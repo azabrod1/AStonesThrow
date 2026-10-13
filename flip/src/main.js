@@ -77,7 +77,8 @@ async function main() {
     overRelaxation: 1.4,
     picBlendPerFrame: 0.03,
     cfl: 1.0,
-    densityStrength: 0.3,
+    // Density correction off: it lifted the whole surface after an impact. Water drifts ~1 % in a second without it.
+    densityStrength: 0,
     gravity: 9.81,
     paused: false,
     seed: 1,

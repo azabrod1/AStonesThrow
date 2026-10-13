@@ -65,3 +65,32 @@ ballistic arc, quadratic drag under water, and a settle into the sand.
 
 Install the development dependencies with `npm install` (Three.js is only
 needed locally for the headless harness, which serves it instead of the CDN).
+
+## FLIP experiment (`flip/`)
+
+A separate WebGPU page that drops a stone into a 40 cm tank of particle
+water, built to answer one question: does a real fluid solver, at the
+resolution a browser can afford, make a better splash than the scripted one
+above? Open http://localhost:8123/flip/ after `npm start` in a browser with
+WebGPU (Chrome, Edge, Safari 26). Click the water or press space to throw;
+the strip sets the cell size, the stone, the entry speed and slow motion.
+`flip/src/main.js` documents the `window.__flip` console API and the URL
+switches (`quality`, `view=side|top`, `debug=particles|depth|thickness|scene`,
+`slice=1`, and the solver settings).
+
+The solver (`flip/src/flipSolver.js`, kernels in `flip/src/shaders/flip.wgsl.js`)
+is FLIP on a staggered grid, adapted from jeantimex/fluid (MIT, `flip/NOTICE.md`):
+particles carry the water, a warm-started red-black Gauss-Seidel pressure
+solve keeps it incompressible each substep, the stone is a moving solid in the
+pressure equation, and the top of the tank is open. Three headless tools drive
+it: `tools/flip-shoot.mjs` captures frames (through an offscreen readback,
+because WebGPU cannot present to a canvas in the cloud container),
+`tools/flip-probe.mjs` checks convergence and that still water stays still,
+and `tools/flip-grid-probe.mjs` prints a slice of the grid around the stone.
+
+**Result.** At 8 to 16 mm cells the solver produces the air cavity behind the
+stone, the bulk displacement and a weak Worthington jet, but no crown and no
+spray. The crown of a real splash is a millimetre-thick sheet thrown from the
+contact line at several times the stone's speed; here the water beside the
+stone rises at about 1 m/s and stays put, because that sheet is far below one
+cell. So the scripted splash stays, and this page is kept as a reference.

@@ -48,10 +48,11 @@ const report = await page.evaluate(async ([radius, speed, time]) => {
   }
   lines.push(`${cavityCells} air cells below the still level (cavity), ${raisedCells} fluid cells above it`);
   lines.push('cell types (A air, ~ fluid, # solid) and Vy on the face below each cell, m/s, slice z=' + sliceZ);
-  for (let y = countY - 1; y >= Math.max(0, countY - 24); y--) {
+  for (let y = Math.min(countY - 1, waterCells + 5); y >= Math.max(0, waterCells - 20); y--) {
     let types = '';
     let speeds = '';
-    for (let x = 0; x < countX; x++) {
+    const stride = countX > 32 ? 2 : 1;
+    for (let x = 0; x < countX; x += stride) {
       const marker = markers[cellIndex(x, y, sliceZ) * 2];
       types += marker === 2 ? '#' : marker === 1 ? '~' : 'A';
       const vy = velocities[nodeIndex(x, y, sliceZ) * 4 + 1];
