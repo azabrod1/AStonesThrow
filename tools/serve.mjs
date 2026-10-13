@@ -12,7 +12,8 @@ const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.
 createServer(async (request, response) => {
   try {
     const url = new URL(request.url, 'http://localhost');
-    const pathname = url.pathname === '/' ? '/index.html' : decodeURIComponent(url.pathname);
+    let pathname = decodeURIComponent(url.pathname);
+    if (pathname.endsWith('/')) pathname += 'index.html';
     const file = path.join(root, pathname);
     if (!file.startsWith(root)) throw new Error('outside root');
     const data = await readFile(file);

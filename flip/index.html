@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>FLIP Splash Experiment</title>
+<style>
+  :root {
+    --bg: #0b1b22;
+    --fg: #eef3f4;
+    --muted: rgba(238, 243, 244, 0.8);
+    --panel: rgba(7, 18, 24, 0.7);
+    --line: rgba(238, 243, 244, 0.16);
+    --accent: #f1c77a;
+    --accent-ink: #2a1d05;
+    color-scheme: dark;
+  }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: 'Instrument Sans', 'Helvetica Neue', Arial, system-ui, sans-serif;
+    overflow: hidden;
+  }
+  #tank { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+  .title { position: fixed; top: calc(env(safe-area-inset-top, 0px) + 14px); left: 18px; pointer-events: none; text-shadow: 0 1px 12px rgba(0,0,0,0.55); }
+  .title h1 { margin: 0; font-weight: 500; font-size: 20px; }
+  .title p { margin: 4px 0 0; font-size: 13px; color: var(--muted); max-width: 46ch; }
+  #status { position: fixed; top: calc(env(safe-area-inset-top, 0px) + 14px); right: 18px; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; text-align: right; max-width: 48vw; }
+  .controls {
+    position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom, 0px) + 14px); transform: translateX(-50%);
+    display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; justify-content: center;
+    padding: 10px 14px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; backdrop-filter: blur(10px);
+    font-size: 13px; max-width: calc(100vw - 32px); box-sizing: border-box;
+  }
+  .controls label { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+  .controls input[type=range] { width: 90px; accent-color: var(--accent); }
+  .controls select, .controls button { font: inherit; color: var(--fg); background: rgba(255,255,255,0.08); border: 1px solid var(--line); border-radius: 8px; padding: 5px 10px; }
+  .controls button.primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; font-weight: 600; }
+  .ui-hidden .title, .ui-hidden .controls, .ui-hidden #status { display: none; }
+</style>
+</head>
+<body>
+<canvas id="tank"></canvas>
+<div class="title">
+  <h1>FLIP splash experiment</h1>
+  <p>A stone drops into a 40 cm tank of particle water. Click the water or press space to throw.</p>
+</div>
+<div id="status">Starting WebGPU…</div>
+<div class="controls">
+  <label>Cells <select id="quality">
+    <option value="coarse">16 mm</option>
+    <option value="medium">12 mm</option>
+    <option value="fine" selected>10 mm</option>
+    <option value="finest">8 mm</option>
+  </select></label>
+  <label>Stone <input id="radius" type="range" min="10" max="40" step="1" value="20"> mm</label>
+  <label>Speed <input id="speed" type="range" min="1" max="8" step="0.5" value="4"> m/s</label>
+  <label>Time <select id="timeScale">
+    <option value="1">real</option>
+    <option value="0.25">¼ speed</option>
+    <option value="0.1">slow</option>
+  </select></label>
+  <button id="throw" class="primary">Throw</button>
+  <button id="pause">Pause</button>
+  <button id="reset">Reset water</button>
+</div>
+<script>
+  if (new URLSearchParams(location.search).get('ui') === '0') document.body.classList.add('ui-hidden');
+</script>
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>
