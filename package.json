@@ -1,0 +1,19 @@
+{
+  "name": "stone-pond",
+  "version": "1.0.0",
+  "description": "Throw stones into a pond: dispersive ripples, crown splash and Worthington jet in WebGL",
+  "main": "index.js",
+  "scripts": {
+    "start": "node tools/serve.mjs",
+    "shoot": "node tools/shoot.mjs",
+    "test": "node tools/fft-test.mjs"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "playwright": "^1.60.0",
+    "three": "^0.183.2"
+  },
+  "type": "module"
+}

@@ -1,0 +1,294 @@
+<title>Stone Pond</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;1,9..144,300&family=Instrument+Sans:wght@400;500;600&display=swap">
+<style>
+  /* Layout: the pond fills the viewport; a quiet title sits top-left and one
+     control strip rests on the bottom edge. Single dark theme by design: the
+     scene itself is the page's background. */
+  :root {
+    --bg: #0b1b22;
+    --fg: #eef3f4;
+    --muted: rgba(238, 243, 244, 0.8);
+    --panel: rgba(7, 18, 24, 0.58);
+    --panel-strong: rgba(7, 18, 24, 0.86);
+    --line: rgba(238, 243, 244, 0.16);
+    --accent: #f1c77a;
+    --accent-ink: #2a1d05;
+    --font-display: 'Fraunces', 'Iowan Old Style', Georgia, serif;
+    --font-ui: 'Instrument Sans', 'Helvetica Neue', Arial, system-ui, sans-serif;
+    color-scheme: dark;
+  }
+  html, body { height: 100%; }
+  [hidden] { display: none !important; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--font-ui);
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+  #pond {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+    touch-action: none;
+    cursor: crosshair;
+    outline: none;
+  }
+  .title {
+    position: fixed;
+    top: calc(env(safe-area-inset-top, 0px) + 14px);
+    left: 18px;
+    pointer-events: none;
+    text-shadow: 0 1px 12px rgba(0, 0, 0, 0.55);
+  }
+  .title h1 {
+    margin: 0;
+    font-family: var(--font-display);
+    font-weight: 300;
+    font-style: italic;
+    font-size: clamp(26px, 3.4vw, 38px);
+    letter-spacing: 0.01em;
+    line-height: 1;
+  }
+  .title p {
+    margin: 6px 0 0;
+    font-size: 13px;
+    color: var(--muted);
+  }
+  .stats {
+    position: fixed;
+    top: calc(env(safe-area-inset-top, 0px) + 16px);
+    right: 18px;
+    font-size: 12px;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+    pointer-events: none;
+    text-shadow: 0 1px 8px rgba(0, 0, 0, 0.6);
+  }
+  .controls {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    padding: 10px 16px calc(env(safe-area-inset-bottom, 0px) + 10px);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 22px;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(to top, var(--panel-strong), var(--panel) 70%, transparent);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+  }
+  .group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+  .group > label, .group > span.name {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+  .segmented {
+    display: inline-flex;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    overflow: hidden;
+  }
+  .segmented button {
+    appearance: none;
+    border: 0;
+    background: transparent;
+    color: var(--fg);
+    font: inherit;
+    font-size: 13px;
+    padding: 6px 12px;
+    cursor: pointer;
+    min-width: 44px;
+  }
+  .segmented button + button { border-left: 1px solid var(--line); }
+  .segmented button[aria-pressed="true"] {
+    background: var(--accent);
+    color: var(--accent-ink);
+    font-weight: 600;
+  }
+  .segmented button:focus-visible, .throw:focus-visible, input[type="range"]:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  input[type="range"] {
+    width: 120px;
+    accent-color: var(--accent);
+  }
+  .readout {
+    font-size: 13px;
+    min-width: 3.5em;
+    font-variant-numeric: tabular-nums;
+  }
+  .throw {
+    appearance: none;
+    border: 1px solid var(--line);
+    background: rgba(238, 243, 244, 0.08);
+    color: var(--fg);
+    font: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 7px 16px;
+    border-radius: 999px;
+    cursor: pointer;
+  }
+  .throw:hover { background: rgba(238, 243, 244, 0.16); }
+  .veil {
+    position: fixed;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    background: var(--bg);
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 20px;
+    color: var(--muted);
+    transition: opacity 0.6s ease;
+    z-index: 2;
+  }
+  .veil.gone { opacity: 0; pointer-events: none; }
+  .veil .error {
+    font-family: var(--font-ui);
+    font-style: normal;
+    font-size: 15px;
+    max-width: 32em;
+    padding: 0 16px;
+    text-align: center;
+    color: var(--fg);
+  }
+  @media (max-width: 520px) {
+    .title p { display: none; }
+    .controls { gap: 8px 14px; }
+    input[type="range"] { width: 90px; }
+    .segmented button { padding: 6px 9px; min-width: 38px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .veil { transition: none; }
+  }
+</style>
+
+<canvas id="pond" aria-label="A pond. Tap or click the water to throw a stone."></canvas>
+
+<div class="title">
+  <h1>Stone Pond</h1>
+  <p>Tap the water to throw a stone. Space throws one for you.</p>
+</div>
+<div class="stats" id="stats" aria-live="off"></div>
+
+<div class="controls" role="toolbar" aria-label="Pond controls">
+  <div class="group">
+    <label for="stone-size">Stone</label>
+    <input type="range" id="stone-size" min="1.5" max="16" step="0.5" value="4">
+    <span class="readout" id="stone-readout">4 cm</span>
+  </div>
+  <div class="group">
+    <span class="name">Throw</span>
+    <div class="segmented" id="power" role="group" aria-label="Throw strength">
+      <button type="button" data-value="soft">Soft</button>
+      <button type="button" data-value="normal" aria-pressed="true">Normal</button>
+      <button type="button" data-value="hard">Hard</button>
+    </div>
+  </div>
+  <div class="group">
+    <span class="name">Time</span>
+    <div class="segmented" id="speed" role="group" aria-label="Playback speed">
+      <button type="button" data-value="1" aria-pressed="true">Real</button>
+      <button type="button" data-value="0.25">¼</button>
+      <button type="button" data-value="0.1">⅒</button>
+    </div>
+  </div>
+  <div class="group">
+    <span class="name">Quality</span>
+    <div class="segmented" id="quality" role="group" aria-label="Rendering quality">
+      <button type="button" data-value="low">Low</button>
+      <button type="button" data-value="medium">Medium</button>
+      <button type="button" data-value="high">High</button>
+    </div>
+  </div>
+  <button type="button" class="throw" id="throw">Throw a stone</button>
+</div>
+
+<div class="veil" id="veil"><span id="veil-text">Filling the pond…</span></div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.183.2/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.183.2/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+  import { startPond } from './src/main.js';
+
+  const veil = document.getElementById('veil');
+  const veilText = document.getElementById('veil-text');
+  const stats = document.getElementById('stats');
+  const params = new URLSearchParams(location.search);
+
+  function segmented(id, onChange) {
+    const root = document.getElementById(id);
+    root.addEventListener('click', (event) => {
+      const button = event.target.closest('button');
+      if (!button) return;
+      for (const other of root.querySelectorAll('button')) other.setAttribute('aria-pressed', String(other === button));
+      onChange(button.dataset.value);
+    });
+    return (value) => {
+      for (const button of root.querySelectorAll('button')) button.setAttribute('aria-pressed', String(button.dataset.value === value));
+    };
+  }
+
+  let pond;
+  try {
+    pond = startPond({
+      canvas: document.getElementById('pond'),
+      quality: params.get('quality') || 'auto',
+      onError: (message) => { veilText.innerHTML = ''; const p = document.createElement('p'); p.className = 'error'; p.textContent = message; veilText.append(p); },
+      onStats: ({ fps, droplets }) => { stats.textContent = `${Math.round(fps)} fps · ${droplets} drops`; },
+    });
+  } catch (error) {
+    console.error(error);
+    if (!veilText.querySelector('.error')) {
+      veilText.innerHTML = '';
+      const p = document.createElement('p');
+      p.className = 'error';
+      p.textContent = 'The pond could not start. This page needs WebGL 2 with floating-point textures.';
+      veilText.append(p);
+    }
+  }
+
+  if (pond) {
+    const sizeInput = document.getElementById('stone-size');
+    const sizeReadout = document.getElementById('stone-readout');
+    const applySize = () => {
+      const cm = Number(sizeInput.value);
+      sizeReadout.textContent = `${cm % 1 === 0 ? cm : cm.toFixed(1)} cm`;
+      pond.setStoneRadius(cm / 200);   // slider is the stone's diameter
+    };
+    sizeInput.addEventListener('input', applySize);
+    applySize();
+    segmented('power', (value) => pond.setPower(value));
+    segmented('speed', (value) => pond.setTimeScale(Number(value)));
+    const setQualityButtons = segmented('quality', (value) => pond.setQuality(value));
+    setQualityButtons(pond.quality);
+    document.getElementById('throw').addEventListener('click', () => pond.throwRandom());
+    document.getElementById('throw').addEventListener('keydown', (event) => { if (event.code === 'Space') event.stopPropagation(); });
+
+    window.__pond = pond;
+    requestAnimationFrame(() => requestAnimationFrame(() => veil.classList.add('gone')));
+    if (params.get('ui') === '0') for (const el of document.querySelectorAll('.title, .controls, .stats')) el.hidden = true;
+  }
+</script>
