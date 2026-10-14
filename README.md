@@ -33,10 +33,11 @@ known timing, and the droplets are choreographed from them:
 
 1. crown (`src/crown.js`): a thin sheet rising from a ring just outside the
    stone, biased forward. It is water launched from the ring over a few
-   milliseconds, each element then flying ballistically, so the whole sheet is
-   a closed form in launch time, azimuth and time. Its rim thickens into a
-   bead, goes wavy and sheds drops from the crests; a few tens of milliseconds
-   in, the sheet tears from the rim down into drops that carry its velocity;
+   milliseconds, each element then flying on its own, slowed by surface
+   tension and air, so the whole sheet is a closed form in launch time,
+   azimuth and time. Its rim thickens into a bead, goes wavy and sheds drops
+   from the crests; after about 60 ms the sheet tears from the rim down into
+   drops that carry its velocity;
 2. cavity and pinch-off about 2.1·√(R/g) seconds after entry;
 3. Worthington jet: a narrow column fired straight up, tip first;
 4. bubbles that rise and burst into foam.

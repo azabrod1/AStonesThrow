@@ -10,8 +10,9 @@
 // scattering for fine spray. The composite pass also tone-maps the frame.
 // Crown sheets (src/shaders/sheet.js) draw into the same targets with an
 // on-screen radius of 999; the composite gives them full coverage once they
-// are about a millimetre thick and a milky scattering that grows with
-// thickness, since a real splash sheet is rippled and aerated, not glass.
+// are about half a millimetre thick and a faint scattering that grows with
+// thickness, so the glassy wall stays clear while the bead and edge-on walls
+// whiten.
 
 export const PARTICLE_VERTEX = /* glsl */`
 attribute vec3 iPosition;
@@ -242,14 +243,14 @@ void main() {
     fluid += uSunIrradiance * glint * 1.5;
     // Crown sheets are written with an on-screen radius of 999. A sheet covers
     // its pixels whatever its thickness (thin film reflects as much as thick),
-    // so its alpha saturates within a millimetre and only softens its edges.
+    // so its alpha saturates within half a millimetre and only softens edges.
     float sheet = step(900.0, pixelRadius);
-    float alpha = (1.0 - exp(-thickness * mix(320.0, 2000.0, sheet))) * mix(1.0, coverage, sprayness);
+    float alpha = (1.0 - exp(-thickness * mix(320.0, 5000.0, sheet))) * mix(1.0, coverage, sprayness);
     color = mix(scene, fluid, alpha);
-    // Sheets are rippled and aerated rather than glassy, so they also scatter
-    // like a thin milky film, most where the view crosses the most water: the
-    // rim bead and the walls seen edge-on.
-    float sheetScatter = sheet * (1.0 - exp(-thickness * 250.0));
+    // A sheet is a glassy film, but its rippled surface scatters a little,
+    // enough to whiten only where the view crosses a lot of water: the beaded
+    // rim and torn edges, and walls seen edge-on.
+    float sheetScatter = sheet * (1.0 - exp(-thickness * 80.0));
     color = mix(color, sprayColor, sheetScatter);
   }
   color = aces(color * uExposure / 0.6);

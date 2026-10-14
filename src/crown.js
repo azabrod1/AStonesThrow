@@ -1,18 +1,22 @@
 // The crown: the thin sheet of water a stone throws up as it enters.
 //
 // The sheet is material launched continuously from a ring around the stone,
-// each ring element then flying ballistically. So the whole sheet is a closed
-// form in launch time tau, azimuth theta and the crown's age t:
+// each ring element then flying on its own. Surface tension and air slow a
+// real sheet's rim fast (which is why crowns never reach the height their
+// launch speed implies), modelled as a velocity decaying as exp(−age/τd) with
+// τd = 0.05 s while gravity acts undamped. So the whole sheet is a closed form
+// in launch time tau, azimuth theta and the crown's age t; with a = t − tau,
 //
-//   position = launch point + u·direction·(t − tau) − ½·g·(t − tau)²·up
+//   position = launch point + u·direction·τd·(1 − exp(−a/τd)) − ½·g·a²·up
 //
 // With stone radius R and entry speed V the main launch lasts
 // T = max(1.2·R/V, 0.01) s. Over it the ring widens from 0.9·R to 1.4·R, the
-// launch speed u falls from 0.7·V to 0.25·V and its angle from vertical from
+// launch speed u falls from 0.55·V to 0.2·V and its angle from vertical from
 // 55° to 25°: the first material makes the flared rim and later material the
 // steeper wall under it. After T a tail keeps feeding the wall at
-// 0.25·V·exp(−(tau − T)/(0.45·T)) from a ring still widening by 0.2·R per T (up
-// to 2·R), so the base stays on the water while the sheet lives.
+// 0.2·V·exp(−(tau − T)/(0.45·T)) from a ring still widening by 0.2·R per T (up
+// to 2·R), so the base stays on the water while the sheet lives. The tail
+// leaves the ring at 0.6·h0, so the foot stays light.
 //
 // Around the ring u is modulated by 1 + 0.08·Σ a_k·cos(k·theta + phase_k) over
 // modes k = 5…9, plus k = 12…18 at half the amplitude, with random a_k in
@@ -25,20 +29,24 @@
 //
 // Thickness is h0·(r0/r)/(1 + age/0.04 s), at least 0.2 mm, with
 // h0 = 1.5 mm·sqrt(R / 3 cm): the sheet thins as it spreads around a widening
-// circle and as it drains. The leading edge (the first ~8% of T) is a bead
-// three times the unstretched thickness h0/(1 + age/0.04 s), since the rim
-// gathers what the stretching takes from the sheet; its normals are bent
-// outward like a tube's so it catches the sun all along the rim.
+// circle and as it drains. The free edge (the material within ~8% of T of the
+// rim, or of the tear front once it tears) is a bead three times the
+// unstretched thickness h0/(1 + age/0.04 s), since an edge gathers what the
+// stretching takes from the sheet; its normals are bent outward like a tube's
+// so it catches the sun all along the edge.
 //
-// At t_break = clamp(T + 2.5·R/V, 0.03, 0.12) s the sheet tears, from the rim
+// At t_break = clamp(T + 6·R/V, 0.06, 0.15) s the sheet tears, from the rim
 // down to the water along a ragged front, over 0.6·t_break. The torn part
-// becomes droplets that carry the local sheet velocity, each holding the
-// volume of the patch of sheet it came from, so the drops come out about the
-// size the sheet's thickness implies.
+// becomes droplets that carry the local (decayed) sheet velocity, each holding
+// the volume of the patch of sheet it came from, so the drops come out about
+// the size the sheet's thickness implies. For a 3 cm stone at about 6 m/s the
+// sheet stands whole for 60 ms, its rim peaking near 5 cm (9 cm on the forward
+// side of an oblique throw), and is gone by about 100 ms.
 //
 // updateGeometry() evaluates a ROWS × COLUMNS grid (rim to base × around the
 // ring) once per rendered frame; update() runs every simulation substep and
-// only sheds from the rim and tears. The mesh is drawn by SplashSystem with the
+// sheds from the rim, while the tear, the costly part, advances at most every
+// TEAR_INTERVAL of simulated time. The mesh is drawn by SplashSystem with the
 // materials in src/shaders/sheet.js, through the droplets' screen-space fluid
 // passes.
 import * as THREE from 'three';
@@ -52,6 +60,9 @@ const ROW_POWER = 1.8;             // crowds main-launch rows towards the rim be
 const MAIN_SHARE = 0.7;            // fraction of the tear front's travel spent on the main launch
 const TAIL_DECAY = 0.45;           // tail launch speed decays over this many T
 const DRAIN_SECONDS = 0.04;        // the sheet's thinning time scale
+const DRAG_SECONDS = 0.05;         // elements' velocity decays as exp(−age / DRAG_SECONDS)
+const TAIL_THICKNESS = 0.6;        // tail material leaves the ring at this fraction of h0
+const TEAR_INTERVAL = 1 / 90;      // the tear advances at most this often (simulated seconds)
 const MIN_THICKNESS = 0.0002;
 const BEAD_END = 0.08;             // the bead is the material of the first 8% of T
 const TEAR_SHARE = 0.6;            // the tear takes this fraction of t_break
@@ -95,7 +106,7 @@ export class CrownSheet {
     this.driftZ = 0.22 * velocity.z;
 
     this.launchDuration = Math.max(1.2 * radius / speed, 0.01);
-    this.breakTime = THREE.MathUtils.clamp(this.launchDuration + 2.5 * radius / speed, 0.03, 0.12);
+    this.breakTime = THREE.MathUtils.clamp(this.launchDuration + 6 * radius / speed, 0.06, 0.15);
     this.tearDuration = TEAR_SHARE * this.breakTime;
     this.endTime = this.breakTime + this.tearDuration;
     this.baseThickness = Math.max(0.0015 * Math.sqrt(this.sizeFactor), MIN_THICKNESS);
@@ -114,6 +125,7 @@ export class CrownSheet {
     this.columnThicknessFactor = new Float64Array(COLUMNS);
     this.columnTearPace = new Float64Array(COLUMNS);
     this.tearFront = new Float64Array(COLUMNS);
+    this.tearClock = TEAR_INTERVAL;    // simulated time since the tear last advanced
     this.tearTarget = new Float64Array(COLUMNS);
     this.tearSwept = new Float64Array(COLUMNS);
     const tearPhase = randomRange(0, Math.PI * 2);
@@ -151,7 +163,7 @@ export class CrownSheet {
     this.normals = new Float32Array(vertexCount * 3);
     this.rimTangents = new Float32Array(vertexCount * 3);
     this.thicknesses = new Float32Array(vertexCount);
-    this.rowTaus = new Float64Array(vertexCount);
+    this.rowTaus = new Float64Array(vertexCount);   // launch time behind the free edge
     const geometry = new THREE.BufferGeometry();
     const dynamic = (array, size) => new THREE.BufferAttribute(array, size).setUsage(THREE.DynamicDrawUsage);
     geometry.setAttribute('position', dynamic(this.positions, 3));
@@ -197,31 +209,37 @@ export class CrownSheet {
   /**
    * State of the element launched at time tau from the azimuth with the given
    * cosine and sine, at the crown's current age: position, velocity and sheet
-   * thickness.
+   * thickness. edgeTau is the launch time at the sheet's free edge there (0
+   * for the rim, the tear front once it tears): the bead runs along it.
    */
-  evaluate(tau, cosAngle, sinAngle, speedFactor, thicknessFactor, out) {
+  evaluate(tau, cosAngle, sinAngle, speedFactor, thicknessFactor, out, edgeTau = 0) {
     const progress = tau / this.launchDuration;
     const main = Math.min(progress, 1);
     const tail = Math.max(progress - 1, 0);
     const ringRadius = this.radius * Math.min(0.9 + 0.5 * main + 0.2 * tail, 2.0);
-    const launchSpeed = this.entrySpeed * (tail > 0 ? 0.25 * Math.exp(-tail / TAIL_DECAY) : 0.7 - 0.45 * main) * speedFactor;
+    const launchSpeed = this.entrySpeed * (tail > 0 ? 0.2 * Math.exp(-tail / TAIL_DECAY) : 0.55 - 0.35 * main) * speedFactor;
     const tilt = THREE.MathUtils.degToRad(55 - 30 * main);
     const radialSpeed = launchSpeed * Math.sin(tilt);
     const upSpeed = launchSpeed * Math.cos(tilt);
     const age = Math.max(this.age - tau, 0);
-    const radialDistance = ringRadius + radialSpeed * age;
-    out.x = this.centreX + cosAngle * radialDistance + this.driftX * age;
-    out.y = -BASE_DEPTH + upSpeed * age - 0.5 * GRAVITY * age * age;
-    out.z = this.centreZ + sinAngle * radialDistance + this.driftZ * age;
-    out.vx = cosAngle * radialSpeed + this.driftX;
-    out.vy = upSpeed - GRAVITY * age;
-    out.vz = sinAngle * radialSpeed + this.driftZ;
+    // Drag: velocity v0·exp(−age/τd), so the distance flown is v0·τd·(1 − exp(−age/τd)).
+    const decay = Math.exp(-age / DRAG_SECONDS);
+    const flight = DRAG_SECONDS * (1 - decay);
+    const radialDistance = ringRadius + radialSpeed * flight;
+    out.x = this.centreX + cosAngle * radialDistance + this.driftX * flight;
+    out.y = -BASE_DEPTH + upSpeed * flight - 0.5 * GRAVITY * age * age;
+    out.z = this.centreZ + sinAngle * radialDistance + this.driftZ * flight;
+    out.vx = (cosAngle * radialSpeed + this.driftX) * decay;
+    out.vy = upSpeed * decay - GRAVITY * age;
+    out.vz = (sinAngle * radialSpeed + this.driftZ) * decay;
     out.radialDistance = radialDistance;
     // The bead gathers what stretching takes from the sheet, so it keeps three
-    // times the unstretched thickness while the sheet behind it thins.
-    const drained = this.baseThickness * thicknessFactor / (1 + age / DRAIN_SECONDS);
+    // times the unstretched thickness while the sheet behind it thins. The
+    // tail leaves the ring thinner, so the foot stays light.
+    const launchThickness = 1 - (1 - TAIL_THICKNESS) * smoothstep(0, 0.5, tail);
+    const drained = this.baseThickness * thicknessFactor * launchThickness / (1 + age / DRAIN_SECONDS);
     const sheetThickness = Math.max(drained * ringRadius / radialDistance, MIN_THICKNESS);
-    const bead = 1 - smoothstep(0.6 * BEAD_END, 1.3 * BEAD_END, progress);
+    const bead = 1 - smoothstep(0.6 * BEAD_END, 1.3 * BEAD_END, (tau - edgeTau) / this.launchDuration);
     out.thickness = sheetThickness + bead * Math.max(3 * drained - sheetThickness, 0);
     return out;
   }
@@ -253,8 +271,16 @@ export class CrownSheet {
   /** Advance to the given splash time: shed from the rim, or tear once it is time. */
   update(time, dt, splash) {
     this.age = time - this.startTime;
-    if (this.age < this.breakTime) this.shed(dt, splash);
-    else this.tear(splash, Math.min((this.age - this.breakTime) / this.tearDuration, 1));
+    if (this.age < this.breakTime) {
+      this.shed(dt, splash);
+    } else {
+      // The tear is the costly part, so it advances at most every TEAR_INTERVAL.
+      this.tearClock += dt;
+      if (this.tearClock >= TEAR_INTERVAL || this.age >= this.endTime) {
+        this.tearClock = 0;
+        this.tear(splash, Math.min((this.age - this.breakTime) / this.tearDuration, 1));
+      }
+    }
     if (this.age >= this.endTime) this.finished = true;
   }
 
@@ -393,12 +419,12 @@ export class CrownSheet {
       for (let row = 0; row < ROWS; row++) {
         const vertex = row * COLUMNS + column;
         const tau = this.rowTau(row, front, end);
-        this.evaluate(tau, cosAngle, sinAngle, speedFactor, thicknessFactor, state);
+        this.evaluate(tau, cosAngle, sinAngle, speedFactor, thicknessFactor, state, front);
         this.positions[vertex * 3] = state.x;
         this.positions[vertex * 3 + 1] = state.y;
         this.positions[vertex * 3 + 2] = state.z;
         this.thicknesses[vertex] = state.thickness;
-        this.rowTaus[vertex] = tau;
+        this.rowTaus[vertex] = tau - front;
       }
     }
 
