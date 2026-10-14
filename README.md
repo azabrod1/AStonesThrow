@@ -31,7 +31,12 @@ diffuses and is stamped by the splash.
 **Splash** (`src/splash.js`). A stone entering water goes through stages with
 known timing, and the droplets are choreographed from them:
 
-1. crown: a sheet flung up and out from the contact ring, biased forward;
+1. crown (`src/crown.js`): a thin sheet rising from a ring just outside the
+   stone, biased forward. It is water launched from the ring over a few
+   milliseconds, each element then flying ballistically, so the whole sheet is
+   a closed form in launch time, azimuth and time. Its rim thickens into a
+   bead, goes wavy and sheds drops from the crests; a few tens of milliseconds
+   in, the sheet tears from the rim down into drops that carry its velocity;
 2. cavity and pinch-off about 2.1·√(R/g) seconds after entry;
 3. Worthington jet: a narrow column fired straight up, tip first;
 4. bubbles that rise and burst into foam.
@@ -42,6 +47,8 @@ into a depth buffer (with each drop's sun glint) and an additive thickness
 buffer; a bilateral blur merges neighbouring drops into sheets; the composite
 pass shades the result with sky reflection, refraction of the scene behind,
 sun highlights and white scattering for fine spray, then tone-maps the frame.
+The crown sheet is a mesh drawn into the same two buffers, so it is shaded
+as the same water, plus a milky scattering for its rippled, aerated film.
 
 **Rendering** (`src/main.js`, `src/shaders/`). Each frame: the floor,
 submerged stones and bubbles are rendered to a texture with depth; the main

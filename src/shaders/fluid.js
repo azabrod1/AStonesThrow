@@ -8,6 +8,10 @@
 // merge into sheets, and the composite pass shades the result as water: sky
 // reflection, refraction of the scene behind, sun highlights, and white
 // scattering for fine spray. The composite pass also tone-maps the frame.
+// Crown sheets (src/shaders/sheet.js) draw into the same targets with an
+// on-screen radius of 999; the composite gives them full coverage once they
+// are about a millimetre thick and a milky scattering that grows with
+// thickness, since a real splash sheet is rippled and aerated, not glass.
 
 export const PARTICLE_VERTEX = /* glsl */`
 attribute vec3 iPosition;
@@ -236,8 +240,17 @@ void main() {
     vec3 surfaceColor = mix(refracted, reflected, fresnel) + specular + sprayColor * scatter * 0.25;
     vec3 fluid = mix(surfaceColor, mix(scene, sprayColor, 0.6), sprayness);
     fluid += uSunIrradiance * glint * 1.5;
-    float alpha = (1.0 - exp(-thickness * 320.0)) * mix(1.0, coverage, sprayness);
+    // Crown sheets are written with an on-screen radius of 999. A sheet covers
+    // its pixels whatever its thickness (thin film reflects as much as thick),
+    // so its alpha saturates within a millimetre and only softens its edges.
+    float sheet = step(900.0, pixelRadius);
+    float alpha = (1.0 - exp(-thickness * mix(320.0, 2000.0, sheet))) * mix(1.0, coverage, sprayness);
     color = mix(scene, fluid, alpha);
+    // Sheets are rippled and aerated rather than glassy, so they also scatter
+    // like a thin milky film, most where the view crosses the most water: the
+    // rim bead and the walls seen edge-on.
+    float sheetScatter = sheet * (1.0 - exp(-thickness * 250.0));
+    color = mix(color, sprayColor, sheetScatter);
   }
   color = aces(color * uExposure / 0.6);
   gl_FragColor = vec4(linearToSrgb(color), 1.0);

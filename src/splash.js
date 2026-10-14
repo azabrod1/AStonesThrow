@@ -2,8 +2,11 @@
 //
 // A stone entering water goes through stages with known timing, and the
 // droplets are choreographed from them rather than solved for:
-//   1. Crown: on entry a thin sheet is flung up and out from the contact ring
-//      and shatters into droplets, biased in the direction of travel.
+//   1. Crown: the contact line throws a little fast, fine spray, then a thin
+//      sheet rises from a ring just outside the stone, biased in the direction
+//      of travel (src/crown.js). Its rim thickens into a bead, goes wavy and
+//      sheds drops from the crests; after a few tens of milliseconds the sheet
+//      tears from the rim down into droplets carrying its local velocity.
 //   2. Cavity and pinch-off: the air cavity behind the stone closes under
 //      hydrostatic pressure about 2.1·sqrt(R/g) seconds after entry, almost
 //      independently of entry speed (Duclaux et al. 2007).
@@ -16,14 +19,21 @@
 // Droplets are integrated on the CPU (a few thousand points) and rendered as
 // a screen-space fluid: sphere impostors into a depth buffer, additive
 // thickness, bilateral depth smoothing so neighbouring drops merge into
-// sheets, then the composite pass shades them (src/shaders/fluid.js).
+// sheets, then the composite pass shades them (src/shaders/fluid.js). The
+// crown sheets are meshes drawn into the same depth and thickness buffers
+// (src/shaders/sheet.js), so sheet and drops are shaded as one body of water.
+// Sheets are evaluated in closed form once per rendered frame (prepareFrame);
+// at most MAX_CROWNS live at once.
 import * as THREE from 'three';
 import { FullscreenPass, createFloatTarget } from './gpu.js';
+import { CrownSheet } from './crown.js';
 import { PARTICLE_VERTEX, PARTICLE_DEPTH_FRAGMENT, PARTICLE_THICKNESS_FRAGMENT, BLUR_FRAGMENT, COMPOSITE_FRAGMENT } from './shaders/fluid.js';
+import { SHEET_VERTEX, SHEET_DEPTH_FRAGMENT, SHEET_THICKNESS_FRAGMENT } from './shaders/sheet.js';
 import { BUBBLE_VERTEX, BUBBLE_FRAGMENT } from './shaders/scene.js';
 
 const GRAVITY = 9.81;
 const REFERENCE_RADIUS = 0.03;   // the stone size the tuning constants were set for
+const MAX_CROWNS = 5;            // an older crown tears at once when another arrives
 
 const randomRange = (lo, hi) => lo + Math.random() * (hi - lo);
 
@@ -44,6 +54,7 @@ export class SplashSystem {
     this.bubblePhases = new Float32Array(bubbleCapacity);
 
     this.jets = [];      // scheduled Worthington jets
+    this.crowns = [];    // live crown sheets
     this.plumes = [];    // scheduled bubble plumes
     this.time = 0;
     this.lighting = lighting;
@@ -77,6 +88,16 @@ export class SplashSystem {
     this.particleMesh.frustumCulled = false;
     this.particleScene = new THREE.Scene();
     this.particleScene.add(this.particleMesh);
+
+    // Crown sheets: every crown's mesh shares these and swaps them per pass.
+    const sheetUniforms = () => ({
+      uSceneDepth: { value: null },
+      uResolution: { value: new THREE.Vector2(1, 1) },
+      uSunDirView: { value: new THREE.Vector3() },
+    });
+    this.sheetDepthMaterial = new THREE.ShaderMaterial({ vertexShader: SHEET_VERTEX, fragmentShader: SHEET_DEPTH_FRAGMENT, uniforms: sheetUniforms(), depthTest: true, depthWrite: true, side: THREE.DoubleSide });
+    this.sheetThicknessMaterial = new THREE.ShaderMaterial({ vertexShader: SHEET_VERTEX, fragmentShader: SHEET_THICKNESS_FRAGMENT, uniforms: sheetUniforms(), depthTest: false, depthWrite: false, blending: THREE.AdditiveBlending, transparent: true, side: THREE.DoubleSide });
+    this.sunDirView = new THREE.Vector3();
 
     this.blurPass = new FullscreenPass(BLUR_FRAGMENT, {
       uDepth: { value: null },
@@ -137,24 +158,38 @@ export class SplashSystem {
     const horizontalFraction = Math.min(horizontal.length() / entrySpeed, 1);
     if (horizontal.lengthSq() > 1e-6) horizontal.normalize();
 
-    // 1. Crown.
+    // 1. Crown. The droplet total is split between fine spray from the contact
+    // line now, drops shed by the sheet's rim, and the sheet's breakup.
     const crownCount = Math.round(THREE.MathUtils.clamp(900 * sizeFactor ** 1.6 * Math.sqrt(entrySpeed / 6), 200, 4500));
-    for (let i = 0; i < crownCount; i++) {
+    const sprayCount = Math.round(0.1 * crownCount);
+    const rimCount = Math.round(0.1 * crownCount);
+    for (let drop = 0; drop < sprayCount; drop++) {
       const angle = Math.random() * Math.PI * 2;
       const dirX = Math.cos(angle), dirZ = Math.sin(angle);
       const forward = (dirX * horizontal.x + dirZ * horizontal.y) * horizontalFraction;
       if (Math.random() < 0.45 * Math.max(-forward, 0)) continue;
-      const ringRadius = radius * randomRange(0.95, 1.25);
-      const tilt = THREE.MathUtils.degToRad(randomRange(22, 58));
-      const dropSpeed = entrySpeed * (0.22 + 0.42 * Math.random() ** 1.6) * (1 + 0.4 * forward);
+      const ringRadius = radius * randomRange(0.9, 1.1);
+      const tilt = THREE.MathUtils.degToRad(randomRange(50, 75));
+      const dropSpeed = entrySpeed * randomRange(0.4, 0.9) * (1 + 0.45 * forward);
       const up = Math.cos(tilt) * dropSpeed;
       const out = Math.sin(tilt) * dropSpeed;
       this.spawnDroplet(
-        x + dirX * ringRadius, 0.004, z + dirZ * ringRadius,
+        x + dirX * ringRadius, 0.003, z + dirZ * ringRadius,
         dirX * out + velocity.x * 0.22, up, dirZ * out + velocity.z * 0.22,
-        (0.0012 + 0.0036 * Math.random() ** 2) * sizeFactor ** 0.4,
+        (0.0005 + 0.0007 * Math.random()) * sizeFactor ** 0.4,
       );
     }
+    if (this.crowns.length >= MAX_CROWNS) {
+      const oldest = this.crowns[0];
+      oldest.finishNow(this);
+      this.retireCrown(oldest);
+    }
+    const crown = new CrownSheet({
+      impact: info, startTime: this.time, rimDroplets: rimCount,
+      breakupDroplets: crownCount - sprayCount - rimCount, material: this.sheetDepthMaterial,
+    });
+    this.crowns.push(crown);
+    this.particleScene.add(crown.mesh);
 
     // Cavity: a depression plus a downward push that launches the first ring.
     water.addSplat({ x, z, radius: radius * 1.1, height: -0.3 * radius, velocity: -0.045 * entrySpeed });
@@ -176,6 +211,12 @@ export class SplashSystem {
       total: Math.round(THREE.MathUtils.clamp(110 * sizeFactor ** 2, 30, 500)),
       spawned: 0, depth: Math.min(0.55, radius * 7),
     });
+  }
+
+  retireCrown(crown) {
+    this.particleScene.remove(crown.mesh);
+    crown.dispose();
+    this.crowns.splice(this.crowns.indexOf(crown), 1);
   }
 
   spawnDroplet(x, y, z, vx, vy, vz, radius) {
@@ -310,6 +351,11 @@ export class SplashSystem {
       }
     }
 
+    // Crown sheets shed from the rim and tear; their droplets are placed where
+    // the sheet is now, so they are not integrated until the next substep.
+    for (const crown of this.crowns) crown.update(this.time, dt, this);
+    for (const crown of this.crowns.filter((candidate) => candidate.finished)) this.retireCrown(crown);
+
     // Bubbles rise, wobble and burst at the surface.
     for (let i = this.bubbleCount - 1; i >= 0; i--) {
       const p = i * 3;
@@ -353,25 +399,40 @@ export class SplashSystem {
     this.fluidSize = new THREE.Vector2(w, h);
   }
 
-  /** Draw droplets over the finished scene and present the frame to the canvas (or target). */
+  /** Bring the crown sheets to the current time: once per rendered frame, not per substep. */
+  prepareFrame() {
+    for (const crown of this.crowns) crown.updateGeometry(this.time);
+  }
+
+  setPassMaterials(particleMaterial, sheetMaterial) {
+    this.particleMesh.material = particleMaterial;
+    for (const crown of this.crowns) crown.mesh.material = sheetMaterial;
+  }
+
+  /** Draw droplets and crown sheets over the finished scene and present the frame to the canvas (or target). */
   render(renderer, camera, sceneTarget, output = null) {
+    this.prepareFrame();
     const { depth, thickness, blurA, blurB } = this.targets;
     const projScale = camera.projectionMatrix.elements[5] * this.fluidSize.y * 0.5;
+    this.sunDirView.copy(this.lighting.sunDirection).transformDirection(camera.matrixWorldInverse);
     for (const material of [this.depthMaterial, this.thicknessMaterial]) {
       material.uniforms.uProjScale.value = projScale;
+      material.uniforms.uStreakSeconds.value = this.streakSeconds;
+    }
+    for (const material of [this.depthMaterial, this.thicknessMaterial, this.sheetDepthMaterial, this.sheetThicknessMaterial]) {
       material.uniforms.uSceneDepth.value = sceneTarget.depthTexture;
       material.uniforms.uResolution.value.copy(this.fluidSize);
-      material.uniforms.uStreakSeconds.value = this.streakSeconds;
-      material.uniforms.uSunDirView.value.copy(this.lighting.sunDirection).transformDirection(camera.matrixWorldInverse);
+      material.uniforms.uSunDirView.value.copy(this.sunDirView);
     }
     renderer.setClearColor(0x000000, 0);
-    if (this.count > 0) {
-      this.particleMesh.material = this.depthMaterial;
+    this.particleMesh.visible = this.count > 0;
+    if (this.count > 0 || this.crowns.length > 0) {
+      this.setPassMaterials(this.depthMaterial, this.sheetDepthMaterial);
       renderer.setRenderTarget(depth);
       renderer.clear(true, true, false);
       renderer.render(this.particleScene, camera);
 
-      this.particleMesh.material = this.thicknessMaterial;
+      this.setPassMaterials(this.thicknessMaterial, this.sheetThicknessMaterial);
       renderer.setRenderTarget(thickness);
       renderer.clear(true, false, false);
       renderer.render(this.particleScene, camera);
