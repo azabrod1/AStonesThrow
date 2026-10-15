@@ -57,8 +57,28 @@
 // jet's 7 mm drop landing at 2.2 m/s stands whole for 19 ms, its rim then
 // 14 mm up and 43 mm across, and is gone by 31 ms.
 //
+// An oblique entry also throws a forward fan (`fan`, made by the splash when
+// more than 0.3 of the entry speed is horizontal), a thin fast sheet ahead
+// of the crown: the same model over an open sector, FAN_HALF_ANGLE either
+// side of the direction of travel, launched over T = FAN_LAUNCH·R/V with no
+// tail from the forward contact line (its ring widening from
+// FAN_RING_START·R to FAN_RING_END·R) at FAN_SPEED_START to FAN_SPEED_END of
+// V, about 0.9·V, and FAN_TILT_START to FAN_TILT_END degrees from vertical,
+// so mostly forward. Its strength (0 to 1, growing with the horizontal
+// fraction) scales the speeds by 0.75 + 0.25·strength and its thickness,
+// FAN_THICKNESS·h0, by 0.5 + 0.5·strength. Across the sector the launch speed
+// falls to FAN_EDGE_SPEED and the thickness to nothing at the edges; it has
+// no drift and fingers its rim with the modes FAN_MODES. It tears at
+// t_break = max(FAN_BREAK·R/V, FAN_MIN_BREAK) (a sheet this thin and fast
+// would part within 2·R/V, but then no frame at 60 Hz would ever show it)
+// into fine drops of FAN_DROP_FLOOR to FAN_DROP_CAP, which carry its
+// decayed velocity. For a 3 cm stone thrown in at 6.9 m/s, 42° from
+// vertical, its rim is 13 cm ahead and 3 cm up when it tears at 20 ms, it
+// is gone by 32 ms, and its spray lands about 0.7 m ahead.
+//
 // updateGeometry() evaluates a ROWS × COLUMNS grid (rim to base × around the
-// ring, built by src/fluidMesh.js) once per rendered frame; update() runs every
+// ring, built by src/fluidMesh.js; the fan's FAN_ROWS × FAN_COLUMNS across
+// its sector, not wrapping) once per rendered frame; update() runs every
 // simulation substep and sheds from the rim, while the tear, the costly part,
 // advances once per rendered frame: whenever a frame's worth of simulated
 // time (SplashSystem.frameSeconds) has passed, so the front moves on every
@@ -96,6 +116,25 @@ const FINE_MODES = [12, 13, 14, 15, 16, 17, 18];
 const MAIN_AMPLITUDE = 0.05;       // deeper turns the scallops into petals
 const FINE_AMPLITUDE = 0.05;
 const MODES_PER_COLUMN = 1 / 2.5;  // a grid resolves modes up to this many per column
+const FAN_ROWS = 10;               // the forward fan of an oblique entry: rim to base...
+const FAN_COLUMNS = 41;            // ...by edge to edge across its sector
+const FAN_HALF_ANGLE = THREE.MathUtils.degToRad(60);   // the sector spans this either side of the direction of travel
+const FAN_LAUNCH = 1.0;            // launched over this many R/V...
+const FAN_BREAK = 1.25;            // ...tearing at this many R/V...
+const FAN_MIN_BREAK = 0.02;        // ...or this many seconds if longer, so a 60 Hz frame sees it whole
+const FAN_RING_START = 0.5;        // launch ring radius in R, first to last material: the forward contact line
+const FAN_RING_END = 0.9;
+const FAN_SPEED_START = 1.0;       // launch speed in V, first to last (about 0.9·V)...
+const FAN_SPEED_END = 0.8;
+const FAN_TILT_START = 75;         // ...at this many degrees from vertical, first to last
+const FAN_TILT_END = 65;
+const FAN_EDGE_SPEED = 0.7;        // launch speed at the sector's edges against straight ahead
+const FAN_THICKNESS = 0.5;         // of a stone crown's h0
+const FAN_MODES = [20, 22, 24, 26, 28, 30, 32];   // its rim's fingers (around a whole circle: 7 to 11 across the sector)
+const FAN_AMPLITUDE = 0.06;
+const FAN_DROP_CAP = 0.00045;      // it tears into fine drops of at most this (times (R / 3 cm)^0.4)...
+const FAN_DROP_FLOOR = 0.00015;    // ...and at least this...
+const FAN_RIM_DROPS = 0.2;         // ...and its rim sheds drops this fraction of the size a crown's does
 
 const randomRange = (low, high) => low + Math.random() * (high - low);
 const smoothstep = (edgeLow, edgeHigh, value) => {
@@ -111,47 +150,58 @@ export class CrownSheet {
    * @param breakupDroplets droplets the sheet becomes when it tears
    * @param material the material the mesh starts with (the splash swaps it per pass)
    * @param landing the crown of a drop landing rather than of a stone
+   * @param fan the forward fan of an oblique entry rather than the crown
+   * @param strength the fan's, 0 to 1, growing with the horizontal fraction of the entry speed
    */
-  constructor({ impact, startTime, rimDroplets, breakupDroplets, material, landing = false }) {
+  constructor({ impact, startTime, rimDroplets, breakupDroplets, material, landing = false, fan = false, strength = 1 }) {
     const { velocity, radius } = impact;
     const speed = Math.max(impact.speed, 1.0);
     this.centreX = impact.x;
     this.centreZ = impact.z;
     this.radius = radius;
     this.sizeFactor = radius / REFERENCE_RADIUS;
-    this.entrySpeed = landing ? LANDING_SPEED * speed : speed;   // sets the launch speeds
+    // Sets the launch speeds.
+    this.entrySpeed = landing ? LANDING_SPEED * speed : fan ? (0.75 + 0.25 * strength) * speed : speed;
     this.tiltShift = landing ? LANDING_TILT : 0;                  // degrees off the launch angle from vertical
     this.startTime = startTime;
     this.age = 0;
     this.finished = false;
     this.landing = landing;
-    this.rows = landing ? LANDING_ROWS : ROWS;
-    this.columns = landing ? LANDING_COLUMNS : COLUMNS;
-    this.mainRows = landing ? LANDING_MAIN_ROWS : MAIN_ROWS;
+    this.fan = fan;
+    this.rows = landing ? LANDING_ROWS : fan ? FAN_ROWS : ROWS;
+    this.columns = landing ? LANDING_COLUMNS : fan ? FAN_COLUMNS : COLUMNS;
+    this.mainRows = landing ? LANDING_MAIN_ROWS : fan ? FAN_ROWS : MAIN_ROWS;
 
     const horizontalSpeed = Math.hypot(velocity.x, velocity.z);
     const horizontalFraction = Math.min(horizontalSpeed / speed, 1);
     this.forwardX = horizontalSpeed > 1e-4 ? (velocity.x / horizontalSpeed) * horizontalFraction : 0;
     this.forwardZ = horizontalSpeed > 1e-4 ? (velocity.z / horizontalSpeed) * horizontalFraction : 0;
-    this.driftX = 0.22 * velocity.x;
-    this.driftZ = 0.22 * velocity.z;
+    this.driftX = fan ? 0 : 0.22 * velocity.x;
+    this.driftZ = fan ? 0 : 0.22 * velocity.z;
+    // Columns go around the whole ring, or across the fan's open sector centred on the direction of travel.
+    this.wrap = !fan;
+    this.heading = Math.atan2(velocity.z, velocity.x);
+    this.firstAngle = fan ? this.heading - FAN_HALF_ANGLE : 0;
+    this.columnWidth = fan ? (2 * FAN_HALF_ANGLE) / (this.columns - 1) : (Math.PI * 2) / this.columns;
 
     if (landing) {
       this.launchDuration = LANDING_LAUNCH * radius / speed;
       this.breakTime = LANDING_BREAK * this.launchDuration;
+    } else if (fan) {
+      this.launchDuration = FAN_LAUNCH * radius / speed;
+      this.breakTime = Math.max(FAN_BREAK * radius / speed, FAN_MIN_BREAK);
     } else {
       this.launchDuration = Math.max(1.2 * radius / speed, 0.01);
       this.breakTime = THREE.MathUtils.clamp(this.launchDuration + 6 * radius / speed, 0.06, 0.15);
     }
     this.tearDuration = TEAR_SHARE * this.breakTime;
     this.endTime = this.breakTime + this.tearDuration;
-    this.baseThickness = Math.max(0.0015 * Math.sqrt(this.sizeFactor), MIN_THICKNESS);
+    this.baseThickness = Math.max(0.0015 * Math.sqrt(this.sizeFactor), MIN_THICKNESS) * (fan ? FAN_THICKNESS * (0.5 + 0.5 * strength) : 1);
 
-    const resolved = (number) => number <= this.columns * MODES_PER_COLUMN;
-    this.modes = [
-      ...MAIN_MODES.filter(resolved).map((number) => ({ number, amplitude: MAIN_AMPLITUDE * randomRange(0.5, 1), phase: randomRange(0, Math.PI * 2) })),
-      ...FINE_MODES.filter(resolved).map((number) => ({ number, amplitude: FINE_AMPLITUDE * randomRange(0.5, 1), phase: randomRange(0, Math.PI * 2) })),
-    ];
+    // Modes count around a whole circle, so a sector's columns resolve as many as a ring of their spacing.
+    const resolved = (number) => number <= ((Math.PI * 2) / this.columnWidth) * MODES_PER_COLUMN;
+    const randomModes = (numbers, amplitude) => numbers.filter(resolved).map((number) => ({ number, amplitude: amplitude * randomRange(0.5, 1), phase: randomRange(0, Math.PI * 2) }));
+    this.modes = fan ? randomModes(FAN_MODES, FAN_AMPLITUDE) : [...randomModes(MAIN_MODES, MAIN_AMPLITUDE), ...randomModes(FINE_MODES, FINE_AMPLITUDE)];
 
     // Per-column constants, and the tear front (a launch time: everything
     // launched before it has torn) with its own pace so the front is ragged.
@@ -167,7 +217,7 @@ export class CrownSheet {
     this.tearSwept = new Float64Array(this.columns);
     const tearPhase = randomRange(0, Math.PI * 2);
     for (let column = 0; column < this.columns; column++) {
-      const angle = (column / this.columns) * Math.PI * 2;
+      const angle = this.firstAngle + column * this.columnWidth;
       this.columnAngle[column] = angle;
       this.columnCos[column] = Math.cos(angle);
       this.columnSin[column] = Math.sin(angle);
@@ -177,16 +227,20 @@ export class CrownSheet {
       this.columnTearPace[column] = 1 + 0.5 * smoothPart + 0.5 * Math.random();
     }
 
-    // Crests of the modulation shed the rim droplets, the strongest most often.
+    // Crests of the modulation shed the rim droplets, the strongest most often
+    // (and on the fan, those nearest straight ahead, where the sheet is thickest).
     this.crests = [];
     const samples = 360;
+    const sampleStep = this.wrap ? (Math.PI * 2) / samples : (2 * FAN_HALF_ANGLE) / (samples - 1);
     const modulation = new Float64Array(samples);
-    for (let index = 0; index < samples; index++) modulation[index] = this.modulation((index / samples) * Math.PI * 2);
+    for (let index = 0; index < samples; index++) modulation[index] = this.modulation(this.firstAngle + index * sampleStep);
     for (let index = 0; index < samples; index++) {
+      if (!this.wrap && (index === 0 || index === samples - 1)) continue;
       const value = modulation[index];
       const before = modulation[(index + samples - 1) % samples];
       const after = modulation[(index + 1) % samples];
-      if (value > before && value >= after && value > 1.02) this.crests.push({ angle: (index / samples) * Math.PI * 2, weight: value - 1, carry: 0 });
+      const angle = this.firstAngle + index * sampleStep;
+      if (value > before && value >= after && value > 1.02) this.crests.push({ angle, weight: (value - 1) * (fan ? this.thicknessFactor(angle) : 1), carry: 0 });
     }
     const totalWeight = this.crests.reduce((sum, crest) => sum + crest.weight, 0) || 1;
     for (const crest of this.crests) crest.share = (crest.weight / totalWeight) * rimDroplets;
@@ -207,8 +261,9 @@ export class CrownSheet {
       aRimTangent: [this.rimTangents, 3],
       aThickness: [this.thicknesses, 1],
       aRide: [new Float32Array(vertexCount).fill(landing ? 1 : 0), 1],   // 1: lifted by the wave height under it
-    }, material);
-    this.maxDropRadius = landing ? LANDING_DROP_CAP * radius : 0.0045 * this.sizeFactor ** 0.4;
+    }, material, { wrap: this.wrap });
+    this.maxDropRadius = landing ? LANDING_DROP_CAP * radius : fan ? FAN_DROP_CAP * this.sizeFactor ** 0.4 : 0.0045 * this.sizeFactor ** 0.4;
+    this.minDropRadius = fan ? FAN_DROP_FLOOR : Math.min(0.0006, 0.5 * this.maxDropRadius);
     this.geometry = this.mesh.geometry;
     this.state = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, thickness: 0, radialDistance: 0 };
     this.stateOther = { ...this.state };
@@ -224,12 +279,24 @@ export class CrownSheet {
 
   forward(angle) { return Math.cos(angle) * this.forwardX + Math.sin(angle) * this.forwardZ; }
 
-  speedFactor(angle) { return this.modulation(angle) * (1 + 0.45 * this.forward(angle)); }
+  /** Across the fan's sector: 1 straight ahead, falling to 0 at its edges. */
+  fanShape(angle) {
+    const offset = Math.abs(Math.atan2(Math.sin(angle - this.heading), Math.cos(angle - this.heading)));
+    return Math.cos(Math.min(offset / FAN_HALF_ANGLE, 1) * Math.PI * 0.5);
+  }
 
-  thicknessFactor(angle) { return 1 - 0.45 * Math.max(-this.forward(angle), 0); }
+  speedFactor(angle) {
+    if (this.fan) return this.modulation(angle) * (FAN_EDGE_SPEED + (1 - FAN_EDGE_SPEED) * this.fanShape(angle));
+    return this.modulation(angle) * (1 + 0.45 * this.forward(angle));
+  }
 
-  /** End of the launched material: the base of the sheet. */
-  feedEnd() { return Math.min(this.age, this.endTime); }
+  thicknessFactor(angle) {
+    if (this.fan) return Math.sqrt(this.fanShape(angle));
+    return 1 - 0.45 * Math.max(-this.forward(angle), 0);
+  }
+
+  /** End of the launched material: the base of the sheet (the fan has no tail). */
+  feedEnd() { return Math.min(this.age, this.fan ? this.launchDuration : this.endTime); }
 
   /**
    * State of the element launched at time tau from the azimuth with the given
@@ -240,10 +307,18 @@ export class CrownSheet {
   evaluate(tau, cosAngle, sinAngle, speedFactor, thicknessFactor, out, edgeTau = 0) {
     const progress = tau / this.launchDuration;
     const main = Math.min(progress, 1);
-    const tail = Math.max(progress - 1, 0);
-    const ringRadius = this.radius * Math.min(0.9 + 0.5 * main + 0.2 * tail, 2.0);
-    const launchSpeed = this.entrySpeed * (tail > 0 ? 0.2 * Math.exp(-tail / TAIL_DECAY) : 0.55 - 0.35 * main) * speedFactor;
-    const tilt = THREE.MathUtils.degToRad(55 - 30 * main - this.tiltShift);
+    let tail, ringRadius, launchSpeed, tilt;
+    if (this.fan) {
+      tail = 0;
+      ringRadius = this.radius * (FAN_RING_START + (FAN_RING_END - FAN_RING_START) * main);
+      launchSpeed = this.entrySpeed * (FAN_SPEED_START + (FAN_SPEED_END - FAN_SPEED_START) * main) * speedFactor;
+      tilt = THREE.MathUtils.degToRad(FAN_TILT_START + (FAN_TILT_END - FAN_TILT_START) * main);
+    } else {
+      tail = Math.max(progress - 1, 0);
+      ringRadius = this.radius * Math.min(0.9 + 0.5 * main + 0.2 * tail, 2.0);
+      launchSpeed = this.entrySpeed * (tail > 0 ? 0.2 * Math.exp(-tail / TAIL_DECAY) : 0.55 - 0.35 * main) * speedFactor;
+      tilt = THREE.MathUtils.degToRad(55 - 30 * main - this.tiltShift);
+    }
     const radialSpeed = launchSpeed * Math.sin(tilt);
     const upSpeed = launchSpeed * Math.cos(tilt);
     const age = Math.max(this.age - tau, 0);
@@ -263,7 +338,8 @@ export class CrownSheet {
     // tail leaves the ring thinner, so the foot stays light.
     const launchThickness = 1 - (1 - TAIL_THICKNESS) * smoothstep(0, 0.5, tail);
     const drained = this.baseThickness * thicknessFactor * launchThickness / (1 + age / DRAIN_SECONDS);
-    const sheetThickness = Math.max(drained * ringRadius / radialDistance, MIN_THICKNESS);
+    // The fan thins to nothing at its edges.
+    const sheetThickness = Math.max(drained * ringRadius / radialDistance, this.fan ? MIN_THICKNESS * thicknessFactor : MIN_THICKNESS);
     const bead = 1 - smoothstep(0.6 * BEAD_END, 1.3 * BEAD_END, (tau - edgeTau) / this.launchDuration);
     out.thickness = sheetThickness + bead * Math.max(3 * drained - sheetThickness, 0);
     return out;
@@ -334,7 +410,7 @@ export class CrownSheet {
           state.vx * boost + randomRange(-scatter, scatter),
           state.vy * boost + randomRange(-scatter, scatter),
           state.vz * boost + randomRange(-scatter, scatter),
-          (0.001 + 0.002 * Math.random() ** 1.5) * this.sizeFactor ** 0.4,
+          (0.001 + 0.002 * Math.random() ** 1.5) * this.sizeFactor ** 0.4 * (this.fan ? FAN_RIM_DROPS : 1),
         );
       }
     }
@@ -387,7 +463,7 @@ export class CrownSheet {
     const fromX = from.x, fromY = from.y, fromZ = from.z, fromRadius = from.radialDistance;
     const to = this.evaluate(tauTo, cosAngle, sinAngle, speedFactor, thicknessFactor, this.stateOther);
     const length = Math.sqrt((to.x - fromX) ** 2 + (to.y - fromY) ** 2 + (to.z - fromZ) ** 2);
-    return length * 0.5 * (fromRadius + to.radialDistance) * (Math.PI * 2 / this.columns);
+    return length * 0.5 * (fromRadius + to.radialDistance) * this.columnWidth;
   }
 
   /**
@@ -403,7 +479,7 @@ export class CrownSheet {
       totalArea += pieceAreas[piece];
     }
     if (totalArea <= 0) return;
-    const halfWidth = Math.PI / this.columns;
+    const halfWidth = 0.5 * this.columnWidth;
     const state = this.state;
     for (let piece = 0; piece < pieces; piece++) {
       const pieceFrom = tauFrom + ((tauTo - tauFrom) * piece) / pieces;
@@ -415,7 +491,7 @@ export class CrownSheet {
         this.evaluateAt(randomRange(pieceFrom, pieceTo), angle, state);
         // Each drop holds the volume of the patch of sheet it came from.
         const volumeRadius = Math.cbrt((3 * state.thickness) / (4 * Math.PI * density));
-        const radius = THREE.MathUtils.clamp(volumeRadius * randomRange(0.7, 1.25), Math.min(0.0006, 0.5 * this.maxDropRadius), this.maxDropRadius);
+        const radius = THREE.MathUtils.clamp(volumeRadius * randomRange(0.7, 1.25), this.minDropRadius, this.maxDropRadius);
         const scatter = 0.04 * Math.sqrt(state.vx * state.vx + state.vy * state.vy + state.vz * state.vz) + 0.05;
         splash.spawnDroplet(
           state.x, state.y, state.z,
@@ -456,7 +532,7 @@ export class CrownSheet {
     // Normals from the grid; near the rim the bead's normal also leans along
     // the sheet towards the edge, as a tube's does.
     const positions = this.positions;
-    computeGridNormals(positions, this.normals, this.rows, this.columns);
+    computeGridNormals(positions, this.normals, this.rows, this.columns, this.wrap);
     for (let column = 0; column < this.columns; column++) {
       for (let row = 0; row < this.rows; row++) {
         const vertex = row * this.columns + column;

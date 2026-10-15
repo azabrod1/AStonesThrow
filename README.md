@@ -38,9 +38,18 @@ known timing, and the droplets are choreographed from them:
    tension and air, so the whole sheet is a closed form in launch time,
    azimuth and time. Its rim thickens into a bead, goes wavy and sheds drops
    from the crests; after about 60 ms the sheet tears from the rim down into
-   drops that carry its velocity;
-2. cavity and pinch-off about 2.1·√(R/g) seconds after entry;
-3. Worthington jet (`src/jet.js`): a glassy column fired straight up. It is
+   drops that carry its velocity. A thrown stone enters obliquely (about 40
+   to 55° from vertical), and then a fan comes first: the same sheet model
+   over a sector 60° either side of the direction of travel, launched from
+   the forward contact line at about 0.9 of the entry speed and 65 to 75°
+   from vertical, half as thick, which flares low ahead of the crown and
+   tears into fine spray after 20 ms;
+2. cavity and pinch-off about 2.1·√(R/g) seconds after entry. An oblique
+   entry drags the cavity forward: its depression and foam stretch one to
+   two radii along the path, and its ring runs stronger ahead than behind;
+3. Worthington jet (`src/jet.js`): a glassy column fired up, after an
+   oblique entry leaning back along the stone's path (by half the entry
+   angle, at most 25°) and a little slower. It is
    water launched from the collapse point, fastest first, each element then
    flying ballistically, so the column is a closed form in launch time,
    azimuth and time; it stretches as it rises, its radius set by volume
@@ -51,7 +60,7 @@ known timing, and the droplets are choreographed from them:
    parts; its slow base falls back into a mound that throws a small
    secondary ring. For a 3 cm stone it reaches about half a metre and is
    gone about half a second after entry;
-4. bubbles that rise and burst into foam.
+4. bubbles that follow the stone down its path, rise and burst into foam.
 
 Drops ring the water where they land, and the big ones (the jet's, and the
 crown's largest) throw a small crown of their own, the classic drop-impact
@@ -98,9 +107,13 @@ ballistic arc, quadratic drag under water, and a settle into the sand.
   of world time each, so `--times=0.07,0.0716667,…` are consecutive frames.
 - `?floats=half` on the page forces half-float render targets everywhere, the
   path devices without `EXT_color_buffer_float` take.
-- `node tools/jet-probe.mjs [radius] [entrySpeed]` runs one Worthington jet on
-  the CPU and prints its timeline, drops, volume budget, when its big drops
-  land and cost per frame.
+- `node tools/jet-probe.mjs [radius] [entrySpeed] [profileTime] [horizontalFraction]`
+  runs one Worthington jet on the CPU and prints its timeline, drops, volume
+  budget, when its big drops land and cost per frame; a horizontal fraction
+  makes it the leaning jet of an oblique entry.
+- `node tools/fan-probe.mjs [radius] [entrySpeed] [horizontalFraction]` runs
+  the forward fan of an oblique entry on the CPU and prints its timeline,
+  its drops, where they land and its cost per frame.
 - `node tools/zoom-probe.mjs [--w=390 --h=844]` drives the wheel, a pinch, a
   tap and Escape through the page's own handlers and checks that what is under
   the pointer stays there.

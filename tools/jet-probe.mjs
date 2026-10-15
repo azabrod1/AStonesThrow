@@ -6,7 +6,12 @@
 // whether the grid normals face outward, and the CPU cost per frame (after a
 // few silent jets, so the code is warm).
 //
-//   node tools/jet-probe.mjs [stoneRadius=0.03] [entrySpeed=6.3] [profileSecondsAfterEntry=0.3]
+//   node tools/jet-probe.mjs [stoneRadius=0.03] [entrySpeed=6.3] [profileSecondsAfterEntry=0.3] [horizontalFraction=0]
+//
+// A horizontal fraction of the entry speed makes the jet of an oblique entry,
+// as SplashSystem.impact does: slower by 0.3 times it and leaning back (here
+// towards +z, the stone having travelled towards −z) by half the entry angle,
+// at most 25°; the lean line says where its top and its drops went.
 //
 // The profile line gives the column's diameter where it leaves the water and
 // at half its height, at the given time after the stone's entry. The landing
@@ -18,8 +23,11 @@ import { JetColumn } from '../src/jet.js';
 const stoneRadius = Number(process.argv[2] ?? 0.03);
 const entrySpeed = Number(process.argv[3] ?? 6.3);
 const profileAfterEntry = Number(process.argv[4] ?? 0.3);
+const horizontalFraction = Number(process.argv[5] ?? 0);
 const sizeFactor = stoneRadius / 0.03;
-const tipSpeed = Math.min(Math.max(0.42 * entrySpeed + 0.7, 1.2), 6.0) * sizeFactor ** 0.15;
+const tipSpeed = Math.min(Math.max(0.42 * entrySpeed + 0.7, 1.2), 6.0) * sizeFactor ** 0.15 * (1 - 0.3 * horizontalFraction);
+const lean = Math.min(0.5 * Math.asin(horizontalFraction), (25 * Math.PI) / 180);
+const leaning = { lean, leanX: 0, leanZ: 1 };
 const budget = Math.round(Math.min(Math.max(220 * sizeFactor ** 1.3, 80), 1200));
 const pinchDelay = 2.1 * Math.sqrt(stoneRadius / 9.81);
 
@@ -34,14 +42,14 @@ const water = { addSplat: (splat) => splats.push({ time: clock, kind: 'splat', .
 
 let clock = 0;
 for (let warmUp = 0; warmUp < 5; warmUp++) {
-  const quiet = new JetColumn({ x: 0, z: -1.4, radius: stoneRadius, tipSpeed, startTime: 0, budget, material: null });
+  const quiet = new JetColumn({ x: 0, z: -1.4, radius: stoneRadius, tipSpeed, startTime: 0, budget, material: null, ...leaning });
   const nowhere = { frameSeconds: 1 / 60, spawnDroplet() {}, spawnFoamSpecks() {}, addSplat() {}, addFoam() {} };
   for (let tick = 1; !quiet.finished && tick < 480; tick++) {
     quiet.update(tick / 240, 1 / 240, nowhere, nowhere);
     if (tick % 4 === 0) quiet.updateGeometry(tick / 240);
   }
 }
-const jet = new JetColumn({ x: 0, z: -1.4, radius: stoneRadius, tipSpeed, startTime: 0, budget, material: null });
+const jet = new JetColumn({ x: 0, z: -1.4, radius: stoneRadius, tipSpeed, startTime: 0, budget, material: null, ...leaning });
 const totalVolume = jet.volume(0, jet.launchEnd);
 const substep = 1 / 240;
 let frameSeconds = 0;
@@ -54,7 +62,7 @@ let profiled = false;
 let lastTipDrops = 0;
 let worstInward = 0;
 const millimetres = (metres) => (metres * 1000).toFixed(1);
-console.log(`stone ${millimetres(stoneRadius)} mm at ${entrySpeed} m/s: tip speed ${tipSpeed.toFixed(2)} m/s, T ${(jet.launchDuration * 1000).toFixed(0)} ms, ` +
+console.log(`stone ${millimetres(stoneRadius)} mm at ${entrySpeed} m/s${horizontalFraction > 0 ? ` (horizontal fraction ${horizontalFraction}, lean ${(lean * 180 / Math.PI).toFixed(1)}°)` : ''}: tip speed ${tipSpeed.toFixed(2)} m/s, T ${(jet.launchDuration * 1000).toFixed(0)} ms, ` +
   `first bulb ${millimetres(jet.firstBulbRadius)} mm, jet volume ${(totalVolume * 1e6).toFixed(1)} ml, budget ${budget} drops, jet starts ${(pinchDelay * 1000).toFixed(0)} ms after entry`);
 
 while (!jet.finished && clock < 2) {
@@ -86,6 +94,7 @@ while (!jet.finished && clock < 2) {
       });
     }
     const top = jet.positions[1];
+    if (lean > 0) console.log(`  lean ${(clock + pinchDelay).toFixed(3)} s after entry: top ${millimetres(jet.positions[2] + 1.4)} mm back from the collapse point, ${(Math.atan2(jet.positions[2] + 1.4, top) * 180 / Math.PI).toFixed(1)}° from vertical`);
     // Rings run from the cap down to the foot; interpolate the diameter at a height.
     const diameterAt = (height) => {
       for (let index = 1; index < rings.length; index++) {

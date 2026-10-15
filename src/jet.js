@@ -12,7 +12,12 @@
 // water). Elements leave straight up with a tilt of up to 5° per jet plus a
 // lateral wobble of about 1% of u along the launch window (0.1 of the
 // scatter the old jet's drops had), so the column leans and bends gently.
-// With a = t − tau,
+// After an oblique entry the column comes up a cavity the stone dragged
+// forward, so it leans back along the stone's path by `lean` (set by the
+// splash: a fraction of the entry angle from vertical, see JET_LEAN): its launch
+// direction is cos(lean) up and sin(lean) back before the tilt. Its elements
+// keep that sideways speed while gravity turns them, so a leaning column
+// arcs over like a fountain and its drops land well back. With a = t − tau,
 //
 //   position = launch point + u·direction·a − ½·g·a²·up
 //
@@ -49,13 +54,18 @@
 // the surface: the launch point while the jet is fed, then climbing the
 // column as the slow material falls back. When the front reaches the foot the
 // column is gone: a stub still in the air becomes one last drop, and the
-// water gets a mound (height about 0.22·R, scaled by the cube root of the
-// fallen volume) with foam, a patch of foam specks in a disc of 1.6·R
+// water gets, where the foot has gone (downrange of the collapse point when
+// the column leans), a mound (height about 0.22·R, scaled by the cube root of
+// the fallen volume) with foam, a patch of foam specks in a disc of 1.6·R
 // (FALLBACK_SPECKS times the same cube root, about 140 for a 3 cm stone) and
-// a small secondary ring. For a 3 cm stone the
+// a small secondary ring. For a 3 cm stone dropped in at about 6 m/s the
 // jet starts 116 ms after entry; at 0.3 s it is 44 cm tall, 24 mm across at
 // the water, 14 mm at mid-height and 10 mm under its 17 mm bulb; the tip
 // drops leave at about 360 and 440 ms and the column is gone by about 530 ms.
+// Thrown in at 6.9 m/s, 42° from vertical, the splash slows it (tip speed
+// 2.9 rather than 3.6 m/s) and leans it 21°: at 0.3 s its top is 32 cm up
+// and about 20 cm back (30° from the collapse point), its drops land 17 to
+// 60 cm back, and it is gone by 470 ms.
 //
 // updateGeometry() evaluates a ROWS × COLUMNS ring grid (src/fluidMesh.js)
 // once per rendered frame: CAP_ROWS rows of the cap's upper half, then rows
@@ -121,8 +131,9 @@ export class JetColumn {
    * @param startTime splash time of the pinch-off
    * @param budget droplets the jet may spawn in all (tip drops and breakup drops are never refused)
    * @param material the material the mesh starts with (the splash swaps it per pass)
+   * @param lean how far the column leans from vertical (radians), towards the unit direction (leanX, leanZ)
    */
-  constructor({ x, z, radius, tipSpeed, startTime, budget, material }) {
+  constructor({ x, z, radius, tipSpeed, startTime, budget, material, lean = 0, leanX = 0, leanZ = 0 }) {
     this.centreX = x;
     this.centreZ = z;
     this.radius = radius;
@@ -137,10 +148,15 @@ export class JetColumn {
     this.launchEnd = this.launchDuration + this.tailDuration;
     this.breakDuration = BREAK_SECONDS * Math.sqrt(this.sizeFactor);
 
+    // Launch direction per unit speed: up by cos(lean), across by sin(lean),
+    // plus the jet's own small tilt (and the wobble, in evaluate).
+    this.upShare = Math.cos(lean);
+    this.leanX = Math.sin(lean) * leanX;
+    this.leanZ = Math.sin(lean) * leanZ;
     const tilt = randomRange(0, MAX_TILT);
     const heading = randomRange(0, Math.PI * 2);
-    this.tiltX = Math.tan(tilt) * Math.cos(heading);
-    this.tiltZ = Math.tan(tilt) * Math.sin(heading);
+    this.tiltX = this.leanX + Math.tan(tilt) * Math.cos(heading);
+    this.tiltZ = this.leanZ + Math.tan(tilt) * Math.sin(heading);
     // Lateral wobble along the launch window: two slow modes per axis.
     const mode = (amplitude, cycles) => ({
       amplitude: WOBBLE * amplitude * randomRange(0.6, 1) * (Math.random() < 0.5 ? -1 : 1),
@@ -227,7 +243,7 @@ export class JetColumn {
   /** Height of the element launched at tau, now. */
   heightAt(tau) {
     const age = Math.max(this.age - tau, 0);
-    return -BASE_DEPTH + this.launchSpeed(tau) * age - 0.5 * GRAVITY * age * age;
+    return -BASE_DEPTH + this.launchSpeed(tau) * this.upShare * age - 0.5 * GRAVITY * age * age;
   }
 
   /**
@@ -252,14 +268,14 @@ export class JetColumn {
       slopeZ += mode.amplitude * mode.frequency * Math.cos(angle);
     }
     out.x = this.centreX + speed * lateralX * age;
-    out.y = -BASE_DEPTH + speed * age - 0.5 * GRAVITY * age * age;
+    out.y = -BASE_DEPTH + speed * this.upShare * age - 0.5 * GRAVITY * age * age;
     out.z = this.centreZ + speed * lateralZ * age;
     out.vx = speed * lateralX;
-    out.vy = speed - GRAVITY * age;
+    out.vy = speed * this.upShare - GRAVITY * age;
     out.vz = speed * lateralZ;
     // ∂position/∂tau = (d launch velocity / d tau)·a − launch velocity + g·a·up.
     const alongX = (speedSlope * lateralX + speed * slopeX) * age - speed * lateralX;
-    const alongY = speedSlope * age - speed + GRAVITY * age;
+    const alongY = (speedSlope * age - speed) * this.upShare + GRAVITY * age;
     const alongZ = (speedSlope * lateralZ + speed * slopeZ) * age - speed * lateralZ;
     const spacing = Math.sqrt(alongX * alongX + alongY * alongY + alongZ * alongZ);
     out.spacing = spacing;
@@ -454,10 +470,14 @@ export class JetColumn {
     }
     const strength = Math.cbrt(fallen / 2.5e-5);   // 1 for about 25 ml, a 3 cm stone's whole jet
     const radius = this.radius;
-    water.addSplat({ x: this.centreX, z: this.centreZ, radius: radius * 0.9, height: 0.22 * radius * strength });
-    water.addSplat({ x: this.centreX, z: this.centreZ, radius: radius * 1.5, velocity: -0.18 * strength, rim: 1.8 });
-    water.addFoam({ x: this.centreX, z: this.centreZ, radius: radius * 1.3, amount: 0.3 * strength });
-    splash.spawnFoamSpecks(this.centreX, this.centreZ, 0, radius * 1.6, Math.round(FALLBACK_SPECKS * strength), 0.025);
+    // A leaning column falls back downrange, where its foot has gone.
+    const footAge = Math.max(this.age - foot, 0);
+    const fallX = this.centreX + this.launchSpeed(foot) * this.leanX * footAge;
+    const fallZ = this.centreZ + this.launchSpeed(foot) * this.leanZ * footAge;
+    water.addSplat({ x: fallX, z: fallZ, radius: radius * 0.9, height: 0.22 * radius * strength });
+    water.addSplat({ x: fallX, z: fallZ, radius: radius * 1.5, velocity: -0.18 * strength, rim: 1.8 });
+    water.addFoam({ x: fallX, z: fallZ, radius: radius * 1.3, amount: 0.3 * strength });
+    splash.spawnFoamSpecks(fallX, fallZ, 0, radius * 1.6, Math.round(FALLBACK_SPECKS * strength), 0.025);
     this.finished = true;
   }
 

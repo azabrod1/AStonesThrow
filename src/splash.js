@@ -7,17 +7,31 @@
 //      of travel (src/crown.js). Its rim thickens into a bead, goes wavy and
 //      sheds drops from the crests; after a few tens of milliseconds the sheet
 //      tears from the rim down into droplets carrying its local velocity.
+//      A thrown stone enters obliquely, θ about 40 to 55° from vertical, and
+//      once more than FAN_THRESHOLD of the entry speed is horizontal a forward
+//      fan comes first: a thin fast sheet over the sector ahead, low and
+//      mostly forward, tearing into fine spray (CrownSheet with `fan`), at a
+//      strength growing to full at FAN_FULL.
 //   2. Cavity and pinch-off: the air cavity behind the stone closes under
 //      hydrostatic pressure about 2.1·sqrt(R/g) seconds after entry, almost
-//      independently of entry speed (Duclaux et al. 2007).
-//   3. Worthington jet: the closure fires a narrow glassy column straight up
+//      independently of entry speed (Duclaux et al. 2007). An oblique entry
+//      drags the cavity forward: besides the entry splat, one or two more
+//      where the stone is one and two radii down its path (R·tan θ apart, at
+//      most PATH_SLOPE_CAP·R), as it gets there and weaker, stretch the
+//      depression and its foam; and each runs forward by the horizontal
+//      fraction (stampCavity), so the ring is stronger ahead than behind.
+//   3. Worthington jet: the closure fires a narrow glassy column up
 //      (src/jet.js), tip first and fastest, so it stretches as it rises. A
 //      bulb at its tip pinches off into one to three large drops, then the
 //      column breaks from the top down into drops about twice its local
 //      radius while its slow base falls back into a mound that throws a
-//      small secondary ring.
-//   4. Bubbles entrained with the stone rise and burst into foam.
-// Each stage also stamps the height field and the foam map.
+//      small secondary ring. After an oblique entry it leans back along the
+//      stone's path by JET_LEAN·θ (at most JET_LEAN_CAP) and, from a dragged cavity,
+//      is slower by JET_OBLIQUE_SLOWING times the horizontal fraction.
+//   4. Bubbles entrained with the stone follow it down its path, rise and
+//      burst into foam.
+// Each stage also stamps the height field and the foam map. A stone falling
+// straight in makes none of the oblique parts.
 //
 // Drops ring the water where they land, and a large one (LANDING_CROWN_RADIUS
 // and up: the jet's tip and breakup drops, the crown's biggest) that has
@@ -66,8 +80,20 @@ const LANDING_BREAKUP = 40;           // its crown's breakup droplets (scaling w
 const CROWN_SPECKS = 220;             // foam specks where a 3 cm stone's crown stood (scaling with its area)
 const LANDING_SPECK_FREE = 0.003;     // a landing drop leaves a foam speck per LANDING_SPECK_STEP of radius beyond this
 const LANDING_SPECK_STEP = 0.0015;
+const PATH_SLOPE_CAP = 1.2;           // the stone's path under water, horizontal over vertical, at most (50°)
+const FAN_THRESHOLD = 0.3;            // the forward fan needs this horizontal fraction of the entry speed...
+const FAN_FULL = 0.7;                 // ...and is at full strength from this one
+const FAN_DROPLETS = 300;             // drops of a 3 cm stone's fan at about 6 m/s and full strength
+const JET_LEAN = 0.4;                                // the jet leans back by this fraction of the entry angle,
+const JET_LEAN_CAP = THREE.MathUtils.degToRad(18);   // at most this
+const OBLIQUE_IMPULSE = 1.3;          // an oblique entry's cavity splats together carry at most this times a vertical one's
+const JET_OBLIQUE_SLOWING = 0.3;      // and is slower by this times the horizontal fraction
 
 const randomRange = (lo, hi) => lo + Math.random() * (hi - lo);
+const smoothstep = (edgeLow, edgeHigh, value) => {
+  const clamped = Math.min(Math.max((value - edgeLow) / (edgeHigh - edgeLow), 0), 1);
+  return clamped * clamped * (3 - 2 * clamped);
+};
 
 export class SplashSystem {
   constructor({ capacity = 16000, bubbleCapacity = 3000, environment, lighting, water }) {
@@ -90,6 +116,7 @@ export class SplashSystem {
     this.columns = [];   // live jet columns
     this.crowns = [];    // live crown sheets
     this.plumes = [];    // scheduled bubble plumes
+    this.wakes = [];     // scheduled cavity splats of an oblique entry
     this.time = 0;
     this.frameSeconds = 1 / 60;   // simulated length of the frame being stepped
     this.lighting = lighting;
@@ -210,6 +237,7 @@ export class SplashSystem {
     const horizontal = new THREE.Vector2(velocity.x, velocity.z);
     const horizontalFraction = Math.min(horizontal.length() / entrySpeed, 1);
     if (horizontal.lengthSq() > 1e-6) horizontal.normalize();
+    const entryAngle = Math.asin(horizontalFraction);   // from vertical
 
     // 1. Crown. The droplet total is split between fine spray from the contact
     // line now, drops shed by the sheet's rim, and the sheet's breakup.
@@ -232,7 +260,7 @@ export class SplashSystem {
         (0.0005 + 0.0007 * Math.random()) * sizeFactor ** 0.4,
       );
     }
-    const stoneCrowns = this.crowns.filter((candidate) => !candidate.landing);
+    const stoneCrowns = this.crowns.filter((candidate) => !candidate.landing && !candidate.fan);
     if (stoneCrowns.length >= MAX_CROWNS) {
       const oldest = stoneCrowns[0];
       oldest.finishNow(this);
@@ -245,25 +273,87 @@ export class SplashSystem {
     this.crowns.push(crown);
     this.particleScene.add(crown.mesh);
 
-    // Cavity: a depression plus a downward push that launches the first ring.
-    water.addSplat({ x, z, radius: radius * 1.1, height: -0.3 * radius, velocity: -0.045 * entrySpeed });
-    water.addFoam({ x, z, radius: radius * 1.5, amount: 0.65 });
+    // The forward fan of an oblique entry: a thin, fast, low sheet ahead of
+    // the crown, at a strength growing with the horizontal fraction.
+    const fanStrength = THREE.MathUtils.clamp((horizontalFraction - FAN_THRESHOLD) / (FAN_FULL - FAN_THRESHOLD), 0, 1);
+    if (fanStrength > 0) {
+      const fanCount = Math.round(THREE.MathUtils.clamp(FAN_DROPLETS * sizeFactor ** 1.6 * Math.sqrt(entrySpeed / 6), 60, 1500) * fanStrength);
+      const fan = new CrownSheet({
+        impact: info, startTime: this.time, rimDroplets: Math.round(0.15 * fanCount), breakupDroplets: Math.round(0.85 * fanCount),
+        material: this.sheetDepthMaterial, fan: true, strength: fanStrength,
+      });
+      this.crowns.push(fan);
+      this.particleScene.add(fan.mesh);
+    }
 
-    // 2 and 3. Pinch-off then the jet.
+    // Cavity: a depression plus a downward push that launches the first ring.
+    // An oblique entry drags it forward: up to two more, where the stone is
+    // one and two radii down its path (k·R·tan θ ahead, θ the entry angle
+    // from vertical), as it gets there, each weaker, stretch the depression
+    // and its foam; and each runs forward by the horizontal fraction, so the
+    // ring is stronger ahead.
+    const travelX = horizontal.x * horizontalFraction;
+    const travelZ = horizontal.y * horizontalFraction;
+    // The wake splats share the impulse with the entry splat, so an oblique
+    // entry rings at most OBLIQUE_IMPULSE times as hard as a vertical one.
+    const pathSlope = Math.min(Math.tan(entryAngle), PATH_SLOPE_CAP);
+    const wakeStep = radius * pathSlope;
+    const sinkSpeed = Math.max(entrySpeed * Math.cos(entryAngle), 1.0);
+    const wakeStrengths = [smoothstep(0.05, 0.25, horizontalFraction) * 0.8, smoothstep(0.3, 0.5, horizontalFraction) * 0.6];
+    const impulseScale = Math.min(OBLIQUE_IMPULSE / (1 + wakeStrengths[0] + wakeStrengths[1]), 1);
+    this.stampCavity({ x, z, radius, speed: entrySpeed, strength: impulseScale, travelX, travelZ }, water);
+    wakeStrengths.forEach((strength, index) => {
+      const step = index + 1;
+      if (strength > 0) {
+        this.wakes.push({
+          x: x + horizontal.x * wakeStep * step, z: z + horizontal.y * wakeStep * step, start: this.time + (step * radius) / sinkSpeed,
+          radius, speed: entrySpeed, strength: strength * impulseScale, travelX, travelZ,
+        });
+      }
+    });
+
+    // 2 and 3. Pinch-off then the jet, which after an oblique entry leans back
+    // along the stone's path and, from a dragged cavity, rises slower.
     const pinchDelay = 2.1 * Math.sqrt(radius / GRAVITY);
-    const tipSpeed = THREE.MathUtils.clamp(0.42 * entrySpeed + 0.7, 1.2, 6.0) * sizeFactor ** 0.15;
+    const tipSpeed = THREE.MathUtils.clamp(0.42 * entrySpeed + 0.7, 1.2, 6.0) * sizeFactor ** 0.15 * (1 - JET_OBLIQUE_SLOWING * horizontalFraction);
     this.jets.push({
       x, z, radius, start: this.time + pinchDelay,
       total: Math.round(THREE.MathUtils.clamp(220 * sizeFactor ** 1.3, 80, 1200)),
       tipSpeed, speed: entrySpeed,
+      lean: Math.min(JET_LEAN * entryAngle, JET_LEAN_CAP), leanX: -horizontal.x, leanZ: -horizontal.y,
     });
 
-    // 4. Bubbles follow the stone down.
+    // 4. Bubbles follow the stone down its path.
     this.plumes.push({
       x, z, start: this.time, duration: 0.3,
       total: Math.round(THREE.MathUtils.clamp(110 * sizeFactor ** 2, 30, 500)),
       spawned: 0, depth: Math.min(0.55, radius * 7),
+      driftX: horizontal.x * pathSlope, driftZ: horizontal.y * pathSlope,
     });
+  }
+
+  /**
+   * A cavity splat: the depression and downward push that launch a ring,
+   * with its foam. (travelX, travelZ), a direction times a share from 0 to 1,
+   * sets that share of the depression running that way: water rising behind
+   * it and sinking ahead, the vertical velocity −c·∂h/∂x of a travelling
+   * wave (c the speed of waves its size), as a pair of splats either side.
+   * Splats on their own ring as strongly behind as ahead, whatever their
+   * layout.
+   */
+  stampCavity({ x, z, radius, speed, strength, travelX = 0, travelZ = 0 }, water) {
+    const sigma = radius * 1.1;
+    const depth = 0.3 * radius * strength;
+    water.addSplat({ x, z, radius: sigma, height: -depth, velocity: -0.045 * speed * strength });
+    water.addFoam({ x, z, radius: radius * 1.5, amount: 0.65 * strength });
+    const travel = Math.hypot(travelX, travelZ);
+    if (travel > 0) {
+      const lift = 0.6 * travel * Math.sqrt(GRAVITY * sigma) * depth / sigma;   // ≈ c·depth/σ at the slope's peak
+      const offsetX = (travelX / travel) * 0.8 * sigma;
+      const offsetZ = (travelZ / travel) * 0.8 * sigma;
+      water.addSplat({ x: x - offsetX, z: z - offsetZ, radius: 0.8 * sigma, velocity: lift, rim: 1 });
+      water.addSplat({ x: x + offsetX, z: z + offsetZ, radius: 0.8 * sigma, velocity: -lift, rim: 1 });
+    }
   }
 
   /** A big drop has landed: a crown of its own, its droplet count following the drop's area. */
@@ -280,7 +370,7 @@ export class SplashSystem {
 
   /** A crown has gone. A stone's leaves foam specks where its base stood, 0.9 to 2.2 stone radii from its centre. */
   retireCrown(crown) {
-    if (!crown.landing) {
+    if (!crown.landing && !crown.fan) {
       const radius = crown.radius;
       const count = Math.round(THREE.MathUtils.clamp(CROWN_SPECKS * crown.sizeFactor ** 2, 40, 900));
       this.spawnFoamSpecks(crown.centreX, crown.centreZ, 0.9 * radius, 2.2 * radius, count, 0.03);
@@ -302,6 +392,7 @@ export class SplashSystem {
     const column = new JetColumn({
       x: jet.x, z: jet.z, radius: jet.radius, tipSpeed: jet.tipSpeed,
       startTime: jet.start, budget: jet.total, material: this.columnDepthMaterial,
+      lean: jet.lean, leanX: jet.leanX, leanZ: jet.leanZ,
     });
     this.columns.push(column);
     this.particleScene.add(column.mesh);
@@ -367,9 +458,12 @@ export class SplashSystem {
   update(dt, water) {
     this.time += dt;
 
-    // Scheduled jets start their columns.
+    // Scheduled jets start their columns, and an oblique entry's cavity
+    // reaches on as the stone moves along.
     for (const jet of this.jets) if (this.time >= jet.start) this.startJet(jet, water);
     this.jets = this.jets.filter((jet) => this.time < jet.start);
+    for (const wake of this.wakes) if (this.time >= wake.start) this.stampCavity(wake, water);
+    this.wakes = this.wakes.filter((wake) => this.time < wake.start);
 
     // Bubble plumes.
     for (const plume of this.plumes) {
@@ -380,7 +474,7 @@ export class SplashSystem {
         const angle = Math.random() * Math.PI * 2;
         const r = Math.random() * 0.05 * (0.3 + depth);
         this.spawnBubble(
-          plume.x + Math.cos(angle) * r, -depth, plume.z + Math.sin(angle) * r,
+          plume.x + Math.cos(angle) * r + plume.driftX * depth, -depth, plume.z + Math.sin(angle) * r + plume.driftZ * depth,
           randomRange(-0.05, 0.05), randomRange(0.10, 0.32), randomRange(-0.05, 0.05),
           0.0006 + 0.0022 * Math.random() ** 2,
         );

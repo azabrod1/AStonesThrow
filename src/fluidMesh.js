@@ -2,12 +2,14 @@
 // passes, the crown sheet (src/crown.js) and the jet column (src/jet.js).
 //
 // A grid is `rows` rings of `columns` vertices each, closed around every ring;
-// vertex (row, column) is at index row · columns + column. Its attributes are
-// typed arrays the owner rewrites once per rendered frame, then flags with
-// markChanged. Normals come from central differences across and along the
-// grid; where a ring collapses to a point (a pole) the normal points away
-// from the next ring instead. The orientation of a normal (in or out) depends
-// on which way the owner winds its rings.
+// vertex (row, column) is at index row · columns + column. With `wrap: false`
+// the rings stay open (a sector, such as the crown's forward fan): the last
+// column does not join the first, and normals there take one-sided
+// differences. Its attributes are typed arrays the owner rewrites once per
+// rendered frame, then flags with markChanged. Normals come from central
+// differences across and along the grid; where a ring collapses to a point (a
+// pole) the normal points away from the next ring instead. The orientation of
+// a normal (in or out) depends on which way the owner winds its rings.
 import * as THREE from 'three';
 
 /**
@@ -15,15 +17,17 @@ import * as THREE from 'three';
  * @param columns vertices around each ring
  * @param attributes {name: [typedArray, itemSize]}, including 'position'
  * @param material the material the mesh starts with
+ * @param wrap false for open rings (a sector), whose last column is an edge
  */
-export function createRingGrid(rows, columns, attributes, material) {
+export function createRingGrid(rows, columns, attributes, material, { wrap = true } = {}) {
   const geometry = new THREE.BufferGeometry();
   for (const [name, [array, itemSize]] of Object.entries(attributes)) {
     geometry.setAttribute(name, new THREE.BufferAttribute(array, itemSize).setUsage(THREE.DynamicDrawUsage));
   }
   const indices = [];
+  const spans = wrap ? columns : columns - 1;
   for (let row = 0; row < rows - 1; row++) {
-    for (let column = 0; column < columns; column++) {
+    for (let column = 0; column < spans; column++) {
       const next = (column + 1) % columns;
       const corner = row * columns + column;
       const cornerNext = row * columns + next;
@@ -42,11 +46,11 @@ export function markChanged(geometry, names) {
   for (const name of names) geometry.attributes[name].needsUpdate = true;
 }
 
-/** Unit normals from central differences around each ring and along the grid. */
-export function computeGridNormals(positions, normals, rows, columns) {
+/** Unit normals from central differences around each ring (one-sided at an open ring's ends) and along the grid. */
+export function computeGridNormals(positions, normals, rows, columns, wrap = true) {
   for (let column = 0; column < columns; column++) {
-    const previous = (column + columns - 1) % columns;
-    const next = (column + 1) % columns;
+    const previous = wrap ? (column + columns - 1) % columns : Math.max(column - 1, 0);
+    const next = wrap ? (column + 1) % columns : Math.min(column + 1, columns - 1);
     for (let row = 0; row < rows; row++) {
       const vertex = row * columns + column;
       const before = Math.max(row - 1, 0) * columns + column;
