@@ -1,0 +1,30 @@
+{
+  "source": "meadow_2_2k.hdr",
+  "width": 2048,
+  "height": 1024,
+  "sun": {
+    "elevation": 26.99,
+    "azimuth": 216.16,
+    "direction": [
+      0.71949,
+      0.45377,
+      0.52576
+    ],
+    "pixels": 10
+  },
+  "sunIrradiance": [
+    9.3554,
+    8.3293,
+    7.09
+  ],
+  "skyRadiance": [
+    0.34365,
+    0.44905,
+    0.62488
+  ],
+  "horizonRadiance": {
+    "median": 0.081549,
+    "p90": 0.49581
+  },
+  "maxLuminance": 144840
+}

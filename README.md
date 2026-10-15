@@ -82,13 +82,31 @@ scattering for its rippled, aerated film, the column (and the large drops it
 breaks into) as clear glass, a lens that shows the pond and the sun's glitter
 from well to the side and, through its bulb, the sky upside down.
 
+**Sky** (`src/sky.js`). The sky is a photograph: an equirectangular HDRI
+of a meadow with trees on a dome at the far plane, turned about the vertical
+(and mirrored, where that puts better scenery ahead) so that its sun stands
+where the scene's does (28° right of straight ahead) and at the photo's own
+elevation, which becomes the scene's. Its brightness is
+anchored on the sun: `tools/sky-probe.mjs` measures the photo's sun
+irradiance and sky radiance, and the dome is scaled so that its sun matches
+the scene's (times π, the scene's convention for diffuse light), so the
+photo's own balance of sky and sun carries over, and the sky's mean radiance
+becomes the ambient light of the foam and the sand. The sun's light reaches
+the scene through the directional light and the analytic highlights, so the
+dome's radiance is capped at 30 times the mean sky. The water reaches 3 km,
+far enough to meet the dome's horizon with no strip of the photo's ground
+between them, so the photo's treeline stands on the far shore. The dome and
+a water-coloured lower hemisphere are captured once into a cube map that the
+droplets reflect, and a prefiltered copy lights the stones.
+
 **Rendering** (`src/main.js`, `src/shaders/`). Each frame: the floor,
 submerged stones and bubbles are rendered to a texture with depth; the main
-scene renders the sky, shore and water surface, which refracts that texture
+scene renders the sky dome and the water surface, which refracts that texture
 with absorption by path length through the water, reflects a planar mirror
-image of the sky and shore (the camera never moves, so it is re-rendered only
-when the view zooms or turns), and adds a GGX sun highlight that widens with
-distance to stand in for sub-pixel glitter; the foam specks ride on it.
+image of the sky dome, clouds and treeline (the camera never moves, so it is
+re-rendered only when the view zooms or turns), and adds a GGX sun highlight
+that widens with distance to stand in for sub-pixel glitter; the foam specks
+ride on it.
 Caustics on the sand come from the Laplacian of the surface height above.
 Stones are faceted procedural geometry with a small rigid-body model: a
 ballistic arc, quadratic drag under water, and a settle into the sand.
@@ -107,6 +125,13 @@ ballistic arc, quadratic drag under water, and a settle into the sand.
   of world time each, so `--times=0.07,0.0716667,…` are consecutive frames.
 - `?floats=half` on the page forces half-float render targets everywhere, the
   path devices without `EXT_color_buffer_float` take.
+- `?sky=name` on the page (`--sky=name` for the harness) picks the sky
+  panorama, a key of `SKIES` in `src/sky.js`.
+- `node tools/sky-probe.mjs assets/sky/name_2k.hdr [--png=preview.png]`
+  measures a sky panorama (the sun's direction, the sun's irradiance, the
+  sky's mean radiance, the horizon's) and writes `assets/sky/name.json`,
+  which `src/sky.js` reads; `--png` also writes a tone-mapped preview with the
+  sun marked. A new panorama needs this run once.
 - `node tools/jet-probe.mjs [radius] [entrySpeed] [profileTime] [horizontalFraction]`
   runs one Worthington jet on the CPU and prints its timeline, drops, volume
   budget, when its big drops land and cost per frame; a horizontal fraction
@@ -124,3 +149,8 @@ ballistic arc, quadratic drag under water, and a settle into the sand.
 
 Install the development dependencies with `npm install` (Three.js is only
 needed locally for the headless harness, which serves it instead of the CDN).
+
+## Credits
+
+The sky panorama is *Meadow 2* by Sergej Majboroda, from
+[Poly Haven](https://polyhaven.com), CC0.

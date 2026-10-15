@@ -5,7 +5,7 @@
 //   2. step the spectral water surface (GPU) and its foam;
 //   3. render what is under the surface (floor, submerged stones, bubbles)
 //      to a texture with depth;
-//   4. render the main scene (sky, shore, water surface refracting pass 3,
+//   4. render the main scene (sky dome, water surface refracting pass 3,
 //      foam specks riding the surface, stones above the surface) to an HDR
 //      texture with depth;
 //   5. draw the droplets over it and tone-map to the canvas.
@@ -19,8 +19,12 @@
 // change in finger spacing, while the fingers' midpoint holds on to what was
 // under it. A zoomed view stays inside the home view, so zooming all the way
 // out returns to it; Escape and the Reset view button go straight back. The
-// mirror image of the sky and shore is re-rendered at the next frame
-// whenever the view has changed.
+// mirror image of the sky is re-rendered at the next frame whenever the view
+// has changed.
+//
+// Starting is asynchronous: the sky is a photographed panorama
+// (src/sky.js) that has to load before anything is built, because the sun's
+// elevation is the photo's. ?sky=<name> picks the panorama.
 import * as THREE from 'three';
 import { SpectralWater } from './spectralWater.js';
 import { createEnvironment } from './sky.js';
@@ -42,6 +46,7 @@ const MAX_ROCKS = 10;
 const MIN_FOV = 8;            // degrees: the narrowest zoom
 const WHEEL_STEP = 0.9;       // field of view factor per wheel notch
 const HOME_TARGET = [0, 0.12, -1.0];
+const SUN_AZIMUTH = Math.atan2(0.42, 0.78);   // radians right of straight ahead (−Z), about 28°
 
 function detectQuality() {
   const coarse = window.matchMedia?.('(pointer: coarse)').matches;
@@ -49,7 +54,7 @@ function detectQuality() {
   return coarse || small ? 'low' : 'high';
 }
 
-export function startPond({ canvas, quality = 'auto', onReady, onError, onStats, onViewChange }) {
+export async function startPond({ canvas, quality = 'auto', onReady, onError, onStats, onViewChange }) {
   let renderer;
   try {
     renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance', alpha: false, stencil: false });
@@ -59,7 +64,8 @@ export function startPond({ canvas, quality = 'auto', onReady, onError, onStats,
   }
   // ?floats=half takes the half-float path that devices without
   // EXT_color_buffer_float get, to test it on any machine.
-  const forceHalfFloat = new URLSearchParams(window.location.search).get('floats') === 'half';
+  const pageParameters = new URLSearchParams(window.location.search);
+  const forceHalfFloat = pageParameters.get('floats') === 'half';
   configureFloatSupport(renderer, { forceHalfFloat });
   // EXT_color_buffer_float also makes half floats renderable, so either will do.
   const renderableFloats = renderer.extensions.has('EXT_color_buffer_float') || renderer.extensions.has('EXT_color_buffer_half_float');
@@ -73,17 +79,28 @@ export function startPond({ canvas, quality = 'auto', onReady, onError, onStats,
 
   // Lighting shared by every shader. Values are linear radiance in arbitrary
   // units chosen so that a sunlit pond tone-maps well at the given exposure.
-  const sunDirection = new THREE.Vector3(0.42, Math.sin(THREE.MathUtils.degToRad(30)), -0.78).normalize();
+  // The sun's direction and the sky's ambient radiance come from the sky
+  // panorama; shaders hold these vectors by reference, so they are filled in
+  // place, never replaced.
   const lighting = {
-    sunDirection,
+    sunDirection: new THREE.Vector3(),
     sunIrradiance: new THREE.Vector3(3.0, 2.85, 2.55),
-    skyAmbient: new THREE.Vector3(0.26, 0.34, 0.46),
+    skyAmbient: new THREE.Vector3(),
     absorb: new THREE.Vector3(0.95, 0.36, 0.34),
     waterColor: new THREE.Vector3(0.010, 0.046, 0.040),
     exposure: 0.55,
   };
 
-  const environment = createEnvironment(renderer, sunDirection);
+  let environment;
+  try {
+    environment = await createEnvironment(renderer, { name: pageParameters.get('sky'), sunAzimuth: SUN_AZIMUTH, sunIrradiance: lighting.sunIrradiance });
+  } catch (error) {
+    onError?.('The sky could not be loaded. Check the connection and reload the page.');
+    throw error;
+  }
+  lighting.sunDirection.copy(environment.sunDirection);
+  lighting.skyAmbient.copy(environment.skyAmbient);
+  const sunDirection = lighting.sunDirection;
 
   let qualityName = quality === 'auto' ? detectQuality() : quality;
   let settings = QUALITY[qualityName];
@@ -109,10 +126,9 @@ export function startPond({ canvas, quality = 'auto', onReady, onError, onStats,
   const sceneUnder = new THREE.Scene();
   sceneUnder.add(floor, splash.bubblePoints, sunUnder);
   const sceneMain = new THREE.Scene();
-  sceneMain.add(environment.sky, environment.shore, surface.inner, surface.outer, splash.foamSpecks.points, sun);
-  // Layer 1 holds what the water mirrors: the sky and the far shore.
+  sceneMain.add(environment.sky, surface.inner, surface.outer, splash.foamSpecks.points, sun);
+  // Layer 1 holds what the water mirrors: the sky dome, far shore included.
   environment.sky.layers.enable(1);
-  environment.shore.layers.enable(1);
   sceneMain.environment = environment.envTexture;
   sceneUnder.environment = environment.envTexture;
 
@@ -153,10 +169,10 @@ export function startPond({ canvas, quality = 'auto', onReady, onError, onStats,
   let mainTarget = null;
   let reflectionTarget = null;
 
-  // The camera never moves, so the mirror image of the sky and shore is
-  // rendered only when the view changes (a resize or a zoom), through a camera
-  // reflected in the water plane (the same construction as Three.js's
-  // Reflector), then sampled by the water shader through this matrix.
+  // The camera never moves, so the mirror image of the sky is rendered only
+  // when the view changes (a resize or a zoom), through a camera reflected in
+  // the water plane (the same construction as Three.js's Reflector), then
+  // sampled by the water shader through this matrix.
   const mirrorCamera = new THREE.PerspectiveCamera();
   mirrorCamera.layers.set(1);
   const reflectionMatrix = new THREE.Matrix4();
@@ -509,6 +525,8 @@ export function startPond({ canvas, quality = 'auto', onReady, onError, onStats,
     get time() { return simulationTime; },
     get rocks() { return rocks; },
     get quality() { return qualityName; },
+    /** The sky panorama in use (a key of SKIES in src/sky.js). */
+    sky: environment.name,
     camera,
     lighting,
     water,

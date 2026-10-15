@@ -243,9 +243,10 @@ vec3 aces(vec3 color) {
 }
 
 // Light arriving along a world direction at a point a little above the pond:
-// the sky and shore above the horizon; below it the pond, a rough mirror of
-// them with the sun's glitter (effective roughness GLITTER_ROUGHNESS, wider
-// than the water shader's own because its waves spread the glitter too).
+// the sky (the photographed panorama, far shore and all) above the horizon;
+// below it the pond, a rough mirror of it with the sun's glitter (effective
+// roughness GLITTER_ROUGHNESS, wider than the water shader's own because its
+// waves spread the glitter too).
 // body is the share left for light from under the surface (1 − Fresnel).
 #define GLITTER_ROUGHNESS 0.4
 vec3 pondView(vec3 direction, vec3 sunWorld, out float body) {

@@ -268,7 +268,8 @@
 
   let pond;
   try {
-    pond = startPond({
+    // Module scripts may await at the top level; the pond starts once its sky has loaded.
+    pond = await startPond({
       canvas: document.getElementById('pond'),
       quality: params.get('quality') || 'auto',
       onError: (message) => { veilText.innerHTML = ''; const p = document.createElement('p'); p.className = 'error'; p.textContent = message; veilText.append(p); },

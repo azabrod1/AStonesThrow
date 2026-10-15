@@ -1,72 +1,142 @@
-// Sky, far shore and the environment maps derived from them.
+// The sky: a photographed panorama on a dome, and the environment maps
+// derived from it.
 //
-// The sky is the Preetham model from Three.js. A ring of dark wooded hills
-// sits on the horizon so that the water has something to reflect at grazing
-// angles. Both are rendered once into a cube map that the water and the
-// droplets reflect, and a prefiltered copy lights the stones.
+// The sky is an equirectangular HDRI from Poly Haven (CC0) in assets/sky/,
+// drawn on a dome (a large box on layer 1, so the mirror pass sees it) at the
+// far plane. Its measurements, in assets/sky/<name>.json, come from
+// tools/sky-probe.mjs: the sun's direction in the file's frame, its
+// irradiance, and the sky's mean radiance. SKIES lists the panoramas and how
+// each is turned; ?sky=<name> on the page picks one, DEFAULT_SKY otherwise.
+//
+// Orientation. The dome samples the panorama by direction as Three.js's
+// equirect lookup does (equirectUv: u = atan(z, x)/2π + ½), with the x of the
+// direction negated first when the entry is `mirrored` (the photo flipped left
+// for right, to put better scenery in front), then turned about the vertical
+// by the angle that puts the photo's sun at `sunAzimuth`, the scene's choice.
+// The sun's elevation is the photo's; sunDirection is built from the two.
+//
+// Brightness. The scene's sun irradiance is fixed (lighting.sunIrradiance);
+// the dome is scaled by the ratio of its luminance to the photo's measured
+// sun irradiance, so the photo's own ratio of sky to sun carries over, times
+// SKY_EXPOSURE. That constant is π: the scene's diffuse shaders (floor, foam,
+// specks) light a white surface facing the sun to sunIrradiance, without the
+// Lambertian 1/π, so sunIrradiance is π times a physical irradiance in the
+// units of the sky's radiance. Measured without it, the sky at the top of the
+// home view came out a tenth as bright as the old Preetham sky and the
+// reflected sky in the middle distance a fifth; with it, the ambient radiance
+// of a test panorama (Poly Haven's Belfast Farmhouse, not shipped) landed
+// within 7% of the hand-tuned constant the scene was balanced with,
+// (0.26, 0.34, 0.46); Meadow 2's is 1.4 times that. skyAmbient, the
+// cosine-weighted mean sky radiance that the foam, specks, floor and spray
+// use, is the measured value on the same scale.
+// The sun's light reaches the scene through the directional light and the
+// analytic highlights, not through the environment: a sun disc thousands of
+// times brighter than the sky would poison every blurred level of the
+// prefiltered map and overflow the half-float cube, so the dome's radiance is
+// capped at RADIANCE_CAP times the mean sky radiance (scaled down to keep
+// its hue). The sun is never in the home view's direct sight, so the cap
+// only touches the mirror image and the cube.
+//
+// The panorama and a water-coloured hemisphere below the horizon (the photo's
+// own ground there would light drops and stones green from below) are
+// rendered once into a cube map that the droplets reflect, and a prefiltered
+// copy lights the stones.
 import * as THREE from 'three';
-import { Sky } from 'three/addons/objects/Sky.js';
+import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
 
-function hills() {
-  const segments = 360;
-  const radius = 140;
-  const positions = [];
-  const colors = [];
-  const dark = new THREE.Color(0.030, 0.052, 0.040);
-  const lit = new THREE.Color(0.075, 0.115, 0.070);
-  const haze = new THREE.Color(0.42, 0.52, 0.62);
-  const noise = (t, scale, seed) => {
-    const x = t * scale + seed;
-    const i = Math.floor(x), f = x - i;
-    const a = Math.sin(i * 12.9898 + 78.233) * 43758.5453, b = Math.sin((i + 1) * 12.9898 + 78.233) * 43758.5453;
-    const ha = a - Math.floor(a), hb = b - Math.floor(b);
-    return ha + (hb - ha) * f * f * (3 - 2 * f);
-  };
-  const heightAt = (i) => {
-    const t = i / segments;
-    return 5.0 + 7.0 * noise(t, 7, 3) + 3.0 * noise(t, 23, 11) + 1.2 * noise(t, 90, 5);
-  };
-  for (let i = 0; i < segments; i++) {
-    const a0 = (i / segments) * Math.PI * 2;
-    const a1 = ((i + 1) / segments) * Math.PI * 2;
-    const h0 = heightAt(i), h1 = heightAt(i + 1);
-    const x0 = Math.cos(a0) * radius, z0 = Math.sin(a0) * radius;
-    const x1 = Math.cos(a1) * radius, z1 = Math.sin(a1) * radius;
-    const shade0 = dark.clone().lerp(lit, noise(i / segments, 40, 7)).lerp(haze, 0.42);
-    const shade1 = dark.clone().lerp(lit, noise((i + 1) / segments, 40, 7)).lerp(haze, 0.42);
-    const base0 = shade0.clone().lerp(haze, 0.35);
-    const base1 = shade1.clone().lerp(haze, 0.35);
-    positions.push(x0, -2, z0, x1, -2, z1, x1, h1, z1, x0, -2, z0, x1, h1, z1, x0, h0, z0);
-    colors.push(...base0.toArray(), ...base1.toArray(), ...shade1.toArray(), ...base0.toArray(), ...shade1.toArray(), ...shade0.toArray());
-  }
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-  const mesh = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide }));
-  mesh.frustumCulled = false;
-  return mesh;
+// The orientation was chosen from home-view frames. Meadow 2 mirrored puts
+// tall trees on the left with sky between the crowns; as photographed the
+// whole view ahead is a wall of foliage. Each entry costs about 6 MB, so one
+// panorama ships; ?sky=<name> is for comparing candidates before choosing.
+const SKIES = {
+  meadow_2: { mirrored: true },
+};
+const DEFAULT_SKY = 'meadow_2';
+const SKY_EXPOSURE = Math.PI;   // see Brightness above
+const RADIANCE_CAP = 30;       // times the mean sky radiance
+const DOME_SIZE = 20000;       // metres, edge of the box
+
+const luminance = (rgb) => 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2];
+
+const DOME_VERTEX = /* glsl */`
+varying vec3 vDirection;
+void main() {
+  vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+  vDirection = worldPosition.xyz - cameraPosition;
+  gl_Position = projectionMatrix * viewMatrix * worldPosition;
+  gl_Position.z = gl_Position.w;   // on the far plane: everything else is in front
 }
+`;
 
-export function createEnvironment(renderer, sunDirection) {
-  const sky = new Sky();
-  sky.scale.setScalar(20000);
-  // The stock sun disc is tens of thousands of times brighter than the sky,
-  // which overflows half-float textures and poisons the prefiltered
-  // environment. The sun's light comes from the directional light and the
-  // analytic highlight in the water shaders, so keep only a modest disc here.
-  sky.material.fragmentShader = sky.material.fragmentShader.replace('( vSunE * 19000.0 * Fex ) * sundisk', '( vSunE * 2.5 * Fex ) * sundisk');
-  sky.material.needsUpdate = true;
-  const uniforms = sky.material.uniforms;
-  uniforms.turbidity.value = 3.2;
-  uniforms.rayleigh.value = 1.6;
-  uniforms.mieCoefficient.value = 0.006;
-  uniforms.mieDirectionalG.value = 0.86;
-  uniforms.sunPosition.value.copy(sunDirection);
+const DOME_FRAGMENT = /* glsl */`
+#define PI 3.141592653589793
+uniform sampler2D uPanorama;
+uniform float uMirror;         // 1, or -1 to flip the photo left for right
+uniform float uRotation;       // radians added to the azimuth before the lookup
+uniform float uScale;
+uniform float uRadianceCap;
+varying vec3 vDirection;
+void main() {
+  vec3 direction = normalize(vDirection);
+  float azimuth = atan(direction.z, direction.x * uMirror) + uRotation;
+  vec2 panoramaUv = vec2(azimuth / (2.0 * PI) + 0.5, asin(clamp(direction.y, -1.0, 1.0)) / PI + 0.5);
+  vec3 radiance = texture2D(uPanorama, panoramaUv).rgb * uScale;
+  float brightest = max(radiance.r, max(radiance.g, radiance.b));
+  radiance *= min(1.0, uRadianceCap / max(brightest, 1e-6));
+  gl_FragColor = vec4(radiance, 1.0);
+}
+`;
 
-  const shore = hills();
-  // The sky model is undefined below the horizon (it can produce NaN there), and
-  // one NaN texel poisons every blurred level of the prefiltered environment.
-  // A dark water-coloured hemisphere under the camera covers that half entirely.
+/**
+ * Load the sky and build the environment maps.
+ * @param renderer the WebGLRenderer
+ * @param options.name a key of SKIES (others fall back to DEFAULT_SKY)
+ * @param options.sunAzimuth radians from straight ahead (−Z) toward the right (+X)
+ * @param options.sunIrradiance the scene's sun irradiance (RGB Vector3) the dome is scaled to
+ * @returns {Promise<{ sky, cubeTexture, envTexture, sunDirection, skyAmbient, name }>}
+ */
+export async function createEnvironment(renderer, { name, sunAzimuth, sunIrradiance }) {
+  const skyName = SKIES[name] ? name : DEFAULT_SKY;
+  const { mirrored } = SKIES[skyName];
+  const [measurement, panorama] = await Promise.all([
+    fetch(new URL(`../assets/sky/${skyName}.json`, import.meta.url)).then((response) => {
+      if (!response.ok) throw new Error(`sky measurements: HTTP ${response.status}`);
+      return response.json();
+    }),
+    new HDRLoader().setDataType(THREE.HalfFloatType).loadAsync(new URL(`../assets/sky/${skyName}_2k.hdr`, import.meta.url).href),
+  ]);
+  panorama.wrapS = THREE.RepeatWrapping;   // the azimuth wraps; no seam at u = 0
+
+  const elevation = THREE.MathUtils.degToRad(measurement.sun.elevation);
+  const sunDirection = new THREE.Vector3(Math.cos(elevation) * Math.sin(sunAzimuth), Math.sin(elevation), -Math.cos(elevation) * Math.cos(sunAzimuth));
+  const mirror = mirrored ? -1 : 1;
+  const [fileSunX, , fileSunZ] = measurement.sun.direction;
+  const rotation = Math.atan2(fileSunZ, fileSunX) - Math.atan2(sunDirection.z, sunDirection.x * mirror);
+  const scale = (luminance(sunIrradiance.toArray()) / luminance(measurement.sunIrradiance)) * SKY_EXPOSURE;
+  const skyAmbient = new THREE.Vector3().fromArray(measurement.skyRadiance).multiplyScalar(scale);
+
+  const sky = new THREE.Mesh(
+    new THREE.BoxGeometry(1, 1, 1),
+    new THREE.ShaderMaterial({
+      vertexShader: DOME_VERTEX,
+      fragmentShader: DOME_FRAGMENT,
+      uniforms: {
+        uPanorama: { value: panorama },
+        uMirror: { value: mirror },
+        uRotation: { value: rotation },
+        uScale: { value: scale },
+        uRadianceCap: { value: RADIANCE_CAP * luminance(skyAmbient.toArray()) },
+      },
+      side: THREE.BackSide,
+      depthWrite: false,
+    }),
+  );
+  sky.scale.setScalar(DOME_SIZE);
+  sky.frustumCulled = false;
+  sky.renderOrder = 1;   // after the opaque scene, so the depth test skips it under the water
+
+  // Under the horizon the photo shows its own ground; for the cube, cover it
+  // with a dark water-coloured hemisphere, as the pond would look from the drops.
   const ground = new THREE.Mesh(
     new THREE.SphereGeometry(600, 48, 24, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2),
     new THREE.MeshBasicMaterial({ color: new THREE.Color(0.10, 0.17, 0.20), side: THREE.BackSide }),
@@ -74,7 +144,7 @@ export function createEnvironment(renderer, sunDirection) {
   ground.position.y = 0.3;
 
   const captureScene = new THREE.Scene();
-  captureScene.add(sky, shore, ground);
+  captureScene.add(sky, ground);
   const cubeTarget = new THREE.WebGLCubeRenderTarget(512, { type: THREE.HalfFloatType, generateMipmaps: true, minFilter: THREE.LinearMipmapLinearFilter, magFilter: THREE.LinearFilter });
   const cubeCamera = new THREE.CubeCamera(0.5, 50000, cubeTarget);
   cubeCamera.position.set(0, 1.15, 0);
@@ -87,7 +157,9 @@ export function createEnvironment(renderer, sunDirection) {
   const pmrem = new THREE.PMREMGenerator(renderer);
   const envTexture = pmrem.fromCubemap(cubeTarget.texture).texture;
   pmrem.dispose();
-  captureScene.remove(sky, shore, ground);
+  captureScene.remove(sky, ground);
+  ground.geometry.dispose();
+  ground.material.dispose();
 
-  return { sky, shore, cubeTexture: cubeTarget.texture, envTexture };
+  return { sky, cubeTexture: cubeTarget.texture, envTexture, sunDirection, skyAmbient, name: skyName };
 }

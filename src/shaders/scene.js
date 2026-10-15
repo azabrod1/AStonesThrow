@@ -106,7 +106,7 @@ export const WATER_FRAGMENT = /* glsl */`
 #include <packing>
 uniform sampler2D uHeight;
 uniform sampler2D uFoam;
-uniform sampler2D uReflection;    // sky and shore seen through a mirrored camera
+uniform sampler2D uReflection;    // the sky dome seen through a mirrored camera
 uniform mat4 uReflectionMatrix;   // world -> reflection texture coordinates
 uniform sampler2D uUnderColor;
 uniform sampler2D uUnderDepth;
@@ -149,9 +149,9 @@ void main() {
   float nDotV = max(dot(n, v), 0.0);
   float fresnel = 0.02 + 0.98 * pow(1.0 - nDotV, 5.0);
 
-  // Reflection of the sky and the far shore: a planar mirror image rendered at
-  // screen resolution, shifted by the surface slope (a tilt of s radians turns
-  // the reflected ray by 2s).
+  // Reflection of the sky and the far shore (the dome's photograph): a planar
+  // mirror image rendered at screen resolution, shifted by the surface slope (a
+  // tilt of s radians turns the reflected ray by 2s).
   vec4 reflectCoord = uReflectionMatrix * vec4(vWorld, 1.0);
   vec2 reflectUv = reflectCoord.xy / reflectCoord.w;
   reflectUv += vec2(-slope.x, slope.y) * 2.0 * uFocalPx / uResolution;
@@ -163,13 +163,15 @@ void main() {
   vec2 screenUv = gl_FragCoord.xy / uResolution;
   float surfaceDistZ = -vViewZ;
   float rawDepth = texture2D(uUnderDepth, screenUv).r;
-  float underDistZ = rawDepth >= 1.0 ? 1000.0 : -perspectiveDepthToViewZ(rawDepth, uNear, uFar);
+  // Nothing under the surface (past the floor's edge): as deep as the far plane,
+  // which is past the far edge of the water.
+  float underDistZ = rawDepth >= 1.0 ? uFar : -perspectiveDepthToViewZ(rawDepth, uNear, uFar);
   float pathZ = max(underDistZ - surfaceDistZ, 0.0);
   float path = pathZ * viewDist / surfaceDistZ;
   vec2 refractShift = slope * 0.25 * min(path, 3.0) * uFocalPx / max(viewDist, 0.3) / uResolution;
   vec2 refractUv = clamp(screenUv + refractShift, vec2(0.002), vec2(0.998));
   float rawDepth2 = texture2D(uUnderDepth, refractUv).r;
-  float underDistZ2 = rawDepth2 >= 1.0 ? 1000.0 : -perspectiveDepthToViewZ(rawDepth2, uNear, uFar);
+  float underDistZ2 = rawDepth2 >= 1.0 ? uFar : -perspectiveDepthToViewZ(rawDepth2, uNear, uFar);
   float path2 = max(underDistZ2 - surfaceDistZ, 0.0) * viewDist / surfaceDistZ;
   if (path2 < 0.02) { refractUv = screenUv; path2 = path; }
   vec3 underColor = texture2D(uUnderColor, refractUv).rgb;

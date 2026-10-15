@@ -16,6 +16,7 @@
 // --report="js expression" is evaluated in the page after each frame and its
 // result printed as JSON (window.__pond is the app). --floats=half renders on
 // the half-float path that devices without EXT_color_buffer_float take.
+// --sky=name picks the sky panorama (a key of SKIES in src/sky.js).
 import { chromium } from 'playwright';
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
@@ -44,6 +45,7 @@ const crop = arg('crop', '');
 const cropScale = Number(arg('cropscale', '1'));
 const report = arg('report', '');
 const floats = arg('floats', '');
+const sky = arg('sky', '');
 
 const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.mjs': 'text/javascript', '.json': 'application/json', '.png': 'image/png', '.css': 'text/css' };
 const server = createServer(async (request, response) => {
@@ -87,7 +89,7 @@ const problems = [];
 page.on('pageerror', (e) => problems.push(String(e)));
 page.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') problems.push(m.text()); });
 
-const url = `http://localhost:${port}/index.html?quality=${quality}${keepUi ? '' : '&ui=0'}${floats ? `&floats=${floats}` : ''}`;
+const url = `http://localhost:${port}/index.html?quality=${quality}${keepUi ? '' : '&ui=0'}${floats ? `&floats=${floats}` : ''}${sky ? `&sky=${sky}` : ''}`;
 console.log(`[shoot] ${url} -> ${outDir}`);
 await page.goto(url, { waitUntil: 'domcontentloaded' });
 try {

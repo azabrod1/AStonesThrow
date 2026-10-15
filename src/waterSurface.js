@@ -1,7 +1,12 @@
 // The water surface: an inner patch that follows the simulated height field and
-// a flat outer sheet to the horizon, drawn with one shader.
+// a flat outer sheet to the horizon, drawn with one shader. The sheet reaches
+// OUTER_HALF_SIZE metres from the patch's centre, so seen from the camera
+// (1.15 m up) its edge is 0.02° below the horizon and the water meets the sky
+// dome's horizon with no strip of the photo's own ground between them.
 import * as THREE from 'three';
 import { WATER_VERTEX, WATER_FRAGMENT } from './shaders/scene.js';
+
+const OUTER_HALF_SIZE = 3000;
 
 function outerSheetGeometry(innerHalf, outerHalf, centre) {
   // Four quads around the inner square, in the XZ plane.
@@ -57,7 +62,7 @@ export function createWaterSurface(water, lighting, environment) {
   inner.position.set(water.centre[0], 0, water.centre[1]);
   inner.frustumCulled = false;
 
-  const outer = new THREE.Mesh(outerSheetGeometry(water.domainSize / 2, 400, water.centre), outerMaterial);
+  const outer = new THREE.Mesh(outerSheetGeometry(water.domainSize / 2, OUTER_HALF_SIZE, water.centre), outerMaterial);
   outer.frustumCulled = false;
 
   return {
