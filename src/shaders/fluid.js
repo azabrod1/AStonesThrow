@@ -94,6 +94,9 @@
 // Fresnel reflection of the sky cube, no refraction (a sheet or a column lets
 // the dome behind it show straight through), the sheet's aerated bead, and a
 // drop's mean light and glints. Only what stands above the water is drawn.
+// A second draw of the same programs writes how far each is from the mirror
+// camera into the mirror's alpha (MIRROR_COMMON), so that the water can look
+// a near object's reflection up where it is rather than at infinity.
 import { GLSL_COMMON } from './scene.js';
 
 // A drop's mean light (the header): this much of the sky's mean radiance and
@@ -462,11 +465,29 @@ void main() {
 
 // ---- the mirror image: cheap water seen from below the pond (src/main.js) ----
 
-// World position and directions from view space, for any camera (the mirror's included).
+// World position and directions from view space, for any camera (the mirror's
+// included). The mirror pass draws each kind twice: its colour, then
+// (uMirrorDistance 1, the same program with another blend) its distance.
+// The distance draw writes nothing where the fragment covers less than
+// MIRROR_NEAR_COVERAGE of its pixel (a thin sheet's face: the reflected ray
+// goes on through it to the sky, so the water reflects that sky there, by
+// direction), and elsewhere its nearness to the mirror camera,
+// 1 − MIRROR_NEARNESS_SCALE / distance, into alpha, leaving the colour as it
+// is; the blend keeps the least, the nearest. The dome and the clear leave
+// alpha at 1, as far as it gets. The water shader reads it back
+// (WATER_FRAGMENT in src/shaders/scene.js, which says why). Half floats keep
+// a distance of 2 to 8 m to 1 to 8 mm this way.
 const MIRROR_COMMON = /* glsl */`
+#define MIRROR_NEAR_COVERAGE 0.1
+#define MIRROR_NEARNESS_SCALE 4.0
 uniform samplerCube uEnvCube;
+uniform float uMirrorDistance;
 ${FRESNEL}
 vec3 worldFromView(vec3 viewVector) { return viewVector * mat3(viewMatrix); }
+vec4 mirrorNearness(float coverage, vec3 viewPoint) {
+  if (coverage < MIRROR_NEAR_COVERAGE) discard;
+  return vec4(0.0, 0.0, 0.0, 1.0 - MIRROR_NEARNESS_SCALE / max(length(viewPoint), 0.05));
+}
 `;
 
 // A sheet: the sky's Fresnel reflection, and its aerated bead's scattering.
@@ -484,14 +505,18 @@ void main() {
   if (dot(normal, toViewer) < 0.0) normal = -normal;
   normal = normalize(normal + vViewRimTangent);
   float fresnel = waterFresnel(dot(normal, toViewer));
-  vec3 reflected = textureCubeLodEXT(uEnvCube, worldFromView(reflect(-toViewer, normal)), 1.0).rgb;
   float aerated = 0.55 * vAeration * (1.0 - fresnel);
+  if (uMirrorDistance > 0.5) { gl_FragColor = mirrorNearness(fresnel + aerated, vViewPosition); return; }
+  vec3 reflected = textureCubeLodEXT(uEnvCube, worldFromView(reflect(-toViewer, normal)), 1.0).rgb;
   gl_FragColor = vec4(fresnel * reflected + aerated * uSkyAmbient * 1.2, fresnel + aerated);
 }
 `;
 
 // A column: the sky's Fresnel reflection. A tube bends light only across its
 // axis, so from below it shows the sky behind it, which the dome already is.
+// All of it is near for the distance draw, faces included: what a reflected
+// ray sees through a glass rod is the rod's image of the sky, which moves
+// with the rod, not with the sky far behind it.
 export const MIRROR_COLUMN_FRAGMENT = /* glsl */`
 varying vec3 vViewPosition;
 varying vec3 vViewNormal;
@@ -502,6 +527,7 @@ void main() {
   vec3 normal = normalize(vViewNormal);
   if (dot(normal, toViewer) < 0.0) normal = -normal;
   float fresnel = waterFresnel(dot(normal, toViewer));
+  if (uMirrorDistance > 0.5) { gl_FragColor = mirrorNearness(1.0, vViewPosition); return; }
   vec3 reflected = textureCubeLodEXT(uEnvCube, worldFromView(reflect(-toViewer, normal)), 1.0).rgb;
   gl_FragColor = vec4(fresnel * reflected, fresnel);
 }
@@ -535,13 +561,14 @@ void main() {
   vec2 perpendicular = vec2(-vAxis.y, vAxis.x);
   vec3 normal = vec3(vAxis * c.x + perpendicular * c.y, sqrt(1.0 - c.z));
   float fresnel = waterFresnel(normal.z);
-  vec3 reflected = textureCubeLodEXT(uEnvCube, worldFromView(reflect(vec3(0.0, 0.0, -1.0), normal)), 1.0).rgb;
   float travel = vStretch - 1.0;
   vec2 fragment = vec2(vQuad.x * vStretch, vQuad.y);
   float coverage = exposureShare(fragment.x, fragment.y, travel) * vAreaShare;
+  float body = MEAN_SKY * (1.0 - fresnel);
+  if (uMirrorDistance > 0.5) { gl_FragColor = mirrorNearness(coverage * (fresnel + body), vViewCentre); return; }
+  vec3 reflected = textureCubeLodEXT(uEnvCube, worldFromView(reflect(vec3(0.0, 0.0, -1.0), normal)), 1.0).rgb;
   float glint = vGlintPowers.x * glintFootprint(fragment, vGlintPoints.xy, vAxis, travel, vDrawnPixelRadius)
     + vGlintPowers.y * glintFootprint(fragment, vGlintPoints.zw, vAxis, travel, vDrawnPixelRadius);
-  float body = MEAN_SKY * (1.0 - fresnel);
   gl_FragColor = vec4(coverage * (fresnel * reflected + body * uSkyAmbient) + uSunIrradiance * glint, coverage * (fresnel + body));
 }
 `;

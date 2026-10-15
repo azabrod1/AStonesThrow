@@ -105,8 +105,8 @@ const PATH_STEP = 1 / 240;         // s: the app's substep at 60 frames a second
 const PATH_SECONDS = 1.5;
 // The walls.
 const SLICE_STEP = 1 / 6;          // slices this many radii apart
-const PINCH_TIME = 2.1;            // the deep seal, in sqrt(R/g) after entry...
-const CLOSE_TIME = 0.4;            // ...and the surface closes this many sqrt(R/g) later
+export const PINCH_TIME = 2.1;     // the deep seal, in sqrt(R/g) after entry...
+export const CLOSE_TIME = 0.4;     // ...and the surface closes this many sqrt(R/g) later (src/rock.js reads both)
 const SURFACE_HEAD = 0.5;          // z0, in R: the pressure head that closes the slices at the surface
 const SLOWEST_PUSH = 0.2;          // a slice is pushed open at least as hard as by this share of the entry speed
 const WIDEN = 0.45;                // a slice at the surface opens to R·(1 + WIDEN)...

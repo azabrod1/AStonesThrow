@@ -9,7 +9,19 @@
 // several milliseconds late. Under water a quadratic drag stops it within a
 // few radii and buoyancy-reduced gravity sinks it to the floor, where it
 // settles into the sand.
+//
+// The stone is two meshes: the part above the water in the main scene, the
+// part below in the under-water pass (src/main.js), which the water shader
+// shows through the surface. Below the water it is drawn where it is seen
+// through the still surface (SEEN_THROUGH_WATER, src/shaders/scene.js), not
+// on the straight line from the camera, once the water has closed over it:
+// while its cavity is open (src/cavity.js) it is in air, seen through the
+// hole, and drawn where it is; from the pinch-off to the closure of the
+// surface (PINCH_TIME to PINCH_TIME + CLOSE_TIME times sqrt(R/g) after the
+// impact) it moves over to where the water shows it.
 import * as THREE from 'three';
+import { SEEN_THROUGH_WATER } from './shaders/scene.js';
+import { PINCH_TIME, CLOSE_TIME } from './cavity.js';
 
 const WATER_DENSITY = 1000;
 const ROCK_DENSITY = 2600;
@@ -95,6 +107,19 @@ export class Rock {
     this.meshAbove = new THREE.Mesh(this.geometry, makeMaterial(1));
     this.meshBelow = new THREE.Mesh(this.geometry, makeMaterial(-1));
     this.meshBelow.material.envMapIntensity = 0.35;
+    // Under the water: where the surface shows it (the header), by this much.
+    const seenThroughWater = this.seenThroughWater = { value: 0 };
+    this.sinceImpact = -1;
+    this.meshBelow.material.onBeforeCompile = (shader) => {
+      shader.uniforms.uSeenThroughWater = seenThroughWater;
+      shader.vertexShader = shader.vertexShader
+        .replace('#include <common>', `#include <common>\nuniform float uSeenThroughWater;\n${SEEN_THROUGH_WATER}`)
+        .replace('#include <project_vertex>', `#include <project_vertex>
+  vec3 trueWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;
+  mvPosition = viewMatrix * vec4(mix(trueWorld, seenThroughWater(trueWorld), uSeenThroughWater), 1.0);
+  gl_Position = projectionMatrix * mvPosition;`);
+    };
+    this.meshBelow.material.customProgramCacheKey = () => 'seen-through-water';
     for (const mesh of [this.meshAbove, this.meshBelow]) {
       mesh.scale.setScalar(radius);
       mesh.frustumCulled = false;
@@ -170,6 +195,14 @@ export class Rock {
     if (this.state !== 'rest') {
       const spin = new THREE.Quaternion().setFromAxisAngle(this.spinAxis, this.spinRate * dt);
       this.quaternion.premultiply(spin);
+    }
+    // In its cavity's air until the pinch-off, under water once the surface has closed.
+    if (impact) this.sinceImpact = 0;
+    else if (this.sinceImpact >= 0) this.sinceImpact += dt;
+    if (this.sinceImpact >= 0) {
+      const timeUnit = Math.sqrt(this.radius / GRAVITY);
+      const progress = THREE.MathUtils.clamp((this.sinceImpact - PINCH_TIME * timeUnit) / (CLOSE_TIME * timeUnit), 0, 1);
+      this.seenThroughWater.value = progress * progress * (3 - 2 * progress);
     }
     this.syncMeshes();
     return impact;

@@ -139,13 +139,19 @@
 //
 // The water mirrors the splash: mirrorObjects() lists what is alive to be
 // drawn in the mirror image (the droplets, the crowns, the columns), each
-// tagged by mirrorWith with MIRROR_LAYER and the cheap water material the
-// mirror pass swaps in (src/main.js re-renders the mirror while the list is
-// not empty, and only then). A new mesh joins with mirrorWith at its creation
-// and a line in prepareFrame, which builds the list; whatever is on
-// MIRROR_LAYER in the scenes the mirror draws must be in it. The cavities are
-// left out: a hole lies below the mirror plane, so the water reflects none
-// of it.
+// tagged by mirrorWith with MIRROR_LAYER and the two materials the mirror
+// pass swaps in: the cheap water, then the same program writing how far it
+// is from the mirror's camera into the mirror's alpha (MIRROR_COMMON in
+// src/shaders/fluid.js), which the water shader reads to look a near
+// thing's reflection up where it is (src/main.js re-renders the mirror while
+// the list is not empty, and only then). A new mesh joins with mirrorWith at
+// its creation and a line in prepareFrame, which builds the list; whatever
+// is on MIRROR_LAYER in the scenes the mirror draws must be in it, and must
+// leave the mirror's alpha alone but for its distance. The cavities are left
+// out: a hole lies below the mirror plane, so the water reflects none of it.
+// The beads on a crown's fingertips (src/crown.js) are drawn as droplets:
+// prepareFrame writes them after the drops in flight, which are the only ones
+// stepped, so they ride the fingers until they pinch off as real drops.
 //
 // With nothing in the air (no droplet, sheet or column) render() neither
 // clears nor reads the fluid targets: it tone-maps the scene alone
@@ -275,13 +281,15 @@ function floorLight(lighting, depth) {
 export const MIRROR_LAYER = 1;
 
 /**
- * Draw `object` in the water's mirror image with `material` in place of its
- * own; `bounds(box)`, if given, grows a world box around what it draws
- * (otherwise its geometry's bounding box is used).
+ * Draw `object` in the water's mirror image with `materials.colour` in place
+ * of its own, then `materials.distance` (its distance, src/main.js);
+ * `bounds(box)`, if given, grows a world box around what it draws (otherwise
+ * its geometry's bounding box is used).
  */
-export function mirrorWith(object, material, bounds = null) {
+export function mirrorWith(object, materials, bounds = null) {
   object.layers.enable(MIRROR_LAYER);
-  object.userData.mirrorMaterial = material;
+  object.userData.mirrorMaterial = materials.colour;
+  object.userData.mirrorDistanceMaterial = materials.distance;
   if (bounds) object.userData.mirrorBounds = bounds;
   return object;
 }
@@ -420,24 +428,32 @@ export class SplashSystem {
     this.sunDirView = new THREE.Vector3();
 
     // The mirror image's cheap water (src/shaders/fluid.js, MIRROR_*), drawn
-    // over the dome's mirror image: premultiplied, the dome showing through.
-    const mirrorBlend = { transparent: true, depthTest: true, depthWrite: false, blending: THREE.CustomBlending, blendEquation: THREE.AddEquation, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor, blendSrcAlpha: THREE.OneFactor, blendDstAlpha: THREE.OneMinusSrcAlphaFactor };
-    this.sheetMirrorMaterial = new THREE.ShaderMaterial({
+    // over the dome's mirror image: premultiplied, the dome showing through,
+    // the alpha left as the dome wrote it. Then each again as its distance
+    // (MIRROR_COMMON): the same program (uMirrorDistance 1) with a blend that
+    // leaves the colour and keeps the least alpha, the nearest.
+    const mirrorBlend = { transparent: true, depthTest: true, depthWrite: false, blending: THREE.CustomBlending, blendEquation: THREE.AddEquation, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor, blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor };
+    const distanceBlend = { transparent: true, depthTest: true, depthWrite: false, blending: THREE.CustomBlending, blendEquation: THREE.AddEquation, blendSrc: THREE.ZeroFactor, blendDst: THREE.OneFactor, blendEquationAlpha: THREE.MinEquation, blendSrcAlpha: THREE.OneFactor, blendDstAlpha: THREE.OneFactor };
+    const mirrorPair = (parameters) => {
+      const colour = new THREE.ShaderMaterial({ ...parameters, uniforms: { ...parameters.uniforms, uMirrorDistance: { value: 0 } }, ...mirrorBlend });
+      const distance = new THREE.ShaderMaterial({ ...parameters, uniforms: { ...colour.uniforms, uMirrorDistance: { value: 1 } }, ...distanceBlend });
+      return { colour, distance };
+    };
+    this.sheetMirror = mirrorPair({
       vertexShader: SHEET_VERTEX, fragmentShader: MIRROR_SHEET_FRAGMENT,
       uniforms: { ...rideUniforms(), uEnvCube: { value: environment.cubeTexture }, uSkyAmbient: { value: lighting.skyAmbient } },
-      ...mirrorBlend, side: THREE.DoubleSide,
+      side: THREE.DoubleSide,
     });
-    this.columnMirrorMaterial = new THREE.ShaderMaterial({
+    this.columnMirror = mirrorPair({
       vertexShader: COLUMN_VERTEX, fragmentShader: MIRROR_COLUMN_FRAGMENT,
       uniforms: { uProjScale: { value: 1000 }, uMinPixelRadius: { value: 1.0 }, uEnvCube: { value: environment.cubeTexture } },
-      ...mirrorBlend, side: THREE.DoubleSide,
+      side: THREE.DoubleSide,
     });
-    this.dropMirrorMaterial = new THREE.ShaderMaterial({
+    this.dropMirror = mirrorPair({
       vertexShader: PARTICLE_VERTEX, fragmentShader: MIRROR_DROP_FRAGMENT,
       uniforms: { ...particleUniforms(), uLeastRadius: { value: MIRROR_DROP_RADIUS }, uEnvCube: { value: environment.cubeTexture }, uSkyAmbient: { value: lighting.skyAmbient }, uSunIrradiance: { value: lighting.sunIrradiance } },
-      ...mirrorBlend,
     });
-    mirrorWith(this.particleMesh, this.dropMirrorMaterial, (box) => this.dropletBounds(box));
+    mirrorWith(this.particleMesh, this.dropMirror, (box) => this.dropletBounds(box));
     this.mirrorList = [];
     this.dropletBox = new THREE.Box3();
     this.dropletMin = new THREE.Vector3();
@@ -1021,21 +1037,33 @@ export class SplashSystem {
     this.prepareScene();
     for (const crown of this.crowns) crown.updateGeometry(this.time);
     for (const column of this.columns) column.updateGeometry(this.time);
-    this.particleMesh.visible = this.count > 0;
+    // The beads on the crowns' fingertips (src/crown.js) are drawn as droplets
+    // after the ones in flight, which are not stepped past `count`.
+    let beads = 0;
+    for (const crown of this.crowns) beads += crown.beadsInto(this, this.count + beads);
+    if (beads > 0) {
+      this.instancePositions.needsUpdate = true;
+      this.instanceRadii.needsUpdate = true;
+      this.instanceVelocities.needsUpdate = true;
+      this.instanceLenses.needsUpdate = true;
+    }
+    const drawn = this.count + beads;
+    this.particleGeometry.instanceCount = drawn;
+    this.particleMesh.visible = drawn > 0;
     const list = this.mirrorList;
     list.length = 0;
     // The droplets join only while one is big enough to see in the mirror; off
     // the mirror layer otherwise, since the mirror pass draws what is on it.
     let mirroredDrops = false;
-    for (let index = 0; index < this.count && !mirroredDrops; index++) mirroredDrops = this.radii[index] >= MIRROR_DROP_RADIUS;
+    for (let index = 0; index < drawn && !mirroredDrops; index++) mirroredDrops = this.radii[index] >= MIRROR_DROP_RADIUS;
     if (mirroredDrops) {
       this.particleMesh.layers.enable(MIRROR_LAYER);
       list.push(this.particleMesh);
     } else {
       this.particleMesh.layers.disable(MIRROR_LAYER);
     }
-    for (const crown of this.crowns) list.push(mirrorWith(crown.mesh, this.sheetMirrorMaterial));
-    for (const column of this.columns) list.push(mirrorWith(column.mesh, this.columnMirrorMaterial));
+    for (const crown of this.crowns) list.push(mirrorWith(crown.mesh, this.sheetMirror));
+    for (const column of this.columns) list.push(mirrorWith(column.mesh, this.columnMirror));
   }
 
   /** What is alive to be mirrored this frame (after prepareFrame): objects tagged by mirrorWith. Empty when the splash is over. */
@@ -1070,10 +1098,12 @@ export class SplashSystem {
   /** The mirror pass's view (its camera and the height of its target in pixels), before it draws mirrorObjects(). */
   setMirrorView(mirrorCamera, height) {
     const projScale = mirrorCamera.projectionMatrix.elements[5] * height * 0.5;
-    this.dropMirrorMaterial.uniforms.uProjScale.value = projScale;
-    this.dropMirrorMaterial.uniforms.uStreakSeconds.value = this.streakSeconds;
-    this.dropMirrorMaterial.uniforms.uSunDirView.value.copy(this.lighting.sunDirection).transformDirection(mirrorCamera.matrixWorldInverse);
-    this.columnMirrorMaterial.uniforms.uProjScale.value = projScale;
+    // The distance materials share these uniform objects.
+    const drop = this.dropMirror.colour.uniforms;
+    drop.uProjScale.value = projScale;
+    drop.uStreakSeconds.value = this.streakSeconds;
+    drop.uSunDirView.value.copy(this.lighting.sunDirection).transformDirection(mirrorCamera.matrixWorldInverse);
+    this.columnMirror.colour.uniforms.uProjScale.value = projScale;
   }
 
   setPassMaterials(particleMaterial, sheetMaterial, columnMaterial) {

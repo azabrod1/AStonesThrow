@@ -1,6 +1,7 @@
 // GLSL for the pond: water surface with the foam's bubble pattern
-// (FOAM_PATTERN), pond floor with caustics, bubbles, and the foam specks that
-// ride the surface after a splash (src/foamSpecks.js). All scene passes
+// (FOAM_PATTERN), pond floor with caustics, bubbles, the foam specks that
+// ride the surface after a splash (src/foamSpecks.js), and where the still
+// surface shows what is under it (SEEN_THROUGH_WATER). All scene passes
 // render linear HDR radiance; the composite pass tone-maps.
 //
 // GLSL_COMMON also carries the ambient wind waves (src/ambientWaves.js) and
@@ -497,10 +498,13 @@ export const WATER_FRAGMENT = /* glsl */`
 uniform sampler2D uHeight;
 uniform sampler2D uFoam;
 uniform vec2 uFoamDrift;          // how far the wind has carried the foam (m): its pattern drifts with the map
-uniform sampler2D uReflection;    // the sky dome seen through a mirrored camera
+uniform sampler2D uReflection;    // the sky dome seen through a mirrored camera; alpha: nearness (MIRROR_COMMON, src/shaders/fluid.js)
 uniform mat4 uReflectionMatrix;   // world -> reflection texture coordinates
+uniform vec4 uMirrorNear;         // the splash's image in the mirror, uv corners (x0, y0, x1, y1); empty (x0 > x1) when none
+uniform vec2 uMirrorSize;         // the mirror image's pixels
 uniform sampler2D uUnderColor;
 uniform sampler2D uUnderDepth;
+uniform float uStonesUnder;       // 1 while a stone is under the water (src/main.js), else 0
 uniform vec2 uResolution;
 uniform float uNear;
 uniform float uFar;
@@ -538,6 +542,52 @@ float ambientUnresolvedVariance(vec2 worldXZ) {
   float level = clamp(0.5 * log2(max(max(dot(acrossX, acrossX), dot(acrossY, acrossY)), 1e-8)), 0.0, float(AMBIENT_LEVELS - 1) - 0.001);
   int lower = int(level);
   return mix(uAmbientUnresolved[lower], uAmbientUnresolved[lower + 1], level - float(lower));
+}
+
+// The refraction's lookup, landing on what is less than this share of the
+// pixel's own water deep (a stone over the floor), is moved back (main).
+#define STONE_OVERSHOOT 0.75
+
+// The mirror image holds the splash (uMirrorNear not empty): what is near
+// in it has its nearness to the mirror camera in alpha (1 − scale/distance;
+// 1 for the sky). A near object's reflection must move with the ripples by
+// d/(L + d) of what the sky's does (d its distance from the surface, L the
+// mirror camera's): its point at d along the rippled ray is looked up, not
+// the ray's direction. The object comes from the flat mirror's texel there
+// (its centre, nearest, so the distance is one object's and not a blend
+// with the sky's): the sky the ray reaches past it, or what the flat mirror
+// shows there, if nothing is near. Where the flat mirror shows sky but the
+// rippled direction lands on a near object, the ray cannot have hit it from
+// here (it would have been found nearer the flat texel) and the sky behind
+// it is not in the image: the flat texel's sky stands in. Only pixels whose
+// flat or rippled lookup falls in the splash's rectangle take this; two
+// fetches each.
+#define MIRROR_NEARNESS_SCALE 4.0     // MIRROR_COMMON's
+#define MIRROR_FARTHEST 1e-3          // nearness under this (beyond a kilometre): the sky
+vec3 nearReflection(vec2 rippleUv, vec3 ray) {
+  vec2 rippleLookup = clamp(rippleUv, vec2(0.002), vec2(0.998));
+  vec4 flatCoord = uReflectionMatrix * vec4(vWorld, 1.0);
+  vec2 flatUv = flatCoord.xy / max(flatCoord.w, 1e-4);
+  bool flatNear = all(greaterThanEqual(flatUv, uMirrorNear.xy)) && all(lessThanEqual(flatUv, uMirrorNear.zw));
+  bool rippleNear = all(greaterThanEqual(rippleUv, uMirrorNear.xy)) && all(lessThanEqual(rippleUv, uMirrorNear.zw));
+  if (!flatNear && !rippleNear) return texture2D(uReflection, rippleLookup).rgb;
+  vec2 flatTexel = clamp((floor(flatUv * uMirrorSize) + 0.5) / uMirrorSize, vec2(0.002), vec2(0.998));
+  vec3 mirrorEye = vec3(cameraPosition.x, -cameraPosition.y, cameraPosition.z);
+  float surfaceDistance = distance(vWorld, mirrorEye);
+  if (flatNear) {
+    vec4 atFlat = texture2D(uReflection, flatTexel);
+    float nearness = (1.0 - atFlat.a) / MIRROR_NEARNESS_SCALE;
+    if (nearness > MIRROR_FARTHEST) {
+      float along = max(1.0 / nearness - surfaceDistance, 0.0);
+      vec4 nearCoord = uReflectionMatrix * vec4(vWorld + ray * along, 1.0);
+      return texture2D(uReflection, clamp(nearCoord.xy / max(nearCoord.w, 1e-4), vec2(0.002), vec2(0.998))).rgb;
+    }
+    vec4 atRipple = texture2D(uReflection, rippleLookup);
+    return (1.0 - atRipple.a) * surfaceDistance > 0.5 * MIRROR_NEARNESS_SCALE ? atFlat.rgb : atRipple.rgb;
+  }
+  vec4 atRipple = texture2D(uReflection, rippleLookup);
+  if ((1.0 - atRipple.a) * surfaceDistance <= 0.5 * MIRROR_NEARNESS_SCALE) return atRipple.rgb;
+  return texture2D(uReflection, flatTexel).rgb;
 }
 
 void main() {
@@ -592,6 +642,18 @@ void main() {
   float underDistZ2 = rawDepth2 >= 1.0 ? uFar : -perspectiveDepthToViewZ(rawDepth2, uNear, uFar);
   float path2 = max(underDistZ2 - surfaceDistZ, 0.0) * viewDist / surfaceDistZ;
   if (path2 < 0.02) { refractUv = screenUv; path2 = path; }
+  // A stone over the floor (the under-water pass draws it where the still
+  // surface shows it, src/rock.js): the shift above is for the water under
+  // this pixel, down to the floor, and where it lands on the stone, much
+  // shallower, the ray the slope bends has reached the stone's depth after
+  // only path2/path of that: the lookup moves back by that share and takes
+  // what is there (one more fetch, only where a lookup lands on a stone), so
+  // the floor's large shifts no longer smear the stone.
+  if (uStonesUnder > 0.5 && rawDepth < 1.0 && path2 < STONE_OVERSHOOT * path) {
+    refractUv = clamp(screenUv + refractShift * (min(path2, 3.0) / min(path, 3.0)), vec2(0.002), vec2(0.998));
+    float rawDepth3 = texture2D(uUnderDepth, refractUv).r;
+    path2 = rawDepth3 >= 1.0 ? path : max(max(-perspectiveDepthToViewZ(rawDepth3, uNear, uFar) - surfaceDistZ, 0.0) * viewDist / surfaceDistZ, 0.02);
+  }
   vec3 underColor = texture2D(uUnderColor, refractUv).rgb;
   vec3 transmittance = exp(-uAbsorb * path2);
   float scattering = 1.0 - exp(-path2 / uScatterLength);
@@ -604,7 +666,9 @@ void main() {
   // the camera moves the image up or down by twice its tilt; one tilting
   // sideways turns it far less at grazing angles, so reflections stretch into
   // vertical streaks, as they do on a lake. A ray turned below the horizon
-  // would meet the next ripple; it takes the horizon's colour.
+  // would meet the next ripple; it takes the horizon's colour. While the
+  // mirror holds the splash, near things are looked up where they are
+  // (nearReflection).
   vec3 reflectedRay = reflect(-v, n);
 #ifdef CAVITY_MESH
   // Inside the hole (and on the lip's inner face) a reflected ray leaves
@@ -617,7 +681,9 @@ void main() {
   reflectedRay.y = max(reflectedRay.y, 0.001);
   vec4 reflectCoord = uReflectionMatrix * vec4(reflectedRay, 0.0);
   vec2 reflectUv = reflectCoord.xy / max(reflectCoord.w, 1e-4);
-  vec3 reflected = texture2D(uReflection, clamp(reflectUv, vec2(0.002), vec2(0.998))).rgb;
+  vec3 reflected;
+  if (uMirrorNear.x > uMirrorNear.z) reflected = texture2D(uReflection, clamp(reflectUv, vec2(0.002), vec2(0.998))).rgb;
+  else reflected = nearReflection(reflectUv, reflectedRay);
 
 #ifdef CAVITY_MESH
   reflected = mix(refracted, reflected, escapes);
@@ -780,12 +846,51 @@ void main() {
 }
 `;
 
+// Where a point under the water is seen through the still surface (y = 0),
+// for what the under-water pass draws (submerged stones, src/rock.js, and
+// bubbles). The camera's ray to it bends where it enters the water (Snell's
+// law, index SEEN_WATER_INDEX): the surface point it enters at is found by
+// Newton's method from the straight line's (five steps leave under 1e-4 of
+// the depth, anywhere in view), and the point is moved along the camera's ray
+// through that surface point, keeping its depth. Drawn there, it is where the
+// water shader looks it up (along the camera's ray at that surface point),
+// so it is seen where it is seen through flat water, rather than on the
+// straight line, which from the home view puts a stone 10 cm down three
+// times too far toward the camera (0.31 m in front of the point above it
+// instead of 0.10 m) and one on the floor twice; and the water it is looked
+// through (the camera's ray from the surface down to its depth) is as long as
+// a floor point's at that depth along the same ray, so a stone on the floor
+// is absorbed as the floor around it is. The floor itself is still drawn on
+// the straight line. A point above the water stays where it is.
+export const SEEN_THROUGH_WATER = /* glsl */`
+#define SEEN_WATER_INDEX 1.333
+vec3 seenThroughWater(vec3 world) {
+  float depth = -world.y;
+  vec2 fromEye = world.xz - cameraPosition.xz;
+  float reach = length(fromEye);
+  float height = cameraPosition.y;
+  if (depth <= 0.0 || reach < 1e-5 || height <= 0.0) return world;
+  float crossing = reach * height / (height + depth);
+  for (int step = 0; step < 5; step++) {
+    float above = sqrt(crossing * crossing + height * height);
+    float rest = reach - crossing;
+    float below = sqrt(rest * rest + depth * depth);
+    float residual = crossing / above - SEEN_WATER_INDEX * rest / below;
+    float slope = height * height / (above * above * above) + SEEN_WATER_INDEX * depth * depth / (below * below * below);
+    crossing = clamp(crossing - residual / slope, 0.0, reach);
+  }
+  vec2 seen = cameraPosition.xz + fromEye * (crossing * (height + depth) / (height * reach));
+  return vec3(seen.x, world.y, seen.y);
+}
+`;
+
 export const BUBBLE_VERTEX = /* glsl */`
 attribute float aSize;
 uniform float uProjScale;
 varying float vFade;
+${SEEN_THROUGH_WATER}
 void main() {
-  vec4 viewPosition = modelViewMatrix * vec4(position, 1.0);
+  vec4 viewPosition = viewMatrix * vec4(seenThroughWater((modelMatrix * vec4(position, 1.0)).xyz), 1.0);
   float dist = max(-viewPosition.z, 0.05);
   gl_PointSize = max(aSize * 2.0 * uProjScale / dist, 1.5);
   vFade = clamp(aSize * 2.0 * uProjScale / dist / 1.5, 0.3, 1.0);

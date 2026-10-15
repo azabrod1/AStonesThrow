@@ -9,7 +9,8 @@
 //      columns (CPU);
 //   4. while a splash lives, draw it into the water's mirror image (below);
 //   5. render what is under the surface (floor, submerged stones, bubbles)
-//      to a texture with depth;
+//      to a texture with depth, the stones and bubbles where the still
+//      surface shows them (src/rock.js);
 //   6. render the main scene (sky dome, water surface refracting pass 5 and
 //      reflecting the mirror image, the stones' cavities in it
 //      (src/cavity.js), foam specks riding the surface, stones above the
@@ -282,9 +283,14 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
   // drops, each with the cheap water material mirrorWith gave it) is drawn
   // into the mirror every frame over the sky: only inside the rectangle its
   // image covers there, joined with the last frame's so that the sky paints
-  // over where it was. With nothing alive the cached mirror stays untouched:
-  // no pass at all. The mirror image has underScale of the canvas's
-  // resolution; the rectangle is in its own pixels.
+  // over where it was. Each is drawn twice, its colour and then its distance
+  // from the mirror camera into the target's alpha (MIRROR_COMMON in
+  // src/shaders/fluid.js); the dome and the clear leave alpha at 1, which
+  // says "as far as the sky". The water shader looks near objects up by that
+  // distance inside the rectangle the splash's image covers (splashRect,
+  // handed to the surface each frame). With nothing alive the cached mirror
+  // stays untouched: no pass at all. The mirror image has underScale of the
+  // canvas's resolution; the rectangle is in its own pixels.
   const mirrorCamera = new THREE.PerspectiveCamera();
   mirrorCamera.layers.set(MIRROR_LAYER);
   const reflectionMatrix = new THREE.Matrix4();
@@ -334,7 +340,11 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     renderer.setClearColor(0x000000, 1);
     renderer.clear(true, true, false);
     renderer.render(sceneMain, mirrorCamera);
-    if (objects.length > 0) renderer.render(splash.particleScene, mirrorCamera);
+    if (objects.length > 0) {
+      renderer.render(splash.particleScene, mirrorCamera);
+      for (const object of objects) object.material = object.userData.mirrorDistanceMaterial;
+      renderer.render(splash.particleScene, mirrorCamera);
+    }
     renderer.clippingPlanes = [];
     for (const object of objects) object.material = object.userData.passMaterial;
     reflectionTarget.scissorTest = false;
@@ -668,7 +678,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     // The splash's sheets and columns to this frame, for the mirror and the droplet passes.
     if (!skip.fluid) splash.prepareFrame();
     updateReflection();
-    surface.update({ underTarget, reflectionTarget, reflectionMatrix, resolution, camera, time: simulationTime });
+    surface.update({ underTarget, reflectionTarget, reflectionMatrix, mirrorRect: splashRect, stonesUnder: rocks.some((rock) => rock.state !== 'air'), resolution, camera, time: simulationTime });
     splash.prepareScene();   // the stones' cavities, and the patch dipping under them
     if (skip.cavity) surface.setCavities([]);
     surface.inner.visible = surface.outer.visible = !skip.surface;

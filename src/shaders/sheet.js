@@ -17,7 +17,11 @@
 // the ray passes through, and the wall's aeration: the bead at the rim and
 // along the torn edge, whose weight is the length of aRimTangent over
 // RIM_LEAN (src/crown.js bends the bead's normal by 1.4 times the weight),
-// 1 at the edge.
+// 1 at the edge. A stone's crown's fingers (aRod = 1) are rods of water, not
+// film: the depth pass marks them as a column's tube (998), so the composite
+// shades them as the jet's glass is shaded, their normals leaning across
+// them as a rod's do (src/crown.js; the lean adds to aRimTangent, so a
+// finger's sides are aerated too, up to 0.86 at its roots).
 //
 // Column. A closed tube, so the depth pass writes view depth, 998 plus half
 // how round the surface is there (aRound: 1 on the end cap and bulb, a lens
@@ -38,6 +42,7 @@ export const SHEET_VERTEX = /* glsl */`
 attribute float aThickness;
 attribute vec3 aRimTangent;
 attribute float aRide;
+attribute float aRod;
 uniform sampler2D uHeight;
 uniform vec2 uDomainMin;
 uniform float uDomainSize;
@@ -47,6 +52,7 @@ varying vec3 vViewNormal;
 varying vec3 vViewRimTangent;
 varying float vThickness;
 varying float vAeration;
+varying float vRod;
 ${GLSL_COMMON}
 void main() {
   vec4 world = modelMatrix * vec4(position, 1.0);
@@ -60,6 +66,7 @@ void main() {
   vViewRimTangent = normalMatrix * aRimTangent;
   vThickness = aThickness;
   vAeration = clamp(length(aRimTangent) / RIM_LEAN, 0.0, 1.0);
+  vRod = aRod;
   gl_Position = projectionMatrix * viewPosition;
 }
 `;
@@ -70,6 +77,7 @@ uniform vec2 uResolution;
 varying vec3 vViewPosition;
 varying vec3 vViewNormal;
 varying vec3 vViewRimTangent;
+varying float vRod;
 void main() {
   float sceneDepth = texture2D(uSceneDepth, gl_FragCoord.xy / uResolution).r;
   if (gl_FragCoord.z > sceneDepth) discard;
@@ -77,7 +85,7 @@ void main() {
   vec3 normal = normalize(vViewNormal);
   if (dot(normal, toViewer) < 0.0) normal = -normal;
   normal = normalize(normal + vViewRimTangent);
-  gl_FragColor = vec4(-vViewPosition.z, 999.0, normal.xy);
+  gl_FragColor = vec4(-vViewPosition.z, vRod > 0.5 ? 998.0 : 999.0, normal.xy);
 }
 `;
 

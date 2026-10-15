@@ -73,9 +73,12 @@ known timing, and the droplets are choreographed from them:
    cavity (2.), biased forward. It is water launched from the ring over a few
    milliseconds, each element then flying on its own, slowed by surface
    tension and air, so the whole sheet is a closed form in launch time,
-   azimuth and time. Its rim thickens into a bead, goes wavy and sheds drops
-   from the crests; after about 60 ms (for a 3 cm stone) the sheet tears
-   from the rim down into drops that carry its velocity. A thrown stone enters obliquely (about 40
+   azimuth and time. Its rim thickens into a bead and grows fingers: narrow
+   rods of water between shallow arcs of rim, each ending in a round bead
+   that swells, pinches off as a drop as big as the rim is thick, and
+   starts again; after about 60 ms (for a 3 cm stone) the sheet tears, the
+   arcs first and the fingers last, from the rim down into drops that carry
+   its velocity. A thrown stone enters obliquely (about 40
    to 55° from vertical), and then a fan comes first: the same sheet model
    over a sector 60° either side of the direction of travel, launched from
    the forward contact line at about 0.9 of the entry speed and 65 to 75°
@@ -161,7 +164,8 @@ as the stone is big, so air and surface tension slow it less, it drains
 slower and stands longer: a 16 cm stone's crown stands for 160 ms, its rim
 17 cm high and 70 cm across, and tears into drops of up to 9 mm, while a
 1.5 cm pebble's rises 4 cm. Its rim fingers as a decelerating rim does, so a
-big crown has more, finer fingers rather than a few huge petals. A big
+big crown has more fingers rather than a few huge petals: 24 on a 16 cm
+stone's, 15 on a 6 cm one's, 12 on a 4 cm one's. A big
 stone's jet is fat (its Froude number is lower, so the cavity's collapse is
 less singular) and breaks up slowly (a column's capillary time grows as its
 radius to the 1.5): a 16 cm stone's is 11 cm across at the water, rises
@@ -196,7 +200,10 @@ splash throws tens to a few hundred drops a stone (a 16 cm stone about 1500
 over its life, at most about 700 in the air at once, most of them several
 millimetres across), not thousands of specks. The water mirrors the splash:
 while it lives, its sheets, columns and drops are drawn as cheap water into
-the mirror image the pond reflects, over just the rectangle they cover.
+the mirror image the pond reflects, over just the rectangle they cover, with
+how far each is from the mirror's camera, so that the water looks a near
+thing's reflection up where it is: the jet's reflection hangs under the jet
+and only trembles with the ripples, where the sky's streaks with them.
 
 **Sky** (`src/sky.js`). The sky is a photograph: an equirectangular HDRI
 of a meadow with trees on a dome at the far plane, turned about the vertical
@@ -217,14 +224,19 @@ droplets reflect, and a prefiltered copy lights the stones.
 
 **Rendering** (`src/main.js`, `src/shaders/`). Each frame: the floor,
 submerged stones and bubbles are rendered to a texture with depth (at half
-the canvas's resolution on Medium and Low); the main
+the canvas's resolution on Medium and Low), the stones and bubbles where the
+still surface shows them, bent by refraction (a stone 10 cm down is seen a
+third as far in front of the point above it as a straight line from the
+camera puts it, and one on the floor half as far), the floor on the
+straight line; the main
 scene renders the sky dome and the water surface (with any open cavity, drawn
 by the same shader), which refracts that texture
 with absorption by path length through the water, reflects a planar mirror
 image of the sky dome, clouds and treeline (the camera never moves, so it is
 re-rendered only when the view zooms or turns; while a splash lives, it is
 drawn into it each frame, over the rectangle it covers) in the direction each ripple
-turns the view ray, so reflections wobble into vertical streaks, and adds
+turns the view ray, so reflections wobble into vertical streaks (near
+things, the splash's, by their distance, so they move far less), and adds
 the sun's glitter: a Beckmann highlight on the rippled normal, widened by the
 ripple finer than the pixel. Where there is foam it replaces the surface, a
 diffuse white under the sun and the sky; the foam specks ride on it. The

@@ -16,6 +16,11 @@
 // (src/main.js) draws both variants before the first throw, so their programs
 // are built by then.
 //
+// update() hands the shader, each frame, the two images it looks things up
+// in: the mirror image (with where the splash lies in it: the shader reads
+// distances there, WATER_FRAGMENT) and the under-water pass (with whether a
+// stone is under the water: its lookup is then checked against it).
+//
 // The inner patch's mesh carries only the displacement: the shader takes
 // the normal from the height textures per pixel, so the mesh needs no more
 // vertices than the displacement's silhouette and the cavity's dip need, and
@@ -63,8 +68,11 @@ export function createWaterSurface(water, lighting, ambientWaves, { meshSegments
     uFoamDrift: water.foamUniforms.uFoamDrift,
     uReflection: { value: null },
     uReflectionMatrix: { value: new THREE.Matrix4() },
+    uMirrorNear: { value: new THREE.Vector4(1, 1, 0, 0) },   // the splash's image in the mirror (uv), empty when none
+    uMirrorSize: { value: new THREE.Vector2(1, 1) },
     uUnderColor: { value: null },
     uUnderDepth: { value: null },
+    uStonesUnder: { value: 0 },
     uResolution: { value: new THREE.Vector2(1, 1) },
     uNear: { value: 0.05 },
     uFar: { value: 100 },
@@ -151,9 +159,15 @@ export function createWaterSurface(water, lighting, ambientWaves, { meshSegments
       }
       inner.material = count > 0 ? innerCavityMaterial : innerMaterial;
     },
-    update({ underTarget, reflectionTarget, reflectionMatrix, resolution, camera }) {
+    /** mirrorRect: where the splash is drawn in the mirror image (its pixels: x, y, width, height; 0 wide when nowhere). */
+    update({ underTarget, reflectionTarget, reflectionMatrix, mirrorRect = null, stonesUnder = false, resolution, camera }) {
+      uniforms.uStonesUnder.value = stonesUnder ? 1 : 0;
       uniforms.uReflection.value = reflectionTarget.texture;
       uniforms.uReflectionMatrix.value.copy(reflectionMatrix);
+      const width = reflectionTarget.width, height = reflectionTarget.height;
+      uniforms.uMirrorSize.value.set(width, height);
+      if (mirrorRect && mirrorRect.z > 0) uniforms.uMirrorNear.value.set(mirrorRect.x / width, mirrorRect.y / height, (mirrorRect.x + mirrorRect.z) / width, (mirrorRect.y + mirrorRect.w) / height);
+      else uniforms.uMirrorNear.value.set(1, 1, 0, 0);
       uniforms.uUnderColor.value = underTarget.texture;
       uniforms.uUnderDepth.value = underTarget.depthTexture;
       uniforms.uResolution.value.copy(resolution);
