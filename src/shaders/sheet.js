@@ -4,7 +4,10 @@
 // the drops as one body of water. All passes discard fragments hidden by the
 // scene, exactly as the droplets do, and draw both faces.
 //
-// Sheet. The depth pass writes what the droplet depth pass writes: view
+// Sheet. A landing drop's crown (aRide = 1) is lifted by the water's height
+// under each vertex, sampled as the water surface's vertex shader does, so it
+// stands on the waves it lands on; a stone's crown starts on still water and
+// keeps its own base. The depth pass writes what the droplet depth pass writes: view
 // depth, an on-screen radius of 999 pixels (so the composite shades a thin
 // film, never spray) and a sun glint. The glint uses the grid normal turned to
 // face the viewer, leaned along aRimTangent near the rim so the bead catches
@@ -26,16 +29,28 @@
 // as droplets are, so it never breaks into dashes.
 
 import { NORMAL_PACKING } from './fluid.js';
+import { GLSL_COMMON } from './scene.js';
 
 export const SHEET_VERTEX = /* glsl */`
 attribute float aThickness;
 attribute vec3 aRimTangent;
+attribute float aRide;
+uniform sampler2D uHeight;
+uniform vec2 uDomainMin;
+uniform float uDomainSize;
+uniform float uTexelOffset;
 varying vec3 vViewPosition;
 varying vec3 vViewNormal;
 varying vec3 vViewRimTangent;
 varying float vThickness;
+${GLSL_COMMON}
 void main() {
-  vec4 viewPosition = modelViewMatrix * vec4(position, 1.0);
+  vec4 world = modelMatrix * vec4(position, 1.0);
+  if (aRide > 0.5) {
+    vec2 domainUv = (world.xz - uDomainMin) / uDomainSize + uTexelOffset;
+    world.y += texture2D(uHeight, domainUv).r * patchMask(domainUv);
+  }
+  vec4 viewPosition = viewMatrix * world;
   vViewPosition = viewPosition.xyz;
   vViewNormal = normalMatrix * normal;
   vViewRimTangent = normalMatrix * aRimTangent;

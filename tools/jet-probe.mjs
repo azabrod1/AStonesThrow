@@ -9,7 +9,10 @@
 //   node tools/jet-probe.mjs [stoneRadius=0.03] [entrySpeed=6.3] [profileSecondsAfterEntry=0.3]
 //
 // The profile line gives the column's diameter where it leaves the water and
-// at half its height, at the given time after the stone's entry.
+// at half its height, at the given time after the stone's entry. The landing
+// lines fly the drops of 4 mm and more (the ones that throw a crown where
+// they land) with the splash's own drag and substeps, and say when and how
+// fast they reach the water.
 import { JetColumn } from '../src/jet.js';
 
 const stoneRadius = Number(process.argv[2] ?? 0.03);
@@ -21,14 +24,18 @@ const budget = Math.round(Math.min(Math.max(220 * sizeFactor ** 1.3, 80), 1200))
 const pinchDelay = 2.1 * Math.sqrt(stoneRadius / 9.81);
 
 const drops = [];
-const splash = { spawnDroplet: (x, y, z, vx, vy, vz, radius) => drops.push({ time: clock, x, y, z, vx, vy, vz, radius }) };
+const splash = {
+  frameSeconds: 1 / 60,
+  spawnDroplet: (x, y, z, vx, vy, vz, radius) => drops.push({ time: clock, x, y, z, vx, vy, vz, radius }),
+  spawnFoamSpecks: (x, z, innerRadius, outerRadius, count) => splats.push({ time: clock, kind: 'specks', radius: outerRadius, count }),
+};
 const splats = [];
 const water = { addSplat: (splat) => splats.push({ time: clock, kind: 'splat', ...splat }), addFoam: (foam) => splats.push({ time: clock, kind: 'foam', ...foam }) };
 
 let clock = 0;
 for (let warmUp = 0; warmUp < 5; warmUp++) {
   const quiet = new JetColumn({ x: 0, z: -1.4, radius: stoneRadius, tipSpeed, startTime: 0, budget, material: null });
-  const nowhere = { spawnDroplet() {}, addSplat() {}, addFoam() {} };
+  const nowhere = { frameSeconds: 1 / 60, spawnDroplet() {}, spawnFoamSpecks() {}, addSplat() {}, addFoam() {} };
   for (let tick = 1; !quiet.finished && tick < 480; tick++) {
     quiet.update(tick / 240, 1 / 240, nowhere, nowhere);
     if (tick % 4 === 0) quiet.updateGeometry(tick / 240);
@@ -131,6 +138,24 @@ const big = drops.filter((drop) => drop.radius > 0.002);
 console.log(`  ${(clock * 1000).toFixed(0)} ms (${((clock + pinchDelay) * 1000).toFixed(0)} after entry): column gone`);
 console.log(`drops: ${drops.length} (${big.length} over 2 mm), radii ${big.map((drop) => millimetres(drop.radius)).join(' ')}`);
 console.log(`volume: drops ${(dropVolume * 1e6).toFixed(1)} ml + fallen back about ${(fallen * 1e6).toFixed(1)} ml of ${(totalVolume * 1e6).toFixed(1)} ml launched`);
-console.log(`water: ${splats.map((splat) => `${splat.kind} r ${millimetres(splat.radius)} mm${splat.height ? ` h ${millimetres(splat.height)} mm` : ''}${splat.velocity ? ` v ${splat.velocity.toFixed(2)}` : ''}${splat.amount ? ` amount ${splat.amount.toFixed(2)}` : ''}`).join('; ')}`);
+console.log(`water: ${splats.map((splat) => `${splat.kind} r ${millimetres(splat.radius)} mm${splat.height ? ` h ${millimetres(splat.height)} mm` : ''}${splat.velocity ? ` v ${splat.velocity.toFixed(2)}` : ''}${splat.amount ? ` amount ${splat.amount.toFixed(2)}` : ''}${splat.count ? ` count ${splat.count}` : ''}`).join('; ')}`);
+// Fly the big drops to the water as SplashSystem.update does.
+const landings = [];
+for (const drop of drops.filter((candidate) => candidate.radius >= 0.004)) {
+  let { x, y, z, vx, vy, vz } = drop;
+  let time = drop.time;
+  while (time < 3) {
+    const speed = Math.hypot(vx, vy, vz);
+    const drag = Math.min((0.00027 / drop.radius) * speed * substep, 0.5);
+    vx -= vx * drag; vy -= vy * drag; vz -= vz * drag;
+    vy -= 9.81 * substep;
+    x += vx * substep; y += vy * substep; z += vz * substep;
+    time += substep;
+    if (y <= 0 && vy < 0) break;
+  }
+  landings.push({ time: time + pinchDelay, radius: drop.radius, speed: Math.hypot(vx, vy, vz), offset: Math.hypot(x, z + 1.4) });
+}
+landings.sort((first, second) => first.time - second.time);
+console.log(`landings of drops over 4 mm (s after entry, radius, speed, distance from the jet): ${landings.map((landing) => `${landing.time.toFixed(3)} s ${millimetres(landing.radius)} mm ${landing.speed.toFixed(2)} m/s ${millimetres(landing.offset)} mm`).join('; ')}`);
 console.log(`normals: worst outward cosine ${worstInward.toFixed(3)} (negative means some point inward)`);
 console.log(`CPU: ${(geometryMilliseconds / Math.max(geometryCalls, 1) * 1000).toFixed(0)} µs per frame for the geometry over ${geometryCalls} frames, ${(updateMilliseconds / updateCalls * 1000).toFixed(1)} µs per substep update`);

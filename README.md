@@ -8,8 +8,9 @@ Open `index.html` through any static server (`npm start`, then
 http://localhost:8123/). There is no build step. Three.js loads from a CDN.
 
 Tap or click the water to throw a stone there. Space throws one at random.
-The strip at the bottom sets the stone size, the throw strength, slow motion
-and the rendering quality.
+Scroll or pinch to zoom toward what is under the pointer (down to an 8°
+field of view); Escape or Reset view goes back. The strip at the bottom sets
+the stone size, the throw strength, slow motion and the rendering quality.
 
 ## How it works
 
@@ -52,6 +53,14 @@ known timing, and the droplets are choreographed from them:
    gone about half a second after entry;
 4. bubbles that rise and burst into foam.
 
+Drops ring the water where they land, and the big ones (the jet's, and the
+crown's largest) throw a small crown of their own, the classic drop-impact
+crown: the same sheet model with the drop's radius and speed, standing for
+about 20 ms. Foam specks (`src/foamSpecks.js`) are the grain of the foam the
+splash leaves: rafts of 2 to 4 mm points riding the waves where the crown
+stood, where the jet fell back, where drops landed and where bubbles
+surfaced, drifting outward and popping over 2 to 8 seconds.
+
 Droplets are integrated on the CPU and rendered as a screen-space fluid:
 sphere impostors stretched along their motion like a camera shutter would,
 into a depth buffer (with each drop's sun glint) and an additive thickness
@@ -68,8 +77,9 @@ from well to the side and, through its bulb, the sky upside down.
 submerged stones and bubbles are rendered to a texture with depth; the main
 scene renders the sky, shore and water surface, which refracts that texture
 with absorption by path length through the water, reflects a planar mirror
-image of the sky and shore rendered once (the camera never moves), and adds a
-GGX sun highlight that widens with distance to stand in for sub-pixel glitter.
+image of the sky and shore (the camera never moves, so it is re-rendered only
+when the view zooms or turns), and adds a GGX sun highlight that widens with
+distance to stand in for sub-pixel glitter; the foam specks ride on it.
 Caustics on the sand come from the Laplacian of the surface height above.
 Stones are faceted procedural geometry with a small rigid-body model: a
 ballistic arc, quadratic drag under water, and a settle into the sand.
@@ -78,17 +88,26 @@ ballistic arc, quadratic drag under water, and a settle into the sand.
 
 - `npm test` checks the GPU FFT formulation and the splat spectrum on the CPU.
 - `npm run shoot -- --label=name --throws=x:z:radius --times=0.1,0.5` renders
-  deterministic frames headlessly (Playwright + Chromium) into `shots/name/`.
+  deterministic frames headlessly (Playwright + Chromium) into `shots/name/`,
+  at exact times after the first impact.
   Options: `--fov`, `--look=x:y:z`, `--preimpact=seconds`, `--ui=1`,
   `--debug=under|height|foam|env|face`, `--eval="js"`, `--w --h --dpr`,
   `--crop=x:y:w:h --cropscale=n` (an enlarged crop of each frame),
-  `--report="js"` (printed after each frame), `--floats=half`.
+  `--report="js"` (printed after each frame), `--floats=half`. With
+  `--eval="window.__pond.setTimeScale(0.1)"` the frames are slow motion, 1/600 s
+  of world time each, so `--times=0.07,0.0716667,…` are consecutive frames.
 - `?floats=half` on the page forces half-float render targets everywhere, the
   path devices without `EXT_color_buffer_float` take.
 - `node tools/jet-probe.mjs [radius] [entrySpeed]` runs one Worthington jet on
-  the CPU and prints its timeline, drops, volume budget and cost per frame.
+  the CPU and prints its timeline, drops, volume budget, when its big drops
+  land and cost per frame.
+- `node tools/zoom-probe.mjs [--w=390 --h=844]` drives the wheel, a pinch, a
+  tap and Escape through the page's own handlers and checks that what is under
+  the pointer stays there.
 - `window.__pond` exposes the app in the console: `throwAt(x, z, { radius })`,
-  `setTimeScale`, `pause()`, `advance(seconds)`, `setDebugView(name)`.
+  `setTimeScale`, `pause()`, `advance(seconds)` (in the frames the app would
+  draw at the current time scale), `setDebugView(name)`, `setFov(degrees)`,
+  `lookAt(x, y, z)`, `resetView()`.
 
 Install the development dependencies with `npm install` (Three.js is only
 needed locally for the headless harness, which serves it instead of the CDN).

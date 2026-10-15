@@ -19,6 +19,18 @@
 //   4. Bubbles entrained with the stone rise and burst into foam.
 // Each stage also stamps the height field and the foam map.
 //
+// Drops ring the water where they land, and a large one (LANDING_CROWN_RADIUS
+// and up: the jet's tip and breakup drops, the crown's biggest) that has
+// flown at least LANDING_CROWN_FLIGHT and falls at LANDING_CROWN_SPEED or
+// more throws a small crown of its own, a CrownSheet with the drop's radius
+// and speed (at most MAX_LANDING_CROWNS alive; the rest, and smaller drops,
+// kick up a few droplets instead).
+//
+// Foam specks (src/foamSpecks.js) are the grain of the foam a splash leaves:
+// a patch where the crown's base was once it has gone, one where the jet
+// falls back, a few where each drop lands (by its size) and one where each
+// bubble surfaces. They ride the surface for 2 to 8 s.
+//
 // Droplets are integrated on the CPU (a few thousand points) and rendered as
 // a screen-space fluid: sphere impostors into a depth buffer, additive
 // thickness, bilateral depth smoothing so neighbouring drops merge into
@@ -28,12 +40,15 @@
 // shaded as one body of water; a column and the large drops it breaks into
 // (spawned with `lens`) are shaded as clear glass. Both meshes are evaluated in
 // closed form once per rendered frame (prepareFrame); at most MAX_CROWNS
-// crowns and MAX_JETS jets live at once, and nothing is drawn for them when
-// none are alive.
+// stone crowns and MAX_JETS jets live at once, and nothing is drawn for them
+// when none are alive. Their costly steps (the crown's tear, the jet's
+// breakup) run once per rendered frame, the frame's simulated length given by
+// setFrameSeconds before its substeps.
 import * as THREE from 'three';
 import { FullscreenPass, createFloatTarget } from './gpu.js';
 import { CrownSheet } from './crown.js';
 import { JetColumn } from './jet.js';
+import { FoamSpecks } from './foamSpecks.js';
 import { PARTICLE_VERTEX, PARTICLE_DEPTH_FRAGMENT, PARTICLE_THICKNESS_FRAGMENT, BLUR_FRAGMENT, COMPOSITE_FRAGMENT } from './shaders/fluid.js';
 import { SHEET_VERTEX, SHEET_DEPTH_FRAGMENT, SHEET_THICKNESS_FRAGMENT, COLUMN_VERTEX, COLUMN_DEPTH_FRAGMENT, COLUMN_THICKNESS_FRAGMENT } from './shaders/sheet.js';
 import { BUBBLE_VERTEX, BUBBLE_FRAGMENT } from './shaders/scene.js';
@@ -42,11 +57,20 @@ const GRAVITY = 9.81;
 const REFERENCE_RADIUS = 0.03;   // the stone size the tuning constants were set for
 const MAX_CROWNS = 5;            // an older crown tears at once when another arrives
 const MAX_JETS = 3;              // an older jet breaks into drops at once when another starts
+const LANDING_CROWN_RADIUS = 0.004;   // drops this big throw a crown where they land...
+const MAX_LANDING_CROWNS = 6;         // ...while fewer than this many are alive...
+const LANDING_CROWN_FLIGHT = 0.05;    // ...if they have flown this long (s)...
+const LANDING_CROWN_SPEED = 1.0;      // ...and fall this fast (m/s): not the drops a crown's torn foot drops back
+const LANDING_REFERENCE = 0.0086;     // a 3 cm stone's first tip drop: the landing crown tuning size
+const LANDING_BREAKUP = 40;           // its crown's breakup droplets (scaling with the drop's area)
+const CROWN_SPECKS = 220;             // foam specks where a 3 cm stone's crown stood (scaling with its area)
+const LANDING_SPECK_FREE = 0.003;     // a landing drop leaves a foam speck per LANDING_SPECK_STEP of radius beyond this
+const LANDING_SPECK_STEP = 0.0015;
 
 const randomRange = (lo, hi) => lo + Math.random() * (hi - lo);
 
 export class SplashSystem {
-  constructor({ capacity = 16000, bubbleCapacity = 3000, environment, lighting }) {
+  constructor({ capacity = 16000, bubbleCapacity = 3000, environment, lighting, water }) {
     this.capacity = capacity;
     this.count = 0;
     this.positions = new Float32Array(capacity * 3);
@@ -67,7 +91,9 @@ export class SplashSystem {
     this.crowns = [];    // live crown sheets
     this.plumes = [];    // scheduled bubble plumes
     this.time = 0;
+    this.frameSeconds = 1 / 60;   // simulated length of the frame being stepped
     this.lighting = lighting;
+    this.foamSpecks = new FoamSpecks({ water, lighting });
 
     // Droplet instances.
     const quad = new THREE.PlaneGeometry(2, 2);
@@ -108,8 +134,15 @@ export class SplashSystem {
       uResolution: { value: new THREE.Vector2(1, 1) },
       uSunDirView: { value: new THREE.Vector3() },
     });
-    this.sheetDepthMaterial = new THREE.ShaderMaterial({ vertexShader: SHEET_VERTEX, fragmentShader: SHEET_DEPTH_FRAGMENT, uniforms: sheetUniforms(), depthTest: true, depthWrite: true, side: THREE.DoubleSide });
-    this.sheetThicknessMaterial = new THREE.ShaderMaterial({ vertexShader: SHEET_VERTEX, fragmentShader: SHEET_THICKNESS_FRAGMENT, uniforms: sheetUniforms(), depthTest: false, depthWrite: false, blending: THREE.AdditiveBlending, transparent: true, side: THREE.DoubleSide });
+    // A landing crown rides the waves: the sheet's vertex shader samples the height field.
+    const rideUniforms = () => ({
+      uHeight: { value: water.heightTexture },
+      uDomainMin: { value: new THREE.Vector2(water.domainMin[0], water.domainMin[1]) },
+      uDomainSize: { value: water.domainSize },
+      uTexelOffset: { value: water.uvOffset },
+    });
+    this.sheetDepthMaterial = new THREE.ShaderMaterial({ vertexShader: SHEET_VERTEX, fragmentShader: SHEET_DEPTH_FRAGMENT, uniforms: { ...sheetUniforms(), ...rideUniforms() }, depthTest: true, depthWrite: true, side: THREE.DoubleSide });
+    this.sheetThicknessMaterial = new THREE.ShaderMaterial({ vertexShader: SHEET_VERTEX, fragmentShader: SHEET_THICKNESS_FRAGMENT, uniforms: { ...sheetUniforms(), ...rideUniforms() }, depthTest: false, depthWrite: false, blending: THREE.AdditiveBlending, transparent: true, side: THREE.DoubleSide });
     // Jet columns, likewise.
     const columnUniforms = () => ({ ...sheetUniforms(), uProjScale: { value: 1000 }, uMinPixelRadius: { value: 1.0 }, uFullFloatInfo: { value: 1 } });
     this.columnDepthMaterial = new THREE.ShaderMaterial({ vertexShader: COLUMN_VERTEX, fragmentShader: COLUMN_DEPTH_FRAGMENT, uniforms: columnUniforms(), depthTest: true, depthWrite: true, side: THREE.DoubleSide });
@@ -199,8 +232,9 @@ export class SplashSystem {
         (0.0005 + 0.0007 * Math.random()) * sizeFactor ** 0.4,
       );
     }
-    if (this.crowns.length >= MAX_CROWNS) {
-      const oldest = this.crowns[0];
+    const stoneCrowns = this.crowns.filter((candidate) => !candidate.landing);
+    if (stoneCrowns.length >= MAX_CROWNS) {
+      const oldest = stoneCrowns[0];
       oldest.finishNow(this);
       this.retireCrown(oldest);
     }
@@ -232,7 +266,25 @@ export class SplashSystem {
     });
   }
 
+  /** A big drop has landed: a crown of its own, its droplet count following the drop's area. */
+  startLandingCrown(hit) {
+    const breakup = Math.round(THREE.MathUtils.clamp(LANDING_BREAKUP * (hit.radius / LANDING_REFERENCE) ** 2, 6, 40));
+    const crown = new CrownSheet({
+      impact: { x: hit.x, z: hit.z, speed: hit.speed, velocity: { x: hit.velocityX, y: -hit.fallSpeed, z: hit.velocityZ }, radius: hit.radius },
+      startTime: this.time, rimDroplets: Math.round(0.25 * breakup), breakupDroplets: breakup,
+      material: this.sheetDepthMaterial, landing: true,
+    });
+    this.crowns.push(crown);
+    this.particleScene.add(crown.mesh);
+  }
+
+  /** A crown has gone. A stone's leaves foam specks where its base stood, 0.9 to 2.2 stone radii from its centre. */
   retireCrown(crown) {
+    if (!crown.landing) {
+      const radius = crown.radius;
+      const count = Math.round(THREE.MathUtils.clamp(CROWN_SPECKS * crown.sizeFactor ** 2, 40, 900));
+      this.spawnFoamSpecks(crown.centreX, crown.centreZ, 0.9 * radius, 2.2 * radius, count, 0.03);
+    }
     this.particleScene.remove(crown.mesh);
     crown.dispose();
     this.crowns.splice(this.crowns.indexOf(crown), 1);
@@ -259,6 +311,11 @@ export class SplashSystem {
     this.particleScene.remove(column.mesh);
     column.dispose();
     this.columns.splice(this.columns.indexOf(column), 1);
+  }
+
+  /** `count` foam specks in rafts over the ring between two radii around (x, z), drifting outward at up to `driftSpeed` m/s. */
+  spawnFoamSpecks(x, z, innerRadius, outerRadius, count, driftSpeed) {
+    this.foamSpecks.spawnPatch(x, z, innerRadius, outerRadius, count, this.time, driftSpeed);
   }
 
   /** `lens`: draw the drop as glass like the jet column it came from (unblurred, refracting). */
@@ -347,7 +404,7 @@ export class SplashSystem {
       const z = this.positions[p + 2] + vz * dt;
       this.ages[i] += dt;
       if ((y <= 0 && vy < 0) || this.ages[i] > 6) {
-        if (y <= 0 && radius > 0.0016) landings.push({ x, z, radius, speed: -vy });
+        if (y <= 0 && radius > 0.0016) landings.push({ x, z, radius, fallSpeed: -vy, speed: Math.sqrt(vx * vx + vy * vy + vz * vz), velocityX: vx, velocityZ: vz, flight: this.ages[i] });
         this.removeDroplet(i);
         continue;
       }
@@ -355,21 +412,32 @@ export class SplashSystem {
       this.velocities[p] = vx; this.velocities[p + 1] = vy; this.velocities[p + 2] = vz;
     }
 
-    // Falling drops ring the surface again, with a few secondary droplets.
+    // Falling drops ring the surface again. A big one throws a crown of its
+    // own, or failing that a few secondary droplets, and each leaves a few
+    // foam specks by its size.
     landings.sort((a, b) => b.radius - a.radius);
+    let landingCrowns = 0;
+    if (landings.length > 0) for (const crown of this.crowns) if (crown.landing) landingCrowns++;
     for (let n = 0; n < landings.length && n < 40; n++) {
       const hit = landings[n];
-      const strength = Math.min(hit.radius / 0.005, 2) * Math.min(hit.speed / 4, 1.5);
+      const strength = Math.min(hit.radius / 0.005, 2) * Math.min(hit.fallSpeed / 4, 1.5);
       water.addSplat({ x: hit.x, z: hit.z, radius: Math.max(hit.radius * 3, 0.015), velocity: -0.22 * strength, rim: 1.6 });
+      const crowned = hit.radius >= LANDING_CROWN_RADIUS && landingCrowns < MAX_LANDING_CROWNS && hit.flight >= LANDING_CROWN_FLIGHT && hit.fallSpeed >= LANDING_CROWN_SPEED;
+      if (crowned) {
+        this.startLandingCrown(hit);
+        landingCrowns++;
+      }
       if (hit.radius > 0.004) {
         water.addFoam({ x: hit.x, z: hit.z, radius: hit.radius * 3, amount: 0.05 * strength });
-        const sprayCount = Math.random() < 0.6 ? 1 + Math.floor(Math.random() * 3) : 0;
+        const sprayCount = crowned ? 0 : Math.random() < 0.6 ? 1 + Math.floor(Math.random() * 3) : 0;
         for (let s = 0; s < sprayCount; s++) {
           const angle = Math.random() * Math.PI * 2;
-          const out = randomRange(0.2, 0.9) * Math.min(hit.speed / 3, 1.5);
-          this.spawnDroplet(hit.x, 0.003, hit.z, Math.cos(angle) * out, randomRange(0.5, 1.8) * Math.min(hit.speed / 3, 1.5), Math.sin(angle) * out, hit.radius * randomRange(0.3, 0.5));
+          const out = randomRange(0.2, 0.9) * Math.min(hit.fallSpeed / 3, 1.5);
+          this.spawnDroplet(hit.x, 0.003, hit.z, Math.cos(angle) * out, randomRange(0.5, 1.8) * Math.min(hit.fallSpeed / 3, 1.5), Math.sin(angle) * out, hit.radius * randomRange(0.3, 0.5));
         }
       }
+      const specks = Math.floor((hit.radius - LANDING_SPECK_FREE) / LANDING_SPECK_STEP + Math.random());
+      if (specks > 0) this.spawnFoamSpecks(hit.x, hit.z, 0, 2 * hit.radius, specks, 0.02);
     }
 
     // Crown sheets shed from the rim and tear; their droplets are placed where
@@ -393,6 +461,8 @@ export class SplashSystem {
       const z = this.bubblePositions[p + 2] + (this.bubbleVelocities[p + 2] - wobble) * dt;
       if (y >= -0.002) {
         if (Math.random() < 0.3) water.addFoam({ x, z, radius: 0.012, amount: 0.06 });
+        // A surfacing bubble floats for a while as a speck its own size (2 to 4 mm across).
+        this.foamSpecks.spawn(x, z, randomRange(-0.004, 0.004), randomRange(-0.004, 0.004), this.time, THREE.MathUtils.clamp(2 * size, 0.002, 0.004));
         this.removeBubble(i);
         continue;
       }
@@ -407,6 +477,7 @@ export class SplashSystem {
     this.bubblePositionAttribute.needsUpdate = true;
     this.bubbleSizeAttribute.needsUpdate = true;
     this.bubblePoints.geometry.setDrawRange(0, this.bubbleCount);
+    this.foamSpecks.commit(this.time);
   }
 
   // ---- rendering --------------------------------------------------------
@@ -499,10 +570,19 @@ export class SplashSystem {
     this.compositePass.render(renderer, output);
   }
 
-  /** Motion streak length follows how much world time the frame covers (shutter ≈ half a frame). */
-  setFrameSeconds(seconds) { this.streakSeconds = seconds * 0.5; }
+  /**
+   * The simulated length of the frame about to be stepped, given before its
+   * substeps: the crown's tear and the jet's breakup advance once per frame,
+   * and the motion streaks follow it (shutter ≈ half a frame).
+   */
+  setFrameSeconds(seconds) {
+    this.frameSeconds = seconds;
+    this.streakSeconds = seconds * 0.5;
+  }
 
-  updateBubbleUniforms(camera, height) {
+  /** After the camera's projection changes: the bubbles' and foam specks' sizes on screen. */
+  updateViewUniforms(camera, height, pixelRatio) {
     this.bubbleMaterial.uniforms.uProjScale.value = camera.projectionMatrix.elements[5] * height * 0.5;
+    this.foamSpecks.setView(camera, height, pixelRatio);
   }
 }

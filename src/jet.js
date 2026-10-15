@@ -50,7 +50,9 @@
 // column as the slow material falls back. When the front reaches the foot the
 // column is gone: a stub still in the air becomes one last drop, and the
 // water gets a mound (height about 0.22·R, scaled by the cube root of the
-// fallen volume) with foam and a small secondary ring. For a 3 cm stone the
+// fallen volume) with foam, a patch of foam specks in a disc of 1.6·R
+// (FALLBACK_SPECKS times the same cube root, about 140 for a 3 cm stone) and
+// a small secondary ring. For a 3 cm stone the
 // jet starts 116 ms after entry; at 0.3 s it is 44 cm tall, 24 mm across at
 // the water, 14 mm at mid-height and 10 mm under its 17 mm bulb; the tip
 // drops leave at about 360 and 440 ms and the column is gone by about 530 ms.
@@ -60,8 +62,9 @@
 // placed by arc length below the cap's centre, crowded towards it where the
 // bulb, neck and beads are, each ring the larger of column and bulb, smoothly
 // blended, down to the foot. update() runs every simulation substep and
-// checks the tip, while the breakup advances at most every BREAK_INTERVAL of
-// simulated time. SplashSystem draws the mesh with the column materials in
+// checks the tip, while the breakup advances once per rendered frame:
+// whenever a frame's worth of simulated time (SplashSystem.frameSeconds) has
+// passed, so it moves on every frame at any time scale. SplashSystem draws the mesh with the column materials in
 // src/shaders/sheet.js through the droplets' screen-space fluid passes, where
 // the composite shades it as a glass lens; drops of LENS_DROP_RADIUS and more
 // are flagged to be drawn the same way (with their motion streak held short),
@@ -97,7 +100,7 @@ const RIPPLE_SLOWING = 0.12;       // ...once it has slowed, and anywhere during
 const RIPPLE_FRONT = 0.33;         // extra amplitude just below the breakup front, decaying over RIPPLE_DEPTH drops
 const RIPPLE_DEPTH = 2;
 const BREAK_SECONDS = 0.12;        // the front sweeps to the base in this long (× sqrt of the size)
-const BREAK_INTERVAL = 1 / 90;     // the breakup advances at most this often (simulated seconds)
+const FALLBACK_SPECKS = 110;       // foam specks where the jet falls back, times the mound's strength
 const LENS_DROP_RADIUS = 0.002;    // drops this big are drawn as glass like the column
 const WATER_DENSITY = 1000;
 const SURFACE_TENSION = 0.072;
@@ -162,7 +165,7 @@ export class JetColumn {
     this.hold = 0;                     // extra front travel before the current piece pinches off
     this.frontStartTau = 0;
     this.frontStartAge = 0;
-    this.breakClock = BREAK_INTERVAL;
+    this.breakClock = 0;               // simulated time since the breakup last advanced
     this.dropsSpawned = 0;
 
     this.positions = new Float32Array(ROWS * COLUMNS * 3);
@@ -328,9 +331,9 @@ export class JetColumn {
     if (this.phase === 'tip') {
       this.updateTip(splash);
     } else {
-      // The breakup is the costly part, so it advances at most every BREAK_INTERVAL.
+      // The breakup is the costly part, so it advances once per rendered frame.
       this.breakClock += dt;
-      if (this.breakClock >= BREAK_INTERVAL) {
+      if (this.breakClock >= splash.frameSeconds * (1 - 1e-6)) {
         this.breakClock = 0;
         this.advanceBreakup(splash, water, false);
       }
@@ -454,6 +457,7 @@ export class JetColumn {
     water.addSplat({ x: this.centreX, z: this.centreZ, radius: radius * 0.9, height: 0.22 * radius * strength });
     water.addSplat({ x: this.centreX, z: this.centreZ, radius: radius * 1.5, velocity: -0.18 * strength, rim: 1.8 });
     water.addFoam({ x: this.centreX, z: this.centreZ, radius: radius * 1.3, amount: 0.3 * strength });
+    splash.spawnFoamSpecks(this.centreX, this.centreZ, 0, radius * 1.6, Math.round(FALLBACK_SPECKS * strength), 0.025);
     this.finished = true;
   }
 

@@ -6,9 +6,21 @@
 //   3. render what is under the surface (floor, submerged stones, bubbles)
 //      to a texture with depth;
 //   4. render the main scene (sky, shore, water surface refracting pass 3,
-//      stones above the surface) to an HDR texture with depth;
+//      foam specks riding the surface, stones above the surface) to an HDR
+//      texture with depth;
 //   5. draw the droplets over it and tone-map to the canvas.
 // All simulation runs in world seconds scaled by the slow-motion factor.
+//
+// The camera never moves: the planar reflection and the throwing hand assume
+// its position. The view zooms by narrowing the field of view (from the home
+// 48° landscape or 62° portrait down to 8°) and turning the camera, horizon
+// level, so that what is under the pointer stays there (src/viewZoom.js): the
+// mouse wheel by 0.9 per notch, a two-finger pinch with the inverse of the
+// change in finger spacing, while the fingers' midpoint holds on to what was
+// under it. A zoomed view stays inside the home view, so zooming all the way
+// out returns to it; Escape and the Reset view button go straight back. The
+// mirror image of the sky and shore is re-rendered at the next frame
+// whenever the view has changed.
 import * as THREE from 'three';
 import { SpectralWater } from './spectralWater.js';
 import { createEnvironment } from './sky.js';
@@ -17,6 +29,7 @@ import { createPondFloor } from './pondFloor.js';
 import { Rock } from './rock.js';
 import { SplashSystem } from './splash.js';
 import { createFloatTarget, FullscreenPass, configureFloatSupport } from './gpu.js';
+import { viewFacing, directionAt, placeDirection, clampToFrame, zoomToward, isZoomed } from './viewZoom.js';
 
 const QUALITY = {
   high: { grid: 512, fluidScale: 1.0, maxDpr: 2.0 },
@@ -26,6 +39,9 @@ const QUALITY = {
 const POWER = { soft: 1.3, normal: 1.0, hard: 0.72 };   // flight-time multipliers
 const POND_DEPTH = 0.8;
 const MAX_ROCKS = 10;
+const MIN_FOV = 8;            // degrees: the narrowest zoom
+const WHEEL_STEP = 0.9;       // field of view factor per wheel notch
+const HOME_TARGET = [0, 0.12, -1.0];
 
 function detectQuality() {
   const coarse = window.matchMedia?.('(pointer: coarse)').matches;
@@ -33,7 +49,7 @@ function detectQuality() {
   return coarse || small ? 'low' : 'high';
 }
 
-export function startPond({ canvas, quality = 'auto', onReady, onError, onStats }) {
+export function startPond({ canvas, quality = 'auto', onReady, onError, onStats, onViewChange }) {
   let renderer;
   try {
     renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance', alpha: false, stencil: false });
@@ -75,11 +91,13 @@ export function startPond({ canvas, quality = 'auto', onReady, onError, onStats 
   const water = new SpectralWater(renderer, { size: settings.grid, domainSize: 6, centre: [0, -1.0], depth: POND_DEPTH });
   const surface = createWaterSurface(water, lighting, environment);
   const floor = createPondFloor(water, lighting);
-  const splash = new SplashSystem({ environment, lighting });
+  const splash = new SplashSystem({ environment, lighting, water });
 
   const camera = new THREE.PerspectiveCamera(48, 1, 0.05, 60000);
   camera.position.set(0, 1.15, 2.45);
-  camera.lookAt(0, 0.12, -1.0);
+  // The view: home is the framing the page opens with; view is the current one.
+  const home = { ...viewFacing(HOME_TARGET[0] - camera.position.x, HOME_TARGET[1] - camera.position.y, HOME_TARGET[2] - camera.position.z), fov: 48 };
+  const view = { ...home };
 
   const sun = new THREE.DirectionalLight(new THREE.Color(1.0, 0.95, 0.86), 3.0);
   sun.position.copy(sunDirection).multiplyScalar(50);
@@ -91,7 +109,7 @@ export function startPond({ canvas, quality = 'auto', onReady, onError, onStats 
   const sceneUnder = new THREE.Scene();
   sceneUnder.add(floor, splash.bubblePoints, sunUnder);
   const sceneMain = new THREE.Scene();
-  sceneMain.add(environment.sky, environment.shore, surface.inner, surface.outer, sun);
+  sceneMain.add(environment.sky, environment.shore, surface.inner, surface.outer, splash.foamSpecks.points, sun);
   // Layer 1 holds what the water mirrors: the sky and the far shore.
   environment.sky.layers.enable(1);
   environment.shore.layers.enable(1);
@@ -131,30 +149,31 @@ export function startPond({ canvas, quality = 'auto', onReady, onError, onStats 
       if (uMode < 1.5) { float h = t.r * 40.0; gl_FragColor = vec4(0.5 + h, 0.5 + h, 0.5 + h * 0.5 + abs(t.g) * 2.0, 1.0); return; }
       gl_FragColor = vec4(vec3(t.r), 1.0);
     }`, { uTexture: { value: null }, uCube: { value: environment.cubeTexture }, uMode: { value: 0 } });
-  let fovOverride = null;
   let underTarget = null;
   let mainTarget = null;
   let reflectionTarget = null;
 
   // The camera never moves, so the mirror image of the sky and shore is
-  // rendered once per resize through a camera reflected in the water plane
-  // (the same construction as Three.js's Reflector), then sampled by the
-  // water shader through this matrix.
+  // rendered only when the view changes (a resize or a zoom), through a camera
+  // reflected in the water plane (the same construction as Three.js's
+  // Reflector), then sampled by the water shader through this matrix.
   const mirrorCamera = new THREE.PerspectiveCamera();
   mirrorCamera.layers.set(1);
   const reflectionMatrix = new THREE.Matrix4();
   const reflectionClip = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0.0);
+  const mirrorNormal = new THREE.Vector3(0, 1, 0);
+  const mirrorEye = new THREE.Vector3();
+  const mirrorTarget = new THREE.Vector3();
+  const mirrorRotation = new THREE.Matrix4();
+  let viewChanged = true;      // the mirror image is stale
   function renderReflection() {
     camera.updateMatrixWorld();
-    const normal = new THREE.Vector3(0, 1, 0);
-    const cameraPosition = new THREE.Vector3().setFromMatrixPosition(camera.matrixWorld);
-    const rotation = new THREE.Matrix4().extractRotation(camera.matrixWorld);
-    const view = cameraPosition.clone().negate().reflect(normal).negate();
-    const lookAt = new THREE.Vector3(0, 0, -1).applyMatrix4(rotation).add(cameraPosition);
-    const target = lookAt.clone().negate().reflect(normal).negate();
-    mirrorCamera.position.copy(view);
-    mirrorCamera.up.set(0, 1, 0).applyMatrix4(rotation).reflect(normal);
-    mirrorCamera.lookAt(target);
+    mirrorEye.setFromMatrixPosition(camera.matrixWorld);
+    mirrorRotation.extractRotation(camera.matrixWorld);
+    mirrorTarget.set(0, 0, -1).applyMatrix4(mirrorRotation).add(mirrorEye).negate().reflect(mirrorNormal).negate();
+    mirrorCamera.position.copy(mirrorEye).negate().reflect(mirrorNormal).negate();
+    mirrorCamera.up.set(0, 1, 0).applyMatrix4(mirrorRotation).reflect(mirrorNormal);
+    mirrorCamera.lookAt(mirrorTarget);
     mirrorCamera.near = camera.near;
     mirrorCamera.far = camera.far;
     mirrorCamera.updateMatrixWorld();
@@ -173,6 +192,47 @@ export function startPond({ canvas, quality = 'auto', onReady, onError, onStats 
   const resolution = new THREE.Vector2();
   let dpr = 1;
 
+  // ---- the view ----------------------------------------------------------
+  const viewEuler = new THREE.Euler(0, 0, 0, 'YXZ');
+  let viewFromApi = false;     // set by setFov / lookAt, which may leave the home frame
+  let reportedZoom = false;
+
+  /** Point the camera as `view` says; the mirror image follows at the next frame. */
+  function applyView() {
+    camera.fov = view.fov;
+    camera.quaternion.setFromEuler(viewEuler.set(view.pitch, view.yaw, 0, 'YXZ'));
+    camera.updateProjectionMatrix();
+    camera.updateMatrixWorld();
+    splash.updateViewUniforms(camera, resolution.y, dpr);
+    viewChanged = true;
+    const zoomed = isZoomed(view, home);
+    if (zoomed !== reportedZoom) { reportedZoom = zoomed; onViewChange?.({ zoomed }); }
+  }
+
+  function setView(next, fromApi = false) {
+    view.yaw = next.yaw;
+    view.pitch = next.pitch;
+    view.fov = next.fov;
+    viewFromApi = fromApi;
+    applyView();
+  }
+
+  function resetView() { setView(home); }
+
+  function toDeviceCoordinates(clientX, clientY) {
+    const rect = canvas.getBoundingClientRect();
+    return { x: ((clientX - rect.left) / rect.width) * 2 - 1, y: -((clientY - rect.top) / rect.height) * 2 + 1 };
+  }
+
+  /** Zoom to a field of view, keeping what is under the client point there (zooming out also heads home). */
+  function zoomAt(clientX, clientY, fov) {
+    const point = toDeviceCoordinates(clientX, clientY);
+    const target = THREE.MathUtils.clamp(fov, MIN_FOV, home.fov);
+    let next = zoomToward(view, home, camera.aspect, point.x, point.y, target);
+    if (fov > view.fov) next = clampToFrame(next, home, camera.aspect);
+    if (isZoomed(next, view)) setView(next);   // otherwise nothing moved: at a limit
+  }
+
   function resize() {
     const width = Math.max(1, canvas.clientWidth);
     const height = Math.max(1, canvas.clientHeight);
@@ -180,18 +240,20 @@ export function startPond({ canvas, quality = 'auto', onReady, onError, onStats 
     renderer.setPixelRatio(dpr);
     renderer.setSize(width, height, false);
     resolution.set(Math.round(width * dpr), Math.round(height * dpr));
+    const zoomed = isZoomed(view, home);
     camera.aspect = width / height;
-    camera.fov = fovOverride ?? (width >= height ? 48 : 62);
-    camera.updateProjectionMatrix();
+    home.fov = width >= height ? 48 : 62;
+    // A view set through the API stays as it is; the user's zoom stays inside the new home frame.
+    if (!zoomed) Object.assign(view, home);
+    else if (!viewFromApi) Object.assign(view, clampToFrame({ ...view, fov: Math.min(view.fov, home.fov) }, home, camera.aspect));
     underTarget?.dispose();
     mainTarget?.dispose();
     reflectionTarget?.dispose();
     underTarget = createFloatTarget(resolution.x, resolution.y, { type: THREE.HalfFloatType, filter: THREE.LinearFilter, depth: true, depthTexture: true });
     mainTarget = createFloatTarget(resolution.x, resolution.y, { type: THREE.HalfFloatType, filter: THREE.LinearFilter, depth: true, depthTexture: true });
     reflectionTarget = createFloatTarget(resolution.x, resolution.y, { type: THREE.HalfFloatType, filter: THREE.LinearFilter, depth: true });
-    renderReflection();
     splash.resize(resolution.x, resolution.y, settings.fluidScale);
-    splash.updateBubbleUniforms(camera, resolution.y);
+    applyView();
   }
   resize();
   const observer = new ResizeObserver(() => resize());
@@ -247,8 +309,8 @@ export function startPond({ canvas, quality = 'auto', onReady, onError, onStats 
   const waterPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
   const pointer = new THREE.Vector2();
   function aimPoint(clientX, clientY) {
-    const rect = canvas.getBoundingClientRect();
-    pointer.set(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
+    const point = toDeviceCoordinates(clientX, clientY);
+    pointer.set(point.x, point.y);
     raycaster.setFromCamera(pointer, camera);
     const hit = new THREE.Vector3();
     if (!raycaster.ray.intersectPlane(waterPlane, hit)) return null;
@@ -272,29 +334,85 @@ export function startPond({ canvas, quality = 'auto', onReady, onError, onStats 
     arc.visible = true;
   }
 
-  let pressStart = null;
+  // A press that lifts where it went down throws. A second finger turns the
+  // gesture into a pinch, which never throws, even when one finger lifts first.
+  const activePointers = new Map();   // pointerId -> { x, y } in client pixels
+  let pressStart = null;              // { id, x, y } of the press that may throw
+  let pinch = null;                   // { distance, fov, direction } when the pinch began
+
+  function pinchSpan() {
+    const [first, second] = activePointers.values();
+    return { x: 0.5 * (first.x + second.x), y: 0.5 * (first.y + second.y), distance: Math.max(Math.hypot(first.x - second.x, first.y - second.y), 1) };
+  }
+
+  function startPinch() {
+    const span = pinchSpan();
+    const point = toDeviceCoordinates(span.x, span.y);
+    pinch = { distance: span.distance, fov: view.fov, direction: directionAt(view, camera.aspect, point.x, point.y) };
+  }
+
+  function movePinch() {
+    const span = pinchSpan();
+    const point = toDeviceCoordinates(span.x, span.y);
+    const fov = THREE.MathUtils.clamp((pinch.fov * pinch.distance) / span.distance, MIN_FOV, home.fov);
+    const placed = placeDirection(pinch.direction, point.x, point.y, fov, camera.aspect);
+    setView(clampToFrame({ yaw: placed.yaw, pitch: placed.pitch, fov }, home, camera.aspect));
+  }
+
+  function releasePointer(event) {
+    activePointers.delete(event.pointerId);
+    if (pinch && activePointers.size < 2) pinch = null;
+    if (pressStart?.id === event.pointerId) pressStart = null;
+  }
+
   canvas.addEventListener('pointerdown', (event) => {
-    pressStart = { x: event.clientX, y: event.clientY };
-    showAim(aimPoint(event.clientX, event.clientY));
-    canvas.setPointerCapture?.(event.pointerId);
+    activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    try { canvas.setPointerCapture(event.pointerId); } catch { /* a synthetic or already released pointer */ }
+    if (activePointers.size === 1) {
+      pressStart = { id: event.pointerId, x: event.clientX, y: event.clientY };
+      showAim(aimPoint(event.clientX, event.clientY));
+    } else if (activePointers.size === 2) {
+      pressStart = null;
+      showAim(null);
+      startPinch();
+    }
   });
   canvas.addEventListener('pointermove', (event) => {
+    const tracked = activePointers.get(event.pointerId);
+    if (tracked) { tracked.x = event.clientX; tracked.y = event.clientY; }
+    if (pinch) { if (tracked) movePinch(); return; }
     if (event.pointerType === 'mouse' || pressStart) showAim(aimPoint(event.clientX, event.clientY));
   });
   canvas.addEventListener('pointerup', (event) => {
-    const moved = pressStart ? Math.hypot(event.clientX - pressStart.x, event.clientY - pressStart.y) : 99;
-    pressStart = null;
-    const hit = aimPoint(event.clientX, event.clientY);
-    if (hit && moved < 14) throwAt(hit.x, hit.z);
+    const press = pressStart?.id === event.pointerId ? pressStart : null;
+    releasePointer(event);
+    if (press) {
+      const moved = Math.hypot(event.clientX - press.x, event.clientY - press.y);
+      const hit = aimPoint(event.clientX, event.clientY);
+      if (hit && moved < 14) throwAt(hit.x, hit.z);
+    }
     if (event.pointerType !== 'mouse') showAim(null);
   });
-  canvas.addEventListener('pointerleave', () => { pressStart = null; showAim(null); });
+  canvas.addEventListener('pointercancel', (event) => { releasePointer(event); showAim(null); });
+  canvas.addEventListener('pointerleave', (event) => { if (!activePointers.has(event.pointerId)) showAim(null); });
+  canvas.addEventListener('wheel', (event) => {
+    event.preventDefault();
+    // Notches: a mouse wheel sends about 100 pixels or 3 lines each. A trackpad
+    // pinch arrives as ctrl + wheel in small steps, scaled to feel like the page zoom.
+    let notches = event.deltaMode === 1 ? event.deltaY / 3 : event.deltaMode === 2 ? event.deltaY : event.deltaY / 100;
+    if (event.ctrlKey) notches *= 10;
+    notches = THREE.MathUtils.clamp(notches, -4, 4);
+    zoomAt(event.clientX, event.clientY, view.fov * WHEEL_STEP ** -notches);
+  }, { passive: false });
   window.addEventListener('keydown', (event) => {
     if (event.code === 'Space' && !event.repeat && event.target === document.body) { event.preventDefault(); throwRandom(); }
+    if (event.key === 'Escape' && isZoomed(view, home)) resetView();
   });
 
   // ---- simulation and rendering ----------------------------------------
   function simulate(dt) {
+    // The tear and breakup fronts advance once per frame, so the splash needs the frame's length first.
+    splash.setFrameSeconds(dt);
     const substep = 1 / 240;
     const steps = Math.min(Math.max(1, Math.ceil(dt / substep)), 12);
     const h = dt / steps;
@@ -307,12 +425,12 @@ export function startPond({ canvas, quality = 'auto', onReady, onError, onStats 
       simulationTime += h;
     }
     for (const rock of [...rocks]) if (rock.restTime > 40) retireRock(rock);
-    splash.setFrameSeconds(dt);
     water.step(dt);
   }
 
   function render() {
     camera.updateMatrixWorld();
+    if (viewChanged) { renderReflection(); viewChanged = false; }
     surface.update({ underTarget, reflectionTarget, reflectionMatrix, resolution, camera, time: simulationTime });
     floor.material.uniforms.uHeight.value = water.heightTexture;
 
@@ -368,17 +486,26 @@ export function startPond({ canvas, quality = 'auto', onReady, onError, onStats 
     },
     pause() { running = false; },
     resume() { if (!running) { running = true; lastFrame = performance.now(); requestAnimationFrame(frame); } },
-    /** Deterministic stepping for screenshots: simulate in 1/60 s chunks, then draw once. */
+    /**
+     * Deterministic stepping for screenshots: simulate `seconds` of world time
+     * in the frames the app would draw, 1/60 s of real time each (so a time
+     * scale of 0.1 makes frames of 1/600 s), then draw once.
+     */
     advance(seconds) {
-      const chunk = 1 / 60;
+      const chunk = Math.max(timeScale, 0.01) / 60;
       let remaining = seconds;
       while (remaining > 1e-6) { const dt = Math.min(chunk, remaining); simulate(dt); remaining -= dt; }
       render();
     },
     hasImpacted() { return rocks.some((rock) => rock.state !== 'air'); },
     setDebugView(name) { debugView = name; },
-    setFov(degrees) { fovOverride = degrees; camera.fov = degrees; camera.updateProjectionMatrix(); renderReflection(); },
-    lookAt(x, y, z) { camera.lookAt(x, y, z); camera.updateMatrixWorld(); renderReflection(); },
+    /** Set the field of view (degrees), keeping the look direction; unlike the user's zoom it may leave the home frame. */
+    setFov(degrees) { setView({ yaw: view.yaw, pitch: view.pitch, fov: degrees }, true); },
+    /** Turn the camera to look at a world point, horizon level. */
+    lookAt(x, y, z) { setView({ ...viewFacing(x - camera.position.x, y - camera.position.y, z - camera.position.z), fov: view.fov }, true); },
+    /** Back to the home view the page opens with. */
+    resetView,
+    get zoomed() { return isZoomed(view, home); },
     get time() { return simulationTime; },
     get rocks() { return rocks; },
     get quality() { return qualityName; },

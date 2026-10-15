@@ -7,7 +7,10 @@
 //   node tools/shoot.mjs --label=first --throws=0:-1.4:0.03 --times=0.02,0.08,0.15,0.3,0.6,1.2
 //
 // --throws: x:z:radius per stone, comma separated. --times: seconds after the
-// first impact to capture. --w/--h/--dpr set the viewport. --ui=1 keeps the UI.
+// first impact to capture (frames are named tS_CC.png, or tS_CCCC.png for a
+// time that needs four decimals, such as a run of slow-motion frames). The
+// flight is stepped a frame at a time; the part of the last step after the
+// impact counts toward the first capture, so the times are exact. --w/--h/--dpr set the viewport. --ui=1 keeps the UI.
 // --crop=x:y:width:height also saves that region of each frame (CSS pixels)
 // as tN_NN_crop.png, enlarged --cropscale times with square pixels (default 1).
 // --report="js expression" is evaluated in the page after each frame and its
@@ -115,12 +118,19 @@ while (!(await page.evaluate(() => window.__pond.hasImpacted())) && flight < 3) 
   await page.evaluate(() => window.__pond.advance(1 / 60));
   flight += 1 / 60;
 }
-console.log(`[shoot] impact after ${flight.toFixed(2)} s of flight`);
-let elapsed = 0;
+// The flight steps overshoot the impact: by the age of the first stone's crown.
+const overshoot = await page.evaluate(() => {
+  const splash = window.__pond.splash;
+  const starts = splash.crowns.filter((crown) => !crown.landing).map((crown) => crown.startTime);
+  return starts.length ? splash.time - Math.min(...starts) : 0;
+});
+console.log(`[shoot] impact after ${flight.toFixed(2)} s of flight (${(overshoot * 1000).toFixed(1)} ms ago)`);
+let elapsed = overshoot;
 for (const t of times) {
   await page.evaluate((seconds) => window.__pond.advance(seconds), Math.max(t - elapsed, 0));
   elapsed = Math.max(t, elapsed);
-  const name = `t${t.toFixed(2).replace('.', '_')}.png`;
+  const decimals = Math.abs(Number(t.toFixed(2)) - t) < 1e-9 ? 2 : 4;
+  const name = `t${t.toFixed(decimals).replace('.', '_')}.png`;
   await page.screenshot({ path: path.join(outDir, name), timeout: 180000 });
   console.log(`[shoot] ${name}`);
   if (report) console.log(`[shoot] report: ${JSON.stringify(await page.evaluate(report))}`);

@@ -18,14 +18,15 @@
 // to 2·R), so the base stays on the water while the sheet lives. The tail
 // leaves the ring at 0.6·h0, so the foot stays light.
 //
-// Around the ring u is modulated by 1 + 0.08·Σ a_k·cos(k·theta + phase_k) over
-// modes k = 5…9, plus k = 12…18 at half the amplitude, with random a_k in
-// [0.5, 1]. Faster elements fly further, so the rim goes wavy (the
-// Rayleigh–Plateau instability of the rim) and grows scallops; their crests
-// shed droplets until the sheet breaks. An oblique entry multiplies u by
-// 1 + 0.45·forward (forward = cosine to the direction of travel times the
-// horizontal fraction of the entry speed), thins the back side to match, and
-// carries every element along at 0.22 of the horizontal entry velocity.
+// Around the ring u is modulated by 1 + 0.05·Σ a_k·cos(k·theta + phase_k) over
+// modes k = 5…9 and k = 12…18 alike, with random a_k in [0.5, 1] (stronger
+// low modes turn some crowns into three or four petals). Faster elements fly
+// further, so the rim goes wavy (the Rayleigh–Plateau instability of the rim)
+// and grows fine scallops; their crests shed droplets until the sheet breaks.
+// An oblique entry multiplies u by 1 + 0.45·forward (forward = cosine to the
+// direction of travel times the horizontal fraction of the entry speed), thins
+// the back side to match, and carries every element along at 0.22 of the
+// horizontal entry velocity.
 //
 // Thickness is h0·(r0/r)/(1 + age/0.04 s), at least 0.2 mm, with
 // h0 = 1.5 mm·sqrt(R / 3 cm): the sheet thins as it spreads around a widening
@@ -43,12 +44,27 @@
 // sheet stands whole for 60 ms, its rim peaking near 5 cm (9 cm on the forward
 // side of an oblique throw), and is gone by about 100 ms.
 //
+// A large drop landing makes a small crown of its own, the classic
+// drop-impact crown: the same model with the drop's radius and landing speed
+// (`landing`), on a LANDING_ROWS × LANDING_COLUMNS grid with the modes it can
+// resolve, and time scales that fit a drop: T = LANDING_LAUNCH·R/V with no
+// floor, t_break = LANDING_BREAK·T and no 60 ms floor either. Its launch
+// speeds are LANDING_SPEED times a stone's and leave LANDING_TILT degrees
+// nearer vertical, so it stands about a drop diameter tall and three across
+// when it tears, as a drop's crown does (a stone's is flatter for its size);
+// it tears into drops of at most LANDING_DROP_CAP·R, and its mesh rides the
+// waves (aRide), since most drops land on water the splash has disturbed. A
+// jet's 7 mm drop landing at 2.2 m/s stands whole for 19 ms, its rim then
+// 14 mm up and 43 mm across, and is gone by 31 ms.
+//
 // updateGeometry() evaluates a ROWS × COLUMNS grid (rim to base × around the
 // ring, built by src/fluidMesh.js) once per rendered frame; update() runs every
 // simulation substep and sheds from the rim, while the tear, the costly part,
-// advances at most every TEAR_INTERVAL of simulated time. The mesh is drawn by
-// SplashSystem with the materials in src/shaders/sheet.js, through the
-// droplets' screen-space fluid passes.
+// advances once per rendered frame: whenever a frame's worth of simulated
+// time (SplashSystem.frameSeconds) has passed, so the front moves on every
+// frame at any time scale. The mesh is drawn by SplashSystem with the
+// materials in src/shaders/sheet.js, through the droplets' screen-space fluid
+// passes.
 import * as THREE from 'three';
 import { createRingGrid, computeGridNormals, markChanged } from './fluidMesh.js';
 
@@ -57,21 +73,29 @@ const REFERENCE_RADIUS = 0.03;     // the stone size the tuning constants were s
 const ROWS = 24;                   // samples along launch time, rim (row 0) to base
 const COLUMNS = 96;                // samples around the ring (resolves the k = 18 mode)
 const MAIN_ROWS = 17;              // rows given to the main launch once the tail exists
+const LANDING_ROWS = 12;           // a landing drop's crown: a smaller grid...
+const LANDING_COLUMNS = 32;
+const LANDING_MAIN_ROWS = 8;
+const LANDING_LAUNCH = 1.0;        // ...launching over this many R/V...
+const LANDING_BREAK = 6;           // ...tearing at this many launch windows...
+const LANDING_SPEED = 1.2;         // ...at this many times a stone crown's launch speeds...
+const LANDING_TILT = 20;           // ...this many degrees nearer vertical...
+const LANDING_DROP_CAP = 0.16;     // ...into drops of at most this many landing drop radii
 const ROW_POWER = 1.8;             // crowds main-launch rows towards the rim bead
 const MAIN_SHARE = 0.7;            // fraction of the tear front's travel spent on the main launch
 const TAIL_DECAY = 0.45;           // tail launch speed decays over this many T
 const DRAIN_SECONDS = 0.04;        // the sheet's thinning time scale
 const DRAG_SECONDS = 0.05;         // elements' velocity decays as exp(−age / DRAG_SECONDS)
 const TAIL_THICKNESS = 0.6;        // tail material leaves the ring at this fraction of h0
-const TEAR_INTERVAL = 1 / 90;      // the tear advances at most this often (simulated seconds)
 const MIN_THICKNESS = 0.0002;
 const BEAD_END = 0.08;             // the bead is the material of the first 8% of T
 const TEAR_SHARE = 0.6;            // the tear takes this fraction of t_break
 const BASE_DEPTH = 0.003;          // launch a little below the surface so the base meets the water
 const MAIN_MODES = [5, 6, 7, 8, 9];
 const FINE_MODES = [12, 13, 14, 15, 16, 17, 18];
-const MAIN_AMPLITUDE = 0.08;       // deeper turns the scallops into petals
-const FINE_AMPLITUDE = 0.04;
+const MAIN_AMPLITUDE = 0.05;       // deeper turns the scallops into petals
+const FINE_AMPLITUDE = 0.05;
+const MODES_PER_COLUMN = 1 / 2.5;  // a grid resolves modes up to this many per column
 
 const randomRange = (low, high) => low + Math.random() * (high - low);
 const smoothstep = (edgeLow, edgeHigh, value) => {
@@ -86,18 +110,24 @@ export class CrownSheet {
    * @param rimDroplets droplets the rim sheds before breakup
    * @param breakupDroplets droplets the sheet becomes when it tears
    * @param material the material the mesh starts with (the splash swaps it per pass)
+   * @param landing the crown of a drop landing rather than of a stone
    */
-  constructor({ impact, startTime, rimDroplets, breakupDroplets, material }) {
+  constructor({ impact, startTime, rimDroplets, breakupDroplets, material, landing = false }) {
     const { velocity, radius } = impact;
     const speed = Math.max(impact.speed, 1.0);
     this.centreX = impact.x;
     this.centreZ = impact.z;
     this.radius = radius;
     this.sizeFactor = radius / REFERENCE_RADIUS;
-    this.entrySpeed = speed;
+    this.entrySpeed = landing ? LANDING_SPEED * speed : speed;   // sets the launch speeds
+    this.tiltShift = landing ? LANDING_TILT : 0;                  // degrees off the launch angle from vertical
     this.startTime = startTime;
     this.age = 0;
     this.finished = false;
+    this.landing = landing;
+    this.rows = landing ? LANDING_ROWS : ROWS;
+    this.columns = landing ? LANDING_COLUMNS : COLUMNS;
+    this.mainRows = landing ? LANDING_MAIN_ROWS : MAIN_ROWS;
 
     const horizontalSpeed = Math.hypot(velocity.x, velocity.z);
     const horizontalFraction = Math.min(horizontalSpeed / speed, 1);
@@ -106,32 +136,38 @@ export class CrownSheet {
     this.driftX = 0.22 * velocity.x;
     this.driftZ = 0.22 * velocity.z;
 
-    this.launchDuration = Math.max(1.2 * radius / speed, 0.01);
-    this.breakTime = THREE.MathUtils.clamp(this.launchDuration + 6 * radius / speed, 0.06, 0.15);
+    if (landing) {
+      this.launchDuration = LANDING_LAUNCH * radius / speed;
+      this.breakTime = LANDING_BREAK * this.launchDuration;
+    } else {
+      this.launchDuration = Math.max(1.2 * radius / speed, 0.01);
+      this.breakTime = THREE.MathUtils.clamp(this.launchDuration + 6 * radius / speed, 0.06, 0.15);
+    }
     this.tearDuration = TEAR_SHARE * this.breakTime;
     this.endTime = this.breakTime + this.tearDuration;
     this.baseThickness = Math.max(0.0015 * Math.sqrt(this.sizeFactor), MIN_THICKNESS);
 
+    const resolved = (number) => number <= this.columns * MODES_PER_COLUMN;
     this.modes = [
-      ...MAIN_MODES.map((number) => ({ number, amplitude: MAIN_AMPLITUDE * randomRange(0.5, 1), phase: randomRange(0, Math.PI * 2) })),
-      ...FINE_MODES.map((number) => ({ number, amplitude: FINE_AMPLITUDE * randomRange(0.5, 1), phase: randomRange(0, Math.PI * 2) })),
+      ...MAIN_MODES.filter(resolved).map((number) => ({ number, amplitude: MAIN_AMPLITUDE * randomRange(0.5, 1), phase: randomRange(0, Math.PI * 2) })),
+      ...FINE_MODES.filter(resolved).map((number) => ({ number, amplitude: FINE_AMPLITUDE * randomRange(0.5, 1), phase: randomRange(0, Math.PI * 2) })),
     ];
 
     // Per-column constants, and the tear front (a launch time: everything
     // launched before it has torn) with its own pace so the front is ragged.
-    this.columnAngle = new Float64Array(COLUMNS);
-    this.columnCos = new Float64Array(COLUMNS);
-    this.columnSin = new Float64Array(COLUMNS);
-    this.columnSpeedFactor = new Float64Array(COLUMNS);
-    this.columnThicknessFactor = new Float64Array(COLUMNS);
-    this.columnTearPace = new Float64Array(COLUMNS);
-    this.tearFront = new Float64Array(COLUMNS);
-    this.tearClock = TEAR_INTERVAL;    // simulated time since the tear last advanced
-    this.tearTarget = new Float64Array(COLUMNS);
-    this.tearSwept = new Float64Array(COLUMNS);
+    this.columnAngle = new Float64Array(this.columns);
+    this.columnCos = new Float64Array(this.columns);
+    this.columnSin = new Float64Array(this.columns);
+    this.columnSpeedFactor = new Float64Array(this.columns);
+    this.columnThicknessFactor = new Float64Array(this.columns);
+    this.columnTearPace = new Float64Array(this.columns);
+    this.tearFront = new Float64Array(this.columns);
+    this.tearClock = Infinity;         // simulated time since the tear last advanced: tear at once
+    this.tearTarget = new Float64Array(this.columns);
+    this.tearSwept = new Float64Array(this.columns);
     const tearPhase = randomRange(0, Math.PI * 2);
-    for (let column = 0; column < COLUMNS; column++) {
-      const angle = (column / COLUMNS) * Math.PI * 2;
+    for (let column = 0; column < this.columns; column++) {
+      const angle = (column / this.columns) * Math.PI * 2;
       this.columnAngle[column] = angle;
       this.columnCos[column] = Math.cos(angle);
       this.columnSin[column] = Math.sin(angle);
@@ -156,21 +192,23 @@ export class CrownSheet {
     for (const crest of this.crests) crest.share = (crest.weight / totalWeight) * rimDroplets;
     this.breakupRemaining = breakupDroplets;   // still to come from the tear
     this.tearCarry = 0;                        // fraction of a droplet owed
-    this.pieceAreas = new Float64Array(ROWS);
+    this.pieceAreas = new Float64Array(this.rows);
 
     // The grid mesh.
-    const vertexCount = ROWS * COLUMNS;
+    const vertexCount = this.rows * this.columns;
     this.positions = new Float32Array(vertexCount * 3);
     this.normals = new Float32Array(vertexCount * 3);
     this.rimTangents = new Float32Array(vertexCount * 3);
     this.thicknesses = new Float32Array(vertexCount);
     this.rowTaus = new Float64Array(vertexCount);   // launch time behind the free edge
-    this.mesh = createRingGrid(ROWS, COLUMNS, {
+    this.mesh = createRingGrid(this.rows, this.columns, {
       position: [this.positions, 3],
       normal: [this.normals, 3],
       aRimTangent: [this.rimTangents, 3],
       aThickness: [this.thicknesses, 1],
+      aRide: [new Float32Array(vertexCount).fill(landing ? 1 : 0), 1],   // 1: lifted by the wave height under it
     }, material);
+    this.maxDropRadius = landing ? LANDING_DROP_CAP * radius : 0.0045 * this.sizeFactor ** 0.4;
     this.geometry = this.mesh.geometry;
     this.state = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, thickness: 0, radialDistance: 0 };
     this.stateOther = { ...this.state };
@@ -205,7 +243,7 @@ export class CrownSheet {
     const tail = Math.max(progress - 1, 0);
     const ringRadius = this.radius * Math.min(0.9 + 0.5 * main + 0.2 * tail, 2.0);
     const launchSpeed = this.entrySpeed * (tail > 0 ? 0.2 * Math.exp(-tail / TAIL_DECAY) : 0.55 - 0.35 * main) * speedFactor;
-    const tilt = THREE.MathUtils.degToRad(55 - 30 * main);
+    const tilt = THREE.MathUtils.degToRad(55 - 30 * main - this.tiltShift);
     const radialSpeed = launchSpeed * Math.sin(tilt);
     const upSpeed = launchSpeed * Math.cos(tilt);
     const age = Math.max(this.age - tau, 0);
@@ -239,10 +277,10 @@ export class CrownSheet {
   rowTau(row, front, end) {
     const split = this.launchDuration;
     if (front < split && end > split) {
-      if (row < MAIN_ROWS) return front + (split - front) * (row / MAIN_ROWS) ** ROW_POWER;
-      return split + (end - split) * (row - MAIN_ROWS) / (ROWS - 1 - MAIN_ROWS);
+      if (row < this.mainRows) return front + (split - front) * (row / this.mainRows) ** ROW_POWER;
+      return split + (end - split) * (row - this.mainRows) / (this.rows - 1 - this.mainRows);
     }
-    return front + (end - front) * (row / (ROWS - 1)) ** ROW_POWER;
+    return front + (end - front) * (row / (this.rows - 1)) ** ROW_POWER;
   }
 
   /** Launch time a fraction of the way from rim to base, the main launch taking MAIN_SHARE of the way. */
@@ -261,9 +299,9 @@ export class CrownSheet {
     if (this.age < this.breakTime) {
       this.shed(dt, splash);
     } else {
-      // The tear is the costly part, so it advances at most every TEAR_INTERVAL.
+      // The tear is the costly part, so it advances once per rendered frame.
       this.tearClock += dt;
-      if (this.tearClock >= TEAR_INTERVAL || this.age >= this.endTime) {
+      if (this.tearClock >= splash.frameSeconds * (1 - 1e-6) || this.age >= this.endTime) {
         this.tearClock = 0;
         this.tear(splash, Math.min((this.age - this.breakTime) / this.tearDuration, 1));
       }
@@ -312,7 +350,7 @@ export class CrownSheet {
     const end = this.feedEnd();
     let sweptArea = 0;
     let untornArea = 0;
-    for (let column = 0; column < COLUMNS; column++) {
+    for (let column = 0; column < this.columns; column++) {
       const fraction = Math.min(progress * this.columnTearPace[column], 1);
       const target = Math.max(Math.min(this.sheetTau(fraction, end), end), this.tearFront[column]);
       this.tearTarget[column] = target;
@@ -325,7 +363,7 @@ export class CrownSheet {
     const droplets = this.breakupRemaining * Math.min(sweptArea / untornArea, 1);
     this.breakupRemaining -= droplets;
     const density = droplets / sweptArea;
-    for (let column = 0; column < COLUMNS; column++) {
+    for (let column = 0; column < this.columns; column++) {
       if (this.tearTarget[column] <= this.tearFront[column]) continue;
       this.spawnFromStrip(column, this.tearFront[column], this.tearTarget[column], end, this.tearSwept[column] * density, density, splash);
       this.tearFront[column] = this.tearTarget[column];
@@ -349,7 +387,7 @@ export class CrownSheet {
     const fromX = from.x, fromY = from.y, fromZ = from.z, fromRadius = from.radialDistance;
     const to = this.evaluate(tauTo, cosAngle, sinAngle, speedFactor, thicknessFactor, this.stateOther);
     const length = Math.sqrt((to.x - fromX) ** 2 + (to.y - fromY) ** 2 + (to.z - fromZ) ** 2);
-    return length * 0.5 * (fromRadius + to.radialDistance) * (Math.PI * 2 / COLUMNS);
+    return length * 0.5 * (fromRadius + to.radialDistance) * (Math.PI * 2 / this.columns);
   }
 
   /**
@@ -357,7 +395,7 @@ export class CrownSheet {
    * number of droplets (fractions carry over), spread over it by area.
    */
   spawnFromStrip(column, tauFrom, tauTo, end, droplets, density, splash) {
-    const pieces = Math.min(Math.max(1, Math.ceil(((tauTo - tauFrom) / Math.max(end, 1e-6)) * ROWS)), ROWS);
+    const pieces = Math.min(Math.max(1, Math.ceil(((tauTo - tauFrom) / Math.max(end, 1e-6)) * this.rows)), this.rows);
     const pieceAreas = this.pieceAreas;
     let totalArea = 0;
     for (let piece = 0; piece < pieces; piece++) {
@@ -365,7 +403,7 @@ export class CrownSheet {
       totalArea += pieceAreas[piece];
     }
     if (totalArea <= 0) return;
-    const halfWidth = Math.PI / COLUMNS;
+    const halfWidth = Math.PI / this.columns;
     const state = this.state;
     for (let piece = 0; piece < pieces; piece++) {
       const pieceFrom = tauFrom + ((tauTo - tauFrom) * piece) / pieces;
@@ -377,7 +415,7 @@ export class CrownSheet {
         this.evaluateAt(randomRange(pieceFrom, pieceTo), angle, state);
         // Each drop holds the volume of the patch of sheet it came from.
         const volumeRadius = Math.cbrt((3 * state.thickness) / (4 * Math.PI * density));
-        const radius = THREE.MathUtils.clamp(volumeRadius * randomRange(0.7, 1.25), 0.0006, 0.0045 * this.sizeFactor ** 0.4);
+        const radius = THREE.MathUtils.clamp(volumeRadius * randomRange(0.7, 1.25), Math.min(0.0006, 0.5 * this.maxDropRadius), this.maxDropRadius);
         const scatter = 0.04 * Math.sqrt(state.vx * state.vx + state.vy * state.vy + state.vz * state.vz) + 0.05;
         splash.spawnDroplet(
           state.x, state.y, state.z,
@@ -397,14 +435,14 @@ export class CrownSheet {
     this.age = time - this.startTime;
     const end = this.feedEnd();
     const state = this.state;
-    for (let column = 0; column < COLUMNS; column++) {
+    for (let column = 0; column < this.columns; column++) {
       const cosAngle = this.columnCos[column];
       const sinAngle = this.columnSin[column];
       const speedFactor = this.columnSpeedFactor[column];
       const thicknessFactor = this.columnThicknessFactor[column];
       const front = Math.min(this.tearFront[column], end);
-      for (let row = 0; row < ROWS; row++) {
-        const vertex = row * COLUMNS + column;
+      for (let row = 0; row < this.rows; row++) {
+        const vertex = row * this.columns + column;
         const tau = this.rowTau(row, front, end);
         this.evaluate(tau, cosAngle, sinAngle, speedFactor, thicknessFactor, state, front);
         this.positions[vertex * 3] = state.x;
@@ -418,12 +456,12 @@ export class CrownSheet {
     // Normals from the grid; near the rim the bead's normal also leans along
     // the sheet towards the edge, as a tube's does.
     const positions = this.positions;
-    computeGridNormals(positions, this.normals, ROWS, COLUMNS);
-    for (let column = 0; column < COLUMNS; column++) {
-      for (let row = 0; row < ROWS; row++) {
-        const vertex = row * COLUMNS + column;
-        const before = Math.max(row - 1, 0) * COLUMNS + column;
-        const after = Math.min(row + 1, ROWS - 1) * COLUMNS + column;
+    computeGridNormals(positions, this.normals, this.rows, this.columns);
+    for (let column = 0; column < this.columns; column++) {
+      for (let row = 0; row < this.rows; row++) {
+        const vertex = row * this.columns + column;
+        const before = Math.max(row - 1, 0) * this.columns + column;
+        const after = Math.min(row + 1, this.rows - 1) * this.columns + column;
         const alongX = positions[after * 3] - positions[before * 3];
         const alongY = positions[after * 3 + 1] - positions[before * 3 + 1];
         const alongZ = positions[after * 3 + 2] - positions[before * 3 + 2];

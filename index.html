@@ -119,7 +119,7 @@
     color: var(--accent-ink);
     font-weight: 600;
   }
-  .segmented button:focus-visible, .throw:focus-visible, input[type="range"]:focus-visible {
+  .segmented button:focus-visible, .throw:focus-visible, .reset-view:focus-visible, input[type="range"]:focus-visible {
     outline: 2px solid var(--accent);
     outline-offset: 2px;
   }
@@ -145,6 +145,19 @@
     cursor: pointer;
   }
   .throw:hover { background: rgba(238, 243, 244, 0.16); }
+  /* Shown only while the view is zoomed: a quieter twin of the throw button. */
+  .reset-view {
+    appearance: none;
+    border: 1px solid var(--line);
+    background: transparent;
+    color: var(--fg);
+    font: inherit;
+    font-size: 13px;
+    padding: 7px 14px;
+    border-radius: 999px;
+    cursor: pointer;
+  }
+  .reset-view:hover { background: rgba(238, 243, 244, 0.1); }
   .veil {
     position: fixed;
     inset: 0;
@@ -179,11 +192,11 @@
   }
 </style>
 
-<canvas id="pond" aria-label="A pond. Tap or click the water to throw a stone."></canvas>
+<canvas id="pond" aria-label="A pond. Tap or click the water to throw a stone. Scroll or pinch to zoom."></canvas>
 
 <div class="title">
   <h1>Stone Pond</h1>
-  <p>Tap the water to throw a stone. Space throws one for you.</p>
+  <p>Tap the water to throw a stone. Space throws one for you; scroll or pinch to look closer.</p>
 </div>
 <div class="stats" id="stats" aria-live="off"></div>
 
@@ -217,6 +230,7 @@
       <button type="button" data-value="high">High</button>
     </div>
   </div>
+  <button type="button" class="reset-view" id="reset-view" hidden>Reset view</button>
   <button type="button" class="throw" id="throw">Throw a stone</button>
 </div>
 
@@ -236,6 +250,7 @@
   const veil = document.getElementById('veil');
   const veilText = document.getElementById('veil-text');
   const stats = document.getElementById('stats');
+  const resetView = document.getElementById('reset-view');
   const params = new URLSearchParams(location.search);
 
   function segmented(id, onChange) {
@@ -258,6 +273,7 @@
       quality: params.get('quality') || 'auto',
       onError: (message) => { veilText.innerHTML = ''; const p = document.createElement('p'); p.className = 'error'; p.textContent = message; veilText.append(p); },
       onStats: ({ fps, droplets }) => { stats.textContent = `${Math.round(fps)} fps · ${droplets} drops`; },
+      onViewChange: ({ zoomed }) => { resetView.hidden = !zoomed; },
     });
   } catch (error) {
     console.error(error);
@@ -285,6 +301,7 @@
     const setQualityButtons = segmented('quality', (value) => pond.setQuality(value));
     setQualityButtons(pond.quality);
     document.getElementById('throw').addEventListener('click', () => pond.throwRandom());
+    resetView.addEventListener('click', () => pond.resetView());
     document.getElementById('throw').addEventListener('keydown', (event) => { if (event.code === 'Space') event.stopPropagation(); });
 
     window.__pond = pond;

@@ -1,4 +1,5 @@
-// GLSL for the pond: water surface, pond floor with caustics, and bubbles.
+// GLSL for the pond: water surface, pond floor with caustics, bubbles, and
+// the foam specks that ride the surface after a splash (src/foamSpecks.js).
 // All scene passes render linear HDR radiance; the composite pass tone-maps.
 
 export const GLSL_COMMON = /* glsl */`
@@ -281,6 +282,82 @@ void main() {
   float highlight = exp(-dot(hp, hp) * 14.0);
   vec3 color = mix(uTint, vec3(1.0), rim * 0.55 + highlight * 0.8);
   float alpha = (0.25 + 0.6 * rim + highlight * 0.5) * vFade;
+  gl_FragColor = vec4(color * alpha, alpha);
+}
+`;
+
+// Foam specks: points riding the water surface. Each speck's whole life is a
+// closed form of the splash time, so the CPU writes a speck once, when it is
+// born: it drifts outward from where it was born at a speed decaying over
+// SPECK_DRIFT_SECONDS, wanders a little, and sits on the waves at the height
+// the water surface's own vertex shader gives that point (plus SPECK_LIFT, so
+// the triangulated surface never covers it). It fades in over a tenth of a
+// second and out over its last SPECK_FADE seconds, shrinking as it goes.
+// A speck smaller than uMinPixelSize is drawn at that size, soft, with its
+// opacity cut by the area it really covers (down to SPECK_MIN_COVERAGE): a
+// hard dot of a pixel or two would flicker as it moves across pixels, and far
+// specks should read as a faint grain where they gather, not as bright dots.
+export const SPECK_VERTEX = /* glsl */`
+#define SPECK_DRIFT_SECONDS 1.6
+#define SPECK_WANDER 0.0012
+#define SPECK_LIFT 0.0015
+#define SPECK_FADE 0.35
+#define SPECK_MIN_COVERAGE 0.12
+attribute vec2 aDrift;       // initial outward drift, m/s
+attribute vec4 aTiming;      // birth (splash seconds), life (s), diameter (m), random phase
+uniform sampler2D uHeight;
+uniform vec2 uDomainMin;
+uniform float uDomainSize;
+uniform float uTexelOffset;
+uniform float uTime;
+uniform float uProjScale;    // render-target pixels per world unit at distance 1
+uniform float uMinPixelSize;
+varying float vAlpha;
+varying float vPixelSize;
+${GLSL_COMMON}
+void main() {
+  float age = uTime - aTiming.x;
+  float life = aTiming.y;
+  if (age < 0.0 || age >= life) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); gl_PointSize = 0.0; vAlpha = 0.0; vPixelSize = 0.0; return; }
+  float phase = aTiming.w;
+  vec2 place = position.xz + aDrift * SPECK_DRIFT_SECONDS * (1.0 - exp(-age / SPECK_DRIFT_SECONDS));
+  place += SPECK_WANDER * vec2(sin(age * 1.3 + phase) + 0.5 * sin(age * 3.1 + 2.0 * phase), cos(age * 1.1 + 1.7 * phase) + 0.5 * sin(age * 2.7 + 3.0 * phase));
+  vec2 domainUv = (place - uDomainMin) / uDomainSize + uTexelOffset;
+  float height = texture2D(uHeight, domainUv).r * patchMask(domainUv);
+  vec4 viewPosition = viewMatrix * vec4(place.x, height + SPECK_LIFT, place.y, 1.0);
+  float fadeOut = 1.0 - smoothstep(life - SPECK_FADE, life, age);
+  float fade = smoothstep(0.0, 0.1, age) * fadeOut;
+  float pixelSize = aTiming.z * (0.6 + 0.4 * fadeOut) * uProjScale / max(-viewPosition.z, 0.05);
+  float drawn = max(pixelSize, uMinPixelSize);
+  gl_PointSize = drawn;
+  vPixelSize = drawn;
+  vAlpha = fade * max((pixelSize * pixelSize) / (drawn * drawn), SPECK_MIN_COVERAGE);
+  gl_Position = projectionMatrix * viewPosition;
+}
+`;
+
+// A speck is lit like the foam map in WATER_FRAGMENT (white under the sun and
+// sky, on a level surface), dimmed by uBrightness. Drawn over five pixels or more it is a
+// translucent disc a little brighter at its rim, which is how a small surface
+// bubble looks; smaller, a soft blob.
+export const SPECK_FRAGMENT = /* glsl */`
+uniform vec3 uSunDir;
+uniform vec3 uSunIrradiance;
+uniform vec3 uSkyAmbient;
+uniform float uOpacity;
+uniform float uBrightness;
+varying float vAlpha;
+varying float vPixelSize;
+void main() {
+  vec2 offset = gl_PointCoord * 2.0 - 1.0;
+  float radiusSquared = dot(offset, offset);
+  if (radiusSquared > 1.0) discard;
+  float bubble = (0.7 + 0.3 * smoothstep(0.3, 0.8, radiusSquared)) * (1.0 - smoothstep(0.75, 1.0, radiusSquared));
+  float blob = exp(-3.0 * radiusSquared);
+  float shape = mix(blob, bubble, smoothstep(3.5, 5.0, vPixelSize));
+  vec3 light = uSunIrradiance * (0.3 + 0.35 * max(uSunDir.y, 0.0)) + uSkyAmbient * 1.5;
+  vec3 color = vec3(0.94, 0.96, 0.97) * light * uBrightness;
+  float alpha = vAlpha * shape * uOpacity;
   gl_FragColor = vec4(color * alpha, alpha);
 }
 `;
