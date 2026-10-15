@@ -71,7 +71,10 @@ if (idleFps < 30) check(afterIdle.quality === 'low', `idle below 30 fps steps do
 else if (idleFps < 50) check(afterIdle.quality === 'medium', `idle below 50 fps steps down to medium (got ${afterIdle.quality})`);
 else check(afterIdle.quality === 'high', `idle at ${idleFps} fps stays high (got ${afterIdle.quality})`);
 check(afterIdle.pressed.length === 1 && afterIdle.pressed[0] === afterIdle.quality, `the quality buttons show ${afterIdle.quality} (pressed: ${afterIdle.pressed.join(',') || 'none'})`);
-check(afterIdle.readout.endsWith(afterIdle.quality), `the readout names the preset (${afterIdle.readout})`);
+// The readout refreshes every 16 frames: give it that long.
+await page.waitForFunction((name) => document.getElementById('stats').textContent.endsWith(name), afterIdle.quality, { timeout: 120000 }).catch(() => {});
+const readoutAfterIdle = (await pageState()).readout;
+check(readoutAfterIdle.endsWith(afterIdle.quality), `the readout names the preset (${readoutAfterIdle})`);
 
 // The splash measurement: throw, wait for the splash to be measured or to end.
 await page.evaluate(() => window.__pond.throwAt(0, -1.4, { radius: 0.03 }));
