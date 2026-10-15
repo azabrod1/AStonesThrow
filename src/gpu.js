@@ -41,19 +41,21 @@ export function configureFloatSupport(renderer, { forceHalfFloat = false } = {})
   return capabilities;
 }
 
-export function createFloatTarget(width, height, { format = THREE.RGBAFormat, type = THREE.FloatType, filter = THREE.NearestFilter, depth = false, depthTexture = false, wrap = THREE.ClampToEdgeWrapping } = {}) {
+// mipmaps: true gives a linearly filtered target with a mip chain that Three.js
+// regenerates after every render into it (power-of-two sizes only).
+export function createFloatTarget(width, height, { format = THREE.RGBAFormat, type = THREE.FloatType, filter = THREE.NearestFilter, depth = false, depthTexture = false, wrap = THREE.ClampToEdgeWrapping, mipmaps = false } = {}) {
   if (type === THREE.FloatType && !capabilities.fullFloat) type = THREE.HalfFloatType;
   if (type === THREE.FloatType && filter === THREE.LinearFilter && !capabilities.floatLinear) filter = THREE.NearestFilter;
   const target = new THREE.WebGLRenderTarget(width, height, {
     format,
     type,
-    minFilter: filter,
-    magFilter: filter,
+    minFilter: mipmaps ? THREE.LinearMipmapLinearFilter : filter,
+    magFilter: mipmaps ? THREE.LinearFilter : filter,
     wrapS: wrap,
     wrapT: wrap,
     depthBuffer: depth,
     stencilBuffer: false,
-    generateMipmaps: false,
+    generateMipmaps: mipmaps,
   });
   if (depthTexture) {
     target.depthTexture = new THREE.DepthTexture(width, height, THREE.UnsignedIntType);

@@ -7,12 +7,13 @@ Keep this file short. Every future session reads all of it, so most notes belong
 ```bash
 npm install                # three (served to the headless harness) and playwright
 npm start                  # static server; open http://localhost:8123/
-npm test                   # CPU check of the GPU FFT and the splat spectrum
-npm run shoot -- --label=name --throws=0:-1.4:0.03 --times=0.1,0.5   # frames into shots/name/; --fov --look --crop --report --eval --floats=half --sky=name
+npm test                   # CPU checks: the GPU FFT, the splat spectrum, the wind ripples (wave-probe)
+npm run shoot -- --label=name --throws=0:-1.4:0.03 --times=0.1,0.5   # frames into shots/name/; --fov --look --crop --report --eval --floats=half --sky=name --wind=x:z; --throws=none for idle water
 node tools/jet-probe.mjs 0.03 6.3      # one Worthington jet on the CPU: timeline, drops, cost
 node tools/fan-probe.mjs 0.03 6.9 0.68 # the forward fan of an oblique entry on the CPU
 node tools/zoom-probe.mjs              # drives the page's zoom handlers and checks the anchor stays put
 node tools/sky-probe.mjs assets/sky/meadow_2_2k.hdr   # measures a sky panorama into assets/sky/meadow_2.json
+node tools/wave-probe.mjs              # the wind ripples on the CPU: real field, rms slope, travel direction, mip roughness, cost
 ```
 
 There is no build step. The page loads Three.js from jsDelivr through the import map in `index.html`.

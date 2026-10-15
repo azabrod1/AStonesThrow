@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node tools/serve.mjs",
     "shoot": "node tools/shoot.mjs",
-    "test": "node tools/fft-test.mjs"
+    "test": "node tools/fft-test.mjs && node tools/wave-probe.mjs"
   },
   "keywords": [],
   "author": "",

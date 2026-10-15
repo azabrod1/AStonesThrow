@@ -17,7 +17,9 @@
 // into a ring of typed arrays (the oldest slot is reused when the ring is
 // full) and uploads only the slots written since the last frame. Per frame
 // the cost is one uniform and a draw of the slots in use, each vertex one
-// fetch of the height texture; nothing is drawn once every speck has gone.
+// fetch of the splash's height texture and one of the ambient waves'
+// (src/ambientWaves.js), so specks ride their crests; nothing is drawn once
+// every speck has gone.
 import * as THREE from 'three';
 import { SPECK_VERTEX, SPECK_FRAGMENT } from './shaders/scene.js';
 
@@ -37,7 +39,7 @@ const MIN_PIXEL_SIZE = 2.5;       // smaller specks are drawn this wide (CSS pix
 const randomRange = (low, high) => low + Math.random() * (high - low);
 
 export class FoamSpecks {
-  constructor({ water, lighting, capacity = CAPACITY }) {
+  constructor({ water, lighting, ambientWaves, capacity = CAPACITY }) {
     this.capacity = capacity;
     this.next = 0;               // the ring slot the next speck takes
     this.used = 0;               // slots written at least once: the draw range
@@ -75,6 +77,7 @@ export class FoamSpecks {
         uSkyAmbient: { value: lighting.skyAmbient },
         uOpacity: { value: OPACITY },
         uBrightness: { value: BRIGHTNESS },
+        ...ambientWaves.uniforms(),
       },
       transparent: true,
       depthWrite: false,

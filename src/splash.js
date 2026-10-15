@@ -96,7 +96,7 @@ const smoothstep = (edgeLow, edgeHigh, value) => {
 };
 
 export class SplashSystem {
-  constructor({ capacity = 16000, bubbleCapacity = 3000, environment, lighting, water }) {
+  constructor({ capacity = 16000, bubbleCapacity = 3000, environment, lighting, water, ambientWaves }) {
     this.capacity = capacity;
     this.count = 0;
     this.positions = new Float32Array(capacity * 3);
@@ -120,7 +120,7 @@ export class SplashSystem {
     this.time = 0;
     this.frameSeconds = 1 / 60;   // simulated length of the frame being stepped
     this.lighting = lighting;
-    this.foamSpecks = new FoamSpecks({ water, lighting });
+    this.foamSpecks = new FoamSpecks({ water, lighting, ambientWaves });
 
     // Droplet instances.
     const quad = new THREE.PlaneGeometry(2, 2);
@@ -161,12 +161,14 @@ export class SplashSystem {
       uResolution: { value: new THREE.Vector2(1, 1) },
       uSunDirView: { value: new THREE.Vector3() },
     });
-    // A landing crown rides the waves: the sheet's vertex shader samples the height field.
+    // A landing crown rides the waves: the sheet's vertex shader samples the
+    // splash's height field and the ambient waves (src/ambientWaves.js).
     const rideUniforms = () => ({
       uHeight: { value: water.heightTexture },
       uDomainMin: { value: new THREE.Vector2(water.domainMin[0], water.domainMin[1]) },
       uDomainSize: { value: water.domainSize },
       uTexelOffset: { value: water.uvOffset },
+      ...ambientWaves.uniforms(),
     });
     this.sheetDepthMaterial = new THREE.ShaderMaterial({ vertexShader: SHEET_VERTEX, fragmentShader: SHEET_DEPTH_FRAGMENT, uniforms: { ...sheetUniforms(), ...rideUniforms() }, depthTest: true, depthWrite: true, side: THREE.DoubleSide });
     this.sheetThicknessMaterial = new THREE.ShaderMaterial({ vertexShader: SHEET_VERTEX, fragmentShader: SHEET_THICKNESS_FRAGMENT, uniforms: { ...sheetUniforms(), ...rideUniforms() }, depthTest: false, depthWrite: false, blending: THREE.AdditiveBlending, transparent: true, side: THREE.DoubleSide });

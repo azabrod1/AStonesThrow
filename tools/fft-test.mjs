@@ -1,32 +1,11 @@
 // CPU check of the GPU FFT formulation used in src/spectralWater.js.
 //
 // The shader runs log2(N) Stockham radix-2 passes per axis. Each pass reads two
-// inputs per output; this file does the same arithmetic on arrays and compares
-// the result against a naive DFT, then checks the closed-form Gaussian spectrum
-// that the update pass adds for each splash. Run: node tools/fft-test.mjs
-
-function stockhamPass(input, N, subtransformSize, sign) {
-  // input/output: Float64Array of 2N (interleaved complex)
-  const output = new Float64Array(2 * N);
-  const half = subtransformSize / 2;
-  for (let index = 0; index < N; index++) {
-    const evenIndex = Math.floor(index / subtransformSize) * half + (index % half);
-    const oddIndex = evenIndex + N / 2;
-    const evenRe = input[2 * evenIndex], evenIm = input[2 * evenIndex + 1];
-    const oddRe = input[2 * oddIndex], oddIm = input[2 * oddIndex + 1];
-    const angle = sign * 2 * Math.PI * (index / subtransformSize);
-    const twRe = Math.cos(angle), twIm = Math.sin(angle);
-    output[2 * index] = evenRe + (twRe * oddRe - twIm * oddIm);
-    output[2 * index + 1] = evenIm + (twRe * oddIm + twIm * oddRe);
-  }
-  return output;
-}
-
-function fft1d(input, N, sign) {
-  let data = input;
-  for (let size = 2; size <= N; size *= 2) data = stockhamPass(data, N, size, sign);
-  return data;
-}
+// inputs per output; tools/stockham.mjs does the same arithmetic on arrays, and
+// this file compares the result against a naive DFT, then checks the
+// closed-form Gaussian spectrum that the update pass adds for each splash.
+// Run: node tools/fft-test.mjs
+import { stockhamPass, fft1d } from './stockham.mjs';
 
 function naiveDft(input, N, sign) {
   const output = new Float64Array(2 * N);

@@ -1,10 +1,13 @@
-// GLSL for the spectral water solver (src/spectralWater.js).
+// GLSL for the spectral water solver (src/spectralWater.js) and the ambient
+// wind waves (src/ambientWaves.js).
 //
 // State texture (RGBA32F, one texel per wave vector): H = (r, g) complex height
 // spectrum, V = (b, a) complex spectrum of the vertical velocity dH/dt.
 // The update pass rotates each mode by its own angular frequency, applies
 // damping, and adds the closed-form spectra of this frame's Gaussian splats.
-// The FFT passes then bring h and v back to the grid for rendering.
+// The FFT passes then bring h and v back to the grid for rendering. They
+// transform both complex pairs of a texel, (r, g) and (b, a), at once: the
+// ambient waves' evaluation pass fills both, the solver only the first.
 
 export const FULLSCREEN_VERTEX = /* glsl */`
 varying vec2 vUv;
@@ -74,8 +77,51 @@ void main() {
 }
 `;
 
-// One radix-2 Stockham pass along one axis. The first pass reads the state
-// texture and combines H + iV into a single complex field, so the inverse
+// The ambient wind waves at one time, from their seed (src/ambientWaves.js
+// explains the construction): H(k, t) = A₋ e^{−iωt} + A₊ e^{+iωt}, with ω the
+// update pass's dispersion rounded to a whole multiple of uFrequencyStep, so
+// the field repeats every 2π/uFrequencyStep seconds and uTime arrives wrapped
+// into that period. The texel holds two complex spectra, each of two real
+// fields: H + i·(i kx H) in (r, g) and i kz H + i·(−k² H) in (b, a), so the
+// inverse FFT gives height, ∂h/∂x, ∂h/∂z and the Laplacian ∇²h, all exact,
+// scaled to the height texture's units.
+export const AMBIENT_EVALUATE_FRAGMENT = /* glsl */`
+#define PI 3.141592653589793
+uniform sampler2D uSeed;        // per wave vector: A₋ (r, g), A₊ (b, a), metres
+uniform float uN;               // texels per side
+uniform float uTileSize;        // metres per side
+uniform float uDepth;           // pond depth, metres
+uniform float uFrequencyStep;   // rad/s
+uniform float uTime;            // seconds, within one period
+uniform float uOutputScale;     // height texture units per metre
+
+vec2 complexMultiply(vec2 first, vec2 second) {
+  return vec2(first.x * second.x - first.y * second.y, first.x * second.y + first.y * second.x);
+}
+
+void main() {
+  ivec2 texel = ivec2(gl_FragCoord.xy);
+  vec4 seed = texelFetch(uSeed, texel, 0);
+  int size = int(uN);
+  vec2 latticeIndex = vec2(texel.x < size / 2 ? texel.x : texel.x - size, texel.y < size / 2 ? texel.y : texel.y - size);
+  float wavenumber = 2.0 * PI * length(latticeIndex) / uTileSize;
+  float omega = sqrt((9.81 * wavenumber + 7.2e-5 * wavenumber * wavenumber * wavenumber) * tanh(min(wavenumber * uDepth, 20.0)));
+  omega = floor(omega / uFrequencyStep + 0.5) * uFrequencyStep;
+  float angle = omega * uTime;
+  vec2 turn = vec2(cos(angle), sin(angle));
+  vec2 height = complexMultiply(seed.xy, vec2(turn.x, -turn.y)) + complexMultiply(seed.zw, turn);
+  vec2 waveVector = 2.0 * PI * latticeIndex / uTileSize;   // rad/m along world x and z
+  vec2 slopeX = complexMultiply(vec2(0.0, waveVector.x), height);
+  vec2 slopeZ = complexMultiply(vec2(0.0, waveVector.y), height);
+  vec2 laplacian = -dot(waveVector, waveVector) * height;
+  // i·z = (−z.y, z.x)
+  gl_FragColor = vec4(height + vec2(-slopeX.y, slopeX.x), slopeZ + vec2(-laplacian.y, laplacian.x)) * uOutputScale;
+}
+`;
+
+// One radix-2 Stockham pass along one axis, on both complex pairs of the
+// texel. With uFromState the pass reads the solver's state texture and
+// combines H + iV into the first pair (the second is zero), so the inverse
 // transform yields h in the real part and v in the imaginary part.
 export const FFT_PASS_FRAGMENT = /* glsl */`
 #define PI 3.141592653589793
@@ -85,10 +131,14 @@ uniform float uSubSize;
 uniform int uHorizontal;
 uniform int uFromState;
 
-vec2 fetchValue(ivec2 texel) {
+vec4 fetchValue(ivec2 texel) {
   vec4 v = texelFetch(uInput, texel, 0);
-  if (uFromState == 1) return vec2(v.x - v.w, v.y + v.z);
-  return v.xy;
+  if (uFromState == 1) return vec4(v.x - v.w, v.y + v.z, 0.0, 0.0);
+  return v;
+}
+
+vec2 complexMultiply(vec2 first, vec2 second) {
+  return vec2(first.x * second.x - first.y * second.y, first.x * second.y + first.y * second.x);
 }
 
 void main() {
@@ -101,12 +151,11 @@ void main() {
   int oddIndex = evenIndex + n / 2;
   ivec2 evenTexel = uHorizontal == 1 ? ivec2(evenIndex, texel.y) : ivec2(texel.x, evenIndex);
   ivec2 oddTexel = uHorizontal == 1 ? ivec2(oddIndex, texel.y) : ivec2(texel.x, oddIndex);
-  vec2 even = fetchValue(evenTexel);
-  vec2 odd = fetchValue(oddTexel);
+  vec4 even = fetchValue(evenTexel);
+  vec4 odd = fetchValue(oddTexel);
   float angle = 2.0 * PI * float(index) / uSubSize;
   vec2 twiddle = vec2(cos(angle), sin(angle));
-  vec2 result = even + vec2(twiddle.x * odd.x - twiddle.y * odd.y, twiddle.x * odd.y + twiddle.y * odd.x);
-  gl_FragColor = vec4(result, 0.0, 1.0);
+  gl_FragColor = even + vec4(complexMultiply(twiddle, odd.xy), complexMultiply(twiddle, odd.zw));
 }
 `;
 

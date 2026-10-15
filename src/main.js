@@ -3,12 +3,14 @@
 // Frame pipeline:
 //   1. advance the stones, droplets and bubbles (CPU), feeding the water;
 //   2. step the spectral water surface (GPU) and its foam;
-//   3. render what is under the surface (floor, submerged stones, bubbles)
+//   3. evaluate the ambient wind waves at the frame's time (GPU, once per
+//      rendered frame; src/ambientWaves.js);
+//   4. render what is under the surface (floor, submerged stones, bubbles)
 //      to a texture with depth;
-//   4. render the main scene (sky dome, water surface refracting pass 3,
+//   5. render the main scene (sky dome, water surface refracting pass 4,
 //      foam specks riding the surface, stones above the surface) to an HDR
 //      texture with depth;
-//   5. draw the droplets over it and tone-map to the canvas.
+//   6. draw the droplets over it and tone-map to the canvas.
 // All simulation runs in world seconds scaled by the slow-motion factor.
 //
 // The camera never moves: the planar reflection and the throwing hand assume
@@ -24,9 +26,12 @@
 //
 // Starting is asynchronous: the sky is a photographed panorama
 // (src/sky.js) that has to load before anything is built, because the sun's
-// elevation is the photo's. ?sky=<name> picks the panorama.
+// elevation is the photo's. ?sky=<name> picks the panorama; ?wind=x,z sets the
+// direction the wind blows toward in world XZ (DEFAULT_WIND otherwise);
+// ?paused=1 starts with the clock stopped (resume() starts it).
 import * as THREE from 'three';
 import { SpectralWater } from './spectralWater.js';
+import { AmbientWaves, DEFAULT_WIND } from './ambientWaves.js';
 import { createEnvironment } from './sky.js';
 import { createWaterSurface } from './waterSurface.js';
 import { createPondFloor } from './pondFloor.js';
@@ -47,6 +52,7 @@ const MIN_FOV = 8;            // degrees: the narrowest zoom
 const WHEEL_STEP = 0.9;       // field of view factor per wheel notch
 const HOME_TARGET = [0, 0.12, -1.0];
 const SUN_AZIMUTH = Math.atan2(0.42, 0.78);   // radians right of straight ahead (−Z), about 28°
+const DEBUG_MODES = { under: 0, height: 1, foam: 2, env: 3, face: 4, ambient: 5 };   // setDebugView names
 
 function detectQuality() {
   const coarse = window.matchMedia?.('(pointer: coarse)').matches;
@@ -106,9 +112,12 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
   let settings = QUALITY[qualityName];
 
   const water = new SpectralWater(renderer, { size: settings.grid, domainSize: 6, centre: [0, -1.0], depth: POND_DEPTH });
-  const surface = createWaterSurface(water, lighting, environment);
-  const floor = createPondFloor(water, lighting);
-  const splash = new SplashSystem({ environment, lighting, water });
+  const windParameter = pageParameters.get('wind')?.split(',').map(Number);
+  const windDirection = windParameter?.length === 2 && windParameter.every(Number.isFinite) && Math.hypot(...windParameter) > 0 ? windParameter : DEFAULT_WIND;
+  const ambientWaves = new AmbientWaves(renderer, { windDirection, depth: POND_DEPTH });
+  const surface = createWaterSurface(water, lighting, ambientWaves);
+  const floor = createPondFloor(water, lighting, ambientWaves);
+  const splash = new SplashSystem({ environment, lighting, water, ambientWaves });
 
   const camera = new THREE.PerspectiveCamera(48, 1, 0.05, 60000);
   camera.position.set(0, 1.15, 2.45);
@@ -145,11 +154,13 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
   arc.frustumCulled = false;
   sceneMain.add(marker, arc);
 
-  // Debug views for development: show the under-water pass or the height field.
+  // Debug views for development: show the under-water pass, the height
+  // field, the foam, the environment cube or the ambient waves' height tile.
   let debugView = 'none';
   const debugPass = new FullscreenPass(`
     uniform sampler2D uTexture; uniform samplerCube uCube; uniform float uMode; varying vec2 vUv;
     void main() {
+      if (uMode > 4.5) { gl_FragColor = vec4(vec3(clamp(0.5 + texture2D(uTexture, vUv).r * 0.1, 0.0, 1.0)), 1.0); return; }   // ambient: millimetres
       if (uMode > 3.5) {
         // One cube face (-Z), base mip level, horizon band magnified 4x vertically.
         vec3 dir = vec3((vUv.x - 0.5) * 2.0, (vUv.y - 0.5) * 0.5, -1.0);
@@ -446,6 +457,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
 
   function render() {
     camera.updateMatrixWorld();
+    ambientWaves.update(simulationTime);
     if (viewChanged) { renderReflection(); viewChanged = false; }
     surface.update({ underTarget, reflectionTarget, reflectionMatrix, resolution, camera, time: simulationTime });
     floor.material.uniforms.uHeight.value = water.heightTexture;
@@ -459,16 +471,19 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     renderer.clear(true, true, false);
     renderer.render(sceneMain, camera);
 
-    if (debugView === 'under' || debugView === 'height' || debugView === 'foam' || debugView === 'env' || debugView === 'face') {
-      debugPass.material.uniforms.uTexture.value = debugView === 'under' ? underTarget.texture : debugView === 'height' ? water.heightTexture : water.foamTexture;
-      debugPass.material.uniforms.uMode.value = debugView === 'under' ? 0 : debugView === 'height' ? 1 : debugView === 'foam' ? 2 : debugView === 'env' ? 3 : 4;
+    if (Object.hasOwn(DEBUG_MODES, debugView)) {
+      const debugTextures = { under: underTarget.texture, height: water.heightTexture, ambient: ambientWaves.heightTexture };
+      debugPass.material.uniforms.uTexture.value = debugTextures[debugView] ?? water.foamTexture;
+      debugPass.material.uniforms.uMode.value = DEBUG_MODES[debugView];
       debugPass.render(renderer, null);
       return;
     }
     splash.render(renderer, camera, mainTarget, null);
   }
 
-  let running = true;
+  // ?paused=1 starts with the clock stopped, so the harness's frames start
+  // from world time zero whatever the page's start-up took.
+  let running = pageParameters.get('paused') !== '1';
   let lastFrame = performance.now();
   let fpsAverage = 60;
   let frames = 0;
@@ -484,7 +499,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     simulate(dtReal * timeScale);
     render();
   }
-  requestAnimationFrame(frame);
+  if (running) requestAnimationFrame(frame);
   onReady?.();
 
   const api = {
@@ -530,6 +545,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     camera,
     lighting,
     water,
+    ambientWaves,
     splash,
     sceneUnder,
     sceneMain,

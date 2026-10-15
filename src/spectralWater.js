@@ -23,6 +23,36 @@ import { SPECTRAL_UPDATE_FRAGMENT, FFT_PASS_FRAGMENT, FOAM_FRAGMENT } from './sh
 const MAX_SPLATS = 32;
 const MAX_FOAM = 16;
 
+/**
+ * The inverse FFT on the GPU: 2·log2(size) passes of FFT_PASS_FRAGMENT, rows
+ * then columns, ping-ponging between the two scratch targets; the last pass
+ * writes `output`. With fromState the first pass reads `input` as a state
+ * texture (H + iV from its four channels); otherwise as two complex pairs,
+ * as the ambient waves (src/ambientWaves.js) write it.
+ */
+export function runInverseFft(renderer, fftPass, input, [scratchA, scratchB], output, size, { fromState: firstFromState = true } = {}) {
+  const fft = fftPass.material.uniforms;
+  const totalPasses = 2 * Math.log2(size);
+  let source = input;
+  let fromState = firstFromState ? 1 : 0;
+  let scratch = scratchA;
+  let passIndex = 0;
+  for (let axis = 0; axis < 2; axis++) {
+    for (let subSize = 2; subSize <= size; subSize *= 2) {
+      passIndex++;
+      fft.uInput.value = source.texture;
+      fft.uSubSize.value = subSize;
+      fft.uHorizontal.value = axis === 0 ? 1 : 0;
+      fft.uFromState.value = fromState;
+      const target = passIndex === totalPasses ? output : scratch;
+      fftPass.render(renderer, target);
+      fromState = 0;
+      source = target;
+      scratch = target === scratchA ? scratchB : scratchA;
+    }
+  }
+}
+
 export class SpectralWater {
   /**
    * @param renderer THREE.WebGLRenderer
@@ -153,26 +183,7 @@ export class SpectralWater {
     this.splats = [];
 
     // 2. Inverse FFT: rows then columns. The final pass lands in the display texture.
-    const fft = this.fftPass.material.uniforms;
-    let input = this.stateA;
-    let fromState = 1;
-    let output = this.fftA;
-    const totalPasses = 2 * this.passes;
-    let passIndex = 0;
-    for (let axis = 0; axis < 2; axis++) {
-      for (let sub = 2; sub <= this.size; sub *= 2) {
-        passIndex++;
-        fft.uInput.value = input.texture;
-        fft.uSubSize.value = sub;
-        fft.uHorizontal.value = axis === 0 ? 1 : 0;
-        fft.uFromState.value = fromState;
-        const target = passIndex === totalPasses ? this.heightTarget : output;
-        this.fftPass.render(renderer, target);
-        fromState = 0;
-        input = target;
-        output = (target === this.fftA) ? this.fftB : this.fftA;
-      }
-    }
+    runInverseFft(renderer, this.fftPass, this.stateA, [this.fftA, this.fftB], this.heightTarget, this.size);
 
     // 3. Foam.
     const foam = this.foamPass.material.uniforms;

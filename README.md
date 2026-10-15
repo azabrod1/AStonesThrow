@@ -29,6 +29,21 @@ closed-form spectrum. One inverse FFT per frame (2·log2 N passes on the GPU)
 returns the height and vertical velocity for rendering. A foam map decays,
 diffuses and is stamped by the splash.
 
+**Wind ripples** (`src/ambientWaves.js`). Between throws the pond is never
+still: a second spectral field, on its own 6 m tile of 256 × 256 laid over
+all the water, carries the ripples a breeze raises. It is a fixed random draw
+from a wind-wave spectrum (wavelengths from 5 to about 60 cm, mostly
+travelling downwind, a tenth as much upwind, rms slope 0.035) evaluated
+afresh every frame at the world time, with the same dispersion as the splash,
+so it has no state to drift and slow motion slows it too; linear waves add,
+so the splash simply rides on it. One evaluation pass and one inverse FFT per
+frame give the height, its exact slopes and its Laplacian, mipmapped so that
+far ripples average to flat instead of shimmering; the slope they average
+away becomes roughness in the sun's glitter, so the glitter keeps its
+brightness with distance. Gusts multiply it: patches of ripple about 3 m
+across (cat's paws) drift downwind at 1.5 m/s over calmer water that keeps a
+quarter of it, which also hides the tile's repetition.
+
 **Splash** (`src/splash.js`). A stone entering water goes through stages with
 known timing, and the droplets are choreographed from them:
 
@@ -104,27 +119,42 @@ submerged stones and bubbles are rendered to a texture with depth; the main
 scene renders the sky dome and the water surface, which refracts that texture
 with absorption by path length through the water, reflects a planar mirror
 image of the sky dome, clouds and treeline (the camera never moves, so it is
-re-rendered only when the view zooms or turns), and adds a GGX sun highlight
-that widens with distance to stand in for sub-pixel glitter; the foam specks
-ride on it.
-Caustics on the sand come from the Laplacian of the surface height above.
+re-rendered only when the view zooms or turns) in the direction each ripple
+turns the view ray, so reflections wobble into vertical streaks, and adds
+the sun's glitter: a Beckmann highlight on the rippled normal, widened by the
+ripple finer than the pixel; the foam specks ride on it.
+Caustics on the sand come from the Laplacian of the surface height above,
+splash and wind ripples both, so they drift with the ripples.
 Stones are faceted procedural geometry with a small rigid-body model: a
 ballistic arc, quadratic drag under water, and a settle into the sand.
 
 ## Development
 
-- `npm test` checks the GPU FFT formulation and the splat spectrum on the CPU.
+- `npm test` checks the GPU FFT formulation and the splat spectrum on the CPU,
+  then runs `tools/wave-probe.mjs`.
+- `node tools/wave-probe.mjs [--wind=x,z]` checks the wind ripples on the CPU
+  with the GPU's own FFT passes: the field is real, its rms slope is the
+  target, waves travel downwind, it repeats seamlessly after its period, and
+  the roughness each mip level hands the glitter matches a measurement; it
+  prints the cost of a frame.
 - `npm run shoot -- --label=name --throws=x:z:radius --times=0.1,0.5` renders
   deterministic frames headlessly (Playwright + Chromium) into `shots/name/`,
   at exact times after the first impact.
   Options: `--fov`, `--look=x:y:z`, `--preimpact=seconds`, `--ui=1`,
-  `--debug=under|height|foam|env|face`, `--eval="js"`, `--w --h --dpr`,
+  `--debug=under|height|foam|env|face|ambient`, `--eval="js"`, `--w --h --dpr`,
   `--crop=x:y:w:h --cropscale=n` (an enlarged crop of each frame),
   `--report="js"` (printed after each frame), `--floats=half`. With
   `--eval="window.__pond.setTimeScale(0.1)"` the frames are slow motion, 1/600 s
   of world time each, so `--times=0.07,0.0716667,…` are consecutive frames.
+  `--throws=none` throws nothing and takes `--times` seconds after `idle.png`
+  (which follows `--preroll=seconds`), for a run of idle frames.
 - `?floats=half` on the page forces half-float render targets everywhere, the
   path devices without `EXT_color_buffer_float` take.
+- `?paused=1` starts the page with its clock stopped (the harness does, so
+  its frames start from world time zero and every run renders the same water).
+- `?wind=x,z` on the page (`--wind=x:z` for the harness) sets the direction
+  the wind blows toward, in world XZ (the camera looks toward −Z); the
+  default is (0.45, −0.9), away from the camera and a little to the right.
 - `?sky=name` on the page (`--sky=name` for the harness) picks the sky
   panorama, a key of `SKIES` in `src/sky.js`.
 - `node tools/sky-probe.mjs assets/sky/name_2k.hdr [--png=preview.png]`

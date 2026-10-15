@@ -5,13 +5,13 @@
 // scene, exactly as the droplets do, and draw both faces.
 //
 // Sheet. A landing drop's crown (aRide = 1) is lifted by the water's height
-// under each vertex, sampled as the water surface's vertex shader does, so it
-// stands on the waves it lands on; a stone's crown starts on still water and
-// keeps its own base. The depth pass writes what the droplet depth pass writes: view
-// depth, an on-screen radius of 999 pixels (so the composite shades a thin
-// film, never spray) and a sun glint. The glint uses the grid normal turned to
-// face the viewer, leaned along aRimTangent near the rim so the bead catches
-// the sun like a tube. The thickness pass adds the water a ray crosses: the
+// under each vertex, splash and ambient waves together, sampled as the water
+// surface's vertex shader does, so it stands on the waves it lands on; a
+// stone's crown starts on still water and keeps its own base. The depth pass
+// writes what the droplet depth pass writes: view depth, an on-screen radius
+// of 999 pixels (so the composite shades a thin film, never spray) and a sun
+// glint. The glint uses the grid normal turned to face the viewer, leaned
+// along aRimTangent near the rim so the bead catches the sun like a tube. The thickness pass adds the water a ray crosses: the
 // sheet thickness over the cosine of the view angle (capped), for every wall
 // the ray passes through.
 //
@@ -48,7 +48,7 @@ void main() {
   vec4 world = modelMatrix * vec4(position, 1.0);
   if (aRide > 0.5) {
     vec2 domainUv = (world.xz - uDomainMin) / uDomainSize + uTexelOffset;
-    world.y += texture2D(uHeight, domainUv).r * patchMask(domainUv);
+    world.y += (texture2D(uHeight, domainUv).r + ambientHeight(world.xz)) * patchMask(domainUv);
   }
   vec4 viewPosition = viewMatrix * world;
   vViewPosition = viewPosition.xyz;

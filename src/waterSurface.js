@@ -1,8 +1,11 @@
 // The water surface: an inner patch that follows the simulated height field and
-// a flat outer sheet to the horizon, drawn with one shader. The sheet reaches
-// OUTER_HALF_SIZE metres from the patch's centre, so seen from the camera
-// (1.15 m up) its edge is 0.02° below the horizon and the water meets the sky
-// dome's horizon with no strip of the photo's own ground between them.
+// a flat outer sheet to the horizon, drawn with one shader. The ambient wind
+// waves (src/ambientWaves.js) ride on both: they displace the inner patch with
+// the splash's waves and shade all the water (WATER_VERTEX and WATER_FRAGMENT
+// say how). The sheet reaches OUTER_HALF_SIZE metres from the patch's centre,
+// so seen from the camera (1.15 m up) its edge is 0.02° below the horizon and
+// the water meets the sky dome's horizon with no strip of the photo's own
+// ground between them.
 import * as THREE from 'three';
 import { WATER_VERTEX, WATER_FRAGMENT } from './shaders/scene.js';
 
@@ -24,7 +27,7 @@ function outerSheetGeometry(innerHalf, outerHalf, centre) {
   return geometry;
 }
 
-export function createWaterSurface(water, lighting, environment) {
+export function createWaterSurface(water, lighting, ambientWaves) {
   const uniforms = {
     uHeight: { value: water.heightTexture },
     uFoam: { value: water.foamTexture },
@@ -50,10 +53,18 @@ export function createWaterSurface(water, lighting, environment) {
     uDomainSize: { value: water.domainSize },
     uTexelOffset: { value: water.uvOffset },
     uInner: { value: 1 },
+    uAmbientUnresolved: { value: ambientWaves.unresolvedVariance },
+    ...ambientWaves.uniforms(),
   };
-  const innerMaterial = new THREE.ShaderMaterial({ vertexShader: WATER_VERTEX, fragmentShader: WATER_FRAGMENT, uniforms });
-  const outerMaterial = innerMaterial.clone();
-  outerMaterial.uniforms = { ...uniforms, uInner: { value: 0 } };
+  // Two materials sharing every uniform object but uInner.
+  const material = (inner) => new THREE.ShaderMaterial({
+    vertexShader: WATER_VERTEX,
+    fragmentShader: WATER_FRAGMENT,
+    uniforms: inner ? uniforms : { ...uniforms, uInner: { value: 0 } },
+    defines: { AMBIENT_LEVELS: ambientWaves.levels },
+  });
+  const innerMaterial = material(true);
+  const outerMaterial = material(false);
 
   const innerSegments = Math.min(water.size, 512);
   const innerGeometry = new THREE.PlaneGeometry(water.domainSize, water.domainSize, innerSegments, innerSegments);
@@ -81,8 +92,6 @@ export function createWaterSurface(water, lighting, environment) {
       uniforms.uTime.value = time;
       uniforms.uFoam.value = water.foamTexture;
       uniforms.uHeight.value = water.heightTexture;
-      outerMaterial.uniforms.uUnderColor.value = underTarget.texture;
-      outerMaterial.uniforms.uUnderDepth.value = underTarget.depthTexture;
     },
   };
 }

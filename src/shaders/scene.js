@@ -1,6 +1,11 @@
 // GLSL for the pond: water surface, pond floor with caustics, bubbles, and
 // the foam specks that ride the surface after a splash (src/foamSpecks.js).
 // All scene passes render linear HDR radiance; the composite pass tone-maps.
+//
+// GLSL_COMMON also carries the ambient wind waves (src/ambientWaves.js) and
+// their gust envelope, for every shader that rides or shades the surface; the
+// uniforms it declares come from AmbientWaves.uniforms() and stay inactive in
+// shaders that never call the functions using them.
 
 export const GLSL_COMMON = /* glsl */`
 #define PI 3.141592653589793
@@ -30,52 +35,95 @@ float patchMask(vec2 domainUv) {
   return 1.0 - smoothstep(0.78, 0.98, edge);
 }
 
-// GGX sun highlight for a wet surface (F0 = 0.02). Returns outgoing radiance for
-// a sun of the given irradiance.
-vec3 sunSpecular(vec3 n, vec3 v, vec3 l, vec3 sunIrradiance, float roughness) {
-  vec3 h = normalize(l + v);
-  float nDotH = max(dot(n, h), 0.0);
-  float nDotV = max(dot(n, v), 1e-3);
-  float nDotL = max(dot(n, l), 0.0);
-  float vDotH = max(dot(v, h), 0.0);
-  float a = roughness * roughness;
-  float a2 = a * a;
-  float denominator = nDotH * nDotH * (a2 - 1.0) + 1.0;
-  float d = a2 / (PI * denominator * denominator);
+// Ambient wind waves: a periodic tile of ripples (src/ambientWaves.js) laid
+// over all the water and multiplied by the gust envelope. Its texture holds
+// height, ∂h/∂x, ∂h/∂z and ∇²h (r, g, b, a) in units of
+// uAmbientMetresPerUnit, mipmapped and repeat-wrapped.
+uniform sampler2D uAmbientHeight;
+uniform float uAmbientTileSize;      // metres per side of the tile
+uniform float uAmbientTexels;        // texels per side
+uniform float uAmbientMetresPerUnit;
+uniform vec2 uWindDirection;         // world XZ the wind blows toward, unit length
+uniform float uGustTime;             // world seconds
+
+// Gusts: cat's paws. Patches of ripple about GUST_SCALE metres across drift
+// downwind at GUST_DRIFT m/s over calmer water, which keeps GUST_CALM of the
+// ripple so it is never glass. Two octaves of value noise, turned off the
+// world axes so the noise lattice never lines up with the view; the finer one
+// drifts half as fast again, so the patches change shape as they travel. The
+// smoothstep from GUST_EDGE_LOW to GUST_EDGE_HIGH makes them patches rather
+// than a gentle swell of ripple. The splash's own ripples are not modulated.
+#define GUST_SCALE 3.0
+#define GUST_DRIFT 1.5
+#define GUST_CALM 0.25
+#define GUST_EDGE_LOW 0.42
+#define GUST_EDGE_HIGH 0.62
+float gustEnvelope(vec2 worldXZ, float time) {
+  vec2 coarse = mat2(0.8, 0.6, -0.6, 0.8) * (worldXZ - uWindDirection * GUST_DRIFT * time) / GUST_SCALE;
+  vec2 fine = mat2(0.6, -0.8, 0.8, 0.6) * (worldXZ - uWindDirection * 1.5 * GUST_DRIFT * time) / (0.45 * GUST_SCALE) + 13.7;
+  float field = 0.65 * valueNoise(coarse) + 0.35 * valueNoise(fine);
+  return mix(GUST_CALM, 1.0, smoothstep(GUST_EDGE_LOW, GUST_EDGE_HIGH, field));
+}
+
+// Height of the ambient waves at full gust, metres. In a vertex shader the
+// lookup is at the base level; in a fragment shader at the pixel's mip level.
+float ambientHeightAtFullGust(vec2 worldXZ) {
+  return texture2D(uAmbientHeight, worldXZ / uAmbientTileSize).r * uAmbientMetresPerUnit;
+}
+
+float ambientHeight(vec2 worldXZ) {
+  return ambientHeightAtFullGust(worldXZ) * gustEnvelope(worldXZ, uGustTime);
+}
+
+// Slope (dh/dx, dh/dz) at full gust, exact (from the spectrum), read at the
+// pixel's mip level so far ripples average to flat. The water shader
+// multiplies it by the gust envelope it also needs for its roughness.
+vec2 ambientSlopeAtFullGust(vec2 worldXZ) {
+  return texture2D(uAmbientHeight, worldXZ / uAmbientTileSize).gb * uAmbientMetresPerUnit;
+}
+
+// Laplacian of the height (1/m), exact, at the pixel's mip level. The sun's
+// disc blurs a caustic on the floor 0.8 m down by under a centimetre, less
+// than a texel, so it needs no blur of its own.
+float ambientLaplacian(vec2 worldXZ) {
+  return texture2D(uAmbientHeight, worldXZ / uAmbientTileSize).a * uAmbientMetresPerUnit * gustEnvelope(worldXZ, uGustTime);
+}
+
+// Sun glitter (F0 = 0.02): the sun reflected by a surface whose normal is n
+// and whose slopes finer than n resolves are Gaussian with total variance
+// slopeVariance (both axes): the Beckmann distribution, with its Smith
+// shadowing (Walter et al.'s rational fit). Gaussian tails, not GGX's long
+// ones: water's slopes are close to Gaussian, and at grazing angles a GGX tail
+// paints a bright smear toward the horizon where no slope reaches the sun.
+// Returns outgoing radiance for a sun of the given irradiance.
+float beckmannShadowing(float cosine, float slopeVariance) {
+  float cotangentOverWidth = cosine / sqrt(slopeVariance * max(1.0 - cosine * cosine, 1e-6));
+  if (cotangentOverWidth >= 1.6) return 1.0;
+  return (3.535 * cotangentOverWidth + 2.181 * cotangentOverWidth * cotangentOverWidth)
+    / (1.0 + 2.276 * cotangentOverWidth + 2.577 * cotangentOverWidth * cotangentOverWidth);
+}
+
+vec3 sunGlitter(vec3 normal, vec3 toViewer, vec3 toSun, vec3 sunIrradiance, float slopeVariance) {
+  vec3 halfVector = normalize(toSun + toViewer);
+  float nDotH = max(dot(normal, halfVector), 1e-3);
+  float nDotV = max(dot(normal, toViewer), 1e-3);
+  float nDotL = max(dot(normal, toSun), 0.0);
+  float vDotH = max(dot(toViewer, halfVector), 0.0);
+  float cosineSquared = nDotH * nDotH;
+  float tangentSquared = (1.0 - cosineSquared) / cosineSquared;
+  float distribution = exp(-tangentSquared / slopeVariance) / (PI * slopeVariance * cosineSquared * cosineSquared);
   float fresnel = 0.02 + 0.98 * pow(1.0 - vDotH, 5.0);
-  float k = a * 0.5;
-  float g = (nDotV / (nDotV * (1.0 - k) + k)) * (nDotL / (nDotL * (1.0 - k) + k));
-  return sunIrradiance * d * g * fresnel / max(4.0 * nDotV * nDotL, 1e-3) * nDotL;
-}
-
-// Tiny wind ripples: three slow plane waves, slopes only. Keeps flat water from
-// looking like glass without hiding the simulated ripples.
-vec2 noiseSlope(vec2 p, float scale, float amplitude, vec2 drift, float t) {
-  vec2 q = p * scale + drift * t;
-  float e = 0.35;
-  float dx = valueNoise(q + vec2(e, 0.0)) - valueNoise(q - vec2(e, 0.0));
-  float dy = valueNoise(q + vec2(0.0, e)) - valueNoise(q - vec2(0.0, e));
-  return vec2(dx, dy) * (amplitude * scale / (2.0 * e));
-}
-
-vec2 windSlope(vec2 p, float t) {
-  vec2 slope = vec2(0.0);
-  // Irregular cat's-paws: two octaves of drifting noise, plus faint plane waves.
-  slope += noiseSlope(p, 9.0, 0.0022, vec2(0.6, 0.25), t);
-  slope += noiseSlope(p, 23.0, 0.0008, vec2(-0.9, 0.5), t);
-  slope += noiseSlope(p, 61.0, 0.00022, vec2(1.4, -0.7), t);
-  vec2 d1 = normalize(vec2(0.80, 0.30));
-  vec2 d2 = normalize(vec2(-0.45, 0.90));
-  vec2 d3 = normalize(vec2(0.20, -1.00));
-  float k1 = 2.0 * PI / 0.16, k2 = 2.0 * PI / 0.11, k3 = 2.0 * PI / 0.27;
-  slope += d1 * 0.00020 * k1 * cos(k1 * dot(d1, p) - sqrt(9.81 * k1) * t);
-  slope += d2 * 0.00012 * k2 * cos(k2 * dot(d2, p) - sqrt(9.81 * k2) * t + 1.7);
-  slope += d3 * 0.00025 * k3 * cos(k3 * dot(d3, p) - sqrt(9.81 * k3) * t + 0.4);
-  float gust = 0.3 + 0.7 * valueNoise(p * 0.45 + vec2(t * 0.06, t * 0.02));
-  return slope * gust;
+  float shadowing = beckmannShadowing(nDotV, slopeVariance) * beckmannShadowing(max(nDotL, 1e-3), slopeVariance);
+  return sunIrradiance * distribution * shadowing * fresnel / max(4.0 * nDotV * nDotL, 1e-3) * nDotL;
 }
 `;
 
+// The water. The inner patch is displaced by the splash height and the ambient
+// height together, both faded out by patchMask at the patch's rim, so its edge
+// meets the flat outer sheet (the ambient height there, a few millimetres
+// 4 m and more from the camera, is far below a pixel). Shading takes the
+// slope of both fields everywhere: the splash's inside the patch, the
+// ambient's over all the water, outer sheet included.
 export const WATER_VERTEX = /* glsl */`
 uniform sampler2D uHeight;
 uniform vec2 uDomainMin;
@@ -91,8 +139,8 @@ void main() {
   vec3 world = (modelMatrix * vec4(position, 1.0)).xyz;
   vec2 domainUv = (world.xz - uDomainMin) / uDomainSize + uTexelOffset;
   float mask = uInner > 0.5 ? patchMask(domainUv) : 0.0;
-  float h = uInner > 0.5 ? texture2D(uHeight, domainUv).r : 0.0;
-  world.y += h * mask;
+  float height = uInner > 0.5 ? texture2D(uHeight, domainUv).r + ambientHeight(world.xz) : 0.0;
+  world.y += height * mask;
   vWorld = world;
   vDomainUv = domainUv;
   vMask = mask;
@@ -123,12 +171,26 @@ uniform float uCell;
 uniform vec3 uAbsorb;          // per-metre absorption
 uniform vec3 uWaterColor;      // in-scattered radiance at full depth
 uniform float uScatterLength;  // metres over which in-scattering saturates
-uniform float uRoughness;
+uniform float uRoughness;        // sub-grid roughness: a slope spread of uRoughness² (rms, both axes)
+uniform float uAmbientUnresolved[AMBIENT_LEVELS];   // slope variance each mip level of the ambient waves loses
 varying vec3 vWorld;
 varying vec2 vDomainUv;
 varying float vMask;
 varying float vViewZ;
 ${GLSL_COMMON}
+
+// The slope variance of the ambient ripples that this pixel's lookup no
+// longer shows and the base level does, at full gust: interpolated by mip
+// level, the level computed as the GPU picks it (isotropic, from the larger
+// screen derivative). Magnified, nearer the camera, it is zero.
+float ambientUnresolvedVariance(vec2 worldXZ) {
+  vec2 texelPosition = worldXZ / uAmbientTileSize * uAmbientTexels;
+  vec2 acrossX = dFdx(texelPosition);
+  vec2 acrossY = dFdy(texelPosition);
+  float level = clamp(0.5 * log2(max(max(dot(acrossX, acrossX), dot(acrossY, acrossY)), 1e-8)), 0.0, float(AMBIENT_LEVELS - 1) - 0.001);
+  int lower = int(level);
+  return mix(uAmbientUnresolved[lower], uAmbientUnresolved[lower + 1], level - float(lower));
+}
 
 void main() {
   float texelStep = 1.0 / uN;
@@ -138,23 +200,30 @@ void main() {
   float hu = texture2D(uHeight, vDomainUv + vec2(0.0, texelStep)).r;
   vec3 toCamera = cameraPosition - vWorld;
   float viewDist = length(toCamera);
-  // Beyond a few metres the wind ripples are smaller than a pixel: fade them out
-  // and let a rougher highlight stand in for the glitter they would make.
-  float farness = smoothstep(2.5, 14.0, viewDist);
-  vec2 slope = vec2(hr - hl, hu - hd) / (2.0 * uCell) * vMask;
-  slope += windSlope(vWorld.xz, uTime) * (1.0 - farness);
+  // The splash's slope inside its patch plus the ambient ripples everywhere,
+  // which the mipmaps flatten where they are finer than a pixel. What they
+  // flatten becomes roughness, so the glitter keeps its brightness with distance.
+  float gust = gustEnvelope(vWorld.xz, uGustTime);
+  vec2 slope = vec2(hr - hl, hu - hd) / (2.0 * uCell) * vMask + ambientSlopeAtFullGust(vWorld.xz) * gust;
+  float subGridSpread = uRoughness * uRoughness;
+  float slopeVariance = subGridSpread * subGridSpread + ambientUnresolvedVariance(vWorld.xz) * gust * gust;
   vec3 n = normalize(vec3(-slope.x, 1.0, -slope.y));
-  float roughness = mix(uRoughness, 0.19, farness);
   vec3 v = toCamera / viewDist;
   float nDotV = max(dot(n, v), 0.0);
   float fresnel = 0.02 + 0.98 * pow(1.0 - nDotV, 5.0);
 
   // Reflection of the sky and the far shore (the dome's photograph): a planar
-  // mirror image rendered at screen resolution, shifted by the surface slope (a
-  // tilt of s radians turns the reflected ray by 2s).
-  vec4 reflectCoord = uReflectionMatrix * vec4(vWorld, 1.0);
-  vec2 reflectUv = reflectCoord.xy / reflectCoord.w;
-  reflectUv += vec2(-slope.x, slope.y) * 2.0 * uFocalPx / uResolution;
+  // mirror image, rendered at screen resolution, of a dome at infinity, so the
+  // direction the surface reflects the view ray into is looked up through the
+  // mirror camera (w = 0: a direction). A ripple tilting toward or away from
+  // the camera moves the image up or down by twice its tilt; one tilting
+  // sideways turns it far less at grazing angles, so reflections stretch into
+  // vertical streaks, as they do on a lake. A ray turned below the horizon
+  // would meet the next ripple; it takes the horizon's colour.
+  vec3 reflectedRay = reflect(-v, n);
+  reflectedRay.y = max(reflectedRay.y, 0.001);
+  vec4 reflectCoord = uReflectionMatrix * vec4(reflectedRay, 0.0);
+  vec2 reflectUv = reflectCoord.xy / max(reflectCoord.w, 1e-4);
   vec3 reflected = texture2D(uReflection, clamp(reflectUv, vec2(0.002), vec2(0.998))).rgb;
 
   // Refraction: shift the screen lookup by the surface slope, scaled by how much
@@ -180,7 +249,7 @@ void main() {
   vec3 refracted = underColor * transmittance + uWaterColor * scattering;
 
   vec3 color = mix(refracted, reflected, fresnel);
-  color += min(sunSpecular(n, v, uSunDir, uSunIrradiance, roughness), vec3(400.0));
+  color += min(sunGlitter(n, v, uSunDir, uSunIrradiance, slopeVariance), vec3(400.0));
 
   // Foam is patchy: bubbles clustered by a drifting noise, thinning as it decays.
   float foam = texture2D(uFoam, vDomainUv).r * vMask;
@@ -229,7 +298,7 @@ void main() {
   float silt = valueNoise(p * 0.9 + 3.0);
   sand *= 0.75 + 0.45 * silt;
 
-  // Caustics: where the surface above focuses the sun. The beam reaching this
+  // Caustics: where the surfaces above focus the sun. The beam reaching this
   // floor point crossed the surface up-sun of it; its irradiance scales with
   // the inverse area dilation of the refracted rays, which for small slopes is
   // 1 + 0.25 · depth · ∇²h.
@@ -244,12 +313,9 @@ void main() {
   float hd = texture2D(uHeight, uv - vec2(0.0, texelStep)).r;
   float hu = texture2D(uHeight, uv + vec2(0.0, texelStep)).r;
   float laplacian = (hl + hr + hu + hd - 4.0 * hc) / (9.0 * uCell * uCell);
-  float focus = 1.0 + 0.25 * uPondDepth * laplacian * mask;
+  // The ambient ripples add their own: a web of caustics drifting with them.
+  float focus = 1.0 + 0.25 * uPondDepth * (laplacian * mask + ambientLaplacian(surfacePoint));
   float caustic = clamp(1.0 / max(focus, 0.5), 0.72, 1.45);
-  // Faint wandering caustic web from the wind ripples.
-  vec2 w = windSlope(surfacePoint, 0.0);
-  float web = valueNoise(surfacePoint * 9.0 + vec2(0.0, 0.0));
-  caustic *= 0.92 + 0.16 * web;
 
   float sunPath = uPondDepth / max(uSunDir.y, 0.2);
   vec3 sunlight = uSunIrradiance * exp(-uAbsorb * sunPath) * max(uSunDir.y, 0.0) * caustic;
@@ -292,8 +358,8 @@ void main() {
 // closed form of the splash time, so the CPU writes a speck once, when it is
 // born: it drifts outward from where it was born at a speed decaying over
 // SPECK_DRIFT_SECONDS, wanders a little, and sits on the waves at the height
-// the water surface's own vertex shader gives that point (plus SPECK_LIFT, so
-// the triangulated surface never covers it). It fades in over a tenth of a
+// the water surface's own vertex shader gives that point, splash and ambient
+// waves together (plus SPECK_LIFT, so the triangulated surface never covers it). It fades in over a tenth of a
 // second and out over its last SPECK_FADE seconds, shrinking as it goes.
 // A speck smaller than uMinPixelSize is drawn at that size, soft, with its
 // opacity cut by the area it really covers (down to SPECK_MIN_COVERAGE): a
@@ -325,7 +391,7 @@ void main() {
   vec2 place = position.xz + aDrift * SPECK_DRIFT_SECONDS * (1.0 - exp(-age / SPECK_DRIFT_SECONDS));
   place += SPECK_WANDER * vec2(sin(age * 1.3 + phase) + 0.5 * sin(age * 3.1 + 2.0 * phase), cos(age * 1.1 + 1.7 * phase) + 0.5 * sin(age * 2.7 + 3.0 * phase));
   vec2 domainUv = (place - uDomainMin) / uDomainSize + uTexelOffset;
-  float height = texture2D(uHeight, domainUv).r * patchMask(domainUv);
+  float height = (texture2D(uHeight, domainUv).r + ambientHeight(place)) * patchMask(domainUv);
   vec4 viewPosition = viewMatrix * vec4(place.x, height + SPECK_LIFT, place.y, 1.0);
   float fadeOut = 1.0 - smoothstep(life - SPECK_FADE, life, age);
   float fade = smoothstep(0.0, 0.1, age) * fadeOut;

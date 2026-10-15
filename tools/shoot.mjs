@@ -10,13 +10,19 @@
 // first impact to capture (frames are named tS_CC.png, or tS_CCCC.png for a
 // time that needs four decimals, such as a run of slow-motion frames). The
 // flight is stepped a frame at a time; the part of the last step after the
-// impact counts toward the first capture, so the times are exact. --w/--h/--dpr set the viewport. --ui=1 keeps the UI.
+// impact counts toward the first capture, so the times are exact.
+// --throws=none throws nothing: the frames are idle water, --times seconds
+// after idle.png (which is taken after --preroll seconds). The page starts
+// paused (?paused=1), so world time is zero at the start of every run and
+// idle water renders identically. --w/--h/--dpr set the viewport. --ui=1
+// keeps the UI.
 // --crop=x:y:width:height also saves that region of each frame (CSS pixels)
 // as tN_NN_crop.png, enlarged --cropscale times with square pixels (default 1).
 // --report="js expression" is evaluated in the page after each frame and its
 // result printed as JSON (window.__pond is the app). --floats=half renders on
 // the half-float path that devices without EXT_color_buffer_float take.
 // --sky=name picks the sky panorama (a key of SKIES in src/sky.js).
+// --wind=x:z sets the direction the wind blows toward in world XZ.
 import { chromium } from 'playwright';
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
@@ -31,7 +37,8 @@ const outDir = path.join(root, 'shots', label);
 const width = Number(arg('w', 1280));
 const height = Number(arg('h', 720));
 const dpr = Number(arg('dpr', 1));
-const throws = arg('throws', '0:-1.4:0.03').split(',').map((t) => t.split(':').map(Number));
+const throwArgument = arg('throws', '0:-1.4:0.03');
+const throws = throwArgument === 'none' ? [] : throwArgument.split(',').map((t) => t.split(':').map(Number));
 const times = arg('times', '0.02,0.08,0.15,0.3,0.6,1.2').split(',').map(Number);
 const keepUi = arg('ui', '0') === '1';
 const quality = arg('quality', 'high');
@@ -46,6 +53,7 @@ const cropScale = Number(arg('cropscale', '1'));
 const report = arg('report', '');
 const floats = arg('floats', '');
 const sky = arg('sky', '');
+const wind = arg('wind', '');
 
 const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.mjs': 'text/javascript', '.json': 'application/json', '.png': 'image/png', '.css': 'text/css' };
 const server = createServer(async (request, response) => {
@@ -89,7 +97,7 @@ const problems = [];
 page.on('pageerror', (e) => problems.push(String(e)));
 page.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') problems.push(m.text()); });
 
-const url = `http://localhost:${port}/index.html?quality=${quality}${keepUi ? '' : '&ui=0'}${floats ? `&floats=${floats}` : ''}${sky ? `&sky=${sky}` : ''}`;
+const url = `http://localhost:${port}/index.html?quality=${quality}&paused=1${keepUi ? '' : '&ui=0'}${floats ? `&floats=${floats}` : ''}${sky ? `&sky=${sky}` : ''}${wind ? `&wind=${wind.replace(':', ',')}` : ''}`;
 console.log(`[shoot] ${url} -> ${outDir}`);
 await page.goto(url, { waitUntil: 'domcontentloaded' });
 try {
@@ -110,13 +118,13 @@ console.log('[shoot] idle.png');
 for (const [x, z, radius] of throws) await page.evaluate(([x, z, radius]) => window.__pond.throwAt(x, z, { radius }), [x, z, radius]);
 if (evalAfterThrow) await page.evaluate(evalAfterThrow);
 let flight = 0;
-if (preImpact > 0) {
+if (throws.length > 0 && preImpact > 0) {
   await page.evaluate((seconds) => window.__pond.advance(seconds), preImpact);
   flight += preImpact;
   await page.screenshot({ path: path.join(outDir, 'flight.png'), timeout: 180000 });
   console.log('[shoot] flight.png');
 }
-while (!(await page.evaluate(() => window.__pond.hasImpacted())) && flight < 3) {
+while (throws.length > 0 && !(await page.evaluate(() => window.__pond.hasImpacted())) && flight < 3) {
   await page.evaluate(() => window.__pond.advance(1 / 60));
   flight += 1 / 60;
 }
@@ -126,7 +134,7 @@ const overshoot = await page.evaluate(() => {
   const starts = splash.crowns.filter((crown) => !crown.landing).map((crown) => crown.startTime);
   return starts.length ? splash.time - Math.min(...starts) : 0;
 });
-console.log(`[shoot] impact after ${flight.toFixed(2)} s of flight (${(overshoot * 1000).toFixed(1)} ms ago)`);
+if (throws.length > 0) console.log(`[shoot] impact after ${flight.toFixed(2)} s of flight (${(overshoot * 1000).toFixed(1)} ms ago)`);
 let elapsed = overshoot;
 for (const t of times) {
   await page.evaluate((seconds) => window.__pond.advance(seconds), Math.max(t - elapsed, 0));

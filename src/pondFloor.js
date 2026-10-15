@@ -1,8 +1,10 @@
-// The sandy pond floor, lit by sunlight focused through the rippling surface.
+// The sandy pond floor, lit by sunlight focused through the rippling surface:
+// the caustics come from the curvature of the splash's height field and of the
+// ambient wind waves (src/ambientWaves.js), so they drift with the ripples.
 import * as THREE from 'three';
 import { FLOOR_VERTEX, FLOOR_FRAGMENT } from './shaders/scene.js';
 
-export function createPondFloor(water, lighting) {
+export function createPondFloor(water, lighting, ambientWaves) {
   const material = new THREE.ShaderMaterial({
     vertexShader: FLOOR_VERTEX,
     fragmentShader: FLOOR_FRAGMENT,
@@ -18,6 +20,7 @@ export function createPondFloor(water, lighting) {
       uCell: { value: water.cell },
       uPondDepth: { value: water.depth },
       uAbsorb: { value: lighting.absorb },
+      ...ambientWaves.uniforms(),
     },
   });
   const mesh = new THREE.Mesh(new THREE.PlaneGeometry(600, 600), material);
