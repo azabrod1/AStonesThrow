@@ -39,7 +39,17 @@ known timing, and the droplets are choreographed from them:
    from the crests; after about 60 ms the sheet tears from the rim down into
    drops that carry its velocity;
 2. cavity and pinch-off about 2.1·√(R/g) seconds after entry;
-3. Worthington jet: a narrow column fired straight up, tip first;
+3. Worthington jet (`src/jet.js`): a glassy column fired straight up. It is
+   water launched from the collapse point, fastest first, each element then
+   flying ballistically, so the column is a closed form in launch time,
+   azimuth and time; it stretches as it rises, its radius set by volume
+   conservation, widest at the base. A bulb at its tip pinches off into one
+   to three large drops (the largest of the splash), then the column breaks
+   from the top down into drops about twice its local radius, as a
+   Rayleigh–Plateau instability does, growing varicose beads before it
+   parts; its slow base falls back into a mound that throws a small
+   secondary ring. For a 3 cm stone it reaches about half a metre and is
+   gone about half a second after entry;
 4. bubbles that rise and burst into foam.
 
 Droplets are integrated on the CPU and rendered as a screen-space fluid:
@@ -48,8 +58,11 @@ into a depth buffer (with each drop's sun glint) and an additive thickness
 buffer; a bilateral blur merges neighbouring drops into sheets; the composite
 pass shades the result with sky reflection, refraction of the scene behind,
 sun highlights and white scattering for fine spray, then tone-maps the frame.
-The crown sheet is a mesh drawn into the same two buffers, so it is shaded
-as the same water, plus a milky scattering for its rippled, aerated film.
+The crown sheet and the jet column are meshes drawn into the same two
+buffers, so they are shaded as the same water: the sheet with a milky
+scattering for its rippled, aerated film, the column (and the large drops it
+breaks into) as clear glass, a lens that shows the pond and the sun's glitter
+from well to the side and, through its bulb, the sky upside down.
 
 **Rendering** (`src/main.js`, `src/shaders/`). Each frame: the floor,
 submerged stones and bubbles are rendered to a texture with depth; the main
@@ -67,7 +80,11 @@ ballistic arc, quadratic drag under water, and a settle into the sand.
 - `npm run shoot -- --label=name --throws=x:z:radius --times=0.1,0.5` renders
   deterministic frames headlessly (Playwright + Chromium) into `shots/name/`.
   Options: `--fov`, `--look=x:y:z`, `--preimpact=seconds`, `--ui=1`,
-  `--debug=under|height|foam|env|face`, `--eval="js"`, `--w --h --dpr`.
+  `--debug=under|height|foam|env|face`, `--eval="js"`, `--w --h --dpr`,
+  `--crop=x:y:w:h --cropscale=n` (an enlarged crop of each frame),
+  `--report="js"` (printed after each frame).
+- `node tools/jet-probe.mjs [radius] [entrySpeed]` runs one Worthington jet on
+  the CPU and prints its timeline, drops, volume budget and cost per frame.
 - `window.__pond` exposes the app in the console: `throwAt(x, z, { radius })`,
   `setTimeScale`, `pause()`, `advance(seconds)`, `setDebugView(name)`.
 

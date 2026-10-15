@@ -44,12 +44,13 @@
 // side of an oblique throw), and is gone by about 100 ms.
 //
 // updateGeometry() evaluates a ROWS × COLUMNS grid (rim to base × around the
-// ring) once per rendered frame; update() runs every simulation substep and
-// sheds from the rim, while the tear, the costly part, advances at most every
-// TEAR_INTERVAL of simulated time. The mesh is drawn by SplashSystem with the
-// materials in src/shaders/sheet.js, through the droplets' screen-space fluid
-// passes.
+// ring, built by src/fluidMesh.js) once per rendered frame; update() runs every
+// simulation substep and sheds from the rim, while the tear, the costly part,
+// advances at most every TEAR_INTERVAL of simulated time. The mesh is drawn by
+// SplashSystem with the materials in src/shaders/sheet.js, through the
+// droplets' screen-space fluid passes.
 import * as THREE from 'three';
+import { createRingGrid, computeGridNormals, markChanged } from './fluidMesh.js';
 
 const GRAVITY = 9.81;
 const REFERENCE_RADIUS = 0.03;     // the stone size the tuning constants were set for
@@ -164,27 +165,13 @@ export class CrownSheet {
     this.rimTangents = new Float32Array(vertexCount * 3);
     this.thicknesses = new Float32Array(vertexCount);
     this.rowTaus = new Float64Array(vertexCount);   // launch time behind the free edge
-    const geometry = new THREE.BufferGeometry();
-    const dynamic = (array, size) => new THREE.BufferAttribute(array, size).setUsage(THREE.DynamicDrawUsage);
-    geometry.setAttribute('position', dynamic(this.positions, 3));
-    geometry.setAttribute('normal', dynamic(this.normals, 3));
-    geometry.setAttribute('aRimTangent', dynamic(this.rimTangents, 3));
-    geometry.setAttribute('aThickness', dynamic(this.thicknesses, 1));
-    const indices = [];
-    for (let row = 0; row < ROWS - 1; row++) {
-      for (let column = 0; column < COLUMNS; column++) {
-        const next = (column + 1) % COLUMNS;
-        const corner = row * COLUMNS + column;
-        const cornerNext = row * COLUMNS + next;
-        const below = (row + 1) * COLUMNS + column;
-        const belowNext = (row + 1) * COLUMNS + next;
-        indices.push(corner, below, cornerNext, cornerNext, below, belowNext);
-      }
-    }
-    geometry.setIndex(indices);
-    this.geometry = geometry;
-    this.mesh = new THREE.Mesh(geometry, material);
-    this.mesh.frustumCulled = false;
+    this.mesh = createRingGrid(ROWS, COLUMNS, {
+      position: [this.positions, 3],
+      normal: [this.normals, 3],
+      aRimTangent: [this.rimTangents, 3],
+      aThickness: [this.thicknesses, 1],
+    }, material);
+    this.geometry = this.mesh.geometry;
     this.state = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, thickness: 0, radialDistance: 0 };
     this.stateOther = { ...this.state };
   }
@@ -431,27 +418,15 @@ export class CrownSheet {
     // Normals from the grid; near the rim the bead's normal also leans along
     // the sheet towards the edge, as a tube's does.
     const positions = this.positions;
+    computeGridNormals(positions, this.normals, ROWS, COLUMNS);
     for (let column = 0; column < COLUMNS; column++) {
-      const previous = (column + COLUMNS - 1) % COLUMNS;
-      const next = (column + 1) % COLUMNS;
       for (let row = 0; row < ROWS; row++) {
         const vertex = row * COLUMNS + column;
         const before = Math.max(row - 1, 0) * COLUMNS + column;
         const after = Math.min(row + 1, ROWS - 1) * COLUMNS + column;
-        const aroundX = positions[(row * COLUMNS + next) * 3] - positions[(row * COLUMNS + previous) * 3];
-        const aroundY = positions[(row * COLUMNS + next) * 3 + 1] - positions[(row * COLUMNS + previous) * 3 + 1];
-        const aroundZ = positions[(row * COLUMNS + next) * 3 + 2] - positions[(row * COLUMNS + previous) * 3 + 2];
         const alongX = positions[after * 3] - positions[before * 3];
         const alongY = positions[after * 3 + 1] - positions[before * 3 + 1];
         const alongZ = positions[after * 3 + 2] - positions[before * 3 + 2];
-        let normalX = aroundY * alongZ - aroundZ * alongY;
-        let normalY = aroundZ * alongX - aroundX * alongZ;
-        let normalZ = aroundX * alongY - aroundY * alongX;
-        const normalLength = Math.sqrt(normalX * normalX + normalY * normalY + normalZ * normalZ);
-        if (normalLength > 1e-12) { normalX /= normalLength; normalY /= normalLength; normalZ /= normalLength; } else { normalX = 0; normalY = 1; normalZ = 0; }
-        this.normals[vertex * 3] = normalX;
-        this.normals[vertex * 3 + 1] = normalY;
-        this.normals[vertex * 3 + 2] = normalZ;
         const alongLength = Math.sqrt(alongX * alongX + alongY * alongY + alongZ * alongZ);
         const bend = alongLength > 1e-9 ? 1.4 * (1 - smoothstep(0, BEAD_END, this.rowTaus[vertex] / this.launchDuration)) / alongLength : 0;
         this.rimTangents[vertex * 3] = -alongX * bend;
@@ -459,7 +434,7 @@ export class CrownSheet {
         this.rimTangents[vertex * 3 + 2] = -alongZ * bend;
       }
     }
-    for (const name of ['position', 'normal', 'aRimTangent', 'aThickness']) this.geometry.attributes[name].needsUpdate = true;
+    markChanged(this.geometry, ['position', 'normal', 'aRimTangent', 'aThickness']);
   }
 
   dispose() {

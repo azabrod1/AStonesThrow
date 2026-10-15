@@ -10,9 +10,12 @@
 //   2. Cavity and pinch-off: the air cavity behind the stone closes under
 //      hydrostatic pressure about 2.1·sqrt(R/g) seconds after entry, almost
 //      independently of entry speed (Duclaux et al. 2007).
-//   3. Worthington jet: the closure fires a narrow column straight up, tip
-//      first and fastest, which breaks into large drops that fall back and
-//      splash again.
+//   3. Worthington jet: the closure fires a narrow glassy column straight up
+//      (src/jet.js), tip first and fastest, so it stretches as it rises. A
+//      bulb at its tip pinches off into one to three large drops, then the
+//      column breaks from the top down into drops about twice its local
+//      radius while its slow base falls back into a mound that throws a
+//      small secondary ring.
 //   4. Bubbles entrained with the stone rise and burst into foam.
 // Each stage also stamps the height field and the foam map.
 //
@@ -20,20 +23,25 @@
 // a screen-space fluid: sphere impostors into a depth buffer, additive
 // thickness, bilateral depth smoothing so neighbouring drops merge into
 // sheets, then the composite pass shades them (src/shaders/fluid.js). The
-// crown sheets are meshes drawn into the same depth and thickness buffers
-// (src/shaders/sheet.js), so sheet and drops are shaded as one body of water.
-// Sheets are evaluated in closed form once per rendered frame (prepareFrame);
-// at most MAX_CROWNS live at once.
+// crown sheets and jet columns are meshes drawn into the same depth and
+// thickness buffers (src/shaders/sheet.js), so sheets, columns and drops are
+// shaded as one body of water; a column and the large drops it breaks into
+// (spawned with `lens`) are shaded as clear glass. Both meshes are evaluated in
+// closed form once per rendered frame (prepareFrame); at most MAX_CROWNS
+// crowns and MAX_JETS jets live at once, and nothing is drawn for them when
+// none are alive.
 import * as THREE from 'three';
 import { FullscreenPass, createFloatTarget } from './gpu.js';
 import { CrownSheet } from './crown.js';
+import { JetColumn } from './jet.js';
 import { PARTICLE_VERTEX, PARTICLE_DEPTH_FRAGMENT, PARTICLE_THICKNESS_FRAGMENT, BLUR_FRAGMENT, COMPOSITE_FRAGMENT } from './shaders/fluid.js';
-import { SHEET_VERTEX, SHEET_DEPTH_FRAGMENT, SHEET_THICKNESS_FRAGMENT } from './shaders/sheet.js';
+import { SHEET_VERTEX, SHEET_DEPTH_FRAGMENT, SHEET_THICKNESS_FRAGMENT, COLUMN_VERTEX, COLUMN_DEPTH_FRAGMENT, COLUMN_THICKNESS_FRAGMENT } from './shaders/sheet.js';
 import { BUBBLE_VERTEX, BUBBLE_FRAGMENT } from './shaders/scene.js';
 
 const GRAVITY = 9.81;
 const REFERENCE_RADIUS = 0.03;   // the stone size the tuning constants were set for
 const MAX_CROWNS = 5;            // an older crown tears at once when another arrives
+const MAX_JETS = 3;              // an older jet breaks into drops at once when another starts
 
 const randomRange = (lo, hi) => lo + Math.random() * (hi - lo);
 
@@ -45,6 +53,7 @@ export class SplashSystem {
     this.velocities = new Float32Array(capacity * 3);
     this.radii = new Float32Array(capacity);
     this.ages = new Float32Array(capacity);
+    this.lenses = new Float32Array(capacity);   // 1 for drops drawn as glass lenses like the jet column
 
     this.bubbleCapacity = bubbleCapacity;
     this.bubbleCount = 0;
@@ -54,6 +63,7 @@ export class SplashSystem {
     this.bubblePhases = new Float32Array(bubbleCapacity);
 
     this.jets = [];      // scheduled Worthington jets
+    this.columns = [];   // live jet columns
     this.crowns = [];    // live crown sheets
     this.plumes = [];    // scheduled bubble plumes
     this.time = 0;
@@ -67,9 +77,11 @@ export class SplashSystem {
     this.instancePositions = new THREE.InstancedBufferAttribute(this.positions, 3).setUsage(THREE.DynamicDrawUsage);
     this.instanceRadii = new THREE.InstancedBufferAttribute(this.radii, 1).setUsage(THREE.DynamicDrawUsage);
     this.instanceVelocities = new THREE.InstancedBufferAttribute(this.velocities, 3).setUsage(THREE.DynamicDrawUsage);
+    this.instanceLenses = new THREE.InstancedBufferAttribute(this.lenses, 1).setUsage(THREE.DynamicDrawUsage);
     geometry.setAttribute('iPosition', this.instancePositions);
     geometry.setAttribute('iRadius', this.instanceRadii);
     geometry.setAttribute('iVelocity', this.instanceVelocities);
+    geometry.setAttribute('iLens', this.instanceLenses);
     geometry.instanceCount = 0;
     this.particleGeometry = geometry;
 
@@ -97,10 +109,15 @@ export class SplashSystem {
     });
     this.sheetDepthMaterial = new THREE.ShaderMaterial({ vertexShader: SHEET_VERTEX, fragmentShader: SHEET_DEPTH_FRAGMENT, uniforms: sheetUniforms(), depthTest: true, depthWrite: true, side: THREE.DoubleSide });
     this.sheetThicknessMaterial = new THREE.ShaderMaterial({ vertexShader: SHEET_VERTEX, fragmentShader: SHEET_THICKNESS_FRAGMENT, uniforms: sheetUniforms(), depthTest: false, depthWrite: false, blending: THREE.AdditiveBlending, transparent: true, side: THREE.DoubleSide });
+    // Jet columns, likewise.
+    const columnUniforms = () => ({ ...sheetUniforms(), uProjScale: { value: 1000 }, uMinPixelRadius: { value: 1.0 } });
+    this.columnDepthMaterial = new THREE.ShaderMaterial({ vertexShader: COLUMN_VERTEX, fragmentShader: COLUMN_DEPTH_FRAGMENT, uniforms: columnUniforms(), depthTest: true, depthWrite: true, side: THREE.DoubleSide });
+    this.columnThicknessMaterial = new THREE.ShaderMaterial({ vertexShader: COLUMN_VERTEX, fragmentShader: COLUMN_THICKNESS_FRAGMENT, uniforms: columnUniforms(), depthTest: false, depthWrite: false, blending: THREE.AdditiveBlending, transparent: true, side: THREE.DoubleSide });
     this.sunDirView = new THREE.Vector3();
 
     this.blurPass = new FullscreenPass(BLUR_FRAGMENT, {
       uDepth: { value: null },
+      uFluidInfo: { value: null },
       uDirection: { value: new THREE.Vector2() },
       uProjScale: { value: 1000 },
       uBlurWorld: { value: 0.012 },
@@ -121,6 +138,8 @@ export class SplashSystem {
       uExposure: { value: lighting.exposure },
       uRefract: { value: 1.4 },
       uMinPixelRadius: { value: 1.0 },
+      uProjScale: { value: 1000 },
+      uPackedNormals: { value: 1 },
     });
 
     // Bubbles.
@@ -200,9 +219,8 @@ export class SplashSystem {
     const tipSpeed = THREE.MathUtils.clamp(0.42 * entrySpeed + 0.7, 1.2, 6.0) * sizeFactor ** 0.15;
     this.jets.push({
       x, z, radius, start: this.time + pinchDelay,
-      duration: 0.08 * Math.sqrt(sizeFactor),
       total: Math.round(THREE.MathUtils.clamp(220 * sizeFactor ** 1.3, 80, 1200)),
-      spawned: 0, tipSpeed, speed: entrySpeed, started: false,
+      tipSpeed, speed: entrySpeed,
     });
 
     // 4. Bubbles follow the stone down.
@@ -219,13 +237,38 @@ export class SplashSystem {
     this.crowns.splice(this.crowns.indexOf(crown), 1);
   }
 
-  spawnDroplet(x, y, z, vx, vy, vz, radius) {
+  /** The cavity has pinched off: fire the column, keeping at most MAX_JETS. */
+  startJet(jet, water) {
+    water.addSplat({ x: jet.x, z: jet.z, radius: jet.radius * 0.6, height: 0.06 * jet.radius, velocity: 0.05 * jet.speed });
+    water.addFoam({ x: jet.x, z: jet.z, radius: jet.radius * 1.0, amount: 0.35 });
+    if (this.columns.length >= MAX_JETS) {
+      const oldest = this.columns[0];
+      oldest.finishNow(this, water);
+      this.retireColumn(oldest);
+    }
+    const column = new JetColumn({
+      x: jet.x, z: jet.z, radius: jet.radius, tipSpeed: jet.tipSpeed,
+      startTime: jet.start, budget: jet.total, material: this.columnDepthMaterial,
+    });
+    this.columns.push(column);
+    this.particleScene.add(column.mesh);
+  }
+
+  retireColumn(column) {
+    this.particleScene.remove(column.mesh);
+    column.dispose();
+    this.columns.splice(this.columns.indexOf(column), 1);
+  }
+
+  /** `lens`: draw the drop as glass like the jet column it came from (unblurred, refracting). */
+  spawnDroplet(x, y, z, vx, vy, vz, radius, lens = false) {
     if (this.count >= this.capacity) return;
     const i = this.count++;
     this.positions[i * 3] = x; this.positions[i * 3 + 1] = y; this.positions[i * 3 + 2] = z;
     this.velocities[i * 3] = vx; this.velocities[i * 3 + 1] = vy; this.velocities[i * 3 + 2] = vz;
     this.radii[i] = radius;
     this.ages[i] = 0;
+    this.lenses[i] = lens ? 1 : 0;
   }
 
   removeDroplet(i) {
@@ -237,6 +280,7 @@ export class SplashSystem {
       }
       this.radii[i] = this.radii[last];
       this.ages[i] = this.ages[last];
+      this.lenses[i] = this.lenses[last];
     }
   }
 
@@ -265,33 +309,9 @@ export class SplashSystem {
   update(dt, water) {
     this.time += dt;
 
-    // Scheduled jets.
-    for (const jet of this.jets) {
-      if (this.time < jet.start) continue;
-      if (!jet.started) {
-        jet.started = true;
-        water.addSplat({ x: jet.x, z: jet.z, radius: jet.radius * 0.6, height: 0.06 * jet.radius, velocity: 0.05 * jet.speed });
-        water.addFoam({ x: jet.x, z: jet.z, radius: jet.radius * 1.0, amount: 0.35 });
-      }
-      const phase = Math.min((this.time - jet.start) / jet.duration, 1);
-      const shouldHave = Math.round(jet.total * phase);
-      const sizeFactor = jet.radius / REFERENCE_RADIUS;
-      while (jet.spawned < shouldHave) {
-        const tau = jet.spawned / jet.total;
-        const speed = jet.tipSpeed * (1 - 0.68 * tau) * randomRange(0.92, 1.08);
-        const spread = jet.radius * 0.4 * (0.35 + 0.65 * tau);
-        const angle = Math.random() * Math.PI * 2;
-        const r = Math.sqrt(Math.random()) * spread;
-        const lateral = speed * 0.10;
-        this.spawnDroplet(
-          jet.x + Math.cos(angle) * r, 0.01, jet.z + Math.sin(angle) * r,
-          randomRange(-lateral, lateral), speed, randomRange(-lateral, lateral),
-          (0.005 + 0.009 * Math.random() * (1 - 0.5 * tau)) * sizeFactor ** 0.5,
-        );
-        jet.spawned++;
-      }
-    }
-    this.jets = this.jets.filter((jet) => jet.spawned < jet.total);
+    // Scheduled jets start their columns.
+    for (const jet of this.jets) if (this.time >= jet.start) this.startJet(jet, water);
+    this.jets = this.jets.filter((jet) => this.time < jet.start);
 
     // Bubble plumes.
     for (const plume of this.plumes) {
@@ -356,6 +376,10 @@ export class SplashSystem {
     for (const crown of this.crowns) crown.update(this.time, dt, this);
     for (const crown of this.crowns.filter((candidate) => candidate.finished)) this.retireCrown(crown);
 
+    // Jet columns pinch off their tips, break up and fall back, the same way.
+    for (const column of this.columns) column.update(this.time, dt, this, water);
+    for (const column of this.columns.filter((candidate) => candidate.finished)) this.retireColumn(column);
+
     // Bubbles rise, wobble and burst at the surface.
     for (let i = this.bubbleCount - 1; i >= 0; i--) {
       const p = i * 3;
@@ -377,6 +401,7 @@ export class SplashSystem {
     this.instancePositions.needsUpdate = true;
     this.instanceRadii.needsUpdate = true;
     this.instanceVelocities.needsUpdate = true;
+    this.instanceLenses.needsUpdate = true;
     this.particleGeometry.instanceCount = this.count;
     this.bubblePositionAttribute.needsUpdate = true;
     this.bubbleSizeAttribute.needsUpdate = true;
@@ -399,17 +424,19 @@ export class SplashSystem {
     this.fluidSize = new THREE.Vector2(w, h);
   }
 
-  /** Bring the crown sheets to the current time: once per rendered frame, not per substep. */
+  /** Bring the crown sheets and jet columns to the current time: once per rendered frame, not per substep. */
   prepareFrame() {
     for (const crown of this.crowns) crown.updateGeometry(this.time);
+    for (const column of this.columns) column.updateGeometry(this.time);
   }
 
-  setPassMaterials(particleMaterial, sheetMaterial) {
+  setPassMaterials(particleMaterial, sheetMaterial, columnMaterial) {
     this.particleMesh.material = particleMaterial;
     for (const crown of this.crowns) crown.mesh.material = sheetMaterial;
+    for (const column of this.columns) column.mesh.material = columnMaterial;
   }
 
-  /** Draw droplets and crown sheets over the finished scene and present the frame to the canvas (or target). */
+  /** Draw droplets, crown sheets and jet columns over the finished scene and present the frame to the canvas (or target). */
   render(renderer, camera, sceneTarget, output = null) {
     this.prepareFrame();
     const { depth, thickness, blurA, blurB } = this.targets;
@@ -419,26 +446,28 @@ export class SplashSystem {
       material.uniforms.uProjScale.value = projScale;
       material.uniforms.uStreakSeconds.value = this.streakSeconds;
     }
-    for (const material of [this.depthMaterial, this.thicknessMaterial, this.sheetDepthMaterial, this.sheetThicknessMaterial]) {
+    for (const material of [this.columnDepthMaterial, this.columnThicknessMaterial]) material.uniforms.uProjScale.value = projScale;
+    for (const material of [this.depthMaterial, this.thicknessMaterial, this.sheetDepthMaterial, this.sheetThicknessMaterial, this.columnDepthMaterial, this.columnThicknessMaterial]) {
       material.uniforms.uSceneDepth.value = sceneTarget.depthTexture;
       material.uniforms.uResolution.value.copy(this.fluidSize);
       material.uniforms.uSunDirView.value.copy(this.sunDirView);
     }
     renderer.setClearColor(0x000000, 0);
     this.particleMesh.visible = this.count > 0;
-    if (this.count > 0 || this.crowns.length > 0) {
-      this.setPassMaterials(this.depthMaterial, this.sheetDepthMaterial);
+    if (this.count > 0 || this.crowns.length > 0 || this.columns.length > 0) {
+      this.setPassMaterials(this.depthMaterial, this.sheetDepthMaterial, this.columnDepthMaterial);
       renderer.setRenderTarget(depth);
       renderer.clear(true, true, false);
       renderer.render(this.particleScene, camera);
 
-      this.setPassMaterials(this.thicknessMaterial, this.sheetThicknessMaterial);
+      this.setPassMaterials(this.thicknessMaterial, this.sheetThicknessMaterial, this.columnThicknessMaterial);
       renderer.setRenderTarget(thickness);
       renderer.clear(true, false, false);
       renderer.render(this.particleScene, camera);
 
       const blur = this.blurPass.material.uniforms;
       blur.uProjScale.value = projScale;
+      blur.uFluidInfo.value = depth.texture;
       blur.uDepth.value = depth.texture;
       blur.uDirection.value.set(1 / this.fluidSize.x, 0);
       this.blurPass.render(renderer, blurA);
@@ -462,6 +491,8 @@ export class SplashSystem {
     composite.uFluidTexel.value.set(1 / this.fluidSize.x, 1 / this.fluidSize.y);
     composite.uSunDirView.value.copy(this.lighting.sunDirection).transformDirection(camera.matrixWorldInverse);
     composite.uExposure.value = this.lighting.exposure;
+    composite.uProjScale.value = projScale;
+    composite.uPackedNormals.value = depth.texture.type === THREE.FloatType ? 1 : 0;
     this.compositePass.render(renderer, output);
   }
 

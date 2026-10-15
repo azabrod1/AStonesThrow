@@ -8,9 +8,13 @@
 //
 // --throws: x:z:radius per stone, comma separated. --times: seconds after the
 // first impact to capture. --w/--h/--dpr set the viewport. --ui=1 keeps the UI.
+// --crop=x:y:width:height also saves that region of each frame (CSS pixels)
+// as tN_NN_crop.png, enlarged --cropscale times with square pixels (default 1).
+// --report="js expression" is evaluated in the page after each frame and its
+// result printed as JSON (window.__pond is the app).
 import { chromium } from 'playwright';
 import { existsSync } from 'node:fs';
-import { mkdir, readFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -32,6 +36,9 @@ const fov = arg('fov', '');
 const look = arg('look', '');
 const evalAfterThrow = arg('eval', '');
 const preImpact = Number(arg('preimpact', '0'));
+const crop = arg('crop', '');
+const cropScale = Number(arg('cropscale', '1'));
+const report = arg('report', '');
 
 const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.mjs': 'text/javascript', '.json': 'application/json', '.png': 'image/png', '.css': 'text/css' };
 const server = createServer(async (request, response) => {
@@ -114,6 +121,26 @@ for (const t of times) {
   const name = `t${t.toFixed(2).replace('.', '_')}.png`;
   await page.screenshot({ path: path.join(outDir, name), timeout: 180000 });
   console.log(`[shoot] ${name}`);
+  if (report) console.log(`[shoot] report: ${JSON.stringify(await page.evaluate(report))}`);
+  if (crop) {
+    const [x, y, cropWidth, cropHeight] = crop.split(':').map(Number);
+    const cropName = name.replace('.png', '_crop.png');
+    const pixels = await page.screenshot({ clip: { x, y, width: cropWidth, height: cropHeight }, timeout: 180000 });
+    const enlarged = cropScale === 1 ? pixels : Buffer.from((await page.evaluate(async ([base64, scale]) => {
+      const image = new Image();
+      image.src = `data:image/png;base64,${base64}`;
+      await image.decode();
+      const canvas = document.createElement('canvas');
+      canvas.width = image.width * scale;
+      canvas.height = image.height * scale;
+      const context = canvas.getContext('2d');
+      context.imageSmoothingEnabled = false;
+      context.drawImage(image, 0, 0, canvas.width, canvas.height);
+      return canvas.toDataURL('image/png');
+    }, [pixels.toString('base64'), cropScale])).split(',')[1], 'base64');
+    await writeFile(path.join(outDir, cropName), enlarged);
+    console.log(`[shoot] ${cropName}`);
+  }
 }
 if (problems.length) { console.log('[shoot] console problems:'); console.log(problems.slice(0, 20).join('\n')); }
 await browser.close();
