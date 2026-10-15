@@ -62,9 +62,10 @@
 // 0.6·t_break. The torn part becomes droplets that carry the local (decayed)
 // sheet velocity, each holding the volume of the patch of sheet it came from,
 // so the drops come out about the size the sheet's thickness implies, between
-// 0.6 and 4.5 mm for a 3 cm stone. For a 3 cm stone at about 6 m/s the sheet
-// stands whole for 60 ms, its rim peaking near 5 cm (9 cm on the forward side
-// of an oblique throw), and is gone by about 100 ms.
+// CROWN_DROP_FLOOR and CROWN_DROP_CAP (1 and 5.5 mm) for a 3 cm stone; its
+// rim sheds drops of RIM_DROP_RADIUS and up. For a 3 cm stone at about 6 m/s
+// the sheet stands whole for 60 ms, its rim peaking near 5 cm (9 cm on the
+// forward side of an oblique throw), and is gone by about 100 ms.
 //
 // How a stone's sheet scales with its radius R, against s = R / 3 cm. Lengths
 // go with R and speeds with the entry speed V, as in a Froude-scaled splash:
@@ -85,7 +86,7 @@
 // 42° from vertical, the reference throw, a 1.5 cm stone's rim reaches about
 // 4 cm up and its sheet is gone by 96 ms; a 16 cm stone's sheet is 4 mm
 // thick, stands for 160 ms with its rim up to 17 cm high and 70 cm across,
-// is gone by 256 ms and tears into drops of 1 to 7 mm (tools/splash-probe.mjs
+// is gone by 256 ms and tears into drops of 2.5 to 9 mm (tools/splash-probe.mjs
 // measures these).
 //
 // A large drop landing makes a small crown of its own, the classic
@@ -149,7 +150,7 @@ const LANDING_LAUNCH = 1.0;        // ...launching over this many R/V...
 const LANDING_BREAK = 6;           // ...tearing at this many launch windows...
 const LANDING_SPEED = 1.2;         // ...at this many times a stone crown's launch speeds...
 const LANDING_TILT = 20;           // ...this many degrees nearer vertical...
-const LANDING_DROP_CAP = 0.16;     // ...into drops of at most this many landing drop radii
+const LANDING_DROP_CAP = 0.25;     // ...into drops of at most this many landing drop radii
 const ROW_POWER = 1.8;             // crowds main-launch rows towards the rim bead
 const MAIN_SHARE = 0.7;            // fraction of the tear front's travel spent on the main launch
 const TAIL_DECAY = 0.45;           // tail launch speed decays over this many T
@@ -160,6 +161,10 @@ const SHEET_THICKNESS = 0.0015;    // h0 of a 3 cm stone's sheet, scaling with R
 const BREAK_FLOOR = 0.06;          // a stone's sheet stands at least this long (s), so a 60 Hz frame sees it...
 const BREAK_CEILING = 0.15;        // ...and at most this, both times R / 3 cm for stones of 3 cm and up
 const DROP_SIZE_POWER = 0.5;       // a stone's sheet sheds and tears into drops scaling as (R / 3 cm)^this
+const CROWN_DROP_CAP = 0.0055;     // it tears into drops of at most this...
+const CROWN_DROP_FLOOR = 0.001;    // ...and at least this (both times (R / 3 cm)^DROP_SIZE_POWER)
+const RIM_DROP_RADIUS = 0.0015;    // its rim sheds drops of this...
+const RIM_DROP_SPREAD = 0.0025;    // ...to this much more (the same scaling; a landing crown's as (R / 3 cm)^0.4)
 const TAIL_THICKNESS = 0.6;        // tail material leaves the ring at this fraction of h0
 const MIN_THICKNESS = 0.0002;
 const BEAD_END = 0.08;             // the bead is the material of the first 8% of T
@@ -187,8 +192,8 @@ const FAN_EDGE_SPEED = 0.7;        // launch speed at the sector's edges against
 const FAN_THICKNESS = 0.5;         // of a stone crown's h0
 const FAN_MODES = [20, 22, 24, 26, 28, 30, 32];   // its rim's fingers (around a whole circle: 7 to 11 across the sector)
 const FAN_AMPLITUDE = 0.06;
-const FAN_DROP_CAP = 0.00045;      // it tears into fine drops of at most this...
-const FAN_DROP_FLOOR = 0.00015;    // ...and at least this (both times (R / 3 cm)^DROP_SIZE_POWER)...
+const FAN_DROP_CAP = 0.0008;       // it tears into fine drops of at most this...
+const FAN_DROP_FLOOR = 0.0003;     // ...and at least this (both times (R / 3 cm)^DROP_SIZE_POWER)...
 const FAN_RIM_DROPS = 0.2;         // ...and its rim sheds drops this fraction of the size a crown's does
 
 const randomRange = (low, high) => low + Math.random() * (high - low);
@@ -338,8 +343,8 @@ export class CrownSheet {
       aRide: [this.rideFlags(vertexCount, landing), 1],   // 1: lifted by the wave height under it
     }, material, { wrap: this.wrap });
     this.dropScale = landing ? 1 : this.sizeFactor ** DROP_SIZE_POWER;
-    this.maxDropRadius = landing ? LANDING_DROP_CAP * radius : (fan ? FAN_DROP_CAP : 0.0045) * this.dropScale;
-    this.minDropRadius = fan ? FAN_DROP_FLOOR * this.dropScale : Math.min(0.0006 * this.dropScale, 0.5 * this.maxDropRadius);
+    this.maxDropRadius = landing ? LANDING_DROP_CAP * radius : (fan ? FAN_DROP_CAP : CROWN_DROP_CAP) * this.dropScale;
+    this.minDropRadius = fan ? FAN_DROP_FLOOR * this.dropScale : Math.min(CROWN_DROP_FLOOR * this.dropScale, 0.5 * this.maxDropRadius);
     this.geometry = this.mesh.geometry;
     this.state = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, thickness: 0, radialDistance: 0 };
     this.stateOther = { ...this.state };
@@ -508,7 +513,7 @@ export class CrownSheet {
           state.vx * boost + randomRange(-scatter, scatter),
           state.vy * boost + randomRange(-scatter, scatter),
           state.vz * boost + randomRange(-scatter, scatter),
-          (0.001 + 0.002 * Math.random() ** 1.5) * (this.landing ? this.sizeFactor ** 0.4 : this.dropScale) * (this.fan ? FAN_RIM_DROPS : 1),
+          (RIM_DROP_RADIUS + RIM_DROP_SPREAD * Math.random() ** 1.5) * (this.landing ? this.sizeFactor ** 0.4 : this.dropScale) * (this.fan ? FAN_RIM_DROPS : 1),
         );
       }
     }

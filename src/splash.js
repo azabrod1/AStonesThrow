@@ -81,25 +81,31 @@
 //     FOAM_STAMP_CAP (a bigger cavity entrains more air for the area of its
 //     mouth); the crown's specks go as s² (the area its base covered);
 //     the bubbles as s², in a cloud as wide as the stone.
-// The caps are for cost, set above what the slider's biggest stone (16 cm,
-// s = 2.67) needs even thrown hard. Thrown normally (6.3 m/s, 42° from
-// vertical) it spawns about 7000 drops: 4000 from the crown, 1400 from the
-// fan, 400 contact spray, a dozen from the jet, 700 from the crowns of the
-// 40-odd drops that throw one where they land and 500 kicked up by the rest;
-// at most 3500 are alive at once (4200 thrown hard), a quarter of the
-// droplet capacity, and it leaves 3300 foam specks. Its CPU work on a
-// desktop is under a millisecond a frame on average and 3 to 4 ms in the
+// The counts are set for a believable splash, tens to a few hundred drops
+// a stone and most of them millimetres across, not thousands of specks: a
+// 3 cm stone throws about 400 (130 from the crown, 60 fine ones from the
+// fan, a dozen contact spray, two dozen from the jet, 130 from the crowns of
+// the drops that throw one where they land, 20 kicked up by the rest), at
+// most about 190 in the air at once. The caps are for cost, set above what
+// the slider's biggest stone (16 cm, s = 2.67) needs even thrown hard.
+// Thrown normally (6.3 m/s, 42° from vertical) it spawns about 1500 drops:
+// 650 from the crown (2.5 to 9 mm), 300 from the fan, 70 contact spray, a
+// dozen from the jet, 180 from the crowns of the 25-odd drops that throw one
+// where they land and 230 kicked up by the rest; at most 700 are alive at
+// once (800 thrown hard), and it leaves 3400 foam specks. Its CPU work on a
+// desktop is under a millisecond a frame on average and 3 to 7 ms in the
 // worst frames, where the crown tears and drops land
 // (tools/splash-probe.mjs measures all of this).
 //
-// Droplets are integrated on the CPU (a few thousand points) and rendered as
-// a screen-space fluid: sphere impostors into a depth buffer, additive
-// thickness, bilateral depth smoothing so neighbouring drops merge into
-// sheets, then the composite pass shades them (src/shaders/fluid.js). The
-// crown sheets and jet columns are meshes drawn into the same depth and
-// thickness buffers (src/shaders/sheet.js), so sheets, columns and drops are
-// shaded as one body of water; a column and the large drops it breaks into
-// (spawned with `lens`) are shaded as clear glass. Both meshes are evaluated in
+// Droplets are integrated on the CPU and rendered as screen-space water
+// (src/shaders/fluid.js): sphere impostors into an info target (depth, what
+// it is, the exact normal) and a summed optics target (thickness, coverage,
+// sun glints, aeration), then the composite shades them. The crown sheets and
+// jet columns are meshes drawn into the same two targets (src/shaders/
+// sheet.js), so sheets, columns and drops are shaded as one water: the
+// pond's Fresnel, reflection, refraction with its absorption, and its sun
+// glitter, with drops of two device pixels and more as glass beads with their
+// two glints and finer ones as a faint mist. Both meshes are evaluated in
 // closed form once per rendered frame (prepareFrame); at most MAX_CROWNS
 // stone crowns and MAX_JETS jets live at once, and nothing is drawn for them
 // when none are alive. The cavities are drawn in the main scene instead
@@ -109,6 +115,16 @@
 // open at once. The sheets' and columns' costly steps (the crown's tear, the
 // jet's breakup) run once per rendered frame, the frame's simulated length
 // given by setFrameSeconds before its substeps.
+//
+// The water mirrors the splash: mirrorObjects() lists what is alive to be
+// drawn in the mirror image (the droplets, the crowns, the columns), each
+// tagged by mirrorWith with MIRROR_LAYER and the cheap water material the
+// mirror pass swaps in (src/main.js re-renders the mirror while the list is
+// not empty, and only then). A new mesh joins with mirrorWith at its creation
+// and a line in prepareFrame, which builds the list; whatever is on
+// MIRROR_LAYER in the scenes the mirror draws must be in it. The cavities are
+// left out: a hole lies below the mirror plane, so the water reflects none
+// of it.
 import * as THREE from 'three';
 import { FullscreenPass, createFloatTarget } from './gpu.js';
 import { CrownSheet } from './crown.js';
@@ -116,7 +132,7 @@ import { JetColumn } from './jet.js';
 import { Cavity } from './cavity.js';
 import { MAX_CAVITIES } from './waterSurface.js';
 import { FoamSpecks } from './foamSpecks.js';
-import { PARTICLE_VERTEX, PARTICLE_DEPTH_FRAGMENT, PARTICLE_THICKNESS_FRAGMENT, BLUR_FRAGMENT, COMPOSITE_FRAGMENT } from './shaders/fluid.js';
+import { PARTICLE_VERTEX, PARTICLE_DEPTH_FRAGMENT, PARTICLE_THICKNESS_FRAGMENT, COMPOSITE_FRAGMENT, MIRROR_SHEET_FRAGMENT, MIRROR_COLUMN_FRAGMENT, MIRROR_DROP_FRAGMENT } from './shaders/fluid.js';
 import { SHEET_VERTEX, SHEET_DEPTH_FRAGMENT, SHEET_THICKNESS_FRAGMENT, COLUMN_VERTEX, COLUMN_DEPTH_FRAGMENT, COLUMN_THICKNESS_FRAGMENT } from './shaders/sheet.js';
 import { BUBBLE_VERTEX, BUBBLE_FRAGMENT } from './shaders/scene.js';
 
@@ -129,19 +145,23 @@ const MAX_LANDING_CROWNS = 6;         // ...while fewer than this many are alive
 const LANDING_CROWN_FLIGHT = 0.05;    // ...if they have flown this long (s)...
 const LANDING_CROWN_SPEED = 1.0;      // ...and fall this fast (m/s): not the drops a crown's torn foot drops back
 const LANDING_REFERENCE = 0.0086;     // a 3 cm stone's first tip drop: the landing crown tuning size
-const LANDING_BREAKUP = 40;           // its crown's breakup droplets (scaling with the drop's area)
+const LANDING_BREAKUP = 12;           // its crown's breakup droplets (scaling with the drop's area)
 const CROWN_SPECKS = 220;             // foam specks where a 3 cm stone's crown stood (scaling with its area)
 const CROWN_SPECK_CAP = 1600;         // at most (a 16 cm stone's crown wants 1560)
+const LANDING_KICK_CHANCE = 0.4;      // a big drop landing without a crown kicks up droplets this often...
+const LANDING_KICK_MOST = 2;          // ...one to this many
 const LANDING_SPECK_FREE = 0.003;     // a landing drop leaves a foam speck per LANDING_SPECK_STEP of radius beyond this
 const LANDING_SPECK_STEP = 0.0015;
 const PATH_SLOPE_CAP = 1.2;           // the stone's path under water, horizontal over vertical, at most (50°)
 const FAN_THRESHOLD = 0.3;            // the forward fan needs this horizontal fraction of the entry speed...
 const FAN_FULL = 0.7;                 // ...and is at full strength from this one
-const FAN_DROPLETS = 300;             // drops of a 3 cm stone's fan at about 6 m/s and full strength
-const CROWN_DROPLETS = 900;           // drops of a 3 cm stone's crown at about 6 m/s (contact spray, rim and tear)
+const FAN_DROPLETS = 70;              // drops of a 3 cm stone's fan at about 6 m/s and full strength
+const CROWN_DROPLETS = 150;           // drops of a 3 cm stone's crown at about 6 m/s (contact spray, rim and tear)
 const DROPLET_COUNT_POWER = 1.6;      // the crown's and the fan's drop counts scale as (R / 3 cm)^this
-const CROWN_DROPLET_CAP = 6000;       // at most (a 16 cm stone thrown hard wants about 5200)
-const FAN_DROPLET_CAP = 2000;         // at most (the same stone's fan, about 1700)
+const CROWN_DROPLET_CAP = 2000;       // at most (a 16 cm stone thrown hard wants about 870)
+const FAN_DROPLET_CAP = 600;          // at most (the same stone's fan, about 400)
+const SPRAY_DROP_RADIUS = 0.0008;     // the contact line's spray: drops of this radius...
+const SPRAY_DROP_SPREAD = 0.001;      // ...to this much more, times (R / 3 cm)^0.4
 const BUBBLES = 110;                  // bubbles a 3 cm stone drags down, scaling with R²...
 const BUBBLE_CAP = 800;               // ...at most (a 16 cm stone wants 780)
 const FOAM_STAMP = 0.65;              // the cavity's foam for a 3 cm stone, scaling as sqrt(R / 3 cm)...
@@ -153,6 +173,43 @@ const JET_LEAN_CAP = THREE.MathUtils.degToRad(18);   // at most this
 const OBLIQUE_IMPULSE = 1.3;          // an oblique entry's cavity splats together carry at most this times a vertical one's
 const JET_OBLIQUE_SLOWING = 0.3;      // and is slower by this times the horizontal fraction
 const CAVITY_SPLAT_DEPTH = 0.1;       // the cavity splat's depression, in stone radii: the hole itself is the cavity's mesh
+const HAZE_RADIUS = 0.5;             // device pixels: finer drops are mist (src/shaders/fluid.js)
+const MIRROR_PAD = 0.05;              // metres around what is mirrored: drawn radii, streaks, a landing crown's ride
+const MIRROR_DROP_RADIUS = 0.002;     // finer drops are left out of the mirror: their images there are under a pixel
+
+const POND_DEPTH = 0.8;               // when the water does not say (the CPU probes' stand-in)
+const SAND_ALBEDO = 0.33;             // the floor's mean sand colour (FLOOR_FRAGMENT in src/shaders/scene.js)
+
+/**
+ * The sand floor's radiance under the water, lit as FLOOR_FRAGMENT lights it
+ * (the sun through the water above it, and the sky), without its caustics:
+ * what the composite sees of the pond's bottom through a drop.
+ */
+function floorLight(lighting, depth) {
+  const sunHeight = Math.max(lighting.sunDirection.y, 0.2);
+  const light = new THREE.Vector3();
+  for (const channel of ['x', 'y', 'z']) {
+    const absorb = lighting.absorb[channel];
+    light[channel] = SAND_ALBEDO * (lighting.sunIrradiance[channel] * Math.exp(-absorb * depth / sunHeight) * Math.max(lighting.sunDirection.y, 0)
+      + lighting.skyAmbient[channel] * Math.exp(-absorb * depth) * 1.4);
+  }
+  return light;
+}
+
+/** The layer the mirror camera draws (src/main.js): the sky dome and whatever mirrorWith tags. */
+export const MIRROR_LAYER = 1;
+
+/**
+ * Draw `object` in the water's mirror image with `material` in place of its
+ * own; `bounds(box)`, if given, grows a world box around what it draws
+ * (otherwise its geometry's bounding box is used).
+ */
+export function mirrorWith(object, material, bounds = null) {
+  object.layers.enable(MIRROR_LAYER);
+  object.userData.mirrorMaterial = material;
+  if (bounds) object.userData.mirrorBounds = bounds;
+  return object;
+}
 
 const randomRange = (lo, hi) => lo + Math.random() * (hi - lo);
 const smoothstep = (edgeLow, edgeHigh, value) => {
@@ -212,17 +269,21 @@ export class SplashSystem {
     const particleUniforms = () => ({
       uProjScale: { value: 1000 },
       uMinPixelRadius: { value: 1.0 },
+      uHazeRadius: { value: 0.5 },
       uStreakSeconds: { value: 0 },
       uSunDirView: { value: new THREE.Vector3() },
+      uLeastRadius: { value: 0 },
       uSceneDepth: { value: null },
       uResolution: { value: new THREE.Vector2(1, 1) },
-      uFullFloatInfo: { value: 1 },
     });
     this.streakSeconds = 0;
+    // The optics pass sums all four channels (src/shaders/fluid.js).
+    const summed = { depthTest: false, depthWrite: false, transparent: true, blending: THREE.CustomBlending, blendEquation: THREE.AddEquation, blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor, blendSrcAlpha: THREE.OneFactor, blendDstAlpha: THREE.OneFactor };
     this.depthMaterial = new THREE.ShaderMaterial({ vertexShader: PARTICLE_VERTEX, fragmentShader: PARTICLE_DEPTH_FRAGMENT, uniforms: particleUniforms(), depthTest: true, depthWrite: true });
-    this.thicknessMaterial = new THREE.ShaderMaterial({ vertexShader: PARTICLE_VERTEX, fragmentShader: PARTICLE_THICKNESS_FRAGMENT, uniforms: particleUniforms(), depthTest: false, depthWrite: false, blending: THREE.AdditiveBlending, transparent: true });
+    this.thicknessMaterial = new THREE.ShaderMaterial({ vertexShader: PARTICLE_VERTEX, fragmentShader: PARTICLE_THICKNESS_FRAGMENT, uniforms: particleUniforms(), ...summed });
     this.particleMesh = new THREE.Mesh(geometry, this.depthMaterial);
     this.particleMesh.frustumCulled = false;
+    this.particleMesh.visible = false;
     this.particleScene = new THREE.Scene();
     this.particleScene.add(this.particleMesh);
 
@@ -230,7 +291,6 @@ export class SplashSystem {
     const sheetUniforms = () => ({
       uSceneDepth: { value: null },
       uResolution: { value: new THREE.Vector2(1, 1) },
-      uSunDirView: { value: new THREE.Vector3() },
     });
     // A landing crown rides the waves: the sheet's vertex shader samples the
     // splash's height field and the ambient waves (src/ambientWaves.js).
@@ -242,39 +302,55 @@ export class SplashSystem {
       ...ambientWaves.uniforms(),
     });
     this.sheetDepthMaterial = new THREE.ShaderMaterial({ vertexShader: SHEET_VERTEX, fragmentShader: SHEET_DEPTH_FRAGMENT, uniforms: { ...sheetUniforms(), ...rideUniforms() }, depthTest: true, depthWrite: true, side: THREE.DoubleSide });
-    this.sheetThicknessMaterial = new THREE.ShaderMaterial({ vertexShader: SHEET_VERTEX, fragmentShader: SHEET_THICKNESS_FRAGMENT, uniforms: { ...sheetUniforms(), ...rideUniforms() }, depthTest: false, depthWrite: false, blending: THREE.AdditiveBlending, transparent: true, side: THREE.DoubleSide });
+    this.sheetThicknessMaterial = new THREE.ShaderMaterial({ vertexShader: SHEET_VERTEX, fragmentShader: SHEET_THICKNESS_FRAGMENT, uniforms: { ...sheetUniforms(), ...rideUniforms() }, ...summed, side: THREE.DoubleSide });
     // Jet columns, likewise.
-    const columnUniforms = () => ({ ...sheetUniforms(), uProjScale: { value: 1000 }, uMinPixelRadius: { value: 1.0 }, uFullFloatInfo: { value: 1 } });
+    const columnUniforms = () => ({ ...sheetUniforms(), uProjScale: { value: 1000 }, uMinPixelRadius: { value: 1.0 } });
     this.columnDepthMaterial = new THREE.ShaderMaterial({ vertexShader: COLUMN_VERTEX, fragmentShader: COLUMN_DEPTH_FRAGMENT, uniforms: columnUniforms(), depthTest: true, depthWrite: true, side: THREE.DoubleSide });
-    this.columnThicknessMaterial = new THREE.ShaderMaterial({ vertexShader: COLUMN_VERTEX, fragmentShader: COLUMN_THICKNESS_FRAGMENT, uniforms: columnUniforms(), depthTest: false, depthWrite: false, blending: THREE.AdditiveBlending, transparent: true, side: THREE.DoubleSide });
+    this.columnThicknessMaterial = new THREE.ShaderMaterial({ vertexShader: COLUMN_VERTEX, fragmentShader: COLUMN_THICKNESS_FRAGMENT, uniforms: columnUniforms(), ...summed, side: THREE.DoubleSide });
     this.sunDirView = new THREE.Vector3();
 
-    this.blurPass = new FullscreenPass(BLUR_FRAGMENT, {
-      uDepth: { value: null },
-      uFluidInfo: { value: null },
-      uDirection: { value: new THREE.Vector2() },
-      uProjScale: { value: 1000 },
-      uBlurWorld: { value: 0.012 },
+    // The mirror image's cheap water (src/shaders/fluid.js, MIRROR_*), drawn
+    // over the dome's mirror image: premultiplied, the dome showing through.
+    const mirrorBlend = { transparent: true, depthTest: true, depthWrite: false, blending: THREE.CustomBlending, blendEquation: THREE.AddEquation, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor, blendSrcAlpha: THREE.OneFactor, blendDstAlpha: THREE.OneMinusSrcAlphaFactor };
+    this.sheetMirrorMaterial = new THREE.ShaderMaterial({
+      vertexShader: SHEET_VERTEX, fragmentShader: MIRROR_SHEET_FRAGMENT,
+      uniforms: { ...rideUniforms(), uEnvCube: { value: environment.cubeTexture }, uSkyAmbient: { value: lighting.skyAmbient } },
+      ...mirrorBlend, side: THREE.DoubleSide,
     });
+    this.columnMirrorMaterial = new THREE.ShaderMaterial({
+      vertexShader: COLUMN_VERTEX, fragmentShader: MIRROR_COLUMN_FRAGMENT,
+      uniforms: { uProjScale: { value: 1000 }, uMinPixelRadius: { value: 1.0 }, uEnvCube: { value: environment.cubeTexture } },
+      ...mirrorBlend, side: THREE.DoubleSide,
+    });
+    this.dropMirrorMaterial = new THREE.ShaderMaterial({
+      vertexShader: PARTICLE_VERTEX, fragmentShader: MIRROR_DROP_FRAGMENT,
+      uniforms: { ...particleUniforms(), uLeastRadius: { value: MIRROR_DROP_RADIUS }, uEnvCube: { value: environment.cubeTexture }, uSkyAmbient: { value: lighting.skyAmbient }, uSunIrradiance: { value: lighting.sunIrradiance } },
+      ...mirrorBlend,
+    });
+    mirrorWith(this.particleMesh, this.dropMirrorMaterial, (box) => this.dropletBounds(box));
+    this.mirrorList = [];
+    this.dropletBox = new THREE.Box3();
+    this.dropletMin = new THREE.Vector3();
+    this.dropletMax = new THREE.Vector3();
+
     this.compositePass = new FullscreenPass(COMPOSITE_FRAGMENT, {
       uScene: { value: null },
-      uFluidDepth: { value: null },
-      uThickness: { value: null },
       uFluidInfo: { value: null },
+      uOptics: { value: null },
       uEnvCube: { value: environment.cubeTexture },
       uInverseProjection: { value: new THREE.Matrix4() },
       uCameraWorld: { value: new THREE.Matrix4() },
-      uFluidTexel: { value: new THREE.Vector2() },
       uSunDirView: { value: new THREE.Vector3() },
       uSunIrradiance: { value: lighting.sunIrradiance },
       uSkyAmbient: { value: lighting.skyAmbient },
       uAbsorb: { value: lighting.absorb },
+      uFloorLight: { value: floorLight(lighting, water.depth ?? POND_DEPTH) },
+      uWaterColor: { value: lighting.waterColor ?? new THREE.Vector3() },
+      uPondDepth: { value: water.depth ?? POND_DEPTH },
       uExposure: { value: lighting.exposure },
       uRefract: { value: 1.4 },
-      uMinPixelRadius: { value: 1.0 },
       uFluidScale: { value: 1.0 },
       uProjScale: { value: 1000 },
-      uFullFloatInfo: { value: 1 },
     });
 
     // Bubbles.
@@ -299,6 +375,7 @@ export class SplashSystem {
 
     this.fluidScale = 0.5;
     this.targets = null;
+    this.fluidCleared = false;   // the optics target holds nothing: the composite skips every pixel
   }
 
   // ---- choreography ----------------------------------------------------
@@ -320,7 +397,7 @@ export class SplashSystem {
 
     // 1. Crown. The droplet total is split between fine spray from the contact
     // line now, drops shed by the sheet's rim, and the sheet's breakup.
-    const crownCount = Math.round(THREE.MathUtils.clamp(CROWN_DROPLETS * sizeFactor ** DROPLET_COUNT_POWER * Math.sqrt(entrySpeed / 6), 200, CROWN_DROPLET_CAP));
+    const crownCount = Math.round(THREE.MathUtils.clamp(CROWN_DROPLETS * sizeFactor ** DROPLET_COUNT_POWER * Math.sqrt(entrySpeed / 6), 50, CROWN_DROPLET_CAP));
     const sprayCount = Math.round(0.1 * crownCount);
     const rimCount = Math.round(0.1 * crownCount);
     for (let drop = 0; drop < sprayCount; drop++) {
@@ -336,7 +413,7 @@ export class SplashSystem {
       this.spawnDroplet(
         x + dirX * ringRadius, 0.003, z + dirZ * ringRadius,
         dirX * out + velocity.x * 0.22, up, dirZ * out + velocity.z * 0.22,
-        (0.0005 + 0.0007 * Math.random()) * sizeFactor ** 0.4,
+        (SPRAY_DROP_RADIUS + SPRAY_DROP_SPREAD * Math.random()) * sizeFactor ** 0.4,
       );
     }
     const stoneCrowns = this.crowns.filter((candidate) => !candidate.landing && !candidate.fan);
@@ -356,7 +433,7 @@ export class SplashSystem {
     // the crown, at a strength growing with the horizontal fraction.
     const fanStrength = THREE.MathUtils.clamp((horizontalFraction - FAN_THRESHOLD) / (FAN_FULL - FAN_THRESHOLD), 0, 1);
     if (fanStrength > 0) {
-      const fanCount = Math.round(THREE.MathUtils.clamp(FAN_DROPLETS * sizeFactor ** DROPLET_COUNT_POWER * Math.sqrt(entrySpeed / 6), 60, FAN_DROPLET_CAP) * fanStrength);
+      const fanCount = Math.round(THREE.MathUtils.clamp(FAN_DROPLETS * sizeFactor ** DROPLET_COUNT_POWER * Math.sqrt(entrySpeed / 6), 15, FAN_DROPLET_CAP) * fanStrength);
       const fan = new CrownSheet({
         impact: info, startTime: this.time, rimDroplets: Math.round(0.15 * fanCount), breakupDroplets: Math.round(0.85 * fanCount),
         material: this.sheetDepthMaterial, fan: true, strength: fanStrength, rim: cavity,
@@ -476,7 +553,7 @@ export class SplashSystem {
 
   /** A big drop has landed: a crown of its own, its droplet count following the drop's area. */
   startLandingCrown(hit) {
-    const breakup = Math.round(THREE.MathUtils.clamp(LANDING_BREAKUP * (hit.radius / LANDING_REFERENCE) ** 2, 6, 40));
+    const breakup = Math.round(THREE.MathUtils.clamp(LANDING_BREAKUP * (hit.radius / LANDING_REFERENCE) ** 2, 3, 12));
     const crown = new CrownSheet({
       impact: { x: hit.x, z: hit.z, speed: hit.speed, velocity: { x: hit.velocityX, y: -hit.fallSpeed, z: hit.velocityZ }, radius: hit.radius },
       startTime: this.time, rimDroplets: Math.round(0.25 * breakup), breakupDroplets: breakup,
@@ -646,7 +723,7 @@ export class SplashSystem {
       }
       if (hit.radius > 0.004) {
         water.addFoam({ x: hit.x, z: hit.z, radius: hit.radius * 3, amount: 0.05 * strength });
-        const sprayCount = crowned ? 0 : Math.random() < 0.6 ? 1 + Math.floor(Math.random() * 3) : 0;
+        const sprayCount = crowned ? 0 : Math.random() < LANDING_KICK_CHANCE ? 1 + Math.floor(Math.random() * LANDING_KICK_MOST) : 0;
         for (let s = 0; s < sprayCount; s++) {
           const angle = Math.random() * Math.PI * 2;
           const out = randomRange(0.2, 0.9) * Math.min(hit.fallSpeed / 3, 1.5);
@@ -705,12 +782,11 @@ export class SplashSystem {
     const h = Math.max(2, Math.round(height * fluidScale));
     if (this.targets) Object.values(this.targets).forEach((t) => t.dispose());
     this.targets = {
-      depth: createFloatTarget(w, h, { type: THREE.FloatType, depth: true }),
-      thickness: createFloatTarget(w, h, { format: THREE.RedFormat, type: THREE.HalfFloatType, filter: THREE.LinearFilter }),
-      blurA: createFloatTarget(w, h, { format: THREE.RedFormat, type: THREE.FloatType }),
-      blurB: createFloatTarget(w, h, { format: THREE.RedFormat, type: THREE.FloatType, filter: THREE.LinearFilter }),
+      info: createFloatTarget(w, h, { type: THREE.FloatType, depth: true }),
+      optics: createFloatTarget(w, h, { type: THREE.HalfFloatType, filter: THREE.LinearFilter }),
     };
     this.fluidSize = new THREE.Vector2(w, h);
+    this.fluidCleared = false;
   }
 
   /**
@@ -730,11 +806,68 @@ export class SplashSystem {
     this.surface?.setCavities(shapes);
   }
 
-  /** Bring the cavities, crown sheets and jet columns to the current time: once per rendered frame, not per substep. */
+  /**
+   * Bring the cavities, crown sheets and jet columns to the current time and
+   * list what the mirror draws: once per rendered frame, before the mirror
+   * pass, not per substep.
+   */
   prepareFrame() {
     this.prepareScene();
     for (const crown of this.crowns) crown.updateGeometry(this.time);
     for (const column of this.columns) column.updateGeometry(this.time);
+    this.particleMesh.visible = this.count > 0;
+    const list = this.mirrorList;
+    list.length = 0;
+    // The droplets join only while one is big enough to see in the mirror; off
+    // the mirror layer otherwise, since the mirror pass draws what is on it.
+    let mirroredDrops = false;
+    for (let index = 0; index < this.count && !mirroredDrops; index++) mirroredDrops = this.radii[index] >= MIRROR_DROP_RADIUS;
+    if (mirroredDrops) {
+      this.particleMesh.layers.enable(MIRROR_LAYER);
+      list.push(this.particleMesh);
+    } else {
+      this.particleMesh.layers.disable(MIRROR_LAYER);
+    }
+    for (const crown of this.crowns) list.push(mirrorWith(crown.mesh, this.sheetMirrorMaterial));
+    for (const column of this.columns) list.push(mirrorWith(column.mesh, this.columnMirrorMaterial));
+  }
+
+  /** What is alive to be mirrored this frame (after prepareFrame): objects tagged by mirrorWith. Empty when the splash is over. */
+  mirrorObjects() { return this.mirrorList; }
+
+  /** Grow `box` around the droplets in the air that the mirror draws (their centres). */
+  dropletBounds(box) {
+    let minX = Infinity, minY = Infinity, minZ = Infinity, maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+    const positions = this.positions;
+    for (let index = 0; index < this.count * 3; index += 3) {
+      if (this.radii[index / 3] < MIRROR_DROP_RADIUS) continue;
+      const x = positions[index], y = positions[index + 1], z = positions[index + 2];
+      if (x < minX) minX = x; if (x > maxX) maxX = x;
+      if (y < minY) minY = y; if (y > maxY) maxY = y;
+      if (z < minZ) minZ = z; if (z > maxZ) maxZ = z;
+    }
+    if (minX <= maxX) box.union(this.dropletBox.set(this.dropletMin.set(minX, minY, minZ), this.dropletMax.set(maxX, maxY, maxZ)));
+  }
+
+  /** The world box around everything mirrorObjects() draws, padded by MIRROR_PAD. */
+  mirrorBounds(box) {
+    box.makeEmpty();
+    for (const object of this.mirrorList) {
+      if (object.userData.mirrorBounds) { object.userData.mirrorBounds(box); continue; }
+      object.geometry.computeBoundingBox();
+      box.union(this.dropletBox.copy(object.geometry.boundingBox).applyMatrix4(object.matrixWorld));
+    }
+    if (!box.isEmpty()) box.expandByScalar(MIRROR_PAD);
+    return box;
+  }
+
+  /** The mirror pass's view (its camera and the height of its target in pixels), before it draws mirrorObjects(). */
+  setMirrorView(mirrorCamera, height) {
+    const projScale = mirrorCamera.projectionMatrix.elements[5] * height * 0.5;
+    this.dropMirrorMaterial.uniforms.uProjScale.value = projScale;
+    this.dropMirrorMaterial.uniforms.uStreakSeconds.value = this.streakSeconds;
+    this.dropMirrorMaterial.uniforms.uSunDirView.value.copy(this.lighting.sunDirection).transformDirection(mirrorCamera.matrixWorldInverse);
+    this.columnMirrorMaterial.uniforms.uProjScale.value = projScale;
   }
 
   setPassMaterials(particleMaterial, sheetMaterial, columnMaterial) {
@@ -743,66 +876,51 @@ export class SplashSystem {
     for (const column of this.columns) column.mesh.material = columnMaterial;
   }
 
-  /** Draw droplets, crown sheets and jet columns over the finished scene and present the frame to the canvas (or target). */
+  /** Draw droplets, crown sheets and jet columns over the finished scene and present the frame to the canvas (or target). After prepareFrame. */
   render(renderer, camera, sceneTarget, output = null) {
-    this.prepareFrame();
-    const { depth, thickness, blurA, blurB } = this.targets;
+    const { info, optics } = this.targets;
     const projScale = camera.projectionMatrix.elements[5] * this.fluidSize.y * 0.5;
     this.sunDirView.copy(this.lighting.sunDirection).transformDirection(camera.matrixWorldInverse);
     for (const material of [this.depthMaterial, this.thicknessMaterial]) {
       material.uniforms.uProjScale.value = projScale;
       material.uniforms.uStreakSeconds.value = this.streakSeconds;
+      material.uniforms.uSunDirView.value.copy(this.sunDirView);
+      material.uniforms.uHazeRadius.value = HAZE_RADIUS * this.fluidScale;
     }
-    // Columns and lens drops pack their normals to suit the depth target (NORMAL_PACKING).
-    const fullFloatInfo = depth.texture.type === THREE.FloatType ? 1 : 0;
     for (const material of [this.columnDepthMaterial, this.columnThicknessMaterial]) material.uniforms.uProjScale.value = projScale;
-    for (const material of [this.depthMaterial, this.columnDepthMaterial, this.compositePass.material]) material.uniforms.uFullFloatInfo.value = fullFloatInfo;
     for (const material of [this.depthMaterial, this.thicknessMaterial, this.sheetDepthMaterial, this.sheetThicknessMaterial, this.columnDepthMaterial, this.columnThicknessMaterial]) {
       material.uniforms.uSceneDepth.value = sceneTarget.depthTexture;
       material.uniforms.uResolution.value.copy(this.fluidSize);
-      material.uniforms.uSunDirView.value.copy(this.sunDirView);
     }
     renderer.setClearColor(0x000000, 0);
-    this.particleMesh.visible = this.count > 0;
     if (this.count > 0 || this.crowns.length > 0 || this.columns.length > 0) {
       this.setPassMaterials(this.depthMaterial, this.sheetDepthMaterial, this.columnDepthMaterial);
-      renderer.setRenderTarget(depth);
+      renderer.setRenderTarget(info);
       renderer.clear(true, true, false);
       renderer.render(this.particleScene, camera);
 
       this.setPassMaterials(this.thicknessMaterial, this.sheetThicknessMaterial, this.columnThicknessMaterial);
-      renderer.setRenderTarget(thickness);
+      renderer.setRenderTarget(optics);
       renderer.clear(true, false, false);
       renderer.render(this.particleScene, camera);
-
-      const blur = this.blurPass.material.uniforms;
-      blur.uProjScale.value = projScale;
-      blur.uFluidInfo.value = depth.texture;
-      blur.uDepth.value = depth.texture;
-      blur.uDirection.value.set(1 / this.fluidSize.x, 0);
-      this.blurPass.render(renderer, blurA);
-      blur.uDepth.value = blurA.texture;
-      blur.uDirection.value.set(0, 1 / this.fluidSize.y);
-      this.blurPass.render(renderer, blurB);
-    } else {
-      renderer.setRenderTarget(blurB);
+      this.fluidCleared = false;
+    } else if (!this.fluidCleared) {
+      // The splash is over: one clear, and the composite skips every pixel from now on.
+      renderer.setRenderTarget(optics);
       renderer.clear(true, false, false);
-      renderer.setRenderTarget(thickness);
-      renderer.clear(true, false, false);
+      this.fluidCleared = true;
     }
 
     const composite = this.compositePass.material.uniforms;
     composite.uScene.value = sceneTarget.texture;
-    composite.uFluidDepth.value = blurB.texture;
-    composite.uThickness.value = thickness.texture;
-    composite.uFluidInfo.value = depth.texture;
+    composite.uFluidInfo.value = info.texture;
+    composite.uOptics.value = optics.texture;
     composite.uInverseProjection.value.copy(camera.projectionMatrixInverse);
     composite.uCameraWorld.value.copy(camera.matrixWorld);
-    composite.uFluidTexel.value.set(1 / this.fluidSize.x, 1 / this.fluidSize.y);
-    composite.uSunDirView.value.copy(this.lighting.sunDirection).transformDirection(camera.matrixWorldInverse);
+    composite.uSunDirView.value.copy(this.sunDirView);
     composite.uExposure.value = this.lighting.exposure;
-    composite.uProjScale.value = projScale;
     composite.uFluidScale.value = this.fluidScale;
+    composite.uProjScale.value = projScale;
     this.compositePass.render(renderer, output);
   }
 
