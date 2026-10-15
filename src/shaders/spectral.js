@@ -161,37 +161,55 @@ void main() {
 `;
 
 // Foam: decays, diffuses a little, is churned up where the surface moves fast,
-// and is stamped in by splashes.
+// and is stamped in by splashes. The map holds the amount in R (0 to 1) and,
+// in G, the lifetime τ of the foam there: each stamp brings its own (a big
+// splash's raft is thicker and lasts longer), and where foam of different
+// lifetimes mixes, by stamping or diffusing, G is their amount-weighted mean,
+// so the amount decays as exp(−dt/τ) with the τ of the foam actually there.
 export const FOAM_FRAGMENT = /* glsl */`
 #define MAX_FOAM 16
+#define SHORTEST_LIFETIME 0.5
 uniform sampler2D uFoam;
 uniform sampler2D uHeight;
 uniform float uN;
 uniform float uDt;
-uniform float uTau;
+uniform float uDiffusionRate;          // 1/s: 4·D/cell², D the diffusivity in m²/s
+uniform float uChurnLifetime;          // seconds: τ of the foam fast surface motion makes
 uniform int uFoamCount;
-uniform vec4 uFoamSplats[MAX_FOAM];   // x,y texels; z sigma texels; w amount
+uniform vec4 uFoamSplats[MAX_FOAM];    // x,y texels; z sigma texels; w amount
+uniform float uFoamLifetimes[MAX_FOAM];   // seconds
 varying vec2 vUv;
+
+// Adds amount of foam with its lifetime to (amount, amount × lifetime).
+vec2 addFoam(vec2 carried, float amount, float lifetime) {
+  return carried + vec2(amount, amount * lifetime);
+}
 
 void main() {
   vec2 texelSize = vec2(1.0 / uN);
-  float foam = texture2D(uFoam, vUv).r;
-  float neighbours = texture2D(uFoam, vUv + vec2(texelSize.x, 0.0)).r
-    + texture2D(uFoam, vUv - vec2(texelSize.x, 0.0)).r
-    + texture2D(uFoam, vUv + vec2(0.0, texelSize.y)).r
-    + texture2D(uFoam, vUv - vec2(0.0, texelSize.y)).r;
-  foam = mix(foam, neighbours * 0.25, min(uDt * 6.0, 1.0));
-  foam *= exp(-uDt / uTau);
+  vec2 centre = texture2D(uFoam, vUv).rg;
+  vec2 east = texture2D(uFoam, vUv + vec2(texelSize.x, 0.0)).rg;
+  vec2 west = texture2D(uFoam, vUv - vec2(texelSize.x, 0.0)).rg;
+  vec2 north = texture2D(uFoam, vUv + vec2(0.0, texelSize.y)).rg;
+  vec2 south = texture2D(uFoam, vUv - vec2(0.0, texelSize.y)).rg;
+  // (amount, amount × lifetime): both diffuse, so the lifetime follows the foam.
+  vec2 carried = vec2(centre.r, centre.r * centre.g);
+  vec2 neighbours = vec2(east.r, east.r * east.g) + vec2(west.r, west.r * west.g)
+    + vec2(north.r, north.r * north.g) + vec2(south.r, south.r * south.g);
+  carried = mix(carried, neighbours * 0.25, min(uDt * uDiffusionRate, 1.0));
+  float lifetime = carried.x > 1e-6 ? carried.y / carried.x : SHORTEST_LIFETIME;
+  carried *= exp(-uDt / max(lifetime, SHORTEST_LIFETIME));
   float speed = abs(texture2D(uHeight, vUv).g);
-  foam += max(speed - 1.4, 0.0) * uDt * 0.5;
+  carried = addFoam(carried, max(speed - 1.4, 0.0) * uDt * 0.5, uChurnLifetime);
   vec2 texel = gl_FragCoord.xy - 0.5;
-  for (int i = 0; i < MAX_FOAM; i++) {
-    if (i >= uFoamCount) break;
-    vec4 splat = uFoamSplats[i];
-    vec2 d = texel - splat.xy;
-    float g = exp(-dot(d, d) / (2.0 * splat.z * splat.z));
-    foam += splat.w * g * (1.0 - foam);
+  for (int index = 0; index < MAX_FOAM; index++) {
+    if (index >= uFoamCount) break;
+    vec4 splat = uFoamSplats[index];
+    vec2 offset = texel - splat.xy;
+    float falloff = exp(-dot(offset, offset) / (2.0 * splat.z * splat.z));
+    carried = addFoam(carried, splat.w * falloff * (1.0 - carried.x), uFoamLifetimes[index]);
   }
-  gl_FragColor = vec4(clamp(foam, 0.0, 1.0), 0.0, 0.0, 1.0);
+  float amount = clamp(carried.x, 0.0, 1.0);
+  gl_FragColor = vec4(amount, carried.x > 1e-6 ? carried.y / carried.x : SHORTEST_LIFETIME, 0.0, 1.0);
 }
 `;
