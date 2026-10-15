@@ -140,11 +140,12 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
   const windDirection = windParameter?.length === 2 && windParameter.every(Number.isFinite) && Math.hypot(...windParameter) > 0 ? windParameter : DEFAULT_WIND;
   const ambientWaves = new AmbientWaves(renderer, { windDirection, depth: POND_DEPTH });
   const surface = createWaterSurface(water, lighting, ambientWaves);
-  const floor = createPondFloor(water, lighting, ambientWaves);
   const splash = new SplashSystem({ environment, lighting, water, ambientWaves, surface });
 
   const camera = new THREE.PerspectiveCamera(48, 1, 0.05, 60000);
   camera.position.set(0, 1.15, 2.45);
+  // The floor's pattern is baked once, laid out in perspective from the camera's eye (src/pondFloor.js).
+  const floor = createPondFloor(water, lighting, ambientWaves, { renderer, eye: camera.position });
   // The view: home is the framing the page opens with; view is the current one.
   const home = { ...viewFacing(HOME_TARGET[0] - camera.position.x, HOME_TARGET[1] - camera.position.y, HOME_TARGET[2] - camera.position.z), fov: 48 };
   const view = { ...home };

@@ -652,65 +652,123 @@ void main() {
 }
 `;
 
-export const FLOOR_VERTEX = /* glsl */`
-varying vec3 vWorld;
-void main() {
-  vec3 world = (modelMatrix * vec4(position, 1.0)).xyz;
-  vWorld = world;
-  gl_Position = projectionMatrix * viewMatrix * vec4(world, 1.0);
-}
-`;
-
-export const FLOOR_FRAGMENT = /* glsl */`
-uniform sampler2D uHeight;
-uniform vec3 uSunDir;
-uniform vec3 uSunIrradiance;
-uniform vec3 uSkyAmbient;
-uniform vec2 uDomainMin;
-uniform float uDomainSize;
-uniform float uTexelOffset;
-uniform float uN;
-uniform float uCell;
-uniform float uPondDepth;
-uniform vec3 uAbsorb;
-varying vec3 vWorld;
-${GLSL_COMMON}
-
-void main() {
-  vec2 p = vWorld.xz;
-  // Sand with pebbles.
+// The floor's pattern: sand of mixed grain, pebbles in patches and silt
+// darkening it in broad drifts, as an albedo at a world XZ point. Seven value
+// noises, so it is not evaluated per pixel: src/pondFloor.js bakes it once at
+// start-up (FLOOR_BAKE_FRAGMENT) into a texture that FLOOR_FRAGMENT fetches.
+export const FLOOR_PATTERN = /* glsl */`
+vec3 floorPattern(vec2 p) {
   float grain = valueNoise(p * 38.0) * 0.45 + valueNoise(p * 130.0) * 0.25 + valueNoise(p * 7.0) * 0.5;
   vec3 sand = mix(vec3(0.26, 0.22, 0.15), vec3(0.42, 0.37, 0.27), grain);
   float pebble = smoothstep(0.62, 0.74, valueNoise(p * 6.5 + 7.3) * 0.7 + valueNoise(p * 21.0) * 0.3);
   vec3 pebbleColor = vec3(0.27, 0.26, 0.24) * (0.6 + 0.8 * valueNoise(p * 70.0));
   sand = mix(sand, pebbleColor, pebble * 0.8);
   float silt = valueNoise(p * 0.9 + 3.0);
-  sand *= 0.75 + 0.45 * silt;
+  return sand * (0.75 + 0.45 * silt);
+}
+`;
+
+// The baked pattern's layout (src/pondFloor.js says why): in perspective from
+// the camera's eye, which never moves. A texel's u is 0.5 plus its sideways
+// offset from the eye over twice uPatternSpread times its distance ahead of
+// the eye, its v uPatternNearest over that distance; uPatternEye is the eye's
+// world (x, z). The texture holds albedo over PATTERN_RANGE, which is above
+// the pattern's largest (0.54), so its 8 bits span the pattern's range.
+const FLOOR_PATTERN_LAYOUT = /* glsl */`
+uniform vec2 uPatternEye;
+uniform float uPatternNearest;
+uniform float uPatternSpread;
+#define PATTERN_RANGE 0.55
+`;
+
+// One pass over the pattern texture: each texel holds the pattern at the
+// floor point its layout gives it.
+export const FLOOR_BAKE_FRAGMENT = /* glsl */`
+${FLOOR_PATTERN_LAYOUT}
+varying vec2 vUv;
+${GLSL_COMMON}
+${FLOOR_PATTERN}
+void main() {
+  float ahead = uPatternNearest / vUv.y;
+  vec2 world = vec2(uPatternEye.x + (2.0 * vUv.x - 1.0) * uPatternSpread * ahead, uPatternEye.y - ahead);
+  gl_FragColor = vec4(floorPattern(world) / PATTERN_RANGE, 1.0);
+}
+`;
+
+// What the floor's pixels need that is the same everywhere, or affine in the
+// world position, is worked out here, for the floor's four vertices: the light
+// reaching the floor (the same everywhere, so flat), where a floor point's
+// sunlight crossed the surface, and the pattern's coordinates, projective
+// (u·w, v·w, w) with w the distance ahead of the eye. The last two are affine
+// in the world position, so they interpolate exactly.
+export const FLOOR_VERTEX = /* glsl */`
+uniform vec3 uSunDir;
+uniform vec3 uSunIrradiance;
+uniform vec3 uSkyAmbient;
+uniform vec3 uAbsorb;
+uniform float uPondDepth;
+${FLOOR_PATTERN_LAYOUT}
+varying vec2 vSurfacePoint;
+varying vec3 vPatternCoord;
+flat varying vec3 vSunlight;
+flat varying vec3 vSkylight;
+void main() {
+  vec3 world = (modelMatrix * vec4(position, 1.0)).xyz;
+  // The beam reaching a floor point crossed the surface up-sun of it.
+  vSurfacePoint = world.xz + uSunDir.xz / max(uSunDir.y, 0.2) * uPondDepth * 0.75;
+  float ahead = uPatternEye.y - world.z;
+  vPatternCoord = vec3(0.5 * ahead + (world.x - uPatternEye.x) * 0.5 / uPatternSpread, uPatternNearest, ahead);
+  // The sun after crossing the water (the caustics then focus it) and the
+  // sky's light, per unit of the baked pattern.
+  float sunPath = uPondDepth / max(uSunDir.y, 0.2);
+  vSunlight = uSunIrradiance * exp(-uAbsorb * sunPath) * max(uSunDir.y, 0.0) * PATTERN_RANGE;
+  vSkylight = uSkyAmbient * exp(-uAbsorb * uPondDepth) * 1.4 * PATTERN_RANGE;
+  gl_Position = projectionMatrix * viewMatrix * vec4(world, 1.0);
+}
+`;
+
+export const FLOOR_FRAGMENT = /* glsl */`
+uniform sampler2D uHeight;
+uniform sampler2D uPattern;
+uniform vec2 uDomainMin;
+uniform float uDomainSize;
+uniform float uTexelOffset;
+uniform float uN;
+uniform float uCell;
+uniform float uPondDepth;
+varying vec2 vSurfacePoint;
+varying vec3 vPatternCoord;
+flat varying vec3 vSunlight;
+flat varying vec3 vSkylight;
+${GLSL_COMMON}
+
+void main() {
+  // Sand with pebbles and silt (FLOOR_PATTERN), baked.
+  vec3 sand = texture2DProj(uPattern, vPatternCoord).rgb;
 
   // Caustics: where the surfaces above focus the sun. The beam reaching this
-  // floor point crossed the surface up-sun of it; its irradiance scales with
-  // the inverse area dilation of the refracted rays, which for small slopes is
-  // 1 + 0.25 · depth · ∇²h.
-  vec2 surfacePoint = p + uSunDir.xz / max(uSunDir.y, 0.2) * uPondDepth * 0.75;
-  vec2 uv = (surfacePoint - uDomainMin) / uDomainSize + uTexelOffset;
+  // floor point crossed the surface at vSurfacePoint, up-sun of it; its
+  // irradiance scales with the inverse area dilation of the refracted rays,
+  // which for small slopes is 1 + 0.25 · depth · ∇²h.
+  vec2 uv = (vSurfacePoint - uDomainMin) / uDomainSize + uTexelOffset;
   float mask = patchMask(uv);
-  // Sampled three texels apart: the sun's width and the water blur fine detail.
-  float texelStep = 3.0 / uN;
-  float hc = texture2D(uHeight, uv).r;
-  float hl = texture2D(uHeight, uv - vec2(texelStep, 0.0)).r;
-  float hr = texture2D(uHeight, uv + vec2(texelStep, 0.0)).r;
-  float hd = texture2D(uHeight, uv - vec2(0.0, texelStep)).r;
-  float hu = texture2D(uHeight, uv + vec2(0.0, texelStep)).r;
-  float laplacian = (hl + hr + hu + hd - 4.0 * hc) / (9.0 * uCell * uCell);
+  // Sampled three texels apart: the sun's width and the water blur fine
+  // detail. Outside the splash's patch (mask 0) there is nothing to sample.
+  float laplacian = 0.0;
+  if (mask > 0.0) {
+    float texelStep = 3.0 / uN;
+    float hc = texture2DLodEXT(uHeight, uv, 0.0).r;
+    float hl = texture2DLodEXT(uHeight, uv - vec2(texelStep, 0.0), 0.0).r;
+    float hr = texture2DLodEXT(uHeight, uv + vec2(texelStep, 0.0), 0.0).r;
+    float hd = texture2DLodEXT(uHeight, uv - vec2(0.0, texelStep), 0.0).r;
+    float hu = texture2DLodEXT(uHeight, uv + vec2(0.0, texelStep), 0.0).r;
+    laplacian = (hl + hr + hu + hd - 4.0 * hc) / (9.0 * uCell * uCell);
+  }
   // The ambient ripples add their own: a web of caustics drifting with them.
-  float focus = 1.0 + 0.25 * uPondDepth * (laplacian * mask + ambientLaplacian(surfacePoint));
+  float focus = 1.0 + 0.25 * uPondDepth * (laplacian * mask + ambientLaplacian(vSurfacePoint));
   float caustic = clamp(1.0 / max(focus, 0.5), 0.72, 1.45);
 
-  float sunPath = uPondDepth / max(uSunDir.y, 0.2);
-  vec3 sunlight = uSunIrradiance * exp(-uAbsorb * sunPath) * max(uSunDir.y, 0.0) * caustic;
-  vec3 ambient = uSkyAmbient * exp(-uAbsorb * uPondDepth) * 1.4;
-  vec3 color = sand * (sunlight + ambient);
-  gl_FragColor = vec4(color, 1.0);
+  gl_FragColor = vec4(sand * (vSunlight * caustic + vSkylight), 1.0);
 }
 `;
 

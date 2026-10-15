@@ -1,10 +1,71 @@
 // The sandy pond floor, lit by sunlight focused through the rippling surface:
 // the caustics come from the curvature of the splash's height field and of the
 // ambient wind waves (src/ambientWaves.js), so they drift with the ripples.
+//
+// The floor's pattern (sand, pebbles and silt: FLOOR_PATTERN in
+// src/shaders/scene.js, seven value noises) never changes, so the floor shader
+// does not compute it: one GPU pass of the same code bakes it at start-up into
+// an RGBA8 texture (8 MiB), and per pixel the floor fetches it and adds what
+// moves, the caustics, and the light.
+//
+// The pattern shows through the water out to about 25 m ahead (past that,
+// absorption leaves it under half a level of the final 8-bit pixel) and as
+// wide as the view; a square of world XZ covering that with as many texels
+// would have texels of about 3 cm, several pixels each on the near floor. But
+// the camera never moves (src/main.js), it only turns and zooms, so the
+// texture is laid out in perspective from its eye (eye, the camera's
+// position): a column is a fixed ratio of sideways offset to distance ahead of
+// the eye, from −PATTERN_SPREAD to +PATTERN_SPREAD (51° either side, the
+// bottom corners of a 21:9 view), and a row a fixed ratio of PATTERN_NEAREST
+// to that distance, from the horizon to PATTERN_NEAREST metres ahead (just
+// nearer than the bottom of the phone's view). Its texels lie on the floor as
+// the screen's pixels do: across the view 1.2 mm per metre of distance, along
+// it 0.56 mm per metre squared (2.8 by 2.9 mm at 2.3 m, the bottom of the home
+// view; 8 by 24 mm at 6.5 m; 1.8 by 13 cm at 15 m). That is about a texel per
+// pixel at the home view and 1.3 to 1.6 pixels per texel at the phone's, which
+// look as the per-pixel noise did; at the narrowest zoom (8°) it is about five,
+// and the finest sand grain softens. Past its edges (views turned away from
+// the home frame through the API) it repeats mirrored.
+//
+// The bake is one pass of PATTERN_SIZE texels through the noise the floor
+// shader used to run for every pixel of every frame. Its program is freed
+// after it; the texture lives as long as the floor's material (disposing the
+// material frees it).
 import * as THREE from 'three';
-import { FLOOR_VERTEX, FLOOR_FRAGMENT } from './shaders/scene.js';
+import { FLOOR_VERTEX, FLOOR_FRAGMENT, FLOOR_BAKE_FRAGMENT } from './shaders/scene.js';
+import { FullscreenPass } from './gpu.js';
 
-export function createPondFloor(water, lighting, ambientWaves) {
+const PATTERN_SIZE = [2048, 1024];   // texels: across the view, along it
+const PATTERN_NEAREST = 1.75;        // metres ahead of the eye, the texture's last row
+const PATTERN_SPREAD = 1.25;         // the texture's half width, as sideways offset over distance ahead
+
+function bakePattern(renderer, layout) {
+  const target = new THREE.WebGLRenderTarget(PATTERN_SIZE[0], PATTERN_SIZE[1], {
+    type: THREE.UnsignedByteType,
+    format: THREE.RGBAFormat,
+    minFilter: THREE.LinearFilter,
+    magFilter: THREE.LinearFilter,
+    wrapS: THREE.MirroredRepeatWrapping,
+    wrapT: THREE.MirroredRepeatWrapping,
+    depthBuffer: false,
+    stencilBuffer: false,
+    generateMipmaps: false,
+  });
+  const pass = new FullscreenPass(FLOOR_BAKE_FRAGMENT, layout);
+  const previousTarget = renderer.getRenderTarget();
+  pass.render(renderer, target);
+  renderer.setRenderTarget(previousTarget);
+  pass.material.dispose();
+  return target;
+}
+
+export function createPondFloor(water, lighting, ambientWaves, { renderer, eye }) {
+  const layout = {
+    uPatternEye: { value: new THREE.Vector2(eye.x, eye.z) },
+    uPatternNearest: { value: PATTERN_NEAREST },
+    uPatternSpread: { value: PATTERN_SPREAD },
+  };
+  const pattern = bakePattern(renderer, layout);
   const material = new THREE.ShaderMaterial({
     vertexShader: FLOOR_VERTEX,
     fragmentShader: FLOOR_FRAGMENT,
@@ -20,9 +81,12 @@ export function createPondFloor(water, lighting, ambientWaves) {
       uCell: { value: water.cell },
       uPondDepth: { value: water.depth },
       uAbsorb: { value: lighting.absorb },
+      uPattern: { value: pattern.texture },
+      ...layout,
       ...ambientWaves.uniforms(),
     },
   });
+  material.addEventListener('dispose', () => pattern.dispose());
   const mesh = new THREE.Mesh(new THREE.PlaneGeometry(600, 600), material);
   mesh.rotation.x = -Math.PI / 2;
   mesh.position.y = -water.depth;
