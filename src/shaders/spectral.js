@@ -25,7 +25,8 @@ uniform float uN;            // grid size (texels per side)
 uniform float uCell;         // metres per texel
 uniform float uDepth;        // pond depth, metres
 uniform float uDt;           // seconds advanced this pass
-uniform float uGamma0;       // base damping, 1/s
+uniform float uGamma0;       // base damping, 1/s, above uKDamp...
+uniform float uKDamp;        // ...and in proportion to k below it
 uniform float uNu;           // k² damping coefficient, m²/s
 uniform float uKLow;         // below this wavenumber waves are damped hard (no sloshing)
 uniform float uGammaLow;
@@ -44,7 +45,7 @@ void main() {
   float k = qMag / uCell;                      // radians per metre
   float omega2 = (9.81 * k + 7.2e-5 * k * k * k) * tanh(min(k * uDepth, 20.0));
   float omega = sqrt(omega2);
-  float gamma = uGamma0 + uNu * k * k + (k < uKLow ? uGammaLow : 0.0);
+  float gamma = uGamma0 * min(k / uKDamp, 1.0) + uNu * k * k + (k < uKLow ? uGammaLow : 0.0);
 
   vec2 height = state.xy;
   vec2 velocity = state.zw;

@@ -4,8 +4,9 @@
 // each ring element then flying on its own. Surface tension and air slow a
 // real sheet's rim fast (which is why crowns never reach the height their
 // launch speed implies), modelled as a velocity decaying as exp(−age/τd) with
-// τd = 0.05 s while gravity acts undamped. So the whole sheet is a closed form
-// in launch time tau, azimuth theta and the crown's age t; with a = t − tau,
+// τd = 0.05 s for a 3 cm stone (see the scaling below) while gravity acts
+// undamped. So the whole sheet is a closed form in launch time tau, azimuth
+// theta and the crown's age t; with a = t − tau,
 //
 //   position = launch point + u·direction·τd·(1 − exp(−a/τd)) − ½·g·a²·up
 //
@@ -19,30 +20,62 @@
 // leaves the ring at 0.6·h0, so the foot stays light.
 //
 // Around the ring u is modulated by 1 + 0.05·Σ a_k·cos(k·theta + phase_k) over
-// modes k = 5…9 and k = 12…18 alike, with random a_k in [0.5, 1] (stronger
-// low modes turn some crowns into three or four petals). Faster elements fly
-// further, so the rim goes wavy (the Rayleigh–Plateau instability of the rim)
-// and grows fine scallops; their crests shed droplets until the sheet breaks.
+// modes k = 5…9 and k = 12…18 alike for a 3 cm stone, with random a_k in
+// [0.5, 1] (stronger low modes turn some crowns into three or four petals).
+// Faster elements fly further, so the rim goes wavy (the Rayleigh–Plateau
+// instability of the rim) and grows fine scallops; their crests shed
+// droplets until the sheet breaks. The fingers' spacing is the
+// Rayleigh–Taylor wavelength of the decelerating rim, ∝ sqrt(σ/(ρ·a)), and
+// the deceleration a ∝ u/τd goes as 1/R, so the spacing grows as sqrt(R)
+// while the rim's length grows as R: a stone s = R / 3 cm times the size has
+// sqrt(s) times as many fingers. The mode numbers are stretched by sqrt(s)
+// (every whole number in the stretched span, so a 16 cm stone's crown has
+// modes 8…15 and 20…29) and the amplitudes divided by the square root of
+// how many there are against the 3 cm stone's, so the rim is as wavy at any
+// size, in finer fingers on a bigger stone.
 // An oblique entry multiplies u by 1 + 0.45·forward (forward = cosine to the
 // direction of travel times the horizontal fraction of the entry speed), thins
 // the back side to match, and carries every element along at 0.22 of the
 // horizontal entry velocity.
 //
-// Thickness is h0·(r0/r)/(1 + age/0.04 s), at least 0.2 mm, with
-// h0 = 1.5 mm·sqrt(R / 3 cm): the sheet thins as it spreads around a widening
-// circle and as it drains. The free edge (the material within ~8% of T of the
-// rim, or of the tear front once it tears) is a bead three times the
-// unstretched thickness h0/(1 + age/0.04 s), since an edge gathers what the
-// stretching takes from the sheet; its normals are bent outward like a tube's
-// so it catches the sun all along the edge.
+// Thickness is h0·(r0/r)/(1 + age/td), at least 0.2 mm, with h0 = 1.5 mm and
+// the drain time td = 0.04 s for a 3 cm stone: the sheet thins as it spreads
+// around a widening circle and as it drains. The free edge (the material
+// within ~8% of T of the rim, or of the tear front once it tears) is a bead
+// three times the unstretched thickness h0/(1 + age/td), since an edge gathers
+// what the stretching takes from the sheet; its normals are bent outward like
+// a tube's so it catches the sun all along the edge.
 //
-// At t_break = clamp(T + 6·R/V, 0.06, 0.15) s the sheet tears, from the rim
-// down to the water along a ragged front, over 0.6·t_break. The torn part
-// becomes droplets that carry the local (decayed) sheet velocity, each holding
-// the volume of the patch of sheet it came from, so the drops come out about
-// the size the sheet's thickness implies. For a 3 cm stone at about 6 m/s the
-// sheet stands whole for 60 ms, its rim peaking near 5 cm (9 cm on the forward
-// side of an oblique throw), and is gone by about 100 ms.
+// At t_break = clamp(T + 6·R/V, 0.06 s, 0.15 s) for a 3 cm stone the sheet
+// tears, from the rim down to the water along a ragged front, over
+// 0.6·t_break. The torn part becomes droplets that carry the local (decayed)
+// sheet velocity, each holding the volume of the patch of sheet it came from,
+// so the drops come out about the size the sheet's thickness implies, between
+// 0.6 and 4.5 mm for a 3 cm stone. For a 3 cm stone at about 6 m/s the sheet
+// stands whole for 60 ms, its rim peaking near 5 cm (9 cm on the forward side
+// of an oblique throw), and is gone by about 100 ms.
+//
+// How a stone's sheet scales with its radius R, against s = R / 3 cm. Lengths
+// go with R and speeds with the entry speed V, as in a Froude-scaled splash:
+// the launch ring (0.9 to 1.4·R) and the launch window T ∝ R/V. The sheet's
+// thickness goes with R too (h0 = 1.5 mm·s), and since the air and the rim's
+// surface tension decelerate a sheet in inverse proportion to its thickness,
+// so do its drag time τd = 0.05 s·s and its drain time td = 0.04 s·s, both
+// floored at SHEET_SCALE_FLOOR times (τd 20 ms). A thick sheet lasts: for
+// stones of 3 cm and up the tear's floor and ceiling (60 and 150 ms) scale
+// with s as well, so the sheet stands as long against its own drag and drain
+// time at any size (smaller stones keep the 60 ms floor, which a 60 Hz frame
+// needs). The launch speed does not change with R, so a big stone's rim flies
+// nearly ballistic, up to u²/2g, and a small one's is held near u·τd: the rim's
+// height grows about as R for small stones and more slowly for big ones. Its
+// drops hold the volume of a sheet h0 thick over an area ∝ R² shared among a
+// count ∝ s^1.6 (SplashSystem.impact), so their radii, the caps on them
+// included, go as s^DROP_SIZE_POWER (s^0.47 by that count). At about 6.3 m/s,
+// 42° from vertical, the reference throw, a 1.5 cm stone's rim reaches about
+// 4 cm up and its sheet is gone by 96 ms; a 16 cm stone's sheet is 4 mm
+// thick, stands for 160 ms with its rim up to 17 cm high and 70 cm across,
+// is gone by 256 ms and tears into drops of 1 to 7 mm (tools/splash-probe.mjs
+// measures these).
 //
 // A large drop landing makes a small crown of its own, the classic
 // drop-impact crown: the same model with the drop's radius and landing speed
@@ -53,7 +86,9 @@
 // nearer vertical, so it stands about a drop diameter tall and three across
 // when it tears, as a drop's crown does (a stone's is flatter for its size);
 // it tears into drops of at most LANDING_DROP_CAP·R, and its mesh rides the
-// waves (aRide), since most drops land on water the splash has disturbed. A
+// waves (aRide), since most drops land on water the splash has disturbed. It
+// keeps the 3 cm stone's drag and drain times and h0 = 1.5 mm·sqrt(R / 3 cm),
+// which is what it was tuned with (a drop's crown is no stone's scaled down). A
 // jet's 7 mm drop landing at 2.2 m/s stands whole for 19 ms, its rim then
 // 14 mm up and 43 mm across, and is gone by 31 ms.
 //
@@ -70,11 +105,13 @@
 // falls to FAN_EDGE_SPEED and the thickness to nothing at the edges; it has
 // no drift and fingers its rim with the modes FAN_MODES. It tears at
 // t_break = max(FAN_BREAK·R/V, FAN_MIN_BREAK) (a sheet this thin and fast
-// would part within 2·R/V, but then no frame at 60 Hz would ever show it)
-// into fine drops of FAN_DROP_FLOOR to FAN_DROP_CAP, which carry its
-// decayed velocity. For a 3 cm stone thrown in at 6.9 m/s, 42° from
-// vertical, its rim is 13 cm ahead and 3 cm up when it tears at 20 ms, it
-// is gone by 32 ms, and its spray lands about 0.7 m ahead.
+// would part within 2·R/V, but then no frame at 60 Hz would ever show it;
+// the floor scales with s from 3 cm up, as the crown's does) into fine drops
+// of FAN_DROP_FLOOR to FAN_DROP_CAP (times s^DROP_SIZE_POWER), which carry
+// its decayed velocity. It scales with the stone as the crown does. For a
+// 3 cm stone thrown in at 6.9 m/s, 42° from vertical, its rim is 13 cm ahead
+// and 3 cm up when it tears at 20 ms, it is gone by 32 ms, and its spray
+// lands about 0.7 m ahead.
 //
 // updateGeometry() evaluates a ROWS × COLUMNS grid (rim to base × around the
 // ring, built by src/fluidMesh.js; the fan's FAN_ROWS × FAN_COLUMNS across
@@ -104,8 +141,13 @@ const LANDING_DROP_CAP = 0.16;     // ...into drops of at most this many landing
 const ROW_POWER = 1.8;             // crowds main-launch rows towards the rim bead
 const MAIN_SHARE = 0.7;            // fraction of the tear front's travel spent on the main launch
 const TAIL_DECAY = 0.45;           // tail launch speed decays over this many T
-const DRAIN_SECONDS = 0.04;        // the sheet's thinning time scale
-const DRAG_SECONDS = 0.05;         // elements' velocity decays as exp(−age / DRAG_SECONDS)
+const DRAIN_SECONDS = 0.04;        // the sheet's thinning time scale, for a 3 cm stone...
+const DRAG_SECONDS = 0.05;         // ...and its elements' velocity decays as exp(−age / τd), τd this...
+const SHEET_SCALE_FLOOR = 0.4;     // ...both scaling with R / 3 cm, but at least this many times (τd 20 ms)
+const SHEET_THICKNESS = 0.0015;    // h0 of a 3 cm stone's sheet, scaling with R
+const BREAK_FLOOR = 0.06;          // a stone's sheet stands at least this long (s), so a 60 Hz frame sees it...
+const BREAK_CEILING = 0.15;        // ...and at most this, both times R / 3 cm for stones of 3 cm and up
+const DROP_SIZE_POWER = 0.5;       // a stone's sheet sheds and tears into drops scaling as (R / 3 cm)^this
 const TAIL_THICKNESS = 0.6;        // tail material leaves the ring at this fraction of h0
 const MIN_THICKNESS = 0.0002;
 const BEAD_END = 0.08;             // the bead is the material of the first 8% of T
@@ -121,7 +163,7 @@ const FAN_COLUMNS = 41;            // ...by edge to edge across its sector
 const FAN_HALF_ANGLE = THREE.MathUtils.degToRad(60);   // the sector spans this either side of the direction of travel
 const FAN_LAUNCH = 1.0;            // launched over this many R/V...
 const FAN_BREAK = 1.25;            // ...tearing at this many R/V...
-const FAN_MIN_BREAK = 0.02;        // ...or this many seconds if longer, so a 60 Hz frame sees it whole
+const FAN_MIN_BREAK = 0.02;        // ...or this many seconds (times R / 3 cm from 3 cm up) if longer, so a 60 Hz frame sees it whole
 const FAN_RING_START = 0.5;        // launch ring radius in R, first to last material: the forward contact line
 const FAN_RING_END = 0.9;
 const FAN_SPEED_START = 1.0;       // launch speed in V, first to last (about 0.9·V)...
@@ -132,8 +174,8 @@ const FAN_EDGE_SPEED = 0.7;        // launch speed at the sector's edges against
 const FAN_THICKNESS = 0.5;         // of a stone crown's h0
 const FAN_MODES = [20, 22, 24, 26, 28, 30, 32];   // its rim's fingers (around a whole circle: 7 to 11 across the sector)
 const FAN_AMPLITUDE = 0.06;
-const FAN_DROP_CAP = 0.00045;      // it tears into fine drops of at most this (times (R / 3 cm)^0.4)...
-const FAN_DROP_FLOOR = 0.00015;    // ...and at least this...
+const FAN_DROP_CAP = 0.00045;      // it tears into fine drops of at most this...
+const FAN_DROP_FLOOR = 0.00015;    // ...and at least this (both times (R / 3 cm)^DROP_SIZE_POWER)...
 const FAN_RIM_DROPS = 0.2;         // ...and its rim sheds drops this fraction of the size a crown's does
 
 const randomRange = (low, high) => low + Math.random() * (high - low);
@@ -160,6 +202,12 @@ export class CrownSheet {
     this.centreZ = impact.z;
     this.radius = radius;
     this.sizeFactor = radius / REFERENCE_RADIUS;
+    // A stone's sheet is as thick as the stone is big, so it slows, drains and
+    // lasts in proportion; a landing drop's crown keeps the 3 cm stone's times.
+    const sheetScale = landing ? 1 : Math.max(this.sizeFactor, SHEET_SCALE_FLOOR);
+    const lastingScale = Math.max(this.sizeFactor, 1);
+    this.dragSeconds = DRAG_SECONDS * sheetScale;
+    this.drainSeconds = DRAIN_SECONDS * sheetScale;
     // Sets the launch speeds.
     this.entrySpeed = landing ? LANDING_SPEED * speed : fan ? (0.75 + 0.25 * strength) * speed : speed;
     this.tiltShift = landing ? LANDING_TILT : 0;                  // degrees off the launch angle from vertical
@@ -189,18 +237,29 @@ export class CrownSheet {
       this.breakTime = LANDING_BREAK * this.launchDuration;
     } else if (fan) {
       this.launchDuration = FAN_LAUNCH * radius / speed;
-      this.breakTime = Math.max(FAN_BREAK * radius / speed, FAN_MIN_BREAK);
+      this.breakTime = Math.max(FAN_BREAK * radius / speed, FAN_MIN_BREAK * lastingScale);
     } else {
       this.launchDuration = Math.max(1.2 * radius / speed, 0.01);
-      this.breakTime = THREE.MathUtils.clamp(this.launchDuration + 6 * radius / speed, 0.06, 0.15);
+      this.breakTime = THREE.MathUtils.clamp(this.launchDuration + 6 * radius / speed, BREAK_FLOOR * lastingScale, BREAK_CEILING * lastingScale);
     }
     this.tearDuration = TEAR_SHARE * this.breakTime;
     this.endTime = this.breakTime + this.tearDuration;
-    this.baseThickness = Math.max(0.0015 * Math.sqrt(this.sizeFactor), MIN_THICKNESS) * (fan ? FAN_THICKNESS * (0.5 + 0.5 * strength) : 1);
+    const thickness = SHEET_THICKNESS * (landing ? Math.sqrt(this.sizeFactor) : this.sizeFactor);
+    this.baseThickness = Math.max(thickness, MIN_THICKNESS) * (fan ? FAN_THICKNESS * (0.5 + 0.5 * strength) : 1);
 
     // Modes count around a whole circle, so a sector's columns resolve as many as a ring of their spacing.
     const resolved = (number) => number <= ((Math.PI * 2) / this.columnWidth) * MODES_PER_COLUMN;
-    const randomModes = (numbers, amplitude) => numbers.filter(resolved).map((number) => ({ number, amplitude: amplitude * randomRange(0.5, 1), phase: randomRange(0, Math.PI * 2) }));
+    // A stone's rim has sqrt(s) times a 3 cm stone's fingers (the header); a drop's crown keeps its modes.
+    const fingerScale = landing ? 1 : Math.sqrt(this.sizeFactor);
+    const randomModes = (referenceNumbers, amplitude) => {
+      const step = referenceNumbers[1] - referenceNumbers[0];
+      const first = Math.max(2, Math.round(referenceNumbers[0] * fingerScale));
+      const last = Math.max(first, Math.round(referenceNumbers.at(-1) * fingerScale));
+      const numbers = [];
+      for (let number = first; number <= last; number += step) numbers.push(number);
+      const share = Math.sqrt(referenceNumbers.length / numbers.length);
+      return numbers.filter(resolved).map((number) => ({ number, amplitude: amplitude * share * randomRange(0.5, 1), phase: randomRange(0, Math.PI * 2) }));
+    };
     this.modes = fan ? randomModes(FAN_MODES, FAN_AMPLITUDE) : [...randomModes(MAIN_MODES, MAIN_AMPLITUDE), ...randomModes(FINE_MODES, FINE_AMPLITUDE)];
 
     // Per-column constants, and the tear front (a launch time: everything
@@ -262,8 +321,9 @@ export class CrownSheet {
       aThickness: [this.thicknesses, 1],
       aRide: [new Float32Array(vertexCount).fill(landing ? 1 : 0), 1],   // 1: lifted by the wave height under it
     }, material, { wrap: this.wrap });
-    this.maxDropRadius = landing ? LANDING_DROP_CAP * radius : fan ? FAN_DROP_CAP * this.sizeFactor ** 0.4 : 0.0045 * this.sizeFactor ** 0.4;
-    this.minDropRadius = fan ? FAN_DROP_FLOOR : Math.min(0.0006, 0.5 * this.maxDropRadius);
+    this.dropScale = landing ? 1 : this.sizeFactor ** DROP_SIZE_POWER;
+    this.maxDropRadius = landing ? LANDING_DROP_CAP * radius : (fan ? FAN_DROP_CAP : 0.0045) * this.dropScale;
+    this.minDropRadius = fan ? FAN_DROP_FLOOR * this.dropScale : Math.min(0.0006 * this.dropScale, 0.5 * this.maxDropRadius);
     this.geometry = this.mesh.geometry;
     this.state = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, thickness: 0, radialDistance: 0 };
     this.stateOther = { ...this.state };
@@ -323,8 +383,8 @@ export class CrownSheet {
     const upSpeed = launchSpeed * Math.cos(tilt);
     const age = Math.max(this.age - tau, 0);
     // Drag: velocity v0·exp(−age/τd), so the distance flown is v0·τd·(1 − exp(−age/τd)).
-    const decay = Math.exp(-age / DRAG_SECONDS);
-    const flight = DRAG_SECONDS * (1 - decay);
+    const decay = Math.exp(-age / this.dragSeconds);
+    const flight = this.dragSeconds * (1 - decay);
     const radialDistance = ringRadius + radialSpeed * flight;
     out.x = this.centreX + cosAngle * radialDistance + this.driftX * flight;
     out.y = -BASE_DEPTH + upSpeed * flight - 0.5 * GRAVITY * age * age;
@@ -337,7 +397,7 @@ export class CrownSheet {
     // times the unstretched thickness while the sheet behind it thins. The
     // tail leaves the ring thinner, so the foot stays light.
     const launchThickness = 1 - (1 - TAIL_THICKNESS) * smoothstep(0, 0.5, tail);
-    const drained = this.baseThickness * thicknessFactor * launchThickness / (1 + age / DRAIN_SECONDS);
+    const drained = this.baseThickness * thicknessFactor * launchThickness / (1 + age / this.drainSeconds);
     // The fan thins to nothing at its edges.
     const sheetThickness = Math.max(drained * ringRadius / radialDistance, this.fan ? MIN_THICKNESS * thicknessFactor : MIN_THICKNESS);
     const bead = 1 - smoothstep(0.6 * BEAD_END, 1.3 * BEAD_END, (tau - edgeTau) / this.launchDuration);
@@ -410,7 +470,7 @@ export class CrownSheet {
           state.vx * boost + randomRange(-scatter, scatter),
           state.vy * boost + randomRange(-scatter, scatter),
           state.vz * boost + randomRange(-scatter, scatter),
-          (0.001 + 0.002 * Math.random() ** 1.5) * this.sizeFactor ** 0.4 * (this.fan ? FAN_RIM_DROPS : 1),
+          (0.001 + 0.002 * Math.random() ** 1.5) * (this.landing ? this.sizeFactor ** 0.4 : this.dropScale) * (this.fan ? FAN_RIM_DROPS : 1),
         );
       }
     }

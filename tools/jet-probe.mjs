@@ -67,12 +67,14 @@ console.log(`stone ${millimetres(stoneRadius)} mm at ${entrySpeed} m/s${horizont
 
 while (!jet.finished && clock < 2) {
   clock += substep;
+  const dropsBeforeUpdate = drops.length;
   let started = performance.now();
   jet.update(clock, substep, splash, water);
   updateMilliseconds += performance.now() - started;
   updateCalls++;
   if (jet.tipDrops !== lastTipDrops) {
-    const drop = drops.filter((candidate) => candidate.radius > 0.002).at(-1);
+    // The tip drop is the largest of those this pinch made (the rest are the neck's spray).
+    const drop = drops.slice(dropsBeforeUpdate).reduce((largest, candidate) => (candidate.radius > largest.radius ? candidate : largest));
     console.log(`  ${(clock * 1000).toFixed(0)} ms (${((clock + pinchDelay) * 1000).toFixed(0)} after entry): tip drop ${jet.tipDrops}, radius ${millimetres(drop.radius)} mm at ${millimetres(drop.y)} mm high, rising ${drop.vy.toFixed(2)} m/s`);
     lastTipDrops = jet.tipDrops;
   }

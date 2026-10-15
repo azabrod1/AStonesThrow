@@ -23,7 +23,7 @@
 import * as THREE from 'three';
 import { SPECK_VERTEX, SPECK_FRAGMENT } from './shaders/scene.js';
 
-const CAPACITY = 4096;
+const CAPACITY = 8192;           // specks alive at once: a 16 cm stone leaves about 3200, so two big throws fit
 const MIN_LIFE = 2;
 const MAX_LIFE = 8;
 const LIFE_SKEW = 1.8;            // life = MIN + (MAX − MIN)·u^LIFE_SKEW: most specks go early

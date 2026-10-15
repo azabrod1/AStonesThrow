@@ -1,15 +1,19 @@
 // A thrown stone: faceted procedural geometry and a small rigid-body model.
 //
-// In the air it follows a ballistic arc with a little drag and tumbles. On
-// contact with the surface it reports the impact (position, speed, direction,
-// radius) so the splash can be built from it. Under water a quadratic drag
-// stops it within a few radii and buoyancy-reduced gravity sinks it to the
-// floor, where it settles into the sand.
+// In the air it follows a ballistic arc with a little drag and tumbles. The
+// moment its lowest point (of the tumbling mesh, not of a sphere) touches the
+// surface it reports the impact (position, speed, direction, radius) so the
+// splash can be built from it: the splash starts at first contact, not once
+// the stone is partly under, which for a 16 cm stone at 5 m/s down would be
+// several milliseconds late. Under water a quadratic drag stops it within a
+// few radii and buoyancy-reduced gravity sinks it to the floor, where it
+// settles into the sand.
 import * as THREE from 'three';
 
 const WATER_DENSITY = 1000;
 const ROCK_DENSITY = 2600;
 const GRAVITY = 9.81;
+const rockRotation = new THREE.Matrix4();
 
 function hash3(x, y, z) {
   let h = Math.sin(x * 127.1 + y * 311.7 + z * 74.7) * 43758.5453;
@@ -74,6 +78,8 @@ export class Rock {
     this.spinAxis = new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).normalize();
     this.spinRate = 6 + Math.random() * 10;
     this.geometry = createRockGeometry();
+    this.geometry.computeBoundingSphere();
+    this.reach = this.geometry.boundingSphere.center.length() + this.geometry.boundingSphere.radius;   // furthest any point gets from the centre, in radii
     const baseColor = new THREE.Color().setHSL(0.08 + Math.random() * 0.04, 0.08 + Math.random() * 0.1, 0.3 + Math.random() * 0.14);
     const makeMaterial = (clipNormalY) => new THREE.MeshStandardMaterial({
       color: baseColor,
@@ -97,6 +103,19 @@ export class Rock {
 
   get mass() { return ROCK_DENSITY * (4 / 3) * Math.PI * this.radius ** 3; }
 
+  /** Height of the stone's lowest point below its centre (negative, metres), as it is turned now. */
+  lowestOffset() {
+    const positions = this.geometry.attributes.position.array;
+    // The world height of a mesh point is the rotation's second row dotted with it.
+    const rotation = rockRotation.makeRotationFromQuaternion(this.quaternion).elements;
+    const rowX = rotation[1], rowY = rotation[5], rowZ = rotation[9];
+    let lowest = 0;
+    for (let index = 0; index < positions.length; index += 3) {
+      lowest = Math.min(lowest, rowX * positions[index] + rowY * positions[index + 1] + rowZ * positions[index + 2]);
+    }
+    return lowest * this.radius;
+  }
+
   syncMeshes() {
     for (const mesh of [this.meshAbove, this.meshBelow]) {
       mesh.position.copy(this.position);
@@ -118,7 +137,9 @@ export class Rock {
       this.velocity.addScaledVector(this.velocity, -dragAcceleration * dt);
       this.velocity.y -= GRAVITY * dt;
       this.position.addScaledVector(this.velocity, dt);
-      if (this.position.y - this.radius * 0.35 <= 0 && this.velocity.y < 0) {
+      // Only near the water is the mesh worth walking for its lowest point.
+      const touching = this.position.y <= this.reach * this.radius && this.position.y + this.lowestOffset() <= 0;
+      if (touching && this.velocity.y < 0) {
         this.state = 'water';
         impact = {
           x: this.position.x,

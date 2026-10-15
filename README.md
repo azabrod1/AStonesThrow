@@ -57,8 +57,8 @@ known timing, and the droplets are choreographed from them:
    milliseconds, each element then flying on its own, slowed by surface
    tension and air, so the whole sheet is a closed form in launch time,
    azimuth and time. Its rim thickens into a bead, goes wavy and sheds drops
-   from the crests; after about 60 ms the sheet tears from the rim down into
-   drops that carry its velocity. A thrown stone enters obliquely (about 40
+   from the crests; after about 60 ms (for a 3 cm stone) the sheet tears
+   from the rim down into drops that carry its velocity. A thrown stone enters obliquely (about 40
    to 55° from vertical), and then a fan comes first: the same sheet model
    over a sector 60° either side of the direction of travel, launched from
    the forward contact line at about 0.9 of the entry speed and 65 to 75°
@@ -89,6 +89,26 @@ about 20 ms. Foam specks (`src/foamSpecks.js`) are the grain of the foam the
 splash leaves: rafts of 2 to 4 mm points riding the waves where the crown
 stood, where the jet fell back, where drops landed and where bubbles
 surfaced, drifting outward and popping over 2 to 8 seconds.
+
+The splash scales with the stone (the slider's 1.5 to 16 cm is its
+diameter; the constants were tuned at 3 cm radius). Wherever the physics
+allows it scales as a Froude-similar splash does: lengths with the radius,
+times with √(R/g), speeds with the entry speed. The crown's sheet is as thick
+as the stone is big, so air and surface tension slow it less, it drains
+slower and stands longer: a 16 cm stone's crown stands for 160 ms, its rim
+17 cm high and 70 cm across, and tears into drops of up to 7 mm, while a
+1.5 cm pebble's rises 4 cm. Its rim fingers as a decelerating rim does, so a
+big crown has more, finer fingers rather than a few huge petals. A big
+stone's jet is fat (its Froude number is lower, so the cavity's collapse is
+less singular) and breaks up slowly (a column's capillary time grows as its
+radius to the 1.5): a 16 cm stone's is 11 cm across at the water, rises
+45 cm (80 cm dropped straight in) and mostly falls back as a column, which
+throws a second, strong ring. Drop counts grow faster than the stone's area
+and drop sizes as √R, so a big splash is both denser and coarser; the foam it
+leaves covers the cavity's mouth and is denser. The pond damps waves longer
+than 30 cm less than ripples, as a real one does, so a big stone's ring
+carries across it. The stone starts the splash the moment its lowest point
+touches the water. `tools/splash-probe.mjs` prints the whole table.
 
 Droplets are integrated on the CPU and rendered as a screen-space fluid:
 sphere impostors stretched along their motion like a camera shutter would,
@@ -155,9 +175,13 @@ ballistic arc, quadratic drag under water, and a settle into the sand.
   Options: `--fov`, `--look=x:y:z`, `--preimpact=seconds`, `--ui=1`,
   `--debug=under|height|foam|env|face|ambient`, `--eval="js"`, `--w --h --dpr`,
   `--crop=x:y:w:h --cropscale=n` (an enlarged crop of each frame),
-  `--report="js"` (printed after each frame), `--floats=half`. With
+  `--report="js"` (printed after each frame), `--floats=half`,
+  `--power=soft|normal|hard` (soft is a higher arc, so a steeper entry,
+  about 30° from vertical). With
   `--eval="window.__pond.setTimeScale(0.1)"` the frames are slow motion, 1/600 s
-  of world time each, so `--times=0.07,0.0716667,…` are consecutive frames.
+  of world time each, so `--times=0.07,0.0716667,…` are consecutive frames;
+  the flight is stepped in slow frames too, so the first frame is at most
+  1/600 s after the impact (a `--preimpact` just short of it saves time).
   `--throws=none` throws nothing and takes `--times` seconds after `idle.png`
   (which follows `--preroll=seconds`), for a run of idle frames.
 - `?floats=half` on the page forces half-float render targets everywhere, the
@@ -178,6 +202,13 @@ ballistic arc, quadratic drag under water, and a settle into the sand.
   runs one Worthington jet on the CPU and prints its timeline, drops, volume
   budget, when its big drops land and cost per frame; a horizontal fraction
   makes it the leaning jet of an oblique entry.
+- `node tools/splash-probe.mjs [radius ...] [--aim=x:z] [--power=name] [--vertical]`
+  throws stones as the app does and runs their whole splash on the CPU: for
+  each size the crown's height, reach and life, the jet's top and width, the
+  drops by source and at most alive, the cavity, the foam, the ring the pond
+  makes of it at 0.5, 1 and 2 m (the solver's own dispersion and damping),
+  and the CPU cost per frame. Without radii it runs the slider's 1.5, 4, 8
+  and 16 cm and the 3 cm-radius reference.
 - `node tools/fan-probe.mjs [radius] [entrySpeed] [horizontalFraction]` runs
   the forward fan of an oblique entry on the CPU and prints its timeline,
   its drops, where they land and its cost per frame.
@@ -188,8 +219,8 @@ ballistic arc, quadratic drag under water, and a settle into the sand.
 - `node tools/zoom-probe.mjs [--w=390 --h=844]` drives the wheel, a pinch, a
   tap and Escape through the page's own handlers and checks that what is under
   the pointer stays there.
-- `window.__pond` exposes the app in the console: `throwAt(x, z, { radius })`,
-  `setTimeScale`, `pause()`, `advance(seconds)` (in the frames the app would
+- `window.__pond` exposes the app in the console: `throwAt(x, z, { radius, power })`,
+  `setTimeScale` (and `timeScale`), `pause()`, `advance(seconds)` (in the frames the app would
   draw at the current time scale), `setDebugView(name)`, `setFov(degrees)`,
   `lookAt(x, y, z)`, `resetView()`.
 
