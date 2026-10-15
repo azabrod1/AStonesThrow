@@ -41,6 +41,16 @@
 // own ground there would light drops and stones green from below) are
 // rendered once into a cube map that the droplets reflect, and a prefiltered
 // copy lights the stones.
+//
+// Memory. The panorama's pixels are dropped from the CPU once they are on the
+// GPU (nothing uploads it again). The captures need no depth buffer: the
+// ground hemisphere is drawn after the dome, over it. The droplets sample the
+// cube at its first and second mip levels (src/shaders/fluid.js), so it stays
+// CUBE_SIZE; the stones (roughness 0.92) read only the prefiltered map's
+// blurriest levels, so it is made from a capture of PREFILTER_SIZE, a
+// sixteenth of the memory of one from the droplets' cube. createEnvironment
+// reports its render targets and the panorama's bytes for the memory
+// estimate (src/main.js).
 import * as THREE from 'three';
 import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
 
@@ -55,6 +65,8 @@ const DEFAULT_SKY = 'meadow_2';
 const SKY_EXPOSURE = Math.PI;   // see Brightness above
 const RADIANCE_CAP = 30;       // times the mean sky radiance
 const DOME_SIZE = 20000;       // metres, edge of the box
+const CUBE_SIZE = 512;         // the droplets' cube, per face
+const PREFILTER_SIZE = 128;    // the capture the stones' prefiltered map is made from, per face
 
 const luminance = (rgb) => 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2];
 
@@ -93,7 +105,7 @@ void main() {
  * @param options.name a key of SKIES (others fall back to DEFAULT_SKY)
  * @param options.sunAzimuth radians from straight ahead (−Z) toward the right (+X)
  * @param options.sunIrradiance the scene's sun irradiance (RGB Vector3) the dome is scaled to
- * @returns {Promise<{ sky, cubeTexture, envTexture, sunDirection, skyAmbient, name }>}
+ * @returns {Promise<{ sky, cubeTexture, envTexture, sunDirection, skyAmbient, name, targets, panoramaBytes }>}
  */
 export async function createEnvironment(renderer, { name, sunAzimuth, sunIrradiance }) {
   const skyName = SKIES[name] ? name : DEFAULT_SKY;
@@ -106,6 +118,8 @@ export async function createEnvironment(renderer, { name, sunAzimuth, sunIrradia
     new HDRLoader().setDataType(THREE.HalfFloatType).loadAsync(new URL(`../assets/sky/${skyName}_2k.hdr`, import.meta.url).href),
   ]);
   panorama.wrapS = THREE.RepeatWrapping;   // the azimuth wraps; no seam at u = 0
+  const panoramaBytes = panorama.image.data.byteLength;
+  panorama.onUpdate = () => { panorama.image.data = null; };   // on the GPU now: free the CPU copy
 
   const elevation = THREE.MathUtils.degToRad(measurement.sun.elevation);
   const sunDirection = new THREE.Vector3(Math.cos(elevation) * Math.sin(sunAzimuth), Math.sin(elevation), -Math.cos(elevation) * Math.cos(sunAzimuth));
@@ -137,29 +151,36 @@ export async function createEnvironment(renderer, { name, sunAzimuth, sunIrradia
 
   // Under the horizon the photo shows its own ground; for the cube, cover it
   // with a dark water-coloured hemisphere, as the pond would look from the drops.
+  // Drawn after the dome (which is at the far plane), so no depth buffer is needed.
   const ground = new THREE.Mesh(
     new THREE.SphereGeometry(600, 48, 24, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2),
     new THREE.MeshBasicMaterial({ color: new THREE.Color(0.10, 0.17, 0.20), side: THREE.BackSide }),
   );
   ground.position.y = 0.3;
+  ground.renderOrder = 2;
 
   const captureScene = new THREE.Scene();
   captureScene.add(sky, ground);
-  const cubeTarget = new THREE.WebGLCubeRenderTarget(512, { type: THREE.HalfFloatType, generateMipmaps: true, minFilter: THREE.LinearMipmapLinearFilter, magFilter: THREE.LinearFilter });
-  const cubeCamera = new THREE.CubeCamera(0.5, 50000, cubeTarget);
-  cubeCamera.position.set(0, 1.15, 0);
-  // Each face needs a cleared depth buffer, whatever the renderer's setting.
-  const previousAutoClear = renderer.autoClear;
-  renderer.autoClear = true;
-  cubeCamera.update(renderer, captureScene);
-  renderer.autoClear = previousAutoClear;
+  const capture = (size, mipmaps) => {
+    const target = new THREE.WebGLCubeRenderTarget(size, { type: THREE.HalfFloatType, generateMipmaps: mipmaps, minFilter: mipmaps ? THREE.LinearMipmapLinearFilter : THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false });
+    const cubeCamera = new THREE.CubeCamera(0.5, 50000, target);
+    cubeCamera.position.set(0, 1.15, 0);
+    const previousAutoClear = renderer.autoClear;
+    renderer.autoClear = true;
+    cubeCamera.update(renderer, captureScene);
+    renderer.autoClear = previousAutoClear;
+    return target;
+  };
+  const cubeTarget = capture(CUBE_SIZE, true);
+  const prefilterSource = capture(PREFILTER_SIZE, false);
 
   const pmrem = new THREE.PMREMGenerator(renderer);
-  const envTexture = pmrem.fromCubemap(cubeTarget.texture).texture;
+  const envTarget = pmrem.fromCubemap(prefilterSource.texture);
   pmrem.dispose();
+  prefilterSource.dispose();
   captureScene.remove(sky, ground);
   ground.geometry.dispose();
   ground.material.dispose();
 
-  return { sky, cubeTexture: cubeTarget.texture, envTexture, sunDirection, skyAmbient, name: skyName };
+  return { sky, cubeTexture: cubeTarget.texture, envTexture: envTarget.texture, sunDirection, skyAmbient, name: skyName, targets: [cubeTarget, envTarget], panoramaBytes };
 }

@@ -125,6 +125,14 @@
 // MIRROR_LAYER in the scenes the mirror draws must be in it. The cavities are
 // left out: a hole lies below the mirror plane, so the water reflects none
 // of it.
+//
+// With nothing in the air (no droplet, sheet or column) render() neither
+// clears nor reads the fluid targets: it tone-maps the scene alone
+// (TONE_MAP_FRAGMENT, the composite's own tone map), so a still pond pays one
+// texture read per pixel for the splash. reset() retires everything at once
+// (src/main.js throws a stone under the loading veil to compile every
+// program, then resets); `inMotion` and `settled` tell the app when it may
+// lower its frame rate and when its solver may sleep.
 import * as THREE from 'three';
 import { FullscreenPass, createFloatTarget } from './gpu.js';
 import { CrownSheet } from './crown.js';
@@ -179,6 +187,33 @@ const MIRROR_DROP_RADIUS = 0.002;     // finer drops are left out of the mirror:
 
 const POND_DEPTH = 0.8;               // when the water does not say (the CPU probes' stand-in)
 const SAND_ALBEDO = 0.33;             // the floor's mean sand colour (FLOOR_FRAGMENT in src/shaders/scene.js)
+
+// The composite's tone map (COMPOSITE_FRAGMENT in src/shaders/fluid.js) for a
+// frame with no water in the air: the same operations as its pixels with
+// none, so such a frame comes out exactly as the composite made it.
+const TONE_MAP_FRAGMENT = /* glsl */`
+uniform sampler2D uScene;
+uniform float uExposure;
+varying vec2 vUv;
+vec3 aces(vec3 color) {
+  const mat3 inputMatrix = mat3(0.59719, 0.07600, 0.02840, 0.35458, 0.90834, 0.13383, 0.04823, 0.01566, 0.83777);
+  const mat3 outputMatrix = mat3(1.60475, -0.10208, -0.00327, -0.53108, 1.10813, -0.07276, -0.07367, -0.00605, 1.07602);
+  vec3 v = inputMatrix * color;
+  vec3 a = v * (v + 0.0245786) - 0.000090537;
+  vec3 b = v * (0.983729 * v + 0.4329510) + 0.238081;
+  return clamp(outputMatrix * (a / b), 0.0, 1.0);
+}
+vec3 linearToSrgb(vec3 c) {
+  vec3 lo = c * 12.92;
+  vec3 hi = 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055;
+  return mix(lo, hi, step(vec3(0.0031308), c));
+}
+void main() {
+  vec3 color = texture2D(uScene, vUv).rgb;
+  color = aces(color * uExposure / 0.6);
+  gl_FragColor = vec4(linearToSrgb(color), 1.0);
+}
+`;
 
 /**
  * The sand floor's radiance under the water, lit as FLOOR_FRAGMENT lights it
@@ -298,7 +333,7 @@ export class SplashSystem {
       uHeight: { value: water.heightTexture },
       uDomainMin: { value: new THREE.Vector2(water.domainMin[0], water.domainMin[1]) },
       uDomainSize: { value: water.domainSize },
-      uTexelOffset: { value: water.uvOffset },
+      uTexelOffset: water.gridUniforms?.uTexelOffset ?? { value: water.uvOffset },   // shared: it follows the solver's grid
       ...ambientWaves.uniforms(),
     });
     this.sheetDepthMaterial = new THREE.ShaderMaterial({ vertexShader: SHEET_VERTEX, fragmentShader: SHEET_DEPTH_FRAGMENT, uniforms: { ...sheetUniforms(), ...rideUniforms() }, depthTest: true, depthWrite: true, side: THREE.DoubleSide });
@@ -352,6 +387,7 @@ export class SplashSystem {
       uFluidScale: { value: 1.0 },
       uProjScale: { value: 1000 },
     });
+    this.toneMapPass = new FullscreenPass(TONE_MAP_FRAGMENT, { uScene: { value: null }, uExposure: { value: lighting.exposure } });
 
     // Bubbles.
     const bubbleGeometry = new THREE.BufferGeometry();
@@ -375,7 +411,51 @@ export class SplashSystem {
 
     this.fluidScale = 0.5;
     this.targets = null;
-    this.fluidCleared = false;   // the optics target holds nothing: the composite skips every pixel
+  }
+
+  /** Something in the air or in the water is moving: droplets, sheets, columns, an open cavity, bubbles, or a stage still to come. */
+  get inMotion() {
+    return this.count > 0 || this.crowns.length > 0 || this.columns.length > 0 || this.cavities.length > 0 || this.bubbleCount > 0
+      || this.jets.length > 0 || this.plumes.length > 0 || this.wakes.length > 0 || this.foamStamps.length > 0;
+  }
+
+  /** Nothing of the splash is left, foam specks included. */
+  get settled() { return !this.inMotion && !this.foamSpecks.alive; }
+
+  /**
+   * Retire everything at once: droplets, sheets, columns, cavities, bubbles,
+   * foam specks, the stages still to come and the mirror list, the fluid
+   * targets cleared (with `renderer`), and the splash clock back to zero.
+   */
+  reset(renderer = null) {
+    this.count = 0;
+    this.bubbleCount = 0;
+    for (const crown of this.crowns) { this.particleScene.remove(crown.mesh); crown.dispose(); }
+    this.crowns = [];
+    for (const column of [...this.columns]) this.retireColumn(column);
+    for (const cavity of [...this.cavities]) this.retireCavity(cavity);
+    this.jets = [];
+    this.plumes = [];
+    this.wakes = [];
+    this.foamStamps = [];
+    this.mirrorList.length = 0;
+    this.particleMesh.visible = false;
+    this.particleMesh.layers.disable(MIRROR_LAYER);
+    this.particleGeometry.instanceCount = 0;
+    this.bubblePoints.geometry.setDrawRange(0, 0);
+    this.foamSpecks.reset();
+    this.time = 0;
+    this.sceneTime = -1;
+    this.surface?.setCavities([]);
+    if (renderer && this.targets) {
+      const previous = renderer.getRenderTarget();
+      renderer.setClearColor(0x000000, 0);
+      for (const target of Object.values(this.targets)) {
+        renderer.setRenderTarget(target);
+        renderer.clear(true, true, false);
+      }
+      renderer.setRenderTarget(previous);
+    }
   }
 
   // ---- choreography ----------------------------------------------------
@@ -537,7 +617,8 @@ export class SplashSystem {
     const inside = (value, low) => Math.abs((value - low) / domainSize - 0.5) * 2 < 0.75;
     const cavity = new Cavity({
       impact: info, startTime: this.time, material: this.surface?.cavityMaterial ?? null,
-      cell: water.cell, floorDepth: water.depth, lean, step: this.substep,
+      // The surface dips by whole vertices of its mesh, which may be coarser than the solver's grid (src/waterSurface.js).
+      cell: Math.max(water.cell ?? 0, this.surface?.cell ?? 0) || undefined, floorDepth: water.depth, lean, step: this.substep,
       drawn: inside(info.x, domainMin[0]) && inside(info.z, domainMin[1]),
     });
     this.cavities.push(cavity);
@@ -776,17 +857,22 @@ export class SplashSystem {
 
   // ---- rendering --------------------------------------------------------
 
+  /**
+   * The fluid targets for a canvas of width × height device pixels at
+   * fluidScale of its resolution. The info target is half float (src/shaders/
+   * fluid.js says what that keeps of it: a column's roundness only as 0 or 1,
+   * which changes a few pixels where the jet's bulb meets its column).
+   */
   resize(width, height, fluidScale) {
     this.fluidScale = fluidScale;
     const w = Math.max(2, Math.round(width * fluidScale));
     const h = Math.max(2, Math.round(height * fluidScale));
     if (this.targets) Object.values(this.targets).forEach((t) => t.dispose());
     this.targets = {
-      info: createFloatTarget(w, h, { type: THREE.FloatType, depth: true }),
+      info: createFloatTarget(w, h, { type: THREE.HalfFloatType, depth: true }),
       optics: createFloatTarget(w, h, { type: THREE.HalfFloatType, filter: THREE.LinearFilter }),
     };
     this.fluidSize = new THREE.Vector2(w, h);
-    this.fluidCleared = false;
   }
 
   /**
@@ -876,8 +962,20 @@ export class SplashSystem {
     for (const column of this.columns) column.mesh.material = columnMaterial;
   }
 
+  /** The scene tone-mapped to the canvas (or target), with no water in the air. */
+  toneMap(renderer, sceneTarget, output = null) {
+    this.toneMapPass.material.uniforms.uScene.value = sceneTarget.texture;
+    this.toneMapPass.material.uniforms.uExposure.value = this.lighting.exposure;
+    this.toneMapPass.render(renderer, output);
+  }
+
   /** Draw droplets, crown sheets and jet columns over the finished scene and present the frame to the canvas (or target). After prepareFrame. */
   render(renderer, camera, sceneTarget, output = null) {
+    if (this.count === 0 && this.crowns.length === 0 && this.columns.length === 0) {
+      // Nothing in the air: no fluid pass, no clear, no read of their targets.
+      this.toneMap(renderer, sceneTarget, output);
+      return;
+    }
     const { info, optics } = this.targets;
     const projScale = camera.projectionMatrix.elements[5] * this.fluidSize.y * 0.5;
     this.sunDirView.copy(this.lighting.sunDirection).transformDirection(camera.matrixWorldInverse);
@@ -893,23 +991,15 @@ export class SplashSystem {
       material.uniforms.uResolution.value.copy(this.fluidSize);
     }
     renderer.setClearColor(0x000000, 0);
-    if (this.count > 0 || this.crowns.length > 0 || this.columns.length > 0) {
-      this.setPassMaterials(this.depthMaterial, this.sheetDepthMaterial, this.columnDepthMaterial);
-      renderer.setRenderTarget(info);
-      renderer.clear(true, true, false);
-      renderer.render(this.particleScene, camera);
+    this.setPassMaterials(this.depthMaterial, this.sheetDepthMaterial, this.columnDepthMaterial);
+    renderer.setRenderTarget(info);
+    renderer.clear(true, true, false);
+    renderer.render(this.particleScene, camera);
 
-      this.setPassMaterials(this.thicknessMaterial, this.sheetThicknessMaterial, this.columnThicknessMaterial);
-      renderer.setRenderTarget(optics);
-      renderer.clear(true, false, false);
-      renderer.render(this.particleScene, camera);
-      this.fluidCleared = false;
-    } else if (!this.fluidCleared) {
-      // The splash is over: one clear, and the composite skips every pixel from now on.
-      renderer.setRenderTarget(optics);
-      renderer.clear(true, false, false);
-      this.fluidCleared = true;
-    }
+    this.setPassMaterials(this.thicknessMaterial, this.sheetThicknessMaterial, this.columnThicknessMaterial);
+    renderer.setRenderTarget(optics);
+    renderer.clear(true, false, false);
+    renderer.render(this.particleScene, camera);
 
     const composite = this.compositePass.material.uniforms;
     composite.uScene.value = sceneTarget.texture;
@@ -934,9 +1024,13 @@ export class SplashSystem {
     this.streakSeconds = seconds * 0.5;
   }
 
-  /** After the camera's projection changes: the bubbles' and foam specks' sizes on screen. */
-  updateViewUniforms(camera, height, pixelRatio) {
-    this.bubbleMaterial.uniforms.uProjScale.value = camera.projectionMatrix.elements[5] * height * 0.5;
+  /**
+   * After the camera's projection changes: the bubbles' and foam specks'
+   * sizes on screen. height: the main pass's in device pixels; underHeight:
+   * the under-water pass's, which draws the bubbles.
+   */
+  updateViewUniforms(camera, height, pixelRatio, underHeight = height) {
+    this.bubbleMaterial.uniforms.uProjScale.value = camera.projectionMatrix.elements[5] * underHeight * 0.5;
     this.foamSpecks.setView(camera, height, pixelRatio);
   }
 }

@@ -62,3 +62,20 @@ export function createFloatTarget(width, height, { format = THREE.RGBAFormat, ty
   }
   return target;
 }
+
+const CHANNELS = { [THREE.RGBAFormat]: 4, [THREE.RGFormat]: 2, [THREE.RedFormat]: 1 };
+const TYPE_BYTES = { [THREE.FloatType]: 4, [THREE.HalfFloatType]: 2, [THREE.UnsignedByteType]: 1 };
+
+/**
+ * The bytes a render target holds on the GPU, as allocated: its colour
+ * texture (with its mip chain, six faces for a cube) and its depth buffer or
+ * depth texture (4 bytes a pixel).
+ */
+export function renderTargetBytes(target) {
+  const texture = target.texture;
+  const faces = target.isWebGLCubeRenderTarget ? 6 : 1;
+  const mipmapped = texture.generateMipmaps && texture.minFilter !== THREE.NearestFilter && texture.minFilter !== THREE.LinearFilter;
+  const colour = target.width * target.height * (CHANNELS[texture.format] ?? 4) * (TYPE_BYTES[texture.type] ?? 4) * faces * (mipmapped ? 4 / 3 : 1);
+  const depth = target.depthBuffer || target.depthTexture ? target.width * target.height * 4 * faces : 0;
+  return Math.round(colour + depth);
+}

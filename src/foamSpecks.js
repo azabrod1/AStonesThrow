@@ -23,7 +23,8 @@
 // the cost is two uniforms and a draw of the slots in use, each vertex one
 // fetch of the splash's height texture, one of the ambient waves'
 // (src/ambientWaves.js), so specks ride their crests, and one of the foam
-// map; nothing is drawn once every speck has gone.
+// map; nothing is drawn once every speck has gone. The texel offset is the
+// solver's shared uniform, so a change of its grid reaches the specks.
 import * as THREE from 'three';
 import { SPECK_VERTEX, SPECK_FRAGMENT } from './shaders/scene.js';
 
@@ -74,7 +75,7 @@ export class FoamSpecks {
         uFoam: { value: water.foamTexture },
         uDomainMin: { value: new THREE.Vector2(water.domainMin[0], water.domainMin[1]) },
         uDomainSize: { value: water.domainSize },
-        uTexelOffset: { value: water.uvOffset },
+        uTexelOffset: water.gridUniforms?.uTexelOffset ?? { value: water.uvOffset },
         uTime: { value: 0 },
         uProjScale: { value: 1000 },
         uMinPixelSize: { value: MIN_PIXEL_SIZE },
@@ -138,6 +139,20 @@ export class FoamSpecks {
       }
       left -= cluster;
     }
+  }
+
+  /** Whether any speck was alive at the last commit. */
+  get alive() { return this.points.visible; }
+
+  /** Every speck gone at once (the splash's reset). */
+  reset() {
+    this.next = 0;
+    this.used = 0;
+    this.lastDeath = -Infinity;
+    this.dirtyFrom = this.capacity;
+    this.dirtyTo = 0;
+    this.geometry.setDrawRange(0, 0);
+    this.points.visible = false;
   }
 
   /** Once per simulation step: the clock, the foam map, visibility, and the upload of new specks. */

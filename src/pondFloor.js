@@ -31,6 +31,18 @@
 // shader used to run for every pixel of every frame. Its program is freed
 // after it; the texture lives as long as the floor's material (disposing the
 // material frees it).
+//
+// Drawn at the canvas's resolution the pattern is at most 1.4 times
+// minified, so the floor samples its base level alone. The lower quality
+// presets draw the under-water pass at half resolution (underScale in
+// src/main.js), twice as minified, and there it shimmers as the ripples move
+// it: the bake also builds the mip chain (a third more memory), and
+// setPatternMipmaps has the floor sample it while the pass is smaller than
+// the canvas.
+//
+// The solver's grid sizes are its shared gridUniforms, so they follow a change
+// of quality (src/main.js), and its height texture keeps its object through
+// one: the floor, its material and the baked pattern are never rebuilt.
 import * as THREE from 'three';
 import { FLOOR_VERTEX, FLOOR_FRAGMENT, FLOOR_BAKE_FRAGMENT } from './shaders/scene.js';
 import { FullscreenPass } from './gpu.js';
@@ -43,13 +55,13 @@ function bakePattern(renderer, layout) {
   const target = new THREE.WebGLRenderTarget(PATTERN_SIZE[0], PATTERN_SIZE[1], {
     type: THREE.UnsignedByteType,
     format: THREE.RGBAFormat,
-    minFilter: THREE.LinearFilter,
+    minFilter: THREE.LinearMipmapLinearFilter,   // so the chain is allocated and built after the bake
     magFilter: THREE.LinearFilter,
     wrapS: THREE.MirroredRepeatWrapping,
     wrapT: THREE.MirroredRepeatWrapping,
     depthBuffer: false,
     stencilBuffer: false,
-    generateMipmaps: false,
+    generateMipmaps: true,
   });
   const pass = new FullscreenPass(FLOOR_BAKE_FRAGMENT, layout);
   const previousTarget = renderer.getRenderTarget();
@@ -57,6 +69,21 @@ function bakePattern(renderer, layout) {
   renderer.setRenderTarget(previousTarget);
   pass.material.dispose();
   return target;
+}
+
+/**
+ * Sample the baked pattern's mip chain (true) or its base level alone (the
+ * header). Three.js sets a render target's filter once, when it allocates
+ * it, so this sets the texture's on the GPU directly.
+ */
+export function setPatternMipmaps(floor, renderer, mipmapped) {
+  const texture = floor.material.uniforms.uPattern.value;
+  const filter = mipmapped ? THREE.LinearMipmapLinearFilter : THREE.LinearFilter;
+  if (texture.userData.minFilterSet === filter) return;
+  texture.userData.minFilterSet = filter;
+  const gl = renderer.getContext();
+  renderer.state.bindTexture(gl.TEXTURE_2D, renderer.properties.get(texture).__webglTexture);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, mipmapped ? gl.LINEAR_MIPMAP_LINEAR : gl.LINEAR);
 }
 
 export function createPondFloor(water, lighting, ambientWaves, { renderer, eye }) {
@@ -76,9 +103,9 @@ export function createPondFloor(water, lighting, ambientWaves, { renderer, eye }
       uSkyAmbient: { value: lighting.skyAmbient },
       uDomainMin: { value: new THREE.Vector2(water.domainMin[0], water.domainMin[1]) },
       uDomainSize: { value: water.domainSize },
-      uTexelOffset: { value: water.uvOffset },
-      uN: { value: water.size },
-      uCell: { value: water.cell },
+      uTexelOffset: water.gridUniforms.uTexelOffset,
+      uN: water.gridUniforms.uN,
+      uCell: water.gridUniforms.uCell,
       uPondDepth: { value: water.depth },
       uAbsorb: { value: lighting.absorb },
       uPattern: { value: pattern.texture },

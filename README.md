@@ -9,18 +9,27 @@ GitHub Pages on every push. Locally, open `index.html` through any static
 server (`npm start`, then http://localhost:8123/). There is no build step.
 Three.js loads from a CDN.
 
-Tap or click the water to throw a stone there. Space throws one at random.
+Tap or click the water to throw a stone there (beyond the simulated patch,
+at its nearest point). Space throws one at random.
 Scroll or pinch to zoom toward what is under the pointer (down to an 8°
 field of view); Escape or Reset view goes back. The strip at the bottom sets
 the stone size, the throw strength, slow motion and the rendering quality.
 The quality starts on High everywhere and steps down by itself if the idle
-pond or the first splash renders too slowly (the readout in the corner shows
-the frame rate and the preset in use); the buttons fix a preset.
+pond or the first splash renders too slowly, and later whenever the frame
+rate stays under 25 for a few seconds (the readout in the corner shows the
+frame rate and the preset in use); the buttons fix a preset. A preset sets
+the work a frame does: High runs the 512² solver, a 254-segment water mesh
+and full-resolution targets; Medium and Low a 256² solver, 160 and 128
+segments, the under-water view and the mirror image at half resolution and
+the splash's buffers at half, and draw a pond where nothing happens at 30
+frames a second. The canvas never holds more than 2.6 million pixels.
+Every GPU program a throw needs is compiled while the page loads, under its
+veil: a stone is thrown and drawn there, then cleared away.
 
 ## How it works
 
 **Water surface** (`src/spectralWater.js`). The pond is a 6 m square patch of
-512 × 512 cells (256 on low quality) kept in Fourier space: for each wave
+512 × 512 cells (256 on Medium and Low) kept in Fourier space: for each wave
 vector the complex amplitude of the height and of its time derivative. Linear
 water waves obey
 
@@ -33,7 +42,12 @@ as they do on a real pond. Disturbances are Gaussian splats with a raised rim
 closed-form spectrum. One inverse FFT per frame (2·log2 N passes on the GPU)
 returns the height and vertical velocity for rendering. A foam map rides
 along: how much foam each cell holds and how long that foam lasts, stamped by
-the splash, spreading a little and decaying.
+the splash, spreading a little and decaying. A change of quality carries the
+waves and the foam to the new grid. When nothing has disturbed the water for
+75 s (the time the biggest splash's longest waves, which the pond damps
+least, take to fade below a pixel's notice) and nothing of the splash is
+left, the solver sleeps: it clears its textures once and runs no passes
+until the next splat.
 
 **Wind ripples** (`src/ambientWaves.js`). Between throws the pond is never
 still: a second spectral field, on its own 6 m tile of 256 × 256 laid over
@@ -187,7 +201,8 @@ a water-coloured lower hemisphere are captured once into a cube map that the
 droplets reflect, and a prefiltered copy lights the stones.
 
 **Rendering** (`src/main.js`, `src/shaders/`). Each frame: the floor,
-submerged stones and bubbles are rendered to a texture with depth; the main
+submerged stones and bubbles are rendered to a texture with depth (at half
+the canvas's resolution on Medium and Low); the main
 scene renders the sky dome and the water surface (with any open cavity, drawn
 by the same shader), which refracts that texture
 with absorption by path length through the water, reflects a planar mirror
@@ -197,7 +212,11 @@ drawn into it each frame, over the rectangle it covers) in the direction each ri
 turns the view ray, so reflections wobble into vertical streaks, and adds
 the sun's glitter: a Beckmann highlight on the rippled normal, widened by the
 ripple finer than the pixel. Where there is foam it replaces the surface, a
-diffuse white under the sun and the sky; the foam specks ride on it.
+diffuse white under the sun and the sky; the foam specks ride on it. The
+splash's passes then draw its water over the scene and tone-map it; with no
+water in the air the frame is only tone-mapped. The inner patch's mesh only
+carries the displacement (the normals come from the height textures per
+pixel), so it is coarser than the solver's grid.
 Caustics on the sand come from the Laplacian of the surface height above,
 splash and wind ripples both, so they drift with the ripples.
 Stones are faceted procedural geometry with a small rigid-body model: a
@@ -250,14 +269,23 @@ ballistic arc, quadratic drag under water, and a settle into the sand.
   (which follows `--preroll=seconds`), for a run of idle frames.
 - `?floats=half` on the page forces half-float render targets everywhere, the
   path devices without `EXT_color_buffer_float` take.
-- `?profile=1` on a real device runs the profiling steps of `src/profiler.js`:
-  it switches parts of the frame off one at a time (the floor pass, the water
-  surface, each FFT, the droplet passes, three quarters of the pixels), times
-  the frames that remain, then a splash, and prints milliseconds per frame
-  for each in the corner readout and the console. Frame rates measured
-  headless mean nothing, and phones have no GPU timer, so this is how the
-  cost of each part is found on a phone. `&quality=` fixes the preset
-  (medium otherwise).
+- `?profile=1` on a real device runs the profiling steps of `src/profiler.js`.
+  It first measures the floor: frames that neither simulate nor draw, which
+  shows what the browser allows (33 ms there means a 30 Hz cap, as iOS Low
+  Power Mode sets). Then, on the still pond and through a splash replayed
+  from the same seeded throw at 1/60 s per frame, it switches parts of the
+  frame off one at a time (the floor pass, the water surface, the wind
+  waves, the solver's sleep, three quarters of the pixels; the droplet
+  passes, the mirror pass, the cavity, the solver), each between two
+  measurements with everything on, and prints for each the median interval
+  between frames (unclamped; the mean in brackets, since the median moves in
+  whole display frames), its change against the baselines around it, and
+  the JS milliseconds spent in simulate and in render, with draw calls and
+  triangles, then the render targets' memory, in the corner readout and
+  the console. Frame rates measured headless mean nothing, and phones have
+  no GPU timer, so this is how the cost of each part is found on a phone.
+  `&quality=` fixes the preset (medium otherwise). `node tools/profile-probe.mjs`
+  runs it headless and checks the report's shape.
 - `?paused=1` starts the page with its clock stopped (the harness does, so
   its frames start from world time zero and every run renders the same water).
 - `?wind=x,z` on the page (`--wind=x:z` for the harness) sets the direction
@@ -295,15 +323,26 @@ ballistic arc, quadratic drag under water, and a settle into the sand.
   its drops, where they land and its cost per frame.
 - `node tools/quality-probe.mjs` runs the page unpaused at phone size with
   automatic quality, waits for the idle and first-splash measurements, and
-  checks the preset steps down when the frame rate is low and that the readout
-  and the quality buttons follow.
+  checks the preset steps down when the frame rate is low, that the readout
+  and the quality buttons follow and that the first throw compiles no
+  program. After every change of preset, from each to each other, it checks
+  what is actually built (`window.__pond.budget`): the solver's grid, the
+  water mesh, the canvas and every target's size; a change in the middle of
+  a splash must keep the waves; and pausing and resuming twice in one tick
+  must leave one frame loop. On a fake clock it checks that the watch after
+  calibration steps down at 20 frames a second and that a still pond on
+  Medium draws every other frame with its time keeping up; and that a large
+  window keeps within the pixel budget.
 - `node tools/zoom-probe.mjs [--w=390 --h=844]` drives the wheel, a pinch, a
   tap and Escape through the page's own handlers and checks that what is under
   the pointer stays there.
 - `window.__pond` exposes the app in the console: `throwAt(x, z, { radius, power })`,
   `setTimeScale` (and `timeScale`), `pause()`, `advance(seconds)` (in the frames the app would
   draw at the current time scale), `setDebugView(name)`, `setFov(degrees)`,
-  `lookAt(x, y, z)`, `resetView()`.
+  `lookAt(x, y, z)`, `resetView()`, and `budget`: what the preset built (the
+  solver's grid, the mesh, the pixel ratio, every target's size, an estimate
+  of the render targets' memory, the programs compiled and the warm-up's,
+  whether the solver sleeps and the frame rate is capped).
 
 Install the development dependencies with `npm install` (Three.js is only
 needed locally for the headless harness, which serves it instead of the CDN).

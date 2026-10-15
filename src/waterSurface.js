@@ -12,8 +12,19 @@
 // and while any cavity is open setCavities swaps the inner patch to its
 // CAVITY_PUSH variant, which dips the patch under each cavity's lip so it
 // never shows through the hole. With no cavity open the patch draws with its
-// own material, so still water costs exactly what it did. precompile builds
-// both variants' programs ahead of the first throw.
+// own material, so still water costs exactly what it did. The app's warm-up
+// (src/main.js) draws both variants before the first throw, so their programs
+// are built by then.
+//
+// The inner patch's mesh carries only the displacement: the shader takes
+// the normal from the height textures per pixel, so the mesh needs no more
+// vertices than the displacement's silhouette and the cavity's dip need, and
+// fewer than the solver's grid on the lower quality presets
+// (setMeshSegments, src/main.js). It keeps only its positions (the shader
+// reads no normal or uv). The cavity dips the patch by whole vertices, so
+// `cell` (the mesh's spacing) is what src/cavity.js margins by. The sizes the
+// shader needs of the solver's grid are the solver's shared gridUniforms, so
+// they follow its resize.
 import * as THREE from 'three';
 import { WATER_VERTEX, WATER_FRAGMENT } from './shaders/scene.js';
 
@@ -36,7 +47,16 @@ function outerSheetGeometry(innerHalf, outerHalf, centre) {
   return geometry;
 }
 
-export function createWaterSurface(water, lighting, ambientWaves) {
+/** The inner patch: segments × segments quads over the solver's square, positions only. */
+function innerPatchGeometry(water, segments) {
+  const geometry = new THREE.PlaneGeometry(water.domainSize, water.domainSize, segments, segments);
+  geometry.rotateX(-Math.PI / 2);
+  geometry.deleteAttribute('normal');
+  geometry.deleteAttribute('uv');
+  return geometry;
+}
+
+export function createWaterSurface(water, lighting, ambientWaves, { meshSegments = Math.min(water.size, 512) } = {}) {
   const uniforms = {
     uHeight: { value: water.heightTexture },
     uFoam: { value: water.foamTexture },
@@ -51,15 +71,15 @@ export function createWaterSurface(water, lighting, ambientWaves) {
     uSunDir: { value: lighting.sunDirection },
     uSunIrradiance: { value: lighting.sunIrradiance },
     uSkyAmbient: { value: lighting.skyAmbient },
-    uN: { value: water.size },
-    uCell: { value: water.cell },
+    uN: water.gridUniforms.uN,
+    uCell: water.gridUniforms.uCell,
     uAbsorb: { value: lighting.absorb },
     uWaterColor: { value: lighting.waterColor },
     uScatterLength: { value: 2.2 },
     uRoughness: { value: 0.07 },
     uDomainMin: { value: new THREE.Vector2(water.domainMin[0], water.domainMin[1]) },
     uDomainSize: { value: water.domainSize },
-    uTexelOffset: { value: water.uvOffset },
+    uTexelOffset: water.gridUniforms.uTexelOffset,
     uInner: { value: 1 },
     uAmbientUnresolved: { value: ambientWaves.unresolvedVariance },
     ...ambientWaves.uniforms(),
@@ -93,10 +113,8 @@ export function createWaterSurface(water, lighting, ambientWaves) {
     side: THREE.DoubleSide,
   });
 
-  const innerSegments = Math.min(water.size, 512);
-  const innerGeometry = new THREE.PlaneGeometry(water.domainSize, water.domainSize, innerSegments, innerSegments);
-  innerGeometry.rotateX(-Math.PI / 2);
-  const inner = new THREE.Mesh(innerGeometry, innerMaterial);
+  let segments = meshSegments;
+  const inner = new THREE.Mesh(innerPatchGeometry(water, segments), innerMaterial);
   inner.position.set(water.centre[0], 0, water.centre[1]);
   inner.frustumCulled = false;
 
@@ -108,6 +126,19 @@ export function createWaterSurface(water, lighting, ambientWaves) {
     outer,
     uniforms,
     cavityMaterial,
+    /** The inner patch's quads per side. */
+    get meshSegments() { return segments; },
+    /** Its vertex spacing (m): the cavity's dip margins by it. */
+    get cell() { return water.domainSize / segments; },
+    /** Its triangles. */
+    get triangles() { return 2 * segments * segments; },
+    /** Rebuild the inner patch with this many quads per side. */
+    setMeshSegments(count) {
+      if (count === segments) return;
+      inner.geometry.dispose();
+      inner.geometry = innerPatchGeometry(water, count);
+      segments = count;
+    },
     /** The open cavities' pushShape()s (src/cavity.js): the patch dips under them, or draws as still water when there are none. */
     setCavities(shapes) {
       const count = Math.min(shapes.length, MAX_CAVITIES);
@@ -118,19 +149,6 @@ export function createWaterSurface(water, lighting, ambientWaves) {
         cavityUniforms.uCavityShifts.value[index].set(shape.shiftX, shape.shiftY, shape.shiftZ);
       }
       inner.material = count > 0 ? innerCavityMaterial : innerMaterial;
-    },
-    /**
-     * Build the cavity variants' programs now, as the main pass will use them
-     * (into `target`, lit as `scene` is: both are part of a program's key), so
-     * the first throw does not wait for them.
-     */
-    precompile(renderer, camera, target, scene) {
-      const variants = new THREE.Scene();
-      variants.add(new THREE.Mesh(innerGeometry, innerCavityMaterial), new THREE.Mesh(new THREE.BufferGeometry(), cavityMaterial));
-      const previous = renderer.getRenderTarget();
-      renderer.setRenderTarget(target);
-      renderer.compile(variants, camera, scene);
-      renderer.setRenderTarget(previous);
     },
     update({ underTarget, reflectionTarget, reflectionMatrix, resolution, camera }) {
       uniforms.uReflection.value = reflectionTarget.texture;

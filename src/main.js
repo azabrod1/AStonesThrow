@@ -2,7 +2,8 @@
 //
 // Frame pipeline:
 //   1. advance the stones, droplets and bubbles (CPU), feeding the water;
-//   2. step the spectral water surface (GPU) and its foam;
+//   2. step the spectral water surface (GPU) and its foam, unless it sleeps
+//      (Low power, below);
 //   3. evaluate the ambient wind waves at the frame's time (GPU, once per
 //      rendered frame; src/ambientWaves.js) and the splash's sheets and
 //      columns (CPU);
@@ -13,7 +14,8 @@
 //      reflecting the mirror image, the stones' cavities in it
 //      (src/cavity.js), foam specks riding the surface, stones above the
 //      surface) to an HDR texture with depth;
-//   7. draw the splash's water over it and tone-map to the canvas.
+//   7. draw the splash's water over it and tone-map to the canvas; with no
+//      water in the air, only the tone map (src/splash.js).
 // All simulation runs in world seconds scaled by the slow-motion factor.
 //
 // The camera never moves: the planar reflection and the throwing hand assume
@@ -26,59 +28,119 @@
 // out returns to it; Escape and the Reset view button go straight back. The
 // mirror image of the sky is re-rendered at the next frame whenever the view
 // has changed, and while a splash lives it is drawn over where the splash's
-// own mirror image falls, each frame (updateReflection).
+// own mirror image falls, each frame (updateReflection). A tap throws at the
+// water under it, brought inside the solver's patch less POND_MARGIN when it
+// is beyond (or on the sky): a splash nearer the patch's edge would ring
+// across it, since the patch is periodic.
+//
+// Quality. Each preset of QUALITY sets the work a frame does: the splash
+// solver's grid, the inner water patch's mesh (src/waterSurface.js), the
+// resolution of the under-water pass and of the mirror image (underScale of
+// the canvas's), the splash's fluid buffers (fluidScale), the cap on device
+// pixels per CSS pixel, and the frame rate of a pond where nothing happens;
+// never a target's format (QUALITY says why). Whatever the preset, the canvas holds at
+// most PIXEL_BUDGET device pixels (the pixel ratio is lowered to fit).
+// applyQuality rebuilds whatever the preset changes: the solver (which keeps
+// its waves, src/spectralWater.js), the mesh, every target.
+// window.__pond.budget reports what is built, with an estimate of the GPU
+// memory the render targets hold.
+//
+// Low power. A pond where nothing happens does as little as it can. The
+// solver sleeps (no passes at all) once its last splat or foam stamp is
+// SLEEP_SECONDS of simulated time behind and nothing of the splash is left
+// (src/spectralWater.js derives the time from its damping); the composite is
+// a plain tone map while no water is in the air; and on a preset with an
+// idleFrameRate, once nothing has moved, been touched or zoomed for
+// IDLE.quietSeconds, frames come at most that often (every other
+// requestAnimationFrame on a 60 Hz display), the simulated time still
+// advancing by the real time between them.
 //
 // Starting is asynchronous: the sky is a photographed panorama
 // (src/sky.js) that has to load before anything is built, because the sun's
-// elevation is the photo's. ?sky=<name> picks the panorama; ?wind=x,z sets the
-// direction the wind blows toward in world XZ (DEFAULT_WIND otherwise);
-// ?paused=1 starts with the clock stopped (resume() starts it); ?quality=
-// high|medium|low fixes a preset (QUALITY), otherwise the quality calibrates
-// itself from the frame rate (CALIBRATION) and reports each change through
-// onQualityChange. ?profile=1 runs the profiling steps of src/profiler.js
-// and reports through onProfile.
+// elevation is the photo's. Before the pond reports ready, under the page's
+// loading veil, warmUp throws a stone and draws its flight and splash at a
+// few moments, so that every GPU program a throw needs (the stone's, the
+// splash's passes, the mirror's, the cavity's, the composite's, the specks')
+// is compiled then rather than at the first throw, then clears it all away:
+// the pond starts still, at time zero. ?sky=<name> picks the panorama;
+// ?wind=x,z sets the direction the wind blows toward in world XZ
+// (DEFAULT_WIND otherwise); ?paused=1 starts with the clock stopped
+// (resume() starts it); ?quality=high|medium|low fixes a preset (QUALITY),
+// otherwise the quality calibrates itself from the frame rate (CALIBRATION),
+// keeps watching it, and reports each change through onQualityChange.
+// ?profile=1 runs the profiling steps of src/profiler.js and reports through
+// onProfile.
 import * as THREE from 'three';
 import { SpectralWater } from './spectralWater.js';
 import { AmbientWaves, DEFAULT_WIND } from './ambientWaves.js';
 import { createEnvironment } from './sky.js';
 import { createWaterSurface } from './waterSurface.js';
-import { createPondFloor } from './pondFloor.js';
+import { createPondFloor, setPatternMipmaps } from './pondFloor.js';
 import { Rock } from './rock.js';
 import { SplashSystem, MIRROR_LAYER } from './splash.js';
-import { createFloatTarget, FullscreenPass, configureFloatSupport } from './gpu.js';
+import { createFloatTarget, FullscreenPass, configureFloatSupport, renderTargetBytes } from './gpu.js';
 import { viewFacing, directionAt, placeDirection, clampToFrame, zoomToward, isZoomed } from './viewZoom.js';
 import { Profiler } from './profiler.js';
 
-// Quality presets: the water grid, the splash's fluid buffers as a fraction of
-// the canvas, and the cap on device pixels per CSS pixel. The splash lives in
-// a few dozen pixels, so the fluid buffer's resolution is what it is made of:
-// a drop narrower than a buffer pixel is widened to one, so at half
-// resolution on a 1× canvas every fleck of spray became a 4-pixel square.
-const QUALITY = {
-  high: { grid: 512, fluidScale: 1.0, maxDpr: 2.0 },
-  medium: { grid: 512, fluidScale: 0.5, maxDpr: 2.0 },
-  low: { grid: 256, fluidScale: 0.75, maxDpr: 1.5 },
+// Quality presets. The splash lives in a few dozen pixels, so the fluid
+// buffer's resolution is what it is made of: a drop narrower than a buffer
+// pixel is widened to one, so at half resolution on a 1× canvas every fleck
+// of spray became a 4-pixel square.
+//   grid          the splash solver's cells per side (6 m): 512 resolves 2.3 cm
+//                 ripples, 256 4.7 cm ones;
+//   meshSegments  the inner water patch's quads per side (it only carries the
+//                 displacement; the shading's normals come from the textures);
+//   underScale    the under-water pass's and the mirror image's resolution, of
+//                 the canvas's (both are seen through ripples);
+//   fluidScale    the splash's fluid buffers', of the canvas's;
+//   idleFrameRate the frame rate of a pond where nothing happens (0: every frame);
+//   maxDpr        the cap on device pixels per CSS pixel.
+// Every target keeps its format on every preset, so a program drawn under the
+// loading veil (warmUp) meets no new pipeline state after a change of preset;
+// and every mesh takes 16-bit indices (at most 254 segments: Three.js keeps
+// the index 65535 for primitive restart).
+export const QUALITY = {
+  high: { grid: 512, meshSegments: 254, underScale: 1.0, fluidScale: 1.0, idleFrameRate: 0, maxDpr: 2.0 },
+  medium: { grid: 256, meshSegments: 160, underScale: 0.5, fluidScale: 0.5, idleFrameRate: 30, maxDpr: 2.0 },
+  low: { grid: 256, meshSegments: 128, underScale: 0.5, fluidScale: 0.5, idleFrameRate: 30, maxDpr: 1.5 },
 };
+export const PIXEL_BUDGET = 2.6e6;   // device pixels in the canvas, on every preset
 const QUALITY_ORDER = ['high', 'medium', 'low'];
 // Automatic quality starts every device on high and steps down from what it
 // measures, never from what the device looks like: the frame rate of the idle
 // pond after warm-up, then of the first splash (the fluid passes run only
-// while drops are in the air, so the idle rate overestimates).
+// while drops are in the air, so the idle rate overestimates). From the idle
+// measurement on it keeps watching: a frame rate below sustainedMinimumFps
+// over sustainedSeconds of frames drawn one per requestAnimationFrame steps
+// down once more. It never steps up.
 const CALIBRATION = {
-  warmUpFrames: 30,        // shader compiles and the first mip chains
-  windowFrames: 60,        // frames averaged for one measurement
-  fewestFrames: 20,        // a splash that ends sooner is measured on what it gave
-  idleMinimumFps: 50,      // idle below this: one step down; below splashMinimumFps: two
-  splashMinimumFps: 30,    // the first splash below this: one step down
+  warmUpFrames: 30,          // the first mip chains and caches
+  windowFrames: 60,          // frames averaged for one measurement
+  fewestFrames: 20,          // a splash that ends sooner is measured on what it gave
+  idleMinimumFps: 50,        // idle below this: one step down; below splashMinimumFps: two
+  splashMinimumFps: 30,      // the first splash below this: one step down
+  sustainedMinimumFps: 25,   // later, this or less...
+  sustainedSeconds: 3,       // ...over this long: one step down
+  settleSeconds: 2,          // nothing is judged this long after a change of preset
+  stallSeconds: 0.5,         // a longer interval is a stall (a hidden tab, a rebuild), not a frame rate
+};
+const IDLE = {
+  quietSeconds: 1,           // nothing moving, touched or zoomed for this long...
+  tolerance: 0.004,          // ...and frames come at the preset's idleFrameRate, this many seconds early at most
 };
 const POWER = { soft: 1.3, normal: 1.0, hard: 0.72 };   // flight-time multipliers
 const POND_DEPTH = 0.8;
+const POND_MARGIN = 0.4;      // metres inside the solver's patch that a tap's throw keeps to
 const MAX_ROCKS = 10;
 const MIN_FOV = 8;            // degrees: the narrowest zoom
 const WHEEL_STEP = 0.9;       // field of view factor per wheel notch
 const HOME_TARGET = [0, 0.12, -1.0];
 const SUN_AZIMUTH = Math.atan2(0.42, 0.78);   // radians right of straight ahead (−Z), about 28°
 const DEBUG_MODES = { under: 0, height: 1, foam: 2, env: 3, face: 4, ambient: 5 };   // setDebugView names
+// The warm-up's throw (the reference stone, aimed as the profiler's) and the
+// moments after its impact it draws: the crown, the fan, the cavity, spray
+// and the mirror; the jet column; the specks and the drops' landing crowns.
+const WARM_UP = { x: 0, z: -1.4, radius: 0.03, moments: [0.02, 0.16, 0.4] };
 
 export async function startPond({ canvas, quality = 'auto', onReady, onError, onStats, onViewChange, onQualityChange, onProfile }) {
   let renderer;
@@ -102,6 +164,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
   renderer.localClippingEnabled = true;
   renderer.autoClear = false;
   renderer.setClearColor(0x000000, 1);
+  // A frame is many render() calls: render() resets the counts once per frame, so they are the frame's.
+  renderer.info.autoReset = false;
 
   // Lighting shared by every shader. Values are linear radiance in arbitrary
   // units chosen so that a sunlit pond tone-maps well at the given exposure.
@@ -133,19 +197,21 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
   let qualityName = automaticQuality ? 'high' : QUALITY[quality] ? quality : 'medium';
   let settings = QUALITY[qualityName];
   // Parts of the frame the profiler switches off (src/profiler.js); all on otherwise.
-  const skip = { floor: false, surface: false, solver: false, ambient: false, fluid: false, halfDensity: false };
+  const skip = { floor: false, surface: false, solver: false, ambient: false, fluid: false, mirror: false, cavity: false, halfDensity: false, sleep: false };
 
   const water = new SpectralWater(renderer, { size: settings.grid, domainSize: 6, centre: [0, -1.0], depth: POND_DEPTH });
   const windParameter = pageParameters.get('wind')?.split(',').map(Number);
   const windDirection = windParameter?.length === 2 && windParameter.every(Number.isFinite) && Math.hypot(...windParameter) > 0 ? windParameter : DEFAULT_WIND;
   const ambientWaves = new AmbientWaves(renderer, { windDirection, depth: POND_DEPTH });
-  const surface = createWaterSurface(water, lighting, ambientWaves);
+  const surface = createWaterSurface(water, lighting, ambientWaves, { meshSegments: settings.meshSegments });
   const splash = new SplashSystem({ environment, lighting, water, ambientWaves, surface });
 
   const camera = new THREE.PerspectiveCamera(48, 1, 0.05, 60000);
   camera.position.set(0, 1.15, 2.45);
   // The floor's pattern is baked once, laid out in perspective from the camera's eye (src/pondFloor.js).
   const floor = createPondFloor(water, lighting, ambientWaves, { renderer, eye: camera.position });
+  const floorPattern = floor.material.uniforms.uPattern.value;   // RGBA8, with its mip chain
+  const floorPatternBytes = Math.round(floorPattern.image.width * floorPattern.image.height * 4 * (floorPattern.generateMipmaps ? 4 / 3 : 1));
   // The view: home is the framing the page opens with; view is the current one.
   const home = { ...viewFacing(HOME_TARGET[0] - camera.position.x, HOME_TARGET[1] - camera.position.y, HOME_TARGET[2] - camera.position.z), fov: 48 };
   const view = { ...home };
@@ -217,7 +283,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
   // into the mirror every frame over the sky: only inside the rectangle its
   // image covers there, joined with the last frame's so that the sky paints
   // over where it was. With nothing alive the cached mirror stays untouched:
-  // no pass at all.
+  // no pass at all. The mirror image has underScale of the canvas's
+  // resolution; the rectangle is in its own pixels.
   const mirrorCamera = new THREE.PerspectiveCamera();
   mirrorCamera.layers.set(MIRROR_LAYER);
   const reflectionMatrix = new THREE.Matrix4();
@@ -300,7 +367,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
   }
 
   function updateReflection() {
-    const objects = skip.fluid ? nothingMirrored : splash.mirrorObjects();
+    const objects = skip.fluid || skip.mirror ? nothingMirrored : splash.mirrorObjects();
     if (viewChanged) {
       placeMirrorCamera();
       drawMirror(null, objects);
@@ -328,6 +395,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
   const viewEuler = new THREE.Euler(0, 0, 0, 'YXZ');
   let viewFromApi = false;     // set by setFov / lookAt, which may leave the home frame
   let reportedZoom = false;
+  let lastActivity = 0;        // performance.now() of the last input, view change or motion (IDLE)
 
   /** Point the camera as `view` says; the mirror image follows at the next frame. */
   function applyView() {
@@ -335,8 +403,9 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     camera.quaternion.setFromEuler(viewEuler.set(view.pitch, view.yaw, 0, 'YXZ'));
     camera.updateProjectionMatrix();
     camera.updateMatrixWorld();
-    splash.updateViewUniforms(camera, resolution.y, dpr);
+    splash.updateViewUniforms(camera, resolution.y, dpr, underTarget.height);
     viewChanged = true;
+    lastActivity = performance.now();
     const zoomed = isZoomed(view, home);
     if (zoomed !== reportedZoom) { reportedZoom = zoomed; onViewChange?.({ zoomed }); }
   }
@@ -365,13 +434,17 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     if (isZoomed(next, view)) setView(next);   // otherwise nothing moved: at a limit
   }
 
+  /** Width and height of `fraction` of the canvas's resolution, at least one pixel. */
+  const scaledSize = (fraction) => [Math.max(1, Math.round(resolution.x * fraction)), Math.max(1, Math.round(resolution.y * fraction))];
+
   function resize() {
     const width = Math.max(1, canvas.clientWidth);
     const height = Math.max(1, canvas.clientHeight);
-    dpr = Math.min(window.devicePixelRatio || 1, settings.maxDpr) * (skip.halfDensity ? 0.5 : 1);
+    // The preset's cap and the pixel budget, whichever is lower.
+    dpr = Math.min(window.devicePixelRatio || 1, settings.maxDpr, Math.sqrt(PIXEL_BUDGET / (width * height))) * (skip.halfDensity ? 0.5 : 1);
     renderer.setPixelRatio(dpr);
     renderer.setSize(width, height, false);
-    resolution.set(Math.round(width * dpr), Math.round(height * dpr));
+    renderer.getDrawingBufferSize(resolution);
     const zoomed = isZoomed(view, home);
     camera.aspect = width / height;
     home.fov = width >= height ? 48 : 62;
@@ -381,14 +454,16 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     underTarget?.dispose();
     mainTarget?.dispose();
     reflectionTarget?.dispose();
-    underTarget = createFloatTarget(resolution.x, resolution.y, { type: THREE.HalfFloatType, filter: THREE.LinearFilter, depth: true, depthTexture: true });
+    const [underWidth, underHeight] = scaledSize(settings.underScale);
+    underTarget = createFloatTarget(underWidth, underHeight, { type: THREE.HalfFloatType, filter: THREE.LinearFilter, depth: true, depthTexture: true });
     mainTarget = createFloatTarget(resolution.x, resolution.y, { type: THREE.HalfFloatType, filter: THREE.LinearFilter, depth: true, depthTexture: true });
-    reflectionTarget = createFloatTarget(resolution.x, resolution.y, { type: THREE.HalfFloatType, filter: THREE.LinearFilter, depth: true });
+    reflectionTarget = createFloatTarget(underWidth, underHeight, { type: THREE.HalfFloatType, filter: THREE.LinearFilter, depth: true });
     splash.resize(resolution.x, resolution.y, settings.fluidScale);
+    // A smaller under-water pass sees the floor's pattern more minified: its mip chain then (src/pondFloor.js).
+    setPatternMipmaps(floor, renderer, underWidth < resolution.x);
     applyView();
   }
   resize();
-  surface.precompile(renderer, camera, mainTarget, sceneMain);
   const observer = new ResizeObserver(() => resize());
   observer.observe(canvas);
 
@@ -421,13 +496,16 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     sceneMain.add(rock.meshAbove);
     sceneUnder.add(rock.meshBelow);
     while (rocks.length > MAX_ROCKS) retireRock(rocks[0]);
+    lastActivity = performance.now();
     return rock;
   }
 
-  function retireRock(rock) {
+  /** Take a stone out of the scenes; keepMaterials frees only its geometry (warmUp keeps a stone's materials, so their program stays compiled). */
+  function retireRock(rock, { keepMaterials = false } = {}) {
     sceneMain.remove(rock.meshAbove);
     sceneUnder.remove(rock.meshBelow);
-    rock.dispose();
+    if (keepMaterials) rock.geometry.dispose();
+    else rock.dispose();
     rocks.splice(rocks.indexOf(rock), 1);
   }
 
@@ -437,17 +515,28 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     return throwAt(x, z);
   }
 
-  // Pointer aiming: pick the water plane under the pointer.
+  // Pointer aiming: pick the water plane under the pointer, kept inside the
+  // solver's patch less POND_MARGIN. A pointer on the sky aims as far as the
+  // patch reaches in its direction.
   const raycaster = new THREE.Raycaster();
   const waterPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
   const pointer = new THREE.Vector2();
+  const throwRegion = {
+    minX: water.domainMin[0] + POND_MARGIN, maxX: water.domainMin[0] + water.domainSize - POND_MARGIN,
+    minZ: water.domainMin[1] + POND_MARGIN, maxZ: water.domainMin[1] + water.domainSize - POND_MARGIN,
+  };
   function aimPoint(clientX, clientY) {
     const point = toDeviceCoordinates(clientX, clientY);
     pointer.set(point.x, point.y);
     raycaster.setFromCamera(pointer, camera);
     const hit = new THREE.Vector3();
-    if (!raycaster.ray.intersectPlane(waterPlane, hit)) return null;
-    if (hit.z > 2.2 || hit.distanceTo(camera.position) > 12) return null;
+    if (!raycaster.ray.intersectPlane(waterPlane, hit)) {
+      const horizontal = Math.hypot(raycaster.ray.direction.x, raycaster.ray.direction.z);
+      if (horizontal < 1e-6) return null;
+      hit.set(camera.position.x + (raycaster.ray.direction.x / horizontal) * 100, 0, camera.position.z + (raycaster.ray.direction.z / horizontal) * 100);
+    }
+    hit.x = THREE.MathUtils.clamp(hit.x, throwRegion.minX, throwRegion.maxX);
+    hit.z = THREE.MathUtils.clamp(hit.z, throwRegion.minZ, throwRegion.maxZ);
     return hit;
   }
 
@@ -499,6 +588,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
   }
 
   canvas.addEventListener('pointerdown', (event) => {
+    lastActivity = performance.now();
     activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
     try { canvas.setPointerCapture(event.pointerId); } catch { /* a synthetic or already released pointer */ }
     if (activePointers.size === 1) {
@@ -511,12 +601,14 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     }
   });
   canvas.addEventListener('pointermove', (event) => {
+    lastActivity = performance.now();
     const tracked = activePointers.get(event.pointerId);
     if (tracked) { tracked.x = event.clientX; tracked.y = event.clientY; }
     if (pinch) { if (tracked) movePinch(); return; }
     if (event.pointerType === 'mouse' || pressStart) showAim(aimPoint(event.clientX, event.clientY));
   });
   canvas.addEventListener('pointerup', (event) => {
+    lastActivity = performance.now();
     const press = pressStart?.id === event.pointerId ? pressStart : null;
     releasePointer(event);
     if (press) {
@@ -558,10 +650,19 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
       simulationTime += h;
     }
     for (const rock of [...rocks]) if (rock.restTime > 40) retireRock(rock);
-    if (!skip.solver) water.step(dt);
+    if (!skip.solver) {
+      // The solver sleeps once its waves and foam have faded and nothing of the splash is left (the header);
+      // the profiler's 'solver kept awake' step keeps it stepping.
+      if (skip.sleep) water.wake();
+      else if (!water.asleep && water.settled && splash.settled) water.sleep();
+      water.step(dt);
+    }
   }
 
+  let framesRendered = 0;
   function render() {
+    renderer.info.reset();
+    framesRendered++;
     camera.updateMatrixWorld();
     if (!skip.ambient) ambientWaves.update(simulationTime);
     // The splash's sheets and columns to this frame, for the mirror and the droplet passes.
@@ -569,8 +670,9 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     updateReflection();
     surface.update({ underTarget, reflectionTarget, reflectionMatrix, resolution, camera, time: simulationTime });
     splash.prepareScene();   // the stones' cavities, and the patch dipping under them
-    floor.material.uniforms.uHeight.value = water.heightTexture;
-    surface.inner.visible = surface.outer.visible = splash.cavityGroup.visible = !skip.surface;
+    if (skip.cavity) surface.setCavities([]);
+    surface.inner.visible = surface.outer.visible = !skip.surface;
+    splash.cavityGroup.visible = !skip.surface && !skip.cavity;
 
     renderer.setRenderTarget(underTarget);
     renderer.setClearColor(0x000000, 1);
@@ -581,28 +683,67 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     renderer.clear(true, true, false);
     renderer.render(sceneMain, camera);
 
-    if (Object.hasOwn(DEBUG_MODES, debugView) || skip.fluid) {
-      // A debug view, or the profiler's plain tone map of the scene in place of the droplet passes.
+    if (Object.hasOwn(DEBUG_MODES, debugView)) {
       const debugTextures = { under: underTarget.texture, height: water.heightTexture, ambient: ambientWaves.heightTexture };
-      debugPass.material.uniforms.uTexture.value = skip.fluid ? mainTarget.texture : debugTextures[debugView] ?? water.foamTexture;
-      debugPass.material.uniforms.uMode.value = skip.fluid ? 0 : DEBUG_MODES[debugView];
+      debugPass.material.uniforms.uTexture.value = debugTextures[debugView] ?? water.foamTexture;
+      debugPass.material.uniforms.uMode.value = DEBUG_MODES[debugView];
       debugPass.render(renderer, null);
       return;
     }
-    splash.render(renderer, camera, mainTarget, null);
+    // The profiler's plain tone map in place of the droplet passes, or the splash over the scene.
+    if (skip.fluid) splash.toneMap(renderer, mainTarget, null);
+    else splash.render(renderer, camera, mainTarget, null);
   }
 
   // ?paused=1 starts with the clock stopped, so the harness's frames start
   // from world time zero whatever the page's start-up took.
   let running = pageParameters.get('paused') !== '1';
+  let frameRequest = 0;        // the pending requestAnimationFrame, 0 when none: never two loops
   let lastFrame = performance.now();
   let fpsAverage = 60;
   let frames = 0;
 
+  // ---- what is built, and its memory -------------------------------------
+  const sizeOf = (target) => ({ width: target.width, height: target.height });
+  /** The bytes the render targets hold, by owner (renderTargetBytes in src/gpu.js), and the sky's textures. */
+  function memoryEstimate() {
+    const sum = (targets) => targets.reduce((total, target) => total + renderTargetBytes(target), 0);
+    const parts = {
+      solver: sum([water.stateA, water.stateB, water.fftA, water.fftB, water.heightTarget, water.foamA, water.foamB]),
+      wind: sum([ambientWaves.spectrumTarget, ambientWaves.fftA, ambientWaves.fftB, ambientWaves.heightTarget]),
+      scene: sum([underTarget, mainTarget, reflectionTarget]),
+      splash: sum(Object.values(splash.targets)),
+      sky: sum(environment.targets) + environment.panoramaBytes,
+      floor: floorPatternBytes,
+    };
+    return { ...parts, total: Object.values(parts).reduce((total, bytes) => total + bytes, 0) };
+  }
+  function budget() {
+    return {
+      quality: qualityName,
+      grid: water.size,
+      meshSegments: surface.meshSegments,
+      meshTriangles: surface.triangles,
+      pixelRatio: dpr,
+      canvas: { width: resolution.x, height: resolution.y },
+      targets: { main: sizeOf(mainTarget), under: sizeOf(underTarget), reflection: sizeOf(reflectionTarget), fluid: sizeOf(splash.targets.info), solver: sizeOf(water.heightTarget) },
+      targetBytes: memoryEstimate(),
+      memory: { ...renderer.info.memory },
+      programs: renderer.info.programs?.length ?? 0,
+      solverAsleep: water.asleep,
+      frameCapped,
+      calibration: automaticQuality ? calibration.phase : 'fixed',
+      warmUp: { ...warmUpReport },
+    };
+  }
+
   function applyQuality(name) {
     qualityName = name;
     settings = QUALITY[name];
+    water.resize(settings.grid);
+    surface.setMeshSegments(settings.meshSegments);
     resize();
+    monitor.settle = CALIBRATION.settleSeconds;
     onQualityChange?.(name);
   }
 
@@ -622,7 +763,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     const splashOver = calibration.phase === 'splash' && splash.count === 0;
     if (!splashOver) {
       calibration.frames++;
-      // The first splash frames compile the fluid shaders; the idle warm-up covers the rest.
+      // The first splash frames upload its buffers; the idle warm-up covers the rest.
       const warmUp = calibration.phase === 'idle' ? CALIBRATION.warmUpFrames : 5;
       if (calibration.frames <= warmUp) return;
       calibration.seconds += dtReal;
@@ -643,31 +784,116 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     }
   }
 
-  const profiler = profiling ? new Profiler({
+  // After the idle measurement the frame rate stays watched (CALIBRATION):
+  // windows of sustainedSeconds of frames drawn one per requestAnimationFrame;
+  // a capped frame or a stall starts the window again.
+  const monitor = { seconds: 0, frames: 0, settle: 0 };
+  function watchFrameRate(interval, everyFrame) {
+    if (!automaticQuality || calibration.phase === 'idle' || calibration.phase === 'splash') return;
+    if (!everyFrame || interval > CALIBRATION.stallSeconds) { monitor.seconds = 0; monitor.frames = 0; return; }
+    if (monitor.settle > 0) { monitor.settle -= interval; return; }
+    monitor.seconds += interval;
+    monitor.frames++;
+    if (monitor.seconds < CALIBRATION.sustainedSeconds) return;
+    if (monitor.frames / monitor.seconds < CALIBRATION.sustainedMinimumFps) stepDown(1);
+    monitor.seconds = 0;
+    monitor.frames = 0;
+  }
+
+  // ---- the frame loop ------------------------------------------------------
+  /** Whether frames are coming at the preset's idleFrameRate: nothing moving, touched or zoomed for IDLE.quietSeconds. */
+  let frameCapped = false;
+  function capFrames(now) {
+    frameCapped = settings.idleFrameRate > 0 && (!profiler || profiler.done) && activePointers.size === 0 && now - lastActivity > 1000 * IDLE.quietSeconds;
+    return frameCapped;
+  }
+  let profiler = null;
+
+  function frame(now) {
+    frameRequest = 0;
+    if (!running) return;
+    frameRequest = requestAnimationFrame(frame);
+    const interval = (now - lastFrame) / 1000;   // real seconds since the last frame drawn, unclamped
+    if (profiler?.emptyFrames) {
+      // The profiler's floor: a frame that neither simulates nor draws.
+      lastFrame = now;
+      profiler.frame({ interval, simulateMilliseconds: 0, renderMilliseconds: 0, calls: 0, triangles: 0 });
+      return;
+    }
+    const capped = capFrames(now);
+    if (capped && interval < 1 / settings.idleFrameRate - IDLE.tolerance) return;   // this one is skipped; the next draws both intervals
+    lastFrame = now;
+    const dtReal = Math.min(interval, 0.1);
+    if (dtReal > 0) {
+      fpsAverage += (1 / dtReal - fpsAverage) * 0.05;
+      if ((++frames & 15) === 0) onStats?.({ fps: fpsAverage, droplets: splash.count, quality: qualityName });
+      calibrate(dtReal);
+      watchFrameRate(interval, !capped);
+    }
+    const simulateStart = performance.now();
+    simulate((profiler?.fixedSeconds ?? dtReal) * timeScale);
+    const renderStart = performance.now();
+    render();
+    const renderEnd = performance.now();
+    if (splash.inMotion || rocks.some((rock) => rock.state !== 'rest')) lastActivity = now;
+    profiler?.frame({ interval, simulateMilliseconds: renderStart - simulateStart, renderMilliseconds: renderEnd - renderStart, calls: renderer.info.render.calls, triangles: renderer.info.render.triangles });
+  }
+
+  /** The pond back to still water at time zero: no stones, no splash, the solver cleared and asleep. */
+  function clearPond() {
+    for (const rock of [...rocks]) retireRock(rock);
+    water.clear();
+    splash.reset(renderer);
+    simulationTime = 0;
+    viewChanged = true;   // the mirror image is drawn whole again, without the splash
+    mirroredRect.set(0, 0, 0, 0);
+    splashRect.set(0, 0, 0, 0);
+  }
+
+  // ---- warm-up: every program a throw needs, compiled under the veil -----
+  // Three.js deletes a program once no material uses it. The splash's
+  // materials live as long as the page; a stone's die with it, so the warm-up
+  // stone's two materials are kept (programKeepers) and every later stone,
+  // made the same way, finds their program.
+  const warmUpReport = { programs: 0, milliseconds: 0 };
+  const programKeepers = [];
+  function warmUp() {
+    const started = performance.now();
+    const programsBefore = renderer.info.programs?.length ?? 0;
+    marker.visible = arc.visible = true;   // the aim marker's programs too
+    const stone = throwAt(WARM_UP.x, WARM_UP.z, { radius: WARM_UP.radius, power: 'normal' });
+    render();
+    marker.visible = arc.visible = false;
+    for (let step = 0; step < 180 && !rocks.some((rock) => rock.state !== 'air'); step++) simulate(1 / 60);
+    let elapsed = 0;
+    for (const moment of WARM_UP.moments) {
+      while (elapsed < moment - 1e-6) { const dt = Math.min(1 / 60, moment - elapsed); simulate(dt); elapsed += dt; }
+      render();
+    }
+    programKeepers.push(stone.meshAbove.material, stone.meshBelow.material);
+    retireRock(stone, { keepMaterials: true });
+    clearPond();
+    warmUpReport.programs = (renderer.info.programs?.length ?? 0) - programsBefore;
+    warmUpReport.milliseconds = performance.now() - started;
+  }
+  warmUp();
+
+  profiler = profiling ? new Profiler({
     applySkips(flags) {
       const wasHalfDensity = skip.halfDensity;
       for (const key of Object.keys(skip)) skip[key] = Boolean(flags[key]);
       if (skip.halfDensity !== wasHalfDensity) resize();
     },
-    throwStone: () => throwAt(0, -1.4, { radius: 0.03 }),
+    throwStone: () => throwAt(0, -1.4, { radius: 0.03, power: 'normal' }),
+    hasImpacted: () => rocks.some((rock) => rock.state !== 'air'),
+    clearPond,
+    describe: () => `${qualityName}, ${resolution.x}×${resolution.y} at ${dpr.toFixed(2)}×, grid ${water.size}, mesh ${surface.meshSegments}`,
+    memory: () => ({ ...memoryEstimate(), textures: renderer.info.memory.textures, geometries: renderer.info.memory.geometries }),
     onReport: (lines) => onProfile?.(lines),
   }) : null;
 
-  function frame(now) {
-    if (!running) return;
-    requestAnimationFrame(frame);
-    const dtReal = Math.min((now - lastFrame) / 1000, 0.1);
-    lastFrame = now;
-    if (dtReal > 0) {
-      fpsAverage += (1 / dtReal - fpsAverage) * 0.05;
-      if ((++frames & 15) === 0) onStats?.({ fps: fpsAverage, droplets: splash.count, quality: qualityName });
-      calibrate(dtReal);
-      profiler?.frame(dtReal);
-    }
-    simulate(dtReal * timeScale);
-    render();
-  }
-  if (running) requestAnimationFrame(frame);
+  lastFrame = performance.now();
+  if (running) frameRequest = requestAnimationFrame(frame);
   onReady?.();
 
   const api = {
@@ -683,8 +909,17 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
       else if (!QUALITY[name]) return;
       applyQuality(automaticQuality ? 'high' : name);
     },
-    pause() { running = false; },
-    resume() { if (!running) { running = true; lastFrame = performance.now(); requestAnimationFrame(frame); } },
+    pause() {
+      running = false;
+      if (frameRequest) cancelAnimationFrame(frameRequest);
+      frameRequest = 0;
+    },
+    resume() {
+      if (running) return;
+      running = true;
+      lastFrame = performance.now();
+      if (!frameRequest) frameRequest = requestAnimationFrame(frame);
+    },
     /**
      * Deterministic stepping for screenshots: simulate `seconds` of world time
      * in the frames the app would draw, 1/60 s of real time each (so a time
@@ -709,15 +944,27 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     get timeScale() { return timeScale; },
     get rocks() { return rocks; },
     get quality() { return qualityName; },
+    /**
+     * What the preset built (read-only): the solver's grid, the patch's mesh,
+     * the pixel ratio, every target's size, the render targets' bytes by owner
+     * (an estimate from their formats), renderer.info.memory, the programs
+     * compiled, whether the solver sleeps and the frame rate is capped, and
+     * the warm-up's programs and milliseconds.
+     */
+    get budget() { return budget(); },
+    /** Frames drawn so far (render() calls), for the probes. */
+    get framesRendered() { return framesRendered; },
     /** Where the splash was drawn into the mirror image at the last frame, in its target's pixels (0 wide: nowhere), and the target's size. */
     get mirrorRegion() { return { x: splashRect.x, y: splashRect.y, width: splashRect.z, height: splashRect.w, targetWidth: reflectionTarget.width, targetHeight: reflectionTarget.height }; },
     /** The sky panorama in use (a key of SKIES in src/sky.js). */
     sky: environment.name,
+    renderer,
     camera,
     lighting,
     water,
     ambientWaves,
     splash,
+    surface,
     sceneUnder,
     sceneMain,
     THREE,
