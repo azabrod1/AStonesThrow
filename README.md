@@ -162,6 +162,14 @@ ballistic arc, quadratic drag under water, and a settle into the sand.
   (which follows `--preroll=seconds`), for a run of idle frames.
 - `?floats=half` on the page forces half-float render targets everywhere, the
   path devices without `EXT_color_buffer_float` take.
+- `?profile=1` on a real device runs the profiling steps of `src/profiler.js`:
+  it switches parts of the frame off one at a time (the floor pass, the water
+  surface, each FFT, the droplet passes, three quarters of the pixels), times
+  the frames that remain, then a splash, and prints milliseconds per frame
+  for each in the corner readout and the console. Frame rates measured
+  headless mean nothing, and phones have no GPU timer, so this is how the
+  cost of each part is found on a phone. `&quality=` fixes the preset
+  (medium otherwise).
 - `?paused=1` starts the page with its clock stopped (the harness does, so
   its frames start from world time zero and every run renders the same water).
 - `?wind=x,z` on the page (`--wind=x:z` for the harness) sets the direction

@@ -31,7 +31,8 @@
 // ?paused=1 starts with the clock stopped (resume() starts it); ?quality=
 // high|medium|low fixes a preset (QUALITY), otherwise the quality calibrates
 // itself from the frame rate (CALIBRATION) and reports each change through
-// onQualityChange.
+// onQualityChange. ?profile=1 runs the profiling steps of src/profiler.js
+// and reports through onProfile.
 import * as THREE from 'three';
 import { SpectralWater } from './spectralWater.js';
 import { AmbientWaves, DEFAULT_WIND } from './ambientWaves.js';
@@ -42,6 +43,7 @@ import { Rock } from './rock.js';
 import { SplashSystem } from './splash.js';
 import { createFloatTarget, FullscreenPass, configureFloatSupport } from './gpu.js';
 import { viewFacing, directionAt, placeDirection, clampToFrame, zoomToward, isZoomed } from './viewZoom.js';
+import { Profiler } from './profiler.js';
 
 // Quality presets: the water grid, the splash's fluid buffers as a fraction of
 // the canvas, and the cap on device pixels per CSS pixel. The splash lives in
@@ -74,7 +76,7 @@ const HOME_TARGET = [0, 0.12, -1.0];
 const SUN_AZIMUTH = Math.atan2(0.42, 0.78);   // radians right of straight ahead (−Z), about 28°
 const DEBUG_MODES = { under: 0, height: 1, foam: 2, env: 3, face: 4, ambient: 5 };   // setDebugView names
 
-export async function startPond({ canvas, quality = 'auto', onReady, onError, onStats, onViewChange, onQualityChange }) {
+export async function startPond({ canvas, quality = 'auto', onReady, onError, onStats, onViewChange, onQualityChange, onProfile }) {
   let renderer;
   try {
     renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance', alpha: false, stencil: false });
@@ -122,9 +124,12 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
   lighting.skyAmbient.copy(environment.skyAmbient);
   const sunDirection = lighting.sunDirection;
 
-  let automaticQuality = quality === 'auto' || !QUALITY[quality];
-  let qualityName = automaticQuality ? 'high' : quality;
+  const profiling = pageParameters.get('profile') === '1';
+  let automaticQuality = !profiling && (quality === 'auto' || !QUALITY[quality]);
+  let qualityName = automaticQuality ? 'high' : QUALITY[quality] ? quality : 'medium';
   let settings = QUALITY[qualityName];
+  // Parts of the frame the profiler switches off (src/profiler.js); all on otherwise.
+  const skip = { floor: false, surface: false, solver: false, ambient: false, fluid: false, halfDensity: false };
 
   const water = new SpectralWater(renderer, { size: settings.grid, domainSize: 6, centre: [0, -1.0], depth: POND_DEPTH });
   const windParameter = pageParameters.get('wind')?.split(',').map(Number);
@@ -278,7 +283,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
   function resize() {
     const width = Math.max(1, canvas.clientWidth);
     const height = Math.max(1, canvas.clientHeight);
-    dpr = Math.min(window.devicePixelRatio || 1, settings.maxDpr);
+    dpr = Math.min(window.devicePixelRatio || 1, settings.maxDpr) * (skip.halfDensity ? 0.5 : 1);
     renderer.setPixelRatio(dpr);
     renderer.setSize(width, height, false);
     resolution.set(Math.round(width * dpr), Math.round(height * dpr));
@@ -467,29 +472,31 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
       simulationTime += h;
     }
     for (const rock of [...rocks]) if (rock.restTime > 40) retireRock(rock);
-    water.step(dt);
+    if (!skip.solver) water.step(dt);
   }
 
   function render() {
     camera.updateMatrixWorld();
-    ambientWaves.update(simulationTime);
+    if (!skip.ambient) ambientWaves.update(simulationTime);
     if (viewChanged) { renderReflection(); viewChanged = false; }
     surface.update({ underTarget, reflectionTarget, reflectionMatrix, resolution, camera, time: simulationTime });
     floor.material.uniforms.uHeight.value = water.heightTexture;
+    surface.inner.visible = surface.outer.visible = !skip.surface;
 
     renderer.setRenderTarget(underTarget);
     renderer.setClearColor(0x000000, 1);
     renderer.clear(true, true, false);
-    renderer.render(sceneUnder, camera);
+    if (!skip.floor) renderer.render(sceneUnder, camera);
 
     renderer.setRenderTarget(mainTarget);
     renderer.clear(true, true, false);
     renderer.render(sceneMain, camera);
 
-    if (Object.hasOwn(DEBUG_MODES, debugView)) {
+    if (Object.hasOwn(DEBUG_MODES, debugView) || skip.fluid) {
+      // A debug view, or the profiler's plain tone map of the scene in place of the droplet passes.
       const debugTextures = { under: underTarget.texture, height: water.heightTexture, ambient: ambientWaves.heightTexture };
-      debugPass.material.uniforms.uTexture.value = debugTextures[debugView] ?? water.foamTexture;
-      debugPass.material.uniforms.uMode.value = DEBUG_MODES[debugView];
+      debugPass.material.uniforms.uTexture.value = skip.fluid ? mainTarget.texture : debugTextures[debugView] ?? water.foamTexture;
+      debugPass.material.uniforms.uMode.value = skip.fluid ? 0 : DEBUG_MODES[debugView];
       debugPass.render(renderer, null);
       return;
     }
@@ -547,6 +554,16 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     }
   }
 
+  const profiler = profiling ? new Profiler({
+    applySkips(flags) {
+      const wasHalfDensity = skip.halfDensity;
+      for (const key of Object.keys(skip)) skip[key] = Boolean(flags[key]);
+      if (skip.halfDensity !== wasHalfDensity) resize();
+    },
+    throwStone: () => throwAt(0, -1.4, { radius: 0.03 }),
+    onReport: (lines) => onProfile?.(lines),
+  }) : null;
+
   function frame(now) {
     if (!running) return;
     requestAnimationFrame(frame);
@@ -556,6 +573,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
       fpsAverage += (1 / dtReal - fpsAverage) * 0.05;
       if ((++frames & 15) === 0) onStats?.({ fps: fpsAverage, droplets: splash.count, quality: qualityName });
       calibrate(dtReal);
+      profiler?.frame(dtReal);
     }
     simulate(dtReal * timeScale);
     render();

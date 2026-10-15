@@ -67,6 +67,8 @@
     font-variant-numeric: tabular-nums;
     pointer-events: none;
     text-shadow: 0 1px 8px rgba(0, 0, 0, 0.6);
+    white-space: pre;          /* the profile report is several lines */
+    text-align: right;
   }
   .controls {
     position: fixed;
@@ -268,15 +270,17 @@
 
   let pond;
   let setQualityButtons = () => {};   // assigned once the controls exist; the calibration may call it before
+  let profileDone = false;            // once the profile report is up, the readout keeps it
   try {
     // Module scripts may await at the top level; the pond starts once its sky has loaded.
     pond = await startPond({
       canvas: document.getElementById('pond'),
       quality: params.get('quality') || 'auto',
       onError: (message) => { veilText.innerHTML = ''; const p = document.createElement('p'); p.className = 'error'; p.textContent = message; veilText.append(p); },
-      onStats: ({ fps, droplets, quality }) => { stats.textContent = `${Math.round(fps)} fps · ${droplets} drops · ${quality}`; },
+      onStats: ({ fps, droplets, quality }) => { if (!profileDone) stats.textContent = `${Math.round(fps)} fps · ${droplets} drops · ${quality}`; },
       onViewChange: ({ zoomed }) => { resetView.hidden = !zoomed; },
       onQualityChange: (name) => setQualityButtons(name),
+      onProfile: (lines) => { profileDone = true; stats.textContent = lines.join('\n'); },
     });
   } catch (error) {
     console.error(error);
