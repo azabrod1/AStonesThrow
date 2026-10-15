@@ -19,6 +19,7 @@ node tools/wave-probe.mjs              # the wind ripples on the CPU: real field
 node tools/foam-probe.mjs              # the foam's bubble pattern on the CPU: the shader's fade constants, antialiasing against supersampling, cost
 node tools/quality-probe.mjs           # every preset builds its sizes (__pond.budget) from every other, the calibration and its watch step down, the idle frame cap, pause/resume, no program at the first throw
 node tools/profile-probe.mjs           # runs ?profile=1 headless and checks the report's shape (its milliseconds mean nothing here)
+node tools/controls-probe.mjs          # the controls as phones' browsers lay them out (viewport tag, touch, 3×): sizes, fit, the slider's tap and drag
 npm run site && node tools/site-check.mjs   # build what Pages publishes into _site/ and load it under /IntoTheWater/
 ```
 
@@ -36,6 +37,7 @@ There is no build step. The page loads Three.js from jsDelivr through the import
 - A quality change rebuilds the solver, the water mesh and every target (`applyQuality`). Whatever samples the solver takes its sizes from `water.gridUniforms`; its textures keep their objects.
 - `assets/sky/*.json` is written by `tools/sky-probe.mjs` from its `.hdr`; rerun the probe, never edit the JSON.
 - Every push to `main` deploys to GitHub Pages (https://azabrod1.github.io/IntoTheWater/). Only `index.html`, `src/` and `assets/` are published (`SITE_FILES` in `tools/build-site.mjs`); a new runtime folder goes there too. Use relative paths: the site lives under `/IntoTheWater/`.
+- The page is laid out for phones by its viewport tag, which the shoot harness (a desktop browser) ignores: check any change to the page's controls with `tools/controls-probe.mjs`.
 - Add files by name, never `git add -A`. `shots/` is ignored and stays local.
 
 ## The cloud container

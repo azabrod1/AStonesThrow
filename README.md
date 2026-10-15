@@ -336,6 +336,16 @@ ballistic arc, quadratic drag under water, and a settle into the sand.
 - `node tools/zoom-probe.mjs [--w=390 --h=844]` drives the wheel, a pinch, a
   tap and Escape through the page's own handlers and checks that what is under
   the pointer stays there.
+- `node tools/controls-probe.mjs [--root=path] [--label=name]` loads the page
+  as phones' browsers do (mobile layout by the viewport tag, touch, 3× pixels)
+  at a large phone's portrait and landscape and a small phone's portrait, and
+  in a desktop window, and checks that the page is laid out at the device's
+  width, every control is on the screen, the strip covers at most 30% of the
+  height, the stone slider is 44 points tall (and most of the width in
+  portrait) and every button 34, and that a tap or a drag anywhere along the
+  slider sets the stone; it saves each screen to `shots/controls-probe/`. The
+  shoot harness and the other probes emulate a desktop browser, which ignores
+  the viewport tag, so only this probe sees the page as a phone does.
 - `window.__pond` exposes the app in the console: `throwAt(x, z, { radius, power })`,
   `setTimeScale` (and `timeScale`), `pause()`, `advance(seconds)` (in the frames the app would
   draw at the current time scale), `setDebugView(name)`, `setFov(degrees)`,

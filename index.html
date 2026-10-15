@@ -1,3 +1,12 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<!-- Laid out at the device's width: without this a phone's browser lays the
+     page out 980 pixels wide and shrinks it, every control with it, to fit.
+     viewport-fit=cover lets the pond run under the notch in landscape; the
+     controls and the title keep inside the safe area (env(safe-area-inset-…)). -->
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b1b22">
 <title>Stone Pond</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;1,9..144,300&family=Instrument+Sans:wght@400;500;600&display=swap">
 <style>
@@ -40,7 +49,7 @@
   .title {
     position: fixed;
     top: calc(env(safe-area-inset-top, 0px) + 14px);
-    left: 18px;
+    left: calc(env(safe-area-inset-left, 0px) + 18px);
     pointer-events: none;
     text-shadow: 0 1px 12px rgba(0, 0, 0, 0.55);
   }
@@ -61,7 +70,7 @@
   .stats {
     position: fixed;
     top: calc(env(safe-area-inset-top, 0px) + 16px);
-    right: 18px;
+    right: calc(env(safe-area-inset-right, 0px) + 18px);
     font-size: 12px;
     color: var(--muted);
     font-variant-numeric: tabular-nums;
@@ -72,7 +81,7 @@
   }
   /* ?profile=1's report (src/profiler.js): several lines of figures, read left to right. */
   .stats.report {
-    left: 18px;
+    left: calc(env(safe-area-inset-left, 0px) + 18px);
     text-align: left;
     white-space: pre-wrap;
     font-size: 11px;
@@ -89,7 +98,8 @@
     left: 0;
     right: 0;
     bottom: 0;
-    padding: 10px 16px calc(env(safe-area-inset-bottom, 0px) + 10px);
+    padding: 10px calc(env(safe-area-inset-right, 0px) + 16px) calc(env(safe-area-inset-bottom, 0px) + 10px) calc(env(safe-area-inset-left, 0px) + 16px);
+    touch-action: manipulation;   /* quick taps on the buttons never zoom the page */
     display: flex;
     flex-wrap: wrap;
     gap: 10px 22px;
@@ -139,9 +149,59 @@
     outline: 2px solid var(--accent);
     outline-offset: 2px;
   }
+  /* The stone slider, drawn the same on every browser: a thin track filled up
+     to the thumb (--fraction, which the page sets from the value), a round
+     thumb in the accent colour, and a box taller than the track so a finger
+     finds it. On a touch screen the thumb is 28 px and the box 44 px tall
+     (Apple's smallest comfortable target); on a phone the slider has a row of
+     its own. */
   input[type="range"] {
-    width: 120px;
-    accent-color: var(--accent);
+    --thumb: 18px;
+    --track: 4px;
+    --fraction: 0.31;
+    -webkit-appearance: none;
+    appearance: none;
+    width: 140px;
+    height: 28px;
+    margin: 0;
+    padding: 0;
+    background: transparent;
+    cursor: pointer;
+    touch-action: none;
+  }
+  input[type="range"]::-webkit-slider-runnable-track {
+    height: var(--track);
+    border-radius: 999px;
+    background: linear-gradient(to right, var(--accent) calc(var(--thumb) / 2 + var(--fraction) * (100% - var(--thumb))), rgba(238, 243, 244, 0.28) 0);
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: var(--thumb);
+    height: var(--thumb);
+    margin-top: calc((var(--track) - var(--thumb)) / 2);
+    border: 0;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
+  }
+  input[type="range"]::-moz-range-track {
+    height: var(--track);
+    border-radius: 999px;
+    background: rgba(238, 243, 244, 0.28);
+  }
+  input[type="range"]::-moz-range-progress {
+    height: var(--track);
+    border-radius: 999px;
+    background: var(--accent);
+  }
+  input[type="range"]::-moz-range-thumb {
+    width: var(--thumb);
+    height: var(--thumb);
+    border: 0;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
   }
   .readout {
     font-size: 13px;
@@ -197,11 +257,24 @@
     text-align: center;
     color: var(--fg);
   }
+  @media (pointer: coarse) {
+    input[type="range"] { --thumb: 28px; --track: 6px; height: 44px; }
+    .segmented button, .throw, .reset-view { min-height: 36px; }
+  }
   @media (max-width: 520px) {
     .title p { display: none; }
     .controls { gap: 8px 14px; }
-    input[type="range"] { width: 90px; }
+    .stone-group { flex: 1 1 100%; justify-content: center; }
+    .stone-group input[type="range"] { flex: 1 1 auto; width: auto; max-width: 320px; }
     .segmented button { padding: 6px 9px; min-width: 38px; }
+  }
+  /* Most phones: with each group's name beside its buttons, Throw and Time
+     cannot share a row, nor Quality and the throw button, and five rows cover
+     a third of the water. The name goes above its buttons instead. */
+  @media (max-width: 400px) {
+    .group:not(.stone-group) { flex-direction: column; gap: 3px; }
+    .group:not(.stone-group) > span.name { font-size: 10px; }
+    .throw, .reset-view { align-self: flex-end; }
   }
   @media (prefers-reduced-motion: reduce) {
     .veil { transition: none; }
@@ -217,7 +290,7 @@
 <div class="stats" id="stats" aria-live="off"></div>
 
 <div class="controls" role="toolbar" aria-label="Pond controls">
-  <div class="group">
+  <div class="group stone-group">
     <label for="stone-size">Stone</label>
     <input type="range" id="stone-size" min="1.5" max="16" step="0.5" value="6">
     <span class="readout" id="stone-readout">6 cm</span>
@@ -310,13 +383,31 @@
   if (pond) {
     const sizeInput = document.getElementById('stone-size');
     const sizeReadout = document.getElementById('stone-readout');
+    const sizeRange = { minimum: Number(sizeInput.min), maximum: Number(sizeInput.max), step: Number(sizeInput.step) };
     const applySize = () => {
       const cm = Number(sizeInput.value);
       sizeReadout.textContent = `${cm % 1 === 0 ? cm : cm.toFixed(1)} cm`;
+      sizeInput.style.setProperty('--fraction', String((cm - sizeRange.minimum) / (sizeRange.maximum - sizeRange.minimum)));
       pond.setStoneRadius(cm / 200);   // slider is the stone's diameter
     };
     sizeInput.addEventListener('input', applySize);
     applySize();
+    // iOS moves a range input only by its thumb. Here a touch anywhere along
+    // the slider puts the thumb under the finger, and the finger drags it from
+    // there (the thumb's centre runs from half a thumb in at either end).
+    const setSizeFromTouch = (event) => {
+      event.preventDefault();
+      const touch = event.touches[0];
+      if (!touch) return;
+      const bounds = sizeInput.getBoundingClientRect();
+      const thumb = parseFloat(getComputedStyle(sizeInput).getPropertyValue('--thumb')) || 0;
+      const fraction = Math.min(Math.max((touch.clientX - bounds.left - thumb / 2) / Math.max(bounds.width - thumb, 1), 0), 1);
+      const steps = Math.round((fraction * (sizeRange.maximum - sizeRange.minimum)) / sizeRange.step);
+      const value = sizeRange.minimum + steps * sizeRange.step;
+      if (Number(sizeInput.value) !== value) { sizeInput.value = String(value); applySize(); }
+    };
+    sizeInput.addEventListener('touchstart', setSizeFromTouch, { passive: false });
+    sizeInput.addEventListener('touchmove', setSizeFromTouch, { passive: false });
     segmented('power', (value) => pond.setPower(value));
     segmented('speed', (value) => pond.setTimeScale(Number(value)));
     setQualityButtons = segmented('quality', (value) => pond.setQuality(value));
