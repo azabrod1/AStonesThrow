@@ -6,10 +6,19 @@
 // so seen from the camera (1.15 m up) its edge is 0.02° below the horizon and
 // the water meets the sky dome's horizon with no strip of the photo's own
 // ground between them.
+//
+// A stone's cavity (src/cavity.js) is drawn with the same shader and the same
+// uniforms: cavityMaterial is its CAVITY_MESH variant, for the cavity's mesh,
+// and while any cavity is open setCavities swaps the inner patch to its
+// CAVITY_PUSH variant, which dips the patch under each cavity's lip so it
+// never shows through the hole. With no cavity open the patch draws with its
+// own material, so still water costs exactly what it did. precompile builds
+// both variants' programs ahead of the first throw.
 import * as THREE from 'three';
 import { WATER_VERTEX, WATER_FRAGMENT } from './shaders/scene.js';
 
 const OUTER_HALF_SIZE = 3000;
+export const MAX_CAVITIES = 4;   // the inner patch dips under at most this many cavities at once
 
 function outerSheetGeometry(innerHalf, outerHalf, centre) {
   // Four quads around the inner square, in the XZ plane.
@@ -64,6 +73,25 @@ export function createWaterSurface(water, lighting, ambientWaves) {
   });
   const innerMaterial = material(true);
   const outerMaterial = material(false);
+  // The cavity variants (WATER_VERTEX says what each does).
+  const cavityUniforms = {
+    uCavityCount: { value: 0 },
+    uCavityMouths: { value: Array.from({ length: MAX_CAVITIES }, () => new THREE.Vector4()) },
+    uCavityShifts: { value: Array.from({ length: MAX_CAVITIES }, () => new THREE.Vector3()) },
+  };
+  const innerCavityMaterial = new THREE.ShaderMaterial({
+    vertexShader: WATER_VERTEX,
+    fragmentShader: WATER_FRAGMENT,
+    uniforms: { ...uniforms, ...cavityUniforms },
+    defines: { AMBIENT_LEVELS: ambientWaves.levels, CAVITY_PUSH: MAX_CAVITIES },
+  });
+  const cavityMaterial = new THREE.ShaderMaterial({
+    vertexShader: WATER_VERTEX,
+    fragmentShader: WATER_FRAGMENT,
+    uniforms,
+    defines: { AMBIENT_LEVELS: ambientWaves.levels, CAVITY_MESH: 1 },
+    side: THREE.DoubleSide,
+  });
 
   const innerSegments = Math.min(water.size, 512);
   const innerGeometry = new THREE.PlaneGeometry(water.domainSize, water.domainSize, innerSegments, innerSegments);
@@ -79,6 +107,31 @@ export function createWaterSurface(water, lighting, ambientWaves) {
     inner,
     outer,
     uniforms,
+    cavityMaterial,
+    /** The open cavities' pushShape()s (src/cavity.js): the patch dips under them, or draws as still water when there are none. */
+    setCavities(shapes) {
+      const count = Math.min(shapes.length, MAX_CAVITIES);
+      cavityUniforms.uCavityCount.value = count;
+      for (let index = 0; index < count; index++) {
+        const shape = shapes[index];
+        cavityUniforms.uCavityMouths.value[index].set(shape.x, shape.z, shape.radius * shape.radius, 0);
+        cavityUniforms.uCavityShifts.value[index].set(shape.shiftX, shape.shiftY, shape.shiftZ);
+      }
+      inner.material = count > 0 ? innerCavityMaterial : innerMaterial;
+    },
+    /**
+     * Build the cavity variants' programs now, as the main pass will use them
+     * (into `target`, lit as `scene` is: both are part of a program's key), so
+     * the first throw does not wait for them.
+     */
+    precompile(renderer, camera, target, scene) {
+      const variants = new THREE.Scene();
+      variants.add(new THREE.Mesh(innerGeometry, innerCavityMaterial), new THREE.Mesh(new THREE.BufferGeometry(), cavityMaterial));
+      const previous = renderer.getRenderTarget();
+      renderer.setRenderTarget(target);
+      renderer.compile(variants, camera, scene);
+      renderer.setRenderTarget(previous);
+    },
     update({ underTarget, reflectionTarget, reflectionMatrix, resolution, camera }) {
       uniforms.uReflection.value = reflectionTarget.texture;
       uniforms.uReflectionMatrix.value.copy(reflectionMatrix);

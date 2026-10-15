@@ -3,27 +3,34 @@
 // A stone entering water goes through stages with known timing, and the
 // droplets are choreographed from them rather than solved for:
 //   1. Crown: the contact line throws a little fast, fine spray, then a thin
-//      sheet rises from a ring just outside the stone, biased in the direction
-//      of travel (src/crown.js). Its rim thickens into a bead, goes wavy and
-//      sheds drops from the crests; after a few tens of milliseconds the sheet
-//      tears from the rim down into droplets carrying its local velocity.
-//      A thrown stone enters obliquely, θ about 40 to 55° from vertical, and
-//      once more than FAN_THRESHOLD of the entry speed is horizontal a forward
-//      fan comes first: a thin fast sheet over the sector ahead, low and
-//      mostly forward, tearing into fine spray (CrownSheet with `fan`), at a
-//      strength growing to full at FAN_FULL.
-//   2. Cavity and pinch-off: the air cavity behind the stone closes under
-//      hydrostatic pressure about 2.1·sqrt(R/g) seconds after entry, almost
-//      independently of entry speed (Duclaux et al. 2007). An oblique entry
-//      drags the cavity forward: besides the entry splat, one or two more
-//      where the stone is one and two radii down its path (R·tan θ apart, at
-//      most PATH_SLOPE_CAP·R), as it gets there and weaker, stretch the
-//      depression and its foam; and each runs forward by the horizontal
-//      fraction (stampCavity), so the ring is stronger ahead than behind.
-//   3. Worthington jet: the closure fires a narrow glassy column up
-//      (src/jet.js), tip first and fastest, so it stretches as it rises. A
-//      bulb at its tip pinches off into one to three large drops, then the
-//      column breaks from the top down into drops about twice its local
+//      sheet rises from the lip of the stone's cavity (stage 2), biased in the
+//      direction of travel (src/crown.js). Its rim thickens into a bead, goes
+//      wavy and sheds drops from the crests; after a few tens of milliseconds
+//      the sheet tears from the rim down into droplets carrying its local
+//      velocity. A thrown stone enters obliquely, θ about 40 to 55° from
+//      vertical, and once more than FAN_THRESHOLD of the entry speed is
+//      horizontal a forward fan comes first: a thin fast sheet over the sector
+//      ahead, launched from the lip's forward side, low and mostly forward,
+//      tearing into fine spray (CrownSheet with `fan`), at a strength growing
+//      to full at FAN_FULL.
+//   2. Cavity: the stone opens an air-filled hole behind it (src/cavity.js), a
+//      closed form in depth and time drawn as a hole in the water surface, its
+//      lip lifted around it and the stone at its bottom; an oblique stone's is
+//      sheared along its path. It pinches off (deep seal) about 2.1·sqrt(R/g)
+//      seconds after entry, almost independently of entry speed (Duclaux et
+//      al. 2007), at about half the stone's depth then; the hole above the neck
+//      collapses from the bottom up, and the surface closes to a mound
+//      0.4·sqrt(R/g) later. The cavity splat (stampCavity) is the ring's
+//      source: a downward push and a shallow depression. An oblique entry drags
+//      it forward: besides the entry splat, one or two more where the stone is
+//      one and two radii down its path (R·tan θ apart, at most
+//      PATH_SLOPE_CAP·R), as it gets there and weaker; and each runs forward by
+//      the horizontal fraction, so the ring is stronger ahead than behind.
+//      Their foam is the air the hole held: it comes when the hole closes.
+//   3. Worthington jet: where and when the hole closes, a narrow glassy column
+//      fires up (src/jet.js), tip first and fastest, so it stretches as it
+//      rises. A bulb at its tip pinches off into one to three large drops, then
+//      the column breaks from the top down into drops about twice its local
 //      radius while its slow base falls back into a mound that throws a
 //      small secondary ring. After an oblique entry it leans back along the
 //      stone's path by JET_LEAN·θ (at most JET_LEAN_CAP) and, from a dragged cavity,
@@ -55,20 +62,24 @@
 //     stone's crown is both denser and coarser; the contact spray stays fine
 //     (s^0.4). A big stone sheds big drops, and those throw crowns of their
 //     own where they land.
-//   - The pinch-off comes 2.1·sqrt(R/g) after entry; the jet's launch window
-//     goes as sqrt(s), its radius as R·s^0.25 (fatter at the lower Froude
-//     number of a big stone) and its breakup as s^1.5 (a capillary time),
-//     its tip speed follows V (times s^0.15): a big stone's jet is a fat
-//     column that mostly falls back as one, not a taller needle.
-//   - The cavity splat: σ = 1.1·R and a depression 0.3·R deep, so the ring's
-//     wavelength goes with R; its downward velocity 0.045·V adds a height
-//     that goes as sqrt(R) (the speed over the frequency of waves of size R),
-//     and a big jet's fall-back adds a strong second ring. The solver damps
-//     waves longer than 30 cm less (src/spectralWater.js), so a big stone's
-//     ring carries across the pond.
-//   - Foam: the cavity's stamp spreads over 1.5·R at FOAM_STAMP·sqrt(s), at
-//     most FOAM_STAMP_CAP (a bigger cavity entrains more air for the area of
-//     its mouth); the crown's specks go as s² (the area its base covered);
+//   - The cavity's lengths go with R and its times with sqrt(R/g) (its
+//     depths follow the stone, src/cavity.js): it pinches off 2.1·sqrt(R/g)
+//     after entry and closes 0.4·sqrt(R/g) later, when the jet starts; the
+//     jet's launch window goes as sqrt(s), its radius as R·s^0.25 (fatter at
+//     the lower Froude number of a big stone) and its breakup as s^1.5 (a
+//     capillary time), its tip speed follows V (times s^0.15): a big stone's
+//     jet is a fat column that mostly falls back as one, not a taller needle.
+//   - The cavity splat: σ = 1.1·R and a depression CAVITY_SPLAT_DEPTH·R deep
+//     (the hole itself is the cavity's mesh), so the ring's wavelength goes
+//     with R; its downward velocity 0.045·V adds a height that goes as
+//     sqrt(R) (the speed over the frequency of waves of size R), and a big
+//     jet's fall-back adds a strong second ring. The solver damps waves
+//     longer than 30 cm less (src/spectralWater.js), so a big stone's ring
+//     carries across the pond.
+//   - Foam: the cavity's foam comes up where it closed and spreads to 1.5·R
+//     over FOAM_SPREAD·sqrt(R/g), FOAM_STAMP·sqrt(s) in all, at most
+//     FOAM_STAMP_CAP (a bigger cavity entrains more air for the area of its
+//     mouth); the crown's specks go as s² (the area its base covered);
 //     the bubbles as s², in a cloud as wide as the stone.
 // The caps are for cost, set above what the slider's biggest stone (16 cm,
 // s = 2.67) needs even thrown hard. Thrown normally (6.3 m/s, 42° from
@@ -91,13 +102,19 @@
 // (spawned with `lens`) are shaded as clear glass. Both meshes are evaluated in
 // closed form once per rendered frame (prepareFrame); at most MAX_CROWNS
 // stone crowns and MAX_JETS jets live at once, and nothing is drawn for them
-// when none are alive. Their costly steps (the crown's tear, the jet's
-// breakup) run once per rendered frame, the frame's simulated length given by
-// setFrameSeconds before its substeps.
+// when none are alive. The cavities are drawn in the main scene instead
+// (cavityGroup), with the water surface's own shader (src/waterSurface.js),
+// so prepareScene brings them to the frame's time before that scene is drawn
+// and hands the surface the circles it dips from; at most MAX_CAVITIES are
+// open at once. The sheets' and columns' costly steps (the crown's tear, the
+// jet's breakup) run once per rendered frame, the frame's simulated length
+// given by setFrameSeconds before its substeps.
 import * as THREE from 'three';
 import { FullscreenPass, createFloatTarget } from './gpu.js';
 import { CrownSheet } from './crown.js';
 import { JetColumn } from './jet.js';
+import { Cavity } from './cavity.js';
+import { MAX_CAVITIES } from './waterSurface.js';
 import { FoamSpecks } from './foamSpecks.js';
 import { PARTICLE_VERTEX, PARTICLE_DEPTH_FRAGMENT, PARTICLE_THICKNESS_FRAGMENT, BLUR_FRAGMENT, COMPOSITE_FRAGMENT } from './shaders/fluid.js';
 import { SHEET_VERTEX, SHEET_DEPTH_FRAGMENT, SHEET_THICKNESS_FRAGMENT, COLUMN_VERTEX, COLUMN_DEPTH_FRAGMENT, COLUMN_THICKNESS_FRAGMENT } from './shaders/sheet.js';
@@ -128,11 +145,14 @@ const FAN_DROPLET_CAP = 2000;         // at most (the same stone's fan, about 17
 const BUBBLES = 110;                  // bubbles a 3 cm stone drags down, scaling with R²...
 const BUBBLE_CAP = 800;               // ...at most (a 16 cm stone wants 780)
 const FOAM_STAMP = 0.65;              // the cavity's foam for a 3 cm stone, scaling as sqrt(R / 3 cm)...
-const FOAM_STAMP_CAP = 0.95;          // ...up to this
+const FOAM_STAMP_CAP = 0.95;          // ...up to this, in all...
+const FOAM_PIECES = 4;                // ...in this many stamps, from where the hole closed outward...
+const FOAM_SPREAD = 0.6;              // ...over this many sqrt(R/g) from its closure
 const JET_LEAN = 0.4;                                // the jet leans back by this fraction of the entry angle,
 const JET_LEAN_CAP = THREE.MathUtils.degToRad(18);   // at most this
 const OBLIQUE_IMPULSE = 1.3;          // an oblique entry's cavity splats together carry at most this times a vertical one's
 const JET_OBLIQUE_SLOWING = 0.3;      // and is slower by this times the horizontal fraction
+const CAVITY_SPLAT_DEPTH = 0.1;       // the cavity splat's depression, in stone radii: the hole itself is the cavity's mesh
 
 const randomRange = (lo, hi) => lo + Math.random() * (hi - lo);
 const smoothstep = (edgeLow, edgeHigh, value) => {
@@ -141,7 +161,7 @@ const smoothstep = (edgeLow, edgeHigh, value) => {
 };
 
 export class SplashSystem {
-  constructor({ capacity = 16000, bubbleCapacity = 3000, environment, lighting, water, ambientWaves }) {
+  constructor({ capacity = 16000, bubbleCapacity = 3000, environment, lighting, water, ambientWaves, surface = null }) {
     this.capacity = capacity;
     this.count = 0;
     this.positions = new Float32Array(capacity * 3);
@@ -162,8 +182,14 @@ export class SplashSystem {
     this.crowns = [];    // live crown sheets
     this.plumes = [];    // scheduled bubble plumes
     this.wakes = [];     // scheduled cavity splats of an oblique entry
+    this.foamStamps = [];   // scheduled foam: a cavity's, when it closes
+    this.cavities = [];  // open cavities (src/cavity.js), drawn in the main scene from cavityGroup
+    this.cavityGroup = new THREE.Group();
+    this.surface = surface;
+    this.sceneTime = -1;  // splash time the cavities were last brought to
     this.time = 0;
     this.frameSeconds = 1 / 60;   // simulated length of the frame being stepped
+    this.substep = 1 / 240;       // and of its substeps, which the stones are stepped with
     this.lighting = lighting;
     this.foamSpecks = new FoamSpecks({ water, lighting, ambientWaves });
 
@@ -286,6 +312,11 @@ export class SplashSystem {
     const horizontalFraction = Math.min(horizontal.length() / entrySpeed, 1);
     if (horizontal.lengthSq() > 1e-6) horizontal.normalize();
     const entryAngle = Math.asin(horizontalFraction);   // from vertical
+    const jetLean = Math.min(JET_LEAN * entryAngle, JET_LEAN_CAP);
+
+    // The hole the stone opens: the crown and the fan launch from its rim and
+    // the jet rises where it closes.
+    const cavity = this.startCavity(info, water, jetLean);
 
     // 1. Crown. The droplet total is split between fine spray from the contact
     // line now, drops shed by the sheet's rim, and the sheet's breakup.
@@ -316,7 +347,7 @@ export class SplashSystem {
     }
     const crown = new CrownSheet({
       impact: info, startTime: this.time, rimDroplets: rimCount,
-      breakupDroplets: crownCount - sprayCount - rimCount, material: this.sheetDepthMaterial,
+      breakupDroplets: crownCount - sprayCount - rimCount, material: this.sheetDepthMaterial, rim: cavity,
     });
     this.crowns.push(crown);
     this.particleScene.add(crown.mesh);
@@ -328,7 +359,7 @@ export class SplashSystem {
       const fanCount = Math.round(THREE.MathUtils.clamp(FAN_DROPLETS * sizeFactor ** DROPLET_COUNT_POWER * Math.sqrt(entrySpeed / 6), 60, FAN_DROPLET_CAP) * fanStrength);
       const fan = new CrownSheet({
         impact: info, startTime: this.time, rimDroplets: Math.round(0.15 * fanCount), breakupDroplets: Math.round(0.85 * fanCount),
-        material: this.sheetDepthMaterial, fan: true, strength: fanStrength,
+        material: this.sheetDepthMaterial, fan: true, strength: fanStrength, rim: cavity,
       });
       this.crowns.push(fan);
       this.particleScene.add(fan.mesh);
@@ -349,26 +380,29 @@ export class SplashSystem {
     const sinkSpeed = Math.max(entrySpeed * Math.cos(entryAngle), 1.0);
     const wakeStrengths = [smoothstep(0.05, 0.25, horizontalFraction) * 0.8, smoothstep(0.3, 0.5, horizontalFraction) * 0.6];
     const impulseScale = Math.min(OBLIQUE_IMPULSE / (1 + wakeStrengths[0] + wakeStrengths[1]), 1);
-    this.stampCavity({ x, z, radius, speed: entrySpeed, strength: impulseScale, travelX, travelZ }, water);
+    // Their foam is the air the hole held, which surfaces where it closes, so it comes then.
+    const foamTime = this.time + cavity.closeTime;
+    this.stampCavity({ x, z, radius, speed: entrySpeed, strength: impulseScale, travelX, travelZ, foamTime }, water);
     wakeStrengths.forEach((strength, index) => {
       const step = index + 1;
       if (strength > 0) {
         this.wakes.push({
           x: x + horizontal.x * wakeStep * step, z: z + horizontal.y * wakeStep * step, start: this.time + (step * radius) / sinkSpeed,
-          radius, speed: entrySpeed, strength: strength * impulseScale, travelX, travelZ,
+          radius, speed: entrySpeed, strength: strength * impulseScale, travelX, travelZ, foamTime,
         });
       }
     });
 
-    // 2 and 3. Pinch-off then the jet, which after an oblique entry leans back
-    // along the stone's path and, from a dragged cavity, rises slower.
-    const pinchDelay = 2.1 * Math.sqrt(radius / GRAVITY);
+    // 2 and 3. Pinch-off, the collapse of the hole above it, then the jet from
+    // where the hole closed, which after an oblique entry leans back along the
+    // stone's path and, from a dragged cavity, rises slower.
+    const closure = cavity.lipAt(cavity.closeTime, {});
     const tipSpeed = THREE.MathUtils.clamp(0.42 * entrySpeed + 0.7, 1.2, 6.0) * sizeFactor ** 0.15 * (1 - JET_OBLIQUE_SLOWING * horizontalFraction);
     this.jets.push({
-      x, z, radius, start: this.time + pinchDelay,
+      x: closure.x, z: closure.z, radius, start: this.time + cavity.closeTime,
       total: Math.round(THREE.MathUtils.clamp(220 * sizeFactor ** 1.3, 80, 1200)),
       tipSpeed, speed: entrySpeed,
-      lean: Math.min(JET_LEAN * entryAngle, JET_LEAN_CAP), leanX: -horizontal.x, leanZ: -horizontal.y,
+      lean: jetLean, leanX: -horizontal.x, leanZ: -horizontal.y,
     });
 
     // 4. Bubbles follow the stone down its path, in a cloud as wide as the stone.
@@ -387,21 +421,57 @@ export class SplashSystem {
    * it and sinking ahead, the vertical velocity −c·∂h/∂x of a travelling
    * wave (c the speed of waves its size), as a pair of splats either side.
    * Splats on their own ring as strongly behind as ahead, whatever their
-   * layout.
+   * layout. The foam comes from foamTime (the cavity's closure), or now.
    */
-  stampCavity({ x, z, radius, speed, strength, travelX = 0, travelZ = 0 }, water) {
+  stampCavity({ x, z, radius, speed, strength, travelX = 0, travelZ = 0, foamTime = this.time }, water) {
     const sigma = radius * 1.1;
-    const depth = 0.3 * radius * strength;
+    const depth = CAVITY_SPLAT_DEPTH * radius * strength;
+    const ringDepth = 0.3 * radius * strength;   // the depression the ring's travel is set from (it was the splat's own)
     water.addSplat({ x, z, radius: sigma, height: -depth, velocity: -0.045 * speed * strength });
-    water.addFoam({ x, z, radius: radius * 1.5, amount: Math.min(FOAM_STAMP * Math.sqrt(radius / REFERENCE_RADIUS), FOAM_STAMP_CAP) * strength });
+    // The foam comes up where the hole closed and spreads: FOAM_PIECES stamps
+    // over FOAM_SPREAD·sqrt(R/g), widening to 1.5·R, together the amount below.
+    const amount = Math.min(FOAM_STAMP * Math.sqrt(radius / REFERENCE_RADIUS), FOAM_STAMP_CAP) * strength;
+    for (let piece = 0; piece < FOAM_PIECES; piece++) {
+      const share = piece / (FOAM_PIECES - 1);
+      const foam = { x, z, radius: radius * (0.6 + 0.9 * share), amount: amount / FOAM_PIECES };
+      const time = foamTime + share * FOAM_SPREAD * Math.sqrt(radius / GRAVITY);
+      if (time > this.time) this.foamStamps.push({ time, foam }); else water.addFoam(foam);
+    }
     const travel = Math.hypot(travelX, travelZ);
     if (travel > 0) {
-      const lift = 0.6 * travel * Math.sqrt(GRAVITY * sigma) * depth / sigma;   // ≈ c·depth/σ at the slope's peak
+      const lift = 0.6 * travel * Math.sqrt(GRAVITY * sigma) * ringDepth / sigma;   // ≈ c·depth/σ at the slope's peak
       const offsetX = (travelX / travel) * 0.8 * sigma;
       const offsetZ = (travelZ / travel) * 0.8 * sigma;
       water.addSplat({ x: x - offsetX, z: z - offsetZ, radius: 0.8 * sigma, velocity: lift, rim: 1 });
       water.addSplat({ x: x + offsetX, z: z + offsetZ, radius: 0.8 * sigma, velocity: -lift, rim: 1 });
     }
+  }
+
+  /**
+   * The stone's cavity (src/cavity.js), keeping at most MAX_CAVITIES open (the
+   * most the surface dips under; an older one closes at once). It
+   * is drawn only where the surface patch is simulated: outside it the water
+   * is a flat sheet with no hole to show.
+   */
+  startCavity(info, water, lean) {
+    if (this.cavities.length >= MAX_CAVITIES) this.retireCavity(this.cavities[0]);
+    const domainMin = water.domainMin ?? [-Infinity, -Infinity];
+    const domainSize = water.domainSize ?? Infinity;
+    const inside = (value, low) => Math.abs((value - low) / domainSize - 0.5) * 2 < 0.75;
+    const cavity = new Cavity({
+      impact: info, startTime: this.time, material: this.surface?.cavityMaterial ?? null,
+      cell: water.cell, floorDepth: water.depth, lean, step: this.substep,
+      drawn: inside(info.x, domainMin[0]) && inside(info.z, domainMin[1]),
+    });
+    this.cavities.push(cavity);
+    if (cavity.mesh) this.cavityGroup.add(cavity.mesh);
+    return cavity;
+  }
+
+  retireCavity(cavity) {
+    if (cavity.mesh) this.cavityGroup.remove(cavity.mesh);
+    cavity.dispose();
+    this.cavities.splice(this.cavities.indexOf(cavity), 1);
   }
 
   /** A big drop has landed: a crown of its own, its droplet count following the drop's area. */
@@ -428,7 +498,7 @@ export class SplashSystem {
     this.crowns.splice(this.crowns.indexOf(crown), 1);
   }
 
-  /** The cavity has pinched off: fire the column, keeping at most MAX_JETS. */
+  /** The cavity has closed: fire the column from the mound where it closed, keeping at most MAX_JETS. */
   startJet(jet, water) {
     water.addSplat({ x: jet.x, z: jet.z, radius: jet.radius * 0.6, height: 0.06 * jet.radius, velocity: 0.05 * jet.speed });
     water.addFoam({ x: jet.x, z: jet.z, radius: jet.radius * 1.0, amount: 0.35 });
@@ -505,6 +575,7 @@ export class SplashSystem {
   /** Advance droplets and bubbles by dt seconds, feeding the water surface. */
   update(dt, water) {
     this.time += dt;
+    this.substep = dt;
 
     // Scheduled jets start their columns, and an oblique entry's cavity
     // reaches on as the stone moves along.
@@ -512,6 +583,10 @@ export class SplashSystem {
     this.jets = this.jets.filter((jet) => this.time < jet.start);
     for (const wake of this.wakes) if (this.time >= wake.start) this.stampCavity(wake, water);
     this.wakes = this.wakes.filter((wake) => this.time < wake.start);
+    for (const stamp of this.foamStamps) if (this.time >= stamp.time) water.addFoam(stamp.foam);
+    this.foamStamps = this.foamStamps.filter((stamp) => this.time < stamp.time);
+    for (const cavity of this.cavities) cavity.update(this.time);
+    for (const cavity of this.cavities.filter((candidate) => candidate.finished)) this.retireCavity(cavity);
 
     // Bubble plumes.
     for (const plume of this.plumes) {
@@ -638,8 +713,26 @@ export class SplashSystem {
     this.fluidSize = new THREE.Vector2(w, h);
   }
 
-  /** Bring the crown sheets and jet columns to the current time: once per rendered frame, not per substep. */
+  /**
+   * Bring the cavities to the current time and hand the surface the circles
+   * its patch dips from: once per rendered frame, before the main scene is
+   * drawn (main.js calls it; prepareFrame does if it has not been).
+   */
+  prepareScene() {
+    if (this.sceneTime === this.time) return;
+    this.sceneTime = this.time;
+    const shapes = [];
+    for (const cavity of this.cavities) {
+      cavity.updateGeometry(this.time);
+      const shape = cavity.pushShape();
+      if (shape) shapes.push(shape);
+    }
+    this.surface?.setCavities(shapes);
+  }
+
+  /** Bring the cavities, crown sheets and jet columns to the current time: once per rendered frame, not per substep. */
   prepareFrame() {
+    this.prepareScene();
     for (const crown of this.crowns) crown.updateGeometry(this.time);
     for (const column of this.columns) column.updateGeometry(this.time);
   }

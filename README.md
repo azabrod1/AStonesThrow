@@ -53,8 +53,8 @@ quarter of it, which also hides the tile's repetition.
 **Splash** (`src/splash.js`). A stone entering water goes through stages with
 known timing, and the droplets are choreographed from them:
 
-1. crown (`src/crown.js`): a thin sheet rising from a ring just outside the
-   stone, biased forward. It is water launched from the ring over a few
+1. crown (`src/crown.js`): a thin sheet rising from the lip of the stone's
+   cavity (2.), biased forward. It is water launched from the ring over a few
    milliseconds, each element then flying on its own, slowed by surface
    tension and air, so the whole sheet is a closed form in launch time,
    azimuth and time. Its rim thickens into a bead, goes wavy and sheds drops
@@ -65,11 +65,22 @@ known timing, and the droplets are choreographed from them:
    the forward contact line at about 0.9 of the entry speed and 65 to 75°
    from vertical, half as thick, which flares low ahead of the crown and
    tears into fine spray after 20 ms;
-2. cavity and pinch-off about 2.1·√(R/g) seconds after entry. An oblique
-   entry drags the cavity forward: its depression and foam stretch one to
-   two radii along the path, and its ring runs stronger ahead than behind;
-3. Worthington jet (`src/jet.js`): a glassy column fired up, after an
-   oblique entry leaning back along the stone's path (by half the entry
+2. cavity (`src/cavity.js`): the stone opens a dark, air-filled hole in the
+   water, its lip lifted around it and the stone at its bottom, sheared
+   along an oblique stone's path. Each slice of water opens when the stone
+   passes it and closes under the water's pressure (the Rayleigh–Besant
+   picture: a(z, t) = R·√((1 − s)(1 + (1 + B)s)), s the slice's age over its
+   lifetime), so the hole necks and pinches off about 2.1·√(R/g) after entry
+   at about half the stone's depth then, closes from the neck up and closes
+   at the surface 0.4·√(R/g) later. It is a closed form drawn as a mesh with
+   the water's own shader, darkening with depth; the surface dips under its
+   lip so it never shows through. For a 3 cm stone thrown at 6.3 m/s the
+   mouth widens to 1.45 R, the hole pinches 6.2 R down at 116 ms and closes
+   at 138 ms. Its splat launches the ring; an oblique entry drags it
+   forward, so the ring runs stronger ahead than behind; its foam comes when
+   the hole closes;
+3. Worthington jet (`src/jet.js`): a glassy column fired up from where the
+   hole closed, after an oblique entry leaning back along the stone's path (by half the entry
    angle, at most 25°) and a little slower. It is
    water launched from the collapse point, fastest first, each element then
    flying ballistically, so the column is a closed form in launch time,
@@ -164,7 +175,8 @@ droplets reflect, and a prefiltered copy lights the stones.
 
 **Rendering** (`src/main.js`, `src/shaders/`). Each frame: the floor,
 submerged stones and bubbles are rendered to a texture with depth; the main
-scene renders the sky dome and the water surface, which refracts that texture
+scene renders the sky dome and the water surface (with any open cavity, drawn
+by the same shader), which refracts that texture
 with absorption by path length through the water, reflects a planar mirror
 image of the sky dome, clouds and treeline (the camera never moves, so it is
 re-rendered only when the view zooms or turns) in the direction each ripple
@@ -180,7 +192,8 @@ ballistic arc, quadratic drag under water, and a settle into the sand.
 ## Development
 
 - `npm test` checks the GPU FFT formulation and the splat spectrum on the CPU,
-  then runs `tools/wave-probe.mjs` and `tools/foam-probe.mjs`.
+  then runs `tools/wave-probe.mjs`, `tools/foam-probe.mjs` and
+  `tools/cavity-probe.mjs`.
 - Deployment: `.github/workflows/deploy.yml` runs the tests and `npm run site`
   on every push to `main` and publishes `_site/` to GitHub Pages. `npm run site`
   (`tools/build-site.mjs`) copies only what the page loads: `index.html`,
@@ -247,6 +260,15 @@ ballistic arc, quadratic drag under water, and a settle into the sand.
   makes of it at 0.5, 1 and 2 m (the solver's own dispersion and damping),
   and the CPU cost per frame. Without radii it runs the slider's 1.5, 4, 8
   and 16 cm and the 3 cm-radius reference.
+- `node tools/cavity-probe.mjs [diameter-in-cm ...] [--aim=x:z]` throws and
+  drops each stone (1.5, 4, 6, 8 and 16 cm) and runs its cavity on the CPU:
+  the timeline (the pinch-off's time and depth, the closure, the jet's start),
+  the mouth, the lip and the depth over time, and the cost of a frame's mesh;
+  it checks that the cavity follows the stone `src/rock.js` moves, that the
+  pinch and the closure come when they should, that the cone the surface dips
+  into holds the whole hole and the lip covers where it dips, that the
+  normals face the air and that the crown stands on the lip, and exits with 1
+  if not.
 - `node tools/fan-probe.mjs [radius] [entrySpeed] [horizontalFraction]` runs
   the forward fan of an oblique entry on the CPU and prints its timeline,
   its drops, where they land and its cost per frame.

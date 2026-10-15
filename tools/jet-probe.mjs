@@ -29,7 +29,7 @@ const tipSpeed = Math.min(Math.max(0.42 * entrySpeed + 0.7, 1.2), 6.0) * sizeFac
 const lean = Math.min(0.5 * Math.asin(horizontalFraction), (25 * Math.PI) / 180);
 const leaning = { lean, leanX: 0, leanZ: 1 };
 const budget = Math.round(Math.min(Math.max(220 * sizeFactor ** 1.3, 80), 1200));
-const pinchDelay = 2.1 * Math.sqrt(stoneRadius / 9.81);
+const pinchDelay = (2.1 + 0.4) * Math.sqrt(stoneRadius / 9.81);   // the jet starts when the cavity's mouth closes (src/cavity.js)
 
 const drops = [];
 const splash = {
