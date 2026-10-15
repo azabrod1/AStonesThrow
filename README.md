@@ -31,8 +31,9 @@ any time step and gives the right dispersion: long ripples outrun short ones,
 as they do on a real pond. Disturbances are Gaussian splats with a raised rim
 (zero net volume, so no long-wave mound), added in Fourier space from their
 closed-form spectrum. One inverse FFT per frame (2·log2 N passes on the GPU)
-returns the height and vertical velocity for rendering. A foam map decays,
-diffuses and is stamped by the splash.
+returns the height and vertical velocity for rendering. A foam map rides
+along: how much foam each cell holds and how long that foam lasts, stamped by
+the splash, spreading a little and decaying.
 
 **Wind ripples** (`src/ambientWaves.js`). Between throws the pond is never
 still: a second spectral field, on its own 6 m tile of 256 × 256 laid over
@@ -85,10 +86,32 @@ known timing, and the droplets are choreographed from them:
 Drops ring the water where they land, and the big ones (the jet's, and the
 crown's largest) throw a small crown of their own, the classic drop-impact
 crown: the same sheet model with the drop's radius and speed, standing for
-about 20 ms. Foam specks (`src/foamSpecks.js`) are the grain of the foam the
-splash leaves: rafts of 2 to 4 mm points riding the waves where the crown
-stood, where the jet fell back, where drops landed and where bubbles
-surfaced, drifting outward and popping over 2 to 8 seconds.
+about 20 ms.
+
+**Foam** (`FOAM_PATTERN` in `src/shaders/scene.js`). The splash leaves a
+raft of foam. The foam map says where and how much, but its cells are over a
+centimetre wide, so the water shader draws the raft from three layers of
+cellular noise fixed on the water: bubbles 2 to 3 mm across packed together,
+larger ones of 3 to 7 mm among them, and a lace of curved filaments around
+holes a few centimetres wide. The map's strength, lumped at 3 and 14 cm so
+that a raft is ragged and clumpy rather than a round, even net, sets the
+threshold they must pass. Where it is strong the raft is
+solid white, its bubbles shaded darker at their rims and catching the sun;
+as it weakens the holes open, the filaments thin to strings of bubbles and
+clumps, then only the biggest bubbles are left, so a raft thins from its
+edge inward the way foam pops, and foam just over the threshold, a single
+layer of bubbles, lets the water show through. A raft lasts longer the bigger
+the splash: a 4 cm stone's is gone in about 6 s, a 16 cm stone's thins to
+scattered clumps by 10 s and is gone by 15.
+The threshold's edge is one pixel wide at any distance (from the pattern's
+exact gradient and the pixel's footprint on the water), and each layer fades
+into an even white of the right strength before its cells shrink to a couple
+of pixels, so distant foam neither shimmers nor goes grey. Only pixels with
+foam compute the pattern. Foam specks (`src/foamSpecks.js`) are the bubbles
+that drift out of the raft: 2 to 4 mm points riding the waves where the
+crown stood, where the jet fell back, where drops landed and where bubbles
+surfaced, drifting outward and popping over 2 to 8 seconds, faded out where
+the raft is dense.
 
 Droplets are integrated on the CPU and rendered as a screen-space fluid:
 sphere impostors stretched along their motion like a camera shutter would,
@@ -127,7 +150,8 @@ image of the sky dome, clouds and treeline (the camera never moves, so it is
 re-rendered only when the view zooms or turns) in the direction each ripple
 turns the view ray, so reflections wobble into vertical streaks, and adds
 the sun's glitter: a Beckmann highlight on the rippled normal, widened by the
-ripple finer than the pixel; the foam specks ride on it.
+ripple finer than the pixel. Where there is foam it replaces the surface, a
+diffuse white under the sun and the sky; the foam specks ride on it.
 Caustics on the sand come from the Laplacian of the surface height above,
 splash and wind ripples both, so they drift with the ripples.
 Stones are faceted procedural geometry with a small rigid-body model: a
@@ -136,7 +160,7 @@ ballistic arc, quadratic drag under water, and a settle into the sand.
 ## Development
 
 - `npm test` checks the GPU FFT formulation and the splat spectrum on the CPU,
-  then runs `tools/wave-probe.mjs`.
+  then runs `tools/wave-probe.mjs` and `tools/foam-probe.mjs`.
 - Deployment: `.github/workflows/deploy.yml` runs the tests and `npm run site`
   on every push to `main` and publishes `_site/` to GitHub Pages. `npm run site`
   (`tools/build-site.mjs`) copies only what the page loads: `index.html`,
@@ -144,6 +168,12 @@ ballistic arc, quadratic drag under water, and a settle into the sand.
   must be added to its list. `node tools/site-check.mjs`, after
   `npm run site`, serves `_site/` under `/IntoTheWater/` as Pages does and
   checks that the pond starts and no request fails.
+- `node tools/foam-probe.mjs` runs the foam's bubble pattern on the CPU, with
+  the constants read from the shader: each layer's median and spread and the
+  bubbles' mean shade match what the shader fades them to, and at the home,
+  phone and close-up framings the antialiased pattern covers what a
+  supersampled one does and changes no more than it when the water moves
+  under the pixels; it prints the cell visits per foam pixel.
 - `node tools/wave-probe.mjs [--wind=x,z]` checks the wind ripples on the CPU
   with the GPU's own FFT passes: the field is real, its rms slope is the
   target, waves travel downwind, it repeats seamlessly after its period, and

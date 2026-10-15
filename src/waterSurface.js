@@ -42,7 +42,6 @@ export function createWaterSurface(water, lighting, ambientWaves) {
     uSunDir: { value: lighting.sunDirection },
     uSunIrradiance: { value: lighting.sunIrradiance },
     uSkyAmbient: { value: lighting.skyAmbient },
-    uTime: { value: 0 },
     uN: { value: water.size },
     uCell: { value: water.cell },
     uAbsorb: { value: lighting.absorb },
@@ -80,7 +79,7 @@ export function createWaterSurface(water, lighting, ambientWaves) {
     inner,
     outer,
     uniforms,
-    update({ underTarget, reflectionTarget, reflectionMatrix, resolution, camera, time }) {
+    update({ underTarget, reflectionTarget, reflectionMatrix, resolution, camera }) {
       uniforms.uReflection.value = reflectionTarget.texture;
       uniforms.uReflectionMatrix.value.copy(reflectionMatrix);
       uniforms.uUnderColor.value = underTarget.texture;
@@ -89,7 +88,6 @@ export function createWaterSurface(water, lighting, ambientWaves) {
       uniforms.uNear.value = camera.near;
       uniforms.uFar.value = camera.far;
       uniforms.uFocalPx.value = camera.projectionMatrix.elements[5] * resolution.y * 0.5;
-      uniforms.uTime.value = time;
       uniforms.uFoam.value = water.foamTexture;
       uniforms.uHeight.value = water.heightTexture;
     },

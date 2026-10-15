@@ -14,14 +14,29 @@
 // inverse FFT (2·log2 N passes) brings height and velocity back to the grid
 // as an RGBA16F texture: R = height (m), G = vertical velocity (m/s).
 //
-// A separate foam texture (R channel, 0..1) decays, diffuses, and is stamped
-// by splashes and by fast surface motion.
+// A separate foam map (FOAM_FRAGMENT): R the amount of foam, 0 to 1, G the
+// lifetime τ of the foam there. It diffuses (FOAM_DIFFUSIVITY, the same
+// spread in metres on every grid), is stamped by splashes and by fast surface
+// motion, and decays as exp(−t/τ). Each stamp brings its own τ, growing with
+// its radius (foamLifetime): a big stone's raft is thicker and lasts longer.
+// The water shader turns the amount into a bubble pattern (FOAM_PATTERN in
+// src/shaders/scene.js), solid above about 0.6 and gone below about 0.01, so
+// a raft thins from its weak edge inward and a stamp of 0.65 is gone after
+// about 4·τ.
 import * as THREE from 'three';
 import { FullscreenPass, createFloatTarget } from './gpu.js';
 import { SPECTRAL_UPDATE_FRAGMENT, FFT_PASS_FRAGMENT, FOAM_FRAGMENT } from './shaders/spectral.js';
 
 const MAX_SPLATS = 32;
 const MAX_FOAM = 16;
+const FOAM_DIFFUSIVITY = 5e-5;   // m²/s: a raft's edge spreads by about 3 cm in 10 s
+const FOAM_LIFETIME = { base: 1.5, perMetre: 15, longest: 6 };   // τ = base + perMetre·radius, at most longest (s)
+const CHURN_LIFETIME = 2.0;       // τ of the foam fast surface motion churns up (s)
+
+/** The lifetime τ (s) of foam stamped over a Gaussian of this radius (m). */
+export function foamLifetime(radius) {
+  return Math.min(FOAM_LIFETIME.base + FOAM_LIFETIME.perMetre * radius, FOAM_LIFETIME.longest);
+}
 
 /**
  * The inverse FFT on the GPU: 2·log2(size) passes of FFT_PASS_FRAGMENT, rows
@@ -116,9 +131,11 @@ export class SpectralWater {
       uHeight: { value: this.heightTarget.texture },
       uN: { value: size },
       uDt: { value: 0 },
-      uTau: { value: 2.2 },
+      uDiffusionRate: { value: 4 * FOAM_DIFFUSIVITY / (this.cell * this.cell) },
+      uChurnLifetime: { value: CHURN_LIFETIME },
       uFoamCount: { value: 0 },
       uFoamSplats: { value: foamArray },
+      uFoamLifetimes: { value: new Array(MAX_FOAM).fill(FOAM_LIFETIME.base) },
     });
     this.clear();
   }
@@ -151,9 +168,10 @@ export class SpectralWater {
     this.splats.push({ tx, tz, sigma: Math.max(radius / this.cell, 0.6), height, velocity, rim });
   }
 
-  addFoam({ x, z, radius, amount }) {
+  /** Stamp foam: a Gaussian of `radius` (m) and peak `amount`, lasting `lifetime` (τ, s). */
+  addFoam({ x, z, radius, amount, lifetime = foamLifetime(radius) }) {
     const [tx, tz] = this.worldToTexel(x, z);
-    this.foamSplats.push({ tx, tz, sigma: Math.max(radius / this.cell, 0.8), amount });
+    this.foamSplats.push({ tx, tz, sigma: Math.max(radius / this.cell, 0.8), amount, lifetime });
   }
 
   /** Advance the surface by dt seconds and refresh the height and foam textures. */
@@ -191,7 +209,10 @@ export class SpectralWater {
     foam.uDt.value = dt;
     const foamChunk = this.foamSplats.slice(0, MAX_FOAM);
     foam.uFoamCount.value = foamChunk.length;
-    foamChunk.forEach((splat, i) => foam.uFoamSplats.value[i].set(splat.tx, splat.tz, splat.sigma, splat.amount));
+    foamChunk.forEach((splat, index) => {
+      foam.uFoamSplats.value[index].set(splat.tx, splat.tz, splat.sigma, splat.amount);
+      foam.uFoamLifetimes.value[index] = splat.lifetime;
+    });
     this.foamSplats = this.foamSplats.slice(MAX_FOAM);
     this.foamPass.render(renderer, this.foamB);
     [this.foamA, this.foamB] = [this.foamB, this.foamA];

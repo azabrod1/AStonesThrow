@@ -1,25 +1,29 @@
-// Foam specks: the fine bubbles a splash leaves on the surface, which pop
+// Foam specks: the fine bubbles a splash scatters on the surface, which pop
 // away over several seconds.
 //
-// The foam map (src/spectralWater.js) gives the smooth white of a fresh
-// splash; the specks are its grain. Each is a point riding the water surface,
-// 2 to 4 mm across (most nearer 2), living 2 to 8 s (most nearer 2),
-// drifting slowly outward from where it was born, wandering a millimetre or
-// so, and fading quickly at the end. Surface bubbles are mostly clear with a
-// bright rim, so a speck is a translucent white, dimmer than the foam map: a
-// lone one is faint, a raft of them reads as foam. The splash makes them
-// where the crown's base was, where the jet falls back, where drops land and
-// where bubbles surface, in rafts of two to six a few millimetres across, so
-// a patch reads as foam rather than as an even scatter of snow.
+// The raft itself is the foam map (src/spectralWater.js), which the water
+// shader draws as a pattern of bubbles, lace and holes (FOAM_PATTERN in
+// src/shaders/scene.js); the specks are the bits that drift out of it and
+// the bubbles that land or surface away from it. Each is a point riding the
+// water surface, 2 to 4 mm across (most nearer 2), living 2 to 8 s (most
+// nearer 2), drifting slowly outward from where it was born, wandering a
+// millimetre or so, and fading quickly at the end. Surface bubbles are mostly
+// clear with a bright rim, so a speck is a translucent white, dimmer than the
+// raft: a lone one is faint, a cluster of them reads as foam. The splash
+// makes them where the crown's base was, where the jet falls back, where
+// drops land and where bubbles surface, in clusters of two to six a few
+// millimetres across, so a patch reads as foam rather than as an even scatter
+// of snow. Where the foam map is dense a speck fades out (SPECK_VERTEX), so
+// specks never double the raft's own bubbles.
 //
 // A speck's whole life is a closed form of the splash time (SPECK_VERTEX in
 // src/shaders/scene.js), so the CPU writes each one once, when it is born,
 // into a ring of typed arrays (the oldest slot is reused when the ring is
 // full) and uploads only the slots written since the last frame. Per frame
-// the cost is one uniform and a draw of the slots in use, each vertex one
-// fetch of the splash's height texture and one of the ambient waves'
-// (src/ambientWaves.js), so specks ride their crests; nothing is drawn once
-// every speck has gone.
+// the cost is two uniforms and a draw of the slots in use, each vertex one
+// fetch of the splash's height texture, one of the ambient waves'
+// (src/ambientWaves.js), so specks ride their crests, and one of the foam
+// map; nothing is drawn once every speck has gone.
 import * as THREE from 'three';
 import { SPECK_VERTEX, SPECK_FRAGMENT } from './shaders/scene.js';
 
@@ -29,17 +33,18 @@ const MAX_LIFE = 8;
 const LIFE_SKEW = 1.8;            // life = MIN + (MAX − MIN)·u^LIFE_SKEW: most specks go early
 const MIN_DIAMETER = 0.002;
 const MAX_DIAMETER = 0.004;
-const RAFT_SPREAD = 0.003;        // specks of one raft lie within this of its centre (m)
-const MIN_RAFT = 2;
-const MAX_RAFT = 6;
+const CLUSTER_SPREAD = 0.003;     // specks of one cluster lie within this of its centre (m)
+const MIN_CLUSTER = 2;
+const MAX_CLUSTER = 6;
 const OPACITY = 0.5;
-const BRIGHTNESS = 0.75;          // against the foam map's white
+const BRIGHTNESS = 0.75;          // against the raft's white
 const MIN_PIXEL_SIZE = 2.5;       // smaller specks are drawn this wide (CSS pixels), soft and faint
 
 const randomRange = (low, high) => low + Math.random() * (high - low);
 
 export class FoamSpecks {
   constructor({ water, lighting, ambientWaves, capacity = CAPACITY }) {
+    this.water = water;
     this.capacity = capacity;
     this.next = 0;               // the ring slot the next speck takes
     this.used = 0;               // slots written at least once: the draw range
@@ -66,6 +71,7 @@ export class FoamSpecks {
       fragmentShader: SPECK_FRAGMENT,
       uniforms: {
         uHeight: { value: water.heightTexture },
+        uFoam: { value: water.foamTexture },
         uDomainMin: { value: new THREE.Vector2(water.domainMin[0], water.domainMin[1]) },
         uDomainSize: { value: water.domainSize },
         uTexelOffset: { value: water.uvOffset },
@@ -111,7 +117,7 @@ export class FoamSpecks {
   }
 
   /**
-   * `count` specks in rafts over the ring between two radii around (x, z)
+   * `count` specks in clusters over the ring between two radii around (x, z)
    * (inner 0 for a disc), drifting outward at up to `driftSpeed` m/s.
    */
   spawnPatch(x, z, innerRadius, outerRadius, count, time, driftSpeed) {
@@ -122,21 +128,22 @@ export class FoamSpecks {
       const outX = Math.cos(angle), outZ = Math.sin(angle);
       const centreX = x + outX * distance, centreZ = z + outZ * distance;
       const speed = driftSpeed * randomRange(0.3, 1);
-      const raft = Math.min(left, MIN_RAFT + Math.floor(Math.random() * (MAX_RAFT - MIN_RAFT + 1)));
-      for (let speck = 0; speck < raft; speck++) {
-        const spreadAngle = Math.random() * Math.PI * 2, spreadDistance = RAFT_SPREAD * Math.sqrt(Math.random());
+      const cluster = Math.min(left, MIN_CLUSTER + Math.floor(Math.random() * (MAX_CLUSTER - MIN_CLUSTER + 1)));
+      for (let speck = 0; speck < cluster; speck++) {
+        const spreadAngle = Math.random() * Math.PI * 2, spreadDistance = CLUSTER_SPREAD * Math.sqrt(Math.random());
         this.spawn(
           centreX + spreadDistance * Math.cos(spreadAngle), centreZ + spreadDistance * Math.sin(spreadAngle),
           outX * speed + randomRange(-0.002, 0.002), outZ * speed + randomRange(-0.002, 0.002), time,
         );
       }
-      left -= raft;
+      left -= cluster;
     }
   }
 
-  /** Once per simulation step: the clock, visibility, and the upload of new specks. */
+  /** Once per simulation step: the clock, the foam map, visibility, and the upload of new specks. */
   commit(time) {
     this.material.uniforms.uTime.value = time;
+    this.material.uniforms.uFoam.value = this.water.foamTexture;
     this.points.visible = time < this.lastDeath;
     if (this.dirtyTo <= this.dirtyFrom) return;
     const first = this.dirtyFrom, count = this.dirtyTo - this.dirtyFrom;
