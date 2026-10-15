@@ -205,9 +205,16 @@ ballistic arc, quadratic drag under water, and a settle into the sand.
 
 ## Development
 
-- `npm test` checks the GPU FFT formulation and the splat spectrum on the CPU,
-  then runs `tools/wave-probe.mjs`, `tools/foam-probe.mjs` and
-  `tools/cavity-probe.mjs`.
+- `npm test` runs `tools/fft-test.mjs`, `tools/wave-probe.mjs`,
+  `tools/foam-probe.mjs` and `tools/cavity-probe.mjs`; each exits with 1 if a
+  check fails.
+- `node tools/fft-test.mjs` checks the splash solver's spectral passes on the
+  CPU with the shaders' arithmetic: the FFT against a naive DFT, a splat's
+  spectrum against its Gaussian, the Nyquist bins (splats at fractional
+  centres make real fields, with no velocity in the height or height in the
+  velocity), and the half-float path: the smallest stone's ring survives with
+  every stored value rounded to binary16, subnormals kept or flushed to zero,
+  and fields well beyond the largest a splash makes fit in it.
 - Deployment: `.github/workflows/deploy.yml` runs the tests and `npm run site`
   on every push to `main` and publishes `_site/` to GitHub Pages. `npm run site`
   (`tools/build-site.mjs`) copies only what the page loads: `index.html`,

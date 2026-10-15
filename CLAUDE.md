@@ -7,7 +7,7 @@ Keep this file short. Every future session reads all of it, so most notes belong
 ```bash
 npm install                # three (served to the headless harness) and playwright
 npm start                  # static server; open http://localhost:8123/
-npm test                   # CPU checks: the GPU FFT, the splat spectrum, the wind ripples (wave-probe), the foam pattern (foam-probe), the cavity (cavity-probe)
+npm test                   # CPU checks: the solver's FFT, splat spectrum, Nyquist bins and half floats (fft-test), the wind ripples (wave-probe), the foam pattern (foam-probe), the cavity (cavity-probe)
 npm run shoot -- --label=name --throws=0:-1.4:0.03 --times=0.1,0.5   # frames into shots/name/; --fov --look --crop --report --eval --floats=half --sky=name --wind=x:z --power=soft; --throws=none for idle water
 node tools/jet-probe.mjs 0.03 6.3      # one Worthington jet on the CPU: timeline, drops, cost
 node tools/fan-probe.mjs 0.03 6.9 0.68 # the forward fan of an oblique entry on the CPU

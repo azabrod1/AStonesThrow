@@ -2,12 +2,20 @@
 // wind waves (src/ambientWaves.js).
 //
 // State texture (RGBA32F, one texel per wave vector): H = (r, g) complex height
-// spectrum, V = (b, a) complex spectrum of the vertical velocity dH/dt.
+// spectrum, V = (b, a) complex spectrum of the vertical velocity dH/dt, both
+// in the forward transform's units: summed over the cells, not averaged, so
+// N² times the coefficients the inverse transform takes. A splat's are then
+// its amplitude times about its area in texels; with the 1/N², a small
+// stone's height coefficients were 1e-8 to 1e-9, under binary16's smallest
+// subnormal (6e-8), and on devices without float32 targets its ring was lost.
 // The update pass rotates each mode by its own angular frequency, applies
 // damping, and adds the closed-form spectra of this frame's Gaussian splats.
-// The FFT passes then bring h and v back to the grid for rendering. They
+// The FFT passes then bring h and v back to the grid for rendering, the
+// solver's dividing out the N² on the way (SOLVER_FFT_PASS_FRAGMENT). They
 // transform both complex pairs of a texel, (r, g) and (b, a), at once: the
 // ambient waves' evaluation pass fills both, the solver only the first.
+// tools/fft-test.mjs reproduces these passes on the CPU, also through
+// binary16 storage.
 
 export const FULLSCREEN_VERTEX = /* glsl */`
 varying vec2 vUv;
@@ -34,6 +42,16 @@ uniform int uSplatCount;
 uniform vec4 uSplats[MAX_SPLATS];      // x,y: centre in texels; z: sigma in texels; w: rim ratio (0 = plain Gaussian)
 uniform vec2 uSplatAmps[MAX_SPLATS];   // x: height (m), y: vertical velocity (m/s)
 
+vec2 complexMultiply(vec2 first, vec2 second) {
+  return vec2(first.x * second.x - first.y * second.y, first.x * second.y + first.y * second.x);
+}
+
+// e^{i·phase}, from |phase|: the mirror bin's phase is exactly −phase, so its
+// value is exactly the conjugate whatever the GPU's sin and cos do with signs.
+vec2 phasor(float phase) {
+  return vec2(cos(abs(phase)), sign(phase) * sin(abs(phase)));
+}
+
 void main() {
   ivec2 texel = ivec2(gl_FragCoord.xy);
   vec4 state = texelFetch(uState, texel, 0);
@@ -58,6 +76,23 @@ void main() {
   nextHeight *= decay;
   nextVelocity *= decay;
 
+  // A splat's spectrum is its Gaussian's, G(q) = 2π·σ²·exp(−σ²|q|²/2) in the
+  // forward transform's units (no 1/N², see the top), times the shift to its
+  // centre x0, e^{−i q·x0}: the band-limited Gaussian, each bin the continuous
+  // spectrum at its own q. A real field needs H(−q) = conj H(q), and the
+  // Nyquist row and column (texel N/2, q = −π along that axis) are their own
+  // mirror images, so there the coefficient must be real along that axis. The
+  // transform of the sampled Gaussian puts both images ±π in that bin,
+  // 2·G(π)·cos(π·x0); the band-limited spectrum used everywhere else drops
+  // the images beyond ±π and so takes half of each at the edge of the band:
+  // G(π)·cos(π·x0), the real part of the shift. So along a Nyquist axis the
+  // shift is the cosine of that axis's phase, and the axes' factors multiply.
+  // A complex coefficient there leaked into the other field of the packed
+  // transform: the velocity of a small stone's splat at a fractional centre
+  // put a line of alternating ripples through it into the height, at first
+  // 0.4 (512²) to 1.2 (256²) times the splat's own height.
+  bool nyquistX = texel.x == n / 2;
+  bool nyquistY = texel.y == n / 2;
   for (int i = 0; i < MAX_SPLATS; i++) {
     if (i >= uSplatCount) break;
     vec4 splat = uSplats[i];
@@ -67,11 +102,18 @@ void main() {
     float rimSigma = sigma * max(splat.w, 1.0);
     float shape = exp(-0.5 * sigma * sigma * qMag * qMag);
     if (splat.w > 1.0) shape -= exp(-0.5 * rimSigma * rimSigma * qMag * qMag);
-    float magnitude = 2.0 * PI * sigma * sigma / (uN * uN) * shape;
-    float phase = -(q.x * splat.x + q.y * splat.y);
-    vec2 e = vec2(cos(phase), sin(phase)) * magnitude;
-    nextHeight += uSplatAmps[i].x * e;
-    nextVelocity += uSplatAmps[i].y * e;
+    float magnitude = 2.0 * PI * sigma * sigma * shape;
+    float phaseX = -q.x * splat.x;
+    float phaseY = -q.y * splat.y;
+    vec2 shift;
+    if (nyquistX || nyquistY) {
+      shift = complexMultiply(nyquistX ? vec2(cos(phaseX), 0.0) : phasor(phaseX), nyquistY ? vec2(cos(phaseY), 0.0) : phasor(phaseY));
+    } else {
+      shift = phasor(phaseX + phaseY);
+    }
+    vec2 spectrum = shift * magnitude;
+    nextHeight += uSplatAmps[i].x * spectrum;
+    nextVelocity += uSplatAmps[i].y * spectrum;
   }
   if (texel.x == 0 && texel.y == 0) { nextHeight = vec2(0.0); nextVelocity = vec2(0.0); }
   gl_FragColor = vec4(nextHeight, nextVelocity);
@@ -124,6 +166,20 @@ void main() {
 // texel. With uFromState the pass reads the solver's state texture and
 // combines H + iV into the first pair (the second is zero), so the inverse
 // transform yields h in the real part and v in the imaginary part.
+//
+// With SOLVER_SCALING defined (SOLVER_FFT_PASS_FRAGMENT, the solver's passes)
+// the passes divide out the state's N² as they go: those along x halve their
+// output, which keeps the rows at the scale of the coefficients (1/N over the
+// log2 N passes); those along y leave it, so the columns hold N times the
+// field; the last divides by N. Every value a pass stores so stays well
+// inside binary16's range on the half-float path, from a small stone's ripples
+// to the fastest splash. One 1/N² in the last pass would leave up to N²/2
+// times the field in the scratch targets, over binary16's largest value
+// (65504) once the field passes 0.5 m/s on 512², as a 16 cm stone's does
+// (1.4 m/s); and a constant scale small enough for that would let a small
+// stone's coefficients fall under binary16's smallest normal value again,
+// which some GPUs flush to zero.
+// The factors are powers of two, so on float32 targets they change nothing.
 export const FFT_PASS_FRAGMENT = /* glsl */`
 #define PI 3.141592653589793
 uniform sampler2D uInput;
@@ -156,9 +212,16 @@ void main() {
   vec4 odd = fetchValue(oddTexel);
   float angle = 2.0 * PI * float(index) / uSubSize;
   vec2 twiddle = vec2(cos(angle), sin(angle));
-  gl_FragColor = even + vec4(complexMultiply(twiddle, odd.xy), complexMultiply(twiddle, odd.zw));
+  vec4 result = even + vec4(complexMultiply(twiddle, odd.xy), complexMultiply(twiddle, odd.zw));
+#ifdef SOLVER_SCALING
+  result *= uHorizontal == 1 ? 0.5 : (sub == n ? 1.0 / uN : 1.0);
+#endif
+  gl_FragColor = result;
 }
 `;
+
+// The solver's inverse passes: FFT_PASS_FRAGMENT with its scaling (above).
+export const SOLVER_FFT_PASS_FRAGMENT = `#define SOLVER_SCALING\n${FFT_PASS_FRAGMENT}`;
 
 // Foam: decays, diffuses a little, is churned up where the surface moves fast,
 // and is stamped in by splashes. The map holds the amount in R (0 to 1) and,

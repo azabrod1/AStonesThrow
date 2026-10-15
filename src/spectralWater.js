@@ -19,7 +19,13 @@
 // impulse at a point). A Gaussian has a closed-form spectrum, so splats are
 // added in Fourier space without any forward transform. Each frame one
 // inverse FFT (2·log2 N passes) brings height and velocity back to the grid
-// as an RGBA16F texture: R = height (m), G = vertical velocity (m/s).
+// as an RGBA16F texture: R = height (m), G = vertical velocity (m/s). The
+// state holds the spectra without the inverse transform's 1/N² (the forward
+// transform's units), so a small stone's coefficients stay normal half floats
+// where float32 targets are missing; the passes divide it out on the way
+// (SOLVER_FFT_PASS_FRAGMENT). Splats and foam centred off the patch are
+// refused: a splat would wrap through the periodic transform and ring on the
+// far side, and foam would leave a sliver along the edge.
 //
 // A separate foam map (FOAM_FRAGMENT): R the amount of foam, 0 to 1, G the
 // lifetime τ of the foam there. It diffuses (FOAM_DIFFUSIVITY, the same
@@ -32,7 +38,7 @@
 // about 4·τ.
 import * as THREE from 'three';
 import { FullscreenPass, createFloatTarget } from './gpu.js';
-import { SPECTRAL_UPDATE_FRAGMENT, FFT_PASS_FRAGMENT, FOAM_FRAGMENT } from './shaders/spectral.js';
+import { SPECTRAL_UPDATE_FRAGMENT, SOLVER_FFT_PASS_FRAGMENT, FOAM_FRAGMENT } from './shaders/spectral.js';
 
 const MAX_SPLATS = 32;
 const MAX_FOAM = 16;
@@ -56,11 +62,12 @@ export function foamLifetime(radius) {
 }
 
 /**
- * The inverse FFT on the GPU: 2·log2(size) passes of FFT_PASS_FRAGMENT, rows
- * then columns, ping-ponging between the two scratch targets; the last pass
- * writes `output`. With fromState the first pass reads `input` as a state
- * texture (H + iV from its four channels); otherwise as two complex pairs,
- * as the ambient waves (src/ambientWaves.js) write it.
+ * The inverse FFT on the GPU: 2·log2(size) passes of fftPass (FFT_PASS_FRAGMENT,
+ * or the solver's SOLVER_FFT_PASS_FRAGMENT), rows then columns, ping-ponging
+ * between the two scratch targets; the last pass writes `output`. With
+ * fromState the first pass reads `input` as a state texture (H + iV from its
+ * four channels); otherwise as two complex pairs, as the ambient waves
+ * (src/ambientWaves.js) write it.
  */
 export function runInverseFft(renderer, fftPass, input, [scratchA, scratchB], output, size, { fromState: firstFromState = true } = {}) {
   const fft = fftPass.material.uniforms;
@@ -135,7 +142,7 @@ export class SpectralWater {
       uSplats: { value: splatArray },
       uSplatAmps: { value: ampArray },
     });
-    this.fftPass = new FullscreenPass(FFT_PASS_FRAGMENT, {
+    this.fftPass = new FullscreenPass(SOLVER_FFT_PASS_FRAGMENT, {
       uInput: { value: null },
       uN: { value: size },
       uSubSize: { value: 2 },
@@ -177,19 +184,24 @@ export class SpectralWater {
   get uvOffset() { return 0.5 / this.size; }
 
   /**
-   * Queue a Gaussian disturbance.
+   * Queue a Gaussian disturbance; false, queuing nothing, for a point off the patch.
    * @param x,z world position (m)   @param radius Gaussian sigma (m)
    * @param height peak height impulse (m)   @param velocity peak vertical velocity impulse (m/s)
    */
   addSplat({ x, z, radius, height = 0, velocity = 0, rim = 1.7 }) {
     const [tx, tz] = this.worldToTexel(x, z);
+    // Off the patch it would wrap through the periodic transform (and a NaN would spoil every mode).
+    if (!(tx >= 0 && tx <= this.size && tz >= 0 && tz <= this.size)) return false;
     this.splats.push({ tx, tz, sigma: Math.max(radius / this.cell, 0.6), height, velocity, rim });
+    return true;
   }
 
-  /** Stamp foam: a Gaussian of `radius` (m) and peak `amount`, lasting `lifetime` (τ, s). */
+  /** Stamp foam: a Gaussian of `radius` (m) and peak `amount`, lasting `lifetime` (τ, s); false, stamping nothing, off the patch. */
   addFoam({ x, z, radius, amount, lifetime = foamLifetime(radius) }) {
     const [tx, tz] = this.worldToTexel(x, z);
+    if (!(tx >= 0 && tx <= this.size && tz >= 0 && tz <= this.size)) return false;
     this.foamSplats.push({ tx, tz, sigma: Math.max(radius / this.cell, 0.8), amount, lifetime });
+    return true;
   }
 
   /** Advance the surface by dt seconds and refresh the height and foam textures. */
@@ -221,19 +233,26 @@ export class SpectralWater {
     // 2. Inverse FFT: rows then columns. The final pass lands in the display texture.
     runInverseFft(renderer, this.fftPass, this.stateA, [this.fftA, this.fftB], this.heightTarget, this.size);
 
-    // 3. Foam.
+    // 3. Foam with this frame's stamps, chunked like the splats: the later
+    // chunks advance no time (no decay, spreading or churn), so they only stamp.
     const foam = this.foamPass.material.uniforms;
-    foam.uFoam.value = this.foamA.texture;
-    foam.uDt.value = dt;
-    const foamChunk = this.foamSplats.slice(0, MAX_FOAM);
-    foam.uFoamCount.value = foamChunk.length;
-    foamChunk.forEach((splat, index) => {
-      foam.uFoamSplats.value[index].set(splat.tx, splat.tz, splat.sigma, splat.amount);
-      foam.uFoamLifetimes.value[index] = splat.lifetime;
-    });
-    this.foamSplats = this.foamSplats.slice(MAX_FOAM);
-    this.foamPass.render(renderer, this.foamB);
-    [this.foamA, this.foamB] = [this.foamB, this.foamA];
+    let remainingFoam = this.foamSplats;
+    let firstFoam = true;
+    do {
+      const foamChunk = remainingFoam.slice(0, MAX_FOAM);
+      remainingFoam = remainingFoam.slice(MAX_FOAM);
+      foam.uFoam.value = this.foamA.texture;
+      foam.uDt.value = firstFoam ? dt : 0;
+      foam.uFoamCount.value = foamChunk.length;
+      foamChunk.forEach((splat, index) => {
+        foam.uFoamSplats.value[index].set(splat.tx, splat.tz, splat.sigma, splat.amount);
+        foam.uFoamLifetimes.value[index] = splat.lifetime;
+      });
+      this.foamPass.render(renderer, this.foamB);
+      [this.foamA, this.foamB] = [this.foamB, this.foamA];
+      firstFoam = false;
+    } while (remainingFoam.length > 0);
+    this.foamSplats = [];
 
     renderer.setRenderTarget(previousTarget);
   }
