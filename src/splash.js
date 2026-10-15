@@ -45,6 +45,42 @@
 // falls back, a few where each drop lands (by its size) and one where each
 // bubble surfaces. They ride the surface for 2 to 8 s.
 //
+// How the splash scales with the stone's radius R, against s = R / 3 cm (the
+// size the constants were tuned at) and the entry speed V. Wherever the
+// physics allows it scales as a Froude-similar splash does, lengths with R,
+// times with sqrt(R/g) and speeds with V; the sheets' own scaling is in
+// src/crown.js, the jet's in src/jet.js.
+//   - The crown's and the fan's droplet counts go as s^DROPLET_COUNT_POWER ·
+//     sqrt(V / 6 m/s) and their drops' radii as s^0.5 (src/crown.js), so a big
+//     stone's crown is both denser and coarser; the contact spray stays fine
+//     (s^0.4). A big stone sheds big drops, and those throw crowns of their
+//     own where they land.
+//   - The pinch-off comes 2.1·sqrt(R/g) after entry; the jet's launch window
+//     goes as sqrt(s), its radius as R·s^0.25 (fatter at the lower Froude
+//     number of a big stone) and its breakup as s^1.5 (a capillary time),
+//     its tip speed follows V (times s^0.15): a big stone's jet is a fat
+//     column that mostly falls back as one, not a taller needle.
+//   - The cavity splat: σ = 1.1·R and a depression 0.3·R deep, so the ring's
+//     wavelength goes with R; its downward velocity 0.045·V adds a height
+//     that goes as sqrt(R) (the speed over the frequency of waves of size R),
+//     and a big jet's fall-back adds a strong second ring. The solver damps
+//     waves longer than 30 cm less (src/spectralWater.js), so a big stone's
+//     ring carries across the pond.
+//   - Foam: the cavity's stamp spreads over 1.5·R at FOAM_STAMP·sqrt(s), at
+//     most FOAM_STAMP_CAP (a bigger cavity entrains more air for the area of
+//     its mouth); the crown's specks go as s² (the area its base covered);
+//     the bubbles as s², in a cloud as wide as the stone.
+// The caps are for cost, set above what the slider's biggest stone (16 cm,
+// s = 2.67) needs even thrown hard. Thrown normally (6.3 m/s, 42° from
+// vertical) it spawns about 7000 drops: 4000 from the crown, 1400 from the
+// fan, 400 contact spray, a dozen from the jet, 700 from the crowns of the
+// 40-odd drops that throw one where they land and 500 kicked up by the rest;
+// at most 3500 are alive at once (4200 thrown hard), a quarter of the
+// droplet capacity, and it leaves 3300 foam specks. Its CPU work on a
+// desktop is under a millisecond a frame on average and 3 to 4 ms in the
+// worst frames, where the crown tears and drops land
+// (tools/splash-probe.mjs measures all of this).
+//
 // Droplets are integrated on the CPU (a few thousand points) and rendered as
 // a screen-space fluid: sphere impostors into a depth buffer, additive
 // thickness, bilateral depth smoothing so neighbouring drops merge into
@@ -78,12 +114,21 @@ const LANDING_CROWN_SPEED = 1.0;      // ...and fall this fast (m/s): not the dr
 const LANDING_REFERENCE = 0.0086;     // a 3 cm stone's first tip drop: the landing crown tuning size
 const LANDING_BREAKUP = 40;           // its crown's breakup droplets (scaling with the drop's area)
 const CROWN_SPECKS = 220;             // foam specks where a 3 cm stone's crown stood (scaling with its area)
+const CROWN_SPECK_CAP = 1600;         // at most (a 16 cm stone's crown wants 1560)
 const LANDING_SPECK_FREE = 0.003;     // a landing drop leaves a foam speck per LANDING_SPECK_STEP of radius beyond this
 const LANDING_SPECK_STEP = 0.0015;
 const PATH_SLOPE_CAP = 1.2;           // the stone's path under water, horizontal over vertical, at most (50°)
 const FAN_THRESHOLD = 0.3;            // the forward fan needs this horizontal fraction of the entry speed...
 const FAN_FULL = 0.7;                 // ...and is at full strength from this one
 const FAN_DROPLETS = 300;             // drops of a 3 cm stone's fan at about 6 m/s and full strength
+const CROWN_DROPLETS = 900;           // drops of a 3 cm stone's crown at about 6 m/s (contact spray, rim and tear)
+const DROPLET_COUNT_POWER = 1.6;      // the crown's and the fan's drop counts scale as (R / 3 cm)^this
+const CROWN_DROPLET_CAP = 6000;       // at most (a 16 cm stone thrown hard wants about 5200)
+const FAN_DROPLET_CAP = 2000;         // at most (the same stone's fan, about 1700)
+const BUBBLES = 110;                  // bubbles a 3 cm stone drags down, scaling with R²...
+const BUBBLE_CAP = 800;               // ...at most (a 16 cm stone wants 780)
+const FOAM_STAMP = 0.65;              // the cavity's foam for a 3 cm stone, scaling as sqrt(R / 3 cm)...
+const FOAM_STAMP_CAP = 0.95;          // ...up to this
 const JET_LEAN = 0.4;                                // the jet leans back by this fraction of the entry angle,
 const JET_LEAN_CAP = THREE.MathUtils.degToRad(18);   // at most this
 const OBLIQUE_IMPULSE = 1.3;          // an oblique entry's cavity splats together carry at most this times a vertical one's
@@ -244,7 +289,7 @@ export class SplashSystem {
 
     // 1. Crown. The droplet total is split between fine spray from the contact
     // line now, drops shed by the sheet's rim, and the sheet's breakup.
-    const crownCount = Math.round(THREE.MathUtils.clamp(900 * sizeFactor ** 1.6 * Math.sqrt(entrySpeed / 6), 200, 4500));
+    const crownCount = Math.round(THREE.MathUtils.clamp(CROWN_DROPLETS * sizeFactor ** DROPLET_COUNT_POWER * Math.sqrt(entrySpeed / 6), 200, CROWN_DROPLET_CAP));
     const sprayCount = Math.round(0.1 * crownCount);
     const rimCount = Math.round(0.1 * crownCount);
     for (let drop = 0; drop < sprayCount; drop++) {
@@ -280,7 +325,7 @@ export class SplashSystem {
     // the crown, at a strength growing with the horizontal fraction.
     const fanStrength = THREE.MathUtils.clamp((horizontalFraction - FAN_THRESHOLD) / (FAN_FULL - FAN_THRESHOLD), 0, 1);
     if (fanStrength > 0) {
-      const fanCount = Math.round(THREE.MathUtils.clamp(FAN_DROPLETS * sizeFactor ** 1.6 * Math.sqrt(entrySpeed / 6), 60, 1500) * fanStrength);
+      const fanCount = Math.round(THREE.MathUtils.clamp(FAN_DROPLETS * sizeFactor ** DROPLET_COUNT_POWER * Math.sqrt(entrySpeed / 6), 60, FAN_DROPLET_CAP) * fanStrength);
       const fan = new CrownSheet({
         impact: info, startTime: this.time, rimDroplets: Math.round(0.15 * fanCount), breakupDroplets: Math.round(0.85 * fanCount),
         material: this.sheetDepthMaterial, fan: true, strength: fanStrength,
@@ -326,11 +371,11 @@ export class SplashSystem {
       lean: Math.min(JET_LEAN * entryAngle, JET_LEAN_CAP), leanX: -horizontal.x, leanZ: -horizontal.y,
     });
 
-    // 4. Bubbles follow the stone down its path.
+    // 4. Bubbles follow the stone down its path, in a cloud as wide as the stone.
     this.plumes.push({
       x, z, start: this.time, duration: 0.3,
-      total: Math.round(THREE.MathUtils.clamp(110 * sizeFactor ** 2, 30, 500)),
-      spawned: 0, depth: Math.min(0.55, radius * 7),
+      total: Math.round(THREE.MathUtils.clamp(BUBBLES * sizeFactor ** 2, 30, BUBBLE_CAP)),
+      spawned: 0, depth: Math.min(0.55, radius * 7), spread: sizeFactor,
       driftX: horizontal.x * pathSlope, driftZ: horizontal.y * pathSlope,
     });
   }
@@ -348,7 +393,7 @@ export class SplashSystem {
     const sigma = radius * 1.1;
     const depth = 0.3 * radius * strength;
     water.addSplat({ x, z, radius: sigma, height: -depth, velocity: -0.045 * speed * strength });
-    water.addFoam({ x, z, radius: radius * 1.5, amount: 0.65 * strength });
+    water.addFoam({ x, z, radius: radius * 1.5, amount: Math.min(FOAM_STAMP * Math.sqrt(radius / REFERENCE_RADIUS), FOAM_STAMP_CAP) * strength });
     const travel = Math.hypot(travelX, travelZ);
     if (travel > 0) {
       const lift = 0.6 * travel * Math.sqrt(GRAVITY * sigma) * depth / sigma;   // ≈ c·depth/σ at the slope's peak
@@ -375,7 +420,7 @@ export class SplashSystem {
   retireCrown(crown) {
     if (!crown.landing && !crown.fan) {
       const radius = crown.radius;
-      const count = Math.round(THREE.MathUtils.clamp(CROWN_SPECKS * crown.sizeFactor ** 2, 40, 900));
+      const count = Math.round(THREE.MathUtils.clamp(CROWN_SPECKS * crown.sizeFactor ** 2, 40, CROWN_SPECK_CAP));
       this.spawnFoamSpecks(crown.centreX, crown.centreZ, 0.9 * radius, 2.2 * radius, count, 0.03);
     }
     this.particleScene.remove(crown.mesh);
@@ -475,9 +520,9 @@ export class SplashSystem {
       while (plume.spawned < shouldHave) {
         const depth = plume.depth * (0.1 + 0.9 * Math.random()) * phase;
         const angle = Math.random() * Math.PI * 2;
-        const r = Math.random() * 0.05 * (0.3 + depth);
+        const offset = Math.random() * 0.05 * (0.3 + depth) * plume.spread;
         this.spawnBubble(
-          plume.x + Math.cos(angle) * r + plume.driftX * depth, -depth, plume.z + Math.sin(angle) * r + plume.driftZ * depth,
+          plume.x + Math.cos(angle) * offset + plume.driftX * depth, -depth, plume.z + Math.sin(angle) * offset + plume.driftZ * depth,
           randomRange(-0.05, 0.05), randomRange(0.10, 0.32), randomRange(-0.05, 0.05),
           0.0006 + 0.0022 * Math.random() ** 2,
         );

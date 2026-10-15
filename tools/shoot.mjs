@@ -9,8 +9,10 @@
 // --throws: x:z:radius per stone, comma separated. --times: seconds after the
 // first impact to capture (frames are named tS_CC.png, or tS_CCCC.png for a
 // time that needs four decimals, such as a run of slow-motion frames). The
-// flight is stepped a frame at a time; the part of the last step after the
-// impact counts toward the first capture, so the times are exact.
+// flight is stepped a frame at a time (a slow-motion frame under --eval's
+// setTimeScale, so a --preimpact a little short of the impact saves time);
+// the part of the last step after the impact counts toward the first
+// capture, so the times are exact.
 // --throws=none throws nothing: the frames are idle water, --times seconds
 // after idle.png (which is taken after --preroll seconds). The page starts
 // paused (?paused=1), so world time is zero at the start of every run and
@@ -23,6 +25,8 @@
 // the half-float path that devices without EXT_color_buffer_float take.
 // --sky=name picks the sky panorama (a key of SKIES in src/sky.js).
 // --wind=x:z sets the direction the wind blows toward in world XZ.
+// --power=soft|normal|hard throws as the strength buttons do (soft is a
+// higher arc, so a steeper entry: about 30° from vertical against 42°).
 import { chromium } from 'playwright';
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
@@ -54,6 +58,7 @@ const report = arg('report', '');
 const floats = arg('floats', '');
 const sky = arg('sky', '');
 const wind = arg('wind', '');
+const power = arg('power', 'normal');
 
 const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.mjs': 'text/javascript', '.json': 'application/json', '.png': 'image/png', '.css': 'text/css' };
 const server = createServer(async (request, response) => {
@@ -115,7 +120,7 @@ await page.evaluate((seconds) => window.__pond.advance(seconds), preRoll);
 await page.screenshot({ path: path.join(outDir, 'idle.png') });
 console.log('[shoot] idle.png');
 
-for (const [x, z, radius] of throws) await page.evaluate(([x, z, radius]) => window.__pond.throwAt(x, z, { radius }), [x, z, radius]);
+for (const [x, z, radius] of throws) await page.evaluate(([x, z, radius, power]) => window.__pond.throwAt(x, z, { radius, power }), [x, z, radius, power]);
 if (evalAfterThrow) await page.evaluate(evalAfterThrow);
 let flight = 0;
 if (throws.length > 0 && preImpact > 0) {
@@ -124,9 +129,12 @@ if (throws.length > 0 && preImpact > 0) {
   await page.screenshot({ path: path.join(outDir, 'flight.png'), timeout: 180000 });
   console.log('[shoot] flight.png');
 }
+// One app frame per step, at the page's time scale, so that in slow motion the
+// first frame after the impact is at most one slow frame (1/600 s at 0.1) late.
+const flightStep = await page.evaluate(() => Math.max(window.__pond.timeScale ?? 1, 0.01) / 60);
 while (throws.length > 0 && !(await page.evaluate(() => window.__pond.hasImpacted())) && flight < 3) {
-  await page.evaluate(() => window.__pond.advance(1 / 60));
-  flight += 1 / 60;
+  await page.evaluate((seconds) => window.__pond.advance(seconds), flightStep);
+  flight += flightStep;
 }
 // The flight steps overshoot the impact: by the age of the first stone's crown.
 const overshoot = await page.evaluate(() => {

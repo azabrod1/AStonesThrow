@@ -22,8 +22,14 @@
 //   position = launch point + u·direction·a − ½·g·a²·up
 //
 // and ∂position/∂tau, the spacing of neighbouring elements, is closed form.
-// Elements leave from a radius r0 = R·(0.18 + 0.32·tau/T) (0.5·R in the
-// tail), so the column is a cone, widest at the water. Volume is conserved:
+// Elements leave from a radius r0 = Rj·(0.18 + 0.32·tau/T) (0.5·Rj in the
+// tail), so the column is a cone, widest at the water. Rj is the stone's
+// radius R times (R / 3 cm)^JET_RADIUS_POWER: a jet is thinner the more
+// singular the cavity's collapse, that is the higher the Froude number
+// V²/(g·R) (Gekle & Gordillo 2010 find thinner, faster jets as it grows), and
+// at a given entry speed a big stone's is lower, so its jet is fatter than a
+// scaled-up copy of a small one's (a 16 cm stone's 1.28 times, a 1.5 cm
+// stone's 0.71 times). Volume is conserved:
 // an element carries π·r0²·u·dtau spread over |∂position/∂tau|·dtau of
 // column, so the column radius is r0·sqrt(u / |∂position/∂tau|), capped at
 // 1.4·r0 where elements bunch (in the slow tail, a fat foot).
@@ -38,7 +44,10 @@
 // under it, and pinches again, up to MAX_TIP_DROPS times while the end still
 // rises; the first tip drop is the largest drop of the whole splash. Then the
 // column breaks from the top down: a front sweeps the launch times from the
-// end to T in BREAK_SECONDS·sqrt(R / 3 cm), and each piece it reaches, the
+// end to T in BREAK_SECONDS·(R / 3 cm)^1.5, at least BREAK_FLOOR (the
+// Rayleigh–Plateau time of a column, sqrt(ρ·r³/σ), with its radius r ∝ R;
+// a 16 cm stone's column takes half a second, so most of it falls back
+// whole), and each piece it reaches, the
 // material for one drop of 1.9 local column radii (the Rayleigh–Plateau
 // size, ±35%, but at most 0.75 to 0.9 of the first tip drop, which binds for
 // most of them), gathers into a bulb at the end and pinches off with the
@@ -95,6 +104,7 @@ const TAIL_SHARE = 1.0;            // after T a tail of this many T feeds the ba
 const TIP_RADIUS = 0.18;           // launch radius at the start, in stone radii...
 const BASE_RADIUS = 0.5;           // ...growing to this at T (0.18 + 0.32·tau/T)...
 const TAIL_RADIUS = 0.5;           // ...and held there through the tail
+const JET_RADIUS_POWER = 0.25;     // the column's radii in R·(R / 3 cm)^this: fatter at a lower Froude number
 const MAX_TILT = THREE.MathUtils.degToRad(5);
 const WOBBLE = 0.01;               // lateral launch velocity over launch speed (0.1 of the old drops' scatter)
 const BULB_SHARE = 0.06;           // a tip bulb is the material of this fraction of T
@@ -109,7 +119,8 @@ const RIPPLE_RISING = 0.06;        // varicose amplitude (of the radius) while t
 const RIPPLE_SLOWING = 0.12;       // ...once it has slowed, and anywhere during the breakup
 const RIPPLE_FRONT = 0.33;         // extra amplitude just below the breakup front, decaying over RIPPLE_DEPTH drops
 const RIPPLE_DEPTH = 2;
-const BREAK_SECONDS = 0.12;        // the front sweeps to the base in this long (× sqrt of the size)
+const BREAK_SECONDS = 0.12;        // the front sweeps to the base in this long (× (R / 3 cm)^1.5, a capillary time)...
+const BREAK_FLOOR = 0.05;          // ...or at least this
 const FALLBACK_SPECKS = 110;       // foam specks where the jet falls back, times the mound's strength
 const LENS_DROP_RADIUS = 0.002;    // drops this big are drawn as glass like the column
 const WATER_DENSITY = 1000;
@@ -138,6 +149,7 @@ export class JetColumn {
     this.centreZ = z;
     this.radius = radius;
     this.sizeFactor = radius / REFERENCE_RADIUS;
+    this.columnRadius = radius * this.sizeFactor ** JET_RADIUS_POWER;   // Rj in the header
     this.tipSpeed = tipSpeed;
     this.startTime = startTime;
     this.age = 0;
@@ -146,7 +158,7 @@ export class JetColumn {
     this.launchDuration = 0.08 * Math.sqrt(this.sizeFactor);
     this.tailDuration = TAIL_SHARE * this.launchDuration;
     this.launchEnd = this.launchDuration + this.tailDuration;
-    this.breakDuration = BREAK_SECONDS * Math.sqrt(this.sizeFactor);
+    this.breakDuration = Math.max(BREAK_SECONDS * this.sizeFactor ** 1.5, BREAK_FLOOR);
 
     // Launch direction per unit speed: up by cos(lean), across by sin(lean),
     // plus the jet's own small tilt (and the wobble, in evaluate).
@@ -223,8 +235,8 @@ export class JetColumn {
   }
 
   launchRadius(tau) {
-    if (tau > this.launchDuration) return TAIL_RADIUS * this.radius;
-    return this.radius * (TIP_RADIUS + (BASE_RADIUS - TIP_RADIUS) * (tau / this.launchDuration));
+    if (tau > this.launchDuration) return TAIL_RADIUS * this.columnRadius;
+    return this.columnRadius * (TIP_RADIUS + (BASE_RADIUS - TIP_RADIUS) * (tau / this.launchDuration));
   }
 
   /** Volume launched per second at launch time tau. */

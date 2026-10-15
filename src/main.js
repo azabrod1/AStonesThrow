@@ -617,6 +617,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     resetView,
     get zoomed() { return isZoomed(view, home); },
     get time() { return simulationTime; },
+    get timeScale() { return timeScale; },
     get rocks() { return rocks; },
     get quality() { return qualityName; },
     /** The sky panorama in use (a key of SKIES in src/sky.js). */

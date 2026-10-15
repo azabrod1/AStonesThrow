@@ -17,7 +17,7 @@ const entrySpeed = Number(process.argv[3] ?? 6.94);
 const horizontalFraction = Number(process.argv[4] ?? 0.676);
 const sizeFactor = stoneRadius / 0.03;
 const strength = Math.min(Math.max((horizontalFraction - 0.3) / 0.4, 0), 1);
-const fanCount = Math.round(Math.min(Math.max(300 * sizeFactor ** 1.6 * Math.sqrt(entrySpeed / 6), 60), 1500) * strength);
+const fanCount = Math.round(Math.min(Math.max(300 * sizeFactor ** 1.6 * Math.sqrt(entrySpeed / 6), 60), 2000) * strength);
 // The stone travels towards −z, as a throw from the bank does.
 const verticalSpeed = entrySpeed * Math.sqrt(1 - horizontalFraction ** 2);
 const impact = { x: 0, z: -1.4, speed: entrySpeed, velocity: { x: 0, y: -verticalSpeed, z: -entrySpeed * horizontalFraction }, radius: stoneRadius };

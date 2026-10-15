@@ -6,7 +6,14 @@
 //     ω² = (g k + σ k³ / ρ) · tanh(k D)
 // so each mode is advanced exactly by rotating (H, V) through ω·dt, which is
 // stable for any time step and gives the correct dispersion: long ripples
-// outrun short ones, as they do on a real pond. Damping is applied per mode.
+// outrun short ones, as they do on a real pond. Damping is applied per mode
+// (DAMPING): γ(k) = γ0·min(k/k_d, 1) + ν·k², plus γ_low for waves longer than
+// 2.4 m so the patch never sloshes. A real pond damps its ripples through
+// the surface film and viscosity, which fade towards nothing for long waves,
+// so γ0 applies in full only to ripples shorter than 30 cm (k_d) and falls in
+// proportion to k for longer ones: the ring of a big stone, half a metre
+// long, carries across the pond, while a small stone's rings (10 to 30 cm)
+// fade as they always did.
 //
 // Disturbances enter as Gaussian "splats" (a height or vertical-velocity
 // impulse at a point). A Gaussian has a closed-form spectrum, so splats are
@@ -22,6 +29,15 @@ import { SPECTRAL_UPDATE_FRAGMENT, FFT_PASS_FRAGMENT, FOAM_FRAGMENT } from './sh
 
 const MAX_SPLATS = 32;
 const MAX_FOAM = 16;
+// Damping per mode (see the header). tools/splash-probe.mjs reads these to
+// evolve a splash's ring as the GPU does.
+export const DAMPING = {
+  base: 0.3,              // γ0, 1/s, for ripples shorter than baseWavelength...
+  baseWavelength: 0.3,    // ...m, and in proportion to k for longer ones
+  viscosity: 4e-5,        // ν, m²/s
+  lowShare: 1 / 2.5,      // waves longer than this share of the patch (2.4 m)...
+  low: 1.5,               // ...are damped this much harder, 1/s
+};
 
 /**
  * The inverse FFT on the GPU: 2·log2(size) passes of FFT_PASS_FRAGMENT, rows
@@ -94,10 +110,11 @@ export class SpectralWater {
       uCell: { value: this.cell },
       uDepth: { value: depth },
       uDt: { value: 0 },
-      uGamma0: { value: 0.3 },
-      uNu: { value: 4e-5 },
-      uKLow: { value: 2 * Math.PI / (domainSize / 2.5) },
-      uGammaLow: { value: 1.5 },
+      uGamma0: { value: DAMPING.base },
+      uKDamp: { value: (2 * Math.PI) / DAMPING.baseWavelength },
+      uNu: { value: DAMPING.viscosity },
+      uKLow: { value: (2 * Math.PI) / (domainSize * DAMPING.lowShare) },
+      uGammaLow: { value: DAMPING.low },
       uSplatCount: { value: 0 },
       uSplats: { value: splatArray },
       uSplatAmps: { value: ampArray },
