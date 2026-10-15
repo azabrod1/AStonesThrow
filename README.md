@@ -119,7 +119,7 @@ allows it scales as a Froude-similar splash does: lengths with the radius,
 times with √(R/g), speeds with the entry speed. The crown's sheet is as thick
 as the stone is big, so air and surface tension slow it less, it drains
 slower and stands longer: a 16 cm stone's crown stands for 160 ms, its rim
-17 cm high and 70 cm across, and tears into drops of up to 7 mm, while a
+17 cm high and 70 cm across, and tears into drops of up to 9 mm, while a
 1.5 cm pebble's rises 4 cm. Its rim fingers as a decelerating rim does, so a
 big crown has more, finer fingers rather than a few huge petals. A big
 stone's jet is fat (its Froude number is lower, so the cavity's collapse is
@@ -133,17 +133,30 @@ than 30 cm less than ripples, as a real one does, so a big stone's ring
 carries across it. The stone starts the splash the moment its lowest point
 touches the water. `tools/splash-probe.mjs` prints the whole table.
 
-Droplets are integrated on the CPU and rendered as a screen-space fluid:
-sphere impostors stretched along their motion like a camera shutter would,
-into a depth buffer (with each drop's sun glint) and an additive thickness
-buffer; a bilateral blur merges neighbouring drops into sheets; the composite
-pass shades the result with sky reflection, refraction of the scene behind,
-sun highlights and white scattering for fine spray, then tone-maps the frame.
-The crown sheet and the jet column are meshes drawn into the same two
-buffers, so they are shaded as the same water: the sheet with a milky
-scattering for its rippled, aerated film, the column (and the large drops it
-breaks into) as clear glass, a lens that shows the pond and the sun's glitter
-from well to the side and, through its bulb, the sky upside down.
+Everything the splash throws up is shaded as the same water as the pond
+(`src/shaders/fluid.js`): Fresnel between the light it reflects (the sky,
+or the pond below the horizon, with the sand under it and the sun's glitter)
+and the light it lets through, absorbed by the pond's own coefficients over
+the water crossed, and the sun's glitter with the pond's own model. The
+crown sheet and the jet column are meshes and the droplets sphere impostors,
+stretched along their motion as a camera's shutter would smear them, all
+drawn into one buffer of depth, kind and exact normal and one of summed
+thickness, coverage, sun glints and aeration; the composite pass shades
+them and tone-maps the frame. The sheet is a clear film that barely bends
+what is behind it, aerated (a faint white) only along its rim bead and torn
+edges; the column is a lens that shows the pond and its glitter from well to
+the side and, through its bulb, the sky upside down. A drop two device
+pixels or wider is a glass bead, the pond in its top, the sky upside down
+in its lower half, with two glints, the sun reflected off it and the sun
+refracted through it (which makes a splash sparkle against the light),
+each a point whatever the drop's size; a streak or a small bead shows the
+drop's mean light. Drops under a pixel are a mist whose brightness follows
+the water they really cover, so a lone fine drop all but vanishes. The
+splash throws tens to a few hundred drops a stone (a 16 cm stone about 1500
+over its life, at most about 700 in the air at once, most of them several
+millimetres across), not thousands of specks. The water mirrors the splash:
+while it lives, its sheets, columns and drops are drawn as cheap water into
+the mirror image the pond reflects, over just the rectangle they cover.
 
 **Sky** (`src/sky.js`). The sky is a photograph: an equirectangular HDRI
 of a meadow with trees on a dome at the far plane, turned about the vertical
@@ -167,7 +180,8 @@ submerged stones and bubbles are rendered to a texture with depth; the main
 scene renders the sky dome and the water surface, which refracts that texture
 with absorption by path length through the water, reflects a planar mirror
 image of the sky dome, clouds and treeline (the camera never moves, so it is
-re-rendered only when the view zooms or turns) in the direction each ripple
+re-rendered only when the view zooms or turns; while a splash lives, it is
+drawn into it each frame, over the rectangle it covers) in the direction each ripple
 turns the view ray, so reflections wobble into vertical streaks, and adds
 the sun's glitter: a Beckmann highlight on the rippled normal, widened by the
 ripple finer than the pixel. Where there is foam it replaces the surface, a
