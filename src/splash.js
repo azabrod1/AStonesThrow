@@ -92,6 +92,7 @@ export class SplashSystem {
       uSunDirView: { value: new THREE.Vector3() },
       uSceneDepth: { value: null },
       uResolution: { value: new THREE.Vector2(1, 1) },
+      uFullFloatInfo: { value: 1 },
     });
     this.streakSeconds = 0;
     this.depthMaterial = new THREE.ShaderMaterial({ vertexShader: PARTICLE_VERTEX, fragmentShader: PARTICLE_DEPTH_FRAGMENT, uniforms: particleUniforms(), depthTest: true, depthWrite: true });
@@ -110,7 +111,7 @@ export class SplashSystem {
     this.sheetDepthMaterial = new THREE.ShaderMaterial({ vertexShader: SHEET_VERTEX, fragmentShader: SHEET_DEPTH_FRAGMENT, uniforms: sheetUniforms(), depthTest: true, depthWrite: true, side: THREE.DoubleSide });
     this.sheetThicknessMaterial = new THREE.ShaderMaterial({ vertexShader: SHEET_VERTEX, fragmentShader: SHEET_THICKNESS_FRAGMENT, uniforms: sheetUniforms(), depthTest: false, depthWrite: false, blending: THREE.AdditiveBlending, transparent: true, side: THREE.DoubleSide });
     // Jet columns, likewise.
-    const columnUniforms = () => ({ ...sheetUniforms(), uProjScale: { value: 1000 }, uMinPixelRadius: { value: 1.0 } });
+    const columnUniforms = () => ({ ...sheetUniforms(), uProjScale: { value: 1000 }, uMinPixelRadius: { value: 1.0 }, uFullFloatInfo: { value: 1 } });
     this.columnDepthMaterial = new THREE.ShaderMaterial({ vertexShader: COLUMN_VERTEX, fragmentShader: COLUMN_DEPTH_FRAGMENT, uniforms: columnUniforms(), depthTest: true, depthWrite: true, side: THREE.DoubleSide });
     this.columnThicknessMaterial = new THREE.ShaderMaterial({ vertexShader: COLUMN_VERTEX, fragmentShader: COLUMN_THICKNESS_FRAGMENT, uniforms: columnUniforms(), depthTest: false, depthWrite: false, blending: THREE.AdditiveBlending, transparent: true, side: THREE.DoubleSide });
     this.sunDirView = new THREE.Vector3();
@@ -139,7 +140,7 @@ export class SplashSystem {
       uRefract: { value: 1.4 },
       uMinPixelRadius: { value: 1.0 },
       uProjScale: { value: 1000 },
-      uPackedNormals: { value: 1 },
+      uFullFloatInfo: { value: 1 },
     });
 
     // Bubbles.
@@ -446,7 +447,10 @@ export class SplashSystem {
       material.uniforms.uProjScale.value = projScale;
       material.uniforms.uStreakSeconds.value = this.streakSeconds;
     }
+    // Columns and lens drops pack their normals to suit the depth target (NORMAL_PACKING).
+    const fullFloatInfo = depth.texture.type === THREE.FloatType ? 1 : 0;
     for (const material of [this.columnDepthMaterial, this.columnThicknessMaterial]) material.uniforms.uProjScale.value = projScale;
+    for (const material of [this.depthMaterial, this.columnDepthMaterial, this.compositePass.material]) material.uniforms.uFullFloatInfo.value = fullFloatInfo;
     for (const material of [this.depthMaterial, this.thicknessMaterial, this.sheetDepthMaterial, this.sheetThicknessMaterial, this.columnDepthMaterial, this.columnThicknessMaterial]) {
       material.uniforms.uSceneDepth.value = sceneTarget.depthTexture;
       material.uniforms.uResolution.value.copy(this.fluidSize);
@@ -492,7 +496,6 @@ export class SplashSystem {
     composite.uSunDirView.value.copy(this.lighting.sunDirection).transformDirection(camera.matrixWorldInverse);
     composite.uExposure.value = this.lighting.exposure;
     composite.uProjScale.value = projScale;
-    composite.uPackedNormals.value = depth.texture.type === THREE.FloatType ? 1 : 0;
     this.compositePass.render(renderer, output);
   }
 

@@ -17,11 +17,11 @@
 //   position = launch point + u·direction·a − ½·g·a²·up
 //
 // and ∂position/∂tau, the spacing of neighbouring elements, is closed form.
-// Elements leave from a radius r0 = R·(0.15 + 0.2·tau/T) (0.35·R in the
-// tail), so the base is the widest part. Volume is conserved: an element
-// carries π·r0²·u·dtau spread over |∂position/∂tau|·dtau of column, so the
-// column radius is r0·sqrt(u / |∂position/∂tau|), capped at 1.4·r0 where
-// elements bunch (in the slow tail, a fat foot).
+// Elements leave from a radius r0 = R·(0.18 + 0.32·tau/T) (0.5·R in the
+// tail), so the column is a cone, widest at the water. Volume is conserved:
+// an element carries π·r0²·u·dtau spread over |∂position/∂tau|·dtau of
+// column, so the column radius is r0·sqrt(u / |∂position/∂tau|), capped at
+// 1.4·r0 where elements bunch (in the slow tail, a fat foot).
 //
 // The column's free end is a cap. At first it is the tip bulb, the material
 // of the first 6% of T gathered into a ball of radius 1.6·r0(0), grown in as
@@ -35,13 +35,13 @@
 // column breaks from the top down: a front sweeps the launch times from the
 // end to T in BREAK_SECONDS·sqrt(R / 3 cm), and each piece it reaches, the
 // material for one drop of 1.9 local column radii (the Rayleigh–Plateau
-// size, ±20%, but at most 0.75 to 0.9 of the first tip drop), gathers into a
-// bulb at the end and pinches off with the local velocity, a little scatter
-// and often a small satellite; each piece is held back by up to 60% of its
-// share so the rhythm is ragged. Volumes are kept, so the drop count follows
-// the column: for a 3 cm stone at about 6 m/s, two tip drops of 7.2 and 6.6
-// mm, then some twenty of 5 to 6.5 mm, holding 45% of the water; the rest
-// falls back. Before it breaks the column grows varicose beads with the drop
+// size, ±35%, but at most 0.75 to 0.9 of the first tip drop, which binds for
+// most of them), gathers into a bulb at the end and pinches off with the
+// local velocity, a little scatter and often a small satellite; each piece is
+// held back by up to its whole share so the rhythm is ragged. Volumes are
+// kept, so the drop count follows the column: for a 3 cm stone at about 6
+// m/s, two tip drops of 8.6 and 7.6 mm, then some twenty of 6.5 to 7.5 mm and
+// satellites of about 2 mm, holding 40% of the water; the rest falls back. Before it breaks the column grows varicose beads with the drop
 // spacing (radius ±6% while it rises fast, ±12% as it slows, up to ±45% just
 // below the front, necks where the pieces will part), which catch the sun.
 //
@@ -51,8 +51,9 @@
 // column is gone: a stub still in the air becomes one last drop, and the
 // water gets a mound (height about 0.22·R, scaled by the cube root of the
 // fallen volume) with foam and a small secondary ring. For a 3 cm stone the
-// jet starts 116 ms after entry, its tip reaches 48 cm, the tip drops leave
-// at about 340 and 400 ms and the column is gone by about 520 ms.
+// jet starts 116 ms after entry; at 0.3 s it is 44 cm tall, 24 mm across at
+// the water, 14 mm at mid-height and 10 mm under its 17 mm bulb; the tip
+// drops leave at about 360 and 440 ms and the column is gone by about 530 ms.
 //
 // updateGeometry() evaluates a ROWS × COLUMNS ring grid (src/fluidMesh.js)
 // once per rendered frame: CAP_ROWS rows of the cap's upper half, then rows
@@ -63,8 +64,8 @@
 // simulated time. SplashSystem draws the mesh with the column materials in
 // src/shaders/sheet.js through the droplets' screen-space fluid passes, where
 // the composite shades it as a glass lens; drops of LENS_DROP_RADIUS and more
-// are flagged to be drawn the same way, so the tip drop looks like the bulb
-// it was.
+// are flagged to be drawn the same way (with their motion streak held short),
+// so the tip drop looks like the bulb it was.
 import * as THREE from 'three';
 import { createRingGrid, computeGridNormals, markChanged } from './fluidMesh.js';
 
@@ -78,6 +79,9 @@ const ARC_SAMPLES = 40;            // centreline samples for placing rows by arc
 const BASE_DEPTH = 0.004;          // launch a little below the surface so the foot meets the water
 const SPEED_FALL = 0.68;           // the launch speed falls by this fraction over T
 const TAIL_SHARE = 1.0;            // after T a tail of this many T feeds the base, slowing to rest
+const TIP_RADIUS = 0.18;           // launch radius at the start, in stone radii...
+const BASE_RADIUS = 0.5;           // ...growing to this at T (0.18 + 0.32·tau/T)...
+const TAIL_RADIUS = 0.5;           // ...and held there through the tail
 const MAX_TILT = THREE.MathUtils.degToRad(5);
 const WOBBLE = 0.01;               // lateral launch velocity over launch speed (0.1 of the old drops' scatter)
 const BULB_SHARE = 0.06;           // a tip bulb is the material of this fraction of T
@@ -199,7 +203,10 @@ export class JetColumn {
     return (-this.tipSpeed * (1 - SPEED_FALL)) / this.tailDuration;
   }
 
-  launchRadius(tau) { return this.radius * (0.15 + 0.2 * Math.min(tau / this.launchDuration, 1)); }
+  launchRadius(tau) {
+    if (tau > this.launchDuration) return TAIL_RADIUS * this.radius;
+    return this.radius * (TIP_RADIUS + (BASE_RADIUS - TIP_RADIUS) * (tau / this.launchDuration));
+  }
 
   /** Volume launched per second at launch time tau. */
   volumeRate(tau) { const launchRadius = this.launchRadius(tau); return Math.PI * launchRadius * launchRadius * this.launchSpeed(tau); }
@@ -391,19 +398,19 @@ export class JetColumn {
   }
 
   /**
-   * The material for the next breakup drop: 1.9 local column radii ±20%, at
-   * most 0.75 to 0.9 of the first tip drop, held for up to 60% of its share of
+   * The material for the next breakup drop: 1.9 local column radii ±35%, at
+   * most 0.75 to 0.9 of the first tip drop, held for up to its whole share of
    * the front's travel so the drops come off in an irregular rhythm.
    */
   choosePiece() {
     const local = this.evaluate(this.endTau, this.state).radius;
-    const dropRadius = Math.min(DROP_RADII * local * randomRange(0.8, 1.2), this.maxDropRadius * randomRange(0.83, 1));
+    const dropRadius = Math.min(DROP_RADII * local * randomRange(0.65, 1.35), this.maxDropRadius * randomRange(0.83, 1));
     const dropVolume = (4 / 3) * Math.PI * dropRadius ** 3;
     let span = dropVolume / this.volumeRate(this.endTau);
     span *= dropVolume / Math.max(this.volume(this.endTau, this.endTau + span), 1e-12);
     this.span = Math.min(span, this.launchEnd - this.endTau);
     this.bulbRadius = sphereRadius(this.volume(this.endTau, this.endTau + this.span));
-    this.hold = randomRange(0, 0.6) * this.span;
+    this.hold = randomRange(0, 1) * this.span;
   }
 
   /**

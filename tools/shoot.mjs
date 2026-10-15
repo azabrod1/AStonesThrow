@@ -11,7 +11,8 @@
 // --crop=x:y:width:height also saves that region of each frame (CSS pixels)
 // as tN_NN_crop.png, enlarged --cropscale times with square pixels (default 1).
 // --report="js expression" is evaluated in the page after each frame and its
-// result printed as JSON (window.__pond is the app).
+// result printed as JSON (window.__pond is the app). --floats=half renders on
+// the half-float path that devices without EXT_color_buffer_float take.
 import { chromium } from 'playwright';
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
@@ -39,6 +40,7 @@ const preImpact = Number(arg('preimpact', '0'));
 const crop = arg('crop', '');
 const cropScale = Number(arg('cropscale', '1'));
 const report = arg('report', '');
+const floats = arg('floats', '');
 
 const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.mjs': 'text/javascript', '.json': 'application/json', '.png': 'image/png', '.css': 'text/css' };
 const server = createServer(async (request, response) => {
@@ -82,7 +84,7 @@ const problems = [];
 page.on('pageerror', (e) => problems.push(String(e)));
 page.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') problems.push(m.text()); });
 
-const url = `http://localhost:${port}/index.html?quality=${quality}${keepUi ? '' : '&ui=0'}`;
+const url = `http://localhost:${port}/index.html?quality=${quality}${keepUi ? '' : '&ui=0'}${floats ? `&floats=${floats}` : ''}`;
 console.log(`[shoot] ${url} -> ${outDir}`);
 await page.goto(url, { waitUntil: 'domcontentloaded' });
 try {

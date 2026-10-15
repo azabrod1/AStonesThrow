@@ -82,7 +82,9 @@ ballistic arc, quadratic drag under water, and a settle into the sand.
   Options: `--fov`, `--look=x:y:z`, `--preimpact=seconds`, `--ui=1`,
   `--debug=under|height|foam|env|face`, `--eval="js"`, `--w --h --dpr`,
   `--crop=x:y:w:h --cropscale=n` (an enlarged crop of each frame),
-  `--report="js"` (printed after each frame).
+  `--report="js"` (printed after each frame), `--floats=half`.
+- `?floats=half` on the page forces half-float render targets everywhere, the
+  path devices without `EXT_color_buffer_float` take.
 - `node tools/jet-probe.mjs [radius] [entrySpeed]` runs one Worthington jet on
   the CPU and prints its timeline, drops, volume budget and cost per frame.
 - `window.__pond` exposes the app in the console: `throwAt(x, z, { radius })`,

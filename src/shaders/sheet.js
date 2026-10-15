@@ -15,16 +15,17 @@
 // Column. A closed tube, so the depth pass writes view depth, a marker of 998
 // (a glassy solid column: the blur leaves it sharp and the composite shades it
 // as a lens, with no film scattering), the sun glint from its normal, and in
-// alpha its smooth view normal turned to face the viewer, x and y in 11 bits
-// each, and in 2 more bits how round the surface is there (aRound: 1 on the
-// end cap and bulb, a lens like a sphere; 0 on the tube, a lens only across
-// its axis), packed as an integer below 2^24 so a float target keeps it
-// exactly. (Normals rebuilt from the depth of a faceted mesh would stripe the
-// column.) A ray through a cylinder of radius r at offset s crosses
+// alpha, packed by NORMAL_PACKING (src/shaders/fluid.js), its smooth view
+// normal turned to face the viewer and how round the surface is there (aRound:
+// 1 on the end cap and bulb, a lens like a sphere; 0 on the tube, a lens only
+// across its axis). Normals rebuilt from depth would stripe the faceted mesh,
+// and a half-float depth is too coarse for them at all. A ray through a cylinder of radius r at offset s crosses
 // 2·sqrt(r² − s²) = 2·r·|n·v| of water, as it does through a sphere, so the
 // thickness pass writes r·|n·v| for each of the two faces it meets. A column
 // narrower than uMinPixelRadius is widened to it along its normals (outward),
 // as droplets are, so it never breaks into dashes.
+
+import { NORMAL_PACKING } from './fluid.js';
 
 export const SHEET_VERTEX = /* glsl */`
 attribute float aThickness;
@@ -103,9 +104,11 @@ export const COLUMN_DEPTH_FRAGMENT = /* glsl */`
 uniform sampler2D uSceneDepth;
 uniform vec2 uResolution;
 uniform vec3 uSunDirView;
+uniform float uFullFloatInfo;    // 1 when this target is full float (NORMAL_PACKING)
 varying vec3 vViewPosition;
 varying vec3 vViewNormal;
 varying float vRound;
+${NORMAL_PACKING}
 void main() {
   float sceneDepth = texture2D(uSceneDepth, gl_FragCoord.xy / uResolution).r;
   if (gl_FragCoord.z > sceneDepth) discard;
@@ -114,9 +117,7 @@ void main() {
   if (dot(normal, toViewer) < 0.0) normal = -normal;
   vec3 halfVector = normalize(uSunDirView + toViewer);
   float glint = pow(max(dot(normal, halfVector), 0.0), 90.0);
-  vec2 packedNormal = floor(clamp(normal.xy, -1.0, 1.0) * 1023.0 + 1024.5);
-  float roundLevel = floor(clamp(vRound, 0.0, 1.0) * 3.0 + 0.5);
-  gl_FragColor = vec4(-vViewPosition.z, 998.0, glint, (packedNormal.x * 2048.0 + packedNormal.y) * 4.0 + roundLevel);
+  gl_FragColor = vec4(-vViewPosition.z, 998.0, glint, packNormal(normal, vRound, uFullFloatInfo));
 }
 `;
 

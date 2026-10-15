@@ -31,10 +31,12 @@ export class FullscreenPass {
 // Browsers without EXT_color_buffer_float fall back to half floats everywhere;
 // the solver loses precision but keeps running. Without OES_texture_float_linear
 // full-float textures cannot be filtered, so they are sampled nearest.
+// forceHalfFloat takes the half-float path on any device, to test it (the page
+// sets it with ?floats=half).
 const capabilities = { fullFloat: true, floatLinear: true };
 
-export function configureFloatSupport(renderer) {
-  capabilities.fullFloat = renderer.extensions.has('EXT_color_buffer_float');
+export function configureFloatSupport(renderer, { forceHalfFloat = false } = {}) {
+  capabilities.fullFloat = renderer.extensions.has('EXT_color_buffer_float') && !forceHalfFloat;
   capabilities.floatLinear = renderer.extensions.has('OES_texture_float_linear');
   return capabilities;
 }

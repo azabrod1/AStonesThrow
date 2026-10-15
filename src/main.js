@@ -41,8 +41,13 @@ export function startPond({ canvas, quality = 'auto', onReady, onError, onStats 
     onError?.('WebGL 2 is not available in this browser.');
     throw error;
   }
-  const floatSupport = configureFloatSupport(renderer);
-  if (!renderer.capabilities.isWebGL2 || (!floatSupport.fullFloat && !renderer.extensions.has('EXT_color_buffer_half_float'))) {
+  // ?floats=half takes the half-float path that devices without
+  // EXT_color_buffer_float get, to test it on any machine.
+  const forceHalfFloat = new URLSearchParams(window.location.search).get('floats') === 'half';
+  configureFloatSupport(renderer, { forceHalfFloat });
+  // EXT_color_buffer_float also makes half floats renderable, so either will do.
+  const renderableFloats = renderer.extensions.has('EXT_color_buffer_float') || renderer.extensions.has('EXT_color_buffer_half_float');
+  if (!renderer.capabilities.isWebGL2 || !renderableFloats) {
     onError?.('This browser cannot render to floating-point textures, which the water needs.');
     throw new Error('floating-point render targets missing');
   }

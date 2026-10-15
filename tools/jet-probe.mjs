@@ -6,11 +6,15 @@
 // whether the grid normals face outward, and the CPU cost per frame (after a
 // few silent jets, so the code is warm).
 //
-//   node tools/jet-probe.mjs [stoneRadius=0.03] [entrySpeed=6.3]
+//   node tools/jet-probe.mjs [stoneRadius=0.03] [entrySpeed=6.3] [profileSecondsAfterEntry=0.3]
+//
+// The profile line gives the column's diameter where it leaves the water and
+// at half its height, at the given time after the stone's entry.
 import { JetColumn } from '../src/jet.js';
 
 const stoneRadius = Number(process.argv[2] ?? 0.03);
 const entrySpeed = Number(process.argv[3] ?? 6.3);
+const profileAfterEntry = Number(process.argv[4] ?? 0.3);
 const sizeFactor = stoneRadius / 0.03;
 const tipSpeed = Math.min(Math.max(0.42 * entrySpeed + 0.7, 1.2), 6.0) * sizeFactor ** 0.15;
 const budget = Math.round(Math.min(Math.max(220 * sizeFactor ** 1.3, 80), 1200));
@@ -39,6 +43,7 @@ let geometryCalls = 0;
 let updateMilliseconds = 0;
 let updateCalls = 0;
 let lastPhase = jet.phase;
+let profiled = false;
 let lastTipDrops = 0;
 let worstInward = 0;
 const millimetres = (metres) => (metres * 1000).toFixed(1);
@@ -59,6 +64,30 @@ while (!jet.finished && clock < 2) {
   if (jet.phase !== lastPhase) {
     console.log(`  ${(clock * 1000).toFixed(0)} ms (${((clock + pinchDelay) * 1000).toFixed(0)} after entry): breakup starts at tau ${(jet.endTau / jet.launchDuration).toFixed(2)} T, foot at ${(jet.footTau() / jet.launchDuration).toFixed(2)} T`);
     lastPhase = jet.phase;
+  }
+  if (!profiled && clock + pinchDelay >= profileAfterEntry - 1e-9) {
+    profiled = true;
+    jet.updateGeometry(clock);
+    const columns = 24;
+    const rows = jet.positions.length / 3 / columns;
+    const rings = [];
+    for (let row = 6; row < rows; row++) {
+      const first = (row * columns) * 3, opposite = (row * columns + columns / 2) * 3;
+      rings.push({
+        y: 0.5 * (jet.positions[first + 1] + jet.positions[opposite + 1]),
+        diameter: Math.hypot(jet.positions[first] - jet.positions[opposite], jet.positions[first + 1] - jet.positions[opposite + 1], jet.positions[first + 2] - jet.positions[opposite + 2]),
+      });
+    }
+    const top = jet.positions[1];
+    // Rings run from the cap down to the foot; interpolate the diameter at a height.
+    const diameterAt = (height) => {
+      for (let index = 1; index < rings.length; index++) {
+        const upper = rings[index - 1], lower = rings[index];
+        if (lower.y <= height && upper.y >= height) return lower.diameter + (upper.diameter - lower.diameter) * (height - lower.y) / Math.max(upper.y - lower.y, 1e-9);
+      }
+      return NaN;
+    };
+    console.log(`  profile ${(clock + pinchDelay).toFixed(3)} s after entry: top ${millimetres(top)} mm, diameter ${millimetres(diameterAt(0))} mm at the water, ${millimetres(diameterAt(0.05))} mm 5 cm up, ${millimetres(diameterAt(0.5 * top))} mm at mid-height, ${millimetres(diameterAt(0.85 * top))} mm under the bulb, bulb ${millimetres(2 * jet.end.radius)} mm`);
   }
   frameSeconds += substep;
   if (frameSeconds >= 1 / 60 - 1e-9 && !jet.finished) {

@@ -15,14 +15,15 @@
 // thickness, so the glassy wall stays clear while the bead and edge-on walls
 // whiten.
 //
-// Jet columns write 998 there and, packed in the depth target's alpha, their
-// smooth normal and how round the surface is; so do the large drops a column
-// breaks into (iLens), so they look like the bulb they were. (uPackedNormals
-// is 0 when that target is only half float: the normal is then rebuilt from
-// depth like a drop's and everything treated as a tube.) The blur leaves them
-// unsmoothed and the composite shades them as glass lenses with no film
-// scattering, fading to spray only under a couple of pixels in radius (an
-// on-screen radius taken from their thickness and depth). A ray through a
+// Jet columns write 998 there and, packed in the depth target's alpha
+// (NORMAL_PACKING; uFullFloatInfo says how), their smooth normal and how round
+// the surface is; so do the large drops a column breaks into (iLens), so they
+// look like the bulb they were. The blur leaves them unsmoothed and the
+// composite shades them as glass lenses with no film scattering, fading to
+// spray only under a couple of pixels in radius (an on-screen radius taken
+// from their thickness and depth); a round lens under about 6 pixels fades to
+// the plain surface shading, which spares specks an upside-down horizon. A
+// ray through a
 // water sphere at incidence θ leaves turned by 2·(θ − asin(sin θ / 1.33))
 // towards its centre, in the plane of the ray and the normal; through a tube
 // it keeps its slope along the axis (taken as vertical) and turns only across
@@ -33,6 +34,37 @@
 // horizon and, below it, the pond as a rough mirror of the sky plus the sun's
 // glitter, offset so that the straight-through direction gives exactly the
 // scene behind; reflections use the same function.
+
+// Jet columns and the drops drawn like them pack their view normal (turned to
+// face the viewer) and how round the surface is into the depth target's alpha,
+// as an integer the target keeps exactly: 11 + 11 + 2 bits, below 2^24, in a
+// float target; 5 + 5 + 1 bits, up to 2047, in a half-float one.
+export const NORMAL_PACKING = /* glsl */`
+float packNormal(vec3 normal, float roundness, float fullFloat) {
+  vec2 clamped = clamp(normal.xy, -1.0, 1.0);
+  if (fullFloat > 0.5) {
+    vec2 fine = floor(clamped * 1023.0 + 1024.5);
+    return (fine.x * 2048.0 + fine.y) * 4.0 + floor(clamp(roundness, 0.0, 1.0) * 3.0 + 0.5);
+  }
+  vec2 coarse = min(floor((clamped + 1.0) * 16.0), 31.0);
+  return (coarse.x * 32.0 + coarse.y) * 2.0 + step(0.5, roundness);
+}
+vec3 unpackNormal(float packed, float fullFloat, out float roundness) {
+  vec2 normalXy;
+  if (fullFloat > 0.5) {
+    float pair = floor(packed / 4.0);
+    roundness = (packed - pair * 4.0) / 3.0;
+    float high = floor(pair / 2048.0);
+    normalXy = (vec2(high, pair - high * 2048.0) - 1024.0) / 1023.0;
+  } else {
+    float pair = floor(packed / 2.0);
+    roundness = packed - pair * 2.0;
+    float high = floor(pair / 32.0);
+    normalXy = (vec2(high, pair - high * 32.0) + 0.5) / 16.0 - 1.0;
+  }
+  return normalize(vec3(normalXy, sqrt(max(1.0 - dot(normalXy, normalXy), 0.0))));
+}
+`;
 
 export const PARTICLE_VERTEX = /* glsl */`
 attribute vec3 iPosition;
@@ -59,6 +91,8 @@ void main() {
   float streak = length(motion);
   vec2 axis = streak > 1e-5 ? motion / streak : vec2(1.0, 0.0);
   float stretch = 1.0 + 0.5 * streak / radius;
+  // A drop drawn as a lens keeps its shape: a long streak would read as a pill.
+  if (iLens > 0.5) stretch = min(stretch, 1.25);
   vec2 perpendicular = vec2(-axis.y, axis.x);
   vec2 offset = (axis * position.x * stretch + perpendicular * position.y) * radius;
   vQuad = position.xy;
@@ -86,6 +120,7 @@ uniform mat4 projectionMatrix;
 uniform sampler2D uSceneDepth;
 uniform vec2 uResolution;
 uniform vec3 uSunDirView;
+uniform float uFullFloatInfo;    // 1 when this target is full float (NORMAL_PACKING)
 varying vec2 vQuad;
 varying vec3 vViewCentre;
 varying float vRadius;
@@ -94,6 +129,7 @@ varying float vStretch;
 varying vec2 vAxis;
 varying float vLens;
 ${CAPSULE}
+${NORMAL_PACKING}
 void main() {
   vec3 c = capsule(vQuad, vStretch);
   if (c.z > 1.0) discard;
@@ -113,11 +149,8 @@ void main() {
   float glint = pow(max(dot(n, h), 0.0), 90.0) / vStretch;
   if (vLens > 0.5) {
     // A drop from the jet column is drawn as the column is (src/shaders/sheet.js):
-    // marker 998, its exact normal packed in alpha, round at its ends and a
-    // tube (taken as vertical, as these drops mostly move) along a streak.
-    vec2 packedNormal = floor(clamp(n.xy, -1.0, 1.0) * 1023.0 + 1024.5);
-    float roundLevel = abs(c.x) > 1e-4 || vStretch < 1.05 ? 3.0 : 0.0;
-    gl_FragColor = vec4(-viewPos.z, 998.0, glint, (packedNormal.x * 2048.0 + packedNormal.y) * 4.0 + roundLevel);
+    // marker 998 and its exact normal packed in alpha, a round lens.
+    gl_FragColor = vec4(-viewPos.z, 998.0, glint, packNormal(n, 1.0, uFullFloatInfo));
     return;
   }
   gl_FragColor = vec4(-viewPos.z, vPixelRadius, glint, 1.0);
@@ -189,9 +222,10 @@ uniform float uExposure;
 uniform float uRefract;
 uniform float uMinPixelRadius;
 uniform float uProjScale;      // fluid-target pixels per world unit at distance 1
-uniform float uPackedNormals;  // 1 when jet columns' normals are packed in the depth target's alpha
+uniform float uFullFloatInfo;  // 1 when the depth target is full float (NORMAL_PACKING)
 varying vec2 vUv;
 #define PI 3.141592653589793
+${NORMAL_PACKING}
 
 vec3 viewPosition(vec2 uv, float depth) {
   vec4 farPoint = uInverseProjection * vec4(uv * 2.0 - 1.0, 1.0, 1.0);
@@ -268,13 +302,7 @@ void main() {
     float sheet = step(998.5, info.g);
     float column = step(997.5, info.g) - sheet;
     float roundness = 0.0;
-    if (column > 0.5 && uPackedNormals > 0.5) {
-      float packedXy = floor(info.a / 4.0);
-      roundness = (info.a - packedXy * 4.0) / 3.0;
-      vec2 packedNormal = vec2(floor(packedXy / 2048.0), packedXy - floor(packedXy / 2048.0) * 2048.0);
-      vec2 normalXy = (packedNormal - 1024.0) / 1023.0;
-      n = vec3(normalXy, sqrt(max(1.0 - dot(normalXy, normalXy), 0.0)));
-    }
+    if (column > 0.5) n = unpackNormal(info.a, uFullFloatInfo, roundness);
 
     vec3 v = normalize(-pos);
     float nDotV = max(dot(n, v), 0.0);
@@ -288,6 +316,8 @@ void main() {
     float t = clamp(thickness, 0.0, 0.06);
     vec2 refractUv = clamp(vUv + n.xy * uRefract * t, vec2(0.001), vec2(0.999));
     vec3 refracted = texture2D(uScene, refractUv).rgb * exp(-uAbsorb * thickness * 3.0);
+    // A column's on-screen radius, from its thickness and depth.
+    float columnRadius = 0.5 * thickness / max(n.z, 0.3) * uProjScale / depth;
     if (column > 0.5) {
       // A column is a lens: see the header.
       vec3 sunWorld = normalize((uCameraWorld * vec4(uSunDirView, 0.0)).xyz);
@@ -321,8 +351,12 @@ void main() {
       vec3 reflectedLight = pondView(reflect(-worldV, worldN), sunWorld, bodyReflected);
       vec3 under = texture2D(uScene, vUv).rgb - eyeLight;
       float carry = bodyEye > 0.01 ? 1.0 / bodyEye : 0.0;
-      refracted = max(exitLight + under * bodyExit * carry, 0.0) * exp(-uAbsorb * thickness * 3.0);
-      reflected = max(reflectedLight + under * bodyReflected * carry, 0.0);
+      // A small round lens (a drop, or the bulb seen from afar) would only show
+      // a speck of upside-down horizon: below about 6 pixels of radius it
+      // fades to the plain surface shading.
+      float lens = 1.0 - roundness * (1.0 - smoothstep(3.0, 6.0, columnRadius));
+      refracted = mix(refracted, max(exitLight + under * bodyExit * carry, 0.0) * exp(-uAbsorb * thickness * 3.0), lens);
+      reflected = mix(reflected, max(reflectedLight + under * bodyReflected * carry, 0.0), lens);
     }
 
     vec3 h = normalize(uSunDirView + v);
@@ -340,7 +374,6 @@ void main() {
     // are shaded as scattering points lit by the sky and, strongly, by the sun
     // when it is behind them (forward scattering through a drop). Drops smaller
     // than their impostor cover only part of the pixel.
-    float columnRadius = 0.5 * thickness / max(n.z, 0.3) * uProjScale / depth;
     float pixelRadius = mix(info.g, columnRadius, column);
     float glint = info.b;
     // A column is one continuous surface, so it stays glass down to a couple
