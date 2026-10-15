@@ -28,7 +28,10 @@
 // (src/sky.js) that has to load before anything is built, because the sun's
 // elevation is the photo's. ?sky=<name> picks the panorama; ?wind=x,z sets the
 // direction the wind blows toward in world XZ (DEFAULT_WIND otherwise);
-// ?paused=1 starts with the clock stopped (resume() starts it).
+// ?paused=1 starts with the clock stopped (resume() starts it); ?quality=
+// high|medium|low fixes a preset (QUALITY), otherwise the quality calibrates
+// itself from the frame rate (CALIBRATION) and reports each change through
+// onQualityChange.
 import * as THREE from 'three';
 import { SpectralWater } from './spectralWater.js';
 import { AmbientWaves, DEFAULT_WIND } from './ambientWaves.js';
@@ -40,10 +43,27 @@ import { SplashSystem } from './splash.js';
 import { createFloatTarget, FullscreenPass, configureFloatSupport } from './gpu.js';
 import { viewFacing, directionAt, placeDirection, clampToFrame, zoomToward, isZoomed } from './viewZoom.js';
 
+// Quality presets: the water grid, the splash's fluid buffers as a fraction of
+// the canvas, and the cap on device pixels per CSS pixel. The splash lives in
+// a few dozen pixels, so the fluid buffer's resolution is what it is made of:
+// a drop narrower than a buffer pixel is widened to one, so at half
+// resolution on a 1× canvas every fleck of spray became a 4-pixel square.
 const QUALITY = {
   high: { grid: 512, fluidScale: 1.0, maxDpr: 2.0 },
-  medium: { grid: 512, fluidScale: 0.5, maxDpr: 1.5 },
-  low: { grid: 256, fluidScale: 0.5, maxDpr: 1.0 },
+  medium: { grid: 512, fluidScale: 0.5, maxDpr: 2.0 },
+  low: { grid: 256, fluidScale: 0.75, maxDpr: 1.5 },
+};
+const QUALITY_ORDER = ['high', 'medium', 'low'];
+// Automatic quality starts every device on high and steps down from what it
+// measures, never from what the device looks like: the frame rate of the idle
+// pond after warm-up, then of the first splash (the fluid passes run only
+// while drops are in the air, so the idle rate overestimates).
+const CALIBRATION = {
+  warmUpFrames: 30,        // shader compiles and the first mip chains
+  windowFrames: 60,        // frames averaged for one measurement
+  fewestFrames: 20,        // a splash that ends sooner is measured on what it gave
+  idleMinimumFps: 50,      // idle below this: one step down; below splashMinimumFps: two
+  splashMinimumFps: 30,    // the first splash below this: one step down
 };
 const POWER = { soft: 1.3, normal: 1.0, hard: 0.72 };   // flight-time multipliers
 const POND_DEPTH = 0.8;
@@ -54,13 +74,7 @@ const HOME_TARGET = [0, 0.12, -1.0];
 const SUN_AZIMUTH = Math.atan2(0.42, 0.78);   // radians right of straight ahead (−Z), about 28°
 const DEBUG_MODES = { under: 0, height: 1, foam: 2, env: 3, face: 4, ambient: 5 };   // setDebugView names
 
-function detectQuality() {
-  const coarse = window.matchMedia?.('(pointer: coarse)').matches;
-  const small = Math.min(window.innerWidth, window.innerHeight) < 700;
-  return coarse || small ? 'low' : 'high';
-}
-
-export async function startPond({ canvas, quality = 'auto', onReady, onError, onStats, onViewChange }) {
+export async function startPond({ canvas, quality = 'auto', onReady, onError, onStats, onViewChange, onQualityChange }) {
   let renderer;
   try {
     renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance', alpha: false, stencil: false });
@@ -108,7 +122,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
   lighting.skyAmbient.copy(environment.skyAmbient);
   const sunDirection = lighting.sunDirection;
 
-  let qualityName = quality === 'auto' ? detectQuality() : quality;
+  let automaticQuality = quality === 'auto' || !QUALITY[quality];
+  let qualityName = automaticQuality ? 'high' : quality;
   let settings = QUALITY[qualityName];
 
   const water = new SpectralWater(renderer, { size: settings.grid, domainSize: 6, centre: [0, -1.0], depth: POND_DEPTH });
@@ -487,6 +502,51 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
   let lastFrame = performance.now();
   let fpsAverage = 60;
   let frames = 0;
+
+  function applyQuality(name) {
+    qualityName = name;
+    settings = QUALITY[name];
+    resize();
+    onQualityChange?.(name);
+  }
+
+  // The calibration (CALIBRATION above): 'idle' measures the still pond,
+  // 'splash' the first splash, then it is done. Only when the quality is automatic.
+  const calibration = { phase: 'idle', frames: 0, seconds: 0 };
+  function stepDown(steps) {
+    const index = Math.min(QUALITY_ORDER.indexOf(qualityName) + steps, QUALITY_ORDER.length - 1);
+    if (QUALITY_ORDER[index] !== qualityName) applyQuality(QUALITY_ORDER[index]);
+  }
+  function calibrate(dtReal) {
+    if (!automaticQuality || calibration.phase === 'done') return;
+    if (calibration.phase === 'awaitingSplash') {
+      if (splash.count === 0) return;
+      Object.assign(calibration, { phase: 'splash', frames: 0, seconds: 0 });
+    }
+    const splashOver = calibration.phase === 'splash' && splash.count === 0;
+    if (!splashOver) {
+      calibration.frames++;
+      // The first splash frames compile the fluid shaders; the idle warm-up covers the rest.
+      const warmUp = calibration.phase === 'idle' ? CALIBRATION.warmUpFrames : 5;
+      if (calibration.frames <= warmUp) return;
+      calibration.seconds += dtReal;
+      if (calibration.frames - warmUp < CALIBRATION.windowFrames) return;
+    } else if (calibration.frames - 5 < CALIBRATION.fewestFrames) {
+      Object.assign(calibration, { phase: 'awaitingSplash', frames: 0, seconds: 0 });   // too short to judge: the next splash
+      return;
+    }
+    const measuredFrames = calibration.frames - (calibration.phase === 'idle' ? CALIBRATION.warmUpFrames : 5);
+    const fps = measuredFrames / Math.max(calibration.seconds, 1e-3);
+    if (calibration.phase === 'idle') {
+      if (fps < CALIBRATION.splashMinimumFps) stepDown(2);
+      else if (fps < CALIBRATION.idleMinimumFps) stepDown(1);
+      Object.assign(calibration, { phase: 'awaitingSplash', frames: 0, seconds: 0 });
+    } else {
+      if (fps < CALIBRATION.splashMinimumFps) stepDown(1);
+      calibration.phase = 'done';
+    }
+  }
+
   function frame(now) {
     if (!running) return;
     requestAnimationFrame(frame);
@@ -495,6 +555,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     if (dtReal > 0) {
       fpsAverage += (1 / dtReal - fpsAverage) * 0.05;
       if ((++frames & 15) === 0) onStats?.({ fps: fpsAverage, droplets: splash.count, quality: qualityName });
+      calibrate(dtReal);
     }
     simulate(dtReal * timeScale);
     render();
@@ -508,12 +569,12 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     setStoneRadius(radius) { stoneRadius = radius; },
     setPower(name) { if (POWER[name]) power = name; },
     setTimeScale(scale) { timeScale = scale; },
+    /** A preset by name, which ends the automatic calibration; 'auto' starts it again from high. */
     setQuality(name) {
-      const next = name === 'auto' ? detectQuality() : name;
-      if (!QUALITY[next]) return;
-      qualityName = next;
-      settings = QUALITY[next];
-      resize();
+      automaticQuality = name === 'auto';
+      if (automaticQuality) Object.assign(calibration, { phase: 'idle', frames: 0, seconds: 0 });
+      else if (!QUALITY[name]) return;
+      applyQuality(automaticQuality ? 'high' : name);
     },
     pause() { running = false; },
     resume() { if (!running) { running = true; lastFrame = performance.now(); requestAnimationFrame(frame); } },

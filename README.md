@@ -13,6 +13,9 @@ Tap or click the water to throw a stone there. Space throws one at random.
 Scroll or pinch to zoom toward what is under the pointer (down to an 8°
 field of view); Escape or Reset view goes back. The strip at the bottom sets
 the stone size, the throw strength, slow motion and the rendering quality.
+The quality starts on High everywhere and steps down by itself if the idle
+pond or the first splash renders too slowly (the readout in the corner shows
+the frame rate and the preset in use); the buttons fix a preset.
 
 ## How it works
 
@@ -178,6 +181,10 @@ ballistic arc, quadratic drag under water, and a settle into the sand.
 - `node tools/fan-probe.mjs [radius] [entrySpeed] [horizontalFraction]` runs
   the forward fan of an oblique entry on the CPU and prints its timeline,
   its drops, where they land and its cost per frame.
+- `node tools/quality-probe.mjs` runs the page unpaused at phone size with
+  automatic quality, waits for the idle and first-splash measurements, and
+  checks the preset steps down when the frame rate is low and that the readout
+  and the quality buttons follow.
 - `node tools/zoom-probe.mjs [--w=390 --h=844]` drives the wheel, a pinch, a
   tap and Escape through the page's own handlers and checks that what is under
   the pointer stays there.

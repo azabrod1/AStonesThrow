@@ -267,14 +267,16 @@
   }
 
   let pond;
+  let setQualityButtons = () => {};   // assigned once the controls exist; the calibration may call it before
   try {
     // Module scripts may await at the top level; the pond starts once its sky has loaded.
     pond = await startPond({
       canvas: document.getElementById('pond'),
       quality: params.get('quality') || 'auto',
       onError: (message) => { veilText.innerHTML = ''; const p = document.createElement('p'); p.className = 'error'; p.textContent = message; veilText.append(p); },
-      onStats: ({ fps, droplets }) => { stats.textContent = `${Math.round(fps)} fps · ${droplets} drops`; },
+      onStats: ({ fps, droplets, quality }) => { stats.textContent = `${Math.round(fps)} fps · ${droplets} drops · ${quality}`; },
       onViewChange: ({ zoomed }) => { resetView.hidden = !zoomed; },
+      onQualityChange: (name) => setQualityButtons(name),
     });
   } catch (error) {
     console.error(error);
@@ -299,7 +301,7 @@
     applySize();
     segmented('power', (value) => pond.setPower(value));
     segmented('speed', (value) => pond.setTimeScale(Number(value)));
-    const setQualityButtons = segmented('quality', (value) => pond.setQuality(value));
+    setQualityButtons = segmented('quality', (value) => pond.setQuality(value));
     setQualityButtons(pond.quality);
     document.getElementById('throw').addEventListener('click', () => pond.throwRandom());
     resetView.addEventListener('click', () => pond.resetView());

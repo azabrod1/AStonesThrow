@@ -221,6 +221,7 @@ uniform vec3 uAbsorb;
 uniform float uExposure;
 uniform float uRefract;
 uniform float uMinPixelRadius;
+uniform float uFluidScale;      // fluid-buffer pixels per device pixel (the buffer's resolution scale)
 uniform float uProjScale;      // fluid-target pixels per world unit at distance 1
 uniform float uFullFloatInfo;  // 1 when the depth target is full float (NORMAL_PACKING)
 varying vec2 vUv;
@@ -379,8 +380,14 @@ void main() {
     float glint = info.b;
     // A column is one continuous surface, so it stays glass down to a couple
     // of pixels wide; drops turn to spray while they are still a few pixels.
-    float sprayness = 1.0 - mix(smoothstep(1.5, 5.0, pixelRadius), smoothstep(1.0, 2.5, pixelRadius), column);
-    float coverage = clamp(pixelRadius * pixelRadius / (uMinPixelRadius * uMinPixelRadius), 0.12, 1.0);
+    // Both limits are device pixels: a half-resolution fluid buffer must not
+    // turn drops into spray at twice the size, nor let the impostor a drop is
+    // widened to (uMinPixelRadius, in buffer pixels, so twice as wide on the
+    // screen) keep the coverage floor it would have at full resolution: the
+    // floor is scaled by the buffer pixel's area in device pixels.
+    float devicePixelRadius = pixelRadius / uFluidScale;
+    float sprayness = 1.0 - mix(smoothstep(1.5, 5.0, devicePixelRadius), smoothstep(1.0, 2.5, devicePixelRadius), column);
+    float coverage = clamp(pixelRadius * pixelRadius / (uMinPixelRadius * uMinPixelRadius), 0.12 * uFluidScale * uFluidScale, 1.0);
     float forward = pow(clamp(0.5 - 0.5 * dot(v, uSunDirView), 0.0, 1.0), 6.0);
     vec3 sprayLight = uSkyAmbient * 1.2 + uSunIrradiance * (0.08 + 0.7 * forward);
     float scatter = 1.0 - exp(-thickness * 30.0);

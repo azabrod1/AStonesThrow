@@ -14,6 +14,7 @@ node tools/fan-probe.mjs 0.03 6.9 0.68 # the forward fan of an oblique entry on 
 node tools/zoom-probe.mjs              # drives the page's zoom handlers and checks the anchor stays put
 node tools/sky-probe.mjs assets/sky/meadow_2_2k.hdr   # measures a sky panorama into assets/sky/meadow_2.json
 node tools/wave-probe.mjs              # the wind ripples on the CPU: real field, rms slope, travel direction, mip roughness, cost
+node tools/quality-probe.mjs           # runs the page's frame loop unpaused and checks the automatic quality steps down and the UI follows
 npm run site && node tools/site-check.mjs   # build what Pages publishes into _site/ and load it under /IntoTheWater/
 ```
 

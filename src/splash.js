@@ -201,6 +201,7 @@ export class SplashSystem {
       uExposure: { value: lighting.exposure },
       uRefract: { value: 1.4 },
       uMinPixelRadius: { value: 1.0 },
+      uFluidScale: { value: 1.0 },
       uProjScale: { value: 1000 },
       uFullFloatInfo: { value: 1 },
     });
@@ -663,6 +664,7 @@ export class SplashSystem {
     composite.uSunDirView.value.copy(this.lighting.sunDirection).transformDirection(camera.matrixWorldInverse);
     composite.uExposure.value = this.lighting.exposure;
     composite.uProjScale.value = projScale;
+    composite.uFluidScale.value = this.fluidScale;
     this.compositePass.render(renderer, output);
   }
 
