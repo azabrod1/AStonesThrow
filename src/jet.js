@@ -1,7 +1,8 @@
 // The Worthington jet: the column of water fired straight up when the air
-// cavity behind a stone pinches off.
+// cavity behind a stone pinches off and the hole above the neck closes.
 //
-// The column is water launched upward from the collapse point, each element
+// The column is water launched upward from the point where the cavity's
+// mouth closed (src/cavity.js; the splash starts it then), each element
 // then flying ballistically under gravity alone (a column is not a sheet, so
 // there is no drag). Over the main window T = 0.08·sqrt(R / 3 cm) s an
 // element launched at time tau leaves at u = tipSpeed·(1 − 0.68·tau/T): the
@@ -68,13 +69,14 @@
 // the fallen volume) with foam, a patch of foam specks in a disc of 1.6·R
 // (FALLBACK_SPECKS times the same cube root, about 140 for a 3 cm stone) and
 // a small secondary ring. For a 3 cm stone dropped in at about 6 m/s the
-// jet starts 116 ms after entry; at 0.3 s it is 44 cm tall, 24 mm across at
-// the water, 14 mm at mid-height and 10 mm under its 17 mm bulb; the tip
-// drops leave at about 360 and 440 ms and the column is gone by about 530 ms.
+// jet starts when the cavity closes, 138 ms after entry; 0.19 s later it is
+// 44 cm tall, 24 mm across at the water, 14 mm at mid-height and 10 mm under
+// its 17 mm bulb; the tip drops leave about 240 and 320 ms after it starts
+// and the column is gone about 410 ms after it starts.
 // Thrown in at 6.9 m/s, 42° from vertical, the splash slows it (tip speed
-// 2.9 rather than 3.6 m/s) and leans it 21°: at 0.3 s its top is 32 cm up
-// and about 20 cm back (30° from the collapse point), its drops land 17 to
-// 60 cm back, and it is gone by 470 ms.
+// 2.9 rather than 3.6 m/s) and leans it 21°: 0.18 s after it starts its top
+// is 32 cm up and about 20 cm back (30° from the collapse point), its drops
+// land 17 to 60 cm back, and it is gone 350 ms after it starts.
 //
 // updateGeometry() evaluates a ROWS × COLUMNS ring grid (src/fluidMesh.js)
 // once per rendered frame: CAP_ROWS rows of the cap's upper half, then rows

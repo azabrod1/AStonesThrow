@@ -8,8 +8,8 @@
 //   4. render what is under the surface (floor, submerged stones, bubbles)
 //      to a texture with depth;
 //   5. render the main scene (sky dome, water surface refracting pass 4,
-//      foam specks riding the surface, stones above the surface) to an HDR
-//      texture with depth;
+//      the stones' cavities in it (src/cavity.js), foam specks riding the
+//      surface, stones above the surface) to an HDR texture with depth;
 //   6. draw the droplets over it and tone-map to the canvas.
 // All simulation runs in world seconds scaled by the slow-motion factor.
 //
@@ -137,7 +137,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
   const ambientWaves = new AmbientWaves(renderer, { windDirection, depth: POND_DEPTH });
   const surface = createWaterSurface(water, lighting, ambientWaves);
   const floor = createPondFloor(water, lighting, ambientWaves);
-  const splash = new SplashSystem({ environment, lighting, water, ambientWaves });
+  const splash = new SplashSystem({ environment, lighting, water, ambientWaves, surface });
 
   const camera = new THREE.PerspectiveCamera(48, 1, 0.05, 60000);
   camera.position.set(0, 1.15, 2.45);
@@ -155,7 +155,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
   const sceneUnder = new THREE.Scene();
   sceneUnder.add(floor, splash.bubblePoints, sunUnder);
   const sceneMain = new THREE.Scene();
-  sceneMain.add(environment.sky, surface.inner, surface.outer, splash.foamSpecks.points, sun);
+  sceneMain.add(environment.sky, surface.inner, surface.outer, splash.cavityGroup, splash.foamSpecks.points, sun);
   // Layer 1 holds what the water mirrors: the sky dome, far shore included.
   environment.sky.layers.enable(1);
   sceneMain.environment = environment.envTexture;
@@ -303,6 +303,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     applyView();
   }
   resize();
+  surface.precompile(renderer, camera, mainTarget, sceneMain);
   const observer = new ResizeObserver(() => resize());
   observer.observe(canvas);
 
@@ -480,8 +481,9 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     if (!skip.ambient) ambientWaves.update(simulationTime);
     if (viewChanged) { renderReflection(); viewChanged = false; }
     surface.update({ underTarget, reflectionTarget, reflectionMatrix, resolution, camera, time: simulationTime });
+    splash.prepareScene();   // the stones' cavities, and the patch dipping under them
     floor.material.uniforms.uHeight.value = water.heightTexture;
-    surface.inner.visible = surface.outer.visible = !skip.surface;
+    surface.inner.visible = surface.outer.visible = splash.cavityGroup.visible = !skip.surface;
 
     renderer.setRenderTarget(underTarget);
     renderer.setClearColor(0x000000, 1);

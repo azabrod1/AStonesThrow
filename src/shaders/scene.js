@@ -417,12 +417,39 @@ FoamLook foamLook(vec2 position, vec2 acrossX, vec2 acrossY, float foam, vec2 fo
 // 4 m and more from the camera, is far below a pixel). Shading takes the
 // slope of both fields everywhere: the splash's inside the patch, the
 // ambient's over all the water, outer sheet included.
+//
+// Two variants of the same source, chosen by a #define, serve the cavity a
+// stone opens (src/cavity.js); without either, the shaders compile to what
+// they always were.
+//   CAVITY_PUSH (the inner patch while a cavity is open, set to the most
+//     cavities there can be): every vertex inside a cavity's circle moves by
+//     that cavity's shift, down below the hole's floor and along its axis, so
+//     the patch dips under the cavity's lip in a well that holds the cavity
+//     and never shows through the hole (src/cavity.js says how the circle
+//     and the shift are chosen). The moved vertices get no mask, so the
+//     hidden well never computes foam.
+//   CAVITY_MESH (the cavity's own mesh): positions and normals come from the
+//     mesh, built in world coordinates. aCavity.x, how far the vertex rides
+//     the surface, scales the splash's and the wind's height and slope, so
+//     the lip sits on the waves like the surface it joins and the wall below
+//     it does not; aCavity.y is how open the point is to the sky, aCavity.z
+//     how steeply a ray must climb to leave the hole through its mouth.
 export const WATER_VERTEX = /* glsl */`
 uniform sampler2D uHeight;
 uniform vec2 uDomainMin;
 uniform float uDomainSize;
 uniform float uTexelOffset;
 uniform float uInner;
+#ifdef CAVITY_PUSH
+uniform int uCavityCount;
+uniform vec4 uCavityMouths[CAVITY_PUSH];   // centre x and z, the circle's radius squared
+uniform vec3 uCavityShifts[CAVITY_PUSH];   // the move: along x, the new height, along z
+#endif
+#ifdef CAVITY_MESH
+attribute vec3 aCavity;
+varying vec3 vNormalWorld;
+varying vec3 vCavity;
+#endif
 varying vec3 vWorld;
 varying vec2 vDomainUv;
 varying float vMask;
@@ -432,8 +459,23 @@ void main() {
   vec3 world = (modelMatrix * vec4(position, 1.0)).xyz;
   vec2 domainUv = (world.xz - uDomainMin) / uDomainSize + uTexelOffset;
   float mask = uInner > 0.5 ? patchMask(domainUv) : 0.0;
+#ifdef CAVITY_MESH
+  mask *= aCavity.x;
+  vNormalWorld = normal;
+  vCavity = aCavity;
+#endif
   float height = uInner > 0.5 ? texture2D(uHeight, domainUv).r + ambientHeight(world.xz) : 0.0;
   world.y += height * mask;
+#ifdef CAVITY_PUSH
+  for (int index = 0; index < CAVITY_PUSH; index++) {
+    if (index >= uCavityCount) break;
+    vec2 fromMouth = world.xz - uCavityMouths[index].xy;
+    if (dot(fromMouth, fromMouth) < uCavityMouths[index].z) {
+      world = vec3(world.x + uCavityShifts[index].x, uCavityShifts[index].y, world.z + uCavityShifts[index].z);
+      mask = 0.0;
+    }
+  }
+#endif
   vWorld = world;
   vDomainUv = domainUv;
   vMask = mask;
@@ -469,6 +511,11 @@ varying vec3 vWorld;
 varying vec2 vDomainUv;
 varying float vMask;
 varying float vViewZ;
+#ifdef CAVITY_MESH
+#define CAVITY_DARKEST 0.1          // the hole's light where it sees no sky, against the open water's
+varying vec3 vNormalWorld;
+varying vec3 vCavity;       // rides the surface, open to the sky, climb to escape (WATER_VERTEX)
+#endif
 ${GLSL_COMMON}
 ${FOAM_PATTERN}
 
@@ -497,27 +544,28 @@ void main() {
   // which the mipmaps flatten where they are finer than a pixel. What they
   // flatten becomes roughness, so the glitter keeps its brightness with distance.
   float gust = gustEnvelope(vWorld.xz, uGustTime);
-  vec2 slope = vec2(hr - hl, hu - hd) / (2.0 * uCell) * vMask + ambientSlopeAtFullGust(vWorld.xz) * gust;
   float subGridSpread = uRoughness * uRoughness;
+#ifdef CAVITY_MESH
+  // The mesh's normal, tilted by the surface's slopes where the mesh rides
+  // the surface (its own normal is the lip's shape on still water). The
+  // refraction's shift is the surface's alone: it is tuned for ripples, and
+  // the lip's own tilt, many times steeper, would throw the lookup far
+  // across the under-pass; down the wall, seen nearly face on, there is none.
+  float ride = vCavity.x;
+  vec2 surfaceSlope = vec2(hr - hl, hu - hd) / (2.0 * uCell) * vMask + ambientSlopeAtFullGust(vWorld.xz) * gust * ride;
+  float slopeVariance = subGridSpread * subGridSpread + ambientUnresolvedVariance(vWorld.xz) * gust * gust * ride;
+  vec3 meshNormal = normalize(vNormalWorld);
+  vec3 n = normalize(meshNormal + vec3(-surfaceSlope.x, 0.0, -surfaceSlope.y) * max(meshNormal.y, 0.0));
+  float level = smoothstep(0.6, 0.9, meshNormal.y);   // 1 where the mesh lies as the surface does
+  vec2 slope = surfaceSlope;
+#else
+  vec2 slope = vec2(hr - hl, hu - hd) / (2.0 * uCell) * vMask + ambientSlopeAtFullGust(vWorld.xz) * gust;
   float slopeVariance = subGridSpread * subGridSpread + ambientUnresolvedVariance(vWorld.xz) * gust * gust;
   vec3 n = normalize(vec3(-slope.x, 1.0, -slope.y));
+#endif
   vec3 v = toCamera / viewDist;
   float nDotV = max(dot(n, v), 0.0);
   float fresnel = 0.02 + 0.98 * pow(1.0 - nDotV, 5.0);
-
-  // Reflection of the sky and the far shore (the dome's photograph): a planar
-  // mirror image, rendered at screen resolution, of a dome at infinity, so the
-  // direction the surface reflects the view ray into is looked up through the
-  // mirror camera (w = 0: a direction). A ripple tilting toward or away from
-  // the camera moves the image up or down by twice its tilt; one tilting
-  // sideways turns it far less at grazing angles, so reflections stretch into
-  // vertical streaks, as they do on a lake. A ray turned below the horizon
-  // would meet the next ripple; it takes the horizon's colour.
-  vec3 reflectedRay = reflect(-v, n);
-  reflectedRay.y = max(reflectedRay.y, 0.001);
-  vec4 reflectCoord = uReflectionMatrix * vec4(reflectedRay, 0.0);
-  vec2 reflectUv = reflectCoord.xy / max(reflectCoord.w, 1e-4);
-  vec3 reflected = texture2D(uReflection, clamp(reflectUv, vec2(0.002), vec2(0.998))).rgb;
 
   // Refraction: shift the screen lookup by the surface slope, scaled by how much
   // water lies behind this point and by distance (a slope moves the image more
@@ -541,8 +589,42 @@ void main() {
   float scattering = 1.0 - exp(-path2 / uScatterLength);
   vec3 refracted = underColor * transmittance + uWaterColor * scattering;
 
+  // Reflection of the sky and the far shore (the dome's photograph): a planar
+  // mirror image, rendered at screen resolution, of a dome at infinity, so the
+  // direction the surface reflects the view ray into is looked up through the
+  // mirror camera (w = 0: a direction). A ripple tilting toward or away from
+  // the camera moves the image up or down by twice its tilt; one tilting
+  // sideways turns it far less at grazing angles, so reflections stretch into
+  // vertical streaks, as they do on a lake. A ray turned below the horizon
+  // would meet the next ripple; it takes the horizon's colour.
+  vec3 reflectedRay = reflect(-v, n);
+#ifdef CAVITY_MESH
+  // Inside the hole (and on the lip's inner face) a reflected ray leaves
+  // through the mouth only if it climbs steeply enough; otherwise it meets the
+  // wall across, which looks like the water seen through this one. Elsewhere
+  // on the lip (vCavity.z = 0) it is the open surface's.
+  float climb = reflectedRay.y / max(length(reflectedRay.xz), 1e-3);
+  float escapes = vCavity.z > 1e-4 ? smoothstep(0.7, 1.3, climb / vCavity.z) : 1.0;
+#endif
+  reflectedRay.y = max(reflectedRay.y, 0.001);
+  vec4 reflectCoord = uReflectionMatrix * vec4(reflectedRay, 0.0);
+  vec2 reflectUv = reflectCoord.xy / max(reflectCoord.w, 1e-4);
+  vec3 reflected = texture2D(uReflection, clamp(reflectUv, vec2(0.002), vec2(0.998))).rgb;
+
+#ifdef CAVITY_MESH
+  reflected = mix(refracted, reflected, escapes);
+  vec3 color = mix(refracted, reflected, fresnel);
+  // The hole shades itself: the sky it sees narrows with depth (vCavity.y),
+  // a wall sees half of it at most ((1 + n.y) / 2 of the sky, cosine
+  // weighted), and the sun reaches only the part of the wall it shines into.
+  color *= mix(CAVITY_DARKEST, 1.0, vCavity.y * (0.5 + 0.5 * meshNormal.y));
+  float sunClimb = uSunDir.y / max(length(uSunDir.xz), 1e-3);
+  float sunlit = vCavity.z > 1e-4 ? smoothstep(0.7, 1.3, sunClimb / vCavity.z) : 1.0;
+  color += sunlit * min(sunGlitter(n, v, uSunDir, uSunIrradiance, slopeVariance), vec3(400.0));
+#else
   vec3 color = mix(refracted, reflected, fresnel);
   color += min(sunGlitter(n, v, uSunDir, uSunIrradiance, slopeVariance), vec3(400.0));
+#endif
 
   // Foam (FOAM_PATTERN): where it covers, it replaces the water's surface,
   // reflection and glitter included, except that thin foam, just over the
@@ -552,6 +634,9 @@ void main() {
   // are taken here, in uniform control flow; the pattern only where there is
   // foam.
   float foam = texture2D(uFoam, vDomainUv).r * vMask;
+#ifdef CAVITY_MESH
+  foam *= level;   // the pattern lies on the water's plane: none down the walls
+#endif
   vec2 acrossX = dFdx(vWorld.xz);
   vec2 acrossY = dFdy(vWorld.xz);
   vec2 foamChange = vec2(dFdx(foam), dFdy(foam));

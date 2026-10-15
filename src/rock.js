@@ -2,8 +2,9 @@
 //
 // In the air it follows a ballistic arc with a little drag and tumbles. The
 // moment its lowest point (of the tumbling mesh, not of a sphere) touches the
-// surface it reports the impact (position, speed, direction, radius) so the
-// splash can be built from it: the splash starts at first contact, not once
+// surface it reports the impact (position, its centre's height, speed,
+// direction, radius) so the splash can be built from it (the cavity follows
+// the stone down from there): the splash starts at first contact, not once
 // the stone is partly under, which for a 16 cm stone at 5 m/s down would be
 // several milliseconds late. Under water a quadratic drag stops it within a
 // few radii and buoyancy-reduced gravity sinks it to the floor, where it
@@ -144,6 +145,7 @@ export class Rock {
         impact = {
           x: this.position.x,
           z: this.position.z,
+          height: this.position.y,   // of the centre, above the water
           speed: this.velocity.length(),
           velocity: this.velocity.clone(),
           radius: this.radius,

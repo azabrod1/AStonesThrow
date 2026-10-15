@@ -11,13 +11,24 @@
 //   position = launch point + u·direction·τd·(1 − exp(−a/τd)) − ½·g·a²·up
 //
 // With stone radius R and entry speed V the main launch lasts
-// T = max(1.2·R/V, 0.01) s. Over it the ring widens from 0.9·R to 1.4·R, the
-// launch speed u falls from 0.55·V to 0.2·V and its angle from vertical from
-// 55° to 25°: the first material makes the flared rim and later material the
-// steeper wall under it. After T a tail keeps feeding the wall at
-// 0.2·V·exp(−(tau − T)/(0.45·T)) from a ring still widening by 0.2·R per T (up
-// to 2·R), so the base stays on the water while the sheet lives. The tail
-// leaves the ring at 0.6·h0, so the foot stays light.
+// T = max(1.2·R/V, 0.01) s. Over it the launch speed u falls from 0.55·V to
+// 0.2·V and its angle from vertical from 55° to 25°: the first material makes
+// the flared rim and later material the steeper wall under it. After T a tail
+// keeps feeding the wall at 0.2·V·exp(−(tau − T)/(0.45·T)), so the base stays
+// on the water while the sheet lives. The tail leaves the ring at 0.6·h0, so
+// the foot stays light.
+//
+// The ring a stone's sheet launches from is the lip of its cavity (`rim`,
+// src/cavity.js): each element leaves from where the lip's crest was at its
+// launch time, from the mouth's centre then (which an oblique stone drags
+// forward as it goes in), at the crest's radius at that azimuth (at least
+// RIM_RING_START·R, the contact line's first ejecta) and the crest's height.
+// So the sheet stands on the lip, and its base rises and widens with the lip,
+// about 0.9 to 1.6·R; once the mouth starts to close, the base stays where
+// the crest was widest, on the lip's outer slope, while the hole closes
+// inside it. Its base row rides the surface's waves as the lip does (aRide).
+// A sheet with no cavity (a landing drop's crown) launches from a ring
+// widening from 0.9·R to 1.4·R over T and by 0.2·R per T after it (up to 2·R).
 //
 // Around the ring u is modulated by 1 + 0.05·Σ a_k·cos(k·theta + phase_k) over
 // modes k = 5…9 and k = 12…18 alike for a 3 cm stone, with random a_k in
@@ -96,8 +107,9 @@
 // more than 0.3 of the entry speed is horizontal), a thin fast sheet ahead
 // of the crown: the same model over an open sector, FAN_HALF_ANGLE either
 // side of the direction of travel, launched over T = FAN_LAUNCH·R/V with no
-// tail from the forward contact line (its ring widening from
-// FAN_RING_START·R to FAN_RING_END·R) at FAN_SPEED_START to FAN_SPEED_END of
+// tail from the forward contact line, the cavity's lip on its forward side
+// (at least FAN_RING_START·R out; with no cavity, a ring widening from
+// FAN_RING_START·R to FAN_RING_END·R), at FAN_SPEED_START to FAN_SPEED_END of
 // V, about 0.9·V, and FAN_TILT_START to FAN_TILT_END degrees from vertical,
 // so mostly forward. Its strength (0 to 1, growing with the horizontal
 // fraction) scales the speeds by 0.75 + 0.25·strength and its thickness,
@@ -152,7 +164,8 @@ const TAIL_THICKNESS = 0.6;        // tail material leaves the ring at this frac
 const MIN_THICKNESS = 0.0002;
 const BEAD_END = 0.08;             // the bead is the material of the first 8% of T
 const TEAR_SHARE = 0.6;            // the tear takes this fraction of t_break
-const BASE_DEPTH = 0.003;          // launch a little below the surface so the base meets the water
+const BASE_DEPTH = 0.003;          // launch a little below the surface (or the cavity's lip) so the base meets the water
+const RIM_RING_START = 0.9;        // on a cavity, the ring is at least this many R until the lip's crest is wider
 const MAIN_MODES = [5, 6, 7, 8, 9];
 const FINE_MODES = [12, 13, 14, 15, 16, 17, 18];
 const MAIN_AMPLITUDE = 0.05;       // deeper turns the scallops into petals
@@ -194,8 +207,9 @@ export class CrownSheet {
    * @param landing the crown of a drop landing rather than of a stone
    * @param fan the forward fan of an oblique entry rather than the crown
    * @param strength the fan's, 0 to 1, growing with the horizontal fraction of the entry speed
+   * @param rim the stone's cavity (src/cavity.js), whose lip the sheet launches from, or null
    */
-  constructor({ impact, startTime, rimDroplets, breakupDroplets, material, landing = false, fan = false, strength = 1 }) {
+  constructor({ impact, startTime, rimDroplets, breakupDroplets, material, landing = false, fan = false, strength = 1, rim = null }) {
     const { velocity, radius } = impact;
     const speed = Math.max(impact.speed, 1.0);
     this.centreX = impact.x;
@@ -216,6 +230,8 @@ export class CrownSheet {
     this.finished = false;
     this.landing = landing;
     this.fan = fan;
+    this.rim = rim;
+    this.lip = { x: 0, z: 0, mouth: 0, width: 0, height: 0, widest: 0, widestWidth: 0 };
     this.rows = landing ? LANDING_ROWS : fan ? FAN_ROWS : ROWS;
     this.columns = landing ? LANDING_COLUMNS : fan ? FAN_COLUMNS : COLUMNS;
     this.mainRows = landing ? LANDING_MAIN_ROWS : fan ? FAN_ROWS : MAIN_ROWS;
@@ -319,7 +335,7 @@ export class CrownSheet {
       normal: [this.normals, 3],
       aRimTangent: [this.rimTangents, 3],
       aThickness: [this.thicknesses, 1],
-      aRide: [new Float32Array(vertexCount).fill(landing ? 1 : 0), 1],   // 1: lifted by the wave height under it
+      aRide: [this.rideFlags(vertexCount, landing), 1],   // 1: lifted by the wave height under it
     }, material, { wrap: this.wrap });
     this.dropScale = landing ? 1 : this.sizeFactor ** DROP_SIZE_POWER;
     this.maxDropRadius = landing ? LANDING_DROP_CAP * radius : (fan ? FAN_DROP_CAP : 0.0045) * this.dropScale;
@@ -327,6 +343,13 @@ export class CrownSheet {
     this.geometry = this.mesh.geometry;
     this.state = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, thickness: 0, radialDistance: 0 };
     this.stateOther = { ...this.state };
+  }
+
+  /** A landing crown rides the waves; a stone's sheet on a cavity's lip rides them at its base, as the lip does. */
+  rideFlags(vertexCount, landing) {
+    const flags = new Float32Array(vertexCount).fill(landing ? 1 : 0);
+    if (this.rim) flags.fill(1, (this.rows - 1) * this.columns);
+    return flags;
   }
 
   // ---- the model --------------------------------------------------------
@@ -379,6 +402,21 @@ export class CrownSheet {
       launchSpeed = this.entrySpeed * (tail > 0 ? 0.2 * Math.exp(-tail / TAIL_DECAY) : 0.55 - 0.35 * main) * speedFactor;
       tilt = THREE.MathUtils.degToRad(55 - 30 * main - this.tiltShift);
     }
+    // On a cavity the material leaves from its lip's crest, where the lip was
+    // then (centre, radius at this azimuth, height), once the crest is wider
+    // than the ring above starts; once the hole closes it stays where the
+    // crest was widest, on the lip's outer slope.
+    let centreX = this.centreX, centreZ = this.centreZ, baseHeight = -BASE_DEPTH;
+    if (this.rim) {
+      const lip = this.rim.lipAt(tau, this.lip);
+      const shape = this.rim.shape(cosAngle, sinAngle);
+      const crest = lip.mouth * shape + lip.width;
+      const held = lip.widest * shape + lip.widestWidth;
+      centreX = lip.x;
+      centreZ = lip.z;
+      ringRadius = Math.max(held, (this.fan ? FAN_RING_START : RIM_RING_START) * this.radius);
+      baseHeight += this.rim.lipHeightBeyond(lip, ringRadius - crest);
+    }
     const radialSpeed = launchSpeed * Math.sin(tilt);
     const upSpeed = launchSpeed * Math.cos(tilt);
     const age = Math.max(this.age - tau, 0);
@@ -386,9 +424,9 @@ export class CrownSheet {
     const decay = Math.exp(-age / this.dragSeconds);
     const flight = this.dragSeconds * (1 - decay);
     const radialDistance = ringRadius + radialSpeed * flight;
-    out.x = this.centreX + cosAngle * radialDistance + this.driftX * flight;
-    out.y = -BASE_DEPTH + upSpeed * flight - 0.5 * GRAVITY * age * age;
-    out.z = this.centreZ + sinAngle * radialDistance + this.driftZ * flight;
+    out.x = centreX + cosAngle * radialDistance + this.driftX * flight;
+    out.y = baseHeight + upSpeed * flight - 0.5 * GRAVITY * age * age;
+    out.z = centreZ + sinAngle * radialDistance + this.driftZ * flight;
     out.vx = (cosAngle * radialSpeed + this.driftX) * decay;
     out.vy = upSpeed * decay - GRAVITY * age;
     out.vz = (sinAngle * radialSpeed + this.driftZ) * decay;
