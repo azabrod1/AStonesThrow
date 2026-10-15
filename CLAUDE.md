@@ -14,6 +14,7 @@ node tools/fan-probe.mjs 0.03 6.9 0.68 # the forward fan of an oblique entry on 
 node tools/zoom-probe.mjs              # drives the page's zoom handlers and checks the anchor stays put
 node tools/sky-probe.mjs assets/sky/meadow_2_2k.hdr   # measures a sky panorama into assets/sky/meadow_2.json
 node tools/wave-probe.mjs              # the wind ripples on the CPU: real field, rms slope, travel direction, mip roughness, cost
+npm run site && node tools/site-check.mjs   # build what Pages publishes into _site/ and load it under /IntoTheWater/
 ```
 
 There is no build step. The page loads Three.js from jsDelivr through the import map in `index.html`.
@@ -27,6 +28,7 @@ There is no build step. The page loads Three.js from jsDelivr through the import
 - Tune the splash by looking at frames: close-ups through `--fov=12 --look=x:y:z` with crops, and the home view. The reference throw `0:-1.4:0.03` enters at about 41° from vertical, so it is oblique.
 - Use descriptive variable names, never single letters.
 - `assets/sky/*.json` is written by `tools/sky-probe.mjs` from its `.hdr`; rerun the probe, never edit the JSON.
+- Every push to `main` deploys to GitHub Pages (https://azabrod1.github.io/IntoTheWater/). Only `index.html`, `src/` and `assets/` are published (`SITE_FILES` in `tools/build-site.mjs`); a new runtime folder goes there too. Use relative paths: the site lives under `/IntoTheWater/`.
 - Add files by name, never `git add -A`. `shots/` is ignored and stays local.
 
 ## The cloud container

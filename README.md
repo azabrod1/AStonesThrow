@@ -4,8 +4,10 @@ Throw stones into a pond and watch the splash. A WebGL toy built with
 Three.js: the water is a real wave solver, the splash is choreographed from
 the physics of a stone entering water, and the droplets are rendered as water.
 
-Open `index.html` through any static server (`npm start`, then
-http://localhost:8123/). There is no build step. Three.js loads from a CDN.
+Live at https://azabrod1.github.io/IntoTheWater/, published from `main` by
+GitHub Pages on every push. Locally, open `index.html` through any static
+server (`npm start`, then http://localhost:8123/). There is no build step.
+Three.js loads from a CDN.
 
 Tap or click the water to throw a stone there. Space throws one at random.
 Scroll or pinch to zoom toward what is under the pointer (down to an 8°
@@ -132,6 +134,13 @@ ballistic arc, quadratic drag under water, and a settle into the sand.
 
 - `npm test` checks the GPU FFT formulation and the splat spectrum on the CPU,
   then runs `tools/wave-probe.mjs`.
+- Deployment: `.github/workflows/deploy.yml` runs the tests and `npm run site`
+  on every push to `main` and publishes `_site/` to GitHub Pages. `npm run site`
+  (`tools/build-site.mjs`) copies only what the page loads: `index.html`,
+  `src/` and `assets/`. A new file or folder loaded at run time outside those
+  must be added to its list. `node tools/site-check.mjs`, after
+  `npm run site`, serves `_site/` under `/IntoTheWater/` as Pages does and
+  checks that the pond starts and no request fails.
 - `node tools/wave-probe.mjs [--wind=x,z]` checks the wind ripples on the CPU
   with the GPU's own FFT passes: the field is real, its rms slope is the
   target, waves travel downwind, it repeats seamlessly after its period, and
