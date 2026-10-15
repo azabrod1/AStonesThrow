@@ -18,11 +18,25 @@
 //      water 3 mm under the pixels, as a passing ripple does, changes the
 //      shader's image no more than 1.6 times as much as it changes the
 //      supersampled one (shimmer would change it far more);
-//   3. prints the cell visits per foam pixel at each framing, the cost.
+//   3. prints the cell visits per foam pixel at each framing, the cost;
+//   4. runs the foam map's step (FOAM_FRAGMENT in src/shaders/spectral.js)
+//      with its arithmetic, on a corner of the Medium grid: a flow keeps the
+//      amount (within 6%: where the hole's edge moves, the interpolation's
+//      undershoot is clipped at zero, which adds a few per cent; nothing rises
+//      above what was there), clears its core and carries the raft out to
+//      where a source of its area puts it (within 10%), leaving under 2% of it
+//      within 0.6 of the radius it clears (bilinear samples, also printed,
+//      blur the hole's edge inward); the wind's drift moves a raft at
+//      FOAM_DRIFT (within 2%) without widening it (its rms radius by under 3%,
+//      where bilinear samples, also printed, widen it by about 40% in 8 s);
+//      and a boil over a raft leaves the raft its own lifetime (within 3% of
+//      the two exponentials after 8 s).
 // It exits with 1 if a check fails.
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { FOAM_FRAGMENT } from '../src/shaders/spectral.js';
+import { FOAM_DRIFT, FOAM_DIFFUSIVITY, FOAM_FLOW } from '../src/spectralWater.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const shaderSource = readFileSync(path.join(root, 'src/shaders/scene.js'), 'utf8');
@@ -296,5 +310,139 @@ for (const [name, framing] of Object.entries(FRAMINGS)) {
   check(shimmer < 1.6 * truthShimmer + 1e-3, `${name}: change when the water moves 3 mm ${shimmer.toFixed(4)}, supersampled ${truthShimmer.toFixed(4)}`);
   console.log(`     ${name}: ${visitsPerFoamPixel.toFixed(1)} cell visits per foam pixel`);
 }
+// 4. The map's step on the CPU: (total, raft, raft × its lifetime, boil × its
+// lifetime) per texel, each texel taking its stencil from where the flows
+// brought it, spreading and drifting (Lax–Wendroff), each kind decaying at its
+// own lifetime, then the stamps, as FOAM_FRAGMENT does.
+const MAP_SIZE = 64, MAP_CELL = 6 / 256;   // a corner of the Medium grid
+const SHORTEST_LIFETIME = Number(FOAM_FRAGMENT.match(/#define SHORTEST_LIFETIME ([\d.]+)/)[1]);
+const stencil = new Float64Array(20);
+const clampIndex = (index) => (index < 0 ? 0 : index > MAP_SIZE - 1 ? MAP_SIZE - 1 : index);
+// A texel (clamped to the map, as the target's edge clamps), or with `bilinear` the bilinear sample at a point, into the stencil.
+function sampleInto(map, positionX, positionY, offset, bilinear = false) {
+  if (!bilinear) {
+    const index = (clampIndex(positionY) * MAP_SIZE + clampIndex(positionX)) * 4;
+    for (let channel = 0; channel < 4; channel++) stencil[offset + channel] = map[index + channel];
+    return;
+  }
+  const cornerX = Math.floor(positionX), cornerY = Math.floor(positionY);
+  const alongX = positionX - cornerX, alongY = positionY - cornerY;
+  const left = clampIndex(cornerX), right = clampIndex(cornerX + 1), bottom = clampIndex(cornerY), top = clampIndex(cornerY + 1);
+  const lowerLeft = (bottom * MAP_SIZE + left) * 4, lowerRight = (bottom * MAP_SIZE + right) * 4, upperLeft = (top * MAP_SIZE + left) * 4, upperRight = (top * MAP_SIZE + right) * 4;
+  for (let channel = 0; channel < 4; channel++) {
+    stencil[offset + channel] = (1 - alongY) * ((1 - alongX) * map[lowerLeft + channel] + alongX * map[lowerRight + channel]) + alongY * ((1 - alongX) * map[upperLeft + channel] + alongX * map[upperRight + channel]);
+  }
+}
+function decayed(amount, product, dt) {
+  const lifetime = amount > 1e-6 ? product / amount : SHORTEST_LIFETIME;
+  const factor = Math.exp(-dt / Math.max(lifetime, SHORTEST_LIFETIME));
+  return [amount * factor, product * factor];
+}
+// flows: { x, y (texels), spread (this step's area over 2π, texels²), core2 (texels²) }; drift: texels this step;
+// bilinear reads the stencil around the upstream point bilinearly instead, for comparison.
+function mapStep(map, { dt, drift = [0, 0], flows = [], stamps = [], diffusion = true, bilinear = false }) {
+  const next = new Float32Array(map.length);
+  const rate = diffusion ? Math.min(dt * 4 * FOAM_DIFFUSIVITY / (MAP_CELL * MAP_CELL), 1) : 0;
+  for (let row = 0; row < MAP_SIZE; row++) {
+    for (let column = 0; column < MAP_SIZE; column++) {
+      let positionX = column - drift[0], positionY = row - drift[1], stretch = 1;
+      for (const flow of flows) {
+        const offsetX = positionX - flow.x, offsetY = positionY - flow.y;
+        const distanceSquared = offsetX * offsetX + offsetY * offsetY, reach = distanceSquared + flow.core2;
+        const shrink = Math.exp(-flow.spread / reach);
+        positionX = flow.x + offsetX * shrink; positionY = flow.y + offsetY * shrink;
+        stretch *= shrink * shrink * (1 + 2 * flow.spread * distanceSquared / (reach * reach));
+      }
+      const nearestX = bilinear ? positionX : Math.floor(positionX + 0.5), nearestY = bilinear ? positionY : Math.floor(positionY + 0.5);
+      const withinX = positionX - nearestX, withinY = positionY - nearestY;
+      sampleInto(map, nearestX, nearestY, 0, bilinear); sampleInto(map, nearestX + 1, nearestY, 4, bilinear); sampleInto(map, nearestX - 1, nearestY, 8, bilinear);
+      sampleInto(map, nearestX, nearestY + 1, 12, bilinear); sampleInto(map, nearestX, nearestY - 1, 16, bilinear);
+      const carried = [0, 0, 0, 0];
+      for (let channel = 0; channel < 4; channel++) {
+        const centre = stencil[channel], east = stencil[4 + channel], west = stencil[8 + channel], north = stencil[12 + channel], south = stencil[16 + channel];
+        const interpolated = centre + 0.5 * withinX * (east - west) + 0.5 * withinY * (north - south)
+          + 0.5 * withinX * withinX * (east + west - 2 * centre) + 0.5 * withinY * withinY * (north + south - 2 * centre);
+        const upstream = Math.min(Math.max(interpolated, Math.min(centre, east, west, north, south)), Math.max(centre, east, west, north, south));
+        carried[channel] = Math.max((upstream + rate * (0.25 * (east + west + north + south) - centre)) * stretch, 0);
+      }
+      let [raft, raftProduct] = decayed(carried[1], carried[2], dt);
+      let [boil, boilProduct] = decayed(Math.max(carried[0] - carried[1], 0), carried[3], dt);
+      for (const stamp of stamps) {
+        const offsetX = column - stamp.x, offsetY = row - stamp.y;
+        const added = stamp.amount * Math.exp(-(offsetX * offsetX + offsetY * offsetY) / (2 * stamp.sigma * stamp.sigma)) * Math.max(1 - raft - (stamp.boil ? boil : 0), 0);
+        if (stamp.boil) { boil += added; boilProduct += added * stamp.lifetime; } else { raft += added; raftProduct += added * stamp.lifetime; }
+      }
+      const total = boil + raft, keep = total > 1 ? 1 / total : 1;
+      next.set([total * keep, raft * keep, raftProduct * keep, boilProduct * keep], (row * MAP_SIZE + column) * 4);
+    }
+  }
+  return next;
+}
+function mapMoments(map) {
+  let sum = 0, sumX = 0, sumY = 0, spread = 0;
+  for (let index = 0; index < MAP_SIZE * MAP_SIZE; index++) { sum += map[index * 4]; sumX += map[index * 4] * (index % MAP_SIZE); sumY += map[index * 4] * Math.floor(index / MAP_SIZE); }
+  const meanX = sumX / sum, meanY = sumY / sum;
+  for (let index = 0; index < MAP_SIZE * MAP_SIZE; index++) spread += map[index * 4] * ((index % MAP_SIZE - meanX) ** 2 + (Math.floor(index / MAP_SIZE) - meanY) ** 2);
+  return { sum, meanX, meanY, rms: Math.sqrt(spread / sum) };
+}
+const mapMiddle = MAP_SIZE / 2, mapStepSeconds = 1 / 60;
+const lastingRaft = (sigma) => mapStep(new Float32Array(MAP_SIZE * MAP_SIZE * 4), { dt: 0, diffusion: false, stamps: [{ x: mapMiddle, y: mapMiddle, sigma: sigma / MAP_CELL, amount: 0.5, lifetime: 1e6 }] });
+console.log('The map\'s step (FOAM_FRAGMENT), on the Medium grid:');
+{
+  // A raft of σ 6 cm under a flow that clears 16 cm, its strength decaying over 0.18 s (a 16 cm stone's fall-back).
+  const flowRadius = 0.16, decay = 0.18, area = Math.PI * flowRadius * flowRadius;
+  const swept = (bilinear) => {
+    let map = lastingRaft(0.06);
+    for (let step = 0; step < 60; step++) {
+      const share = area * (Math.exp(-step * mapStepSeconds / decay) - Math.exp(-(step + 1) * mapStepSeconds / decay));
+      map = mapStep(map, { dt: mapStepSeconds, bilinear, flows: [{ x: mapMiddle, y: mapMiddle, spread: share / (2 * Math.PI * MAP_CELL * MAP_CELL), core2: (FOAM_FLOW.core * flowRadius / MAP_CELL) ** 2 }] });
+    }
+    let inHole = 0;   // the share of the amount left within 0.6 of the cleared radius
+    for (let index = 0; index < MAP_SIZE * MAP_SIZE; index++) if (Math.hypot(index % MAP_SIZE - mapMiddle, Math.floor(index / MAP_SIZE) - mapMiddle) * MAP_CELL < 0.6 * flowRadius) inHole += map[index * 4];
+    return { map, inHole: inHole / mapMoments(map).sum };
+  };
+  const before = mapMoments(lastingRaft(0.06));
+  const { map, inHole } = swept(false), bilinearSweep = swept(true);
+  const after = mapMoments(map);
+  let weightedRadius = 0, inCore = 0;
+  for (let index = 0; index < MAP_SIZE * MAP_SIZE; index++) {
+    const distance = Math.hypot(index % MAP_SIZE - mapMiddle, Math.floor(index / MAP_SIZE) - mapMiddle) * MAP_CELL;
+    weightedRadius += map[index * 4] * distance;
+    if (distance < FOAM_FLOW.core * flowRadius) inCore = Math.max(inCore, map[index * 4]);
+  }
+  let sourceRadius = 0, norm = 0;   // a singular source of that area moves r to sqrt(r² + R²)
+  for (let index = 1; index < 4000; index++) { const radius = index * 1e-4, density = radius * Math.exp(-radius * radius / (2 * 0.06 * 0.06)); sourceRadius += density * Math.hypot(radius, flowRadius); norm += density; }
+  sourceRadius /= norm;
+  let peakBefore = 0, peakAfter = 0;
+  const original = lastingRaft(0.06);
+  for (let index = 0; index < MAP_SIZE * MAP_SIZE; index++) { peakBefore = Math.max(peakBefore, original[index * 4]); peakAfter = Math.max(peakAfter, map[index * 4]); }
+  check(Math.abs(after.sum / before.sum - 1) < 0.06, `a flow keeps the amount: ${(100 * (after.sum / before.sum - 1)).toFixed(2)}% (bilinear samples: ${(100 * (mapMoments(bilinearSweep.map).sum / before.sum - 1)).toFixed(2)}%)`);
+  check(peakAfter <= peakBefore + 1e-6, `and brightens nothing: at most ${peakAfter.toFixed(3)} after, ${peakBefore.toFixed(3)} before`);
+  check(inCore < 0.01 * 0.5, `a flow clears its core: at most ${inCore.toFixed(4)} left of 0.5`);
+  check(Math.abs(weightedRadius / after.sum / sourceRadius - 1) < 0.1, `a flow carries the raft out to ${(100 * weightedRadius / after.sum).toFixed(1)} cm on average (a source of its area: ${(100 * sourceRadius).toFixed(1)} cm)`);
+  check(inHole < 0.02, `a flow leaves ${(100 * inHole).toFixed(1)}% of the raft within 0.6 of the radius it clears (bilinear samples: ${(100 * bilinearSweep.inHole).toFixed(1)}%)`);
+}
+{
+  // The same raft drifting with the wind for 8 s (no spreading, to see the drift's own).
+  const velocity = [0.45 / Math.hypot(0.45, 0.9) * FOAM_DRIFT, -0.9 / Math.hypot(0.45, 0.9) * FOAM_DRIFT];
+  const drifted = (bilinear) => {
+    let map = lastingRaft(0.06);
+    const before = mapMoments(map);
+    for (let step = 0; step < 480; step++) map = mapStep(map, { dt: mapStepSeconds, diffusion: false, bilinear, drift: [velocity[0] * mapStepSeconds / MAP_CELL, velocity[1] * mapStepSeconds / MAP_CELL] });
+    const after = mapMoments(map);
+    return { moved: Math.hypot(after.meanX - before.meanX, after.meanY - before.meanY) * MAP_CELL, widened: after.rms / before.rms - 1 };
+  };
+  const laxWendroff = drifted(false), upstream = drifted(true);
+  check(Math.abs(laxWendroff.moved / (8 * FOAM_DRIFT) - 1) < 0.02, `the drift moves a raft ${(100 * laxWendroff.moved).toFixed(2)} cm in 8 s (${(800 * FOAM_DRIFT).toFixed(2)} cm at FOAM_DRIFT)`);
+  check(laxWendroff.widened < 0.03, `the drift widens it by ${(100 * laxWendroff.widened).toFixed(1)}% (an upstream bilinear sample: ${(100 * upstream.widened).toFixed(1)}%)`);
+}
+{
+  // A boil of 0.4 (τ 0.8 s) over a raft of 0.1 (τ 5 s), wide and even, for 8 s.
+  let map = mapStep(new Float32Array(MAP_SIZE * MAP_SIZE * 4), { dt: 0, diffusion: false, stamps: [{ x: mapMiddle, y: mapMiddle, sigma: 1e4, amount: 0.1, lifetime: 5 }, { x: mapMiddle, y: mapMiddle, sigma: 1e4, amount: 0.4, lifetime: 0.8, boil: true }] });
+  for (let step = 0; step < 48; step++) map = mapStep(map, { dt: 10 * mapStepSeconds, diffusion: false });
+  const exact = 0.1 * Math.exp(-8 / 5) + 0.4 * Math.exp(-8 / 0.8), oneLifetime = 0.5 * Math.exp(-8 / ((0.1 * 5 + 0.4 * 0.8) / 0.5));
+  const left = map[(mapMiddle * MAP_SIZE + mapMiddle) * 4];
+  check(Math.abs(left / exact - 1) < 0.03, `a boil over a raft leaves ${left.toFixed(4)} after 8 s (each kind at its own lifetime: ${exact.toFixed(4)}; one shared lifetime would leave ${oneLifetime.toFixed(4)})`);
+}
 if (failures.length) { console.log(`${failures.length} check(s) failed`); process.exit(1); }
-console.log('foam pattern checks passed');
+console.log('foam pattern and map checks passed');

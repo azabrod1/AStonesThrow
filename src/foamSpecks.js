@@ -6,7 +6,8 @@
 // src/shaders/scene.js); the specks are the bits that drift out of it and
 // the bubbles that land or surface away from it. Each is a point riding the
 // water surface, 2 to 4 mm across (most nearer 2), living 2 to 8 s (most
-// nearer 2), drifting slowly outward from where it was born, wandering a
+// nearer 2), drifting slowly outward from where it was born and downwind with
+// the raft (the foam map's drift, src/spectralWater.js), wandering a
 // millimetre or so, and fading quickly at the end. Surface bubbles are mostly
 // clear with a bright rim, so a speck is a translucent white, dimmer than the
 // raft: a lone one is faint, a cluster of them reads as foam. The splash
@@ -24,7 +25,8 @@
 // fetch of the splash's height texture, one of the ambient waves'
 // (src/ambientWaves.js), so specks ride their crests, and one of the foam
 // map; nothing is drawn once every speck has gone. The texel offset is the
-// solver's shared uniform, so a change of its grid reaches the specks.
+// solver's shared uniform, so a change of its grid reaches the specks, and
+// so is the drift's velocity.
 import * as THREE from 'three';
 import { SPECK_VERTEX, SPECK_FRAGMENT } from './shaders/scene.js';
 
@@ -77,6 +79,7 @@ export class FoamSpecks {
         uDomainSize: { value: water.domainSize },
         uTexelOffset: water.gridUniforms?.uTexelOffset ?? { value: water.uvOffset },
         uTime: { value: 0 },
+        uFoamVelocity: water.foamUniforms?.uFoamVelocity ?? { value: new THREE.Vector2() },
         uProjScale: { value: 1000 },
         uMinPixelSize: { value: MIN_PIXEL_SIZE },
         uSunDir: { value: lighting.sunDirection },

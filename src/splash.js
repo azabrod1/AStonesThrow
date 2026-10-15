@@ -40,6 +40,23 @@
 // Each stage also stamps the height field and the foam map. A stone falling
 // straight in makes none of the oblique parts.
 //
+// Foam. The map keeps two kinds (src/spectralWater.js): a boil, big bubbles,
+// dense and popping within a second (BOIL_LIFETIME), and a raft, the small
+// bubbles left, sparse and lasting seconds (raftLifetime, longer the bigger
+// the stone). Where the hole closes its air comes up over FOAM_SPREAD·sqrt(R/g)
+// as both, the boil over about the mouth, the raft wider; the jet rises from
+// a boil of its own, and where it falls back it stamps both again
+// (fallBackFoam: src/jet.js meets the water through columnWater, which hands
+// its foam to the splash). Each is a patch of three to five sub-stamps of
+// unequal radii at random offsets (stampFoamPatch), never one Gaussian, drawn
+// from a random sequence of the foam's own (foamRandom), so no two rafts share
+// a shape and the foam shifts no other draw. Surfacing bubbles fizz, a faint
+// boil each, and a landing drop leaves a small boil of its own. Two surface flows per stone
+// carry it (addFoamFlow): the jet's base welling up where the hole closed
+// (CLOSURE_FLOW) and the mound spreading where the jet falls back
+// (FALLBACK_FLOW), each sweeping the foam out of a disc into a ring and arcs
+// over FLOW_DECAY·sqrt(R/g); and the wind drifts it all (setWind).
+//
 // Drops ring the water where they land, and a large one (LANDING_CROWN_RADIUS
 // and up: the jet's tip and breakup drops, the crown's biggest) that has
 // flown at least LANDING_CROWN_FLIGHT and falls at LANDING_CROWN_SPEED or
@@ -76,11 +93,15 @@
 //     jet's fall-back adds a strong second ring. The solver damps waves
 //     longer than 30 cm less (src/spectralWater.js), so a big stone's ring
 //     carries across the pond.
-//   - Foam: the cavity's foam comes up where it closed and spreads to 1.5·R
-//     over FOAM_SPREAD·sqrt(R/g), FOAM_STAMP·sqrt(s) in all, at most
-//     FOAM_STAMP_CAP (a bigger cavity entrains more air for the area of its
-//     mouth); the crown's specks go as s² (the area its base covered);
-//     the bubbles as s², in a cloud as wide as the stone.
+//   - Foam: the patches' radii go with R, the boil's peaks as sqrt(s) and the
+//     raft's as s^0.25 times the cavity splat's strength, at most
+//     FOAM_AMOUNT_CAP (a bigger cavity entrains more air for the area of its
+//     mouth); the raft lasts
+//     RAFT_LIFETIME.base + RAFT_LIFETIME.perMetre·R (3.2 s for the 1.5 cm
+//     pebble, 5.4 s for the 16 cm stone); the flows clear discs of
+//     CLOSURE_FLOW·R and FALLBACK_FLOW·R; the crown's specks go as s² (the
+//     area its base covered); the bubbles as s², in a cloud as wide as the
+//     stone.
 // The counts are set for a believable splash, tens to a few hundred drops
 // a stone and most of them millimetres across, not thousands of specks: a
 // 3 cm stone throws about 400 (130 from the crown, 60 fine ones from the
@@ -172,10 +193,29 @@ const SPRAY_DROP_RADIUS = 0.0008;     // the contact line's spray: drops of this
 const SPRAY_DROP_SPREAD = 0.001;      // ...to this much more, times (R / 3 cm)^0.4
 const BUBBLES = 110;                  // bubbles a 3 cm stone drags down, scaling with R²...
 const BUBBLE_CAP = 800;               // ...at most (a 16 cm stone wants 780)
-const FOAM_STAMP = 0.65;              // the cavity's foam for a 3 cm stone, scaling as sqrt(R / 3 cm)...
-const FOAM_STAMP_CAP = 0.95;          // ...up to this, in all...
-const FOAM_PIECES = 4;                // ...in this many stamps, from where the hole closed outward...
-const FOAM_SPREAD = 0.6;              // ...over this many sqrt(R/g) from its closure
+// The foam (the map keeps two kinds, src/spectralWater.js). The air the hole
+// held comes up where it closed as a boil, big bubbles, dense and short-lived,
+// and leaves a raft of small bubbles, sparse and lasting seconds, longer the
+// bigger the stone; each comes as a patch of sub-stamps (stampFoamPatch).
+const BOIL_AMOUNT = 0.25;             // a 3 cm stone's boil: its sub-stamps' peak, scaling as sqrt(R / 3 cm) and the cavity splat's strength...
+const RAFT_AMOUNT = 0.18;             // ...and its raft's, as (R / 3 cm)^0.25 (a small stone's raft is smaller, hardly thinner)...
+const FOAM_AMOUNT_CAP = 0.8;          // ...at most
+const BOIL_LIFETIME = 0.8;            // τ of a boil (s)
+const RAFT_LIFETIME = { base: 3, perMetre: 30 };     // τ of a raft: base + perMetre·R (s), at most 6 (src/spectralWater.js)
+const FOAM_SPREAD = 0.6;              // the hole's foam comes up over this many sqrt(R/g) from its closure
+const JET_BASE_BOIL = 0.2;            // the boil where the jet rises, its sub-stamps' peak
+const BUBBLE_FOAM = 0.04;             // a fizz where a bubble surfaces (a boil, popping as fast)
+const LANDING_FOAM_LIFETIME = 1.2;    // a landing drop's foam is a boil of big bubbles, lasting this (s)
+const FALLBACK_BOIL_CAP = 0.45;       // the jet's fall-back stamps its foam as a boil of at most this peak...
+const FALLBACK_RAFT = 0.3;            // ...and a raft of this share of it...
+const FALLBACK_RAFT_CAP = 0.15;       // ...at most
+// Surface flows (addFoamFlow in src/spectralWater.js), which sweep the foam
+// out of a disc into a ring: the jet's base welling up where the hole closed,
+// and the mound where the jet falls back spreading. Their discs in stone
+// radii; their strength decays over FLOW_DECAY·sqrt(R/g).
+const CLOSURE_FLOW = 1.4;
+const FALLBACK_FLOW = 2.0;
+const FLOW_DECAY = 2;
 const JET_LEAN = 0.4;                                // the jet leans back by this fraction of the entry angle,
 const JET_LEAN_CAP = THREE.MathUtils.degToRad(18);   // at most this
 const OBLIQUE_IMPULSE = 1.3;          // an oblique entry's cavity splats together carry at most this times a vertical one's
@@ -247,6 +287,38 @@ export function mirrorWith(object, material, bounds = null) {
 }
 
 const randomRange = (lo, hi) => lo + Math.random() * (hi - lo);
+
+/** τ (s) of the raft a stone of radius R (m) leaves. */
+const raftLifetime = (radius) => RAFT_LIFETIME.base + RAFT_LIFETIME.perMetre * radius;
+
+/**
+ * A random sequence of the foam's own, seeded by `values` (a place and a
+ * time): the foam's shapes are drawn from it rather than from Math.random, so
+ * they shift no other draw of the splash (a seeded throw splashes the same
+ * whatever its foam), yet no two rafts share a shape. Murmur3's finaliser over
+ * the values' bits, then mulberry32.
+ */
+function foamRandom(...values) {
+  const finalise = (bits) => {
+    let mixed = Math.imul(bits ^ (bits >>> 16), 0x85ebca6b);
+    mixed = Math.imul(mixed ^ (mixed >>> 13), 0xc2b2ae35);
+    return (mixed ^ (mixed >>> 16)) >>> 0;
+  };
+  const number = new Float64Array(1);
+  const words = new Uint32Array(number.buffer);
+  let state = 0x9e3779b9;
+  for (const value of values) {
+    number[0] = value;
+    state = finalise(state ^ words[0]);
+    state = finalise(state ^ words[1]);
+  }
+  return () => {
+    state = (state + 0x6d2b79f5) >>> 0;
+    let mixed = Math.imul(state ^ (state >>> 15), state | 1);
+    mixed ^= mixed + Math.imul(mixed ^ (mixed >>> 7), mixed | 61);
+    return ((mixed ^ (mixed >>> 14)) >>> 0) / 4294967296;
+  };
+}
 const smoothstep = (edgeLow, edgeHigh, value) => {
   const clamped = Math.min(Math.max((value - edgeLow) / (edgeHigh - edgeLow), 0), 1);
   return clamped * clamped * (3 - 2 * clamped);
@@ -275,6 +347,7 @@ export class SplashSystem {
     this.plumes = [];    // scheduled bubble plumes
     this.wakes = [];     // scheduled cavity splats of an oblique entry
     this.foamStamps = [];   // scheduled foam: a cavity's, when it closes
+    this.flowStarts = [];   // scheduled surface flows: a jet's base, when the hole closes
     this.cavities = [];  // open cavities (src/cavity.js), drawn in the main scene from cavityGroup
     this.cavityGroup = new THREE.Group();
     this.surface = surface;
@@ -284,6 +357,8 @@ export class SplashSystem {
     this.substep = 1 / 240;       // and of its substeps, which the stones are stepped with
     this.lighting = lighting;
     this.foamSpecks = new FoamSpecks({ water, lighting, ambientWaves });
+    // The foam drifts down the wind the ripples blow with (the CPU probes' stand-ins have neither).
+    if (ambientWaves.windDirection) water.setWind?.(ambientWaves.windDirection);
 
     // Droplet instances.
     const quad = new THREE.PlaneGeometry(2, 2);
@@ -416,7 +491,7 @@ export class SplashSystem {
   /** Something in the air or in the water is moving: droplets, sheets, columns, an open cavity, bubbles, or a stage still to come. */
   get inMotion() {
     return this.count > 0 || this.crowns.length > 0 || this.columns.length > 0 || this.cavities.length > 0 || this.bubbleCount > 0
-      || this.jets.length > 0 || this.plumes.length > 0 || this.wakes.length > 0 || this.foamStamps.length > 0;
+      || this.jets.length > 0 || this.plumes.length > 0 || this.wakes.length > 0 || this.foamStamps.length > 0 || this.flowStarts.length > 0;
   }
 
   /** Nothing of the splash is left, foam specks included. */
@@ -438,6 +513,7 @@ export class SplashSystem {
     this.plumes = [];
     this.wakes = [];
     this.foamStamps = [];
+    this.flowStarts = [];
     this.mirrorList.length = 0;
     this.particleMesh.visible = false;
     this.particleMesh.layers.disable(MIRROR_LAYER);
@@ -554,6 +630,8 @@ export class SplashSystem {
     // where the hole closed, which after an oblique entry leans back along the
     // stone's path and, from a dragged cavity, rises slower.
     const closure = cavity.lipAt(cavity.closeTime, {});
+    // The jet's base wells up there and sweeps the foam out from under it.
+    this.flowStarts.push({ time: this.time + cavity.closeTime, flow: { x: closure.x, z: closure.z, radius: CLOSURE_FLOW * radius, decay: FLOW_DECAY * Math.sqrt(radius / GRAVITY) } });
     const tipSpeed = THREE.MathUtils.clamp(0.42 * entrySpeed + 0.7, 1.2, 6.0) * sizeFactor ** 0.15 * (1 - JET_OBLIQUE_SLOWING * horizontalFraction);
     this.jets.push({
       x: closure.x, z: closure.z, radius, start: this.time + cavity.closeTime,
@@ -585,15 +663,13 @@ export class SplashSystem {
     const depth = CAVITY_SPLAT_DEPTH * radius * strength;
     const ringDepth = 0.3 * radius * strength;   // the depression the ring's travel is set from (it was the splat's own)
     water.addSplat({ x, z, radius: sigma, height: -depth, velocity: -0.045 * speed * strength });
-    // The foam comes up where the hole closed and spreads: FOAM_PIECES stamps
-    // over FOAM_SPREAD·sqrt(R/g), widening to 1.5·R, together the amount below.
-    const amount = Math.min(FOAM_STAMP * Math.sqrt(radius / REFERENCE_RADIUS), FOAM_STAMP_CAP) * strength;
-    for (let piece = 0; piece < FOAM_PIECES; piece++) {
-      const share = piece / (FOAM_PIECES - 1);
-      const foam = { x, z, radius: radius * (0.6 + 0.9 * share), amount: amount / FOAM_PIECES };
-      const time = foamTime + share * FOAM_SPREAD * Math.sqrt(radius / GRAVITY);
-      if (time > this.time) this.foamStamps.push({ time, foam }); else water.addFoam(foam);
-    }
+    // The foam comes up where the hole closed over FOAM_SPREAD·sqrt(R/g): a
+    // boil over about the mouth, and the wider raft it leaves.
+    const sizeFactor = radius / REFERENCE_RADIUS;
+    const random = foamRandom(x, z, foamTime);
+    const span = FOAM_SPREAD * Math.sqrt(radius / GRAVITY);
+    this.stampFoamPatch(water, random, { x, z, radius: 1.4 * radius, amount: Math.min(RAFT_AMOUNT * sizeFactor ** 0.25 * strength, FOAM_AMOUNT_CAP), reach: 1.2, radii: [0.3, 0.65], lifetime: raftLifetime(radius), time: foamTime, span });
+    this.stampFoamPatch(water, random, { x, z, radius: 1.1 * radius, amount: Math.min(BOIL_AMOUNT * Math.sqrt(sizeFactor) * strength, FOAM_AMOUNT_CAP), reach: 1.0, radii: [0.3, 0.6], lifetime: BOIL_LIFETIME, boil: true, time: foamTime, span });
     const travel = Math.hypot(travelX, travelZ);
     if (travel > 0) {
       const lift = 0.6 * travel * Math.sqrt(GRAVITY * sigma) * ringDepth / sigma;   // ≈ c·depth/σ at the slope's peak
@@ -656,13 +732,13 @@ export class SplashSystem {
     this.crowns.splice(this.crowns.indexOf(crown), 1);
   }
 
-  /** The cavity has closed: fire the column from the mound where it closed, keeping at most MAX_JETS. */
+  /** The cavity has closed: fire the column from the mound where it closed, in a boil, keeping at most MAX_JETS. */
   startJet(jet, water) {
     water.addSplat({ x: jet.x, z: jet.z, radius: jet.radius * 0.6, height: 0.06 * jet.radius, velocity: 0.05 * jet.speed });
-    water.addFoam({ x: jet.x, z: jet.z, radius: jet.radius * 1.0, amount: 0.35 });
+    this.stampFoamPatch(water, foamRandom(jet.x, jet.z, jet.start), { x: jet.x, z: jet.z, radius: jet.radius, amount: JET_BASE_BOIL, reach: 1.0, radii: [0.3, 0.6], lifetime: BOIL_LIFETIME, boil: true });
     if (this.columns.length >= MAX_JETS) {
       const oldest = this.columns[0];
-      oldest.finishNow(this, water);
+      oldest.finishNow(this, this.columnWater(oldest, water));
       this.retireColumn(oldest);
     }
     const column = new JetColumn({
@@ -678,6 +754,48 @@ export class SplashSystem {
     this.particleScene.remove(column.mesh);
     column.dispose();
     this.columns.splice(this.columns.indexOf(column), 1);
+  }
+
+  /**
+   * The water as a column meets it: src/jet.js touches the water only when
+   * the column falls back, with the mound's splats, which pass straight
+   * through, and its foam, which fallBackFoam stamps the splash's way.
+   */
+  columnWater(column, water) {
+    return { addSplat: (splat) => water.addSplat(splat), addFoam: (foam) => this.fallBackFoam(column, foam, water) };
+  }
+
+  /**
+   * Where a column falls back (its `foam`: the place, the mound's reach and
+   * how much it fell): a boil and a raft as patches, and the mound spreading,
+   * a flow that sweeps them and whatever floats there outward into a ring.
+   */
+  fallBackFoam(column, foam, water) {
+    const random = foamRandom(foam.x, foam.z, this.time);
+    this.stampFoamPatch(water, random, { x: foam.x, z: foam.z, radius: 1.2 * foam.radius, amount: Math.min(FALLBACK_RAFT * foam.amount, FALLBACK_RAFT_CAP), reach: 1.2, radii: [0.3, 0.65], lifetime: raftLifetime(column.radius) });
+    this.stampFoamPatch(water, random, { x: foam.x, z: foam.z, radius: foam.radius, amount: Math.min(foam.amount, FALLBACK_BOIL_CAP), reach: 1.0, radii: [0.3, 0.6], lifetime: BOIL_LIFETIME, boil: true });
+    water.addFoamFlow?.({ x: foam.x, z: foam.z, radius: FALLBACK_FLOW * column.radius, decay: FLOW_DECAY * Math.sqrt(column.radius / GRAVITY) });
+  }
+
+  /**
+   * Foam as a patch rather than one round Gaussian: three to five sub-stamps
+   * of radius times radii[0] to radii[1], at random offsets up to
+   * reach·radius from (x, z), peaks of 0.4 to 1 times `amount`, drawn from
+   * `random`; a boil or a raft of the given lifetime. They come at `time`
+   * (now if it has passed), the later ones spread over `span` seconds after.
+   */
+  stampFoamPatch(water, random, { x, z, radius, amount, reach, radii, lifetime, boil = false, time = this.time, span = 0 }) {
+    const count = 3 + Math.floor(random() * 3);
+    for (let piece = 0; piece < count; piece++) {
+      const angle = random() * Math.PI * 2;
+      const distance = reach * radius * Math.sqrt(random());
+      const foam = {
+        x: x + Math.cos(angle) * distance, z: z + Math.sin(angle) * distance,
+        radius: radius * (radii[0] + (radii[1] - radii[0]) * random()), amount: amount * (0.4 + 0.6 * random()), lifetime, boil,
+      };
+      const at = time + span * piece / (count - 1);
+      if (at > this.time) this.foamStamps.push({ time: at, foam }); else water.addFoam(foam);
+    }
   }
 
   /** `count` foam specks in rafts over the ring between two radii around (x, z), drifting outward at up to `driftSpeed` m/s. */
@@ -743,6 +861,8 @@ export class SplashSystem {
     this.wakes = this.wakes.filter((wake) => this.time < wake.start);
     for (const stamp of this.foamStamps) if (this.time >= stamp.time) water.addFoam(stamp.foam);
     this.foamStamps = this.foamStamps.filter((stamp) => this.time < stamp.time);
+    for (const start of this.flowStarts) if (this.time >= start.time) water.addFoamFlow?.(start.flow);
+    this.flowStarts = this.flowStarts.filter((start) => this.time < start.time);
     for (const cavity of this.cavities) cavity.update(this.time);
     for (const cavity of this.cavities.filter((candidate) => candidate.finished)) this.retireCavity(cavity);
 
@@ -803,7 +923,7 @@ export class SplashSystem {
         landingCrowns++;
       }
       if (hit.radius > 0.004) {
-        water.addFoam({ x: hit.x, z: hit.z, radius: hit.radius * 3, amount: 0.05 * strength });
+        water.addFoam({ x: hit.x, z: hit.z, radius: hit.radius * 3, amount: 0.05 * strength, lifetime: LANDING_FOAM_LIFETIME, boil: true });
         const sprayCount = crowned ? 0 : Math.random() < LANDING_KICK_CHANCE ? 1 + Math.floor(Math.random() * LANDING_KICK_MOST) : 0;
         for (let s = 0; s < sprayCount; s++) {
           const angle = Math.random() * Math.PI * 2;
@@ -821,7 +941,7 @@ export class SplashSystem {
     for (const crown of this.crowns.filter((candidate) => candidate.finished)) this.retireCrown(crown);
 
     // Jet columns pinch off their tips, break up and fall back, the same way.
-    for (const column of this.columns) column.update(this.time, dt, this, water);
+    for (const column of this.columns) column.update(this.time, dt, this, this.columnWater(column, water));
     for (const column of this.columns.filter((candidate) => candidate.finished)) this.retireColumn(column);
 
     // Bubbles rise, wobble and burst at the surface.
@@ -835,7 +955,7 @@ export class SplashSystem {
       const y = this.bubblePositions[p + 1] + this.bubbleVelocities[p + 1] * dt;
       const z = this.bubblePositions[p + 2] + (this.bubbleVelocities[p + 2] - wobble) * dt;
       if (y >= -0.002) {
-        if (Math.random() < 0.3) water.addFoam({ x, z, radius: 0.012, amount: 0.06 });
+        if (Math.random() < 0.3) water.addFoam({ x, z, radius: 0.012, amount: BUBBLE_FOAM, lifetime: BOIL_LIFETIME, boil: true });
         // A surfacing bubble floats for a while as a speck its own size (2 to 4 mm across).
         this.foamSpecks.spawn(x, z, randomRange(-0.004, 0.004), randomRange(-0.004, 0.004), this.time, THREE.MathUtils.clamp(2 * size, 0.002, 0.004));
         this.removeBubble(i);

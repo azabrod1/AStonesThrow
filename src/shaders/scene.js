@@ -122,7 +122,9 @@ vec3 sunGlitter(vec3 normal, vec3 toViewer, vec3 toSun, vec3 sunIrradiance, floa
 // The foam's bubble pattern, for WATER_FRAGMENT. The foam map
 // (src/spectralWater.js) is smooth and coarse (1.2 cm texels on high, 2.3 cm
 // on low); what makes foam look like foam is finer than that, so it is
-// computed here, in world XZ (it stays put as the water moves), from three
+// computed here, in world XZ (it stays put as the water moves) less how far
+// the wind has drifted the foam (uFoamDrift, src/spectralWater.js), so the
+// pattern rides with the map rather than the map sliding over it, from three
 // layers of cellular noise, each a jittered grid with one feature per cell
 // and a 3×3 cell search:
 //   lace    FOAM_LACE_CELL cells, the edges of a power diagram (cells of
@@ -139,7 +141,11 @@ vec3 sunGlitter(vec3 normal, vec3 toViewer, vec3 toSun, vec3 sunIrradiance, floa
 // FOAM_LOG_SCALE·ln(foam / FOAM_MID), lumped by two value noises: FOAM_RAGGED
 // at about 14 cm, so a raft's edge is ragged rather than a Gaussian's circle,
 // and FOAM_CLUMP at about 3 cm, so the lace breaks into filaments of uneven
-// width, fragments and clumps rather than an even net. A pixel is foam where
+// width, fragments and clumps rather than an even net. Both are strong enough
+// to show from 4 m on a phone, where a pixel is 3 by 10 mm and the bubbles
+// have faded: there a map of 0.4, a fresh boil, covers about 87% (lumps and
+// holes break the rest), 1 about 98%, 0.1, a raft, about 45%, 0.02 about 6%
+// (tools/foam-probe.mjs measured them). A pixel is foam where
 // pattern + density > 0: where the map is strong that is everywhere, a solid
 // raft; as it weakens the holes in the lace open from their middles, then
 // the filaments thin to strings of bubbles, then only the largest bubbles on
@@ -169,7 +175,8 @@ vec3 sunGlitter(vec3 normal, vec3 toViewer, vec3 toSun, vec3 sunIrradiance, floa
 // shimmer against supersampling, with these very constants.
 //
 // Cost, per pixel where the map exceeds FOAM_PRESENT (all other pixels skip
-// it in one branch, and pay three derivatives): each layer still resolved
+// it in one branch, and pay three derivatives; the drift is one subtraction,
+// and the footprint takes a square root fewer than it did): each layer still resolved
 // costs nine cell visits of about 50 operations (a hash of three outputs, a
 // distance, the running best two), about 470; the lace's warp and the two
 // lumps of the density add three value noises, about 230; the threshold,
@@ -195,11 +202,11 @@ export const FOAM_PATTERN = /* glsl */`
 #define FOAM_BUBBLE_CLAMP 2.0
 #define FOAM_LACE_WEIGHT 0.4
 #define FOAM_BUBBLE_WEIGHT 0.6
-#define FOAM_MID 0.08                      // map value where the density is 0
-#define FOAM_LOG_SCALE 0.857               // solid from about 0.6, nothing below about 0.01
-#define FOAM_RAGGED 1.2
+#define FOAM_MID 0.1                       // map value where the density is 0
+#define FOAM_LOG_SCALE 0.857               // about 87% cover at 0.4, half at 0.1, nothing below about 0.01
+#define FOAM_RAGGED 1.8                    // value noise lumps about 14 cm across: a raft's outline
 #define FOAM_RAGGED_FREQUENCY 7.0          // per metre
-#define FOAM_CLUMP 1.8                     // value noise lumps about 3 cm across, which break the lace
+#define FOAM_CLUMP 2.8                     // value noise lumps about 3 cm across, which break the lace
 #define FOAM_CLUMP_FREQUENCY 35.0          // into filaments of uneven width, fragments and clumps (per metre)
 #define FOAM_FADE_START 0.18               // footprint over cell size
 #define FOAM_FADE_END 0.45
@@ -324,7 +331,7 @@ struct FoamLook {
 // the map's value, above FOAM_PRESENT; foamChange: its change across a pixel;
 // surfaceNormal: the water's, which tilts the bubbles with it.
 FoamLook foamLook(vec2 position, vec2 acrossX, vec2 acrossY, float foam, vec2 foamChange, vec3 surfaceNormal) {
-  float footprint = sqrt(length(acrossX) * length(acrossY));
+  float footprint = sqrt(sqrt(dot(acrossX, acrossX) * dot(acrossY, acrossY)));
   float fineFade = smoothstep(FOAM_FADE_START, FOAM_FADE_END, footprint / FOAM_FINE_CELL);
   float coarseFade = smoothstep(FOAM_FADE_START, FOAM_FADE_END, footprint / FOAM_COARSE_CELL);
   float laceFade = smoothstep(FOAM_FADE_START, FOAM_FADE_END, footprint / FOAM_LACE_CELL);
@@ -489,6 +496,7 @@ export const WATER_FRAGMENT = /* glsl */`
 #include <packing>
 uniform sampler2D uHeight;
 uniform sampler2D uFoam;
+uniform vec2 uFoamDrift;          // how far the wind has carried the foam (m): its pattern drifts with the map
 uniform sampler2D uReflection;    // the sky dome seen through a mirrored camera
 uniform mat4 uReflectionMatrix;   // world -> reflection texture coordinates
 uniform sampler2D uUnderColor;
@@ -630,9 +638,9 @@ void main() {
   // reflection and glitter included, except that thin foam, just over the
   // threshold, lets some of the water show through. It is a diffuse white,
   // lit by the sun on the rippled surface and by the sky, its bubbles shaded
-  // and glinting while they are resolved. The footprint and the map's change
-  // are taken here, in uniform control flow; the pattern only where there is
-  // foam.
+  // and glinting while they are resolved; its pattern drifts with the map
+  // (uFoamDrift). The footprint and the map's change are taken here, in
+  // uniform control flow; the pattern only where there is foam.
   float foam = texture2D(uFoam, vDomainUv).r * vMask;
 #ifdef CAVITY_MESH
   foam *= level;   // the pattern lies on the water's plane: none down the walls
@@ -641,7 +649,7 @@ void main() {
   vec2 acrossY = dFdy(vWorld.xz);
   vec2 foamChange = vec2(dFdx(foam), dFdy(foam));
   if (foam > FOAM_PRESENT) {
-    FoamLook look = foamLook(vWorld.xz, acrossX, acrossY, foam, foamChange, n);
+    FoamLook look = foamLook(vWorld.xz - uFoamDrift, acrossX, acrossY, foam, foamChange, n);
     vec3 light = uSunIrradiance * max(dot(n, uSunDir), 0.0) + uSkyAmbient * FOAM_SKY_LIGHT;
     vec3 foamColor = FOAM_ALBEDO * look.shade * light;
     if (look.glint > 0.0) foamColor += look.glint * FOAM_GLINT * min(sunGlitter(look.domeNormal, v, uSunDir, uSunIrradiance, look.glintVariance), vec3(40.0));
@@ -804,10 +812,12 @@ void main() {
 // Foam specks: points riding the water surface. Each speck's whole life is a
 // closed form of the splash time, so the CPU writes a speck once, when it is
 // born: it drifts outward from where it was born at a speed decaying over
-// SPECK_DRIFT_SECONDS, wanders a little, and sits on the waves at the height
-// the water surface's own vertex shader gives that point, splash and ambient
-// waves together (plus SPECK_LIFT, so the triangulated surface never covers it). It fades in over a tenth of a
-// second and out over its last SPECK_FADE seconds, shrinking as it goes.
+// SPECK_DRIFT_SECONDS, drifts downwind with the surface water as the raft does
+// (uFoamVelocity, src/spectralWater.js), wanders a little, and sits on the
+// waves at the height the water surface's own vertex shader gives that point,
+// splash and ambient waves together (plus SPECK_LIFT, so the triangulated
+// surface never covers it). It fades in over a tenth of a second and out
+// over its last SPECK_FADE seconds, shrinking as it goes.
 // A speck smaller than uMinPixelSize is drawn at that size, soft, with its
 // opacity cut by the area it really covers (down to SPECK_MIN_COVERAGE): a
 // hard dot of a pixel or two would flicker as it moves across pixels, and far
@@ -831,6 +841,7 @@ uniform vec2 uDomainMin;
 uniform float uDomainSize;
 uniform float uTexelOffset;
 uniform float uTime;
+uniform vec2 uFoamVelocity;  // the surface's drift downwind (m/s), which carries the raft too
 uniform float uProjScale;    // render-target pixels per world unit at distance 1
 uniform float uMinPixelSize;
 varying float vAlpha;
@@ -841,7 +852,7 @@ void main() {
   float life = aTiming.y;
   if (age < 0.0 || age >= life) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); gl_PointSize = 0.0; vAlpha = 0.0; vPixelSize = 0.0; return; }
   float phase = aTiming.w;
-  vec2 place = position.xz + aDrift * SPECK_DRIFT_SECONDS * (1.0 - exp(-age / SPECK_DRIFT_SECONDS));
+  vec2 place = position.xz + aDrift * SPECK_DRIFT_SECONDS * (1.0 - exp(-age / SPECK_DRIFT_SECONDS)) + uFoamVelocity * age;
   place += SPECK_WANDER * vec2(sin(age * 1.3 + phase) + 0.5 * sin(age * 3.1 + 2.0 * phase), cos(age * 1.1 + 1.7 * phase) + 0.5 * sin(age * 2.7 + 3.0 * phase));
   vec2 domainUv = (place - uDomainMin) / uDomainSize + uTexelOffset;
   float mask = patchMask(domainUv);

@@ -41,8 +41,10 @@ as they do on a real pond. Disturbances are Gaussian splats with a raised rim
 (zero net volume, so no long-wave mound), added in Fourier space from their
 closed-form spectrum. One inverse FFT per frame (2·log2 N passes on the GPU)
 returns the height and vertical velocity for rendering. A foam map rides
-along: how much foam each cell holds and how long that foam lasts, stamped by
-the splash, spreading a little and decaying. A change of quality carries the
+along: how much foam each cell holds, of two kinds that last very
+differently (a boil and a raft, below), and how long each lasts; stamped by
+the splash, carried outward by its surface flows and downwind by the breeze,
+spreading a little and decaying. A change of quality carries the
 waves and the foam to the new grid. When nothing has disturbed the water for
 75 s (the time the biggest splash's longest waves, which the pond damps
 least, take to fade below a pixel's notice) and nothing of the splash is
@@ -113,21 +115,34 @@ crown's largest) throw a small crown of their own, the classic drop-impact
 crown: the same sheet model with the drop's radius and speed, standing for
 about 20 ms.
 
-**Foam** (`FOAM_PATTERN` in `src/shaders/scene.js`). The splash leaves a
-raft of foam. The foam map says where and how much, but its cells are over a
-centimetre wide, so the water shader draws the raft from three layers of
-cellular noise fixed on the water: bubbles 2 to 3 mm across packed together,
-larger ones of 3 to 7 mm among them, and a lace of curved filaments around
-holes a few centimetres wide. The map's strength, lumped at 3 and 14 cm so
-that a raft is ragged and clumpy rather than a round, even net, sets the
-threshold they must pass. Where it is strong the raft is
-solid white, its bubbles shaded darker at their rims and catching the sun;
-as it weakens the holes open, the filaments thin to strings of bubbles and
-clumps, then only the biggest bubbles are left, so a raft thins from its
+**Foam** (`FOAM_PATTERN` in `src/shaders/scene.js`, the map in
+`src/spectralWater.js`). Where the stone's hole closes, its air erupts as a
+boil: big bubbles, dense and white, popping within a second or two. What
+remains is a raft of small bubbles, sparse and lasting seconds, longer the
+bigger the stone (its lifetime τ is 3.2 s for the smallest, 5.4 s for a
+16 cm stone); the jet rises from a boil of its own and leaves another boil
+and raft where it falls back. Each is stamped as a patch of three to five
+sub-stamps of unequal sizes at random offsets, never one round Gaussian, so
+no two rafts share a shape. Surface flows carry the foam: where the hole
+closed the jet's base wells up, and where the jet falls back the mound
+spreads, each sweeping the foam out of a disc into a ring (keeping its
+amount), so a raft turns ring-like or crescent-shaped, with arcs where the
+flow stretched it, and the place the jet fell clears. The whole raft drifts
+downwind at 3 cm/s, and its pattern and specks with it. The foam map says
+where and how much, but its cells are over a centimetre wide, so the water
+shader draws the raft from three layers of cellular noise: bubbles 2 to 3 mm
+across packed together, larger ones of 3 to 7 mm among them, and a lace of
+curved filaments around holes a few centimetres wide. The map's strength,
+lumped at 3 and 14 cm strongly enough to show from a phone 4 m away, so
+that a boil is mottled and a raft's edge broken rather than a round, even
+white, sets the threshold they must pass. Where it is strong the raft is
+nearly solid white, its bubbles shaded darker at their rims and catching the
+sun; as it weakens the holes open, the filaments thin to strings of bubbles
+and clumps, then only the biggest bubbles are left, so a raft thins from its
 edge inward the way foam pops, and foam just over the threshold, a single
-layer of bubbles, lets the water show through. A raft lasts longer the bigger
-the splash: a 4 cm stone's is gone in about 6 s, a 16 cm stone's thins to
-scattered clumps by 10 s and is gone by 15.
+layer of bubbles, lets the water show through. A 4 cm stone's raft is gone
+in about 6 s; a 16 cm stone's is patchy clusters by 4 s and scattered,
+faint ones by 8.
 The threshold's edge is one pixel wide at any distance (from the pattern's
 exact gradient and the pixel's footprint on the water), and each layer fades
 into an even white of the right strength before its cells shrink to a couple
@@ -246,7 +261,13 @@ ballistic arc, quadratic drag under water, and a settle into the sand.
   bubbles' mean shade match what the shader fades them to, and at the home,
   phone and close-up framings the antialiased pattern covers what a
   supersampled one does and changes no more than it when the water moves
-  under the pixels; it prints the cell visits per foam pixel.
+  under the pixels; it prints the cell visits per foam pixel. Then it runs
+  the foam map's step with the shader's arithmetic: a surface flow keeps the
+  amount to a few per cent and brightens nothing, clears its core, carries a
+  raft out to where a source of its area would and leaves a clean hole; the
+  wind's drift moves a raft at its speed without widening it (bilinear
+  samples, printed for comparison, would blur both); and a boil over a raft
+  leaves the raft its own lifetime.
 - `node tools/wave-probe.mjs [--wind=x,z]` checks the wind ripples on the CPU
   with the GPU's own FFT passes: the field is real, its rms slope is the
   target, waves travel downwind, it repeats seamlessly after its period, and
