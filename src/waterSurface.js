@@ -60,6 +60,7 @@ export function createWaterSurface(water, lighting, ambientWaves, { meshSegments
   const uniforms = {
     uHeight: { value: water.heightTexture },
     uFoam: { value: water.foamTexture },
+    uFoamDrift: water.foamUniforms.uFoamDrift,
     uReflection: { value: null },
     uReflectionMatrix: { value: new THREE.Matrix4() },
     uUnderColor: { value: null },

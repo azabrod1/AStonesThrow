@@ -223,56 +223,99 @@ void main() {
 // The solver's inverse passes: FFT_PASS_FRAGMENT with its scaling (above).
 export const SOLVER_FFT_PASS_FRAGMENT = `#define SOLVER_SCALING\n${FFT_PASS_FRAGMENT}`;
 
-// Foam: decays, diffuses a little, is churned up where the surface moves fast,
-// and is stamped in by splashes. The map holds the amount in R (0 to 1) and,
-// in G, the lifetime τ of the foam there: each stamp brings its own (a big
-// splash's raft is thicker and lasts longer), and where foam of different
-// lifetimes mixes, by stamping or diffusing, G is their amount-weighted mean,
-// so the amount decays as exp(−dt/τ) with the τ of the foam actually there.
+// The foam map's step (src/spectralWater.js says what the map holds). Each
+// texel takes its foam from where the surface brought it, semi-Lagrangian:
+// the upstream point is the texel moved back by the wind's drift (uniform, a
+// small fraction of a texel a step) and then back through each flow. A flow
+// is a source on the surface, water welling up through a core and spreading
+// outward: this step it adds an area A, and a point at r from its centre came
+// from
+//     r_up = r · exp(−(A/2π) / (r² + core²)),
+// which keeps area beyond the core (r² − r_up² → A/π) and stretches the core,
+// so foam is carried outward without piling up and the core clears. `stretch`
+// is that map's Jacobian, r_up·dr_up / (r·dr) ≤ 1, the share of the area here
+// that came from there: multiplying by it keeps the amount, so a raft swept
+// into a ring is no brighter than it was. The foam at the upstream point is
+// read from the five texel centres around the texel nearest it, interpolated
+// to it quadratically and kept within those five values: where only the wind
+// moves the map, that is Lax–Wendroff, which moves a raft by a fraction of a
+// texel a step without smearing it, and under a flow it keeps a cleared
+// hole's edge sharp, where a bilinear sample would blur both by the square
+// root of the distance moved times a texel (a raft drifting for 8 s by 40%,
+// a 16 cm stone's hole by 6 cm). The spreading is the diffusion on the same
+// five samples. Then each kind decays at its own lifetime, fast surface
+// motion churns up a boil, and the stamps come in.
 export const FOAM_FRAGMENT = /* glsl */`
 #define MAX_FOAM 16
-#define SHORTEST_LIFETIME 0.5
+#define MAX_FLOWS 8
+#define SHORTEST_LIFETIME 0.3
 uniform sampler2D uFoam;
 uniform sampler2D uHeight;
 uniform float uN;
 uniform float uDt;
 uniform float uDiffusionRate;          // 1/s: 4·D/cell², D the diffusivity in m²/s
-uniform float uChurnLifetime;          // seconds: τ of the foam fast surface motion makes
+uniform float uChurnLifetime;          // seconds: τ of the boil fast surface motion churns up
+uniform vec2 uDrift;                   // texels the whole map drifts this step (the wind)
+uniform int uFlowCount;
+uniform vec4 uFlows[MAX_FLOWS];        // centre x, y (texels); this step's area over 2π (texels²); core radius squared (texels²)
 uniform int uFoamCount;
-uniform vec4 uFoamSplats[MAX_FOAM];    // x,y texels; z sigma texels; w amount
-uniform float uFoamLifetimes[MAX_FOAM];   // seconds
+uniform vec4 uFoamSplats[MAX_FOAM];    // x, y texels; z sigma texels; w amount
+uniform vec2 uFoamKinds[MAX_FOAM];     // lifetime (s); 1 for a boil, 0 for a raft
 varying vec2 vUv;
 
-// Adds amount of foam with its lifetime to (amount, amount × lifetime).
-vec2 addFoam(vec2 carried, float amount, float lifetime) {
-  return carried + vec2(amount, amount * lifetime);
+// (amount, amount × lifetime) of one kind, decayed over this step.
+vec2 decayed(vec2 kind) {
+  float lifetime = kind.x > 1e-6 ? kind.y / kind.x : SHORTEST_LIFETIME;
+  return kind * exp(-uDt / max(lifetime, SHORTEST_LIFETIME));
 }
 
 void main() {
+  vec2 position = gl_FragCoord.xy - 0.5 - uDrift;   // texels
+  float stretch = 1.0;
+  for (int index = 0; index < MAX_FLOWS; index++) {
+    if (index >= uFlowCount) break;
+    vec4 flow = uFlows[index];
+    vec2 offset = position - flow.xy;
+    float distanceSquared = dot(offset, offset);
+    float reach = distanceSquared + flow.w;
+    float shrink = exp(-flow.z / reach);
+    position = flow.xy + offset * shrink;
+    stretch *= shrink * shrink * (1.0 + 2.0 * flow.z * distanceSquared / (reach * reach));
+  }
+  vec2 nearest = floor(position + 0.5);
+  vec2 within = position - nearest;   // at most half a texel
   vec2 texelSize = vec2(1.0 / uN);
-  vec2 centre = texture2D(uFoam, vUv).rg;
-  vec2 east = texture2D(uFoam, vUv + vec2(texelSize.x, 0.0)).rg;
-  vec2 west = texture2D(uFoam, vUv - vec2(texelSize.x, 0.0)).rg;
-  vec2 north = texture2D(uFoam, vUv + vec2(0.0, texelSize.y)).rg;
-  vec2 south = texture2D(uFoam, vUv - vec2(0.0, texelSize.y)).rg;
-  // (amount, amount × lifetime): both diffuse, so the lifetime follows the foam.
-  vec2 carried = vec2(centre.r, centre.r * centre.g);
-  vec2 neighbours = vec2(east.r, east.r * east.g) + vec2(west.r, west.r * west.g)
-    + vec2(north.r, north.r * north.g) + vec2(south.r, south.r * south.g);
-  carried = mix(carried, neighbours * 0.25, min(uDt * uDiffusionRate, 1.0));
-  float lifetime = carried.x > 1e-6 ? carried.y / carried.x : SHORTEST_LIFETIME;
-  carried *= exp(-uDt / max(lifetime, SHORTEST_LIFETIME));
+  vec2 uv = (nearest + 0.5) * texelSize;
+  // (total, raft, raft × its lifetime, boil × its lifetime): all add, so all
+  // advect, spread and drift alike.
+  vec4 centre = texture2D(uFoam, uv);
+  vec4 east = texture2D(uFoam, uv + vec2(texelSize.x, 0.0));
+  vec4 west = texture2D(uFoam, uv - vec2(texelSize.x, 0.0));
+  vec4 north = texture2D(uFoam, uv + vec2(0.0, texelSize.y));
+  vec4 south = texture2D(uFoam, uv - vec2(0.0, texelSize.y));
+  vec4 upstream = centre + 0.5 * within.x * (east - west) + 0.5 * within.y * (north - south)
+    + 0.5 * within.x * within.x * (east + west - 2.0 * centre) + 0.5 * within.y * within.y * (north + south - 2.0 * centre);
+  upstream = clamp(upstream, min(min(min(east, west), min(north, south)), centre), max(max(max(east, west), max(north, south)), centre));
+  vec4 carried = (upstream + min(uDt * uDiffusionRate, 1.0) * (0.25 * (east + west + north + south) - centre)) * stretch;
+  carried = max(carried, 0.0);
+  vec2 raft = decayed(carried.gb);
+  vec2 boil = decayed(vec2(max(carried.r - carried.g, 0.0), carried.a));
   float speed = abs(texture2D(uHeight, vUv).g);
-  carried = addFoam(carried, max(speed - 1.4, 0.0) * uDt * 0.5, uChurnLifetime);
+  boil += vec2(1.0, uChurnLifetime) * max(speed - 1.4, 0.0) * uDt * 0.5;
   vec2 texel = gl_FragCoord.xy - 0.5;
   for (int index = 0; index < MAX_FOAM; index++) {
     if (index >= uFoamCount) break;
     vec4 splat = uFoamSplats[index];
     vec2 offset = texel - splat.xy;
-    float falloff = exp(-dot(offset, offset) / (2.0 * splat.z * splat.z));
-    carried = addFoam(carried, splat.w * falloff * (1.0 - carried.x), uFoamLifetimes[index]);
+    // A stamp saturates toward full foam: a boil against all the foam there, a
+    // raft against the raft (one under a boil keeps its amount when the boil pops).
+    bool isBoil = uFoamKinds[index].y > 0.5;
+    float room = max(1.0 - raft.x - (isBoil ? boil.x : 0.0), 0.0);
+    vec2 stamp = splat.w * exp(-dot(offset, offset) / (2.0 * splat.z * splat.z)) * room * vec2(1.0, uFoamKinds[index].x);
+    if (isBoil) boil += stamp; else raft += stamp;
   }
-  float amount = clamp(carried.x, 0.0, 1.0);
-  gl_FragColor = vec4(amount, carried.x > 1e-6 ? carried.y / carried.x : SHORTEST_LIFETIME, 0.0, 1.0);
+  float total = boil.x + raft.x;
+  float keep = total > 1.0 ? 1.0 / total : 1.0;
+  gl_FragColor = vec4(total, raft, boil.y) * keep;
 }
 `;
