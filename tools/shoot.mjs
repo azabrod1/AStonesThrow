@@ -1,4 +1,4 @@
-// Headless screenshot harness for Throw some rocks.
+// Headless screenshot harness for A Stone’s Throw.
 //
 // Serves the project folder, routes the CDN Three.js imports to node_modules
 // so the page loads offline, drives the simulation through window.__pond in

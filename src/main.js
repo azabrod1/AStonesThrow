@@ -1,4 +1,4 @@
-// Throw some rocks: throw rocks into a pond and watch the splash.
+// A Stone’s Throw: throw rocks into a lake and watch the splash.
 //
 // Frame pipeline:
 //   1. advance the stones, droplets and bubbles (CPU), feeding the water;

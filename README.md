@@ -1,4 +1,4 @@
-# Throw some rocks
+# A Stone’s Throw
 
 Throw rocks into a pond and watch the splash. A WebGL toy built with
 Three.js: the water is a real wave solver, the splash is choreographed from

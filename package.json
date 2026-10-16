@@ -1,5 +1,5 @@
 {
-  "name": "throw-some-rocks",
+  "name": "a-stones-throw",
   "version": "1.0.0",
   "description": "Throw rocks into a lake: dispersive ripples, crown splash and Worthington jet in WebGL",
   "main": "index.js",
