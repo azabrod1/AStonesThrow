@@ -1,5 +1,5 @@
 // Loads the published site (_site/, from npm run site) the way GitHub Pages
-// serves it, under the project path /IntoTheWater/, and checks that the pond
+// serves it, under the project path /AStonesThrow/, and checks that the pond
 // starts and that every request the page makes succeeds. Catches a file
 // missing from SITE_FILES (tools/build-site.mjs) and a root-absolute path,
 // which works on localhost and 404s on Pages.
@@ -15,7 +15,7 @@ import { createServer } from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const PAGES_PATH = '/IntoTheWater/';
+const PAGES_PATH = '/AStonesThrow/';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const siteDirectory = path.join(root, '_site');
 if (!existsSync(path.join(siteDirectory, 'index.html'))) { console.error('[site-check] no _site/index.html: run npm run site first'); process.exit(1); }

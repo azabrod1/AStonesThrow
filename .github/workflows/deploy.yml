@@ -1,6 +1,6 @@
 name: Deploy to GitHub Pages
 
-# Publishes the pond to https://azabrod1.github.io/IntoTheWater/ on every push
+# Publishes the pond to https://azabrod1.github.io/AStonesThrow/ on every push
 # to main. There is no build: tools/build-site.mjs copies the page, its modules
 # and the sky panorama into _site/, which is uploaded as it is.
 on:

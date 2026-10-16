@@ -23,7 +23,7 @@ node tools/foam-probe.mjs              # the foam's bubble pattern on the CPU: t
 node tools/quality-probe.mjs           # every preset builds its sizes (__pond.budget) from every other, the calibration and its watch step down, the idle frame cap, pause/resume, no program at the first throw
 node tools/profile-probe.mjs           # runs ?profile=1 headless and checks the report's shape (its milliseconds mean nothing here)
 node tools/controls-probe.mjs          # the controls as phones' browsers lay them out (viewport tag, touch, 3×): sizes, fit, the slider's tap and drag
-npm run site && node tools/site-check.mjs   # build what Pages publishes into _site/ and load it under /IntoTheWater/
+npm run site && node tools/site-check.mjs   # build what Pages publishes into _site/ and load it under /AStonesThrow/
 ```
 
 There is no build step. The page loads Three.js from jsDelivr through the import map in `index.html`.
@@ -40,7 +40,7 @@ There is no build step. The page loads Three.js from jsDelivr through the import
 - A quality change rebuilds the solver, the water mesh and every target (`applyQuality`). Whatever samples the solver takes its sizes from `water.gridUniforms`; its textures keep their objects.
 - `assets/sky/*.json` is written by `tools/sky-probe.mjs` from its `.hdr`; rerun the probe, never edit the JSON. A new sky also needs its `SKIES` entry (orientation chosen from home-view frames), a thumbnail in `assets/sky/thumbs/` and a row on the Sky page in `index.html`.
 - The settings (View, Water, Sky, Wind, Quality) live in the panel the top-right button opens (`src/settingsPanel.js`); each remembered setting (all but View) has its own `localStorage` key, and a page parameter wins over it.
-- Every push to `main` deploys to GitHub Pages (https://azabrod1.github.io/IntoTheWater/). Only `index.html`, `src/` and `assets/` are published (`SITE_FILES` in `tools/build-site.mjs`); a new runtime folder goes there too. Use relative paths: the site lives under `/IntoTheWater/`.
+- Every push to `main` deploys to GitHub Pages (https://azabrod1.github.io/AStonesThrow/). Only `index.html`, `src/` and `assets/` are published (`SITE_FILES` in `tools/build-site.mjs`); a new runtime folder goes there too. Use relative paths: the site lives under `/AStonesThrow/`.
 - The page is laid out for phones by its viewport tag, which the shoot harness (a desktop browser) ignores: check any change to the page's controls with `tools/controls-probe.mjs`.
 - The page opens on Calm wind; frames from before the Wind control are Breeze (`--wind-strength=breeze`; byte-identical when idle until the rings' calibration moved and sharpened the floor's caustics).
 - The shore (`SHORE`, `floorDepthAt` in `src/pondFloor.js`) has a GLSL twin, `LAKE_BED` in `src/shaders/scene.js`: change both, or the rocks rest off the drawn bed.

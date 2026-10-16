@@ -5,7 +5,7 @@ built with Three.js: the water is a real wave solver, the splash is
 choreographed from the physics of a stone entering water, and the droplets
 are rendered as water.
 
-Live at https://azabrod1.github.io/IntoTheWater/, published from `main` by
+Live at https://azabrod1.github.io/AStonesThrow/, published from `main` by
 GitHub Pages on every push. Locally, open `index.html` through any static
 server (`npm start`, then http://localhost:8123/). There is no build step.
 Three.js loads from a CDN.
@@ -474,7 +474,7 @@ farther out, so it rises into the view rather than filling its corner.
   (`tools/build-site.mjs`) copies only what the page loads: `index.html`,
   `src/` and `assets/`. A new file or folder loaded at run time outside those
   must be added to its list. `node tools/site-check.mjs`, after
-  `npm run site`, serves `_site/` under `/IntoTheWater/` as Pages does and
+  `npm run site`, serves `_site/` under `/AStonesThrow/` as Pages does and
   checks that the pond starts and no request fails.
 - `node tools/foam-probe.mjs` runs the foam's bubble pattern on the CPU, with
   the constants read from the shader: each layer's median and spread and the
