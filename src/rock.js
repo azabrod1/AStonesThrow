@@ -1,4 +1,5 @@
-// A thrown stone: faceted procedural geometry and a small rigid-body model.
+// A thrown stone: procedural geometry (lumpy, worn smooth, speckled:
+// createRockGeometry) and a small rigid-body model.
 //
 // In the air it follows a ballistic arc with a little drag and tumbles, at
 // SPIN_LEAST to SPIN_MOST rad/s about a random axis (most stones turn
@@ -12,7 +13,7 @@
 // the water's head on its front (the reference simulation's fit, C_d 0.46 and
 // C_h 0.6) stop it within a few radii, a sideways lift curves its path a
 // little, and once the hole has pinched off buoyancy-reduced gravity sinks it
-// to the floor, where it settles into the sand (sinkStep in src/cavity.js,
+// to the lake bed, where it settles into the sand (sinkStep in src/cavity.js,
 // which traces the cavity along the same path; the splash tells the stone
 // when its hole pinches off, setCavityTimes).
 //
@@ -103,33 +104,57 @@ function valueNoise3(x, y, z) {
   return result;
 }
 
-/** Faceted stone of unit nominal radius, flattened like a river stone. Scale by the real radius. */
+/**
+ * Stone of unit nominal radius, flattened like a river stone: a sphere
+ * pushed out and in by two noises (its lumps), squashed. Scale by the real
+ * radius. The mesh is a list of separate triangles (the stone's shape and
+ * contact are integrated over them) with its normals the smooth surface's,
+ * found from the same function a little to either side of each vertex, so
+ * it reads as worn stone rather than facets even at 30 cm; its colour is a
+ * fine speckle over a faint tint for each face. The random draws (the squash,
+ * then two for each face's tint) are the ones the faceted stone made, so a
+ * seeded throw keeps its stone and its splash (tools/variety-probe.mjs).
+ */
 export function createRockGeometry(seed = Math.random() * 1000) {
   const geometry = new THREE.IcosahedronGeometry(1, 3);
   const positions = geometry.attributes.position;
-  const vertex = new THREE.Vector3();
   const squash = new THREE.Vector3(1.0, 0.62 + 0.2 * Math.random(), 0.8 + 0.2 * Math.random());
-  for (let i = 0; i < positions.count; i++) {
-    vertex.fromBufferAttribute(positions, i);
-    const direction = vertex.clone().normalize();
+  const surfacePoint = (direction, out) => {
     const coarse = valueNoise3(direction.x * 1.6 + seed, direction.y * 1.6, direction.z * 1.6) - 0.5;
     const fine = valueNoise3(direction.x * 4.5 + seed, direction.y * 4.5 + 3.1, direction.z * 4.5) - 0.5;
-    const radius = 1 + 0.42 * coarse + 0.14 * fine;
-    vertex.copy(direction).multiplyScalar(radius).multiply(squash);
-    positions.setXYZ(i, vertex.x, vertex.y, vertex.z);
-  }
-  // Per-face colour variation: facets catch light differently on real stone.
+    return out.copy(direction).multiplyScalar(1 + 0.42 * coarse + 0.14 * fine).multiply(squash);
+  };
+  const normals = new Float32Array(positions.count * 3);
   const colors = new Float32Array(positions.count * 3);
+  const direction = new THREE.Vector3(), tangent = new THREE.Vector3(), bitangent = new THREE.Vector3();
+  const point = new THREE.Vector3(), aside = new THREE.Vector3(), alongTangent = new THREE.Vector3(), alongBitangent = new THREE.Vector3();
+  const step = 0.01;
   for (let face = 0; face < positions.count / 3; face++) {
-    const tint = 0.82 + 0.36 * Math.random();
-    const warm = 0.96 + 0.08 * Math.random();
+    const faceTint = 0.82 + 0.36 * Math.random();
+    const faceWarm = 0.96 + 0.08 * Math.random();
     for (let corner = 0; corner < 3; corner++) {
-      const i = (face * 3 + corner) * 3;
-      colors[i] = tint * warm; colors[i + 1] = tint; colors[i + 2] = tint * (2 - warm);
+      const vertex = face * 3 + corner;
+      direction.fromBufferAttribute(positions, vertex).normalize();
+      surfacePoint(direction, point);
+      tangent.set(-direction.z, 0, direction.x);
+      if (tangent.lengthSq() < 1e-6) tangent.set(1, 0, 0);
+      tangent.normalize();
+      bitangent.crossVectors(direction, tangent);
+      surfacePoint(aside.copy(direction).addScaledVector(tangent, step).normalize(), alongTangent).sub(point);
+      surfacePoint(aside.copy(direction).addScaledVector(bitangent, step).normalize(), alongBitangent).sub(point);
+      const normal = aside.crossVectors(alongBitangent, alongTangent).normalize();
+      if (normal.dot(direction) < 0) normal.negate();
+      positions.setXYZ(vertex, point.x, point.y, point.z);
+      normals[vertex * 3] = normal.x; normals[vertex * 3 + 1] = normal.y; normals[vertex * 3 + 2] = normal.z;
+      // A fine speckle of darker and lighter grains over the face's faint tint.
+      const speckle = 0.78 + 0.42 * valueNoise3(direction.x * 22 + seed, direction.y * 22, direction.z * 22 + 5.3);
+      const tint = 0.75 * speckle + 0.25 * faceTint;
+      const warm = 0.75 + 0.25 * faceWarm;
+      colors[vertex * 3] = tint * (0.25 + warm); colors[vertex * 3 + 1] = tint; colors[vertex * 3 + 2] = tint * (1.75 - warm);
     }
   }
+  geometry.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
   geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-  geometry.computeVertexNormals();
   return geometry;
 }
 
@@ -270,7 +295,6 @@ export class Rock {
       vertexColors: true,
       roughness: 0.92,
       metalness: 0.0,
-      flatShading: true,
       envMap: envTexture,
       envMapIntensity: 0.9,
       clippingPlanes: [new THREE.Plane(new THREE.Vector3(0, clipNormalY, 0), 0)],

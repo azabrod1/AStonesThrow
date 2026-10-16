@@ -1,11 +1,24 @@
-// The sandy pond floor, lit by sunlight focused through the rippling surface:
+// The sandy lake bed, lit by sunlight focused through the rippling surface:
 // the caustics come from the curvature of the splash's height field, of the
 // ambient wind waves (src/ambientWaves.js) and of the rings (src/rings.js), so
 // they drift with the ripples and a ring throws a ring of light on the sand.
 //
+// The bed (LAKE_BED, floorDepthAt) deepens away from the bank the camera
+// stands on, as a lake's does: 0.7 m under the bottom of the home view,
+// 1.7 m where the reference throw lands, 3.5 m far out. Its mesh is rings
+// about the bank, sunk to it in the vertex shader, and every point of it is
+// lit through its own depth of water: the sun down to it, the caustics'
+// focusing and where on it they fall. So the sand is bright in the shallows
+// and fades with depth, and a ring's light on the sand, under 1.7 m of water
+// where the rocks land, is too dim and too far through the water to show,
+// as in a real lake. The rocks and their holes come to rest on it (src/
+// cavity.js sinkStep takes floorDepthAt). The waves take the solver's depth
+// (0.8 m, src/main.js): under 2 m long, they run within 1% of their speed
+// over 1.7 m.
+//
 // The caustics (FLOOR_FRAGMENT in src/shaders/scene.js). A floor point is lit
 // by the sun refracted into the water, focused by the curvature of the
-// surface it crossed: the Laplacian of all three heights, times the depth,
+// surface it crossed: the Laplacian of all three heights, times the bed's depth there,
 // times how far the refracted light moves on the floor per metre of depth and
 // unit of slope (Snell's law: 1 − cos θi/(n·cos θt) for a slope across the
 // sun's plane, sec²θt times that along it; their mean, 0.76 for this scene's
@@ -20,8 +33,9 @@
 // main.js), but the eye sees it through the still surface, nearer, so each
 // pixel takes its caustics at the floor point it really shows, lit through
 // the surface tan θt per metre of depth up-sun of it. A ring's caustic then
-// lies 0.7 m down-sun of it on the sand and shows on screen where the
-// water's refraction puts it; before, the sun's shift taken as 0.75·tan θi
+// lies tan θt times the depth down-sun of it on the sand (0.9 times it under
+// the meadow's sun, 27° up) and shows on screen where the water's refraction
+// puts it; before, the sun's shift taken as 0.75·tan θi
 // and the floor's caustic on the straight line put it 240 pixels from there
 // (1080p home view, the reference throw; each error about half of that).
 //
@@ -69,6 +83,54 @@
 import * as THREE from 'three';
 import { FLOOR_VERTEX, FLOOR_FRAGMENT, FLOOR_BAKE_FRAGMENT } from './shaders/scene.js';
 import { FullscreenPass } from './gpu.js';
+
+// The lake bed: the depth (m) grows with the distance d from BANK, the point
+// on the bank under the camera's home spot, as deep·tanh((shallow +
+// slope·d)/deep): 0.7 m at the bottom of the home view, 1.7 m where the
+// reference throw lands, 2.4 m at the far edge of the solver's patch, and
+// levelling off at 3.5 m. The rocks and their holes rest on it (src/
+// cavity.js sinkStep); LAKE_BED in src/shaders/scene.js is its GLSL twin,
+// which sinks the floor's mesh and lights it.
+export const LAKE_BED = { bankX: 0, bankZ: 2.45, shallow: 0.12, slope: 0.45, deep: 3.5 };
+/** The lake bed's depth (m, positive) under a world XZ point. */
+export function floorDepthAt(x, z) {
+  const distance = Math.hypot(x - LAKE_BED.bankX, z - LAKE_BED.bankZ);
+  return LAKE_BED.deep * Math.tanh((LAKE_BED.shallow + LAKE_BED.slope * distance) / LAKE_BED.deep);
+}
+const BED_RINGS = { first: 0.05, growth: 1.08, last: 300 };   // the mesh's rings about the bank, metres
+const BED_SEGMENTS = 96;                                        // and its spokes
+
+/**
+ * The lake bed's mesh: rings about the bank, from BED_RINGS.first out to
+ * BED_RINGS.last, each BED_RINGS.growth times the last, so cells are
+ * centimetres where the bed is shallow and steep and tens of metres where it
+ * is flat; flat (y = 0) here, the floor's vertex shader sinks each vertex to
+ * the bed (floorDepthAt).
+ */
+function bedGeometry() {
+  const radii = [0];
+  for (let radius = BED_RINGS.first; radii.at(-1) < BED_RINGS.last; radius *= BED_RINGS.growth) radii.push(Math.min(radius, BED_RINGS.last));
+  const positions = [LAKE_BED.bankX, 0, LAKE_BED.bankZ];
+  for (let ring = 1; ring < radii.length; ring++) {
+    for (let spoke = 0; spoke < BED_SEGMENTS; spoke++) {
+      const angle = (spoke / BED_SEGMENTS) * Math.PI * 2;
+      positions.push(LAKE_BED.bankX + radii[ring] * Math.cos(angle), 0, LAKE_BED.bankZ + radii[ring] * Math.sin(angle));
+    }
+  }
+  const indices = [];
+  for (let spoke = 0; spoke < BED_SEGMENTS; spoke++) indices.push(0, 1 + ((spoke + 1) % BED_SEGMENTS), 1 + spoke);
+  for (let ring = 1; ring < radii.length - 1; ring++) {
+    const inner = 1 + (ring - 1) * BED_SEGMENTS, outer = inner + BED_SEGMENTS;
+    for (let spoke = 0; spoke < BED_SEGMENTS; spoke++) {
+      const next = (spoke + 1) % BED_SEGMENTS;
+      indices.push(inner + spoke, inner + next, outer + spoke, inner + next, outer + next, outer + spoke);
+    }
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setIndex(indices);
+  return geometry;
+}
 
 const PATTERN_SIZE = [2048, 1024];   // texels: across the view, along it
 const PATTERN_NEAREST = 1.75;        // metres ahead of the eye, the texture's last row
@@ -129,7 +191,8 @@ export function createPondFloor(water, lighting, ambientWaves, { renderer, eye, 
       uTexelOffset: water.gridUniforms.uTexelOffset,
       uN: water.gridUniforms.uN,
       uCell: water.gridUniforms.uCell,
-      uPondDepth: { value: water.depth },
+      uLakeBed: { value: new THREE.Vector4(LAKE_BED.bankX, LAKE_BED.bankZ, LAKE_BED.shallow, LAKE_BED.slope) },
+      uLakeDeep: { value: LAKE_BED.deep },
       uAbsorb: { value: lighting.absorb },
       uPattern: { value: pattern.texture },
       ...layout,
@@ -138,9 +201,7 @@ export function createPondFloor(water, lighting, ambientWaves, { renderer, eye, 
     },
   });
   material.addEventListener('dispose', () => pattern.dispose());
-  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(600, 600), material);
-  mesh.rotation.x = -Math.PI / 2;
-  mesh.position.y = -water.depth;
+  const mesh = new THREE.Mesh(bedGeometry(), material);
   mesh.frustumCulled = false;
   return mesh;
 }

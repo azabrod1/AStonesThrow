@@ -1,4 +1,4 @@
-// Stone Pond: throw stones into water and watch the splash.
+// Throw some rocks: throw rocks into a pond and watch the splash.
 //
 // Frame pipeline:
 //   1. advance the stones, droplets and bubbles (CPU), feeding the water;
@@ -31,7 +31,8 @@
 // mirror image of the sky is re-rendered at the next frame whenever the view
 // has changed, and while a splash lives it is drawn over where the splash's
 // own mirror image falls, each frame (updateReflection). A tap throws at the
-// water under it, brought inside the solver's patch less POND_MARGIN when it
+// water under it, brought inside the solver's patch less POND_MARGIN (or
+// MARGIN_RADII of a big rock's radius) when it
 // is beyond (or on the sky): a splash nearer the patch's edge would ring
 // across it, since the patch is periodic. While a press aims (or a mouse
 // hovers) a ring on the water and a faint arc from the hand show the throw;
@@ -75,7 +76,7 @@
 // ?wind=x,z sets the direction the wind blows toward in world XZ
 // (DEFAULT_WIND otherwise); ?windStrength=calm|breeze|windy the wind's
 // strength (WIND_STRENGTHS in src/ambientWaves.js; setWind); each otherwise
-// the one last chosen on this device, or meadow, pond and calm; ?paused=1
+// the one last chosen on this device, or lakeside, lake and calm; ?paused=1
 // starts with the clock stopped
 // (resume() starts it); ?quality=high|medium|low fixes a preset (QUALITY),
 // otherwise the quality calibrates itself from the frame rate (CALIBRATION),
@@ -88,7 +89,7 @@ import { AmbientWaves, DEFAULT_WIND, WIND_STRENGTHS } from './ambientWaves.js';
 import { Rings } from './rings.js';
 import { createEnvironment, SKY_NAMES } from './sky.js';
 import { createWaterSurface } from './waterSurface.js';
-import { createPondFloor, setPatternMipmaps } from './pondFloor.js';
+import { createPondFloor, setPatternMipmaps, floorDepthAt } from './pondFloor.js';
 import { Rock } from './rock.js';
 import { SplashSystem, MIRROR_LAYER } from './splash.js';
 import { createFloatTarget, FullscreenPass, configureFloatSupport, renderTargetBytes } from './gpu.js';
@@ -145,8 +146,9 @@ const IDLE = {
   tolerance: 0.004,          // ...and frames come at the preset's idleFrameRate, this many seconds early at most
 };
 const POWER = { soft: 1.3, normal: 1.0, hard: 0.72 };   // flight-time multipliers
-const POND_DEPTH = 0.8;
-const POND_MARGIN = 0.4;      // metres inside the solver's patch that a tap's throw keeps to
+const POND_DEPTH = 0.8;       // the depth the waves take (the solver, the wind's ripples, the rings): see the bed below
+const POND_MARGIN = 0.4;      // metres inside the solver's patch that a tap's throw keeps to...
+const MARGIN_RADII = 4;       // ...or this many of the rock's radius, if more: a 30 cm rock's splats reach 3 radii out
 const MAX_ROCKS = 10;
 const MIN_FOV = 8;            // degrees: the narrowest zoom
 const WHEEL_STEP = 0.9;       // field of view factor per wheel notch
@@ -158,21 +160,25 @@ const WIND_STORAGE_KEY = 'stone-pond-wind';   // the Wind setting's last choice 
 const WATER_STORAGE_KEY = 'stone-pond-water'; // the Water setting's
 const SKY_STORAGE_KEY = 'stone-pond-sky';     // the Sky setting's
 const SUN_BALANCE = [3.0, 2.85, 2.55];        // the sun's irradiance under the meadow sky; another sky's has its photo's colour (src/sky.js)
-// The water's clarity (the Water setting): its extinction, per metre, and
-// the radiance of water too deep to see through (lighting below;
-// WATER_FRAGMENT in src/shaders/scene.js). Pond, the default, is about as
-// clear as a clean pond's: the sand shows near the bank and is gone about
-// 9 m out, so a ring's light on the sand fades out by where a stone lands.
-// Clear is a spring's, the pond as it was before (absorption alone, 0.36
-// per metre in green, and the same colour): the sand shows far out, with
-// each ring's light rings on it. Murky is a lake after rain: the sand shows
-// only at the bank.
+// The water (the Water setting): its absorption, per metre, which dims the
+// light going down to the bed; its extinction, per metre, absorption plus
+// scattering, which dims the bed seen through the water; and the radiance of
+// water too deep to see through (lighting below; WATER_FRAGMENT in
+// src/shaders/scene.js). The bed deepens from the bank (src/pondFloor.js),
+// so in any of them the sand shows near the bank and fades with depth, and a
+// ring's light on the sand is gone where the rocks land.
+// Lake, the default, is a clear Alpine lake's (Lake Zurich's): little
+// absorbed but red, so the sand under the shallows is lit nearly white and
+// deep water is turquoise-blue. Clear is a spring's or a pool's, bluer and
+// clearer still. Pond is a green pond's, its blue absorbed by dissolved
+// matter; Murky a lake after rain, where the sand shows only at the bank.
 const WATER_CLARITIES = {
-  clear: { extinction: [1.0, 0.4, 0.4], color: [0.010, 0.046, 0.040] },
-  pond: { extinction: [2.0, 1.45, 1.65], color: [0.015, 0.074, 0.041] },
-  murky: { extinction: [3.0, 2.4, 2.7], color: [0.022, 0.082, 0.040] },
+  clear: { absorb: [0.40, 0.07, 0.05], extinction: [0.9, 0.35, 0.32], color: [0.012, 0.085, 0.115] },
+  lake: { absorb: [0.45, 0.10, 0.07], extinction: [1.3, 0.85, 0.8], color: [0.014, 0.075, 0.100] },
+  pond: { absorb: [0.95, 0.36, 0.34], extinction: [2.0, 1.45, 1.65], color: [0.015, 0.074, 0.041] },
+  murky: { absorb: [1.0, 0.45, 0.55], extinction: [3.0, 2.4, 2.7], color: [0.022, 0.082, 0.040] },
 };
-const DEFAULT_WATER = 'pond';
+const DEFAULT_WATER = 'lake';
 // The warm-up's throw (the reference stone, aimed as the profiler's) and the
 // moments after its impact it draws: the crown, the fan, the cavity, spray
 // and the mirror; the jet column; the specks and the drops' landing crowns.
@@ -218,7 +224,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     sunDirection: new THREE.Vector3(),
     sunIrradiance: new THREE.Vector3(),
     skyAmbient: new THREE.Vector3(),
-    absorb: new THREE.Vector3(0.95, 0.36, 0.34),
+    absorb: new THREE.Vector3(),
     extinction: new THREE.Vector3(),
     waterColor: new THREE.Vector3(),
     exposure: 0.55,
@@ -251,6 +257,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
   const rings = new Rings(renderer, { depth: POND_DEPTH });
   rings.setLiveLimit(settings.rings);
   water.rings = rings;
+  // The lake bed (src/pondFloor.js): the splash's holes and the rocks rest on it.
+  water.floorDepthAt = floorDepthAt;
   const surface = createWaterSurface(water, lighting, ambientWaves, { meshSegments: settings.meshSegments, rings });
   const splash = new SplashSystem({ environment, lighting, water, ambientWaves, surface });
   // The wind's strength: the page's ?windStrength, else the last choice here, else calm.
@@ -269,10 +277,12 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
   let waterName = Object.hasOwn(WATER_CLARITIES, requestedWater ?? '') ? requestedWater : Object.hasOwn(WATER_CLARITIES, storedWater ?? '') ? storedWater : DEFAULT_WATER;
   function applyWater(name) {
     waterName = name;
+    lighting.absorb.fromArray(WATER_CLARITIES[name].absorb);
     lighting.extinction.fromArray(WATER_CLARITIES[name].extinction);
     lighting.waterColor.fromArray(WATER_CLARITIES[name].color);
   }
   applyWater(waterName);
+  splash.updateLighting();   // its view of the bed takes the absorption, set only now
 
   const camera = new THREE.PerspectiveCamera(48, 1, 0.05, 60000);
   camera.position.set(0, 1.15, 2.45);
@@ -293,7 +303,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     sun.position.copy(sunDirection).multiplyScalar(50);
     sun.color.setRGB(lighting.sunIrradiance.x, lighting.sunIrradiance.y, lighting.sunIrradiance.z);
     sunUnder.position.copy(sun.position);
-    const sunPath = POND_DEPTH / Math.max(sunDirection.y, 0.2);
+    const sunPath = floorDepthAt(HOME_TARGET[0], HOME_TARGET[2]) / Math.max(sunDirection.y, 0.2);
     sunUnder.color.copy(sun.color).multiply(new THREE.Color(Math.exp(-lighting.absorb.x * sunPath), Math.exp(-lighting.absorb.y * sunPath), Math.exp(-lighting.absorb.z * sunPath)));
   }
   applySunLights();
@@ -578,8 +588,12 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
   let timeScale = 1;
   let simulationTime = 0;
 
-  function handPosition() {
-    return new THREE.Vector3(0.30, -0.32, -0.55).applyMatrix4(camera.matrixWorld);
+  // The hand, beside and below the eye. A rock over 16 cm across leaves it
+  // lower and farther out, by its size beyond that, so that it rises into
+  // the view from below its edge rather than filling the corner of it.
+  function handPosition(radius = stoneRadius) {
+    const beyond = Math.max(radius - 0.08, 0);
+    return new THREE.Vector3(0.30, -0.32 - 1.6 * beyond, -0.55 - 1.2 * beyond).applyMatrix4(camera.matrixWorld);
   }
 
   function throwVelocity(hand, target, powerName = power) {
@@ -592,7 +606,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
 
   function throwAt(x, z, options = {}) {
     const radius = options.radius ?? stoneRadius;
-    const hand = handPosition();
+    const hand = handPosition(radius);
     const target = new THREE.Vector3(x, 0, z);
     const { velocity } = throwVelocity(hand, target, options.power ?? power);
     const rock = new Rock({ radius, position: hand, velocity, envTexture: environment.envTexture });
@@ -620,15 +634,12 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
   }
 
   // Pointer aiming: pick the water plane under the pointer, kept inside the
-  // solver's patch less POND_MARGIN. A pointer on the sky aims as far as the
+  // solver's patch less throwMargin(). A pointer on the sky aims as far as the
   // patch reaches in its direction.
   const raycaster = new THREE.Raycaster();
   const waterPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
   const pointer = new THREE.Vector2();
-  const throwRegion = {
-    minX: water.domainMin[0] + POND_MARGIN, maxX: water.domainMin[0] + water.domainSize - POND_MARGIN,
-    minZ: water.domainMin[1] + POND_MARGIN, maxZ: water.domainMin[1] + water.domainSize - POND_MARGIN,
-  };
+  const throwMargin = () => Math.max(POND_MARGIN, MARGIN_RADII * stoneRadius);
   function aimPoint(clientX, clientY) {
     const point = toDeviceCoordinates(clientX, clientY);
     pointer.set(point.x, point.y);
@@ -639,8 +650,9 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
       if (horizontal < 1e-6) return null;
       hit.set(camera.position.x + (raycaster.ray.direction.x / horizontal) * 100, 0, camera.position.z + (raycaster.ray.direction.z / horizontal) * 100);
     }
-    hit.x = THREE.MathUtils.clamp(hit.x, throwRegion.minX, throwRegion.maxX);
-    hit.z = THREE.MathUtils.clamp(hit.z, throwRegion.minZ, throwRegion.maxZ);
+    const margin = throwMargin();
+    hit.x = THREE.MathUtils.clamp(hit.x, water.domainMin[0] + margin, water.domainMin[0] + water.domainSize - margin);
+    hit.z = THREE.MathUtils.clamp(hit.z, water.domainMin[1] + margin, water.domainMin[1] + water.domainSize - margin);
     return hit;
   }
 
@@ -750,7 +762,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     const h = dt / steps;
     for (let s = 0; s < steps; s++) {
       for (const rock of rocks) {
-        const impact = rock.update(h, POND_DEPTH);
+        const impact = rock.update(h, floorDepthAt);
         if (impact) splash.impact(impact, water);
       }
       splash.update(h, water);
@@ -1027,7 +1039,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     setClarity(name) {
       if (!Object.hasOwn(WATER_CLARITIES, name)) return;
       applyWater(name);
-      lastActivity = performance.now();
+      applySky();   // the absorption lights the stones under the water and the splash's view of the bed
       try { window.localStorage.setItem(WATER_STORAGE_KEY, name); } catch { /* storage refused: the choice lasts this visit */ }
     },
     get clarity() { return waterName; },

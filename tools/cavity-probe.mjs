@@ -37,19 +37,26 @@
 // powers, Math.random seeded, and runs every check on every frame of each,
 // printing the seals they made and the worst margins.
 //
+// Last, the lake bed (floorDepthAt, src/pondFloor.js), which the app's rocks
+// and holes rest on instead of the flat 0.8 m the rest of this probe uses:
+// the biggest rocks thrown near the bank (0.75 m deep), where the reference
+// throw lands (1.7 m) and far out, every check on every frame, and each
+// stone must come to rest on the bed under it.
+//
 //   node tools/cavity-probe.mjs [diameter-in-cm ...] [--aim=x:z] [--seed=12345] [--variety=24]
 //
-// Without diameters it runs the slider's 1.5, 4, 6, 8 and 16 cm.
+// Without diameters it runs the slider's 1.5, 4, 6, 8, 16 and 30 cm.
 import * as THREE from 'three';
 import { SplashSystem, MOUND_DELAY } from '../src/splash.js';
 import { Rock } from '../src/rock.js';
 import { CAVITY_LAYOUT, PINCH_TIME } from '../src/cavity.js';
+import { floorDepthAt } from '../src/pondFloor.js';
 
 const { rows: CAVITY_ROWS, columns: CAVITY_COLUMNS, firstWallRow, mouthRow } = CAVITY_LAYOUT;
 
 const option = (name, fallback) => { const hit = process.argv.find((argument) => argument.startsWith(`--${name}=`)); return hit ? hit.slice(name.length + 3) : fallback; };
 const diameters = process.argv.slice(2).filter((argument) => !argument.startsWith('--')).map(Number);
-const stoneDiameters = diameters.length > 0 ? diameters : [1.5, 4, 6, 8, 16];
+const stoneDiameters = diameters.length > 0 ? diameters : [1.5, 4, 6, 8, 16, 30];
 const [aimX, aimZ] = option('aim', '0:-1.4').split(':').map(Number);
 const seed = Number(option('seed', '12345'));
 const VARIETY_THROWS = Number(option('variety', '24'));
@@ -72,7 +79,7 @@ camera.lookAt(0, 0.12, -1.0);
 camera.updateMatrixWorld();
 const hand = new THREE.Vector3(0.30, -0.32, -0.55).applyMatrix4(camera.matrixWorld);
 
-function throwStone(radius, vertical, aim = [aimX, aimZ], power = 'normal') {
+function throwStone(radius, vertical, aim = [aimX, aimZ], power = 'normal', floor = POND_DEPTH) {
   const target = new THREE.Vector3(aim[0], 0, aim[1]);
   const flightTime = THREE.MathUtils.clamp(0.42 + 0.11 * hand.distanceTo(target), 0.5, 1.0) * POWERS[power];
   const velocity = target.clone().sub(hand).divideScalar(flightTime);
@@ -84,15 +91,16 @@ function throwStone(radius, vertical, aim = [aimX, aimZ], power = 'normal') {
     rock.velocity.set(0, -speed, 0);
   }
   for (let step = 0; step < 4 * 240; step++) {
-    const impact = rock.update(FRAME / SUBSTEPS, POND_DEPTH);
+    const impact = rock.update(FRAME / SUBSTEPS, floor);
     if (impact) return { impact, rock };
   }
   throw new Error('the stone never reached the water');
 }
 
-function standIns() {
+function standIns(floor = POND_DEPTH) {
   const water = {
     heightTexture: null, domainMin: [-3, -4], domainSize: 6, uvOffset: 0.5 / 512, cell: CELL, depth: POND_DEPTH,
+    floorDepthAt: typeof floor === 'function' ? floor : undefined,
     addSplat: () => {}, addFoam: () => {},
   };
   const lighting = { sunDirection: new THREE.Vector3(0, 1, 0), sunIrradiance: new THREE.Vector3(3, 2.85, 2.55), skyAmbient: new THREE.Vector3(0.36, 0.48, 0.66), absorb: new THREE.Vector3(), exposure: 0.55 };
@@ -153,9 +161,9 @@ function checkMesh(cavity, label) {
 // The worst margins seen: how far a wall vertex came to the well's side (negative: inside), the apron's least overlap in cells.
 const margins = { well: -Infinity, apron: Infinity };
 
-function runCavity(radius, vertical, { silent = false, aim, power, name } = {}) {
-  const { impact, rock } = throwStone(radius, vertical, aim, power);
-  const { water, splash } = standIns();
+function runCavity(radius, vertical, { silent = false, aim, power, name, floor = POND_DEPTH } = {}) {
+  const { impact, rock } = throwStone(radius, vertical, aim, power, floor);
+  const { water, splash } = standIns(floor);
   splash.impact(impact, water);
   const cavity = splash.cavities[0];
   const crown = splash.crowns.find((candidate) => !candidate.landing && !candidate.fan);
@@ -171,7 +179,7 @@ function runCavity(radius, vertical, { silent = false, aim, power, name } = {}) 
     splash.setFrameSeconds(FRAME);
     for (let substep = 0; substep < SUBSTEPS; substep++) {
       // As in the app, the splash's first step is in the substep the stone touched in, which has moved it already.
-      if (frame > 0 || substep > 0) rock.update(FRAME / SUBSTEPS, POND_DEPTH);
+      if (frame > 0 || substep > 0) rock.update(FRAME / SUBSTEPS, floor);
       splash.update(FRAME / SUBSTEPS, water);
     }
     if (cavity.finished) break;
@@ -205,7 +213,7 @@ function runCavity(radius, vertical, { silent = false, aim, power, name } = {}) 
     if (!silent) checkMesh(cavity, label);
   }
   if (silent) return null;
-  return Object.assign(result, { impact, cavity, label, costs, worstPath, worstBase, worstFloor, jetStart, jetRegime });
+  return Object.assign(result, { impact, rock, cavity, label, costs, worstPath, worstBase, worstFloor, jetStart, jetRegime });
 }
 
 // Warm up, then measure.
@@ -292,5 +300,23 @@ for (const diameter of stoneDiameters) {
   }
   console.log(`  ${diameter} cm: seals ${Object.entries(seals).map(([kind, count]) => `${kind} ${count}`).join(', ')}; worst: a wall vertex ${(margins.well * 1000).toFixed(1)} mm from the well's side (negative: inside), the apron ${margins.apron.toFixed(1)} cells past the dip, the stone ${(100 * worstPath / 1).toFixed(0)}% of its allowance off src/rock.js's path, the crown's base ${(worstBase * 1000).toFixed(2)} mm off the lip`);
 }
+// The lake bed: the biggest rocks near the bank, where the reference throw lands, and far out.
+console.log('\nthe lake bed (floorDepthAt): every check on every frame, and the stone resting on the bed under it');
+for (const diameter of [16, 30]) {
+  for (const [aim, power] of [[[0, 1.0], 'normal'], [[0, -1.4], 'normal'], [[0.8, -3.2], 'hard'], [[0, 1.0], 'soft']]) {
+    const radius = diameter / 200;
+    const label = `${diameter} cm thrown ${power} at (${aim[0]}, ${aim[1]}), the bed ${floorDepthAt(aim[0], aim[1]).toFixed(2)} m deep`;
+    const result = runCavity(radius, false, { aim, power, name: label, floor: floorDepthAt });
+    checkTiming(result, label);
+    // Let the stone settle, then compare its lowest point with the bed under it.
+    for (let step = 0; step < 240 * 6 && result.rock.state !== 'rest'; step++) result.rock.update(1 / 240, floorDepthAt);
+    const { position } = result.rock;
+    const bed = floorDepthAt(position.x, position.z);
+    const lowest = position.y + result.rock.lowestOffset();
+    check(result.rock.state === 'rest' && Math.abs(-lowest - bed) < 0.5 * radius, `${label}: the stone ${result.rock.state === 'rest' ? 'rests' : 'has not come to rest'} with its lowest point ${(-lowest).toFixed(3)} m down, the bed ${bed.toFixed(3)} m`);
+    console.log(`  ${label}: seals ${result.cavity.seal.kind}, pinch at ${milliseconds(result.cavity.pinchTime)} ms; the stone rests ${(-lowest).toFixed(2)} m down on the bed's ${bed.toFixed(2)} m`);
+  }
+}
+
 console.log(failures.length === 0 ? '\ncavity-probe: all checks pass' : `\ncavity-probe: ${failures.length} checks fail:\n  ${[...new Set(failures)].slice(0, 30).join('\n  ')}`);
 process.exitCode = failures.length === 0 ? 0 : 1;

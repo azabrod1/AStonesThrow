@@ -52,7 +52,7 @@
 //
 // --sets=default runs only the default stone's three sets (normal, soft and
 // hard), leaving out the 16 cm stone and the pebble; --sets=grid runs every
-// size of the slider (1.5, 4, 6, 8 and 16 cm) at every power.
+// size of the slider (1.5, 4, 6, 8, 16 and 30 cm) at every power.
 import * as THREE from 'three';
 import { SplashSystem } from '../src/splash.js';
 import { JetColumn } from '../src/jet.js';
@@ -207,7 +207,7 @@ for (let warmUp = 0; warmUp < 4; warmUp++) runThrow(0.03, 'normal', 1000000 + wa
 
 // --sets=grid: the slider's sizes, each thrown softly, normally and hard (the
 // seal and the forms' odds across them), with the default stone's checks.
-const GRID_SIZES = [1.5, 4, 6, 8, 16];
+const GRID_SIZES = [1.5, 4, 6, 8, 16, 30];
 const sets = setChoice === 'grid'
   ? GRID_SIZES.flatMap((diameter) => ['soft', 'normal', 'hard'].map((power) => ({ label: `${diameter} cm stone, ${power} power`, radius: diameter / 200, power, checked: diameter === 6 && power === 'normal' })))
   : [

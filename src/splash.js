@@ -307,6 +307,16 @@ function floorLight(lighting, depth) {
   return light;
 }
 
+/**
+ * The depth the splash's water sees the pond's floor at, through a drop or
+ * in a reflection of the pond (one for the whole splash): the lake bed's under
+ * the middle of the solver's patch (src/pondFloor.js), or the pond's own.
+ */
+function floorViewDepth(water) {
+  if (water.floorDepthAt && water.centre) return water.floorDepthAt(water.centre[0], water.centre[1]);
+  return water.depth ?? POND_DEPTH;
+}
+
 /** The layer the mirror camera draws (src/main.js): the sky dome and whatever mirrorWith tags. */
 export const MIRROR_LAYER = 1;
 
@@ -727,9 +737,9 @@ export class SplashSystem {
       uSkyAmbient: { value: lighting.skyAmbient },
       uAbsorb: { value: lighting.absorb },
       uExtinction: { value: lighting.extinction ?? new THREE.Vector3() },
-      uFloorLight: { value: floorLight(lighting, water.depth ?? POND_DEPTH) },
+      uFloorLight: { value: floorLight(lighting, floorViewDepth(water)) },
       uWaterColor: { value: lighting.waterColor ?? new THREE.Vector3() },
-      uPondDepth: { value: water.depth ?? POND_DEPTH },
+      uPondDepth: { value: floorViewDepth(water) },
       uExposure: { value: lighting.exposure },
       uRefract: { value: 1.4 },
       uFluidScale: { value: 1.0 },
@@ -1031,7 +1041,7 @@ export class SplashSystem {
     const cavity = new Cavity({
       impact: info, startTime: this.time, material: this.surface?.cavityMaterial ?? null,
       // The surface dips by whole vertices of its mesh, which may be coarser than the solver's grid (src/waterSurface.js).
-      cell: Math.max(water.cell ?? 0, this.surface?.cell ?? 0) || undefined, floorDepth: water.depth, lean, step: this.substep,
+      cell: Math.max(water.cell ?? 0, this.surface?.cell ?? 0) || undefined, floorDepth: water.floorDepthAt ?? water.depth, lean, step: this.substep,
       drawn: inside(info.x, domainMin[0]) && inside(info.z, domainMin[1]),
       seal: choice?.seal ?? null, asymmetry: choice?.hole ?? null,
     });

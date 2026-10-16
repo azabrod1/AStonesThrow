@@ -190,13 +190,13 @@ for (const framing of FRAMINGS) {
   await page.waitForTimeout(400);
   const choices = await boxes('#water [role="radio"]');
   const [waterPanel] = await boxes('#settings');
-  if (framing.touch) check(choices.length === 3 && choices.every((choice) => choice.height >= SMALLEST_BUTTON_HEIGHT - 0.5), `the Water page's three choices are at least ${SMALLEST_BUTTON_HEIGHT} points tall`);
+  if (framing.touch) check(choices.length === 4 && choices.every((choice) => choice.height >= SMALLEST_BUTTON_HEIGHT - 0.5), `the Water page's four choices are at least ${SMALLEST_BUTTON_HEIGHT} points tall`);
   check(onScreen(waterPanel) && choices.every(onScreen), `the Water page is on the screen`);
   await press('#water [data-value="murky"]');
   const chosen = await page.evaluate(() => ({ clarity: window.__pond.clarity, row: document.querySelector('.menu-tier[data-open="water"] .menu-tier-value').textContent }));
   check(chosen.clarity === 'murky' && chosen.row === 'Murky', `Murky sets the clarity (${chosen.clarity}) and the row's value ("${chosen.row}")`);
   await page.screenshot({ path: path.join(outputFolder, `${framing.name}-water.png`) });
-  await page.evaluate(() => window.__pond.setClarity('pond'));
+  await page.evaluate(() => window.__pond.setClarity('lake'));
   const stonesBefore = await page.evaluate(() => window.__pond.rocks.length);
   const waterPoint = { x: layout.screenWidth * 0.3 / layout.scale, y: layout.screenHeight * 0.55 / layout.scale };
   if (framing.touch) await page.touchscreen.tap(waterPoint.x, waterPoint.y);

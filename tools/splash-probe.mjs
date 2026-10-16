@@ -34,7 +34,7 @@
 //
 //   node tools/splash-probe.mjs [radius ...] [--aim=x:z] [--power=normal|soft|hard] [--vertical]
 //
-// Radii in metres (default the slider's 1.5, 4, 8 and 16 cm diameters and the
+// Radii in metres (default the slider's 1.5, 4, 8, 16 and 30 cm diameters and the
 // 3 cm-radius reference); --vertical drops the stone straight in at the
 // throw's speed instead.
 import * as THREE from 'three';
@@ -46,7 +46,7 @@ import { DAMPING } from '../src/spectralWater.js';
 
 const option = (name, fallback) => { const hit = process.argv.find((argument) => argument.startsWith(`--${name}=`)); return hit ? hit.slice(name.length + 3) : fallback; };
 const radii = process.argv.slice(2).filter((argument) => !argument.startsWith('--')).map(Number);
-const stoneRadii = radii.length > 0 ? radii : [0.0075, 0.02, 0.03, 0.04, 0.08];
+const stoneRadii = radii.length > 0 ? radii : [0.0075, 0.02, 0.03, 0.04, 0.08, 0.15];
 const [aimX, aimZ] = option('aim', '0:-1.4').split(':').map(Number);
 const power = { soft: 1.3, normal: 1.0, hard: 0.72 }[option('power', 'normal')];
 const vertical = process.argv.includes('--vertical');

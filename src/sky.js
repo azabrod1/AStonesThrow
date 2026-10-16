@@ -90,7 +90,7 @@ const SKIES = {
   open: { file: 'kloofendal_48d_partly_cloudy_puresky', mirrored: false },
 };
 export const SKY_NAMES = Object.keys(SKIES);
-export const DEFAULT_SKY = 'meadow';
+export const DEFAULT_SKY = 'lakeside';   // an open lake to a far shore, as the Lake water is
 const BALANCE_SKY = 'meadow';    // the sky the scene's sun colour (sunBalance) was chosen under
 const SKY_EXPOSURE = Math.PI;   // see Brightness above
 const RADIANCE_CAP = 30;       // times the mean sky radiance

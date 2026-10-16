@@ -22,4 +22,4 @@ createServer(async (request, response) => {
     response.writeHead(404);
     response.end('not found');
   }
-}).listen(port, () => console.log(`Stone Pond: http://localhost:${port}/`));
+}).listen(port, () => console.log(`Throw some rocks: http://localhost:${port}/`));

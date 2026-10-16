@@ -782,11 +782,10 @@ void main() {
   // ray, and the light the water scatters into the ray makes up the rest, so
   // the longer the path the more it is the water's own colour, and water
   // with nothing under it in view keeps that colour whatever the path.
-  // path2 runs on the straight line to what the pass drew there (the floor
-  // is drawn on it), longer than the refracted ray the farther out it looks,
-  // as if the floor deepened away from the bank (about 1 m at the bottom of
-  // the home view, 2 m at the reference throw), so the sand fades out with
-  // distance as a pond's does.
+  // path2 runs on the straight line to what the pass drew there (the bed is
+  // drawn on it), longer than the refracted ray the farther out it looks:
+  // with the bed's own deepening (src/pondFloor.js) the sand fades out with
+  // distance a little sooner than through flat water of that depth.
   vec3 underColor = texture2D(uUnderColor, refractUv).rgb;
   vec3 refracted = mix(uWaterColor, underColor, exp(-uExtinction * path2));
 
@@ -872,6 +871,18 @@ vec3 floorPattern(vec2 p) {
 }
 `;
 
+// The lake bed's depth at a world XZ point, as floorDepthAt in
+// src/pondFloor.js computes it (LAKE_BED there): deeper the farther from the
+// bank, levelling off at uLakeBed.w.
+export const LAKE_BED = /* glsl */`
+uniform vec4 uLakeBed;   // the bank's x and z, the depth there and its growth per metre
+uniform float uLakeDeep; // the depth it levels off at
+float floorDepthAt(vec2 point) {
+  float distance = length(point - uLakeBed.xy);
+  return uLakeDeep * tanh((uLakeBed.z + uLakeBed.w * distance) / uLakeDeep);
+}
+`;
+
 // The baked pattern's layout (src/pondFloor.js says why): in perspective from
 // the camera's eye, which never moves. A texel's u is 0.5 plus its sideways
 // offset from the eye over twice uPatternSpread times its distance ahead of
@@ -913,16 +924,20 @@ uniform vec3 uSunDir;
 uniform vec3 uSunIrradiance;
 uniform vec3 uSkyAmbient;
 uniform vec3 uAbsorb;
-uniform float uPondDepth;
+${LAKE_BED}
 ${FLOOR_PATTERN_LAYOUT}
 varying vec2 vFloorPoint;
+varying float vDepth;
 varying vec3 vPatternCoord;
 flat varying vec2 vUpSun;
 flat varying float vFocusing;
-flat varying vec3 vSunlight;
-flat varying vec3 vSkylight;
+varying vec3 vSunlight;
+varying vec3 vSkylight;
 void main() {
   vec3 world = (modelMatrix * vec4(position, 1.0)).xyz;
+  float depth = floorDepthAt(world.xz);
+  world.y = -depth;
+  vDepth = depth;
   vFloorPoint = world.xz;
   float sunSine = length(uSunDir.xz);
   float refractedSine = sunSine / WATER_INDEX;
@@ -936,11 +951,11 @@ void main() {
   vFocusing = deflection * 0.5 * (1.0 + 1.0 / (refractedCosine * refractedCosine));
   float ahead = uPatternEye.y - world.z;
   vPatternCoord = vec3(0.5 * ahead + (world.x - uPatternEye.x) * 0.5 / uPatternSpread, uPatternNearest, ahead);
-  // The sun after crossing the water (the caustics then focus it) and the
-  // sky's light, per unit of the baked pattern.
-  float sunPath = uPondDepth / max(uSunDir.y, 0.2);
+  // The sun after crossing the water down to this point of the bed (the
+  // caustics then focus it) and the sky's light, per unit of the baked pattern.
+  float sunPath = depth / max(uSunDir.y, 0.2);
   vSunlight = uSunIrradiance * exp(-uAbsorb * sunPath) * max(uSunDir.y, 0.0) * PATTERN_RANGE;
-  vSkylight = uSkyAmbient * exp(-uAbsorb * uPondDepth) * 1.4 * PATTERN_RANGE;
+  vSkylight = uSkyAmbient * exp(-uAbsorb * depth) * 1.4 * PATTERN_RANGE;
   gl_Position = projectionMatrix * viewMatrix * vec4(world, 1.0);
 }
 `;
@@ -953,13 +968,13 @@ uniform float uDomainSize;
 uniform float uTexelOffset;
 uniform float uN;
 uniform float uCell;
-uniform float uPondDepth;
 varying vec2 vFloorPoint;
+varying float vDepth;
 varying vec3 vPatternCoord;
 flat varying vec2 vUpSun;
 flat varying float vFocusing;
-flat varying vec3 vSunlight;
-flat varying vec3 vSkylight;
+varying vec3 vSunlight;
+varying vec3 vSkylight;
 ${GLSL_COMMON}
 #define WATER_INDEX 1.333
 #define CAUSTIC_BLUR 0.35          // the irradiance's peak where rays focus on the floor: about 1/this
@@ -982,10 +997,10 @@ void main() {
   // ∇²h (src/pondFloor.js).
   vec2 fromEye = vFloorPoint - cameraPosition.xz;
   float reach = max(length(fromEye), 1e-5);
-  float entry = reach * cameraPosition.y / (cameraPosition.y + uPondDepth);
+  float entry = reach * cameraPosition.y / (cameraPosition.y + vDepth);
   float sineWater = entry / (length(vec2(entry, cameraPosition.y)) * WATER_INDEX);
-  vec2 seenPoint = cameraPosition.xz + fromEye * ((entry + uPondDepth * sineWater * inversesqrt(1.0 - sineWater * sineWater)) / reach);
-  vec2 surfacePoint = seenPoint + vUpSun * uPondDepth;
+  vec2 seenPoint = cameraPosition.xz + fromEye * ((entry + vDepth * sineWater * inversesqrt(1.0 - sineWater * sineWater)) / reach);
+  vec2 surfacePoint = seenPoint + vUpSun * vDepth;
   vec2 uv = (surfacePoint - uDomainMin) / uDomainSize + uTexelOffset;
   float mask = patchMask(uv);
   // Sampled three texels apart: the sun's width and the water blur fine
@@ -1013,7 +1028,7 @@ void main() {
   // disc and the pixel's footprint (CAUSTIC_BLUR), past it the crossed rays'
   // 1/|focus|; eased into [CAUSTIC_DARKEST, CAUSTIC_BRIGHTEST] so a steep ring
   // never blows the sand out.
-  float focus = 1.0 + vFocusing * uPondDepth * curvature;
+  float focus = 1.0 + vFocusing * vDepth * curvature;
   float irradiance = sqrt(1.0 + CAUSTIC_BLUR * CAUSTIC_BLUR) * inversesqrt(focus * focus + CAUSTIC_BLUR * CAUSTIC_BLUR);
   float caustic = irradiance > 1.0
     ? 1.0 + (CAUSTIC_BRIGHTEST - 1.0) * tanh((irradiance - 1.0) / (CAUSTIC_BRIGHTEST - 1.0))

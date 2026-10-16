@@ -7,7 +7,7 @@
      controls and the title keep inside the safe area (env(safe-area-inset-…)). -->
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0b1b22">
-<title>Stone Pond</title>
+<title>Throw some rocks</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;1,9..144,300&family=Instrument+Sans:wght@400;500;600&display=swap">
 <style>
   /* Layout: the pond fills the viewport; a quiet title sits top-left and one
@@ -205,7 +205,7 @@
   }
   .readout {
     font-size: 13px;
-    min-width: 3.5em;
+    min-width: 4.4em;   /* "24.5 cm" fits, so the slider keeps its length as the size changes */
     font-variant-numeric: tabular-nums;
   }
   .throw {
@@ -474,18 +474,18 @@
   }
 </style>
 
-<canvas id="pond" aria-label="A pond. Tap or click the water to throw a stone. Scroll or pinch to zoom."></canvas>
+<canvas id="pond" aria-label="A pond. Tap or click the water to throw a rock. Scroll or pinch to zoom."></canvas>
 
 <div class="title">
-  <h1>Stone Pond</h1>
-  <p>Tap the water to throw a stone. Space throws one for you; scroll or pinch to look closer.</p>
+  <h1>Throw some rocks</h1>
+  <p>Tap the water to throw a rock. Space throws one for you; scroll or pinch to look closer.</p>
 </div>
 <div class="stats" id="stats" aria-live="off"></div>
 
 <div class="controls" role="toolbar" aria-label="Pond controls">
   <div class="group stone-group">
-    <label for="stone-size">Stone</label>
-    <input type="range" id="stone-size" min="1.5" max="16" step="0.5" value="6">
+    <label for="stone-size">Rock</label>
+    <input type="range" id="stone-size" min="1.5" max="30" step="0.5" value="6">
     <span class="readout" id="stone-readout">6 cm</span>
   </div>
   <div class="group">
@@ -506,7 +506,7 @@
   </div>
   <div class="row-break" aria-hidden="true"></div>
   <button type="button" class="reset-view" id="reset-view" hidden>Reset view</button>
-  <button type="button" class="throw" id="throw" aria-label="Throw a stone">Throw<span class="more"> a stone</span></button>
+  <button type="button" class="throw" id="throw" aria-label="Throw a rock">Throw<span class="more"> a rock</span></button>
 </div>
 
 <button type="button" class="menu-button" id="menu-button" aria-label="Settings" aria-expanded="false" aria-controls="settings">
@@ -527,6 +527,7 @@
       <div class="menu-field-label" id="water-label">How clear</div>
       <div class="menu-seg" id="water" role="radiogroup" aria-labelledby="water-label" aria-describedby="water-note">
         <button type="button" role="radio" data-value="clear">Clear</button>
+        <button type="button" role="radio" data-value="lake">Lake</button>
         <button type="button" role="radio" data-value="pond">Pond</button>
         <button type="button" role="radio" data-value="murky">Murky</button>
       </div>
@@ -537,8 +538,8 @@
     <div class="menu-head"><button type="button" class="menu-back" aria-label="Back"><span aria-hidden="true">&lsaquo;</span></button><h3>Sky</h3></div>
     <div class="menu-field">
       <div class="sky-list" id="sky" role="radiogroup" aria-label="Sky" aria-describedby="sky-note">
-        <button type="button" class="sky-option" role="radio" data-value="meadow"><img src="assets/sky/thumbs/meadow.jpg" alt="" width="80" height="45"><span><b>Meadow</b><small>Summer trees, afternoon sun</small></span></button>
         <button type="button" class="sky-option" role="radio" data-value="lakeside"><img src="assets/sky/thumbs/lakeside.jpg" alt="" width="80" height="45"><span><b>Lakeside</b><small>A wooded shore, a far bank</small></span></button>
+        <button type="button" class="sky-option" role="radio" data-value="meadow"><img src="assets/sky/thumbs/meadow.jpg" alt="" width="80" height="45"><span><b>Meadow</b><small>Summer trees, afternoon sun</small></span></button>
         <button type="button" class="sky-option" role="radio" data-value="sunrise"><img src="assets/sky/thumbs/sunrise.jpg" alt="" width="80" height="45"><span><b>Sunrise</b><small>Low golden sun on still water</small></span></button>
         <button type="button" class="sky-option" role="radio" data-value="alpine"><img src="assets/sky/thumbs/alpine.jpg" alt="" width="80" height="45"><span><b>Alpine</b><small>Pines, and snowy peaks up the valley</small></span></button>
         <button type="button" class="sky-option" role="radio" data-value="open"><img src="assets/sky/thumbs/open.jpg" alt="" width="80" height="45"><span><b>Open sky</b><small>Clouds out to the horizon</small></span></button>
@@ -667,8 +668,9 @@
     const label = (page, value) => document.querySelector(`#${page} [data-value="${value}"]`)?.querySelector('b')?.textContent ?? document.querySelector(`#${page} [data-value="${value}"]`)?.textContent ?? value;
     const NOTES = {
       water: {
-        clear: 'Spring water: the sand shows far out, and each ring throws rings of light on it.',
-        pond: 'A clean pond: the sand shows near the bank and fades out by where the stones land.',
+        clear: 'Spring water, turquoise: the sand shows far out under the shallows.',
+        lake: 'A clear Alpine lake: bright sand in the shallows, deep blue where the rocks land.',
+        pond: 'A green pond: the sand fades into green a little way out.',
         murky: 'A lake after rain: the sand shows only at the bank.',
       },
       wind: {

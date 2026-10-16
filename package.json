@@ -1,7 +1,7 @@
 {
-  "name": "stone-pond",
+  "name": "throw-some-rocks",
   "version": "1.0.0",
-  "description": "Throw stones into a pond: dispersive ripples, crown splash and Worthington jet in WebGL",
+  "description": "Throw rocks into a lake: dispersive ripples, crown splash and Worthington jet in WebGL",
   "main": "index.js",
   "scripts": {
     "start": "node tools/serve.mjs",

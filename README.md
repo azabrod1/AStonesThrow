@@ -1,6 +1,6 @@
-# Stone Pond
+# Throw some rocks
 
-Throw stones into a pond and watch the splash. A WebGL toy built with
+Throw rocks into a pond and watch the splash. A WebGL toy built with
 Three.js: the water is a real wave solver, the splash is choreographed from
 the physics of a stone entering water, and the droplets are rendered as water.
 
@@ -9,19 +9,22 @@ GitHub Pages on every push. Locally, open `index.html` through any static
 server (`npm start`, then http://localhost:8123/). There is no build step.
 Three.js loads from a CDN.
 
-Tap or click the water to throw a stone there (beyond the simulated patch,
+Tap or click the water to throw a rock there (beyond the simulated patch,
 at its nearest point). Space throws one at random.
 Scroll or pinch to zoom toward what is under the pointer (down to an 8°
 field of view); Escape or Reset view goes back. The strip at the bottom sets
-the stone size, the throw strength and slow motion. The menu button at the
+the rock's size (1.5 to 30 cm across), the throw strength and slow motion. The menu button at the
 top right opens the settings, laid out as the Moon app's menu is (a list,
 each setting a page of its choices with a line on each), and each choice is
 remembered on the device:
-- Water: how clear it is. Clear, a spring's, where the sand shows far out
-  and each ring throws rings of light on it; Pond, the default, a clean
-  pond's, where the sand shows near the bank and fades out by where the
-  stones land; Murky, a lake after rain.
-- Sky: Meadow (the default), Lakeside, Sunrise, Alpine or Open sky. The
+- Water: Lake, the default, a clear Alpine lake's (bright sand in the
+  shallows, turquoise-blue where it is deep); Clear, a spring's, bluer and
+  clearer; Pond, a green pond's; Murky, a lake after rain. The lake bed
+  slopes down from the bank, 0.7 m deep at the bottom of the view to 1.7 m
+  where the rocks land and 3.5 m far out, so the sand shows in the shallows
+  and is gone where the rocks land, and with it the light a ring throws on
+  it.
+- Sky: Lakeside (the default), Meadow, Sunrise, Alpine or Open sky. The
   photo (about 6 MB) loads while the old sky stays; then the sky, the sun's
   direction and colour and everything they light change at once.
 - Wind: Calm (the default, a still day), Breeze or Windy.
@@ -318,7 +321,7 @@ thing's reflection up where it is: the jet's reflection hangs under the jet
 and only trembles with the ripples, where the sky's streaks with them.
 
 **Sky** (`src/sky.js`). The sky is a photograph: an equirectangular HDRI
-(a meadow with trees by default, or one of four others) on a dome at the far
+(a lakeside with a far shore by default, or one of four others) on a dome at the far
 plane, turned about the vertical (and mirrored, where that puts better
 scenery ahead) so that its sun stands where the scene's does (28° right of
 straight ahead) and at the photo's own elevation, which becomes the scene's
@@ -368,13 +371,19 @@ ring throws a ring of light on the sand. They are placed as the water's
 refraction places them: each floor pixel takes them at the floor point the
 eye really sees through the still surface (the floor itself is drawn on
 the straight line), lit by the sun refracted into the water, so a ring's
-caustic lies 0.7 m down-sun of it on the sand. How strongly the surface
+caustic lies down-sun of it on the sand by the refracted sun's tan θt times
+the depth there (0.9 times it under the meadow's sun, 27° up). The
+floor is a lake bed that deepens away from the bank (`floorDepthAt` in
+`src/pondFloor.js`): each point is lit through its own depth of water, and
+the rocks and their holes come to rest on it. How strongly the surface
 focuses the light follows Snell's law for the sun's height (three times
 what a sun overhead would give), so a crest draws a thin bright line where
 its focus meets the sand, eased into 0.65 to 1.6 times the sun's own light
 (`src/pondFloor.js`).
-Stones are faceted procedural geometry with a small rigid-body model: a
-ballistic arc, quadratic drag under water, and a settle into the sand.
+Stones are procedural geometry, lumpy, worn smooth and speckled, with a
+small rigid-body model: a ballistic arc, quadratic drag under water, and a
+settle into the sand. A rock over 16 cm across leaves the hand lower and
+farther out, so it rises into the view rather than filling its corner.
 
 ## Development
 

@@ -276,6 +276,7 @@ function growthFor(widest) {
  */
 export function sinkStep(body, radius, step, floorDepth) {
   if (body.resting) return body;
+  const floor = typeof floorDepth === 'function' ? floorDepth(body.x, body.z) : floorDepth;
   let velocityX = body.vx, velocityY = body.vy, velocityZ = body.vz;
   const speedSquared = velocityX * velocityX + velocityY * velocityY + velocityZ * velocityZ;
   const speed = Math.sqrt(speedSquared);
@@ -303,8 +304,8 @@ export function sinkStep(body, radius, step, floorDepth) {
   body.x += velocityX * step; body.y += velocityY * step; body.z += velocityZ * step;
   body.vx = velocityX; body.vy = velocityY; body.vz = velocityZ;
   body.time += step;
-  if (body.y - RESTING_HEIGHT * radius <= -floorDepth) {
-    body.y = -floorDepth + RESTING_HEIGHT * radius;
+  if (body.y - RESTING_HEIGHT * radius <= -floor) {
+    body.y = -floor + RESTING_HEIGHT * radius;
     body.vx = body.vy = body.vz = 0;
     body.resting = true;
   }
@@ -338,7 +339,7 @@ export class Cavity {
    * @param startTime splash time of the impact
    * @param material the mesh's material (the water shader's CAVITY_MESH variant), or null for none
    * @param cell the water grid's cell size (m): the surface patch dips under the lip by whole cells
-   * @param floorDepth the pond's depth (m), where the stone comes to rest
+   * @param floorDepth the pond's depth (m), where the stone comes to rest, or a function of world (x, z) giving it (the lake bed)
    * @param lean the jet's lean back along the path (radians): the collapsing funnel turns to it (or setLean)
    * @param drawn false when the impact is outside the simulated patch: the hole is not drawn
    * @param step the simulation's substep (s), which the stone is integrated with
