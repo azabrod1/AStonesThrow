@@ -1,6 +1,7 @@
 // GLSL for the pond: water surface with the foam's bubble pattern
-// (FOAM_PATTERN), pond floor with caustics (CAUSTICS), the pool's tiled
-// basin and deck (POOL_FRAGMENT, DECK_FRAGMENT), bubbles, the foam specks
+// (FOAM_PATTERN: froth thinning into translucent bubble films), pond floor
+// with caustics (CAUSTICS), the pool's tiled basin and deck (POOL_FRAGMENT,
+// DECK_FRAGMENT), bubbles, the foam specks
 // that ride the surface after a splash (src/foamSpecks.js), and where the
 // still surface shows what is under it (SEEN_THROUGH_WATER). All scene
 // passes render linear HDR radiance; the composite pass tone-maps.
@@ -264,6 +265,11 @@ vec3 sunGlitter(vec3 normal, vec3 toViewer, vec3 toSun, vec3 sunIrradiance, floa
 // them are left. The map decays at the same rate everywhere, so a raft thins
 // from its weak edge inward, which is how foam pops; ln makes that steady in
 // time.
+// The coarse bubbles also carry clear film centres and scattering rims;
+// the fine bubbles between them stay milky. Dense, freshly churned foam
+// hides the films, then the map's separate boil/raft mixture exposes them
+// as it drains. This reuses the coarse cell search, with no new texture,
+// clock or noise layer. Unresolved films tend to their measured mean opacity.
 //
 // Antialiasing. The threshold's edge is one pixel wide at any distance: its
 // width is the change of the pattern across the pixel, from the pattern's
@@ -284,7 +290,7 @@ vec3 sunGlitter(vec3 normal, vec3 toViewer, vec3 toSun, vec3 sunIrradiance, floa
 // Far foam reads as an even white of the right strength rather than as
 // noise, and does not shimmer as the water moves under it.
 // tools/foam-probe.mjs checks the medians, the spreads, the cover and the
-// shimmer against supersampling, with these very constants.
+// brightness and shimmer against supersampling, with these very constants.
 //
 // Cost, per pixel where the map exceeds FOAM_PRESENT (all other pixels skip
 // it in one branch, and pay three derivatives; the drift is one subtraction,
@@ -297,7 +303,8 @@ vec3 sunGlitter(vec3 normal, vec3 toViewer, vec3 toSun, vec3 sunIrradiance, floa
 // operations per foam pixel, against about 300 and ten texture fetches for
 // the rest of the water shader. A 12° close-up adds the coarse bubbles,
 // about 1350; a throw a metre or two from the camera resolves all three,
-// about 1800.
+// about 1800. The wet films add about 25 scalar operations and no cell
+// visits or texture fetches (the raft amount is in the same RGBA sample).
 export const FOAM_PATTERN = /* glsl */`
 #define FOAM_FINE_CELL 0.003               // metres
 #define FOAM_FINE_RADII vec2(0.28, 0.55)   // bubble radius range, cells
@@ -347,6 +354,9 @@ export const FOAM_PATTERN = /* glsl */`
 #define FOAM_GLINT_VARIANCE 0.02           // slope variance of the film's sheen
 #define FOAM_THIN_OPACITY 0.65             // foam just over the threshold is a single layer of bubbles,
 #define FOAM_OPAQUE 1.5                    // translucent; this far over it, opaque
+#define FOAM_FILM_CENTRE 0.12              // a single wet bubble transmits most of the water beneath it
+#define FOAM_FILM_MEAN 0.8                // measured by tools/foam-probe.mjs
+#define FOAM_FILM_PACKED 0.9               // above this map density, multiple layers hide the clear films
 
 vec3 foamHash(vec2 cell) {
   vec3 mixed = fract(vec3(cell.xyx) * vec3(0.1031, 0.1030, 0.0973));
@@ -441,8 +451,9 @@ struct FoamLook {
 
 // position: world XZ; acrossX, acrossY: its change across one pixel; foam:
 // the map's value, above FOAM_PRESENT; foamChange: its change across a pixel;
-// surfaceNormal: the water's, which tilts the bubbles with it.
-FoamLook foamLook(vec2 position, vec2 acrossX, vec2 acrossY, float foam, vec2 foamChange, vec3 surfaceNormal) {
+// surfaceNormal: the water's, which tilts the bubbles with it; boilFraction:
+// the short-lived population's share of the map (0 for a settled raft).
+FoamLook foamLook(vec2 position, vec2 acrossX, vec2 acrossY, float foam, vec2 foamChange, vec3 surfaceNormal, float boilFraction) {
   float footprint = sqrt(sqrt(dot(acrossX, acrossX) * dot(acrossY, acrossY)));
   float fineFade = smoothstep(FOAM_FADE_START, FOAM_FADE_END, footprint / FOAM_FINE_CELL);
   float coarseFade = smoothstep(FOAM_FADE_START, FOAM_FADE_END, footprint / FOAM_COARSE_CELL);
@@ -526,6 +537,19 @@ FoamLook foamLook(vec2 position, vec2 acrossX, vec2 acrossY, float foam, vec2 fo
   // of the same total light rather than a dot that flickers.
   float turnAcrossPixel = footprint / (winner.bestRadius * (coarseWins ? FOAM_COARSE_CELL : FOAM_FINE_CELL));
   look.glintVariance = FOAM_GLINT_VARIANCE + turnAcrossPixel * turnAcrossPixel;
+
+  // The coarse bubbles that define the raft also define its wet films. A
+  // single layer transmits water through their centres and scatters at their
+  // rims; a dense boil hides those centres with multiple layers. The map's
+  // two populations already decay independently, so this material drains
+  // naturally without a new clock, moving noise or another cell search.
+  float wetness = (1.0 - smoothstep(0.25, FOAM_FILM_PACKED, foam)) * mix(1.0, 0.75, boilFraction);
+  float filmWidth = max(footprint / (FOAM_COARSE_CELL * coarse.bestRadius), 0.04);
+  float filmRadius = length(coarse.bestOffset) / coarse.bestRadius;
+  float centre = 1.0 - smoothstep(0.65 - filmWidth, 0.98 + filmWidth, filmRadius);
+  float film = 1.0 - (1.0 - FOAM_FILM_CENTRE) * centre;
+  film = mix(film, FOAM_FILM_MEAN, coarseFade);
+  look.opacity *= mix(1.0, film, wetness);
   return look;
 }
 `;
@@ -843,13 +867,15 @@ void main() {
   // (uFoamDrift). The map's change is taken here, in uniform control flow
   // (the footprint, acrossX and acrossY, at the top); the pattern only where
   // there is foam.
-  float foam = texture2D(uFoam, vDomainUv).r * vMask;
+  vec2 foamKinds = texture2D(uFoam, vDomainUv).rg;
+  float foam = foamKinds.r * vMask;
 #ifdef CAVITY_MESH
   foam *= level;   // the pattern lies on the water's plane: none down the walls
 #endif
   vec2 foamChange = vec2(dFdx(foam), dFdy(foam));
   if (foam > FOAM_PRESENT) {
-    FoamLook look = foamLook(vWorld.xz - uFoamDrift, acrossX, acrossY, foam, foamChange, n);
+    float boilFraction = clamp(1.0 - foamKinds.g / max(foamKinds.r, 1e-5), 0.0, 1.0);
+    FoamLook look = foamLook(vWorld.xz - uFoamDrift, acrossX, acrossY, foam, foamChange, n, boilFraction);
     vec3 light = uSunIrradiance * max(dot(n, uSunDir), 0.0) + uSkyAmbient * FOAM_SKY_LIGHT;
     vec3 foamColor = FOAM_ALBEDO * look.shade * light;
     if (look.glint > 0.0) foamColor += look.glint * FOAM_GLINT * min(sunGlitter(look.domeNormal, v, uSunDir, uSunIrradiance, look.glintVariance), vec3(40.0));
@@ -1554,9 +1580,12 @@ void main() {
 // triangulated surface never covers it). It fades in over a tenth of a second and out
 // over its last SPECK_FADE seconds, shrinking as it goes.
 // A speck smaller than uMinPixelSize is drawn at that size, soft, with its
-// opacity cut by the area it really covers (down to SPECK_MIN_COVERAGE): a
+// opacity cut by the projected area it really covers: a
 // hard dot of a pixel or two would flicker as it moves across pixels, and far
 // specks should read as a faint grain where they gather, not as bright dots.
+// Each disc projects onto the mean water plane, becoming an ellipse at a
+// grazing angle; an unresolved short axis widens to 1.5 pixels with the
+// matching loss of opacity. Wave displacement still supplies its height.
 // Inside a raft the water shader's bubble pattern is the grain, so a speck
 // fades out where the foam map under it is between SPECK_RAFT_LOW and
 // SPECK_RAFT_HIGH: specks are the bits that drift out of the raft.
@@ -1565,7 +1594,6 @@ export const SPECK_VERTEX = /* glsl */`
 #define SPECK_WANDER 0.0012
 #define SPECK_LIFT 0.0015
 #define SPECK_FADE 0.35
-#define SPECK_MIN_COVERAGE 0.12
 #define SPECK_RAFT_LOW 0.05
 #define SPECK_RAFT_HIGH 0.2
 #define SPECK_RING_SPACING 0.01   // metres: the rings' height under a speck, read this smooth
@@ -1582,11 +1610,13 @@ uniform float uProjScale;    // render-target pixels per world unit at distance 
 uniform float uMinPixelSize;
 varying float vAlpha;
 varying float vPixelSize;
+varying vec2 vSurfaceAxis;
+varying float vSurfaceAspect;
 ${GLSL_COMMON}
 void main() {
   float age = uTime - aTiming.x;
   float life = aTiming.y;
-  if (age < 0.0 || age >= life) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); gl_PointSize = 0.0; vAlpha = 0.0; vPixelSize = 0.0; return; }
+  if (age < 0.0 || age >= life) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); gl_PointSize = 0.0; vAlpha = 0.0; vPixelSize = 0.0; vSurfaceAxis = vec2(0.0, 1.0); vSurfaceAspect = 1.0; return; }
   float phase = aTiming.w;
   vec2 place = position.xz + aDrift * SPECK_DRIFT_SECONDS * (1.0 - exp(-age / SPECK_DRIFT_SECONDS)) + uFoamVelocity * age;
   place += SPECK_WANDER * vec2(sin(age * 1.3 + phase) + 0.5 * sin(age * 3.1 + 2.0 * phase), cos(age * 1.1 + 1.7 * phase) + 0.5 * sin(age * 2.7 + 3.0 * phase));
@@ -1603,7 +1633,15 @@ void main() {
   float drawn = max(pixelSize, uMinPixelSize);
   gl_PointSize = drawn;
   vPixelSize = drawn;
-  vAlpha = fade * max((pixelSize * pixelSize) / (drawn * drawn), SPECK_MIN_COVERAGE);
+  // A floating bubble sits in the water plane, not in the screen plane.
+  // Keep its projected short axis at least 1.5 pixels and conserve its area
+  // in alpha. This also removes the constant-bright snow at a distance.
+  vec3 viewNormal = mat3(viewMatrix) * vec3(0.0, 1.0, 0.0);
+  vSurfaceAxis = vec2(viewNormal.x, -viewNormal.y);
+  vSurfaceAxis /= max(length(vSurfaceAxis), 1e-5);
+  float surfaceAspect = abs(dot(normalize(-viewPosition.xyz), viewNormal));
+  vSurfaceAspect = max(surfaceAspect, min(1.0, 1.5 / drawn));
+  vAlpha = fade * (pixelSize * pixelSize) / (drawn * drawn) * surfaceAspect / vSurfaceAspect;
   gl_Position = projectionMatrix * viewPosition;
 }
 `;
@@ -1620,13 +1658,16 @@ uniform float uOpacity;
 uniform float uBrightness;
 varying float vAlpha;
 varying float vPixelSize;
+varying vec2 vSurfaceAxis;
+varying float vSurfaceAspect;
 void main() {
   vec2 offset = gl_PointCoord * 2.0 - 1.0;
+  offset += vSurfaceAxis * dot(offset, vSurfaceAxis) * (1.0 / vSurfaceAspect - 1.0);
   float radiusSquared = dot(offset, offset);
   if (radiusSquared > 1.0) discard;
-  float bubble = (0.7 + 0.3 * smoothstep(0.3, 0.8, radiusSquared)) * (1.0 - smoothstep(0.75, 1.0, radiusSquared));
+  float bubble = (0.12 + 0.88 * smoothstep(0.2, 0.7, radiusSquared)) * (1.0 - smoothstep(0.75, 1.0, radiusSquared));
   float blob = exp(-3.0 * radiusSquared);
-  float shape = mix(blob, bubble, smoothstep(3.5, 5.0, vPixelSize));
+  float shape = mix(blob, bubble, smoothstep(3.5, 5.0, vPixelSize * vSurfaceAspect));
   vec3 light = uSunIrradiance * max(uSunDir.y, 0.0) + uSkyAmbient * 1.5;
   vec3 color = vec3(0.94, 0.96, 0.97) * light * uBrightness;
   float alpha = vAlpha * shape * uOpacity;
