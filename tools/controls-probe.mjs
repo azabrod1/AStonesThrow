@@ -20,7 +20,9 @@
 //     touch screen) at least 34 points tall; pressed, the panel opens on the
 //     screen, its rows that tall too; its Water row opens the Water page,
 //     whose Murky sets the pond's clarity and the row's value; a press on the
-//     water closes it without throwing a stone, and Escape closes it too.
+//     water closes it without throwing a stone, and Escape closes it too;
+//   - on a touch screen a finger dragged across the water turns the view and
+//     throws nothing, and the Reset view button then shows on the screen.
 // Sizes are reported in points on the screen (CSS pixels times the page's
 // zoom), so a shrunken page fails them. It saves each framing's screen to
 // shots/controls-probe/<label>/ and exits with status 1 if a check fails.
@@ -183,7 +185,7 @@ for (const framing of FRAMINGS) {
   await page.waitForTimeout(400);
   const [panel] = await boxes('#settings');
   const rows = await boxes('#settings .menu-tier');
-  check(!!panel && onScreen(panel) && rows.length === 4, `the settings open on the screen with their four rows`);
+  check(!!panel && onScreen(panel) && rows.length === 5, `the settings open on the screen with their five rows`);
   if (framing.touch) check(rows.every((row) => row.height >= SMALLEST_BUTTON_HEIGHT - 0.5), `every settings row is at least ${SMALLEST_BUTTON_HEIGHT} points tall (smallest ${Math.min(...rows.map((row) => row.height)).toFixed(1)})`);
   await page.screenshot({ path: path.join(outputFolder, `${framing.name}-settings.png`) });
   await press('#settings .menu-tier[data-open="water"]');
@@ -207,6 +209,22 @@ for (const framing of FRAMINGS) {
     await press('#menu-button');
     await page.keyboard.press('Escape');
     check(await page.evaluate(() => document.getElementById('settings').hidden), `Escape closes the settings`);
+  } else {
+    // A real finger (the browser's touch input, not synthetic pointers) dragged across the water.
+    const session = await context.newCDPSession(page);
+    const touch = (type, x, y) => session.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y }] });
+    const azimuthBefore = await page.evaluate(() => window.__pond.orbit.azimuth);
+    const rocksBefore = await page.evaluate(() => window.__pond.rocks.length);
+    const from = { x: layout.screenWidth * 0.35 / layout.scale, y: layout.screenHeight * 0.5 / layout.scale };
+    await touch('touchStart', from.x, from.y);
+    for (let step = 1; step <= 6; step++) await touch('touchMove', from.x + 20 * step, from.y);
+    await touch('touchEnd', from.x + 120, from.y);
+    await session.detach();
+    const dragged = await page.evaluate(() => ({ azimuth: window.__pond.orbit.azimuth, rocks: window.__pond.rocks.length }));
+    const [resetButton] = await boxes('#reset-view');
+    check(dragged.azimuth < azimuthBefore - 1 && dragged.rocks === rocksBefore && !!resetButton && onScreen(resetButton),
+      `a finger dragged 120 px across the water turns the view ${(azimuthBefore - dragged.azimuth).toFixed(1)}° and throws ${dragged.rocks - rocksBefore} rocks; Reset view is on the screen`);
+    await page.screenshot({ path: path.join(outputFolder, `${framing.name}-turned.png`) });
   }
   if (problems.length) { check(false, `page errors: ${problems.join(' | ')}`); }
   await context.close();

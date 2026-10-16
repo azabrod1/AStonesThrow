@@ -50,6 +50,7 @@
     position: fixed;
     top: calc(env(safe-area-inset-top, 0px) + 14px);
     left: calc(env(safe-area-inset-left, 0px) + 18px);
+    right: calc(env(safe-area-inset-right, 0px) + 84px);   /* clear of the settings button */
     pointer-events: none;
     text-shadow: 0 1px 12px rgba(0, 0, 0, 0.55);
   }
@@ -221,7 +222,7 @@
     cursor: pointer;
   }
   .throw:hover { background: rgba(238, 243, 244, 0.16); }
-  /* Shown only while the view is zoomed: a quieter twin of the throw button. */
+  /* Shown only while the view is away from the shore's (turned, zoomed or another view): a quieter twin of the throw button. */
   .reset-view {
     appearance: none;
     border: 1px solid var(--line);
@@ -430,7 +431,7 @@
   }
   /* Phones in portrait: two rows. The stone's slider, its name and size
      above it, with the throw button beside it (the view's reset in its place
-     while zoomed); then the throw's strength and the time, each name above
+     while the view is away from the shore's); then the throw's strength and the time, each name above
      its buttons. The row break comes after the buttons (order), wherever it
      sits in the page. The wind and the quality are in the settings. */
   @media (max-width: 520px) {
@@ -449,7 +450,7 @@
     .stone-group > .readout { grid-area: size; min-width: 0; text-align: right; font-size: 12px; margin-bottom: -6px; }
     .stone-group input[type="range"] { grid-area: slider; width: 100%; }
     .throw, .reset-view { order: 1; align-self: flex-end; margin-bottom: 4px; padding: 7px 12px; }
-    .throw.while-zoomed { display: none; }
+    .throw.while-away { display: none; }
     .row-break { display: block; order: 2; }
     .group:not(.stone-group) { order: 3; flex-direction: column; gap: 2px; }
     .group:not(.stone-group) > span.name { font-size: 10px; }
@@ -478,7 +479,7 @@
 
 <div class="title">
   <h1>Throw some rocks</h1>
-  <p>Tap the water to throw a rock. Space throws one for you; scroll or pinch to look closer.</p>
+  <p>Tap the water to throw a rock, drag to look around. Space throws one for you; scroll or pinch to look closer.</p>
 </div>
 <div class="stats" id="stats" aria-live="off"></div>
 
@@ -516,10 +517,23 @@
      The page script fills each row's value and each page's note. -->
 <div class="settings" id="settings" role="dialog" aria-label="Settings" hidden>
   <div class="menu-page" data-page="root">
+    <button type="button" class="menu-tier" data-open="view"><b>View</b><span class="menu-tier-value"></span><span class="menu-tier-chevron" aria-hidden="true">&rsaquo;</span></button>
     <button type="button" class="menu-tier" data-open="water"><b>Water</b><span class="menu-tier-value"></span><span class="menu-tier-chevron" aria-hidden="true">&rsaquo;</span></button>
     <button type="button" class="menu-tier" data-open="sky"><b>Sky</b><span class="menu-tier-value"></span><span class="menu-tier-chevron" aria-hidden="true">&rsaquo;</span></button>
     <button type="button" class="menu-tier" data-open="wind"><b>Wind</b><span class="menu-tier-value"></span><span class="menu-tier-chevron" aria-hidden="true">&rsaquo;</span></button>
     <button type="button" class="menu-tier" data-open="quality"><b>Quality</b><span class="menu-tier-value"></span><span class="menu-tier-chevron" aria-hidden="true">&rsaquo;</span></button>
+  </div>
+  <div class="menu-page" data-page="view" hidden>
+    <div class="menu-head"><button type="button" class="menu-back" aria-label="Back"><span aria-hidden="true">&lsaquo;</span></button><h3>View</h3></div>
+    <div class="menu-field">
+      <div class="menu-field-label" id="view-label">From</div>
+      <div class="menu-seg" id="view" role="radiogroup" aria-labelledby="view-label" aria-describedby="view-note">
+        <button type="button" role="radio" data-value="shore">Shore</button>
+        <button type="button" role="radio" data-value="level">Low</button>
+        <button type="button" role="radio" data-value="high">High</button>
+      </div>
+      <div class="menu-note" id="view-note"></div>
+    </div>
   </div>
   <div class="menu-page" data-page="water" hidden>
     <div class="menu-head"><button type="button" class="menu-back" aria-label="Back"><span aria-hidden="true">&lsaquo;</span></button><h3>Water</h3></div>
@@ -609,6 +623,8 @@
 
   let pond;
   let showQuality = () => {};   // assigned once the settings exist; the calibration may call it before
+  let currentView = { atHome: true, view: 'shore' };   // the last onViewChange, which comes before the settings exist too
+  let showView = () => {};
   let profileDone = false;            // once the profile report is up, the readout keeps it
   try {
     // Module scripts may await at the top level; the pond starts once its sky has loaded.
@@ -617,7 +633,12 @@
       quality: params.get('quality') || 'auto',
       onError: (message) => { veilText.innerHTML = ''; const p = document.createElement('p'); p.className = 'error'; p.textContent = message; veilText.append(p); },
       onStats: ({ fps, droplets, quality }) => { if (!profileDone) stats.textContent = `${Math.round(fps)} fps · ${droplets} drops · ${quality}`; },
-      onViewChange: ({ zoomed }) => { resetView.hidden = !zoomed; document.getElementById('throw').classList.toggle('while-zoomed', zoomed); },
+      onViewChange: (report) => {
+        currentView = report;
+        resetView.hidden = report.atHome;
+        document.getElementById('throw').classList.toggle('while-away', !report.atHome);
+        showView();
+      },
       onQualityChange: () => showQuality(),
       onProfile: (lines) => { profileDone = true; stats.classList.add('report'); stats.textContent = lines.join('\n'); },
     });
@@ -667,6 +688,12 @@
     const settings = new SettingsPanel({ button: document.getElementById('menu-button'), panel: document.getElementById('settings') });
     const label = (page, value) => document.querySelector(`#${page} [data-value="${value}"]`)?.querySelector('b')?.textContent ?? document.querySelector(`#${page} [data-value="${value}"]`)?.textContent ?? value;
     const NOTES = {
+      view: {
+        shore: 'Standing on the bank, as the pond opens.',
+        level: 'Down at the water, the splash against the far shore.',
+        high: 'From high above, the rings spreading over the pond.',
+        turned: 'Turned by hand. Drag the water to look around; Reset view comes back to the shore.',
+      },
       water: {
         clear: 'Spring water, turquoise: the sand shows far out under the shallows.',
         lake: 'A clear Alpine lake: bright sand in the shallows, deep blue where the rocks land.',
@@ -684,6 +711,13 @@
         medium: 'A coarser water grid, the view under the water and the splash at half resolution, and 30 frames a second while nothing moves.',
         high: 'The finest ripples, and everything at the screen\u2019s full resolution.',
       },
+    };
+    const showViewChoice = radioGroup(document.getElementById('view'), (value) => pond.showView(value));
+    showView = () => {
+      const name = currentView.view;
+      showViewChoice(name);
+      settings.setValue('view', name ? label('view', name) : 'Turned');
+      document.getElementById('view-note').textContent = NOTES.view[name ?? 'turned'];
     };
     const showWater = radioGroup(document.getElementById('water'), (value) => { pond.setClarity(value); updateWater(); });
     function updateWater() {
@@ -727,6 +761,7 @@
       settings.setValue('sky', label('sky', pond.sky));
       skyNote.textContent = '';
     }
+    showView();
     updateWater();
     updateWind();
     showQuality();

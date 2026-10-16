@@ -101,7 +101,8 @@
 // SLOPE_VISIBLE/RETIRE_MARGIN gives the ring's lifetime, and how far its
 // packet has gone by then the extent the ring shows to. With a camera
 // (setCamera: src/main.js hands it the view's pixels per radian and the
-// nearest water the home view shows), a packet counts only as much as a
+// nearest water the shore frame shows while the eye stands at the shore,
+// and none anywhere else), a packet counts only as much as a
 // pixel shows of it (resolvedShare): the mip chain averages it over the
 // pixel's footprint along the radius, at least (d² + h²)/(h·f)·cos α at the
 // nearest d the camera sees of its circle (h the camera's height, f its
@@ -725,14 +726,15 @@ export class RingSources {
    * nearest } (its position, its pixels per radian across the canvas, the
    * nearest water it can see), or null to plan without one (planSource).
    * A source planned for fewer pixels per radian than REPLAN times this
-   * one's is planned again, so a zoom that shows more keeps more: marked
-   * here, planned by retire, one a frame (a plan takes about 0.7 ms on a
-   * desktop, tools/ring-probe.mjs).
+   * one's is planned again, so a zoom that shows more keeps more; with no
+   * camera, every source planned for one is, by its slope alone, so it lives
+   * as long as any view could show it. Marked here, planned by retire, one a
+   * frame (a plan takes about 0.7 ms on a desktop, tools/ring-probe.mjs).
    */
   setCamera(camera) {
     this.camera = camera;
     for (const source of this.sources) {
-      if (camera && (!source.plannedFor || camera.pixelsPerRadian > REPLAN * source.plannedFor.pixelsPerRadian)) source.replan = true;
+      if (camera ? !source.plannedFor || camera.pixelsPerRadian > REPLAN * source.plannedFor.pixelsPerRadian : source.plannedFor) source.replan = true;
     }
   }
 

@@ -789,16 +789,18 @@ void main() {
   vec3 underColor = texture2D(uUnderColor, refractUv).rgb;
   vec3 refracted = mix(uWaterColor, underColor, exp(-uExtinction * path2));
 
-  // Reflection of the sky and the far shore (the dome's photograph): a planar
-  // mirror image, rendered at screen resolution, of a dome at infinity, so the
-  // direction the surface reflects the view ray into is looked up through the
-  // mirror camera (w = 0: a direction). A ripple tilting toward or away from
-  // the camera moves the image up or down by twice its tilt; one tilting
-  // sideways turns it far less at grazing angles, so reflections stretch into
-  // vertical streaks, as they do on a lake. A ray turned below the horizon
-  // would meet the next ripple; it takes the horizon's colour. While the
-  // mirror holds the splash, near things are looked up where they are
-  // (nearReflection).
+  // Reflection of the sky and the far shore (the dome's photograph) and the
+  // beach: a planar mirror image, rendered at screen resolution. The still
+  // mirror's own texel for this point (its place on the still plane through
+  // the mirror camera) is right for anything, near or at infinity; the
+  // ripples move the lookup from there by what they turn the reflected ray
+  // by, as for a dome at infinity (the direction, w = 0, through the mirror
+  // camera). A ripple tilting toward or away from the camera moves the image
+  // up or down by twice its tilt; one tilting sideways turns it far less at
+  // grazing angles, so reflections stretch into vertical streaks, as they do
+  // on a lake. A ray turned below the horizon would meet the next ripple; it
+  // takes the horizon's colour. While the mirror holds the splash, near
+  // things are looked up where they are (nearReflection).
   vec3 reflectedRay = reflect(-v, n);
 #ifdef CAVITY_MESH
   // Inside the hole (and on the lip's inner face) a reflected ray leaves
@@ -810,7 +812,9 @@ void main() {
 #endif
   reflectedRay.y = max(reflectedRay.y, 0.001);
   vec4 reflectCoord = uReflectionMatrix * vec4(reflectedRay, 0.0);
-  vec2 reflectUv = reflectCoord.xy / max(reflectCoord.w, 1e-4);
+  vec4 stillRayCoord = uReflectionMatrix * vec4(-v.x, v.y, -v.z, 0.0);
+  vec4 stillPointCoord = uReflectionMatrix * vec4(vWorld.x, 0.0, vWorld.z, 1.0);
+  vec2 reflectUv = stillPointCoord.xy / max(stillPointCoord.w, 1e-4) + reflectCoord.xy / max(reflectCoord.w, 1e-4) - stillRayCoord.xy / max(stillRayCoord.w, 1e-4);
   vec3 reflected;
   if (uMirrorNear.x > uMirrorNear.z) reflected = texture2D(uReflection, clamp(reflectUv, vec2(0.002), vec2(0.998))).rgb;
   else reflected = nearReflection(reflectUv, reflectedRay);
@@ -855,69 +859,99 @@ void main() {
 }
 `;
 
-// The floor's pattern: sand of mixed grain, pebbles in patches and silt
-// darkening it in broad drifts, as an albedo at a world XZ point. Seven value
-// noises, so it is not evaluated per pixel: src/pondFloor.js bakes it once at
-// start-up (FLOOR_BAKE_FRAGMENT) into a texture that FLOOR_FRAGMENT fetches.
+// The floor's pattern (src/pondFloor.js): sand of mixed grain and pebbles in
+// patches, as an albedo at a world XZ point, over a square tile PATTERN_TILE
+// metres on a side that repeats. Six value noises whose lattices wrap with
+// the tile (tiledNoise: each frequency, per metre, is a whole number of
+// cells across it), so the tile meets itself without a seam; so they are not
+// evaluated per pixel: src/pondFloor.js bakes the tile once at start-up
+// (FLOOR_BAKE_FRAGMENT) into a texture that FLOOR_FRAGMENT fetches. The silt
+// that darkens the sand in broad drifts is the floor's own (FLOOR_FRAGMENT),
+// with no period.
+const FLOOR_PATTERN_TILE = /* glsl */`
+#define PATTERN_TILE 2.0       // metres: the side of the baked tile
+#define PATTERN_RANGE 0.43     // the tile holds albedo over this, above the pattern's largest (0.42), so its 8 bits span the pattern
+`;
 export const FLOOR_PATTERN = /* glsl */`
+float tiledNoise(vec2 p, float period) {
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  vec2 u = f * f * (3.0 - 2.0 * f);
+  float a = hash21(mod(i, period));
+  float b = hash21(mod(i + vec2(1.0, 0.0), period));
+  float c = hash21(mod(i + vec2(0.0, 1.0), period));
+  float d = hash21(mod(i + vec2(1.0, 1.0), period));
+  return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+}
+float tiledNoise(vec2 p, float frequency, vec2 offset) { return tiledNoise(p * frequency + offset, frequency * PATTERN_TILE); }
 vec3 floorPattern(vec2 p) {
-  float grain = valueNoise(p * 38.0) * 0.45 + valueNoise(p * 130.0) * 0.25 + valueNoise(p * 7.0) * 0.5;
+  float grain = tiledNoise(p, 38.0, vec2(0.0)) * 0.45 + tiledNoise(p, 130.0, vec2(0.0)) * 0.25 + tiledNoise(p, 7.0, vec2(0.0)) * 0.5;
   vec3 sand = mix(vec3(0.26, 0.22, 0.15), vec3(0.42, 0.37, 0.27), grain);
-  float pebble = smoothstep(0.62, 0.74, valueNoise(p * 6.5 + 7.3) * 0.7 + valueNoise(p * 21.0) * 0.3);
-  vec3 pebbleColor = vec3(0.27, 0.26, 0.24) * (0.6 + 0.8 * valueNoise(p * 70.0));
-  sand = mix(sand, pebbleColor, pebble * 0.8);
-  float silt = valueNoise(p * 0.9 + 3.0);
-  return sand * (0.75 + 0.45 * silt);
+  float pebble = smoothstep(0.62, 0.74, tiledNoise(p, 6.5, vec2(7.3)) * 0.7 + tiledNoise(p, 21.0, vec2(0.0)) * 0.3);
+  vec3 pebbleColor = vec3(0.27, 0.26, 0.24) * (0.6 + 0.8 * tiledNoise(p, 70.0, vec2(0.0)));
+  return mix(sand, pebbleColor, pebble * 0.8);
 }
 `;
 
 // The lake bed's depth at a world XZ point, as floorDepthAt in
-// src/pondFloor.js computes it (LAKE_BED there): deeper the farther from the
-// bank, levelling off at uLakeBed.w.
+// src/pondFloor.js computes it (SHORE there): deeper the farther out from the
+// waterline, levelling off; behind it negative, the land's height.
 export const LAKE_BED = /* glsl */`
-uniform vec4 uLakeBed;   // the bank's x and z, the depth there and its growth per metre
-uniform float uLakeDeep; // the depth it levels off at
+uniform vec4 uShore;   // the waterline's z, its bend (m), the bed's slope out from it and the depth it levels off at
+uniform vec4 uLand;    // the beach's slope up from the water and the height it levels off at, the bank's height
+uniform vec2 uBank;    // how far inland the bank starts and ends (m)
+float shoreDistance(vec2 point) {
+  return uShore.x + point.x * point.x / (2.0 * uShore.y) - point.y;
+}
+float landHeight(float inland) {
+  return uLand.y * tanh(uLand.x * inland / uLand.y) + uLand.z * smoothstep(uBank.x, uBank.y, inland);
+}
 float floorDepthAt(vec2 point) {
-  float distance = length(point - uLakeBed.xy);
-  return uLakeDeep * tanh((uLakeBed.z + uLakeBed.w * distance) / uLakeDeep);
+  float offshore = shoreDistance(point);
+  return offshore >= 0.0 ? uShore.w * tanh(uShore.z * offshore / uShore.w) : -landHeight(-offshore);
 }
 `;
 
-// The baked pattern's layout (src/pondFloor.js says why): in perspective from
-// the camera's eye, which never moves. A texel's u is 0.5 plus its sideways
-// offset from the eye over twice uPatternSpread times its distance ahead of
-// the eye, its v uPatternNearest over that distance; uPatternEye is the eye's
-// world (x, z). The texture holds albedo over PATTERN_RANGE, which is above
-// the pattern's largest (0.54), so its 8 bits span the pattern's range.
-const FLOOR_PATTERN_LAYOUT = /* glsl */`
-uniform vec2 uPatternEye;
-uniform float uPatternNearest;
-uniform float uPatternSpread;
-#define PATTERN_RANGE 0.55
+// The sand at a world XZ point, over PATTERN_RANGE (the bed's and the
+// beach's): the baked tile (FLOOR_PATTERN) looked up twice, the second time
+// turned and shifted, patches of a few metres taking one lookup or the
+// other, so the tile's repeat does not show; then the silt's broad drifts.
+const FLOOR_SAND = /* glsl */`
+uniform sampler2D uPattern;
+#define PATTERN_TURN mat2(0.8, 0.6, -0.6, 0.8)   // the second lookup's tiles, turned 37° off the first's...
+#define PATTERN_SHIFT vec2(0.37, 0.71)           // ...and shifted, in tiles
+#define PATTERN_PATCHES 0.6                      // per metre: the noise choosing between the two lookups
+#define SILT_FREQUENCY 0.9                       // per metre: the silt's drifts
+vec3 floorSand(vec2 point) {
+  vec2 tilePoint = point / PATTERN_TILE;
+  vec3 straight = texture2D(uPattern, tilePoint).rgb;
+  vec3 turned = texture2D(uPattern, PATTERN_TURN * tilePoint + PATTERN_SHIFT).rgb;
+  float lookup = smoothstep(0.42, 0.58, valueNoise(point * PATTERN_PATCHES + 17.0));
+  float silt = valueNoise(point * SILT_FREQUENCY + 3.0);
+  return mix(straight, turned, lookup) * (0.75 + 0.45 * silt);
+}
 `;
 
-// One pass over the pattern texture: each texel holds the pattern at the
-// floor point its layout gives it.
+// One pass over the pattern's tile: texel (u, v) holds the pattern at the
+// floor point PATTERN_TILE · (u, v), and the floor at world point p fetches
+// it at p / PATTERN_TILE, the texture repeating.
 export const FLOOR_BAKE_FRAGMENT = /* glsl */`
-${FLOOR_PATTERN_LAYOUT}
+${FLOOR_PATTERN_TILE}
 varying vec2 vUv;
 ${GLSL_COMMON}
 ${FLOOR_PATTERN}
 void main() {
-  float ahead = uPatternNearest / vUv.y;
-  vec2 world = vec2(uPatternEye.x + (2.0 * vUv.x - 1.0) * uPatternSpread * ahead, uPatternEye.y - ahead);
-  gl_FragColor = vec4(floorPattern(world) / PATTERN_RANGE, 1.0);
+  gl_FragColor = vec4(floorPattern(vUv * PATTERN_TILE) / PATTERN_RANGE, 1.0);
 }
 `;
 
-// What the floor's pixels need that is the same everywhere, or affine in the
-// world position, is worked out here, for the floor's four vertices: the light
-// reaching the floor (the same everywhere, so flat), how far up-sun of a floor
-// point its sunlight crossed the surface (the sun refracted into the water,
-// tan θt per metre of depth, sin θt = sin θi / n: flat), the floor point's
-// world XZ and the pattern's coordinates, projective (u·w, v·w, w) with w the
-// distance ahead of the eye. The last two are affine in the world position,
-// so they interpolate exactly.
+// What the floor's pixels need that is the same everywhere, or smooth over
+// the bed, is worked out here, per vertex of the bed's mesh: how far up-sun
+// of a floor point its sunlight crossed the surface (the sun refracted into
+// the water, tan θt per metre of depth, sin θt = sin θi / n: flat), the
+// floor point's world XZ (affine in the world position, so it interpolates
+// exactly), its depth, and the sun's and the sky's light reaching it through
+// that depth.
 export const FLOOR_VERTEX = /* glsl */`
 #define WATER_INDEX 1.333
 uniform vec3 uSunDir;
@@ -925,18 +959,21 @@ uniform vec3 uSunIrradiance;
 uniform vec3 uSkyAmbient;
 uniform vec3 uAbsorb;
 ${LAKE_BED}
-${FLOOR_PATTERN_LAYOUT}
+${FLOOR_PATTERN_TILE}
 varying vec2 vFloorPoint;
 varying float vDepth;
-varying vec3 vPatternCoord;
 flat varying vec2 vUpSun;
 flat varying float vFocusing;
 varying vec3 vSunlight;
 varying vec3 vSkylight;
 void main() {
   vec3 world = (modelMatrix * vec4(position, 1.0)).xyz;
-  float depth = floorDepthAt(world.xz);
-  world.y = -depth;
+  // Behind the waterline the bed is the beach, above the water (the main
+  // scene draws it: createShore in src/pondFloor.js); here it is lit as the
+  // water's edge.
+  float bedDepth = floorDepthAt(world.xz);
+  world.y = -bedDepth;
+  float depth = max(bedDepth, 0.0);
   vDepth = depth;
   vFloorPoint = world.xz;
   float sunSine = length(uSunDir.xz);
@@ -949,8 +986,6 @@ void main() {
   // their mean (0.25 for a sun overhead, 0.76 for this scene's at 27°).
   float deflection = 1.0 - max(uSunDir.y, 0.0) / (WATER_INDEX * refractedCosine);
   vFocusing = deflection * 0.5 * (1.0 + 1.0 / (refractedCosine * refractedCosine));
-  float ahead = uPatternEye.y - world.z;
-  vPatternCoord = vec3(0.5 * ahead + (world.x - uPatternEye.x) * 0.5 / uPatternSpread, uPatternNearest, ahead);
   // The sun after crossing the water down to this point of the bed (the
   // caustics then focus it) and the sky's light, per unit of the baked pattern.
   float sunPath = depth / max(uSunDir.y, 0.2);
@@ -962,7 +997,6 @@ void main() {
 
 export const FLOOR_FRAGMENT = /* glsl */`
 uniform sampler2D uHeight;
-uniform sampler2D uPattern;
 uniform vec2 uDomainMin;
 uniform float uDomainSize;
 uniform float uTexelOffset;
@@ -970,20 +1004,21 @@ uniform float uN;
 uniform float uCell;
 varying vec2 vFloorPoint;
 varying float vDepth;
-varying vec3 vPatternCoord;
 flat varying vec2 vUpSun;
 flat varying float vFocusing;
 varying vec3 vSunlight;
 varying vec3 vSkylight;
 ${GLSL_COMMON}
+${FLOOR_PATTERN_TILE}
 #define WATER_INDEX 1.333
 #define CAUSTIC_BLUR 0.35          // the irradiance's peak where rays focus on the floor: about 1/this
 #define CAUSTIC_BRIGHTEST 1.6      // the sunlight on the sand is eased into this many times its own...
 #define CAUSTIC_DARKEST 0.65       // ...and this
+${FLOOR_SAND}
 
 void main() {
-  // Sand with pebbles and silt (FLOOR_PATTERN), baked.
-  vec3 sand = texture2DProj(uPattern, vPatternCoord).rgb;
+  // Sand with pebbles and silt (FLOOR_SAND).
+  vec3 sand = floorSand(vFloorPoint);
 
   // Caustics: where the surfaces above focus the sun, on the floor point this
   // pixel really shows. The floor is drawn on the straight line from the eye
@@ -1035,6 +1070,92 @@ void main() {
     : 1.0 - (1.0 - CAUSTIC_DARKEST) * tanh((1.0 - irradiance) / (1.0 - CAUSTIC_DARKEST));
 
   gl_FragColor = vec4(sand * (vSunlight * caustic + vSkylight), 1.0);
+}
+`;
+
+// The beach behind the waterline (createShore in src/pondFloor.js): the
+// lake bed's surface where it stands out of the water (LAKE_BED), and a
+// strip of it under the water's edge, which the water covers. Its normal
+// comes from the height a little to either side.
+export const LAND_VERTEX = /* glsl */`
+${LAKE_BED}
+varying vec3 vWorld;
+varying vec3 vNormal;
+varying float vInland;     // metres behind the waterline
+#define NORMAL_STEP 0.05   // metres
+void main() {
+  vec3 world = (modelMatrix * vec4(position, 1.0)).xyz;
+  vInland = -shoreDistance(world.xz);
+  float height = -floorDepthAt(world.xz);
+  float aheadX = -floorDepthAt(world.xz + vec2(NORMAL_STEP, 0.0));
+  float aheadZ = -floorDepthAt(world.xz + vec2(0.0, NORMAL_STEP));
+  vNormal = normalize(vec3(height - aheadX, NORMAL_STEP, height - aheadZ));
+  world.y = height;
+  vWorld = world;
+  gl_Position = projectionMatrix * viewMatrix * vec4(world, 1.0);
+}
+`;
+
+// The land: the beach's sand (FLOOR_SAND, as the bed's) in the sun and the
+// sky's light (as the bed's, without the water, DRY_SAND of it), darker where
+// it is wet, up to WET_HEIGHT above the water; from GRASS_FROM to GRASS_TO
+// inland it turns to the bank's grass, which takes the colour of the land the
+// sky photo shows at the horizon that way (photoLand: the sky's cube map, a
+// little above the horizon, at LAND_LEVEL of its mip chain and averaged
+// either side, so the photo's detail does not streak toward the eye; under
+// the horizon a photo shows whatever stood at the photographer's feet, often
+// water), mottled and shaded by the bank's slope against level ground. From LAND_NEAR to
+// LAND_FAR away all of it becomes that colour, so the land runs into the
+// photo's own. Seen in the mirror the directions are the mirror camera's,
+// so its reflection does too.
+export const LAND_FRAGMENT = /* glsl */`
+uniform vec3 uSunDir;
+uniform vec3 uSunIrradiance;
+uniform vec3 uSkyAmbient;
+uniform samplerCube uSkyCube;   // the sky, as the droplets reflect it (src/sky.js)
+varying vec3 vWorld;
+varying vec3 vNormal;
+varying float vInland;
+${GLSL_COMMON}
+${FLOOR_PATTERN_TILE}
+${FLOOR_SAND}
+#define SKY_LIGHT 1.4        // the sky's light on the sand, as the bed's
+#define DRY_SAND vec3(0.68, 0.6, 0.5)   // the beach's dry sand, against the bed's: darker and warmer, as the photos' banks are
+#define WET_HEIGHT 0.12      // metres above the water the sand is wet to...
+#define WET_SHADE 0.6        // ...and as dark as this at the water
+#define GRASS_FROM 2.5       // metres inland: the sand turns to grass from here...
+#define GRASS_TO 4.5         // ...to here
+#define LAND_NEAR 8.0        // metres away: the land becomes the photo's from here...
+#define LAND_FAR 60.0        // ...to here
+#define LAND_HEIGHTS vec2(0.018, 0.04)  // the photo's land is read this high above the horizon (direction's y)...
+#define LAND_SPAN 0.05                  // ...and this far to either side (direction's sideways share)...
+#define LAND_LEVEL 3.0                  // ...at this level of the cube's mip chain (512 a face: 1.4° a texel)
+vec3 photoLand(vec2 toward) {
+  vec2 across = normalize(toward);
+  vec2 side = vec2(-across.y, across.x) * LAND_SPAN;
+  vec3 sum = vec3(0.0);
+  for (int tap = -1; tap <= 1; tap++) {
+    vec2 turned = normalize(across + side * float(tap));
+    sum += textureCubeLodEXT(uSkyCube, vec3(turned.x, LAND_HEIGHTS.x, turned.y), LAND_LEVEL).rgb;
+    sum += textureCubeLodEXT(uSkyCube, vec3(turned.x, LAND_HEIGHTS.y, turned.y), LAND_LEVEL).rgb;
+  }
+  return sum / 6.0;
+}
+void main() {
+  vec3 normal = normalize(vNormal);
+  vec3 sand = floorSand(vWorld.xz) * PATTERN_RANGE * DRY_SAND * mix(WET_SHADE, 1.0, smoothstep(0.0, WET_HEIGHT, vWorld.y));
+  vec3 color = sand * (uSunIrradiance * max(dot(normal, uSunDir), 0.0) + uSkyAmbient * SKY_LIGHT);
+  vec3 toLand = vWorld - cameraPosition;
+  float grass = smoothstep(GRASS_FROM, GRASS_TO, vInland);
+  float far = smoothstep(LAND_NEAR, LAND_FAR, length(toLand));
+  if (grass > 0.0 || far > 0.0) {
+    vec3 land = photoLand(toLand.xz);
+    float level = max(uSunDir.y, 0.0) + SKY_LIGHT * 0.25;
+    float slopeShade = (max(dot(normal, uSunDir), 0.0) + SKY_LIGHT * 0.25 * normal.y) / level;
+    vec3 grassColor = land * slopeShade * (1.0 + (0.6 * valueNoise(vWorld.xz * 2.3 + 5.0) - 0.3) * (1.0 - far));
+    color = mix(mix(color, grassColor, grass), land, far);
+  }
+  gl_FragColor = vec4(color, 1.0);
 }
 `;
 

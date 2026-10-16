@@ -28,6 +28,11 @@
 // --wind=x:z sets the direction the wind blows toward in world XZ, and
 // --wind-strength=calm|breeze|windy its strength (the page's own default is
 // calm; breeze is the look the pond had before the Wind control).
+// --view=shore|level|high stands the camera at one of the View setting's
+// choices (VIEWS in src/main.js), and --orbit=azimuth:elevation:distance
+// (degrees, degrees, metres; :x:y:z after them moves the pivot) on any orbit
+// (src/viewOrbit.js), before --fov and --look turn it; the rocks are still
+// thrown from the shore.
 // --power=soft|normal|hard throws as the strength buttons do (soft is a
 // higher arc, so a steeper entry: about 30° from vertical against 42°).
 // --seed=n seeds Math.random (Park–Miller, from n + i) just before throw i,
@@ -68,6 +73,8 @@ const wind = arg('wind', '');
 const power = arg('power', 'normal');
 const windStrength = arg('wind-strength', '');
 const seed = arg('seed', '');
+const viewName = arg('view', '');
+const orbitArgument = arg('orbit', '');
 
 const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.mjs': 'text/javascript', '.json': 'application/json', '.png': 'image/png', '.css': 'text/css' };
 const server = createServer(async (request, response) => {
@@ -123,6 +130,13 @@ try {
 }
 await page.evaluate(() => window.__pond.pause());
 await page.evaluate((name) => window.__pond.setDebugView(name), debugView);
+if (viewName) await page.evaluate((name) => window.__pond.showView(name, { glide: false }), viewName);
+if (orbitArgument) {
+  await page.evaluate((text) => {
+    const [azimuth, elevation, distance, ...pivot] = text.split(':').map(Number);
+    window.__pond.setOrbit({ azimuth, elevation, distance, pivot: pivot.length === 3 ? pivot : undefined });
+  }, orbitArgument);
+}
 if (fov) await page.evaluate((f) => window.__pond.setFov(Number(f)), fov);
 if (look) await page.evaluate((l) => { const [x, y, z] = l.split(':').map(Number); window.__pond.lookAt(x, y, z); }, look);
 await page.evaluate((seconds) => window.__pond.advance(seconds), preRoll);

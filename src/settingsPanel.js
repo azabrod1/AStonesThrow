@@ -16,8 +16,8 @@
 // back button takes focus.
 //
 // Closing it resets it to the root, so it always opens on the list. It
-// closes on the button, on Escape (before Escape's reset of a zoomed view,
-// src/main.js) and on a press anywhere else; a press on the water then only
+// closes on the button, on Escape (before Escape's glide back to the shore
+// view, src/main.js) and on a press anywhere else; a press on the water then only
 // closes it, it does not throw a stone.
 const ROOT_PAGE = 'root';
 const SLIDE_MS = 220;

@@ -1,6 +1,7 @@
 // Zooming the pond's view: the field of view and the look direction of a
-// camera that never moves (the planar reflection and the hand assume its
-// position), with the horizon kept level.
+// camera standing where its orbit puts it (src/viewOrbit.js), with the
+// horizon kept level. The home view here is the orbit's unzoomed frame,
+// facing its pivot.
 //
 // A view is { yaw, pitch, fov }: radians, radians and the vertical field of
 // view in degrees, for a camera turned by yaw about +Y and then by pitch about
@@ -8,8 +9,8 @@
 // Its forward direction is (−cos p·sin y, sin p, −cos p·cos y).
 //
 // Zooming toward a point keeps the world direction under that point where it
-// is on screen. The camera stays put, so that is the same as keeping the
-// water point under the pointer there. placeDirection solves for the yaw and
+// is on screen. The camera stays put while it zooms, so that is the same as
+// keeping the water point under the pointer there. placeDirection solves for the yaw and
 // pitch that put a world direction at given normalised device coordinates
 // under a given field of view, in closed form: the pitch alone sets the ray's
 // height, the yaw then turns it into place. clampToFrame keeps a zoomed view

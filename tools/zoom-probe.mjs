@@ -1,5 +1,6 @@
-// Browser probe of the zoom (src/main.js, src/viewZoom.js) through the page's
-// real event handlers, without drawing frames.
+// Browser probe of the zoom and the orbit (src/main.js, src/viewZoom.js,
+// src/viewOrbit.js) through the page's real event handlers, without drawing
+// frames (a glide is brought to its end with __pond.settleView()).
 //
 // Loads the page headless like tools/shoot.mjs, then: turns the mouse wheel
 // over several points and checks that the water point under the pointer stays
@@ -8,8 +9,15 @@
 // pointers (spreading and moving) and checks the field of view, that the
 // point under the fingers' midpoint follows it and that no stone is thrown;
 // taps while zoomed and checks a stone is thrown at the point under the tap;
-// presses Escape and checks the view is home again. Prints one line per check
-// and exits with status 1 if any fails.
+// presses Escape and checks the view is home again. Then the orbit: a
+// one-finger drag turns the eye about the pivot (the pivot staying at the
+// view's centre, the distance kept, the turn ORBIT_TURN per canvas height)
+// and throws nothing, nor does a mouse drag, while a mouse click does; a drag
+// up stops with the eye just above the water; a drag that starts zoomed
+// keeps what the view's centre shows there; the View setting's choices and
+// Reset view glide to their orbits, and the page's View row and Reset view
+// button follow. Prints one line per check and exits with status 1 if any
+// fails.
 //
 //   node tools/zoom-probe.mjs [--w=1280 --h=720]
 import { chromium } from 'playwright';
@@ -108,6 +116,7 @@ for (let notch = 0; notch < 40; notch++) await page.mouse.wheel(0, -100);
 await page.waitForTimeout(50);
 check(Math.abs((await fov()) - 8) < 1e-6, `wheel in 40 notches stops at ${(await fov()).toFixed(2)} degrees`);
 await page.keyboard.press('Escape');
+await page.evaluate(() => window.__pond.settleView());
 check(!(await page.evaluate(() => window.__pond.zoomed)) && Math.abs((await fov()) - homeFov) < 1e-6, `Escape returns home: fov ${(await fov()).toFixed(2)}`);
 
 // Pinch: fingers 120 px apart spread to 300 px while their midpoint moves 40 px right.
@@ -145,9 +154,80 @@ check(landing[2] === rocksAfterPinch + 1 && miss < 0.1, `a tap while zoomed thre
 // The Reset view button follows the zoom.
 const buttonHidden = () => page.evaluate(() => document.getElementById('reset-view').hidden);
 const hiddenZoomed = await buttonHidden();
-await page.evaluate(() => window.__pond.resetView());
+await page.evaluate(() => { window.__pond.resetView(); window.__pond.settleView(); });
 const hiddenHome = await buttonHidden();
 check(!hiddenZoomed && hiddenHome, `Reset view button shown while zoomed: ${!hiddenZoomed}, hidden at home: ${hiddenHome}`);
+
+// ---- the orbit ----
+const orbit = () => page.evaluate(() => window.__pond.orbit);
+const rockCount = () => page.evaluate(() => window.__pond.rocks.length);
+const pivotOffCentre = () => page.evaluate(() => {
+  const { orbit: { pivot } } = window.__pond;
+  const [x, y] = window.__probe.onScreen(pivot);
+  const rect = document.getElementById('pond').getBoundingClientRect();
+  return Math.hypot(x - (rect.left + rect.width / 2), y - (rect.top + rect.height / 2));
+});
+const drag = async (fromX, fromY, toX, toY, steps = 8) => {
+  await page.evaluate(([x, y]) => window.__probe.pointer('pointerdown', 1, x, y), [fromX, fromY]);
+  for (let step = 1; step <= steps; step++) {
+    await page.evaluate(([x, y]) => window.__probe.pointer('pointermove', 1, x, y), [fromX + (toX - fromX) * step / steps, fromY + (toY - fromY) * step / steps]);
+  }
+  await page.evaluate(([x, y]) => window.__probe.pointer('pointerup', 1, x, y), [toX, toY]);
+};
+const turnPerPixel = 180 / height;   // ORBIT_TURN (π) per canvas height, in degrees
+
+const shore = await orbit();
+let before = await rockCount();
+await drag(width * 0.4, height * 0.55, width * 0.4 + 200, height * 0.55);
+let turned = await orbit();
+check(Math.abs(turned.azimuth - (shore.azimuth - 200 * turnPerPixel)) < 1e-6 && Math.abs(turned.elevation - shore.elevation) < 1e-6,
+  `a drag 200 px right walks the eye ${(shore.azimuth - turned.azimuth).toFixed(2)}° left about the pivot (${(200 * turnPerPixel).toFixed(2)}° expected), its height kept`);
+check(Math.abs(turned.distance - shore.distance) < 1e-9 && turned.pivot.every((value, index) => Math.abs(value - shore.pivot[index]) < 1e-9) && (await pivotOffCentre()) < 0.5,
+  `the drag keeps the pivot (${turned.pivot.map((value) => value.toFixed(2)).join(', ')}) at the view's centre and the eye ${turned.distance.toFixed(3)} m from it`);
+check((await rockCount()) === before, `the drag threw ${(await rockCount()) - before} rocks`);
+check(!(await buttonHidden()) && (await page.evaluate(() => window.__pond.viewName)) === null, 'turned: Reset view shown, no View choice named');
+await drag(width * 0.5, height * 0.4, width * 0.5, height * 0.4 + 60);
+const raised = await orbit();
+check(Math.abs(raised.elevation - (turned.elevation + 60 * turnPerPixel)) < 1e-6, `a drag 60 px down raises the eye ${(raised.elevation - turned.elevation).toFixed(2)}° (${(60 * turnPerPixel).toFixed(2)}° expected)`);
+await drag(width * 0.5, height * 0.7, width * 0.5, height * 0.05, 12);
+const lowest = await page.evaluate(() => window.__pond.camera.position.y);
+check(Math.abs(lowest - 0.1) < 1e-6, `a long drag up stops with the eye ${(lowest * 100).toFixed(1)} cm above the water (10 cm the least)`);
+
+// A mouse drag turns and throws nothing; a click throws.
+before = await rockCount();
+const elevationBefore = (await orbit()).elevation;
+await page.mouse.move(width * 0.5, height * 0.5);
+await page.mouse.down();
+await page.mouse.move(width * 0.5, height * 0.5 + 40, { steps: 4 });
+await page.mouse.up();
+check((await rockCount()) === before && (await orbit()).elevation > elevationBefore + 1, `a mouse drag 40 px down raised the eye ${((await orbit()).elevation - elevationBefore).toFixed(2)}° and threw ${(await rockCount()) - before} rocks`);
+await page.mouse.click(width * 0.5, height * 0.6);
+check((await rockCount()) === before + 1, 'a mouse click threw a rock');
+
+// A drag that starts zoomed turns round what the view looks at: at its first step, the centre still shows the same point.
+await page.evaluate(() => { window.__pond.resetView(); window.__pond.settleView(); });
+await page.mouse.move(width * 0.7, height * 0.55);
+for (let notch = 0; notch < 8; notch++) await page.mouse.wheel(0, -100);
+await page.waitForTimeout(50);
+const centreWater = await page.evaluate(([x, y]) => window.__probe.waterUnder(x, y), [width / 2, height / 2]);
+await page.evaluate(([x, y]) => { window.__probe.pointer('pointerdown', 1, x, y); window.__probe.pointer('pointermove', 1, x + 14, y); }, [width * 0.5, height * 0.5]);
+const repivoted = await page.evaluate(() => window.__pond.orbit);
+const [centreX, centreY] = await page.evaluate((point) => window.__probe.onScreen(point), centreWater);
+const pivotGap = Math.hypot(repivoted.pivot[0] - centreWater[0], repivoted.pivot[1] - centreWater[1], repivoted.pivot[2] - centreWater[2]);
+check(pivotGap < 1e-6, `a drag that starts zoomed moves the pivot onto the water at the view's centre (${(pivotGap * 1000).toFixed(3)} mm off)`);
+await page.evaluate(([x, y]) => { window.__probe.pointer('pointermove', 1, x + 120, y); window.__probe.pointer('pointerup', 1, x + 120, y); }, [width * 0.5, height * 0.5]);
+const [afterX, afterY] = await page.evaluate((point) => window.__probe.onScreen(point), centreWater);
+check(Math.hypot(afterX - width / 2, afterY - height / 2) < 0.5 && (await page.evaluate(() => window.__pond.zoomed)),
+  `and turns round it, still zoomed: that point ${Math.hypot(afterX - width / 2, afterY - height / 2).toFixed(3)} px from the centre after the turn (${Math.hypot(centreX - width / 2, centreY - height / 2).toFixed(3)} px at its first step)`);
+
+// The View setting's choices glide to their orbits, and the page follows.
+for (const name of ['high', 'level', 'shore']) {
+  await page.evaluate((view) => { window.__pond.showView(view); window.__pond.settleView(); }, name);
+  const state = await page.evaluate(() => ({ name: window.__pond.viewName, zoomed: window.__pond.zoomed, row: document.querySelector('.menu-tier[data-open="view"] .menu-tier-value').textContent, checked: document.querySelector('#view [aria-checked="true"]')?.dataset.value }));
+  check(state.name === name && !state.zoomed && state.checked === name && (await pivotOffCentre()) < 0.5,
+    `View ${name}: the eye at ${(await page.evaluate(() => window.__pond.camera.position.y)).toFixed(2)} m, unzoomed, facing the pivot; the View row reads ${state.row}`);
+}
+check(await buttonHidden(), 'back at the shore view: Reset view hidden');
 
 if (problems.length) { console.log('page errors:'); console.log(problems.join('\n')); failures++; }
 await browser.close();

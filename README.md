@@ -10,20 +10,28 @@ server (`npm start`, then http://localhost:8123/). There is no build step.
 Three.js loads from a CDN.
 
 Tap or click the water to throw a rock there (beyond the simulated patch,
-at its nearest point). Space throws one at random.
-Scroll or pinch to zoom toward what is under the pointer (down to an 8°
-field of view); Escape or Reset view goes back. The strip at the bottom sets
+at its nearest point). Space throws one at random; the rocks are always
+thrown from the shore. Drag the water to walk the view round the pond and
+up or down (from just above the water to nearly straight down), and scroll
+or pinch to zoom toward what is under the pointer (down to an 8° field of
+view); a drag that starts zoomed turns round what the view is looking at.
+Escape or Reset view glides back to the shore. The strip at the bottom sets
 the rock's size (1.5 to 30 cm across), the throw strength and slow motion. The menu button at the
 top right opens the settings, laid out as the Moon app's menu is (a list,
 each setting a page of its choices with a line on each), and each choice is
-remembered on the device:
+remembered on the device (but the view, which opens on the shore):
+- View: Shore, standing on the bank as the page opens; Low, down at the
+  water, the splash against the far shore; High, from above, the rings
+  spreading over the pond. A choice glides there; a drag turns from it.
 - Water: Lake, the default, a clear Alpine lake's (bright sand in the
   shallows, turquoise-blue where it is deep); Clear, a spring's, bluer and
   clearer; Pond, a green pond's; Murky, a lake after rain. The lake bed
-  slopes down from the bank, 0.7 m deep at the bottom of the view to 1.7 m
+  slopes down from the shore, 0.7 m deep at the bottom of the view to 1.7 m
   where the rocks land and 3.5 m far out, so the sand shows in the shallows
   and is gone where the rocks land, and with it the light a ring throws on
-  it.
+  it. Behind the waterline, just behind the shore view, a sand beach rises
+  into a grassy bank that takes its colour from the sky photo's own land, so
+  turned round, the view sees a shore rather than water to the horizon.
 - Sky: Lakeside (the default), Meadow, Sunrise, Alpine or Open sky. The
   photo (about 6 MB) loads while the old sky stays; then the sky, the sun's
   direction and colour and everything they light change at once.
@@ -350,11 +358,10 @@ camera puts it, and one on the floor half as far), the floor on the
 straight line; the main
 scene renders the sky dome and the water surface (with any open cavity, drawn
 by the same shader), which refracts that texture,
-fading it by path length through the water (absorbed and scattered, about as
-clear as a clean pond's: the sand shows near the bank and is gone about 9 m
-out) into the water's own green, reflects a planar mirror
-image of the sky dome, clouds and treeline (the camera never moves, so it is
-re-rendered only when the view zooms or turns; while a splash lives, it is
+fading it by path length through the water (absorbed and scattered, as the
+Water setting says) into the water's own colour, reflects a planar mirror
+image of the sky dome, clouds and treeline (re-rendered only when the view
+zooms, turns or moves; while a splash lives, it is
 drawn into it each frame, over the rectangle it covers) in the direction each ripple
 turns the view ray, so reflections wobble into vertical streaks (near
 things, the splash's, by their distance, so they move far less), and adds
@@ -492,8 +499,13 @@ farther out, so it rises into the view rather than filling its corner.
   (kept in `localStorage`); calm otherwise.
 - `?sky=name` on the page (`--sky=name` for the harness) picks the sky
   panorama, a key of `SKIES` in `src/sky.js`, over the one last chosen on
-  the device; `?water=clear|pond|murky` (`--water=` for the harness) the
+  the device; `?water=clear|lake|pond|murky` (`--water=` for the harness) the
   water's clarity, `WATER_CLARITIES` in `src/main.js`.
+- `?view=shore|level|high` on the page (`--view=` for the harness) opens on
+  one of the View setting's choices (`VIEWS` in `src/main.js`);
+  `--orbit=azimuth:elevation:distance[:x:y:z]` stands the harness's camera on
+  any orbit (degrees, degrees, metres, and the pivot; `src/viewOrbit.js`).
+  The rocks are thrown from the shore whatever the view.
 - `node tools/sky-probe.mjs assets/sky/name_2k.hdr [--png=preview.png]`
   measures a sky panorama (the sun's direction, the sun's irradiance, the
   sky's mean radiance, the horizon's) and writes `assets/sky/name.json`,
@@ -561,7 +573,10 @@ farther out, so it rises into the view rather than filling its corner.
   window keeps within the pixel budget.
 - `node tools/zoom-probe.mjs [--w=390 --h=844]` drives the wheel, a pinch, a
   tap and Escape through the page's own handlers and checks that what is under
-  the pointer stays there.
+  the pointer stays there; then drags, by touch and by mouse, and checks that
+  they turn the view about its pivot, keep the eye above the water and throw
+  nothing, that a drag that starts zoomed turns round what the view shows,
+  and that the View choices and Reset view glide where they should.
 - `node tools/controls-probe.mjs [--root=path] [--label=name]` loads the page
   as phones' browsers do (mobile layout by the viewport tag, touch, 3× pixels)
   at a large phone's portrait and landscape and a small phone's portrait and

@@ -20,24 +20,35 @@
 //      water in the air, only the tone map (src/splash.js).
 // All simulation runs in world seconds scaled by the slow-motion factor.
 //
-// The camera never moves: the planar reflection and the throwing hand assume
-// its position. The view zooms by narrowing the field of view (from the home
-// 48° landscape or 62° portrait down to 8°) and turning the camera, horizon
-// level, so that what is under the pointer stays there (src/viewZoom.js): the
-// mouse wheel by 0.9 per notch, a two-finger pinch with the inverse of the
-// change in finger spacing, while the fingers' midpoint holds on to what was
-// under it. A zoomed view stays inside the home view, so zooming all the way
-// out returns to it; Escape and the Reset view button go straight back. The
-// mirror image of the sky is re-rendered at the next frame whenever the view
-// has changed, and while a splash lives it is drawn over where the splash's
-// own mirror image falls, each frame (updateReflection). A tap throws at the
-// water under it, brought inside the solver's patch less POND_MARGIN (or
-// MARGIN_RADII of a big rock's radius) when it
-// is beyond (or on the sky): a splash nearer the patch's edge would ring
-// across it, since the patch is periodic. While a press aims (or a mouse
-// hovers) a ring on the water and a faint arc from the hand show the throw;
-// a throw hides them, a mouse's until it moves on, or the arc's end would
-// hang in the splash as a hairline.
+// The view. The camera stands on an orbit about a pivot (src/viewOrbit.js),
+// facing it: at home on the shore view the page opens with (VIEWS.shore),
+// 1.15 m above the bank, looking out over the pond. A one-finger or mouse
+// drag (a press that moves TAP_SLOP pixels or more, which never throws) walks
+// it round the pivot and up or down, what is under the finger following it,
+// ORBIT_TURN radians for a drag across the canvas's height; the View setting
+// glides it to another orbit (VIEWS: the shore, down at the water, high
+// above) over GLIDE_SECONDS, and Escape and the Reset view button glide it
+// home. Wherever it stands, the view zooms by narrowing the field of view
+// (from the frame's 48° landscape or 62° portrait down to 8°) and turning
+// the camera, horizon level, so that what is under the pointer stays there
+// (src/viewZoom.js): the mouse wheel by 0.9 per notch, a two-finger pinch
+// with the inverse of the change in finger spacing, while the fingers'
+// midpoint holds on to what was under it. A zoomed view stays inside the
+// unzoomed frame, so zooming all the way out returns to it, and turns with
+// it; a drag that starts zoomed first moves the pivot to what the view looks
+// at (the water under its centre, or a point as far off as the pivot was),
+// so it turns round that. The rocks are always thrown from the shore, by a
+// hand beside and below the shore view's eye, so every throw enters the
+// water as the tools reproduce it. The mirror image of the sky is
+// re-rendered at the next frame whenever the view has changed, and while a
+// splash lives it is drawn over where the splash's own mirror image falls,
+// each frame (updateReflection). A tap throws at the water under it, brought
+// inside the solver's patch less POND_MARGIN (or MARGIN_RADII of a big
+// rock's radius) when it is beyond (or on the sky): a splash nearer the
+// patch's edge would ring across it, since the patch is periodic. While a
+// press aims (or a mouse hovers) a ring on the water and a faint arc from
+// the hand show the throw; a throw hides them, a mouse's until it moves on,
+// or the arc's end would hang in the splash as a hairline.
 //
 // Quality. Each preset of QUALITY sets the work a frame does: the splash
 // solver's grid, the inner water patch's mesh (src/waterSurface.js), the
@@ -72,6 +83,7 @@
 // each have their own localStorage key, and the page's parameters win over
 // them: ?sky=<name> picks the panorama (src/sky.js; setSky loads another
 // later, in place: the sun follows, and the mirror image is drawn again);
+// ?view=shore|level|high stands the camera at one of VIEWS (showView);
 // ?water=clear|pond|murky the water's clarity (WATER_CLARITIES; setClarity);
 // ?wind=x,z sets the direction the wind blows toward in world XZ
 // (DEFAULT_WIND otherwise); ?windStrength=calm|breeze|windy the wind's
@@ -89,11 +101,12 @@ import { AmbientWaves, DEFAULT_WIND, WIND_STRENGTHS } from './ambientWaves.js';
 import { Rings } from './rings.js';
 import { createEnvironment, SKY_NAMES } from './sky.js';
 import { createWaterSurface } from './waterSurface.js';
-import { createPondFloor, setPatternMipmaps, floorDepthAt } from './pondFloor.js';
+import { createPondFloor, createShore, floorDepthAt, groundHeightAt } from './pondFloor.js';
 import { Rock } from './rock.js';
 import { SplashSystem, MIRROR_LAYER } from './splash.js';
 import { createFloatTarget, FullscreenPass, configureFloatSupport, renderTargetBytes } from './gpu.js';
-import { viewFacing, directionAt, placeDirection, clampToFrame, zoomToward, isZoomed } from './viewZoom.js';
+import { directionAt, placeDirection, clampToFrame, zoomToward, isZoomed, viewFacing } from './viewZoom.js';
+import { orbitEye, orbitFacing, orbitAbout, clampOrbit, turnOrbit, blendOrbits, orbitsMatch } from './viewOrbit.js';
 import { Profiler } from './profiler.js';
 
 // Quality presets. The splash lives in a few dozen pixels, so the fluid
@@ -153,6 +166,18 @@ const MAX_ROCKS = 10;
 const MIN_FOV = 8;            // degrees: the narrowest zoom
 const WHEEL_STEP = 0.9;       // field of view factor per wheel notch
 const HOME_TARGET = [0, 0.12, -1.0];
+const TAP_SLOP = 14;          // CSS pixels a press may move and still throw; past them it turns the view
+const ORBIT_TURN = Math.PI;   // radians the view turns for a drag across the canvas's height
+const GLIDE_SECONDS = 1.0;    // a glide to another view
+// The View setting's choices (src/viewOrbit.js): the shore view the page
+// opens with, 1.15 m above the water's edge; down at the water, its eye 16 cm
+// up, 1.9 m from where the rocks land; high above, 2.4 m up and a little to
+// the side, looking down on where they land.
+const VIEWS = {
+  shore: orbitAbout({ x: 0, y: 1.15, z: 2.45 }, { x: HOME_TARGET[0], y: HOME_TARGET[1], z: HOME_TARGET[2] }),
+  level: orbitAbout({ x: 0, y: 0.16, z: 0.5 }, { x: 0, y: 0.1, z: -1.4 }),
+  high: orbitAbout({ x: 1.0, y: 2.4, z: 0.6 }, { x: 0, y: 0, z: -1.3 }),
+};
 const SUN_AZIMUTH = Math.atan2(0.42, 0.78);   // radians right of straight ahead (−Z), about 28°
 const DEBUG_MODES = { under: 0, height: 1, foam: 2, env: 3, face: 4, ambient: 5 };   // setDebugView names
 const DEFAULT_WIND_STRENGTH = 'calm';
@@ -285,14 +310,25 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
   splash.updateLighting();   // its view of the bed takes the absorption, set only now
 
   const camera = new THREE.PerspectiveCamera(48, 1, 0.05, 60000);
-  camera.position.set(0, 1.15, 2.45);
-  // The floor's pattern is baked once, laid out in perspective from the camera's eye (src/pondFloor.js).
-  const floor = createPondFloor(water, lighting, ambientWaves, { renderer, eye: camera.position, rings });
+  // The floor's pattern is baked once, a tile laid out on the world (src/pondFloor.js).
+  const floor = createPondFloor(water, lighting, ambientWaves, { renderer, rings });
   const floorPattern = floor.material.uniforms.uPattern.value;   // RGBA8, with its mip chain
   const floorPatternBytes = Math.round(floorPattern.image.width * floorPattern.image.height * 4 * (floorPattern.generateMipmaps ? 4 / 3 : 1));
-  // The view: home is the framing the page opens with; view is the current one.
-  const home = { ...viewFacing(HOME_TARGET[0] - camera.position.x, HOME_TARGET[1] - camera.position.y, HOME_TARGET[2] - camera.position.z), fov: 48 };
+  // The view: orbit is where the eye stands, facing its pivot; home the frame
+  // it sees from there unzoomed (yaw and pitch toward the pivot, and the
+  // widest field of view); view the current one, zoomed inside home.
+  const requestedView = pageParameters.get('view');
+  const orbit = { ...VIEWS[Object.hasOwn(VIEWS, requestedView ?? '') ? requestedView : 'shore'] };
+  const home = { ...orbitFacing(orbit), fov: 48 };
   const view = { ...home };
+  // The thrower's hand stands beside and below the shore view's eye, wherever the camera is (handPosition).
+  const shoreEye = orbitEye(VIEWS.shore);
+  const shoreFacing = orbitFacing(VIEWS.shore);
+  const shoreFrame = new THREE.Matrix4().compose(
+    new THREE.Vector3(shoreEye.x, shoreEye.y, shoreEye.z),
+    new THREE.Quaternion().setFromEuler(new THREE.Euler(shoreFacing.pitch, shoreFacing.yaw, 0, 'YXZ')),
+    new THREE.Vector3(1, 1, 1),
+  );
 
   // The sun's lights for the stones: its irradiance above the water, and
   // below it what crosses the water column (absorbed over the path the
@@ -317,6 +353,10 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
   // cavities are not on it: a hole lies below the mirror plane, so the water
   // reflects none of it (its lip stands a centimetre at most above the water).
   environment.sky.layers.enable(MIRROR_LAYER);
+  // The beach behind the waterline (src/pondFloor.js), which the water mirrors too.
+  const shore = createShore(floor, lighting, environment);
+  shore.layers.enable(MIRROR_LAYER);
+  sceneMain.add(shore);
   sceneMain.environment = environment.envTexture;
   sceneUnder.environment = environment.envTexture;
 
@@ -359,8 +399,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
   let mainTarget = null;
   let reflectionTarget = null;
 
-  // The camera never moves, so the mirror image of the sky is rendered whole
-  // only when the view changes (a resize or a zoom), through a camera
+  // The mirror image of the sky is rendered whole only when the view changes
+  // (a resize, a zoom, a turn or glide of the eye), through a camera
   // reflected in the water plane (the same construction as Three.js's
   // Reflector), then sampled by the water shader through this matrix. While a
   // splash lives, what it lists in mirrorObjects() (its crowns, columns and
@@ -488,8 +528,9 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
   // ---- the view ----------------------------------------------------------
   const viewEuler = new THREE.Euler(0, 0, 0, 'YXZ');
   let viewFromApi = false;     // set by setFov / lookAt, which may leave the home frame
-  let reportedZoom = false;
+  let reportedView;            // what onViewChange last reported: { atHome, view }
   let lastActivity = 0;        // performance.now() of the last input, view change or motion (IDLE)
+  let glide = null;            // { from, to, name, fromFov, fromTurn, started }: the eye on its way to another orbit
 
   // The sky (setSky): a load replaces the dome and the environment maps and
   // fills lighting's sun and sky in place (src/sky.js); then what holds the
@@ -503,25 +544,40 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     lastActivity = performance.now();
   }
 
-  /** Point the camera as `view` says; the mirror image follows at the next frame. */
+  /** The VIEWS entry the eye stands at, or null. */
+  function viewName() {
+    return Object.keys(VIEWS).find((name) => orbitsMatch(orbit, VIEWS[name])) ?? null;
+  }
+
+  /** Stand the camera on the orbit and point it as `view` says; the mirror image follows at the next frame. */
   function applyView() {
+    const eye = orbitEye(orbit);
+    camera.position.set(eye.x, eye.y, eye.z);
     camera.fov = view.fov;
     camera.quaternion.setFromEuler(viewEuler.set(view.pitch, view.yaw, 0, 'YXZ'));
     camera.updateProjectionMatrix();
     camera.updateMatrixWorld();
     // The rings retire once this view's pixels can no longer show them
-    // (src/rings.js), the nearest water being the home view's.
-    const homeBelow = -home.pitch + THREE.MathUtils.degToRad(home.fov) / 2;
-    rings.setCamera({
-      x: camera.position.x, z: camera.position.z, height: camera.position.y,
-      pixelsPerRadian: 0.5 * resolution.y / Math.tan(THREE.MathUtils.degToRad(view.fov) / 2),
-      nearest: camera.position.y / Math.tan(Math.min(homeBelow, 1.5)),
-    });
+    // (src/rings.js), the nearest water being the shore frame's; anywhere
+    // else they live as long as their slope shows (no camera), so none
+    // retires that a view the eye goes on to would show.
+    const atShore = orbitsMatch(orbit, VIEWS.shore);
+    if (atShore) {
+      const homeBelow = -home.pitch + THREE.MathUtils.degToRad(home.fov) / 2;
+      rings.setCamera({
+        x: camera.position.x, z: camera.position.z, height: camera.position.y,
+        pixelsPerRadian: 0.5 * resolution.y / Math.tan(THREE.MathUtils.degToRad(view.fov) / 2),
+        nearest: camera.position.y / Math.tan(Math.min(homeBelow, 1.5)),
+      });
+    } else {
+      rings.setCamera(null);
+    }
     splash.updateViewUniforms(camera, resolution.y, dpr, underTarget.height);
     viewChanged = true;
     lastActivity = performance.now();
-    const zoomed = isZoomed(view, home);
-    if (zoomed !== reportedZoom) { reportedZoom = zoomed; onViewChange?.({ zoomed }); }
+    // While it glides, the view is the one it goes to.
+    const report = { atHome: !glide && atShore && !isZoomed(view, home), view: glide ? glide.name : viewName() };
+    if (report.atHome !== reportedView?.atHome || report.view !== reportedView?.view) { reportedView = report; onViewChange?.({ ...report }); }
   }
 
   function setView(next, fromApi = false) {
@@ -532,7 +588,72 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     applyView();
   }
 
-  function resetView() { setView(home); }
+  /** Stand the eye on another orbit, at once; a zoomed view turns with its frame and stays inside it. */
+  function moveEye(next) {
+    const turnedYaw = view.yaw - home.yaw;
+    const turnedPitch = view.pitch - home.pitch;
+    Object.assign(orbit, clampOrbit(next, groundHeightAt));
+    Object.assign(home, orbitFacing(orbit));
+    view.yaw = home.yaw + turnedYaw;
+    view.pitch = home.pitch + turnedPitch;
+    if (isZoomed(view, home)) Object.assign(view, clampToFrame(view, home, camera.aspect));
+    viewFromApi = false;
+    applyView();
+  }
+
+  /**
+   * Before a drag turns a zoomed view: the pivot moves to what the view
+   * looks at (the water under its centre, if within three times the pivot's
+   * distance, else a point as far off as the pivot was), the eye staying
+   * where it is, so the view is its new frame's centre and turns round it.
+   */
+  function pivotOnView() {
+    if (!isZoomed(view, home)) return;
+    const centre = directionAt(view, camera.aspect, 0, 0);
+    const toWater = centre.y < 0 ? camera.position.y / -centre.y : Infinity;
+    const reach = toWater <= 3 * orbit.distance ? toWater : orbit.distance;
+    const pivot = { x: camera.position.x + centre.x * reach, y: camera.position.y + centre.y * reach, z: camera.position.z + centre.z * reach };
+    Object.assign(orbit, orbitAbout(camera.position, pivot));
+    Object.assign(home, orbitFacing(orbit));
+    view.yaw = home.yaw;
+    view.pitch = home.pitch;
+    viewFromApi = false;
+  }
+
+  /** Glide the eye to an orbit (one of VIEWS, by `name`) over GLIDE_SECONDS, the zoom easing out on the way. */
+  function glideTo(target, name = null) {
+    glide = { from: { ...orbit }, to: target, name, fromFov: view.fov, fromTurn: { yaw: view.yaw - home.yaw, pitch: view.pitch - home.pitch }, started: performance.now() };
+    stepGlide(glide.started);
+  }
+
+  /** The glide at time `now` (performance.now()); at its end the eye stands exactly on its orbit. */
+  function stepGlide(now) {
+    if (!glide) return;
+    const progress = Math.min((now - glide.started) / (1000 * GLIDE_SECONDS), 1);
+    const eased = progress * progress * (3 - 2 * progress);
+    const target = glide.to;
+    Object.assign(orbit, progress < 1 ? blendOrbits(glide.from, target, eased, groundHeightAt) : clampOrbit(target, groundHeightAt));
+    Object.assign(home, orbitFacing(orbit));
+    view.yaw = home.yaw + glide.fromTurn.yaw * (1 - eased);
+    view.pitch = home.pitch + glide.fromTurn.pitch * (1 - eased);
+    view.fov = glide.fromFov + (home.fov - glide.fromFov) * eased;
+    Object.assign(view, clampToFrame(view, home, camera.aspect));
+    viewFromApi = false;
+    if (progress >= 1) glide = null;
+    applyView();
+  }
+
+  /** One of VIEWS by name: glided to, or (glide false) stood at at once. */
+  function showView(name, { glide: gliding = true } = {}) {
+    if (!Object.hasOwn(VIEWS, name)) return;
+    if (gliding) { glideTo(VIEWS[name], name); return; }
+    glide = null;
+    Object.assign(orbit, VIEWS[name]);
+    Object.assign(home, orbitFacing(orbit));
+    setView(home);
+  }
+
+  function resetView() { showView('shore'); }
 
   function toDeviceCoordinates(clientX, clientY) {
     const rect = canvas.getBoundingClientRect();
@@ -573,8 +694,6 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     mainTarget = createFloatTarget(resolution.x, resolution.y, { type: THREE.HalfFloatType, filter: THREE.LinearFilter, depth: true, depthTexture: true });
     reflectionTarget = createFloatTarget(underWidth, underHeight, { type: THREE.HalfFloatType, filter: THREE.LinearFilter, depth: true });
     splash.resize(resolution.x, resolution.y, settings.fluidScale);
-    // A smaller under-water pass sees the floor's pattern more minified: its mip chain then (src/pondFloor.js).
-    setPatternMipmaps(floor, renderer, underWidth < resolution.x);
     applyView();
   }
   resize();
@@ -588,12 +707,13 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
   let timeScale = 1;
   let simulationTime = 0;
 
-  // The hand, beside and below the eye. A rock over 16 cm across leaves it
-  // lower and farther out, by its size beyond that, so that it rises into
-  // the view from below its edge rather than filling the corner of it.
+  // The hand, beside and below the shore view's eye (shoreFrame), wherever
+  // the camera stands. A rock over 16 cm across leaves it lower and farther
+  // out, by its size beyond that, so that from the shore it rises into the
+  // view from below its edge rather than filling the corner of it.
   function handPosition(radius = stoneRadius) {
     const beyond = Math.max(radius - 0.08, 0);
-    return new THREE.Vector3(0.30, -0.32 - 1.6 * beyond, -0.55 - 1.2 * beyond).applyMatrix4(camera.matrixWorld);
+    return new THREE.Vector3(0.30, -0.32 - 1.6 * beyond, -0.55 - 1.2 * beyond).applyMatrix4(shoreFrame);
   }
 
   function throwVelocity(hand, target, powerName = power) {
@@ -672,10 +792,13 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     arc.visible = true;
   }
 
-  // A press that lifts where it went down throws. A second finger turns the
-  // gesture into a pinch, which never throws, even when one finger lifts first.
+  // A press that lifts where it went down throws; one that moves TAP_SLOP
+  // pixels turns the view instead, for as long as it lasts. A second finger
+  // turns the gesture into a pinch, which never throws, even when one finger
+  // lifts first.
   const activePointers = new Map();   // pointerId -> { x, y } in client pixels
   let pressStart = null;              // { id, x, y } of the press that may throw
+  let turning = null;                 // { x, y }: the press is turning the view, last seen here
   let pinch = null;                   // { distance, fov, direction } when the pinch began
   let thrownFrom = null;              // { x, y }: a mouse threw here; its aim stays hidden until it moves on (its arc would hang in the splash)
 
@@ -698,14 +821,20 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     setView(clampToFrame({ yaw: placed.yaw, pitch: placed.pitch, fov }, home, camera.aspect));
   }
 
+  function stopTurning() {
+    turning = null;
+    canvas.style.removeProperty('cursor');
+  }
+
   function releasePointer(event) {
     activePointers.delete(event.pointerId);
     if (pinch && activePointers.size < 2) pinch = null;
-    if (pressStart?.id === event.pointerId) pressStart = null;
+    if (pressStart?.id === event.pointerId) { pressStart = null; stopTurning(); }
   }
 
   canvas.addEventListener('pointerdown', (event) => {
     lastActivity = performance.now();
+    glide = null;   // the hand takes the view from a glide where it stands
     activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
     try { canvas.setPointerCapture(event.pointerId); } catch { /* a synthetic or already released pointer */ }
     if (activePointers.size === 1) {
@@ -713,6 +842,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
       showAim(aimPoint(event.clientX, event.clientY));
     } else if (activePointers.size === 2) {
       pressStart = null;
+      stopTurning();
       showAim(null);
       startPinch();
     }
@@ -722,18 +852,33 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     const tracked = activePointers.get(event.pointerId);
     if (tracked) { tracked.x = event.clientX; tracked.y = event.clientY; }
     if (pinch) { if (tracked) movePinch(); return; }
-    if (thrownFrom && Math.hypot(event.clientX - thrownFrom.x, event.clientY - thrownFrom.y) < 14) return;
+    if (pressStart?.id === event.pointerId) {
+      if (!turning && Math.hypot(event.clientX - pressStart.x, event.clientY - pressStart.y) >= TAP_SLOP) {
+        turning = { x: pressStart.x, y: pressStart.y };
+        canvas.style.cursor = 'grabbing';
+        pivotOnView();
+        showAim(null);
+      }
+      if (turning) {
+        moveEye(turnOrbit(orbit, event.clientX - turning.x, event.clientY - turning.y, ORBIT_TURN / Math.max(canvas.clientHeight, 1), groundHeightAt));
+        turning.x = event.clientX;
+        turning.y = event.clientY;
+        return;
+      }
+    }
+    if (thrownFrom && Math.hypot(event.clientX - thrownFrom.x, event.clientY - thrownFrom.y) < TAP_SLOP) return;
     thrownFrom = null;
     if (event.pointerType === 'mouse' || pressStart) showAim(aimPoint(event.clientX, event.clientY));
   });
   canvas.addEventListener('pointerup', (event) => {
     lastActivity = performance.now();
     const press = pressStart?.id === event.pointerId ? pressStart : null;
+    const turned = press && turning;
     releasePointer(event);
-    if (press) {
+    if (press && !turned) {
       const moved = Math.hypot(event.clientX - press.x, event.clientY - press.y);
       const hit = aimPoint(event.clientX, event.clientY);
-      if (hit && moved < 14) { throwAt(hit.x, hit.z); if (event.pointerType === 'mouse') thrownFrom = { x: event.clientX, y: event.clientY }; }
+      if (hit && moved < TAP_SLOP) { throwAt(hit.x, hit.z); if (event.pointerType === 'mouse') thrownFrom = { x: event.clientX, y: event.clientY }; }
     }
     if (event.pointerType !== 'mouse' || thrownFrom) showAim(null);
   });
@@ -741,6 +886,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
   canvas.addEventListener('pointerleave', (event) => { if (!activePointers.has(event.pointerId)) showAim(null); });
   canvas.addEventListener('wheel', (event) => {
     event.preventDefault();
+    glide = null;
     // Notches: a mouse wheel sends about 100 pixels or 3 lines each. A trackpad
     // pinch arrives as ctrl + wheel in small steps, scaled to feel like the page zoom.
     let notches = event.deltaMode === 1 ? event.deltaY / 3 : event.deltaMode === 2 ? event.deltaY : event.deltaY / 100;
@@ -750,7 +896,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
   }, { passive: false });
   window.addEventListener('keydown', (event) => {
     if (event.code === 'Space' && !event.repeat && event.target === document.body) { event.preventDefault(); throwRandom(); }
-    if (event.key === 'Escape' && isZoomed(view, home)) resetView();
+    if (event.key === 'Escape' && !reportedView?.atHome) resetView();
   });
 
   // ---- simulation and rendering ----------------------------------------
@@ -956,6 +1102,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
       calibrate(dtReal);
       watchFrameRate(interval, !capped);
     }
+    stepGlide(now);
     const simulateStart = performance.now();
     simulate((profiler?.fixedSeconds ?? dtReal) * timeScale);
     const renderStart = performance.now();
@@ -1088,6 +1235,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
      * scale of 0.1 makes frames of 1/600 s), then draw once.
      */
     advance(seconds) {
+      if (glide) stepGlide(Infinity);   // a glide arrives at once
       const chunk = Math.max(timeScale, 0.01) / 60;
       let remaining = seconds;
       while (remaining > 1e-6) { const dt = Math.min(chunk, remaining); simulate(dt); remaining -= dt; }
@@ -1099,9 +1247,35 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     setFov(degrees) { setView({ yaw: view.yaw, pitch: view.pitch, fov: degrees }, true); },
     /** Turn the camera to look at a world point, horizon level. */
     lookAt(x, y, z) { setView({ ...viewFacing(x - camera.position.x, y - camera.position.y, z - camera.position.z), fov: view.fov }, true); },
-    /** Back to the home view the page opens with. */
+    /** Glide back to the shore view the page opens with, unzoomed. */
     resetView,
+    /** One of VIEWS by name (shore, level, high), glided to; with { glide: false } at once. */
+    showView,
+    /** The VIEWS entry the eye stands at (or glides to), null when turned off them. */
+    get viewName() { return glide ? glide.name : viewName(); },
+    /** A glide under way arrives now (for the probes, which draw no frames). */
+    settleView() { if (glide) stepGlide(Infinity); },
+    /**
+     * Stand the eye at once on an orbit: { azimuth, elevation } in degrees
+     * (src/viewOrbit.js), distance in metres, pivot [x, y, z] (each kept as
+     * it is when left out); the view is unzoomed.
+     */
+    setOrbit({ azimuth, elevation, distance, pivot } = {}) {
+      glide = null;
+      const next = { ...orbit };
+      if (azimuth !== undefined) next.azimuth = THREE.MathUtils.degToRad(azimuth);
+      if (elevation !== undefined) next.elevation = THREE.MathUtils.degToRad(elevation);
+      if (distance !== undefined) next.distance = distance;
+      if (pivot) [next.pivotX, next.pivotY, next.pivotZ] = pivot;
+      Object.assign(orbit, clampOrbit(next, groundHeightAt));
+      Object.assign(home, orbitFacing(orbit));
+      setView(home);
+    },
+    /** The orbit the eye stands on: azimuth and elevation in degrees, distance in metres, pivot [x, y, z]. */
+    get orbit() { return { azimuth: THREE.MathUtils.radToDeg(orbit.azimuth), elevation: THREE.MathUtils.radToDeg(orbit.elevation), distance: orbit.distance, pivot: [orbit.pivotX, orbit.pivotY, orbit.pivotZ] }; },
     get zoomed() { return isZoomed(view, home); },
+    /** Whether the view is the shore's, unzoomed (Reset view and Escape go there). */
+    get atHome() { return reportedView?.atHome ?? true; },
     get time() { return simulationTime; },
     get timeScale() { return timeScale; },
     get rocks() { return rocks; },

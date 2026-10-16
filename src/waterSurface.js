@@ -4,9 +4,10 @@
 // (src/rings.js) ride on both: they displace the inner patch with the
 // splash's waves and shade all the water (WATER_VERTEX and WATER_FRAGMENT say
 // how). The sheet reaches OUTER_HALF_SIZE metres from the patch's centre,
-// so seen from the camera (1.15 m up) its edge is 0.02° below the horizon and
-// the water meets the sky dome's horizon with no strip of the photo's own
-// ground between them.
+// so seen from the shore view's eye (1.15 m up) its edge is 0.007° below the
+// horizon, and from the high view's (2.4 m) 0.015°, and the water meets the
+// sky dome's horizon with no strip of the photo's own ground between them
+// (the dome's box reaches 10 km).
 //
 // A stone's cavity (src/cavity.js) is drawn with the same shader and the same
 // uniforms: cavityMaterial is its CAVITY_MESH variant, for the cavity's mesh,
@@ -35,20 +36,39 @@
 import * as THREE from 'three';
 import { WATER_VERTEX, WATER_FRAGMENT } from './shaders/scene.js';
 
-const OUTER_HALF_SIZE = 3000;
+const OUTER_HALF_SIZE = 9000;
+const OUTER_GROWTH = 1.25;   // each of the outer sheet's square rings this many times the last's half size...
+const OUTER_CUTS = 8;        // ...and each of its sides cut into this many quads
 export const MAX_CAVITIES = 4;   // the inner patch dips under at most this many cavities at once
 
+/**
+ * The outer sheet, in the XZ plane: square rings around the inner patch,
+ * each OUTER_GROWTH times the last's half size, out to outerHalf, each side
+ * of each ring cut into OUTER_CUTS. Small triangles near the patch, not four
+ * quads kilometres long: a camera turned to look along the patch's edge
+ * (src/main.js) sees the sheet a metre or two away, where a huge
+ * triangle's interpolated position is off by enough to move its reflection
+ * and draw a seam along the edge.
+ */
 function outerSheetGeometry(innerHalf, outerHalf, centre) {
-  // Four quads around the inner square, in the XZ plane.
+  const halves = [innerHalf];
+  while (halves.at(-1) < outerHalf) halves.push(Math.min(halves.at(-1) * OUTER_GROWTH, outerHalf));
   const positions = [];
-  const push = (x0, z0, x1, z1) => {
-    positions.push(x0, 0, z0, x1, 0, z1, x1, 0, z0, x0, 0, z0, x0, 0, z1, x1, 0, z1);
-  };
   const cx = centre[0], cz = centre[1];
-  push(cx - outerHalf, cz - outerHalf, cx + outerHalf, cz - innerHalf);   // far strip
-  push(cx - outerHalf, cz + innerHalf, cx + outerHalf, cz + outerHalf);   // near strip
-  push(cx - outerHalf, cz - innerHalf, cx - innerHalf, cz + innerHalf);   // left strip
-  push(cx + innerHalf, cz - innerHalf, cx + outerHalf, cz + innerHalf);   // right strip
+  // A point of square ring `half` at `along` (0 to 1) of the way round it, counter-clockwise from (−half, −half) seen from above.
+  const onRing = (half, along) => {
+    const side = Math.min(Math.floor(along * 4), 3), share = along * 4 - side, offset = -half + 2 * half * share;
+    const [x, z] = [[offset, -half], [half, offset], [-offset, half], [-half, -offset]][side];
+    return [cx + x, 0, cz + z];
+  };
+  for (let ring = 0; ring < halves.length - 1; ring++) {
+    for (let cut = 0; cut < 4 * OUTER_CUTS; cut++) {
+      const start = cut / (4 * OUTER_CUTS), end = (cut + 1) / (4 * OUTER_CUTS);
+      const innerStart = onRing(halves[ring], start), innerEnd = onRing(halves[ring], end);
+      const outerStart = onRing(halves[ring + 1], start), outerEnd = onRing(halves[ring + 1], end);
+      positions.push(...innerStart, ...innerEnd, ...outerStart, ...innerEnd, ...outerEnd, ...outerStart);   // facing up
+    }
+  }
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
   return geometry;
