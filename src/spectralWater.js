@@ -37,7 +37,8 @@
 // RGBA targets).
 //
 // A separate foam map (FOAM_FRAGMENT), RGBA16F. R is the amount of foam, 0
-// to 1, and all the water shader and the specks read. The rest keeps apart
+// to 1, read by the water shader and the specks. The water shader also reads
+// G to distinguish fresh froth from the thinner raft's bubble films. The rest keeps apart
 // two kinds that last very differently: a boil, the big bubbles a splash
 // brings up, popping within a second or two, and a raft, the small bubbles
 // left, lasting seconds. G is the raft's amount, B the raft's amount times its

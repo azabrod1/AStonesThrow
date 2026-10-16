@@ -10,7 +10,10 @@
 // the raft (the foam map's drift, src/spectralWater.js), wandering a
 // millimetre or so, and fading quickly at the end. Surface bubbles are mostly
 // clear with a bright rim, so a speck is a translucent white, dimmer than the
-// raft: a lone one is faint, a cluster of them reads as foam. The splash
+// raft: a lone one is faint, a cluster of them reads as foam. Their discs
+// project onto the mean water plane, so a low view sees ellipses, and their
+// opacity follows projected area with no minimum brightness at a distance.
+// Resolved bubbles have clear centres and bright rims. The splash
 // makes them where the crown's base was, where the jet falls back, where
 // drops land and where bubbles surface, in clusters of two to six a few
 // millimetres across, so a patch reads as foam rather than as an even scatter

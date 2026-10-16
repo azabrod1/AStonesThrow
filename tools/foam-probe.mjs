@@ -3,13 +3,13 @@
 //   node tools/foam-probe.mjs
 //
 // Reads the pattern's constants from the shader's #defines, runs the same
-// three cellular layers in JavaScript (doubles where the GPU has floats: the
+// cellular layers in JavaScript (doubles where the GPU has floats: the
 // hashes differ, the statistics do not) and checks:
 //   1. each layer's median and spread (half its 10–90% range) over a large
 //      area match the FOAM_*_MEDIAN and FOAM_*_SPREAD that a fading layer
 //      tends to, and the mean shade of resolved bubbles matches
 //      FOAM_FADED_SHADE, so foam keeps its strength and brightness as its
-//      layers fade with distance;
+//      layers fade with distance; the wet films retain their mean opacity;
 //   2. at the framings the foam is judged at (the home view at 1280×720, the
 //      phone at 390×844 and twice the density, a 12° close-up), for a
 //      Gaussian raft at the reference impact point, the share of the pixels
@@ -18,6 +18,7 @@
 //      water 3 mm under the pixels, as a passing ripple does, changes the
 //      shader's image no more than 1.6 times as much as it changes the
 //      supersampled one (shimmer would change it far more);
+//      also checks mean brightness within 10%, including the wet films;
 //   3. prints the cell visits per foam pixel at each framing, the cost;
 //   4. runs the foam map's step (FOAM_FRAGMENT in src/shaders/spectral.js)
 //      with its arithmetic, on a corner of the Medium grid: a flow keeps the
@@ -147,6 +148,12 @@ function laceRaw(worldX, worldZ) {
 const sinkLace = (raw) => raw > 0 ? raw : defines.FOAM_LACE_DEPTH * (Math.exp(raw / defines.FOAM_LACE_DEPTH) - 1);
 const fineCells = (worldX, worldZ) => foamCells(worldX / defines.FOAM_FINE_CELL, worldZ / defines.FOAM_FINE_CELL, defines.FOAM_FINE_RADII, 0.7, [11.0, 18.7]);
 const coarseCells = (worldX, worldZ) => foamCells(worldX / defines.FOAM_COARSE_CELL, worldZ / defines.FOAM_COARSE_CELL, defines.FOAM_COARSE_RADII, 0.7, [23.0, 39.1]);
+function filmOpacity(cells, footprint, cellSize) {
+  const radial = Math.hypot(cells.bestX, cells.bestY) / cells.bestRadius;
+  const width = Math.max(footprint / (cellSize * cells.bestRadius), 0.04);
+  const centre = 1 - smoothstep(0.65 - width, 0.98 + width, radial);
+  return 1 - (1 - defines.FOAM_FILM_CENTRE) * centre;
+}
 
 function resolvedShade(cells) {
   const radial = Math.min(Math.hypot(cells.bestX, cells.bestY) / cells.bestRadius, 1);
@@ -156,7 +163,7 @@ function resolvedShade(cells) {
 }
 
 // foamLook in the shader: cover, opacity and shade. across = [dx/dpixelX, dz/dpixelX, dx/dpixelY, dz/dpixelY].
-function foamLook(worldX, worldZ, across, foam, resolveAll = false) {
+function foamLook(worldX, worldZ, across, foam, resolveAll = false, boilFraction = 0) {
   const footprint = Math.sqrt(Math.hypot(across[0], across[1]) * Math.hypot(across[2], across[3]));
   const fadeOf = (cell) => resolveAll ? 0 : smoothstep(defines.FOAM_FADE_START, defines.FOAM_FADE_END, footprint / cell);
   const fineFade = fadeOf(defines.FOAM_FINE_CELL), coarseFade = fadeOf(defines.FOAM_COARSE_CELL), laceFade = fadeOf(defines.FOAM_LACE_CELL);
@@ -205,7 +212,9 @@ function foamLook(worldX, worldZ, across, foam, resolveAll = false) {
   const width = 0.5 * change + defines.FOAM_FADED_EDGE * spreadOfFaded + 1e-3;
   const winner = coarseWins ? coarse : fine, winnerFade = coarseWins ? coarseFade : fineFade;
   const shade = winner ? mix(resolvedShade(winner), defines.FOAM_FADED_SHADE, winnerFade) : defines.FOAM_FADED_SHADE;
-  return { cover: smoothstep(-width, width, value), opacity: mix(defines.FOAM_THIN_OPACITY, 1, smoothstep(0, defines.FOAM_OPAQUE, value)), shade };
+  const wetness = (1 - smoothstep(0.25, defines.FOAM_FILM_PACKED, foam)) * mix(1, 0.75, boilFraction);
+  const film = coarse ? mix(filmOpacity(coarse, footprint, defines.FOAM_COARSE_CELL), defines.FOAM_FILM_MEAN, coarseFade) : defines.FOAM_FILM_MEAN;
+  return { cover: smoothstep(-width, width, value), opacity: mix(defines.FOAM_THIN_OPACITY, 1, smoothstep(0, defines.FOAM_OPAQUE, value)) * mix(1, film, wetness), shade };
 }
 
 const failures = [];
@@ -213,7 +222,7 @@ function check(condition, message) { console.log(`${condition ? 'ok  ' : 'FAIL'}
 
 // 1. Layer statistics, sampled at random over 4 m².
 const seededRandom = (() => { let state = 12345; return () => { state = (state * 1664525 + 1013904223) >>> 0; return state / 4294967296; }; })();
-const samples = { lace: [], fine: [], union: [], clump: [], fineShade: [], unionShade: [] };
+const samples = { lace: [], fine: [], union: [], clump: [], fineShade: [], unionShade: [], film: [] };
 for (let index = 0; index < 30000; index++) {
   const worldX = seededRandom() * 2, worldZ = seededRandom() * 2;
   samples.lace.push(sinkLace(laceRaw(worldX, worldZ).raw));
@@ -224,6 +233,7 @@ for (let index = 0; index < 30000; index++) {
   samples.union.push(clamp(Math.max(fineBubble, coarseBubble), -defines.FOAM_BUBBLE_CLAMP, defines.FOAM_BUBBLE_CLAMP));
   samples.fineShade.push(resolvedShade(fine));
   samples.unionShade.push(resolvedShade(coarseBubble > fineBubble ? coarse : fine));
+  samples.film.push(filmOpacity(coarse, 0, defines.FOAM_COARSE_CELL));
 }
 const quantile = (values, share) => { const sorted = [...values].sort((first, second) => first - second); return sorted[Math.floor(share * (sorted.length - 1))]; };
 const mean = (values) => values.reduce((sum, value) => sum + value, 0) / values.length;
@@ -235,6 +245,24 @@ for (const [name, medianName, spreadName] of [['lace', 'FOAM_LACE_MEDIAN', 'FOAM
 }
 const shadeMean = (mean(samples.fineShade) + mean(samples.unionShade)) / 2;
 check(Math.abs(shadeMean - defines.FOAM_FADED_SHADE) < 0.02, `mean resolved shade ${shadeMean.toFixed(3)} (fine ${mean(samples.fineShade).toFixed(3)}, with coarse ${mean(samples.unionShade).toFixed(3)}), FOAM_FADED_SHADE ${defines.FOAM_FADED_SHADE}`);
+check(Math.abs(mean(samples.film) - defines.FOAM_FILM_MEAN) < 0.02, `mean film opacity ${mean(samples.film).toFixed(3)}, FOAM_FILM_MEAN ${defines.FOAM_FILM_MEAN}`);
+
+// A bubble's material may drain, but must not change the simulated footprint
+// or turn a thick, multilayer boil into transparent holes.
+let materialIsBounded = true, freshIsDenser = true, keepsFootprint = true;
+for (let index = 0; index < 1000; index++) {
+  const worldX = seededRandom() * 2, worldZ = seededRandom() * 2;
+  const across = [0.0001, 0, 0, 0.0001];
+  const raftLook = foamLook(worldX, worldZ, across, 0.2, true, 0);
+  const boilLook = foamLook(worldX, worldZ, across, 0.2, true, 1);
+  const denseLook = foamLook(worldX, worldZ, across, 1, true, 1);
+  materialIsBounded &&= [raftLook, boilLook, denseLook].every((look) => Number.isFinite(look.opacity) && look.opacity >= 0 && look.opacity <= 1);
+  freshIsDenser &&= boilLook.opacity >= raftLook.opacity && denseLook.opacity >= defines.FOAM_THIN_OPACITY;
+  keepsFootprint &&= raftLook.cover === boilLook.cover;
+}
+check(materialIsBounded, 'wet-film opacity stays finite and in [0, 1]');
+check(freshIsDenser, 'fresh froth scatters more than a drained raft; thick foam keeps its opaque fill');
+check(keepsFootprint, 'the foam population changes material, never coverage');
 
 // 2. A raft seen from the home camera: σ 12 cm, a map value of 0.25 at its centre.
 const camera = [0, 1.15, 2.45], impact = [0, 0, -1.4];
@@ -307,6 +335,7 @@ for (const [name, framing] of Object.entries(FRAMINGS)) {
   const truthMoved = render(framing, { supersample: 5, shift: 0.003 });
   const shimmer = meanDifference(shader.image, shaderMoved.image), truthShimmer = meanDifference(truth.image, truthMoved.image);
   check(Math.abs(shader.cover / truth.cover - 1) < 0.1, `${name}: cover ${shader.cover.toFixed(4)}, supersampled ${truth.cover.toFixed(4)}`);
+  check(Math.abs(mean(shader.image) / mean(truth.image) - 1) < 0.1, `${name}: brightness ${mean(shader.image).toFixed(4)}, supersampled ${mean(truth.image).toFixed(4)}`);
   check(shimmer < 1.6 * truthShimmer + 1e-3, `${name}: change when the water moves 3 mm ${shimmer.toFixed(4)}, supersampled ${truthShimmer.toFixed(4)}`);
   console.log(`     ${name}: ${visitsPerFoamPixel.toFixed(1)} cell visits per foam pixel`);
 }

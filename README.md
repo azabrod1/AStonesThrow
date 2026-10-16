@@ -302,7 +302,12 @@ nearly solid white, its bubbles shaded darker at their rims and catching the
 sun; as it weakens the holes open, the filaments thin to strings of bubbles
 and clumps, then only the biggest bubbles are left, so a raft thins from its
 edge inward the way foam pops, and foam just over the threshold, a single
-layer of bubbles, lets the water show through. A 4 cm stone's raft is gone
+layer of bubbles, lets the water show through. The larger bubbles have clear
+centres and bright rims, with milky fine bubbles between them. The map's
+separate boil and raft amounts control this material: fresh, dense froth
+scatters more light; as it drains, the water shows through the bubble films.
+Those films use the existing bubble cells and fade to their measured mean
+opacity at a distance, adding no texture or noise layer. A 4 cm stone's raft is gone
 in about 6 s; a 16 cm stone's is patchy clusters by 4 s and scattered,
 faint ones by 8.
 The threshold's edge is one pixel wide at any distance (from the pattern's
@@ -313,7 +318,9 @@ foam compute the pattern. Foam specks (`src/foamSpecks.js`) are the bubbles
 that drift out of the raft: 2 to 4 mm points riding the waves where the
 crown stood, where the jet fell back, where drops landed and where bubbles
 surfaced, drifting outward and popping over 2 to 8 seconds, faded out where
-the raft is dense.
+the raft is dense. The specks flatten into ellipses at a grazing view and
+fade with their projected area, so distant bubbles do not remain bright,
+camera-facing flecks.
 
 The splash scales with the stone (the slider's 1.5 to 16 cm is its
 diameter; the constants were tuned at 3 cm radius). Wherever the physics
