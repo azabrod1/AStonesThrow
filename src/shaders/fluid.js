@@ -288,6 +288,33 @@ void main() {
 }
 `;
 
+// Night vision, just before the tone map (COMPOSITE_FRAGMENT, and the
+// composite's own tone map in src/splash.js). By moonlight the eye's rods
+// see, which take no colour and are most sensitive to blue-green: uNight
+// (lighting.night, src/sky.js: 0 by day, 1 where rods see alone) mixes the
+// colour towards the rods' luminance, the scotopic luminance from CIE XYZ
+// that Jensen et al. use (A Physically-Based Night Sky Model, 2001),
+// V = Y (1.33 (1 + (Y + Z) / X) − 1.68), divided by its value for white
+// (D65, 2.573: brightness is the hour's light, src/sky.js; this changes
+// only the colour, and a blue sky comes out twice as bright against white
+// as it does to cones), tinted a moonlit blue: NIGHT_TINT, chromaticity
+// (0.278, 0.286) at unit luminance, halfway from white to their night blue
+// at (0.25, 0.25), which washed whole skies to one blue. By day the colour
+// passes untouched.
+export const NIGHT_VISION = /* glsl */`
+uniform float uNight;
+#define NIGHT_TINT vec3(0.85, 0.99, 1.45)
+#define RODS_WHITE 2.573
+vec3 nightVision(vec3 color) {
+  if (uNight <= 0.0) return color;
+  float x = dot(color, vec3(0.4124, 0.3576, 0.1805));
+  float y = dot(color, vec3(0.2126, 0.7152, 0.0722));
+  float z = dot(color, vec3(0.0193, 0.1192, 0.9505));
+  float rods = max(y * (1.33 * (1.0 + (y + z) / max(x, 1e-9)) - 1.68), 0.0) / RODS_WHITE;
+  return mix(color, rods * NIGHT_TINT, uNight);
+}
+`;
+
 export const COMPOSITE_FRAGMENT = /* glsl */`
 uniform sampler2D uScene;
 uniform sampler2D uFluidInfo;  // the depth pass: view depth, class, view normal xy (nearest)
@@ -310,6 +337,7 @@ uniform float uProjScale;       // fluid-buffer pixels per world unit at distanc
 varying vec2 vUv;
 ${GLSL_COMMON}
 ${FRESNEL}
+${NIGHT_VISION}
 #define WATER_SLOPE_VARIANCE 0.006   // the sheet's and the column's unresolved ripple, for their glitter
 #define GLITTER_CAP 40.0
 #define AERATION 0.55                // how far the rim bead and torn edges whiten
@@ -457,7 +485,7 @@ void main() {
     }
     color = mix(scene, fluid, alpha) + uSunIrradiance * optics.b;
   }
-  color = aces(color * uExposure / 0.6);
+  color = aces(nightVision(color) * uExposure / 0.6);
   gl_FragColor = vec4(linearToSrgb(color), 1.0);
 }
 `;

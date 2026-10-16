@@ -320,6 +320,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     extinction: new THREE.Vector3(),
     waterColor: new THREE.Vector3(),
     exposure: 0.55,
+    night: 0,   // how far the eye sees with its rods (src/sky.js; NIGHT_VISION in src/shaders/fluid.js)
   };
   const storedChoice = (key) => { try { return window.localStorage.getItem(key); } catch { return null; } };
 

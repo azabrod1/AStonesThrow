@@ -45,11 +45,12 @@ remembered on the device (but the view, which opens on the shore):
   photo (about 6 MB) loads while the old sky stays; then the sky, the sun's
   direction and colour and everything they light change at once.
 - Time of day: Lakeside and Mesas were each photographed from one spot
-  through a day, and a slider picks the hour: Lakeside's dawn, sunrise and
-  afternoon, Mesas' ten hours from dawn to twilight. The land keeps still and
-  the sun moves round it (Lakeside's sunrise is behind the shore view, over
-  the water on the right). Another place takes its hour nearest the time of
-  day last chosen; the other skies are one photograph each.
+  through a day, and a slider picks the hour: Lakeside's dawn, sunrise,
+  afternoon and starlit night, Mesas' twelve hours from dawn to moonrise and
+  moonlight. The land keeps still and the sun moves round it: Lakeside faces
+  its afternoon sun, Mesas its sunrise and moonrise. By night the eye sees
+  as its rods do, in a moonlit blue. Another place takes its hour nearest the
+  time of day last chosen; the other skies are one photograph each.
 - Wind: Calm (the default, a still day), Breeze or Windy.
 - Quality: Auto, Low, Medium or High.
 Auto starts on High everywhere and steps down by itself if the idle
@@ -400,7 +401,7 @@ droplets reflect, and a prefiltered copy lights the stones; another sky is
 captured into the same maps, in the frame it arrives.
 
 **Hours.** Lakeside and Mesas are Poly Haven's series by Greg Zaal and Jarod
-Guest: thirteen panoramas from one tripod on a hill over a dammed lake in
+Guest: twelve of thirteen panoramas from one tripod on a hill over a dammed lake in
 South Africa, 18 to 22 August 2024, and four from a rock on its shore 350 m
 away (the 2019 afternoon among them). Poly Haven turns each panorama so its
 sun lands on the same column, so `tools/sky-probe.mjs` finds where north is
@@ -409,16 +410,20 @@ in each file: from the true sun's position at the photo's time and place
 skyline up with another hour's. The two agree within 0.5° wherever both
 apply; the photos' time stamps turn out to be local time, and the 2019
 afternoon's sun puts it at 14:41 to 0.1°. One hour of each place is turned
-as a single photograph is (Lakeside's afternoon, as before; Mesas' sunset),
+as a single photograph is (Lakeside's afternoon, as before; Mesas' moonrise),
 and the others keep its land where it is, so their suns stand where they
 stood. Poly Haven exposes each panorama to be looked at, as an adapted eye
 would see it (dawn as bright as noon), so an hour keeps its file's
 brightness against the place's sunlit anchor hour times the clear-sky light
 on the ground at its true sun's elevation against the anchor's, to the
-power 0.25 (an eye that adapts most of the way): sunset comes out 0.56 of
-the afternoon's, twilight at 5° below the horizon a tenth. While the sun is
-down the scene's sun is dark, and the deep water's colour dims with the
-light.
+power 0.25 (an eye that adapts most of the way) and, below 10 lux, where
+the rods take over, to 0.1 further: sunset comes out 0.56 of the
+afternoon's, twilight at 5° below the horizon a tenth, moonlight 0.07 and
+a starlit night 0.04. While the sun is down the scene's sun is dark, or is
+the moon, a full moon's light 400,000 times the sun's at its elevation; the
+deep water's colour dims with the light. Below 10 lux the picture also
+turns towards what rods see, colourless and blue-shifted (Jensen et al.'s
+scotopic luminance, in the tone map), fully by 0.03 lux.
 
 **From under the water** (the Under view; `renderFromBelow` in `src/main.js`,
 `UNDER_FOG` and `WATER_UNDER_FRAGMENT` in `src/shaders/scene.js`). The water's
@@ -625,7 +630,6 @@ farther out, so it rises into the view rather than filling its corner.
   #   dawn 2024-08-19T06:28, sunrise 08-19T06:43, morning 08-20T08:09, mid_morning 08-20T10:05,
   #   afternoon 08-21T14:04, late_afternoon 08-18T16:04, sunset 08-18T17:09, dusk_1 08-22T17:47,
   #   dusk_2 08-22T18:06, moonrise 08-20T19:41, moon_noon 08-18T21:06
-  node tools/sky-probe.mjs assets/sky/qwantani_night_2k.hdr --taken=2024-08-22T18:43:00+02:00 $Q --align=assets/sky/qwantani_moonrise_2k.hdr
   node tools/sky-probe.mjs assets/sky/lakeside_sunrise_2k.hdr --taken=2024-08-21T06:58:00+02:00 $L
   # with --align=assets/sky/lakeside_sunrise_2k.hdr: dawn 2024-08-21T06:27, night 08-21T19:51;
   # and lakeside (2019, its time stamp off by a quarter of an hour) with --align alone
@@ -738,7 +742,7 @@ The sky panoramas are from [Poly Haven](https://polyhaven.com), CC0:
 *Meadow 2* by Sergej Majboroda; *Lakeside* by Greg Zaal; *Lakeside Sunrise*,
 *Lakeside Dawn*, *Lakeside Night* and the *Qwantani* series (Dawn, Sunrise,
 Mid Morning, Noon, Afternoon, Late Afternoon, Sunset, Dusk 1 and 2,
-Moonrise, Moon Noon, Night) by Greg Zaal, processed by Jarod Guest, and
+Moonrise, Moon Noon) by Greg Zaal, processed by Jarod Guest, and
 *Qwantani Morning* by Jarod Guest; *Lago d'Isola* by Andreas Mischok;
 and *Kloofendal 48d Partly Cloudy (Pure Sky)* by Greg Zaal, its sky edited by
 Jarod Guest.

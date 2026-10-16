@@ -191,7 +191,7 @@ import { Cavity, PINCH_TIME, SURFACE_HEAD } from './cavity.js';
 import { MAX_CAVITIES } from './waterSurface.js';
 import { FoamSpecks } from './foamSpecks.js';
 import { RING_SOURCE } from './rings.js';
-import { PARTICLE_VERTEX, PARTICLE_DEPTH_FRAGMENT, PARTICLE_THICKNESS_FRAGMENT, COMPOSITE_FRAGMENT, MIRROR_SHEET_FRAGMENT, MIRROR_COLUMN_FRAGMENT, MIRROR_DROP_FRAGMENT } from './shaders/fluid.js';
+import { PARTICLE_VERTEX, PARTICLE_DEPTH_FRAGMENT, PARTICLE_THICKNESS_FRAGMENT, COMPOSITE_FRAGMENT, MIRROR_SHEET_FRAGMENT, MIRROR_COLUMN_FRAGMENT, MIRROR_DROP_FRAGMENT, NIGHT_VISION } from './shaders/fluid.js';
 import { SHEET_VERTEX, SHEET_DEPTH_FRAGMENT, SHEET_THICKNESS_FRAGMENT, COLUMN_VERTEX, COLUMN_DEPTH_FRAGMENT, COLUMN_THICKNESS_FRAGMENT } from './shaders/sheet.js';
 import { BUBBLE_VERTEX, BUBBLE_FRAGMENT } from './shaders/scene.js';
 
@@ -276,6 +276,7 @@ const TONE_MAP_FRAGMENT = /* glsl */`
 uniform sampler2D uScene;
 uniform float uExposure;
 varying vec2 vUv;
+${NIGHT_VISION}
 vec3 aces(vec3 color) {
   const mat3 inputMatrix = mat3(0.59719, 0.07600, 0.02840, 0.35458, 0.90834, 0.13383, 0.04823, 0.01566, 0.83777);
   const mat3 outputMatrix = mat3(1.60475, -0.10208, -0.00327, -0.53108, 1.10813, -0.07276, -0.07367, -0.00605, 1.07602);
@@ -291,7 +292,7 @@ vec3 linearToSrgb(vec3 c) {
 }
 void main() {
   vec3 color = texture2D(uScene, vUv).rgb;
-  color = aces(color * uExposure / 0.6);
+  color = aces(nightVision(color) * uExposure / 0.6);
   gl_FragColor = vec4(linearToSrgb(color), 1.0);
 }
 `;
@@ -750,11 +751,12 @@ export class SplashSystem {
       uWaterColor: { value: lighting.waterColor ?? new THREE.Vector3() },
       uPondDepth: { value: floorViewDepth(water) },
       uExposure: { value: lighting.exposure },
+      uNight: { value: 0 },
       uRefract: { value: 1.4 },
       uFluidScale: { value: 1.0 },
       uProjScale: { value: 1000 },
     });
-    this.toneMapPass = new FullscreenPass(TONE_MAP_FRAGMENT, { uScene: { value: null }, uExposure: { value: lighting.exposure } });
+    this.toneMapPass = new FullscreenPass(TONE_MAP_FRAGMENT, { uScene: { value: null }, uExposure: { value: lighting.exposure }, uNight: { value: 0 } });
 
     // Bubbles.
     const bubbleGeometry = new THREE.BufferGeometry();
@@ -1532,6 +1534,7 @@ export class SplashSystem {
   toneMap(renderer, sceneTarget, output = null) {
     this.toneMapPass.material.uniforms.uScene.value = sceneTarget.texture;
     this.toneMapPass.material.uniforms.uExposure.value = this.lighting.exposure;
+    this.toneMapPass.material.uniforms.uNight.value = this.lighting.night ?? 0;
     this.toneMapPass.render(renderer, output);
   }
 
@@ -1575,6 +1578,7 @@ export class SplashSystem {
     composite.uCameraWorld.value.copy(camera.matrixWorld);
     composite.uSunDirView.value.copy(this.sunDirView);
     composite.uExposure.value = this.lighting.exposure;
+    composite.uNight.value = this.lighting.night ?? 0;
     composite.uFluidScale.value = this.fluidScale;
     composite.uProjScale.value = projScale;
     this.compositePass.render(renderer, output);

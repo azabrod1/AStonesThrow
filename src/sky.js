@@ -70,12 +70,20 @@
 // brightness. So a place's `anchor` hour (a sunlit one) takes the brightness
 // of a single photograph, above, and every other hour keeps its file's
 // brightness against the anchor's, times the light of its hour against the
-// anchor's raised to 1 − ADAPTATION: illuminance(), the light on level
-// ground under a clear sky with the true sun at the hour's elevation (no
-// moon). The eye adapts most of the way, not all: twilight comes out darker
-// than the photograph shows it, never black. Where the true sun is down
+// anchor's, softened as an eye adapted to each sees it (adaptedLight):
+// illuminance(), the light on level ground under a clear sky with the true
+// sun at the hour's elevation (no moon), to the 1 − ADAPTATION, and below
+// the rods' threshold to the 1 − ROD_ADAPTATION further. The eye adapts
+// most of the way, not all: twilight and night come out darker than the
+// photograph shows them, never black. Where the true sun is down
 // (sky-probe's light 'none') the sky is all the light, and the scene's sun
-// is dark, low where the true one is. That factor is the environment's
+// is dark, low where the true one is; where the moon lights the photo
+// ('moon') it is the scene's sun, its light a full moon's, MOON_DIMMING
+// times the sun's at its elevation. Below NIGHT_VISION_LIGHT[0] the eye's
+// rods take over from its cones, alone by NIGHT_VISION_LIGHT[1] (a full
+// moon low in the sky): lighting.night, from 0 to 1 between the two in the
+// logarithm of the light, mixes the picture towards what rods see
+// (NIGHT_VISION in src/shaders/fluid.js). That factor is the environment's
 // `level` (1 for a single photograph and an anchor): the deep water's colour
 // (src/main.js), a radiance lit by what falls on the water, takes it, and so
 // does the cube's ground hemisphere.
@@ -114,10 +122,14 @@ import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
 // shore. Lago d'Isola mirrored looks down the valley at the snowy peaks, as
 // photographed into a wall of pines. The sunrise's sun, 5° up, stands in the
 // home view's top right, a dead branch in the water just left of it, either
-// way round. The open sky (clouds only) looks alike either way. A place with
-// hours keeps Lakeside's afternoon as it was, its sun ahead to the right, so
-// its sunrise is behind the eye, over the water on the right (turn round to
-// see it), as it was that morning. Each panorama is about 6 MB, fetched only
+// way round. The open sky (clouds only) looks alike either way. Of the
+// places with hours, Lakeside keeps its afternoon as it was, its sun ahead
+// to the right, so its sunrise is behind the eye, over the water on the
+// right (turn round to see it), as it was that morning; Mesas faces its
+// moonrise, east, so its dawn, sunrise and moon stand ahead and its
+// afternoon and sunset to the left and behind. Between the two, every hour
+// has its light ahead at one of them. Mesas' Night panorama (18:43, the sun
+// 13° down) is left out: its sky is a haze of the towns' light. Each panorama is about 6 MB, fetched only
 // when chosen. An hour's `clock` is its local time (sky-probe's taken).
 // `anchor` and `facing` (Light by the hour, Orientation) are the first hour
 // unless named.
@@ -129,11 +141,12 @@ const SKIES = {
       dawn: { file: 'lakeside_dawn', label: 'Dawn', clock: '06:27' },
       sunrise: { file: 'lakeside_sunrise', label: 'Sunrise', clock: '06:58' },
       afternoon: { file: 'lakeside', label: 'Afternoon', clock: '14:41' },
+      night: { file: 'lakeside_night', label: 'Night', clock: '19:51' },
     },
   },
   mesas: {
     anchor: 'afternoon',
-    facing: 'sunset',
+    facing: 'moonrise',
     hours: {
       dawn: { file: 'qwantani_dawn', label: 'Dawn', clock: '06:28' },
       sunrise: { file: 'qwantani_sunrise', label: 'Sunrise', clock: '06:43' },
@@ -145,6 +158,8 @@ const SKIES = {
       sunset: { file: 'qwantani_sunset', label: 'Sunset', clock: '17:09' },
       dusk: { file: 'qwantani_dusk_1', label: 'Dusk', clock: '17:47' },
       twilight: { file: 'qwantani_dusk_2', label: 'Twilight', clock: '18:06' },
+      moonrise: { file: 'qwantani_moonrise', label: 'Moonrise', clock: '19:41' },
+      moonlight: { file: 'qwantani_moon_noon', label: 'Moonlight', clock: '21:06' },
     },
   },
   meadow: { mirrored: true, hours: { afternoon: { file: 'meadow_2', label: 'Afternoon' } } },
@@ -175,7 +190,8 @@ const DOME_SIZE = 20000;       // metres, edge of the box
 const CUBE_SIZE = 512;         // the droplets' cube, per face
 const PREFILTER_SIZE = 128;    // the capture the stones' prefiltered map is made from, per face
 const GROUND = [0.10, 0.17, 0.20];   // the cube's ground hemisphere: the pond as the drops see it, under a sunlit sky
-const ADAPTATION = 0.75;       // how far the eye adapts to an hour's light (Light by the hour)
+const ADAPTATION = 0.75;       // how far the eye adapts to an hour's light (Light by the hour)...
+const ROD_ADAPTATION = 0.9;    // ...and, below NIGHT_VISION_LIGHT[0], its rods (adaptedLight)
 const DOWN_SUN_ELEVATION = 1;  // degrees: where the scene's dark sun stands while the true one is down
 // The light on level ground under a clear sky (illuminance): the sun's, through
 // SUN_DEPTH optical depths per air mass (Kasten and Young's), outside the
@@ -189,6 +205,8 @@ const SUN_OUTSIDE = 127000;    // lux
 const SUN_DEPTH = 0.2;         // a clear sky's optical depth for sunlight, per air mass
 const SKY_LIGHT = [800, 15000];   // lux
 const TWILIGHT = [[0, 800], [-6, 3.9], [-12, 0.009], [-18, 0.00075]];   // [sun's elevation (degrees), lux]
+const MOON_DIMMING = 400000;   // the full moon's light against the sun's at the same elevation (14 magnitudes)
+const NIGHT_VISION_LIGHT = [10, 0.03];   // lux: the rods begin to take over from the cones; the rods see alone
 
 const luminance = (rgb) => 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2];
 
@@ -212,8 +230,28 @@ export function illuminance(elevation) {
 
 /** What lights a panorama (sky-probe's light; a lone photograph's sun). */
 const lightOf = (measurement) => measurement.light ?? 'sun';
-/** The true sun's elevation at a panorama's hour (degrees). */
-const hourElevation = (measurement) => measurement.solar?.elevation ?? measurement.sun.elevation;
+/**
+ * How bright an hour's light looks to an eye adapted to it, in arbitrary
+ * units: the light (lux) to the 1 − ADAPTATION; below NIGHT_VISION_LIGHT[0],
+ * where the rods take over and adapt further, to the 1 − ROD_ADAPTATION
+ * from there. So the starlit night shows its land and its stars, about 5
+ * stops under the day, where the cones' adaptation alone would leave it 7
+ * under, black. ROD_ADAPTATION was chosen from frames of the night hours.
+ */
+function adaptedLight(lux) {
+  const rodsFrom = NIGHT_VISION_LIGHT[0];
+  return lux >= rodsFrom ? lux ** (1 - ADAPTATION) : rodsFrom ** (1 - ADAPTATION) * (lux / rodsFrom) ** (1 - ROD_ADAPTATION);
+}
+
+/**
+ * The light on level ground at a panorama's hour (lux): the true sun's or
+ * its twilight's (illuminance), and where the moon lights the photo, a full
+ * moon's at its elevation besides, the sun's light MOON_DIMMING times dimmer.
+ */
+function hourLight(measurement) {
+  const sunLight = illuminance(measurement.solar?.elevation ?? measurement.sun.elevation);
+  return lightOf(measurement) === 'moon' ? sunLight + illuminance(measurement.sun.elevation) / MOON_DIMMING : sunLight;
+}
 
 const DOME_VERTEX = /* glsl */`
 varying vec3 vDirection;
@@ -351,7 +389,7 @@ export async function createEnvironment(renderer, { name, hour, sunAzimuth, sunB
     const rotation = file === facingFile ? facingRotation : facingRotation + THREE.MathUtils.degToRad(measurement.north - facing.north);
     // The sun: the photo's, or where the true one is when it is down, at
     // DOWN_SUN_ELEVATION; the file's direction turned into the scene's.
-    const sunlit = lightOf(measurement) === 'sun';
+    const sunlit = lightOf(measurement) !== 'none';   // the sun or the moon
     if (file === facingFile) lighting.sunDirection.copy(facingSun);
     else {
       const fileAzimuth = sunlit ? Math.atan2(measurement.sun.direction[2], measurement.sun.direction[0]) : THREE.MathUtils.degToRad(measurement.north + measurement.solar.azimuth) - Math.PI;
@@ -363,7 +401,7 @@ export async function createEnvironment(renderer, { name, hour, sunAzimuth, sunB
     // The brightness: the anchor's as a single photograph's, the hour's
     // light against the anchor's (Light by the hour).
     const anchorScale = (balanceLuminance / luminance(anchor.sunIrradiance)) * SKY_EXPOSURE;
-    const level = file === anchorFile ? 1 : (illuminance(hourElevation(measurement)) / illuminance(hourElevation(anchor))) ** (1 - ADAPTATION);
+    const level = file === anchorFile ? 1 : adaptedLight(hourLight(measurement)) / adaptedLight(hourLight(anchor));
     const scale = anchorScale * level;
     if (sunlit) {
       const sunColour = new THREE.Vector3().fromArray(measurement.sunIrradiance).divide(new THREE.Vector3().fromArray(balance.sunIrradiance)).multiply(sunBalance);
@@ -373,6 +411,8 @@ export async function createEnvironment(renderer, { name, hour, sunAzimuth, sunB
       lighting.sunIrradiance.set(0, 0, 0);
     }
     lighting.skyAmbient.fromArray(measurement.skyRadiance).multiplyScalar(scale);
+    const rodsFrom = Math.log10(NIGHT_VISION_LIGHT[0]);
+    lighting.night = THREE.MathUtils.smoothstep(rodsFrom - Math.log10(hourLight(measurement)), 0, rodsFrom - Math.log10(NIGHT_VISION_LIGHT[1]));
     ground.material.color.setRGB(GROUND[0] * level, GROUND[1] * level, GROUND[2] * level);
 
     const previous = domeUniforms.uPanorama.value;
