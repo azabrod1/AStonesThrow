@@ -23,7 +23,9 @@
 // --report="js expression" is evaluated in the page after each frame and its
 // result printed as JSON (window.__pond is the app). --floats=half renders on
 // the half-float path that devices without EXT_color_buffer_float take.
-// --sky=name picks the sky panorama (a key of SKIES in src/sky.js), and
+// --sky=name picks the sky's place (a key of SKIES in src/sky.js) and
+// --time=hour its hour (the place's anchor otherwise, never the time of day
+// last chosen: the harness's browser keeps no storage), and
 // --water=pool|clear|lake|pond|murky the water (WATER_CLARITIES in src/main.js;
 // pool puts the rocks in the pool, src/pool.js).
 // --wind=x:z sets the direction the wind blows toward in world XZ, and
@@ -73,6 +75,7 @@ const cropScale = Number(arg('cropscale', '1'));
 const report = arg('report', '');
 const floats = arg('floats', '');
 const sky = arg('sky', '');
+const skyTime = arg('time', '');
 const waterClarity = arg('water', '');
 const wind = arg('wind', '');
 const power = arg('power', 'normal');
@@ -124,7 +127,7 @@ const problems = [];
 page.on('pageerror', (e) => problems.push(String(e)));
 page.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') problems.push(m.text()); });
 
-const url = `http://localhost:${port}/index.html?quality=${quality}&paused=1${keepUi ? '' : '&ui=0'}${floats ? `&floats=${floats}` : ''}${sky ? `&sky=${sky}` : ''}${waterClarity ? `&water=${waterClarity}` : ''}${wind ? `&wind=${wind.replace(':', ',')}` : ''}${windStrength ? `&windStrength=${windStrength}` : ''}`;
+const url = `http://localhost:${port}/index.html?quality=${quality}&paused=1${keepUi ? '' : '&ui=0'}${floats ? `&floats=${floats}` : ''}${sky ? `&sky=${sky}` : ''}${skyTime ? `&time=${skyTime}` : ''}${waterClarity ? `&water=${waterClarity}` : ''}${wind ? `&wind=${wind.replace(':', ',')}` : ''}${windStrength ? `&windStrength=${windStrength}` : ''}`;
 console.log(`[shoot] ${url} -> ${outDir}`);
 await page.goto(url, { waitUntil: 'domcontentloaded' });
 try {

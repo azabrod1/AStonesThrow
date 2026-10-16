@@ -21,8 +21,12 @@
 //     screen, its rows that tall too; its Water row opens the Water page,
 //     whose five choices fit their labels, whose Pool puts the rocks in the
 //     pool (the View note follows) and whose Murky sets the pond's clarity,
-//     each with the row's value; a press on the
-//     water closes it without throwing a stone, and Escape closes it too;
+//     each with the row's value; its Time row opens the Time page, whose
+//     slider spans it (44 points tall on a touch screen) and, tapped at its
+//     left end, loads the place's first hour, the row and the readout
+//     following, while a lone photograph's page hides the slider and says
+//     why; a press on the water closes it without throwing a stone, and
+//     Escape closes it too;
 //   - on a touch screen a finger dragged across the water turns the view and
 //     throws nothing, and the Reset view button then shows on the screen.
 // Sizes are reported in points on the screen (CSS pixels times the page's
@@ -187,7 +191,7 @@ for (const framing of FRAMINGS) {
   await page.waitForTimeout(400);
   const [panel] = await boxes('#settings');
   const rows = await boxes('#settings .menu-tier');
-  check(!!panel && onScreen(panel) && rows.length === 5, `the settings open on the screen with their five rows`);
+  check(!!panel && onScreen(panel) && rows.length === 6, `the settings open on the screen with their six rows (${rows.length})`);
   if (framing.touch) check(rows.every((row) => row.height >= SMALLEST_BUTTON_HEIGHT - 0.5), `every settings row is at least ${SMALLEST_BUTTON_HEIGHT} points tall (smallest ${Math.min(...rows.map((row) => row.height)).toFixed(1)})`);
   await page.screenshot({ path: path.join(outputFolder, `${framing.name}-settings.png`) });
   await press('#settings .menu-tier[data-open="water"]');
@@ -206,6 +210,41 @@ for (const framing of FRAMINGS) {
   check(chosen.clarity === 'murky' && chosen.row === 'Murky', `Murky sets the clarity (${chosen.clarity}) and the row's value ("${chosen.row}")`);
   await page.screenshot({ path: path.join(outputFolder, `${framing.name}-water.png`) });
   await page.evaluate(() => window.__pond.setClarity('lake'));
+  // The Time page: Lakeside's hours on a slider; a tap at its left end loads the first.
+  await press('.menu-page[data-page="water"] .menu-back');
+  await page.waitForTimeout(400);
+  await press('#settings .menu-tier[data-open="time"]');
+  await page.waitForTimeout(400);
+  const [timePanel] = await boxes('#settings');
+  const [timeSlider] = await boxes('#time');
+  check(!!timeSlider && onScreen(timePanel) && onScreen(timeSlider) && timeSlider.right - timeSlider.left >= 0.8 * (timePanel.right - timePanel.left) && (!framing.touch || timeSlider.height >= 43.5),
+    `the Time page is on the screen, its slider ${timeSlider ? `${(timeSlider.right - timeSlider.left).toFixed(0)}×${timeSlider.height.toFixed(0)}` : 'missing'} points across the page`);
+  if (timeSlider) {
+    const tapX = (timeSlider.left + 4) / layout.scale, tapY = (timeSlider.top + timeSlider.height / 2) / layout.scale;
+    if (framing.touch) {
+      const session = await context.newCDPSession(page);
+      await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: tapX, y: tapY }] });
+      await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+      await session.detach();
+    } else {
+      await page.mouse.click(tapX, tapY);
+    }
+    await page.waitForFunction(() => window.__pond.hour === window.__pond.hours[0].name && !document.querySelector('.menu-tier[data-open="time"] .menu-tier-value').textContent.endsWith('\u2026'), null, { timeout: 60000 }).catch(() => {});
+    const hour = await page.evaluate(() => ({ time: window.__pond.hour, first: window.__pond.hours[0], row: document.querySelector('.menu-tier[data-open="time"] .menu-tier-value').textContent, readout: document.getElementById('time-name').textContent }));
+    check(hour.time === hour.first.name && hour.row === `${hour.first.label} \u00b7 ${hour.first.clock}` && hour.readout === hour.first.label,
+      `a tap at the slider's left end loads ${hour.time} (the first hour, ${hour.first.name}), the row reads "${hour.row}", the readout "${hour.readout}"`);
+    await page.screenshot({ path: path.join(outputFolder, `${framing.name}-time.png`) });
+  }
+  await press('.menu-page[data-page="time"] .menu-back');
+  await page.waitForTimeout(400);
+  await press('#settings .menu-tier[data-open="sky"]');
+  await page.waitForTimeout(400);
+  await press('#sky [data-value="meadow"]');
+  await page.waitForFunction(() => window.__pond.sky === 'meadow' && document.querySelector('.menu-tier[data-open="time"] .menu-tier-value').textContent === 'Afternoon', null, { timeout: 60000 }).catch(() => {});
+  const lone = await page.evaluate(() => ({ hidden: document.getElementById('time').hidden, note: document.getElementById('time-note').textContent, row: document.querySelector('.menu-tier[data-open="time"] .menu-tier-value').textContent }));
+  check(lone.hidden && lone.note.includes('single photograph') && lone.row === 'Afternoon', `under the meadow's lone photograph the slider hides, the row reads "${lone.row}" and the note "${lone.note}"`);
+  await press('.menu-page[data-page="sky"] .menu-back');   // the list again: the Sky page reaches the water's middle on a small phone
+  await page.waitForTimeout(400);
   const stonesBefore = await page.evaluate(() => window.__pond.rocks.length);
   const waterPoint = { x: layout.screenWidth * 0.3 / layout.scale, y: layout.screenHeight * 0.55 / layout.scale };
   if (framing.touch) await page.touchscreen.tap(waterPoint.x, waterPoint.y);

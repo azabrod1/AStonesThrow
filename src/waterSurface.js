@@ -55,6 +55,14 @@ import { WATER_VERTEX, WATER_FRAGMENT, WATER_UNDER_FRAGMENT } from './shaders/sc
 export const OUTER_HALF_SIZE = 9000;
 const OUTER_GROWTH = 1.25;   // each of the outer sheet's square rings this many times the last's half size...
 const OUTER_CUTS = 8;        // ...and each of its sides cut into this many quads
+// The sheet starts this far inside the patch's edge, under it: the patch's
+// edge has hundreds of vertices where the sheet's has OUTER_CUTS, and two
+// edges on one line with vertices apart leave pinholes in the raster (a
+// dotted line along the patch's sides, the dome's ground showing through:
+// dark ones at dusk). The patch's last 2% (patchMask, src/shaders/scene.js: 6 cm)
+// lies flat and shades as the sheet does, so where the two overlap they
+// draw the same.
+const OUTER_OVERLAP = 0.03;  // metres
 export const MAX_CAVITIES = 4;   // the inner patch dips under at most this many cavities at once
 
 /**
@@ -206,7 +214,7 @@ export function createWaterSurface(water, lighting, ambientWaves, { meshSegments
   inner.position.set(water.centre[0], 0, water.centre[1]);
   inner.frustumCulled = false;
 
-  const outer = new THREE.Mesh(squareRingsGeometry(water.domainSize / 2, OUTER_HALF_SIZE, water.centre), outerMaterial);
+  const outer = new THREE.Mesh(squareRingsGeometry(water.domainSize / 2 - OUTER_OVERLAP, OUTER_HALF_SIZE, water.centre), outerMaterial);
   outer.frustumCulled = false;
 
   return {

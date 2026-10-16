@@ -26,5 +26,13 @@
     "median": 0.35142,
     "p90": 1.1053
   },
-  "maxLuminance": 91718
+  "maxLuminance": 91718,
+  "alignment": {
+    "reference": "lakeside_sunrise_2k.hdr",
+    "turn": 120.23,
+    "peak": 4.06,
+    "nextBest": 2.3
+  },
+  "north": 262.97,
+  "northFrom": "skyline"
 }

@@ -403,6 +403,14 @@
   .sky-option img { flex: none; width: 80px; height: 45px; border-radius: 7px; object-fit: cover; background: rgba(238, 243, 244, 0.08); }
   .sky-option b { display: block; font-size: 14px; font-weight: 500; }
   .sky-option small { display: block; margin-top: 2px; font-size: 12px; color: var(--muted); }
+  /* The Time page: the hour's name and local time over a slider of the
+     place's hours, the first and last hour's times under its ends. */
+  .time-readout { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin: 0 2px; }
+  .time-readout b { font-size: 16px; font-weight: 500; }
+  .time-readout span, .time-ends { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .time-ends { display: flex; justify-content: space-between; margin: 0 2px; }
+  .settings input[type="range"] { display: block; width: 100%; }
+  .settings input[type="range"][hidden], .time-ends[hidden] { display: none; }
   .menu-button:focus-visible, .menu-tier:focus-visible, .menu-back:focus-visible, .menu-seg button:focus-visible, .sky-option:focus-visible {
     outline: 2px solid var(--accent);
     outline-offset: -2px;
@@ -525,6 +533,7 @@
     <button type="button" class="menu-tier" data-open="view"><b>View</b><span class="menu-tier-value"></span><span class="menu-tier-chevron" aria-hidden="true">&rsaquo;</span></button>
     <button type="button" class="menu-tier" data-open="water"><b>Water</b><span class="menu-tier-value"></span><span class="menu-tier-chevron" aria-hidden="true">&rsaquo;</span></button>
     <button type="button" class="menu-tier" data-open="sky"><b>Sky</b><span class="menu-tier-value"></span><span class="menu-tier-chevron" aria-hidden="true">&rsaquo;</span></button>
+    <button type="button" class="menu-tier" data-open="time"><b>Time of day</b><span class="menu-tier-value"></span><span class="menu-tier-chevron" aria-hidden="true">&rsaquo;</span></button>
     <button type="button" class="menu-tier" data-open="wind"><b>Wind</b><span class="menu-tier-value"></span><span class="menu-tier-chevron" aria-hidden="true">&rsaquo;</span></button>
     <button type="button" class="menu-tier" data-open="quality"><b>Quality</b><span class="menu-tier-value"></span><span class="menu-tier-chevron" aria-hidden="true">&rsaquo;</span></button>
   </div>
@@ -560,12 +569,22 @@
     <div class="menu-field">
       <div class="sky-list" id="sky" role="radiogroup" aria-label="Sky" aria-describedby="sky-note">
         <button type="button" class="sky-option" role="radio" data-value="lakeside"><img src="assets/sky/thumbs/lakeside.jpg" alt="" width="80" height="45"><span><b>Lakeside</b><small>A wooded shore, a far bank</small></span></button>
+        <button type="button" class="sky-option" role="radio" data-value="mesas"><img src="assets/sky/thumbs/mesas.jpg" alt="" width="80" height="45"><span><b>Mesas</b><small>Wide water to flat-topped hills</small></span></button>
         <button type="button" class="sky-option" role="radio" data-value="meadow"><img src="assets/sky/thumbs/meadow.jpg" alt="" width="80" height="45"><span><b>Meadow</b><small>Summer trees, afternoon sun</small></span></button>
-        <button type="button" class="sky-option" role="radio" data-value="sunrise"><img src="assets/sky/thumbs/sunrise.jpg" alt="" width="80" height="45"><span><b>Sunrise</b><small>Low golden sun on still water</small></span></button>
         <button type="button" class="sky-option" role="radio" data-value="alpine"><img src="assets/sky/thumbs/alpine.jpg" alt="" width="80" height="45"><span><b>Alpine</b><small>Pines, and snowy peaks up the valley</small></span></button>
         <button type="button" class="sky-option" role="radio" data-value="open"><img src="assets/sky/thumbs/open.jpg" alt="" width="80" height="45"><span><b>Open sky</b><small>Clouds out to the horizon</small></span></button>
       </div>
       <div class="menu-note" id="sky-note" aria-live="polite"></div>
+    </div>
+  </div>
+  <div class="menu-page" data-page="time" hidden>
+    <div class="menu-head"><button type="button" class="menu-back" aria-label="Back"><span aria-hidden="true">&lsaquo;</span></button><h3>Time of day</h3></div>
+    <div class="menu-field">
+      <div class="menu-field-label" id="time-label">Hour</div>
+      <div class="time-readout" aria-hidden="true"><b id="time-name"></b><span id="time-clock"></span></div>
+      <input type="range" id="time" min="0" max="0" step="1" value="0" aria-labelledby="time-label" aria-describedby="time-note">
+      <div class="time-ends" id="time-ends" aria-hidden="true"><span id="time-first"></span><span id="time-last"></span></div>
+      <div class="menu-note" id="time-note" aria-live="polite"></div>
     </div>
   </div>
   <div class="menu-page" data-page="wind" hidden>
@@ -673,21 +692,25 @@
     sizeInput.addEventListener('input', applySize);
     applySize();
     // iOS moves a range input only by its thumb. Here a touch anywhere along
-    // the slider puts the thumb under the finger, and the finger drags it from
+    // a slider puts the thumb under the finger, and the finger drags it from
     // there (the thumb's centre runs from half a thumb in at either end).
-    const setSizeFromTouch = (event) => {
-      event.preventDefault();
-      const touch = event.touches[0];
-      if (!touch) return;
-      const bounds = sizeInput.getBoundingClientRect();
-      const thumb = parseFloat(getComputedStyle(sizeInput).getPropertyValue('--thumb')) || 0;
-      const fraction = Math.min(Math.max((touch.clientX - bounds.left - thumb / 2) / Math.max(bounds.width - thumb, 1), 0), 1);
-      const steps = Math.round((fraction * (sizeRange.maximum - sizeRange.minimum)) / sizeRange.step);
-      const value = sizeRange.minimum + steps * sizeRange.step;
-      if (Number(sizeInput.value) !== value) { sizeInput.value = String(value); applySize(); }
-    };
-    sizeInput.addEventListener('touchstart', setSizeFromTouch, { passive: false });
-    sizeInput.addEventListener('touchmove', setSizeFromTouch, { passive: false });
+    function followTouch(input, onInput) {
+      const setFromTouch = (event) => {
+        event.preventDefault();
+        const touch = event.touches[0];
+        if (!touch) return;
+        const minimum = Number(input.min), maximum = Number(input.max), step = Number(input.step);
+        const bounds = input.getBoundingClientRect();
+        const thumb = parseFloat(getComputedStyle(input).getPropertyValue('--thumb')) || 0;
+        const fraction = Math.min(Math.max((touch.clientX - bounds.left - thumb / 2) / Math.max(bounds.width - thumb, 1), 0), 1);
+        const steps = Math.round((fraction * (maximum - minimum)) / step);
+        const value = minimum + steps * step;
+        if (Number(input.value) !== value) { input.value = String(value); onInput(); }
+      };
+      input.addEventListener('touchstart', setFromTouch, { passive: false });
+      input.addEventListener('touchmove', setFromTouch, { passive: false });
+    }
+    followTouch(sizeInput, applySize);
     segmented('power', (value) => pond.setPower(value));
     segmented('speed', (value) => pond.setTimeScale(Number(value)));
 
@@ -727,6 +750,8 @@
         medium: 'A coarser water grid, the view under the water and the splash at half resolution, and 30 frames a second while nothing moves.',
         high: 'The finest ripples, and everything at the screen\u2019s full resolution.',
       },
+      time: 'Each hour is a photograph of this place, taken from one spot through a day: the land stays where it is and the sun moves round it.',
+      oneTime: 'This sky is a single photograph. Lakeside and Mesas were photographed through the day: pick one of them to change the hour.',
     };
     const showViewChoice = radioGroup(document.getElementById('view'), (value) => pond.showView(value));
     showView = () => {
@@ -777,7 +802,54 @@
       showSky(pond.sky);
       settings.setValue('sky', label('sky', pond.sky));
       skyNote.textContent = '';
+      updateTime();
     }
+    // The time of day: the shown place's hours on a slider (pond.hours), a
+    // lone photograph's one hour with no slider. An hour is a photo to load,
+    // as a sky is: a drag asks for each hour it crosses, and only the last
+    // asked for loads (pond.setHour).
+    const timeInput = document.getElementById('time');
+    const timeNote = document.getElementById('time-note');
+    let timeChoice = null;   // the hour last picked here, while it loads
+    const hourText = (hour) => (hour.clock ? `${hour.label} \u00b7 ${hour.clock}` : hour.label);
+    function showHour(index) {
+      const hours = pond.hours;
+      const hour = hours[index];
+      document.getElementById('time-name').textContent = hour.label;
+      document.getElementById('time-clock').textContent = hour.clock ?? '';
+      timeInput.value = String(index);
+      timeInput.style.setProperty('--fraction', String(hours.length > 1 ? index / (hours.length - 1) : 0));
+      timeInput.setAttribute('aria-valuetext', hourText(hour));
+    }
+    function updateTime() {
+      const hours = pond.hours;
+      const index = Math.max(0, hours.findIndex((hour) => hour.name === pond.hour));
+      timeInput.max = String(hours.length - 1);
+      timeInput.hidden = hours.length < 2;
+      document.getElementById('time-ends').hidden = hours.length < 2;
+      document.getElementById('time-first').textContent = hours[0].clock ?? '';
+      document.getElementById('time-last').textContent = hours.at(-1).clock ?? '';
+      showHour(index);
+      settings.setValue('time', hourText(hours[index]));
+      timeNote.textContent = hours.length > 1 ? NOTES.time : NOTES.oneTime;
+    }
+    function chooseHour() {
+      const index = Number(timeInput.value);
+      const hour = pond.hours[index];
+      if (!hour) return;
+      showHour(index);
+      timeChoice = hour.name;
+      if (hour.name === pond.hour) { updateTime(); return; }
+      settings.setValue('time', `${hourText(hour)}\u2026`);
+      timeNote.textContent = `Loading ${hour.label.toLowerCase()}\u2026`;
+      pond.setHour(hour.name).then((shown) => {
+        if (timeChoice !== hour.name) return;   // another was picked since: its load reports
+        updateTime();
+        if (shown !== hour.name) timeNote.textContent = 'That hour could not be loaded. Check the connection and try again.';
+      });
+    }
+    timeInput.addEventListener('input', chooseHour);
+    followTouch(timeInput, chooseHour);
     showView();
     updateWater();
     updateWind();

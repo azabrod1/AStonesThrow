@@ -26,5 +26,17 @@
     "median": 0.59962,
     "p90": 2.6077
   },
-  "maxLuminance": 126460
+  "maxLuminance": 126460,
+  "taken": "2024-08-21T06:58:00+02:00",
+  "at": [
+    -28.482577018138976,
+    29.01429985008855
+  ],
+  "solar": {
+    "elevation": 5.21,
+    "azimuth": 73.38
+  },
+  "light": "sun",
+  "north": 142.74,
+  "northFrom": "sun"
 }

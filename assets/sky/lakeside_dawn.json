@@ -1,0 +1,48 @@
+{
+  "source": "lakeside_dawn_2k.hdr",
+  "width": 2048,
+  "height": 1024,
+  "sun": {
+    "elevation": 7.07,
+    "azimuth": 220.27,
+    "direction": [
+      0.75717,
+      0.12309,
+      0.64151
+    ],
+    "pixels": 1816
+  },
+  "sunIrradiance": [
+    0.2128,
+    0.18184,
+    0.13755
+  ],
+  "skyRadiance": [
+    0.92468,
+    1.0514,
+    1.3887
+  ],
+  "horizonRadiance": {
+    "median": 1.0673,
+    "p90": 6.1766
+  },
+  "maxLuminance": 11.897,
+  "taken": "2024-08-21T06:27:00+02:00",
+  "at": [
+    -28.482577018138976,
+    29.01429985008855
+  ],
+  "solar": {
+    "elevation": -1.38,
+    "azimuth": 77.13
+  },
+  "light": "none",
+  "alignment": {
+    "reference": "lakeside_sunrise_2k.hdr",
+    "turn": 358.06,
+    "peak": 10.11,
+    "nextBest": 2.15
+  },
+  "north": 140.8,
+  "northFrom": "skyline"
+}

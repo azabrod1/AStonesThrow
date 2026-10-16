@@ -106,14 +106,18 @@
 // is compiled then rather than at the first throw, then clears it all away:
 // the pond starts still, at time zero. The settings (the page's panel)
 // each have their own localStorage key, and the page's parameters win over
-// them: ?sky=<name> picks the panorama (src/sky.js; setSky loads another
-// later, in place: the sun follows, and the mirror image is drawn again);
+// them: ?sky=<name> picks the place, ?time=<hour> its hour (src/sky.js:
+// a place's hours are photographs of it through a day; setSky and setHour
+// load another later, in place: the sun follows, and the mirror image is
+// drawn again; a place takes the hour nearest the time of day last chosen,
+// TIME_STORAGE_KEY, and ?sky=sunrise, the old Sunrise sky, is Lakeside at
+// sunrise);
 // ?view=shore|level|high|under stands the camera at one of VIEWS (showView);
 // ?water=pool|clear|lake|pond|murky the water (WATER_CLARITIES; setClarity);
 // ?wind=x,z sets the direction the wind blows toward in world XZ
 // (DEFAULT_WIND otherwise); ?windStrength=calm|breeze|windy the wind's
 // strength (WIND_STRENGTHS in src/ambientWaves.js; setWind); each otherwise
-// the one last chosen on this device, or lakeside, lake and calm; ?paused=1
+// the one last chosen on this device, or lakeside's afternoon, lake and calm; ?paused=1
 // starts with the clock stopped
 // (resume() starts it); ?quality=high|medium|low fixes a preset (QUALITY),
 // otherwise the quality calibrates itself from the frame rate (CALIBRATION),
@@ -124,7 +128,7 @@ import * as THREE from 'three';
 import { SpectralWater } from './spectralWater.js';
 import { AmbientWaves, DEFAULT_WIND, WIND_STRENGTHS } from './ambientWaves.js';
 import { Rings } from './rings.js';
-import { createEnvironment, SKY_NAMES } from './sky.js';
+import { createEnvironment, SKY_NAMES, skyHours, resolveHour, nearestHour } from './sky.js';
 import { createWaterSurface } from './waterSurface.js';
 import { createPondFloor, createShore, floorDepthAt, groundHeightAt } from './pondFloor.js';
 import { Rock } from './rock.js';
@@ -236,6 +240,7 @@ const DEFAULT_WIND_STRENGTH = 'calm';
 const WIND_STORAGE_KEY = 'stone-pond-wind';   // the Wind setting's last choice on this device
 const WATER_STORAGE_KEY = 'stone-pond-water'; // the Water setting's
 const SKY_STORAGE_KEY = 'stone-pond-sky';     // the Sky setting's
+const TIME_STORAGE_KEY = 'stone-pond-time';   // the Time setting's: the local time ('hh:mm') of the hour last chosen
 const SUN_BALANCE = [3.0, 2.85, 2.55];        // the sun's irradiance under the meadow sky; another sky's has its photo's colour (src/sky.js)
 // The water (the Water setting): its absorption, per metre, which dims the
 // light going down to the bed; its extinction, per metre, absorption plus
@@ -318,9 +323,14 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
   };
   const storedChoice = (key) => { try { return window.localStorage.getItem(key); } catch { return null; } };
 
+  // The sky: ?sky, else the place last chosen here; its hour ?time, else the
+  // one nearest the time of day last chosen here (chosenClock).
+  let chosenClock = storedChoice(TIME_STORAGE_KEY);
+  const placeAndHour = (place, hour) => (place === 'sunrise' ? ['lakeside', 'sunrise'] : [place, hour ?? nearestHour(place, chosenClock)]);
+  const [firstPlace, firstHour] = placeAndHour(pageParameters.get('sky') ?? storedChoice(SKY_STORAGE_KEY), pageParameters.get('time'));
   let environment;
   try {
-    environment = await createEnvironment(renderer, { name: pageParameters.get('sky') ?? storedChoice(SKY_STORAGE_KEY), sunAzimuth: SUN_AZIMUTH, sunBalance: new THREE.Vector3(...SUN_BALANCE), lighting });
+    environment = await createEnvironment(renderer, { name: firstPlace, hour: firstHour, sunAzimuth: SUN_AZIMUTH, sunBalance: new THREE.Vector3(...SUN_BALANCE), lighting });
   } catch (error) {
     onError?.('The sky could not be loaded. Check the connection and reload the page.');
     throw error;
@@ -374,7 +384,11 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     waterName = name;
     lighting.absorb.fromArray(WATER_CLARITIES[name].absorb);
     lighting.extinction.fromArray(WATER_CLARITIES[name].extinction);
-    lighting.waterColor.fromArray(WATER_CLARITIES[name].color);
+    applyWaterColor();
+  }
+  /** The deep water's radiance: the clarity's, lit by the hour's light (the sky's level, src/sky.js). */
+  function applyWaterColor() {
+    lighting.waterColor.fromArray(WATER_CLARITIES[waterName].color).multiplyScalar(environment.level);
   }
   applyWater(waterName);
   // Its view of the bed takes the absorption, set only now, and the bed's depth and albedo.
@@ -632,9 +646,24 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
   // The sky (setSky): a load replaces the dome and the environment maps and
   // fills lighting's sun and sky in place (src/sky.js); then what holds the
   // sun by value follows, and the mirror image is drawn again.
-  let skyRequest = environment.name;     // the sky last asked for
+  let skyRequest = { place: environment.name, hour: environment.hour };   // the sky last asked for
   let skyLoading = Promise.resolve();    // the loads queued so far
+  /**
+   * Queue a load of the place at the hour (resolveHour's); only the last
+   * asked for is loaded. Resolves when it is shown, or failed.
+   */
+  function requestSky(place, hour) {
+    const request = { place, hour: resolveHour(place, hour) };
+    skyRequest = request;
+    skyLoading = skyLoading.then(async () => {
+      if (skyRequest !== request || (environment.name === request.place && environment.hour === request.hour)) return;
+      await environment.load(request.place, request.hour);
+      applySky();
+    }).catch((error) => console.error(error));
+    return skyLoading.then(() => environment.name);
+  }
   function applySky() {
+    applyWaterColor();
     applySunLights();
     splash.updateLighting();
     viewChanged = true;
@@ -1465,25 +1494,39 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     },
     get clarity() { return waterName; },
     /**
-     * The sky by name (a key of SKIES in src/sky.js), remembered on this
-     * device. Its photo loads first and the old sky stays until it has
-     * arrived; then the sky, the sun and everything they light change in one
-     * frame. Resolves to the sky then shown (the old one if the photo could
-     * not be fetched). Choices made while one loads queue behind it, and only
-     * the last is loaded.
+     * The sky by place (a key of SKIES in src/sky.js), remembered on this
+     * device, at its hour nearest the time of day last chosen. Its photo
+     * loads first and the old sky stays until it has arrived; then the sky,
+     * the sun and everything they light change in one frame. Resolves to the
+     * place then shown (the old one if the photo could not be fetched).
+     * Choices made while one loads queue behind it, and only the last is
+     * loaded.
      */
     setSky(name) {
-      if (!SKY_NAMES.includes(name)) return Promise.resolve(environment.name);
-      skyRequest = name;
-      try { window.localStorage.setItem(SKY_STORAGE_KEY, name); } catch { /* storage refused: the choice lasts this visit */ }
-      skyLoading = skyLoading.then(async () => {
-        if (skyRequest !== name || environment.name === name) return;
-        await environment.load(name);
-        applySky();
-      }).catch((error) => console.error(error));
-      return skyLoading.then(() => environment.name);
+      const [place, hour] = placeAndHour(name);
+      if (!SKY_NAMES.includes(place)) return Promise.resolve(environment.name);
+      try { window.localStorage.setItem(SKY_STORAGE_KEY, place); } catch { /* storage refused: the choice lasts this visit */ }
+      return requestSky(place, hour);
     },
     get sky() { return environment.name; },
+    /**
+     * The hour of the place last asked for (a name from `hours`), its local
+     * time remembered on this device as the time of day other places follow.
+     * Loads as setSky does; resolves to the hour then shown. (`time` is the
+     * simulation's clock.)
+     */
+    setHour(name) {
+      const hour = skyHours(skyRequest.place).find((entry) => entry.name === name);
+      if (!hour) return Promise.resolve(environment.hour);
+      if (hour.clock) {
+        chosenClock = hour.clock;
+        try { window.localStorage.setItem(TIME_STORAGE_KEY, hour.clock); } catch { /* storage refused: the choice lasts this visit */ }
+      }
+      return requestSky(skyRequest.place, name).then(() => environment.hour);
+    },
+    get hour() { return environment.hour; },
+    /** The shown place's hours, in the order of the day: { name, label, clock } (clock 'hh:mm', or undefined for a lone photograph). */
+    get hours() { return skyHours(environment.name); },
     setTimeScale(scale) { timeScale = scale; },
     /** A preset by name, which ends the automatic calibration; 'auto' starts it again from high. */
     setQuality(name) {

@@ -41,9 +41,15 @@ remembered on the device (but the view, which opens on the shore):
   it. Behind the waterline, just behind the shore view, a sand beach rises
   into a grassy bank that takes its colour from the sky photo's own land, so
   turned round, the view sees a shore rather than water to the horizon.
-- Sky: Lakeside (the default), Meadow, Sunrise, Alpine or Open sky. The
+- Sky: Lakeside (the default), Mesas, Meadow, Alpine or Open sky. The
   photo (about 6 MB) loads while the old sky stays; then the sky, the sun's
   direction and colour and everything they light change at once.
+- Time of day: Lakeside and Mesas were each photographed from one spot
+  through a day, and a slider picks the hour: Lakeside's dawn, sunrise and
+  afternoon, Mesas' ten hours from dawn to twilight. The land keeps still and
+  the sun moves round it (Lakeside's sunrise is behind the shore view, over
+  the water on the right). Another place takes its hour nearest the time of
+  day last chosen; the other skies are one photograph each.
 - Wind: Calm (the default, a still day), Breeze or Windy.
 - Quality: Auto, Low, Medium or High.
 Auto starts on High everywhere and steps down by itself if the idle
@@ -393,6 +399,27 @@ a water-coloured lower hemisphere are captured into a cube map that the
 droplets reflect, and a prefiltered copy lights the stones; another sky is
 captured into the same maps, in the frame it arrives.
 
+**Hours.** Lakeside and Mesas are Poly Haven's series by Greg Zaal and Jarod
+Guest: thirteen panoramas from one tripod on a hill over a dammed lake in
+South Africa, 18 to 22 August 2024, and four from a rock on its shore 350 m
+away (the 2019 afternoon among them). Poly Haven turns each panorama so its
+sun lands on the same column, so `tools/sky-probe.mjs` finds where north is
+in each file: from the true sun's position at the photo's time and place
+(NOAA's algorithm), or, when the sun is down, by lining the far shore's
+skyline up with another hour's. The two agree within 0.5° wherever both
+apply; the photos' time stamps turn out to be local time, and the 2019
+afternoon's sun puts it at 14:41 to 0.1°. One hour of each place is turned
+as a single photograph is (Lakeside's afternoon, as before; Mesas' sunset),
+and the others keep its land where it is, so their suns stand where they
+stood. Poly Haven exposes each panorama to be looked at, as an adapted eye
+would see it (dawn as bright as noon), so an hour keeps its file's
+brightness against the place's sunlit anchor hour times the clear-sky light
+on the ground at its true sun's elevation against the anchor's, to the
+power 0.25 (an eye that adapts most of the way): sunset comes out 0.56 of
+the afternoon's, twilight at 5° below the horizon a tenth. While the sun is
+down the scene's sun is dark, and the deep water's colour dims with the
+light.
+
 **From under the water** (the Under view; `renderFromBelow` in `src/main.js`,
 `UNDER_FOG` and `WATER_UNDER_FRAGMENT` in `src/shaders/scene.js`). The water's
 own light, darker looking down and brighter looking up toward the surface,
@@ -569,9 +596,12 @@ farther out, so it rises into the view rather than filling its corner.
   `?windStrength=calm|breeze|windy` (`--wind-strength=` for the harness)
   sets its strength, over the one the Wind setting last chose on the device
   (kept in `localStorage`); calm otherwise.
-- `?sky=name` on the page (`--sky=name` for the harness) picks the sky
-  panorama, a key of `SKIES` in `src/sky.js`, over the one last chosen on
-  the device; `?water=clear|lake|pond|murky` (`--water=` for the harness) the
+- `?sky=name` on the page (`--sky=name` for the harness) picks the sky's
+  place, a key of `SKIES` in `src/sky.js`, over the one last chosen on the
+  device (`sunrise`, the old Sunrise sky, is Lakeside at sunrise), and
+  `?time=hour` (`--time=` for the harness) its hour, over the one nearest the
+  time of day last chosen (the harness's browser keeps none: the place's
+  anchor hour); `?water=clear|lake|pond|murky` (`--water=` for the harness) the
   water's clarity, `WATER_CLARITIES` in `src/main.js`.
 - `?view=shore|level|high|under` on the page (`--view=` for the harness) opens on
   one of the View setting's choices (`VIEWS` in `src/main.js`);
@@ -582,7 +612,24 @@ farther out, so it rises into the view rather than filling its corner.
   measures a sky panorama (the sun's direction, the sun's irradiance, the
   sky's mean radiance, the horizon's) and writes `assets/sky/name.json`,
   which `src/sky.js` reads; `--png` also writes a tone-mapped preview with the
-  sun marked. A new panorama needs this run once.
+  sun marked. A new panorama needs this run once. A place's hours also take
+  `--taken=` (the photo's time with its offset from UTC) `--at=` (latitude,
+  longitude) and, where the sun is down, `--align=` another hour's panorama,
+  for what lights them and where north is. The two series were measured so
+  (times as Poly Haven gives them, which are local, UTC+2):
+
+  ```sh
+  Q=--at=-28.48533209827116,29.012639559934758 L=--at=-28.482577018138976,29.01429985008855
+  node tools/sky-probe.mjs assets/sky/qwantani_noon_2k.hdr --taken=2024-08-21T12:18:00+02:00 $Q
+  # with --align=assets/sky/qwantani_noon_2k.hdr:
+  #   dawn 2024-08-19T06:28, sunrise 08-19T06:43, morning 08-20T08:09, mid_morning 08-20T10:05,
+  #   afternoon 08-21T14:04, late_afternoon 08-18T16:04, sunset 08-18T17:09, dusk_1 08-22T17:47,
+  #   dusk_2 08-22T18:06, moonrise 08-20T19:41, moon_noon 08-18T21:06
+  node tools/sky-probe.mjs assets/sky/qwantani_night_2k.hdr --taken=2024-08-22T18:43:00+02:00 $Q --align=assets/sky/qwantani_moonrise_2k.hdr
+  node tools/sky-probe.mjs assets/sky/lakeside_sunrise_2k.hdr --taken=2024-08-21T06:58:00+02:00 $L
+  # with --align=assets/sky/lakeside_sunrise_2k.hdr: dawn 2024-08-21T06:27, night 08-21T19:51;
+  # and lakeside (2019, its time stamp off by a quarter of an hour) with --align alone
+  ```
 - `node tools/jet-probe.mjs [radius] [entrySpeed] [profileTime] [horizontalFraction]`
   runs one Worthington jet of the default (clean) form on the CPU over the
   bowl its stone's cavity leaves and prints its timeline (the needle clearing
@@ -663,14 +710,18 @@ farther out, so it rises into the view rather than filling its corner.
   width, every control is on the screen, the strip covers at most 30% of the
   height, the stone slider is 44 points tall (and most of the width in
   portrait) and every button 34, and that a tap or a drag anywhere along the
-  slider sets the stone; it saves each screen to `shots/controls-probe/`. The
+  slider sets the stone; that the settings open with their six rows, the
+  Time of day page's slider spans it and, tapped at its left end, loads the
+  first hour, and a lone photograph's page hides it; it saves each screen to
+  `shots/controls-probe/`. The
   shoot harness and the other probes emulate a desktop browser, which ignores
   the viewport tag, so only this probe sees the page as a phone does.
 - `window.__pond` exposes the app in the console: `throwAt(x, z, { radius, power })`,
   `setTimeScale` (and `timeScale`), `pause()`, `advance(seconds)` (in the frames the app would
   draw at the current time scale), `setDebugView(name)`, `setFov(degrees)`,
   `lookAt(x, y, z)`, `resetView()`, `setWind(name)` (and `wind`: calm,
-  breeze or windy, remembered on the device), `rings` (the live rings and
+  breeze or windy, remembered on the device), `setSky(place)` and
+  `setHour(name)` (and `sky`, `hour`, and `hours`, the shown place's), `rings` (the live rings and
   their plans), and `budget`: what the preset built (the solver's grid, the
   mesh, the pixel ratio, every target's size, an estimate of the render
   targets' memory, the programs compiled and the warm-up's, whether the
@@ -684,7 +735,10 @@ needed locally for the headless harness, which serves it instead of the CDN).
 ## Credits
 
 The sky panoramas are from [Poly Haven](https://polyhaven.com), CC0:
-*Meadow 2* by Sergej Majboroda; *Lakeside* by Greg Zaal; *Lakeside Sunrise*
-by Greg Zaal, processed by Jarod Guest; *Lago d'Isola* by Andreas Mischok;
+*Meadow 2* by Sergej Majboroda; *Lakeside* by Greg Zaal; *Lakeside Sunrise*,
+*Lakeside Dawn*, *Lakeside Night* and the *Qwantani* series (Dawn, Sunrise,
+Mid Morning, Noon, Afternoon, Late Afternoon, Sunset, Dusk 1 and 2,
+Moonrise, Moon Noon, Night) by Greg Zaal, processed by Jarod Guest, and
+*Qwantani Morning* by Jarod Guest; *Lago d'Isola* by Andreas Mischok;
 and *Kloofendal 48d Partly Cloudy (Pure Sky)* by Greg Zaal, its sky edited by
 Jarod Guest.

@@ -1,0 +1,48 @@
+{
+  "source": "qwantani_dawn_2k.hdr",
+  "width": 2048,
+  "height": 1024,
+  "sun": {
+    "elevation": 8.52,
+    "azimuth": 214.9,
+    "direction": [
+      0.81113,
+      0.14811,
+      0.5658
+    ],
+    "pixels": 2575
+  },
+  "sunIrradiance": [
+    0.20877,
+    0.17795,
+    0.13583
+  ],
+  "skyRadiance": [
+    0.95812,
+    1.084,
+    1.4055
+  ],
+  "horizonRadiance": {
+    "median": 1.2943,
+    "p90": 4.3652
+  },
+  "maxLuminance": 8.4136,
+  "taken": "2024-08-19T06:28:00+02:00",
+  "at": [
+    -28.48533209827116,
+    29.012639559934758
+  ],
+  "solar": {
+    "elevation": -1.59,
+    "azimuth": 76.49
+  },
+  "light": "none",
+  "alignment": {
+    "reference": "qwantani_noon_2k.hdr",
+    "turn": 278.56,
+    "peak": 7.13,
+    "nextBest": 1.7
+  },
+  "north": 138.89,
+  "northFrom": "skyline"
+}
