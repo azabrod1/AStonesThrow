@@ -17,15 +17,23 @@
 // and checks, failing with exit code 1 if any check fails:
 //   - the cavity's stone path follows the stone src/rock.js moves (within 3%
 //     of its depth, or 2 mm);
-//   - the pinch-off comes 2.1·sqrt(R/g) after entry and the surface closes
-//     0.4·sqrt(R/g) later, where the jet starts;
+//   - the pinch-off comes when the cavity's seal says (2.1·sqrt(R/g) after
+//     entry for a deep seal, give or take the splash's few per cent; sooner
+//     for a shallow or a surface seal) and the surface closes when it says
+//     (0.4·sqrt(R/g) later for a deep seal), where the jet starts;
 //   - every frame, the well the surface patch dips into holds every vertex of
 //     the wall, and the lip's apron reaches two water cells past where it dips;
 //   - the wall's normals face the hole's axis and the lip's face up;
 //   - the crown's base sits on the lip: on its crest while the mouth widens,
 //     then on its outer slope where the crest was widest.
 //
-//   node tools/cavity-probe.mjs [diameter-in-cm ...] [--aim=x:z]
+// Then, since every throw's hole is its own (src/splash.js chooses the seal
+// and the asymmetry, src/rock.js's stone shapes and turns it), it throws
+// VARIETY_THROWS more stones of each size at random aims over the pond and
+// powers, Math.random seeded, and runs every check on every frame of each,
+// printing the seals they made and the worst margins.
+//
+//   node tools/cavity-probe.mjs [diameter-in-cm ...] [--aim=x:z] [--seed=12345] [--variety=24]
 //
 // Without diameters it runs the slider's 1.5, 4, 6, 8 and 16 cm.
 import * as THREE from 'three';
@@ -39,6 +47,12 @@ const option = (name, fallback) => { const hit = process.argv.find((argument) =>
 const diameters = process.argv.slice(2).filter((argument) => !argument.startsWith('--')).map(Number);
 const stoneDiameters = diameters.length > 0 ? diameters : [1.5, 4, 6, 8, 16];
 const [aimX, aimZ] = option('aim', '0:-1.4').split(':').map(Number);
+const seed = Number(option('seed', '12345'));
+const VARIETY_THROWS = Number(option('variety', '24'));
+// Park–Miller, so a run repeats exactly (the stones' shapes, turns and splashes are random).
+let randomState = seed;
+Math.random = () => { randomState = (randomState * 16807) % 2147483647; return (randomState - 1) / 2147483646; };
+const POWERS = { soft: 1.3, normal: 1.0, hard: 0.72 };
 
 const GRAVITY = 9.81;
 const FRAME = 1 / 60;
@@ -54,15 +68,15 @@ camera.lookAt(0, 0.12, -1.0);
 camera.updateMatrixWorld();
 const hand = new THREE.Vector3(0.30, -0.32, -0.55).applyMatrix4(camera.matrixWorld);
 
-function throwStone(radius, vertical) {
-  const target = new THREE.Vector3(aimX, 0, aimZ);
-  const flightTime = THREE.MathUtils.clamp(0.42 + 0.11 * hand.distanceTo(target), 0.5, 1.0);
+function throwStone(radius, vertical, aim = [aimX, aimZ], power = 'normal') {
+  const target = new THREE.Vector3(aim[0], 0, aim[1]);
+  const flightTime = THREE.MathUtils.clamp(0.42 + 0.11 * hand.distanceTo(target), 0.5, 1.0) * POWERS[power];
   const velocity = target.clone().sub(hand).divideScalar(flightTime);
   velocity.y += 0.5 * GRAVITY * flightTime;
   const rock = new Rock({ radius, position: hand, velocity, envTexture: null });
   if (vertical) {
     const speed = Math.hypot(velocity.x, velocity.y - GRAVITY * flightTime, velocity.z);
-    rock.position.set(aimX, 2 * radius, aimZ);
+    rock.position.set(aim[0], 2 * radius, aim[1]);
     rock.velocity.set(0, -speed, 0);
   }
   for (let step = 0; step < 4 * 240; step++) {
@@ -111,6 +125,7 @@ function checkMesh(cavity, label) {
     }
   }
   check(worstCone < 0, `${label}: a wall vertex is ${(worstCone * 1000).toFixed(1)} mm outside the well the patch dips into at ${milliseconds(cavity.age)} ms`);
+  margins.well = Math.max(margins.well, worstCone);
   // The apron's outer ring, from the dip's centre.
   let apronInner = Infinity;
   const lastRow = CAVITY_ROWS - 1;
@@ -119,6 +134,7 @@ function checkMesh(cavity, label) {
     apronInner = Math.min(apronInner, Math.hypot(positions[vertex * 3] - shape.x, positions[vertex * 3 + 2] - shape.z));
   }
   check(apronInner >= shape.radius + 2 * CELL, `${label}: the apron ends ${((apronInner - shape.radius) / CELL).toFixed(1)} cells past the dip at ${milliseconds(cavity.age)} ms`);
+  margins.apron = Math.min(margins.apron, (apronInner - shape.radius) / CELL);
   // Normals: the lip's face up, the wall's (well below the mouth) towards the axis.
   for (let column = 0; column < CAVITY_COLUMNS; column += 8) {
     const lip = (CAVITY_ROWS - 8) * CAVITY_COLUMNS + column;
@@ -130,14 +146,17 @@ function checkMesh(cavity, label) {
   }
 }
 
-function runCavity(radius, vertical, { silent = false } = {}) {
-  const { impact, rock } = throwStone(radius, vertical);
+// The worst margins seen: how far a wall vertex came to the well's side (negative: inside), the apron's least overlap in cells.
+const margins = { well: -Infinity, apron: Infinity };
+
+function runCavity(radius, vertical, { silent = false, aim, power, name } = {}) {
+  const { impact, rock } = throwStone(radius, vertical, aim, power);
   const { water, splash } = standIns();
   splash.impact(impact, water);
   const cavity = splash.cavities[0];
   const crown = splash.crowns.find((candidate) => !candidate.landing && !candidate.fan);
   const jetStart = splash.jets[0].start - cavity.startTime;
-  const label = `${(200 * radius).toFixed(1)} cm ${vertical ? 'dropped' : 'thrown'}`;
+  const label = name ?? `${(200 * radius).toFixed(1)} cm ${vertical ? 'dropped' : 'thrown'}`;
   const costs = [];
   const result = {};
   let worstPath = 0;
@@ -214,11 +233,40 @@ for (const diameter of stoneDiameters) {
     const mean = result.costs.reduce((sum, value) => sum + value, 0) / Math.max(result.costs.length, 1);
     console.log(`  CPU: geometry ${mean.toFixed(3)} ms per frame on average over ${result.costs.length} frames, worst ${sorted.at(-1).toFixed(3)} ms`);
     check(result.worstPath <= 1, `${label}: the cavity's stone strays ${result.pathMillimetres?.toFixed(1)} mm from src/rock.js's at ${((result.pathDepth ?? 0) * 100).toFixed(1)} cm deep`);
-    check(Math.abs(cavity.pinchTime / unit - 2.1) < 0.01, `${label}: pinch-off at ${(cavity.pinchTime / unit).toFixed(3)}·sqrt(R/g)`);
-    check(Math.abs((cavity.closeTime - cavity.pinchTime) / unit - 0.4) < 0.01, `${label}: closure ${((cavity.closeTime - cavity.pinchTime) / unit).toFixed(3)}·sqrt(R/g) after the pinch`);
-    check(Math.abs(result.jetStart - cavity.closeTime) < 1e-9, `${label}: the jet starts ${((result.jetStart - cavity.closeTime) * 1000).toFixed(1)} ms from the closure`);
-    check(result.worstBase < 0.001, `${label}: the crown's base is ${(result.worstBase * 1000).toFixed(1)} mm off the lip`);
+    checkTiming(result, label);
   }
+}
+
+/** The path, the seal's timing, the jet's start and the crown's base, for one run. */
+function checkTiming(result, label) {
+  const { cavity } = result;
+  const unit = Math.sqrt(cavity.radius / GRAVITY);
+  check(result.worstPath <= 1, `${label}: the cavity's stone strays ${result.pathMillimetres?.toFixed(1)} mm from src/rock.js's at ${((result.pathDepth ?? 0) * 100).toFixed(1)} cm deep`);
+  check(Math.abs(cavity.pinchTime / unit - cavity.seal.pinch) < 0.01, `${label}: pinch-off at ${(cavity.pinchTime / unit).toFixed(3)}·sqrt(R/g), its ${cavity.seal.kind} seal says ${cavity.seal.pinch.toFixed(3)}`);
+  if (cavity.seal.kind === 'deep') check(Math.abs(cavity.seal.pinch - 2.1) < 0.15, `${label}: a deep seal pinches at ${cavity.seal.pinch.toFixed(2)}·sqrt(R/g)`);
+  if (cavity.pinchSlice > 0) check(Math.abs((cavity.closeTime - cavity.pinchTime) / unit - cavity.seal.close) < 0.01, `${label}: closure ${((cavity.closeTime - cavity.pinchTime) / unit).toFixed(3)}·sqrt(R/g) after the pinch, its seal says ${cavity.seal.close.toFixed(3)}`);
+  check(Math.abs(result.jetStart - cavity.closeTime) < 1e-9, `${label}: the jet starts ${((result.jetStart - cavity.closeTime) * 1000).toFixed(1)} ms from the closure`);
+  check(result.worstBase < 0.001, `${label}: the crown's base is ${(result.worstBase * 1000).toFixed(1)} mm off the lip`);
+}
+
+// The variety: every size thrown at random aims over the pond and powers.
+console.log(`\nvariety: ${VARIETY_THROWS} more throws of each size at random aims and powers, Math.random seeded with ${seed}`);
+for (const diameter of stoneDiameters) {
+  const radius = diameter / 200;
+  const seals = {};
+  let worstPath = 0, worstBase = 0;
+  margins.well = -Infinity; margins.apron = Infinity;
+  for (let index = 0; index < VARIETY_THROWS; index++) {
+    const aim = [THREE.MathUtils.randFloatSpread(1.8), -0.3 - Math.random() * 2.2];
+    const power = ['soft', 'normal', 'hard'][Math.floor(Math.random() * 3)];
+    const label = `${diameter} cm thrown ${power} at (${aim[0].toFixed(2)}, ${aim[1].toFixed(2)}) [variety ${index + 1}]`;
+    const result = runCavity(radius, false, { aim, power, name: label });
+    seals[result.cavity.seal.kind] = (seals[result.cavity.seal.kind] ?? 0) + 1;
+    worstPath = Math.max(worstPath, result.worstPath);
+    worstBase = Math.max(worstBase, result.worstBase);
+    checkTiming(result, label);
+  }
+  console.log(`  ${diameter} cm: seals ${Object.entries(seals).map(([kind, count]) => `${kind} ${count}`).join(', ')}; worst: a wall vertex ${(margins.well * 1000).toFixed(1)} mm from the well's side (negative: inside), the apron ${margins.apron.toFixed(1)} cells past the dip, the stone ${(100 * worstPath / 1).toFixed(0)}% of its allowance off src/rock.js's path, the crown's base ${(worstBase * 1000).toFixed(2)} mm off the lip`);
 }
 console.log(failures.length === 0 ? '\ncavity-probe: all checks pass' : `\ncavity-probe: ${failures.length} checks fail:\n  ${[...new Set(failures)].slice(0, 30).join('\n  ')}`);
 process.exitCode = failures.length === 0 ? 0 : 1;
