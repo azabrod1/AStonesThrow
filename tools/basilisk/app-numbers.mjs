@@ -17,17 +17,21 @@
 //     the axis),
 //   - the jet: its start and tip speed, every substep the column's top, and
 //     every drop it sheds (time, height, radius, rising speed),
-//   - the ring: the pond's linear response to the splash's splats at the
-//     simulation's gauge radii every 10 ms to 6 s, with splash-probe's
-//     measures (deepest trough to highest crest, the crest's time, the
-//     wavelength from the half period around it by deep-water dispersion).
-//     It is the mean around the circle of that radius (exactly, by Graf's
-//     addition theorem: J0(k·d) averages to J0(k·r)·J0(k·s), s the splat's
-//     distance from the entry), which is what an axisymmetric simulation's
-//     gauge measures. At a single point, as splash-probe measures it, the
-//     ring is dominated by whichever drops happen to land near the point
-//     (1 to 6 mm at 0.5 m from one random draw to the next); that value is
-//     also given (`pointSummary`, the point across the throw).
+//   - the ring: the ring source the splash hands the rings (src/rings.js)
+//     with the solver's near-field splats as wide as a quarter of the stone
+//     and more (the jet's mound and base) added, at the simulation's gauge
+//     radii every 10 ms to 8 s, with rings.py's measures (the largest swing
+//     within any 0.6 s, when the highest crest passes, its period from the
+//     zero crossings either side and its wavelength by the dispersion on the
+//     pond's depth). The ring is evolved with the simulation's damping
+//     (2νk², the surface film off) to compare like for like; the app's film
+//     makes it 5 to 10% lower (tools/ring-probe.mjs). It is the mean around
+//     the circle of that radius (exactly, by Graf's addition theorem:
+//     J0(k·d) averages to J0(k·r)·J0(k·s), s the splat's distance from the
+//     entry), which is what an axisymmetric simulation's gauge measures. At
+//     a single point across the throw (`pointSummary`) the drops that land
+//     near it add their own ripples (the splats narrower than a quarter of
+//     the stone are left out of both).
 //
 //   node tools/basilisk/app-numbers.mjs [out.json]
 import { writeFileSync } from 'node:fs';
@@ -35,6 +39,7 @@ import * as THREE from 'three';
 import { SplashSystem } from '../../src/splash.js';
 import { JetColumn } from '../../src/jet.js';
 import { DAMPING } from '../../src/spectralWater.js';
+import { RingSources, RING_DAMPING, ringFrequency, ringGroupSpeed, splatSpectrum } from '../../src/rings.js';
 
 let seed = 20261015;
 Math.random = () => {
@@ -50,12 +55,14 @@ const GRAVITY = 9.81;
 const POND_DEPTH = 0.8;
 const FRAME = 1 / 60;
 const SUBSTEPS = 4;
-const GAUGES = [0.25, 0.5, 1.0, 1.5, 2.0];
+const GAUGES = [0.25, 0.5, 0.75, 1.0, 1.5, 2.0];
 const round = (value, digits = 5) => Number(value.toFixed(digits));
 
 const record = { splats: [], time: 0 };
+// The rings take the stone's ring source as the app hands it to them; only the bookkeeping is needed.
+const rings = Object.assign(new RingSources({ depth: POND_DEPTH }), { uniforms: () => ({}) });
 const water = {
-  heightTexture: null, domainMin: [-3, -4], domainSize: 6, uvOffset: 0.5 / 512,
+  heightTexture: null, domainMin: [-3, -4], domainSize: 6, uvOffset: 0.5 / 512, rings,
   addSplat: (splat) => record.splats.push({ time: record.time, rim: 1.7, height: 0, velocity: 0, ...splat }),
   addFoam: () => {},
 };
@@ -148,7 +155,7 @@ for (let frame = 0; frame < 2 * 60; frame++) {
   splash.prepareFrame();
 }
 
-// The ring, as tools/splash-probe.mjs computes it (the solver's dispersion and damping).
+// The ring: the rings' source with the simulation's damping, the solver's near-field splats with the solver's.
 const besselJ0 = (argument) => {
   const magnitude = Math.abs(argument);
   if (magnitude <= 3) {
@@ -160,23 +167,51 @@ const besselJ0 = (argument) => {
   const phase = magnitude - 0.78539816 + inverse * (-0.04166397 + inverse * (-0.00003954 + inverse * (0.00262573 + inverse * (-0.00054125 + inverse * (-0.00029333 + inverse * 0.00013558)))));
   return (amplitude * Math.cos(phase)) / Math.sqrt(magnitude);
 };
-const WAVENUMBER_STEP = 0.5;
-const WAVENUMBERS = Array.from({ length: 540 }, (_, index) => WAVENUMBER_STEP * (index + 0.5));
-const waveOmega = WAVENUMBERS.map((wavenumber) => Math.sqrt((GRAVITY * wavenumber + 7.2e-5 * wavenumber ** 3) * Math.tanh(Math.min(wavenumber * POND_DEPTH, 20))));
-const waveDamping = WAVENUMBERS.map((wavenumber) => DAMPING.base * Math.min((wavenumber * DAMPING.baseWavelength) / (2 * Math.PI), 1)
+const WAVENUMBER_STEP = 0.1;
+const WAVENUMBERS = Array.from({ length: 2700 }, (_, index) => WAVENUMBER_STEP * (index + 0.5));
+const waveOmega = WAVENUMBERS.map((wavenumber) => ringFrequency(wavenumber, POND_DEPTH));
+const solverDamping = WAVENUMBERS.map((wavenumber) => DAMPING.base * Math.min((wavenumber * DAMPING.baseWavelength) / (2 * Math.PI), 1)
   + DAMPING.viscosity * wavenumber ** 2 + (wavenumber < (2 * Math.PI) / (6 * DAMPING.lowShare) ? DAMPING.low : 0));
+const cleanDamping = WAVENUMBERS.map((wavenumber) => 2 * RING_DAMPING.viscosity * wavenumber ** 2);
 const RING_STEP = 0.01;
-const RING_SECONDS = 6;
+const RING_SECONDS = 8;
+// The ring source's splats (each group's, with its pair as two plain Gaussians of height) and the solver's near field, as one list.
+const ringSplats = rings.sources.flatMap((source) => source.groups.flatMap((group) => {
+  const own = [{ time: group.start, x: group.x, z: group.z, radius: group.sigma, rim: group.rim, height: group.height, velocity: group.velocity, ring: true }];
+  if (!group.pair) return own;
+  return own.concat([1, -1].map((side) => ({ time: group.start, x: group.x + side * group.pair.directionX * group.pair.offset, z: group.z + side * group.pair.directionZ * group.pair.offset,
+    radius: group.pair.sigma, rim: 1, height: side * group.pair.height, velocity: 0, ring: true })));
+}));
+/** The ring's measures as tools/basilisk/rings.py takes them: the largest swing within 0.6 s, the highest crest, the period from the zero crossings either side of it and its wavelength by the dispersion. */
+function ringMeasures(heights) {
+  const span = Math.round(0.6 / RING_STEP);
+  let swing = 0;
+  for (let sample = 0; sample < heights.length; sample++) {
+    let low = Infinity, high = -Infinity;
+    for (let other = sample; other <= Math.min(sample + span, heights.length - 1); other++) { low = Math.min(low, heights[other]); high = Math.max(high, heights[other]); }
+    swing = Math.max(swing, high - low);
+  }
+  let crest = 0;
+  heights.forEach((height, sample) => { if (height > heights[crest]) crest = sample; });
+  let before = crest, after = crest;
+  while (before > 0 && heights[before] > 0) before--;
+  while (after < heights.length - 1 && heights[after] > 0) after++;
+  const omega = Math.PI / ((after - before) * RING_STEP);
+  let wavenumber = omega * omega / GRAVITY;
+  for (let step = 0; step < 60; step++) wavenumber = Math.max(wavenumber - (ringFrequency(wavenumber, POND_DEPTH) ** 2 - omega * omega) / (2 * ringFrequency(wavenumber, POND_DEPTH) * ringGroupSpeed(wavenumber, POND_DEPTH)), 0.5 * wavenumber);
+  return { troughToCrest: round(swing, 7), crestTime: round(crest * RING_STEP, 3), wavelength: round(2 * Math.PI / wavenumber, 4) };
+}
 const samples = Math.round(RING_SECONDS / RING_STEP);
 for (let sample = 0; sample < samples; sample++) out.ring.t.push(round(sample * RING_STEP, 3));
 out.ring.pointSummary = [];
 for (const around of [true, false])
 for (const distance of GAUGES) {
   const heights = new Float64Array(samples);
-  for (const splat of record.splats) {
+  for (const splat of [...ringSplats, ...record.splats]) {
     if (splat.radius < 0.25 * RADIUS) continue;
-    const sigma = Math.max(splat.radius, (0.6 * 6) / 512);
+    const sigma = splat.ring ? splat.radius : Math.max(splat.radius, (0.6 * 6) / 512);
     const rimSigma = sigma * Math.max(splat.rim, 1);
+    const waveDamping = splat.ring ? cleanDamping : solverDamping;
     const offset = Math.hypot(distance + impact.x - splat.x, impact.z - splat.z);
     const fromEntry = Math.hypot(splat.x - impact.x, splat.z - impact.z);
     const weights = WAVENUMBERS.map((wavenumber) => {
@@ -198,16 +233,7 @@ for (const distance of GAUGES) {
       heights[sample] += sum;
     }
   }
-  let crestSample = 0, trough = 0;
-  heights.forEach((height, sample) => {
-    if (height > heights[crestSample]) crestSample = sample;
-    trough = Math.min(trough, height);
-  });
-  let before = crestSample, after = crestSample;
-  while (before > 0 && heights[before - 1] < heights[before]) before--;
-  while (after < samples - 1 && heights[after + 1] < heights[after]) after++;
-  const halfPeriod = 0.5 * (after - before) * RING_STEP;
-  const summary = { r: distance, troughToCrest: round(heights[crestSample] - trough, 7), crestTime: round(crestSample * RING_STEP, 3), wavelength: round((GRAVITY * (2 * halfPeriod) ** 2) / (2 * Math.PI), 4) };
+  const summary = { r: distance, ...ringMeasures(heights) };
   if (around) {
     out.ring.eta.push(Array.from(heights, (height) => round(height, 7)));
     out.ring.summary.push(summary);

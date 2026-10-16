@@ -4,14 +4,13 @@
 // damping is set so that its waves die before they wrap around it. A real
 // pond's ripples travel much farther: what damps them is the surface film
 // (RING_DAMPING), so the ring a stone throws should cross the pond for
-// tens of seconds. Its sources are therefore not handed to the solver but
-// evolved here exactly: the cavity's splat (stampCavity in src/splash.js,
-// with the pair of splats that drags an oblique entry's ring forward and the
-// wake splats a little down its path) and the secondary ring the jet throws
-// where it falls back (src/jet.js through the splash's columnWater). The
-// solver keeps the near field: the drops' landings, the jet's mound and its
-// base. Linear waves add, so the surface is the solver's field, the wind's
-// (src/ambientWaves.js) and the rings' together.
+// tens of seconds. Its source is therefore not handed to the solver but
+// evolved here exactly: a downward push released just after the stone goes
+// in (stampCavity and RING in src/splash.js), with the pair of heights that
+// makes an oblique entry's ring run stronger ahead and the pushes a little
+// down its path. The solver keeps the near field: the drops' landings, the
+// jet's mound and its base. Linear waves add, so the surface is the
+// solver's field, the wind's (src/ambientWaves.js) and the rings' together.
 //
 // The exact linear solution. A splat is a radial shape s(r) (a Gaussian of
 // σ less one of the same volume and σ·rim, as the solver injects it) times a
@@ -25,114 +24,183 @@
 // splat at a signed distance d along e contributes, by Graf's addition
 // theorem, Ŝ·J0(kd) to the axisymmetric part η0(r) and 2·Ŝ·J1(kd) to a part
 // η1(r)·cos θ (θ from e) through J1(kr) in place of J0(kr). So each source is
-// two radial profiles, and its ring runs stronger ahead than behind. The
-// parts m ≥ 2 are left out. An oblique throw's splats and pairs lie up to
-// 1.4 to 16 cm from its centre (with the stone's size), so they are not
-// small: they move up to about a fifth of the ring's height around it for
-// a 4 to 8 cm stone, a third for a 16 cm stone's at 4 s and a 1.5 cm
-// pebble's at 1 s (tools/ring-probe.mjs measures it). Seen from above the
-// ring keeps its circles, their spacing and its lean forward; only the
-// contrast around it is a little more even than the solver's was. Keeping
-// m ≤ 3 would bring that under 4%, for four profiles a ring (a second
-// render target) and twice the work in the profile pass.
+// two radial profiles. A push's pair, heights raised ahead and lowered
+// behind (a dipole, all in η1), is a quarter period out of step with the
+// push itself, so far out J1's quarter-wave lag puts it in step: the waves
+// ahead grow and those behind shrink (an in-step pair of velocities would
+// only move the crests). The parts m ≥ 2 are left out. An oblique throw's
+// splats and pairs lie 1 to 21 cm from its centre (with the stone's size),
+// so they are not small: they move up to a tenth of the ring's height around
+// it, a sixth for an 8 or 16 cm stone's at 4 s (tools/ring-probe.mjs
+// measures it). Seen from above the ring keeps its circles, their spacing
+// and its lean forward; only the contrast around it is a little more even.
+// Keeping m ≤ 3 would take four profiles a ring (a second render target) and
+// twice the work in the profile pass.
 //
-// A source (one throw's cavity, or one jet's fall-back) is up to MAX_GROUPS
-// groups, each a splat and its pair released together; a splat joins the
-// source started at most MERGE.seconds earlier within MERGE.reach of its σ
-// (the wake splats of an oblique entry), and the source's centre is the
-// strength-weighted centroid of its splats. At most MAX_RINGS sources live
-// at once, each a layer of the profile texture (six throws, each a cavity's
-// ring and a fall-back's); a new one past that takes the layer of the one
-// closest to retiring, the faintest as a rule, which vanishes then.
+// The source, fitted to a reference simulation (tools/basilisk/: a 3 cm-
+// radius stone going in straight at 6.3 m/s, its surface continued linearly
+// from 1 s, results/rings_linear.md). The simulated ring's spectrum at 1 s
+// is that of a push released in the hole's first tenth of a second, most of
+// its height in 20 to 50 cm waves: fitted to it, a velocity alone (so the
+// ring starts from flat water) of σ = 2R less one of σ·2.5, released
+// 0.9·sqrt(R/g) after entry at 0.195 of the entry speed. With the
+// simulation's damping (2νk², the film off) its height from trough to crest
+// is 0.94, 0.96, 0.98, 1.02 and 1.07 of the simulation's at 0.5, 0.75, 1, 1.5
+// and 2 m (8.7 mm at 1 m), its highest crest passes within 0.5% of the
+// simulation's time at 0.75 to 2 m (2.7 s at 1 m, 5.0 s at 2 m) with the
+// same wavelength within 8%, and before 1 s the field outside the hole is
+// much the simulation's too (its outgoing crest 19 mm high at 0.11 m at
+// 0.5 s, the simulation's 29 mm); with the film it is 5 to 10% lower. Of
+// the simulation's 10 to 16 cm waves it has a fifth: the train of them
+// that trails the simulated ring (1 to 1.7 mm rms behind it at 0.25 to 1 m)
+// comes from its centre after the push, where the jet's base falls and a
+// second jet rises on the axis until about 1.6 s, exactly axisymmetric
+// there and so more coherent than a real column, and where the app's own
+// jet and drops ring the solver instead. The jet the throw draws adds no
+// ring of its own when it falls back: the simulated ring holds its share.
+// Lengths scale with R and times with sqrt(R/g) (Froude similarity),
+// and the push with the entry speed, as the old cavity splat's did: one
+// reference throw cannot tell how a ring's height grows with R and V, so its
+// V·sqrt(R) is an assumption, as is the simulation's air, ten times lighter
+// than real (with real air that throw seals at the surface, which may change
+// its ring by tens of percent). RING_SOURCE.strength multiplies every source
+// (1: as fitted); tools/ring-probe.mjs checks the fit.
 //
-// Each source's sampling is planned once (planSource) from a stationary-
-// phase envelope of its ring. At time τ the wavenumber k is found at
+// The near field. Near the stone, while the splash stands, linear theory
+// makes the hole's bowl (5 to 7 cm deep at 0.15 s for the reference stone,
+// as the simulation's funnel is) and a central mound after it, under the
+// drawn cavity, crown and jet, which would stand over a bowl or sink into a
+// mound. So the ring is faded out there (NEAR_FIELD: inside 4σ, the more the
+// nearer its centre, so the fade itself is never steep, until 11·sqrt(σ/g)
+// after its release, fully in by 16·sqrt(σ/g): 0.86 and 1.25 s for the
+// reference stone), when only a few millimetres of it are left there.
+//
+// A source (one throw's ring) is up to MAX_GROUPS groups, each a splat and
+// its pair released together; a splat joins the source started at most
+// MERGE.seconds earlier within MERGE.reach of its σ (the pushes down an
+// oblique entry's path), and the source's centre is the strength-weighted
+// centroid of its splats. At most liveLimit sources are live (the quality
+// presets' rings, src/main.js: 10 on High); a new one past that makes the
+// live one closest to retiring, the faintest as a rule, fade out over
+// FADE_SECONDS in its layer, so with MAX_RINGS layers two can fade at once
+// (one more goes at once).
+//
+// Each source's sampling is planned (planSource) from a stationary-phase
+// envelope of its ring. At time τ the wavenumber k is found at
 // r = c_g(k)·τ with slope about k^{3/2} A(k) e^{−γτ} / (τ √(c_g |c_g'|))
 // (A the splats' amplitude; the spread capped near the capillary-gravity
 // minimum of c_g, where the stationary point is an Airy caustic). That is
 // the asymptotic amplitude, not a bound (a velocity-only splat's exact slope
 // meets it), so for each k the age at which it falls below
 // SLOPE_VISIBLE/RETIRE_MARGIN gives the ring's lifetime, and how far its
-// packet has gone by then the extent the ring shows to. The profile's reach
-// R is REACH.margin times that extent over TAPER_START, so the taper begins
-// beyond anything that shows (R within REACH.least and REACH.most). The
-// k-sum is a midpoint rule of step Δk, under which what lies at radius r'
-// reappears near 2π/Δk − r' and 2π/Δk + r' (Poisson summation; the Bessel
-// functions' 1/√r makes an image near the centre stronger than what made
-// it). So the spectrum pass fades out each wavenumber whose packet c_g(k)·τ
-// has passed WINDOW.start·R, all of it gone by WINDOW.end·R (beyond the
-// reach, where nothing is drawn), and Δk is 2π/(ALIAS_PERIOD·R), which puts
-// every image of what is left beyond R. The sum runs to where the narrowest
-// Gaussian's spectrum is 1e-4 (at most WAVENUMBER_CAP). tools/ring-probe.mjs
-// checks the plan against the exact profile: no ring retires while it
-// shows, and what is drawn matches the exact profile over the reach and
-// beyond.
+// packet has gone by then the extent the ring shows to. With a camera
+// (setCamera: src/main.js hands it the view's pixels per radian and the
+// nearest water the home view shows), a packet counts only as much as a
+// pixel shows of it (resolvedShare): the mip chain averages it over the
+// pixel's footprint along the radius, at least (d² + h²)/(h·f)·cos α at the
+// nearest d the camera sees of its circle (h the camera's height, f its
+// pixels per radian, α the angle the radius makes with the view), and a box
+// keeps at most 2/(kF) of a sinusoid; of a circle the camera stands outside,
+// the sides run across the view, so all of it counts. So a far, long ring
+// retires sooner. A view with REPLAN times more pixels per radian than a
+// live source was planned for (a zoom, a bigger canvas) plans it again, one
+// source a frame, so a zoom never plans every live ring in one frame. The
+// profile's reach R is REACH.margin times the extent over TAPER_START, so the
+// taper begins beyond anything that shows (R within REACH.least and
+// REACH.most). The k-sum is a midpoint rule of step Δk, under which what
+// lies at radius r' reappears near 2π/Δk − r' and 2π/Δk + r' (Poisson
+// summation; the Bessel functions' 1/√r makes an image near the centre
+// stronger than what made it). So the spectrum pass fades out each
+// wavenumber whose packet c_g(k)·τ has passed WINDOW.start·R, all of it gone
+// by WINDOW.end·R (beyond the reach, where nothing is drawn), and Δk is
+// 2π/(ALIAS_PERIOD·R), which puts every image of what is left beyond R. The
+// sum runs to where the narrowest Gaussian's spectrum is 1e-4 (at most
+// WAVENUMBER_CAP and MAX_WAVENUMBERS; a pebble's reach is cut by the latter).
+// The plan also keeps, for each k, the age until which its packet is still
+// SLOPE_VISIBLE·OUTER.share steep: at age τ a ring has nothing to draw
+// beyond OUTER.margin times the farthest such packet (outerRadius) and needs
+// no wavenumber beyond OUTER.margin times the shortest (usedCount: the film
+// damps the short waves first). tools/ring-probe.mjs checks the plan against
+// the exact profile: no ring retires while it shows, and what is drawn
+// matches the exact profile over the reach and beyond.
 //
-// Retirement. A ring retires when its largest slope anywhere falls below
-// SLOPE_VISIBLE = 1e-4: that turns the mirror image by 2e-4 rad, under a
-// third of a pixel at the phone's framing (about 1400 pixels per radian),
-// moves the refraction by a twentieth of one, and changes the floor's
-// caustics by under 0.1% (the bound the solver sleeps by, src/
-// spectralWater.js). A ring whose reach is cut at REACH.most (40 m, past
-// the far edge of the pond the view shows; an 8 cm stone's and bigger are,
-// a 6 cm one's is 31 m) retires once nothing that shows is left inside it,
-// and a 16 cm stone's still shows faintly where its taper fades it out
-// (up to 4e-4 of slope beyond 34 m, about 50 s on). tools/ring-probe.mjs
-// prints each stone's (thrown as the app throws): the reference 6 cm stone's
-// cavity ring retires 63 s after the throw and shows to 23 m, its jet's
-// fall-back ring 57 s and 20 m; a 1.5 cm pebble's 17 s and 4 m; a 4 cm
-// stone's 43 s and 13 m; an 8 cm stone's 82 s and a 16 cm stone's 110 s, at
-// the 40 m cut. Each retires 0.7 to 19 s after its exact steepest slope
-// falls under SLOPE_VISIBLE.
+// Retirement. A ring retires when its largest slope anywhere (as the
+// camera's pixels show it) falls below SLOPE_VISIBLE = 1e-4: that turns the
+// mirror image by 2e-4 rad, under a third of a pixel at the phone's framing
+// (about 1400 pixels per radian), moves the refraction by a twentieth of
+// one, and changes the floor's caustics by under 0.1% (the bound the solver
+// sleeps by, src/spectralWater.js). A ring whose reach is cut (at REACH.most,
+// 40 m, past the far edge of the pond the view shows, or by MAX_WAVENUMBERS)
+// retires once nothing that shows is left inside it. tools/ring-probe.mjs
+// prints each stone's, thrown as the app throws, by the slope alone and by
+// the home view: the reference 6 cm stone's retires 119 s after the throw by
+// the slope (it would show to 92 m; the reach is 40 m), 93 s by the home view
+// on a desktop and 101 s on a phone; a 1.5 cm pebble's 50 to 52 s (14 m); a
+// 4 cm stone's 79 to 86 s, an 8 cm stone's 99 to 105 s and a 16 cm stone's
+// 96 to 98 s. When it retires by a home view, the steepest slope any of its
+// pixels shows, each averaging the exact ring over its own footprint, is
+// under SLOPE_VISIBLE.
 //
 // Each rendered frame, while any ring lives (update):
 //   1. one spectrum pass (RING_SPECTRUM_FRAGMENT) over MAX_WAVENUMBERS × MAX_RINGS
-//      texels evaluates, for every source and k on its grid, the two
-//      profiles' weights k·Δk·W·e^{−γτ}[…] summed over its groups (each
-//      released at its own time; W the window above), divided by √k and by
-//      k^{3/2} for the asymptotic sums below; float32 where the device
-//      renders it, else half floats, scaled by COEFFICIENT_SCALE into their
-//      normal range;
-//   2. one profile pass per live source (RING_PROFILE_FRAGMENT) writes its
+//      texels evaluates, for every source and k on its grid it sums that
+//      frame (usedCount), the two profiles' weights k·Δk·W·e^{−γτ}[…] summed
+//      over its groups (each released at its own time; W the window above),
+//      divided by √k and by k^{3/2} for the asymptotic sums below; float32
+//      where the device renders it, else half floats, scaled by
+//      COEFFICIENT_SCALE into their normal range;
+//   2. one profile pass per source drawn (RING_PROFILE_FRAGMENT) writes its
 //      layer of PROFILE_TEXELS radii. Texel i is at u = i/(N − 1), so the
 //      first is the centre and the last the reach and linear filtering is
 //      exact at both ends; its radius is R·(u² + a·u)/(1 + a), a =
 //      PROFILE_MAPPING: 7.5e-5·R apart at the centre and 9e-4·R at the rim
-//      (1.6 mm and 1.9 cm for a 21 m reach), fine enough that what the water
+//      (3 mm and 3.6 cm for a 40 m reach), fine enough that what the water
 //      reads between texels matches the exact profile (tools/ring-probe.mjs).
-//      Inside innerRadius it writes zero at once: no wave is slower than
-//      SLOWEST_GROUP_SPEED (the capillary-gravity minimum), so at age τ no
-//      part of the ring is nearer its centre than that times τ, less the
-//      source's own extent (SOURCE_EXTENT of its widest splat's σ·rim, and
-//      its offsets), but the Airy tail of the caustic there, exponentially
-//      small (INNER_SHARE keeps a margin); a ring costs less as it ages.
+//      Outside its annulus it writes zero at once: inside innerRadius (no
+//      wave is slower than SLOWEST_GROUP_SPEED, the capillary-gravity
+//      minimum, so at age τ no part of the ring is nearer its centre than
+//      that times τ, less the source's own extent (SOURCE_EXTENT of its
+//      widest splat's σ·rim, and its offsets), but the Airy tail of the
+//      caustic there, exponentially small: INNER_SHARE keeps a margin) and
+//      beyond outerRadius, so a young ring costs little and an old one less.
 //      Elsewhere terms with kr < DIRECT_LIMIT evaluate J0 and J1 in full
 //      (Abramowitz and Stegun 9.4.1 to 9.4.6), the rest by their Hankel
 //      asymptotics to 1/(kr) with the phase kr − π/4 advanced from term to
 //      term by a rotation (Δk·r per step), so a term costs a fetch and a
-//      dozen multiply-adds. It writes ∂η0/∂r, ∂η1/∂r, η1 and η0, times
-//      RING_TEXTURE_UNITS, half floats, tapered to zero over the last 15% of
-//      R;
+//      dozen multiply-adds. Then the near field is faded out (NEAR_FIELD), a
+//      ring leaving faded by its fade, and it writes ∂η0/∂r, ∂η1/∂r, η1 and
+//      η0, times RING_TEXTURE_UNITS, half floats, tapered to zero over the
+//      last 15% of R;
 //   3. the array's mip chain is rebuilt once (Three.js, after the last layer),
 //      so that a pixel reads a ring averaged over its own footprint along the
 //      radius (textureGrad, GLSL_COMMON in src/shaders/scene.js), and far
 //      ripples average to flat instead of shimmering.
-// The water surface adds each live ring's slope to its normal and its height
-// to the inner patch's displacement, the floor's caustics its Laplacian, the
-// foam specks ride its height (GLSL_COMMON's ringSlope, ringHeight and
-// ringLaplacian, behind a branch on uRingCount, so with no ring alive a
-// frame costs what it did and no pass runs). uniforms() gives the uniforms
-// those materials spread.
+// The water surface adds each ring's slope to its normal and its height to
+// the inner patch's displacement, the floor's caustics its Laplacian, the
+// foam specks and a crown's foot ride its height (GLSL_COMMON's ringSlope,
+// ringHeight and ringLaplacian, behind a branch on uRingCount, so with no
+// ring alive a frame costs what it did and no pass runs); each lookup skips
+// a ring outside its annulus, so a ring costs a pixel only where its waves
+// are. uniforms() gives the uniforms those materials spread.
 //
-// The ring's strength. RING_SOURCE.strength multiplies every ring source
-// (the cavity's splats and the jet's secondary ring) against the splats the
-// solver was given; it is the constant a calibration against a reference
-// simulation sets (tools/ring-probe.mjs prints the reference vertical drop's
-// ring at 0.5, 1 and 2 m).
+// The cost. A minute of throwing (tools/ring-probe.mjs: the default stone
+// every 3 to 5 s at random places in view, then quiet) keeps about 9.5
+// rings drawn on High (8 on Medium, 6.4 on Low), whose profile passes fetch
+// 18 M spectrum texels a frame (16 M, 12 M) and whose lookups come to about
+// 10 M of the water's pixels' on a desktop or a phone and 10 M of the floor's
+// (desktop); the weaker rings before this calibration, two to a throw and
+// looked up at every pixel within their reach, kept 12 drawn at 33 M fetches
+// and 22 M lookups a frame. Its last ring retires 96 to 103 s after the last
+// throw (63 s before, for rings a seventh as strong). On the CPU a source is
+// planned when it starts, about 0.7 ms on a desktop (a zoom plans the live
+// ones again, one a frame), and update's bookkeeping takes some 40 µs a
+// frame.
 import * as THREE from 'three';
 import { FullscreenPass, createFloatTarget } from './gpu.js';
 
-export const MAX_RINGS = 12;          // sources alive at once: layers of the profile texture
+export const MAX_RINGS = 12;          // layers of the profile texture: live and fading sources together
+export const DEFAULT_LIVE_LIMIT = 10; // sources that count as live at once (setLiveLimit; the quality presets set it), so a ring leaving has a layer to fade out in
+export const FADE_SECONDS = 1.5;      // a ring pushed out by a newer one fades out over this long
 export const MAX_GROUPS = 4;          // splat groups a source holds (an oblique entry's cavity uses three)
 export const PROFILE_TEXELS = 2048;   // radii per profile
 export const MAX_WAVENUMBERS = 2048;  // wavenumbers per source at most
@@ -147,9 +215,8 @@ export const RING_TEXTURE_UNITS = 1000;   // the profiles hold millimetres and s
 // 0.03/s for 30 cm waves, 0.05/s for 20 cm, 0.12/s for 10 cm, 0.6/s for
 // 3 cm. A clean surface (film 0) would damp a 30 cm wave by 0.001/s only.
 export const RING_DAMPING = { viscosity: 1.0e-6, film: 1 };
-// Every ring source's strength against the splat the solver used to take
-// (src/splash.js's cavity splat, the jet's secondary ring): the constant a
-// calibration against a reference simulation sets.
+// Every ring source's strength against the source src/splash.js makes (RING
+// there, fitted to the reference simulation's ring: the header).
 export const RING_SOURCE = { strength: 1 };
 export const SLOPE_VISIBLE = 1e-4;    // a ring retires once no slope of it is this steep (the header)
 const RETIRE_MARGIN = 1.3;            // the envelope is planned against SLOPE_VISIBLE over this, so a ring retires late, never early
@@ -159,9 +226,20 @@ export const ALIAS_PERIOD = 2.5;      // 2π/Δk in reaches: the images of what 
 export const SLOWEST_GROUP_SPEED = 0.177;   // m/s: c_g's minimum (4.3 cm waves); no part of a ring is nearer its centre than this times its age
 export const INNER_SHARE = 0.85;      // the profile pass writes zero inside this share of that radius...
 export const SOURCE_EXTENT = 4;       // ...less this many of the source's widest σ·rim (a Gaussian keeps 3e-4 of its peak there)
+export const OUTER = { share: 0.1, margin: 1.25 };   // the ring is drawn out to margin × the farthest packet still SLOPE_VISIBLE·share steep, and to the shortest such wave
+// The drawn splash (the cavity, the crown, the jet and the solver's mound)
+// is the near field: the ring is faded out inside `outer` of the source's
+// widest σ beyond its offsets (from `inner` out, the more the nearer its
+// centre, by a quintic), until `from`, and fully in by `to`, in sqrt(σ/g)
+// after its release. Linear theory makes the hole's wide, deep bowl there
+// (5 to 7 cm deep for the reference stone at 0.15 s, as the simulation's
+// funnel is), which would leave the drawn jet standing over it; by `to` the
+// ring has gone out past it, and what is left near the centre is a few mm.
+export const NEAR_FIELD = { inner: 0, outer: 4, from: 11, to: 16 };
 const WAVENUMBER_CAP = 400;           // rad/m: 1.6 cm waves, which the film damps within 15 cm
 const GAUSSIAN_REACH = 4.29;          // σ·k at which a splat's Gaussian spectrum is 1e-4: the rest adds under 3e-5 to a slope
 const MERGE = { seconds: 0.05, reach: 3 };   // a splat joins a source started this recently, this many of its σ away
+const REPLAN = 1.25;                  // a live source is planned again when the camera has this many times the pixels per radian it was planned for
 const AIRY = 1.2945;                  // the stationary-phase spread's cap at a caustic: 3.245/√(2π) (the cubic phase integral)
 export const TAPER_START = 0.85;      // of the reach: the profile fades to zero from here
 const GRAVITY = 9.81;
@@ -215,48 +293,75 @@ function envelopeTable(depth) {
   return table;
 }
 
-/** The envelope of the slope that wavenumbers near this table entry make, at age τ, for amplitude A(k) (the header). */
-function slopeEnvelope(entry, amplitude, age) {
-  const spread = Math.min(1 / Math.sqrt(entry.bend * age), AIRY * (entry.twist * age) ** (-1 / 3));
-  return entry.wavenumber ** 1.5 * amplitude * Math.exp(-entry.damping * age) * spread / Math.sqrt(entry.groupVelocity * age);
+/**
+ * The share of a wave of this wavenumber, `radius` from its source's centre,
+ * that a pixel of `camera` can show (the header): the mip chain averages it
+ * over the pixel's footprint along the radius, at least
+ * F = (d² + h²)/(h·f)·cos α, d the nearest the camera sees of that circle (at
+ * least camera.nearest), h the camera's height, f its pixels per radian and
+ * α the angle the radius makes with the view (at most asin(D/r), D the
+ * camera's distance from the centre), and a box keeps at most 2/(kF) of a
+ * sinusoid. Of a circle the camera stands outside, the sides run across the
+ * view, so all of it shows; without a camera, all of it.
+ */
+function resolvedShare(camera, wavenumber, radius) {
+  if (!camera || radius <= camera.distance) return 1;
+  const nearest = Math.max(radius - camera.distance, camera.nearest);
+  const footprint = (nearest * nearest + camera.height * camera.height) / (camera.height * camera.pixelsPerRadian) * Math.sqrt(1 - (camera.distance / radius) ** 2);
+  return Math.min(1, 2 / (wavenumber * footprint));
 }
 
-/** The age (s) at which the envelope falls below `threshold`, by bisection on a geometric scale. */
-function ageBelow(entry, amplitude, threshold) {
+/** The envelope of the slope that wavenumbers near this table entry make, at age τ, for amplitude A(k) (the header), as much as `camera` shows of it. */
+function slopeEnvelope(entry, amplitude, age, camera = null) {
+  const spread = Math.min(1 / Math.sqrt(entry.bend * age), AIRY * (entry.twist * age) ** (-1 / 3));
+  const shown = resolvedShare(camera, entry.wavenumber, entry.groupVelocity * age);
+  return entry.wavenumber ** 1.5 * amplitude * Math.exp(-entry.damping * age) * spread / Math.sqrt(entry.groupVelocity * age) * shown;
+}
+
+/** The age (s) at which the envelope (as `camera` shows it) falls below `threshold`, by bisection on a geometric scale: it only falls with age. */
+function ageBelow(entry, amplitude, threshold, camera = null) {
   let young = 0.25, old = 3000;
-  if (slopeEnvelope(entry, amplitude, young) < threshold) return 0;
+  if (slopeEnvelope(entry, amplitude, young, camera) < threshold) return 0;
   for (let step = 0; step < 18; step++) {
     const middle = Math.sqrt(young * old);
-    if (slopeEnvelope(entry, amplitude, middle) > threshold) young = middle; else old = middle;
+    if (slopeEnvelope(entry, amplitude, middle, camera) > threshold) young = middle; else old = middle;
   }
   return old;
 }
 
-/** The largest |height| and |velocity|/ω a group can give a wave of this wavenumber: Ŝ(|h| + |v|/ω), the pair's two Gaussians too. */
+/** The largest |height| and |velocity|/ω a group can give a wave of this wavenumber: Ŝ(|h| + |v|/ω), the pair's two Gaussians of height too. */
 function groupAmplitude(group, wavenumber, omega) {
   let amplitude = Math.abs(splatSpectrum(wavenumber, group.sigma, group.rim)) * (Math.abs(group.height) + Math.abs(group.velocity) / omega);
-  if (group.pair) amplitude += 2 * Math.abs(group.pair.lift) * splatSpectrum(wavenumber, group.pair.sigma, 1) / omega;
+  if (group.pair) amplitude += 2 * Math.abs(group.pair.height) * splatSpectrum(wavenumber, group.pair.sigma, 1);
   return amplitude;
 }
 
 /**
  * A source's sampling (the header): its k-grid (step Δk and count), its
  * profile's reach R (m), when it retires (end, world seconds), its lifetime
- * after its last splat and how far it shows. `groups` hold their start
- * times and splat parameters.
+ * after its last splat and how far it shows; and `visible`, for each
+ * wavenumber of the envelope's table, its group speed and the age until
+ * which its packet is still SLOPE_VISIBLE·OUTER.share steep (outerRadius and
+ * usedCount). `groups` hold their start times and splat parameters; with
+ * `camera` ({ distance from the source's centre, height, pixelsPerRadian,
+ * nearest }, resolvedShare), only as much of each packet counts as the
+ * camera's pixels can show.
  */
-export function planSource(groups, depth = 0.8) {
+export function planSource(groups, depth = 0.8, camera = null) {
   const table = envelopeTable(depth);
   const latest = Math.max(...groups.map((group) => group.start));
   const earliest = Math.min(...groups.map((group) => group.start));
   let lifetime = 0, extent = 0;
+  const visible = [];
   for (const entry of table) {
     let amplitude = 0;
     for (const group of groups) amplitude += groupAmplitude(group, entry.wavenumber, entry.omega);
     if (!(amplitude > 0)) continue;
-    const visibleAge = ageBelow(entry, amplitude, SLOPE_VISIBLE / RETIRE_MARGIN);
+    const visibleAge = ageBelow(entry, amplitude, SLOPE_VISIBLE / RETIRE_MARGIN, camera);
     lifetime = Math.max(lifetime, visibleAge);
     if (visibleAge > 0) extent = Math.max(extent, entry.groupVelocity * (visibleAge + latest - earliest));
+    const drawnAge = ageBelow(entry, amplitude, SLOPE_VISIBLE * OUTER.share, camera);
+    if (drawnAge > 0) visible.push({ wavenumber: entry.wavenumber, speed: entry.groupVelocity, until: drawnAge });
   }
   let narrowest = Infinity;
   for (const group of groups) narrowest = Math.min(narrowest, group.sigma, group.pair ? group.pair.sigma : Infinity);
@@ -279,21 +384,80 @@ export function planSource(groups, depth = 0.8) {
       let amplitude = 0;
       for (const group of groups) amplitude += groupAmplitude(group, entry.wavenumber, entry.omega);
       if (!(amplitude > 0)) continue;
-      lifetime = Math.max(lifetime, Math.min(ageBelow(entry, amplitude, SLOPE_VISIBLE / RETIRE_MARGIN), reach / entry.groupVelocity));
+      lifetime = Math.max(lifetime, Math.min(ageBelow(entry, amplitude, SLOPE_VISIBLE / RETIRE_MARGIN, camera), reach / entry.groupVelocity));
     }
   }
-  return { step, count, reach, end: latest + lifetime, lifetime, extent };
+  return { step, count, reach, end: latest + lifetime, lifetime, extent, visible };
+}
+
+/** How far (m) a source's splats reach from its centre: its widest σ·rim, or its pair's, beyond its offset. */
+function sourceExtent(source) {
+  let extent = 0;
+  for (const group of source.groups) {
+    extent = Math.max(extent, Math.abs(group.offset ?? 0) + group.sigma * Math.max(group.rim, 1));
+    if (group.pair) extent = Math.max(extent, Math.abs(group.offset ?? 0) + group.pair.offset + group.pair.sigma);
+  }
+  return extent;
 }
 
 /** The radius (m) inside which a source has nothing at world time `time` (the header): what the profile pass leaves at zero. */
 export function innerRadius(source, time) {
-  let youngest = -Infinity, extent = 0;
+  const youngest = Math.max(...source.groups.map((group) => group.start));
+  return Math.max(INNER_SHARE * SLOWEST_GROUP_SPEED * (time - youngest) - SOURCE_EXTENT * sourceExtent(source), 0);
+}
+
+/**
+ * The radius (m) beyond which a source has nothing to draw at world time
+ * `time` (the header): OUTER.margin times the farthest a packet still
+ * SLOPE_VISIBLE·OUTER.share steep has gone since the first splat, past
+ * SOURCE_EXTENT of its extent; at most its reach, and nothing before it starts.
+ */
+export function outerRadius(source, time) {
+  const age = time - Math.min(...source.groups.map((group) => group.start));
+  if (!(age > 0)) return 0;
+  let farthest = 0;
+  for (const entry of source.plan.visible) if (entry.until > age) farthest = Math.max(farthest, entry.speed * age);
+  return Math.min(OUTER.margin * farthest + SOURCE_EXTENT * sourceExtent(source), source.plan.reach);
+}
+
+/**
+ * How many of a source's wavenumbers its sums take at world time `time`
+ * (the header): up to OUTER.margin times the shortest wave whose packet is
+ * still SLOPE_VISIBLE·OUTER.share steep (the film damps the short ones
+ * first), on its grid.
+ */
+export function usedCount(source, time) {
+  const age = time - Math.max(...source.groups.map((group) => group.start));
+  let shortest = 0;
+  for (const entry of source.plan.visible) if (entry.until > age) shortest = Math.max(shortest, entry.wavenumber);
+  return Math.min(source.plan.count, Math.ceil(OUTER.margin * shortest / source.plan.step));
+}
+
+/**
+ * The near field (NEAR_FIELD) of a source at world time `time`: the radii
+ * (m) over which its ring fades in, and how much of it is hidden inside them
+ * (1, while the splash stands, to 0).
+ */
+export function nearField(source, time) {
+  let widest = 0, offset = 0;
   for (const group of source.groups) {
-    youngest = Math.max(youngest, group.start);
-    extent = Math.max(extent, Math.abs(group.offset ?? 0) + group.sigma * Math.max(group.rim, 1));
-    if (group.pair) extent = Math.max(extent, Math.abs(group.offset ?? 0) + group.pair.offset + group.pair.sigma);
+    widest = Math.max(widest, group.sigma);
+    offset = Math.max(offset, Math.abs(group.offset ?? 0));
   }
-  return Math.max(INNER_SHARE * SLOWEST_GROUP_SPEED * (time - youngest) - SOURCE_EXTENT * extent, 0);
+  const unit = Math.sqrt(widest / GRAVITY);
+  const age = time - Math.min(...source.groups.map((group) => group.start));
+  return {
+    inner: offset + NEAR_FIELD.inner * widest,
+    outer: offset + NEAR_FIELD.outer * widest,
+    hide: 1 - THREE.MathUtils.smoothstep(age, NEAR_FIELD.from * unit, NEAR_FIELD.to * unit),
+  };
+}
+
+/** How many profile texels lie between two radii of a profile of this reach (what a profile pass computes). */
+export function texelsBetween(inner, outer, reach) {
+  const position = (radius) => 0.5 * (Math.sqrt(PROFILE_MAPPING ** 2 + 4 * (1 + PROFILE_MAPPING) * Math.min(Math.max(radius, 0), reach) / reach) - PROFILE_MAPPING);
+  if (!(outer > inner)) return 0;
+  return Math.max(Math.floor(position(outer) * (PROFILE_TEXELS - 1)) - Math.ceil(position(inner) * (PROFILE_TEXELS - 1)) + 1, 0);
 }
 
 /** The radius (m) at u along a profile of this reach (texel i is at u = i/(PROFILE_TEXELS − 1)). */
@@ -352,9 +516,10 @@ float besselJ1(float x) {
 // wavenumber out as its packet c_g(k)·τ goes from WINDOW.start to
 // WINDOW.end reaches. A group's splat at signed
 // distance d along the source's direction gives Ĥ0 = h·Ŝ·J0(kd) and
-// Ĥ1 = 2h·Ŝ·J1(kd) (V̂ the same with v); its pair, plain Gaussians at d ∓ δ
-// rising and sinking at ±lift, gives velocity only. Times are seconds since
-// the oldest live source began (uTime and uStarts), so they stay small.
+// Ĥ1 = 2h·Ŝ·J1(kd) (V̂ the same with v); its pair, plain Gaussians of height
+// at d + δ raised and at d − δ lowered by h_p, gives height only. Times are
+// seconds since the oldest live source began (uTime and uStarts), so they
+// stay small.
 export const RING_SPECTRUM_FRAGMENT = /* glsl */`
 #define MAX_RINGS ${MAX_RINGS}
 #define MAX_GROUPS ${MAX_GROUPS}
@@ -369,7 +534,7 @@ uniform float uScale;
 uniform vec4 uGrids[MAX_RINGS];                  // per layer: Δk (rad/m), wavenumbers in use, reach R (m)
 uniform vec4 uStarts[MAX_RINGS];                 // per layer: the groups' start times (a group not in use: never)
 uniform vec4 uSplats[MAX_RINGS * MAX_GROUPS];    // offset d along the direction (m), σ (m), rim, height h (m)
-uniform vec4 uPairs[MAX_RINGS * MAX_GROUPS];     // velocity v (m/s), the pair's lift (m/s), its σ (m), its half-separation δ (m)
+uniform vec4 uPairs[MAX_RINGS * MAX_GROUPS];     // velocity v (m/s), the pair's height h_p (m), its σ (m), its half-separation δ (m)
 ${RING_MATH}
 void main() {
   int layer = int(gl_FragCoord.y);
@@ -407,8 +572,8 @@ void main() {
       float pairShape = pair.z * pair.z * exp(-0.5 * pair.z * pair.z * wavenumber * wavenumber) * pair.y;
       float behind = wavenumber * (splat.x - pair.w);
       float ahead = wavenumber * (splat.x + pair.w);
-      velocity0 += pairShape * (besselJ0(behind) - besselJ0(ahead));
-      velocity1 += 2.0 * pairShape * (besselJ1(behind) - besselJ1(ahead));
+      height0 += pairShape * (besselJ0(ahead) - besselJ0(behind));
+      height1 += 2.0 * pairShape * (besselJ1(ahead) - besselJ1(behind));
     }
     vec2 turn = sineCosine(omega * age);
     float decay = exp(-damping * age) * (1.0 - smoothstep(WINDOW_START * grid.z, WINDOW_END * grid.z, speed * age));
@@ -438,16 +603,18 @@ export const RING_PROFILE_FRAGMENT = /* glsl */`
 uniform sampler2D uSpectrum;
 uniform int uLayer;
 uniform vec4 uGrid;           // Δk (rad/m), wavenumbers in use, reach R (m), mapping a
-uniform float uInner;         // m: inside this the ring has nothing (the header)
+uniform float uInner;         // m: inside this the ring has nothing (the header)...
+uniform float uOuter;         // ...nor beyond this
+uniform vec3 uNearField;      // m, m, share: inside the first radius the ring is hidden by the share, fading in to the second (NEAR_FIELD)
 uniform float uTexels;
-uniform float uOutputScale;   // RING_TEXTURE_UNITS / COEFFICIENT_SCALE
+uniform float uOutputScale;   // RING_TEXTURE_UNITS / COEFFICIENT_SCALE, times the fade of a ring leaving
 ${RING_MATH}
 void main() {
   float position = (gl_FragCoord.x - 0.5) / (uTexels - 1.0);   // texel i: i/(N − 1)
   float mapping = uGrid.w;
   float reach = uGrid.z;
   float radius = reach * (position * position + mapping * position) / (1.0 + mapping);
-  if (radius < uInner) { gl_FragColor = vec4(0.0); return; }
+  if (radius < uInner || radius > uOuter) { gl_FragColor = vec4(0.0); return; }
   float step = uGrid.x;
   int count = int(uGrid.y);
   float directTerms = DIRECT_LIMIT / max(radius * step, 1e-9) - 0.5;   // the centre (texel 0) takes every term in full
@@ -496,22 +663,70 @@ void main() {
     height1 += amplitude * (sineSum1 + 3.0 * cosineSum1 * inverse);
     slope1 += amplitude * (scaledCosineSum1 - 7.0 * sineSum1 * inverse);
   }
+  // The near field, the drawn splash's: hidden, and the slopes of what shows
+  // take the fade's own (∂(mη)/∂r = m ∂η/∂r + η ∂m/∂r). The fade is a
+  // quintic, flat to its second derivative at both ends, so the slopes it
+  // makes have no kink for the texels to cut.
+  float fadeWidth = max(uNearField.y - uNearField.x, 1e-6);
+  float across = clamp((radius - uNearField.x) / fadeWidth, 0.0, 1.0);
+  float shown = 1.0 - uNearField.z * (1.0 - across * across * across * (10.0 - 15.0 * across + 6.0 * across * across));
+  float shownSlope = uNearField.z * 30.0 * across * across * (1.0 - across) * (1.0 - across) / fadeWidth;
+  slope0 = shown * slope0 + shownSlope * height0;
+  slope1 = shown * slope1 + shownSlope * height1;
+  height0 *= shown;
+  height1 *= shown;
   float taper = 1.0 - smoothstep(TAPER_START * reach, reach, radius);
   gl_FragColor = vec4(slope0, slope1, height1, height0) * (uOutputScale * taper);
 }
 `;
 
+/** When a source stops being drawn: its plan's end, or the end of its fade. */
+const endOf = (source) => (source.fading ? Math.min(source.fading.end, source.plan.end) : source.plan.end);
+
 /**
  * The rings' bookkeeping, without a GPU (the CPU probes use it on its own):
- * the live sources, oldest first, each { layer, centreX, centreZ,
- * directionX, directionZ, groups, plan }; how a splat joins one or starts
- * one (the header); which have faded.
+ * the sources drawn, oldest first, each { layer, centreX, centreZ,
+ * directionX, directionZ, groups, plan, fading }; how a splat joins one or
+ * starts one (the header); which have faded. At most liveLimit are live; a
+ * new one past that makes the live one closest to retiring (the faintest,
+ * as a rule) fade out over FADE_SECONDS (fading: { start, end }) in its
+ * layer, and when no layer is free the one that would stop being drawn
+ * soonest goes at once.
  */
 export class RingSources {
-  constructor({ depth = 0.8 } = {}) {
+  constructor({ depth = 0.8, liveLimit = DEFAULT_LIVE_LIMIT, camera = null } = {}) {
     this.depth = depth;
     this.sources = [];
+    this.liveLimit = liveLimit;
+    this.camera = camera;
     this.freeLayers = Array.from({ length: MAX_RINGS }, (unused, layer) => MAX_RINGS - 1 - layer);
+  }
+
+  /** At most this many live sources (1 to MAX_RINGS), from the next new one on. */
+  setLiveLimit(limit) { this.liveLimit = THREE.MathUtils.clamp(Math.round(limit), 1, MAX_RINGS); }
+
+  /**
+   * The camera the rings retire by: { x, z, height, pixelsPerRadian,
+   * nearest } (its position, its pixels per radian across the canvas, the
+   * nearest water it can see), or null to plan without one (planSource).
+   * A source planned for fewer pixels per radian than REPLAN times this
+   * one's is planned again, so a zoom that shows more keeps more: marked
+   * here, planned by retire, one a frame (a plan takes about 0.7 ms on a
+   * desktop, tools/ring-probe.mjs).
+   */
+  setCamera(camera) {
+    this.camera = camera;
+    for (const source of this.sources) {
+      if (camera && (!source.plannedFor || camera.pixelsPerRadian > REPLAN * source.plannedFor.pixelsPerRadian)) source.replan = true;
+    }
+  }
+
+  /** The source's plan for the current camera. */
+  planFor(source) {
+    const camera = this.camera && { distance: Math.hypot(source.centreX - this.camera.x, source.centreZ - this.camera.z), height: this.camera.height, pixelsPerRadian: this.camera.pixelsPerRadian, nearest: this.camera.nearest };
+    source.plannedFor = camera;
+    source.replan = false;
+    return planSource(source.groups, this.depth, camera);
   }
 
   /** Every source gone. */
@@ -521,34 +736,39 @@ export class RingSources {
   }
 
   /**
-   * A ring source at splash time `time`: a splat (centre, σ as `radius`,
-   * rim, height, velocity) and optionally the pair that drags it forward
-   * ({ lift, radius, offset, directionX, directionZ }: plain Gaussians of
-   * σ = radius at offset either side of the centre along the direction,
-   * rising behind and sinking ahead at lift). It joins a source of the same
-   * throw (the header) or starts one; false, adding nothing, for a splat
-   * that makes no wave.
+   * A ring source at splash time `time` (its release; the future is fine):
+   * a splat (centre, σ as `radius`, rim, height, velocity) and optionally
+   * the pair that drags it forward ({ height, radius, offset, directionX,
+   * directionZ }: plain Gaussians of σ = radius at offset either side of the
+   * centre along the direction, raised ahead and lowered behind by height).
+   * It joins a source of the same throw (the header) or starts one; false,
+   * adding nothing, for a splat that makes no wave.
    */
   add({ x, z, radius, height = 0, velocity = 0, rim = 1.7, pair = null }, time) {
     const strength = RING_SOURCE.strength;
     const group = {
       start: time, x, z, sigma: radius, rim, height: height * strength, velocity: velocity * strength,
-      pair: pair && pair.lift !== 0 ? { lift: pair.lift * strength, sigma: pair.radius, offset: pair.offset, directionX: pair.directionX, directionZ: pair.directionZ } : null,
+      pair: pair && pair.height !== 0 ? { height: pair.height * strength, sigma: pair.radius, offset: pair.offset, directionX: pair.directionX, directionZ: pair.directionZ } : null,
     };
     if (!(radius > 0) || (group.height === 0 && group.velocity === 0 && !group.pair)) return false;
-    let source = this.sources.find((candidate) => candidate.groups.length < MAX_GROUPS
+    let source = this.sources.find((candidate) => !candidate.fading && candidate.groups.length < MAX_GROUPS
       && time - candidate.groups[0].start <= MERGE.seconds
       && Math.hypot(x - candidate.centreX, z - candidate.centreZ) <= MERGE.reach * radius
       && (!group.pair || !candidate.hasDirection || group.pair.directionX * candidate.directionX + group.pair.directionZ * candidate.directionZ > 0.9));
     if (!source) {
+      const live = this.sources.filter((candidate) => !candidate.fading);
+      if (live.length >= this.liveLimit) {
+        let soonest = live[0];
+        for (const candidate of live) if (candidate.plan.end < soonest.plan.end) soonest = candidate;
+        soonest.fading = { start: time, end: time + FADE_SECONDS };
+      }
       if (this.freeLayers.length === 0) {
-        // The one closest to retiring (the faintest, as a rule) gives its layer to the new one.
-        let soonest = 0;
-        this.sources.forEach((candidate, index) => { if (candidate.plan.end < this.sources[soonest].plan.end) soonest = index; });
-        const [dropped] = this.sources.splice(soonest, 1);
+        let dropped = this.sources[0];
+        for (const candidate of this.sources) if (endOf(candidate) < endOf(dropped)) dropped = candidate;
+        this.sources.splice(this.sources.indexOf(dropped), 1);
         this.freeLayers.push(dropped.layer);
       }
-      source = { layer: this.freeLayers.pop(), centreX: x, centreZ: z, directionX: 1, directionZ: 0, hasDirection: false, groups: [], plan: null };
+      source = { layer: this.freeLayers.pop(), centreX: x, centreZ: z, directionX: 1, directionZ: 0, hasDirection: false, groups: [], plan: null, plannedFor: null, replan: false, fading: null };
       this.sources.push(source);
     }
     source.groups.push(group);
@@ -574,17 +794,24 @@ export class RingSources {
     }
     if (weightSum > 0) { source.centreX = sumX / weightSum; source.centreZ = sumZ / weightSum; }
     for (const group of source.groups) group.offset = (group.x - source.centreX) * source.directionX + (group.z - source.centreZ) * source.directionZ;
-    source.plan = planSource(source.groups, this.depth);
+    source.plan = this.planFor(source);
   }
 
-  /** Drop the sources that have faded by world time `time`. */
+  /** Plan again the first live source setCamera marked (one a frame), then drop the sources that have faded by world time `time`. */
   retire(time) {
+    const marked = this.sources.find((source) => source.replan && !source.fading);
+    if (marked) marked.plan = this.planFor(marked);
     const kept = [];
     for (const source of this.sources) {
-      if (source.plan.end > time) kept.push(source);
+      if (endOf(source) > time) kept.push(source);
       else this.freeLayers.push(source.layer);
     }
     this.sources = kept;
+  }
+
+  /** How much of a source is drawn at world time `time`: 1, or less while it fades out. */
+  shown(source, time) {
+    return source.fading ? 1 - THREE.MathUtils.smoothstep(time, source.fading.start, source.fading.end) : 1;
   }
 }
 
@@ -597,7 +824,8 @@ export class Rings {
     this.renderer = renderer;
     this.depth = depth;
     this.book = new RingSources({ depth });
-    this.passesRun = 0;      // profile passes in the last update (for the budget report)
+    this.passesRun = 0;      // passes in the last update (for the budget report)...
+    this.fetchesRun = 0;     // ...and the spectrum fetches its profile passes made (texels computed × wavenumbers summed)
 
     this.spectrumTarget = createFloatTarget(MAX_WAVENUMBERS, MAX_RINGS);
     this.profileTarget = new THREE.WebGLArrayRenderTarget(PROFILE_TEXELS, 1, MAX_RINGS, {
@@ -629,6 +857,8 @@ export class Rings {
       uLayer: { value: 0 },
       uGrid: { value: new THREE.Vector4() },
       uInner: { value: 0 },
+      uOuter: { value: 0 },
+      uNearField: { value: new THREE.Vector3() },
       uTexels: { value: PROFILE_TEXELS },
       uOutputScale: { value: RING_TEXTURE_UNITS / COEFFICIENT_SCALE },
     });
@@ -645,11 +875,21 @@ export class Rings {
   /** Uniforms for every material that draws the rings (GLSL_COMMON's ringHeight, ringSlope, ringLaplacian): shared objects. */
   uniforms() { return this.sharedUniforms; }
 
-  /** The live sources, oldest first (RingSources). */
+  /** The sources drawn, oldest first (RingSources). */
   get sources() { return this.book.sources; }
 
-  /** Rings alive. */
+  /** Rings drawn: the live ones and those fading out. */
   get live() { return this.book.sources.length; }
+
+  /** Rings fading out, pushed out by newer ones (RingSources). */
+  get fading() { return this.book.sources.filter((source) => source.fading).length; }
+
+  /** At most this many live rings (RingSources.setLiveLimit; the quality presets set it). */
+  setLiveLimit(limit) { this.book.setLiveLimit(limit); }
+  get liveLimit() { return this.book.liveLimit; }
+
+  /** The camera the rings retire by (RingSources.setCamera). */
+  setCamera(camera) { this.book.setCamera(camera); }
 
   /** Bytes the rings' render targets hold: the spectrum and the profiles with their mip chain. */
   get bytes() {
@@ -676,24 +916,30 @@ export class Rings {
     const shared = this.sharedUniforms;
     shared.uRingCount.value = this.sources.length;
     this.passesRun = 0;
+    this.fetchesRun = 0;
     if (this.sources.length === 0) return;
 
+    // Each source's annulus, wavenumbers in use, near field and fade this frame (the header).
+    const frames = this.sources.map((source) => {
+      const inner = innerRadius(source, time);
+      return { inner, outer: Math.max(outerRadius(source, time), inner), count: usedCount(source, time), near: nearField(source, time), shown: this.book.shown(source, time) };
+    });
     const epoch = Math.min(...this.sources.map((source) => source.groups[0].start));
     const spectrum = this.spectrumPass.material.uniforms;
     spectrum.uTime.value = time - epoch;
     for (const grid of spectrum.uGrids.value) grid.set(0, 0, 0, 0);
-    for (const source of this.sources) {
+    this.sources.forEach((source, index) => {
       const layer = source.layer;
-      spectrum.uGrids.value[layer].set(source.plan.step, source.plan.count, source.plan.reach, 0);
+      spectrum.uGrids.value[layer].set(source.plan.step, frames[index].count, source.plan.reach, 0);
       const starts = spectrum.uStarts.value[layer];
       starts.set(1e9, 1e9, 1e9, 1e9);
-      source.groups.forEach((group, index) => {
-        starts.setComponent(index, group.start - epoch);
-        spectrum.uSplats.value[layer * MAX_GROUPS + index].set(group.offset, group.sigma, group.rim, group.height);
-        if (group.pair) spectrum.uPairs.value[layer * MAX_GROUPS + index].set(group.velocity, group.pair.lift, group.pair.sigma, group.pair.offset);
-        else spectrum.uPairs.value[layer * MAX_GROUPS + index].set(group.velocity, 0, 1, 0);
+      source.groups.forEach((group, slot) => {
+        starts.setComponent(slot, group.start - epoch);
+        spectrum.uSplats.value[layer * MAX_GROUPS + slot].set(group.offset, group.sigma, group.rim, group.height);
+        if (group.pair) spectrum.uPairs.value[layer * MAX_GROUPS + slot].set(group.velocity, group.pair.height, group.pair.sigma, group.pair.offset);
+        else spectrum.uPairs.value[layer * MAX_GROUPS + slot].set(group.velocity, 0, 1, 0);
       });
-    }
+    });
     const renderer = this.renderer;
     const previousTarget = renderer.getRenderTarget();
     this.spectrumPass.render(renderer, this.spectrumTarget);
@@ -701,15 +947,20 @@ export class Rings {
     const profile = this.profilePass.material.uniforms;
     const texture = this.profileTarget.texture;
     this.sources.forEach((source, index) => {
+      const frame = frames[index];
       profile.uLayer.value = source.layer;
-      profile.uGrid.value.set(source.plan.step, source.plan.count, source.plan.reach, PROFILE_MAPPING);
-      profile.uInner.value = innerRadius(source, time);
+      profile.uGrid.value.set(source.plan.step, frame.count, source.plan.reach, PROFILE_MAPPING);
+      profile.uInner.value = frame.inner;
+      profile.uOuter.value = frame.outer;
+      profile.uNearField.value.set(frame.near.inner, frame.near.outer, frame.near.hide);
+      profile.uOutputScale.value = frame.shown * RING_TEXTURE_UNITS / COEFFICIENT_SCALE;
       // Three.js rebuilds the array's mip chain after a render into it: once, after the last layer.
       texture.generateMipmaps = index === this.sources.length - 1;
       renderer.setRenderTarget(this.profileTarget, source.layer);
       renderer.render(this.profilePass.scene, this.passCamera);
       shared.uRingPlaces.value[index].set(source.centreX, source.centreZ, source.directionX, source.directionZ);
-      shared.uRingShapes.value[index].set(source.plan.reach, PROFILE_MAPPING, source.layer, 0);
+      shared.uRingShapes.value[index].set(source.plan.reach, frame.outer, source.layer, frame.inner);
+      this.fetchesRun += texelsBetween(frame.inner, frame.outer, source.plan.reach) * frame.count;
     });
     texture.generateMipmaps = true;
     this.passesRun = 1 + this.sources.length;
@@ -729,6 +980,9 @@ export class Rings {
     const profile = this.profilePass.material.uniforms;
     profile.uGrid.value.set(1, 0, 1, PROFILE_MAPPING);
     profile.uInner.value = 0;
+    profile.uOuter.value = 1;
+    profile.uNearField.value.set(0, 0, 0);
+    profile.uOutputScale.value = RING_TEXTURE_UNITS / COEFFICIENT_SCALE;
     const texture = this.profileTarget.texture;
     for (let layer = 0; layer < MAX_RINGS; layer++) {
       profile.uLayer.value = layer;

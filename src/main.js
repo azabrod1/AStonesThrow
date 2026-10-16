@@ -103,15 +103,18 @@ import { Profiler } from './profiler.js';
 //                 the canvas's (both are seen through ripples);
 //   fluidScale    the splash's fluid buffers', of the canvas's;
 //   idleFrameRate the frame rate of a pond where nothing happens (0: every frame);
-//   maxDpr        the cap on device pixels per CSS pixel.
+//   maxDpr        the cap on device pixels per CSS pixel;
+//   rings         the stones' rings drawn at once (src/rings.js): a newer one
+//                 makes the faintest fade out. Each costs every water pixel
+//                 its waves cover a lookup, and a pass a frame.
 // Every target keeps its format on every preset, so a program drawn under the
 // loading veil (warmUp) meets no new pipeline state after a change of preset;
 // and every mesh takes 16-bit indices (at most 254 segments: Three.js keeps
 // the index 65535 for primitive restart).
 export const QUALITY = {
-  high: { grid: 512, meshSegments: 254, underScale: 1.0, fluidScale: 1.0, idleFrameRate: 0, maxDpr: 2.0 },
-  medium: { grid: 256, meshSegments: 160, underScale: 0.5, fluidScale: 0.5, idleFrameRate: 30, maxDpr: 2.0 },
-  low: { grid: 256, meshSegments: 128, underScale: 0.5, fluidScale: 0.5, idleFrameRate: 30, maxDpr: 1.5 },
+  high: { grid: 512, meshSegments: 254, underScale: 1.0, fluidScale: 1.0, idleFrameRate: 0, maxDpr: 2.0, rings: 10 },
+  medium: { grid: 256, meshSegments: 160, underScale: 0.5, fluidScale: 0.5, idleFrameRate: 30, maxDpr: 2.0, rings: 8 },
+  low: { grid: 256, meshSegments: 128, underScale: 0.5, fluidScale: 0.5, idleFrameRate: 30, maxDpr: 1.5, rings: 6 },
 };
 export const PIXEL_BUDGET = 2.6e6;   // device pixels in the canvas, on every preset
 const QUALITY_ORDER = ['high', 'medium', 'low'];
@@ -218,6 +221,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
   // sources through the solver it is given (water.rings), and the surface,
   // the floor and the foam specks draw them.
   const rings = new Rings(renderer, { depth: POND_DEPTH });
+  rings.setLiveLimit(settings.rings);
   water.rings = rings;
   const surface = createWaterSurface(water, lighting, ambientWaves, { meshSegments: settings.meshSegments, rings });
   const splash = new SplashSystem({ environment, lighting, water, ambientWaves, surface });
@@ -438,6 +442,14 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     camera.quaternion.setFromEuler(viewEuler.set(view.pitch, view.yaw, 0, 'YXZ'));
     camera.updateProjectionMatrix();
     camera.updateMatrixWorld();
+    // The rings retire once this view's pixels can no longer show them
+    // (src/rings.js), the nearest water being the home view's.
+    const homeBelow = -home.pitch + THREE.MathUtils.degToRad(home.fov) / 2;
+    rings.setCamera({
+      x: camera.position.x, z: camera.position.z, height: camera.position.y,
+      pixelsPerRadian: 0.5 * resolution.y / Math.tan(THREE.MathUtils.degToRad(view.fov) / 2),
+      nearest: camera.position.y / Math.tan(Math.min(homeBelow, 1.5)),
+    });
     splash.updateViewUniforms(camera, resolution.y, dpr, underTarget.height);
     viewChanged = true;
     lastActivity = performance.now();
@@ -771,7 +783,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
       memory: { ...renderer.info.memory },
       programs: renderer.info.programs?.length ?? 0,
       solverAsleep: water.asleep,
-      rings: { live: rings.live, passes: rings.passesRun },
+      rings: { live: rings.live, fading: rings.fading, limit: rings.liveLimit, passes: rings.passesRun, fetches: rings.fetchesRun },
       wind: windName,
       frameCapped,
       calibration: automaticQuality ? calibration.phase : 'fixed',
@@ -782,6 +794,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
   function applyQuality(name) {
     qualityName = name;
     settings = QUALITY[name];
+    rings.setLiveLimit(settings.rings);
     water.resize(settings.grid);
     surface.setMeshSegments(settings.meshSegments);
     resize();

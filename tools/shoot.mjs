@@ -29,6 +29,9 @@
 // calm; breeze is the look the pond had before the Wind control).
 // --power=soft|normal|hard throws as the strength buttons do (soft is a
 // higher arc, so a steeper entry: about 30° from vertical against 42°).
+// --seed=n seeds Math.random (Park–Miller, from n + i) just before throw i,
+// so its stone and its splash are the same every run, and the same as
+// tools/variety-probe.mjs's seed n + i at the same aim and power.
 import { chromium } from 'playwright';
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
@@ -62,6 +65,7 @@ const sky = arg('sky', '');
 const wind = arg('wind', '');
 const power = arg('power', 'normal');
 const windStrength = arg('wind-strength', '');
+const seed = arg('seed', '');
 
 const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.mjs': 'text/javascript', '.json': 'application/json', '.png': 'image/png', '.css': 'text/css' };
 const server = createServer(async (request, response) => {
@@ -123,7 +127,15 @@ await page.evaluate((seconds) => window.__pond.advance(seconds), preRoll);
 await page.screenshot({ path: path.join(outDir, 'idle.png'), timeout: 180000 });
 console.log('[shoot] idle.png');
 
-for (const [x, z, radius] of throws) await page.evaluate(([x, z, radius, power]) => window.__pond.throwAt(x, z, { radius, power }), [x, z, radius, power]);
+for (const [index, [x, z, radius]] of throws.entries()) {
+  await page.evaluate(([x, z, radius, power, seed]) => {
+    if (seed !== null) {
+      let state = seed;
+      Math.random = () => { state = (state * 16807) % 2147483647; return (state - 1) / 2147483646; };
+    }
+    window.__pond.throwAt(x, z, { radius, power });
+  }, [x, z, radius, power, seed === '' ? null : Number(seed) + index]);
+}
 if (evalAfterThrow) await page.evaluate(evalAfterThrow);
 let flight = 0;
 if (throws.length > 0 && preImpact > 0) {

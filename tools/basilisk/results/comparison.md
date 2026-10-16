@@ -21,21 +21,21 @@
 | crown | rim radius at the highest, mm | 76.7 | 98.6 | 17.3 | 152 | app: the sheet's farthest point from the axis |
 | crown | tears (first ring over 1 ml shed from the rim), ms after contact | 26.7 | 24.4 |  | 55.8 | axisymmetric: no fingers; the rim breaks off as rings |
 | crown | collapsed (rim under a quarter of its peak), ms |  |  |  | 91.8 | app: the sheet's end |
-| ring | trough to crest at 0.25 m, mm | 3.75 |  |  | 4.66 | app: linear response to its splats, mean around the circle |
-| ring | highest crest at 0.25 m, s after contact | 0.0857 |  |  | 1.3 |  |
-| ring | wavelength at the crest at 0.25 m, cm (deep water) | 17 |  |  | 14.1 |  |
-| ring | trough to crest at 0.5 m, mm | 0.48 |  |  | 2.06 | app: linear response to its splats, mean around the circle |
-| ring | highest crest at 0.5 m, s after contact | 0.0917 |  |  | 2.44 |  |
-| ring | wavelength at the crest at 0.5 m, cm (deep water) | 0.0039 |  |  | 15 |  |
-| ring | trough to crest at 1 m, mm | 0.13 |  |  | 0.551 | app: linear response to its splats, mean around the circle |
-| ring | highest crest at 1 m, s after contact | 0.177 |  |  | 4.08 |  |
-| ring | wavelength at the crest at 1 m, cm (deep water) | 0.191 |  |  | 17 |  |
-| ring | trough to crest at 1.5 m, mm | 0.522 |  |  | 0.202 | app: linear response to its splats, mean around the circle |
-| ring | highest crest at 1.5 m, s after contact | 0.174 |  |  | 3.82 |  |
-| ring | wavelength at the crest at 1.5 m, cm (deep water) | 3.15 |  |  | 45.5 |  |
-| ring | trough to crest at 2 m, mm | 0.247 |  |  | 0.122 | app: linear response to its splats, mean around the circle |
-| ring | highest crest at 2 m, s after contact | 0.174 |  |  | 4.95 |  |
-| ring | wavelength at the crest at 2 m, cm (deep water) | 3.06 |  |  | 47.2 |  |
+| ring | trough to crest at 0.5 m (largest swing within 0.6 s), mm | 16.6 |  |  | 15.8 | simulation: continued linearly from 1 s (rings_linear.md); app: src/rings.js, film off, mean around the circle |
+| ring | highest crest at 0.5 m, s after contact | 1.47 |  |  | 1.52 |  |
+| ring | wavelength at the crest at 0.5 m, cm | 49 |  |  | 36 | from the period between the zero crossings around the crest |
+| ring | trough to crest at 0.75 m (largest swing within 0.6 s), mm | 11.7 |  |  | 11.4 | simulation: continued linearly from 1 s (rings_linear.md); app: src/rings.js, film off, mean around the circle |
+| ring | highest crest at 0.75 m, s after contact | 1.87 |  |  | 1.86 |  |
+| ring | wavelength at the crest at 0.75 m, cm | 45.6 |  |  | 45.6 | from the period between the zero crossings around the crest |
+| ring | trough to crest at 1 m (largest swing within 0.6 s), mm | 8.86 |  |  | 8.8 | simulation: continued linearly from 1 s (rings_linear.md); app: src/rings.js, film off, mean around the circle |
+| ring | highest crest at 1 m, s after contact | 2.68 |  |  | 2.69 |  |
+| ring | wavelength at the crest at 1 m, cm | 36.1 |  |  | 39.1 | from the period between the zero crossings around the crest |
+| ring | trough to crest at 1.5 m (largest swing within 0.6 s), mm | 5.87 |  |  | 6.08 | simulation: continued linearly from 1 s (rings_linear.md); app: src/rings.js, film off, mean around the circle |
+| ring | highest crest at 1.5 m, s after contact | 3.83 |  |  | 3.83 |  |
+| ring | wavelength at the crest at 1.5 m, cm | 42.3 |  |  | 42.3 | from the period between the zero crossings around the crest |
+| ring | trough to crest at 2 m (largest swing within 0.6 s), mm | 4.23 |  |  | 4.59 | simulation: continued linearly from 1 s (rings_linear.md); app: src/rings.js, film off, mean around the circle |
+| ring | highest crest at 2 m, s after contact | 4.97 |  |  | 4.97 |  |
+| ring | wavelength at the crest at 2 m, cm | 45.6 |  |  | 45.6 | from the period between the zero crossings around the crest |
 | stone | drag coefficient (pressure force less the head on the front) | -0.771 | 0.358 | 0.284 | 0.5 | src/rock.js; the simulation's stone follows the app's path |
 | stone | open hole: drag coefficient Cd in F = Cd·½ρU²πR² + Ch·ρgh·πR² | 0.459 | 0.546 | 0.374 | 0.5 | app: Cd 0.5 and buoyancy only |
 | stone | open hole: head coefficient Ch | 0.595 | 0.857 | 0.544 |  | h: depth of the centre |

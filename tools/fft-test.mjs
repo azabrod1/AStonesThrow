@@ -19,9 +19,10 @@
 //      and the fields stay real as they evolve. The old complex coefficient's
 //      cross-talk is printed for comparison;
 //   4. on the half-float path (devices without EXT_color_buffer_float), where
-//      the state and the FFT targets store binary16, the smallest stone's cavity
-//      splat (stampCavity in src/splash.js: R = 7.5 mm, σ = 1.1·R, a depression
-//      of 0.1·R, −0.045 · 6.3 m/s) on 512², advanced for six frames of 1/60 s,
+//      the state and the FFT targets store binary16, the cavity splat the
+//      smallest stone once gave the solver (R = 7.5 mm, σ = 1.1·R, a depression
+//      of 0.1·R, −0.045 · 6.3 m/s: a small, sharp splat of both kinds; the
+//      ring is src/rings.js's now) on 512², advanced for six frames of 1/60 s,
 //      keeps its ring: with the state rounded to binary16 after every step, and
 //      then with every FFT pass's output rounded too, its peak height stays within
 //      10% of the float32 path's, with subnormals kept and with them flushed to
@@ -376,7 +377,7 @@ for (const size of [256, 512]) {
 console.log('\n4. Half floats: the smallest stone\'s cavity splat on 512², six frames of 1/60 s');
 {
   const size = 512, cell = DOMAIN_SIZE / size, radius = 0.0075;
-  // stampCavity in src/splash.js at strength 1, at the reference aim (0, −1.4): a fractional texel row.
+  // The splat src/splash.js's stampCavity once gave the solver, at strength 1, at the reference aim (0, −1.4): a fractional texel row.
   const splat = { tx: 3 / cell, tz: 2.6 / cell, sigma: Math.max(1.1 * radius / cell, 0.6), rim: 1.7, height: -0.1 * radius, velocity: -0.045 * 6.3 };
   const run = (stateScale, store) => {
     let state = new Float64Array(4 * size * size);

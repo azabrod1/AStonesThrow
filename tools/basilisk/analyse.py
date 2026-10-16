@@ -17,9 +17,13 @@ It writes (all small): stone.csv, cavity.csv, jet.csv, jet_drops.csv,
 crown.csv, rings.csv, interface.csv, summary.json, comparison.csv and
 comparison.md (the simulation at each resolution against the app), and the
 plots strip.png, cavity.png, jet.png, crown.png, rings.png, stone.png and,
-with checks, resolution.png.
+with checks, resolution.png. The ring's rows come from the ring continued
+linearly (rings.py's rings_linear.csv in DIR, written first) when it is
+there, measured as rings.py measures it: a gauge's first second is the
+splash's own disturbance, not the ring.
 """
 import argparse, glob, json, math, os, sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import numpy as np
 import matplotlib
 matplotlib.use('Agg')
@@ -180,6 +184,25 @@ def ring_measures(times, eta):
         'arrival_s': arrival,
         'max_mm': float(np.max(eta) * 1000), 'min_mm': float(np.min(eta) * 1000),
     }
+
+
+def continued_rings(path, t0):
+    """rings.py's measures of the ring continued linearly (its csv, on the
+    run clock) at each radius, in the units of the comparison: trough to crest
+    (mm), when the highest crest passes (s from contact), its period (s) and
+    wavelength (cm)."""
+    import rings as continuation
+    with open(path) as handle:
+        radii = [float(name[len('eta_mm_at_'):-1]) for name in handle.readline().strip().split(',')[1:]]
+    data = np.loadtxt(path, delimiter=',', skiprows=1, ndmin=2)
+    measured = {}
+    for column, radius in enumerate(radii, start=1):
+        measure = continuation.ring_measures(data[:, 0] - t0, data[:, column] / 1000)
+        measured['r%g' % radius] = {
+            'radius_m': radius, 'trough_to_crest_mm': measure['trough_to_crest'] * 1000, 'crest_time_s': measure['crest_time'],
+            'period_s': measure['period'], 'wavelength_cm': measure['wavelength'] * 100, 'source': os.path.basename(path),
+        }
+    return measured
 
 
 def analyse(run, out, full=True):
@@ -494,7 +517,12 @@ def analyse(run, out, full=True):
     columns = [grid] + [np.interp(grid, gt[keep], gauges[keep, column]) * 1000 for column in range(1, len(radii) + 1)]
     np.savetxt(os.path.join(out, 'rings.csv'), np.column_stack(columns), delimiter=',',
                fmt=['%.3f'] + ['%.4f'] * len(radii), header='t_s,' + ','.join('eta_mm_at_%gm' % radius for radius in radii), comments='')
-    summary['rings'] = ring
+    summary['rings_from_gauges'] = ring
+    # The ring itself: its linear continuation (rings.py) when there is one.
+    continued = os.path.join(out, 'rings_linear.csv')
+    if os.path.exists(continued):
+        summary['rings'] = continued_rings(continued, t0)
+        summary['rings_start_s'] = float(np.loadtxt(continued, delimiter=',', skiprows=1, ndmin=2)[0, 0] - t0)
 
     # --- the interface, every 10 ms to 0.5 s, thinned to a 2 mm grid -------
     if not full:
@@ -570,9 +598,13 @@ def comparison_rows(summary, app):
     add('crown', 'collapsed (rim under a quarter of its peak), ms', crown.get('collapsed_ms'), (acr['endTime'] - shift) * 1000, "app: the sheet's end")
     for app_ring in app['ring']['summary']:
         ring = summary.get('rings', {}).get('r%g' % app_ring['r'], {})
-        add('ring', 'trough to crest at %g m, mm' % app_ring['r'], ring.get('trough_to_crest_mm'), app_ring['troughToCrest'] * 1000, 'app: linear response to its splats, mean around the circle')
+        # The continuation starts at 1 s, when the ring has passed 0.25 m: nothing to compare there.
+        if ring.get('source') and app_ring['crestTime'] - shift < summary['rings_start_s'] + 0.3:
+            continue
+        add('ring', 'trough to crest at %g m (largest swing within 0.6 s), mm' % app_ring['r'], ring.get('trough_to_crest_mm'), app_ring['troughToCrest'] * 1000,
+            'simulation: continued linearly from 1 s (rings_linear.md); app: src/rings.js, film off, mean around the circle')
         add('ring', 'highest crest at %g m, s after contact' % app_ring['r'], ring.get('crest_time_s'), app_ring['crestTime'] - shift)
-        add('ring', 'wavelength at the crest at %g m, cm (deep water)' % app_ring['r'], ring.get('wavelength_deep_cm'), app_ring['wavelength'] * 100)
+        add('ring', 'wavelength at the crest at %g m, cm' % app_ring['r'], ring.get('wavelength_cm'), app_ring['wavelength'] * 100, 'from the period between the zero crossings around the crest')
     fit = stone.get('open_cavity_fit') or {}
     add('stone', 'drag coefficient (pressure force less the head on the front)', stone.get('force_minus_head_coefficient_median_10_300ms'), 0.5, "src/rock.js; the simulation's stone follows the app's path")
     add('stone', 'open hole: drag coefficient Cd in F = Cd·½ρU²πR² + Ch·ρgh·πR²', fit.get('drag_coefficient'), 0.5, 'app: Cd 0.5 and buoyancy only')
@@ -760,15 +792,23 @@ def plot_comparisons(out, summary, app=None, checks=()):
         radii = [float(name[len('eta_mm_at_'):-1]) for name in handle.readline().strip().split(',')[1:]]
     rings = np.loadtxt(os.path.join(out, 'rings.csv'), delimiter=',', skiprows=1, ndmin=2)
     chosen = [column for column, radius in enumerate(radii, start=1) if radius in (0.25, 0.5, 1.0, 1.5)]
+    continued_path = os.path.join(out, 'rings_linear.csv')
+    continued = None
+    if os.path.exists(continued_path):
+        with open(continued_path) as handle:
+            continued_radii = [float(name[len('eta_mm_at_'):-1]) for name in handle.readline().strip().split(',')[1:]]
+        continued = np.loadtxt(continued_path, delimiter=',', skiprows=1, ndmin=2)
     figure, axes = plt.subplots(len(chosen), 1, figsize=(11, 1.9 * len(chosen)), sharex=True)
     for axis, column in zip(np.atleast_1d(axes), chosen):
         radius = radii[column - 1]
         axis.plot(rings[:, 0], rings[:, column], linewidth=0.7, label=label_fine)
+        if continued is not None and radius in continued_radii:
+            axis.plot(continued[:, 0] - summary['contact_time_s'], continued[:, 1 + continued_radii.index(radius)], linewidth=0.7, alpha=0.8, label='simulation continued linearly from 1 s')
         if app:
             index = [abs(value - radius) < 1e-6 for value in app['ring']['r']]
             if any(index):
                 eta = np.array(app['ring']['eta'][index.index(True)]) * 1000
-                axis.plot(np.array(app['ring']['t']) - shift, eta, '--', linewidth=0.7, label="app (solver's linear ring, mean around the circle)")
+                axis.plot(np.array(app['ring']['t']) - shift, eta, '--', linewidth=0.7, label="app (src/rings.js's ring, film off, mean around the circle)")
         axis.set_ylabel('η at %g m (mm)' % radius, fontsize=8)
         axis.legend(fontsize=7, loc='upper right')
     np.atleast_1d(axes)[-1].set_xlabel('time from contact (s)')

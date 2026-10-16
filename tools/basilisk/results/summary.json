@@ -181,101 +181,53 @@
   ]
  },
  "rings": {
-  "r0.1": {
-   "trough_to_crest_mm": 109.83109099999999,
-   "largest_wave_mm": 92.031043,
-   "crest_time_s": 0.15369004440433212,
-   "half_period_s": 0.092,
-   "wavelength_deep_cm": 5.285971108006144,
-   "wavelength_cm": 5.749326357021185,
-   "arrival_s": 0.03169004440433213,
-   "max_mm": 82.268676,
-   "min_mm": -27.562415,
-   "radius_m": 0.1
-  },
   "r0.25": {
-   "trough_to_crest_mm": 3.75370289,
-   "largest_wave_mm": 3.75370289,
-   "crest_time_s": 0.08569004440433212,
-   "half_period_s": 0.165,
-   "wavelength_deep_cm": 17.002665809955964,
-   "wavelength_cm": 17.169779039466952,
-   "arrival_s": 0.01969004440433213,
-   "max_mm": 2.8503814,
-   "min_mm": -0.90332149,
-   "radius_m": 0.25
+   "radius_m": 0.25,
+   "trough_to_crest_mm": 11.9959,
+   "crest_time_s": 1.159690044404332,
+   "period_s": 0.4800000000000004,
+   "wavelength_cm": 36.0527717125353,
+   "source": "rings_linear.csv"
   },
   "r0.5": {
-   "trough_to_crest_mm": 0.47972106,
-   "largest_wave_mm": 0.467535278878,
-   "crest_time_s": 0.09169004440433212,
-   "half_period_s": 0.0025000000000000022,
-   "wavelength_deep_cm": 0.0039032749793287405,
-   "wavelength_cm": 0.2257747780367162,
-   "arrival_s": 0.02369004440433213,
-   "max_mm": 0.47972106,
-   "min_mm": 1.9681121999999997e-05,
-   "radius_m": 0.5
+   "radius_m": 0.5,
+   "trough_to_crest_mm": 16.598100000000002,
+   "crest_time_s": 1.4696900444043322,
+   "period_s": 0.5600000000000005,
+   "wavelength_cm": 49.02171646694321,
+   "source": "rings_linear.csv"
   },
   "r0.75": {
-   "trough_to_crest_mm": 0.25626534,
-   "largest_wave_mm": 0.1703134617092,
-   "crest_time_s": 0.25569004440433213,
-   "half_period_s": 0.044,
-   "wavelength_deep_cm": 1.2090784575968683,
-   "wavelength_cm": 2.0459806070427615,
-   "arrival_s": 0.02769004440433213,
-   "max_mm": 0.25626534,
-   "min_mm": 6.4582908e-06,
-   "radius_m": 0.75
+   "radius_m": 0.75,
+   "trough_to_crest_mm": 11.742099999999999,
+   "crest_time_s": 1.8696900444043323,
+   "period_s": 0.5400000000000005,
+   "wavelength_cm": 45.59126467391108,
+   "source": "rings_linear.csv"
   },
   "r1": {
-   "trough_to_crest_mm": 0.12964861,
-   "largest_wave_mm": 0.0811908904317,
-   "crest_time_s": 0.17669004440433211,
-   "half_period_s": 0.0175,
-   "wavelength_deep_cm": 0.19126047398710797,
-   "wavelength_cm": 0.8903463251186614,
-   "arrival_s": 0.02969004440433213,
-   "max_mm": 0.12964861,
-   "min_mm": 3.0425683e-06,
-   "radius_m": 1.0
+   "radius_m": 1.0,
+   "trough_to_crest_mm": 8.8641,
+   "crest_time_s": 2.679690044404332,
+   "period_s": 0.4800000000000004,
+   "wavelength_cm": 36.0527717125353,
+   "source": "rings_linear.csv"
   },
   "r1.5": {
-   "trough_to_crest_mm": 0.5215265,
-   "largest_wave_mm": 0.48267539,
-   "crest_time_s": 0.1736900444043321,
-   "half_period_s": 0.07100000000000001,
-   "wavelength_deep_cm": 3.148225467327384,
-   "wavelength_cm": 3.784968843418536,
-   "arrival_s": 0.11369004440433213,
-   "max_mm": 0.17724862000000002,
-   "min_mm": -0.34427788,
-   "radius_m": 1.5
+   "radius_m": 1.5,
+   "trough_to_crest_mm": 5.865500000000001,
+   "crest_time_s": 3.829690044404332,
+   "period_s": 0.5200000000000005,
+   "wavelength_cm": 42.28623240506539,
+   "source": "rings_linear.csv"
   },
   "r2": {
-   "trough_to_crest_mm": 0.24689345000000001,
-   "largest_wave_mm": 0.24689345000000001,
-   "crest_time_s": 0.1736900444043321,
-   "half_period_s": 0.07,
-   "wavelength_deep_cm": 3.0601675837937274,
-   "wavelength_cm": 3.7058211177806597,
-   "arrival_s": 0.11669004440433213,
-   "max_mm": 0.12114944000000001,
-   "min_mm": -0.12574401,
-   "radius_m": 2.0
-  },
-  "r2.4": {
-   "trough_to_crest_mm": 0.233854848,
-   "largest_wave_mm": 0.233854848,
-   "crest_time_s": 0.2876900444043321,
-   "half_period_s": 0.0695,
-   "wavelength_deep_cm": 3.016607035024419,
-   "wavelength_cm": 3.666717395758191,
-   "arrival_s": 0.11269004440433213,
-   "max_mm": 0.20299783,
-   "min_mm": -0.030857018000000003,
-   "radius_m": 2.4
+   "radius_m": 2.0,
+   "trough_to_crest_mm": 4.2334,
+   "crest_time_s": 4.969690044404332,
+   "period_s": 0.5400000000000005,
+   "wavelength_cm": 45.59126467391108,
+   "source": "rings_linear.csv"
   }
  },
  "interface_points": 28867,
@@ -477,6 +429,105 @@
    "cells_per_radius": 61.4400314572961,
    "contact_time_s": 0.00015500327868852472,
    "simulated_to_ms": 56.21949672131148
+  }
+ },
+ "rings_start_s": 0.9996900444043322,
+ "rings_from_gauges": {
+  "r0.1": {
+   "trough_to_crest_mm": 109.83109099999999,
+   "largest_wave_mm": 92.031043,
+   "crest_time_s": 0.15369004440433212,
+   "half_period_s": 0.092,
+   "wavelength_deep_cm": 5.285971108006144,
+   "wavelength_cm": 5.749326357021185,
+   "arrival_s": 0.03169004440433213,
+   "max_mm": 82.268676,
+   "min_mm": -27.562415,
+   "radius_m": 0.1
+  },
+  "r0.25": {
+   "trough_to_crest_mm": 20.083457499999998,
+   "largest_wave_mm": 18.8253085,
+   "crest_time_s": 0.6446900444043322,
+   "half_period_s": 0.09249999999999997,
+   "wavelength_deep_cm": 5.343583446701032,
+   "wavelength_cm": 5.803314287743084,
+   "arrival_s": 0.04069004440433213,
+   "max_mm": 12.512301,
+   "min_mm": -7.5711565,
+   "radius_m": 0.25
+  },
+  "r0.5": {
+   "trough_to_crest_mm": 14.267124500000001,
+   "largest_wave_mm": 14.267124500000001,
+   "crest_time_s": 1.4616900444043321,
+   "half_period_s": 0.253,
+   "wavelength_deep_cm": 39.975156504296464,
+   "wavelength_cm": 40.04737779121693,
+   "arrival_s": 0.5576900444043322,
+   "max_mm": 5.7172488,
+   "min_mm": -8.549875700000001,
+   "radius_m": 0.5
+  },
+  "r0.75": {
+   "trough_to_crest_mm": 11.7270021,
+   "largest_wave_mm": 11.7270021,
+   "crest_time_s": 1.8636900444043323,
+   "half_period_s": 0.24399999999999988,
+   "wavelength_deep_cm": 37.18166066709044,
+   "wavelength_cm": 37.259264549966964,
+   "arrival_s": 0.7746900444043322,
+   "max_mm": 5.7867945,
+   "min_mm": -5.9402076,
+   "radius_m": 0.75
+  },
+  "r1": {
+   "trough_to_crest_mm": 9.049946699999998,
+   "largest_wave_mm": 9.049946699999998,
+   "crest_time_s": 2.671690044404332,
+   "half_period_s": 0.22399999999999998,
+   "wavelength_deep_cm": 31.336116058047757,
+   "wavelength_cm": 31.428041085521485,
+   "arrival_s": 1.2796900444043322,
+   "max_mm": 4.9406292999999994,
+   "min_mm": -4.109317399999999,
+   "radius_m": 1.0
+  },
+  "r1.5": {
+   "trough_to_crest_mm": 5.099604500000001,
+   "largest_wave_mm": 5.099604500000001,
+   "crest_time_s": 3.821690044404332,
+   "half_period_s": 0.21599999999999997,
+   "wavelength_deep_cm": 29.137791589689815,
+   "wavelength_cm": 29.236562089788276,
+   "arrival_s": 0.26969004440433214,
+   "max_mm": 2.7208203,
+   "min_mm": -2.3787842,
+   "radius_m": 1.5
+  },
+  "r2": {
+   "trough_to_crest_mm": 1.9859617099999998,
+   "largest_wave_mm": 1.9859617099999998,
+   "crest_time_s": 3.7796900444043318,
+   "half_period_s": 0.28,
+   "wavelength_deep_cm": 48.96268134069964,
+   "wavelength_cm": 49.02171646694313,
+   "arrival_s": 0.16569004440433213,
+   "max_mm": 1.0750094,
+   "min_mm": -0.91095231,
+   "radius_m": 2.0
+  },
+  "r2.4": {
+   "trough_to_crest_mm": 1.19998495,
+   "largest_wave_mm": 0.66521111,
+   "crest_time_s": 3.345690044404332,
+   "half_period_s": 0.14300000000000002,
+   "wavelength_deep_cm": 12.770891208366928,
+   "wavelength_cm": 12.990178856407763,
+   "arrival_s": 0.12969004440433213,
+   "max_mm": 0.5522776,
+   "min_mm": -0.64770735,
+   "radius_m": 2.4
   }
  }
 }

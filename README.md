@@ -24,7 +24,8 @@ the work a frame does: High runs the 512² solver, a 254-segment water mesh
 and full-resolution targets; Medium and Low a 256² solver, 160 and 128
 segments, the under-water view and the mirror image at half resolution and
 the splash's buffers at half, and draw a pond where nothing happens at 30
-frames a second. The canvas never holds more than 2.6 million pixels.
+frames a second; High keeps 10 stones' rings, Medium 8 and Low 6. The
+canvas never holds more than 2.6 million pixels.
 Every GPU program a throw needs is compiled while the page loads, under its
 veil: a stone is thrown and drawn there, then cleared away.
 
@@ -57,31 +58,49 @@ solver damps least, take to fade below a pixel's notice) and nothing of the
 splash is left, the solver sleeps: it clears its textures once and runs no
 passes until the next splat.
 
-**Rings** (`src/rings.js`). The ring a stone sends out, from its cavity's
-splat (an oblique entry's dragged splats and the pair that runs it forward
-included) and from where its jet falls back, crosses the whole pond as a
-real pond's would, a widening train of crests that outruns its short
-ripples. Each is evolved exactly by linear theory, outside the solver:
+**Rings** (`src/rings.js`). The ring a stone sends out crosses the whole
+pond as a real pond's would, a widening train of crests that outruns its
+short ripples. Its source is a downward push released just after the stone
+goes in (an oblique entry's pushes down its path, and the heights that run
+it forward, included), fitted to a reference simulation of the splash
+(`tools/basilisk/`: a 6 cm stone going in straight at 6.3 m/s, its ring
+followed on linearly from 1 s): with the simulation's damping its height
+from trough to crest is within 7% of the simulation's from 0.5 to 2 m
+(9 mm at 1 m, 4.5 mm at 2 m), its highest crest passes when the
+simulation's does (2.7 s at 1 m, 5 s at 2 m) and its waves are as long
+(36 to 46 cm). It scales with the stone as the splash does (lengths with
+its radius, times with √(R/g), the push with the entry speed: one
+reference throw, so an assumption). The jet's fall-back adds no ring of
+its own: the simulated ring holds its share. It is evolved exactly by
+linear theory, outside the solver:
 
     η(r, t) = ∫ k dk J0(kr) e^{−γ(k)t} [Ĥ(k) cos ωt + V̂(k) sin(ωt)/ω]
 
-with the solver's dispersion ω(k), Ĥ and V̂ the Hankel transforms of the
-same splats the solver used to take (so near the stone it is what the
-solver drew: they agree to under 1.5% over the first 2 m and 2 s), and
-γ(k) a pond's damping: natural water carries a surface film, which pins the
-surface and damps a wave by k·√(νω/8) per second (Lamb; van Dorn), 0.03/s
-for 30 cm waves where the solver damps 0.3/s. An oblique entry's ring is a
-symmetric part and a cos θ part, so it runs stronger ahead. While any ring
-lives, a GPU pass evaluates each ring's spectrum at the frame's time and
-one pass per ring sums it into a radial profile of height and slope out to
-its reach (2 to 40 m), mipmapped; the water adds every live ring's slope to
-its normal everywhere and its height to the inner patch, the floor its
-curvature to the caustics, the foam specks ride it. A ring retires once no
-slope of it is steeper than 1e-4, under a third of a pixel's turn of the
-mirror image on a phone: the reference stone's after about a minute, by
-then 20 m out; a 1.5 cm pebble's after 17 s. With no ring alive there is
-no pass and no cost per pixel. `RING_SOURCE.strength` scales every ring
-source, for calibration against a reference simulation.
+with the solver's dispersion ω(k), Ĥ and V̂ the Hankel transforms of its
+splats (so near the stone it is what the solver would draw: they agree to
+under 3% over the first 2 m and 2 s), and γ(k) a pond's damping: natural
+water carries a surface film, which pins the surface and damps a wave by
+k·√(νω/8) per second (Lamb; van Dorn), 0.03/s for 30 cm waves where the
+solver damps 0.3/s (the ring comes out 3 to 9% under the clean
+simulation's at 0.5 to 2 m). An oblique entry's ring is a symmetric part
+and a cos θ part, so it runs stronger ahead (1.3 to 1.5 times). Near the
+stone, while the splash stands, linear theory would dig the hole's bowl
+under the drawn cavity and jet, so there the ring fades in over about its
+first second. While any ring lives, a GPU pass evaluates each ring's
+spectrum at the frame's time and one pass per ring sums it into a radial
+profile of height and slope out to its reach (2 to 40 m), mipmapped; the
+water adds every ring's slope to its normal everywhere and its height to
+the inner patch, the floor its curvature to the caustics, the foam specks
+and a crown's foot ride it. A ring costs a pixel only between the water it
+has left and its leading waves, and its passes sum only the waves the film
+has not yet damped. A ring retires once no slope of it is steeper than
+1e-4 as the view's pixels can show it (each averages it over its own
+footprint), under a third of a pixel's turn of the mirror image: the
+reference stone's after about a minute and a half, by then 35 m out; a
+1.5 cm pebble's after 50 s. At most 10 rings live on High (8 on Medium, 6
+on Low); a newer one makes the faintest fade out over 1.5 s. With no ring
+alive there is no pass and no cost per pixel. `RING_SOURCE.strength`
+scales every ring source (1: as fitted).
 
 **Wind ripples** (`src/ambientWaves.js`). Between throws the pond is never
 still: a second spectral field, on its own 6 m tile of 256 × 256 laid over
@@ -136,7 +155,7 @@ known timing, and the droplets are choreographed from them:
    wobbles with depth, and closes off-centre, towards its bulge. For a 3 cm
    stone thrown at 6.3 m/s the mouth widens to 1.45 R, and sealing deep the
    hole pinches about 6 R down at about 116 ms and closes at about 140 ms.
-   Its splat launches the ring; an oblique entry drags it
+   The ring (Rings, above) starts as it opens; an oblique entry drags it
    forward, so the ring runs stronger ahead than behind; its foam comes when
    the hole closes;
 3. Worthington jet (`src/jet.js`): a glassy column fired up from where the
@@ -150,7 +169,7 @@ known timing, and the droplets are choreographed from them:
    satellites, then the column breaks from the top down into drops about
    twice its local radius, as a Rayleigh–Plateau instability does, growing
    uneven varicose beads before it parts; its slow base falls back into a
-   mound that throws a small secondary ring. For a 3 cm stone a clean jet
+   mound. For a 3 cm stone a clean jet
    reaches a quarter to half a metre and is gone about half a second
    after entry, but each throw's jet has a form of its own (below);
 4. bubbles that follow the stone down its path, rise and burst into foam.
@@ -234,11 +253,12 @@ stone's, 15 on a 6 cm one's, 12 on a 4 cm one's. A big
 stone's jet is fat (its Froude number is lower, so the cavity's collapse is
 less singular) and breaks up slowly (a column's capillary time grows as its
 radius to the 1.5): a 16 cm stone's is 11 cm across at the water, rises
-45 cm (80 cm dropped straight in) and mostly falls back as a column, which
-throws a second, strong ring. Drop counts grow faster than the stone's area
+45 cm (80 cm dropped straight in) and mostly falls back as a column. Drop counts grow faster than the stone's area
 and drop sizes as √R, so a big splash is both denser and coarser; the foam it
-leaves covers the cavity's mouth and is denser. Its rings, longer and
-stronger, cross the whole pond (Rings, above). The stone starts the splash the moment its lowest point
+leaves covers the cavity's mouth and is denser. Its ring, longer and
+higher (as √R), crosses the whole pond (Rings, above): 1 m ahead of a
+16 cm stone thrown normally it is 4.5 cm from trough to crest, ahead of a
+6 cm one 1.2 cm, of a 1.5 cm pebble 1 mm. The stone starts the splash the moment its lowest point
 touches the water. `tools/splash-probe.mjs` prints the whole table.
 
 Everything the splash throws up is shaded as the same water as the pond
@@ -310,7 +330,15 @@ carries the displacement (the normals come from the height textures per
 pixel), so it is coarser than the solver's grid.
 Caustics on the sand come from the Laplacian of the surface height above,
 splash, wind ripples and rings together, so they drift with the ripples and a
-ring throws a ring of light on the sand.
+ring throws a ring of light on the sand. They are placed as the water's
+refraction places them: each floor pixel takes them at the floor point the
+eye really sees through the still surface (the floor itself is drawn on
+the straight line), lit by the sun refracted into the water, so a ring's
+caustic lies 0.7 m down-sun of it on the sand. How strongly the surface
+focuses the light follows Snell's law for the sun's height (three times
+what a sun overhead would give), so a crest draws a thin bright line where
+its focus meets the sand, eased into half to twice the sun's own light
+(`src/pondFloor.js`).
 Stones are faceted procedural geometry with a small rigid-body model: a
 ballistic arc, quadratic drag under water, and a settle into the sand.
 
@@ -353,19 +381,26 @@ ballistic arc, quadratic drag under water, and a settle into the sand.
   the foam's drift as it should, and Breeze restores them exactly; it prints
   the cost of a frame.
 - `node tools/ring-probe.mjs [--all] [--gpu[=half]]` checks the rings
-  (`src/rings.js`) on the CPU: an isolated cavity splat evolved by the
+  (`src/rings.js`) on the CPU: an isolated ring source evolved by the
   solver's own lattice, injection, dispersion and damping against the rings'
-  Hankel integral and their sampled scheme (they agree to under 1.5% for 4 to
-  16 cm stones over 2 m and 2 s; a 1.5 cm pebble's to 6%, the solver's grid
-  cutting its shortest waves); every ring source a splash makes, made as the
-  app makes them, with its sampling and its retirement (the exact steepest
-  slope when it retires is under the visible bound, so no ring vanishes while
-  it shows, and the drawn profile matches the exact one over its reach); the
-  reference vertical drop's ring at 0.5, 1 and 2 m; and the cost of a frame
-  (each pass's fetches over a ring's life, the CPU's). `--gpu` reads the
-  rings' spectrum and profiles back from a headless page against the same
-  sums in float64 (`--gpu=half` on the half-float path); `--all` runs every
-  stone size.
+  Hankel integral and their sampled scheme (they agree to under 3% over 2 m
+  and 2 s); every ring source a splash makes, made as the app makes them,
+  with its sampling and its retirement (the exact steepest slope when it
+  retires is under the visible bound, so no ring vanishes while it shows,
+  and when it retires by the home view on a desktop and a phone, no pixel of
+  them shows it steeper than that either; the drawn profile, with its
+  annulus, the wavenumbers it sums and its near field, matches the exact one
+  over its reach), and an oblique ring's lead ahead; the reference vertical
+  drop's ring at 0.5, 0.75, 1, 1.5 and 2 m against the reference
+  simulation's (`tools/basilisk/results/rings_linear.md`: within 15% at 0.75
+  to 2 m with the same damping, the crest's time within 5% and its
+  wavelength within 15%); and the cost of a frame (each pass's fetches over
+  a ring's life; a minute of throwing at each quality preset's limit of
+  rings: how many live, the profile passes' fetches, the lookups of the
+  water's and the floor's pixels; the CPU's). `--gpu` reads the rings'
+  spectrum and profiles back from a headless page against the same sums in
+  float64 (`--gpu=half` on the half-float path); `--all` runs every stone
+  size.
 - `npm run shoot -- --label=name --throws=x:z:radius --times=0.1,0.5` renders
   deterministic frames headlessly (Playwright + Chromium) into `shots/name/`,
   at exact times after the first impact.
@@ -373,6 +408,9 @@ ballistic arc, quadratic drag under water, and a settle into the sand.
   `--debug=under|height|foam|env|face|ambient`, `--eval="js"`, `--w --h --dpr`,
   `--crop=x:y:w:h --cropscale=n` (an enlarged crop of each frame),
   `--report="js"` (printed after each frame), `--floats=half`,
+  `--seed=n` (Math.random seeded from n + i just before throw i, so the
+  stone and its splash are the same every run: `tools/variety-probe.mjs`'s
+  seed n + i),
   `--power=soft|normal|hard` (soft is a higher arc, so a steeper entry,
   about 30° from vertical), `--wind-strength=calm|breeze|windy` (the page's
   own default is calm). With
@@ -489,8 +527,9 @@ ballistic arc, quadratic drag under water, and a settle into the sand.
   their plans), and `budget`: what the preset built (the solver's grid, the
   mesh, the pixel ratio, every target's size, an estimate of the render
   targets' memory, the programs compiled and the warm-up's, whether the
-  solver sleeps and the frame rate is capped, the live rings and their
-  passes, the wind).
+  solver sleeps and the frame rate is capped, the rings drawn, how many
+  are fading out and the preset's limit, their passes and the spectrum
+  fetches those made, the wind).
 
 Install the development dependencies with `npm install` (Three.js is only
 needed locally for the headless harness, which serves it instead of the CDN).

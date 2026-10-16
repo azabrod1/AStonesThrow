@@ -3,6 +3,27 @@
 // ambient wind waves (src/ambientWaves.js) and of the rings (src/rings.js), so
 // they drift with the ripples and a ring throws a ring of light on the sand.
 //
+// The caustics (FLOOR_FRAGMENT in src/shaders/scene.js). A floor point is lit
+// by the sun refracted into the water, focused by the curvature of the
+// surface it crossed: the Laplacian of all three heights, times the depth,
+// times how far the refracted light moves on the floor per metre of depth and
+// unit of slope (Snell's law: 1 − cos θi/(n·cos θt) for a slope across the
+// sun's plane, sec²θt times that along it; their mean, 0.76 for this scene's
+// sun 27° up, 0.25 for one overhead). For small slopes the irradiance is
+// 1/(1 + that); where the rays come to a focus on the floor it peaks, as
+// sharp as the sun's disc and the pixel allow, and past the focus it is the
+// crossed rays' 1/|…|, so a ring's crests draw thin bright lines and its
+// troughs darker bands; it is eased into half to twice the sun's own, so a
+// steep ring never blows the sand out. Where on the floor: the floor is
+// drawn on the straight line from the eye (the under-water pass, src/
+// main.js), but the eye sees it through the still surface, nearer, so each
+// pixel takes its caustics at the floor point it really shows, lit through
+// the surface tan θt per metre of depth up-sun of it. A ring's caustic then
+// lies 0.7 m down-sun of it on the sand and shows on screen where the
+// water's refraction puts it; before, the sun's shift taken as 0.75·tan θi
+// and the floor's caustic on the straight line put it 240 pixels from there
+// (1080p home view, the reference throw; each error about half of that).
+//
 // The floor's pattern (sand, pebbles and silt: FLOOR_PATTERN in
 // src/shaders/scene.js, seven value noises) never changes, so the floor shader
 // does not compute it: one GPU pass of the same code bakes it at start-up into

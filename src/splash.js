@@ -24,19 +24,22 @@
 //      half the stone's depth then (or sooner and higher: a shallow or a
 //      surface seal, by the throw's choice below); the hole above the neck
 //      collapses from the bottom up, and the surface closes to a mound
-//      0.4·sqrt(R/g) later. The cavity splat (stampCavity) is the ring's
-//      source: a downward push and a shallow depression. An oblique entry drags
-//      it forward: besides the entry splat, one or two more where the stone is
-//      one and two radii down its path (R·tan θ apart, at most
-//      PATH_SLOPE_CAP·R), as it gets there and weaker; and each runs forward by
-//      the horizontal fraction, so the ring is stronger ahead than behind.
-//      Their foam is the air the hole held: it comes when the hole closes.
+//      0.4·sqrt(R/g) later. The ring the stone sends across the pond
+//      (stampCavity, RING) is a downward push released just after entry,
+//      fitted to a reference simulation's ring; it does not depend on how the
+//      cavity is drawn. An oblique entry drags it forward: besides the entry's
+//      push, one or two more where the stone is one and two radii down its
+//      path (R·tan θ apart, at most PATH_SLOPE_CAP·R), as it gets there and
+//      weaker; and each has a pair of heights, raised ahead and lowered
+//      behind, by the horizontal fraction, so the ring is stronger ahead than
+//      behind. Their foam is the air the hole held: it comes when the hole
+//      closes.
 //   3. Worthington jet: where and when the hole closes, a narrow glassy column
 //      fires up (src/jet.js), tip first and fastest, so it stretches as it
 //      rises. A bulb at its tip pinches off into large drops, then the column
 //      breaks from the top down into drops about twice its local radius while
-//      its slow base falls back into a mound that throws a small secondary
-//      ring. After an oblique entry it leans back along the stone's path by
+//      its slow base falls back into a mound (its ring is part of the stone's,
+//      above). After an oblique entry it leans back along the stone's path by
 //      JET_LEAN·θ (at most JET_LEAN_CAP) and, from a dragged cavity, is slower
 //      by JET_OBLIQUE_SLOWING times the horizontal fraction. Each throw's jet
 //      has a form of its own (the variety notes above chooseSplash): clean,
@@ -93,13 +96,14 @@
 //     the lower Froude number of a big stone) and its breakup as s^1.5 (a
 //     capillary time), its tip speed follows V (times s^0.15): a big stone's
 //     jet is a fat column that mostly falls back as one, not a taller needle.
-//   - The cavity splat: σ = 1.1·R and a depression CAVITY_SPLAT_DEPTH·R deep
-//     (the hole itself is the cavity's mesh), so the ring's wavelength goes
-//     with R; its downward velocity 0.045·V adds a height that goes as
-//     sqrt(R) (the speed over the frequency of waves of size R), and a big
-//     jet's fall-back adds a strong second ring. Both rings are carried
-//     across the whole pond by src/rings.js, damped as a real pond damps
-//     them, so a big stone's ring crosses it.
+//   - The ring (RING): its σ goes with R and its release with sqrt(R/g), so
+//     its wavelength goes with R; its push follows V, as the old cavity
+//     splat's did, so its height goes as V·sqrt(R) (the speed over the
+//     frequency of waves of size R). That is an assumption: the fit had one
+//     reference throw (R 3 cm at 6.3 m/s, straight in), and with real air
+//     that throw seals at the surface, which may change its ring by tens of
+//     percent. It is carried across the whole pond by src/rings.js, damped
+//     as a real pond damps it, so a big stone's ring crosses it.
 //   - Foam: the patches' radii go with R, the boil's peaks as sqrt(s) and the
 //     raft's as s^0.25 times the cavity splat's strength, at most
 //     FOAM_AMOUNT_CAP (a bigger cavity entrains more air for the area of its
@@ -233,7 +237,14 @@ const JET_LEAN = 0.4;                                // the jet leans back by th
 const JET_LEAN_CAP = THREE.MathUtils.degToRad(18);   // at most this
 const OBLIQUE_IMPULSE = 1.3;          // an oblique entry's cavity splats together carry at most this times a vertical one's
 const JET_OBLIQUE_SLOWING = 0.3;      // and is slower by this times the horizontal fraction
-const CAVITY_SPLAT_DEPTH = 0.1;       // the cavity splat's depression, in stone radii: the hole itself is the cavity's mesh
+// The ring a stone sends across the pond (stampCavity, src/rings.js), fitted
+// to the reference simulation's (tools/basilisk/results/rings_linear.md): a
+// downward push of RING.speed of the entry speed, of σ = RING.sigma·R less
+// one of σ·RING.rim (zero volume), released RING.delay·sqrt(R/g) after entry.
+// No height: it starts from flat water. An oblique entry adds a pair of
+// heights, raised ahead and lowered behind, of RING.ahead·travel·|v|·
+// sqrt(σ/g), so its ring runs stronger ahead.
+const RING = { sigma: 2.0, rim: 2.5, delay: 0.9, speed: 0.195, ahead: 0.16 };
 const HAZE_RADIUS = 0.5;             // device pixels: finer drops are mist (src/shaders/fluid.js)
 const MIRROR_PAD = 0.05;              // metres around what is mirrored: drawn radii, streaks, a landing crown's ride
 const MIRROR_DROP_RADIUS = 0.002;     // finer drops are left out of the mirror: their images there are under a pixel
@@ -906,30 +917,34 @@ export class SplashSystem {
   }
 
   /**
-   * A cavity splat: the depression and downward push that launch a ring,
-   * with its foam. (travelX, travelZ), a direction times a share from 0 to 1,
-   * sets that share of the depression running that way: water rising behind
-   * it and sinking ahead, the vertical velocity −c·∂h/∂x of a travelling
-   * wave (c the speed of waves its size), as a pair of splats either side.
-   * Splats on their own ring as strongly behind as ahead, whatever their
-   * layout. The ring goes to the analytic rings when the water carries them
-   * (water.rings, src/rings.js: the splat and its pair as one ring source,
-   * across the whole pond), else to the solver. The foam comes from foamTime
+   * The ring a stone's entry launches (RING), at `strength` of a vertical
+   * entry's, with its foam. (travelX, travelZ), a direction times a share
+   * from 0 to 1, sets the pair of heights that makes that share of the ring
+   * run that way: raised ahead and lowered behind, a quarter period out of
+   * step with the push, so the waves ahead grow and those behind shrink
+   * (src/rings.js). The ring goes to the analytic rings when the water
+   * carries them (water.rings: the push and its pair as one ring source,
+   * across the whole pond), else to the solver (the CPU probes' stand-in),
+   * at once, which cannot hold a splat back. The foam comes from foamTime
    * (the cavity's closure), or now.
    */
   stampCavity({ x, z, radius, speed, strength, travelX = 0, travelZ = 0, foamTime = this.time }, water) {
-    const sigma = radius * 1.1;
-    const depth = CAVITY_SPLAT_DEPTH * radius * strength;
-    const ringDepth = 0.3 * radius * strength;   // the depression the ring's travel is set from (it was the splat's own)
+    const sigma = RING.sigma * radius;
+    const velocity = -RING.speed * speed * strength;
     const travel = Math.hypot(travelX, travelZ);
-    const lift = 0.6 * travel * Math.sqrt(GRAVITY * sigma) * ringDepth / sigma;   // ≈ c·depth/σ at the slope's peak
+    const pairHeight = RING.ahead * travel * Math.abs(velocity) * Math.sqrt(sigma / GRAVITY);
+    const directionX = travel > 0 ? travelX / travel : 1, directionZ = travel > 0 ? travelZ / travel : 0;
     if (water.rings) {
       water.rings.add({
-        x, z, radius: sigma, height: -depth, velocity: -0.045 * speed * strength, rim: 1.7,
-        pair: travel > 0 ? { lift, radius: 0.8 * sigma, offset: 0.8 * sigma, directionX: travelX / travel, directionZ: travelZ / travel } : null,
-      }, this.time);
+        x, z, radius: sigma, velocity, rim: RING.rim,
+        pair: travel > 0 ? { height: pairHeight, radius: 0.8 * sigma, offset: 0.8 * sigma, directionX, directionZ } : null,
+      }, this.time + RING.delay * Math.sqrt(radius / GRAVITY));
     } else {
-      water.addSplat({ x, z, radius: sigma, height: -depth, velocity: -0.045 * speed * strength });
+      water.addSplat({ x, z, radius: sigma, velocity, rim: RING.rim });
+      if (travel > 0) {
+        water.addSplat({ x: x + directionX * 0.8 * sigma, z: z + directionZ * 0.8 * sigma, radius: 0.8 * sigma, height: pairHeight, rim: 1 });
+        water.addSplat({ x: x - directionX * 0.8 * sigma, z: z - directionZ * 0.8 * sigma, radius: 0.8 * sigma, height: -pairHeight, rim: 1 });
+      }
     }
     // The foam comes up where the hole closed over FOAM_SPREAD·sqrt(R/g): a
     // boil over about the mouth, and the wider raft it leaves.
@@ -938,12 +953,6 @@ export class SplashSystem {
     const span = FOAM_SPREAD * Math.sqrt(radius / GRAVITY);
     this.stampFoamPatch(water, random, { x, z, radius: 1.4 * radius, amount: Math.min(RAFT_AMOUNT * sizeFactor ** 0.25 * strength, FOAM_AMOUNT_CAP), reach: 1.2, radii: [0.3, 0.65], lifetime: raftLifetime(radius), time: foamTime, span });
     this.stampFoamPatch(water, random, { x, z, radius: 1.1 * radius, amount: Math.min(BOIL_AMOUNT * Math.sqrt(sizeFactor) * strength, FOAM_AMOUNT_CAP), reach: 1.0, radii: [0.3, 0.6], lifetime: BOIL_LIFETIME, boil: true, time: foamTime, span });
-    if (travel > 0 && !water.rings) {
-      const offsetX = (travelX / travel) * 0.8 * sigma;
-      const offsetZ = (travelZ / travel) * 0.8 * sigma;
-      water.addSplat({ x: x - offsetX, z: z - offsetZ, radius: 0.8 * sigma, velocity: lift, rim: 1 });
-      water.addSplat({ x: x + offsetX, z: z + offsetZ, radius: 0.8 * sigma, velocity: -lift, rim: 1 });
-    }
   }
 
   /**
@@ -1066,11 +1075,12 @@ export class SplashSystem {
    * the column falls back, with the mound's splats and its foam, which
    * fallBackFoam stamps the splash's way. The mound's height splat passes
    * straight through to the solver; its secondary ring (the splat with a
-   * velocity) goes to the analytic rings when the water carries them
-   * (water.rings, src/rings.js), else to the solver too.
+   * velocity) goes nowhere: the stone's ring (stampCavity) is fitted to the
+   * reference simulation's whole ring, which the jet's fall-back is part of,
+   * so the ring does not hang on the jet the throw drew.
    */
   columnWater(column, water) {
-    const addSplat = (splat) => (water.rings && splat.velocity ? water.rings.add(splat, this.time) : water.addSplat(splat));
+    const addSplat = (splat) => (splat.velocity ? false : water.addSplat(splat));
     return { addSplat, addFoam: (foam) => this.fallBackFoam(column, foam, water) };
   }
 

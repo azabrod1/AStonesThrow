@@ -16,10 +16,17 @@ The reference is level 12 with air ten times lighter than real (see below
 why); level 11 and level 13 are the resolution checks. Times are from first
 contact; R = 3 cm, sqrt(R/g) = 55.3 ms. `comparison.md` sets every number
 against the app's for the same vertical entry at 6.3 m/s (app-numbers.mjs).
-**State at the commit:** the reference run had reached 0.33 s, so the jet's
-fall and the rings are not in these files yet (`rings.csv` stops at 0.33 s
-and the ring rows of the table are not results); the run carries on in the
-scratch folder and `run.sh --resume` continues it.
+**State of the files:** the splash's results (the cavity, the jet, the
+crown, the stone: their CSV files, plots and rows of the table) were made
+when the reference run had reached 0.33 s, against the app of that commit
+(`app.json`). The run has since reached 4 s, and the rings come from it:
+`rings_linear.csv`, `.md` and `.png` (rings.py: the surface at 1 s followed
+on linearly to 8 s), `rings.csv` and `rings.png` (the gauges to 4 s, with that
+continuation and the app's ring), the ring rows of the table (from the
+continuation) and the ring section of `app.json` (app-numbers.mjs as of the
+rings' calibration, `src/rings.js`, with the surface film off as in the
+simulation); `summary.json` has the continued ring under `rings` and the
+gauges' own measures under `rings_from_gauges`.
 
 - **Cavity.** It pinches off 109.8 ms after contact (1.99 sqrt(R/g); level 11:
   108.7 ms, 1% apart; Duclaux et al.: 2.06), 226 mm down (7.5 R), with the
@@ -46,6 +53,33 @@ scratch folder and `run.sh --resume` continues it.
   F = Cd·½ρU²πR² + Ch·ρgh·πR² with Cd = 0.46 and Ch = 0.6 (level 11: 0.55 and
   0.86): the head on the stone's front, which the app leaves out, decelerates
   it as much as the drag below 20 cm.
+- **Rings.** Past the splash the rings are small linear waves, so rings.py
+  follows the surface on from 1 s (its elevation and rate of change then, 2νk²
+  damping, 0.8 m deep; `rings_linear.md`). Trough to crest (the largest swing
+  within 0.6 s) the ring is about 16 mm at 0.5 m (that window still holds the
+  near field), 11.7 mm at 0.75 m, 8.9 mm at 1 m, 5.9 mm at 1.5 m and 4.2 mm at
+  2 m; its highest crest passes 1 m at 2.7 s and 2 m at 5.0 s, 36 to 49 cm
+  long. From 1.1 s the heights agree within 1% beyond 0.75 m; from 0.8 s they
+  are 10 to 15% lower. Against the run's own gauges over 1 to 4 s (the run
+  ends before the main crest reaches 2 m at 5 s) the continuation follows the
+  main ring wave for wave (rms difference 7 to 9% of the gauges' at 0.75 and
+  1 m over the first second, 15% at 1.5 m over three, correlation 0.99; the
+  main crests within 2% at 1 m and 9% at 1.5 m). The train of short waves
+  behind it carries the gauges' energy (its rms after the main crest within 5%
+  at 0.5 to 1 m) but its crests fall elsewhere (rms difference 40% at 1 m and
+  70 to 100% at 0.25 to 0.75 m over three seconds): it comes from the centre,
+  where the water goes on rising and falling until about 1.6 s (the jet's base
+  falls, then a second jet 14 cm high rises on the axis at 1.4 s), and the
+  continuation takes the jet's column on the axis at 1 s for a surface.
+  Followed on from 2 s instead (`--start 2`), it matches the gauge at 1 m
+  within 13% over 2 to 4 s, and the main ring's heights at 1 to 2 m within 4%
+  of those from 1 s. At 1 s the ring holds 0.29 J, 5% of the stone's 5.8 J
+  (πρg∫|Z|²k dk, Z its complex amplitude; the app's ring 0.32 J). Its long
+  waves are robust; its short waves near the centre may be overstated (a real
+  crown's drops land incoherently), and with real air this throw seals at the
+  surface at 36 ms, which may change the ring by tens of percent. The app's
+  ring is fitted to it (`src/rings.js` says how; `tools/ring-probe.mjs` checks
+  it).
 
 
 ## The setup, and why
@@ -144,7 +178,12 @@ not simply better in an axisymmetric model.
   numbers and the other resolutions on the plots.
 - `app-numbers.mjs`: the app's splash for the same case as time series
   (JSON): the stone's path, the cavity, the crown, the jet and its drops, the
-  ring at the gauges' radii.
+  ring at the gauges' radii (the ring source the app hands `src/rings.js`,
+  with the simulation's damping, and the solver's near field).
+- `rings.py`: the rings followed on linearly from a run's surface at one
+  moment, with the table of their heights, crest times and wavelengths and
+  how well they agree with the run's gauges (`--film` adds a pond's
+  surface film to the damping, as the app's rings have).
 - `seal.py`: the figure of the crown with real air against the reference's.
 - `results/`: the reference's numbers (below).
 
@@ -162,9 +201,9 @@ tools/basilisk/run.sh runs/L13 level=13 end=0.056 air=0.12             # the fin
 tools/basilisk/run.sh runs/L12real level=12 end=0.06 air=1.2 airadapt=1   # real air: the surface seal
 tools/basilisk/run.sh --resume runs/L12                                # after a restart
 node tools/basilisk/app-numbers.mjs runs/app.json
+python3 tools/basilisk/rings.py runs/L12 --start 1.0 --end 8 --out tools/basilisk/results   # first: analyse.py reads its rings_linear.csv
 python3 tools/basilisk/analyse.py runs/L12 --check runs/L11 --check runs/L13 --app runs/app.json --out tools/basilisk/results
 python3 tools/basilisk/seal.py runs/L12 runs/L12real runs/L13 runs/L13real --out tools/basilisk/results/seal.png
-python3 tools/basilisk/rings.py runs/L12 --start 1.0 --end 6 --out tools/basilisk/results
 ```
 
 Each run writes its outputs (`stone.c` lists them) into its directory, with
