@@ -11,8 +11,10 @@
 //   - the crown: its sheet's time scales, its rim's peak height, its reach
 //     from the centre and its span across the throw at that moment, when it
 //     tears and when it is gone; the forward fan's reach;
-//   - the jet: when it starts, its top and when, its widest diameter, when it
-//     is gone;
+//   - the jet: the form the throw drew and how its hole sealed (src/splash.js
+//     chooseSplash; the stones are not seeded, so these change from run to
+//     run, tools/variety-probe.mjs gives their odds), when it starts, its
+//     column's top and when, its widest diameter, when it is gone;
 //   - the droplets: spawned by source (contact spray, crown, fan, jet, the
 //     crowns of landing drops, the rest), the most alive at once, the largest,
 //     and how many are 4 mm and more;
@@ -143,6 +145,7 @@ function runSplash(radius, { silent = false } = {}) {
     radius, impact, crown: { launch: crown.launchDuration, drag: crown.dragSeconds, breakTime: crown.breakTime, endTime: crown.endTime, thickness: crown.baseThickness, height: 0, heightTime: 0, reach: 0, maxDrop: crown.maxDropRadius },
     fan: fan ? { reach: 0, endTime: fan.endTime } : null,
     jet: { start: null, top: 0, topTime: 0, widest: 0, gone: null },
+    choice: splash.lastChoice ? { regime: splash.lastChoice.regime, seal: splash.lastChoice.seal.kind } : null,
     peakAlive: 0, frameMilliseconds: [], sources, largest, specks: 0, landingCrowns: 0, bigDrops: 0, record,
   };
   let jetColumn = null;
@@ -281,7 +284,9 @@ for (const radius of stoneRadii) {
   console.log(`\nstone ${centimetres(2 * radius)} cm across (radius ${millimetres(radius)} mm, size factor ${(radius / 0.03).toFixed(2)}): enters at ${impact.speed.toFixed(2)} m/s, ${angle.toFixed(0)}° from vertical`);
   console.log(`  crown: launch ${milliseconds(crown.launch)} ms, drag time ${milliseconds(crown.drag)} ms, h0 ${millimetres(crown.thickness)} mm; rim peaks ${centimetres(crown.height)} cm up at ${milliseconds(crown.heightTime)} ms, ${centimetres(crown.reach)} cm out, ${centimetres(crown.span)} cm across; tears at ${milliseconds(crown.breakTime)} ms, gone at ${milliseconds(crown.endTime)} ms; drops up to ${millimetres(crown.maxDrop)} mm`);
   if (fan) console.log(`  fan: reaches ${centimetres(fan.reach)} cm, gone at ${milliseconds(fan.endTime)} ms`);
-  if (jet.start !== null) console.log(`  jet: starts at ${milliseconds(jet.start)} ms, top ${centimetres(jet.top)} cm at ${milliseconds(jet.topTime)} ms, widest ${millimetres(jet.widest)} mm across, gone at ${jet.gone === null ? '-' : milliseconds(jet.gone)} ms`);
+  const form = result.choice ? ` (${result.choice.regime} form, ${result.choice.seal} seal)` : '';
+  if (jet.start !== null) console.log(`  jet${form}: starts at ${milliseconds(jet.start)} ms, top ${centimetres(jet.top)} cm at ${milliseconds(jet.topTime)} ms, widest ${millimetres(jet.widest)} mm across, gone at ${jet.gone === null ? '-' : milliseconds(jet.gone)} ms`);
+  else if (result.choice) console.log(`  jet${form}: none`);
   const total = Object.values(result.sources).reduce((sum, count) => sum + count, 0);
   const bySource = ['spray', 'crown', 'fan', 'jet', 'landing', 'other'].filter((name) => result.sources[name]).map((name) => `${name} ${result.sources[name]} (to ${millimetres(result.largest[name])} mm)`).join(', ');
   console.log(`  droplets: ${total} spawned: ${bySource}; ${result.bigDrops} of 4 mm and more; at most ${result.peakAlive} alive; ${result.landingCrowns} landing crowns`);

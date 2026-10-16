@@ -1,0 +1,482 @@
+{
+ "run": "/tmp/claude-0/-home-user/2dfb02a3-cf97-541f-8d1f-b0c8b14d8fc6/scratchpad/phaseK/runs/L12",
+ "parameters": {
+  "max_level": 12.0,
+  "min_cell": 0.000976562,
+  "mode": 1.0,
+  "end_time": 4.0,
+  "fine_until": 0.7,
+  "late_after": 0.2,
+  "radius": 0.03,
+  "rho_stone": 2600.0,
+  "entry_speed": 6.3,
+  "stone_start": -0.706078,
+  "rho_air": 0.12,
+  "mu_air": 1.8e-05,
+  "front_only": 1.0,
+  "air_adapt": 0.0
+ },
+ "contact_time_s": 0.0003099555956678702,
+ "cells_per_radius": 30.72001572864805,
+ "stone": {
+  "entry_speed": 6.302803,
+  "speed_at_50ms": 3.7754364513140795,
+  "depth_at_50ms_mm": 209.9676624624549,
+  "force_coefficient_median_10_300ms": 0.8326395234806272,
+  "force_minus_head_coefficient_median_10_300ms": -0.7705919197526142,
+  "peak_force_N": 1543.8881,
+  "peak_force_time_ms": 109.55964440433212,
+  "open_cavity_fit": {
+   "window_ms": [
+    10.0,
+    107.79004440433212
+   ],
+   "drag_coefficient": 0.4586512995414102,
+   "head_coefficient": 0.5945661559492584,
+   "rms_residual_N": 0.6210992118005292,
+   "note": "F = Cd\u00b7\u00bd\u03c1U\u00b2\u03c0R\u00b2 + Ch\u00b7\u03c1gh\u00b7\u03c0R\u00b2, h the depth of the centre"
+  }
+ },
+ "water_budget_ml": {
+  "change": -5.781649996094984,
+  "largest_change": 13.147239997124416,
+  "removed_drops": 35.00806,
+  "filled_bubbles": 29.02393,
+  "inside_stone_max": 3.195243,
+  "unaccounted": 0.20248000390501378
+ },
+ "cost": {
+  "wall_s_since_last_start": 404.7,
+  "steps": 12860,
+  "max_cells": 67009,
+  "median_dt_s_first_300ms": 1.6667e-05,
+  "simulated_s": 0.3311875
+ },
+ "cavity": {
+  "regions_disconnected_ms": 110.69004440433213,
+  "pinch_time_ms": 109.79004440433212,
+  "pinch_time_sqrt_R_g": 1.9853488884953716,
+  "pinch_depth_mm": 225.7885,
+  "pinch_depth_R": 7.526283333333334,
+  "stone_depth_at_pinch_R": 13.283133333333334,
+  "pinch_over_stone_depth": 0.5666045160027503,
+  "dome_over_mouth_ms": 117.69004440433211,
+  "dome_height_mm": -9.101,
+  "widest_mouth_mm": 113.18496854521626,
+  "widest_mouth_R": 3.772832284840542,
+  "widest_mouth_ms": 199.69004440433213
+ },
+ "jet": {
+  "emerges_ms": 118.19004440433211,
+  "speed_at_emergence_m_s": 15.694642857142941,
+  "top_mm": 813.2810000000001,
+  "top_ms": 329.6900444043321,
+  "fastest_tip_above_surface_m_s": 24.414142857142593,
+  "tip_speed_m_s_at": {
+   "130 ms": 15.066714285714275,
+   "150 ms": 10.219035714285672,
+   "200 ms": 10.114285714285705,
+   "250 ms": 3.9063571428568933,
+   "300 ms": 4.115464285714089,
+   "400 ms": null
+  },
+  "tip_breaks_ms": [
+   118.2,
+   125.7,
+   126.7,
+   148.2,
+   179.2,
+   180.2,
+   201.7,
+   222.2,
+   223.2,
+   233.2,
+   234.2,
+   236.2,
+   238.7,
+   240.7,
+   243.7,
+   246.2,
+   318.2,
+   323.2,
+   329.7
+  ],
+  "downward_jet_deepest_mm": -769.824,
+  "tip_drops": 46,
+  "first_tip_drop": {
+   "appears_ms": 119.69004440433211,
+   "radius_mm": 2.3767685000000003,
+   "height_mm": 24.135,
+   "speed_m_s": 24.9602,
+   "samples": 6,
+   "highest_mm": 180.67
+  },
+  "tip_drop_radii_mm": [
+   2.38,
+   3.73,
+   2.83,
+   5.73,
+   1.81,
+   1.77,
+   3.09,
+   2.9,
+   1.77,
+   1.97,
+   2.36,
+   5.09
+  ],
+  "tip_drop_times_ms": [
+   119.7,
+   120.7,
+   127.7,
+   148.7,
+   156.7,
+   159.7,
+   163.7,
+   163.7,
+   169.7,
+   178.7,
+   178.7,
+   179.7
+  ]
+ },
+ "crown": {
+  "peak_height_mm": 116.992,
+  "peak_ms": 105.69004440433213,
+  "radius_at_peak_mm": 76.66000000000001,
+  "first_detached_ring_ms": 4.69004440433213,
+  "first_ring_over_0.05ml_ms": 4.69004440433213,
+  "first_ring_over_1ml_ms": 26.69004440433213,
+  "rings_over_1ml": [
+   {
+    "ms": 26.7,
+    "ml": 2.04,
+    "radius_mm": 51.8,
+    "height_mm": 54.4
+   },
+   {
+    "ms": 43.7,
+    "ml": 3.18,
+    "radius_mm": 58.7,
+    "height_mm": 75.0
+   },
+   {
+    "ms": 73.7,
+    "ml": 4.93,
+    "radius_mm": 67.9,
+    "height_mm": 100.1
+   },
+   {
+    "ms": 103.7,
+    "ml": 3.82,
+    "radius_mm": 75.8,
+    "height_mm": 113.3
+   },
+   {
+    "ms": 129.7,
+    "ml": 14.38,
+    "radius_mm": 86.7,
+    "height_mm": 109.6
+   }
+  ]
+ },
+ "rings": {
+  "r0.1": {
+   "trough_to_crest_mm": 109.83109099999999,
+   "largest_wave_mm": 92.031043,
+   "crest_time_s": 0.15369004440433212,
+   "half_period_s": 0.092,
+   "wavelength_deep_cm": 5.285971108006144,
+   "wavelength_cm": 5.749326357021185,
+   "arrival_s": 0.03169004440433213,
+   "max_mm": 82.268676,
+   "min_mm": -27.562415,
+   "radius_m": 0.1
+  },
+  "r0.25": {
+   "trough_to_crest_mm": 3.75370289,
+   "largest_wave_mm": 3.75370289,
+   "crest_time_s": 0.08569004440433212,
+   "half_period_s": 0.165,
+   "wavelength_deep_cm": 17.002665809955964,
+   "wavelength_cm": 17.169779039466952,
+   "arrival_s": 0.01969004440433213,
+   "max_mm": 2.8503814,
+   "min_mm": -0.90332149,
+   "radius_m": 0.25
+  },
+  "r0.5": {
+   "trough_to_crest_mm": 0.47972106,
+   "largest_wave_mm": 0.467535278878,
+   "crest_time_s": 0.09169004440433212,
+   "half_period_s": 0.0025000000000000022,
+   "wavelength_deep_cm": 0.0039032749793287405,
+   "wavelength_cm": 0.2257747780367162,
+   "arrival_s": 0.02369004440433213,
+   "max_mm": 0.47972106,
+   "min_mm": 1.9681121999999997e-05,
+   "radius_m": 0.5
+  },
+  "r0.75": {
+   "trough_to_crest_mm": 0.25626534,
+   "largest_wave_mm": 0.1703134617092,
+   "crest_time_s": 0.25569004440433213,
+   "half_period_s": 0.044,
+   "wavelength_deep_cm": 1.2090784575968683,
+   "wavelength_cm": 2.0459806070427615,
+   "arrival_s": 0.02769004440433213,
+   "max_mm": 0.25626534,
+   "min_mm": 6.4582908e-06,
+   "radius_m": 0.75
+  },
+  "r1": {
+   "trough_to_crest_mm": 0.12964861,
+   "largest_wave_mm": 0.0811908904317,
+   "crest_time_s": 0.17669004440433211,
+   "half_period_s": 0.0175,
+   "wavelength_deep_cm": 0.19126047398710797,
+   "wavelength_cm": 0.8903463251186614,
+   "arrival_s": 0.02969004440433213,
+   "max_mm": 0.12964861,
+   "min_mm": 3.0425683e-06,
+   "radius_m": 1.0
+  },
+  "r1.5": {
+   "trough_to_crest_mm": 0.5215265,
+   "largest_wave_mm": 0.48267539,
+   "crest_time_s": 0.1736900444043321,
+   "half_period_s": 0.07100000000000001,
+   "wavelength_deep_cm": 3.148225467327384,
+   "wavelength_cm": 3.784968843418536,
+   "arrival_s": 0.11369004440433213,
+   "max_mm": 0.17724862000000002,
+   "min_mm": -0.34427788,
+   "radius_m": 1.5
+  },
+  "r2": {
+   "trough_to_crest_mm": 0.24689345000000001,
+   "largest_wave_mm": 0.24689345000000001,
+   "crest_time_s": 0.1736900444043321,
+   "half_period_s": 0.07,
+   "wavelength_deep_cm": 3.0601675837937274,
+   "wavelength_cm": 3.7058211177806597,
+   "arrival_s": 0.11669004440433213,
+   "max_mm": 0.12114944000000001,
+   "min_mm": -0.12574401,
+   "radius_m": 2.0
+  },
+  "r2.4": {
+   "trough_to_crest_mm": 0.233854848,
+   "largest_wave_mm": 0.233854848,
+   "crest_time_s": 0.2876900444043321,
+   "half_period_s": 0.0695,
+   "wavelength_deep_cm": 3.016607035024419,
+   "wavelength_cm": 3.666717395758191,
+   "arrival_s": 0.11269004440433213,
+   "max_mm": 0.20299783,
+   "min_mm": -0.030857018000000003,
+   "radius_m": 2.4
+  }
+ },
+ "interface_points": 28867,
+ "checks": {
+  "level 11": {
+   "cavity": {
+    "regions_disconnected_ms": 108.88026009727216,
+    "pinch_time_ms": 108.68026009727215,
+    "pinch_time_sqrt_R_g": 1.9652805020360598,
+    "pinch_depth_mm": 225.68949999999998,
+    "pinch_depth_R": 7.522983333333333,
+    "stone_depth_at_pinch_R": 13.191333333333333,
+    "pinch_over_stone_depth": 0.570297417496336,
+    "dome_over_mouth_ms": 125.48026009727215,
+    "dome_height_mm": -8.979500000000002,
+    "widest_mouth_mm": 99.26146031746032,
+    "widest_mouth_R": 3.308715343915344,
+    "widest_mouth_ms": 151.38026009727216
+   },
+   "jet": {
+    "emerges_ms": 126.38026009727216,
+    "speed_at_emergence_m_s": 12.974285714285521,
+    "top_mm": 274.219,
+    "top_ms": 151.38026009727216,
+    "fastest_tip_above_surface_m_s": 13.113857142857183,
+    "tip_speed_m_s_at": {
+     "130 ms": 12.835000000000097,
+     "150 ms": 12.137285714285852,
+     "200 ms": null,
+     "250 ms": null,
+     "300 ms": null,
+     "400 ms": null
+    },
+    "tip_breaks_ms": [
+     135.4,
+     136.9
+    ],
+    "downward_jet_deepest_mm": -505.212,
+    "tip_drops": 1,
+    "first_tip_drop": {
+     "appears_ms": 136.38026009727216,
+     "radius_mm": 7.8048655,
+     "height_mm": 125.62499999999999,
+     "speed_m_s": 13.5093,
+     "samples": 16,
+     "highest_mm": 328.374
+    },
+    "tip_drop_radii_mm": [
+     7.8
+    ],
+    "tip_drop_times_ms": [
+     136.4
+    ]
+   },
+   "crown": {
+    "peak_height_mm": 110.156,
+    "peak_ms": 118.88026009727216,
+    "radius_at_peak_mm": 98.633,
+    "first_detached_ring_ms": 24.380260097272153,
+    "first_ring_over_0.05ml_ms": 24.380260097272153,
+    "first_ring_over_1ml_ms": 24.380260097272153,
+    "rings_over_1ml": [
+     {
+      "ms": 24.4,
+      "ml": 4.52,
+      "radius_mm": 55.3,
+      "height_mm": 47.8
+     },
+     {
+      "ms": 37.4,
+      "ml": 3.95,
+      "radius_mm": 62.0,
+      "height_mm": 63.3
+     },
+     {
+      "ms": 44.4,
+      "ml": 4.14,
+      "radius_mm": 65.1,
+      "height_mm": 68.4
+     },
+     {
+      "ms": 84.4,
+      "ml": 9.99,
+      "radius_mm": 83.2,
+      "height_mm": 91.5
+     }
+    ]
+   },
+   "stone": {
+    "entry_speed": 6.306377,
+    "speed_at_50ms": 3.77720893994502,
+    "depth_at_50ms_mm": 210.12621813279767,
+    "force_coefficient_median_10_300ms": 0.9659719553888163,
+    "force_minus_head_coefficient_median_10_300ms": 0.3578050708175322,
+    "peak_force_N": 2059.45397,
+    "peak_force_time_ms": 151.86616009727217,
+    "open_cavity_fit": {
+     "window_ms": [
+      10.0,
+      106.68026009727215
+     ],
+     "drag_coefficient": 0.5458408515017805,
+     "head_coefficient": 0.8574131162715819,
+     "rms_residual_N": 0.9105510262993187,
+     "note": "F = Cd\u00b7\u00bd\u03c1U\u00b2\u03c0R\u00b2 + Ch\u00b7\u03c1gh\u00b7\u03c0R\u00b2, h the depth of the centre"
+    }
+   },
+   "water_budget_ml": {
+    "change": -22.717880000300283,
+    "largest_change": 24.16470999833109,
+    "removed_drops": 23.540969999999998,
+    "filled_bubbles": 2.083879,
+    "inside_stone_max": 3.5798929999999998,
+    "unaccounted": -1.2607890003002864
+   },
+   "cost": {
+    "wall_s_since_last_start": 744.9,
+    "steps": 3648,
+    "max_cells": 31252,
+    "median_dt_s_first_300ms": 5e-05,
+    "simulated_s": 0.1524859
+   },
+   "cells_per_radius": 15.360039321700663,
+   "contact_time_s": 0.0006197399027278497,
+   "simulated_to_ms": 151.86616009727217
+  },
+  "level 13": {
+   "cavity": {
+    "dome_over_mouth_ms": 43.944996721311476,
+    "dome_height_mm": 189.28699999999998,
+    "crown_reaches_axis_ms": 43.944996721311476,
+    "crown_reaches_axis_height_mm": 188.276,
+    "widest_mouth_mm": 62.647081272084804,
+    "widest_mouth_R": 2.088236042402827,
+    "widest_mouth_ms": 55.844996721311475
+   },
+   "jet": {
+    "tip_drops": 3,
+    "first_tip_drop": {
+     "appears_ms": 43.844996721311475,
+     "radius_mm": 3.599571,
+     "height_mm": 188.738,
+     "speed_m_s": 3.9024,
+     "samples": 13,
+     "highest_mm": 234.993
+    },
+    "tip_drop_radii_mm": [
+     3.6,
+     4.58,
+     4.0
+    ],
+    "tip_drop_times_ms": [
+     43.8,
+     53.8,
+     54.8
+    ]
+   },
+   "crown": {
+    "peak_height_mm": 87.695,
+    "peak_ms": 55.344996721311475,
+    "radius_at_peak_mm": 17.334,
+    "first_detached_ring_ms": 1.8449967213114753,
+    "first_ring_over_0.05ml_ms": 1.8449967213114753
+   },
+   "stone": {
+    "entry_speed": 6.301136,
+    "speed_at_50ms": 3.7749578141776254,
+    "depth_at_50ms_mm": 209.9163969735183,
+    "force_coefficient_median_10_300ms": 0.48894075896693595,
+    "force_minus_head_coefficient_median_10_300ms": 0.2839002880663327,
+    "peak_force_N": 63.79363,
+    "peak_force_time_ms": 0.3982967213114752,
+    "open_cavity_fit": {
+     "window_ms": [
+      10.0,
+      300.0
+     ],
+     "drag_coefficient": 0.37362423387308125,
+     "head_coefficient": 0.5437251357721745,
+     "rms_residual_N": 0.5871398676506385,
+     "note": "F = Cd\u00b7\u00bd\u03c1U\u00b2\u03c0R\u00b2 + Ch\u00b7\u03c1gh\u00b7\u03c0R\u00b2, h the depth of the centre"
+    }
+   },
+   "water_budget_ml": {
+    "change": -6.134849996897174,
+    "largest_change": 6.134970000459816,
+    "removed_drops": 5.790986,
+    "filled_bubbles": 0.3419534,
+    "inside_stone_max": 0.29924690000000004,
+    "unaccounted": -0.6858173968971734
+   },
+   "cost": {
+    "wall_s_since_last_start": 2133.0,
+    "steps": 7796,
+    "max_cells": 51622,
+    "median_dt_s_first_300ms": 6.6667e-06,
+    "simulated_s": 0.0563745
+   },
+   "cells_per_radius": 61.4400314572961,
+   "contact_time_s": 0.00015500327868852472,
+   "simulated_to_ms": 56.21949672131148
+  }
+ }
+}

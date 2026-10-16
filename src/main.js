@@ -33,7 +33,10 @@
 // own mirror image falls, each frame (updateReflection). A tap throws at the
 // water under it, brought inside the solver's patch less POND_MARGIN when it
 // is beyond (or on the sky): a splash nearer the patch's edge would ring
-// across it, since the patch is periodic.
+// across it, since the patch is periodic. While a press aims (or a mouse
+// hovers) a ring on the water and a faint arc from the hand show the throw;
+// a throw hides them, a mouse's until it moves on, or the arc's end would
+// hang in the splash as a hairline.
 //
 // Quality. Each preset of QUALITY sets the work a frame does: the splash
 // solver's grid, the inner water patch's mesh (src/waterSurface.js), the
@@ -593,6 +596,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
   const activePointers = new Map();   // pointerId -> { x, y } in client pixels
   let pressStart = null;              // { id, x, y } of the press that may throw
   let pinch = null;                   // { distance, fov, direction } when the pinch began
+  let thrownFrom = null;              // { x, y }: a mouse threw here; its aim stays hidden until it moves on (its arc would hang in the splash)
 
   function pinchSpan() {
     const [first, second] = activePointers.values();
@@ -637,6 +641,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     const tracked = activePointers.get(event.pointerId);
     if (tracked) { tracked.x = event.clientX; tracked.y = event.clientY; }
     if (pinch) { if (tracked) movePinch(); return; }
+    if (thrownFrom && Math.hypot(event.clientX - thrownFrom.x, event.clientY - thrownFrom.y) < 14) return;
+    thrownFrom = null;
     if (event.pointerType === 'mouse' || pressStart) showAim(aimPoint(event.clientX, event.clientY));
   });
   canvas.addEventListener('pointerup', (event) => {
@@ -646,9 +652,9 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     if (press) {
       const moved = Math.hypot(event.clientX - press.x, event.clientY - press.y);
       const hit = aimPoint(event.clientX, event.clientY);
-      if (hit && moved < 14) throwAt(hit.x, hit.z);
+      if (hit && moved < 14) { throwAt(hit.x, hit.z); if (event.pointerType === 'mouse') thrownFrom = { x: event.clientX, y: event.clientY }; }
     }
-    if (event.pointerType !== 'mouse') showAim(null);
+    if (event.pointerType !== 'mouse' || thrownFrom) showAim(null);
   });
   canvas.addEventListener('pointercancel', (event) => { releasePointer(event); showAim(null); });
   canvas.addEventListener('pointerleave', (event) => { if (!activePointers.has(event.pointerId)) showAim(null); });
