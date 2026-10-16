@@ -70,7 +70,9 @@
 // hole, and drawn where it is; from the pinch-off, over NECK_CLOSE·sqrt(R/g)
 // as the neck closes over it, it moves over to where the water shows it. The
 // pinch-off is its cavity's (setCavityTimes, which the splash calls with the
-// report's `rock`), PINCH_TIME·sqrt(R/g) after the impact until then.
+// report's `rock`), PINCH_TIME·sqrt(R/g) after the impact until then. Seen
+// from an eye under the water (src/main.js's Under view) it is drawn where it
+// is, faded into the water's colour (waterFog) with the distance.
 import * as THREE from 'three';
 import { SEEN_THROUGH_WATER } from './shaders/scene.js';
 import { PINCH_TIME, NECK_CLOSE, SPIN_DECAY, sinkStep } from './cavity.js';
@@ -269,7 +271,7 @@ export class Rock {
    * @param radius nominal radius in metres
    * @param envTexture environment map for lighting
    */
-  constructor({ radius, position, velocity, envTexture }) {
+  constructor({ radius, position, velocity, envTexture, waterFog = null }) {
     this.radius = radius;
     this.position = position.clone();
     this.velocity = velocity.clone();
@@ -306,14 +308,25 @@ export class Rock {
     const seenThroughWater = this.seenThroughWater = { value: 0 };
     this.sinceImpact = -1;
     this.cavityTimes = null;   // its cavity's pinch-off (s after the impact), once the splash says
+    // Seen from an eye under the water, it fades into the water's colour with
+    // the distance through it (as the floor does, UNDER_FOG in src/shaders/scene.js,
+    // with the water's light looking level).
+    const fogExtinction = { value: waterFog?.extinction ?? new THREE.Vector3() };
+    const fogColor = { value: waterFog?.color ?? new THREE.Vector3() };
     this.meshBelow.material.onBeforeCompile = (shader) => {
       shader.uniforms.uSeenThroughWater = seenThroughWater;
+      shader.uniforms.uFogExtinction = fogExtinction;
+      shader.uniforms.uFogColor = fogColor;
       shader.vertexShader = shader.vertexShader
         .replace('#include <common>', `#include <common>\nuniform float uSeenThroughWater;\n${SEEN_THROUGH_WATER}`)
         .replace('#include <project_vertex>', `#include <project_vertex>
   vec3 trueWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;
   mvPosition = viewMatrix * vec4(mix(trueWorld, seenThroughWater(trueWorld), uSeenThroughWater), 1.0);
   gl_Position = projectionMatrix * mvPosition;`);
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <common>', '#include <common>\nuniform vec3 uFogExtinction;\nuniform vec3 uFogColor;')
+        .replace('#include <fog_fragment>', `#include <fog_fragment>
+  if (cameraPosition.y < 0.0) gl_FragColor.rgb = mix(uFogColor, gl_FragColor.rgb, exp(-uFogExtinction * length(vViewPosition)));`);
     };
     this.meshBelow.material.customProgramCacheKey = () => 'seen-through-water';
     for (const mesh of [this.meshAbove, this.meshBelow]) {

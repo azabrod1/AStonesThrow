@@ -18,6 +18,14 @@
 // (src/main.js) draws both variants before the first throw, so their programs
 // are built by then.
 //
+// Seen from under the water (src/main.js's Under view), the same meshes draw
+// with WATER_UNDER_FRAGMENT (the sky through Snell's window, the water
+// mirrored past it), their back faces, and a cavity with its CAVITY_MESH
+// variant: fromBelow(true) swaps the patch's and the sheet's materials, and
+// cavityUnderMaterial is the cavities'; fromBelow(false) puts them back. The
+// patch keeps no dip under a cavity from below: the hole hangs in front of
+// it.
+//
 // update() hands the shader, each frame, the two images it looks things up
 // in: the mirror image (with where the splash lies in it: the shader reads
 // distances there, WATER_FRAGMENT) and the under-water pass (with whether a
@@ -34,7 +42,7 @@
 // shader needs of the solver's grid are the solver's shared gridUniforms, so
 // they follow its resize.
 import * as THREE from 'three';
-import { WATER_VERTEX, WATER_FRAGMENT } from './shaders/scene.js';
+import { WATER_VERTEX, WATER_FRAGMENT, WATER_UNDER_FRAGMENT } from './shaders/scene.js';
 
 const OUTER_HALF_SIZE = 9000;
 const OUTER_GROWTH = 1.25;   // each of the outer sheet's square rings this many times the last's half size...
@@ -83,7 +91,7 @@ function innerPatchGeometry(water, segments) {
   return geometry;
 }
 
-export function createWaterSurface(water, lighting, ambientWaves, { meshSegments = Math.min(water.size, 512), rings = null } = {}) {
+export function createWaterSurface(water, lighting, ambientWaves, { meshSegments = Math.min(water.size, 512), rings = null, skyCube = null } = {}) {
   const uniforms = {
     uHeight: { value: water.heightTexture },
     uFoam: { value: water.foamTexture },
@@ -145,6 +153,26 @@ export function createWaterSurface(water, lighting, ambientWaves, { meshSegments
     side: THREE.DoubleSide,
   });
 
+  // From below (the header): the sky's cube shows through the window.
+  const underUniforms = { ...uniforms, uSkyCube: { value: skyCube } };
+  const underMaterial = (inner) => new THREE.ShaderMaterial({
+    vertexShader: WATER_VERTEX,
+    fragmentShader: WATER_UNDER_FRAGMENT,
+    uniforms: inner ? underUniforms : { ...underUniforms, uInner: { value: 0 } },
+    defines: { AMBIENT_LEVELS: ambientWaves.levels },
+    side: THREE.BackSide,
+  });
+  const innerUnderMaterial = underMaterial(true);
+  const outerUnderMaterial = underMaterial(false);
+  const cavityUnderMaterial = new THREE.ShaderMaterial({
+    vertexShader: WATER_VERTEX,
+    fragmentShader: WATER_UNDER_FRAGMENT,
+    uniforms: underUniforms,
+    defines: { AMBIENT_LEVELS: ambientWaves.levels, CAVITY_MESH: 1 },
+    side: THREE.DoubleSide,
+  });
+  let aboveMaterial = innerMaterial;   // the patch's material from above, while fromBelow has swapped it
+
   let segments = meshSegments;
   const inner = new THREE.Mesh(innerPatchGeometry(water, segments), innerMaterial);
   inner.position.set(water.centre[0], 0, water.centre[1]);
@@ -158,6 +186,22 @@ export function createWaterSurface(water, lighting, ambientWaves, { meshSegments
     outer,
     uniforms,
     cavityMaterial,
+    cavityUnderMaterial,
+    /** The bed the surface mirrors from below: the floor's uniforms (src/pondFloor.js), shared. */
+    setBed(floorUniforms) {
+      for (const name of ['uShore', 'uLand', 'uBank', 'uPattern', 'uAbsorb']) underUniforms[name] = floorUniforms[name];
+    },
+    /** Draw the patch and the sheet as seen from under the water (true), or from above again (false). */
+    fromBelow(below) {
+      if (below && inner.material !== innerUnderMaterial) {
+        aboveMaterial = inner.material;
+        inner.material = innerUnderMaterial;
+        outer.material = outerUnderMaterial;
+      } else if (!below && inner.material === innerUnderMaterial) {
+        inner.material = aboveMaterial;
+        outer.material = outerMaterial;
+      }
+    },
     /** The inner patch's quads per side. */
     get meshSegments() { return segments; },
     /** Its vertex spacing (m): the cavity's dip margins by it. */

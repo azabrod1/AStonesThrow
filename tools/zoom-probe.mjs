@@ -14,9 +14,10 @@
 // view's centre, the distance kept, the turn ORBIT_TURN per canvas height)
 // and throws nothing, nor does a mouse drag, while a mouse click does; a drag
 // up stops with the eye just above the water; a drag that starts zoomed
-// keeps what the view's centre shows there; the View setting's choices and
-// Reset view glide to their orbits, and the page's View row and Reset view
-// button follow. Prints one line per check and exits with status 1 if any
+// keeps what the view's centre shows there; under the water a drag keeps the
+// eye between the surface and the bed; the View setting's choices and Reset
+// view glide to their orbits, and the page's View row and Reset view button
+// follow. Prints one line per check and exits with status 1 if any
 // fails.
 //
 //   node tools/zoom-probe.mjs [--w=1280 --h=720]
@@ -220,12 +221,22 @@ const [afterX, afterY] = await page.evaluate((point) => window.__probe.onScreen(
 check(Math.hypot(afterX - width / 2, afterY - height / 2) < 0.5 && (await page.evaluate(() => window.__pond.zoomed)),
   `and turns round it, still zoomed: that point ${Math.hypot(afterX - width / 2, afterY - height / 2).toFixed(3)} px from the centre after the turn (${Math.hypot(centreX - width / 2, centreY - height / 2).toFixed(3)} px at its first step)`);
 
+// Under the water a drag keeps the eye under it: clear of the surface and of the bed.
+await page.evaluate(() => { window.__pond.showView('under'); window.__pond.settleView(); });
+await drag(width * 0.5, height * 0.2, width * 0.5, height * 0.95, 12);
+const underTop = await page.evaluate(() => window.__pond.camera.position.y);
+await drag(width * 0.5, height * 0.95, width * 0.5, height * 0.05, 12);
+const underBottom = await page.evaluate(() => { const { x, y, z } = window.__pond.camera.position; return { y, bed: -window.__pond.water.floorDepthAt(x, z) }; });
+check(Math.abs(underTop + 0.15) < 1e-6 && Math.abs(underBottom.y - (underBottom.bed + 0.15)) < 2e-3,
+  `under the water a drag down stops the eye ${(-underTop * 100).toFixed(1)} cm under the surface, a drag up ${((underBottom.y - underBottom.bed) * 100).toFixed(1)} cm over the bed (15 cm each)`);
+
 // The View setting's choices glide to their orbits, and the page follows.
-for (const name of ['high', 'level', 'shore']) {
+for (const name of ['high', 'level', 'under', 'shore']) {
   await page.evaluate((view) => { window.__pond.showView(view); window.__pond.settleView(); }, name);
   const state = await page.evaluate(() => ({ name: window.__pond.viewName, zoomed: window.__pond.zoomed, row: document.querySelector('.menu-tier[data-open="view"] .menu-tier-value').textContent, checked: document.querySelector('#view [aria-checked="true"]')?.dataset.value }));
-  check(state.name === name && !state.zoomed && state.checked === name && (await pivotOffCentre()) < 0.5,
-    `View ${name}: the eye at ${(await page.evaluate(() => window.__pond.camera.position.y)).toFixed(2)} m, unzoomed, facing the pivot; the View row reads ${state.row}`);
+  const eyeHeight = await page.evaluate(() => window.__pond.camera.position.y);
+  check(state.name === name && !state.zoomed && state.checked === name && (await pivotOffCentre()) < 0.5 && (name === 'under') === (eyeHeight < 0),
+    `View ${name}: the eye at ${eyeHeight.toFixed(2)} m, unzoomed, facing the pivot; the View row reads ${state.row}`);
 }
 check(await buttonHidden(), 'back at the shore view: Reset view hidden');
 

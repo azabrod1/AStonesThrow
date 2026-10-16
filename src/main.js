@@ -27,8 +27,14 @@
 // it round the pivot and up or down, what is under the finger following it,
 // ORBIT_TURN radians for a drag across the canvas's height; the View setting
 // glides it to another orbit (VIEWS: the shore, down at the water, high
-// above) over GLIDE_SECONDS, and Escape and the Reset view button glide it
-// home. Wherever it stands, the view zooms by narrowing the field of view
+// above, under the water) over GLIDE_SECONDS, and Escape and the Reset view
+// button glide it home. An orbit whose pivot is under the water keeps its
+// eye under it too (eyeBounds), so a drag never takes it through the
+// surface; only a glide does. Under the water the frame is UNDER_FOV times
+// wider, and the frame is drawn from below (renderFromBelow): no mirror, no
+// under-water pass, the bed, stones and bubbles faded by the water to the
+// eye, the surface and the cavities with their from-below shading (Snell's
+// window, the mirror past it, the sun's shafts), and nothing in the air. Wherever it stands, the view zooms by narrowing the field of view
 // (from the frame's 48° landscape or 62° portrait down to 8°) and turning
 // the camera, horizon level, so that what is under the pointer stays there
 // (src/viewZoom.js): the mouse wheel by 0.9 per notch, a two-finger pinch
@@ -83,7 +89,7 @@
 // each have their own localStorage key, and the page's parameters win over
 // them: ?sky=<name> picks the panorama (src/sky.js; setSky loads another
 // later, in place: the sun follows, and the mirror image is drawn again);
-// ?view=shore|level|high stands the camera at one of VIEWS (showView);
+// ?view=shore|level|high|under stands the camera at one of VIEWS (showView);
 // ?water=clear|pond|murky the water's clarity (WATER_CLARITIES; setClarity);
 // ?wind=x,z sets the direction the wind blows toward in world XZ
 // (DEFAULT_WIND otherwise); ?windStrength=calm|breeze|windy the wind's
@@ -105,8 +111,9 @@ import { createPondFloor, createShore, floorDepthAt, groundHeightAt } from './po
 import { Rock } from './rock.js';
 import { SplashSystem, MIRROR_LAYER } from './splash.js';
 import { createFloatTarget, FullscreenPass, configureFloatSupport, renderTargetBytes } from './gpu.js';
+import { UNDER_BACKGROUND_FRAGMENT } from './shaders/scene.js';
 import { directionAt, placeDirection, clampToFrame, zoomToward, isZoomed, viewFacing } from './viewZoom.js';
-import { orbitEye, orbitFacing, orbitAbout, clampOrbit, turnOrbit, blendOrbits, orbitsMatch } from './viewOrbit.js';
+import { orbitEye, orbitFacing, orbitAbout, clampOrbit, turnOrbit, blendOrbits, orbitsMatch, LOWEST_EYE } from './viewOrbit.js';
 import { Profiler } from './profiler.js';
 
 // Quality presets. The splash lives in a few dozen pixels, so the fluid
@@ -172,12 +179,22 @@ const GLIDE_SECONDS = 1.0;    // a glide to another view
 // The View setting's choices (src/viewOrbit.js): the shore view the page
 // opens with, 1.15 m above the water's edge; down at the water, its eye 16 cm
 // up, 1.9 m from where the rocks land; high above, 2.4 m up and a little to
-// the side, looking down on where they land.
+// the side, looking down on where they land; under the water, 0.85 m down
+// over the shallows, 1.5 m short of where they land, looking up and out
+// toward it and the sun, its shafts coming down through Snell's window.
 const VIEWS = {
   shore: orbitAbout({ x: 0, y: 1.15, z: 2.45 }, { x: HOME_TARGET[0], y: HOME_TARGET[1], z: HOME_TARGET[2] }),
   level: orbitAbout({ x: 0, y: 0.16, z: 0.5 }, { x: 0, y: 0.1, z: -1.4 }),
   high: orbitAbout({ x: 1.0, y: 2.4, z: 0.6 }, { x: 0, y: 0, z: -1.3 }),
+  under: orbitAbout({ x: -0.7, y: -0.85, z: -0.1 }, { x: 0, y: -0.3, z: -1.4 }),
 };
+// Where the eye may stand (clampOrbit, src/viewOrbit.js): over the water at
+// least LOWEST_EYE above the beach or the still water; under it, on an orbit
+// whose pivot is under it, UNDER_GAP clear of the bed and of the surface.
+const UNDER_GAP = 0.15;
+// Under the water the frame is this much wider (72° landscape), so Snell's
+// window overhead and the bed below fit in one view.
+const UNDER_FOV = 1.5;
 const SUN_AZIMUTH = Math.atan2(0.42, 0.78);   // radians right of straight ahead (−Z), about 28°
 const DEBUG_MODES = { under: 0, height: 1, foam: 2, env: 3, face: 4, ambient: 5 };   // setDebugView names
 const DEFAULT_WIND_STRENGTH = 'calm';
@@ -284,7 +301,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
   water.rings = rings;
   // The lake bed (src/pondFloor.js): the splash's holes and the rocks rest on it.
   water.floorDepthAt = floorDepthAt;
-  const surface = createWaterSurface(water, lighting, ambientWaves, { meshSegments: settings.meshSegments, rings });
+  const surface = createWaterSurface(water, lighting, ambientWaves, { meshSegments: settings.meshSegments, rings, skyCube: environment.cubeTexture });
   const splash = new SplashSystem({ environment, lighting, water, ambientWaves, surface });
   // The wind's strength: the page's ?windStrength, else the last choice here, else calm.
   const storedWind = storedChoice(WIND_STORAGE_KEY);
@@ -312,6 +329,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
   const camera = new THREE.PerspectiveCamera(48, 1, 0.05, 60000);
   // The floor's pattern is baked once, a tile laid out on the world (src/pondFloor.js).
   const floor = createPondFloor(water, lighting, ambientWaves, { renderer, rings });
+  surface.setBed(floor.material.uniforms);   // the bed its mirror shows from under the water
   const floorPattern = floor.material.uniforms.uPattern.value;   // RGBA8, with its mip chain
   const floorPatternBytes = Math.round(floorPattern.image.width * floorPattern.image.height * 4 * (floorPattern.generateMipmaps ? 4 / 3 : 1));
   // The view: orbit is where the eye stands, facing its pivot; home the frame
@@ -319,6 +337,10 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
   // widest field of view); view the current one, zoomed inside home.
   const requestedView = pageParameters.get('view');
   const orbit = { ...VIEWS[Object.hasOwn(VIEWS, requestedView ?? '') ? requestedView : 'shore'] };
+  const aboveWater = { lowestAt: (x, z) => LOWEST_EYE + groundHeightAt(x, z), highestAt: () => Infinity };
+  const underWater = { lowestAt: (x, z) => UNDER_GAP - floorDepthAt(x, z), highestAt: () => -UNDER_GAP };
+  /** Where an orbit's eye may stand: under the water if its pivot is. */
+  const eyeBounds = (target) => (target.pivotY < 0 ? underWater : aboveWater);
   const home = { ...orbitFacing(orbit), fov: 48 };
   const view = { ...home };
   // The thrower's hand stands beside and below the shore view's eye, wherever the camera is (handPosition).
@@ -592,7 +614,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
   function moveEye(next) {
     const turnedYaw = view.yaw - home.yaw;
     const turnedPitch = view.pitch - home.pitch;
-    Object.assign(orbit, clampOrbit(next, groundHeightAt));
+    Object.assign(orbit, clampOrbit(next, eyeBounds(next)));
     Object.assign(home, orbitFacing(orbit));
     view.yaw = home.yaw + turnedYaw;
     view.pitch = home.pitch + turnedPitch;
@@ -620,9 +642,14 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     viewFromApi = false;
   }
 
+  /** The widest field of view (degrees) of the frame from an orbit: 48° landscape, 62° portrait, wider under the water. */
+  function frameFov(target = orbit) {
+    return (canvas.clientWidth >= canvas.clientHeight ? 48 : 62) * (target.pivotY < 0 ? UNDER_FOV : 1);
+  }
+
   /** Glide the eye to an orbit (one of VIEWS, by `name`) over GLIDE_SECONDS, the zoom easing out on the way. */
   function glideTo(target, name = null) {
-    glide = { from: { ...orbit }, to: target, name, fromFov: view.fov, fromTurn: { yaw: view.yaw - home.yaw, pitch: view.pitch - home.pitch }, started: performance.now() };
+    glide = { from: { ...orbit }, to: target, name, fromFov: view.fov, fromFrameFov: home.fov, fromTurn: { yaw: view.yaw - home.yaw, pitch: view.pitch - home.pitch }, started: performance.now() };
     stepGlide(glide.started);
   }
 
@@ -632,8 +659,11 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     const progress = Math.min((now - glide.started) / (1000 * GLIDE_SECONDS), 1);
     const eased = progress * progress * (3 - 2 * progress);
     const target = glide.to;
-    Object.assign(orbit, progress < 1 ? blendOrbits(glide.from, target, eased, groundHeightAt) : clampOrbit(target, groundHeightAt));
+    // A glide that crosses the surface keeps to no side's bounds on the way.
+    const sameSide = (glide.from.pivotY < 0) === (target.pivotY < 0);
+    Object.assign(orbit, progress < 1 ? blendOrbits(glide.from, target, eased, sameSide ? eyeBounds(target) : null) : clampOrbit(target, eyeBounds(target)));
     Object.assign(home, orbitFacing(orbit));
+    home.fov = glide.fromFrameFov + (frameFov(target) - glide.fromFrameFov) * eased;
     view.yaw = home.yaw + glide.fromTurn.yaw * (1 - eased);
     view.pitch = home.pitch + glide.fromTurn.pitch * (1 - eased);
     view.fov = glide.fromFov + (home.fov - glide.fromFov) * eased;
@@ -649,7 +679,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     if (gliding) { glideTo(VIEWS[name], name); return; }
     glide = null;
     Object.assign(orbit, VIEWS[name]);
-    Object.assign(home, orbitFacing(orbit));
+    Object.assign(home, orbitFacing(orbit), { fov: frameFov() });
     setView(home);
   }
 
@@ -682,7 +712,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     renderer.getDrawingBufferSize(resolution);
     const zoomed = isZoomed(view, home);
     camera.aspect = width / height;
-    home.fov = width >= height ? 48 : 62;
+    home.fov = frameFov();
     // A view set through the API stays as it is; the user's zoom stays inside the new home frame.
     if (!zoomed) Object.assign(view, home);
     else if (!viewFromApi) Object.assign(view, clampToFrame({ ...view, fov: Math.min(view.fov, home.fov) }, home, camera.aspect));
@@ -729,13 +759,27 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     const hand = handPosition(radius);
     const target = new THREE.Vector3(x, 0, z);
     const { velocity } = throwVelocity(hand, target, options.power ?? power);
-    const rock = new Rock({ radius, position: hand, velocity, envTexture: environment.envTexture });
+    const rock = new Rock({ radius, position: hand, velocity, envTexture: environment.envTexture, waterFog: { extinction: lighting.extinction, color: lighting.waterColor } });
     rocks.push(rock);
     sceneMain.add(rock.meshAbove);
     sceneUnder.add(rock.meshBelow);
     while (rocks.length > MAX_ROCKS) retireRock(rocks[0]);
     lastActivity = performance.now();
     return rock;
+  }
+
+  /** A frame from an orbit, unzoomed (the warm-up's view from below), the view put back after. */
+  function renderFrom(target) {
+    const keptOrbit = { ...orbit }, keptHome = { ...home }, keptView = { ...view };
+    Object.assign(orbit, target);
+    Object.assign(home, orbitFacing(orbit), { fov: frameFov() });
+    Object.assign(view, { yaw: home.yaw, pitch: home.pitch, fov: home.fov });
+    applyView();
+    render();
+    Object.assign(orbit, keptOrbit);
+    Object.assign(home, keptHome);
+    Object.assign(view, keptView);
+    applyView();
   }
 
   /** Take a stone out of the scenes; keepMaterials frees only its geometry (warmUp keeps a stone's materials, so their program stays compiled). */
@@ -765,7 +809,13 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     pointer.set(point.x, point.y);
     raycaster.setFromCamera(pointer, camera);
     const hit = new THREE.Vector3();
-    if (!raycaster.ray.intersectPlane(waterPlane, hit)) {
+    if (camera.position.y < 0 && raycaster.ray.direction.y < 0) {
+      // From under the water, a ray down: at the water over where it meets the bed.
+      const { origin, direction } = raycaster.ray;
+      let along = 0;
+      while (along < 40 && origin.y + direction.y * along > -floorDepthAt(origin.x + direction.x * along, origin.z + direction.z * along)) along += 0.05;
+      hit.set(origin.x + direction.x * along, 0, origin.z + direction.z * along);
+    } else if (!raycaster.ray.intersectPlane(waterPlane, hit)) {
       const horizontal = Math.hypot(raycaster.ray.direction.x, raycaster.ray.direction.z);
       if (horizontal < 1e-6) return null;
       hit.set(camera.position.x + (raycaster.ray.direction.x / horizontal) * 100, 0, camera.position.z + (raycaster.ray.direction.z / horizontal) * 100);
@@ -860,7 +910,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
         showAim(null);
       }
       if (turning) {
-        moveEye(turnOrbit(orbit, event.clientX - turning.x, event.clientY - turning.y, ORBIT_TURN / Math.max(canvas.clientHeight, 1), groundHeightAt));
+        moveEye(turnOrbit(orbit, event.clientX - turning.x, event.clientY - turning.y, ORBIT_TURN / Math.max(canvas.clientHeight, 1), eyeBounds(orbit)));
         turning.x = event.clientX;
         turning.y = event.clientY;
         return;
@@ -933,21 +983,26 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     rings.update(simulationTime);
     // The splash's sheets and columns to this frame, for the mirror and the droplet passes.
     if (!skip.fluid) splash.prepareFrame();
-    updateReflection();
+    const fromBelow = camera.position.y < 0;
+    if (!fromBelow) updateReflection();   // from below no mirror is needed; a change of view keeps it marked stale until the eye surfaces
     surface.update({ underTarget, reflectionTarget, reflectionMatrix, mirrorRect: splashRect, stonesUnder: rocks.some((rock) => rock.state !== 'air'), resolution, camera, time: simulationTime });
     splash.prepareScene();   // the stones' cavities, and the patch dipping under them
     if (skip.cavity) surface.setCavities([]);
     surface.inner.visible = surface.outer.visible = !skip.surface;
     splash.cavityGroup.visible = !skip.surface && !skip.cavity;
 
-    renderer.setRenderTarget(underTarget);
-    renderer.setClearColor(0x000000, 1);
-    renderer.clear(true, true, false);
-    if (!skip.floor) renderer.render(sceneUnder, camera);
+    if (fromBelow) {
+      renderFromBelow();
+    } else {
+      renderer.setRenderTarget(underTarget);
+      renderer.setClearColor(0x000000, 1);
+      renderer.clear(true, true, false);
+      if (!skip.floor) renderer.render(sceneUnder, camera);
 
-    renderer.setRenderTarget(mainTarget);
-    renderer.clear(true, true, false);
-    renderer.render(sceneMain, camera);
+      renderer.setRenderTarget(mainTarget);
+      renderer.clear(true, true, false);
+      renderer.render(sceneMain, camera);
+    }
 
     if (Object.hasOwn(DEBUG_MODES, debugView)) {
       const debugTextures = { under: underTarget.texture, height: water.heightTexture, ambient: ambientWaves.heightTexture };
@@ -956,9 +1011,46 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
       debugPass.render(renderer, null);
       return;
     }
-    // The profiler's plain tone map in place of the droplet passes, or the splash over the scene.
-    if (skip.fluid) splash.toneMap(renderer, mainTarget, null);
+    // The profiler's plain tone map in place of the droplet passes, or the
+    // splash over the scene; from below, what flies in the air is not drawn.
+    if (skip.fluid || fromBelow) splash.toneMap(renderer, mainTarget, null);
     else splash.render(renderer, camera, mainTarget, null);
+  }
+
+  // The view from under the water (VIEWS.under). What the under-water pass
+  // draws (floor, stones under the water, bubbles) goes straight into the
+  // main target, each fading into the water's colour with the water between
+  // it and the eye (UNDER_FOG, src/shaders/scene.js), over the water's own
+  // colour where nothing is; then the surface and the stones' cavities as
+  // seen from below (surface.fromBelow: the sky in Snell's window, the water
+  // mirrored past it), with the foam's specks. The sky's dome, the beach, the
+  // aim's marker and the stones above the water are behind the surface and
+  // not drawn.
+  const belowBackground = new FullscreenPass(UNDER_BACKGROUND_FRAGMENT, {
+    uInverseProjection: { value: camera.projectionMatrixInverse },
+    uCameraWorld: { value: camera.matrixWorld },
+    uEye: { value: camera.position },
+    uExtinction: { value: lighting.extinction },
+    uWaterColor: { value: lighting.waterColor },
+    uSunDir: { value: lighting.sunDirection },
+    uSunIrradiance: { value: lighting.sunIrradiance },
+    ...ambientWaves.uniforms(),
+  });
+  const hiddenFromBelow = () => [environment.sky, shore, marker, arc, ...rocks.map((rock) => rock.meshAbove)];
+  function renderFromBelow() {
+    renderer.setRenderTarget(mainTarget);
+    renderer.clear(true, true, false);
+    belowBackground.render(renderer, mainTarget);
+    if (!skip.floor) renderer.render(sceneUnder, camera);
+    const hidden = hiddenFromBelow();
+    const wasVisible = hidden.map((object) => object.visible);
+    for (const object of hidden) object.visible = false;
+    surface.fromBelow(true);
+    for (const mesh of splash.cavityGroup.children) mesh.material = surface.cavityUnderMaterial;
+    renderer.render(sceneMain, camera);
+    for (const mesh of splash.cavityGroup.children) mesh.material = surface.cavityMaterial;
+    surface.fromBelow(false);
+    hidden.forEach((object, index) => { object.visible = wasVisible[index]; });
   }
 
   // ?paused=1 starts with the clock stopped, so the harness's frames start
@@ -1140,9 +1232,10 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     marker.visible = arc.visible = false;
     for (let step = 0; step < 180 && !rocks.some((rock) => rock.state !== 'air'); step++) simulate(1 / 60);
     let elapsed = 0;
-    for (const moment of WARM_UP.moments) {
+    for (const [index, moment] of WARM_UP.moments.entries()) {
       while (elapsed < moment - 1e-6) { const dt = Math.min(1 / 60, moment - elapsed); simulate(dt); elapsed += dt; }
       render();
+      if (index === 0) renderFrom(VIEWS.under);   // the cavity is open: the surface's and the cavity's programs from below
     }
     programKeepers.push(stone.meshAbove.material, stone.meshBelow.material);
     retireRock(stone, { keepMaterials: true });
@@ -1249,7 +1342,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     lookAt(x, y, z) { setView({ ...viewFacing(x - camera.position.x, y - camera.position.y, z - camera.position.z), fov: view.fov }, true); },
     /** Glide back to the shore view the page opens with, unzoomed. */
     resetView,
-    /** One of VIEWS by name (shore, level, high), glided to; with { glide: false } at once. */
+    /** One of VIEWS by name (shore, level, high, under), glided to; with { glide: false } at once. */
     showView,
     /** The VIEWS entry the eye stands at (or glides to), null when turned off them. */
     get viewName() { return glide ? glide.name : viewName(); },
@@ -1267,8 +1360,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
       if (elevation !== undefined) next.elevation = THREE.MathUtils.degToRad(elevation);
       if (distance !== undefined) next.distance = distance;
       if (pivot) [next.pivotX, next.pivotY, next.pivotZ] = pivot;
-      Object.assign(orbit, clampOrbit(next, groundHeightAt));
-      Object.assign(home, orbitFacing(orbit));
+      Object.assign(orbit, clampOrbit(next, eyeBounds(next)));
+      Object.assign(home, orbitFacing(orbit), { fov: frameFov() });
       setView(home);
     },
     /** The orbit the eye stands on: azimuth and elevation in degrees, distance in metres, pivot [x, y, z]. */

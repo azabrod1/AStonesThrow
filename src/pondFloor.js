@@ -196,6 +196,8 @@ export function createPondFloor(water, lighting, ambientWaves, { renderer, rings
       uCell: water.gridUniforms.uCell,
       ...shoreUniforms(),
       uAbsorb: { value: lighting.absorb },
+      uExtinction: { value: lighting.extinction },
+      uWaterColor: { value: lighting.waterColor },
       uPattern: { value: pattern.texture },
       ...ambientWaves.uniforms(),
       ...(rings ? rings.uniforms() : {}),

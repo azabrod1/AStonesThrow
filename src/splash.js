@@ -757,7 +757,7 @@ export class SplashSystem {
     this.bubbleMaterial = new THREE.ShaderMaterial({
       vertexShader: BUBBLE_VERTEX,
       fragmentShader: BUBBLE_FRAGMENT,
-      uniforms: { uProjScale: { value: 1000 }, uTint: { value: new THREE.Color(0.18, 0.30, 0.34) } },
+      uniforms: { uProjScale: { value: 1000 }, uTint: { value: new THREE.Color(0.18, 0.30, 0.34) }, uExtinction: { value: lighting.extinction } },
       transparent: true,
       depthWrite: false,
       blending: THREE.CustomBlending,

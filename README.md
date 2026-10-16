@@ -22,7 +22,10 @@ each setting a page of its choices with a line on each), and each choice is
 remembered on the device (but the view, which opens on the shore):
 - View: Shore, standing on the bank as the page opens; Low, down at the
   water, the splash against the far shore; High, from above, the rings
-  spreading over the pond. A choice glides there; a drag turns from it.
+  spreading over the pond; Under, under the water, looking up at the rocks
+  coming down through the sky's bright window, their air cavities silver
+  mirrors, the sun's shafts slanting down. A choice glides there; a drag
+  turns from it (under the water it stays under).
 - Water: Lake, the default, a clear Alpine lake's (bright sand in the
   shallows, turquoise-blue where it is deep); Clear, a spring's, bluer and
   clearer; Pond, a green pond's; Murky, a lake after rain. The lake bed
@@ -349,6 +352,23 @@ a water-coloured lower hemisphere are captured into a cube map that the
 droplets reflect, and a prefiltered copy lights the stones; another sky is
 captured into the same maps, in the frame it arrives.
 
+**From under the water** (the Under view; `renderFromBelow` in `src/main.js`,
+`UNDER_FOG` and `WATER_UNDER_FRAGMENT` in `src/shaders/scene.js`). The water's
+own light, darker looking down and brighter looking up toward the surface,
+is drawn behind everything; the bed (with its caustics), the stones and the
+bubbles are drawn where they are, faded into it by the extinction over their
+distance; then the surface from below: within 48.6° of its normal the eye's
+ray leaves into the air and shows the sky (the cube the droplets reflect,
+with the sun's disc), squeezed into Snell's window, the far shore round its
+edge and the ripples, rings and splash bending it; past that the surface
+mirrors what lies below, the bed where the mirrored ray meets it. A stone's
+cavity is shaded the same way from its air side, so it is a silver mirror
+with the sky down its mouth. The sun's shafts are the light the water
+scatters toward the eye from the sunlight the ripples focus: along each ray
+the curvature where that sunlight crossed the surface, dimmed on its way down
+and out to the eye, scattered forward. Nothing in the air is drawn from
+below but what the window shows of the sky.
+
 **Rendering** (`src/main.js`, `src/shaders/`). Each frame: the floor,
 submerged stones and bubbles are rendered to a texture with depth (at half
 the canvas's resolution on Medium and Low), the stones and bubbles where the
@@ -501,7 +521,7 @@ farther out, so it rises into the view rather than filling its corner.
   panorama, a key of `SKIES` in `src/sky.js`, over the one last chosen on
   the device; `?water=clear|lake|pond|murky` (`--water=` for the harness) the
   water's clarity, `WATER_CLARITIES` in `src/main.js`.
-- `?view=shore|level|high` on the page (`--view=` for the harness) opens on
+- `?view=shore|level|high|under` on the page (`--view=` for the harness) opens on
   one of the View setting's choices (`VIEWS` in `src/main.js`);
   `--orbit=azimuth:elevation:distance[:x:y:z]` stands the harness's camera on
   any orbit (degrees, degrees, metres, and the pivot; `src/viewOrbit.js`).

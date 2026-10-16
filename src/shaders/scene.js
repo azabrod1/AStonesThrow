@@ -932,6 +932,195 @@ vec3 floorSand(vec2 point) {
 }
 `;
 
+// Seen from an eye under the water (the Under view, src/main.js): the water
+// between a point and the eye dims its light by the extinction and fills in
+// the water's own, as from above (WATER_FRAGMENT), but the water's own light
+// is underwaterGlow: the deep colour seen from above (uWaterColor) times
+// UNDER_GLOW_DOWN looking down, into the dark depths, to UNDER_GLOW_UP
+// looking up, toward the lit water under the surface. That is the mean of
+// what the sunlit water scatters toward the eye; on it lie the sun's shafts
+// (underwaterShafts): the ripples focus the sunlight they let through into
+// sheets and threads that run down through the water along the sun's
+// refracted direction, as on the bed (FLOOR_FRAGMENT), so the light the water
+// scatters toward the eye is brighter in them and dimmer between. Along the
+// ray, at SHAFT_STEPS points out to SHAFT_REACH, the sunlight there is
+// focused by the wind ripples' curvature where it crossed the surface (at a
+// fixed mip level, so the loop needs no derivatives), its excess over the
+// mean sunlight dimmed by the water on its way down and on to the eye, and
+// scattered toward the eye by a forward-peaked phase function
+// (Henyey–Greenstein, SHAFT_FORWARD): bright looking toward the sun, faint
+// away from it.
+export const UNDER_FOG = /* glsl */`
+uniform vec3 uExtinction;
+uniform vec3 uWaterColor;
+#define UNDER_GLOW_DOWN 0.9
+#define UNDER_GLOW_UP 5.0
+#define SHAFT_STEPS 12
+#define SHAFT_REACH 8.0        // metres along the ray
+#define SHAFT_LEVEL 0.0        // the ripples' mip level the shafts are read at
+#define SHAFT_BLUR 0.35        // as CAUSTIC_BLUR on the floor
+#define SHAFT_SCATTER 0.5      // the share of the extinction that is scattering (about half, in clear lake water)
+#define SHAFT_FORWARD 0.75     // the phase function's g
+vec3 underwaterGlow(vec3 direction) {
+  return uWaterColor * mix(UNDER_GLOW_DOWN, UNDER_GLOW_UP, smoothstep(-0.5, 0.9, direction.y));
+}
+vec3 underwaterShafts(vec3 origin, vec3 direction, float distance) {
+  float sunSine = length(uSunDir.xz);
+  float refractedSine = sunSine / 1.333;
+  float refractedCosine = sqrt(1.0 - refractedSine * refractedSine);
+  vec3 toSun = vec3(uSunDir.xz / max(sunSine, 1e-5) * refractedSine, refractedCosine).xzy;
+  float focusing = (1.0 - max(uSunDir.y, 0.0) / (1.333 * refractedCosine)) * 0.5 * (1.0 + 1.0 / (refractedCosine * refractedCosine));
+  float reach = min(distance, SHAFT_REACH);
+  float stepLength = reach / float(SHAFT_STEPS);
+  vec3 sum = vec3(0.0);
+  for (int index = 0; index < SHAFT_STEPS; index++) {
+    float along = (float(index) + 0.5) * stepLength;
+    vec3 point = origin + direction * along;
+    float depth = max(-point.y, 0.0);
+    vec2 crossing = point.xz + toSun.xz / toSun.y * depth;
+    float curvature = texture2DLodEXT(uAmbientHeight, crossing / uAmbientTileSize, SHAFT_LEVEL).a * uAmbientMetresPerUnit * gustEnvelope(crossing, uGustTime);
+    float focus = 1.0 + focusing * depth * curvature;
+    float irradiance = sqrt(1.0 + SHAFT_BLUR * SHAFT_BLUR) * inversesqrt(focus * focus + SHAFT_BLUR * SHAFT_BLUR);
+    sum += (min(irradiance, 3.0) - 1.0) * exp(-uExtinction * (along + depth / refractedCosine));
+  }
+  float cosine = dot(direction, toSun);
+  float phase = (1.0 - SHAFT_FORWARD * SHAFT_FORWARD) / pow(1.0 + SHAFT_FORWARD * SHAFT_FORWARD - 2.0 * SHAFT_FORWARD * cosine, 1.5) / (4.0 * 3.14159265);
+  return uSunIrradiance * SHAFT_SCATTER * uExtinction * phase * sum * stepLength;
+}
+vec3 throughWater(vec3 color, vec3 point) {
+  vec3 ray = point - cameraPosition;
+  float distance = max(length(ray), 1e-4);
+  vec3 direction = ray / distance;
+  return mix(underwaterGlow(direction), color, exp(-uExtinction * distance)) + underwaterShafts(cameraPosition, direction, distance);
+}
+`;
+
+// Behind everything seen from under the water (the first thing drawn in the
+// Under view, src/main.js): the water's own light along each pixel's ray,
+// with the sun's shafts out to their reach (UNDER_FOG), so where nothing
+// stands in the way the water carries on with no edge.
+export const UNDER_BACKGROUND_FRAGMENT = /* glsl */`
+uniform mat4 uInverseProjection;
+uniform mat4 uCameraWorld;
+uniform vec3 uEye;
+uniform vec3 uSunDir;
+uniform vec3 uSunIrradiance;
+varying vec2 vUv;
+${GLSL_COMMON}
+${UNDER_FOG}
+void main() {
+  vec4 view = uInverseProjection * vec4(vUv * 2.0 - 1.0, 1.0, 1.0);
+  vec3 direction = normalize((uCameraWorld * vec4(view.xyz / view.w, 0.0)).xyz);
+  gl_FragColor = vec4(underwaterGlow(direction) + underwaterShafts(uEye, direction, SHAFT_REACH), 1.0);
+}
+`;
+
+// The water surface (and a stone's cavity, CAVITY_MESH) seen from under the
+// water, with WATER_VERTEX. The eye's ray reaches the surface from below and
+// leaves into the air only within the critical angle of its normal (48.6°
+// for water: Snell's law, refract), so the sky shows in a bright window
+// overhead, squeezed toward its edge, and the ripples, rings and splash
+// bend it; there the sky comes from the cube the droplets reflect
+// (uSkyCube), with the sun's disc, and the water's Fresnel reflection of
+// what lies below. Past the critical angle the surface is a mirror (total
+// internal reflection) of what lies under it: the bed where the reflected
+// ray meets it (marched in BED_STEPS out to BED_REACH, then halved twice),
+// its sand lit as FLOOR_FRAGMENT lights it (without the caustics) and seen
+// through the water on the way, or the water's own light (underwaterGlow)
+// where it meets none. Foam floating on it shows lit from above. A cavity's
+// normal points into its air as the surface's does, so a hole is shaded the
+// same way: a wall mostly mirrors (silvery where it turns the ray up toward
+// the bright water under the surface), and where the ray passes into its
+// air it sees the sky down the mouth, dimmer the deeper the hole. Then the
+// water between it and the eye (UNDER_FOG).
+export const WATER_UNDER_FRAGMENT = /* glsl */`
+uniform sampler2D uHeight;
+uniform sampler2D uFoam;
+uniform samplerCube uSkyCube;
+uniform vec3 uSunDir;
+uniform vec3 uSunIrradiance;
+uniform vec3 uSkyAmbient;
+uniform float uN;
+uniform float uCell;
+uniform vec3 uAbsorb;
+varying vec3 vWorld;
+varying vec2 vDomainUv;
+varying float vMask;
+varying float vViewZ;
+#ifdef CAVITY_MESH
+varying vec3 vNormalWorld;
+varying vec3 vCavity;       // rides the surface, open to the sky, climb to escape (WATER_VERTEX)
+#endif
+${GLSL_COMMON}
+${UNDER_FOG}
+${LAKE_BED}
+${FLOOR_PATTERN_TILE}
+${FLOOR_SAND}
+#define BED_STEPS 16
+#define BED_REACH 6.0        // metres along the mirrored ray
+#define WATER_INDEX 1.333
+#define SUN_DISC 3000.0      // the sun through the window: a lobe this sharp...
+#define SUN_DISC_GAIN 6.0    // ...this bright against the sun's irradiance
+#define FOAM_SEEN 0.6        // floating foam's light seen from below, against the sun's and sky's on it
+void main() {
+  float texelStep = 1.0 / uN;
+  float hl = texture2D(uHeight, vDomainUv - vec2(texelStep, 0.0)).r;
+  float hr = texture2D(uHeight, vDomainUv + vec2(texelStep, 0.0)).r;
+  float hd = texture2D(uHeight, vDomainUv - vec2(0.0, texelStep)).r;
+  float hu = texture2D(uHeight, vDomainUv + vec2(0.0, texelStep)).r;
+  vec2 acrossX = dFdx(vWorld.xz);
+  vec2 acrossY = dFdy(vWorld.xz);
+  float gust = gustEnvelope(vWorld.xz, uGustTime);
+  vec2 slope = vec2(hr - hl, hu - hd) / (2.0 * uCell) * vMask + ambientSlopeAtFullGust(vWorld.xz) * gust;
+  if (uRingCount > 0) slope += ringSlope(vWorld.xz, acrossX, acrossY);
+#ifdef CAVITY_MESH
+  vec3 n = normalize(vNormalWorld);
+#else
+  vec3 n = normalize(vec3(-slope.x, 1.0, -slope.y));
+#endif
+  vec3 ray = vWorld - cameraPosition;
+  ray /= max(length(ray), 1e-4);
+  // The normal against the ray, for refract and reflect (from the water's side).
+  vec3 against = dot(ray, n) > 0.0 ? -n : n;
+  vec3 mirrored = reflect(ray, against);
+  vec3 color = underwaterGlow(mirrored);
+  if (mirrored.y < -0.01) {
+    // The bed the mirrored ray meets: the first step under it, then two halvings.
+    float stepLength = BED_REACH / float(BED_STEPS);
+    float along = 0.0;
+    bool met = false;
+    for (int index = 1; index <= BED_STEPS; index++) {
+      along = float(index) * stepLength;
+      vec3 point = vWorld + mirrored * along;
+      if (-point.y >= floorDepthAt(point.xz)) { met = true; break; }
+    }
+    if (met) {
+      for (int halving = 0; halving < 2; halving++) {
+        stepLength *= 0.5;
+        vec3 point = vWorld + mirrored * (along - stepLength);
+        if (-point.y >= floorDepthAt(point.xz)) along -= stepLength;
+      }
+      vec3 bed = vWorld + mirrored * along;
+      float depth = max(-bed.y, 0.0);
+      vec3 light = uSunIrradiance * exp(-uAbsorb * depth / max(uSunDir.y, 0.2)) * max(uSunDir.y, 0.0) + uSkyAmbient * exp(-uAbsorb * depth) * 1.4;
+      color = mix(color, floorSand(bed.xz) * PATTERN_RANGE * light, exp(-uExtinction * along));
+    }
+  }
+  vec3 outward = refract(ray, against, WATER_INDEX);
+  if (dot(outward, outward) > 0.5) {
+    float fresnel = 0.02 + 0.98 * pow(1.0 - abs(dot(outward, n)), 5.0);
+    vec3 sky = textureCube(uSkyCube, outward).rgb + uSunIrradiance * SUN_DISC_GAIN * pow(max(dot(outward, uSunDir), 0.0), SUN_DISC);
+#ifdef CAVITY_MESH
+    sky *= mix(0.15, 1.0, vCavity.y);
+#endif
+    color = mix(sky, color, fresnel);
+  }
+  float foam = texture2D(uFoam, vDomainUv).r * vMask;
+  color = mix(color, (uSunIrradiance * max(uSunDir.y, 0.0) + uSkyAmbient) * FOAM_SEEN, smoothstep(0.05, 0.6, foam) * 0.8);
+  gl_FragColor = vec4(min(throughWater(color, vWorld), vec3(1000.0)), 1.0);
+}
+`;
+
 // One pass over the pattern's tile: texel (u, v) holds the pattern at the
 // floor point PATTERN_TILE · (u, v), and the floor at world point p fetches
 // it at p / PATTERN_TILE, the texture repeating.
@@ -997,6 +1186,8 @@ void main() {
 
 export const FLOOR_FRAGMENT = /* glsl */`
 uniform sampler2D uHeight;
+uniform vec3 uSunDir;
+uniform vec3 uSunIrradiance;
 uniform vec2 uDomainMin;
 uniform float uDomainSize;
 uniform float uTexelOffset;
@@ -1010,6 +1201,7 @@ varying vec3 vSunlight;
 varying vec3 vSkylight;
 ${GLSL_COMMON}
 ${FLOOR_PATTERN_TILE}
+${UNDER_FOG}
 #define WATER_INDEX 1.333
 #define CAUSTIC_BLUR 0.35          // the irradiance's peak where rays focus on the floor: about 1/this
 #define CAUSTIC_BRIGHTEST 1.6      // the sunlight on the sand is eased into this many times its own...
@@ -1035,6 +1227,8 @@ void main() {
   float entry = reach * cameraPosition.y / (cameraPosition.y + vDepth);
   float sineWater = entry / (length(vec2(entry, cameraPosition.y)) * WATER_INDEX);
   vec2 seenPoint = cameraPosition.xz + fromEye * ((entry + vDepth * sineWater * inversesqrt(1.0 - sineWater * sineWater)) / reach);
+  // From an eye under the water the floor is seen where it is.
+  if (cameraPosition.y < 0.0) seenPoint = vFloorPoint;
   vec2 surfacePoint = seenPoint + vUpSun * vDepth;
   vec2 uv = (surfacePoint - uDomainMin) / uDomainSize + uTexelOffset;
   float mask = patchMask(uv);
@@ -1069,7 +1263,9 @@ void main() {
     ? 1.0 + (CAUSTIC_BRIGHTEST - 1.0) * tanh((irradiance - 1.0) / (CAUSTIC_BRIGHTEST - 1.0))
     : 1.0 - (1.0 - CAUSTIC_DARKEST) * tanh((1.0 - irradiance) / (1.0 - CAUSTIC_DARKEST));
 
-  gl_FragColor = vec4(sand * (vSunlight * caustic + vSkylight), 1.0);
+  vec3 color = sand * (vSunlight * caustic + vSkylight);
+  if (cameraPosition.y < 0.0) color = throughWater(color, vec3(vFloorPoint.x, -vDepth, vFloorPoint.y));
+  gl_FragColor = vec4(color, 1.0);
 }
 `;
 
@@ -1200,6 +1396,7 @@ vec3 seenThroughWater(vec3 world) {
 export const BUBBLE_VERTEX = /* glsl */`
 attribute float aSize;
 uniform float uProjScale;
+uniform vec3 uExtinction;
 varying float vFade;
 ${SEEN_THROUGH_WATER}
 void main() {
@@ -1207,6 +1404,8 @@ void main() {
   float dist = max(-viewPosition.z, 0.05);
   gl_PointSize = max(aSize * 2.0 * uProjScale / dist, 1.5);
   vFade = clamp(aSize * 2.0 * uProjScale / dist / 1.5, 0.3, 1.0);
+  // Seen from under the water, a bubble fades into it with distance (the green channel's extinction).
+  if (cameraPosition.y < 0.0) vFade *= exp(-uExtinction.g * dist);
   gl_Position = projectionMatrix * viewPosition;
 }
 `;

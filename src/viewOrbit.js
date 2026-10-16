@@ -8,10 +8,12 @@
 // metres, radians, radians, metres. The eye stands at the pivot plus
 // distance · (sin a·cos e, sin e, cos a·cos e): azimuth 0 on the +Z side of
 // the pivot (the bank the shore view stands on), growing toward +X, and the
-// elevation above the pivot's level. clampOrbit keeps the eye at least
-// LOWEST_EYE above the ground under it (`groundAt`, the beach's height, or
-// the still water's, 0: a wave must never cross it) and the elevation under
-// HIGHEST_ELEVATION (straight down, the yaw would be undefined).
+// elevation above the pivot's level. clampOrbit keeps the eye's height
+// between what `bounds` allows where it stands (lowestAt and highestAt, of
+// its x and z: above the water at least LOWEST_EYE over the ground or the
+// still water, so a wave never crosses it; under it, between the bed and
+// the surface, src/main.js) and the elevation within HIGHEST_ELEVATION of
+// level (straight down or up, the yaw would be undefined).
 //
 // Pure math with no Three.js, so tools can check it in Node.
 import { viewFacing } from './viewZoom.js';
@@ -50,29 +52,28 @@ export function orbitAbout(eye, pivot) {
   };
 }
 
-const flatWater = () => 0;
+/** Over still water and no ground: the eye LOWEST_EYE above the water at least. */
+export const ABOVE_WATER = { lowestAt: () => LOWEST_EYE, highestAt: () => Infinity };
 
 /**
- * The lowest elevation that keeps the eye LOWEST_EYE above the ground under
- * it; the ground is under the eye at that elevation, so it is found in a few
- * passes (the beach rises gently, so they settle at once).
+ * The elevation that puts the eye at heightAt(x, z) where it then stands;
+ * that place depends on the elevation, so it is found in a few passes (the
+ * ground changes gently, so they settle at once).
  */
-export function lowestElevation(orbit, groundAt = flatWater) {
+function elevationAtHeight(orbit, heightAt) {
   let elevation = orbit.elevation;
   for (let pass = 0; pass < 3; pass++) {
     const eye = orbitEye({ ...orbit, elevation });
-    elevation = Math.asin(clamp((LOWEST_EYE + groundAt(eye.x, eye.z) - orbit.pivotY) / orbit.distance, -1, 1));
+    elevation = Math.asin(clamp((heightAt(eye.x, eye.z) - orbit.pivotY) / orbit.distance, -1, 1));
   }
   return elevation;
 }
 
-/** The orbit with its elevation kept between lowestElevation and HIGHEST_ELEVATION, its azimuth wrapped. */
-export function clampOrbit(orbit, groundAt = flatWater) {
-  return {
-    ...orbit,
-    azimuth: wrapAngle(orbit.azimuth),
-    elevation: clamp(orbit.elevation, Math.min(lowestElevation(orbit, groundAt), HIGHEST_ELEVATION), HIGHEST_ELEVATION),
-  };
+/** The orbit with its eye kept within `bounds` (the header) and HIGHEST_ELEVATION of level, its azimuth wrapped. */
+export function clampOrbit(orbit, bounds = ABOVE_WATER) {
+  const highest = Math.min(elevationAtHeight(orbit, bounds.highestAt), HIGHEST_ELEVATION);
+  const lowest = Math.min(Math.max(elevationAtHeight(orbit, bounds.lowestAt), -HIGHEST_ELEVATION), highest);
+  return { ...orbit, azimuth: wrapAngle(orbit.azimuth), elevation: clamp(orbit.elevation, lowest, highest) };
 }
 
 /**
@@ -80,21 +81,26 @@ export function clampOrbit(orbit, groundAt = flatWater) {
  * each way: what is under the finger follows it, so a drag to the right
  * walks the eye to the left about the pivot and a drag down raises it.
  */
-export function turnOrbit(orbit, dragX, dragY, radiansPerPixel, groundAt = flatWater) {
-  return clampOrbit({ ...orbit, azimuth: orbit.azimuth - dragX * radiansPerPixel, elevation: orbit.elevation + dragY * radiansPerPixel }, groundAt);
+export function turnOrbit(orbit, dragX, dragY, radiansPerPixel, bounds = ABOVE_WATER) {
+  return clampOrbit({ ...orbit, azimuth: orbit.azimuth - dragX * radiansPerPixel, elevation: orbit.elevation + dragY * radiansPerPixel }, bounds);
 }
 
-/** The orbit `share` (0 to 1) of the way from one to the other, the azimuth the short way round. */
-export function blendOrbits(from, to, share, groundAt = flatWater) {
+/**
+ * The orbit `share` (0 to 1) of the way from one to the other, the azimuth
+ * the short way round, kept within `bounds`; none (null) for a glide that
+ * crosses the surface, between two orbits that each keep to their own side.
+ */
+export function blendOrbits(from, to, share, bounds = ABOVE_WATER) {
   const mix = (start, end) => start + (end - start) * share;
-  return clampOrbit({
+  const blended = {
     pivotX: mix(from.pivotX, to.pivotX),
     pivotY: mix(from.pivotY, to.pivotY),
     pivotZ: mix(from.pivotZ, to.pivotZ),
     azimuth: from.azimuth + wrapAngle(to.azimuth - from.azimuth) * share,
     elevation: mix(from.elevation, to.elevation),
     distance: mix(from.distance, to.distance),
-  }, groundAt);
+  };
+  return bounds ? clampOrbit(blended, bounds) : { ...blended, azimuth: wrapAngle(blended.azimuth) };
 }
 
 /** Whether two orbits put the eye in the same place facing the same way. */
