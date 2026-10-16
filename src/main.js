@@ -54,7 +54,11 @@
 // patch's edge would ring across it, since the patch is periodic. While a
 // press aims (or a mouse hovers) a ring on the water and a faint arc from
 // the hand show the throw; a throw hides them, a mouse's until it moves on,
-// or the arc's end would hang in the splash as a hairline.
+// or the arc's end would hang in the splash as a hairline. A press held
+// still for HOLD_MS dips a finger into the water there instead (src/
+// touch.js): the arc goes, a small ring marks the finger, dragging trails it
+// through the water and letting go lifts it out; it neither throws nor
+// turns the view.
 //
 // Quality. Each preset of QUALITY sets the work a frame does: the splash
 // solver's grid, the inner water patch's mesh (src/waterSurface.js), the
@@ -115,6 +119,7 @@ import { UNDER_BACKGROUND_FRAGMENT } from './shaders/scene.js';
 import { directionAt, placeDirection, clampToFrame, zoomToward, isZoomed, viewFacing } from './viewZoom.js';
 import { orbitEye, orbitFacing, orbitAbout, clampOrbit, turnOrbit, blendOrbits, orbitsMatch, LOWEST_EYE } from './viewOrbit.js';
 import { Profiler } from './profiler.js';
+import { FingerInWater, FINGER } from './touch.js';
 
 // Quality presets. The splash lives in a few dozen pixels, so the fluid
 // buffer's resolution is what it is made of: a drop narrower than a buffer
@@ -174,6 +179,7 @@ const MIN_FOV = 8;            // degrees: the narrowest zoom
 const WHEEL_STEP = 0.9;       // field of view factor per wheel notch
 const HOME_TARGET = [0, 0.12, -1.0];
 const TAP_SLOP = 14;          // CSS pixels a press may move and still throw; past them it turns the view
+const HOLD_MS = 300;          // a press held this long within TAP_SLOP dips a finger into the water
 const ORBIT_TURN = Math.PI;   // radians the view turns for a drag across the canvas's height
 const GLIDE_SECONDS = 1.0;    // a glide to another view
 // The View setting's choices (src/viewOrbit.js): the shore view the page
@@ -804,7 +810,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
   const waterPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
   const pointer = new THREE.Vector2();
   const throwMargin = () => Math.max(POND_MARGIN, MARGIN_RADII * stoneRadius);
-  function aimPoint(clientX, clientY) {
+  function aimPoint(clientX, clientY, margin = throwMargin()) {
     const point = toDeviceCoordinates(clientX, clientY);
     pointer.set(point.x, point.y);
     raycaster.setFromCamera(pointer, camera);
@@ -820,7 +826,6 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
       if (horizontal < 1e-6) return null;
       hit.set(camera.position.x + (raycaster.ray.direction.x / horizontal) * 100, 0, camera.position.z + (raycaster.ray.direction.z / horizontal) * 100);
     }
-    const margin = throwMargin();
     hit.x = THREE.MathUtils.clamp(hit.x, water.domainMin[0] + margin, water.domainMin[0] + water.domainSize - margin);
     hit.z = THREE.MathUtils.clamp(hit.z, water.domainMin[1] + margin, water.domainMin[1] + water.domainSize - margin);
     return hit;
@@ -829,6 +834,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
   function showAim(hit) {
     if (!hit) { marker.visible = false; arc.visible = false; return; }
     marker.visible = true;
+    marker.scale.setScalar(1);
     marker.position.set(hit.x, 0.004, hit.z);
     const hand = handPosition();
     const { velocity, flightTime } = throwVelocity(hand, hit);
@@ -851,6 +857,37 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
   let turning = null;                 // { x, y }: the press is turning the view, last seen here
   let pinch = null;                   // { distance, fov, direction } when the pinch began
   let thrownFrom = null;              // { x, y }: a mouse threw here; its aim stays hidden until it moves on (its arc would hang in the splash)
+  const finger = new FingerInWater(water);
+  let holdTimer = 0;                  // the press's timeout to dip the finger, 0 when none
+  let touching = null;                // { id }: the press whose finger is in the water
+
+  /** The finger's small ring on the water where it is (or none). */
+  function showFinger(point) {
+    arc.visible = false;
+    marker.visible = Boolean(point);
+    if (point) { marker.scale.setScalar(0.45); marker.position.set(point.x, 0.004, point.z); }
+  }
+
+  /** Dip the finger in under the client point, if it is over the water. */
+  function startTouch(pointerId, clientX, clientY) {
+    const point = aimPoint(clientX, clientY, FINGER.margin);
+    if (!point) return;
+    touching = { id: pointerId };
+    finger.dip(point.x, point.z);
+    showFinger(point);
+    lastActivity = performance.now();
+  }
+
+  function endTouch() {
+    if (!touching) return;
+    finger.lift();
+    touching = null;
+    showFinger(null);
+  }
+
+  function cancelHold() {
+    if (holdTimer) { clearTimeout(holdTimer); holdTimer = 0; }
+  }
 
   function pinchSpan() {
     const [first, second] = activePointers.values();
@@ -879,7 +916,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
   function releasePointer(event) {
     activePointers.delete(event.pointerId);
     if (pinch && activePointers.size < 2) pinch = null;
-    if (pressStart?.id === event.pointerId) { pressStart = null; stopTurning(); }
+    if (pressStart?.id === event.pointerId) { pressStart = null; stopTurning(); cancelHold(); }
+    if (touching?.id === event.pointerId) endTouch();
   }
 
   canvas.addEventListener('pointerdown', (event) => {
@@ -890,9 +928,19 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     if (activePointers.size === 1) {
       pressStart = { id: event.pointerId, x: event.clientX, y: event.clientY };
       showAim(aimPoint(event.clientX, event.clientY));
+      // Held still, the press dips a finger in where it is then.
+      const pointerId = event.pointerId;
+      cancelHold();
+      holdTimer = setTimeout(() => {
+        holdTimer = 0;
+        const held = activePointers.get(pointerId);
+        if (pressStart?.id === pointerId && !turning && !pinch && held) startTouch(pointerId, held.x, held.y);
+      }, HOLD_MS);
     } else if (activePointers.size === 2) {
       pressStart = null;
       stopTurning();
+      cancelHold();
+      endTouch();
       showAim(null);
       startPinch();
     }
@@ -902,8 +950,14 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     const tracked = activePointers.get(event.pointerId);
     if (tracked) { tracked.x = event.clientX; tracked.y = event.clientY; }
     if (pinch) { if (tracked) movePinch(); return; }
+    if (touching?.id === event.pointerId) {
+      const point = aimPoint(event.clientX, event.clientY, FINGER.margin);
+      if (point) { finger.moveTo(point.x, point.z); showFinger(point); }
+      return;
+    }
     if (pressStart?.id === event.pointerId) {
       if (!turning && Math.hypot(event.clientX - pressStart.x, event.clientY - pressStart.y) >= TAP_SLOP) {
+        cancelHold();
         turning = { x: pressStart.x, y: pressStart.y };
         canvas.style.cursor = 'grabbing';
         pivotOnView();
@@ -924,15 +978,18 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     lastActivity = performance.now();
     const press = pressStart?.id === event.pointerId ? pressStart : null;
     const turned = press && turning;
+    const touched = touching?.id === event.pointerId;
     releasePointer(event);
-    if (press && !turned) {
+    if (press && !turned && !touched) {
       const moved = Math.hypot(event.clientX - press.x, event.clientY - press.y);
       const hit = aimPoint(event.clientX, event.clientY);
       if (hit && moved < TAP_SLOP) { throwAt(hit.x, hit.z); if (event.pointerType === 'mouse') thrownFrom = { x: event.clientX, y: event.clientY }; }
     }
-    if (event.pointerType !== 'mouse' || thrownFrom) showAim(null);
+    if (event.pointerType !== 'mouse' || thrownFrom || touched) showAim(null);
   });
   canvas.addEventListener('pointercancel', (event) => { releasePointer(event); showAim(null); });
+  // A held press is a finger in the water; a phone's browser may open its menu on one instead.
+  canvas.addEventListener('contextmenu', (event) => event.preventDefault());
   canvas.addEventListener('pointerleave', (event) => { if (!activePointers.has(event.pointerId)) showAim(null); });
   canvas.addEventListener('wheel', (event) => {
     event.preventDefault();
@@ -953,6 +1010,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
   function simulate(dt) {
     // The tear and breakup fronts advance once per frame, so the splash needs the frame's length first.
     splash.setFrameSeconds(dt);
+    finger.advance(dt);   // the finger's wake along its path this frame (src/touch.js)
     const substep = 1 / 240;
     const steps = Math.min(Math.max(1, Math.ceil(dt / substep)), 12);
     const h = dt / steps;
@@ -1325,16 +1383,25 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     /**
      * Deterministic stepping for screenshots: simulate `seconds` of world time
      * in the frames the app would draw, 1/60 s of real time each (so a time
-     * scale of 0.1 makes frames of 1/600 s), then draw once.
+     * scale of 0.1 makes frames of 1/600 s), then draw once. beforeFrame, if
+     * given, is called before each with the seconds simulated so far (the
+     * harness moves a finger with it).
      */
-    advance(seconds) {
+    advance(seconds, beforeFrame = null) {
       if (glide) stepGlide(Infinity);   // a glide arrives at once
       const chunk = Math.max(timeScale, 0.01) / 60;
       let remaining = seconds;
-      while (remaining > 1e-6) { const dt = Math.min(chunk, remaining); simulate(dt); remaining -= dt; }
+      while (remaining > 1e-6) { const dt = Math.min(chunk, remaining); beforeFrame?.(seconds - remaining); simulate(dt); remaining -= dt; }
       render();
     },
     hasImpacted() { return rocks.some((rock) => rock.state !== 'air'); },
+    /** A finger into the water at world (x, z), as a held press puts it (src/touch.js); then dragTouch moves it and liftTouch lifts it. */
+    touchWater(x, z) { endTouch(); touching = { id: 'api' }; finger.dip(x, z); showFinger({ x, z }); },
+    dragTouch(x, z) { finger.moveTo(x, z); showFinger({ x, z }); },
+    liftTouch() { endTouch(); },
+    /** Whether a finger is in the water, and where ({ x, z }, or null). */
+    get touching() { return finger.inWater; },
+    get fingerPosition() { return finger.target ? { ...finger.target } : null; },
     setDebugView(name) { debugView = name; },
     /** Set the field of view (degrees), keeping the look direction; unlike the user's zoom it may leave the home frame. */
     setFov(degrees) { setView({ yaw: view.yaw, pitch: view.pitch, fov: degrees }, true); },

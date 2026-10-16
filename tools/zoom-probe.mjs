@@ -17,7 +17,9 @@
 // keeps what the view's centre shows there; under the water a drag keeps the
 // eye between the surface and the bed; the View setting's choices and Reset
 // view glide to their orbits, and the page's View row and Reset view button
-// follow. Prints one line per check and exits with status 1 if any
+// follow. Last, a press held still dips a finger into the water under it,
+// a drag then moves the finger and not the view, and letting go lifts it
+// without throwing; a mouse held does the same. Prints one line per check and exits with status 1 if any
 // fails.
 //
 //   node tools/zoom-probe.mjs [--w=1280 --h=720]
@@ -239,6 +241,32 @@ for (const name of ['high', 'level', 'under', 'shore']) {
     `View ${name}: the eye at ${eyeHeight.toFixed(2)} m, unzoomed, facing the pivot; the View row reads ${state.row}`);
 }
 check(await buttonHidden(), 'back at the shore view: Reset view hidden');
+
+// Press and hold: a finger in the water (src/touch.js).
+before = await rockCount();
+const orbitBeforeTouch = await orbit();
+const holdX = width * 0.5, holdY = height * 0.62;
+const heldWater = await page.evaluate(([x, y]) => window.__probe.waterUnder(x, y), [holdX, holdY]);
+await page.evaluate(([x, y]) => window.__probe.pointer('pointerdown', 1, x, y), [holdX, holdY]);
+await page.waitForTimeout(450);
+const dipped = await page.evaluate(() => ({ touching: window.__pond.touching, finger: window.__pond.fingerPosition }));
+check(dipped.touching && Math.hypot(dipped.finger.x - heldWater[0], dipped.finger.z - heldWater[2]) < 1e-6,
+  `a press held 0.45 s dips a finger in the water under it (${dipped.finger ? `${dipped.finger.x.toFixed(2)}, ${dipped.finger.z.toFixed(2)}` : 'none'})`);
+for (let step = 1; step <= 8; step++) await page.evaluate(([x, y]) => window.__probe.pointer('pointermove', 1, x, y), [holdX + 20 * step, holdY]);
+await page.evaluate(() => window.__pond.advance(1 / 60));
+const draggedTo = await page.evaluate(([x, y]) => window.__probe.waterUnder(x, y), [holdX + 160, holdY]);
+const fingerAfter = await page.evaluate(() => window.__pond.fingerPosition);
+const orbitAfterTouch = await orbit();
+check(Math.hypot(fingerAfter.x - draggedTo[0], fingerAfter.z - draggedTo[2]) < 1e-6 && Math.abs(orbitAfterTouch.azimuth - orbitBeforeTouch.azimuth) < 1e-9,
+  'dragging moves the finger to the water under the pointer and leaves the view where it was');
+await page.evaluate(([x, y]) => window.__probe.pointer('pointerup', 1, x, y), [holdX + 160, holdY]);
+check(!(await page.evaluate(() => window.__pond.touching)) && (await rockCount()) === before, `letting go lifts the finger out and throws ${(await rockCount()) - before} rocks`);
+await page.mouse.move(width * 0.4, height * 0.6);
+await page.mouse.down();
+await page.waitForTimeout(450);
+const mouseTouching = await page.evaluate(() => window.__pond.touching);
+await page.mouse.up();
+check(mouseTouching && !(await page.evaluate(() => window.__pond.touching)) && (await rockCount()) === before, 'a mouse held still dips the finger too, and lifts it on release without throwing');
 
 if (problems.length) { console.log('page errors:'); console.log(problems.join('\n')); failures++; }
 await browser.close();

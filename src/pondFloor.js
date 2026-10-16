@@ -35,9 +35,10 @@
 // 1/(1 + that); where the rays come to a focus on the floor it peaks, as
 // sharp as the sun's disc and the pixel allow, and past the focus it is the
 // crossed rays' 1/|…|, so a ring's crests draw thin bright lines and its
-// troughs darker bands; it is eased into 0.65 to 1.6 times the sun's own, so
-// a steep ring never blows the sand out, nor draws on it a second set of
-// rings as strong as the surface's own. Where on the floor: the floor is
+// troughs darker bands; it is eased into 0.45 to 2.6 times the sun's own, so
+// a steep ring never blows the sand out, while the ripples' web and a ring's
+// rings of light stand out crisply on the shallow sand, as through a clear
+// pool. Where on the floor: the floor is
 // drawn on the straight line from the eye (the under-water pass, src/
 // main.js), but the eye sees it through the still surface, nearer, so each
 // pixel takes its caustics at the floor point it really shows, lit through

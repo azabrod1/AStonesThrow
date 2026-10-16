@@ -8,14 +8,14 @@ Keep this file short. Every future session reads all of it, so most notes belong
 npm install                # three (served to the headless harness) and playwright
 npm start                  # static server; open http://localhost:8123/
 npm test                   # CPU checks: the solver's FFT, splat spectrum, Nyquist bins and half floats (fft-test), the wind ripples and the Wind control (wave-probe), the foam pattern (foam-probe), the cavity (cavity-probe), the rings (ring-probe)
-npm run shoot -- --label=name --throws=0:-1.4:0.03 --times=0.1,0.5   # frames into shots/name/; --seed=1 --fov --look --crop --report --eval --floats=half --sky=name --water=murky --wind=x:z --wind-strength=breeze --power=soft --view=high --orbit=az:el:dist; --throws=none for idle water
+npm run shoot -- --label=name --throws=0:-1.4:0.03 --times=0.1,0.5   # frames into shots/name/; --seed=1 --fov --look --crop --report --eval --floats=half --sky=name --water=murky --wind=x:z --wind-strength=breeze --power=soft --view=high --orbit=az:el:dist --touch=x0:z0:x1:z1:s; --throws=none for idle water
 node tools/jet-probe.mjs 0.03 6.3      # one Worthington jet on the CPU: timeline, drops, cost
 node tools/fan-probe.mjs 0.03 6.9 0.68 # the forward fan of an oblique entry on the CPU
 node tools/splash-probe.mjs            # the whole splash on the CPU for each stone size: crown, jet, drops, ring, cost per frame
 node tools/ring-probe.mjs --gpu        # the rings against the solver, each ring's retirement and drawn profile, the fit to tools/basilisk's ring, a minute of throwing's cost; --gpu reads the GPU's back
 node tools/cavity-probe.mjs            # the stone's cavity on the CPU for each size: timeline, pinch, closure, cost; checks the hole hides the surface, for random throws too
 node tools/variety-probe.mjs           # how splashes vary throw to throw on the CPU (seed n = the harness's seeded throw n): jet forms, seals, tops, tip drops, lean; --list per throw
-node tools/zoom-probe.mjs              # drives the page's zoom and orbit handlers: the anchor stays put, a drag turns and never throws, the views glide
+node tools/zoom-probe.mjs              # drives the page's zoom, orbit and touch handlers: the anchor stays put, a drag turns and never throws, the views glide, a held press dips a finger
 node tools/sky-probe.mjs assets/sky/meadow_2_2k.hdr   # measures a sky panorama into assets/sky/meadow_2.json
 node tools/wave-probe.mjs              # the wind ripples on the CPU: real field, rms slope, travel direction, mip roughness, cost
 node tools/foam-probe.mjs              # the foam's bubble pattern on the CPU: the shader's fade constants, antialiasing against supersampling, cost

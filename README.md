@@ -11,7 +11,9 @@ Three.js loads from a CDN.
 
 Tap or click the water to throw a rock there (beyond the simulated patch,
 at its nearest point). Space throws one at random; the rocks are always
-thrown from the shore. Drag the water to walk the view round the pond and
+thrown from the shore. Press and hold still for a moment and a hand dips
+into the water there instead: drag to trail it through, leaving a wake, and
+let go to lift it out (`src/touch.js`). Drag the water to walk the view round the pond and
 up or down (from just above the water to nearly straight down), and scroll
 or pinch to zoom toward what is under the pointer (down to an 8° field of
 view); a drag that starts zoomed turns round what the view is looking at.
@@ -405,8 +407,9 @@ floor is a lake bed that deepens away from the bank (`floorDepthAt` in
 the rocks and their holes come to rest on it. How strongly the surface
 focuses the light follows Snell's law for the sun's height (three times
 what a sun overhead would give), so a crest draws a thin bright line where
-its focus meets the sand, eased into 0.65 to 1.6 times the sun's own light
-(`src/pondFloor.js`).
+its focus meets the sand, eased into 0.45 to 2.6 times the sun's own light
+(`src/pondFloor.js`), crisp enough that the ripples' web and a ring's light
+stand out on the shallow sand.
 Stones are procedural geometry, lumpy, worn smooth and speckled, with a
 small rigid-body model: a ballistic arc, quadratic drag under water, and a
 settle into the sand. A rock over 16 cm across leaves the hand lower and

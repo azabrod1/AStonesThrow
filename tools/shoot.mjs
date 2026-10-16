@@ -33,6 +33,10 @@
 // (degrees, degrees, metres; :x:y:z after them moves the pivot) on any orbit
 // (src/viewOrbit.js), before --fov and --look turn it; the rocks are still
 // thrown from the shore.
+// --touch=x0:z0:x1:z1:seconds dips a finger into the water at (x0, z0) at
+// the start of the frames (__pond.touchWater), draws it to (x1, z1) at an
+// even speed over `seconds`, a step every frame, and lifts it out there; the
+// times count from the dip.
 // --power=soft|normal|hard throws as the strength buttons do (soft is a
 // higher arc, so a steeper entry: about 30° from vertical against 42°).
 // --seed=n seeds Math.random (Park–Miller, from n + i) just before throw i,
@@ -74,6 +78,7 @@ const power = arg('power', 'normal');
 const windStrength = arg('wind-strength', '');
 const seed = arg('seed', '');
 const viewName = arg('view', '');
+const touchArgument = arg('touch', '');
 const orbitArgument = arg('orbit', '');
 
 const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.mjs': 'text/javascript', '.json': 'application/json', '.png': 'image/png', '.css': 'text/css' };
@@ -175,10 +180,30 @@ const overshoot = await page.evaluate(() => {
 });
 if (throws.length > 0) console.log(`[shoot] impact after ${flight.toFixed(2)} s of flight (${(overshoot * 1000).toFixed(1)} ms ago)`);
 let elapsed = overshoot;
+if (touchArgument) {
+  await page.evaluate((text) => {
+    const [x0, z0, x1, z1, seconds] = text.split(':').map(Number);
+    window.__touchPath = { x0, z0, x1, z1, seconds, clock: 0 };
+    window.__pond.touchWater(x0, z0);
+  }, touchArgument);
+}
 for (const t of times) {
   // A one-pixel read-back waits for the GPU to finish the steps just queued:
   // under SwiftShader seconds of solver steps can outlast the screenshot's timeout.
-  await page.evaluate((seconds) => { window.__pond.advance(seconds); const gl = window.__pond.renderer.getContext(); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4)); }, Math.max(t - elapsed, 0));
+  await page.evaluate((seconds) => {
+    const path = window.__touchPath;
+    // The finger's place before each frame: along its path at an even speed, lifted at the end.
+    const moveFinger = path && ((sinceCall) => {
+      const share = Math.min((path.clock + sinceCall) / path.seconds, 1);
+      if (window.__pond.touching) {
+        window.__pond.dragTouch(path.x0 + (path.x1 - path.x0) * share, path.z0 + (path.z1 - path.z0) * share);
+        if (share >= 1) window.__pond.liftTouch();
+      }
+    });
+    window.__pond.advance(seconds, moveFinger);
+    if (path) path.clock += seconds;
+    const gl = window.__pond.renderer.getContext(); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
+  }, Math.max(t - elapsed, 0));
   elapsed = Math.max(t, elapsed);
   const decimals = Math.abs(Number(t.toFixed(2)) - t) < 1e-9 ? 2 : 4;
   const name = `t${t.toFixed(decimals).replace('.', '_')}.png`;

@@ -1203,9 +1203,9 @@ ${GLSL_COMMON}
 ${FLOOR_PATTERN_TILE}
 ${UNDER_FOG}
 #define WATER_INDEX 1.333
-#define CAUSTIC_BLUR 0.35          // the irradiance's peak where rays focus on the floor: about 1/this
-#define CAUSTIC_BRIGHTEST 1.6      // the sunlight on the sand is eased into this many times its own...
-#define CAUSTIC_DARKEST 0.65       // ...and this
+#define CAUSTIC_BLUR 0.2           // the irradiance's peak where rays focus on the floor: about 1/this
+#define CAUSTIC_BRIGHTEST 2.6      // the sunlight on the sand is eased into this many times its own...
+#define CAUSTIC_DARKEST 0.45       // ...and this
 ${FLOOR_SAND}
 
 void main() {

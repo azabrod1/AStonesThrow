@@ -45,6 +45,9 @@
     touch-action: none;
     cursor: crosshair;
     outline: none;
+    -webkit-user-select: none;     /* a held press is a finger in the water: no selection or callout */
+    user-select: none;
+    -webkit-touch-callout: none;
   }
   .title {
     position: fixed;
@@ -52,6 +55,8 @@
     left: calc(env(safe-area-inset-left, 0px) + 18px);
     right: calc(env(safe-area-inset-right, 0px) + 84px);   /* clear of the settings button */
     pointer-events: none;
+    -webkit-user-select: none;
+    user-select: none;
     text-shadow: 0 1px 12px rgba(0, 0, 0, 0.55);
   }
   .title h1 {
@@ -479,7 +484,7 @@
 
 <div class="title">
   <h1>A Stone’s Throw</h1>
-  <p>Tap the water to throw a rock, drag to look around. Space throws one for you; scroll or pinch to look closer.</p>
+  <p>Tap the water to throw a rock, hold to touch it, drag to look around. Space throws one for you; scroll or pinch to look closer.</p>
 </div>
 <div class="stats" id="stats" aria-live="off"></div>
 
