@@ -1,0 +1,30 @@
+{
+  "source": "lakeside_sunrise_2k.hdr",
+  "width": 2048,
+  "height": 1024,
+  "sun": {
+    "elevation": 5.3,
+    "azimuth": 216.12,
+    "direction": [
+      0.80431,
+      0.09241,
+      0.58698
+    ],
+    "pixels": 7
+  },
+  "sunIrradiance": [
+    9.6299,
+    5.3521,
+    1.5223
+  ],
+  "skyRadiance": [
+    0.35312,
+    0.40581,
+    0.50895
+  ],
+  "horizonRadiance": {
+    "median": 0.59962,
+    "p90": 2.6077
+  },
+  "maxLuminance": 126460
+}

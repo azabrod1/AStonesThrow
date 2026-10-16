@@ -8,7 +8,7 @@ Keep this file short. Every future session reads all of it, so most notes belong
 npm install                # three (served to the headless harness) and playwright
 npm start                  # static server; open http://localhost:8123/
 npm test                   # CPU checks: the solver's FFT, splat spectrum, Nyquist bins and half floats (fft-test), the wind ripples and the Wind control (wave-probe), the foam pattern (foam-probe), the cavity (cavity-probe), the rings (ring-probe)
-npm run shoot -- --label=name --throws=0:-1.4:0.03 --times=0.1,0.5   # frames into shots/name/; --seed=1 --fov --look --crop --report --eval --floats=half --sky=name --wind=x:z --wind-strength=breeze --power=soft; --throws=none for idle water
+npm run shoot -- --label=name --throws=0:-1.4:0.03 --times=0.1,0.5   # frames into shots/name/; --seed=1 --fov --look --crop --report --eval --floats=half --sky=name --water=murky --wind=x:z --wind-strength=breeze --power=soft; --throws=none for idle water
 node tools/jet-probe.mjs 0.03 6.3      # one Worthington jet on the CPU: timeline, drops, cost
 node tools/fan-probe.mjs 0.03 6.9 0.68 # the forward fan of an oblique entry on the CPU
 node tools/splash-probe.mjs            # the whole splash on the CPU for each stone size: crown, jet, drops, ring, cost per frame
@@ -37,7 +37,8 @@ There is no build step. The page loads Three.js from jsDelivr through the import
 - Use descriptive variable names, never single letters.
 - Every GPU program is compiled under the loading veil (`warmUp` in `src/main.js`): a new material must be drawn there, and no preset may change a target's format, or the first throw stutters. Disposing a material's last user deletes its program.
 - A quality change rebuilds the solver, the water mesh and every target (`applyQuality`). Whatever samples the solver takes its sizes from `water.gridUniforms`; its textures keep their objects.
-- `assets/sky/*.json` is written by `tools/sky-probe.mjs` from its `.hdr`; rerun the probe, never edit the JSON.
+- `assets/sky/*.json` is written by `tools/sky-probe.mjs` from its `.hdr`; rerun the probe, never edit the JSON. A new sky also needs its `SKIES` entry (orientation chosen from home-view frames), a thumbnail in `assets/sky/thumbs/` and a row on the Sky page in `index.html`.
+- The settings (Water, Sky, Wind, Quality) live in the panel the top-right button opens (`src/settingsPanel.js`); each remembered setting has its own `localStorage` key, and a page parameter wins over it.
 - Every push to `main` deploys to GitHub Pages (https://azabrod1.github.io/IntoTheWater/). Only `index.html`, `src/` and `assets/` are published (`SITE_FILES` in `tools/build-site.mjs`); a new runtime folder goes there too. Use relative paths: the site lives under `/IntoTheWater/`.
 - The page is laid out for phones by its viewport tag, which the shoot harness (a desktop browser) ignores: check any change to the page's controls with `tools/controls-probe.mjs`.
 - The page opens on Calm wind; frames from before the Wind control are Breeze (`--wind-strength=breeze`; byte-identical when idle until the rings' calibration moved and sharpened the floor's caustics).

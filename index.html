@@ -69,8 +69,8 @@
   }
   .stats {
     position: fixed;
-    top: calc(env(safe-area-inset-top, 0px) + 16px);
-    right: calc(env(safe-area-inset-right, 0px) + 18px);
+    top: calc(env(safe-area-inset-top, 0px) + 22px);
+    right: calc(env(safe-area-inset-right, 0px) + 68px);
     font-size: 12px;
     color: var(--muted);
     font-variant-numeric: tabular-nums;
@@ -234,9 +234,173 @@
     cursor: pointer;
   }
   .reset-view:hover { background: rgba(238, 243, 244, 0.1); }
-  /* The strip's two rows on a wide screen: the stone, the throw and the
-     time; then the wind, the quality and the buttons. */
-  .row-break { flex-basis: 100%; height: 0; }
+  /* On a wide screen the strip is one row; on a phone the stone and the
+     throw button take the first and the row break starts the second. */
+  .row-break { display: none; flex-basis: 100%; height: 0; }
+  /* The settings (src/settingsPanel.js): a button at the top right and the
+     card it opens under it, laid out as the Moon app's menu is: the list of
+     settings, each row its name, where it stands and a chevron into its page;
+     a page has the way back, the choices, and a line on what the chosen one
+     means. The card's width is fixed, so a page change never moves its
+     outline; it scrolls when a short screen cannot hold it. */
+  .menu-button {
+    position: fixed;
+    top: calc(env(safe-area-inset-top, 0px) + 12px);
+    right: calc(env(safe-area-inset-right, 0px) + 14px);
+    width: 42px;
+    height: 42px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--panel);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    color: var(--fg);
+    cursor: pointer;
+    touch-action: manipulation;
+    z-index: 1;
+  }
+  .menu-button:hover, .menu-button[aria-expanded="true"] { background: var(--panel-strong); border-color: rgba(238, 243, 244, 0.3); }
+  .menu-button svg { width: 20px; height: 20px; }
+  .settings {
+    position: fixed;
+    top: calc(env(safe-area-inset-top, 0px) + 62px);
+    right: calc(env(safe-area-inset-right, 0px) + 12px);
+    width: min(300px, calc(100vw - 24px));
+    max-height: calc(100vh - 74px - env(safe-area-inset-top, 0px));
+    max-height: calc(100dvh - 74px - env(safe-area-inset-top, 0px));
+    box-sizing: border-box;
+    padding: 8px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-content: start;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    touch-action: pan-y;
+    border-radius: 16px;
+    border: 1px solid rgba(238, 243, 244, 0.12);
+    background:
+      linear-gradient(168deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.012) 38%, rgba(0, 0, 0, 0.05)),
+      rgba(7, 18, 24, 0.84);
+    backdrop-filter: blur(30px) saturate(160%);
+    -webkit-backdrop-filter: blur(30px) saturate(160%);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.09), 0 28px 80px rgba(0, 0, 0, 0.6);
+    z-index: 1;
+  }
+  /* The pages share one grid cell, so one can slide out while the next slides in. */
+  .menu-page { grid-area: 1 / 1 / 2 / 2; min-width: 0; }
+  .menu-page-leaving { position: absolute; top: 0; left: 0; right: 0; }
+  .menu-tier {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    min-height: 38px;
+    padding: 4px 10px;
+    border: 0;
+    border-radius: 9px;
+    background: none;
+    color: var(--fg);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+  .menu-tier:hover { background: rgba(238, 243, 244, 0.07); }
+  .menu-tier b { flex: none; font-size: 14px; font-weight: 500; }
+  .menu-tier-value {
+    flex: 1;
+    min-width: 0;
+    text-align: right;
+    font-size: 13px;
+    color: var(--muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .menu-tier-chevron { flex: none; font-size: 16px; line-height: 1; color: rgba(238, 243, 244, 0.5); }
+  .menu-head { display: flex; align-items: center; gap: 4px; padding: 2px 2px 10px; }
+  .menu-head h3 {
+    margin: 0;
+    font-family: var(--font-display);
+    font-weight: 400;
+    font-style: italic;
+    font-size: 19px;
+  }
+  .menu-back {
+    flex: none;
+    width: 32px;
+    height: 32px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    border-radius: 8px;
+    background: none;
+    color: var(--muted);
+    font: inherit;
+    font-size: 22px;
+    line-height: 1;
+    cursor: pointer;
+  }
+  .menu-back:hover { background: rgba(238, 243, 244, 0.07); color: var(--fg); }
+  .menu-field { padding: 0 4px 4px; }
+  .menu-field-label {
+    margin-bottom: 7px;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .menu-seg {
+    display: flex;
+    height: 36px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    overflow: hidden;
+  }
+  .menu-seg button {
+    flex: 1;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--fg);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .menu-seg button + button { border-left: 1px solid var(--line); }
+  .menu-seg button[aria-checked="true"] { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
+  .menu-note { margin: 9px 2px 0; font-size: 12.5px; line-height: 1.5; color: var(--muted); }
+  .sky-list { display: grid; gap: 4px; }
+  .sky-option {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    width: 100%;
+    padding: 5px;
+    border: 1px solid transparent;
+    border-radius: 11px;
+    background: none;
+    color: var(--fg);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+  .sky-option:hover { background: rgba(238, 243, 244, 0.07); }
+  .sky-option[aria-checked="true"] { border-color: var(--accent); background: rgba(241, 199, 122, 0.1); }
+  .sky-option img { flex: none; width: 80px; height: 45px; border-radius: 7px; object-fit: cover; background: rgba(238, 243, 244, 0.08); }
+  .sky-option b { display: block; font-size: 14px; font-weight: 500; }
+  .sky-option small { display: block; margin-top: 2px; font-size: 12px; color: var(--muted); }
+  .menu-button:focus-visible, .menu-tier:focus-visible, .menu-back:focus-visible, .menu-seg button:focus-visible, .sky-option:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+  }
   .veil {
     position: fixed;
     inset: 0;
@@ -264,12 +428,11 @@
     input[type="range"] { --thumb: 28px; --track: 6px; height: 44px; }
     .segmented button, .throw, .reset-view { min-height: 36px; }
   }
-  /* Phones in portrait: four groups with their names beside them would take
-     five rows and a third of the water. Three rows instead: the stone's
-     slider, its name and size above it, with the throw button beside it (the
-     view's reset in its place while zoomed); then the four groups two to a
-     row, each name above its buttons. The row break comes after the buttons
-     (order), wherever it sits in the page. */
+  /* Phones in portrait: two rows. The stone's slider, its name and size
+     above it, with the throw button beside it (the view's reset in its place
+     while zoomed); then the throw's strength and the time, each name above
+     its buttons. The row break comes after the buttons (order), wherever it
+     sits in the page. The wind and the quality are in the settings. */
   @media (max-width: 520px) {
     .title p { display: none; }
     .controls { gap: 6px 12px; padding-top: 8px; padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 8px); }
@@ -287,7 +450,7 @@
     .stone-group input[type="range"] { grid-area: slider; width: 100%; }
     .throw, .reset-view { order: 1; align-self: flex-end; margin-bottom: 4px; padding: 7px 12px; }
     .throw.while-zoomed { display: none; }
-    .row-break { order: 2; }
+    .row-break { display: block; order: 2; }
     .group:not(.stone-group) { order: 3; flex-direction: column; gap: 2px; }
     .group:not(.stone-group) > span.name { font-size: 10px; }
     .segmented button { padding: 6px 8px; min-width: 38px; }
@@ -304,6 +467,10 @@
   }
   @media (prefers-reduced-motion: reduce) {
     .veil { transition: none; }
+  }
+  /* Phones: the title's line is hidden there, so the readout sits on the title's row, left of the button. */
+  @media (max-width: 520px) {
+    .stats { font-size: 11px; }
   }
 </style>
 
@@ -338,24 +505,72 @@
     </div>
   </div>
   <div class="row-break" aria-hidden="true"></div>
-  <div class="group">
-    <span class="name">Wind</span>
-    <div class="segmented" id="wind" role="group" aria-label="Wind">
-      <button type="button" data-value="calm" aria-pressed="true">Calm</button>
-      <button type="button" data-value="breeze">Breeze</button>
-      <button type="button" data-value="windy">Windy</button>
-    </div>
-  </div>
-  <div class="group">
-    <span class="name">Quality</span>
-    <div class="segmented" id="quality" role="group" aria-label="Rendering quality">
-      <button type="button" data-value="low">Low</button>
-      <button type="button" data-value="medium">Medium</button>
-      <button type="button" data-value="high">High</button>
-    </div>
-  </div>
   <button type="button" class="reset-view" id="reset-view" hidden>Reset view</button>
   <button type="button" class="throw" id="throw" aria-label="Throw a stone">Throw<span class="more"> a stone</span></button>
+</div>
+
+<button type="button" class="menu-button" id="menu-button" aria-label="Settings" aria-expanded="false" aria-controls="settings">
+  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M4 5.5 H16 M4 10 H16 M4 14.5 H16"></path></svg>
+</button>
+<!-- The settings (src/settingsPanel.js): the list, and a page per setting.
+     The page script fills each row's value and each page's note. -->
+<div class="settings" id="settings" role="dialog" aria-label="Settings" hidden>
+  <div class="menu-page" data-page="root">
+    <button type="button" class="menu-tier" data-open="water"><b>Water</b><span class="menu-tier-value"></span><span class="menu-tier-chevron" aria-hidden="true">&rsaquo;</span></button>
+    <button type="button" class="menu-tier" data-open="sky"><b>Sky</b><span class="menu-tier-value"></span><span class="menu-tier-chevron" aria-hidden="true">&rsaquo;</span></button>
+    <button type="button" class="menu-tier" data-open="wind"><b>Wind</b><span class="menu-tier-value"></span><span class="menu-tier-chevron" aria-hidden="true">&rsaquo;</span></button>
+    <button type="button" class="menu-tier" data-open="quality"><b>Quality</b><span class="menu-tier-value"></span><span class="menu-tier-chevron" aria-hidden="true">&rsaquo;</span></button>
+  </div>
+  <div class="menu-page" data-page="water" hidden>
+    <div class="menu-head"><button type="button" class="menu-back" aria-label="Back"><span aria-hidden="true">&lsaquo;</span></button><h3>Water</h3></div>
+    <div class="menu-field">
+      <div class="menu-field-label" id="water-label">How clear</div>
+      <div class="menu-seg" id="water" role="radiogroup" aria-labelledby="water-label" aria-describedby="water-note">
+        <button type="button" role="radio" data-value="clear">Clear</button>
+        <button type="button" role="radio" data-value="pond">Pond</button>
+        <button type="button" role="radio" data-value="murky">Murky</button>
+      </div>
+      <div class="menu-note" id="water-note"></div>
+    </div>
+  </div>
+  <div class="menu-page" data-page="sky" hidden>
+    <div class="menu-head"><button type="button" class="menu-back" aria-label="Back"><span aria-hidden="true">&lsaquo;</span></button><h3>Sky</h3></div>
+    <div class="menu-field">
+      <div class="sky-list" id="sky" role="radiogroup" aria-label="Sky" aria-describedby="sky-note">
+        <button type="button" class="sky-option" role="radio" data-value="meadow"><img src="assets/sky/thumbs/meadow.jpg" alt="" width="80" height="45"><span><b>Meadow</b><small>Summer trees, afternoon sun</small></span></button>
+        <button type="button" class="sky-option" role="radio" data-value="lakeside"><img src="assets/sky/thumbs/lakeside.jpg" alt="" width="80" height="45"><span><b>Lakeside</b><small>A wooded shore, a far bank</small></span></button>
+        <button type="button" class="sky-option" role="radio" data-value="sunrise"><img src="assets/sky/thumbs/sunrise.jpg" alt="" width="80" height="45"><span><b>Sunrise</b><small>Low golden sun on still water</small></span></button>
+        <button type="button" class="sky-option" role="radio" data-value="alpine"><img src="assets/sky/thumbs/alpine.jpg" alt="" width="80" height="45"><span><b>Alpine</b><small>Pines, and snowy peaks up the valley</small></span></button>
+        <button type="button" class="sky-option" role="radio" data-value="open"><img src="assets/sky/thumbs/open.jpg" alt="" width="80" height="45"><span><b>Open sky</b><small>Clouds out to the horizon</small></span></button>
+      </div>
+      <div class="menu-note" id="sky-note" aria-live="polite"></div>
+    </div>
+  </div>
+  <div class="menu-page" data-page="wind" hidden>
+    <div class="menu-head"><button type="button" class="menu-back" aria-label="Back"><span aria-hidden="true">&lsaquo;</span></button><h3>Wind</h3></div>
+    <div class="menu-field">
+      <div class="menu-field-label" id="wind-label">Strength</div>
+      <div class="menu-seg" id="wind" role="radiogroup" aria-labelledby="wind-label" aria-describedby="wind-note">
+        <button type="button" role="radio" data-value="calm">Calm</button>
+        <button type="button" role="radio" data-value="breeze">Breeze</button>
+        <button type="button" role="radio" data-value="windy">Windy</button>
+      </div>
+      <div class="menu-note" id="wind-note"></div>
+    </div>
+  </div>
+  <div class="menu-page" data-page="quality" hidden>
+    <div class="menu-head"><button type="button" class="menu-back" aria-label="Back"><span aria-hidden="true">&lsaquo;</span></button><h3>Quality</h3></div>
+    <div class="menu-field">
+      <div class="menu-field-label" id="quality-label">Rendering</div>
+      <div class="menu-seg" id="quality" role="radiogroup" aria-labelledby="quality-label" aria-describedby="quality-note">
+        <button type="button" role="radio" data-value="auto">Auto</button>
+        <button type="button" role="radio" data-value="low">Low</button>
+        <button type="button" role="radio" data-value="medium">Medium</button>
+        <button type="button" role="radio" data-value="high">High</button>
+      </div>
+      <div class="menu-note" id="quality-note"></div>
+    </div>
+  </div>
 </div>
 
 <div class="veil" id="veil"><span id="veil-text">Filling the pond…</span></div>
@@ -370,6 +585,7 @@
 </script>
 <script type="module">
   import { startPond } from './src/main.js';
+  import { SettingsPanel, radioGroup } from './src/settingsPanel.js';
 
   const veil = document.getElementById('veil');
   const veilText = document.getElementById('veil-text');
@@ -391,7 +607,7 @@
   }
 
   let pond;
-  let setQualityButtons = () => {};   // assigned once the controls exist; the calibration may call it before
+  let showQuality = () => {};   // assigned once the settings exist; the calibration may call it before
   let profileDone = false;            // once the profile report is up, the readout keeps it
   try {
     // Module scripts may await at the top level; the pond starts once its sky has loaded.
@@ -401,7 +617,7 @@
       onError: (message) => { veilText.innerHTML = ''; const p = document.createElement('p'); p.className = 'error'; p.textContent = message; veilText.append(p); },
       onStats: ({ fps, droplets, quality }) => { if (!profileDone) stats.textContent = `${Math.round(fps)} fps · ${droplets} drops · ${quality}`; },
       onViewChange: ({ zoomed }) => { resetView.hidden = !zoomed; document.getElementById('throw').classList.toggle('while-zoomed', zoomed); },
-      onQualityChange: (name) => setQualityButtons(name),
+      onQualityChange: () => showQuality(),
       onProfile: (lines) => { profileDone = true; stats.classList.add('report'); stats.textContent = lines.join('\n'); },
     });
   } catch (error) {
@@ -445,15 +661,80 @@
     sizeInput.addEventListener('touchmove', setSizeFromTouch, { passive: false });
     segmented('power', (value) => pond.setPower(value));
     segmented('speed', (value) => pond.setTimeScale(Number(value)));
-    setQualityButtons = segmented('quality', (value) => pond.setQuality(value));
-    setQualityButtons(pond.quality);
-    segmented('wind', (value) => pond.setWind(value))(pond.wind);
+
+    // The settings: each choice goes to the pond, and its row and note follow.
+    const settings = new SettingsPanel({ button: document.getElementById('menu-button'), panel: document.getElementById('settings') });
+    const label = (page, value) => document.querySelector(`#${page} [data-value="${value}"]`)?.querySelector('b')?.textContent ?? document.querySelector(`#${page} [data-value="${value}"]`)?.textContent ?? value;
+    const NOTES = {
+      water: {
+        clear: 'Spring water: the sand shows far out, and each ring throws rings of light on it.',
+        pond: 'A clean pond: the sand shows near the bank and fades out by where the stones land.',
+        murky: 'A lake after rain: the sand shows only at the bank.',
+      },
+      wind: {
+        calm: 'Still water: the shore stands in it as in a mirror.',
+        breeze: 'Light ripples that blur the reflections.',
+        windy: 'Ripples over the whole pond that break the reflections up.',
+      },
+      quality: {
+        auto: 'Starts on High and steps down while the frame rate is too low, and keeps watching.',
+        low: 'As Medium, with fewer pixels on sharp screens and fewer rings at once.',
+        medium: 'A coarser water grid, the view under the water and the splash at half resolution, and 30 frames a second while nothing moves.',
+        high: 'The finest ripples, and everything at the screen\u2019s full resolution.',
+      },
+    };
+    const showWater = radioGroup(document.getElementById('water'), (value) => { pond.setClarity(value); updateWater(); });
+    function updateWater() {
+      showWater(pond.clarity);
+      settings.setValue('water', label('water', pond.clarity));
+      document.getElementById('water-note').textContent = NOTES.water[pond.clarity];
+    }
+    const showWind = radioGroup(document.getElementById('wind'), (value) => { pond.setWind(value); updateWind(); });
+    function updateWind() {
+      showWind(pond.wind);
+      settings.setValue('wind', label('wind', pond.wind));
+      document.getElementById('wind-note').textContent = NOTES.wind[pond.wind];
+    }
+    const showQualityChoice = radioGroup(document.getElementById('quality'), (value) => { pond.setQuality(value); showQuality(); });
+    showQuality = () => {
+      const choice = pond.automaticQuality ? 'auto' : pond.quality;
+      showQualityChoice(choice);
+      settings.setValue('quality', pond.automaticQuality ? `Auto \u00b7 ${label('quality', pond.quality)}` : label('quality', pond.quality));
+      document.getElementById('quality-note').textContent = NOTES.quality[choice] + (pond.automaticQuality ? ` Now drawing: ${label('quality', pond.quality)}.` : '');
+    };
+    // A sky loads its photo first (about 6 MB); the old one stays until then.
+    const skyNote = document.getElementById('sky-note');
+    let skyChoice = null;   // the sky last picked here, while it loads
+    const showSky = radioGroup(document.getElementById('sky'), (value) => {
+      skyChoice = value;
+      showSky(value);
+      if (value === pond.sky) updateSky();
+      else {
+        settings.setValue('sky', `${label('sky', value)}\u2026`);
+        skyNote.textContent = `Loading the ${label('sky', value).toLowerCase()} sky\u2026`;
+      }
+      // Always asked, so a load still queued for an earlier pick is dropped.
+      pond.setSky(value).then((shown) => {
+        if (skyChoice !== value) return;   // another was picked since: its load reports
+        updateSky();
+        if (shown !== value) skyNote.textContent = 'That sky could not be loaded. Check the connection and try again.';
+      });
+    });
+    function updateSky() {
+      showSky(pond.sky);
+      settings.setValue('sky', label('sky', pond.sky));
+      skyNote.textContent = '';
+    }
+    updateWater();
+    updateWind();
+    showQuality();
+    updateSky();
     document.getElementById('throw').addEventListener('click', () => pond.throwRandom());
     resetView.addEventListener('click', () => pond.resetView());
     document.getElementById('throw').addEventListener('keydown', (event) => { if (event.code === 'Space') event.stopPropagation(); });
 
     window.__pond = pond;
     requestAnimationFrame(() => requestAnimationFrame(() => veil.classList.add('gone')));
-    if (params.get('ui') === '0') for (const el of document.querySelectorAll('.title, .controls, .stats')) el.hidden = true;
+    if (params.get('ui') === '0') for (const el of document.querySelectorAll('.title, .controls, .stats, .menu-button')) el.hidden = true;
   }
 </script>

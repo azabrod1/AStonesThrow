@@ -15,7 +15,12 @@
 //     screen's width, and every button is at least 34 points tall;
 //   - a tap anywhere along the slider puts its thumb there (iOS moves a range
 //     input only by its thumb, so the page does this itself), dragging from
-//     there moves it, and the readout and the next stone follow.
+//     there moves it, and the readout and the next stone follow;
+//   - the settings button is on the screen, clear of the title, and (on a
+//     touch screen) at least 34 points tall; pressed, the panel opens on the
+//     screen, its rows that tall too; its Water row opens the Water page,
+//     whose Murky sets the pond's clarity and the row's value; a press on the
+//     water closes it without throwing a stone, and Escape closes it too.
 // Sizes are reported in points on the screen (CSS pixels times the page's
 // zoom), so a shrunken page fails them. It saves each framing's screen to
 // shots/controls-probe/<label>/ and exits with status 1 if a check fails.
@@ -157,6 +162,51 @@ for (const framing of FRAMINGS) {
     } else {
       console.log('  (the tap and drag checks need the page laid out at the device\'s width; skipped)');
     }
+  }
+
+  // The settings (src/settingsPanel.js).
+  const press = (selector) => (framing.touch ? page.tap(selector) : page.click(selector));
+  const boxes = (selector) => page.evaluate((query) => {
+    const scale = window.visualViewport ? window.visualViewport.scale : 1;
+    return [...document.querySelectorAll(query)].filter((element) => element.getClientRects().length > 0).map((element) => {
+      const box = element.getBoundingClientRect();
+      return { name: element.dataset.value || element.dataset.open || element.id || element.className, left: box.left * scale, right: box.right * scale, top: box.top * scale, bottom: box.bottom * scale, height: box.height * scale };
+    });
+  }, selector);
+  const onScreen = (box) => box.left >= -0.5 && box.top >= -0.5 && box.right <= layout.screenWidth + 0.5 && box.bottom <= layout.screenHeight + 0.5;
+  const [menuButton] = await boxes('#menu-button');
+  const [title] = await boxes('.title h1');
+  const overlaps = (first, second) => first.left < second.right && second.left < first.right && first.top < second.bottom && second.top < first.bottom;
+  check(onScreen(menuButton) && !overlaps(menuButton, title), `the settings button is on the screen, clear of the title`);
+  if (framing.touch) check(menuButton.height >= SMALLEST_BUTTON_HEIGHT - 0.5, `the settings button is at least ${SMALLEST_BUTTON_HEIGHT} points tall (${menuButton.height.toFixed(1)})`);
+  await press('#menu-button');
+  await page.waitForTimeout(400);
+  const [panel] = await boxes('#settings');
+  const rows = await boxes('#settings .menu-tier');
+  check(!!panel && onScreen(panel) && rows.length === 4, `the settings open on the screen with their four rows`);
+  if (framing.touch) check(rows.every((row) => row.height >= SMALLEST_BUTTON_HEIGHT - 0.5), `every settings row is at least ${SMALLEST_BUTTON_HEIGHT} points tall (smallest ${Math.min(...rows.map((row) => row.height)).toFixed(1)})`);
+  await page.screenshot({ path: path.join(outputFolder, `${framing.name}-settings.png`) });
+  await press('#settings .menu-tier[data-open="water"]');
+  await page.waitForTimeout(400);
+  const choices = await boxes('#water [role="radio"]');
+  const [waterPanel] = await boxes('#settings');
+  if (framing.touch) check(choices.length === 3 && choices.every((choice) => choice.height >= SMALLEST_BUTTON_HEIGHT - 0.5), `the Water page's three choices are at least ${SMALLEST_BUTTON_HEIGHT} points tall`);
+  check(onScreen(waterPanel) && choices.every(onScreen), `the Water page is on the screen`);
+  await press('#water [data-value="murky"]');
+  const chosen = await page.evaluate(() => ({ clarity: window.__pond.clarity, row: document.querySelector('.menu-tier[data-open="water"] .menu-tier-value').textContent }));
+  check(chosen.clarity === 'murky' && chosen.row === 'Murky', `Murky sets the clarity (${chosen.clarity}) and the row's value ("${chosen.row}")`);
+  await page.screenshot({ path: path.join(outputFolder, `${framing.name}-water.png`) });
+  await page.evaluate(() => window.__pond.setClarity('pond'));
+  const stonesBefore = await page.evaluate(() => window.__pond.rocks.length);
+  const waterPoint = { x: layout.screenWidth * 0.3 / layout.scale, y: layout.screenHeight * 0.55 / layout.scale };
+  if (framing.touch) await page.touchscreen.tap(waterPoint.x, waterPoint.y);
+  else await page.mouse.click(waterPoint.x, waterPoint.y);
+  const afterOutside = await page.evaluate(() => ({ open: !document.getElementById('settings').hidden, stones: window.__pond.rocks.length }));
+  check(!afterOutside.open && afterOutside.stones === stonesBefore, `a press on the water closes the settings without throwing (open: ${afterOutside.open}, stones ${stonesBefore} -> ${afterOutside.stones})`);
+  if (!framing.touch) {
+    await press('#menu-button');
+    await page.keyboard.press('Escape');
+    check(await page.evaluate(() => document.getElementById('settings').hidden), `Escape closes the settings`);
   }
   if (problems.length) { check(false, `page errors: ${problems.join(' | ')}`); }
   await context.close();

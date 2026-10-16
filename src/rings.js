@@ -70,10 +70,16 @@
 // makes the hole's bowl (5 to 7 cm deep at 0.15 s for the reference stone,
 // as the simulation's funnel is) and a central mound after it, under the
 // drawn cavity, crown and jet, which would stand over a bowl or sink into a
-// mound. So the ring is faded out there (NEAR_FIELD: inside 4σ, the more the
-// nearer its centre, so the fade itself is never steep, until 11·sqrt(σ/g)
-// after its release, fully in by 16·sqrt(σ/g): 0.86 and 1.25 s for the
-// reference stone), when only a few millimetres of it are left there.
+// mound. So the ring is faded out there (NEAR_FIELD), the more the nearer its
+// centre, so the fade itself is never steep: inside 4σ while the hole is
+// drawn, then, once it has filled, only over the jet's base (0.5σ to 1.75σ:
+// 3 to 10.5 cm for the reference stone, from about 0.35 s), until
+// 11·sqrt(σ/g) after its release, fully in by 16·sqrt(σ/g) (0.86 and 1.25 s
+// for the reference stone), when only a few millimetres of it are left
+// there. The ring's first trough and crest leave the centre while the jet
+// stands (the simulation has them 10 cm out at 0.3 and 0.5 s, as this ring
+// does); hidden inside 4σ until then, they showed only once 24 cm out, about
+// 0.75 s after entry, and the rings looked late after the splash.
 //
 // A source (one throw's ring) is up to MAX_GROUPS groups, each a splat and
 // its pair released together; a splat joins the source started at most
@@ -233,9 +239,17 @@ export const OUTER = { share: 0.1, margin: 1.25 };   // the ring is drawn out to
 // centre, by a quintic), until `from`, and fully in by `to`, in sqrt(σ/g)
 // after its release. Linear theory makes the hole's wide, deep bowl there
 // (5 to 7 cm deep for the reference stone at 0.15 s, as the simulation's
-// funnel is), which would leave the drawn jet standing over it; by `to` the
-// ring has gone out past it, and what is left near the centre is a few mm.
-export const NEAR_FIELD = { inner: 0, outer: 4, from: 11, to: 16 };
+// funnel is), which would leave the drawn cavity standing over it, and then
+// a central mound under the drawn jet. The bowl is the hole's, so the wide
+// region is hidden only while the hole is drawn: the hole has filled 2.2 to
+// 3 sqrt(σ/g) after the release for every stone (tools/cavity-probe.mjs),
+// and over `settle` the hidden region shrinks to the jet's base (`base`,
+// inner and outer in σ), so the ring's first trough and crest, which the
+// reference simulation has 8 to 24 cm out from 0.25 s on (as this ring
+// does), show as they leave the centre rather than once past 4σ. By `to`
+// the ring has gone out past the jet, and what is left near the centre is a
+// few mm.
+export const NEAR_FIELD = { inner: 0, outer: 4, from: 11, to: 16, settle: [2.5, 4], base: { inner: 0.5, outer: 1.75 } };
 const WAVENUMBER_CAP = 400;           // rad/m: 1.6 cm waves, which the film damps within 15 cm
 const GAUSSIAN_REACH = 4.29;          // σ·k at which a splat's Gaussian spectrum is 1e-4: the rest adds under 3e-5 to a slope
 const MERGE = { seconds: 0.05, reach: 3 };   // a splat joins a source started this recently, this many of its σ away
@@ -446,9 +460,10 @@ export function nearField(source, time) {
   }
   const unit = Math.sqrt(widest / GRAVITY);
   const age = time - Math.min(...source.groups.map((group) => group.start));
+  const settled = THREE.MathUtils.smoothstep(age, NEAR_FIELD.settle[0] * unit, NEAR_FIELD.settle[1] * unit);
   return {
-    inner: offset + NEAR_FIELD.inner * widest,
-    outer: offset + NEAR_FIELD.outer * widest,
+    inner: offset + THREE.MathUtils.lerp(NEAR_FIELD.inner, NEAR_FIELD.base.inner, settled) * widest,
+    outer: offset + THREE.MathUtils.lerp(NEAR_FIELD.outer, NEAR_FIELD.base.outer, settled) * widest,
     hide: 1 - THREE.MathUtils.smoothstep(age, NEAR_FIELD.from * unit, NEAR_FIELD.to * unit),
   };
 }

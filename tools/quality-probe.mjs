@@ -5,7 +5,8 @@
 //    it starts on high; the idle measurement steps it down (under SwiftShader
 //    the frame rate is far below the thresholds, so to low; on a real GPU it
 //    may stay high and the probe only checks consistency); the readout and
-//    the quality buttons follow; the idle pond runs no pass of the rings
+//    the settings' Quality page follow (Auto chosen, its row naming the
+//    preset drawn); the idle pond runs no pass of the rings
 //    (src/rings.js); the first throw compiles no GPU program (src/main.js
 //    compiles them all under the loading veil), and its rings outlive its
 //    splash, a spectrum pass and one profile pass each; the splash
@@ -99,7 +100,8 @@ async function checkBuilt({ page, width, height }, label) {
 const pageState = (page) => page.evaluate(() => ({
   quality: window.__pond.quality,
   readout: document.getElementById('stats').textContent,
-  pressed: [...document.querySelectorAll('#quality button')].filter((button) => button.getAttribute('aria-pressed') === 'true').map((button) => button.dataset.value),
+  pressed: [...document.querySelectorAll('#quality [role="radio"]')].filter((button) => button.getAttribute('aria-checked') === 'true').map((button) => button.dataset.value),
+  row: document.querySelector('.menu-tier[data-open="quality"] .menu-tier-value').textContent,
   droplets: window.__pond.splash.count,
 }));
 /** The largest |height| in the splash solver's height texture (m). */
@@ -134,7 +136,7 @@ console.log(`  idle: ${afterIdle.readout} after ${((Date.now() - idleStart) / 10
 if (idleFps < 30) check(afterIdle.quality === 'low', `idle below 30 fps steps down to low (got ${afterIdle.quality})`);
 else if (idleFps < 50) check(afterIdle.quality === 'medium', `idle below 50 fps steps down to medium (got ${afterIdle.quality})`);
 else check(afterIdle.quality === 'high', `idle at ${idleFps} fps stays high (got ${afterIdle.quality})`);
-check(afterIdle.pressed.length === 1 && afterIdle.pressed[0] === afterIdle.quality, `the quality buttons show ${afterIdle.quality} (pressed: ${afterIdle.pressed.join(',') || 'none'})`);
+check(afterIdle.pressed.length === 1 && afterIdle.pressed[0] === 'auto' && afterIdle.row.toLowerCase().endsWith(afterIdle.quality), `the settings show Auto, drawing ${afterIdle.quality} (chosen: ${afterIdle.pressed.join(',') || 'none'}; row: ${afterIdle.row})`);
 await checkBuilt(phone, 'after the idle measurement');
 // The readout refreshes every 16 frames: give it that long.
 await page.waitForFunction((name) => document.getElementById('stats').textContent.endsWith(name), afterIdle.quality, { timeout: 120000 }).catch(() => {});
@@ -156,13 +158,14 @@ check(programsAfterSplash === programsBeforeThrow, `the first throw compiles no 
 const ringsAfterSplash = await page.evaluate(() => window.__pond.budget.rings);
 check(ringsAfterSplash.live >= 1 && ringsAfterSplash.passes === 1 + ringsAfterSplash.live, `its rings outlive the splash: ${ringsAfterSplash.live} live, ${ringsAfterSplash.passes} passes a frame (a spectrum pass and one profile pass each)`);
 check(order(afterSplash.quality) >= order(afterIdle.quality), `the splash never steps the quality up (${afterIdle.quality} -> ${afterSplash.quality})`);
-check(afterSplash.pressed.length === 1 && afterSplash.pressed[0] === afterSplash.quality, `the quality buttons show ${afterSplash.quality}`);
+check(afterSplash.pressed.length === 1 && afterSplash.pressed[0] === 'auto' && afterSplash.row.toLowerCase().endsWith(afterSplash.quality), `the settings show Auto, drawing ${afterSplash.quality} (row: ${afterSplash.row})`);
 await checkBuilt(phone, 'after the splash measurement');
 
 // A button press fixes the preset: no further automatic change. Then every preset to every other.
 await page.evaluate(() => window.__pond.setQuality('medium'));
 const afterPress = await pageState(page);
 check(afterPress.quality === 'medium', `setQuality('medium') applies (got ${afterPress.quality})`);
+check(afterPress.pressed.length === 1 && afterPress.pressed[0] === 'medium' && afterPress.row === 'Medium', `and the settings show Medium, not Auto (chosen: ${afterPress.pressed.join(',')}; row: ${afterPress.row})`);
 let previous = 'medium';
 for (const name of ['high', 'medium', 'low', 'high', 'low', 'medium', 'high']) {
   await page.evaluate((preset) => window.__pond.setQuality(preset), name);

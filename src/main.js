@@ -67,12 +67,16 @@
 // few moments, so that every GPU program a throw needs (the stone's, the
 // splash's passes, the mirror's, the cavity's, the composite's, the specks')
 // is compiled then rather than at the first throw, then clears it all away:
-// the pond starts still, at time zero. ?sky=<name> picks the panorama;
+// the pond starts still, at time zero. The settings (the page's panel)
+// each have their own localStorage key, and the page's parameters win over
+// them: ?sky=<name> picks the panorama (src/sky.js; setSky loads another
+// later, in place: the sun follows, and the mirror image is drawn again);
+// ?water=clear|pond|murky the water's clarity (WATER_CLARITIES; setClarity);
 // ?wind=x,z sets the direction the wind blows toward in world XZ
 // (DEFAULT_WIND otherwise); ?windStrength=calm|breeze|windy the wind's
-// strength (WIND_STRENGTHS in src/ambientWaves.js), which otherwise is the
-// one last chosen on this device (setWind remembers it in localStorage), or
-// calm; ?paused=1 starts with the clock stopped
+// strength (WIND_STRENGTHS in src/ambientWaves.js; setWind); each otherwise
+// the one last chosen on this device, or meadow, pond and calm; ?paused=1
+// starts with the clock stopped
 // (resume() starts it); ?quality=high|medium|low fixes a preset (QUALITY),
 // otherwise the quality calibrates itself from the frame rate (CALIBRATION),
 // keeps watching it, and reports each change through onQualityChange.
@@ -82,7 +86,7 @@ import * as THREE from 'three';
 import { SpectralWater } from './spectralWater.js';
 import { AmbientWaves, DEFAULT_WIND, WIND_STRENGTHS } from './ambientWaves.js';
 import { Rings } from './rings.js';
-import { createEnvironment } from './sky.js';
+import { createEnvironment, SKY_NAMES } from './sky.js';
 import { createWaterSurface } from './waterSurface.js';
 import { createPondFloor, setPatternMipmaps } from './pondFloor.js';
 import { Rock } from './rock.js';
@@ -150,7 +154,25 @@ const HOME_TARGET = [0, 0.12, -1.0];
 const SUN_AZIMUTH = Math.atan2(0.42, 0.78);   // radians right of straight ahead (−Z), about 28°
 const DEBUG_MODES = { under: 0, height: 1, foam: 2, env: 3, face: 4, ambient: 5 };   // setDebugView names
 const DEFAULT_WIND_STRENGTH = 'calm';
-const WIND_STORAGE_KEY = 'stone-pond-wind';   // the Wind control's last choice on this device
+const WIND_STORAGE_KEY = 'stone-pond-wind';   // the Wind setting's last choice on this device
+const WATER_STORAGE_KEY = 'stone-pond-water'; // the Water setting's
+const SKY_STORAGE_KEY = 'stone-pond-sky';     // the Sky setting's
+const SUN_BALANCE = [3.0, 2.85, 2.55];        // the sun's irradiance under the meadow sky; another sky's has its photo's colour (src/sky.js)
+// The water's clarity (the Water setting): its extinction, per metre, and
+// the radiance of water too deep to see through (lighting below;
+// WATER_FRAGMENT in src/shaders/scene.js). Pond, the default, is about as
+// clear as a clean pond's: the sand shows near the bank and is gone about
+// 9 m out, so a ring's light on the sand fades out by where a stone lands.
+// Clear is a spring's, the pond as it was before (absorption alone, 0.36
+// per metre in green, and the same colour): the sand shows far out, with
+// each ring's light rings on it. Murky is a lake after rain: the sand shows
+// only at the bank.
+const WATER_CLARITIES = {
+  clear: { extinction: [1.0, 0.4, 0.4], color: [0.010, 0.046, 0.040] },
+  pond: { extinction: [2.0, 1.45, 1.65], color: [0.015, 0.074, 0.041] },
+  murky: { extinction: [3.0, 2.4, 2.7], color: [0.022, 0.082, 0.040] },
+};
+const DEFAULT_WATER = 'pond';
 // The warm-up's throw (the reference stone, aimed as the profiler's) and the
 // moments after its impact it draws: the crown, the fan, the cavity, spray
 // and the mirror; the jet column; the specks and the drops' landing crowns.
@@ -185,30 +207,31 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
   // units chosen so that a sunlit pond tone-maps well at the given exposure.
   // The sun's direction and the sky's ambient radiance come from the sky
   // panorama; shaders hold these vectors by reference, so they are filled in
-  // place, never replaced. The water (WATER_FRAGMENT in src/shaders/scene.js
-  // says how): absorb, per metre, dims the light going down to the floor and
+  // place, never replaced; so is the sun's irradiance, which the sky sets
+  // too (src/sky.js). The water (WATER_FRAGMENT in src/shaders/scene.js says
+  // how): absorb, per metre, dims the light going down to the floor and
   // through the splash's thin water; extinction, per metre, absorption plus
   // scattering, dims the floor seen through the water, which fades into
-  // waterColor, the radiance of water too deep to see through.
+  // waterColor, the radiance of water too deep to see through. The Water
+  // setting sets those two (WATER_CLARITIES).
   const lighting = {
     sunDirection: new THREE.Vector3(),
-    sunIrradiance: new THREE.Vector3(3.0, 2.85, 2.55),
+    sunIrradiance: new THREE.Vector3(),
     skyAmbient: new THREE.Vector3(),
     absorb: new THREE.Vector3(0.95, 0.36, 0.34),
-    extinction: new THREE.Vector3(2.0, 1.45, 1.65),
-    waterColor: new THREE.Vector3(0.015, 0.074, 0.041),
+    extinction: new THREE.Vector3(),
+    waterColor: new THREE.Vector3(),
     exposure: 0.55,
   };
+  const storedChoice = (key) => { try { return window.localStorage.getItem(key); } catch { return null; } };
 
   let environment;
   try {
-    environment = await createEnvironment(renderer, { name: pageParameters.get('sky'), sunAzimuth: SUN_AZIMUTH, sunIrradiance: lighting.sunIrradiance });
+    environment = await createEnvironment(renderer, { name: pageParameters.get('sky') ?? storedChoice(SKY_STORAGE_KEY), sunAzimuth: SUN_AZIMUTH, sunBalance: new THREE.Vector3(...SUN_BALANCE), lighting });
   } catch (error) {
     onError?.('The sky could not be loaded. Check the connection and reload the page.');
     throw error;
   }
-  lighting.sunDirection.copy(environment.sunDirection);
-  lighting.skyAmbient.copy(environment.skyAmbient);
   const sunDirection = lighting.sunDirection;
 
   const profiling = pageParameters.get('profile') === '1';
@@ -231,7 +254,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
   const surface = createWaterSurface(water, lighting, ambientWaves, { meshSegments: settings.meshSegments, rings });
   const splash = new SplashSystem({ environment, lighting, water, ambientWaves, surface });
   // The wind's strength: the page's ?windStrength, else the last choice here, else calm.
-  const storedWind = (() => { try { return window.localStorage.getItem(WIND_STORAGE_KEY); } catch { return null; } })();
+  const storedWind = storedChoice(WIND_STORAGE_KEY);
   const requestedWind = pageParameters.get('windStrength');
   let windName = Object.hasOwn(WIND_STRENGTHS, requestedWind ?? '') ? requestedWind : Object.hasOwn(WIND_STRENGTHS, storedWind ?? '') ? storedWind : DEFAULT_WIND_STRENGTH;
   function applyWind(name) {
@@ -240,6 +263,16 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     water.setWindStrength(WIND_STRENGTHS[name]);
   }
   applyWind(windName);
+  // The water's clarity: the page's ?water, else the last choice here, else pond.
+  const storedWater = storedChoice(WATER_STORAGE_KEY);
+  const requestedWater = pageParameters.get('water');
+  let waterName = Object.hasOwn(WATER_CLARITIES, requestedWater ?? '') ? requestedWater : Object.hasOwn(WATER_CLARITIES, storedWater ?? '') ? storedWater : DEFAULT_WATER;
+  function applyWater(name) {
+    waterName = name;
+    lighting.extinction.fromArray(WATER_CLARITIES[name].extinction);
+    lighting.waterColor.fromArray(WATER_CLARITIES[name].color);
+  }
+  applyWater(waterName);
 
   const camera = new THREE.PerspectiveCamera(48, 1, 0.05, 60000);
   camera.position.set(0, 1.15, 2.45);
@@ -251,12 +284,19 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
   const home = { ...viewFacing(HOME_TARGET[0] - camera.position.x, HOME_TARGET[1] - camera.position.y, HOME_TARGET[2] - camera.position.z), fov: 48 };
   const view = { ...home };
 
-  const sun = new THREE.DirectionalLight(new THREE.Color(1.0, 0.95, 0.86), 3.0);
-  sun.position.copy(sunDirection).multiplyScalar(50);
-  // Below the surface the sun has crossed the water column: attenuate it.
-  const sunUnder = sun.clone();
-  const sunPath = POND_DEPTH / sunDirection.y;
-  sunUnder.color.multiply(new THREE.Color(Math.exp(-lighting.absorb.x * sunPath), Math.exp(-lighting.absorb.y * sunPath), Math.exp(-lighting.absorb.z * sunPath)));
+  // The sun's lights for the stones: its irradiance above the water, and
+  // below it what crosses the water column (absorbed over the path the
+  // floor's sunlight takes, FLOOR_VERTEX). The sky sets both (applySky).
+  const sun = new THREE.DirectionalLight(new THREE.Color(), 1.0);
+  const sunUnder = new THREE.DirectionalLight(new THREE.Color(), 1.0);
+  function applySunLights() {
+    sun.position.copy(sunDirection).multiplyScalar(50);
+    sun.color.setRGB(lighting.sunIrradiance.x, lighting.sunIrradiance.y, lighting.sunIrradiance.z);
+    sunUnder.position.copy(sun.position);
+    const sunPath = POND_DEPTH / Math.max(sunDirection.y, 0.2);
+    sunUnder.color.copy(sun.color).multiply(new THREE.Color(Math.exp(-lighting.absorb.x * sunPath), Math.exp(-lighting.absorb.y * sunPath), Math.exp(-lighting.absorb.z * sunPath)));
+  }
+  applySunLights();
 
   const sceneUnder = new THREE.Scene();
   sceneUnder.add(floor, splash.bubblePoints, sunUnder);
@@ -440,6 +480,18 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
   let viewFromApi = false;     // set by setFov / lookAt, which may leave the home frame
   let reportedZoom = false;
   let lastActivity = 0;        // performance.now() of the last input, view change or motion (IDLE)
+
+  // The sky (setSky): a load replaces the dome and the environment maps and
+  // fills lighting's sun and sky in place (src/sky.js); then what holds the
+  // sun by value follows, and the mirror image is drawn again.
+  let skyRequest = environment.name;     // the sky last asked for
+  let skyLoading = Promise.resolve();    // the loads queued so far
+  function applySky() {
+    applySunLights();
+    splash.updateLighting();
+    viewChanged = true;
+    lastActivity = performance.now();
+  }
 
   /** Point the camera as `view` says; the mirror image follows at the next frame. */
   function applyView() {
@@ -790,6 +842,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
       solverAsleep: water.asleep,
       rings: { live: rings.live, fading: rings.fading, limit: rings.liveLimit, passes: rings.passesRun, fetches: rings.fetchesRun },
       wind: windName,
+      clarity: waterName,
+      sky: environment.name,
       frameCapped,
       calibration: automaticQuality ? calibration.phase : 'fixed',
       warmUp: { ...warmUpReport },
@@ -969,6 +1023,34 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
       try { window.localStorage.setItem(WIND_STORAGE_KEY, name); } catch { /* storage refused: the choice lasts this visit */ }
     },
     get wind() { return windName; },
+    /** The water's clarity by name (WATER_CLARITIES: clear, pond, murky), remembered on this device. */
+    setClarity(name) {
+      if (!Object.hasOwn(WATER_CLARITIES, name)) return;
+      applyWater(name);
+      lastActivity = performance.now();
+      try { window.localStorage.setItem(WATER_STORAGE_KEY, name); } catch { /* storage refused: the choice lasts this visit */ }
+    },
+    get clarity() { return waterName; },
+    /**
+     * The sky by name (a key of SKIES in src/sky.js), remembered on this
+     * device. Its photo loads first and the old sky stays until it has
+     * arrived; then the sky, the sun and everything they light change in one
+     * frame. Resolves to the sky then shown (the old one if the photo could
+     * not be fetched). Choices made while one loads queue behind it, and only
+     * the last is loaded.
+     */
+    setSky(name) {
+      if (!SKY_NAMES.includes(name)) return Promise.resolve(environment.name);
+      skyRequest = name;
+      try { window.localStorage.setItem(SKY_STORAGE_KEY, name); } catch { /* storage refused: the choice lasts this visit */ }
+      skyLoading = skyLoading.then(async () => {
+        if (skyRequest !== name || environment.name === name) return;
+        await environment.load(name);
+        applySky();
+      }).catch((error) => console.error(error));
+      return skyLoading.then(() => environment.name);
+    },
+    get sky() { return environment.name; },
     setTimeScale(scale) { timeScale = scale; },
     /** A preset by name, which ends the automatic calibration; 'auto' starts it again from high. */
     setQuality(name) {
@@ -1012,6 +1094,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     get timeScale() { return timeScale; },
     get rocks() { return rocks; },
     get quality() { return qualityName; },
+    /** Whether the quality is chosen automatically (setQuality('auto'), and the page's start unless ?quality= fixes it). */
+    get automaticQuality() { return automaticQuality; },
     /**
      * What the preset built (read-only): the solver's grid, the patch's mesh,
      * the pixel ratio, every target's size, the render targets' bytes by owner
@@ -1024,8 +1108,6 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     get framesRendered() { return framesRendered; },
     /** Where the splash was drawn into the mirror image at the last frame, in its target's pixels (0 wide: nowhere), and the target's size. */
     get mirrorRegion() { return { x: splashRect.x, y: splashRect.y, width: splashRect.z, height: splashRect.w, targetWidth: reflectionTarget.width, targetHeight: reflectionTarget.height }; },
-    /** The sky panorama in use (a key of SKIES in src/sky.js). */
-    sky: environment.name,
     renderer,
     camera,
     lighting,

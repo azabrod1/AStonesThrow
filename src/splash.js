@@ -1546,6 +1546,12 @@ export class SplashSystem {
     this.streakSeconds = seconds * 0.5;
   }
 
+  /** After the sky changes the sun (src/sky.js): the sand's light that the splash's water sees the pond's floor by. */
+  updateLighting() {
+    const uniforms = this.compositePass.material.uniforms;
+    uniforms.uFloorLight.value.copy(floorLight(this.lighting, uniforms.uPondDepth.value));
+  }
+
   /**
    * After the camera's projection changes: the bubbles' and foam specks'
    * sizes on screen. height: the main pass's in device pixels; underHeight:

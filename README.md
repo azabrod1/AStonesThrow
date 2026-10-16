@@ -13,13 +13,23 @@ Tap or click the water to throw a stone there (beyond the simulated patch,
 at its nearest point). Space throws one at random.
 Scroll or pinch to zoom toward what is under the pointer (down to an 8°
 field of view); Escape or Reset view goes back. The strip at the bottom sets
-the stone size, the throw strength, slow motion, the wind (Calm, the
-default, a still day; Breeze; Windy: the last choice is remembered on the
-device) and the rendering quality.
-The quality starts on High everywhere and steps down by itself if the idle
+the stone size, the throw strength and slow motion. The menu button at the
+top right opens the settings, laid out as the Moon app's menu is (a list,
+each setting a page of its choices with a line on each), and each choice is
+remembered on the device:
+- Water: how clear it is. Clear, a spring's, where the sand shows far out
+  and each ring throws rings of light on it; Pond, the default, a clean
+  pond's, where the sand shows near the bank and fades out by where the
+  stones land; Murky, a lake after rain.
+- Sky: Meadow (the default), Lakeside, Sunrise, Alpine or Open sky. The
+  photo (about 6 MB) loads while the old sky stays; then the sky, the sun's
+  direction and colour and everything they light change at once.
+- Wind: Calm (the default, a still day), Breeze or Windy.
+- Quality: Auto, Low, Medium or High.
+Auto starts on High everywhere and steps down by itself if the idle
 pond or the first splash renders too slowly, and later whenever the frame
 rate stays under 25 for a few seconds (the readout in the corner shows the
-frame rate and the preset in use); the buttons fix a preset. A preset sets
+frame rate and the preset in use); a preset fixes it. A preset sets
 the work a frame does: High runs the 512² solver, a 254-segment water mesh
 and full-resolution targets; Medium and Low a 256² solver, 160 and 128
 segments, the under-water view and the mirror image at half resolution and
@@ -308,21 +318,25 @@ thing's reflection up where it is: the jet's reflection hangs under the jet
 and only trembles with the ripples, where the sky's streaks with them.
 
 **Sky** (`src/sky.js`). The sky is a photograph: an equirectangular HDRI
-of a meadow with trees on a dome at the far plane, turned about the vertical
-(and mirrored, where that puts better scenery ahead) so that its sun stands
-where the scene's does (28° right of straight ahead) and at the photo's own
-elevation, which becomes the scene's. Its brightness is
+(a meadow with trees by default, or one of four others) on a dome at the far
+plane, turned about the vertical (and mirrored, where that puts better
+scenery ahead) so that its sun stands where the scene's does (28° right of
+straight ahead) and at the photo's own elevation, which becomes the scene's
+(27° for the meadow, 5° at sunrise, 50° in the Alps). Its brightness is
 anchored on the sun: `tools/sky-probe.mjs` measures the photo's sun
 irradiance and sky radiance, and the dome is scaled so that its sun matches
 the scene's (times π, the scene's convention for diffuse light), so the
 photo's own balance of sky and sun carries over, and the sky's mean radiance
-becomes the ambient light of the foam and the sand. The sun's light reaches
+becomes the ambient light of the foam and the sand. The sun keeps one
+brightness under every sky and takes the colour of the photo's sun against
+the meadow's, so it is orange at sunrise. The sun's light reaches
 the scene through the directional light and the analytic highlights, so the
 dome's radiance is capped at 30 times the mean sky. The water reaches 3 km,
 far enough to meet the dome's horizon with no strip of the photo's ground
 between them, so the photo's treeline stands on the far shore. The dome and
-a water-coloured lower hemisphere are captured once into a cube map that the
-droplets reflect, and a prefiltered copy lights the stones.
+a water-coloured lower hemisphere are captured into a cube map that the
+droplets reflect, and a prefiltered copy lights the stones; another sky is
+captured into the same maps, in the frame it arrives.
 
 **Rendering** (`src/main.js`, `src/shaders/`). Each frame: the floor,
 submerged stones and bubbles are rendered to a texture with depth (at half
@@ -465,10 +479,12 @@ ballistic arc, quadratic drag under water, and a settle into the sand.
   the wind blows toward, in world XZ (the camera looks toward −Z); the
   default is (0.45, −0.9), away from the camera and a little to the right.
   `?windStrength=calm|breeze|windy` (`--wind-strength=` for the harness)
-  sets its strength, over the one the Wind control last chose on the device
+  sets its strength, over the one the Wind setting last chose on the device
   (kept in `localStorage`); calm otherwise.
 - `?sky=name` on the page (`--sky=name` for the harness) picks the sky
-  panorama, a key of `SKIES` in `src/sky.js`.
+  panorama, a key of `SKIES` in `src/sky.js`, over the one last chosen on
+  the device; `?water=clear|pond|murky` (`--water=` for the harness) the
+  water's clarity, `WATER_CLARITIES` in `src/main.js`.
 - `node tools/sky-probe.mjs assets/sky/name_2k.hdr [--png=preview.png]`
   measures a sky panorama (the sun's direction, the sun's irradiance, the
   sky's mean radiance, the horizon's) and writes `assets/sky/name.json`,
@@ -525,7 +541,7 @@ ballistic arc, quadratic drag under water, and a settle into the sand.
 - `node tools/quality-probe.mjs` runs the page unpaused at phone size with
   automatic quality, waits for the idle and first-splash measurements, and
   checks the preset steps down when the frame rate is low, that the readout
-  and the quality buttons follow and that the first throw compiles no
+  and the settings' Quality page follow and that the first throw compiles no
   program. After every change of preset, from each to each other, it checks
   what is actually built (`window.__pond.budget`): the solver's grid, the
   water mesh, the canvas and every target's size; a change in the middle of
@@ -564,5 +580,8 @@ needed locally for the headless harness, which serves it instead of the CDN).
 
 ## Credits
 
-The sky panorama is *Meadow 2* by Sergej Majboroda, from
-[Poly Haven](https://polyhaven.com), CC0.
+The sky panoramas are from [Poly Haven](https://polyhaven.com), CC0:
+*Meadow 2* by Sergej Majboroda; *Lakeside* by Greg Zaal; *Lakeside Sunrise*
+by Greg Zaal, processed by Jarod Guest; *Lago d'Isola* by Andreas Mischok;
+and *Kloofendal 48d Partly Cloudy (Pure Sky)* by Greg Zaal, its sky edited by
+Jarod Guest.

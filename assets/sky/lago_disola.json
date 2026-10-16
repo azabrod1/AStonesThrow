@@ -1,0 +1,30 @@
+{
+  "source": "lago_disola_2k.hdr",
+  "width": 2048,
+  "height": 1024,
+  "sun": {
+    "elevation": 49.97,
+    "azimuth": 215.91,
+    "direction": [
+      0.52093,
+      0.76573,
+      0.37721
+    ],
+    "pixels": 12
+  },
+  "sunIrradiance": [
+    5.3027,
+    4.3471,
+    3.6167
+  ],
+  "skyRadiance": [
+    0.4261,
+    0.47704,
+    0.58562
+  ],
+  "horizonRadiance": {
+    "median": 0.042671,
+    "p90": 0.14999
+  },
+  "maxLuminance": 90458
+}

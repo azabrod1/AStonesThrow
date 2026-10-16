@@ -5,8 +5,10 @@
 // drawn on a dome (a large box on layer 1, so the mirror pass sees it) at the
 // far plane. Its measurements, in assets/sky/<name>.json, come from
 // tools/sky-probe.mjs: the sun's direction in the file's frame, its
-// irradiance, and the sky's mean radiance. SKIES lists the panoramas and how
-// each is turned; ?sky=<name> on the page picks one, DEFAULT_SKY otherwise.
+// irradiance, and the sky's mean radiance. SKIES lists the panoramas (the
+// Sky setting's choices, src/main.js) and how each is turned; the
+// environment loads one to start and another whenever load() is called
+// (Switching, below).
 //
 // Orientation. The dome samples the panorama by direction as Three.js's
 // equirect lookup does (equirectUv: u = atan(z, x)/2π + ½), with the x of the
@@ -15,9 +17,15 @@
 // by the angle that puts the photo's sun at `sunAzimuth`, the scene's choice.
 // The sun's elevation is the photo's; sunDirection is built from the two.
 //
-// Brightness. The scene's sun irradiance is fixed (lighting.sunIrradiance);
-// the dome is scaled by the ratio of its luminance to the photo's measured
-// sun irradiance, so the photo's own ratio of sky to sun carries over, times
+// The sun's colour. The scene's sun keeps the luminance of sunBalance (src/
+// main.js), the irradiance it was balanced with under BALANCE_SKY, and takes
+// the colour of the photo's sun relative to that sky's: so under the meadow
+// it is sunBalance, and at sunrise as orange against it as the photo's sun is
+// against the meadow's (lighting.sunIrradiance, filled in place).
+//
+// Brightness. The dome is scaled by the ratio of the scene's sun luminance to
+// the photo's measured sun irradiance, so the photo's own ratio of sky to sun
+// carries over, times
 // SKY_EXPOSURE. That constant is π: the scene's diffuse shaders (floor, foam,
 // specks) light a white surface facing the sun to sunIrradiance, without the
 // Lambertian 1/π, so sunIrradiance is π times a physical irradiance in the
@@ -34,8 +42,17 @@
 // times brighter than the sky would poison every blurred level of the
 // prefiltered map and overflow the half-float cube, so the dome's radiance is
 // capped at RADIANCE_CAP times the mean sky radiance (scaled down to keep
-// its hue). The sun is never in the home view's direct sight, so the cap
-// only touches the mirror image and the cube.
+// its hue). Only the sunrise's sun is in the home view's direct sight, where
+// the cap leaves the photo's white disc and its starburst; the others' only
+// in the mirror image and the cube.
+//
+// Switching. load(name) fetches the photo and its measurements, then in one
+// frame swaps the dome's texture and uniforms, fills lighting's sun and sky
+// vectors in place, captures the cube and the prefiltered map again into the
+// same targets (every material holding them keeps them) and frees the old
+// photo. Nothing new is compiled: the dome, the capture's ground and the
+// PMREM generator live as long as the environment. Until the photo has
+// arrived the old sky stays, whole.
 //
 // The panorama and a water-coloured hemisphere below the horizon (the photo's
 // own ground there would light drops and stones green from below) are
@@ -54,14 +71,27 @@
 import * as THREE from 'three';
 import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
 
-// The orientation was chosen from home-view frames. Meadow 2 mirrored puts
-// tall trees on the left with sky between the crowns; as photographed the
-// whole view ahead is a wall of foliage. Each entry costs about 6 MB, so one
-// panorama ships; ?sky=<name> is for comparing candidates before choosing.
+// The orientation was chosen from home-view frames (mirrored: the photo
+// flipped left for right; sunAzimuth, degrees right of straight ahead, would
+// put the sun elsewhere than the scene's own place for it). Meadow 2 mirrored
+// puts tall trees on the left with sky between the crowns; as photographed
+// the whole view ahead is a wall of foliage. Lakeside as photographed puts
+// its wooded shore on the left, mirrored the view is open water to a low far
+// shore. Lago d'Isola mirrored looks down the valley at the snowy peaks, as
+// photographed into a wall of pines. The sunrise's sun, 5° up, stands in the
+// home view's top right, a dead branch in the water just left of it, either
+// way round. The open sky (clouds only) looks alike either way. Each
+// panorama is about 6 MB, fetched only when chosen.
 const SKIES = {
-  meadow_2: { mirrored: true },
+  meadow: { file: 'meadow_2', mirrored: true },
+  lakeside: { file: 'lakeside', mirrored: false },
+  sunrise: { file: 'lakeside_sunrise', mirrored: false },
+  alpine: { file: 'lago_disola', mirrored: true },
+  open: { file: 'kloofendal_48d_partly_cloudy_puresky', mirrored: false },
 };
-const DEFAULT_SKY = 'meadow_2';
+export const SKY_NAMES = Object.keys(SKIES);
+export const DEFAULT_SKY = 'meadow';
+const BALANCE_SKY = 'meadow';    // the sky the scene's sun colour (sunBalance) was chosen under
 const SKY_EXPOSURE = Math.PI;   // see Brightness above
 const RADIANCE_CAP = 30;       // times the mean sky radiance
 const DOME_SIZE = 20000;       // metres, edge of the box
@@ -99,47 +129,32 @@ void main() {
 }
 `;
 
+const fetchMeasurement = (file) => fetch(new URL(`../assets/sky/${file}.json`, import.meta.url)).then((response) => {
+  if (!response.ok) throw new Error(`sky measurements: HTTP ${response.status}`);
+  return response.json();
+});
+
 /**
- * Load the sky and build the environment maps.
+ * Build the environment and load its first sky.
  * @param renderer the WebGLRenderer
  * @param options.name a key of SKIES (others fall back to DEFAULT_SKY)
- * @param options.sunAzimuth radians from straight ahead (−Z) toward the right (+X)
- * @param options.sunIrradiance the scene's sun irradiance (RGB Vector3) the dome is scaled to
- * @returns {Promise<{ sky, cubeTexture, envTexture, sunDirection, skyAmbient, name, targets, panoramaBytes }>}
+ * @param options.sunAzimuth radians from straight ahead (−Z) toward the right (+X), unless the sky sets its own
+ * @param options.sunBalance the scene's sun irradiance under BALANCE_SKY (RGB Vector3)
+ * @param options.lighting its sunDirection, sunIrradiance and skyAmbient (Vector3s) are filled in place by every load
+ * @returns {Promise<{ sky, cubeTexture, envTexture, name, targets, panoramaBytes, load }>}
  */
-export async function createEnvironment(renderer, { name, sunAzimuth, sunIrradiance }) {
-  const skyName = SKIES[name] ? name : DEFAULT_SKY;
-  const { mirrored } = SKIES[skyName];
-  const [measurement, panorama] = await Promise.all([
-    fetch(new URL(`../assets/sky/${skyName}.json`, import.meta.url)).then((response) => {
-      if (!response.ok) throw new Error(`sky measurements: HTTP ${response.status}`);
-      return response.json();
-    }),
-    new HDRLoader().setDataType(THREE.HalfFloatType).loadAsync(new URL(`../assets/sky/${skyName}_2k.hdr`, import.meta.url).href),
-  ]);
-  panorama.wrapS = THREE.RepeatWrapping;   // the azimuth wraps; no seam at u = 0
-  const panoramaBytes = panorama.image.data.byteLength;
-  panorama.onUpdate = () => { panorama.image.data = null; };   // on the GPU now: free the CPU copy
-
-  const elevation = THREE.MathUtils.degToRad(measurement.sun.elevation);
-  const sunDirection = new THREE.Vector3(Math.cos(elevation) * Math.sin(sunAzimuth), Math.sin(elevation), -Math.cos(elevation) * Math.cos(sunAzimuth));
-  const mirror = mirrored ? -1 : 1;
-  const [fileSunX, , fileSunZ] = measurement.sun.direction;
-  const rotation = Math.atan2(fileSunZ, fileSunX) - Math.atan2(sunDirection.z, sunDirection.x * mirror);
-  const scale = (luminance(sunIrradiance.toArray()) / luminance(measurement.sunIrradiance)) * SKY_EXPOSURE;
-  const skyAmbient = new THREE.Vector3().fromArray(measurement.skyRadiance).multiplyScalar(scale);
-
+export async function createEnvironment(renderer, { name, sunAzimuth, sunBalance, lighting }) {
   const sky = new THREE.Mesh(
     new THREE.BoxGeometry(1, 1, 1),
     new THREE.ShaderMaterial({
       vertexShader: DOME_VERTEX,
       fragmentShader: DOME_FRAGMENT,
       uniforms: {
-        uPanorama: { value: panorama },
-        uMirror: { value: mirror },
-        uRotation: { value: rotation },
-        uScale: { value: scale },
-        uRadianceCap: { value: RADIANCE_CAP * luminance(skyAmbient.toArray()) },
+        uPanorama: { value: null },
+        uMirror: { value: 1 },
+        uRotation: { value: 0 },
+        uScale: { value: 1 },
+        uRadianceCap: { value: 1 },
       },
       side: THREE.BackSide,
       depthWrite: false,
@@ -148,39 +163,79 @@ export async function createEnvironment(renderer, { name, sunAzimuth, sunIrradia
   sky.scale.setScalar(DOME_SIZE);
   sky.frustumCulled = false;
   sky.renderOrder = 1;   // after the opaque scene, so the depth test skips it under the water
+  const domeUniforms = sky.material.uniforms;
 
   // Under the horizon the photo shows its own ground; for the cube, cover it
   // with a dark water-coloured hemisphere, as the pond would look from the drops.
   // Drawn after the dome (which is at the far plane), so no depth buffer is needed.
+  // The capture draws its own mesh of the dome's geometry and material: the
+  // dome itself belongs to the scene.
   const ground = new THREE.Mesh(
     new THREE.SphereGeometry(600, 48, 24, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2),
     new THREE.MeshBasicMaterial({ color: new THREE.Color(0.10, 0.17, 0.20), side: THREE.BackSide }),
   );
   ground.position.y = 0.3;
   ground.renderOrder = 2;
-
+  const captureDome = new THREE.Mesh(sky.geometry, sky.material);
+  captureDome.scale.setScalar(DOME_SIZE);
+  captureDome.frustumCulled = false;
+  captureDome.renderOrder = 1;
   const captureScene = new THREE.Scene();
-  captureScene.add(sky, ground);
-  const capture = (size, mipmaps) => {
-    const target = new THREE.WebGLCubeRenderTarget(size, { type: THREE.HalfFloatType, generateMipmaps: mipmaps, minFilter: mipmaps ? THREE.LinearMipmapLinearFilter : THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false });
+  captureScene.add(captureDome, ground);
+  const cubeTarget = new THREE.WebGLCubeRenderTarget(CUBE_SIZE, { type: THREE.HalfFloatType, generateMipmaps: true, minFilter: THREE.LinearMipmapLinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false });
+  const prefilterSource = new THREE.WebGLCubeRenderTarget(PREFILTER_SIZE, { type: THREE.HalfFloatType, generateMipmaps: false, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false });
+  const cubeCameras = [cubeTarget, prefilterSource].map((target) => {
     const cubeCamera = new THREE.CubeCamera(0.5, 50000, target);
     cubeCamera.position.set(0, 1.15, 0);
+    return cubeCamera;
+  });
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  let envTarget = null;
+  const balance = await fetchMeasurement(SKIES[BALANCE_SKY].file);
+  const balanceLuminance = luminance(sunBalance.toArray());
+
+  const environment = { sky, cubeTexture: cubeTarget.texture, envTexture: null, name: null, targets: [], panoramaBytes: 0, load };
+
+  /** Load a sky (a key of SKIES; others fall back to DEFAULT_SKY) and make it the scene's, all at once when it has arrived. */
+  async function load(requested) {
+    const skyName = Object.hasOwn(SKIES, requested ?? '') ? requested : DEFAULT_SKY;
+    const { file, mirrored } = SKIES[skyName];
+    const [measurement, panorama] = await Promise.all([
+      fetchMeasurement(file),
+      new HDRLoader().setDataType(THREE.HalfFloatType).loadAsync(new URL(`../assets/sky/${file}_2k.hdr`, import.meta.url).href),
+    ]);
+    panorama.wrapS = THREE.RepeatWrapping;   // the azimuth wraps; no seam at u = 0
+    const panoramaBytes = panorama.image.data.byteLength;
+    panorama.onUpdate = () => { panorama.image.data = null; };   // on the GPU now: free the CPU copy
+
+    const azimuth = SKIES[skyName].sunAzimuth === undefined ? sunAzimuth : THREE.MathUtils.degToRad(SKIES[skyName].sunAzimuth);
+    const elevation = THREE.MathUtils.degToRad(measurement.sun.elevation);
+    const sunDirection = lighting.sunDirection.set(Math.cos(elevation) * Math.sin(azimuth), Math.sin(elevation), -Math.cos(elevation) * Math.cos(azimuth));
+    const sunColour = new THREE.Vector3().fromArray(measurement.sunIrradiance).divide(new THREE.Vector3().fromArray(balance.sunIrradiance)).multiply(sunBalance);
+    lighting.sunIrradiance.copy(sunColour.multiplyScalar(balanceLuminance / luminance(sunColour.toArray())));
+    const mirror = mirrored ? -1 : 1;
+    const [fileSunX, , fileSunZ] = measurement.sun.direction;
+    const scale = (balanceLuminance / luminance(measurement.sunIrradiance)) * SKY_EXPOSURE;
+    lighting.skyAmbient.fromArray(measurement.skyRadiance).multiplyScalar(scale);
+
+    const previous = domeUniforms.uPanorama.value;
+    domeUniforms.uPanorama.value = panorama;
+    domeUniforms.uMirror.value = mirror;
+    domeUniforms.uRotation.value = Math.atan2(fileSunZ, fileSunX) - Math.atan2(sunDirection.z, sunDirection.x * mirror);
+    domeUniforms.uScale.value = scale;
+    domeUniforms.uRadianceCap.value = RADIANCE_CAP * luminance(lighting.skyAmbient.toArray());
+
     const previousAutoClear = renderer.autoClear;
     renderer.autoClear = true;
-    cubeCamera.update(renderer, captureScene);
+    for (const cubeCamera of cubeCameras) cubeCamera.update(renderer, captureScene);
     renderer.autoClear = previousAutoClear;
-    return target;
-  };
-  const cubeTarget = capture(CUBE_SIZE, true);
-  const prefilterSource = capture(PREFILTER_SIZE, false);
+    envTarget = pmrem.fromCubemap(prefilterSource.texture, envTarget);
+    previous?.dispose();
 
-  const pmrem = new THREE.PMREMGenerator(renderer);
-  const envTarget = pmrem.fromCubemap(prefilterSource.texture);
-  pmrem.dispose();
-  prefilterSource.dispose();
-  captureScene.remove(sky, ground);
-  ground.geometry.dispose();
-  ground.material.dispose();
+    Object.assign(environment, { envTexture: envTarget.texture, name: skyName, targets: [cubeTarget, prefilterSource, envTarget], panoramaBytes });
+    return skyName;
+  }
 
-  return { sky, cubeTexture: cubeTarget.texture, envTexture: envTarget.texture, sunDirection, skyAmbient, name: skyName, targets: [cubeTarget, envTarget], panoramaBytes };
+  await load(name);
+  return environment;
 }

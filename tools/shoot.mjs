@@ -23,7 +23,8 @@
 // --report="js expression" is evaluated in the page after each frame and its
 // result printed as JSON (window.__pond is the app). --floats=half renders on
 // the half-float path that devices without EXT_color_buffer_float take.
-// --sky=name picks the sky panorama (a key of SKIES in src/sky.js).
+// --sky=name picks the sky panorama (a key of SKIES in src/sky.js), and
+// --water=clear|pond|murky the water's clarity (WATER_CLARITIES in src/main.js).
 // --wind=x:z sets the direction the wind blows toward in world XZ, and
 // --wind-strength=calm|breeze|windy its strength (the page's own default is
 // calm; breeze is the look the pond had before the Wind control).
@@ -62,6 +63,7 @@ const cropScale = Number(arg('cropscale', '1'));
 const report = arg('report', '');
 const floats = arg('floats', '');
 const sky = arg('sky', '');
+const waterClarity = arg('water', '');
 const wind = arg('wind', '');
 const power = arg('power', 'normal');
 const windStrength = arg('wind-strength', '');
@@ -109,7 +111,7 @@ const problems = [];
 page.on('pageerror', (e) => problems.push(String(e)));
 page.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') problems.push(m.text()); });
 
-const url = `http://localhost:${port}/index.html?quality=${quality}&paused=1${keepUi ? '' : '&ui=0'}${floats ? `&floats=${floats}` : ''}${sky ? `&sky=${sky}` : ''}${wind ? `&wind=${wind.replace(':', ',')}` : ''}${windStrength ? `&windStrength=${windStrength}` : ''}`;
+const url = `http://localhost:${port}/index.html?quality=${quality}&paused=1${keepUi ? '' : '&ui=0'}${floats ? `&floats=${floats}` : ''}${sky ? `&sky=${sky}` : ''}${waterClarity ? `&water=${waterClarity}` : ''}${wind ? `&wind=${wind.replace(':', ',')}` : ''}${windStrength ? `&windStrength=${windStrength}` : ''}`;
 console.log(`[shoot] ${url} -> ${outDir}`);
 await page.goto(url, { waitUntil: 'domcontentloaded' });
 try {
