@@ -5,8 +5,10 @@
 //    it starts on high; the idle measurement steps it down (under SwiftShader
 //    the frame rate is far below the thresholds, so to low; on a real GPU it
 //    may stay high and the probe only checks consistency); the readout and
-//    the quality buttons follow; the first throw compiles no GPU program
-//    (src/main.js compiles them all under the loading veil); the splash
+//    the quality buttons follow; the idle pond runs no pass of the rings
+//    (src/rings.js); the first throw compiles no GPU program (src/main.js
+//    compiles them all under the loading veil), and its rings outlive its
+//    splash, a spectrum pass and one profile pass each; the splash
 //    measurement never steps up. After every change of preset, automatic or
 //    pressed, from every preset to every other, it checks what is actually
 //    built (window.__pond.budget) against the preset: the solver's grid and
@@ -140,6 +142,8 @@ const readoutAfterIdle = (await pageState(page)).readout;
 check(readoutAfterIdle.endsWith(afterIdle.quality), `the readout names the preset (${readoutAfterIdle})`);
 
 // The splash measurement: throw, wait for the splash to be measured or to end.
+const ringsBeforeThrow = await page.evaluate(() => window.__pond.budget.rings);
+check(ringsBeforeThrow.live === 0 && ringsBeforeThrow.passes === 0, `the idle pond runs no ring pass (${ringsBeforeThrow.live} rings, ${ringsBeforeThrow.passes} passes)`);
 const programsBeforeThrow = await page.evaluate(() => window.__pond.budget.programs);
 await page.evaluate(() => window.__pond.throwAt(0, -1.4, { radius: 0.03 }));
 await page.waitForFunction(() => window.__pond.splash.count > 0, undefined, { timeout: 300000 });
@@ -149,6 +153,8 @@ const afterSplash = await pageState(page);
 console.log(`  splash: ${afterSplash.readout} after ${((Date.now() - splashStart) / 1000).toFixed(0)} s of splash`);
 const programsAfterSplash = await page.evaluate(() => window.__pond.budget.programs);
 check(programsAfterSplash === programsBeforeThrow, `the first throw compiles no program (${programsBeforeThrow} before, ${programsAfterSplash} after its splash)`);
+const ringsAfterSplash = await page.evaluate(() => window.__pond.budget.rings);
+check(ringsAfterSplash.live >= 1 && ringsAfterSplash.passes === 1 + ringsAfterSplash.live, `its rings outlive the splash: ${ringsAfterSplash.live} live, ${ringsAfterSplash.passes} passes a frame (a spectrum pass and one profile pass each)`);
 check(order(afterSplash.quality) >= order(afterIdle.quality), `the splash never steps the quality up (${afterIdle.quality} -> ${afterSplash.quality})`);
 check(afterSplash.pressed.length === 1 && afterSplash.pressed[0] === afterSplash.quality, `the quality buttons show ${afterSplash.quality}`);
 await checkBuilt(phone, 'after the splash measurement');

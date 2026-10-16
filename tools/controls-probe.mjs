@@ -6,7 +6,7 @@
 // wide and shrinks it to fit, so every control comes out at less than half
 // its size. This probe emulates a phone's browser (isMobile, touch, the
 // device's pixel ratio) at a large phone's portrait and landscape and a small
-// phone's portrait, plus a desktop window, and for each checks:
+// phone's portrait and landscape, plus a desktop window, and for each checks:
 //   - the page is laid out at the device's width (the viewport tag works);
 //   - every control lies inside the screen, the strip does not overflow and
 //     it covers at most 30% of the screen's height;
@@ -41,6 +41,7 @@ const FRAMINGS = [
   { name: 'phone', width: 430, height: 932, pixelRatio: 3, touch: true, portrait: true },        // a large iPhone in portrait
   { name: 'small-phone', width: 375, height: 667, pixelRatio: 2, touch: true, portrait: true },  // an iPhone SE
   { name: 'phone-landscape', width: 932, height: 430, pixelRatio: 3, touch: true, portrait: false },
+  { name: 'small-phone-landscape', width: 667, height: 375, pixelRatio: 2, touch: true, portrait: false },
   { name: 'desktop', width: 1280, height: 720, pixelRatio: 1, touch: false, portrait: false },
 ];
 const SMALLEST_SLIDER_HEIGHT = 44;     // points
@@ -111,11 +112,11 @@ for (const framing of FRAMINGS) {
     };
   });
   const sliderText = `${layout.slider.width.toFixed(0)}×${layout.slider.height.toFixed(0)} points`;
-  console.log(`  layout ${layout.layoutWidth} CSS pixels wide at zoom ${layout.scale.toFixed(3)}; slider ${sliderText}; the strip covers ${(layout.strip.height / layout.screenHeight * 100).toFixed(0)}% of the screen's height`);
+  console.log(`  layout ${layout.layoutWidth} CSS pixels wide at zoom ${layout.scale.toFixed(3)}; slider ${sliderText}; the strip covers ${(layout.strip.height / layout.screenHeight * 100).toFixed(1)}% of the screen's height`);
   if (framing.touch) check(layout.layoutWidth === framing.width, `the page is laid out at the device's width (${layout.layoutWidth} CSS pixels for a ${framing.width}-point screen)`);
   const outside = layout.parts.filter((part) => part.left < -0.5 || part.top < -0.5 || part.right > layout.screenWidth + 0.5 || part.bottom > layout.screenHeight + 0.5);
   check(outside.length === 0 && !layout.stripOverflows, `every control is on the screen${outside.length ? ` (off it: ${outside.map((part) => part.name).join(', ')})` : ''}${layout.stripOverflows ? ' (the strip overflows)' : ''}`);
-  check(layout.strip.height <= LARGEST_STRIP_SHARE * layout.screenHeight, `the control strip covers at most ${Math.round(LARGEST_STRIP_SHARE * 100)}% of the screen's height (${(layout.strip.height / layout.screenHeight * 100).toFixed(0)}%)`);
+  check(layout.strip.height <= LARGEST_STRIP_SHARE * layout.screenHeight, `the control strip covers at most ${Math.round(LARGEST_STRIP_SHARE * 100)}% of the screen's height (${(layout.strip.height / layout.screenHeight * 100).toFixed(1)}%)`);
   if (framing.touch) {
     check(layout.slider.height >= SMALLEST_SLIDER_HEIGHT - 0.5, `the stone slider is at least ${SMALLEST_SLIDER_HEIGHT} points tall (${layout.slider.height.toFixed(1)})`);
     if (framing.portrait) check(layout.slider.width >= PORTRAIT_SLIDER_SHARE * layout.screenWidth, `the stone slider spans at least ${Math.round(PORTRAIT_SLIDER_SHARE * 100)}% of the screen's width (${(layout.slider.width / layout.screenWidth * 100).toFixed(0)}%)`);

@@ -7,9 +7,10 @@
 // normal rebuilt from depth would stripe the faceted mesh.
 //
 // Sheet. A landing drop's crown (aRide = 1) is lifted by the water's height
-// under each vertex, splash and ambient waves together, sampled as the water
-// surface's vertex shader does, so it stands on the waves it lands on; a
-// stone's crown starts on still water and keeps its own base. The depth pass
+// under each vertex, splash, ambient waves and rings (src/rings.js)
+// together, sampled as the water surface's vertex shader does, so it stands
+// on the waves it lands on; a stone's crown rides them along its base row,
+// as the cavity's lip it stands on does (src/crown.js). The depth pass
 // writes view depth, the sheet's mark (999) and its normal, leaned along
 // aRimTangent near the free edge so the bead reflects and glitters like a
 // tube. The optics pass adds the water a ray crosses (the sheet thickness
@@ -39,6 +40,7 @@ import { GLSL_COMMON } from './scene.js';
 
 export const SHEET_VERTEX = /* glsl */`
 #define RIM_LEAN 1.4             // the rim tangent's length at the free edge (src/crown.js's bend)
+#define SHEET_RING_SPACING 0.01  // metres: the rings' height under a riding vertex, read this smooth (the water surface's own)
 attribute float aThickness;
 attribute vec3 aRimTangent;
 attribute float aRide;
@@ -58,7 +60,9 @@ void main() {
   vec4 world = modelMatrix * vec4(position, 1.0);
   if (aRide > 0.5) {
     vec2 domainUv = (world.xz - uDomainMin) / uDomainSize + uTexelOffset;
-    world.y += (texture2D(uHeight, domainUv).r + ambientHeight(world.xz)) * patchMask(domainUv);
+    float surface = texture2D(uHeight, domainUv).r + ambientHeight(world.xz);
+    if (uRingCount > 0) surface += ringHeight(world.xz, SHEET_RING_SPACING);
+    world.y += surface * patchMask(domainUv);
   }
   vec4 viewPosition = viewMatrix * world;
   vViewPosition = viewPosition.xyz;

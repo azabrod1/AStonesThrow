@@ -55,6 +55,16 @@
 // and the bilinear lookup, which tools/wave-probe.mjs compares with a
 // measurement of the field itself.
 //
+// The wind's strength (setStrength, WIND_STRENGTHS): one factor on the whole
+// field wherever it is used, through the one uniform its heights, slopes and
+// Laplacian are scaled by (uAmbientMetresPerUnit), and its square on the
+// slope variance the mips lose (unresolvedVariance, which the water shader's
+// roughness takes), so the glitter and the caustics follow it too. The gusts
+// still move their patches over it, so calm water is glassy but never dead:
+// cat's paws of faint ripple drift across it. The foam's drift on the wind
+// goes with the strength as well (setWindStrength in src/spectralWater.js).
+// AMBIENT_WAVES.rmsSlope is the Breeze's.
+//
 // uniforms() gives the uniforms that every material sampling the field
 // spreads into its own: shared objects, so update() reaches them all.
 import * as THREE from 'three';
@@ -75,6 +85,10 @@ export const AMBIENT_WAVES = {
 };
 // The wind blows mostly away from the camera (which looks toward −Z), a little to the right.
 export const DEFAULT_WIND = [0.45, -0.9];
+// The Wind control's strengths, against the field drawn at rmsSlope (the
+// Breeze, the look the pond had before the control): the factor on the
+// ripples' height and slope. Calm is the default (src/main.js).
+export const WIND_STRENGTHS = { calm: 0.3, breeze: 1, windy: 1.8 };
 const HEIGHT_TEXTURE_UNITS = 1000;   // the height texture holds millimetres
 
 const GRAVITY = 9.81;
@@ -222,7 +236,9 @@ export class AmbientWaves {
     this.windDirection = new THREE.Vector2(windDirection[0], windDirection[1]).normalize();
 
     const { amplitudes, unresolvedVariance } = buildWaveSeed({ ...settings, windDirection: this.windDirection.toArray() });
-    this.unresolvedVariance = unresolvedVariance;
+    this.unresolvedVariance = unresolvedVariance;   // the water shader's uniform holds this array: setStrength rewrites it in place
+    this.breezeVariance = unresolvedVariance.slice();
+    this.strength = 1;
     this.seedTexture = new THREE.DataTexture(Float32Array.from(amplitudes), size, size, THREE.RGBAFormat, THREE.FloatType);
     this.seedTexture.needsUpdate = true;
 
@@ -260,6 +276,13 @@ export class AmbientWaves {
 
   /** Uniforms for every material that samples the field (GLSL_COMMON's ambientHeight and friends). */
   uniforms() { return this.sharedUniforms; }
+
+  /** The wind's strength (the header): the field's height and slope times `strength`, the variance the mips lose times its square. */
+  setStrength(strength) {
+    this.strength = strength;
+    this.sharedUniforms.uAmbientMetresPerUnit.value = strength / HEIGHT_TEXTURE_UNITS;
+    for (let level = 0; level < this.unresolvedVariance.length; level++) this.unresolvedVariance[level] = this.breezeVariance[level] * strength * strength;
+  }
 
   /** Mip levels of the height texture, for the size of the water shader's unresolvedVariance table. */
   get levels() { return this.passes + 1; }

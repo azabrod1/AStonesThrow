@@ -24,7 +24,9 @@
 // result printed as JSON (window.__pond is the app). --floats=half renders on
 // the half-float path that devices without EXT_color_buffer_float take.
 // --sky=name picks the sky panorama (a key of SKIES in src/sky.js).
-// --wind=x:z sets the direction the wind blows toward in world XZ.
+// --wind=x:z sets the direction the wind blows toward in world XZ, and
+// --wind-strength=calm|breeze|windy its strength (the page's own default is
+// calm; breeze is the look the pond had before the Wind control).
 // --power=soft|normal|hard throws as the strength buttons do (soft is a
 // higher arc, so a steeper entry: about 30° from vertical against 42°).
 import { chromium } from 'playwright';
@@ -59,6 +61,7 @@ const floats = arg('floats', '');
 const sky = arg('sky', '');
 const wind = arg('wind', '');
 const power = arg('power', 'normal');
+const windStrength = arg('wind-strength', '');
 
 const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.mjs': 'text/javascript', '.json': 'application/json', '.png': 'image/png', '.css': 'text/css' };
 const server = createServer(async (request, response) => {
@@ -102,7 +105,7 @@ const problems = [];
 page.on('pageerror', (e) => problems.push(String(e)));
 page.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') problems.push(m.text()); });
 
-const url = `http://localhost:${port}/index.html?quality=${quality}&paused=1${keepUi ? '' : '&ui=0'}${floats ? `&floats=${floats}` : ''}${sky ? `&sky=${sky}` : ''}${wind ? `&wind=${wind.replace(':', ',')}` : ''}`;
+const url = `http://localhost:${port}/index.html?quality=${quality}&paused=1${keepUi ? '' : '&ui=0'}${floats ? `&floats=${floats}` : ''}${sky ? `&sky=${sky}` : ''}${wind ? `&wind=${wind.replace(':', ',')}` : ''}${windStrength ? `&windStrength=${windStrength}` : ''}`;
 console.log(`[shoot] ${url} -> ${outDir}`);
 await page.goto(url, { waitUntil: 'domcontentloaded' });
 try {
@@ -117,7 +120,7 @@ await page.evaluate((name) => window.__pond.setDebugView(name), debugView);
 if (fov) await page.evaluate((f) => window.__pond.setFov(Number(f)), fov);
 if (look) await page.evaluate((l) => { const [x, y, z] = l.split(':').map(Number); window.__pond.lookAt(x, y, z); }, look);
 await page.evaluate((seconds) => window.__pond.advance(seconds), preRoll);
-await page.screenshot({ path: path.join(outDir, 'idle.png') });
+await page.screenshot({ path: path.join(outDir, 'idle.png'), timeout: 180000 });
 console.log('[shoot] idle.png');
 
 for (const [x, z, radius] of throws) await page.evaluate(([x, z, radius, power]) => window.__pond.throwAt(x, z, { radius, power }), [x, z, radius, power]);
@@ -145,7 +148,9 @@ const overshoot = await page.evaluate(() => {
 if (throws.length > 0) console.log(`[shoot] impact after ${flight.toFixed(2)} s of flight (${(overshoot * 1000).toFixed(1)} ms ago)`);
 let elapsed = overshoot;
 for (const t of times) {
-  await page.evaluate((seconds) => window.__pond.advance(seconds), Math.max(t - elapsed, 0));
+  // A one-pixel read-back waits for the GPU to finish the steps just queued:
+  // under SwiftShader seconds of solver steps can outlast the screenshot's timeout.
+  await page.evaluate((seconds) => { window.__pond.advance(seconds); const gl = window.__pond.renderer.getContext(); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4)); }, Math.max(t - elapsed, 0));
   elapsed = Math.max(t, elapsed);
   const decimals = Math.abs(Number(t.toFixed(2)) - t) < 1e-9 ? 2 : 4;
   const name = `t${t.toFixed(decimals).replace('.', '_')}.png`;

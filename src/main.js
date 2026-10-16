@@ -5,8 +5,9 @@
 //   2. step the spectral water surface (GPU) and its foam, unless it sleeps
 //      (Low power, below);
 //   3. evaluate the ambient wind waves at the frame's time (GPU, once per
-//      rendered frame; src/ambientWaves.js) and the splash's sheets and
-//      columns (CPU);
+//      rendered frame; src/ambientWaves.js), the profiles of the rings that
+//      cross the pond (GPU, while any lives; src/rings.js) and the splash's
+//      sheets and columns (CPU);
 //   4. while a splash lives, draw it into the water's mirror image (below);
 //   5. render what is under the surface (floor, submerged stones, bubbles)
 //      to a texture with depth, the stones and bubbles where the still
@@ -65,7 +66,10 @@
 // is compiled then rather than at the first throw, then clears it all away:
 // the pond starts still, at time zero. ?sky=<name> picks the panorama;
 // ?wind=x,z sets the direction the wind blows toward in world XZ
-// (DEFAULT_WIND otherwise); ?paused=1 starts with the clock stopped
+// (DEFAULT_WIND otherwise); ?windStrength=calm|breeze|windy the wind's
+// strength (WIND_STRENGTHS in src/ambientWaves.js), which otherwise is the
+// one last chosen on this device (setWind remembers it in localStorage), or
+// calm; ?paused=1 starts with the clock stopped
 // (resume() starts it); ?quality=high|medium|low fixes a preset (QUALITY),
 // otherwise the quality calibrates itself from the frame rate (CALIBRATION),
 // keeps watching it, and reports each change through onQualityChange.
@@ -73,7 +77,8 @@
 // onProfile.
 import * as THREE from 'three';
 import { SpectralWater } from './spectralWater.js';
-import { AmbientWaves, DEFAULT_WIND } from './ambientWaves.js';
+import { AmbientWaves, DEFAULT_WIND, WIND_STRENGTHS } from './ambientWaves.js';
+import { Rings } from './rings.js';
 import { createEnvironment } from './sky.js';
 import { createWaterSurface } from './waterSurface.js';
 import { createPondFloor, setPatternMipmaps } from './pondFloor.js';
@@ -138,6 +143,8 @@ const WHEEL_STEP = 0.9;       // field of view factor per wheel notch
 const HOME_TARGET = [0, 0.12, -1.0];
 const SUN_AZIMUTH = Math.atan2(0.42, 0.78);   // radians right of straight ahead (−Z), about 28°
 const DEBUG_MODES = { under: 0, height: 1, foam: 2, env: 3, face: 4, ambient: 5 };   // setDebugView names
+const DEFAULT_WIND_STRENGTH = 'calm';
+const WIND_STORAGE_KEY = 'stone-pond-wind';   // the Wind control's last choice on this device
 // The warm-up's throw (the reference stone, aimed as the profiler's) and the
 // moments after its impact it draws: the crown, the fan, the cavity, spray
 // and the mirror; the jet column; the specks and the drops' landing crowns.
@@ -204,13 +211,28 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
   const windParameter = pageParameters.get('wind')?.split(',').map(Number);
   const windDirection = windParameter?.length === 2 && windParameter.every(Number.isFinite) && Math.hypot(...windParameter) > 0 ? windParameter : DEFAULT_WIND;
   const ambientWaves = new AmbientWaves(renderer, { windDirection, depth: POND_DEPTH });
-  const surface = createWaterSurface(water, lighting, ambientWaves, { meshSegments: settings.meshSegments });
+  // The rings that cross the whole pond: the splash hands them its ring
+  // sources through the solver it is given (water.rings), and the surface,
+  // the floor and the foam specks draw them.
+  const rings = new Rings(renderer, { depth: POND_DEPTH });
+  water.rings = rings;
+  const surface = createWaterSurface(water, lighting, ambientWaves, { meshSegments: settings.meshSegments, rings });
   const splash = new SplashSystem({ environment, lighting, water, ambientWaves, surface });
+  // The wind's strength: the page's ?windStrength, else the last choice here, else calm.
+  const storedWind = (() => { try { return window.localStorage.getItem(WIND_STORAGE_KEY); } catch { return null; } })();
+  const requestedWind = pageParameters.get('windStrength');
+  let windName = Object.hasOwn(WIND_STRENGTHS, requestedWind ?? '') ? requestedWind : Object.hasOwn(WIND_STRENGTHS, storedWind ?? '') ? storedWind : DEFAULT_WIND_STRENGTH;
+  function applyWind(name) {
+    windName = name;
+    ambientWaves.setStrength(WIND_STRENGTHS[name]);
+    water.setWindStrength(WIND_STRENGTHS[name]);
+  }
+  applyWind(windName);
 
   const camera = new THREE.PerspectiveCamera(48, 1, 0.05, 60000);
   camera.position.set(0, 1.15, 2.45);
   // The floor's pattern is baked once, laid out in perspective from the camera's eye (src/pondFloor.js).
-  const floor = createPondFloor(water, lighting, ambientWaves, { renderer, eye: camera.position });
+  const floor = createPondFloor(water, lighting, ambientWaves, { renderer, eye: camera.position, rings });
   const floorPattern = floor.material.uniforms.uPattern.value;   // RGBA8, with its mip chain
   const floorPatternBytes = Math.round(floorPattern.image.width * floorPattern.image.height * 4 * (floorPattern.generateMipmaps ? 4 / 3 : 1));
   // The view: home is the framing the page opens with; view is the current one.
@@ -675,6 +697,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     framesRendered++;
     camera.updateMatrixWorld();
     if (!skip.ambient) ambientWaves.update(simulationTime);
+    rings.update(simulationTime);
     // The splash's sheets and columns to this frame, for the mirror and the droplet passes.
     if (!skip.fluid) splash.prepareFrame();
     updateReflection();
@@ -721,6 +744,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     const parts = {
       solver: sum([water.stateA, water.stateB, water.fftA, water.fftB, water.heightTarget, water.foamA, water.foamB]),
       wind: sum([ambientWaves.spectrumTarget, ambientWaves.fftA, ambientWaves.fftB, ambientWaves.heightTarget]),
+      rings: rings.bytes,
       scene: sum([underTarget, mainTarget, reflectionTarget]),
       splash: sum(Object.values(splash.targets)),
       sky: sum(environment.targets) + environment.panoramaBytes,
@@ -741,6 +765,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
       memory: { ...renderer.info.memory },
       programs: renderer.info.programs?.length ?? 0,
       solverAsleep: water.asleep,
+      rings: { live: rings.live, passes: rings.passesRun },
+      wind: windName,
       frameCapped,
       calibration: automaticQuality ? calibration.phase : 'fixed',
       warmUp: { ...warmUpReport },
@@ -854,6 +880,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     for (const rock of [...rocks]) retireRock(rock);
     water.clear();
     splash.reset(renderer);
+    rings.reset();
     simulationTime = 0;
     viewChanged = true;   // the mirror image is drawn whole again, without the splash
     mirroredRect.set(0, 0, 0, 0);
@@ -911,6 +938,13 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     throwRandom,
     setStoneRadius(radius) { stoneRadius = radius; },
     setPower(name) { if (POWER[name]) power = name; },
+    /** The wind's strength by name (WIND_STRENGTHS: calm, breeze, windy), remembered on this device. */
+    setWind(name) {
+      if (!Object.hasOwn(WIND_STRENGTHS, name)) return;
+      applyWind(name);
+      try { window.localStorage.setItem(WIND_STORAGE_KEY, name); } catch { /* storage refused: the choice lasts this visit */ }
+    },
+    get wind() { return windName; },
     setTimeScale(scale) { timeScale = scale; },
     /** A preset by name, which ends the automatic calibration; 'auto' starts it again from high. */
     setQuality(name) {
@@ -973,6 +1007,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     lighting,
     water,
     ambientWaves,
+    rings,
     splash,
     surface,
     sceneUnder,

@@ -234,6 +234,9 @@
     cursor: pointer;
   }
   .reset-view:hover { background: rgba(238, 243, 244, 0.1); }
+  /* The strip's two rows on a wide screen: the stone, the throw and the
+     time; then the wind, the quality and the buttons. */
+  .row-break { flex-basis: 100%; height: 0; }
   .veil {
     position: fixed;
     inset: 0;
@@ -261,20 +264,43 @@
     input[type="range"] { --thumb: 28px; --track: 6px; height: 44px; }
     .segmented button, .throw, .reset-view { min-height: 36px; }
   }
+  /* Phones in portrait: four groups with their names beside them would take
+     five rows and a third of the water. Three rows instead: the stone's
+     slider, its name and size above it, with the throw button beside it (the
+     view's reset in its place while zoomed); then the four groups two to a
+     row, each name above its buttons. The row break comes after the buttons
+     (order), wherever it sits in the page. */
   @media (max-width: 520px) {
     .title p { display: none; }
-    .controls { gap: 8px 14px; }
-    .stone-group { flex: 1 1 100%; justify-content: center; }
-    .stone-group input[type="range"] { flex: 1 1 auto; width: auto; max-width: 320px; }
-    .segmented button { padding: 6px 9px; min-width: 38px; }
-  }
-  /* Most phones: with each group's name beside its buttons, Throw and Time
-     cannot share a row, nor Quality and the throw button, and five rows cover
-     a third of the water. The name goes above its buttons instead. */
-  @media (max-width: 400px) {
-    .group:not(.stone-group) { flex-direction: column; gap: 3px; }
+    .controls { gap: 6px 12px; padding-top: 8px; padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 8px); }
+    .stone-group {
+      flex: 1 1 200px;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      grid-template-areas: "name size" "slider slider";
+      align-items: end;
+      gap: 0 8px;
+    }
+    /* The name and the size sit in the slider's box above its 28 px thumb. */
+    .stone-group > label { grid-area: name; font-size: 10px; margin-bottom: -6px; }
+    .stone-group > .readout { grid-area: size; min-width: 0; text-align: right; font-size: 12px; margin-bottom: -6px; }
+    .stone-group input[type="range"] { grid-area: slider; width: 100%; }
+    .throw, .reset-view { order: 1; align-self: flex-end; margin-bottom: 4px; padding: 7px 12px; }
+    .throw.while-zoomed { display: none; }
+    .row-break { order: 2; }
+    .group:not(.stone-group) { order: 3; flex-direction: column; gap: 2px; }
     .group:not(.stone-group) > span.name { font-size: 10px; }
-    .throw, .reset-view { align-self: flex-end; }
+    .segmented button { padding: 6px 8px; min-width: 38px; }
+  }
+  @media (max-width: 400px) {
+    .throw .more { display: none; }
+  }
+  /* Phones in landscape: the two rows, tighter. */
+  @media (min-width: 521px) and (max-height: 450px) {
+    .controls { gap: 4px 12px; padding-top: 6px; padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 6px); }
+    .group { gap: 6px; }
+    .segmented button { padding: 6px 7px; min-width: 38px; }
+    input[type="range"] { width: 120px; }
   }
   @media (prefers-reduced-motion: reduce) {
     .veil { transition: none; }
@@ -311,6 +337,15 @@
       <button type="button" data-value="0.1">⅒</button>
     </div>
   </div>
+  <div class="row-break" aria-hidden="true"></div>
+  <div class="group">
+    <span class="name">Wind</span>
+    <div class="segmented" id="wind" role="group" aria-label="Wind">
+      <button type="button" data-value="calm" aria-pressed="true">Calm</button>
+      <button type="button" data-value="breeze">Breeze</button>
+      <button type="button" data-value="windy">Windy</button>
+    </div>
+  </div>
   <div class="group">
     <span class="name">Quality</span>
     <div class="segmented" id="quality" role="group" aria-label="Rendering quality">
@@ -320,7 +355,7 @@
     </div>
   </div>
   <button type="button" class="reset-view" id="reset-view" hidden>Reset view</button>
-  <button type="button" class="throw" id="throw">Throw a stone</button>
+  <button type="button" class="throw" id="throw" aria-label="Throw a stone">Throw<span class="more"> a stone</span></button>
 </div>
 
 <div class="veil" id="veil"><span id="veil-text">Filling the pond…</span></div>
@@ -365,7 +400,7 @@
       quality: params.get('quality') || 'auto',
       onError: (message) => { veilText.innerHTML = ''; const p = document.createElement('p'); p.className = 'error'; p.textContent = message; veilText.append(p); },
       onStats: ({ fps, droplets, quality }) => { if (!profileDone) stats.textContent = `${Math.round(fps)} fps · ${droplets} drops · ${quality}`; },
-      onViewChange: ({ zoomed }) => { resetView.hidden = !zoomed; },
+      onViewChange: ({ zoomed }) => { resetView.hidden = !zoomed; document.getElementById('throw').classList.toggle('while-zoomed', zoomed); },
       onQualityChange: (name) => setQualityButtons(name),
       onProfile: (lines) => { profileDone = true; stats.classList.add('report'); stats.textContent = lines.join('\n'); },
     });
@@ -412,6 +447,7 @@
     segmented('speed', (value) => pond.setTimeScale(Number(value)));
     setQualityButtons = segmented('quality', (value) => pond.setQuality(value));
     setQualityButtons(pond.quality);
+    segmented('wind', (value) => pond.setWind(value))(pond.wind);
     document.getElementById('throw').addEventListener('click', () => pond.throwRandom());
     resetView.addEventListener('click', () => pond.resetView());
     document.getElementById('throw').addEventListener('keydown', (event) => { if (event.code === 'Space') event.stopPropagation(); });

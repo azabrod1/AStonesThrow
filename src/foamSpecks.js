@@ -23,10 +23,11 @@
 // full) and uploads only the slots written since the last frame. Per frame
 // the cost is two uniforms and a draw of the slots in use, each vertex one
 // fetch of the splash's height texture, one of the ambient waves'
-// (src/ambientWaves.js), so specks ride their crests, and one of the foam
-// map; nothing is drawn once every speck has gone. The texel offset is the
-// solver's shared uniform, so a change of its grid reaches the specks, and
-// so is the drift's velocity.
+// (src/ambientWaves.js), so specks ride their crests, one of each live ring's
+// profile (src/rings.js, which the water carries as water.rings) and one of
+// the foam map; nothing is drawn once every speck has gone. The texel offset
+// is the solver's shared uniform, so a change of its grid reaches the
+// specks, and so is the drift's velocity.
 import * as THREE from 'three';
 import { SPECK_VERTEX, SPECK_FRAGMENT } from './shaders/scene.js';
 
@@ -88,6 +89,7 @@ export class FoamSpecks {
         uOpacity: { value: OPACITY },
         uBrightness: { value: BRIGHTNESS },
         ...ambientWaves.uniforms(),
+        ...(water.rings ? water.rings.uniforms() : {}),
       },
       transparent: true,
       depthWrite: false,

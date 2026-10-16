@@ -8,16 +8,21 @@
 // stable for any time step and gives the correct dispersion: long ripples
 // outrun short ones, as they do on a real pond. Damping is applied per mode
 // (DAMPING): γ(k) = γ0·min(k/k_d, 1) + ν·k², plus γ_low for waves longer than
-// 2.4 m so the patch never sloshes. A real pond damps its ripples through
-// the surface film and viscosity, which fade towards nothing for long waves,
-// so γ0 applies in full only to ripples shorter than 30 cm (k_d) and falls in
-// proportion to k for longer ones: the ring of a big stone, half a metre
-// long, carries across the pond, while a small stone's rings (10 to 30 cm)
-// fade as they always did.
+// 2.4 m so the patch never sloshes: γ0 in full for ripples shorter than
+// 30 cm (k_d), in proportion to k for longer ones. It is a solver's damping,
+// not a pond's (about ten times a real pond's): the patch is periodic, so
+// its waves must die before they come round it, and it holds only the near
+// field (below); the rings that cross the pond are src/rings.js's, damped as
+// a real pond damps them.
 //
 // Disturbances enter as Gaussian "splats" (a height or vertical-velocity
 // impulse at a point). A Gaussian has a closed-form spectrum, so splats are
-// added in Fourier space without any forward transform. Each frame one
+// added in Fourier space without any forward transform. The splash's ring
+// sources (its cavity's splats and the jet's secondary ring) go instead to
+// the analytic rings the app hands the solver as `rings` (src/rings.js),
+// which carry them across the whole pond with a real pond's damping; so this
+// patch holds the near field (the drops' landings, the jet's mound and base),
+// and its damping and its sleep (below) only ever need to outlast that. Each frame one
 // inverse FFT (2·log2 N passes) brings height and velocity back to the grid
 // as an RG16F texture: R = height (m), G = vertical velocity (m/s). The
 // state holds the spectra without the inverse transform's 1/N² (the forward
@@ -43,7 +48,8 @@
 // foam there. (With one mean for both, a boil of 0.8 s over a raft of 5 s
 // would drag the raft's life down to under 2 s.) The map spreads
 // (FOAM_DIFFUSIVITY, the same in metres on every grid), drifts with the wind
-// (FOAM_DRIFT along setWind's direction), is carried by surface flows
+// (FOAM_DRIFT along setWind's direction, times the wind's strength,
+// setWindStrength), is carried by surface flows
 // (addFoamFlow: a source where the water wells up, which sweeps the foam out
 // of a disc into a ring and keeps its amount), and is stamped by splashes and
 // by fast surface motion; FOAM_FRAGMENT says how. The water shader turns the
@@ -73,7 +79,8 @@
 // nothing in the splash is alive; sleep() clears the state, height and foam
 // textures once, so the pond is exactly still. SLEEP_SECONDS is the time the
 // largest splash's field takes to fade below what a pixel shows, from the
-// damping above and the foam's longest lifetime: see SLEEP_SECONDS.
+// damping above and the foam's longest lifetime: see SLEEP_SECONDS. The rings
+// (src/rings.js) keep their own time: each retires when it fades.
 import * as THREE from 'three';
 import { FullscreenPass, createFloatTarget } from './gpu.js';
 import { SPECTRAL_UPDATE_FRAGMENT, SOLVER_FFT_PASS_FRAGMENT, FOAM_FRAGMENT } from './shaders/spectral.js';
@@ -92,15 +99,17 @@ export const DAMPING = {
 };
 
 // How long the solver runs on after its last splat or foam stamp before it
-// may sleep (simulated seconds). The slowest part is the waves: the pond
+// may sleep (simulated seconds). The slowest part is the waves: the solver
 // damps long waves least (DAMPING), so what is left of a splash after a few
 // seconds is its longest waves, metres long, decaying with time constants of
-// 10 to 25 s. Evolving every splat of the largest splash (a 16 cm stone
-// thrown hard: about 1080 splats over 1.04 s) with the solver's own lattice,
-// injection, dispersion and damping (on the CPU, 512 grid), the field's
-// largest slope is 1.1e-3 at 30 s after its last splat, 4.7e-4 at 45 s,
-// 1.3e-4 at 60 s and 4.4e-5 at 75 s, its height 0.31, 0.18, 0.06 and
-// 0.015 mm, and the floor's caustics change by 0.17, 0.06, 0.015 and 0.005%.
+// 10 to 25 s. Evolving every splat the solver gets from the largest splash
+// (a 16 cm stone thrown hard: about 1090 splats over 1.0 s, its ring sources
+// gone to src/rings.js) with the solver's own lattice, injection, dispersion
+// and damping (on the CPU, 512 grid), the field's largest slope is 3.4e-4 at
+// 30 s after its last splat, 8.8e-5 at 45 s, 3.1e-5 at 60 s and 1.7e-5 at
+// 75 s, its height 0.08, 0.03, 0.014 and 0.007 mm, and the floor's caustics
+// change by 0.07, 0.009, 0.004 and 0.002%. (With the ring sources the
+// solver used to carry, the slope at 75 s was 4.4e-5.)
 // A slope of 1e-4 turns a reflection by 2e-4 rad, under a third of a pixel
 // at the phone's framing (1400 px per radian): at 75 s the field shows
 // nowhere, with room for a second stone as big (a 4 cm stone's field is
@@ -115,7 +124,9 @@ const FOAM_LIFETIME = { base: 1.5, perMetre: 15, longest: 6 };   // τ = base + 
 const CHURN_LIFETIME = 2.0;       // τ of the boil fast surface motion churns up (s)
 // The surface water's drift downwind, which carries the foam and its specks
 // (m/s): about 2% of the breeze, whose cat's paws travel at 1.5 m/s
-// (GUST_DRIFT in src/shaders/scene.js).
+// (GUST_DRIFT in src/shaders/scene.js); at the Breeze's strength, and in
+// proportion to the wind's strength (setWindStrength, WIND_STRENGTHS in
+// src/ambientWaves.js) otherwise.
 export const FOAM_DRIFT = 0.03;
 // A flow (addFoamFlow) wells up through a core of `core` times the radius it
 // clears (the foam at its centre keeps exp(−1/core²) of its amount; the rest
@@ -227,6 +238,12 @@ export class SpectralWater {
     // and at what velocity (m/s, setWind): the water shader's pattern and the
     // specks drift with the map.
     this.foamUniforms = { uFoamDrift: { value: new THREE.Vector2() }, uFoamVelocity: { value: new THREE.Vector2() } };
+    this.windDirection = [1, 0];
+    this.windStrength = 1;
+    // The analytic rings (src/rings.js) the splash hands its ring sources to,
+    // when the app attaches them; without them (the CPU probes' stand-ins
+    // have none) the splash rings this patch as it always did.
+    this.rings = null;
     this.timeScaleDamping = 1;
     this.asleep = true;          // a still pond: step() does nothing until something is queued
     this.quietSeconds = 0;       // simulated seconds since the last splat or foam stamp
@@ -403,11 +420,18 @@ export class SpectralWater {
     return true;
   }
 
-  /** The wind blows toward world XZ `direction` ([x, z] or a Vector2): the foam drifts that way at FOAM_DRIFT. */
+  /** The wind blows toward world XZ `direction` ([x, z] or a Vector2): the foam drifts that way at FOAM_DRIFT times the wind's strength. */
   setWind(direction) {
     const [x, z] = Array.isArray(direction) ? direction : [direction.x, direction.y];
     const length = Math.hypot(x, z) || 1;
-    this.foamUniforms.uFoamVelocity.value.set(x / length, z / length).multiplyScalar(FOAM_DRIFT);
+    this.windDirection = [x / length, z / length];
+    this.foamUniforms.uFoamVelocity.value.set(x / length, z / length).multiplyScalar(FOAM_DRIFT * this.windStrength);
+  }
+
+  /** The wind's strength against the Breeze's (WIND_STRENGTHS in src/ambientWaves.js): the foam's drift goes with it. */
+  setWindStrength(strength) {
+    this.windStrength = strength;
+    this.foamUniforms.uFoamVelocity.value.set(this.windDirection[0], this.windDirection[1]).multiplyScalar(FOAM_DRIFT * strength);
   }
 
   /** Advance the surface by dt seconds and refresh the height and foam textures; nothing while asleep (the header). */

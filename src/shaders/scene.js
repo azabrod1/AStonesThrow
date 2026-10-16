@@ -5,9 +5,11 @@
 // render linear HDR radiance; the composite pass tone-maps.
 //
 // GLSL_COMMON also carries the ambient wind waves (src/ambientWaves.js) and
-// their gust envelope, for every shader that rides or shades the surface; the
-// uniforms it declares come from AmbientWaves.uniforms() and stay inactive in
-// shaders that never call the functions using them.
+// their gust envelope, and the rings that cross the whole pond
+// (src/rings.js), for every shader that rides or shades the surface; the
+// uniforms it declares come from AmbientWaves.uniforms() and Rings.uniforms()
+// and stay inactive in shaders that never call the functions using them.
+import { MAX_RINGS, PROFILE_TEXELS, RING_TEXTURE_UNITS } from '../rings.js';
 
 export const GLSL_COMMON = /* glsl */`
 #define PI 3.141592653589793
@@ -89,6 +91,111 @@ vec2 ambientSlopeAtFullGust(vec2 worldXZ) {
 // than a texel, so it needs no blur of its own.
 float ambientLaplacian(vec2 worldXZ) {
   return texture2D(uAmbientHeight, worldXZ / uAmbientTileSize).a * uAmbientMetresPerUnit * gustEnvelope(worldXZ, uGustTime);
+}
+
+// Rings (src/rings.js): each live ring's radial profile is a layer of
+// uRingProfiles, holding (∂η0/∂r, ∂η1/∂r, η1, η0) in RING_METRES_PER_UNIT: the
+// ring is η0(r) + η1(r)·cos θ, r from its centre and θ from its direction
+// (the throw's; η1 is 0 for a ring with none). A radius r lies at
+// u = (√(a² + 4(1 + a)r/R) − a)/2 along the layer (R the ring's reach, a its
+// mapping), texel i at u = i/(N − 1), so the centre and the reach are texel
+// centres; beyond R the ring is nothing. The layers are mipmapped, so each
+// lookup averages the ring over the pixel's footprint along the radius: a
+// fragment shader passes its derivatives, a vertex shader the spacing it
+// needs. The caller branches on uRingCount, so with no ring alive none of
+// this runs. Per ring and pixel: one fetch (two for the floor's Laplacian)
+// and about 35 operations.
+#define MAX_RINGS ${MAX_RINGS}
+#define RING_PROFILE_TEXELS ${PROFILE_TEXELS.toFixed(1)}
+#define RING_METRES_PER_UNIT ${(1 / RING_TEXTURE_UNITS).toFixed(4)}
+#define RING_CAUSTIC_STEP 0.02     // metres either side over which the floor's Laplacian differences the slope
+uniform int uRingCount;
+uniform vec4 uRingPlaces[MAX_RINGS];   // centre x, z; the direction θ is measured from, x, z
+uniform vec4 uRingShapes[MAX_RINGS];   // reach R (m), mapping a, layer, unused
+uniform highp sampler2DArray uRingProfiles;
+
+// Where radius r lies along a ring's profile as a texture coordinate, and its
+// rate of change with r: u, then (u·(N − 1) + ½)/N.
+vec2 ringCoordinate(float radius, vec4 shape) {
+  float mapping = shape.y;
+  float position = 0.5 * (sqrt(mapping * mapping + 4.0 * (1.0 + mapping) * radius / shape.x) - mapping);
+  float rate = (1.0 + mapping) / (shape.x * (2.0 * position + mapping));
+  return vec2(position, rate) * ((RING_PROFILE_TEXELS - 1.0) / RING_PROFILE_TEXELS) + vec2(0.5 / RING_PROFILE_TEXELS, 0.0);
+}
+
+// The rings' height (m), each read at the mip level whose texels are about
+// spacing metres along its radius (a vertex shader has no derivatives).
+float ringHeight(vec2 worldXZ, float spacing) {
+  float height = 0.0;
+  for (int index = 0; index < MAX_RINGS; index++) {
+    if (index >= uRingCount) break;
+    vec4 place = uRingPlaces[index];
+    vec4 shape = uRingShapes[index];
+    vec2 offset = worldXZ - place.xy;
+    float radius = length(offset);
+    if (radius >= shape.x) continue;
+    vec2 coordinate = ringCoordinate(radius, shape);
+    float level = log2(max(spacing * coordinate.y * RING_PROFILE_TEXELS, 1.0));
+    vec4 profile = textureLod(uRingProfiles, vec3(coordinate.x, 0.5, shape.z), level);
+    height += profile.w + profile.z * dot(offset, place.zw) / max(radius, 1e-6);
+  }
+  return height * RING_METRES_PER_UNIT;
+}
+
+// The rings' slope (∂η/∂x, ∂η/∂z), each averaged over the pixel's footprint
+// along its radius (acrossX, acrossY: dFdx and dFdy of the world XZ). With
+// r̂ outward, cos θ = r̂·e and sin θ = r̂·e⊥ (e⊥ = e turned a right angle):
+//     ∇(η0 + η1 cos θ) = (∂η0/∂r + ∂η1/∂r cos θ) r̂ − (η1/r) sin θ θ̂,   θ̂ = −sin θ e + cos θ e⊥.
+vec2 ringSlope(vec2 worldXZ, vec2 acrossX, vec2 acrossY) {
+  vec2 slope = vec2(0.0);
+  for (int index = 0; index < MAX_RINGS; index++) {
+    if (index >= uRingCount) break;
+    vec4 place = uRingPlaces[index];
+    vec4 shape = uRingShapes[index];
+    vec2 offset = worldXZ - place.xy;
+    float radius = length(offset);
+    if (radius >= shape.x) continue;
+    vec2 outward = offset / max(radius, 1e-6);
+    vec2 coordinate = ringCoordinate(radius, shape);
+    vec4 profile = textureGrad(uRingProfiles, vec3(coordinate.x, 0.5, shape.z),
+      vec2(coordinate.y * dot(outward, acrossX), 0.0), vec2(coordinate.y * dot(outward, acrossY), 0.0));
+    vec2 sideways = vec2(-place.w, place.z);
+    float along = dot(outward, place.zw);
+    float side = dot(outward, sideways);
+    slope += (profile.x + profile.y * along) * outward - profile.z / max(radius, 0.002) * side * (along * sideways - side * place.zw);
+  }
+  return slope * RING_METRES_PER_UNIT;
+}
+
+// The rings' Laplacian (1/m), for the floor's caustics: ∂²η0/∂r² + (∂η0/∂r)/r,
+// and (∂²η1/∂r² + (∂η1/∂r)/r − η1/r²)·cos θ, the second derivative differenced
+// over twice RING_CAUSTIC_STEP. Each lookup is averaged over the footprint.
+float ringLaplacian(vec2 worldXZ, vec2 acrossX, vec2 acrossY) {
+  float laplacian = 0.0;
+  for (int index = 0; index < MAX_RINGS; index++) {
+    if (index >= uRingCount) break;
+    vec4 place = uRingPlaces[index];
+    vec4 shape = uRingShapes[index];
+    vec2 offset = worldXZ - place.xy;
+    float radius = length(offset);
+    if (radius >= shape.x) continue;
+    vec2 outward = offset / max(radius, 1e-6);
+    float inner = max(radius - RING_CAUSTIC_STEP, 0.0);
+    float middle = inner + RING_CAUSTIC_STEP;
+    vec2 innerCoordinate = ringCoordinate(inner, shape);
+    vec2 outerCoordinate = ringCoordinate(inner + 2.0 * RING_CAUSTIC_STEP, shape);
+    float rate = ringCoordinate(middle, shape).y;
+    vec2 gradientX = vec2(rate * max(abs(dot(outward, acrossX)), RING_CAUSTIC_STEP), 0.0);
+    vec2 gradientY = vec2(rate * dot(outward, acrossY), 0.0);
+    vec4 innerProfile = textureGrad(uRingProfiles, vec3(innerCoordinate.x, 0.5, shape.z), gradientX, gradientY);
+    vec4 outerProfile = textureGrad(uRingProfiles, vec3(outerCoordinate.x, 0.5, shape.z), gradientX, gradientY);
+    vec4 mean = 0.5 * (innerProfile + outerProfile);
+    vec2 bend = (outerProfile.xy - innerProfile.xy) / (2.0 * RING_CAUSTIC_STEP);
+    float zeroth = bend.x + mean.x / middle;
+    float first = bend.y + mean.y / middle - mean.z / (middle * middle);
+    laplacian += zeroth + first * dot(outward, place.zw);
+  }
+  return laplacian * RING_METRES_PER_UNIT;
 }
 
 // Sun glitter (F0 = 0.02): the sun reflected by a surface whose normal is n
@@ -419,12 +526,14 @@ FoamLook foamLook(vec2 position, vec2 acrossX, vec2 acrossY, float foam, vec2 fo
 }
 `;
 
-// The water. The inner patch is displaced by the splash height and the ambient
-// height together, both faded out by patchMask at the patch's rim, so its edge
-// meets the flat outer sheet (the ambient height there, a few millimetres
-// 4 m and more from the camera, is far below a pixel). Shading takes the
-// slope of both fields everywhere: the splash's inside the patch, the
-// ambient's over all the water, outer sheet included.
+// The water. The inner patch is displaced by the splash height, the ambient
+// height and the rings' height together, all faded out by patchMask at the
+// patch's rim, so its edge meets the flat outer sheet (the ambient height
+// there, a few millimetres 4 m and more from the camera, and a ring's, a
+// millimetre or less by the time it gets there, are far below a pixel; the
+// sheet is four quads, which could not carry a ring anyway). Shading takes
+// the slope of all three everywhere: the splash's inside the patch, the
+// ambient's and the rings' over all the water, outer sheet included.
 //
 // Two variants of the same source, chosen by a #define, serve the cavity a
 // stone opens (src/cavity.js); without either, the shaders compile to what
@@ -448,6 +557,7 @@ uniform vec2 uDomainMin;
 uniform float uDomainSize;
 uniform float uTexelOffset;
 uniform float uInner;
+uniform float uMeshCell;       // the inner patch's vertex spacing (m): the rings are read that smooth
 #ifdef CAVITY_PUSH
 uniform int uCavityCount;
 uniform vec4 uCavityMouths[CAVITY_PUSH];   // centre x and z, the circle's radius squared
@@ -473,6 +583,7 @@ void main() {
   vCavity = aCavity;
 #endif
   float height = uInner > 0.5 ? texture2D(uHeight, domainUv).r + ambientHeight(world.xz) : 0.0;
+  if (uInner > 0.5 && uRingCount > 0) height += ringHeight(world.xz, uMeshCell);
   world.y += height * mask;
 #ifdef CAVITY_PUSH
   for (int index = 0; index < CAVITY_PUSH; index++) {
@@ -598,9 +709,17 @@ void main() {
   float hu = texture2D(uHeight, vDomainUv + vec2(0.0, texelStep)).r;
   vec3 toCamera = cameraPosition - vWorld;
   float viewDist = length(toCamera);
+  // The pixel's footprint on the water (world XZ per pixel step), for the
+  // rings' and the foam's lookups; taken here, in uniform control flow.
+  vec2 acrossX = dFdx(vWorld.xz);
+  vec2 acrossY = dFdy(vWorld.xz);
   // The splash's slope inside its patch plus the ambient ripples everywhere,
   // which the mipmaps flatten where they are finer than a pixel. What they
-  // flatten becomes roughness, so the glitter keeps its brightness with distance.
+  // flatten becomes roughness, so the glitter keeps its brightness with
+  // distance. The rings' slopes (src/rings.js) add, averaged over the
+  // pixel's footprint; what that averages away is left out of the roughness
+  // (a ring is a few thousandths steep where it is finer than a pixel, under
+  // the ripples' own unresolved slope).
   float gust = gustEnvelope(vWorld.xz, uGustTime);
   float subGridSpread = uRoughness * uRoughness;
 #ifdef CAVITY_MESH
@@ -611,6 +730,7 @@ void main() {
   // across the under-pass; down the wall, seen nearly face on, there is none.
   float ride = vCavity.x;
   vec2 surfaceSlope = vec2(hr - hl, hu - hd) / (2.0 * uCell) * vMask + ambientSlopeAtFullGust(vWorld.xz) * gust * ride;
+  if (uRingCount > 0) surfaceSlope += ringSlope(vWorld.xz, acrossX, acrossY) * ride;
   float slopeVariance = subGridSpread * subGridSpread + ambientUnresolvedVariance(vWorld.xz) * gust * gust * ride;
   vec3 meshNormal = normalize(vNormalWorld);
   vec3 n = normalize(meshNormal + vec3(-surfaceSlope.x, 0.0, -surfaceSlope.y) * max(meshNormal.y, 0.0));
@@ -618,6 +738,7 @@ void main() {
   vec2 slope = surfaceSlope;
 #else
   vec2 slope = vec2(hr - hl, hu - hd) / (2.0 * uCell) * vMask + ambientSlopeAtFullGust(vWorld.xz) * gust;
+  if (uRingCount > 0) slope += ringSlope(vWorld.xz, acrossX, acrossY);
   float slopeVariance = subGridSpread * subGridSpread + ambientUnresolvedVariance(vWorld.xz) * gust * gust;
   vec3 n = normalize(vec3(-slope.x, 1.0, -slope.y));
 #endif
@@ -705,14 +826,13 @@ void main() {
   // threshold, lets some of the water show through. It is a diffuse white,
   // lit by the sun on the rippled surface and by the sky, its bubbles shaded
   // and glinting while they are resolved; its pattern drifts with the map
-  // (uFoamDrift). The footprint and the map's change are taken here, in
-  // uniform control flow; the pattern only where there is foam.
+  // (uFoamDrift). The map's change is taken here, in uniform control flow
+  // (the footprint, acrossX and acrossY, at the top); the pattern only where
+  // there is foam.
   float foam = texture2D(uFoam, vDomainUv).r * vMask;
 #ifdef CAVITY_MESH
   foam *= level;   // the pattern lies on the water's plane: none down the walls
 #endif
-  vec2 acrossX = dFdx(vWorld.xz);
-  vec2 acrossY = dFdy(vWorld.xz);
   vec2 foamChange = vec2(dFdx(foam), dFdy(foam));
   if (foam > FOAM_PRESENT) {
     FoamLook look = foamLook(vWorld.xz - uFoamDrift, acrossX, acrossY, foam, foamChange, n);
@@ -838,8 +958,15 @@ void main() {
     float hu = texture2DLodEXT(uHeight, uv + vec2(0.0, texelStep), 0.0).r;
     laplacian = (hl + hr + hu + hd - 4.0 * hc) / (9.0 * uCell * uCell);
   }
-  // The ambient ripples add their own: a web of caustics drifting with them.
-  float focus = 1.0 + 0.25 * uPondDepth * (laplacian * mask + ambientLaplacian(vSurfacePoint));
+  // The ambient ripples add their own: a web of caustics drifting with them;
+  // and the rings theirs (src/rings.js), each averaged over the floor pixel's
+  // footprint where its sunlight crossed the surface, so a ring throws a
+  // ring of light on the sand.
+  vec2 surfaceAcrossX = dFdx(vSurfacePoint);
+  vec2 surfaceAcrossY = dFdy(vSurfacePoint);
+  float curvature = laplacian * mask + ambientLaplacian(vSurfacePoint);
+  if (uRingCount > 0) curvature += ringLaplacian(vSurfacePoint, surfaceAcrossX, surfaceAcrossY);
+  float focus = 1.0 + 0.25 * uPondDepth * curvature;
   float caustic = clamp(1.0 / max(focus, 0.5), 0.72, 1.45);
 
   gl_FragColor = vec4(sand * (vSunlight * caustic + vSkylight), 1.0);
@@ -920,8 +1047,8 @@ void main() {
 // SPECK_DRIFT_SECONDS, drifts downwind with the surface water as the raft does
 // (uFoamVelocity, src/spectralWater.js), wanders a little, and sits on the
 // waves at the height the water surface's own vertex shader gives that point,
-// splash and ambient waves together (plus SPECK_LIFT, so the triangulated
-// surface never covers it). It fades in over a tenth of a second and out
+// splash, ambient waves and rings together (plus SPECK_LIFT, so the
+// triangulated surface never covers it). It fades in over a tenth of a second and out
 // over its last SPECK_FADE seconds, shrinking as it goes.
 // A speck smaller than uMinPixelSize is drawn at that size, soft, with its
 // opacity cut by the area it really covers (down to SPECK_MIN_COVERAGE): a
@@ -938,6 +1065,7 @@ export const SPECK_VERTEX = /* glsl */`
 #define SPECK_MIN_COVERAGE 0.12
 #define SPECK_RAFT_LOW 0.05
 #define SPECK_RAFT_HIGH 0.2
+#define SPECK_RING_SPACING 0.01   // metres: the rings' height under a speck, read this smooth
 attribute vec2 aDrift;       // initial outward drift, m/s
 attribute vec4 aTiming;      // birth (splash seconds), life (s), diameter (m), random phase
 uniform sampler2D uHeight;
@@ -961,7 +1089,9 @@ void main() {
   place += SPECK_WANDER * vec2(sin(age * 1.3 + phase) + 0.5 * sin(age * 3.1 + 2.0 * phase), cos(age * 1.1 + 1.7 * phase) + 0.5 * sin(age * 2.7 + 3.0 * phase));
   vec2 domainUv = (place - uDomainMin) / uDomainSize + uTexelOffset;
   float mask = patchMask(domainUv);
-  float height = (texture2D(uHeight, domainUv).r + ambientHeight(place)) * mask;
+  float surface = texture2D(uHeight, domainUv).r + ambientHeight(place);
+  if (uRingCount > 0) surface += ringHeight(place, SPECK_RING_SPACING);
+  float height = surface * mask;
   float outsideRaft = 1.0 - smoothstep(SPECK_RAFT_LOW, SPECK_RAFT_HIGH, texture2D(uFoam, domainUv).r * mask);
   vec4 viewPosition = viewMatrix * vec4(place.x, height + SPECK_LIFT, place.y, 1.0);
   float fadeOut = 1.0 - smoothstep(life - SPECK_FADE, life, age);

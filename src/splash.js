@@ -90,9 +90,9 @@
 //     (the hole itself is the cavity's mesh), so the ring's wavelength goes
 //     with R; its downward velocity 0.045·V adds a height that goes as
 //     sqrt(R) (the speed over the frequency of waves of size R), and a big
-//     jet's fall-back adds a strong second ring. The solver damps waves
-//     longer than 30 cm less (src/spectralWater.js), so a big stone's ring
-//     carries across the pond.
+//     jet's fall-back adds a strong second ring. Both rings are carried
+//     across the whole pond by src/rings.js, damped as a real pond damps
+//     them, so a big stone's ring crosses it.
 //   - Foam: the patches' radii go with R, the boil's peaks as sqrt(s) and the
 //     raft's as s^0.25 times the cavity splat's strength, at most
 //     FOAM_AMOUNT_CAP (a bigger cavity entrains more air for the area of its
@@ -411,13 +411,15 @@ export class SplashSystem {
       uResolution: { value: new THREE.Vector2(1, 1) },
     });
     // A landing crown rides the waves: the sheet's vertex shader samples the
-    // splash's height field and the ambient waves (src/ambientWaves.js).
+    // splash's height field, the ambient waves (src/ambientWaves.js) and the
+    // rings (src/rings.js, the cavity's dip under a stone's crown's foot).
     const rideUniforms = () => ({
       uHeight: { value: water.heightTexture },
       uDomainMin: { value: new THREE.Vector2(water.domainMin[0], water.domainMin[1]) },
       uDomainSize: { value: water.domainSize },
       uTexelOffset: water.gridUniforms?.uTexelOffset ?? { value: water.uvOffset },   // shared: it follows the solver's grid
       ...ambientWaves.uniforms(),
+      ...(water.rings ? water.rings.uniforms() : {}),
     });
     this.sheetDepthMaterial = new THREE.ShaderMaterial({ vertexShader: SHEET_VERTEX, fragmentShader: SHEET_DEPTH_FRAGMENT, uniforms: { ...sheetUniforms(), ...rideUniforms() }, depthTest: true, depthWrite: true, side: THREE.DoubleSide });
     this.sheetThicknessMaterial = new THREE.ShaderMaterial({ vertexShader: SHEET_VERTEX, fragmentShader: SHEET_THICKNESS_FRAGMENT, uniforms: { ...sheetUniforms(), ...rideUniforms() }, ...summed, side: THREE.DoubleSide });
@@ -672,13 +674,25 @@ export class SplashSystem {
    * it and sinking ahead, the vertical velocity −c·∂h/∂x of a travelling
    * wave (c the speed of waves its size), as a pair of splats either side.
    * Splats on their own ring as strongly behind as ahead, whatever their
-   * layout. The foam comes from foamTime (the cavity's closure), or now.
+   * layout. The ring goes to the analytic rings when the water carries them
+   * (water.rings, src/rings.js: the splat and its pair as one ring source,
+   * across the whole pond), else to the solver. The foam comes from foamTime
+   * (the cavity's closure), or now.
    */
   stampCavity({ x, z, radius, speed, strength, travelX = 0, travelZ = 0, foamTime = this.time }, water) {
     const sigma = radius * 1.1;
     const depth = CAVITY_SPLAT_DEPTH * radius * strength;
     const ringDepth = 0.3 * radius * strength;   // the depression the ring's travel is set from (it was the splat's own)
-    water.addSplat({ x, z, radius: sigma, height: -depth, velocity: -0.045 * speed * strength });
+    const travel = Math.hypot(travelX, travelZ);
+    const lift = 0.6 * travel * Math.sqrt(GRAVITY * sigma) * ringDepth / sigma;   // ≈ c·depth/σ at the slope's peak
+    if (water.rings) {
+      water.rings.add({
+        x, z, radius: sigma, height: -depth, velocity: -0.045 * speed * strength, rim: 1.7,
+        pair: travel > 0 ? { lift, radius: 0.8 * sigma, offset: 0.8 * sigma, directionX: travelX / travel, directionZ: travelZ / travel } : null,
+      }, this.time);
+    } else {
+      water.addSplat({ x, z, radius: sigma, height: -depth, velocity: -0.045 * speed * strength });
+    }
     // The foam comes up where the hole closed over FOAM_SPREAD·sqrt(R/g): a
     // boil over about the mouth, and the wider raft it leaves.
     const sizeFactor = radius / REFERENCE_RADIUS;
@@ -686,9 +700,7 @@ export class SplashSystem {
     const span = FOAM_SPREAD * Math.sqrt(radius / GRAVITY);
     this.stampFoamPatch(water, random, { x, z, radius: 1.4 * radius, amount: Math.min(RAFT_AMOUNT * sizeFactor ** 0.25 * strength, FOAM_AMOUNT_CAP), reach: 1.2, radii: [0.3, 0.65], lifetime: raftLifetime(radius), time: foamTime, span });
     this.stampFoamPatch(water, random, { x, z, radius: 1.1 * radius, amount: Math.min(BOIL_AMOUNT * Math.sqrt(sizeFactor) * strength, FOAM_AMOUNT_CAP), reach: 1.0, radii: [0.3, 0.6], lifetime: BOIL_LIFETIME, boil: true, time: foamTime, span });
-    const travel = Math.hypot(travelX, travelZ);
-    if (travel > 0) {
-      const lift = 0.6 * travel * Math.sqrt(GRAVITY * sigma) * ringDepth / sigma;   // ≈ c·depth/σ at the slope's peak
+    if (travel > 0 && !water.rings) {
       const offsetX = (travelX / travel) * 0.8 * sigma;
       const offsetZ = (travelZ / travel) * 0.8 * sigma;
       water.addSplat({ x: x - offsetX, z: z - offsetZ, radius: 0.8 * sigma, velocity: lift, rim: 1 });
@@ -774,11 +786,15 @@ export class SplashSystem {
 
   /**
    * The water as a column meets it: src/jet.js touches the water only when
-   * the column falls back, with the mound's splats, which pass straight
-   * through, and its foam, which fallBackFoam stamps the splash's way.
+   * the column falls back, with the mound's splats and its foam, which
+   * fallBackFoam stamps the splash's way. The mound's height splat passes
+   * straight through to the solver; its secondary ring (the splat with a
+   * velocity) goes to the analytic rings when the water carries them
+   * (water.rings, src/rings.js), else to the solver too.
    */
   columnWater(column, water) {
-    return { addSplat: (splat) => water.addSplat(splat), addFoam: (foam) => this.fallBackFoam(column, foam, water) };
+    const addSplat = (splat) => (water.rings && splat.velocity ? water.rings.add(splat, this.time) : water.addSplat(splat));
+    return { addSplat, addFoam: (foam) => this.fallBackFoam(column, foam, water) };
   }
 
   /**

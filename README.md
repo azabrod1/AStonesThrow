@@ -13,7 +13,9 @@ Tap or click the water to throw a stone there (beyond the simulated patch,
 at its nearest point). Space throws one at random.
 Scroll or pinch to zoom toward what is under the pointer (down to an 8°
 field of view); Escape or Reset view goes back. The strip at the bottom sets
-the stone size, the throw strength, slow motion and the rendering quality.
+the stone size, the throw strength, slow motion, the wind (Calm, the
+default, a still day; Breeze; Windy: the last choice is remembered on the
+device) and the rendering quality.
 The quality starts on High everywhere and steps down by itself if the idle
 pond or the first splash renders too slowly, and later whenever the frame
 rate stays under 25 for a few seconds (the readout in the corner shows the
@@ -40,16 +42,46 @@ any time step and gives the right dispersion: long ripples outrun short ones,
 as they do on a real pond. Disturbances are Gaussian splats with a raised rim
 (zero net volume, so no long-wave mound), added in Fourier space from their
 closed-form spectrum. One inverse FFT per frame (2·log2 N passes on the GPU)
-returns the height and vertical velocity for rendering. A foam map rides
+returns the height and vertical velocity for rendering. It holds the near
+field: the drops' landings and the jet's mound and base; the ring a stone
+sends across the pond is the rings' (below), so the patch's damping, about
+ten times a real pond's, only has to outlast that near field before its waves
+come round the periodic patch. A foam map rides
 along: how much foam each cell holds, of two kinds that last very
 differently (a boil and a raft, below), and how long each lasts; stamped by
 the splash, carried outward by its surface flows and downwind by the breeze,
 spreading a little and decaying. A change of quality carries the
 waves and the foam to the new grid. When nothing has disturbed the water for
-75 s (the time the biggest splash's longest waves, which the pond damps
-least, take to fade below a pixel's notice) and nothing of the splash is
-left, the solver sleeps: it clears its textures once and runs no passes
-until the next splat.
+75 s (more than the time the biggest splash's longest waves, which the
+solver damps least, take to fade below a pixel's notice) and nothing of the
+splash is left, the solver sleeps: it clears its textures once and runs no
+passes until the next splat.
+
+**Rings** (`src/rings.js`). The ring a stone sends out, from its cavity's
+splat (an oblique entry's dragged splats and the pair that runs it forward
+included) and from where its jet falls back, crosses the whole pond as a
+real pond's would, a widening train of crests that outruns its short
+ripples. Each is evolved exactly by linear theory, outside the solver:
+
+    η(r, t) = ∫ k dk J0(kr) e^{−γ(k)t} [Ĥ(k) cos ωt + V̂(k) sin(ωt)/ω]
+
+with the solver's dispersion ω(k), Ĥ and V̂ the Hankel transforms of the
+same splats the solver used to take (so near the stone it is what the
+solver drew: they agree to under 1.5% over the first 2 m and 2 s), and
+γ(k) a pond's damping: natural water carries a surface film, which pins the
+surface and damps a wave by k·√(νω/8) per second (Lamb; van Dorn), 0.03/s
+for 30 cm waves where the solver damps 0.3/s. An oblique entry's ring is a
+symmetric part and a cos θ part, so it runs stronger ahead. While any ring
+lives, a GPU pass evaluates each ring's spectrum at the frame's time and
+one pass per ring sums it into a radial profile of height and slope out to
+its reach (2 to 40 m), mipmapped; the water adds every live ring's slope to
+its normal everywhere and its height to the inner patch, the floor its
+curvature to the caustics, the foam specks ride it. A ring retires once no
+slope of it is steeper than 1e-4, under a third of a pixel's turn of the
+mirror image on a phone: the reference stone's after about a minute, by
+then 20 m out; a 1.5 cm pebble's after 17 s. With no ring alive there is
+no pass and no cost per pixel. `RING_SOURCE.strength` scales every ring
+source, for calibration against a reference simulation.
 
 **Wind ripples** (`src/ambientWaves.js`). Between throws the pond is never
 still: a second spectral field, on its own 6 m tile of 256 × 256 laid over
@@ -64,7 +96,11 @@ far ripples average to flat instead of shimmering; the slope they average
 away becomes roughness in the sun's glitter, so the glitter keeps its
 brightness with distance. Gusts multiply it: patches of ripple about 3 m
 across (cat's paws) drift downwind at 1.5 m/s over calmer water that keeps a
-quarter of it, which also hides the tile's repetition.
+quarter of it, which also hides the tile's repetition. The Wind control
+scales the whole field by one factor (its slope variance below a pixel by
+the square) and the foam's drift with it: Calm 0.3, a glassy pond with faint
+cat's paws, on which a stone's rings read far; Breeze 1, the look the pond
+had before the control; Windy 1.8.
 
 **Splash** (`src/splash.js`). A stone entering water goes through stages with
 known timing, and the droplets are choreographed from them:
@@ -131,7 +167,8 @@ closed the jet's base wells up, and where the jet falls back the mound
 spreads, each sweeping the foam out of a disc into a ring (keeping its
 amount), so a raft turns ring-like or crescent-shaped, with arcs where the
 flow stretched it, and the place the jet fell clears. The whole raft drifts
-downwind at 3 cm/s, and its pattern and specks with it. The foam map says
+downwind at 3 cm/s in a breeze (with the wind's strength), and its pattern
+and specks with it. The foam map says
 where and how much, but its cells are over a centimetre wide, so the water
 shader draws the raft from three layers of cellular noise: bubbles 2 to 3 mm
 across packed together, larger ones of 3 to 7 mm among them, and a lace of
@@ -172,9 +209,8 @@ radius to the 1.5): a 16 cm stone's is 11 cm across at the water, rises
 45 cm (80 cm dropped straight in) and mostly falls back as a column, which
 throws a second, strong ring. Drop counts grow faster than the stone's area
 and drop sizes as √R, so a big splash is both denser and coarser; the foam it
-leaves covers the cavity's mouth and is denser. The pond damps waves longer
-than 30 cm less than ripples, as a real one does, so a big stone's ring
-carries across it. The stone starts the splash the moment its lowest point
+leaves covers the cavity's mouth and is denser. Its rings, longer and
+stronger, cross the whole pond (Rings, above). The stone starts the splash the moment its lowest point
 touches the water. `tools/splash-probe.mjs` prints the whole table.
 
 Everything the splash throws up is shaded as the same water as the pond
@@ -245,15 +281,16 @@ water in the air the frame is only tone-mapped. The inner patch's mesh only
 carries the displacement (the normals come from the height textures per
 pixel), so it is coarser than the solver's grid.
 Caustics on the sand come from the Laplacian of the surface height above,
-splash and wind ripples both, so they drift with the ripples.
+splash, wind ripples and rings together, so they drift with the ripples and a
+ring throws a ring of light on the sand.
 Stones are faceted procedural geometry with a small rigid-body model: a
 ballistic arc, quadratic drag under water, and a settle into the sand.
 
 ## Development
 
 - `npm test` runs `tools/fft-test.mjs`, `tools/wave-probe.mjs`,
-  `tools/foam-probe.mjs` and `tools/cavity-probe.mjs`; each exits with 1 if a
-  check fails.
+  `tools/foam-probe.mjs`, `tools/cavity-probe.mjs` and `tools/ring-probe.mjs`;
+  each exits with 1 if a check fails.
 - `node tools/fft-test.mjs` checks the splash solver's spectral passes on the
   CPU with the shaders' arithmetic: the FFT against a naive DFT, a splat's
   spectrum against its Gaussian, the Nyquist bins (splats at fractional
@@ -283,8 +320,24 @@ ballistic arc, quadratic drag under water, and a settle into the sand.
 - `node tools/wave-probe.mjs [--wind=x,z]` checks the wind ripples on the CPU
   with the GPU's own FFT passes: the field is real, its rms slope is the
   target, waves travel downwind, it repeats seamlessly after its period, and
-  the roughness each mip level hands the glitter matches a measurement; it
-  prints the cost of a frame.
+  the roughness each mip level hands the glitter matches a measurement; that
+  each of the Wind control's strengths scales the field, its roughness and
+  the foam's drift as it should, and Breeze restores them exactly; it prints
+  the cost of a frame.
+- `node tools/ring-probe.mjs [--all] [--gpu[=half]]` checks the rings
+  (`src/rings.js`) on the CPU: an isolated cavity splat evolved by the
+  solver's own lattice, injection, dispersion and damping against the rings'
+  Hankel integral and their sampled scheme (they agree to under 1.5% for 4 to
+  16 cm stones over 2 m and 2 s; a 1.5 cm pebble's to 6%, the solver's grid
+  cutting its shortest waves); every ring source a splash makes, made as the
+  app makes them, with its sampling and its retirement (the exact steepest
+  slope when it retires is under the visible bound, so no ring vanishes while
+  it shows, and the drawn profile matches the exact one over its reach); the
+  reference vertical drop's ring at 0.5, 1 and 2 m; and the cost of a frame
+  (each pass's fetches over a ring's life, the CPU's). `--gpu` reads the
+  rings' spectrum and profiles back from a headless page against the same
+  sums in float64 (`--gpu=half` on the half-float path); `--all` runs every
+  stone size.
 - `npm run shoot -- --label=name --throws=x:z:radius --times=0.1,0.5` renders
   deterministic frames headlessly (Playwright + Chromium) into `shots/name/`,
   at exact times after the first impact.
@@ -293,7 +346,8 @@ ballistic arc, quadratic drag under water, and a settle into the sand.
   `--crop=x:y:w:h --cropscale=n` (an enlarged crop of each frame),
   `--report="js"` (printed after each frame), `--floats=half`,
   `--power=soft|normal|hard` (soft is a higher arc, so a steeper entry,
-  about 30° from vertical). With
+  about 30° from vertical), `--wind-strength=calm|breeze|windy` (the page's
+  own default is calm). With
   `--eval="window.__pond.setTimeScale(0.1)"` the frames are slow motion, 1/600 s
   of world time each, so `--times=0.07,0.0716667,…` are consecutive frames;
   the flight is stepped in slow frames too, so the first frame is at most
@@ -324,6 +378,9 @@ ballistic arc, quadratic drag under water, and a settle into the sand.
 - `?wind=x,z` on the page (`--wind=x:z` for the harness) sets the direction
   the wind blows toward, in world XZ (the camera looks toward −Z); the
   default is (0.45, −0.9), away from the camera and a little to the right.
+  `?windStrength=calm|breeze|windy` (`--wind-strength=` for the harness)
+  sets its strength, over the one the Wind control last chose on the device
+  (kept in `localStorage`); calm otherwise.
 - `?sky=name` on the page (`--sky=name` for the harness) picks the sky
   panorama, a key of `SKIES` in `src/sky.js`.
 - `node tools/sky-probe.mjs assets/sky/name_2k.hdr [--png=preview.png]`
@@ -371,8 +428,8 @@ ballistic arc, quadratic drag under water, and a settle into the sand.
   the pointer stays there.
 - `node tools/controls-probe.mjs [--root=path] [--label=name]` loads the page
   as phones' browsers do (mobile layout by the viewport tag, touch, 3× pixels)
-  at a large phone's portrait and landscape and a small phone's portrait, and
-  in a desktop window, and checks that the page is laid out at the device's
+  at a large phone's portrait and landscape and a small phone's portrait and
+  landscape, and in a desktop window, and checks that the page is laid out at the device's
   width, every control is on the screen, the strip covers at most 30% of the
   height, the stone slider is 44 points tall (and most of the width in
   portrait) and every button 34, and that a tap or a drag anywhere along the
@@ -382,10 +439,13 @@ ballistic arc, quadratic drag under water, and a settle into the sand.
 - `window.__pond` exposes the app in the console: `throwAt(x, z, { radius, power })`,
   `setTimeScale` (and `timeScale`), `pause()`, `advance(seconds)` (in the frames the app would
   draw at the current time scale), `setDebugView(name)`, `setFov(degrees)`,
-  `lookAt(x, y, z)`, `resetView()`, and `budget`: what the preset built (the
-  solver's grid, the mesh, the pixel ratio, every target's size, an estimate
-  of the render targets' memory, the programs compiled and the warm-up's,
-  whether the solver sleeps and the frame rate is capped).
+  `lookAt(x, y, z)`, `resetView()`, `setWind(name)` (and `wind`: calm,
+  breeze or windy, remembered on the device), `rings` (the live rings and
+  their plans), and `budget`: what the preset built (the solver's grid, the
+  mesh, the pixel ratio, every target's size, an estimate of the render
+  targets' memory, the programs compiled and the warm-up's, whether the
+  solver sleeps and the frame rate is capped, the live rings and their
+  passes, the wind).
 
 Install the development dependencies with `npm install` (Three.js is only
 needed locally for the headless harness, which serves it instead of the CDN).

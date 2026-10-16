@@ -12,13 +12,20 @@
 //      cosine the shaders assume (h at texel n is h at x = n·cell);
 //   4. the field repeats after one period, so wrapping the time is seamless;
 // then measures how much slope variance each mip level loses (box mips of the
-// slope channels, bilinear lookups) against the model the app uploads, and
-// prints the cost of a frame.
+// slope channels, bilinear lookups) against the model the app uploads;
+//   5. the Wind control's strengths (WIND_STRENGTHS): Breeze is exactly the
+//      field drawn at rmsSlope, as it was before the control; a strength s
+//      scales the one uniform every ripple lookup goes through by s, the
+//      roughness table the water shader holds (the same array) by s², and the
+//      foam's drift (src/spectralWater.js) by s, and Breeze again restores
+//      every one of them exactly;
+// and prints the cost of a frame.
 //
 //   node tools/wave-probe.mjs [--wind=x,z]
 // Exits with status 1 if a check fails.
 import { performance } from 'node:perf_hooks';
-import { AMBIENT_WAVES, DEFAULT_WIND, buildWaveSeed, periodicFrequency, latticeIndex } from '../src/ambientWaves.js';
+import { AMBIENT_WAVES, DEFAULT_WIND, WIND_STRENGTHS, AmbientWaves, buildWaveSeed, periodicFrequency, latticeIndex } from '../src/ambientWaves.js';
+import { SpectralWater, FOAM_DRIFT } from '../src/spectralWater.js';
 import { inverse2d } from './stockham.mjs';
 
 const POND_DEPTH = 0.8;
@@ -281,6 +288,35 @@ for (let level = 0; level < kept.length; level++) {
   console.log(`  level ${level}: texel ${(cell * 2 ** level * 100).toFixed(1).padStart(6)} cm (waves under ${(2 * cell * 2 ** level * 100).toFixed(1).padStart(6)} cm gone)   model ${model.toFixed(3)}   measured ${measured.toFixed(3)}`);
 }
 check(worstModelError < 0.05, `the uploaded model is within ${worstModelError.toFixed(3)} of the measurement at every level`);
+
+// 5. The wind's strength, on the app's own objects (a stand-in renderer: nothing is drawn).
+console.log(`\n5. The Wind control: ${Object.entries(WIND_STRENGTHS).map(([name, strength]) => `${name} ${strength} (rms slope ${(strength * AMBIENT_WAVES.rmsSlope).toFixed(4)})`).join(', ')}`);
+{
+  const standIn = { getRenderTarget: () => null, setRenderTarget: () => {}, setClearColor: () => {}, clear: () => {}, render: () => {} };
+  const ambient = new AmbientWaves(standIn, { windDirection: [windX, windZ], depth: POND_DEPTH });
+  const water = new SpectralWater(standIn, { size: 64 });
+  const metresPerUnit = ambient.uniforms().uAmbientMetresPerUnit;
+  const drawn = Float64Array.from(ambient.unresolvedVariance);
+  const table = ambient.unresolvedVariance;   // the array the water shader's uniform holds
+  water.setWind([windX, windZ]);
+  const drift = water.foamUniforms.uFoamVelocity.value;
+  check(WIND_STRENGTHS.breeze === 1 && WIND_STRENGTHS.calm < 1 && WIND_STRENGTHS.windy > 1, 'Breeze is 1, Calm under it, Windy over it');
+  let worst = 0;
+  for (const [name, strength] of Object.entries(WIND_STRENGTHS)) {
+    ambient.setStrength(strength);
+    water.setWindStrength(strength);
+    worst = Math.max(worst, Math.abs(metresPerUnit.value * 1000 / strength - 1));
+    table.forEach((variance, level) => { worst = Math.max(worst, drawn[level] > 0 ? Math.abs(variance / (drawn[level] * strength * strength) - 1) : variance); });
+    worst = Math.max(worst, Math.abs(Math.hypot(drift.x, drift.y) / (FOAM_DRIFT * strength) - 1), Math.abs((drift.x * windX + drift.y * windZ) / Math.hypot(drift.x, drift.y) - 1));
+    if (name === 'calm') console.log(`  calm: the ripples' height and slope ×${strength}, the roughness the mips lose ×${(strength * strength).toFixed(2)}, the foam drifting at ${(100 * Math.hypot(drift.x, drift.y)).toFixed(1)} cm/s`);
+  }
+  check(worst < 1e-12, `each strength scales the uniform, the roughness table (in place) and the drift as it should (worst relative error ${worst.toExponential(1)})`);
+  ambient.setStrength(WIND_STRENGTHS.breeze);
+  water.setWindStrength(WIND_STRENGTHS.breeze);
+  const length = Math.hypot(windX, windZ);
+  const restored = metresPerUnit.value === 1 / 1000 && table.every((variance, level) => variance === drawn[level]) && drift.x === windX / length * FOAM_DRIFT && drift.y === windZ / length * FOAM_DRIFT;
+  check(restored, 'Breeze restores the uniform, the roughness table and the drift exactly (the frames the pond had before the control)');
+}
 
 // Cost of a frame on the GPU, and the one-off CPU cost.
 const texels = AMBIENT_WAVES.texels;

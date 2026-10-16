@@ -1,6 +1,7 @@
 // The sandy pond floor, lit by sunlight focused through the rippling surface:
-// the caustics come from the curvature of the splash's height field and of the
-// ambient wind waves (src/ambientWaves.js), so they drift with the ripples.
+// the caustics come from the curvature of the splash's height field, of the
+// ambient wind waves (src/ambientWaves.js) and of the rings (src/rings.js), so
+// they drift with the ripples and a ring throws a ring of light on the sand.
 //
 // The floor's pattern (sand, pebbles and silt: FLOOR_PATTERN in
 // src/shaders/scene.js, seven value noises) never changes, so the floor shader
@@ -86,7 +87,7 @@ export function setPatternMipmaps(floor, renderer, mipmapped) {
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, mipmapped ? gl.LINEAR_MIPMAP_LINEAR : gl.LINEAR);
 }
 
-export function createPondFloor(water, lighting, ambientWaves, { renderer, eye }) {
+export function createPondFloor(water, lighting, ambientWaves, { renderer, eye, rings = null }) {
   const layout = {
     uPatternEye: { value: new THREE.Vector2(eye.x, eye.z) },
     uPatternNearest: { value: PATTERN_NEAREST },
@@ -111,6 +112,7 @@ export function createPondFloor(water, lighting, ambientWaves, { renderer, eye }
       uPattern: { value: pattern.texture },
       ...layout,
       ...ambientWaves.uniforms(),
+      ...(rings ? rings.uniforms() : {}),
     },
   });
   material.addEventListener('dispose', () => pattern.dispose());

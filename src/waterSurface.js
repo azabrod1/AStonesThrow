@@ -1,8 +1,9 @@
 // The water surface: an inner patch that follows the simulated height field and
 // a flat outer sheet to the horizon, drawn with one shader. The ambient wind
-// waves (src/ambientWaves.js) ride on both: they displace the inner patch with
-// the splash's waves and shade all the water (WATER_VERTEX and WATER_FRAGMENT
-// say how). The sheet reaches OUTER_HALF_SIZE metres from the patch's centre,
+// waves (src/ambientWaves.js) and the rings that cross the pond
+// (src/rings.js) ride on both: they displace the inner patch with the
+// splash's waves and shade all the water (WATER_VERTEX and WATER_FRAGMENT say
+// how). The sheet reaches OUTER_HALF_SIZE metres from the patch's centre,
 // so seen from the camera (1.15 m up) its edge is 0.02° below the horizon and
 // the water meets the sky dome's horizon with no strip of the photo's own
 // ground between them.
@@ -27,7 +28,8 @@
 // fewer than the solver's grid on the lower quality presets
 // (setMeshSegments, src/main.js). It keeps only its positions (the shader
 // reads no normal or uv). The cavity dips the patch by whole vertices, so
-// `cell` (the mesh's spacing) is what src/cavity.js margins by. The sizes the
+// `cell` (the mesh's spacing) is what src/cavity.js margins by, and the rings
+// displace it as smoothed to that spacing (uMeshCell). The sizes the
 // shader needs of the solver's grid are the solver's shared gridUniforms, so
 // they follow its resize.
 import * as THREE from 'three';
@@ -61,7 +63,7 @@ function innerPatchGeometry(water, segments) {
   return geometry;
 }
 
-export function createWaterSurface(water, lighting, ambientWaves, { meshSegments = Math.min(water.size, 512) } = {}) {
+export function createWaterSurface(water, lighting, ambientWaves, { meshSegments = Math.min(water.size, 512), rings = null } = {}) {
   const uniforms = {
     uHeight: { value: water.heightTexture },
     uFoam: { value: water.foamTexture },
@@ -90,8 +92,10 @@ export function createWaterSurface(water, lighting, ambientWaves, { meshSegments
     uDomainSize: { value: water.domainSize },
     uTexelOffset: water.gridUniforms.uTexelOffset,
     uInner: { value: 1 },
+    uMeshCell: { value: water.domainSize / meshSegments },
     uAmbientUnresolved: { value: ambientWaves.unresolvedVariance },
     ...ambientWaves.uniforms(),
+    ...(rings ? rings.uniforms() : {}),
   };
   // Two materials sharing every uniform object but uInner.
   const material = (inner) => new THREE.ShaderMaterial({
@@ -147,6 +151,7 @@ export function createWaterSurface(water, lighting, ambientWaves, { meshSegments
       inner.geometry.dispose();
       inner.geometry = innerPatchGeometry(water, count);
       segments = count;
+      uniforms.uMeshCell.value = water.domainSize / count;
     },
     /** The open cavities' pushShape()s (src/cavity.js): the patch dips under them, or draws as still water when there are none. */
     setCavities(shapes) {
