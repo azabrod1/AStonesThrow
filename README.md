@@ -617,10 +617,11 @@ farther out, so it rises into the view rather than filling its corner.
   throw's seal says, the jet with it, that the bowl's floor only rises and
   reaches the surface when the hole is gone, that
   the cone the surface dips into holds the whole hole and the lip covers
-  where it dips, that the normals face the air and that the crown stands on
-  the lip; then it does the same for `--variety` (24) more throws of each
-  size at random aims and powers, every one a stone and a hole of its own,
-  and exits with 1 if any check fails.
+  where it dips, that the normals face the air (the floor's centre and,
+  after the pinch, the closing point face up however flat the bowl has
+  become) and that the crown stands on the lip; then it does the same for
+  `--variety` (24) more throws of each size at random aims and powers, every
+  one a stone and a hole of its own, and exits with 1 if any check fails.
 - `node tools/fan-probe.mjs [radius] [entrySpeed] [horizontalFraction]` runs
   the forward fan of an oblique entry on the CPU and prints its timeline,
   its drops, where they land and its cost per frame.

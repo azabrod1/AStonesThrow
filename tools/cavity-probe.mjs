@@ -27,7 +27,10 @@
 //     hole is gone; the hole is never drawn deeper than its floor;
 //   - every frame, the well the surface patch dips into holds every vertex of
 //     the wall, and the lip's apron reaches two water cells past where it dips;
-//   - the wall's normals face the hole's axis and the lip's face up;
+//   - the wall's normals face the hole's axis and the lip's face up, and
+//     every ring shrunk to a point (the floor's centre; after the pinch,
+//     the closing point) faces up, as the ring around it does, however
+//     flat the bowl has become;
 //   - the crown's base sits on the lip: on its crest while the mouth widens,
 //     then on its outer slope where the crest was widest.
 //
@@ -155,6 +158,14 @@ function checkMesh(cavity, label) {
     const ring = wallRows.first + 8;
     const outX = positions[wall * 3] - cavity.rowX[ring], outZ = positions[wall * 3 + 2] - cavity.rowZ[ring];
     if (Math.hypot(outX, outZ) > 0.3 * cavity.radius && -positions[wall * 3 + 1] > 0.1 * cavity.radius) check(normals[wall * 3] * outX + normals[wall * 3 + 2] * outZ < 0, `${label}: a wall normal points away from the hole at ${milliseconds(cavity.age)} ms`);
+  }
+  // The rings shrunk to a point face up: a closing point facing along the floor
+  // would shade a flattened bowl as a steep cone until the frame it is gone.
+  for (let row = 0; row <= wallRows.first && cavity.rowRadius[row] < 1e-6 * cavity.radius; row++) {
+    for (let column = 0; column < CAVITY_COLUMNS; column += 8) {
+      const point = row * CAVITY_COLUMNS + column;
+      check(normals[point * 3 + 1] > 0.5, `${label}: the hole's floor at its centre faces ${(Math.acos(Math.min(normals[point * 3 + 1], 1)) * 180 / Math.PI).toFixed(0)}° from up at ${milliseconds(cavity.age)} ms`);
+    }
   }
 }
 
