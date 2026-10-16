@@ -12,7 +12,8 @@ npm run shoot -- --label=name --throws=0:-1.4:0.03 --times=0.1,0.5   # frames in
 node tools/jet-probe.mjs 0.03 6.3      # one Worthington jet on the CPU: timeline, drops, cost
 node tools/fan-probe.mjs 0.03 6.9 0.68 # the forward fan of an oblique entry on the CPU
 node tools/splash-probe.mjs            # the whole splash on the CPU for each stone size: crown, jet, drops, ring, cost per frame
-node tools/cavity-probe.mjs            # the stone's cavity on the CPU for each size: timeline, pinch, closure, cost; checks the hole hides the surface
+node tools/cavity-probe.mjs            # the stone's cavity on the CPU for each size: timeline, pinch, closure, cost; checks the hole hides the surface, for random throws too
+node tools/variety-probe.mjs           # how splashes vary throw to throw on the CPU (seed n = the harness's seeded throw n): jet forms, seals, tops, tip drops, lean; --list per throw
 node tools/zoom-probe.mjs              # drives the page's zoom handlers and checks the anchor stays put
 node tools/sky-probe.mjs assets/sky/meadow_2_2k.hdr   # measures a sky panorama into assets/sky/meadow_2.json
 node tools/wave-probe.mjs              # the wind ripples on the CPU: real field, rms slope, travel direction, mip roughness, cost
