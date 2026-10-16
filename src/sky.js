@@ -88,6 +88,24 @@
 // (src/main.js), a radiance lit by what falls on the water, takes it, and so
 // does the cube's ground hemisphere.
 //
+// Weather (setWeather; the Weather setting, src/main.js). Rain comes under
+// cloud: `cover` of it (0 to 1) takes that share of the sun's direct light
+// away and turns the dome toward the cloud's: its luminance evened out about
+// the clear sky's mean (to the power 1 − OVERCAST_FLATTEN, so the sun and
+// its glow sink and the shaded land lifts, as under a cloud deck), greyed to
+// OVERCAST_TINT, and scaled to the cloud's brightness, which is all the
+// light of the clear hour (its sky's and its sun's on level ground) times
+// the weather's `light` (a rain cloud's share of a clear day's light),
+// softened as the hours' light is (adaptedLight: under the rods' threshold,
+// at night, the eye makes up more of what the cloud takes). The scene's ambient
+// sky goes the same way, and the environment's level, the deep water's
+// light, with it. The rain's haze fades what lies d metres off by
+// 1 − exp(−3d/visibility) toward HAZE_BRIGHTNESS of the cloud: the water
+// (HAZE in src/shaders/scene.js) by its distance, the dome by the distance
+// a ray climbs out of the rain (HAZE_LAYER over the sine of its elevation),
+// at most LAND_DISTANCE, where the photo's land stands. A clear sky leaves
+// everything as it was.
+//
 // Switching. load(place, hour) fetches the photo and its measurements, then
 // in one frame swaps the dome's texture and uniforms, fills lighting's sun
 // and sky vectors in place, captures the cube and the prefiltered map again
@@ -193,6 +211,8 @@ const GROUND = [0.10, 0.17, 0.20];   // the cube's ground hemisphere: the pond a
 const ADAPTATION = 0.75;       // how far the eye adapts to an hour's light (Light by the hour)...
 const ROD_ADAPTATION = 0.9;    // ...and, below NIGHT_VISION_LIGHT[0], its rods (adaptedLight)
 const DOWN_SUN_ELEVATION = 1;  // degrees: where the scene's dark sun stands while the true one is down
+const OVERCAST_TINT = [0.95, 0.99, 1.07];   // a rain cloud's grey, a little blue, at about unit luminance
+const HAZE_BRIGHTNESS = 0.6;   // the haze against the cloud's mean: an overcast's horizon is under half its zenith (CIE)
 // The light on level ground under a clear sky (illuminance): the sun's, through
 // SUN_DEPTH optical depths per air mass (Kasten and Young's), outside the
 // atmosphere SUN_OUTSIDE; the sky's, SKY_LIGHT[0] + SKY_LIGHT[1]·sin(h)^0.6
@@ -270,7 +290,16 @@ uniform float uMirror;         // 1, or -1 to flip the photo left for right
 uniform float uRotation;       // radians added to the azimuth before the lookup
 uniform float uScale;
 uniform float uRadianceCap;
+uniform float uOvercast;       // the cloud's cover, 0 to 1 (Weather, below)
+uniform float uSkyMean;        // the clear dome's mean radiance (luminance), which cloud evens the sky toward
+uniform float uOvercastScale;  // the overcast dome's brightness against the clear one's
+uniform vec3 uOvercastTint;    // the cloud's colour, at unit luminance
+uniform vec3 uHazeColor;       // the rain's haze (HAZE in src/shaders/scene.js)
+uniform float uHazeDensity;
 varying vec3 vDirection;
+#define OVERCAST_FLATTEN 0.6   // the luminance's power about the mean that cloud takes away: the sun and its glow sink, the shade lifts
+#define HAZE_LAYER 1000.0      // metres: the rain's depth, which a ray climbing out of it crosses
+#define LAND_DISTANCE 400.0    // metres: where the photo's land is taken to stand (its near trees and its far shore alike)
 void main() {
   vec3 direction = normalize(vDirection);
   float azimuth = atan(direction.z, direction.x * uMirror) + uRotation;
@@ -278,6 +307,12 @@ void main() {
   vec3 radiance = texture2D(uPanorama, panoramaUv).rgb * uScale;
   float brightest = max(radiance.r, max(radiance.g, radiance.b));
   radiance *= min(1.0, uRadianceCap / max(brightest, 1e-6));
+  if (uOvercast > 0.0) {
+    float level = max(dot(radiance, vec3(0.2126, 0.7152, 0.0722)), 1e-6);
+    vec3 grey = level * pow(level / uSkyMean, -OVERCAST_FLATTEN) * uOvercastTint;
+    radiance = mix(radiance, grey, uOvercast) * mix(1.0, uOvercastScale, uOvercast);
+  }
+  if (uHazeDensity > 0.0) radiance = mix(radiance, uHazeColor, 1.0 - exp(-uHazeDensity * min(HAZE_LAYER / max(direction.y, 1e-4), LAND_DISTANCE)));
   gl_FragColor = vec4(radiance, 1.0);
 }
 `;
@@ -297,6 +332,8 @@ const fetchMeasurement = (file) => fetch(new URL(`../assets/sky/${file}.json`, i
  * @returns {Promise<{ sky, cubeTexture, envTexture, name, hour, level, targets, panoramaBytes, load }>}
  */
 export async function createEnvironment(renderer, { name, hour, sunAzimuth, sunBalance, lighting }) {
+  // The haze's colour and density, shared with every material that hazes (HAZE in src/shaders/scene.js).
+  const hazeUniforms = { uHazeColor: { value: new THREE.Vector3() }, uHazeDensity: { value: 0 } };
   const sky = new THREE.Mesh(
     new THREE.BoxGeometry(1, 1, 1),
     new THREE.ShaderMaterial({
@@ -308,6 +345,11 @@ export async function createEnvironment(renderer, { name, hour, sunAzimuth, sunB
         uRotation: { value: 0 },
         uScale: { value: 1 },
         uRadianceCap: { value: 1 },
+        uOvercast: { value: 0 },
+        uSkyMean: { value: 1 },
+        uOvercastScale: { value: 1 },
+        uOvercastTint: { value: new THREE.Vector3(...OVERCAST_TINT) },
+        ...hazeUniforms,
       },
       side: THREE.BackSide,
       depthWrite: false,
@@ -353,7 +395,10 @@ export async function createEnvironment(renderer, { name, hour, sunAzimuth, sunB
   const balance = await measurementOf(SKIES[BALANCE_SKY].hours.afternoon.file);
   const balanceLuminance = luminance(sunBalance.toArray());
 
-  const environment = { sky, cubeTexture: cubeTarget.texture, envTexture: null, name: null, hour: null, level: 1, targets: [], panoramaBytes: 0, load };
+  const environment = { sky, cubeTexture: cubeTarget.texture, envTexture: null, name: null, hour: null, level: 1, hazeUniforms, targets: [], panoramaBytes: 0, load, setWeather };
+  // The hour's light under a clear sky (load), which the weather covers (applyWeather).
+  const clear = { sun: new THREE.Vector3(), sky: new THREE.Vector3(), lux: 1, level: 1 };
+  let weather = { cover: 0, light: 1, visibility: Infinity };
 
   /**
    * Load a sky (a key of SKIES; others fall back to DEFAULT_SKY) at one of
@@ -406,31 +451,68 @@ export async function createEnvironment(renderer, { name, hour, sunAzimuth, sunB
     if (sunlit) {
       const sunColour = new THREE.Vector3().fromArray(measurement.sunIrradiance).divide(new THREE.Vector3().fromArray(balance.sunIrradiance)).multiply(sunBalance);
       const sunLuminance = balanceLuminance * (scale / anchorScale) * (luminance(measurement.sunIrradiance) / luminance(anchor.sunIrradiance));
-      lighting.sunIrradiance.copy(sunColour.multiplyScalar(sunLuminance / luminance(sunColour.toArray())));
+      clear.sun.copy(sunColour.multiplyScalar(sunLuminance / luminance(sunColour.toArray())));
     } else {
-      lighting.sunIrradiance.set(0, 0, 0);
+      clear.sun.set(0, 0, 0);
     }
-    lighting.skyAmbient.fromArray(measurement.skyRadiance).multiplyScalar(scale);
-    const rodsFrom = Math.log10(NIGHT_VISION_LIGHT[0]);
-    lighting.night = THREE.MathUtils.smoothstep(rodsFrom - Math.log10(hourLight(measurement)), 0, rodsFrom - Math.log10(NIGHT_VISION_LIGHT[1]));
-    ground.material.color.setRGB(GROUND[0] * level, GROUND[1] * level, GROUND[2] * level);
+    clear.sky.fromArray(measurement.skyRadiance).multiplyScalar(scale);
+    clear.lux = hourLight(measurement);
+    clear.level = level;
 
     const previous = domeUniforms.uPanorama.value;
     domeUniforms.uPanorama.value = panorama;
     domeUniforms.uMirror.value = mirror;
     domeUniforms.uRotation.value = rotation;
     domeUniforms.uScale.value = scale;
-    domeUniforms.uRadianceCap.value = RADIANCE_CAP * luminance(lighting.skyAmbient.toArray());
+    domeUniforms.uRadianceCap.value = RADIANCE_CAP * luminance(clear.sky.toArray());
+    applyWeather();
+    previous?.dispose();
+
+    Object.assign(environment, { name: skyName, hour: hourName, panoramaBytes });
+    return skyName;
+  }
+
+  /**
+   * The weather over the sky: `cover` (0 clear to 1 overcast), the light
+   * that reaches the ground under it against a clear sky's (`light`), and
+   * the rain's `visibility` (metres; Infinity for none). Applied at once,
+   * the cube and the prefiltered map captured again (Weather, above).
+   */
+  function setWeather({ cover = 0, light = 1, visibility = Infinity } = {}) {
+    weather = { cover, light, visibility };
+    applyWeather();
+  }
+
+  /** The lighting of the hour (clear) under the weather; then the cube and the prefiltered map. */
+  function applyWeather() {
+    const { cover, light, visibility } = weather;
+    const sunSine = Math.max(lighting.sunDirection.y, 0);
+    // The clear hour's light on level ground, in the sky's units: the sky's
+    // (π times its mean radiance) and the sun's (sunIrradiance over π, the
+    // SKY_EXPOSURE convention). Under cloud all of it comes from the cloud.
+    const clearLight = Math.PI * luminance(clear.sky.toArray()) + luminance(clear.sun.toArray()) * sunSine / SKY_EXPOSURE;
+    // The cloud lets `light` of the hour's light through, seen by an eye adapted to it.
+    const lux = clear.lux * (cover > 0 ? 1 - cover + cover * light : 1);
+    const cloudLuminance = clearLight * adaptedLight(clear.lux * light) / adaptedLight(clear.lux) / Math.PI;
+    lighting.sunIrradiance.copy(clear.sun).multiplyScalar(1 - cover);
+    lighting.skyAmbient.copy(clear.sky).lerp(new THREE.Vector3(...OVERCAST_TINT).multiplyScalar(cloudLuminance), cover);
+    const weatherLevel = cover > 0 ? (Math.PI * luminance(lighting.skyAmbient.toArray()) + luminance(lighting.sunIrradiance.toArray()) * sunSine / SKY_EXPOSURE) / clearLight : 1;
+    const level = clear.level * weatherLevel;
+    const rodsFrom = Math.log10(NIGHT_VISION_LIGHT[0]);
+    lighting.night = THREE.MathUtils.smoothstep(rodsFrom - Math.log10(lux), 0, rodsFrom - Math.log10(NIGHT_VISION_LIGHT[1]));
+    ground.material.color.setRGB(GROUND[0] * level, GROUND[1] * level, GROUND[2] * level);
+    domeUniforms.uOvercast.value = cover;
+    domeUniforms.uSkyMean.value = luminance(clear.sky.toArray());
+    domeUniforms.uOvercastScale.value = cloudLuminance / Math.max(luminance(clear.sky.toArray()), 1e-9);
+    hazeUniforms.uHazeDensity.value = Number.isFinite(visibility) ? 3 / visibility : 0;
+    hazeUniforms.uHazeColor.value.copy(lighting.skyAmbient).multiplyScalar(HAZE_BRIGHTNESS);
 
     const previousAutoClear = renderer.autoClear;
     renderer.autoClear = true;
     for (const cubeCamera of cubeCameras) cubeCamera.update(renderer, captureScene);
     renderer.autoClear = previousAutoClear;
     envTarget = pmrem.fromCubemap(prefilterSource.texture, envTarget);
-    previous?.dispose();
-
-    Object.assign(environment, { envTexture: envTarget.texture, name: skyName, hour: hourName, level, targets: [cubeTarget, prefilterSource, envTarget], panoramaBytes });
-    return skyName;
+    Object.assign(environment, { envTexture: envTarget.texture, level, targets: [cubeTarget, prefilterSource, envTarget] });
   }
 
   await load(name, hour);

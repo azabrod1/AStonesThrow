@@ -6,8 +6,9 @@
 //      (Low power, below);
 //   3. evaluate the ambient wind waves at the frame's time (GPU, once per
 //      rendered frame; src/ambientWaves.js), the profiles of the rings that
-//      cross the pond (GPU, while any lives; src/rings.js) and the splash's
-//      sheets and columns (CPU);
+//      cross the pond (GPU, while any lives; src/rings.js), the rain's
+//      tile of raindrops' rings (GPU, while it rains; src/rain.js) and the
+//      splash's sheets and columns (CPU);
 //   4. while a splash lives, draw it into the water's mirror image (below);
 //   5. render what is under the surface (the lake bed or the pool's basin,
 //      submerged stones, bubbles) to a texture with depth, the stones,
@@ -16,7 +17,7 @@
 //   6. render the main scene (sky dome, water surface refracting pass 5 and
 //      reflecting the mirror image, the stones' cavities in it
 //      (src/cavity.js), foam specks riding the surface, stones above the
-//      surface) to an HDR texture with depth;
+//      surface, the rain's streaks and flecks) to an HDR texture with depth;
 //   7. draw the splash's water over it and tone-map to the canvas; with no
 //      water in the air, only the tone map (src/splash.js).
 // All simulation runs in world seconds scaled by the slow-motion factor.
@@ -116,8 +117,11 @@
 // ?water=pool|clear|lake|pond|murky the water (WATER_CLARITIES; setClarity);
 // ?wind=x,z sets the direction the wind blows toward in world XZ
 // (DEFAULT_WIND otherwise); ?windStrength=calm|breeze|windy the wind's
-// strength (WIND_STRENGTHS in src/ambientWaves.js; setWind); each otherwise
-// the one last chosen on this device, or lakeside's afternoon, lake and calm; ?paused=1
+// strength (WIND_STRENGTHS in src/ambientWaves.js; setWind);
+// ?weather=clear|light-rain|heavy-rain the weather (WEATHERS: the sky's cloud and
+// haze, src/sky.js, and the rain, src/rain.js; setWeather); each otherwise
+// the one last chosen on this device, or lakeside's afternoon, lake, calm
+// and clear; ?paused=1
 // starts with the clock stopped
 // (resume() starts it); ?quality=high|medium|low fixes a preset (QUALITY),
 // otherwise the quality calibrates itself from the frame rate (CALIBRATION),
@@ -127,6 +131,7 @@
 import * as THREE from 'three';
 import { SpectralWater } from './spectralWater.js';
 import { AmbientWaves, DEFAULT_WIND, WIND_STRENGTHS } from './ambientWaves.js';
+import { Rain } from './rain.js';
 import { Rings } from './rings.js';
 import { createEnvironment, SKY_NAMES, skyHours, resolveHour, nearestHour } from './sky.js';
 import { createWaterSurface } from './waterSurface.js';
@@ -156,15 +161,17 @@ import { createPool, holdInPool, POOL } from './pool.js';
 //   maxDpr        the cap on device pixels per CSS pixel;
 //   rings         the stones' rings drawn at once (src/rings.js): a newer one
 //                 makes the faintest fade out. Each costs every water pixel
-//                 its waves cover a lookup, and a pass a frame.
+//                 its waves cover a lookup, and a pass a frame;
+//   rainTexels    the rain's tile's texels per side (src/rain.js, 1 m): 512
+//                 resolves its rings' shortest crests, 256 blurs them a little.
 // Every target keeps its format on every preset, so a program drawn under the
 // loading veil (warmUp) meets no new pipeline state after a change of preset;
 // and every mesh takes 16-bit indices (at most 254 segments: Three.js keeps
 // the index 65535 for primitive restart).
 export const QUALITY = {
-  high: { grid: 512, meshSegments: 254, underScale: 1.0, fluidScale: 1.0, idleFrameRate: 0, maxDpr: 2.0, rings: 10 },
-  medium: { grid: 256, meshSegments: 160, underScale: 0.5, fluidScale: 0.5, idleFrameRate: 30, maxDpr: 2.0, rings: 8 },
-  low: { grid: 256, meshSegments: 128, underScale: 0.5, fluidScale: 0.5, idleFrameRate: 30, maxDpr: 1.5, rings: 6 },
+  high: { grid: 512, meshSegments: 254, underScale: 1.0, fluidScale: 1.0, idleFrameRate: 0, maxDpr: 2.0, rings: 10, rainTexels: 512 },
+  medium: { grid: 256, meshSegments: 160, underScale: 0.5, fluidScale: 0.5, idleFrameRate: 30, maxDpr: 2.0, rings: 8, rainTexels: 256 },
+  low: { grid: 256, meshSegments: 128, underScale: 0.5, fluidScale: 0.5, idleFrameRate: 30, maxDpr: 1.5, rings: 6, rainTexels: 256 },
 };
 export const PIXEL_BUDGET = 2.6e6;   // device pixels in the canvas, on every preset
 const QUALITY_ORDER = ['high', 'medium', 'low'];
@@ -241,6 +248,19 @@ const WIND_STORAGE_KEY = 'stone-pond-wind';   // the Wind setting's last choice 
 const WATER_STORAGE_KEY = 'stone-pond-water'; // the Water setting's
 const SKY_STORAGE_KEY = 'stone-pond-sky';     // the Sky setting's
 const TIME_STORAGE_KEY = 'stone-pond-time';   // the Time setting's: the local time ('hh:mm') of the hour last chosen
+const WEATHER_STORAGE_KEY = 'stone-pond-weather';   // the Weather setting's
+// The Weather setting: the cloud's cover and the light under it, against a
+// clear sky's (src/sky.js setWeather: overcast takes the sun and greys the
+// sky), the rain's visibility (its haze), the rain (src/rain.js) and how wet
+// the pool's deck goes. A light rain falls from a thin, bright overcast
+// (about a third of a clear day's light, 10 km to see), a downpour from a
+// dark one (an eighth, 1.5 km).
+const WEATHERS = {
+  clear: { cover: 0, light: 1, visibility: Infinity, rain: null, wet: 0 },
+  'light-rain': { cover: 1, light: 0.35, visibility: 10000, rain: 'light', wet: 0.5 },
+  'heavy-rain': { cover: 1, light: 0.12, visibility: 1500, rain: 'heavy', wet: 1 },
+};
+const RAIN_WIND = 3;   // m/s the rain drifts with the Breeze; the wind's strength scales it
 const SUN_BALANCE = [3.0, 2.85, 2.55];        // the sun's irradiance under the meadow sky; another sky's has its photo's colour (src/sky.js)
 // The water (the Water setting): its absorption, per metre, which dims the
 // light going down to the bed; its extinction, per metre, absorption plus
@@ -349,6 +369,10 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
   const windParameter = pageParameters.get('wind')?.split(',').map(Number);
   const windDirection = windParameter?.length === 2 && windParameter.every(Number.isFinite) && Math.hypot(...windParameter) > 0 ? windParameter : DEFAULT_WIND;
   const ambientWaves = new AmbientWaves(renderer, { windDirection, depth: POND_DEPTH });
+  // The rain (src/rain.js): its rings on the water, its streaks and flecks;
+  // none until the Weather brings it (applyWeather). The pool's deck wets.
+  const rain = new Rain(renderer, lighting, { texels: settings.rainTexels });
+  const wetDeck = { value: 0 };
   // The rings that cross the whole pond: the splash hands them its ring
   // sources through the solver it is given (water.rings), and the surface,
   // the floor and the foam specks draw them.
@@ -359,11 +383,11 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
   // the water is the pool's (setPooled). The bed the splash's holes and the
   // rocks rest on is the lake's (src/pondFloor.js), or the pool's floor,
   // whose walls hold the rocks in (holdInPool).
-  const pool = createPool(water, lighting, ambientWaves, environment, { rings });
+  const pool = createPool(water, lighting, ambientWaves, environment, { rings, haze: environment.hazeUniforms, wet: wetDeck });
   let pooled = false;
   const bedDepthAt = (x, z) => (pooled ? POOL.depth : floorDepthAt(x, z));
   water.floorDepthAt = bedDepthAt;
-  const surface = createWaterSurface(water, lighting, ambientWaves, { meshSegments: settings.meshSegments, rings, skyCube: environment.cubeTexture });
+  const surface = createWaterSurface(water, lighting, ambientWaves, { meshSegments: settings.meshSegments, rings, skyCube: environment.cubeTexture, rain, haze: environment.hazeUniforms });
   const splash = new SplashSystem({ environment, lighting, water, ambientWaves, surface });
   // The wind's strength: the page's ?windStrength, else the last choice here, else calm.
   const storedWind = storedChoice(WIND_STORAGE_KEY);
@@ -373,8 +397,14 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     windName = name;
     ambientWaves.setStrength(WIND_STRENGTHS[name]);
     water.setWindStrength(WIND_STRENGTHS[name]);
+    rain.setWind(windDirection, RAIN_WIND * WIND_STRENGTHS[name]);
   }
   applyWind(windName);
+  // The weather: the page's ?weather, else the last choice here, else clear;
+  // applied once the pond is built (applyWeather, after the warm-up).
+  const storedWeather = storedChoice(WEATHER_STORAGE_KEY);
+  const requestedWeather = pageParameters.get('weather');
+  let weatherName = Object.hasOwn(WEATHERS, requestedWeather ?? '') ? requestedWeather : Object.hasOwn(WEATHERS, storedWeather ?? '') ? storedWeather : 'clear';
   // The water's clarity: the page's ?water, else the last choice here, else pond.
   const storedWater = storedChoice(WATER_STORAGE_KEY);
   const requestedWater = pageParameters.get('water');
@@ -447,7 +477,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
   const sceneUnder = new THREE.Scene();
   sceneUnder.add(floor, splash.bubblePoints, sunUnder);
   const sceneMain = new THREE.Scene();
-  sceneMain.add(environment.sky, surface.inner, surface.outer, splash.cavityGroup, splash.foamSpecks.points, sun);
+  sceneMain.add(environment.sky, surface.inner, surface.outer, splash.cavityGroup, splash.foamSpecks.points, sun, rain.streaks, rain.flecks);
   // MIRROR_LAYER holds what the water mirrors: the sky dome, far shore
   // included, and while a splash lives its crowns, columns and drops. The
   // cavities are not on it: a hole lies below the mirror plane, so the water
@@ -663,6 +693,31 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     }).catch((error) => console.error(error));
     return skyLoading.then(() => environment.name);
   }
+  /**
+   * The weather by name (WEATHERS): the sky's cloud and haze at once, the
+   * deck's wet, and the rain, which falls once its ring's table has come.
+   */
+  function applyWeather(name) {
+    weatherName = name;
+    const weather = WEATHERS[name];
+    environment.setWeather(weather);
+    wetDeck.value = weather.wet;
+    applySky();
+    return rain.setIntensity(weather.rain).catch((error) => console.error(error));
+  }
+
+  // Where the eye looks at the water (world XZ): where its line of sight
+  // crosses the surface, at most FOCUS_REACH off, or under the eye when it
+  // looks away from the surface. The rain's flecks are laid about it.
+  const FOCUS_REACH = 30;
+  const focusDirection = new THREE.Vector3();
+  function viewFocus() {
+    camera.getWorldDirection(focusDirection);
+    const along = Math.abs(focusDirection.y) > 1e-3 ? -camera.position.y / focusDirection.y : -1;
+    const reach = along > 0 ? Math.min(along, FOCUS_REACH) : 0;
+    return [camera.position.x + focusDirection.x * reach, camera.position.z + focusDirection.z * reach];
+  }
+
   function applySky() {
     applyWaterColor();
     applySunLights();
@@ -1158,6 +1213,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     framesRendered++;
     camera.updateMatrixWorld();
     if (!skip.ambient) ambientWaves.update(simulationTime);
+    rain.update(simulationTime, camera, resolution, viewFocus());
     rings.update(simulationTime);
     // The splash's sheets and columns to this frame, for the mirror and the droplet passes.
     if (!skip.fluid) splash.prepareFrame();
@@ -1248,6 +1304,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     const parts = {
       solver: sum([water.stateA, water.stateB, water.fftA, water.fftB, water.heightTarget, water.foamA, water.foamB]),
       wind: sum([ambientWaves.spectrumTarget, ambientWaves.fftA, ambientWaves.fftB, ambientWaves.heightTarget]),
+      rain: renderTargetBytes(rain.tileTarget),
       rings: rings.bytes,
       scene: sum([underTarget, mainTarget, reflectionTarget]),
       splash: sum(Object.values(splash.targets)),
@@ -1271,6 +1328,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
       solverAsleep: water.asleep,
       rings: { live: rings.live, fading: rings.fading, limit: rings.liveLimit, passes: rings.passesRun, fetches: rings.fetchesRun },
       wind: windName,
+      rain: { weather: weatherName, falling: rain.on, texels: rain.texels },
       clarity: waterName,
       sky: environment.name,
       frameCapped,
@@ -1283,6 +1341,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     qualityName = name;
     settings = QUALITY[name];
     rings.setLiveLimit(settings.rings);
+    rain.setTexels(settings.rainTexels);
     water.resize(settings.grid);
     surface.setMeshSegments(settings.meshSegments);
     resize();
@@ -1379,7 +1438,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     const renderStart = performance.now();
     render();
     const renderEnd = performance.now();
-    if (splash.inMotion || rocks.some((rock) => rock.state !== 'rest')) lastActivity = now;
+    if (splash.inMotion || rain.on || rocks.some((rock) => rock.state !== 'rest')) lastActivity = now;
     profiler?.frame({ interval, simulateMilliseconds: renderStart - simulateStart, renderMilliseconds: renderEnd - renderStart, calls: renderer.info.render.calls, triangles: renderer.info.render.triangles });
   }
 
@@ -1428,9 +1487,11 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     let state = WARM_UP.seed;
     Math.random = () => { state = (state * 16807) % 2147483647; return (state - 1) / 2147483646; };
     marker.visible = arc.visible = true;   // the aim marker's programs too
+    rain.show(true);                       // and the rain's: its tile's pass, its streaks and flecks (none drawn: none set)
     const stone = throwAt(WARM_UP.x, WARM_UP.z, { radius: WARM_UP.radius, power: 'normal' });
     render();
     marker.visible = arc.visible = false;
+    rain.show(false);
     for (let step = 0; step < 180 && !rocks.some((rock) => rock.state !== 'air'); step++) simulate(1 / 60);
     let elapsed = 0;
     for (const [index, moment] of WARM_UP.moments.entries()) {
@@ -1454,6 +1515,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     warmUpReport.milliseconds = performance.now() - started;
   }
   warmUp();
+  await applyWeather(weatherName);   // a remembered rain falls before the veil lifts, not just after
 
   profiler = profiling ? new Profiler({
     applySkips(flags) {
@@ -1526,6 +1588,20 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
       return requestSky(skyRequest.place, name).then(() => environment.hour);
     },
     get hour() { return environment.hour; },
+    /**
+     * The weather by name (WEATHERS: clear, light-rain, heavy-rain), remembered
+     * on this device. The sky clouds over at once; the rain falls once its
+     * ring's table has come (the first time, about 0.6 MB). Resolves when
+     * it falls.
+     */
+    setWeather(name) {
+      if (!Object.hasOwn(WEATHERS, name)) return Promise.resolve(weatherName);
+      try { window.localStorage.setItem(WEATHER_STORAGE_KEY, name); } catch { /* storage refused: the choice lasts this visit */ }
+      return applyWeather(name).then(() => weatherName);
+    },
+    get weather() { return weatherName; },
+    /** Whether rain is falling (its ring's table has come). */
+    get raining() { return rain.on; },
     /** The shown place's hours, in the order of the day: { name, label, clock } (clock 'hh:mm', or undefined for a lone photograph). */
     get hours() { return skyHours(environment.name); },
     setTimeScale(scale) { timeScale = scale; },

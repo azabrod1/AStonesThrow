@@ -25,7 +25,9 @@
 // the half-float path that devices without EXT_color_buffer_float take.
 // --sky=name picks the sky's place (a key of SKIES in src/sky.js) and
 // --time=hour its hour (the place's anchor otherwise, never the time of day
-// last chosen: the harness's browser keeps no storage), and
+// last chosen: the harness's browser keeps no storage), --weather=
+// clear|light-rain|heavy-rain the weather (WEATHERS in src/main.js; the
+// rain waits for its ring's table before the first frame), and
 // --water=pool|clear|lake|pond|murky the water (WATER_CLARITIES in src/main.js;
 // pool puts the rocks in the pool, src/pool.js).
 // --wind=x:z sets the direction the wind blows toward in world XZ, and
@@ -76,6 +78,7 @@ const report = arg('report', '');
 const floats = arg('floats', '');
 const sky = arg('sky', '');
 const skyTime = arg('time', '');
+const weather = arg('weather', '');
 const waterClarity = arg('water', '');
 const wind = arg('wind', '');
 const power = arg('power', 'normal');
@@ -127,7 +130,7 @@ const problems = [];
 page.on('pageerror', (e) => problems.push(String(e)));
 page.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') problems.push(m.text()); });
 
-const url = `http://localhost:${port}/index.html?quality=${quality}&paused=1${keepUi ? '' : '&ui=0'}${floats ? `&floats=${floats}` : ''}${sky ? `&sky=${sky}` : ''}${skyTime ? `&time=${skyTime}` : ''}${waterClarity ? `&water=${waterClarity}` : ''}${wind ? `&wind=${wind.replace(':', ',')}` : ''}${windStrength ? `&windStrength=${windStrength}` : ''}`;
+const url = `http://localhost:${port}/index.html?quality=${quality}&paused=1${keepUi ? '' : '&ui=0'}${floats ? `&floats=${floats}` : ''}${sky ? `&sky=${sky}` : ''}${skyTime ? `&time=${skyTime}` : ''}${weather ? `&weather=${weather}` : ''}${waterClarity ? `&water=${waterClarity}` : ''}${wind ? `&wind=${wind.replace(':', ',')}` : ''}${windStrength ? `&windStrength=${windStrength}` : ''}`;
 console.log(`[shoot] ${url} -> ${outDir}`);
 await page.goto(url, { waitUntil: 'domcontentloaded' });
 try {
@@ -137,6 +140,7 @@ try {
   console.error(problems.join('\n'));
   await browser.close(); server.close(); process.exit(1);
 }
+if (weather && weather !== 'clear') await page.waitForFunction(() => window.__pond.raining, null, { timeout: 60000 });
 await page.evaluate(() => window.__pond.pause());
 await page.evaluate((name) => window.__pond.setDebugView(name), debugView);
 if (viewName) await page.evaluate((name) => window.__pond.showView(name, { glide: false }), viewName);

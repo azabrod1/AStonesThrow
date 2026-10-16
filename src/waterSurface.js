@@ -123,7 +123,7 @@ function poolPatchGeometry(water, segments, square) {
   return geometry;
 }
 
-export function createWaterSurface(water, lighting, ambientWaves, { meshSegments = Math.min(water.size, 512), rings = null, skyCube = null } = {}) {
+export function createWaterSurface(water, lighting, ambientWaves, { meshSegments = Math.min(water.size, 512), rings = null, skyCube = null, rain = null, haze = null } = {}) {
   const uniforms = {
     uHeight: { value: water.heightTexture },
     uFoam: { value: water.foamTexture },
@@ -155,6 +155,8 @@ export function createWaterSurface(water, lighting, ambientWaves, { meshSegments
     uAmbientUnresolved: { value: ambientWaves.unresolvedVariance },
     ...ambientWaves.uniforms(),
     ...(rings ? rings.uniforms() : {}),
+    ...(rain ? rain.uniforms() : { uRainOn: { value: 0 } }),
+    ...(haze ?? { uHazeColor: { value: new THREE.Vector3() }, uHazeDensity: { value: 0 } }),
   };
   // Two materials sharing every uniform object but uInner.
   const material = (inner) => new THREE.ShaderMaterial({

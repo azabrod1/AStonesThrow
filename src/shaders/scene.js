@@ -12,6 +12,20 @@
 // uniforms it declares come from AmbientWaves.uniforms() and Rings.uniforms()
 // and stay inactive in shaders that never call the functions using them.
 import { MAX_RINGS, PROFILE_TEXELS, PROFILE_MAPPING, RING_TEXTURE_UNITS } from '../rings.js';
+import { RAIN_RIPPLES } from './rain.js';
+
+// The rain's haze (src/sky.js setWeather): what lies d metres off fades
+// toward uHazeColor, the overcast's horizon, by 1 − exp(−uHazeDensity·d)
+// (uHazeDensity 3/visibility: a dark object at the visibility keeps 5% of its
+// contrast). The dome fades the same way, to the distance its land stands
+// at. With no rain the density is 0 and the colour passes untouched.
+export const HAZE = /* glsl */`
+uniform vec3 uHazeColor;
+uniform float uHazeDensity;
+vec3 withHaze(vec3 color, float distance) {
+  return uHazeDensity > 0.0 ? mix(color, uHazeColor, 1.0 - exp(-uHazeDensity * distance)) : color;
+}
+`;
 
 export const GLSL_COMMON = /* glsl */`
 #define PI 3.141592653589793
@@ -668,6 +682,8 @@ varying vec3 vCavity;       // rides the surface, open to the sky, climb to esca
 #endif
 ${GLSL_COMMON}
 ${FOAM_PATTERN}
+${RAIN_RIPPLES}
+${HAZE}
 
 // The slope variance of the ambient ripples that this pixel's lookup no
 // longer shows and the base level does, at full gust: interpolated by mip
@@ -759,6 +775,10 @@ void main() {
   vec2 surfaceSlope = vec2(hr - hl, hu - hd) / (2.0 * uCell) * vMask + ambientSlopeAtFullGust(vWorld.xz) * gust * ride;
   if (uRingCount > 0) surfaceSlope += ringSlope(vWorld.xz, acrossX, acrossY) * ride;
   float slopeVariance = subGridSpread * subGridSpread + ambientUnresolvedVariance(vWorld.xz) * gust * gust * ride;
+  if (uRainOn > 0.5) {
+    surfaceSlope += rainSlope(vWorld.xz) * ride;
+    slopeVariance += rainUnresolvedVariance(vWorld.xz) * ride;
+  }
   vec3 meshNormal = normalize(vNormalWorld);
   vec3 n = normalize(meshNormal + vec3(-surfaceSlope.x, 0.0, -surfaceSlope.y) * max(meshNormal.y, 0.0));
   float level = smoothstep(0.6, 0.9, meshNormal.y);   // 1 where the mesh lies as the surface does
@@ -767,6 +787,10 @@ void main() {
   vec2 slope = vec2(hr - hl, hu - hd) / (2.0 * uCell) * vMask + ambientSlopeAtFullGust(vWorld.xz) * gust;
   if (uRingCount > 0) slope += ringSlope(vWorld.xz, acrossX, acrossY);
   float slopeVariance = subGridSpread * subGridSpread + ambientUnresolvedVariance(vWorld.xz) * gust * gust;
+  if (uRainOn > 0.5) {
+    slope += rainSlope(vWorld.xz);
+    slopeVariance += rainUnresolvedVariance(vWorld.xz);
+  }
   vec3 n = normalize(vec3(-slope.x, 1.0, -slope.y));
 #endif
   vec3 v = toCamera / viewDist;
@@ -882,6 +906,7 @@ void main() {
     color = mix(color, foamColor, look.cover * look.opacity);
   }
 
+  color = withHaze(color, viewDist);
   gl_FragColor = vec4(min(color, vec3(1000.0)), 1.0);
 }
 `;
@@ -1197,6 +1222,7 @@ ${UNDER_FOG}
 ${LAKE_BED}
 ${FLOOR_PATTERN_TILE}
 ${FLOOR_SAND}
+${RAIN_RIPPLES}
 ${POOL_TILES}
 #define BED_STEPS 16
 #define BED_REACH 6.0        // metres along the mirrored ray
@@ -1230,6 +1256,7 @@ void main() {
   float gust = gustEnvelope(vWorld.xz, uGustTime);
   vec2 slope = vec2(hr - hl, hu - hd) / (2.0 * uCell) * vMask + ambientSlopeAtFullGust(vWorld.xz) * gust;
   if (uRingCount > 0) slope += ringSlope(vWorld.xz, acrossX, acrossY);
+  if (uRainOn > 0.5) slope += rainSlope(vWorld.xz);
 #ifdef CAVITY_MESH
   vec3 n = normalize(vNormalWorld);
 #else
@@ -1824,10 +1851,14 @@ uniform vec3 uSunDir;
 uniform vec3 uSunIrradiance;
 uniform vec3 uSkyAmbient;
 uniform vec4 uPool;     // the pool's corner (x, z), its side and its depth (m)
+uniform float uWet;     // how wet the rain has made it, 0 to 1 (src/main.js)
 varying vec3 vWorld;
 ${GLSL_COMMON}
 ${PHOTO_LAND}
 ${MIRROR_NEARNESS_OUTPUT}
+${HAZE}
+#define WET_STONE 0.62      // wet stone's albedo against dry (water in its pores)
+#define WET_GRASS 0.85
 #define SKY_LIGHT 1.4
 #define COPING_WIDTH 0.3
 #define COPING_ROUND 0.03
@@ -1856,13 +1887,14 @@ void main() {
   vec3 coping = COPING_COLOR * (0.92 + 0.12 * grain) * mix(0.72, 1.0, smoothstep(0.0, COPING_ROUND, outside));
   vec3 paver = PAVER_COLOR * (0.9 + 0.14 * grain) * (1.0 + (hash21(floor(cell)) - 0.5) * 0.12 * (1.0 - smoothstep(0.4, 1.2, max(width.x, width.y))));
   paver = mix(JOINT_COLOR, paver, paverCover(cell, width));
-  vec3 albedo = outside < COPING_WIDTH ? coping : paver;
+  vec3 albedo = (outside < COPING_WIDTH ? coping : paver) * mix(1.0, WET_STONE, uWet);
   float lawn = smoothstep(COPING_WIDTH + DECK_WIDTH, COPING_WIDTH + DECK_WIDTH + 0.08, outside);
-  vec3 grass = GRASS_COLOR * (1.0 + 0.6 * valueNoise(point * 2.3 + 5.0) - 0.3) * (0.8 + 0.4 * valueNoise(point * 13.0));
+  vec3 grass = GRASS_COLOR * (1.0 + 0.6 * valueNoise(point * 2.3 + 5.0) - 0.3) * (0.8 + 0.4 * valueNoise(point * 13.0)) * mix(1.0, WET_GRASS, uWet);
   vec3 color = mix(albedo, grass, lawn) * (uSunIrradiance * max(uSunDir.y, 0.0) + uSkyAmbient * SKY_LIGHT);
   vec3 toGround = vWorld - cameraPosition;
   float far = smoothstep(LAND_NEAR, LAND_FAR, length(toGround));
   if (far > 0.0) color = mix(color, photoLand(toGround.xz), far);
+  color = withHaze(color, length(toGround));
 #ifdef MIRROR_NEARNESS
   gl_FragColor = vec4(color, mirrorNearness(vWorld));
 #else

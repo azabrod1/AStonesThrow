@@ -534,6 +534,7 @@
     <button type="button" class="menu-tier" data-open="water"><b>Water</b><span class="menu-tier-value"></span><span class="menu-tier-chevron" aria-hidden="true">&rsaquo;</span></button>
     <button type="button" class="menu-tier" data-open="sky"><b>Sky</b><span class="menu-tier-value"></span><span class="menu-tier-chevron" aria-hidden="true">&rsaquo;</span></button>
     <button type="button" class="menu-tier" data-open="time"><b>Time of day</b><span class="menu-tier-value"></span><span class="menu-tier-chevron" aria-hidden="true">&rsaquo;</span></button>
+    <button type="button" class="menu-tier" data-open="weather"><b>Weather</b><span class="menu-tier-value"></span><span class="menu-tier-chevron" aria-hidden="true">&rsaquo;</span></button>
     <button type="button" class="menu-tier" data-open="wind"><b>Wind</b><span class="menu-tier-value"></span><span class="menu-tier-chevron" aria-hidden="true">&rsaquo;</span></button>
     <button type="button" class="menu-tier" data-open="quality"><b>Quality</b><span class="menu-tier-value"></span><span class="menu-tier-chevron" aria-hidden="true">&rsaquo;</span></button>
   </div>
@@ -585,6 +586,18 @@
       <input type="range" id="time" min="0" max="0" step="1" value="0" aria-labelledby="time-label" aria-describedby="time-note">
       <div class="time-ends" id="time-ends" aria-hidden="true"><span id="time-first"></span><span id="time-last"></span></div>
       <div class="menu-note" id="time-note" aria-live="polite"></div>
+    </div>
+  </div>
+  <div class="menu-page" data-page="weather" hidden>
+    <div class="menu-head"><button type="button" class="menu-back" aria-label="Back"><span aria-hidden="true">&lsaquo;</span></button><h3>Weather</h3></div>
+    <div class="menu-field">
+      <div class="menu-field-label" id="weather-label">Sky</div>
+      <div class="menu-seg" id="weather" role="radiogroup" aria-labelledby="weather-label" aria-describedby="weather-note">
+        <button type="button" role="radio" data-value="clear">Clear</button>
+        <button type="button" role="radio" data-value="light-rain">Light rain</button>
+        <button type="button" role="radio" data-value="heavy-rain">Heavy rain</button>
+      </div>
+      <div class="menu-note" id="weather-note" aria-live="polite"></div>
     </div>
   </div>
   <div class="menu-page" data-page="wind" hidden>
@@ -750,6 +763,11 @@
         medium: 'A coarser water grid, the view under the water and the splash at half resolution, and 30 frames a second while nothing moves.',
         high: 'The finest ripples, and everything at the screen\u2019s full resolution.',
       },
+      weather: {
+        clear: 'The sky as it was photographed.',
+        'light-rain': 'A bright overcast and a light rain: rings spreading on the water, a fleck where each drop lands, faint streaks falling.',
+        'heavy-rain': 'A dark sky and a downpour: the water hammered with rings and splashes, the far bank lost in the rain.',
+      },
       time: 'Each hour is a photograph of this place, taken from one spot through a day: the land stays where it is and the sun moves round it.',
       oneTime: 'This sky is a single photograph. Lakeside and Mesas were photographed through the day: pick one of them to change the hour.',
     };
@@ -768,6 +786,21 @@
       showView();   // the pool's views are told otherwise
     }
     const showWind = radioGroup(document.getElementById('wind'), (value) => { pond.setWind(value); updateWind(); });
+    // The weather: the sky clouds over at once; the first rain fetches its rings' table (about 0.6 MB).
+    const weatherNote = document.getElementById('weather-note');
+    let weatherChoice = null;
+    const showWeather = radioGroup(document.getElementById('weather'), (value) => {
+      weatherChoice = value;
+      showWeather(value);
+      settings.setValue('weather', label('weather', value));
+      if (value !== 'clear' && !pond.raining) weatherNote.textContent = 'The rain is coming\u2026';
+      pond.setWeather(value).then(() => { if (weatherChoice === value) updateWeather(); });
+    });
+    function updateWeather() {
+      showWeather(pond.weather);
+      settings.setValue('weather', label('weather', pond.weather));
+      weatherNote.textContent = NOTES.weather[pond.weather];
+    }
     function updateWind() {
       showWind(pond.wind);
       settings.setValue('wind', label('wind', pond.wind));
@@ -852,6 +885,7 @@
     followTouch(timeInput, chooseHour);
     showView();
     updateWater();
+    updateWeather();
     updateWind();
     showQuality();
     updateSky();

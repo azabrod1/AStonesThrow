@@ -1,6 +1,7 @@
 // Loads the published site (_site/, from npm run site) the way GitHub Pages
 // serves it, under the project path /AStonesThrow/, and checks that the pond
-// starts and that every request the page makes succeeds. Catches a file
+// starts, that rain falls once asked for (its files load only then) and that
+// every request the page makes succeeds. Catches a file
 // missing from SITE_FILES (tools/build-site.mjs) and a root-absolute path,
 // which works on localhost and 404s on Pages.
 //
@@ -68,6 +69,11 @@ page.on('pageerror', (error) => failures.push(`page error: ${error}`));
 await page.goto(`http://localhost:${port}${PAGES_PATH}`, { waitUntil: 'domcontentloaded' });
 let started = true;
 try { await page.waitForFunction(() => !!window.__pond, { timeout: 120000 }); } catch { started = false; }
+let rained = false;
+if (started) {
+  await page.evaluate(() => window.__pond.setWeather('heavy-rain'));
+  try { await page.waitForFunction(() => window.__pond.raining, null, { timeout: 60000 }); rained = true; } catch { rained = false; }
+}
 const veilMessage = await page.evaluate(() => document.querySelector('.veil .error')?.textContent ?? null);
 await browser.close();
 server.close();
@@ -75,5 +81,6 @@ server.close();
 console.log(`[site-check] ${loaded.length} requests under ${PAGES_PATH}: ${[...new Set(loaded.map((url) => url.split('/').slice(0, 3).join('/')))].join(', ')}`);
 if (veilMessage) failures.push(`the veil shows: ${veilMessage}`);
 if (!started) failures.push('the pond never started');
+else if (!rained) failures.push('the rain never fell');
 if (failures.length) { console.error('[site-check] FAIL'); for (const failure of failures) console.error(`  ${failure}`); process.exit(1); }
-console.log('[site-check] ok: the pond starts and every request succeeds');
+console.log('[site-check] ok: the pond starts, the rain falls and every request succeeds');

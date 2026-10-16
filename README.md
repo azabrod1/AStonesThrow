@@ -51,6 +51,12 @@ remembered on the device (but the view, which opens on the shore):
   its afternoon sun, Mesas its sunrise and moonrise. By night the eye sees
   as its rods do, in a moonlit blue. Another place takes its hour nearest the
   time of day last chosen; the other skies are one photograph each.
+- Weather: Clear (the default), Light rain or Heavy rain. Rain comes under
+  an overcast that hides the sun and greys the sky, with a haze that fades
+  the far shore; its drops ring the water, streak past the eye and throw up
+  flecks where they land, and the pool's deck goes dark with wet. A light
+  rain's rings are fine and far apart; a downpour hammers the whole surface.
+  Rain at night is dark: the cloud hides the moon.
 - Wind: Calm (the default, a still day), Breeze or Windy.
 - Quality: Auto, Low, Medium or High.
 Auto starts on High everywhere and steps down by itself if the idle
@@ -425,6 +431,35 @@ deep water's colour dims with the light. Below 10 lux the picture also
 turns towards what rods see, colourless and blue-shifted (Jensen et al.'s
 scotopic luminance, in the tone map), fully by 0.03 lux.
 
+**Rain** (`src/rain.js`, `src/shaders/rain.js`; the cloud and haze in
+`src/sky.js`). The Weather setting clouds the sky over: the sun's direct
+light goes, and the dome's luminance is evened out about its clear mean (to
+the power 0.4, so the sun's glow sinks and the shaded land lifts, as under a
+cloud deck), greyed a little blue and scaled to the cloud's brightness, the
+hour's whole clear-sky light times the share a rain cloud lets through (a
+third for light rain, an eighth for a downpour) as the adapted eye sees it.
+The rain's haze fades what lies d metres off by 1 − exp(−3d/visibility)
+(10 km and 1.5 km): the water by its distance, the dome by the distance a
+ray climbs out of a 1 km layer of rain, at most 400 m, where the photo's land
+stands. A raindrop's ring is worked out once by `tools/rain-probe.mjs`:
+the crater a 2 mm drop opens (3 mm deep, a Gaussian 2.5 mm wide) let go as
+linear capillary-gravity waves on deep water, with viscosity, summed by
+Hankel transform. Capillary waves are fast where short and gravity waves
+where long, so the ring is a train of crests, the short ones running ahead,
+closing up behind on the slowest waves (1.7 cm, 0.23 m/s), as rain's rings
+do on a pond. The table of its height and slope over radius and time is
+loaded as a half-float texture, and each frame one pass draws the rings of
+the moment's drops into a 1 m tile, each drop's ring scaled to its size as a
+capillary ring scales, f·η(r/f, t/f^1.5). The drops come from a schedule
+with no state, hashed from the clock and the tile's cells, so the harness
+renders the same rain every run. The water reads the tile twice, the second
+time turned and shifted, so the repeat does not show; far off, where the
+rings are finer than a pixel, what the mip levels average away comes back as
+roughness, from the rings' slope spectrum by Campbell's theorem (as the
+wind's ripples do). The falling drops are streaks, each the path it cuts in
+the eye's 1/30 s, slanted by the wind, in a 20 m box about the eye; where a
+drop lands near where the eye looks, a fleck of white rises and falls.
+
 **From under the water** (the Under view; `renderFromBelow` in `src/main.js`,
 `UNDER_FOG` and `WATER_UNDER_FRAGMENT` in `src/shaders/scene.js`). The water's
 own light, darker looking down and brighter looking up toward the surface,
@@ -489,8 +524,14 @@ farther out, so it rises into the view rather than filling its corner.
 ## Development
 
 - `npm test` runs `tools/fft-test.mjs`, `tools/wave-probe.mjs`,
-  `tools/foam-probe.mjs`, `tools/cavity-probe.mjs` and `tools/ring-probe.mjs`;
-  each exits with 1 if a check fails.
+  `tools/foam-probe.mjs`, `tools/cavity-probe.mjs`, `tools/ring-probe.mjs`
+  and `tools/rain-probe.mjs`; each exits with 1 if a check fails.
+- `node tools/rain-probe.mjs [--write]` works out a raindrop's ring on the
+  CPU and prints its timeline and slope spectrum, checking the sum starts
+  as the crater, the slowest waves go 0.23 m/s, the steepest crest runs at
+  about their group speed and the table's edge cuts nothing; `--write`
+  writes `assets/rain/ring.json` and `ring_profile.bin`, which the page
+  loads the first time it rains.
 - `node tools/fft-test.mjs` checks the splash solver's spectral passes on the
   CPU with the shaders' arithmetic: the FFT against a naive DFT, a splat's
   spectrum against its Gaussian, the Nyquist bins (splats at fractional
@@ -514,7 +555,8 @@ farther out, so it rises into the view rather than filling its corner.
   `src/` and `assets/`. A new file or folder loaded at run time outside those
   must be added to its list. `node tools/site-check.mjs`, after
   `npm run site`, serves `_site/` under `/AStonesThrow/` as Pages does and
-  checks that the pond starts and no request fails.
+  checks that the pond starts, rain falls once asked for (its files load only
+  then) and no request fails.
 - `node tools/foam-probe.mjs` runs the foam's bubble pattern on the CPU, with
   the constants read from the shader: each layer's median and spread and the
   bubbles' mean shade match what the shader fades them to, and at the home,
@@ -567,7 +609,8 @@ farther out, so it rises into the view rather than filling its corner.
   seed n + i),
   `--power=soft|normal|hard` (soft is a higher arc, so a steeper entry,
   about 30° from vertical), `--wind-strength=calm|breeze|windy` (the page's
-  own default is calm). With
+  own default is calm), `--weather=clear|light-rain|heavy-rain` (waits for
+  the rain's table before the first frame). With
   `--eval="window.__pond.setTimeScale(0.1)"` the frames are slow motion, 1/600 s
   of world time each, so `--times=0.07,0.0716667,…` are consecutive frames;
   the flight is stepped in slow frames too, so the first frame is at most
@@ -607,7 +650,10 @@ farther out, so it rises into the view rather than filling its corner.
   `?time=hour` (`--time=` for the harness) its hour, over the one nearest the
   time of day last chosen (the harness's browser keeps none: the place's
   anchor hour); `?water=clear|lake|pond|murky` (`--water=` for the harness) the
-  water's clarity, `WATER_CLARITIES` in `src/main.js`.
+  water's clarity, `WATER_CLARITIES` in `src/main.js`;
+  `?weather=clear|light-rain|heavy-rain` (`--weather=` for the harness) the
+  weather, `WEATHERS` in `src/main.js`, over the one last chosen on the
+  device.
 - `?view=shore|level|high|under` on the page (`--view=` for the harness) opens on
   one of the View setting's choices (`VIEWS` in `src/main.js`);
   `--orbit=azimuth:elevation:distance[:x:y:z]` stands the harness's camera on
@@ -692,7 +738,9 @@ farther out, so it rises into the view rather than filling its corner.
   water mesh, the canvas and every target's size; a change in the middle of
   a splash must keep the waves; the pool, switched to and back, compiles no
   program, draws only its own quads of the water mesh and keeps a throw's
-  ring only while its near field is hidden; and pausing and resuming twice
+  ring only while its near field is hidden; each weather's rain compiles no
+  program, a throw into a downpour and a change to Medium neither, the rain's
+  tile takes the preset's size, and a clear sky again stops it; and pausing and resuming twice
   in one tick must leave one frame loop. On a fake clock it checks that the watch after
   calibration steps down at 20 frames a second and that a still pond on
   Medium draws every other frame with its time keeping up; and that a large
@@ -714,9 +762,10 @@ farther out, so it rises into the view rather than filling its corner.
   width, every control is on the screen, the strip covers at most 30% of the
   height, the stone slider is 44 points tall (and most of the width in
   portrait) and every button 34, and that a tap or a drag anywhere along the
-  slider sets the stone; that the settings open with their six rows, the
+  slider sets the stone; that the settings open with their seven rows, the
   Time of day page's slider spans it and, tapped at its left end, loads the
-  first hour, and a lone photograph's page hides it; it saves each screen to
+  first hour, and a lone photograph's page hides it, and the Weather page's
+  choices set the weather; it saves each screen to
   `shots/controls-probe/`. The
   shoot harness and the other probes emulate a desktop browser, which ignores
   the viewport tag, so only this probe sees the page as a phone does.
@@ -725,13 +774,15 @@ farther out, so it rises into the view rather than filling its corner.
   draw at the current time scale), `setDebugView(name)`, `setFov(degrees)`,
   `lookAt(x, y, z)`, `resetView()`, `setWind(name)` (and `wind`: calm,
   breeze or windy, remembered on the device), `setSky(place)` and
-  `setHour(name)` (and `sky`, `hour`, and `hours`, the shown place's), `rings` (the live rings and
+  `setHour(name)` (and `sky`, `hour`, and `hours`, the shown place's),
+  `setWeather(name)` (and `weather`, and `raining`, once the rain's table
+  has come and it falls), `rings` (the live rings and
   their plans), and `budget`: what the preset built (the solver's grid, the
   mesh, the pixel ratio, every target's size, an estimate of the render
   targets' memory, the programs compiled and the warm-up's, whether the
   solver sleeps and the frame rate is capped, the rings drawn, how many
   are fading out and the preset's limit, their passes and the spectrum
-  fetches those made, the wind).
+  fetches those made, the wind, the weather and the rain's tile).
 
 Install the development dependencies with `npm install` (Three.js is only
 needed locally for the headless harness, which serves it instead of the CDN).

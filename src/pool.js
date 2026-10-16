@@ -108,7 +108,7 @@ function basinGeometry(pool, bottom, top, withFloor) {
  * the lighting's objects, the solver's grid sizes and the sky's cube, so
  * they follow a change of sky, water or quality.
  */
-export function createPool(water, lighting, ambientWaves, environment, { rings = null } = {}) {
+export function createPool(water, lighting, ambientWaves, environment, { rings = null, haze = null, wet = { value: 0 } } = {}) {
   const pool = water.poolSquare;
   const poolUniform = { value: new THREE.Vector4(pool.minX, pool.minZ, pool.size, POOL.depth) };
   const basinMaterial = new THREE.ShaderMaterial({
@@ -142,6 +142,8 @@ export function createPool(water, lighting, ambientWaves, environment, { rings =
       uSkyAmbient: { value: lighting.skyAmbient },
       uSkyCube: { value: environment.cubeTexture },
       uPool: poolUniform,
+      uWet: wet,
+      ...(haze ?? { uHazeColor: { value: new THREE.Vector3() }, uHazeDensity: { value: 0 } }),
     },
   });
   // The mirror's: the same uniforms, with the distance in alpha (the header).

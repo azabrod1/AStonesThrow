@@ -21,7 +21,10 @@
 //    no program (the warm-up drew both sceneries), its water mesh draws only
 //    the pool's quads, a throw into it compiles none and keeps one ring, the
 //    near field's (src/rings.js), which retires with it, and a change of
-//    preset in it keeps the pool's mesh. pause(), resume(), pause(),
+//    preset in it keeps the pool's mesh. Rain (src/rain.js): each weather in
+//    turn, with a throw in the downpour and a change of preset, compiles no
+//    program (the warm-up drew the rain's), and the tile takes the preset's
+//    size; clear again, nothing of the rain runs. pause(), resume(), pause(),
 //    resume() in one tick leave one frame loop: one render per
 //    requestAnimationFrame at most.
 // 2. The same page on a fake clock (performance.now and requestAnimationFrame
@@ -218,6 +221,24 @@ await page.evaluate(() => { window.__pond.setQuality('high'); window.__pond.setC
 const backOnLake = await page.evaluate(() => window.__pond.budget.programs);
 check(backOnLake === programsBeforePool, `back on the lake, still no new program (${backOnLake})`);
 await checkBuilt(phone, 'back on the lake');
+
+// The weather: rain compiles nothing, follows the preset's tile size, and goes when it clears.
+const programsBeforeRain = await page.evaluate(() => window.__pond.budget.programs);
+for (const weather of ['light-rain', 'heavy-rain']) {
+  await page.evaluate((name) => window.__pond.setWeather(name), weather);
+  await page.waitForFunction(() => window.__pond.raining, null, { timeout: 60000 });
+  await page.evaluate(() => window.__pond.advance(0.2));
+  const raining = await page.evaluate(() => ({ programs: window.__pond.budget.programs, weather: window.__pond.weather }));
+  check(raining.programs === programsBeforeRain && raining.weather === weather, `${weather} compiles no program (${raining.programs})`);
+}
+await page.evaluate(() => { window.__pond.throwAt(0, -1.4, { radius: 0.03 }); window.__pond.advance(0.6); window.__pond.setQuality('medium'); window.__pond.advance(0.1); });
+const rainMedium = await page.evaluate(() => ({ programs: window.__pond.budget.programs, rain: window.__pond.budget.rain }));
+check(rainMedium.programs === programsBeforeRain && rainMedium.rain.falling && rainMedium.rain.texels === 256, `a throw into the downpour and a change to medium compile no program (${rainMedium.programs}); the rain's tile is ${rainMedium.rain.texels}² on medium`);
+await page.evaluate(() => window.__pond.setQuality('high'));
+await page.evaluate(() => window.__pond.setWeather('clear'));
+const cleared = await page.evaluate(() => ({ raining: window.__pond.raining, programs: window.__pond.budget.programs }));
+check(!cleared.raining && cleared.programs === programsBeforeRain, `clear again: no rain falls, and no program was compiled (${cleared.programs})`);
+await checkBuilt(phone, 'after the rain');
 
 // pause, resume, pause, resume in one tick: one frame loop, so at most one render per requestAnimationFrame (high is never capped).
 const loops = await page.evaluate(() => new Promise((resolve) => {
