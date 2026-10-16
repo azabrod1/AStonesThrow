@@ -98,6 +98,7 @@
 // camera into the mirror's alpha (MIRROR_COMMON), so that the water can look
 // a near object's reflection up where it is rather than at infinity.
 import { GLSL_COMMON } from './scene.js';
+import { GALE_SURFACE } from './gale.js';
 
 // A drop's mean light (the header): this much of the sky's mean radiance and
 // of what is behind it.
@@ -134,9 +135,13 @@ varying vec2 vAxis;              // screen-space motion direction (view xy)
 varying vec4 vGlintPoints;       // reflected (xy) and refracted (zw) glint, view xy in drawn radii from the centre
 varying vec2 vGlintPowers;       // their radiance × pixel area over the sun's irradiance (E·P·ρ² / E)
 ${FRESNEL}
+${GALE_SURFACE}
 void main() {
   if (iRadius < uLeastRadius) { gl_Position = vec4(0.0, 0.0, 2.0, 1.0); return; }
-  vec4 viewCentre = viewMatrix * vec4(iPosition, 1.0);
+  // A drop flies over still water (src/splash.js); the gale lifts it with the surface under it.
+  vec3 centre = iPosition;
+  if (uGaleMetresPerUnit > 0.0) centre.y += galeLift(iPosition);
+  vec4 viewCentre = viewMatrix * vec4(centre, 1.0);
   float dist = max(-viewCentre.z, 0.05);
   float pixelRadius = iRadius * uProjScale / dist;
   float drawnPixelRadius = max(pixelRadius, uMinPixelRadius);
@@ -509,6 +514,7 @@ const MIRROR_COMMON = /* glsl */`
 #define MIRROR_NEARNESS_SCALE 4.0
 uniform samplerCube uEnvCube;
 uniform float uMirrorDistance;
+uniform float uMirrorLevel;    // the mirror's plane: the water's height under the splash (0 but under a gale, src/main.js)
 ${FRESNEL}
 vec3 worldFromView(vec3 viewVector) { return viewVector * mat3(viewMatrix); }
 vec4 mirrorNearness(float coverage, vec3 viewPoint) {
@@ -526,7 +532,7 @@ varying vec3 vViewRimTangent;
 varying float vAeration;
 ${MIRROR_COMMON}
 void main() {
-  if ((worldFromView(vViewPosition) + cameraPosition).y < 0.0) discard;
+  if ((worldFromView(vViewPosition) + cameraPosition).y < uMirrorLevel) discard;
   vec3 toViewer = normalize(-vViewPosition);
   vec3 normal = normalize(vViewNormal);
   if (dot(normal, toViewer) < 0.0) normal = -normal;
@@ -549,7 +555,7 @@ varying vec3 vViewPosition;
 varying vec3 vViewNormal;
 ${MIRROR_COMMON}
 void main() {
-  if ((worldFromView(vViewPosition) + cameraPosition).y < 0.0) discard;
+  if ((worldFromView(vViewPosition) + cameraPosition).y < uMirrorLevel) discard;
   vec3 toViewer = normalize(-vViewPosition);
   vec3 normal = normalize(vViewNormal);
   if (dot(normal, toViewer) < 0.0) normal = -normal;
@@ -582,7 +588,7 @@ ${CAPSULE}
 ${EXPOSURE}
 ${GLINT_FOOTPRINT}
 void main() {
-  if ((worldFromView(vViewCentre) + cameraPosition).y < 0.0) discard;
+  if ((worldFromView(vViewCentre) + cameraPosition).y < uMirrorLevel) discard;
   vec3 c = capsule(vQuad, vStretch);
   if (c.z > 1.0) discard;
   vec2 perpendicular = vec2(-vAxis.y, vAxis.x);

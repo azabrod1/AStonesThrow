@@ -5,7 +5,8 @@
 //   2. step the spectral water surface (GPU) and its foam, unless it sleeps
 //      (Low power, below);
 //   3. evaluate the ambient wind waves at the frame's time (GPU, once per
-//      rendered frame; src/ambientWaves.js), the profiles of the rings that
+//      rendered frame; src/ambientWaves.js), under a gale its waves and
+//      their foam (src/galeWaves.js), the profiles of the rings that
 //      cross the pond (GPU, while any lives; src/rings.js), the rain's
 //      tile of raindrops' rings (GPU, while it rains; src/rain.js) and the
 //      splash's sheets and columns (CPU);
@@ -17,7 +18,8 @@
 //   6. render the main scene (sky dome, water surface refracting pass 5 and
 //      reflecting the mirror image, the stones' cavities in it
 //      (src/cavity.js), foam specks riding the surface, stones above the
-//      surface, the rain's streaks and flecks) to an HDR texture with depth;
+//      surface, the rain's streaks and flecks, the gale's spray) to an HDR
+//      texture with depth;
 //   7. draw the splash's water over it and tone-map to the canvas; with no
 //      water in the air, only the tone map (src/splash.js).
 // All simulation runs in world seconds scaled by the slow-motion factor.
@@ -116,10 +118,12 @@
 // ?view=shore|level|high|under stands the camera at one of VIEWS (showView);
 // ?water=pool|clear|lake|pond|murky the water (WATER_CLARITIES; setClarity);
 // ?wind=x,z sets the direction the wind blows toward in world XZ
-// (DEFAULT_WIND otherwise); ?windStrength=calm|breeze|windy the wind's
-// strength (WIND_STRENGTHS in src/ambientWaves.js; setWind);
-// ?weather=clear|light-rain|heavy-rain the weather (WEATHERS: the sky's cloud and
-// haze, src/sky.js, and the rain, src/rain.js; setWeather); each otherwise
+// (DEFAULT_WIND otherwise); ?windStrength=calm|breeze|windy|gale the wind's
+// strength (WIND_STRENGTHS in src/ambientWaves.js, a gale's waves
+// GALE_STRENGTHS in src/galeWaves.js; setWind);
+// ?weather=clear|light-rain|heavy-rain|storm the weather (WEATHERS: the sky's cloud and
+// haze, src/sky.js, the rain, src/rain.js, and a storm's lightning,
+// src/lightning.js, and gale; setWeather); each otherwise
 // the one last chosen on this device, or lakeside's afternoon, lake, calm
 // and clear; ?paused=1
 // starts with the clock stopped
@@ -131,7 +135,9 @@
 import * as THREE from 'three';
 import { SpectralWater } from './spectralWater.js';
 import { AmbientWaves, DEFAULT_WIND, WIND_STRENGTHS } from './ambientWaves.js';
+import { GaleWaves, GALE_STRENGTHS } from './galeWaves.js';
 import { Rain } from './rain.js';
+import { lightningAt } from './lightning.js';
 import { Rings } from './rings.js';
 import { createEnvironment, SKY_NAMES, skyHours, resolveHour, nearestHour } from './sky.js';
 import { createWaterSurface } from './waterSurface.js';
@@ -254,12 +260,17 @@ const WEATHER_STORAGE_KEY = 'stone-pond-weather';   // the Weather setting's
 // sky), the rain's visibility (its haze), the rain (src/rain.js) and how wet
 // the pool's deck goes. A light rain falls from a thin, bright overcast
 // (about a third of a clear day's light, 10 km to see), a downpour from a
-// dark one (an eighth, 1.5 km).
+// dark one (an eighth, 1.5 km), a storm's from a darker one (a twentieth,
+// 800 m), with lightning (src/lightning.js) and a gale (`wind`: choosing it
+// sets the Wind setting too, unless the page's ?windStrength says).
 const WEATHERS = {
   clear: { cover: 0, light: 1, visibility: Infinity, rain: null, wet: 0 },
   'light-rain': { cover: 1, light: 0.35, visibility: 10000, rain: 'light', wet: 0.5 },
   'heavy-rain': { cover: 1, light: 0.12, visibility: 1500, rain: 'heavy', wet: 1 },
+  storm: { cover: 1, light: 0.05, visibility: 800, rain: 'heavy', wet: 1, lightning: true, wind: 'gale' },
 };
+const GALE_EYE_CLEARANCE = 0.45;  // m the eye keeps from the still water under a gale: its crests and troughs reach about 0.4
+const GALE_MIRROR_MARGIN = 0.1;   // m: the splash's mirror image under a gale is reckoned this much roomier (the waves under it are not level)
 const RAIN_WIND = 3;   // m/s the rain drifts with the Breeze; the wind's strength scales it
 const SUN_BALANCE = [3.0, 2.85, 2.55];        // the sun's irradiance under the meadow sky; another sky's has its photo's colour (src/sky.js)
 // The water (the Water setting): its absorption, per metre, which dims the
@@ -369,9 +380,16 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
   const windParameter = pageParameters.get('wind')?.split(',').map(Number);
   const windDirection = windParameter?.length === 2 && windParameter.every(Number.isFinite) && Math.hypot(...windParameter) > 0 ? windParameter : DEFAULT_WIND;
   const ambientWaves = new AmbientWaves(renderer, { windDirection, depth: POND_DEPTH });
+  // The gale's waves (src/galeWaves.js): their uniforms join the ripples'
+  // before any material spreads those in; they blow only under a gale, and
+  // never in the pool (applyGale).
+  const galeWaves = new GaleWaves(renderer, { windDirection, centre: water.centre, sharedWith: ambientWaves, lighting });
+  // The water's height at world (x, z) under the gale (its CPU sum), for the stones, the mirror and the eye.
+  const galeSample = { height: 0, slopeX: 0, slopeZ: 0 };
+  const galeSurfaceAt = (x, z) => galeWaves.sample(x, z, galeSample).height;
   // The rain (src/rain.js): its rings on the water, its streaks and flecks;
   // none until the Weather brings it (applyWeather). The pool's deck wets.
-  const rain = new Rain(renderer, lighting, { texels: settings.rainTexels });
+  const rain = new Rain(renderer, lighting, { texels: settings.rainTexels, gale: galeWaves.uniforms() });
   const wetDeck = { value: 0 };
   // The rings that cross the whole pond: the splash hands them its ring
   // sources through the solver it is given (water.rings), and the surface,
@@ -387,7 +405,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
   let pooled = false;
   const bedDepthAt = (x, z) => (pooled ? POOL.depth : floorDepthAt(x, z));
   water.floorDepthAt = bedDepthAt;
-  const surface = createWaterSurface(water, lighting, ambientWaves, { meshSegments: settings.meshSegments, rings, skyCube: environment.cubeTexture, rain, haze: environment.hazeUniforms });
+  const surface = createWaterSurface(water, lighting, ambientWaves, { meshSegments: settings.meshSegments, rings, skyCube: environment.cubeTexture, rain, haze: environment.hazeUniforms, gale: galeWaves });
   const splash = new SplashSystem({ environment, lighting, water, ambientWaves, surface });
   // The wind's strength: the page's ?windStrength, else the last choice here, else calm.
   const storedWind = storedChoice(WIND_STORAGE_KEY);
@@ -398,6 +416,14 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     ambientWaves.setStrength(WIND_STRENGTHS[name]);
     water.setWindStrength(WIND_STRENGTHS[name]);
     rain.setWind(windDirection, RAIN_WIND * WIND_STRENGTHS[name]);
+    galeWaves.setFoamVelocity(water.foamUniforms.uFoamVelocity.value);
+    applyGale();
+  }
+  /** The gale's waves, as the wind and the water have them: a pool's basin is too small to raise any. */
+  function applyGale() {
+    const strength = pooled ? 0 : GALE_STRENGTHS[windName] ?? 0;
+    galeWaves.setStrength(strength);
+    surface.setGale(strength > 0);
   }
   applyWind(windName);
   // The weather: the page's ?weather, else the last choice here, else clear;
@@ -405,12 +431,15 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
   const storedWeather = storedChoice(WEATHER_STORAGE_KEY);
   const requestedWeather = pageParameters.get('weather');
   let weatherName = Object.hasOwn(WEATHERS, requestedWeather ?? '') ? requestedWeather : Object.hasOwn(WEATHERS, storedWeather ?? '') ? storedWeather : 'clear';
+  // A storm brings its gale, unless the page's ?windStrength says otherwise.
+  if (WEATHERS[weatherName].wind && !Object.hasOwn(WIND_STRENGTHS, requestedWind ?? '')) applyWind(WEATHERS[weatherName].wind);
   // The water's clarity: the page's ?water, else the last choice here, else pond.
   const storedWater = storedChoice(WATER_STORAGE_KEY);
   const requestedWater = pageParameters.get('water');
   let waterName = Object.hasOwn(WATER_CLARITIES, requestedWater ?? '') ? requestedWater : Object.hasOwn(WATER_CLARITIES, storedWater ?? '') ? storedWater : DEFAULT_WATER;
   pooled = waterName === 'pool';
   water.setPool(pooled);
+  applyGale();
   function applyWater(name) {
     waterName = name;
     lighting.absorb.fromArray(WATER_CLARITIES[name].absorb);
@@ -422,6 +451,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     lighting.waterColor.fromArray(WATER_CLARITIES[waterName].color).multiplyScalar(environment.level);
   }
   applyWater(waterName);
+  galeWaves.setBed(floorDepthAt(water.centre[0], water.centre[1]));
   // Its view of the bed takes the absorption, set only now, and the bed's depth and albedo.
   splash.setBed({ depth: bedDepthAt(water.centre[0], water.centre[1]), albedo: pooled ? POOL.tileAlbedo : undefined });
 
@@ -445,10 +475,14 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
   const underBox = { minX: poolBox.minX + UNDER_GAP, maxX: poolBox.maxX - UNDER_GAP, minZ: poolBox.minZ + UNDER_GAP, maxZ: poolBox.maxZ - UNDER_GAP };
   const outsidePool = (x, z) => Math.max(Math.abs(x - (square.minX + square.size / 2)), Math.abs(z - (square.minZ + square.size / 2))) - square.size / 2;
   const eyeGroundAt = (x, z) => (pooled ? POOL.deck * THREE.MathUtils.smoothstep(outsidePool(x, z), -EYE_EDGE, 0) : groundHeightAt(x, z));
-  const aboveWater = { lowestAt: (x, z) => LOWEST_EYE + eyeGroundAt(x, z), highestAt: () => Infinity };
-  const underWater = { lowestAt: (x, z) => UNDER_GAP - (pooled ? POOL.depth : floorDepthAt(x, z)), highestAt: () => -UNDER_GAP, get box() { return pooled ? underBox : null; } };
+  // Under a gale the eye keeps GALE_EYE_CLEARANCE clear of the still water
+  // too, over and under it, so no crest or trough reaches it.
+  const galeClearance = () => (galeWaves.on ? GALE_EYE_CLEARANCE : 0);
+  const aboveWater = { lowestAt: (x, z) => LOWEST_EYE + Math.max(eyeGroundAt(x, z), galeClearance()), highestAt: () => Infinity };
+  const underWater = { lowestAt: (x, z) => UNDER_GAP - (pooled ? POOL.depth : floorDepthAt(x, z)), highestAt: () => -UNDER_GAP - galeClearance(), get box() { return pooled ? underBox : null; } };
   /** Where an orbit's eye may stand: under the water if its pivot is. */
   const eyeBounds = (target) => (target.pivotY < 0 ? underWater : aboveWater);
+  Object.assign(orbit, clampOrbit(orbit, eyeBounds(orbit)));   // the views stand within them, but under a gale
   const home = { ...orbitFacing(orbit), fov: 48 };
   const view = { ...home };
   // The thrower's hand stands beside and below the shore view's eye, wherever the camera is (handPosition).
@@ -477,7 +511,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
   const sceneUnder = new THREE.Scene();
   sceneUnder.add(floor, splash.bubblePoints, sunUnder);
   const sceneMain = new THREE.Scene();
-  sceneMain.add(environment.sky, surface.inner, surface.outer, splash.cavityGroup, splash.foamSpecks.points, sun, rain.streaks, rain.flecks);
+  sceneMain.add(environment.sky, surface.inner, surface.outer, splash.cavityGroup, splash.foamSpecks.points, sun, rain.streaks, rain.flecks, galeWaves.spray);
   // MIRROR_LAYER holds what the water mirrors: the sky dome, far shore
   // included, and while a splash lives its crowns, columns and drops. The
   // cavities are not on it: a hole lies below the mirror plane, so the water
@@ -567,18 +601,32 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
   const mirrorRotation = new THREE.Matrix4();
   const mirrorBox = new THREE.Box3();
   const mirrorCorner = new THREE.Vector3();
+  const mirrorShift = new THREE.Vector3();
   const splashRect = new THREE.Vector4();     // this frame's splash image in the reflection target (x, y, width, height; 0 wide: none)
   const mirroredRect = new THREE.Vector4();   // the last frame's
   const mirrorRegion = new THREE.Vector4();
   const nothingMirrored = [];
   let viewChanged = true;      // the mirror image is stale
+  // Under a gale the mirror is about the water's height under the latest
+  // splash (mirrorLevel, which the water's and the splash's mirror shaders
+  // share), so the splash's image stands on the waves where it stands; the
+  // sky's and the far shore's hardly move. On still water, 0.
+  const mirrorLevel = surface.uniforms.uMirrorLevel;
+  let mirrorPlacedAt = 0;      // the level the mirror camera was placed at
+  let lastImpact = null;       // { x, z } of the latest stone's entry
 
   function placeMirrorCamera() {
     camera.updateMatrixWorld();
+    const level = mirrorLevel.value;
+    mirrorPlacedAt = level;
+    reflectionClip.constant = -level;
     mirrorEye.setFromMatrixPosition(camera.matrixWorld);
     mirrorRotation.extractRotation(camera.matrixWorld);
+    // Mirrored about y = 0, then raised twice the level: about y = level.
     mirrorTarget.set(0, 0, -1).applyMatrix4(mirrorRotation).add(mirrorEye).negate().reflect(mirrorNormal).negate();
+    mirrorTarget.y += 2 * level;
     mirrorCamera.position.copy(mirrorEye).negate().reflect(mirrorNormal).negate();
+    mirrorCamera.position.y += 2 * level;
     mirrorCamera.up.set(0, 1, 0).applyMatrix4(mirrorRotation).reflect(mirrorNormal);
     mirrorCamera.lookAt(mirrorTarget);
     mirrorCamera.near = camera.near;
@@ -622,8 +670,10 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     splashRect.set(0, 0, 0, 0);
     if (objects.length === 0) return;
     splash.mirrorBounds(mirrorBox);
-    if (mirrorBox.isEmpty() || mirrorBox.max.y <= 0) return;   // only what stands above the water is mirrored
-    mirrorBox.min.y = Math.max(mirrorBox.min.y, 0);
+    // The splash is reckoned on still water and drawn lifted with the waves (galeLift): its image is about as much higher.
+    if (!mirrorBox.isEmpty() && mirrorLevel.value !== 0) { mirrorBox.translate(mirrorShift.set(0, mirrorLevel.value, 0)); mirrorBox.expandByScalar(GALE_MIRROR_MARGIN); }
+    if (mirrorBox.isEmpty() || mirrorBox.max.y <= mirrorLevel.value) return;   // only what stands above the water is mirrored
+    mirrorBox.min.y = Math.max(mirrorBox.min.y, mirrorLevel.value);
     let left = Infinity, right = -Infinity, bottom = Infinity, top = -Infinity;
     for (let corner = 0; corner < 8; corner++) {
       mirrorCorner.set(corner & 1 ? mirrorBox.max.x : mirrorBox.min.x, corner & 2 ? mirrorBox.max.y : mirrorBox.min.y, corner & 4 ? mirrorBox.max.z : mirrorBox.min.z);
@@ -644,6 +694,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
 
   function updateReflection() {
     const objects = skip.fluid || skip.mirror ? nothingMirrored : splash.mirrorObjects();
+    mirrorLevel.value = galeWaves.on && lastImpact && objects.length > 0 ? galeSurfaceAt(lastImpact.x, lastImpact.z) : 0;
+    if (Math.abs(mirrorLevel.value - mirrorPlacedAt) > 1e-4 && !viewChanged) placeMirrorCamera();   // the splash's region is drawn again below
     if (viewChanged) {
       placeMirrorCamera();
       drawMirror(null, objects);
@@ -701,9 +753,25 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     weatherName = name;
     const weather = WEATHERS[name];
     environment.setWeather(weather);
+    if (!weather.lightning) environment.setFlash(1);
     wetDeck.value = weather.wet;
     applySky();
     return rain.setIntensity(weather.rain).catch((error) => console.error(error));
+  }
+
+  // Lightning in a storm (src/lightning.js), each frame: the sky's light and
+  // a bolt on the dome; the mirror image is drawn again while it flashes.
+  const lightning = { flash: 1, bolt: { bearing: 0, top: 0, brightness: 0, seed: 0 } };
+  let flashing = false;
+  function updateLightning(time) {
+    if (!WEATHERS[weatherName].lightning) return;
+    lightningAt(time, lightning);
+    const lit = lightning.flash > 1.001 || lightning.bolt.brightness > 0;
+    if (lit || flashing) {
+      environment.setFlash(lightning.flash, lightning.bolt);
+      viewChanged = true;   // the mirror holds the sky: drawn again, and once more as the flash ends
+    }
+    flashing = lit;
   }
 
   // Where the eye looks at the water (world XZ): where its line of sight
@@ -854,7 +922,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     if (!Object.hasOwn(VIEWS, name)) return;
     if (gliding) { glideTo(viewsNow()[name], name); return; }
     glide = null;
-    placeOrbit(viewsNow()[name]);
+    placeOrbit(clampOrbit(viewsNow()[name], eyeBounds(viewsNow()[name])));
     Object.assign(home, orbitFacing(orbit), { fov: frameFov() });
     setView(home);
   }
@@ -1009,7 +1077,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     if (!hit) { marker.visible = false; arc.visible = false; return; }
     marker.visible = true;
     marker.scale.setScalar(1);
-    marker.position.set(hit.x, 0.004, hit.z);
+    marker.position.set(hit.x, 0.004 + (galeWaves.on ? galeSurfaceAt(hit.x, hit.z) : 0), hit.z);
     const hand = handPosition();
     const { velocity, flightTime } = throwVelocity(hand, hit);
     for (let i = 0; i < 25; i++) {
@@ -1039,7 +1107,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
   function showFinger(point) {
     arc.visible = false;
     marker.visible = Boolean(point);
-    if (point) { marker.scale.setScalar(0.45); marker.position.set(point.x, 0.004, point.z); }
+    if (point) { marker.scale.setScalar(0.45); marker.position.set(point.x, 0.004 + (galeWaves.on ? galeSurfaceAt(point.x, point.z) : 0), point.z); }
   }
 
   /** Dip the finger in under the client point, if it is over the water. */
@@ -1190,9 +1258,9 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     const h = dt / steps;
     for (let s = 0; s < steps; s++) {
       for (const rock of rocks) {
-        const impact = rock.update(h, bedDepthAt);
+        const impact = rock.update(h, bedDepthAt, galeWaves.on ? galeSurfaceAt : null);
         if (pooled) holdInPool(rock, pool.square);
-        if (impact) splash.impact(impact, water);
+        if (impact) { splash.impact(impact, water); lastImpact = { x: impact.x, z: impact.z }; }
       }
       splash.update(h, water);
       simulationTime += h;
@@ -1213,11 +1281,14 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     framesRendered++;
     camera.updateMatrixWorld();
     if (!skip.ambient) ambientWaves.update(simulationTime);
+    galeWaves.update(simulationTime);   // nothing with no gale
+    galeWaves.updateView(simulationTime, camera, resolution, viewFocus());
+    updateLightning(simulationTime);
     rain.update(simulationTime, camera, resolution, viewFocus());
     rings.update(simulationTime);
     // The splash's sheets and columns to this frame, for the mirror and the droplet passes.
     if (!skip.fluid) splash.prepareFrame();
-    const fromBelow = camera.position.y < 0;
+    const fromBelow = camera.position.y < (galeWaves.on ? galeSurfaceAt(camera.position.x, camera.position.z) : 0);
     if (!fromBelow) updateReflection();   // from below no mirror is needed; a change of view keeps it marked stale until the eye surfaces
     surface.update({ underTarget, reflectionTarget, reflectionMatrix, mirrorRect: splashRect, stonesUnder: rocks.some((rock) => rock.state !== 'air'), resolution, camera, time: simulationTime });
     splash.prepareScene();   // the stones' cavities, and the patch dipping under them
@@ -1304,6 +1375,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     const parts = {
       solver: sum([water.stateA, water.stateB, water.fftA, water.fftB, water.heightTarget, water.foamA, water.foamB]),
       wind: sum([ambientWaves.spectrumTarget, ambientWaves.fftA, ambientWaves.fftB, ambientWaves.heightTarget]),
+      gale: sum([galeWaves.spectrumTarget, galeWaves.fftA, galeWaves.fftB, galeWaves.displacementTarget, galeWaves.derivativeTarget]),
       rain: renderTargetBytes(rain.tileTarget),
       rings: rings.bytes,
       scene: sum([underTarget, mainTarget, reflectionTarget]),
@@ -1328,6 +1400,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
       solverAsleep: water.asleep,
       rings: { live: rings.live, fading: rings.fading, limit: rings.liveLimit, passes: rings.passesRun, fetches: rings.fetchesRun },
       wind: windName,
+      gale: { blowing: galeWaves.on, sheetTriangles: surface.sheetTriangles },
       rain: { weather: weatherName, falling: rain.on, texels: rain.texels },
       clarity: waterName,
       sky: environment.name,
@@ -1466,6 +1539,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     pooled = asPool;
     clearPond();
     water.setPool(asPool);
+    applyGale();
     showScenery(asPool);
     splash.setBed({ depth: bedDepthAt(water.centre[0], water.centre[1]), albedo: asPool ? POOL.tileAlbedo : undefined });
     glide = null;
@@ -1488,8 +1562,10 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     Math.random = () => { state = (state * 16807) % 2147483647; return (state - 1) / 2147483646; };
     marker.visible = arc.visible = true;   // the aim marker's programs too
     rain.show(true);                       // and the rain's: its tile's pass, its streaks and flecks (none drawn: none set)
+    const galeWarmUp = galeWaves.warmUp();   // and the gale's passes and spray (its FFT's program is the ripples')
     const stone = throwAt(WARM_UP.x, WARM_UP.z, { radius: WARM_UP.radius, power: 'normal' });
     render();
+    galeWarmUp.done();
     marker.visible = arc.visible = false;
     rain.show(false);
     for (let step = 0; step < 180 && !rocks.some((rock) => rock.state !== 'air'); step++) simulate(1 / 60);
@@ -1544,6 +1620,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     setWind(name) {
       if (!Object.hasOwn(WIND_STRENGTHS, name)) return;
       applyWind(name);
+      moveEye({ ...orbit });   // a gale's eye stands clear of its waves (galeClearance)
       try { window.localStorage.setItem(WIND_STORAGE_KEY, name); } catch { /* storage refused: the choice lasts this visit */ }
     },
     get wind() { return windName; },
@@ -1597,6 +1674,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     setWeather(name) {
       if (!Object.hasOwn(WEATHERS, name)) return Promise.resolve(weatherName);
       try { window.localStorage.setItem(WEATHER_STORAGE_KEY, name); } catch { /* storage refused: the choice lasts this visit */ }
+      if (WEATHERS[name].wind) this.setWind(WEATHERS[name].wind);
       return applyWeather(name).then(() => weatherName);
     },
     get weather() { return weatherName; },
@@ -1707,6 +1785,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     lighting,
     water,
     ambientWaves,
+    galeWaves,
     rings,
     splash,
     surface,

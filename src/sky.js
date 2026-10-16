@@ -106,6 +106,16 @@
 // at most LAND_DISTANCE, where the photo's land stands. A clear sky leaves
 // everything as it was.
 //
+// Lightning (setFlash; src/lightning.js says when and how bright): a flash
+// multiplies the dome's light, the scene's ambient sky and the haze's colour
+// by its level, each frame, from what the weather set (the cube and the
+// prefiltered map are not captured again: the drops and the stones miss
+// it); a bolt is drawn on the dome (boltLight in DOME_FRAGMENT), a jagged
+// line from its top's elevation, where the cloud's base is, to the horizon,
+// a few octaves of straight-segment noise wide, as bright as the bolt asks
+// against the cloud, and faded where the photo is darker than its sky, where
+// its land stands in front of the bolt.
+//
 // Switching. load(place, hour) fetches the photo and its measurements, then
 // in one frame swaps the dome's texture and uniforms, fills lighting's sun
 // and sky vectors in place, captures the cube and the prefiltered map again
@@ -296,10 +306,39 @@ uniform float uOvercastScale;  // the overcast dome's brightness against the cle
 uniform vec3 uOvercastTint;    // the cloud's colour, at unit luminance
 uniform vec3 uHazeColor;       // the rain's haze (HAZE in src/shaders/scene.js)
 uniform float uHazeDensity;
+uniform float uFlash;          // the sky's light under lightning, against its own (1 with none)
+uniform vec4 uBolt;            // a bolt: its bearing (radians from −Z toward +X), its top's elevation, its brightness against the cloud (0: none), a seed
 varying vec3 vDirection;
 #define OVERCAST_FLATTEN 0.6   // the luminance's power about the mean that cloud takes away: the sun and its glow sink, the shade lifts
 #define HAZE_LAYER 1000.0      // metres: the rain's depth, which a ray climbing out of it crosses
 #define LAND_DISTANCE 400.0    // metres: where the photo's land is taken to stand (its near trees and its far shore alike)
+#define BOLT_WIDTH 0.0012      // radians: a bolt's core
+#define BOLT_GLOW 0.015        // radians: the rain it lights about it
+#define BOLT_GLOW_SHARE 0.04
+float boltHash(float point) { return fract(sin(point * 127.1) * 43758.5453); }
+// Noise of straight segments between random points: a jagged line.
+float boltNoise(float point) {
+  float cell = floor(point);
+  return mix(boltHash(cell), boltHash(cell + 1.0), point - cell) - 0.5;
+}
+// The bolt's light in a direction, against the cloud's mean; land is 1 where the photo shows land.
+float boltLight(vec3 direction, float land) {
+  float elevation = asin(clamp(direction.y, -1.0, 1.0));
+  if (elevation < 0.0 || elevation > uBolt.y) return 0.0;
+  float along = elevation / uBolt.y;   // 0 at the ground, 1 at the cloud
+  float wander = 0.0, amplitude = 0.25 * uBolt.y, frequency = 4.0;
+  for (int octave = 0; octave < 5; octave++) {
+    wander += amplitude * boltNoise(along * frequency + uBolt.w + float(octave) * 17.3);
+    amplitude *= 0.5;
+    frequency *= 2.2;
+  }
+  float bearing = atan(direction.x, -direction.z);
+  float offset = mod(bearing - uBolt.x - wander + PI, 2.0 * PI) - PI;
+  offset *= cos(elevation);
+  float core = exp(-pow(offset / BOLT_WIDTH, 2.0));
+  float glow = BOLT_GLOW_SHARE * exp(-pow(offset / BOLT_GLOW, 2.0));
+  return uBolt.z * (core + glow) * (1.0 - land) * smoothstep(1.0, 0.85, along);
+}
 void main() {
   vec3 direction = normalize(vDirection);
   float azimuth = atan(direction.z, direction.x * uMirror) + uRotation;
@@ -307,11 +346,13 @@ void main() {
   vec3 radiance = texture2D(uPanorama, panoramaUv).rgb * uScale;
   float brightest = max(radiance.r, max(radiance.g, radiance.b));
   radiance *= min(1.0, uRadianceCap / max(brightest, 1e-6));
+  float photoLevel = max(dot(radiance, vec3(0.2126, 0.7152, 0.0722)), 1e-6);
   if (uOvercast > 0.0) {
-    float level = max(dot(radiance, vec3(0.2126, 0.7152, 0.0722)), 1e-6);
-    vec3 grey = level * pow(level / uSkyMean, -OVERCAST_FLATTEN) * uOvercastTint;
+    vec3 grey = photoLevel * pow(photoLevel / uSkyMean, -OVERCAST_FLATTEN) * uOvercastTint;
     radiance = mix(radiance, grey, uOvercast) * mix(1.0, uOvercastScale, uOvercast);
   }
+  radiance *= uFlash;
+  if (uBolt.z > 0.0) radiance += boltLight(direction, 1.0 - smoothstep(0.4, 0.8, photoLevel / uSkyMean)) * uSkyMean * mix(1.0, uOvercastScale, uOvercast) * vec3(0.85, 0.9, 1.0);
   if (uHazeDensity > 0.0) radiance = mix(radiance, uHazeColor, 1.0 - exp(-uHazeDensity * min(HAZE_LAYER / max(direction.y, 1e-4), LAND_DISTANCE)));
   gl_FragColor = vec4(radiance, 1.0);
 }
@@ -349,6 +390,8 @@ export async function createEnvironment(renderer, { name, hour, sunAzimuth, sunB
         uSkyMean: { value: 1 },
         uOvercastScale: { value: 1 },
         uOvercastTint: { value: new THREE.Vector3(...OVERCAST_TINT) },
+        uFlash: { value: 1 },
+        uBolt: { value: new THREE.Vector4() },
         ...hazeUniforms,
       },
       side: THREE.BackSide,
@@ -395,7 +438,7 @@ export async function createEnvironment(renderer, { name, hour, sunAzimuth, sunB
   const balance = await measurementOf(SKIES[BALANCE_SKY].hours.afternoon.file);
   const balanceLuminance = luminance(sunBalance.toArray());
 
-  const environment = { sky, cubeTexture: cubeTarget.texture, envTexture: null, name: null, hour: null, level: 1, hazeUniforms, targets: [], panoramaBytes: 0, load, setWeather };
+  const environment = { sky, cubeTexture: cubeTarget.texture, envTexture: null, name: null, hour: null, level: 1, hazeUniforms, targets: [], panoramaBytes: 0, load, setWeather, setFlash };
   // The hour's light under a clear sky (load), which the weather covers (applyWeather).
   const clear = { sun: new THREE.Vector3(), sky: new THREE.Vector3(), lux: 1, level: 1 };
   let weather = { cover: 0, light: 1, visibility: Infinity };
@@ -513,6 +556,27 @@ export async function createEnvironment(renderer, { name, hour, sunAzimuth, sunB
     renderer.autoClear = previousAutoClear;
     envTarget = pmrem.fromCubemap(prefilterSource.texture, envTarget);
     Object.assign(environment, { envTexture: envTarget.texture, level, targets: [cubeTarget, prefilterSource, envTarget] });
+    unlit.ambient.copy(lighting.skyAmbient);
+    unlit.haze.copy(hazeUniforms.uHazeColor.value);
+    setFlash(flash.level, flash.bolt);
+  }
+
+  // What the weather set, before a flash multiplies it (setFlash).
+  const unlit = { ambient: new THREE.Vector3(), haze: new THREE.Vector3() };
+  const flash = { level: 1, bolt: null };
+  /**
+   * Lightning (src/lightning.js): the sky's light times `level` (1 for none),
+   * and a bolt ({ bearing, top, brightness, seed }; null or a brightness of 0
+   * for none) drawn on the dome. Each frame; nothing is captured again.
+   */
+  function setFlash(level, bolt = null) {
+    flash.level = level;
+    flash.bolt = bolt;
+    domeUniforms.uFlash.value = level;
+    lighting.skyAmbient.copy(unlit.ambient).multiplyScalar(level);
+    hazeUniforms.uHazeColor.value.copy(unlit.haze).multiplyScalar(level);
+    if (bolt && bolt.brightness > 0) domeUniforms.uBolt.value.set(bolt.bearing, bolt.top, bolt.brightness, bolt.seed);
+    else domeUniforms.uBolt.value.z = 0;
   }
 
   await load(name, hour);

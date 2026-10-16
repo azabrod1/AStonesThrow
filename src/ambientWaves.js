@@ -87,8 +87,9 @@ export const AMBIENT_WAVES = {
 export const DEFAULT_WIND = [0.45, -0.9];
 // The Wind control's strengths, against the field drawn at rmsSlope (the
 // Breeze, the look the pond had before the control): the factor on the
-// ripples' height and slope. Calm is the default (src/main.js).
-export const WIND_STRENGTHS = { calm: 0.3, breeze: 1, windy: 1.8 };
+// ripples' height and slope. Calm is the default (src/main.js). A Gale also
+// raises the gale's waves (src/galeWaves.js), and its ripples ride on them.
+export const WIND_STRENGTHS = { calm: 0.3, breeze: 1, windy: 1.8, gale: 4 };
 const HEIGHT_TEXTURE_UNITS = 1000;   // the height texture holds millimetres
 
 const GRAVITY = 9.81;

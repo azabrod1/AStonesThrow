@@ -3,6 +3,7 @@
 // water's lookup of that tile (RAIN_RIPPLES), the falling streaks
 // (STREAK_VERTEX, STREAK_FRAGMENT) and the flecks a drop throws up where it
 // lands (FLECK_VERTEX, FLECK_FRAGMENT). src/rain.js says what each is.
+import { GALE_SURFACE } from './gale.js';
 
 // The schedule. The tile is cut into uRainCells² cells of uRainCell metres;
 // each cell holds uRainSlots drops at once, and each slot lands a drop every
@@ -198,6 +199,7 @@ void main() {
 // cut by the area it really covers, as the foam specks are.
 export const FLECK_VERTEX = /* glsl */`
 ${RAIN_DROPS}
+${GALE_SURFACE}
 attribute vec3 aSchedule;       // the cell (x, z) in the tile, the slot
 attribute vec3 aRepeat;         // the tile's offset from the focus's tile (x, z), the reading (0 or 1)
 uniform vec2 uFocusTile[2];     // the tile the focus lies in, for each reading
@@ -221,6 +223,7 @@ void main() {
   vec2 world = (reading == 0 ? inTile : RAIN_TURN_BACK * (inTile - RAIN_SHIFT)) * uTileSize;
   float along = drop.age / life;
   float height = uFleckHeight * drop.size * 4.0 * along * (1.0 - along);
+  if (uGaleMetresPerUnit > 0.0) height += galeHeight(world);   // on the gale's waves
   vec4 viewPosition = viewMatrix * vec4(world.x, height, world.y, 1.0);
   float pixels = uFleckSize * drop.size * uProjScale / max(-viewPosition.z, 1e-3);
   float drawn = max(pixels, uMinPixels);

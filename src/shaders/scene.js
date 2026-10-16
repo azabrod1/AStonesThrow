@@ -13,6 +13,7 @@
 // and stay inactive in shaders that never call the functions using them.
 import { MAX_RINGS, PROFILE_TEXELS, PROFILE_MAPPING, RING_TEXTURE_UNITS } from '../rings.js';
 import { RAIN_RIPPLES } from './rain.js';
+import { GALE_SURFACE } from './gale.js';
 
 // The rain's haze (src/sky.js setWeather): what lies d metres off fades
 // toward uHazeColor, the overcast's horizon, by 1 − exp(−uHazeDensity·d)
@@ -107,6 +108,39 @@ vec2 ambientSlopeAtFullGust(vec2 worldXZ) {
 // than a texel, so it needs no blur of its own.
 float ambientLaplacian(vec2 worldXZ) {
   return texture2D(uAmbientHeight, worldXZ / uAmbientTileSize).a * uAmbientMetresPerUnit * gustEnvelope(worldXZ, uGustTime);
+}
+
+${GALE_SURFACE}
+// How much of the sideways move a rest position takes (above).
+float galeSideways(vec2 restXZ) {
+  return smoothstep(GALE_SIDEWAYS_FROM, GALE_SIDEWAYS_TO, length(restXZ - uGaleCentre));
+}
+
+// Where the gale moves the still surface's point at restXZ: (Dx, h, Dz) in
+// metres, read at mip level lod (a vertex reads the waves no shorter than
+// its mesh can draw).
+vec3 galeMove(vec2 restXZ, float lod) {
+  vec4 field = textureLod(uGaleDisplacement, galeUv(restXZ), lod) * uGaleMetresPerUnit;
+  float sideways = galeSideways(restXZ);
+  return vec3(field.y * sideways, field.x, field.z * sideways);
+}
+
+// The moved surface's normal at restXZ, as a slope (−n.x/n.y, −n.z/n.y),
+// read at the pixel's mip level: the tangents of the moved surface,
+// (1 + ∂Dx/∂x, ∂h/∂x, ∂Dz/∂x) and (∂Dx/∂z, ∂h/∂z, 1 + ∂Dz/∂z), crossed, the
+// sideways parts scaled as the move is. And the Jacobian of the whole move,
+// whether drawn sideways or not: under 1 where the water crowds toward a
+// crest, toward 0 where the crest breaks.
+vec2 galeSlope(vec2 restXZ, out float jacobian) {
+  vec2 uv = galeUv(restXZ);
+  vec4 derivatives = texture2D(uGaleDerivatives, uv) * uGaleMetresPerUnit;
+  float crossTerm = texture2D(uGaleDisplacement, uv).a * uGaleMetresPerUnit;
+  jacobian = (1.0 + derivatives.z) * (1.0 + derivatives.w) - crossTerm * crossTerm;
+  float sideways = galeSideways(restXZ);
+  vec3 alongX = vec3(1.0 + sideways * derivatives.z, derivatives.x, sideways * crossTerm);
+  vec3 alongZ = vec3(sideways * crossTerm, derivatives.y, 1.0 + sideways * derivatives.w);
+  vec3 normal = cross(alongZ, alongX);
+  return -normal.xz / max(normal.y, 0.05);
 }
 
 // Rings (src/rings.js): each live ring's radial profile is a layer of
@@ -351,7 +385,7 @@ export const FOAM_PATTERN = /* glsl */`
 #define FOAM_FINE_SPREAD 0.6
 #define FOAM_UNION_MEDIAN 0.26
 #define FOAM_UNION_SPREAD 0.74
-#define FOAM_CLUMP_SPREAD 0.29             // of the clump noise less 0.5, whose median is 0
+#define FOAM_CLUMP_SPREAD 0.29             // of the clump noise less 0.5, whose median is 0 (the ragged noise's too)
 #define FOAM_FADED_EDGE 0.5                // the share of a faded layer's spread that widens the edge
 // Below this map value no pattern can reach the threshold.
 #define FOAM_PRESENT (FOAM_MID * exp(-(FOAM_LACE_WEIGHT + FOAM_BUBBLE_WEIGHT * FOAM_BUBBLE_CLAMP + 0.5 * (FOAM_RAGGED + FOAM_CLUMP)) / FOAM_LOG_SCALE))
@@ -523,12 +557,16 @@ FoamLook foamLook(vec2 position, vec2 acrossX, vec2 acrossY, float foam, vec2 fo
     clump = (valueNoiseWithGradient(position * FOAM_CLUMP_FREQUENCY + 57.3, clumpSlope) - 0.5) * (1.0 - clumpFade);
     gradient += FOAM_CLUMP * FOAM_CLUMP_FREQUENCY * (1.0 - clumpFade) * clumpSlope;
   }
-  float density = FOAM_LOG_SCALE * log(foam / FOAM_MID) + FOAM_RAGGED * (valueNoise(position * FOAM_RAGGED_FREQUENCY + 31.7) - 0.5) + FOAM_CLUMP * clump;
+  // The ragged outline fades too, where its lumps are finer than a pixel
+  // (far whitecaps, src/galeWaves.js; a splash's foam is never that far).
+  float raggedFade = smoothstep(FOAM_FADE_START, FOAM_FADE_END, footprint * FOAM_RAGGED_FREQUENCY);
+  float ragged = raggedFade < 1.0 ? (valueNoise(position * FOAM_RAGGED_FREQUENCY + 31.7) - 0.5) * (1.0 - raggedFade) : 0.0;
+  float density = FOAM_LOG_SCALE * log(foam / FOAM_MID) + FOAM_RAGGED * ragged + FOAM_CLUMP * clump;
   float value = FOAM_LACE_WEIGHT * lace + FOAM_BUBBLE_WEIGHT * bubble + density;
   float changeAcrossPixel = abs(dot(gradient, acrossX)) + abs(dot(gradient, acrossY)) + FOAM_LOG_SCALE * (abs(foamChange.x) + abs(foamChange.y)) / foam;
   float spreadOfFaded = FOAM_LACE_WEIGHT * FOAM_LACE_SPREAD * laceFade
     + FOAM_BUBBLE_WEIGHT * (FOAM_FINE_SPREAD * fineFade * (1.0 - coarseFade) + FOAM_UNION_SPREAD * coarseFade)
-    + FOAM_CLUMP * FOAM_CLUMP_SPREAD * clumpFade;
+    + FOAM_CLUMP * FOAM_CLUMP_SPREAD * clumpFade + FOAM_RAGGED * FOAM_CLUMP_SPREAD * raggedFade;
   float width = 0.5 * changeAcrossPixel + FOAM_FADED_EDGE * spreadOfFaded + 1e-3;
 
   FoamLook look;
@@ -575,7 +613,11 @@ FoamLook foamLook(vec2 position, vec2 acrossX, vec2 acrossY, float foam, vec2 fo
 // millimetre or less by the time it gets there, are far below a pixel; the
 // sheet is four quads, which could not carry a ring anyway). Shading takes
 // the slope of all three everywhere: the splash's inside the patch, the
-// ambient's and the rings' over all the water, outer sheet included.
+// ambient's and the rings' over all the water, outer sheet included. Under a
+// gale (src/galeWaves.js) both the patch and the sheet then move by its
+// waves, unmasked, read at the point's rest position (vRest, where every
+// other field is laid) and as smooth as the mesh is coarse; the shading
+// takes its moved surface's normal, its roughness and its whitecaps.
 //
 // Two variants of the same source, chosen by a #define, serve the cavity a
 // stone opens (src/cavity.js); without either, the shaders compile to what
@@ -600,6 +642,7 @@ uniform float uDomainSize;
 uniform float uTexelOffset;
 uniform float uInner;
 uniform float uMeshCell;       // the inner patch's vertex spacing (m): the rings are read that smooth
+uniform float uSheetSpacing;   // the outer sheet's vertex spacing per metre out from the patch's centre (src/waterSurface.js)
 #ifdef CAVITY_PUSH
 uniform int uCavityCount;
 uniform vec4 uCavityMouths[CAVITY_PUSH];   // centre x and z, the circle's radius squared
@@ -614,6 +657,7 @@ varying vec3 vWorld;
 varying vec2 vDomainUv;
 varying float vMask;
 varying float vViewZ;
+varying vec2 vRest;            // where the point lies on still water (the gale moves it from there)
 ${GLSL_COMMON}
 void main() {
   vec3 world = (modelMatrix * vec4(position, 1.0)).xyz;
@@ -627,12 +671,27 @@ void main() {
   float height = uInner > 0.5 ? texture2D(uHeight, domainUv).r + ambientHeight(world.xz) : 0.0;
   if (uInner > 0.5 && uRingCount > 0) height += ringHeight(world.xz, uMeshCell);
   world.y += height * mask;
+  vRest = world.xz;
+#ifdef CAVITY_MESH
+  // The cavity is built on still water (src/cavity.js); the gale lifts it with the column.
+  if (uGaleMetresPerUnit > 0.0) world.y += galeLift((modelMatrix * vec4(position, 1.0)).xyz);
+#else
+  // The gale moves the water (the cavity's mesh is lifted whole, src/cavity.js),
+  // read as smooth as the mesh is coarse: the patch at the base level, the
+  // sheet's vertices, sparser the farther out, at the level of their spacing.
+  if (uGaleMetresPerUnit > 0.0) {
+    vec2 fromCentre = abs(world.xz - uGaleCentre);
+    float spacing = uInner > 0.5 ? uMeshCell : uSheetSpacing * max(fromCentre.x, fromCentre.y);
+    world += galeMove(world.xz, max(log2(spacing * uGaleTexels / uGaleTileSize) + 0.5, 0.0));
+  }
+#endif
 #ifdef CAVITY_PUSH
   for (int index = 0; index < CAVITY_PUSH; index++) {
     if (index >= uCavityCount) break;
     vec2 fromMouth = world.xz - uCavityMouths[index].xy;
     if (dot(fromMouth, fromMouth) < uCavityMouths[index].z) {
-      world = vec3(world.x + uCavityShifts[index].x, uCavityShifts[index].y, world.z + uCavityShifts[index].z);
+      vec3 still = vec3(world.x + uCavityShifts[index].x, uCavityShifts[index].y, world.z + uCavityShifts[index].z);
+      world = vec3(still.x, still.y + (uGaleMetresPerUnit > 0.0 ? galeLift(still) : 0.0), still.z);
       mask = 0.0;
     }
   }
@@ -655,6 +714,7 @@ uniform sampler2D uReflection;    // the sky dome seen through a mirrored camera
 uniform mat4 uReflectionMatrix;   // world -> reflection texture coordinates
 uniform vec4 uMirrorNear;         // the splash's image in the mirror, uv corners (x0, y0, x1, y1); empty (x0 > x1) when none
 uniform vec2 uMirrorSize;         // the mirror image's pixels
+uniform float uMirrorLevel;       // the height it mirrors about: the water's under the splash (0 but under a gale, src/main.js)
 uniform sampler2D uUnderColor;
 uniform sampler2D uUnderDepth;
 uniform float uStonesUnder;       // 1 while a stone is under the water (src/main.js), else 0
@@ -671,10 +731,12 @@ uniform vec3 uExtinction;      // per metre: absorption plus scattering (lightin
 uniform vec3 uWaterColor;      // the radiance of water too deep to see through (lighting.waterColor)
 uniform float uRoughness;        // sub-grid roughness: a slope spread of uRoughness² (rms, both axes)
 uniform float uAmbientUnresolved[AMBIENT_LEVELS];   // slope variance each mip level of the ambient waves loses
+uniform float uGaleUnresolved[GALE_LEVELS];         // and of the gale's (src/galeWaves.js)
 varying vec3 vWorld;
 varying vec2 vDomainUv;
 varying float vMask;
 varying float vViewZ;
+varying vec2 vRest;            // where the point lies on still water (WATER_VERTEX)
 #ifdef CAVITY_MESH
 #define CAVITY_DARKEST 0.1          // the hole's light where it sees no sky, against the open water's
 varying vec3 vNormalWorld;
@@ -696,6 +758,43 @@ float ambientUnresolvedVariance(vec2 worldXZ) {
   float level = clamp(0.5 * log2(max(max(dot(acrossX, acrossX), dot(acrossY, acrossY)), 1e-8)), 0.0, float(AMBIENT_LEVELS - 1) - 0.001);
   int lower = int(level);
   return mix(uAmbientUnresolved[lower], uAmbientUnresolved[lower + 1], level - float(lower));
+}
+
+// The wind's streaks under a gale: the whitecaps' raft (src/galeWaves.js)
+// gathered into windrows, lines along the wind GALE_STREAK_SPACING apart
+// across it, up to GALE_STREAK_WIDTH of that wide (narrowing and widening
+// along it), wavering over GALE_STREAK_WAVER along it and broken into
+// lengths, as Langmuir cells sweep the foam the
+// whitecaps leave. Returned is the raft's gain there: GALE_STREAK_GAIN on a
+// line, GALE_STREAK_LEFT between them. A line finer than the pixel (its
+// footprint across the wind, from acrossX and acrossY) fades to its mean.
+#define GALE_STREAK_SPACING 0.9
+#define GALE_STREAK_WIDTH 0.1
+#define GALE_STREAK_WAVER 7.0
+#define GALE_STREAK_GAIN 2.0
+#define GALE_STREAK_LEFT 0.6
+float galeStreaks(vec2 restXZ, vec2 acrossX, vec2 acrossY) {
+  vec2 across = vec2(-uWindDirection.y, uWindDirection.x);
+  float along = dot(restXZ, uWindDirection);
+  float coordinate = dot(restXZ, across) / GALE_STREAK_SPACING;
+  coordinate += 2.5 * (valueNoise(vec2(along / GALE_STREAK_WAVER, coordinate * 0.25)) - 0.5);
+  float pixel = (abs(dot(acrossX, across)) + abs(dot(acrossY, across))) / GALE_STREAK_SPACING;
+  float fromLine = abs(fract(coordinate) - 0.5);
+  float width = GALE_STREAK_WIDTH * (0.3 + 0.7 * valueNoise(vec2(floor(coordinate) * 3.71 + 9.2, along / 1.3)));
+  float line = 1.0 - smoothstep(0.5 * width - 0.5 * pixel, 0.5 * width + 0.5 * pixel, fromLine);
+  line = mix(line, width, smoothstep(width, 1.0, pixel));
+  float lengths = smoothstep(0.5, 0.8, valueNoise(vec2(floor(coordinate) * 7.13, along / 1.5)));
+  return mix(GALE_STREAK_LEFT, GALE_STREAK_GAIN, line * lengths);
+}
+
+// The same for the gale's waves, at the rest position its lookups are at.
+float galeUnresolvedVariance(vec2 restXZ) {
+  vec2 texelPosition = restXZ / uGaleTileSize * uGaleTexels;
+  vec2 acrossX = dFdx(texelPosition);
+  vec2 acrossY = dFdy(texelPosition);
+  float level = clamp(0.5 * log2(max(max(dot(acrossX, acrossX), dot(acrossY, acrossY)), 1e-8)), 0.0, float(GALE_LEVELS - 1) - 0.001);
+  int lower = int(level);
+  return mix(uGaleUnresolved[lower], uGaleUnresolved[lower + 1], level - float(lower));
 }
 
 // The refraction's lookup, landing on what is less than this share of the
@@ -726,7 +825,7 @@ vec3 nearReflection(vec2 rippleUv, vec3 ray) {
   bool rippleNear = all(greaterThanEqual(rippleUv, uMirrorNear.xy)) && all(lessThanEqual(rippleUv, uMirrorNear.zw));
   if (!flatNear && !rippleNear) return texture2D(uReflection, rippleLookup).rgb;
   vec2 flatTexel = clamp((floor(flatUv * uMirrorSize) + 0.5) / uMirrorSize, vec2(0.002), vec2(0.998));
-  vec3 mirrorEye = vec3(cameraPosition.x, -cameraPosition.y, cameraPosition.z);
+  vec3 mirrorEye = vec3(cameraPosition.x, 2.0 * uMirrorLevel - cameraPosition.y, cameraPosition.z);
   float surfaceDistance = distance(vWorld, mirrorEye);
   if (flatNear) {
     vec4 atFlat = texture2D(uReflection, flatTexel);
@@ -779,6 +878,11 @@ void main() {
     surfaceSlope += rainSlope(vWorld.xz) * ride;
     slopeVariance += rainUnresolvedVariance(vWorld.xz) * ride;
   }
+  float galeJacobian = 1.0;
+  if (uGaleMetresPerUnit > 0.0) {
+    surfaceSlope += galeSlope(vRest, galeJacobian) * ride;
+    slopeVariance += galeUnresolvedVariance(vRest) * ride;
+  }
   vec3 meshNormal = normalize(vNormalWorld);
   vec3 n = normalize(meshNormal + vec3(-surfaceSlope.x, 0.0, -surfaceSlope.y) * max(meshNormal.y, 0.0));
   float level = smoothstep(0.6, 0.9, meshNormal.y);   // 1 where the mesh lies as the surface does
@@ -790,6 +894,11 @@ void main() {
   if (uRainOn > 0.5) {
     slope += rainSlope(vWorld.xz);
     slopeVariance += rainUnresolvedVariance(vWorld.xz);
+  }
+  float galeJacobian = 1.0;
+  if (uGaleMetresPerUnit > 0.0) {
+    slope += galeSlope(vRest, galeJacobian);
+    slopeVariance += galeUnresolvedVariance(vRest);
   }
   vec3 n = normalize(vec3(-slope.x, 1.0, -slope.y));
 #endif
@@ -862,7 +971,7 @@ void main() {
   reflectedRay.y = max(reflectedRay.y, 0.001);
   vec4 reflectCoord = uReflectionMatrix * vec4(reflectedRay, 0.0);
   vec4 stillRayCoord = uReflectionMatrix * vec4(-v.x, v.y, -v.z, 0.0);
-  vec4 stillPointCoord = uReflectionMatrix * vec4(vWorld.x, 0.0, vWorld.z, 1.0);
+  vec4 stillPointCoord = uReflectionMatrix * vec4(vWorld.x, uMirrorLevel, vWorld.z, 1.0);
   vec2 reflectUv = stillPointCoord.xy / max(stillPointCoord.w, 1e-4) + reflectCoord.xy / max(reflectCoord.w, 1e-4) - stillRayCoord.xy / max(stillRayCoord.w, 1e-4);
   vec3 reflected;
   if (uMirrorNear.x > uMirrorNear.z) reflected = texture2D(uReflection, clamp(reflectUv, vec2(0.002), vec2(0.998))).rgb;
@@ -893,6 +1002,14 @@ void main() {
   // there is foam.
   vec2 foamKinds = texture2D(uFoam, vDomainUv).rg;
   float foam = foamKinds.r * vMask;
+  // The gale's whitecaps and the foam they leave, over all the water, the
+  // raft gathered into the wind's streaks.
+  if (uGaleMetresPerUnit > 0.0) {
+    vec2 whitecaps = texture2D(uGaleFoam, vRest / uGaleTileSize + 0.5 / uGaleFoamTexels).rg;
+    float raft = whitecaps.g * galeStreaks(vRest, acrossX, acrossY);
+    foamKinds = foamKinds * vMask + vec2(whitecaps.r - whitecaps.g + raft, raft);
+    foam = foamKinds.r;
+  }
 #ifdef CAVITY_MESH
   foam *= level;   // the pattern lies on the water's plane: none down the walls
 #endif
@@ -1213,6 +1330,7 @@ varying vec3 vWorld;
 varying vec2 vDomainUv;
 varying float vMask;
 varying float vViewZ;
+varying vec2 vRest;            // where the point lies on still water (WATER_VERTEX)
 #ifdef CAVITY_MESH
 varying vec3 vNormalWorld;
 varying vec3 vCavity;       // rides the surface, open to the sky, climb to escape (WATER_VERTEX)
@@ -1257,6 +1375,10 @@ void main() {
   vec2 slope = vec2(hr - hl, hu - hd) / (2.0 * uCell) * vMask + ambientSlopeAtFullGust(vWorld.xz) * gust;
   if (uRingCount > 0) slope += ringSlope(vWorld.xz, acrossX, acrossY);
   if (uRainOn > 0.5) slope += rainSlope(vWorld.xz);
+  if (uGaleMetresPerUnit > 0.0) {
+    float galeJacobian;
+    slope += galeSlope(vRest, galeJacobian);
+  }
 #ifdef CAVITY_MESH
   vec3 n = normalize(vNormalWorld);
 #else
@@ -1541,14 +1663,16 @@ void main() {
 // through (the camera's ray from the surface down to its depth) is as long as
 // a floor point's at that depth along the same ray, so a stone on the floor
 // is absorbed as the floor around it is. The floor itself is still drawn on
-// the straight line. A point above the water stays where it is.
+// the straight line. A point above the water stays where it is. Under a
+// gale (src/galeWaves.js) the surface it is seen through is the level one at
+// the height of the water above it, `level`.
 export const SEEN_THROUGH_WATER = /* glsl */`
 #define SEEN_WATER_INDEX 1.333
-vec3 seenThroughWater(vec3 world) {
-  float depth = -world.y;
+vec3 seenThroughWater(vec3 world, float level) {
+  float depth = level - world.y;
   vec2 fromEye = world.xz - cameraPosition.xz;
   float reach = length(fromEye);
-  float height = cameraPosition.y;
+  float height = cameraPosition.y - level;
   if (depth <= 0.0 || reach < 1e-5 || height <= 0.0) return world;
   float crossing = reach * height / (height + depth);
   for (int step = 0; step < 5; step++) {
@@ -1570,8 +1694,12 @@ uniform float uProjScale;
 uniform vec3 uExtinction;
 varying float vFade;
 ${SEEN_THROUGH_WATER}
+${GALE_SURFACE}
 void main() {
-  vec4 viewPosition = viewMatrix * vec4(seenThroughWater((modelMatrix * vec4(position, 1.0)).xyz), 1.0);
+  // A bubble rises through still water (src/splash.js); the gale lifts it with the column.
+  vec3 world = (modelMatrix * vec4(position, 1.0)).xyz;
+  if (uGaleMetresPerUnit > 0.0) world.y += galeLift(world);
+  vec4 viewPosition = viewMatrix * vec4(seenThroughWater(world, uGaleMetresPerUnit > 0.0 ? galeHeight(world.xz) : 0.0), 1.0);
   float dist = max(-viewPosition.z, 0.05);
   gl_PointSize = max(aSize * 2.0 * uProjScale / dist, 1.5);
   vFade = clamp(aSize * 2.0 * uProjScale / dist / 1.5, 0.3, 1.0);
@@ -1652,6 +1780,7 @@ void main() {
   float surface = texture2D(uHeight, domainUv).r + ambientHeight(place);
   if (uRingCount > 0) surface += ringHeight(place, SPECK_RING_SPACING);
   float height = surface * mask;
+  if (uGaleMetresPerUnit > 0.0) height += galeHeight(place);
   float outsideRaft = 1.0 - smoothstep(SPECK_RAFT_LOW, SPECK_RAFT_HIGH, texture2D(uFoam, domainUv).r * mask);
   vec4 viewPosition = viewMatrix * vec4(place.x, height + SPECK_LIFT, place.y, 1.0);
   float fadeOut = 1.0 - smoothstep(life - SPECK_FADE, life, age);
@@ -1728,7 +1857,7 @@ void main() {
   vec3 world = (modelMatrix * vec4(position, 1.0)).xyz;
   vWorld = world;
   vNormal = normal;
-  gl_Position = projectionMatrix * viewMatrix * vec4(seenThroughWater(world), 1.0);
+  gl_Position = projectionMatrix * viewMatrix * vec4(seenThroughWater(world, 0.0), 1.0);
 }
 `;
 

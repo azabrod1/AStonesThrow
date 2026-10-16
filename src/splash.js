@@ -80,6 +80,15 @@
 // and speed (at most MAX_LANDING_CROWNS alive; the rest, and smaller drops,
 // kick up a few droplets instead).
 //
+// Under a gale (src/galeWaves.js) the water moves, and the splash does not
+// know it: every part of it is computed on still water, its surface at 0,
+// and moved as it is drawn (galeLift in src/shaders/gale.js), what is in the
+// air (sheets, columns, drops) by the height of the water under it, what is
+// under the water (the cavity, bubbles) as the column stretches between the
+// fixed bed and the moving surface. A drop lands where it meets still
+// water's 0, which is where it meets the moving surface as drawn. The stone
+// is moved the same way (src/rock.js).
+//
 // Foam specks (src/foamSpecks.js) are the grain of the foam a splash leaves:
 // a patch where the crown's base was once it has gone, one where the jet
 // falls back, a few where each drop lands (by its size) and one where each
@@ -658,7 +667,11 @@ export class SplashSystem {
     geometry.instanceCount = 0;
     this.particleGeometry = geometry;
 
+    // The gale lifts everything the splash draws with the surface under it
+    // (galeLift, src/shaders/scene.js); its uniforms are among the ripples'.
+    const galeUniforms = () => Object.fromEntries(Object.entries(ambientWaves.uniforms()).filter(([name]) => name.startsWith('uGale')));
     const particleUniforms = () => ({
+      ...galeUniforms(),
       uProjScale: { value: 1000 },
       uMinPixelRadius: { value: 1.0 },
       uHazeRadius: { value: 0.5 },
@@ -698,7 +711,7 @@ export class SplashSystem {
     this.sheetDepthMaterial = new THREE.ShaderMaterial({ vertexShader: SHEET_VERTEX, fragmentShader: SHEET_DEPTH_FRAGMENT, uniforms: { ...sheetUniforms(), ...rideUniforms() }, depthTest: true, depthWrite: true, side: THREE.DoubleSide });
     this.sheetThicknessMaterial = new THREE.ShaderMaterial({ vertexShader: SHEET_VERTEX, fragmentShader: SHEET_THICKNESS_FRAGMENT, uniforms: { ...sheetUniforms(), ...rideUniforms() }, ...summed, side: THREE.DoubleSide });
     // Jet columns, likewise.
-    const columnUniforms = () => ({ ...sheetUniforms(), uProjScale: { value: 1000 }, uMinPixelRadius: { value: 1.0 } });
+    const columnUniforms = () => ({ ...sheetUniforms(), ...galeUniforms(), uProjScale: { value: 1000 }, uMinPixelRadius: { value: 1.0 } });
     this.columnDepthMaterial = new THREE.ShaderMaterial({ vertexShader: COLUMN_VERTEX, fragmentShader: COLUMN_DEPTH_FRAGMENT, uniforms: columnUniforms(), depthTest: true, depthWrite: true, side: THREE.DoubleSide });
     this.columnThicknessMaterial = new THREE.ShaderMaterial({ vertexShader: COLUMN_VERTEX, fragmentShader: COLUMN_THICKNESS_FRAGMENT, uniforms: columnUniforms(), ...summed, side: THREE.DoubleSide });
     this.sunDirView = new THREE.Vector3();
@@ -711,7 +724,7 @@ export class SplashSystem {
     const mirrorBlend = { transparent: true, depthTest: true, depthWrite: false, blending: THREE.CustomBlending, blendEquation: THREE.AddEquation, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor, blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor };
     const distanceBlend = { transparent: true, depthTest: true, depthWrite: false, blending: THREE.CustomBlending, blendEquation: THREE.AddEquation, blendSrc: THREE.ZeroFactor, blendDst: THREE.OneFactor, blendEquationAlpha: THREE.MinEquation, blendSrcAlpha: THREE.OneFactor, blendDstAlpha: THREE.OneFactor };
     const mirrorPair = (parameters) => {
-      const colour = new THREE.ShaderMaterial({ ...parameters, uniforms: { ...parameters.uniforms, uMirrorDistance: { value: 0 } }, ...mirrorBlend });
+      const colour = new THREE.ShaderMaterial({ ...parameters, uniforms: { ...parameters.uniforms, uMirrorDistance: { value: 0 }, uMirrorLevel: surface?.uniforms.uMirrorLevel ?? { value: 0 } }, ...mirrorBlend });
       const distance = new THREE.ShaderMaterial({ ...parameters, uniforms: { ...colour.uniforms, uMirrorDistance: { value: 1 } }, ...distanceBlend });
       return { colour, distance };
     };
@@ -722,7 +735,7 @@ export class SplashSystem {
     });
     this.columnMirror = mirrorPair({
       vertexShader: COLUMN_VERTEX, fragmentShader: MIRROR_COLUMN_FRAGMENT,
-      uniforms: { uProjScale: { value: 1000 }, uMinPixelRadius: { value: 1.0 }, uEnvCube: { value: environment.cubeTexture } },
+      uniforms: { ...galeUniforms(), uProjScale: { value: 1000 }, uMinPixelRadius: { value: 1.0 }, uEnvCube: { value: environment.cubeTexture } },
       side: THREE.DoubleSide,
     });
     this.dropMirror = mirrorPair({
@@ -768,7 +781,7 @@ export class SplashSystem {
     this.bubbleMaterial = new THREE.ShaderMaterial({
       vertexShader: BUBBLE_VERTEX,
       fragmentShader: BUBBLE_FRAGMENT,
-      uniforms: { uProjScale: { value: 1000 }, uTint: { value: new THREE.Color(0.18, 0.30, 0.34) }, uExtinction: { value: lighting.extinction } },
+      uniforms: { ...galeUniforms(), uProjScale: { value: 1000 }, uTint: { value: new THREE.Color(0.18, 0.30, 0.34) }, uExtinction: { value: lighting.extinction } },
       transparent: true,
       depthWrite: false,
       blending: THREE.CustomBlending,

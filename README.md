@@ -51,13 +51,18 @@ remembered on the device (but the view, which opens on the shore):
   its afternoon sun, Mesas its sunrise and moonrise. By night the eye sees
   as its rods do, in a moonlit blue. Another place takes its hour nearest the
   time of day last chosen; the other skies are one photograph each.
-- Weather: Clear (the default), Light rain or Heavy rain. Rain comes under
+- Weather: Clear (the default), Light rain, Heavy rain or Storm. Rain comes under
   an overcast that hides the sun and greys the sky, with a haze that fades
   the far shore; its drops ring the water, streak past the eye and throw up
   flecks where they land, and the pool's deck goes dark with wet. A light
   rain's rings are fine and far apart; a downpour hammers the whole surface.
-  Rain at night is dark: the cloud hides the moon.
-- Wind: Calm (the default, a still day), Breeze or Windy.
+  Rain at night is dark: the cloud hides the moon. A storm is a downpour
+  under a darker sky, with lightning, and brings a gale.
+- Wind: Calm (the default, a still day), Breeze, Windy or Gale. A gale
+  raises waves a third of a metre high out to the horizon, white-capped,
+  with spray off the crests and foam in streaks along the wind; the stones
+  and their splashes ride them, and the Low view's eye stands above them.
+  The pool is too small for waves: there a gale only ripples hard.
 - Quality: Auto, Low, Medium or High.
 Auto starts on High everywhere and steps down by itself if the idle
 pond or the first splash renders too slowly, and later whenever the frame
@@ -460,6 +465,53 @@ wind's ripples do). The falling drops are streaks, each the path it cuts in
 the eye's 1/30 s, slanted by the wind, in a 20 m box about the eye; where a
 drop lands near where the eye looks, a fleck of white rises and falls.
 
+**Gale** (`src/galeWaves.js`; its shaders in `src/shaders/gale.js` and
+`src/shaders/spectral.js`). A gale of 18 m/s over 1.5 km of open water
+raises a young wind sea, whose spectrum is JONSWAP's for that wind and
+fetch (Hasselmann et al. 1973): a significant height of about 0.34 m, a
+peak period of 1.85 s and 5.8 m waves (the formula's peak is 5.3 m), spread
+in direction as Donelan et al. measured, narrowest at the peak. It is drawn
+once, from a seeded generator, on a 32 m tile of 128² wave vectors (waves
+down to 0.5 m; the ripples, four times their Breeze, carry the shorter),
+and evaluated on the GPU each frame by two FFTs, as the ripples are: the
+height, a sideways move that carries the water toward each crest
+(Tessendorf's choppy waves), which sharpens the crests and broadens the
+troughs, the slopes, and the derivatives of the move. All the water moves:
+the patch, and the sheet to the horizon, cut finer while the gale blows
+(75,000 triangles, 12 cm apart at the patch and growing outward), its
+vertices reading the waves no shorter than their spacing, so far off they
+flatten and the shading carries them on, with what the mips average away
+given back as roughness. Near the stones, within 4.5 m of the patch's
+centre, the water moves only up and down (the sideways move grows in by
+12 m), so the splash needs only the height under it. The splash computes
+everything on still water, as it always has, and the gale moves it as it
+is drawn: what is in the air (crown, jet, drops, spray) rises with the
+wave under it, what is under the water (the cavity, bubbles, a sinking
+stone) rises as the water column stretches between the fixed bed and the
+moving surface, so a stone on the bed stays put. A stone meets the water
+at the height of the waves under it, which the CPU sums from the same
+spectrum (all but 0.3% of its variance, to 5 mm), and the mirror image is
+taken about the water's height under the latest splash. Whitecaps: where
+the sideways move crowds the water past breaking (its Jacobian under 0.66,
+about 3% of the sea), a foam map on the tile takes a dense boil that pops
+within a second and a raft that drains over five, which the water shades
+as it shades a splash's foam, the raft gathered into thin wavering streaks
+along the wind; and spray is torn off where the boil says a crest has just
+broken, wisps of drops blown downwind as streaks. When the gale rises its
+foam is run over the six seconds before, so the sea opens as one that has
+been blowing. The eye keeps 0.45 m clear of the still water either way.
+`tools/gale-probe.mjs` checks the field on the CPU with the GPU's passes.
+
+**Lightning** (`src/lightning.js`, drawn by `src/sky.js`). In a storm the
+strikes come from the clock, so every run has the same: one in most seven
+seconds, two to four return strokes each, decaying over 45 ms, then an
+afterglow. A flash multiplies the dome's light, the scene's ambient sky
+and the haze by up to about ten for a strike 1.5 km off (the light falls
+with the distance squared, softened as the eye adapts), and most strikes
+show a bolt on the dome, a jagged line from the cloud's base, 600 m up,
+to the horizon, hidden where the photo's land stands in front of it; the
+mirror image is drawn again while it flashes, so the water shows it.
+
 **From under the water** (the Under view; `renderFromBelow` in `src/main.js`,
 `UNDER_FOG` and `WATER_UNDER_FRAGMENT` in `src/shaders/scene.js`). The water's
 own light, darker looking down and brighter looking up toward the surface,
@@ -524,8 +576,17 @@ farther out, so it rises into the view rather than filling its corner.
 ## Development
 
 - `npm test` runs `tools/fft-test.mjs`, `tools/wave-probe.mjs`,
-  `tools/foam-probe.mjs`, `tools/cavity-probe.mjs`, `tools/ring-probe.mjs`
-  and `tools/rain-probe.mjs`; each exits with 1 if a check fails.
+  `tools/foam-probe.mjs`, `tools/cavity-probe.mjs`, `tools/ring-probe.mjs`,
+  `tools/rain-probe.mjs` and `tools/gale-probe.mjs`; each exits with 1 if a
+  check fails.
+- `node tools/gale-probe.mjs [--wind=x,z]` builds the gale's seed with the
+  app's code and runs its evaluation and FFT passes on the CPU: the field is
+  real and its packed channels are the fields; the sideways move squeezes
+  the crests and stretches the troughs; the significant height and the peak
+  are JONSWAP's; the waves travel downwind; the field repeats after its
+  period; the CPU's surface (for the stones and the splash) is the field;
+  the mips lose the slope variance the shader's model says; and it prints
+  how much of the sea breaks, and the cost.
 - `node tools/rain-probe.mjs [--write]` works out a raindrop's ring on the
   CPU and prints its timeline and slope spectrum, checking the sum starts
   as the crater, the slowest waves go 0.23 m/s, the steepest crest runs at
@@ -608,8 +669,8 @@ farther out, so it rises into the view rather than filling its corner.
   stone and its splash are the same every run: `tools/variety-probe.mjs`'s
   seed n + i),
   `--power=soft|normal|hard` (soft is a higher arc, so a steeper entry,
-  about 30° from vertical), `--wind-strength=calm|breeze|windy` (the page's
-  own default is calm), `--weather=clear|light-rain|heavy-rain` (waits for
+  about 30° from vertical), `--wind-strength=calm|breeze|windy|gale` (the page's
+  own default is calm), `--weather=clear|light-rain|heavy-rain|storm` (waits for
   the rain's table before the first frame). With
   `--eval="window.__pond.setTimeScale(0.1)"` the frames are slow motion, 1/600 s
   of world time each, so `--times=0.07,0.0716667,…` are consecutive frames;
@@ -641,7 +702,7 @@ farther out, so it rises into the view rather than filling its corner.
 - `?wind=x,z` on the page (`--wind=x:z` for the harness) sets the direction
   the wind blows toward, in world XZ (the camera looks toward −Z); the
   default is (0.45, −0.9), away from the camera and a little to the right.
-  `?windStrength=calm|breeze|windy` (`--wind-strength=` for the harness)
+  `?windStrength=calm|breeze|windy|gale` (`--wind-strength=` for the harness)
   sets its strength, over the one the Wind setting last chose on the device
   (kept in `localStorage`); calm otherwise.
 - `?sky=name` on the page (`--sky=name` for the harness) picks the sky's
@@ -651,9 +712,9 @@ farther out, so it rises into the view rather than filling its corner.
   time of day last chosen (the harness's browser keeps none: the place's
   anchor hour); `?water=clear|lake|pond|murky` (`--water=` for the harness) the
   water's clarity, `WATER_CLARITIES` in `src/main.js`;
-  `?weather=clear|light-rain|heavy-rain` (`--weather=` for the harness) the
+  `?weather=clear|light-rain|heavy-rain|storm` (`--weather=` for the harness) the
   weather, `WEATHERS` in `src/main.js`, over the one last chosen on the
-  device.
+  device (a storm brings a gale, unless `?windStrength` says otherwise).
 - `?view=shore|level|high|under` on the page (`--view=` for the harness) opens on
   one of the View setting's choices (`VIEWS` in `src/main.js`);
   `--orbit=azimuth:elevation:distance[:x:y:z]` stands the harness's camera on
@@ -740,7 +801,10 @@ farther out, so it rises into the view rather than filling its corner.
   program, draws only its own quads of the water mesh and keeps a throw's
   ring only while its near field is hidden; each weather's rain compiles no
   program, a throw into a downpour and a change to Medium neither, the rain's
-  tile takes the preset's size, and a clear sky again stops it; and pausing and resuming twice
+  tile takes the preset's size, and a clear sky again stops it; the gale
+  compiles no program and draws its finer sheet, a throw into it and the
+  storm through a lightning strike neither, and in the pool it raises no
+  waves; and pausing and resuming twice
   in one tick must leave one frame loop. On a fake clock it checks that the watch after
   calibration steps down at 20 frames a second and that a still pond on
   Medium draws every other frame with its time keeping up; and that a large
@@ -782,7 +846,8 @@ farther out, so it rises into the view rather than filling its corner.
   targets' memory, the programs compiled and the warm-up's, whether the
   solver sleeps and the frame rate is capped, the rings drawn, how many
   are fading out and the preset's limit, their passes and the spectrum
-  fetches those made, the wind, the weather and the rain's tile).
+  fetches those made, the wind, the gale's sheet, the weather and the
+  rain's tile).
 
 Install the development dependencies with `npm install` (Three.js is only
 needed locally for the headless harness, which serves it instead of the CDN).

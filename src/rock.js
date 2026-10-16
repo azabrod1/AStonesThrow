@@ -17,6 +17,17 @@
 // which traces the cavity along the same path; the splash tells the stone
 // when its hole pinches off, setCavityTimes).
 //
+// Under a gale (src/galeWaves.js) the water moves up and down. The stone
+// meets it at the height of the waves under it (update's surfaceAt, the
+// CPU's sum of the gale's waves), and from then on it moves as the splash
+// does, on still water, its surface at 0: its position is in that frame,
+// and it is drawn lifted as the gale lifts the splash (galeLift in
+// src/shaders/scene.js): by the surface's height while above the still
+// level, and under it by h·(1 + y/bed), the water column stretching between
+// the fixed bed and the moving surface, so a stone on the bed stays put. Its
+// two halves are cut at the water's height over it, and the half under the
+// water is seen through a level surface there.
+//
 // The stone's properties at impact (`shape`, `contact`, `spin`, `lift` in the
 // report), which make one splash unlike the next (src/splash.js), and `seed`,
 // drawn when the stone is thrown, which seeds the splash's own random stream
@@ -87,6 +98,7 @@ const FLAT_LIFT = 0.5;             // the lift of a tilted flattened stone, time
 const IRREGULAR_LIFT = 0.8;        // ...of its lumps, times its irregularity, in a random direction...
 const SPIN_LIFT = 0.6;             // ...and of its spin, times ω·R/V along ω × v
 const LIFT_CAP = 0.35;             // at most this C_L in all
+const CREST_REACH = 0.6;           // m: under a gale, no crest reaches higher than this above the still water
 const rockRotation = new THREE.Matrix4();
 
 function hash3(x, y, z) {
@@ -299,13 +311,14 @@ export class Rock {
       metalness: 0.0,
       envMap: envTexture,
       envMapIntensity: 0.9,
-      clippingPlanes: [new THREE.Plane(new THREE.Vector3(0, clipNormalY, 0), 0)],
+      clippingPlanes: [new THREE.Plane(new THREE.Vector3(0, clipNormalY, 0), 0)],   // at the water's height under the stone (syncMeshes)
     });
     this.meshAbove = new THREE.Mesh(this.geometry, makeMaterial(1));
     this.meshBelow = new THREE.Mesh(this.geometry, makeMaterial(-1));
     this.meshBelow.material.envMapIntensity = 0.35;
     // Under the water: where the surface shows it (the header), by this much.
     const seenThroughWater = this.seenThroughWater = { value: 0 };
+    const waterLevel = this.waterLevel = { value: 0 };   // the surface's height above the stone, under a gale
     this.sinceImpact = -1;
     this.cavityTimes = null;   // its cavity's pinch-off (s after the impact), once the splash says
     // Seen from an eye under the water, it fades into the water's colour with
@@ -315,13 +328,14 @@ export class Rock {
     const fogColor = { value: waterFog?.color ?? new THREE.Vector3() };
     this.meshBelow.material.onBeforeCompile = (shader) => {
       shader.uniforms.uSeenThroughWater = seenThroughWater;
+      shader.uniforms.uWaterLevel = waterLevel;
       shader.uniforms.uFogExtinction = fogExtinction;
       shader.uniforms.uFogColor = fogColor;
       shader.vertexShader = shader.vertexShader
-        .replace('#include <common>', `#include <common>\nuniform float uSeenThroughWater;\n${SEEN_THROUGH_WATER}`)
+        .replace('#include <common>', `#include <common>\nuniform float uSeenThroughWater;\nuniform float uWaterLevel;\n${SEEN_THROUGH_WATER}`)
         .replace('#include <project_vertex>', `#include <project_vertex>
   vec3 trueWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;
-  mvPosition = viewMatrix * vec4(mix(trueWorld, seenThroughWater(trueWorld), uSeenThroughWater), 1.0);
+  mvPosition = viewMatrix * vec4(mix(trueWorld, seenThroughWater(trueWorld, uWaterLevel), uSeenThroughWater), 1.0);
   gl_Position = projectionMatrix * mvPosition;`);
       shader.fragmentShader = shader.fragmentShader
         .replace('#include <common>', '#include <common>\nuniform vec3 uFogExtinction;\nuniform vec3 uFogColor;')
@@ -431,18 +445,30 @@ export class Rock {
     this.body.openUntil = pinchTime - this.impactStep;
   }
 
-  syncMeshes() {
+  /**
+   * The meshes where the stone is drawn: in the air where it is; in the water
+   * lifted as the gale lifts the splash (the header), its halves cut at the
+   * water's height `surface` over it.
+   */
+  syncMeshes(surface = 0, bedDepth = 1) {
+    let lift = 0;
+    if (this.state !== 'air' && surface !== 0) lift = this.position.y >= 0 ? surface : surface * Math.max(1 + this.position.y / bedDepth, 0);
     for (const mesh of [this.meshAbove, this.meshBelow]) {
-      mesh.position.copy(this.position);
+      mesh.position.set(this.position.x, this.position.y + lift, this.position.z);
       mesh.quaternion.copy(this.quaternion);
     }
+    this.meshAbove.material.clippingPlanes[0].constant = -surface;   // keeps y ≥ surface
+    this.meshBelow.material.clippingPlanes[0].constant = surface;    // keeps y ≤ surface
+    this.waterLevel.value = surface;
   }
 
   /**
    * Advance by dt seconds. Returns an impact description the first time the
-   * stone touches the water, otherwise null.
+   * stone touches the water, otherwise null. surfaceAt(x, z), under a gale,
+   * is the water's height there (m); null for still water.
    */
-  update(dt, pondDepth) {
+  update(dt, pondDepth, surfaceAt = null) {
+    let surface = 0;
     this.age += dt;
     let impact = null;
     if (this.state === 'air') {
@@ -453,9 +479,12 @@ export class Rock {
       this.velocity.y -= GRAVITY * dt;
       this.position.addScaledVector(this.velocity, dt);
       // Only near the water is the mesh worth walking for its lowest point.
-      const touching = this.position.y <= this.reach * this.radius && this.position.y + this.lowestOffset() <= 0;
+      if (surfaceAt && this.position.y <= this.reach * this.radius + CREST_REACH) surface = surfaceAt(this.position.x, this.position.z);
+      const touching = this.position.y - surface <= this.reach * this.radius && this.position.y + this.lowestOffset() <= surface;
       if (touching && this.velocity.y < 0) {
         this.state = 'water';
+        // From here on it moves on still water, as the splash does (the header).
+        this.position.y -= surface;
         const speed = this.velocity.length();
         const lift = this.liftAt(this.velocity);
         // Its hole is open, and its head acts, until the pinch-off: PINCH_TIME·sqrt(R/g) until the splash says (setCavityTimes).
@@ -491,6 +520,7 @@ export class Rock {
       const body = this.body;
       sinkStep(body, this.radius, dt, pondDepth);
       this.position.set(body.x, body.y, body.z);
+      if (surfaceAt) surface = surfaceAt(body.x, body.z);
       this.velocity.set(body.vx, body.vy, body.vz);
       this.spinRate *= Math.exp(-SPIN_DECAY * dt);
       if (body.resting) this.state = 'rest';
@@ -510,7 +540,9 @@ export class Rock {
       const progress = THREE.MathUtils.clamp((this.sinceImpact - pinchTime) / (NECK_CLOSE * timeUnit), 0, 1);
       this.seenThroughWater.value = progress * progress * (3 - 2 * progress);
     }
-    this.syncMeshes();
+    // The bed's depth (a number, or a function of x and z, as sinkStep takes it) only matters to a lifted stone.
+    const bedDepth = surface === 0 || this.state === 'air' ? 1 : typeof pondDepth === 'function' ? pondDepth(this.position.x, this.position.z) : pondDepth;
+    this.syncMeshes(surface, bedDepth);
     return impact;
   }
 

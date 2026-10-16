@@ -24,7 +24,12 @@
 //    preset in it keeps the pool's mesh. Rain (src/rain.js): each weather in
 //    turn, with a throw in the downpour and a change of preset, compiles no
 //    program (the warm-up drew the rain's), and the tile takes the preset's
-//    size; clear again, nothing of the rain runs. pause(), resume(), pause(),
+//    size; clear again, nothing of the rain runs. The gale (src/galeWaves.js)
+//    and the storm: the gale compiles no program (the warm-up drew its passes
+//    and its spray, and the water's shaders branch on it), draws the finer
+//    sheet that carries its waves, and a throw into it compiles none; the
+//    storm compiles none through a lightning strike; in the pool the gale
+//    raises no waves; calm again, the still sheet. pause(), resume(), pause(),
 //    resume() in one tick leave one frame loop: one render per
 //    requestAnimationFrame at most.
 // 2. The same page on a fake clock (performance.now and requestAnimationFrame
@@ -239,6 +244,27 @@ await page.evaluate(() => window.__pond.setWeather('clear'));
 const cleared = await page.evaluate(() => ({ raining: window.__pond.raining, programs: window.__pond.budget.programs }));
 check(!cleared.raining && cleared.programs === programsBeforeRain, `clear again: no rain falls, and no program was compiled (${cleared.programs})`);
 await checkBuilt(phone, 'after the rain');
+
+// The gale and the storm: nothing compiles, the gale's sheet, none in the pool.
+const programsBeforeGale = await page.evaluate(() => window.__pond.budget.programs);
+await page.evaluate(() => { window.__pond.setWind('gale'); window.__pond.advance(0.3); });
+const galeBudget = await page.evaluate(() => ({ programs: window.__pond.budget.programs, gale: window.__pond.budget.gale }));
+check(galeBudget.programs === programsBeforeGale && galeBudget.gale.blowing && galeBudget.gale.sheetTriangles > 50000, `the gale compiles no program (${galeBudget.programs}) and draws its finer sheet (${galeBudget.gale.sheetTriangles} triangles)`);
+await page.evaluate(() => { window.__pond.throwAt(0, -1.4, { radius: 0.03 }); window.__pond.advance(0.8); });
+const galeThrow = await page.evaluate(() => window.__pond.budget.programs);
+check(galeThrow === programsBeforeGale, `a throw into the gale compiles no program (${galeThrow})`);
+await page.evaluate(() => window.__pond.setWeather('storm'));
+await page.waitForFunction(() => window.__pond.raining, null, { timeout: 60000 });
+await page.evaluate(() => window.__pond.advance(2.5));   // the storm's first strike is at about 1.6 s of the clock (src/lightning.js)
+const storm = await page.evaluate(() => ({ programs: window.__pond.budget.programs, wind: window.__pond.wind }));
+check(storm.programs === programsBeforeGale && storm.wind === 'gale', `the storm compiles no program through a strike (${storm.programs}), its wind a gale (${storm.wind})`);
+await page.evaluate(() => { window.__pond.setWeather('clear'); window.__pond.setClarity('pool'); window.__pond.advance(0.1); });
+const pooledGale = await page.evaluate(() => ({ programs: window.__pond.budget.programs, gale: window.__pond.budget.gale }));
+check(!pooledGale.gale.blowing && pooledGale.programs === programsBeforeGale, `in the pool the gale raises no waves (${pooledGale.gale.blowing ? 'blowing' : 'still'}) and nothing compiles`);
+await page.evaluate(() => { window.__pond.setClarity('lake'); window.__pond.setWind('calm'); window.__pond.advance(0.1); });
+const calmAgain = await page.evaluate(() => ({ programs: window.__pond.budget.programs, gale: window.__pond.budget.gale }));
+check(!calmAgain.gale.blowing && calmAgain.gale.sheetTriangles < 5000 && calmAgain.programs === programsBeforeGale, `calm again: the still sheet (${calmAgain.gale.sheetTriangles} triangles), no program (${calmAgain.programs})`);
+await checkBuilt(phone, 'after the gale');
 
 // pause, resume, pause, resume in one tick: one frame loop, so at most one render per requestAnimationFrame (high is never capped).
 const loops = await page.evaluate(() => new Promise((resolve) => {

@@ -9,6 +9,12 @@
 // sky dome's horizon with no strip of the photo's own ground between them
 // (the dome's box reaches 10 km).
 //
+// Under a gale (src/galeWaves.js, setGale) the gale's waves move both, the
+// patch and the sheet alike, and the sheet is cut finer so it can carry
+// them (GALE_SHEET_CUTS): the still sheet's few large quads come back when
+// it drops. Both read the waves at a point's rest position, so the patch's
+// edge and the sheet's start, which overlap, move together.
+//
 // A stone's cavity (src/cavity.js) is drawn with the same shader and the same
 // uniforms: cavityMaterial is its CAVITY_MESH variant, for the cavity's mesh,
 // and while any cavity is open setCavities swaps the inner patch to its
@@ -64,6 +70,13 @@ const OUTER_CUTS = 8;        // ...and each of its sides cut into this many quad
 // draw the same.
 const OUTER_OVERLAP = 0.03;  // metres
 export const MAX_CAVITIES = 4;   // the inner patch dips under at most this many cavities at once
+// While the gale blows (setGale) the sheet carries its waves, and is cut
+// finer: GALE_SHEET_CUTS to a side, each ring 1 + 2/GALE_SHEET_CUTS times
+// the last (square quads), so its vertices are 12 cm apart at the patch and
+// grow with the distance (1.3 m at 30 m); WATER_VERTEX reads the waves no
+// shorter than that spacing (uSheetSpacing), so far off they flatten, and
+// the shading carries them on.
+const GALE_SHEET_CUTS = 48;
 
 /**
  * The outer sheet, in the XZ plane (at `height`): square rings around the
@@ -75,9 +88,9 @@ export const MAX_CAVITIES = 4;   // the inner patch dips under at most this many
  * reflection and draw a seam along the edge. The pool's deck is one too
  * (src/pool.js).
  */
-export function squareRingsGeometry(innerHalf, outerHalf, centre, height = 0) {
+export function squareRingsGeometry(innerHalf, outerHalf, centre, height = 0, { growth = OUTER_GROWTH, cuts = OUTER_CUTS } = {}) {
   const halves = [innerHalf];
-  while (halves.at(-1) < outerHalf) halves.push(Math.min(halves.at(-1) * OUTER_GROWTH, outerHalf));
+  while (halves.at(-1) < outerHalf) halves.push(Math.min(halves.at(-1) * growth, outerHalf));
   const positions = [];
   const cx = centre[0], cz = centre[1];
   // A point of square ring `half` at `along` (0 to 1) of the way round it, counter-clockwise from (−half, −half) seen from above.
@@ -87,8 +100,8 @@ export function squareRingsGeometry(innerHalf, outerHalf, centre, height = 0) {
     return [cx + x, height, cz + z];
   };
   for (let ring = 0; ring < halves.length - 1; ring++) {
-    for (let cut = 0; cut < 4 * OUTER_CUTS; cut++) {
-      const start = cut / (4 * OUTER_CUTS), end = (cut + 1) / (4 * OUTER_CUTS);
+    for (let cut = 0; cut < 4 * cuts; cut++) {
+      const start = cut / (4 * cuts), end = (cut + 1) / (4 * cuts);
       const innerStart = onRing(halves[ring], start), innerEnd = onRing(halves[ring], end);
       const outerStart = onRing(halves[ring + 1], start), outerEnd = onRing(halves[ring + 1], end);
       positions.push(...innerStart, ...innerEnd, ...outerStart, ...innerEnd, ...outerEnd, ...outerStart);   // facing up
@@ -123,7 +136,7 @@ function poolPatchGeometry(water, segments, square) {
   return geometry;
 }
 
-export function createWaterSurface(water, lighting, ambientWaves, { meshSegments = Math.min(water.size, 512), rings = null, skyCube = null, rain = null, haze = null } = {}) {
+export function createWaterSurface(water, lighting, ambientWaves, { meshSegments = Math.min(water.size, 512), rings = null, skyCube = null, rain = null, haze = null, gale = null } = {}) {
   const uniforms = {
     uHeight: { value: water.heightTexture },
     uFoam: { value: water.foamTexture },
@@ -132,6 +145,7 @@ export function createWaterSurface(water, lighting, ambientWaves, { meshSegments
     uReflectionMatrix: { value: new THREE.Matrix4() },
     uMirrorNear: { value: new THREE.Vector4(1, 1, 0, 0) },   // the splash's image in the mirror (uv), empty when none
     uMirrorSize: { value: new THREE.Vector2(1, 1) },
+    uMirrorLevel: { value: 0 },   // the height the mirror image mirrors about (src/main.js); the splash's mirror materials share it
     uUnderColor: { value: null },
     uUnderDepth: { value: null },
     uStonesUnder: { value: 0 },
@@ -153,6 +167,8 @@ export function createWaterSurface(water, lighting, ambientWaves, { meshSegments
     uInner: { value: 1 },
     uMeshCell: { value: water.domainSize / meshSegments },
     uAmbientUnresolved: { value: ambientWaves.unresolvedVariance },
+    uGaleUnresolved: { value: gale ? gale.unresolvedVariance : [0] },
+    uSheetSpacing: { value: 2 / GALE_SHEET_CUTS },
     ...ambientWaves.uniforms(),
     ...(rings ? rings.uniforms() : {}),
     ...(rain ? rain.uniforms() : { uRainOn: { value: 0 } }),
@@ -163,7 +179,7 @@ export function createWaterSurface(water, lighting, ambientWaves, { meshSegments
     vertexShader: WATER_VERTEX,
     fragmentShader: WATER_FRAGMENT,
     uniforms: inner ? uniforms : { ...uniforms, uInner: { value: 0 } },
-    defines: { AMBIENT_LEVELS: ambientWaves.levels },
+    defines: { AMBIENT_LEVELS: ambientWaves.levels, GALE_LEVELS: gale ? gale.levels : 1 },
   });
   const innerMaterial = material(true);
   const outerMaterial = material(false);
@@ -177,13 +193,13 @@ export function createWaterSurface(water, lighting, ambientWaves, { meshSegments
     vertexShader: WATER_VERTEX,
     fragmentShader: WATER_FRAGMENT,
     uniforms: { ...uniforms, ...cavityUniforms },
-    defines: { AMBIENT_LEVELS: ambientWaves.levels, CAVITY_PUSH: MAX_CAVITIES },
+    defines: { AMBIENT_LEVELS: ambientWaves.levels, GALE_LEVELS: gale ? gale.levels : 1, CAVITY_PUSH: MAX_CAVITIES },
   });
   const cavityMaterial = new THREE.ShaderMaterial({
     vertexShader: WATER_VERTEX,
     fragmentShader: WATER_FRAGMENT,
     uniforms,
-    defines: { AMBIENT_LEVELS: ambientWaves.levels, CAVITY_MESH: 1 },
+    defines: { AMBIENT_LEVELS: ambientWaves.levels, GALE_LEVELS: gale ? gale.levels : 1, CAVITY_MESH: 1 },
     side: THREE.DoubleSide,
   });
 
@@ -194,7 +210,7 @@ export function createWaterSurface(water, lighting, ambientWaves, { meshSegments
     vertexShader: WATER_VERTEX,
     fragmentShader: WATER_UNDER_FRAGMENT,
     uniforms: inner ? underUniforms : { ...underUniforms, uInner: { value: 0 } },
-    defines: { AMBIENT_LEVELS: ambientWaves.levels },
+    defines: { AMBIENT_LEVELS: ambientWaves.levels, GALE_LEVELS: gale ? gale.levels : 1 },
     side: THREE.BackSide,
   });
   const innerUnderMaterial = underMaterial(true);
@@ -203,7 +219,7 @@ export function createWaterSurface(water, lighting, ambientWaves, { meshSegments
     vertexShader: WATER_VERTEX,
     fragmentShader: WATER_UNDER_FRAGMENT,
     uniforms: underUniforms,
-    defines: { AMBIENT_LEVELS: ambientWaves.levels, CAVITY_MESH: 1 },
+    defines: { AMBIENT_LEVELS: ambientWaves.levels, GALE_LEVELS: gale ? gale.levels : 1, CAVITY_MESH: 1 },
     side: THREE.DoubleSide,
   });
   let aboveMaterial = innerMaterial;   // the patch's material from above, while fromBelow has swapped it
@@ -216,7 +232,9 @@ export function createWaterSurface(water, lighting, ambientWaves, { meshSegments
   inner.position.set(water.centre[0], 0, water.centre[1]);
   inner.frustumCulled = false;
 
-  const outer = new THREE.Mesh(squareRingsGeometry(water.domainSize / 2 - OUTER_OVERLAP, OUTER_HALF_SIZE, water.centre), outerMaterial);
+  const stillSheet = squareRingsGeometry(water.domainSize / 2 - OUTER_OVERLAP, OUTER_HALF_SIZE, water.centre);
+  let galeSheet = null;   // made when the gale first blows
+  const outer = new THREE.Mesh(stillSheet, outerMaterial);
   outer.frustumCulled = false;
 
   return {
@@ -270,6 +288,13 @@ export function createWaterSurface(water, lighting, ambientWaves, { meshSegments
     },
     /** Whether the surface is a pool's (setPool). */
     get pooled() { return pool !== null; },
+    /** Whether the gale blows: the sheet that carries its waves, or the still one. */
+    setGale(blowing) {
+      if (blowing && !galeSheet) galeSheet = squareRingsGeometry(water.domainSize / 2 - OUTER_OVERLAP, OUTER_HALF_SIZE, water.centre, 0, { growth: 1 + 2 / GALE_SHEET_CUTS, cuts: GALE_SHEET_CUTS });
+      outer.geometry = blowing ? galeSheet : stillSheet;
+    },
+    /** The sheet's triangles, as drawn. */
+    get sheetTriangles() { return outer.geometry.attributes.position.count / 3; },
     /** The open cavities' pushShape()s (src/cavity.js): the patch dips under them, or draws as still water when there are none. */
     setCavities(shapes) {
       const count = Math.min(shapes.length, MAX_CAVITIES);

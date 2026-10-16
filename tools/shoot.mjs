@@ -141,6 +141,8 @@ try {
   await browser.close(); server.close(); process.exit(1);
 }
 if (weather && weather !== 'clear') await page.waitForFunction(() => window.__pond.raining, null, { timeout: 60000 });
+// The loading veil fades out over a moment once the pond is ready; a frame taken meanwhile would catch it.
+await page.evaluate(() => document.getElementById('veil')?.remove());
 await page.evaluate(() => window.__pond.pause());
 await page.evaluate((name) => window.__pond.setDebugView(name), debugView);
 if (viewName) await page.evaluate((name) => window.__pond.showView(name, { glide: false }), viewName);

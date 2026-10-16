@@ -187,6 +187,104 @@ void main() {
 }
 `;
 
+// The gale's waves at one time, from their seed (src/galeWaves.js explains
+// the construction), H(k, t) evolved as the ripples' are, and with it the
+// sideways move D = λ i k̂ H and the derivatives, packed two real fields to a
+// complex spectrum so that one inverse FFT gives four real fields:
+//   uPart 0, the displacement:  H + i·Dx in (r, g), Dz + i·∂Dx/∂z in (b, a);
+//   uPart 1, the derivatives:   i kx H + i·(i kz H) in (r, g),
+//                               ∂Dx/∂x + i·∂Dz/∂z in (b, a);
+// with ∂Dx/∂x = −λ kx²/k H, ∂Dz/∂z = −λ kz²/k H, ∂Dx/∂z = −λ kx kz/k H, all
+// scaled to the textures' units.
+export const GALE_EVALUATE_FRAGMENT = /* glsl */`
+#define PI 3.141592653589793
+uniform sampler2D uSeed;        // per wave vector: A₋ (r, g), A₊ (b, a), metres
+uniform float uN;               // texels per side
+uniform float uTileSize;        // metres per side
+uniform float uDepth;           // the lake's depth for the dispersion, metres
+uniform float uFrequencyStep;   // rad/s
+uniform float uTime;            // seconds, within one period
+uniform float uOutputScale;     // texture units per metre
+uniform float uChoppiness;      // λ
+uniform int uPart;              // 0: the displacement; 1: the derivatives
+
+vec2 complexMultiply(vec2 first, vec2 second) {
+  return vec2(first.x * second.x - first.y * second.y, first.x * second.y + first.y * second.x);
+}
+// i·z
+vec2 timesI(vec2 value) { return vec2(-value.y, value.x); }
+
+void main() {
+  ivec2 texel = ivec2(gl_FragCoord.xy);
+  vec4 seed = texelFetch(uSeed, texel, 0);
+  int size = int(uN);
+  vec2 latticeIndex = vec2(texel.x < size / 2 ? texel.x : texel.x - size, texel.y < size / 2 ? texel.y : texel.y - size);
+  vec2 waveVector = 2.0 * PI * latticeIndex / uTileSize;   // rad/m along world x and z
+  float wavenumber = length(waveVector);
+  float omega = sqrt((9.81 * wavenumber + 7.2e-5 * wavenumber * wavenumber * wavenumber) * tanh(min(wavenumber * uDepth, 20.0)));
+  omega = floor(omega / uFrequencyStep + 0.5) * uFrequencyStep;
+  float angle = omega * uTime;
+  vec2 turn = vec2(cos(angle), sin(angle));
+  vec2 height = complexMultiply(seed.xy, vec2(turn.x, -turn.y)) + complexMultiply(seed.zw, turn);
+  float reach = wavenumber > 0.0 ? uChoppiness / wavenumber : 0.0;   // λ/k
+  if (uPart == 0) {
+    vec2 moveX = timesI(reach * waveVector.x * height);
+    vec2 moveZ = timesI(reach * waveVector.y * height);
+    vec2 moveXZ = -reach * waveVector.x * waveVector.y * height;
+    gl_FragColor = vec4(height + timesI(moveX), moveZ + timesI(moveXZ)) * uOutputScale;
+  } else {
+    vec2 slopeX = timesI(waveVector.x * height);
+    vec2 slopeZ = timesI(waveVector.y * height);
+    vec2 stretchX = -reach * waveVector.x * waveVector.x * height;
+    vec2 stretchZ = -reach * waveVector.y * waveVector.y * height;
+    gl_FragColor = vec4(slopeX + timesI(slopeZ), stretchX + timesI(stretchZ)) * uOutputScale;
+  }
+}
+`;
+
+// The gale's whitecaps (src/galeWaves.js): one step of its foam map, which
+// lies on the gale's tile at rest positions, as the solver's foam map's
+// kinds do (r the whole foam, g its raft). Where the crests crowd the water
+// past breaking (the Jacobian J of the sideways move, from GALE_BREAK_START
+// down to GALE_BREAK_FULL) they churn a boil of GALE_BOIL, the big bubbles,
+// which pops within a second (uBoilKeep a step), and lay a raft at
+// GALE_RAFT_RATE a second of breaking, the small bubbles, which drains over
+// seconds (uRaftKeep); the water shows the raft gathered into the wind's
+// streaks (galeStreaks in src/shaders/scene.js). The whole map drifts
+// downwind with the surface (uDrift), taken from upstream, semi-Lagrangian.
+export const GALE_FOAM_FRAGMENT = /* glsl */`
+uniform sampler2D uPrevious;      // the map a step ago: (foam, raft)
+uniform sampler2D uDisplacement;  // the gale's fields (GALE_EVALUATE_FRAGMENT), in texture units
+uniform sampler2D uDerivatives;
+uniform float uMetresPerUnit;     // the gale's strength over the units
+uniform float uFieldTexels;       // the fields' texels per side
+uniform float uTexels;            // the map's
+uniform vec2 uDrift;              // the surface's drift this step, in the tile's uv
+uniform float uStep;              // seconds
+uniform float uBoilKeep;          // exp(−step/τ) of the boil
+uniform float uRaftKeep;          // and of the raft
+#define GALE_BREAK_START 0.66
+#define GALE_BREAK_FULL 0.5
+#define GALE_BOIL 0.6
+#define GALE_RAFT_RATE 1.0
+#define GALE_RAFT_MOST 0.5
+
+void main() {
+  vec2 uv = gl_FragCoord.xy / uTexels;
+  vec2 before = texture2D(uPrevious, uv - uDrift).rg;
+  // The fields' texel n holds the field at n·cell; the map's texel centre is at uv·tile.
+  vec2 fieldUv = uv + 0.5 / uFieldTexels - 0.5 / uTexels;
+  vec4 derivatives = texture2D(uDerivatives, fieldUv) * uMetresPerUnit;
+  float crossTerm = texture2D(uDisplacement, fieldUv).a * uMetresPerUnit;
+  float jacobian = (1.0 + derivatives.z) * (1.0 + derivatives.w) - crossTerm * crossTerm;
+  float breaking = 1.0 - smoothstep(GALE_BREAK_FULL, GALE_BREAK_START, jacobian);
+  float boil = max(before.r - before.g, 0.0) * uBoilKeep;
+  boil = max(boil, breaking * GALE_BOIL);
+  float raft = min(before.g * uRaftKeep + breaking * GALE_RAFT_RATE * uStep, GALE_RAFT_MOST);
+  gl_FragColor = vec4(boil + raft, raft, 0.0, 1.0);
+}
+`;
+
 // One radix-2 Stockham pass along one axis, on both complex pairs of the
 // texel. With uFromState the pass reads the solver's state texture and
 // combines H + iV into the first pair (the second is zero), so the inverse

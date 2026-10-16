@@ -37,6 +37,7 @@
 // and the MIRROR_* fragments of src/shaders/fluid.js.
 
 import { GLSL_COMMON } from './scene.js';
+import { GALE_SURFACE } from './gale.js';
 
 export const SHEET_VERTEX = /* glsl */`
 #define RIM_LEAN 1.4             // the rim tangent's length at the free edge (src/crown.js's bend)
@@ -64,6 +65,8 @@ void main() {
     if (uRingCount > 0) surface += ringHeight(world.xz, SHEET_RING_SPACING);
     world.y += surface * patchMask(domainUv);
   }
+  // The sheet stands on still water (src/crown.js); the gale lifts it with the surface under it.
+  if (uGaleMetresPerUnit > 0.0) world.y += galeLift((modelMatrix * vec4(position, 1.0)).xyz);
   vec4 viewPosition = viewMatrix * world;
   vViewPosition = viewPosition.xyz;
   vViewNormal = normalMatrix * normal;
@@ -117,8 +120,15 @@ varying vec3 vViewPosition;
 varying vec3 vViewNormal;
 varying float vRadius;
 varying float vRound;
+${GALE_SURFACE}
 void main() {
   vec4 viewPosition = modelViewMatrix * vec4(position, 1.0);
+  // The column stands on still water (src/jet.js); the gale lifts it with the surface under it.
+  if (uGaleMetresPerUnit > 0.0) {
+    vec4 world = modelMatrix * vec4(position, 1.0);
+    world.y += galeLift(world.xyz);
+    viewPosition = viewMatrix * world;
+  }
   vec3 viewNormal = normalize(normalMatrix * normal);
   float minRadius = uMinPixelRadius * max(-viewPosition.z, 0.05) / uProjScale;
   viewPosition.xyz += viewNormal * max(minRadius - aRadius, 0.0);

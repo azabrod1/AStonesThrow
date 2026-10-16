@@ -596,6 +596,7 @@
         <button type="button" role="radio" data-value="clear">Clear</button>
         <button type="button" role="radio" data-value="light-rain">Light rain</button>
         <button type="button" role="radio" data-value="heavy-rain">Heavy rain</button>
+        <button type="button" role="radio" data-value="storm">Storm</button>
       </div>
       <div class="menu-note" id="weather-note" aria-live="polite"></div>
     </div>
@@ -608,6 +609,7 @@
         <button type="button" role="radio" data-value="calm">Calm</button>
         <button type="button" role="radio" data-value="breeze">Breeze</button>
         <button type="button" role="radio" data-value="windy">Windy</button>
+        <button type="button" role="radio" data-value="gale">Gale</button>
       </div>
       <div class="menu-note" id="wind-note"></div>
     </div>
@@ -756,6 +758,7 @@
         calm: 'Still water: the shore stands in it as in a mirror.',
         breeze: 'Light ripples that blur the reflections.',
         windy: 'Ripples over the whole pond that break the reflections up.',
+        gale: 'A gale over the lake: waves a third of a metre high, whitecaps, spray off the crests, foam in streaks along the wind. The pool is too small for waves; there it only ripples hard.',
       },
       quality: {
         auto: 'Starts on High and steps down while the frame rate is too low, and keeps watching.',
@@ -767,6 +770,7 @@
         clear: 'The sky as it was photographed.',
         'light-rain': 'A bright overcast and a light rain: rings spreading on the water, a fleck where each drop lands, faint streaks falling.',
         'heavy-rain': 'A dark sky and a downpour: the water hammered with rings and splashes, the far bank lost in the rain.',
+        storm: 'A storm: a darker sky, a downpour, lightning, and the wind up to a gale.',
       },
       time: 'Each hour is a photograph of this place, taken from one spot through a day: the land stays where it is and the sun moves round it.',
       oneTime: 'This sky is a single photograph. Lakeside and Mesas were photographed through the day: pick one of them to change the hour.',
@@ -795,6 +799,7 @@
       settings.setValue('weather', label('weather', value));
       if (value !== 'clear' && !pond.raining) weatherNote.textContent = 'The rain is coming\u2026';
       pond.setWeather(value).then(() => { if (weatherChoice === value) updateWeather(); });
+      updateWind();   // a storm brings a gale
     });
     function updateWeather() {
       showWeather(pond.weather);

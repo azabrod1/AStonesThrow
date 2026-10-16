@@ -34,7 +34,7 @@
 // cuts in STREAK_SECONDS. The flecks (FLECK_VERTEX): a point at each drop
 // near where the eye looks, rising and falling once over FLECK_LIFE seconds,
 // the crown and jet a drop throws up, too small to be more than a fleck of
-// white at a few metres.
+// white at a few metres, standing on a gale's waves (src/galeWaves.js).
 //
 // RAIN: per intensity, the rate of the drops that leave a ring one can see
 // (per m² per second), the cell (metres, dividing TILE_SIZE) and its slots
@@ -106,7 +106,7 @@ export class Rain {
    * @param lighting the scene's lighting (src/main.js): the streaks and flecks take the sky's light and the sun's
    * @param options.texels the tile's texels per side (a power of two up to 2^(RAIN_LEVELS − 1))
    */
-  constructor(renderer, lighting, { texels = 512 } = {}) {
+  constructor(renderer, lighting, { texels = 512, gale = {} } = {}) {
     this.renderer = renderer;
     this.intensity = null;
     this.ring = null;             // ring.json, once fetched
@@ -210,6 +210,7 @@ export class Rain {
         uFleckHeight: { value: FLECK_HEIGHT },
         uOpacity: { value: RAIN.light.fleckOpacity },
         ...this.lightUniforms,
+        ...gale,   // the gale's uniforms (src/galeWaves.js): the flecks stand on its waves
       },
       transparent: true,
       depthWrite: false,
