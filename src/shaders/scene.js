@@ -628,9 +628,8 @@ uniform vec3 uSunIrradiance;
 uniform vec3 uSkyAmbient;
 uniform float uN;
 uniform float uCell;
-uniform vec3 uAbsorb;          // per-metre absorption
-uniform vec3 uWaterColor;      // in-scattered radiance at full depth
-uniform float uScatterLength;  // metres over which in-scattering saturates
+uniform vec3 uExtinction;      // per metre: absorption plus scattering (lighting.extinction)
+uniform vec3 uWaterColor;      // the radiance of water too deep to see through (lighting.waterColor)
 uniform float uRoughness;        // sub-grid roughness: a slope spread of uRoughness² (rms, both axes)
 uniform float uAmbientUnresolved[AMBIENT_LEVELS];   // slope variance each mip level of the ambient waves loses
 varying vec3 vWorld;
@@ -778,10 +777,18 @@ void main() {
     float rawDepth3 = texture2D(uUnderDepth, refractUv).r;
     path2 = rawDepth3 >= 1.0 ? path : max(max(-perspectiveDepthToViewZ(rawDepth3, uNear, uFar) - surfaceDistZ, 0.0) * viewDist / surfaceDistZ, 0.02);
   }
+  // What the under-water pass shows here, seen through path2 of water: its
+  // light dims by the water's extinction, absorbed or scattered out of the
+  // ray, and the light the water scatters into the ray makes up the rest, so
+  // the longer the path the more it is the water's own colour, and water
+  // with nothing under it in view keeps that colour whatever the path.
+  // path2 runs on the straight line to what the pass drew there (the floor
+  // is drawn on it), longer than the refracted ray the farther out it looks,
+  // as if the floor deepened away from the bank (about 1 m at the bottom of
+  // the home view, 2 m at the reference throw), so the sand fades out with
+  // distance as a pond's does.
   vec3 underColor = texture2D(uUnderColor, refractUv).rgb;
-  vec3 transmittance = exp(-uAbsorb * path2);
-  float scattering = 1.0 - exp(-path2 / uScatterLength);
-  vec3 refracted = underColor * transmittance + uWaterColor * scattering;
+  vec3 refracted = mix(uWaterColor, underColor, exp(-uExtinction * path2));
 
   // Reflection of the sky and the far shore (the dome's photograph): a planar
   // mirror image, rendered at screen resolution, of a dome at infinity, so the
@@ -956,8 +963,8 @@ flat varying vec3 vSkylight;
 ${GLSL_COMMON}
 #define WATER_INDEX 1.333
 #define CAUSTIC_BLUR 0.35          // the irradiance's peak where rays focus on the floor: about 1/this
-#define CAUSTIC_BRIGHTEST 2.0      // the sunlight on the sand is eased into this many times its own...
-#define CAUSTIC_DARKEST 0.5        // ...and this
+#define CAUSTIC_BRIGHTEST 1.6      // the sunlight on the sand is eased into this many times its own...
+#define CAUSTIC_DARKEST 0.65       // ...and this
 
 void main() {
   // Sand with pebbles and silt (FLOOR_PATTERN), baked.

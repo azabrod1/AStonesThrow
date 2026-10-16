@@ -299,8 +299,9 @@ uniform vec3 uSunDirView;
 uniform vec3 uSunIrradiance;
 uniform vec3 uSkyAmbient;
 uniform vec3 uAbsorb;
+uniform vec3 uExtinction;       // per metre: absorption plus scattering (lighting.extinction)
 uniform vec3 uFloorLight;       // the sunlit sand floor's radiance, under the water (src/splash.js)
-uniform vec3 uWaterColor;       // the water's in-scattered radiance at full depth (lighting.waterColor)
+uniform vec3 uWaterColor;       // the radiance of water too deep to see through (lighting.waterColor)
 uniform float uPondDepth;
 uniform float uExposure;
 uniform float uRefract;
@@ -341,20 +342,18 @@ vec3 aces(vec3 color) {
 // roughness GLITTER_ROUGHNESS, wider than the water shader's own because its
 // waves spread the glitter too), and the light from under its surface as the
 // water shader makes it: the sand floor seen through the water along the ray
-// (depth over the sine of its elevation) and the water's in-scattering over
-// that path (SCATTER_LENGTH, the water's uScatterLength). So a steep look
-// into the pond shows the turquoise of the sand under it, a grazing one the
-// sky's reflection over dark water.
+// (depth over the sine of its elevation), fading by the water's extinction
+// into the water's own colour. So a steep look into the pond shows the sand
+// under it, a grazing one the sky's reflection over dark green water.
 // body is the share left for light from under the surface (1 − Fresnel).
 #define GLITTER_ROUGHNESS 0.4
-#define SCATTER_LENGTH 2.2
 vec3 pondView(vec3 direction, vec3 sunWorld, out float body) {
   if (direction.y >= 0.0) { body = 0.0; return textureCubeLodEXT(uEnvCube, direction, 1.0).rgb; }
   float cosine = -direction.y;
   float fresnel = waterFresnel(cosine);
   body = 1.0 - fresnel;
   float path = uPondDepth / max(cosine, 0.02);
-  vec3 under = uFloorLight * exp(-uAbsorb * path) + uWaterColor * (1.0 - exp(-path / SCATTER_LENGTH));
+  vec3 under = mix(uWaterColor, uFloorLight, exp(-uExtinction * path));
   vec3 sky = textureCubeLodEXT(uEnvCube, vec3(direction.x, max(cosine, 0.04), direction.z), 2.0).rgb;
   vec3 halfVector = normalize(sunWorld - direction);
   float alpha = GLITTER_ROUGHNESS * GLITTER_ROUGHNESS;

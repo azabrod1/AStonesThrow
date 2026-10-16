@@ -726,6 +726,7 @@ export class SplashSystem {
       uSunIrradiance: { value: lighting.sunIrradiance },
       uSkyAmbient: { value: lighting.skyAmbient },
       uAbsorb: { value: lighting.absorb },
+      uExtinction: { value: lighting.extinction ?? new THREE.Vector3() },
       uFloorLight: { value: floorLight(lighting, water.depth ?? POND_DEPTH) },
       uWaterColor: { value: lighting.waterColor ?? new THREE.Vector3() },
       uPondDepth: { value: water.depth ?? POND_DEPTH },

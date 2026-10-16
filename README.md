@@ -332,8 +332,10 @@ third as far in front of the point above it as a straight line from the
 camera puts it, and one on the floor half as far), the floor on the
 straight line; the main
 scene renders the sky dome and the water surface (with any open cavity, drawn
-by the same shader), which refracts that texture
-with absorption by path length through the water, reflects a planar mirror
+by the same shader), which refracts that texture,
+fading it by path length through the water (absorbed and scattered, about as
+clear as a clean pond's: the sand shows near the bank and is gone about 9 m
+out) into the water's own green, reflects a planar mirror
 image of the sky dome, clouds and treeline (the camera never moves, so it is
 re-rendered only when the view zooms or turns; while a splash lives, it is
 drawn into it each frame, over the rectangle it covers) in the direction each ripple
@@ -355,7 +357,7 @@ the straight line), lit by the sun refracted into the water, so a ring's
 caustic lies 0.7 m down-sun of it on the sand. How strongly the surface
 focuses the light follows Snell's law for the sun's height (three times
 what a sun overhead would give), so a crest draws a thin bright line where
-its focus meets the sand, eased into half to twice the sun's own light
+its focus meets the sand, eased into 0.65 to 1.6 times the sun's own light
 (`src/pondFloor.js`).
 Stones are faceted procedural geometry with a small rigid-body model: a
 ballistic arc, quadratic drag under water, and a settle into the sand.

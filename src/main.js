@@ -185,13 +185,18 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
   // units chosen so that a sunlit pond tone-maps well at the given exposure.
   // The sun's direction and the sky's ambient radiance come from the sky
   // panorama; shaders hold these vectors by reference, so they are filled in
-  // place, never replaced.
+  // place, never replaced. The water (WATER_FRAGMENT in src/shaders/scene.js
+  // says how): absorb, per metre, dims the light going down to the floor and
+  // through the splash's thin water; extinction, per metre, absorption plus
+  // scattering, dims the floor seen through the water, which fades into
+  // waterColor, the radiance of water too deep to see through.
   const lighting = {
     sunDirection: new THREE.Vector3(),
     sunIrradiance: new THREE.Vector3(3.0, 2.85, 2.55),
     skyAmbient: new THREE.Vector3(),
     absorb: new THREE.Vector3(0.95, 0.36, 0.34),
-    waterColor: new THREE.Vector3(0.010, 0.046, 0.040),
+    extinction: new THREE.Vector3(2.0, 1.45, 1.65),
+    waterColor: new THREE.Vector3(0.015, 0.074, 0.041),
     exposure: 0.55,
   };
 

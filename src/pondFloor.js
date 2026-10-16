@@ -13,8 +13,9 @@
 // 1/(1 + that); where the rays come to a focus on the floor it peaks, as
 // sharp as the sun's disc and the pixel allow, and past the focus it is the
 // crossed rays' 1/|…|, so a ring's crests draw thin bright lines and its
-// troughs darker bands; it is eased into half to twice the sun's own, so a
-// steep ring never blows the sand out. Where on the floor: the floor is
+// troughs darker bands; it is eased into 0.65 to 1.6 times the sun's own, so
+// a steep ring never blows the sand out, nor draws on it a second set of
+// rings as strong as the surface's own. Where on the floor: the floor is
 // drawn on the straight line from the eye (the under-water pass, src/
 // main.js), but the eye sees it through the still surface, nearer, so each
 // pixel takes its caustics at the floor point it really shows, lit through
@@ -30,12 +31,12 @@
 // an RGBA8 texture (8 MiB), and per pixel the floor fetches it and adds what
 // moves, the caustics, and the light.
 //
-// The pattern shows through the water out to about 25 m ahead (past that,
-// absorption leaves it under half a level of the final 8-bit pixel) and as
-// wide as the view; a square of world XZ covering that with as many texels
-// would have texels of about 3 cm, several pixels each on the near floor. But
-// the camera never moves (src/main.js), it only turns and zooms, so the
-// texture is laid out in perspective from its eye (eye, the camera's
+// The pattern shows through the water out to about 9 m ahead (past that, the
+// water, lighting.extinction, leaves it under half a level of the final 8-bit
+// pixel) and as wide as the view; a square of world XZ covering that with as
+// many texels would have texels of about 1.5 cm, five pixels each on the near
+// floor. But the camera never moves (src/main.js), it only turns and zooms,
+// so the texture is laid out in perspective from its eye (eye, the camera's
 // position): a column is a fixed ratio of sideways offset to distance ahead of
 // the eye, from −PATTERN_SPREAD to +PATTERN_SPREAD (51° either side, the
 // bottom corners of a 21:9 view), and a row a fixed ratio of PATTERN_NEAREST
