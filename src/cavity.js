@@ -127,14 +127,20 @@
 // flat apron out to where the surface takes over. It is built in world
 // coordinates once per rendered frame (updateGeometry) and drawn in the main
 // scene with the water shader's CAVITY_MESH variant (src/shaders/scene.js,
-// built in src/waterSurface.js), so it is shaded as the same water. aCavity
-// carries per vertex how far it rides the surface (1 on the lip, which sits
-// on the splash's height field and the wind's waves like the surface it
-// joins; 0 down the wall below RIDE_DEPTH·R), how open to the sky it is
-// (1 / (1 + (depth / (OCCLUSION_DEPTH·mouth))²): the occlusion that darkens
-// the hole towards its bottom) and how steeply a ray must climb to leave
-// through the mouth (half the depth over the mouth's radius; on the lip's
-// inner face, any upward ray, while a downward one meets the hole).
+// built in src/waterSurface.js), so it is shaded as the same water. Its
+// normals are the grid's, but where rings have shrunk to a point (the
+// floor's centre; once the hole has pinched, the closing point and the
+// cap's rings with it) they face as the first open ring around does, so the
+// floor of a bowl flattening into the surface shades as the flat water it
+// is becoming, and the hole fades out rather than vanishing in the frame it
+// is gone. aCavity carries per vertex how far it rides the surface (1 on
+// the lip, which sits on the splash's height field and the wind's waves
+// like the surface it joins; 0 down the wall below RIDE_DEPTH·R), how open
+// to the sky it is (1 / (1 + (depth / (OCCLUSION_DEPTH·mouth))²): the
+// occlusion that darkens the hole towards its bottom) and how steeply a ray
+// must climb to leave through the mouth (half the depth over the mouth's
+// radius; on the lip's inner face, any upward ray, while a downward one
+// meets the hole).
 //
 // The surface patch must not show through the hole: pushShape() gives the
 // water shader a circle around the mouth and a shift. Every vertex of the
@@ -213,6 +219,7 @@ const TOP_POWER = 1.3;             // crowded towards the surface
 const DARKEST_MOUTH = 0.15;        // in R: the narrowest mouth the occlusion and escape take
 const FACING_HOLE = 0.002;         // the least climb to escape the wall and the lip's inner face hand the shader (any ray going up)
 const OCCLUSION_DEPTH = 0.5;       // in mouth radii: the depth at which the hole sees half the sky it sees at its mouth
+const CLOSED_RING = 1e-6;          // in R: a ring narrower is a point (the floor's centre, the closing point), facing as the next open ring does
 // Hiding the surface patch.
 const PUSH_MARGIN = 2;             // water cells beyond the hole that the patch dips from
 const COVER_MARGIN = 2.5;          // water cells beyond that which the lip's apron covers
@@ -951,17 +958,25 @@ export class Cavity {
     }
 
     computeGridNormals(this.positions, this.normals, ROWS, COLUMNS);
-    // The floor's centre is a pole: it faces as the ring around it does.
+    // The floor's centre is a pole, and once the hole has pinched so are its
+    // bottom ring (the closing point) and the cap's rings: each faces as the
+    // first open ring around them does. The grid's own rule for a pole
+    // (src/fluidMesh.js) would face the closing point along the floor, out
+    // towards that ring, and shade the floor from the centre out to it (most
+    // of a big stone's bowl) as a steep cone however flat the bowl has
+    // become: the hole would show, dark, until the frame it is gone.
+    let openRow = 1;
+    while (openRow < CAP_ROWS + WALL_ROWS - 1 && this.rowRadius[openRow] < CLOSED_RING * radius) openRow++;
     let sumX = 0, sumY = 0, sumZ = 0;
     for (let column = 0; column < COLUMNS; column++) {
-      const vertex = COLUMNS + column;
+      const vertex = openRow * COLUMNS + column;
       sumX += this.normals[vertex * 3]; sumY += this.normals[vertex * 3 + 1]; sumZ += this.normals[vertex * 3 + 2];
     }
     const sumLength = Math.hypot(sumX, sumY, sumZ) || 1;
-    for (let column = 0; column < COLUMNS; column++) {
-      this.normals[column * 3] = sumX / sumLength;
-      this.normals[column * 3 + 1] = sumY / sumLength;
-      this.normals[column * 3 + 2] = sumZ / sumLength;
+    for (let vertex = 0; vertex < openRow * COLUMNS; vertex++) {
+      this.normals[vertex * 3] = sumX / sumLength;
+      this.normals[vertex * 3 + 1] = sumY / sumLength;
+      this.normals[vertex * 3 + 2] = sumZ / sumLength;
     }
     markChanged(this.geometry, ['position', 'normal', 'aCavity']);
   }
