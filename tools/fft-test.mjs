@@ -31,7 +31,13 @@
 //   5. the half-float transform has room for the largest fields: splats of
 //      4 m/s (a 16 cm stone's field reaches about 1.4 m/s), narrow and wide,
 //      come back finite and accurate, where one 1/N² in the last pass would
-//      overflow binary16.
+//      overflow binary16;
+//   6. the pool's walls (setPool): a splat injected with its mirror images
+//      comes back as the four Gaussians, mirrored across the walls (less
+//      their mean); as it evolves, the field stays even about every wall, so
+//      no wave slopes across one, and a wave that reaches a wall comes back
+//      off it; and at fractional centres on 256² and 512² its height and
+//      velocity stay real, as in 3.
 // Exits with status 1 if a check fails.
 //
 //   node tools/fft-test.mjs
@@ -176,9 +182,10 @@ function spectrumOf(state, size, which) {
  * queues them) and keeps k = 0 at zero; every stored value goes through
  * `store`. stateScale is N² as the solver now injects, 1 for the old 1/N²
  * injection; nyquist 'real' is the update pass's treatment of texel N/2,
- * 'complex' the old one.
+ * 'complex' the old one. walls ({ x, y }, texels: uWalls) gives each splat
+ * its mirror images across them, as in a pool.
  */
-function updateState(state, size, { dt, splats = [], stateScale, nyquist = 'real', store = STORAGE.exact }) {
+function updateState(state, size, { dt, splats = [], stateScale, nyquist = 'real', store = STORAGE.exact, walls = null }) {
   const { qx, qy, qMagnitude } = gridOf(size);
   const { cosine, sineOverOmega, omegaSine, decay } = rotationOf(size, dt);
   const next = new Float64Array(state.length);
@@ -197,7 +204,14 @@ function updateState(state, size, { dt, splats = [], stateScale, nyquist = 'real
         const magnitude = 2 * Math.PI * splat.sigma ** 2 / (size * size) * stateScale * shape;
         const phaseX = -qx[column] * splat.tx, phaseY = -qy[row] * splat.tz;
         let shiftRe, shiftIm;
-        if (nyquist === 'real' && (column === size / 2 || row === size / 2)) {
+        if (walls) {
+          // Each axis's shift for the splat and its image across the wall, real along a Nyquist axis; their product.
+          const imageX = -qx[column] * (2 * walls.x - splat.tx), imageY = -qy[row] * (2 * walls.y - splat.tz);
+          const alongXRe = Math.cos(phaseX) + Math.cos(imageX), alongXIm = column === size / 2 ? 0 : Math.sin(phaseX) + Math.sin(imageX);
+          const alongYRe = Math.cos(phaseY) + Math.cos(imageY), alongYIm = row === size / 2 ? 0 : Math.sin(phaseY) + Math.sin(imageY);
+          shiftRe = alongXRe * alongYRe - alongXIm * alongYIm;
+          shiftIm = alongXRe * alongYIm + alongXIm * alongYRe;
+        } else if (nyquist === 'real' && (column === size / 2 || row === size / 2)) {
           // Along a Nyquist axis the shift is real: cos of that axis's phase.
           const alongXRe = Math.cos(phaseX), alongXIm = column === size / 2 ? 0 : Math.sin(phaseX);
           const alongYRe = Math.cos(phaseY), alongYIm = row === size / 2 ? 0 : Math.sin(phaseY);
@@ -436,6 +450,87 @@ console.log('\n5. Range of the half-float transform');
     const rmsError = Math.sqrt(squared / (size * size)) / peak;
     check(stored.finite && rmsError < 1e-3 && once.largestStored > HALF_MAX,
       `${name} splat, σ ${sigma} texels, 4 m/s: field peak ${peak.toFixed(2)}, state up to ${largestOf(state).toFixed(1)}, scratch up to ${stored.largestStored.toFixed(1)} (binary16 holds ${HALF_MAX}), rms error ${rmsError.toExponential(2)} of the peak; one 1/N² in the last pass would need ${once.largestStored.toExponential(2)}`);
+  }
+}
+
+// 6. The pool's walls.
+console.log('\n6. The pool\'s walls: a splat with its mirror images');
+{
+  // The pool is the patch's middle quarter (setPool): its walls at N/4 and 3N/4 along each axis.
+  const size = 64, walls = { x: size / 4, y: size / 4 }, amplitude = 0.37, sigma = 2.5, centreX = 22.3, centreY = 37.8;
+  const splat = { tx: centreX, tz: centreY, sigma, rim: 1, height: amplitude, velocity: 0 };
+  const state = updateState(new Float64Array(4 * size * size), size, { dt: 0, splats: [splat], stateScale: size * size, walls });
+  const field = inverseTransform(packState(state, size), size, { scaling: SOLVER_SCALING });
+  const wrapped = (offset) => offset - size * Math.round(offset / size);
+  const images = [[centreX, centreY], [2 * walls.x - centreX, centreY], [centreX, 2 * walls.y - centreY], [2 * walls.x - centreX, 2 * walls.y - centreY]];
+  const mean = 4 * amplitude * 2 * Math.PI * sigma * sigma / (size * size);
+  let worst = 0, worstImaginary = 0;
+  for (let row = 0; row < size; row++) {
+    for (let column = 0; column < size; column++) {
+      let expected = -mean;
+      for (const [imageX, imageY] of images) expected += amplitude * Math.exp(-(wrapped(column - imageX) ** 2 + wrapped(row - imageY) ** 2) / (2 * sigma * sigma));
+      worst = Math.max(worst, Math.abs(field.re[row * size + column] - expected));
+      worstImaginary = Math.max(worstImaginary, Math.abs(field.im[row * size + column]));
+    }
+  }
+  check(worst < 1e-9 * amplitude && worstImaginary < 1e-9 * amplitude,
+    `σ = ${sigma} texels at (${centreX}, ${centreY}) on ${size}², walls at ${walls.x} and ${walls.x + size / 2}: largest difference from its four images less their mean ${worst.toExponential(2)}, velocity ${worstImaginary.toExponential(2)}`);
+
+  // Evolved, with the solver's dispersion and damping on its 6 m patch: even about every wall.
+  let evolved = state;
+  const frames = 150;
+  for (let frame = 0; frame < frames; frame++) evolved = updateState(evolved, size, { dt: 1 / 60, stateScale: size * size });
+  const height = inverseTransform(packState(evolved, size), size, { scaling: SOLVER_SCALING }).re;
+  const at = (column, row) => height[((row % size + size) % size) * size + ((column % size + size) % size)];
+  let peak = 0, oddness = 0, slopeAcross = 0, steepest = 0;
+  for (let row = 0; row < size; row++) {
+    for (let column = 0; column < size; column++) peak = Math.max(peak, Math.abs(at(column, row)));
+    for (const wall of [walls.x, walls.x + size / 2]) {
+      for (let offset = 1; offset < size / 4; offset++) oddness = Math.max(oddness, Math.abs(at(wall + offset, row) - at(wall - offset, row)));
+      slopeAcross = Math.max(slopeAcross, Math.abs(at(wall + 1, row) - at(wall - 1, row)) / 2);
+    }
+    for (let column = 0; column < size; column++) steepest = Math.max(steepest, Math.abs(at(column + 1, row) - at(column - 1, row)) / 2);
+  }
+  for (let column = 0; column < size; column++) {
+    for (const wall of [walls.y, walls.y + size / 2]) {
+      for (let offset = 1; offset < size / 4; offset++) oddness = Math.max(oddness, Math.abs(at(column, wall + offset) - at(column, wall - offset)));
+      slopeAcross = Math.max(slopeAcross, Math.abs(at(column, wall + 1) - at(column, wall - 1)) / 2);
+    }
+  }
+  check(oddness < 1e-9 * peak && slopeAcross < 1e-9 * steepest,
+    `after ${frames} frames of 1/60 s: the field is even about all four walls (largest difference across one ${oddness.toExponential(2)} of its peak ${peak.toExponential(2)}), and slopes across them ${(slopeAcross / steepest).toExponential(2)} of its steepest`);
+
+  // The waves come back off the walls: the pool's field is the open patch's (the same splat alone,
+  // evolved alike) read at the point and at its mirror images across the walls, so what reaches a
+  // wall runs on as if from the splat's image beyond it.
+  let openEvolved = updateState(new Float64Array(4 * size * size), size, { dt: 0, splats: [splat], stateScale: size * size });
+  for (let frame = 0; frame < frames; frame++) openEvolved = updateState(openEvolved, size, { dt: 1 / 60, stateScale: size * size });
+  const openHeight = inverseTransform(packState(openEvolved, size), size, { scaling: SOLVER_SCALING }).re;
+  const openAt = (column, row) => openHeight[((row % size + size) % size) * size + ((column % size + size) % size)];
+  let imageDifference = 0, reflected = 0;
+  for (let row = 0; row < size; row++) {
+    for (let column = 0; column < size; column++) {
+      const mirrorColumn = 2 * walls.x - column, mirrorRow = 2 * walls.y - row;
+      const fromImages = openAt(column, row) + openAt(mirrorColumn, row) + openAt(column, mirrorRow) + openAt(mirrorColumn, mirrorRow);
+      imageDifference = Math.max(imageDifference, Math.abs(at(column, row) - fromImages));
+      // In the pool, what the images add to the open field there: the reflections.
+      if (column >= walls.x && column <= walls.x + size / 2 && row >= walls.y && row <= walls.y + size / 2) reflected = Math.max(reflected, Math.abs(at(column, row) - openAt(column, row)));
+    }
+  }
+  check(imageDifference < 1e-9 * peak && reflected > 0.2 * peak,
+    `after ${frames} frames the pool's field is the open patch's read at the point and its three mirror images (largest difference ${imageDifference.toExponential(2)} of the peak); the reflections reach ${(reflected / peak).toFixed(2)} of the peak in the pool`);
+
+  // Real fields at fractional centres, as in 3.
+  for (const gridSize of [256, 512]) {
+    const gridWalls = { x: gridSize / 4, y: gridSize / 4 };
+    const fractional = { tx: 100.37 * gridSize / 256, tz: 61.71 * gridSize / 256, sigma: 0.6, rim: 1.7 };
+    for (const [name, amounts] of [['height', { height: 0.37, velocity: 0 }], ['velocity', { height: 0, velocity: 0.37 }]]) {
+      const gridState = updateState(new Float64Array(4 * gridSize * gridSize), gridSize, { dt: 0, splats: [{ ...fractional, ...amounts }], stateScale: gridSize * gridSize, walls: gridWalls });
+      const packed = inverseTransform(packState(gridState, gridSize), gridSize, { scaling: SOLVER_SCALING });
+      const own = name === 'height' ? packed.re : packed.im, other = name === 'height' ? packed.im : packed.re;
+      const ratio = largestOf(other) / largestOf(own);
+      check(ratio < 1e-6, `${gridSize}², σ 0.6 texels at a fractional centre with its images, ${name} only: the ${name === 'height' ? 'velocity' : 'height'} is ${ratio.toExponential(2)} of the ${name} peak`);
+    }
   }
 }
 

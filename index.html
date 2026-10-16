@@ -546,6 +546,7 @@
     <div class="menu-field">
       <div class="menu-field-label" id="water-label">How clear</div>
       <div class="menu-seg" id="water" role="radiogroup" aria-labelledby="water-label" aria-describedby="water-note">
+        <button type="button" role="radio" data-value="pool">Pool</button>
         <button type="button" role="radio" data-value="clear">Clear</button>
         <button type="button" role="radio" data-value="lake">Lake</button>
         <button type="button" role="radio" data-value="pond">Pond</button>
@@ -701,7 +702,15 @@
         under: 'Under the water, the sky in a bright window overhead and the rocks coming down through it.',
         turned: 'Turned by hand. Drag the water to look around; Reset view comes back to the shore.',
       },
+      poolView: {
+        shore: 'Standing on the deck at the pool\u2019s corner, looking down into it.',
+        level: 'Down at the water, just inside the pool\u2019s wall.',
+        high: 'From high above, the rings running back and forth off the walls.',
+        under: 'Under the water, the sky in a bright window overhead and the tiles mirrored in the surface past it.',
+        turned: 'Turned by hand. Drag the water to look around; Reset view comes back to the deck.',
+      },
       water: {
+        pool: 'A tiled pool, crystal clear: the ripples run back and forth off its walls, and the sunlight dances on its tiles.',
         clear: 'Spring water, turquoise: the sand shows far out under the shallows.',
         lake: 'A clear Alpine lake: bright sand in the shallows, deep blue where the rocks land.',
         pond: 'A green pond: the sand fades into green a little way out.',
@@ -724,13 +733,14 @@
       const name = currentView.view;
       showViewChoice(name);
       settings.setValue('view', name ? label('view', name) : 'Turned');
-      document.getElementById('view-note').textContent = NOTES.view[name ?? 'turned'];
+      document.getElementById('view-note').textContent = (pond.clarity === 'pool' ? NOTES.poolView : NOTES.view)[name ?? 'turned'];
     };
     const showWater = radioGroup(document.getElementById('water'), (value) => { pond.setClarity(value); updateWater(); });
     function updateWater() {
       showWater(pond.clarity);
       settings.setValue('water', label('water', pond.clarity));
       document.getElementById('water-note').textContent = NOTES.water[pond.clarity];
+      showView();   // the pool's views are told otherwise
     }
     const showWind = radioGroup(document.getElementById('wind'), (value) => { pond.setWind(value); updateWind(); });
     function updateWind() {

@@ -5,7 +5,7 @@
 // view glide it to another orbit (blendOrbits), and src/main.js says the rest.
 //
 // An orbit is { pivotX, pivotY, pivotZ, azimuth, elevation, distance }:
-// metres, radians, radians, metres. The eye stands at the pivot plus
+// metres, radians, radians, metres (and, kept inside a box, its reach). The eye stands at the pivot plus
 // distance · (sin a·cos e, sin e, cos a·cos e): azimuth 0 on the +Z side of
 // the pivot (the bank the shore view stands on), growing toward +X, and the
 // elevation above the pivot's level. clampOrbit keeps the eye's height
@@ -13,7 +13,12 @@
 // its x and z: above the water at least LOWEST_EYE over the ground or the
 // still water, so a wave never crosses it; under it, between the bed and
 // the surface, src/main.js) and the elevation within HIGHEST_ELEVATION of
-// level (straight down or up, the yaw would be undefined).
+// level (straight down or up, the yaw would be undefined); and, if `bounds`
+// has a box ({ minX, maxX, minZ, maxZ }: under a pool's water, inside its
+// walls), the pivot inside it and the eye too, nearer the pivot where the
+// way to it leaves the box. The distance it wanted is kept as the orbit's
+// reach, so turned back where the way is clear the eye stands as far out
+// as before.
 //
 // Pure math with no Three.js, so tools can check it in Node.
 import { viewFacing } from './viewZoom.js';
@@ -69,11 +74,34 @@ function elevationAtHeight(orbit, heightAt) {
   return elevation;
 }
 
+/**
+ * The orbit with its pivot inside `box` and its eye no farther out along its
+ * way from the pivot than the box's edge, its reach the distance it had (or
+ * the reach it kept). Moving the eye toward the pivot keeps it between
+ * heights the pivot is between.
+ */
+export function keepInside(orbit, box) {
+  const pivotX = clamp(orbit.pivotX, box.minX, box.maxX);
+  const pivotZ = clamp(orbit.pivotZ, box.minZ, box.maxZ);
+  const across = Math.cos(orbit.elevation);
+  const towardX = Math.sin(orbit.azimuth) * across, towardZ = Math.cos(orbit.azimuth) * across;
+  const reach = orbit.reach ?? orbit.distance;
+  let distance = reach;
+  if (towardX > 1e-9) distance = Math.min(distance, (box.maxX - pivotX) / towardX);
+  else if (towardX < -1e-9) distance = Math.min(distance, (box.minX - pivotX) / towardX);
+  if (towardZ > 1e-9) distance = Math.min(distance, (box.maxZ - pivotZ) / towardZ);
+  else if (towardZ < -1e-9) distance = Math.min(distance, (box.minZ - pivotZ) / towardZ);
+  return { ...orbit, pivotX, pivotZ, distance: Math.max(distance, 1e-3), reach };
+}
+
 /** The orbit with its eye kept within `bounds` (the header) and HIGHEST_ELEVATION of level, its azimuth wrapped. */
 export function clampOrbit(orbit, bounds = ABOVE_WATER) {
-  const highest = Math.min(elevationAtHeight(orbit, bounds.highestAt), HIGHEST_ELEVATION);
-  const lowest = Math.min(Math.max(elevationAtHeight(orbit, bounds.lowestAt), -HIGHEST_ELEVATION), highest);
-  return { ...orbit, azimuth: wrapAngle(orbit.azimuth), elevation: clamp(orbit.elevation, lowest, highest) };
+  // In a box the heights are kept at the distance it wants, which the box may then shorten.
+  const wanted = bounds.box && orbit.reach ? { ...orbit, distance: orbit.reach } : orbit;
+  const highest = Math.min(elevationAtHeight(wanted, bounds.highestAt), HIGHEST_ELEVATION);
+  const lowest = Math.min(Math.max(elevationAtHeight(wanted, bounds.lowestAt), -HIGHEST_ELEVATION), highest);
+  const clamped = { ...wanted, azimuth: wrapAngle(orbit.azimuth), elevation: clamp(orbit.elevation, lowest, highest) };
+  return bounds.box ? keepInside(clamped, bounds.box) : clamped;
 }
 
 /**

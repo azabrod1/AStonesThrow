@@ -17,10 +17,16 @@
 // keeps what the view's centre shows there; under the water a drag keeps the
 // eye between the surface and the bed; the View setting's choices and Reset
 // view glide to their orbits, and the page's View row and Reset view button
-// follow. Last, a press held still dips a finger into the water under it,
+// follow. Then a press held still dips a finger into the water under it,
 // a drag then moves the finger and not the view, and letting go lifts it
-// without throwing; a mouse held does the same. Prints one line per check and exits with status 1 if any
-// fails.
+// without throwing; a mouse held does the same. Last, the pool
+// (src/pool.js): its views stand where they should (on the deck, over its
+// water, under it inside its walls), a drag under its water keeps the eye
+// UNDER_GAP inside its walls as well as clear of its floor and surface (and
+// out again as far as before once turned back from a wall), a
+// glide into its water and out goes over the water and never through the
+// deck, and a tap on the deck throws inside the walls. Prints one line per
+// check and exits with status 1 if any fails.
 //
 //   node tools/zoom-probe.mjs [--w=1280 --h=720]
 import { chromium } from 'playwright';
@@ -267,6 +273,65 @@ await page.waitForTimeout(450);
 const mouseTouching = await page.evaluate(() => window.__pond.touching);
 await page.mouse.up();
 check(mouseTouching && !(await page.evaluate(() => window.__pond.touching)) && (await rockCount()) === before, 'a mouse held still dips the finger too, and lifts it on release without throwing');
+
+// The pool.
+await page.evaluate(() => { window.__pond.setClarity('pool'); window.__pond.resetView(); window.__pond.settleView(); });
+const square = await page.evaluate(() => window.__pond.water.poolSquare);
+const insideBy = ({ x, z }) => Math.min(x - square.minX, square.minX + square.size - x, z - square.minZ, square.minZ + square.size - z);
+const deck = 0.1;   // POOL.deck (src/pool.js)
+for (const name of ['shore', 'high', 'level', 'under']) {
+  await page.evaluate((view) => { window.__pond.showView(view); window.__pond.settleView(); }, name);
+  const eye = await page.evaluate(() => ({ ...window.__pond.camera.position }));
+  const state = await page.evaluate(() => ({ name: window.__pond.viewName, zoomed: window.__pond.zoomed }));
+  const placed = name === 'under' ? eye.y < -0.15 + 1e-6 && insideBy(eye) >= 0.15 - 1e-6
+    : name === 'level' ? insideBy(eye) > 0 && Math.abs(eye.y - 0.16) < 1e-6
+      : eye.y > deck + 0.1;
+  check(state.name === name && !state.zoomed && placed && (await pivotOffCentre()) < 0.5,
+    `in the pool, View ${name}: the eye at (${eye.x.toFixed(2)}, ${eye.y.toFixed(2)}, ${eye.z.toFixed(2)}), ${name === 'under' ? `${(insideBy(eye) * 100).toFixed(0)} cm inside the walls` : name === 'level' ? 'over the water inside the walls' : 'over the deck'}`);
+}
+await page.evaluate(() => { window.__pond.showView('under'); window.__pond.settleView(); });
+// Each drag's every step: the eye swings round the pivot, toward each wall in turn.
+let nearestWall = Infinity, highestEye = -Infinity, lowestEye = Infinity, samples = 0;
+for (const [fromX, fromY, toX, toY] of [[0.1, 0.5, 0.95, 0.5], [0.95, 0.5, 0.05, 0.6], [0.5, 0.1, 0.5, 0.95], [0.2, 0.9, 0.8, 0.1], [0.9, 0.3, 0.1, 0.4], [0.5, 0.95, 0.5, 0.05]]) {
+  await page.evaluate(([x, y]) => window.__probe.pointer('pointerdown', 1, x, y), [width * fromX, height * fromY]);
+  for (let step = 1; step <= 24; step++) {
+    const eye = await page.evaluate(([x, y]) => { window.__probe.pointer('pointermove', 1, x, y); return { ...window.__pond.camera.position }; }, [width * (fromX + (toX - fromX) * step / 24), height * (fromY + (toY - fromY) * step / 24)]);
+    nearestWall = Math.min(nearestWall, insideBy(eye));
+    highestEye = Math.max(highestEye, eye.y);
+    lowestEye = Math.min(lowestEye, eye.y);
+    samples++;
+  }
+  await page.evaluate(([x, y]) => window.__probe.pointer('pointerup', 1, x, y), [width * toX, height * toY]);
+}
+check(Math.abs(nearestWall - 0.15) < 1e-6 && highestEye <= -0.15 + 1e-6 && lowestEye >= -1.4 + 0.15 - 2e-3,
+  `under the pool's water six long drags (${samples} steps) keep the eye ${(nearestWall * 100).toFixed(1)} cm inside its walls at the least, ${(-highestEye * 100).toFixed(1)} cm under the surface and ${((lowestEye + 1.4) * 100).toFixed(1)} cm over the floor (15 cm each)`);
+// Swung toward a side wall the eye comes in nearer the pivot; swung back, out again as far as it was.
+await page.evaluate(() => { window.__pond.showView('under'); window.__pond.settleView(); });
+const underDistance = (await orbit()).distance;
+await drag(width * 0.5, height * 0.5, width * 0.5 + height * 0.45, height * 0.5, 12);
+const swung = await orbit();
+await drag(width * 0.5 + height * 0.45, height * 0.5, width * 0.5, height * 0.5, 12);
+const swungBack = await orbit();
+check(swung.distance < underDistance - 0.01 && Math.abs(swungBack.distance - underDistance) < 1e-9,
+  `turned 81° toward a side wall the eye comes in from ${underDistance.toFixed(2)} m to ${swung.distance.toFixed(2)} m from the pivot, and turned back stands ${swungBack.distance.toFixed(2)} m out again`);
+for (const [from, to] of [['shore', 'under'], ['under', 'shore'], ['high', 'under'], ['under', 'high']]) {
+  await page.evaluate((view) => { window.__pond.showView(view, { glide: false }); }, from);
+  const path = await page.evaluate((view) => window.__pond.glidePath(view, 200), to);
+  const throughDeck = path.filter((eye) => eye.y < deck + 0.1 - 1e-9 && insideBy(eye) < -1e-9);
+  check(throughDeck.length === 0, `in the pool a glide from ${from} to ${to} goes over the water: ${throughDeck.length} of ${path.length} steps below the deck's top outside the walls`);
+}
+await page.evaluate(() => { window.__pond.showView('shore', { glide: false }); });
+before = await rockCount();
+const deckX = width * 0.5, deckY = height * 0.08;
+await page.evaluate(([x, y]) => { window.__probe.pointer('pointerdown', 1, x, y); window.__probe.pointer('pointerup', 1, x, y); }, [deckX, deckY]);
+const deckThrow = await page.evaluate(() => {
+  const rock = window.__pond.rocks.at(-1);
+  const position = rock.position.clone(), velocity = rock.velocity.clone();
+  for (let step = 0; step < 2000 && position.y > 0; step++) { velocity.y -= 9.81 / 1000; position.addScaledVector(velocity, 1 / 1000); }
+  return { x: position.x, z: position.z, count: window.__pond.rocks.length };
+});
+check(deckThrow.count === before + 1 && insideBy(deckThrow) > 0.2, `a tap on the deck beyond the pool throws inside its walls, landing ${(insideBy(deckThrow) * 100).toFixed(0)} cm in from the nearest`);
+await page.evaluate(() => window.__pond.setClarity('lake'));
 
 if (problems.length) { console.log('page errors:'); console.log(problems.join('\n')); failures++; }
 await browser.close();

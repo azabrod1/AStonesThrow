@@ -111,7 +111,11 @@
 //     reference throw (R 3 cm at 6.3 m/s, straight in), and with real air
 //     that throw seals at the surface, which may change its ring by tens of
 //     percent. It is carried across the whole pond by src/rings.js, damped
-//     as a real pond damps it, so a big stone's ring crosses it.
+//     as a real pond damps it, so a big stone's ring crosses it. In a pool
+//     (water.pool, src/spectralWater.js) the solver carries it instead, so
+//     its walls reflect it, and src/rings.js only the near field it would
+//     hide: held until its release, it goes to both in one frame
+//     (releasePoolRing), so the two start together.
 //   - Foam: the patches' radii go with R, the boil's peaks as sqrt(s) and the
 //     raft's as s^0.25 times the cavity splat's strength, at most
 //     FOAM_AMOUNT_CAP (a bigger cavity entrains more air for the area of its
@@ -186,6 +190,7 @@ import { JetColumn, CLEAN_FORM } from './jet.js';
 import { Cavity, PINCH_TIME, SURFACE_HEAD } from './cavity.js';
 import { MAX_CAVITIES } from './waterSurface.js';
 import { FoamSpecks } from './foamSpecks.js';
+import { RING_SOURCE } from './rings.js';
 import { PARTICLE_VERTEX, PARTICLE_DEPTH_FRAGMENT, PARTICLE_THICKNESS_FRAGMENT, COMPOSITE_FRAGMENT, MIRROR_SHEET_FRAGMENT, MIRROR_COLUMN_FRAGMENT, MIRROR_DROP_FRAGMENT } from './shaders/fluid.js';
 import { SHEET_VERTEX, SHEET_DEPTH_FRAGMENT, SHEET_THICKNESS_FRAGMENT, COLUMN_VERTEX, COLUMN_DEPTH_FRAGMENT, COLUMN_THICKNESS_FRAGMENT } from './shaders/sheet.js';
 import { BUBBLE_VERTEX, BUBBLE_FRAGMENT } from './shaders/scene.js';
@@ -294,14 +299,15 @@ void main() {
 /**
  * The sand floor's radiance under the water, lit as FLOOR_FRAGMENT lights it
  * (the sun through the water above it, and the sky), without its caustics:
- * what the composite sees of the pond's bottom through a drop.
+ * what the composite sees of the pond's bottom through a drop. A pool's
+ * tiles (setBed) are brighter.
  */
-function floorLight(lighting, depth) {
+function floorLight(lighting, depth, albedo = SAND_ALBEDO) {
   const sunHeight = Math.max(lighting.sunDirection.y, 0.2);
   const light = new THREE.Vector3();
   for (const channel of ['x', 'y', 'z']) {
     const absorb = lighting.absorb[channel];
-    light[channel] = SAND_ALBEDO * (lighting.sunIrradiance[channel] * Math.exp(-absorb * depth / sunHeight) * Math.max(lighting.sunDirection.y, 0)
+    light[channel] = albedo * (lighting.sunIrradiance[channel] * Math.exp(-absorb * depth / sunHeight) * Math.max(lighting.sunDirection.y, 0)
       + lighting.skyAmbient[channel] * Math.exp(-absorb * depth) * 1.4);
   }
   return light;
@@ -618,6 +624,7 @@ export class SplashSystem {
     this.crowns = [];    // live crown sheets
     this.plumes = [];    // scheduled bubble plumes
     this.wakes = [];     // scheduled cavity splats of an oblique entry
+    this.poolRings = []; // a pool's ring sources, held until their release (stampCavity)
     this.foamStamps = [];   // scheduled foam: a cavity's, when it closes
     this.bases = [];        // scheduled: a jet's base meeting the water, when the hole's bowl has flattened
     this.cavities = [];  // open cavities (src/cavity.js), drawn in the main scene from cavityGroup
@@ -626,8 +633,10 @@ export class SplashSystem {
     this.sceneTime = -1;  // splash time the cavities were last brought to
     this.time = 0;
     this.frameSeconds = 1 / 60;   // simulated length of the frame being stepped
+    this.frameEnd = 0;            // the splash time it ends at, when the solver takes this frame's splats (setFrameSeconds)
     this.substep = 1 / 240;       // and of its substeps, which the stones are stepped with
     this.lighting = lighting;
+    this.bedAlbedo = SAND_ALBEDO;   // the bed's (setBed)
     this.foamSpecks = new FoamSpecks({ water, lighting, ambientWaves });
     // The foam drifts down the wind the ripples blow with (the CPU probes' stand-ins have neither).
     if (ambientWaves.windDirection) water.setWind?.(ambientWaves.windDirection);
@@ -774,7 +783,7 @@ export class SplashSystem {
   /** Something in the air or in the water is moving: droplets, sheets, columns, an open cavity, bubbles, or a stage still to come. */
   get inMotion() {
     return this.count > 0 || this.crowns.length > 0 || this.columns.length > 0 || this.cavities.length > 0 || this.bubbleCount > 0
-      || this.jets.length > 0 || this.plumes.length > 0 || this.wakes.length > 0 || this.foamStamps.length > 0 || this.bases.length > 0;
+      || this.jets.length > 0 || this.plumes.length > 0 || this.wakes.length > 0 || this.poolRings.length > 0 || this.foamStamps.length > 0 || this.bases.length > 0;
   }
 
   /** Nothing of the splash is left, foam specks included. */
@@ -795,6 +804,7 @@ export class SplashSystem {
     this.jets = [];
     this.plumes = [];
     this.wakes = [];
+    this.poolRings = [];
     this.foamStamps = [];
     this.bases = [];
     this.mirrorList.length = 0;
@@ -989,6 +999,25 @@ export class SplashSystem {
   }
 
   /**
+   * A pool's ring source at its release (stampCavity): its push and pair to
+   * the solver, whose walls reflect the ring, and to src/rings.js as a
+   * near-field ring, released when the solver takes them: at the end of this
+   * frame (setFrameSeconds), so the near field it hides is the solver's own.
+   */
+  releasePoolRing({ x, z, sigma, velocity, pairHeight, directionX, directionZ }, water) {
+    const strength = RING_SOURCE.strength;
+    water.addSplat({ x, z, radius: sigma, velocity: velocity * strength, rim: RING.rim });
+    if (pairHeight !== 0) {
+      water.addSplat({ x: x + directionX * 0.8 * sigma, z: z + directionZ * 0.8 * sigma, radius: 0.8 * sigma, height: pairHeight * strength, rim: 1 });
+      water.addSplat({ x: x - directionX * 0.8 * sigma, z: z - directionZ * 0.8 * sigma, radius: 0.8 * sigma, height: -pairHeight * strength, rim: 1 });
+    }
+    water.rings.add({
+      x, z, radius: sigma, velocity, rim: RING.rim, nearOnly: true,
+      pair: pairHeight !== 0 ? { height: pairHeight, radius: 0.8 * sigma, offset: 0.8 * sigma, directionX, directionZ } : null,
+    }, Math.max(this.frameEnd, this.time));
+  }
+
+  /**
    * The ring a stone's entry launches (RING), at `strength` of a vertical
    * entry's, with its foam. (travelX, travelZ), a direction times a share
    * from 0 to 1, sets the pair of heights that makes that share of the ring
@@ -996,9 +1025,10 @@ export class SplashSystem {
    * step with the push, so the waves ahead grow and those behind shrink
    * (src/rings.js). The ring goes to the analytic rings when the water
    * carries them (water.rings: the push and its pair as one ring source,
-   * across the whole pond), else to the solver (the CPU probes' stand-in),
-   * at once, which cannot hold a splat back. The foam comes from foamTime
-   * (the cavity's closure), or now.
+   * across the whole pond); in a pool (water.pool) it is held until its
+   * release and goes to both (releasePoolRing); else to the solver (the CPU
+   * probes' stand-in), at once, which cannot hold a splat back. The foam
+   * comes from foamTime (the cavity's closure), or now.
    */
   stampCavity({ x, z, radius, speed, strength, travelX = 0, travelZ = 0, foamTime = this.time }, water) {
     const sigma = RING.sigma * radius;
@@ -1006,7 +1036,9 @@ export class SplashSystem {
     const travel = Math.hypot(travelX, travelZ);
     const pairHeight = RING.ahead * travel * Math.abs(velocity) * Math.sqrt(sigma / GRAVITY);
     const directionX = travel > 0 ? travelX / travel : 1, directionZ = travel > 0 ? travelZ / travel : 0;
-    if (water.rings) {
+    if (water.rings && water.pool) {
+      this.poolRings.push({ time: this.time + RING.delay * Math.sqrt(radius / GRAVITY), x, z, sigma, velocity, pairHeight: travel > 0 ? pairHeight : 0, directionX, directionZ });
+    } else if (water.rings) {
       water.rings.add({
         x, z, radius: sigma, velocity, rim: RING.rim,
         pair: travel > 0 ? { height: pairHeight, radius: 0.8 * sigma, offset: 0.8 * sigma, directionX, directionZ } : null,
@@ -1257,6 +1289,8 @@ export class SplashSystem {
     this.jets = this.jets.filter((jet) => this.time < jet.start);
     for (const wake of this.wakes) if (this.time >= wake.start) this.stampCavity(wake, water);
     this.wakes = this.wakes.filter((wake) => this.time < wake.start);
+    for (const ring of this.poolRings) if (this.time >= ring.time) this.releasePoolRing(ring, water);
+    this.poolRings = this.poolRings.filter((ring) => this.time < ring.time);
     for (const stamp of this.foamStamps) if (this.time >= stamp.time) water.addFoam(stamp.foam);
     this.foamStamps = this.foamStamps.filter((stamp) => this.time < stamp.time);
     for (const base of this.bases) if (this.time >= base.time) this.startBase(base, water);
@@ -1553,13 +1587,21 @@ export class SplashSystem {
    */
   setFrameSeconds(seconds) {
     this.frameSeconds = seconds;
+    this.frameEnd = this.time + seconds;
     this.streakSeconds = seconds * 0.5;
   }
 
   /** After the sky changes the sun (src/sky.js): the sand's light that the splash's water sees the pond's floor by. */
   updateLighting() {
     const uniforms = this.compositePass.material.uniforms;
-    uniforms.uFloorLight.value.copy(floorLight(this.lighting, uniforms.uPondDepth.value));
+    uniforms.uFloorLight.value.copy(floorLight(this.lighting, uniforms.uPondDepth.value, this.bedAlbedo));
+  }
+
+  /** The bed the splash's water sees through its drops: its depth (m) and albedo (the lake's sand by default; a pool's tiles, src/main.js). */
+  setBed({ depth, albedo = SAND_ALBEDO }) {
+    this.bedAlbedo = albedo;
+    this.compositePass.material.uniforms.uPondDepth.value = depth;
+    this.updateLighting();
   }
 
   /**

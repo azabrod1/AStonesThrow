@@ -81,6 +81,17 @@
 // does); hidden inside 4σ until then, they showed only once 24 cm out, about
 // 0.75 s after entry, and the rings looked late after the splash.
 //
+// In a pool (src/spectralWater.js setPool) the ring has walls to come back
+// off, which an analytic ring cannot: its source goes into the solver, whose
+// patch reflects it. The solver has no near field to fade, so here the
+// source is a near-field ring (add's nearOnly): the part NEAR_FIELD hides,
+// with its sign turned, so with the solver's ring the surface is the same
+// faded ring the open pond draws until the fade is over, and then the
+// solver's alone. It is drawn out to the near field's outer radius only and
+// retires when the fade ends (16·sqrt(σ/g) after its release: 1.25 s for
+// the reference stone, 2.8 s for a 30 cm rock). It needs its release to be
+// the solver's: src/splash.js hands both the same source in the same frame.
+//
 // A source (one throw's ring) is up to MAX_GROUPS groups, each a splat and
 // its pair released together; a splat joins the source started at most
 // MERGE.seconds earlier within MERGE.reach of its σ (the pushes down an
@@ -469,6 +480,12 @@ export function nearField(source, time) {
   };
 }
 
+/** When a source's near field is fully in (world seconds): a near-field ring (the header) retires then. */
+export function nearFieldEnd(source) {
+  const widest = Math.max(...source.groups.map((group) => group.sigma));
+  return Math.min(...source.groups.map((group) => group.start)) + NEAR_FIELD.to * Math.sqrt(widest / GRAVITY);
+}
+
 /** How many profile texels lie between two radii of a profile of this reach (what a profile pass computes). */
 export function texelsBetween(inner, outer, reach) {
   const position = (radius) => 0.5 * (Math.sqrt(PROFILE_MAPPING ** 2 + 4 * (1 + PROFILE_MAPPING) * Math.min(Math.max(radius, 0), reach) / reach) - PROFILE_MAPPING);
@@ -622,6 +639,7 @@ uniform vec4 uGrid;           // Δk (rad/m), wavenumbers in use, reach R (m), m
 uniform float uInner;         // m: inside this the ring has nothing (the header)...
 uniform float uOuter;         // ...nor beyond this
 uniform vec3 uNearField;      // m, m, share: inside the first radius the ring is hidden by the share, fading in to the second (NEAR_FIELD)
+uniform float uNearOnly;      // 1 for a pool's near-field ring (the header): what the fade hides, its sign turned
 uniform float uTexels;
 uniform float uOutputScale;   // RING_TEXTURE_UNITS / COEFFICIENT_SCALE, times the fade of a ring leaving
 ${RING_MATH}
@@ -682,10 +700,11 @@ void main() {
   // The near field, the drawn splash's: hidden, and the slopes of what shows
   // take the fade's own (∂(mη)/∂r = m ∂η/∂r + η ∂m/∂r). The fade is a
   // quintic, flat to its second derivative at both ends, so the slopes it
-  // makes have no kink for the texels to cut.
+  // makes have no kink for the texels to cut. A near-field ring shows what
+  // the fade hides, turned over: m − 1, whose slope is the fade's own.
   float fadeWidth = max(uNearField.y - uNearField.x, 1e-6);
   float across = clamp((radius - uNearField.x) / fadeWidth, 0.0, 1.0);
-  float shown = 1.0 - uNearField.z * (1.0 - across * across * across * (10.0 - 15.0 * across + 6.0 * across * across));
+  float shown = 1.0 - uNearOnly - uNearField.z * (1.0 - across * across * across * (10.0 - 15.0 * across + 6.0 * across * across));
   float shownSlope = uNearField.z * 30.0 * across * across * (1.0 - across) * (1.0 - across) / fadeWidth;
   slope0 = shown * slope0 + shownSlope * height0;
   slope1 = shown * slope1 + shownSlope * height1;
@@ -738,12 +757,14 @@ export class RingSources {
     }
   }
 
-  /** The source's plan for the current camera. */
+  /** The source's plan for the current camera; a near-field ring's ends with its near field. */
   planFor(source) {
     const camera = this.camera && { distance: Math.hypot(source.centreX - this.camera.x, source.centreZ - this.camera.z), height: this.camera.height, pixelsPerRadian: this.camera.pixelsPerRadian, nearest: this.camera.nearest };
     source.plannedFor = camera;
     source.replan = false;
-    return planSource(source.groups, this.depth, camera);
+    const plan = planSource(source.groups, this.depth, camera);
+    if (source.nearOnly) plan.end = Math.min(plan.end, nearFieldEnd(source));
+    return plan;
   }
 
   /** Every source gone. */
@@ -758,17 +779,18 @@ export class RingSources {
    * the pair that drags it forward ({ height, radius, offset, directionX,
    * directionZ }: plain Gaussians of σ = radius at offset either side of the
    * centre along the direction, raised ahead and lowered behind by height).
-   * It joins a source of the same throw (the header) or starts one; false,
-   * adding nothing, for a splat that makes no wave.
+   * nearOnly makes it a pool's near-field ring (the header). It joins a
+   * source of the same throw (the header) or starts one; false, adding
+   * nothing, for a splat that makes no wave.
    */
-  add({ x, z, radius, height = 0, velocity = 0, rim = 1.7, pair = null }, time) {
+  add({ x, z, radius, height = 0, velocity = 0, rim = 1.7, pair = null, nearOnly = false }, time) {
     const strength = RING_SOURCE.strength;
     const group = {
       start: time, x, z, sigma: radius, rim, height: height * strength, velocity: velocity * strength,
       pair: pair && pair.height !== 0 ? { height: pair.height * strength, sigma: pair.radius, offset: pair.offset, directionX: pair.directionX, directionZ: pair.directionZ } : null,
     };
     if (!(radius > 0) || (group.height === 0 && group.velocity === 0 && !group.pair)) return false;
-    let source = this.sources.find((candidate) => !candidate.fading && candidate.groups.length < MAX_GROUPS
+    let source = this.sources.find((candidate) => !candidate.fading && candidate.groups.length < MAX_GROUPS && candidate.nearOnly === nearOnly
       && time - candidate.groups[0].start <= MERGE.seconds
       && Math.hypot(x - candidate.centreX, z - candidate.centreZ) <= MERGE.reach * radius
       && (!group.pair || !candidate.hasDirection || group.pair.directionX * candidate.directionX + group.pair.directionZ * candidate.directionZ > 0.9));
@@ -785,7 +807,7 @@ export class RingSources {
         this.sources.splice(this.sources.indexOf(dropped), 1);
         this.freeLayers.push(dropped.layer);
       }
-      source = { layer: this.freeLayers.pop(), centreX: x, centreZ: z, directionX: 1, directionZ: 0, hasDirection: false, groups: [], plan: null, plannedFor: null, replan: false, fading: null };
+      source = { layer: this.freeLayers.pop(), centreX: x, centreZ: z, directionX: 1, directionZ: 0, hasDirection: false, nearOnly, groups: [], plan: null, plannedFor: null, replan: false, fading: null };
       this.sources.push(source);
     }
     source.groups.push(group);
@@ -876,6 +898,7 @@ export class Rings {
       uInner: { value: 0 },
       uOuter: { value: 0 },
       uNearField: { value: new THREE.Vector3() },
+      uNearOnly: { value: 0 },
       uTexels: { value: PROFILE_TEXELS },
       uOutputScale: { value: RING_TEXTURE_UNITS / COEFFICIENT_SCALE },
     });
@@ -937,9 +960,12 @@ export class Rings {
     if (this.sources.length === 0) return;
 
     // Each source's annulus, wavenumbers in use, near field and fade this frame (the header).
+    // A near-field ring has nothing beyond its near field's outer radius.
     const frames = this.sources.map((source) => {
       const inner = innerRadius(source, time);
-      return { inner, outer: Math.max(outerRadius(source, time), inner), count: usedCount(source, time), near: nearField(source, time), shown: this.book.shown(source, time) };
+      const near = nearField(source, time);
+      const outer = source.nearOnly ? Math.min(outerRadius(source, time), near.outer) : outerRadius(source, time);
+      return { inner, outer: Math.max(outer, inner), count: usedCount(source, time), near, shown: this.book.shown(source, time) };
     });
     const epoch = Math.min(...this.sources.map((source) => source.groups[0].start));
     const spectrum = this.spectrumPass.material.uniforms;
@@ -970,6 +996,7 @@ export class Rings {
       profile.uInner.value = frame.inner;
       profile.uOuter.value = frame.outer;
       profile.uNearField.value.set(frame.near.inner, frame.near.outer, frame.near.hide);
+      profile.uNearOnly.value = source.nearOnly ? 1 : 0;
       profile.uOutputScale.value = frame.shown * RING_TEXTURE_UNITS / COEFFICIENT_SCALE;
       // Three.js rebuilds the array's mip chain after a render into it: once, after the last layer.
       texture.generateMipmaps = index === this.sources.length - 1;
@@ -999,6 +1026,7 @@ export class Rings {
     profile.uInner.value = 0;
     profile.uOuter.value = 1;
     profile.uNearField.value.set(0, 0, 0);
+    profile.uNearOnly.value = 0;
     profile.uOutputScale.value = RING_TEXTURE_UNITS / COEFFICIENT_SCALE;
     const texture = this.profileTarget.texture;
     for (let layer = 0; layer < MAX_RINGS; layer++) {

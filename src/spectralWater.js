@@ -59,6 +59,21 @@
 // has carried it since the map was last cleared, foamUniforms.uFoamVelocity
 // the drift's velocity, which the specks ride too.
 //
+// The pool (setPool, the Pool water in src/main.js): a square basin half the
+// patch across, centred on it, with walls that reflect every wave. Each
+// splat goes in with its mirror images across the pool's walls
+// (SPECTRAL_UPDATE_FRAGMENT): the patch is periodic over twice the pool's
+// width, so the images' periodic sum is even about every wall, which is
+// what a wall that reflects does, and the waves run on round the basin,
+// wall to wall, to every order of reflection, at no cost beyond the open
+// pond's. What lies outside the pool is the images' (the deck hides it), so
+// splats and foam centred there are refused: a drop landing on the deck
+// makes no wave. A ring's source goes into the solver too (src/splash.js),
+// so it reflects; src/rings.js then draws only what the near field hides of
+// it. The pool's damping (POOL_DAMPING) is lighter than the open pond's, so
+// a ring runs back and forth across it a few times, and its sleep waits
+// longer (POOL_SLEEP_SECONDS), since a basin's waves do not spread away.
+//
 // Grid size (resize): the quality presets (src/main.js) change N. A mode of
 // the state is N² times the field's Fourier series coefficient at its wave
 // vector, which is the same on any grid (a splat's is 2πr²/D² times its
@@ -119,6 +134,21 @@ export const DAMPING = {
 // so even a full raft (1) is gone 6·ln(1/0.00106) = 41 s after its last
 // stamp (the flows and the drift only move foam, and never raise it). Hence 75 s.
 export const SLEEP_SECONDS = 75;
+// The pool's (the header). A basin's waves do not spread away, so what
+// fades them is the damping alone: POOL_DAMPING.base in place of
+// DAMPING.base, a third of it, so a ring runs back and forth across the
+// pool for a minute; and no wave damped less than POOL_DAMPING.least, as the
+// basin's walls and floor damp even its longest waves, which the open
+// pond's law leaves nearly undamped (a 2 m wave 0.045/s, over minutes).
+// tools/pool-probe.mjs evolves a splash's splats in the basin with the
+// solver's own arithmetic: a 6 cm stone's ripples stay plain to see (slopes
+// over 3e-3) for about 60 s and fade under SLOPE_VISIBLE (1e-4,
+// src/rings.js) by about 120 s; the largest, a 30 cm rock thrown hard, plain
+// for 90 s, fades under it 150 to 180 s after its last splat, and at 165 s
+// its slope is 5 to 6e-5 and its caustics change by 0.05%. Hence
+// POOL_SLEEP_SECONDS, in place of SLEEP_SECONDS.
+export const POOL_DAMPING = { base: 0.1, least: 0.05 };
+export const POOL_SLEEP_SECONDS = 165;
 export const FOAM_DIFFUSIVITY = 5e-5;   // m²/s: a raft's edge spreads by about 3 cm in 10 s
 const FOAM_LIFETIME = { base: 1.5, perMetre: 15, longest: 6 };   // τ = base + perMetre·radius, at most longest (s), of either kind
 const CHURN_LIFETIME = 2.0;       // τ of the boil fast surface motion churns up (s)
@@ -244,6 +274,7 @@ export class SpectralWater {
     // when the app attaches them; without them (the CPU probes' stand-ins
     // have none) the splash rings this patch as it always did.
     this.rings = null;
+    this.pool = null;            // { minX, minZ, size } (world metres) while the patch is a pool (setPool)
     this.timeScaleDamping = 1;
     this.asleep = true;          // a still pond: step() does nothing until something is queued
     this.quietSeconds = 0;       // simulated seconds since the last splat or foam stamp
@@ -258,6 +289,7 @@ export class SpectralWater {
       uDepth: { value: depth },
       uDt: { value: 0 },
       uGamma0: { value: DAMPING.base },
+      uGammaLeast: { value: 0 },
       uKDamp: { value: (2 * Math.PI) / DAMPING.baseWavelength },
       uNu: { value: DAMPING.viscosity },
       uKLow: { value: (2 * Math.PI) / (domainSize * DAMPING.lowShare) },
@@ -265,6 +297,7 @@ export class SpectralWater {
       uSplatCount: { value: 0 },
       uSplats: { value: splatArray },
       uSplatAmps: { value: ampArray },
+      uWalls: { value: new THREE.Vector3() },
     });
     this.fftPass = new FullscreenPass(SOLVER_FFT_PASS_FRAGMENT, {
       uInput: { value: null },
@@ -319,8 +352,34 @@ export class SpectralWater {
     this.asleep = false;
   }
 
-  /** Whether the last splat or foam stamp is SLEEP_SECONDS behind (the app also waits for the splash to end). */
-  get settled() { return this.quietSeconds >= SLEEP_SECONDS; }
+  /** Whether the last splat or foam stamp is SLEEP_SECONDS behind, in a pool POOL_SLEEP_SECONDS (the app also waits for the splash to end). */
+  get settled() { return this.quietSeconds >= (this.pool ? POOL_SLEEP_SECONDS : SLEEP_SECONDS); }
+
+  /**
+   * Make the patch a pool (true: the header) or the open pond again (false):
+   * its walls, its damping and its sleep. The caller clears the water, whose
+   * waves belong to the other.
+   */
+  setPool(walled) {
+    this.pool = walled ? this.poolSquare : null;
+    this.updatePass.material.uniforms.uGamma0.value = walled ? POOL_DAMPING.base : DAMPING.base;
+    this.updatePass.material.uniforms.uGammaLeast.value = walled ? POOL_DAMPING.least : 0;
+  }
+
+  /** The pool's square (the header), whether or not the patch is a pool now: world metres, { minX, minZ, size }. */
+  get poolSquare() {
+    const half = this.domainSize / 4;
+    return { minX: this.centre[0] - half, minZ: this.centre[1] - half, size: 2 * half };
+  }
+
+  /** Whether a world point lies where splats may go: on the patch, and in the pool if there is one. */
+  holds(x, z) {
+    const [tx, tz] = this.worldToTexel(x, z);
+    // Off the patch it would wrap through the periodic transform (and a NaN would spoil every mode).
+    if (!(tx >= 0 && tx <= this.size && tz >= 0 && tz <= this.size)) return false;
+    const pool = this.pool;
+    return !pool || (x >= pool.minX && x <= pool.minX + pool.size && z >= pool.minZ && z <= pool.minZ + pool.size);
+  }
 
   /**
    * Change the grid to size × size cells, keeping the waves and the foam (the
@@ -383,14 +442,14 @@ export class SpectralWater {
   get uvOffset() { return 0.5 / this.size; }
 
   /**
-   * Queue a Gaussian disturbance; false, queuing nothing, for a point off the patch.
+   * Queue a Gaussian disturbance; false, queuing nothing, for a point off the
+   * patch, or out of the pool (holds).
    * @param x,z world position (m)   @param radius Gaussian sigma (m)
    * @param height peak height impulse (m)   @param velocity peak vertical velocity impulse (m/s)
    */
   addSplat({ x, z, radius, height = 0, velocity = 0, rim = 1.7 }) {
+    if (!this.holds(x, z)) return false;
     const [tx, tz] = this.worldToTexel(x, z);
-    // Off the patch it would wrap through the periodic transform (and a NaN would spoil every mode).
-    if (!(tx >= 0 && tx <= this.size && tz >= 0 && tz <= this.size)) return false;
     this.splats.push({ tx, tz, sigma: Math.max(radius / this.cell, 0.6), height, velocity, rim });
     return true;
   }
@@ -398,11 +457,12 @@ export class SpectralWater {
   /**
    * Stamp foam: a Gaussian of `radius` (m) and peak `amount`, lasting
    * `lifetime` (τ, s, at most FOAM_LIFETIME.longest), a boil or (by default)
-   * a raft (the header); false, stamping nothing, off the patch.
+   * a raft (the header); false, stamping nothing, off the patch or out of
+   * the pool (holds).
    */
   addFoam({ x, z, radius, amount, lifetime = foamLifetime(radius), boil = false }) {
+    if (!this.holds(x, z)) return false;
     const [tx, tz] = this.worldToTexel(x, z);
-    if (!(tx >= 0 && tx <= this.size && tz >= 0 && tz <= this.size)) return false;
     this.foamSplats.push({ tx, tz, sigma: Math.max(radius / this.cell, 0.8), amount, lifetime: Math.min(lifetime, FOAM_LIFETIME.longest), boil });
     return true;
   }
@@ -447,9 +507,12 @@ export class SpectralWater {
     const renderer = this.renderer;
     const previousTarget = renderer.getRenderTarget();
 
-    // 1. Spectral update with this frame's splats (chunked if there are many).
+    // 1. Spectral update with this frame's splats (chunked if there are many),
+    // in a pool with their mirror images across its walls (the header).
     const uniforms = this.updatePass.material.uniforms;
     uniforms.uState.value = this.stateA.texture;
+    if (this.pool) uniforms.uWalls.value.set(...this.worldToTexel(this.pool.minX, this.pool.minZ), 1);
+    else uniforms.uWalls.value.set(0, 0, 0);
     let remaining = this.splats;
     let first = true;
     do {

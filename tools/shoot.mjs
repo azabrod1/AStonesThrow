@@ -24,7 +24,8 @@
 // result printed as JSON (window.__pond is the app). --floats=half renders on
 // the half-float path that devices without EXT_color_buffer_float take.
 // --sky=name picks the sky panorama (a key of SKIES in src/sky.js), and
-// --water=clear|pond|murky the water's clarity (WATER_CLARITIES in src/main.js).
+// --water=pool|clear|lake|pond|murky the water (WATER_CLARITIES in src/main.js;
+// pool puts the rocks in the pool, src/pool.js).
 // --wind=x:z sets the direction the wind blows toward in world XZ, and
 // --wind-strength=calm|breeze|windy its strength (the page's own default is
 // calm; breeze is the look the pond had before the Wind control).

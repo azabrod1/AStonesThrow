@@ -8,7 +8,8 @@
 //    the settings' Quality page follow (Auto chosen, its row naming the
 //    preset drawn); the idle pond runs no pass of the rings
 //    (src/rings.js); the first throw compiles no GPU program (src/main.js
-//    compiles them all under the loading veil), and its rings outlive its
+//    compiles them all under the loading veil; a failure names the programs
+//    it compiled), and its rings outlive its
 //    splash, a spectrum pass and one profile pass each; the splash
 //    measurement never steps up. After every change of preset, automatic or
 //    pressed, from every preset to every other, it checks what is actually
@@ -16,8 +17,13 @@
 //    its textures, the water mesh's segments and triangles, the canvas, the
 //    main, under-water, mirror and fluid targets. A change of preset in the
 //    middle of a splash keeps the waves (the solver carries them to the new
-//    grid). pause(), resume(), pause(), resume() in one tick leave one frame
-//    loop: one render per requestAnimationFrame at most.
+//    grid). The Pool water (src/pool.js): switching to it and back compiles
+//    no program (the warm-up drew both sceneries), its water mesh draws only
+//    the pool's quads, a throw into it compiles none and keeps one ring, the
+//    near field's (src/rings.js), which retires with it, and a change of
+//    preset in it keeps the pool's mesh. pause(), resume(), pause(),
+//    resume() in one tick leave one frame loop: one render per
+//    requestAnimationFrame at most.
 // 2. The same page on a fake clock (performance.now and requestAnimationFrame
 //    advance a set step per frame, whatever SwiftShader takes, once however
 //    many callbacks the frame runs: the probe's own waits poll on it): at 55 frames
@@ -86,12 +92,16 @@ function expected(name, width, height, devicePixelRatio = 1) {
   return { grid: preset.grid, meshSegments: preset.meshSegments, canvas, under: scaled(preset.underScale, 1), fluid: scaled(preset.fluidScale, 2) };
 }
 const size = ({ width, height }) => `${width}×${height}`;
+/** The quads across the water mesh: the patch's segments, or in the pool those over its square and one round it (src/waterSurface.js). */
+const quadsAcross = (segments, pool) => (pool ? Math.min(Math.ceil(pool.size / (pool.domainSize / segments)) + 2, segments) : segments);
 async function checkBuilt({ page, width, height }, label) {
   const budget = await page.evaluate(() => window.__pond.budget);
+  const pool = budget.clarity === 'pool' ? await page.evaluate(() => ({ size: window.__pond.water.poolSquare.size, domainSize: window.__pond.water.domainSize })) : null;
   const want = expected(budget.quality, width, height);
   const { targets } = budget;
   check(budget.grid === want.grid && targets.solver.width === want.grid && targets.solver.height === want.grid, `${label}: ${budget.quality}'s solver is ${want.grid}² (grid ${budget.grid}, textures ${size(targets.solver)})`);
-  check(budget.meshSegments === want.meshSegments && budget.meshTriangles === 2 * want.meshSegments ** 2, `${label}: the water mesh has ${want.meshSegments} segments (${budget.meshSegments}, ${budget.meshTriangles} triangles)`);
+  const quads = quadsAcross(want.meshSegments, pool);
+  check(budget.meshSegments === want.meshSegments && budget.meshTriangles === 2 * quads ** 2, `${label}: the water mesh has ${want.meshSegments} segments (${budget.meshSegments}, ${budget.meshTriangles} triangles${pool ? `, the pool's ${quads}² quads` : ''})`);
   check(size(budget.canvas) === size(want.canvas) && size(targets.main) === size(want.canvas), `${label}: canvas and main target ${size(want.canvas)} (${size(budget.canvas)}, ${size(targets.main)})`);
   check(size(targets.under) === size(want.under) && size(targets.reflection) === size(want.under), `${label}: under-water and mirror targets ${size(want.under)} (${size(targets.under)}, ${size(targets.reflection)})`);
   check(size(targets.fluid) === size(want.fluid), `${label}: fluid targets ${size(want.fluid)} (${size(targets.fluid)})`);
@@ -146,7 +156,9 @@ check(readoutAfterIdle.endsWith(afterIdle.quality), `the readout names the prese
 // The splash measurement: throw, wait for the splash to be measured or to end.
 const ringsBeforeThrow = await page.evaluate(() => window.__pond.budget.rings);
 check(ringsBeforeThrow.live === 0 && ringsBeforeThrow.passes === 0, `the idle pond runs no ring pass (${ringsBeforeThrow.live} rings, ${ringsBeforeThrow.passes} passes)`);
+const programNames = (page) => page.evaluate(() => window.__pond.renderer.info.programs.map((program) => `${program.name} (${program.cacheKey.slice(0, 40)})`));
 const programsBeforeThrow = await page.evaluate(() => window.__pond.budget.programs);
+const namesBeforeThrow = await programNames(page);
 await page.evaluate(() => window.__pond.throwAt(0, -1.4, { radius: 0.03 }));
 await page.waitForFunction(() => window.__pond.splash.count > 0, undefined, { timeout: 300000 });
 const splashStart = Date.now();
@@ -154,7 +166,9 @@ await page.waitForFunction(() => window.__pond.splash.count === 0, undefined, { 
 const afterSplash = await pageState(page);
 console.log(`  splash: ${afterSplash.readout} after ${((Date.now() - splashStart) / 1000).toFixed(0)} s of splash`);
 const programsAfterSplash = await page.evaluate(() => window.__pond.budget.programs);
-check(programsAfterSplash === programsBeforeThrow, `the first throw compiles no program (${programsBeforeThrow} before, ${programsAfterSplash} after its splash)`);
+const namesAfterSplash = await programNames(page);
+const compiled = namesAfterSplash.filter((name) => !namesBeforeThrow.includes(name));
+check(programsAfterSplash === programsBeforeThrow, `the first throw compiles no program (${programsBeforeThrow} before, ${programsAfterSplash} after its splash${compiled.length ? `; new: ${compiled.join(', ')}` : ''})`);
 const ringsAfterSplash = await page.evaluate(() => window.__pond.budget.rings);
 check(ringsAfterSplash.live >= 1 && ringsAfterSplash.passes === 1 + ringsAfterSplash.live, `its rings outlive the splash: ${ringsAfterSplash.live} live, ${ringsAfterSplash.passes} passes a frame (a spectrum pass and one profile pass each)`);
 check(order(afterSplash.quality) >= order(afterIdle.quality), `the splash never steps the quality up (${afterIdle.quality} -> ${afterSplash.quality})`);
@@ -184,6 +198,26 @@ await page.evaluate(() => { window.__pond.advance(0.2); window.__pond.setQuality
 const backOnHigh = await largestHeight(page);
 check(backOnHigh > 1e-4 && Number.isFinite(backOnHigh), `and back on 512² (${(backOnHigh * 1000).toFixed(2)} mm)`);
 await checkBuilt(phone, 'after the switches mid-splash');
+
+// The pool, and back to the lake.
+const programsBeforePool = await page.evaluate(() => window.__pond.budget.programs);
+await page.evaluate(() => { window.__pond.setClarity('pool'); window.__pond.advance(0.1); });
+const inPool = await page.evaluate(() => window.__pond.budget);
+check(inPool.clarity === 'pool' && inPool.programs === programsBeforePool, `the pool compiles no program (${programsBeforePool} before, ${inPool.programs} drawing it)`);
+await checkBuilt(phone, 'in the pool');
+await page.evaluate(() => { window.__pond.throwAt(0, -1.4, { radius: 0.03 }); window.__pond.advance(1.0); });
+const poolSplash = await page.evaluate(() => window.__pond.budget);
+check(poolSplash.programs === programsBeforePool && poolSplash.rings.live === 1 && !poolSplash.solverAsleep,
+  `a throw into the pool compiles no program (${poolSplash.programs}) and keeps one ring, its near field's (${poolSplash.rings.live} live), the solver awake`);
+await page.evaluate(() => window.__pond.advance(1.5));
+const poolLater = await page.evaluate(() => window.__pond.budget);
+check(poolLater.rings.live === 0 && poolLater.rings.passes === 0 && !poolLater.solverAsleep, `its near-field ring retires with the near field (${poolLater.rings.live} live 2.5 s after the throw), the solver still awake with the pool's waves`);
+await page.evaluate(() => window.__pond.setQuality('medium'));
+await checkBuilt(phone, 'in the pool, high -> medium');
+await page.evaluate(() => { window.__pond.setQuality('high'); window.__pond.setClarity('lake'); window.__pond.advance(0.1); });
+const backOnLake = await page.evaluate(() => window.__pond.budget.programs);
+check(backOnLake === programsBeforePool, `back on the lake, still no new program (${backOnLake})`);
+await checkBuilt(phone, 'back on the lake');
 
 // pause, resume, pause, resume in one tick: one frame loop, so at most one render per requestAnimationFrame (high is never capped).
 const loops = await page.evaluate(() => new Promise((resolve) => {

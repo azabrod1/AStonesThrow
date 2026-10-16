@@ -1,8 +1,9 @@
 // GLSL for the pond: water surface with the foam's bubble pattern
-// (FOAM_PATTERN), pond floor with caustics, bubbles, the foam specks that
-// ride the surface after a splash (src/foamSpecks.js), and where the still
-// surface shows what is under it (SEEN_THROUGH_WATER). All scene passes
-// render linear HDR radiance; the composite pass tone-maps.
+// (FOAM_PATTERN), pond floor with caustics (CAUSTICS), the pool's tiled
+// basin and deck (POOL_FRAGMENT, DECK_FRAGMENT), bubbles, the foam specks
+// that ride the surface after a splash (src/foamSpecks.js), and where the
+// still surface shows what is under it (SEEN_THROUGH_WATER). All scene
+// passes render linear HDR radiance; the composite pass tone-maps.
 //
 // GLSL_COMMON also carries the ambient wind waves (src/ambientWaves.js) and
 // their gust envelope, and the rings that cross the whole pond
@@ -932,6 +933,117 @@ vec3 floorSand(vec2 point) {
 }
 `;
 
+// The sunlight the rippled surface focuses onto a point under the water (the
+// lake bed's caustics, FLOOR_FRAGMENT, and the pool's, POOL_FRAGMENT), with
+// the solver's uniforms (uHeight, uDomainMin, uDomainSize, uTexelOffset, uN,
+// uCell) declared before it. surfaceCurvature is the Laplacian of all three
+// heights where the point's sunlight crossed the surface: the solver's,
+// sampled three texels apart (the sun's width and the water blur fine
+// detail; outside the splash's patch, mask 0, there is nothing to sample);
+// the ambient ripples', a web of caustics drifting with them; and the
+// rings' (src/rings.js), each averaged over the pixel's footprint where its
+// sunlight crossed the surface, so a ring throws a ring of light. Called in
+// uniform control flow (it takes the crossing's screen derivatives).
+// causticLight is the irradiance against the sun's own for a focus of
+// 1 + focusing · depth · curvature (src/pondFloor.js): 1/focus for small
+// slopes; where the rays come to a focus (focus near 0) a bright line, its
+// peak set by the sun's disc and the pixel's footprint (CAUSTIC_BLUR), past
+// it the crossed rays' 1/|focus|; eased into [CAUSTIC_DARKEST,
+// CAUSTIC_BRIGHTEST] so a steep ring never blows the sand out.
+const CAUSTICS = /* glsl */`
+#define CAUSTIC_BLUR 0.2           // the irradiance's peak where rays focus on the floor: about 1/this
+#define CAUSTIC_BRIGHTEST 2.6      // the sunlight on the sand is eased into this many times its own...
+#define CAUSTIC_DARKEST 0.45       // ...and this
+float surfaceCurvature(vec2 surfacePoint) {
+  vec2 uv = (surfacePoint - uDomainMin) / uDomainSize + uTexelOffset;
+  float mask = patchMask(uv);
+  float laplacian = 0.0;
+  if (mask > 0.0) {
+    float texelStep = 3.0 / uN;
+    float hc = texture2DLodEXT(uHeight, uv, 0.0).r;
+    float hl = texture2DLodEXT(uHeight, uv - vec2(texelStep, 0.0), 0.0).r;
+    float hr = texture2DLodEXT(uHeight, uv + vec2(texelStep, 0.0), 0.0).r;
+    float hd = texture2DLodEXT(uHeight, uv - vec2(0.0, texelStep), 0.0).r;
+    float hu = texture2DLodEXT(uHeight, uv + vec2(0.0, texelStep), 0.0).r;
+    laplacian = (hl + hr + hu + hd - 4.0 * hc) / (9.0 * uCell * uCell);
+  }
+  vec2 surfaceAcrossX = dFdx(surfacePoint);
+  vec2 surfaceAcrossY = dFdy(surfacePoint);
+  float curvature = laplacian * mask + ambientLaplacian(surfacePoint);
+  if (uRingCount > 0) curvature += ringLaplacian(surfacePoint, surfaceAcrossX, surfaceAcrossY);
+  return curvature;
+}
+float causticLight(float focus) {
+  float irradiance = sqrt(1.0 + CAUSTIC_BLUR * CAUSTIC_BLUR) * inversesqrt(focus * focus + CAUSTIC_BLUR * CAUSTIC_BLUR);
+  return irradiance > 1.0
+    ? 1.0 + (CAUSTIC_BRIGHTEST - 1.0) * tanh((irradiance - 1.0) / (CAUSTIC_BRIGHTEST - 1.0))
+    : 1.0 - (1.0 - CAUSTIC_DARKEST) * tanh((1.0 - irradiance) / (1.0 - CAUSTIC_DARKEST));
+}
+`;
+
+// The pool (src/pool.js): a tiled basin, its walls rising out of the water to
+// the deck, and the deck round it. POOL_TILES is the tiles' albedo at a point
+// of the basin with its normal: square tiles of POOL_TILE with grout of
+// POOL_GROUT between them, laid from the pool's corner on the floor and from
+// the deck down on the walls, whose top BAND_ROWS rows, at the waterline, are
+// a deep blue; each tile a few percent lighter or darker than the next.
+// Antialiased: the grout's share of each pixel's footprint is the box
+// filter's exact integral over it (a grid's lines, Quilez's
+// "filterable procedurals"), the footprint from the screen derivatives of the
+// world position (smooth across the basin's corners) along the face's tile
+// axes, so far off the grout greys the tiles evenly rather than shimmering,
+// and the tiles' own variation fades out once a tile is under a pixel or so.
+const POOL_TILES = /* glsl */`
+uniform vec4 uPool;     // the pool's corner (x, z), its side and its depth (m)
+uniform float uDeck;    // m: the deck's level above the still water, the walls' top
+#define POOL_TILE 0.125
+#define POOL_GROUT 0.005
+#define BAND_ROWS 2.0
+#define TILE_COLOR vec3(0.74, 0.86, 0.88)
+#define GROUT_COLOR vec3(0.42, 0.45, 0.45)
+#define BAND_COLOR vec3(0.09, 0.27, 0.56)
+#define TILE_VARIATION 0.06
+// The share of a footprint (a box about cell, width wide, in tiles) that no
+// grout line covers: the lines are POOL_GROUT/POOL_TILE of a tile wide, at
+// each tile's low edge.
+float tileCover(vec2 cell, vec2 width) {
+  float lines = POOL_TILE / POOL_GROUT;
+  vec2 high = cell + 0.5 * width;
+  vec2 low = cell - 0.5 * width;
+  vec2 covered = (floor(high) + min(fract(high) * lines, 1.0) - floor(low) - min(fract(low) * lines, 1.0)) / (lines * width);
+  return (1.0 - covered.x) * (1.0 - covered.y);
+}
+// A face's tile axes at a point (in tiles): across the floor from the
+// pool's corner; along a wall from its corner, and down from the deck. And
+// a world step's length along them.
+vec2 tileCell(vec3 point, vec3 normal) {
+  if (abs(normal.y) > 0.5) return (point.xz - uPool.xy) / POOL_TILE;
+  if (abs(normal.x) > 0.5) return vec2(point.z - uPool.y, uDeck - point.y) / POOL_TILE;
+  return vec2(point.x - uPool.x, uDeck - point.y) / POOL_TILE;
+}
+vec2 tileStep(vec3 step, vec3 normal) {
+  if (abs(normal.y) > 0.5) return step.xz / POOL_TILE;
+  if (abs(normal.x) > 0.5) return vec2(step.z, -step.y) / POOL_TILE;
+  return vec2(step.x, -step.y) / POOL_TILE;
+}
+// The tiles' albedo over a footprint width tiles wide (no derivatives: the
+// mirror under the surface, WATER_UNDER_FRAGMENT, marches to it).
+vec3 poolTileColor(vec3 point, vec3 normal, vec2 width) {
+  vec2 cell = tileCell(point, normal);
+  bool wall = abs(normal.y) < 0.5;
+  vec3 tile = wall && cell.y < BAND_ROWS ? BAND_COLOR : TILE_COLOR;
+  float variation = (hash21(floor(cell) + (wall ? normal.xz * 37.0 : vec2(0.0))) - 0.5) * 2.0 * TILE_VARIATION;
+  tile *= 1.0 + variation * (1.0 - smoothstep(0.4, 1.2, max(width.x, width.y)));
+  return mix(GROUT_COLOR, tile, tileCover(cell, width));
+}
+// The tiles' albedo over this pixel's footprint (from the screen derivatives
+// of the true point, smooth across the basin's corners).
+vec3 poolTiles(vec3 point, vec3 normal) {
+  vec2 width = max(abs(tileStep(dFdx(point), normal)), abs(tileStep(dFdy(point), normal))) + 1e-3;
+  return poolTileColor(point, normal, width);
+}
+`;
+
 // Seen from an eye under the water (the Under view, src/main.js): the water
 // between a point and the eye dims its light by the extinction and fills in
 // the water's own, as from above (WATER_FRAGMENT), but the water's own light
@@ -1027,7 +1139,10 @@ void main() {
 // ray meets it (marched in BED_STEPS out to BED_REACH, then halved twice),
 // its sand lit as FLOOR_FRAGMENT lights it (without the caustics) and seen
 // through the water on the way, or the water's own light (underwaterGlow)
-// where it meets none. Foam floating on it shows lit from above. A cavity's
+// where it meets none. In a pool (uPool's depth not zero, src/pool.js) the
+// ray meets the basin, found exactly: its floor or the first wall in its
+// way, tiled (POOL_TILES) and averaged over a footprint that grows with the
+// way to it. Foam floating on it shows lit from above. A cavity's
 // normal points into its air as the surface's does, so a hole is shaded the
 // same way: a wall mostly mirrors (silvery where it turns the ray up toward
 // the bright water under the surface), and where the ray passes into its
@@ -1056,12 +1171,28 @@ ${UNDER_FOG}
 ${LAKE_BED}
 ${FLOOR_PATTERN_TILE}
 ${FLOOR_SAND}
+${POOL_TILES}
 #define BED_STEPS 16
 #define BED_REACH 6.0        // metres along the mirrored ray
 #define WATER_INDEX 1.333
 #define SUN_DISC 3000.0      // the sun through the window: a lobe this sharp...
 #define SUN_DISC_GAIN 6.0    // ...this bright against the sun's irradiance
 #define FOAM_SEEN 0.6        // floating foam's light seen from below, against the sun's and sky's on it
+#define TILE_BLUR 0.004      // the pool's tiles' footprint per metre of the way to them (radians), over...
+#define TILE_BLUR_LEAST 0.01 // ...this much (m)
+// The way along a ray from a point in the pool to its basin, and the face
+// it meets there: the floor, or the first wall in its way.
+float toBasin(vec3 origin, vec3 ray, out vec3 normal) {
+  vec2 low = uPool.xy;
+  vec2 high = uPool.xy + uPool.z;
+  float along = (-uPool.w - origin.y) / min(ray.y, -1e-5);
+  normal = vec3(0.0, 1.0, 0.0);
+  float wall = ray.x > 1e-5 ? (high.x - origin.x) / ray.x : ray.x < -1e-5 ? (low.x - origin.x) / ray.x : 1e4;
+  if (wall < along) { along = wall; normal = vec3(-sign(ray.x), 0.0, 0.0); }
+  wall = ray.z > 1e-5 ? (high.y - origin.z) / ray.z : ray.z < -1e-5 ? (low.y - origin.z) / ray.z : 1e4;
+  if (wall < along) { along = wall; normal = vec3(0.0, 0.0, -sign(ray.z)); }
+  return max(along, 0.0);
+}
 void main() {
   float texelStep = 1.0 / uN;
   float hl = texture2D(uHeight, vDomainUv - vec2(texelStep, 0.0)).r;
@@ -1084,7 +1215,16 @@ void main() {
   vec3 against = dot(ray, n) > 0.0 ? -n : n;
   vec3 mirrored = reflect(ray, against);
   vec3 color = underwaterGlow(mirrored);
-  if (mirrored.y < -0.01) {
+  if (mirrored.y < -0.01 && uPool.w > 0.0) {
+    vec3 normal;
+    float along = toBasin(vWorld, mirrored, normal);
+    vec3 bed = vWorld + mirrored * along;
+    float depth = max(-bed.y, 0.0);
+    vec3 light = uSunIrradiance * exp(-uAbsorb * depth / max(uSunDir.y, 0.2)) * max(uSunDir.y, 0.0) + uSkyAmbient * exp(-uAbsorb * depth) * 1.4;
+    light *= 0.75 + 0.25 * normal.y;   // a wall sees half the sky, and the sun aslant
+    vec3 tiles = poolTileColor(bed, normal, vec2(TILE_BLUR_LEAST + TILE_BLUR * along) / POOL_TILE);
+    color = mix(color, tiles * light, exp(-uExtinction * along));
+  } else if (mirrored.y < -0.01) {
     // The bed the mirrored ray meets: the first step under it, then two halvings.
     float stepLength = BED_REACH / float(BED_STEPS);
     float along = 0.0;
@@ -1203,9 +1343,7 @@ ${GLSL_COMMON}
 ${FLOOR_PATTERN_TILE}
 ${UNDER_FOG}
 #define WATER_INDEX 1.333
-#define CAUSTIC_BLUR 0.2           // the irradiance's peak where rays focus on the floor: about 1/this
-#define CAUSTIC_BRIGHTEST 2.6      // the sunlight on the sand is eased into this many times its own...
-#define CAUSTIC_DARKEST 0.45       // ...and this
+${CAUSTICS}
 ${FLOOR_SAND}
 
 void main() {
@@ -1230,42 +1368,38 @@ void main() {
   // From an eye under the water the floor is seen where it is.
   if (cameraPosition.y < 0.0) seenPoint = vFloorPoint;
   vec2 surfacePoint = seenPoint + vUpSun * vDepth;
-  vec2 uv = (surfacePoint - uDomainMin) / uDomainSize + uTexelOffset;
-  float mask = patchMask(uv);
-  // Sampled three texels apart: the sun's width and the water blur fine
-  // detail. Outside the splash's patch (mask 0) there is nothing to sample.
-  float laplacian = 0.0;
-  if (mask > 0.0) {
-    float texelStep = 3.0 / uN;
-    float hc = texture2DLodEXT(uHeight, uv, 0.0).r;
-    float hl = texture2DLodEXT(uHeight, uv - vec2(texelStep, 0.0), 0.0).r;
-    float hr = texture2DLodEXT(uHeight, uv + vec2(texelStep, 0.0), 0.0).r;
-    float hd = texture2DLodEXT(uHeight, uv - vec2(0.0, texelStep), 0.0).r;
-    float hu = texture2DLodEXT(uHeight, uv + vec2(0.0, texelStep), 0.0).r;
-    laplacian = (hl + hr + hu + hd - 4.0 * hc) / (9.0 * uCell * uCell);
-  }
-  // The ambient ripples add their own: a web of caustics drifting with them;
-  // and the rings theirs (src/rings.js), each averaged over the floor pixel's
-  // footprint where its sunlight crossed the surface, so a ring throws a
-  // ring of light on the sand.
-  vec2 surfaceAcrossX = dFdx(surfacePoint);
-  vec2 surfaceAcrossY = dFdy(surfacePoint);
-  float curvature = laplacian * mask + ambientLaplacian(surfacePoint);
-  if (uRingCount > 0) curvature += ringLaplacian(surfacePoint, surfaceAcrossX, surfaceAcrossY);
-  // The irradiance: 1/focus for small slopes; where the rays come to a focus
-  // on the floor (focus near 0) a bright line, its peak set by the sun's
-  // disc and the pixel's footprint (CAUSTIC_BLUR), past it the crossed rays'
-  // 1/|focus|; eased into [CAUSTIC_DARKEST, CAUSTIC_BRIGHTEST] so a steep ring
-  // never blows the sand out.
-  float focus = 1.0 + vFocusing * vDepth * curvature;
-  float irradiance = sqrt(1.0 + CAUSTIC_BLUR * CAUSTIC_BLUR) * inversesqrt(focus * focus + CAUSTIC_BLUR * CAUSTIC_BLUR);
-  float caustic = irradiance > 1.0
-    ? 1.0 + (CAUSTIC_BRIGHTEST - 1.0) * tanh((irradiance - 1.0) / (CAUSTIC_BRIGHTEST - 1.0))
-    : 1.0 - (1.0 - CAUSTIC_DARKEST) * tanh((1.0 - irradiance) / (1.0 - CAUSTIC_DARKEST));
+  float caustic = causticLight(1.0 + vFocusing * vDepth * surfaceCurvature(surfacePoint));
 
   vec3 color = sand * (vSunlight * caustic + vSkylight);
   if (cameraPosition.y < 0.0) color = throughWater(color, vec3(vFloorPoint.x, -vDepth, vFloorPoint.y));
   gl_FragColor = vec4(color, 1.0);
+}
+`;
+
+// The land the sky photo shows at the horizon toward a horizontal direction
+// (photoLand), for the ground near the pond, which takes its colour, and
+// beyond LAND_NEAR, where the ground runs into it: the sky's cube map (the
+// one the droplets reflect, src/sky.js), a little above the horizon, at
+// LAND_LEVEL of its mip chain and averaged either side, so the photo's
+// detail does not streak toward the eye. (Under the horizon a photo shows
+// whatever stood at the photographer's feet, often water.)
+const PHOTO_LAND = /* glsl */`
+uniform samplerCube uSkyCube;   // the sky, as the droplets reflect it (src/sky.js)
+#define LAND_NEAR 8.0        // metres away: the land becomes the photo's from here...
+#define LAND_FAR 60.0        // ...to here
+#define LAND_HEIGHTS vec2(0.018, 0.04)  // the photo's land is read this high above the horizon (direction's y)...
+#define LAND_SPAN 0.05                  // ...and this far to either side (direction's sideways share)...
+#define LAND_LEVEL 3.0                  // ...at this level of the cube's mip chain (512 a face: 1.4° a texel)
+vec3 photoLand(vec2 toward) {
+  vec2 across = normalize(toward);
+  vec2 side = vec2(-across.y, across.x) * LAND_SPAN;
+  vec3 sum = vec3(0.0);
+  for (int tap = -1; tap <= 1; tap++) {
+    vec2 turned = normalize(across + side * float(tap));
+    sum += textureCubeLodEXT(uSkyCube, vec3(turned.x, LAND_HEIGHTS.x, turned.y), LAND_LEVEL).rgb;
+    sum += textureCubeLodEXT(uSkyCube, vec3(turned.x, LAND_HEIGHTS.y, turned.y), LAND_LEVEL).rgb;
+  }
+  return sum / 6.0;
 }
 `;
 
@@ -1308,35 +1442,19 @@ export const LAND_FRAGMENT = /* glsl */`
 uniform vec3 uSunDir;
 uniform vec3 uSunIrradiance;
 uniform vec3 uSkyAmbient;
-uniform samplerCube uSkyCube;   // the sky, as the droplets reflect it (src/sky.js)
 varying vec3 vWorld;
 varying vec3 vNormal;
 varying float vInland;
 ${GLSL_COMMON}
 ${FLOOR_PATTERN_TILE}
 ${FLOOR_SAND}
+${PHOTO_LAND}
 #define SKY_LIGHT 1.4        // the sky's light on the sand, as the bed's
 #define DRY_SAND vec3(0.68, 0.6, 0.5)   // the beach's dry sand, against the bed's: darker and warmer, as the photos' banks are
 #define WET_HEIGHT 0.12      // metres above the water the sand is wet to...
 #define WET_SHADE 0.6        // ...and as dark as this at the water
 #define GRASS_FROM 2.5       // metres inland: the sand turns to grass from here...
 #define GRASS_TO 4.5         // ...to here
-#define LAND_NEAR 8.0        // metres away: the land becomes the photo's from here...
-#define LAND_FAR 60.0        // ...to here
-#define LAND_HEIGHTS vec2(0.018, 0.04)  // the photo's land is read this high above the horizon (direction's y)...
-#define LAND_SPAN 0.05                  // ...and this far to either side (direction's sideways share)...
-#define LAND_LEVEL 3.0                  // ...at this level of the cube's mip chain (512 a face: 1.4° a texel)
-vec3 photoLand(vec2 toward) {
-  vec2 across = normalize(toward);
-  vec2 side = vec2(-across.y, across.x) * LAND_SPAN;
-  vec3 sum = vec3(0.0);
-  for (int tap = -1; tap <= 1; tap++) {
-    vec2 turned = normalize(across + side * float(tap));
-    sum += textureCubeLodEXT(uSkyCube, vec3(turned.x, LAND_HEIGHTS.x, turned.y), LAND_LEVEL).rgb;
-    sum += textureCubeLodEXT(uSkyCube, vec3(turned.x, LAND_HEIGHTS.y, turned.y), LAND_LEVEL).rgb;
-  }
-  return sum / 6.0;
-}
 void main() {
   vec3 normal = normalize(vNormal);
   vec3 sand = floorSand(vWorld.xz) * PATTERN_RANGE * DRY_SAND * mix(WET_SHADE, 1.0, smoothstep(0.0, WET_HEIGHT, vWorld.y));
@@ -1513,5 +1631,201 @@ void main() {
   vec3 color = vec3(0.94, 0.96, 0.97) * light * uBrightness;
   float alpha = vAlpha * shape * uOpacity;
   gl_FragColor = vec4(color * alpha, alpha);
+}
+`;
+
+// Drawn into the water's mirror image (src/pool.js's mirror meshes, with
+// MIRROR_NEARNESS defined), a point writes its nearness to the mirror camera
+// into alpha, as the splash's do (MIRROR_COMMON in src/shaders/fluid.js), so
+// the water looks its reflection up where it is (WATER_FRAGMENT's
+// nearReflection): the walls and the deck are centimetres from the water,
+// and a ripple moves their image far less than the sky's.
+const MIRROR_NEARNESS_OUTPUT = /* glsl */`
+#define MIRROR_NEARNESS_SCALE 4.0   // MIRROR_COMMON's
+float mirrorNearness(vec3 point) {
+  return 1.0 - MIRROR_NEARNESS_SCALE / max(distance(point, cameraPosition), 0.05);
+}
+`;
+
+// The basin (createPool's basin and walls): where the still surface shows it
+// from above (SEEN_THROUGH_WATER: the floor looks shallower than it is, and
+// a wall's tiles break at the waterline, as in a real pool), where it is
+// from below or above the water. The fragment shader works at the true
+// point (vWorld).
+export const POOL_VERTEX = /* glsl */`
+varying vec3 vWorld;
+varying vec3 vNormal;
+${SEEN_THROUGH_WATER}
+void main() {
+  vec3 world = (modelMatrix * vec4(position, 1.0)).xyz;
+  vWorld = world;
+  vNormal = normal;
+  gl_Position = projectionMatrix * viewMatrix * vec4(seenThroughWater(world), 1.0);
+}
+`;
+
+// The basin's light. Under the water, a point is lit as the lake bed is
+// (FLOOR_FRAGMENT): the sun refracted into the water and dimmed by the
+// water's absorption on its way down (along the refracted ray), focused into
+// caustics by the surface's curvature where its light crossed it
+// (CAUSTICS, with the floor's focusing), and on a wall turned by the angle
+// it meets it at; plus the sky's light, half as much on a wall, which sees
+// half the sky. The sunlight reaches a point only if it crossed the water
+// inside the pool and cleared the deck: the crossing must be more than the
+// deck's own shadow (uDeck times the sun's run per metre of rise) in from
+// the pool's edge toward the sun, so the sunward wall shades the floor
+// under it, and a wall facing away from the sun has only the sky. The
+// shadow's edge is soft over a centimetre or two, as the sun's disc and the
+// ripples blur it. The corners, where the floor meets a wall or two walls
+// meet, are a little darker (CORNER_SHADE, over CORNER_REACH): less of the
+// sky reaches into them. Above the water a wall is lit by the sun and the
+// sky directly. Seen from under the water, all of it fades into the water
+// on the way to the eye (UNDER_FOG).
+export const POOL_FRAGMENT = /* glsl */`
+uniform sampler2D uHeight;
+uniform vec3 uSunDir;
+uniform vec3 uSunIrradiance;
+uniform vec3 uSkyAmbient;
+uniform vec3 uAbsorb;
+uniform vec2 uDomainMin;
+uniform float uDomainSize;
+uniform float uTexelOffset;
+uniform float uN;
+uniform float uCell;
+varying vec3 vWorld;
+varying vec3 vNormal;
+${GLSL_COMMON}
+${UNDER_FOG}
+${CAUSTICS}
+${POOL_TILES}
+${MIRROR_NEARNESS_OUTPUT}
+#define WATER_INDEX 1.333
+#define SKY_LIGHT 1.4          // the sky's light, as on the lake bed
+#define CORNER_SHADE 0.35
+#define CORNER_REACH 0.15      // metres
+// How much sunlight reaches a point whose light crossed the surface at
+// surfacePoint (the header): how far the light ran over the pool from its
+// edge, toward the sun, against the deck's shadow on the water.
+float sunlitFrom(vec2 surfacePoint, vec2 toSun, float depth) {
+  vec2 lower = uPool.xy;
+  vec2 upper = uPool.xy + uPool.z;
+  float runX = toSun.x > 1e-4 ? (upper.x - surfacePoint.x) / toSun.x : toSun.x < -1e-4 ? (lower.x - surfacePoint.x) / toSun.x : 1e4;
+  float runZ = toSun.y > 1e-4 ? (upper.y - surfacePoint.y) / toSun.y : toSun.y < -1e-4 ? (lower.y - surfacePoint.y) / toSun.y : 1e4;
+  float shadow = uDeck * length(uSunDir.xz) / max(uSunDir.y, 1e-3);
+  float soft = 0.01 + 0.01 * depth;
+  return smoothstep(-soft, soft, min(runX, runZ) - shadow);
+}
+float cornerLight(vec3 point, vec3 normal) {
+  vec2 lower = uPool.xy;
+  vec2 upper = uPool.xy + uPool.z;
+  vec2 fromSides = min(point.xz - lower, upper - point.xz);
+  float nearest;
+  if (normal.y > 0.5) nearest = min(fromSides.x, fromSides.y);
+  else nearest = min(point.y + uPool.w, abs(normal.x) > 0.5 ? fromSides.y : fromSides.x);
+  return 1.0 - CORNER_SHADE * exp(-max(nearest, 0.0) / CORNER_REACH);
+}
+void main() {
+  vec3 normal = normalize(vNormal);
+  float depth = max(-vWorld.y, 0.0);
+  vec3 albedo = poolTiles(vWorld, normal);
+  // The sun refracted into the water: up-sun of a point by tan θt per metre
+  // of depth its light crossed the surface.
+  float sunSine = length(uSunDir.xz);
+  vec2 toSun = uSunDir.xz / max(sunSine, 1e-5);
+  float refractedSine = sunSine / WATER_INDEX;
+  float refractedCosine = sqrt(1.0 - refractedSine * refractedSine);
+  vec3 refractedSun = vec3(toSun.x * refractedSine, refractedCosine, toSun.y * refractedSine);
+  vec2 surfacePoint = vWorld.xz + toSun * (refractedSine / refractedCosine) * depth;
+  float curvature = surfaceCurvature(surfacePoint);
+  vec3 light;
+  if (depth > 0.0) {
+    float deflection = 1.0 - max(uSunDir.y, 0.0) / (WATER_INDEX * refractedCosine);
+    float focusing = deflection * 0.5 * (1.0 + 1.0 / (refractedCosine * refractedCosine));
+    float caustic = causticLight(1.0 + focusing * depth * curvature);
+    float facing = max(dot(normal, refractedSun), 0.0) / refractedCosine;
+    vec3 sun = uSunIrradiance * max(uSunDir.y, 0.0) * exp(-uAbsorb * depth / refractedCosine) * facing * sunlitFrom(surfacePoint, toSun, depth) * caustic;
+    vec3 sky = uSkyAmbient * exp(-uAbsorb * depth) * SKY_LIGHT * (0.5 + 0.5 * normal.y);
+    light = sun + sky;
+  } else {
+    light = uSunIrradiance * max(dot(normal, uSunDir), 0.0) + uSkyAmbient * SKY_LIGHT * (0.5 + 0.5 * normal.y);
+  }
+  vec3 color = albedo * light * cornerLight(vWorld, normal);
+  if (cameraPosition.y < 0.0) color = throughWater(color, vWorld);
+#ifdef MIRROR_NEARNESS
+  gl_FragColor = vec4(color, mirrorNearness(vWorld));
+#else
+  gl_FragColor = vec4(color, 1.0);
+#endif
+}
+`;
+
+// The deck round the pool (createPool's yard): a plane at the deck's level
+// out to the horizon, with a hole the pool's size. Out from the pool's edge,
+// a band of pale stone (COPING_WIDTH), its edge rounded down into the pool
+// (darker over COPING_ROUND); then square pavers (PAVER, laid from the
+// coping's outer edge, with joints of PAVER_JOINT, antialiased as the
+// tiles' grout is), out to DECK_WIDTH; then a mottled lawn; and from
+// LAND_NEAR to LAND_FAR away all of it becomes the land the sky photo shows
+// at the horizon that way (PHOTO_LAND, as the beach's does), so the ground
+// runs into the photo's own. (Near by, that colour is the photo's far,
+// hazy shore, often its water: the beach's bank takes it, a lawn may not.)
+// Lit by the sun and the sky, as the beach is.
+export const DECK_VERTEX = /* glsl */`
+varying vec3 vWorld;
+void main() {
+  vWorld = (modelMatrix * vec4(position, 1.0)).xyz;
+  gl_Position = projectionMatrix * viewMatrix * vec4(vWorld, 1.0);
+}
+`;
+
+export const DECK_FRAGMENT = /* glsl */`
+uniform vec3 uSunDir;
+uniform vec3 uSunIrradiance;
+uniform vec3 uSkyAmbient;
+uniform vec4 uPool;     // the pool's corner (x, z), its side and its depth (m)
+varying vec3 vWorld;
+${GLSL_COMMON}
+${PHOTO_LAND}
+${MIRROR_NEARNESS_OUTPUT}
+#define SKY_LIGHT 1.4
+#define COPING_WIDTH 0.3
+#define COPING_ROUND 0.03
+#define COPING_COLOR vec3(0.44, 0.38, 0.29)
+#define PAVER 0.6
+#define PAVER_JOINT 0.008
+#define PAVER_COLOR vec3(0.31, 0.26, 0.19)
+#define JOINT_COLOR vec3(0.13, 0.115, 0.09)
+#define DECK_WIDTH 2.4
+#define GRASS_COLOR vec3(0.075, 0.12, 0.035)
+float paverCover(vec2 cell, vec2 width) {
+  float lines = PAVER / PAVER_JOINT;
+  vec2 high = cell + 0.5 * width;
+  vec2 low = cell - 0.5 * width;
+  vec2 covered = (floor(high) + min(fract(high) * lines, 1.0) - floor(low) - min(fract(low) * lines, 1.0)) / (lines * width);
+  return (1.0 - covered.x) * (1.0 - covered.y);
+}
+void main() {
+  vec2 centre = uPool.xy + 0.5 * uPool.z;
+  vec2 offset = vWorld.xz - centre;
+  float outside = max(abs(offset.x), abs(offset.y)) - 0.5 * uPool.z;
+  vec2 point = vWorld.xz;
+  vec2 cell = (point - (uPool.xy - COPING_WIDTH)) / PAVER;
+  vec2 width = max(abs(dFdx(point)), abs(dFdy(point))) / PAVER + 1e-3;
+  float grain = valueNoise(point * 9.0) * 0.6 + valueNoise(point * 31.0) * 0.4;
+  vec3 coping = COPING_COLOR * (0.92 + 0.12 * grain) * mix(0.72, 1.0, smoothstep(0.0, COPING_ROUND, outside));
+  vec3 paver = PAVER_COLOR * (0.9 + 0.14 * grain) * (1.0 + (hash21(floor(cell)) - 0.5) * 0.12 * (1.0 - smoothstep(0.4, 1.2, max(width.x, width.y))));
+  paver = mix(JOINT_COLOR, paver, paverCover(cell, width));
+  vec3 albedo = outside < COPING_WIDTH ? coping : paver;
+  float lawn = smoothstep(COPING_WIDTH + DECK_WIDTH, COPING_WIDTH + DECK_WIDTH + 0.08, outside);
+  vec3 grass = GRASS_COLOR * (1.0 + 0.6 * valueNoise(point * 2.3 + 5.0) - 0.3) * (0.8 + 0.4 * valueNoise(point * 13.0));
+  vec3 color = mix(albedo, grass, lawn) * (uSunIrradiance * max(uSunDir.y, 0.0) + uSkyAmbient * SKY_LIGHT);
+  vec3 toGround = vWorld - cameraPosition;
+  float far = smoothstep(LAND_NEAR, LAND_FAR, length(toGround));
+  if (far > 0.0) color = mix(color, photoLand(toGround.xz), far);
+#ifdef MIRROR_NEARNESS
+  gl_FragColor = vec4(color, mirrorNearness(vWorld));
+#else
+  gl_FragColor = vec4(color, 1.0);
+#endif
 }
 `;

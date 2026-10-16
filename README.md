@@ -1,8 +1,9 @@
 # A Stone’s Throw
 
-Throw rocks into a pond and watch the splash. A WebGL toy built with
-Three.js: the water is a real wave solver, the splash is choreographed from
-the physics of a stone entering water, and the droplets are rendered as water.
+Throw rocks into a lake, or a tiled pool, and watch the splash. A WebGL toy
+built with Three.js: the water is a real wave solver, the splash is
+choreographed from the physics of a stone entering water, and the droplets
+are rendered as water.
 
 Live at https://azabrod1.github.io/IntoTheWater/, published from `main` by
 GitHub Pages on every push. Locally, open `index.html` through any static
@@ -27,10 +28,13 @@ remembered on the device (but the view, which opens on the shore):
   spreading over the pond; Under, under the water, looking up at the rocks
   coming down through the sky's bright window, their air cavities silver
   mirrors, the sun's shafts slanting down. A choice glides there; a drag
-  turns from it (under the water it stays under).
-- Water: Lake, the default, a clear Alpine lake's (bright sand in the
-  shallows, turquoise-blue where it is deep); Clear, a spring's, bluer and
-  clearer; Pond, a green pond's; Murky, a lake after rain. The lake bed
+  turns from it (under the water it stays under). In the pool, Shore stands
+  on the deck at the pool's near corner looking down into it, Low just
+  inside its near wall, and under the water the eye keeps inside its walls.
+- Water: Pool, a tiled pool on a deck in a lawn (below); Lake, the
+  default, a clear Alpine lake's (bright sand in the shallows,
+  turquoise-blue where it is deep); Clear, a spring's, bluer and clearer;
+  Pond, a green pond's; Murky, a lake after rain. The lake bed
   slopes down from the shore, 0.7 m deep at the bottom of the view to 1.7 m
   where the rocks land and 3.5 m far out, so the sand shows in the shallows
   and is gone where the rocks land, and with it the light a ring throws on
@@ -127,6 +131,34 @@ reference stone's after about a minute and a half, by then 35 m out; a
 on Low); a newer one makes the faintest fade out over 1.5 s. With no ring
 alive there is no pass and no cost per pixel. `RING_SOURCE.strength`
 scales every ring source (1: as fitted).
+
+**The pool** (`src/pool.js`, `setPool` in `src/spectralWater.js`). The
+Pool water puts the rocks in a 3 m square pool, 1.4 m deep, tiled, its
+walls rising 10 cm out of the water to a stone coping and a paved deck in a
+lawn. Its walls reflect the waves to every order, at no cost: the pool is
+the middle quarter of the solver's 6 m periodic patch, and every splat goes
+in with its mirror images across the walls, whose periodic sum is even about
+every wall, which is what a wall that reflects does (the four images' phase
+shifts multiply, two per axis, so a splat costs what it did; `tools/fft-test.mjs`
+checks the field is the four Gaussians, stays even about every wall as it
+evolves and is the open patch's field read at the point and its mirror
+images). A ring's source therefore goes into the solver too, and the rings
+draw only what its near field hides under the drawn splash, turned over and
+for its first second or so, so the splash looks as it does on the lake. A
+basin's waves cannot spread away, so the pool damps them less than the
+lake's solver does but never less than 0.05/s, its walls and floor damping
+even the longest: a 6 cm stone's rings run back and forth off the walls for
+about a minute, and the solver sleeps 165 s after its last splat
+(`tools/pool-probe.mjs` evolves the largest splash in the basin and checks
+it is still by then). The basin is drawn under the water where the still
+surface shows it (its floor looks shallower than it is and its tiles break
+at the waterline, as in a real pool), lit as the lake bed is, through the
+water with the ripples' caustics on the floor and the walls, and shaded by
+the sunward walls; the water reflects the walls and the deck by their
+distance, as it does the splash, so a ripple moves their image little, and
+from under the water the surface mirrors the basin, met exactly. The grout
+and the pavers' joints are box-filtered over each pixel's footprint, so
+they grey evenly far off rather than shimmer.
 
 **Wind ripples** (`src/ambientWaves.js`). Between throws the pond is never
 still: a second spectral field, on its own 6 m tile of 256 × 256 laid over
@@ -426,7 +458,17 @@ farther out, so it rises into the view rather than filling its corner.
   centres make real fields, with no velocity in the height or height in the
   velocity), and the half-float path: the smallest stone's ring survives with
   every stored value rounded to binary16, subnormals kept or flushed to zero,
-  and fields well beyond the largest a splash makes fit in it.
+  and fields well beyond the largest a splash makes fit in it; and the pool's
+  walls: a splat's mirror images, a field even about every wall, and real
+  fields at fractional centres with them.
+- `node tools/pool-probe.mjs [--radius=0.15] [--power=hard]` throws a stone
+  into the pool on the CPU, keeps every splat its solver would take (the
+  ring's too) and evolves them in the basin with the solver's own arithmetic,
+  for the lake's damping and the pool's (and any others given as
+  `POOL_CANDIDATES="base,least;…"`): the largest slope, height and caustic
+  change in the pool at times after the last splat, and how long its ripples
+  stay plain and visible. It checks that the largest rock's waves (30 cm,
+  thrown hard) are under what a pixel shows when the pool's solver sleeps.
 - Deployment: `.github/workflows/deploy.yml` runs the tests and `npm run site`
   on every push to `main` and publishes `_site/` to GitHub Pages. `npm run site`
   (`tools/build-site.mjs`) copies only what the page loads: `index.html`,
@@ -589,8 +631,10 @@ farther out, so it rises into the view rather than filling its corner.
   program. After every change of preset, from each to each other, it checks
   what is actually built (`window.__pond.budget`): the solver's grid, the
   water mesh, the canvas and every target's size; a change in the middle of
-  a splash must keep the waves; and pausing and resuming twice in one tick
-  must leave one frame loop. On a fake clock it checks that the watch after
+  a splash must keep the waves; the pool, switched to and back, compiles no
+  program, draws only its own quads of the water mesh and keeps a throw's
+  ring only while its near field is hidden; and pausing and resuming twice
+  in one tick must leave one frame loop. On a fake clock it checks that the watch after
   calibration steps down at 20 frames a second and that a still pond on
   Medium draws every other frame with its time keeping up; and that a large
   window keeps within the pixel budget.
@@ -599,7 +643,11 @@ farther out, so it rises into the view rather than filling its corner.
   the pointer stays there; then drags, by touch and by mouse, and checks that
   they turn the view about its pivot, keep the eye above the water and throw
   nothing, that a drag that starts zoomed turns round what the view shows,
-  and that the View choices and Reset view glide where they should.
+  and that the View choices and Reset view glide where they should; in the
+  pool, that the views stand where they should, the eye under its water
+  keeps inside its walls and comes back out once turned from one, a glide
+  into its water and out goes over the water, and a tap on the deck throws
+  inside the walls.
 - `node tools/controls-probe.mjs [--root=path] [--label=name]` loads the page
   as phones' browsers do (mobile layout by the viewport tag, touch, 3× pixels)
   at a large phone's portrait and landscape and a small phone's portrait and

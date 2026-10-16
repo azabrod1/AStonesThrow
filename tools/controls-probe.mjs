@@ -19,7 +19,9 @@
 //   - the settings button is on the screen, clear of the title, and (on a
 //     touch screen) at least 34 points tall; pressed, the panel opens on the
 //     screen, its rows that tall too; its Water row opens the Water page,
-//     whose Murky sets the pond's clarity and the row's value; a press on the
+//     whose five choices fit their labels, whose Pool puts the rocks in the
+//     pool (the View note follows) and whose Murky sets the pond's clarity,
+//     each with the row's value; a press on the
 //     water closes it without throwing a stone, and Escape closes it too;
 //   - on a touch screen a finger dragged across the water turns the view and
 //     throws nothing, and the Reset view button then shows on the screen.
@@ -192,8 +194,13 @@ for (const framing of FRAMINGS) {
   await page.waitForTimeout(400);
   const choices = await boxes('#water [role="radio"]');
   const [waterPanel] = await boxes('#settings');
-  if (framing.touch) check(choices.length === 4 && choices.every((choice) => choice.height >= SMALLEST_BUTTON_HEIGHT - 0.5), `the Water page's four choices are at least ${SMALLEST_BUTTON_HEIGHT} points tall`);
+  if (framing.touch) check(choices.length === 5 && choices.every((choice) => choice.height >= SMALLEST_BUTTON_HEIGHT - 0.5), `the Water page's five choices are at least ${SMALLEST_BUTTON_HEIGHT} points tall`);
   check(onScreen(waterPanel) && choices.every(onScreen), `the Water page is on the screen`);
+  const clipped = await page.evaluate(() => [...document.querySelectorAll('#water [role="radio"]')].filter((choice) => choice.scrollWidth > choice.clientWidth).map((choice) => choice.textContent));
+  check(clipped.length === 0, `every Water choice's label fits its button${clipped.length ? ` (not: ${clipped.join(', ')})` : ''}`);
+  await press('#water [data-value="pool"]');
+  const pooled = await page.evaluate(() => ({ clarity: window.__pond.clarity, row: document.querySelector('.menu-tier[data-open="water"] .menu-tier-value').textContent, viewNote: document.getElementById('view-note').textContent }));
+  check(pooled.clarity === 'pool' && pooled.row === 'Pool' && pooled.viewNote.includes('pool'), `Pool puts the rocks in the pool (${pooled.clarity}), the row reads "${pooled.row}", the View note "${pooled.viewNote}"`);
   await press('#water [data-value="murky"]');
   const chosen = await page.evaluate(() => ({ clarity: window.__pond.clarity, row: document.querySelector('.menu-tier[data-open="water"] .menu-tier-value').textContent }));
   check(chosen.clarity === 'murky' && chosen.row === 'Murky', `Murky sets the clarity (${chosen.clarity}) and the row's value ("${chosen.row}")`);

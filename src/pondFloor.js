@@ -25,7 +25,8 @@
 // photo carries on, and the camera, which turns about the pond (src/
 // main.js), sees a shore behind it rather than water to the horizon.
 //
-// The caustics (FLOOR_FRAGMENT in src/shaders/scene.js). A floor point is lit
+// The caustics (FLOOR_FRAGMENT and CAUSTICS, which the pool's basin shares,
+// in src/shaders/scene.js). A floor point is lit
 // by the sun refracted into the water, focused by the curvature of the
 // surface it crossed: the Laplacian of all three heights, times the bed's depth there,
 // times how far the refracted light moves on the floor per metre of depth and

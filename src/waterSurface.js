@@ -18,6 +18,14 @@
 // (src/main.js) draws both variants before the first throw, so their programs
 // are built by then.
 //
+// In the pool (setPool, src/pool.js) the inner patch draws only the pool's
+// quads and a ring of them under its walls (the patch beyond is the
+// solver's mirror images, src/spectralWater.js, and the deck covers it), the
+// app hides the outer sheet, and seen from below the surface mirrors the
+// basin rather than the lake bed. The pool's mirror image holds its walls and
+// deck, near the water, so the water looks every reflection up by its
+// distance (WATER_FRAGMENT's nearReflection), not only the splash's.
+//
 // Seen from under the water (src/main.js's Under view), the same meshes draw
 // with WATER_UNDER_FRAGMENT (the sky through Snell's window, the water
 // mirrored past it), their back faces, and a cavity with its CAVITY_MESH
@@ -44,21 +52,22 @@
 import * as THREE from 'three';
 import { WATER_VERTEX, WATER_FRAGMENT, WATER_UNDER_FRAGMENT } from './shaders/scene.js';
 
-const OUTER_HALF_SIZE = 9000;
+export const OUTER_HALF_SIZE = 9000;
 const OUTER_GROWTH = 1.25;   // each of the outer sheet's square rings this many times the last's half size...
 const OUTER_CUTS = 8;        // ...and each of its sides cut into this many quads
 export const MAX_CAVITIES = 4;   // the inner patch dips under at most this many cavities at once
 
 /**
- * The outer sheet, in the XZ plane: square rings around the inner patch,
- * each OUTER_GROWTH times the last's half size, out to outerHalf, each side
- * of each ring cut into OUTER_CUTS. Small triangles near the patch, not four
- * quads kilometres long: a camera turned to look along the patch's edge
- * (src/main.js) sees the sheet a metre or two away, where a huge
- * triangle's interpolated position is off by enough to move its reflection
- * and draw a seam along the edge.
+ * The outer sheet, in the XZ plane (at `height`): square rings around the
+ * inner patch, each OUTER_GROWTH times the last's half size, out to
+ * outerHalf, each side of each ring cut into OUTER_CUTS. Small triangles
+ * near the patch, not four quads kilometres long: a camera turned to look
+ * along the patch's edge (src/main.js) sees the sheet a metre or two away,
+ * where a huge triangle's interpolated position is off by enough to move its
+ * reflection and draw a seam along the edge. The pool's deck is one too
+ * (src/pool.js).
  */
-function outerSheetGeometry(innerHalf, outerHalf, centre) {
+export function squareRingsGeometry(innerHalf, outerHalf, centre, height = 0) {
   const halves = [innerHalf];
   while (halves.at(-1) < outerHalf) halves.push(Math.min(halves.at(-1) * OUTER_GROWTH, outerHalf));
   const positions = [];
@@ -67,7 +76,7 @@ function outerSheetGeometry(innerHalf, outerHalf, centre) {
   const onRing = (half, along) => {
     const side = Math.min(Math.floor(along * 4), 3), share = along * 4 - side, offset = -half + 2 * half * share;
     const [x, z] = [[offset, -half], [half, offset], [-offset, half], [-half, -offset]][side];
-    return [cx + x, 0, cz + z];
+    return [cx + x, height, cz + z];
   };
   for (let ring = 0; ring < halves.length - 1; ring++) {
     for (let cut = 0; cut < 4 * OUTER_CUTS; cut++) {
@@ -88,6 +97,21 @@ function innerPatchGeometry(water, segments) {
   geometry.rotateX(-Math.PI / 2);
   geometry.deleteAttribute('normal');
   geometry.deleteAttribute('uv');
+  return geometry;
+}
+
+/**
+ * The inner patch over a pool's square and a quad round it, at the patch's
+ * spacing, placed as the patch is (about the solver's centre).
+ */
+function poolPatchGeometry(water, segments, square) {
+  const cell = water.domainSize / segments;
+  const count = Math.min(Math.ceil(square.size / cell) + 2, segments);
+  const geometry = new THREE.PlaneGeometry(count * cell, count * cell, count, count);
+  geometry.rotateX(-Math.PI / 2);
+  geometry.deleteAttribute('normal');
+  geometry.deleteAttribute('uv');
+  geometry.translate(square.minX + square.size / 2 - water.centre[0], 0, square.minZ + square.size / 2 - water.centre[1]);
   return geometry;
 }
 
@@ -153,8 +177,9 @@ export function createWaterSurface(water, lighting, ambientWaves, { meshSegments
     side: THREE.DoubleSide,
   });
 
-  // From below (the header): the sky's cube shows through the window.
-  const underUniforms = { ...uniforms, uSkyCube: { value: skyCube } };
+  // From below (the header): the sky's cube shows through the window, and
+  // past it the bed, or a pool's basin (uPool's depth 0 for none).
+  const underUniforms = { ...uniforms, uSkyCube: { value: skyCube }, uPool: { value: new THREE.Vector4() }, uDeck: { value: 0 } };
   const underMaterial = (inner) => new THREE.ShaderMaterial({
     vertexShader: WATER_VERTEX,
     fragmentShader: WATER_UNDER_FRAGMENT,
@@ -174,11 +199,14 @@ export function createWaterSurface(water, lighting, ambientWaves, { meshSegments
   let aboveMaterial = innerMaterial;   // the patch's material from above, while fromBelow has swapped it
 
   let segments = meshSegments;
-  const inner = new THREE.Mesh(innerPatchGeometry(water, segments), innerMaterial);
+  let pool = null;   // the pool's { minX, minZ, size, depth, deck } (setPool)
+  let patchGeometry = innerPatchGeometry(water, segments);
+  let poolGeometry = null;   // the patch over the pool alone, made when first needed
+  const inner = new THREE.Mesh(patchGeometry, innerMaterial);
   inner.position.set(water.centre[0], 0, water.centre[1]);
   inner.frustumCulled = false;
 
-  const outer = new THREE.Mesh(outerSheetGeometry(water.domainSize / 2, OUTER_HALF_SIZE, water.centre), outerMaterial);
+  const outer = new THREE.Mesh(squareRingsGeometry(water.domainSize / 2, OUTER_HALF_SIZE, water.centre), outerMaterial);
   outer.frustumCulled = false;
 
   return {
@@ -206,16 +234,32 @@ export function createWaterSurface(water, lighting, ambientWaves, { meshSegments
     get meshSegments() { return segments; },
     /** Its vertex spacing (m): the cavity's dip margins by it. */
     get cell() { return water.domainSize / segments; },
-    /** Its triangles. */
-    get triangles() { return 2 * segments * segments; },
+    /** Its triangles, as drawn (the pool's fewer). */
+    get triangles() { return inner.geometry.index.count / 3; },
     /** Rebuild the inner patch with this many quads per side. */
     setMeshSegments(count) {
       if (count === segments) return;
-      inner.geometry.dispose();
-      inner.geometry = innerPatchGeometry(water, count);
+      patchGeometry.dispose();
+      poolGeometry?.dispose();
       segments = count;
+      patchGeometry = innerPatchGeometry(water, count);
+      poolGeometry = null;
       uniforms.uMeshCell.value = water.domainSize / count;
+      this.setPool(pool);
     },
+    /**
+     * The pool's square, its depth and its deck's height ({ minX, minZ,
+     * size, depth, deck }: src/pool.js), or null for the lake (the header).
+     */
+    setPool(square) {
+      pool = square;
+      if (square && !poolGeometry) poolGeometry = poolPatchGeometry(water, segments, square);
+      inner.geometry = square ? poolGeometry : patchGeometry;
+      underUniforms.uPool.value.set(square?.minX ?? 0, square?.minZ ?? 0, square?.size ?? 0, square?.depth ?? 0);
+      underUniforms.uDeck.value = square?.deck ?? 0;
+    },
+    /** Whether the surface is a pool's (setPool). */
+    get pooled() { return pool !== null; },
     /** The open cavities' pushShape()s (src/cavity.js): the patch dips under them, or draws as still water when there are none. */
     setCavities(shapes) {
       const count = Math.min(shapes.length, MAX_CAVITIES);
@@ -234,7 +278,9 @@ export function createWaterSurface(water, lighting, ambientWaves, { meshSegments
       uniforms.uReflectionMatrix.value.copy(reflectionMatrix);
       const width = reflectionTarget.width, height = reflectionTarget.height;
       uniforms.uMirrorSize.value.set(width, height);
-      if (mirrorRect && mirrorRect.z > 0) uniforms.uMirrorNear.value.set(mirrorRect.x / width, mirrorRect.y / height, (mirrorRect.x + mirrorRect.z) / width, (mirrorRect.y + mirrorRect.w) / height);
+      // In a pool the whole mirror image holds near things, its walls and deck (src/pool.js).
+      if (pool) uniforms.uMirrorNear.value.set(0, 0, 1, 1);
+      else if (mirrorRect && mirrorRect.z > 0) uniforms.uMirrorNear.value.set(mirrorRect.x / width, mirrorRect.y / height, (mirrorRect.x + mirrorRect.z) / width, (mirrorRect.y + mirrorRect.w) / height);
       else uniforms.uMirrorNear.value.set(1, 1, 0, 0);
       uniforms.uUnderColor.value = underTarget.texture;
       uniforms.uUnderDepth.value = underTarget.depthTexture;

@@ -15,8 +15,8 @@
 // once per simulated frame, takes it from where it was to where it is
 // wanted along a straight path, at most FINGER.mostSplats splat pairs a
 // frame (a jump farther than that is spread over them, each as strong as
-// the speed allows). Splats off the solver's patch are refused, so the
-// caller keeps the finger FINGER.margin inside it.
+// the speed allows). Splats off the solver's patch (or out of the pool) are
+// refused, so the caller keeps the finger FINGER.margin inside it.
 //
 // Pure bookkeeping with no Three.js, so tools can drive it in Node.
 export const FINGER = {

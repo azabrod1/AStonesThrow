@@ -9,9 +9,10 @@
 //      cross the pond (GPU, while any lives; src/rings.js) and the splash's
 //      sheets and columns (CPU);
 //   4. while a splash lives, draw it into the water's mirror image (below);
-//   5. render what is under the surface (floor, submerged stones, bubbles)
-//      to a texture with depth, the stones and bubbles where the still
-//      surface shows them (src/rock.js);
+//   5. render what is under the surface (the lake bed or the pool's basin,
+//      submerged stones, bubbles) to a texture with depth, the stones,
+//      bubbles and basin where the still surface shows them (src/rock.js,
+//      src/pool.js);
 //   6. render the main scene (sky dome, water surface refracting pass 5 and
 //      reflecting the mirror image, the stones' cavities in it
 //      (src/cavity.js), foam specks riding the surface, stones above the
@@ -51,7 +52,9 @@
 // each frame (updateReflection). A tap throws at the water under it, brought
 // inside the solver's patch less POND_MARGIN (or MARGIN_RADII of a big
 // rock's radius) when it is beyond (or on the sky): a splash nearer the
-// patch's edge would ring across it, since the patch is periodic. While a
+// patch's edge would ring across it, since the patch is periodic. In the pool
+// it is brought inside the pool's walls less POOL_MARGIN instead, so the
+// splash stands clear of them. While a
 // press aims (or a mouse hovers) a ring on the water and a faint arc from
 // the hand show the throw; a throw hides them, a mouse's until it moves on,
 // or the arc's end would hang in the splash as a hairline. A press held
@@ -59,6 +62,18 @@
 // touch.js): the arc goes, a small ring marks the finger, dragging trails it
 // through the water and letting go lifts it out; it neither throws nor
 // turns the view.
+//
+// The pool. The Pool water (WATER_CLARITIES.pool) puts the rocks in a tiled
+// pool instead of the lake: the solver's patch becomes a basin whose walls
+// reflect the waves (src/spectralWater.js setPool), the lake's bed, beach and
+// open water give way to the pool's basin and deck (src/pool.js:
+// showScenery), the rocks rest on its floor and the eye stands on the deck
+// or in the water, under it inside the walls (eyeBounds; a glide across the
+// surface goes in over the water). The views are the lake's but for the
+// shore view, which looks down into the pool from its near corner, and the
+// low one, whose eye is just inside the pool's near wall (POOL_VIEWS). A
+// change between the pool and the lake starts the new one still
+// (setPooled).
 //
 // Quality. Each preset of QUALITY sets the work a frame does: the splash
 // solver's grid, the inner water patch's mesh (src/waterSurface.js), the
@@ -94,7 +109,7 @@
 // them: ?sky=<name> picks the panorama (src/sky.js; setSky loads another
 // later, in place: the sun follows, and the mirror image is drawn again);
 // ?view=shore|level|high|under stands the camera at one of VIEWS (showView);
-// ?water=clear|pond|murky the water's clarity (WATER_CLARITIES; setClarity);
+// ?water=pool|clear|lake|pond|murky the water (WATER_CLARITIES; setClarity);
 // ?wind=x,z sets the direction the wind blows toward in world XZ
 // (DEFAULT_WIND otherwise); ?windStrength=calm|breeze|windy the wind's
 // strength (WIND_STRENGTHS in src/ambientWaves.js; setWind); each otherwise
@@ -117,9 +132,10 @@ import { SplashSystem, MIRROR_LAYER } from './splash.js';
 import { createFloatTarget, FullscreenPass, configureFloatSupport, renderTargetBytes } from './gpu.js';
 import { UNDER_BACKGROUND_FRAGMENT } from './shaders/scene.js';
 import { directionAt, placeDirection, clampToFrame, zoomToward, isZoomed, viewFacing } from './viewZoom.js';
-import { orbitEye, orbitFacing, orbitAbout, clampOrbit, turnOrbit, blendOrbits, orbitsMatch, LOWEST_EYE } from './viewOrbit.js';
+import { orbitEye, orbitFacing, orbitAbout, clampOrbit, turnOrbit, blendOrbits, orbitsMatch, keepInside, LOWEST_EYE } from './viewOrbit.js';
 import { Profiler } from './profiler.js';
 import { FingerInWater, FINGER } from './touch.js';
+import { createPool, holdInPool, POOL } from './pool.js';
 
 // Quality presets. The splash lives in a few dozen pixels, so the fluid
 // buffer's resolution is what it is made of: a drop narrower than a buffer
@@ -174,6 +190,8 @@ const POWER = { soft: 1.3, normal: 1.0, hard: 0.72 };   // flight-time multiplie
 const POND_DEPTH = 0.8;       // the depth the waves take (the solver, the wind's ripples, the rings): see the bed below
 const POND_MARGIN = 0.4;      // metres inside the solver's patch that a tap's throw keeps to...
 const MARGIN_RADII = 4;       // ...or this many of the rock's radius, if more: a 30 cm rock's splats reach 3 radii out
+const POOL_MARGIN = 0.25;     // metres inside the pool's walls a throw keeps to (or MARGIN_RADII of the rock's radius)
+const EYE_EDGE = 0.3;         // metres inside the pool's edge over which the deck's height eases in for the eye
 const MAX_ROCKS = 10;
 const MIN_FOV = 8;            // degrees: the narrowest zoom
 const WHEEL_STEP = 0.9;       // field of view factor per wheel notch
@@ -193,6 +211,17 @@ const VIEWS = {
   level: orbitAbout({ x: 0, y: 0.16, z: 0.5 }, { x: 0, y: 0.1, z: -1.4 }),
   high: orbitAbout({ x: 1.0, y: 2.4, z: 0.6 }, { x: 0, y: 0, z: -1.3 }),
   under: orbitAbout({ x: -0.7, y: -0.85, z: -0.1 }, { x: 0, y: -0.3, z: -1.4 }),
+};
+// In the pool (src/pool.js) the shore view stands on the deck at the pool's
+// near corner, 1.7 m up and 1.2 m back from it, a little to the side, and
+// looks down into the pool, its floor and two of its walls; the low view's
+// eye is over the water just inside the near wall, 25 cm in from it, rather
+// than at the lake's edge, where the pool's deck stands. The rocks are thrown
+// from the lake's shore view's hand all the same (handPosition).
+const POOL_VIEWS = {
+  ...VIEWS,
+  shore: orbitAbout({ x: 0.6, y: 1.7, z: 1.7 }, { x: 0, y: 0, z: -1.1 }),
+  level: orbitAbout({ x: 0, y: 0.16, z: 0.25 }, { x: 0, y: 0.1, z: -1.4 }),
 };
 // Where the eye may stand (clampOrbit, src/viewOrbit.js): over the water at
 // least LOWEST_EYE above the beach or the still water; under it, on an orbit
@@ -217,10 +246,15 @@ const SUN_BALANCE = [3.0, 2.85, 2.55];        // the sun's irradiance under the 
 // ring's light on the sand is gone where the rocks land.
 // Lake, the default, is a clear Alpine lake's (Lake Zurich's): little
 // absorbed but red, so the sand under the shallows is lit nearly white and
-// deep water is turquoise-blue. Clear is a spring's or a pool's, bluer and
-// clearer still. Pond is a green pond's, its blue absorbed by dissolved
-// matter; Murky a lake after rain, where the sand shows only at the bank.
+// deep water is turquoise-blue. Clear is a spring's, bluer and clearer
+// still. Pond is a green pond's, its blue absorbed by dissolved matter;
+// Murky a lake after rain, where the sand shows only at the bank. Pool is
+// the pool's (src/pool.js), with its basin in place of the lake: filtered
+// water, nearly pure water's absorption (about 0.35, 0.06 and 0.015 per
+// metre in red, green and blue) and little scattering, so the white tiles
+// show through the whole basin, tinted aqua by the red it takes out.
 const WATER_CLARITIES = {
+  pool: { absorb: [0.35, 0.06, 0.015], extinction: [0.42, 0.11, 0.06], color: [0.010, 0.090, 0.130] },
   clear: { absorb: [0.40, 0.07, 0.05], extinction: [0.9, 0.35, 0.32], color: [0.012, 0.085, 0.115] },
   lake: { absorb: [0.45, 0.10, 0.07], extinction: [1.3, 0.85, 0.8], color: [0.014, 0.075, 0.100] },
   pond: { absorb: [0.95, 0.36, 0.34], extinction: [2.0, 1.45, 1.65], color: [0.015, 0.074, 0.041] },
@@ -230,7 +264,12 @@ const DEFAULT_WATER = 'lake';
 // The warm-up's throw (the reference stone, aimed as the profiler's) and the
 // moments after its impact it draws: the crown, the fan, the cavity, spray
 // and the mirror; the jet column; the specks and the drops' landing crowns.
-const WARM_UP = { x: 0, z: -1.4, radius: 0.03, moments: [0.02, 0.16, 0.4] };
+// Its randomness is seeded (Park–Miller, as tools/shoot.mjs seeds a throw):
+// seed 4 raises a clean jet 90 cm tall (tools/variety-probe.mjs --list), so
+// the column's three programs are built too, where an unseeded throw raised
+// none about one time in thirty (its jet form "none") and the first throw
+// with a jet then built them.
+const WARM_UP = { x: 0, z: -1.4, radius: 0.03, moments: [0.02, 0.16, 0.4], seed: 4 };
 
 export async function startPond({ canvas, quality = 'auto', onReady, onError, onStats, onViewChange, onQualityChange, onProfile }) {
   let renderer;
@@ -305,8 +344,14 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
   const rings = new Rings(renderer, { depth: POND_DEPTH });
   rings.setLiveLimit(settings.rings);
   water.rings = rings;
-  // The lake bed (src/pondFloor.js): the splash's holes and the rocks rest on it.
-  water.floorDepthAt = floorDepthAt;
+  // The pool (src/pool.js), whose meshes the scenes take below; pooled while
+  // the water is the pool's (setPooled). The bed the splash's holes and the
+  // rocks rest on is the lake's (src/pondFloor.js), or the pool's floor,
+  // whose walls hold the rocks in (holdInPool).
+  const pool = createPool(water, lighting, ambientWaves, environment, { rings });
+  let pooled = false;
+  const bedDepthAt = (x, z) => (pooled ? POOL.depth : floorDepthAt(x, z));
+  water.floorDepthAt = bedDepthAt;
   const surface = createWaterSurface(water, lighting, ambientWaves, { meshSegments: settings.meshSegments, rings, skyCube: environment.cubeTexture });
   const splash = new SplashSystem({ environment, lighting, water, ambientWaves, surface });
   // The wind's strength: the page's ?windStrength, else the last choice here, else calm.
@@ -323,6 +368,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
   const storedWater = storedChoice(WATER_STORAGE_KEY);
   const requestedWater = pageParameters.get('water');
   let waterName = Object.hasOwn(WATER_CLARITIES, requestedWater ?? '') ? requestedWater : Object.hasOwn(WATER_CLARITIES, storedWater ?? '') ? storedWater : DEFAULT_WATER;
+  pooled = waterName === 'pool';
+  water.setPool(pooled);
   function applyWater(name) {
     waterName = name;
     lighting.absorb.fromArray(WATER_CLARITIES[name].absorb);
@@ -330,7 +377,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     lighting.waterColor.fromArray(WATER_CLARITIES[name].color);
   }
   applyWater(waterName);
-  splash.updateLighting();   // its view of the bed takes the absorption, set only now
+  // Its view of the bed takes the absorption, set only now, and the bed's depth and albedo.
+  splash.setBed({ depth: bedDepthAt(water.centre[0], water.centre[1]), albedo: pooled ? POOL.tileAlbedo : undefined });
 
   const camera = new THREE.PerspectiveCamera(48, 1, 0.05, 60000);
   // The floor's pattern is baked once, a tile laid out on the world (src/pondFloor.js).
@@ -342,9 +390,18 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
   // it sees from there unzoomed (yaw and pitch toward the pivot, and the
   // widest field of view); view the current one, zoomed inside home.
   const requestedView = pageParameters.get('view');
-  const orbit = { ...VIEWS[Object.hasOwn(VIEWS, requestedView ?? '') ? requestedView : 'shore'] };
-  const aboveWater = { lowestAt: (x, z) => LOWEST_EYE + groundHeightAt(x, z), highestAt: () => Infinity };
-  const underWater = { lowestAt: (x, z) => UNDER_GAP - floorDepthAt(x, z), highestAt: () => -UNDER_GAP };
+  const viewsNow = () => (pooled ? POOL_VIEWS : VIEWS);
+  const orbit = { ...viewsNow()[Object.hasOwn(VIEWS, requestedView ?? '') ? requestedView : 'shore'] };
+  // The ground the eye keeps over: the beach, or the pool's deck, eased in
+  // over EYE_EDGE inside the pool's edge so the eye never stands at the
+  // deck's lip. Under a pool's water it keeps inside the walls too.
+  const square = water.poolSquare;
+  const poolBox = { minX: square.minX, maxX: square.minX + square.size, minZ: square.minZ, maxZ: square.minZ + square.size };
+  const underBox = { minX: poolBox.minX + UNDER_GAP, maxX: poolBox.maxX - UNDER_GAP, minZ: poolBox.minZ + UNDER_GAP, maxZ: poolBox.maxZ - UNDER_GAP };
+  const outsidePool = (x, z) => Math.max(Math.abs(x - (square.minX + square.size / 2)), Math.abs(z - (square.minZ + square.size / 2))) - square.size / 2;
+  const eyeGroundAt = (x, z) => (pooled ? POOL.deck * THREE.MathUtils.smoothstep(outsidePool(x, z), -EYE_EDGE, 0) : groundHeightAt(x, z));
+  const aboveWater = { lowestAt: (x, z) => LOWEST_EYE + eyeGroundAt(x, z), highestAt: () => Infinity };
+  const underWater = { lowestAt: (x, z) => UNDER_GAP - (pooled ? POOL.depth : floorDepthAt(x, z)), highestAt: () => -UNDER_GAP, get box() { return pooled ? underBox : null; } };
   /** Where an orbit's eye may stand: under the water if its pivot is. */
   const eyeBounds = (target) => (target.pivotY < 0 ? underWater : aboveWater);
   const home = { ...orbitFacing(orbit), fov: 48 };
@@ -367,7 +424,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     sun.position.copy(sunDirection).multiplyScalar(50);
     sun.color.setRGB(lighting.sunIrradiance.x, lighting.sunIrradiance.y, lighting.sunIrradiance.z);
     sunUnder.position.copy(sun.position);
-    const sunPath = floorDepthAt(HOME_TARGET[0], HOME_TARGET[2]) / Math.max(sunDirection.y, 0.2);
+    const sunPath = bedDepthAt(HOME_TARGET[0], HOME_TARGET[2]) / Math.max(sunDirection.y, 0.2);
     sunUnder.color.copy(sun.color).multiply(new THREE.Color(Math.exp(-lighting.absorb.x * sunPath), Math.exp(-lighting.absorb.y * sunPath), Math.exp(-lighting.absorb.z * sunPath)));
   }
   applySunLights();
@@ -385,6 +442,18 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
   const shore = createShore(floor, lighting, environment);
   shore.layers.enable(MIRROR_LAYER);
   sceneMain.add(shore);
+  // The pool's basin under the water, its walls and deck in the main scene
+  // and the mirror (src/pool.js); shown in place of the lake's while the
+  // water is the pool's (showScenery).
+  sceneUnder.add(pool.basin);
+  sceneMain.add(pool.walls, pool.mirrorWalls, pool.yard, pool.mirrorYard);
+  /** The lake's bed, beach and open water, or the pool's basin and deck: the meshes only (setPooled changes the water). */
+  function showScenery(asPool) {
+    floor.visible = shore.visible = !asPool;
+    pool.setVisible(asPool);
+    surface.setPool(asPool ? { ...pool.square, depth: POOL.depth, deck: POOL.deck } : null);
+  }
+  showScenery(pooled);
   sceneMain.environment = environment.envTexture;
   sceneUnder.environment = environment.envTexture;
 
@@ -572,9 +641,9 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     lastActivity = performance.now();
   }
 
-  /** The VIEWS entry the eye stands at, or null. */
-  function viewName() {
-    return Object.keys(VIEWS).find((name) => orbitsMatch(orbit, VIEWS[name])) ?? null;
+  /** The VIEWS (POOL_VIEWS in the pool) entry the eye stands at, or null. */
+  function viewName(views = viewsNow()) {
+    return Object.keys(views).find((name) => orbitsMatch(orbit, views[name])) ?? null;
   }
 
   /** Stand the camera on the orbit and point it as `view` says; the mirror image follows at the next frame. */
@@ -589,7 +658,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     // (src/rings.js), the nearest water being the shore frame's; anywhere
     // else they live as long as their slope shows (no camera), so none
     // retires that a view the eye goes on to would show.
-    const atShore = orbitsMatch(orbit, VIEWS.shore);
+    const atShore = orbitsMatch(orbit, viewsNow().shore);
     if (atShore) {
       const homeBelow = -home.pitch + THREE.MathUtils.degToRad(home.fov) / 2;
       rings.setCamera({
@@ -616,11 +685,17 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     applyView();
   }
 
+  /** The orbit becomes `next`, every field of it: no reach (src/viewOrbit.js) is left from before. */
+  function placeOrbit(next) {
+    delete orbit.reach;
+    Object.assign(orbit, next);
+  }
+
   /** Stand the eye on another orbit, at once; a zoomed view turns with its frame and stays inside it. */
   function moveEye(next) {
     const turnedYaw = view.yaw - home.yaw;
     const turnedPitch = view.pitch - home.pitch;
-    Object.assign(orbit, clampOrbit(next, eyeBounds(next)));
+    placeOrbit(clampOrbit(next, eyeBounds(next)));
     Object.assign(home, orbitFacing(orbit));
     view.yaw = home.yaw + turnedYaw;
     view.pitch = home.pitch + turnedPitch;
@@ -641,7 +716,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     const toWater = centre.y < 0 ? camera.position.y / -centre.y : Infinity;
     const reach = toWater <= 3 * orbit.distance ? toWater : orbit.distance;
     const pivot = { x: camera.position.x + centre.x * reach, y: camera.position.y + centre.y * reach, z: camera.position.z + centre.z * reach };
-    Object.assign(orbit, orbitAbout(camera.position, pivot));
+    placeOrbit(orbitAbout(camera.position, pivot));
     Object.assign(home, orbitFacing(orbit));
     view.yaw = home.yaw;
     view.pitch = home.pitch;
@@ -659,15 +734,25 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     stepGlide(glide.started);
   }
 
+  /**
+   * The orbit `eased` (0 to 1) of the way from one orbit to another. A glide
+   * that crosses the surface keeps to no side's bounds on the way; in the
+   * pool, it goes in (or out) over the water, never through the deck.
+   */
+  function glideOrbit(from, target, eased) {
+    if (eased >= 1) return clampOrbit(target, eyeBounds(target));
+    const sameSide = (from.pivotY < 0) === (target.pivotY < 0);
+    const next = blendOrbits(from, target, eased, sameSide ? eyeBounds(target) : null);
+    return !sameSide && pooled && orbitEye(next).y < POOL.deck + LOWEST_EYE ? keepInside(next, poolBox) : next;
+  }
+
   /** The glide at time `now` (performance.now()); at its end the eye stands exactly on its orbit. */
   function stepGlide(now) {
     if (!glide) return;
     const progress = Math.min((now - glide.started) / (1000 * GLIDE_SECONDS), 1);
     const eased = progress * progress * (3 - 2 * progress);
     const target = glide.to;
-    // A glide that crosses the surface keeps to no side's bounds on the way.
-    const sameSide = (glide.from.pivotY < 0) === (target.pivotY < 0);
-    Object.assign(orbit, progress < 1 ? blendOrbits(glide.from, target, eased, sameSide ? eyeBounds(target) : null) : clampOrbit(target, eyeBounds(target)));
+    placeOrbit(glideOrbit(glide.from, target, eased));
     Object.assign(home, orbitFacing(orbit));
     home.fov = glide.fromFrameFov + (frameFov(target) - glide.fromFrameFov) * eased;
     view.yaw = home.yaw + glide.fromTurn.yaw * (1 - eased);
@@ -682,9 +767,9 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
   /** One of VIEWS by name: glided to, or (glide false) stood at at once. */
   function showView(name, { glide: gliding = true } = {}) {
     if (!Object.hasOwn(VIEWS, name)) return;
-    if (gliding) { glideTo(VIEWS[name], name); return; }
+    if (gliding) { glideTo(viewsNow()[name], name); return; }
     glide = null;
-    Object.assign(orbit, VIEWS[name]);
+    placeOrbit(viewsNow()[name]);
     Object.assign(home, orbitFacing(orbit), { fov: frameFov() });
     setView(home);
   }
@@ -777,12 +862,12 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
   /** A frame from an orbit, unzoomed (the warm-up's view from below), the view put back after. */
   function renderFrom(target) {
     const keptOrbit = { ...orbit }, keptHome = { ...home }, keptView = { ...view };
-    Object.assign(orbit, target);
+    placeOrbit(target);
     Object.assign(home, orbitFacing(orbit), { fov: frameFov() });
     Object.assign(view, { yaw: home.yaw, pitch: home.pitch, fov: home.fov });
     applyView();
     render();
-    Object.assign(orbit, keptOrbit);
+    placeOrbit(keptOrbit);
     Object.assign(home, keptHome);
     Object.assign(view, keptView);
     applyView();
@@ -798,18 +883,24 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
   }
 
   function throwRandom() {
-    const x = THREE.MathUtils.randFloatSpread(1.8);
-    const z = -0.3 - Math.random() * 2.2;
-    return throwAt(x, z);
+    const point = keepOnWater({ x: THREE.MathUtils.randFloatSpread(1.8), z: -0.3 - Math.random() * 2.2 }, throwMargin());
+    return throwAt(point.x, point.z);
   }
 
   // Pointer aiming: pick the water plane under the pointer, kept inside the
-  // solver's patch less throwMargin(). A pointer on the sky aims as far as the
-  // patch reaches in its direction.
+  // solver's patch (or the pool) less throwMargin(). A pointer on the sky
+  // aims as far as the water reaches in its direction.
   const raycaster = new THREE.Raycaster();
   const waterPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
   const pointer = new THREE.Vector2();
-  const throwMargin = () => Math.max(POND_MARGIN, MARGIN_RADII * stoneRadius);
+  const throwMargin = () => Math.max(pooled ? POOL_MARGIN : POND_MARGIN, MARGIN_RADII * stoneRadius);
+  /** The point ({ x, z }, changed in place) brought inside the solver's patch, or the pool's walls, less `margin`. */
+  function keepOnWater(point, margin) {
+    const bounds = pooled ? pool.square : { minX: water.domainMin[0], minZ: water.domainMin[1], size: water.domainSize };
+    point.x = THREE.MathUtils.clamp(point.x, bounds.minX + margin, bounds.minX + bounds.size - margin);
+    point.z = THREE.MathUtils.clamp(point.z, bounds.minZ + margin, bounds.minZ + bounds.size - margin);
+    return point;
+  }
   function aimPoint(clientX, clientY, margin = throwMargin()) {
     const point = toDeviceCoordinates(clientX, clientY);
     pointer.set(point.x, point.y);
@@ -819,16 +910,14 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
       // From under the water, a ray down: at the water over where it meets the bed.
       const { origin, direction } = raycaster.ray;
       let along = 0;
-      while (along < 40 && origin.y + direction.y * along > -floorDepthAt(origin.x + direction.x * along, origin.z + direction.z * along)) along += 0.05;
+      while (along < 40 && origin.y + direction.y * along > -bedDepthAt(origin.x + direction.x * along, origin.z + direction.z * along)) along += 0.05;
       hit.set(origin.x + direction.x * along, 0, origin.z + direction.z * along);
     } else if (!raycaster.ray.intersectPlane(waterPlane, hit)) {
       const horizontal = Math.hypot(raycaster.ray.direction.x, raycaster.ray.direction.z);
       if (horizontal < 1e-6) return null;
       hit.set(camera.position.x + (raycaster.ray.direction.x / horizontal) * 100, 0, camera.position.z + (raycaster.ray.direction.z / horizontal) * 100);
     }
-    hit.x = THREE.MathUtils.clamp(hit.x, water.domainMin[0] + margin, water.domainMin[0] + water.domainSize - margin);
-    hit.z = THREE.MathUtils.clamp(hit.z, water.domainMin[1] + margin, water.domainMin[1] + water.domainSize - margin);
-    return hit;
+    return keepOnWater(hit, margin);
   }
 
   function showAim(hit) {
@@ -1016,7 +1105,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     const h = dt / steps;
     for (let s = 0; s < steps; s++) {
       for (const rock of rocks) {
-        const impact = rock.update(h, floorDepthAt);
+        const impact = rock.update(h, bedDepthAt);
+        if (pooled) holdInPool(rock, pool.square);
         if (impact) splash.impact(impact, water);
       }
       splash.update(h, water);
@@ -1046,7 +1136,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     surface.update({ underTarget, reflectionTarget, reflectionMatrix, mirrorRect: splashRect, stonesUnder: rocks.some((rock) => rock.state !== 'air'), resolution, camera, time: simulationTime });
     splash.prepareScene();   // the stones' cavities, and the patch dipping under them
     if (skip.cavity) surface.setCavities([]);
-    surface.inner.visible = surface.outer.visible = !skip.surface;
+    surface.inner.visible = !skip.surface;
+    surface.outer.visible = !skip.surface && !surface.pooled;   // the pool has no open water
     splash.cavityGroup.visible = !skip.surface && !skip.cavity;
 
     if (fromBelow) {
@@ -1094,7 +1185,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     uSunIrradiance: { value: lighting.sunIrradiance },
     ...ambientWaves.uniforms(),
   });
-  const hiddenFromBelow = () => [environment.sky, shore, marker, arc, ...rocks.map((rock) => rock.meshAbove)];
+  const hiddenFromBelow = () => [environment.sky, shore, pool.walls, pool.yard, marker, arc, ...rocks.map((rock) => rock.meshAbove)];
   function renderFromBelow() {
     renderer.setRenderTarget(mainTarget);
     renderer.clear(true, true, false);
@@ -1274,6 +1365,25 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     splashRect.set(0, 0, 0, 0);
   }
 
+  /**
+   * The water the pool's (true) or the lake's (the header: the pool): the
+   * solver's walls, the scenery, the bed the splash's drops see, and a still
+   * pond of the new kind; the eye on the same view of the new kind (or the
+   * one it glides to), or kept where it may stand there.
+   */
+  function setPooled(asPool) {
+    if (asPool === pooled) return;
+    const standing = glide ? glide.name : viewName();
+    pooled = asPool;
+    clearPond();
+    water.setPool(asPool);
+    showScenery(asPool);
+    splash.setBed({ depth: bedDepthAt(water.centre[0], water.centre[1]), albedo: asPool ? POOL.tileAlbedo : undefined });
+    glide = null;
+    if (standing) showView(standing, { glide: false });
+    else moveEye({ ...orbit });
+  }
+
   // ---- warm-up: every program a throw needs, compiled under the veil -----
   // Three.js deletes a program once no material uses it. The splash's
   // materials live as long as the page; a stone's die with it, so the warm-up
@@ -1284,6 +1394,9 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
   function warmUp() {
     const started = performance.now();
     const programsBefore = renderer.info.programs?.length ?? 0;
+    const random = Math.random;
+    let state = WARM_UP.seed;
+    Math.random = () => { state = (state * 16807) % 2147483647; return (state - 1) / 2147483646; };
     marker.visible = arc.visible = true;   // the aim marker's programs too
     const stone = throwAt(WARM_UP.x, WARM_UP.z, { radius: WARM_UP.radius, power: 'normal' });
     render();
@@ -1293,8 +1406,17 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     for (const [index, moment] of WARM_UP.moments.entries()) {
       while (elapsed < moment - 1e-6) { const dt = Math.min(1 / 60, moment - elapsed); simulate(dt); elapsed += dt; }
       render();
-      if (index === 0) renderFrom(VIEWS.under);   // the cavity is open: the surface's and the cavity's programs from below
+      if (index === 0) {
+        renderFrom(VIEWS.under);   // the cavity is open: the surface's and the cavity's programs from below
+        // The other water's scenery (the pool's, or the lake's), from above
+        // and below, so a change of water compiles nothing.
+        showScenery(!pooled);
+        render();
+        renderFrom(VIEWS.under);
+        showScenery(pooled);
+      }
     }
+    Math.random = random;
     programKeepers.push(stone.meshAbove.material, stone.meshBelow.material);
     retireRock(stone, { keepMaterials: true });
     clearPond();
@@ -1333,10 +1455,11 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
       try { window.localStorage.setItem(WIND_STORAGE_KEY, name); } catch { /* storage refused: the choice lasts this visit */ }
     },
     get wind() { return windName; },
-    /** The water's clarity by name (WATER_CLARITIES: clear, pond, murky), remembered on this device. */
+    /** The water by name (WATER_CLARITIES: pool, clear, lake, pond, murky; the pool is the pool's basin, the others the lake), remembered on this device. */
     setClarity(name) {
       if (!Object.hasOwn(WATER_CLARITIES, name)) return;
       applyWater(name);
+      setPooled(name === 'pool');
       applySky();   // the absorption lights the stones under the water and the splash's view of the bed
       try { window.localStorage.setItem(WATER_STORAGE_KEY, name); } catch { /* storage refused: the choice lasts this visit */ }
     },
@@ -1395,6 +1518,11 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
       render();
     },
     hasImpacted() { return rocks.some((rock) => rock.state !== 'air'); },
+    /** Where the eye would stand at `steps` + 1 even shares of a glide from where it is to the view `name` (tools/zoom-probe.mjs). */
+    glidePath(name, steps = 50) {
+      const from = { ...orbit }, target = viewsNow()[name];
+      return Array.from({ length: steps + 1 }, (unused, step) => { const share = step / steps; return orbitEye(glideOrbit(from, target, share * share * (3 - 2 * share))); });
+    },
     /** A finger into the water at world (x, z), as a held press puts it (src/touch.js); then dragTouch moves it and liftTouch lifts it. */
     touchWater(x, z) { endTouch(); touching = { id: 'api' }; finger.dip(x, z); showFinger({ x, z }); },
     dragTouch(x, z) { finger.moveTo(x, z); showFinger({ x, z }); },
@@ -1422,12 +1550,12 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
      */
     setOrbit({ azimuth, elevation, distance, pivot } = {}) {
       glide = null;
-      const next = { ...orbit };
+      const { reach, ...next } = orbit;   // a distance given is the one it wants
       if (azimuth !== undefined) next.azimuth = THREE.MathUtils.degToRad(azimuth);
       if (elevation !== undefined) next.elevation = THREE.MathUtils.degToRad(elevation);
-      if (distance !== undefined) next.distance = distance;
+      next.distance = distance ?? reach ?? orbit.distance;
       if (pivot) [next.pivotX, next.pivotY, next.pivotZ] = pivot;
-      Object.assign(orbit, clampOrbit(next, eyeBounds(next)));
+      placeOrbit(clampOrbit(next, eyeBounds(next)));
       Object.assign(home, orbitFacing(orbit), { fov: frameFov() });
       setView(home);
     },

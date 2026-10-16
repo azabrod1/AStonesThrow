@@ -10,6 +10,9 @@
 // subnormal (6e-8), and on devices without float32 targets its ring was lost.
 // The update pass rotates each mode by its own angular frequency, applies
 // damping, and adds the closed-form spectra of this frame's Gaussian splats.
+// In a pool (uWalls, src/spectralWater.js) each splat comes with its mirror
+// images across the pool's walls, so the patch's periodic waves are the
+// pool's, reflected at its walls.
 // The FFT passes then bring h and v back to the grid for rendering, the
 // solver's dividing out the N² on the way (SOLVER_FFT_PASS_FRAGMENT). They
 // transform both complex pairs of a texel, (r, g) and (b, a), at once: the
@@ -34,13 +37,15 @@ uniform float uCell;         // metres per texel
 uniform float uDepth;        // pond depth, metres
 uniform float uDt;           // seconds advanced this pass
 uniform float uGamma0;       // base damping, 1/s, above uKDamp...
-uniform float uKDamp;        // ...and in proportion to k below it
+uniform float uKDamp;        // ...and in proportion to k below it, but...
+uniform float uGammaLeast;   // ...never less than this (a pool's walls and floor: src/spectralWater.js); 0 in the open pond
 uniform float uNu;           // k² damping coefficient, m²/s
 uniform float uKLow;         // below this wavenumber waves are damped hard (no sloshing)
 uniform float uGammaLow;
 uniform int uSplatCount;
 uniform vec4 uSplats[MAX_SPLATS];      // x,y: centre in texels; z: sigma in texels; w: rim ratio (0 = plain Gaussian)
 uniform vec2 uSplatAmps[MAX_SPLATS];   // x: height (m), y: vertical velocity (m/s)
+uniform vec3 uWalls;                   // x, y: a wall of the pool along each axis (texels); z: 1 in a pool, 0 in the open pond
 
 vec2 complexMultiply(vec2 first, vec2 second) {
   return vec2(first.x * second.x - first.y * second.y, first.x * second.y + first.y * second.x);
@@ -50,6 +55,11 @@ vec2 complexMultiply(vec2 first, vec2 second) {
 // value is exactly the conjugate whatever the GPU's sin and cos do with signs.
 vec2 phasor(float phase) {
   return vec2(cos(abs(phase)), sign(phase) * sin(abs(phase)));
+}
+
+// The shift along one axis, real along a Nyquist axis (main).
+vec2 axisShift(float phase, bool nyquist) {
+  return nyquist ? vec2(cos(phase), 0.0) : phasor(phase);
 }
 
 void main() {
@@ -63,7 +73,7 @@ void main() {
   float k = qMag / uCell;                      // radians per metre
   float omega2 = (9.81 * k + 7.2e-5 * k * k * k) * tanh(min(k * uDepth, 20.0));
   float omega = sqrt(omega2);
-  float gamma = uGamma0 * min(k / uKDamp, 1.0) + uNu * k * k + (k < uKLow ? uGammaLow : 0.0);
+  float gamma = max(uGamma0 * min(k / uKDamp, 1.0), uGammaLeast) + uNu * k * k + (k < uKLow ? uGammaLow : 0.0);
 
   vec2 height = state.xy;
   vec2 velocity = state.zw;
@@ -91,6 +101,18 @@ void main() {
   // transform: the velocity of a small stone's splat at a fractional centre
   // put a line of alternating ripples through it into the height, at first
   // 0.4 (512²) to 1.2 (256²) times the splat's own height.
+  //
+  // In a pool (uWalls.z) the splat comes with its mirror images: across the
+  // wall x = a along x, a Gaussian at 2a − x0 as well as at x0, and so along
+  // y, four in all. The patch is periodic over twice the pool's width, so
+  // they mirror it across its far walls too (2a − x0 + N is the image across
+  // a + N/2), and their periodic sum is the field of a splat in the pool
+  // with walls that reflect every wave (the cosine series a closed basin's
+  // waves are): it is even about every wall, so it never slopes across one.
+  // The four images' shift is the product of each axis's two, each as above
+  // (real along a Nyquist axis), so the mirror bin's is still exactly its
+  // conjugate; and the update keeps the evenness, since each mode turns and
+  // decays as its mirror modes do.
   bool nyquistX = texel.x == n / 2;
   bool nyquistY = texel.y == n / 2;
   for (int i = 0; i < MAX_SPLATS; i++) {
@@ -106,7 +128,10 @@ void main() {
     float phaseX = -q.x * splat.x;
     float phaseY = -q.y * splat.y;
     vec2 shift;
-    if (nyquistX || nyquistY) {
+    if (uWalls.z > 0.5) {
+      shift = complexMultiply(axisShift(phaseX, nyquistX) + axisShift(-q.x * (2.0 * uWalls.x - splat.x), nyquistX),
+                              axisShift(phaseY, nyquistY) + axisShift(-q.y * (2.0 * uWalls.y - splat.y), nyquistY));
+    } else if (nyquistX || nyquistY) {
       shift = complexMultiply(nyquistX ? vec2(cos(phaseX), 0.0) : phasor(phaseX), nyquistY ? vec2(cos(phaseY), 0.0) : phasor(phaseY));
     } else {
       shift = phasor(phaseX + phaseY);
