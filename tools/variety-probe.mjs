@@ -17,17 +17,19 @@
 //   - the stones: their elongation, flatness and irregularity, what touched
 //     first (face, edge or point), how blunt it was there and the spin ratio
 //     ω·R/V;
-//   - the regimes: how often each jet form and each seal came up, and a jet
-//     leaning more than LEANING_DEGREES;
-//   - the jet: its top (the highest its column or its tip drops reached; the
-//     highest drop of 1.5 mm and more too, the crown's included), the tip
+//   - the regimes: how often each jet form and each seal came up (with the
+//     surface seal's chance, src/splash.js chooseSplash), and a jet leaning
+//     more than LEANING_DEGREES;
+//   - the jet: its top (the highest its column reached or its tip drops
+//     reach, flown with the splash's own drag; the highest drop of 1.5 mm and
+//     more too, the crown's included), the tip
 //     beads (count and radii), its lean from
 //     vertical, the hole's lopsidedness (the mouth's widest over its
 //     narrowest while it is open) and the crown's height, overall and by form;
 //   - the CPU cost per frame (mean, 95th percentile, worst);
 // with --list, every throw of the first set on a line of its own (its seed,
-// form, seal, asymmetry, lean, top, tip beads), and checks, failing with exit
-// code 1 if any check fails:
+// form, seal and the surface seal's chance, asymmetry, lean, top, tip beads),
+// and checks, failing with exit code 1 if any check fails:
 //   - no throw of the default stone at normal power makes an invisible
 //     splash: its crown's rim rises at least VISIBLE_CROWN, and its jet's top
 //     or its highest drop at least VISIBLE_JET; and a throw with no jet at all
@@ -46,10 +48,11 @@
 //     same jet: its top spread by under 0.01, one tip bead, the lean the
 //     aim sets (17°, back along the throw: spread 0°).
 //
-//   node tools/variety-probe.mjs [throws=200] [--seed=1] [--aim=x:z] [--sets=default|all] [--list]
+//   node tools/variety-probe.mjs [throws=200] [--seed=1] [--aim=x:z] [--sets=default|all|grid] [--list]
 //
 // --sets=default runs only the default stone's three sets (normal, soft and
-// hard), leaving out the 16 cm stone and the pebble.
+// hard), leaving out the 16 cm stone and the pebble; --sets=grid runs every
+// size of the slider (1.5, 4, 6, 8 and 16 cm) at every power.
 import * as THREE from 'three';
 import { SplashSystem } from '../src/splash.js';
 import { JetColumn } from '../src/jet.js';
@@ -59,7 +62,8 @@ const option = (name, fallback) => { const hit = process.argv.find((argument) =>
 const throwCount = Number(process.argv.slice(2).find((argument) => !argument.startsWith('--')) ?? 200);
 const firstSeed = Number(option('seed', '1'));
 const [aimX, aimZ] = option('aim', '0:-1.4').split(':').map(Number);
-const allSets = option('sets', 'all') === 'all';
+const setChoice = option('sets', 'all');
+const allSets = setChoice === 'all';
 const listing = process.argv.includes('--list');
 
 const GRAVITY = 9.81;
@@ -114,9 +118,22 @@ function throwStone(radius, power, seed) {
 }
 
 // The tip beads each jet pinches off (a split tip's two halves count as two),
-// and the highest they fly (their apex without drag, from where they left).
+// and the highest they fly (their apex, flown from where they left with the
+// splash's own drag and substep, src/splash.js update).
 let tipRecord = null;
 let tipApex = 0;
+function apex(y, velocityX, velocityY, velocityZ, radius) {
+  const step = FRAME / SUBSTEPS;
+  let highest = y;
+  while (velocityY > 0) {
+    const drag = Math.min((0.00027 / radius) * Math.hypot(velocityX, velocityY, velocityZ) * step, 0.5);
+    velocityX -= velocityX * drag; velocityY -= velocityY * drag; velocityZ -= velocityZ * drag;
+    velocityY -= GRAVITY * step;
+    y += velocityY * step;
+    highest = Math.max(highest, y);
+  }
+  return highest;
+}
 const pinchTip = JetColumn.prototype.pinchTip;
 JetColumn.prototype.pinchTip = function (splash) {
   const before = splash.count;
@@ -126,8 +143,7 @@ JetColumn.prototype.pinchTip = function (splash) {
   // The tip drop (or the two of a split tip) are the first drops this pinch spawned.
   for (let index = before; index < Math.min(before + (split ? 2 : 1), splash.count); index++) {
     tipRecord.push(splash.radii[index]);
-    const rising = Math.max(splash.velocities[index * 3 + 1], 0);
-    tipApex = Math.max(tipApex, splash.positions[index * 3 + 1] + (rising * rising) / (2 * GRAVITY));
+    tipApex = Math.max(tipApex, apex(splash.positions[index * 3 + 1], splash.velocities[index * 3], splash.velocities[index * 3 + 1], splash.velocities[index * 3 + 2], splash.radii[index]));
   }
 };
 
@@ -140,7 +156,7 @@ function runThrow(radius, power, seed) {
   const cavity = splash.cavities[0];
   const crown = splash.crowns.find((candidate) => !candidate.landing && !candidate.fan);
   const result = {
-    seed, impact, regime: choice.regime, seal: choice.seal.kind, asymmetry: choice.asymmetry,
+    seed, impact, regime: choice.regime, seal: choice.seal.kind, surfaceChance: choice.surfaceChance ?? 0, asymmetry: choice.asymmetry,
     lean: THREE.MathUtils.radToDeg(Math.atan(Math.hypot(choice.lean.x, choice.lean.z))),
     leanVector: [THREE.MathUtils.radToDeg(Math.atan(choice.lean.x)), THREE.MathUtils.radToDeg(Math.atan(choice.lean.z))],
     jetTop: 0, dropTop: 0, crownTop: 0, lopsided: 1, frames: [],
@@ -189,15 +205,20 @@ const check = (condition, message) => { if (!condition) failures.push(message); 
 // Warm up (the code, not the statistics: each throw is seeded on its own).
 for (let warmUp = 0; warmUp < 4; warmUp++) runThrow(0.03, 'normal', 1000000 + warmUp);
 
-const sets = [
-  { label: '6 cm stone, normal power', radius: 0.03, power: 'normal', checked: true },
-  { label: '6 cm stone, soft power', radius: 0.03, power: 'soft' },
-  { label: '6 cm stone, hard power', radius: 0.03, power: 'hard' },
-  ...(allSets ? [
-    { label: '16 cm stone, normal power', radius: 0.08, power: 'normal' },
-    { label: '1.5 cm pebble, normal power', radius: 0.0075, power: 'normal' },
-  ] : []),
-];
+// --sets=grid: the slider's sizes, each thrown softly, normally and hard (the
+// seal and the forms' odds across them), with the default stone's checks.
+const GRID_SIZES = [1.5, 4, 6, 8, 16];
+const sets = setChoice === 'grid'
+  ? GRID_SIZES.flatMap((diameter) => ['soft', 'normal', 'hard'].map((power) => ({ label: `${diameter} cm stone, ${power} power`, radius: diameter / 200, power, checked: diameter === 6 && power === 'normal' })))
+  : [
+    { label: '6 cm stone, normal power', radius: 0.03, power: 'normal', checked: true },
+    { label: '6 cm stone, soft power', radius: 0.03, power: 'soft' },
+    { label: '6 cm stone, hard power', radius: 0.03, power: 'hard' },
+    ...(allSets ? [
+      { label: '16 cm stone, normal power', radius: 0.08, power: 'normal' },
+      { label: '1.5 cm pebble, normal power', radius: 0.0075, power: 'normal' },
+    ] : []),
+  ];
 console.log(`${throwCount} throws a set at (${aimX}, ${aimZ}), seeds ${firstSeed} to ${firstSeed + throwCount - 1} (Park–Miller); frames of 1/60 s in ${SUBSTEPS} substeps`);
 for (const [setIndex, set] of sets.entries()) {
   const results = [];
@@ -210,7 +231,7 @@ for (const [setIndex, set] of sets.entries()) {
   const regimes = tally(results.map((result) => result.regime));
   const leaning = results.filter((result) => result.lean > LEANING_DEGREES).length;
   console.log(`  jet forms: ${shares(regimes, throwCount)}; leaning more than ${LEANING_DEGREES}°: ${percent(leaning / throwCount)}`);
-  console.log(`  seals: ${shares(tally(results.map((result) => result.seal)), throwCount)}; asymmetry ${spread(results.map((result) => result.asymmetry), 1, 2)}; the mouth's widest over narrowest ${spread(results.map((result) => result.lopsided), 1, 2)}`);
+  console.log(`  seals: ${shares(tally(results.map((result) => result.seal)), throwCount)} (the surface seal's chance ${spread(results.map((result) => result.surfaceChance), 100, 0)}%); asymmetry ${spread(results.map((result) => result.asymmetry), 1, 2)}; the mouth's widest over narrowest ${spread(results.map((result) => result.lopsided), 1, 2)}`);
   const tops = results.map((result) => result.jetTop);
   const tipCounts = tally(results.map((result) => result.tipBeads.length));
   const tipRadii = results.flatMap((result) => result.tipBeads);
@@ -226,7 +247,7 @@ for (const [setIndex, set] of sets.entries()) {
   console.log(`  CPU: ${mean(frames).toFixed(2)} ms per frame on average, 95th percentile ${quantile(frames, 0.95).toFixed(2)}, worst ${Math.max(...frames).toFixed(2)} ms`);
   if (listing && setIndex === 0) {
     for (const result of results) {
-      console.log(`    seed ${result.seed}: ${result.regime} (${result.seal} seal), asymmetry ${result.asymmetry.toFixed(2)}, lean ${result.lean.toFixed(0)}°, top ${(100 * result.jetTop).toFixed(1)} cm, highest drop ${(100 * result.dropTop).toFixed(1)} cm, tip beads ${result.tipBeads.map((bead) => (1000 * bead).toFixed(1)).join(' ') || 'none'}; ${result.impact.contact.kind} first, spin ratio ${result.impact.spin.ratio.toFixed(3)}`);
+      console.log(`    seed ${result.seed}: ${result.regime} (${result.seal} seal; the surface seal's chance ${(100 * result.surfaceChance).toFixed(0)}%), asymmetry ${result.asymmetry.toFixed(2)}, lean ${result.lean.toFixed(0)}°, top ${(100 * result.jetTop).toFixed(1)} cm, highest drop ${(100 * result.dropTop).toFixed(1)} cm, tip beads ${result.tipBeads.map((bead) => (1000 * bead).toFixed(1)).join(' ') || 'none'}; ${result.impact.contact.kind} first, spin ratio ${result.impact.spin.ratio.toFixed(3)}`);
     }
   }
   if (set.checked) {

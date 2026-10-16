@@ -4,29 +4,40 @@
 // each ring element then flying on its own. Surface tension and air slow a
 // real sheet's rim fast (which is why crowns never reach the height their
 // launch speed implies), modelled as a velocity decaying as exp(−age/τd) with
-// τd = 0.05 s for a 3 cm stone (see the scaling below) while gravity acts
+// τd = CROWN_DRAG = 0.085 s for a 3 cm stone's crown (0.05 s for a landing
+// drop's crown and the fan; see the scaling below) while gravity acts
 // undamped. So the whole sheet is a closed form in launch time tau, azimuth
 // theta and the crown's age t; with a = t − tau,
 //
 //   position = launch point + u·direction·τd·(1 − exp(−a/τd)) − ½·g·a²·up
 //
 // With stone radius R and entry speed V the main launch lasts
-// T = max(1.2·R/V, 0.01) s. Over it the launch speed u falls from 0.55·V to
-// 0.2·V and its angle from vertical from 55° to 25°: the first material makes
-// the flared rim and later material the steeper wall under it. After T a tail
-// keeps feeding the wall at 0.2·V·exp(−(tau − T)/(0.45·T)), so the base stays
-// on the water while the sheet lives. The tail leaves the ring at 0.6·h0, so
-// the foot stays light.
+// T = max(1.2·R/V, 0.01) s. Over it a stone's crown leaves at CROWN_SPEED, from
+// 0.36·V down to 0.26·V, and CROWN_TILT, from 18° to 12° from vertical: a
+// tall, nearly upright wall, the rim first, as the reference simulation's
+// (tools/basilisk: a 3 cm stone straight in at 6.3 m/s throws a crown 11 to
+// 12 cm high at 0.1 s, its rim 8 to 10 cm out, in air ten times lighter than
+// real; τd is a little shorter than its fit for real air). After T a tail
+// keeps feeding the wall at 0.26·V·exp(−(tau − T)/(0.45·T)) for TAIL_FEED·T,
+// so the base stays on the water. The tail leaves the ring at 0.6·h0, so the
+// foot stays light. A landing drop's crown launches from 0.55·V to 0.2·V at
+// 55° to 25° from vertical, and its tail at 0.2·V, feeding while it lives.
 //
 // The ring a stone's sheet launches from is the lip of its cavity (`rim`,
 // src/cavity.js): each element leaves from where the lip's crest was at its
 // launch time, from the mouth's centre then (which an oblique stone drags
 // forward as it goes in), at the crest's radius at that azimuth (at least
 // RIM_RING_START·R, the contact line's first ejecta) and the crest's height.
-// So the sheet stands on the lip, and its base rises and widens with the lip,
-// about 0.9 to 1.6·R; once the mouth starts to close, the base stays where
-// the crest was widest, on the lip's outer slope, while the hole closes
-// inside it. Its base row rides the surface's waves as the lip does (aRide).
+// So the sheet stands on the lip, and its base rises and widens with the lip;
+// once the mouth starts to close, the base stays where the crest was widest,
+// on the lip's outer slope, while the hole closes inside it. The funnel's
+// mouth keeps widening long after the main launch (to 3·R and more), and it
+// carries the sheet's foot out with it: a stone crown's material stands where
+// the lip is now rather than where it left, by a share growing over its launch
+// (CARRY: the rim not at all, the tail all of it), and never sinks below the
+// lip, so the wall stands on the lip and leans in towards its rim, as the
+// reference's does. Its base row rides the surface's waves as the lip does
+// (aRide).
 // A sheet with no cavity (a landing drop's crown) launches from a ring
 // widening from 0.9·R to 1.4·R over T and by 0.2·R per T after it (up to 2·R).
 //
@@ -84,64 +95,76 @@
 // the entry speed, at least 0.5), and a broad face going in first throws the
 // sheet faster and lower, a point slower and steeper (speedScale on u,
 // tiltShift degrees on the launch angle).
-// A surface seal (`seal`, which src/splash.js gives a fast, big entry's
-// crown): the air rushing into the hole behind the stone pulls the sheet in
-// over it. A sealing crown has no fingers (a smooth rim of DOME_COLUMNS·
-// sqrt(s) columns, the slow modes only) and launches DOME_TILT degrees
-// nearer vertical, a taller wall. From DOME_PULL_START of its seal time a
-// pull P (a smoothstep, 1 at the seal time) draws each element towards the
-// crown's drifting axis by P·w of its distance and up towards the free
-// sheet's highest point H (sampled once per age, domeTop) by the same share,
-// with w = DOME_CLOSED·(1 − tau/T)^DOME_PROFILE: the rim most, the tail not
-// at all. So the rim closes into the apex of a dome about sqrt(R/g) after
-// entry (for a 6 cm stone a bell about 12 cm tall over the hole), which then
-// sinks as the free sheet falls and, when the hole below pinches
-// (seal.tear), bursts from the apex down: the tear. Its rim sheds before the
-// pull starts, none while it closes, and the burst takes the rest.
+// A surface seal (`seal`, which src/splash.js gives a fast entry's crown):
+// the air rushing into the hole behind the stone pulls the sheet in over it.
+// A sealing crown has no fingers (a smooth rim of DOME_COLUMNS·sqrt(s)
+// columns, the slow modes only) and launches DOME_TILT degrees nearer
+// vertical. From DOME_PULL_START of its seal time a pull P (a smoothstep, 1
+// at the seal time) draws every element onto a dome (pullIn): a smooth bell
+// over the hole from the lip's crest to an apex DOME_HEIGHT·R above the still
+// water (the reference's real-air runs close about 4 cm up: a low dome), the
+// sheet's rim at the apex, its foot on the lip, buckled by a few folds around
+// (Marston et al. 2016 find every sealing crown buckles). Its rim's bead
+// merges as it closes. As the rim meets, a thin spike of water shoots up from
+// the apex (sealSpray: the reference's seal jet) and breaks into fine drops.
+// The dome holds still until the hole below pinches (seal.tear), then bursts
+// from the apex down, its sheet flying off out and up (DOME_BURST): the tear.
+// Its rim sheds before the pull starts, none while it closes, and the burst
+// takes the rest.
 //
 // Thickness is h0·(r0/r)/(1 + age/td), at least 0.2 mm, with h0 = 1.5 mm and
-// the drain time td = 0.04 s for a 3 cm stone: the sheet thins as it spreads
+// the drain time td = CROWN_DRAIN = 0.06 s for a 3 cm stone's crown (0.04 s
+// for a landing crown and the fan): the sheet thins as it spreads
 // around a widening circle and as it drains. The free edge (the material
 // within ~8% of T of the rim, or of the tear front once it tears) is a bead
 // three times the unstretched thickness h0/(1 + age/td), since an edge gathers
 // what the stretching takes from the sheet; its normals are bent outward like
 // a tube's so it catches the sun all along the edge.
 //
-// At t_break = clamp(T + 6·R/V, 0.06 s, 0.15 s) for a 3 cm stone the sheet
-// tears, from the rim down to the water along a ragged front, over
-// 0.6·t_break; on a stone's crown the arcs between the fingers tear first
-// (at the ragged pace of a rim with none) and the fingers last, at the
-// slowest pace, as a rim's webs open between its ligaments.
+// A stone's sheet tears once its rim stalls: STALL_SHARE times the age at
+// which its first material's rising speed u·cos(tilt)·exp(−a/τd) falls to
+// g·a (Newton's method, once), at least BREAK_FLOOR and at most
+// BREAK_CEILING (60 and 150 ms, times R / 3 cm from 3 cm up); a landing
+// crown's at LANDING_BREAK·T. It tears from the rim down to the water along a
+// ragged front, over 0.6·t_break, the raggedness varying smoothly around the
+// ring (three lobes and TEAR_MODES at random phases), so the torn edge is a
+// curve; on a stone's crown the arcs between the fingers tear first and the
+// fingers last, at the slowest pace, as a rim's webs open between its
+// ligaments.
 // The torn part becomes droplets that carry the local (decayed) sheet
 // velocity, each holding the volume of the patch of sheet it came from, so the
 // drops come out about the size the sheet's thickness implies, between
 // CROWN_DROP_FLOOR and CROWN_DROP_CAP (1 and 5.5 mm) for a 3 cm stone; its
 // fingers shed their beads, the fan's and a landing crown's crests drops of
-// RIM_DROP_RADIUS and up. For a 3 cm stone at about 6 m/s the sheet stands
-// whole for 60 ms, its rim peaking near 5 cm (9 cm on the forward side of an
-// oblique throw), and is gone by about 100 ms.
+// RIM_DROP_RADIUS and up. For a 3 cm stone dropped straight in at 6.3 m/s
+// the sheet stands whole for 90 ms, its rim peaking 11 cm up at 90 ms, 8 cm
+// out (the reference: 11 to 12 cm at 0.1 s, 8 to 10 cm out), and is gone by
+// 150 ms; thrown at 42° from vertical its forward side stands taller, 13 to
+// 19 cm.
 //
 // How a stone's sheet scales with its radius R, against s = R / 3 cm. Lengths
 // go with R and speeds with the entry speed V, as in a Froude-scaled splash:
 // the launch ring (0.9 to 1.4·R) and the launch window T ∝ R/V. The sheet's
 // thickness goes with R too (h0 = 1.5 mm·s), and since the air and the rim's
 // surface tension decelerate a sheet in inverse proportion to its thickness,
-// so do its drag time τd = 0.05 s·s and its drain time td = 0.04 s·s, both
-// floored at SHEET_SCALE_FLOOR times (τd 20 ms). A thick sheet lasts: for
+// so do its drag time τd = 0.085 s·s and its drain time td = 0.06 s·s, both
+// floored at CROWN_SCALE_FLOOR times (τd 21 ms; the fan's at
+// SHEET_SCALE_FLOOR). A thick sheet lasts: for
 // stones of 3 cm and up the tear's floor and ceiling (60 and 150 ms) scale
-// with s as well, so the sheet stands as long against its own drag and drain
-// time at any size (smaller stones keep the 60 ms floor, which a 60 Hz frame
+// with s as well (smaller stones keep the 60 ms floor, which a 60 Hz frame
 // needs). The launch speed does not change with R, so a big stone's rim flies
 // nearly ballistic, up to u²/2g, and a small one's is held near u·τd: the rim's
 // height grows about as R for small stones and more slowly for big ones. Its
 // drops hold the volume of a sheet h0 thick over an area ∝ R² shared among a
 // count ∝ s^1.6 (SplashSystem.impact), so their radii, the caps on them
-// included, go as s^DROP_SIZE_POWER (s^0.47 by that count). At about 6.3 m/s,
-// 42° from vertical, the reference throw, a 1.5 cm stone's rim reaches about
-// 4 cm up and its sheet is gone by 96 ms; a 16 cm stone's sheet is 4 mm
-// thick, stands for 160 ms with its rim up to 17 cm high and 70 cm across,
-// is gone by 256 ms and tears into drops of 2.5 to 9 mm (tools/splash-probe.mjs
-// measures these).
+// included, go as s^DROP_SIZE_POWER (s^0.47 by that count). Thrown at about
+// 6.3 m/s, 42° from vertical and sealing deep, a 1.5 cm stone's sheet
+// reaches about 5 cm up and is gone by 96 ms (sealing at the surface, as it
+// nearly always does, it closes into a dome 1 cm high); a 4 cm stone's 11 cm, a 6 cm
+// stone's 14 cm (11 cm dropped straight in); a 16 cm stone's sheet is 4 mm
+// thick, stands for 160 ms with its rim 25 to 40 cm high, nearly ballistic,
+// is gone by 256 ms and tears into drops of 2.5 to 9 mm
+// (tools/splash-probe.mjs measures these).
 //
 // A large drop landing makes a small crown of its own, the classic
 // drop-impact crown: the same model with the drop's radius and landing speed
@@ -211,12 +234,21 @@ const LANDING_DROP_CAP = 0.25;     // ...into drops of at most this many landing
 const ROW_POWER = 1.8;             // crowds main-launch rows towards the rim bead
 const MAIN_SHARE = 0.7;            // fraction of the tear front's travel spent on the main launch
 const TAIL_DECAY = 0.45;           // tail launch speed decays over this many T
-const DRAIN_SECONDS = 0.04;        // the sheet's thinning time scale, for a 3 cm stone...
-const DRAG_SECONDS = 0.05;         // ...and its elements' velocity decays as exp(−age / τd), τd this...
-const SHEET_SCALE_FLOOR = 0.4;     // ...both scaling with R / 3 cm, but at least this many times (τd 20 ms)
+const TEAR_MODES = [7, 11, 17];    // the tear front's raggedness around the ring, besides its three lobes
+const CARRY = [0, 1.2];            // a stone crown's material rides the lip out as the mouth widens, by smoothstep over these many T of its launch (the rim not at all)...
+const TAIL_FEED = 2.5;             // ...and its tail is fed for this many T after the main launch (later it would leave at nothing)
+const CROWN_SPEED = [0.36, 0.26];  // a stone's crown leaves at these shares of V, first to last of the main launch...
+const CROWN_TILT = [18, 12];       // ...at these many degrees from vertical...
+const CROWN_DRAIN = 0.06;          // ...and thins over this time scale, for a 3 cm stone...
+const CROWN_DRAG = 0.085;          // ...its elements' velocity decaying as exp(−age / τd), τd this (the reference simulation's rim, a little less for real air)
+const DRAIN_SECONDS = 0.04;        // a landing crown's and the fan's thinning time scale, for a 3 cm stone...
+const DRAG_SECONDS = 0.05;         // ...and their elements' τd: both, like a stone crown's, scale...
+const SHEET_SCALE_FLOOR = 0.4;     // ...both scaling with R / 3 cm, but at least this many times (τd 20 ms)...
+const CROWN_SCALE_FLOOR = 0.25;    // ...and a stone crown's at least this many (τd 25 ms: a pebble's sheet is held back by its surface tension)
 const SHEET_THICKNESS = 0.0015;    // h0 of a 3 cm stone's sheet, scaling with R
-const BREAK_FLOOR = 0.06;          // a stone's sheet stands at least this long (s), so a 60 Hz frame sees it...
+const BREAK_FLOOR = 0.06;          // a stone's sheet tears when its rim stalls, but stands at least this long (s), so a 60 Hz frame sees it...
 const BREAK_CEILING = 0.15;        // ...and at most this, both times R / 3 cm for stones of 3 cm and up
+const STALL_SHARE = 1.15;          // it tears this many times the rim's stall after the launch
 const DROP_SIZE_POWER = 0.5;       // a stone's sheet sheds and tears into drops scaling as (R / 3 cm)^this
 const CROWN_DROP_CAP = 0.0055;     // it tears into drops of at most this...
 const CROWN_DROP_FLOOR = 0.001;    // ...and at least this (both times (R / 3 cm)^DROP_SIZE_POWER)
@@ -249,11 +281,14 @@ const BEAD_SEED = 0.3;             // a bead starts with this share of its drop'
 const MODES_PER_COLUMN = 1 / 2.5;  // a grid resolves modes up to this many per column
 const DOME_COLUMNS = 64;           // a sealing crown's columns around (times sqrt(R / 3 cm)): it has no fingers
 const DOME_PULL_START = 0.35;      // the pull starts at this share of the seal time...
-const DOME_CLOSED = 0.97;          // ...and draws the rim this share of the way to the axis
-const DOME_PROFILE = 1.5;          // the sheet below the rim follows by (1 − tau/T)^this
+const DOME_HEIGHT = 1.4;           // ...and draws the sheet onto a dome whose apex stands this many R above the still water...
+const DOME_ROUND = 0.8;            // ...its radius r_foot·cos(πs/2)^this at height y_foot + h·sin(πs/2) (s from its foot to its apex)...
+const DOME_FOLDS = [6, 10];        // ...buckled by this many folds around (Marston et al. 2016)...
+const DOME_FOLD = 0.05;            // ...of up to this share of its radius, at mid height
+const DOME_BURST = 0.25;           // when it bursts its sheet flies off at this times sqrt(g·R)·s, out and up
 const DOME_TILT = 12;              // a sealing crown launches this many degrees nearer vertical: a taller wall
-const DOME_SAMPLES = 9;            // rows (rim to base) and...
-const DOME_STRIDE = 4;             // ...every this many columns sampled for the free sheet's top
+const SEAL_SPRAY = 8;              // the closure throws a spike of this many fine drops up from the apex (times sqrt(R / 3 cm))...
+const SEAL_SPRAY_SPEED = [0.8, 2.2];   // ...at these speeds, times sqrt(R / 3 cm) (the reference's real-air seal jet)
 const FAN_ROWS = 10;               // the forward fan of an oblique entry: rim to base...
 const FAN_COLUMNS = 41;            // ...by edge to edge across its sector
 const FAN_HALF_ANGLE = THREE.MathUtils.degToRad(60);   // the sector spans this either side of the direction of travel
@@ -344,10 +379,11 @@ export class CrownSheet {
     this.sizeFactor = radius / REFERENCE_RADIUS;
     // A stone's sheet is as thick as the stone is big, so it slows, drains and
     // lasts in proportion; a landing drop's crown keeps the 3 cm stone's times.
-    const sheetScale = landing ? 1 : Math.max(this.sizeFactor, SHEET_SCALE_FLOOR);
+    const stoneCrown = !landing && !fan;
+    const sheetScale = landing ? 1 : Math.max(this.sizeFactor, stoneCrown ? CROWN_SCALE_FLOOR : SHEET_SCALE_FLOOR);
     const lastingScale = Math.max(this.sizeFactor, 1);
-    this.dragSeconds = DRAG_SECONDS * sheetScale;
-    this.drainSeconds = DRAIN_SECONDS * sheetScale;
+    this.dragSeconds = (stoneCrown ? CROWN_DRAG : DRAG_SECONDS) * sheetScale;
+    this.drainSeconds = (stoneCrown ? CROWN_DRAIN : DRAIN_SECONDS) * sheetScale;
     // Sets the launch speeds.
     this.lopsided = { spinX: 0, spinZ: 0, speedScale: 1, tiltShift: 0, ...lopsided };
     this.entrySpeed = (landing ? LANDING_SPEED * speed : fan ? (0.75 + 0.25 * strength) * speed : speed) * this.lopsided.speedScale;
@@ -359,11 +395,13 @@ export class CrownSheet {
     this.fan = fan;
     this.rim = rim;
     this.lip = { x: 0, z: 0, mouth: 0, width: 0, height: 0, widest: 0, widestWidth: 0 };
+    this.lipNow = { x: 0, z: 0, mouth: 0, width: 0, height: 0, widest: 0, widestWidth: 0, age: -1 };   // the lip at the crown's age (carried)
     this.launch = { tau: NaN, age: NaN };   // launchAt's cache
     // A stone's rim has sqrt(s) times a 3 cm stone's fingers (the header); a
     // drop's crown keeps its modes; a sealing crown's rim closes smooth.
     const fingerScale = landing ? 1 : Math.sqrt(this.sizeFactor);
-    this.seal = !landing && !fan && seal ? { time: seal.time, start: DOME_PULL_START * seal.time, tear: Math.max(seal.tear, seal.time) } : null;
+    // A dome stands on its cavity's lip: a sheet with no cavity never seals.
+    this.seal = !landing && !fan && seal && rim ? { time: seal.time, start: DOME_PULL_START * seal.time, tear: Math.max(seal.tear, seal.time) } : null;
     this.fingered = !landing && !fan && !this.seal;
     this.fingers = this.fingered ? layFingers(fingerScale) : [];
     this.rows = landing ? LANDING_ROWS : fan ? FAN_ROWS : ROWS;
@@ -393,7 +431,14 @@ export class CrownSheet {
       this.breakTime = Math.max(FAN_BREAK * radius / speed, FAN_MIN_BREAK * lastingScale);
     } else {
       this.launchDuration = Math.max(1.2 * radius / speed, 0.01);
-      this.breakTime = THREE.MathUtils.clamp(this.launchDuration + 6 * radius / speed, BREAK_FLOOR * lastingScale, BREAK_CEILING * lastingScale);
+      // It tears when its rim stalls: when u·cos(tilt)·exp(−a/τd) = g·a for the rim's launch (Newton's method).
+      const rising = this.entrySpeed * CROWN_SPEED[0] * Math.cos(THREE.MathUtils.degToRad(CROWN_TILT[0] - this.tiltShift));
+      let stall = Math.min(rising / GRAVITY, this.dragSeconds);
+      for (let iteration = 0; iteration < 12; iteration++) {
+        const decay = rising * Math.exp(-stall / this.dragSeconds);
+        stall -= (decay - GRAVITY * stall) / (-decay / this.dragSeconds - GRAVITY);
+      }
+      this.breakTime = THREE.MathUtils.clamp(STALL_SHARE * stall, BREAK_FLOOR * lastingScale, BREAK_CEILING * lastingScale);
       // A dome stands until the hole under it pinches, then bursts from the top.
       if (this.seal) this.breakTime = this.seal.tear;
     }
@@ -440,6 +485,10 @@ export class CrownSheet {
       this.columnWidths[column] = this.columnWidth;
     }
     const tearPhase = randomRange(0, Math.PI * 2);
+    // The front's raggedness varies smoothly around the ring (TEAR_MODES at random phases),
+    // so neighbouring columns tear alike and the torn edge is a curve, not a saw.
+    const tearModes = TEAR_MODES.map((mode) => ({ mode, phase: randomRange(0, Math.PI * 2), amplitude: randomRange(0.5, 1) }));
+    const tearSpan = tearModes.reduce((sum, wave) => sum + wave.amplitude, 0);
     const place = this.place = { factor: 0, fingerness: 0 };
     for (let column = 0; column < this.columns; column++) {
       const angle = this.columnAngle[column];
@@ -448,8 +497,9 @@ export class CrownSheet {
       this.columnSpeedFactor[column] = this.speedFactor(angle);
       this.columnThicknessFactor[column] = this.thicknessFactor(angle);
       const smoothPart = 0.5 + 0.5 * Math.sin(3 * angle + tearPhase);
+      const finePart = 0.5 + 0.5 * tearModes.reduce((sum, wave) => sum + wave.amplitude * Math.sin(wave.mode * angle + wave.phase), 0) / tearSpan;
       // Faster than 1 a column tears before the end; a finger's axis tears at 1, the slowest.
-      const ragged = 0.5 * smoothPart + 0.5 * Math.random();
+      const ragged = 0.5 * smoothPart + 0.5 * finePart;
       if (this.fingered) {
         this.fingerAt(angle, place);
         this.columnFingerFactor[column] = place.factor;
@@ -515,8 +565,10 @@ export class CrownSheet {
     this.geometry = this.mesh.geometry;
     this.state = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, thickness: 0, radialDistance: 0 };
     this.stateOther = { ...this.state };
-    this.domeState = { ...this.state };
-    this.domeApex = { age: NaN, height: 0, rate: 0 };   // domeTop's cache
+    // A sealing crown's dome: its folds (DOME_FOLDS, at a random phase) and whether the closure has thrown its spike.
+    this.domeFolds = Math.round(randomRange(DOME_FOLDS[0], DOME_FOLDS[1]));
+    this.domeFoldPhase = randomRange(0, Math.PI * 2);
+    this.sealSprayed = false;
   }
 
   /** A landing crown rides the waves; a stone's sheet on a cavity's lip rides them at its base, as the lip does. */
@@ -588,7 +640,7 @@ export class CrownSheet {
   }
 
   /** End of the launched material: the base of the sheet (the fan has no tail). */
-  feedEnd() { return Math.min(this.age, this.fan ? this.launchDuration : this.endTime); }
+  feedEnd() { return Math.min(this.age, this.fan ? this.launchDuration : this.landing || !this.rim ? this.endTime : (1 + TAIL_FEED) * this.launchDuration); }
 
   /**
    * What the state of an element launched at time tau owes to that time
@@ -611,11 +663,17 @@ export class CrownSheet {
       ringRadius = this.radius * (FAN_RING_START + (FAN_RING_END - FAN_RING_START) * main);
       launchSpeed = this.entrySpeed * (FAN_SPEED_START + (FAN_SPEED_END - FAN_SPEED_START) * main);
       tilt = THREE.MathUtils.degToRad(FAN_TILT_START + (FAN_TILT_END - FAN_TILT_START) * main);
-    } else {
+    } else if (this.landing) {
       tail = Math.max(progress - 1, 0);
       ringRadius = this.radius * Math.min(0.9 + 0.5 * main + 0.2 * tail, 2.0);
       launchSpeed = this.entrySpeed * (tail > 0 ? 0.2 * Math.exp(-tail / TAIL_DECAY) : 0.55 - 0.35 * main);
       tilt = THREE.MathUtils.degToRad(55 - 30 * main - this.tiltShift);
+    } else {
+      // A stone's crown: a tall, nearly upright wall (the header).
+      tail = Math.max(progress - 1, 0);
+      ringRadius = this.radius * Math.min(0.9 + 0.5 * main + 0.2 * tail, 2.0);
+      launchSpeed = this.entrySpeed * (tail > 0 ? CROWN_SPEED[1] * Math.exp(-tail / TAIL_DECAY) : CROWN_SPEED[0] + (CROWN_SPEED[1] - CROWN_SPEED[0]) * main);
+      tilt = THREE.MathUtils.degToRad(CROWN_TILT[0] + (CROWN_TILT[1] - CROWN_TILT[0]) * main - this.tiltShift);
     }
     launch.tail = tail;
     launch.ringRadius = ringRadius;
@@ -634,20 +692,31 @@ export class CrownSheet {
     launch.drainDivisor = 1 + age / this.drainSeconds;
     // A finger is its rim's material (the header).
     launch.fingerShare = this.fingered ? 1 - smoothstep(0, FINGER_ROOT, progress) : 0;
-    if (this.seal) this.sealPull(launch, main, tail);
+    // A stone crown's foot, the late material still low by the lip, rides the lip out as the mouth widens (evaluate).
+    launch.carry = this.rim && !this.fan && !this.landing ? smoothstep(CARRY[0], CARRY[1], progress) : 0;
     return launch;
   }
 
-  /**
-   * A sealing crown's pull (the header) on a launch of launchAt: how far its
-   * material is drawn in at full pull, and the pull now with its rate.
-   */
-  sealPull(launch, main, tail) {
-    launch.domeShare = DOME_CLOSED * (1 - main) ** DOME_PROFILE * (tail > 0 ? 0 : 1);
+  /** How far a sealing crown has closed now (its pull, 0 to 1; 0 for any other sheet). */
+  sealedShare() {
+    if (!this.seal) return 0;
+    const share = Math.min(Math.max((this.age - this.seal.start) / Math.max(this.seal.time - this.seal.start, 1e-4), 0), 1);
+    return share * share * (3 - 2 * share);
+  }
+
+  /** How fast the pull grows now (per second). */
+  sealRate() {
     const span = Math.max(this.seal.time - this.seal.start, 1e-4);
-    const share = Math.min(Math.max((this.age - this.seal.start) / span, 0), 1);
-    launch.pull = share * share * (3 - 2 * share);
-    launch.pullRate = (6 * share * (1 - share)) / span;
+    const share = (this.age - this.seal.start) / span;
+    return share > 0 && share < 1 ? (6 * share * (1 - share)) / span : 0;
+  }
+
+  /** Where launch time tau lies from the sheet's foot (0) to its rim (1), the main launch taking MAIN_SHARE of the way from the rim (sheetTau's inverse). */
+  sheetHeight(tau, end) {
+    const split = this.launchDuration;
+    if (end <= split) return 1 - tau / Math.max(end, 1e-9);
+    if (tau <= split) return 1 - (MAIN_SHARE * tau) / split;
+    return (1 - MAIN_SHARE) * (1 - (tau - split) / Math.max(end - split, 1e-9));
   }
 
   /**
@@ -660,10 +729,6 @@ export class CrownSheet {
    * cavity's mouth outline at this azimuth (columnRimShape), or worked out.
    */
   evaluate(tau, cosAngle, sinAngle, speedFactor, thicknessFactor, out, edgeTau = 0, fingerFactor = 0, free = false, rimShape = undefined) {
-    // A sealing crown's pull needs the free sheet's top, found first: finding
-    // it evaluates the free sheet through launchAt's one-entry cache. Before
-    // the pull starts (while the rim still sheds, every substep) it is none.
-    const top = this.seal && !free && this.age > this.seal.start ? this.domeTop() : null;
     const launch = this.launchAt(tau);
     let ringRadius = launch.ringRadius;
     const launchSpeed = launch.launchSpeed * speedFactor * (1 + fingerFactor * launch.fingerShare);
@@ -681,74 +746,83 @@ export class CrownSheet {
       centreZ = lip.z;
       ringRadius = Math.max(held, (this.fan ? FAN_RING_START : RIM_RING_START) * this.radius);
       baseHeight += this.rim.lipHeightBeyond(lip, ringRadius - crest);
+      if (launch.carry > 0) {
+        // The foot is carried out with the lip as the mouth widens under it: it stands where the lip is now.
+        const now = this.lipNow;
+        if (now.age !== this.age) { this.rim.lipAt(this.age, now); now.age = this.age; }
+        const ringNow = Math.max(now.widest * shape + now.widestWidth, RIM_RING_START * this.radius);
+        const heightNow = -BASE_DEPTH + this.rim.lipHeightBeyond(now, ringNow - (now.mouth * shape + now.width));
+        const carry = launch.carry;
+        centreX += (now.x - centreX) * carry;
+        centreZ += (now.z - centreZ) * carry;
+        ringRadius += (ringNow - ringRadius) * carry;
+        baseHeight += (heightNow - baseHeight) * carry;
+      }
     }
     const radialSpeed = launchSpeed * launch.sinTilt;
     const upSpeed = launchSpeed * launch.cosTilt;
     const decay = launch.decay;
     const flight = launch.flight;
-    const radialDistance = ringRadius + radialSpeed * flight;
-    out.x = centreX + cosAngle * radialDistance + this.driftX * flight;
+    // Carried material goes where the lip goes, not where it was flung or dragged.
+    const flown = flight * (1 - launch.carry);
+    const radialDistance = ringRadius + radialSpeed * flown;
+    out.x = centreX + cosAngle * radialDistance + this.driftX * flown;
     out.y = baseHeight + upSpeed * flight - launch.fall;
-    out.z = centreZ + sinAngle * radialDistance + this.driftZ * flight;
+    out.z = centreZ + sinAngle * radialDistance + this.driftZ * flown;
     out.vx = (cosAngle * radialSpeed + this.driftX) * decay;
     out.vy = upSpeed * decay - launch.fallSpeed;
     out.vz = (sinAngle * radialSpeed + this.driftZ) * decay;
     out.radialDistance = radialDistance;
-    if (top && launch.domeShare > 0) this.pullIn(out, cosAngle, sinAngle, radialSpeed * decay, launch, top);
+    // The foot never sinks below the lip it stands on: the water there holds it up.
+    if (launch.carry > 0 && out.y < baseHeight) { out.y = baseHeight; out.vy = Math.max(out.vy, 0); }
+    if (this.seal && !free && this.age > this.seal.start) this.pullIn(out, tau, cosAngle, sinAngle, rimShape);
     // The bead gathers what stretching takes from the sheet, so it keeps three
     // times the unstretched thickness while the sheet behind it thins.
     const drained = this.baseThickness * thicknessFactor * launch.launchThickness / launch.drainDivisor;
     // The fan thins to nothing at its edges.
     const sheetThickness = Math.max(drained * ringRadius / radialDistance, this.fan ? MIN_THICKNESS * thicknessFactor : MIN_THICKNESS);
-    const bead = 1 - smoothstep(0.6 * BEAD_END, 1.3 * BEAD_END, (tau - edgeTau) / this.launchDuration);
+    // A sealing crown's rim merges as it closes: no free edge, no bead, until the dome bursts.
+    const merged = this.seal && edgeTau === 0 ? this.sealedShare() : 0;
+    const bead = (1 - smoothstep(0.6 * BEAD_END, 1.3 * BEAD_END, (tau - edgeTau) / this.launchDuration)) * (1 - merged);
     out.thickness = sheetThickness + bead * Math.max(3 * drained - sheetThickness, 0);
     return out;
   }
 
   /**
-   * A surface seal's pull on a free element `out` (evaluate's): in towards
-   * the crown's drifting axis and up to the free sheet's top by the pull's
-   * share, the rim most and the base not at all, so the rim closes into the
-   * apex of a dome (the header). radialVelocity is its free speed outward,
-   * top the free sheet's (domeTop).
+   * A surface seal's pull on a free element `out` (evaluate's, launched at
+   * tau from the azimuth with the given cosine and sine): it is drawn by the
+   * pull P (sealedShare) onto the dome (the header), a surface of revolution
+   * about the lip's centre from the lip's crest (its foot, the carried tail's
+   * ring) to an apex DOME_HEIGHT·R above the still water, the sheet's rim at
+   * the apex and its foot at the foot: at s from foot to rim (sheetHeight),
+   * radius r_foot·cos(πs/2)^DOME_ROUND·(1 + DOME_FOLD·sin(πs)·sin(kφ + ψ)) and
+   * height y_foot + (apex − y_foot)·sin(πs/2). So the dome is a smooth bell
+   * whatever the free sheet's waves and an oblique throw's lopsidedness, with
+   * k buckling folds. While it stands it holds still; once it bursts (the
+   * tear) its sheet flies off at DOME_BURST·sqrt(g·R)·s, out and up.
    */
-  pullIn(out, cosAngle, sinAngle, radialVelocity, launch, top) {
-    const pulled = launch.domeShare * launch.pull;
-    const pulling = launch.domeShare * launch.pullRate;
-    const radialDistance = out.radialDistance;
-    const inward = radialDistance * pulled;
-    const inwardSpeed = radialVelocity * pulled + radialDistance * pulling;
-    out.x -= cosAngle * inward;
-    out.z -= sinAngle * inward;
-    out.vx -= cosAngle * inwardSpeed;
-    out.vz -= sinAngle * inwardSpeed;
-    out.vy += pulled * (top.rate - out.vy) + pulling * (top.height - out.y);
-    out.y += pulled * (top.height - out.y);
-    out.radialDistance = radialDistance - inward;
-  }
-
-  /**
-   * A sealing crown's apex (the header): the free sheet's highest point now
-   * (rows rim to base, every DOME_STRIDE-th column), and how fast it moves,
-   * worked out once per age.
-   */
-  domeTop() {
-    const top = this.domeApex;
-    if (top.age === this.age) return top;
-    const state = this.domeState;
-    const end = Math.max(this.feedEnd(), 1e-6);
-    let highest = -Infinity;
-    for (let sample = 0; sample < DOME_SAMPLES; sample++) {
-      const tau = this.sheetTau(sample / (DOME_SAMPLES - 1), end);
-      for (let column = 0; column < this.columns; column += DOME_STRIDE) {
-        this.evaluate(tau, this.columnCos[column], this.columnSin[column], this.columnSpeedFactor[column], this.columnThicknessFactor[column], state, 0, 0, true, this.columnRimShape?.[column]);
-        highest = Math.max(highest, state.y);
-      }
-    }
-    top.rate = Number.isFinite(top.age) && this.age > top.age ? (highest - top.height) / (this.age - top.age) : 0;
-    top.height = highest;
-    top.age = this.age;
-    return top;
+  pullIn(out, tau, cosAngle, sinAngle, rimShape) {
+    const pull = this.sealedShare();
+    const now = this.lipNow;
+    if (now.age !== this.age) { this.rim.lipAt(this.age, now); now.age = this.age; }
+    const shape = rimShape ?? this.rim.shape(cosAngle, sinAngle);
+    const footRadius = Math.max(now.widest * shape + now.widestWidth, RIM_RING_START * this.radius);
+    const footHeight = -BASE_DEPTH + this.rim.lipHeightBeyond(now, footRadius - (now.mouth * shape + now.width));
+    const along = this.sheetHeight(tau, Math.max(this.feedEnd(), 1e-6));
+    const angle = Math.atan2(sinAngle, cosAngle);
+    const fold = 1 + DOME_FOLD * Math.sin(Math.PI * along) * Math.sin(this.domeFolds * angle + this.domeFoldPhase);
+    const radius = footRadius * Math.cos(0.5 * Math.PI * along) ** DOME_ROUND * fold;
+    const height = footHeight + (DOME_HEIGHT * this.radius - footHeight) * Math.sin(0.5 * Math.PI * along);
+    const domeX = now.x + cosAngle * radius, domeZ = now.z + sinAngle * radius;
+    // At rest on the dome, or flying off it once it bursts.
+    const burst = this.age >= this.breakTime ? DOME_BURST * Math.sqrt(GRAVITY * this.radius) * along : 0;
+    const rate = this.sealRate();
+    out.vx += pull * (cosAngle * burst - out.vx) + rate * (domeX - out.x);
+    out.vy += pull * (burst - out.vy) + rate * (height - out.y);
+    out.vz += pull * (sinAngle * burst - out.vz) + rate * (domeZ - out.z);
+    out.x += pull * (domeX - out.x);
+    out.y += pull * (height - out.y);
+    out.z += pull * (domeZ - out.z);
   }
 
   evaluateAt(tau, angle, out) {
@@ -779,6 +853,7 @@ export class CrownSheet {
   /** Advance to the given splash time: shed from the rim, or tear once it is time. */
   update(time, dt, splash) {
     this.age = time - this.startTime;
+    if (this.seal && !this.sealSprayed && this.age >= this.seal.time) this.sealSpray(splash);
     if (this.age < this.breakTime) {
       this.shed(dt, splash);
     } else {
@@ -791,6 +866,26 @@ export class CrownSheet {
       }
     }
     if (this.age >= this.endTime) this.finished = true;
+  }
+
+  /**
+   * The dome has closed: where the rim met, a thin spike of water shoots up
+   * from the apex (the reference simulation's real-air seal) and breaks into
+   * SEAL_SPRAY fine drops.
+   */
+  sealSpray(splash) {
+    this.sealSprayed = true;
+    const lip = this.lipNow;
+    if (lip.age !== this.age) { this.rim.lipAt(this.age, lip); lip.age = this.age; }
+    const scale = Math.sqrt(this.sizeFactor);
+    const count = Math.max(Math.round(SEAL_SPRAY * scale), 3);
+    for (let drop = 0; drop < count; drop++) {
+      const speed = randomRange(SEAL_SPRAY_SPEED[0], SEAL_SPRAY_SPEED[1]) * scale;
+      const angle = randomRange(0, Math.PI * 2);
+      const lean = randomRange(0, 0.12) * speed;
+      splash.spawnDroplet(lip.x + randomRange(-0.1, 0.1) * this.radius, DOME_HEIGHT * this.radius, lip.z + randomRange(-0.1, 0.1) * this.radius,
+        Math.cos(angle) * lean, speed, Math.sin(angle) * lean, (0.0005 + 0.0009 * Math.random()) * this.sizeFactor ** 0.4);
+    }
   }
 
   /** Tear whatever is left into droplets now (when too many crowns are alive). */
@@ -1036,6 +1131,7 @@ export class CrownSheet {
     // towards its sides (FINGER_LEAN at its roots), as a rod's does.
     const positions = this.positions;
     const columns = this.columns;
+    const sealed = this.sealedShare();
     computeGridNormals(positions, this.normals, this.rows, columns, this.wrap);
     for (let column = 0; column < columns; column++) {
       const across = this.columnAcross[column];
@@ -1049,7 +1145,8 @@ export class CrownSheet {
         const alongY = positions[after * 3 + 1] - positions[before * 3 + 1];
         const alongZ = positions[after * 3 + 2] - positions[before * 3 + 2];
         const alongLength = Math.sqrt(alongX * alongX + alongY * alongY + alongZ * alongZ);
-        const bend = alongLength > 1e-9 ? 1.4 * (1 - smoothstep(0, BEAD_END, this.rowTaus[vertex] / this.launchDuration)) / alongLength : 0;
+        const merged = this.seal && front === 0 ? sealed : 0;
+        const bend = alongLength > 1e-9 ? 1.4 * (1 - smoothstep(0, BEAD_END, this.rowTaus[vertex] / this.launchDuration)) * (1 - merged) / alongLength : 0;
         let leanX = 0, leanY = 0, leanZ = 0;
         const share = across === 0 ? 0 : 1 - smoothstep(0, FINGER_ROOT, (this.rowTaus[vertex] + front) / this.launchDuration);
         if (share > 0) {

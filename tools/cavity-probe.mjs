@@ -10,17 +10,21 @@
 //   - the entry: speed, angle from vertical, Froude number V²/(g·R);
 //   - the timeline: when the stone's centre reaches the water, the pinch-off
 //     (time in ms and in sqrt(R/g), its depth, and the stone's depth then),
-//     the closure of the surface and when the jet starts against it;
+//     when the jet starts against it, and the bowl left above the neck: its
+//     floor's depth as it rises and when it has flattened into the surface;
 //   - the hole over time: the mouth's radius, the lip's crest (radius and
 //     height), the depth of the hole and the circle the surface dips from;
 //   - the mesh: vertices, and the CPU cost of a frame's geometry;
 // and checks, failing with exit code 1 if any check fails:
 //   - the cavity's stone path follows the stone src/rock.js moves (within 3%
 //     of its depth, or 2 mm);
-//   - the pinch-off comes when the cavity's seal says (2.1·sqrt(R/g) after
+//   - the pinch-off comes when the cavity's seal says (2.06·sqrt(R/g) after
 //     entry for a deep seal, give or take the splash's few per cent; sooner
-//     for a shallow or a surface seal) and the surface closes when it says
-//     (0.4·sqrt(R/g) later for a deep seal), where the jet starts;
+//     for a shallow or a surface seal), when the jet starts (a throw with no
+//     jet heaves its mound later, MOUND_DELAY of the bowl's time units after
+//     it, src/splash.js); the bowl's floor
+//     starts at the pinch depth, only rises, and reaches the surface when the
+//     hole is gone; the hole is never drawn deeper than its floor;
 //   - every frame, the well the surface patch dips into holds every vertex of
 //     the wall, and the lip's apron reaches two water cells past where it dips;
 //   - the wall's normals face the hole's axis and the lip's face up;
@@ -37,9 +41,9 @@
 //
 // Without diameters it runs the slider's 1.5, 4, 6, 8 and 16 cm.
 import * as THREE from 'three';
-import { SplashSystem } from '../src/splash.js';
+import { SplashSystem, MOUND_DELAY } from '../src/splash.js';
 import { Rock } from '../src/rock.js';
-import { CAVITY_LAYOUT } from '../src/cavity.js';
+import { CAVITY_LAYOUT, PINCH_TIME } from '../src/cavity.js';
 
 const { rows: CAVITY_ROWS, columns: CAVITY_COLUMNS, firstWallRow, mouthRow } = CAVITY_LAYOUT;
 
@@ -156,11 +160,13 @@ function runCavity(radius, vertical, { silent = false, aim, power, name } = {}) 
   const cavity = splash.cavities[0];
   const crown = splash.crowns.find((candidate) => !candidate.landing && !candidate.fan);
   const jetStart = splash.jets[0].start - cavity.startTime;
+  const jetRegime = splash.jets[0].regime;
   const label = name ?? `${(200 * radius).toFixed(1)} cm ${vertical ? 'dropped' : 'thrown'}`;
   const costs = [];
   const result = {};
   let worstPath = 0;
   let worstBase = 0;
+  let worstFloor = 0;
   for (let frame = 0; frame < 120 && !cavity.finished; frame++) {
     splash.setFrameSeconds(FRAME);
     for (let substep = 0; substep < SUBSTEPS; substep++) {
@@ -194,10 +200,12 @@ function runCavity(radius, vertical, { silent = false, aim, power, name } = {}) 
         worstBase = Math.max(worstBase, Math.abs(crown.positions[vertex + 1] - (cavity.lipHeightBeyond(lip, distance - crest) - 0.003)));
       }
     }
+    // After the pinch the hole is drawn no deeper than the bowl's floor.
+    if (age >= cavity.pinchTime && cavity.pinchSlice > 0) worstFloor = Math.max(worstFloor, cavity.holeDepth - cavity.bowlFloorAt(age).depth);
     if (!silent) checkMesh(cavity, label);
   }
   if (silent) return null;
-  return Object.assign(result, { impact, cavity, label, costs, worstPath, worstBase, jetStart });
+  return Object.assign(result, { impact, cavity, label, costs, worstPath, worstBase, worstFloor, jetStart, jetRegime });
 }
 
 // Warm up, then measure.
@@ -220,7 +228,9 @@ for (const diameter of stoneDiameters) {
     }
     console.log(`  the centre reaches the water at ${(cavity.surfaceTime * 1000).toFixed(1)} ms; the mouth is widest, ${radii(cavity.mouthAt(cavity.widestTime), radius)} R, at ${milliseconds(cavity.widestTime)} ms; the lip is highest, ${radii(highest, radius)} R, at ${milliseconds(highestTime)} ms`);
     const stoneAtPinch = cavity.stoneAt(cavity.pinchTime, {}).depth;
-    console.log(`  pinch-off at ${milliseconds(cavity.pinchTime)} ms (${(cavity.pinchTime / unit).toFixed(2)}·sqrt(R/g)), ${radii(cavity.pinchDepth, radius)} R down, the stone (the hole's bottom until then) ${radii(stoneAtPinch, radius)} R down; the surface closes at ${milliseconds(cavity.closeTime)} ms (${((cavity.closeTime - cavity.pinchTime) / unit).toFixed(2)}·sqrt(R/g) later); the jet starts ${((result.jetStart - cavity.closeTime) * 1000).toFixed(1)} ms after the closure`);
+    console.log(`  pinch-off at ${milliseconds(cavity.pinchTime)} ms (${(cavity.pinchTime / unit).toFixed(2)}·sqrt(R/g)), ${radii(cavity.pinchDepth, radius)} R down, the stone (the hole's bottom until then) ${radii(stoneAtPinch, radius)} R down; the jet starts ${((result.jetStart - cavity.pinchTime) * 1000).toFixed(1)} ms after the pinch`);
+    const floors = [0.01, 0.03, 0.06, 0.1, 0.15, 0.2].map((after) => `${milliseconds(cavity.pinchTime + after)} ms ${radii(cavity.bowlFloorAt(cavity.pinchTime + after).depth, radius)} R`);
+    console.log(`  the bowl's floor: ${floors.join(', ')}; it has flattened into the surface at ${milliseconds(cavity.closeTime)} ms (${((cavity.closeTime - cavity.pinchTime) / unit).toFixed(2)}·sqrt(R/g) after the pinch)`);
     // The closed form at exact times (the frames above only sample it).
     const marks = [0.1, 0.25, 0.5, 1, 1.5, 2, 2.1, 2.2, 2.3, 2.4];
     const line = marks.map((mark) => {
@@ -243,9 +253,23 @@ function checkTiming(result, label) {
   const unit = Math.sqrt(cavity.radius / GRAVITY);
   check(result.worstPath <= 1, `${label}: the cavity's stone strays ${result.pathMillimetres?.toFixed(1)} mm from src/rock.js's at ${((result.pathDepth ?? 0) * 100).toFixed(1)} cm deep`);
   check(Math.abs(cavity.pinchTime / unit - cavity.seal.pinch) < 0.01, `${label}: pinch-off at ${(cavity.pinchTime / unit).toFixed(3)}·sqrt(R/g), its ${cavity.seal.kind} seal says ${cavity.seal.pinch.toFixed(3)}`);
-  if (cavity.seal.kind === 'deep') check(Math.abs(cavity.seal.pinch - 2.1) < 0.15, `${label}: a deep seal pinches at ${cavity.seal.pinch.toFixed(2)}·sqrt(R/g)`);
-  if (cavity.pinchSlice > 0) check(Math.abs((cavity.closeTime - cavity.pinchTime) / unit - cavity.seal.close) < 0.01, `${label}: closure ${((cavity.closeTime - cavity.pinchTime) / unit).toFixed(3)}·sqrt(R/g) after the pinch, its seal says ${cavity.seal.close.toFixed(3)}`);
-  check(Math.abs(result.jetStart - cavity.closeTime) < 1e-9, `${label}: the jet starts ${((result.jetStart - cavity.closeTime) * 1000).toFixed(1)} ms from the closure`);
+  if (cavity.seal.kind === 'deep') check(Math.abs(cavity.seal.pinch - PINCH_TIME) < 0.15, `${label}: a deep seal pinches at ${cavity.seal.pinch.toFixed(2)}·sqrt(R/g)`);
+  // A throw with no jet heaves its mound MOUND_DELAY of the bowl's time units after the pinch (src/splash.js).
+  const jetDelay = result.jetRegime === 'none' ? MOUND_DELAY * cavity.bowlUnit : 0;
+  check(Math.abs(result.jetStart - cavity.pinchTime - jetDelay) < 1e-9, `${label}: the jet (${result.jetRegime}) starts ${((result.jetStart - cavity.pinchTime) * 1000).toFixed(1)} ms from the pinch`);
+  // The bowl: from the pinch depth, only rising, at the surface when the hole is gone.
+  if (cavity.pinchSlice > 0) {
+    check(Math.abs(cavity.bowlFloorAt(cavity.pinchTime).depth - cavity.pinchDepth) < 1e-9, `${label}: the bowl's floor starts ${radii(cavity.bowlFloorAt(cavity.pinchTime).depth, cavity.radius)} R down, the pinch ${radii(cavity.pinchDepth, cavity.radius)} R`);
+    let previous = Infinity, rising = true;
+    for (let time = cavity.pinchTime; time <= cavity.closeTime + 1e-9; time += 0.001) {
+      const depth = cavity.bowlFloorAt(time).depth;
+      if (depth > previous + 1e-12) rising = false;
+      previous = depth;
+    }
+    check(rising, `${label}: the bowl's floor sinks somewhere after the pinch`);
+    check(cavity.bowlFloorAt(cavity.closeTime).depth === 0, `${label}: the bowl's floor is ${radii(cavity.bowlFloorAt(cavity.closeTime).depth, cavity.radius)} R down when the hole is gone`);
+  }
+  check(result.worstFloor < 1e-6, `${label}: the hole is drawn ${(result.worstFloor * 1000).toFixed(2)} mm below the bowl's floor`);
   check(result.worstBase < 0.001, `${label}: the crown's base is ${(result.worstBase * 1000).toFixed(1)} mm off the lip`);
 }
 

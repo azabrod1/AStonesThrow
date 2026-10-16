@@ -12,19 +12,20 @@
 //      horizontal a forward fan comes first: a thin fast sheet over the sector
 //      ahead, launched from the lip's forward side, low and mostly forward,
 //      tearing into fine spray (CrownSheet with `fan`), at a strength growing
-//      to full at FAN_FULL. After a fast, big entry the crown may instead close
-//      over the hole as a dome (a surface seal, chosen below), which bursts
-//      from the top when the hole under it pinches.
+//      to full at FAN_FULL. After a fast entry, or a small stone's, the crown
+//      may instead close over the hole as a low dome (a surface seal, chosen
+//      below), which bursts from the top when the hole under it pinches.
 //   2. Cavity: the stone opens an air-filled hole behind it (src/cavity.js), a
 //      closed form in depth and time drawn as a hole in the water surface, its
 //      lip lifted around it and the stone at its bottom; an oblique stone's is
 //      sheared along its path, and an irregular, tumbling stone's is lopsided.
-//      It pinches off (deep seal) about 2.1·sqrt(R/g) seconds after entry,
-//      almost independently of entry speed (Duclaux et al. 2007), at about
-//      half the stone's depth then (or sooner and higher: a shallow or a
-//      surface seal, by the throw's choice below); the hole above the neck
-//      collapses from the bottom up, and the surface closes to a mound
-//      0.4·sqrt(R/g) later. The ring the stone sends across the pond
+//      It pinches off (deep seal) about 2.06·sqrt(R/g) seconds after entry,
+//      almost independently of entry speed (Duclaux et al. 2007), about 7.5·R
+//      down for the reference throw, 0.57 of the stone's depth then (or sooner
+//      and higher: a shallow or a surface seal, by the throw's choice below);
+//      the wide bowl above the neck stays open and fills from below, and has
+//      flattened into the surface about sqrt(z_p/g) after the pinch (z_p the
+//      pinch depth). The ring the stone sends across the pond
 //      (stampCavity, RING) is a downward push released just after entry,
 //      fitted to a reference simulation's ring; it does not depend on how the
 //      cavity is drawn. An oblique entry drags it forward: besides the entry's
@@ -32,16 +33,21 @@
 //      path (R·tan θ apart, at most PATH_SLOPE_CAP·R), as it gets there and
 //      weaker; and each has a pair of heights, raised ahead and lowered
 //      behind, by the horizontal fraction, so the ring is stronger ahead than
-//      behind. Their foam is the air the hole held: it comes when the hole
-//      closes.
-//   3. Worthington jet: where and when the hole closes, a narrow glassy column
-//      fires up (src/jet.js), tip first and fastest, so it stretches as it
-//      rises. A bulb at its tip pinches off into large drops, then the column
-//      breaks from the top down into drops about twice its local radius while
-//      its slow base falls back into a mound (its ring is part of the stone's,
-//      above). After an oblique entry it leans back along the stone's path by
-//      JET_LEAN·θ (at most JET_LEAN_CAP) and, from a dragged cavity, is slower
-//      by JET_OBLIQUE_SLOWING times the horizontal fraction. Each throw's jet
+//      behind. Their foam is the air the hole held: it comes when the bowl has
+//      flattened, where the jet's base meets the water (startBase).
+//   3. Worthington jet: at the pinch-off a glassy column fires up the axis
+//      from the bowl's floor (src/jet.js): a thin needle first and fastest,
+//      the body under it, and a broad slow base that the bowl's collapse
+//      builds, so it stretches as it rises. Its body leaves at JET_SPEED of
+//      the entry speed (the needle up to three times faster), carrying
+//      JET_SHARE of the water that fills the bowl. Its tip pinches off into
+//      drops, then the column breaks from the top down into drops about twice
+//      its local radius while its slow base falls back into a mound (its ring
+//      is part of the stone's, above). After an oblique entry it leans back
+//      along the stone's path by JET_LEAN·θ (at most JET_LEAN_CAP) and, from a
+//      dragged cavity, is slower by JET_OBLIQUE_SLOWING times the horizontal
+//      fraction and its needle's extra speed lower by NEEDLE_OBLIQUE times it
+//      (a sheared hole focuses less). Each throw's jet
 //      has a form of its own (the variety notes above chooseSplash): clean,
 //      with none to four tip drops, leaning towards a lopsided hole's bulge,
 //      ragged, stubby, split in two, or none at all (only a low mound).
@@ -90,12 +96,14 @@
 //     (s^0.4). A big stone sheds big drops, and those throw crowns of their
 //     own where they land.
 //   - The cavity's lengths go with R and its times with sqrt(R/g) (its
-//     depths follow the stone, src/cavity.js): it pinches off 2.1·sqrt(R/g)
-//     after entry and closes 0.4·sqrt(R/g) later, when the jet starts; the
-//     jet's launch window goes as sqrt(s), its radius as R·s^0.25 (fatter at
-//     the lower Froude number of a big stone) and its breakup as s^1.5 (a
-//     capillary time), its tip speed follows V (times s^0.15): a big stone's
-//     jet is a fat column that mostly falls back as one, not a taller needle.
+//     depths follow the stone, src/cavity.js; its mouth widens more at a
+//     higher Froude number): it pinches off 2.06·sqrt(R/g) after entry, when
+//     the jet starts, and its bowl has flattened about sqrt(z_p/g) later; the
+//     jet's launch window goes as sqrt(z_p/g), its radius as R·s^0.25 (fatter
+//     at the lower Froude number of a big stone), its breakup's pace as a
+//     capillary time of the column, its speeds follow V (times s^0.15): a big
+//     stone's jet is a fat column that mostly falls back as one, not a taller
+//     needle.
 //   - The ring (RING): its σ goes with R and its release with sqrt(R/g), so
 //     its wavelength goes with R; its push follows V, as the old cavity
 //     splat's did, so its height goes as V·sqrt(R) (the speed over the
@@ -115,19 +123,19 @@
 //     stone.
 // The counts are set for a believable splash, tens to a few hundred drops
 // a stone and most of them millimetres across, not thousands of specks: a
-// 3 cm stone throws about 400 (130 from the crown, 60 fine ones from the
-// fan, a dozen contact spray, two dozen from the jet, 130 from the crowns of
-// the drops that throw one where they land, 20 kicked up by the rest), at
-// most about 190 in the air at once. The caps are for cost, set above what
-// the slider's biggest stone (16 cm, s = 2.67) needs even thrown hard.
-// Thrown normally (6.3 m/s, 42° from vertical) it spawns about 1500 drops:
-// 650 from the crown (2.5 to 9 mm), 300 from the fan, 70 contact spray, a
-// dozen from the jet, 180 from the crowns of the 25-odd drops that throw one
-// where they land and 230 kicked up by the rest; at most 700 are alive at
-// once (800 thrown hard), and it leaves 3400 foam specks. Its CPU work on a
-// desktop is under a millisecond a frame on average and 3 to 7 ms in the
-// worst frames, where the crown tears and drops land
-// (tools/splash-probe.mjs measures all of this).
+// 3 cm stone throws 300 to 360 (150 from the crown, 60 fine ones from the
+// fan, a dozen contact spray, a dozen or two from the jet, 50 to 100 from the
+// crowns of the drops that throw one where they land and a few dozen kicked
+// up by the rest), at most 200 to 225 in the air at once. The caps are for
+// cost, set above what the slider's biggest stone (16 cm, s = 2.67) needs
+// even thrown hard. Thrown normally (6.3 m/s, 42° from vertical) it spawns
+// 1600 to 1900 drops: 680 from the crown (2.5 to 9 mm), 310 from the fan,
+// 70 contact spray, a few large ones from the jet, 250 to 500 from the crowns
+// of the 40 to 70 drops that throw one where they land and 300 to 400 kicked
+// up by the rest; at most 730 to 840 are alive at once, and it leaves 3400
+// to 3700 foam specks. Its CPU work on a desktop is under a millisecond a frame on average
+// and a few milliseconds in the worst frames, where the crown tears and drops
+// land (tools/splash-probe.mjs measures all of this).
 //
 // Droplets are integrated on the CPU and rendered as screen-space water
 // (src/shaders/fluid.js): sphere impostors into an info target (depth, what
@@ -175,7 +183,7 @@ import * as THREE from 'three';
 import { FullscreenPass, createFloatTarget } from './gpu.js';
 import { CrownSheet } from './crown.js';
 import { JetColumn, CLEAN_FORM } from './jet.js';
-import { Cavity } from './cavity.js';
+import { Cavity, PINCH_TIME, SURFACE_HEAD } from './cavity.js';
 import { MAX_CAVITIES } from './waterSurface.js';
 import { FoamSpecks } from './foamSpecks.js';
 import { PARTICLE_VERTEX, PARTICLE_DEPTH_FRAGMENT, PARTICLE_THICKNESS_FRAGMENT, COMPOSITE_FRAGMENT, MIRROR_SHEET_FRAGMENT, MIRROR_COLUMN_FRAGMENT, MIRROR_DROP_FRAGMENT } from './shaders/fluid.js';
@@ -236,7 +244,11 @@ const FLOW_DECAY = 2;
 const JET_LEAN = 0.4;                                // the jet leans back by this fraction of the entry angle,
 const JET_LEAN_CAP = THREE.MathUtils.degToRad(18);   // at most this
 const OBLIQUE_IMPULSE = 1.3;          // an oblique entry's cavity splats together carry at most this times a vertical one's
-const JET_OBLIQUE_SLOWING = 0.3;      // and is slower by this times the horizontal fraction
+const JET_SPEED = 0.75;               // the jet's body leaves at this share of the entry speed (src/jet.js)...
+const JET_OBLIQUE_SLOWING = 0.3;      // ...and from a dragged cavity is slower by this times the horizontal fraction...
+const NEEDLE_OBLIQUE = 0.9;           // ...and its needle's extra speed lower by this times it: a sheared hole focuses less
+const JET_SHARE = 0.25;               // the jet carries this share of the water that fills the bowl left above the neck
+export const MOUND_DELAY = 0.8;              // a throw with no jet heaves its mound this many of the bowl's time units after the pinch, the bowl nearly full
 // The ring a stone sends across the pond (stampCavity, src/rings.js), fitted
 // to the reference simulation's (tools/basilisk/results/rings_linear.md): a
 // downward push of RING.speed of the entry speed, of σ = RING.sigma·R less
@@ -359,19 +371,36 @@ const smoothstep = (edgeLow, edgeHigh, value) => {
 // same however its flight was stepped, and the choices shift no other draw;
 // each jet column draws from a stream of its own too). chooseSplash picks:
 //   - the seal (Aristoff & Bush 2009, Truscott, Epps & Belden 2014). Deep: the
-//     hole pinches deep down about 2.1·sqrt(R/g) after entry (Duclaux et al.
-//     2007), varied by a few per cent. Surface: the crown is pulled shut over
-//     the hole by the air rushing in behind the stone before the deep pinch;
-//     the suction grows with the entry speed and with the hole's volume, so
-//     it needs a fast entry, sooner for a big stone (Gilbarg & Anderson 1948,
-//     Marston et al. 2016): its chance is a logistic in
-//     SEAL_SPEED·V·s^SEAL_SIZE (s = R / 3 cm, times 1 + 0.12 per unit of
-//     bluntness over a ball's: a broad face throws a fuller crown), half at
-//     7.6 m/s for a 6 cm stone and 6.6 m/s for a 16 cm one. The app's throws
-//     enter at 5.6 to 8.2 m/s, so a few in a hundred of the default stone's
-//     seal at the surface, a fifth of a 16 cm stone's and hardly any pebble's.
-//     Shallow: a flat face going in first (a belly flop opens a wide, shallow
-//     hole) or a slow entry pinches sooner and higher.
+//     hole pinches deep down about 2.06·sqrt(R/g) after entry (Duclaux et al.
+//     2007; the reference simulation 1.99), varied by a few per cent. Surface:
+//     the crown is pulled shut over the hole by the air rushing in behind the
+//     stone before the deep pinch. For a vertical smooth sphere that happens
+//     when the Froude number F = V²/(g·R) passes (ρ/ρa)²/6400 = 108 at the
+//     atmosphere's density (Birkhoff & Isaacs 1951, Aristoff & Bush 2009
+//     figure 19), so a fast or small stone seals at the surface and a big one
+//     needs more speed: 2.8 m/s for a 1.5 cm stone, 5.6 m/s for 6 cm, 9.2 m/s
+//     for 16 cm. What pulls the crown in is the air's flow into the hole
+//     (Gilbarg & Anderson 1948; Eshraghi, Jung & Vlachos 2020 find the seal
+//     set by its speed against the entry speed), and an oblique entry lets it
+//     in through the oblique section of a sheared hole, 1/cos θ times as wide,
+//     at cos θ the speed: so the throw seals by F·cos²θ (θ from vertical), and
+//     surface closure comes later or not at all the more oblique the entry
+//     (May 1975; the oblique entries of Ocean Engineering 2018 and 2019). A
+//     rough, irregular stone's crown is lopsided, fingers and tears (Marston et
+//     al. 2016 find even a smooth sphere's sealing crown buckles), which delays
+//     or prevents the seal: the boundary rises by SEAL_IRREGULAR times the
+//     asymmetry (below), and a broad face going in first throws a fuller crown
+//     (1 + 0.12 per unit of bluntness over a ball's). The chance is a logistic
+//     in ln(F·cos²θ / boundary), SEAL_SPREAD wide. For the default 6 cm stone
+//     thrown normally (6.3 m/s, 42° from vertical) about one in ten seals at
+//     the surface, a third thrown softly (30°) and a few thrown hard (56°);
+//     nearly every pebble; a third of 4 cm stones; no 16 cm stone. The dome
+//     closes SEAL_TIME·R/(V·cos θ) after entry (the reference simulation's
+//     real-air runs 5 to 7.6·R/V; Marston et al. 2012 11.5·R/V for smaller,
+//     smooth spheres), up to half as late again near the boundary (Eshraghi,
+//     Jung & Vlachos 2020 find the seal's time grows there). Shallow: a flat
+//     face going in first (a belly flop opens a wide, shallow hole) or a slow
+//     entry pinches sooner and higher.
 //   - the asymmetry (0 to 1): how far from round the hole opens and collapses,
 //     from the stone's outline where it goes in ((flatness + elongation/2)·
 //     |sin 2·faceAngle|: a flat stone tilted, not flat on or edge on, hits
@@ -392,23 +421,29 @@ const smoothstep = (edgeLow, edgeHigh, value) => {
 //     rare; a clean jet takes the rest, its tip beads (0 to 4, of varying
 //     sizes, with satellites), its height and its beads varying throw to
 //     throw. After a surface seal the dome takes the jet's push: a weak ragged
-//     or stubby jet, or none (no jet clears the water: a low glassy mound
-//     heaves up and subsides in a fizz of small drops); after a shallow
-//     seal mostly a stubby one. For the default 6 cm stone thrown normally
-//     about half the jets are clean, a fifth lean, a fifth are ragged, one in
-//     eight is stubby and a few split or never rise (tools/variety-probe.mjs).
+//     or stubby jet, or none (no jet clears the water: once the bowl has
+//     nearly filled, MOUND_DELAY, a low glassy mound heaves up and subsides
+//     in a fizz of small drops); after a shallow seal mostly a stubby one.
+//     For the default 6 cm stone thrown normally four jets in ten are clean,
+//     a fifth to a quarter ragged, one in six leans, one in eight is stubby
+//     and a few split or never rise (tools/variety-probe.mjs).
 // Every jet also leans back along an oblique stone's path (JET_LEAN) and
 // sideways where the lift bent the funnel (PATH_LEAN), at most JET_LEAN_MOST.
-const SEAL_SPEED = 1 / 7.6;           // the surface seal's number: V·this·s^SEAL_SIZE...
-const SEAL_SIZE = 0.15;
-const SEAL_SPREAD = 0.06;             // ...its chance a logistic around 1 of this width
+const SEAL_FROUDE = 108;              // the surface seal's boundary for a vertical smooth sphere: (ρ/ρa)²/6400 (Birkhoff & Isaacs 1951)...
+const SEAL_IRREGULAR = 0.5;           // ...raised by this times the throw's asymmetry...
+const SEAL_SPREAD = 0.25;             // ...its chance a logistic in ln(F·cos²θ / boundary) of this width
+const SEAL_TIME = 6.5;                // the dome closes this many R/(V·cos θ) after entry, far from the boundary...
 const BULGE_LEAN = [4, 14];           // degrees a jet leans towards a lopsided hole's bulge, at asymmetry 0 and 1...
 const LEANING_EXTRA = [8, 16];        // ...and a leaning jet's more
 const JET_LEAN_MOST = THREE.MathUtils.degToRad(30);   // a jet leans at most this far from vertical
 const PATH_LEAN = 0.6;                // the jet leans by this share of the angle the lift bent the funnel
 
-/** The throw's own choices (above): the seal, the hole's asymmetry, the crown's lopsidedness and the jet's form. */
-function chooseSplash(info, random) {
+/**
+ * The throw's own choices (above): the seal, the hole's asymmetry, the
+ * crown's lopsidedness and the jet's form; `fixed` {seal, regime} fixes the
+ * seal's kind (with its nominal timing) and the jet's form, for a probe.
+ */
+function chooseSplash(info, random, fixed = null) {
   const range = (low, high) => low + random() * (high - low);
   const pick = (weights) => {
     const total = Object.values(weights).reduce((sum, weight) => sum + weight, 0);
@@ -426,19 +461,32 @@ function chooseSplash(info, random) {
   const across = Math.sqrt(Math.max(1 - spin.alongEntry * spin.alongEntry, 0));
 
   const tilt = Math.abs(Math.sin(2 * THREE.MathUtils.degToRad(contact.faceAngle)));
-  const asymmetry = THREE.MathUtils.clamp(
+  const asymmetry = fixed ? 0 : THREE.MathUtils.clamp(
     1.4 * (shape.flatness + 0.5 * shape.elongation) * tilt + 2.5 * Math.max(shape.irregularity - 0.04, 0) + 2.5 * spin.ratio * across + 0.35 * (random() - 0.5), 0, 1);
 
-  // The seal.
+  // The seal: the surface seal's chance and its dome's time (above), from the
+  // entry's Froude number through the oblique mouth against the boundary.
   const blunt = THREE.MathUtils.clamp(contact.bluntness - 1, -0.6, 1.5);
-  const sealNumber = speed * SEAL_SPEED * sizeFactor ** SEAL_SIZE * (1 + 0.12 * blunt);
-  const surfaceChance = 1 / (1 + Math.exp(-(sealNumber - 1) / SEAL_SPREAD));
+  const verticalShare = Math.sqrt(Math.max(1 - horizontalFraction * horizontalFraction, 0.01));
+  const sealFroude = ((speed * verticalShare) ** 2 / (GRAVITY * radius)) * (1 + 0.12 * blunt);
+  const boundary = SEAL_FROUDE * (1 + SEAL_IRREGULAR * asymmetry);
+  const surfaceChance = 1 / (1 + Math.exp(-Math.log(sealFroude / boundary) / SEAL_SPREAD));
   const shallowChance = 0.06 + 0.3 * smoothstep(0.6, 1.6, blunt) * (contact.kind === 'face' ? 1 : 0.4) + 0.4 * smoothstep(5.5, 3.5, speed);
   const sealDraw = random();
-  const sealKind = sealDraw < surfaceChance ? 'surface' : sealDraw < surfaceChance + (1 - surfaceChance) * shallowChance ? 'shallow' : 'deep';
-  const seal = sealKind === 'deep' ? { kind: 'deep', pinch: 2.1 * range(0.95, 1.06), close: 0.4 * range(0.85, 1.2) }
-    : sealKind === 'shallow' ? { kind: 'shallow', pinch: range(1.35, 1.65), close: range(0.22, 0.3), head: range(1.4, 2.4), widen: range(0.5, 0.65) }
-      : { kind: 'surface', pinch: range(1.7, 1.9), close: range(0.3, 0.4), dome: range(0.85, 1.15) };
+  const sealKind = fixed?.seal ?? (sealDraw < surfaceChance ? 'surface' : sealDraw < surfaceChance + (1 - surfaceChance) * shallowChance ? 'shallow' : 'deep');
+  const nominal = Boolean(fixed?.seal);
+  const vary = (low, high) => (nominal ? 1 : range(low, high));
+  let seal;
+  if (sealKind === 'deep') seal = { kind: 'deep', pinch: PINCH_TIME * vary(0.95, 1.06), bowl: vary(0.85, 1.2), mouth: vary(0.9, 1.1) };
+  else if (sealKind === 'shallow') seal = { kind: 'shallow', pinch: range(1.35, 1.65), bowl: range(0.6, 0.8), head: SURFACE_HEAD * range(2, 2.8), mouth: range(1.0, 1.15) };
+  else {
+    // The dome closes later near the boundary, always before the hole pinches.
+    const pinch = nominal ? 1.8 : range(1.7, 1.9);
+    const nearness = Math.min(boundary / sealFroude, 1);
+    const dome = (SEAL_TIME / Math.sqrt(sealFroude)) * (1 + 0.5 * nearness * nearness) * vary(0.9, 1.1);
+    // The dome cuts the hole off from the air, so its mouth stops widening early: the dome spans it.
+    seal = { kind: 'surface', pinch, bowl: vary(0.8, 1.0), mouth: vary(0.25, 0.4), dome: THREE.MathUtils.clamp(dome, 0.35, 0.85 * pinch) };
+  }
 
   // The hole's departure from round, towards the side its lumps bulge it to.
   const liftAcross = info.lift ? Math.hypot(info.lift.shape.x, info.lift.shape.z) : 0;
@@ -453,7 +501,7 @@ function chooseSplash(info, random) {
   // vertical speed there over the entry speed, ω × r at the waterline), a
   // broad face throws it lower and wider, a point taller and narrower.
   const spinLift = 2.5 * spin.ratio;
-  const crown = {
+  const crown = fixed ? { spinX: 0, spinZ: 0, speedScale: 1, tiltShift: 0 } : {
     spinX: spinLift * spin.axis.z, spinZ: -spinLift * spin.axis.x,
     speedScale: contact.kind === 'face' ? range(1.0, 1.08) : contact.kind === 'point' ? range(0.94, 1.02) : range(0.97, 1.04),
     tiltShift: contact.kind === 'face' ? -range(4, 10) : contact.kind === 'point' ? range(2, 6) : 0,
@@ -472,8 +520,8 @@ function chooseSplash(info, random) {
         stubby: 0.12 + 0.5 * big + 0.25 * smoothstep(0.5, 1.5, blunt),
         split: 0.015 + 0.08 * asymmetry * asymmetry,
       };
-  const regime = pick(weights);
-  return { seal, asymmetry, hole, crown, regime, range, random, sizeFactor };
+  const regime = fixed?.regime ?? pick(weights);
+  return { seal, asymmetry, hole, crown, regime, range, random, sizeFactor, surfaceChance, nominal: Boolean(fixed?.regime) };
 }
 
 /**
@@ -481,18 +529,18 @@ function chooseSplash(info, random) {
  * scale and its own lean towards the hole's bulge (degrees), from the
  * throw's stream.
  */
-function jetForm(regime, choice, tipSpeed) {
+function jetForm(regime, choice, bodySpeed) {
   const { range, random, asymmetry } = choice;
   const count = (weights) => { let draw = random(); for (let value = 0; value < weights.length; value++) { draw -= weights[value]; if (draw <= 0) return value; } return weights.length - 1; };
   const beadShares = () => Array.from({ length: 5 }, () => range(0.035, 0.095));
   const bulgeLean = BULGE_LEAN[0] + (BULGE_LEAN[1] - BULGE_LEAN[0]) * asymmetry;
-  const rise = tipSpeed / GRAVITY;   // how long the tip rises
+  const rise = bodySpeed / GRAVITY;   // how long the body rises
   const sealed = choice.seal.kind === 'surface';
   // A jet that pinches many tip beads pinches its first sooner (a thicker
   // neck will do) and gathers the next ones faster.
   const clean = (tipBeads = count([0.08, 0.25, 0.3, 0.24, 0.13])) => ({
     ...CLEAN_FORM,
-    tipBeads, beadShares: beadShares(), firstBulb: range(1.3, 1.95), neckRatio: range(0.42, 0.52) + 0.05 * tipBeads, gatherScale: range(0.25, 0.5) * (1 - 0.12 * tipBeads),
+    tipBeads, beadShares: beadShares(), firstBulb: range(1.3, 1.95), neckRatio: range(0.42, 0.52) + 0.05 * tipBeads, gatherScale: range(0.25, 0.5) * (1 - 0.12 * tipBeads), needle: range(2.5, 3.3),
     radiusScale: range(0.85, 1.15), breakScale: range(0.8, 1.3), dropSpread: [0.55, 1.4], dropCap: range(0.8, 1.2),
     scatter: range(0.8, 1.6), satellites: range(0.4, 0.8), tipSatellites: Math.floor(range(0, 3)), wobble: range(0.7, 1.6),
     irregularity: range(0.15, 0.4), splitTip: random() < 0.1, bend: range(-0.02, 0.03),
@@ -500,13 +548,13 @@ function jetForm(regime, choice, tipSpeed) {
   switch (regime) {
     case 'leaning':
       return {
-        form: { ...clean(count([0.25, 0.4, 0.25, 0.1])), bend: range(0.03, 0.08), wobble: range(1, 2) },
+        form: { ...clean(count([0.25, 0.4, 0.25, 0.1])), bend: range(0.03, 0.08), wobble: range(1, 2), needle: range(1.8, 2.6) },
         speedScale: range(0.75, 0.95), lean: bulgeLean + range(LEANING_EXTRA[0], LEANING_EXTRA[1]),
       };
     case 'ragged':
       return {
         form: {
-          ...CLEAN_FORM, tipBeads: 0, firstBulb: range(0.9, 1.3), radiusScale: range(0.9, 1.3), breakAt: range(0.1, 0.25) * rise,
+          ...CLEAN_FORM, tipBeads: 0, firstBulb: range(0.9, 1.3), radiusScale: range(0.9, 1.3), breakAt: range(0.1, 0.25) * rise, needle: range(1.5, 2.5),
           breakScale: range(0.3, 0.6), dropSpread: [0.3, 1.6], dropCap: 0.8, scatter: range(3, 5), satellites: 0.9, tipSatellites: 0,
           spray: range(2.5, 4), wobble: range(2.5, 4), irregularity: range(0.5, 0.7), bend: range(-0.05, 0.05),
         },
@@ -515,7 +563,7 @@ function jetForm(regime, choice, tipSpeed) {
     case 'stubby':
       return {
         form: {
-          ...CLEAN_FORM, tipBeads: count([0.55, 0.45]), beadShares: beadShares(), firstBulb: range(1.5, 2.1), radiusScale: 1 + range(0.3, 0.6) / Math.sqrt(Math.max(choice.sizeFactor, 1)),
+          ...CLEAN_FORM, tipBeads: count([0.55, 0.45]), beadShares: beadShares(), firstBulb: range(1.5, 2.1), radiusScale: 1 + range(0.3, 0.6) / Math.sqrt(Math.max(choice.sizeFactor, 1)), needle: range(1.0, 1.4),
           breakScale: range(1.3, 2.0), dropSpread: [0.7, 1.3], dropCap: 1.2, satellites: 0.4, wobble: 0.8, irregularity: 0.2,
         },
         speedScale: sealed ? range(0.45, 0.6) : range(0.55, 0.75), lean: bulgeLean * range(0.5, 1),
@@ -526,12 +574,14 @@ function jetForm(regime, choice, tipSpeed) {
       // which subsides in a fizz of small drops.
       return {
         form: {
-          ...CLEAN_FORM, tipBeads: 0, firstBulb: 1.0, radiusScale: range(1.2, 1.4), breakScale: range(1.3, 1.8), dropSpread: [0.5, 1.0],
+          ...CLEAN_FORM, tipBeads: 0, firstBulb: 1.0, radiusScale: range(1.2, 1.4), breakScale: range(1.3, 1.8), dropSpread: [0.5, 1.0], needle: 1,
           dropCap: 0.6, scatter: 0.6, satellites: 0.1, wobble: 0.5, irregularity: 0.2,
         },
         speedScale: range(0.15, 0.22), lean: bulgeLean * range(0.3, 1),
       };
     default:
+      // A probe's fixed clean jet (chooseSplash's `fixed`) is the nominal one.
+      if (choice.nominal) return { form: { ...CLEAN_FORM }, speedScale: 1, lean: 0 };
       return { form: clean(), speedScale: range(0.85, 1.12), lean: bulgeLean * range(0.3, 1) };
   }
 }
@@ -559,7 +609,7 @@ export class SplashSystem {
     this.plumes = [];    // scheduled bubble plumes
     this.wakes = [];     // scheduled cavity splats of an oblique entry
     this.foamStamps = [];   // scheduled foam: a cavity's, when it closes
-    this.flowStarts = [];   // scheduled surface flows: a jet's base, when the hole closes
+    this.bases = [];        // scheduled: a jet's base meeting the water, when the hole's bowl has flattened
     this.cavities = [];  // open cavities (src/cavity.js), drawn in the main scene from cavityGroup
     this.cavityGroup = new THREE.Group();
     this.surface = surface;
@@ -713,7 +763,7 @@ export class SplashSystem {
   /** Something in the air or in the water is moving: droplets, sheets, columns, an open cavity, bubbles, or a stage still to come. */
   get inMotion() {
     return this.count > 0 || this.crowns.length > 0 || this.columns.length > 0 || this.cavities.length > 0 || this.bubbleCount > 0
-      || this.jets.length > 0 || this.plumes.length > 0 || this.wakes.length > 0 || this.foamStamps.length > 0 || this.flowStarts.length > 0;
+      || this.jets.length > 0 || this.plumes.length > 0 || this.wakes.length > 0 || this.foamStamps.length > 0 || this.bases.length > 0;
   }
 
   /** Nothing of the splash is left, foam specks included. */
@@ -735,7 +785,7 @@ export class SplashSystem {
     this.plumes = [];
     this.wakes = [];
     this.foamStamps = [];
-    this.flowStarts = [];
+    this.bases = [];
     this.mirrorList.length = 0;
     this.particleMesh.visible = false;
     this.particleMesh.layers.disable(MIRROR_LAYER);
@@ -770,17 +820,22 @@ export class SplashSystem {
     const jetLean = Math.min(JET_LEAN * entryAngle, JET_LEAN_CAP);
     // How this throw goes (the variety notes above chooseSplash), on its own
     // random stream, seeded by the stone (a stone the impact does not name draws a seed).
+    // A probe may fix the seal and the jet's form (info.fixed: {seal, regime},
+    // tools/basilisk/app-numbers.mjs: the reference simulation's deep seal and a clean jet).
     const seed = info.seed ?? Math.floor(Math.random() * 4294967296);
-    const choice = chooseSplash(info, foamRandom(seed, radius));
+    const choice = chooseSplash(info, foamRandom(seed, radius), info.fixed);
 
     // The hole the stone opens: the crown and the fan launch from its rim and
     // the jet rises where it closes, leaning back along an oblique path,
     // sideways where the lift bent the funnel and towards a lopsided hole's
     // bulge.
     const cavity = this.startCavity(info, water, jetLean, choice);
-    info.rock?.setCavityTimes(cavity.pinchTime, cavity.closeTime);
-    const baseTipSpeed = THREE.MathUtils.clamp(0.42 * entrySpeed + 0.7, 1.2, 6.0) * sizeFactor ** 0.15 * (1 - JET_OBLIQUE_SLOWING * horizontalFraction);
-    const shape = jetForm(choice.regime, choice, baseTipSpeed);
+    info.rock?.setCavityTimes(cavity.pinchTime);
+    // The jet's body leaves at JET_SPEED of the entry speed (src/jet.js; the needle faster), slower from a
+    // dragged cavity, and an oblique entry's sheared hole focuses its needle less.
+    const baseBodySpeed = THREE.MathUtils.clamp(JET_SPEED * entrySpeed, 1.5, 8.0) * sizeFactor ** 0.15 * (1 - JET_OBLIQUE_SLOWING * horizontalFraction);
+    const focus = 1 - NEEDLE_OBLIQUE * horizontalFraction;
+    const shape = jetForm(choice.regime, choice, baseBodySpeed);
     const lean = this.jetLean(cavity, horizontal, horizontalFraction, jetLean, shape.lean, choice.hole.lopsidedAngle);
     cavity.setLean(lean.x, lean.z);
     // What this throw chose, for the probes (tools/variety-probe.mjs) and the shoot harness's reports.
@@ -873,15 +928,21 @@ export class SplashSystem {
     // after an oblique entry leans back along the stone's path and, from a
     // dragged cavity, rises slower.
     const closure = cavity.closurePoint({});
-    // The jet's base wells up there and sweeps the foam out from under it.
-    this.flowStarts.push({ time: this.time + cavity.closeTime, flow: { x: closure.x, z: closure.z, radius: CLOSURE_FLOW * radius, decay: FLOW_DECAY * Math.sqrt(radius / GRAVITY) } });
-    const tipSpeed = baseTipSpeed * shape.speedScale;
+    // When the bowl has flattened the jet's base meets the water there (startBase).
+    this.bases.push({ time: this.time + cavity.closeTime, x: closure.x, z: closure.z, radius, speed: entrySpeed });
+    const bodySpeed = baseBodySpeed * shape.speedScale;
+    const unfocused = (form) => ({ ...form, needle: 1 + (form.needle - 1) * focus });
     const total = Math.round(THREE.MathUtils.clamp(220 * sizeFactor ** 1.3, 80, 1200));
     const leanAngle = Math.atan(Math.hypot(lean.x, lean.z));
     const leanLength = Math.hypot(lean.x, lean.z) || 1;
+    // A throw with no jet ('none') only heaves a mound, once the bowl has nearly filled.
+    const jetStart = cavity.pinchTime + (choice.regime === 'none' ? MOUND_DELAY * cavity.bowlUnit : 0);
     const jet = {
-      x: closure.x, z: closure.z, radius, start: this.time + cavity.closeTime, total, tipSpeed, speed: entrySpeed,
-      lean: leanAngle, leanX: lean.x / leanLength, leanZ: lean.z / leanLength, form: shape.form, regime: choice.regime,
+      x: closure.x, z: closure.z, radius, start: this.time + jetStart, total, bodySpeed,
+      floor: (age, out) => cavity.bowlFloorAt(jetStart + age, out), bowlUnit: cavity.bowlUnit,
+      // The jet carries JET_SHARE of the water that fills the bowl, more for a fatter form, less for a slower one.
+      volume: JET_SHARE * cavity.bowlVolume * shape.form.radiusScale ** 2 * shape.speedScale,
+      lean: leanAngle, leanX: lean.x / leanLength, leanZ: lean.z / leanLength, form: unfocused(shape.form), regime: choice.regime,
       random: foamRandom(seed, radius, 1),
     };
     if (choice.regime === 'split') {
@@ -897,9 +958,9 @@ export class SplashSystem {
         const length = Math.hypot(tiltX, tiltZ) || 1;
         this.jets.push({
           ...jet, x: closure.x + side * apart * Math.cos(across), z: closure.z + side * apart * Math.sin(across),
-          total: Math.round(total * part), tipSpeed: tipSpeed * range(0.88, 1.08),
+          total: Math.round(total * part), bodySpeed: bodySpeed * range(0.88, 1.08), volume: jet.volume * part,
           lean: Math.atan(length), leanX: tiltX / length, leanZ: tiltZ / length,
-          form: { ...jetForm('clean', choice, tipSpeed).form, tipBeads: Math.floor(range(0, 3)), share: part }, companion: index > 0,
+          form: unfocused({ ...jetForm('clean', choice, bodySpeed).form, tipBeads: Math.floor(range(0, 3)), share: part }), companion: index > 0,
           random: foamRandom(seed, radius, 2 + index),
         });
       });
@@ -1046,22 +1107,29 @@ export class SplashSystem {
    * programs, whatever form it draws.
    */
   startJet(jet, water) {
-    if (!jet.companion) {
-      water.addSplat({ x: jet.x, z: jet.z, radius: jet.radius * 0.6, height: 0.06 * jet.radius, velocity: 0.05 * jet.speed });
-      this.stampFoamPatch(water, foamRandom(jet.x, jet.z, jet.start), { x: jet.x, z: jet.z, radius: jet.radius, amount: JET_BASE_BOIL, reach: 1.0, radii: [0.3, 0.6], lifetime: BOIL_LIFETIME, boil: true });
-    }
     if (this.columns.length >= MAX_JETS) {
       const oldest = this.columns[0];
       oldest.finishNow(this, this.columnWater(oldest, water));
       this.retireColumn(oldest);
     }
     const column = new JetColumn({
-      x: jet.x, z: jet.z, radius: jet.radius, tipSpeed: jet.tipSpeed,
+      x: jet.x, z: jet.z, radius: jet.radius, speed: jet.bodySpeed, bowlUnit: jet.bowlUnit, volume: jet.volume,
       startTime: jet.start, budget: jet.total, material: this.columnDepthMaterial,
-      lean: jet.lean, leanX: jet.leanX, leanZ: jet.leanZ, form: jet.form, random: jet.random,
+      lean: jet.lean, leanX: jet.leanX, leanZ: jet.leanZ, form: jet.form, random: jet.random, floor: jet.floor,
     });
     this.columns.push(column);
     this.particleScene.add(column.mesh);
+  }
+
+  /**
+   * The bowl has flattened into the surface: where the jet rose, its base
+   * meets the water in a low mound and a boil, and wells up, sweeping the
+   * foam out from under it.
+   */
+  startBase(base, water) {
+    water.addSplat({ x: base.x, z: base.z, radius: base.radius * 0.6, height: 0.06 * base.radius, velocity: 0.05 * base.speed });
+    this.stampFoamPatch(water, foamRandom(base.x, base.z, base.time), { x: base.x, z: base.z, radius: base.radius, amount: JET_BASE_BOIL, reach: 1.0, radii: [0.3, 0.6], lifetime: BOIL_LIFETIME, boil: true });
+    water.addFoamFlow?.({ x: base.x, z: base.z, radius: CLOSURE_FLOW * base.radius, decay: FLOW_DECAY * Math.sqrt(base.radius / GRAVITY) });
   }
 
   retireColumn(column) {
@@ -1180,8 +1248,8 @@ export class SplashSystem {
     this.wakes = this.wakes.filter((wake) => this.time < wake.start);
     for (const stamp of this.foamStamps) if (this.time >= stamp.time) water.addFoam(stamp.foam);
     this.foamStamps = this.foamStamps.filter((stamp) => this.time < stamp.time);
-    for (const start of this.flowStarts) if (this.time >= start.time) water.addFoamFlow?.(start.flow);
-    this.flowStarts = this.flowStarts.filter((start) => this.time < start.time);
+    for (const base of this.bases) if (this.time >= base.time) this.startBase(base, water);
+    this.bases = this.bases.filter((base) => this.time < base.time);
     for (const cavity of this.cavities) cavity.update(this.time);
     for (const cavity of this.cavities.filter((candidate) => candidate.finished)) this.retireCavity(cavity);
 

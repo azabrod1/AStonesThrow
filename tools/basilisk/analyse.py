@@ -569,20 +569,20 @@ def comparison_rows(summary, app):
         rows.append((group, quantity, simulated, app_value, note))
     cavity, jet, crown, stone = (summary.get(key, {}) for key in ('cavity', 'jet', 'crown', 'stone'))
     ac = app['cavity']
-    add('cavity', 'pinch-off, ms after contact', cavity.get('pinch_time_ms'), (ac['pinchTime'] - shift) * 1000, 'PINCH_TIME = 2.1 sqrt(R/g) on the splash clock')
+    add('cavity', 'pinch-off, ms after contact', cavity.get('pinch_time_ms'), (ac['pinchTime'] - shift) * 1000, 'PINCH_TIME = 2.06 sqrt(R/g) on the splash clock, which starts a substep (4.2 ms) before contact')
     add('cavity', 'pinch-off, sqrt(R/g) after contact', cavity.get('pinch_time_sqrt_R_g'), (ac['pinchTime'] - shift) * 1000 / unit, 'Duclaux et al. 2007: 2.06')
-    add('cavity', 'pinch-off depth, R', cavity.get('pinch_depth_R'), ac['pinchDepth'] / R)
-    add('cavity', "stone's centre depth at the pinch-off, R", cavity.get('stone_depth_at_pinch_R'), ac['stoneDepthAtPinch'] / R)
+    add('cavity', 'pinch-off depth, R', cavity.get('pinch_depth_R'), ac['pinchDepth'] / R, 'SURFACE_HEAD = 5.25 R sets it')
+    add('cavity', "stone's centre depth at the pinch-off, R", cavity.get('stone_depth_at_pinch_R'), ac['stoneDepthAtPinch'] / R, 'the head on the stone while the hole is open (stone rows)')
     add('cavity', 'pinch depth / stone depth', cavity.get('pinch_over_stone_depth'), ac['pinchDepth'] / ac['stoneDepthAtPinch'], 'Duclaux et al.: about 1/2')
-    add('cavity', 'surface closed, ms after contact', cavity.get('surface_closes_ms'), (ac['closeTime'] - shift) * 1000, 'CLOSE_TIME = 0.4 sqrt(R/g) after the pinch')
-    add('cavity', 'widest mouth (wall at the still surface), R', cavity.get('widest_mouth_R'), ac['widestMouth'] / R, 'WIDEN = 0.45')
+    add('cavity', 'surface closed, ms after contact', cavity.get('surface_closes_ms'), (ac['closeTime'] - shift) * 1000, 'app: the bowl above the neck has flattened into the surface (closeTime)')
+    add('cavity', 'widest mouth (wall at the still surface), R', cavity.get('widest_mouth_R'), ac['widestMouth'] / R, 'MOUTH_WIDEST = 3.6 R for this Froude number; 3.1 R by the pinch-off (the reference: 3.1)')
     add('cavity', 'widest mouth, ms after contact', cavity.get('widest_mouth_ms'), (ac['widestTime'] - shift) * 1000)
     aj = app['jet']
-    add('jet', 'above the still surface, ms after contact', jet.get('emerges_ms'), (aj['startTime'] - shift) * 1000 if aj.get('startTime') is not None else None, "the app's jet starts at the surface's closure")
+    add('jet', 'above the still surface, ms after contact', jet.get('emerges_ms'), (aj['startTime'] - shift) * 1000 if aj.get('startTime') is not None else None, "app: the needle's first material clears the still surface; the jet starts at the pinch-off")
     add('jet', 'tip speed as it emerges, m/s', jet.get('speed_at_emergence_m_s'), aj.get('tipSpeed'))
-    add('jet', 'fastest tip above the surface, m/s', jet.get('fastest_tip_above_surface_m_s'), aj.get('tipSpeed'))
+    add('jet', 'fastest tip above the surface, m/s', jet.get('fastest_tip_above_surface_m_s'), aj.get('tipSpeed'), 'app: the needle leaves at 3 times the body (0.75 of the entry speed)')
     top = int(np.argmax(aj['top'])) if aj['top'] else None
-    add('jet', 'highest tip, mm', jet.get('top_mm'), aj['top'][top] * 1000 if top is not None else None)
+    add('jet', 'highest tip, mm', jet.get('top_mm'), aj['top'][top] * 1000 if top is not None else None, "app: the column's top; its tip drops fly higher")
     add('jet', 'highest tip, ms after contact', jet.get('top_ms'), (aj['t'][top] - shift) * 1000 if top is not None else None)
     tip_drops = [drop for drop in aj['drops'] if drop['radius'] >= 0.002]
     first = jet.get('first_tip_drop')
@@ -591,10 +591,10 @@ def comparison_rows(summary, app):
     add('jet', 'drops of 2 mm radius or more from the jet', jet.get('tip_drops'), len(tip_drops), 'simulation: drops leaving the tip along the axis')
     acr = app['crown']
     peak = int(np.argmax(acr['rimHeight'])) if acr['rimHeight'] else None
-    add('crown', 'highest rim, mm above the still surface', crown.get('peak_height_mm'), acr['rimHeight'][peak] * 1000 if peak is not None else None)
+    add('crown', 'highest rim, mm above the still surface', crown.get('peak_height_mm'), acr['rimHeight'][peak] * 1000 if peak is not None else None, "the sheet's drag time 0.085 s (CROWN_DRAG), a little shorter than this light air's fit, for real air")
     add('crown', 'highest rim, ms after contact', crown.get('peak_ms'), (acr['t'][peak] - shift) * 1000 if peak is not None else None)
-    add('crown', 'rim radius at the highest, mm', crown.get('radius_at_peak_mm'), acr['reach'][peak] * 1000 if peak is not None else None, "app: the sheet's farthest point from the axis")
-    add('crown', 'tears (first ring over 1 ml shed from the rim), ms after contact', crown.get('first_ring_over_1ml_ms'), (acr['breakTime'] - shift) * 1000, 'axisymmetric: no fingers; the rim breaks off as rings')
+    add('crown', 'rim radius at the highest, mm', crown.get('radius_at_peak_mm'), acr['reach'][peak] * 1000 if peak is not None else None, "app: the sheet's highest point's distance from the axis")
+    add('crown', 'tears (first ring over 1 ml shed from the rim), ms after contact', crown.get('first_ring_over_1ml_ms'), (acr['breakTime'] - shift) * 1000, 'app: the sheet tears when its rim stalls; axisymmetric: no fingers, the rim breaks off as rings')
     add('crown', 'collapsed (rim under a quarter of its peak), ms', crown.get('collapsed_ms'), (acr['endTime'] - shift) * 1000, "app: the sheet's end")
     for app_ring in app['ring']['summary']:
         ring = summary.get('rings', {}).get('r%g' % app_ring['r'], {})
@@ -606,9 +606,9 @@ def comparison_rows(summary, app):
         add('ring', 'highest crest at %g m, s after contact' % app_ring['r'], ring.get('crest_time_s'), app_ring['crestTime'] - shift)
         add('ring', 'wavelength at the crest at %g m, cm' % app_ring['r'], ring.get('wavelength_cm'), app_ring['wavelength'] * 100, 'from the period between the zero crossings around the crest')
     fit = stone.get('open_cavity_fit') or {}
-    add('stone', 'drag coefficient (pressure force less the head on the front)', stone.get('force_minus_head_coefficient_median_10_300ms'), 0.5, "src/rock.js; the simulation's stone follows the app's path")
-    add('stone', 'open hole: drag coefficient Cd in F = Cd·½ρU²πR² + Ch·ρgh·πR²', fit.get('drag_coefficient'), 0.5, 'app: Cd 0.5 and buoyancy only')
-    add('stone', 'open hole: head coefficient Ch', fit.get('head_coefficient'), None, 'h: depth of the centre')
+    add('stone', 'drag coefficient (pressure force less the head on the front)', stone.get('force_minus_head_coefficient_median_10_300ms'), 0.46, "src/rock.js; the simulation's stone follows the app's path")
+    add('stone', 'open hole: drag coefficient Cd in F = Cd·½ρU²πR² + Ch·ρgh·πR²', fit.get('drag_coefficient'), 0.46, 'app: Cd 0.46 and Ch 0.6 while the hole is open, buoyancy once it has pinched off')
+    add('stone', 'open hole: head coefficient Ch', fit.get('head_coefficient'), 0.6, 'h: depth of the centre')
     return rows
 
 
@@ -616,23 +616,25 @@ def write_comparison(out, summary, app, checks=()):
     """comparison.csv: each quantity, the simulation's value (the run, then
     each check: (label, summary)), the app's, and their ratio to the run's."""
     main = comparison_rows(summary, app)
-    others = [(label, comparison_rows(other, app)) for label, other in checks]
+    # A check's rows are matched by their quantity, not their place: a check
+    # has no continued ring, so it keeps ring rows the run leaves out.
+    others = [(label, {(group, quantity): simulated for group, quantity, simulated, _, _ in comparison_rows(other, app)}) for label, other in checks]
     level = int(summary['parameters']['max_level'])
     cell = lambda value: '' if value is None else ('%.4g' % value)
     with open(os.path.join(out, 'comparison.csv'), 'w') as handle:
         handle.write('group,quantity,level %d%s,app,app_over_level_%d,note\n' % (level, ''.join(',%s' % label for label, _ in others), level))
-        for index, (group, quantity, simulated, app_value, note) in enumerate(main):
+        for group, quantity, simulated, app_value, note in main:
             ratio = app_value / simulated if simulated not in (None, 0) and app_value is not None else None
             handle.write('%s,"%s",%s%s,%s,%s,"%s"\n' % (group, quantity, cell(simulated),
-                         ''.join(',%s' % cell(rows[index][2]) for _, rows in others), cell(app_value), cell(ratio), note))
+                         ''.join(',%s' % cell(rows.get((group, quantity))) for _, rows in others), cell(app_value), cell(ratio), note))
     # The same as a Markdown table, for the README.
     short = lambda value: '' if value is None else ('%.3g' % value)
     with open(os.path.join(out, 'comparison.md'), 'w') as handle:
         handle.write('| | quantity | level %d%s | app | note |\n' % (level, ''.join(' | %s' % label for label, _ in others)))
         handle.write('|---|---|---%s|---|---|\n' % ('|---' * len(others)))
-        for index, (group, quantity, simulated, app_value, note) in enumerate(main):
+        for group, quantity, simulated, app_value, note in main:
             handle.write('| %s | %s | %s%s | %s | %s |\n' % (group, quantity, short(simulated),
-                         ''.join(' | %s' % short(rows[index][2]) for _, rows in others), short(app_value), note))
+                         ''.join(' | %s' % short(rows.get((group, quantity))) for _, rows in others), short(app_value), note))
     return main
 
 

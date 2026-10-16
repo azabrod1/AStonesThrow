@@ -8,10 +8,13 @@
 // below) so the splash can be built from it (the cavity follows the stone
 // down from there): the splash starts at first contact, not once the stone is
 // partly under, which for a 16 cm stone at 5 m/s down would be several
-// milliseconds late. Under water a quadratic drag stops it within a few radii,
-// a sideways lift curves its path a little, and buoyancy-reduced gravity sinks
-// it to the floor, where it settles into the sand (sinkStep in src/cavity.js,
-// which traces the cavity along the same path).
+// milliseconds late. Under water a quadratic drag and, while its hole is open,
+// the water's head on its front (the reference simulation's fit, C_d 0.46 and
+// C_h 0.6) stop it within a few radii, a sideways lift curves its path a
+// little, and once the hole has pinched off buoyancy-reduced gravity sinks it
+// to the floor, where it settles into the sand (sinkStep in src/cavity.js,
+// which traces the cavity along the same path; the splash tells the stone
+// when its hole pinches off, setCavityTimes).
 //
 // The stone's properties at impact (`shape`, `contact`, `spin`, `lift` in the
 // report), which make one splash unlike the next (src/splash.js), and `seed`,
@@ -63,13 +66,13 @@
 // through the still surface (SEEN_THROUGH_WATER, src/shaders/scene.js), not
 // on the straight line from the camera, once the water has closed over it:
 // while its cavity is open (src/cavity.js) it is in air, seen through the
-// hole, and drawn where it is; from the pinch-off to the closure of the
-// surface it moves over to where the water shows it. Those times are its
-// cavity's (setCavityTimes, which the splash calls with the report's `rock`),
-// PINCH_TIME and CLOSE_TIME times sqrt(R/g) after the impact until then.
+// hole, and drawn where it is; from the pinch-off, over NECK_CLOSE·sqrt(R/g)
+// as the neck closes over it, it moves over to where the water shows it. The
+// pinch-off is its cavity's (setCavityTimes, which the splash calls with the
+// report's `rock`), PINCH_TIME·sqrt(R/g) after the impact until then.
 import * as THREE from 'three';
 import { SEEN_THROUGH_WATER } from './shaders/scene.js';
-import { PINCH_TIME, CLOSE_TIME, SPIN_DECAY, sinkStep } from './cavity.js';
+import { PINCH_TIME, NECK_CLOSE, SPIN_DECAY, sinkStep } from './cavity.js';
 
 const ROCK_DENSITY = 2600;
 const GRAVITY = 9.81;
@@ -256,7 +259,8 @@ export class Rock {
     this.reach = this.geometry.boundingSphere.center.length() + this.geometry.boundingSphere.radius;   // furthest any point gets from the centre, in radii
     this.shape = stoneShape(this.geometry);
     this.liftHeading = Math.random() * Math.PI * 2;   // the direction its lumps push it (the header)
-    this.body = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, time: 0, liftX: 0, liftY: 0, liftZ: 0, spinLiftX: 0, spinLiftY: 0, spinLiftZ: 0, resting: false };
+    this.body = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, time: 0, liftX: 0, liftY: 0, liftZ: 0, spinLiftX: 0, spinLiftY: 0, spinLiftZ: 0, resting: false, openUntil: undefined };
+    this.impactStep = 0;
     const baseColor = new THREE.Color().setHSL(0.08 + Math.random() * 0.04, 0.08 + Math.random() * 0.1, 0.3 + Math.random() * 0.14);
     // The seed of its splash's own random stream (src/splash.js), drawn now so
     // that a seeded throw splashes alike however its flight is stepped.
@@ -277,7 +281,7 @@ export class Rock {
     // Under the water: where the surface shows it (the header), by this much.
     const seenThroughWater = this.seenThroughWater = { value: 0 };
     this.sinceImpact = -1;
-    this.cavityTimes = null;   // its cavity's pinch-off and surface closure (s after the impact), once the splash says
+    this.cavityTimes = null;   // its cavity's pinch-off (s after the impact), once the splash says
     this.meshBelow.material.onBeforeCompile = (shader) => {
       shader.uniforms.uSeenThroughWater = seenThroughWater;
       shader.vertexShader = shader.vertexShader
@@ -379,9 +383,15 @@ export class Rock {
     return { shape: shapeLift, spin: spinLift };
   }
 
-  /** The splash's cavity for this stone pinches off and closes these many seconds after the impact. */
-  setCavityTimes(pinchTime, closeTime) {
-    this.cavityTimes = { pinchTime, closeTime };
+  /**
+   * The splash's cavity for this stone pinches off this many seconds after the
+   * impact (on the splash's clock, which starts a substep before the stone's
+   * own under water): its head acts until then (sinkStep), and it is seen
+   * through the water from then on.
+   */
+  setCavityTimes(pinchTime) {
+    this.cavityTimes = { pinchTime };
+    this.body.openUntil = pinchTime - this.impactStep;
   }
 
   syncMeshes() {
@@ -411,9 +421,12 @@ export class Rock {
         this.state = 'water';
         const speed = this.velocity.length();
         const lift = this.liftAt(this.velocity);
+        // Its hole is open, and its head acts, until the pinch-off: PINCH_TIME·sqrt(R/g) until the splash says (setCavityTimes).
+        this.impactStep = dt;
         Object.assign(this.body, {
           x: this.position.x, y: this.position.y, z: this.position.z, vx: this.velocity.x, vy: this.velocity.y, vz: this.velocity.z, time: 0,
           liftX: lift.shape.x, liftY: lift.shape.y, liftZ: lift.shape.z, spinLiftX: lift.spin.x, spinLiftY: lift.spin.y, spinLiftZ: lift.spin.z, resting: false,
+          openUntil: PINCH_TIME * Math.sqrt(this.radius / GRAVITY) - dt,
         });
         impact = {
           x: this.position.x,
@@ -457,8 +470,7 @@ export class Rock {
     if (this.sinceImpact >= 0) {
       const timeUnit = Math.sqrt(this.radius / GRAVITY);
       const pinchTime = this.cavityTimes?.pinchTime ?? PINCH_TIME * timeUnit;
-      const closeTime = this.cavityTimes?.closeTime ?? (PINCH_TIME + CLOSE_TIME) * timeUnit;
-      const progress = THREE.MathUtils.clamp((this.sinceImpact - pinchTime) / Math.max(closeTime - pinchTime, 1e-4), 0, 1);
+      const progress = THREE.MathUtils.clamp((this.sinceImpact - pinchTime) / (NECK_CLOSE * timeUnit), 0, 1);
       this.seenThroughWater.value = progress * progress * (3 - 2 * progress);
     }
     this.syncMeshes();

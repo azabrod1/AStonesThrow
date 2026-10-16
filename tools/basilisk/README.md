@@ -16,17 +16,16 @@ The reference is level 12 with air ten times lighter than real (see below
 why); level 11 and level 13 are the resolution checks. Times are from first
 contact; R = 3 cm, sqrt(R/g) = 55.3 ms. `comparison.md` sets every number
 against the app's for the same vertical entry at 6.3 m/s (app-numbers.mjs).
-**State of the files:** the splash's results (the cavity, the jet, the
-crown, the stone: their CSV files, plots and rows of the table) were made
-when the reference run had reached 0.33 s, against the app of that commit
-(`app.json`). The run has since reached 4 s, and the rings come from it:
+**State of the files:** every file in `results/` comes from the reference
+run to its end at 4 s, against the app calibrated to it (`app.json`:
+app-numbers.mjs with the splash's and the rings' calibration). The rings:
 `rings_linear.csv`, `.md` and `.png` (rings.py: the surface at 1 s followed
 on linearly to 8 s), `rings.csv` and `rings.png` (the gauges to 4 s, with that
 continuation and the app's ring), the ring rows of the table (from the
-continuation) and the ring section of `app.json` (app-numbers.mjs as of the
-rings' calibration, `src/rings.js`, with the surface film off as in the
-simulation); `summary.json` has the continued ring under `rings` and the
-gauges' own measures under `rings_from_gauges`.
+continuation; the app's ring from `src/rings.js` with the surface film off as
+in the simulation); `summary.json` has the continued ring under `rings` and
+the gauges' own measures under `rings_from_gauges`. The bullets below give
+the app before the calibration, which is what they were measured against.
 
 - **Cavity.** It pinches off 109.8 ms after contact (1.99 sqrt(R/g); level 11:
   108.7 ms, 1% apart; Duclaux et al.: 2.06), 226 mm down (7.5 R), with the
@@ -40,9 +39,10 @@ gauges' own measures under `rings_from_gauges`.
   clears the still surface at 118 ms (level 11: 126 ms) at 13 to 16 m/s,
   shedding drops of 2 to 6 mm from 120 ms on; the column's joined top
   reaches 75 cm at 0.2 s and 81 cm at 0.33 s, slowing to about 4 m/s by
-  0.25 s, while the bowl's collapse builds a broad cone under it (5 cm across
-  at the surface at 0.25 s). The app's jet starts at 134 ms at 3.35 m/s and
-  tops out at 0.51 m at 450 ms.
+  0.25 s, and coasts on to 1.39 m at 665 ms, while the bowl's collapse builds
+  a broad cone under it (5 cm across at the surface at 0.25 s); the bowl has
+  flattened into the surface by about 0.5 s. The app's jet started at 134 ms
+  at 3.35 m/s and topped out at 0.51 m at 450 ms.
 - **Crown.** With the light air it stands open at levels 11 and 12, 11 to
   12 cm high at 0.1 s with its rim 8 to 10 cm out, breaking off rings of 2 to
   14 ml from 27 ms on (an axisymmetric sheet cannot finger). At level 13 its

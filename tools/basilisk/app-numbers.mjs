@@ -13,10 +13,13 @@
 //     pinch-off (time, depth, the stone's depth then), the closure, and every
 //     ms the mouth's radius, the lip's height and the hole's depth,
 //   - the crown: when it tears and is gone, and every substep the rim's
-//     height (the sheet's highest point) and reach (its farthest point from
+//     height (the sheet's highest point) and reach (that point's distance from
 //     the axis),
-//   - the jet: its start and tip speed, every substep the column's top, and
-//     every drop it sheds (time, height, radius, rising speed),
+//   - the jet: when it is launched (the pinch-off), when its needle's first
+//     material clears the still surface (startTime, which the comparison
+//     sets against the simulation's emergence) and how fast it rises then
+//     (tipSpeed), every substep the column's top, and every drop it sheds
+//     (time, height, radius, rising speed),
 //   - the ring: the ring source the splash hands the rings (src/rings.js)
 //     with the solver's near-field splats as wide as a quarter of the stone
 //     and more (the jet's mound and base) added, at the simulation's gauge
@@ -85,8 +88,11 @@ splash.spawnDroplet = (x, y, z, vx, vy, vz, dropRadius, lens) => {
   spawnDroplet(x, y, z, vx, vy, vz, dropRadius, lens);
 };
 
+// The reference simulation's case: a ball, its air light enough that it seals deep (tools/basilisk/README.md),
+// so the splash's choices are fixed to a deep seal with its nominal timing and a clean jet.
 const impact = {
   x: 0, z: -1.4, height: RADIUS, speed: SPEED, velocity: new THREE.Vector3(0, -SPEED, 0), radius: RADIUS,
+  fixed: { seal: 'deep', regime: 'clean' },
 };
 splash.impact(impact, water);
 const cavity = splash.cavities[0];
@@ -105,7 +111,7 @@ const out = {
     closeTime: round(cavity.closeTime), t: [], mouth: [], lipHeight: [], holeDepth: [],
   },
   crown: { breakTime: round(crown.breakTime), endTime: round(crown.endTime), t: [], rimHeight: [], reach: [] },
-  jet: { startTime: null, t: [], top: [], drops: jetDrops },
+  jet: { launchTime: null, startTime: null, tipSpeed: null, t: [], top: [], drops: jetDrops },
   ring: { r: GAUGES, t: [], eta: [], summary: [] },
 };
 for (let time = 0; time <= 0.6 + 1e-9; time += 0.001) {
@@ -132,10 +138,12 @@ for (let frame = 0; frame < 2 * 60; frame++) {
     }
     if (splash.crowns.includes(crown)) {
       crown.updateGeometry(time);
+      // The rim: the sheet's highest point, and its distance from the axis.
       let height = -Infinity, reach = 0;
       for (let vertex = 0; vertex < crown.positions.length / 3; vertex++) {
-        height = Math.max(height, crown.positions[vertex * 3 + 1]);
-        reach = Math.max(reach, Math.hypot(crown.positions[vertex * 3] - crown.centreX, crown.positions[vertex * 3 + 2] - crown.centreZ));
+        if (crown.positions[vertex * 3 + 1] <= height) continue;
+        height = crown.positions[vertex * 3 + 1];
+        reach = Math.hypot(crown.positions[vertex * 3] - crown.centreX, crown.positions[vertex * 3 + 2] - crown.centreZ);
       }
       out.crown.t.push(round(time, 4));
       out.crown.rimHeight.push(round(height));
@@ -143,13 +151,17 @@ for (let frame = 0; frame < 2 * 60; frame++) {
     }
     if (!column && splash.columns.length > 0) {
       column = splash.columns[0];
-      out.jet.startTime = round(column.startTime);
-      out.jet.tipSpeed = round(column.tipSpeed ?? NaN, 4);
+      out.jet.launchTime = round(column.startTime);
     }
     if (column && splash.columns.includes(column)) {
       column.updateGeometry(time);
       out.jet.t.push(round(time, 4));
       out.jet.top.push(round(column.positions[1]));
+      // The needle's first material clears the still surface: when, and how fast it rises then.
+      if (out.jet.startTime === null && column.heightAt(0) > 0) {
+        out.jet.startTime = round(time);
+        out.jet.tipSpeed = round(column.evaluate(0, {}).vy, 4);
+      }
     }
   }
   splash.prepareFrame();
