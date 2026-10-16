@@ -109,12 +109,15 @@ known timing, and the droplets are choreographed from them:
    cavity (2.), biased forward. It is water launched from the ring over a few
    milliseconds, each element then flying on its own, slowed by surface
    tension and air, so the whole sheet is a closed form in launch time,
-   azimuth and time. Its rim thickens into a bead and grows fingers: narrow
-   rods of water between shallow arcs of rim, each ending in a round bead
-   that swells, pinches off as a drop as big as the rim is thick, and
-   starts again; after about 60 ms (for a 3 cm stone) the sheet tears, the
-   arcs first and the fingers last, from the rim down into drops that carry
-   its velocity. A thrown stone enters obliquely (about 40
+   azimuth and time: a tall, nearly upright wall that stands on the lip and
+   leans in, 11 cm high at 90 ms for a 3 cm stone dropped straight in at
+   6.3 m/s (the reference simulation's: 11 to 12 cm at 0.1 s, below). Its rim
+   thickens into a bead and grows fingers: narrow rods of water between
+   shallow arcs of rim, each ending in a round bead that swells, pinches off
+   as a drop as big as the rim is thick, and starts again; once its rim stalls
+   (about 90 ms for a 3 cm stone) the sheet tears, the arcs first and the
+   fingers last, from the rim down into drops that carry its velocity. A
+   thrown stone enters obliquely (about 40
    to 55° from vertical), and then a fan comes first: the same sheet model
    over a sector 60° either side of the direction of travel, launched from
    the forward contact line at about 0.9 of the entry speed and 65 to 75°
@@ -124,35 +127,45 @@ known timing, and the droplets are choreographed from them:
    water, its lip lifted around it and the stone at its bottom, sheared
    along an oblique stone's path. Each slice of water opens when the stone
    passes it and closes under the water's pressure (the Rayleigh–Besant
-   picture: a(z, t) = R·√((1 − s)(1 + (1 + B)s)), s the slice's age over its
-   lifetime), so the hole necks and pinches off about 2.1·√(R/g) after entry
-   at about half the stone's depth then, closes from the neck up and closes
-   at the surface 0.4·√(R/g) later (a deep seal; some throws seal shallower or
-   at the surface, below). It is a closed form drawn as a mesh with
+   picture: a(z, t) = R·√(1 + B·s − (1 + B)·s⁴), s the slice's age over its
+   lifetime), so the hole is a wide funnel that necks and pinches off about
+   2.06·√(R/g) after entry, about 7.5 R down for a 3 cm stone dropped straight
+   in at 6.3 m/s; the bowl above the neck stays open and fills from below,
+   and has flattened into the surface about √(z/g) after the pinch, z its
+   depth (a deep seal; some throws seal shallower or at the surface, below).
+   While the hole is open the water's head presses on the stone's front, as
+   well as its drag, and nothing buoys it. It is a closed form drawn as a mesh with
    the water's own shader, darkening with depth; the surface dips under its
    lip so it never shows through. A stone is no ball: each slice opens to the
    outline the stone had as it passed, turning as it tumbles, with a bulge and
    lobes from its lumps, so an irregular stone's hole is oval, lopsided and
    wobbles with depth, and closes off-centre, towards its bulge. For a 3 cm
-   stone thrown at 6.3 m/s the mouth widens to 1.45 R, and sealing deep the
-   hole pinches about 6 R down at about 116 ms and closes at about 140 ms.
-   Its splat launches the ring; an oblique entry drags it
+   stone thrown at 6.3 m/s the mouth widens to 3.6 R, and sealing deep the
+   hole pinches about 6 R down at about 115 ms and its bowl has flattened by
+   about 240 ms. Its splat launches the ring; an oblique entry drags it
    forward, so the ring runs stronger ahead than behind; its foam comes when
-   the hole closes;
-3. Worthington jet (`src/jet.js`): a glassy column fired up from where the
-   hole closed, after an oblique entry leaning back along the stone's path (by
-   0.4 of the entry angle, at most 18°) and a little slower. It is
-   water launched from the collapse point, fastest first, each element then
-   flying ballistically, so the column is a closed form in launch time,
-   azimuth and time; it stretches as it rises, its radius set by volume
-   conservation, widest at the base. A bulb at its tip pinches off into
-   large drops (the largest of the splash), none to four of them, with
-   satellites, then the column breaks from the top down into drops about
-   twice its local radius, as a Rayleigh–Plateau instability does, growing
-   uneven varicose beads before it parts; its slow base falls back into a
-   mound that throws a small secondary ring. For a 3 cm stone a clean jet
-   reaches a quarter to half a metre and is gone about half a second
-   after entry, but each throw's jet has a form of its own (below);
+   the bowl has flattened;
+3. Worthington jet (`src/jet.js`): a glassy column fired up the axis from
+   the bowl's floor at the pinch-off, after an oblique entry leaning back
+   along the stone's path (by 0.4 of the entry angle, at most 18°) and a
+   little slower. It is water launched from a point that rises with the
+   bowl's floor, fastest first: a thin needle at up to three times the body's
+   speed, the body, and a broad slow base that the bowl's collapse builds,
+   each element then flying ballistically, so the column is a closed form in
+   launch time, azimuth and time; it stretches as it rises, its radius set by
+   volume conservation, widest at the base. A bulb at its tip pinches off
+   into drops, none to four of them, with satellites, then the column breaks
+   from the top down into drops about twice its local radius, a piece every
+   capillary time of the column, as a Rayleigh–Plateau instability does,
+   growing uneven varicose beads before it parts; its slow base falls back
+   into a mound that throws a small secondary ring. For a 3 cm stone dropped
+   straight in at 6.3 m/s the needle clears the surface 131 ms after entry at
+   14 m/s, its first tip drop 3 mm in radius, and the column is 6 cm across
+   at the water at 0.25 s and stands 60 to 70 cm tall at half a second
+   (the reference simulation: 118 ms, 13 to 16 m/s, 2.4 mm, 5 cm, and an
+   unbroken 81 cm, an upper bound); thrown at 42° a clean jet stands 25 to
+   45 cm, its tip drops flying higher, but each throw's jet has a form of its
+   own (below);
 4. bubbles that follow the stone down its path, rise and burst into foam.
 
 Drops ring the water where they land, and the big ones (the jet's, and the
@@ -169,18 +182,21 @@ stone or a lumpy, spinning one is pushed sideways as it goes in, so its path
 curves a little. From these, the throw's size, speed and angle and a random
 stream seeded by the stone, the splash chooses (`chooseSplash` in
 `src/splash.js`): how the hole seals (deep; shallow for a flat face going in
-first; at the surface, the crown pulled shut over the hole, for a fast,
-big entry), how lopsided it is, how the crown leans (a spinning stone drags
+first; at the surface, the crown pulled shut over the hole into a low glassy
+dome, when the entry's Froude number V²/(g·R) passes Birkhoff and Isaacs'
+108, less readily the more oblique the entry and the more irregular the
+stone), how lopsided it is, how the crown leans (a spinning stone drags
 water up on one side), and the jet's form: clean (none to four tip drops of
 varying size), leaning towards the hole's bulge and whipping, ragged (the
 column comes apart early from the top into irregular drops and spray),
 stubby (short and fat: big stones, flat entries, shallow seals), split in two
 (rare), or none at all (after a surface seal: only a low glassy mound
 heaves up and subsides). For the default 6 cm stone
-thrown normally about half the jets are clean, a fifth lean, a fifth are
-ragged, one in eight is stubby and a few split or never rise; a 16 cm stone
-seals at the surface a quarter of the time and its jets are mostly stubby
-or ragged (`tools/variety-probe.mjs` prints the distributions).
+thrown normally about one throw in ten seals at the surface, four jets in
+ten are clean, a fifth to a quarter ragged, one in six leans, one in eight
+is stubby and a few split or never rise; a 1.5 cm pebble nearly always seals
+at the surface, a 16 cm stone almost never, and its jets are mostly stubby
+(`tools/variety-probe.mjs` prints the distributions).
 
 **Foam** (`FOAM_PATTERN` in `src/shaders/scene.js`, the map in
 `src/spectralWater.js`). Where the stone's hole closes, its air erupts as a
@@ -227,15 +243,16 @@ allows it scales as a Froude-similar splash does: lengths with the radius,
 times with √(R/g), speeds with the entry speed. The crown's sheet is as thick
 as the stone is big, so air and surface tension slow it less, it drains
 slower and stands longer: a 16 cm stone's crown stands for 160 ms, its rim
-17 cm high and 70 cm across, and tears into drops of up to 9 mm, while a
-1.5 cm pebble's rises 4 cm. Its rim fingers as a decelerating rim does, so a
+25 to 40 cm high, and tears into drops of up to 9 mm, while a 1.5 cm
+pebble's rises 5 cm when it seals deep (it nearly always seals at the
+surface instead, under a dome 1 cm high). Its rim fingers as a decelerating rim does, so a
 big crown has more fingers rather than a few huge petals: 24 on a 16 cm
 stone's, 15 on a 6 cm one's, 12 on a 4 cm one's. A big
 stone's jet is fat (its Froude number is lower, so the cavity's collapse is
 less singular) and breaks up slowly (a column's capillary time grows as its
-radius to the 1.5): a 16 cm stone's is 11 cm across at the water, rises
-45 cm (80 cm dropped straight in) and mostly falls back as a column, which
-throws a second, strong ring. Drop counts grow faster than the stone's area
+radius to the 1.5): a 16 cm stone's is 10 to 20 cm across at the water,
+rises 20 to 50 cm and mostly falls back as a column, which throws a second,
+strong ring. Drop counts grow faster than the stone's area
 and drop sizes as √R, so a big splash is both denser and coarser; the foam it
 leaves covers the cavity's mouth and is denser. Its rings, longer and
 stronger, cross the whole pond (Rings, above). The stone starts the splash the moment its lowest point
@@ -417,17 +434,23 @@ ballistic arc, quadratic drag under water, and a settle into the sand.
   which `src/sky.js` reads; `--png` also writes a tone-mapped preview with the
   sun marked. A new panorama needs this run once.
 - `node tools/jet-probe.mjs [radius] [entrySpeed] [profileTime] [horizontalFraction]`
-  runs one Worthington jet of the default (clean) form on the CPU and prints
-  its timeline, drops, volume budget, when its big drops land and cost per
-  frame; a horizontal fraction makes it the leaning jet of an oblique entry.
-- `node tools/variety-probe.mjs [throws=200] [--seed=1] [--aim=x:z] [--sets=default|all] [--list]`
+  runs one Worthington jet of the default (clean) form on the CPU over the
+  bowl its stone's cavity leaves and prints its timeline (the needle clearing
+  the surface, the tip drops, the breakup, the fall-back), its profile at the
+  given time after entry, its drops, volume budget, when its big drops land,
+  whether its normals face outward and its cost per frame; a horizontal
+  fraction makes it the leaning jet of an oblique entry.
+- `node tools/variety-probe.mjs [throws=200] [--seed=1] [--aim=x:z] [--sets=default|all|grid] [--list]`
   throws stones as the app does (seed n is the shoot harness's seeded throw n
   at the same aim and power) and prints how their splashes vary: the stones'
-  shapes, contacts and spins; how often each jet form and seal comes up; the
+  shapes, contacts and spins; how often each jet form and seal comes up (with
+  the surface seal's chance); the
   jets' tops, tip drops and lean, the holes' lopsidedness and the crowns'
-  heights, by form; and the cost per frame, for the default stone thrown
+  heights, by form (a jet's top is its column's or its tip drops' highest,
+  flown with the splash's drag); and the cost per frame, for the default stone thrown
   normally, softly and hard and for a 16 cm stone and a pebble
-  (`--sets=default` leaves out the last two). `--list`
+  (`--sets=default` leaves out the last two; `--sets=grid` runs every size of
+  the slider at every power). `--list`
   prints each throw of the first set. It checks that no default throw at
   normal power is all but invisible, that hardly any lacks a jet, and that
   they are not alike: at least four forms each a twentieth of the time and
@@ -444,10 +467,12 @@ ballistic arc, quadratic drag under water, and a settle into the sand.
   and 16 cm and the 3 cm-radius reference.
 - `node tools/cavity-probe.mjs [diameter-in-cm ...] [--aim=x:z] [--seed=n] [--variety=n]` throws and
   drops each stone (1.5, 4, 6, 8 and 16 cm) and runs its cavity on the CPU:
-  the timeline (the pinch-off's time and depth, the closure, the jet's start),
-  the mouth, the lip and the depth over time, and the cost of a frame's mesh;
-  it checks that the cavity follows the stone `src/rock.js` moves, that the
-  pinch and the closure come when the throw's seal says they should, that
+  the timeline (the pinch-off's time and depth, the jet's start, the bowl's
+  floor as it rises and when it has flattened), the mouth, the lip and the
+  depth over time, and the cost of a frame's mesh; it checks that the cavity
+  follows the stone `src/rock.js` moves, that the pinch comes when the
+  throw's seal says, the jet with it, that the bowl's floor only rises and
+  reaches the surface when the hole is gone, that
   the cone the surface dips into holds the whole hole and the lip covers
   where it dips, that the normals face the air and that the crown stands on
   the lip; then it does the same for `--variety` (24) more throws of each

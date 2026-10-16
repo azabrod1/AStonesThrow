@@ -19,8 +19,8 @@
 //     crowns of landing drops, the rest), the most alive at once, the largest,
 //     and how many are 4 mm and more;
 //   - the water: the cavity splat (σ, depth, downward velocity), its foam
-//     (from when the hole closes: stamps, reach, amount), all the foam
-//     stamps, the specks;
+//     (from when the hole's bowl has flattened into the surface: stamps,
+//     reach, amount), all the foam stamps, the specks;
 //   - the ring: the pond's linear response to the splash's splats at 0.5, 1
 //     and 2 m from the entry, across the throw: its height from trough to
 //     crest, when the highest crest passes and its wavelength. It uses the
@@ -146,6 +146,8 @@ function runSplash(radius, { silent = false } = {}) {
     fan: fan ? { reach: 0, endTime: fan.endTime } : null,
     jet: { start: null, top: 0, topTime: 0, widest: 0, gone: null },
     choice: splash.lastChoice ? { regime: splash.lastChoice.regime, seal: splash.lastChoice.seal.kind } : null,
+    // The hole's foam comes when its bowl has flattened into the surface (src/cavity.js closeTime).
+    foamFrom: splash.cavities[0] ? splash.cavities[0].startTime + splash.cavities[0].closeTime : null,
     peakAlive: 0, frameMilliseconds: [], sources, largest, specks: 0, landingCrowns: 0, bigDrops: 0, record,
   };
   let jetColumn = null;
@@ -291,12 +293,13 @@ for (const radius of stoneRadii) {
   const bySource = ['spray', 'crown', 'fan', 'jet', 'landing', 'other'].filter((name) => result.sources[name]).map((name) => `${name} ${result.sources[name]} (to ${millimetres(result.largest[name])} mm)`).join(', ');
   console.log(`  droplets: ${total} spawned: ${bySource}; ${result.bigDrops} of 4 mm and more; at most ${result.peakAlive} alive; ${result.landingCrowns} landing crowns`);
   const cavity = result.record.splats[0];
-  // The cavity's foam: the stamps as wide as the stone and more (the jet's mound's included), from when the hole closes.
-  const cavityFoam = result.record.foam.filter((stamp) => stamp.radius >= 0.55 * radius && stamp.time >= (jet.start ?? 0) - 1e-9 && stamp.time < (jet.start ?? 0) + 2 * Math.sqrt(radius / GRAVITY));
+  // The cavity's foam: the stamps as wide as the stone and more (the jet's base's boil included), from when the hole closes.
+  const foamFrom = result.foamFrom ?? jet.start ?? 0;
+  const cavityFoam = result.record.foam.filter((stamp) => stamp.radius >= 0.55 * radius && stamp.time >= foamFrom - 1e-9 && stamp.time < foamFrom + 2 * Math.sqrt(radius / GRAVITY));
   const widest = cavityFoam.reduce((best, stamp) => Math.max(best, stamp.radius), 0);
   const foamAmount = cavityFoam.reduce((sum, stamp) => sum + stamp.amount, 0);
   const foamEnd = cavityFoam.reduce((last, stamp) => Math.max(last, stamp.time), 0);
-  console.log(`  water: cavity σ ${millimetres(cavity.radius)} mm, depth ${millimetres(-cavity.height)} mm, ${cavity.velocity.toFixed(2)} m/s; its foam ${cavityFoam.length} stamps from ${milliseconds(jet.start ?? 0)} to ${milliseconds(foamEnd)} ms, to σ ${millimetres(widest)} mm, amount ${foamAmount.toFixed(2)} in all; ${result.record.splats.length} splats, ${result.record.foam.length} foam stamps, ${result.specks} foam specks`);
+  console.log(`  water: cavity σ ${millimetres(cavity.radius)} mm, depth ${millimetres(-cavity.height)} mm, ${cavity.velocity.toFixed(2)} m/s; its foam ${cavityFoam.length} stamps from ${milliseconds(foamFrom)} to ${milliseconds(foamEnd)} ms, to σ ${millimetres(widest)} mm, amount ${foamAmount.toFixed(2)} in all; ${result.record.splats.length} splats, ${result.record.foam.length} foam stamps, ${result.specks} foam specks`);
   const throwLength = Math.hypot(impact.velocity.x, impact.velocity.z);
   const acrossX = throwLength > 1e-6 ? -impact.velocity.z / throwLength : 1, acrossZ = throwLength > 1e-6 ? impact.velocity.x / throwLength : 0;
   const rings = [0.5, 1, 2].map((distance) => ({ distance, ...ringAt(result.record, impact.x + acrossX * distance, impact.z + acrossZ * distance, radius) }));

@@ -1,35 +1,51 @@
 // CPU probe of the Worthington jet (src/jet.js), without a browser.
 //
-// Runs one JetColumn with stand-ins for the splash and the water, substeps of
-// 1/240 s and a geometry evaluation every 1/60 s, and prints its timeline
-// (tip pinches, breakup, fall-back), the drops it made, the volume accounting,
+// Runs one JetColumn of the default (clean) form over the bowl the stone's
+// cavity leaves (src/cavity.js, a deep seal for a stone dropped straight in,
+// or thrown with the given horizontal fraction), with stand-ins for the
+// splash and the water, substeps of 1/240 s and a geometry evaluation every
+// 1/60 s, and prints its timeline (the needle clearing the surface, tip
+// pinches, breakup, fall-back), the drops it made, the volume accounting,
 // whether the grid normals face outward, and the CPU cost per frame (after a
 // few silent jets, so the code is warm).
 //
 //   node tools/jet-probe.mjs [stoneRadius=0.03] [entrySpeed=6.3] [profileSecondsAfterEntry=0.3] [horizontalFraction=0]
 //
 // A horizontal fraction of the entry speed makes the jet of an oblique entry,
-// as SplashSystem.impact does: slower by 0.3 times it and leaning back (here
-// towards +z, the stone having travelled towards −z) by half the entry angle,
-// at most 25°; the lean line says where its top and its drops went.
+// as SplashSystem.impact does: its body slower by 0.3 times it, its needle's
+// extra speed lower by 0.9 times it, and leaning back (here towards +z, the
+// stone having travelled towards −z) by 0.4 of the entry angle, at most 18°;
+// the lean line says where its top and its drops went.
 //
 // The profile line gives the column's diameter where it leaves the water and
-// at half its height, at the given time after the stone's entry. The landing
-// lines fly the drops of 4 mm and more (the ones that throw a crown where
-// they land) with the splash's own drag and substeps, and say when and how
-// fast they reach the water.
+// up it, at the given time after the stone's entry. The landing lines fly the
+// drops of 4 mm and more (the ones that throw a crown where they land) with
+// the splash's own drag and substeps, and say when and how fast they reach
+// the water.
 import { JetColumn } from '../src/jet.js';
+import { Cavity } from '../src/cavity.js';
 
 const stoneRadius = Number(process.argv[2] ?? 0.03);
 const entrySpeed = Number(process.argv[3] ?? 6.3);
 const profileAfterEntry = Number(process.argv[4] ?? 0.3);
 const horizontalFraction = Number(process.argv[5] ?? 0);
 const sizeFactor = stoneRadius / 0.03;
-const tipSpeed = Math.min(Math.max(0.42 * entrySpeed + 0.7, 1.2), 6.0) * sizeFactor ** 0.15 * (1 - 0.3 * horizontalFraction);
-const lean = Math.min(0.5 * Math.asin(horizontalFraction), (25 * Math.PI) / 180);
+// As SplashSystem.impact: JET_SPEED, JET_OBLIQUE_SLOWING, NEEDLE_OBLIQUE.
+const speed = Math.min(Math.max(0.75 * entrySpeed, 1.5), 8.0) * sizeFactor ** 0.15 * (1 - 0.3 * horizontalFraction);
+const needle = 1 + (3.0 - 1) * (1 - 0.9 * horizontalFraction);
+const lean = Math.min(0.4 * Math.asin(horizontalFraction), (18 * Math.PI) / 180);
 const leaning = { lean, leanX: 0, leanZ: 1 };
 const budget = Math.round(Math.min(Math.max(220 * sizeFactor ** 1.3, 80), 1200));
-const pinchDelay = (2.1 + 0.4) * Math.sqrt(stoneRadius / 9.81);   // the jet starts when the cavity's mouth closes (src/cavity.js)
+// The cavity's bowl: a deep seal, its nominal timing.
+const sinking = entrySpeed * Math.sqrt(1 - horizontalFraction ** 2);
+const cavity = new Cavity({
+  impact: { x: 0, z: -1.4, height: stoneRadius, speed: entrySpeed, velocity: { x: 0, y: -sinking, z: -entrySpeed * horizontalFraction }, radius: stoneRadius },
+  startTime: 0, drawn: false, lean,
+});
+const pinchDelay = cavity.pinchTime;   // the jet starts at the pinch-off
+// As SplashSystem.impact: the jet carries JET_SHARE (0.25) of the water that fills the bowl.
+const bowl = { floor: (age, out) => cavity.bowlFloorAt(cavity.pinchTime + age, out), bowlUnit: cavity.bowlUnit, volume: 0.25 * cavity.bowlVolume };
+const form = { needle };
 
 const drops = [];
 const splash = {
@@ -42,14 +58,14 @@ const water = { addSplat: (splat) => splats.push({ time: clock, kind: 'splat', .
 
 let clock = 0;
 for (let warmUp = 0; warmUp < 5; warmUp++) {
-  const quiet = new JetColumn({ x: 0, z: -1.4, radius: stoneRadius, tipSpeed, startTime: 0, budget, material: null, ...leaning });
+  const quiet = new JetColumn({ x: 0, z: -1.4, radius: stoneRadius, speed, startTime: 0, budget, material: null, ...leaning, ...bowl, form });
   const nowhere = { frameSeconds: 1 / 60, spawnDroplet() {}, spawnFoamSpecks() {}, addSplat() {}, addFoam() {} };
   for (let tick = 1; !quiet.finished && tick < 480; tick++) {
     quiet.update(tick / 240, 1 / 240, nowhere, nowhere);
     if (tick % 4 === 0) quiet.updateGeometry(tick / 240);
   }
 }
-const jet = new JetColumn({ x: 0, z: -1.4, radius: stoneRadius, tipSpeed, startTime: 0, budget, material: null, ...leaning });
+const jet = new JetColumn({ x: 0, z: -1.4, radius: stoneRadius, speed, startTime: 0, budget, material: null, ...leaning, ...bowl, form });
 const totalVolume = jet.volume(0, jet.launchEnd);
 const substep = 1 / 240;
 let frameSeconds = 0;
@@ -62,8 +78,10 @@ let profiled = false;
 let lastTipDrops = 0;
 let worstInward = 0;
 const millimetres = (metres) => (metres * 1000).toFixed(1);
-console.log(`stone ${millimetres(stoneRadius)} mm at ${entrySpeed} m/s${horizontalFraction > 0 ? ` (horizontal fraction ${horizontalFraction}, lean ${(lean * 180 / Math.PI).toFixed(1)}°)` : ''}: tip speed ${tipSpeed.toFixed(2)} m/s, T ${(jet.launchDuration * 1000).toFixed(0)} ms, ` +
+console.log(`stone ${millimetres(stoneRadius)} mm at ${entrySpeed} m/s${horizontalFraction > 0 ? ` (horizontal fraction ${horizontalFraction}, lean ${(lean * 180 / Math.PI).toFixed(1)}°)` : ''}: body ${speed.toFixed(2)} m/s, needle ${jet.tipSpeed.toFixed(2)} m/s, ` +
+  `pinch ${(cavity.pinchDepth * 1000).toFixed(0)} mm down, T ${(jet.launchDuration * 1000).toFixed(0)} ms of ${(jet.launchEnd * 1000).toFixed(0)} ms, ` +
   `first bulb ${millimetres(jet.firstBulbRadius)} mm, jet volume ${(totalVolume * 1e6).toFixed(1)} ml, budget ${budget} drops, jet starts ${(pinchDelay * 1000).toFixed(0)} ms after entry`);
+let emerged = false;
 
 while (!jet.finished && clock < 2) {
   clock += substep;
@@ -72,6 +90,10 @@ while (!jet.finished && clock < 2) {
   jet.update(clock, substep, splash, water);
   updateMilliseconds += performance.now() - started;
   updateCalls++;
+  if (!emerged && jet.heightAt(0) > 0) {
+    emerged = true;
+    console.log(`  ${(clock * 1000).toFixed(0)} ms (${((clock + pinchDelay) * 1000).toFixed(0)} after entry): the needle clears the surface at ${jet.evaluate(0, jet.state).vy.toFixed(2)} m/s`);
+  }
   if (jet.tipDrops !== lastTipDrops) {
     // The tip drop is the largest of those this pinch made (the rest are the neck's spray).
     const drop = drops.slice(dropsBeforeUpdate).reduce((largest, candidate) => (candidate.radius > largest.radius ? candidate : largest));

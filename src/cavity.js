@@ -2,53 +2,78 @@
 // depth and time, and the mesh that draws it as a hole in the surface.
 //
 // The stone. Under water src/rock.js moves the stone with sinkStep (below):
-// quadratic drag (deceleration STONE_DRAG·v²/R), a sideways lift across its
-// path (C_L·LIFT·v²/R, the lift coefficient and its direction from the stone's
-// shape and spin, the spin's part fading as the tumble does) and
-// buoyancy-reduced gravity. The cavity integrates the same step once, at the
-// impact, from where the impact found the stone and with the simulation's
-// substep, into a table of its path: depth, place and speed every substep. So
-// the hole follows the stone's actual depth, speed and curve.
+// quadratic drag (deceleration STONE_DRAG·v²/R, C_d = DRAG_COEFFICIENT), a
+// sideways lift across its path (C_L·LIFT·v²/R, the lift coefficient and its
+// direction from the stone's shape and spin, the spin's part fading as the
+// tumble does) and gravity. While its hole is open the stone's back is in the
+// hole's air, at the atmosphere's pressure, so the water's hydrostatic head
+// presses on its front too, C_h·ρ·g·h·πR² (C_h = HEAD_COEFFICIENT, h the
+// centre's depth: deceleration STONE_HEAD·g·h/R), and nothing buoys it; once
+// the hole has pinched off the air it carries takes the water's pressure, and
+// over OPEN_FADE·sqrt(R/g) the head gives way to buoyancy. The reference
+// simulation (tools/basilisk: a 3 cm stone straight in at 6.3 m/s) fits
+// F = C_d·½ρU²πR² + C_h·ρgh·πR² with C_d 0.46 and C_h 0.6; below 20 cm the
+// head slows the stone as much as the drag does. The cavity integrates the
+// same step once, at the impact, from where the impact found the stone and
+// with the simulation's substep, into a table of its path: depth, place and
+// speed every substep. So the hole follows the stone's actual depth, speed
+// and curve.
 //
 // The walls (the Rayleigh–Besant picture: Duclaux et al. 2007, Aristoff &
 // Bush 2009, Truscott et al. 2014). Each horizontal slice of water at depth z
 // is pushed outward when the stone's centre passes it, at t_s(z); it opens,
-// stops and closes again under the hydrostatic pressure ρ·g·z. A slice
-// thrown out at speed u and decelerated by a pressure growing with depth has
-// a² = R² + 2·R·u·τ − (g·z/L)·τ² (τ = t − t_s(z)), the square-root closing that
-// makes a cavity neck; written with its lifetime T and s = τ/T,
+// stands and closes again under the hydrostatic pressure. With its lifetime T
+// and s = (t − t_s(z))/T,
 //
-//   a(z, t) = R·sqrt((1 − s)·(1 + (1 + B)·s)),   0 ≤ s ≤ 1,
+//   a(z, t) = R·sqrt(1 + B·s − (1 + B)·s^k),   0 ≤ s ≤ 1, k = OPENING,
 //
-// R at s = 0 (the stone's equator), 0 at s = 1. B sets the widest radius,
-// a_max = R·(2 + B)/(2·sqrt(1 + B)), reached at s = B/(2·(1 + B)); it is chosen
-// so that a_max(z) = R·(1 + WIDEN·(1 − z/z_p)), widest near the surface and
-// R·(1 + DEEP_WIDEN) at the pinch depth z_p and below. The lifetime follows the
-// slice's push and the pressure: T ∝ V(z)/(z + SURFACE_HEAD·R), V(z) the stone's
-// speed there, so a slice closes at t_c(z) = t_s(z) + C·V(z)/(z + z0). Shallow
-// slices live longest, deep ones were opened late, so the earliest closure,
-// the pinch-off (deep seal), is in between: C is set so that it comes
-// PINCH_TIME·sqrt(R/g) after entry (Duclaux et al.: about 2.1, nearly
-// independent of the entry speed), and where it falls follows from the
-// stone's path: a half to two thirds of the stone's depth at that moment (a
-// sphere at constant speed pinches at half; a stone slowing down, nearer
-// itself). A stone come to rest on the floor pushes no water aside, so the
-// speed a slice is pushed with is at least SLOWEST_PUSH of the entry speed.
-// Above the pinch the cavity then collapses inward from the
-// neck up (the closures above z_p are compressed in time so that the surface
-// closes CLOSE_TIME·sqrt(R/g) after the pinch, at the closure time), and the
-// surface closes to a mound from which the Worthington jet rises (the splash
-// starts the jet there, at closurePoint()). Below the pinch the bubble
-// that rides down with the stone is no longer drawn.
+// R at s = 0 (the stone's equator), 0 at s = 1: it opens fast, stands near its
+// widest and closes as a square root, which makes a neck. Its widest, at
+// s* = (B/(k·(1 + B)))^(1/(k − 1)), is set through B (read off a table, made
+// once) to a funnel's: DEEP_WIDEST·R at 0.8 of the pinch depth z_p and below,
+// widening towards the surface by an excess that falls as 1 − FUNNEL_TOP·sqrt(ζ)
+// (ζ = z/z_p, times 1 − smoothstep over FUNNEL_FOOT), up to MOUTH_WIDEST·R at
+// the surface for the reference throw, the excess going as
+// (F/WIDTH_FROUDE)^WIDTH_POWER with the Froude number F = V²/(g·R) (times the
+// seal's `mouth`). The mouth of the reference throw is 3.1·R wide by the
+// pinch-off and 3.6·R at 0.2 s, the reference simulation's 3.1 and 3.8. The
+// lifetime follows the slice's push and the pressure: T ∝ V(z)/(z + z0), with
+// z0 = SURFACE_HEAD·R and V(z) the stone's speed there, so a slice closes at
+// t_c(z) = t_s(z) + C·V(z)/(z + z0). Shallow slices live longest, deep ones
+// were opened late, so the earliest closure, the pinch-off (deep seal), is in
+// between: C is set so that it comes PINCH_TIME·sqrt(R/g) after the splash's
+// start (Duclaux et al.: 2.06; the reference simulation 1.99 after first
+// contact, a substep later), nearly independent of the entry speed, and z0
+// sets where it falls: 7.5·R down for the reference throw, as in the
+// reference, the stone then 13·R down. It is at least SHALLOWEST·R down. A
+// stone come to rest on the floor pushes no water aside, so the speed a slice
+// is pushed with is at least SLOWEST_PUSH of the entry speed.
+//
+// After the pinch-off the hole above the neck is a bowl that stays open and
+// fills from below (the reference: 10 cm deep at 130 ms, 5 cm at 165 ms). Its
+// floor rises as D = z_p·(S·e^(−τ/τb) + (1 − S)·e^(−τ/τn)) (BOWL_SHARE,
+// BOWL_DECAY, NECK_DECAY; τ in the bowl's time unit sqrt(z_p/g) since the
+// pinch, times the seal's `bowl`): the neck zips up at once, the bowl over it
+// fills more slowly. Each slice above the pinch closes as the floor passes it
+// (at BOWL_LAST at the latest), and from FLATTEN[0] to FLATTEN[1] of the
+// bowl's unit what is left flattens into the surface: then the hole is gone
+// (closeTime), and its foam comes up (src/splash.js). bowlFloorAt gives the
+// floor as it is drawn, which the Worthington jet leaves from (src/jet.js,
+// which the splash starts at the pinch, at closurePoint()), and bowlVolume the
+// water that fills the bowl, a share of which the jet carries. After the pinch
+// the funnel also turns onto the jet's axis and its centre moves to the
+// closure over RECENTRE·sqrt(R/g); below the pinch the bubble that rides down
+// with the stone is no longer drawn.
 //
 // Seals (`seal`, chosen per throw by the splash). The deep seal above is the
-// default (pinch PINCH_TIME, closure CLOSE_TIME later, head SURFACE_HEAD,
-// mouth WIDEN); the splash varies each a little from throw to throw. A shallow
-// seal (a slow or flat entry, Aristoff & Bush 2009) pinches sooner and, with a
-// larger head z0, which evens out the slices' lifetimes, nearer the surface,
-// and its short funnel closes faster. A surface seal (a fast entry, whose crown
-// domes over the hole, src/crown.js) cuts the hole off from the air: the
-// stone, still sinking, lowers its pressure, so it pinches sooner too.
+// default (pinch PINCH_TIME, head SURFACE_HEAD, `bowl` and `mouth` 1); the
+// splash varies each a little from throw to throw. A shallow seal (a slow or
+// flat entry, Aristoff & Bush 2009) pinches sooner and, with a larger head z0,
+// which evens out the slices' lifetimes, nearer the surface, and its short
+// bowl fills faster. A surface seal (a fast entry, whose crown domes over the
+// hole, src/crown.js) cuts the hole off from the air: its mouth stops widening
+// early (a small `mouth`), and the stone, still sinking, lowers its pressure,
+// so it pinches sooner too.
 //
 // An oblique entry: every slice is centred where the stone's centre was when
 // it passed, so the hole is sheared along the stone's path (and bent where
@@ -83,13 +108,15 @@
 // mouth's outline, S(0, φ) (shape()). Its crest is where the crown sheet and
 // the forward fan launch (lipAt, read by src/crown.js), so they stand on it
 // and follow it. For a 3 cm stone thrown in at 6.3 m/s, 42° from vertical
-// (Froude number V²/(g·R) 136), its centre reaches the water at 9 ms; the
-// mouth is widest, 1.45·R, at 64 ms, the lip 0.17·R high; sealing deep, the
-// hole pinches off at about 116 ms some 6·R down, the stone then 9 to 10·R
-// down, and the surface closes at about 140 ms. A 4 cm stone's (radius 2 cm)
-// pinches at about 99 ms 7.3·R down and closes at about 120 ms; a 16 cm
-// stone's at about 185 ms 3.7·R down (the stone, slowed harder, 6.3·R down)
-// and 225 ms. Each throw's stone and seal move these by several per cent
+// (Froude number V²/(g·R) 136), its centre reaches the water at 9 ms, the lip
+// is highest, 0.28·R, at 65 ms, and the mouth widest, 3.6·R, at 190 ms;
+// sealing deep, the hole pinches off at about 115 ms some 5.7·R down (the
+// sheared hole's vertical reach is shorter than a straight one's), the stone
+// then 10·R down, and the bowl has flattened into the surface by about
+// 240 ms. A 4 cm stone's (radius 2 cm) pinches at about 98 ms 6.8·R down and
+// has flattened by 230 ms; a 16 cm stone's pinches at about 190 ms 3.3·R down
+// (the stone, slowed harder, 8·R down) and has flattened by 370 ms. Each
+// throw's stone and seal move these by several per cent
 // (tools/cavity-probe.mjs prints them).
 //
 // The mesh: a ring grid (src/fluidMesh.js) of COLUMNS around and, from the
@@ -130,8 +157,12 @@ const GRAVITY = 9.81;
 // The stone under water, as src/rock.js moves it (tools/cavity-probe.mjs checks the two agree).
 const WATER_DENSITY = 1000;
 const ROCK_DENSITY = 2600;
-const STONE_DRAG = (3 / 8) * (WATER_DENSITY / ROCK_DENSITY) * 0.5;   // the drag deceleration is this·v²/R
-const SINKING_GRAVITY = GRAVITY * (1 - WATER_DENSITY / ROCK_DENSITY);
+const DENSITY_RATIO = WATER_DENSITY / ROCK_DENSITY;
+const DRAG_COEFFICIENT = 0.46;     // C_d: the reference simulation's fit while the hole is open (tools/basilisk)...
+const HEAD_COEFFICIENT = 0.6;      // ...and C_h, the head on the stone's front while its back is in the hole's air
+const STONE_DRAG = (3 / 8) * DENSITY_RATIO * DRAG_COEFFICIENT;   // the drag deceleration is this·v²/R
+const STONE_HEAD = (3 / 4) * DENSITY_RATIO * HEAD_COEFFICIENT;   // the head's is this·g·h/R, h the centre's depth
+const OPEN_FADE = 0.1;             // in sqrt(R/g): after the pinch-off the head gives way to buoyancy over this long
 const RESTING_HEIGHT = 0.75;       // the stone rests with its centre this many radii above the floor
 export const SPIN_DECAY = 3;       // the stone's tumble fades as exp(−SPIN_DECAY·t) under water (src/rock.js)
 const LIFT = (3 / 8) * (WATER_DENSITY / ROCK_DENSITY);   // a lift coefficient C_L pushes the stone sideways at C_L·LIFT·v²/R
@@ -140,12 +171,25 @@ const PATH_STEP = 1 / 240;         // s: the app's substep at 60 frames a second
 const PATH_SECONDS = 1.5;
 // The walls.
 const SLICE_STEP = 1 / 6;          // slices this many radii apart
-export const PINCH_TIME = 2.1;     // the deep seal, in sqrt(R/g) after entry...
-export const CLOSE_TIME = 0.4;     // ...and the surface closes this many sqrt(R/g) later (src/rock.js reads both)
-const SURFACE_HEAD = 0.5;          // z0, in R: the pressure head that closes the slices at the surface
+export const PINCH_TIME = 2.06;    // the deep seal's pinch-off, in sqrt(R/g) on the splash's clock (src/rock.js reads it)...
+export const NECK_CLOSE = 0.4;     // ...and the water has closed over the stone this many sqrt(R/g) later (src/rock.js)
+export const SURFACE_HEAD = 5.25;         // z0, in R: the head in the slices' lifetimes T ∝ V/(z + z0), which sets where the pinch falls
 const SLOWEST_PUSH = 0.2;          // a slice is pushed open at least as hard as by this share of the entry speed
-const WIDEN = 0.45;                // a slice at the surface opens to R·(1 + WIDEN)...
-const DEEP_WIDEN = 0.05;           // ...one at the pinch depth or below to R·(1 + DEEP_WIDEN)
+const SHALLOWEST = 1;              // in R: the pinch is at least this deep
+const OPENING = 4;                 // k in a² = R²·(1 + B·s − (1 + B)·s^k): a slice opens fast, stands, then closes
+const MOUTH_WIDEST = 3.6;          // a slice at the surface opens to this many R...
+const DEEP_WIDEST = 1.37;          // ...one at 0.8 of the pinch depth or below to this many...
+const FUNNEL_TOP = 0.88;           // ...the excess falling as 1 − FUNNEL_TOP·sqrt(ζ) (ζ the depth over the pinch depth)...
+const FUNNEL_FOOT = [0.35, 0.8];   // ...times 1 − smoothstep over this span of ζ...
+const WIDTH_FROUDE = 135;          // ...for the reference throw's Froude number V²/(g·R); the mouth's excess over
+const WIDTH_POWER = 0.25;          //    the deep width goes as (F / WIDTH_FROUDE)^WIDTH_POWER
+const BOWL_SHARE = 0.82;           // after the pinch the bowl's floor rises as D = z_p·(S·e^(−τ/τb) + (1 − S)·e^(−τ/τn)),
+const BOWL_DECAY = 0.284;          //   S this, τb BOWL_DECAY and τn NECK_DECAY, τ in sqrt(z_p/g) since the pinch: the neck
+const NECK_DECAY = 0.01;           //   zips up at once, the bowl above it fills more slowly...
+const BOWL_LAST = 1.5;             // ...a slice above the floor's reach closes at this τ at the latest...
+const FLATTEN = [0.5, 1.0];        // ...and from the first τ to the second the bowl flattens into the surface, and is gone
+const RECENTRE = 0.3;              // in sqrt(R/g): after the pinch the funnel turns onto the jet's axis over this long
+const BOWL_STEP = 1 / 12;          // in R: the bowl's volume is summed over slabs this thick
 const ELONGATION = 0.35;           // an oblique hole is this much longer along the throw, times the horizontal fraction
 const MODULATION_LEAST = 0.55;     // the wall's radius around the axis, against the round hole's, at least...
 const MODULATION_MOST = 1.7;       // ...and at most
@@ -180,10 +224,41 @@ const smoothstep = (edgeLow, edgeHigh, value) => {
   return clamped * clamped * (3 - 2 * clamped);
 };
 
-/** The growth B that makes a slice open to a_max (in R): a_max² = (2 + B)² / (4·(1 + B)). */
+/** Where a slice of growth B is widest, as a share of its life: s* = (B / (k·(1 + B)))^(1/(k − 1)). */
+function widestShare(growth) {
+  return (growth / (OPENING * (1 + growth))) ** (1 / (OPENING - 1));
+}
+
+/** a²/R² of a slice of growth B at a share s of its life (the header's law). */
+function openingSquared(growth, share) {
+  return 1 + growth * share - (1 + growth) * share ** OPENING;
+}
+
+// A slice's widest radius grows with B (by the envelope theorem its square
+// grows at s* − s*^k > 0), so B for a given widest is read off a table of the
+// widest at GROWTH_SAMPLES values of B spaced evenly in log B, made once.
+const GROWTH_LEAST = 1e-4, GROWTH_MOST = 1e3, GROWTH_SAMPLES = 360;
+let growthWidest = null;
+
+/** The growth B that makes a slice open to `widest` (in R) at its widest (from the table, interpolated in log B). */
 function growthFor(widest) {
-  const excess = Math.max(widest * widest - 1, 0);
-  return 2 * excess + 2 * Math.sqrt(excess * excess + excess);
+  if (widest <= 1) return 0;
+  if (!growthWidest) {
+    growthWidest = new Float64Array(GROWTH_SAMPLES);
+    for (let index = 0; index < GROWTH_SAMPLES; index++) {
+      const growth = GROWTH_LEAST * (GROWTH_MOST / GROWTH_LEAST) ** (index / (GROWTH_SAMPLES - 1));
+      growthWidest[index] = Math.sqrt(openingSquared(growth, widestShare(growth)));
+    }
+  }
+  if (widest <= growthWidest[0]) return GROWTH_LEAST * (widest - 1) / (growthWidest[0] - 1);
+  let low = 0, high = GROWTH_SAMPLES - 1;
+  if (widest >= growthWidest[high]) return GROWTH_MOST;
+  while (high - low > 1) {
+    const middle = (low + high) >> 1;
+    if (growthWidest[middle] < widest) low = middle; else high = middle;
+  }
+  const blend = (widest - growthWidest[low]) / (growthWidest[high] - growthWidest[low]);
+  return GROWTH_LEAST * (GROWTH_MOST / GROWTH_LEAST) ** ((low + blend) / (GROWTH_SAMPLES - 1));
 }
 
 /**
@@ -191,7 +266,13 @@ function growthFor(widest) {
  * the cavity traces its path with it): `body` holds its centre (x, y, z), its
  * velocity, the time since the impact, the shape's lift coefficient vector and
  * the spin's (liftX.., spinLiftX..: C_L times a unit direction across the
- * path), and whether it rests on the floor, which it sets.
+ * path), when its hole pinches off (openUntil, on the body's clock; never
+ * when it is undefined) and whether it rests on the floor, which it sets.
+ * While the hole is open the stone's back is in air at the atmosphere's
+ * pressure, so the water's pressure on its front pushes back on it, the head
+ * C_h·ρ·g·h·πR², and there is no buoyancy; once the hole has pinched off the
+ * air it carries down takes the water's pressure and the stone sinks under
+ * buoyancy-reduced gravity (the header).
  */
 export function sinkStep(body, radius, step, floorDepth) {
   if (body.resting) return body;
@@ -200,6 +281,13 @@ export function sinkStep(body, radius, step, floorDepth) {
   const speed = Math.sqrt(speedSquared);
   const drag = Math.min((STONE_DRAG / radius) * speed * step, 0.9);
   velocityX -= velocityX * drag; velocityY -= velocityY * drag; velocityZ -= velocityZ * drag;
+  // The head on its front, against its motion, while its hole is open.
+  const open = body.openUntil === undefined ? 0
+    : Math.min(Math.max(1 - (body.time + step - body.openUntil) / (OPEN_FADE * Math.sqrt(radius / GRAVITY)), 0), 1);
+  if (open > 0 && speed > 1e-6) {
+    const head = Math.min((STONE_HEAD * GRAVITY * Math.max(-body.y, 0) / radius) * open * step / speed, 0.9);
+    velocityX -= body.vx * head; velocityY -= body.vy * head; velocityZ -= body.vz * head;
+  }
   // The lift, kept across the path as the path turns; the spin's fades with the tumble.
   const spinShare = Math.exp(-SPIN_DECAY * (body.time + step));
   let liftX = body.liftX + body.spinLiftX * spinShare;
@@ -211,7 +299,7 @@ export function sinkStep(body, radius, step, floorDepth) {
     const push = Math.min((LIFT / radius) * speed * step, 0.9) * speed;
     velocityX += liftX * push; velocityY += liftY * push; velocityZ += liftZ * push;
   }
-  velocityY -= SINKING_GRAVITY * step;
+  velocityY -= GRAVITY * (1 - DENSITY_RATIO * (1 - open)) * step;
   body.x += velocityX * step; body.y += velocityY * step; body.z += velocityZ * step;
   body.vx = velocityX; body.vy = velocityY; body.vz = velocityZ;
   body.time += step;
@@ -254,7 +342,8 @@ export class Cavity {
    * @param lean the jet's lean back along the path (radians): the collapsing funnel turns to it (or setLean)
    * @param drawn false when the impact is outside the simulated patch: the hole is not drawn
    * @param step the simulation's substep (s), which the stone is integrated with
-   * @param seal {kind, pinch, close, head, widen}: the seal (the header), times in sqrt(R/g), the head in R
+   * @param seal {kind, pinch, bowl, head, mouth}: the seal (the header): the pinch-off in sqrt(R/g), the bowl's
+   *   life and the mouth's excess width as shares of a deep seal's, the head in R
    * @param asymmetry {ellipse, lopsided, lopsidedAngle, lobes, lobesAngle, closure}: the wall's departure from round (the header)
    */
   constructor({ impact, startTime, material = null, cell = 6 / 512, floorDepth = 0.8, lean = 0, drawn = true, step = PATH_STEP, seal = null, asymmetry = null }) {
@@ -266,9 +355,10 @@ export class Cavity {
     this.drawn = drawn;
     this.finished = false;
     this.timeUnit = Math.sqrt(radius / GRAVITY);
-    this.seal = { kind: 'deep', pinch: PINCH_TIME, close: CLOSE_TIME, head: SURFACE_HEAD, widen: WIDEN, ...seal };
+    this.seal = { kind: 'deep', pinch: PINCH_TIME, bowl: 1, head: SURFACE_HEAD, mouth: 1, ...seal };
     this.pinchTime = this.seal.pinch * this.timeUnit;
     const speed = Math.max(impact.speed, 1.0);
+    this.froude = (speed * speed) / (GRAVITY * radius);
     const horizontalSpeed = Math.hypot(velocity.x, velocity.z);
     const horizontalFraction = Math.min(horizontalSpeed / speed, 1);
     this.headingX = horizontalSpeed > 1e-4 ? velocity.x / horizontalSpeed : 1;
@@ -353,8 +443,9 @@ export class Cavity {
     this.pathSpeed = new Float64Array(steps);
     this.entryVelocityX = velocity.x;
     this.entryVelocityZ = velocity.z;
+    // The body's clock starts where the impact found the stone, a step after the splash's start.
     const body = {
-      x, y: height, z, vx: velocity.x, vy: velocity.y, vz: velocity.z, time: 0, resting: false,
+      x, y: height, z, vx: velocity.x, vy: velocity.y, vz: velocity.z, time: 0, resting: false, openUntil: this.pinchTime - step,
       liftX: lift?.shape.x ?? 0, liftY: lift?.shape.y ?? 0, liftZ: lift?.shape.z ?? 0,
       spinLiftX: lift?.spin.x ?? 0, spinLiftY: lift?.spin.y ?? 0, spinLiftZ: lift?.spin.z ?? 0,
     };
@@ -454,24 +545,79 @@ export class Cavity {
       if (earliest(middle).time < this.pinchTime) low = middle; else high = middle;
     }
     const scale = 0.5 * (low + high);
-    const pinchSlice = earliest(scale).slice;
+    // A hole pinches at least SHALLOWEST·R down (a shallow seal's head would put it at the surface).
+    const pinchSlice = Math.min(Math.max(earliest(scale).slice, Math.round(SHALLOWEST / SLICE_STEP)), count - 1);
     this.pinchSlice = pinchSlice;
     this.pinchDepth = pinchSlice * step;
 
-    // Above the pinch the closures are compressed in time so that the surface
-    // closes CLOSE_TIME·sqrt(R/g) after it; below, they keep their own.
-    const surfaceClosing = this.sliceTime[0] + scale * lifeShape[0];
-    const compression = surfaceClosing - this.pinchTime > 1e-9 ? (this.seal.close * this.timeUnit) / (surfaceClosing - this.pinchTime) : 1;
+    // Above the pinch the bowl closes from the neck up (the header): each
+    // slice closes when the bowl's floor rises past it, those its floor
+    // never reaches at BOWL_LAST. Below, the slices keep their own closures.
+    // The bowl's times are in sqrt(z_p/g), its duration scaled by the seal's.
+    this.bowlUnit = Math.sqrt(Math.max(this.pinchDepth, radius) / GRAVITY) * this.seal.bowl;
+    // The walls narrow from the mouth's width to the deep width down the funnel.
+    const mouthWidest = DEEP_WIDEST + (MOUTH_WIDEST - DEEP_WIDEST) * (this.froude / WIDTH_FROUDE) ** WIDTH_POWER * this.seal.mouth;
     for (let slice = 0; slice < count; slice++) {
-      const closing = this.sliceTime[slice] + scale * lifeShape[slice];
-      this.sliceClose[slice] = slice <= pinchSlice ? this.pinchTime + (closing - this.pinchTime) * compression : closing;
-      this.sliceLife[slice] = Math.max(this.sliceClose[slice] - this.sliceTime[slice], 1e-4);
-      const widen = slice * step < this.pinchDepth ? DEEP_WIDEN + (this.seal.widen - DEEP_WIDEN) * (1 - (slice * step) / this.pinchDepth) : DEEP_WIDEN;
-      this.sliceGrowth[slice] = growthFor(1 + widen);
+      const depth = slice * step;
+      let closing = this.sliceTime[slice] + scale * lifeShape[slice];
+      if (slice <= pinchSlice) closing = this.pinchTime + (pinchSlice > 0 ? this.bowlRise(depth / this.pinchDepth) * this.bowlUnit : 0);
+      this.sliceClose[slice] = closing;
+      this.sliceLife[slice] = Math.max(closing - this.sliceTime[slice], 1e-4);
+      const share = depth / Math.max(this.pinchDepth, 1e-9);
+      const funnel = depth < this.pinchDepth ? Math.max(1 - FUNNEL_TOP * Math.sqrt(share), 0) * (1 - smoothstep(FUNNEL_FOOT[0], FUNNEL_FOOT[1], share)) : 0;
+      this.sliceGrowth[slice] = growthFor(DEEP_WIDEST + (mouthWidest - DEEP_WIDEST) * funnel);
     }
-    this.closeTime = pinchSlice > 0 ? this.sliceClose[0] : this.pinchTime;
-    // The surface slice is widest at s = B/(2·(1 + B)) of its life.
-    this.widestTime = this.surfaceTime + (this.sliceGrowth[0] / (2 * (1 + this.sliceGrowth[0]))) * this.sliceLife[0];
+    // The bowl is gone, flattened into the surface, at FLATTEN[1].
+    this.closeTime = pinchSlice > 0 ? this.pinchTime + FLATTEN[1] * this.bowlUnit : this.pinchTime;
+    this.widestTime = this.surfaceTime + widestShare(this.sliceGrowth[0]) * this.sliceLife[0];
+    // The bowl above the neck at the pinch: the water that fills it feeds the jet (src/jet.js).
+    this.bowlVolume = 0;
+    for (let depth = 0.5 * BOWL_STEP * radius; depth < this.pinchDepth; depth += BOWL_STEP * radius) {
+      this.bowlVolume += Math.PI * this.radiusAt(depth, this.pinchTime) ** 2 * BOWL_STEP * radius;
+    }
+  }
+
+  /** The bowl's floor as a share of the pinch depth at τ (in its units) since the pinch, before it flattens (the header's D/z_p). */
+  bowlShare(since) {
+    return BOWL_SHARE * Math.exp(-since / BOWL_DECAY) + (1 - BOWL_SHARE) * Math.exp(-since / NECK_DECAY);
+  }
+
+  /** The time (τ since the pinch) the bowl's floor takes to rise to `share` of the pinch depth, at most BOWL_LAST (a bisection, at the impact). */
+  bowlRise(share) {
+    if (share >= 1) return 0;
+    if (this.bowlShare(BOWL_LAST) >= share) return BOWL_LAST;
+    let low = 0, high = BOWL_LAST;
+    for (let iteration = 0; iteration < 40; iteration++) {
+      const middle = 0.5 * (low + high);
+      if (this.bowlShare(middle) > share) low = middle; else high = middle;
+    }
+    return 0.5 * (low + high);
+  }
+
+  /** How much of its depth the bowl keeps as it flattens into the surface (1 until FLATTEN[0], 0 at FLATTEN[1]), at a time after the impact. */
+  flattenShare(time) {
+    if (this.pinchSlice <= 0 || time <= this.pinchTime) return 1;
+    return 1 - smoothstep(FLATTEN[0], FLATTEN[1], (time - this.pinchTime) / this.bowlUnit);
+  }
+
+  /**
+   * The bowl's floor as it is drawn, at a time after the impact: its depth
+   * (positive down, flattened) and how fast it rises (m/s). Before the
+   * pinch, the pinch depth, rising at nothing; once the bowl is gone, the
+   * surface.
+   */
+  bowlFloorAt(time, out = {}) {
+    const since = Math.max(time - this.pinchTime, 0) / this.bowlUnit;
+    if (this.pinchSlice <= 0 || since >= FLATTEN[1]) { out.depth = 0; out.rise = 0; return out; }
+    const share = this.bowlShare(since);
+    const slope = -(BOWL_SHARE / BOWL_DECAY) * Math.exp(-since / BOWL_DECAY) - ((1 - BOWL_SHARE) / NECK_DECAY) * Math.exp(-since / NECK_DECAY);
+    const span = FLATTEN[1] - FLATTEN[0];
+    const along = Math.min(Math.max((since - FLATTEN[0]) / span, 0), 1);
+    const flatten = 1 - along * along * (3 - 2 * along);
+    const flattenSlope = -6 * along * (1 - along) / span;
+    out.depth = this.pinchDepth * share * flatten;
+    out.rise = time > this.pinchTime ? -(this.pinchDepth * (slope * flatten + share * flattenSlope)) / this.bowlUnit : 0;
+    return out;
   }
 
   /**
@@ -566,7 +712,7 @@ export class Cavity {
     const progress = (time - start) / life;
     if (progress <= 0) return this.radius;
     if (progress >= 1) return 0;
-    return this.radius * Math.sqrt((1 - progress) * (1 + (1 + growth) * progress));
+    return this.radius * Math.sqrt(Math.max(openingSquared(growth, progress), 0));
   }
 
   /** The centre of the slice at a depth: where the stone's centre crossed it. */
@@ -577,19 +723,6 @@ export class Cavity {
     out.x = this.sliceX[slice] + (this.sliceX[slice + 1] - this.sliceX[slice]) * blend;
     out.z = this.sliceZ[slice] + (this.sliceZ[slice + 1] - this.sliceZ[slice]) * blend;
     return out;
-  }
-
-  /** After the pinch, the depth of the highest closed slice (the funnel's bottom); 0 once the surface has closed. */
-  closedDepth(time) {
-    if (time >= this.closeTime) return 0;
-    for (let slice = this.pinchSlice - 1; slice >= 0; slice--) {
-      if (this.sliceClose[slice] > time) {
-        const later = this.sliceClose[slice], earlier = this.sliceClose[slice + 1];
-        const blend = later - earlier > 1e-12 ? (later - time) / (later - earlier) : 0;
-        return (slice + Math.min(Math.max(blend, 0), 1)) * this.sliceStep;
-      }
-    }
-    return 0;
   }
 
   /** The mouth's radius: the contact line of a sphere sinking to its equator, then the slice at the surface. */
@@ -610,9 +743,9 @@ export class Cavity {
     return this.outlineFactor(section, cosAngle, sinAngle, cos2, sin2, cos3, sin3);
   }
 
-  /** How far the upper cavity has collapsed towards its closure: 0 until the pinch, 1 when the surface closes. */
+  /** How far the bowl has turned onto the jet's axis and its centre moved to the closure: 0 until the pinch, 1 RECENTRE·sqrt(R/g) later. */
   collapseShare(time) {
-    return time >= this.pinchTime && this.pinchSlice > 0 ? smoothstep(this.pinchTime, this.closeTime, time) : 0;
+    return time >= this.pinchTime && this.pinchSlice > 0 ? smoothstep(this.pinchTime, Math.min(this.pinchTime + RECENTRE * this.timeUnit, this.closeTime), time) : 0;
   }
 
   /** Where the hole closes, the jet's foot (the header): the mouth's centre, moved towards the bulge. */
@@ -643,7 +776,7 @@ export class Cavity {
     out.z = this.stone.z + this.closureZ * collapse;
     out.mouth = mouth;
     out.width = LIP_WIDTH * mouth;
-    out.height = LIP_HEIGHT * mouth * (1 - LIP_SETTLE * smoothstep(this.timeUnit, this.pinchTime, time));
+    out.height = LIP_HEIGHT * mouth * (1 - LIP_SETTLE * smoothstep(this.timeUnit, this.pinchTime, time)) * this.flattenShare(time);
     // The widest the mouth has been: a sheet launched from the lip stays there
     // while the hole closes inside it.
     out.widest = time > this.widestTime ? this.mouthAt(this.widestTime) : mouth;
@@ -680,13 +813,16 @@ export class Cavity {
     const pinched = age >= this.pinchTime && this.pinchSlice > 0;
     let bottom, bottomRadius;
     if (pinched) {
-      bottom = this.closedDepth(age);
+      // The bowl's floor (bowlFloorAt), before it flattens: the depth of the highest closed slice.
+      bottom = this.pinchDepth * this.bowlShare((age - this.pinchTime) / this.bowlUnit);
       bottomRadius = 0;
     } else {
       bottom = Math.max(this.stoneAt(age, this.stone).depth, 0);
       bottomRadius = bottom > 0 ? radius : mouth;
     }
-    this.holeDepth = bottom;
+    // As the bowl flattens into the surface (flattenShare), every depth is drawn that much shallower.
+    const flatten = this.flattenShare(age);
+    this.holeDepth = bottom * flatten;
     let truncated = false;
     if (bottom > DRAWN_DEPTH * radius) {
       bottom = DRAWN_DEPTH * radius;
@@ -717,12 +853,12 @@ export class Cavity {
       if (bottom <= 0 || depth <= 0) { centre.x = mouthX; centre.z = mouthZ; }
       if (!pinched && !truncated && wallRow === 0) { centre.x = this.stone.x; centre.z = this.stone.z; }
       if (collapse > 0) {
-        centre.x += (mouthX - this.leanX * depth - centre.x) * collapse;
-        centre.z += (mouthZ - this.leanZ * depth - centre.z) * collapse;
+        centre.x += (mouthX - this.leanX * depth * flatten - centre.x) * collapse;
+        centre.z += (mouthZ - this.leanZ * depth * flatten - centre.z) * collapse;
       }
       this.rowX[row] = centre.x;
       this.rowZ[row] = centre.z;
-      this.rowY[row] = -depth;
+      this.rowY[row] = -depth * flatten;
       this.rowRadius[row] = rowRadius;
       // The mouth row follows the mouth's outline exactly (the lip's rows join it).
       if (depth <= 0) { outlines.set(this.columnShape, row * COLUMNS); rowWidest[row] = this.widestShape; }
@@ -740,9 +876,10 @@ export class Cavity {
 
     // The circle the surface patch dips from: wide enough that the sheared
     // well it dips into holds every ring of the wall, and the lip's inner face.
-    const shearX = bottom > 1e-6 ? (this.rowX[CAP_ROWS] - mouthX) / bottom : 0;
-    const shearZ = bottom > 1e-6 ? (this.rowZ[CAP_ROWS] - mouthZ) / bottom : 0;
-    const wellDepth = bottom + WELL_CLEARANCE * radius;
+    const drawnBottom = bottom * flatten;
+    const shearX = drawnBottom > 1e-6 ? (this.rowX[CAP_ROWS] - mouthX) / drawnBottom : 0;
+    const shearZ = drawnBottom > 1e-6 ? (this.rowZ[CAP_ROWS] - mouthZ) / drawnBottom : 0;
+    const wellDepth = drawnBottom + WELL_CLEARANCE * radius;
     const crest = mouth + lip.width;
     let pushRadius = mouth * this.widestShape + lip.width;
     for (let row = CAP_ROWS; row < CAP_ROWS + WALL_ROWS; row++) {
