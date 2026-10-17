@@ -823,6 +823,9 @@ export class Rock {
    * floats it on still water), so its vertices rise, fall and tilt with the
    * water's height at its middle and its slope across it
    * (src/shaders/scene.js FLOATER_WATER, read with the water's own uniforms),
+   * as far as it is at the water (`ride`, syncMeshes: wholly afloat; none in
+   * the air clear of it, under it or on the ground, where it is drawn where
+   * the physics has it, on its path and where it strikes),
    * and each part is cut where the water's surface really is, pixel by pixel,
    * in place of a level plane: the water laps along it, a pizza's crust and
    * all; inside its rim (`water.dry`: a pizza's crust) its top is never cut,
@@ -833,14 +836,17 @@ export class Rock {
   rideTheWater(water, { seenThroughWater, waterLevel, fogExtinction, fogColor }) {
     // Inside its rim, its share `water.dry` of its radius (src/things.js), the water never covers its top.
     const dryRadius = { value: (this.thing.water.dry ?? 0) * this.radius };
+    const rideShare = this.rideShare = { value: 0 };
+    this.ridesWater = true;   // src/main.js redraws its mirror image as the water moves under it
     const ride = (side) => (shader) => {
       Object.assign(shader.uniforms, water);
+      shader.uniforms.uRide = rideShare;
       shader.uniforms.uWaterLevel = waterLevel;
       shader.uniforms.uSeenThroughWater = seenThroughWater;
       shader.uniforms.uFogExtinction = fogExtinction;
       shader.uniforms.uFogColor = fogColor;
       shader.uniforms.uDryRadius = dryRadius;
-      const declarations = `${FLOATER_WATER}\nuniform float uWaterLevel;\nuniform float uDryRadius;\nvarying vec3 vRideWorld;\nvarying vec2 vRideMiddle;\n`;
+      const declarations = `${FLOATER_WATER}\nuniform float uWaterLevel;\nuniform float uDryRadius;\nuniform float uRide;\nvarying vec3 vRideWorld;\nvarying vec2 vRideMiddle;\n`;
       shader.vertexShader = shader.vertexShader
         .replace('#include <common>', `#include <common>\n${declarations}uniform float uSeenThroughWater;\n${side === 'below' ? SEEN_THROUGH_WATER : ''}`)
         .replace('#include <project_vertex>', `
@@ -849,7 +855,7 @@ export class Rock {
   float across = 0.5 * length(modelMatrix[0].xyz);
   float slopeX = (floaterWaterHeight(middle.xz + vec2(across, 0.0)) - floaterWaterHeight(middle.xz - vec2(across, 0.0))) / (2.0 * across);
   float slopeZ = (floaterWaterHeight(middle.xz + vec2(0.0, across)) - floaterWaterHeight(middle.xz - vec2(0.0, across))) / (2.0 * across);
-  ridden.y += floaterWaterHeight(middle.xz) + slopeX * (ridden.x - middle.x) + slopeZ * (ridden.z - middle.z);
+  ridden.y += uRide * (floaterWaterHeight(middle.xz) + slopeX * (ridden.x - middle.x) + slopeZ * (ridden.z - middle.z));
   vRideWorld = ridden.xyz;
   vRideMiddle = middle.xz;
   ${side === 'below' ? 'ridden.xyz = mix(ridden.xyz, seenThroughWater(ridden.xyz, uWaterLevel), uSeenThroughWater);' : ''}
@@ -1131,6 +1137,15 @@ export class Rock {
       this.meshMirror.visible = afloat && this.position.y + this.waterline(this.position.y).high > FLOAT.mirrorLeast;
     }
     this.waterLevel.value = surface;
+    // How far it rides the water as drawn (rideTheWater): wholly afloat; less as it stands clear of the still surface, out
+    // of it or under it, none once clear by its half-height; none on the ground. Its float hands over in the surface, so
+    // it never jumps.
+    if (this.rideShare) {
+      const half = this.halfHeight();
+      const clear = Math.max(this.position.y - half, -this.position.y - half, 0);
+      const afloat = this.state === 'float' || (this.state === 'rest' && this.afloat);
+      this.rideShare.value = this.state === 'ground' || this.state === 'skim' ? 0 : afloat ? 1 : Math.max(1 - clear / half, 0);
+    }
   }
 
   /**

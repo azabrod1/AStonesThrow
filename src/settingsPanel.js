@@ -159,7 +159,9 @@ export function radioGroup(root, onChoose) {
     if (!button || !root.contains(button)) return;
     onChoose(button.dataset.value);
   });
-  // Arrow keys move the choice, as a radio group's do.
+  // Arrow keys move the choice, as a radio group's do. The choice is made
+  // before the focus moves: choosing opens the fold that holds it (the Object
+  // page's), and a button in a shut fold takes no focus.
   root.addEventListener('keydown', (event) => {
     const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[event.key];
     if (!step) return;
@@ -167,8 +169,8 @@ export function radioGroup(root, onChoose) {
     const buttons = radios();
     const index = buttons.indexOf(document.activeElement);
     const next = buttons[(Math.max(index, 0) + step + buttons.length) % buttons.length];
-    next.focus();
     onChoose(next.dataset.value);
+    next.focus();
   });
   return show;
 }

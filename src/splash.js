@@ -1511,19 +1511,31 @@ export class SplashSystem {
       const y = this.positions[p + 1] + vy * dt;
       let z = this.positions[p + 2] + vz * dt;
       this.ages[i] += dt;
-      // The pool's walls and deck (setGround): off a wall's side back into the pool, or down on the deck.
+      // The pool's walls and deck (setGround): off a wall's side back into the pool, or down on the deck. Which is told by
+      // its height where it crossed the wall's line, not where it ended: one that crossed above the deck went over the
+      // coping, even if it ends the step below it, and one rising past the deck's top in the step crossed below it.
       if (this.ground) {
         const { square, deck } = this.ground;
-        const inside = (pointX, pointZ) => pointX > square.minX && pointX < square.minX + square.size && pointZ > square.minZ && pointZ < square.minZ + square.size;
-        const was = inside(this.positions[p], this.positions[p + 2]);
+        const maxX = square.minX + square.size, maxZ = square.minZ + square.size;
+        const inside = (pointX, pointZ) => pointX > square.minX && pointX < maxX && pointZ > square.minZ && pointZ < maxZ;
+        const previousX = this.positions[p], previousY = this.positions[p + 1], previousZ = this.positions[p + 2];
+        const was = inside(previousX, previousZ);
         if (!inside(x, z)) {
-          if (was && y < deck) {
+          let crossing = 1;   // the fraction of the step at which it first crossed a wall's line
+          if (was) {
+            if (x <= square.minX) crossing = Math.min(crossing, (square.minX - previousX) / (x - previousX));
+            if (x >= maxX) crossing = Math.min(crossing, (maxX - previousX) / (x - previousX));
+            if (z <= square.minZ) crossing = Math.min(crossing, (square.minZ - previousZ) / (z - previousZ));
+            if (z >= maxZ) crossing = Math.min(crossing, (maxZ - previousZ) / (z - previousZ));
+          }
+          if (was && previousY + (y - previousY) * crossing < deck) {
             // Its side, below its top: back off it, the axis it crossed turned and slowed.
-            if (x <= square.minX || x >= square.minX + square.size) { vx *= -DECK_DROPS.wall; x = THREE.MathUtils.clamp(x, square.minX + 1e-4, square.minX + square.size - 1e-4); }
-            if (z <= square.minZ || z >= square.minZ + square.size) { vz *= -DECK_DROPS.wall; z = THREE.MathUtils.clamp(z, square.minZ + 1e-4, square.minZ + square.size - 1e-4); }
+            if (x <= square.minX || x >= maxX) { vx *= -DECK_DROPS.wall; x = THREE.MathUtils.clamp(x, square.minX + 1e-4, maxX - 1e-4); }
+            if (z <= square.minZ || z >= maxZ) { vz *= -DECK_DROPS.wall; z = THREE.MathUtils.clamp(z, square.minZ + 1e-4, maxZ - 1e-4); }
           } else if (y <= deck) {
-            // Down on the deck (or begun inside the paving, where nothing shows): it lands, and wets it.
-            if (!was && vy < 0 && this.positions[p + 1] >= deck) this.landOnDeck(x, z, radius, vx, vy, vz);
+            // Down on the deck, over the coping or from above it (or begun inside the paving, where nothing shows): it
+            // lands, and wets it.
+            if (vy < 0 && (was || previousY >= deck)) this.landOnDeck(x, z, radius, vx, vy, vz);
             this.removeDroplet(i);
             continue;
           }

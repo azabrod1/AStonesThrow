@@ -316,6 +316,33 @@ for (const framing of FRAMINGS) {
     const after = await page.evaluate(() => ({ count: window.__pond.rocks.length, thing: window.__pond.rocks.at(-1)?.thing.key }));
     check(thrown.closed && after.count === thrown.before + 1 && after.thing === choice, `choosing ${choice} closes the settings, and the next tap on the water throws it (${thrown.closed ? 'closed' : 'still open'}; ${after.count - thrown.before} thrown, ${after.thing})`);
   }
+  // Arrow keys cross from one fold into the next (src/settingsPanel.js radioGroup): the next fold opens, the focus moves into
+  // it and the next press carries on from there.
+  await press('#menu-button');
+  await page.waitForTimeout(400);
+  await press('#settings .menu-tier[data-open="thing"]');
+  await page.waitForTimeout(400);
+  const keyed = [];
+  await page.evaluate(() => { const cards = document.querySelectorAll('.menu-group[data-group="Stones"] [role="radio"]'); cards[cards.length - 1].click(); });
+  if (await page.evaluate(() => document.getElementById('settings').hidden)) {
+    await press('#menu-button');
+    await page.waitForTimeout(400);
+    await press('#settings .menu-tier[data-open="thing"]');
+    await page.waitForTimeout(400);
+  }
+  await page.evaluate(() => { const cards = document.querySelectorAll('.menu-group[data-group="Stones"] [role="radio"]'); cards[cards.length - 1].focus(); });
+  const order = await page.evaluate(() => [...document.querySelectorAll('#thing [role="radio"]')].map((card) => card.dataset.value));
+  const start = order.indexOf(await page.evaluate(() => window.__pond.thing));
+  for (let pressCount = 0; pressCount < 2; pressCount++) {
+    await page.keyboard.press('ArrowDown');
+    await page.waitForTimeout(80);
+    keyed.push(await page.evaluate(() => ({ thing: window.__pond.thing, focused: document.activeElement?.dataset?.value, open: [...document.querySelectorAll('#thing .menu-group[open]')].map((fold) => fold.dataset.group) })));
+  }
+  const keyedRight = keyed.every((step, stepIndex) => step.thing === order[start + 1 + stepIndex] && step.focused === step.thing && step.open.length === 1 && step.open[0] === 'Balls');
+  check(keyedRight, `ArrowDown from the last stone opens Balls and moves the focus into it, and the next press carries on (${keyed.map((step) => `${step.thing}, focus ${step.focused}, open ${step.open.join('+')}`).join('; ')})`);
+  await page.evaluate(() => document.querySelector('#thing [data-value="stone"]').click());   // the river stone again; the click closes the settings
+  if (!(await page.evaluate(() => document.getElementById('settings').hidden))) await press('#menu-button');
+  await page.waitForTimeout(400);
   // Back to the list for the next pages.
   await press('#menu-button');
   await page.waitForTimeout(400);

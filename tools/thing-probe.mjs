@@ -498,6 +498,20 @@ console.log('\nThings meeting things (src/collide.js):');
   console.log(`\nThe splash's drops by the pool's wall: ${through ? 'one went into the wall or under the deck' : 'none went into the wall or under the deck'}; ${landed ? `landed on the deck, wetting ${wet.length} spot(s)` : 'none landed on the deck'}`);
   check(!through, 'a splash drop went through the pool\'s wall or under its deck');
   check(landed, 'a splash drop thrown over the pool\'s wall did not land on the deck');
+  // One step that crosses the wall's line above the deck's top and ends below it went over the coping: it lands on the
+  // deck. One that rises past the deck's top in the step crossed the wall's side below it: it comes back.
+  const oneStep = (y, vx, vy) => {
+    splash.reset();
+    wet.length = 0;
+    splash.spawnDroplet(wallX - 0.002, y, -1, vx, vy, 0, 0.002);
+    splash.update(0.02, water);
+    return { landed: wet.length > 0, back: splash.count > 0 && splash.positions[0] < wallX };
+  };
+  const overCoping = oneStep(POOL.deck + 0.004, 2, -1);
+  const upTheSide = oneStep(POOL.deck - 0.004, 2, 1.5);
+  console.log(`A drop over the coping in one step: ${overCoping.landed ? 'lands on the deck' : overCoping.back ? 'comes back into the pool' : 'is gone'}; one rising past the deck's top at the wall: ${upTheSide.back ? 'comes back off its side' : upTheSide.landed ? 'lands on the deck' : 'went through'}`);
+  check(overCoping.landed && !overCoping.back, 'a splash drop that crossed above the deck\'s top and ended below it did not land on the deck');
+  check(upTheSide.back && !upTheSide.landed, 'a splash drop rising past the deck\'s top at the wall went through its side');
 }
 
 // ---- a thing defined from outside (src/things.js defineThing) ----

@@ -324,6 +324,7 @@ const WEATHERS = {
   storm: { cover: 1, light: 0.05, visibility: 800, rain: 'heavy', wet: 1, lightning: true, wind: 'gale' },
 };
 const GALE_EYE_CLEARANCE = 0.45;  // m the eye keeps from the still water under a gale: its crests and troughs reach about 0.4
+const RIDE_MIRROR_MARGIN = 0.05;  // m: a floater's mirror image is reckoned this much roomier, for the water it rides as drawn (src/rock.js rideTheWater)
 const GALE_MIRROR_MARGIN = 0.1;   // m: the splash's mirror image under a gale is reckoned this much roomier (the waves under it are not level)
 const RAIN_WIND = 3;   // m/s the rain drifts with the Breeze; the wind's strength scales it
 const SUN_BALANCE = [3.0, 2.85, 2.55];        // the sun's irradiance under the meadow sky; another sky's has its photo's colour (src/sky.js)
@@ -730,8 +731,9 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
   /**
    * Where the splash's mirror image falls in the reflection target, and the
    * mirror images of the floaters not where they were last drawn
-   * (`floaters`, src/rock.js meshMirror: drawn as they move and once more
-   * still, then held in the cached image),
+   * (`floaters`, src/rock.js meshMirror: drawn as they move, and as the
+   * water they ride moves under them, rideTheWater; once more still, then
+   * held in the cached image),
    * into splashRect (0 wide when nowhere).
    */
   function measureSplashImage(objects, floaters = []) {
@@ -742,7 +744,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     // The splash is reckoned on still water and drawn lifted with the waves (galeLift): its image is about as much higher.
     if (!mirrorBox.isEmpty() && mirrorLevel.value !== 0) { mirrorBox.translate(mirrorShift.set(0, mirrorLevel.value, 0)); mirrorBox.expandByScalar(GALE_MIRROR_MARGIN); }
     // A floater's image, where it is drawn (lifted already), a little wider than it for its last frame's place.
-    for (const rock of floaters) mirrorBox.union(floaterBox.setFromCenterAndSize(rock.meshMirror.position, floaterSize.setScalar(3 * rock.radius)));
+    for (const rock of floaters) mirrorBox.union(floaterBox.setFromCenterAndSize(rock.meshMirror.position, floaterSize.setScalar(3 * rock.radius + 2 * RIDE_MIRROR_MARGIN)));
     if (mirrorBox.isEmpty() || mirrorBox.max.y <= mirrorLevel.value) return;   // only what stands above the water is mirrored
     mirrorBox.min.y = Math.max(mirrorBox.min.y, mirrorLevel.value);
     let left = Infinity, right = -Infinity, bottom = Infinity, top = -Infinity;
@@ -765,8 +767,10 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
 
   function updateReflection() {
     const objects = skip.fluid || skip.mirror ? nothingMirrored : splash.mirrorObjects();
-    // A floater whose image is not where it now is (moving, or come to rest since it was last drawn).
-    const floaters = skip.mirror ? nothingMirrored : rocks.filter((rock) => rock.meshMirror?.visible && !rock.meshMirror.position.equals(rock.mirroredAt ?? unmirrored));
+    // A floater whose image is not where it now is (moving, or come to rest since it was last drawn), or one riding water
+    // that moves under it (src/rock.js rideTheWater: the wind's waves, the solver's ripples, the rings, the rain's).
+    const waterMoves = !skip.ambient || !water.asleep || rings.live > 0 || rain.on;
+    const floaters = skip.mirror ? nothingMirrored : rocks.filter((rock) => rock.meshMirror?.visible && ((rock.ridesWater && waterMoves) || !rock.meshMirror.position.equals(rock.mirroredAt ?? unmirrored)));
     mirrorLevel.value = galeWaves.on && lastImpact && objects.length > 0 ? galeSurfaceAt(lastImpact.x, lastImpact.z) : 0;
     if (Math.abs(mirrorLevel.value - mirrorPlacedAt) > 1e-4 && !viewChanged) placeMirrorCamera();   // the splash's region is drawn again below
     if (viewChanged) {

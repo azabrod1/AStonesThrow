@@ -946,7 +946,7 @@
         fold.className = 'menu-group';
         fold.dataset.group = name;
         const summary = document.createElement('summary');
-        summary.append(name, Object.assign(document.createElement('small'), { textContent: `${keys.length}` }));
+        summary.append(name, document.createElement('small'));
         const cards = document.createElement('div');
         cards.className = 'menu-cards';
         for (const key of keys) {
@@ -978,11 +978,11 @@
       showThing(pond.thing);
       const thing = THINGS[pond.thing];
       settings.setValue('thing', thing.name);
-      // The chosen thing's fold open, the others shut; each fold's heading names the one chosen in it.
+      // The chosen thing's fold open, the others shut; the chosen fold's heading names the thing chosen in it.
       for (const fold of thingsRoot.querySelectorAll('.menu-group')) {
         const chosen = fold.dataset.group === thing.group;
         if (chosen) fold.open = true;
-        fold.querySelector('summary small').textContent = chosen ? thing.name : `${thingGroups().find((group) => group.name === fold.dataset.group).keys.length}`;
+        fold.querySelector('summary small').textContent = chosen ? thing.name : '';
       }
       // Skip skips what skips (a stone): off for anything else.
       skipSwitch.disabled = !thing.skips;
