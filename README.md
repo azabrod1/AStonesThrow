@@ -27,12 +27,12 @@ and level, spinning, and skips across the water (below), in the direction
 of the tap (even on the sky); its first touch lands where a level throw
 puts it. The menu button at the
 top right opens the settings, laid out as the Moon app's menu is: a list in
-four groups (what is thrown: What to throw; the place: Location, Water and Time of
+four groups (what is thrown: Object; the place: Location, Water and Time of
 day; the conditions: Weather and Wind; the viewing: View and Quality), each row an icon, its name
 over a line on what it sets and where it stands, and each setting a page of
 its choices (Location and Water as pictures) with a line on each. Each choice
 is remembered on the device (but the view, which opens on the shore):
-- What to throw (`?thing=`): a river stone (the default), slate, granite,
+- Object (`?thing=`, what is thrown): a river stone (the default), slate, granite,
   basalt or pumice; a golf ball, a tennis ball, a bowling ball or a
   basketball; a gem; an apple or a pizza. Each is pictured, in a fold for its
   group (Stones, Balls, Gems, Food; the chosen thing's open, one at a time),
@@ -41,8 +41,10 @@ is remembered on the device (but the view, which opens on the shore):
   pizza"). Pumice, a tennis ball, a basketball and a bowling ball
   of 11 lb or less are lighter than water: they come back up, bob and
   float (a basketball 4.3 cm under, mirrored in the water, drifting under a
-  gale), as do an apple (low: a quarter of it is air) and a pizza (flat side
-  down; in the air its broad face slows it); the rest sink, a golf ball
+  gale), as do an apple (low: a quarter of it is air) and a pizza (a soft
+  disc made by hand, its outline and crust uneven: thrown, it spins level
+  like a frisbee, wobbling, its edges cupped against the air; afloat, its
+  toppings up and dry, as much of it under as Archimedes says); the rest sink, a golf ball
   slowly, basalt fastest. A gem (diamond, emerald, ruby or sapphire, cut and
   faceted, 5 to 1000 carats) sinks.
   Each choice's picture (`assets/things/thumbs/`) is a harness frame of
@@ -247,7 +249,7 @@ friction, rolling), its drag in the air, its rest on the bed, its look (a
 mesh builder, `registerMesh`, and its parameters) and what it can do (skip;
 be held to a human throw). A definition is checked (`validateThing` says
 what is wrong), so one can come from outside: `__pond.defineThing(key,
-definition)` adds a thing, and the What to throw page shows it. A new thing
+definition)` adds a thing, and the Object page shows it. A new thing
 is a definition; a new look, a mesh builder; a new body or flight (a
 feather's flutter), a body or air model in `src/rock.js`. What is thrown is a kind
 of stone (the river stone's procedural geometry in its own squash, lumps,

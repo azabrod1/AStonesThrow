@@ -470,7 +470,7 @@
   .menu-card img { flex: none; width: 80px; height: 45px; border-radius: 7px; object-fit: cover; background: rgba(238, 243, 244, 0.08); }
   .menu-card b { display: block; font-size: 14px; font-weight: 500; }
   .menu-card small { display: block; margin-top: 2px; font-size: 12px; color: var(--muted); }
-  /* The What to throw page: a fold for each group of things (src/things.js),
+  /* The Object page: a fold for each group of things (src/things.js),
      one open at a time, its heading the group's name, how many it holds and
      the one chosen in it; the cards inside as the Water page's. */
   .menu-groups { display: grid; gap: 6px; }
@@ -622,7 +622,7 @@
   <div class="menu-page" data-page="root">
     <button type="button" class="menu-tier" data-open="thing">
       <svg class="menu-tier-icon" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="6.8"></circle><path d="M3.4 8.6c4.2 1.6 9 1.6 13.2 0M10 3.2c-2.2 4.2-2.2 9.4 0 13.6"></path></svg>
-      <span class="menu-tier-name"><b>What to throw</b><small>Stones, balls, gems, food</small></span>
+      <span class="menu-tier-name"><b>Object</b><small>What you throw</small></span>
       <span class="menu-tier-value"></span><span class="menu-tier-chevron" aria-hidden="true">&rsaquo;</span>
     </button>
     <hr class="menu-rule">
@@ -665,10 +665,10 @@
     </button>
   </div>
   <div class="menu-page" data-page="thing" hidden>
-    <div class="menu-head"><button type="button" class="menu-back" aria-label="Back"><span aria-hidden="true">&lsaquo;</span></button><h3>What to throw</h3></div>
+    <div class="menu-head"><button type="button" class="menu-back" aria-label="Back"><span aria-hidden="true">&lsaquo;</span></button><h3>Object</h3></div>
     <div class="menu-field">
       <!-- Built from src/things.js (thingGroups): a group to a fold, the chosen thing's open. -->
-      <div class="menu-groups" id="thing" role="radiogroup" aria-label="What to throw"></div>
+      <div class="menu-groups" id="thing" role="radiogroup" aria-label="Object to throw"></div>
     </div>
   </div>
   <div class="menu-page" data-page="view" hidden>
@@ -934,7 +934,7 @@
       document.getElementById('view-note').textContent = (pond.clarity === 'pool' ? NOTES.poolView : NOTES.view)[name ?? 'turned'];
     };
     const showWater = radioGroup(document.getElementById('water'), (value) => { pond.setClarity(value); updateWater(); });
-    // The What to throw page, built from the registry (src/things.js): a fold
+    // The Object page, built from the registry (src/things.js): a fold
     // for each group, its things' cards inside, the chosen thing's fold open
     // and only one open at a time; built again whenever a thing is defined.
     const thingsRoot = document.getElementById('thing');

@@ -107,8 +107,10 @@ function throwThing(name, { x = 0, z = -1.4, power = 'normal', value, pooled = f
   let velocity = target.clone().sub(hand).divideScalar(flightTime);
   velocity.y += 0.5 * GRAVITY * flightTime;
   let landing = target;
-  if (name !== 'stone') ({ velocity, landing } = aimThrow(hand, target, flightTime, measured));
-  const rock = new Rock({ radius: measured.radius, position: hand, velocity, envTexture: null, thing: name, mass: measured.mass });
+  // Made first, as src/main.js makes it, so a fluttering thing is aimed by its own flight.
+  const rock = new Rock({ radius: measured.radius, position: hand, velocity: new THREE.Vector3(), envTexture: null, thing: name, mass: measured.mass });
+  if (name !== 'stone') ({ velocity, landing } = aimThrow(hand, target, flightTime, measured, rock.trialFlight()));
+  rock.velocity.copy(velocity);
   if (pooled) rock.groundAt = poolGround(POOL_SQUARE);
   return { rock, measured, hand, target, landing, launch: velocity.clone() };
 }
@@ -178,17 +180,30 @@ for (const name of THING_NAMES) {
     let line = `${label.padEnd(20)} ${centimetres(2 * measured.radius).padStart(5)} cm ${(measured.mass ?? rock.mass).toFixed(3).padStart(6)} kg ${rock.density.toFixed(0).padStart(5)} kg/m³; down ${centimetres(miss)} cm from the tap, ${centimetres(record.deepest)} cm deep`;
     check(miss < AIM_MISS, `${label}: its path came down ${centimetres(miss)} cm from the tap`);
     if (rock.floats) {
-      const half = rock.halfHeight();
-      const draft = half - rock.position.y;
-      const share = rock.density / WATER_DENSITY;   // its own (a mesh's from its volume: a pizza's disc)
-      // Archimedes: the depth up a ball (its half-height for a stone) whose cap holds `share` of it.
-      let low = 0, high = 2;
-      for (let iteration = 0; iteration < 50; iteration++) { const middle = (low + high) / 2; if (middle * middle * (3 - middle) / 4 < share) low = middle; else high = middle; }
-      const expected = half * (low + high) / 2;
-      line += `; up after ${record.surfaced?.toFixed(2)} s, its centre ${centimetres(record.highestBob - rock.floatingHeight())} cm over where it floats at the highest, ${record.ripples} ring${record.ripples === 1 ? '' : 's'}; rests after ${record.restAt?.toFixed(1)} s, ${centimetres(draft)} cm under (${centimetres(expected)})`;
+      // Archimedes: at rest the share of it under the water is its density over water's (a sphere's cap; anything else's mesh, sliced).
+      const under = rock.waterline(rock.position.y).share, wanted = rock.density / WATER_DENSITY;
+      line += `; up after ${record.surfaced?.toFixed(2)} s, its centre ${centimetres(record.highestBob - rock.floatingHeight())} cm over where it floats at the highest, ${record.ripples} ring${record.ripples === 1 ? '' : 's'}; rests after ${record.restAt?.toFixed(1)} s, ${(100 * under).toFixed(1)}% of it under (${(100 * wanted).toFixed(1)}%)`;
       check(record.restAt !== null && record.restAt < REST_SECONDS && rock.afloat, `${label}: has not come to rest afloat within ${REST_SECONDS} s (${rock.state})`);
       check(record.ripples >= 1, `${label}: came up without a ring`);
-      check(Math.abs(draft - expected) < FLOAT_DEPTH_TOLERANCE, `${label}: floats ${centimetres(draft)} cm under, Archimedes ${centimetres(expected)} cm`);
+      check(Math.abs(under - wanted) < 0.01, `${label}: ${(100 * under).toFixed(1)}% of it under the water, Archimedes ${(100 * wanted).toFixed(1)}%`);
+      if (rock.sphere) {
+        // A ball's draft against the cap's (a basketball 4.3 cm, a tennis ball 2.8 cm).
+        let low = 0, high = 2;
+        for (let iteration = 0; iteration < 50; iteration++) { const middle = (low + high) / 2; if (middle * middle * (3 - middle) / 4 < wanted) low = middle; else high = middle; }
+        const draft = rock.radius - rock.position.y, expected = rock.radius * (low + high) / 2;
+        line += `, ${centimetres(draft)} cm deep (${centimetres(expected)})`;
+        check(Math.abs(draft - expected) < FLOAT_DEPTH_TOLERANCE, `${label}: floats ${centimetres(draft)} cm under, Archimedes ${centimetres(expected)} cm`);
+      } else {
+        // Its mesh, sliced, holds its whole volume (the waterline's table against its shape's moments' integral).
+        const table = rock.waterlineTable;
+        check(table && Math.abs(table.shares.at(-1) - 1) < 1e-9, `${label}: its waterline's table does not hold its whole volume`);
+      }
+      if (rock.thing.body.upright) {
+        // Toppings up and dry: its own +y up, the cheese (0.03 R over its middle) over the water.
+        const up = new THREE.Vector3(0, 1, 0).applyQuaternion(rock.quaternion).y, cheese = rock.position.y + 0.03 * rock.radius;
+        line += `; its top ${up > 0 ? 'up' : 'down'}, the cheese ${centimetres(cheese)} cm over the water`;
+        check(up > 0.98 && cheese > 0, `${label}: afloat with its toppings ${up > 0 ? 'up' : 'down'}, the cheese ${centimetres(cheese)} cm over the water`);
+      }
     } else {
       const bed = floorDepthAt(rock.position.x, rock.position.z);
       // Let go from rest under 10 m of water, its hole long closed: it sinks at its terminal speed.
@@ -260,7 +275,8 @@ for (const name of THING_NAMES) {
   const ratios = record.apexes.map((apex) => (apex - POOL.deck - rock.ellipsoidDepth()) / 1);
   const [least, most] = THINGS[name].material.bounce;
   console.log(`  ${THINGS[name].name.padEnd(14)} ${ratios.slice(0, 4).map((ratio) => ratio.toFixed(3)).join(', ') || 'no bounce'}; ${rock.state} ${centimetres(rock.position.y + rock.lowestOffset() - POOL.deck)} cm over the deck`);
-  if (ratios.length > 0) check(ratios[0] > 0.95 * least * least && ratios[0] < 1.05 * most * most, `${THINGS[name].name}: came back ${ratios[0].toFixed(3)} of its fall, its bounce ${least}–${most} squared`);
+  // A fluttering thing falls slower than free, so its first rise is not its bounce squared of the drop: its speeds are checked instead.
+  if (ratios.length > 0 && THINGS[name].air.model !== 'flutter') check(ratios[0] > 0.95 * least * least && ratios[0] < 1.05 * most * most, `${THINGS[name].name}: came back ${ratios[0].toFixed(3)} of its fall, its bounce ${least}–${most} squared`);
   check(rock.state === 'rest' && Math.abs(rock.position.y + rock.lowestOffset() - POOL.deck) < 0.01, `${THINGS[name].name}: has not come to rest on the deck (${rock.state}, ${rock.position.y.toFixed(3)} m)`);
 }
 {

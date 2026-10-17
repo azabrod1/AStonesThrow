@@ -13,16 +13,19 @@
 //     drilled;
 //   - apple: its sphere drawn in at the stalk and the calyx, red streaked
 //     over yellow-green, and its stalk (createAppleGeometry);
-//   - pizza: a disc turned from a profile, its crust, cheese, sauce and
-//     pepperoni painted per vertex (createPizzaGeometry);
+//   - pizza: a disc turned from a profile, made by hand (its outline
+//     wobbles, its crust rises unevenly, its top is lumpy), its top painted
+//     on a texture (cheese, blisters, sauce, pepperoni, a charred crust:
+//     paintPizza; createPizzaGeometry);
 //   - gem: a brilliant cut (createGemGeometry: a table, a crown of facets,
 //     the girdle, a pavilion to the culet), stretched by its `look.stretch`,
 //     each facet's colour `look.color` at its own brightness, a diamond's
 //     `look.fire` of them in the spectrum's colours.
 // A new kind of look (a pizza's disc, a feather's vane) is a builder
 // registered here; its definition then names it. Every geometry carries a
-// colour per vertex and is drawn with the one material src/rock.js makes,
-// so no kind compiles a program of its own (src/main.js warmUp).
+// colour per vertex and is drawn with the material src/rock.js makes; a kind
+// with a texture (the pizza's) has its own program, which src/main.js warmUp
+// draws, and every other kind shares the stone's.
 import * as THREE from 'three';
 
 /** An sRGB colour (0 to 255) in the linear values vertex colours take. */
@@ -38,9 +41,12 @@ const MESHES = new Map();
  * Register a mesh's kind: `build(definition, { flat })` returns its unit-sized
  * geometry (a colour per vertex; for a stone, a list of separate triangles,
  * src/rock.js integrates its shape over them), `color(definition)` the
- * material's colour (drawn when the thing is made, after its geometry).
+ * material's colour (drawn when the thing is made, after its geometry),
+ * and `texture(definition)`, if it has one, the material's map (its colours
+ * times the vertices'; a textured thing's material is its own program,
+ * which src/main.js warmUp draws).
  */
-export function registerMesh(kind, { build, color }) { MESHES.set(kind, { build, color }); }
+export function registerMesh(kind, { build, color, texture = null }) { MESHES.set(kind, { build, color, texture }); }
 
 /** The registered builder of a kind of mesh, or undefined. */
 export function meshKind(kind) { return MESHES.get(kind); }
@@ -452,57 +458,178 @@ export function createAppleGeometry() {
 }
 
 // A pizza: a disc of unit radius turned about its axis from a profile (its
-// flat bottom, the crust's rim, the top), PIZZA.segments round and in rings
-// across, so its toppings can be painted per vertex: a golden crust,
-// cheese with the sauce showing through, and PIZZA.pepperoni slices. A list
-// of separate triangles (src/rock.js integrates its shape and finds its
-// lowest point over them).
+// flat bottom, the crust's puffed rim, the top), PIZZA.segments round,
+// made by hand: its outline wobbles (PIZZA.outline: a few slow waves and a
+// finer ripple), its crust rises unevenly (PIZZA.puff) and its melted top is
+// bumpy (PIZZA.bumps). Its top is painted on a texture (paintPizza: cheese
+// with browned blisters, the sauce showing at the crust, pepperoni with
+// darker rims and fat, the crust golden with char and flour), mapped from
+// above; the crust's outer side and the bottom take the paint's crust edge,
+// darker per vertex under it and where it sits in the water. Built as a grid for smooth normals, then
+// cut into separate triangles (src/rock.js integrates its shape and finds
+// its lowest point over them). A browser paints the texture once and every
+// pizza shares it; without a document (the CPU probes) there is none.
 const PIZZA = {
-  segments: 64, rings: 24, base: 0.035, top: 0.025, crustFrom: 0.85, crustTop: 0.075, pepperoni: 9, slice: 0.11,
-  bottom: linear(200, 150, 92), crust: linear(196, 128, 58), crustDark: linear(150, 88, 38), cheese: linear(244, 206, 118), sauce: linear(196, 64, 32), salami: linear(120, 22, 18),
+  segments: 96, topRings: 22, base: 0.035, top: 0.03, crustFrom: 0.8, crustTop: 0.12,
+  outline: [[2, 0.03], [3, 0.025], [5, 0.012], [11, 0.006]],   // the outline's waves: [count round, size]
+  puff: 0.35,                                                   // the crust's height varies by up to this share
+  bumps: 0.01,                                                  // the top's melted lumps, in R
+  texture: 512,
+  bottom: 0.8, wet: 0.7,   // the paint's crust edge, darker under it and on its side in the water (wet)
 };
+const pizzaWave = (seed) => (angle) => PIZZA.outline.reduce((sum, [count, size], index) => sum + size * Math.sin(count * angle + seed[index]), 0);
 
-/** A pizza's geometry (the header), its pepperoni placed by `random`. */
-export function createPizzaGeometry(random = Math.random) {
-  // The profile, (radius, height) pairs from the bottom's centre out, up round the crust and in over the top.
-  const profile = [];
-  for (let ring = 0; ring <= PIZZA.rings; ring++) profile.push([(0.97 * ring) / PIZZA.rings, -PIZZA.base]);
-  profile.push([1.0, -0.01], [0.97, PIZZA.crustTop * 0.8], [0.92, PIZZA.crustTop], [PIZZA.crustFrom + 0.02, PIZZA.top + 0.02]);
-  for (let ring = PIZZA.rings; ring >= 0; ring--) profile.push([(PIZZA.crustFrom * ring) / PIZZA.rings, PIZZA.top]);
-  const slices = Array.from({ length: PIZZA.pepperoni }, (unused, index) => {
-    const along = Math.sqrt((index + random()) / PIZZA.pepperoni) * (PIZZA.crustFrom - PIZZA.slice - 0.03);
-    const angle = index * 2.4 + random();
-    return [along * Math.cos(angle), along * Math.sin(angle)];
-  });
-  const color = new THREE.Color();
-  const colorAt = (x, y, z, out) => {
-    const radius = Math.hypot(x, z);
-    if (y < -PIZZA.base + 1e-6) return out.copy(PIZZA.bottom).multiplyScalar(0.9 + 0.15 * valueNoise3(x * 9, 0, z * 9));
-    if (radius > PIZZA.crustFrom + 0.01 || y > PIZZA.top + 0.01) return out.copy(PIZZA.crust).lerp(PIZZA.crustDark, smoothstep(0.4, 0.8, valueNoise3(x * 7, y * 7, z * 7)));
-    if (slices.some(([sliceX, sliceZ]) => Math.hypot(x - sliceX, z - sliceZ) < PIZZA.slice)) return out.copy(PIZZA.salami).multiplyScalar(0.85 + 0.25 * valueNoise3(x * 30, 1, z * 30));
-    return out.copy(PIZZA.cheese).lerp(PIZZA.sauce, smoothstep(0.7, 0.8, valueNoise3(x * 6, 2, z * 6)) * 0.7);
+/** A small seeded random stream (mulberry32), so every pizza's paint is the same. */
+function seeded(seed) {
+  let state = seed >>> 0;
+  return () => { state = (state + 0x6d2b79f5) >>> 0; let t = Math.imul(state ^ (state >>> 15), 1 | state); t ^= t + Math.imul(t ^ (t >>> 7), 61 | t); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+}
+
+/**
+ * The pizza's top on a canvas (the header), its disc of radius 0.47 of the
+ * texture about its middle, following `edge(angle)`, the outline's wave;
+ * outside it white, which the crust's side and the bottom take.
+ */
+function paintPizza(edge) {
+  const size = PIZZA.texture, centre = size / 2, scale = size * 0.47;
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = size;
+  const paint = canvas.getContext('2d');
+  const random = seeded(7);
+  paint.fillStyle = '#fff';
+  paint.fillRect(0, 0, size, size);
+  const outline = (share) => {
+    paint.beginPath();
+    for (let step = 0; step <= 180; step++) {
+      const angle = (step / 180) * Math.PI * 2, radius = scale * share * (1 + edge(angle));
+      paint[step ? 'lineTo' : 'moveTo'](centre + radius * Math.cos(angle), centre + radius * Math.sin(angle));
+    }
+    paint.closePath();
   };
-  const point = (pair, angle) => [pair[0] * Math.cos(angle), pair[1], pair[0] * Math.sin(angle)];
-  const triangles = [];
-  for (let segment = 0; segment < PIZZA.segments; segment++) {
-    const angle = (segment / PIZZA.segments) * Math.PI * 2, next = ((segment + 1) / PIZZA.segments) * Math.PI * 2;
-    for (let index = 0; index < profile.length - 1; index++) {
-      const a = point(profile[index], angle), b = point(profile[index + 1], angle), c = point(profile[index + 1], next), d = point(profile[index], next);
-      // Facing out: the profile runs out along the bottom, up the rim and in over the top.
-      if (profile[index][0] > 1e-9) triangles.push([a, b, d]);
-      if (profile[index + 1][0] > 1e-9) triangles.push([b, c, d]);
+  const blob = (x, y, radius, inner, outer) => {
+    const gradient = paint.createRadialGradient(x, y, 0, x, y, radius);
+    gradient.addColorStop(0, inner);
+    gradient.addColorStop(1, outer);
+    paint.fillStyle = gradient;
+    paint.beginPath();
+    paint.arc(x, y, radius, 0, Math.PI * 2);
+    paint.fill();
+  };
+  const inside = (share) => { const angle = random() * Math.PI * 2, along = Math.sqrt(random()) * share; return [centre + scale * along * Math.cos(angle), centre + scale * along * Math.sin(angle)]; };
+  // The crust: golden, browner to its edge, charred here and there, a dust of flour.
+  outline(1);
+  const crust = paint.createRadialGradient(centre, centre, scale * 0.75, centre, centre, scale * 1.05);
+  crust.addColorStop(0, '#d9a45a'); crust.addColorStop(0.55, '#c98b3f'); crust.addColorStop(1, '#9c6128');
+  paint.fillStyle = crust;
+  paint.fill();
+  paint.save();
+  outline(1);
+  paint.clip();
+  for (let spot = 0; spot < 60; spot++) {
+    const angle = random() * Math.PI * 2, along = scale * (0.84 + 0.17 * random()) * (1 + edge(angle));
+    const x = centre + along * Math.cos(angle), y = centre + along * Math.sin(angle);
+    if (random() < 0.45) blob(x, y, 3 + 7 * random(), 'rgba(60,32,14,0.75)', 'rgba(60,32,14,0)');
+    else blob(x, y, 2 + 4 * random(), 'rgba(250,240,220,0.5)', 'rgba(250,240,220,0)');
+  }
+  paint.restore();
+  // The sauce, to just inside the crust, and the cheese melted over most of it.
+  outline(PIZZA.crustFrom + 0.02);
+  paint.fillStyle = '#b73a1e';
+  paint.fill();
+  paint.save();
+  outline(PIZZA.crustFrom + 0.02);
+  paint.clip();
+  for (let melt = 0; melt < 260; melt++) {
+    const [x, y] = inside(PIZZA.crustFrom - 0.04);
+    blob(x, y, 14 + 26 * random(), 'rgba(248,196,92,0.95)', 'rgba(242,182,80,0)');
+  }
+  // Browned blisters on the cheese.
+  for (let blister = 0; blister < 34; blister++) {
+    const [x, y] = inside(PIZZA.crustFrom - 0.02);
+    blob(x, y, 5 + 9 * random(), 'rgba(170,92,30,0.8)', 'rgba(214,140,56,0)');
+  }
+  // Pepperoni: round, cupped (a darker rim), flecked with fat, a little grease round each.
+  for (let slice = 0; slice < 11; slice++) {
+    const [x, y] = inside(PIZZA.crustFrom - 0.15);
+    const radius = scale * (0.085 + 0.025 * random());
+    blob(x, y, radius * 1.35, 'rgba(214,110,40,0.35)', 'rgba(214,110,40,0)');
+    blob(x, y, radius, '#c9402a', '#8f2416');
+    for (let fleck = 0; fleck < 7; fleck++) {
+      const angle = random() * Math.PI * 2, along = radius * 0.7 * Math.sqrt(random());
+      blob(x + along * Math.cos(angle), y + along * Math.sin(angle), 1.5 + 2 * random(), 'rgba(235,160,130,0.8)', 'rgba(235,160,130,0)');
     }
   }
-  const positions = new Float32Array(triangles.length * 9), colors = new Float32Array(triangles.length * 9);
-  triangles.forEach((corners, face) => corners.forEach((corner, cornerIndex) => {
-    positions.set(corner, face * 9 + cornerIndex * 3);
-    colorAt(...corner, color);
-    colors.set([color.r, color.g, color.b], face * 9 + cornerIndex * 3);
-  }));
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-  geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-  geometry.computeVertexNormals();
+  paint.restore();
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.anisotropy = 4;
+  return texture;
+}
+
+/** The pizza's top's texture (the header), painted once; null without a document. */
+export function pizzaTexture() {
+  if (pizzaTexture.painted === undefined) pizzaTexture.painted = typeof document === 'undefined' ? null : paintPizza(pizzaWave(PIZZA_SEED));
+  return pizzaTexture.painted;
+}
+const PIZZA_SEED = [0.7, 2.1, 4.0, 1.3];   // the outline waves' phases: one pizza's shape, which its texture is painted to
+
+/** A pizza's geometry (the header): unit radius, its outline, crust and top made by hand. */
+export function createPizzaGeometry() {
+  const edge = pizzaWave(PIZZA_SEED);
+  // The profile, (radius, height, on the texture's top) from the bottom's centre out, up round the crust and in over the top.
+  const profile = [];
+  for (let ring = 0; ring <= 8; ring++) profile.push([(0.96 * ring) / 8, -PIZZA.base, false]);
+  for (const [radius, height] of [[0.99, -0.025], [1.0, 0.0], [0.99, 0.045]]) profile.push([radius, height, false]);
+  for (const [radius, height] of [[0.96, 0.095], [0.92, PIZZA.crustTop], [0.87, 0.105], [0.83, 0.07], [PIZZA.crustFrom, PIZZA.top + 0.01]]) profile.push([radius, height, true]);
+  for (let ring = PIZZA.topRings; ring >= 0; ring--) profile.push([(PIZZA.crustFrom * ring) / PIZZA.topRings, PIZZA.top, true]);
+  const columns = PIZZA.segments + 1, rows = profile.length;
+  const positions = new Float32Array(columns * rows * 3), colors = new Float32Array(columns * rows * 3), uvs = new Float32Array(columns * rows * 2);
+  for (let column = 0; column < columns; column++) {
+    const angle = (column / PIZZA.segments) * Math.PI * 2;
+    const wobble = 1 + edge(angle);
+    // The crust rises unevenly round, more where it was stretched thin.
+    const puff = 1 + PIZZA.puff * (0.5 * Math.sin(3 * angle + 1.1) + 0.3 * Math.sin(7 * angle + 2.3) + 0.2 * Math.sin(13 * angle));
+    profile.forEach(([radius, height, top], row) => {
+      const out = radius * wobble;
+      const x = out * Math.cos(angle), z = out * Math.sin(angle);
+      let y = height;
+      if (height > 0.04) y = PIZZA.top + (height - PIZZA.top) * puff;            // the crust's rise
+      else if (top) y += PIZZA.bumps * (valueNoise3(x * 6, 0, z * 6) - 0.5) * (1 - smoothstep(0.7, 0.8, radius));   // melted lumps
+      const index = column * rows + row;
+      positions.set([x, y, z], index * 3);
+      const shade = top ? 1 : height <= -PIZZA.base + 1e-6 ? PIZZA.bottom : height < 0 ? PIZZA.wet : 1;
+      colors.set([shade, shade, shade], index * 3);
+      // Its top mapped from above onto the texture's disc (radius 0.47 of it); its side and underside onto the paint's crust
+      // edge at their angle, so no triangle between them strays over the paint's white margin.
+      const edgeX = 0.99 * wobble * Math.cos(angle), edgeZ = 0.99 * wobble * Math.sin(angle);
+      uvs.set(top ? [0.5 + 0.47 * x, 0.5 - 0.47 * z] : [0.5 + 0.47 * edgeX, 0.5 - 0.47 * edgeZ], index * 2);
+    });
+  }
+  const indices = [];
+  for (let column = 0; column < PIZZA.segments; column++) {
+    for (let row = 0; row < rows - 1; row++) {
+      const a = column * rows + row, b = a + 1, c = (column + 1) * rows + row + 1, d = (column + 1) * rows + row;
+      if (profile[row][0] > 1e-9) indices.push(a, b, d);
+      if (profile[row + 1][0] > 1e-9) indices.push(b, c, d);
+    }
+  }
+  const smooth = new THREE.BufferGeometry();
+  smooth.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  smooth.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  smooth.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+  smooth.setIndex(indices);
+  smooth.computeVertexNormals();
+  // The seam where the grid wraps round: both columns' normals the same.
+  const normals = smooth.attributes.normal;
+  for (let row = 0; row < rows; row++) {
+    const first = row, last = PIZZA.segments * rows + row;
+    const nx = normals.getX(first) + normals.getX(last), ny = normals.getY(first) + normals.getY(last), nz = normals.getZ(first) + normals.getZ(last);
+    const length = Math.hypot(nx, ny, nz) || 1;
+    normals.setXYZ(first, nx / length, ny / length, nz / length);
+    normals.setXYZ(last, nx / length, ny / length, nz / length);
+  }
+  const geometry = smooth.toNonIndexed();
+  smooth.dispose();
   return geometry;
 }
 
@@ -519,5 +646,5 @@ registerMesh('stone', {
 });
 registerMesh('ball', { build: (definition) => createBallGeometry(definition), color: () => new THREE.Color(1, 1, 1) });
 registerMesh('apple', { build: () => createAppleGeometry(), color: () => new THREE.Color(1, 1, 1) });
-registerMesh('pizza', { build: () => createPizzaGeometry(), color: () => new THREE.Color(1, 1, 1) });
+registerMesh('pizza', { build: () => createPizzaGeometry(), color: () => new THREE.Color(1, 1, 1), texture: () => pizzaTexture() });
 registerMesh('gem', { build: (definition) => createGemGeometry(definition), color: () => new THREE.Color(1, 1, 1) });

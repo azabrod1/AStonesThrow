@@ -174,15 +174,18 @@
 // bowling ball, a basketball) rises once its hole has pinched off, and once
 // its centre is within FLOAT.handover of its height under the still surface
 // it floats (`float`, floatStep): buoyed by the water over its submerged
-// part (a sphere's cap, as deep as the thing is under; for a stone, its
-// ellipsoid's depth as it is turned), carrying FLOAT.addedMass of that water,
+// part (`waterline`: a sphere's cap, as deep as it is under; anything
+// else's own mesh, sliced once as it is thrown, waterlineTable, so a flat
+// pizza floats as a slab does, by Archimedes, its toppings dry), carrying FLOAT.addedMass of that water,
 // slowed by the drag on its wetted part and by the waves it makes (its bob
 // damped at FLOAT.damping of critical, its drift at FLOAT.slowing). It
 // comes up through the surface (a ring, `ripple`, if faster than
 // FLOAT.ringFrom), may bob clear of it and fall back (in quietly, with a
 // ring, if slower than FLOAT.quietEntry, else as any throw goes in), bobs a
 // few times and comes to rest at the depth it floats at (`rest`, `afloat`),
-// a basketball 4.3 cm under, a tennis ball 2.8 cm. Under a gale it rides the
+// a basketball 4.3 cm under, a tennis ball 2.8 cm; one not round turns flat
+// side down (rightOnWater; a thing kept upright, a pizza, its toppings up).
+// Under a gale it rides the
 // waves as it is drawn (syncMeshes' lift, as for a stone on the bed) and
 // drifts downwind at FLOAT.drift (src/main.js sets `drift`), never resting.
 // Afloat it is also in the water's mirror image (meshMirror: its part above
@@ -264,6 +267,7 @@ const FLOAT = {
   settledSpeed: 0.006,        // m/s: it rests once slower than this...
   settledOffset: 0.0015,      // m: ...and this near the height it floats at
   drift: 0.15,                // m/s: under a gale it drifts downwind at this
+  mirrorLeast: 0.03,          // m: a floater standing less than this out of the water is not in its mirror image
   righting: 3,                // rad/s: a floater that is not round turns flat side down at up to this (a pizza, slate, pumice)
 };
 // Ground (the header: the pool's deck), besides each thing's own (src/things.js `ground`).
@@ -275,6 +279,11 @@ const GROUND = {
   tumble: 0.5,                 // a stone turns end over end at this times its speed over its radius (it skids as it tumbles)...
   tumbleMost: 60,              // ...at most this (rad/s)
 };
+// A soft, flat thing's flight (`air.model` 'flutter', src/things.js: a pizza; the header): spun on its face, it keeps level
+// as a frisbee does (turning to it at up to `turning` rad/s), its upright side up, wobbling by `pitch` radians `rate` times
+// a second; it takes the drag on its face as the share it shows the air (at least `edgeOn`, edge on) and is lifted as a
+// plate is (`glide`, of the drag); its aim flies it as it will fly (Rock.trialFlight).
+const FLUTTER = { turning: 8, pitch: 0.25, rate: 2.5, spin: [4, 8], edgeOn: 0.15, glide: 0.6 };
 // A throw's aim (aimThrow): the flight times it tries (least, most, step; s), the passes against the air's drag and their step (s).
 const AIM = { times: [0.3, 2.0, 0.01], passes: 6, step: 1 / 120 };
 // A ball's shape and contact (the header).
@@ -285,6 +294,7 @@ const BALL_SHAPE = Object.freeze({
 const BALL_CONTACT = Object.freeze({ kind: 'edge', faceAngle: 45, pointAngle: 45, bluntness: 1 });
 const rockRotation = new THREE.Matrix4();
 const UP = new THREE.Vector3(0, 1, 0);
+const WATERLINE = { levels: 48 };   // a floater's waterline table's levels (waterlineTable)
 
 /** A standard normal draw (Box–Muller, from Math.random). */
 function gaussian() {
@@ -315,10 +325,12 @@ export function flyStep(position, velocity, radius, mass, dt, drag = 0.47) {
  * tap's direction) and aimed for the air's drag, which slows a light thing
  * (a tennis ball, pumice): its flight is flown (flyStep) and the aim moved
  * by its miss, AIM.passes times (and held to `fastest` after, a little
- * short). Returns the velocity, the flight time, the path every AIM.step
- * (for the aim's arc) and where it comes down.
+ * short). `flight`, if given, flies it as the thing itself flies (Rock
+ * trialFlight: a pizza's flutter, whose wobble and glide no plain drag
+ * says); else flyStep with its drag. Returns the velocity, the flight time,
+ * the path every AIM.step (for the aim's arc) and where it comes down.
  */
-export function aimThrow(hand, target, flightTime, measured) {
+export function aimThrow(hand, target, flightTime, measured, flight = null) {
   const fastest = measured.thing.fastest(measured.size);
   const throwTo = (point, time) => { const throwing = point.clone().sub(hand).divideScalar(time); throwing.y += 0.5 * GRAVITY * time; return throwing; };
   let aim = target.clone();
@@ -352,9 +364,11 @@ export function aimThrow(hand, target, flightTime, measured) {
   const flyOut = (throwing, path = null) => {
     position.copy(hand);
     moving.copy(throwing);
+    flight?.reset(position, moving);
     for (let step = 0; step < 3 / AIM.step && (position.y > 0 || moving.y > 0); step++) {
       path?.push(position.clone());
-      flyStep(position, moving, measured.radius, measured.mass, AIM.step, measured.thing.air.drag);
+      if (flight) flight.step(AIM.step, position, moving);
+      else flyStep(position, moving, measured.radius, measured.mass, AIM.step, measured.thing.air.drag);
     }
     path?.push(position.clone());
     return position;
@@ -371,6 +385,34 @@ export function aimThrow(hand, target, flightTime, measured) {
   const landing = flyOut(throwing, path).clone();
   landing.y = 0;
   return { velocity: throwing, flightTime: time, path, landing };
+}
+
+/**
+ * A fluttering thing's flight, tried before it is thrown (aimThrow, the aim's
+ * arc): `thing`, its definition, `shape` (Rock's: one of its kind made
+ * before has it), `radius`, `density` and `ownMass` (Rock's); let go as one
+ * is (flat, its spin, its wobble from the release: Rock's constructor), so
+ * the trial is its flight. `reset(position, velocity)` lets it go there,
+ * `step(dt, position, velocity)` moves the two given vectors as it moves.
+ */
+export function flutterTrial({ thing, shape, radius, density, ownMass }) {
+  let trial = null;
+  return {
+    reset(position, velocity) {
+      trial = Object.assign(Object.create(Rock.prototype), {
+        thing, shape, radius, density, ownMass, flutterPhase: 0, age: 0, spinRate: 0.5 * (FLUTTER.spin[0] + FLUTTER.spin[1]),
+        uprightAxis: thing.body.upright ? UP.clone() : shape.axes[2].clone(),
+        quaternion: new THREE.Quaternion(), spinAxis: thing.body.upright ? UP.clone() : shape.axes[2].clone(), position: position.clone(), velocity: velocity.clone(),
+      });
+    },
+    step(dt, position, velocity) {
+      trial.age += dt;
+      trial.fly(dt);
+      trial.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(trial.spinAxis, trial.spinRate * dt));
+      position.copy(trial.position);
+      velocity.copy(trial.velocity);
+    },
+  };
 }
 
 /** The area of the segment a chord `depth` in from its edge cuts off a disc of `radius`. */
@@ -481,6 +523,54 @@ export function aimSkip(from, target, speed, onWater, fallback) {
 function capShare(depth) {
   const inside = Math.min(Math.max(depth, 0), 2);
   return inside * inside * (3 - inside) / 4;
+}
+
+/**
+ * The share of a closed mesh's volume (unit radius, separate triangles)
+ * below each of WATERLINE.levels + 1 levels along `axis`, from its lowest
+ * point to its highest (a floater's waterline, Rock.waterline): each level's
+ * volume is the sum, over its triangles clipped to the side below, of the
+ * tetrahedra they make with a point on the level's plane (the plane's own
+ * cap then adds nothing). Made once, as a thing is thrown.
+ */
+export function waterlineTable(geometry, axis) {
+  const positions = geometry.attributes.position.array;
+  const heights = new Float64Array(positions.length / 3);
+  let low = Infinity, high = -Infinity;
+  for (let vertex = 0; vertex < heights.length; vertex++) {
+    heights[vertex] = positions[vertex * 3] * axis.x + positions[vertex * 3 + 1] * axis.y + positions[vertex * 3 + 2] * axis.z;
+    low = Math.min(low, heights[vertex]); high = Math.max(high, heights[vertex]);
+  }
+  const point = (vertex) => [positions[vertex * 3], positions[vertex * 3 + 1], positions[vertex * 3 + 2]];
+  const volumeBelow = (level) => {
+    const originX = axis.x * level, originY = axis.y * level, originZ = axis.z * level;
+    let volume = 0;
+    for (let first = 0; first < heights.length; first += 3) {
+      // The triangle clipped to below the level (Sutherland–Hodgman against one plane), then fanned.
+      const polygon = [];
+      for (let corner = 0; corner < 3; corner++) {
+        const here = first + corner, next = first + ((corner + 1) % 3);
+        const hereBelow = heights[here] <= level, nextBelow = heights[next] <= level;
+        if (hereBelow) polygon.push(point(here));
+        if (hereBelow !== nextBelow) {
+          const share = (level - heights[here]) / (heights[next] - heights[here]);
+          const a = point(here), b = point(next);
+          polygon.push([a[0] + (b[0] - a[0]) * share, a[1] + (b[1] - a[1]) * share, a[2] + (b[2] - a[2]) * share]);
+        }
+      }
+      for (let corner = 1; corner + 1 < polygon.length; corner++) {
+        const [ax, ay, az] = [polygon[0][0] - originX, polygon[0][1] - originY, polygon[0][2] - originZ];
+        const [bx, by, bz] = [polygon[corner][0] - originX, polygon[corner][1] - originY, polygon[corner][2] - originZ];
+        const [cx, cy, cz] = [polygon[corner + 1][0] - originX, polygon[corner + 1][1] - originY, polygon[corner + 1][2] - originZ];
+        volume += (ax * (by * cz - bz * cy) + ay * (bz * cx - bx * cz) + az * (bx * cy - by * cx)) / 6;
+      }
+    }
+    return volume;
+  };
+  const total = volumeBelow(high + 1e-6);
+  const shares = new Float64Array(WATERLINE.levels + 1);
+  for (let level = 0; level <= WATERLINE.levels; level++) shares[level] = level === 0 ? 0 : level === WATERLINE.levels ? 1 : volumeBelow(low + ((high - low) * level) / WATERLINE.levels) / total;
+  return { axis: axis.clone(), low, high, shares };
 }
 
 /** The depth (in radii up from its bottom) a ball of `share` of water's density floats at: capShare's inverse, by bisection. */
@@ -642,6 +732,10 @@ export class Rock {
     const volume = this.sphere ? (4 / 3) * Math.PI * radius ** 3 : this.shape.volume * radius ** 3;
     this.density = this.thing.body.density ?? this.ownMass / volume;
     this.floats = this.density < WATER_DENSITY;
+    // Which way is up for it: its own +y if it is kept upright (a pizza's toppings), else its short axis, either way.
+    this.uprightAxis = this.thing.body.upright ? UP.clone() : this.shape.axes[2].clone();
+    // A floater that is not a sphere floats by its mesh's own volume (waterlineTable).
+    this.waterlineTable = this.floats && !this.sphere ? waterlineTable(this.geometry, this.uprightAxis) : null;
     this.liftHeading = Math.random() * Math.PI * 2;   // the direction its lumps push it (the header)
     this.body = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, time: 0, liftX: 0, liftY: 0, liftZ: 0, spinLiftX: 0, spinLiftY: 0, spinLiftZ: 0, resting: false, openUntil: undefined };
     // Its constants under water (src/cavity.js underWater): the reference stone's for a river stone.
@@ -652,9 +746,19 @@ export class Rock {
     // The seed of its splash's own random stream (src/splash.js), drawn now so
     // that a seeded throw splashes alike however its flight is stepped.
     this.splashSeed = Math.floor(Math.random() * 4294967296);
+    // A fluttering thing is let go flat (held so, as a pizza is), spinning on its face (FLUTTER), its wobble from the release:
+    // its flight is then known before it is thrown (flutterTrial: the aim).
+    if (this.thing.air.model === 'flutter') {
+      this.quaternion.identity();
+      this.flutterPhase = 0;
+      this.spinRate = 0.5 * (FLUTTER.spin[0] + FLUTTER.spin[1]);
+      this.spinAxis.copy(this.uprightAxis);
+    }
+    const map = mesh.texture?.(this.thing) ?? null;   // a textured look's (a pizza's top); its own program (src/main.js warmUp)
     const makeMaterial = (clipNormalY) => new THREE.MeshStandardMaterial({
       color: baseColor,
       vertexColors: true,
+      ...(map ? { map } : {}),
       roughness: look.roughness,
       metalness: 0.0,
       envMap: envTexture,
@@ -962,7 +1066,10 @@ export class Rock {
     this.meshBelow.material.clippingPlanes[0].constant = surface;    // keeps y ≤ surface
     if (this.meshMirror) {
       this.meshMirror.material.clippingPlanes[0].constant = -surface;
-      this.meshMirror.visible = this.state === 'float' || this.afloat;
+      // Only what stands out of the water enough to show in it: a flat thing's image (a pizza's) would be a sliver, which
+      // the mirror's ripples break into stray lines (FLOAT.mirrorLeast).
+      const afloat = this.state === 'float' || this.afloat;
+      this.meshMirror.visible = afloat && this.position.y + this.waterline(this.position.y).high > FLOAT.mirrorLeast;
     }
     this.waterLevel.value = surface;
   }
@@ -997,7 +1104,7 @@ export class Rock {
   collisionMass() {
     let wetted = 0;
     if (this.state === 'water') wetted = 1;
-    else if (this.state === 'float' || this.afloat) wetted = capShare((this.halfHeight() - this.position.y) / this.halfHeight());
+    else if (this.state === 'float' || this.afloat) wetted = this.waterline(this.position.y).share;
     return this.mass + FLOAT.addedMass * WATER_DENSITY * (this.mass / this.density) * wetted;
   }
 
@@ -1022,7 +1129,99 @@ export class Rock {
   }
 
   /** dt seconds through the air (flyStep). */
-  fly(dt) { flyStep(this.position, this.velocity, this.radius, this.mass, dt, this.thing.air.drag); }
+  fly(dt) {
+    if (this.thing.air.model === 'flutter') { this.flutter(dt); return; }
+    flyStep(this.position, this.velocity, this.radius, this.mass, dt, this.thing.air.drag);
+  }
+
+  /**
+   * dt seconds through the air for a soft, flat thing (FLUTTER, the header):
+   * its face turned towards broadside to the air and pitching about it, its
+   * spin on its face, the drag on the share of its face the air meets, and a
+   * little glide off it.
+   */
+  flutter(dt) {
+    const speed = this.velocity.length();
+    const face = this.uprightAxis.clone().applyQuaternion(this.quaternion);
+    if (speed > 1e-6) {
+      const along = this.velocity.clone().divideScalar(speed);
+      // Level, as its spin holds a disc (a frisbee's), its upright side up, pitching about the level line across its path.
+      if (face.y < 0 && !this.thing.body.upright) face.negate();
+      const across = along.clone().cross(UP);
+      if (across.lengthSq() < 1e-9) across.set(1, 0, 0);
+      across.normalize();
+      const pitch = FLUTTER.pitch * Math.sin(2 * Math.PI * FLUTTER.rate * this.age + this.flutterPhase);
+      const wanted = UP.clone().applyAxisAngle(across, pitch);
+      const turn = face.clone().cross(wanted);
+      const off = Math.asin(Math.min(turn.length(), 1));
+      if (off > 1e-5) this.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(turn.normalize(), Math.min(off, FLUTTER.turning * dt)));
+      const shown = FLUTTER.edgeOn + (1 - FLUTTER.edgeOn) * Math.abs(face.dot(along));
+      flyStep(this.position, this.velocity, this.radius, this.mass, dt, this.thing.air.drag * shown);
+      // The glide: the air on its tilted face pushes it across its path, as on a plate: −(n·v̂)·(n − (n·v̂)·v̂) (lifted while it comes down level).
+      const meets = face.dot(along);
+      const sideways = face.clone().addScaledVector(along, -meets);
+      const drag = 0.5 * 1.2 * this.thing.air.drag * Math.PI * this.radius ** 2 * speed * speed / this.mass;
+      this.velocity.addScaledVector(sideways, -meets * FLUTTER.glide * drag * dt);
+    } else {
+      flyStep(this.position, this.velocity, this.radius, this.mass, dt, this.thing.air.drag);
+    }
+    // It spins on its face (its tumble's axis its face's normal).
+    this.spinAxis.copy(this.uprightAxis).applyQuaternion(this.quaternion);
+  }
+
+  /** Its flight, tried (aimThrow; flutterTrial), or null for a thing whose flight is plain (flyStep says it all). */
+  trialFlight() {
+    return this.thing.air.model === 'flutter' ? flutterTrial(this) : null;
+  }
+
+  /**
+   * A soft thing's shape as it is drawn now (`body.soft`, src/things.js: a
+   * pizza; src/main.js calls this once a frame): in the air its edges trail
+   * the centre, cupped against the air by `soft.cup` of its radius per
+   * (m/s)² (at most `soft.most`), and flap in a saddle by `soft.flap` at
+   * `soft.rate` a second; on the water or the ground it lies flat again
+   * (over about a tenth of a second). Its mesh is bent along its face's
+   * normal by r² of each point's distance from its middle.
+   */
+  flex() {
+    const soft = this.thing.body.soft;
+    if (!soft) return;
+    const positions = this.geometry.attributes.position;
+    if (!this.restShape) { this.restShape = positions.array.slice(); this.restNormals = this.geometry.attributes.normal.array.slice(); }
+    let cup = 0, flap = 0;
+    if (this.state === 'air') {
+      const face = this.shape.axes[2].clone().applyQuaternion(this.quaternion);
+      const speed = this.velocity.length();
+      const facing = speed > 1e-6 ? face.dot(this.velocity) / speed : 0;
+      cup = -Math.min(soft.cup * speed * speed, soft.most) * facing;
+      flap = soft.flap * Math.min(speed / 4, 1);
+    }
+    // Eased towards what it should be, so it relaxes rather than snaps.
+    this.flexed = this.flexed ?? { cup: 0, flap: 0 };
+    this.flexed.cup += (cup - this.flexed.cup) * 0.35;
+    this.flexed.flap += (flap - this.flexed.flap) * 0.35;
+    if (Math.abs(this.flexed.cup) < 1e-4 && Math.abs(this.flexed.flap) < 1e-4 && this.flexedDrawn === false) return;
+    const rest = this.restShape, restNormals = this.restNormals, array = positions.array, normals = this.geometry.attributes.normal.array;
+    const phase = 2 * Math.PI * soft.rate * this.age;
+    const [axisX, axisY, axisZ] = this.shape.axes;   // its long, middle and short axes, in its own frame
+    for (let index = 0; index < array.length; index += 3) {
+      const x = rest[index], y = rest[index + 1], z = rest[index + 2];
+      const u = x * axisX.x + y * axisX.y + z * axisX.z, v = x * axisY.x + y * axisY.y + z * axisY.z;
+      const amount = this.flexed.cup + this.flexed.flap * Math.sin(phase + 2 * Math.atan2(v, u));
+      const bend = amount * (u * u + v * v);
+      array[index] = x + axisZ.x * bend; array[index + 1] = y + axisZ.y * bend; array[index + 2] = z + axisZ.z * bend;
+      // Its smooth normal tilted by the bend's slope, 2·amount·(u, v), on whichever face it is.
+      const nx = restNormals[index], ny = restNormals[index + 1], nz = restNormals[index + 2];
+      const facing = nx * axisZ.x + ny * axisZ.y + nz * axisZ.z;
+      const slopeU = 2 * amount * u * facing, slopeV = 2 * amount * v * facing;
+      const tx = nx - slopeU * axisX.x - slopeV * axisY.x, ty = ny - slopeU * axisX.y - slopeV * axisY.y, tz = nz - slopeU * axisX.z - slopeV * axisY.z;
+      const length = Math.hypot(tx, ty, tz) || 1;
+      normals[index] = tx / length; normals[index + 1] = ty / length; normals[index + 2] = tz / length;
+    }
+    positions.needsUpdate = true;
+    this.geometry.attributes.normal.needsUpdate = true;
+    this.flexedDrawn = Math.abs(this.flexed.cup) >= 1e-4 || Math.abs(this.flexed.flap) >= 1e-4;
+  }
 
   /**
    * Into the water from where the stone is, at its velocity: its path under
@@ -1101,13 +1300,55 @@ export class Rock {
 
   // ---- floating (the header) ----------------------------------------------
 
-  /** Its half-height (m): a ball's radius; a stone's ellipsoid's depth as it is turned. */
+  /**
+   * Where the water meets it with its centre `height` (m) over the still
+   * water, as it is turned now: the share of it under (`share`), how fast
+   * that share grows as it sinks (`slope`, per metre: its waterplane's area
+   * over its volume), and how far its lowest and highest points are from
+   * its centre (`low`, `high`, m, along the vertical). A sphere's is a cap's;
+   * anything else's its mesh's own (waterlineTable, along its upright axis,
+   * which floating turns to the vertical: rightOnWater).
+   */
+  waterline(height) {
+    const radius = this.radius;
+    if (!this.waterlineTable) {
+      const half = this.halfHeight();
+      const depth = Math.min(Math.max((half - height) / half, 0), 2);
+      return { share: capShare(depth), slope: (6 * depth - 3 * depth * depth) / (4 * half), low: -half, high: half, depth };
+    }
+    const { axis, low, high, shares } = this.waterlineTable;
+    // Its axis up or down: a point at `along` on it is at height + sign·along·R.
+    const sign = axis.clone().applyQuaternion(this.quaternion).y >= 0 ? 1 : -1;
+    const lookup = (along) => {
+      const position = THREE.MathUtils.clamp((along - low) / (high - low), 0, 1) * WATERLINE.levels;
+      const index = Math.min(Math.floor(position), WATERLINE.levels - 1);
+      const blend = position - index;
+      return { share: shares[index] + (shares[index + 1] - shares[index]) * blend, slope: (shares[index + 1] - shares[index]) * WATERLINE.levels / (high - low) };
+    };
+    const below = -height / radius;   // the water's level along its axis, from its centre, in radii
+    const found = sign > 0 ? lookup(below) : lookup(-below);
+    const share = sign > 0 ? found.share : 1 - found.share;
+    const inside = sign > 0 ? below > low && below < high : -below > low && -below < high;
+    return { share, slope: inside ? found.slope / radius : 0, low: radius * (sign > 0 ? low : -high), high: radius * (sign > 0 ? high : -low) };
+  }
+
+  /** Its half-height (m): a ball's radius; anything else's ellipsoid's depth as it is turned. */
   halfHeight() { return this.ellipsoidDepth(); }
 
-  /** The height of its centre over the still water when it floats at rest (m). */
+  /** The height of its centre over the still water when it floats at rest (m), turned as it is now (Archimedes, by bisection). */
   floatingHeight() {
-    const half = this.halfHeight();
-    return half * (1 - floatingDepth(this.density / WATER_DENSITY));
+    if (!this.waterlineTable) {
+      const half = this.halfHeight();
+      return half * (1 - floatingDepth(this.density / WATER_DENSITY));
+    }
+    const wanted = this.density / WATER_DENSITY;
+    const { low, high } = this.waterline(0);
+    let lowest = -high, highest = -low;   // centre heights from all under to all clear
+    for (let iteration = 0; iteration < 40; iteration++) {
+      const middle = 0.5 * (lowest + highest);
+      if (this.waterline(middle).share > wanted) lowest = middle; else highest = middle;
+    }
+    return 0.5 * (lowest + highest);
   }
 
   /** From under the water (or back down from the air) to afloat: a ring if it broke the surface fast enough (`ripple`), else null. */
@@ -1119,27 +1360,29 @@ export class Rock {
 
   /**
    * dt seconds afloat (the header): buoyed by the water over its submerged
-   * part (a ball's cap, its half-height deep at the most), its inertia its
+   * part (waterline: a ball's cap, anything else's mesh), its inertia its
    * own and FLOAT.addedMass of that water's, the drag on its wetted part
    * and the waves it makes slowing it. Returns whether it is still in the
    * water (it may bob clear); it settles once still.
    */
   floatStep(dt) {
-    const half = this.halfHeight();
     const volume = this.mass / this.density;   // m³: a stone's nominal ball's, as its mass is
-    const depth = Math.min(Math.max((half - this.position.y) / half, 0), 2);   // how far up it is under, in half-heights from its bottom
-    const share = capShare(depth);
+    const line = this.waterline(this.position.y);
+    const share = line.share;
     const inertia = this.mass + FLOAT.addedMass * WATER_DENSITY * volume * share;
     const buoyancy = WATER_DENSITY * GRAVITY * volume * share;
     // Its bob's stiffness, the buoyancy's change with depth, and the damping that is FLOAT.damping of critical for it.
-    const stiffness = WATER_DENSITY * GRAVITY * volume * (6 * depth - 3 * depth * depth) / (4 * half);
+    const stiffness = WATER_DENSITY * GRAVITY * volume * line.slope;
     const damping = 2 * FLOAT.damping * Math.sqrt(Math.max(stiffness, 0) * inertia);
-    const waterplane = Math.PI * half * half * (depth < 1 ? depth * (2 - depth) : 1);
+    const half = 0.5 * (line.high - line.low);
+    // The waterplane (dV/dy) while it is in the water's surface; all its face once under.
+    const waterplane = line.slope > 0 ? volume * line.slope : share > 0.5 ? volume / (2 * half) : 0;
     const resisting = (damping + 0.5 * WATER_DENSITY * FLOAT.drag * waterplane * Math.abs(this.velocity.y)) / inertia;
     this.velocity.y = (this.velocity.y + ((buoyancy - this.mass * GRAVITY) / inertia) * dt) / (1 + resisting * dt);
     // Along the water, towards the drift (a gale's), slowed by the drag on its wetted section and its waves.
     const relativeX = this.velocity.x - this.drift.x, relativeZ = this.velocity.z - this.drift.z;
-    const section = discSegment(half, depth * half);
+    // Its wetted cross-section against its drift: a sphere's cap's; anything else's its share of its own.
+    const section = this.waterlineTable ? share * volume / (2 * this.radius) : discSegment(half, line.depth * half);
     const slowing = 0.5 * WATER_DENSITY * FLOAT.drag * section * Math.hypot(relativeX, relativeZ) / inertia + FLOAT.slowing * Math.min(4 * share, 1);
     const kept = 1 / (1 + slowing * dt);
     this.velocity.x = this.drift.x + relativeX * kept;
@@ -1147,7 +1390,7 @@ export class Rock {
     this.position.addScaledVector(this.velocity, dt);
     this.spinRate *= Math.exp(-SPIN_DECAY * dt);
     if (!this.sphere) this.rightOnWater(dt);
-    if (this.position.y >= half && this.velocity.y > 0) return false;   // bobbed clear of the water
+    if (this.position.y + this.waterline(this.position.y).low >= 0 && this.velocity.y > 0) return false;   // bobbed clear of the water
     const still = Math.abs(this.velocity.y) < FLOAT.settledSpeed && Math.hypot(this.velocity.x, this.velocity.z) < FLOAT.settledSpeed;
     if (still && this.drift.x === 0 && this.drift.z === 0 && Math.abs(this.position.y - this.floatingHeight()) < FLOAT.settledOffset) {
       this.position.y = this.floatingHeight();
@@ -1159,13 +1402,15 @@ export class Rock {
   }
 
   /**
-   * A floater that is not round turns flat side down (the header): its short
-   * axis towards the vertical at up to FLOAT.righting, as the water's push
-   * on its lower side rights it.
+   * A floater that is not round turns flat side down (the header): its
+   * upright axis (its short axis, or its own +y if it is kept upright, a
+   * pizza's toppings up) towards the vertical at up to FLOAT.righting, as the
+   * water's push on its lower side rights it.
    */
   rightOnWater(dt) {
-    const short = this.shape.axes[2].clone().applyQuaternion(this.quaternion);
-    if (short.y < 0) short.negate();
+    const short = this.uprightAxis.clone().applyQuaternion(this.quaternion);
+    // Either way up, unless it is kept upright (a pizza: its toppings up).
+    if (short.y < 0 && !this.thing.body.upright) short.negate();
     const axis = short.clone().cross(UP);
     const off = Math.asin(Math.min(axis.length(), 1));
     if (off < 1e-4) return;

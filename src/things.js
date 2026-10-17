@@ -1,4 +1,4 @@
-// What can be thrown (the What to throw setting, src/main.js setThing): a
+// What can be thrown (the Object setting, src/main.js setThing): a
 // registry of definitions (defineThing), each a plain description of the
 // real thing, which is all the physics needs to know of it (src/rock.js,
 // src/cavity.js, src/collide.js) and all the page needs to offer it (the
@@ -21,7 +21,14 @@
 //     or 3/5 of its speed along the ground once it rolls; a thing that does
 //     not roll tumbles) and `rolling`, its rolling resistance.
 //   - air: `drag`, its drag coefficient in flight (on the disc of its nominal
-//     radius: 0.47 a ball's; a pizza, flat on, more).
+//     radius: 0.47 a ball's; a pizza, flat on, more), and its `model`:
+//     `ballistic` (it tumbles as it flies) or `flutter` (a soft, flat thing:
+//     it turns broadside to the air, wobbles, spins on its face and glides a
+//     little, src/rock.js Rock.flutter).
+//   - body.upright: it is kept one way up (its own +y: a pizza's toppings),
+//     in the air and afloat; otherwise a flat floater lies either way up.
+//   - body.soft, a soft thing's give (a pizza's): in the air its edges trail
+//     the centre, cupped against the air, and flap (src/rock.js Rock.flex).
 //   - water: `restingHeight`, its centre over the bed at rest, in radii.
 //   - look: `mesh`, the kind of mesh it is drawn with (src/thingMeshes.js,
 //     registerMesh), that kind's own parameters, and the material's
@@ -58,8 +65,8 @@
 //     diamond (3510), emerald (2760), ruby and sapphire (corundum, 4000);
 //   - food: an apple (100 to 300 g at 815 kg/m³: a quarter of it is air, so
 //     it floats, low), and a pizza (20, 30 or 40 cm across, a disc with its
-//     crust, cheese and pepperoni, about 700 kg/m³ for its bread: it floats,
-//     flat, and in the air its broad face catches the air).
+//     crust, cheese and pepperoni, about 420 kg/m³, mostly airy bread: it floats,
+//     flat; soft, it flutters through the air broadside, flexing).
 //
 // One material serves them all (src/rock.js): what tells them apart is in
 // the geometry, the vertex colours and the material's colour, roughness and
@@ -73,8 +80,9 @@ const THROW_WORK = 120;              // J: the most a throw puts into a held thi
 const MASS_UNITS = { g: 0.001, kg: 1, lb: 0.45359237, ct: 0.0002 };   // kg per unit
 const ROLLS = { solid: 5 / 7, shell: 3 / 5 };   // the share of its speed along the ground a ball keeps once it rolls
 const BODY_SHAPES = ['sphere', 'mesh'];         // the bodies src/rock.js knows
+const AIR_MODELS = ['ballistic', 'flutter'];    // the flights src/rock.js knows (Rock.fly)
 const CALLED = { Stones: 'a rock', Balls: 'a ball', Gems: 'a gem' };
-const DEFAULTS = { air: { drag: 0.47 }, look: { roughness: 0.92, reflection: 0.9 }, abilities: { skips: false, held: true } };
+const DEFAULTS = { air: { drag: 0.47, model: 'ballistic' }, look: { roughness: 0.92, reflection: 0.9 }, abilities: { skips: false, held: true } };
 
 export const THINGS = {};
 export const THING_NAMES = [];
@@ -115,6 +123,10 @@ export function validateThing(key, definition) {
   need(material?.roll === undefined || material.roll === null || Object.hasOwn(ROLLS, material.roll), 'material.roll must be solid, shell or none');
   need(!material?.roll || (isNumber(material.rolling) && material.rolling >= 0), 'a thing that rolls needs material.rolling');
   need(definition.air?.drag === undefined || (isNumber(definition.air.drag) && definition.air.drag > 0), 'air.drag must be above 0');
+  need(definition.air?.model === undefined || AIR_MODELS.includes(definition.air.model), `air.model must be one of ${AIR_MODELS.join(', ')}`);
+  need(definition.body?.upright === undefined || typeof definition.body.upright === 'boolean', 'body.upright must be true or false');
+  const soft = definition.body?.soft;
+  need(soft === undefined || ['cup', 'most', 'flap', 'rate'].every((field) => isNumber(soft[field]) && soft[field] >= 0), 'body.soft needs cup, most, flap and rate, each 0 or more');
   need(isNumber(definition.water?.restingHeight) && definition.water.restingHeight > 0, 'water.restingHeight must be above 0');
   need(look && meshKind(look.mesh), `look.mesh "${look?.mesh}" is no registered mesh (src/thingMeshes.js)`);
   return problems;
@@ -279,10 +291,12 @@ defineThing('pizza', {
   name: 'Pizza', group: 'Food', note: 'A flat disc: it sails, and floats flat', called: 'a pizza',
   body: {
     shape: 'mesh',
-    size: { by: 'preset', unit: 'size', initial: 2, presets: [{ value: 1, label: '20 cm', diameter: 0.2, mass: 0.15 }, { value: 2, label: '30 cm', diameter: 0.3, mass: 0.5 }, { value: 3, label: '40 cm', diameter: 0.4, mass: 1.15 }] },
+    upright: true,
+    soft: { cup: 0.0025, most: 0.12, flap: 0.05, rate: 3 },
+    size: { by: 'preset', unit: 'size', initial: 2, presets: [{ value: 1, label: '20 cm', diameter: 0.2, mass: 0.11 }, { value: 2, label: '30 cm', diameter: 0.3, mass: 0.38 }, { value: 3, label: '40 cm', diameter: 0.4, mass: 0.9 }] },
   },
   material: { bounce: [0.05, 0.12], friction: 0.9 },
-  air: { drag: 1.1 },
+  air: { drag: 1.1, model: 'flutter' },
   water: { restingHeight: 0.06 },
-  look: { mesh: 'pizza', roughness: 0.8, reflection: 0.6 },
+  look: { mesh: 'pizza', roughness: 1.0, reflection: 0.6 },
 });

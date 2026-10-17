@@ -86,7 +86,7 @@
 // through the water and letting go lifts it out; it neither throws nor
 // turns the view.
 //
-// What is thrown. The What to throw setting (setThing, remembered on this device;
+// What is thrown. The Object setting (setThing, remembered on this device;
 // ?thing=) picks a kind of stone or a ball (src/things.js THINGS), and the
 // strip's slider sets its size in its own unit (setSize: a stone's
 // diameter, a bowling ball's pounds, a basketball's size; a golf or tennis
@@ -190,7 +190,7 @@ import { Rings } from './rings.js';
 import { createEnvironment, SKY_NAMES, skyHours, resolveHour, nearestHour } from './sky.js';
 import { createWaterSurface } from './waterSurface.js';
 import { createPondFloor, createShore, floorDepthAt, groundHeightAt } from './pondFloor.js';
-import { Rock, aimSkip, aimThrow, skipSpeed, SKIP_THROW } from './rock.js';
+import { Rock, aimSkip, aimThrow, flutterTrial, skipSpeed, SKIP_THROW } from './rock.js';
 import { THINGS, DEFAULT_THING, defineThing } from './things.js';
 import { collideThings } from './collide.js';
 import { SplashSystem, MIRROR_LAYER } from './splash.js';
@@ -308,7 +308,7 @@ const WATER_STORAGE_KEY = 'stone-pond-water'; // the Water setting's
 const SKY_STORAGE_KEY = 'stone-pond-sky';     // the Location setting's
 const TIME_STORAGE_KEY = 'stone-pond-time';   // the Time setting's: the local time ('hh:mm') of the hour last chosen
 const WEATHER_STORAGE_KEY = 'stone-pond-weather';   // the Weather setting's
-const THING_STORAGE_KEY = 'stone-pond-thing';       // the What to throw setting's: what is thrown (src/things.js)
+const THING_STORAGE_KEY = 'stone-pond-thing';       // the Object setting's: what is thrown (src/things.js)
 // The Weather setting: the cloud's cover and the light under it, against a
 // clear sky's (src/sky.js setWeather: overcast takes the sun and greys the
 // sky), the rain's visibility (its haze), the rain (src/rain.js) and how wet
@@ -359,7 +359,7 @@ const DEFAULT_WATER = 'lake';
 // the column's three programs are built too, where an unseeded throw raised
 // none about one time in thirty (its jet form "none") and the first throw
 // with a jet then built them.
-const WARM_UP = { x: 0, z: -1.4, radius: 0.03, moments: [0.02, 0.16, 0.4], seed: 4, floater: 'pumice' };
+const WARM_UP = { x: 0, z: -1.4, radius: 0.03, moments: [0.02, 0.16, 0.4], seed: 4, floaters: ['pumice', 'pizza'] };   // a floater of each program: pumice the stones', a pizza its textured one
 
 export async function startPond({ canvas, quality = 'auto', onReady, onError, onStats, onViewChange, onQualityChange, onProfile }) {
   let renderer;
@@ -1125,11 +1125,12 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
   let stoneRadius = 0.03;
   let power = 'normal';
   let skipping = false;   // Skip: taps throw skips (skipThrow)
-  // What is thrown (the What to throw setting, src/things.js): the page's ?thing, else the last choice here, else a river stone;
+  // What is thrown (the Object setting, src/things.js): the page's ?thing, else the last choice here, else a river stone;
   // and each kind's slider value (a stone's size is stoneRadius).
   const storedThing = storedChoice(THING_STORAGE_KEY);
   const requestedThing = pageParameters.get('thing');
   let thingName = Object.hasOwn(THINGS, requestedThing ?? '') ? requestedThing : Object.hasOwn(THINGS, storedThing ?? '') ? storedThing : DEFAULT_THING;
+  const thingShapes = new Map();   // each kind's shape, from one made (a fluttering thing's aim flies it)
   const thingSizes = Object.fromEntries(Object.entries(THINGS).map(([name, thing]) => [name, thing.slider?.initial ?? null]));
   let timeScale = 1;
   let simulationTime = 0;
@@ -1174,13 +1175,13 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
    * and aimed for the air's drag. With the flight time and, but for a river
    * stone, its path and where it comes down.
    */
-  function thingVelocity(hand, target, powerName, measured) {
+  function thingVelocity(hand, target, powerName, measured, flight = null) {
     const { velocity, flightTime } = throwVelocity(hand, target, powerName);
     if (measured.thing.key === DEFAULT_THING) return { velocity, flightTime, path: null, landing: target };
-    return aimThrow(hand, target, flightTime, measured);
+    return aimThrow(hand, target, flightTime, measured, flight);
   }
 
-  /** What is thrown (`name`, else the What to throw setting's): its kind, its radius and mass at its slider's value `size` (a stone's radius `radius`). */
+  /** What is thrown (`name`, else the Object setting's): its kind, its radius and mass at its slider's value `size` (a stone's radius `radius`). */
   function measureThing(name, size, radius) {
     const thing = THINGS[name];
     if (thing.byDiameter) {
@@ -1199,8 +1200,11 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     const target = new THREE.Vector3(x, 0, z);
     const skipped = skips ? skipThrow(handPosition(radius), target, radius, options.power ?? power) : null;
     const hand = skipped?.hand ?? handPosition(radius);
-    const { velocity } = skipped ?? thingVelocity(hand, target, options.power ?? power, { thing, radius, mass, size });
-    const rock = new Rock({ radius, position: hand, velocity, envTexture: environment.envTexture, waterFog: { extinction: lighting.extinction, color: lighting.waterColor }, thing: name, mass, mirrorLayer: MIRROR_LAYER, skip: skips });
+    // Made first, so a thing that flutters is aimed by its own flight (src/rock.js trialFlight).
+    const rock = new Rock({ radius, position: hand, velocity: new THREE.Vector3(), envTexture: environment.envTexture, waterFog: { extinction: lighting.extinction, color: lighting.waterColor }, thing: name, mass, mirrorLayer: MIRROR_LAYER, skip: skips });
+    thingShapes.set(name, rock.shape);
+    const { velocity } = skipped ?? thingVelocity(hand, target, options.power ?? power, { thing, radius, mass, size }, rock.trialFlight());
+    rock.velocity.copy(velocity);
     if (skips) {
       rock.launchSkip(velocity);
       // In the pool it touches and skims only inside the walls, less its radius (src/pool.js holds it off them).
@@ -1300,7 +1304,10 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     const measured = measureThing(thingName);
     const skipped = skipping && measured.thing.skips ? skipThrow(handPosition(measured.radius), hit, measured.radius) : null;
     const hand = skipped?.hand ?? handPosition(measured.radius);
-    const thrown = skipped ?? thingVelocity(hand, hit, power, measured);
+    // A fluttering thing's arc is its flight's (src/rock.js flutterTrial), once one of its kind has been made (the warm-up makes a pizza).
+    const shape = thingShapes.get(thingName);
+    const flight = measured.thing.air.model === 'flutter' && shape ? flutterTrial({ thing: measured.thing, shape, radius: measured.radius, density: measured.mass / (shape.volume * measured.radius ** 3), ownMass: measured.mass }) : null;
+    const thrown = skipped ?? thingVelocity(hand, hit, power, measured, flight);
     const { velocity, flightTime } = thrown;
     // Where it comes down: a skip's first touch; anything else's flown path's end (the air's drag, the fastest it can be thrown).
     const path = skipped ? null : thrown.path;
@@ -1520,6 +1527,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
 
   let framesRendered = 0;
   function render() {
+    for (const rock of rocks) rock.flex();   // a soft thing's shape as it is drawn now (src/rock.js)
     renderer.info.reset();
     framesRendered++;
     camera.updateMatrixWorld();
@@ -1807,13 +1815,16 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     rain.show(true);                       // and the rain's: its tile's pass, its streaks and flecks (none drawn: none set)
     const galeWarmUp = galeWaves.warmUp();   // and the gale's passes and spray (its FFT's program is the ripples')
     const stone = throwAt(WARM_UP.x, WARM_UP.z, { radius: WARM_UP.radius, power: 'normal', thing: DEFAULT_THING });
-    // A floater's mirror image (src/rock.js meshMirror), in the whole mirror drawn now: its program too.
-    const floater = throwAt(WARM_UP.x, WARM_UP.z, { thing: WARM_UP.floater });
-    floater.meshMirror.visible = true;
+    // A floater's mirror image (src/rock.js meshMirror), in the whole mirror drawn now, and a textured thing's
+    // materials (a pizza's: above, below and in the mirror): their programs too.
+    const floaters = WARM_UP.floaters.map((name) => throwAt(WARM_UP.x, WARM_UP.z, { thing: name }));
+    for (const floater of floaters) floater.meshMirror.visible = true;
     viewChanged = true;
     render();
-    programKeepers.push(floater.meshMirror.material);
-    retireRock(floater, { keepMaterials: true });
+    for (const floater of floaters) {
+      programKeepers.push(floater.meshAbove.material, floater.meshBelow.material, floater.meshMirror.material);
+      retireRock(floater, { keepMaterials: true });
+    }
     galeWarmUp.done();
     marker.visible = arc.visible = false;
     rain.show(false);

@@ -143,7 +143,7 @@ export class SettingsPanel {
  * Wire a group of radio buttons (role="radio", data-value) in `root`:
  * clicking one calls onChoose with its value. Returns show(value), which
  * marks that one checked. The buttons are found each time, so `root`'s may
- * be built again (the What to throw page's, as things are defined).
+ * be built again (the Object page's, as things are defined).
  */
 export function radioGroup(root, onChoose) {
   const radios = () => [...root.querySelectorAll('[role="radio"]')];
