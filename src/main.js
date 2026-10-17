@@ -64,16 +64,18 @@
 // water under it, a cross where it touches and a line down from the top of
 // each arc, over everything.
 // With Skip on (setSkip: the Throw group's
-// switch) a tap throws a skip instead (skipThrow): a flat stone, from the
-// hand let down to SKIP_HAND_HEIGHT, at SKIP_SPEED for the strength
-// (SKIP_POOL_SPEED in the pool; slower for a stone over SKIP_FULL_RADIUS),
-// towards the tap and nearly level
-// (SKIP_ELEVATION): it first touches the water at the tap if a release that
-// level reaches it (src/rock.js skipLaunch), else as near to it as one does,
-// so it always comes in low (a skip cannot be thrown to land at one's feet),
-// and on open water (SKIP_SHALLOWEST, or inside the pool); if no such touch
-// lies along the tap's direction, it aims at the tap brought onto the water
-// as a throw is. The aim's ring and arc show where. From there it skips on as
+// switch) a tap throws a skip instead (skipThrow, aimSkip in src/rock.js):
+// a flat stone, from the hand let down to SKIP_THROW.handHeight, at
+// SKIP_THROW's speed for the strength (gentler in the pool; slower for a big
+// stone), towards the tap and nearly level (SKIP_THROW.elevation): it first
+// touches the water at the tap if a release that level reaches it, else as
+// near to it as one does, so it always comes in low (a skip cannot be thrown
+// to land at one's feet), and on open water (SKIP_THROW.shallowest deep, or
+// inside the pool); if no such touch lies along the tap's direction, along
+// the direction of the tap brought onto the water as a throw is; failing
+// that (a big stone thrown slowly in the pool) as far as it reaches, on the
+// deck, which it lands on as ground (src/rock.js groundAt, src/pool.js
+// poolGround). The aim's ring and arc show where it comes down. From there it skips on as
 // src/rock.js works out, out of the patch and the pool too. While a
 // press aims (or a mouse hovers) a ring on the water and a faint arc from
 // the hand show the throw; a throw hides them, a mouse's until it moves on,
@@ -159,7 +161,7 @@ import { Rings } from './rings.js';
 import { createEnvironment, SKY_NAMES, skyHours, resolveHour, nearestHour } from './sky.js';
 import { createWaterSurface } from './waterSurface.js';
 import { createPondFloor, createShore, floorDepthAt, groundHeightAt } from './pondFloor.js';
-import { Rock, skipLaunch } from './rock.js';
+import { Rock, aimSkip, skipSpeed, SKIP_THROW } from './rock.js';
 import { SplashSystem, MIRROR_LAYER } from './splash.js';
 import { createFloatTarget, FullscreenPass, configureFloatSupport, renderTargetBytes } from './gpu.js';
 import { UNDER_BACKGROUND_FRAGMENT } from './shaders/scene.js';
@@ -167,7 +169,7 @@ import { directionAt, placeDirection, clampToFrame, zoomToward, isZoomed, viewFa
 import { orbitEye, orbitFacing, orbitAbout, clampOrbit, turnOrbit, blendOrbits, orbitsMatch, keepInside, LOWEST_EYE } from './viewOrbit.js';
 import { Profiler } from './profiler.js';
 import { FingerInWater, FINGER } from './touch.js';
-import { createPool, holdInPool, POOL } from './pool.js';
+import { createPool, holdInPool, poolGround, poolInside, POOL } from './pool.js';
 
 // Quality presets. The splash lives in a few dozen pixels, so the fluid
 // buffer's resolution is what it is made of: a drop narrower than a buffer
@@ -221,12 +223,6 @@ const IDLE = {
   tolerance: 0.004,          // ...and frames come at the preset's idleFrameRate, this many seconds early at most
 };
 const POWER = { soft: 1.3, normal: 1.0, hard: 0.72 };   // flight-time multipliers
-const SKIP_SPEED = { soft: 7, normal: 10, hard: 13 };   // m/s: a skip throw's speed by strength, for a stone up to SKIP_FULL_RADIUS...
-const SKIP_POOL_SPEED = { soft: 6, normal: 7.5, hard: 9 };   // ...and in the pool, 3 m across: gentler, so most skips stay in it (a hard one may clear the far wall)...
-const SKIP_FULL_RADIUS = 0.04;   // ...beyond which it goes as SKIP_FULL_RADIUS / R (a rough assumption: as the cube root of the mass)
-const SKIP_HAND_HEIGHT = 0.3;    // m over the water: a skip is thrown crouched, side-arm...
-const SKIP_ELEVATION = { least: -3, most: 6 };   // ...and let go nearly level: degrees from level, down to up...
-const SKIP_SHALLOWEST = 0.3;     // ...to first touch the lake where it is this deep (m) or more, or the pool inside its walls less POOL_MARGIN
 const POND_DEPTH = 0.8;       // the depth the waves take (the solver, the wind's ripples, the rings): see the bed below
 const POND_MARGIN = 0.4;      // metres inside the solver's patch that a tap's throw keeps to...
 const MARGIN_RADII = 4;       // ...or this many of the rock's radius, if more: a 30 cm rock's splats reach 3 radii out
@@ -1100,50 +1096,19 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
   }
 
   /**
-   * A skip throw (the header): from the hand let down to SKIP_HAND_HEIGHT,
-   * at SKIP_SPEED for the strength (SKIP_POOL_SPEED in the pool; less for a
-   * stone over SKIP_FULL_RADIUS),
-   * towards the target, on the lower arc to the first touch: along the
-   * target's direction, as near the target as a release within
-   * SKIP_ELEVATION reaches and on open water (SKIP_SHALLOWEST deep, or in
-   * the pool less throwMargin()); failing that, along the direction of the
-   * target brought onto the water (keepOnWater). With its flight time and
-   * the touch, for the aim.
+   * A skip throw (the header): from the hand let down to
+   * SKIP_THROW.handHeight, at the strength's speed (skipSpeed), aimed by
+   * aimSkip at the target, on open water (SKIP_THROW.shallowest deep, or in
+   * the pool less throwMargin()), falling back on the target brought onto
+   * the water (keepOnWater). With the hand, the velocity, the flight time
+   * and where it comes down, for the aim.
    */
   function skipThrow(hand, target, radius, powerName = power) {
     const from = hand.clone();
-    from.y = Math.min(from.y, SKIP_HAND_HEIGHT);
-    const speed = (pooled ? SKIP_POOL_SPEED : SKIP_SPEED)[powerName] * Math.min(1, SKIP_FULL_RADIUS / radius);
-    const reachAt = (degrees) => {
-      const up = speed * Math.sin(THREE.MathUtils.degToRad(degrees));
-      return (speed * Math.cos(THREE.MathUtils.degToRad(degrees)) * (up + Math.sqrt(up * up + 2 * 9.81 * from.y))) / 9.81;
-    };
-    const nearest = reachAt(SKIP_ELEVATION.least), farthest = reachAt(SKIP_ELEVATION.most);
+    from.y = Math.min(from.y, SKIP_THROW.handHeight);
     const margin = throwMargin();
-    const onWater = (x, z) => (pooled
-      ? x >= pool.square.minX + margin && x <= pool.square.minX + pool.square.size - margin && z >= pool.square.minZ + margin && z <= pool.square.minZ + pool.square.size - margin
-      : bedDepthAt(x, z) >= SKIP_SHALLOWEST);
-    // The touch along the direction to `towards`, as near it as may be, or null.
-    const touchTowards = (towards) => {
-      const distance = Math.hypot(towards.x - from.x, towards.z - from.z);
-      if (distance < 1e-6) return null;
-      const directionX = (towards.x - from.x) / distance, directionZ = (towards.z - from.z) / distance;
-      const wanted = THREE.MathUtils.clamp(distance, nearest, farthest);
-      let best = onWater(from.x + directionX * wanted, from.z + directionZ * wanted) ? wanted : null;
-      for (let step = 0; step <= 64 && best === null; step++) {
-        // Outward and inward from the wanted reach, nearest first.
-        for (const side of [1, -1]) {
-          const reach = wanted + side * (farthest - nearest) * step / 64;
-          if (best === null && reach >= nearest && reach <= farthest && onWater(from.x + directionX * reach, from.z + directionZ * reach)) best = reach;
-        }
-      }
-      return best === null ? null : new THREE.Vector3(from.x + directionX * best, 0, from.z + directionZ * best);
-    };
-    const onto = keepOnWater(target.clone(), margin);
-    const touch = touchTowards(target) ?? touchTowards(onto) ?? onto;
-    const velocity = skipLaunch(from, touch, speed);
-    const flightTime = (velocity.y + Math.sqrt(velocity.y ** 2 + 2 * 9.81 * from.y)) / 9.81;
-    return { hand: from, velocity, flightTime, touch };
+    const onWater = pooled ? poolInside(pool.square, margin) : (x, z) => bedDepthAt(x, z) >= SKIP_THROW.shallowest;
+    return { hand: from, ...aimSkip(from, target, skipSpeed(powerName, radius, pooled), onWater, keepOnWater(target.clone(), margin)) };
   }
 
   function throwAt(x, z, options = {}) {
@@ -1156,9 +1121,11 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     const rock = new Rock({ radius, position: hand, velocity, envTexture: environment.envTexture, waterFog: { extinction: lighting.extinction, color: lighting.waterColor }, skip: skips });
     if (skips) {
       rock.launchSkip(velocity);
-      // In the pool it touches and skims only inside the walls, less its radius (src/pool.js holds it off them).
-      const square = pool.square;
-      if (pooled) rock.skip.inside = (px, pz) => px >= square.minX + radius && px <= square.minX + square.size - radius && pz >= square.minZ + radius && pz <= square.minZ + square.size - radius;
+      // In the pool it touches and skims only inside the walls, less its radius (src/pool.js holds it off them), and the deck is ground.
+      if (pooled) {
+        rock.skip.inside = poolInside(pool.square, radius);
+        rock.groundAt = poolGround(pool.square);
+      }
     }
     rocks.push(rock);
     sceneMain.add(rock.meshAbove);
@@ -1422,7 +1389,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     for (let s = 0; s < steps; s++) {
       for (const rock of rocks) {
         const impact = rock.update(h, bedDepthAt, galeWaves.on ? galeSurfaceAt : null);
-        if (pooled) holdInPool(rock, pool.square, h);
+        if (pooled) holdInPool(rock, pool.square);
         if (tracing && (rock.state === 'air' || rock.state === 'skim' || impact)) traceRock(rock, impact);
         if (impact?.skim) splash.skim(impact, water);
         else if (impact) splash.impact(impact, water);
@@ -1456,7 +1423,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     if (!skip.fluid) splash.prepareFrame();
     const fromBelow = camera.position.y < (galeWaves.on ? galeSurfaceAt(camera.position.x, camera.position.z) : 0);
     if (!fromBelow) updateReflection();   // from below no mirror is needed; a change of view keeps it marked stale until the eye surfaces
-    surface.update({ underTarget, reflectionTarget, reflectionMatrix, mirrorRect: splashRect, stonesUnder: rocks.some((rock) => rock.state !== 'air'), resolution, camera, time: simulationTime });
+    surface.update({ underTarget, reflectionTarget, reflectionMatrix, mirrorRect: splashRect, stonesUnder: rocks.some((rock) => rock.state === 'skim' || rock.state === 'water' || (rock.state === 'rest' && rock.position.y < 0)), resolution, camera, time: simulationTime });
     splash.prepareScene();   // the stones' cavities, and the patch dipping under them
     if (skip.cavity) surface.setCavities([]);
     surface.inner.visible = !skip.surface;

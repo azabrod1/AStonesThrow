@@ -630,19 +630,25 @@ farther out, so it rises into the view rather than filling its corner.
   writes `assets/rain/ring.json` and `ring_profile.bin`, which the page
   loads the first time it rains.
 - `node tools/skip-probe.mjs [throws=60] [--seed=1] [--aim=x:z] [--list]`
-  throws skips as the app does with Skip on (the 6 cm stone softly, normally
-  and hard, then a 3, a 16 and a 30 cm stone normally), flies, skips and
-  sinks each on the CPU with a splash system, and prints the skips per
-  throw, the first touch (its angles in and out, how long it lasts, the
-  speeds), the first hop's length and height, a touch's spray and ring
-  pushes, where the stone went in and the cost of a contact and a frame. It
-  checks that a normal throw mostly skips (a median of 3 to 8), that softer
-  throws skip less, that a 30 cm rock never skips, that no skip leaves
-  rising faster than it came down and the first hop stays under 30 cm, that
-  every hop is an arc (at least 1/40 as high as it is long), that the stone
-  stays in the vertical plane it was thrown in, that every skip rings and
-  sprays, that every stone comes to rest, that halving the contact's step
-  changes nothing, and that a contact costs under a millisecond.
+  throws skips as the app does with Skip on, through the app's own aiming
+  (`aimSkip` and `SKIP_THROW` in `src/rock.js`): in the lake the 6 cm stone
+  softly, normally and hard, then a 3, a 16 and a 30 cm stone normally; in
+  the pool, with its walls and deck, the 6 cm stone at each strength and a
+  30 cm rock. It flies, skips and sinks each on the CPU with a splash system
+  and prints the skips per throw, the first touch (its angles in and out,
+  how long it lasts, the speeds), the first hop's length and height, a
+  touch's spray and ring pushes, where the stone went in, how far the first
+  touch lies from where the aim shows it, where pool throws end and the cost
+  of a contact and a frame. It checks that a normal throw mostly skips (a
+  median of 3 to 8), that softer throws skip less, that a 30 cm rock never
+  skips, that no skip leaves rising faster than it came down and the first
+  hop stays under 30 cm, that every hop is an arc (at least 1/40 as high as
+  it is long), that in the lake the stone stays in the vertical plane it was
+  thrown in, that every skip rings and sprays, that every stone comes to
+  rest, that the aim shows the first touch within 12 cm, that in the pool no
+  stone goes below the deck outside the walls and soft and normal skips stay
+  in it, that halving the contact's step or the frame's substeps changes
+  little, and that a contact costs under a millisecond.
 - `node tools/fft-test.mjs` checks the splash solver's spectral passes on the
   CPU with the shaders' arithmetic: the FFT against a naive DFT, a splat's
   spectrum against its Gaussian, the Nyquist bins (splats at fractional

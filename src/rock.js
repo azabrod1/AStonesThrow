@@ -76,7 +76,9 @@
 // stone (createRockGeometry's `flat`: the short axis squashed to
 // SKIP_STONE.squash of the long one, its surface noise SKIP_STONE.surfaceNoise
 // of a river stone's) and lets it go low and fast (launchSkip, at the
-// velocity skipLaunch finds for the tapped point), its face nose-up by
+// velocity aimSkip finds for the tap: SKIP_THROW's speeds, from a crouch,
+// nearly level, its first touch along the tap's direction on open water),
+// its face nose-up by
 // SKIP_TILT along the throw (about the "magic angle" of Clanet, Hersen &
 // Bocquet 2004) and never to either side, spinning at SKIP_SPIN about its
 // short axis, which holds the face's tilt in flight (a gyroscope: the spin
@@ -132,6 +134,23 @@
 // 10° and at 30°), and below about 7° it digs in at its first touch.
 // tools/skip-probe.mjs prints what it does.
 //
+// Ground. A skip stone can come down on ground rather than water: the
+// pool's deck, its height given by `groundAt` (src/pool.js poolGround, which
+// src/main.js hands a skip stone), on its first flight (a big stone thrown
+// slowly falls short of the pool) or skipped out over a wall. It lands only
+// where it was over the ground the step before too: one coming from over
+// the water meets the ground's side (src/pool.js turns it off the pool's
+// wall). On the ground it lands as a stone lands on paving (meetGround): it
+// bounces off at GROUND.bounce of the speed it came down at, the friction
+// taking GROUND.friction times the push off the ground from its speed along
+// it and the lump that strikes turning its path by up to GROUND.scatter, and
+// tumbles end over end (its spin about the level axis across its path, at
+// GROUND.tumble of its speed over its radius), until it comes down slower
+// than GROUND.settle; then it tumbles along it (`ground`, tumbleAlong), its
+// ellipsoid on it (ellipsoidDepth: the lumpy mesh would lift it off as it
+// turns), slowing at GROUND.tumbling·g, and rests once slower than
+// GROUND.stopped; over the ground's edge it falls again.
+//
 // The stone is two meshes: the part above the water in the main scene, the
 // part below in the under-water pass (src/main.js), which the water shader
 // shows through the surface. Below the water it is drawn where it is seen
@@ -178,6 +197,17 @@ const SKIP_TILT = { mean: 20, spread: 6, least: 4, most: 40 };   // degrees: the
 const SKIP_SPIN = { least: 60, most: 110 };                 // rad/s about the short axis (10 to 17 turns a second)
 const SKIP_WOBBLE = { degrees: 3, reference: 80 };          // each skip pitches the face by about this (σ), times reference/ω
 const SKIP_SPIN_KEPT = 0.85;                                // of the spin left after each skip
+// Ground (the header: a skip stone on the pool's deck).
+const GROUND = {
+  bounce: [0.25, 0.45],        // it comes off the ground at this share of the speed it came down at (stone on stone; its lumps strike unevenly)...
+  friction: 0.6,               // ...the friction taking this times the push off the ground from its speed along it (Coulomb)...
+  scatter: 0.05,               // ...its path turned by up to this (radians) by the lump that strikes...
+  settle: 0.4,                 // m/s: ...until it comes down slower than this; then it tumbles along...
+  tumbling: 0.9,               // ...slowing at this times g...
+  stopped: 0.05,               // m/s: ...and rests once slower than this
+  tumble: 0.5,                 // it turns end over end at this times its speed over its radius (a flat stone skids as it tumbles)...
+  tumbleMost: 60,              // ...at most this (rad/s)
+};
 const rockRotation = new THREE.Matrix4();
 
 /** A standard normal draw (Box–Muller, from Math.random). */
@@ -192,18 +222,24 @@ function discSegment(radius, depth) {
   return radius * radius * Math.acos(offset / radius) - offset * Math.sqrt(Math.max(radius * radius - offset * offset, 0));
 }
 
+/** How long (s) a stone let go `height` over the water, rising at `rise` (m/s), flies before it comes down to it (in a vacuum: the air's drag on a stone is tiny). */
+export function flightTime(height, rise) {
+  return (rise + Math.sqrt(rise * rise + 2 * GRAVITY * Math.max(height, 0))) / GRAVITY;
+}
+
+/** How far along the water (m) a stone let go `height` over it at `speed`, `elevation` radians above level, comes down. */
+export function reachAt(height, speed, elevation) {
+  return speed * Math.cos(elevation) * flightTime(height, speed * Math.sin(elevation));
+}
+
 /**
  * The velocity a skip throw leaves `from` with at `speed` to come down on the
- * water (y = 0) at `to`: the lower of the two arcs, in a vacuum (the air's
- * drag on a stone is tiny); beyond the farthest it can reach, that arc.
+ * water (y = 0) at `to`: the lower of the two arcs (reachAt); beyond the
+ * farthest it can reach, that arc.
  */
 export function skipLaunch(from, to, speed) {
   const distance = Math.hypot(to.x - from.x, to.z - from.z);
-  const height = from.y - to.y;
-  const reach = (elevation) => {
-    const along = speed * Math.cos(elevation), up = speed * Math.sin(elevation);
-    return (along * (up + Math.sqrt(up * up + 2 * GRAVITY * Math.max(height, 0)))) / GRAVITY;
-  };
+  const reach = (elevation) => reachAt(from.y - to.y, speed, elevation);
   // The reach grows with the elevation up to the farthest arc's (under 45° from above the water), found first.
   let low = 0, high = Math.PI / 4;
   for (let step = 0; step < 50; step++) {
@@ -220,6 +256,67 @@ export function skipLaunch(from, to, speed) {
   const headingX = (to.x - from.x) / Math.max(distance, 1e-9), headingZ = (to.z - from.z) / Math.max(distance, 1e-9);
   const along = speed * Math.cos(elevation);
   return new THREE.Vector3(headingX * along, speed * Math.sin(elevation), headingZ * along);
+}
+
+// A skip throw (src/main.js skipThrow; tools/skip-probe.mjs throws the
+// same): its speed by strength, in the lake and in the pool (3 m across:
+// gentler, so most skips stay in it), for a stone up to `fullRadius`, beyond
+// which it goes as fullRadius / R (a rough assumption: as the cube root of
+// the mass); the hand let down to `handHeight` over the water (crouched,
+// side-arm); let go nearly level, within `elevation` (degrees from level,
+// down to up); first touching the lake where it is `shallowest` deep or more.
+export const SKIP_THROW = {
+  speed: { soft: 7, normal: 10, hard: 13 },
+  poolSpeed: { soft: 6, normal: 7.5, hard: 9 },
+  fullRadius: 0.04,
+  handHeight: 0.3,
+  elevation: { least: -3, most: 6 },
+  shallowest: 0.3,
+};
+
+/** A skip throw's speed (m/s) at strength `power` for a stone of `radius` (SKIP_THROW), in the pool or the lake. */
+export function skipSpeed(power, radius, pooled = false) {
+  return (pooled ? SKIP_THROW.poolSpeed : SKIP_THROW.speed)[power] * Math.min(1, SKIP_THROW.fullRadius / radius);
+}
+
+/**
+ * A skip throw's aim: let go from `from` at `speed`, nearly level
+ * (SKIP_THROW.elevation), its first touch along the direction to `target`,
+ * as near the target as such a release reaches, where `onWater(x, z)` says
+ * there is open water; failing that, along the direction to `fallback`;
+ * failing that, the farthest such release towards `fallback`, wherever it
+ * comes down (a big stone thrown slowly may come down on the pool's deck).
+ * Returns the velocity, the flight time and where it comes down (`touch`,
+ * which the aim shows: always where the arc meets the water's level).
+ */
+export function aimSkip(from, target, speed, onWater, fallback) {
+  const least = THREE.MathUtils.degToRad(SKIP_THROW.elevation.least), most = THREE.MathUtils.degToRad(SKIP_THROW.elevation.most);
+  const nearest = reachAt(from.y, speed, least), farthest = reachAt(from.y, speed, most);
+  // The touch along the direction to `towards`, as near it as may be, or null.
+  const touchTowards = (towards) => {
+    const distance = Math.hypot(towards.x - from.x, towards.z - from.z);
+    if (distance < 1e-6) return null;
+    const directionX = (towards.x - from.x) / distance, directionZ = (towards.z - from.z) / distance;
+    const wanted = THREE.MathUtils.clamp(distance, nearest, farthest);
+    for (let step = 0; step <= 64; step++) {
+      // Outward and inward from the wanted reach, nearest first.
+      for (const side of [1, -1]) {
+        const reach = wanted + side * (farthest - nearest) * step / 64;
+        if (reach >= nearest && reach <= farthest && onWater(from.x + directionX * reach, from.z + directionZ * reach)) return new THREE.Vector3(from.x + directionX * reach, 0, from.z + directionZ * reach);
+      }
+    }
+    return null;
+  };
+  const touch = touchTowards(target) ?? touchTowards(fallback);
+  let velocity;
+  if (touch) velocity = skipLaunch(from, touch, speed);
+  else {
+    const distance = Math.hypot(fallback.x - from.x, fallback.z - from.z) || 1;
+    const level = speed * Math.cos(most);
+    velocity = new THREE.Vector3(((fallback.x - from.x) / distance) * level, speed * Math.sin(most), ((fallback.z - from.z) / distance) * level);
+  }
+  const time = flightTime(from.y, velocity.y);
+  return { velocity, flightTime: time, touch: new THREE.Vector3(from.x + velocity.x * time, 0, from.z + velocity.z * time) };
 }
 
 function hash3(x, y, z) {
@@ -417,6 +514,9 @@ export class Rock {
     this.state = 'air';
     // A skip stone's state; `inside(x, z)`, given in a pool (src/main.js), says where its walls let it touch and skim.
     this.skip = skip ? { normal: new THREE.Vector3(0, 1, 0), skips: 0, contact: null, inside: null } : null;
+    // The ground's height at (x, z), or null over the water: the pool's deck (src/pool.js poolGround), given for a skip stone (the header).
+    this.groundAt = null;
+    this.groundHeight = 0;   // the ground's height under a stone tumbling along it (`ground`)
     this.age = 0;
     this.restTime = 0;
     this.quaternion = new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.random() * 6, Math.random() * 6, Math.random() * 6));
@@ -610,12 +710,67 @@ export class Rock {
     return this.radius * (Math.sqrt(sum) - (rowX * centroid.x + rowY * centroid.y + rowZ * centroid.z));
   }
 
-  /** Come to rest where it is, its lowest point at `height` (src/pool.js: a stone skipped out onto the deck). */
+  /** Come to rest where it is, its lowest point at `height` (a stone that tumbled to a stop on the ground). */
   restOn(height) {
     this.position.y = height - this.lowestOffset();
     this.velocity.set(0, 0, 0);
     this.state = 'rest';
     this.syncMeshes();
+  }
+
+  /** dt seconds through the air: gravity, and the air's drag, tiny but keeping long throws honest. */
+  fly(dt) {
+    const speed = this.velocity.length();
+    const dragAcceleration = 0.5 * 1.2 * 0.47 * Math.PI * this.radius ** 2 * speed / this.mass;
+    this.velocity.addScaledVector(this.velocity, -dragAcceleration * dt);
+    this.velocity.y -= GRAVITY * dt;
+    this.position.addScaledVector(this.velocity, dt);
+  }
+
+  /**
+   * Down on the ground at `height` (the header): out of it, then a bounce
+   * off it, or it settles to tumble along it.
+   */
+  meetGround(height, dt) {
+    this.position.y = height + this.ellipsoidDepth();
+    if (this.velocity.y >= -GROUND.settle) {
+      this.state = 'ground';
+      this.tumbleAlong(dt);
+      return;
+    }
+    const fall = -this.velocity.y;
+    const bounce = GROUND.bounce[0] + (GROUND.bounce[1] - GROUND.bounce[0]) * Math.random();
+    this.velocity.y = bounce * fall;
+    const along = Math.hypot(this.velocity.x, this.velocity.z);
+    const kept = along > 1e-9 ? Math.max(along - GROUND.friction * (1 + bounce) * fall, 0) / along : 0;
+    const turn = GROUND.scatter * (2 * Math.random() - 1);
+    const velocityX = this.velocity.x * kept, velocityZ = this.velocity.z * kept;
+    this.velocity.x = velocityX * Math.cos(turn) - velocityZ * Math.sin(turn);
+    this.velocity.z = velocityX * Math.sin(turn) + velocityZ * Math.cos(turn);
+    this.tumbleEndOverEnd();
+  }
+
+  /** Tumbling along the ground (the header), slowing at GROUND.tumbling·g; over its edge it falls again, and it rests once slower than GROUND.stopped. */
+  tumbleAlong(dt) {
+    const height = this.groundAt?.(this.position.x, this.position.z) ?? null;
+    if (height === null) { this.state = 'air'; return; }
+    this.groundHeight = height;
+    this.velocity.y = 0;
+    this.position.y = height + this.ellipsoidDepth();
+    const along = Math.hypot(this.velocity.x, this.velocity.z);
+    const slowed = Math.max(along - GROUND.tumbling * GRAVITY * dt, 0);
+    if (slowed < GROUND.stopped) { this.restOn(height); return; }
+    this.velocity.x *= slowed / along;
+    this.velocity.z *= slowed / along;
+    this.tumbleEndOverEnd();
+  }
+
+  /** Its spin about the level axis across its path, at GROUND.tumble of its speed over its radius (at most GROUND.tumbleMost). */
+  tumbleEndOverEnd() {
+    const along = Math.hypot(this.velocity.x, this.velocity.z);
+    if (along < 1e-6) return;
+    this.spinAxis.set(this.velocity.z / along, 0, -this.velocity.x / along);
+    this.spinRate = Math.min(GROUND.tumble * along / this.radius, GROUND.tumbleMost);
   }
 
   /** Height of the stone's lowest point below its centre (negative, metres), as it is turned now. */
@@ -814,13 +969,13 @@ export class Rock {
     this.age += dt;
     this.previous.copy(this.position);
     let impact = null;
-    if (this.state === 'air') {
-      const speed = this.velocity.length();
-      // Air drag on a stone: tiny but keeps long throws honest.
-      const dragAcceleration = 0.5 * 1.2 * 0.47 * Math.PI * this.radius ** 2 * speed / this.mass;
-      this.velocity.addScaledVector(this.velocity, -dragAcceleration * dt);
-      this.velocity.y -= GRAVITY * dt;
-      this.position.addScaledVector(this.velocity, dt);
+    // Down on the ground (the header), if it was over it the step before too (else it met the ground's side, src/pool.js).
+    const groundBefore = this.state === 'air' && this.groundAt ? this.groundAt(this.position.x, this.position.z) : null;
+    if (this.state === 'air') this.fly(dt);
+    const groundNow = groundBefore !== null ? this.groundAt(this.position.x, this.position.z) : null;
+    if (groundNow !== null && this.position.y - this.ellipsoidDepth() <= groundNow) {
+      this.meetGround(groundNow, dt);
+    } else if (this.state === 'air') {
       // Only near the water is the mesh worth walking for its lowest point.
       if (surfaceAt && this.position.y <= this.reach * this.radius + CREST_REACH) surface = surfaceAt(this.position.x, this.position.z);
       const touching = this.position.y - surface <= this.reach * this.radius && this.position.y + this.lowestOffset() <= surface;
@@ -842,12 +997,18 @@ export class Rock {
       contact.age += dt;
       if (contact.age < contact.duration) this.skimAt(contact, contact.age, this.position, this.velocity);
       else {
+        // Off the water, flying on for what is left of the step.
         this.position.copy(contact.exitPosition);
         this.velocity.copy(contact.exitVelocity);
         this.state = 'air';
         this.skip.contact = null;
         this.afterSkip();
+        this.fly(contact.age - contact.duration);
       }
+    } else if (this.state === 'ground') {
+      this.position.x += this.velocity.x * dt;
+      this.position.z += this.velocity.z * dt;
+      this.tumbleAlong(dt);
     } else if (this.state === 'water') {
       // Drag, the sideways lift and buoyancy-reduced gravity (src/cavity.js, whose stone path is the same).
       const body = this.body;
@@ -865,13 +1026,16 @@ export class Rock {
       this.quaternion.premultiply(spin);
     }
     // In its cavity's air until the pinch-off, under water once the surface has closed.
-    if (impact) this.sinceImpact = 0;
+    // A skip's touch opens no hole: what dips under the water is seen through it.
+    if (impact && !impact.skim) this.sinceImpact = 0;
     else if (this.sinceImpact >= 0) this.sinceImpact += dt;
     if (this.sinceImpact >= 0) {
       const timeUnit = Math.sqrt(this.radius / GRAVITY);
       const pinchTime = this.cavityTimes?.pinchTime ?? PINCH_TIME * timeUnit;
       const progress = THREE.MathUtils.clamp((this.sinceImpact - pinchTime) / (NECK_CLOSE * timeUnit), 0, 1);
       this.seenThroughWater.value = progress * progress * (3 - 2 * progress);
+    } else if (this.skip) {
+      this.seenThroughWater.value = this.state === 'skim' ? 1 : 0;
     }
     // The bed's depth (a number, or a function of x and z, as sinkStep takes it) only matters to a lifted stone.
     const bedDepth = surface === 0 || this.state === 'air' ? 1 : typeof pondDepth === 'function' ? pondDepth(this.position.x, this.position.z) : pondDepth;
