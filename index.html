@@ -484,7 +484,9 @@
   .menu-group[open] > summary::after { transform: rotate(90deg); }
   .menu-group > summary small { color: var(--muted); font-size: 12px; }
   .menu-group > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 11px; }
-  .menu-group .menu-cards { padding: 0 4px 4px; }
+  .menu-group .menu-cards { padding: 0 4px 4px; gap: 2px; }
+  .menu-group .menu-card { padding: 3px 5px; }
+  .menu-group .menu-card img { width: 64px; height: 36px; }
   /* The Time page: the hour's name and local time over a slider of the
      place's hours, the first and last hour's times under its ends. */
   .time-readout { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin: 0 2px; }

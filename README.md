@@ -34,24 +34,28 @@ its choices (Location and Water as pictures) with a line on each. Each choice
 is remembered on the device (but the view, which opens on the shore):
 - Object (`?thing=`, what is thrown): a river stone (the default), slate, granite,
   basalt or pumice; a golf ball, a tennis ball, a bowling ball or a
-  basketball; a gem; an apple or a pizza. Each is pictured, in a fold for its
-  group (Stones, Balls, Gems, Food; the chosen thing's open, one at a time),
+  basketball; a gem; an apple, a watermelon or a pizza; a brick. Each is
+  pictured, in a fold for its group (Stones, Balls, Gems, Food, Other; the
+  chosen thing's open, one at a time),
   each the size, weight and density of the real thing (`src/things.js`), and
   the throw button names it ("Throw a rock", "Throw a ball", "Throw a
   pizza"). Pumice, a tennis ball, a basketball and a bowling ball
   of 11 lb or less are lighter than water: they come back up, bob and
   float (a basketball 4.3 cm under, mirrored in the water, drifting under a
-  gale), as do an apple (low: a quarter of it is air) and a pizza (a soft
+  gale), as do an apple (low: a quarter of it is air), a watermelon (2 to
+  10 kg, nearly as heavy as water: it plunges deep, comes back up slowly
+  and floats with only its striped back showing) and a pizza (a soft
   disc made by hand, its outline and crust uneven: thrown, it spins level
   like a frisbee, wobbling, its edges cupped against the air; afloat, its
   toppings up and dry, as much of it under as Archimedes says); the rest sink, a golf ball
   slowly, basalt fastest. A gem (diamond, emerald, ruby or sapphire, cut and
-  faceted, 5 to 1000 carats) sinks.
+  faceted, 5 to 1000 carats) sinks, as does a brick (2.7 kg of fired clay).
   Each choice's picture (`assets/things/thumbs/`) is a harness frame of
   the thing at rest on the pool's deck, its middle 70% shrunk to 160×90:
   `--water=pool --throws=none --times=0.05 --look=0.25:y:0.85 --fov=f`
   (y the deck's 0.1 m plus its radius, f = 2·atan(1.25·d/1.8) for its
-  diameter d; a stone 10 cm, a gem 3 cm, a pizza 30 cm) and `--eval` throwing it, turning
+  diameter d; a stone 10 cm, a gem 3 cm, a pizza 30 cm, a watermelon 25 cm,
+  a brick 21.5 cm) and `--eval` throwing it, turning
   it upright and laying it there with `restOn(0.1)`.
   Anything thrown at a floater knocks it: they bounce off each other, the
   floater dipping, ringing the water and throwing off spray, and the knock

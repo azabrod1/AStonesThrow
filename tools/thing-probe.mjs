@@ -213,11 +213,12 @@ for (const name of THING_NAMES) {
       let sinking = 0;
       // Its speed along its path: a flat gem glides a little (its lift), so it falls a little slower.
       for (let time = 0; time < 6 && settling.state === 'water'; time += STEP) { settling.update(STEP, 10); sinking = Math.max(sinking, settling.velocity.length()); }
-      const terminal = Math.sqrt((8 / 3) * (measured.density / WATER_DENSITY - 1) * GRAVITY * measured.radius / DRAG_COEFFICIENT);
+      // Its own density (a brick's from its mesh's volume), on the drag's nominal ball.
+      const terminal = Math.sqrt((8 / 3) * (rock.density / WATER_DENSITY - 1) * GRAVITY * measured.radius / DRAG_COEFFICIENT);
       line += `; sinks at ${sinking.toFixed(2)} m/s (terminal ${terminal.toFixed(2)}), rests ${centimetres(-rock.position.y)} cm down on the bed's ${centimetres(bed)} after ${record.restAt?.toFixed(1)} s`;
       check(rock.state === 'rest' && rock.position.y < 0, `${label}: has not come to rest on the bed (${rock.state})`);
-      // A gem's flat cut glides a little more (its lift): SINK_TOLERANCE twice over.
-      check(Math.abs(sinking - terminal) < (THINGS[name].look.mesh === 'gem' ? 2 : 1) * SINK_TOLERANCE * terminal, `${label}: sinks at ${sinking.toFixed(2)} m/s, its terminal speed ${terminal.toFixed(2)}`);
+      // A gem's flat cut, a brick's slab, glides a little more (its lift): SINK_TOLERANCE twice over.
+      check(Math.abs(sinking - terminal) < (['gem', 'brick'].includes(THINGS[name].look.mesh) ? 2 : 1) * SINK_TOLERANCE * terminal, `${label}: sinks at ${sinking.toFixed(2)} m/s, its terminal speed ${terminal.toFixed(2)}`);
     }
     console.log(line);
   }

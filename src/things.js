@@ -64,9 +64,14 @@
 //   - gems, cut as brilliants, 5 to 1000 carats (1 ct = 0.2 g), all sinking:
 //     diamond (3510), emerald (2760), ruby and sapphire (corundum, 4000);
 //   - food: an apple (100 to 300 g at 815 kg/m³: a quarter of it is air, so
-//     it floats, low), and a pizza (20, 30 or 40 cm across, a disc with its
+//     it floats, low), a watermelon (2 to 10 kg at 960 kg/m³: it floats with
+//     only a sliver of its back above the water), and a pizza (20, 30 or 40 cm across, a disc with its
 //     crust, cheese and pepperoni, about 420 kg/m³, mostly airy bread: it floats,
 //     flat; soft, it flutters through the air broadside, flexing).
+//
+//   - other: a brick (215 × 102.5 × 65 mm, 2.7 kg: about 1900 kg/m³, its
+//     density from its mesh's volume; it sinks, and lands on the deck with
+//     a thud).
 //
 // One material serves them all (src/rock.js): what tells them apart is in
 // the geometry, the vertex colours and the material's colour, roughness and
@@ -299,4 +304,20 @@ defineThing('pizza', {
   air: { drag: 1.1, model: 'flutter' },
   water: { restingHeight: 0.06 },
   look: { mesh: 'pizza', roughness: 1.0, reflection: 0.6 },
+});
+defineThing('watermelon', {
+  name: 'Watermelon', group: 'Food', note: 'Nearly as heavy as water: it floats, almost under', called: 'a watermelon',
+  body: { shape: 'mesh', density: 960, size: { by: 'mass', unit: 'kg', min: 2, max: 10, step: 0.5, initial: 5 } },
+  material: { bounce: [0.08, 0.15], friction: 0.6 },
+  water: { restingHeight: 0.9 },
+  look: { mesh: 'watermelon', roughness: 0.45, reflection: 0.9 },
+});
+
+defineThing('brick', {
+  name: 'Brick', group: 'Other', note: '2.7 kg of fired clay: it sinks', called: 'a brick',
+  body: { shape: 'mesh', size: { by: 'fixed', diameter: 0.215, mass: 2.7 } },
+  material: { bounce: [0.1, 0.2], friction: 0.7 },
+  air: { drag: 1.0 },
+  water: { restingHeight: 0.3 },
+  look: { mesh: 'brick', roughness: 0.95, reflection: 0.6 },
 });

@@ -17,6 +17,10 @@
 //     wobbles, its crust rises unevenly, its top is lumpy), its top painted
 //     on a texture (cheese, blisters, sauce, pepperoni, a charred crust:
 //     paintPizza; createPizzaGeometry);
+//   - watermelon: an oval, striped dark and pale green, its field spot and
+//     its stalk's nub (createWatermelonGeometry);
+//   - brick: a box of a brick's proportions, its edges rounded, mottled clay
+//     (createBrickGeometry);
 //   - gem: a brilliant cut (createGemGeometry: a table, a crown of facets,
 //     the girdle, a pavilion to the culet), stretched by its `look.stretch`,
 //     each facet's colour `look.color` at its own brightness, a diamond's
@@ -633,6 +637,106 @@ export function createPizzaGeometry() {
   return geometry;
 }
 
+// A watermelon: an oval (WATERMELON.long along x, its other axes to keep a
+// unit ball's volume), dark green with paler green stripes that wander from
+// end to end, a yellow field spot where it lay, and a stalk's nub at one end.
+// Smooth, then cut into separate triangles (src/rock.js integrates its shape).
+const WATERMELON = {
+  long: 1.18, stripes: 16, wander: 0.35,
+  dark: linear(30, 74, 30), pale: linear(118, 160, 70), field: linear(214, 196, 110), nub: linear(110, 90, 50),
+};
+
+/** A watermelon's geometry (the header). */
+export function createWatermelonGeometry() {
+  const { positions, indices } = icosphere(4);
+  const across = 1 / Math.sqrt(WATERMELON.long);   // long·across² = 1: a unit ball's volume
+  const colors = new Float32Array(positions.length);
+  const color = new THREE.Color();
+  for (let vertex = 0; vertex < positions.length; vertex += 3) {
+    const x = positions[vertex], y = positions[vertex + 1], z = positions[vertex + 2];
+    // Stripes round its long axis, wandering as they run end to end.
+    const around = Math.atan2(z, y) + WATERMELON.wander * Math.sin(3 * x + 1.3) + 0.15 * (valueNoise3(x * 3, y * 3, z * 3) - 0.5);
+    const stripe = 0.5 + 0.5 * Math.sin(around * WATERMELON.stripes / 2);
+    const jagged = smoothstep(0.45, 0.75, stripe + 0.25 * (valueNoise3(x * 14, y * 14, z * 14) - 0.5));
+    color.copy(WATERMELON.dark).lerp(WATERMELON.pale, jagged * 0.85);
+    // The field spot, on its underside as it grew.
+    color.lerp(WATERMELON.field, smoothstep(-0.55, -0.85, y) * smoothstep(0.8, 0.2, Math.abs(x)) * 0.85);
+    if (x > 0.96) color.lerp(WATERMELON.nub, smoothstep(0.96, 0.995, x));
+    positions[vertex] = x * WATERMELON.long; positions[vertex + 1] = y * across; positions[vertex + 2] = z * across;
+    colors[vertex] = color.r; colors[vertex + 1] = color.g; colors[vertex + 2] = color.b;
+  }
+  const smooth = new THREE.BufferGeometry();
+  smooth.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  smooth.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  smooth.setIndex(indices);
+  smooth.computeVertexNormals();
+  const geometry = smooth.toNonIndexed();
+  smooth.dispose();
+  return geometry;
+}
+
+// A brick: a box of BRICK's proportions (its half-length 1), its edges
+// rounded by BRICK.round, mottled red-orange clay flecked with darker grains
+// and pale mortar crumbs; a grid on each face, so the mottling has room.
+const BRICK = {
+  half: [1, 0.3023, 0.4767],   // 215 × 65 × 102.5 mm, by its half-length
+  round: 0.04, cells: 18,
+  clay: linear(196, 98, 58), dark: linear(138, 60, 38), light: linear(222, 138, 92), mortar: linear(212, 202, 184),
+};
+
+/** A brick's geometry (the header), separate triangles, its normals the rounded box's. */
+export function createBrickGeometry() {
+  const [halfX, halfY, halfZ] = BRICK.half;
+  const inner = [halfX - BRICK.round, halfY - BRICK.round, halfZ - BRICK.round];
+  const color = new THREE.Color();
+  const positions = [], normals = [], colors = [];
+  // A face's corner (each axis in −1..1 across the face) on the rounded box: the point on the inner box, out along its normal by the rounding.
+  const onBox = (point) => {
+    const box = [point[0] * halfX, point[1] * halfY, point[2] * halfZ];
+    const core = box.map((value, axis) => Math.min(Math.max(value, -inner[axis]), inner[axis]));
+    const out = box.map((value, axis) => value - core[axis]);
+    const length = Math.hypot(...out) || 1;
+    const normal = out.map((value) => value / length);
+    return { position: core.map((value, axis) => value + normal[axis] * BRICK.round), normal };
+  };
+  const paint = ([x, y, z]) => {
+    const grain = valueNoise3(x * 9, y * 9, z * 9), fleck = valueNoise3(x * 40 + 3, y * 40, z * 40);
+    color.copy(BRICK.clay).lerp(BRICK.light, smoothstep(0.55, 0.85, grain) * 0.7).lerp(BRICK.dark, smoothstep(0.45, 0.15, grain) * 0.6);
+    if (fleck > 0.86) color.lerp(BRICK.dark, 0.6);
+    if (fleck < 0.08) color.lerp(BRICK.mortar, 0.7);
+    return [color.r, color.g, color.b];
+  };
+  // Each of the six faces as a grid of BRICK.cells along its longer side.
+  for (const [axis, sign] of [[0, 1], [0, -1], [1, 1], [1, -1], [2, 1], [2, -1]]) {
+    const [first, second] = [0, 1, 2].filter((other) => other !== axis);
+    const columns = Math.max(2, Math.round(BRICK.cells * BRICK.half[first])), rows = Math.max(2, Math.round(BRICK.cells * BRICK.half[second]));
+    const corner = (column, row) => {
+      const point = [0, 0, 0];
+      point[axis] = sign;
+      point[first] = -1 + (2 * column) / columns;
+      point[second] = -1 + (2 * row) / rows;
+      return onBox(point);
+    };
+    for (let column = 0; column < columns; column++) {
+      for (let row = 0; row < rows; row++) {
+        const a = corner(column, row), b = corner(column + 1, row), c = corner(column + 1, row + 1), d = corner(column, row + 1);
+        // Wound to face out on every side.
+        const quad = sign * (axis === 1 ? -1 : 1) > 0 ? [a, b, c, a, c, d] : [a, c, b, a, d, c];
+        for (const vertex of quad) {
+          positions.push(...vertex.position);
+          normals.push(...vertex.normal);
+          colors.push(...paint(vertex.position));
+        }
+      }
+    }
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  return geometry;
+}
+
 // ---- the kinds -------------------------------------------------------------
 
 registerMesh('stone', {
@@ -646,5 +750,7 @@ registerMesh('stone', {
 });
 registerMesh('ball', { build: (definition) => createBallGeometry(definition), color: () => new THREE.Color(1, 1, 1) });
 registerMesh('apple', { build: () => createAppleGeometry(), color: () => new THREE.Color(1, 1, 1) });
+registerMesh('watermelon', { build: () => createWatermelonGeometry(), color: () => new THREE.Color(1, 1, 1) });
+registerMesh('brick', { build: () => createBrickGeometry(), color: () => new THREE.Color(1, 1, 1) });
 registerMesh('pizza', { build: () => createPizzaGeometry(), color: () => new THREE.Color(1, 1, 1), texture: () => pizzaTexture() });
 registerMesh('gem', { build: (definition) => createGemGeometry(definition), color: () => new THREE.Color(1, 1, 1) });

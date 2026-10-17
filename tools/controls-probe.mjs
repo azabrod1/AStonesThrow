@@ -21,7 +21,7 @@
 //     screen, its rows that tall too, each row's value whole beside its
 //     name; its Object row opens that page, its things in a fold for
 //     each group (the chosen thing's open, one at a time: on a phone in
-//     portrait the page needs no scrolling), whose fifteen pictured choices
+//     portrait the page needs no scrolling), whose seventeen pictured choices
 //     can each be opened and scrolled onto the screen and fit their names,
 //     its head staying at the panel's top as it scrolls, and each sets
 //     what is thrown, the throw button's name (a rock, a ball, a gem), the row's value and the strip's name, slider (its
@@ -232,7 +232,7 @@ for (const framing of FRAMINGS) {
   check(chosen.clarity === 'murky' && chosen.row === 'Murky', `Murky sets the clarity (${chosen.clarity}) and the row's value ("${chosen.row}")`);
   await page.screenshot({ path: path.join(outputFolder, `${framing.name}-water.png`) });
   await page.evaluate(() => window.__pond.setClarity('lake'));
-  // The Object page (src/things.js): its folds and fifteen pictured choices; each sets what is thrown, and the strip's slider follows it.
+  // The Object page (src/things.js): its folds and seventeen pictured choices; each sets what is thrown, and the strip's slider follows it.
   await press('.menu-page[data-page="water"] .menu-back');
   await page.waitForTimeout(400);
   await press('#settings .menu-tier[data-open="thing"]');
@@ -242,7 +242,7 @@ for (const framing of FRAMINGS) {
     const panel = document.getElementById('settings');
     return { names: [...document.querySelectorAll('#thing .menu-group')].map((fold) => fold.dataset.group), open: [...document.querySelectorAll('#thing .menu-group[open]')].map((fold) => fold.dataset.group), scrolls: panel.scrollHeight > panel.clientHeight + 1 };
   });
-  check(folds.names.length === 4 && folds.open.length === 1 && folds.open[0] === 'Stones', `the Object page folds its things into ${folds.names.join(', ')}, the chosen one's open (${folds.open.join(', ')})`);
+  check(folds.names.length === 5 && folds.open.length === 1 && folds.open[0] === 'Stones', `the Object page folds its things into ${folds.names.join(', ')}, the chosen one's open (${folds.open.join(', ')})`);
   if (framing.portrait) check(!folds.scrolls, 'with one fold open the Object page fits a phone in portrait without scrolling');
   // Each fold opened in turn (the others shut), each of its cards scrolled to.
   const things = await page.evaluate(async () => {
@@ -262,7 +262,7 @@ for (const framing of FRAMINGS) {
     return placed;
   });
   const [thingPanel] = await boxes('#settings');
-  check(onScreen(thingPanel) && things.length === 15 && things.every(onScreen) && things.every((choice) => choice.others === 0) && (!framing.touch || things.every((choice) => choice.height >= SMALLEST_BUTTON_HEIGHT - 0.5)), `the Object page is on the screen, each of its fifteen choices once its fold is open (the others shut) and it is scrolled to${framing.touch ? `, at least ${SMALLEST_BUTTON_HEIGHT} points tall` : ''}`);
+  check(onScreen(thingPanel) && things.length === 17 && things.every(onScreen) && things.every((choice) => choice.others === 0) && (!framing.touch || things.every((choice) => choice.height >= SMALLEST_BUTTON_HEIGHT - 0.5)), `the Object page is on the screen, each of its seventeen choices once its fold is open (the others shut) and it is scrolled to${framing.touch ? `, at least ${SMALLEST_BUTTON_HEIGHT} points tall` : ''}`);
   // Its head stays at the panel's top, inside its edge, while the page scrolls under it.
   const head = await page.evaluate(() => {
     const panel = document.getElementById('settings');
