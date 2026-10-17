@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node tools/serve.mjs",
     "shoot": "node tools/shoot.mjs",
-    "test": "node tools/fft-test.mjs && node tools/wave-probe.mjs && node tools/foam-probe.mjs && node tools/cavity-probe.mjs && node tools/ring-probe.mjs && node tools/rain-probe.mjs && node tools/gale-probe.mjs && node tools/skip-probe.mjs 30",
+    "test": "node tools/fft-test.mjs && node tools/wave-probe.mjs && node tools/foam-probe.mjs && node tools/cavity-probe.mjs && node tools/ring-probe.mjs && node tools/rain-probe.mjs && node tools/gale-probe.mjs && node tools/skip-probe.mjs 30 && node tools/thing-probe.mjs",
     "site": "node tools/build-site.mjs"
   },
   "keywords": [],

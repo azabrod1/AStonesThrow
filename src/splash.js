@@ -213,6 +213,7 @@ import { Cavity, PINCH_TIME, SURFACE_HEAD } from './cavity.js';
 import { MAX_CAVITIES } from './waterSurface.js';
 import { FoamSpecks } from './foamSpecks.js';
 import { RING_SOURCE } from './rings.js';
+import { STONE_DENSITY } from './things.js';
 import { PARTICLE_VERTEX, PARTICLE_DEPTH_FRAGMENT, PARTICLE_THICKNESS_FRAGMENT, COMPOSITE_FRAGMENT, MIRROR_SHEET_FRAGMENT, MIRROR_COLUMN_FRAGMENT, MIRROR_DROP_FRAGMENT, NIGHT_VISION } from './shaders/fluid.js';
 import { SHEET_VERTEX, SHEET_DEPTH_FRAGMENT, SHEET_THICKNESS_FRAGMENT, COLUMN_VERTEX, COLUMN_DEPTH_FRAGMENT, COLUMN_THICKNESS_FRAGMENT } from './shaders/sheet.js';
 import { BUBBLE_VERTEX, BUBBLE_FRAGMENT } from './shaders/scene.js';
@@ -272,6 +273,7 @@ const JET_LEAN = 0.4;                                // the jet leans back by th
 const JET_LEAN_CAP = THREE.MathUtils.degToRad(18);   // at most this
 const OBLIQUE_IMPULSE = 1.3;          // an oblique entry's cavity splats together carry at most this times a vertical one's
 const JET_SPEED = 0.75;               // the jet's body leaves at this share of the entry speed (src/jet.js)...
+const LIGHT_JET = [0.4, 0.6];         // ...a lighter thing's at this much of it, by sqrt(ρ/ρ_stone) (lightJet)
 const JET_OBLIQUE_SLOWING = 0.3;      // ...and from a dragged cavity is slower by this times the horizontal fraction...
 const NEEDLE_OBLIQUE = 0.9;           // ...and its needle's extra speed lower by this times it: a sheared hole focuses less
 const JET_SHARE = 0.25;               // the jet carries this share of the water that fills the bowl left above the neck
@@ -297,6 +299,9 @@ const SKIM_FAN_SPEED = 0.6;           // the fan leaves at about this share of t
 const SKIM_CHURN = { amount: 0.12, radius: 1.2, lifetime: 0.35 };   // the churned water: a boil's peak, its patch in face radii, τ (s)
 const SKIM_LOOSE = 0.25;              // loose drops, of the fan's, thrown wider:
 const SKIM_SPRAY = { angle: [30, 80], rise: [10, 35], speed: [0.1, 0.35] };   // degrees off the heading to either side, degrees above level, of the stone's speed along the water
+const RIPPLE = { share: 0.6, foam: 0.05 };   // a floater's ripple (ripple): its ring's share of an entry's at its speed, its boil's foam per m/s
+// A knocked floater's spray (knock): drops per m/s, at most, their spread about the knock's direction, its lift, their radii (m).
+const KNOCK = { drops: 14, most: 70, spread: 0.7, lift: 0.4, radius: [0.0006, 0.0018] };
 const HAZE_RADIUS = 0.5;             // device pixels: finer drops are mist (src/shaders/fluid.js)
 const MIRROR_PAD = 0.05;              // metres around what is mirrored: drawn radii, streaks, a landing crown's ride
 const MIRROR_DROP_RADIUS = 0.002;     // finer drops are left out of the mirror: their images there are under a pixel
@@ -574,6 +579,17 @@ function chooseSplash(info, random, fixed = null) {
       };
   const regime = fixed?.regime ?? pick(weights);
   return { seal, asymmetry, hole, crown, regime, range, random, sizeFactor, surfaceChance, nominal: Boolean(fixed?.regime) };
+}
+
+/**
+ * A thing lighter than a river stone (src/things.js; its `density` in the
+ * impact) throws a slower jet: it stops sooner, so less of its push is left
+ * when the hole closes, the jet's speed scaled by LIGHT_JET[0] +
+ * LIGHT_JET[1]·sqrt(ρ/ρ_stone) (a basketball's about half a stone's; its
+ * shallower hole, src/cavity.js, gives it less water too).
+ */
+function lightJet(density = STONE_DENSITY) {
+  return density < STONE_DENSITY ? LIGHT_JET[0] + LIGHT_JET[1] * Math.sqrt(density / STONE_DENSITY) : 1;
 }
 
 /**
@@ -895,7 +911,7 @@ export class SplashSystem {
     info.rock?.setCavityTimes(cavity.pinchTime);
     // The jet's body leaves at JET_SPEED of the entry speed (src/jet.js; the needle faster), slower from a
     // dragged cavity, and an oblique entry's sheared hole focuses its needle less.
-    const baseBodySpeed = THREE.MathUtils.clamp(JET_SPEED * entrySpeed, 1.5, 8.0) * sizeFactor ** 0.15 * (1 - JET_OBLIQUE_SLOWING * horizontalFraction);
+    const baseBodySpeed = THREE.MathUtils.clamp(JET_SPEED * entrySpeed, 1.5, 8.0) * sizeFactor ** 0.15 * (1 - JET_OBLIQUE_SLOWING * horizontalFraction) * lightJet(info.density);
     const focus = 1 - NEEDLE_OBLIQUE * horizontalFraction;
     const shape = jetForm(choice.regime, choice, baseBodySpeed);
     const lean = this.jetLean(cavity, horizontal, horizontalFraction, jetLean, shape.lean, choice.hole.lopsidedAngle);
@@ -1146,11 +1162,11 @@ export class SplashSystem {
   }
 
   /**
-   * A ring source (stampCavity's, a skip's), released at `time`: a push of
-   * `velocity` over σ = `sigma` less one of σ·RING.rim, and the pair of
-   * heights that makes the share (travelX, travelZ) of it run that way. To
-   * the analytic rings, held for the pool (releasePoolRing), or to the
-   * solver at once (stampCavity's header).
+   * A ring source (stampCavity's, a skip's, a floater's ripple's), released
+   * at `time`: a push of `velocity` over σ = `sigma` less one of σ·RING.rim,
+   * and the pair of heights that makes the share (travelX, travelZ) of it
+   * run that way. To the analytic rings, held for the pool
+   * (releasePoolRing), or to the solver at once (stampCavity's header).
    */
   launchRing({ x, z, sigma, velocity, travelX = 0, travelZ = 0, time }, water) {
     const travel = Math.hypot(travelX, travelZ);
@@ -1169,6 +1185,44 @@ export class SplashSystem {
         water.addSplat({ x: x + directionX * 0.8 * sigma, z: z + directionZ * 0.8 * sigma, radius: 0.8 * sigma, height: pairHeight, rim: 1 });
         water.addSplat({ x: x - directionX * 0.8 * sigma, z: z - directionZ * 0.8 * sigma, radius: 0.8 * sigma, height: -pairHeight, rim: 1 });
       }
+    }
+  }
+
+  /**
+   * A floater breaking the surface (src/rock.js `ripple`): coming up through
+   * it, or back down onto it after bobbing clear, at `speed`. Its ring is an
+   * entry's (RING's source) for a ball of its radius at RIPPLE.share of that
+   * speed, pushing up as it rises and down as it comes down, and the water
+   * it sheds whitens a little round it (a boil of RIPPLE.foam).
+   */
+  ripple(info, water) {
+    const { x, z, radius, speed, rising } = info;
+    const sign = rising ? 1 : -1;
+    this.launchRing({ x, z, sigma: RING.sigma * radius, velocity: sign * RING.speed * RIPPLE.share * speed, time: this.time }, water);
+    const random = foamRandom(x, z, this.time);
+    this.stampFoamPatch(water, random, {
+      x, z, radius: 1.2 * radius, amount: Math.min(RIPPLE.foam * speed, FOAM_AMOUNT_CAP), reach: 1.0, radii: [0.3, 0.6],
+      lifetime: BOIL_LIFETIME, boil: true, time: this.time, span: FOAM_SPREAD * Math.sqrt(radius / GRAVITY),
+    });
+  }
+
+  /**
+   * A floater struck by another thing (src/collide.js): the water on it
+   * thrown off where it was struck (x, y, z, on still water), out along
+   * `normal` (away from it) and spread by KNOCK.spread, a little upward, at
+   * up to `speed`; KNOCK.drops per m/s, more for a bigger ball (as the
+   * square root of its radius), at most KNOCK.most.
+   */
+  knock({ x, y, z, normalX, normalY, normalZ, speed, radius }) {
+    const count = Math.round(Math.min(KNOCK.drops * speed * Math.sqrt(radius / REFERENCE_RADIUS), KNOCK.most));
+    for (let drop = 0; drop < count; drop++) {
+      let directionX = normalX + KNOCK.spread * (2 * Math.random() - 1);
+      let directionY = normalY + KNOCK.spread * (2 * Math.random() - 1) + KNOCK.lift;
+      let directionZ = normalZ + KNOCK.spread * (2 * Math.random() - 1);
+      const length = Math.hypot(directionX, directionY, directionZ) || 1;
+      const dropSpeed = speed * randomRange(0.3, 1);
+      directionX *= dropSpeed / length; directionY *= dropSpeed / length; directionZ *= dropSpeed / length;
+      this.spawnDroplet(x, Math.max(y, 0.002), z, directionX, directionY, directionZ, randomRange(KNOCK.radius[0], KNOCK.radius[1]));
     }
   }
 

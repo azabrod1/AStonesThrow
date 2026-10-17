@@ -19,7 +19,11 @@
 //   - the settings button is on the screen, clear of the title, and (on a
 //     touch screen) at least 34 points tall; pressed, the panel opens on the
 //     screen, its rows that tall too, each row's value whole beside its
-//     name; its Water row opens the Water page, whose five pictured choices
+//     name; its Throw row opens the Throw page, whose thirteen pictured choices
+//     can each be scrolled onto the screen and fit their names, and each sets
+//     what is thrown, the row's value and the strip's name, slider (its
+//     range, or off for a ball of one size) and readout following, the strip
+//     still fitting; its Water row opens the Water page, whose five pictured choices
 //     can each be scrolled onto the screen and fit their names, whose Pool
 //     puts the rocks in the pool (the View note follows) and whose Murky sets
 //     the pond's clarity, each with the row's value; its Time row opens the
@@ -193,7 +197,7 @@ for (const framing of FRAMINGS) {
   await page.waitForTimeout(400);
   const [panel] = await boxes('#settings');
   const rows = await boxes('#settings .menu-tier');
-  check(!!panel && onScreen(panel) && rows.length === 7, `the settings open on the screen with their seven rows (${rows.length})`);
+  check(!!panel && onScreen(panel) && rows.length === 8, `the settings open on the screen with their eight rows (${rows.length})`);
   if (framing.touch) check(rows.every((row) => row.height >= SMALLEST_BUTTON_HEIGHT - 0.5), `every settings row is at least ${SMALLEST_BUTTON_HEIGHT} points tall (smallest ${Math.min(...rows.map((row) => row.height)).toFixed(1)})`);
   const cutValues = await page.evaluate(() => [...document.querySelectorAll('#settings .menu-tier-value')].filter((value) => value.scrollWidth > value.clientWidth + 0.5).map((value) => value.textContent));
   const hinted = await page.evaluate(() => [...document.querySelectorAll('#settings .menu-tier-name small')].filter((hint) => hint.getClientRects().length > 0).length);
@@ -225,8 +229,50 @@ for (const framing of FRAMINGS) {
   check(chosen.clarity === 'murky' && chosen.row === 'Murky', `Murky sets the clarity (${chosen.clarity}) and the row's value ("${chosen.row}")`);
   await page.screenshot({ path: path.join(outputFolder, `${framing.name}-water.png`) });
   await page.evaluate(() => window.__pond.setClarity('lake'));
-  // The Time page: Lakeside's hours on a slider; a tap at its left end loads the first.
+  // The Throw page (src/things.js): thirteen pictured choices; each sets what is thrown, and the strip's slider follows it.
   await press('.menu-page[data-page="water"] .menu-back');
+  await page.waitForTimeout(400);
+  await press('#settings .menu-tier[data-open="thing"]');
+  await page.waitForTimeout(400);
+  const things = await page.evaluate(() => {
+    const scale = window.visualViewport ? window.visualViewport.scale : 1;
+    const placed = [...document.querySelectorAll('#thing [role="radio"]')].map((choice) => {
+      choice.scrollIntoView({ block: 'nearest' });
+      const box = choice.getBoundingClientRect();
+      return { name: choice.dataset.value, left: box.left * scale, right: box.right * scale, top: box.top * scale, bottom: box.bottom * scale, height: box.height * scale };
+    });
+    document.getElementById('settings').scrollTop = 0;
+    return placed;
+  });
+  const [thingPanel] = await boxes('#settings');
+  check(onScreen(thingPanel) && things.length === 13 && things.every(onScreen) && (!framing.touch || things.every((choice) => choice.height >= SMALLEST_BUTTON_HEIGHT - 0.5)), `the Throw page is on the screen, each of its thirteen choices once scrolled to${framing.touch ? `, at least ${SMALLEST_BUTTON_HEIGHT} points tall` : ''}`);
+  const thingsClipped = await page.evaluate(() => [...document.querySelectorAll('#thing [role="radio"] b')].filter((name) => name.scrollWidth > name.clientWidth).map((name) => name.textContent));
+  check(thingsClipped.length === 0, `every Throw choice's name fits its card${thingsClipped.length ? ` (not: ${thingsClipped.join(', ')})` : ''}`);
+  const strip = () => page.evaluate(() => {
+    const slider = document.getElementById('stone-size');
+    const strip = document.querySelector('.controls');
+    return {
+      thing: window.__pond.thing, row: document.querySelector('.menu-tier[data-open="thing"] .menu-tier-value').textContent,
+      label: document.querySelector('label[for="stone-size"]').textContent, readout: document.getElementById('stone-readout').textContent,
+      minimum: Number(slider.min), maximum: Number(slider.max), disabled: slider.disabled, overflows: strip.scrollWidth > strip.clientWidth + 0.5,
+    };
+  });
+  for (const [choice, expected] of [
+    ['basketball', { row: 'Basketball', label: 'Basketball', readout: '620 g', minimum: 5, maximum: 7, disabled: false }],
+    ['bowling', { row: 'Bowling ball', label: 'Bowling ball', readout: '14 lb', minimum: 6, maximum: 16, disabled: false }],
+    ['tennis', { row: 'Tennis ball', label: 'Tennis ball', readout: '58 g', disabled: true }],
+    ['granite', { row: 'Granite', label: 'Granite', disabled: false, minimum: 1.5, maximum: 30 }],
+    ['diamond', { row: 'Diamond', label: 'Diamond', readout: '100 ct', minimum: 5, maximum: 1000, disabled: false }],
+    ['stone', { row: 'River stone', label: 'Rock', disabled: false, minimum: 1.5, maximum: 30 }],
+  ]) {
+    await press(`#thing [data-value="${choice}"]`);
+    const shown = await strip();
+    const wrong = Object.entries(expected).filter(([key, value]) => shown[key] !== value).map(([key]) => `${key} ${JSON.stringify(shown[key])}`);
+    check(shown.thing === choice && wrong.length === 0 && !shown.overflows, `${choice} is thrown, its row, the strip's name, slider and readout follow (${shown.label}, ${shown.readout}${shown.disabled ? ', slider off' : `, ${shown.minimum} to ${shown.maximum}`})${wrong.length ? `; wrong: ${wrong.join(', ')}` : ''}${shown.overflows ? '; the strip overflows' : ''}`);
+    if (choice === 'bowling') await page.screenshot({ path: path.join(outputFolder, `${framing.name}-throw.png`) });
+  }
+  // The Time page: Lakeside's hours on a slider; a tap at its left end loads the first.
+  await press('.menu-page[data-page="thing"] .menu-back');
   await page.waitForTimeout(400);
   await press('#settings .menu-tier[data-open="time"]');
   await page.waitForTimeout(400);

@@ -19,17 +19,41 @@ up or down (from just above the water to nearly straight down), and scroll
 or pinch to zoom toward what is under the pointer (down to an 8° field of
 view); a drag that starts zoomed turns round what the view is looking at.
 Escape or Reset view glides back to the shore. The strip at the bottom sets
-the rock's size (1.5 to 30 cm across), the throw strength, Skip and the
-speed (real time, or slow motion at ¼ or ⅒). With Skip on, a flat stone is
-thrown low and level, spinning, and skips across the water (below), in the
-direction of the tap (even on the sky); its first touch lands where a level
-throw puts it. The menu button at the
+the size of what is thrown (a stone 1.5 to 30 cm across, a bowling ball 6
+to 16 lb, a basketball size 5 to 7, a gem 5 to 1000 carats; a golf or a
+tennis ball has one size), the throw strength, Skip and the speed (real
+time, or slow motion at ¼ or ⅒). With Skip on, a flat stone is thrown low
+and level, spinning, and skips across the water (below), in the direction
+of the tap (even on the sky); its first touch lands where a level throw
+puts it. The menu button at the
 top right opens the settings, laid out as the Moon app's menu is: a list in
-three groups (the place: Location, Water and Time of day; the conditions:
-Weather and Wind; the viewing: View and Quality), each row an icon, its name
+four groups (what is thrown: Throw; the place: Location, Water and Time of
+day; the conditions: Weather and Wind; the viewing: View and Quality), each row an icon, its name
 over a line on what it sets and where it stands, and each setting a page of
 its choices (Location and Water as pictures) with a line on each. Each choice
 is remembered on the device (but the view, which opens on the shore):
+- Throw (`?thing=`): a river stone (the default), slate, granite, basalt or
+  pumice, or a golf ball, a tennis ball, a bowling ball or a basketball, each
+  pictured, each the size, weight and density of the real thing
+  (`src/things.js`). Pumice, a tennis ball, a basketball and a bowling ball
+  of 11 lb or less are lighter than water: they come back up, bob and
+  float (a basketball 4.3 cm under, mirrored in the water, drifting under a
+  gale); the rest sink, a golf ball slowly, basalt fastest. Or a gem
+  (diamond, emerald, ruby or sapphire, cut and faceted, 5 to 1000 carats).
+  Each choice's picture (`assets/things/thumbs/`) is a harness frame of
+  the thing at rest on the pool's deck, its middle 70% shrunk to 160×90:
+  `--water=pool --throws=none --times=0.05 --look=0.25:y:0.85 --fov=f`
+  (y the deck's 0.1 m plus its radius, f = 2·atan(1.25·d/1.8) for its
+  diameter d; a stone 10 cm, a gem 3 cm) and `--eval` throwing it, turning
+  it upright and laying it there with `restOn(0.1)`.
+  Anything thrown at a floater knocks it: they bounce off each other, the
+  floater dipping, ringing the water and throwing off spray, and the knock
+  passes on to whatever it is driven into, floaters and the pool's walls
+  (which send things back off them) alike. Floaters and things at rest on
+  the deck stay in sight; a throw retires the oldest thing out of sight. In the pool,
+  anything that comes down on the deck bounces as it would on paving (a
+  basketball back to 70% of its fall, a bowling ball hardly at all) and
+  rolls or tumbles to a stop, or off the edge into the water.
 - View: Shore, standing on the bank as the page opens; Low, down at the
   water, the splash against the far shore; High, from above, the rings
   spreading over the pond; Under, under the water, looking up at the rocks
@@ -209,6 +233,25 @@ scales the whole field by one factor (its slope variance below a pixel by
 the square) and the foam's drift with it: Calm 0.3, a glassy pond with faint
 cat's paws, on which a stone's rings read far; Breeze 1, the look the pond
 had before the control; Windy 1.8.
+
+**Things** (`src/things.js`, `src/rock.js`). What is thrown is a kind
+of stone (the river stone's procedural geometry in its own squash, lumps,
+colours and density) or a ball (an icosphere painted per vertex: a
+basketball's seams, a tennis ball's, a golf ball's dimples, a bowling ball's
+swirl and finger holes), all drawn with one material, so a new kind compiles
+nothing. Under the water each moves with its own density's drag, head, lift
+and buoyancy, divided by its inertia with the water it carries (half the
+water it displaces, against the reference stone's, whose fit already holds
+it: a basketball carries six times its own mass). A floater rises once its
+hole has closed and floats on the water over its submerged cap, damped by
+the waves it makes, and rests at Archimedes' depth. A ball is aimed against
+the air's drag and thrown no faster than it can be (`aimThrow`); a lighter
+thing throws a slower jet (`lightJet` in `src/splash.js`).
+Things meet things in `src/collide.js`: spheres exchanging a collision's
+impulse (momentum kept, the bounce of the pair's materials, a floater's
+mass counting the water it carries), gone over several times a step with
+the pool's walls so a knock passes along a row within the step.
+`tools/thing-probe.mjs` checks the sizes, aims, depths, bounces and meetings.
 
 **Splash** (`src/splash.js`). A stone entering water goes through stages with
 known timing, and the droplets are choreographed from them:
@@ -897,8 +940,10 @@ farther out, so it rises into the view rather than filling its corner.
   `shots/controls-probe/`. The
   shoot harness and the other probes emulate a desktop browser, which ignores
   the viewport tag, so only this probe sees the page as a phone does.
-- `window.__pond` exposes the app in the console: `throwAt(x, z, { radius, power, skip })`,
+- `window.__pond` exposes the app in the console: `throwAt(x, z, { radius, power, skip, thing, size })`,
   `setSkip(on)` (and `skipping`), `setTrace(on)`,
+  `setThing(name)` (and `thing`: a key of `THINGS` in `src/things.js`, remembered
+  on the device) and `setSize(value)` (and `size`: the slider's value in its unit),
   `setTimeScale` (and `timeScale`), `pause()`, `advance(seconds)` (in the frames the app would
   draw at the current time scale), `setDebugView(name)`, `setFov(degrees)`,
   `lookAt(x, y, z)`, `resetView()`, `setWind(name)` (and `wind`: calm,

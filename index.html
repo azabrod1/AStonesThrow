@@ -198,6 +198,9 @@
      finds it. On a touch screen the thumb is 28 px and the box 44 px tall
      (Apple's smallest comfortable target); on a phone the slider has a row of
      its own. */
+  /* A thing of one size (src/things.js: a golf or tennis ball) keeps the slider, off. */
+  input[type="range"]:disabled { opacity: 0.35; cursor: default; }
+  .switch:disabled { opacity: 0.35; cursor: default; }
   input[type="range"] {
     --thumb: 18px;
     --track: 4px;
@@ -463,6 +466,9 @@
   .menu-card img { flex: none; width: 80px; height: 45px; border-radius: 7px; object-fit: cover; background: rgba(238, 243, 244, 0.08); }
   .menu-card b { display: block; font-size: 14px; font-weight: 500; }
   .menu-card small { display: block; margin-top: 2px; font-size: 12px; color: var(--muted); }
+  /* The Throw page: its cards under two headings, the stones and the balls. */
+  .menu-cards .menu-field-label { margin: 6px 2px 2px; }
+  .menu-cards .menu-field-label:first-child { margin-top: 0; }
   /* The Time page: the hour's name and local time over a slider of the
      place's hours, the first and last hour's times under its ends. */
   .time-readout { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin: 0 2px; }
@@ -598,6 +604,12 @@
      The page script fills each row's value and each page's note. -->
 <div class="settings" id="settings" role="dialog" aria-label="Settings" hidden>
   <div class="menu-page" data-page="root">
+    <button type="button" class="menu-tier" data-open="thing">
+      <svg class="menu-tier-icon" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="6.8"></circle><path d="M3.4 8.6c4.2 1.6 9 1.6 13.2 0M10 3.2c-2.2 4.2-2.2 9.4 0 13.6"></path></svg>
+      <span class="menu-tier-name"><b>Throw</b><small>Stones and balls</small></span>
+      <span class="menu-tier-value"></span><span class="menu-tier-chevron" aria-hidden="true">&rsaquo;</span>
+    </button>
+    <hr class="menu-rule">
     <button type="button" class="menu-tier" data-open="sky">
       <svg class="menu-tier-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M2.5 15.5 7.5 8l3.2 4.6 2.1-2.8 4.7 5.7z"></path><circle cx="14" cy="5.2" r="1.6"></circle></svg>
       <span class="menu-tier-name"><b>Location</b><small>The shore and sky around</small></span>
@@ -635,6 +647,30 @@
       <span class="menu-tier-name"><b>Quality</b><small>Detail and smoothness</small></span>
       <span class="menu-tier-value"></span><span class="menu-tier-chevron" aria-hidden="true">&rsaquo;</span>
     </button>
+  </div>
+  <div class="menu-page" data-page="thing" hidden>
+    <div class="menu-head"><button type="button" class="menu-back" aria-label="Back"><span aria-hidden="true">&lsaquo;</span></button><h3>Throw</h3></div>
+    <div class="menu-field">
+      <div class="menu-cards" id="thing" role="radiogroup" aria-label="What to throw">
+        <div class="menu-field-label">Stones</div>
+        <button type="button" class="menu-card" role="radio" data-value="stone"><img src="assets/things/thumbs/stone.jpg" alt="" width="80" height="45"><span><b>River stone</b><small>Worn smooth, 2.6 times as heavy as water</small></span></button>
+        <button type="button" class="menu-card" role="radio" data-value="slate"><img src="assets/things/thumbs/slate.jpg" alt="" width="80" height="45"><span><b>Slate</b><small>A flat slab, blue-grey, in layers</small></span></button>
+        <button type="button" class="menu-card" role="radio" data-value="granite"><img src="assets/things/thumbs/granite.jpg" alt="" width="80" height="45"><span><b>Granite</b><small>Pale and flecked; a little heavier</small></span></button>
+        <button type="button" class="menu-card" role="radio" data-value="basalt"><img src="assets/things/thumbs/basalt.jpg" alt="" width="80" height="45"><span><b>Basalt</b><small>Dark and dense: sinks fastest</small></span></button>
+        <button type="button" class="menu-card" role="radio" data-value="pumice"><img src="assets/things/thumbs/pumice.jpg" alt="" width="80" height="45"><span><b>Pumice</b><small>Full of bubbles: lighter than water, it floats</small></span></button>
+        <div class="menu-field-label">Balls</div>
+        <button type="button" class="menu-card" role="radio" data-value="golf"><img src="assets/things/thumbs/golf.jpg" alt="" width="80" height="45"><span><b>Golf ball</b><small>46 g; a little heavier than water: it sinks slowly</small></span></button>
+        <button type="button" class="menu-card" role="radio" data-value="tennis"><img src="assets/things/thumbs/tennis.jpg" alt="" width="80" height="45"><span><b>Tennis ball</b><small>58 g; a hollow shell: it floats</small></span></button>
+        <button type="button" class="menu-card" role="radio" data-value="bowling"><img src="assets/things/thumbs/bowling.jpg" alt="" width="80" height="45"><span><b>Bowling ball</b><small>6 to 16 lb: 11 lb and lighter float</small></span></button>
+        <button type="button" class="menu-card" role="radio" data-value="basketball"><img src="assets/things/thumbs/basketball.jpg" alt="" width="80" height="45"><span><b>Basketball</b><small>Sizes 5 to 7; it floats high</small></span></button>
+        <div class="menu-field-label">Gems</div>
+        <button type="button" class="menu-card" role="radio" data-value="diamond"><img src="assets/things/thumbs/diamond.jpg" alt="" width="80" height="45"><span><b>Diamond</b><small>Colourless, its facets flashing</small></span></button>
+        <button type="button" class="menu-card" role="radio" data-value="emerald"><img src="assets/things/thumbs/emerald.jpg" alt="" width="80" height="45"><span><b>Emerald</b><small>Deep green, in its oblong cut</small></span></button>
+        <button type="button" class="menu-card" role="radio" data-value="ruby"><img src="assets/things/thumbs/ruby.jpg" alt="" width="80" height="45"><span><b>Ruby</b><small>Red corundum, an oval</small></span></button>
+        <button type="button" class="menu-card" role="radio" data-value="sapphire"><img src="assets/things/thumbs/sapphire.jpg" alt="" width="80" height="45"><span><b>Sapphire</b><small>Blue corundum, an oval</small></span></button>
+      </div>
+      <div class="menu-note" id="thing-note">The slider at the bottom sets a stone's size, a bowling ball's weight, a basketball's size and a gem's carats.</div>
+    </div>
   </div>
   <div class="menu-page" data-page="view" hidden>
     <div class="menu-head"><button type="button" class="menu-back" aria-label="Back"><span aria-hidden="true">&lsaquo;</span></button><h3>View</h3></div>
@@ -738,6 +774,7 @@
 <script type="module">
   import { startPond } from './src/main.js';
   import { SettingsPanel, radioGroup } from './src/settingsPanel.js';
+  import { THINGS } from './src/things.js';
 
   const veil = document.getElementById('veil');
   const veilText = document.getElementById('veil-text');
@@ -791,17 +828,37 @@
   }
 
   if (pond) {
+    // The slider is what is thrown's (src/things.js `slider`): a stone's
+    // diameter, a bowling ball's pounds, a basketball's size; off for a ball
+    // of one size. The stones share one size; each ball keeps its own.
     const sizeInput = document.getElementById('stone-size');
     const sizeReadout = document.getElementById('stone-readout');
-    const sizeRange = { minimum: Number(sizeInput.min), maximum: Number(sizeInput.max), step: Number(sizeInput.step) };
+    const sizeLabel = document.querySelector('label[for="stone-size"]');
+    const sliderValues = {};
+    const sliderKey = () => (THINGS[pond.thing].stone ? 'stone' : pond.thing);
     const applySize = () => {
-      const cm = Number(sizeInput.value);
-      sizeReadout.textContent = `${cm % 1 === 0 ? cm : cm.toFixed(1)} cm`;
-      sizeInput.style.setProperty('--fraction', String((cm - sizeRange.minimum) / (sizeRange.maximum - sizeRange.minimum)));
-      pond.setStoneRadius(cm / 200);   // slider is the stone's diameter
+      const thing = THINGS[pond.thing];
+      const value = Number(sizeInput.value);
+      sizeReadout.textContent = thing.readout(value);
+      const slider = thing.slider;
+      sizeInput.style.setProperty('--fraction', String(slider ? (value - slider.min) / (slider.max - slider.min) : 0));
+      if (!slider) return;
+      sliderValues[sliderKey()] = value;
+      pond.setSize(value);
     };
+    function showSlider() {
+      const thing = THINGS[pond.thing];
+      const slider = thing.slider ?? { min: 0, max: 1, step: 1, initial: 0 };
+      sizeLabel.textContent = thing.short;
+      sizeInput.min = String(slider.min);
+      sizeInput.max = String(slider.max);
+      sizeInput.step = String(slider.step);
+      sizeInput.value = String(sliderValues[sliderKey()] ?? slider.initial);
+      sizeInput.disabled = !thing.slider;
+      applySize();
+    }
     sizeInput.addEventListener('input', applySize);
-    applySize();
+    showSlider();
     // iOS moves a range input only by its thumb. Here a touch anywhere along
     // a slider puts the thumb under the finger, and the finger drags it from
     // there (the thumb's centre runs from half a thumb in at either end).
@@ -809,7 +866,7 @@
       const setFromTouch = (event) => {
         event.preventDefault();
         const touch = event.touches[0];
-        if (!touch) return;
+        if (!touch || input.disabled) return;
         const minimum = Number(input.min), maximum = Number(input.max), step = Number(input.step);
         const bounds = input.getBoundingClientRect();
         const thumb = parseFloat(getComputedStyle(input).getPropertyValue('--thumb')) || 0;
@@ -878,6 +935,14 @@
       document.getElementById('view-note').textContent = (pond.clarity === 'pool' ? NOTES.poolView : NOTES.view)[name ?? 'turned'];
     };
     const showWater = radioGroup(document.getElementById('water'), (value) => { pond.setClarity(value); updateWater(); });
+    const showThing = radioGroup(document.getElementById('thing'), (value) => { pond.setThing(value); updateThing(); });
+    function updateThing() {
+      showThing(pond.thing);
+      settings.setValue('thing', THINGS[pond.thing].name);
+      // Skip skips a stone: off for a ball or a gem.
+      skipSwitch.disabled = !THINGS[pond.thing].stone;
+      showSlider();
+    }
     function updateWater() {
       showWater(pond.clarity);
       settings.setValue('water', label('water', pond.clarity));
@@ -983,6 +1048,7 @@
     timeInput.addEventListener('input', chooseHour);
     followTouch(timeInput, chooseHour);
     showView();
+    updateThing();
     updateWater();
     updateWeather();
     updateWind();

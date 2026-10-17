@@ -29,12 +29,13 @@
 // the mirror's layer alone.
 //
 // The stones and their holes take the pool's floor, POOL.depth, as their
-// bed, and its walls hold a stone under the water inside them (holdInPool);
-// a skipping stone that meets a wall below its top comes back off it
-// (holdSkipping). The deck is ground to a skip stone (poolGround: src/rock.js
-// lands it there as on paving), and the walls, less its radius, bound where
-// it may touch the water (poolInside). The eye keeps over the deck
-// (src/main.js).
+// bed, and its walls hold a stone under the water, or afloat, inside them
+// (holdInPool): a wall turns it back. A skipping stone that meets a wall
+// below its top comes back off it (holdSkipping). The deck is ground to
+// whatever comes down on it (poolGround: src/rock.js bounces it, and
+// tumbles or rolls it along, as on paving), and the walls, less a skip
+// stone's radius, bound where it may touch the water (poolInside). The eye
+// keeps over the deck (src/main.js).
 import * as THREE from 'three';
 import { POOL_VERTEX, POOL_FRAGMENT, DECK_VERTEX, DECK_FRAGMENT } from './shaders/scene.js';
 import { squareRingsGeometry, OUTER_HALF_SIZE } from './waterSurface.js';
@@ -48,22 +49,43 @@ export const POOL = {
 const BASIN_CELL = 0.075;      // m: the basin's mesh spacing
 const MAIN_WALL_FROM = -0.1;   // m: the walls the main scene draws reach this far under the water, below any trough
 const WALL_KEPT = 0.4;         // a skipping stone comes back off a wall with this share of its speed across it
+const WALL_WATER = 0.8;        // a thing in the water comes back off a wall at its own bounce times this (holdInPool)
 
 /**
- * A stone under the water (src/rock.js) held inside the pool's walls (the
- * square, water.poolSquare): the wall it meets stops it, and it slides on
- * down. In the air it may cross the deck: the aim keeps its landing in the
- * pool. A skip stone, until it goes in, is held as holdSkipping says.
+ * A thing under the water or afloat (src/rock.js) held inside the pool's
+ * walls (the square, water.poolSquare): the wall it meets turns it back, at
+ * its own bounce (Rock.collisionBounce) times WALL_WATER (the water between
+ * it and the tiles takes some), and it carries on along the wall; under the
+ * water its path (sinkStep's body) with it (Rock.knock). In the air it may
+ * cross the deck: the aim keeps its landing in the pool, and the deck is
+ * ground (poolGround). A skip stone, until it goes in, is held as
+ * holdSkipping says; it goes in moving fast along the water, its centre
+ * still above it, and the walls hold it from then on. Returns how hard it
+ * was turned back (its change of speed, m/s, and the wall's normal, into the
+ * pool), or null: src/main.js runs it with the things' meetings
+ * (src/collide.js), so a ball off a wall into another passes the knock on in
+ * the same step, and a floater turned back hard rings the water.
  */
 export function holdInPool(rock, square) {
-  if (rock.skip && rock.state !== 'water' && rock.state !== 'rest') { holdSkipping(rock, square); return; }
-  // A skip stone goes in moving fast along the water, its centre still above it: the walls hold it from then on.
-  if (rock.position.y > 0 && !(rock.skip && rock.state === 'water')) return;
+  if (rock.skip && rock.state !== 'water' && rock.state !== 'rest') { holdSkipping(rock, square); return null; }
+  const afloat = rock.state === 'float' || rock.afloat;
+  if (rock.position.y > 0 && !afloat && !(rock.skip && rock.state === 'water')) return null;
+  if (rock.state === 'air' || rock.state === 'ground' || (rock.state === 'rest' && !afloat)) return null;
+  let held = null;
   for (const [axis, low] of [['x', square.minX], ['z', square.minZ]]) {
     const lowest = low + rock.radius, highest = low + square.size - rock.radius;
-    if (rock.position[axis] < lowest) { rock.position[axis] = lowest; rock.velocity[axis] = Math.max(rock.velocity[axis], 0); }
-    else if (rock.position[axis] > highest) { rock.position[axis] = highest; rock.velocity[axis] = Math.min(rock.velocity[axis], 0); }
+    const side = rock.position[axis] < lowest ? 1 : rock.position[axis] > highest ? -1 : 0;   // the wall's normal, into the pool
+    if (side === 0) continue;
+    const into = -side * rock.velocity[axis];   // its speed into the wall
+    const change = into > 0 ? (1 + rock.collisionBounce * WALL_WATER) * into : 0;
+    const moved = (side > 0 ? lowest : highest) - rock.position[axis];
+    const velocity = [0, 0, 0], offset = [0, 0, 0];
+    velocity[axis === 'x' ? 0 : 2] = side * change;
+    offset[axis === 'x' ? 0 : 2] = moved;
+    rock.knock(...velocity, ...offset);
+    if (!held || change > held.change) held = { change, normalX: axis === 'x' ? side : 0, normalZ: axis === 'z' ? side : 0 };
   }
+  return held;
 }
 
 /**
