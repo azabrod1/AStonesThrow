@@ -216,8 +216,12 @@
 // frame at any time scale. The mesh is drawn by SplashSystem with the
 // materials in src/shaders/sheet.js, through the droplets' screen-space fluid
 // passes.
+//
+// In the pool (`walls`, set by SplashSystem) the sheet and its beads are held
+// inside its walls (holdWithinWalls in src/fluidMesh.js): a sheet that meets
+// a wall runs up it instead of passing through onto the deck.
 import * as THREE from 'three';
-import { createRingGrid, computeGridNormals, markChanged } from './fluidMesh.js';
+import { createRingGrid, computeGridNormals, holdWithinWalls, markChanged } from './fluidMesh.js';
 
 const GRAVITY = 9.81;
 const REFERENCE_RADIUS = 0.03;     // the stone size the tuning constants were set for
@@ -389,6 +393,7 @@ export class CrownSheet {
     this.entrySpeed = (landing ? LANDING_SPEED * speed : fan ? (0.75 + 0.25 * strength) * speed : speed) * this.lopsided.speedScale;
     this.tiltShift = landing ? LANDING_TILT : this.lopsided.tiltShift + (seal && !fan ? DOME_TILT : 0);   // degrees off the launch angle from vertical
     this.startTime = startTime;
+    this.walls = null;   // the pool's walls, inset (src/splash.js setGround), or none
     this.age = 0;
     this.finished = false;
     this.landing = landing;
@@ -917,6 +922,10 @@ export class CrownSheet {
     bead.x = tipX + alongX * reach;
     bead.y = tipY + alongY * reach;
     bead.z = tipZ + alongZ * reach;
+    if (this.walls) {
+      bead.x = Math.min(Math.max(bead.x, this.walls.minX), this.walls.maxX);
+      bead.z = Math.min(Math.max(bead.z, this.walls.minZ), this.walls.maxZ);
+    }
     bead.radius = radius;
     return bead;
   }
@@ -1124,6 +1133,7 @@ export class CrownSheet {
         this.rowTaus[vertex] = tau - front;
       }
     }
+    holdWithinWalls(this.positions, this.walls);
     if (!this.beadsGone) for (const finger of this.fingers) this.placeBead(finger, this.beadShare(finger));
 
     // Normals from the grid; near the rim the bead's normal also leans along

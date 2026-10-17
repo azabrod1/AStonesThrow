@@ -42,6 +42,7 @@ uniform float uGammaLeast;   // ...never less than this (a pool's walls and floo
 uniform float uNu;           // k² damping coefficient, m²/s
 uniform float uKLow;         // below this wavenumber waves are damped hard (no sloshing)
 uniform float uGammaLow;
+uniform float uGammaBreaking;  // a pool's breaking waves (src/spectralWater.js BREAKING), 1/s, for every wave; 0 in the open pond
 uniform int uSplatCount;
 uniform vec4 uSplats[MAX_SPLATS];      // x,y: centre in texels; z: sigma in texels; w: rim ratio (0 = plain Gaussian)
 uniform vec2 uSplatAmps[MAX_SPLATS];   // x: height (m), y: vertical velocity (m/s)
@@ -73,7 +74,7 @@ void main() {
   float k = qMag / uCell;                      // radians per metre
   float omega2 = (9.81 * k + 7.2e-5 * k * k * k) * tanh(min(k * uDepth, 20.0));
   float omega = sqrt(omega2);
-  float gamma = max(uGamma0 * min(k / uKDamp, 1.0), uGammaLeast) + uNu * k * k + (k < uKLow ? uGammaLow : 0.0);
+  float gamma = max(uGamma0 * min(k / uKDamp, 1.0), uGammaLeast) + uNu * k * k + (k < uKLow ? uGammaLow : 0.0) + uGammaBreaking;
 
   vec2 height = state.xy;
   vec2 velocity = state.zw;

@@ -23,7 +23,9 @@
 // It checks that with POOL_DAMPING the largest rock's waves (30 cm, thrown
 // hard) are under SLOPE_VISIBLE, and its caustics change by under 0.1%,
 // POOL_SLEEP_SECONDS after its last splat, so the solver's sleep never
-// clears waves that show. Exits with status 1 if not.
+// clears waves that show. Exits with status 1 if not. It leaves out the
+// pool's breaking (BREAKING in src/spectralWater.js), which only takes
+// energy away, so the check holds with it too.
 //
 //   node tools/pool-probe.mjs [--radius=0.15] [--power=hard]
 import * as THREE from 'three';

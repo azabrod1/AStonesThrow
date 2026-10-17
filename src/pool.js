@@ -29,12 +29,20 @@
 // the mirror's layer alone.
 //
 // The stones and their holes take the pool's floor, POOL.depth, as their
-// bed, and its walls hold a stone under the water inside them (holdInPool);
-// a skipping stone that meets a wall below its top comes back off it
-// (holdSkipping). The deck is ground to a skip stone (poolGround: src/rock.js
-// lands it there as on paving), and the walls, less its radius, bound where
-// it may touch the water (poolInside). The eye keeps over the deck
-// (src/main.js).
+// bed, and its walls hold a stone under the water, or afloat, inside them
+// (holdInPool): a wall turns it back. Anything in the air that meets a
+// wall's side below its top, coming from inside (a skipping stone, a
+// floater bobbed clear), comes back off it (holdAirborne). The deck is ground to
+// whatever comes down on it (poolGround: src/rock.js bounces it, and
+// tumbles or rolls it along, as on paving), and the walls, less a skip
+// stone's radius, bound where it may touch the water (poolInside). The eye
+// keeps over the deck (src/main.js).
+//
+// The splash's drops that land on the deck wet it (wetSpot, from
+// src/splash.js setGround): a map of how wet, WET_MAP, over the pool and
+// round it, which the drops soak, the more the wetter, and which dries a
+// little every WET_MAP.step, its thin edges first; the deck's shader
+// darkens the stone and the grass by it.
 import * as THREE from 'three';
 import { POOL_VERTEX, POOL_FRAGMENT, DECK_VERTEX, DECK_FRAGMENT } from './shaders/scene.js';
 import { squareRingsGeometry, OUTER_HALF_SIZE } from './waterSurface.js';
@@ -46,42 +54,74 @@ export const POOL = {
   tileAlbedo: 0.8,  // the tiles' mean albedo, grout included (POOL_TILES), for what the splash's drops show of the floor
 };
 const BASIN_CELL = 0.075;      // m: the basin's mesh spacing
+// The deck's wetness map (wetSpot): it reaches WET_MAP.reach (m) past the walls in cells of WET_MAP.cell (m); a
+// drop adds up to `soak` of full wetness, which dries away over `dry` seconds (thin edges first), and the map
+// is dried and uploaded every `step` seconds.
+const WET_MAP = { reach: 1.5, cell: 0.015, soak: 0.55, dry: 40, step: 0.25 };
 const MAIN_WALL_FROM = -0.1;   // m: the walls the main scene draws reach this far under the water, below any trough
 const WALL_KEPT = 0.4;         // a skipping stone comes back off a wall with this share of its speed across it
+const WALL_WATER = 0.8;        // a thing in the water comes back off a wall at its own bounce times this (holdInPool)
 
 /**
- * A stone under the water (src/rock.js) held inside the pool's walls (the
- * square, water.poolSquare): the wall it meets stops it, and it slides on
- * down. In the air it may cross the deck: the aim keeps its landing in the
- * pool. A skip stone, until it goes in, is held as holdSkipping says.
+ * A thing under the water or afloat (src/rock.js) held inside the pool's
+ * walls (the square, water.poolSquare): the wall it meets turns it back, at
+ * its own bounce (Rock.collisionBounce) times WALL_WATER (the water between
+ * it and the tiles takes some), and it carries on along the wall; under the
+ * water its path (sinkStep's body) with it (Rock.knock). In the air the
+ * walls' sides turn it back if it comes at them from inside, below their
+ * top (holdAirborne); above it, it crosses onto the deck, which is ground
+ * (poolGround). A skipping stone follows its contact's path; it goes in
+ * moving fast along the water, its centre still above it, and the walls
+ * hold it from then on, as they hold a skipped pumice once it floats.
+ * Returns how hard it
+ * was turned back (its change of speed, m/s, and the wall's normal, into the
+ * pool), or null: src/main.js runs it with the things' meetings
+ * (src/collide.js), so a ball off a wall into another passes the knock on in
+ * the same step, and a floater turned back hard rings the water.
  */
 export function holdInPool(rock, square) {
-  if (rock.skip && rock.state !== 'water' && rock.state !== 'rest') { holdSkipping(rock, square); return; }
-  // A skip stone goes in moving fast along the water, its centre still above it: the walls hold it from then on.
-  if (rock.position.y > 0 && !(rock.skip && rock.state === 'water')) return;
+  // In the air (any thing: a thrown one, a floater bobbed clear, a skip between touches) the walls' sides turn it back.
+  if (rock.state === 'air') { holdAirborne(rock, square); return null; }
+  if (rock.skip && rock.state === 'skim') return null;
+  const afloat = rock.state === 'float' || rock.afloat;
+  if (rock.position.y > 0 && !afloat && !(rock.skip && rock.state === 'water')) return null;
+  if (rock.state === 'air' || rock.state === 'ground' || (rock.state === 'rest' && !afloat)) return null;
+  let held = null;
   for (const [axis, low] of [['x', square.minX], ['z', square.minZ]]) {
     const lowest = low + rock.radius, highest = low + square.size - rock.radius;
-    if (rock.position[axis] < lowest) { rock.position[axis] = lowest; rock.velocity[axis] = Math.max(rock.velocity[axis], 0); }
-    else if (rock.position[axis] > highest) { rock.position[axis] = highest; rock.velocity[axis] = Math.min(rock.velocity[axis], 0); }
+    const side = rock.position[axis] < lowest ? 1 : rock.position[axis] > highest ? -1 : 0;   // the wall's normal, into the pool
+    if (side === 0) continue;
+    const into = -side * rock.velocity[axis];   // its speed into the wall
+    const change = into > 0 ? (1 + rock.collisionBounce * WALL_WATER) * into : 0;
+    const moved = (side > 0 ? lowest : highest) - rock.position[axis];
+    const velocity = [0, 0, 0], offset = [0, 0, 0];
+    velocity[axis === 'x' ? 0 : 2] = side * change;
+    offset[axis === 'x' ? 0 : 2] = moved;
+    rock.knock(...velocity, ...offset);
+    if (!held || change > held.change) held = { change, normalX: axis === 'x' ? side : 0, normalZ: axis === 'z' ? side : 0 };
   }
+  return held;
 }
 
 /**
- * A skip stone in the air (while it skims it follows its contact's path, and
- * on the deck src/rock.js moves it): its centre past a wall less its radius,
- * lower than the wall's top, having been inside the step before, it has met
- * the wall's side, and comes back off it with WALL_KEPT of its speed across
- * it. (Its throw's first flight starts over the deck, never inside.)
+ * A thing in the air (a skip stone between touches, a floater bobbed clear,
+ * a thing knocked up off the water; a skip stone skimming follows its
+ * contact's path, and on the deck src/rock.js moves things): its centre past
+ * a wall less its radius, its bottom lower than the wall's top, having been
+ * inside the step before, it has met the wall's side, and comes back off it,
+ * a skip stone with WALL_KEPT of its speed across it, anything else at its
+ * own bounce (Rock.collisionBounce). One that clears the wall's top passes
+ * over it, onto the deck. (A throw's first flight starts over the deck,
+ * never inside.)
  */
-function holdSkipping(rock, square) {
-  if (rock.state !== 'air') return;
+function holdAirborne(rock, square) {
   const outside = (point, axis, low) => point[axis] < low + rock.radius || point[axis] > low + square.size - rock.radius;
   const beyond = (point) => outside(point, 'x', square.minX) || outside(point, 'z', square.minZ);
   if (!beyond(rock.position) || beyond(rock.previous) || rock.position.y - rock.ellipsoidDepth() > POOL.deck) return;
   for (const [axis, low] of [['x', square.minX], ['z', square.minZ]]) {
     if (!outside(rock.position, axis, low)) continue;
     rock.position[axis] = THREE.MathUtils.clamp(rock.position[axis], low + rock.radius, low + square.size - rock.radius);
-    rock.velocity[axis] *= -WALL_KEPT;
+    rock.velocity[axis] *= -(rock.skip ? WALL_KEPT : rock.collisionBounce);
   }
 }
 
@@ -146,6 +186,16 @@ function basinGeometry(pool, bottom, top, withFloor) {
  */
 export function createPool(water, lighting, ambientWaves, environment, { rings = null, haze = null, wet = { value: 0 } } = {}) {
   const pool = water.poolSquare;
+  // Where the splash's drops came down on the deck (wetSpot): a map over the pool and WET_MAP.reach round it.
+  const wetSpan = pool.size + 2 * WET_MAP.reach;
+  const wetSide = Math.round(wetSpan / WET_MAP.cell);
+  const wetness = new Float32Array(wetSide * wetSide);
+  const wetBytes = new Uint8Array(wetSide * wetSide);
+  const wetMap = new THREE.DataTexture(wetBytes, wetSide, wetSide, THREE.RedFormat, THREE.UnsignedByteType);
+  wetMap.magFilter = wetMap.minFilter = THREE.LinearFilter;
+  wetMap.needsUpdate = true;
+  const wetArea = { value: new THREE.Vector3(pool.minX - WET_MAP.reach, pool.minZ - WET_MAP.reach, wetSpan) };
+  let wetAny = false, wetClock = null, wetDue = 0;
   const poolUniform = { value: new THREE.Vector4(pool.minX, pool.minZ, pool.size, POOL.depth) };
   const basinMaterial = new THREE.ShaderMaterial({
     vertexShader: POOL_VERTEX,
@@ -179,6 +229,8 @@ export function createPool(water, lighting, ambientWaves, environment, { rings =
       uSkyCube: { value: environment.cubeTexture },
       uPool: poolUniform,
       uWet: wet,
+      uWetMap: { value: wetMap },
+      uWetArea: wetArea,
       ...(haze ?? { uHazeColor: { value: new THREE.Vector3() }, uHazeDensity: { value: 0 } }),
     },
   });
@@ -187,7 +239,7 @@ export function createPool(water, lighting, ambientWaves, environment, { rings =
     vertexShader: material.vertexShader,
     fragmentShader: material.fragmentShader,
     uniforms: material.uniforms,
-    defines: { MIRROR_NEARNESS: 1 },
+    defines: { ...material.defines, MIRROR_NEARNESS: 1 },
   });
   const mesh = (geometry, material) => {
     const made = new THREE.Mesh(geometry, material);
@@ -208,6 +260,46 @@ export function createPool(water, lighting, ambientWaves, environment, { rings =
     mirrorWalls,
     yard,
     mirrorYard,
+    /** A drop landed on the deck at (x, z), wetting a spot `radius` (m) across (src/splash.js setGround): more drops, wetter. */
+    wetSpot(x, z, radius) {
+      const first = (value) => Math.max(Math.floor(value), 0), last = (value) => Math.min(Math.ceil(value), wetSide - 1);
+      const column = (x - wetArea.value.x) / WET_MAP.cell - 0.5, row = (z - wetArea.value.y) / WET_MAP.cell - 0.5;
+      const reach = radius / WET_MAP.cell + 1;
+      for (let at = first(row - reach); at <= last(row + reach); at++) {
+        for (let across = first(column - reach); across <= last(column + reach); across++) {
+          const share = 1 - THREE.MathUtils.smoothstep(Math.hypot(across - column, at - row) * WET_MAP.cell, 0.5 * radius, radius);
+          if (share <= 0) continue;
+          const cell = at * wetSide + across;
+          wetness[cell] = Math.min(wetness[cell] + WET_MAP.soak * share, 1);
+          wetBytes[cell] = Math.round(wetness[cell] * 255);
+          wetAny = wetMap.needsUpdate = true;
+        }
+      }
+    },
+    /** The simulation's time (s): every WET_MAP.step the deck dries a little, and what changed is uploaded. */
+    setTime(time) {
+      if (wetClock === null || time < wetClock) wetClock = time;
+      wetDue += time - wetClock;
+      wetClock = time;
+      if (wetDue < WET_MAP.step || !wetAny) { if (!wetAny) wetDue = 0; return; }
+      const drying = wetDue / WET_MAP.dry;
+      wetDue = 0;
+      wetAny = false;
+      for (let cell = 0; cell < wetness.length; cell++) {
+        if (wetness[cell] <= 0) continue;
+        wetness[cell] = Math.max(wetness[cell] - drying, 0);
+        wetBytes[cell] = Math.round(wetness[cell] * 255);
+        if (wetness[cell] > 0) wetAny = true;
+      }
+      wetMap.needsUpdate = true;
+    },
+    /** Dry the deck at once (a new pond). */
+    dry() {
+      wetness.fill(0);
+      wetBytes.fill(0);
+      wetAny = false;
+      wetMap.needsUpdate = true;
+    },
     /** Show the pool's meshes, or hide them. */
     setVisible(visible) {
       for (const object of [basin, walls, mirrorWalls, yard, mirrorYard]) object.visible = visible;

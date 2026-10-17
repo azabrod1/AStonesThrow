@@ -142,12 +142,13 @@ export class SettingsPanel {
 /**
  * Wire a group of radio buttons (role="radio", data-value) in `root`:
  * clicking one calls onChoose with its value. Returns show(value), which
- * marks that one checked.
+ * marks that one checked. The buttons are found each time, so `root`'s may
+ * be built again (the Object page's, as things are defined).
  */
 export function radioGroup(root, onChoose) {
-  const buttons = [...root.querySelectorAll('[role="radio"]')];
+  const radios = () => [...root.querySelectorAll('[role="radio"]')];
   const show = (value) => {
-    for (const button of buttons) {
+    for (const button of radios()) {
       const checked = button.dataset.value === value;
       button.setAttribute('aria-checked', String(checked));
       button.tabIndex = checked ? 0 : -1;
@@ -158,15 +159,18 @@ export function radioGroup(root, onChoose) {
     if (!button || !root.contains(button)) return;
     onChoose(button.dataset.value);
   });
-  // Arrow keys move the choice, as a radio group's do.
+  // Arrow keys move the choice, as a radio group's do. The choice is made
+  // before the focus moves: choosing opens the fold that holds it (the Object
+  // page's), and a button in a shut fold takes no focus.
   root.addEventListener('keydown', (event) => {
     const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[event.key];
     if (!step) return;
     event.preventDefault();
+    const buttons = radios();
     const index = buttons.indexOf(document.activeElement);
     const next = buttons[(Math.max(index, 0) + step + buttons.length) % buttons.length];
-    next.focus();
     onChoose(next.dataset.value);
+    next.focus();
   });
   return show;
 }

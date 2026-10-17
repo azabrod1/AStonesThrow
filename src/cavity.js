@@ -10,7 +10,18 @@
 // presses on its front too, C_h·ρ·g·h·πR² (C_h = HEAD_COEFFICIENT, h the
 // centre's depth: deceleration STONE_HEAD·g·h/R), and nothing buoys it; once
 // the hole has pinched off the air it carries takes the water's pressure, and
-// over OPEN_FADE·sqrt(R/g) the head gives way to buoyancy. The reference
+// over OPEN_FADE·sqrt(R/g) the head gives way to buoyancy. A thing of another
+// density than a river stone's (src/things.js) is moved with its own
+// constants (underWater): the drag's, the head's and the lift's go as ρw/ρs,
+// buoyancy too, and each acceleration is divided by the thing's inertia,
+// its mass and the water it carries with it (ADDED_MASS, C_a, of the water
+// it displaces), against the reference stone's: the fit below holds that
+// stone's own added mass (a fifth of its mass), so its constants are the
+// fit's and its path is as it was, while a basketball, which carries six
+// times its own mass of water, is slowed and buoyed about a sixth as hard as
+// its density alone would say. A thing lighter than water rises once its
+// hole has pinched off (src/rock.js floats it once it nears the surface);
+// the hole's slices reach only as deep as it went (buildSlices). The reference
 // simulation (tools/basilisk: a 3 cm stone straight in at 6.3 m/s) fits
 // F = C_d·½ρU²πR² + C_h·ρgh·πR² with C_d 0.46 and C_h 0.6; below 20 cm the
 // head slows the stone as much as the drag does. The cavity integrates the
@@ -156,8 +167,10 @@
 // is drawn no deeper than DRAWN_DEPTH·R: the camera looks in at 15 to 25°
 // from the horizon and sees no more than one or two radii down, and the
 // floor drawn there shows what is below it (the stone) through it, as the
-// floor at the stone does.
-import { createRingGrid, computeGridNormals, markChanged } from './fluidMesh.js';
+// floor at the stone does. In the pool (`walls`, set by SplashSystem) the
+// hole is held inside its walls (holdWithinWalls in src/fluidMesh.js), so it
+// never shows through the tiles.
+import { createRingGrid, computeGridNormals, holdWithinWalls, markChanged } from './fluidMesh.js';
 
 const GRAVITY = 9.81;
 // The stone under water, as src/rock.js moves it (tools/cavity-probe.mjs checks the two agree).
@@ -172,6 +185,9 @@ const OPEN_FADE = 0.1;             // in sqrt(R/g): after the pinch-off the head
 const RESTING_HEIGHT = 0.75;       // the stone rests with its centre this many radii above the floor
 export const SPIN_DECAY = 3;       // the stone's tumble fades as exp(−SPIN_DECAY·t) under water (src/rock.js)
 const LIFT = (3 / 8) * (WATER_DENSITY / ROCK_DENSITY);   // a lift coefficient C_L pushes the stone sideways at C_L·LIFT·v²/R
+const ADDED_MASS = 0.5;            // C_a: a body carries this share of the water it displaces with it (a sphere's)
+// The reference stone's constants (underWater), the fit's as they were.
+const STONE_UNDER_WATER = Object.freeze({ density: ROCK_DENSITY, ratio: DENSITY_RATIO, inertia: 1, drag: STONE_DRAG, head: STONE_HEAD, lift: LIFT, restingHeight: RESTING_HEIGHT });
 const ENTRY_HEIGHT = 0.7;          // the stone's centre at first contact, in radii above the water, when the impact does not say
 const PATH_STEP = 1 / 240;         // s: the app's substep at 60 frames a second, when the impact does not give one
 const PATH_SECONDS = 1.5;
@@ -269,12 +285,31 @@ function growthFor(widest) {
 }
 
 /**
+ * The constants sinkStep moves a body of `density` (kg/m³) with (the
+ * header): ρw/ρs, its inertia against the reference stone's, the drag's, the
+ * head's and the lift's coefficients over R, and the height in radii its
+ * centre rests at over the floor. The reference stone's are the fit's.
+ */
+export function underWater(density = ROCK_DENSITY, restingHeight = RESTING_HEIGHT) {
+  if (density === ROCK_DENSITY && restingHeight === RESTING_HEIGHT) return STONE_UNDER_WATER;
+  const ratio = WATER_DENSITY / density;
+  const inertia = (1 + ADDED_MASS * DENSITY_RATIO) / (1 + ADDED_MASS * ratio);
+  return {
+    density, ratio, inertia, restingHeight,
+    drag: (3 / 8) * ratio * DRAG_COEFFICIENT * inertia,
+    head: (3 / 4) * ratio * HEAD_COEFFICIENT * inertia,
+    lift: (3 / 8) * ratio * inertia,
+  };
+}
+
+/**
  * One substep of the stone under water (src/rock.js moves it with this, and
  * the cavity traces its path with it): `body` holds its centre (x, y, z), its
  * velocity, the time since the impact, the shape's lift coefficient vector and
  * the spin's (liftX.., spinLiftX..: C_L times a unit direction across the
  * path), when its hole pinches off (openUntil, on the body's clock; never
- * when it is undefined) and whether it rests on the floor, which it sets.
+ * when it is undefined), whether it rests on the floor, which it sets, and
+ * `water`, its constants (underWater; the reference stone's if absent).
  * While the hole is open the stone's back is in air at the atmosphere's
  * pressure, so the water's pressure on its front pushes back on it, the head
  * C_h·ρ·g·h·πR², and there is no buoyancy; once the hole has pinched off the
@@ -283,17 +318,18 @@ function growthFor(widest) {
  */
 export function sinkStep(body, radius, step, floorDepth) {
   if (body.resting) return body;
+  const water = body.water ?? STONE_UNDER_WATER;
   const floor = typeof floorDepth === 'function' ? floorDepth(body.x, body.z) : floorDepth;
   let velocityX = body.vx, velocityY = body.vy, velocityZ = body.vz;
   const speedSquared = velocityX * velocityX + velocityY * velocityY + velocityZ * velocityZ;
   const speed = Math.sqrt(speedSquared);
-  const drag = Math.min((STONE_DRAG / radius) * speed * step, 0.9);
+  const drag = Math.min((water.drag / radius) * speed * step, 0.9);
   velocityX -= velocityX * drag; velocityY -= velocityY * drag; velocityZ -= velocityZ * drag;
   // The head on its front, against its motion, while its hole is open.
   const open = body.openUntil === undefined ? 0
     : Math.min(Math.max(1 - (body.time + step - body.openUntil) / (OPEN_FADE * Math.sqrt(radius / GRAVITY)), 0), 1);
   if (open > 0 && speed > 1e-6) {
-    const head = Math.min((STONE_HEAD * GRAVITY * Math.max(-body.y, 0) / radius) * open * step / speed, 0.9);
+    const head = Math.min((water.head * GRAVITY * Math.max(-body.y, 0) / radius) * open * step / speed, 0.9);
     velocityX -= body.vx * head; velocityY -= body.vy * head; velocityZ -= body.vz * head;
   }
   // The lift, kept across the path as the path turns; the spin's fades with the tumble.
@@ -304,15 +340,15 @@ export function sinkStep(body, radius, step, floorDepth) {
   if (speedSquared > 1e-12 && (liftX !== 0 || liftY !== 0 || liftZ !== 0)) {
     const along = (liftX * body.vx + liftY * body.vy + liftZ * body.vz) / speedSquared;
     liftX -= along * body.vx; liftY -= along * body.vy; liftZ -= along * body.vz;
-    const push = Math.min((LIFT / radius) * speed * step, 0.9) * speed;
+    const push = Math.min((water.lift / radius) * speed * step, 0.9) * speed;
     velocityX += liftX * push; velocityY += liftY * push; velocityZ += liftZ * push;
   }
-  velocityY -= GRAVITY * (1 - DENSITY_RATIO * (1 - open)) * step;
+  velocityY -= GRAVITY * (1 - water.ratio * (1 - open)) * water.inertia * step;
   body.x += velocityX * step; body.y += velocityY * step; body.z += velocityZ * step;
   body.vx = velocityX; body.vy = velocityY; body.vz = velocityZ;
   body.time += step;
-  if (body.y - RESTING_HEIGHT * radius <= -floor) {
-    body.y = -floor + RESTING_HEIGHT * radius;
+  if (body.y - water.restingHeight * radius <= -floor) {
+    body.y = -floor + water.restingHeight * radius;
     body.vx = body.vy = body.vz = 0;
     body.resting = true;
   }
@@ -342,7 +378,8 @@ function multiply(first, second) {
 
 export class Cavity {
   /**
-   * @param impact {x, z, height, speed, velocity, radius, shape, spin, lift} from Rock.update (height: of the stone's centre)
+   * @param impact {x, z, height, speed, velocity, radius, shape, spin, lift, underWater} from Rock.update (height: of the stone's
+   *   centre; underWater: its constants, underWater's, the reference stone's if absent)
    * @param startTime splash time of the impact
    * @param material the mesh's material (the water shader's CAVITY_MESH variant), or null for none
    * @param cell the water grid's cell size (m): the surface patch dips under the lip by whole cells
@@ -358,6 +395,7 @@ export class Cavity {
     const { velocity, radius } = impact;
     this.radius = radius;
     this.startTime = startTime;
+    this.walls = null;   // the pool's walls, inset (src/splash.js setGround), or none
     this.age = 0;
     this.cell = cell;
     this.drawn = drawn;
@@ -381,7 +419,7 @@ export class Cavity {
     this.closureX = this.asymmetry.closure * radius * Math.cos(this.asymmetry.lopsidedAngle);
     this.closureZ = this.asymmetry.closure * radius * Math.sin(this.asymmetry.lopsidedAngle);
 
-    this.tracePath(impact.x, impact.height ?? ENTRY_HEIGHT * radius, impact.z, velocity, floorDepth, step, impact.lift);
+    this.tracePath(impact.x, impact.height ?? ENTRY_HEIGHT * radius, impact.z, velocity, floorDepth, step, impact.lift, impact.underWater);
     this.buildSlices();
     this.buildSections(impact);
 
@@ -439,7 +477,7 @@ export class Cavity {
    * is at the end of the substep it touched in, one step after the splash's
    * start, so sample n is the stone at n + 1 steps.
    */
-  tracePath(x, height, z, velocity, floorDepth, step, lift = null) {
+  tracePath(x, height, z, velocity, floorDepth, step, lift = null, water = undefined) {
     const radius = this.radius;
     const steps = Math.ceil(PATH_SECONDS / step) + 1;
     this.pathStep = step;
@@ -453,7 +491,7 @@ export class Cavity {
     this.entryVelocityZ = velocity.z;
     // The body's clock starts where the impact found the stone, a step after the splash's start.
     const body = {
-      x, y: height, z, vx: velocity.x, vy: velocity.y, vz: velocity.z, time: 0, resting: false, openUntil: this.pinchTime - step,
+      x, y: height, z, vx: velocity.x, vy: velocity.y, vz: velocity.z, time: 0, resting: false, openUntil: this.pinchTime - step, water,
       liftX: lift?.shape.x ?? 0, liftY: lift?.shape.y ?? 0, liftZ: lift?.shape.z ?? 0,
       spinLiftX: lift?.spin.x ?? 0, spinLiftY: lift?.spin.y ?? 0, spinLiftZ: lift?.spin.z ?? 0,
     };
@@ -499,7 +537,10 @@ export class Cavity {
     const radius = this.radius;
     const step = SLICE_STEP * radius;
     this.sliceStep = step;
-    const deepest = this.stoneAt(Math.min(2 * this.pinchTime + 0.05, PATH_SECONDS)).depth;
+    // As deep as the stone went by then: a thing lighter than water turns back up (the header).
+    const until = Math.min(2 * this.pinchTime + 0.05, PATH_SECONDS);
+    let deepest = this.stoneAt(until).depth;
+    for (let index = 0; index < this.pathCount && (index + 1) * this.pathStep <= until; index++) deepest = Math.max(deepest, this.pathDepth[index]);
     const count = Math.max(Math.floor(Math.max(deepest, step) / step) + 1, 3);
     this.sliceCount = count;
     this.sliceTime = new Float64Array(count);
@@ -957,6 +998,7 @@ export class Cavity {
       }
     }
 
+    holdWithinWalls(this.positions, this.walls);   // in the pool, flat against a wall it meets (src/splash.js)
     computeGridNormals(this.positions, this.normals, ROWS, COLUMNS);
     // The floor's centre is a pole, and once the hole has pinched so are its
     // bottom ring (the closing point) and the cap's rings: each faces as the

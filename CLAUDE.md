@@ -7,14 +7,15 @@ Keep this file short. Every future session reads all of it, so most notes belong
 ```bash
 npm install                # three (served to the headless harness) and playwright
 npm start                  # static server; open http://localhost:8123/
-npm test                   # CPU checks: the solver's FFT, splat spectrum, Nyquist bins, half floats and pool walls (fft-test), the wind ripples and the Wind control (wave-probe), the foam pattern (foam-probe), the cavity (cavity-probe), the rings (ring-probe), the raindrop's ring (rain-probe), the gale's waves (gale-probe), skipping (skip-probe)
-npm run shoot -- --label=name --throws=0:-1.4:0.03 --times=0.1,0.5   # frames into shots/name/; --seed=1 --fov --look --crop --report --eval --floats=half --sky=name --time=hour --weather=light-rain|heavy-rain|storm --water=pool|murky --wind=x:z --wind-strength=breeze --power=soft --view=high --orbit=az:el:dist --touch=x0:z0:x1:z1:s --skip --trace; --throws=none for idle water
+npm test                   # CPU checks: the solver's FFT, splat spectrum, Nyquist bins, half floats and pool walls (fft-test), the wind ripples and the Wind control (wave-probe), the foam pattern (foam-probe), the cavity (cavity-probe), the rings (ring-probe), the raindrop's ring (rain-probe), the gale's waves (gale-probe), skipping (skip-probe), the things thrown (thing-probe)
+npm run shoot -- --label=name --throws=0:-1.4:0.03 --times=0.1,0.5   # frames into shots/name/; --seed=1 --fov --look --crop --report --eval --floats=half --sky=name --time=hour --weather=light-rain|heavy-rain|storm --water=pool|murky --wind=x:z --wind-strength=breeze --power=soft --thing=basketball|bowling:16 --view=high --orbit=az:el:dist --touch=x0:z0:x1:z1:s --skip --trace; --throws=none for idle water
 node tools/jet-probe.mjs 0.03 6.3      # one Worthington jet on the CPU: timeline, drops, cost
 node tools/fan-probe.mjs 0.03 6.9 0.68 # the forward fan of an oblique entry on the CPU
 node tools/splash-probe.mjs            # the whole splash on the CPU for each stone size: crown, jet, drops, ring, cost per frame
 node tools/ring-probe.mjs --gpu        # the rings against the solver, each ring's retirement and drawn profile, the fit to tools/basilisk's ring, a minute of throwing's cost; --gpu reads the GPU's back
 node tools/cavity-probe.mjs            # the stone's cavity on the CPU for each size: timeline, pinch, closure, cost; checks the hole hides the surface, for random throws too
 node tools/pool-probe.mjs              # the pool's waves on the CPU: how long a splash's ripples run round the basin, and that the solver sleeps only once they are gone (POOL_SLEEP_SECONDS)
+node tools/thing-probe.mjs             # each thing thrown (src/things.js): its aim, depth, float or sink, rest; the pool's deck; things meeting things and walls (src/collide.js)
 node tools/variety-probe.mjs           # how splashes vary throw to throw on the CPU (seed n = the harness's seeded throw n): jet forms, seals, tops, tip drops, lean; --list per throw
 node tools/skip-probe.mjs              # Skip throws on the CPU: skips per throw, hops, angles in and out, where it goes in, cost; ?trace=1 on the page draws the paths
 node tools/zoom-probe.mjs              # drives the page's zoom, orbit and touch handlers: the anchor stays put, a drag turns and never throws, the views glide, a held press dips a finger
@@ -51,6 +52,7 @@ There is no build step. The page loads Three.js from jsDelivr through the import
 - The Pool water is the patch's middle quarter with mirror-image walls (`setPool`): there the solver carries the ring and `src/rings.js` draws only its hidden near field, turned over (`nearOnly`), both released in one frame (`releasePoolRing`). Change the ring's source in one and you change it in both.
 - `assets/rain/` is written by `tools/rain-probe.mjs --write`; never edit it. The cloud and haze are the sky's (`setWeather` in `src/sky.js`), the drops `src/rain.js`'s.
 - Under a gale the splash and the stones compute on still water (surface at 0) and are lifted as drawn (`galeLift` in `src/shaders/gale.js`, `Rock.syncMeshes`). Anything new drawn on the water must be lifted too, or it floats or sinks in the waves.
+- What can be thrown is a registry of definitions in `src/things.js` (`defineThing`: plain, validated data; body, material, air, water, look, abilities); its meshes are `src/thingMeshes.js`'s builders (`registerMesh`). `src/rock.js` reads the definition and never asks what a thing is. A river stone (the default) must stay exactly as it was: seeded throws match `main`'s in `tools/variety-probe.mjs`, `tools/cavity-probe.mjs` and `tools/skip-probe.mjs` (a new mesh or material on every stone draws random ids and moves them). Things' looks live in geometry, vertex colours and uniforms, so they compile no program of their own.
 - Add files by name, never `git add -A`. `shots/` is ignored and stays local.
 
 ## The cloud container

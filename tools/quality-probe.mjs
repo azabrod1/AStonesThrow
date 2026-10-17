@@ -21,7 +21,9 @@
 //    no program (the warm-up drew both sceneries), its water mesh draws only
 //    the pool's quads, a throw into it compiles none and keeps one ring, the
 //    near field's (src/rings.js), which retires with it, and a change of
-//    preset in it keeps the pool's mesh. Rain (src/rain.js): each weather in
+//    preset in it keeps the pool's mesh. Every kind of thing (src/things.js)
+//    thrown, the floaters followed until they float in the mirror image,
+//    compiles no program. Rain (src/rain.js): each weather in
 //    turn, with a throw in the downpour and a change of preset, compiles no
 //    program (the warm-up drew the rain's), and the tile takes the preset's
 //    size; clear again, nothing of the rain runs. The gale (src/galeWaves.js)
@@ -226,6 +228,16 @@ await page.evaluate(() => { window.__pond.setQuality('high'); window.__pond.setC
 const backOnLake = await page.evaluate(() => window.__pond.budget.programs);
 check(backOnLake === programsBeforePool, `back on the lake, still no new program (${backOnLake})`);
 await checkBuilt(phone, 'back on the lake');
+
+// Every kind of thing (src/things.js), thrown and followed until the floaters float in the mirror image, compiles no program.
+const programsBeforeThings = await page.evaluate(() => window.__pond.budget.programs);
+const namesBeforeThings = await programNames(page);
+for (const thing of ['slate', 'granite', 'basalt', 'pumice', 'golf', 'tennis', 'bowling', 'basketball', 'diamond', 'apple', 'pizza', 'watermelon', 'brick']) {
+  await page.evaluate((name) => { window.__pond.pause(); window.__pond.throwAt(0, -1.4, { thing: name }); window.__pond.advance(3.0); }, thing);
+}
+const programsAfterThings = await page.evaluate(() => window.__pond.budget.programs);
+const thingsCompiled = (await programNames(page)).filter((name) => !namesBeforeThings.includes(name));
+check(programsAfterThings === programsBeforeThings, `every kind of thing thrown, and a floater in the mirror image, compiles no program (${programsBeforeThings} before, ${programsAfterThings} after${thingsCompiled.length ? `; new: ${thingsCompiled.join(', ')}` : ''})`);
 
 // The weather: rain compiles nothing, follows the preset's tile size, and goes when it clears.
 const programsBeforeRain = await page.evaluate(() => window.__pond.budget.programs);

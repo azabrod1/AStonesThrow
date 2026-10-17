@@ -19,17 +19,63 @@ up or down (from just above the water to nearly straight down), and scroll
 or pinch to zoom toward what is under the pointer (down to an 8° field of
 view); a drag that starts zoomed turns round what the view is looking at.
 Escape or Reset view glides back to the shore. The strip at the bottom sets
-the rock's size (1.5 to 30 cm across), the throw strength, Skip and the
-speed (real time, or slow motion at ¼ or ⅒). With Skip on, a flat stone is
-thrown low and level, spinning, and skips across the water (below), in the
-direction of the tap (even on the sky); its first touch lands where a level
-throw puts it. The menu button at the
+the size of what is thrown (a stone 1.5 to 30 cm across, a bowling ball 6
+to 16 lb, a basketball size 5 to 7, a gem 5 to 1000 carats; a golf or a
+tennis ball has one size), the throw strength, Skip and the speed (real
+time, or slow motion at ¼ or ⅒). With Skip on, a flat stone is thrown low
+and level, spinning, and skips across the water (below), in the direction
+of the tap (even on the sky); its first touch lands where a level throw
+puts it. The menu button at the
 top right opens the settings, laid out as the Moon app's menu is: a list in
-three groups (the place: Location, Water and Time of day; the conditions:
-Weather and Wind; the viewing: View and Quality), each row an icon, its name
+four groups (what is thrown: Object; the place: Location, Water and Time of
+day; the conditions: Weather and Wind; the viewing: View and Quality), each row an icon, its name
 over a line on what it sets and where it stands, and each setting a page of
 its choices (Location and Water as pictures) with a line on each. Each choice
 is remembered on the device (but the view, which opens on the shore):
+- Object (`?thing=`, what is thrown): a river stone (the default), slate, granite,
+  basalt or pumice; a golf ball, a tennis ball, a bowling ball or a
+  basketball; a gem; an apple, a watermelon or a pizza; a brick. Each is
+  pictured, in a fold for its group (Stones, Balls, Gems, Other; the
+  chosen thing's open, one at a time; tapping one closes the settings, so
+  the next tap on the water throws it),
+  each the size, weight and density of the real thing (`src/things.js`), and
+  the throw button names it ("Throw a rock", "Throw a ball", "Throw a
+  pizza"). Pumice, a tennis ball, a basketball and a bowling ball
+  of 11 lb or less are lighter than water: they come back up, bob and
+  float (a basketball 4.3 cm under, mirrored in the water, drifting under a
+  gale), as do an apple (low: a quarter of it is air), a watermelon (2 to
+  10 kg, nearly as heavy as water: it plunges deep, comes back up slowly
+  and floats with only its striped back showing) and a pizza (a soft
+  disc made by hand, its outline and crust uneven: thrown, it spins level
+  like a frisbee, wobbling, its edges cupped against the air; afloat, its
+  toppings up and dry, as much of it under as Archimedes says). A floater
+  rides the water as it is drawn, ripples, rings and wind waves, rising
+  and tilting with them, and the water meets it at its true surface (a
+  pizza's crust holds it off the toppings); the rest sink, a golf ball
+  slowly, basalt fastest. A gem (diamond, emerald, ruby or sapphire, cut and
+  faceted, 5 to 1000 carats) sinks, as does a brick (2.7 kg of fired clay).
+  Each choice's picture (`assets/things/thumbs/`) is a harness frame of
+  the thing at rest on the pool's deck, its middle 70% shrunk to 160×90:
+  `--water=pool --throws=none --times=0.05 --look=0.25:y:0.85 --fov=f`
+  (y the deck's 0.1 m plus its radius, f = 2·atan(1.25·d/1.8) for its
+  diameter d; a stone 10 cm, a gem 3 cm, a pizza 30 cm, a watermelon 25 cm,
+  a brick 21.5 cm) and `--eval` throwing it, turning
+  it upright and laying it there with `restOn(0.1)`.
+  Anything thrown at a floater knocks it: they bounce off each other, the
+  floater dipping, ringing the water and throwing off spray, and the knock
+  passes on to whatever it is driven into, floaters and the pool's walls
+  (which send things back off them) alike. Floaters and things at rest on
+  the deck stay in sight; a throw retires the oldest thing out of sight. In the pool,
+  anything that comes down on the deck bounces as it would on paving (a
+  basketball back to 70% of its fall, a bowling ball hardly at all) and
+  rolls or tumbles to a stop, or off the edge into the water. A splash
+  meets the pool's walls and deck as well: its sheet and jet run up a wall
+  they reach, drops that hit a wall's side fall back into the pool, and
+  those thrown over it land on the paving, big ones splattering, and leave
+  it wet where they fall; the more come down, the darker and longer it
+  stays wet, drying from the edges over up to forty seconds. The pool's
+  waves break: throw after throw into one corner no longer piles them into
+  glassy humps, as they spill their energy once they stay too steep.
 - View: Shore, standing on the bank as the page opens; Low, down at the
   water, the splash against the far shore; High, from above, the rings
   spreading over the pond; Under, under the water, looking up at the rocks
@@ -209,6 +255,35 @@ scales the whole field by one factor (its slope variance below a pixel by
 the square) and the foam's drift with it: Calm 0.3, a glassy pond with faint
 cat's paws, on which a stone's rings read far; Breeze 1, the look the pond
 had before the control; Windy 1.8.
+
+**Things** (`src/things.js`, `src/thingMeshes.js`, `src/rock.js`). What
+can be thrown is a registry of definitions (`defineThing`), plain data in the
+parts a physics engine gives a body: its body (a sphere, or its mesh's own
+shape; its density and how the slider sizes it), its material (bounce,
+friction, rolling), its drag in the air, its rest on the bed, its look (a
+mesh builder, `registerMesh`, and its parameters) and what it can do (skip;
+be held to a human throw). A definition is checked (`validateThing` says
+what is wrong), so one can come from outside: `__pond.defineThing(key,
+definition)` adds a thing, and the Object page shows it. A new thing
+is a definition; a new look, a mesh builder; a new body or flight (a
+feather's flutter), a body or air model in `src/rock.js`. What is thrown is a kind
+of stone (the river stone's procedural geometry in its own squash, lumps,
+colours and density) or a ball (an icosphere painted per vertex: a
+basketball's seams, a tennis ball's, a golf ball's dimples, a bowling ball's
+swirl and finger holes), all drawn with one material, so a new kind compiles
+nothing. Under the water each moves with its own density's drag, head, lift
+and buoyancy, divided by its inertia with the water it carries (half the
+water it displaces, against the reference stone's, whose fit already holds
+it: a basketball carries six times its own mass). A floater rises once its
+hole has closed and floats on the water over its submerged cap, damped by
+the waves it makes, and rests at Archimedes' depth. A ball is aimed against
+the air's drag and thrown no faster than it can be (`aimThrow`); a lighter
+thing throws a slower jet (`lightJet` in `src/splash.js`).
+Things meet things in `src/collide.js`: spheres exchanging a collision's
+impulse (momentum kept, the bounce of the pair's materials, a floater's
+mass counting the water it carries), gone over several times a step with
+the pool's walls so a knock passes along a row within the step.
+`tools/thing-probe.mjs` checks the sizes, aims, depths, bounces and meetings.
 
 **Splash** (`src/splash.js`). A stone entering water goes through stages with
 known timing, and the droplets are choreographed from them:
@@ -613,7 +688,8 @@ farther out, so it rises into the view rather than filling its corner.
 
 - `npm test` runs `tools/fft-test.mjs`, `tools/wave-probe.mjs`,
   `tools/foam-probe.mjs`, `tools/cavity-probe.mjs`, `tools/ring-probe.mjs`,
-  `tools/rain-probe.mjs`, `tools/gale-probe.mjs` and `tools/skip-probe.mjs`;
+  `tools/rain-probe.mjs`, `tools/gale-probe.mjs`, `tools/skip-probe.mjs` and
+  `tools/thing-probe.mjs`;
   each exits with 1 if a check fails.
 - `node tools/gale-probe.mjs [--wind=x,z]` builds the gale's seed with the
   app's code and runs its evaluation and FFT passes on the CPU: the field is
@@ -897,8 +973,10 @@ farther out, so it rises into the view rather than filling its corner.
   `shots/controls-probe/`. The
   shoot harness and the other probes emulate a desktop browser, which ignores
   the viewport tag, so only this probe sees the page as a phone does.
-- `window.__pond` exposes the app in the console: `throwAt(x, z, { radius, power, skip })`,
+- `window.__pond` exposes the app in the console: `throwAt(x, z, { radius, power, skip, thing, size })`,
   `setSkip(on)` (and `skipping`), `setTrace(on)`,
+  `setThing(name)` (and `thing`: a key of `THINGS` in `src/things.js`, remembered
+  on the device) and `setSize(value)` (and `size`: the slider's value in its unit),
   `setTimeScale` (and `timeScale`), `pause()`, `advance(seconds)` (in the frames the app would
   draw at the current time scale), `setDebugView(name)`, `setFov(degrees)`,
   `lookAt(x, y, z)`, `resetView()`, `setWind(name)` (and `wind`: calm,

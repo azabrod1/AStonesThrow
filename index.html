@@ -198,6 +198,9 @@
      finds it. On a touch screen the thumb is 28 px and the box 44 px tall
      (Apple's smallest comfortable target); on a phone the slider has a row of
      its own. */
+  /* A thing of one size (src/things.js: a golf or tennis ball) keeps the slider, off. */
+  input[type="range"]:disabled { opacity: 0.35; cursor: default; }
+  .switch:disabled { opacity: 0.35; cursor: default; }
   input[type="range"] {
     --thumb: 18px;
     --track: 4px;
@@ -387,7 +390,11 @@
     text-overflow: ellipsis;
   }
   .menu-tier-chevron { flex: none; font-size: 16px; line-height: 1; color: rgba(238, 243, 244, 0.5); }
-  .menu-head { display: flex; align-items: center; gap: 4px; padding: 2px 2px 10px; }
+  /* A page's head stays at the top while the page scrolls under it, clear of the panel's edge. */
+  .menu-head {
+    display: flex; align-items: center; gap: 4px; padding: 10px 10px 10px; margin: -8px -8px 0;
+    position: sticky; top: -8px; z-index: 1; background: rgba(9, 21, 27, 0.97); border-radius: 16px 16px 0 0;
+  }
   .menu-head h3 {
     margin: 0;
     font-family: var(--font-display);
@@ -463,6 +470,23 @@
   .menu-card img { flex: none; width: 80px; height: 45px; border-radius: 7px; object-fit: cover; background: rgba(238, 243, 244, 0.08); }
   .menu-card b { display: block; font-size: 14px; font-weight: 500; }
   .menu-card small { display: block; margin-top: 2px; font-size: 12px; color: var(--muted); }
+  /* The Object page: a fold for each group of things (src/things.js),
+     one open at a time, its heading the group's name, how many it holds and
+     the one chosen in it; the cards inside as the Water page's. */
+  .menu-groups { display: grid; gap: 6px; }
+  .menu-group { border: 1px solid var(--line); border-radius: 12px; }
+  .menu-group > summary {
+    display: flex; align-items: center; gap: 8px; min-height: 38px; padding: 0 12px;
+    list-style: none; cursor: pointer; font-size: 14px;
+  }
+  .menu-group > summary::-webkit-details-marker { display: none; }
+  .menu-group > summary::after { content: '\203A'; margin-left: auto; color: var(--muted); font-size: 18px; transition: transform 0.2s; }
+  .menu-group[open] > summary::after { transform: rotate(90deg); }
+  .menu-group > summary small { color: var(--muted); font-size: 12px; }
+  .menu-group > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 11px; }
+  .menu-group .menu-cards { padding: 0 4px 4px; gap: 2px; }
+  .menu-group .menu-card { padding: 3px 5px; }
+  .menu-group .menu-card img { width: 64px; height: 36px; }
   /* The Time page: the hour's name and local time over a slider of the
      place's hours, the first and last hour's times under its ends. */
   .time-readout { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin: 0 2px; }
@@ -598,6 +622,12 @@
      The page script fills each row's value and each page's note. -->
 <div class="settings" id="settings" role="dialog" aria-label="Settings" hidden>
   <div class="menu-page" data-page="root">
+    <button type="button" class="menu-tier" data-open="thing">
+      <svg class="menu-tier-icon" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="6.8"></circle><path d="M3.4 8.6c4.2 1.6 9 1.6 13.2 0M10 3.2c-2.2 4.2-2.2 9.4 0 13.6"></path></svg>
+      <span class="menu-tier-name"><b>Object</b><small>What you throw</small></span>
+      <span class="menu-tier-value"></span><span class="menu-tier-chevron" aria-hidden="true">&rsaquo;</span>
+    </button>
+    <hr class="menu-rule">
     <button type="button" class="menu-tier" data-open="sky">
       <svg class="menu-tier-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M2.5 15.5 7.5 8l3.2 4.6 2.1-2.8 4.7 5.7z"></path><circle cx="14" cy="5.2" r="1.6"></circle></svg>
       <span class="menu-tier-name"><b>Location</b><small>The shore and sky around</small></span>
@@ -635,6 +665,13 @@
       <span class="menu-tier-name"><b>Quality</b><small>Detail and smoothness</small></span>
       <span class="menu-tier-value"></span><span class="menu-tier-chevron" aria-hidden="true">&rsaquo;</span>
     </button>
+  </div>
+  <div class="menu-page" data-page="thing" hidden>
+    <div class="menu-head"><button type="button" class="menu-back" aria-label="Back"><span aria-hidden="true">&lsaquo;</span></button><h3>Object</h3></div>
+    <div class="menu-field">
+      <!-- Built from src/things.js (thingGroups): a group to a fold, the chosen thing's open. -->
+      <div class="menu-groups" id="thing" role="radiogroup" aria-label="Object to throw"></div>
+    </div>
   </div>
   <div class="menu-page" data-page="view" hidden>
     <div class="menu-head"><button type="button" class="menu-back" aria-label="Back"><span aria-hidden="true">&lsaquo;</span></button><h3>View</h3></div>
@@ -738,6 +775,7 @@
 <script type="module">
   import { startPond } from './src/main.js';
   import { SettingsPanel, radioGroup } from './src/settingsPanel.js';
+  import { THINGS, thingGroups, onThingsChange } from './src/things.js';
 
   const veil = document.getElementById('veil');
   const veilText = document.getElementById('veil-text');
@@ -791,17 +829,37 @@
   }
 
   if (pond) {
+    // The slider is what is thrown's (src/things.js `slider`): a stone's
+    // diameter, a bowling ball's pounds, a basketball's size; off for a ball
+    // of one size. The stones share one size; each ball keeps its own.
     const sizeInput = document.getElementById('stone-size');
     const sizeReadout = document.getElementById('stone-readout');
-    const sizeRange = { minimum: Number(sizeInput.min), maximum: Number(sizeInput.max), step: Number(sizeInput.step) };
+    const sizeLabel = document.querySelector('label[for="stone-size"]');
+    const sliderValues = {};
+    const sliderKey = () => (THINGS[pond.thing].byDiameter ? 'stone' : pond.thing);
     const applySize = () => {
-      const cm = Number(sizeInput.value);
-      sizeReadout.textContent = `${cm % 1 === 0 ? cm : cm.toFixed(1)} cm`;
-      sizeInput.style.setProperty('--fraction', String((cm - sizeRange.minimum) / (sizeRange.maximum - sizeRange.minimum)));
-      pond.setStoneRadius(cm / 200);   // slider is the stone's diameter
+      const thing = THINGS[pond.thing];
+      const value = Number(sizeInput.value);
+      sizeReadout.textContent = thing.readout(value);
+      const slider = thing.slider;
+      sizeInput.style.setProperty('--fraction', String(slider ? (value - slider.min) / (slider.max - slider.min) : 0));
+      if (!slider) return;
+      sliderValues[sliderKey()] = value;
+      pond.setSize(value);
     };
+    function showSlider() {
+      const thing = THINGS[pond.thing];
+      const slider = thing.slider ?? { min: 0, max: 1, step: 1, initial: 0 };
+      sizeLabel.textContent = thing.short;
+      sizeInput.min = String(slider.min);
+      sizeInput.max = String(slider.max);
+      sizeInput.step = String(slider.step);
+      sizeInput.value = String(sliderValues[sliderKey()] ?? slider.initial);
+      sizeInput.disabled = !thing.slider;
+      applySize();
+    }
     sizeInput.addEventListener('input', applySize);
-    applySize();
+    showSlider();
     // iOS moves a range input only by its thumb. Here a touch anywhere along
     // a slider puts the thumb under the finger, and the finger drags it from
     // there (the thumb's centre runs from half a thumb in at either end).
@@ -809,7 +867,7 @@
       const setFromTouch = (event) => {
         event.preventDefault();
         const touch = event.touches[0];
-        if (!touch) return;
+        if (!touch || input.disabled) return;
         const minimum = Number(input.min), maximum = Number(input.max), step = Number(input.step);
         const bounds = input.getBoundingClientRect();
         const thumb = parseFloat(getComputedStyle(input).getPropertyValue('--thumb')) || 0;
@@ -878,6 +936,63 @@
       document.getElementById('view-note').textContent = (pond.clarity === 'pool' ? NOTES.poolView : NOTES.view)[name ?? 'turned'];
     };
     const showWater = radioGroup(document.getElementById('water'), (value) => { pond.setClarity(value); updateWater(); });
+    // The Object page, built from the registry (src/things.js): a fold
+    // for each group, its things' cards inside, the chosen thing's fold open
+    // and only one open at a time; built again whenever a thing is defined.
+    const thingsRoot = document.getElementById('thing');
+    function buildThings() {
+      thingsRoot.replaceChildren(...thingGroups().map(({ name, keys }) => {
+        const fold = document.createElement('details');
+        fold.className = 'menu-group';
+        fold.dataset.group = name;
+        const summary = document.createElement('summary');
+        summary.append(name, document.createElement('small'));
+        const cards = document.createElement('div');
+        cards.className = 'menu-cards';
+        for (const key of keys) {
+          const thing = THINGS[key];
+          const card = Object.assign(document.createElement('button'), { type: 'button', className: 'menu-card' });
+          card.setAttribute('role', 'radio');
+          card.dataset.value = key;
+          const picture = Object.assign(document.createElement('img'), { src: thing.look.thumbnail, alt: '', width: 80, height: 45 });
+          picture.addEventListener('error', () => { picture.style.visibility = 'hidden'; });
+          const words = document.createElement('span');
+          words.append(Object.assign(document.createElement('b'), { textContent: thing.name }), Object.assign(document.createElement('small'), { textContent: thing.note }));
+          card.append(picture, words);
+          cards.append(card);
+        }
+        fold.append(summary, cards);
+        fold.addEventListener('toggle', () => {
+          if (fold.open) for (const other of thingsRoot.querySelectorAll('.menu-group[open]')) if (other !== fold) other.open = false;
+        });
+        return fold;
+      }));
+    }
+    buildThings();
+    const showThing = radioGroup(thingsRoot, (value) => { pond.setThing(value); updateThing(); });
+    // A card tapped is the choice made: the panel closes, so the next tap on the water throws it (a tap on the water with
+    // the panel open only closes it). Arrow keys move the choice and leave it open.
+    thingsRoot.addEventListener('click', (event) => { if (event.target.closest('[role="radio"]')) settings.hide(); });
+    onThingsChange(() => { buildThings(); updateThing(); });
+    function updateThing() {
+      showThing(pond.thing);
+      const thing = THINGS[pond.thing];
+      settings.setValue('thing', thing.name);
+      // The chosen thing's fold open, the others shut; the chosen fold's heading names the thing chosen in it.
+      for (const fold of thingsRoot.querySelectorAll('.menu-group')) {
+        const chosen = fold.dataset.group === thing.group;
+        if (chosen) fold.open = true;
+        fold.querySelector('summary small').textContent = chosen ? thing.name : '';
+      }
+      // Skip skips what skips (a stone): off for anything else.
+      skipSwitch.disabled = !thing.skips;
+      // The throw button names what it throws (the thing's `called`: a rock, a ball, a gem, an apple…).
+      const thrown = thing.called;
+      const throwButton = document.getElementById('throw');
+      throwButton.querySelector('.more').textContent = ` ${thrown}`;
+      throwButton.setAttribute('aria-label', `Throw ${thrown}`);
+      showSlider();
+    }
     function updateWater() {
       showWater(pond.clarity);
       settings.setValue('water', label('water', pond.clarity));
@@ -983,6 +1098,7 @@
     timeInput.addEventListener('input', chooseHour);
     followTouch(timeInput, chooseHour);
     showView();
+    updateThing();
     updateWater();
     updateWeather();
     updateWind();
