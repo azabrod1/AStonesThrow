@@ -38,10 +38,16 @@
 //     comes back up and floats; two basketballs drifting into each other
 //     bounce apart; one driven at a pool wall comes back off it (its bounce
 //     times the water's share), and one driven into another against a wall
-//     is sent back, neither past the wall; a basketball driven into a row of three touching ones,
+//     is sent back, neither past the wall, and so is a skipped pumice afloat
+//     (it keeps its skip) and a basketball bobbed clear and knocked at a wall
+//     below its top (in the air, the wall's side turns it back); a
+//     basketball driven into a row of three touching ones,
 //     or spaced apart, passes the knock along to the last; none of them
 //     ever overlaps another by more than
 //     OVERLAP_MOST after its meeting;
+//   - a thing defined from outside (src/things.js defineThing: a plain beach
+//     ball) is thrown and floats as its definition says, and a broken
+//     definition is refused, with what is wrong with it;
 //   - halving the substep moves a floater's highest bob by under
 //     STEP_TOLERANCE and its rest not at all;
 //   - a floater's step costs under STEP_COST_MS.
@@ -49,7 +55,7 @@
 //   node tools/thing-probe.mjs
 import * as THREE from 'three';
 import { Rock, aimThrow } from '../src/rock.js';
-import { THINGS, THING_NAMES, WATER_DENSITY } from '../src/things.js';
+import { THINGS, THING_NAMES, WATER_DENSITY, defineThing, validateThing } from '../src/things.js';
 import { floorDepthAt } from '../src/pondFloor.js';
 import { holdInPool, poolGround, POOL } from '../src/pool.js';
 import { collideThings } from '../src/collide.js';
@@ -169,12 +175,12 @@ for (const name of THING_NAMES) {
     const label = `${THINGS[name].name}${value ? ` ${value} lb` : ''}`;
     const miss = record.crossing ? Math.hypot(record.crossing.x - target.x, record.crossing.z - target.z) : Infinity;
     lake.push({ name, label, rock, measured, record });
-    let line = `${label.padEnd(20)} ${centimetres(2 * measured.radius).padStart(5)} cm ${(measured.mass ?? rock.mass).toFixed(3).padStart(6)} kg ${measured.density.toFixed(0).padStart(5)} kg/m³; down ${centimetres(miss)} cm from the tap, ${centimetres(record.deepest)} cm deep`;
+    let line = `${label.padEnd(20)} ${centimetres(2 * measured.radius).padStart(5)} cm ${(measured.mass ?? rock.mass).toFixed(3).padStart(6)} kg ${rock.density.toFixed(0).padStart(5)} kg/m³; down ${centimetres(miss)} cm from the tap, ${centimetres(record.deepest)} cm deep`;
     check(miss < AIM_MISS, `${label}: its path came down ${centimetres(miss)} cm from the tap`);
     if (rock.floats) {
       const half = rock.halfHeight();
       const draft = half - rock.position.y;
-      const share = measured.density / WATER_DENSITY;
+      const share = rock.density / WATER_DENSITY;   // its own (a mesh's from its volume: a pizza's disc)
       // Archimedes: the depth up a ball (its half-height for a stone) whose cap holds `share` of it.
       let low = 0, high = 2;
       for (let iteration = 0; iteration < 50; iteration++) { const middle = (low + high) / 2; if (middle * middle * (3 - middle) / 4 < share) low = middle; else high = middle; }
@@ -196,7 +202,7 @@ for (const name of THING_NAMES) {
       line += `; sinks at ${sinking.toFixed(2)} m/s (terminal ${terminal.toFixed(2)}), rests ${centimetres(-rock.position.y)} cm down on the bed's ${centimetres(bed)} after ${record.restAt?.toFixed(1)} s`;
       check(rock.state === 'rest' && rock.position.y < 0, `${label}: has not come to rest on the bed (${rock.state})`);
       // A gem's flat cut glides a little more (its lift): SINK_TOLERANCE twice over.
-      check(Math.abs(sinking - terminal) < (THINGS[name].gem ? 2 : 1) * SINK_TOLERANCE * terminal, `${label}: sinks at ${sinking.toFixed(2)} m/s, its terminal speed ${terminal.toFixed(2)}`);
+      check(Math.abs(sinking - terminal) < (THINGS[name].look.mesh === 'gem' ? 2 : 1) * SINK_TOLERANCE * terminal, `${label}: sinks at ${sinking.toFixed(2)} m/s, its terminal speed ${terminal.toFixed(2)}`);
     }
     console.log(line);
   }
@@ -204,7 +210,7 @@ for (const name of THING_NAMES) {
 
 // ---- the aim, for each ball at each strength and a few taps ----
 console.log('\nThe balls\' aim (the centre\'s path at the still water against the tap), at three strengths and three taps:');
-for (const name of THING_NAMES.filter((key) => !THINGS[key].stone)) {
+for (const name of THING_NAMES.filter((key) => THINGS[key].abilities.held)) {
   let worst = 0;
   for (const power of Object.keys(POWERS)) {
     for (const [x, z] of [[0, -0.6], [0.8, -1.8], [-1.2, -3.2]]) {
@@ -252,8 +258,8 @@ for (const name of THING_NAMES) {
   rock.groundAt = poolGround(POOL_SQUARE);
   const record = follow(rock, { seconds: 10, pooled: true });
   const ratios = record.apexes.map((apex) => (apex - POOL.deck - rock.ellipsoidDepth()) / 1);
-  const [least, most] = THINGS[name].ground.bounce;
-  console.log(`  ${THINGS[name].name.padEnd(14)} ${ratios.slice(0, 4).map((ratio) => ratio.toFixed(3)).join(', ') || 'no bounce'}; ${rock.state} ${centimetres(rock.position.y - rock.ellipsoidDepth() - POOL.deck)} cm over the deck`);
+  const [least, most] = THINGS[name].material.bounce;
+  console.log(`  ${THINGS[name].name.padEnd(14)} ${ratios.slice(0, 4).map((ratio) => ratio.toFixed(3)).join(', ') || 'no bounce'}; ${rock.state} ${centimetres(rock.position.y + rock.lowestOffset() - POOL.deck)} cm over the deck`);
   if (ratios.length > 0) check(ratios[0] > 0.95 * least * least && ratios[0] < 1.05 * most * most, `${THINGS[name].name}: came back ${ratios[0].toFixed(3)} of its fall, its bounce ${least}–${most} squared`);
   check(rock.state === 'rest' && Math.abs(rock.position.y + rock.lowestOffset() - POOL.deck) < 0.01, `${THINGS[name].name}: has not come to rest on the deck (${rock.state}, ${rock.position.y.toFixed(3)} m)`);
 }
@@ -422,6 +428,53 @@ console.log('\nThings meeting things (src/collide.js):');
   }
   console.log(`  a basketball driven at 1.2 m/s into one against the wall: sent back ${centimetres(nearest - driven.position.x)} cm from where they met, the other ${centimetres(wallX - atWall.position.x - atWall.radius)} cm off the wall; worst overlap ${(1000 * worst).toFixed(2)} mm, past the wall ${(1000 * Math.max(outside, 0)).toFixed(2)} mm`);
   check(nearest - driven.position.x > 0.05 && worst < OVERLAP_MOST && outside < 1e-6 && driven.afloat && atWall.afloat, 'a basketball driven into one against a wall was not sent back, or they overlapped or crossed the wall');
+
+  // A skipped pumice afloat keeps its skip, and the walls must hold it still (review: it floated through them).
+  const pumice = new Rock({ radius: 0.015, position: new THREE.Vector3(1.46, 0, -1), velocity: new THREE.Vector3(), envTexture: null, thing: 'pumice', skip: true });
+  Object.assign(pumice, { state: 'float', hasFloated: true });
+  pumice.position.y = pumice.floatingHeight();
+  pumice.velocity.x = 1;
+  let farthest = -Infinity;
+  for (let time = 0; time < 0.5; time += STEP) { pumice.update(STEP, POOL.depth); collideThings([pumice], contain); farthest = Math.max(farthest, pumice.position.x); }
+  console.log(`  a skipped 3 cm pumice afloat driven at a wall at 1 m/s: it gets to x = ${farthest.toFixed(3)} m, the wall less its radius ${(wallX - pumice.radius).toFixed(3)}`);
+  check(farthest <= wallX - pumice.radius + 1e-6, `a skipped pumice afloat went through the pool's wall (to x = ${farthest.toFixed(3)})`);
+
+  // A basketball bobbed clear and knocked at a wall: in the air, below the wall's top, the wall's side turns it back (review: it went through and onto the deck).
+  const bobbed = new Rock({ radius: measure('basketball').radius, position: new THREE.Vector3(1.37, 0.14, -1), velocity: new THREE.Vector3(3, 1, 0), envTexture: null, thing: 'basketball', mass: measure('basketball').mass });
+  Object.assign(bobbed, { state: 'air', hasFloated: true });
+  bobbed.previous.copy(bobbed.position);
+  bobbed.groundAt = poolGround(POOL_SQUARE);
+  let through = false;
+  for (let step = 0; step < 240; step++) {
+    bobbed.update(STEP, POOL.depth);
+    collideThings([bobbed], contain);
+    if (bobbed.position.x > wallX - bobbed.radius + 1e-6 && bobbed.position.y - bobbed.radius < POOL.deck) through = true;
+  }
+  console.log(`  a basketball bobbed clear, knocked at a wall at 3 m/s: ${through ? 'went through its side' : 'came back off its side'}, now ${bobbed.state} at x = ${bobbed.position.x.toFixed(2)}`);
+  check(!through && !bobbed.onGround, 'a basketball in the air went through the side of a pool wall');
+}
+
+// ---- a thing defined from outside (src/things.js defineThing) ----
+{
+  const broken = validateThing('broken', { name: 'Broken', group: 'Test', note: 'x', body: { shape: 'cube', size: { by: 'fixed', diameter: 0.1 } }, material: { bounce: [0.9, 0.2], friction: 0.5 }, water: { restingHeight: 1 }, look: { mesh: 'teapot' } });
+  let refused = null;
+  try { defineThing('broken', { name: 'Broken' }); } catch (error) { refused = error.message; }
+  console.log(`\nA broken definition: ${broken.length} problems ("${broken[0]}", …); defineThing refuses it: ${refused ? 'yes' : 'no'}`);
+  check(broken.length >= 4 && refused !== null && !THING_NAMES.includes('broken'), 'a broken definition was not refused');
+  const beachBall = defineThing('test-beach-ball', {
+    name: 'Beach ball', group: 'Test', note: 'Defined by the probe',
+    body: { shape: 'sphere', size: { by: 'fixed', diameter: 0.4, mass: 0.12 } },
+    material: { bounce: [0.6, 0.7], friction: 0.5, roll: 'shell', rolling: 0.03 },
+    air: { drag: 0.5 }, water: { restingHeight: 0.97 },
+    look: { mesh: 'ball', paint: 'plain', color: [40, 120, 230], roughness: 0.4, reflection: 1.0 },
+  });
+  const { rock } = throwThing('test-beach-ball', { x: 0, z: -1.2 });
+  const record = follow(rock);
+  const draft = rock.radius - rock.position.y, expected = rock.radius - rock.floatingHeight();
+  console.log(`A beach ball defined from outside (${centimetres(2 * beachBall.measure().radius)} cm, ${(1000 * beachBall.measure().mass).toFixed(0)} g): ${rock.afloat ? 'rests afloat' : rock.state}, ${centimetres(draft)} cm under (Archimedes ${centimetres(expected)})`);
+  check((rock.afloat || rock.state === 'float') && Math.abs(draft - expected) < FLOAT_DEPTH_TOLERANCE, `a thing defined from outside does not float as it should (${rock.state}, ${centimetres(draft)} cm under, Archimedes ${centimetres(expected)})`);
+  THING_NAMES.splice(THING_NAMES.indexOf('test-beach-ball'), 1);
+  delete THINGS['test-beach-ball'];
 }
 
 // ---- the substep, and the cost ----

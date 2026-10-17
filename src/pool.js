@@ -30,8 +30,9 @@
 //
 // The stones and their holes take the pool's floor, POOL.depth, as their
 // bed, and its walls hold a stone under the water, or afloat, inside them
-// (holdInPool): a wall turns it back. A skipping stone that meets a wall
-// below its top comes back off it (holdSkipping). The deck is ground to
+// (holdInPool): a wall turns it back. Anything in the air that meets a
+// wall's side below its top, coming from inside (a skipping stone, a
+// floater bobbed clear), comes back off it (holdAirborne). The deck is ground to
 // whatever comes down on it (poolGround: src/rock.js bounces it, and
 // tumbles or rolls it along, as on paving), and the walls, less a skip
 // stone's radius, bound where it may touch the water (poolInside). The eye
@@ -56,18 +57,22 @@ const WALL_WATER = 0.8;        // a thing in the water comes back off a wall at 
  * walls (the square, water.poolSquare): the wall it meets turns it back, at
  * its own bounce (Rock.collisionBounce) times WALL_WATER (the water between
  * it and the tiles takes some), and it carries on along the wall; under the
- * water its path (sinkStep's body) with it (Rock.knock). In the air it may
- * cross the deck: the aim keeps its landing in the pool, and the deck is
- * ground (poolGround). A skip stone, until it goes in, is held as
- * holdSkipping says; it goes in moving fast along the water, its centre
- * still above it, and the walls hold it from then on. Returns how hard it
+ * water its path (sinkStep's body) with it (Rock.knock). In the air the
+ * walls' sides turn it back if it comes at them from inside, below their
+ * top (holdAirborne); above it, it crosses onto the deck, which is ground
+ * (poolGround). A skipping stone follows its contact's path; it goes in
+ * moving fast along the water, its centre still above it, and the walls
+ * hold it from then on, as they hold a skipped pumice once it floats.
+ * Returns how hard it
  * was turned back (its change of speed, m/s, and the wall's normal, into the
  * pool), or null: src/main.js runs it with the things' meetings
  * (src/collide.js), so a ball off a wall into another passes the knock on in
  * the same step, and a floater turned back hard rings the water.
  */
 export function holdInPool(rock, square) {
-  if (rock.skip && rock.state !== 'water' && rock.state !== 'rest') { holdSkipping(rock, square); return null; }
+  // In the air (any thing: a thrown one, a floater bobbed clear, a skip between touches) the walls' sides turn it back.
+  if (rock.state === 'air') { holdAirborne(rock, square); return null; }
+  if (rock.skip && rock.state === 'skim') return null;
   const afloat = rock.state === 'float' || rock.afloat;
   if (rock.position.y > 0 && !afloat && !(rock.skip && rock.state === 'water')) return null;
   if (rock.state === 'air' || rock.state === 'ground' || (rock.state === 'rest' && !afloat)) return null;
@@ -89,21 +94,24 @@ export function holdInPool(rock, square) {
 }
 
 /**
- * A skip stone in the air (while it skims it follows its contact's path, and
- * on the deck src/rock.js moves it): its centre past a wall less its radius,
- * lower than the wall's top, having been inside the step before, it has met
- * the wall's side, and comes back off it with WALL_KEPT of its speed across
- * it. (Its throw's first flight starts over the deck, never inside.)
+ * A thing in the air (a skip stone between touches, a floater bobbed clear,
+ * a thing knocked up off the water; a skip stone skimming follows its
+ * contact's path, and on the deck src/rock.js moves things): its centre past
+ * a wall less its radius, its bottom lower than the wall's top, having been
+ * inside the step before, it has met the wall's side, and comes back off it,
+ * a skip stone with WALL_KEPT of its speed across it, anything else at its
+ * own bounce (Rock.collisionBounce). One that clears the wall's top passes
+ * over it, onto the deck. (A throw's first flight starts over the deck,
+ * never inside.)
  */
-function holdSkipping(rock, square) {
-  if (rock.state !== 'air') return;
+function holdAirborne(rock, square) {
   const outside = (point, axis, low) => point[axis] < low + rock.radius || point[axis] > low + square.size - rock.radius;
   const beyond = (point) => outside(point, 'x', square.minX) || outside(point, 'z', square.minZ);
   if (!beyond(rock.position) || beyond(rock.previous) || rock.position.y - rock.ellipsoidDepth() > POOL.deck) return;
   for (const [axis, low] of [['x', square.minX], ['z', square.minZ]]) {
     if (!outside(rock.position, axis, low)) continue;
     rock.position[axis] = THREE.MathUtils.clamp(rock.position[axis], low + rock.radius, low + square.size - rock.radius);
-    rock.velocity[axis] *= -WALL_KEPT;
+    rock.velocity[axis] *= -(rock.skip ? WALL_KEPT : rock.collisionBounce);
   }
 }
 

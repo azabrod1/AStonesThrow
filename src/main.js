@@ -86,7 +86,7 @@
 // through the water and letting go lifts it out; it neither throws nor
 // turns the view.
 //
-// What is thrown. The Throw setting (setThing, remembered on this device;
+// What is thrown. The What to throw setting (setThing, remembered on this device;
 // ?thing=) picks a kind of stone or a ball (src/things.js THINGS), and the
 // strip's slider sets its size in its own unit (setSize: a stone's
 // diameter, a bowling ball's pounds, a basketball's size; a golf or tennis
@@ -191,7 +191,7 @@ import { createEnvironment, SKY_NAMES, skyHours, resolveHour, nearestHour } from
 import { createWaterSurface } from './waterSurface.js';
 import { createPondFloor, createShore, floorDepthAt, groundHeightAt } from './pondFloor.js';
 import { Rock, aimSkip, aimThrow, skipSpeed, SKIP_THROW } from './rock.js';
-import { THINGS, DEFAULT_THING } from './things.js';
+import { THINGS, DEFAULT_THING, defineThing } from './things.js';
 import { collideThings } from './collide.js';
 import { SplashSystem, MIRROR_LAYER } from './splash.js';
 import { createFloatTarget, FullscreenPass, configureFloatSupport, renderTargetBytes } from './gpu.js';
@@ -308,7 +308,7 @@ const WATER_STORAGE_KEY = 'stone-pond-water'; // the Water setting's
 const SKY_STORAGE_KEY = 'stone-pond-sky';     // the Location setting's
 const TIME_STORAGE_KEY = 'stone-pond-time';   // the Time setting's: the local time ('hh:mm') of the hour last chosen
 const WEATHER_STORAGE_KEY = 'stone-pond-weather';   // the Weather setting's
-const THING_STORAGE_KEY = 'stone-pond-thing';       // the Throw setting's: what is thrown (src/things.js)
+const THING_STORAGE_KEY = 'stone-pond-thing';       // the What to throw setting's: what is thrown (src/things.js)
 // The Weather setting: the cloud's cover and the light under it, against a
 // clear sky's (src/sky.js setWeather: overcast takes the sun and greys the
 // sky), the rain's visibility (its haze), the rain (src/rain.js) and how wet
@@ -1125,7 +1125,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
   let stoneRadius = 0.03;
   let power = 'normal';
   let skipping = false;   // Skip: taps throw skips (skipThrow)
-  // What is thrown (the Throw setting, src/things.js): the page's ?thing, else the last choice here, else a river stone;
+  // What is thrown (the What to throw setting, src/things.js): the page's ?thing, else the last choice here, else a river stone;
   // and each kind's slider value (a stone's size is stoneRadius).
   const storedThing = storedChoice(THING_STORAGE_KEY);
   const requestedThing = pageParameters.get('thing');
@@ -1180,22 +1180,22 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     return aimThrow(hand, target, flightTime, measured);
   }
 
-  /** What is thrown (`name`, else the Throw setting's): its kind, its radius and mass at its slider's value `size` (a stone's radius `radius`). */
+  /** What is thrown (`name`, else the What to throw setting's): its kind, its radius and mass at its slider's value `size` (a stone's radius `radius`). */
   function measureThing(name, size, radius) {
     const thing = THINGS[name];
-    if (thing.stone) {
+    if (thing.byDiameter) {
       const nominal = radius ?? stoneRadius;
       return { thing, radius: nominal, mass: thing.measure(200 * nominal).mass, size: null };
     }
-    const value = size ?? thingSizes[name];
+    const value = size ?? thingSizes[name] ?? thing.slider?.initial;
     return { thing, ...thing.measure(value), size: value };
   }
 
   function throwAt(x, z, options = {}) {
     const name = Object.hasOwn(THINGS, options.thing ?? '') ? options.thing : thingName;
     const { thing, radius, mass, size } = measureThing(name, options.size, options.radius);
-    // Skip skips a stone (any kind); a ball or a gem is thrown as ever.
-    const skips = (options.skip ?? skipping) && thing.stone;
+    // Skip skips what skips (src/things.js abilities: a stone of any kind); anything else is thrown as ever.
+    const skips = (options.skip ?? skipping) && thing.skips;
     const target = new THREE.Vector3(x, 0, z);
     const skipped = skips ? skipThrow(handPosition(radius), target, radius, options.power ?? power) : null;
     const hand = skipped?.hand ?? handPosition(radius);
@@ -1298,7 +1298,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     marker.visible = true;
     marker.scale.setScalar(1);
     const measured = measureThing(thingName);
-    const skipped = skipping && measured.thing.stone ? skipThrow(handPosition(measured.radius), hit, measured.radius) : null;
+    const skipped = skipping && measured.thing.skips ? skipThrow(handPosition(measured.radius), hit, measured.radius) : null;
     const hand = skipped?.hand ?? handPosition(measured.radius);
     const thrown = skipped ?? thingVelocity(hand, hit, power, measured);
     const { velocity, flightTime } = thrown;
@@ -1874,10 +1874,16 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     /** The strip's slider for what is thrown, in its unit (src/things.js `slider`): a stone's diameter (cm), a bowling ball's pounds, a basketball's size. */
     setSize(value) {
       const thing = THINGS[thingName];
-      if (thing.stone) stoneRadius = value / 200;
+      if (thing.byDiameter) stoneRadius = value / 200;
       else if (thing.slider) thingSizes[thingName] = THREE.MathUtils.clamp(value, thing.slider.min, thing.slider.max);
     },
-    get size() { return THINGS[thingName].stone ? 200 * stoneRadius : thingSizes[thingName]; },
+    get size() { return THINGS[thingName].byDiameter ? 200 * stoneRadius : thingSizes[thingName] ?? THINGS[thingName].slider?.initial; },
+    /**
+     * Define a thing to throw (src/things.js defineThing: a definition, checked;
+     * it throws saying what is wrong), from the console or a page that makes
+     * them; the setting's cards follow (onThingsChange).
+     */
+    defineThing,
     setPower(name) { if (POWER[name]) power = name; },
     /** Skip on or off: taps, Space and throwRandom throw skips (the header); throwAt's `skip` option overrides it. */
     setSkip(on) { skipping = Boolean(on); },

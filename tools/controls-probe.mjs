@@ -19,8 +19,11 @@
 //   - the settings button is on the screen, clear of the title, and (on a
 //     touch screen) at least 34 points tall; pressed, the panel opens on the
 //     screen, its rows that tall too, each row's value whole beside its
-//     name; its Throw row opens the Throw page, whose thirteen pictured choices
-//     can each be scrolled onto the screen and fit their names, and each sets
+//     name; its What to throw row opens that page, its things in a fold for
+//     each group (the chosen thing's open, one at a time: on a phone in
+//     portrait the page needs no scrolling), whose fifteen pictured choices
+//     can each be opened and scrolled onto the screen and fit their names,
+//     its head staying at the panel's top as it scrolls, and each sets
 //     what is thrown, the throw button's name (a rock, a ball, a gem), the row's value and the strip's name, slider (its
 //     range, or off for a ball of one size) and readout following, the strip
 //     still fitting; its Water row opens the Water page, whose five pictured choices
@@ -229,25 +232,49 @@ for (const framing of FRAMINGS) {
   check(chosen.clarity === 'murky' && chosen.row === 'Murky', `Murky sets the clarity (${chosen.clarity}) and the row's value ("${chosen.row}")`);
   await page.screenshot({ path: path.join(outputFolder, `${framing.name}-water.png`) });
   await page.evaluate(() => window.__pond.setClarity('lake'));
-  // The Throw page (src/things.js): thirteen pictured choices; each sets what is thrown, and the strip's slider follows it.
+  // The What to throw page (src/things.js): its folds and fifteen pictured choices; each sets what is thrown, and the strip's slider follows it.
   await press('.menu-page[data-page="water"] .menu-back');
   await page.waitForTimeout(400);
   await press('#settings .menu-tier[data-open="thing"]');
   await page.waitForTimeout(400);
-  const things = await page.evaluate(() => {
+  // Its folds (src/things.js groups): the chosen thing's open alone; with it, a phone in portrait sees the whole page without scrolling.
+  const folds = await page.evaluate(() => {
+    const panel = document.getElementById('settings');
+    return { names: [...document.querySelectorAll('#thing .menu-group')].map((fold) => fold.dataset.group), open: [...document.querySelectorAll('#thing .menu-group[open]')].map((fold) => fold.dataset.group), scrolls: panel.scrollHeight > panel.clientHeight + 1 };
+  });
+  check(folds.names.length === 4 && folds.open.length === 1 && folds.open[0] === 'Stones', `the What to throw page folds its things into ${folds.names.join(', ')}, the chosen one's open (${folds.open.join(', ')})`);
+  if (framing.portrait) check(!folds.scrolls, 'with one fold open the What to throw page fits a phone in portrait without scrolling');
+  // Each fold opened in turn (the others shut), each of its cards scrolled to.
+  const things = await page.evaluate(async () => {
     const scale = window.visualViewport ? window.visualViewport.scale : 1;
-    const placed = [...document.querySelectorAll('#thing [role="radio"]')].map((choice) => {
-      choice.scrollIntoView({ block: 'nearest' });
-      const box = choice.getBoundingClientRect();
-      return { name: choice.dataset.value, left: box.left * scale, right: box.right * scale, top: box.top * scale, bottom: box.bottom * scale, height: box.height * scale };
-    });
+    const placed = [];
+    for (const fold of document.querySelectorAll('#thing .menu-group')) {
+      fold.open = true;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      const others = [...document.querySelectorAll('#thing .menu-group[open]')].filter((other) => other !== fold).length;
+      for (const choice of fold.querySelectorAll('[role="radio"]')) {
+        choice.scrollIntoView({ block: 'nearest' });
+        const box = choice.getBoundingClientRect();
+        placed.push({ name: choice.dataset.value, others, left: box.left * scale, right: box.right * scale, top: box.top * scale, bottom: box.bottom * scale, height: box.height * scale });
+      }
+    }
     document.getElementById('settings').scrollTop = 0;
     return placed;
   });
   const [thingPanel] = await boxes('#settings');
-  check(onScreen(thingPanel) && things.length === 13 && things.every(onScreen) && (!framing.touch || things.every((choice) => choice.height >= SMALLEST_BUTTON_HEIGHT - 0.5)), `the Throw page is on the screen, each of its thirteen choices once scrolled to${framing.touch ? `, at least ${SMALLEST_BUTTON_HEIGHT} points tall` : ''}`);
+  check(onScreen(thingPanel) && things.length === 15 && things.every(onScreen) && things.every((choice) => choice.others === 0) && (!framing.touch || things.every((choice) => choice.height >= SMALLEST_BUTTON_HEIGHT - 0.5)), `the What to throw page is on the screen, each of its fifteen choices once its fold is open (the others shut) and it is scrolled to${framing.touch ? `, at least ${SMALLEST_BUTTON_HEIGHT} points tall` : ''}`);
+  // Its head stays at the panel's top, inside its edge, while the page scrolls under it.
+  const head = await page.evaluate(() => {
+    const panel = document.getElementById('settings');
+    panel.scrollTop = panel.scrollHeight;
+    const headBox = document.querySelector('.menu-page[data-page="thing"] .menu-head').getBoundingClientRect(), panelBox = panel.getBoundingClientRect();
+    const title = document.querySelector('.menu-page[data-page="thing"] .menu-head h3').getBoundingClientRect();
+    panel.scrollTop = 0;
+    return { headTop: headBox.top - panelBox.top, titleTop: title.top - panelBox.top };
+  });
+  check(head.headTop >= -0.5 && head.headTop <= 1.5 && head.titleTop >= 8, `the page's head stays at the panel's top as it scrolls, its name ${head.titleTop.toFixed(0)} px inside the edge`);
   const thingsClipped = await page.evaluate(() => [...document.querySelectorAll('#thing [role="radio"] b')].filter((name) => name.scrollWidth > name.clientWidth).map((name) => name.textContent));
-  check(thingsClipped.length === 0, `every Throw choice's name fits its card${thingsClipped.length ? ` (not: ${thingsClipped.join(', ')})` : ''}`);
+  check(thingsClipped.length === 0, `every What to throw choice's name fits its card${thingsClipped.length ? ` (not: ${thingsClipped.join(', ')})` : ''}`);
   const strip = () => page.evaluate(() => {
     const slider = document.getElementById('stone-size');
     const strip = document.querySelector('.controls');
@@ -264,8 +291,11 @@ for (const framing of FRAMINGS) {
     ['tennis', { row: 'Tennis ball', label: 'Tennis ball', readout: '58 g', disabled: true }],
     ['granite', { button: 'Throw a rock', row: 'Granite', label: 'Granite', disabled: false, minimum: 1.5, maximum: 30 }],
     ['diamond', { button: 'Throw a gem', row: 'Diamond', label: 'Diamond', readout: '100 ct', minimum: 5, maximum: 1000, disabled: false }],
+    ['pizza', { button: 'Throw a pizza', row: 'Pizza', label: 'Pizza', readout: '30 cm', minimum: 1, maximum: 3, disabled: false }],
     ['stone', { row: 'River stone', label: 'Rock', disabled: false, minimum: 1.5, maximum: 30 }],
   ]) {
+    await page.evaluate((value) => { document.querySelector(`#thing [data-value="${value}"]`).closest('details').open = true; }, choice);
+    await page.waitForTimeout(80);
     await press(`#thing [data-value="${choice}"]`);
     const shown = await strip();
     const wrong = Object.entries(expected).filter(([key, value]) => shown[key] !== value).map(([key]) => `${key} ${JSON.stringify(shown[key])}`);

@@ -232,7 +232,7 @@ await checkBuilt(phone, 'back on the lake');
 // Every kind of thing (src/things.js), thrown and followed until the floaters float in the mirror image, compiles no program.
 const programsBeforeThings = await page.evaluate(() => window.__pond.budget.programs);
 const namesBeforeThings = await programNames(page);
-for (const thing of ['slate', 'granite', 'basalt', 'pumice', 'golf', 'tennis', 'bowling', 'basketball']) {
+for (const thing of ['slate', 'granite', 'basalt', 'pumice', 'golf', 'tennis', 'bowling', 'basketball', 'diamond', 'apple', 'pizza']) {
   await page.evaluate((name) => { window.__pond.pause(); window.__pond.throwAt(0, -1.4, { thing: name }); window.__pond.advance(3.0); }, thing);
 }
 const programsAfterThings = await page.evaluate(() => window.__pond.budget.programs);

@@ -27,24 +27,29 @@ and level, spinning, and skips across the water (below), in the direction
 of the tap (even on the sky); its first touch lands where a level throw
 puts it. The menu button at the
 top right opens the settings, laid out as the Moon app's menu is: a list in
-four groups (what is thrown: Throw; the place: Location, Water and Time of
+four groups (what is thrown: What to throw; the place: Location, Water and Time of
 day; the conditions: Weather and Wind; the viewing: View and Quality), each row an icon, its name
 over a line on what it sets and where it stands, and each setting a page of
 its choices (Location and Water as pictures) with a line on each. Each choice
 is remembered on the device (but the view, which opens on the shore):
-- Throw (`?thing=`): a river stone (the default), slate, granite, basalt or
-  pumice, or a golf ball, a tennis ball, a bowling ball or a basketball, each
-  pictured, each the size, weight and density of the real thing
-  (`src/things.js`). Pumice, a tennis ball, a basketball and a bowling ball
+- What to throw (`?thing=`): a river stone (the default), slate, granite,
+  basalt or pumice; a golf ball, a tennis ball, a bowling ball or a
+  basketball; a gem; an apple or a pizza. Each is pictured, in a fold for its
+  group (Stones, Balls, Gems, Food; the chosen thing's open, one at a time),
+  each the size, weight and density of the real thing (`src/things.js`), and
+  the throw button names it ("Throw a rock", "Throw a ball", "Throw a
+  pizza"). Pumice, a tennis ball, a basketball and a bowling ball
   of 11 lb or less are lighter than water: they come back up, bob and
   float (a basketball 4.3 cm under, mirrored in the water, drifting under a
-  gale); the rest sink, a golf ball slowly, basalt fastest. Or a gem
-  (diamond, emerald, ruby or sapphire, cut and faceted, 5 to 1000 carats).
+  gale), as do an apple (low: a quarter of it is air) and a pizza (flat side
+  down; in the air its broad face slows it); the rest sink, a golf ball
+  slowly, basalt fastest. A gem (diamond, emerald, ruby or sapphire, cut and
+  faceted, 5 to 1000 carats) sinks.
   Each choice's picture (`assets/things/thumbs/`) is a harness frame of
   the thing at rest on the pool's deck, its middle 70% shrunk to 160×90:
   `--water=pool --throws=none --times=0.05 --look=0.25:y:0.85 --fov=f`
   (y the deck's 0.1 m plus its radius, f = 2·atan(1.25·d/1.8) for its
-  diameter d; a stone 10 cm, a gem 3 cm) and `--eval` throwing it, turning
+  diameter d; a stone 10 cm, a gem 3 cm, a pizza 30 cm) and `--eval` throwing it, turning
   it upright and laying it there with `restOn(0.1)`.
   Anything thrown at a floater knocks it: they bounce off each other, the
   floater dipping, ringing the water and throwing off spray, and the knock
@@ -234,7 +239,17 @@ the square) and the foam's drift with it: Calm 0.3, a glassy pond with faint
 cat's paws, on which a stone's rings read far; Breeze 1, the look the pond
 had before the control; Windy 1.8.
 
-**Things** (`src/things.js`, `src/rock.js`). What is thrown is a kind
+**Things** (`src/things.js`, `src/thingMeshes.js`, `src/rock.js`). What
+can be thrown is a registry of definitions (`defineThing`), plain data in the
+parts a physics engine gives a body: its body (a sphere, or its mesh's own
+shape; its density and how the slider sizes it), its material (bounce,
+friction, rolling), its drag in the air, its rest on the bed, its look (a
+mesh builder, `registerMesh`, and its parameters) and what it can do (skip;
+be held to a human throw). A definition is checked (`validateThing` says
+what is wrong), so one can come from outside: `__pond.defineThing(key,
+definition)` adds a thing, and the What to throw page shows it. A new thing
+is a definition; a new look, a mesh builder; a new body or flight (a
+feather's flutter), a body or air model in `src/rock.js`. What is thrown is a kind
 of stone (the river stone's procedural geometry in its own squash, lumps,
 colours and density) or a ball (an icosphere painted per vertex: a
 basketball's seams, a tennis ball's, a golf ball's dimples, a bowling ball's

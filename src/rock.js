@@ -1,9 +1,12 @@
-// A thrown thing: a stone (procedural geometry, lumpy, worn smooth,
-// speckled: createRockGeometry) or a ball (src/things.js createBallGeometry),
-// and a small rigid-body model. What it is (`thing`, a key of src/things.js
-// THINGS) sets its size, mass and density, its look and how it meets the
-// ground; the river stone, the default, is the stone there always was, and
-// what follows is written of it, the other kinds after.
+// A thrown thing and a small rigid-body model of it. What it is (`thing`, a
+// key of src/things.js THINGS: a definition, data) sets everything: its
+// size, mass and density, its body's shape, its material, its drag, its
+// look (its mesh, src/thingMeshes.js) and what it can do. The model reads
+// the definition and never asks what the thing is: a body is a `sphere`
+// (analytic) or a `mesh` (its mesh's own moments and lowest point), the air
+// takes its `air.drag`, the deck and other things its `material`. The river
+// stone, the default, is the stone there always was, and what follows is
+// written of it, the other things after.
 //
 // In the air it follows a ballistic arc with a little drag and tumbles, at
 // SPIN_LEAST to SPIN_MOST rad/s about a random axis (most stones turn
@@ -151,14 +154,18 @@
 // from an eye under the water (src/main.js's Under view) it is drawn where it
 // is, faded into the water's colour (waterFog) with the distance.
 //
-// Other things (src/things.js). A gem is its cut's faceted mesh, a stone
-// in all else, its mass its own. Another stone is the same stone in its own
-// squash, lumps and colouring (createRockGeometry's `look`), of its own
-// density. A ball is a sphere: its shape is a ball's (BALL_SHAPE: no
-// elongation, flatness or lumps), it touches where a ball does (its lowest
-// point R under its centre, BALL_CONTACT), and its mass is its own (`mass`;
-// a stone's is the nominal ball's of its density, as the air's drag always
-// took it). Under water each moves with its own density's constants
+// Other things (src/things.js). A `mesh` body (a stone of any kind, a gem,
+// a pizza) has its mesh's shape (stoneShape: its moments, its axes, its
+// flatness) and touches where its mesh's lowest point is; its density is its
+// definition's, or its mass over its mesh's volume (a pizza's disc). A
+// `sphere` body (a ball, an apple) has a ball's shape (BALL_SHAPE: no
+// elongation, flatness or lumps) and touches where a ball does (its lowest
+// point R under its centre, BALL_CONTACT). Its mass is its own (`mass`); a
+// thing sized by its diameter (a stone) has the nominal ball's of its
+// density, as the air's drag always took it. In the air the drag is its
+// `air.drag` on the disc of its radius (flyStep: a pizza's broad face
+// catches the air). A floater that is not round turns flat side down on
+// the water (rightOnWater). Under water each moves with its own density's constants
 // (src/cavity.js underWater: the drag, head, lift and buoyancy over its
 // inertia, the water it carries included), so a bowling ball sinks at half
 // a stone's speed and a basketball stops within a radius or two.
@@ -211,7 +218,11 @@
 import * as THREE from 'three';
 import { SEEN_THROUGH_WATER } from './shaders/scene.js';
 import { PINCH_TIME, NECK_CLOSE, SPIN_DECAY, sinkStep, underWater } from './cavity.js';
-import { THINGS, DEFAULT_THING, WATER_DENSITY, STONE_DENSITY, createBallGeometry, createGemGeometry, stoneColor } from './things.js';
+import { THINGS, DEFAULT_THING, WATER_DENSITY, STONE_DENSITY } from './things.js';
+import { meshKind } from './thingMeshes.js';
+
+// The stone's geometry is src/thingMeshes.js's now; the probes take it from here as they always did.
+export { createRockGeometry } from './thingMeshes.js';
 
 const GRAVITY = 9.81;
 const SPIN_LEAST = 5;              // rad/s: the tumble in flight, from this...
@@ -236,7 +247,6 @@ export const SKIM = {
   leastExit: 6,       // degrees: ...and one that would leave flatter than this (it would only glide on: a hop under 1/40 as high as it is long)
   leastTilt: 3,       // degrees: the wetted chord is d/sin α with α at least this
 };
-const SKIP_STONE = { squash: [0.26, 0.12], surfaceNoise: 0.6 };   // a flat stone's short axis: 0.26 to 0.38 of its long one (a river stone's 0.62 to 0.82); its surface noise, of a river stone's
 const SKIP_TILT = { mean: 20, spread: 6, least: 4, most: 40 };   // degrees: the face nose-up along the throw (a normal draw, clamped)
 const SKIP_SPIN = { least: 60, most: 110 };                 // rad/s about the short axis (10 to 17 turns a second)
 const SKIP_WOBBLE = { degrees: 3, reference: 80 };          // each skip pitches the face by about this (σ), times reference/ω
@@ -254,7 +264,7 @@ const FLOAT = {
   settledSpeed: 0.006,        // m/s: it rests once slower than this...
   settledOffset: 0.0015,      // m: ...and this near the height it floats at
   drift: 0.15,                // m/s: under a gale it drifts downwind at this
-  ballRest: 0.97,             // a ball on the bed rests with its centre this many radii above it (src/cavity.js restingHeight)
+  righting: 3,                // rad/s: a floater that is not round turns flat side down at up to this (a pizza, slate, pumice)
 };
 // Ground (the header: the pool's deck), besides each thing's own (src/things.js `ground`).
 const GROUND = {
@@ -266,15 +276,15 @@ const GROUND = {
   tumbleMost: 60,              // ...at most this (rad/s)
 };
 // A throw's aim (aimThrow): the flight times it tries (least, most, step; s), the passes against the air's drag and their step (s).
-const AIM = { times: [0.3, 2.0, 0.01], passes: 3, step: 1 / 120 };
+const AIM = { times: [0.3, 2.0, 0.01], passes: 6, step: 1 / 120 };
 // A ball's shape and contact (the header).
 const BALL_SHAPE = Object.freeze({
   volume: (4 / 3) * Math.PI, centroid: new THREE.Vector3(), axes: [new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0, 1)],
   semiAxes: [1, 1, 1], elongation: 0, flatness: 0, irregularity: 0,
 });
 const BALL_CONTACT = Object.freeze({ kind: 'edge', faceAngle: 45, pointAngle: 45, bluntness: 1 });
-const GEM_REST = 0.45;   // a gem on the bed rests on its side, its centre this many radii up
 const rockRotation = new THREE.Matrix4();
+const UP = new THREE.Vector3(0, 1, 0);
 
 /** A standard normal draw (Box–Muller, from Math.random). */
 function gaussian() {
@@ -287,9 +297,9 @@ function gaussian() {
  * stone but keeping long throws honest, and slowing a light ball (src/main.js
  * aims a ball's throw with it).
  */
-export function flyStep(position, velocity, radius, mass, dt) {
+export function flyStep(position, velocity, radius, mass, dt, drag = 0.47) {
   const speed = velocity.length();
-  const dragAcceleration = 0.5 * 1.2 * 0.47 * Math.PI * radius ** 2 * speed / mass;
+  const dragAcceleration = 0.5 * 1.2 * drag * Math.PI * radius ** 2 * speed / mass;
   velocity.addScaledVector(velocity, -dragAcceleration * dt);
   velocity.y -= GRAVITY * dt;
   position.addScaledVector(velocity, dt);
@@ -344,7 +354,7 @@ export function aimThrow(hand, target, flightTime, measured) {
     moving.copy(throwing);
     for (let step = 0; step < 3 / AIM.step && (position.y > 0 || moving.y > 0); step++) {
       path?.push(position.clone());
-      flyStep(position, moving, measured.radius, measured.mass, AIM.step);
+      flyStep(position, moving, measured.radius, measured.mass, AIM.step, measured.thing.air.drag);
     }
     path?.push(position.clone());
     return position;
@@ -483,94 +493,6 @@ function floatingDepth(share) {
   return 0.5 * (low + high);
 }
 
-function hash3(x, y, z) {
-  let h = Math.sin(x * 127.1 + y * 311.7 + z * 74.7) * 43758.5453;
-  return h - Math.floor(h);
-}
-
-function valueNoise3(x, y, z) {
-  const ix = Math.floor(x), iy = Math.floor(y), iz = Math.floor(z);
-  const fx = x - ix, fy = y - iy, fz = z - iz;
-  const sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy), sz = fz * fz * (3 - 2 * fz);
-  let result = 0;
-  for (let dz = 0; dz <= 1; dz++) for (let dy = 0; dy <= 1; dy++) for (let dx = 0; dx <= 1; dx++) {
-    const weight = (dx ? sx : 1 - sx) * (dy ? sy : 1 - sy) * (dz ? sz : 1 - sz);
-    result += weight * hash3(ix + dx, iy + dy, iz + dz);
-  }
-  return result;
-}
-
-/**
- * Stone of unit nominal radius, flattened like a river stone: a sphere
- * pushed out and in by two noises (its lumps), squashed. Scale by the real
- * radius. The mesh is a list of separate triangles (the stone's shape and
- * contact are integrated over them) with its normals the smooth surface's,
- * found from the same function a little to either side of each vertex, so
- * it reads as worn stone rather than facets even at 30 cm; its colour is a
- * fine speckle over a faint tint for each face. The random draws (the squash,
- * then two for each face's tint) are the ones the faceted stone made, so a
- * seeded throw keeps its stone and its splash (tools/variety-probe.mjs).
- * A `flat` stone, picked for skipping (the header), takes the same draws,
- * squashed to SKIP_STONE.squash and its surface noise SKIP_STONE.surfaceNoise
- * as high. Another kind of stone (`look`, src/things.js) takes the same
- * draws, its squash from its own ranges ([y least, y spread, z least, z
- * spread], unless flat), its lumps `lumps` as high, and its colour
- * stoneColor's.
- */
-export function createRockGeometry(seed = Math.random() * 1000, { flat = false, look = null } = {}) {
-  const geometry = new THREE.IcosahedronGeometry(1, 3);
-  const positions = geometry.attributes.position;
-  const river = !look || look.kind === 'river';
-  const [flatLeast, flatSpread] = SKIP_STONE.squash;
-  const squash = flat || river ? new THREE.Vector3(1.0, flat ? flatLeast + flatSpread * Math.random() : 0.62 + 0.2 * Math.random(), 0.8 + 0.2 * Math.random())
-    : new THREE.Vector3(1.0, look.squash[0] + look.squash[1] * Math.random(), look.squash[2] + look.squash[3] * Math.random());
-  const surfacePoint = (direction, out) => {
-    const coarse = valueNoise3(direction.x * 1.6 + seed, direction.y * 1.6, direction.z * 1.6) - 0.5;
-    const fine = valueNoise3(direction.x * 4.5 + seed, direction.y * 4.5 + 3.1, direction.z * 4.5) - 0.5;
-    const radialScale = flat ? 1 + SKIP_STONE.surfaceNoise * (0.42 * coarse + 0.14 * fine)
-      : river ? 1 + 0.42 * coarse + 0.14 * fine : 1 + look.lumps * (0.42 * coarse + 0.14 * fine);
-    return out.copy(direction).multiplyScalar(radialScale).multiply(squash);
-  };
-  const tinted = new THREE.Color();
-  const normals = new Float32Array(positions.count * 3);
-  const colors = new Float32Array(positions.count * 3);
-  const direction = new THREE.Vector3(), tangent = new THREE.Vector3(), bitangent = new THREE.Vector3();
-  const point = new THREE.Vector3(), aside = new THREE.Vector3(), alongTangent = new THREE.Vector3(), alongBitangent = new THREE.Vector3();
-  const step = 0.01;
-  for (let face = 0; face < positions.count / 3; face++) {
-    const faceTint = 0.82 + 0.36 * Math.random();
-    const faceWarm = 0.96 + 0.08 * Math.random();
-    for (let corner = 0; corner < 3; corner++) {
-      const vertex = face * 3 + corner;
-      direction.fromBufferAttribute(positions, vertex).normalize();
-      surfacePoint(direction, point);
-      tangent.set(-direction.z, 0, direction.x);
-      if (tangent.lengthSq() < 1e-6) tangent.set(1, 0, 0);
-      tangent.normalize();
-      bitangent.crossVectors(direction, tangent);
-      surfacePoint(aside.copy(direction).addScaledVector(tangent, step).normalize(), alongTangent).sub(point);
-      surfacePoint(aside.copy(direction).addScaledVector(bitangent, step).normalize(), alongBitangent).sub(point);
-      const normal = aside.crossVectors(alongBitangent, alongTangent).normalize();
-      if (normal.dot(direction) < 0) normal.negate();
-      positions.setXYZ(vertex, point.x, point.y, point.z);
-      normals[vertex * 3] = normal.x; normals[vertex * 3 + 1] = normal.y; normals[vertex * 3 + 2] = normal.z;
-      if (!river) {
-        stoneColor(look.kind, direction, point, seed, faceTint, tinted);
-        colors[vertex * 3] = tinted.r; colors[vertex * 3 + 1] = tinted.g; colors[vertex * 3 + 2] = tinted.b;
-        continue;
-      }
-      // A fine speckle of darker and lighter grains over the face's faint tint.
-      const speckle = 0.78 + 0.42 * valueNoise3(direction.x * 22 + seed, direction.y * 22, direction.z * 22 + 5.3);
-      const tint = 0.75 * speckle + 0.25 * faceTint;
-      const warm = 0.75 + 0.25 * faceWarm;
-      colors[vertex * 3] = tint * (0.25 + warm); colors[vertex * 3 + 1] = tint; colors[vertex * 3 + 2] = tint * (1.75 - warm);
-    }
-  }
-  geometry.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
-  geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-  return geometry;
-}
-
 /**
  * Eigenvalues and unit eigenvectors of a symmetric 3×3 matrix (row-major
  * array of 9), by Jacobi rotations; sorted from the largest eigenvalue down.
@@ -695,12 +617,9 @@ export class Rock {
     // A skip stone's state; `inside(x, z)`, given in a pool (src/main.js), says where its walls let it touch and skim.
     this.skip = skip ? { normal: new THREE.Vector3(0, 1, 0), skips: 0, contact: null, inside: null } : null;
     this.thing = THINGS[thing] ?? THINGS[DEFAULT_THING];
-    this.ball = this.thing.ball;
-    this.gem = this.thing.gem;
-    // A ball's or a gem's own mass; a stone's follows from its density (`mass`).
-    this.ballMass = mass ?? (this.thing.stone ? null : this.thing.measure(this.thing.slider?.initial).mass);
-    this.density = this.thing.stone ? this.thing.look.density : this.ballMass / ((4 / 3) * Math.PI * radius ** 3);
-    this.floats = this.density < WATER_DENSITY;
+    this.sphere = this.thing.sphere;   // its body a sphere (the header), not its mesh's own shape
+    // Its own mass, unless sized by its diameter: then its density's (`mass`, as a stone's always was).
+    this.ownMass = this.thing.byDiameter ? null : mass ?? this.thing.measure(this.thing.slider?.initial).mass;
     this.afloat = false;           // at rest on the water (the header's floating)
     this.hasFloated = false;       // has floated, so bobbed clear it comes back in quietly
     this.drift = { x: 0, z: 0 };   // m/s: what a gale drifts it at, afloat (src/main.js)
@@ -714,29 +633,32 @@ export class Rock {
     this.quaternion = new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.random() * 6, Math.random() * 6, Math.random() * 6));
     this.spinAxis = new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).normalize();
     this.spinRate = SPIN_LEAST + (SPIN_MOST - SPIN_LEAST) * Math.random() ** SPIN_SKEW;
-    this.geometry = this.ball ? createBallGeometry(this.thing.key) : this.gem ? createGemGeometry(this.thing.key) : createRockGeometry(undefined, { flat: skip, look: this.thing.look });
+    const mesh = meshKind(this.thing.look.mesh);
+    this.geometry = mesh.build(this.thing, { flat: Boolean(skip) });
     this.geometry.computeBoundingSphere();
     this.reach = this.geometry.boundingSphere.center.length() + this.geometry.boundingSphere.radius;   // furthest any point gets from the centre, in radii
-    this.shape = this.ball ? BALL_SHAPE : stoneShape(this.geometry);
+    this.shape = this.sphere ? BALL_SHAPE : stoneShape(this.geometry);
+    // Its density: its definition's, or its mass over its volume (a sphere's; a mesh's own, as a pizza's disc).
+    const volume = this.sphere ? (4 / 3) * Math.PI * radius ** 3 : this.shape.volume * radius ** 3;
+    this.density = this.thing.body.density ?? this.ownMass / volume;
+    this.floats = this.density < WATER_DENSITY;
     this.liftHeading = Math.random() * Math.PI * 2;   // the direction its lumps push it (the header)
     this.body = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, time: 0, liftX: 0, liftY: 0, liftZ: 0, spinLiftX: 0, spinLiftY: 0, spinLiftZ: 0, resting: false, openUntil: undefined };
     // Its constants under water (src/cavity.js underWater): the reference stone's for a river stone.
-    this.body.water = underWater(this.density, this.ball ? FLOAT.ballRest : this.gem ? GEM_REST : this.thing.look.restingHeight);
+    this.body.water = underWater(this.density, this.thing.water.restingHeight);
     this.impactStep = 0;
     const look = this.thing.look;
-    const baseColor = !this.thing.stone ? new THREE.Color(1, 1, 1)
-      : look.kind === 'river' ? new THREE.Color().setHSL(0.08 + Math.random() * 0.04, 0.08 + Math.random() * 0.1, 0.3 + Math.random() * 0.14)
-        : new THREE.Color().setHSL(look.hue[0] + Math.random() * look.hue[1], look.saturation[0] + Math.random() * look.saturation[1], look.lightness[0] + Math.random() * look.lightness[1]);
+    const baseColor = mesh.color(this.thing);
     // The seed of its splash's own random stream (src/splash.js), drawn now so
     // that a seeded throw splashes alike however its flight is stepped.
     this.splashSeed = Math.floor(Math.random() * 4294967296);
     const makeMaterial = (clipNormalY) => new THREE.MeshStandardMaterial({
       color: baseColor,
       vertexColors: true,
-      roughness: !this.thing.stone ? this.thing.roughness : look.roughness ?? 0.92,
+      roughness: look.roughness,
       metalness: 0.0,
       envMap: envTexture,
-      envMapIntensity: !this.thing.stone ? this.thing.reflection : 0.9,
+      envMapIntensity: look.reflection,
       clippingPlanes: [new THREE.Plane(new THREE.Vector3(0, clipNormalY, 0), 0)],   // at the water's height under the stone (syncMeshes)
     });
     this.meshAbove = new THREE.Mesh(this.geometry, makeMaterial(1));
@@ -793,7 +715,7 @@ export class Rock {
   get meshes() { return this.meshMirror ? [this.meshAbove, this.meshBelow, this.meshMirror] : [this.meshAbove, this.meshBelow]; }
 
   /** Its mass (kg): a ball's or a gem's own; a stone's the nominal ball's of its density (the air's drag's, as it always was). */
-  get mass() { return !this.thing.stone ? this.ballMass : this.density * (4 / 3) * Math.PI * this.radius ** 3; }
+  get mass() { return this.thing.byDiameter ? this.density * (4 / 3) * Math.PI * this.radius ** 3 : this.ownMass; }
 
   /** The stone's own mass (kg), from its volume (the skim's; `mass`, the nominal ball's, is the air drag's). */
   get trueMass() { return this.density * this.shape.volume * this.radius ** 3; }
@@ -911,7 +833,7 @@ export class Rock {
 
   /** Height of the stone's lowest point below its centre (negative, metres), as it is turned now. */
   lowestOffset() {
-    if (this.ball) return -this.radius;
+    if (this.sphere) return -this.radius;
     const positions = this.geometry.attributes.position.array;
     // The world height of a mesh point is the rotation's second row dotted with it.
     const rotation = rockRotation.makeRotationFromQuaternion(this.quaternion).elements;
@@ -929,7 +851,7 @@ export class Rock {
    * lumpy mesh, cheap enough for every step (on the ground, afloat). A ball's radius.
    */
   ellipsoidDepth() {
-    if (this.ball) return this.radius;
+    if (this.sphere) return this.radius;
     const rotation = rockRotation.makeRotationFromQuaternion(this.quaternion).elements;
     const rowX = rotation[1], rowY = rotation[5], rowZ = rotation[9];
     let sum = 0;
@@ -944,7 +866,7 @@ export class Rock {
    * the bluntness there. A ball's is a ball's (BALL_CONTACT).
    */
   contact() {
-    if (this.ball) return BALL_CONTACT;
+    if (this.sphere) return BALL_CONTACT;
     const positions = this.geometry.attributes.position.array;
     const rotation = rockRotation.makeRotationFromQuaternion(this.quaternion).elements;
     const rowX = rotation[1], rowY = rotation[5], rowZ = rotation[9];
@@ -1066,7 +988,7 @@ export class Rock {
 
   /** Its radius as a sphere (m): a ball's; a stone's mean semi-axis. */
   get collisionRadius() {
-    if (this.ball) return this.radius;
+    if (this.sphere) return this.radius;
     const [long, middle, short] = this.shape.semiAxes;
     return this.radius * (long + middle + short) / 3;
   }
@@ -1080,7 +1002,7 @@ export class Rock {
   }
 
   /** How much of the speed it meets another thing at it gives back: the middle of its bounce (src/things.js `ground`). */
-  get collisionBounce() { return (this.thing.ground.bounce[0] + this.thing.ground.bounce[1]) / 2; }
+  get collisionBounce() { return (this.thing.material.bounce[0] + this.thing.material.bounce[1]) / 2; }
 
   /**
    * Knocked by another thing (src/collide.js): its velocity changed by
@@ -1100,7 +1022,7 @@ export class Rock {
   }
 
   /** dt seconds through the air (flyStep). */
-  fly(dt) { flyStep(this.position, this.velocity, this.radius, this.mass, dt); }
+  fly(dt) { flyStep(this.position, this.velocity, this.radius, this.mass, dt, this.thing.air.drag); }
 
   /**
    * Into the water from where the stone is, at its velocity: its path under
@@ -1224,6 +1146,7 @@ export class Rock {
     this.velocity.z = this.drift.z + relativeZ * kept;
     this.position.addScaledVector(this.velocity, dt);
     this.spinRate *= Math.exp(-SPIN_DECAY * dt);
+    if (!this.sphere) this.rightOnWater(dt);
     if (this.position.y >= half && this.velocity.y > 0) return false;   // bobbed clear of the water
     const still = Math.abs(this.velocity.y) < FLOAT.settledSpeed && Math.hypot(this.velocity.x, this.velocity.z) < FLOAT.settledSpeed;
     if (still && this.drift.x === 0 && this.drift.z === 0 && Math.abs(this.position.y - this.floatingHeight()) < FLOAT.settledOffset) {
@@ -1233,6 +1156,20 @@ export class Rock {
       this.afloat = true;
     }
     return true;
+  }
+
+  /**
+   * A floater that is not round turns flat side down (the header): its short
+   * axis towards the vertical at up to FLOAT.righting, as the water's push
+   * on its lower side rights it.
+   */
+  rightOnWater(dt) {
+    const short = this.shape.axes[2].clone().applyQuaternion(this.quaternion);
+    if (short.y < 0) short.negate();
+    const axis = short.clone().cross(UP);
+    const off = Math.asin(Math.min(axis.length(), 1));
+    if (off < 1e-4) return;
+    this.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(axis.normalize(), Math.min(off, FLOAT.righting * dt)));
   }
 
   // ---- the ground (the header) --------------------------------------------
@@ -1254,15 +1191,15 @@ export class Rock {
       this.alongGround(dt);
       return;
     }
-    const ground = this.thing.ground;
+    const ground = this.thing.material;
     const fall = -this.velocity.y;
     const bounce = ground.bounce[0] + (ground.bounce[1] - ground.bounce[0]) * Math.random();
     this.velocity.y = bounce * fall;
     const along = Math.hypot(this.velocity.x, this.velocity.z);
     // The friction slows it along the ground, a ball no lower than rolling.
-    const least = this.ball ? ground.roll * along : 0;
+    const least = ground.roll ? ground.roll * along : 0;
     const kept = along > 1e-9 ? Math.max(along - ground.friction * (1 + bounce) * fall, least) / along : 0;
-    const turn = this.ball ? 0 : GROUND.scatter * (2 * Math.random() - 1);
+    const turn = ground.roll ? 0 : GROUND.scatter * (2 * Math.random() - 1);
     const velocityX = this.velocity.x * kept, velocityZ = this.velocity.z * kept;
     this.velocity.x = velocityX * Math.cos(turn) - velocityZ * Math.sin(turn);
     this.velocity.z = velocityX * Math.sin(turn) + velocityZ * Math.cos(turn);
@@ -1277,7 +1214,7 @@ export class Rock {
     this.velocity.y = 0;
     this.position.y = height + this.ellipsoidDepth();
     const along = Math.hypot(this.velocity.x, this.velocity.z);
-    const slowing = this.ball ? this.thing.ground.rolling : GROUND.tumbling;
+    const slowing = this.thing.material.roll ? this.thing.material.rolling : GROUND.tumbling;
     const slowed = Math.max(along - slowing * GRAVITY * dt, 0);
     if (slowed < GROUND.stopped) { this.restOn(height); return; }
     this.velocity.x *= slowed / along;
@@ -1290,7 +1227,7 @@ export class Rock {
     const along = Math.hypot(this.velocity.x, this.velocity.z);
     if (along < 1e-6) return;
     this.spinAxis.set(this.velocity.z / along, 0, -this.velocity.x / along);
-    this.spinRate = this.ball ? along / this.radius : Math.min(GROUND.tumble * along / this.radius, GROUND.tumbleMost);
+    this.spinRate = this.thing.material.roll ? along / this.radius : Math.min(GROUND.tumble * along / this.radius, GROUND.tumbleMost);
   }
 
   /**

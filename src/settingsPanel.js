@@ -142,12 +142,13 @@ export class SettingsPanel {
 /**
  * Wire a group of radio buttons (role="radio", data-value) in `root`:
  * clicking one calls onChoose with its value. Returns show(value), which
- * marks that one checked.
+ * marks that one checked. The buttons are found each time, so `root`'s may
+ * be built again (the What to throw page's, as things are defined).
  */
 export function radioGroup(root, onChoose) {
-  const buttons = [...root.querySelectorAll('[role="radio"]')];
+  const radios = () => [...root.querySelectorAll('[role="radio"]')];
   const show = (value) => {
-    for (const button of buttons) {
+    for (const button of radios()) {
       const checked = button.dataset.value === value;
       button.setAttribute('aria-checked', String(checked));
       button.tabIndex = checked ? 0 : -1;
@@ -163,6 +164,7 @@ export function radioGroup(root, onChoose) {
     const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[event.key];
     if (!step) return;
     event.preventDefault();
+    const buttons = radios();
     const index = buttons.indexOf(document.activeElement);
     const next = buttons[(Math.max(index, 0) + step + buttons.length) % buttons.length];
     next.focus();
