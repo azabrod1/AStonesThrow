@@ -151,7 +151,44 @@
     color: var(--accent-ink);
     font-weight: 600;
   }
-  .segmented button:focus-visible, .throw:focus-visible, .reset-view:focus-visible, input[type="range"]:focus-visible {
+  /* The Skip switch, beside the throw's strength: its name and a track
+     whose knob slides over and lights while it is on. */
+  .throw-group .switch { margin-left: 2px; }
+  .switch {
+    appearance: none;
+    border: 0;
+    background: transparent;
+    color: var(--fg);
+    font: inherit;
+    font-size: 13px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 2px;
+    cursor: pointer;
+  }
+  .switch-track {
+    position: relative;
+    box-sizing: border-box;
+    width: 34px;
+    height: 20px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    transition: background-color 0.15s, border-color 0.15s;
+  }
+  .switch-knob {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--fg);
+    transition: transform 0.15s, background-color 0.15s;
+  }
+  .switch[aria-checked="true"] .switch-track { background: var(--accent); border-color: var(--accent); }
+  .switch[aria-checked="true"] .switch-knob { transform: translateX(14px); background: var(--accent-ink); }
+  .segmented button:focus-visible, .switch:focus-visible, .throw:focus-visible, .reset-view:focus-visible, input[type="range"]:focus-visible {
     outline: 2px solid var(--accent);
     outline-offset: 2px;
   }
@@ -463,11 +500,11 @@
   }
   @media (pointer: coarse) {
     input[type="range"] { --thumb: 28px; --track: 6px; height: 44px; }
-    .segmented button, .throw, .reset-view { min-height: 36px; }
+    .segmented button, .switch, .throw, .reset-view { min-height: 36px; }
   }
   /* Phones in portrait: two rows. The stone's slider, its name and size
      above it, with the throw button beside it (the view's reset in its place
-     while the view is away from the shore's); then the throw's strength and the time, each name above
+     while the view is away from the shore's); then the throw's strength, the Skip switch on its name's row, and the time, each name above
      its buttons. The row break comes after the buttons (order), wherever it
      sits in the page. The wind and the quality are in the settings. */
   @media (max-width: 520px) {
@@ -488,8 +525,13 @@
     .throw, .reset-view { order: 1; align-self: flex-end; margin-bottom: 4px; padding: 7px 12px; }
     .throw.while-away { display: none; }
     .row-break { display: block; order: 2; }
-    .group:not(.stone-group) { order: 3; flex-direction: column; gap: 2px; }
+    .group:not(.stone-group) { order: 3; flex-direction: column; gap: 2px; align-self: flex-end; }
     .group:not(.stone-group) > span.name { font-size: 10px; }
+    /* The Skip switch sits on the throw's name row, at its right, named as the rows are. */
+    .throw-group { display: grid; grid-template-columns: 1fr auto; grid-template-areas: "name skip" "power power"; align-items: end; column-gap: 8px; }
+    .throw-group > span.name { grid-area: name; }
+    .throw-group > .segmented { grid-area: power; }
+    .throw-group > .switch { grid-area: skip; margin: 0; padding: 0 2px; font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
     .segmented button { padding: 6px 8px; min-width: 38px; }
   }
   @media (max-width: 400px) {
@@ -503,7 +545,7 @@
     input[type="range"] { width: 120px; }
   }
   @media (prefers-reduced-motion: reduce) {
-    .veil { transition: none; }
+    .veil, .switch-track, .switch-knob { transition: none; }
   }
   /* Phones: the title's line is hidden there, so the readout sits on the title's row, left of the button. */
   @media (max-width: 520px) {
@@ -525,13 +567,16 @@
     <input type="range" id="stone-size" min="1.5" max="30" step="0.5" value="6">
     <span class="readout" id="stone-readout">6 cm</span>
   </div>
-  <div class="group">
+  <div class="group throw-group">
     <span class="name">Throw</span>
     <div class="segmented" id="power" role="group" aria-label="Throw strength">
       <button type="button" data-value="soft">Soft</button>
       <button type="button" data-value="normal" aria-pressed="true">Normal</button>
       <button type="button" data-value="hard">Hard</button>
     </div>
+    <button type="button" class="switch" id="skip" role="switch" aria-checked="false" title="Skip the rock across the water">
+      <span>Skip</span><span class="switch-track" aria-hidden="true"><span class="switch-knob"></span></span>
+    </button>
   </div>
   <div class="group">
     <span class="name">Speed</span>
@@ -778,6 +823,12 @@
     }
     followTouch(sizeInput, applySize);
     segmented('power', (value) => pond.setPower(value));
+    const skipSwitch = document.getElementById('skip');
+    skipSwitch.addEventListener('click', () => {
+      const on = skipSwitch.getAttribute('aria-checked') !== 'true';
+      skipSwitch.setAttribute('aria-checked', String(on));
+      pond.setSkip(on);
+    });
     segmented('speed', (value) => pond.setTimeScale(Number(value)));
 
     // The settings: each choice goes to the pond, and its row and note follow.

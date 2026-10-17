@@ -30,7 +30,11 @@
 //
 // The stones and their holes take the pool's floor, POOL.depth, as their
 // bed, and its walls hold a stone under the water inside them (holdInPool);
-// the eye keeps over the deck (src/main.js).
+// a skipping stone that meets a wall below its top comes back off it
+// (holdSkipping). The deck is ground to a skip stone (poolGround: src/rock.js
+// lands it there as on paving), and the walls, less its radius, bound where
+// it may touch the water (poolInside). The eye keeps over the deck
+// (src/main.js).
 import * as THREE from 'three';
 import { POOL_VERTEX, POOL_FRAGMENT, DECK_VERTEX, DECK_FRAGMENT } from './shaders/scene.js';
 import { squareRingsGeometry, OUTER_HALF_SIZE } from './waterSurface.js';
@@ -43,20 +47,52 @@ export const POOL = {
 };
 const BASIN_CELL = 0.075;      // m: the basin's mesh spacing
 const MAIN_WALL_FROM = -0.1;   // m: the walls the main scene draws reach this far under the water, below any trough
+const WALL_KEPT = 0.4;         // a skipping stone comes back off a wall with this share of its speed across it
 
 /**
  * A stone under the water (src/rock.js) held inside the pool's walls (the
  * square, water.poolSquare): the wall it meets stops it, and it slides on
  * down. In the air it may cross the deck: the aim keeps its landing in the
- * pool.
+ * pool. A skip stone, until it goes in, is held as holdSkipping says.
  */
 export function holdInPool(rock, square) {
-  if (rock.position.y > 0) return;
+  if (rock.skip && rock.state !== 'water' && rock.state !== 'rest') { holdSkipping(rock, square); return; }
+  // A skip stone goes in moving fast along the water, its centre still above it: the walls hold it from then on.
+  if (rock.position.y > 0 && !(rock.skip && rock.state === 'water')) return;
   for (const [axis, low] of [['x', square.minX], ['z', square.minZ]]) {
     const lowest = low + rock.radius, highest = low + square.size - rock.radius;
     if (rock.position[axis] < lowest) { rock.position[axis] = lowest; rock.velocity[axis] = Math.max(rock.velocity[axis], 0); }
     else if (rock.position[axis] > highest) { rock.position[axis] = highest; rock.velocity[axis] = Math.min(rock.velocity[axis], 0); }
   }
+}
+
+/**
+ * A skip stone in the air (while it skims it follows its contact's path, and
+ * on the deck src/rock.js moves it): its centre past a wall less its radius,
+ * lower than the wall's top, having been inside the step before, it has met
+ * the wall's side, and comes back off it with WALL_KEPT of its speed across
+ * it. (Its throw's first flight starts over the deck, never inside.)
+ */
+function holdSkipping(rock, square) {
+  if (rock.state !== 'air') return;
+  const outside = (point, axis, low) => point[axis] < low + rock.radius || point[axis] > low + square.size - rock.radius;
+  const beyond = (point) => outside(point, 'x', square.minX) || outside(point, 'z', square.minZ);
+  if (!beyond(rock.position) || beyond(rock.previous) || rock.position.y - rock.ellipsoidDepth() > POOL.deck) return;
+  for (const [axis, low] of [['x', square.minX], ['z', square.minZ]]) {
+    if (!outside(rock.position, axis, low)) continue;
+    rock.position[axis] = THREE.MathUtils.clamp(rock.position[axis], low + rock.radius, low + square.size - rock.radius);
+    rock.velocity[axis] *= -WALL_KEPT;
+  }
+}
+
+/** The ground round the pool (src/rock.js groundAt): the deck's height outside the walls, null over the water inside them. */
+export function poolGround(square) {
+  return (x, z) => (x >= square.minX && x <= square.minX + square.size && z >= square.minZ && z <= square.minZ + square.size ? null : POOL.deck);
+}
+
+/** Whether (x, z) lies inside the pool's walls less `margin` (a skip stone's radius: where it may touch the water; the aim's margin). */
+export function poolInside(square, margin) {
+  return (x, z) => x >= square.minX + margin && x <= square.minX + square.size - margin && z >= square.minZ + margin && z <= square.minZ + square.size - margin;
 }
 
 /**

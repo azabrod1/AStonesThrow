@@ -19,8 +19,11 @@ up or down (from just above the water to nearly straight down), and scroll
 or pinch to zoom toward what is under the pointer (down to an 8° field of
 view); a drag that starts zoomed turns round what the view is looking at.
 Escape or Reset view glides back to the shore. The strip at the bottom sets
-the rock's size (1.5 to 30 cm across), the throw strength and the speed
-(real time, or slow motion at ¼ or ⅒). The menu button at the
+the rock's size (1.5 to 30 cm across), the throw strength, Skip and the
+speed (real time, or slow motion at ¼ or ⅒). With Skip on, a flat stone is
+thrown low and level, spinning, and skips across the water (below), in the
+direction of the tap (even on the sky); its first touch lands where a level
+throw puts it. The menu button at the
 top right opens the settings, laid out as the Moon app's menu is: a list in
 three groups (the place: Location, Water and Time of day; the conditions:
 Weather and Wind; the viewing: View and Quality), each row an icon, its name
@@ -303,6 +306,29 @@ ten are clean, a fifth to a quarter ragged, one in six leans, one in eight
 is stubby and a few split or never rise; a 1.5 cm pebble nearly always seals
 at the surface, a 16 cm stone almost never, and its jets are mostly stubby
 (`tools/variety-probe.mjs` prints the distributions).
+
+**Skipping** (`src/rock.js`, a Skip throw). The thrower picks a flat stone
+and lets it go from a crouch, 30 cm over the water, nearly level, at 7, 10
+or 13 m/s (Soft, Normal, Hard; a stone over 8 cm across goes slower), its
+face tilted nose-up about 20° along the throw (Clanet, Hersen & Bocquet's
+"magic angle") and spinning fast about its short axis, which holds that
+tilt. Each touch is worked out once, on the CPU, as Bocquet (2003) models
+it: the water pushes the face along its normal by ½·ρ·C·|v|² times the part
+of it that is wet (a little more while the stone comes down, a little less
+as it climbs), and drags it along the face. The stone either rises back
+out and flies on, or goes in, when its face goes wholly under, its leading
+edge catches, it slows too much, or it would leave too flat to do more than
+glide. A normal throw skips three to five times: its hops are arcs of much
+the same shape, each about six tenths the size of the last, the touches
+coming quicker and quicker (2.7 m long and 16 cm high, then 1.6 m and 9 cm,
+0.9 m and 5 cm, 0.6 m and 3 cm), all in the vertical plane it was thrown
+in. In the pool it is thrown gentler (6, 7.5 or 9 m/s), so most skips stay
+in it, coming back off the far wall; a hard one may clear the wall and land
+on the paving, where it bounces low, tumbling end over end, and tumbles to a
+stop a few metres on. Every touch sends out a ring, throws a fan of spray ahead
+and leaves a moment's white churn; the last is any stone's splash
+(`tools/skip-probe.mjs` prints all of it). A 30 cm rock is thrown too slowly
+to skip.
 
 **Foam** (`FOAM_PATTERN` in `src/shaders/scene.js`, the map in
 `src/spectralWater.js`). Where the stone's hole closes, its air erupts as a
@@ -587,8 +613,8 @@ farther out, so it rises into the view rather than filling its corner.
 
 - `npm test` runs `tools/fft-test.mjs`, `tools/wave-probe.mjs`,
   `tools/foam-probe.mjs`, `tools/cavity-probe.mjs`, `tools/ring-probe.mjs`,
-  `tools/rain-probe.mjs` and `tools/gale-probe.mjs`; each exits with 1 if a
-  check fails.
+  `tools/rain-probe.mjs`, `tools/gale-probe.mjs` and `tools/skip-probe.mjs`;
+  each exits with 1 if a check fails.
 - `node tools/gale-probe.mjs [--wind=x,z]` builds the gale's seed with the
   app's code and runs its evaluation and FFT passes on the CPU: the field is
   real and its packed channels are the fields; the sideways move squeezes
@@ -603,6 +629,26 @@ farther out, so it rises into the view rather than filling its corner.
   about their group speed and the table's edge cuts nothing; `--write`
   writes `assets/rain/ring.json` and `ring_profile.bin`, which the page
   loads the first time it rains.
+- `node tools/skip-probe.mjs [throws=60] [--seed=1] [--aim=x:z] [--list]`
+  throws skips as the app does with Skip on, through the app's own aiming
+  (`aimSkip` and `SKIP_THROW` in `src/rock.js`): in the lake the 6 cm stone
+  softly, normally and hard, then a 3, a 16 and a 30 cm stone normally; in
+  the pool, with its walls and deck, the 6 cm stone at each strength and a
+  30 cm rock. It flies, skips and sinks each on the CPU with a splash system
+  and prints the skips per throw, the first touch (its angles in and out,
+  how long it lasts, the speeds), the first hop's length and height, a
+  touch's spray and ring pushes, where the stone went in, how far the first
+  touch lies from where the aim shows it, where pool throws end and the cost
+  of a contact and a frame. It checks that a normal throw mostly skips (a
+  median of 3 to 8), that softer throws skip less, that a 30 cm rock never
+  skips, that no skip leaves rising faster than it came down and the first
+  hop stays under 30 cm, that every hop is an arc (at least 1/40 as high as
+  it is long), that in the lake the stone stays in the vertical plane it was
+  thrown in, that every skip rings and sprays, that every stone comes to
+  rest, that the aim shows the first touch within 12 cm, that in the pool no
+  stone goes below the deck outside the walls and soft and normal skips stay
+  in it, that halving the contact's step or the frame's substeps changes
+  little, and that a contact costs under a millisecond.
 - `node tools/fft-test.mjs` checks the splash solver's spectral passes on the
   CPU with the shaders' arithmetic: the FFT against a naive DFT, a splat's
   spectrum against its Gaussian, the Nyquist bins (splats at fractional
@@ -679,7 +725,9 @@ farther out, so it rises into the view rather than filling its corner.
   stone and its splash are the same every run: `tools/variety-probe.mjs`'s
   seed n + i),
   `--power=soft|normal|hard` (soft is a higher arc, so a steeper entry,
-  about 30° from vertical), `--wind-strength=calm|breeze|windy|gale` (the page's
+  about 30° from vertical), `--skip` (skip throws, the times counted from
+  the first touch), `--trace` (each stone's path drawn as a line),
+  `--wind-strength=calm|breeze|windy|gale` (the page's
   own default is calm), `--weather=clear|light-rain|heavy-rain|storm` (waits for
   the rain's table before the first frame). With
   `--eval="window.__pond.setTimeScale(0.1)"` the frames are slow motion, 1/600 s
@@ -690,6 +738,10 @@ farther out, so it rises into the view rather than filling its corner.
   (which follows `--preroll=seconds`), for a run of idle frames.
 - `?floats=half` on the page forces half-float render targets everywhere, the
   path devices without `EXT_color_buffer_float` take.
+- `?trace=1` on the page, or the T key, traces each stone over everything
+  (`__pond.setTrace`): its path from the hand until it goes in (yellow), its
+  track on the water under it (white), a red cross at each touch and a white
+  line down from the top of each arc.
 - `?profile=1` on a real device runs the profiling steps of `src/profiler.js`.
   It first measures the floor: frames that neither simulate nor draw, which
   shows what the browser allows (33 ms there means a 30 Hz cap, as iOS Low
@@ -845,7 +897,8 @@ farther out, so it rises into the view rather than filling its corner.
   `shots/controls-probe/`. The
   shoot harness and the other probes emulate a desktop browser, which ignores
   the viewport tag, so only this probe sees the page as a phone does.
-- `window.__pond` exposes the app in the console: `throwAt(x, z, { radius, power })`,
+- `window.__pond` exposes the app in the console: `throwAt(x, z, { radius, power, skip })`,
+  `setSkip(on)` (and `skipping`), `setTrace(on)`,
   `setTimeScale` (and `timeScale`), `pause()`, `advance(seconds)` (in the frames the app would
   draw at the current time scale), `setDebugView(name)`, `setFov(degrees)`,
   `lookAt(x, y, z)`, `resetView()`, `setWind(name)` (and `wind`: calm,
