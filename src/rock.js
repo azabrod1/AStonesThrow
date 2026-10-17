@@ -138,23 +138,6 @@
 // 10° and at 30°), and below about 7° it digs in at its first touch.
 // tools/skip-probe.mjs prints what it does.
 //
-// Ground. A skip stone can come down on ground rather than water: the
-// pool's deck, its height given by `groundAt` (src/pool.js poolGround, which
-// src/main.js hands a skip stone), on its first flight (a big stone thrown
-// slowly falls short of the pool) or skipped out over a wall. It lands only
-// where it was over the ground the step before too: one coming from over
-// the water meets the ground's side (src/pool.js turns it off the pool's
-// wall). On the ground it lands as a stone lands on paving (meetGround): it
-// bounces off at GROUND.bounce of the speed it came down at, the friction
-// taking GROUND.friction times the push off the ground from its speed along
-// it and the lump that strikes turning its path by up to GROUND.scatter, and
-// tumbles end over end (its spin about the level axis across its path, at
-// GROUND.tumble of its speed over its radius), until it comes down slower
-// than GROUND.settle; then it tumbles along it (`ground`, tumbleAlong), its
-// ellipsoid on it (ellipsoidDepth: the lumpy mesh would lift it off as it
-// turns), slowing at GROUND.tumbling·g, and rests once slower than
-// GROUND.stopped; over the ground's edge it falls again.
-//
 // The stone is two meshes: the part above the water in the main scene, the
 // part below in the under-water pass (src/main.js), which the water shader
 // shows through the surface. Below the water it is drawn where it is seen
@@ -207,7 +190,9 @@
 //
 // Ground. A thing can come down on ground rather than water: the pool's
 // deck, its height given by `groundAt` (src/pool.js poolGround, which
-// src/main.js hands everything thrown in the pool). It lands only where it
+// src/main.js hands everything thrown in the pool): short of the pool (a
+// big stone skipped slowly, a heavy ball thrown as far as it goes) or
+// skipped out over a wall. It lands only where it
 // was over the ground the step before too: one coming from over the water
 // meets the ground's side. On the ground it lands as the thing does on
 // paving (meetGround, with its THINGS `ground`): it bounces off at `bounce`
@@ -216,7 +201,8 @@
 // path by up to GROUND.scatter and it tumbles end over end (its spin about
 // the level axis across its path, at GROUND.tumble of its speed over its
 // radius) until it comes down slower than GROUND.settle; then it tumbles
-// along (`ground`, tumbleAlong), its ellipsoid on it, slowing at
+// along (`ground`, alongGround), its ellipsoid on it (ellipsoidDepth: the
+// lumpy mesh would lift it off as it turns), slowing at
 // GROUND.tumbling·g. A ball keeps at least `roll` of its speed along the
 // ground (friction brings it to rolling, 5/7 for a solid ball, 3/5 for a
 // shell) and spins as it rolls, and once down it rolls along, slowing at

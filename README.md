@@ -656,7 +656,8 @@ farther out, so it rises into the view rather than filling its corner.
 
 - `npm test` runs `tools/fft-test.mjs`, `tools/wave-probe.mjs`,
   `tools/foam-probe.mjs`, `tools/cavity-probe.mjs`, `tools/ring-probe.mjs`,
-  `tools/rain-probe.mjs`, `tools/gale-probe.mjs` and `tools/skip-probe.mjs`;
+  `tools/rain-probe.mjs`, `tools/gale-probe.mjs`, `tools/skip-probe.mjs` and
+  `tools/thing-probe.mjs`;
   each exits with 1 if a check fails.
 - `node tools/gale-probe.mjs [--wind=x,z]` builds the gale's seed with the
   app's code and runs its evaluation and FFT passes on the CPU: the field is

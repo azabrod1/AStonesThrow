@@ -64,7 +64,8 @@
 // water under it, a cross where it touches and a line down from the top of
 // each arc, over everything.
 // With Skip on (setSkip: the Throw group's
-// switch) a tap throws a skip instead (skipThrow, aimSkip in src/rock.js):
+// switch, off while a ball or a gem is chosen) a tap throws a stone of any
+// kind as a skip instead (skipThrow, aimSkip in src/rock.js):
 // a flat stone, from the hand let down to SKIP_THROW.handHeight, at
 // SKIP_THROW's speed for the strength (gentler in the pool; slower for a big
 // stone), towards the tap and nearly level (SKIP_THROW.elevation): it first
