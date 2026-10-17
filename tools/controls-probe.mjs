@@ -21,7 +21,7 @@
 //     screen, its rows that tall too, each row's value whole beside its
 //     name; its Throw row opens the Throw page, whose thirteen pictured choices
 //     can each be scrolled onto the screen and fit their names, and each sets
-//     what is thrown, the row's value and the strip's name, slider (its
+//     what is thrown, the throw button's name (a rock, a ball, a gem), the row's value and the strip's name, slider (its
 //     range, or off for a ball of one size) and readout following, the strip
 //     still fitting; its Water row opens the Water page, whose five pictured choices
 //     can each be scrolled onto the screen and fit their names, whose Pool
@@ -255,14 +255,15 @@ for (const framing of FRAMINGS) {
       thing: window.__pond.thing, row: document.querySelector('.menu-tier[data-open="thing"] .menu-tier-value').textContent,
       label: document.querySelector('label[for="stone-size"]').textContent, readout: document.getElementById('stone-readout').textContent,
       minimum: Number(slider.min), maximum: Number(slider.max), disabled: slider.disabled, overflows: strip.scrollWidth > strip.clientWidth + 0.5,
+      button: document.getElementById('throw').getAttribute('aria-label'),
     };
   });
   for (const [choice, expected] of [
-    ['basketball', { row: 'Basketball', label: 'Basketball', readout: '620 g', minimum: 5, maximum: 7, disabled: false }],
+    ['basketball', { button: 'Throw a ball', row: 'Basketball', label: 'Basketball', readout: '620 g', minimum: 5, maximum: 7, disabled: false }],
     ['bowling', { row: 'Bowling ball', label: 'Bowling ball', readout: '14 lb', minimum: 6, maximum: 16, disabled: false }],
     ['tennis', { row: 'Tennis ball', label: 'Tennis ball', readout: '58 g', disabled: true }],
-    ['granite', { row: 'Granite', label: 'Granite', disabled: false, minimum: 1.5, maximum: 30 }],
-    ['diamond', { row: 'Diamond', label: 'Diamond', readout: '100 ct', minimum: 5, maximum: 1000, disabled: false }],
+    ['granite', { button: 'Throw a rock', row: 'Granite', label: 'Granite', disabled: false, minimum: 1.5, maximum: 30 }],
+    ['diamond', { button: 'Throw a gem', row: 'Diamond', label: 'Diamond', readout: '100 ct', minimum: 5, maximum: 1000, disabled: false }],
     ['stone', { row: 'River stone', label: 'Rock', disabled: false, minimum: 1.5, maximum: 30 }],
   ]) {
     await press(`#thing [data-value="${choice}"]`);

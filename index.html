@@ -936,11 +936,17 @@
     };
     const showWater = radioGroup(document.getElementById('water'), (value) => { pond.setClarity(value); updateWater(); });
     const showThing = radioGroup(document.getElementById('thing'), (value) => { pond.setThing(value); updateThing(); });
+    // The throw button names what it throws: a rock, a ball or a gem (the kind's group).
+    const THROWN = { Stones: 'a rock', Balls: 'a ball', Gems: 'a gem' };
     function updateThing() {
       showThing(pond.thing);
       settings.setValue('thing', THINGS[pond.thing].name);
       // Skip skips a stone: off for a ball or a gem.
       skipSwitch.disabled = !THINGS[pond.thing].stone;
+      const thrown = THROWN[THINGS[pond.thing].group];
+      const throwButton = document.getElementById('throw');
+      throwButton.querySelector('.more').textContent = ` ${thrown}`;
+      throwButton.setAttribute('aria-label', `Throw ${thrown}`);
       showSlider();
     }
     function updateWater() {
