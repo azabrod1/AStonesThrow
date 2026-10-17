@@ -219,7 +219,7 @@
 // `rolling`·g. Either rests once slower than GROUND.stopped; over the
 // ground's edge it falls again (into the pool).
 import * as THREE from 'three';
-import { SEEN_THROUGH_WATER } from './shaders/scene.js';
+import { SEEN_THROUGH_WATER, FLOATER_WATER } from './shaders/scene.js';
 import { PINCH_TIME, NECK_CLOSE, SPIN_DECAY, sinkStep, underWater } from './cavity.js';
 import { THINGS, DEFAULT_THING, WATER_DENSITY, STONE_DENSITY } from './things.js';
 import { meshKind } from './thingMeshes.js';
@@ -697,8 +697,9 @@ export class Rock {
    * @param thing what it is (a key of src/things.js THINGS; the river stone if absent)
    * @param mass a ball's mass (kg; src/things.js measure); a stone's is its density's
    * @param mirrorLayer the layer the water's mirror image draws (src/splash.js MIRROR_LAYER): afloat, it is in it
+   * @param water the water's uniforms (src/waterSurface.js rideUniforms): a floater given them rides the water's ripples as drawn (rideTheWater)
    */
-  constructor({ radius, position, velocity, envTexture, waterFog = null, thing = DEFAULT_THING, mass = null, mirrorLayer = null, skip = false }) {
+  constructor({ radius, position, velocity, envTexture, waterFog = null, thing = DEFAULT_THING, mass = null, mirrorLayer = null, skip = false, water = null }) {
     this.radius = radius;
     this.position = position.clone();
     this.previous = position.clone();   // where it was a step ago
@@ -808,11 +809,68 @@ export class Rock {
   if (cameraPosition.y < 0.0) gl_FragColor.rgb = mix(uFogColor, gl_FragColor.rgb, exp(-uFogExtinction * length(vViewPosition)));`);
     };
     this.meshBelow.material.customProgramCacheKey = () => 'seen-through-water';
+    if (this.floats && water) this.rideTheWater(water, { seenThroughWater, waterLevel, fogExtinction, fogColor });
     for (const mesh of this.meshes) {
       mesh.scale.setScalar(radius);
       mesh.frustumCulled = false;
     }
     this.syncMeshes();
+  }
+
+  /**
+   * A floater's materials made to ride the water as it is drawn (the header):
+   * the water's ripples, wind waves and rings are the GPU's (the physics
+   * floats it on still water), so its vertices rise, fall and tilt with the
+   * water's height at its middle and its slope across it
+   * (src/shaders/scene.js FLOATER_WATER, read with the water's own uniforms),
+   * and each part is cut where the water's surface really is, pixel by pixel,
+   * in place of a level plane: the water laps along it, a pizza's crust and
+   * all; inside its rim (`water.dry`: a pizza's crust) its top is never cut,
+   * the rim holding the water out (src/waterSurface.js setDryDiscs hides the
+   * water there). Its three programs (above, below, in the mirror) are its own, drawn
+   * under the loading veil (src/main.js warmUp).
+   */
+  rideTheWater(water, { seenThroughWater, waterLevel, fogExtinction, fogColor }) {
+    // Inside its rim, its share `water.dry` of its radius (src/things.js), the water never covers its top.
+    const dryRadius = { value: (this.thing.water.dry ?? 0) * this.radius };
+    const ride = (side) => (shader) => {
+      Object.assign(shader.uniforms, water);
+      shader.uniforms.uWaterLevel = waterLevel;
+      shader.uniforms.uSeenThroughWater = seenThroughWater;
+      shader.uniforms.uFogExtinction = fogExtinction;
+      shader.uniforms.uFogColor = fogColor;
+      shader.uniforms.uDryRadius = dryRadius;
+      const declarations = `${FLOATER_WATER}\nuniform float uWaterLevel;\nuniform float uDryRadius;\nvarying vec3 vRideWorld;\nvarying vec2 vRideMiddle;\n`;
+      shader.vertexShader = shader.vertexShader
+        .replace('#include <common>', `#include <common>\n${declarations}uniform float uSeenThroughWater;\n${side === 'below' ? SEEN_THROUGH_WATER : ''}`)
+        .replace('#include <project_vertex>', `
+  vec4 ridden = modelMatrix * vec4(transformed, 1.0);
+  vec3 middle = (modelMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+  float across = 0.5 * length(modelMatrix[0].xyz);
+  float slopeX = (floaterWaterHeight(middle.xz + vec2(across, 0.0)) - floaterWaterHeight(middle.xz - vec2(across, 0.0))) / (2.0 * across);
+  float slopeZ = (floaterWaterHeight(middle.xz + vec2(0.0, across)) - floaterWaterHeight(middle.xz - vec2(0.0, across))) / (2.0 * across);
+  ridden.y += floaterWaterHeight(middle.xz) + slopeX * (ridden.x - middle.x) + slopeZ * (ridden.z - middle.z);
+  vRideWorld = ridden.xyz;
+  vRideMiddle = middle.xz;
+  ${side === 'below' ? 'ridden.xyz = mix(ridden.xyz, seenThroughWater(ridden.xyz, uWaterLevel), uSeenThroughWater);' : ''}
+  vec4 mvPosition = viewMatrix * ridden;
+  gl_Position = projectionMatrix * mvPosition;`);
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <common>', `#include <common>\n${declarations}uniform vec3 uFogExtinction;\nuniform vec3 uFogColor;`)
+        .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
+  ${side === 'below' ? '' : '// Inside its rim (a pizza\'s crust holds the water out) its top is never under it.\n  if (distance(vRideWorld.xz, vRideMiddle) >= uDryRadius)'}
+  if (vRideWorld.y ${side === 'below' ? '>' : '<'} uWaterLevel + floaterWaterHeight(vRideWorld.xz)) discard;`)
+        .replace('#include <fog_fragment>', `#include <fog_fragment>
+  ${side === 'below' ? 'if (cameraPosition.y < 0.0) gl_FragColor.rgb = mix(uFogColor, gl_FragColor.rgb, exp(-uFogExtinction * length(vViewPosition)));' : ''}`)
+        .replace('#include <dithering_fragment>', `#include <dithering_fragment>
+  ${side === 'mirror' ? `gl_FragColor.a = 1.0 - ${MIRROR_NEARNESS_SCALE.toFixed(1)} / max(length(vViewPosition), 0.05);` : ''}`);
+    };
+    for (const [mesh, side] of [[this.meshAbove, 'above'], [this.meshBelow, 'below'], [this.meshMirror, 'mirror']]) {
+      if (!mesh) continue;
+      mesh.material.clippingPlanes = [];
+      mesh.material.onBeforeCompile = ride(side);
+      mesh.material.customProgramCacheKey = () => `ride-${side}`;
+    }
   }
 
   /** Its meshes: above the water, below it, and afloat in the mirror image. */
@@ -1062,10 +1120,11 @@ export class Rock {
       mesh.position.set(this.position.x, this.position.y + lift, this.position.z);
       mesh.quaternion.copy(this.quaternion);
     }
-    this.meshAbove.material.clippingPlanes[0].constant = -surface;   // keeps y ≥ surface
-    this.meshBelow.material.clippingPlanes[0].constant = surface;    // keeps y ≤ surface
+    // Cut at the water: by a plane at its height over it (a floater that rides the water cuts itself at its true surface, rideTheWater).
+    if (this.meshAbove.material.clippingPlanes.length) this.meshAbove.material.clippingPlanes[0].constant = -surface;   // keeps y ≥ surface
+    if (this.meshBelow.material.clippingPlanes.length) this.meshBelow.material.clippingPlanes[0].constant = surface;    // keeps y ≤ surface
     if (this.meshMirror) {
-      this.meshMirror.material.clippingPlanes[0].constant = -surface;
+      if (this.meshMirror.material.clippingPlanes.length) this.meshMirror.material.clippingPlanes[0].constant = -surface;
       // Only what stands out of the water enough to show in it: a flat thing's image (a pizza's) would be a sliver, which
       // the mirror's ripples break into stray lines (FLOAT.mirrorLeast).
       const afloat = this.state === 'float' || this.afloat;

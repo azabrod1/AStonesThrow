@@ -23,7 +23,8 @@
 //     each group (the chosen thing's open, one at a time: on a phone in
 //     portrait the page needs no scrolling), whose seventeen pictured choices
 //     can each be opened and scrolled onto the screen and fit their names,
-//     its head staying at the panel's top as it scrolls, and each sets
+//     its head staying at the panel's top as it scrolls, and each, tapped,
+//     closes the settings, the next tap on the water throwing it, and sets
 //     what is thrown, the throw button's name (a rock, a ball, a gem), the row's value and the strip's name, slider (its
 //     range, or off for a ball of one size) and readout following, the strip
 //     still fitting; its Water row opens the Water page, whose five pictured choices
@@ -242,7 +243,7 @@ for (const framing of FRAMINGS) {
     const panel = document.getElementById('settings');
     return { names: [...document.querySelectorAll('#thing .menu-group')].map((fold) => fold.dataset.group), open: [...document.querySelectorAll('#thing .menu-group[open]')].map((fold) => fold.dataset.group), scrolls: panel.scrollHeight > panel.clientHeight + 1 };
   });
-  check(folds.names.length === 5 && folds.open.length === 1 && folds.open[0] === 'Stones', `the Object page folds its things into ${folds.names.join(', ')}, the chosen one's open (${folds.open.join(', ')})`);
+  check(folds.names.length === 4 && folds.open.length === 1 && folds.open[0] === 'Stones', `the Object page folds its things into ${folds.names.join(', ')}, the chosen one's open (${folds.open.join(', ')})`);
   if (framing.portrait) check(!folds.scrolls, 'with one fold open the Object page fits a phone in portrait without scrolling');
   // Each fold opened in turn (the others shut), each of its cards scrolled to.
   const things = await page.evaluate(async () => {
@@ -294,16 +295,29 @@ for (const framing of FRAMINGS) {
     ['pizza', { button: 'Throw a pizza', row: 'Pizza', label: 'Pizza', readout: '30 cm', minimum: 1, maximum: 3, disabled: false }],
     ['stone', { row: 'River stone', label: 'Rock', disabled: false, minimum: 1.5, maximum: 30 }],
   ]) {
+    // The settings open on the Object page, the choice's fold open; a tap on its card closes them, and the next tap on the water throws it.
+    if (await page.evaluate(() => document.getElementById('settings').hidden)) {
+      await press('#menu-button');
+      await page.waitForTimeout(400);
+      await press('#settings .menu-tier[data-open="thing"]');
+      await page.waitForTimeout(400);
+    }
     await page.evaluate((value) => { document.querySelector(`#thing [data-value="${value}"]`).closest('details').open = true; }, choice);
     await page.waitForTimeout(80);
+    if (choice === 'bowling') await page.screenshot({ path: path.join(outputFolder, `${framing.name}-throw.png`) });
     await press(`#thing [data-value="${choice}"]`);
+    await page.waitForTimeout(100);
     const shown = await strip();
     const wrong = Object.entries(expected).filter(([key, value]) => shown[key] !== value).map(([key]) => `${key} ${JSON.stringify(shown[key])}`);
     check(shown.thing === choice && wrong.length === 0 && !shown.overflows, `${choice} is thrown, its row, the strip's name, slider and readout follow (${shown.label}, ${shown.readout}${shown.disabled ? ', slider off' : `, ${shown.minimum} to ${shown.maximum}`})${wrong.length ? `; wrong: ${wrong.join(', ')}` : ''}${shown.overflows ? '; the strip overflows' : ''}`);
-    if (choice === 'bowling') await page.screenshot({ path: path.join(outputFolder, `${framing.name}-throw.png`) });
+    const thrown = await page.evaluate(() => ({ closed: document.getElementById('settings').hidden, before: window.__pond.rocks.length }));
+    await press('#pond');
+    await page.waitForTimeout(150);
+    const after = await page.evaluate(() => ({ count: window.__pond.rocks.length, thing: window.__pond.rocks.at(-1)?.thing.key }));
+    check(thrown.closed && after.count === thrown.before + 1 && after.thing === choice, `choosing ${choice} closes the settings, and the next tap on the water throws it (${thrown.closed ? 'closed' : 'still open'}; ${after.count - thrown.before} thrown, ${after.thing})`);
   }
-  // The Time page: Lakeside's hours on a slider; a tap at its left end loads the first.
-  await press('.menu-page[data-page="thing"] .menu-back');
+  // Back to the list for the next pages.
+  await press('#menu-button');
   await page.waitForTimeout(400);
   await press('#settings .menu-tier[data-open="time"]');
   await page.waitForTimeout(400);

@@ -35,8 +35,9 @@ is remembered on the device (but the view, which opens on the shore):
 - Object (`?thing=`, what is thrown): a river stone (the default), slate, granite,
   basalt or pumice; a golf ball, a tennis ball, a bowling ball or a
   basketball; a gem; an apple, a watermelon or a pizza; a brick. Each is
-  pictured, in a fold for its group (Stones, Balls, Gems, Food, Other; the
-  chosen thing's open, one at a time),
+  pictured, in a fold for its group (Stones, Balls, Gems, Other; the
+  chosen thing's open, one at a time; tapping one closes the settings, so
+  the next tap on the water throws it),
   each the size, weight and density of the real thing (`src/things.js`), and
   the throw button names it ("Throw a rock", "Throw a ball", "Throw a
   pizza"). Pumice, a tennis ball, a basketball and a bowling ball
@@ -47,7 +48,10 @@ is remembered on the device (but the view, which opens on the shore):
   and floats with only its striped back showing) and a pizza (a soft
   disc made by hand, its outline and crust uneven: thrown, it spins level
   like a frisbee, wobbling, its edges cupped against the air; afloat, its
-  toppings up and dry, as much of it under as Archimedes says); the rest sink, a golf ball
+  toppings up and dry, as much of it under as Archimedes says). A floater
+  rides the water as it is drawn, ripples, rings and wind waves, rising
+  and tilting with them, and the water meets it at its true surface (a
+  pizza's crust holds it off the toppings); the rest sink, a golf ball
   slowly, basalt fastest. A gem (diamond, emerald, ruby or sapphire, cut and
   faceted, 5 to 1000 carats) sinks, as does a brick (2.7 kg of fired clay).
   Each choice's picture (`assets/things/thumbs/`) is a harness frame of

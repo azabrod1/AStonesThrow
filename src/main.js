@@ -1201,7 +1201,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     const skipped = skips ? skipThrow(handPosition(radius), target, radius, options.power ?? power) : null;
     const hand = skipped?.hand ?? handPosition(radius);
     // Made first, so a thing that flutters is aimed by its own flight (src/rock.js trialFlight).
-    const rock = new Rock({ radius, position: hand, velocity: new THREE.Vector3(), envTexture: environment.envTexture, waterFog: { extinction: lighting.extinction, color: lighting.waterColor }, thing: name, mass, mirrorLayer: MIRROR_LAYER, skip: skips });
+    const rock = new Rock({ radius, position: hand, velocity: new THREE.Vector3(), envTexture: environment.envTexture, waterFog: { extinction: lighting.extinction, color: lighting.waterColor }, thing: name, mass, mirrorLayer: MIRROR_LAYER, skip: skips, water: surface.rideUniforms });
     thingShapes.set(name, rock.shape);
     const { velocity } = skipped ?? thingVelocity(hand, target, options.power ?? power, { thing, radius, mass, size }, rock.trialFlight());
     rock.velocity.copy(velocity);
@@ -1541,6 +1541,10 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     if (!skip.fluid) splash.prepareFrame();
     const fromBelow = camera.position.y < (galeWaves.on ? galeSurfaceAt(camera.position.x, camera.position.z) : 0);
     if (!fromBelow) updateReflection();   // from below no mirror is needed; a change of view keeps it marked stale until the eye surfaces
+    // A floater whose rim keeps the water off its top (a pizza afloat, toppings up): the water is not drawn inside its rim.
+    surface.setDryDiscs(rocks.filter((rock) => rock.thing.water.dry && (rock.state === 'float' || rock.afloat) && rock.uprightAxis.clone().applyQuaternion(rock.quaternion).y > 0.9).map((rock) => ({
+      x: rock.meshAbove.position.x, z: rock.meshAbove.position.z, radius: rock.thing.water.dry * rock.radius,
+    })));
     surface.update({ underTarget, reflectionTarget, reflectionMatrix, mirrorRect: splashRect, stonesUnder: rocks.some((rock) => rock.state === 'skim' || rock.state === 'water' || rock.state === 'float' || rock.afloat || (rock.state === 'rest' && rock.position.y < 0)), resolution, camera, time: simulationTime });
     splash.prepareScene();   // the stones' cavities, and the patch dipping under them
     if (skip.cavity) surface.setCavities([]);

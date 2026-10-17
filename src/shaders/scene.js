@@ -732,6 +732,11 @@ uniform vec3 uWaterColor;      // the radiance of water too deep to see through 
 uniform float uRoughness;        // sub-grid roughness: a slope spread of uRoughness² (rms, both axes)
 uniform float uAmbientUnresolved[AMBIENT_LEVELS];   // slope variance each mip level of the ambient waves loses
 uniform float uGaleUnresolved[GALE_LEVELS];         // and of the gale's (src/galeWaves.js)
+// A floater's dry disc (src/waterSurface.js setDryDiscs: inside a pizza's crust): centre x and z, its radius squared.
+// It rides the water (src/rock.js rideTheWater), so its rim always holds the water out: seen from above, the water is
+// not drawn inside it, and the floater's own top shows.
+uniform vec3 uDryDiscs[DRY_DISCS];
+uniform int uDryCount;
 varying vec3 vWorld;
 varying vec2 vDomainUv;
 varying float vMask;
@@ -844,6 +849,13 @@ vec3 nearReflection(vec2 rippleUv, vec3 ray) {
 }
 
 void main() {
+  if (cameraPosition.y > vWorld.y) {
+    for (int index = 0; index < DRY_DISCS; index++) {
+      if (index >= uDryCount) break;
+      vec2 fromCentre = vWorld.xz - uDryDiscs[index].xy;
+      if (dot(fromCentre, fromCentre) < uDryDiscs[index].z) discard;
+    }
+  }
   float texelStep = 1.0 / uN;
   float hl = texture2D(uHeight, vDomainUv - vec2(texelStep, 0.0)).r;
   float hr = texture2D(uHeight, vDomainUv + vec2(texelStep, 0.0)).r;
@@ -1666,6 +1678,26 @@ void main() {
 // the straight line. A point above the water stays where it is. Under a
 // gale (src/galeWaves.js) the surface it is seen through is the level one at
 // the height of the water above it, `level`.
+// The water's height at a point (m over the still water, the gale's waves
+// aside: those lift a floater as a whole, src/rock.js syncMeshes), as
+// WATER_VERTEX moves the surface there: the solver's ripples, the wind's and
+// the rings, faded out at the patch's edge. A floater's materials (src/rock.js)
+// ride on it and meet it at its own height, pixel by pixel.
+export const FLOATER_WATER = /* glsl */`
+${GLSL_COMMON}
+uniform sampler2D uHeight;
+uniform vec2 uDomainMin;
+uniform float uDomainSize;
+uniform float uTexelOffset;
+uniform float uMeshCell;
+float floaterWaterHeight(vec2 worldXZ) {
+  vec2 domainUv = (worldXZ - uDomainMin) / uDomainSize + uTexelOffset;
+  float height = texture2D(uHeight, domainUv).r + ambientHeight(worldXZ);
+  if (uRingCount > 0) height += ringHeight(worldXZ, uMeshCell);
+  return height * patchMask(domainUv);
+}
+`;
+
 export const SEEN_THROUGH_WATER = /* glsl */`
 #define SEEN_WATER_INDEX 1.333
 vec3 seenThroughWater(vec3 world, float level) {

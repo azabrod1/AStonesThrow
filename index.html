@@ -970,6 +970,9 @@
     }
     buildThings();
     const showThing = radioGroup(thingsRoot, (value) => { pond.setThing(value); updateThing(); });
+    // A card tapped is the choice made: the panel closes, so the next tap on the water throws it (a tap on the water with
+    // the panel open only closes it). Arrow keys move the choice and leave it open.
+    thingsRoot.addEventListener('click', (event) => { if (event.target.closest('[role="radio"]')) settings.hide(); });
     onThingsChange(() => { buildThings(); updateThing(); });
     function updateThing() {
       showThing(pond.thing);

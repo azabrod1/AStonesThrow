@@ -29,7 +29,10 @@
 //     in the air and afloat; otherwise a flat floater lies either way up.
 //   - body.soft, a soft thing's give (a pizza's): in the air its edges trail
 //     the centre, cupped against the air, and flap (src/rock.js Rock.flex).
-//   - water: `restingHeight`, its centre over the bed at rest, in radii.
+//   - water: `restingHeight`, its centre over the bed at rest, in radii, and
+//     `dry`, for a thing with a rim (a pizza's crust), the share of its radius
+//     inside the rim that the water does not reach: it rides the water, so its
+//     rim holds it out (src/waterSurface.js setDryDiscs).
 //   - look: `mesh`, the kind of mesh it is drawn with (src/thingMeshes.js,
 //     registerMesh), that kind's own parameters, and the material's
 //     `roughness` and `reflection`; `thumbnail`, its card's picture.
@@ -63,15 +66,14 @@
 //     basketball (sizes 5 to 7: 87 kg/m³, it floats 4.3 cm under);
 //   - gems, cut as brilliants, 5 to 1000 carats (1 ct = 0.2 g), all sinking:
 //     diamond (3510), emerald (2760), ruby and sapphire (corundum, 4000);
-//   - food: an apple (100 to 300 g at 815 kg/m³: a quarter of it is air, so
-//     it floats, low), a watermelon (2 to 10 kg at 960 kg/m³: it floats with
-//     only a sliver of its back above the water), and a pizza (20, 30 or 40 cm across, a disc with its
-//     crust, cheese and pepperoni, about 420 kg/m³, mostly airy bread: it floats,
-//     flat; soft, it flutters through the air broadside, flexing).
-//
-//   - other: a brick (215 × 102.5 × 65 mm, 2.7 kg: about 1900 kg/m³, its
-//     density from its mesh's volume; it sinks, and lands on the deck with
-//     a thud).
+//   - other things: an apple (100 to 300 g at 815 kg/m³: a quarter of it is
+//     air, so it floats, low), a pizza (20, 30 or 40 cm across, a disc with
+//     its crust, cheese and pepperoni, about 420 kg/m³, mostly airy bread: it
+//     floats flat, toppings up; soft, it flutters through the air, level,
+//     flexing), a watermelon (2 to 10 kg at 960 kg/m³: it floats with only a
+//     sliver of its back above the water) and a brick (215 × 102.5 × 65 mm,
+//     2.7 kg: about 1900 kg/m³, its density from its mesh's volume; it sinks,
+//     and lands on the deck with a thud).
 //
 // One material serves them all (src/rock.js): what tells them apart is in
 // the geometry, the vertex colours and the material's colour, roughness and
@@ -133,6 +135,7 @@ export function validateThing(key, definition) {
   const soft = definition.body?.soft;
   need(soft === undefined || ['cup', 'most', 'flap', 'rate'].every((field) => isNumber(soft[field]) && soft[field] >= 0), 'body.soft needs cup, most, flap and rate, each 0 or more');
   need(isNumber(definition.water?.restingHeight) && definition.water.restingHeight > 0, 'water.restingHeight must be above 0');
+  need(definition.water?.dry === undefined || (isNumber(definition.water.dry) && definition.water.dry > 0 && definition.water.dry < 1), 'water.dry must lie between 0 and 1');
   need(look && meshKind(look.mesh), `look.mesh "${look?.mesh}" is no registered mesh (src/thingMeshes.js)`);
   return problems;
 }
@@ -286,14 +289,14 @@ defineThing('ruby', gem('Ruby', 'Red corundum, an oval', 4000, { color: [190, 12
 defineThing('sapphire', gem('Sapphire', 'Blue corundum, an oval', 4000, { color: [25, 55, 185], stretch: 1.25, contrast: [0.5, 1.0], roughness: 0.06, reflection: 1.5 }));
 
 defineThing('apple', {
-  name: 'Apple', group: 'Food', note: 'A quarter of it is air: it floats, low', called: 'an apple',
+  name: 'Apple', group: 'Other', note: 'A quarter of it is air: it floats, low', called: 'an apple',
   body: { shape: 'sphere', density: 815, size: { by: 'mass', unit: 'g', min: 100, max: 300, step: 10, initial: 180 } },
   material: { bounce: [0.25, 0.35], friction: 0.6, roll: 'solid', rolling: 0.06 },
   water: { restingHeight: 0.95 },
   look: { mesh: 'apple', roughness: 0.45, reflection: 1.0 },
 });
 defineThing('pizza', {
-  name: 'Pizza', group: 'Food', note: 'A flat disc: it sails, and floats flat', called: 'a pizza',
+  name: 'Pizza', group: 'Other', note: 'A flat disc: it sails, and floats flat', called: 'a pizza',
   body: {
     shape: 'mesh',
     upright: true,
@@ -302,11 +305,11 @@ defineThing('pizza', {
   },
   material: { bounce: [0.05, 0.12], friction: 0.9 },
   air: { drag: 1.1, model: 'flutter' },
-  water: { restingHeight: 0.06 },
+  water: { restingHeight: 0.06, dry: 0.88 },
   look: { mesh: 'pizza', roughness: 1.0, reflection: 0.6 },
 });
 defineThing('watermelon', {
-  name: 'Watermelon', group: 'Food', note: 'Nearly as heavy as water: it floats, almost under', called: 'a watermelon',
+  name: 'Watermelon', group: 'Other', note: 'Nearly as heavy as water: it floats, almost under', called: 'a watermelon',
   body: { shape: 'mesh', density: 960, size: { by: 'mass', unit: 'kg', min: 2, max: 10, step: 0.5, initial: 5 } },
   material: { bounce: [0.08, 0.15], friction: 0.6 },
   water: { restingHeight: 0.9 },
