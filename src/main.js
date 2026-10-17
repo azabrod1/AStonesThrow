@@ -57,7 +57,24 @@
 // rock's radius) when it is beyond (or on the sky): a splash nearer the
 // patch's edge would ring across it, since the patch is periodic. In the pool
 // it is brought inside the pool's walls less POOL_MARGIN instead, so the
-// splash stands clear of them. While a
+// splash stands clear of them. A skip keeps the tap's direction, even on
+// the sky (aimPoint's `keep` off): its first touch lands along it (below).
+// For testing, ?trace=1, the T key or setTrace
+// traces each stone from the hand (traceRock): its path, its track on the
+// water under it, a cross where it touches and a line down from the top of
+// each arc, over everything.
+// With Skip on (setSkip: the Throw group's
+// switch) a tap throws a skip instead (skipThrow): a flat stone, from the
+// hand let down to SKIP_HAND_HEIGHT, at SKIP_SPEED for the strength
+// (SKIP_POOL_SPEED in the pool; slower for a stone over SKIP_FULL_RADIUS),
+// towards the tap and nearly level
+// (SKIP_ELEVATION): it first touches the water at the tap if a release that
+// level reaches it (src/rock.js skipLaunch), else as near to it as one does,
+// so it always comes in low (a skip cannot be thrown to land at one's feet),
+// and on open water (SKIP_SHALLOWEST, or inside the pool); if no such touch
+// lies along the tap's direction, it aims at the tap brought onto the water
+// as a throw is. The aim's ring and arc show where. From there it skips on as
+// src/rock.js works out, out of the patch and the pool too. While a
 // press aims (or a mouse hovers) a ring on the water and a faint arc from
 // the hand show the throw; a throw hides them, a mouse's until it moves on,
 // or the arc's end would hang in the splash as a hairline. A press held
@@ -142,7 +159,7 @@ import { Rings } from './rings.js';
 import { createEnvironment, SKY_NAMES, skyHours, resolveHour, nearestHour } from './sky.js';
 import { createWaterSurface } from './waterSurface.js';
 import { createPondFloor, createShore, floorDepthAt, groundHeightAt } from './pondFloor.js';
-import { Rock } from './rock.js';
+import { Rock, skipLaunch } from './rock.js';
 import { SplashSystem, MIRROR_LAYER } from './splash.js';
 import { createFloatTarget, FullscreenPass, configureFloatSupport, renderTargetBytes } from './gpu.js';
 import { UNDER_BACKGROUND_FRAGMENT } from './shaders/scene.js';
@@ -204,12 +221,19 @@ const IDLE = {
   tolerance: 0.004,          // ...and frames come at the preset's idleFrameRate, this many seconds early at most
 };
 const POWER = { soft: 1.3, normal: 1.0, hard: 0.72 };   // flight-time multipliers
+const SKIP_SPEED = { soft: 7, normal: 10, hard: 13 };   // m/s: a skip throw's speed by strength, for a stone up to SKIP_FULL_RADIUS...
+const SKIP_POOL_SPEED = { soft: 6, normal: 7.5, hard: 9 };   // ...and in the pool, 3 m across: gentler, so most skips stay in it (a hard one may clear the far wall)...
+const SKIP_FULL_RADIUS = 0.04;   // ...beyond which it goes as SKIP_FULL_RADIUS / R (a rough assumption: as the cube root of the mass)
+const SKIP_HAND_HEIGHT = 0.3;    // m over the water: a skip is thrown crouched, side-arm...
+const SKIP_ELEVATION = { least: -3, most: 6 };   // ...and let go nearly level: degrees from level, down to up...
+const SKIP_SHALLOWEST = 0.3;     // ...to first touch the lake where it is this deep (m) or more, or the pool inside its walls less POOL_MARGIN
 const POND_DEPTH = 0.8;       // the depth the waves take (the solver, the wind's ripples, the rings): see the bed below
 const POND_MARGIN = 0.4;      // metres inside the solver's patch that a tap's throw keeps to...
 const MARGIN_RADII = 4;       // ...or this many of the rock's radius, if more: a 30 cm rock's splats reach 3 radii out
 const POOL_MARGIN = 0.25;     // metres inside the pool's walls a throw keeps to (or MARGIN_RADII of the rock's radius)
 const EYE_EDGE = 0.3;         // metres inside the pool's edge over which the deck's height eases in for the eye
 const MAX_ROCKS = 10;
+const TRACE = { points: 4000, step: 0.01, marks: 100, cross: 0.06 };   // a stone's traced path (setTracing): at most this many points, one per this many metres it moves; at most this many touches and arc tops marked; a touch's cross this many metres each way
 const MIN_FOV = 8;            // degrees: the narrowest zoom
 const WHEEL_STEP = 0.9;       // field of view factor per wheel notch
 const HOME_TARGET = [0, 0.12, -1.0];
@@ -976,8 +1000,85 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
 
   // ---- stones and throwing ---------------------------------------------
   const rocks = [];
+  // The traced paths (the header), for testing: each stone's path (yellow)
+  // until it goes in, its track on the water under it (white), a red cross
+  // where it touches the water and a line down to the water from the top of
+  // each arc (white), drawn over everything and kept until the stone retires.
+  let tracing = pageParameters.get('trace') === '1';
+  const traces = new Map();   // rock -> { path, track, marks, count, markCount, rising }
+  const traceMaterial = (color, opacity = 1) => new THREE.LineBasicMaterial({ color, opacity, depthTest: false, depthWrite: false, transparent: true });
+  const traceMaterials = { path: traceMaterial(0xffd34d), track: traceMaterial(0xffffff, 0.55), touch: traceMaterial(0xff5a4d) };
+  function traceLine(vertices, material, Kind) {
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(vertices * 3), 3).setUsage(THREE.DynamicDrawUsage));
+    geometry.setDrawRange(0, 0);
+    const line = new Kind(geometry, material);
+    line.frustumCulled = false;
+    line.renderOrder = 10;
+    sceneMain.add(line);
+    return line;
+  }
+  function traceSegment(trace, line, x0, y0, z0, x1, y1, z1) {
+    const vertices = line.geometry.attributes.position;
+    const at = trace.marks.get(line) ?? 0;
+    if (at + 2 > vertices.count) return;
+    vertices.setXYZ(at, x0, y0, z0);
+    vertices.setXYZ(at + 1, x1, y1, z1);
+    vertices.needsUpdate = true;
+    trace.marks.set(line, at + 2);
+    line.geometry.setDrawRange(0, at + 2);
+  }
+  /** Trace where `rock` is now; `touch` (a skip's touch or the impact) marks where it met the water. */
+  function traceRock(rock, touch = null) {
+    let trace = traces.get(rock);
+    if (!trace) {
+      trace = {
+        path: traceLine(TRACE.points, traceMaterials.path, THREE.Line), track: traceLine(TRACE.points, traceMaterials.track, THREE.Line),
+        tops: traceLine(TRACE.marks * 2, traceMaterials.track, THREE.LineSegments), touches: traceLine(TRACE.marks * 4, traceMaterials.touch, THREE.LineSegments),
+        marks: new Map(), count: 0, rising: rock.velocity.y > 0,
+      };
+      traces.set(rock, trace);
+    }
+    const { x, y, z } = rock.position;
+    // The top of an arc: a line down to the water.
+    if (rock.state === 'air') {
+      if (trace.rising && rock.velocity.y <= 0) traceSegment(trace, trace.tops, x, y, z, x, 0, z);
+      trace.rising = rock.velocity.y > 0;
+    }
+    if (touch) {
+      const size = TRACE.cross;
+      traceSegment(trace, trace.touches, touch.x - size, 0, touch.z - size, touch.x + size, 0, touch.z + size);
+      traceSegment(trace, trace.touches, touch.x - size, 0, touch.z + size, touch.x + size, 0, touch.z - size);
+    }
+    const points = trace.path.geometry.attributes.position;
+    const last = trace.count - 1;
+    if (trace.count >= TRACE.points) return;
+    if (trace.count > 0 && Math.hypot(x - points.getX(last), y - points.getY(last), z - points.getZ(last)) < TRACE.step) return;
+    points.setXYZ(trace.count, x, y, z);
+    trace.track.geometry.attributes.position.setXYZ(trace.count, x, 0, z);
+    trace.count++;
+    for (const line of [trace.path, trace.track]) {
+      line.geometry.attributes.position.needsUpdate = true;
+      line.geometry.setDrawRange(0, trace.count);
+    }
+  }
+  function untrace(rock) {
+    const trace = traces.get(rock);
+    if (!trace) return;
+    for (const line of [trace.path, trace.track, trace.tops, trace.touches]) {
+      sceneMain.remove(line);
+      line.geometry.dispose();
+    }
+    traces.delete(rock);
+  }
+  /** Tracing on or off (the header; ?trace=1, the T key, setTrace): off takes the lines away. */
+  function setTracing(on) {
+    tracing = Boolean(on);
+    if (!tracing) for (const rock of [...traces.keys()]) untrace(rock);
+  }
   let stoneRadius = 0.03;
   let power = 'normal';
+  let skipping = false;   // Skip: taps throw skips (skipThrow)
   let timeScale = 1;
   let simulationTime = 0;
 
@@ -998,12 +1099,67 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     return { velocity, flightTime };
   }
 
+  /**
+   * A skip throw (the header): from the hand let down to SKIP_HAND_HEIGHT,
+   * at SKIP_SPEED for the strength (SKIP_POOL_SPEED in the pool; less for a
+   * stone over SKIP_FULL_RADIUS),
+   * towards the target, on the lower arc to the first touch: along the
+   * target's direction, as near the target as a release within
+   * SKIP_ELEVATION reaches and on open water (SKIP_SHALLOWEST deep, or in
+   * the pool less throwMargin()); failing that, along the direction of the
+   * target brought onto the water (keepOnWater). With its flight time and
+   * the touch, for the aim.
+   */
+  function skipThrow(hand, target, radius, powerName = power) {
+    const from = hand.clone();
+    from.y = Math.min(from.y, SKIP_HAND_HEIGHT);
+    const speed = (pooled ? SKIP_POOL_SPEED : SKIP_SPEED)[powerName] * Math.min(1, SKIP_FULL_RADIUS / radius);
+    const reachAt = (degrees) => {
+      const up = speed * Math.sin(THREE.MathUtils.degToRad(degrees));
+      return (speed * Math.cos(THREE.MathUtils.degToRad(degrees)) * (up + Math.sqrt(up * up + 2 * 9.81 * from.y))) / 9.81;
+    };
+    const nearest = reachAt(SKIP_ELEVATION.least), farthest = reachAt(SKIP_ELEVATION.most);
+    const margin = throwMargin();
+    const onWater = (x, z) => (pooled
+      ? x >= pool.square.minX + margin && x <= pool.square.minX + pool.square.size - margin && z >= pool.square.minZ + margin && z <= pool.square.minZ + pool.square.size - margin
+      : bedDepthAt(x, z) >= SKIP_SHALLOWEST);
+    // The touch along the direction to `towards`, as near it as may be, or null.
+    const touchTowards = (towards) => {
+      const distance = Math.hypot(towards.x - from.x, towards.z - from.z);
+      if (distance < 1e-6) return null;
+      const directionX = (towards.x - from.x) / distance, directionZ = (towards.z - from.z) / distance;
+      const wanted = THREE.MathUtils.clamp(distance, nearest, farthest);
+      let best = onWater(from.x + directionX * wanted, from.z + directionZ * wanted) ? wanted : null;
+      for (let step = 0; step <= 64 && best === null; step++) {
+        // Outward and inward from the wanted reach, nearest first.
+        for (const side of [1, -1]) {
+          const reach = wanted + side * (farthest - nearest) * step / 64;
+          if (best === null && reach >= nearest && reach <= farthest && onWater(from.x + directionX * reach, from.z + directionZ * reach)) best = reach;
+        }
+      }
+      return best === null ? null : new THREE.Vector3(from.x + directionX * best, 0, from.z + directionZ * best);
+    };
+    const onto = keepOnWater(target.clone(), margin);
+    const touch = touchTowards(target) ?? touchTowards(onto) ?? onto;
+    const velocity = skipLaunch(from, touch, speed);
+    const flightTime = (velocity.y + Math.sqrt(velocity.y ** 2 + 2 * 9.81 * from.y)) / 9.81;
+    return { hand: from, velocity, flightTime, touch };
+  }
+
   function throwAt(x, z, options = {}) {
     const radius = options.radius ?? stoneRadius;
-    const hand = handPosition(radius);
+    const skips = options.skip ?? skipping;
     const target = new THREE.Vector3(x, 0, z);
-    const { velocity } = throwVelocity(hand, target, options.power ?? power);
-    const rock = new Rock({ radius, position: hand, velocity, envTexture: environment.envTexture, waterFog: { extinction: lighting.extinction, color: lighting.waterColor } });
+    const skipped = skips ? skipThrow(handPosition(radius), target, radius, options.power ?? power) : null;
+    const hand = skipped?.hand ?? handPosition(radius);
+    const { velocity } = skipped ?? throwVelocity(hand, target, options.power ?? power);
+    const rock = new Rock({ radius, position: hand, velocity, envTexture: environment.envTexture, waterFog: { extinction: lighting.extinction, color: lighting.waterColor }, skip: skips });
+    if (skips) {
+      rock.launchSkip(velocity);
+      // In the pool it touches and skims only inside the walls, less its radius (src/pool.js holds it off them).
+      const square = pool.square;
+      if (pooled) rock.skip.inside = (px, pz) => px >= square.minX + radius && px <= square.minX + square.size - radius && pz >= square.minZ + radius && pz <= square.minZ + square.size - radius;
+    }
     rocks.push(rock);
     sceneMain.add(rock.meshAbove);
     sceneUnder.add(rock.meshBelow);
@@ -1028,6 +1184,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
 
   /** Take a stone out of the scenes; keepMaterials frees only its geometry (warmUp keeps a stone's materials, so their program stays compiled). */
   function retireRock(rock, { keepMaterials = false } = {}) {
+    untrace(rock);
     sceneMain.remove(rock.meshAbove);
     sceneUnder.remove(rock.meshBelow);
     if (keepMaterials) rock.geometry.dispose();
@@ -1054,7 +1211,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     point.z = THREE.MathUtils.clamp(point.z, bounds.minZ + margin, bounds.minZ + bounds.size - margin);
     return point;
   }
-  function aimPoint(clientX, clientY, margin = throwMargin()) {
+  /** The water under the pointer, brought onto the water less `margin` (keepOnWater) unless `keep` is false. */
+  function aimPoint(clientX, clientY, margin = throwMargin(), keep = true) {
     const point = toDeviceCoordinates(clientX, clientY);
     pointer.set(point.x, point.y);
     raycaster.setFromCamera(pointer, camera);
@@ -1070,16 +1228,20 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
       if (horizontal < 1e-6) return null;
       hit.set(camera.position.x + (raycaster.ray.direction.x / horizontal) * 100, 0, camera.position.z + (raycaster.ray.direction.z / horizontal) * 100);
     }
-    return keepOnWater(hit, margin);
+    return keep ? keepOnWater(hit, margin) : hit;
   }
+  /** Where a tap aims a throw: a skip keeps the tap's direction (skipThrow brings its touch onto the water). */
+  const throwAim = (clientX, clientY) => aimPoint(clientX, clientY, throwMargin(), !skipping);
 
   function showAim(hit) {
     if (!hit) { marker.visible = false; arc.visible = false; return; }
     marker.visible = true;
     marker.scale.setScalar(1);
-    marker.position.set(hit.x, 0.004 + (galeWaves.on ? galeSurfaceAt(hit.x, hit.z) : 0), hit.z);
-    const hand = handPosition();
-    const { velocity, flightTime } = throwVelocity(hand, hit);
+    const skipped = skipping ? skipThrow(handPosition(), hit, stoneRadius) : null;
+    const landing = skipped?.touch ?? hit;
+    marker.position.set(landing.x, 0.004 + (galeWaves.on ? galeSurfaceAt(landing.x, landing.z) : 0), landing.z);
+    const hand = skipped?.hand ?? handPosition();
+    const { velocity, flightTime } = skipped ?? throwVelocity(hand, hit);
     for (let i = 0; i < 25; i++) {
       const t = flightTime * i / 24;
       arcPoints[i * 3] = hand.x + velocity.x * t;
@@ -1169,7 +1331,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     try { canvas.setPointerCapture(event.pointerId); } catch { /* a synthetic or already released pointer */ }
     if (activePointers.size === 1) {
       pressStart = { id: event.pointerId, x: event.clientX, y: event.clientY };
-      showAim(aimPoint(event.clientX, event.clientY));
+      showAim(throwAim(event.clientX, event.clientY));
       // Held still, the press dips a finger in where it is then.
       const pointerId = event.pointerId;
       cancelHold();
@@ -1214,7 +1376,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     }
     if (thrownFrom && Math.hypot(event.clientX - thrownFrom.x, event.clientY - thrownFrom.y) < TAP_SLOP) return;
     thrownFrom = null;
-    if (event.pointerType === 'mouse' || pressStart) showAim(aimPoint(event.clientX, event.clientY));
+    if (event.pointerType === 'mouse' || pressStart) showAim(throwAim(event.clientX, event.clientY));
   });
   canvas.addEventListener('pointerup', (event) => {
     lastActivity = performance.now();
@@ -1224,7 +1386,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     releasePointer(event);
     if (press && !turned && !touched) {
       const moved = Math.hypot(event.clientX - press.x, event.clientY - press.y);
-      const hit = aimPoint(event.clientX, event.clientY);
+      const hit = throwAim(event.clientX, event.clientY);
       if (hit && moved < TAP_SLOP) { throwAt(hit.x, hit.z); if (event.pointerType === 'mouse') thrownFrom = { x: event.clientX, y: event.clientY }; }
     }
     if (event.pointerType !== 'mouse' || thrownFrom || touched) showAim(null);
@@ -1246,6 +1408,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
   window.addEventListener('keydown', (event) => {
     if (event.code === 'Space' && !event.repeat && event.target === document.body) { event.preventDefault(); throwRandom(); }
     if (event.key === 'Escape' && !reportedView?.atHome) resetView();
+    if ((event.key === 't' || event.key === 'T') && !event.repeat && event.target === document.body) setTracing(!tracing);
   });
 
   // ---- simulation and rendering ----------------------------------------
@@ -1259,8 +1422,11 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     for (let s = 0; s < steps; s++) {
       for (const rock of rocks) {
         const impact = rock.update(h, bedDepthAt, galeWaves.on ? galeSurfaceAt : null);
-        if (pooled) holdInPool(rock, pool.square);
-        if (impact) { splash.impact(impact, water); lastImpact = { x: impact.x, z: impact.z }; }
+        if (pooled) holdInPool(rock, pool.square, h);
+        if (tracing && (rock.state === 'air' || rock.state === 'skim' || impact)) traceRock(rock, impact);
+        if (impact?.skim) splash.skim(impact, water);
+        else if (impact) splash.impact(impact, water);
+        if (impact) lastImpact = { x: impact.x, z: impact.z };
       }
       splash.update(h, water);
       simulationTime += h;
@@ -1600,7 +1766,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
       if (skip.halfDensity !== wasHalfDensity) resize();
     },
     throwStone: () => throwAt(0, -1.4, { radius: 0.03, power: 'normal' }),
-    hasImpacted: () => rocks.some((rock) => rock.state !== 'air'),
+    hasImpacted: () => rocks.some((rock) => rock.state !== 'air' || rock.skip?.skips > 0),
     clearPond,
     describe: () => `${qualityName}, ${resolution.x}×${resolution.y} at ${dpr.toFixed(2)}×, grid ${water.size}, mesh ${surface.meshSegments}`,
     memory: () => ({ ...memoryEstimate(), textures: renderer.info.memory.textures, geometries: renderer.info.memory.geometries }),
@@ -1616,6 +1782,11 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     throwRandom,
     setStoneRadius(radius) { stoneRadius = radius; },
     setPower(name) { if (POWER[name]) power = name; },
+    /** Skip on or off: taps, Space and throwRandom throw skips (the header); throwAt's `skip` option overrides it. */
+    setSkip(on) { skipping = Boolean(on); },
+    get skipping() { return skipping; },
+    /** Trace each stone (the header; ?trace=1, the T key) from its next step on; off takes the traces away. */
+    setTrace(on) { setTracing(on); },
     /** The wind's strength by name (WIND_STRENGTHS: calm, breeze, windy), remembered on this device. */
     setWind(name) {
       if (!Object.hasOwn(WIND_STRENGTHS, name)) return;
@@ -1715,7 +1886,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
       while (remaining > 1e-6) { const dt = Math.min(chunk, remaining); beforeFrame?.(seconds - remaining); simulate(dt); remaining -= dt; }
       render();
     },
-    hasImpacted() { return rocks.some((rock) => rock.state !== 'air'); },
+    /** Whether a stone has met the water: gone in, or skipped (a skip's touch can be over within a frame). */
+    hasImpacted() { return rocks.some((rock) => rock.state !== 'air' || rock.skip?.skips > 0); },
     /** Where the eye would stand at `steps` + 1 even shares of a glide from where it is to the view `name` (tools/zoom-probe.mjs). */
     glidePath(name, steps = 50) {
       const from = { ...orbit }, target = viewsNow()[name];

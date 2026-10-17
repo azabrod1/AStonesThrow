@@ -44,6 +44,11 @@
 // times count from the dip.
 // --power=soft|normal|hard throws as the strength buttons do (soft is a
 // higher arc, so a steeper entry: about 30° from vertical against 42°).
+// --skip throws skips, as the Skip switch does (src/rock.js): the stone
+// first touches the water at the throw's x:z (or where a nearly level
+// release puts it, src/main.js skipThrow) and skips on from there, and the
+// times count from that first touch.
+// --trace draws each stone's path as a line (__pond.setTrace).
 // --seed=n seeds Math.random (Park–Miller, from n + i) just before throw i,
 // so its stone and its splash are the same every run, and the same as
 // tools/variety-probe.mjs's seed n + i at the same aim and power.
@@ -82,6 +87,8 @@ const weather = arg('weather', '');
 const waterClarity = arg('water', '');
 const wind = arg('wind', '');
 const power = arg('power', 'normal');
+const skipThrows = process.argv.includes('--skip');
+const tracePaths = process.argv.includes('--trace');
 const windStrength = arg('wind-strength', '');
 const seed = arg('seed', '');
 const viewName = arg('view', '');
@@ -158,14 +165,15 @@ await page.evaluate((seconds) => window.__pond.advance(seconds), preRoll);
 await page.screenshot({ path: path.join(outDir, 'idle.png'), timeout: 180000 });
 console.log('[shoot] idle.png');
 
+if (tracePaths) await page.evaluate(() => window.__pond.setTrace(true));
 for (const [index, [x, z, radius]] of throws.entries()) {
-  await page.evaluate(([x, z, radius, power, seed]) => {
+  await page.evaluate(([x, z, radius, power, seed, skip]) => {
     if (seed !== null) {
       let state = seed;
       Math.random = () => { state = (state * 16807) % 2147483647; return (state - 1) / 2147483646; };
     }
-    window.__pond.throwAt(x, z, { radius, power });
-  }, [x, z, radius, power, seed === '' ? null : Number(seed) + index]);
+    window.__pond.throwAt(x, z, { radius, power, skip });
+  }, [x, z, radius, power, seed === '' ? null : Number(seed) + index, skipThrows]);
 }
 if (evalAfterThrow) await page.evaluate(evalAfterThrow);
 let flight = 0;

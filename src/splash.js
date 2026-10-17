@@ -56,6 +56,19 @@
 // Each stage also stamps the height field and the foam map. A stone falling
 // straight in makes none of the oblique parts.
 //
+// A skip stone's touch (src/rock.js: the stone skims off the water within
+// tens of milliseconds) makes none of the stages (skim): it sends out a ring,
+// RING's source for a ball of the stone's face radius carrying the push the
+// water gave the stone (its push speed), in up to SKIM_PUSHES pushes one σ
+// apart along the stretch where the face was wet, which the rings merge into
+// one; and throws spray ahead of the stone: a forward fan (src/crown.js
+// `fan`, as an oblique entry's) at SKIM_FAN_SPEED of the stone's speed along
+// the water, tearing into SKIM_DROPLETS fine drops for a 3 cm face at a
+// normal skip's first touch, and a few loose drops thrown wider (SKIM_LOOSE,
+// SKIM_SPRAY); and the water its face churned shows white for a moment, a
+// small boil (SKIM_CHURN) with no raft after it. When the stone at last goes
+// in, its impact is any stone's.
+//
 // Foam. The map keeps two kinds (src/spectralWater.js): a boil, big bubbles,
 // dense and popping within a second (BOIL_LIFETIME), and a raft, the small
 // bubbles left, sparse and lasting seconds (raftLifetime, longer the bigger
@@ -271,6 +284,19 @@ export const MOUND_DELAY = 0.8;              // a throw with no jet heaves its m
 // heights, raised ahead and lowered behind, of RING.ahead·travel·|v|·
 // sqrt(σ/g), so its ring runs stronger ahead.
 const RING = { sigma: 2.0, rim: 2.5, delay: 0.9, speed: 0.195, ahead: 0.16 };
+// A skip's touch (skim, the header). Its push speed (src/rock.js skimReport)
+// is about SKIM_PUSH_SPEED at a normal skip's first touch; the spray's count
+// and the boil go as its square root.
+const SKIM_PUSH_SPEED = 2;            // m/s
+const SKIM_WET_BEHIND = 0.5;          // the face is wet this many of its radii behind the stone's centre
+const SKIM_PUSHES = 3;                // the ring's pushes along the wet stretch, one σ apart, at most...
+const SKIM_RING_SPAN = 0.04;          // ...released over at most this long (s), so the rings merge them (src/rings.js MERGE)
+const SKIM_DROPLETS = 120;            // the fan's drops for a 3 cm face's touch, as (R / 3 cm)^DROPLET_COUNT_POWER...
+const SKIM_DROPLET_CAP = 600;         // ...at most
+const SKIM_FAN_SPEED = 0.6;           // the fan leaves at about this share of the stone's speed along the water (src/crown.js FAN_SPEED_START)
+const SKIM_CHURN = { amount: 0.12, radius: 1.2, lifetime: 0.35 };   // the churned water: a boil's peak, its patch in face radii, τ (s)
+const SKIM_LOOSE = 0.25;              // loose drops, of the fan's, thrown wider:
+const SKIM_SPRAY = { angle: [30, 80], rise: [10, 35], speed: [0.1, 0.35] };   // degrees off the heading to either side, degrees above level, of the stone's speed along the water
 const HAZE_RADIUS = 0.5;             // device pixels: finer drops are mist (src/shaders/fluid.js)
 const MIRROR_PAD = 0.05;              // metres around what is mirrored: drawn radii, streaks, a landing crown's ride
 const MIRROR_DROP_RADIUS = 0.002;     // finer drops are left out of the mirror: their images there are under a pixel
@@ -1014,6 +1040,69 @@ export class SplashSystem {
   }
 
   /**
+   * A skip stone's touch (src/rock.js skim; the header): the ring its push
+   * sends out, the spray thrown ahead of it and the water it churned, white
+   * for a moment.
+   */
+  skim(info, water) {
+    const { x, z, exitX, exitZ, velocity, radius, pushSpeed, duration } = info;
+    const sizeFactor = radius / REFERENCE_RADIUS;
+    const along = Math.hypot(velocity.x, velocity.z);
+    const headingX = velocity.x / Math.max(along, 1e-9), headingZ = velocity.z / Math.max(along, 1e-9);
+    const horizontalFraction = Math.min(along / Math.max(velocity.length(), 1e-9), 1);
+    const strength = Math.sqrt(Math.max(pushSpeed, 0) / SKIM_PUSH_SPEED);
+    // The ring: an entry's (RING) for a ball of the face's radius carrying the
+    // push, from where the face was wet (behind the stone's centre), in pushes
+    // one σ apart along its path on the water, released together enough to
+    // make one ring (src/rings.js merges them).
+    const sigma = RING.sigma * radius;
+    const startX = x - headingX * SKIM_WET_BEHIND * radius, startZ = z - headingZ * SKIM_WET_BEHIND * radius;
+    const endX = exitX - headingX * SKIM_WET_BEHIND * radius, endZ = exitZ - headingZ * SKIM_WET_BEHIND * radius;
+    const length = Math.hypot(endX - startX, endZ - startZ);
+    const pushes = THREE.MathUtils.clamp(Math.round(length / sigma) + 1, 1, SKIM_PUSHES);
+    for (let push = 0; push < pushes; push++) {
+      const share = pushes === 1 ? 0.5 : push / (pushes - 1);
+      this.launchRing({
+        x: startX + (endX - startX) * share, z: startZ + (endZ - startZ) * share, sigma, velocity: -RING.speed * pushSpeed / pushes,
+        travelX: headingX * horizontalFraction, travelZ: headingZ * horizontalFraction, time: this.time + share * Math.min(duration, SKIM_RING_SPAN),
+      }, water);
+    }
+    // The spray: the water the face pushes aside leaves as a thin sheet over
+    // the sector ahead, low and fast, tearing into fine drops (a forward fan,
+    // as an oblique entry throws: src/crown.js `fan`), at SKIM_FAN_SPEED of
+    // the stone's speed along the water, and a few loose drops thrown wider.
+    const count = Math.round(THREE.MathUtils.clamp(SKIM_DROPLETS * sizeFactor ** DROPLET_COUNT_POWER * strength, 6, SKIM_DROPLET_CAP));
+    const fan = new CrownSheet({
+      impact: { x: startX, z: startZ, speed: SKIM_FAN_SPEED * along, velocity, radius },
+      startTime: this.time, rimDroplets: Math.round(0.15 * count), breakupDroplets: Math.round(0.85 * count),
+      material: this.sheetDepthMaterial, fan: true, strength: Math.min(strength, 1),
+    });
+    this.crowns.push(fan);
+    this.particleScene.add(fan.mesh);
+    const loose = Math.round(SKIM_LOOSE * count);
+    for (let drop = 0; drop < loose; drop++) {
+      const side = drop % 2 === 0 ? 1 : -1;
+      const off = side * THREE.MathUtils.degToRad(randomRange(SKIM_SPRAY.angle[0], SKIM_SPRAY.angle[1]));
+      const directionX = headingX * Math.cos(off) - headingZ * Math.sin(off);
+      const directionZ = headingX * Math.sin(off) + headingZ * Math.cos(off);
+      const rise = THREE.MathUtils.degToRad(randomRange(SKIM_SPRAY.rise[0], SKIM_SPRAY.rise[1]));
+      const dropSpeed = along * randomRange(SKIM_SPRAY.speed[0], SKIM_SPRAY.speed[1]);
+      const aside = side * radius * randomRange(0.4, 1.0);
+      this.spawnDroplet(
+        startX - headingZ * aside, 0.003, startZ + headingX * aside,
+        directionX * Math.cos(rise) * dropSpeed, Math.sin(rise) * dropSpeed, directionZ * Math.cos(rise) * dropSpeed,
+        (SPRAY_DROP_RADIUS + SPRAY_DROP_SPREAD * Math.random()) * sizeFactor ** 0.4,
+      );
+    }
+    // The water the face churned: a small boil, white for a moment (on the solver's patch only, where the foam is).
+    const middleX = 0.5 * (startX + endX), middleZ = 0.5 * (startZ + endZ);
+    this.stampFoamPatch(water, foamRandom(middleX, middleZ, this.time), {
+      x: middleX, z: middleZ, radius: SKIM_CHURN.radius * radius, amount: Math.min(SKIM_CHURN.amount * strength, FOAM_AMOUNT_CAP),
+      reach: 0.6, radii: [0.4, 0.8], lifetime: SKIM_CHURN.lifetime, boil: true,
+    });
+  }
+
+  /**
    * A pool's ring source at its release (stampCavity): its push and pair to
    * the solver, whose walls reflect the ring, and to src/rings.js as a
    * near-field ring, released when the solver takes them: at the end of this
@@ -1046,25 +1135,7 @@ export class SplashSystem {
    * comes from foamTime (the cavity's closure), or now.
    */
   stampCavity({ x, z, radius, speed, strength, travelX = 0, travelZ = 0, foamTime = this.time }, water) {
-    const sigma = RING.sigma * radius;
-    const velocity = -RING.speed * speed * strength;
-    const travel = Math.hypot(travelX, travelZ);
-    const pairHeight = RING.ahead * travel * Math.abs(velocity) * Math.sqrt(sigma / GRAVITY);
-    const directionX = travel > 0 ? travelX / travel : 1, directionZ = travel > 0 ? travelZ / travel : 0;
-    if (water.rings && water.pool) {
-      this.poolRings.push({ time: this.time + RING.delay * Math.sqrt(radius / GRAVITY), x, z, sigma, velocity, pairHeight: travel > 0 ? pairHeight : 0, directionX, directionZ });
-    } else if (water.rings) {
-      water.rings.add({
-        x, z, radius: sigma, velocity, rim: RING.rim,
-        pair: travel > 0 ? { height: pairHeight, radius: 0.8 * sigma, offset: 0.8 * sigma, directionX, directionZ } : null,
-      }, this.time + RING.delay * Math.sqrt(radius / GRAVITY));
-    } else {
-      water.addSplat({ x, z, radius: sigma, velocity, rim: RING.rim });
-      if (travel > 0) {
-        water.addSplat({ x: x + directionX * 0.8 * sigma, z: z + directionZ * 0.8 * sigma, radius: 0.8 * sigma, height: pairHeight, rim: 1 });
-        water.addSplat({ x: x - directionX * 0.8 * sigma, z: z - directionZ * 0.8 * sigma, radius: 0.8 * sigma, height: -pairHeight, rim: 1 });
-      }
-    }
+    this.launchRing({ x, z, sigma: RING.sigma * radius, velocity: -RING.speed * speed * strength, travelX, travelZ, time: this.time + RING.delay * Math.sqrt(radius / GRAVITY) }, water);
     // The foam comes up where the hole closed over FOAM_SPREAD·sqrt(R/g): a
     // boil over about the mouth, and the wider raft it leaves.
     const sizeFactor = radius / REFERENCE_RADIUS;
@@ -1072,6 +1143,33 @@ export class SplashSystem {
     const span = FOAM_SPREAD * Math.sqrt(radius / GRAVITY);
     this.stampFoamPatch(water, random, { x, z, radius: 1.4 * radius, amount: Math.min(RAFT_AMOUNT * sizeFactor ** 0.25 * strength, FOAM_AMOUNT_CAP), reach: 1.2, radii: [0.3, 0.65], lifetime: raftLifetime(radius), time: foamTime, span });
     this.stampFoamPatch(water, random, { x, z, radius: 1.1 * radius, amount: Math.min(BOIL_AMOUNT * Math.sqrt(sizeFactor) * strength, FOAM_AMOUNT_CAP), reach: 1.0, radii: [0.3, 0.6], lifetime: BOIL_LIFETIME, boil: true, time: foamTime, span });
+  }
+
+  /**
+   * A ring source (stampCavity's, a skip's), released at `time`: a push of
+   * `velocity` over σ = `sigma` less one of σ·RING.rim, and the pair of
+   * heights that makes the share (travelX, travelZ) of it run that way. To
+   * the analytic rings, held for the pool (releasePoolRing), or to the
+   * solver at once (stampCavity's header).
+   */
+  launchRing({ x, z, sigma, velocity, travelX = 0, travelZ = 0, time }, water) {
+    const travel = Math.hypot(travelX, travelZ);
+    const pairHeight = RING.ahead * travel * Math.abs(velocity) * Math.sqrt(sigma / GRAVITY);
+    const directionX = travel > 0 ? travelX / travel : 1, directionZ = travel > 0 ? travelZ / travel : 0;
+    if (water.rings && water.pool) {
+      this.poolRings.push({ time, x, z, sigma, velocity, pairHeight: travel > 0 ? pairHeight : 0, directionX, directionZ });
+    } else if (water.rings) {
+      water.rings.add({
+        x, z, radius: sigma, velocity, rim: RING.rim,
+        pair: travel > 0 ? { height: pairHeight, radius: 0.8 * sigma, offset: 0.8 * sigma, directionX, directionZ } : null,
+      }, time);
+    } else {
+      water.addSplat({ x, z, radius: sigma, velocity, rim: RING.rim });
+      if (travel > 0) {
+        water.addSplat({ x: x + directionX * 0.8 * sigma, z: z + directionZ * 0.8 * sigma, radius: 0.8 * sigma, height: pairHeight, rim: 1 });
+        water.addSplat({ x: x - directionX * 0.8 * sigma, z: z - directionZ * 0.8 * sigma, radius: 0.8 * sigma, height: -pairHeight, rim: 1 });
+      }
+    }
   }
 
   /**

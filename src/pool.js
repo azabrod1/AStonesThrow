@@ -30,7 +30,10 @@
 //
 // The stones and their holes take the pool's floor, POOL.depth, as their
 // bed, and its walls hold a stone under the water inside them (holdInPool);
-// the eye keeps over the deck (src/main.js).
+// a skipping stone that meets a wall below its top comes back off it, and
+// one skipped out over the deck lands on it as a stone lands on paving
+// (DECK, holdSkipping): it bounces low, tumbling, and tumbles to a stop
+// within a few metres. The eye keeps over the deck (src/main.js).
 import * as THREE from 'three';
 import { POOL_VERTEX, POOL_FRAGMENT, DECK_VERTEX, DECK_FRAGMENT } from './shaders/scene.js';
 import { squareRingsGeometry, OUTER_HALF_SIZE } from './waterSurface.js';
@@ -43,20 +46,104 @@ export const POOL = {
 };
 const BASIN_CELL = 0.075;      // m: the basin's mesh spacing
 const MAIN_WALL_FROM = -0.1;   // m: the walls the main scene draws reach this far under the water, below any trough
+const WALL_KEPT = 0.4;         // a skipping stone comes back off a wall with this share of its speed across it
+const DECK = {
+  bounce: [0.25, 0.45],        // a stone landing on the paving comes off it at this share of the speed it came down at (stone on stone; its lumps strike unevenly)...
+  friction: 0.6,               // ...the paving's friction taking this times the push off it from its speed along it (Coulomb)...
+  scatter: 0.05,               // ...its path turned by up to this (radians) by the lump that strikes...
+  settle: 0.4,                 // m/s: ...until it comes down slower than this; then it tumbles along...
+  tumbling: 0.9,               // ...slowing at this times g...
+  stopped: 0.05,               // m/s: ...and rests once slower than this
+  tumble: 0.5,                 // it turns end over end at this times its speed over its radius (a flat stone skids as it tumbles)...
+  tumbleMost: 60,              // ...at most this (rad/s)
+};
+const GRAVITY = 9.81;
 
 /**
  * A stone under the water (src/rock.js) held inside the pool's walls (the
  * square, water.poolSquare): the wall it meets stops it, and it slides on
  * down. In the air it may cross the deck: the aim keeps its landing in the
- * pool.
+ * pool. A skip stone, until it goes in, is held as holdSkipping says
+ * (`dt`, the step just taken, for its slide on the deck).
  */
-export function holdInPool(rock, square) {
-  if (rock.position.y > 0) return;
+export function holdInPool(rock, square, dt = 1 / 240) {
+  if (rock.skip && rock.state !== 'water' && rock.state !== 'rest') { holdSkipping(rock, square, dt); return; }
+  // A skip stone goes in moving fast along the water, its centre still above it: the walls hold it from then on.
+  if (rock.position.y > 0 && !(rock.skip && rock.state === 'water')) return;
   for (const [axis, low] of [['x', square.minX], ['z', square.minZ]]) {
     const lowest = low + rock.radius, highest = low + square.size - rock.radius;
     if (rock.position[axis] < lowest) { rock.position[axis] = lowest; rock.velocity[axis] = Math.max(rock.velocity[axis], 0); }
     else if (rock.position[axis] > highest) { rock.position[axis] = highest; rock.velocity[axis] = Math.min(rock.velocity[axis], 0); }
   }
+}
+
+/**
+ * A skip stone off the water after its first touch (its throw's flight in
+ * crosses the deck freely, and while it skims it follows its contact's
+ * path): its centre within a radius of a wall, lower than the wall's top, it
+ * comes back off it with WALL_KEPT of its speed across it, if it was inside
+ * the step before; else it has come down on the deck, which is paving, not
+ * water. There it bounces off at DECK.bounce of the speed it came down at,
+ * the friction taking DECK.friction times the push off the paving from its
+ * speed along it and the lump that strikes turning its path by up to
+ * DECK.scatter, and tumbles end over end (its spin turned about the level
+ * axis across its path, at DECK.tumble of its speed over its radius), until
+ * it comes down slower than DECK.settle; then it tumbles along on the
+ * paving (`skip.onDeck`), its ellipsoid on it (ellipsoidDepth: the lumpy
+ * mesh would lift it off the paving as it turns), slowing at DECK.tumbling·g
+ * every step, and rests once slower than DECK.stopped.
+ */
+function holdSkipping(rock, square, dt) {
+  if (rock.state !== 'air' || rock.skip.skips === 0) return;
+  const outside = (point, axis, low) => point[axis] < low + rock.radius || point[axis] > low + square.size - rock.radius;
+  const beyond = (point) => outside(point, 'x', square.minX) || outside(point, 'z', square.minZ);
+  if (rock.skip.onDeck) { tumbleAlong(rock, dt); return; }
+  if (!beyond(rock.position)) return;
+  const lowest = rock.position.y - rock.ellipsoidDepth();
+  if (lowest > POOL.deck) return;
+  if (!beyond(rock.previous)) {
+    for (const [axis, low] of [['x', square.minX], ['z', square.minZ]]) {
+      if (!outside(rock.position, axis, low)) continue;
+      rock.position[axis] = THREE.MathUtils.clamp(rock.position[axis], low + rock.radius, low + square.size - rock.radius);
+      rock.velocity[axis] *= -WALL_KEPT;
+    }
+    return;
+  }
+  // On the paving: out of it, then a bounce, or it settles to tumble along.
+  rock.position.y += POOL.deck - lowest;
+  if (rock.velocity.y >= -DECK.settle) { rock.skip.onDeck = true; tumbleAlong(rock, dt); return; }
+  const fall = -rock.velocity.y;
+  const bounce = DECK.bounce[0] + (DECK.bounce[1] - DECK.bounce[0]) * Math.random();
+  rock.velocity.y = bounce * fall;
+  const along = Math.hypot(rock.velocity.x, rock.velocity.z);
+  const kept = along > 1e-9 ? Math.max(along - DECK.friction * (1 + bounce) * fall, 0) / along : 0;
+  const turn = DECK.scatter * (2 * Math.random() - 1);
+  const x = rock.velocity.x * kept, z = rock.velocity.z * kept;
+  rock.velocity.x = x * Math.cos(turn) - z * Math.sin(turn);
+  rock.velocity.z = x * Math.sin(turn) + z * Math.cos(turn);
+  tumbleEndOverEnd(rock);
+  rock.syncMeshes();
+}
+
+/** Its spin about the level axis across its path, at DECK.tumble of its speed over its radius (at most DECK.tumbleMost). */
+function tumbleEndOverEnd(rock) {
+  const along = Math.hypot(rock.velocity.x, rock.velocity.z);
+  if (along < 1e-6) return;
+  rock.spinAxis.set(rock.velocity.z / along, 0, -rock.velocity.x / along);
+  rock.spinRate = Math.min(DECK.tumble * along / rock.radius, DECK.tumbleMost);
+}
+
+/** Tumbling along the paving (holdSkipping): on it, slowing at DECK.tumbling·g, at rest once slower than DECK.stopped. */
+function tumbleAlong(rock, dt) {
+  rock.velocity.y = 0;
+  rock.position.y = POOL.deck + rock.ellipsoidDepth();
+  const along = Math.hypot(rock.velocity.x, rock.velocity.z);
+  const slowed = Math.max(along - DECK.tumbling * GRAVITY * dt, 0);
+  if (slowed < DECK.stopped) { rock.restOn(POOL.deck); return; }
+  rock.velocity.x *= slowed / along;
+  rock.velocity.z *= slowed / along;
+  tumbleEndOverEnd(rock);
+  rock.syncMeshes();
 }
 
 /**

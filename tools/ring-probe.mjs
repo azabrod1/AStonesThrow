@@ -523,7 +523,7 @@ const largestOf = (values) => values.reduce((largest, value) => Math.max(largest
 /** The ring source stampCavity makes for a stone of this radius dropped straight in at REFERENCE_SPEED, through RingSources. */
 function cavitySource(radius) {
   const sources = new RingSources({ depth: POND_DEPTH });
-  SplashSystem.prototype.stampCavity.call({ time: 0, stampFoamPatch: () => {} }, { x: 0, z: 0, radius, speed: REFERENCE_SPEED, strength: 1 }, { rings: sources, addFoam: () => true });
+  SplashSystem.prototype.stampCavity.call({ time: 0, stampFoamPatch: () => {}, launchRing: SplashSystem.prototype.launchRing }, { x: 0, z: 0, radius, speed: REFERENCE_SPEED, strength: 1 }, { rings: sources, addFoam: () => true });
   return sources.sources[0];
 }
 const COMPARE_TEXELS = Math.round(2 / SOLVER_CELL);   // 2 m

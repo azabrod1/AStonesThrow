@@ -16,7 +16,8 @@ createServer(async (request, response) => {
     const file = path.join(root, pathname);
     if (!file.startsWith(root)) throw new Error('outside root');
     const data = await readFile(file);
-    response.writeHead(200, { 'content-type': mime[path.extname(file)] || 'application/octet-stream' });
+    // Never cached, so a reload always runs the files as they are on disk.
+    response.writeHead(200, { 'content-type': mime[path.extname(file)] || 'application/octet-stream', 'cache-control': 'no-store' });
     response.end(data);
   } catch {
     response.writeHead(404);
