@@ -74,6 +74,14 @@
 // it. The pool's damping (POOL_DAMPING) is lighter than the open pond's, so
 // a ring runs back and forth across it a few times, and its sleep waits
 // longer (POOL_SLEEP_SECONDS), since a basin's waves do not spread away.
+// Its waves break (BREAKING): the solver is linear, so throw after throw
+// into a corner would pile its waves up, wall to wall, into glassy humps
+// higher than the deck and steeper than water stands. Every BREAKING.every
+// seconds a pass (STEEPNESS_FRAGMENT) finds the pool's steepest slope, read
+// back without waiting (readRenderTargetPixelsAsync); once it has stayed
+// over BREAKING.steep for BREAKING.hold readings every wave is damped the
+// harder the steeper it is, as breaking crests spill their energy. A fresh
+// splash's own steep mound is gone before it would count.
 //
 // Grid size (resize): the quality presets (src/main.js) change N. A mode of
 // the state is N² times the field's Fourier series coefficient at its wave
@@ -150,6 +158,14 @@ export const SLEEP_SECONDS = 75;
 // POOL_SLEEP_SECONDS, in place of SLEEP_SECONDS.
 export const POOL_DAMPING = { base: 0.1, least: 0.05 };
 export const POOL_SLEEP_SECONDS = 165;
+// The pool's breaking waves (the header): a reading every `every` s of the steepest slope, taken across `reach`
+// (m) each side so ripples' slopes do not count; past `steep` for `hold` readings in a row, every wave is
+// damped by `rate` times the least of them over `steep`, less one (1/s), at most `most`. Tuned on the CPU
+// against ten bricks thrown into a corner (their sloshing 6 s on falls from about 55 mm to 17 mm) and single
+// throws (a 3 cm stone's never breaks).
+export const BREAKING = { every: 0.25, reach: 0.047, steep: 0.3, hold: 3, rate: 4, most: 8 };
+const STEEP_SIDE = 16;       // the steepness pass's target: the pool in STEEP_SIDE² blocks
+const STEEP_RANGE = 2;       // the slope its bytes span
 export const FOAM_DIFFUSIVITY = 5e-5;   // m²/s: a raft's edge spreads by about 3 cm in 10 s
 const FOAM_LIFETIME = { base: 1.5, perMetre: 15, longest: 6 };   // τ = base + perMetre·radius, at most longest (s), of either kind
 const CHURN_LIFETIME = 2.0;       // τ of the boil fast surface motion churns up (s)
@@ -181,6 +197,35 @@ void main() {
   if (abs(wave.x) >= keep || abs(wave.y) >= keep) { gl_FragColor = vec4(0.0); return; }
   ivec2 source = ivec2(wave.x < 0 ? wave.x + fromSize : wave.x, wave.y < 0 ? wave.y + fromSize : wave.y);
   gl_FragColor = texelFetch(uState, source, 0) * uScale;
+}
+`;
+
+// The pool's steepest slope in each block of it (the header: BREAKING), as
+// a byte: STEEP_RANGE is 1. The slope is taken across uReach texels each side.
+const STEEPNESS_FRAGMENT = /* glsl */`
+#define MAX_BLOCK 64
+uniform sampler2D uHeight;
+uniform vec2 uCorner;     // the pool's first texel
+uniform float uBlock;     // texels in a block along each axis
+uniform float uReach;
+uniform float uCell;      // metres per texel
+void main() {
+  int block = int(uBlock), reach = int(uReach);
+  ivec2 corner = ivec2(uCorner);
+  ivec2 first = corner + ivec2(gl_FragCoord.xy) * block;
+  ivec2 lowest = corner + reach, highest = corner + ${STEEP_SIDE} * block - 1 - reach;
+  float steepest = 0.0;
+  for (int y = 0; y < MAX_BLOCK; y++) {
+    if (y >= block) break;
+    for (int x = 0; x < MAX_BLOCK; x++) {
+      if (x >= block) break;
+      ivec2 at = clamp(first + ivec2(x, y), lowest, highest);
+      float alongX = texelFetch(uHeight, at + ivec2(reach, 0), 0).r - texelFetch(uHeight, at - ivec2(reach, 0), 0).r;
+      float alongY = texelFetch(uHeight, at + ivec2(0, reach), 0).r - texelFetch(uHeight, at - ivec2(0, reach), 0).r;
+      steepest = max(steepest, length(vec2(alongX, alongY)));
+    }
+  }
+  gl_FragColor = vec4(min(steepest / (2.0 * uReach * uCell * ${STEEP_RANGE}.0), 1.0), 0.0, 0.0, 1.0);
 }
 `;
 
@@ -295,6 +340,7 @@ export class SpectralWater {
       uNu: { value: DAMPING.viscosity },
       uKLow: { value: (2 * Math.PI) / (domainSize * DAMPING.lowShare) },
       uGammaLow: { value: DAMPING.low },
+      uGammaBreaking: { value: 0 },
       uSplatCount: { value: 0 },
       uSplats: { value: splatArray },
       uSplatAmps: { value: ampArray },
@@ -323,7 +369,13 @@ export class SpectralWater {
     });
     this.resamplePass = new FullscreenPass(RESAMPLE_FRAGMENT, { uState: { value: null }, uFromSize: { value: size }, uToSize: { value: size }, uScale: { value: 1 } });
     this.foamResamplePass = new FullscreenPass(FOAM_RESAMPLE_FRAGMENT, { uFoam: { value: null }, uFromSize: { value: size }, uToSize: { value: size } });
+    // The pool's breaking (the header): its steepness pass, drawn once now so its program is built with the rest.
+    this.steepTarget = new THREE.WebGLRenderTarget(STEEP_SIDE, STEEP_SIDE, { depthBuffer: false });
+    this.steepBytes = new Uint8Array(4 * STEEP_SIDE * STEEP_SIDE);
+    this.steepPass = new FullscreenPass(STEEPNESS_FRAGMENT, { uHeight: { value: this.heightTarget.texture }, uCorner: { value: new THREE.Vector2() }, uBlock: { value: 1 }, uReach: { value: 1 }, uCell: { value: this.cell } });
     this.clear();
+    this.steepPass.render(renderer, this.steepTarget);
+    renderer.setRenderTarget(null);
   }
 
   /** Zero every target and drop what is queued: a still pond, asleep. */
@@ -341,6 +393,11 @@ export class SpectralWater {
     this.foamUniforms.uFoamDrift.value.set(0, 0);
     this.asleep = true;
     this.quietSeconds = 0;
+    this.breakingClock = 0;      // simulated seconds since the last steepness reading (BREAKING)
+    this.steepReadings = [];     // the last BREAKING.hold readings, over BREAKING.steep
+    this.steepReading = null;    // the reading on its way back, while there is one
+    this.steepGeneration = (this.steepGeneration ?? 0) + 1;   // a reading from before a clear is dropped
+    this.updatePass.material.uniforms.uGammaBreaking.value = 0;
   }
 
   /** Stop stepping a pond whose waves and foam have faded (the header: sleep): clear it once. */
@@ -365,6 +422,8 @@ export class SpectralWater {
     this.pool = walled ? this.poolSquare : null;
     this.updatePass.material.uniforms.uGamma0.value = walled ? POOL_DAMPING.base : DAMPING.base;
     this.updatePass.material.uniforms.uGammaLeast.value = walled ? POOL_DAMPING.least : 0;
+    this.updatePass.material.uniforms.uGammaBreaking.value = 0;
+    this.steepReadings = [];
   }
 
   /** The pool's square (the header), whether or not the patch is a pool now: world metres, { minX, minZ, size }. */
@@ -430,8 +489,8 @@ export class SpectralWater {
   }
 
   dispose() {
-    for (const target of [this.stateA, this.stateB, this.fftA, this.fftB, this.heightTarget, this.foamA, this.foamB]) target.dispose();
-    for (const pass of [this.updatePass, this.fftPass, this.foamPass, this.resamplePass, this.foamResamplePass]) pass.material.dispose();
+    for (const target of [this.stateA, this.stateB, this.fftA, this.fftB, this.heightTarget, this.foamA, this.foamB, this.steepTarget]) target.dispose();
+    for (const pass of [this.updatePass, this.fftPass, this.foamPass, this.resamplePass, this.foamResamplePass, this.steepPass]) pass.material.dispose();
   }
 
   /** World XZ to texel coordinates (texel 0 sits at domainMin). */
@@ -534,6 +593,7 @@ export class SpectralWater {
 
     // 2. Inverse FFT: rows then columns. The final pass lands in the display texture.
     runInverseFft(renderer, this.fftPass, this.stateA, [this.fftA, this.fftB], this.heightTarget, this.size);
+    if (this.pool) this.measureSteepness(dt);
 
     // 3. Foam with this frame's stamps, chunked like the splats: the later
     // chunks advance no time (no decay, spreading, drift, flow or churn), so
@@ -574,6 +634,39 @@ export class SpectralWater {
     this.foamSplats = [];
 
     renderer.setRenderTarget(previousTarget);
+  }
+
+  /**
+   * The pool's breaking (the header): every BREAKING.every simulated seconds
+   * the steepness pass, read back without waiting; when a reading comes back
+   * the breaking damping follows the last BREAKING.hold of them.
+   */
+  measureSteepness(dt) {
+    this.breakingClock += dt;
+    if (this.breakingClock < BREAKING.every || this.steepReading) return;
+    this.breakingClock = 0;
+    const uniforms = this.steepPass.material.uniforms;
+    const [cornerX, cornerZ] = this.worldToTexel(this.pool.minX, this.pool.minZ);
+    uniforms.uCorner.value.set(Math.ceil(cornerX - 1e-6), Math.ceil(cornerZ - 1e-6));
+    uniforms.uBlock.value = Math.max(Math.floor(this.pool.size / this.cell / STEEP_SIDE), 1);
+    uniforms.uReach.value = Math.max(Math.round(BREAKING.reach / this.cell), 1);
+    uniforms.uCell.value = this.cell;
+    this.steepPass.render(this.renderer, this.steepTarget);
+    const generation = this.steepGeneration;
+    this.steepReading = this.renderer.readRenderTargetPixelsAsync?.(this.steepTarget, 0, 0, STEEP_SIDE, STEEP_SIDE, this.steepBytes)
+      ?.then(() => {
+        if (generation !== this.steepGeneration) return;
+        this.steepReading = null;
+        let steepest = 0;
+        for (let index = 0; index < this.steepBytes.length; index += 4) steepest = Math.max(steepest, this.steepBytes[index]);
+        this.steepReadings.push((steepest / 255) * STEEP_RANGE / BREAKING.steep);
+        if (this.steepReadings.length > BREAKING.hold) this.steepReadings.shift();
+        const held = this.steepReadings.length === BREAKING.hold ? Math.min(...this.steepReadings) : 0;
+        this.updatePass.material.uniforms.uGammaBreaking.value = this.pool ? Math.min(BREAKING.rate * Math.max(held - 1, 0), BREAKING.most) : 0;
+      }, () => { if (generation === this.steepGeneration) this.steepReading = null; }) ?? null;
+    // Three leaves its pixel buffer bound while it waits, which would fail any other readPixels meanwhile.
+    const gl = this.renderer.getContext();
+    if (this.steepReading && gl.PIXEL_PACK_BUFFER) gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
   }
 
   get heightTexture() { return this.heightTarget.texture; }

@@ -156,9 +156,10 @@
 // drops of LENS_DROP_RADIUS and more are flagged to be drawn the same way
 // (with their motion streak held short), so the tip drop looks like the bulb
 // it was. Below the bowl's floor the column is inside the water, and the
-// cavity's walls hide it.
+// cavity's walls hide it. In the pool (`walls`, set by SplashSystem) the
+// column is held inside its walls (holdWithinWalls in src/fluidMesh.js).
 import * as THREE from 'three';
-import { createRingGrid, computeGridNormals, markChanged } from './fluidMesh.js';
+import { createRingGrid, computeGridNormals, holdWithinWalls, markChanged } from './fluidMesh.js';
 
 const GRAVITY = 9.81;
 const REFERENCE_RADIUS = 0.03;     // the stone size the tuning constants were set for
@@ -278,6 +279,7 @@ export class JetColumn {
     this.tipSpeed = speed * Math.max(this.form.needle, 1);   // the needle's first material, the fastest
     this.tipBeads = this.form.tipBeads === 0 && this.form.needle > NEEDLE_HOLD ? 1 : this.form.tipBeads;
     this.startTime = startTime;
+    this.walls = null;   // the pool's walls, inset (src/splash.js setGround), or none
     this.age = 0;
     this.finished = false;
     this.budget = budget;
@@ -945,6 +947,7 @@ export class JetColumn {
       this.writeRing(CAP_ROWS + index, rows.x[index], rows.y[index], rows.z[index], rows.axisX[index], rows.axisY[index], rows.axisZ[index], rows.radius[index], rows.water[index], rows.round[index]);
     }
 
+    holdWithinWalls(this.positions, this.walls);
     computeGridNormals(this.positions, this.normals, ROWS, COLUMNS);
     markChanged(this.geometry, ['position', 'normal', 'aRadius', 'aRound']);
   }

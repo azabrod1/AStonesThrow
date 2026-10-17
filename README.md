@@ -68,7 +68,14 @@ is remembered on the device (but the view, which opens on the shore):
   the deck stay in sight; a throw retires the oldest thing out of sight. In the pool,
   anything that comes down on the deck bounces as it would on paving (a
   basketball back to 70% of its fall, a bowling ball hardly at all) and
-  rolls or tumbles to a stop, or off the edge into the water.
+  rolls or tumbles to a stop, or off the edge into the water. A splash
+  meets the pool's walls and deck as well: its sheet and jet run up a wall
+  they reach, drops that hit a wall's side fall back into the pool, and
+  those thrown over it land on the paving, big ones splattering, and leave
+  it wet where they fall; the more come down, the darker and longer it
+  stays wet, drying from the edges over up to forty seconds. The pool's
+  waves break: throw after throw into one corner no longer piles them into
+  glassy humps, as they spill their energy once they stay too steep.
 - View: Shore, standing on the bank as the page opens; Low, down at the
   water, the splash against the far shore; High, from above, the rings
   spreading over the pond; Under, under the water, looking up at the rocks

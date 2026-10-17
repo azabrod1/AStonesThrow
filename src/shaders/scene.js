@@ -2013,6 +2013,10 @@ uniform vec3 uSunIrradiance;
 uniform vec3 uSkyAmbient;
 uniform vec4 uPool;     // the pool's corner (x, z), its side and its depth (m)
 uniform float uWet;     // how wet the rain has made it, 0 to 1 (src/main.js)
+// Where the splash's drops came down on it (src/pool.js wetSpot): how wet, 0 to 1, over the square
+// from (x, y) on the ground, z (m) across; it dries from its thin edges in.
+uniform sampler2D uWetMap;
+uniform vec3 uWetArea;
 varying vec3 vWorld;
 ${GLSL_COMMON}
 ${PHOTO_LAND}
@@ -2048,9 +2052,14 @@ void main() {
   vec3 coping = COPING_COLOR * (0.92 + 0.12 * grain) * mix(0.72, 1.0, smoothstep(0.0, COPING_ROUND, outside));
   vec3 paver = PAVER_COLOR * (0.9 + 0.14 * grain) * (1.0 + (hash21(floor(cell)) - 0.5) * 0.12 * (1.0 - smoothstep(0.4, 1.2, max(width.x, width.y))));
   paver = mix(JOINT_COLOR, paver, paverCover(cell, width));
-  vec3 albedo = (outside < COPING_WIDTH ? coping : paver) * mix(1.0, WET_STONE, uWet);
+  // Wet where the splash's drops came down: a soaked patch is dark to its edge, which the stone's grain roughens.
+  vec2 wetAt = (point - uWetArea.xy) / uWetArea.z;
+  float soaked = all(greaterThan(wetAt, vec2(0.0))) && all(lessThan(wetAt, vec2(1.0))) ? texture2D(uWetMap, wetAt).r : 0.0;
+  float splashed = smoothstep(0.03, 0.18, soaked + 0.08 * (grain - 0.5)) * (0.75 + 0.25 * smoothstep(0.2, 0.8, soaked));
+  float wet = max(uWet, splashed);
+  vec3 albedo = (outside < COPING_WIDTH ? coping : paver) * mix(1.0, WET_STONE, wet);
   float lawn = smoothstep(COPING_WIDTH + DECK_WIDTH, COPING_WIDTH + DECK_WIDTH + 0.08, outside);
-  vec3 grass = GRASS_COLOR * (1.0 + 0.6 * valueNoise(point * 2.3 + 5.0) - 0.3) * (0.8 + 0.4 * valueNoise(point * 13.0)) * mix(1.0, WET_GRASS, uWet);
+  vec3 grass = GRASS_COLOR * (1.0 + 0.6 * valueNoise(point * 2.3 + 5.0) - 0.3) * (0.8 + 0.4 * valueNoise(point * 13.0)) * mix(1.0, WET_GRASS, wet);
   vec3 color = mix(albedo, grass, lawn) * (uSunIrradiance * max(uSunDir.y, 0.0) + uSkyAmbient * SKY_LIGHT);
   vec3 toGround = vWorld - cameraPosition;
   float far = smoothstep(LAND_NEAR, LAND_FAR, length(toGround));

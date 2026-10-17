@@ -167,8 +167,10 @@
 // is drawn no deeper than DRAWN_DEPTH·R: the camera looks in at 15 to 25°
 // from the horizon and sees no more than one or two radii down, and the
 // floor drawn there shows what is below it (the stone) through it, as the
-// floor at the stone does.
-import { createRingGrid, computeGridNormals, markChanged } from './fluidMesh.js';
+// floor at the stone does. In the pool (`walls`, set by SplashSystem) the
+// hole is held inside its walls (holdWithinWalls in src/fluidMesh.js), so it
+// never shows through the tiles.
+import { createRingGrid, computeGridNormals, holdWithinWalls, markChanged } from './fluidMesh.js';
 
 const GRAVITY = 9.81;
 // The stone under water, as src/rock.js moves it (tools/cavity-probe.mjs checks the two agree).
@@ -393,6 +395,7 @@ export class Cavity {
     const { velocity, radius } = impact;
     this.radius = radius;
     this.startTime = startTime;
+    this.walls = null;   // the pool's walls, inset (src/splash.js setGround), or none
     this.age = 0;
     this.cell = cell;
     this.drawn = drawn;
@@ -995,6 +998,7 @@ export class Cavity {
       }
     }
 
+    holdWithinWalls(this.positions, this.walls);   // in the pool, flat against a wall it meets (src/splash.js)
     computeGridNormals(this.positions, this.normals, ROWS, COLUMNS);
     // The floor's centre is a pole, and once the hole has pinched so are its
     // bottom ring (the closing point) and the cap's rings: each faces as the

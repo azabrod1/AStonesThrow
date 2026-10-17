@@ -45,6 +45,9 @@
 //     or spaced apart, passes the knock along to the last; none of them
 //     ever overlaps another by more than
 //     OVERLAP_MOST after its meeting;
+//   - the splash's drops meet the pool's walls and deck (src/splash.js
+//     setGround): none goes into a wall or under the deck, and one thrown
+//     over a wall lands on the deck and wets it;
 //   - a thing defined from outside (src/things.js defineThing: a plain beach
 //     ball) is thrown and floats as its definition says, and a broken
 //     definition is refused, with what is wrong with it;
@@ -59,6 +62,7 @@ import { THINGS, THING_NAMES, WATER_DENSITY, defineThing, validateThing } from '
 import { floorDepthAt } from '../src/pondFloor.js';
 import { holdInPool, poolGround, POOL } from '../src/pool.js';
 import { collideThings } from '../src/collide.js';
+import { SplashSystem } from '../src/splash.js';
 
 const GRAVITY = 9.81;
 const STEP = 1 / 240;
@@ -469,6 +473,31 @@ console.log('\nThings meeting things (src/collide.js):');
   }
   console.log(`  a basketball bobbed clear, knocked at a wall at 3 m/s: ${through ? 'went through its side' : 'came back off its side'}, now ${bobbed.state} at x = ${bobbed.position.x.toFixed(2)}`);
   check(!through && !bobbed.onGround, 'a basketball in the air went through the side of a pool wall');
+}
+
+// ---- the splash's drops and the pool's walls and deck (src/splash.js setGround) ----
+{
+  const water = { heightTexture: null, domainMin: [-3, -4], domainSize: 6, uvOffset: 0.5 / 512, cell: 6 / 512, depth: POOL.depth, addSplat: () => {}, addFoam: () => {} };
+  const lighting = { sunDirection: new THREE.Vector3(0, 1, 0), sunIrradiance: new THREE.Vector3(3, 2.85, 2.55), skyAmbient: new THREE.Vector3(0.36, 0.48, 0.66), absorb: new THREE.Vector3(), exposure: 0.55 };
+  const splash = new SplashSystem({ environment: { cubeTexture: null }, lighting, water, ambientWaves: { uniforms: () => ({}) } });
+  const wet = [];
+  splash.setGround({ square: POOL_SQUARE, deck: POOL.deck, onWet: (x, z, radius) => wet.push({ x, z, radius }) });
+  const wallX = POOL_SQUARE.minX + POOL_SQUARE.size;
+  // One drop low at the wall (below the deck's top), one thrown high over it.
+  splash.spawnDroplet(wallX - 0.05, 0.05, -1, 2, 0.5, 0, 0.002);
+  splash.spawnDroplet(wallX - 0.05, 0.3, -1, 1.5, 1, 0, 0.003);
+  let through = false, landed = false;
+  for (let time = 0; time < 1.5; time += STEP) {
+    splash.update(STEP, water);
+    for (let index = 0; index < splash.count; index++) {
+      const x = splash.positions[index * 3], y = splash.positions[index * 3 + 1];
+      if (x > wallX && y < POOL.deck - 1e-6) through = true;
+    }
+    if (wet.some((spot) => spot.x > wallX)) landed = true;
+  }
+  console.log(`\nThe splash's drops by the pool's wall: ${through ? 'one went into the wall or under the deck' : 'none went into the wall or under the deck'}; ${landed ? `landed on the deck, wetting ${wet.length} spot(s)` : 'none landed on the deck'}`);
+  check(!through, 'a splash drop went through the pool\'s wall or under its deck');
+  check(landed, 'a splash drop thrown over the pool\'s wall did not land on the deck');
 }
 
 // ---- a thing defined from outside (src/things.js defineThing) ----

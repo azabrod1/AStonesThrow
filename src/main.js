@@ -508,6 +508,11 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
   galeWaves.setBed(floorDepthAt(water.centre[0], water.centre[1]));
   // Its view of the bed takes the absorption, set only now, and the bed's depth and albedo.
   splash.setBed({ depth: bedDepthAt(water.centre[0], water.centre[1]), albedo: pooled ? POOL.tileAlbedo : undefined });
+  /** The ground the splash's drops meet: the pool's walls and deck, which they wet (src/splash.js setGround); none in the lake. */
+  function applyGround() {
+    splash.setGround(pooled ? { square: pool.square, deck: POOL.deck, onWet: (x, z, radius) => pool.wetSpot(x, z, radius) } : null);
+  }
+  applyGround();
 
   const camera = new THREE.PerspectiveCamera(48, 1, 0.05, 60000);
   // The floor's pattern is baked once, a tile laid out on the world (src/pondFloor.js).
@@ -1528,6 +1533,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
   let framesRendered = 0;
   function render() {
     for (const rock of rocks) rock.flex();   // a soft thing's shape as it is drawn now (src/rock.js)
+    pool.setTime(simulationTime);            // its deck's splashed patches dry by it
     renderer.info.reset();
     framesRendered++;
     camera.updateMatrixWorld();
@@ -1774,6 +1780,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
   function clearPond() {
     for (const rock of [...rocks]) retireRock(rock);
     water.clear();
+    pool.dry();
     splash.reset(renderer);
     rings.reset();
     simulationTime = 0;
@@ -1797,6 +1804,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     applyGale();
     showScenery(asPool);
     splash.setBed({ depth: bedDepthAt(water.centre[0], water.centre[1]), albedo: asPool ? POOL.tileAlbedo : undefined });
+    applyGround();
     glide = null;
     if (standing) showView(standing, { glide: false });
     else moveEye({ ...orbit });

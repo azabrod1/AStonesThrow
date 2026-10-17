@@ -198,6 +198,14 @@
 // prepareFrame writes them after the drops in flight, which are the only ones
 // stepped, so they ride the fingers until they pinch off as real drops.
 //
+// In the pool (setGround, src/main.js) the splash meets its walls and deck:
+// the sheets, columns and cavities are held inside the walls (`walls`, less
+// DECK_DROPS.wallInset: holdWithinWalls in src/fluidMesh.js), so a sheet
+// that reaches one runs up it; a drop that hits a wall's side under the deck
+// comes off it with DECK_DROPS.wall of its speed across it; one that comes
+// down on the deck is gone, wetting it (the ground's onWet, src/pool.js
+// wetSpot) and, if big, splattering a few small drops (landOnDeck).
+//
 // With nothing in the air (no droplet, sheet or column) render() neither
 // clears nor reads the fluid targets: it tone-maps the scene alone
 // (TONE_MAP_FRAGMENT, the composite's own tone map), so a still pond pays one
@@ -300,6 +308,10 @@ const SKIM_CHURN = { amount: 0.12, radius: 1.2, lifetime: 0.35 };   // the churn
 const SKIM_LOOSE = 0.25;              // loose drops, of the fan's, thrown wider:
 const SKIM_SPRAY = { angle: [30, 80], rise: [10, 35], speed: [0.1, 0.35] };   // degrees off the heading to either side, degrees above level, of the stone's speed along the water
 const RIPPLE = { share: 0.6, foam: 0.05 };   // a floater's ripple (ripple): its ring's share of an entry's at its speed, its boil's foam per m/s
+// The pool's ground (setGround): sheets and columns are held this far (m) inside its walls; drops come off a wall's
+// side with `wall` of their speed across it; on the deck one this big or more splatters up to `splatter` drops,
+// and each wets a spot `wetSpread` times its radius, `wetLeast` (m) at least.
+const DECK_DROPS = { wallInset: 0.004, wall: 0.3, splatterFrom: 0.0015, splatter: 3, wetSpread: 8, wetLeast: 0.012 };
 // A knocked floater's spray (knock): drops per m/s, at most, their spread about the knock's direction, its lift, their radii (m).
 const KNOCK = { drops: 14, most: 70, spread: 0.7, lift: 0.4, radius: [0.0006, 0.0018] };
 const HAZE_RADIUS = 0.5;             // device pixels: finer drops are mist (src/shaders/fluid.js)
@@ -680,6 +692,8 @@ export class SplashSystem {
     this.foamStamps = [];   // scheduled foam: a cavity's, when it closes
     this.bases = [];        // scheduled: a jet's base meeting the water, when the hole's bowl has flattened
     this.cavities = [];  // open cavities (src/cavity.js), drawn in the main scene from cavityGroup
+    this.ground = null;  // the pool's walls and deck (setGround), or none
+    this.walls = null;   // the box the sheets and columns are held in (setGround)
     this.cavityGroup = new THREE.Group();
     this.surface = surface;
     this.sceneTime = -1;  // splash time the cavities were last brought to
@@ -1493,10 +1507,28 @@ export class SplashSystem {
       const drag = Math.min(0.00027 / radius * speed * dt, 0.5);
       vx -= vx * drag; vy -= vy * drag; vz -= vz * drag;
       vy -= GRAVITY * dt;
-      const x = this.positions[p] + vx * dt;
+      let x = this.positions[p] + vx * dt;
       const y = this.positions[p + 1] + vy * dt;
-      const z = this.positions[p + 2] + vz * dt;
+      let z = this.positions[p + 2] + vz * dt;
       this.ages[i] += dt;
+      // The pool's walls and deck (setGround): off a wall's side back into the pool, or down on the deck.
+      if (this.ground) {
+        const { square, deck } = this.ground;
+        const inside = (pointX, pointZ) => pointX > square.minX && pointX < square.minX + square.size && pointZ > square.minZ && pointZ < square.minZ + square.size;
+        const was = inside(this.positions[p], this.positions[p + 2]);
+        if (!inside(x, z)) {
+          if (was && y < deck) {
+            // Its side, below its top: back off it, the axis it crossed turned and slowed.
+            if (x <= square.minX || x >= square.minX + square.size) { vx *= -DECK_DROPS.wall; x = THREE.MathUtils.clamp(x, square.minX + 1e-4, square.minX + square.size - 1e-4); }
+            if (z <= square.minZ || z >= square.minZ + square.size) { vz *= -DECK_DROPS.wall; z = THREE.MathUtils.clamp(z, square.minZ + 1e-4, square.minZ + square.size - 1e-4); }
+          } else if (y <= deck) {
+            // Down on the deck (or begun inside the paving, where nothing shows): it lands, and wets it.
+            if (!was && vy < 0 && this.positions[p + 1] >= deck) this.landOnDeck(x, z, radius, vx, vy, vz);
+            this.removeDroplet(i);
+            continue;
+          }
+        }
+      }
       if ((y <= 0 && vy < 0) || this.ages[i] > 6) {
         if (y <= 0 && radius > 0.0016) landings.push({ x, z, radius, fallSpeed: -vy, speed: Math.sqrt(vx * vx + vy * vy + vz * vz), velocityX: vx, velocityZ: vz, flight: this.ages[i] });
         this.removeDroplet(i);
@@ -1604,6 +1636,7 @@ export class SplashSystem {
     this.sceneTime = this.time;
     const shapes = [];
     for (const cavity of this.cavities) {
+      cavity.walls = this.walls;
       cavity.updateGeometry(this.time);
       const shape = cavity.pushShape();
       if (shape) shapes.push(shape);
@@ -1618,8 +1651,9 @@ export class SplashSystem {
    */
   prepareFrame() {
     this.prepareScene();
-    for (const crown of this.crowns) crown.updateGeometry(this.time);
-    for (const column of this.columns) column.updateGeometry(this.time);
+    // In the pool the sheets and columns run up its walls (holdWithinWalls).
+    for (const crown of this.crowns) { crown.walls = this.walls; crown.updateGeometry(this.time); }
+    for (const column of this.columns) { column.walls = this.walls; column.updateGeometry(this.time); }
     // The beads on the crowns' fingertips (src/crown.js) are drawn as droplets
     // after the ones in flight, which are not stepped past `count`.
     let beads = 0;
@@ -1767,6 +1801,36 @@ export class SplashSystem {
   }
 
   /** The bed the splash's water sees through its drops: its depth (m) and albedo (the lake's sand by default; a pool's tiles, src/main.js). */
+  /**
+   * A drop come down on the pool's deck (setGround): the paving wet where it
+   * fell, and a big one splattering a few small drops back up off it.
+   */
+  landOnDeck(x, z, radius, vx, vy, vz) {
+    this.ground.onWet?.(x, z, Math.max(radius * DECK_DROPS.wetSpread, DECK_DROPS.wetLeast));
+    if (radius < DECK_DROPS.splatterFrom) return;
+    const count = 1 + Math.floor(Math.random() * DECK_DROPS.splatter);
+    const fall = -vy;
+    for (let drop = 0; drop < count; drop++) {
+      const angle = Math.random() * Math.PI * 2, out = randomRange(0.15, 0.5) * fall;
+      this.spawnDroplet(x, this.ground.deck + 0.002, z, 0.3 * vx + Math.cos(angle) * out, randomRange(0.15, 0.4) * fall, 0.3 * vz + Math.sin(angle) * out, radius * randomRange(0.25, 0.45));
+    }
+  }
+
+  /**
+   * The ground round the water the drops can meet (null: none, the lake):
+   * a pool's `square` and its `deck`'s height (src/pool.js). A drop that
+   * meets a wall's side below its top comes back off it (DECK_DROPS.wall of
+   * its speed across it) into the pool; one that comes down on the deck lands
+   * there, a big one splattering (DECK_DROPS.splatter), and `onWet(x, z,
+   * radius)` marks the paving wet where it fell.
+   */
+  setGround(ground) {
+    this.ground = ground;
+    const square = ground?.square;
+    const inset = DECK_DROPS.wallInset;
+    this.walls = square ? { minX: square.minX + inset, maxX: square.minX + square.size - inset, minZ: square.minZ + inset, maxZ: square.minZ + square.size - inset } : null;
+  }
+
   setBed({ depth, albedo = SAND_ALBEDO }) {
     this.bedAlbedo = albedo;
     this.compositePass.material.uniforms.uPondDepth.value = depth;

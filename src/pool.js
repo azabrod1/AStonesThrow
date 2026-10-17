@@ -37,6 +37,12 @@
 // tumbles or rolls it along, as on paving), and the walls, less a skip
 // stone's radius, bound where it may touch the water (poolInside). The eye
 // keeps over the deck (src/main.js).
+//
+// The splash's drops that land on the deck wet it (wetSpot, from
+// src/splash.js setGround): a map of how wet, WET_MAP, over the pool and
+// round it, which the drops soak, the more the wetter, and which dries a
+// little every WET_MAP.step, its thin edges first; the deck's shader
+// darkens the stone and the grass by it.
 import * as THREE from 'three';
 import { POOL_VERTEX, POOL_FRAGMENT, DECK_VERTEX, DECK_FRAGMENT } from './shaders/scene.js';
 import { squareRingsGeometry, OUTER_HALF_SIZE } from './waterSurface.js';
@@ -48,6 +54,10 @@ export const POOL = {
   tileAlbedo: 0.8,  // the tiles' mean albedo, grout included (POOL_TILES), for what the splash's drops show of the floor
 };
 const BASIN_CELL = 0.075;      // m: the basin's mesh spacing
+// The deck's wetness map (wetSpot): it reaches WET_MAP.reach (m) past the walls in cells of WET_MAP.cell (m); a
+// drop adds up to `soak` of full wetness, which dries away over `dry` seconds (thin edges first), and the map
+// is dried and uploaded every `step` seconds.
+const WET_MAP = { reach: 1.5, cell: 0.015, soak: 0.55, dry: 40, step: 0.25 };
 const MAIN_WALL_FROM = -0.1;   // m: the walls the main scene draws reach this far under the water, below any trough
 const WALL_KEPT = 0.4;         // a skipping stone comes back off a wall with this share of its speed across it
 const WALL_WATER = 0.8;        // a thing in the water comes back off a wall at its own bounce times this (holdInPool)
@@ -176,6 +186,16 @@ function basinGeometry(pool, bottom, top, withFloor) {
  */
 export function createPool(water, lighting, ambientWaves, environment, { rings = null, haze = null, wet = { value: 0 } } = {}) {
   const pool = water.poolSquare;
+  // Where the splash's drops came down on the deck (wetSpot): a map over the pool and WET_MAP.reach round it.
+  const wetSpan = pool.size + 2 * WET_MAP.reach;
+  const wetSide = Math.round(wetSpan / WET_MAP.cell);
+  const wetness = new Float32Array(wetSide * wetSide);
+  const wetBytes = new Uint8Array(wetSide * wetSide);
+  const wetMap = new THREE.DataTexture(wetBytes, wetSide, wetSide, THREE.RedFormat, THREE.UnsignedByteType);
+  wetMap.magFilter = wetMap.minFilter = THREE.LinearFilter;
+  wetMap.needsUpdate = true;
+  const wetArea = { value: new THREE.Vector3(pool.minX - WET_MAP.reach, pool.minZ - WET_MAP.reach, wetSpan) };
+  let wetAny = false, wetClock = null, wetDue = 0;
   const poolUniform = { value: new THREE.Vector4(pool.minX, pool.minZ, pool.size, POOL.depth) };
   const basinMaterial = new THREE.ShaderMaterial({
     vertexShader: POOL_VERTEX,
@@ -209,6 +229,8 @@ export function createPool(water, lighting, ambientWaves, environment, { rings =
       uSkyCube: { value: environment.cubeTexture },
       uPool: poolUniform,
       uWet: wet,
+      uWetMap: { value: wetMap },
+      uWetArea: wetArea,
       ...(haze ?? { uHazeColor: { value: new THREE.Vector3() }, uHazeDensity: { value: 0 } }),
     },
   });
@@ -217,7 +239,7 @@ export function createPool(water, lighting, ambientWaves, environment, { rings =
     vertexShader: material.vertexShader,
     fragmentShader: material.fragmentShader,
     uniforms: material.uniforms,
-    defines: { MIRROR_NEARNESS: 1 },
+    defines: { ...material.defines, MIRROR_NEARNESS: 1 },
   });
   const mesh = (geometry, material) => {
     const made = new THREE.Mesh(geometry, material);
@@ -238,6 +260,46 @@ export function createPool(water, lighting, ambientWaves, environment, { rings =
     mirrorWalls,
     yard,
     mirrorYard,
+    /** A drop landed on the deck at (x, z), wetting a spot `radius` (m) across (src/splash.js setGround): more drops, wetter. */
+    wetSpot(x, z, radius) {
+      const first = (value) => Math.max(Math.floor(value), 0), last = (value) => Math.min(Math.ceil(value), wetSide - 1);
+      const column = (x - wetArea.value.x) / WET_MAP.cell - 0.5, row = (z - wetArea.value.y) / WET_MAP.cell - 0.5;
+      const reach = radius / WET_MAP.cell + 1;
+      for (let at = first(row - reach); at <= last(row + reach); at++) {
+        for (let across = first(column - reach); across <= last(column + reach); across++) {
+          const share = 1 - THREE.MathUtils.smoothstep(Math.hypot(across - column, at - row) * WET_MAP.cell, 0.5 * radius, radius);
+          if (share <= 0) continue;
+          const cell = at * wetSide + across;
+          wetness[cell] = Math.min(wetness[cell] + WET_MAP.soak * share, 1);
+          wetBytes[cell] = Math.round(wetness[cell] * 255);
+          wetAny = wetMap.needsUpdate = true;
+        }
+      }
+    },
+    /** The simulation's time (s): every WET_MAP.step the deck dries a little, and what changed is uploaded. */
+    setTime(time) {
+      if (wetClock === null || time < wetClock) wetClock = time;
+      wetDue += time - wetClock;
+      wetClock = time;
+      if (wetDue < WET_MAP.step || !wetAny) { if (!wetAny) wetDue = 0; return; }
+      const drying = wetDue / WET_MAP.dry;
+      wetDue = 0;
+      wetAny = false;
+      for (let cell = 0; cell < wetness.length; cell++) {
+        if (wetness[cell] <= 0) continue;
+        wetness[cell] = Math.max(wetness[cell] - drying, 0);
+        wetBytes[cell] = Math.round(wetness[cell] * 255);
+        if (wetness[cell] > 0) wetAny = true;
+      }
+      wetMap.needsUpdate = true;
+    },
+    /** Dry the deck at once (a new pond). */
+    dry() {
+      wetness.fill(0);
+      wetBytes.fill(0);
+      wetAny = false;
+      wetMap.needsUpdate = true;
+    },
     /** Show the pool's meshes, or hide them. */
     setVisible(visible) {
       for (const object of [basin, walls, mirrorWalls, yard, mirrorYard]) object.visible = visible;
