@@ -18,17 +18,17 @@
 //     there moves it, and the readout and the next stone follow;
 //   - the settings button is on the screen, clear of the title, and (on a
 //     touch screen) at least 34 points tall; pressed, the panel opens on the
-//     screen, its rows that tall too; its Water row opens the Water page,
-//     whose five choices fit their labels, whose Pool puts the rocks in the
-//     pool (the View note follows) and whose Murky sets the pond's clarity,
-//     each with the row's value; its Time row opens the Time page, whose
-//     slider spans it (44 points tall on a touch screen) and, tapped at its
-//     left end, loads the place's first hour, the row and the readout
-//     following, while a lone photograph's page hides the slider and says
-//     why; its Weather row opens the Weather page, whose three choices fit
-//     and whose Heavy rain brings the rain; a press on the water closes it
-//     without throwing a stone, and
-//     Escape closes it too;
+//     screen, its rows that tall too, each row's value whole beside its
+//     name; its Water row opens the Water page, whose five pictured choices
+//     can each be scrolled onto the screen and fit their names, whose Pool
+//     puts the rocks in the pool (the View note follows) and whose Murky sets
+//     the pond's clarity, each with the row's value; its Time row opens the
+//     Time page, whose slider spans it (44 points tall on a touch screen)
+//     and, tapped at its left end, loads the place's first hour, the row and
+//     the readout following, while a lone photograph's page hides the slider
+//     and says why; its Weather row opens the Weather page, whose four
+//     choices fit and whose Heavy rain brings the rain; a press on the water
+//     closes it without throwing a stone, and Escape closes it too;
 //   - on a touch screen a finger dragged across the water turns the view and
 //     throws nothing, and the Reset view button then shows on the screen.
 // Sizes are reported in points on the screen (CSS pixels times the page's
@@ -195,15 +195,28 @@ for (const framing of FRAMINGS) {
   const rows = await boxes('#settings .menu-tier');
   check(!!panel && onScreen(panel) && rows.length === 7, `the settings open on the screen with their seven rows (${rows.length})`);
   if (framing.touch) check(rows.every((row) => row.height >= SMALLEST_BUTTON_HEIGHT - 0.5), `every settings row is at least ${SMALLEST_BUTTON_HEIGHT} points tall (smallest ${Math.min(...rows.map((row) => row.height)).toFixed(1)})`);
+  const cutValues = await page.evaluate(() => [...document.querySelectorAll('#settings .menu-tier-value')].filter((value) => value.scrollWidth > value.clientWidth + 0.5).map((value) => value.textContent));
+  const hinted = await page.evaluate(() => [...document.querySelectorAll('#settings .menu-tier-name small')].filter((hint) => hint.getClientRects().length > 0).length);
+  check(cutValues.length === 0, `every row's value shows whole beside its name${cutValues.length ? ` (cut: ${cutValues.join(', ')})` : ''}; ${hinted} of the rows show their line on what they set`);
   await page.screenshot({ path: path.join(outputFolder, `${framing.name}-settings.png`) });
   await press('#settings .menu-tier[data-open="water"]');
   await page.waitForTimeout(400);
-  const choices = await boxes('#water [role="radio"]');
+  // Each choice as the panel scrolls it into view: a short screen's panel scrolls.
+  const choices = await page.evaluate(() => {
+    const scale = window.visualViewport ? window.visualViewport.scale : 1;
+    const placed = [...document.querySelectorAll('#water [role="radio"]')].map((choice) => {
+      choice.scrollIntoView({ block: 'nearest' });
+      const box = choice.getBoundingClientRect();
+      return { name: choice.dataset.value, left: box.left * scale, right: box.right * scale, top: box.top * scale, bottom: box.bottom * scale, height: box.height * scale };
+    });
+    document.getElementById('settings').scrollTop = 0;
+    return placed;
+  });
   const [waterPanel] = await boxes('#settings');
   if (framing.touch) check(choices.length === 5 && choices.every((choice) => choice.height >= SMALLEST_BUTTON_HEIGHT - 0.5), `the Water page's five choices are at least ${SMALLEST_BUTTON_HEIGHT} points tall`);
-  check(onScreen(waterPanel) && choices.every(onScreen), `the Water page is on the screen`);
-  const clipped = await page.evaluate(() => [...document.querySelectorAll('#water [role="radio"]')].filter((choice) => choice.scrollWidth > choice.clientWidth).map((choice) => choice.textContent));
-  check(clipped.length === 0, `every Water choice's label fits its button${clipped.length ? ` (not: ${clipped.join(', ')})` : ''}`);
+  check(onScreen(waterPanel) && choices.length === 5 && choices.every(onScreen), `the Water page is on the screen, each of its choices once scrolled to`);
+  const clipped = await page.evaluate(() => [...document.querySelectorAll('#water [role="radio"] b')].filter((name) => name.scrollWidth > name.clientWidth).map((name) => name.textContent));
+  check(clipped.length === 0, `every Water choice's name fits its card${clipped.length ? ` (not: ${clipped.join(', ')})` : ''}`);
   await press('#water [data-value="pool"]');
   const pooled = await page.evaluate(() => ({ clarity: window.__pond.clarity, row: document.querySelector('.menu-tier[data-open="water"] .menu-tier-value').textContent, viewNote: document.getElementById('view-note').textContent }));
   check(pooled.clarity === 'pool' && pooled.row === 'Pool' && pooled.viewNote.includes('pool'), `Pool puts the rocks in the pool (${pooled.clarity}), the row reads "${pooled.row}", the View note "${pooled.viewNote}"`);
@@ -245,7 +258,7 @@ for (const framing of FRAMINGS) {
   await page.waitForFunction(() => window.__pond.sky === 'meadow' && document.querySelector('.menu-tier[data-open="time"] .menu-tier-value').textContent === 'Afternoon', null, { timeout: 60000 }).catch(() => {});
   const lone = await page.evaluate(() => ({ hidden: document.getElementById('time').hidden, note: document.getElementById('time-note').textContent, row: document.querySelector('.menu-tier[data-open="time"] .menu-tier-value').textContent }));
   check(lone.hidden && lone.note.includes('single photograph') && lone.row === 'Afternoon', `under the meadow's lone photograph the slider hides, the row reads "${lone.row}" and the note "${lone.note}"`);
-  await press('.menu-page[data-page="sky"] .menu-back');   // the list again: the Sky page reaches the water's middle on a small phone
+  await press('.menu-page[data-page="sky"] .menu-back');   // the list again: the Location page reaches the water's middle on a small phone
   await page.waitForTimeout(400);
   // The Weather page: its choices fit, and Heavy rain brings the rain.
   await press('#settings .menu-tier[data-open="weather"]');
@@ -263,7 +276,10 @@ for (const framing of FRAMINGS) {
   await press('.menu-page[data-page="weather"] .menu-back');
   await page.waitForTimeout(400);
   const stonesBefore = await page.evaluate(() => window.__pond.rocks.length);
-  const waterPoint = { x: layout.screenWidth * 0.3 / layout.scale, y: layout.screenHeight * 0.55 / layout.scale };
+  // Water clear of the open list: beside it, or (on a narrow screen, where it spans the width) under it, above the strip.
+  const [openList] = await boxes('#settings');
+  const waterX = layout.screenWidth * 0.3;
+  const waterPoint = { x: waterX / layout.scale, y: (waterX < openList.left ? layout.screenHeight * 0.55 : (openList.bottom + layout.strip.top) / 2) / layout.scale };
   if (framing.touch) await page.touchscreen.tap(waterPoint.x, waterPoint.y);
   else await page.mouse.click(waterPoint.x, waterPoint.y);
   const afterOutside = await page.evaluate(() => ({ open: !document.getElementById('settings').hidden, stones: window.__pond.rocks.length }));

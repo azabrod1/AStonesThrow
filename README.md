@@ -19,10 +19,14 @@ up or down (from just above the water to nearly straight down), and scroll
 or pinch to zoom toward what is under the pointer (down to an 8° field of
 view); a drag that starts zoomed turns round what the view is looking at.
 Escape or Reset view glides back to the shore. The strip at the bottom sets
-the rock's size (1.5 to 30 cm across), the throw strength and slow motion. The menu button at the
-top right opens the settings, laid out as the Moon app's menu is (a list,
-each setting a page of its choices with a line on each), and each choice is
-remembered on the device (but the view, which opens on the shore):
+the rock's size (1.5 to 30 cm across), the throw strength and the speed
+(real time, or slow motion at ¼ or ⅒). The menu button at the
+top right opens the settings, laid out as the Moon app's menu is: a list in
+three groups (the place: Location, Water and Time of day; the conditions:
+Weather and Wind; the viewing: View and Quality), each row an icon, its name
+over a line on what it sets and where it stands, and each setting a page of
+its choices (Location and Water as pictures) with a line on each. Each choice
+is remembered on the device (but the view, which opens on the shore):
 - View: Shore, standing on the bank as the page opens; Low, down at the
   water, the splash against the far shore; High, from above, the rings
   spreading over the pond; Under, under the water, looking up at the rocks
@@ -31,17 +35,23 @@ remembered on the device (but the view, which opens on the shore):
   turns from it (under the water it stays under). In the pool, Shore stands
   on the deck at the pool's near corner looking down into it, Low just
   inside its near wall, and under the water the eye keeps inside its walls.
-- Water: Pool, a tiled pool on a deck in a lawn (below); Lake, the
+- Water: Clear, a spring's, bluer and clearer; Lake, the
   default, a clear Alpine lake's (bright sand in the shallows,
-  turquoise-blue where it is deep); Clear, a spring's, bluer and clearer;
-  Pond, a green pond's; Murky, a lake after rain. The lake bed
+  turquoise-blue where it is deep); Pond, a green pond's; Murky, a lake
+  after rain; Pool, a tiled pool on a deck in a lawn (below). Each choice's
+  picture (`assets/water/thumbs/`) is a harness frame shrunk to 160×90:
+  `--water=name --throws=0:-1.4:0.03 --times=1.0 --seed=1
+  --orbit=0:35:2.4:0:0:0.8`, which looks out from over the bank so the
+  sand's fading shows each water's clarity (the pool: its shore view,
+  cropped to the pool). The lake bed
   slopes down from the shore, 0.7 m deep at the bottom of the view to 1.7 m
   where the rocks land and 3.5 m far out, so the sand shows in the shallows
   and is gone where the rocks land, and with it the light a ring throws on
   it. Behind the waterline, just behind the shore view, a sand beach rises
   into a grassy bank that takes its colour from the sky photo's own land, so
   turned round, the view sees a shore rather than water to the horizon.
-- Sky: Lakeside (the default), Mesas, Meadow, Alpine or Open sky. The
+- Location (the sky photo, `?sky=`): Lakeside (the default), Mesas, Meadow,
+  Alpine or Open sky, each a panorama of a place, its land and its sky. The
   photo (about 6 MB) loads while the old sky stays; then the sky, the sun's
   direction and colour and everything they light change at once.
 - Time of day: Lakeside and Mesas were each photographed from one spot
@@ -826,7 +836,9 @@ farther out, so it rises into the view rather than filling its corner.
   width, every control is on the screen, the strip covers at most 30% of the
   height, the stone slider is 44 points tall (and most of the width in
   portrait) and every button 34, and that a tap or a drag anywhere along the
-  slider sets the stone; that the settings open with their seven rows, the
+  slider sets the stone; that the settings open with their seven rows, each
+  row's value whole beside its name, the Water page's pictured choices each
+  reachable by scrolling and its Pool and Murky taking, the
   Time of day page's slider spans it and, tapped at its left end, loads the
   first hour, and a lone photograph's page hides it, and the Weather page's
   choices set the weather; it saves each screen to

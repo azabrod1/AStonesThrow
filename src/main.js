@@ -252,7 +252,7 @@ const DEBUG_MODES = { under: 0, height: 1, foam: 2, env: 3, face: 4, ambient: 5 
 const DEFAULT_WIND_STRENGTH = 'calm';
 const WIND_STORAGE_KEY = 'stone-pond-wind';   // the Wind setting's last choice on this device
 const WATER_STORAGE_KEY = 'stone-pond-water'; // the Water setting's
-const SKY_STORAGE_KEY = 'stone-pond-sky';     // the Sky setting's
+const SKY_STORAGE_KEY = 'stone-pond-sky';     // the Location setting's
 const TIME_STORAGE_KEY = 'stone-pond-time';   // the Time setting's: the local time ('hh:mm') of the hour last chosen
 const WEATHER_STORAGE_KEY = 'stone-pond-weather';   // the Weather setting's
 // The Weather setting: the cloud's cover and the light under it, against a

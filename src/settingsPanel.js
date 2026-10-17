@@ -1,10 +1,12 @@
 // The settings panel: the button at the top right and the card it opens
 // under it, laid out as the Moon app's ☰ menu is (azabrod1/moon,
-// PlanetariumMenuPanel). The root page lists the settings, each row its name,
-// where it stands and a chevron; a row opens that setting's page, whose ‹
-// button comes back. A page holds the choices and a line on what the chosen
-// one means. The markup is in index.html; the page script (there too) wires
-// each choice to the pond and calls setValue with what it shows.
+// PlanetariumMenuPanel). The root page lists the settings in groups, each
+// row an icon, its name over a line on what it sets, where it stands and a
+// chevron; a row opens that setting's page, whose ‹ button comes back. A page
+// holds the choices (a row of buttons, a slider, or pictured cards) and a line
+// on what the chosen one means. The markup is in index.html; the page script
+// (there too) wires each choice to the pond and calls setValue with what it
+// shows.
 //
 // A page change slides, 220 ms on transform and opacity, the old page out
 // and the new one in from the side it is going to (back the other way), as

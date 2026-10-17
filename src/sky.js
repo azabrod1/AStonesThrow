@@ -7,7 +7,7 @@
 // tools/sky-probe.mjs: the sun's direction in the file's frame, its
 // irradiance, and the sky's mean radiance; for a place's hours (below) also
 // what lights it, the true sun's position and where north is in the file.
-// SKIES lists the places (the Sky setting's choices, src/main.js), each with
+// SKIES lists the places (the Location setting's choices, src/main.js), each with
 // its hours (the Time setting's) and how it is turned; the environment loads
 // one to start and another whenever load() is called (Switching, below).
 //

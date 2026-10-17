@@ -245,10 +245,12 @@
   .row-break { display: none; flex-basis: 100%; height: 0; }
   /* The settings (src/settingsPanel.js): a button at the top right and the
      card it opens under it, laid out as the Moon app's menu is: the list of
-     settings, each row its name, where it stands and a chevron into its page;
-     a page has the way back, the choices, and a line on what the chosen one
-     means. The card's width is fixed, so a page change never moves its
-     outline; it scrolls when a short screen cannot hold it. */
+     settings in three groups (the place, the conditions, the viewing), each
+     row an icon, its name over a line on what it sets, where it stands and a
+     chevron into its page; a page has the way back, the choices, and a line
+     on what the chosen one means. The card's width is fixed, so a page change
+     never moves its outline; it scrolls when a short screen cannot hold it,
+     and a screen too short for the list drops the rows' lines. */
   .menu-button {
     position: fixed;
     top: calc(env(safe-area-inset-top, 0px) + 12px);
@@ -275,7 +277,7 @@
     position: fixed;
     top: calc(env(safe-area-inset-top, 0px) + 62px);
     right: calc(env(safe-area-inset-right, 0px) + 12px);
-    width: min(300px, calc(100vw - 24px));
+    width: min(320px, calc(100vw - 24px));
     max-height: calc(100vh - 74px - env(safe-area-inset-top, 0px));
     max-height: calc(100dvh - 74px - env(safe-area-inset-top, 0px));
     box-sizing: border-box;
@@ -303,10 +305,10 @@
   .menu-tier {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 12px;
     width: 100%;
-    min-height: 38px;
-    padding: 4px 10px;
+    min-height: 44px;
+    padding: 5px 10px;
     border: 0;
     border-radius: 9px;
     background: none;
@@ -316,7 +318,27 @@
     cursor: pointer;
   }
   .menu-tier:hover { background: rgba(238, 243, 244, 0.07); }
-  .menu-tier b { flex: none; font-size: 14px; font-weight: 500; }
+  .menu-tier-icon {
+    flex: none;
+    width: 19px;
+    height: 19px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.5;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    color: rgba(238, 243, 244, 0.72);
+  }
+  .menu-tier-name { flex: none; display: flex; flex-direction: column; gap: 1px; }
+  .menu-tier-name b { font-size: 14px; font-weight: 500; line-height: 1.25; }
+  .menu-tier-name small { font-size: 11.5px; line-height: 1.3; color: rgba(238, 243, 244, 0.55); }
+  .menu-rule { height: 1px; margin: 4px 10px; border: 0; background: rgba(238, 243, 244, 0.09); }
+  /* A screen too short for the two-line rows (a small phone on its side) keeps the names alone. */
+  @media (max-height: 420px) {
+    .menu-tier { min-height: 38px; padding: 4px 10px; }
+    .menu-tier-name small { display: none; }
+    .menu-rule { margin: 3px 10px; }
+  }
   .menu-tier-value {
     flex: 1;
     min-width: 0;
@@ -383,8 +405,9 @@
   .menu-seg button + button { border-left: 1px solid var(--line); }
   .menu-seg button[aria-checked="true"] { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
   .menu-note { margin: 9px 2px 0; font-size: 12.5px; line-height: 1.5; color: var(--muted); }
-  .sky-list { display: grid; gap: 4px; }
-  .sky-option {
+  /* A page of pictured choices (Location, Water): a thumbnail, the name and a line on it. */
+  .menu-cards { display: grid; gap: 4px; }
+  .menu-card {
     display: flex;
     align-items: center;
     gap: 11px;
@@ -398,11 +421,11 @@
     text-align: left;
     cursor: pointer;
   }
-  .sky-option:hover { background: rgba(238, 243, 244, 0.07); }
-  .sky-option[aria-checked="true"] { border-color: var(--accent); background: rgba(241, 199, 122, 0.1); }
-  .sky-option img { flex: none; width: 80px; height: 45px; border-radius: 7px; object-fit: cover; background: rgba(238, 243, 244, 0.08); }
-  .sky-option b { display: block; font-size: 14px; font-weight: 500; }
-  .sky-option small { display: block; margin-top: 2px; font-size: 12px; color: var(--muted); }
+  .menu-card:hover { background: rgba(238, 243, 244, 0.07); }
+  .menu-card[aria-checked="true"] { border-color: var(--accent); background: rgba(241, 199, 122, 0.1); }
+  .menu-card img { flex: none; width: 80px; height: 45px; border-radius: 7px; object-fit: cover; background: rgba(238, 243, 244, 0.08); }
+  .menu-card b { display: block; font-size: 14px; font-weight: 500; }
+  .menu-card small { display: block; margin-top: 2px; font-size: 12px; color: var(--muted); }
   /* The Time page: the hour's name and local time over a slider of the
      place's hours, the first and last hour's times under its ends. */
   .time-readout { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin: 0 2px; }
@@ -411,7 +434,7 @@
   .time-ends { display: flex; justify-content: space-between; margin: 0 2px; }
   .settings input[type="range"] { display: block; width: 100%; }
   .settings input[type="range"][hidden], .time-ends[hidden] { display: none; }
-  .menu-button:focus-visible, .menu-tier:focus-visible, .menu-back:focus-visible, .menu-seg button:focus-visible, .sky-option:focus-visible {
+  .menu-button:focus-visible, .menu-tier:focus-visible, .menu-back:focus-visible, .menu-seg button:focus-visible, .menu-card:focus-visible {
     outline: 2px solid var(--accent);
     outline-offset: -2px;
   }
@@ -511,7 +534,7 @@
     </div>
   </div>
   <div class="group">
-    <span class="name">Time</span>
+    <span class="name">Speed</span>
     <div class="segmented" id="speed" role="group" aria-label="Playback speed">
       <button type="button" data-value="1" aria-pressed="true">Real</button>
       <button type="button" data-value="0.25">¼</button>
@@ -530,13 +553,43 @@
      The page script fills each row's value and each page's note. -->
 <div class="settings" id="settings" role="dialog" aria-label="Settings" hidden>
   <div class="menu-page" data-page="root">
-    <button type="button" class="menu-tier" data-open="view"><b>View</b><span class="menu-tier-value"></span><span class="menu-tier-chevron" aria-hidden="true">&rsaquo;</span></button>
-    <button type="button" class="menu-tier" data-open="water"><b>Water</b><span class="menu-tier-value"></span><span class="menu-tier-chevron" aria-hidden="true">&rsaquo;</span></button>
-    <button type="button" class="menu-tier" data-open="sky"><b>Sky</b><span class="menu-tier-value"></span><span class="menu-tier-chevron" aria-hidden="true">&rsaquo;</span></button>
-    <button type="button" class="menu-tier" data-open="time"><b>Time of day</b><span class="menu-tier-value"></span><span class="menu-tier-chevron" aria-hidden="true">&rsaquo;</span></button>
-    <button type="button" class="menu-tier" data-open="weather"><b>Weather</b><span class="menu-tier-value"></span><span class="menu-tier-chevron" aria-hidden="true">&rsaquo;</span></button>
-    <button type="button" class="menu-tier" data-open="wind"><b>Wind</b><span class="menu-tier-value"></span><span class="menu-tier-chevron" aria-hidden="true">&rsaquo;</span></button>
-    <button type="button" class="menu-tier" data-open="quality"><b>Quality</b><span class="menu-tier-value"></span><span class="menu-tier-chevron" aria-hidden="true">&rsaquo;</span></button>
+    <button type="button" class="menu-tier" data-open="sky">
+      <svg class="menu-tier-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M2.5 15.5 7.5 8l3.2 4.6 2.1-2.8 4.7 5.7z"></path><circle cx="14" cy="5.2" r="1.6"></circle></svg>
+      <span class="menu-tier-name"><b>Location</b><small>The shore and sky around</small></span>
+      <span class="menu-tier-value"></span><span class="menu-tier-chevron" aria-hidden="true">&rsaquo;</span>
+    </button>
+    <button type="button" class="menu-tier" data-open="water">
+      <svg class="menu-tier-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.8c-2.7 3.3-5.1 6.2-5.1 8.9a5.1 5.1 0 0 0 10.2 0c0-2.7-2.4-5.6-5.1-8.9z"></path><path d="M7.6 12.2a2.5 2.5 0 0 0 2.1 2.3"></path></svg>
+      <span class="menu-tier-name"><b>Water</b><small>Lake, pond or pool</small></span>
+      <span class="menu-tier-value"></span><span class="menu-tier-chevron" aria-hidden="true">&rsaquo;</span>
+    </button>
+    <button type="button" class="menu-tier" data-open="time">
+      <svg class="menu-tier-icon" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7.2"></circle><path d="M10 6v4l2.7 1.7"></path></svg>
+      <span class="menu-tier-name"><b>Time of day</b><small>Dawn to night</small></span>
+      <span class="menu-tier-value"></span><span class="menu-tier-chevron" aria-hidden="true">&rsaquo;</span>
+    </button>
+    <hr class="menu-rule">
+    <button type="button" class="menu-tier" data-open="weather">
+      <svg class="menu-tier-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M5.5 12.5a2.75 2.75 0 0 1 .4-5.47 4.25 4.25 0 0 1 8.2.57 2.5 2.5 0 0 1 .4 4.9z"></path><path d="M7.4 15.2l-.9 2M10.4 15.2l-.9 2M13.4 15.2l-.9 2"></path></svg>
+      <span class="menu-tier-name"><b>Weather</b><small>Rain and storms</small></span>
+      <span class="menu-tier-value"></span><span class="menu-tier-chevron" aria-hidden="true">&rsaquo;</span>
+    </button>
+    <button type="button" class="menu-tier" data-open="wind">
+      <svg class="menu-tier-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M2.5 8h9a2.25 2.25 0 1 0-2.25-2.25"></path><path d="M2.5 11.5h11.75a2.25 2.25 0 1 1-2.25 2.25"></path><path d="M2.5 15h5"></path></svg>
+      <span class="menu-tier-name"><b>Wind</b><small>Still water to a gale</small></span>
+      <span class="menu-tier-value"></span><span class="menu-tier-chevron" aria-hidden="true">&rsaquo;</span>
+    </button>
+    <hr class="menu-rule">
+    <button type="button" class="menu-tier" data-open="view">
+      <svg class="menu-tier-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M1.8 10S4.8 4.8 10 4.8 18.2 10 18.2 10 15.2 15.2 10 15.2 1.8 10 1.8 10z"></path><circle cx="10" cy="10" r="2.4"></circle></svg>
+      <span class="menu-tier-name"><b>View</b><small>Where you watch from</small></span>
+      <span class="menu-tier-value"></span><span class="menu-tier-chevron" aria-hidden="true">&rsaquo;</span>
+    </button>
+    <button type="button" class="menu-tier" data-open="quality">
+      <svg class="menu-tier-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M3.6 14.6a6.6 6.6 0 1 1 12.8 0"></path><path d="M10 12.9l3.2-4.1"></path></svg>
+      <span class="menu-tier-name"><b>Quality</b><small>Detail and smoothness</small></span>
+      <span class="menu-tier-value"></span><span class="menu-tier-chevron" aria-hidden="true">&rsaquo;</span>
+    </button>
   </div>
   <div class="menu-page" data-page="view" hidden>
     <div class="menu-head"><button type="button" class="menu-back" aria-label="Back"><span aria-hidden="true">&lsaquo;</span></button><h3>View</h3></div>
@@ -554,26 +607,24 @@
   <div class="menu-page" data-page="water" hidden>
     <div class="menu-head"><button type="button" class="menu-back" aria-label="Back"><span aria-hidden="true">&lsaquo;</span></button><h3>Water</h3></div>
     <div class="menu-field">
-      <div class="menu-field-label" id="water-label">How clear</div>
-      <div class="menu-seg" id="water" role="radiogroup" aria-labelledby="water-label" aria-describedby="water-note">
-        <button type="button" role="radio" data-value="pool">Pool</button>
-        <button type="button" role="radio" data-value="clear">Clear</button>
-        <button type="button" role="radio" data-value="lake">Lake</button>
-        <button type="button" role="radio" data-value="pond">Pond</button>
-        <button type="button" role="radio" data-value="murky">Murky</button>
+      <div class="menu-cards" id="water" role="radiogroup" aria-label="Water">
+        <button type="button" class="menu-card" role="radio" data-value="clear"><img src="assets/water/thumbs/clear.jpg" alt="" width="80" height="45"><span><b>Clear</b><small>Spring water: turquoise, the sand far out</small></span></button>
+        <button type="button" class="menu-card" role="radio" data-value="lake"><img src="assets/water/thumbs/lake.jpg" alt="" width="80" height="45"><span><b>Lake</b><small>An Alpine lake: bright sand, then deep blue</small></span></button>
+        <button type="button" class="menu-card" role="radio" data-value="pond"><img src="assets/water/thumbs/pond.jpg" alt="" width="80" height="45"><span><b>Pond</b><small>Green; the sand fades a little way out</small></span></button>
+        <button type="button" class="menu-card" role="radio" data-value="murky"><img src="assets/water/thumbs/murky.jpg" alt="" width="80" height="45"><span><b>Murky</b><small>A lake after rain: sand only at the bank</small></span></button>
+        <button type="button" class="menu-card" role="radio" data-value="pool"><img src="assets/water/thumbs/pool.jpg" alt="" width="80" height="45"><span><b>Pool</b><small>A tiled pool; ripples bounce off its walls</small></span></button>
       </div>
-      <div class="menu-note" id="water-note"></div>
     </div>
   </div>
   <div class="menu-page" data-page="sky" hidden>
-    <div class="menu-head"><button type="button" class="menu-back" aria-label="Back"><span aria-hidden="true">&lsaquo;</span></button><h3>Sky</h3></div>
+    <div class="menu-head"><button type="button" class="menu-back" aria-label="Back"><span aria-hidden="true">&lsaquo;</span></button><h3>Location</h3></div>
     <div class="menu-field">
-      <div class="sky-list" id="sky" role="radiogroup" aria-label="Sky" aria-describedby="sky-note">
-        <button type="button" class="sky-option" role="radio" data-value="lakeside"><img src="assets/sky/thumbs/lakeside.jpg" alt="" width="80" height="45"><span><b>Lakeside</b><small>A wooded shore, a far bank</small></span></button>
-        <button type="button" class="sky-option" role="radio" data-value="mesas"><img src="assets/sky/thumbs/mesas.jpg" alt="" width="80" height="45"><span><b>Mesas</b><small>Wide water to flat-topped hills</small></span></button>
-        <button type="button" class="sky-option" role="radio" data-value="meadow"><img src="assets/sky/thumbs/meadow.jpg" alt="" width="80" height="45"><span><b>Meadow</b><small>Summer trees, afternoon sun</small></span></button>
-        <button type="button" class="sky-option" role="radio" data-value="alpine"><img src="assets/sky/thumbs/alpine.jpg" alt="" width="80" height="45"><span><b>Alpine</b><small>Pines, and snowy peaks up the valley</small></span></button>
-        <button type="button" class="sky-option" role="radio" data-value="open"><img src="assets/sky/thumbs/open.jpg" alt="" width="80" height="45"><span><b>Open sky</b><small>Clouds out to the horizon</small></span></button>
+      <div class="menu-cards" id="sky" role="radiogroup" aria-label="Location" aria-describedby="sky-note">
+        <button type="button" class="menu-card" role="radio" data-value="lakeside"><img src="assets/sky/thumbs/lakeside.jpg" alt="" width="80" height="45"><span><b>Lakeside</b><small>A wooded shore, a far bank</small></span></button>
+        <button type="button" class="menu-card" role="radio" data-value="mesas"><img src="assets/sky/thumbs/mesas.jpg" alt="" width="80" height="45"><span><b>Mesas</b><small>Wide water to flat-topped hills</small></span></button>
+        <button type="button" class="menu-card" role="radio" data-value="meadow"><img src="assets/sky/thumbs/meadow.jpg" alt="" width="80" height="45"><span><b>Meadow</b><small>Summer trees, afternoon sun</small></span></button>
+        <button type="button" class="menu-card" role="radio" data-value="alpine"><img src="assets/sky/thumbs/alpine.jpg" alt="" width="80" height="45"><span><b>Alpine</b><small>Pines, and snowy peaks up the valley</small></span></button>
+        <button type="button" class="menu-card" role="radio" data-value="open"><img src="assets/sky/thumbs/open.jpg" alt="" width="80" height="45"><span><b>Open sky</b><small>Clouds out to the horizon</small></span></button>
       </div>
       <div class="menu-note" id="sky-note" aria-live="polite"></div>
     </div>
@@ -747,13 +798,6 @@
         under: 'Under the water, the sky in a bright window overhead and the tiles mirrored in the surface past it.',
         turned: 'Turned by hand. Drag the water to look around; Reset view comes back to the deck.',
       },
-      water: {
-        pool: 'A tiled pool, crystal clear: the ripples run back and forth off its walls, and the sunlight dances on its tiles.',
-        clear: 'Spring water, turquoise: the sand shows far out under the shallows.',
-        lake: 'A clear Alpine lake: bright sand in the shallows, deep blue where the rocks land.',
-        pond: 'A green pond: the sand fades into green a little way out.',
-        murky: 'A lake after rain: the sand shows only at the bank.',
-      },
       wind: {
         calm: 'Still water: the shore stands in it as in a mirror.',
         breeze: 'Light ripples that blur the reflections.',
@@ -773,7 +817,7 @@
         storm: 'A storm: a darker sky, a downpour, lightning, and the wind up to a gale.',
       },
       time: 'Each hour is a photograph of this place, taken from one spot through a day: the land stays where it is and the sun moves round it.',
-      oneTime: 'This sky is a single photograph. Lakeside and Mesas were photographed through the day: pick one of them to change the hour.',
+      oneTime: 'This place is a single photograph. Lakeside and Mesas were photographed through the day: pick one of them under Location to change the hour.',
     };
     const showViewChoice = radioGroup(document.getElementById('view'), (value) => pond.showView(value));
     showView = () => {
@@ -786,7 +830,6 @@
     function updateWater() {
       showWater(pond.clarity);
       settings.setValue('water', label('water', pond.clarity));
-      document.getElementById('water-note').textContent = NOTES.water[pond.clarity];
       showView();   // the pool's views are told otherwise
     }
     const showWind = radioGroup(document.getElementById('wind'), (value) => { pond.setWind(value); updateWind(); });
@@ -827,13 +870,13 @@
       if (value === pond.sky) updateSky();
       else {
         settings.setValue('sky', `${label('sky', value)}\u2026`);
-        skyNote.textContent = `Loading the ${label('sky', value).toLowerCase()} sky\u2026`;
+        skyNote.textContent = `Loading ${label('sky', value)}\u2026`;
       }
       // Always asked, so a load still queued for an earlier pick is dropped.
       pond.setSky(value).then((shown) => {
         if (skyChoice !== value) return;   // another was picked since: its load reports
         updateSky();
-        if (shown !== value) skyNote.textContent = 'That sky could not be loaded. Check the connection and try again.';
+        if (shown !== value) skyNote.textContent = 'That place could not be loaded. Check the connection and try again.';
       });
     });
     function updateSky() {
