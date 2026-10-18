@@ -406,6 +406,39 @@ for (const framing of FRAMINGS) {
     await press('#menu-button');
     await page.keyboard.press('Escape');
     check(await page.evaluate(() => document.getElementById('settings').hidden), `Escape closes the settings`);
+    // Skip left on for stones moves nothing of a ball's throw (review: a far tap in the pool aimed a basketball 2 m further).
+    await page.evaluate(() => { window.__pond.setClarity('pool'); window.__pond.setThing('basketball'); });
+    await page.waitForTimeout(300);
+    const tapThrow = async (skip) => {
+      await page.evaluate((on) => window.__pond.setSkip(on), skip);
+      await page.mouse.click(layout.screenWidth * 0.5 / layout.scale, layout.screenHeight * 0.21 / layout.scale);
+      await page.waitForTimeout(50);
+      return page.evaluate(() => { const rock = window.__pond.rocks.at(-1); return { thing: rock?.thing.key, velocity: rock ? [rock.velocity.x, rock.velocity.y, rock.velocity.z] : null, skip: Boolean(rock?.skip) }; });
+    };
+    const skipOff = await tapThrow(false), skipOn = await tapThrow(true);
+    const apart = skipOff.velocity && skipOn.velocity ? Math.hypot(...skipOff.velocity.map((value, index) => value - skipOn.velocity[index])) : Infinity;
+    check(skipOff.thing === 'basketball' && skipOn.thing === 'basketball' && !skipOn.skip && apart < 0.05, `a basketball tapped at the far pool is thrown alike with Skip off and left on for stones (${apart.toFixed(3)} m/s apart, ${skipOn.skip ? 'skipping' : 'not skipping'})`);
+    await page.evaluate(() => { window.__pond.setSkip(false); window.__pond.setClarity('lake'); window.__pond.setThing('stone'); });
+    // A thing defined from outside, sized by its diameter, keeps its own size (review: it took the stones' 6 cm).
+    const sized = await page.evaluate(() => {
+      const pond = window.__pond;
+      pond.setSize(6);
+      pond.defineThing('probe-foam-ball', {
+        name: 'Foam ball', group: 'Test', note: 'Defined by the probe',
+        body: { shape: 'sphere', density: 100, size: { by: 'diameter', unit: 'cm', min: 20, max: 80, step: 1, initial: 40 } },
+        material: { bounce: [0.5, 0.6], friction: 0.5 }, water: { restingHeight: 0.97 }, look: { mesh: 'ball', paint: 'plain', color: [240, 200, 40] },
+      });
+      pond.setThing('probe-foam-ball');
+      const own = pond.size;
+      const thrown = pond.throwAt(0, -1.4).radius;
+      const asked = pond.throwAt(0, -1.4, { size: 60 }).radius;
+      pond.setSize(500);
+      const clamped = pond.size;
+      pond.setThing('stone');
+      return { own, thrown, asked, clamped, stone: pond.size };
+    });
+    check(sized.own === 40 && Math.abs(sized.thrown - 0.2) < 1e-9 && Math.abs(sized.asked - 0.3) < 1e-9 && sized.clamped === 80 && sized.stone === 6,
+      `a foam ball defined from outside, 20 to 80 cm, is thrown at its own 40 cm (${(200 * sized.thrown).toFixed(1)}), at 60 when asked (${(200 * sized.asked).toFixed(1)}), its slider kept to 80 (${sized.clamped}); the stones keep 6 cm (${sized.stone})`);
   } else {
     // A real finger (the browser's touch input, not synthetic pointers) dragged across the water.
     const session = await context.newCDPSession(page);

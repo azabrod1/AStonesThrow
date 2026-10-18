@@ -23,7 +23,11 @@
 //    near field's (src/rings.js), which retires with it, and a change of
 //    preset in it keeps the pool's mesh. Every kind of thing (src/things.js)
 //    thrown, the floaters followed until they float in the mirror image,
-//    compiles no program. Rain (src/rain.js): each weather in
+//    compiles no program, and no prepared thing's (a fixed mesh's, made
+//    ready under the veil) first throw holds the main thread for more than
+//    FIRST_THROW_MS (every thing's printed); a basketball resting afloat
+//    adds at most FLOATER_FRAME_CALLS draw calls a frame (its mirror image
+//    redrawn as the water moves; calls and triangles printed). Rain (src/rain.js): each weather in
 //    turn, with a throw in the downpour and a change of preset, compiles no
 //    program (the warm-up drew the rain's), and the tile takes the preset's
 //    size; clear again, nothing of the rain runs. The gale (src/galeWaves.js)
@@ -54,6 +58,9 @@ import { fileURLToPath } from 'node:url';
 import { QUALITY, PIXEL_BUDGET } from '../src/main.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const FLOATER_FRAME_CALLS = 12;   // the most draw calls a basketball resting afloat may add to a frame: its halves, and its mirror image's region redrawn
+const FIRST_THROW_MS = 20;   // ms: the most a prepared thing's first throw may hold the main thread (a pizza's took 33 to 57 ms making its mesh's waterline before src/rock.js prepareThing; single throws here vary by a few ms with SwiftShader on the same CPU)
+const PREPARED_THINGS = ['apple', 'pizza', 'watermelon', 'brick'];   // the things of a fixed mesh (src/thingMeshes.js), made ready under the veil
 const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.mjs': 'text/javascript', '.json': 'application/json' };
 const server = createServer(async (request, response) => {
   try {
@@ -232,12 +239,55 @@ await checkBuilt(phone, 'back on the lake');
 // Every kind of thing (src/things.js), thrown and followed until the floaters float in the mirror image, compiles no program.
 const programsBeforeThings = await page.evaluate(() => window.__pond.budget.programs);
 const namesBeforeThings = await programNames(page);
+// Each one's first throw, timed: what the tap costs the main thread (src/rock.js prepareThing: warmUp made every thing
+// ready, so a pizza's or a watermelon's mesh and waterline are not made as it is thrown).
+const firstThrows = [];
 for (const thing of ['slate', 'granite', 'basalt', 'pumice', 'golf', 'tennis', 'bowling', 'basketball', 'diamond', 'apple', 'pizza', 'watermelon', 'brick']) {
-  await page.evaluate((name) => { window.__pond.pause(); window.__pond.throwAt(0, -1.4, { thing: name }); window.__pond.advance(3.0); }, thing);
+  const spent = await page.evaluate((name) => {
+    window.__pond.pause();
+    const started = performance.now();
+    window.__pond.throwAt(0, -1.4, { thing: name });
+    const elapsed = performance.now() - started;
+    window.__pond.advance(3.0);
+    return elapsed;
+  }, thing);
+  firstThrows.push({ thing, spent });
 }
+console.log(`  first throws (ms on the main thread): ${firstThrows.map(({ thing, spent }) => `${thing} ${spent.toFixed(1)}`).join(', ')}`);
+const slowThrows = firstThrows.filter(({ thing, spent }) => PREPARED_THINGS.includes(thing) && spent > FIRST_THROW_MS);
+check(slowThrows.length === 0, `every prepared thing's first throw takes under ${FIRST_THROW_MS} ms on the main thread${slowThrows.length ? ` (not: ${slowThrows.map(({ thing, spent }) => `${thing} ${spent.toFixed(1)}`).join(', ')})` : ''}`);
 const programsAfterThings = await page.evaluate(() => window.__pond.budget.programs);
 const thingsCompiled = (await programNames(page)).filter((name) => !namesBeforeThings.includes(name));
 check(programsAfterThings === programsBeforeThings, `every kind of thing thrown, and a floater in the mirror image, compiles no program (${programsBeforeThings} before, ${programsAfterThings} after${thingsCompiled.length ? `; new: ${thingsCompiled.join(', ')}` : ''})`);
+
+// What a floater resting on moving water costs a frame (src/main.js updateReflection: its mirror image is redrawn, in a
+// scissored region, as the water it rides moves): the draw calls and triangles of a frame with a basketball afloat,
+// against the still pond's. GPU-free counts: SwiftShader's milliseconds mean nothing.
+const frameCounts = () => page.evaluate(() => {
+  const pond = window.__pond, info = pond.renderer.info;
+  info.autoReset = false;
+  let calls = 0, triangles = 0;
+  for (let frame = 0; frame < 20; frame++) {
+    info.reset();
+    pond.advance(1 / 60);
+    calls += info.render.calls; triangles += info.render.triangles;
+  }
+  info.autoReset = true;
+  return { calls: calls / 20, triangles: Math.round(triangles / 20) };
+});
+await page.evaluate(() => { window.__pond.pause(); window.__pond.clear(); window.__pond.advance(1); });
+const stillPond = await frameCounts();
+const restingBall = await page.evaluate(() => {
+  const pond = window.__pond;
+  const rock = pond.throwAt(0, -1.4, { thing: 'basketball' });
+  for (let second = 0; second < 40 && !(rock.state === 'rest' && rock.afloat); second++) pond.advance(1);
+  pond.advance(1);
+  return rock.state === 'rest' && rock.afloat;
+});
+const withFloater = await frameCounts();
+console.log(`  a frame: ${stillPond.calls} draw calls, ${stillPond.triangles} triangles on the still pond; ${withFloater.calls}, ${withFloater.triangles} with a basketball resting afloat`);
+check(restingBall && withFloater.calls - stillPond.calls <= FLOATER_FRAME_CALLS, `a basketball resting afloat adds at most ${FLOATER_FRAME_CALLS} draw calls a frame (${withFloater.calls - stillPond.calls})`);
+await page.evaluate(() => { window.__pond.clear(); window.__pond.resume(); });
 
 // The weather: rain compiles nothing, follows the preset's tile size, and goes when it clears.
 const programsBeforeRain = await page.evaluate(() => window.__pond.budget.programs);

@@ -48,9 +48,51 @@ const MESHES = new Map();
  * material's colour (drawn when the thing is made, after its geometry),
  * and `texture(definition)`, if it has one, the material's map (its colours
  * times the vertices'; a textured thing's material is its own program,
- * which src/main.js warmUp draws).
+ * which src/main.js warmUp draws). A `fixed` kind builds the same geometry
+ * every time and draws no random numbers: src/rock.js prepareThing builds
+ * it, its shape and its waterline once for each definition, and every one
+ * thrown shares them. `volume(definition)` is its unit-sized volume, where
+ * it has one (a fixed kind's is its geometry's; a stone's lumps are drawn
+ * at random, so it has none): a thing sized by its mass is as big as its
+ * density and that volume make it (src/things.js). `prepare(definition)`
+ * fills whatever a kind keeps between throws (a ball's painted spheres),
+ * drawing no random numbers, so the first one thrown costs no more than the
+ * next (src/rock.js prepareThing). `check(look)` says, as sentences, what is
+ * wrong with a definition's `look` for this kind (the fields its builder
+ * reads; src/things.js validateThing), none for a good one.
  */
-export function registerMesh(kind, { build, color, texture = null }) { MESHES.set(kind, { build, color, texture }); }
+export function registerMesh(kind, { build, color, texture = null, fixed = false, volume = null, prepare = null, check = null }) {
+  MESHES.set(kind, { build, color, texture, fixed, prepare, check, volume: volume ?? (fixed ? (definition) => meshVolume(build(definition, {})) : null) });
+}
+
+// What the looks' checks (registerMesh `check`) ask of a field.
+const finite = (value) => typeof value === 'number' && Number.isFinite(value);
+const numbersIn = (value, count, least, most) => Array.isArray(value) && value.length === count && value.every((entry) => finite(entry) && entry >= least && entry <= most);
+const STONE_PATTERNS = ['river', 'slate', 'granite', 'basalt', 'pumice'];
+const BALL_PAINTS = ['basketball', 'tennis', 'golf', 'bowling', 'plain'];
+
+const VOLUMES = new WeakMap();   // definition → its mesh's unit volume, measured once
+
+/** The unit-sized volume of `definition`'s mesh (registerMesh `volume`), measured once; null for a kind that has none. */
+export function unitVolume(definition) {
+  const volume = meshKind(definition.look?.mesh)?.volume;
+  if (!volume) return null;
+  if (!VOLUMES.has(definition)) VOLUMES.set(definition, volume(definition));
+  return VOLUMES.get(definition);
+}
+
+/** The volume a closed geometry of separate triangles (no index) encloses: the sum of the tetrahedra its faces make with the origin. */
+export function meshVolume(geometry) {
+  const positions = geometry.attributes.position.array;
+  let volume = 0;
+  for (let index = 0; index < positions.length; index += 9) {
+    const ax = positions[index], ay = positions[index + 1], az = positions[index + 2];
+    const bx = positions[index + 3], by = positions[index + 4], bz = positions[index + 5];
+    const cx = positions[index + 6], cy = positions[index + 7], cz = positions[index + 8];
+    volume += (ax * (by * cz - bz * cy) + ay * (bz * cx - bx * cz) + az * (bx * cy - by * cx)) / 6;
+  }
+  return volume;
+}
 
 /** The registered builder of a kind of mesh, or undefined. */
 export function meshKind(kind) { return MESHES.get(kind); }
@@ -740,6 +782,16 @@ export function createBrickGeometry() {
 // ---- the kinds -------------------------------------------------------------
 
 registerMesh('stone', {
+  // The river stone's look is its own; another kind's squash, lumps and colouring are its look's ranges.
+  check: (look) => {
+    if (!STONE_PATTERNS.includes(look.pattern)) return [`look.pattern must be one of ${STONE_PATTERNS.join(', ')}`];
+    if (look.pattern === 'river') return [];
+    const problems = [];
+    if (!numbersIn(look.squash, 4, 0, 2)) problems.push('look.squash must be four numbers from 0 to 2 (height least, spread; depth least, spread)');
+    if (!(finite(look.lumps) && look.lumps >= 0 && look.lumps <= 3)) problems.push('look.lumps must be a number from 0 to 3');
+    for (const field of ['hue', 'saturation', 'lightness']) if (!numbersIn(look[field], 2, 0, 1)) problems.push(`look.${field} must be two numbers from 0 to 1 (least, spread)`);
+    return problems;
+  },
   build: (definition, { flat = false } = {}) => createRockGeometry(undefined, { flat, look: definition.look }),
   // Its tint over its speckle: the river stone's as it always was (its draws too), another kind's from its look's ranges.
   color: (definition) => {
@@ -748,9 +800,29 @@ registerMesh('stone', {
     return new THREE.Color().setHSL(look.hue[0] + Math.random() * look.hue[1], look.saturation[0] + Math.random() * look.saturation[1], look.lightness[0] + Math.random() * look.lightness[1]);
   },
 });
-registerMesh('ball', { build: (definition) => createBallGeometry(definition), color: () => new THREE.Color(1, 1, 1) });
-registerMesh('apple', { build: () => createAppleGeometry(), color: () => new THREE.Color(1, 1, 1) });
-registerMesh('watermelon', { build: () => createWatermelonGeometry(), color: () => new THREE.Color(1, 1, 1) });
-registerMesh('brick', { build: () => createBrickGeometry(), color: () => new THREE.Color(1, 1, 1) });
-registerMesh('pizza', { build: () => createPizzaGeometry(), color: () => new THREE.Color(1, 1, 1), texture: () => pizzaTexture() });
-registerMesh('gem', { build: (definition) => createGemGeometry(definition), color: () => new THREE.Color(1, 1, 1) });
+registerMesh('ball', {
+  build: (definition) => createBallGeometry(definition), color: () => new THREE.Color(1, 1, 1),
+  check: (look) => [
+    ...(BALL_PAINTS.includes(look.paint) ? [] : [`look.paint must be one of ${BALL_PAINTS.join(', ')}`]),
+    ...(look.paint !== 'plain' || numbersIn(look.color, 3, 0, 255) ? [] : ['a plain ball needs look.color, three numbers from 0 to 255']),
+  ],
+  // Each of its paints (a bowling ball's every pair of colours), painted now.
+  prepare: (definition) => {
+    const paints = definition.look.paint === 'bowling' ? BOWLING.shells.length : 1;
+    for (let index = 0; index < paints; index++) createBallGeometry(definition, () => (index + 0.5) / paints).dispose();
+  },
+});
+registerMesh('apple', { build: () => createAppleGeometry(), color: () => new THREE.Color(1, 1, 1), fixed: true });
+registerMesh('watermelon', { build: () => createWatermelonGeometry(), color: () => new THREE.Color(1, 1, 1), fixed: true });
+registerMesh('brick', { build: () => createBrickGeometry(), color: () => new THREE.Color(1, 1, 1), fixed: true });
+registerMesh('pizza', { build: () => createPizzaGeometry(), color: () => new THREE.Color(1, 1, 1), texture: () => pizzaTexture(), fixed: true });
+// A gem's facets are lit at random, its cut never: its volume is any one's (its colours drawn from a still stream).
+registerMesh('gem', {
+  build: (definition) => createGemGeometry(definition), color: () => new THREE.Color(1, 1, 1), volume: (definition) => meshVolume(createGemGeometry(definition, () => 0.5)),
+  check: (look) => [
+    ...(numbersIn(look.color, 3, 0, 255) ? [] : ['look.color must be three numbers from 0 to 255']),
+    ...(look.stretch === undefined || (finite(look.stretch) && look.stretch >= 0.5 && look.stretch <= 3) ? [] : ['look.stretch must be a number from 0.5 to 3']),
+    ...(look.fire === undefined || (finite(look.fire) && look.fire >= 0 && look.fire <= 1) ? [] : ['look.fire must be a number from 0 to 1']),
+    ...(look.contrast === undefined || numbersIn(look.contrast, 2, 0, 4) ? [] : ['look.contrast must be two numbers from 0 to 4']),
+  ],
+});

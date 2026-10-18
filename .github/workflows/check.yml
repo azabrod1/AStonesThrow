@@ -1,0 +1,49 @@
+name: Check
+
+# Every pull request (and push to a branch other than main, whose deploy runs
+# npm test itself) runs the CPU probes, then the browser probes headless:
+# Chromium renders WebGL through SwiftShader, which is correct but slow, so
+# their frame rates mean nothing; their CPU timings (a throw's cost) and
+# counts (programs, draw calls) do.
+on:
+  pull_request:
+  push:
+    branches-ignore: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cpu:
+    runs-on: ubuntu-latest
+    env:
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: node tools/variety-probe.mjs
+      - run: node tools/pool-probe.mjs
+
+  browser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: node tools/controls-probe.mjs
+      - run: node tools/quality-probe.mjs
+      - run: npm run site && node tools/site-check.mjs

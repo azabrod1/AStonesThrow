@@ -294,6 +294,7 @@ const BALL_SHAPE = Object.freeze({
 const BALL_CONTACT = Object.freeze({ kind: 'edge', faceAngle: 45, pointAngle: 45, bluntness: 1 });
 const rockRotation = new THREE.Matrix4();
 const UP = new THREE.Vector3(0, 1, 0);
+const FLEX_EASE = 0.039;   // s: a soft thing's give eases to what the air makes it with this time constant (Rock.flex; 0.35 a frame at 60 fps)
 const WATERLINE = { levels: 48 };   // a floater's waterline table's levels (waterlineTable)
 
 /** A standard normal draw (Box–Muller, from Math.random). */
@@ -541,27 +542,35 @@ export function waterlineTable(geometry, axis) {
     heights[vertex] = positions[vertex * 3] * axis.x + positions[vertex * 3 + 1] * axis.y + positions[vertex * 3 + 2] * axis.z;
     low = Math.min(low, heights[vertex]); high = Math.max(high, heights[vertex]);
   }
-  const point = (vertex) => [positions[vertex * 3], positions[vertex * 3 + 1], positions[vertex * 3 + 2]];
+  // The clipped polygon's corners (at most four), kept in one scratch array: this runs over every triangle at every
+  // level, and a list per triangle made it the slowest part of a throw.
+  const polygon = new Float64Array(12);
   const volumeBelow = (level) => {
     const originX = axis.x * level, originY = axis.y * level, originZ = axis.z * level;
     let volume = 0;
     for (let first = 0; first < heights.length; first += 3) {
       // The triangle clipped to below the level (Sutherland–Hodgman against one plane), then fanned.
-      const polygon = [];
+      let corners = 0;
       for (let corner = 0; corner < 3; corner++) {
         const here = first + corner, next = first + ((corner + 1) % 3);
         const hereBelow = heights[here] <= level, nextBelow = heights[next] <= level;
-        if (hereBelow) polygon.push(point(here));
+        if (hereBelow) {
+          polygon[corners * 3] = positions[here * 3]; polygon[corners * 3 + 1] = positions[here * 3 + 1]; polygon[corners * 3 + 2] = positions[here * 3 + 2];
+          corners++;
+        }
         if (hereBelow !== nextBelow) {
           const share = (level - heights[here]) / (heights[next] - heights[here]);
-          const a = point(here), b = point(next);
-          polygon.push([a[0] + (b[0] - a[0]) * share, a[1] + (b[1] - a[1]) * share, a[2] + (b[2] - a[2]) * share]);
+          for (let component = 0; component < 3; component++) {
+            const a = positions[here * 3 + component], b = positions[next * 3 + component];
+            polygon[corners * 3 + component] = a + (b - a) * share;
+          }
+          corners++;
         }
       }
-      for (let corner = 1; corner + 1 < polygon.length; corner++) {
-        const [ax, ay, az] = [polygon[0][0] - originX, polygon[0][1] - originY, polygon[0][2] - originZ];
-        const [bx, by, bz] = [polygon[corner][0] - originX, polygon[corner][1] - originY, polygon[corner][2] - originZ];
-        const [cx, cy, cz] = [polygon[corner + 1][0] - originX, polygon[corner + 1][1] - originY, polygon[corner + 1][2] - originZ];
+      for (let corner = 1; corner + 1 < corners; corner++) {
+        const ax = polygon[0] - originX, ay = polygon[1] - originY, az = polygon[2] - originZ;
+        const bx = polygon[corner * 3] - originX, by = polygon[corner * 3 + 1] - originY, bz = polygon[corner * 3 + 2] - originZ;
+        const cx = polygon[corner * 3 + 3] - originX, cy = polygon[corner * 3 + 4] - originY, cz = polygon[corner * 3 + 5] - originZ;
         volume += (ax * (by * cz - bz * cy) + ay * (bz * cx - bx * cz) + az * (bx * cy - by * cx)) / 6;
       }
     }
@@ -689,6 +698,45 @@ export function stoneShape(geometry) {
   };
 }
 
+/** What prepareThing has made, for each definition (a thing defined again is a new definition) and each of flat or not. */
+const PREPARED = new WeakMap();
+
+/**
+ * A fixed mesh's thing (src/thingMeshes.js registerMesh `fixed`) made ready
+ * to throw, once: its geometry, its shape (stoneShape), how far it reaches
+ * and its waterline tables (waterlineTable, made for an axis the first time
+ * it is asked for, and kept), which every one thrown shares. Slicing a
+ * pizza's mesh for its waterline took a throw over 30 ms; src/main.js
+ * prepares every thing under the loading veil, and one defined later as it
+ * is defined. Returns null for a mesh that is not fixed, whose kind fills
+ * what it keeps between throws instead (registerMesh `prepare`: a ball's
+ * painted spheres).
+ */
+export function prepareThing(thing, { flat = false } = {}) {
+  const mesh = meshKind(thing.look.mesh);
+  if (!mesh?.fixed) { mesh?.prepare?.(thing); return null; }
+  if (!PREPARED.has(thing)) PREPARED.set(thing, new Map());
+  const byFlat = PREPARED.get(thing);
+  if (!byFlat.has(flat)) {
+    const geometry = mesh.build(thing, { flat });
+    geometry.computeBoundingSphere();
+    const shape = thing.body.shape === 'sphere' ? BALL_SHAPE : stoneShape(geometry);
+    const tables = new Map();
+    const waterline = (axis) => {
+      const key = axis.toArray().join(',');
+      if (!tables.has(key)) tables.set(key, waterlineTable(geometry, axis));
+      return tables.get(key);
+    };
+    // A floater's table now, for the axis it floats about (Rock: its own +y kept upright, else its short axis), at its
+    // first size (another size may float where this one sinks: its table is made as it is first thrown, then kept).
+    const { radius, mass } = thing.measure(thing.slider?.initial);
+    const density = thing.body.density ?? mass / (shape.volume * radius ** 3);
+    if (thing.body.shape !== 'sphere' && density < WATER_DENSITY) waterline(thing.body.upright ? UP : shape.axes[2]);
+    byFlat.set(flat, { geometry, shape, reach: geometry.boundingSphere.center.length() + geometry.boundingSphere.radius, waterline });
+  }
+  return byFlat.get(flat);
+}
+
 export class Rock {
   /**
    * @param radius nominal radius in metres
@@ -725,10 +773,14 @@ export class Rock {
     this.spinAxis = new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).normalize();
     this.spinRate = SPIN_LEAST + (SPIN_MOST - SPIN_LEAST) * Math.random() ** SPIN_SKEW;
     const mesh = meshKind(this.thing.look.mesh);
-    this.geometry = mesh.build(this.thing, { flat: Boolean(skip) });
-    this.geometry.computeBoundingSphere();
-    this.reach = this.geometry.boundingSphere.center.length() + this.geometry.boundingSphere.radius;   // furthest any point gets from the centre, in radii
-    this.shape = this.sphere ? BALL_SHAPE : stoneShape(this.geometry);
+    // A fixed mesh is prepared once for its definition and shared (prepareThing); a soft one's vertices flex, so it has
+    // its own copy of them. Anything else (a stone's lumps, drawn at random) is built for each one thrown.
+    const prepared = mesh.fixed ? prepareThing(this.thing, { flat: Boolean(skip) }) : null;
+    this.sharedGeometry = Boolean(prepared) && !this.thing.body.soft;
+    this.geometry = prepared ? (this.sharedGeometry ? prepared.geometry : prepared.geometry.clone()) : mesh.build(this.thing, { flat: Boolean(skip) });
+    if (!prepared) this.geometry.computeBoundingSphere();
+    this.reach = prepared?.reach ?? this.geometry.boundingSphere.center.length() + this.geometry.boundingSphere.radius;   // furthest any point gets from the centre, in radii
+    this.shape = this.sphere ? BALL_SHAPE : prepared?.shape ?? stoneShape(this.geometry);
     // Its density: its definition's, or its mass over its volume (a sphere's; a mesh's own, as a pizza's disc).
     const volume = this.sphere ? (4 / 3) * Math.PI * radius ** 3 : this.shape.volume * radius ** 3;
     this.density = this.thing.body.density ?? this.ownMass / volume;
@@ -736,7 +788,7 @@ export class Rock {
     // Which way is up for it: its own +y if it is kept upright (a pizza's toppings), else its short axis, either way.
     this.uprightAxis = this.thing.body.upright ? UP.clone() : this.shape.axes[2].clone();
     // A floater that is not a sphere floats by its mesh's own volume (waterlineTable).
-    this.waterlineTable = this.floats && !this.sphere ? waterlineTable(this.geometry, this.uprightAxis) : null;
+    this.waterlineTable = this.floats && !this.sphere ? (prepared ? prepared.waterline(this.uprightAxis) : waterlineTable(this.geometry, this.uprightAxis)) : null;
     this.liftHeading = Math.random() * Math.PI * 2;   // the direction its lumps push it (the header)
     this.body = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, time: 0, liftX: 0, liftY: 0, liftZ: 0, spinLiftX: 0, spinLiftY: 0, spinLiftZ: 0, resting: false, openUntil: undefined };
     // Its constants under water (src/cavity.js underWater): the reference stone's for a river stone.
@@ -1161,8 +1213,8 @@ export class Rock {
 
   // ---- meeting other things (src/collide.js) -------------------------------
 
-  /** Whether it can meet another thing: flying, under the water, or afloat (not at rest on the bed or the deck). */
-  get collides() { return this.state === 'air' || this.state === 'water' || this.state === 'float' || this.afloat; }
+  /** Whether it can meet another thing: flying, skimming, under the water, or afloat (not at rest on the bed or the deck). */
+  get collides() { return this.state === 'air' || this.state === 'skim' || this.state === 'water' || this.state === 'float' || this.afloat; }
 
   /** Whether it is a floater on (or rising to, or bobbed clear of) the water; one thrown is not, until it has gone in. */
   get floater() { return this.floats && (this.state !== 'air' || this.hasFloated); }
@@ -1188,9 +1240,16 @@ export class Rock {
   /**
    * Knocked by another thing (src/collide.js): its velocity changed by
    * (dvx, dvy, dvz) and it moved by (dx, dy, dz), under the water its path
-   * (sinkStep's body) with it; at rest afloat it bobs again.
+   * (sinkStep's body) with it; at rest afloat it bobs again. A skip stone
+   * knocked off its skim's path flies on from where it was knocked (its
+   * touch counted as a skip): it meets the water again as it comes to it.
    */
   knock(dvx, dvy, dvz, dx, dy, dz) {
+    if (this.state === 'skim' && (dvx !== 0 || dvy !== 0 || dvz !== 0)) {
+      this.state = 'air';
+      this.skip.contact = null;
+      this.skip.skips++;
+    }
     this.velocity.x += dvx; this.velocity.y += dvy; this.velocity.z += dvz;
     this.position.x += dx; this.position.y += dy; this.position.z += dz;
     if (this.state === 'water') {
@@ -1270,10 +1329,13 @@ export class Rock {
       cup = -Math.min(soft.cup * speed * speed, soft.most) * facing;
       flap = soft.flap * Math.min(speed / 4, 1);
     }
-    // Eased towards what it should be, so it relaxes rather than snaps.
-    this.flexed = this.flexed ?? { cup: 0, flap: 0 };
-    this.flexed.cup += (cup - this.flexed.cup) * 0.35;
-    this.flexed.flap += (flap - this.flexed.flap) * 0.35;
+    // Eased towards what it should be over FLEX_EASE seconds of its own time, so it relaxes rather than snaps, alike
+    // however often it is drawn (and still while the pond is paused).
+    this.flexed = this.flexed ?? { cup: 0, flap: 0, age: this.age };
+    const ease = 1 - Math.exp(-Math.max(this.age - this.flexed.age, 0) / FLEX_EASE);
+    this.flexed.age = this.age;
+    this.flexed.cup += (cup - this.flexed.cup) * ease;
+    this.flexed.flap += (flap - this.flexed.flap) * ease;
     if (Math.abs(this.flexed.cup) < 1e-4 && Math.abs(this.flexed.flap) < 1e-4 && this.flexedDrawn === false) return;
     const rest = this.restShape, restNormals = this.restNormals, array = positions.array, normals = this.geometry.attributes.normal.array;
     const phase = 2 * Math.PI * soft.rate * this.age;
@@ -1652,7 +1714,7 @@ export class Rock {
   }
 
   dispose() {
-    this.geometry.dispose();
+    if (!this.sharedGeometry) this.geometry.dispose();   // a shared one stays with its definition (prepareThing)
     this.meshAbove.material.dispose();
     this.meshBelow.material.dispose();
     this.meshMirror?.material.dispose();

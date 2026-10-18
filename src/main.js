@@ -190,8 +190,8 @@ import { Rings } from './rings.js';
 import { createEnvironment, SKY_NAMES, skyHours, resolveHour, nearestHour } from './sky.js';
 import { createWaterSurface } from './waterSurface.js';
 import { createPondFloor, createShore, floorDepthAt, groundHeightAt } from './pondFloor.js';
-import { Rock, aimSkip, aimThrow, flutterTrial, skipSpeed, SKIP_THROW } from './rock.js';
-import { THINGS, DEFAULT_THING, defineThing } from './things.js';
+import { Rock, aimSkip, aimThrow, flutterTrial, prepareThing, skipSpeed, SKIP_THROW } from './rock.js';
+import { THINGS, THING_NAMES, DEFAULT_THING, defineThing, onThingsChange } from './things.js';
 import { collideThings } from './collide.js';
 import { SplashSystem, MIRROR_LAYER } from './splash.js';
 import { createFloatTarget, FullscreenPass, configureFloatSupport, renderTargetBytes } from './gpu.js';
@@ -1131,16 +1131,33 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     tracing = Boolean(on);
     if (!tracing) for (const rock of [...traces.keys()]) untrace(rock);
   }
-  let stoneRadius = 0.03;
   let power = 'normal';
   let skipping = false;   // Skip: taps throw skips (skipThrow)
   // What is thrown (the Object setting, src/things.js): the page's ?thing, else the last choice here, else a river stone;
-  // and each kind's slider value (a stone's size is stoneRadius).
+  // and each kind's slider value (thingSizes: its own, or its family's, src/things.js `size.share`: the stones share one).
   const storedThing = storedChoice(THING_STORAGE_KEY);
   const requestedThing = pageParameters.get('thing');
   let thingName = Object.hasOwn(THINGS, requestedThing ?? '') ? requestedThing : Object.hasOwn(THINGS, storedThing ?? '') ? storedThing : DEFAULT_THING;
   const thingShapes = new Map();   // each kind's shape, from one made (a fluttering thing's aim flies it)
-  const thingSizes = Object.fromEntries(Object.entries(THINGS).map(([name, thing]) => [name, thing.slider?.initial ?? null]));
+  const sizeKey = (thing) => thing.sizeShare ?? thing.key;
+  const thingSizes = {};
+  for (const thing of Object.values(THINGS)) thingSizes[sizeKey(thing)] ??= thing.slider?.initial ?? null;
+  /** A slider value kept within what `thing`'s slider allows. */
+  const withinSlider = (thing, value) => (thing.slider ? THREE.MathUtils.clamp(value, thing.slider.min, thing.slider.max) : value);
+  /** `name` made ready to throw (src/rock.js prepareThing), its shape kept for the aim, its size measured once (a gem's volume). */
+  function prepareNamed(name) {
+    const thing = THINGS[name];
+    thingShapes.delete(name);
+    const prepared = prepareThing(thing);
+    if (prepared) thingShapes.set(name, prepared.shape);
+    thing.measure(thing.slider?.initial);
+  }
+  // A thing defined (or defined again) from now on: ready to throw now, at its own first size.
+  onThingsChange((name) => {
+    const thing = THINGS[name];
+    if (!thing.sizeShare || thingSizes[thing.sizeShare] === undefined) thingSizes[sizeKey(thing)] = thing.slider?.initial ?? null;
+    prepareNamed(name);
+  });
   let timeScale = 1;
   let simulationTime = 0;
 
@@ -1190,14 +1207,19 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     return aimThrow(hand, target, flightTime, measured, flight);
   }
 
-  /** What is thrown (`name`, else the Object setting's): its kind, its radius and mass at its slider's value `size` (a stone's radius `radius`). */
+  /**
+   * What is thrown (`name`, else the Object setting's): its kind, its radius
+   * and mass at its slider's value `size` (kept within its slider), else at
+   * the one it has now (its own, or its family's); a thing sized by its
+   * diameter may be given its radius `radius` instead.
+   */
   function measureThing(name, size, radius) {
     const thing = THINGS[name];
+    const value = size !== undefined && size !== null ? withinSlider(thing, size) : thingSizes[sizeKey(thing)] ?? thing.slider?.initial;
     if (thing.byDiameter) {
-      const nominal = radius ?? stoneRadius;
+      const nominal = radius ?? value / 200;
       return { thing, radius: nominal, mass: thing.measure(200 * nominal).mass, size: null };
     }
-    const value = size ?? thingSizes[name] ?? thing.slider?.initial;
     return { thing, ...thing.measure(value), size: value };
   }
 
@@ -1303,15 +1325,17 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     }
     return keep ? keepOnWater(hit, margin) : hit;
   }
+  /** Whether a tap now throws a skip: Skip on and what is thrown skips (a ball does not, whatever Skip was left at for stones). */
+  const skipsNow = () => skipping && THINGS[thingName].skips;
   /** Where a tap aims a throw: a skip keeps the tap's direction (skipThrow brings its touch onto the water). */
-  const throwAim = (clientX, clientY) => aimPoint(clientX, clientY, throwMargin(), !skipping);
+  const throwAim = (clientX, clientY) => aimPoint(clientX, clientY, throwMargin(), !skipsNow());
 
   function showAim(hit) {
     if (!hit) { marker.visible = false; arc.visible = false; return; }
     marker.visible = true;
     marker.scale.setScalar(1);
     const measured = measureThing(thingName);
-    const skipped = skipping && measured.thing.skips ? skipThrow(handPosition(measured.radius), hit, measured.radius) : null;
+    const skipped = skipsNow() ? skipThrow(handPosition(measured.radius), hit, measured.radius) : null;
     const hand = skipped?.hand ?? handPosition(measured.radius);
     // A fluttering thing's arc is its flight's (src/rock.js flutterTrial), once one of its kind has been made (the warm-up makes a pizza).
     const shape = thingShapes.get(thingName);
@@ -1830,6 +1854,9 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     marker.visible = arc.visible = true;   // the aim marker's programs too
     rain.show(true);                       // and the rain's: its tile's pass, its streaks and flecks (none drawn: none set)
     const galeWarmUp = galeWaves.warmUp();   // and the gale's passes and spray (its FFT's program is the ripples')
+    // Every thing made ready to throw (src/rock.js prepareThing: a pizza's shared mesh and waterline, a ball's paints), so
+    // no throw pays for it; one defined later is made ready as it is defined.
+    for (const name of THING_NAMES) prepareNamed(name);
     const stone = throwAt(WARM_UP.x, WARM_UP.z, { radius: WARM_UP.radius, power: 'normal', thing: DEFAULT_THING });
     // A floater's mirror image (src/rock.js meshMirror), in the whole mirror drawn now, and a textured thing's
     // materials (a pizza's: above, below and in the mirror): their programs too.
@@ -1890,7 +1917,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
   const api = {
     throwAt,
     throwRandom,
-    setStoneRadius(radius) { stoneRadius = radius; },
+    /** The stones' size by their radius (m), as the harness sets it (the strip's slider sets it in cm, setSize). */
+    setStoneRadius(radius) { thingSizes[sizeKey(THINGS[DEFAULT_THING])] = 200 * radius; },
     /** What is thrown (a key of src/things.js THINGS: a kind of stone or a ball), remembered on this device. */
     setThing(name) {
       if (!Object.hasOwn(THINGS, name)) return;
@@ -1898,13 +1926,15 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
       try { window.localStorage.setItem(THING_STORAGE_KEY, name); } catch { /* storage refused: the choice lasts this visit */ }
     },
     get thing() { return thingName; },
-    /** The strip's slider for what is thrown, in its unit (src/things.js `slider`): a stone's diameter (cm), a bowling ball's pounds, a basketball's size. */
+    /**
+     * The strip's slider for what is thrown, in its unit (src/things.js `slider`), kept within it: a stone's diameter (cm,
+     * shared by the stones), a bowling ball's pounds, a basketball's size; each thing its own but for a family's.
+     */
     setSize(value) {
       const thing = THINGS[thingName];
-      if (thing.byDiameter) stoneRadius = value / 200;
-      else if (thing.slider) thingSizes[thingName] = THREE.MathUtils.clamp(value, thing.slider.min, thing.slider.max);
+      if (thing.slider && Number.isFinite(value)) thingSizes[sizeKey(thing)] = withinSlider(thing, value);
     },
-    get size() { return THINGS[thingName].byDiameter ? 200 * stoneRadius : thingSizes[thingName] ?? THINGS[thingName].slider?.initial; },
+    get size() { return thingSizes[sizeKey(THINGS[thingName])] ?? THINGS[thingName].slider?.initial; },
     /**
      * Define a thing to throw (src/things.js defineThing: a definition, checked;
      * it throws saying what is wrong), from the console or a page that makes
@@ -2016,6 +2046,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
       while (remaining > 1e-6) { const dt = Math.min(chunk, remaining); beforeFrame?.(seconds - remaining); simulate(dt); remaining -= dt; }
       render();
     },
+    /** The pond back to still water: nothing thrown, the solver cleared (as the profiler starts each of its steps). */
+    clear() { clearPond(); },
     /** Whether a stone has met the water: gone in, or skipped (a skip's touch can be over within a frame). */
     hasImpacted() { return rocks.some((rock) => rock.state !== 'air' || rock.skip?.skips > 0); },
     /** Where the eye would stand at `steps` + 1 even shares of a glide from where it is to the view `name` (tools/zoom-probe.mjs). */

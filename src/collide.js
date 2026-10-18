@@ -27,6 +27,15 @@
 // off the water on it where it was struck (a knock: src/splash.js knock,
 // drops at COLLIDE.spray of the speed the pair closed at).
 //
+// A small thing fast enough to pass a floater within one substep (a gem
+// thrown hard at a tennis ball: 10 m/s is 4 cm a step) would be missed by
+// overlaps at the step's end, or met from its far side. So a pair apart at
+// the step's end is swept along the step too (each from where it was,
+// Rock.previous, to where it is, in a straight line): if they touched on the
+// way, and were closing, they meet as they touched, each put back where it
+// was then and given the impulse along the line between them there. The
+// rest of the step is lost to them, under a substep.
+//
 // Knocks pass on: a ball knocked into a second knocks it, and that one a
 // third. Over steps this comes of itself (the knocked ball moves on and
 // meets the next); within a step, a pair moved apart may be pushed into a
@@ -48,6 +57,8 @@ const COLLIDE = {
 
 const between = new THREE.Vector3();
 const relative = new THREE.Vector3();
+const startBetween = new THREE.Vector3();
+const sweep = new THREE.Vector3();
 
 /**
  * One substep's meetings among `things` (src/rock.js Rocks): each pair that
@@ -103,15 +114,32 @@ function collidePass(things, knocks) {
       between.copy(other.meshAbove.position).sub(one.meshAbove.position);
       const distance = between.length();
       const reach = one.collisionRadius + other.collisionRadius;
-      if (distance >= reach - COLLIDE.settled || distance < 1e-9) continue;
+      if (distance < 1e-9) continue;
+      let normal, overlap = 0, backOne = 0, backOther = 0;
+      if (distance < reach - COLLIDE.settled) {
+        normal = between.divideScalar(distance);   // from the first towards the second
+        overlap = reach - distance;
+      } else {
+        // Apart at the step's end: did they touch on the way (the header)?
+        const touched = touchedAt(one, other, reach);
+        if (touched === null) continue;
+        normal = between.copy(startBetween).addScaledVector(sweep, touched).divideScalar(reach);
+        if (-relative.copy(other.velocity).sub(one.velocity).dot(normal) <= 0) continue;
+        backOne = backOther = 1 - touched;
+      }
       met = true;
-      const normal = between.divideScalar(distance);   // from the first towards the second
       const massOne = one.collisionMass(), massOther = other.collisionMass();
-      // Apart, each by its share of the overlap.
-      const overlap = reach - distance;
-      const shareOne = massOther / (massOne + massOther);
-      one.knock(0, 0, 0, -normal.x * overlap * shareOne, -normal.y * overlap * shareOne, -normal.z * overlap * shareOne);
-      other.knock(0, 0, 0, normal.x * overlap * (1 - shareOne), normal.y * overlap * (1 - shareOne), normal.z * overlap * (1 - shareOne));
+      if (overlap > 0) {
+        // Apart, each by its share of the overlap.
+        const shareOne = massOther / (massOne + massOther);
+        one.knock(0, 0, 0, -normal.x * overlap * shareOne, -normal.y * overlap * shareOne, -normal.z * overlap * shareOne);
+        other.knock(0, 0, 0, normal.x * overlap * (1 - shareOne), normal.y * overlap * (1 - shareOne), normal.z * overlap * (1 - shareOne));
+      } else {
+        // Back to where they touched.
+        for (const [thing, back] of [[one, backOne], [other, backOther]]) {
+          thing.knock(0, 0, 0, (thing.previous.x - thing.position.x) * back, (thing.previous.y - thing.position.y) * back, (thing.previous.z - thing.position.z) * back);
+        }
+      }
       const closing = -relative.copy(other.velocity).sub(one.velocity).dot(normal);
       if (closing <= 0) continue;
       const bounce = Math.sqrt(one.collisionBounce * other.collisionBounce);
@@ -134,4 +162,26 @@ function collidePass(things, knocks) {
     }
   }
   return met;
+}
+
+/**
+ * The fraction of the step (0 to 1) at which `one` and `other`, each moved in
+ * a straight line from where it was (Rock.previous) to where it is, first
+ * came within `reach` of each other, or null if they never did, or touched
+ * already as the step began. Leaves the line between them as the step began
+ * in startBetween and its change over the step in sweep.
+ */
+function touchedAt(one, other, reach) {
+  // Where each was drawn as the step began: where it was, lifted as it is now (under a gale, src/rock.js syncMeshes).
+  startBetween.copy(other.previous).sub(one.previous)
+    .add(other.meshAbove.position).sub(other.position).sub(one.meshAbove.position).add(one.position);
+  sweep.copy(between).sub(startBetween);
+  const a = sweep.lengthSq();
+  const c = startBetween.lengthSq() - reach * reach;
+  if (a < 1e-12 || c <= 0) return null;
+  const b = 2 * startBetween.dot(sweep);
+  const discriminant = b * b - 4 * a * c;
+  if (b >= 0 || discriminant < 0) return null;
+  const touched = (-b - Math.sqrt(discriminant)) / (2 * a);
+  return touched <= 1 ? touched : null;
 }

@@ -13,7 +13,12 @@
 //       { by: 'preset', unit, presets: [{ value, label, diameter, mass }], initial }
 //       { by: 'fixed', diameter, mass }   (the slider off)
 //     A sphere's density follows from its mass and diameter; a mesh's from
-//     its mass and its mesh's own volume (src/rock.js), a pizza's being a disc.
+//     its mass and its mesh's own volume (src/rock.js), a pizza's being a disc;
+//     one sized by its mass and density is as big as they make its mesh's own
+//     volume (a cut gem). A thing sized by its diameter has a sphere's mass of
+//     its density (`mass` in src/rock.js), as the river stone always has.
+//     `size.share`, a family's name, makes things share one slider value (the
+//     stones' 'stones'); otherwise each thing keeps its own.
 //   - material: how it meets the pool's deck and other things (src/rock.js
 //     meetGround, src/collide.js): `bounce`, the share of the speed it came
 //     down at it leaves at (a range: a stone's lumps strike unevenly),
@@ -79,7 +84,7 @@
 // the geometry, the vertex colours and the material's colour, roughness and
 // reflection, which are uniforms, so no thing compiles a program of its own
 // (src/main.js warmUp).
-import { meshKind } from './thingMeshes.js';
+import { meshKind, unitVolume } from './thingMeshes.js';
 
 export const WATER_DENSITY = 1000;
 export const STONE_DENSITY = 2600;   // a river stone's: the splash and the cavity were fitted to it (tools/basilisk)
@@ -97,46 +102,94 @@ export const DEFAULT_THING = 'stone';
 const listeners = new Set();
 
 const isNumber = (value) => typeof value === 'number' && Number.isFinite(value);
+const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
+const within = (value, [least, most]) => isNumber(value) && value >= least && value <= most;
+// The bounds a definition's numbers must keep (validateThing), and that it must keep at every size (defineThing).
+const LIMITS = {
+  density: [50, 25000],     // kg/m³: lighter than balsa's half, heavier than gold
+  diameter: [0.005, 2],     // m across
+  mass: [0.0001, 100],      // kg
+  centimetres: [0.5, 200],  // a slider sized by its diameter
+  bounce: [0, 1], friction: [0, 5], rolling: [0, 1], drag: [0.01, 10],
+  restingHeight: [0.001, 2],   // its centre over the bed at rest, in radii
+  text: 120,                   // characters in a name, group or note
+};
 
-/** What is wrong with a definition (the header), as sentences; none for a good one. */
+/**
+ * What is wrong with a definition (the header), as sentences; none for a
+ * good one. It reads anything at all, as JSON might bring it, without
+ * failing: a field of the wrong kind is a problem, never an error.
+ */
 export function validateThing(key, definition) {
+  try {
+    return definitionProblems(key, definition);
+  } catch (error) {
+    return [`it could not be read (${error.message})`];
+  }
+}
+
+function definitionProblems(key, definition) {
   const problems = [];
   const need = (condition, problem) => { if (!condition) problems.push(problem); };
-  need(typeof key === 'string' && /^[a-z][a-z0-9-]*$/.test(key), `its key "${key}" must be lower case letters, digits and dashes`);
-  if (!definition || typeof definition !== 'object') return [...problems, 'it is not an object'];
-  for (const field of ['name', 'group', 'note']) need(typeof definition[field] === 'string' && definition[field].length > 0, `it needs a ${field}`);
-  const { body, material, look } = definition;
-  need(body && BODY_SHAPES.includes(body.shape), `body.shape must be one of ${BODY_SHAPES.join(', ')}`);
-  const size = body?.size;
-  need(size && ['diameter', 'mass', 'preset', 'fixed'].includes(size.by), 'body.size.by must be diameter, mass, preset or fixed');
-  if (size?.by === 'diameter' || size?.by === 'mass') {
-    need(isNumber(size.min) && isNumber(size.max) && isNumber(size.step) && size.min > 0 && size.max > size.min && size.step > 0, 'body.size needs min < max and a step, all above 0');
-    need(isNumber(size.initial) && size.initial >= size.min && size.initial <= size.max, 'body.size.initial must lie between its min and max');
+  need(typeof key === 'string' && /^[a-z][a-z0-9-]*$/.test(key) && key.length <= 40, `its key "${String(key).slice(0, 40)}" must be lower case letters, digits and dashes`);
+  if (!isObject(definition)) return [...problems, 'it is not an object'];
+  for (const field of ['name', 'group', 'note']) need(typeof definition[field] === 'string' && definition[field].length > 0 && definition[field].length <= LIMITS.text, `it needs a ${field} of 1 to ${LIMITS.text} characters`);
+  for (const field of ['short', 'called']) need(definition[field] === undefined || (typeof definition[field] === 'string' && definition[field].length > 0 && definition[field].length <= LIMITS.text), `${field} must be text of 1 to ${LIMITS.text} characters`);
+  for (const part of ['body', 'material', 'water', 'look']) need(isObject(definition[part]), `it needs a ${part}, an object`);
+  for (const part of ['air', 'abilities']) need(definition[part] === undefined || isObject(definition[part]), `${part} must be an object`);
+  if (problems.length > 0) return problems;
+  const { body, material, water, look } = definition;
+  const air = definition.air ?? {}, abilities = definition.abilities ?? {};
+
+  need(BODY_SHAPES.includes(body.shape), `body.shape must be one of ${BODY_SHAPES.join(', ')}`);
+  need(body.density === undefined || within(body.density, LIMITS.density), `body.density must be ${LIMITS.density.join(' to ')} kg/m³`);
+  need(body.diameter === undefined || within(body.diameter, LIMITS.diameter), `body.diameter must be ${LIMITS.diameter.join(' to ')} m`);
+  need(body.upright === undefined || typeof body.upright === 'boolean', 'body.upright must be true or false');
+  const soft = body.soft;
+  need(soft === undefined || (isObject(soft) && ['cup', 'most', 'flap', 'rate'].every((field) => within(soft[field], [0, 10]))), 'body.soft needs cup, most, flap and rate, each 0 to 10');
+  const size = body.size;
+  if (!isObject(size) || !['diameter', 'mass', 'preset', 'fixed'].includes(size.by)) {
+    problems.push('body.size must be an object whose `by` is diameter, mass, preset or fixed');
+  } else {
+    need(size.share === undefined || (typeof size.share === 'string' && size.share.length > 0 && size.share.length <= 40), 'body.size.share must be a family\'s name');
+    if (size.by === 'diameter' || size.by === 'mass') {
+      need(isNumber(size.min) && isNumber(size.max) && isNumber(size.step) && size.min > 0 && size.max > size.min && size.step > 0 && (size.max - size.min) / size.step <= 10000, 'body.size needs min < max and a step, all above 0 (at most 10000 steps)');
+      need(isNumber(size.initial) && size.initial >= size.min && size.initial <= size.max, 'body.size.initial must lie between its min and max');
+    }
+    if (size.by === 'diameter') {
+      need(size.unit === 'cm' && within(body.density, LIMITS.density), 'a thing sized by its diameter needs unit cm and a body.density');
+      need(!isNumber(size.min) || !isNumber(size.max) || (within(size.min, LIMITS.centimetres) && within(size.max, LIMITS.centimetres)), `its diameters must be ${LIMITS.centimetres.join(' to ')} cm`);
+    }
+    if (size.by === 'mass') {
+      need(Object.hasOwn(MASS_UNITS, size.unit), `body.size.unit must be one of ${Object.keys(MASS_UNITS).join(', ')}`);
+      need(within(body.diameter, LIMITS.diameter) || within(body.density, LIMITS.density), 'a thing sized by its mass needs a body.diameter or a body.density');
+      need(isNumber(body.diameter) || body.shape !== 'mesh' || Boolean(meshKind(look.mesh)?.volume), `a mesh sized by its mass and density needs a mesh of known volume (look.mesh "${look.mesh}" has none)`);
+    }
+    if (size.by === 'preset') {
+      const presets = size.presets;
+      need(Array.isArray(presets) && presets.length > 0 && presets.length <= 20 && presets.every((preset, index) => isObject(preset) && isNumber(preset.value) && within(preset.diameter, LIMITS.diameter) && within(preset.mass, LIMITS.mass) && typeof preset.label === 'string' && preset.label.length <= 40 && (index === 0 || preset.value === presets[index - 1].value + 1)),
+        'body.size.presets must be a list of 1 to 20 { value, label, diameter, mass }, their values counting up by 1');
+      need(Array.isArray(presets) && presets.some((preset) => isObject(preset) && preset.value === size.initial), 'body.size.initial must be one of its presets\' values');
+    }
+    if (size.by === 'fixed') need(within(size.diameter, LIMITS.diameter) && within(size.mass, LIMITS.mass), `a thing of one size needs body.size.diameter (${LIMITS.diameter.join(' to ')} m) and body.size.mass (${LIMITS.mass.join(' to ')} kg)`);
   }
-  if (size?.by === 'diameter') need(size.unit === 'cm' && isNumber(body.density) && body.density > 0, 'a thing sized by its diameter needs unit cm and a body.density');
-  if (size?.by === 'mass') {
-    need(Object.hasOwn(MASS_UNITS, size.unit), `body.size.unit must be one of ${Object.keys(MASS_UNITS).join(', ')}`);
-    need((isNumber(body.diameter) && body.diameter > 0) || (isNumber(body.density) && body.density > 0), 'a thing sized by its mass needs a body.diameter or a body.density');
-  }
-  if (size?.by === 'preset') {
-    need(Array.isArray(size.presets) && size.presets.length > 0 && size.presets.every((preset, index) => isNumber(preset.value) && preset.diameter > 0 && preset.mass > 0 && typeof preset.label === 'string' && (index === 0 || preset.value === size.presets[index - 1].value + 1)),
-      'body.size.presets must be a list of { value, label, diameter, mass }, their values counting up by 1');
-    need(size.presets?.some((preset) => preset.value === size.initial), 'body.size.initial must be one of its presets\' values');
-  }
-  if (size?.by === 'fixed') need(isNumber(size.diameter) && size.diameter > 0 && isNumber(size.mass) && size.mass > 0, 'a thing of one size needs body.size.diameter and body.size.mass');
-  const bounce = material?.bounce;
+
+  const bounce = material.bounce;
   need(Array.isArray(bounce) && bounce.length === 2 && bounce.every(isNumber) && bounce[0] >= 0 && bounce[0] <= bounce[1] && bounce[1] <= 1, 'material.bounce must be [least, most] within 0 to 1');
-  need(isNumber(material?.friction) && material.friction >= 0, 'material.friction must be 0 or more');
-  need(material?.roll === undefined || material.roll === null || Object.hasOwn(ROLLS, material.roll), 'material.roll must be solid, shell or none');
-  need(!material?.roll || (isNumber(material.rolling) && material.rolling >= 0), 'a thing that rolls needs material.rolling');
-  need(definition.air?.drag === undefined || (isNumber(definition.air.drag) && definition.air.drag > 0), 'air.drag must be above 0');
-  need(definition.air?.model === undefined || AIR_MODELS.includes(definition.air.model), `air.model must be one of ${AIR_MODELS.join(', ')}`);
-  need(definition.body?.upright === undefined || typeof definition.body.upright === 'boolean', 'body.upright must be true or false');
-  const soft = definition.body?.soft;
-  need(soft === undefined || ['cup', 'most', 'flap', 'rate'].every((field) => isNumber(soft[field]) && soft[field] >= 0), 'body.soft needs cup, most, flap and rate, each 0 or more');
-  need(isNumber(definition.water?.restingHeight) && definition.water.restingHeight > 0, 'water.restingHeight must be above 0');
-  need(definition.water?.dry === undefined || (isNumber(definition.water.dry) && definition.water.dry > 0 && definition.water.dry < 1), 'water.dry must lie between 0 and 1');
-  need(look && meshKind(look.mesh), `look.mesh "${look?.mesh}" is no registered mesh (src/thingMeshes.js)`);
+  need(within(material.friction, LIMITS.friction), `material.friction must be ${LIMITS.friction.join(' to ')}`);
+  need(material.roll === undefined || material.roll === null || (typeof material.roll === 'string' && Object.hasOwn(ROLLS, material.roll)), 'material.roll must be solid, shell or none');
+  need(!material.roll || within(material.rolling, LIMITS.rolling), 'a thing that rolls needs material.rolling, 0 to 1');
+  need(air.drag === undefined || within(air.drag, LIMITS.drag), `air.drag must be ${LIMITS.drag.join(' to ')}`);
+  need(air.model === undefined || AIR_MODELS.includes(air.model), `air.model must be one of ${AIR_MODELS.join(', ')}`);
+  need(within(water.restingHeight, LIMITS.restingHeight), `water.restingHeight must be ${LIMITS.restingHeight.join(' to ')} radii`);
+  need(water.dry === undefined || (isNumber(water.dry) && water.dry > 0 && water.dry < 1), 'water.dry must lie between 0 and 1');
+  for (const ability of ['skips', 'held']) need(abilities[ability] === undefined || typeof abilities[ability] === 'boolean', `abilities.${ability} must be true or false`);
+  const mesh = typeof look.mesh === 'string' ? meshKind(look.mesh) : undefined;
+  need(mesh, `look.mesh "${String(look.mesh)}" is no registered mesh (src/thingMeshes.js)`);
+  for (const field of ['roughness', 'reflection']) need(look[field] === undefined || within(look[field], [0, 4]), `look.${field} must be 0 to 4`);
+  need(look.thumbnail === undefined || typeof look.thumbnail === 'string', 'look.thumbnail must be a path');
+  // The mesh's own fields (src/thingMeshes.js registerMesh `check`).
+  if (mesh?.check) problems.push(...mesh.check(look));
   return problems;
 }
 
@@ -156,7 +209,10 @@ function measureFor(definition) {
       return (value) => {
         const mass = value * MASS_UNITS[size.unit];
         if (isNumber(body.diameter)) return ball(body.diameter / 2, mass);
-        return { radius: Math.cbrt((3 * mass) / (4 * Math.PI * body.density)), mass, density: body.density };
+        // As big as its density makes it: a sphere's volume, or its mesh's own (a cut gem's), so mass, density and the
+        // volume it displaces and meets things with agree (src/rock.js reads the mesh's volume to the same number).
+        const volume = body.shape === 'mesh' ? unitVolume(definition) : (4 / 3) * Math.PI;
+        return { radius: Math.cbrt(mass / (body.density * volume)), mass, density: body.density };
       };
     case 'preset':
       return (value) => {
@@ -185,12 +241,22 @@ function readoutFor(definition) {
  * what is wrong), its defaults filled in and what the rest reads derived:
  * `slider` (the strip's range in its unit, or null), `measure(value)`,
  * `readout(value)`, `fastest(value)` (m/s), `called`, the material's `roll`
- * as a share, and `sphere`, `byDiameter`, `skips`. A key already defined is
- * replaced. Returns the thing.
+ * as a share, and `sphere`, `byDiameter`, `sizeShare`, `skips`. A key
+ * already defined is replaced. Returns the thing.
+ *
+ * It is all or nothing: the definition is copied as plain data (so it is
+ * the registry's, whatever its maker does with theirs after), checked, then
+ * tried before it is registered: measured at its slider's least, first and
+ * most (each within LIMITS) and, unless `trial` is false (the things below,
+ * which tools/thing-probe.mjs throws), its mesh built once. One that fails
+ * any of it is not registered, and the error says why.
  */
-export function defineThing(key, definition) {
-  const problems = validateThing(key, definition);
+export function defineThing(key, definition, { trial = true } = {}) {
+  let plain;
+  try { plain = withoutUndefined(structuredClone(definition)); } catch { throw new Error(`The thing "${key}" cannot be defined: it must be plain data (no functions or classes).`); }
+  const problems = validateThing(key, plain);
   if (problems.length > 0) throw new Error(`The thing "${key}" cannot be defined: ${problems.join('; ')}.`);
+  definition = plain;
   const size = definition.body.size;
   const thing = {
     ...definition,
@@ -203,6 +269,7 @@ export function defineThing(key, definition) {
     material: { ...definition.material, roll: definition.material.roll ? ROLLS[definition.material.roll] : null },
     sphere: definition.body.shape === 'sphere',
     byDiameter: size.by === 'diameter',
+    sizeShare: size.share ?? null,
     slider: size.by === 'fixed' ? null
       : size.by === 'preset' ? { min: size.presets[0].value, max: size.presets.at(-1).value, step: 1, initial: size.initial, unit: size.unit }
         : { min: size.min, max: size.max, step: size.step, initial: size.initial, unit: size.unit },
@@ -212,10 +279,50 @@ export function defineThing(key, definition) {
   thing.skips = thing.abilities.skips;
   // The fastest a throw sends it: a held thing no faster than THROW_WORK lets it go; a stone as it always was.
   thing.fastest = (value) => (thing.abilities.held ? Math.sqrt((2 * THROW_WORK) / thing.measure(value ?? thing.slider?.initial).mass) : Infinity);
+  const failed = tryThing(thing, trial);
+  if (failed) throw new Error(`The thing "${key}" cannot be defined: ${failed}.`);
   THINGS[key] = thing;
   if (!THING_NAMES.includes(key)) THING_NAMES.push(key);
   for (const listener of listeners) listener(key);
   return thing;
+}
+
+/** `value` with its fields left undefined taken out (as JSON has them), so a field given as undefined takes its default. */
+function withoutUndefined(value) {
+  if (Array.isArray(value)) return value.map(withoutUndefined);
+  if (!isObject(value)) return value;
+  return Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== undefined).map(([key, entry]) => [key, withoutUndefined(entry)]));
+}
+
+/** What goes wrong with a thing made as defineThing makes it (its sizes, and with `build` its mesh), or null. */
+function tryThing(thing, build) {
+  try {
+    const values = thing.slider ? [thing.slider.min, thing.slider.initial, thing.slider.max] : [undefined];
+    for (const value of values) {
+      const { radius, mass } = thing.measure(value);
+      if (!within(2 * radius, LIMITS.diameter) || !within(mass, LIMITS.mass)) {
+        return `at ${value ?? 'its size'} it would be ${isNumber(radius) ? `${(200 * radius).toFixed(1)} cm` : 'no size'} across and weigh ${isNumber(mass) ? `${mass.toPrecision(3)} kg` : 'nothing'} (it must be ${LIMITS.diameter.join(' to ')} m and ${LIMITS.mass.join(' to ')} kg)`;
+      }
+    }
+    if (build) {
+      // Built once, its random draws (a stone's lumps) from a still stream, so that a seeded throw after it is unchanged.
+      const mesh = meshKind(thing.look.mesh);
+      const random = Math.random;
+      Math.random = () => 0.5;
+      try {
+        const geometry = mesh.build(thing, {});
+        mesh.color(thing);
+        const count = geometry?.attributes?.position?.count ?? 0;
+        geometry?.dispose?.();
+        if (count === 0) return 'its mesh is empty';
+      } finally {
+        Math.random = random;
+      }
+    }
+    return null;
+  } catch (error) {
+    return `it fails as it is made (${error.message})`;
+  }
 }
 
 /** Call `listener(key)` whenever a thing is defined (the page rebuilds its cards). Returns the way to stop. */
@@ -237,25 +344,28 @@ export function thingGroups() {
 
 // ---- the things ------------------------------------------------------------
 
+// Each tried by tools/thing-probe.mjs, which throws them all; its mesh is not built as it is defined (defineThing `trial`).
+const defineBuiltIn = (key, definition) => defineThing(key, definition, { trial: false });
+
 const stone = (name, note, density, look, { short = name, restingHeight = 0.75, bounce = [0.25, 0.45], friction = 0.6 } = {}) => ({
   name, short, group: 'Stones', note,
-  body: { shape: 'mesh', density, size: { by: 'diameter', unit: 'cm', min: 1.5, max: 30, step: 0.5, initial: 6 } },
+  body: { shape: 'mesh', density, size: { by: 'diameter', unit: 'cm', min: 1.5, max: 30, step: 0.5, initial: 6, share: 'stones' } },
   material: { bounce, friction },
   water: { restingHeight },
   look: { mesh: 'stone', ...look },
   abilities: { skips: true, held: false },
 });
-defineThing('stone', stone('River stone', 'Worn smooth, 2.6 times as heavy as water', 2600, { pattern: 'river' }, { short: 'Rock' }));
-defineThing('slate', stone('Slate', 'A flat slab, blue-grey, in layers', 2750, {
+defineBuiltIn('stone', stone('River stone', 'Worn smooth, 2.6 times as heavy as water', 2600, { pattern: 'river' }, { short: 'Rock' }));
+defineBuiltIn('slate', stone('Slate', 'A flat slab, blue-grey, in layers', 2750, {
   pattern: 'slate', squash: [0.22, 0.1, 0.55, 0.2], lumps: 0.45, hue: [0.57, 0.04], saturation: [0.03, 0.04], lightness: [0.26, 0.08], roughness: 0.8,
 }, { restingHeight: 0.35, bounce: [0.2, 0.35] }));
-defineThing('granite', stone('Granite', 'Pale and flecked; a little heavier', 2700, {
+defineBuiltIn('granite', stone('Granite', 'Pale and flecked; a little heavier', 2700, {
   pattern: 'granite', squash: [0.7, 0.18, 0.84, 0.16], lumps: 0.85, hue: [0.02, 0.03], saturation: [0.16, 0.08], lightness: [0.42, 0.08], roughness: 0.75,
 }, { restingHeight: 0.8, bounce: [0.3, 0.45] }));
-defineThing('basalt', stone('Basalt', 'Dark and dense: sinks fastest', 3000, {
+defineBuiltIn('basalt', stone('Basalt', 'Dark and dense: sinks fastest', 3000, {
   pattern: 'basalt', squash: [0.62, 0.2, 0.8, 0.2], lumps: 0.9, hue: [0.6, 0.1], saturation: [0.02, 0.03], lightness: [0.1, 0.05], roughness: 0.85,
 }));
-defineThing('pumice', stone('Pumice', 'Full of bubbles: lighter than water, it floats', 650, {
+defineBuiltIn('pumice', stone('Pumice', 'Full of bubbles: lighter than water, it floats', 650, {
   pattern: 'pumice', squash: [0.66, 0.22, 0.8, 0.2], lumps: 1.25, hue: [0.1, 0.03], saturation: [0.22, 0.1], lightness: [0.68, 0.08], roughness: 1.0,
 }, { restingHeight: 0.8, bounce: [0.2, 0.35], friction: 0.7 }));
 
@@ -266,13 +376,13 @@ const ball = (name, note, size, material, look) => ({
   water: { restingHeight: 0.97 },
   look: { mesh: 'ball', ...look },
 });
-defineThing('golf', ball('Golf ball', '46 g; a little heavier than water: it sinks slowly', { size: { by: 'fixed', diameter: 0.04267, mass: 0.0459 } },
+defineBuiltIn('golf', ball('Golf ball', '46 g; a little heavier than water: it sinks slowly', { size: { by: 'fixed', diameter: 0.04267, mass: 0.0459 } },
   { bounce: [0.75, 0.82], friction: 0.4, roll: 'solid', rolling: 0.05 }, { paint: 'golf', roughness: 0.35, reflection: 0.9 }));
-defineThing('tennis', ball('Tennis ball', '58 g; a hollow shell: it floats', { size: { by: 'fixed', diameter: 0.067, mass: 0.058 } },
+defineBuiltIn('tennis', ball('Tennis ball', '58 g; a hollow shell: it floats', { size: { by: 'fixed', diameter: 0.067, mass: 0.058 } },
   { bounce: [0.72, 0.77], friction: 0.6, roll: 'shell', rolling: 0.04 }, { paint: 'tennis', roughness: 1.0, reflection: 0.5 }));
-defineThing('bowling', ball('Bowling ball', '6 to 16 lb: 11 lb and lighter float', { diameter: 0.2159, size: { by: 'mass', unit: 'lb', min: 6, max: 16, step: 1, initial: 14 } },
+defineBuiltIn('bowling', ball('Bowling ball', '6 to 16 lb: 11 lb and lighter float', { diameter: 0.2159, size: { by: 'mass', unit: 'lb', min: 6, max: 16, step: 1, initial: 14 } },
   { bounce: [0.15, 0.25], friction: 0.3, roll: 'solid', rolling: 0.015 }, { paint: 'bowling', roughness: 0.14, reflection: 1.0 }));
-defineThing('basketball', ball('Basketball', 'Sizes 5 to 7; it floats high', {
+defineBuiltIn('basketball', ball('Basketball', 'Sizes 5 to 7; it floats high', {
   size: { by: 'preset', unit: 'size', initial: 7, presets: [{ value: 5, label: '480 g', diameter: 0.222, mass: 0.48 }, { value: 6, label: '540 g', diameter: 0.23, mass: 0.54 }, { value: 7, label: '620 g', diameter: 0.239, mass: 0.62 }] },
 }, { bounce: [0.83, 0.87], friction: 0.6, roll: 'shell', rolling: 0.02 }, { paint: 'basketball', roughness: 0.62, reflection: 0.8 }));
 
@@ -283,19 +393,19 @@ const gem = (name, note, density, look) => ({
   water: { restingHeight: 0.45 },
   look: { mesh: 'gem', ...look },
 });
-defineThing('diamond', gem('Diamond', 'Colourless, its facets flashing', 3510, { color: [232, 240, 255], stretch: 1, fire: 0.15, contrast: [0.15, 1.6], roughness: 0.03, reflection: 2.0 }));
-defineThing('emerald', gem('Emerald', 'Deep green, in its oblong cut', 2760, { color: [18, 150, 80], stretch: 1.4, contrast: [0.5, 1.0], roughness: 0.06, reflection: 1.5 }));
-defineThing('ruby', gem('Ruby', 'Red corundum, an oval', 4000, { color: [190, 12, 45], stretch: 1.25, contrast: [0.5, 1.0], roughness: 0.06, reflection: 1.5 }));
-defineThing('sapphire', gem('Sapphire', 'Blue corundum, an oval', 4000, { color: [25, 55, 185], stretch: 1.25, contrast: [0.5, 1.0], roughness: 0.06, reflection: 1.5 }));
+defineBuiltIn('diamond', gem('Diamond', 'Colourless, its facets flashing', 3510, { color: [232, 240, 255], stretch: 1, fire: 0.15, contrast: [0.15, 1.6], roughness: 0.03, reflection: 2.0 }));
+defineBuiltIn('emerald', gem('Emerald', 'Deep green, in its oblong cut', 2760, { color: [18, 150, 80], stretch: 1.4, contrast: [0.5, 1.0], roughness: 0.06, reflection: 1.5 }));
+defineBuiltIn('ruby', gem('Ruby', 'Red corundum, an oval', 4000, { color: [190, 12, 45], stretch: 1.25, contrast: [0.5, 1.0], roughness: 0.06, reflection: 1.5 }));
+defineBuiltIn('sapphire', gem('Sapphire', 'Blue corundum, an oval', 4000, { color: [25, 55, 185], stretch: 1.25, contrast: [0.5, 1.0], roughness: 0.06, reflection: 1.5 }));
 
-defineThing('apple', {
+defineBuiltIn('apple', {
   name: 'Apple', group: 'Other', note: 'A quarter of it is air: it floats, low', called: 'an apple',
   body: { shape: 'sphere', density: 815, size: { by: 'mass', unit: 'g', min: 100, max: 300, step: 10, initial: 180 } },
   material: { bounce: [0.25, 0.35], friction: 0.6, roll: 'solid', rolling: 0.06 },
   water: { restingHeight: 0.95 },
   look: { mesh: 'apple', roughness: 0.45, reflection: 1.0 },
 });
-defineThing('pizza', {
+defineBuiltIn('pizza', {
   name: 'Pizza', group: 'Other', note: 'A flat disc: it sails, and floats flat', called: 'a pizza',
   body: {
     shape: 'mesh',
@@ -308,7 +418,7 @@ defineThing('pizza', {
   water: { restingHeight: 0.06, dry: 0.88 },
   look: { mesh: 'pizza', roughness: 1.0, reflection: 0.6 },
 });
-defineThing('watermelon', {
+defineBuiltIn('watermelon', {
   name: 'Watermelon', group: 'Other', note: 'Nearly as heavy as water: it floats, almost under', called: 'a watermelon',
   body: { shape: 'mesh', density: 960, size: { by: 'mass', unit: 'kg', min: 2, max: 10, step: 0.5, initial: 5 } },
   material: { bounce: [0.08, 0.15], friction: 0.6 },
@@ -316,7 +426,7 @@ defineThing('watermelon', {
   look: { mesh: 'watermelon', roughness: 0.45, reflection: 0.9 },
 });
 
-defineThing('brick', {
+defineBuiltIn('brick', {
   name: 'Brick', group: 'Other', note: '2.7 kg of fired clay: it sinks', called: 'a brick',
   body: { shape: 'mesh', size: { by: 'fixed', diameter: 0.215, mass: 2.7 } },
   material: { bounce: [0.1, 0.2], friction: 0.7 },

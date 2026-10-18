@@ -35,7 +35,10 @@
 //     a basketball afloat bounces off it, the ball moves off, dips, rings
 //     the water and throws off spray, and rests afloat again; a 16 lb
 //     bowling ball dropped on a tennis ball afloat drives it under, and it
-//     comes back up and floats; two basketballs drifting into each other
+//     comes back up and floats; a 5 ct diamond at 14 m/s through a tennis
+//     ball afloat strikes it however its 1/240 s is cut into steps (it is
+//     swept along the step), and a skip stone skimming into a basketball
+//     afloat strikes it; two basketballs drifting into each other
 //     bounce apart; one driven at a pool wall comes back off it (its bounce
 //     times the water's share), and one driven into another against a wall
 //     is sent back, neither past the wall, and so is a skipped pumice afloat
@@ -47,7 +50,19 @@
 //     OVERLAP_MOST after its meeting;
 //   - the splash's drops meet the pool's walls and deck (src/splash.js
 //     setGround): none goes into a wall or under the deck, and one thrown
-//     over a wall lands on the deck and wets it;
+//     over a wall lands on the deck and wets it, as does one crossing the
+//     wall's line above the deck's top and ending the step below it, while
+//     one rising past the deck's top at the wall comes back off its side;
+//   - definitions as anyone might write them: the review's bad ones (a stone
+//     look without its fields, body.soft null, presets an object, an
+//     infinite diameter) are refused plainly, and good ones damaged at
+//     random never make the check throw, and whatever defineThing takes
+//     can be made and stepped;
+//   - mass, density and volume agree for every thing not sized by its
+//     diameter, the volume measured here from its mesh;
+//   - making each thing as it is thrown, once prepared (src/rock.js
+//     prepareThing), costs a fixed mesh's under FIXED_THROW_MS (the table
+//     printed for every thing);
 //   - a thing defined from outside (src/things.js defineThing: a plain beach
 //     ball) is thrown and floats as its definition says, and a broken
 //     definition is refused, with what is wrong with it;
@@ -57,20 +72,22 @@
 //
 //   node tools/thing-probe.mjs
 import * as THREE from 'three';
-import { Rock, aimThrow } from '../src/rock.js';
+import { Rock, aimThrow, prepareThing } from '../src/rock.js';
 import { THINGS, THING_NAMES, WATER_DENSITY, defineThing, validateThing } from '../src/things.js';
 import { floorDepthAt } from '../src/pondFloor.js';
 import { holdInPool, poolGround, POOL } from '../src/pool.js';
 import { collideThings } from '../src/collide.js';
 import { SplashSystem } from '../src/splash.js';
+import { meshKind } from '../src/thingMeshes.js';
 
 const GRAVITY = 9.81;
 const STEP = 1 / 240;
 const AIM_MISS = 0.05;                 // m
-const REST_SECONDS = 15;
+const REST_SECONDS = 18;              // s: a watermelon (960 kg/m³) dives over a metre and rises slowly, resting after 14 to 15.5 s as its throw falls
 const FLOAT_DEPTH_TOLERANCE = 0.003;   // m
 const SINK_TOLERANCE = 0.02;           // of the terminal speed
 const STEP_TOLERANCE = 0.1;            // of the highest bob
+const FIXED_THROW_MS = 1;              // ms: the most making a prepared thing (a fixed mesh's, src/rock.js prepareThing) may take as it is thrown
 const STEP_COST_MS = 0.05;
 const OVERLAP_MOST = 0.002;            // m
 const POWERS = { soft: 1.3, normal: 1.0, hard: 0.72 };
@@ -383,6 +400,50 @@ console.log('\nThings meeting things (src/collide.js):');
   check(record.overlap < OVERLAP_MOST, `a bowling ball and a tennis ball overlapped by ${(1000 * record.overlap).toFixed(1)} mm`);
 }
 {
+  // A 5 ct diamond at 14 m/s through a tennis ball afloat (review: it passed through it in one 1/240 s step). However
+  // the 1/240 s is cut into steps, it strikes the ball and comes back.
+  const results = [1, 2, 3, 4].map((parts) => {
+    const ball = afloatAt('tennis', 0, -1.4);
+    const measured = measure('diamond', 5);
+    const start = ball.meshAbove.position.clone().add(new THREE.Vector3(-0.03, 0.03, 0));
+    const diamond = new Rock({ radius: measured.radius, position: start, velocity: new THREE.Vector3(10, -10, 0), envTexture: null, thing: 'diamond', mass: measured.mass });
+    let knocks = 0;
+    for (let step = 0; step < parts; step++) {
+      ball.update(STEP / parts, floorDepthAt);
+      diamond.update(STEP / parts, floorDepthAt);
+      knocks += collideThings([ball, diamond]).length;
+    }
+    return { parts, struck: ball.velocity.length() > 0.05, back: diamond.velocity.x < 0, knocks };
+  });
+  console.log(`  a 5 ct diamond at 14 m/s through a tennis ball afloat, 1/240 s cut into 1 to 4 steps: ${results.map((result) => `${result.parts}: ${result.struck && result.back ? 'struck it' : 'passed'}`).join(', ')}`);
+  check(results.every((result) => result.struck && result.back), `a fast diamond passed through a tennis ball afloat (${results.filter((result) => !(result.struck && result.back)).map((result) => `${result.parts} step(s)`).join(', ')})`);
+}
+{
+  // A skip stone skimming into a basketball afloat in its path (review: on the water, skimming, it went through it).
+  const stone = new Rock({ radius: 0.03, position: new THREE.Vector3(0, 0.25, 0), velocity: new THREE.Vector3(0, -1.2, -9), envTexture: null, skip: true });
+  stone.launchSkip(stone.velocity);
+  for (let time = 0; time < 1 && stone.state !== 'skim'; time += STEP) stone.update(STEP, floorDepthAt);
+  const skimming = stone.state === 'skim';
+  const heading = new THREE.Vector3(stone.velocity.x, 0, stone.velocity.z).normalize();
+  const ball = afloatAt('basketball', 0, 0);
+  const rise = ball.meshAbove.position.y - stone.meshAbove.position.y;
+  const apart = Math.sqrt(Math.max((ball.collisionRadius + stone.collisionRadius + 0.005) ** 2 - rise * rise, 0));
+  ball.position.x = stone.position.x + heading.x * apart;
+  ball.position.z = stone.position.z + heading.z * apart;
+  ball.syncMeshes();
+  let struckSkimming = false, overlap = 0;
+  for (let step = 0; step < 60; step++) {
+    ball.update(STEP, floorDepthAt);
+    stone.update(STEP, floorDepthAt);
+    const wasSkimming = stone.state === 'skim';
+    const knocks = collideThings([ball, stone]);
+    if (wasSkimming && knocks.length > 0) struckSkimming = true;
+    overlap = Math.max(overlap, ball.collisionRadius + stone.collisionRadius - ball.meshAbove.position.distanceTo(stone.meshAbove.position));
+  }
+  console.log(`  a skip stone skimming into a basketball afloat: ${skimming ? (struckSkimming ? 'strikes it as it skims' : 'passes through it') : 'never skimmed'}; the ball moves off at ${ball.velocity.length().toFixed(2)} m/s; worst overlap ${(1000 * Math.max(overlap, 0)).toFixed(2)} mm`);
+  check(skimming && struckSkimming && overlap < OVERLAP_MOST, 'a skimming stone did not strike a basketball afloat in its path');
+}
+{
   // Two basketballs afloat drifting into each other.
   const one = afloatAt('basketball', -0.4, -1.2), other = afloatAt('basketball', 0.4, -1.2);
   one.knock(0.6, 0, 0, 0, 0, 0);
@@ -535,6 +596,125 @@ console.log('\nThings meeting things (src/collide.js):');
   check((rock.afloat || rock.state === 'float') && Math.abs(draft - expected) < FLOAT_DEPTH_TOLERANCE, `a thing defined from outside does not float as it should (${rock.state}, ${centimetres(draft)} cm under, Archimedes ${centimetres(expected)})`);
   THING_NAMES.splice(THING_NAMES.indexOf('test-beach-ball'), 1);
   delete THINGS['test-beach-ball'];
+}
+
+// ---- definitions as anyone might write them (src/things.js validateThing, defineThing) ----
+{
+  // The review's: each refused, none crashing the check, none registered.
+  const sphereLook = { mesh: 'ball', paint: 'plain', color: [200, 60, 40] };
+  const good = {
+    name: 'Probe ball', group: 'Test', note: 'Defined by the probe',
+    body: { shape: 'sphere', size: { by: 'fixed', diameter: 0.2, mass: 0.3 } },
+    material: { bounce: [0.5, 0.6], friction: 0.5 }, water: { restingHeight: 0.97 }, look: sphereLook,
+  };
+  const reviewCases = {
+    'a stone look without its fields': { ...good, body: { shape: 'mesh', density: 2600, size: { by: 'diameter', unit: 'cm', min: 2, max: 10, step: 1, initial: 5 } }, look: { mesh: 'stone' } },
+    'body.soft null': { ...good, body: { ...good.body, soft: null } },
+    'presets an object': { ...good, body: { shape: 'sphere', size: { by: 'preset', presets: {}, initial: 1 } } },
+    'an infinite diameter': { ...good, body: { shape: 'sphere', size: { by: 'preset', unit: 'size', initial: 1, presets: [{ value: 1, label: 'x', diameter: Infinity, mass: 1 }] } } },
+  };
+  const refusals = Object.entries(reviewCases).map(([label, definition]) => {
+    let problems = null, error = null;
+    try { problems = validateThing('probe-case', definition); } catch (thrown) { problems = `the check threw: ${thrown.message}`; }
+    try { defineThing('probe-case', definition); } catch (thrown) { error = thrown.message; }
+    return { label, refused: Array.isArray(problems) && problems.length > 0 && error !== null && !Object.hasOwn(THINGS, 'probe-case') };
+  });
+  console.log(`\nDefinitions as anyone might write them: the review's four refused plainly: ${refusals.map((entry) => `${entry.label} ${entry.refused ? 'yes' : 'NO'}`).join('; ')}`);
+  check(refusals.every((entry) => entry.refused), `a bad definition was not refused plainly (${refusals.filter((entry) => !entry.refused).map((entry) => entry.label).join(', ')})`);
+  // Random damage to good definitions (one field at a time put to something else JSON can hold): the check never throws,
+  // and what defineThing takes can be made, measured and stepped.
+  const junk = [null, undefined, {}, [], '', 'x', true, 0, -1, 1e9, 1e-9, Number.NaN, Infinity, [1], [Infinity, 1], { by: 'mass' }];
+  const fields = (value, prefix = []) => (value && typeof value === 'object' ? Object.entries(value).flatMap(([key, entry]) => [[...prefix, key], ...fields(entry, [...prefix, key])]) : []);
+  let fuzzRandom = 12345;
+  const pick = (count) => { fuzzRandom = (fuzzRandom * 16807) % 2147483647; return fuzzRandom % count; };
+  const sources = [good, ...['stone', 'slate', 'basketball', 'bowling', 'diamond', 'pizza', 'watermelon', 'brick'].map((key) => {
+    const { key: unused, short, called, sphere, byDiameter, sizeShare, slider, measure: measuring, readout, fastest, skips, ...rest } = THINGS[key];
+    return structuredClone({ ...rest, material: { ...rest.material, roll: rest.material.roll === null ? undefined : rest.material.roll === 5 / 7 ? 'solid' : 'shell' } });
+  })];
+  let tried = 0, threw = 0, taken = 0, broken = 0;
+  for (let trial = 0; trial < 1500; trial++) {
+    const definition = structuredClone(sources[pick(sources.length)]);
+    const paths = fields(definition);
+    for (let damage = 0; damage <= pick(2); damage++) {
+      const path = paths[pick(paths.length)];
+      let holder = definition;
+      for (const key of path.slice(0, -1)) holder = holder?.[key];
+      if (holder && typeof holder === 'object') holder[path.at(-1)] = junk[pick(junk.length)];
+    }
+    tried++;
+    try { validateThing('probe-fuzz', definition); } catch { threw++; }
+    let thing = null;
+    try { thing = defineThing('probe-fuzz', definition); } catch { /* refused: as it should be, if it is bad */ }
+    if (!thing) continue;
+    taken++;
+    try {
+      const measured = thing.measure(thing.slider?.initial);
+      const rock = new Rock({ radius: measured.radius, position: new THREE.Vector3(0, 0.5, -1.4), velocity: new THREE.Vector3(0, -3, -2), envTexture: null, thing: 'probe-fuzz', mass: measured.mass });
+      for (let step = 0; step < 240; step++) rock.update(STEP, floorDepthAt);
+      if (![rock.position.x, rock.position.y, rock.position.z, rock.density].every(Number.isFinite)) broken++;
+      rock.dispose();
+    } catch { broken++; }
+  }
+  THING_NAMES.splice(THING_NAMES.indexOf('probe-fuzz') >>> 0, THING_NAMES.includes('probe-fuzz') ? 1 : 0);
+  delete THINGS['probe-fuzz'];
+  console.log(`  ${tried} definitions damaged at random: the check threw on ${threw}; defineThing took ${taken}, of which ${broken} could not be made or stepped`);
+  check(threw === 0 && broken === 0, `damaged definitions: the check threw on ${threw}, and ${broken} taken could not be made or stepped`);
+}
+
+// ---- mass, density and volume agree (src/things.js measure, src/rock.js) ----
+{
+  // Each thing's mass, against its density and the volume it displaces (its mesh's own, measured here apart from the
+  // app's stoneShape), but for a thing sized by its diameter, whose mass is a ball's of its density (the river stone's).
+  const disagree = [];
+  for (const name of THING_NAMES) {
+    const thing = THINGS[name];
+    if (thing.byDiameter) continue;
+    for (const value of thing.slider ? [thing.slider.min, thing.slider.max] : [undefined]) {
+      const measured = thing.measure(value);
+      const rock = new Rock({ radius: measured.radius, position: new THREE.Vector3(), velocity: new THREE.Vector3(), envTexture: null, thing: name, mass: measured.mass });
+      const positions = rock.geometry.attributes.position.array;
+      let unit = 0;
+      for (let index = 0; index < positions.length; index += 9) {
+        const [ax, ay, az, bx, by, bz, cx, cy, cz] = positions.subarray(index, index + 9);
+        unit += (ax * (by * cz - bz * cy) + ay * (bz * cx - bx * cz) + az * (bx * cy - by * cx)) / 6;
+      }
+      const volume = (rock.sphere ? (4 / 3) * Math.PI : unit) * measured.radius ** 3;
+      const ratio = (rock.density * volume) / rock.mass;
+      if (Math.abs(ratio - 1) > (rock.sphere ? 1e-9 : 1e-3)) disagree.push(`${name}${value !== undefined ? ` ${value}` : ''} ${ratio.toFixed(3)}`);
+      rock.dispose();
+    }
+  }
+  console.log(`\nMass, density and volume: density × volume / mass for each thing at its least and most${disagree.length ? `: off for ${disagree.join(', ')}` : ': 1 for every one'}`);
+  check(disagree.length === 0, `mass, density and volume disagree (${disagree.join(', ')})`);
+}
+
+// ---- what a throw costs the main thread (src/rock.js prepareThing) ----
+{
+  // Each thing made as the app throws it, after it is prepared (src/main.js warmUp): the median of 15. A thing of a
+  // fixed mesh shares its prepared one; a stone's lumps are its own, built each throw.
+  const rows = [], over = [];
+  let preparing = 0;
+  for (const name of THING_NAMES) {
+    const thing = THINGS[name];
+    const started = performance.now();
+    prepareThing(thing);
+    preparing += performance.now() - started;
+    const measured = thing.measure(thing.slider?.initial);
+    const times = [];
+    for (let trial = 0; trial < 15; trial++) {
+      const before = performance.now();
+      const rock = new Rock({ radius: thing.byDiameter ? 0.03 : measured.radius, position: new THREE.Vector3(), velocity: new THREE.Vector3(), envTexture: null, thing: name, mass: measured.mass });
+      if (thing.air.model === 'flutter') rock.trialFlight();
+      times.push(performance.now() - before);
+      rock.dispose();
+    }
+    times.sort((first, second) => first - second);
+    const median = times[7];
+    rows.push(`${name} ${median.toFixed(2)}`);
+    if (meshKind(thing.look.mesh).fixed && median > FIXED_THROW_MS) over.push(`${name} ${median.toFixed(2)} ms`);
+  }
+  console.log(`\nWhat making a thing costs as it is thrown (ms, median of 15, once prepared; preparing them all took ${preparing.toFixed(0)} ms): ${rows.join(', ')}`);
+  check(over.length === 0, `a prepared thing costs more than ${FIXED_THROW_MS} ms to throw (${over.join(', ')})`);
 }
 
 // ---- the substep, and the cost ----

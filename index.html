@@ -831,12 +831,12 @@
   if (pond) {
     // The slider is what is thrown's (src/things.js `slider`): a stone's
     // diameter, a bowling ball's pounds, a basketball's size; off for a ball
-    // of one size. The stones share one size; each ball keeps its own.
+    // of one size. A family shares one size (src/things.js `size.share`: the stones); anything else keeps its own.
     const sizeInput = document.getElementById('stone-size');
     const sizeReadout = document.getElementById('stone-readout');
     const sizeLabel = document.querySelector('label[for="stone-size"]');
     const sliderValues = {};
-    const sliderKey = () => (THINGS[pond.thing].byDiameter ? 'stone' : pond.thing);
+    const sliderKey = () => THINGS[pond.thing].sizeShare ?? pond.thing;
     const applySize = () => {
       const thing = THINGS[pond.thing];
       const value = Number(sizeInput.value);
