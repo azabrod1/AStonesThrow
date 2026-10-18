@@ -16,5 +16,8 @@
     "playwright": "^1.60.0",
     "three": "^0.183.2"
   },
-  "type": "module"
+  "type": "module",
+  "devDependencies": {
+    "@dimforge/rapier3d-compat": "^0.21.0"
+  }
 }

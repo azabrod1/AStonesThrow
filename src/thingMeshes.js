@@ -46,12 +46,13 @@ const MESHES = new Map();
  * geometry (a colour per vertex; for a stone, a list of separate triangles,
  * src/rock.js integrates its shape over them), `color(definition)` the
  * material's colour (drawn when the thing is made, after its geometry),
- * and `texture(definition)`, if it has one, the material's map (its colours
+ * `glow(definition)`, if it has one, the material's emissive colour (null
+ * for none), and `texture(definition)`, if it has one, the material's map (its colours
  * times the vertices'; a textured thing's material is its own program,
  * which src/main.js warmUp draws). A `fixed` kind builds the same geometry
  * every time and draws no random numbers: src/rock.js prepareThing builds
- * it, its shape and its waterline once for each definition, and every one
- * thrown shares them. `volume(definition)` is its unit-sized volume, where
+ * it, its shape and its buoyancy's columns once for each definition, and
+ * every one thrown shares them. `volume(definition)` is its unit-sized volume, where
  * it has one (a fixed kind's is its geometry's; a stone's lumps are drawn
  * at random, so it has none): a thing sized by its mass is as big as its
  * density and that volume make it (src/things.js). `prepare(definition)`
@@ -59,10 +60,14 @@ const MESHES = new Map();
  * drawing no random numbers, so the first one thrown costs no more than the
  * next (src/rock.js prepareThing). `check(look)` says, as sentences, what is
  * wrong with a definition's `look` for this kind (the fields its builder
- * reads; src/things.js validateThing), none for a good one.
+ * reads; src/things.js validateThing), none for a good one. A
+ * `sharedStream` kind (a stone) draws its lumps from Math.random between
+ * its throw's own draws, so its throw keeps drawing from Math.random too
+ * (src/rock.js `random`: a seeded stone is the stone it always was); any
+ * other thing's throw draws from a stream of its own.
  */
-export function registerMesh(kind, { build, color, texture = null, fixed = false, volume = null, prepare = null, check = null }) {
-  MESHES.set(kind, { build, color, texture, fixed, prepare, check, volume: volume ?? (fixed ? (definition) => meshVolume(build(definition, {})) : null) });
+export function registerMesh(kind, { build, color, texture = null, glow = null, fixed = false, volume = null, prepare = null, check = null, sharedStream = false }) {
+  MESHES.set(kind, { build, color, texture, glow, fixed, prepare, check, sharedStream, volume: volume ?? (fixed ? (definition) => meshVolume(build(definition, {})) : null) });
 }
 
 // What the looks' checks (registerMesh `check`) ask of a field.
@@ -782,6 +787,8 @@ export function createBrickGeometry() {
 // ---- the kinds -------------------------------------------------------------
 
 registerMesh('stone', {
+  // Its lumps and tint are drawn from Math.random between its throw's own draws, as they always were (src/rock.js `random`).
+  sharedStream: true,
   // The river stone's look is its own; another kind's squash, lumps and colouring are its look's ranges.
   check: (look) => {
     if (!STONE_PATTERNS.includes(look.pattern)) return [`look.pattern must be one of ${STONE_PATTERNS.join(', ')}`];
@@ -815,7 +822,17 @@ registerMesh('ball', {
 registerMesh('apple', { build: () => createAppleGeometry(), color: () => new THREE.Color(1, 1, 1), fixed: true });
 registerMesh('watermelon', { build: () => createWatermelonGeometry(), color: () => new THREE.Color(1, 1, 1), fixed: true });
 registerMesh('brick', { build: () => createBrickGeometry(), color: () => new THREE.Color(1, 1, 1), fixed: true });
-registerMesh('pizza', { build: () => createPizzaGeometry(), color: () => new THREE.Color(1, 1, 1), texture: () => pizzaTexture(), fixed: true });
+// Its material's colour: white, or its look's `tint` over its paint; `frost` (0 to 1) lays a pale bloom over it all,
+// the material's emissive colour (a frozen pizza's: a uniform, so no program of its own).
+registerMesh('pizza', {
+  build: () => createPizzaGeometry(), texture: () => pizzaTexture(), fixed: true,
+  color: (definition) => (definition.look.tint ? new THREE.Color(...definition.look.tint.map((channel) => channel / 255)) : new THREE.Color(1, 1, 1)),
+  glow: (definition) => (definition.look.frost ? new THREE.Color(0.62, 0.7, 0.8).multiplyScalar(definition.look.frost) : null),
+  check: (look) => [
+    ...(look.tint === undefined || numbersIn(look.tint, 3, 0, 255) ? [] : ['look.tint must be three numbers from 0 to 255']),
+    ...(look.frost === undefined || (finite(look.frost) && look.frost >= 0 && look.frost <= 1) ? [] : ['look.frost must be a number from 0 to 1']),
+  ],
+});
 // A gem's facets are lit at random, its cut never: its volume is any one's (its colours drawn from a still stream).
 registerMesh('gem', {
   build: (definition) => createGemGeometry(definition), color: () => new THREE.Color(1, 1, 1), volume: (definition) => meshVolume(createGemGeometry(definition, () => 0.5)),

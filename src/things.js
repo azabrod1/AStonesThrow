@@ -10,7 +10,7 @@
 //     the slider sets:
 //       { by: 'diameter', unit: 'cm', min, max, step, initial }   (needs a density; its mass a ball's of it)
 //       { by: 'mass', unit: 'g' | 'kg' | 'lb' | 'ct', min, max, step, initial }   (a body.diameter, or a density)
-//       { by: 'preset', unit, presets: [{ value, label, diameter, mass }], initial }
+//       { by: 'preset', unit, presets: [{ value, label, diameter, mass, name }], initial }   (`name` what the size is called: "Size 7")
 //       { by: 'fixed', diameter, mass }   (the slider off)
 //     A sphere's density follows from its mass and diameter; a mesh's from
 //     its mass and its mesh's own volume (src/rock.js), a pizza's being a disc;
@@ -24,23 +24,33 @@
 //     down at it leaves at (a range: a stone's lumps strike unevenly),
 //     `friction` (Coulomb), `roll` ('solid', 'shell' or none: a ball keeps 5/7
 //     or 3/5 of its speed along the ground once it rolls; a thing that does
-//     not roll tumbles) and `rolling`, its rolling resistance.
+//     not roll tumbles) and `rolling`, its rolling resistance; `give`, for a
+//     hollow ball, how much it flattens per m/s it is struck at, and springs
+//     back (src/rock.js squash: drawn, not felt).
 //   - air: `drag`, its drag coefficient in flight (on the disc of its nominal
 //     radius: 0.47 a ball's; a pizza, flat on, more), and its `model`:
-//     `ballistic` (it tumbles as it flies) or `flutter` (a soft, flat thing:
-//     it turns broadside to the air, wobbles, spins on its face and glides a
-//     little, src/rock.js Rock.flutter).
-//   - body.upright: it is kept one way up (its own +y: a pizza's toppings),
-//     in the air and afloat; otherwise a flat floater lies either way up.
-//   - body.soft, a soft thing's give (a pizza's): in the air its edges trail
-//     the centre, cupped against the air, and flap (src/rock.js Rock.flex).
+//     `ballistic` (it tumbles as it flies) or `flutter` (a flat thing: a plate
+//     in the air, turned by the air's push on its face and its spin, let go
+//     flat with a little tilt, src/rock.js Rock.flutter).
+//   - body.upright: its own +y is its top (a pizza's toppings): which way up
+//     it is let go, and which way its rim keeps the water off afloat (the
+//     water turns it as it will: upside down it stays so).
+//   - body.soft, a soft thing's give (a pizza's): a spring that the air cups
+//     in flight, steadying it, and the water and the deck fling (src/rock.js
+//     Rock.bendStep, drawn by Rock.flex).
 //   - water: `restingHeight`, its centre over the bed at rest, in radii, and
 //     `dry`, for a thing with a rim (a pizza's crust), the share of its radius
 //     inside the rim that the water does not reach: it rides the water, so its
-//     rim holds it out (src/waterSurface.js setDryDiscs).
+//     rim holds it out (src/waterSurface.js setDryDiscs); `soaks`, for a thing
+//     that takes up water (bread), `takes`, the share of its volume of water
+//     it holds soaked through, and `seconds`, how long it takes wholly under
+//     to soak most of the way (src/rock.js soak: heavier, it floats lower;
+//     soft, it goes limp; its rim no longer holds the water out).
 //   - look: `mesh`, the kind of mesh it is drawn with (src/thingMeshes.js,
 //     registerMesh), that kind's own parameters, and the material's
-//     `roughness` and `reflection`; `thumbnail`, its card's picture.
+//     `roughness` and `reflection`; `wet`, how much `darker` and `glossier`
+//     it looks wet (out of the water it dries, src/rock.js showWet; a stone
+//     darkens most, a gem not at all); `thumbnail`, its card's picture.
 //   - abilities: `skips` (Skip skips it: a stone), `held` (a throw puts at
 //     most THROW_WORK into it, so a heavy thing leaves slower; a stone keeps
 //     its throw as it always was).
@@ -73,9 +83,11 @@
 //     diamond (3510), emerald (2760), ruby and sapphire (corundum, 4000);
 //   - other things: an apple (100 to 300 g at 815 kg/m³: a quarter of it is
 //     air, so it floats, low), a pizza (20, 30 or 40 cm across, a disc with
-//     its crust, cheese and pepperoni, about 420 kg/m³, mostly airy bread: it
-//     floats flat, toppings up; soft, it flutters through the air, level,
-//     flexing), a watermelon (2 to 10 kg at 960 kg/m³: it floats with only a
+//     its crust, cheese and pepperoni, about 420 kg/m³, mostly airy bread: a
+//     plate in the air, cupped by it as it flies, it floats flat and soaks,
+//     sinking lower and going limp over a minute or two), a frozen pizza (the
+//     same, rigid, lighter for its size, frosted: it tumbles more, floats
+//     higher and soaks only as it thaws), a watermelon (2 to 10 kg at 960 kg/m³: it floats with only a
 //     sliver of its back above the water) and a brick (215 × 102.5 × 65 mm,
 //     2.7 kg: about 1900 kg/m³, its density from its mesh's volume; it sinks,
 //     and lands on the deck with a thud).
@@ -94,7 +106,7 @@ const ROLLS = { solid: 5 / 7, shell: 3 / 5 };   // the share of its speed along 
 const BODY_SHAPES = ['sphere', 'mesh'];         // the bodies src/rock.js knows
 const AIR_MODELS = ['ballistic', 'flutter'];    // the flights src/rock.js knows (Rock.fly)
 const CALLED = { Stones: 'a rock', Balls: 'a ball', Gems: 'a gem' };
-const DEFAULTS = { air: { drag: 0.47, model: 'ballistic' }, look: { roughness: 0.92, reflection: 0.9 }, abilities: { skips: false, held: true } };
+const DEFAULTS = { air: { drag: 0.47, model: 'ballistic' }, look: { roughness: 0.92, reflection: 0.9, wet: { darker: 0.15, glossier: 0.4 } }, abilities: { skips: false, held: true } };
 
 export const THINGS = {};
 export const THING_NAMES = [];
@@ -167,8 +179,8 @@ function definitionProblems(key, definition) {
     }
     if (size.by === 'preset') {
       const presets = size.presets;
-      need(Array.isArray(presets) && presets.length > 0 && presets.length <= 20 && presets.every((preset, index) => isObject(preset) && isNumber(preset.value) && within(preset.diameter, LIMITS.diameter) && within(preset.mass, LIMITS.mass) && typeof preset.label === 'string' && preset.label.length <= 40 && (index === 0 || preset.value === presets[index - 1].value + 1)),
-        'body.size.presets must be a list of 1 to 20 { value, label, diameter, mass }, their values counting up by 1');
+      need(Array.isArray(presets) && presets.length > 0 && presets.length <= 20 && presets.every((preset, index) => isObject(preset) && isNumber(preset.value) && within(preset.diameter, LIMITS.diameter) && within(preset.mass, LIMITS.mass) && typeof preset.label === 'string' && preset.label.length <= 40 && (preset.name === undefined || (typeof preset.name === 'string' && preset.name.length <= 40)) && (index === 0 || preset.value === presets[index - 1].value + 1)),
+        'body.size.presets must be a list of 1 to 20 { value, label, diameter, mass, name? }, their values counting up by 1');
       need(Array.isArray(presets) && presets.some((preset) => isObject(preset) && preset.value === size.initial), 'body.size.initial must be one of its presets\' values');
     }
     if (size.by === 'fixed') need(within(size.diameter, LIMITS.diameter) && within(size.mass, LIMITS.mass), `a thing of one size needs body.size.diameter (${LIMITS.diameter.join(' to ')} m) and body.size.mass (${LIMITS.mass.join(' to ')} kg)`);
@@ -179,15 +191,18 @@ function definitionProblems(key, definition) {
   need(within(material.friction, LIMITS.friction), `material.friction must be ${LIMITS.friction.join(' to ')}`);
   need(material.roll === undefined || material.roll === null || (typeof material.roll === 'string' && Object.hasOwn(ROLLS, material.roll)), 'material.roll must be solid, shell or none');
   need(!material.roll || within(material.rolling, LIMITS.rolling), 'a thing that rolls needs material.rolling, 0 to 1');
+  need(material.give === undefined || within(material.give, [0, 0.1]), 'material.give must be 0 to 0.1 (its flattening per m/s)');
   need(air.drag === undefined || within(air.drag, LIMITS.drag), `air.drag must be ${LIMITS.drag.join(' to ')}`);
   need(air.model === undefined || AIR_MODELS.includes(air.model), `air.model must be one of ${AIR_MODELS.join(', ')}`);
   need(within(water.restingHeight, LIMITS.restingHeight), `water.restingHeight must be ${LIMITS.restingHeight.join(' to ')} radii`);
   need(water.dry === undefined || (isNumber(water.dry) && water.dry > 0 && water.dry < 1), 'water.dry must lie between 0 and 1');
+  need(water.soaks === undefined || (isObject(water.soaks) && within(water.soaks.seconds, [1, 100000]) && within(water.soaks.takes, [0, 2])), 'water.soaks needs seconds (1 to 100000) and takes (0 to 2, of its volume)');
   for (const ability of ['skips', 'held']) need(abilities[ability] === undefined || typeof abilities[ability] === 'boolean', `abilities.${ability} must be true or false`);
   const mesh = typeof look.mesh === 'string' ? meshKind(look.mesh) : undefined;
   need(mesh, `look.mesh "${String(look.mesh)}" is no registered mesh (src/thingMeshes.js)`);
   for (const field of ['roughness', 'reflection']) need(look[field] === undefined || within(look[field], [0, 4]), `look.${field} must be 0 to 4`);
   need(look.thumbnail === undefined || typeof look.thumbnail === 'string', 'look.thumbnail must be a path');
+  need(look.wet === undefined || (isObject(look.wet) && within(look.wet.darker, [0, 1]) && within(look.wet.glossier, [0, 1])), 'look.wet needs darker and glossier, each 0 to 1');
   // The mesh's own fields (src/thingMeshes.js registerMesh `check`).
   if (mesh?.check) problems.push(...mesh.check(look));
   return problems;
@@ -227,7 +242,6 @@ function measureFor(definition) {
 /** The strip's text for a definition's slider `value`. */
 function readoutFor(definition) {
   const size = definition.body.size;
-  const grams = (mass) => (mass < 1 ? `${Math.round(mass * 1000)} g` : `${mass.toFixed(1)} kg`);
   switch (size.by) {
     case 'diameter': return (value) => `${value % 1 === 0 ? value : value.toFixed(1)} cm`;
     case 'mass': return (value) => `${value} ${size.unit}`;
@@ -236,11 +250,40 @@ function readoutFor(definition) {
   }
 }
 
+/** Metres or kilograms as the strip writes them: "6.7 cm", "620 g", "5.0 kg". */
+const centimetres = (metres) => { const tenths = Math.round(1000 * metres); return `${tenths % 10 === 0 ? tenths / 10 : (tenths / 10).toFixed(1)} cm`; };
+const grams = (mass) => (mass < 1 ? `${Math.round(mass * 1000)} g` : `${mass.toFixed(1)} kg`);
+
+/**
+ * What a definition is at its slider's `value`, as the picker and the strip
+ * show it and the physics has it (src/rock.js reads the same mass and
+ * volume): its diameter and mass (m, kg), its true density (a mesh's mass
+ * over its mesh's own volume, a fixed mesh's or a cut gem's; else its
+ * definition's, or a sphere's), whether it floats, and `text`, the strip's
+ * line: what sets its size, then the other of its size and mass ("Size 7 ·
+ * 620 g", "14 lb · 21.6 cm", "6.7 cm · 58 g").
+ */
+function propertiesFor(definition, measure, readout) {
+  const size = definition.body.size;
+  return (value) => {
+    const { radius, mass } = measure(value);
+    const volume = definition.body.shape === 'mesh' ? unitVolume(definition) : null;
+    const density = definition.body.density ?? (volume ? mass / (volume * radius ** 3) : mass / ((4 / 3) * Math.PI * radius ** 3));
+    const preset = size.by === 'preset' ? size.presets.find((candidate) => candidate.value === Math.round(value)) ?? size.presets[0] : null;
+    const text = size.by === 'fixed' ? `${centimetres(2 * radius)} · ${grams(mass)}`
+      : preset?.name ? `${preset.name} · ${preset.label}`
+        : size.by === 'mass' ? `${readout(value)} · ${centimetres(2 * radius)}`
+          : `${readout(value)} · ${grams(mass)}`;
+    return { diameter: 2 * radius, mass, density, floats: density < WATER_DENSITY, text };
+  };
+}
+
 /**
  * Register a thing under `key` (the header): checked (it throws, listing
  * what is wrong), its defaults filled in and what the rest reads derived:
  * `slider` (the strip's range in its unit, or null), `measure(value)`,
- * `readout(value)`, `fastest(value)` (m/s), `called`, the material's `roll`
+ * `readout(value)`, `properties(value)` (propertiesFor: the picker's and
+ * the strip's), `fastest(value)` (m/s), `called`, the material's `roll`
  * as a share, and `sphere`, `byDiameter`, `sizeShare`, `skips`. A key
  * already defined is replaced. Returns the thing.
  *
@@ -276,6 +319,7 @@ export function defineThing(key, definition, { trial = true } = {}) {
     measure: measureFor(definition),
     readout: readoutFor(definition),
   };
+  thing.properties = propertiesFor(definition, thing.measure, thing.readout);
   thing.skips = thing.abilities.skips;
   // The fastest a throw sends it: a held thing no faster than THROW_WORK lets it go; a stone as it always was.
   thing.fastest = (value) => (thing.abilities.held ? Math.sqrt((2 * THROW_WORK) / thing.measure(value ?? thing.slider?.initial).mass) : Infinity);
@@ -352,7 +396,7 @@ const stone = (name, note, density, look, { short = name, restingHeight = 0.75, 
   body: { shape: 'mesh', density, size: { by: 'diameter', unit: 'cm', min: 1.5, max: 30, step: 0.5, initial: 6, share: 'stones' } },
   material: { bounce, friction },
   water: { restingHeight },
-  look: { mesh: 'stone', ...look },
+  look: { mesh: 'stone', wet: { darker: 0.35, glossier: 0.5 }, ...look },
   abilities: { skips: true, held: false },
 });
 defineBuiltIn('stone', stone('River stone', 'Worn smooth, 2.6 times as heavy as water', 2600, { pattern: 'river' }, { short: 'Rock' }));
@@ -379,19 +423,19 @@ const ball = (name, note, size, material, look) => ({
 defineBuiltIn('golf', ball('Golf ball', '46 g; a little heavier than water: it sinks slowly', { size: { by: 'fixed', diameter: 0.04267, mass: 0.0459 } },
   { bounce: [0.75, 0.82], friction: 0.4, roll: 'solid', rolling: 0.05 }, { paint: 'golf', roughness: 0.35, reflection: 0.9 }));
 defineBuiltIn('tennis', ball('Tennis ball', '58 g; a hollow shell: it floats', { size: { by: 'fixed', diameter: 0.067, mass: 0.058 } },
-  { bounce: [0.72, 0.77], friction: 0.6, roll: 'shell', rolling: 0.04 }, { paint: 'tennis', roughness: 1.0, reflection: 0.5 }));
+  { bounce: [0.72, 0.77], friction: 0.6, roll: 'shell', rolling: 0.04, give: 0.02 }, { paint: 'tennis', roughness: 1.0, reflection: 0.5 }));
 defineBuiltIn('bowling', ball('Bowling ball', '6 to 16 lb: 11 lb and lighter float', { diameter: 0.2159, size: { by: 'mass', unit: 'lb', min: 6, max: 16, step: 1, initial: 14 } },
   { bounce: [0.15, 0.25], friction: 0.3, roll: 'solid', rolling: 0.015 }, { paint: 'bowling', roughness: 0.14, reflection: 1.0 }));
 defineBuiltIn('basketball', ball('Basketball', 'Sizes 5 to 7; it floats high', {
-  size: { by: 'preset', unit: 'size', initial: 7, presets: [{ value: 5, label: '480 g', diameter: 0.222, mass: 0.48 }, { value: 6, label: '540 g', diameter: 0.23, mass: 0.54 }, { value: 7, label: '620 g', diameter: 0.239, mass: 0.62 }] },
-}, { bounce: [0.83, 0.87], friction: 0.6, roll: 'shell', rolling: 0.02 }, { paint: 'basketball', roughness: 0.62, reflection: 0.8 }));
+  size: { by: 'preset', unit: 'size', initial: 7, presets: [{ value: 5, name: 'Size 5', label: '480 g', diameter: 0.222, mass: 0.48 }, { value: 6, name: 'Size 6', label: '540 g', diameter: 0.23, mass: 0.54 }, { value: 7, name: 'Size 7', label: '620 g', diameter: 0.239, mass: 0.62 }] },
+}, { bounce: [0.83, 0.87], friction: 0.6, roll: 'shell', rolling: 0.02, give: 0.012 }, { paint: 'basketball', roughness: 0.62, reflection: 0.8 }));
 
 const gem = (name, note, density, look) => ({
   name, group: 'Gems', note,
   body: { shape: 'mesh', density, size: { by: 'mass', unit: 'ct', min: 5, max: 1000, step: 5, initial: 100 } },
   material: { bounce: [0.35, 0.5], friction: 0.4 },
   water: { restingHeight: 0.45 },
-  look: { mesh: 'gem', ...look },
+  look: { mesh: 'gem', wet: { darker: 0, glossier: 0 }, ...look },
 });
 defineBuiltIn('diamond', gem('Diamond', 'Colourless, its facets flashing', 3510, { color: [232, 240, 255], stretch: 1, fire: 0.15, contrast: [0.15, 1.6], roughness: 0.03, reflection: 2.0 }));
 defineBuiltIn('emerald', gem('Emerald', 'Deep green, in its oblong cut', 2760, { color: [18, 150, 80], stretch: 1.4, contrast: [0.5, 1.0], roughness: 0.06, reflection: 1.5 }));
@@ -415,8 +459,21 @@ defineBuiltIn('pizza', {
   },
   material: { bounce: [0.05, 0.12], friction: 0.9 },
   air: { drag: 1.1, model: 'flutter' },
-  water: { restingHeight: 0.06, dry: 0.88 },
-  look: { mesh: 'pizza', roughness: 1.0, reflection: 0.6 },
+  water: { restingHeight: 0.06, dry: 0.88, soaks: { seconds: 60, takes: 0.45 } },
+  look: { mesh: 'pizza', roughness: 1.0, reflection: 0.6, wet: { darker: 0.3, glossier: 0.5 } },
+});
+defineBuiltIn('frozen-pizza', {
+  name: 'Frozen pizza', short: 'Frozen', group: 'Other', note: 'Straight from the freezer: stiff, it tumbles and floats higher', called: 'a frozen pizza',
+  body: {
+    shape: 'mesh',
+    upright: true,
+    size: { by: 'preset', unit: 'size', initial: 2, presets: [{ value: 1, label: '20 cm', diameter: 0.2, mass: 0.09 }, { value: 2, label: '30 cm', diameter: 0.3, mass: 0.3 }, { value: 3, label: '40 cm', diameter: 0.4, mass: 0.72 }] },
+  },
+  material: { bounce: [0.15, 0.25], friction: 0.5 },
+  air: { drag: 1.1, model: 'flutter' },
+  // Frozen through, it takes up water only as it thaws: slowly.
+  water: { restingHeight: 0.06, dry: 0.88, soaks: { seconds: 1200, takes: 0.3 } },
+  look: { mesh: 'pizza', tint: [225, 232, 242], frost: 0.22, roughness: 0.5, reflection: 1.2, wet: { darker: 0.1, glossier: 0.3 } },
 });
 defineBuiltIn('watermelon', {
   name: 'Watermelon', group: 'Other', note: 'Nearly as heavy as water: it floats, almost under', called: 'a watermelon',

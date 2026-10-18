@@ -17,7 +17,10 @@
 // scrolls the panel: the incoming page is still off to the side when its
 // back button takes focus.
 //
-// Closing it resets it to the root, so it always opens on the list. It
+// Closing it resets it to the root, so it always opens on the list; a
+// control outside it may open it straight onto a page (openOn: the strip's
+// chip for what is thrown opens What to throw), and then ‹ closes it and the
+// focus goes back to that control. It
 // closes on the button, on Escape (before Escape's glide back to the shore
 // view, src/main.js) and on a press anywhere else; a press on the water then only
 // closes it, it does not throw a stone.
@@ -73,7 +76,22 @@ export class SettingsPanel {
     if (!this.isOpen()) return;
     this.panel.hidden = true;
     this.button.setAttribute('aria-expanded', 'false');
+    const from = this.openedFrom;
     this.resetToRoot();
+    if (from && this.panel.contains(document.activeElement)) from.focus({ preventScroll: true });
+  }
+
+  /**
+   * Open straight onto `page` from `from` (a control outside the panel: the
+   * strip's chip for what is thrown), no slide: its ‹ and closing it give
+   * the focus back to `from`.
+   */
+  openOn(page, from) {
+    if (this.isOpen()) this.hide();
+    this.show();
+    this.openedFrom = from;
+    this.navigate(page, true);
+    this.settle(this.generation);
   }
 
   /** The value a root row shows on its right ("Pond", "Auto · High"). */
@@ -83,6 +101,7 @@ export class SettingsPanel {
   }
 
   back() {
+    if (this.openedFrom && this.currentPage !== ROOT_PAGE) { this.hide(); return; }
     const opener = this.opener;
     this.navigate(ROOT_PAGE, false);
     opener?.focus({ preventScroll: true });
@@ -119,6 +138,7 @@ export class SettingsPanel {
   resetToRoot() {
     this.currentPage = ROOT_PAGE;
     this.opener = null;
+    this.openedFrom = null;
     this.generation += 1;
     this.settle();
   }

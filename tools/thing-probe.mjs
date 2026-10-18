@@ -89,6 +89,8 @@ const SINK_TOLERANCE = 0.02;           // of the terminal speed
 const STEP_TOLERANCE = 0.1;            // of the highest bob
 const FIXED_THROW_MS = 1;              // ms: the most making a prepared thing (a fixed mesh's, src/rock.js prepareThing) may take as it is thrown
 const STEP_COST_MS = 0.05;
+const PIZZA_RIGHTS_SECONDS = 5;        // s: a pizza let go on the water at any angle lies flat by then
+const COLUMN_VOLUME = 0.02;           // of a floater's volume: its buoyancy's columns (src/rock.js buoyancyColumns) hold its mesh's to this
 const OVERLAP_MOST = 0.002;            // m
 const POWERS = { soft: 1.3, normal: 1.0, hard: 0.72 };
 const DRAG_COEFFICIENT = 0.46;         // src/cavity.js's
@@ -215,9 +217,11 @@ for (const name of THING_NAMES) {
         line += `, ${centimetres(draft)} cm deep (${centimetres(expected)})`;
         check(Math.abs(draft - expected) < FLOAT_DEPTH_TOLERANCE, `${label}: floats ${centimetres(draft)} cm under, Archimedes ${centimetres(expected)} cm`);
       } else {
-        // Its mesh, sliced, holds its whole volume (the waterline's table against its shape's moments' integral).
-        const table = rock.waterlineTable;
-        check(table && Math.abs(table.shares.at(-1) - 1) < 1e-9, `${label}: its waterline's table does not hold its whole volume`);
+        // Its buoyancy's columns hold its mesh's volume (against its shape's moments' integral), to COLUMN_VOLUME.
+        const columns = rock.buoyancy;
+        const held = columns ? columns.volume / rock.shape.volume : 0;
+        line += `, its ${columns?.count} columns holding ${(100 * held).toFixed(1)}% of its mesh's volume`;
+        check(columns && Math.abs(held - 1) < COLUMN_VOLUME, `${label}: its buoyancy's columns hold ${(100 * held).toFixed(1)}% of its volume`);
       }
       if (rock.thing.body.upright) {
         // Toppings up and dry: its own +y up, the cheese (0.03 R over its middle) over the water.
@@ -346,7 +350,7 @@ function together(things, seconds, floor = floorDepthAt) {
       for (let second = first + 1; second < things.length; second++) {
         const [one, other] = [things[first], things[second]];
         if (!one.collides || !other.collides || !(one.floater || other.floater)) continue;
-        const overlap = one.collisionRadius + other.collisionRadius - one.meshAbove.position.distanceTo(other.meshAbove.position);
+        const overlap = one.collisionRadius + other.collisionRadius - one.centre.distanceTo(other.centre);
 
         record.overlap = Math.max(record.overlap, overlap);
       }
@@ -356,6 +360,107 @@ function together(things, seconds, floor = floorDepthAt) {
   }
   return record;
 }
+// ---- a flat thing on the water at any angle, and in the air (src/rock.js turnAfloat, flutter) ----
+console.log('\nA pizza let go on the water at an angle (buoyancyColumns, turnAfloat): its share under at its height there, where it floats turned so, and where it comes to rest');
+{
+  const shares = [];
+  for (const degrees of [0, 45, 80, 90, 135]) {
+    const measured = measure('pizza');
+    const rock = new Rock({ radius: measured.radius, position: new THREE.Vector3(0, 0, -1.4), velocity: new THREE.Vector3(), envTexture: null, thing: 'pizza', mass: measured.mass });
+    rock.quaternion.setFromAxisAngle(new THREE.Vector3(1, 0, 0), THREE.MathUtils.degToRad(degrees));
+    rock.spinRate = 0;
+    const height = rock.floatingHeight();
+    const share = rock.waterline(0.004).share;
+    shares.push({ degrees, share, height });
+    rock.state = 'float'; rock.hasFloated = true; rock.position.y = height;
+    let time = 0;
+    for (; time < 10 && rock.state !== 'rest'; time += STEP) rock.update(STEP, floorDepthAt);
+    const up = rock.uprightAxis.clone().applyQuaternion(rock.quaternion).y;
+    console.log(`  at ${String(degrees).padStart(3)}°: ${(100 * share).toFixed(1)}% under with its centre 4 mm up, floats with its centre ${centimetres(height)} cm up; rests after ${time.toFixed(1)} s ${up > 0 ? 'toppings up' : 'toppings down'}, ${THREE.MathUtils.radToDeg(Math.acos(Math.min(Math.abs(up), 1))).toFixed(1)}° off flat`);
+    check(rock.afloat && Math.abs(up) > 0.99 && time < PIZZA_RIGHTS_SECONDS, `a pizza let go at ${degrees}° did not come to rest flat within ${PIZZA_RIGHTS_SECONDS} s (${rock.state}, ${Math.abs(up).toFixed(3)})`);
+    check(degrees <= 90 ? up > 0 : up < 0, `a pizza let go at ${degrees}° came to rest ${up > 0 ? 'toppings up' : 'toppings down'}`);
+  }
+  // The review: at 0°, 45° and 80° the same share under and the same height (the waterline along its axis only).
+  const [flat, tilted, steep] = shares;
+  check(Math.abs(tilted.share - flat.share) > 0.02 && Math.abs(steep.share - flat.share) > 0.02 && Math.abs(steep.height - flat.height) > 0.005, 'a pizza floats as deep turned as flat (its waterline takes no account of its angle)');
+}
+console.log('\nPizzas thrown at (0, -1.4) on eight seeds (flutter: a plate in the air, its turn its own):');
+{
+  const tilts = [];
+  for (let seed = 1; seed <= 8; seed++) {
+    randomState = seed * 7919;
+    const { rock } = throwThing('pizza', { x: 0, z: -1.4 });
+    for (let time = 0; time < 3 && rock.state === 'air'; time += STEP) rock.update(STEP, floorDepthAt);
+    const face = rock.shape.axes[2].clone().applyQuaternion(rock.quaternion);
+    tilts.push(THREE.MathUtils.radToDeg(Math.acos(Math.min(Math.abs(face.y), 1))));
+  }
+  // Its spin holds it: the same throw spun slowly and fast turns over unlike.
+  const spun = [5, 12].map((rate) => {
+    randomState = 99;
+    const { rock } = throwThing('pizza', { x: 0, z: -1.4 });
+    rock.spinRate = rate;
+    let most = 0;
+    for (let time = 0; time < 0.6 && rock.state === 'air'; time += STEP) {
+      rock.update(STEP, floorDepthAt);
+      const face = rock.shape.axes[2].clone().applyQuaternion(rock.quaternion);
+      most = Math.max(most, THREE.MathUtils.radToDeg(Math.acos(Math.min(Math.abs(face.y), 1))));
+    }
+    return most;
+  });
+  console.log(`  each in the air until it goes in: its face ${tilts.map((tilt) => tilt.toFixed(0)).join('°, ')}° off level as it went in; spun at 5 rad/s it tilted up to ${spun[0].toFixed(0)}°, at 12 rad/s ${spun[1].toFixed(0)}°`);
+  check(Math.max(...tilts) - Math.min(...tilts) > 5, `pizzas thrown alike went in alike (${tilts.map((tilt) => tilt.toFixed(0)).join(', ')}°): their flight is steered, not flown`);
+  check(Math.abs(spun[0] - spun[1]) > 2, 'a pizza flies the same however fast it spins');
+}
+console.log('\nSoaking (src/rock.js soak): a pizza and a frozen one afloat for two minutes');
+{
+  for (const name of ['pizza', 'frozen-pizza']) {
+    const rock = afloatAt(name, 0, -1.4);
+    const startHeight = rock.position.y, startDensity = rock.density, startDisc = rock.dryDisc;
+    for (let time = 0; time < 120; time += STEP) rock.update(STEP, floorDepthAt);
+    const sank = startHeight - rock.position.y;
+    console.log(`  ${THINGS[name].name.padEnd(13)} soaked ${(100 * rock.soaked).toFixed(0)}%: ${startDensity.toFixed(0)} → ${rock.density.toFixed(0)} kg/m³, ${(1000 * sank).toFixed(1)} mm lower, its dry top ${centimetres(startDisc)} → ${centimetres(rock.dryDisc)} cm across its middle; ${rock.afloat ? 'afloat' : rock.state}`);
+    if (name === 'pizza') check(rock.soaked > 0.4 && sank > 0.002 && rock.dryDisc < 0.7 * startDisc && rock.afloat, `a pizza afloat two minutes has not soaked (${(100 * rock.soaked).toFixed(0)}%, ${(1000 * sank).toFixed(1)} mm lower)`);
+    else check(rock.soaked < 0.15 && rock.afloat, `a frozen pizza soaked as fast as a fresh one (${(100 * rock.soaked).toFixed(0)}%)`);
+  }
+}
+console.log('\nA throw\'s own random stream (src/rock.js `random`): a basketball bounced on the deck, Math.random drawn from or not between its steps');
+{
+  const bounces = [false, true].map((drawing) => {
+    randomState = 4242;
+    const measured = measure('basketball');
+    const ball = new Rock({ radius: measured.radius, position: new THREE.Vector3(0, 1.2, -3.5), velocity: new THREE.Vector3(0.2, 0, 0), envTexture: null, thing: 'basketball', mass: measured.mass });
+    ball.groundAt = poolGround(POOL_SQUARE);
+    const heights = [];
+    let rising = false;
+    for (let time = 0; time < 3; time += STEP) {
+      if (drawing) Math.random();   // what drawing a mesh's ids, a paint, a splash would take from it
+      ball.update(STEP, floorDepthAt);
+      if (rising && ball.velocity.y <= 0) heights.push(ball.position.y);
+      rising = ball.velocity.y > 0;
+    }
+    return heights;
+  });
+  const same = bounces[0].length === bounces[1].length && bounces[0].every((height, index) => height === bounces[1][index]);
+  console.log(`  its bounces' tops ${bounces[0].map((height) => height.toFixed(4)).join(', ')} m, and with Math.random drawn from between its steps ${same ? 'the same' : bounces[1].map((height) => height.toFixed(4)).join(', ')}`);
+  check(same, 'a basketball\'s bounces changed when Math.random was drawn from between its steps');
+}
+console.log('\nA hollow ball\'s give (src/rock.js strike, squashStep): a basketball dropped from a metre onto the deck');
+{
+  const measured = measure('basketball');
+  const ball = new Rock({ radius: measured.radius, position: new THREE.Vector3(0, 1.2, -3.5), velocity: new THREE.Vector3(), envTexture: null, thing: 'basketball', mass: measured.mass });
+  ball.groundAt = poolGround(POOL_SQUARE);
+  // Its first bounce: flattened most, then round again (within a tenth of that) before it comes down again.
+  let most = 0, struckAt = null, recovered = null;
+  for (let time = 0; time < 1.2 && recovered === null; time += STEP) {
+    ball.update(STEP, floorDepthAt);
+    most = Math.max(most, ball.squash.amount);
+    if (struckAt === null && ball.squash.amount > 0.005) struckAt = time;
+    if (struckAt !== null && Math.abs(ball.squash.amount) < 0.1 * most && Math.abs(ball.squash.rate) < 0.1 * most * 2 * Math.PI * 11) recovered = time - struckAt;
+  }
+  console.log(`  it flattens by ${(100 * most).toFixed(1)}% and is round again ${recovered === null ? 'never' : `${(1000 * recovered).toFixed(0)} ms after`}`);
+  check(most > 0.02 && most < 0.15 && recovered !== null && recovered < 0.2, `a basketball's give on the deck: ${(100 * most).toFixed(1)}%, round again after ${recovered}`);
+}
+
 console.log('\nThings meeting things (src/collide.js):');
 {
   // One collision, alone: momentum kept, the bounce the pair's.
@@ -376,6 +481,37 @@ console.log('\nThings meeting things (src/collide.js):');
   console.log(`  a stone striking a basketball afloat at ${closingBefore.toFixed(2)} m/s: they part at ${(-closingAfter).toFixed(2)} m/s (bounce ${bounce.toFixed(2)}), momentum ${before.toArray().map((value) => value.toFixed(4)).join(', ')} → ${after.toArray().map((value) => value.toFixed(4)).join(', ')} kg·m/s`);
   check(after.distanceTo(before) < 1e-9 * Math.max(before.length(), 1), 'a collision did not keep the pair\'s momentum');
   check(Math.abs(-closingAfter - bounce * closingBefore) < 1e-9, `a collision gave back ${(-closingAfter / closingBefore).toFixed(3)} of the closing speed, not ${bounce.toFixed(3)}`);
+}
+{
+  // A glancing hit (src/collide.js rub): a tennis ball skimming over a basketball afloat. Their surfaces rub, so both spin
+  // and the tennis ball's path turns; momentum and angular momentum are kept, no energy is made.
+  const ball = afloatAt('basketball', 0, -1.4);
+  const tennis = new Rock({ radius: measure('tennis').radius, position: new THREE.Vector3(), velocity: new THREE.Vector3(4, -1, 0), envTexture: null, thing: 'tennis', mass: measure('tennis').mass });
+  tennis.spinRate = 0;
+  const reach = ball.collisionRadius + tennis.collisionRadius;
+  // Touching where the line between them is 55° off the tennis ball's path.
+  const angle = THREE.MathUtils.degToRad(55);
+  tennis.position.set(ball.meshAbove.position.x - 0.999 * reach * Math.sin(angle), ball.meshAbove.position.y + 0.999 * reach * Math.cos(angle), -1.4);
+  tennis.previous.copy(tennis.position);
+  tennis.syncMeshes();
+  const pair = [ball, tennis];
+  const masses = new Map(pair.map((thing) => [thing, thing.collisionMass()]));
+  const spin = (thing) => thing.spinAxis.clone().multiplyScalar(thing.spinRate);
+  const energy = () => pair.reduce((sum, thing) => sum + 0.5 * masses.get(thing) * thing.velocity.lengthSq() + 0.5 * thing.collisionInertia * spin(thing).lengthSq(), 0);
+  // About the origin, from where they parted (the overlap's parting moves them, not their momentum).
+  const angularMomentum = (velocities, spins) => pair.reduce((sum, thing, index) => sum.add(thing.meshAbove.position.clone().cross(velocities[index]).multiplyScalar(masses.get(thing))).addScaledVector(spins[index], thing.collisionInertia), new THREE.Vector3());
+  const energyBefore = energy();
+  const velocitiesBefore = pair.map((thing) => thing.velocity.clone()), spinsBefore = pair.map(spin);
+  const headingBefore = Math.atan2(tennis.velocity.y, tennis.velocity.x);
+  collideThings(pair);
+  const energyAfter = energy();
+  const turningBefore = angularMomentum(velocitiesBefore, spinsBefore), turningAfter = angularMomentum(pair.map((thing) => thing.velocity), pair.map(spin));
+  const turned = THREE.MathUtils.radToDeg(Math.atan2(tennis.velocity.y, tennis.velocity.x) - headingBefore);
+  console.log(`  a tennis ball glancing off a basketball afloat at 4.1 m/s: spun to ${tennis.spinRate.toFixed(1)} rad/s, the basketball to ${ball.spinRate.toFixed(1)} rad/s; energy ${energyBefore.toFixed(4)} → ${energyAfter.toFixed(4)} J; angular momentum kept to ${turningAfter.distanceTo(turningBefore).toExponential(1)} kg·m²/s`);
+  check(tennis.spinRate > 1 && ball.spinRate > 0.1, 'a glancing hit spun neither ball');
+  check(energyAfter <= energyBefore + 1e-9, 'a glancing hit made energy');
+  check(turningAfter.distanceTo(turningBefore) < 1e-6 * Math.max(turningBefore.length(), 1), 'a glancing hit did not keep the pair\'s angular momentum');
+  check(Number.isFinite(turned), 'a glancing hit left no path');
 }
 {
   // A stone thrown at a basketball afloat where the tap falls.
@@ -417,6 +553,38 @@ console.log('\nThings meeting things (src/collide.js):');
   });
   console.log(`  a 5 ct diamond at 14 m/s through a tennis ball afloat, 1/240 s cut into 1 to 4 steps: ${results.map((result) => `${result.parts}: ${result.struck && result.back ? 'struck it' : 'passed'}`).join(', ')}`);
   check(results.every((result) => result.struck && result.back), `a fast diamond passed through a tennis ball afloat (${results.filter((result) => !(result.struck && result.back)).map((result) => `${result.parts} step(s)`).join(', ')})`);
+}
+{
+  // Masses and sizes far apart, swept in 1 to 4 steps: a 1000 ct ruby at 25 m/s through a tennis ball afloat (a heavy,
+  // small, fast thing: it must not pass through), a 16 lb bowling ball at 6 m/s into one (the tennis ball must go), a
+  // tennis ball at 20 m/s into a 40 cm pizza afloat (a light thing off a broad one: it must come back).
+  const cases = [
+    { label: 'a 1000 ct ruby at 25 m/s into a tennis ball', floater: ['tennis'], thrown: ['ruby', 1000], speed: 25 },
+    { label: 'a 16 lb bowling ball at 6 m/s into a tennis ball', floater: ['tennis'], thrown: ['bowling', 16], speed: 6 },
+    { label: 'a tennis ball at 20 m/s into a 40 cm pizza', floater: ['pizza', 3], thrown: ['tennis'], speed: 20 },
+  ];
+  for (const { label, floater, thrown, speed } of cases) {
+    const results = [1, 2, 3, 4].map((parts) => {
+      const measuredFloater = measure(...floater);
+      const target = new Rock({ radius: measuredFloater.radius, position: new THREE.Vector3(0, 0, -1.4), velocity: new THREE.Vector3(), envTexture: null, thing: floater[0], mass: measuredFloater.mass });
+      target.state = 'float'; target.hasFloated = true; target.quaternion.identity(); target.spinRate = 0;
+      target.position.y = target.floatingHeight();
+      target.syncMeshes();
+      const measuredThrown = measure(...thrown);
+      // Starting just clear of it, aimed through its middle at 45° down: within one 1/240 s step it would be past it.
+      const reach = target.collisionRadius + 1.02 * measuredThrown.radius * (1 + 0.5 * speed * STEP / measuredThrown.radius);
+      const start = target.meshAbove.position.clone().add(new THREE.Vector3(-reach / Math.SQRT2, reach / Math.SQRT2, 0));
+      const thing = new Rock({ radius: measuredThrown.radius, position: start, velocity: new THREE.Vector3(speed / Math.SQRT2, -speed / Math.SQRT2, 0), envTexture: null, thing: thrown[0], mass: measuredThrown.mass });
+      for (let step = 0; step < 2 * parts; step++) {
+        target.update(STEP / parts, floorDepthAt);
+        thing.update(STEP / parts, floorDepthAt);
+        collideThings([target, thing]);
+      }
+      return { parts, struck: target.velocity.length() > 0.05, apart: thing.meshAbove.position.distanceTo(target.meshAbove.position) >= 0.999 * (thing.collisionRadius + target.collisionRadius) || thing.velocity.x < 0 };
+    });
+    console.log(`  ${label}, 1/240 s cut into 1 to 4 steps: ${results.map((result) => `${result.parts}: ${result.struck && result.apart ? 'struck it' : 'passed'}`).join(', ')}`);
+    check(results.every((result) => result.struck && result.apart), `${label}: missed in ${results.filter((result) => !(result.struck && result.apart)).map((result) => `${result.parts} step(s)`).join(', ')}`);
+  }
 }
 {
   // A skip stone skimming into a basketball afloat in its path (review: on the water, skimming, it went through it).
@@ -628,7 +796,7 @@ console.log('\nThings meeting things (src/collide.js):');
   let fuzzRandom = 12345;
   const pick = (count) => { fuzzRandom = (fuzzRandom * 16807) % 2147483647; return fuzzRandom % count; };
   const sources = [good, ...['stone', 'slate', 'basketball', 'bowling', 'diamond', 'pizza', 'watermelon', 'brick'].map((key) => {
-    const { key: unused, short, called, sphere, byDiameter, sizeShare, slider, measure: measuring, readout, fastest, skips, ...rest } = THINGS[key];
+    const { key: unused, short, called, sphere, byDiameter, sizeShare, slider, measure: measuring, readout, properties, fastest, skips, ...rest } = THINGS[key];
     return structuredClone({ ...rest, material: { ...rest.material, roll: rest.material.roll === null ? undefined : rest.material.roll === 5 / 7 ? 'solid' : 'shell' } });
   })];
   let tried = 0, threw = 0, taken = 0, broken = 0;
@@ -731,6 +899,7 @@ console.log('\nThings meeting things (src/collide.js):');
   check(Math.abs(runs[1].rest - runs[0].rest) < 1e-4, 'basketball: halving the substep moved where it floats');
   const floating = lake.filter((entry) => entry.record.floatSteps > 0);
   const cost = Math.max(...floating.map((entry) => entry.record.cost / entry.record.floatSteps));
+  console.log(floating.map((entry) => `${entry.name} ${(1000 * entry.record.cost / entry.record.floatSteps).toFixed(1)} µs × ${entry.record.floatSteps}`).join(", "));
   console.log(`A floater's step costs at most ${(1000 * cost).toFixed(2)} µs`);
   check(cost < STEP_COST_MS, `a floater's step costs ${(1000 * cost).toFixed(2)} µs`);
 }

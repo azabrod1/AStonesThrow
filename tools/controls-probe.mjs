@@ -19,15 +19,20 @@
 //   - the settings button is on the screen, clear of the title, and (on a
 //     touch screen) at least 34 points tall; pressed, the panel opens on the
 //     screen, its rows that tall too, each row's value whole beside its
-//     name; its Object row opens that page, its things in a fold for
+//     name; its What to throw row opens that page, its things in a fold for
 //     each group (the chosen thing's open, one at a time: on a phone in
-//     portrait the page needs no scrolling), whose seventeen pictured choices
+//     portrait the page needs no scrolling), whose eighteen pictured choices
 //     can each be opened and scrolled onto the screen and fit their names,
-//     its head staying at the panel's top as it scrolls, and each, tapped,
-//     closes the settings, the next tap on the water throwing it, and sets
-//     what is thrown, the throw button's name (a rock, a ball, a gem), the row's value and the strip's name, slider (its
-//     range, or off for a ball of one size) and readout following, the strip
-//     still fitting; its Water row opens the Water page, whose five pictured choices
+//     its head staying at the panel's top as it scrolls; the strip's chip
+//     opens the page at once, and each choice, tapped, is shown over the
+//     folds to look over (its name, size, mass, Floats or Sinks; the
+//     settings stay open) and its Use button closes the settings, the next
+//     tap on the water throwing it, and sets what is thrown, the throw
+//     button's name (a rock, a ball, a gem), the row's value and the strip's
+//     name, slider (its range, or off for a ball of one size) and line
+//     ("Size 7 · 620 g") following, the strip still fitting; the latest
+//     choices sit at the page's top and one tapped is thrown at once; Skip
+//     pressed for a pizza stays off and says why; its Water row opens the Water page, whose five pictured choices
 //     can each be scrolled onto the screen and fit their names, whose Pool
 //     puts the rocks in the pool (the View note follows) and whose Murky sets
 //     the pond's clarity, each with the row's value; its Time row opens the
@@ -166,7 +171,7 @@ for (const framing of FRAMINGS) {
       await touch('touchStart', tapX, tapY);
       await touch('touchEnd', tapX, tapY);
       const tapped = await sliderState();
-      check(Math.abs(tapped.value - expected(0.8)) <= initial.step + 1e-9 && tapped.readout === `${tapped.value % 1 === 0 ? tapped.value : tapped.value.toFixed(1)} cm`, `a tap at 80% along the slider sets ${tapped.value} cm (expected about ${expected(0.8)}), the readout says "${tapped.readout}"`);
+      check(Math.abs(tapped.value - expected(0.8)) <= initial.step + 1e-9 && tapped.readout.startsWith(`${tapped.value % 1 === 0 ? tapped.value : tapped.value.toFixed(1)} cm · `), `a tap at 80% along the slider sets ${tapped.value} cm (expected about ${expected(0.8)}), the readout says "${tapped.readout}"`);
       const radius = await page.evaluate(() => { window.__pond.throwRandom(); return window.__pond.rocks.at(-1).radius; });
       check(Math.abs(radius - tapped.value / 200) < 1e-9, `the next stone is ${(radius * 200).toFixed(1)} cm across`);
       const [startX, startY] = pointAt(0.2);
@@ -201,7 +206,7 @@ for (const framing of FRAMINGS) {
   await page.waitForTimeout(400);
   const [panel] = await boxes('#settings');
   const rows = await boxes('#settings .menu-tier');
-  check(!!panel && onScreen(panel) && rows.length === 8, `the settings open on the screen with their eight rows (${rows.length})`);
+  check(!!panel && onScreen(panel) && rows.length === 9, `the settings open on the screen with their nine rows (${rows.length})`);
   if (framing.touch) check(rows.every((row) => row.height >= SMALLEST_BUTTON_HEIGHT - 0.5), `every settings row is at least ${SMALLEST_BUTTON_HEIGHT} points tall (smallest ${Math.min(...rows.map((row) => row.height)).toFixed(1)})`);
   const cutValues = await page.evaluate(() => [...document.querySelectorAll('#settings .menu-tier-value')].filter((value) => value.scrollWidth > value.clientWidth + 0.5).map((value) => value.textContent));
   const hinted = await page.evaluate(() => [...document.querySelectorAll('#settings .menu-tier-name small')].filter((hint) => hint.getClientRects().length > 0).length);
@@ -233,7 +238,7 @@ for (const framing of FRAMINGS) {
   check(chosen.clarity === 'murky' && chosen.row === 'Murky', `Murky sets the clarity (${chosen.clarity}) and the row's value ("${chosen.row}")`);
   await page.screenshot({ path: path.join(outputFolder, `${framing.name}-water.png`) });
   await page.evaluate(() => window.__pond.setClarity('lake'));
-  // The Object page (src/things.js): its folds and seventeen pictured choices; each sets what is thrown, and the strip's slider follows it.
+  // The Object page (src/things.js): its folds and eighteen pictured choices; each sets what is thrown, and the strip's slider follows it.
   await press('.menu-page[data-page="water"] .menu-back');
   await page.waitForTimeout(400);
   await press('#settings .menu-tier[data-open="thing"]');
@@ -263,7 +268,7 @@ for (const framing of FRAMINGS) {
     return placed;
   });
   const [thingPanel] = await boxes('#settings');
-  check(onScreen(thingPanel) && things.length === 17 && things.every(onScreen) && things.every((choice) => choice.others === 0) && (!framing.touch || things.every((choice) => choice.height >= SMALLEST_BUTTON_HEIGHT - 0.5)), `the Object page is on the screen, each of its seventeen choices once its fold is open (the others shut) and it is scrolled to${framing.touch ? `, at least ${SMALLEST_BUTTON_HEIGHT} points tall` : ''}`);
+  check(onScreen(thingPanel) && things.length === 18 && things.every(onScreen) && things.every((choice) => choice.others === 0) && (!framing.touch || things.every((choice) => choice.height >= SMALLEST_BUTTON_HEIGHT - 0.5)), `the Object page is on the screen, each of its eighteen choices once its fold is open (the others shut) and it is scrolled to${framing.touch ? `, at least ${SMALLEST_BUTTON_HEIGHT} points tall` : ''}`);
   // Its head stays at the panel's top, inside its edge, while the page scrolls under it.
   const head = await page.evaluate(() => {
     const panel = document.getElementById('settings');
@@ -281,31 +286,38 @@ for (const framing of FRAMINGS) {
     const strip = document.querySelector('.controls');
     return {
       thing: window.__pond.thing, row: document.querySelector('.menu-tier[data-open="thing"] .menu-tier-value').textContent,
-      label: document.querySelector('label[for="stone-size"]').textContent, readout: document.getElementById('stone-readout').textContent,
+      label: document.getElementById('thing-chip-name').textContent, readout: document.getElementById('stone-readout').textContent,
       minimum: Number(slider.min), maximum: Number(slider.max), disabled: slider.disabled, overflows: strip.scrollWidth > strip.clientWidth + 0.5,
       button: document.getElementById('throw').getAttribute('aria-label'),
     };
   });
   for (const [choice, expected] of [
-    ['basketball', { button: 'Throw a ball', row: 'Basketball', label: 'Basketball', readout: '620 g', minimum: 5, maximum: 7, disabled: false }],
-    ['bowling', { row: 'Bowling ball', label: 'Bowling ball', readout: '14 lb', minimum: 6, maximum: 16, disabled: false }],
-    ['tennis', { row: 'Tennis ball', label: 'Tennis ball', readout: '58 g', disabled: true }],
+    ['basketball', { button: 'Throw a ball', row: 'Basketball', label: 'Basketball', readout: 'Size 7 · 620 g', minimum: 5, maximum: 7, disabled: false }],
+    ['bowling', { row: 'Bowling ball', label: 'Bowling ball', readout: '14 lb · 21.6 cm', minimum: 6, maximum: 16, disabled: false }],
+    ['tennis', { row: 'Tennis ball', label: 'Tennis ball', readout: '6.7 cm · 58 g', disabled: true }],
     ['granite', { button: 'Throw a rock', row: 'Granite', label: 'Granite', disabled: false, minimum: 1.5, maximum: 30 }],
-    ['diamond', { button: 'Throw a gem', row: 'Diamond', label: 'Diamond', readout: '100 ct', minimum: 5, maximum: 1000, disabled: false }],
-    ['pizza', { button: 'Throw a pizza', row: 'Pizza', label: 'Pizza', readout: '30 cm', minimum: 1, maximum: 3, disabled: false }],
+    ['diamond', { button: 'Throw a gem', row: 'Diamond', label: 'Diamond', readout: '100 ct · 3 cm', minimum: 5, maximum: 1000, disabled: false }],
+    ['pizza', { button: 'Throw a pizza', row: 'Pizza', label: 'Pizza', readout: '30 cm · 380 g', minimum: 1, maximum: 3, disabled: false }],
     ['stone', { row: 'River stone', label: 'Rock', disabled: false, minimum: 1.5, maximum: 30 }],
   ]) {
-    // The settings open on the Object page, the choice's fold open; a tap on its card closes them, and the next tap on the water throws it.
+    // The strip's chip opens What to throw at once, the choice's fold open; a tap on its card chooses it and shows it
+    // over the folds (the settings stay open), Use closes them, and the next tap on the water throws it.
     if (await page.evaluate(() => document.getElementById('settings').hidden)) {
-      await press('#menu-button');
-      await page.waitForTimeout(400);
-      await press('#settings .menu-tier[data-open="thing"]');
+      await press('#thing-chip');
       await page.waitForTimeout(400);
     }
+    const onPage = await page.evaluate(() => !document.querySelector('.menu-page[data-page="thing"]').hidden);
+    check(onPage, `the strip's chip opens What to throw at once (${onPage ? 'its page' : 'not it'})`);
     await page.evaluate((value) => { document.querySelector(`#thing [data-value="${value}"]`).closest('details').open = true; }, choice);
     await page.waitForTimeout(80);
     if (choice === 'bowling') await page.screenshot({ path: path.join(outputFolder, `${framing.name}-throw.png`) });
     await press(`#thing [data-value="${choice}"]`);
+    await page.waitForTimeout(100);
+    const inspected = await page.evaluate(() => ({ open: !document.getElementById('settings').hidden, name: document.getElementById('inspect-name').textContent, stats: document.getElementById('inspect-stats').textContent, badges: [...document.querySelectorAll('#inspect-badges span')].map((badge) => badge.textContent), use: document.getElementById('thing-use').textContent }));
+    check(inspected.open && inspected.name === expected.row && inspected.badges.some((badge) => badge === 'Floats' || badge === 'Sinks') && inspected.use.toLowerCase().includes(expected.row.toLowerCase()),
+      `${choice} chosen stays open to look over: ${inspected.name}, ${inspected.stats}, ${inspected.badges.join(', ')}; "${inspected.use}"`);
+    if (choice === 'basketball') await page.screenshot({ path: path.join(outputFolder, `${framing.name}-inspect.png`) });
+    await press('#thing-use');
     await page.waitForTimeout(100);
     const shown = await strip();
     const wrong = Object.entries(expected).filter(([key, value]) => shown[key] !== value).map(([key]) => `${key} ${JSON.stringify(shown[key])}`);
@@ -314,8 +326,21 @@ for (const framing of FRAMINGS) {
     await press('#pond');
     await page.waitForTimeout(150);
     const after = await page.evaluate(() => ({ count: window.__pond.rocks.length, thing: window.__pond.rocks.at(-1)?.thing.key }));
-    check(thrown.closed && after.count === thrown.before + 1 && after.thing === choice, `choosing ${choice} closes the settings, and the next tap on the water throws it (${thrown.closed ? 'closed' : 'still open'}; ${after.count - thrown.before} thrown, ${after.thing})`);
+    check(thrown.closed && after.count === thrown.before + 1 && after.thing === choice, `Use ${choice} closes the settings, and the next tap on the water throws it (${thrown.closed ? 'closed' : 'still open'}; ${after.count - thrown.before} thrown, ${after.thing})`);
   }
+  // What was used lately sits at the top of What to throw, a tap each: it throws at once (the settings close).
+  await press('#thing-chip');
+  await page.waitForTimeout(400);
+  const quick = await page.evaluate(() => [...document.querySelectorAll('#thing-quick button')].map((button) => button.dataset.value));
+  if (quick.includes('pizza')) await press('#thing-quick [data-value="pizza"]');
+  await page.waitForTimeout(150);
+  const quickPicked = await page.evaluate(() => ({ thing: window.__pond.thing, closed: document.getElementById('settings').hidden }));
+  check(quick.length >= 4 && quick.includes('pizza') && quickPicked.thing === 'pizza' && quickPicked.closed, `the latest choices sit at the top (${quick.join(', ')}), and one tapped is thrown at once (${quickPicked.thing}, ${quickPicked.closed ? 'closed' : 'open'})`);
+  // Skip is off for what does not skip, and pressed it says why.
+  await page.evaluate(() => document.getElementById('skip').click());   // off (aria-disabled), so a tap is the page's to answer
+  await page.waitForTimeout(100);
+  const skipHint = await page.evaluate(() => ({ skipping: window.__pond.skipping, shown: !document.getElementById('hint').hidden, text: document.getElementById('hint').textContent }));
+  check(!skipHint.skipping && skipHint.shown && skipHint.text.startsWith('Only stones skip'), `Skip pressed with a pizza stays off and says why ("${skipHint.text}")`);
   // Arrow keys cross from one fold into the next (src/settingsPanel.js radioGroup): the next fold opens, the focus moves into
   // it and the next press carries on from there.
   await press('#menu-button');

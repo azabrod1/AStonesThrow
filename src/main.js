@@ -1,7 +1,11 @@
 // A Stone’s Throw: throw rocks into a lake and watch the splash.
 //
 // Frame pipeline:
-//   1. advance the stones, droplets and bubbles (CPU), feeding the water;
+//   1. advance the stones, droplets and bubbles (CPU), feeding the water:
+//      the things thrown in fixed steps of PHYSICS_STEP whatever the frame's
+//      length (at most CATCH_UP a frame: a slow device slows the world),
+//      drawn between their last two steps (simulate), the splash brought to
+//      each step's start as its impacts come;
 //   2. step the spectral water surface (GPU) and its foam, unless it sleeps
 //      (Low power, below);
 //   3. evaluate the ambient wind waves at the frame's time (GPU, once per
@@ -105,7 +109,11 @@
 // bounce off each other, the floater dipping and bobbing, ringing the
 // water and throwing off spray), floaters bump, and the pool's walls send
 // things back (src/pool.js holdInPool, run in collideThings' passes, so a
-// knock passes along a row and off a wall within the substep). In the pool the deck is
+// knock passes along a row and off a wall within the step); things meet a
+// floater where it is drawn, riding the water (src/floaterRide.js reads the
+// water's height under each back from the GPU, without waiting). Each impact,
+// skip, floater's ring and knock sounds (src/sound.js; the Sound setting,
+// its own localStorage key, ?sound=off). In the pool the deck is
 // ground to anything thrown (src/pool.js poolGround). What is in sight
 // stays: a floater, or a thing at rest on the deck (keptInSight), goes only
 // when more than MAX_IN_SIGHT are kept (the oldest first) or a gale has
@@ -190,7 +198,7 @@ import { Rings } from './rings.js';
 import { createEnvironment, SKY_NAMES, skyHours, resolveHour, nearestHour } from './sky.js';
 import { createWaterSurface } from './waterSurface.js';
 import { createPondFloor, createShore, floorDepthAt, groundHeightAt } from './pondFloor.js';
-import { Rock, aimSkip, aimThrow, flutterTrial, prepareThing, skipSpeed, SKIP_THROW } from './rock.js';
+import { Rock, aimSkip, aimThrow, flutterTrial, prepareThing, skipSpeed, SKIP_THROW, PHYSICS_STEP } from './rock.js';
 import { THINGS, THING_NAMES, DEFAULT_THING, defineThing, onThingsChange } from './things.js';
 import { collideThings } from './collide.js';
 import { SplashSystem, MIRROR_LAYER } from './splash.js';
@@ -201,6 +209,8 @@ import { orbitEye, orbitFacing, orbitAbout, clampOrbit, turnOrbit, blendOrbits, 
 import { Profiler } from './profiler.js';
 import { FingerInWater, FINGER } from './touch.js';
 import { createPool, holdInPool, poolGround, poolInside, POOL } from './pool.js';
+import { createSound } from './sound.js';
+import { createFloaterRide } from './floaterRide.js';
 
 // Quality presets. The splash lives in a few dozen pixels, so the fluid
 // buffer's resolution is what it is made of: a drop narrower than a buffer
@@ -262,6 +272,7 @@ const EYE_EDGE = 0.3;         // metres inside the pool's edge over which the de
 const MAX_ROCKS = 10;          // things out of sight (flying, sinking, on the bed) at once: a throw past this retires the oldest of them
 const MAX_IN_SIGHT = 12;       // things kept in sight (floaters, things at rest on the deck): only past this is the oldest of them retired
 const FARTHEST_AFLOAT = 30;    // m: a floater a gale has drifted this far from the pond is out of sight, and goes
+const CATCH_UP = 12;           // a frame moves the world at most this many of its steps (simulate: 50 ms; the old frame's 12 substeps)
 const TRACE = { points: 4000, step: 0.01, marks: 100, cross: 0.06 };   // a stone's traced path (setTracing): at most this many points, one per this many metres it moves; at most this many touches and arc tops marked; a touch's cross this many metres each way
 const MIN_FOV = 8;            // degrees: the narrowest zoom
 const WHEEL_STEP = 0.9;       // field of view factor per wheel notch
@@ -304,6 +315,7 @@ const SUN_AZIMUTH = Math.atan2(0.42, 0.78);   // radians right of straight ahead
 const DEBUG_MODES = { under: 0, height: 1, foam: 2, env: 3, face: 4, ambient: 5 };   // setDebugView names
 const DEFAULT_WIND_STRENGTH = 'calm';
 const WIND_STORAGE_KEY = 'stone-pond-wind';   // the Wind setting's last choice on this device
+const SOUND_STORAGE_KEY = 'stone-pond-sound';   // the Sound setting's last choice on this device ('off', or on)
 const WATER_STORAGE_KEY = 'stone-pond-water'; // the Water setting's
 const SKY_STORAGE_KEY = 'stone-pond-sky';     // the Location setting's
 const TIME_STORAGE_KEY = 'stone-pond-time';   // the Time setting's: the local time ('hh:mm') of the hour last chosen
@@ -461,8 +473,12 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
   const bedDepthAt = (x, z) => (pooled ? POOL.depth : floorDepthAt(x, z));
   water.floorDepthAt = bedDepthAt;
   const surface = createWaterSurface(water, lighting, ambientWaves, { meshSegments: settings.meshSegments, rings, skyCube: environment.cubeTexture, rain, haze: environment.hazeUniforms, gale: galeWaves });
+  const floaterRide = createFloaterRide(surface.rideUniforms);   // the water under each floater, for the physics
   const splash = new SplashSystem({ environment, lighting, water, ambientWaves, surface });
   // The wind's strength: the page's ?windStrength, else the last choice here, else calm.
+  // The sounds of what is thrown (src/sound.js): on unless turned off on this device, or by ?sound=off.
+  const sound = createSound();
+  sound.setEnabled((pageParameters.get('sound') ?? storedChoice(SOUND_STORAGE_KEY)) !== 'off');
   const storedWind = storedChoice(WIND_STORAGE_KEY);
   const requestedWind = pageParameters.get('windStrength');
   let windName = Object.hasOwn(WIND_STRENGTHS, requestedWind ?? '') ? requestedWind : Object.hasOwn(WIND_STRENGTHS, storedWind ?? '') ? storedWind : DEFAULT_WIND_STRENGTH;
@@ -1224,6 +1240,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
   }
 
   function throwAt(x, z, options = {}) {
+    sound.unlock();   // a throw is a gesture's (or the page's own): the audio may start now
     const name = Object.hasOwn(THINGS, options.thing ?? '') ? options.thing : thingName;
     const { thing, radius, mass, size } = measureThing(name, options.size, options.radius);
     // Skip skips what skips (src/things.js abilities: a stone of any kind); anything else is thrown as ever.
@@ -1337,8 +1354,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     const measured = measureThing(thingName);
     const skipped = skipsNow() ? skipThrow(handPosition(measured.radius), hit, measured.radius) : null;
     const hand = skipped?.hand ?? handPosition(measured.radius);
-    // A fluttering thing's arc is its flight's (src/rock.js flutterTrial), once one of its kind has been made (the warm-up makes a pizza).
-    const shape = thingShapes.get(thingName);
+    // A fluttering thing's arc is its flight's (src/rock.js flutterTrial), its shape its prepared one's (or the last thrown's).
+    const shape = thingShapes.get(thingName) ?? prepareThing(measured.thing)?.shape;
     const flight = measured.thing.air.model === 'flutter' && shape ? flutterTrial({ thing: measured.thing, shape, radius: measured.radius, density: measured.mass / (shape.volume * measured.radius ** 3), ownMass: measured.mass }) : null;
     const thrown = skipped ?? thingVelocity(hand, hit, power, measured, flight);
     const { velocity, flightTime } = thrown;
@@ -1517,22 +1534,39 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
   });
 
   // ---- simulation and rendering ----------------------------------------
+  // The world moves in steps of PHYSICS_STEP (src/rock.js) whatever the frame's length, so a throw goes as it goes on
+  // any device: the things are stepped on until their clock (stepsTime) passes the frame's end, the splash, which
+  // their impacts start, brought to each step's start before it (as it always was, in its own steps of at most
+  // PHYSICS_STEP) and on to the frame's end after, and each thing drawn between its last two steps where it was at
+  // that end (Rock.drawAt). A frame longer than CATCH_UP steps moves the world only so far: a slow device slows the
+  // world rather than piling up steps it cannot afford.
+  let stepsTime = 0;
+  splash.setStoneStep(PHYSICS_STEP);   // its cavities trace their stones in the stones' own steps, not its pieces of them
+  function advanceSplash(until) {
+    while (simulationTime < until - 1e-9) {
+      const step = Math.min(PHYSICS_STEP, until - simulationTime);
+      splash.update(step, water);
+      simulationTime += step;
+    }
+  }
   function simulate(dt) {
+    const frame = Math.min(dt, CATCH_UP * PHYSICS_STEP);
     // The tear and breakup fronts advance once per frame, so the splash needs the frame's length first.
-    splash.setFrameSeconds(dt);
-    finger.advance(dt);   // the finger's wake along its path this frame (src/touch.js)
-    const substep = 1 / 240;
-    const steps = Math.min(Math.max(1, Math.ceil(dt / substep)), 12);
-    const h = dt / steps;
-    for (let s = 0; s < steps; s++) {
+    splash.setFrameSeconds(frame);
+    finger.advance(frame);   // the finger's wake along its path this frame (src/touch.js)
+    const end = simulationTime + frame;
+    stepsTime = Math.max(stepsTime, simulationTime);
+    while (stepsTime < end - 1e-12) {
+      advanceSplash(stepsTime);
       for (const rock of rocks) {
         // A gale drifts a floater downwind (src/rock.js); the pool has no gale's waves.
         if (rock.floats) rock.setDrift(galeWaves.on && !pooled ? galeWaves.windDirection : null);
-        const impact = rock.update(h, bedDepthAt, galeWaves.on ? galeSurfaceAt : null);
+        const impact = rock.update(PHYSICS_STEP, bedDepthAt, galeWaves.on ? galeSurfaceAt : null);
         if (tracing && (rock.state === 'air' || rock.state === 'skim' || impact)) traceRock(rock, impact);
-        if (impact?.skim) splash.skim(impact, water);
-        else if (impact?.ripple) splash.ripple(impact, water);
-        else if (impact) splash.impact(impact, water);
+        if (impact?.skim) { splash.skim(impact, water); sound.skip(impact); }
+        else if (impact?.ripple) { splash.ripple(impact, water); sound.ripple(impact); }
+        else if (impact) { splash.impact(impact, water); sound.splash(impact); }
+        for (const knock of rock.heard.splice(0)) sound.knock(knock);
         if (impact && !impact.ripple) lastImpact = { x: impact.x, z: impact.z };
       }
       // A thing striking a floater, floaters bumping, the pool's walls turning things back (and a skipping stone off
@@ -1540,10 +1574,12 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
       for (const { ripple, knock } of collideThings(rocks, pooled ? (rock) => holdInPool(rock, pool.square) : null)) {
         splash.ripple(ripple, water);
         splash.knock(knock);
+        sound.knock({ speed: knock.closing, radius: ripple.rock.radius, bounce: ripple.rock.collisionBounce });
       }
-      splash.update(h, water);
-      simulationTime += h;
+      stepsTime += PHYSICS_STEP;
     }
+    advanceSplash(end);
+    for (const rock of rocks) rock.drawAt(1 - (stepsTime - end) / PHYSICS_STEP);
     // A stone at rest on the bed goes after a while; what is kept in sight stays (the header), unless a gale drifts it out of sight.
     for (const rock of [...rocks]) {
       if (rock.restTime > 40 && !keptInSight(rock)) retireRock(rock);
@@ -1554,13 +1590,13 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
       // the profiler's 'solver kept awake' step keeps it stepping.
       if (skip.sleep) water.wake();
       else if (!water.asleep && water.settled && splash.settled) water.sleep();
-      water.step(dt);
+      water.step(frame);
     }
   }
 
   let framesRendered = 0;
   function render() {
-    for (const rock of rocks) rock.flex();   // a soft thing's shape as it is drawn now (src/rock.js)
+    for (const rock of rocks) { rock.flex(); rock.showWet(); }   // a soft thing's shape, and how wet each looks, as drawn now (src/rock.js)
     pool.setTime(simulationTime);            // its deck's splashed patches dry by it
     renderer.info.reset();
     framesRendered++;
@@ -1576,9 +1612,9 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     const fromBelow = camera.position.y < (galeWaves.on ? galeSurfaceAt(camera.position.x, camera.position.z) : 0);
     if (!fromBelow) updateReflection();   // from below no mirror is needed; a change of view keeps it marked stale until the eye surfaces
     // A floater whose rim keeps the water off its top (a pizza afloat, toppings up): the water is not drawn inside its rim.
-    surface.setDryDiscs(rocks.filter((rock) => rock.thing.water.dry && (rock.state === 'float' || rock.afloat) && rock.uprightAxis.clone().applyQuaternion(rock.quaternion).y > 0.9).map((rock) => ({
-      x: rock.meshAbove.position.x, z: rock.meshAbove.position.z, radius: rock.thing.water.dry * rock.radius,
-    })));
+    surface.setDryDiscs(rocks.filter((rock) => rock.dryDisc > 0).map((rock) => ({ x: rock.meshAbove.position.x, z: rock.meshAbove.position.z, radius: rock.dryDisc })));
+    // The water's height under each floater riding it, read back for the physics (src/floaterRide.js: things meet it where it is drawn).
+    floaterRide.update(renderer, rocks.filter((rock) => rock.rideShare && rock.rideShare.value > 0));
     surface.update({ underTarget, reflectionTarget, reflectionMatrix, mirrorRect: splashRect, stonesUnder: rocks.some((rock) => rock.state === 'skim' || rock.state === 'water' || rock.state === 'float' || rock.afloat || (rock.state === 'rest' && rock.position.y < 0)), resolution, camera, time: simulationTime });
     splash.prepareScene();   // the stones' cavities, and the patch dipping under them
     if (skip.cavity) surface.setCavities([]);
@@ -1812,6 +1848,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     splash.reset(renderer);
     rings.reset();
     simulationTime = 0;
+    stepsTime = 0;
     viewChanged = true;   // the mirror image is drawn whole again, without the splash
     mirroredRect.set(0, 0, 0, 0);
     splashRect.set(0, 0, 0, 0);
@@ -1857,6 +1894,15 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     // Every thing made ready to throw (src/rock.js prepareThing: a pizza's shared mesh and waterline, a ball's paints), so
     // no throw pays for it; one defined later is made ready as it is defined.
     for (const name of THING_NAMES) prepareNamed(name);
+    // Each thing that flies a flight of its own (a pizza, fresh or frozen) aimed once, so its first throw's aim runs
+    // code the browser has already made ready (src/rock.js flutterTrial, aimThrow).
+    for (const name of THING_NAMES.filter((key) => THINGS[key].air.model === 'flutter')) {
+      const measured = measureThing(name);
+      const prepared = prepareThing(measured.thing);
+      if (!prepared) continue;
+      const trial = flutterTrial({ thing: measured.thing, shape: prepared.shape, radius: measured.radius, density: measured.mass / (prepared.shape.volume * measured.radius ** 3), ownMass: measured.mass });
+      thingVelocity(handPosition(measured.radius), new THREE.Vector3(WARM_UP.x, 0, WARM_UP.z), 'normal', measured, trial);
+    }
     const stone = throwAt(WARM_UP.x, WARM_UP.z, { radius: WARM_UP.radius, power: 'normal', thing: DEFAULT_THING });
     // A floater's mirror image (src/rock.js meshMirror), in the whole mirror drawn now, and a textured thing's
     // materials (a pizza's: above, below and in the mirror): their programs too.
@@ -1868,6 +1914,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
       programKeepers.push(floater.meshAbove.material, floater.meshBelow.material, floater.meshMirror.material);
       retireRock(floater, { keepMaterials: true });
     }
+    floaterRide.warmUp(renderer);   // the floaters' ride's pass
     galeWarmUp.done();
     marker.visible = arc.visible = false;
     rain.show(false);
@@ -1955,6 +2002,16 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
       try { window.localStorage.setItem(WIND_STORAGE_KEY, name); } catch { /* storage refused: the choice lasts this visit */ }
     },
     get wind() { return windName; },
+    /** The sounds on or off (src/sound.js), remembered on this device. */
+    setSound(on) {
+      sound.setEnabled(on);
+      try { window.localStorage.setItem(SOUND_STORAGE_KEY, on ? 'on' : 'off'); } catch { /* storage refused: the choice lasts this visit */ }
+    },
+    get sound() { return sound.enabled; },
+    /** The floaters' ride read back (src/floaterRide.js): how many reads have come back and whether reading works (tools/quality-probe.mjs). */
+    get floaterRide() { return { reads: floaterRide.reads, requests: floaterRide.requests, working: floaterRide.working }; },
+    /** How many sounds are playing now (tools/quality-probe.mjs). */
+    get soundsPlaying() { return sound.playing; },
     /** The water by name (WATER_CLARITIES: pool, clear, lake, pond, murky; the pool is the pool's basin, the others the lake), remembered on this device. */
     setClarity(name) {
       if (!Object.hasOwn(WATER_CLARITIES, name)) return;

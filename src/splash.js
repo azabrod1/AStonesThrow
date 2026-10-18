@@ -700,7 +700,8 @@ export class SplashSystem {
     this.time = 0;
     this.frameSeconds = 1 / 60;   // simulated length of the frame being stepped
     this.frameEnd = 0;            // the splash time it ends at, when the solver takes this frame's splats (setFrameSeconds)
-    this.substep = 1 / 240;       // and of its substeps, which the stones are stepped with
+    this.substep = 1 / 240;       // and of its substeps, which the stones are stepped with (each update's, or setStoneStep's)
+    this.stoneStep = null;        // the step the stones are stepped with, when it is not the splash's own (setStoneStep)
     this.lighting = lighting;
     this.bedAlbedo = SAND_ALBEDO;   // the bed's (setBed)
     this.foamSpecks = new FoamSpecks({ water, lighting, ambientWaves });
@@ -1459,10 +1460,17 @@ export class SplashSystem {
     }
   }
 
+  /**
+   * The step the stones are stepped with (src/main.js: PHYSICS_STEP), which
+   * a cavity traces its stone's path in, when the splash's own steps are not
+   * it (src/main.js brings the splash to each of the stones' steps in pieces).
+   */
+  setStoneStep(seconds) { this.stoneStep = seconds; }
+
   /** Advance droplets and bubbles by dt seconds, feeding the water surface. */
   update(dt, water) {
     this.time += dt;
-    this.substep = dt;
+    this.substep = this.stoneStep ?? dt;
 
     // Scheduled jets start their columns, and an oblique entry's cavity
     // reaches on as the stone moves along.

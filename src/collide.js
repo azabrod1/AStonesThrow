@@ -5,9 +5,10 @@
 // tools/thing-probe.mjs checks it.
 //
 // Each thing is a sphere for this (Rock.collisionRadius: a ball's radius, a
-// stone's mean semi-axis), where it is drawn (its mesh's position, which
-// under a gale is lifted with the waves, so a stone in the air meets a
-// floater where it is seen). A pair meets when one of them is a floater
+// stone's mean semi-axis), where it is drawn (Rock.centre: its mesh's
+// position, which under a gale is lifted with the waves, and a floater's
+// riding the water's ripples and rings, src/floaterRide.js, so a stone in
+// the air meets a floater where it is seen). A pair meets when one of them is a floater
 // (afloat, bobbing, or on its way up) and their spheres overlap; things
 // that sink pass each other, as stones always have. Overlapping, they are
 // moved apart along the line between their centres, each by its share of
@@ -21,8 +22,10 @@
 // about 0.6, a tennis ball on one 0.8), each mass its own and the water it
 // carries (Rock.collisionMass: the added mass of its wetted part, so a
 // floating basketball is pushed as something about half again its own
-// mass). Momentum is kept and nothing is turned (no friction at the
-// contact). A floater whose speed changes by more than COLLIDE.ringFrom
+// mass). Momentum is kept. Their surfaces rub as they part (rub: Coulomb's
+// friction at the contact, with their spins), so a glancing hit spins both
+// and turns their paths a little; it never adds speed or spin. A floater
+// whose speed changes by more than COLLIDE.ringFrom
 // sends out a ring (its `ripple`, as when it breaks the surface) and throws
 // off the water on it where it was struck (a knock: src/splash.js knock,
 // drops at COLLIDE.spray of the speed the pair closed at).
@@ -34,7 +37,10 @@
 // Rock.previous, to where it is, in a straight line): if they touched on the
 // way, and were closing, they meet as they touched, each put back where it
 // was then and given the impulse along the line between them there. The
-// rest of the step is lost to them, under a substep.
+// rest of the step is lost to them, under a substep. A pair overlapping as
+// the step began (things that do not meet, a sinker and a stone, turned into
+// ones that do) that passes through each other's middles in it is put back
+// as it was and parted along the line between them then.
 //
 // Knocks pass on: a ball knocked into a second knocks it, and that one a
 // third. Over steps this comes of itself (the knocked ball moves on and
@@ -66,7 +72,8 @@ const sweep = new THREE.Vector3();
  * in by `contain` (a pool's walls; null in the lake), over passes (the header).
  * Returns what the water shows of the knocks: for each floater knocked hard
  * enough, its hardest knock's `ripple` (its ring, src/splash.js ripple) and
- * `knock` (its spray, src/splash.js knock).
+ * `knock` (its spray, src/splash.js knock; `closing`, the speed it was
+ * struck at, for its sound, src/sound.js).
  */
 export function collideThings(things, contain = null) {
   const knocks = [];
@@ -97,7 +104,7 @@ function containPass(things, contain, knocks) {
       ripple: { ripple: true, x: at.x, z: at.z, radius: thing.radius, speed: held.change, rising: false, rock: thing },
       knock: {
         x: at.x - held.normalX * thing.radius, y: at.y, z: at.z - held.normalZ * thing.radius,
-        normalX: held.normalX, normalY: 0, normalZ: held.normalZ, speed: COLLIDE.spray * held.change, radius: thing.radius,
+        normalX: held.normalX, normalY: 0, normalZ: held.normalZ, speed: COLLIDE.spray * held.change, radius: thing.radius, closing: held.change,
       },
     });
   }
@@ -111,14 +118,24 @@ function collidePass(things, knocks) {
     for (let second = first + 1; second < things.length; second++) {
       const one = things[first], other = things[second];
       if (!one.collides || !other.collides || !(one.floater || other.floater)) continue;
-      between.copy(other.meshAbove.position).sub(one.meshAbove.position);
+      between.copy(other.centre).sub(one.centre);
       const distance = between.length();
       const reach = one.collisionRadius + other.collisionRadius;
       if (distance < 1e-9) continue;
       let normal, overlap = 0, backOne = 0, backOther = 0;
       if (distance < reach - COLLIDE.settled) {
-        normal = between.divideScalar(distance);   // from the first towards the second
-        overlap = reach - distance;
+        // Overlapping already as the step began, and passed through each other's middles in it: they meet as they were
+        // then, put back there (the line between them now points the wrong way).
+        drawnAtStart(one, other);
+        if (startBetween.dot(between) < 0 && startBetween.lengthSq() > 1e-18 && startBetween.lengthSq() < reach * reach) {
+          for (const thing of [one, other]) thing.knock(0, 0, 0, thing.previous.x - thing.position.x, thing.previous.y - thing.position.y, thing.previous.z - thing.position.z);
+          const apart = startBetween.length();
+          normal = between.copy(startBetween).divideScalar(apart);
+          overlap = Math.max(reach - apart, 0);
+        } else {
+          normal = between.divideScalar(distance);   // from the first towards the second
+          overlap = reach - distance;
+        }
       } else {
         // Apart at the step's end: did they touch on the way (the header)?
         const touched = touchedAt(one, other, reach);
@@ -146,6 +163,7 @@ function collidePass(things, knocks) {
       const impulse = (1 + bounce) * closing / (1 / massOne + 1 / massOther);
       one.knock(-normal.x * impulse / massOne, -normal.y * impulse / massOne, -normal.z * impulse / massOne, 0, 0, 0);
       other.knock(normal.x * impulse / massOther, normal.y * impulse / massOther, normal.z * impulse / massOther, 0, 0, 0);
+      rub(one, other, normal, impulse, massOne, massOther);
       // What the water shows of it: each floater knocked hard enough rings and throws off spray where it was struck.
       for (const [thing, mass, side] of [[one, massOne, 1], [other, massOther, -1]]) {
         const change = impulse / mass;
@@ -155,7 +173,7 @@ function collidePass(things, knocks) {
           ripple: { ripple: true, x: at.x, z: at.z, radius: thing.radius, speed: change, rising: -side * normal.y > 0, rock: thing },
           knock: {
             x: at.x + side * normal.x * thing.collisionRadius, y: at.y + side * normal.y * thing.collisionRadius, z: at.z + side * normal.z * thing.collisionRadius,
-            normalX: side * normal.x, normalY: side * normal.y, normalZ: side * normal.z, speed: COLLIDE.spray * closing, radius: thing.radius,
+            normalX: side * normal.x, normalY: side * normal.y, normalZ: side * normal.z, speed: COLLIDE.spray * closing, radius: thing.radius, closing,
           },
         });
       }
@@ -172,9 +190,7 @@ function collidePass(things, knocks) {
  * in startBetween and its change over the step in sweep.
  */
 function touchedAt(one, other, reach) {
-  // Where each was drawn as the step began: where it was, lifted as it is now (under a gale, src/rock.js syncMeshes).
-  startBetween.copy(other.previous).sub(one.previous)
-    .add(other.meshAbove.position).sub(other.position).sub(one.meshAbove.position).add(one.position);
+  drawnAtStart(one, other);
   sweep.copy(between).sub(startBetween);
   const a = sweep.lengthSq();
   const c = startBetween.lengthSq() - reach * reach;
@@ -184,4 +200,56 @@ function touchedAt(one, other, reach) {
   if (b >= 0 || discriminant < 0) return null;
   const touched = (-b - Math.sqrt(discriminant)) / (2 * a);
   return touched <= 1 ? touched : null;
+}
+
+const slipping = new THREE.Vector3();
+const spinOne = new THREE.Vector3();
+const spinOther = new THREE.Vector3();
+const leverOne = new THREE.Vector3();
+const leverOther = new THREE.Vector3();
+const push = new THREE.Vector3();
+
+/**
+ * The friction where `one` and `other` touch, as they part (the header):
+ * their surfaces slipping across each other at the contact (each one's
+ * velocity and its spin's, ω × r, r from its centre to the contact along
+ * `normal`), the impulse along the contact that stops the slip, or
+ * μ·`impulse` if that is less (Coulomb's; μ the root of the product of
+ * their frictions, src/things.js `material`), each turned by it about its
+ * centre (Rock.collisionInertia), so a glancing hit spins both and a
+ * spinning ball throws the other off sideways. It takes off speed and spin
+ * and never adds them.
+ */
+function rub(one, other, normal, impulse, massOne, massOther) {
+  // Each from its centre to the one point they touch at, between them in the share of their radii.
+  const distance = push.copy(other.centre).sub(one.centre).dot(normal);
+  const radiusOne = one.collisionRadius * distance / (one.collisionRadius + other.collisionRadius);
+  const radiusOther = distance - radiusOne;
+  leverOne.copy(normal).multiplyScalar(radiusOne);
+  leverOther.copy(normal).multiplyScalar(-radiusOther);
+  spinOne.copy(one.spinAxis).multiplyScalar(one.spinRate);
+  spinOther.copy(other.spinAxis).multiplyScalar(other.spinRate);
+  // The second's surface against the first's, at the contact.
+  slipping.copy(other.velocity).add(push.crossVectors(spinOther, leverOther)).sub(one.velocity).sub(push.crossVectors(spinOne, leverOne));
+  slipping.addScaledVector(normal, -slipping.dot(normal));
+  const slip = slipping.length();
+  if (slip < 1e-6) return;
+  const inertiaOne = one.collisionInertia, inertiaOther = other.collisionInertia;
+  // The impulse that would stop the slip: for spheres, 1/m₁ + 1/m₂ + R₁²/I₁ + R₂²/I₂ of it per m/s.
+  const stopping = slip / (1 / massOne + 1 / massOther + radiusOne * radiusOne / inertiaOne + radiusOther * radiusOther / inertiaOther);
+  const friction = Math.min(Math.sqrt(one.thing.material.friction * other.thing.material.friction) * impulse, stopping);
+  // Along the slip on the first, against it on the second.
+  push.copy(slipping).multiplyScalar(friction / slip);
+  const turnOne = spinOne.crossVectors(leverOne, push).divideScalar(inertiaOne);
+  one.knock(push.x / massOne, push.y / massOne, push.z / massOne, 0, 0, 0);
+  one.spinBy(turnOne);
+  push.negate();
+  const turnOther = spinOther.crossVectors(leverOther, push).divideScalar(inertiaOther);
+  other.knock(push.x / massOther, push.y / massOther, push.z / massOther, 0, 0, 0);
+  other.spinBy(turnOther);
+}
+
+/** The line from `one` to `other` as they were drawn as the step began (into startBetween): where each was, lifted as it is now (under a gale, src/rock.js syncMeshes). */
+function drawnAtStart(one, other) {
+  startBetween.copy(other.previous).sub(one.previous).add(other.centre).sub(other.position).sub(one.centre).add(one.position);
 }
