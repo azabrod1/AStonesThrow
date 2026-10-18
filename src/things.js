@@ -24,9 +24,7 @@
 //     down at it leaves at (a range: a stone's lumps strike unevenly),
 //     `friction` (Coulomb), `roll` ('solid', 'shell' or none: a ball keeps 5/7
 //     or 3/5 of its speed along the ground once it rolls; a thing that does
-//     not roll tumbles) and `rolling`, its rolling resistance; `give`, for a
-//     hollow ball, how much it flattens per m/s it is struck at, and springs
-//     back (src/rock.js squash: drawn, not felt).
+//     not roll tumbles) and `rolling`, its rolling resistance.
 //   - air: `drag`, its drag coefficient in flight (on the disc of its nominal
 //     radius: 0.47 a ball's; a pizza, flat on, more), and its `model`:
 //     `ballistic` (it tumbles as it flies) or `flutter` (a flat thing: a plate
@@ -191,7 +189,6 @@ function definitionProblems(key, definition) {
   need(within(material.friction, LIMITS.friction), `material.friction must be ${LIMITS.friction.join(' to ')}`);
   need(material.roll === undefined || material.roll === null || (typeof material.roll === 'string' && Object.hasOwn(ROLLS, material.roll)), 'material.roll must be solid, shell or none');
   need(!material.roll || within(material.rolling, LIMITS.rolling), 'a thing that rolls needs material.rolling, 0 to 1');
-  need(material.give === undefined || within(material.give, [0, 0.1]), 'material.give must be 0 to 0.1 (its flattening per m/s)');
   need(air.drag === undefined || within(air.drag, LIMITS.drag), `air.drag must be ${LIMITS.drag.join(' to ')}`);
   need(air.model === undefined || AIR_MODELS.includes(air.model), `air.model must be one of ${AIR_MODELS.join(', ')}`);
   need(within(water.restingHeight, LIMITS.restingHeight), `water.restingHeight must be ${LIMITS.restingHeight.join(' to ')} radii`);
@@ -423,12 +420,12 @@ const ball = (name, note, size, material, look) => ({
 defineBuiltIn('golf', ball('Golf ball', '46 g; a little heavier than water: it sinks slowly', { size: { by: 'fixed', diameter: 0.04267, mass: 0.0459 } },
   { bounce: [0.75, 0.82], friction: 0.4, roll: 'solid', rolling: 0.05 }, { paint: 'golf', roughness: 0.35, reflection: 0.9 }));
 defineBuiltIn('tennis', ball('Tennis ball', '58 g; a hollow shell: it floats', { size: { by: 'fixed', diameter: 0.067, mass: 0.058 } },
-  { bounce: [0.72, 0.77], friction: 0.6, roll: 'shell', rolling: 0.04, give: 0.02 }, { paint: 'tennis', roughness: 1.0, reflection: 0.5 }));
+  { bounce: [0.72, 0.77], friction: 0.6, roll: 'shell', rolling: 0.04 }, { paint: 'tennis', roughness: 1.0, reflection: 0.5 }));
 defineBuiltIn('bowling', ball('Bowling ball', '6 to 16 lb: 11 lb and lighter float', { diameter: 0.2159, size: { by: 'mass', unit: 'lb', min: 6, max: 16, step: 1, initial: 14 } },
   { bounce: [0.15, 0.25], friction: 0.3, roll: 'solid', rolling: 0.015 }, { paint: 'bowling', roughness: 0.14, reflection: 1.0 }));
 defineBuiltIn('basketball', ball('Basketball', 'Sizes 5 to 7; it floats high', {
   size: { by: 'preset', unit: 'size', initial: 7, presets: [{ value: 5, name: 'Size 5', label: '480 g', diameter: 0.222, mass: 0.48 }, { value: 6, name: 'Size 6', label: '540 g', diameter: 0.23, mass: 0.54 }, { value: 7, name: 'Size 7', label: '620 g', diameter: 0.239, mass: 0.62 }] },
-}, { bounce: [0.83, 0.87], friction: 0.6, roll: 'shell', rolling: 0.02, give: 0.012 }, { paint: 'basketball', roughness: 0.62, reflection: 0.8 }));
+}, { bounce: [0.83, 0.87], friction: 0.6, roll: 'shell', rolling: 0.02 }, { paint: 'basketball', roughness: 0.62, reflection: 0.8 }));
 
 const gem = (name, note, density, look) => ({
   name, group: 'Gems', note,

@@ -62,8 +62,7 @@ is remembered on the device (but the view, which opens on the shore):
   floater rides the water as it is drawn, ripples, rings and wind waves,
   rising and tilting with them as a body does, and the water meets it at
   its true surface (a pizza's crust holds it off the toppings); things
-  meet it where it is drawn. A thing out of the water looks wet and dries;
-  a hollow ball flattens a little where it is struck and springs back.
+  meet it where it is drawn. A thing out of the water looks wet and dries.
   The rest sink, a golf ball
   slowly, basalt fastest. A gem (diamond, emerald, ruby or sapphire, cut and
   faceted, 5 to 1000 carats) sinks, as does a brick (2.7 kg of fired clay).

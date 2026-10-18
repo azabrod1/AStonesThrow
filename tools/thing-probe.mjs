@@ -444,22 +444,6 @@ console.log('\nA throw\'s own random stream (src/rock.js `random`): a basketball
   console.log(`  its bounces' tops ${bounces[0].map((height) => height.toFixed(4)).join(', ')} m, and with Math.random drawn from between its steps ${same ? 'the same' : bounces[1].map((height) => height.toFixed(4)).join(', ')}`);
   check(same, 'a basketball\'s bounces changed when Math.random was drawn from between its steps');
 }
-console.log('\nA hollow ball\'s give (src/rock.js strike, squashStep): a basketball dropped from a metre onto the deck');
-{
-  const measured = measure('basketball');
-  const ball = new Rock({ radius: measured.radius, position: new THREE.Vector3(0, 1.2, -3.5), velocity: new THREE.Vector3(), envTexture: null, thing: 'basketball', mass: measured.mass });
-  ball.groundAt = poolGround(POOL_SQUARE);
-  // Its first bounce: flattened most, then round again (within a tenth of that) before it comes down again.
-  let most = 0, struckAt = null, recovered = null;
-  for (let time = 0; time < 1.2 && recovered === null; time += STEP) {
-    ball.update(STEP, floorDepthAt);
-    most = Math.max(most, ball.squash.amount);
-    if (struckAt === null && ball.squash.amount > 0.005) struckAt = time;
-    if (struckAt !== null && Math.abs(ball.squash.amount) < 0.1 * most && Math.abs(ball.squash.rate) < 0.1 * most * 2 * Math.PI * 11) recovered = time - struckAt;
-  }
-  console.log(`  it flattens by ${(100 * most).toFixed(1)}% and is round again ${recovered === null ? 'never' : `${(1000 * recovered).toFixed(0)} ms after`}`);
-  check(most > 0.02 && most < 0.15 && recovered !== null && recovered < 0.2, `a basketball's give on the deck: ${(100 * most).toFixed(1)}%, round again after ${recovered}`);
-}
 
 console.log('\nThe fixed step (src/main.js simulate, src/rock.js drawAt): drawing between steps, and what drawing does not change');
 {

@@ -197,8 +197,8 @@
 // (`water.soaks`), heavier and limper by the minute, floating lower, its
 // rim no longer keeping its top dry. A soft thing's give is a spring
 // (bendStep: cupped by the air in flight, which steadies it, flung on
-// striking the water or the deck), and a hollow ball flattens a little
-// where it is struck and springs back (strike, squashStep; drawn only).
+// striking the water or the deck). A ball stays round: a real one gives
+// for a hundredth of a second when struck, less than a frame.
 //
 // Its own random stream (`random`): what a throw draws (its turn, its spin,
 // its bounces, its splash's seed) comes from a stream of its own seeded
@@ -325,19 +325,17 @@ const PLATE = { slope: 2.7, skin: 0.03, centre: 0.5, cupSteadies: 0.7, turnDrag:
 // air and this in the water; striking the water or the ground flat it is flung by `splat` of its speed into its face
 // (over its radius, in radii a second).
 // Soaked through it is limp: its spring `limp` slower.
-// A hollow ball's give (`material.give`, Rock.squashStep): flattened along the blow by `give` per m/s, at most `most`, it
-// springs back at `rate` Hz, damped at `damping` of critical: a few hundredths of a second, as a struck ball rings.
-const SQUASH = { most: 0.18, rate: 11, damping: 0.18 };
 const BEND = { damping: 0.25, wetDamping: 0.6, splat: 0.04, limp: 0.6 };
 // The water on it (Rock.soak): out of the water it dries over `drySeconds`; a soaking thing at rest afloat floats again
 // to find its new height every `settleSeconds`, if it has sunk FLOAT.settledOffset since.
 const WET = { drySeconds: 90, settleSeconds: 0.5 };
 const AIR_DENSITY = 1.2;   // kg/m³ (flyStep's)
 // A throw's aim (aimThrow): the flight times it tries (least, most, step; s), the passes against the air's drag and their step (s),
-// a flight of its own's passes (a plate's), how near (m) a pass must come down for no more to be flown (a plate's flight,
+// a flight of its own's passes (a plate's: at most coarsePasses of them coarse, AIM.step, until one comes down within
+// coarseClose m), how near (m) a pass must come down for no more to be flown (a plate's flight,
 // each pass hundreds of its steps, sooner) and the most (m)
 // a pass may move the aim.
-const AIM = { times: [0.3, 2.0, 0.01], passes: 6, flightPasses: 7, step: 1 / 120, close: 0.003, flightClose: 0.01, farthestStep: 1.5 };
+const AIM = { times: [0.3, 2.0, 0.01], passes: 6, flightPasses: 9, coarsePasses: 5, coarseClose: 0.03, step: 1 / 120, close: 0.003, flightClose: 0.01, farthestStep: 1.5 };
 // A ball's shape and contact (the header).
 const BALL_SHAPE = Object.freeze({
   volume: (4 / 3) * Math.PI, centroid: new THREE.Vector3(), axes: [new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0, 1)],
@@ -431,8 +429,7 @@ export function aimThrow(hand, target, flightTime, measured, flight = null) {
   const position = new THREE.Vector3(), moving = new THREE.Vector3();
   // A flight of its own is flown in the steps the thing is (PHYSICS_STEP): a plate's turning is not a ball's drag, and
   // flown coarser it would come down elsewhere.
-  const seconds = flight ? PHYSICS_STEP : AIM.step;
-  const flyOut = (throwing, path = null) => {
+  const flyOut = (throwing, path = null, seconds = flight ? PHYSICS_STEP : AIM.step) => {
     position.copy(hand);
     moving.copy(throwing);
     flight?.reset(position, moving);
@@ -450,11 +447,15 @@ export function aimThrow(hand, target, flightTime, measured, flight = null) {
   let throwing = throwTo(aim, time);
   let map = [1, 0, 0, 1];   // d(landing)/d(aim), x and z
   let before = null, best = null;
+  // A flight of its own is first flown coarsely (AIM.step) until it comes down near (AIM.coarseClose), then in its own
+  // steps: the coarse passes cost half as much, and the fine ones start near.
+  let coarse = Boolean(flight);
   for (let pass = 0; pass < (flight ? AIM.flightPasses : AIM.passes); pass++) {
-    const landed = flyOut(throwing);
+    const landed = flyOut(throwing, null, coarse ? AIM.step : flight ? PHYSICS_STEP : AIM.step);
     const missX = goal.x - landed.x, missZ = goal.z - landed.z, miss = Math.hypot(missX, missZ);
-    if (!best || miss < best.miss) best = { miss, aimX: aim.x, aimZ: aim.z };
-    if (miss < (flight ? AIM.flightClose : AIM.close)) break;   // near enough: no more passes
+    if (coarse && (miss < AIM.coarseClose || pass >= AIM.coarsePasses - 1)) { coarse = false; before = null; best = null; continue; }
+    if (!coarse && (!best || miss < best.miss)) best = { miss, aimX: aim.x, aimZ: aim.z };
+    if (!coarse && miss < (flight ? AIM.flightClose : AIM.close)) break;   // near enough: no more passes
     if (before) {
       const aimX = aim.x - before.aimX, aimZ = aim.z - before.aimZ, length = aimX * aimX + aimZ * aimZ;
       if (length > 1e-12) {
@@ -962,8 +963,6 @@ export class Rock {
     this.wet = 0;
     this.soaked = 0;
     this.heard = [];   // its knocks on the ground since src/main.js last took them (src/sound.js)
-    // A hollow ball's give, drawn (squashStep): its flattening along `axis` and how fast that changes.
-    this.squash = this.thing.material.give ? { amount: 0, rate: 0, axis: new THREE.Vector3(0, 1, 0) } : null;
     this.rideHeight = 0;           // the water's height under its middle as drawn (src/floaterRide.js reads it back), afloat
     this.centre = new THREE.Vector3();   // where things meet it (src/collide.js): where it is drawn, riding the water (syncMeshes)
     this.stepEnd = { position: new THREE.Vector3(), quaternion: new THREE.Quaternion() };   // where it is drawn after its last step (syncMeshes)
@@ -1393,7 +1392,6 @@ export class Rock {
     // Where it is drawn, riding the water as far as it does (src/floaterRide.js): where things meet it.
     this.centre.copy(this.meshAbove.position);
     if (this.rideShare) this.centre.y += this.rideHeight * this.rideShare.value;
-    if (this.squash) this.squashMeshes();
   }
 
   /**
@@ -1463,52 +1461,6 @@ export class Rock {
     return up > 0.9 ? dry * this.radius * (1 - this.soaked) : 0;
   }
 
-  /** Struck at `speed` (m/s) along `direction` (a hollow ball, `material.give`): it flattens that way, and springs back. */
-  strike(speed, direction) {
-    const squash = this.squash;
-    if (!squash || speed <= 0) return;
-    const frequency = 2 * Math.PI * SQUASH.rate;
-    const kick = this.thing.material.give * speed * frequency;
-    if (kick <= Math.abs(squash.rate)) return;
-    squash.axis.copy(direction).normalize();
-    squash.rate = kick;
-  }
-
-  /** dt seconds of its give springing back (SQUASH). */
-  squashStep(dt) {
-    const squash = this.squash;
-    if (!squash || (squash.amount === 0 && squash.rate === 0)) return;
-    const frequency = 2 * Math.PI * SQUASH.rate;
-    squash.rate += (-frequency * frequency * squash.amount - 2 * SQUASH.damping * frequency * squash.rate) * dt;
-    squash.amount = THREE.MathUtils.clamp(squash.amount + squash.rate * dt, -SQUASH.most, SQUASH.most);
-    if (Math.abs(squash.amount) < 1e-4 && Math.abs(squash.rate) < 1e-3) { squash.amount = 0; squash.rate = 0; }
-  }
-
-  /** Its meshes flattened by its give along its axis, keeping their volume (a hollow ball's: the matrices made by hand). */
-  squashMeshes() {
-    const squash = this.squash;
-    const along = 1 - squash.amount, across = 1 / Math.sqrt(along);
-    const axis = squash.axis;
-    // S = across·I + (along − across)·n·nᵀ about its centre.
-    const matrix = scratch.squash ??= new THREE.Matrix4();
-    const ax = axis.x, ay = axis.y, az = axis.z, extra = along - across;
-    matrix.set(
-      across + extra * ax * ax, extra * ax * ay, extra * ax * az, 0,
-      extra * ay * ax, across + extra * ay * ay, extra * ay * az, 0,
-      extra * az * ax, extra * az * ay, across + extra * az * az, 0,
-      0, 0, 0, 1,
-    );
-    for (const mesh of this.meshes) {
-      mesh.matrixAutoUpdate = false;
-      mesh.matrix.compose(mesh.position, mesh.quaternion, mesh.scale);
-      if (squash.amount !== 0) {
-        const { x, y, z } = mesh.position;
-        mesh.matrix.setPosition(0, 0, 0).premultiply(matrix).setPosition(x, y, z);
-      }
-      mesh.matrixWorldNeedsUpdate = true;
-    }
-  }
-
   /**
    * Drawn `share` (0 to 1) of the way from where its last step began to
    * where it ended (src/main.js steps the world in PHYSICS_STEP and draws
@@ -1520,7 +1472,6 @@ export class Rock {
       mesh.position.lerpVectors(before.position, after.position, share);
       mesh.quaternion.slerpQuaternions(before.quaternion, after.quaternion, share);
     }
-    if (this.squash) this.squashMeshes();
   }
 
   /**
@@ -1593,7 +1544,6 @@ export class Rock {
       this.skip.skips++;
     }
     this.velocity.x += dvx; this.velocity.y += dvy; this.velocity.z += dvz;
-    if (this.squash && (dvx !== 0 || dvy !== 0 || dvz !== 0)) this.strike(Math.hypot(dvx, dvy, dvz), scratch.along.set(dvx, dvy, dvz));
     this.position.x += dx; this.position.y += dy; this.position.z += dz;
     if (this.state === 'water') {
       const body = this.body;
@@ -1776,7 +1726,6 @@ export class Rock {
   goIn(dt, surface = 0) {
     this.state = 'water';
     this.splat(this.velocity);
-    this.strike(0.5 * this.velocity.length(), this.velocity);   // the water gives more than the deck
     // From here on it moves on still water, as the splash does (the header).
     this.position.y -= surface;
     const speed = this.velocity.length();
@@ -2103,7 +2052,6 @@ export class Rock {
     const ground = this.thing.material;
     const fall = -this.velocity.y;
     this.heard.push({ speed: fall, radius: this.radius, bounce: this.collisionBounce });   // its knock on the deck (src/sound.js)
-    this.strike(fall, UP);
     const bounce = ground.bounce[0] + (ground.bounce[1] - ground.bounce[0]) * this.random();
     this.velocity.y = bounce * fall;
     const along = Math.hypot(this.velocity.x, this.velocity.z);
@@ -2235,7 +2183,6 @@ export class Rock {
       if (this.afloat && surfaceAt) surface = surfaceAt(this.position.x, this.position.z);
     }
     this.bendStep(dt);
-    this.squashStep(dt);
     this.soak(dt);
     if (this.state !== 'rest' && !this.turned) {
       const spin = new THREE.Quaternion().setFromAxisAngle(this.spinAxis, this.spinRate * dt);
