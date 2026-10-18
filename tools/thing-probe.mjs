@@ -22,6 +22,8 @@
 //     at the depth Archimedes says (a ball's cap of its share of water's
 //     density; a basketball 4.3 cm under, a tennis ball 2.8 cm) within
 //     FLOAT_DEPTH_TOLERANCE, and a gale drifts it downwind at FLOAT.drift;
+//     blown onto the shore it grounds at the waterline, never into the bed
+//     (within SHORE_TOLERANCE), and floats off when the wind turns;
 //   - a sinker rests on the bed; let go under deep water it sinks at its
 //     terminal speed, sqrt((8/3)·(ρs/ρw − 1)·g·R/C_d) (a 16 lb bowling ball
 //     1.5 m/s, a golf ball 0.4 m/s), within SINK_TOLERANCE;
@@ -92,6 +94,7 @@ const STEP_COST_MS = 0.05;
 const PIZZA_RIGHTS_SECONDS = 5;        // s: a pizza let go on the water at any angle lies flat by then
 const COLUMN_VOLUME = 0.02;           // of a floater's volume: its buoyancy's columns (src/rock.js buoyancyColumns) hold its mesh's to this
 const OVERLAP_MOST = 0.002;            // m
+const SHORE_TOLERANCE = 0.002;         // m: the most a floater grounded on the shore may sink into the bed
 const POWERS = { soft: 1.3, normal: 1.0, hard: 0.72 };
 const DRAG_COEFFICIENT = 0.46;         // src/cavity.js's
 const POOL_SQUARE = { minX: -1.5, minZ: -2.5, size: 3 };   // the solver's middle quarter (src/spectralWater.js poolSquare)
@@ -288,6 +291,27 @@ for (const name of THING_NAMES.filter((key) => THINGS[key].abilities.held)) {
   for (let time = 0; time < 12; time += STEP) rock.update(STEP, floorDepthAt);
   console.log(`\nUnder a gale a basketball afloat drifts at ${rock.velocity.x.toFixed(3)} m/s downwind (${rock.state})`);
   check(Math.abs(rock.velocity.x - 0.15) < 0.01 && rock.state === 'float', `basketball: a gale drifts it at ${rock.velocity.x.toFixed(3)} m/s (${rock.state})`);
+}
+
+// ---- the shore: a gale blowing floaters onto it ----
+console.log('\nBlown onto the shore by a gale for a minute, then out again for a minute: where each grounds, how far into the bed it goes, where it is after');
+for (const name of THING_NAMES) {
+  const measured = measure(name);
+  const rock = new Rock({ radius: measured.radius, position: new THREE.Vector3(0.3, 0, 2), velocity: new THREE.Vector3(), envTexture: null, thing: name, mass: measured.mass });
+  if (!rock.floats) continue;
+  rock.startFloating(0);
+  let deepest = 0, grounded = null;
+  for (let time = 0; time < 120; time += STEP) {
+    rock.setDrift(new THREE.Vector2(0, time < 60 ? 1 : -1));
+    rock.update(STEP, floorDepthAt);
+    if (time < 60) {
+      deepest = Math.max(deepest, -floorDepthAt(rock.position.x, rock.position.z) - (rock.position.y + rock.lowestOffset()));
+      grounded = rock.position.z;
+    }
+  }
+  console.log(`  ${name.padEnd(13)} grounds at z ${grounded.toFixed(2)} m (bed ${(100 * floorDepthAt(0.3, grounded)).toFixed(1)} cm deep), ${centimetres(Math.max(deepest, 0))} cm into the bed at most; blown back out to z ${rock.position.z.toFixed(2)} (${rock.state})`);
+  check(deepest <= SHORE_TOLERANCE && grounded < 2.8 && rock.position.z < 0 && rock.state === 'float',
+    `${name}: blown onto the shore it went ${centimetres(deepest)} cm into the bed, to z ${grounded.toFixed(2)}, and back out only to z ${rock.position.z.toFixed(2)} (${rock.state})`);
 }
 
 // ---- the deck ----

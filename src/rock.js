@@ -2029,6 +2029,32 @@ export class Rock {
     this.turned = true;
   }
 
+  /**
+   * Afloat where the bed comes up to its lowest point (a gale drifting it
+   * onto the shore): it grounds there. The bed holds it from going on into
+   * shallower water, and it sits no lower than the bed. It floats off again
+   * once the water takes it back out. `pondDepth` is the bed's depth, as
+   * update takes it.
+   */
+  aground(pondDepth) {
+    const depthAt = (x, z) => (typeof pondDepth === 'function' ? pondDepth(x, z) : pondDepth);
+    // Only where the bed is within its reach is its mesh worth walking for its lowest point.
+    const depth = depthAt(this.position.x, this.position.z);
+    if (depth > this.reach * this.radius - this.position.y) return;
+    const lowest = this.lowestOffset();
+    if (this.position.y + lowest >= -depth) return;
+    let bed = depth;
+    if (depth < depthAt(this.previous.x, this.previous.z)) {
+      this.position.x = this.previous.x;
+      this.position.z = this.previous.z;
+      this.velocity.x = 0;
+      this.velocity.z = 0;
+      bed = depthAt(this.position.x, this.position.z);
+    }
+    this.position.y = Math.max(this.position.y, -bed - lowest);
+    this.velocity.y = Math.max(this.velocity.y, 0);
+  }
+
   // ---- the ground (the header) --------------------------------------------
 
   /** Come to rest where it is, its lowest point at `height` (it tumbled or rolled to a stop on the ground). */
@@ -2177,7 +2203,10 @@ export class Rock {
         this.state = 'air';
         this.position.y += surface;
         surface = 0;
-      } else if (surfaceAt) surface = surfaceAt(this.position.x, this.position.z);
+      } else {
+        this.aground(pondDepth);
+        if (surfaceAt) surface = surfaceAt(this.position.x, this.position.z);
+      }
     } else {
       this.restTime += dt;
       if (this.afloat && surfaceAt) surface = surfaceAt(this.position.x, this.position.z);

@@ -56,8 +56,9 @@ export class SettingsPanel {
       this.hide();
       this.button.focus({ preventScroll: true });
     }, true);
+    // A press on the control it was opened from is that control's to close it with (its click), not a press outside it.
     window.addEventListener('pointerdown', (event) => {
-      if (!this.isOpen() || this.panel.contains(event.target) || this.button.contains(event.target)) return;
+      if (!this.isOpen() || this.panel.contains(event.target) || this.button.contains(event.target) || this.openedFrom?.contains(event.target)) return;
       this.hide();
       if (event.target instanceof HTMLCanvasElement) { event.stopPropagation(); event.preventDefault(); }
     }, true);

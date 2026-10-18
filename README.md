@@ -32,67 +32,14 @@ day; the conditions: Weather, Wind and Sound; the viewing: View and Quality), ea
 over a line on what it sets and where it stands, and each setting a page of
 its choices (Location and Water as pictures) with a line on each. Each choice
 is remembered on the device (but the view, which opens on the shore):
-- What to throw (`?thing=`): a river stone (the default), slate, granite,
-  basalt or pumice; a golf ball, a tennis ball, a bowling ball or a
-  basketball; a gem; an apple, a watermelon, a pizza or a frozen pizza; a
-  brick. The strip's chip (the thing's name, over its slider) opens this
-  page at once. Each is pictured, in a fold for its group (Stones, Balls,
-  Gems, Other; the chosen thing's open, one at a time); tapping one chooses
-  it and shows it over the folds to look over (its picture, size, mass and
-  density, whether it floats, skips, bends or soaks, a slider for its size
-  and a star to make it a favourite), and Use goes back to the water to
-  throw it. Favourites and the latest choices sit at the top, a tap each.
-  The strip says the size both ways ("Size 7 · 620 g", "14 lb · 21.6 cm");
-  Skip is off for what does not skip, and says why when pressed,
-  each the size, weight and density of the real thing (`src/things.js`), and
-  the throw button names it ("Throw a rock", "Throw a ball", "Throw a
-  pizza"). Pumice, a tennis ball, a basketball and a bowling ball
-  of 11 lb or less are lighter than water: they come back up, bob and
-  float (a basketball 4.3 cm under, mirrored in the water, drifting under a
-  gale), as do an apple (low: a quarter of it is air), a watermelon (2 to
-  10 kg, nearly as heavy as water: it plunges deep, comes back up slowly
-  and floats with only its striped back showing) and a pizza (a soft
-  disc made by hand, its outline and crust uneven: thrown, it flies as a
-  spinning plate, the air's push on its face and its spin turning it, its
-  edges cupped by the air, which steadies it; afloat, as much of it under
-  as Archimedes says at whatever angle it lies, turned flat by the water,
-  its toppings dry inside its crust; over a minute or two it soaks, heavier,
-  lower and limper, the water coming over its top). A frozen pizza is the
-  same stiff and frosted: it tumbles more and soaks only as it thaws. A
-  floater rides the water as it is drawn, ripples, rings and wind waves,
-  rising and tilting with them as a body does, and the water meets it at
-  its true surface (a pizza's crust holds it off the toppings); things
-  meet it where it is drawn. A thing out of the water looks wet and dries.
-  The rest sink, a golf ball
-  slowly, basalt fastest. A gem (diamond, emerald, ruby or sapphire, cut and
-  faceted, 5 to 1000 carats) sinks, as does a brick (2.7 kg of fired clay).
-  Each choice's picture (`assets/things/thumbs/`) is a harness frame of
-  the thing at rest on the pool's deck, its middle 70% shrunk to 160×90:
-  `--water=pool --throws=none --times=0.05 --look=0.25:y:0.85 --fov=f`
-  (y the deck's 0.1 m plus its radius, f = 2·atan(1.25·d/1.8) for its
-  diameter d; a stone 10 cm, a gem 3 cm, a pizza 30 cm, a watermelon 25 cm,
-  a brick 21.5 cm) and `--eval` throwing it, turning
-  it upright and laying it there with `restOn(0.1)`, e.g. the frozen pizza's:
-  `--eval="const r = window.__pond.throwAt(0.25, 0.85, { thing: 'frozen-pizza' }); r.quaternion.identity(); r.velocity.set(0, 0, 0); r.position.set(0.25, 0, 0.85); r.restOn(0.1);"`.
-  Anything thrown at a floater knocks it: they bounce off each other, the
-  floater dipping, ringing the water and throwing off spray, and the knock
-  passes on to whatever it is driven into, floaters and the pool's walls
-  (which send things back off them) alike; a glancing hit spins both.
-  Everything thrown moves in fixed steps of 1/240 s whatever the frame
-  rate, so a throw goes the same on any device. Each splash, skip, knock
-  and bounce sounds as it happens (Sound, on unless turned off;
-  `?sound=off`), made from how fast, how big and how lively the thing is. Floaters and things at rest on
-  the deck stay in sight; a throw retires the oldest thing out of sight. In the pool,
-  anything that comes down on the deck bounces as it would on paving (a
-  basketball back to 70% of its fall, a bowling ball hardly at all) and
-  rolls or tumbles to a stop, or off the edge into the water. A splash
-  meets the pool's walls and deck as well: its sheet and jet run up a wall
-  they reach, drops that hit a wall's side fall back into the pool, and
-  those thrown over it land on the paving, big ones splattering, and leave
-  it wet where they fall; the more come down, the darker and longer it
-  stays wet, drying from the edges over up to forty seconds. The pool's
-  waves break: throw after throw into one corner no longer piles them into
-  glassy humps, as they spill their energy once they stay too steep.
+- What to throw (`?thing=`): stones (a river stone, the default; slate,
+  granite, basalt, pumice), balls (golf, tennis, bowling, basketball), gems
+  (diamond, emerald, ruby, sapphire) and others (an apple, a watermelon, a
+  pizza, a frozen pizza, a brick), each the size, weight and density of the
+  real thing (`src/things.js`). The strip's chip opens this page. What is
+  lighter than water floats; the rest sink. Each choice's picture
+  (`assets/things/thumbs/`) is a harness frame of it at rest on the pool's
+  deck.
 - View: Shore, standing on the bank as the page opens; Low, down at the
   water, the splash against the far shore; High, from above, the rings
   spreading over the pond; Under, under the water, looking up at the rocks
@@ -273,34 +220,10 @@ the square) and the foam's drift with it: Calm 0.3, a glassy pond with faint
 cat's paws, on which a stone's rings read far; Breeze 1, the look the pond
 had before the control; Windy 1.8.
 
-**Things** (`src/things.js`, `src/thingMeshes.js`, `src/rock.js`). What
-can be thrown is a registry of definitions (`defineThing`), plain data in the
-parts a physics engine gives a body: its body (a sphere, or its mesh's own
-shape; its density and how the slider sizes it), its material (bounce,
-friction, rolling), its drag in the air, its rest on the bed, its look (a
-mesh builder, `registerMesh`, and its parameters) and what it can do (skip;
-be held to a human throw). A definition is checked (`validateThing` says
-what is wrong), so one can come from outside: `__pond.defineThing(key,
-definition)` adds a thing, and the Object page shows it. A new thing
-is a definition; a new look, a mesh builder; a new body or flight (a
-feather's flutter), a body or air model in `src/rock.js`. What is thrown is a kind
-of stone (the river stone's procedural geometry in its own squash, lumps,
-colours and density) or a ball (an icosphere painted per vertex: a
-basketball's seams, a tennis ball's, a golf ball's dimples, a bowling ball's
-swirl and finger holes), all drawn with one material, so a new kind compiles
-nothing. Under the water each moves with its own density's drag, head, lift
-and buoyancy, divided by its inertia with the water it carries (half the
-water it displaces, against the reference stone's, whose fit already holds
-it: a basketball carries six times its own mass). A floater rises once its
-hole has closed and floats on the water over its submerged cap, damped by
-the waves it makes, and rests at Archimedes' depth. A ball is aimed against
-the air's drag and thrown no faster than it can be (`aimThrow`); a lighter
-thing throws a slower jet (`lightJet` in `src/splash.js`).
-Things meet things in `src/collide.js`: spheres exchanging a collision's
-impulse (momentum kept, the bounce of the pair's materials, a floater's
-mass counting the water it carries), gone over several times a step with
-the pool's walls so a knock passes along a row within the step.
-`tools/thing-probe.mjs` checks the sizes, aims, depths, bounces and meetings.
+**Things** (`src/things.js`, `src/thingMeshes.js`, `src/rock.js`,
+`src/collide.js`). What can be thrown is a registry of plain, validated
+definitions (`defineThing`); `__pond.defineThing(key, definition)` adds one.
+`tools/thing-probe.mjs` checks them.
 
 **Splash** (`src/splash.js`). A stone entering water goes through stages with
 known timing, and the droplets are choreographed from them:

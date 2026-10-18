@@ -336,6 +336,25 @@ for (const framing of FRAMINGS) {
   await page.waitForTimeout(150);
   const quickPicked = await page.evaluate(() => ({ thing: window.__pond.thing, closed: document.getElementById('settings').hidden }));
   check(quick.length >= 4 && quick.includes('pizza') && quickPicked.thing === 'pizza' && quickPicked.closed, `the latest choices sit at the top (${quick.join(', ')}), and one tapped is thrown at once (${quickPicked.thing}, ${quickPicked.closed ? 'closed' : 'open'})`);
+  // The chip pressed again closes What to throw (its press is not one outside the panel, src/settingsPanel.js), where the
+  // open panel leaves it uncovered; where the panel covers it, its ‹ closes it.
+  await press('#thing-chip');
+  await page.waitForTimeout(400);
+  const chipOpen = await page.evaluate(() => {
+    const chip = document.getElementById('thing-chip');
+    const box = chip.getBoundingClientRect();
+    return { opened: !document.getElementById('settings').hidden, uncovered: chip.contains(document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)) };
+  });
+  if (chipOpen.uncovered) {
+    await press('#thing-chip');
+    await page.waitForTimeout(150);
+    const chipClosed = await page.evaluate(() => ({ closed: document.getElementById('settings').hidden, expanded: document.getElementById('thing-chip').getAttribute('aria-expanded') }));
+    check(chipOpen.opened && chipClosed.closed && chipClosed.expanded === 'false', `the chip pressed again closes What to throw (${chipOpen.opened ? 'opened' : 'did not open'}, then ${chipClosed.closed ? 'closed' : 'still open'}, aria-expanded ${chipClosed.expanded})`);
+  } else {
+    console.log('  (the open panel covers the chip here: its ‹ closes it)');
+    await page.evaluate(() => document.querySelector('.menu-page[data-page="thing"] .menu-back')?.click());
+    await page.waitForTimeout(150);
+  }
   // Skip is off for what does not skip, and pressed it says why.
   await page.evaluate(() => document.getElementById('skip').click());   // off (aria-disabled), so a tap is the page's to answer
   await page.waitForTimeout(100);
