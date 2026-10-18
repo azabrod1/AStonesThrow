@@ -77,6 +77,7 @@ export class SettingsPanel {
     this.panel.hidden = true;
     this.button.setAttribute('aria-expanded', 'false');
     const from = this.openedFrom;
+    from?.setAttribute('aria-expanded', 'false');
     this.resetToRoot();
     if (from && this.panel.contains(document.activeElement)) from.focus({ preventScroll: true });
   }
@@ -90,6 +91,7 @@ export class SettingsPanel {
     if (this.isOpen()) this.hide();
     this.show();
     this.openedFrom = from;
+    from?.setAttribute('aria-expanded', 'true');
     this.navigate(page, true);
     this.settle(this.generation);
   }

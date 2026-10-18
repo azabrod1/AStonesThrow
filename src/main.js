@@ -479,6 +479,9 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
   // The sounds of what is thrown (src/sound.js): on unless turned off on this device, or by ?sound=off.
   const sound = createSound();
   sound.setEnabled((pageParameters.get('sound') ?? storedChoice(SOUND_STORAGE_KEY)) !== 'off');
+  // Browsers let audio start only on a gesture: the first press or key starts it (never the page's own throws, the
+  // warm-up's among them).
+  for (const type of ['pointerdown', 'keydown']) window.addEventListener(type, () => sound.unlock(), { capture: true });
   const storedWind = storedChoice(WIND_STORAGE_KEY);
   const requestedWind = pageParameters.get('windStrength');
   let windName = Object.hasOwn(WIND_STRENGTHS, requestedWind ?? '') ? requestedWind : Object.hasOwn(WIND_STRENGTHS, storedWind ?? '') ? storedWind : DEFAULT_WIND_STRENGTH;
@@ -1240,7 +1243,6 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
   }
 
   function throwAt(x, z, options = {}) {
-    sound.unlock();   // a throw is a gesture's (or the page's own): the audio may start now
     const name = Object.hasOwn(THINGS, options.thing ?? '') ? options.thing : thingName;
     const { thing, radius, mass, size } = measureThing(name, options.size, options.radius);
     // Skip skips what skips (src/things.js abilities: a stone of any kind); anything else is thrown as ever.
@@ -2012,6 +2014,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     get floaterRide() { return { reads: floaterRide.reads, requests: floaterRide.requests, working: floaterRide.working }; },
     /** How many sounds are playing now (tools/quality-probe.mjs). */
     get soundsPlaying() { return sound.playing; },
+    get soundState() { return sound.state; },
     /** The water by name (WATER_CLARITIES: pool, clear, lake, pond, murky; the pool is the pool's basin, the others the lake), remembered on this device. */
     setClarity(name) {
       if (!Object.hasOwn(WATER_CLARITIES, name)) return;

@@ -18,7 +18,7 @@
 //     pocks and a stone clicks.
 //
 // Nothing plays until the page has been touched (browsers start audio only
-// on a gesture: src/main.js calls unlock on each throw), and Sound off
+// on a gesture: src/main.js calls unlock on the first press or key), and Sound off
 // (the setting, its own localStorage key, src/main.js) stops it all. Each
 // sound is a few nodes that stop and are let go within a second; at most
 // VOICES.most play at once (the quietest new one waits for none: it is
@@ -31,6 +31,7 @@ export function createSound() {
   let context = null, master = null, noise = null;
   let enabled = true;
   let playing = 0;
+  let offset = 0;   // where in the noise the last burst began
 
   function ready(starting = false) {
     if (!enabled || (!context && !starting)) return null;
@@ -45,7 +46,12 @@ export function createSound() {
       // A second of white noise, made once, that every slap and thud plays a slice of.
       noise = context.createBuffer(1, context.sampleRate, context.sampleRate);
       const samples = noise.getChannelData(0);
-      for (let index = 0; index < samples.length; index++) samples[index] = Math.random() * 2 - 1;
+      // From a stream of its own (a seeded throw's Math.random is not the sound's to draw from).
+      let state = 0x9e3779b9;
+      for (let index = 0; index < samples.length; index++) {
+        state ^= state << 13; state ^= state >>> 17; state ^= state << 5;
+        samples[index] = ((state >>> 0) / 4294967296) * 2 - 1;
+      }
     }
     if (context.state === 'suspended') context.resume().catch(() => {});
     return context.state === 'running' ? context : null;
@@ -81,7 +87,8 @@ export function createSound() {
     envelope.gain.linearRampToValueAtTime(gain, at + 0.002);
     envelope.gain.exponentialRampToValueAtTime(1e-4, at + seconds);
     source.connect(filter).connect(envelope).connect(master);
-    source.start(at, Math.random() * 0.5, seconds + 0.01);
+    offset = (offset + 0.37) % 0.5;   // a different slice of the noise each time, drawn from no random stream
+    source.start(at, offset, seconds + 0.01);
     source.onended = onEnd;
   }
 
@@ -112,8 +119,9 @@ export function createSound() {
       if (enabled && context) ready();
     },
     get enabled() { return enabled; },
-    /** How many sounds are playing (tools/quality-probe.mjs). */
+    /** How many sounds are playing, and the audio's state ('running', 'suspended', or 'none' before a gesture or without audio): tools/quality-probe.mjs. */
     get playing() { return playing; },
+    get state() { return context?.state ?? 'none'; },
 
     /** A thing into the water (src/rock.js goIn's impact: speed, radius). */
     splash({ speed, radius }) {

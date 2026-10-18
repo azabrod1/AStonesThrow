@@ -336,18 +336,26 @@ const ride = await page.evaluate(async () => {
 });
 console.log(`  a basketball afloat: ${ride.reads - ride.readsBefore} reads of the water under it came back (${ride.requests} asked), its centre up to ${(1000 * ride.most).toFixed(2)} mm off the still water`);
 check(ride.working && ride.reads > ride.readsBefore && ride.most < 0.05 && ride.meets < 1e-6, `the water's height under a floater is read back for the physics, and things meet it there (${ride.reads - ride.readsBefore} reads, at most ${(1000 * ride.most).toFixed(1)} mm; the ball ${ride.state})`);
-// The sounds (src/sound.js): a throw's splash and a knock play, and stop.
+// The sounds (src/sound.js): started by a gesture (a key here), a throw's splash plays and stops. Where the browser has
+// no audio to run (a CI runner), nothing plays; either way no voice is left held.
+await page.keyboard.press('Shift');
 const sounds = await page.evaluate(async () => {
   const pond = window.__pond;
   pond.setSound(true);
-  pond.throwAt(0.2, -1.2, { radius: 0.04 });
+  for (let wait = 0; wait < 50 && pond.soundState !== 'running'; wait++) await new Promise((resolve) => setTimeout(resolve, 20));
+  // Stepped to its splash here (headless frames are slow), its sounds counted as it goes in.
+  pond.pause();
+  const stone = pond.throwAt(0.2, -1.2, { radius: 0.04 });
   let most = 0;
-  for (let wait = 0; wait < 100; wait++) { await new Promise((resolve) => setTimeout(resolve, 20)); most = Math.max(most, pond.soundsPlaying); }
+  for (let frame = 0; frame < 120 && stone.state === 'air'; frame++) { pond.advance(1 / 60); most = Math.max(most, pond.soundsPlaying); }
+  pond.advance(0.05);
+  most = Math.max(most, pond.soundsPlaying);
+  pond.resume();
   await new Promise((resolve) => setTimeout(resolve, 2500));
-  return { most, after: pond.soundsPlaying };
+  return { most, after: pond.soundsPlaying, state: pond.soundState };
 });
-console.log(`  a throw's sounds: up to ${sounds.most} at once, ${sounds.after} left 2.5 s after`);
-check(sounds.most >= 1 && sounds.after === 0, `a throw sounds, and its sounds end (${sounds.most} at once, ${sounds.after} after)`);
+console.log(`  a throw's sounds (audio ${sounds.state}): up to ${sounds.most} at once, ${sounds.after} left 2.5 s after`);
+check((sounds.state !== 'running' || sounds.most >= 1) && sounds.after === 0, `a throw sounds where the audio runs (${sounds.state}), and its sounds end (${sounds.most} at once, ${sounds.after} after)`);
 await page.evaluate(() => { window.__pond.clear(); });
 
 // A long session (resource lifetime): sixty throws of every kind, the oldest retired as the pond fills, then the pond

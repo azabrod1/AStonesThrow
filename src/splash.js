@@ -1820,7 +1820,6 @@ export class SplashSystem {
     uniforms.uFloorLight.value.copy(floorLight(this.lighting, uniforms.uPondDepth.value, this.bedAlbedo));
   }
 
-  /** The bed the splash's water sees through its drops: its depth (m) and albedo (the lake's sand by default; a pool's tiles, src/main.js). */
   /**
    * A drop come down on the pool's deck (setGround): the paving wet where it
    * fell, and a big one splattering a few small drops back up off it.
@@ -1851,6 +1850,7 @@ export class SplashSystem {
     this.walls = square ? { minX: square.minX + inset, maxX: square.minX + square.size - inset, minZ: square.minZ + inset, maxZ: square.minZ + square.size - inset } : null;
   }
 
+  /** The bed the splash's water sees through its drops: its depth (m) and albedo (the lake's sand by default; a pool's tiles, src/main.js). */
   setBed({ depth, albedo = SAND_ALBEDO }) {
     this.bedAlbedo = albedo;
     this.compositePass.material.uniforms.uPondDepth.value = depth;

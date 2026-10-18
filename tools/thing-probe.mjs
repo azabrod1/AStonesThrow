@@ -461,6 +461,66 @@ console.log('\nA hollow ball\'s give (src/rock.js strike, squashStep): a basketb
   check(most > 0.02 && most < 0.15 && recovered !== null && recovered < 0.2, `a basketball's give on the deck: ${(100 * most).toFixed(1)}%, round again after ${recovered}`);
 }
 
+console.log('\nThe fixed step (src/main.js simulate, src/rock.js drawAt): drawing between steps, and what drawing does not change');
+{
+  // Frames of 1/165 s, jittered ±8%, stepped as src/main.js steps them: each frame drawn where the ball was at its end,
+  // between its last two steps, whatever the frames before drew.
+  const measured = measure('tennis');
+  const ball = new Rock({ radius: measured.radius, position: new THREE.Vector3(0, 0.5, 0), velocity: new THREE.Vector3(10, 2, 0), envTexture: null, thing: 'tennis', mass: measured.mass });
+  const stepsAt = [[0, ball.stepEnd.position.clone()]];
+  let time = 0, stepsTime = 0, worst = 0, jitter = 7;
+  for (let frame = 0; frame < 60; frame++) {
+    jitter = (jitter * 16807) % 2147483647;
+    const end = time + (1 / 165) * (1 + 0.16 * ((jitter % 1000) / 1000 - 0.5));
+    while (stepsTime < end - 1e-12) { ball.update(STEP, 10); stepsTime += STEP; stepsAt.push([stepsTime, ball.stepEnd.position.clone()]); }
+    ball.drawAt(1 - (stepsTime - end) / STEP);
+    const [beforeTime, before] = stepsAt.at(-2), [, after] = stepsAt.at(-1);
+    const truth = before.clone().lerp(after, (end - beforeTime) / STEP);
+    worst = Math.max(worst, ball.meshAbove.position.distanceTo(truth));
+    time = end;
+  }
+  console.log(`  a tennis ball at 10 m/s drawn in jittered frames of 1/165 s: at most ${(1000 * worst).toFixed(4)} mm from where it was at each frame's end`);
+  check(worst < 1e-6, `drawn between its steps, a tennis ball strays ${(1000 * worst).toFixed(3)} mm from where it was`);
+  // A pizza goes in alike however often it is drawn (its give is drawn, never felt: src/rock.js physicsPositions).
+  const runs = [0, 4, 2].map((every) => {
+    randomState = 31;
+    const { rock } = throwThing('pizza', { x: 0, z: -1.4 });
+    let impact = null, steps = 0;
+    for (; steps < 1000 && !impact; steps++) {
+      impact = rock.update(STEP, floorDepthAt);
+      if (every && steps % every === 0) rock.flex();
+    }
+    return { steps, x: impact.x, z: impact.z, bluntness: impact.contact.bluntness };
+  });
+  const alike = runs.every((run) => run.steps === runs[0].steps && run.x === runs[0].x && run.z === runs[0].z && run.bluntness === runs[0].bluntness);
+  console.log(`  a pizza drawn never, every 4 steps and every 2: in at step ${runs.map((run) => run.steps).join(', ')}, z ${runs.map((run) => run.z.toFixed(4)).join(', ')}, bluntness ${runs.map((run) => run.bluntness.toFixed(2)).join(', ')}`);
+  check(alike, 'a pizza goes in differently as it is drawn more or less often');
+}
+{
+  // A thing that soaks, sized by its diameter (a defined sponge), stays a number; under a gale, a floater that bobs clear
+  // of a crest leaves it where it was drawn.
+  defineThing('probe-sponge', {
+    name: 'Sponge', group: 'Other', note: 'Soaks', body: { shape: 'sphere', density: 300, size: { by: 'diameter', unit: 'cm', min: 4, max: 10, step: 1, initial: 6 } },
+    material: { bounce: [0.2, 0.3], friction: 0.6 }, water: { restingHeight: 0.5, soaks: { seconds: 5, takes: 1 } }, look: { mesh: 'ball', paint: 'plain', color: [230, 210, 90] },
+  });
+  const sponge = afloatAt('probe-sponge', 0, -1.4);
+  for (let time = 0; time < 20; time += STEP) sponge.update(STEP, floorDepthAt);
+  const finite = [sponge.position.x, sponge.position.y, sponge.position.z, sponge.density].every(Number.isFinite);
+  console.log(`  a sponge sized by its diameter, soaking: ${finite ? `${sponge.density.toFixed(0)} kg/m³, ${sponge.state}` : 'NaN'}`);
+  check(finite && sponge.density > 300, `a soaking thing sized by its diameter went to ${sponge.density} kg/m³`);
+  const tennis = afloatAt('tennis', 0, -1.4);
+  tennis.velocity.y = 2.5;
+  tennis.state = 'float';
+  let jump = 0, drawn = null;
+  for (let step = 0; step < 240 && tennis.state === 'float'; step++) {
+    drawn = tennis.meshAbove.position.y;
+    tennis.update(STEP, floorDepthAt, () => 0.15);
+  }
+  if (tennis.state === 'air') jump = Math.abs(tennis.meshAbove.position.y - drawn);
+  console.log(`  under a 15 cm crest a tennis ball bobbing clear moves ${(100 * jump).toFixed(1)} cm as it leaves the water (${tennis.state})`);
+  check(tennis.state === 'air' && jump < 0.02, `a floater bobbing clear of a crest jumped ${(100 * jump).toFixed(1)} cm`);
+}
+
 console.log('\nThings meeting things (src/collide.js):');
 {
   // One collision, alone: momentum kept, the bounce the pair's.

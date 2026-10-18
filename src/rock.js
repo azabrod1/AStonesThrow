@@ -354,7 +354,7 @@ const scratch = {
 };
 const UP = new THREE.Vector3(0, 1, 0);
 const BUOYANCY = { columns: 20 };
-const RIDE_TILT = 0.36;   // the most a floater is tilted as it rides the water as drawn (rideTheWater): the slope's tangent, 20°   // a mesh floater's buoyancy columns across its widest (buoyancyColumns)
+const RIDE_TILT = 0.36;   // the most a floater is tilted as it rides the water as drawn (rideTheWater): the slope's tangent, 20°
 
 /** A standard normal draw (Box–Muller, from `random`). */
 function gaussian(random = Math.random) {
@@ -716,7 +716,14 @@ export function buoyancyColumns(geometry, axis) {
     centroid.y += shares[index] * 0.5 * (ends[index * 6 + 1] + ends[index * 6 + 4]);
     centroid.z += shares[index] * 0.5 * (ends[index * 6 + 2] + ends[index * 6 + 5]);
   }
-  return { ends, shares, count: columnCount, cell, axis: along, acrossU, acrossV, volume: total * cell * cell, centroid };
+  // Each column as its middle and half its length (what Rock.waterline reads: half the products of its ends).
+  const middles = new Float64Array(columnCount * 3), halves = new Float64Array(columnCount * 3);
+  for (let index = 0; index < columnCount * 3; index++) {
+    const column = Math.floor(index / 3), component = index % 3;
+    middles[index] = 0.5 * (ends[column * 6 + component] + ends[column * 6 + 3 + component]);
+    halves[index] = 0.5 * (ends[column * 6 + 3 + component] - ends[column * 6 + component]);
+  }
+  return { ends, middles, halves, shares: Float64Array.from(shares), count: columnCount, cell, axis: along, acrossU, acrossV, volume: total * cell * cell, centroid };
 }
 
 /** The depth (in radii up from its bottom) a ball of `share` of water's density floats at: capShare's inverse, by bisection. */
@@ -949,6 +956,8 @@ export class Rock {
       this.spinRate = spin;
     }
     this.bend = { cup: 0, cupRate: 0, flap: 0, flapRate: 0 };
+    // A soft thing's rest shape, which the physics reads (physicsPositions) while flex bends what is drawn.
+    this.restShape = this.thing.body.soft ? this.geometry.attributes.position.array.slice() : null;
     // What the water has done to it (soak, showWet): how wet it is (1 out of the water, drying to 0) and how far soaked through.
     this.wet = 0;
     this.soaked = 0;
@@ -957,7 +966,8 @@ export class Rock {
     this.squash = this.thing.material.give ? { amount: 0, rate: 0, axis: new THREE.Vector3(0, 1, 0) } : null;
     this.rideHeight = 0;           // the water's height under its middle as drawn (src/floaterRide.js reads it back), afloat
     this.centre = new THREE.Vector3();   // where things meet it (src/collide.js): where it is drawn, riding the water (syncMeshes)
-    this.dry = { mass: this.ownMass, density: this.density };
+    this.stepEnd = { position: new THREE.Vector3(), quaternion: new THREE.Quaternion() };   // where it is drawn after its last step (syncMeshes)
+    this.dry = { mass: this.mass, density: this.density };   // as thrown, before any soaking (the `mass` getter: a stone's is its density's)
     const glow = mesh.glow?.(this.thing) ?? null;      // a look's own light (a frozen pizza's frost)
     const map = mesh.texture?.(this.thing) ?? null;   // a textured look's (a pizza's top); its own program (src/main.js warmUp)
     const makeMaterial = (clipNormalY) => new THREE.MeshStandardMaterial({
@@ -1103,6 +1113,13 @@ export class Rock {
     }
   }
 
+  /**
+   * Its mesh's corners as the physics has them: its rest shape, never a soft
+   * thing's give as drawn (flex bends the geometry once a frame, and the
+   * physics would then depend on how often frames are drawn).
+   */
+  get physicsPositions() { return this.restShape ?? this.geometry.attributes.position.array; }
+
   /** Its meshes: above the water, below it, and afloat in the mirror image. */
   get meshes() { return this.meshMirror ? [this.meshAbove, this.meshBelow, this.meshMirror] : [this.meshAbove, this.meshBelow]; }
 
@@ -1226,7 +1243,7 @@ export class Rock {
   /** Height of the stone's lowest point below its centre (negative, metres), as it is turned now. */
   lowestOffset() {
     if (this.sphere) return -this.radius;
-    const positions = this.geometry.attributes.position.array;
+    const positions = this.physicsPositions;
     // The world height of a mesh point is the rotation's second row dotted with it.
     const rotation = rockRotation.makeRotationFromQuaternion(this.quaternion).elements;
     const rowX = rotation[1], rowY = rotation[5], rowZ = rotation[9];
@@ -1259,7 +1276,7 @@ export class Rock {
    */
   contact() {
     if (this.sphere) return BALL_CONTACT;
-    const positions = this.geometry.attributes.position.array;
+    const positions = this.physicsPositions;
     const rotation = rockRotation.makeRotationFromQuaternion(this.quaternion).elements;
     const rowX = rotation[1], rowY = rotation[5], rowZ = rotation[9];
     // The world's down in the stone's frame is minus the rotation's second row.
@@ -1350,6 +1367,9 @@ export class Rock {
       mesh.position.set(this.position.x, this.position.y + lift, this.position.z);
       mesh.quaternion.copy(this.quaternion);
     }
+    // Where it is drawn as things stand (drawAt draws a frame between two of these).
+    this.stepEnd.position.copy(this.meshAbove.position);
+    this.stepEnd.quaternion.copy(this.quaternion);
     // Cut at the water: by a plane at its height over it (a floater that rides the water cuts itself at its true surface, rideTheWater).
     if (this.meshAbove.material.clippingPlanes.length) this.meshAbove.material.clippingPlanes[0].constant = -surface;   // keeps y ≥ surface
     if (this.meshBelow.material.clippingPlanes.length) this.meshBelow.material.clippingPlanes[0].constant = surface;    // keeps y ≤ surface
@@ -1392,12 +1412,15 @@ export class Rock {
     const under = this.state === 'water' ? 1 : this.dry.density / WATER_DENSITY;
     this.soaked += (1 - this.soaked) * under * dt / soaks.seconds;
     const volume = this.dry.mass / this.dry.density;
-    this.ownMass = this.dry.mass + this.soaked * soaks.takes * WATER_DENSITY * volume;
-    this.density = this.ownMass / volume;
+    const mass = this.dry.mass + this.soaked * soaks.takes * WATER_DENSITY * volume;
+    this.density = mass / volume;
+    // A thing sized by its diameter has its density's mass (the `mass` getter); anything else keeps its own.
+    if (!this.thing.byDiameter) this.ownMass = mass;
     // Soaked heavier than water, it sinks: from where it floats, its hole long closed.
     if (this.density >= WATER_DENSITY && this.floats) {
       this.floats = false;
       this.afloat = false;
+      this.restTime = 0;   // its time at rest afloat is over: on the bed it is counted afresh (src/main.js retires it 40 s on)
       this.state = 'water';
       this.body.water = underWater(this.density, this.thing.water.restingHeight);
       Object.assign(this.body, { x: this.position.x, y: this.position.y, z: this.position.z, vx: this.velocity.x, vy: this.velocity.y, vz: this.velocity.z, resting: false, openUntil: -1 });
@@ -1492,13 +1515,10 @@ export class Rock {
    * each frame between its steps): its meshes, as syncMeshes put them then.
    */
   drawAt(share) {
-    const before = this.drawnBefore;
-    if (!before) return;
-    this.syncMeshes(this.drawn.surface, this.drawn.bedDepth);   // where its last step left it (a frame before may have drawn it short of that)
-    if (share >= 1) return;
+    const before = this.drawnBefore ?? this.stepEnd, after = this.stepEnd;
     for (const mesh of this.meshes) {
-      mesh.position.lerpVectors(before.position, mesh.position, share);
-      mesh.quaternion.slerpQuaternions(before.quaternion, mesh.quaternion, share);
+      mesh.position.lerpVectors(before.position, after.position, share);
+      mesh.quaternion.slerpQuaternions(before.quaternion, after.quaternion, share);
     }
     if (this.squash) this.squashMeshes();
   }
@@ -1722,7 +1742,7 @@ export class Rock {
     const soft = this.thing.body.soft;
     if (!soft) return;
     const positions = this.geometry.attributes.position;
-    if (!this.restShape) { this.restShape = positions.array.slice(); this.restNormals = this.geometry.attributes.normal.array.slice(); }
+    if (!this.restNormals) this.restNormals = this.geometry.attributes.normal.array.slice();
     const { cup, flap } = this.bend;
     if (Math.abs(cup) < 1e-4 && Math.abs(flap) < 1e-4 && this.flexedDrawn === false) return;
     const rest = this.restShape, restNormals = this.restNormals, array = positions.array, normals = this.geometry.attributes.normal.array;
@@ -1846,7 +1866,7 @@ export class Rock {
       const depth = Math.min(Math.max((half - height) / half, 0), 2);
       return { share: capShare(depth), slope: (6 * depth - 3 * depth * depth) / (4 * half), low: -half, high: half, depth };
     }
-    const { ends, shares, count, cell, acrossU, acrossV } = this.buoyancy;
+    const { middles, halves, shares, count, cell, acrossU, acrossV } = this.buoyancy;
     const rotation = rockRotation.makeRotationFromQuaternion(this.quaternion).elements;
     const rowX = rotation[1], rowY = rotation[5], rowZ = rotation[9];
     // A column is cell wide: seen along the vertical it spans this much more than its ends do.
@@ -1856,27 +1876,32 @@ export class Rock {
     let share = 0, slope = 0, low = Infinity, high = -Infinity, centreX = 0, centreY = 0, centreZ = 0;
     let area = 0, firstX = 0, firstZ = 0, secondXX = 0, secondZZ = 0, secondXZ = 0;
     for (let index = 0; index < count; index++) {
-      const at = index * 6;
-      const startHeight = rowX * ends[at] + rowY * ends[at + 1] + rowZ * ends[at + 2];
-      const endHeight = rowX * ends[at + 3] + rowY * ends[at + 4] + rowZ * ends[at + 5];
-      const lowerAt = startHeight <= endHeight ? at : at + 3, upperAt = startHeight <= endHeight ? at + 3 : at;
-      const bottom = Math.min(startHeight, endHeight) - spread, top = Math.max(startHeight, endHeight) + spread;
+      const at = index * 3;
+      const middleX = middles[at], middleY = middles[at + 1], middleZ = middles[at + 2];
+      let halfX = halves[at], halfY = halves[at + 1], halfZ = halves[at + 2];
+      let rise = rowX * halfX + rowY * halfY + rowZ * halfZ;
+      // Its half pointing up, so its lower end is middle − half.
+      if (rise < 0) { rise = -rise; halfX = -halfX; halfY = -halfY; halfZ = -halfZ; }
+      const middleHeight = rowX * middleX + rowY * middleY + rowZ * middleZ;
+      const bottom = middleHeight - rise - spread, top = middleHeight + rise + spread;
       if (bottom < low) low = bottom;
       if (top > high) high = top;
       if (level <= bottom) continue;
       const wet = level >= top ? 1 : (level - bottom) / (top - bottom);
-      share += shares[index] * wet;
-      // The wet part's middle: half of it up from its lower end.
-      const middle = 0.5 * wet, weight = shares[index] * wet;
-      centreX += weight * (ends[lowerAt] + (ends[upperAt] - ends[lowerAt]) * middle);
-      centreY += weight * (ends[lowerAt + 1] + (ends[upperAt + 1] - ends[lowerAt + 1]) * middle);
-      centreZ += weight * (ends[lowerAt + 2] + (ends[upperAt + 2] - ends[lowerAt + 2]) * middle);
+      const weight = shares[index] * wet;
+      share += weight;
+      // The wet part's middle: half of it up from its lower end, middle − half + wet·half·2·½.
+      const along = wet - 1;
+      centreX += weight * (middleX + along * halfX);
+      centreY += weight * (middleY + along * halfY);
+      centreZ += weight * (middleZ + along * halfZ);
       if (wet >= 1) continue;
       slope += shares[index] / (top - bottom);
       if (!plane) continue;
       // Its waterplane's part (m²), where the water's level crosses it (m, from its origin along the world's x and z).
       const part = volume * shares[index] / ((top - bottom) * radius);
-      const crossX = ends[lowerAt] + (ends[upperAt] - ends[lowerAt]) * wet, crossY = ends[lowerAt + 1] + (ends[upperAt + 1] - ends[lowerAt + 1]) * wet, crossZ = ends[lowerAt + 2] + (ends[upperAt + 2] - ends[lowerAt + 2]) * wet;
+      const reach = 2 * wet - 1;
+      const crossX = middleX + reach * halfX, crossY = middleY + reach * halfY, crossZ = middleZ + reach * halfZ;
       const x = radius * (rotation[0] * crossX + rotation[4] * crossY + rotation[8] * crossZ), z = radius * (rotation[2] * crossX + rotation[6] * crossY + rotation[10] * crossZ);
       area += part; firstX += part * x; firstZ += part * z; secondXX += part * x * x; secondZZ += part * z * z; secondXZ += part * x * z;
     }
@@ -2030,20 +2055,13 @@ export class Rock {
       dampZZ = damping * (plane.zz - 2 * z * plane.z + z * z * plane.area);
       dampXZ = damping * (plane.xz - x * plane.z - z * plane.x + x * z * plane.area);
     }
-    // Its principal moments (its shape's: an ellipsoid of the same second moments), with the water it carries.
-    const [long, middleAxis, short] = this.shape.semiAxes;
-    const carried = 1 + FLOAT.addedInertia * line.share;
-    const moments = [(middleAxis ** 2 + short ** 2) / 5, (long ** 2 + short ** 2) / 5, (long ** 2 + middleAxis ** 2) / 5].map((moment) => moment * this.mass * radius * radius * carried);
-    const axes = this.shape.axes.map((axis, index) => scratch.axes[index].copy(axis).applyQuaternion(quaternion));
-    // Euler's equations in its principal frame: I·dω/dt = τ − ω × (I·ω), the damping taken implicitly about the level axes.
-    const momentum = scratch.momentum.set(0, 0, 0);
-    axes.forEach((axis, index) => momentum.addScaledVector(axis, moments[index] * angular.dot(axis)));
-    const gyroscopic = scratch.gyroscopic.crossVectors(angular, momentum);
-    const turned = scratch.turned.set(0, 0, 0);
-    axes.forEach((axis, index) => turned.addScaledVector(axis, angular.dot(axis) + ((torque.dot(axis) - gyroscopic.dot(axis)) / moments[index]) * dt));
+    // Its principal moments (principal: its shape's, with the water it carries) and Euler's equations (eulerTurn), the
+    // damping then taken implicitly about the level axes.
+    const turned = this.eulerTurn(angular, torque, dt, 1 + FLOAT.addedInertia * line.share);
+    const { moments, axes } = this.principal(1 + FLOAT.addedInertia * line.share);
     // Damped: τ_x = −(zz·ω_x − xz·ω_z), τ_z = −(xx·ω_z − xz·ω_x), against the moment about each level axis.
-    const levelMoment = (worldAxis) => axes.reduce((sum, axis, index) => sum + moments[index] * axis.getComponent(worldAxis) ** 2, 0);
-    const momentX = levelMoment(0), momentZ = levelMoment(2);
+    const momentX = moments[0] * axes[0].x ** 2 + moments[1] * axes[1].x ** 2 + moments[2] * axes[2].x ** 2;
+    const momentZ = moments[0] * axes[0].z ** 2 + moments[1] * axes[1].z ** 2 + moments[2] * axes[2].z ** 2;
     const dampedX = (turned.x + (dampXZ * turned.z / momentX) * dt) / (1 + (dampZZ / momentX) * dt);
     const dampedZ = (turned.z + (dampXZ * dampedX / momentZ) * dt) / (1 + (dampXX / momentZ) * dt);
     // The water it is in slows all its turning besides (as FLOAT.slowing its drift), and its spin about the vertical as under water.
@@ -2133,11 +2151,12 @@ export class Rock {
   update(dt, pondDepth, surfaceAt = null) {
     let surface = 0;
     this.age += dt;
-    this.turned = false;   // a floater's turn (turnAfloat) or a flat thing's in flight (flutter) turns it itself
-    // Where it was drawn as the step began (drawAt draws it between there and where it ends).
+    this.turned = false;   // a floater not round turns itself afloat (turnAfloat); anything else turns by its spin below
+    // Where the last step left it (syncMeshes), as this step begins: drawAt draws it between there and where this one ends
+    // (never from where a frame drew it, which may be short of either).
     this.drawnBefore ??= { position: new THREE.Vector3(), quaternion: new THREE.Quaternion() };
-    this.drawnBefore.position.copy(this.meshAbove.position);
-    this.drawnBefore.quaternion.copy(this.meshAbove.quaternion);
+    this.drawnBefore.position.copy(this.stepEnd.position);
+    this.drawnBefore.quaternion.copy(this.stepEnd.quaternion);
     this.previous.copy(this.position);
     let impact = null;
     // Down on the ground (the header), if it was over it the step before too (else it met the ground's side, src/pool.js).
@@ -2204,8 +2223,13 @@ export class Rock {
         impact = this.startFloating(body.vy);
       }
     } else if (this.state === 'float') {
-      if (!this.floatStep(dt)) this.state = 'air';
       if (surfaceAt) surface = surfaceAt(this.position.x, this.position.z);
+      if (!this.floatStep(dt)) {
+        // Bobbed clear: into the air's frame, the waves' height under it added back (afloat it moved on still water).
+        this.state = 'air';
+        this.position.y += surface;
+        surface = 0;
+      } else if (surfaceAt) surface = surfaceAt(this.position.x, this.position.z);
     } else {
       this.restTime += dt;
       if (this.afloat && surfaceAt) surface = surfaceAt(this.position.x, this.position.z);
