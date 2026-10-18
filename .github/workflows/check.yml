@@ -1,14 +1,12 @@
 name: Check
 
-# Every pull request (and push to a branch other than main, whose deploy runs
-# npm test itself) runs the CPU probes, then the browser probes headless:
+# Every pull request (main's deploy runs npm test itself) runs the CPU
+# probes, then the browser probes headless:
 # Chromium renders WebGL through SwiftShader, which is correct but slow, so
 # their frame rates mean nothing; their CPU timings (a throw's cost) and
 # counts (programs, draw calls) do.
 on:
   pull_request:
-  push:
-    branches-ignore: [main]
   workflow_dispatch:
 
 permissions:
