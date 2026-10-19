@@ -49,6 +49,10 @@
 // release puts it, src/main.js skipThrow) and skips on from there, and the
 // times count from that first touch.
 // --trace draws each stone's path as a line (__pond.setTrace).
+// --thing=name[:value] throws that (a key of THINGS in src/things.js: a
+// kind of stone, golf, tennis, bowling, basketball; ?thing=), at that
+// slider value (a bowling ball's pounds, a basketball's size; a stone's
+// size is the throw's radius).
 // --seed=n seeds Math.random (Park–Miller, from n + i) just before throw i,
 // so its stone and its splash are the same every run, and the same as
 // tools/variety-probe.mjs's seed n + i at the same aim and power.
@@ -94,6 +98,7 @@ const seed = arg('seed', '');
 const viewName = arg('view', '');
 const touchArgument = arg('touch', '');
 const orbitArgument = arg('orbit', '');
+const [thingName, thingValue] = arg('thing', '').split(':');
 
 const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.mjs': 'text/javascript', '.json': 'application/json', '.png': 'image/png', '.css': 'text/css' };
 const server = createServer(async (request, response) => {
@@ -137,7 +142,7 @@ const problems = [];
 page.on('pageerror', (e) => problems.push(String(e)));
 page.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') problems.push(m.text()); });
 
-const url = `http://localhost:${port}/index.html?quality=${quality}&paused=1${keepUi ? '' : '&ui=0'}${floats ? `&floats=${floats}` : ''}${sky ? `&sky=${sky}` : ''}${skyTime ? `&time=${skyTime}` : ''}${weather ? `&weather=${weather}` : ''}${waterClarity ? `&water=${waterClarity}` : ''}${wind ? `&wind=${wind.replace(':', ',')}` : ''}${windStrength ? `&windStrength=${windStrength}` : ''}`;
+const url = `http://localhost:${port}/index.html?quality=${quality}&paused=1${keepUi ? '' : '&ui=0'}${floats ? `&floats=${floats}` : ''}${sky ? `&sky=${sky}` : ''}${skyTime ? `&time=${skyTime}` : ''}${weather ? `&weather=${weather}` : ''}${waterClarity ? `&water=${waterClarity}` : ''}${wind ? `&wind=${wind.replace(':', ',')}` : ''}${windStrength ? `&windStrength=${windStrength}` : ''}${thingName ? `&thing=${thingName}` : ''}`;
 console.log(`[shoot] ${url} -> ${outDir}`);
 await page.goto(url, { waitUntil: 'domcontentloaded' });
 try {
@@ -161,6 +166,7 @@ if (orbitArgument) {
 }
 if (fov) await page.evaluate((f) => window.__pond.setFov(Number(f)), fov);
 if (look) await page.evaluate((l) => { const [x, y, z] = l.split(':').map(Number); window.__pond.lookAt(x, y, z); }, look);
+if (thingValue) await page.evaluate((value) => window.__pond.setSize(value), Number(thingValue));
 await page.evaluate((seconds) => window.__pond.advance(seconds), preRoll);
 await page.screenshot({ path: path.join(outDir, 'idle.png'), timeout: 180000 });
 console.log('[shoot] idle.png');

@@ -42,6 +42,19 @@ export function createRingGrid(rows, columns, attributes, material, { wrap = tru
   return mesh;
 }
 
+/**
+ * Flatten a grid against walls: every vertex outside the box {minX, maxX,
+ * minZ, maxZ} (the pool's, src/pool.js) is moved onto its nearest face, so a
+ * sheet that meets a wall runs up it instead of passing through. No box, no change.
+ */
+export function holdWithinWalls(positions, walls) {
+  if (!walls) return;
+  for (let index = 0; index < positions.length; index += 3) {
+    positions[index] = Math.min(Math.max(positions[index], walls.minX), walls.maxX);
+    positions[index + 2] = Math.min(Math.max(positions[index + 2], walls.minZ), walls.maxZ);
+  }
+}
+
 export function markChanged(geometry, names) {
   for (const name of names) geometry.attributes[name].needsUpdate = true;
 }

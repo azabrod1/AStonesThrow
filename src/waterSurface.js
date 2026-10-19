@@ -70,6 +70,7 @@ const OUTER_CUTS = 8;        // ...and each of its sides cut into this many quad
 // draw the same.
 const OUTER_OVERLAP = 0.03;  // metres
 export const MAX_CAVITIES = 4;   // the inner patch dips under at most this many cavities at once
+export const DRY_DISCS = 6;      // at most this many floaters keep the water off their tops at once (setDryDiscs)
 // While the gale blows (setGale) the sheet carries its waves, and is cut
 // finer: GALE_SHEET_CUTS to a side, each ring 1 + 2/GALE_SHEET_CUTS times
 // the last (square quads), so its vertices are 12 cm apart at the patch and
@@ -169,6 +170,8 @@ export function createWaterSurface(water, lighting, ambientWaves, { meshSegments
     uAmbientUnresolved: { value: ambientWaves.unresolvedVariance },
     uGaleUnresolved: { value: gale ? gale.unresolvedVariance : [0] },
     uSheetSpacing: { value: 2 / GALE_SHEET_CUTS },
+    uDryDiscs: { value: Array.from({ length: DRY_DISCS }, () => new THREE.Vector3()) },
+    uDryCount: { value: 0 },
     ...ambientWaves.uniforms(),
     ...(rings ? rings.uniforms() : {}),
     ...(rain ? rain.uniforms() : { uRainOn: { value: 0 } }),
@@ -179,7 +182,7 @@ export function createWaterSurface(water, lighting, ambientWaves, { meshSegments
     vertexShader: WATER_VERTEX,
     fragmentShader: WATER_FRAGMENT,
     uniforms: inner ? uniforms : { ...uniforms, uInner: { value: 0 } },
-    defines: { AMBIENT_LEVELS: ambientWaves.levels, GALE_LEVELS: gale ? gale.levels : 1 },
+    defines: { AMBIENT_LEVELS: ambientWaves.levels, GALE_LEVELS: gale ? gale.levels : 1, DRY_DISCS },
   });
   const innerMaterial = material(true);
   const outerMaterial = material(false);
@@ -193,13 +196,13 @@ export function createWaterSurface(water, lighting, ambientWaves, { meshSegments
     vertexShader: WATER_VERTEX,
     fragmentShader: WATER_FRAGMENT,
     uniforms: { ...uniforms, ...cavityUniforms },
-    defines: { AMBIENT_LEVELS: ambientWaves.levels, GALE_LEVELS: gale ? gale.levels : 1, CAVITY_PUSH: MAX_CAVITIES },
+    defines: { AMBIENT_LEVELS: ambientWaves.levels, GALE_LEVELS: gale ? gale.levels : 1, CAVITY_PUSH: MAX_CAVITIES, DRY_DISCS },
   });
   const cavityMaterial = new THREE.ShaderMaterial({
     vertexShader: WATER_VERTEX,
     fragmentShader: WATER_FRAGMENT,
     uniforms,
-    defines: { AMBIENT_LEVELS: ambientWaves.levels, GALE_LEVELS: gale ? gale.levels : 1, CAVITY_MESH: 1 },
+    defines: { AMBIENT_LEVELS: ambientWaves.levels, GALE_LEVELS: gale ? gale.levels : 1, CAVITY_MESH: 1, DRY_DISCS },
     side: THREE.DoubleSide,
   });
 
@@ -295,6 +298,24 @@ export function createWaterSurface(water, lighting, ambientWaves, { meshSegments
     },
     /** The sheet's triangles, as drawn. */
     get sheetTriangles() { return outer.geometry.attributes.position.count / 3; },
+    /**
+     * The floaters whose rims keep the water off their tops (src/main.js: a
+     * pizza afloat, inside its crust): each {x, z, radius}. They ride the
+     * water (src/rock.js rideTheWater), so their rims hold it out: seen from
+     * above, the water is not drawn inside a disc (WATER_FRAGMENT); at most
+     * DRY_DISCS.
+     */
+    setDryDiscs(discs) {
+      const count = Math.min(discs.length, DRY_DISCS);
+      uniforms.uDryCount.value = count;
+      for (let index = 0; index < count; index++) uniforms.uDryDiscs.value[index].set(discs[index].x, discs[index].z, discs[index].radius ** 2);
+    },
+    /**
+     * The uniforms a floater's materials read the water's height with
+     * (src/shaders/scene.js FLOATER_WATER, src/rock.js): the water's own
+     * objects, so they follow the solver, the wind and the rings.
+     */
+    get rideUniforms() { return uniforms; },
     /** The open cavities' pushShape()s (src/cavity.js): the patch dips under them, or draws as still water when there are none. */
     setCavities(shapes) {
       const count = Math.min(shapes.length, MAX_CAVITIES);

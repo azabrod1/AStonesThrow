@@ -21,7 +21,22 @@
 //    no program (the warm-up drew both sceneries), its water mesh draws only
 //    the pool's quads, a throw into it compiles none and keeps one ring, the
 //    near field's (src/rings.js), which retires with it, and a change of
-//    preset in it keeps the pool's mesh. Rain (src/rain.js): each weather in
+//    preset in it keeps the pool's mesh. Every kind of thing (src/things.js)
+//    thrown, the floaters followed until they float in the mirror image,
+//    compiles no program, and no first throw builds a fixed mesh or slices
+//    its waterline (src/rock.js prepareThing did both under the veil; each
+//    throw's time on the main thread is printed, not checked: under
+//    SwiftShader one throw's varies from 2 to over 60 ms); a basketball
+//    resting afloat adds at most FLOATER_FRAME_CALLS draw calls a frame
+//    (its mirror image redrawn as the water moves; calls and triangles
+//    printed). The world's
+//    step is fixed: a basketball thrown alike at 60 frames a second and in
+//    frames of 1/162 s is in the same place 2.5 s on. With the page running,
+//    the water's height under a floater beside a splash is read back
+//    (src/floaterRide.js), and a throw's sounds play and end (src/sound.js;
+//    the browser lets audio start without a gesture here). Sixty throws of
+//    every kind, the pond then cleared, leave no geometry, texture or
+//    program behind. Rain (src/rain.js): each weather in
 //    turn, with a throw in the downpour and a change of preset, compiles no
 //    program (the warm-up drew the rain's), and the tile takes the preset's
 //    size; clear again, nothing of the rain runs. The gale (src/galeWaves.js)
@@ -52,6 +67,7 @@ import { fileURLToPath } from 'node:url';
 import { QUALITY, PIXEL_BUDGET } from '../src/main.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const FLOATER_FRAME_CALLS = 12;   // the most draw calls a basketball resting afloat may add to a frame: its halves, and its mirror image's region redrawn
 const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.mjs': 'text/javascript', '.json': 'application/json' };
 const server = createServer(async (request, response) => {
   try {
@@ -68,7 +84,7 @@ const containerChromium = '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
 const browser = await chromium.launch({
   headless: true,
   executablePath: process.env.PW_CHROMIUM || (existsSync(containerChromium) ? containerChromium : undefined),
-  args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--enable-webgl', '--disable-gpu-sandbox'],
+  args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--enable-webgl', '--disable-gpu-sandbox', '--autoplay-policy=no-user-gesture-required'],
 });
 const problems = [];
 async function openPage({ width = 390, height = 844, query, initScript = null }) {
@@ -226,6 +242,155 @@ await page.evaluate(() => { window.__pond.setQuality('high'); window.__pond.setC
 const backOnLake = await page.evaluate(() => window.__pond.budget.programs);
 check(backOnLake === programsBeforePool, `back on the lake, still no new program (${backOnLake})`);
 await checkBuilt(phone, 'back on the lake');
+
+// Every kind of thing (src/things.js), thrown and followed until the floaters float in the mirror image, compiles no program.
+const programsBeforeThings = await page.evaluate(() => window.__pond.budget.programs);
+const namesBeforeThings = await programNames(page);
+// Each one's first throw makes no mesh and slices no waterline (src/rock.js prepareThing: warmUp made every thing ready;
+// a pizza's waterline took a throw 33 to 57 ms). Each is timed too, for the record: the times vary too much here to check.
+const preparedBefore = await page.evaluate(() => window.__pond.budget.preparation);
+const firstThrows = [];
+for (const thing of ['slate', 'granite', 'basalt', 'pumice', 'golf', 'tennis', 'bowling', 'basketball', 'diamond', 'apple', 'pizza', 'frozen-pizza', 'watermelon', 'brick']) {
+  const spent = await page.evaluate((name) => {
+    window.__pond.pause();
+    const started = performance.now();
+    window.__pond.throwAt(0, -1.4, { thing: name });
+    const elapsed = performance.now() - started;
+    window.__pond.advance(3.0);
+    return elapsed;
+  }, thing);
+  firstThrows.push({ thing, spent });
+}
+console.log(`  first throws (ms on the main thread): ${firstThrows.map(({ thing, spent }) => `${thing} ${spent.toFixed(1)}`).join(', ')}`);
+const preparedAfter = await page.evaluate(() => window.__pond.budget.preparation);
+check(preparedBefore.meshes > 0 && preparedAfter.meshes === preparedBefore.meshes && preparedAfter.waterlines === preparedBefore.waterlines,
+  `no first throw builds a fixed mesh or slices a waterline (meshes ${preparedBefore.meshes} → ${preparedAfter.meshes}, waterlines ${preparedBefore.waterlines} → ${preparedAfter.waterlines})`);
+const programsAfterThings = await page.evaluate(() => window.__pond.budget.programs);
+const thingsCompiled = (await programNames(page)).filter((name) => !namesBeforeThings.includes(name));
+check(programsAfterThings === programsBeforeThings, `every kind of thing thrown, and a floater in the mirror image, compiles no program (${programsBeforeThings} before, ${programsAfterThings} after${thingsCompiled.length ? `; new: ${thingsCompiled.join(', ')}` : ''})`);
+
+// What a floater resting on moving water costs a frame (src/main.js updateReflection: its mirror image is redrawn, in a
+// scissored region, as the water it rides moves): the draw calls and triangles of a frame with a basketball afloat,
+// against the still pond's. GPU-free counts: SwiftShader's milliseconds mean nothing.
+const frameCounts = () => page.evaluate(() => {
+  const pond = window.__pond, info = pond.renderer.info;
+  info.autoReset = false;
+  let calls = 0, triangles = 0;
+  for (let frame = 0; frame < 20; frame++) {
+    info.reset();
+    pond.advance(1 / 60);
+    calls += info.render.calls; triangles += info.render.triangles;
+  }
+  info.autoReset = true;
+  return { calls: calls / 20, triangles: Math.round(triangles / 20) };
+});
+await page.evaluate(() => { window.__pond.pause(); window.__pond.clear(); window.__pond.advance(1); });
+const stillPond = await frameCounts();
+const restingBall = await page.evaluate(() => {
+  const pond = window.__pond;
+  const rock = pond.throwAt(0, -1.4, { thing: 'basketball' });
+  for (let second = 0; second < 40 && !(rock.state === 'rest' && rock.afloat); second++) pond.advance(1);
+  pond.advance(1);
+  return rock.state === 'rest' && rock.afloat;
+});
+const withFloater = await frameCounts();
+console.log(`  a frame: ${stillPond.calls} draw calls, ${stillPond.triangles} triangles on the still pond; ${withFloater.calls}, ${withFloater.triangles} with a basketball resting afloat`);
+check(restingBall && withFloater.calls - stillPond.calls <= FLOATER_FRAME_CALLS, `a basketball resting afloat adds at most ${FLOATER_FRAME_CALLS} draw calls a frame (${withFloater.calls - stillPond.calls})`);
+// The world's step is fixed (src/main.js simulate, src/rock.js PHYSICS_STEP): the same throw, drawn 60 times a second or
+// at a frame rate that steps it unevenly (a slow-motion speed of 0.37: frames of 1/162 s), goes exactly where it went.
+const unevenly = await page.evaluate(() => {
+  const pond = window.__pond;
+  const run = (scale) => {
+    pond.clear();
+    pond.setTimeScale(scale);
+    const random = Math.random;
+    let state = 77;
+    Math.random = () => { state = (state * 16807) % 2147483647; return (state - 1) / 2147483646; };
+    const rock = pond.throwAt(0.4, -1.8, { thing: 'basketball' });
+    Math.random = random;
+    pond.advance(2.5);
+    pond.setTimeScale(1);
+    return [rock.position.x, rock.position.y, rock.position.z, rock.state];
+  };
+  return [run(1), run(0.37)];
+});
+const apart = Math.hypot(unevenly[0][0] - unevenly[1][0], unevenly[0][1] - unevenly[1][1], unevenly[0][2] - unevenly[1][2]);
+check(apart < 1e-9 && unevenly[0][3] === unevenly[1][3], `a basketball thrown alike at 60 frames a second and at frames of 1/162 s is where it was 2.5 s on (${apart.toExponential(1)} m apart, ${unevenly[0][3]} and ${unevenly[1][3]})`);
+// A floater rides the water as drawn, and things meet it there (src/floaterRide.js): with the page running, a basketball
+// afloat has the water's height under it read back, without a frame waiting for it (SwiftShader answers slowly: up to
+// a minute here), and where things meet it is where it is drawn.
+const ride = await page.evaluate(async () => {
+  const pond = window.__pond;
+  pond.clear();
+  pond.resume();
+  const ball = pond.throwAt(0, -1.4, { thing: 'basketball' });
+  for (let wait = 0; wait < 600 && ball.state !== 'float' && !ball.afloat; wait++) await new Promise((resolve) => setTimeout(resolve, 50));
+  const readsBefore = pond.floaterRide.reads;
+  let most = 0;
+  const gl = pond.renderer.getContext();
+  for (let wait = 0; wait < 1200 && pond.floaterRide.reads < readsBefore + 2; wait++) {
+    gl.finish();   // a software renderer may otherwise leave the read's fence unanswered a long while
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    most = Math.max(most, Math.abs(ball.rideHeight));
+  }
+  // The height read comes between steps; the next step's sync puts where things meet it there.
+  ball.syncMeshes(ball.drawn.surface, ball.drawn.bedDepth);
+  const share = ball.rideShare.value;
+  return { ...pond.floaterRide, readsBefore, most, state: ball.state, meets: Math.abs(ball.centre.y - (ball.position.y + ball.rideHeight * share)) };
+});
+console.log(`  a basketball afloat: ${ride.reads - ride.readsBefore} reads of the water under it came back (${ride.requests} asked), its centre up to ${(1000 * ride.most).toFixed(2)} mm off the still water`);
+// A browser whose renderer never answers the read's fence in the minute (GitHub's runners' SwiftShader at times) is
+// said so, and asked for reads without breaking; any read that comes must be sane, and things meet the ball there.
+const answered = ride.reads > ride.readsBefore;
+if (!answered) console.log(`  (this browser answered none of the ${ride.requests} reads asked in a minute: the readback is checked where it answers)`);
+check(ride.working && ride.requests > 0 && (!answered || ride.most < 0.05) && ride.meets < 1e-6, `the water's height under a floater is read back for the physics, and things meet it there (${ride.reads - ride.readsBefore} reads of ${ride.requests} asked, at most ${(1000 * ride.most).toFixed(1)} mm; the ball ${ride.state})`);
+// The sounds (src/sound.js): started by a gesture (a key here), a throw's splash plays and stops. Where the browser has
+// no audio to run (a CI runner), nothing plays; either way no voice is left held.
+await page.keyboard.press('Shift');
+const sounds = await page.evaluate(async () => {
+  const pond = window.__pond;
+  pond.setSound(true);
+  for (let wait = 0; wait < 50 && pond.soundState !== 'running'; wait++) await new Promise((resolve) => setTimeout(resolve, 20));
+  // Stepped to its splash here (headless frames are slow), its sounds counted as it goes in.
+  pond.pause();
+  const stone = pond.throwAt(0.2, -1.2, { radius: 0.04 });
+  let most = 0;
+  for (let frame = 0; frame < 120 && stone.state === 'air'; frame++) { pond.advance(1 / 60); most = Math.max(most, pond.soundsPlaying); }
+  pond.advance(0.05);
+  most = Math.max(most, pond.soundsPlaying);
+  pond.resume();
+  await new Promise((resolve) => setTimeout(resolve, 2500));
+  return { most, after: pond.soundsPlaying, state: pond.soundState };
+});
+console.log(`  a throw's sounds (audio ${sounds.state}): up to ${sounds.most} at once, ${sounds.after} left 2.5 s after`);
+check((sounds.state !== 'running' || sounds.most >= 1) && sounds.after === 0, `a throw sounds where the audio runs (${sounds.state}), and its sounds end (${sounds.most} at once, ${sounds.after} after)`);
+await page.evaluate(() => { window.__pond.clear(); });
+
+// A long session (resource lifetime): sixty throws of every kind, the oldest retired as the pond fills, then the pond
+// cleared: the GPU's geometries and textures are back where they were, and no program was made.
+const session = await page.evaluate(() => {
+  const pond = window.__pond, memory = pond.renderer.info.memory;
+  pond.pause();
+  pond.clear();
+  pond.advance(0.5);
+  const before = { geometries: memory.geometries, textures: memory.textures, programs: pond.budget.programs };
+  const names = ['stone', 'basketball', 'pizza', 'frozen-pizza', 'tennis', 'brick', 'pumice', 'diamond', 'watermelon', 'apple', 'bowling', 'golf'];
+  let most = 0;
+  for (let throwing = 0; throwing < 60; throwing++) {
+    pond.throwAt(-1 + (throwing % 7) * 0.33, -0.8 - (throwing % 5) * 0.4, { thing: names[throwing % names.length] });
+    pond.advance(0.4);
+    most = Math.max(most, pond.rocks.length);
+  }
+  pond.clear();
+  pond.advance(0.5);
+  const after = { geometries: memory.geometries, textures: memory.textures, programs: pond.budget.programs };
+  pond.resume();
+  return { before, after, most };
+});
+console.log(`  sixty throws of every kind, at most ${session.most} in the pond at once: geometries ${session.before.geometries} → ${session.after.geometries}, textures ${session.before.textures} → ${session.after.textures}, programs ${session.before.programs} → ${session.after.programs}`);
+check(session.after.geometries <= session.before.geometries && session.after.textures <= session.before.textures && session.after.programs === session.before.programs, 'sixty throws and a clear pond leave no geometry, texture or program behind');
+
+await page.evaluate(() => { window.__pond.clear(); window.__pond.resume(); });
 
 // The weather: rain compiles nothing, follows the preset's tile size, and goes when it clears.
 const programsBeforeRain = await page.evaluate(() => window.__pond.budget.programs);

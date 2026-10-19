@@ -19,17 +19,27 @@ up or down (from just above the water to nearly straight down), and scroll
 or pinch to zoom toward what is under the pointer (down to an 8° field of
 view); a drag that starts zoomed turns round what the view is looking at.
 Escape or Reset view glides back to the shore. The strip at the bottom sets
-the rock's size (1.5 to 30 cm across), the throw strength, Skip and the
-speed (real time, or slow motion at ¼ or ⅒). With Skip on, a flat stone is
-thrown low and level, spinning, and skips across the water (below), in the
-direction of the tap (even on the sky); its first touch lands where a level
-throw puts it. The menu button at the
+the size of what is thrown (a stone 1.5 to 30 cm across, a bowling ball 6
+to 16 lb, a basketball size 5 to 7, a gem 5 to 1000 carats; a golf or a
+tennis ball has one size), the throw strength, Skip and the speed (real
+time, or slow motion at ¼ or ⅒). With Skip on, a flat stone is thrown low
+and level, spinning, and skips across the water (below), in the direction
+of the tap (even on the sky); its first touch lands where a level throw
+puts it. The menu button at the
 top right opens the settings, laid out as the Moon app's menu is: a list in
-three groups (the place: Location, Water and Time of day; the conditions:
-Weather and Wind; the viewing: View and Quality), each row an icon, its name
+four groups (what is thrown: What to throw; the place: Location, Water and Time of
+day; the conditions: Weather, Wind and Sound; the viewing: View and Quality), each row an icon, its name
 over a line on what it sets and where it stands, and each setting a page of
 its choices (Location and Water as pictures) with a line on each. Each choice
 is remembered on the device (but the view, which opens on the shore):
+- What to throw (`?thing=`): stones (a river stone, the default; slate,
+  granite, basalt, pumice), balls (golf, tennis, bowling, basketball), gems
+  (diamond, emerald, ruby, sapphire) and others (an apple, a watermelon, a
+  pizza, a frozen pizza, a brick), each the size, weight and density of the
+  real thing (`src/things.js`). The strip's chip opens this page. What is
+  lighter than water floats; the rest sink. Each choice's picture
+  (`assets/things/thumbs/`) is a harness frame of it at rest on the pool's
+  deck.
 - View: Shore, standing on the bank as the page opens; Low, down at the
   water, the splash against the far shore; High, from above, the rings
   spreading over the pond; Under, under the water, looking up at the rocks
@@ -209,6 +219,11 @@ scales the whole field by one factor (its slope variance below a pixel by
 the square) and the foam's drift with it: Calm 0.3, a glassy pond with faint
 cat's paws, on which a stone's rings read far; Breeze 1, the look the pond
 had before the control; Windy 1.8.
+
+**Things** (`src/things.js`, `src/thingMeshes.js`, `src/rock.js`,
+`src/collide.js`). What can be thrown is a registry of plain, validated
+definitions (`defineThing`); `__pond.defineThing(key, definition)` adds one.
+`tools/thing-probe.mjs` checks them.
 
 **Splash** (`src/splash.js`). A stone entering water goes through stages with
 known timing, and the droplets are choreographed from them:
@@ -613,7 +628,8 @@ farther out, so it rises into the view rather than filling its corner.
 
 - `npm test` runs `tools/fft-test.mjs`, `tools/wave-probe.mjs`,
   `tools/foam-probe.mjs`, `tools/cavity-probe.mjs`, `tools/ring-probe.mjs`,
-  `tools/rain-probe.mjs`, `tools/gale-probe.mjs` and `tools/skip-probe.mjs`;
+  `tools/rain-probe.mjs`, `tools/gale-probe.mjs`, `tools/skip-probe.mjs` and
+  `tools/thing-probe.mjs`;
   each exits with 1 if a check fails.
 - `node tools/gale-probe.mjs [--wind=x,z]` builds the gale's seed with the
   app's code and runs its evaluation and FFT passes on the CPU: the field is
@@ -897,8 +913,10 @@ farther out, so it rises into the view rather than filling its corner.
   `shots/controls-probe/`. The
   shoot harness and the other probes emulate a desktop browser, which ignores
   the viewport tag, so only this probe sees the page as a phone does.
-- `window.__pond` exposes the app in the console: `throwAt(x, z, { radius, power, skip })`,
+- `window.__pond` exposes the app in the console: `throwAt(x, z, { radius, power, skip, thing, size })`,
   `setSkip(on)` (and `skipping`), `setTrace(on)`,
+  `setThing(name)` (and `thing`: a key of `THINGS` in `src/things.js`, remembered
+  on the device) and `setSize(value)` (and `size`: the slider's value in its unit),
   `setTimeScale` (and `timeScale`), `pause()`, `advance(seconds)` (in the frames the app would
   draw at the current time scale), `setDebugView(name)`, `setFov(degrees)`,
   `lookAt(x, y, z)`, `resetView()`, `setWind(name)` (and `wind`: calm,
@@ -911,8 +929,9 @@ farther out, so it rises into the view rather than filling its corner.
   targets' memory, the programs compiled and the warm-up's, whether the
   solver sleeps and the frame rate is capped, the rings drawn, how many
   are fading out and the preset's limit, their passes and the spectrum
-  fetches those made, the wind, the gale's sheet, the weather and the
-  rain's tile).
+  fetches those made, the wind, the gale's sheet, the weather, the
+  rain's tile, and how many fixed meshes and waterlines `prepareThing`
+  has made).
 
 Install the development dependencies with `npm install` (Three.js is only
 needed locally for the headless harness, which serves it instead of the CDN).

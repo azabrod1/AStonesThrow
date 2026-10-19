@@ -198,6 +198,48 @@
      finds it. On a touch screen the thumb is 28 px and the box 44 px tall
      (Apple's smallest comfortable target); on a phone the slider has a row of
      its own. */
+  /* A thing of one size (src/things.js: a golf or tennis ball) keeps the slider, off. */
+  input[type="range"]:disabled { opacity: 0.35; cursor: default; }
+  .switch:disabled, .switch[aria-disabled="true"] { opacity: 0.35; cursor: default; }
+  /* What is thrown, named as the strip's names are, in a pill that opens What to throw. */
+  .thing-chip {
+    appearance: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: rgba(238, 243, 244, 0.06);
+    color: var(--fg);
+    font: inherit;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    padding: 4px 6px 4px 9px;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .thing-chip svg { width: 10px; height: 10px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; color: var(--muted); }
+  .thing-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  /* A thing of one size (src/things.js: a golf or tennis ball): no slider, its size and mass instead. */
+  .stone-group input[type="range"][hidden] { display: none; }
+  /* A line over the strip for a moment (why Skip is off). */
+  .hint {
+    position: fixed;
+    left: 50%;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 112px);
+    transform: translateX(-50%);
+    max-width: min(30em, calc(100vw - 32px));
+    padding: 8px 12px;
+    border-radius: 10px;
+    background: var(--panel-strong);
+    color: var(--fg);
+    font-size: 13px;
+    line-height: 1.4;
+    text-align: center;
+    z-index: 1;
+  }
+  .hint[hidden] { display: none; }
   input[type="range"] {
     --thumb: 18px;
     --track: 4px;
@@ -248,7 +290,7 @@
   }
   .readout {
     font-size: 13px;
-    min-width: 4.4em;   /* "24.5 cm" fits, so the slider keeps its length as the size changes */
+    min-width: 8.6em;   /* "24.5 cm · 20.0 kg" fits, so the slider keeps its length as the size changes */
     font-variant-numeric: tabular-nums;
   }
   .throw {
@@ -370,6 +412,11 @@
   .menu-tier-name b { font-size: 14px; font-weight: 500; line-height: 1.25; }
   .menu-tier-name small { font-size: 11.5px; line-height: 1.3; color: rgba(238, 243, 244, 0.55); }
   .menu-rule { height: 1px; margin: 4px 10px; border: 0; background: rgba(238, 243, 244, 0.09); }
+  /* A short phone in portrait (an iPhone SE): the rows a little tighter, so the list stops above the strip. */
+  @media (max-height: 700px) {
+    .menu-tier { min-height: 40px; padding: 3px 10px; }
+    .menu-rule { margin: 3px 10px; }
+  }
   /* A screen too short for the two-line rows (a small phone on its side) keeps the names alone. */
   @media (max-height: 420px) {
     .menu-tier { min-height: 38px; padding: 4px 10px; }
@@ -387,7 +434,11 @@
     text-overflow: ellipsis;
   }
   .menu-tier-chevron { flex: none; font-size: 16px; line-height: 1; color: rgba(238, 243, 244, 0.5); }
-  .menu-head { display: flex; align-items: center; gap: 4px; padding: 2px 2px 10px; }
+  /* A page's head stays at the top while the page scrolls under it, clear of the panel's edge. */
+  .menu-head {
+    display: flex; align-items: center; gap: 4px; padding: 10px 10px 10px; margin: -8px -8px 0;
+    position: sticky; top: -8px; z-index: 1; background: rgba(9, 21, 27, 0.97); border-radius: 16px 16px 0 0;
+  }
   .menu-head h3 {
     margin: 0;
     font-family: var(--font-display);
@@ -463,6 +514,79 @@
   .menu-card img { flex: none; width: 80px; height: 45px; border-radius: 7px; object-fit: cover; background: rgba(238, 243, 244, 0.08); }
   .menu-card b { display: block; font-size: 14px; font-weight: 500; }
   .menu-card small { display: block; margin-top: 2px; font-size: 12px; color: var(--muted); }
+  /* The Object page: a fold for each group of things (src/things.js),
+     one open at a time, its heading the group's name, how many it holds and
+     the one chosen in it; the cards inside as the Water page's. */
+  .menu-groups { display: grid; gap: 6px; }
+  .menu-group { border: 1px solid var(--line); border-radius: 12px; }
+  .menu-group > summary {
+    display: flex; align-items: center; gap: 8px; min-height: 38px; padding: 0 12px;
+    list-style: none; cursor: pointer; font-size: 14px;
+  }
+  .menu-group > summary::-webkit-details-marker { display: none; }
+  .menu-group > summary::after { content: '\203A'; margin-left: auto; color: var(--muted); font-size: 18px; transition: transform 0.2s; }
+  .menu-group[open] > summary::after { transform: rotate(90deg); }
+  .menu-group > summary small { color: var(--muted); font-size: 12px; }
+  .menu-group > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 11px; }
+  .menu-group .menu-cards { padding: 0 4px 4px; gap: 2px; }
+  .menu-group .menu-card { padding: 3px 5px; }
+  .menu-group .menu-card img { width: 64px; height: 36px; }
+  /* What to throw: favourites and the latest choices, a tap each; the chosen thing over the folds, to look over. */
+  .thing-quick { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+  .thing-quick[hidden] { display: none; }
+  .thing-quick button {
+    display: inline-flex; align-items: center; gap: 6px; min-height: 34px; padding: 3px 10px 3px 3px;
+    border: 1px solid var(--line); border-radius: 999px; background: none; color: var(--fg); font: inherit; font-size: 12.5px; cursor: pointer;
+  }
+  .thing-quick button[aria-current="true"] { border-color: var(--accent); }
+  .thing-quick img { width: 40px; height: 26px; border-radius: 999px; object-fit: cover; }
+  .thing-quick .favourite::before { content: '\2605'; color: var(--accent); font-size: 11px; margin-right: -2px; }
+  .thing-inspect {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    grid-template-areas: "picture words words" "size size use";
+    align-items: center;
+    gap: 6px 10px;
+    position: relative;
+    margin-bottom: 8px;
+    padding: 8px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    /* It stays under the page's head as the folds scroll, so Use is in reach of whatever was chosen. */
+    position: sticky;
+    top: var(--inspect-top, 44px);
+    z-index: 1;
+    background: rgb(17, 30, 37);
+  }
+  .thing-inspect img { grid-area: picture; width: 112px; height: 63px; border-radius: 8px; object-fit: cover; background: rgba(238, 243, 244, 0.08); }
+  .thing-inspect-words { grid-area: words; min-width: 0; padding-right: 30px; }
+  .thing-inspect-words b { display: block; font-size: 15px; font-weight: 500; }
+  .thing-inspect-words small { display: block; margin-top: 2px; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .thing-badges { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
+  .thing-badges span { padding: 1px 7px; border: 1px solid var(--line); border-radius: 999px; font-size: 11px; color: var(--fg); }
+  .thing-badges span.not { color: var(--muted); text-decoration: line-through; text-decoration-color: rgba(238, 243, 244, 0.35); }
+  .thing-favourite { position: absolute; top: 4px; right: 4px; width: 34px; height: 34px; padding: 7px; border: 0; border-radius: 999px; background: none; color: var(--muted); cursor: pointer; }
+  .thing-favourite svg { width: 100%; height: 100%; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linejoin: round; }
+  .thing-favourite[aria-pressed="true"] { color: var(--accent); }
+  .thing-favourite[aria-pressed="true"] svg { fill: currentColor; }
+  .settings .thing-inspect input[type="range"] { grid-area: size; width: 100%; }
+  .settings .thing-inspect input[type="range"][hidden] { display: block; visibility: hidden; }
+  .thing-use {
+    grid-area: use; min-height: 34px; padding: 6px 14px; border: 0; border-radius: 999px;
+    background: var(--accent); color: var(--accent-ink); font: inherit; font-size: 13px; font-weight: 600; white-space: nowrap; cursor: pointer;
+  }
+  .thing-quick button:focus-visible, .thing-favourite:focus-visible, .thing-use:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  /* A short screen: the chosen thing in one row, its name and what it does, Use beside it (its picture is its card's,
+     its size and mass the strip's line, its size the strip's slider). */
+  @media (max-height: 700px) {
+    .thing-inspect { grid-template-columns: 1fr auto auto; grid-template-areas: "words favourite use"; padding: 5px 6px 5px 10px; gap: 6px; margin-bottom: 6px; }
+    .thing-inspect img, .thing-inspect-words small { display: none; }
+    .thing-inspect-words { padding-right: 0; }
+    .thing-badges { margin-top: 3px; }
+    .settings .thing-inspect input[type="range"], .settings .thing-inspect input[type="range"][hidden] { display: none; }
+    .thing-favourite { position: static; grid-area: favourite; align-self: center; }
+    .thing-use { padding: 6px 12px; }
+  }
   /* The Time page: the hour's name and local time over a slider of the
      place's hours, the first and last hour's times under its ends. */
   .time-readout { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin: 0 2px; }
@@ -500,7 +624,11 @@
   }
   @media (pointer: coarse) {
     input[type="range"] { --thumb: 28px; --track: 6px; height: 44px; }
-    .segmented button, .switch, .throw, .reset-view { min-height: 36px; }
+    .segmented button, .switch, .throw, .reset-view, .thing-chip { min-height: 36px; }
+    /* A finger's targets on What to throw: 44 px (Apple's smallest comfortable). */
+    .menu-group > summary, .thing-use, .thing-quick button { min-height: 44px; }
+    .menu-group .menu-card { min-height: 44px; }
+    .thing-favourite { width: 44px; height: 44px; padding: 11px; }
   }
   /* Phones in portrait: two rows. The stone's slider, its name and size
      above it, with the throw button beside it (the view's reset in its place
@@ -519,7 +647,8 @@
       gap: 0 8px;
     }
     /* The name and the size sit in the slider's box above its 28 px thumb. */
-    .stone-group > label { grid-area: name; font-size: 10px; margin-bottom: -6px; }
+    /* The chip over the slider's box, whose thumb leaves room above it: it reaches into that room, as the name did. */
+    .stone-group > .thing-chip { grid-area: name; justify-self: start; font-size: 10px; min-height: 34px; margin-bottom: -6px; }
     .stone-group > .readout { grid-area: size; min-width: 0; text-align: right; font-size: 12px; margin-bottom: -6px; }
     .stone-group input[type="range"] { grid-area: slider; width: 100%; }
     .throw, .reset-view { order: 1; align-self: flex-end; margin-bottom: 4px; padding: 7px 12px; }
@@ -563,8 +692,9 @@
 
 <div class="controls" role="toolbar" aria-label="Pond controls">
   <div class="group stone-group">
-    <label for="stone-size">Rock</label>
-    <input type="range" id="stone-size" min="1.5" max="30" step="0.5" value="6">
+    <!-- What is thrown: the chip opens What to throw (the settings' page), the slider its size. -->
+    <button type="button" class="thing-chip" id="thing-chip" aria-haspopup="dialog" aria-controls="settings" aria-expanded="false"><span class="thing-chip-name" id="thing-chip-name">Rock</span><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M2.5 3.8 5 6.3 7.5 3.8"></path></svg></button>
+    <input type="range" id="stone-size" min="1.5" max="30" step="0.5" value="6" aria-label="Size">
     <span class="readout" id="stone-readout">6 cm</span>
   </div>
   <div class="group throw-group">
@@ -591,6 +721,8 @@
   <button type="button" class="throw" id="throw" aria-label="Throw a rock">Throw<span class="more"> a rock</span></button>
 </div>
 
+<div class="hint" id="hint" role="status" aria-live="polite" hidden></div>
+
 <button type="button" class="menu-button" id="menu-button" aria-label="Settings" aria-expanded="false" aria-controls="settings">
   <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M4 5.5 H16 M4 10 H16 M4 14.5 H16"></path></svg>
 </button>
@@ -598,6 +730,12 @@
      The page script fills each row's value and each page's note. -->
 <div class="settings" id="settings" role="dialog" aria-label="Settings" hidden>
   <div class="menu-page" data-page="root">
+    <button type="button" class="menu-tier" data-open="thing">
+      <svg class="menu-tier-icon" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="6.8"></circle><path d="M3.4 8.6c4.2 1.6 9 1.6 13.2 0M10 3.2c-2.2 4.2-2.2 9.4 0 13.6"></path></svg>
+      <span class="menu-tier-name"><b>What to throw</b><small>Stones, balls, gems and more</small></span>
+      <span class="menu-tier-value"></span><span class="menu-tier-chevron" aria-hidden="true">&rsaquo;</span>
+    </button>
+    <hr class="menu-rule">
     <button type="button" class="menu-tier" data-open="sky">
       <svg class="menu-tier-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M2.5 15.5 7.5 8l3.2 4.6 2.1-2.8 4.7 5.7z"></path><circle cx="14" cy="5.2" r="1.6"></circle></svg>
       <span class="menu-tier-name"><b>Location</b><small>The shore and sky around</small></span>
@@ -624,6 +762,11 @@
       <span class="menu-tier-name"><b>Wind</b><small>Still water to a gale</small></span>
       <span class="menu-tier-value"></span><span class="menu-tier-chevron" aria-hidden="true">&rsaquo;</span>
     </button>
+    <button type="button" class="menu-tier" data-open="sound">
+      <svg class="menu-tier-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M3.5 7.6h2.8L10 4.4v11.2l-3.7-3.2H3.5z"></path><path d="M13 7.2a3.9 3.9 0 0 1 0 5.6M15.2 5a7 7 0 0 1 0 10"></path></svg>
+      <span class="menu-tier-name"><b>Sound</b><small>Splashes, knocks and bounces</small></span>
+      <span class="menu-tier-value"></span><span class="menu-tier-chevron" aria-hidden="true">&rsaquo;</span>
+    </button>
     <hr class="menu-rule">
     <button type="button" class="menu-tier" data-open="view">
       <svg class="menu-tier-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M1.8 10S4.8 4.8 10 4.8 18.2 10 18.2 10 15.2 15.2 10 15.2 1.8 10 1.8 10z"></path><circle cx="10" cy="10" r="2.4"></circle></svg>
@@ -635,6 +778,27 @@
       <span class="menu-tier-name"><b>Quality</b><small>Detail and smoothness</small></span>
       <span class="menu-tier-value"></span><span class="menu-tier-chevron" aria-hidden="true">&rsaquo;</span>
     </button>
+  </div>
+  <div class="menu-page" data-page="thing" hidden>
+    <div class="menu-head"><button type="button" class="menu-back" aria-label="Back"><span aria-hidden="true">&lsaquo;</span></button><h3>What to throw</h3></div>
+    <div class="menu-field">
+      <!-- Favourites, then what was chosen lately: one tap throws with it. -->
+      <div class="thing-quick" id="thing-quick" role="group" aria-label="Favourites and recent" hidden></div>
+      <!-- The chosen thing, to look over before using it: its picture, size and mass, what it does, its size. -->
+      <div class="thing-inspect" id="thing-inspect">
+        <img id="inspect-picture" alt="" width="112" height="63">
+        <div class="thing-inspect-words">
+          <b id="inspect-name"></b>
+          <small id="inspect-stats"></small>
+          <span class="thing-badges" id="inspect-badges"></span>
+        </div>
+        <button type="button" class="thing-favourite" id="thing-favourite" aria-pressed="false" aria-label="Favourite"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.6l2.3 4.7 5.1.7-3.7 3.6.9 5.1-4.6-2.4-4.6 2.4.9-5.1L2.6 8l5.1-.7z"></path></svg></button>
+        <input type="range" id="inspect-size" aria-label="Its size">
+        <button type="button" class="thing-use" id="thing-use">Use</button>
+      </div>
+      <!-- Built from src/things.js (thingGroups): a group to a fold, the chosen thing's open. -->
+      <div class="menu-groups" id="thing" role="radiogroup" aria-label="Object to throw"></div>
+    </div>
   </div>
   <div class="menu-page" data-page="view" hidden>
     <div class="menu-head"><button type="button" class="menu-back" aria-label="Back"><span aria-hidden="true">&lsaquo;</span></button><h3>View</h3></div>
@@ -710,6 +874,16 @@
       <div class="menu-note" id="wind-note"></div>
     </div>
   </div>
+  <div class="menu-page" data-page="sound" hidden>
+    <div class="menu-head"><button type="button" class="menu-back" aria-label="Back"><span aria-hidden="true">&lsaquo;</span></button><h3>Sound</h3></div>
+    <div class="menu-field">
+      <div class="menu-seg" id="sound" role="radiogroup" aria-label="Sound" aria-describedby="sound-note">
+        <button type="button" role="radio" data-value="on">On</button>
+        <button type="button" role="radio" data-value="off">Off</button>
+      </div>
+      <div class="menu-note" id="sound-note">Each thing sounds as it meets the water, the deck and other things: a stone plunks, a basketball booms, a pizza slaps. Made as it happens, from how fast, how big and how lively it is.</div>
+    </div>
+  </div>
   <div class="menu-page" data-page="quality" hidden>
     <div class="menu-head"><button type="button" class="menu-back" aria-label="Back"><span aria-hidden="true">&lsaquo;</span></button><h3>Quality</h3></div>
     <div class="menu-field">
@@ -738,6 +912,7 @@
 <script type="module">
   import { startPond } from './src/main.js';
   import { SettingsPanel, radioGroup } from './src/settingsPanel.js';
+  import { THINGS, thingGroups, onThingsChange } from './src/things.js';
 
   const veil = document.getElementById('veil');
   const veilText = document.getElementById('veil-text');
@@ -791,17 +966,43 @@
   }
 
   if (pond) {
+    // The slider is what is thrown's (src/things.js `slider`): a stone's
+    // diameter, a bowling ball's pounds, a basketball's size; off for a ball
+    // of one size. A family shares one size (src/things.js `size.share`: the stones); anything else keeps its own.
     const sizeInput = document.getElementById('stone-size');
     const sizeReadout = document.getElementById('stone-readout');
-    const sizeRange = { minimum: Number(sizeInput.min), maximum: Number(sizeInput.max), step: Number(sizeInput.step) };
+    const chip = document.getElementById('thing-chip');
+    const sliderValues = {};
+    const sliderKey = () => THINGS[pond.thing].sizeShare ?? pond.thing;
+    // The strip's line is the thing's own (src/things.js properties: "Size 7 · 620 g"); a thing of one size has no slider.
     const applySize = () => {
-      const cm = Number(sizeInput.value);
-      sizeReadout.textContent = `${cm % 1 === 0 ? cm : cm.toFixed(1)} cm`;
-      sizeInput.style.setProperty('--fraction', String((cm - sizeRange.minimum) / (sizeRange.maximum - sizeRange.minimum)));
-      pond.setStoneRadius(cm / 200);   // slider is the stone's diameter
+      const thing = THINGS[pond.thing];
+      const value = Number(sizeInput.value);
+      const slider = thing.slider;
+      sizeReadout.textContent = thing.properties(slider ? value : undefined).text;
+      sizeInput.style.setProperty('--fraction', String(slider ? (value - slider.min) / (slider.max - slider.min) : 0));
+      if (!slider) return;
+      sliderValues[sliderKey()] = value;
+      pond.setSize(value);
+      showInspected?.();
     };
+    function showSlider() {
+      const thing = THINGS[pond.thing];
+      const slider = thing.slider ?? { min: 0, max: 1, step: 1, initial: 0 };
+      document.getElementById('thing-chip-name').textContent = thing.short;
+      chip.setAttribute('aria-label', `What to throw: ${thing.name}`);
+      sizeInput.setAttribute('aria-label', `${thing.short}'s size`);
+      sizeInput.min = String(slider.min);
+      sizeInput.max = String(slider.max);
+      sizeInput.step = String(slider.step);
+      sizeInput.value = String(sliderValues[sliderKey()] ?? slider.initial);
+      sizeInput.disabled = !thing.slider;
+      sizeInput.hidden = !thing.slider;
+      applySize();
+    }
+    let showInspected = null;   // What to throw's look at the chosen thing, once it exists
     sizeInput.addEventListener('input', applySize);
-    applySize();
+    showSlider();
     // iOS moves a range input only by its thumb. Here a touch anywhere along
     // a slider puts the thumb under the finger, and the finger drags it from
     // there (the thumb's centre runs from half a thumb in at either end).
@@ -809,7 +1010,7 @@
       const setFromTouch = (event) => {
         event.preventDefault();
         const touch = event.touches[0];
-        if (!touch) return;
+        if (!touch || input.disabled) return;
         const minimum = Number(input.min), maximum = Number(input.max), step = Number(input.step);
         const bounds = input.getBoundingClientRect();
         const thumb = parseFloat(getComputedStyle(input).getPropertyValue('--thumb')) || 0;
@@ -824,7 +1025,18 @@
     followTouch(sizeInput, applySize);
     segmented('power', (value) => pond.setPower(value));
     const skipSwitch = document.getElementById('skip');
+    // A line over the strip for a moment.
+    const hint = document.getElementById('hint');
+    let hintTimer = 0;
+    const showHint = (text) => {
+      hint.textContent = text;
+      hint.hidden = false;
+      clearTimeout(hintTimer);
+      hintTimer = setTimeout(() => { hint.hidden = true; }, 2600);
+    };
     skipSwitch.addEventListener('click', () => {
+      // Off for what cannot skip, and it says why when pressed.
+      if (skipSwitch.getAttribute('aria-disabled') === 'true') { showHint(skipSwitch.title); return; }
       const on = skipSwitch.getAttribute('aria-checked') !== 'true';
       skipSwitch.setAttribute('aria-checked', String(on));
       pond.setSkip(on);
@@ -878,6 +1090,148 @@
       document.getElementById('view-note').textContent = (pond.clarity === 'pool' ? NOTES.poolView : NOTES.view)[name ?? 'turned'];
     };
     const showWater = radioGroup(document.getElementById('water'), (value) => { pond.setClarity(value); updateWater(); });
+    // The Object page, built from the registry (src/things.js): a fold
+    // for each group, its things' cards inside, the chosen thing's fold open
+    // and only one open at a time; built again whenever a thing is defined.
+    const thingsRoot = document.getElementById('thing');
+    function buildThings() {
+      thingsRoot.replaceChildren(...thingGroups().map(({ name, keys }) => {
+        const fold = document.createElement('details');
+        fold.className = 'menu-group';
+        fold.dataset.group = name;
+        const summary = document.createElement('summary');
+        summary.append(name, document.createElement('small'));
+        const cards = document.createElement('div');
+        cards.className = 'menu-cards';
+        for (const key of keys) {
+          const thing = THINGS[key];
+          const card = Object.assign(document.createElement('button'), { type: 'button', className: 'menu-card' });
+          card.setAttribute('role', 'radio');
+          card.dataset.value = key;
+          const picture = Object.assign(document.createElement('img'), { src: thing.look.thumbnail, alt: '', width: 80, height: 45 });
+          picture.addEventListener('error', () => { picture.style.visibility = 'hidden'; });
+          const words = document.createElement('span');
+          words.append(Object.assign(document.createElement('b'), { textContent: thing.name }), Object.assign(document.createElement('small'), { textContent: thing.note }));
+          card.append(picture, words);
+          cards.append(card);
+        }
+        fold.append(summary, cards);
+        fold.addEventListener('toggle', () => {
+          if (fold.open) for (const other of thingsRoot.querySelectorAll('.menu-group[open]')) if (other !== fold) other.open = false;
+        });
+        return fold;
+      }));
+    }
+    buildThings();
+    // What to throw. A card (or an arrow key) chooses the thing and shows it above the folds, to look over: its
+    // picture, size and mass, whether it floats, skips, bends or soaks, its size to set; Use (or Enter on a card)
+    // goes back to the water to throw it. Favourites and the latest choices sit at the top, one tap each, and throw
+    // at once. The strip's chip opens this page; the choice made, the focus goes back there.
+    const FAVOURITES_KEY = 'stone-pond-favourites', RECENT_KEY = 'stone-pond-recent', RECENT_MOST = 4;
+    const storedList = (key) => { try { const list = JSON.parse(localStorage.getItem(key) ?? '[]'); return Array.isArray(list) ? list.filter((name) => typeof name === 'string') : []; } catch { return []; } };
+    const storeList = (key, list) => { try { localStorage.setItem(key, JSON.stringify(list)); } catch { /* storage refused: the list lasts this visit */ } };
+    let favourites = storedList(FAVOURITES_KEY), recent = storedList(RECENT_KEY);
+    const quick = document.getElementById('thing-quick');
+    const inspectSize = document.getElementById('inspect-size');
+    const favouriteButton = document.getElementById('thing-favourite');
+    const useButton = document.getElementById('thing-use');
+    function showQuick() {
+      const names = [...new Set([...favourites, ...recent])].filter((name) => THINGS[name]).slice(0, favourites.length + RECENT_MOST);
+      quick.hidden = names.length === 0;
+      quick.replaceChildren(...names.map((name) => {
+        const thing = THINGS[name];
+        const button = Object.assign(document.createElement('button'), { type: 'button', className: favourites.includes(name) ? 'favourite' : '' });
+        button.dataset.value = name;
+        if (name === pond.thing) button.setAttribute('aria-current', 'true');
+        const picture = Object.assign(document.createElement('img'), { src: thing.look.thumbnail, alt: '', width: 40, height: 26 });
+        picture.addEventListener('error', () => { picture.style.visibility = 'hidden'; });
+        button.append(picture, thing.short);
+        button.setAttribute('aria-label', `${thing.name}${favourites.includes(name) ? ', a favourite' : ''}`);
+        return button;
+      }));
+    }
+    showInspected = () => {
+      const thing = THINGS[pond.thing];
+      const value = thing.slider ? Number(sizeInput.value) : undefined;
+      const properties = thing.properties(value);
+      const picture = document.getElementById('inspect-picture');
+      picture.style.visibility = '';
+      picture.src = thing.look.thumbnail;
+      document.getElementById('inspect-name').textContent = thing.name;
+      document.getElementById('inspect-stats').textContent = `${properties.text} · ${Math.round(properties.density)} kg/m\u00b3`;
+      const badge = (text, has = true) => Object.assign(document.createElement('span'), { textContent: text, className: has ? '' : 'not' });
+      document.getElementById('inspect-badges').replaceChildren(
+        badge(properties.floats ? 'Floats' : 'Sinks'),
+        badge('Skips', thing.skips),
+        ...(thing.body.soft ? [badge('Bends')] : []),
+        ...(thing.water.soaks ? [badge('Soaks')] : []),
+      );
+      inspectSize.hidden = !thing.slider;
+      if (thing.slider) Object.assign(inspectSize, { min: String(thing.slider.min), max: String(thing.slider.max), step: String(thing.slider.step), value: sizeInput.value });
+      inspectSize.style.setProperty('--fraction', sizeInput.style.getPropertyValue('--fraction'));
+      favouriteButton.setAttribute('aria-pressed', String(favourites.includes(pond.thing)));
+      favouriteButton.setAttribute('aria-label', `${thing.name}: favourite`);
+      useButton.textContent = `Use ${thing.name.toLowerCase()}`;
+    };
+    document.getElementById('inspect-picture').addEventListener('error', (event) => { event.target.style.visibility = 'hidden'; });
+    inspectSize.addEventListener('input', () => { sizeInput.value = inspectSize.value; applySize(); });
+    followTouch(inspectSize, () => { sizeInput.value = inspectSize.value; applySize(); });
+    favouriteButton.addEventListener('click', () => {
+      favourites = favourites.includes(pond.thing) ? favourites.filter((name) => name !== pond.thing) : [...favourites, pond.thing];
+      storeList(FAVOURITES_KEY, favourites);
+      showQuick();
+      showInspected();
+    });
+    const useChosen = () => {
+      recent = [pond.thing, ...recent.filter((name) => name !== pond.thing)].slice(0, RECENT_MOST);
+      storeList(RECENT_KEY, recent);
+      showQuick();
+      settings.hide();
+    };
+    useButton.addEventListener('click', useChosen);
+    quick.addEventListener('click', (event) => {
+      const button = event.target.closest('button[data-value]');
+      if (!button) return;
+      pond.setThing(button.dataset.value);
+      updateThing();
+      useChosen();
+    });
+    thingsRoot.addEventListener('keydown', (event) => { if (event.key === 'Enter' && event.target.closest('[role="radio"]')) { event.preventDefault(); useChosen(); } });
+    chip.addEventListener('click', () => {
+      if (settings.isOpen()) { settings.hide(); return; }
+      settings.openOn('thing', chip);
+      thingsRoot.querySelector('[aria-checked="true"]')?.focus({ preventScroll: true });
+    });
+    const showThing = radioGroup(thingsRoot, (value) => { pond.setThing(value); updateThing(); });
+    onThingsChange(() => { buildThings(); updateThing(); });
+    function updateThing() {
+      showThing(pond.thing);
+      const thing = THINGS[pond.thing];
+      settings.setValue('thing', thing.name);
+      // The chosen thing's fold open, the others shut; the chosen fold's heading names the thing chosen in it.
+      for (const fold of thingsRoot.querySelectorAll('.menu-group')) {
+        const chosen = fold.dataset.group === thing.group;
+        if (chosen) fold.open = true;
+        fold.querySelector('summary small').textContent = chosen ? thing.name : '';
+      }
+      // Skip skips what skips (a stone): off for anything else, and it says so.
+      skipSwitch.setAttribute('aria-disabled', String(!thing.skips));
+      skipSwitch.title = thing.skips ? 'Skip the rock across the water' : `Only stones skip: ${thing.called} ${thing.properties(thing.slider ? Number(sizeInput.value) : undefined).floats ? 'floats' : 'sinks'} where it lands.`;
+      // The throw button names what it throws (the thing's `called`: a rock, a ball, a gem, an apple…).
+      const thrown = thing.called;
+      const throwButton = document.getElementById('throw');
+      throwButton.querySelector('.more').textContent = ` ${thrown}`;
+      throwButton.setAttribute('aria-label', `Throw ${thrown}`);
+      showSlider();
+      showInspected();
+      showQuick();
+    }
+    const showSound = radioGroup(document.getElementById('sound'), (value) => { pond.setSound(value === 'on'); updateSound(); });
+    function updateSound() {
+      showSound(pond.sound ? 'on' : 'off');
+      settings.setValue('sound', pond.sound ? 'On' : 'Off');
+    }
+    updateSound();
     function updateWater() {
       showWater(pond.clarity);
       settings.setValue('water', label('water', pond.clarity));
@@ -983,6 +1337,7 @@
     timeInput.addEventListener('input', chooseHour);
     followTouch(timeInput, chooseHour);
     showView();
+    updateThing();
     updateWater();
     updateWeather();
     updateWind();

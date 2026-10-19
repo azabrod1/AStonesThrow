@@ -17,7 +17,10 @@
 // scrolls the panel: the incoming page is still off to the side when its
 // back button takes focus.
 //
-// Closing it resets it to the root, so it always opens on the list. It
+// Closing it resets it to the root, so it always opens on the list; a
+// control outside it may open it straight onto a page (openOn: the strip's
+// chip for what is thrown opens What to throw), and then ‹ closes it and the
+// focus goes back to that control. It
 // closes on the button, on Escape (before Escape's glide back to the shore
 // view, src/main.js) and on a press anywhere else; a press on the water then only
 // closes it, it does not throw a stone.
@@ -53,8 +56,9 @@ export class SettingsPanel {
       this.hide();
       this.button.focus({ preventScroll: true });
     }, true);
+    // A press on the control it was opened from is that control's to close it with (its click), not a press outside it.
     window.addEventListener('pointerdown', (event) => {
-      if (!this.isOpen() || this.panel.contains(event.target) || this.button.contains(event.target)) return;
+      if (!this.isOpen() || this.panel.contains(event.target) || this.button.contains(event.target) || this.openedFrom?.contains(event.target)) return;
       this.hide();
       if (event.target instanceof HTMLCanvasElement) { event.stopPropagation(); event.preventDefault(); }
     }, true);
@@ -73,7 +77,24 @@ export class SettingsPanel {
     if (!this.isOpen()) return;
     this.panel.hidden = true;
     this.button.setAttribute('aria-expanded', 'false');
+    const from = this.openedFrom;
+    from?.setAttribute('aria-expanded', 'false');
     this.resetToRoot();
+    if (from && this.panel.contains(document.activeElement)) from.focus({ preventScroll: true });
+  }
+
+  /**
+   * Open straight onto `page` from `from` (a control outside the panel: the
+   * strip's chip for what is thrown), no slide: its ‹ and closing it give
+   * the focus back to `from`.
+   */
+  openOn(page, from) {
+    if (this.isOpen()) this.hide();
+    this.show();
+    this.openedFrom = from;
+    from?.setAttribute('aria-expanded', 'true');
+    this.navigate(page, true);
+    this.settle(this.generation);
   }
 
   /** The value a root row shows on its right ("Pond", "Auto · High"). */
@@ -83,6 +104,7 @@ export class SettingsPanel {
   }
 
   back() {
+    if (this.openedFrom && this.currentPage !== ROOT_PAGE) { this.hide(); return; }
     const opener = this.opener;
     this.navigate(ROOT_PAGE, false);
     opener?.focus({ preventScroll: true });
@@ -119,6 +141,7 @@ export class SettingsPanel {
   resetToRoot() {
     this.currentPage = ROOT_PAGE;
     this.opener = null;
+    this.openedFrom = null;
     this.generation += 1;
     this.settle();
   }
@@ -142,12 +165,13 @@ export class SettingsPanel {
 /**
  * Wire a group of radio buttons (role="radio", data-value) in `root`:
  * clicking one calls onChoose with its value. Returns show(value), which
- * marks that one checked.
+ * marks that one checked. The buttons are found each time, so `root`'s may
+ * be built again (the Object page's, as things are defined).
  */
 export function radioGroup(root, onChoose) {
-  const buttons = [...root.querySelectorAll('[role="radio"]')];
+  const radios = () => [...root.querySelectorAll('[role="radio"]')];
   const show = (value) => {
-    for (const button of buttons) {
+    for (const button of radios()) {
       const checked = button.dataset.value === value;
       button.setAttribute('aria-checked', String(checked));
       button.tabIndex = checked ? 0 : -1;
@@ -158,15 +182,18 @@ export function radioGroup(root, onChoose) {
     if (!button || !root.contains(button)) return;
     onChoose(button.dataset.value);
   });
-  // Arrow keys move the choice, as a radio group's do.
+  // Arrow keys move the choice, as a radio group's do. The choice is made
+  // before the focus moves: choosing opens the fold that holds it (the Object
+  // page's), and a button in a shut fold takes no focus.
   root.addEventListener('keydown', (event) => {
     const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[event.key];
     if (!step) return;
     event.preventDefault();
+    const buttons = radios();
     const index = buttons.indexOf(document.activeElement);
     const next = buttons[(Math.max(index, 0) + step + buttons.length) % buttons.length];
-    next.focus();
     onChoose(next.dataset.value);
+    next.focus();
   });
   return show;
 }
