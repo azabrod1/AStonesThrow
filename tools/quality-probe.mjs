@@ -23,11 +23,13 @@
 //    near field's (src/rings.js), which retires with it, and a change of
 //    preset in it keeps the pool's mesh. Every kind of thing (src/things.js)
 //    thrown, the floaters followed until they float in the mirror image,
-//    compiles no program, and no prepared thing's (a fixed mesh's, made
-//    ready under the veil) first throw holds the main thread for more than
-//    FIRST_THROW_MS (every thing's printed); a basketball resting afloat
-//    adds at most FLOATER_FRAME_CALLS draw calls a frame (its mirror image
-//    redrawn as the water moves; calls and triangles printed). The world's
+//    compiles no program, and no first throw builds a fixed mesh or slices
+//    its waterline (src/rock.js prepareThing did both under the veil; each
+//    throw's time on the main thread is printed, not checked: under
+//    SwiftShader one throw's varies from 2 to over 60 ms); a basketball
+//    resting afloat adds at most FLOATER_FRAME_CALLS draw calls a frame
+//    (its mirror image redrawn as the water moves; calls and triangles
+//    printed). The world's
 //    step is fixed: a basketball thrown alike at 60 frames a second and in
 //    frames of 1/162 s is in the same place 2.5 s on. With the page running,
 //    the water's height under a floater beside a splash is read back
@@ -66,8 +68,6 @@ import { QUALITY, PIXEL_BUDGET } from '../src/main.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const FLOATER_FRAME_CALLS = 12;   // the most draw calls a basketball resting afloat may add to a frame: its halves, and its mirror image's region redrawn
-const FIRST_THROW_MS = 20;   // ms: the most a prepared thing's first throw may hold the main thread (a pizza's took 33 to 57 ms making its mesh's waterline before src/rock.js prepareThing; single throws here vary by a few ms with SwiftShader on the same CPU)
-const PREPARED_THINGS = ['apple', 'pizza', 'frozen-pizza', 'watermelon', 'brick'];   // the things of a fixed mesh (src/thingMeshes.js), made ready under the veil
 const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.mjs': 'text/javascript', '.json': 'application/json' };
 const server = createServer(async (request, response) => {
   try {
@@ -246,8 +246,9 @@ await checkBuilt(phone, 'back on the lake');
 // Every kind of thing (src/things.js), thrown and followed until the floaters float in the mirror image, compiles no program.
 const programsBeforeThings = await page.evaluate(() => window.__pond.budget.programs);
 const namesBeforeThings = await programNames(page);
-// Each one's first throw, timed: what the tap costs the main thread (src/rock.js prepareThing: warmUp made every thing
-// ready, so a pizza's or a watermelon's mesh and waterline are not made as it is thrown).
+// Each one's first throw makes no mesh and slices no waterline (src/rock.js prepareThing: warmUp made every thing ready;
+// a pizza's waterline took a throw 33 to 57 ms). Each is timed too, for the record: the times vary too much here to check.
+const preparedBefore = await page.evaluate(() => window.__pond.budget.preparation);
 const firstThrows = [];
 for (const thing of ['slate', 'granite', 'basalt', 'pumice', 'golf', 'tennis', 'bowling', 'basketball', 'diamond', 'apple', 'pizza', 'frozen-pizza', 'watermelon', 'brick']) {
   const spent = await page.evaluate((name) => {
@@ -261,8 +262,9 @@ for (const thing of ['slate', 'granite', 'basalt', 'pumice', 'golf', 'tennis', '
   firstThrows.push({ thing, spent });
 }
 console.log(`  first throws (ms on the main thread): ${firstThrows.map(({ thing, spent }) => `${thing} ${spent.toFixed(1)}`).join(', ')}`);
-const slowThrows = firstThrows.filter(({ thing, spent }) => PREPARED_THINGS.includes(thing) && spent > FIRST_THROW_MS);
-check(slowThrows.length === 0, `every prepared thing's first throw takes under ${FIRST_THROW_MS} ms on the main thread${slowThrows.length ? ` (not: ${slowThrows.map(({ thing, spent }) => `${thing} ${spent.toFixed(1)}`).join(', ')})` : ''}`);
+const preparedAfter = await page.evaluate(() => window.__pond.budget.preparation);
+check(preparedBefore.meshes > 0 && preparedAfter.meshes === preparedBefore.meshes && preparedAfter.waterlines === preparedBefore.waterlines,
+  `no first throw builds a fixed mesh or slices a waterline (meshes ${preparedBefore.meshes} → ${preparedAfter.meshes}, waterlines ${preparedBefore.waterlines} → ${preparedAfter.waterlines})`);
 const programsAfterThings = await page.evaluate(() => window.__pond.budget.programs);
 const thingsCompiled = (await programNames(page)).filter((name) => !namesBeforeThings.includes(name));
 check(programsAfterThings === programsBeforeThings, `every kind of thing thrown, and a floater in the mirror image, compiles no program (${programsBeforeThings} before, ${programsAfterThings} after${thingsCompiled.length ? `; new: ${thingsCompiled.join(', ')}` : ''})`);

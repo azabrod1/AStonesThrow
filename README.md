@@ -929,8 +929,9 @@ farther out, so it rises into the view rather than filling its corner.
   targets' memory, the programs compiled and the warm-up's, whether the
   solver sleeps and the frame rate is capped, the rings drawn, how many
   are fading out and the preset's limit, their passes and the spectrum
-  fetches those made, the wind, the gale's sheet, the weather and the
-  rain's tile).
+  fetches those made, the wind, the gale's sheet, the weather, the
+  rain's tile, and how many fixed meshes and waterlines `prepareThing`
+  has made).
 
 Install the development dependencies with `npm install` (Three.js is only
 needed locally for the headless harness, which serves it instead of the CDN).

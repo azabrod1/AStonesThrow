@@ -845,6 +845,8 @@ export function stoneShape(geometry) {
 
 /** What prepareThing has made, for each definition (a thing defined again is a new definition) and each of flat or not. */
 const PREPARED = new WeakMap();
+/** How often prepareThing has built a fixed mesh and sliced a waterline (its buoyancy's columns): src/main.js's `budget`, which tools/quality-probe.mjs checks a throw leaves alone. */
+export const PREPARATION_WORK = { meshes: 0, waterlines: 0 };
 
 /**
  * A fixed mesh's thing (src/thingMeshes.js registerMesh `fixed`) made ready
@@ -864,10 +866,14 @@ export function prepareThing(thing, { flat = false } = {}) {
   const byFlat = PREPARED.get(thing);
   if (!byFlat.has(flat)) {
     const geometry = mesh.build(thing, { flat });
+    PREPARATION_WORK.meshes++;
     geometry.computeBoundingSphere();
     const shape = thing.body.shape === 'sphere' ? BALL_SHAPE : stoneShape(geometry);
     let columns = null;
-    const buoyancy = () => (columns ??= buoyancyColumns(geometry, shape.axes[2]));
+    const buoyancy = () => {
+      if (!columns) { columns = buoyancyColumns(geometry, shape.axes[2]); PREPARATION_WORK.waterlines++; }
+      return columns;
+    };
     // A floater's columns now, at its first size (another size may float where this one sinks: its columns are made as
     // it is first thrown, then kept).
     const { radius, mass } = thing.measure(thing.slider?.initial);

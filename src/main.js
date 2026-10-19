@@ -198,7 +198,7 @@ import { Rings } from './rings.js';
 import { createEnvironment, SKY_NAMES, skyHours, resolveHour, nearestHour } from './sky.js';
 import { createWaterSurface } from './waterSurface.js';
 import { createPondFloor, createShore, floorDepthAt, groundHeightAt } from './pondFloor.js';
-import { Rock, aimSkip, aimThrow, flutterTrial, prepareThing, skipSpeed, SKIP_THROW, PHYSICS_STEP } from './rock.js';
+import { Rock, aimSkip, aimThrow, flutterTrial, prepareThing, PREPARATION_WORK, skipSpeed, SKIP_THROW, PHYSICS_STEP } from './rock.js';
 import { THINGS, THING_NAMES, DEFAULT_THING, defineThing, onThingsChange } from './things.js';
 import { collideThings } from './collide.js';
 import { SplashSystem, MIRROR_LAYER } from './splash.js';
@@ -1734,6 +1734,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
       frameCapped,
       calibration: automaticQuality ? calibration.phase : 'fixed',
       warmUp: { ...warmUpReport },
+      preparation: { ...PREPARATION_WORK },
     };
   }
 
