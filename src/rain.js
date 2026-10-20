@@ -8,7 +8,10 @@
 // train of crests closing up on the slowest waves, 1.7 cm long, 0.23 m/s),
 // and writes it as a table of height and radial slope over radius and time
 // (assets/rain/ring.json and ring_profile.bin), fetched the first time it
-// rains. Each frame one pass (RAIN_TILE_FRAGMENT in src/shaders/rain.js)
+// rains, or alongside the sky when rainy weather is remembered. Downloads
+// time out after 30 seconds and may be retried; intensity changes during a
+// download still use the latest selection. Each frame one pass
+// (RAIN_TILE_FRAGMENT in src/shaders/rain.js)
 // draws the rings of the drops of the moment into a tile of TILE_SIZE
 // metres, TEXELS per side (RGBA16F: height in millimetres, ∂h/∂x, ∂h/∂z;
 // linear, mipmapped, repeat-wrapped). The drops come from a schedule with
@@ -49,6 +52,7 @@
 // lookup per drop per texel), two lookups per water pixel, the streaks'
 // quads and the flecks' points; with no rain, none of it runs.
 import * as THREE from 'three';
+import { loadAsset } from './loadAsset.js';
 import { FullscreenPass, createFloatTarget } from './gpu.js';
 import { mipAxisFactor } from './ambientWaves.js';
 import { RAIN_TILE_FRAGMENT, RAIN_MAX_SLOTS, STREAK_VERTEX, STREAK_FRAGMENT, FLECK_VERTEX, FLECK_FRAGMENT } from './shaders/rain.js';
@@ -100,20 +104,30 @@ export function rainSchedule({ rate, cell, sizes, life }) {
   return { slots, period: slots / perCell, cells: Math.round(TILE_SIZE / cell) };
 }
 
+/** Download without GPU work, so a remembered rain can load alongside the sky. */
+export async function loadRainData() {
+  const folder = new URL('../assets/rain/', import.meta.url);
+  const ring = await loadAsset(new URL('ring.json', folder));
+  const table = new Float32Array(await loadAsset(new URL(ring.profile, folder), 'arrayBuffer'));
+  return { ring, table };
+}
+
 export class Rain {
   /**
    * @param renderer THREE.WebGLRenderer
    * @param lighting the scene's lighting (src/main.js): the streaks and flecks take the sky's light and the sun's
+   * @param options.download optional early download, settled as { data } or { error }
    * @param options.texels the tile's texels per side (a power of two up to 2^(RAIN_LEVELS − 1))
    */
-  constructor(renderer, lighting, { texels = 512, gale = {} } = {}) {
+  constructor(renderer, lighting, { texels = 512, gale = {}, download = null } = {}) {
     this.renderer = renderer;
     this.intensity = null;
     this.ring = null;             // ring.json, once fetched
     this.loading = null;
+    this.download = download;
     this.unresolvedVariance = new Array(RAIN_LEVELS).fill(0);   // the water's uniform holds this array: filled in place
     // A placeholder table until the real one has come: the programs compile
-    // against it at the warm-up, so the first rain compiles nothing.
+    // against it when rain is selected for the warm-up.
     this.profileTexture = new THREE.DataTexture(new Uint16Array(4), 1, 1, THREE.RGFormat, THREE.HalfFloatType);
     this.profileTexture.needsUpdate = true;
     this.tileTarget = null;
@@ -251,18 +265,14 @@ export class Rain {
     this.streaks.material.uniforms.uFall.value.set(this.wind.x, -fall, this.wind.y);
   }
 
-  /** Fetch the ring's table (once). */
+  /** Fetch the ring's table once, with a timeout; failed requests may be retried. */
   load() {
     this.loading ??= (async () => {
-      const folder = new URL('../assets/rain/', import.meta.url);
-      const ring = await fetch(new URL('ring.json', folder)).then((response) => {
-        if (!response.ok) throw new Error(`rain ring: HTTP ${response.status}`);
-        return response.json();
-      });
-      const table = new Float32Array(await fetch(new URL(ring.profile, folder)).then((response) => {
-        if (!response.ok) throw new Error(`rain ring table: HTTP ${response.status}`);
-        return response.arrayBuffer();
-      }));
+      const download = this.download;
+      this.download = null;   // consume once; a failed preload must not poison a retry
+      const result = download ? await download : { data: await loadRainData() };
+      if (result.error) throw result.error;
+      const { ring, table } = result.data;
       const halves = new Uint16Array(table.length);
       for (let index = 0; index < table.length; index++) halves[index] = THREE.DataUtils.toHalfFloat(table[index]);
       const texture = new THREE.DataTexture(halves, ring.radii, ring.times, THREE.RGFormat, THREE.HalfFloatType);
@@ -278,7 +288,7 @@ export class Rain {
       this.profileTexture.dispose();
       this.profileTexture = texture;
       this.ring = ring;
-    })();
+    })().catch((error) => { this.loading = null; throw error; });
     return this.loading;
   }
 

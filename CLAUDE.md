@@ -28,10 +28,11 @@ node tools/foam-probe.mjs              # the foam's bubble pattern on the CPU: t
 node tools/quality-probe.mjs           # every preset builds its sizes (__pond.budget) from every other, the calibration and its watch step down, the idle frame cap, pause/resume, no program at the first throw
 node tools/profile-probe.mjs           # runs ?profile=1 headless and checks the report's shape (its milliseconds mean nothing here)
 node tools/controls-probe.mjs          # the controls as phones' browsers lay them out (viewport tag, touch, 3×): sizes, fit, the slider's tap and drag
+npm run site && node tools/startup-probe.mjs # delayed/failed assets, retry, saved settings and startup input races
 npm run site && node tools/site-check.mjs   # build what Pages publishes into _site/ and load it under /AStonesThrow/
 ```
 
-There is no build step. The page loads Three.js from jsDelivr through the import map in `index.html`.
+Local development loads Three.js from jsDelivr through the import map. `npm run site` copies the pinned runtime modules into `_site/vendor/three` and rewrites the published import map to same-origin URLs.
 
 ## Rules
 
@@ -41,7 +42,7 @@ There is no build step. The page loads Three.js from jsDelivr through the import
 - The crown sheet, the jet column, the forward fan and the cavity are closed-form surfaces evaluated once per rendered frame (`src/crown.js`, `src/jet.js`, `src/cavity.js`); their tear and breakup also run once per frame. Keep it that way: substep work is what a phone pays for.
 - Tune the splash by looking at frames: close-ups through `--fov=12 --look=x:y:z` with crops, and the home view. The reference throw `0:-1.4:0.03` enters at about 41° from vertical, so it is oblique.
 - Use descriptive variable names, never single letters.
-- Every GPU program is compiled under the loading veil (`warmUp` in `src/main.js`): a new material must be drawn there, and no preset may change a target's format, or the first throw stutters. Disposing a material's last user deletes its program.
+- Core throw programs are compiled under the loading veil (`warmUp` in `src/main.js`). Optional rain and gale programs warm only if selected at startup, otherwise compile on first use. Never run a temporary warm-up scene after interaction starts. No preset may change a target's format. Disposing a material's last user deletes its program.
 - A quality change rebuilds the solver, the water mesh and every target (`applyQuality`). Whatever samples the solver takes its sizes from `water.gridUniforms`; its textures keep their objects.
 - `assets/sky/*.json` is written by `tools/sky-probe.mjs` from its `.hdr`; rerun the probe, never edit the JSON. A new sky also needs its `SKIES` entry (orientation chosen from home-view frames), a thumbnail in `assets/sky/thumbs/` and a card on the Location page in `index.html`. A place's hours are probed with `--taken --at` and, sun down, `--align` (the runs are in `README.md`), so the land keeps still between them.
 - The settings (What to throw, the code's `thing`; Location, the code's `sky`; Water; Time of day; Weather; Wind; Sound; View; Quality) live in the panel the top-right button opens (`src/settingsPanel.js`); each remembered setting (all but View) has its own `localStorage` key, and a page parameter wins over it.

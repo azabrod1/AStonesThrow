@@ -7,8 +7,8 @@
 //
 //   npm run site && node tools/site-check.mjs
 //
-// Three.js and the fonts are routed to node_modules and to nothing, as in
-// tools/shoot.mjs, so the check runs offline; the CDN itself is not tested.
+// The Three.js CDN is blocked to require the published local runtime; fonts
+// are stubbed so the check runs offline.
 import { chromium } from 'playwright';
 import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
@@ -47,11 +47,8 @@ const browser = await chromium.launch({
   args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--enable-webgl', '--disable-gpu-sandbox'],
 });
 const context = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 1 });
-await context.route('https://cdn.jsdelivr.net/npm/three@*/**', async (route) => {
-  const relative = new URL(route.request().url()).pathname.replace(/^\/npm\/three@[^/]+\//, '');
-  try { await route.fulfill({ status: 200, contentType: 'text/javascript', body: await readFile(path.join(root, 'node_modules/three', relative)) }); }
-  catch { await route.fulfill({ status: 404, body: '' }); }
-});
+// Published runtime dependencies must work without the CDN.
+await context.route('https://cdn.jsdelivr.net/**', (route) => route.abort());
 await context.route('https://fonts.googleapis.com/**', (route) => route.fulfill({ status: 200, contentType: 'text/css', body: '' }));
 
 const page = await context.newPage();

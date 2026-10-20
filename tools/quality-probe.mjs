@@ -37,11 +37,10 @@
 //    the browser lets audio start without a gesture here). Sixty throws of
 //    every kind, the pond then cleared, leave no geometry, texture or
 //    program behind. Rain (src/rain.js): each weather in
-//    turn, with a throw in the downpour and a change of preset, compiles no
-//    program (the warm-up drew the rain's), and the tile takes the preset's
+//    turn, with a throw in the downpour and a change of preset, reuses its
+//    programs after the first selection, and the tile takes the preset's
 //    size; clear again, nothing of the rain runs. The gale (src/galeWaves.js)
-//    and the storm: the gale compiles no program (the warm-up drew its passes
-//    and its spray, and the water's shaders branch on it), draws the finer
+//    and the storm: the first gale compiles its passes and spray once, draws the finer
 //    sheet that carries its waves, and a throw into it compiles none; the
 //    storm compiles none through a lightning strike; in the pool the gale
 //    raises no waves; calm again, the still sheet. pause(), resume(), pause(),
@@ -392,13 +391,17 @@ check(session.after.geometries <= session.before.geometries && session.after.tex
 
 await page.evaluate(() => { window.__pond.clear(); window.__pond.resume(); });
 
-// The weather: rain compiles nothing, follows the preset's tile size, and goes when it clears.
-const programsBeforeRain = await page.evaluate(() => window.__pond.budget.programs);
+// Rain compiles on first selection, then follows presets without new programs.
+let programsBeforeRain = await page.evaluate(() => window.__pond.budget.programs);
 for (const weather of ['light-rain', 'heavy-rain']) {
   await page.evaluate((name) => window.__pond.setWeather(name), weather);
   await page.waitForFunction(() => window.__pond.raining, null, { timeout: 60000 });
   await page.evaluate(() => window.__pond.advance(0.2));
   const raining = await page.evaluate(() => ({ programs: window.__pond.budget.programs, weather: window.__pond.weather }));
+  if (weather === 'light-rain') {
+    check(raining.programs > programsBeforeRain, 'rain programs are deferred until rain is first selected');
+    programsBeforeRain = raining.programs;
+  }
   check(raining.programs === programsBeforeRain && raining.weather === weather, `${weather} compiles no program (${raining.programs})`);
 }
 await page.evaluate(() => { window.__pond.throwAt(0, -1.4, { radius: 0.03 }); window.__pond.advance(0.6); window.__pond.setQuality('medium'); window.__pond.advance(0.1); });
@@ -410,10 +413,12 @@ const cleared = await page.evaluate(() => ({ raining: window.__pond.raining, pro
 check(!cleared.raining && cleared.programs === programsBeforeRain, `clear again: no rain falls, and no program was compiled (${cleared.programs})`);
 await checkBuilt(phone, 'after the rain');
 
-// The gale and the storm: nothing compiles, the gale's sheet, none in the pool.
-const programsBeforeGale = await page.evaluate(() => window.__pond.budget.programs);
+// The gale compiles once on first selection; later changes reuse it.
+let programsBeforeGale = await page.evaluate(() => window.__pond.budget.programs);
 await page.evaluate(() => { window.__pond.setWind('gale'); window.__pond.advance(0.3); });
 const galeBudget = await page.evaluate(() => ({ programs: window.__pond.budget.programs, gale: window.__pond.budget.gale }));
+check(galeBudget.programs > programsBeforeGale, 'gale programs are deferred until a gale is first selected');
+programsBeforeGale = galeBudget.programs;
 check(galeBudget.programs === programsBeforeGale && galeBudget.gale.blowing && galeBudget.gale.sheetTriangles > 50000, `the gale compiles no program (${galeBudget.programs}) and draws its finer sheet (${galeBudget.gale.sheetTriangles} triangles)`);
 await page.evaluate(() => { window.__pond.throwAt(0, -1.4, { radius: 0.03 }); window.__pond.advance(0.8); });
 const galeThrow = await page.evaluate(() => window.__pond.budget.programs);

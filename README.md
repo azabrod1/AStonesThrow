@@ -7,8 +7,8 @@ are rendered as water.
 
 Live at https://azabrod1.github.io/AStonesThrow/, published from `main` by
 GitHub Pages on every push. Locally, open `index.html` through any static
-server (`npm start`, then http://localhost:8123/). There is no build step.
-Three.js loads from a CDN.
+server (`npm start`, then http://localhost:8123/). Development loads Three.js
+from a CDN; `npm run site` packages it alongside the published site.
 
 Tap or click the water to throw a rock there (beyond the simulated patch,
 at its nearest point). Space throws one at random; the rocks are always
@@ -97,8 +97,21 @@ segments, the under-water view and the mirror image at half resolution and
 the splash's buffers at half, and draw a pond where nothing happens at 30
 frames a second; High keeps 10 stones' rings, Medium 8 and Low 6. The
 canvas never holds more than 2.6 million pixels.
-Every GPU program a throw needs is compiled while the page loads, under its
-veil: a stone is thrown and drawn there, then cleared away.
+Core stone/splash programs are compiled while the page loads, under its
+veil: a stone is thrown and drawn there, then cleared away. Rain and gale
+programs are warmed only when selected at startup; otherwise
+they compile on first use, which can briefly pause that first interaction.
+No background warm-up modifies the live scene. The final scene, including
+remembered weather, is rendered before the veil lifts, even when paused.
+
+The published site serves Three.js alongside its own files (`npm run site`
+creates `_site/vendor/three`). Dependency failures offer Retry; module, sky
+and rain downloads have a 30-second limit. Sky calibration and the panorama
+load together, and a failed replacement leaves the current sky visible.
+Module preloads begin dependency downloads as the page is parsed. A remembered
+rain downloads alongside the sky; failure keeps the startup veil visible with
+Retry. Later rain download failures offer Retry beside the weather controls,
+and stale completions cannot overwrite a newer weather choice.
 
 ## How it works
 
