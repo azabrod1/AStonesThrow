@@ -22,8 +22,9 @@ Escape or Reset view glides back to the shore. The strip at the bottom sets
 the size of what is thrown (a stone 1.5 to 30 cm across, a bowling ball 6
 to 16 lb, a basketball size 5 to 7, a gem 5 to 1000 carats; a golf or a
 tennis ball has one size), the throw strength, Skip and the speed (real
-time, or slow motion at ¼ or ⅒). With Skip on, a flat stone is thrown low
-and level, spinning, and skips across the water (below), in the direction
+time, or slow motion at ¼ or ⅒). With Skip on, a flat stone (or a pizza,
+spun like a frisbee) is thrown low and level, spinning, and skips across the
+water (below), in the direction
 of the tap (even on the sky); its first touch lands where a level throw
 puts it. The menu button at the
 top right opens the settings, laid out as the Moon app's menu is: a list in
@@ -35,11 +36,21 @@ is remembered on the device (but the view, which opens on the shore):
 - What to throw (`?thing=`): stones (a river stone, the default; slate,
   granite, basalt, pumice), balls (golf, tennis, bowling, basketball), gems
   (diamond, emerald, ruby, sapphire) and others (an apple, a watermelon, a
-  pizza, a frozen pizza, a brick), each the size, weight and density of the
-  real thing (`src/things.js`). The strip's chip opens this page. What is
-  lighter than water floats; the rest sink. Each choice's picture
+  pizza, a frozen pizza, a pie, a rubber duck, a brick), each the size, weight
+  and density of the real thing (`src/things.js`). The strip's chip opens this
+  page. What is lighter than water floats; the rest sink. A pizza comes with
+  a recipe's toppings drawn at random (Margherita, Pepperoni, Funghi,
+  Hawaiian, Vegetariana, Diavola, Capricciosa), slaps the water flat, floats
+  draped over the waves, soaks and, waterlogged after two or three minutes,
+  sinks; a frozen one thaws first, its frost fading, and only then goes soft
+  and soaks. A pie's filling is drawn at random too: apple and pumpkin float
+  low, cherry and blueberry sink. A rubber duck rights itself however it
+  lands. Each choice's picture
   (`assets/things/thumbs/`) is a harness frame of it at rest on the pool's
-  deck.
+  deck, shrunk to 160×90: `--water=pool --thing=name
+  --throws=-1.75:0.75:0.05 --times=3 --seed=1 --w=320 --h=180`, looked at
+  where it rests (`--report` says) with `--look=x:y:z` and a `--fov` that
+  frames it (a duck 4°, a pie 8°, a pizza 9°).
 - View: Shore, standing on the bank as the page opens; Low, down at the
   water, the splash against the far shore; High, from above, the rings
   spreading over the pond; Under, under the water, looking up at the rocks

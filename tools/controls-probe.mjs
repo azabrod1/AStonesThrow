@@ -21,8 +21,9 @@
 //     screen, its rows that tall too, each row's value whole beside its
 //     name; its What to throw row opens that page, its things in a fold for
 //     each group (the chosen thing's open, one at a time: on a phone in
-//     portrait the page needs no scrolling), whose eighteen pictured choices
+//     portrait the page needs no scrolling), whose twenty pictured choices
 //     can each be opened and scrolled onto the screen and fit their names,
+//     every card one height, its name and note each one line, whole,
 //     its head staying at the panel's top as it scrolls; the strip's chip
 //     opens the page at once, and each choice, tapped, is shown over the
 //     folds to look over (its name, size, mass, Floats or Sinks; the
@@ -32,7 +33,8 @@
 //     name, slider (its range, or off for a ball of one size) and line
 //     ("Size 7 · 620 g") following, the strip still fitting; the latest
 //     choices sit at the page's top and one tapped is thrown at once; Skip
-//     pressed for a pizza stays off and says why; its Water row opens the Water page, whose five pictured choices
+//     pressed for a pie stays off and says why, and for a pizza turns on
+//     (a pizza skips); its Water row opens the Water page, whose five pictured choices
 //     can each be scrolled onto the screen and fit their names, whose Pool
 //     puts the rocks in the pool (the View note follows) and whose Murky sets
 //     the pond's clarity, each with the row's value; its Time row opens the
@@ -238,7 +240,7 @@ for (const framing of FRAMINGS) {
   check(chosen.clarity === 'murky' && chosen.row === 'Murky', `Murky sets the clarity (${chosen.clarity}) and the row's value ("${chosen.row}")`);
   await page.screenshot({ path: path.join(outputFolder, `${framing.name}-water.png`) });
   await page.evaluate(() => window.__pond.setClarity('lake'));
-  // The Object page (src/things.js): its folds and eighteen pictured choices; each sets what is thrown, and the strip's slider follows it.
+  // The Object page (src/things.js): its folds and twenty pictured choices; each sets what is thrown, and the strip's slider follows it.
   await press('.menu-page[data-page="water"] .menu-back');
   await page.waitForTimeout(400);
   await press('#settings .menu-tier[data-open="thing"]');
@@ -261,14 +263,19 @@ for (const framing of FRAMINGS) {
       for (const choice of fold.querySelectorAll('[role="radio"]')) {
         choice.scrollIntoView({ block: 'nearest' });
         const box = choice.getBoundingClientRect();
-        placed.push({ name: choice.dataset.value, others, left: box.left * scale, right: box.right * scale, top: box.top * scale, bottom: box.bottom * scale, height: box.height * scale });
+        // Its name and note each on one line, whole (not cut short: scrollWidth beyond its box).
+        const cut = [...choice.querySelectorAll('b, small')].some((line) => line.scrollWidth > line.clientWidth + 0.5);
+        placed.push({ name: choice.dataset.value, others, cut, left: box.left * scale, right: box.right * scale, top: box.top * scale, bottom: box.bottom * scale, height: box.height * scale });
       }
     }
     document.getElementById('settings').scrollTop = 0;
     return placed;
   });
   const [thingPanel] = await boxes('#settings');
-  check(onScreen(thingPanel) && things.length === 18 && things.every(onScreen) && things.every((choice) => choice.others === 0) && (!framing.touch || things.every((choice) => choice.height >= SMALLEST_BUTTON_HEIGHT - 0.5)), `the Object page is on the screen, each of its eighteen choices once its fold is open (the others shut) and it is scrolled to${framing.touch ? `, at least ${SMALLEST_BUTTON_HEIGHT} points tall` : ''}`);
+  check(onScreen(thingPanel) && things.length === 20 && things.every(onScreen) && things.every((choice) => choice.others === 0) && (!framing.touch || things.every((choice) => choice.height >= SMALLEST_BUTTON_HEIGHT - 0.5)), `the Object page is on the screen, each of its twenty choices once its fold is open (the others shut) and it is scrolled to${framing.touch ? `, at least ${SMALLEST_BUTTON_HEIGHT} points tall` : ''}`);
+  // Every card one height (review: a note on two lines made its card taller than the rest), each line whole.
+  const heights = things.map((choice) => choice.height), cut = things.filter((choice) => choice.cut).map((choice) => choice.name);
+  check(Math.max(...heights) - Math.min(...heights) < 0.5 && cut.length === 0, `What to throw's cards are one height (${Math.min(...heights).toFixed(1)} to ${Math.max(...heights).toFixed(1)} points), their names and notes whole${cut.length ? `; cut short: ${cut.join(', ')}` : ''}`);
   // Its head stays at the panel's top, inside its edge, while the page scrolls under it.
   const head = await page.evaluate(() => {
     const panel = document.getElementById('settings');
@@ -355,11 +362,24 @@ for (const framing of FRAMINGS) {
     await page.evaluate(() => document.querySelector('.menu-page[data-page="thing"] .menu-back')?.click());
     await page.waitForTimeout(150);
   }
-  // Skip is off for what does not skip, and pressed it says why.
+  // Skip turns on for a pizza (it skips, src/things.js), and is off for what does not skip, pressed saying why.
+  await page.evaluate(() => document.getElementById('skip').click());
+  await page.waitForTimeout(100);
+  const pizzaSkips = await page.evaluate(() => window.__pond.skipping);
+  check(pizzaSkips, `Skip pressed with a pizza turns on (${pizzaSkips ? 'on' : 'off'})`);
+  // The pie chosen as a user does, its card and Use (the page's controls follow it; __pond.setThing alone leaves them).
+  await page.evaluate(() => {
+    window.__pond.setSkip(false);
+    const card = document.querySelector('#thing [data-value="pie"]');
+    card.closest('details').open = true;
+    card.click();
+    document.getElementById('thing-use').click();
+  });
+  await page.waitForTimeout(100);
   await page.evaluate(() => document.getElementById('skip').click());   // off (aria-disabled), so a tap is the page's to answer
   await page.waitForTimeout(100);
   const skipHint = await page.evaluate(() => ({ skipping: window.__pond.skipping, shown: !document.getElementById('hint').hidden, text: document.getElementById('hint').textContent }));
-  check(!skipHint.skipping && skipHint.shown && skipHint.text.startsWith('Only stones skip'), `Skip pressed with a pizza stays off and says why ("${skipHint.text}")`);
+  check(!skipHint.skipping && skipHint.shown && skipHint.text.startsWith('A pie does not skip'), `Skip pressed with a pie stays off and says why ("${skipHint.text}")`);
   // Arrow keys cross from one fold into the next (src/settingsPanel.js radioGroup): the next fold opens, the focus moves into
   // it and the next press carries on from there.
   await press('#menu-button');

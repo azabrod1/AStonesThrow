@@ -31,29 +31,43 @@
 //     in the air, turned by the air's push on its face and its spin, let go
 //     flat with a little tilt, src/rock.js Rock.flutter).
 //   - body.upright: its own +y is its top (a pizza's toppings): which way up
-//     it is let go, and which way its rim keeps the water off afloat (the
-//     water turns it as it will: upside down it stays so).
+//     it is let go, which way its rim keeps the water off afloat (the water
+//     turns it as it will: upside down it stays so), the axis its buoyancy is
+//     cut along, and the faces it settles onto on the deck (src/rock.js
+//     restOn). body.ballast, its centre of mass off its volume's middle, in
+//     radii of its own frame (a rubber duck's heavy base, [0, -0.2, 0]): the
+//     water turns it about that, so a duck rights itself.
 //   - body.soft, a soft thing's give (a pizza's): a spring that the air cups
 //     in flight, steadying it, and the water and the deck fling (src/rock.js
-//     Rock.bendStep, drawn by Rock.flex).
+//     Rock.bendStep, drawn by Rock.flex); its `drape`, how far, afloat, it is
+//     drawn lying over the waves rather than turned rigidly on them (all of
+//     it once soaked through: src/rock.js rideTheWater).
 //   - water: `restingHeight`, its centre over the bed at rest, in radii, and
 //     `dry`, for a thing with a rim (a pizza's crust), the share of its radius
 //     inside the rim that the water does not reach: it rides the water, so its
 //     rim holds it out (src/waterSurface.js setDryDiscs); `soaks`, for a thing
 //     that takes up water (bread), `takes`, the share of its volume of water
 //     it holds soaked through, and `seconds`, how long it takes wholly under
-//     to soak most of the way (src/rock.js soak: heavier, it floats lower;
-//     soft, it goes limp; its rim no longer holds the water out).
+//     to soak most of the way (src/rock.js soak: heavier, it floats lower and
+//     soaks faster, and waterlogged past water's density it sinks; soft, it
+//     goes limp; its rim no longer holds the water out); `thaws`, for a
+//     frozen thing, the `seconds` it takes wholly under to thaw (in air some
+//     fifteen times as long): until it has, it is rigid and frosted, and it
+//     soaks only as far as it has thawed.
+//   - A thing that flies as a plate (`air.model` 'flutter') meets the water
+//     as one too (src/rock.js PLATE_WATER): its face slaps it, and under it
+//     and afloat it carries a disc's water and meets it broadside.
 //   - look: `mesh`, the kind of mesh it is drawn with (src/thingMeshes.js,
 //     registerMesh), that kind's own parameters, and the material's
 //     `roughness` and `reflection`; `wet`, how much `darker` and `glossier`
 //     it looks wet (out of the water it dries, src/rock.js showWet; a stone
 //     darkens most, a gem not at all); `thumbnail`, its card's picture.
-//   - abilities: `skips` (Skip skips it: a stone), `held` (a throw puts at
+//   - abilities: `skips` (Skip skips it: a stone, a pizza), `held` (a throw puts at
 //     most THROW_WORK into it, so a heavy thing leaves slower; a stone keeps
 //     its throw as it always was).
 // Besides: `name`, `short` (the strip's name for it), `group` (the setting's
-// heading), `note` (the card's line) and `called` (the throw button's
+// heading), `note` (the card's line, one line on it: some 40 characters fit
+// a phone's card whole, a longer one is cut short) and `called` (the throw button's
 // "Throw …"; else the group's).
 //
 // defineThing checks a definition (validateThing, which says what is wrong
@@ -81,14 +95,22 @@
 //     diamond (3510), emerald (2760), ruby and sapphire (corundum, 4000);
 //   - other things: an apple (100 to 300 g at 815 kg/m³: a quarter of it is
 //     air, so it floats, low), a pizza (20, 30 or 40 cm across, a disc with
-//     its crust, cheese and pepperoni, about 420 kg/m³, mostly airy bread: a
-//     plate in the air, cupped by it as it flies, it floats flat and soaks,
-//     sinking lower and going limp over a minute or two), a frozen pizza (the
-//     same, rigid, lighter for its size, frosted: it tumbles more, floats
-//     higher and soaks only as it thaws), a watermelon (2 to 10 kg at 960 kg/m³: it floats with only a
-//     sliver of its back above the water) and a brick (215 × 102.5 × 65 mm,
-//     2.7 kg: about 1900 kg/m³, its density from its mesh's volume; it sinks,
-//     and lands on the deck with a thud).
+//     its crust and cheese, each one thrown dressed with a recipe's toppings
+//     drawn at random, 5 to 14% more weight; about 450 kg/m³, mostly airy
+//     bread: a plate in the air, cupped by it as it flies, it slaps the water
+//     and floats flat, draped over the waves, and soaks, sinking lower and
+//     going limp until, waterlogged after two or three minutes, it sinks
+//     flat to the bed; Skip skims it), a frozen pizza (the same, rigid,
+//     lighter for its size, frosted: it tumbles more and floats higher, and
+//     thaws afloat over several minutes, its frost going, before it goes
+//     soft and soaks), a pie (12, 23 or 28 cm in its tin, thrown flat, filled
+//     at random: apple, about 860 kg/m³, and pumpkin float low, cherry and
+//     blueberry sink), a watermelon (2 to 10 kg at 960 kg/m³: it floats with
+//     only a sliver of its back above the water), a rubber duck (5, 9 or 25
+//     cm, hollow vinyl, 120 to 250 kg/m³: it bobs high, and its heavy base
+//     rights it however it lands) and a brick (215 × 102.5 × 65 mm, 2.7 kg:
+//     about 1900 kg/m³, its density from its mesh's volume; it sinks, and
+//     lands on the deck with a thud).
 //
 // One material serves them all (src/rock.js): what tells them apart is in
 // the geometry, the vertex colours and the material's colour, roughness and
@@ -155,8 +177,9 @@ function definitionProblems(key, definition) {
   need(body.density === undefined || within(body.density, LIMITS.density), `body.density must be ${LIMITS.density.join(' to ')} kg/m³`);
   need(body.diameter === undefined || within(body.diameter, LIMITS.diameter), `body.diameter must be ${LIMITS.diameter.join(' to ')} m`);
   need(body.upright === undefined || typeof body.upright === 'boolean', 'body.upright must be true or false');
+  need(body.ballast === undefined || (Array.isArray(body.ballast) && body.ballast.length === 3 && body.ballast.every((value) => within(value, [-1, 1]))), 'body.ballast must be three numbers from -1 to 1 (radii)');
   const soft = body.soft;
-  need(soft === undefined || (isObject(soft) && ['cup', 'most', 'flap', 'rate'].every((field) => within(soft[field], [0, 10]))), 'body.soft needs cup, most, flap and rate, each 0 to 10');
+  need(soft === undefined || (isObject(soft) && ['cup', 'most', 'flap', 'rate'].every((field) => within(soft[field], [0, 10])) && (soft.drape === undefined || within(soft.drape, [0, 1]))), 'body.soft needs cup, most, flap and rate, each 0 to 10 (and a drape, if any, 0 to 1)');
   const size = body.size;
   if (!isObject(size) || !['diameter', 'mass', 'preset', 'fixed'].includes(size.by)) {
     problems.push('body.size must be an object whose `by` is diameter, mass, preset or fixed');
@@ -194,6 +217,7 @@ function definitionProblems(key, definition) {
   need(within(water.restingHeight, LIMITS.restingHeight), `water.restingHeight must be ${LIMITS.restingHeight.join(' to ')} radii`);
   need(water.dry === undefined || (isNumber(water.dry) && water.dry > 0 && water.dry < 1), 'water.dry must lie between 0 and 1');
   need(water.soaks === undefined || (isObject(water.soaks) && within(water.soaks.seconds, [1, 100000]) && within(water.soaks.takes, [0, 2])), 'water.soaks needs seconds (1 to 100000) and takes (0 to 2, of its volume)');
+  need(water.thaws === undefined || (isObject(water.thaws) && within(water.thaws.seconds, [1, 100000])), 'water.thaws needs seconds (1 to 100000)');
   for (const ability of ['skips', 'held']) need(abilities[ability] === undefined || typeof abilities[ability] === 'boolean', `abilities.${ability} must be true or false`);
   const mesh = typeof look.mesh === 'string' ? meshKind(look.mesh) : undefined;
   need(mesh, `look.mesh "${String(look.mesh)}" is no registered mesh (src/thingMeshes.js)`);
@@ -256,7 +280,8 @@ const grams = (mass) => (mass < 1 ? `${Math.round(mass * 1000)} g` : `${mass.toF
  * show it and the physics has it (src/rock.js reads the same mass and
  * volume): its diameter and mass (m, kg), its true density (a mesh's mass
  * over its mesh's own volume, a fixed mesh's or a cut gem's; else its
- * definition's, or a sphere's), whether it floats, and `text`, the strip's
+ * definition's, or a sphere's), whether it floats (`floats`, plain;
+ * `alwaysFloats`, however it is dressed), and `text`, the strip's
  * line: what sets its size, then the other of its size and mass ("Size 7 ·
  * 620 g", "14 lb · 21.6 cm", "6.7 cm · 58 g").
  */
@@ -271,7 +296,9 @@ function propertiesFor(definition, measure, readout) {
       : preset?.name ? `${preset.name} · ${preset.label}`
         : size.by === 'mass' ? `${readout(value)} · ${centimetres(2 * radius)}`
           : `${readout(value)} · ${grams(mass)}`;
-    return { diameter: 2 * radius, mass, density, floats: density < WATER_DENSITY, text };
+    // Dressed as it is thrown (src/thingMeshes.js registerMesh `heaviest`: a pie's filling), it may sink though it floats plain.
+    const heaviest = meshKind(definition.look.mesh)?.heaviest ?? 0;
+    return { diameter: 2 * radius, mass, density, floats: density < WATER_DENSITY, alwaysFloats: density * (1 + heaviest) < WATER_DENSITY, text };
   };
 }
 
@@ -280,7 +307,8 @@ function propertiesFor(definition, measure, readout) {
  * what is wrong), its defaults filled in and what the rest reads derived:
  * `slider` (the strip's range in its unit, or null), `measure(value)`,
  * `readout(value)`, `properties(value)` (propertiesFor: the picker's and
- * the strip's), `fastest(value)` (m/s), `called`, the material's `roll`
+ * the strip's), `fastest(value)` (m/s; `fastestFor(mass)`, for one of
+ * that mass: a pie with its filling), `called`, the material's `roll`
  * as a share, and `sphere`, `byDiameter`, `sizeShare`, `skips`. A key
  * already defined is replaced. Returns the thing.
  *
@@ -319,7 +347,8 @@ export function defineThing(key, definition, { trial = true } = {}) {
   thing.properties = propertiesFor(definition, thing.measure, thing.readout);
   thing.skips = thing.abilities.skips;
   // The fastest a throw sends it: a held thing no faster than THROW_WORK lets it go; a stone as it always was.
-  thing.fastest = (value) => (thing.abilities.held ? Math.sqrt((2 * THROW_WORK) / thing.measure(value ?? thing.slider?.initial).mass) : Infinity);
+  thing.fastestFor = (mass) => (thing.abilities.held ? Math.sqrt((2 * THROW_WORK) / mass) : Infinity);
+  thing.fastest = (value) => thing.fastestFor(thing.measure(value ?? thing.slider?.initial).mass);
   const failed = tryThing(thing, trial);
   if (failed) throw new Error(`The thing "${key}" cannot be defined: ${failed}.`);
   THINGS[key] = thing;
@@ -396,7 +425,7 @@ const stone = (name, note, density, look, { short = name, restingHeight = 0.75, 
   look: { mesh: 'stone', wet: { darker: 0.35, glossier: 0.5 }, ...look },
   abilities: { skips: true, held: false },
 });
-defineBuiltIn('stone', stone('River stone', 'Worn smooth, 2.6 times as heavy as water', 2600, { pattern: 'river' }, { short: 'Rock' }));
+defineBuiltIn('stone', stone('River stone', 'Worn smooth; 2.6 times as heavy as water', 2600, { pattern: 'river' }, { short: 'Rock' }));
 defineBuiltIn('slate', stone('Slate', 'A flat slab, blue-grey, in layers', 2750, {
   pattern: 'slate', squash: [0.22, 0.1, 0.55, 0.2], lumps: 0.45, hue: [0.57, 0.04], saturation: [0.03, 0.04], lightness: [0.26, 0.08], roughness: 0.8,
 }, { restingHeight: 0.35, bounce: [0.2, 0.35] }));
@@ -406,7 +435,7 @@ defineBuiltIn('granite', stone('Granite', 'Pale and flecked; a little heavier', 
 defineBuiltIn('basalt', stone('Basalt', 'Dark and dense: sinks fastest', 3000, {
   pattern: 'basalt', squash: [0.62, 0.2, 0.8, 0.2], lumps: 0.9, hue: [0.6, 0.1], saturation: [0.02, 0.03], lightness: [0.1, 0.05], roughness: 0.85,
 }));
-defineBuiltIn('pumice', stone('Pumice', 'Full of bubbles: lighter than water, it floats', 650, {
+defineBuiltIn('pumice', stone('Pumice', 'Full of bubbles: it floats', 650, {
   pattern: 'pumice', squash: [0.66, 0.22, 0.8, 0.2], lumps: 1.25, hue: [0.1, 0.03], saturation: [0.22, 0.1], lightness: [0.68, 0.08], roughness: 1.0,
 }, { restingHeight: 0.8, bounce: [0.2, 0.35], friction: 0.7 }));
 
@@ -417,7 +446,7 @@ const ball = (name, note, size, material, look) => ({
   water: { restingHeight: 0.97 },
   look: { mesh: 'ball', ...look },
 });
-defineBuiltIn('golf', ball('Golf ball', '46 g; a little heavier than water: it sinks slowly', { size: { by: 'fixed', diameter: 0.04267, mass: 0.0459 } },
+defineBuiltIn('golf', ball('Golf ball', '46 g; just heavier than water: it sinks', { size: { by: 'fixed', diameter: 0.04267, mass: 0.0459 } },
   { bounce: [0.75, 0.82], friction: 0.4, roll: 'solid', rolling: 0.05 }, { paint: 'golf', roughness: 0.35, reflection: 0.9 }));
 defineBuiltIn('tennis', ball('Tennis ball', '58 g; a hollow shell: it floats', { size: { by: 'fixed', diameter: 0.067, mass: 0.058 } },
   { bounce: [0.72, 0.77], friction: 0.6, roll: 'shell', rolling: 0.04 }, { paint: 'tennis', roughness: 1.0, reflection: 0.5 }));
@@ -446,38 +475,75 @@ defineBuiltIn('apple', {
   water: { restingHeight: 0.95 },
   look: { mesh: 'apple', roughness: 0.45, reflection: 1.0 },
 });
+// A pizza's give (body.soft): the air cups it and flaps it; afloat it drapes over the waves, wholly once soaked.
+const PIZZA_GIVE = { cup: 0.0025, most: 0.12, flap: 0.05, rate: 3, drape: 0.7 };
 defineBuiltIn('pizza', {
-  name: 'Pizza', group: 'Other', note: 'A flat disc: it sails, and floats flat', called: 'a pizza',
+  name: 'Pizza', group: 'Other', note: 'Random toppings: it sails, skims, soaks', called: 'a pizza',
   body: {
     shape: 'mesh',
     upright: true,
-    soft: { cup: 0.0025, most: 0.12, flap: 0.05, rate: 3 },
+    soft: PIZZA_GIVE,
     size: { by: 'preset', unit: 'size', initial: 2, presets: [{ value: 1, label: '20 cm', diameter: 0.2, mass: 0.11 }, { value: 2, label: '30 cm', diameter: 0.3, mass: 0.38 }, { value: 3, label: '40 cm', diameter: 0.4, mass: 0.9 }] },
   },
   material: { bounce: [0.05, 0.12], friction: 0.9 },
   air: { drag: 1.1, model: 'flutter' },
-  water: { restingHeight: 0.06, dry: 0.88, soaks: { seconds: 60, takes: 0.45 } },
+  // Soaked through it holds more water than its air's room: waterlogged, it sinks, in two or three minutes afloat.
+  water: { restingHeight: 0.06, dry: 0.88, soaks: { seconds: 60, takes: 0.62 } },
   look: { mesh: 'pizza', roughness: 1.0, reflection: 0.6, wet: { darker: 0.3, glossier: 0.5 } },
+  abilities: { skips: true },   // flat and spinning, it skims (src/rock.js skim), as a stone does
 });
 defineBuiltIn('frozen-pizza', {
-  name: 'Frozen pizza', short: 'Frozen', group: 'Other', note: 'Straight from the freezer: stiff, it tumbles and floats higher', called: 'a frozen pizza',
+  name: 'Frozen pizza', short: 'Frozen', group: 'Other', note: 'Rigid and frosted: it thaws, then soaks', called: 'a frozen pizza',
   body: {
     shape: 'mesh',
     upright: true,
+    soft: PIZZA_GIVE,   // once thawed (water.thaws): frozen, it is rigid
     size: { by: 'preset', unit: 'size', initial: 2, presets: [{ value: 1, label: '20 cm', diameter: 0.2, mass: 0.09 }, { value: 2, label: '30 cm', diameter: 0.3, mass: 0.3 }, { value: 3, label: '40 cm', diameter: 0.4, mass: 0.72 }] },
   },
   material: { bounce: [0.15, 0.25], friction: 0.5 },
   air: { drag: 1.1, model: 'flutter' },
-  // Frozen through, it takes up water only as it thaws: slowly.
-  water: { restingHeight: 0.06, dry: 0.88, soaks: { seconds: 1200, takes: 0.3 } },
+  // Frozen through, it thaws in two and a half minutes wholly under (afloat, a third under, in seven or so), and only
+  // as it thaws does it go soft and take up water, as a fresh one does.
+  water: { restingHeight: 0.06, dry: 0.88, thaws: { seconds: 150 }, soaks: { seconds: 60, takes: 0.72 } },
   look: { mesh: 'pizza', tint: [225, 232, 242], frost: 0.22, roughness: 0.5, reflection: 1.2, wet: { darker: 0.1, glossier: 0.3 } },
+  abilities: { skips: true },   // flat and spinning, it skims (src/rock.js skim), as a stone does
+});
+// A fruit pie in its tin, thrown flat (a plate in the air, as a pizza is), its filling drawn at random as it is thrown
+// (src/thingMeshes.js pieFilling): an apple pie (its sizes' masses) about 860 kg/m³ floats low, a pumpkin one lower,
+// and cherry and blueberry, a fifth heavier, sink. Its crimped rim keeps the water off its top; its pastry soaks a little,
+// where its tin does not hold the water off (never enough to sink a pie that floats).
+defineBuiltIn('pie', {
+  name: 'Pie', group: 'Other', note: 'Filled at random: it floats or sinks', called: 'a pie',
+  body: {
+    shape: 'mesh',
+    upright: true,
+    size: { by: 'preset', unit: 'size', initial: 2, presets: [{ value: 1, name: 'Tart', label: '12 cm', diameter: 0.12, mass: 0.185 }, { value: 2, name: 'Pie', label: '23 cm', diameter: 0.23, mass: 1.3 }, { value: 3, name: 'Family', label: '28 cm', diameter: 0.28, mass: 2.3 }] },
+  },
+  material: { bounce: [0.04, 0.1], friction: 0.8 },
+  air: { drag: 1.0, model: 'flutter' },
+  water: { restingHeight: 0.22, dry: 0.82, soaks: { seconds: 300, takes: 0.04 } },
+  look: { mesh: 'pie', roughness: 0.7, reflection: 0.8, wet: { darker: 0.2, glossier: 0.4 } },
 });
 defineBuiltIn('watermelon', {
-  name: 'Watermelon', group: 'Other', note: 'Nearly as heavy as water: it floats, almost under', called: 'a watermelon',
+  name: 'Watermelon', group: 'Other', note: 'Nearly as heavy as water: it floats low', called: 'a watermelon',
   body: { shape: 'mesh', density: 960, size: { by: 'mass', unit: 'kg', min: 2, max: 10, step: 0.5, initial: 5 } },
   material: { bounce: [0.08, 0.15], friction: 0.6 },
   water: { restingHeight: 0.9 },
   look: { mesh: 'watermelon', roughness: 0.45, reflection: 0.9 },
+});
+
+defineBuiltIn('duck', {
+  name: 'Rubber duck', short: 'Duck', group: 'Other', note: 'Hollow vinyl: it rights itself afloat', called: 'a rubber duck',
+  body: {
+    shape: 'mesh',
+    upright: true,
+    ballast: [0, -0.2, 0],
+    size: { by: 'preset', unit: 'size', initial: 2, presets: [{ value: 1, name: 'Mini', label: '5 cm', diameter: 0.05, mass: 0.005 }, { value: 2, name: 'Classic', label: '9 cm', diameter: 0.09, mass: 0.028 }, { value: 3, name: 'Jumbo', label: '25 cm', diameter: 0.25, mass: 0.3 }] },
+  },
+  material: { bounce: [0.45, 0.6], friction: 0.8 },
+  air: { drag: 0.6 },
+  water: { restingHeight: 0.4 },
+  look: { mesh: 'duck', roughness: 0.35, reflection: 1.0, wet: { darker: 0.03, glossier: 0.45 } },
 });
 
 defineBuiltIn('brick', {
