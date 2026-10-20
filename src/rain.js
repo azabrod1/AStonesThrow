@@ -9,8 +9,8 @@
 // and writes it as a table of height and radial slope over radius and time
 // (assets/rain/ring.json and ring_profile.bin), fetched the first time it
 // rains, or alongside the sky when rainy weather is remembered. Downloads
-// time out after 30 seconds and may be retried; intensity changes during a
-// download still use the latest selection. Each frame one pass
+// time out after 30 seconds without progress and may be retried; intensity
+// changes during a download still use the latest selection. Each frame one pass
 // (RAIN_TILE_FRAGMENT in src/shaders/rain.js)
 // draws the rings of the drops of the moment into a tile of TILE_SIZE
 // metres, TEXELS per side (RGBA16F: height in millimetres, ∂h/∂x, ∂h/∂z;

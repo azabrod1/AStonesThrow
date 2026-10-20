@@ -401,8 +401,10 @@ for (const weather of ['light-rain', 'heavy-rain']) {
   if (weather === 'light-rain') {
     check(raining.programs > programsBeforeRain, 'rain programs are deferred until rain is first selected');
     programsBeforeRain = raining.programs;
+  } else {
+    check(raining.programs === programsBeforeRain, `${weather} reuses the rain programs (${raining.programs})`);
   }
-  check(raining.programs === programsBeforeRain && raining.weather === weather, `${weather} compiles no program (${raining.programs})`);
+  check(raining.weather === weather, `the selected ${weather} is falling`);
 }
 await page.evaluate(() => { window.__pond.throwAt(0, -1.4, { radius: 0.03 }); window.__pond.advance(0.6); window.__pond.setQuality('medium'); window.__pond.advance(0.1); });
 const rainMedium = await page.evaluate(() => ({ programs: window.__pond.budget.programs, rain: window.__pond.budget.rain }));
@@ -419,7 +421,7 @@ await page.evaluate(() => { window.__pond.setWind('gale'); window.__pond.advance
 const galeBudget = await page.evaluate(() => ({ programs: window.__pond.budget.programs, gale: window.__pond.budget.gale }));
 check(galeBudget.programs > programsBeforeGale, 'gale programs are deferred until a gale is first selected');
 programsBeforeGale = galeBudget.programs;
-check(galeBudget.programs === programsBeforeGale && galeBudget.gale.blowing && galeBudget.gale.sheetTriangles > 50000, `the gale compiles no program (${galeBudget.programs}) and draws its finer sheet (${galeBudget.gale.sheetTriangles} triangles)`);
+check(galeBudget.gale.blowing && galeBudget.gale.sheetTriangles > 50000, `the gale blows and draws its finer sheet (${galeBudget.gale.sheetTriangles} triangles)`);
 await page.evaluate(() => { window.__pond.throwAt(0, -1.4, { radius: 0.03 }); window.__pond.advance(0.8); });
 const galeThrow = await page.evaluate(() => window.__pond.budget.programs);
 check(galeThrow === programsBeforeGale, `a throw into the gale compiles no program (${galeThrow})`);

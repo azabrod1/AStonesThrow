@@ -167,7 +167,9 @@
 // only when selected at startup. Otherwise their first render
 // compiles them synchronously, keeping the previous frame on screen; no
 // background warm-up mutates a scene the user can interact with. The final
-// scene is drawn before readiness, even with ?paused=1. The settings (the page's panel)
+// scene is drawn before readiness, even with ?paused=1. A failed startup rain
+// offers an explicit way to continue in Clear weather before revealing it.
+// The settings (the page's panel)
 // each have their own localStorage key, and the page's parameters win over
 // them: ?sky=<name> picks the place, ?time=<hour> its hour (src/sky.js:
 // a place's hours are photographs of it through a day; setSky and setHour
@@ -378,7 +380,7 @@ const DEFAULT_WATER = 'lake';
 // with a jet then built them.
 const WARM_UP = { x: 0, z: -1.4, radius: 0.03, moments: [0.02, 0.16, 0.4], seed: 4, floaters: ['pumice', 'pizza'] };   // a floater of each program: pumice the stones', a pizza its textured one
 
-export async function startPond({ canvas, quality = 'auto', onReady, onProgress, onError, onStats, onViewChange, onQualityChange, onProfile }) {
+export async function startPond({ canvas, quality = 'auto', onReady, onProgress, onError, onRainError, onStats, onViewChange, onQualityChange, onProfile }) {
   let readyForInput = false;
   let renderer;
   try {
@@ -1966,8 +1968,13 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   try {
     await applyWeather(weatherName);   // a remembered rain falls before the veil lifts
   } catch (error) {
-    onError?.('The rain could not be loaded. Check the connection and retry.');
-    throw error;
+    const message = 'The rain could not be loaded. Retry or continue without rain.';
+    if (!onRainError) { onError?.(message); throw error; }
+    // The page resolves only after the user explicitly chooses to continue.
+    // No input or frame loop runs while the choice is pending.
+    await onRainError(message);
+    await applyWeather('clear');
+    try { window.localStorage.setItem(WEATHER_STORAGE_KEY, 'clear'); } catch { /* storage may be disabled */ }
   }
 
   profiler = profiling ? new Profiler({

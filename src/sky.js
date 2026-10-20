@@ -116,8 +116,8 @@
 // against the cloud, and faded where the photo is darker than its sky, where
 // its land stands in front of the bolt.
 //
-// Asset requests time out after 30 seconds; the current sky stays until all
-// of the replacement assets arrive. Initial calibration loads in parallel.
+// Asset requests time out after 30 seconds without progress; the current sky
+// stays until all replacement assets arrive. Initial calibration loads in parallel.
 //
 // Switching. load(place, hour) fetches the photo and its measurements, then
 // in one frame swaps the dome's texture and uniforms, fills lighting's sun

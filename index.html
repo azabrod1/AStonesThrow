@@ -639,6 +639,18 @@
     text-align: center;
     color: var(--fg);
   }
+  .load-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; padding: 0 16px; }
+  .load-actions button {
+    min-height: 44px;
+    padding: 10px 16px;
+    border: 1px solid var(--line);
+    border-radius: 24px;
+    background: var(--panel);
+    color: var(--fg);
+    font: 500 14px var(--font-ui);
+    cursor: pointer;
+  }
+  .load-actions button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   @media (pointer: coarse) {
     input[type="range"] { --thumb: 28px; --track: 6px; height: 44px; }
     .segmented button, .switch, .throw, .reset-view, .thing-chip { min-height: 36px; }
@@ -942,7 +954,7 @@
     };
   }
 
-  function showLoadError(message) {
+  function showLoadError(message, continueWithoutRain) {
     veilText.replaceChildren();
     const paragraph = document.createElement('p');
     paragraph.className = 'error';
@@ -951,7 +963,20 @@
     retry.type = 'button';
     retry.textContent = 'Retry';
     retry.addEventListener('click', () => location.reload());
-    veilText.append(paragraph, retry);
+    const actions = document.createElement('div');
+    actions.className = 'load-actions';
+    actions.append(retry);
+    veilText.append(paragraph, actions);
+    if (continueWithoutRain) {
+      const proceed = document.createElement('button');
+      proceed.type = 'button';
+      proceed.textContent = 'Continue without rain';
+      proceed.addEventListener('click', () => {
+        veilText.textContent = 'Finishing the scene…';
+        continueWithoutRain();
+      }, { once: true });
+      actions.append(proceed);
+    }
   }
 
   let pond;
@@ -979,6 +1004,7 @@
       quality: params.get('quality') || 'auto',
       onProgress: (message) => { veilText.textContent = message; },
       onError: showLoadError,
+      onRainError: (message) => new Promise((resolve) => showLoadError(message, resolve)),
       onStats: ({ fps, droplets, quality }) => { if (!profileDone) stats.textContent = `${Math.round(fps)} fps · ${droplets} drops · ${quality}`; },
       onViewChange: (report) => {
         currentView = report;

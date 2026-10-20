@@ -105,12 +105,14 @@ No background warm-up modifies the live scene. The final scene, including
 remembered weather, is rendered before the veil lifts, even when paused.
 
 The published site serves Three.js alongside its own files (`npm run site`
-creates `_site/vendor/three`). Dependency failures offer Retry; module, sky
-and rain downloads have a 30-second limit. Sky calibration and the panorama
+creates `_site/vendor/three`). Dependency failures offer Retry. Modules have a
+30-second deadline; sky and rain transfers time out only after 30 seconds
+without progress, so slow downloads can finish. Sky calibration and the panorama
 load together, and a failed replacement leaves the current sky visible.
 Module preloads begin dependency downloads as the page is parsed. A remembered
-rain downloads alongside the sky; failure keeps the startup veil visible with
-Retry. Later rain download failures offer Retry beside the weather controls,
+rain downloads alongside the sky; failure offers Retry and Continue without
+rain under the veil. Continuing selects and remembers Clear weather, renders
+that scene, then enables input. Later rain failures offer Retry beside the weather controls,
 and stale completions cannot overwrite a newer weather choice.
 
 ## How it works

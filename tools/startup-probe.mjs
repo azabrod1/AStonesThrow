@@ -161,16 +161,32 @@ try {
   await staleRain.context().close();
 
   const failedStartupRain = await pageFor();
+  await failedStartupRain.addInitScript(() => {
+    if (localStorage.getItem('stone-pond-weather') === null) localStorage.setItem('stone-pond-weather', 'storm');
+  });
   await failedStartupRain.route('**/assets/rain/*.bin', (route) => route.abort());
-  await open(failedStartupRain, '&weather=storm');
+  await open(failedStartupRain);
   await failedStartupRain.locator('#veil .error').waitFor({ timeout: 120000 });
   assert.match(await failedStartupRain.locator('#veil .error').textContent(), /rain could not be loaded/);
   assert.equal(await failedStartupRain.evaluate(() => Boolean(window.__pond)), false);
-  await failedStartupRain.unroute('**/assets/rain/*.bin');
-  await failedStartupRain.locator('#veil button').click();
+  await failedStartupRain.getByRole('button', { name: 'Retry', exact: true }).click();
+  await failedStartupRain.locator('#veil .error').waitFor({ timeout: 120000 });
+  await failedStartupRain.keyboard.press('Space');
+  assert.equal(await failedStartupRain.evaluate(() => Boolean(window.__pond)), false);
+  if (process.env.RAIN_STARTUP_ERROR_SCREENSHOT) await failedStartupRain.screenshot({ path: process.env.RAIN_STARTUP_ERROR_SCREENSHOT });
+  await failedStartupRain.getByRole('button', { name: 'Continue without rain', exact: true }).click();
   await ready(failedStartupRain);
+  assert.deepEqual(await failedStartupRain.evaluate(() => ({ weather: window.__pond.weather, raining: window.__pond.raining, rocks: window.__pond.rocks.length, saved: localStorage.getItem('stone-pond-weather'), drawn: window.__pond.framesRendered > 0 && window.__pond.renderer.getRenderTarget() === null })), { weather: 'clear', raining: false, rocks: 0, saved: 'clear', drawn: true });
+  await failedStartupRain.locator('#throw').click();
+  assert.equal(await failedStartupRain.evaluate(() => window.__pond.rocks.length), 1);
+  // The failed asset is still unavailable, but the saved fallback now opens.
+  await failedStartupRain.reload({ waitUntil: 'domcontentloaded' });
+  await ready(failedStartupRain);
+  assert.equal(await failedStartupRain.evaluate(() => window.__pond.weather), 'clear');
+  await failedStartupRain.unroute('**/assets/rain/*.bin');
+  await failedStartupRain.evaluate(() => window.__pond.setWeather('storm'));
   assert.equal(await failedStartupRain.evaluate(() => window.__pond.raining), true);
-  console.log('PASS: startup rain failure stays behind the veil and recovers on Retry');
+  console.log('PASS: saved rain failure offers an escape, renders before input, remembers Clear and permits rain retry');
   await failedStartupRain.context().close();
 
   for (const asset of ['vendor/three/build/three.module.min.js', 'assets/sky/lakeside_2k.hdr']) {
@@ -189,20 +205,47 @@ try {
 
   for (const asset of ['vendor/three/build/three.module.min.js', 'assets/sky/lakeside_2k.hdr', 'assets/rain/ring_profile.bin']) {
     const delayed = await pageFor();
-    // Shorten only the explicit network deadline; leave animation timers alone.
-    await delayed.addInitScript(() => {
-      const original = window.setTimeout;
-      window.setTimeout = (callback, delay, ...args) => original(callback, delay === 30000 ? 250 : delay, ...args);
-    });
+    const moduleCase = asset.startsWith('vendor/');
+    if (moduleCase) {
+      await delayed.route((url) => url.pathname === prefix, async (route) => {
+        const response = await route.fetch();
+        const source = await response.text();
+        const body = source.replace("reject(new Error('Module load timed out')), 30000)", "reject(new Error('Module load timed out')), 250)");
+        assert.notEqual(body, source, 'the module deadline must be instrumented');
+        await route.fulfill({ response, body });
+      });
+    } else {
+      // Instrument only the selected asset, leaving the module watchdog and
+      // every other asset's deadline intact. No production test switches.
+      await delayed.route('**/src/loadAsset.js', async (route) => {
+        const response = await route.fetch();
+        const source = await response.text();
+        const body = source.replace('  const controller =', `  if (new URL(url).pathname.endsWith(${JSON.stringify('/' + asset)})) timeout = 250;\n  const controller =`);
+        assert.notEqual(body, source, 'the selected asset deadline must be instrumented');
+        await route.fulfill({ response, body });
+      });
+      // Deliberately exceed the old globally shortened module deadline.
+      await delayed.route('**/src/main.js', async (route) => {
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        await route.continue();
+      });
+    }
     const pending = hold(delayed, `**/${asset}`);
     await pending.installed;
     await open(delayed, asset.includes('/rain/') ? '&weather=storm' : '');
     await pending.arrived;
-    await delayed.locator('#veil .error').waitFor();
+    await delayed.locator('#veil .error').waitFor({ timeout: 120000 });
+    const expectedError = moduleCase ? /download its files/ : asset.includes('/rain/') ? /rain could not be loaded/ : /sky could not be loaded/;
+    assert.match(await delayed.locator('#veil .error').textContent(), expectedError);
     pending.release();
     await delayed.waitForTimeout(500);
     assert.equal(await delayed.evaluate(() => Boolean(window.__pond)), false);
     assert.equal(await delayed.locator('#veil').getAttribute('class'), 'veil');
+    if (asset.includes('/rain/')) {
+      await delayed.getByRole('button', { name: 'Continue without rain', exact: true }).click();
+      await ready(delayed);
+      assert.equal(await delayed.evaluate(() => window.__pond.raining), false);
+    }
     console.log(`PASS: late ${asset} cannot start or reveal a timed-out pond`);
     await delayed.context().close();
   }
