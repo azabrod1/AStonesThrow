@@ -934,7 +934,7 @@ export function prepareThing(thing) {
     const density = thing.body.density ?? mass / (shape.volume * radius ** 3);
     if (thing.body.shape !== 'sphere' && density < WATER_DENSITY) buoyancy();
     // Its own parts (registerMesh `dress`) made once and let go: the first one thrown costs no more than the next.
-    if (mesh.dress) { const parts = mesh.dress(thing, seededStream(1)); if (!parts.shared) parts.geometry.dispose(); }
+    if (mesh.dress) { const parts = mesh.dress(thing, seededStream(1)); if (parts && !parts.shared) parts.geometry.dispose(); }
     PREPARED.set(thing, { geometry, shape, reach: geometry.boundingSphere.center.length() + geometry.boundingSphere.radius, buoyancy });
   }
   return PREPARED.get(thing);
@@ -1017,7 +1017,7 @@ export class Rock {
     // Its constants under water (src/cavity.js underWater): the reference stone's for a river stone.
     // A plate meets the water with its face (PLATE_WATER): its face's area and the water it carries, over its volume.
     this.plate = this.thing.air.model === 'flutter' && !this.sphere;
-    this.form = this.plate ? { face: ((4 / 3) * Math.PI / this.shape.volume) * (this.thing.air.drag / DRAG_COEFFICIENT), carries: PLATE_WATER.carries / this.shape.volume } : null;
+    this.form = this.plate ? { face: (4 / 3) * Math.PI / this.shape.volume, drag: this.thing.air.drag / DRAG_COEFFICIENT, carries: PLATE_WATER.carries / this.shape.volume } : null;
     this.body.water = underWater(this.density, this.thing.water.restingHeight, this.form);
     this.impactStep = 0;
     const look = this.thing.look;
@@ -1130,8 +1130,9 @@ export class Rock {
    * water there). A soft thing drapes over the waves besides (`drape`, a
    * pizza's: showWet sets it): each of its points lifted by the water's height
    * under it, as a sheet lying on the water, rather than the whole turned
-   * rigidly, by its drape's share, its normals turned to the water's slope
-   * there; anything rigid has none. Its three programs (above, below, in the
+   * rigidly, by its drape's share (its normals the rigid tilt's: a sample
+   * of the water's slope at each point would triple the work); anything
+   * rigid has none, nor anything off the water. Its three programs (above, below, in the
    * mirror) are its own, every floater's alike, drawn under the loading veil
    * (src/main.js warmUp).
    */
@@ -1168,9 +1169,6 @@ export class Rock {
   float turnSine = length(turnAxis);
   vec3 offset = ridden.xyz - middle;
   vec3 laid = ridden.xyz;   // where it is, as the physics has it (a soft thing drapes from there)
-  #ifndef FLAT_SHADED
-    vec3 laidNormal = inverseTransformDirection(vNormal, viewMatrix);
-  #endif
   if (turnSine > 1e-6) {
     turnAxis /= turnSine;
     offset = offset * up.y + cross(turnAxis, offset) * turnSine + turnAxis * dot(turnAxis, offset) * (1.0 - up.y);
@@ -1182,26 +1180,9 @@ export class Rock {
   }
   ridden.xyz = middle + offset;
   ridden.y += uRide * floaterWaterHeight(middle.xz);
-  // A soft thing draped over the waves (the header): each point on the water's height under it, its normal turned to
-  // the water's slope there (over a centimetre), by its drape's share.
-  if (uDrape * uRide > 0.0) {
-    float under = floaterWaterHeight(laid.xz);
-    vec3 draped = laid + vec3(0.0, uRide * under, 0.0);
-    ridden.xyz = mix(ridden.xyz, draped, uDrape);
-    #ifndef FLAT_SHADED
-      vec2 localSlope = vec2(floaterWaterHeight(laid.xz + vec2(0.01, 0.0)) - under, floaterWaterHeight(laid.xz + vec2(0.0, 0.01)) - under) / 0.01 * uRide;
-      vec3 localUp = normalize(vec3(-localSlope.x, 1.0, -localSlope.y));
-      vec3 localAxis = vec3(localUp.z, 0.0, -localUp.x);
-      float localSine = length(localAxis);
-      vec3 drapedNormal = laidNormal;
-      if (localSine > 1e-6) {
-        localAxis /= localSine;
-        drapedNormal = laidNormal * localUp.y + cross(localAxis, laidNormal) * localSine + localAxis * dot(localAxis, laidNormal) * (1.0 - localUp.y);
-      }
-      vec3 rigidNormal = inverseTransformDirection(vNormal, viewMatrix);
-      vNormal = normalize((viewMatrix * vec4(normalize(mix(rigidNormal, drapedNormal, uDrape)), 0.0)).xyz);
-    #endif
-  }
+  // A soft thing draped over the waves (the header): each point on the water's height under it, by its drape's share
+  // (one more of the water's heights for each point; its normals keep the tilt over its whole width).
+  if (uDrape * uRide > 0.0) ridden.xyz = mix(ridden.xyz, laid + vec3(0.0, uRide * floaterWaterHeight(laid.xz), 0.0), uDrape);
   vRideWorld = ridden.xyz;
   vRideMiddle = middle.xz;
   ${side === 'below' ? 'ridden.xyz = mix(ridden.xyz, seenThroughWater(ridden.xyz, uWaterLevel), uSeenThroughWater);' : ''}
@@ -1237,6 +1218,9 @@ export class Rock {
 
   /** Its mass (kg): a ball's or a gem's own; a stone's the nominal ball's of its density (the air's drag's, as it always was). */
   get mass() { return this.thing.byDiameter ? this.density * (4 / 3) * Math.PI * this.radius ** 3 : this.ownMass; }
+
+  /** The water a plate's face slams (kg, PLATE_WATER: half a disc's added mass), which it carries as it bobs too. */
+  get slamMass() { return PLATE_WATER.slam * WATER_DENSITY * this.radius ** 3; }
 
   /** The stone's own mass (kg), from its volume (the skim's; `mass`, the nominal ball's, is the air drag's). */
   get trueMass() { return this.density * this.shape.volume * this.radius ** 3; }
@@ -1890,8 +1874,21 @@ export class Rock {
     // A plate slaps the water (PLATE_WATER): the water its face strikes takes most of the speed into it at once.
     if (this.plate) {
       const face = scratch.face.copy(this.shape.axes[2]).applyQuaternion(this.quaternion);
-      const slam = PLATE_WATER.slam * WATER_DENSITY * this.radius ** 3;
-      this.velocity.addScaledVector(face, -face.dot(this.velocity) * slam / (this.mass + slam));
+      this.velocity.addScaledVector(face, -face.dot(this.velocity) * this.slamMass / (this.mass + this.slamMass));
+    }
+    // A plate lighter than water, its slap taken, floats at once: it never dives (what is left of its speed runs along
+    // its face, a little up it if it is tilted, which under the water's model would hold it over the surface). Its slap
+    // is a touch, as a skip's is (skimReport's fields: src/splash.js skim, a ring and a fan of spray), not an entry: it
+    // opens no hole and throws up no jet.
+    if (this.plate && this.floats) {
+      this.state = 'float';
+      this.hasFloated = true;
+      const faceRadius = this.faceRadius, push = this.mass * impactVelocity.distanceTo(this.velocity);
+      return {
+        skim: true, slap: true, x: this.position.x, z: this.position.z, exitX: this.position.x, exitZ: this.position.z,
+        velocity: impactVelocity, exitVelocity: this.velocity.clone(), duration: 0, radius: faceRadius, mass: this.mass, push,
+        pushSpeed: push / (STONE_DENSITY * (4 / 3) * Math.PI * faceRadius ** 3), skips: 0, rock: this,
+      };
     }
     const lift = this.liftAt(this.velocity);
     if (this.skip) {
@@ -1934,20 +1931,6 @@ export class Rock {
       underWater: this.body.water,   // its constants under water (src/cavity.js), which the cavity traces its path with
       rock: this,
     };
-    // A plate lighter than water, its slap taken, floats at once: it never dives (what is left of its speed runs along
-    // its face, a little up it if it is tilted, which under the water's model would hold it over the surface). Its slap
-    // is a touch, as a skip's is (skimReport's fields: src/splash.js skim, a ring and a fan of spray), not an entry: it
-    // opens no hole and throws up no jet.
-    if (this.plate && this.floats) {
-      this.state = 'float';
-      this.hasFloated = true;
-      const face = this.faceRadius, push = this.mass * impactVelocity.distanceTo(this.velocity);
-      return {
-        skim: true, slap: true, x: this.position.x, z: this.position.z, exitX: this.position.x, exitZ: this.position.z,
-        velocity: impactVelocity, exitVelocity: this.velocity.clone(), duration: 0, radius: face, mass: this.mass, push,
-        pushSpeed: push / (STONE_DENSITY * (4 / 3) * Math.PI * face ** 3), skips: 0, rock: this,
-      };
-    }
     return impact;
   }
 
@@ -2085,7 +2068,7 @@ export class Rock {
     // The water it carries: its share of what it displaces; as it bobs, a plate also the water its face slams
     // (PLATE_WATER), which it does not carry sliding along in its own plane.
     const inertia = this.mass + FLOAT.addedMass * WATER_DENSITY * volume * share;
-    const bobInertia = inertia + (this.plate ? PLATE_WATER.slam * WATER_DENSITY * this.radius ** 3 * Math.min(share / PLATE_WATER.wetted, 1) : 0);
+    const bobInertia = inertia + (this.plate ? this.slamMass * Math.min(share / PLATE_WATER.wetted, 1) : 0);
     const buoyancy = WATER_DENSITY * GRAVITY * volume * share;
     // Its bob's stiffness, the buoyancy's change with depth, and the damping that is FLOAT.damping of critical for it.
     const stiffness = WATER_DENSITY * GRAVITY * volume * line.slope;

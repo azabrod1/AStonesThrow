@@ -262,7 +262,7 @@ for (const name of THING_NAMES) {
       // Its speed along its path: a flat gem glides a little (its lift), so it falls a little slower.
       for (let time = 0; time < 6 && settling.state === 'water'; time += STEP) { settling.update(STEP, 10); sinking = Math.max(sinking, settling.velocity.length()); }
       // Its own density (a brick's from its mesh's volume), on the drag's nominal ball; a plate's on its face (underWater's `face`).
-      const terminal = Math.sqrt((8 / 3) * (rock.density / WATER_DENSITY - 1) * GRAVITY * measured.radius / (DRAG_COEFFICIENT * (rock.form?.face ?? 1)));
+      const terminal = Math.sqrt((8 / 3) * (rock.density / WATER_DENSITY - 1) * GRAVITY * measured.radius / (DRAG_COEFFICIENT * (rock.form?.face ?? 1) * (rock.form?.drag ?? 1)));
       line += `; sinks at ${sinking.toFixed(2)} m/s (terminal ${terminal.toFixed(2)}), rests ${centimetres(-rock.position.y)} cm down on the bed's ${centimetres(bed)} after ${record.restAt?.toFixed(1)} s`;
       check(rock.state === 'rest' && rock.position.y < 0, `${label}: has not come to rest on the bed (${rock.state})`);
       // A gem's flat cut, a brick's slab, glides a little more (its lift): SINK_TOLERANCE twice over.

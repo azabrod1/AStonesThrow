@@ -292,8 +292,8 @@ function growthFor(widest) {
  * centre rests at over the floor. The reference stone's are the fit's. A
  * body not a ball (`form`: a pizza, a plate moving broadside) gives its
  * `face`, the area the water meets over its volume against a ball's
- * ((4/3)·A·R/V, drag coefficient over C_d included: a 30 cm pizza's is about
- * 40), which the drag and the head go as, and `carries`, the water it
+ * ((4/3)·A·R/V: a 30 cm pizza's is about 16), which the drag and the head go
+ * as, its `drag` coefficient over C_d (the drag's alone), and `carries`, the water it
  * carries as a share of its own volume (a disc's, broadside, (8/3)·R³/V). Its
  * lift is left a ball's: a plate sliding along the surface would plane up out
  * of it, which a body under the water cannot follow; its drag stops it within
@@ -306,7 +306,7 @@ export function underWater(density = ROCK_DENSITY, restingHeight = RESTING_HEIGH
   const inertia = (1 + ADDED_MASS * DENSITY_RATIO) / (1 + (form?.carries ?? ADDED_MASS) * ratio);
   return {
     density, ratio, inertia, restingHeight,
-    drag: (3 / 8) * ratio * DRAG_COEFFICIENT * inertia * face,
+    drag: (3 / 8) * ratio * DRAG_COEFFICIENT * inertia * face * (form?.drag ?? 1),
     head: (3 / 4) * ratio * HEAD_COEFFICIENT * inertia * face,
     lift: (3 / 8) * ratio * inertia,
   };
