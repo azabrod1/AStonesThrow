@@ -91,7 +91,7 @@
 //
 //   node tools/thing-probe.mjs
 import * as THREE from 'three';
-import { Rock, aimThrow, aimSkip, prepareThing, skipLowest, skipSpeed, SKIP_THROW } from '../src/rock.js';
+import { Rock, aimThrow, aimSkip, prepareThing, skipLowest, skipSpeed, SKIP_THROW, throwFlightTime } from '../src/rock.js';
 import { THINGS, THING_NAMES, WATER_DENSITY, defineThing, validateThing } from '../src/things.js';
 import { floorDepthAt } from '../src/pondFloor.js';
 import { holdInPool, poolGround, POOL } from '../src/pool.js';
@@ -115,7 +115,7 @@ const PIZZA_RIGHTS_SECONDS = 8;        // s: a pizza let go on the water at any 
 const COLUMN_VOLUME = 0.02;           // of a floater's volume: its buoyancy's columns (src/rock.js buoyancyColumns) hold its mesh's to this
 const OVERLAP_MOST = 0.002;            // m
 const SHORE_TOLERANCE = 0.002;         // m: the most a floater grounded on the shore may sink into the bed
-const POWERS = { soft: 1.3, normal: 1.0, hard: 0.72 };
+const POWERS = ['soft', 'normal', 'hard'];   // src/rock.js THROW_STRENGTH
 const DRAG_COEFFICIENT = 0.46;         // src/cavity.js's
 const POOL_SQUARE = { minX: -1.5, minZ: -2.5, size: 3 };   // the solver's middle quarter (src/spectralWater.js poolSquare)
 
@@ -149,7 +149,7 @@ function throwThing(name, { x = 0, z = -1.4, power = 'normal', value, pooled = f
   const measured = measure(name, value);
   const hand = handFor(measured.radius);
   const target = new THREE.Vector3(x, 0, z);
-  const flightTime = THREE.MathUtils.clamp(0.42 + 0.11 * hand.distanceTo(target), 0.5, 1.0) * POWERS[power];
+  const flightTime = throwFlightTime(hand, target, power, measured.radius);
   let velocity = target.clone().sub(hand).divideScalar(flightTime);
   velocity.y += 0.5 * GRAVITY * flightTime;
   let landing = target;
@@ -278,7 +278,7 @@ for (const name of THING_NAMES) {
 console.log('\nThe balls\' aim (the centre\'s path at the still water against the tap), at three strengths and three taps:');
 for (const name of THING_NAMES.filter((key) => THINGS[key].abilities.held)) {
   let worst = 0;
-  for (const power of Object.keys(POWERS)) {
+  for (const power of POWERS) {
     for (const [x, z] of [[0, -0.6], [0.8, -1.8], [-1.2, -3.2]]) {
       const { rock, target, launch, measured } = throwThing(name, { x, z, power });
       const record = follow(rock, { seconds: 3 });

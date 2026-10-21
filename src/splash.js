@@ -7,8 +7,9 @@
 //      direction of travel (src/crown.js). Its rim thickens into a bead, goes
 //      wavy and sheds drops from the crests; after a few tens of milliseconds
 //      the sheet tears from the rim down into droplets carrying its local
-//      velocity. A thrown stone enters obliquely, θ about 40 to 55° from
-//      vertical, and once more than FAN_THRESHOLD of the entry speed is
+//      velocity. A thrown stone enters obliquely, θ about 40 to 45° from
+//      vertical (30° thrown softly, 70 to 73° and twice as fast thrown hard,
+//      src/rock.js throwFlightTime), and once more than FAN_THRESHOLD of the entry speed is
 //      horizontal a forward fan comes first: a thin fast sheet over the sector
 //      ahead, launched from the lip's forward side, low and mostly forward,
 //      tearing into fine spray (CrownSheet with `fan`), at a strength growing

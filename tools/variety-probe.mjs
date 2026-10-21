@@ -56,7 +56,7 @@
 import * as THREE from 'three';
 import { SplashSystem } from '../src/splash.js';
 import { JetColumn } from '../src/jet.js';
-import { Rock } from '../src/rock.js';
+import { Rock, throwFlightTime } from '../src/rock.js';
 
 const option = (name, fallback) => { const hit = process.argv.find((argument) => argument.startsWith(`--${name}=`)); return hit ? hit.slice(name.length + 3) : fallback; };
 const throwCount = Number(process.argv.slice(2).find((argument) => !argument.startsWith('--')) ?? 200);
@@ -78,7 +78,6 @@ const MIN_SHARE = 0.05;
 const MAX_SHARE = 0.6;
 const MIN_HEIGHT_SPREAD = 0.3;
 const MIN_LEAN_SPREAD = 5;
-const POWERS = { soft: 1.3, normal: 1.0, hard: 0.72 };   // src/main.js POWER
 
 const camera = new THREE.PerspectiveCamera(48, 16 / 9, 0.05, 60000);
 camera.position.set(0, 1.15, 2.45);
@@ -106,7 +105,7 @@ function throwStone(radius, power, seed) {
   const { water, splash } = standIns();
   seedRandom(seed);
   const target = new THREE.Vector3(aimX, 0, aimZ);
-  const flightTime = THREE.MathUtils.clamp(0.42 + 0.11 * hand.distanceTo(target), 0.5, 1.0) * POWERS[power];
+  const flightTime = throwFlightTime(hand, target, power, radius);
   const velocity = target.clone().sub(hand).divideScalar(flightTime);
   velocity.y += 0.5 * GRAVITY * flightTime;
   const rock = new Rock({ radius, position: hand, velocity, envTexture: null });

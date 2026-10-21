@@ -29,7 +29,7 @@ const cdnPrefix = `https://cdn.jsdelivr.net/npm/three@${version}/`;
 if (!html.includes(`${cdnPrefix}build/three.module.js`) || !html.includes(`${cdnPrefix}examples/jsm/`)) {
   throw new Error('Three.js import map does not match the installed version');
 }
-for (const file of ['build/three.module.min.js', 'build/three.core.min.js', 'examples/jsm/loaders/HDRLoader.js', 'LICENSE']) {
+for (const file of ['build/three.module.min.js', 'build/three.core.min.js', 'LICENSE']) {
   const destination = path.join(siteDirectory, 'vendor/three', file);
   await mkdir(path.dirname(destination), { recursive: true });
   await cp(path.join(root, 'node_modules/three', file), destination);

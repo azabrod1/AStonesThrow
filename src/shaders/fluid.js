@@ -304,19 +304,26 @@ void main() {
 // Night vision, just before the tone map (COMPOSITE_FRAGMENT, and the
 // composite's own tone map in src/splash.js). By moonlight the eye's rods
 // see, which take no colour and are most sensitive to blue-green: uNight
-// (lighting.night, src/sky.js: 0 by day, 1 where rods see alone) mixes the
+// (lighting.night, src/sky.js: 0 by day, 1 where rods see most) mixes the
 // colour towards the rods' luminance, the scotopic luminance from CIE XYZ
 // that Jensen et al. use (A Physically-Based Night Sky Model, 2001),
 // V = Y (1.33 (1 + (Y + Z) / X) − 1.68), divided by its value for white
 // (D65, 2.573: brightness is the hour's light, src/sky.js; this changes
 // only the colour, and a blue sky comes out twice as bright against white
-// as it does to cones), tinted a moonlit blue: NIGHT_TINT, chromaticity
-// (0.278, 0.286) at unit luminance, halfway from white to their night blue
-// at (0.25, 0.25), which washed whole skies to one blue. By day the colour
-// passes untouched.
+// as it does to cones). A picture of what rods alone see is a grey
+// photograph, so the night is drawn as a film draws one: the rods' image
+// keeps NIGHT_COLOUR of the cones' colour (the mesopic eye still sees some
+// under a moon), is tinted a moonlit blue, NIGHT_TINT at unit luminance
+// (chromaticity (0.256, 0.257), all but Jensen's night blue at (0.25,
+// 0.25), which as the only colour washed whole skies to one blue), and goes
+// to white where it is bright (NIGHT_WHITE, its exposed luminance), so the
+// moon's glitter and the splash's glints are silver on blue water. By day
+// the colour passes untouched.
 export const NIGHT_VISION = /* glsl */`
 uniform float uNight;
-#define NIGHT_TINT vec3(0.85, 0.99, 1.45)
+#define NIGHT_TINT vec3(0.75, 0.99, 1.85)
+#define NIGHT_COLOUR 0.4
+#define NIGHT_WHITE vec2(0.5, 3.0)
 #define RODS_WHITE 2.573
 vec3 nightVision(vec3 color) {
   if (uNight <= 0.0) return color;
@@ -324,7 +331,9 @@ vec3 nightVision(vec3 color) {
   float y = dot(color, vec3(0.2126, 0.7152, 0.0722));
   float z = dot(color, vec3(0.0193, 0.1192, 0.9505));
   float rods = max(y * (1.33 * (1.0 + (y + z) / max(x, 1e-9)) - 1.68), 0.0) / RODS_WHITE;
-  return mix(color, rods * NIGHT_TINT, uNight);
+  vec3 cones = min(color / max(y, 1e-9), vec3(8.0));   // the colour at unit luminance
+  vec3 tint = mix(NIGHT_TINT, vec3(1.0), smoothstep(NIGHT_WHITE.x, NIGHT_WHITE.y, rods * uExposure / 0.6));
+  return mix(color, rods * tint * mix(vec3(1.0), cones, NIGHT_COLOUR), uNight);
 }
 `;
 
