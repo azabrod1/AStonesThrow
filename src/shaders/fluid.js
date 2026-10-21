@@ -17,7 +17,8 @@
 //           pixel and of the exposure that water covers), b the drops' sun
 //           glints (radiance over the sun's irradiance) and a the crown's
 //           aeration (its rim bead and torn edges, and its froth,
-//           src/shaders/sheet.js), the share of its light scattered white.
+//           src/shaders/sheet.js), the share of its light scattered white,
+//           times its share of the pixel, as the coverage is.
 //
 // Droplets. Sphere impostors stretched along their motion into capsules, as a
 // camera's shutter would smear them (half a frame, uStreakSeconds). A drop
@@ -62,8 +63,10 @@
 //     sunGlitter with WATER_SLOPE_VARIANCE (its unresolved ripple). Its rim
 //     bead and torn edges, and its froth (src/shaders/sheet.js), are
 //     aerated: mixed towards the spray's scattering colour by the optics'
-//     aeration, at most 1. Its holes are the scene's: the depth pass
-//     discards them, and the optics write the sheet's share of a pixel.
+//     aeration over their coverage, at most 1. Its holes are the scene's:
+//     the depth pass discards them, and the optics write the sheet's share
+//     of a pixel, in the aeration as in the coverage, which the alpha
+//     applies (so the aeration is divided by it, up to a whole pixel).
 //   - Column and drop beads (a drop from one device pixel of radius up, fading
 //     in from half a pixel): lenses. A ray through a water sphere at incidence
 //     θ leaves turned by 2·(θ − asin(sin θ / 1.33)) towards its centre, in the
@@ -482,7 +485,10 @@ void main() {
       // The rim bead, torn edges and froth are aerated: a white scattering, brightest towards the sun.
       float forward = pow(clamp(0.5 - 0.5 * dot(toViewer, uSunDirView), 0.0, 1.0), 6.0);
       vec3 scattering = vec3(0.85, 0.88, 0.90) * (uSkyAmbient * 1.2 + uSunIrradiance * (0.08 + 0.7 * forward));
-      surface = mix(surface, scattering, sheet * clamp(optics.a, 0.0, 1.0));
+      // Where holes or the sheet's edge cover part of a pixel, the optics carry that share in the
+      // aeration as in the coverage, and the alpha applies it: divide it out of the aeration.
+      float aeration = optics.a / max(min(coverage, 1.0), 1e-3);
+      surface = mix(surface, scattering, sheet * clamp(aeration, 0.0, 1.0));
       float drop = 1.0 - sheet - column;
       // On-screen radius in device pixels: a drop's from the depth pass, a column's from the water across it.
       float deviceRadius = mix(info.g, 0.5 * thickness / max(normal.z, 0.3) * uProjScale / info.r, column) / uFluidScale;

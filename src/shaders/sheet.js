@@ -39,7 +39,9 @@
 // openness asks for: where n < q the sheet has a hole. Each pass takes the
 // same holes: the depth pass discards a pixel more hole than sheet, the
 // optics pass writes the sheet's share of each pixel (its thickness,
-// coverage and aeration times it), so a hole's edge is antialiased; a hole
+// coverage and aeration times it; the composite divides the aeration by the
+// coverage, so the share drawn keeps its whiteness), so a hole's edge is
+// antialiased; a hole
 // narrower than a pixel or two (the noise's footprint in cells, from its
 // screen derivatives, over FROTH_FADE) is not drawn but averaged: no pixel
 // is discarded and the optics write the open share's mean, so a far sheet
@@ -51,8 +53,9 @@
 // scattering colour by the sum (at most 1). The depth pass also wrinkles the
 // normal (the sheet's capillary ripples): a height of WRINKLE_SLOPE (plus
 // WRINKLE_FROTH times the whiteness) times the cell's length times a value
-// noise at WRINKLE_SCALE of the holes' cells, bumped by its screen
-// derivatives (Mikkelsen's surface gradient), fading out as the cells shrink
+// noise at WRINKLE_SCALE of the holes' cells, bumped by the noise's screen
+// derivatives (Mikkelsen's surface gradient; the amplitude, itself made of
+// derivatives, held constant over the pixel), fading out as the cells shrink
 // below a pixel. Fingers (aRod) keep their glass: no holes, no wrinkles,
 // half the whiteness; nor does the bead open (its aeration closes the
 // holes there). It costs a sheet pixel two to three value noises (eight
@@ -167,11 +170,14 @@ vec3 wrinkledNormal(vec3 normal, vec3 viewPosition, vec3 sheet, float violence, 
   // Metres a wrinkle's cell spans, from the same screen steps.
   float cellLength = 0.5 * (length(sigmaX) / max(cellsX, 1e-6) + length(sigmaY) / max(cellsY, 1e-6));
   float fade = (1.0 - smoothstep(FROTH_FADE.x, FROTH_FADE.y, footprint)) * (rod > 0.5 ? 0.0 : 1.0);
-  float height = (WRINKLE_SLOPE + WRINKLE_FROTH * min(violence, 1.0)) * cellLength * fade * frothNoise(wrinkleSheet + vec3(41.0, 13.0, 29.0));
+  // The amplitude is made of derivatives, so it is held constant over the pixel and only the noise
+  // is differentiated: a derivative of a derivative is undefined in GLSL.
+  float amplitude = (WRINKLE_SLOPE + WRINKLE_FROTH * min(violence, 1.0)) * cellLength * fade;
+  float wrinkle = frothNoise(wrinkleSheet + vec3(41.0, 13.0, 29.0));
   vec3 across = cross(sigmaY, normal);
   vec3 up = cross(normal, sigmaX);
   float determinant = dot(sigmaX, across);
-  vec3 gradient = sign(determinant) * (dFdx(height) * across + dFdy(height) * up);
+  vec3 gradient = sign(determinant) * amplitude * (dFdx(wrinkle) * across + dFdy(wrinkle) * up);
   vec3 wrinkled = abs(determinant) * normal - gradient;
   return dot(wrinkled, wrinkled) > 0.0 ? normalize(wrinkled) : normal;
 }
