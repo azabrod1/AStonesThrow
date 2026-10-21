@@ -39,7 +39,9 @@ is remembered on the device (but the view, which opens on the shore):
   (diamond, emerald, ruby, sapphire) and others (an apple, a watermelon, a
   pizza, a frozen pizza, a brick), each the size, weight and density of the
   real thing (`src/things.js`). The strip's chip opens this page. What is
-  lighter than water floats; the rest sink. Each choice's picture
+  lighter than water floats; the rest sink. What comes to rest stays, on the
+  bed or the pool's floor as on the deck, up to the quality preset's count
+  (below); past it the oldest shrinks away. Each choice's picture
   (`assets/things/thumbs/`) is a harness frame of it at rest on the pool's
   deck.
 - View: Shore, standing on the bank as the page opens; Low, down at the
@@ -100,7 +102,12 @@ the work a frame does: High runs the 512² solver, a 254-segment water mesh
 and full-resolution targets; Medium and Low a 256² solver, 160 and 128
 segments, the under-water view and the mirror image at half resolution and
 the splash's buffers at half, and draw a pond where nothing happens at 30
-frames a second; High keeps 10 stones' rings, Medium 8 and Low 6. The
+frames a second; High keeps 10 stones' rings, Medium 8 and Low 6, and 40
+things at rest (a stone on the bottom is one draw call) and 16 afloat (a
+floater costs more: its physics, its ride and its mirror image), Medium 30
+and 14, Low 20 and 12; up to 20 things may be on the move at once, on
+every preset. Past a count the oldest of that kind shrinks away over 0.6 s,
+never vanishing at once. The
 canvas never holds more than 2.6 million pixels.
 Core stone/splash programs are compiled while the page loads, under its
 veil: a stone is thrown and drawn there, then cleared away. Rain and gale

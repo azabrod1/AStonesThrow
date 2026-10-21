@@ -29,7 +29,10 @@
 //    SwiftShader one throw's varies from 2 to over 60 ms); a basketball
 //    resting afloat adds at most FLOATER_FRAME_CALLS draw calls a frame
 //    (its mirror image redrawn as the water moves; calls and triangles
-//    printed). The world's
+//    printed). What comes to rest stays: in the pool on low the preset's
+//    `resting` stones are all there 41 s on, each one draw call, and one more
+//    come to rest shrinks the oldest away (src/main.js keepWithinCaps,
+//    fadeOut), never at once. The world's
 //    step is fixed: a basketball thrown alike at 60 frames a second and in
 //    frames of 1/162 s is in the same place 2.5 s on. With the page running,
 //    the water's height under a floater beside a splash is read back
@@ -295,6 +298,45 @@ const restingBall = await page.evaluate(() => {
 const withFloater = await frameCounts();
 console.log(`  a frame: ${stillPond.calls} draw calls, ${stillPond.triangles} triangles on the still pond; ${withFloater.calls}, ${withFloater.triangles} with a basketball resting afloat`);
 check(restingBall && withFloater.calls - stillPond.calls <= FLOATER_FRAME_CALLS, `a basketball resting afloat adds at most ${FLOATER_FRAME_CALLS} draw calls a frame (${withFloater.calls - stillPond.calls})`);
+// What comes to rest stays (src/main.js keepWithinCaps): in the pool on low, the preset's `resting` stones lie on its
+// floor, each one draw call (its part above the water hidden, src/rock.js syncMeshes), and no timer takes them; one
+// more, come to rest, shrinks the oldest away (fadeOut: partway, smaller and still there; then gone), never at once.
+await page.evaluate(() => { const pond = window.__pond; pond.clear(); pond.setQuality('low'); pond.setClarity('pool'); pond.advance(0.5); });
+const emptyPool = await frameCounts();
+const kept = await page.evaluate(() => {
+  const pond = window.__pond;
+  const { resting } = pond.budget.things;
+  let state = 11;
+  const random = () => { state = (state * 16807) % 2147483647; return (state - 1) / 2147483646; };
+  const throwOne = () => pond.throwAt(-1.1 + 2.2 * random(), -2.1 + 2.2 * random(), { thing: 'stone' });
+  const stones = [];
+  for (let index = 0; index < resting; index++) { stones.push(throwOne()); pond.advance(0.3); }
+  pond.advance(5);
+  const settled = stones.filter((stone) => stone.state === 'rest').length;
+  pond.advance(41);   // past the 40 s that once took a stone at rest on the bed
+  const result = {
+    resting, settled,
+    keptAfter: stones.filter((stone) => pond.rocks.includes(stone)).length,
+    oneCall: stones.filter((stone) => !stone.meshAbove.visible && stone.meshBelow.visible).length,
+  };
+  const extra = throwOne();
+  for (let step = 0; step < 600 && !pond.rocks.some((rock) => rock.fading !== undefined); step++) pond.advance(1 / 60);
+  const fading = pond.rocks.find((rock) => rock.fading !== undefined);
+  result.oldestFades = fading === stones[0];
+  pond.advance(0.3);
+  result.partway = fading ? { there: pond.rocks.includes(fading), scale: fading.meshBelow.scale.x } : null;
+  pond.advance(0.5);
+  result.gone = fading ? !pond.rocks.includes(fading) : false;
+  result.after = { kept: pond.budget.things.kept, extraKept: pond.rocks.includes(extra) };
+  return result;
+});
+const restingPool = await frameCounts();
+console.log(`  the pool on low: ${kept.settled} of ${kept.resting} stones at rest, ${kept.keptAfter} still there 41 s on, ${kept.oneCall} drawn once; ${emptyPool.calls} draw calls a frame empty, ${restingPool.calls} with them`);
+check(kept.settled === kept.resting && kept.keptAfter === kept.resting, `the preset's ${kept.resting} stones at rest on the pool's floor all stay, 41 s on (${kept.keptAfter})`);
+check(kept.oneCall === kept.resting && restingPool.calls - emptyPool.calls <= kept.resting + 2, `a stone at rest under the water is one draw call (${kept.oneCall} of ${kept.resting} with the part above hidden; ${restingPool.calls - emptyPool.calls} calls for them)`);
+check(kept.oldestFades && kept.partway?.there && kept.partway.scale > 0.05 && kept.partway.scale < 0.95 && kept.gone && kept.after.kept === kept.resting && kept.after.extraKept,
+  `one more at rest shrinks the oldest away, not at once (the oldest: ${kept.oldestFades}; partway ${kept.partway ? `there, at ${kept.partway.scale.toFixed(2)} of its size` : 'never'}; then gone: ${kept.gone}; ${kept.after.kept} kept)`);
+await page.evaluate(() => { const pond = window.__pond; pond.clear(); pond.setClarity('lake'); pond.setQuality('high'); pond.advance(0.1); });
 // The world's step is fixed (src/main.js simulate, src/rock.js PHYSICS_STEP): the same throw, drawn 60 times a second or
 // at a frame rate that steps it unevenly (a slow-motion speed of 0.37: frames of 1/162 s), goes exactly where it went.
 const unevenly = await page.evaluate(() => {

@@ -116,12 +116,15 @@
 // water's height under each back from the GPU, without waiting). Each impact,
 // skip, floater's ring and knock sounds (src/sound.js; the Sound setting,
 // its own localStorage key, ?sound=off). In the pool the deck is
-// ground to anything thrown (src/pool.js poolGround). What is in sight
-// stays: a floater, or a thing at rest on the deck (keptInSight), goes only
-// when more than MAX_IN_SIGHT are kept (the oldest first) or a gale has
-// drifted it FARTHEST_AFLOAT away; a throw past MAX_ROCKS retires the
-// oldest thing out of sight (in the air, under the water, on the bed), and
-// a stone at rest on the bed goes after 40 s.
+// ground to anything thrown (src/pool.js poolGround). What comes to rest
+// stays, on the bed or the pool's floor as on the deck: the preset keeps
+// up to its `resting` things at rest and its `afloat` floaters (QUALITY: a
+// thing at rest is one draw call, src/rock.js syncMeshes, a floater costs
+// more, its physics, its ride and its mirror image), and up to MOVING_MOST
+// on the move (flying, skimming, sinking, tumbling); past a cap the oldest
+// of that kind shrinks away over FADE_SECONDS where it is, frozen
+// (keepWithinCaps, fadeOut), never vanishing at once. A floater a gale has
+// drifted FARTHEST_AFLOAT away goes at once, out of sight.
 //
 // The pool. The Pool water (WATER_CLARITIES.pool) puts the rocks in a tiled
 // pool instead of the lake: the solver's patch becomes a basin whose walls
@@ -244,9 +247,9 @@ import { createFloaterRide } from './floaterRide.js';
 // and every mesh takes 16-bit indices (at most 254 segments: Three.js keeps
 // the index 65535 for primitive restart).
 export const QUALITY = {
-  high: { grid: 512, meshSegments: 254, underScale: 1.0, fluidScale: 1.0, idleFrameRate: 0, maxDpr: 2.0, rings: 10, rainTexels: 512 },
-  medium: { grid: 256, meshSegments: 160, underScale: 0.5, fluidScale: 0.5, idleFrameRate: 30, maxDpr: 2.0, rings: 8, rainTexels: 256 },
-  low: { grid: 256, meshSegments: 128, underScale: 0.5, fluidScale: 0.5, idleFrameRate: 30, maxDpr: 1.5, rings: 6, rainTexels: 256 },
+  high: { grid: 512, meshSegments: 254, underScale: 1.0, fluidScale: 1.0, idleFrameRate: 0, maxDpr: 2.0, rings: 10, rainTexels: 512, resting: 40, afloat: 16 },
+  medium: { grid: 256, meshSegments: 160, underScale: 0.5, fluidScale: 0.5, idleFrameRate: 30, maxDpr: 2.0, rings: 8, rainTexels: 256, resting: 30, afloat: 14 },
+  low: { grid: 256, meshSegments: 128, underScale: 0.5, fluidScale: 0.5, idleFrameRate: 30, maxDpr: 1.5, rings: 6, rainTexels: 256, resting: 20, afloat: 12 },
 };
 export const PIXEL_BUDGET = 2.6e6;   // device pixels in the canvas, on every preset
 const QUALITY_ORDER = ['high', 'medium', 'low'];
@@ -278,8 +281,8 @@ const POND_MARGIN = 0.4;      // metres inside the solver's patch that a tap's t
 const MARGIN_RADII = 4;       // ...or this many of the rock's radius, if more: a 30 cm rock's splats reach 3 radii out
 const POOL_MARGIN = 0.25;     // metres inside the pool's walls a throw keeps to (or MARGIN_RADII of the rock's radius)
 const EYE_EDGE = 0.3;         // metres inside the pool's edge over which the deck's height eases in for the eye
-const MAX_ROCKS = 10;          // things out of sight (flying, sinking, on the bed) at once: a throw past this retires the oldest of them
-const MAX_IN_SIGHT = 12;       // things kept in sight (floaters, things at rest on the deck): only past this is the oldest of them retired
+const MOVING_MOST = 20;        // things on the move (flying, skimming, sinking, tumbling) at once: past this the oldest fades out (keepWithinCaps)
+const FADE_SECONDS = 0.6;      // a thing past a cap shrinks away over this long (fadeOut)
 const FARTHEST_AFLOAT = 30;    // m: a floater a gale has drifted this far from the pond is out of sight, and goes
 const CATCH_UP = 12;           // a frame moves the world at most this many of its steps (simulate: 50 ms; the old frame's 12 substeps)
 const TRACE = { points: 4000, step: 0.01, marks: 100, cross: 0.06 };   // a stone's traced path (setTracing): at most this many points, one per this many metres it moves; at most this many touches and arc tops marked; a touch's cross this many metres each way
@@ -805,7 +808,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     // A floater whose image is not where it now is (moving, or come to rest since it was last drawn), or one riding water
     // that moves under it (src/rock.js rideTheWater: the wind's waves, the solver's ripples, the rings, the rain's).
     const waterMoves = !skip.ambient || !water.asleep || rings.live > 0 || rain.on;
-    const floaters = skip.mirror ? nothingMirrored : rocks.filter((rock) => rock.meshMirror?.visible && ((rock.ridesWater && waterMoves) || !rock.meshMirror.position.equals(rock.mirroredAt ?? unmirrored)));
+    const floaters = skip.mirror ? nothingMirrored : rocks.filter((rock) => rock.meshMirror?.visible && (rock.fading !== undefined || (rock.ridesWater && waterMoves) || !rock.meshMirror.position.equals(rock.mirroredAt ?? unmirrored)));
     mirrorLevel.value = galeWaves.on && lastImpact && objects.length > 0 ? galeSurfaceAt(lastImpact.x, lastImpact.z) : 0;
     if (Math.abs(mirrorLevel.value - mirrorPlacedAt) > 1e-4 && !viewChanged) placeMirrorCamera();   // the splash's region is drawn again below
     if (viewChanged) {
@@ -1282,11 +1285,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     sceneMain.add(rock.meshAbove);
     sceneUnder.add(rock.meshBelow);
     if (rock.meshMirror) sceneMain.add(rock.meshMirror);
-    // The oldest out of sight goes first; one in sight only when there are too many of those (keptInSight).
-    for (const [kept, most] of [[false, MAX_ROCKS], [true, MAX_IN_SIGHT]]) {
-      const among = rocks.filter((candidate) => keptInSight(candidate) === kept);
-      for (let index = 0; among.length - index > most; index++) retireRock(among[index]);
-    }
+    keepWithinCaps();
     lastActivity = performance.now();
     return rock;
   }
@@ -1305,8 +1304,26 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     applyView();
   }
 
-  /** Whether a thing is kept in sight (the header): a floater, or at rest on the deck (or on its way there). */
-  function keptInSight(rock) { return rock.floats || rock.onGround || rock.state === 'ground'; }
+  /** What a thing counts against (keepWithinCaps): a floater; one at rest, on the bottom or the deck; or one on the move. */
+  function kindOf(rock) {
+    if (rock.floats) return 'afloat';
+    return rock.state === 'rest' ? 'resting' : 'moving';
+  }
+
+  /** Past a cap (the header: the preset's `resting` and `afloat`, MOVING_MOST), the oldest of that kind fades out. */
+  function keepWithinCaps() {
+    const most = { resting: settings.resting, afloat: settings.afloat, moving: MOVING_MOST };
+    const count = { resting: 0, afloat: 0, moving: 0 };
+    for (const rock of rocks) if (rock.fading === undefined) count[kindOf(rock)]++;
+    for (const rock of rocks) {   // the oldest first
+      if (rock.fading !== undefined) continue;
+      const kind = kindOf(rock);
+      if (count[kind] > most[kind]) { fadeOut(rock); count[kind]--; }
+    }
+  }
+
+  /** Start a thing shrinking away where it is (simulate: over FADE_SECONDS, then retireRock), frozen: no more steps or knocks. */
+  function fadeOut(rock) { rock.fading = 0; }
 
   /** Take a stone out of the scenes; keepMaterials frees only its geometry (warmUp keeps a stone's materials, so their program stays compiled). */
   function retireRock(rock, { keepMaterials = false } = {}) {
@@ -1579,9 +1596,10 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     finger.advance(frame);   // the finger's wake along its path this frame (src/touch.js)
     const end = simulationTime + frame;
     stepsTime = Math.max(stepsTime, simulationTime);
+    const stepping = rocks.filter((rock) => rock.fading === undefined);   // a thing fading out is frozen (fadeOut)
     while (stepsTime < end - 1e-12) {
       advanceSplash(stepsTime);
-      for (const rock of rocks) {
+      for (const rock of stepping) {
         // A gale drifts a floater downwind (src/rock.js); the pool has no gale's waves.
         if (rock.floats) rock.setDrift(galeWaves.on && !pooled ? galeWaves.windDirection : null);
         const impact = rock.update(PHYSICS_STEP, bedDepthAt, galeWaves.on ? galeSurfaceAt : null);
@@ -1594,7 +1612,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       }
       // A thing striking a floater, floaters bumping, the pool's walls turning things back (and a skipping stone off
       // their sides, src/pool.js): src/collide.js; the knocked floater rings and throws off spray.
-      for (const { ripple, knock } of collideThings(rocks, pooled ? (rock) => holdInPool(rock, pool.square) : null)) {
+      for (const { ripple, knock } of collideThings(stepping, pooled ? (rock) => holdInPool(rock, pool.square) : null)) {
         splash.ripple(ripple, water);
         splash.knock(knock);
         sound.knock({ speed: knock.closing, radius: ripple.rock.radius, bounce: ripple.rock.collisionBounce });
@@ -1602,12 +1620,17 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       stepsTime += PHYSICS_STEP;
     }
     advanceSplash(end);
-    for (const rock of rocks) rock.drawAt(1 - (stepsTime - end) / PHYSICS_STEP);
-    // A stone at rest on the bed goes after a while; what is kept in sight stays (the header), unless a gale drifts it out of sight.
+    for (const rock of rocks) rock.drawAt(rock.fading === undefined ? 1 - (stepsTime - end) / PHYSICS_STEP : 1);
+    // What is past a cap shrinks away (keepWithinCaps), and goes; a floater a gale drifts out of sight goes at once.
     for (const rock of [...rocks]) {
-      if (rock.restTime > 40 && !keptInSight(rock)) retireRock(rock);
-      else if (rock.floats && Math.hypot(rock.position.x, rock.position.z) > FARTHEST_AFLOAT) retireRock(rock);
+      if (rock.fading !== undefined) {
+        rock.fading += frame;
+        const left = 1 - THREE.MathUtils.smoothstep(rock.fading, 0, FADE_SECONDS);
+        if (left <= 0) retireRock(rock);
+        else for (const mesh of rock.meshes) mesh.scale.setScalar(left);
+      } else if (rock.floats && Math.hypot(rock.position.x, rock.position.z) > FARTHEST_AFLOAT) retireRock(rock);
     }
+    keepWithinCaps();   // things settle, and a lower preset keeps fewer
     if (!skip.solver) {
       // The solver sleeps once its waves and foam have faded and nothing of the splash is left (the header);
       // the profiler's 'solver kept awake' step keeps it stepping.
@@ -1747,6 +1770,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       programs: renderer.info.programs?.length ?? 0,
       solverAsleep: water.asleep,
       rings: { live: rings.live, fading: rings.fading, limit: rings.liveLimit, passes: rings.passesRun, fetches: rings.fetchesRun },
+      things: { kept: rocks.length, fading: rocks.filter((rock) => rock.fading !== undefined).length, resting: settings.resting, afloat: settings.afloat, moving: MOVING_MOST },
       wind: windName,
       gale: { blowing: galeWaves.on, sheetTriangles: surface.sheetTriangles },
       rain: { weather: weatherName, falling: rain.on, texels: rain.texels },

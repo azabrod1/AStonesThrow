@@ -956,7 +956,8 @@ export class Rock {
     // The ground's height at (x, z), or null over the water: the pool's deck (src/pool.js poolGround, given by src/main.js; the header).
     this.groundAt = null;
     this.groundHeight = 0;         // the ground's height under a thing tumbling or rolling along it (`ground`)
-    this.onGround = false;         // at rest on the ground (restOn), in sight as a floater is (src/main.js)
+    this.onGround = false;         // at rest on the ground (restOn)
+    this.fading = undefined;       // seconds into shrinking away, once src/main.js has begun it (fadeOut): frozen, it is no longer stepped
     this.drawn = { surface: 0, bedDepth: 1 };   // the water it was last drawn on (syncMeshes), for a knock's redraw
     this.age = 0;
     this.restTime = 0;
@@ -1422,6 +1423,13 @@ export class Rock {
     // Cut at the water: by a plane at its height over it (a floater that rides the water cuts itself at its true surface, rideTheWater).
     if (this.meshAbove.material.clippingPlanes.length) this.meshAbove.material.clippingPlanes[0].constant = -surface;   // keeps y ≥ surface
     if (this.meshBelow.material.clippingPlanes.length) this.meshBelow.material.clippingPlanes[0].constant = surface;    // keeps y ≤ surface
+    // At rest wholly under the water (on the bed) its part above the water draws nothing, and wholly out of it (on the
+    // deck) its part below: hidden, a thing at rest costs one draw call, not two (src/main.js keeps tens of them).
+    if (!this.floats) {
+      const resting = this.state === 'rest', centre = this.position.y + lift, reach = this.reach * this.radius;
+      this.meshAbove.visible = !(resting && centre + reach < surface);
+      this.meshBelow.visible = !(resting && centre - reach > surface);
+    }
     if (this.meshMirror) {
       if (this.meshMirror.material.clippingPlanes.length) this.meshMirror.material.clippingPlanes[0].constant = -surface;
       // Only what stands out of the water enough to show in it: a flat thing's image (a pizza's) would be a sliver, which
@@ -1468,7 +1476,7 @@ export class Rock {
     if (this.density >= WATER_DENSITY && this.floats) {
       this.floats = false;
       this.afloat = false;
-      this.restTime = 0;   // its time at rest afloat is over: on the bed it is counted afresh (src/main.js retires it 40 s on)
+      this.restTime = 0;   // its time at rest afloat is over: on the bed it is counted afresh
       this.state = 'water';
       this.body.water = underWater(this.density, this.thing.water.restingHeight);
       Object.assign(this.body, { x: this.position.x, y: this.position.y, z: this.position.z, vx: this.velocity.x, vy: this.velocity.y, vz: this.velocity.z, resting: false, openUntil: -1 });
