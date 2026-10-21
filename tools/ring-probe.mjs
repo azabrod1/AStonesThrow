@@ -63,8 +63,10 @@
 //      5 s at random places on the water in view, for 60 s, then quiet): how
 //      many rings live, the profile passes' fetches, and the lookups the
 //      water's pixels (the home view on a desktop and a phone's), the floor's
-//      and the inner patch's vertices make, at each quality preset's limit
-//      of live rings; and the CPU's: planning a source (once),
+//      (of the rings its caustics take, RingSources.updateCaustics) and the
+//      inner patch's vertices make, at each quality preset's limit of live
+//      rings, and with a stone every 1.5 s at High's and Low's (which that
+//      fills); and the CPU's: planning a source (once),
 //      Rings.update's bookkeeping (each frame, on a stand-in renderer), and
 //      a zoom's planning the live rings again, which must take one a frame.
 // With --gpu (or --gpu=half, the half-float path) it also loads the page
@@ -85,7 +87,7 @@ import { QUALITY } from '../src/main.js';
 import {
   RingSources, Rings, planSource, innerRadius, outerRadius, usedCount, nearField, texelsBetween, ringFrequency, ringGroupSpeed, ringDamping, splatSpectrum, profileRadius,
   INNER_SHARE, SLOWEST_GROUP_SPEED, PROFILE_TEXELS, PROFILE_MAPPING, DIRECT_LIMIT, TAPER_START, SLOPE_VISIBLE, RING_DAMPING, RING_SOURCE, REACH, WINDOW,
-  MAX_RINGS, MAX_WAVENUMBERS, MAX_GROUPS, COEFFICIENT_SCALE, RING_TEXTURE_UNITS, FADE_SECONDS,
+  MAX_RINGS, MAX_WAVENUMBERS, MAX_GROUPS, COEFFICIENT_SCALE, RING_TEXTURE_UNITS, FADE_SECONDS, CAUSTIC_RINGS, CAUSTIC_FADE_SECONDS,
 } from '../src/rings.js';
 
 const started = performance.now();
@@ -886,7 +888,9 @@ console.log('  per pixel and ring whose annulus holds it: the water fragment one
  * the rings drawn (live and fading), the profile passes' fetches, and the
  * ring lookups the water's pixels, the floor's and the inner patch's
  * vertices make (`views`: their water points, each standing for its share of
- * the screen's pixels). With `camera` (HOME_VIEWS) the rings retire by it.
+ * the screen's pixels; the floor's look up only the rings its caustics take,
+ * the youngest updateCaustics counts with a share). With `camera`
+ * (HOME_VIEWS) the rings retire by it.
  */
 function minuteOfThrowing(liveLimit, views, throws, camera = null) {
   const book = new RingSources({ depth: POND_DEPTH, liveLimit, camera });
@@ -901,24 +905,26 @@ function minuteOfThrowing(liveLimit, views, throws, camera = null) {
   for (let time = 0; time < 300; time += 0.5) {
     while (next < pending.length && pending[next].time <= time) { book.add(pending[next].splat, pending[next].time); next++; }
     book.retire(time);
+    const causticRings = book.updateCaustics(time);
     if (next === pending.length && book.sources.length === 0) break;
     let fetches = 0;
     const annuli = book.sources.map((source) => {
       const inner = innerRadius(source, time), outer = Math.max(outerRadius(source, time), inner);
       fetches += texelsBetween(inner, outer, source.plan.reach) * usedCount(source, time);
-      return { x: source.centreX, z: source.centreZ, inner, outer };
+      return { x: source.centreX, z: source.centreZ, inner, outer, caustic: source.caustic };
     });
+    const causticAnnuli = annuli.slice(annuli.length - causticRings).filter((annulus) => annulus.caustic > 0);
     const lookups = views.map((view) => {
       let total = 0;
       for (const point of view.points) {
-        for (const annulus of annuli) {
+        for (const annulus of view.caustics ? causticAnnuli : annuli) {
           const radius = Math.hypot(point.x - annulus.x, point.z - annulus.z);
           if (radius >= annulus.inner - point.margin && radius < annulus.outer + point.margin) total += point.weight;
         }
       }
       return total;
     });
-    samples.push({ time, live: book.sources.filter((source) => !source.fading).length, fading: book.sources.filter((source) => source.fading).length, fetches, lookups });
+    samples.push({ time, live: book.sources.filter((source) => !source.fading).length, fading: book.sources.filter((source) => source.fading).length, caustics: causticAnnuli.length, fetches, lookups });
   }
   return samples;
 }
@@ -942,7 +948,7 @@ function viewPoints({ width, height, fov, floor = false, columns = 96, rows = 96
       points.push({ x, z, weight, margin: floor ? 0.02 : 0 });
     }
   }
-  return { points };
+  return { points, caustics: floor };
 }
 /** The inner patch's vertices on high (a grid over the solver's 6 m square). */
 function patchVertices(segments) {
@@ -964,21 +970,29 @@ function patchVertices(segments) {
   const views = [desktop, phone, desktopFloor, patchVertices(254)];
   console.log(`  a minute of throwing: ${throws.length} default stones (6 cm) thrown normally every 3 to 5 s at random places in view for 60 s, then quiet; per frame, the rings drawn (live + fading), the profile passes' fetches, and ring lookups by the water's pixels (desktop 1920×1080 at 48°, phone 1084×2346 at 62°), the floor's (desktop) and the inner patch's 255² vertices`);
   // Every layer live and no camera (the rings as they would be with neither
-  // bound), then each preset's limit with the camera they retire by.
+  // bound), then each preset's limit with the camera they retire by; then a
+  // stone every 1.5 s, which fills High's live rings and Low's.
   const runs = [{ limit: MAX_RINGS, view: null }, ...Object.entries(QUALITY).flatMap(([name, preset]) => (name === 'high' ? HOME_VIEWS : HOME_VIEWS.filter((view) => view.name === 'phone')).map((view) => ({ limit: preset.rings, view })))];
-  for (const { limit, view } of runs) {
-    const samples = minuteOfThrowing(limit, views, throws, view ? view.camera : null);
+  const rapidThrows = [];
+  for (let time = 0.5; time < 60; time += 1.5) {
+    const aim = { x: -1.6 + 3.2 * random(), z: -3.4 + 3.6 * random() };
+    rapidThrows.push({ time, source: splashRings(0.03, { aim, seed: 1 + Math.floor(random() * 1e6) }).sources[0] });
+  }
+  const rapidRuns = [{ limit: QUALITY.high.rings, view: HOME_VIEWS.find((view) => view.name === 'desktop'), rapid: true }, { limit: QUALITY.low.rings, view: HOME_VIEWS.find((view) => view.name === 'phone'), rapid: true }];
+  for (const { limit, view, rapid } of [...runs, ...rapidRuns]) {
+    if (rapid && limit === QUALITY.high.rings) console.log(`  the same with ${rapidThrows.length} stones, one every 1.5 s for 60 s:`);
+    const samples = minuteOfThrowing(limit, views, rapid ? rapidThrows : throws, view ? view.camera : null);
     const during = samples.filter((sample) => sample.time >= 20 && sample.time < 60);
     const after = samples.filter((sample) => sample.time >= 60);
     const mean = (rows, pick) => rows.reduce((sum, row) => sum + pick(row), 0) / Math.max(rows.length, 1);
     const most = (rows, pick) => rows.reduce((best, row) => Math.max(best, pick(row)), 0);
     const millions = (value) => (value / 1e6).toFixed(1);
     const names = Object.entries(QUALITY).filter(([, preset]) => preset.rings === limit).map(([name]) => name);
-    console.log(`    at most ${limit} live${names.length ? ` (${names.join(', ')})` : ' (every layer)'}, ${view ? `retiring by the ${view.name}'s view` : 'retiring by the slope alone'}: while throwing (20 to 60 s) ${mean(during, (row) => row.live + row.fading).toFixed(1)} rings drawn on average, at most ${most(during, (row) => row.live + row.fading)}; ${millions(mean(during, (row) => row.fetches))} M profile fetches a frame (at most ${millions(most(during, (row) => row.fetches))}); lookups ${millions(mean(during, (row) => row.lookups[0]))} M desktop water, ${millions(mean(during, (row) => row.lookups[1]))} M phone water (at most ${millions(most(during, (row) => row.lookups[1]))}), ${millions(mean(during, (row) => row.lookups[2]))} M desktop floor, ${millions(mean(during, (row) => row.lookups[3]))} M patch vertices`);
+    console.log(`    at most ${limit} live${names.length ? ` (${names.join(', ')})` : ' (every layer)'}, ${view ? `retiring by the ${view.name}'s view` : 'retiring by the slope alone'}: while throwing (20 to 60 s) ${mean(during, (row) => row.live + row.fading).toFixed(1)} rings drawn on average, at most ${most(during, (row) => row.live + row.fading)}; ${millions(mean(during, (row) => row.fetches))} M profile fetches a frame (at most ${millions(most(during, (row) => row.fetches))}); lookups ${millions(mean(during, (row) => row.lookups[0]))} M desktop water, ${millions(mean(during, (row) => row.lookups[1]))} M phone water (at most ${millions(most(during, (row) => row.lookups[1]))}), ${millions(mean(during, (row) => row.lookups[2]))} M desktop floor (its caustics taking ${mean(during, (row) => row.caustics).toFixed(1)} rings, at most ${most(during, (row) => row.caustics)}), ${millions(mean(during, (row) => row.lookups[3]))} M patch vertices`);
     const last = samples[samples.length - 1];
     console.log(`      after the last throw: ${mean(after.slice(0, 20), (row) => row.live + row.fading).toFixed(1)} rings drawn over its first 10 s, ${millions(mean(after.slice(0, 20), (row) => row.fetches))} M fetches, ${millions(mean(after.slice(0, 20), (row) => row.lookups[1]))} M phone lookups a frame; the last ring retires ${(last.time - 60).toFixed(0)} s after it`);
   }
-  console.log(`  (a ring pushed out by a newer one fades out over ${FADE_SECONDS} s in a spare layer: at most ${MAX_RINGS} layers in all)`);
+  console.log(`  (a ring pushed out by a newer one fades out over ${FADE_SECONDS} s in a spare layer: at most ${MAX_RINGS} layers in all; the floor's caustics take the youngest ${CAUSTIC_RINGS} live rings, an older one leaving them over ${CAUSTIC_FADE_SECONDS} s)`);
 }
 {
   // The CPU: planning a source, once; Rings.update's bookkeeping every frame (on a stand-in renderer that draws nothing).

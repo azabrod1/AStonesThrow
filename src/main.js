@@ -231,9 +231,12 @@ import { createFloaterRide } from './floaterRide.js';
 //   fluidScale    the splash's fluid buffers', of the canvas's;
 //   idleFrameRate the frame rate of a pond where nothing happens (0: every frame);
 //   maxDpr        the cap on device pixels per CSS pixel;
-//   rings         the stones' rings drawn at once (src/rings.js): a newer one
-//                 makes the faintest fade out. Each costs every water pixel
-//                 its waves cover a lookup, and a pass a frame;
+//   rings         the stones' rings live at once (src/rings.js): past them a
+//                 newer one makes the one closest to retiring, the faintest
+//                 as a rule, fade out over FADE_SECONDS (8 s), too slowly to
+//                 see. Each costs every water pixel its waves cover a lookup,
+//                 and a pass a frame; the floor's caustics take only the
+//                 youngest CAUSTIC_RINGS (6) on every preset;
 //   rainTexels    the rain's tile's texels per side (src/rain.js, 1 m): 512
 //                 resolves its rings' shortest crests, 256 blurs them a little.
 // Every target keeps its format on every preset, so a program drawn under the
@@ -241,9 +244,9 @@ import { createFloaterRide } from './floaterRide.js';
 // and every mesh takes 16-bit indices (at most 254 segments: Three.js keeps
 // the index 65535 for primitive restart).
 export const QUALITY = {
-  high: { grid: 512, meshSegments: 254, underScale: 1.0, fluidScale: 1.0, idleFrameRate: 0, maxDpr: 2.0, rings: 10, rainTexels: 512 },
-  medium: { grid: 256, meshSegments: 160, underScale: 0.5, fluidScale: 0.5, idleFrameRate: 30, maxDpr: 2.0, rings: 8, rainTexels: 256 },
-  low: { grid: 256, meshSegments: 128, underScale: 0.5, fluidScale: 0.5, idleFrameRate: 30, maxDpr: 1.5, rings: 6, rainTexels: 256 },
+  high: { grid: 512, meshSegments: 254, underScale: 1.0, fluidScale: 1.0, idleFrameRate: 0, maxDpr: 2.0, rings: 24, rainTexels: 512 },
+  medium: { grid: 256, meshSegments: 160, underScale: 0.5, fluidScale: 0.5, idleFrameRate: 30, maxDpr: 2.0, rings: 12, rainTexels: 256 },
+  low: { grid: 256, meshSegments: 128, underScale: 0.5, fluidScale: 0.5, idleFrameRate: 30, maxDpr: 1.5, rings: 8, rainTexels: 256 },
 };
 export const PIXEL_BUDGET = 2.6e6;   // device pixels in the canvas, on every preset
 const QUALITY_ORDER = ['high', 'medium', 'low'];

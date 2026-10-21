@@ -95,7 +95,7 @@ the work a frame does: High runs the 512² solver, a 254-segment water mesh
 and full-resolution targets; Medium and Low a 256² solver, 160 and 128
 segments, the under-water view and the mirror image at half resolution and
 the splash's buffers at half, and draw a pond where nothing happens at 30
-frames a second; High keeps 10 stones' rings, Medium 8 and Low 6. The
+frames a second; High keeps 24 stones' rings, Medium 12 and Low 8. The
 canvas never holds more than 2.6 million pixels.
 Core stone/splash programs are compiled while the page loads, under its
 veil: a stone is thrown and drawn there, then cleared away. Rain and gale
@@ -176,15 +176,18 @@ first second. While any ring lives, a GPU pass evaluates each ring's
 spectrum at the frame's time and one pass per ring sums it into a radial
 profile of height and slope out to its reach (2 to 40 m), mipmapped; the
 water adds every ring's slope to its normal everywhere and its height to
-the inner patch, the floor its curvature to the caustics, the foam specks
-and a crown's foot ride it. A ring costs a pixel only between the water it
-has left and its leading waves, and its passes sum only the waves the film
-has not yet damped. A ring retires once no slope of it is steeper than
+the inner patch, the floor the curvature of the youngest six to the
+caustics (a ring's curvature falls fast as its waves lengthen; an older
+one's light fades out over 3 s), the foam specks and a crown's foot ride
+it. A ring costs a pixel only between the water it has left and its
+leading waves, and its passes sum only the waves the film has not yet
+damped. A ring retires once no slope of it is steeper than
 1e-4 as the view's pixels can show it (each averages it over its own
 footprint), under a third of a pixel's turn of the mirror image: the
 reference stone's after about a minute and a half, by then 35 m out; a
-1.5 cm pebble's after 50 s. At most 10 rings live on High (8 on Medium, 6
-on Low); a newer one makes the faintest fade out over 1.5 s. With no ring
+1.5 cm pebble's after 50 s. At most 24 rings live on High (12 on Medium,
+8 on Low); a newer one makes the one closest to retiring, the faintest as
+a rule, fade out over 8 s, so slowly that nobody sees it go. With no ring
 alive there is no pass and no cost per pixel. `RING_SOURCE.strength`
 scales every ring source (1: as fitted).
 
