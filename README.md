@@ -46,7 +46,10 @@ is remembered on the device (but the view, which opens on the shore):
   and soaks. A pie's filling is drawn at random too: apple and pumpkin float
   low, cherry and blueberry sink. Plates use the same direction-aware water
   forces while entering, floating and sinking: their face takes the drag and
-  carries water, their edge meets skin drag, and the flow turns them broadside.
+  carries water, their edge meets skin and rim drag, and under the water the
+  flow turns them broadside (at the surface they plane, and float level). A
+  pie's weight sits a little low in it, so under the water it turns back
+  right way up.
   Wetting progressively slows the face rather than instantly stopping it;
   plates make spray and rings without a sphere-shaped cavity. Wetting uses
   submerged volume as a proxy for wetted face area; ventilation and a resolved

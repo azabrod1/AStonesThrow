@@ -36,7 +36,9 @@
 //     cut along, and the faces it settles onto on the deck (src/rock.js
 //     restOn). body.ballast, its centre of mass off its volume's middle, in
 //     radii of its own frame (a rubber duck's heavy base, [0, -0.2, 0]): the
-//     water turns it about that, so a duck rights itself.
+//     water turns it about that, so a duck rights itself (a pie, [0, -0.06,
+//     0], under the water); on the deck only one weighted as low as a duck
+//     rolls onto its base (src/rock.js GROUND.rightsFrom).
 //   - body.soft, a soft thing's give (a pizza's): a spring that the air cups
 //     in flight, steadying it, and the water and the deck fling (src/rock.js
 //     Rock.bendStep, drawn by Rock.flex); its `drape`, how far, afloat, it is
@@ -511,12 +513,15 @@ defineBuiltIn('frozen-pizza', {
 // A fruit pie in its tin, thrown flat (a plate in the air, as a pizza is), its filling drawn at random as it is thrown
 // (src/thingMeshes.js pieFilling): an apple pie (its sizes' masses) about 860 kg/m³ floats low, a pumpkin one lower,
 // and cherry and blueberry, a fifth heavier, sink. Its crimped rim keeps the water off its top; its pastry soaks a little,
-// where its tin does not hold the water off (never enough to sink a pie that floats).
+// where its tin does not hold the water off (never enough to sink a pie that floats). Its tin and filling are low in
+// it, the air under its crust high (what floats an apple pie): its weight is a little under its volume's middle
+// (`ballast`), so under the water it turns back right way up, where the flow had turned it on its edge.
 defineBuiltIn('pie', {
   name: 'Pie', group: 'Other', note: 'Filled at random: it floats or sinks', called: 'a pie',
   body: {
     shape: 'mesh',
     upright: true,
+    ballast: [0, -0.06, 0],
     size: { by: 'preset', unit: 'size', initial: 2, presets: [{ value: 1, name: 'Tart', label: '12 cm', diameter: 0.12, mass: 0.185 }, { value: 2, name: 'Pie', label: '23 cm', diameter: 0.23, mass: 1.3 }, { value: 3, name: 'Family', label: '28 cm', diameter: 0.28, mass: 2.3 }] },
   },
   material: { bounce: [0.04, 0.1], friction: 0.8 },

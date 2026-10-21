@@ -202,11 +202,13 @@
 //
 // Plates use one water model from first wetting through bobbing or sinking
 // (plateWaterStep, turnAfloat). Drag and added mass act across the face;
-// along it there is skin drag. As more of the face wets, its added mass
-// takes normal momentum, giving the slap over the first few steps. The
-// Munk moment turns a moving plate broadside; the displaced volume's lever
-// turns it at the surface. The disc's added rotational inertia resists that
-// turn. Both light and dense plates use this model, so there is no sphere
+// along it there is skin drag and its rim's, edge-on (PLATE_WATER). As more
+// of the face wets, its added mass takes normal momentum, giving the slap
+// over the first few steps. Under the water the Munk moment turns a moving
+// plate broadside; at the surface, where it planes, the displaced volume's
+// lever turns it level. The disc's added rotational inertia resists the
+// turning; a pie's weight, a little low in it (`body.ballast`), turns it
+// back right way up under the water. Both light and dense plates use this model, so there is no sphere
 // cavity or orientation-independent underwater path for a plate.
 //
 // What the water does to it (soak, showWet): out of the water a thing is
@@ -333,7 +335,8 @@ const GROUND = {
   stopped: 0.05,               // m/s: ...and either rests once slower than this
   tumble: 0.5,                 // a stone turns end over end at this times its speed over its radius (it skids as it tumbles)...
   tumbleMost: 60,              // ...at most this (rad/s)
-  settleSeconds: 0.25,         // s: a thing kept upright settles onto the face it lies on over this (Rock.restOn)
+  settleSeconds: 0.25,         // s: a thing kept upright settles onto the face it lies on over this (Rock.restOn)...
+  rightsFrom: 0.1,             // ...onto its base if its `body.ballast` is this far down (radii: a duck's, not a pie's)
 };
 // A flat thing's flight (`air.model` 'flutter', src/things.js: a pizza; the header): a plate in the air, its attitude its
 // own, turned by the air's push and its spin. The push on its face is ½ρv²·πR² times C_N(α) = `slope`·sin α·cos² α +
@@ -354,7 +357,13 @@ const BEND = { damping: 0.25, wetDamping: 0.6, splat: 0.04, limp: 0.6 };
 // A disc's added mass normal to its face: (4/3)ρR³ at the free surface,
 // (8/3)ρR³ submerged. Wetting ramps over `wetted` of its volume under water;
 // this is a coarse waterline estimate, not a resolved free-surface solver.
-const PLATE_WATER = { slam: 4 / 3, wetted: 0.1 };
+// Along its face, besides its skin's drag, its rim meets the water edge-on:
+// a bluff edge's drag `edge` on its rim's frontal area, 2·V/(π·R_face) (a
+// pie's tin, 3.5 cm deep, about six times its skin's; a pizza's twice), so
+// a plate slides along its face for a few of its radii, not metres. The
+// flow's turning (the Munk moment, turnAfloat) is full only `munkDepth` of
+// its radius under: at the surface it planes.
+const PLATE_WATER = { slam: 4 / 3, wetted: 0.1, edge: 1.0, munkDepth: 1 };
 // The water on it (Rock.soak): out of the water it dries over `drySeconds`; a soaking thing at rest afloat floats again
 // to find its new height every `settleSeconds`, if it has sunk FLOAT.settledOffset since. A frozen thing (`water.thaws`)
 // thaws `airThaw` as fast in air as in water (the water carries its heat to it some fifteen times faster).
@@ -2120,9 +2129,11 @@ export class Rock {
     const normal = relative.dot(face);
     const along = scratch.along.copy(relative).addScaledVector(face, -normal);
     const added = this.plateAddedMass(share);
-    const wetArea = Math.PI * this.radius ** 2 * Math.min(share / PLATE_WATER.wetted, 1);
+    const wetted = Math.min(share / PLATE_WATER.wetted, 1);
+    const wetArea = Math.PI * this.radius ** 2 * wetted;
+    const rimArea = 2 * (this.mass / this.density) / (Math.PI * this.faceRadius) * wetted;   // its rim, edge-on (PLATE_WATER)
     const normalDrag = 0.5 * WATER_DENSITY * this.thing.air.drag * wetArea * Math.abs(normal);
-    const skinDrag = 0.5 * WATER_DENSITY * PLATE.skin * wetArea * along.length();
+    const skinDrag = 0.5 * WATER_DENSITY * (PLATE.skin * wetArea + PLATE_WATER.edge * rimArea) * along.length();
     const normalMass = this.mass + added;
     const normalDenominator = normalMass + normalDrag * dt;
     const tangentDenominator = this.mass + (skinDrag + this.mass * FLOAT.slowing * Math.min(4 * share, 1)) * dt;
@@ -2204,11 +2215,14 @@ export class Rock {
       dampXZ = damping * (plane.xz - x * plane.z - z * plane.x + x * z * plane.area);
     }
     if (this.plate) {
-      // Munk moment: an edge-first disc turns broadside to its relative flow.
+      // Munk moment: an edge-first disc turns broadside to its relative flow. It is deep water's: at the surface a plate
+      // planes, the water under it only, and its pressure and its displaced volume's lever turn it level, so the moment
+      // grows in only as its top goes under, in full PLATE_WATER.munkDepth of its radius down.
       const face = scratch.face.copy(this.shape.axes[2]).applyQuaternion(quaternion);
       const flow = scratch.force.copy(this.velocity);
       flow.x -= this.drift.x; flow.z -= this.drift.z;
-      torque.addScaledVector(scratch.pressure.crossVectors(face, flow), this.carriedWater * face.dot(flow));
+      const under = Math.min(Math.max(-(this.position.y + line.high) / (PLATE_WATER.munkDepth * radius), 0), 1);
+      torque.addScaledVector(scratch.pressure.crossVectors(face, flow), under * this.carriedWater * face.dot(flow));
     }
     // Its principal moments (principal: its shape's, with the water it carries) and Euler's equations (eulerTurn), the
     // damping then taken implicitly about the level axes.
@@ -2274,8 +2288,9 @@ export class Rock {
    * Come to rest where it is, its lowest point at `height` (it tumbled or
    * rolled to a stop on the ground). A thing kept upright (`body.upright`: a
    * pizza, a pie, a duck) settles onto a face it can lie on over
-   * GROUND.settleSeconds (settleStep): one ballasted low (a duck) onto its
-   * base, anything else onto whichever of its top or bottom is nearer down.
+   * GROUND.settleSeconds (settleStep): one ballasted low (GROUND.rightsFrom:
+   * a duck) onto its base, anything else (a pie, its weight only a little
+   * low) onto whichever of its top or bottom is nearer down.
    */
   restOn(height) {
     this.groundHeight = height;
@@ -2285,7 +2300,7 @@ export class Rock {
     this.onGround = true;
     if (this.thing.body.upright) {
       const up = scratch.face.copy(this.uprightAxis).applyQuaternion(this.quaternion);
-      const down = (this.thing.body.ballast?.[1] ?? 0) < 0 || up.y >= 0 ? UP : scratch.along.set(0, -1, 0);
+      const down = (this.thing.body.ballast?.[1] ?? 0) <= -GROUND.rightsFrom || up.y >= 0 ? UP : scratch.along.set(0, -1, 0);
       const turn = new THREE.Quaternion().setFromUnitVectors(up, down);
       this.settling = turn.w < 0.9999 ? { from: this.quaternion.clone(), to: turn.multiply(this.quaternion), time: 0 } : null;
     }

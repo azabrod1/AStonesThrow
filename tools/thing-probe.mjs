@@ -71,7 +71,8 @@
 //     definition is refused, with what is wrong with it;
 //   - floating plates meet the water across a grid of targets, sizes and
 //     powers: no deep dives or fast submerged rise, including review seed
-//     41514; a wet plate's inertia and drag distinguish its face and edge;
+//     41514, and of the larger ones at most PLATE_OVERTURNED upside down;
+//     a wet plate's inertia and drag distinguish its face and edge;
 //     a pizza soaks and, waterlogged after 2 to 7 minutes, sinks
 //     slowly, as a plate does (3 to 30 cm/s), to rest flat on the bed; a
 //     frozen one is rigid (the air does not cup it), thaws over minutes, its
@@ -81,11 +82,12 @@
 //     cheese; apple and pumpkin pies float, cherry and blueberry sink;
 //   - a rubber duck let go on the water at any angle rights itself (its
 //     ballast) and rests within 5 s; dropped upside down on the deck, it,
-//     and a pizza dropped tilted, settles onto its base;
+//     and a pizza dropped tilted, settles onto its base; a pie dropped
+//     upside down stays so;
 //   - a pizza thrown with Skip skips, twice on average at normal strength;
 //   - halving the substep moves a floater's highest bob by under
 //     STEP_TOLERANCE and its rest not at all;
-//   - a floater's step costs under STEP_COST_MS.
+//   - a floater's middle step costs under STEP_COST_MS.
 //
 //   node tools/thing-probe.mjs
 import * as THREE from 'three';
@@ -108,6 +110,7 @@ const FIXED_THROW_MS = 1;              // ms: the most making a prepared thing (
 const STONE_LOAD_MS = 3;               // ...unless a river stone's throw takes more than this (a busy machine: it takes 2.2 ms on a quiet one)...
 const STONE_SHARE = 1 / 3;             // ...when it may take this share of a stone's
 const STEP_COST_MS = 0.05;
+const PLATE_OVERTURNED = 0.1;          // of the plates thrown (30 cm pizzas and up, 23 cm pies and up): the most that come up upside down
 const PIZZA_RIGHTS_SECONDS = 8;        // s: a pizza let go on the water at any angle lies flat by then
 const COLUMN_VOLUME = 0.02;           // of a floater's volume: its buoyancy's columns (src/rock.js buoyancyColumns) hold its mesh's to this
 const OVERLAP_MOST = 0.002;            // m
@@ -161,7 +164,7 @@ function throwThing(name, { x = 0, z = -1.4, power = 'normal', value, pooled = f
 
 /** Steps a thing until it rests (or `seconds`), recording what the probe reports. */
 function follow(rock, { seconds = 30, step = STEP, floor = floorDepthAt, pooled = false } = {}) {
-  const record = { crossing: null, deepest: 0, surfaced: null, highestBob: -Infinity, ripples: 0, impacts: 0, fastestSink: 0, restAt: null, cost: 0, floatSteps: 0, apexes: [], states: new Set() };
+  const record = { crossing: null, deepest: 0, surfaced: null, highestBob: -Infinity, ripples: 0, impacts: 0, fastestSink: 0, restAt: null, cost: 0, floatSteps: 0, stepCosts: [], apexes: [], states: new Set() };
   let previousY = rock.position.y, rising = false;
   for (let time = 0; time < seconds; time += step) {
     const wasAir = rock.state === 'air';
@@ -169,7 +172,7 @@ function follow(rock, { seconds = 30, step = STEP, floor = floorDepthAt, pooled 
     const started = performance.now();
     const impact = rock.update(step, floor);
     const spent = performance.now() - started;
-    if (rock.state === 'float') { record.cost += spent; record.floatSteps++; }
+    if (rock.state === 'float') { record.cost += spent; record.floatSteps++; record.stepCosts.push(spent); }
     if (pooled) collideThings([rock], (thing) => holdInPool(thing, POOL_SQUARE));
     record.states.add(rock.state);
     if (impact?.ripple) record.ripples++;
@@ -246,10 +249,10 @@ for (const name of THING_NAMES) {
         check(columns && Math.abs(held - 1) < COLUMN_VOLUME, `${label}: its buoyancy's columns hold ${(100 * held).toFixed(1)}% of its volume`);
       }
       if (rock.thing.body.upright) {
-        // A plate may settle either face up; a ballasted duck rights itself. Its highest point (a pizza's crust, a pie's rim, a duck's head) over the water.
+        // Its top up and out of the water: its own +y up, its highest point (a pizza's crust, a pie's rim, a duck's head) over the water.
         const up = new THREE.Vector3(0, 1, 0).applyQuaternion(rock.quaternion).y, top = rock.position.y + rock.waterline(rock.position.y).high;
         line += `; its top ${up > 0 ? 'up' : 'down'}, ${centimetres(top)} cm out of the water`;
-        check((rock.plate ? Math.abs(up) > 0.98 : up > 0.98) && top > 0, `${label}: afloat with its top ${up > 0 ? 'up' : 'down'}, ${centimetres(top)} cm out of the water`);
+        check(up > 0.98 && top > 0, `${label}: afloat with its top ${up > 0 ? 'up' : 'down'}, ${centimetres(top)} cm out of the water`);
       }
     } else {
       const bed = floorDepthAt(rock.position.x, rock.position.z);
@@ -509,6 +512,7 @@ console.log('\nWaterlogged, thawing, draping (src/rock.js soak, showWet, drape):
 console.log('\nPlates meeting the water across targets, sizes and powers (including review seed 41514)');
 {
   let most = 0, tested = 0, fastestRise = 0;
+  const overturned = {};   // of the floaters 30 cm and up (a pie 23): how many came up upside down
   for (const name of ['pizza', 'frozen-pizza', 'pie']) {
     for (const value of [1, 2, 3]) for (const power of ['soft', 'normal', 'hard']) {
       for (const x of [-1.5, 0, 1.5]) for (const z of [-0.5, -1.4, -2.5]) for (const seed of [41514, 104729]) {
@@ -531,12 +535,19 @@ console.log('\nPlates meeting the water across targets, sizes and powers (includ
         if (floats) {
           check(touched && deepest < 0.7 && !deepReturn && rise < 0.7, `${label}: depth ${deepest.toFixed(3)} m, submerged rise ${rise.toFixed(3)} m/s, jumped out ${deepReturn}`);
           most = Math.max(most, deepest); fastestRise = Math.max(fastestRise, rise);
+          if (value >= 2) {
+            const counts = overturned[name] ??= { down: 0, of: 0 };
+            counts.of++;
+            if (rock.uprightAxis.clone().applyQuaternion(rock.quaternion).y < 0) counts.down++;
+          }
         } else check(deepest > 0.1 && !rock.afloat, `${label}: a dense filling failed to sink`);
         tested++; rock.dispose();
       }
     }
   }
-  console.log(`  ${tested} throws: floaters at most ${centimetres(most)} cm deep, submerged rise at most ${fastestRise.toFixed(2)} m/s`);
+  console.log(`  ${tested} throws: floaters at most ${centimetres(most)} cm deep, submerged rise at most ${fastestRise.toFixed(2)} m/s; upside down, of the larger sizes: ${Object.entries(overturned).map(([name, { down, of }]) => `${name} ${down} of ${of}`).join(', ')}`);
+  // Thrown flat, a plate comes up the way it was thrown, but now and then (the water's slap and the flow turn it).
+  for (const [name, { down, of }] of Object.entries(overturned)) check(down <= PLATE_OVERTURNED * of, `${name}: ${down} of ${of} larger plates came up upside down`);
 }
 
 // Directional inertia: wetting a face takes normal momentum, never the
@@ -606,8 +617,9 @@ console.log('\nThe rubber duck (body.ballast): let go on the water at any angle,
   });
   console.log(`  let go turned ${poses.map(([axis, degrees]) => `${degrees}° about ${axis[0] ? 'x' : 'z'}`).join(', ')}: upright (its up's height) ${rests.map((rest) => rest.up.toFixed(2)).join(', ')}, at rest after ${rests.map((rest) => rest.time.toFixed(1)).join(', ')} s`);
   check(rests.every((rest) => rest.afloat && rest.up > 0.95 && rest.time < 5), 'a rubber duck let go on the water did not right itself and rest within 5 s');
-  // Dropped on the deck upside down, and a pizza tilted: each settles onto the face it lies on (Rock.restOn).
-  for (const [name, angle] of [['duck', Math.PI], ['pizza', 0.5]]) {
+  // Dropped on the deck upside down, and a pizza tilted: each settles onto the face it lies on (Rock.restOn). A pie,
+  // weighted only a little low (src/rock.js GROUND.rightsFrom), stays upside down.
+  for (const [name, angle] of [['duck', Math.PI], ['pizza', 0.5], ['pie', Math.PI]]) {
     const thing = measure(name);
     const rock = new Rock({ radius: thing.radius, position: new THREE.Vector3(0, POOL.deck + 0.5, 1.5), velocity: new THREE.Vector3(), envTexture: null, thing: name, mass: thing.mass });
     rock.quaternion.setFromAxisAngle(new THREE.Vector3(1, 0, 0), angle);
@@ -617,7 +629,7 @@ console.log('\nThe rubber duck (body.ballast): let go on the water at any angle,
     for (let step = 0; step < 120; step++) rock.update(STEP, floorDepthAt);
     const up = rock.uprightAxis.clone().applyQuaternion(rock.quaternion).y, gap = rock.position.y + rock.lowestOffset() - POOL.deck;
     console.log(`  a ${THINGS[name].name.toLowerCase()} dropped on the deck turned ${THREE.MathUtils.radToDeg(angle).toFixed(0)}°: rests ${up > 0.99 ? 'upright' : up < -0.99 ? 'upside down' : `${THREE.MathUtils.radToDeg(Math.acos(up)).toFixed(0)}° off`}, ${(1000 * gap).toFixed(1)} mm over the deck`);
-    check(rock.state === 'rest' && Math.abs(up) > 0.99 && (name !== 'duck' || up > 0) && Math.abs(gap) < 1e-3, `a ${name} dropped on the deck rests ${up.toFixed(2)} upright, ${(1000 * gap).toFixed(1)} mm over it`);
+    check(rock.state === 'rest' && Math.abs(up) > 0.99 && (name === 'duck' ? up > 0 : name === 'pie' ? up < 0 : true) && Math.abs(gap) < 1e-3, `a ${name} dropped on the deck rests ${up.toFixed(2)} upright, ${(1000 * gap).toFixed(1)} mm over it`);
   }
 }
 
@@ -1174,10 +1186,13 @@ console.log('\nThings meeting things (src/collide.js):');
   console.log(`\nHalving the substep moves a basketball's highest bob by ${(100 * change).toFixed(1)}% and its rest by ${(1000 * Math.abs(runs[1].rest - runs[0].rest)).toFixed(3)} mm`);
   check(change < STEP_TOLERANCE, `basketball: halving the substep moved its highest bob by ${(100 * change).toFixed(1)}%`);
   check(Math.abs(runs[1].rest - runs[0].rest) < 1e-4, 'basketball: halving the substep moved where it floats');
+  // Each thing's first throw: its mean step carries the code's warming up, spread over fewer steps the sooner it rests
+  // (a plate), so the check is on its middle step.
   const floating = lake.filter((entry) => entry.record.floatSteps > 0);
-  const cost = Math.max(...floating.map((entry) => entry.record.cost / entry.record.floatSteps));
-  console.log(floating.map((entry) => `${entry.name} ${(1000 * entry.record.cost / entry.record.floatSteps).toFixed(1)} µs × ${entry.record.floatSteps}`).join(", "));
-  console.log(`A floater's step costs at most ${(1000 * cost).toFixed(2)} µs`);
+  const middle = (costs) => [...costs].sort((first, second) => first - second)[costs.length >> 1];
+  const cost = Math.max(...floating.map((entry) => middle(entry.record.stepCosts)));
+  console.log(floating.map((entry) => `${entry.name} ${(1000 * middle(entry.record.stepCosts)).toFixed(1)} µs (mean ${(1000 * entry.record.cost / entry.record.floatSteps).toFixed(1)}) × ${entry.record.floatSteps}`).join(", "));
+  console.log(`A floater's middle step costs at most ${(1000 * cost).toFixed(2)} µs`);
   check(cost < STEP_COST_MS, `a floater's step costs ${(1000 * cost).toFixed(2)} µs`);
 }
 
