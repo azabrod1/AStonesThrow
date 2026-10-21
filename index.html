@@ -632,6 +632,9 @@
   .menu-group > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 11px; }
   .menu-group .menu-cards { padding: 0 4px 4px; gap: 2px; }
   .menu-group .menu-card { padding: 3px 5px; }
+  /* Every card in a fold one height: its name and its note one line each (a note longer than the card is cut short, whole in its title). */
+  .menu-group .menu-card > span { min-width: 0; }
+  .menu-group .menu-card b, .menu-group .menu-card small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .menu-group .menu-card img { width: 64px; height: 36px; }
   /* What to throw: favourites and the latest choices, a tap each; the chosen thing over the folds, to look over. */
   .thing-quick { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
@@ -744,6 +747,15 @@
     .menu-group > summary, .thing-use, .thing-quick button { min-height: 44px; }
     .menu-group .menu-card { min-height: 44px; }
     .thing-favourite { width: 44px; height: 44px; padding: 11px; }
+  }
+  /* A short touch screen (an iPhone SE upright, a phone on its side): the
+     dropdown's pills at the controls probe's least height (34 points) and its
+     rows and heads closer, so its twenty pills fit over the strip without
+     scrolling. */
+  @media (pointer: coarse) and (max-height: 700px) {
+    .thing-menu-card [role="menuitemradio"] { min-height: 34px; }
+    .thing-menu-pills { row-gap: 3px; }
+    .thing-menu-head { margin: 5px 2px 2px; }
   }
   /* Screens too narrow for one row (a phone on its side, a tablet upright):
      two rows, what is thrown and the throw button, then how to throw and
@@ -1289,7 +1301,7 @@
         cards.className = 'menu-cards';
         for (const key of keys) {
           const thing = THINGS[key];
-          const card = Object.assign(document.createElement('button'), { type: 'button', className: 'menu-card' });
+          const card = Object.assign(document.createElement('button'), { type: 'button', className: 'menu-card', title: `${thing.name}: ${thing.note}` });
           card.setAttribute('role', 'radio');
           card.dataset.value = key;
           const picture = Object.assign(document.createElement('img'), { src: thing.look.thumbnail, alt: '', width: 80, height: 45 });
@@ -1333,6 +1345,8 @@
       }));
     }
     buildMenu();
+    /** Whether a thing floats: "Floats", "Sinks", or, one that floats plain but may sink as it is dressed (a pie's filling), "Floats or sinks". */
+    const floatsOrSinks = (properties) => (!properties.floats ? 'Sinks' : properties.alwaysFloats ? 'Floats' : 'Floats or sinks');
     // What to throw. A card (or an arrow key) chooses the thing and shows it above the folds, to look over: its
     // picture, size and mass, whether it floats, skips, bends or soaks, its size to set; Use (or Enter on a card)
     // goes back to the water to throw it. Favourites and the latest choices sit at the top, one tap each, and throw
@@ -1371,9 +1385,10 @@
       document.getElementById('inspect-stats').textContent = `${properties.text} · ${Math.round(properties.density)} kg/m\u00b3`;
       const badge = (text, has = true) => Object.assign(document.createElement('span'), { textContent: text, className: has ? '' : 'not' });
       document.getElementById('inspect-badges').replaceChildren(
-        badge(properties.floats ? 'Floats' : 'Sinks'),
+        badge(floatsOrSinks(properties)),
         badge('Skips', thing.skips),
-        ...(thing.body.soft ? [badge('Bends')] : []),
+        // A frozen thing thaws before it bends; anything soft bends.
+        ...(thing.water.thaws ? [badge('Thaws')] : thing.body.soft ? [badge('Bends')] : []),
         ...(thing.water.soaks ? [badge('Soaks')] : []),
       );
       inspectSize.hidden = !thing.slider;
@@ -1440,9 +1455,11 @@
       // The dropdown's pill for it checked, and its foot naming it.
       for (const pill of menuGroups.querySelectorAll('[role="menuitemradio"]')) pill.setAttribute('aria-checked', String(pill.dataset.value === pond.thing));
       document.getElementById('thing-more-text').textContent = `More about the ${thing.name.toLowerCase()}`;
-      // Skip skips what skips (a stone): greyed out for anything else, and it says so; a skip asked for goes back to Normal.
+      // Skip skips what skips (a stone, a pizza): greyed out for anything else, and it says so; a skip asked for goes back to Normal.
       skipButton.setAttribute('aria-disabled', String(!thing.skips));
-      skipButton.title = thing.skips ? 'Skip the rock across the water' : `Only stones skip: ${thing.called} ${thing.properties(thing.slider ? Number(sizeInput.value) : undefined).floats ? 'floats' : 'sinks'} where it lands.`;
+      const called = thing.called.charAt(0).toUpperCase() + thing.called.slice(1);
+      const lands = floatsOrSinks(thing.properties(thing.slider ? Number(sizeInput.value) : undefined)).toLowerCase();
+      skipButton.title = thing.skips ? `Skip ${thing.called} across the water` : `${called} does not skip: it ${lands} where it lands.`;
       if (!thing.skips && throwKind === 'skip') setThrowKind('normal');
       // The throw button names what it throws (the thing's `called`: a rock, a ball, a gem, an apple…).
       const thrown = thing.called;
