@@ -212,7 +212,8 @@
 // cavity or orientation-independent underwater path for a plate.
 //
 // What the water does to it (soak, showWet): out of the water a thing is
-// wet and dries (darker and glossier by its look's `wet`); bread soaks
+// wet and dries (darker and glossier by its look's `wet`; slowly in the cold,
+// damp air under snow, where a frozen thing does not thaw: setAir); bread soaks
 // (`water.soaks`), heavier and limper by the minute, floating lower, its
 // rim no longer keeping its top dry. A soft thing's give is a spring
 // (bendStep: cupped by the air in flight, which steadies it, flung on
@@ -369,6 +370,17 @@ const PLATE_WATER = { slam: 4 / 3, wetted: 0.1, edge: 1.0, munkDepth: 1 };
 // thaws `airThaw` as fast in air as in water (the water carries its heat to it some fifteen times faster).
 // Soaking under the water, its constants there are made again once its density has moved by `densityStep` of itself.
 const WET = { drySeconds: 90, settleSeconds: 0.5, airThaw: 1 / 15, densityStep: 0.01 };
+// The air the things are out in (setAir; the Weather, src/main.js WEATHERS). Under snow it is freezing, so a frozen
+// thing out of the water does not thaw (its share afloat in the water still does: the lake keeps a few degrees over
+// freezing), and so near saturated that a wet thing dries `drying` as fast: evaporation goes as the shortfall of the
+// air's vapour pressure from saturation's, at 0 °C and 90% humidity about a twentieth of 20 °C and 50%'s.
+const AIR = { freezing: false, drying: 1 };
+
+/** The air's state (above): `freezing` (no thaw out of the water) and `drying` (a share of a mild day's rate). */
+export function setAir({ freezing = false, drying = 1 } = {}) {
+  AIR.freezing = freezing;
+  AIR.drying = drying;
+}
 const WHITE = new THREE.Color(1, 1, 1);
 const AIR_DENSITY = 1.2;   // kg/m³ (flyStep's)
 // A throw's aim (aimThrow): the flight times it tries (least, most, step; s), the passes against the air's drag (flown in
@@ -1557,9 +1569,10 @@ export class Rock {
 
   /**
    * dt seconds of the water on it (the header): in the water (under it,
-   * afloat) it is wet through, and out of it dries over WET.drySeconds. A
-   * frozen thing (`water.thaws`) thaws over its `seconds` wholly under, its
-   * share under of that afloat and WET.airThaw of it out of the water. A
+   * afloat) it is wet through, and out of it dries over WET.drySeconds (in
+   * the snow's air, AIR.drying as fast). A frozen thing (`water.thaws`)
+   * thaws over its `seconds` wholly under, its share under of that afloat
+   * and WET.airThaw of it out of the water (none in freezing air). A
    * thing that soaks (src/things.js `water.soaks`: bread) takes up water as
    * it is wetted, its share under the water of it (the lower it floats, the
    * faster) and as far as it has thawed: soaked towards `takes` of its
@@ -1571,10 +1584,10 @@ export class Rock {
     // On the bed (sunk, waterlogged) it is all under the water, as sinking; afloat its density's share of it (Archimedes).
     const onBed = this.state === 'rest' && !this.afloat && !this.onGround;
     const inWater = this.state === 'water' || this.state === 'float' || this.afloat || onBed;
-    this.wet = inWater ? 1 : Math.max(this.wet - dt / WET.drySeconds, 0);
+    this.wet = inWater ? 1 : Math.max(this.wet - AIR.drying * dt / WET.drySeconds, 0);
     const under = this.state === 'water' || onBed ? 1 : inWater ? Math.min(this.density / WATER_DENSITY, 1) : 0;
     const thaws = this.thing.water.thaws;
-    if (thaws && this.thawed < 1) this.thawed = Math.min(this.thawed + (under + (1 - under) * WET.airThaw) * dt / thaws.seconds, 1);
+    if (thaws && this.thawed < 1) this.thawed = Math.min(this.thawed + (under + (1 - under) * (AIR.freezing ? 0 : WET.airThaw)) * dt / thaws.seconds, 1);
     const soaks = this.thing.water.soaks;
     if (!soaks || !inWater || this.soaked >= 1 || this.thawed <= 0) return;
     this.soaked = Math.min(this.soaked + (1 - this.soaked) * under * this.thawed * dt / soaks.seconds, 1);

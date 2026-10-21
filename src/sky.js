@@ -106,8 +106,10 @@
 // 1 − exp(−3d/visibility) toward HAZE_BRIGHTNESS of the cloud: the water
 // (HAZE in src/shaders/scene.js) by its distance, the dome by the distance
 // a ray climbs out of the rain (HAZE_LAYER over the sine of its elevation),
-// at most LAND_DISTANCE, where the photo's land stands. A clear sky leaves
-// everything as it was.
+// at most LAND_DISTANCE, where the photo's land stands. Snow's haze is
+// brighter (the weather's `hazeBrightness`, over HAZE_BRIGHTNESS): its
+// flakes scatter the cloud's light back as white as they are, where rain's
+// drops let it through. A clear sky leaves everything as it was.
 //
 // Lightning (setFlash; src/lightning.js says when and how bright): a flash
 // multiplies the dome's light, the scene's ambient sky and the haze's colour
@@ -235,7 +237,7 @@ const ADAPTATION = 0.8;        // how far the eye adapts to an hour's light (Lig
 const ROD_ADAPTATION = 0.98;   // ...and, below NIGHT_VISION_LIGHT[0], its rods (adaptedLight)
 const DOWN_SUN_ELEVATION = 1;  // degrees: where the scene's dark sun stands while the true one is down
 const OVERCAST_TINT = [0.95, 0.99, 1.07];   // a rain cloud's grey, a little blue, at about unit luminance
-const HAZE_BRIGHTNESS = 0.6;   // the haze against the cloud's mean: an overcast's horizon is under half its zenith (CIE)
+const HAZE_BRIGHTNESS = 0.6;   // rain's haze against the cloud's mean: an overcast's horizon is under half its zenith (CIE)
 // The light on level ground under a clear sky (illuminance): the sun's, through
 // SUN_DEPTH optical depths per air mass (Kasten and Young's), outside the
 // atmosphere SUN_OUTSIDE; the sky's, SKY_LIGHT[0] + SKY_LIGHT[1]·sin(h)^0.6
@@ -463,7 +465,7 @@ export async function createEnvironment(renderer, { name, hour, sunAzimuth, sunB
   const environment = { sky, cubeTexture: cubeTarget.texture, envTexture: null, name: null, hour: null, level: 1, hazeUniforms, targets: [], panoramaBytes: 0, load, prefetch, setWeather, setFlash };
   // The hour's light under a clear sky (load), which the weather covers (applyWeather).
   const clear = { sun: new THREE.Vector3(), sky: new THREE.Vector3(), lux: 1, level: 1 };
-  let weather = { cover: 0, light: 1, visibility: Infinity };
+  let weather = { cover: 0, light: 1, visibility: Infinity, hazeBrightness: HAZE_BRIGHTNESS };
 
   /**
    * Load a sky (a key of SKIES; others fall back to DEFAULT_SKY) at one of
@@ -570,17 +572,18 @@ export async function createEnvironment(renderer, { name, hour, sunAzimuth, sunB
   /**
    * The weather over the sky: `cover` (0 clear to 1 overcast), the light
    * that reaches the ground under it against a clear sky's (`light`), and
-   * the rain's `visibility` (metres; Infinity for none). Applied at once,
+   * the rain's or the snow's `visibility` (metres; Infinity for none) and
+   * its haze's brightness against the cloud's (`hazeBrightness`). Applied at once,
    * the cube and the prefiltered map captured again (Weather, above).
    */
-  function setWeather({ cover = 0, light = 1, visibility = Infinity } = {}) {
-    weather = { cover, light, visibility };
+  function setWeather({ cover = 0, light = 1, visibility = Infinity, hazeBrightness = HAZE_BRIGHTNESS } = {}) {
+    weather = { cover, light, visibility, hazeBrightness };
     applyWeather();
   }
 
   /** The lighting of the hour (clear) under the weather; then the cube and the prefiltered map. */
   function applyWeather() {
-    const { cover, light, visibility } = weather;
+    const { cover, light, visibility, hazeBrightness } = weather;
     const sunSine = Math.max(lighting.sunDirection.y, 0);
     // The clear hour's light on level ground, in the sky's units: the sky's
     // (π times its mean radiance) and the sun's (sunIrradiance over π, the
@@ -600,7 +603,7 @@ export async function createEnvironment(renderer, { name, hour, sunAzimuth, sunB
     domeUniforms.uSkyMean.value = luminance(clear.sky.toArray());
     domeUniforms.uOvercastScale.value = cloudLuminance / Math.max(luminance(clear.sky.toArray()), 1e-9);
     hazeUniforms.uHazeDensity.value = Number.isFinite(visibility) ? 3 / visibility : 0;
-    hazeUniforms.uHazeColor.value.copy(lighting.skyAmbient).multiplyScalar(HAZE_BRIGHTNESS);
+    hazeUniforms.uHazeColor.value.copy(lighting.skyAmbient).multiplyScalar(hazeBrightness);
 
     const previousAutoClear = renderer.autoClear;
     renderer.autoClear = true;

@@ -594,6 +594,8 @@
   }
   .menu-seg button + button { border-left: 1px solid var(--line); }
   .menu-seg button[aria-checked="true"] { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
+  /* One choice over two rows of segments (Weather: the rain's, the snow's). */
+  .menu-seg-rows { display: grid; gap: 6px; }
   .menu-note { margin: 9px 2px 0; font-size: 12.5px; line-height: 1.5; color: var(--muted); }
   /* A page of pictured choices (Location, Water): a thumbnail, the name and a line on it. */
   .menu-cards { display: grid; gap: 4px; }
@@ -889,7 +891,7 @@
     <hr class="menu-rule">
     <button type="button" class="menu-tier" data-open="weather">
       <svg class="menu-tier-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M5.5 12.5a2.75 2.75 0 0 1 .4-5.47 4.25 4.25 0 0 1 8.2.57 2.5 2.5 0 0 1 .4 4.9z"></path><path d="M7.4 15.2l-.9 2M10.4 15.2l-.9 2M13.4 15.2l-.9 2"></path></svg>
-      <span class="menu-tier-name"><b>Weather</b><small>Rain and storms</small></span>
+      <span class="menu-tier-name"><b>Weather</b><small>Rain, snow and storms</small></span>
       <span class="menu-tier-value"></span><span class="menu-tier-chevron" aria-hidden="true">&rsaquo;</span>
     </button>
     <button type="button" class="menu-tier" data-open="wind">
@@ -987,11 +989,18 @@
     <div class="menu-head"><button type="button" class="menu-back" aria-label="Back"><span aria-hidden="true">&lsaquo;</span></button><h3>Weather</h3></div>
     <div class="menu-field">
       <div class="menu-field-label" id="weather-label">Sky</div>
-      <div class="menu-seg" id="weather" role="radiogroup" aria-labelledby="weather-label" aria-describedby="weather-note">
-        <button type="button" role="radio" data-value="clear">Clear</button>
-        <button type="button" role="radio" data-value="light-rain">Light rain</button>
-        <button type="button" role="radio" data-value="heavy-rain">Heavy rain</button>
-        <button type="button" role="radio" data-value="storm">Storm</button>
+      <div class="menu-seg-rows" id="weather" role="radiogroup" aria-labelledby="weather-label" aria-describedby="weather-note">
+        <div class="menu-seg">
+          <button type="button" role="radio" data-value="clear">Clear</button>
+          <button type="button" role="radio" data-value="light-rain">Light rain</button>
+          <button type="button" role="radio" data-value="heavy-rain">Heavy rain</button>
+          <button type="button" role="radio" data-value="storm">Storm</button>
+        </div>
+        <div class="menu-seg">
+          <button type="button" role="radio" data-value="light-snow">Light snow</button>
+          <button type="button" role="radio" data-value="heavy-snow">Heavy snow</button>
+          <button type="button" role="radio" data-value="blizzard">Blizzard</button>
+        </div>
       </div>
       <div class="menu-note" id="weather-note" aria-live="polite"></div>
     </div>
@@ -1274,6 +1283,9 @@
         'light-rain': 'A bright overcast and a light rain: rings spreading on the water, a fleck where each drop lands, faint streaks falling.',
         'heavy-rain': 'A dark sky and a downpour: the water hammered with rings and splashes, the far bank lost in the rain.',
         storm: 'A storm: a darker sky, a downpour, lightning, and the wind up to a gale.',
+        'light-snow': 'A bright overcast and a light snow: flakes drifting down and melting on the water, a dusting on the shore.',
+        'heavy-snow': 'Heavy snow: big flakes thick in the air, the shore white, the far bank lost in the snow. A frozen pizza stays frozen out of the water.',
+        blizzard: 'A blizzard: heavy snow driven sideways by a gale, the world beyond the pond gone white.',
       },
       time: 'Each hour is a photograph of this place, taken from one spot through a day: the land stays where it is and the sun moves round it.',
       oneTime: 'This place is a single photograph. Lakeside and Mesas were photographed through the day: pick one of them under Location to change the hour.',
@@ -1482,7 +1494,8 @@
       showView();   // the pool's views are told otherwise
     }
     const showWind = radioGroup(document.getElementById('wind'), (value) => { pond.setWind(value); updateWind(); });
-    // The weather: the sky clouds over at once; the first rain fetches its rings' table (about 0.6 MB).
+    // The weather: the sky clouds over and the snow falls at once; the first rain fetches its rings' table (about 0.6 MB).
+    const RAINY = ['light-rain', 'heavy-rain', 'storm'];
     const weatherNote = document.getElementById('weather-note');
     let weatherRequest = 0;
     const showWeather = radioGroup(document.getElementById('weather'), chooseWeather);
@@ -1490,7 +1503,7 @@
       const request = ++weatherRequest;
       showWeather(value);
       settings.setValue('weather', label('weather', value));
-      weatherNote.textContent = value !== 'clear' && !pond.raining ? 'The rain is coming…' : NOTES.weather[value];
+      weatherNote.textContent = RAINY.includes(value) && !pond.raining ? 'The rain is coming…' : NOTES.weather[value];
       pond.setWeather(value).then(() => {
         if (weatherRequest === request) updateWeather();
       }).catch(() => {
@@ -1501,7 +1514,7 @@
         retry.addEventListener('click', () => chooseWeather(value));
         weatherNote.replaceChildren('The rain could not be loaded. Check the connection. ', retry);
       });
-      updateWind();   // a storm brings a gale
+      updateWind();   // a storm or a blizzard brings a gale
     }
     function updateWeather() {
       showWeather(pond.weather);

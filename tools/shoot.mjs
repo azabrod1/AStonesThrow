@@ -26,8 +26,9 @@
 // --sky=name picks the sky's place (a key of SKIES in src/sky.js) and
 // --time=hour its hour (the place's anchor otherwise, never the time of day
 // last chosen: the harness's browser keeps no storage), --weather=
-// clear|light-rain|heavy-rain the weather (WEATHERS in src/main.js; the
-// rain waits for its ring's table before the first frame), and
+// clear|light-rain|heavy-rain|storm|light-snow|heavy-snow|blizzard the
+// weather (WEATHERS in src/main.js; the rain waits for its ring's table
+// before the first frame), and
 // --water=pool|clear|lake|pond|murky the water (WATER_CLARITIES in src/main.js;
 // pool puts the rocks in the pool, src/pool.js).
 // --wind=x:z sets the direction the wind blows toward in world XZ, and
@@ -153,7 +154,7 @@ try {
   console.error(problems.join('\n'));
   await browser.close(); server.close(); process.exit(1);
 }
-if (weather && weather !== 'clear') await page.waitForFunction(() => window.__pond.raining, null, { timeout: 60000 });
+if (weather && weather !== 'clear') await page.waitForFunction(() => window.__pond.raining || window.__pond.snowing, null, { timeout: 60000 });
 // The loading veil fades out over a moment once the pond is ready; a frame taken meanwhile would catch it.
 await page.evaluate(() => document.getElementById('veil')?.remove());
 await page.evaluate(() => window.__pond.pause());

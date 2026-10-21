@@ -109,13 +109,21 @@ is remembered on the device (but the view, which opens on the shore):
   day page is open the hours either side of the shown one are fetched
   ahead, so the next one picked comes at once. Another place takes its hour nearest the
   time of day last chosen; the other skies are one photograph each.
-- Weather: Clear (the default), Light rain, Heavy rain or Storm. Rain comes under
+- Weather: Clear (the default), Light rain, Heavy rain, Storm, Light snow,
+  Heavy snow or Blizzard. Rain comes under
   an overcast that hides the sun and greys the sky, with a haze that fades
   the far shore; its drops ring the water, streak past the eye and throw up
   flecks where they land, and the pool's deck goes dark with wet. A light
   rain's rings are fine and far apart; a downpour hammers the whole surface.
   Rain at night is dark: the cloud hides the moon. A storm is a downpour
-  under a darker sky, with lightning, and brings a gale.
+  under a darker sky, with lightning, and brings a gale. Snow falls from a
+  brighter overcast, its flakes drifting with the wind, swaying and melting
+  on the water without a ring; a haze, whiter than rain's, hides the far
+  shore; it lies on the beach, the bank and the pool's deck, in patches
+  under a light snow and all over under a heavy one, except on the wet sand
+  by the water and where a splash's drops come down. In its freezing air a
+  frozen pizza thaws only in the water and wet things barely dry. A
+  blizzard is fine snow driven by a gale.
 - Wind: Calm (the default, a still day), Breeze, Windy or Gale. A gale
   raises waves a third of a metre high out to the horizon, white-capped,
   with spray off the crests and foam in streaks along the wind; the stones
@@ -644,6 +652,29 @@ foam is run over the six seconds before, so the sea opens as one that has
 been blowing. The eye keeps 0.45 m clear of the still water either way.
 `tools/gale-probe.mjs` checks the field on the CPU with the GPU's passes.
 
+**Snow** (`src/snow.js`, `src/shaders/snow.js`; the cloud and haze in
+`src/sky.js`, the snow on the ground `SNOW_COVER` in `src/shaders/scene.js`).
+Snow clouds the sky over as rain does, from a brighter cloud (0.55 of a
+clear day's light for light snow, 0.35 for heavy, 0.22 for a blizzard), and
+its haze is whiter (0.85 to 0.9 of the cloud against rain's 0.6) and
+thicker (1.5 km, 400 m, 150 m to see). A snowflake meets the water at about
+1 m/s, weighing milligrams: it melts and leaves no ring, so the water is
+left as the wind has it. The flakes are one instanced draw in a box about
+the eye (16, 40 and 60 thousand of them), each falling at its terminal
+speed (0.9 to 1.1 m/s, give or take a fifth), carried at the wind's speed,
+swaying on a small ellipse and tossed by gusts of 0.3 of the wind, drawn as
+the capsule it sweeps in 1/120 s: round in still air, a streak in a
+blizzard's, with the same light either way; a flake under 1.2 pixels is
+drawn that wide and fainter, and the haze carries the snow beyond the box.
+Under a gale they are cut at its waves. On the ground the snow lies in
+value-noise patches under a light snow and whole under a heavy one, melts
+on the beach's wet sand (4 cm above the water) and on the deck where the
+splash's drops land, and whitens the far land half way. In its air (`setAir`
+in `src/rock.js`) a frozen thing thaws only in the water and wet things,
+and the deck's splashed patches, dry a twentieth as fast.
+`tools/snow-probe.mjs` checks the flakes' motion (its twin on the CPU,
+`flakeAt`) and drawing.
+
 **Lightning** (`src/lightning.js`, drawn by `src/sky.js`). In a storm the
 strikes come from the clock, so every run has the same: one in most seven
 seconds, two to four return strokes each, decaying over 45 ms, then an
@@ -837,7 +868,7 @@ farther out, so it rises into the view rather than filling its corner.
   in at 12.4 m/s, 73° from vertical: `throwFlightTime` in `src/rock.js`), `--skip` (skip throws, the times counted from
   the first touch), `--trace` (each stone's path drawn as a line),
   `--wind-strength=calm|breeze|windy|gale` (the page's
-  own default is calm), `--weather=clear|light-rain|heavy-rain|storm` (waits for
+  own default is calm), `--weather=clear|light-rain|heavy-rain|storm|light-snow|heavy-snow|blizzard` (waits for
   the rain's table before the first frame). With
   `--eval="window.__pond.setTimeScale(0.1)"` the frames are slow motion, 1/600 s
   of world time each, so `--times=0.07,0.0716667,…` are consecutive frames;
@@ -883,9 +914,10 @@ farther out, so it rises into the view rather than filling its corner.
   time of day last chosen (the harness's browser keeps none: the place's
   anchor hour); `?water=clear|lake|pond|murky` (`--water=` for the harness) the
   water's clarity, `WATER_CLARITIES` in `src/main.js`;
-  `?weather=clear|light-rain|heavy-rain|storm` (`--weather=` for the harness) the
-  weather, `WEATHERS` in `src/main.js`, over the one last chosen on the
-  device (a storm brings a gale, unless `?windStrength` says otherwise).
+  `?weather=clear|light-rain|heavy-rain|storm|light-snow|heavy-snow|blizzard`
+  (`--weather=` for the harness) the weather, `WEATHERS` in `src/main.js`,
+  over the one last chosen on the device (a storm or a blizzard brings a
+  gale, unless `?windStrength` says otherwise).
 - `?view=shore|level|high|under` on the page (`--view=` for the harness) opens on
   one of the View setting's choices (`VIEWS` in `src/main.js`);
   `--orbit=azimuth:elevation:distance[:x:y:z]` stands the harness's camera on
@@ -972,7 +1004,10 @@ farther out, so it rises into the view rather than filling its corner.
   program, draws only its own quads of the water mesh and keeps a throw's
   ring only while its near field is hidden; each weather's rain compiles no
   program, a throw into a downpour and a change to Medium neither, the rain's
-  tile takes the preset's size, and a clear sky again stops it; the gale
+  tile takes the preset's size, and a clear sky again stops it; the first
+  snow compiles its flakes' one program and every later one, a throw into
+  it and a blizzard's gale none more, it adds one draw call, and clear
+  again neither falls nor lies; the gale
   compiles no program and draws its finer sheet, a throw into it and the
   storm through a lightning strike neither, and in the pool it raises no
   waves; and pausing and resuming twice
@@ -1010,7 +1045,7 @@ farther out, so it rises into the view rather than filling its corner.
   reachable by scrolling and its Pool and Murky taking, the
   Time of day page's slider spans it and, tapped at its left end, loads the
   first hour, and a lone photograph's page hides it, and the Weather page's
-  choices set the weather; it saves each screen to
+  choices, rain's and snow's in two rows, fit and set the weather; it saves each screen to
   `shots/controls-probe/`. The
   shoot harness and the other probes emulate a desktop browser, which ignores
   the viewport tag, so only this probe sees the page as a phone does.
@@ -1025,14 +1060,15 @@ farther out, so it rises into the view rather than filling its corner.
   `setHour(name)` (and `sky`, `hour`, and `hours`, the shown place's),
   `prefetchHours()` (fetches the hours either side of the one asked for ahead),
   `setWeather(name)` (and `weather`, and `raining`, once the rain's table
-  has come and it falls), `rings` (the live rings and
+  has come and it falls, and `snowing`), `rings` (the live rings and
   their plans), and `budget`: what the preset built (the solver's grid, the
   mesh, the pixel ratio, every target's size, an estimate of the render
   targets' memory, the programs compiled and the warm-up's, whether the
   solver sleeps and the frame rate is capped, the rings drawn, how many
   are fading out and the preset's limit, their passes and the spectrum
   fetches those made, the wind, the gale's sheet, the weather, the
-  rain's tile, and how many fixed meshes and waterlines `prepareThing`
+  rain's tile, the snow's flakes and cover, the last frame's draw calls
+  and triangles, and how many fixed meshes and waterlines `prepareThing`
   has made).
 
 Install the development dependencies with `npm install` (Three.js is only

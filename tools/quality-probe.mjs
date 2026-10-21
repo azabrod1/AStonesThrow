@@ -42,7 +42,11 @@
 //    program behind. Rain (src/rain.js): each weather in
 //    turn, with a throw in the downpour and a change of preset, reuses its
 //    programs after the first selection, and the tile takes the preset's
-//    size; clear again, nothing of the rain runs. The gale (src/galeWaves.js)
+//    size; clear again, nothing of the rain runs. Snow (src/snow.js), after
+//    the gale: the first snow compiles its flakes' one program, the others
+//    and a blizzard's gale reuse it and the gale's (the ground's snow is a
+//    uniform), a throw into it compiles none, its draw adds one call; clear
+//    again, nothing of it is drawn or lies. The gale (src/galeWaves.js)
 //    and the storm: the first gale compiles its passes and spray once, draws the finer
 //    sheet that carries its waves, and a throw into it compiles none; the
 //    storm compiles none through a lightning strike; in the pool the gale
@@ -282,6 +286,7 @@ check(programsAfterThings === programsBeforeThings, `every kind of thing thrown,
 // against the still pond's. GPU-free counts: SwiftShader's milliseconds mean nothing.
 const frameCounts = () => page.evaluate(() => {
   const pond = window.__pond, info = pond.renderer.info;
+  const autoReset = info.autoReset;   // the page's (src/main.js: off, render() resets once a frame), put back after
   info.autoReset = false;
   let calls = 0, triangles = 0;
   for (let frame = 0; frame < 20; frame++) {
@@ -289,7 +294,7 @@ const frameCounts = () => page.evaluate(() => {
     pond.advance(1 / 60);
     calls += info.render.calls; triangles += info.render.triangles;
   }
-  info.autoReset = true;
+  info.autoReset = autoReset;
   return { calls: calls / 20, triangles: Math.round(triangles / 20) };
 });
 await page.evaluate(() => { window.__pond.pause(); window.__pond.clear(); window.__pond.advance(1); });
@@ -486,6 +491,35 @@ await page.evaluate(() => { window.__pond.setClarity('lake'); window.__pond.setW
 const calmAgain = await page.evaluate(() => ({ programs: window.__pond.budget.programs, gale: window.__pond.budget.gale }));
 check(!calmAgain.gale.blowing && calmAgain.gale.sheetTriangles < 5000 && calmAgain.programs === programsBeforeGale, `calm again: the still sheet (${calmAgain.gale.sheetTriangles} triangles), no program (${calmAgain.programs})`);
 await checkBuilt(phone, 'after the gale');
+
+// The snow: its first selection compiles its flakes' program, then it reuses it; it falls at once, adds one draw
+// call, and goes when it clears. After the gale's checks: a blizzard brings a gale, whose programs are compiled now.
+await page.evaluate(() => { window.__pond.pause(); window.__pond.clear(); window.__pond.advance(1); });
+const clearDraws = await frameCounts();
+await page.evaluate(() => window.__pond.resume());
+let programsBeforeSnow = await page.evaluate(() => window.__pond.budget.programs);
+for (const weather of ['light-snow', 'heavy-snow', 'blizzard']) {
+  await page.evaluate((name) => window.__pond.setWeather(name), weather);
+  const falling = await page.evaluate(() => window.__pond.snowing);
+  await page.evaluate(() => window.__pond.advance(0.1));
+  const first = await page.evaluate(() => window.__pond.budget.programs);
+  if (weather === 'light-snow') {
+    check(first === programsBeforeSnow + 1, `the first snow compiles its flakes' one program (${programsBeforeSnow} → ${first})`);
+    programsBeforeSnow = first;
+  }
+  await page.evaluate(() => { window.__pond.throwAt(0, -1.4, { radius: 0.03 }); window.__pond.advance(0.6); });
+  const snowing = await page.evaluate(() => ({ programs: window.__pond.budget.programs, weather: window.__pond.weather, snow: window.__pond.budget.snow, wind: window.__pond.wind }));
+  check(falling && snowing.programs === programsBeforeSnow && snowing.weather === weather && snowing.snow.flakes > 0 && snowing.snow.cover > 0 && (weather !== 'blizzard' || snowing.wind === 'gale'),
+    `${weather} falls at once (${snowing.snow.flakes} flakes, the ground ${snowing.snow.cover} covered${weather === 'blizzard' ? `, wind ${snowing.wind}` : ''}) and with a throw compiles no more (${snowing.programs})`);
+}
+await page.evaluate(() => { window.__pond.pause(); window.__pond.clear(); window.__pond.setWind('calm'); window.__pond.advance(1); });
+const snowDraws = await frameCounts();
+await page.evaluate(() => window.__pond.resume());
+console.log(`  a still pond's frame: ${clearDraws.calls} calls, ${clearDraws.triangles} triangles clear; ${snowDraws.calls} calls, ${snowDraws.triangles} triangles in a blizzard`);
+check(snowDraws.calls === clearDraws.calls + 1, `the snow adds one draw call to a frame (${clearDraws.calls} → ${snowDraws.calls})`);
+await page.evaluate(() => { window.__pond.setWeather('clear'); window.__pond.advance(0.1); });
+const unsnowed = await page.evaluate(() => ({ snowing: window.__pond.snowing, snow: window.__pond.budget.snow, programs: window.__pond.budget.programs }));
+check(!unsnowed.snowing && unsnowed.snow.flakes === 0 && unsnowed.snow.cover === 0 && unsnowed.programs === programsBeforeSnow, `clear again: no snow falls or lies, and no program was compiled (${unsnowed.programs})`);
 
 // pause, resume, pause, resume in one tick: one frame loop, so at most one render per requestAnimationFrame, and at least every
 // other (the most the idle cap, on high too now, skips of a 60 Hz requestAnimationFrame).
