@@ -193,8 +193,10 @@
 // otherwise the quality calibrates itself from the frame rate (CALIBRATION),
 // keeps watching it, and reports each change through onQualityChange.
 // ?profile=1 runs the profiling steps of src/profiler.js and reports through
-// onProfile. Each throw once the pond takes input (not the warm-up's) is
-// reported through onThrow: the page's first-visit cue goes with the first.
+// onProfile. Each throw a person makes (a tap on the water; throwRandom,
+// which the throw button and Space call) is reported through onThrow, not
+// the warm-up's, the profiler's or a harness's throwAt: the page's
+// first-visit cue goes with the first.
 import * as THREE from 'three';
 import { SpectralWater } from './spectralWater.js';
 import { AmbientWaves, DEFAULT_WIND, WIND_STRENGTHS } from './ambientWaves.js';
@@ -1286,7 +1288,6 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       for (let index = 0; among.length - index > most; index++) retireRock(among[index]);
     }
     lastActivity = performance.now();
-    if (readyForInput) onThrow?.(rock);
     return rock;
   }
 
@@ -1323,7 +1324,9 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
 
   function throwRandom() {
     const point = keepOnWater({ x: THREE.MathUtils.randFloatSpread(1.8), z: -0.3 - Math.random() * 2.2 }, throwMargin());
-    return throwAt(point.x, point.z);
+    const rock = throwAt(point.x, point.z);
+    onThrow?.(rock);
+    return rock;
   }
 
   // Pointer aiming: pick the water plane under the pointer, kept inside the
@@ -1529,7 +1532,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     if (press && !turned && !touched) {
       const moved = Math.hypot(event.clientX - press.x, event.clientY - press.y);
       const hit = throwAim(event.clientX, event.clientY);
-      if (hit && moved < TAP_SLOP) { throwAt(hit.x, hit.z); if (event.pointerType === 'mouse') thrownFrom = { x: event.clientX, y: event.clientY }; }
+      if (hit && moved < TAP_SLOP) { onThrow?.(throwAt(hit.x, hit.z)); if (event.pointerType === 'mouse') thrownFrom = { x: event.clientX, y: event.clientY }; }
     }
     if (event.pointerType !== 'mouse' || thrownFrom || touched) showAim(null);
   });
