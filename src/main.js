@@ -1687,7 +1687,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
         rock.fading += frame;
         const left = 1 - THREE.MathUtils.smoothstep(rock.fading, 0, FADE_SECONDS);
         if (left <= 0) retireRock(rock);
-        else for (const mesh of rock.meshes) mesh.scale.setScalar(left);
+        else for (const mesh of rock.meshes) mesh.scale.setScalar(rock.radius * left);   // its meshes are scaled by its radius (src/rock.js)
       } else if (rock.floats && Math.hypot(rock.position.x, rock.position.z) > FARTHEST_AFLOAT) retireRock(rock);
     }
     keepWithinCaps();   // things settle, and a lower preset keeps fewer

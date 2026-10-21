@@ -306,7 +306,8 @@ console.log(`  a frame: ${stillPond.calls} draw calls, ${stillPond.triangles} tr
 check(restingBall && withFloater.calls - stillPond.calls <= FLOATER_FRAME_CALLS, `a basketball resting afloat adds at most ${FLOATER_FRAME_CALLS} draw calls a frame (${withFloater.calls - stillPond.calls})`);
 // What comes to rest stays (src/main.js keepWithinCaps): in the pool on low, the preset's `resting` stones lie on its
 // floor, each one draw call (its part above the water hidden, src/rock.js syncMeshes), and no timer takes them; one
-// more, come to rest, shrinks the oldest away (fadeOut: partway, smaller and still there; then gone), never at once.
+// more, come to rest, shrinks the oldest away (fadeOut: partway, smaller than its own size and still there; then gone),
+// never at once.
 await page.evaluate(() => { const pond = window.__pond; pond.clear(); pond.setQuality('low'); pond.setClarity('pool'); pond.advance(0.5); });
 const emptyPool = await frameCounts();
 const kept = await page.evaluate(() => {
@@ -330,7 +331,7 @@ const kept = await page.evaluate(() => {
   const fading = pond.rocks.find((rock) => rock.fading !== undefined);
   result.oldestFades = fading === stones[0];
   pond.advance(0.3);
-  result.partway = fading ? { there: pond.rocks.includes(fading), scale: fading.meshBelow.scale.x } : null;
+  result.partway = fading ? { there: pond.rocks.includes(fading), scale: fading.meshBelow.scale.x / fading.radius } : null;   // its meshes' scale is its radius
   pond.advance(0.5);
   result.gone = fading ? !pond.rocks.includes(fading) : false;
   result.after = { kept: pond.budget.things.kept, extraKept: pond.rocks.includes(extra) };
