@@ -2,6 +2,7 @@
 // No CDN mocks: the deployed runtime must be entirely same-origin.
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
+import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { chromium } from 'playwright';
 import path from 'node:path';
@@ -21,9 +22,11 @@ const server = createServer(async (request, response) => {
 });
 await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
 const origin = `http://127.0.0.1:${server.address().port}`;
+// PW_CHROMIUM picks a browser; otherwise the cloud container's preinstalled one, as the other probes do.
+const containerChromium = '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
 const browser = await chromium.launch({
   headless: true,
-  executablePath: process.env.PW_CHROMIUM || undefined,
+  executablePath: process.env.PW_CHROMIUM || (existsSync(containerChromium) ? containerChromium : undefined),
   args: process.env.PW_HARDWARE ? [] : ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'],
 });
 async function pageFor(viewport = { width: 390, height: 844 }) {
