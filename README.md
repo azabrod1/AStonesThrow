@@ -100,9 +100,13 @@ frame rate and the preset in use); a preset fixes it. A preset sets
 the work a frame does: High runs the 512² solver, a 254-segment water mesh
 and full-resolution targets; Medium and Low a 256² solver, 160 and 128
 segments, the under-water view and the mirror image at half resolution and
-the splash's buffers at half, and draw a pond where nothing happens at 30
-frames a second; High keeps 10 stones' rings, Medium 8 and Low 6. The
-canvas never holds more than 2.6 million pixels.
+the splash's buffers at half. Every preset draws a frame no sooner than
+about 9.7 ms after the last (a sixtieth of a second, less some slack),
+whatever the screen's refresh rate: a 60 or a 90 Hz screen draws every
+refresh, a 120 Hz one every other, 60 frames a second (72 on a 144 Hz
+one), and a pond where nothing happens at 30 frames a second; High keeps
+24 stones' rings, Medium 12 and Low 8. The canvas never holds more than
+2.6 million pixels.
 Core stone/splash programs are compiled while the page loads, under its
 veil: a stone is thrown and drawn there, then cleared away. Rain and gale
 programs are warmed only when selected at startup; otherwise
@@ -182,15 +186,20 @@ first second. While any ring lives, a GPU pass evaluates each ring's
 spectrum at the frame's time and one pass per ring sums it into a radial
 profile of height and slope out to its reach (2 to 40 m), mipmapped; the
 water adds every ring's slope to its normal everywhere and its height to
-the inner patch, the floor its curvature to the caustics, the foam specks
-and a crown's foot ride it. A ring costs a pixel only between the water it
-has left and its leading waves, and its passes sum only the waves the film
-has not yet damped. A ring retires once no slope of it is steeper than
+the inner patch, the floor the curvature of the youngest six to the
+caustics (a ring's curvature falls fast as its waves lengthen; an older
+one's light fades out over 3 s), the foam specks and a crown's foot ride
+it. A ring costs a pixel only between the water it has left and its
+leading waves, and its passes sum only the waves the film has not yet
+damped. A ring retires once no slope of it is steeper than
 1e-4 as the view's pixels can show it (each averages it over its own
 footprint), under a third of a pixel's turn of the mirror image: the
 reference stone's after about a minute and a half, by then 35 m out; a
-1.5 cm pebble's after 50 s. At most 10 rings live on High (8 on Medium, 6
-on Low); a newer one makes the faintest fade out over 1.5 s. With no ring
+1.5 cm pebble's after 50 s. At most 24 rings live on High (12 on Medium,
+8 on Low); a newer one makes the one closest to retiring, the faintest as
+a rule, fade out over 8 s on High, so slowly that nobody sees it go (4 s
+on Medium and 3 s on Low, where a ring still fading costs what a live one
+does). With no ring
 alive there is no pass and no cost per pixel. `RING_SOURCE.strength`
 scales every ring source (1: as fitted).
 
@@ -368,12 +377,19 @@ and leaves a moment's white churn; the last is any stone's splash
 to skip.
 
 **Foam** (`FOAM_PATTERN` in `src/shaders/scene.js`, the map in
-`src/spectralWater.js`). Where the stone's hole closes, its air erupts as a
-boil: big bubbles, dense and white, popping within a second or two. What
-remains is a raft of small bubbles, sparse and lasting seconds, longer the
-bigger the stone (its lifetime τ is 3.2 s for the smallest, 5.4 s for a
-16 cm stone); the jet rises from a boil of its own and leaves another boil
-and raft where it falls back. Each is stamped as a patch of three to five
+`src/spectralWater.js`). Where the stone's hole closes, its air comes up as a
+boil: big bubbles, popping within a second (its lifetime τ is 0.65 s). What
+remains is a raft of small bubbles, sparse and lasting a few seconds, longer
+the bigger the stone (τ is 2.1 s for the smallest, 2.3 s for the 6 cm stone,
+2.8 s for a 16 cm stone and 3.5 s for the 30 cm rock); the jet rises from a
+boil of its own and leaves a fainter boil and raft where it falls back, and
+each drop that lands leaves a speck of boil. A thrown stone seldom leaves
+much white, so the amounts are small: the pattern below whitens about half
+the water at a map value of 0.1, and the map under a 6 cm stone's foam peaks
+near 0.17. The boil's amount grows with the stone's radius (its air goes as
+R³, the mouth it comes up through as R²), so a pebble barely fizzes and only
+a big stone's boil is solid white, at its centre, for about half a second
+after its hole closes. Each is stamped as a patch of three to five
 sub-stamps of unequal sizes at random offsets, never one round Gaussian, so
 no two rafts share a shape. Surface flows carry the foam: where the hole
 closed the jet's base wells up, and where the jet falls back the mound
@@ -398,9 +414,13 @@ centres and bright rims, with milky fine bubbles between them. The map's
 separate boil and raft amounts control this material: fresh, dense froth
 scatters more light; as it drains, the water shows through the bubble films.
 Those films use the existing bubble cells and fade to their measured mean
-opacity at a distance, adding no texture or noise layer. A 4 cm stone's raft is gone
-in about 6 s; a 16 cm stone's is patchy clusters by 4 s and scattered,
-faint ones by 8.
+opacity at a distance, adding no texture or noise layer. Close up (the
+shoot harness, `--seed=1`), a 6 cm stone thrown normally leaves a broken,
+partly see-through fizz over about its hole's mouth at 0.4 to 0.7 s, a few
+lacy wisps and scattered bubbles by 1.2 s and only the foam specks by 2.5 s;
+a 30 cm rock leaves a dense boil round its jet at 0.5 s, a mottled raft by
+0.9 s, sparse clumps that the flows have carried into arcs about a metre
+across by 1.5 s, a few scattered clumps by 3 s and clear water by 5.
 The threshold's edge is one pixel wide at any distance (from the pattern's
 exact gradient and the pixel's footprint on the water), and each layer fades
 into an even white of the right strength before its cells shrink to a couple
@@ -907,8 +927,11 @@ farther out, so it rises into the view rather than filling its corner.
   waves; and pausing and resuming twice
   in one tick must leave one frame loop. On a fake clock it checks that the watch after
   calibration steps down at 20 frames a second and that a still pond on
-  Medium draws every other frame with its time keeping up; and that a large
-  window keeps within the pixel budget.
+  Medium draws every other frame with its time keeping up; that on High a
+  still pond draws every other frame of a 60 Hz clock and every fourth of a
+  120 Hz one, and a throw every other frame of a 120 Hz clock (held to 60 a
+  second) and every frame of a 60 Hz one; and that a large window keeps
+  within the pixel budget.
 - `node tools/zoom-probe.mjs [--w=390 --h=844]` drives the wheel, a pinch, a
   tap and Escape through the page's own handlers and checks that what is under
   the pointer stays there; then drags, by touch and by mouse, and checks that
