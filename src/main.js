@@ -99,7 +99,9 @@
 // diameter, a bowling ball's pounds, a basketball's size; a golf or tennis
 // ball has one size). measureThing gives what a throw is: its radius, mass
 // and density. A river stone is thrown as stones always were
-// (throwVelocity); anything else is aimed by src/rock.js aimThrow, which
+// (throwVelocity, at the manner's and the strength's flight time: ARC over
+// src/rock.js throwFlightTime, a hard toss let go at 12 m/s, fast and flat,
+// going in twice as fast as a medium one); anything else is aimed by src/rock.js aimThrow, which
 // flies it against the air's drag (a tennis ball or a piece of pumice
 // would fall several centimetres short) and throws a heavy ball no faster
 // than it can be thrown (a 16 lb bowling ball 5.75 m/s), short of a tap
@@ -119,12 +121,15 @@
 // its own localStorage key, ?sound=off), when it is seen (simulate's
 // seenAfter: a step's end past the moment its frame draws, at the world's
 // speed, and that frame's way to the screen, a frame on). In the pool the deck is
-// ground to anything thrown (src/pool.js poolGround). What is in sight
-// stays: a floater, or a thing at rest on the deck (keptInSight), goes only
-// when more than MAX_IN_SIGHT are kept (the oldest first) or a gale has
-// drifted it FARTHEST_AFLOAT away; a throw past MAX_ROCKS retires the
-// oldest thing out of sight (in the air, under the water, on the bed), and
-// a stone at rest on the bed goes after 40 s.
+// ground to anything thrown (src/pool.js poolGround). What comes to rest
+// stays, on the bed or the pool's floor as on the deck: the preset keeps
+// up to its `resting` things at rest and its `afloat` floaters (QUALITY: a
+// thing at rest is one draw call, src/rock.js syncMeshes, a floater costs
+// more, its physics, its ride and its mirror image), and up to MOVING_MOST
+// on the move (flying, skimming, sinking, tumbling); past a cap the oldest
+// of that kind shrinks away over FADE_SECONDS where it is, frozen
+// (keepWithinCaps, fadeOut), never vanishing at once. A floater a gale has
+// drifted FARTHEST_AFLOAT away goes at once, out of sight.
 //
 // The pool. The Pool water (WATER_CLARITIES.pool) puts the rocks in a tiled
 // pool instead of the lake: the solver's patch becomes a basin whose walls
@@ -189,7 +194,8 @@
 // them: ?sky=<name> picks the place, ?time=<hour> its hour (src/sky.js:
 // a place's hours are photographs of it through a day; setSky and setHour
 // load another later, in place: the sun follows, and the mirror image is
-// drawn again; a place takes the hour nearest the time of day last chosen,
+// drawn again; prefetchHours fetches the hours either side ahead, so the
+// next is there when picked; a place takes the hour nearest the time of day last chosen,
 // TIME_STORAGE_KEY, and ?sky=sunrise, the old Sunrise sky, is Lakeside at
 // sunrise);
 // ?view=shore|level|high|under stands the camera at one of VIEWS (showView);
@@ -222,7 +228,7 @@ import { Rings } from './rings.js';
 import { createEnvironment, SKY_NAMES, skyHours, resolveHour, nearestHour } from './sky.js';
 import { createWaterSurface } from './waterSurface.js';
 import { createPondFloor, createShore, floorDepthAt, groundHeightAt } from './pondFloor.js';
-import { Rock, aimSkip, aimThrow, flutterTrial, prepareThing, PREPARATION_WORK, skipLowest, skipSpeed, SKIP_THROW, PHYSICS_STEP } from './rock.js';
+import { Rock, aimSkip, aimThrow, flutterTrial, prepareThing, PREPARATION_WORK, skipLowest, skipSpeed, SKIP_THROW, PHYSICS_STEP, throwFlightTime } from './rock.js';
 import { THINGS, THING_NAMES, DEFAULT_THING, defineThing, onThingsChange } from './things.js';
 import { collideThings } from './collide.js';
 import { SplashSystem, MIRROR_LAYER } from './splash.js';
@@ -261,14 +267,16 @@ import { createFloaterRide } from './floaterRide.js';
 //                 every preset;
 //   rainTexels    the rain's tile's texels per side (src/rain.js, 1 m): 512
 //                 resolves its rings' shortest crests, 256 blurs them a little.
+//   resting, afloat  the things kept at rest and afloat (the header); past
+//                 them the oldest of that kind shrinks away.
 // Every target keeps its format on every preset, so a program drawn under the
 // loading veil (warmUp) meets no new pipeline state after a change of preset;
 // and every mesh takes 16-bit indices (at most 254 segments: Three.js keeps
 // the index 65535 for primitive restart).
 export const QUALITY = {
-  high: { grid: 512, meshSegments: 254, underScale: 1.0, fluidScale: 1.0, idleFrameRate: 30, maxDpr: 2.0, rings: 24, ringFade: 8, rainTexels: 512 },
-  medium: { grid: 256, meshSegments: 160, underScale: 0.5, fluidScale: 0.5, idleFrameRate: 30, maxDpr: 2.0, rings: 12, ringFade: 4, rainTexels: 256 },
-  low: { grid: 256, meshSegments: 128, underScale: 0.5, fluidScale: 0.5, idleFrameRate: 30, maxDpr: 1.5, rings: 8, ringFade: 3, rainTexels: 256 },
+  high: { grid: 512, meshSegments: 254, underScale: 1.0, fluidScale: 1.0, idleFrameRate: 30, maxDpr: 2.0, rings: 24, ringFade: 8, rainTexels: 512, resting: 40, afloat: 16 },
+  medium: { grid: 256, meshSegments: 160, underScale: 0.5, fluidScale: 0.5, idleFrameRate: 30, maxDpr: 2.0, rings: 12, ringFade: 4, rainTexels: 256, resting: 30, afloat: 14 },
+  low: { grid: 256, meshSegments: 128, underScale: 0.5, fluidScale: 0.5, idleFrameRate: 30, maxDpr: 1.5, rings: 8, ringFade: 3, rainTexels: 256, resting: 20, afloat: 12 },
 };
 export const PIXEL_BUDGET = 2.6e6;   // device pixels in the canvas, on every preset
 const QUALITY_ORDER = ['high', 'medium', 'low'];
@@ -315,24 +323,26 @@ export const MAX_FRAME_RATE = 60;
 const CEILING_TOLERANCE = 0.007;
 // How a thing is thrown: the manner (toss, lob or skip: setManner) and the
 // strength (soft, normal, hard: setPower). A toss and a lob fly to the tap
-// in the normal flight time (throwVelocity) times ARC's multiplier: a toss
-// goes the low way round, flatter the harder it is thrown; a lob the high
-// way, higher the harder (both ways the strength is the pace). A skip's
-// strength is its speed (src/rock.js SKIP_THROW). The normal toss is the
-// throw the splash is tuned to (CLAUDE.md's reference throw).
+// in the normal flight time (src/rock.js throwFlightTime) times ARC's
+// multiplier: a toss goes the low way round, flatter the harder it is
+// thrown; a lob the high way, higher the harder (both ways the strength is
+// the pace). A hard toss (null) is the real hard throw: let go fast on the
+// low arc, it goes in about twice as fast (src/rock.js THROW_STRENGTH). A
+// skip's strength is its speed (src/rock.js SKIP_THROW). The normal toss is
+// the throw the splash is tuned to (CLAUDE.md's reference throw).
 const ARC = {
-  toss: { soft: 1.18, normal: 1.0, hard: 0.72 },
+  toss: { soft: 1.18, normal: 1.0, hard: null },
   lob: { soft: 1.3, normal: 1.5, hard: 1.7 },
 };
 const MANNERS = ['toss', 'lob', 'skip'];
-const POWER = ARC.toss;   // the strengths, for their names
+const POWERS = ['soft', 'normal', 'hard'];   // the throw's strengths (ARC's keys)
 const POND_DEPTH = 0.8;       // the depth the waves take (the solver, the wind's ripples, the rings): see the bed below
 const POND_MARGIN = 0.4;      // metres inside the solver's patch that a tap's throw keeps to...
 const MARGIN_RADII = 4;       // ...or this many of the rock's radius, if more: a 30 cm rock's splats reach 3 radii out
 const POOL_MARGIN = 0.25;     // metres inside the pool's walls a throw keeps to (or MARGIN_RADII of the rock's radius)
 const EYE_EDGE = 0.3;         // metres inside the pool's edge over which the deck's height eases in for the eye
-const MAX_ROCKS = 10;          // things out of sight (flying, sinking, on the bed) at once: a throw past this retires the oldest of them
-const MAX_IN_SIGHT = 12;       // things kept in sight (floaters, things at rest on the deck): only past this is the oldest of them retired
+const MOVING_MOST = 20;        // things on the move (flying, skimming, sinking, tumbling) at once: past this the oldest fades out (keepWithinCaps)
+const FADE_SECONDS = 0.6;      // a thing past a cap shrinks away over this long (fadeOut)
 const FARTHEST_AFLOAT = 30;    // m: a floater a gale has drifted this far from the pond is out of sight, and goes
 const CATCH_UP = 12;           // a frame moves the world at most this many of its steps (simulate: 50 ms; the old frame's 12 substeps)
 const TRACE = { points: 4000, step: 0.01, marks: 100, cross: 0.06 };   // a stone's traced path (setTracing): at most this many points, one per this many metres it moves; at most this many touches and arc tops marked; a touch's cross this many metres each way
@@ -858,7 +868,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     // A floater whose image is not where it now is (moving, or come to rest since it was last drawn), or one riding water
     // that moves under it (src/rock.js rideTheWater: the wind's waves, the solver's ripples, the rings, the rain's).
     const waterMoves = !skip.ambient || !water.asleep || rings.live > 0 || rain.on;
-    const floaters = skip.mirror ? nothingMirrored : rocks.filter((rock) => rock.meshMirror?.visible && ((rock.ridesWater && waterMoves) || !rock.meshMirror.position.equals(rock.mirroredAt ?? unmirrored)));
+    const floaters = skip.mirror ? nothingMirrored : rocks.filter((rock) => rock.meshMirror?.visible && (rock.fading !== undefined || (rock.ridesWater && waterMoves) || !rock.meshMirror.position.equals(rock.mirroredAt ?? unmirrored)));
     mirrorLevel.value = galeWaves.on && lastImpact && objects.length > 0 ? galeSurfaceAt(lastImpact.x, lastImpact.z) : 0;
     if (Math.abs(mirrorLevel.value - mirrorPlacedAt) > 1e-4 && !viewChanged) placeMirrorCamera();   // the splash's region is drawn again below
     if (viewChanged) {
@@ -1265,9 +1275,10 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     return new THREE.Vector3(0.30, -0.32 - 1.6 * beyond, -0.55 - 1.2 * beyond).applyMatrix4(shoreFrame);
   }
 
-  function throwVelocity(hand, target, powerName = power, mannerName = manner) {
-    const distance = hand.distanceTo(target);
-    const flightTime = THREE.MathUtils.clamp(0.42 + 0.11 * distance, 0.5, 1.0) * (ARC[mannerName] ?? ARC.toss)[powerName];
+  /** A throw's velocity from `hand` to `target` at strength `powerName` and manner `mannerName` for a stone of `radius` (ARC; src/rock.js throwFlightTime), with its flight time. */
+  function throwVelocity(hand, target, powerName, radius, mannerName = manner) {
+    const multiplier = (ARC[mannerName] ?? ARC.toss)[powerName];
+    const flightTime = multiplier === null ? throwFlightTime(hand, target, powerName, radius) : throwFlightTime(hand, target, 'normal', radius) * multiplier;
     const velocity = target.clone().sub(hand).divideScalar(flightTime);
     velocity.y += 0.5 * 9.81 * flightTime;
     return { velocity, flightTime };
@@ -1305,7 +1316,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
    * stone, its path and where it comes down.
    */
   function thingVelocity(hand, target, powerName, measured, flight = null, mannerName = manner) {
-    const { velocity, flightTime } = throwVelocity(hand, target, powerName, mannerName);
+    const { velocity, flightTime } = throwVelocity(hand, target, powerName, measured.radius, mannerName);
     if (measured.thing.key === DEFAULT_THING) return { velocity, flightTime, path: null, landing: target };
     return aimThrow(hand, target, flightTime, measured, flight);
   }
@@ -1356,11 +1367,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     sceneMain.add(rock.meshAbove);
     sceneUnder.add(rock.meshBelow);
     if (rock.meshMirror) sceneMain.add(rock.meshMirror);
-    // The oldest out of sight goes first; one in sight only when there are too many of those (keptInSight).
-    for (const [kept, most] of [[false, MAX_ROCKS], [true, MAX_IN_SIGHT]]) {
-      const among = rocks.filter((candidate) => keptInSight(candidate) === kept);
-      for (let index = 0; among.length - index > most; index++) retireRock(among[index]);
-    }
+    keepWithinCaps();
     lastActivity = performance.now();
     return rock;
   }
@@ -1379,8 +1386,26 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     applyView();
   }
 
-  /** Whether a thing is kept in sight (the header): a floater, or at rest on the deck (or on its way there). */
-  function keptInSight(rock) { return rock.floats || rock.onGround || rock.state === 'ground'; }
+  /** What a thing counts against (keepWithinCaps): a floater; one at rest, on the bottom or the deck; or one on the move. */
+  function kindOf(rock) {
+    if (rock.floats) return 'afloat';
+    return rock.state === 'rest' ? 'resting' : 'moving';
+  }
+
+  /** Past a cap (the header: the preset's `resting` and `afloat`, MOVING_MOST), the oldest of that kind fades out. */
+  function keepWithinCaps() {
+    const most = { resting: settings.resting, afloat: settings.afloat, moving: MOVING_MOST };
+    const count = { resting: 0, afloat: 0, moving: 0 };
+    for (const rock of rocks) if (rock.fading === undefined) count[kindOf(rock)]++;
+    for (const rock of rocks) {   // the oldest first
+      if (rock.fading !== undefined) continue;
+      const kind = kindOf(rock);
+      if (count[kind] > most[kind]) { fadeOut(rock); count[kind]--; }
+    }
+  }
+
+  /** Start a thing shrinking away where it is (simulate: over FADE_SECONDS, then retireRock), frozen: no more steps or knocks. */
+  function fadeOut(rock) { rock.fading = 0; }
 
   /** Take a stone out of the scenes; keepMaterials frees only its geometry (warmUp keeps a stone's materials, so their program stays compiled). */
   function retireRock(rock, { keepMaterials = false } = {}) {
@@ -1659,6 +1684,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     finger.advance(frame);   // the finger's wake along its path this frame (src/touch.js)
     const end = simulationTime + frame;
     stepsTime = Math.max(stepsTime, simulationTime);
+    const stepping = rocks.filter((rock) => rock.fading === undefined);   // a thing fading out is frozen (fadeOut)
     // When what this step finds is seen, in real seconds from now (the header): the step's end past the moment the frame
     // draws (a step at most: more in slow motion) and the frame's way to the screen, about a frame (src/sound.js plays
     // its sound then, less the audio's own latency).
@@ -1666,7 +1692,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     const seenAfter = () => Math.max(stepsTime + PHYSICS_STEP - end, 0) / Math.max(timeScale, 0.01) + presented;
     while (stepsTime < end - 1e-12) {
       advanceSplash(stepsTime);
-      for (const rock of rocks) {
+      for (const rock of stepping) {
         // A gale drifts a floater downwind (src/rock.js); the pool has no gale's waves.
         if (rock.floats) rock.setDrift(galeWaves.on && !pooled ? galeWaves.windDirection : null);
         const impact = rock.update(PHYSICS_STEP, bedDepthAt, galeWaves.on ? galeSurfaceAt : null);
@@ -1679,7 +1705,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       }
       // A thing striking a floater, floaters bumping, the pool's walls turning things back (and a skipping stone off
       // their sides, src/pool.js): src/collide.js; the knocked floater rings and throws off spray.
-      for (const { ripple, knock } of collideThings(rocks, pooled ? (rock) => holdInPool(rock, pool.square) : null)) {
+      for (const { ripple, knock } of collideThings(stepping, pooled ? (rock) => holdInPool(rock, pool.square) : null)) {
         splash.ripple(ripple, water);
         splash.knock(knock);
         sound.knock({ speed: knock.closing, radius: ripple.rock.radius, bounce: ripple.rock.collisionBounce }, seenAfter());
@@ -1687,12 +1713,17 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       stepsTime += PHYSICS_STEP;
     }
     advanceSplash(end);
-    for (const rock of rocks) rock.drawAt(1 - (stepsTime - end) / PHYSICS_STEP);
-    // A stone at rest on the bed goes after a while; what is kept in sight stays (the header), unless a gale drifts it out of sight.
+    for (const rock of rocks) rock.drawAt(rock.fading === undefined ? 1 - (stepsTime - end) / PHYSICS_STEP : 1);
+    // What is past a cap shrinks away (keepWithinCaps), and goes; a floater a gale drifts out of sight goes at once.
     for (const rock of [...rocks]) {
-      if (rock.restTime > 40 && !keptInSight(rock)) retireRock(rock);
-      else if (rock.floats && Math.hypot(rock.position.x, rock.position.z) > FARTHEST_AFLOAT) retireRock(rock);
+      if (rock.fading !== undefined) {
+        rock.fading += frame;
+        const left = 1 - THREE.MathUtils.smoothstep(rock.fading, 0, FADE_SECONDS);
+        if (left <= 0) retireRock(rock);
+        else for (const mesh of rock.meshes) mesh.scale.setScalar(rock.radius * left);   // its meshes are scaled by its radius (src/rock.js)
+      } else if (rock.floats && Math.hypot(rock.position.x, rock.position.z) > FARTHEST_AFLOAT) retireRock(rock);
     }
+    keepWithinCaps();   // things settle, and a lower preset keeps fewer
     if (!skip.solver) {
       // The solver sleeps once its waves and foam have faded and nothing of the splash is left (the header);
       // the profiler's 'solver kept awake' step keeps it stepping.
@@ -1832,6 +1863,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       programs: renderer.info.programs?.length ?? 0,
       solverAsleep: water.asleep,
       rings: { live: rings.live, fading: rings.fading, limit: rings.liveLimit, passes: rings.passesRun, fetches: rings.fetchesRun },
+      things: { kept: rocks.length, fading: rocks.filter((rock) => rock.fading !== undefined).length, resting: settings.resting, afloat: settings.afloat, moving: MOVING_MOST },
       wind: windName,
       gale: { blowing: galeWaves.on, sheetTriangles: surface.sheetTriangles },
       rain: { weather: weatherName, falling: rain.on, texels: rain.texels },
@@ -2132,8 +2164,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
      * them; the setting's cards follow (onThingsChange).
      */
     defineThing,
-    /** The throw's strength (the strip's Soft, Medium and Hard: ARC's soft, normal and hard): taps, Space and throwRandom throw with it. */
-    setPower(name) { if (POWER[name]) power = name; },
+    /** The throw's strength (POWERS: the strip's Soft, Medium and Hard, ARC's soft, normal and hard): taps, Space and throwRandom throw with it. */
+    setPower(name) { if (POWERS.includes(name)) power = name; },
     get power() { return power; },
     /** The throw's manner (the strip's Toss, Lob and Skip: MANNERS): taps, Space and throwRandom throw so; throwAt's `manner` option overrides it. */
     setManner,
@@ -2203,6 +2235,19 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       return requestSky(skyRequest.place, name).then(() => environment.hour);
     },
     get hour() { return environment.hour; },
+    /**
+     * Fetch the hours either side of the one last asked for ahead (src/sky.js
+     * prefetch), so that picking one of them next waits only on its decode:
+     * the page calls it while the Time of day page is open. Not when the
+     * browser asks to save data.
+     */
+    prefetchHours() {
+      if (typeof navigator !== 'undefined' && navigator.connection?.saveData) return;
+      const hours = skyHours(skyRequest.place);
+      const index = hours.findIndex((entry) => entry.name === skyRequest.hour);
+      if (index < 0) return;
+      for (const neighbour of [hours[index - 1], hours[index + 1]]) if (neighbour) environment.prefetch(skyRequest.place, neighbour.name);
+    },
     /**
      * The weather by name (WEATHERS: clear, light-rain, heavy-rain), remembered
      * on this device. The sky clouds over at once; the rain falls once its

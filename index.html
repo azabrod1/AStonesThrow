@@ -1628,10 +1628,14 @@
         if (timeChoice !== hour.name) return;   // another was picked since: its load reports
         updateTime();
         if (shown !== hour.name) timeNote.textContent = 'That hour could not be loaded. Check the connection and try again.';
+        else if (settings.isOpen() && settings.currentPage === 'time') pond.prefetchHours();
       });
     }
     timeInput.addEventListener('input', chooseHour);
     followTouch(timeInput, chooseHour);
+    // An hour is a 6 MB photo: opening the page fetches the hours either side of the shown one ahead
+    // (pond.prefetchHours), and each hour shown while it is open fetches its own, so the next is there when picked.
+    document.querySelector('.menu-tier[data-open="time"]').addEventListener('click', () => pond.prefetchHours());
     showView();
     updateThing();
     updateWater();

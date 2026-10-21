@@ -81,7 +81,7 @@
 import * as THREE from 'three';
 import { performance } from 'node:perf_hooks';
 import { SplashSystem } from '../src/splash.js';
-import { Rock } from '../src/rock.js';
+import { Rock, throwFlightTime } from '../src/rock.js';
 import { DAMPING } from '../src/spectralWater.js';
 import { QUALITY } from '../src/main.js';
 import {
@@ -429,7 +429,7 @@ function viewFootprints({ width, height, fov }, columns = 160, rows = 160) {
 /** A stone thrown at `aim` with normal power as the app throws, or (vertical) dropped straight in at REFERENCE_SPEED. */
 function throwStone(radius, vertical, aim = AIM) {
   const target = new THREE.Vector3(aim.x, 0, aim.z);
-  const flightTime = THREE.MathUtils.clamp(0.42 + 0.11 * hand.distanceTo(target), 0.5, 1.0);
+  const flightTime = throwFlightTime(hand, target, 'normal', radius);
   const velocity = target.clone().sub(hand).divideScalar(flightTime);
   velocity.y += 0.5 * GRAVITY * flightTime;
   const rock = new Rock({ radius, position: vertical ? new THREE.Vector3(aim.x, 1.02 * radius, aim.z) : hand, velocity: vertical ? new THREE.Vector3(0, -REFERENCE_SPEED, 0) : velocity, envTexture: null });
