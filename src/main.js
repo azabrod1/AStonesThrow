@@ -67,9 +67,12 @@
 // traces each stone from the hand (traceRock): its path, its track on the
 // water under it, a cross where it touches and a line down from the top of
 // each arc, over everything.
-// With Skip on (setSkip: the strip's Skip, the last of the ways to throw,
-// greyed out while a ball or a gem is chosen) a tap throws a stone of any
-// kind as a skip instead (skipThrow, aimSkip in src/rock.js):
+// How it is thrown is the manner (setManner: the strip's Toss, Lob or Skip)
+// and the strength (setPower: Soft, Medium or Hard): a toss or a lob flies
+// to the tap in ARC's flight time, the low way or the high way round. With
+// the manner Skip (setSkip too; greyed out while a ball or a gem is chosen)
+// a tap throws a stone of any kind as a skip instead (skipThrow, aimSkip in
+// src/rock.js):
 // a flat stone, from the hand let down to SKIP_THROW.handHeight, at
 // SKIP_THROW's speed for the strength (gentler in the pool; slower for a big
 // stone), towards the tap and nearly level (SKIP_THROW.elevation): it first
@@ -96,9 +99,9 @@
 // diameter, a bowling ball's pounds, a basketball's size; a golf or tennis
 // ball has one size). measureThing gives what a throw is: its radius, mass
 // and density. A river stone is thrown as stones always were
-// (throwVelocity, at the strength's flight time, src/rock.js
-// throwFlightTime: Soft a higher lob, Hard let go at 12 m/s, fast and flat,
-// going in twice as fast as Normal); anything else is aimed by src/rock.js aimThrow, which
+// (throwVelocity, at the manner's and the strength's flight time: ARC over
+// src/rock.js throwFlightTime, a hard toss let go at 12 m/s, fast and flat,
+// going in twice as fast as a medium one); anything else is aimed by src/rock.js aimThrow, which
 // flies it against the air's drag (a tennis ball or a piece of pumice
 // would fall several centimetres short) and throws a heavy ball no faster
 // than it can be thrown (a 16 lb bowling ball 5.75 m/s), short of a tap
@@ -318,7 +321,21 @@ const IDLE = {
 // by a millisecond, never loses one.
 export const MAX_FRAME_RATE = 60;
 const CEILING_TOLERANCE = 0.007;
-const POWERS = ['soft', 'normal', 'hard'];   // the throw's strengths (src/rock.js THROW_STRENGTH)
+// How a thing is thrown: the manner (toss, lob or skip: setManner) and the
+// strength (soft, normal, hard: setPower). A toss and a lob fly to the tap
+// in the normal flight time (src/rock.js throwFlightTime) times ARC's
+// multiplier: a toss goes the low way round, flatter the harder it is
+// thrown; a lob the high way, higher the harder (both ways the strength is
+// the pace). A hard toss (null) is the real hard throw: let go fast on the
+// low arc, it goes in about twice as fast (src/rock.js THROW_STRENGTH). A
+// skip's strength is its speed (src/rock.js SKIP_THROW). The normal toss is
+// the throw the splash is tuned to (CLAUDE.md's reference throw).
+const ARC = {
+  toss: { soft: 1.18, normal: 1.0, hard: null },
+  lob: { soft: 1.3, normal: 1.5, hard: 1.7 },
+};
+const MANNERS = ['toss', 'lob', 'skip'];
+const POWERS = ['soft', 'normal', 'hard'];   // the throw's strengths (ARC's keys)
 const POND_DEPTH = 0.8;       // the depth the waves take (the solver, the wind's ripples, the rings): see the bed below
 const POND_MARGIN = 0.4;      // metres inside the solver's patch that a tap's throw keeps to...
 const MARGIN_RADII = 4;       // ...or this many of the rock's radius, if more: a 30 cm rock's splats reach 3 radii out
@@ -1212,8 +1229,15 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     tracing = Boolean(on);
     if (!tracing) for (const rock of [...traces.keys()]) untrace(rock);
   }
-  let power = 'normal';
-  let skipping = false;   // Skip: taps throw skips (skipThrow)
+  let power = 'normal';   // the strength (ARC's keys)
+  let manner = 'toss';    // toss, lob or skip (MANNERS)
+  let skipping = false;   // the manner is skip: taps throw skips (skipThrow)
+  /** The manner set (MANNERS; the header): taps, Space and throwRandom throw so. */
+  function setManner(name) {
+    if (!MANNERS.includes(name)) return;
+    manner = name;
+    skipping = name === 'skip';
+  }
   // What is thrown (the Object setting, src/things.js): the page's ?thing, else the last choice here, else a river stone;
   // and each kind's slider value (thingSizes: its own, or its family's, src/things.js `size.share`: the stones share one).
   const storedThing = storedChoice(THING_STORAGE_KEY);
@@ -1251,9 +1275,10 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     return new THREE.Vector3(0.30, -0.32 - 1.6 * beyond, -0.55 - 1.2 * beyond).applyMatrix4(shoreFrame);
   }
 
-  /** A throw's velocity from `hand` to `target` at strength `powerName` for a stone of `radius` (src/rock.js throwFlightTime), with its flight time. */
-  function throwVelocity(hand, target, powerName, radius) {
-    const flightTime = throwFlightTime(hand, target, powerName, radius);
+  /** A throw's velocity from `hand` to `target` at strength `powerName` and manner `mannerName` for a stone of `radius` (ARC; src/rock.js throwFlightTime), with its flight time. */
+  function throwVelocity(hand, target, powerName, radius, mannerName = manner) {
+    const multiplier = (ARC[mannerName] ?? ARC.toss)[powerName];
+    const flightTime = multiplier === null ? throwFlightTime(hand, target, powerName, radius) : throwFlightTime(hand, target, 'normal', radius) * multiplier;
     const velocity = target.clone().sub(hand).divideScalar(flightTime);
     velocity.y += 0.5 * 9.81 * flightTime;
     return { velocity, flightTime };
@@ -1290,8 +1315,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
    * and aimed for the air's drag. With the flight time and, but for a river
    * stone, its path and where it comes down.
    */
-  function thingVelocity(hand, target, powerName, measured, flight = null) {
-    const { velocity, flightTime } = throwVelocity(hand, target, powerName, measured.radius);
+  function thingVelocity(hand, target, powerName, measured, flight = null, mannerName = manner) {
+    const { velocity, flightTime } = throwVelocity(hand, target, powerName, measured.radius, mannerName);
     if (measured.thing.key === DEFAULT_THING) return { velocity, flightTime, path: null, landing: target };
     return aimThrow(hand, target, flightTime, measured, flight);
   }
@@ -1316,7 +1341,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     const name = Object.hasOwn(THINGS, options.thing ?? '') ? options.thing : thingName;
     const { thing, radius, mass, size } = measureThing(name, options.size, options.radius);
     // Skip skips what skips (src/things.js abilities: a stone of any kind, a pizza); anything else is thrown as ever.
-    const skips = (options.skip ?? skipping) && thing.skips;
+    const thrownAs = MANNERS.includes(options.manner) ? options.manner : options.skip === undefined ? manner : options.skip ? 'skip' : 'toss';
+    const skips = thrownAs === 'skip' && thing.skips;
     const target = new THREE.Vector3(x, 0, z);
     // Made first, so a thing that flutters is aimed by its own flight (src/rock.js trialFlight) and a skip by its own
     // mass (a pizza's toppings and all); a skip is let go lower, from the hand let down (skipThrow).
@@ -1328,7 +1354,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     if (skipped) { rock.position.copy(hand); rock.previous.copy(hand); rock.syncMeshes(); }
     thingShapes.set(name, rock.shape);
     // Aimed as heavy as it is (a pie's filling, a pizza's toppings and all: its fastest its own).
-    const { velocity } = skipped ?? thingVelocity(hand, target, options.power ?? power, { thing, radius, mass: rock.mass, size }, rock.trialFlight());
+    const { velocity } = skipped ?? thingVelocity(hand, target, options.power ?? power, { thing, radius, mass: rock.mass, size }, rock.trialFlight(), thrownAs);
     rock.velocity.copy(velocity);
     if (skips) {
       rock.launchSkip(velocity, tilt);
@@ -2138,11 +2164,14 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
      * them; the setting's cards follow (onThingsChange).
      */
     defineThing,
-    /** The throw's strength (POWERS: soft, the strip's Lob; normal; hard): taps, Space and throwRandom throw with it. */
+    /** The throw's strength (POWERS: the strip's Soft, Medium and Hard, ARC's soft, normal and hard): taps, Space and throwRandom throw with it. */
     setPower(name) { if (POWERS.includes(name)) power = name; },
     get power() { return power; },
-    /** Skip on or off: taps, Space and throwRandom throw skips (the header); throwAt's `skip` option overrides it. */
-    setSkip(on) { skipping = Boolean(on); },
+    /** The throw's manner (the strip's Toss, Lob and Skip: MANNERS): taps, Space and throwRandom throw so; throwAt's `manner` option overrides it. */
+    setManner,
+    get manner() { return manner; },
+    /** Skip on or off: the manner skip, or back to a toss (the header); throwAt's `skip` option overrides it. */
+    setSkip(on) { setManner(on ? 'skip' : manner === 'skip' ? 'toss' : manner); },
     get skipping() { return skipping; },
     /** Trace each stone (the header; ?trace=1, the T key) from its next step on; off takes the traces away. */
     setTrace(on) { setTracing(on); },

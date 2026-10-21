@@ -19,15 +19,16 @@
 //   - a tap anywhere along the slider puts its thumb there (iOS moves a range
 //     input only by its thumb, so the page does this itself), dragging from
 //     there moves it, and the readout and the next stone follow;
-//   - how to throw is one row: Skip, Lob, Hard and Normal each set the
-//     throw's strength and Skip, and slow motion sets the time's scale;
+//   - how to throw is one row: Toss, Lob and Skip set the throw's manner,
+//     Soft, Medium and Hard its strength, and the slow-motion clock goes
+//     round the time's rates (1×, ¼×, ⅒×) and lights while slow;
 //   - the strip's chip opens the dropdown of things (src/thingMenu.js) over
 //     the strip and under the settings button, its four groups and twenty
 //     pills on the screen (on a phone in portrait without scrolling), each
 //     fitting its name and on a touch screen at least 34 points tall, the
 //     chosen one checked and focused; a pill tapped is thrown next (the
 //     dropdown closed, the focus back on the chip, the strip following, a
-//     skip asked for gone back to Normal for a ball), a press on the pond
+//     skip asked for gone back to Toss for a ball), a press on the pond
 //     closes it without throwing, the chip pressed again closes it, and on a
 //     desktop the arrow keys and Enter choose in it and Escape closes it;
 //   - the settings button is on the screen, clear of the title, and (on a
@@ -241,22 +242,30 @@ for (const framing of FRAMINGS) {
   check(onScreen(menuButton) && !overlaps(menuButton, title), `the settings button is on the screen, clear of the title`);
   if (framing.touch) check(menuButton.height >= SMALLEST_BUTTON_HEIGHT - 0.5, `the settings button is at least ${SMALLEST_BUTTON_HEIGHT} points tall (${menuButton.height.toFixed(1)})`);
 
-  // How to throw: Skip, Lob, Hard and Normal each set the throw's strength (src/main.js POWER; Lob is soft) and Skip.
+  // How to throw: Toss, Lob and Skip set the manner (src/main.js MANNERS), Soft, Medium and Hard the strength (ARC), each on its own.
+  const throwState = () => page.evaluate(() => ({ manner: document.querySelector('#manner [aria-pressed="true"]')?.dataset.value, power: document.querySelector('#power [aria-pressed="true"]')?.dataset.value, pondManner: window.__pond.manner, pondPower: window.__pond.power, skipping: window.__pond.skipping }));
   const throwKinds = [];
-  for (const kind of ['skip', 'lob', 'hard', 'normal']) {
-    await press(`#throw-kind [data-value="${kind}"]`);
-    throwKinds.push(await page.evaluate(() => ({ pressed: document.querySelector('#throw-kind [aria-pressed="true"]')?.dataset.value, power: window.__pond.power, skipping: window.__pond.skipping })));
+  for (const [group, value] of [['manner', 'skip'], ['power', 'hard'], ['manner', 'lob'], ['power', 'soft'], ['manner', 'toss'], ['power', 'normal']]) {
+    await press(`#${group} [data-value="${value}"]`);
+    throwKinds.push(await throwState());
   }
-  const expectedKinds = [{ pressed: 'skip', power: 'normal', skipping: true }, { pressed: 'lob', power: 'soft', skipping: false }, { pressed: 'hard', power: 'hard', skipping: false }, { pressed: 'normal', power: 'normal', skipping: false }];
-  check(JSON.stringify(throwKinds) === JSON.stringify(expectedKinds), `Skip, Lob, Hard and Normal set the throw (${throwKinds.map((kind) => `${kind.pressed}: ${kind.power}${kind.skipping ? ', skipping' : ''}`).join('; ')})`);
-  await press('#speed [data-value="0.25"]');
-  const slowed = await page.evaluate(() => window.__pond.timeScale);
-  await press('#speed [data-value="1"]');
-  const realTime = await page.evaluate(() => window.__pond.timeScale);
-  check(slowed === 0.25 && realTime === 1, `slow motion: ¼× runs the pond at ${slowed} of real time, 1× at ${realTime}`);
+  const expectedKinds = [
+    { manner: 'skip', power: 'normal', skipping: true }, { manner: 'skip', power: 'hard', skipping: true }, { manner: 'lob', power: 'hard', skipping: false },
+    { manner: 'lob', power: 'soft', skipping: false }, { manner: 'toss', power: 'soft', skipping: false }, { manner: 'toss', power: 'normal', skipping: false },
+  ];
+  const kindsRight = throwKinds.every((state, index) => state.manner === expectedKinds[index].manner && state.pondManner === state.manner && state.power === expectedKinds[index].power && state.pondPower === state.power && state.skipping === expectedKinds[index].skipping);
+  check(kindsRight, `Toss, Lob and Skip set the manner and Soft, Medium and Hard the strength, each keeping the other (${throwKinds.map((state) => `${state.power} ${state.manner}${state.skipping ? ', skipping' : ''}`).join('; ')})`);
+  // Slow motion: the clock goes round 1×, ¼×, ⅒× and back, lit while slow.
+  const slowSteps = [];
+  for (let presses = 0; presses < 3; presses++) {
+    await press('#slow');
+    slowSteps.push(await page.evaluate(() => ({ scale: window.__pond.timeScale, rate: document.getElementById('slow-rate').textContent, lit: document.getElementById('slow').getAttribute('aria-pressed') })));
+  }
+  const slowRight = JSON.stringify(slowSteps) === JSON.stringify([{ scale: 0.25, rate: '¼×', lit: 'true' }, { scale: 0.1, rate: '⅒×', lit: 'true' }, { scale: 1, rate: '1×', lit: 'false' }]);
+  check(slowRight, `slow motion: the clock's presses run the pond at ${slowSteps.map((step) => `${step.scale} (${step.rate}${step.lit === 'true' ? ', lit' : ''})`).join(', ')}`);
 
-  // The dropdown of things (src/thingMenu.js): Skip asked for first, so choosing a ball shows it going back to Normal.
-  await press('#throw-kind [data-value="skip"]');
+  // The dropdown of things (src/thingMenu.js): Skip asked for first, so choosing a ball shows it going back to Toss.
+  await press('#manner [data-value="skip"]');
   await press('#thing-chip');
   await page.waitForTimeout(300);
   const menu = await page.evaluate(() => {
@@ -290,14 +299,14 @@ for (const framing of FRAMINGS) {
   const picked = await page.evaluate(() => ({
     thing: window.__pond.thing, open: !document.getElementById('thing-menu').hidden, expanded: document.getElementById('thing-chip').getAttribute('aria-expanded'),
     focused: document.activeElement?.id, label: document.getElementById('thing-chip-name').textContent, sliderHidden: document.getElementById('stone-size').hidden,
-    pressed: document.querySelector('#throw-kind [aria-pressed="true"]')?.dataset.value, skipping: window.__pond.skipping, skipOff: document.querySelector('#throw-kind [data-value="skip"]').getAttribute('aria-disabled'),
+    pressed: document.querySelector('#manner [aria-pressed="true"]')?.dataset.value, skipping: window.__pond.skipping, skipOff: document.querySelector('#manner [data-value="skip"]').getAttribute('aria-disabled'),
   }));
   await press('#pond');
   await page.waitForTimeout(150);
   const pickedThrown = await page.evaluate(() => ({ count: window.__pond.rocks.length, thing: window.__pond.rocks.at(-1)?.thing.key }));
   check(picked.thing === 'tennis' && !picked.open && picked.expanded === 'false' && picked.focused === 'thing-chip' && picked.label === 'Tennis ball' && picked.sliderHidden && pickedThrown.count === rocksBeforePick + 1 && pickedThrown.thing === 'tennis',
     `a pill tapped closes the dropdown (${picked.open ? 'open' : 'closed'}, focus on ${picked.focused}), the strip follows (${picked.label}, slider ${picked.sliderHidden ? 'off' : 'on'}) and the next tap on the water throws it (${pickedThrown.count - rocksBeforePick} thrown, ${pickedThrown.thing})`);
-  check(picked.pressed === 'normal' && !picked.skipping && picked.skipOff === 'true', `a skip asked for goes back to Normal for a ball, Skip greyed out (${picked.pressed}${picked.skipping ? ', skipping' : ''}, Skip off: ${picked.skipOff})`);
+  check(picked.pressed === 'toss' && !picked.skipping && picked.skipOff === 'true', `a skip asked for goes back to Toss for a ball, Skip greyed out (${picked.pressed}${picked.skipping ? ', skipping' : ''}, Skip off: ${picked.skipOff})`);
   // A press on the pond (here above the card) only closes it; the chip pressed again closes it too.
   await press('#thing-chip');
   await page.waitForTimeout(300);
@@ -509,12 +518,12 @@ for (const framing of FRAMINGS) {
     await page.waitForTimeout(150);
   }
   // Skip turns on for a pizza (it skips, src/things.js).
-  await page.evaluate(() => document.querySelector('#throw-kind [data-value="skip"]').click());
+  await page.evaluate(() => document.querySelector('#manner [data-value="skip"]').click());
   await page.waitForTimeout(100);
-  const pizzaSkips = await page.evaluate(() => ({ skipping: window.__pond.skipping, pressed: document.querySelector('#throw-kind [aria-pressed="true"]')?.dataset.value }));
+  const pizzaSkips = await page.evaluate(() => ({ skipping: window.__pond.skipping, pressed: document.querySelector('#manner [aria-pressed="true"]')?.dataset.value }));
   check(pizzaSkips.skipping && pizzaSkips.pressed === 'skip', `Skip pressed with a pizza turns on (${pizzaSkips.skipping ? 'on' : 'off'}, ${pizzaSkips.pressed} chosen)`);
   // The pie chosen as a user does, its card and Use (the page's controls follow it; __pond.setThing alone leaves them):
-  // it cannot skip, so the throw goes back to Normal, and Skip, pressed, stays off and says why.
+  // it cannot skip, so the manner goes back to Toss, and Skip, pressed, stays off and says why.
   await page.evaluate(() => {
     const card = document.querySelector('#thing [data-value="pie"]');
     card.closest('details').open = true;
@@ -522,12 +531,12 @@ for (const framing of FRAMINGS) {
     document.getElementById('thing-use').click();
   });
   await page.waitForTimeout(100);
-  const pieKind = await page.evaluate(() => ({ skipping: window.__pond.skipping, pressed: document.querySelector('#throw-kind [aria-pressed="true"]')?.dataset.value }));
-  await page.evaluate(() => document.querySelector('#throw-kind [data-value="skip"]').click());   // off (aria-disabled), so a tap is the page's to answer
+  const pieKind = await page.evaluate(() => ({ skipping: window.__pond.skipping, pressed: document.querySelector('#manner [aria-pressed="true"]')?.dataset.value }));
+  await page.evaluate(() => document.querySelector('#manner [data-value="skip"]').click());   // off (aria-disabled), so a tap is the page's to answer
   await page.waitForTimeout(100);
-  const skipHint = await page.evaluate(() => ({ skipping: window.__pond.skipping, pressed: document.querySelector('#throw-kind [aria-pressed="true"]')?.dataset.value, shown: !document.getElementById('hint').hidden, text: document.getElementById('hint').textContent }));
-  check(!pieKind.skipping && pieKind.pressed === 'normal' && !skipHint.skipping && skipHint.pressed === 'normal' && skipHint.shown && skipHint.text.startsWith('A pie does not skip'),
-    `a pie chosen while skipping goes back to Normal (${pieKind.pressed}), and Skip pressed with it stays off and says why ("${skipHint.text}")`);
+  const skipHint = await page.evaluate(() => ({ skipping: window.__pond.skipping, pressed: document.querySelector('#manner [aria-pressed="true"]')?.dataset.value, shown: !document.getElementById('hint').hidden, text: document.getElementById('hint').textContent }));
+  check(!pieKind.skipping && pieKind.pressed === 'toss' && !skipHint.skipping && skipHint.pressed === 'toss' && skipHint.shown && skipHint.text.startsWith('A pie does not skip'),
+    `a pie chosen while skipping goes back to Toss (${pieKind.pressed}), and Skip pressed with it stays off and says why ("${skipHint.text}")`);
   // Arrow keys cross from one fold into the next (src/settingsPanel.js radioGroup): the next fold opens, the focus moves into
   // it and the next press carries on from there.
   await press('#menu-button');
