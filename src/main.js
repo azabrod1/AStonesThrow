@@ -1532,7 +1532,11 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     if (press && !turned && !touched) {
       const moved = Math.hypot(event.clientX - press.x, event.clientY - press.y);
       const hit = throwAim(event.clientX, event.clientY);
-      if (hit && moved < TAP_SLOP) { onThrow?.(throwAt(hit.x, hit.z)); if (event.pointerType === 'mouse') thrownFrom = { x: event.clientX, y: event.clientY }; }
+      if (hit && moved < TAP_SLOP) {
+        const rock = throwAt(hit.x, hit.z);   // thrown first: onThrow?.(throwAt(…)) would not throw at all without an onThrow
+        onThrow?.(rock);
+        if (event.pointerType === 'mouse') thrownFrom = { x: event.clientX, y: event.clientY };
+      }
     }
     if (event.pointerType !== 'mouse' || thrownFrom || touched) showAim(null);
   });
