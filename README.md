@@ -18,14 +18,20 @@ let go to lift it out (`src/touch.js`). Drag the water to walk the view round th
 up or down (from just above the water to nearly straight down), and scroll
 or pinch to zoom toward what is under the pointer (down to an 8° field of
 view); a drag that starts zoomed turns round what the view is looking at.
-Escape or Reset view glides back to the shore. The strip at the bottom sets
-the size of what is thrown (a stone 1.5 to 30 cm across, a bowling ball 6
-to 16 lb, a basketball size 5 to 7, a gem 5 to 1000 carats; a golf or a
-tennis ball has one size), the throw strength, Skip and the speed (real
-time, or slow motion at ¼ or ⅒). With Skip on, a flat stone is thrown low
-and level, spinning, and skips across the water (below), in the direction
-of the tap (even on the sky); its first touch lands where a level throw
-puts it. The menu button at the
+Escape or Reset view (under the menu button while the view is away from
+the shore's) glides back to the shore. The strip at the bottom sets what is
+thrown: its chip opens a dropdown of every thing under its group, each with
+its picture (`src/thingMenu.js`), and its slider sets the size (a stone 1.5
+to 30 cm across, a bowling ball 6 to 16 lb, a basketball size 5 to 7, a gem
+5 to 1000 carats; a golf or a tennis ball has one size). Its second row sets
+how it is thrown, Lob (a high, slow arc; the code's soft), Normal, Hard
+(fast and flat) or Skip, and slow motion (1×, ¼× or ⅒× real time). With
+Skip, a flat stone is thrown low and level, spinning, at the normal
+strength, and skips across the water (below), in the direction of the tap
+(even on the sky); its first touch lands where a level throw puts it. Skip
+is greyed out for what cannot skip, and choosing such a thing goes back to
+Normal. On a phone in portrait, where the title's line is hidden, a cue over
+the water says to tap it, until the first throw. The menu button at the
 top right opens the settings, laid out as the Moon app's menu is: a list in
 four groups (what is thrown: What to throw; the place: Location, Water and Time of
 day; the conditions: Weather, Wind and Sound; the viewing: View and Quality), each row an icon, its name
@@ -36,7 +42,7 @@ is remembered on the device (but the view, which opens on the shore):
   granite, basalt, pumice), balls (golf, tennis, bowling, basketball), gems
   (diamond, emerald, ruby, sapphire) and others (an apple, a watermelon, a
   pizza, a frozen pizza, a brick), each the size, weight and density of the
-  real thing (`src/things.js`). The strip's chip opens this page. What is
+  real thing (`src/things.js`). The foot of the strip's dropdown opens this page. What is
   lighter than water floats; the rest sink. Each choice's picture
   (`assets/things/thumbs/`) is a harness frame of it at rest on the pool's
   deck.
@@ -339,7 +345,8 @@ at the surface, a 16 cm stone almost never, and its jets are mostly stubby
 
 **Skipping** (`src/rock.js`, a Skip throw). The thrower picks a flat stone
 and lets it go from a crouch, 30 cm over the water, nearly level, at 7, 10
-or 13 m/s (Soft, Normal, Hard; a stone over 8 cm across goes slower), its
+or 13 m/s (the strengths soft, normal and hard: the strip's Skip throws at
+normal, the harness's `--power` at any; a stone over 8 cm across goes slower), its
 face tilted nose-up about 20° along the throw (Clanet, Hersen & Bocquet's
 "magic angle") and spinning fast about its short axis, which holds that
 tilt. Each touch is worked out once, on the CPU, as Bocquet (2003) models
@@ -919,7 +926,12 @@ farther out, so it rises into the view rather than filling its corner.
   width, every control is on the screen, the strip covers at most 30% of the
   height, the stone slider is 44 points tall (and most of the width in
   portrait) and every button 34, and that a tap or a drag anywhere along the
-  slider sets the stone; that the settings open with their seven rows, each
+  slider sets the stone; that the first visit's cue shows on a phone in
+  portrait and goes with the first throw; that Lob, Normal, Hard and Skip set
+  the throw and 1×, ¼× and ⅒× the time; that the chip's dropdown fits over the
+  strip (a phone in portrait without scrolling), its pills tall enough for a
+  finger, a pill tapped is thrown next, a press on the pond closes it without
+  throwing and the keyboard works it; that the settings open with their rows, each
   row's value whole beside its name, the Water page's pictured choices each
   reachable by scrolling and its Pool and Murky taking, the
   Time of day page's slider spans it and, tapped at its left end, loads the

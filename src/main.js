@@ -67,8 +67,8 @@
 // traces each stone from the hand (traceRock): its path, its track on the
 // water under it, a cross where it touches and a line down from the top of
 // each arc, over everything.
-// With Skip on (setSkip: the Throw group's
-// switch, off while a ball or a gem is chosen) a tap throws a stone of any
+// With Skip on (setSkip: the strip's Skip, the last of the ways to throw,
+// greyed out while a ball or a gem is chosen) a tap throws a stone of any
 // kind as a skip instead (skipThrow, aimSkip in src/rock.js):
 // a flat stone, from the hand let down to SKIP_THROW.handHeight, at
 // SKIP_THROW's speed for the strength (gentler in the pool; slower for a big
@@ -193,7 +193,8 @@
 // otherwise the quality calibrates itself from the frame rate (CALIBRATION),
 // keeps watching it, and reports each change through onQualityChange.
 // ?profile=1 runs the profiling steps of src/profiler.js and reports through
-// onProfile.
+// onProfile. Each throw once the pond takes input (not the warm-up's) is
+// reported through onThrow: the page's first-visit cue goes with the first.
 import * as THREE from 'three';
 import { SpectralWater } from './spectralWater.js';
 import { AmbientWaves, DEFAULT_WIND, WIND_STRENGTHS } from './ambientWaves.js';
@@ -380,7 +381,7 @@ const DEFAULT_WATER = 'lake';
 // with a jet then built them.
 const WARM_UP = { x: 0, z: -1.4, radius: 0.03, moments: [0.02, 0.16, 0.4], seed: 4, floaters: ['pumice', 'pizza'] };   // a floater of each program: pumice the stones', a pizza its textured one
 
-export async function startPond({ canvas, quality = 'auto', onReady, onProgress, onError, onRainError, onStats, onViewChange, onQualityChange, onProfile }) {
+export async function startPond({ canvas, quality = 'auto', onReady, onProgress, onError, onRainError, onStats, onViewChange, onQualityChange, onProfile, onThrow }) {
   let readyForInput = false;
   let renderer;
   try {
@@ -1285,6 +1286,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       for (let index = 0; among.length - index > most; index++) retireRock(among[index]);
     }
     lastActivity = performance.now();
+    if (readyForInput) onThrow?.(rock);
     return rock;
   }
 
@@ -2026,7 +2028,9 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
      * them; the setting's cards follow (onThingsChange).
      */
     defineThing,
+    /** The throw's strength (POWER: soft, the strip's Lob; normal; hard): taps, Space and throwRandom throw with it. */
     setPower(name) { if (POWER[name]) power = name; },
+    get power() { return power; },
     /** Skip on or off: taps, Space and throwRandom throw skips (the header); throwAt's `skip` option overrides it. */
     setSkip(on) { skipping = Boolean(on); },
     get skipping() { return skipping; },
