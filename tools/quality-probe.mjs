@@ -258,7 +258,7 @@ const namesBeforeThings = await programNames(page);
 // a pizza's waterline took a throw 33 to 57 ms). Each is timed too, for the record: the times vary too much here to check.
 const preparedBefore = await page.evaluate(() => window.__pond.budget.preparation);
 const firstThrows = [];
-for (const thing of ['slate', 'granite', 'basalt', 'pumice', 'golf', 'tennis', 'bowling', 'basketball', 'diamond', 'apple', 'pizza', 'frozen-pizza', 'watermelon', 'brick']) {
+for (const thing of ['slate', 'granite', 'basalt', 'pumice', 'golf', 'tennis', 'bowling', 'basketball', 'diamond', 'apple', 'pizza', 'frozen-pizza', 'pie', 'duck', 'watermelon', 'brick']) {
   const spent = await page.evaluate((name) => {
     window.__pond.pause();
     const started = performance.now();
@@ -421,7 +421,7 @@ const session = await page.evaluate(() => {
   pond.clear();
   pond.advance(0.5);
   const before = { geometries: memory.geometries, textures: memory.textures, programs: pond.budget.programs };
-  const names = ['stone', 'basketball', 'pizza', 'frozen-pizza', 'tennis', 'brick', 'pumice', 'diamond', 'watermelon', 'apple', 'bowling', 'golf'];
+  const names = ['stone', 'basketball', 'pizza', 'frozen-pizza', 'pie', 'duck', 'tennis', 'brick', 'pumice', 'diamond', 'watermelon', 'apple', 'bowling', 'golf'];
   let most = 0;
   for (let throwing = 0; throwing < 60; throwing++) {
     pond.throwAt(-1 + (throwing % 7) * 0.33, -0.8 - (throwing % 5) * 0.4, { thing: names[throwing % names.length] });

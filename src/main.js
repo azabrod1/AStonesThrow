@@ -115,7 +115,9 @@
 // floater where it is drawn, riding the water (src/floaterRide.js reads the
 // water's height under each back from the GPU, without waiting). Each impact,
 // skip, floater's ring and knock sounds (src/sound.js; the Sound setting,
-// its own localStorage key, ?sound=off). In the pool the deck is
+// its own localStorage key, ?sound=off), when it is seen (simulate's
+// seenAfter: a step's end past the moment its frame draws, at the world's
+// speed, and that frame's way to the screen, a frame on). In the pool the deck is
 // ground to anything thrown (src/pool.js poolGround). What comes to rest
 // stays, on the bed or the pool's floor as on the deck: the preset keeps
 // up to its `resting` things at rest and its `afloat` floaters (QUALITY: a
@@ -221,7 +223,7 @@ import { Rings } from './rings.js';
 import { createEnvironment, SKY_NAMES, skyHours, resolveHour, nearestHour } from './sky.js';
 import { createWaterSurface } from './waterSurface.js';
 import { createPondFloor, createShore, floorDepthAt, groundHeightAt } from './pondFloor.js';
-import { Rock, aimSkip, aimThrow, flutterTrial, prepareThing, PREPARATION_WORK, skipSpeed, SKIP_THROW, PHYSICS_STEP, throwFlightTime } from './rock.js';
+import { Rock, aimSkip, aimThrow, flutterTrial, prepareThing, PREPARATION_WORK, skipLowest, skipSpeed, SKIP_THROW, PHYSICS_STEP, throwFlightTime } from './rock.js';
 import { THINGS, THING_NAMES, DEFAULT_THING, defineThing, onThingsChange } from './things.js';
 import { collideThings } from './collide.js';
 import { SplashSystem, MIRROR_LAYER } from './splash.js';
@@ -1260,15 +1262,23 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
    * SKIP_THROW.handHeight, at the strength's speed (skipSpeed), aimed by
    * aimSkip at the target, on open water (SKIP_THROW.shallowest deep, or in
    * the pool less throwMargin()), falling back on the target brought onto
-   * the water (keepOnWater). With the hand, the velocity, the flight time
-   * and where it comes down, for the aim.
+   * the water (keepOnWater), for `measured` (measureThing's). A stone's
+   * throw goes by its size, as it always did; anything else's (a pizza) by
+   * its mass, aimed by its lowest point, which touches first (skipLowest,
+   * at its own `tilt`, drawn before it is aimed: Rock.skipTilt).
+   * With the hand, the velocity, the flight time and where it comes down,
+   * for the aim.
    */
-  function skipThrow(hand, target, radius, powerName = power) {
+  function skipThrow(hand, target, measured, powerName = power, tilt = undefined) {
+    const { radius } = measured;
+    const mass = measured.thing.byDiameter ? null : measured.mass;
     const from = hand.clone();
     from.y = Math.min(from.y, SKIP_THROW.handHeight);
     const margin = throwMargin();
     const onWater = pooled ? poolInside(pool.square, margin) : (x, z) => bedDepthAt(x, z) >= SKIP_THROW.shallowest;
-    return { hand: from, ...aimSkip(from, target, skipSpeed(powerName, radius, pooled), onWater, keepOnWater(target.clone(), margin)) };
+    const lowest = mass === null ? 0 : skipLowest(radius, tilt);
+    const aimed = aimSkip(from.clone().setY(from.y - lowest), target, skipSpeed(powerName, radius, pooled, mass), onWater, keepOnWater(target.clone(), margin));
+    return { hand: from, ...aimed };
   }
 
   /**
@@ -1303,18 +1313,23 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   function throwAt(x, z, options = {}) {
     const name = Object.hasOwn(THINGS, options.thing ?? '') ? options.thing : thingName;
     const { thing, radius, mass, size } = measureThing(name, options.size, options.radius);
-    // Skip skips what skips (src/things.js abilities: a stone of any kind); anything else is thrown as ever.
+    // Skip skips what skips (src/things.js abilities: a stone of any kind, a pizza); anything else is thrown as ever.
     const skips = (options.skip ?? skipping) && thing.skips;
     const target = new THREE.Vector3(x, 0, z);
-    const skipped = skips ? skipThrow(handPosition(radius), target, radius, options.power ?? power) : null;
+    // Made first, so a thing that flutters is aimed by its own flight (src/rock.js trialFlight) and a skip by its own
+    // mass (a pizza's toppings and all); a skip is let go lower, from the hand let down (skipThrow).
+    const rock = new Rock({ radius, position: handPosition(radius), velocity: new THREE.Vector3(), envTexture: environment.envTexture, waterFog: { extinction: lighting.extinction, color: lighting.waterColor }, thing: name, mass, mirrorLayer: MIRROR_LAYER, skip: skips, water: surface.rideUniforms });
+    // A broad thing's tilt drawn first, so it is aimed by its own (a stone's is drawn as it is let go, as it always was).
+    const tilt = skips && !thing.byDiameter ? rock.skipTilt() : undefined;
+    const skipped = skips ? skipThrow(handPosition(radius), target, { thing, radius, mass: rock.mass }, options.power ?? power, tilt) : null;
     const hand = skipped?.hand ?? handPosition(radius);
-    // Made first, so a thing that flutters is aimed by its own flight (src/rock.js trialFlight).
-    const rock = new Rock({ radius, position: hand, velocity: new THREE.Vector3(), envTexture: environment.envTexture, waterFog: { extinction: lighting.extinction, color: lighting.waterColor }, thing: name, mass, mirrorLayer: MIRROR_LAYER, skip: skips, water: surface.rideUniforms });
+    if (skipped) { rock.position.copy(hand); rock.previous.copy(hand); rock.syncMeshes(); }
     thingShapes.set(name, rock.shape);
-    const { velocity } = skipped ?? thingVelocity(hand, target, options.power ?? power, { thing, radius, mass, size }, rock.trialFlight());
+    // Aimed as heavy as it is (a pie's filling, a pizza's toppings and all: its fastest its own).
+    const { velocity } = skipped ?? thingVelocity(hand, target, options.power ?? power, { thing, radius, mass: rock.mass, size }, rock.trialFlight());
     rock.velocity.copy(velocity);
     if (skips) {
-      rock.launchSkip(velocity);
+      rock.launchSkip(velocity, tilt);
       // In the pool it touches and skims only inside the walls, less its radius (src/pool.js holds it off them).
       if (pooled) rock.skip.inside = poolInside(pool.square, radius);
     }
@@ -1427,7 +1442,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     marker.visible = true;
     marker.scale.setScalar(1);
     const measured = measureThing(thingName);
-    const skipped = skipsNow() ? skipThrow(handPosition(measured.radius), hit, measured.radius) : null;
+    const skipped = skipsNow() ? skipThrow(handPosition(measured.radius), hit, measured) : null;
     const hand = skipped?.hand ?? handPosition(measured.radius);
     // A fluttering thing's arc is its flight's (src/rock.js flutterTrial), its shape its prepared one's (or the last thrown's).
     const shape = thingShapes.get(thingName) ?? prepareThing(measured.thing)?.shape;
@@ -1637,6 +1652,11 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     const end = simulationTime + frame;
     stepsTime = Math.max(stepsTime, simulationTime);
     const stepping = rocks.filter((rock) => rock.fading === undefined);   // a thing fading out is frozen (fadeOut)
+    // When what this step finds is seen, in real seconds from now (the header): the step's end past the moment the frame
+    // draws (a step at most: more in slow motion) and the frame's way to the screen, about a frame (src/sound.js plays
+    // its sound then, less the audio's own latency).
+    const presented = Math.min(1 / Math.max(fpsAverage, 1), 1 / 30);
+    const seenAfter = () => Math.max(stepsTime + PHYSICS_STEP - end, 0) / Math.max(timeScale, 0.01) + presented;
     while (stepsTime < end - 1e-12) {
       advanceSplash(stepsTime);
       for (const rock of stepping) {
@@ -1644,10 +1664,10 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
         if (rock.floats) rock.setDrift(galeWaves.on && !pooled ? galeWaves.windDirection : null);
         const impact = rock.update(PHYSICS_STEP, bedDepthAt, galeWaves.on ? galeSurfaceAt : null);
         if (tracing && (rock.state === 'air' || rock.state === 'skim' || impact)) traceRock(rock, impact);
-        if (impact?.skim) { splash.skim(impact, water); sound.skip(impact); }
-        else if (impact?.ripple) { splash.ripple(impact, water); sound.ripple(impact); }
-        else if (impact) { splash.impact(impact, water); sound.splash(impact); }
-        for (const knock of rock.heard.splice(0)) sound.knock(knock);
+        if (impact?.skim) { splash.skim(impact, water); sound.skip(impact, seenAfter()); }
+        else if (impact?.ripple) { splash.ripple(impact, water); sound.ripple(impact, seenAfter()); }
+        else if (impact) { splash.impact(impact, water); sound.splash(impact, seenAfter()); }
+        for (const knock of rock.heard.splice(0)) sound.knock(knock, seenAfter());
         if (impact && !impact.ripple) lastImpact = { x: impact.x, z: impact.z };
       }
       // A thing striking a floater, floaters bumping, the pool's walls turning things back (and a skipping stone off
@@ -1655,7 +1675,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       for (const { ripple, knock } of collideThings(stepping, pooled ? (rock) => holdInPool(rock, pool.square) : null)) {
         splash.ripple(ripple, water);
         splash.knock(knock);
-        sound.knock({ speed: knock.closing, radius: ripple.rock.radius, bounce: ripple.rock.collisionBounce });
+        sound.knock({ speed: knock.closing, radius: ripple.rock.radius, bounce: ripple.rock.collisionBounce }, seenAfter());
       }
       stepsTime += PHYSICS_STEP;
     }
