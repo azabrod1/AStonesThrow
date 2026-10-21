@@ -29,7 +29,10 @@
 //    SwiftShader one throw's varies from 2 to over 60 ms); a basketball
 //    resting afloat adds at most FLOATER_FRAME_CALLS draw calls a frame
 //    (its mirror image redrawn as the water moves; calls and triangles
-//    printed). The world's
+//    printed). What comes to rest stays: in the pool on low the preset's
+//    `resting` stones are all there 41 s on, each one draw call, and one more
+//    come to rest shrinks the oldest away (src/main.js keepWithinCaps,
+//    fadeOut), never at once. The world's
 //    step is fixed: a basketball thrown alike at 60 frames a second and in
 //    frames of 1/162 s is in the same place 2.5 s on. With the page running,
 //    the water's height under a floater beside a splash is read back
@@ -51,9 +54,15 @@
 //    many callbacks the frame runs: the probe's own waits poll on it): at 55 frames
 //    a second the calibration keeps high through the idle pond and a splash;
 //    at 20 a second the watch that follows steps down to medium within a few
-//    seconds; and on medium a pond where nothing happens draws every other
+//    seconds (even once the pond is still: at 20 a second the idle cap skips
+//    no requestAnimationFrame, so the watch counts every frame); and on medium a pond where nothing happens draws every other
 //    requestAnimationFrame at 60 a second, its simulated time still keeping
-//    up with the clock.
+//    up with the clock. Then on high: the still pond draws every other one
+//    at 60 a second too, and every fourth at 120 (a 120 Hz display); a throw
+//    at twice MAX_FRAME_RATE a second draws every other one, held to
+//    MAX_FRAME_RATE, and at MAX_FRAME_RATE every one, as at 90 a second (a
+//    90 Hz display's frames are within the ceiling's slack), the idle cap
+//    off and the simulated time keeping up throughout.
 // 3. A 2560×1440 window on high: the canvas keeps within PIXEL_BUDGET.
 //
 //   node tools/quality-probe.mjs
@@ -63,7 +72,7 @@ import { readFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { QUALITY, PIXEL_BUDGET } from '../src/main.js';
+import { QUALITY, PIXEL_BUDGET, MAX_FRAME_RATE } from '../src/main.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const FLOATER_FRAME_CALLS = 12;   // the most draw calls a basketball resting afloat may add to a frame: its halves, and its mirror image's region redrawn
@@ -249,7 +258,7 @@ const namesBeforeThings = await programNames(page);
 // a pizza's waterline took a throw 33 to 57 ms). Each is timed too, for the record: the times vary too much here to check.
 const preparedBefore = await page.evaluate(() => window.__pond.budget.preparation);
 const firstThrows = [];
-for (const thing of ['slate', 'granite', 'basalt', 'pumice', 'golf', 'tennis', 'bowling', 'basketball', 'diamond', 'apple', 'pizza', 'frozen-pizza', 'watermelon', 'brick']) {
+for (const thing of ['slate', 'granite', 'basalt', 'pumice', 'golf', 'tennis', 'bowling', 'basketball', 'diamond', 'apple', 'pizza', 'frozen-pizza', 'pie', 'duck', 'watermelon', 'brick']) {
   const spent = await page.evaluate((name) => {
     window.__pond.pause();
     const started = performance.now();
@@ -295,6 +304,46 @@ const restingBall = await page.evaluate(() => {
 const withFloater = await frameCounts();
 console.log(`  a frame: ${stillPond.calls} draw calls, ${stillPond.triangles} triangles on the still pond; ${withFloater.calls}, ${withFloater.triangles} with a basketball resting afloat`);
 check(restingBall && withFloater.calls - stillPond.calls <= FLOATER_FRAME_CALLS, `a basketball resting afloat adds at most ${FLOATER_FRAME_CALLS} draw calls a frame (${withFloater.calls - stillPond.calls})`);
+// What comes to rest stays (src/main.js keepWithinCaps): in the pool on low, the preset's `resting` stones lie on its
+// floor, each one draw call (its part above the water hidden, src/rock.js syncMeshes), and no timer takes them; one
+// more, come to rest, shrinks the oldest away (fadeOut: partway, smaller than its own size and still there; then gone),
+// never at once.
+await page.evaluate(() => { const pond = window.__pond; pond.clear(); pond.setQuality('low'); pond.setClarity('pool'); pond.advance(0.5); });
+const emptyPool = await frameCounts();
+const kept = await page.evaluate(() => {
+  const pond = window.__pond;
+  const { resting } = pond.budget.things;
+  let state = 11;
+  const random = () => { state = (state * 16807) % 2147483647; return (state - 1) / 2147483646; };
+  const throwOne = () => pond.throwAt(-1.1 + 2.2 * random(), -2.1 + 2.2 * random(), { thing: 'stone' });
+  const stones = [];
+  for (let index = 0; index < resting; index++) { stones.push(throwOne()); pond.advance(0.3); }
+  pond.advance(5);
+  const settled = stones.filter((stone) => stone.state === 'rest').length;
+  pond.advance(41);   // past the 40 s that once took a stone at rest on the bed
+  const result = {
+    resting, settled,
+    keptAfter: stones.filter((stone) => pond.rocks.includes(stone)).length,
+    oneCall: stones.filter((stone) => !stone.meshAbove.visible && stone.meshBelow.visible).length,
+  };
+  const extra = throwOne();
+  for (let step = 0; step < 600 && !pond.rocks.some((rock) => rock.fading !== undefined); step++) pond.advance(1 / 60);
+  const fading = pond.rocks.find((rock) => rock.fading !== undefined);
+  result.oldestFades = fading === stones[0];
+  pond.advance(0.3);
+  result.partway = fading ? { there: pond.rocks.includes(fading), scale: fading.meshBelow.scale.x / fading.radius } : null;   // its meshes' scale is its radius
+  pond.advance(0.5);
+  result.gone = fading ? !pond.rocks.includes(fading) : false;
+  result.after = { kept: pond.budget.things.kept, extraKept: pond.rocks.includes(extra) };
+  return result;
+});
+const restingPool = await frameCounts();
+console.log(`  the pool on low: ${kept.settled} of ${kept.resting} stones at rest, ${kept.keptAfter} still there 41 s on, ${kept.oneCall} drawn once; ${emptyPool.calls} draw calls a frame empty, ${restingPool.calls} with them`);
+check(kept.settled === kept.resting && kept.keptAfter === kept.resting, `the preset's ${kept.resting} stones at rest on the pool's floor all stay, 41 s on (${kept.keptAfter})`);
+check(kept.oneCall === kept.resting && restingPool.calls - emptyPool.calls <= kept.resting + 2, `a stone at rest under the water is one draw call (${kept.oneCall} of ${kept.resting} with the part above hidden; ${restingPool.calls - emptyPool.calls} calls for them)`);
+check(kept.oldestFades && kept.partway?.there && kept.partway.scale > 0.05 && kept.partway.scale < 0.95 && kept.gone && kept.after.kept === kept.resting && kept.after.extraKept,
+  `one more at rest shrinks the oldest away, not at once (the oldest: ${kept.oldestFades}; partway ${kept.partway ? `there, at ${kept.partway.scale.toFixed(2)} of its size` : 'never'}; then gone: ${kept.gone}; ${kept.after.kept} kept)`);
+await page.evaluate(() => { const pond = window.__pond; pond.clear(); pond.setClarity('lake'); pond.setQuality('high'); pond.advance(0.1); });
 // The world's step is fixed (src/main.js simulate, src/rock.js PHYSICS_STEP): the same throw, drawn 60 times a second or
 // at a frame rate that steps it unevenly (a slow-motion speed of 0.37: frames of 1/162 s), goes exactly where it went.
 const unevenly = await page.evaluate(() => {
@@ -373,7 +422,7 @@ const session = await page.evaluate(() => {
   pond.clear();
   pond.advance(0.5);
   const before = { geometries: memory.geometries, textures: memory.textures, programs: pond.budget.programs };
-  const names = ['stone', 'basketball', 'pizza', 'frozen-pizza', 'tennis', 'brick', 'pumice', 'diamond', 'watermelon', 'apple', 'bowling', 'golf'];
+  const names = ['stone', 'basketball', 'pizza', 'frozen-pizza', 'pie', 'duck', 'tennis', 'brick', 'pumice', 'diamond', 'watermelon', 'apple', 'bowling', 'golf'];
   let most = 0;
   for (let throwing = 0; throwing < 60; throwing++) {
     pond.throwAt(-1 + (throwing % 7) * 0.33, -0.8 - (throwing % 5) * 0.4, { thing: names[throwing % names.length] });
@@ -438,7 +487,8 @@ const calmAgain = await page.evaluate(() => ({ programs: window.__pond.budget.pr
 check(!calmAgain.gale.blowing && calmAgain.gale.sheetTriangles < 5000 && calmAgain.programs === programsBeforeGale, `calm again: the still sheet (${calmAgain.gale.sheetTriangles} triangles), no program (${calmAgain.programs})`);
 await checkBuilt(phone, 'after the gale');
 
-// pause, resume, pause, resume in one tick: one frame loop, so at most one render per requestAnimationFrame (high is never capped).
+// pause, resume, pause, resume in one tick: one frame loop, so at most one render per requestAnimationFrame, and at least every
+// other (the most the idle cap, on high too now, skips of a 60 Hz requestAnimationFrame).
 const loops = await page.evaluate(() => new Promise((resolve) => {
   const pond = window.__pond;
   pond.pause(); pond.resume(); pond.pause(); pond.resume();
@@ -477,20 +527,51 @@ const slowFor = await fakePage.evaluate((from) => (performance.now() - from) / 1
 check((await pageState(fakePage)).quality === 'medium', `at 20 frames a second the watch steps down to medium (after ${slowFor.toFixed(1)} s)`);
 check(slowFor < 6, 'within a few seconds');
 await checkBuilt(faked, 'after the watch stepped down');
-// A pond where nothing happens on medium: frames at 30 a second on a 60 Hz clock.
-await fakePage.evaluate(() => { window.__fakeStep = 1000 / 60; });
-await fakePage.waitForFunction(() => window.__pond.budget.frameCapped, undefined, { timeout: 900000 }).catch(() => {});
-const capped = await fakePage.evaluate(() => new Promise((resolve) => {
+/** The renders, simulated and clock seconds over 40 faked frames at `hertz`, and whether the idle cap held at the start and the end. */
+const overFrames = (hertz) => fakePage.evaluate((step) => new Promise((resolve) => {
+  window.__fakeStep = step;
   const pond = window.__pond;
-  const start = { renders: pond.framesRendered, ticks: window.__ticks, time: pond.time, clock: performance.now() };
+  const start = { renders: pond.framesRendered, ticks: window.__ticks, time: pond.time, clock: performance.now(), capped: pond.budget.frameCapped };
   const wait = () => {
     if (window.__ticks - start.ticks < 40) { requestAnimationFrame(wait); return; }
-    resolve({ renders: pond.framesRendered - start.renders, ticks: window.__ticks - start.ticks, simulated: pond.time - start.time, clock: (performance.now() - start.clock) / 1000 });
+    resolve({ renders: pond.framesRendered - start.renders, ticks: window.__ticks - start.ticks, simulated: pond.time - start.time, clock: (performance.now() - start.clock) / 1000, capped: [start.capped, pond.budget.frameCapped] });
   };
   requestAnimationFrame(wait);
-}));
+}), 1000 / hertz);
+const drawsOneIn = (counted, every) => counted.renders >= (counted.ticks - 1) / every - 1 && counted.renders <= (counted.ticks + 1) / every + 1;
+const keepsUp = (counted) => Math.abs(counted.simulated - counted.clock) <= 2.5 / 60;
+/** Waits for the idle cap on or off as judged by a frame begun after the call (frameCapped is only updated by a frame). */
+const waitForCap = async (on) => {
+  const from = await fakePage.evaluate(() => window.__ticks);
+  await fakePage.waitForFunction(([wanted, after]) => window.__ticks > after + 1 && window.__pond.budget.frameCapped === wanted, [on, from], { timeout: 900000 }).catch(() => {});
+};
+// A pond where nothing happens on medium: frames at 30 a second on a 60 Hz clock.
+await fakePage.evaluate(() => { window.__fakeStep = 1000 / 60; });
+await waitForCap(true);
+const capped = await overFrames(60);
 check(capped.renders >= 0.4 * capped.ticks && capped.renders <= 0.6 * capped.ticks + 1, `a still pond on medium draws every other frame: ${capped.renders} renders in ${capped.ticks} frames`);
-check(Math.abs(capped.simulated - capped.clock) <= 2.5 / 60, `and its simulated time keeps up: ${capped.simulated.toFixed(3)} s simulated in ${capped.clock.toFixed(3)} s`);
+check(keepsUp(capped), `and its simulated time keeps up: ${capped.simulated.toFixed(3)} s simulated in ${capped.clock.toFixed(3)} s`);
+// High idles at 30 too; while things happen, every preset is held to
+// MAX_FRAME_RATE: a clock at twice it (a 120 Hz display) draws every other
+// frame and the idle pond every fourth, a clock at it (60 Hz) every frame.
+await fakePage.evaluate(() => window.__pond.setQuality('high'));
+await waitForCap(true);
+const highStill = await overFrames(60);
+check(highStill.capped.every(Boolean) && drawsOneIn(highStill, 60 / QUALITY.high.idleFrameRate), `a still pond on high draws every other frame at 60 Hz: ${highStill.renders} renders in ${highStill.ticks} frames`);
+const highStillFast = await overFrames(120);
+check(highStillFast.capped.every(Boolean) && drawsOneIn(highStillFast, 120 / QUALITY.high.idleFrameRate) && keepsUp(highStillFast), `and every fourth at 120 Hz: ${highStillFast.renders} renders in ${highStillFast.ticks} frames, ${highStillFast.simulated.toFixed(3)} s simulated in ${highStillFast.clock.toFixed(3)} s`);
+await fakePage.evaluate(() => window.__pond.throwAt(0, -1.4, { radius: 0.03 }));
+await waitForCap(false);
+const flyingFast = await overFrames(2 * MAX_FRAME_RATE);
+check(!flyingFast.capped.some(Boolean) && drawsOneIn(flyingFast, 2) && keepsUp(flyingFast), `a throw at ${2 * MAX_FRAME_RATE} Hz draws every other frame, ${MAX_FRAME_RATE} a second: ${flyingFast.renders} renders in ${flyingFast.ticks} frames, ${flyingFast.simulated.toFixed(3)} s simulated in ${flyingFast.clock.toFixed(3)} s`);
+await fakePage.evaluate(() => window.__pond.throwAt(0.3, -1.4, { radius: 0.03 }));
+await waitForCap(false);
+const flying = await overFrames(MAX_FRAME_RATE);
+check(!flying.capped.some(Boolean) && drawsOneIn(flying, 1) && keepsUp(flying), `and at ${MAX_FRAME_RATE} Hz every frame: ${flying.renders} renders in ${flying.ticks} frames`);
+await fakePage.evaluate(() => window.__pond.throwAt(-0.3, -1.4, { radius: 0.03 }));
+await waitForCap(false);
+const flyingNinety = await overFrames(90);
+check(!flyingNinety.capped.some(Boolean) && drawsOneIn(flyingNinety, 1) && keepsUp(flyingNinety), `and at 90 Hz every frame too, within the ceiling's slack: ${flyingNinety.renders} renders in ${flyingNinety.ticks} frames`);
 await faked.context.close();
 
 // ---- 3. the pixel budget ----------------------------------------------------

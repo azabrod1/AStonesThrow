@@ -135,6 +135,13 @@
 //     stone's impact, as for any throw (`water`, the splash built from it),
 //     but for its lift under water, whose push across the throw's plane is
 //     left out (its fast spin would curve it off to one side).
+// A broad thing skipped (a pizza: `abilities.skips`) is thrown by its mass,
+// as a stone heavier than SKIP_THROW.fullRadius's is (skipSpeed), spun no
+// faster at its rim than such a stone, aimed by its trailing edge, which
+// touches first (skipLowest), and flies the skip's arc held level by its
+// spin, as its aim does, the air left out (the plate's lift would sail it up
+// off the water, its drag bring it down short); it skims as a stone does, by
+// its own mass and face, and goes in as a plate (below), its slap a touch.
 // The model has Clanet et al.'s magic angle: thrown normally (10 m/s, 30 cm
 // up) the first hop is longest with the face at about 15° and the stone
 // skips most often from 15° to 20° (five times), less either side (three at
@@ -188,9 +195,21 @@
 // few times and comes to rest at the depth it floats at (`rest`, `afloat`),
 // a basketball 4.3 cm under, a tennis ball 2.8 cm. One not round is a rigid
 // body on the water (turnAfloat): the water's push at the middle of what it
-// displaces and its weight at its own turn it, its rocking damped as its
-// bob is, so a pizza on its edge falls flat and one upside down floats
-// upside down; it rests only lying stably (stableAfloat).
+// displaces and its weight at its own (its volume's middle, moved by its
+// `body.ballast`: a duck's heavy base, which rights it) turn it, its rocking
+// damped as its bob is, so a pizza on its edge falls flat and one upside
+// down floats upside down; it rests only lying stably (stableAfloat).
+//
+// Plates use one water model from first wetting through bobbing or sinking
+// (plateWaterStep, turnAfloat). Drag and added mass act across the face;
+// along it there is skin drag and its rim's, edge-on (PLATE_WATER). As more
+// of the face wets, its added mass takes normal momentum, giving the slap
+// over the first few steps. Under the water the Munk moment turns a moving
+// plate broadside; at the surface, where it planes, the displaced volume's
+// lever turns it level. The disc's added rotational inertia resists the
+// turning; a pie's weight, a little low in it (`body.ballast`), turns it
+// back right way up under the water. Both light and dense plates use this model, so there is no sphere
+// cavity or orientation-independent underwater path for a plate.
 //
 // What the water does to it (soak, showWet): out of the water a thing is
 // wet and dries (darker and glossier by its look's `wet`); bread soaks
@@ -199,6 +218,11 @@
 // (bendStep: cupped by the air in flight, which steadies it, flung on
 // striking the water or the deck). A ball stays round: a real one gives
 // for a hundredth of a second when struck, less than a frame.
+//
+// Its own parts (registerMesh `dress`: a pizza's toppings, a pie's filling)
+// are drawn as it is made, from a stream of their own seeded from its own,
+// added to its copy of the shared mesh and their weight to its own
+// (`dressing`); it floats by the shared mesh.
 //
 // Its own random stream (`random`): what a throw draws (its turn, its spin,
 // its bounces, its splash's seed) comes from a stream of its own seeded
@@ -235,7 +259,9 @@
 // radius) until it comes down slower than GROUND.settle; then it tumbles
 // along (`ground`, alongGround), its ellipsoid on it (ellipsoidDepth: the
 // lumpy mesh would lift it off as it turns), slowing at
-// GROUND.tumbling·g. A ball keeps at least `roll` of its speed along the
+// GROUND.tumbling·g. A thing kept upright (a pizza, a pie, a duck) settles
+// at rest onto a face it lies on (restOn: a ballasted one onto its base). A
+// ball keeps at least `roll` of its speed along the
 // ground (friction brings it to rolling, 5/7 for a solid ball, 3/5 for a
 // shell) and spins as it rolls, and once down it rolls along, slowing at
 // `rolling`·g. Either rests once slower than GROUND.stopped; over the
@@ -244,7 +270,7 @@ import * as THREE from 'three';
 import { SEEN_THROUGH_WATER, FLOATER_WATER } from './shaders/scene.js';
 import { PINCH_TIME, NECK_CLOSE, SPIN_DECAY, sinkStep, underWater } from './cavity.js';
 import { THINGS, DEFAULT_THING, WATER_DENSITY, STONE_DENSITY } from './things.js';
-import { meshKind } from './thingMeshes.js';
+import { meshKind, withParts } from './thingMeshes.js';
 
 // The stone's geometry is src/thingMeshes.js's now; the probes take it from here as they always did.
 export { createRockGeometry } from './thingMeshes.js';
@@ -309,6 +335,8 @@ const GROUND = {
   stopped: 0.05,               // m/s: ...and either rests once slower than this
   tumble: 0.5,                 // a stone turns end over end at this times its speed over its radius (it skids as it tumbles)...
   tumbleMost: 60,              // ...at most this (rad/s)
+  settleSeconds: 0.25,         // s: a thing kept upright settles onto the face it lies on over this (Rock.restOn)...
+  rightsFrom: 0.1,             // ...onto its base if its `body.ballast` is this far down (radii: a duck's, not a pie's)
 };
 // A flat thing's flight (`air.model` 'flutter', src/things.js: a pizza; the header): a plate in the air, its attitude its
 // own, turned by the air's push and its spin. The push on its face is ½ρv²·πR² times C_N(α) = `slope`·sin α·cos² α +
@@ -326,12 +354,25 @@ const PLATE = { slope: 2.7, skin: 0.03, centre: 0.5, cupSteadies: 0.7, turnDrag:
 // (over its radius, in radii a second).
 // Soaked through it is limp: its spring `limp` slower.
 const BEND = { damping: 0.25, wetDamping: 0.6, splat: 0.04, limp: 0.6 };
+// A disc's added mass normal to its face: (4/3)ρR³ at the free surface,
+// (8/3)ρR³ submerged. Wetting ramps over `wetted` of its volume under water;
+// this is a coarse waterline estimate, not a resolved free-surface solver.
+// Along its face, besides its skin's drag, its rim meets the water edge-on:
+// a bluff edge's drag `edge` on its rim's frontal area, 2·V/(π·R_face) (a
+// pie's tin, 3.5 cm deep, about six times its skin's; a pizza's twice), so
+// a plate slides along its face for a few of its radii, not metres. The
+// flow's turning (the Munk moment, turnAfloat) is full only `munkDepth` of
+// its radius under: at the surface it planes.
+const PLATE_WATER = { slam: 4 / 3, wetted: 0.1, edge: 1.0, munkDepth: 1 };
 // The water on it (Rock.soak): out of the water it dries over `drySeconds`; a soaking thing at rest afloat floats again
-// to find its new height every `settleSeconds`, if it has sunk FLOAT.settledOffset since.
-const WET = { drySeconds: 90, settleSeconds: 0.5 };
+// to find its new height every `settleSeconds`, if it has sunk FLOAT.settledOffset since. A frozen thing (`water.thaws`)
+// thaws `airThaw` as fast in air as in water (the water carries its heat to it some fifteen times faster).
+// Soaking under the water, its constants there are made again once its density has moved by `densityStep` of itself.
+const WET = { drySeconds: 90, settleSeconds: 0.5, airThaw: 1 / 15, densityStep: 0.01 };
+const WHITE = new THREE.Color(1, 1, 1);
 const AIR_DENSITY = 1.2;   // kg/m³ (flyStep's)
-// A throw's aim (aimThrow): the flight times it tries (least, most, step; s), the passes against the air's drag and their step (s),
-// a flight of its own's passes (a plate's: at most coarsePasses of them coarse, AIM.step, until one comes down within
+// A throw's aim (aimThrow): the flight times it tries (least, most, step; s), the passes against the air's drag (flown in
+// PHYSICS_STEP, as the thing will fly), a flight of its own's passes (a plate's: at most coarsePasses of them coarse, AIM.step, until one comes down within
 // coarseClose m), how near (m) a pass must come down for no more to be flown (a plate's flight,
 // each pass hundreds of its steps, sooner) and the most (m)
 // a pass may move the aim.
@@ -387,7 +428,8 @@ export function flyStep(position, velocity, radius, mass, dt, drag = 0.47) {
  * thrown (`fastest`: of the flight times that are slow enough, the one
  * nearest the strength's, else as far as the fastest throw reaches along the
  * tap's direction) and aimed for the air's drag, which slows a light thing
- * (a tennis ball, pumice): its flight is flown (flyStep) and the aim moved
+ * (a tennis ball, pumice): its flight is flown (flyStep, in the steps the
+ * thing will fly, PHYSICS_STEP, to where it crosses the still water) and the aim moved
  * by its miss, up to AIM.passes times (and held to `fastest` after, a little
  * short). `flight`, if given, flies it as the thing itself flies (Rock
  * trialFlight: a pizza's flight as a plate, which no plain drag says), in
@@ -397,7 +439,8 @@ export function flyStep(position, velocity, radius, mass, dt, drag = 0.47) {
  * aim's arc) and where it comes down.
  */
 export function aimThrow(hand, target, flightTime, measured, flight = null) {
-  const fastest = measured.thing.fastest(measured.size);
+  // No faster than its own mass lets it go (a pie's filling, a pizza's toppings and all).
+  const fastest = measured.thing.fastestFor(measured.mass);
   const throwTo = (point, time) => { const throwing = point.clone().sub(hand).divideScalar(time); throwing.y += 0.5 * GRAVITY * time; return throwing; };
   let aim = target.clone();
   let time = flightTime;
@@ -427,17 +470,23 @@ export function aimThrow(hand, target, flightTime, measured, flight = null) {
   // The drag's miss, flown out and taken off the aim.
   const goal = aim.clone();
   const position = new THREE.Vector3(), moving = new THREE.Vector3();
-  // A flight of its own is flown in the steps the thing is (PHYSICS_STEP): a plate's turning is not a ball's drag, and
-  // flown coarser it would come down elsewhere.
-  const flyOut = (throwing, path = null, seconds = flight ? PHYSICS_STEP : AIM.step) => {
+  // Each pass is flown in the steps the thing will fly (PHYSICS_STEP): flown coarser it comes down elsewhere (a plate's
+  // turning is not a ball's drag, and a ball's coarser steps fall ½·g·dt lower each second of its flight). A ball comes
+  // down where its last step crosses the still water, not at the step's end: a hard throw's flat step is 5 cm along the
+  // water. A plate (a flight of its own) keeps its step's end: its rim, not its centre, meets the water first, and its
+  // aim was fitted so.
+  const previous = new THREE.Vector3();
+  const flyOut = (throwing, path = null, seconds = PHYSICS_STEP) => {
     position.copy(hand);
     moving.copy(throwing);
     flight?.reset(position, moving);
     for (let step = 0; step < 3 / seconds && (position.y > 0 || moving.y > 0); step++) {
       path?.push(position.clone());
+      previous.copy(position);
       if (flight) flight.step(seconds, position, moving);
       else flyStep(position, moving, measured.radius, measured.mass, seconds, measured.thing.air.drag);
     }
+    if (!flight && position.y < 0 && previous.y > 0) position.lerpVectors(previous, position, previous.y / (previous.y - position.y));
     path?.push(position.clone());
     return position;
   };
@@ -451,7 +500,7 @@ export function aimThrow(hand, target, flightTime, measured, flight = null) {
   // steps: the coarse passes cost half as much, and the fine ones start near.
   let coarse = Boolean(flight);
   for (let pass = 0; pass < (flight ? AIM.flightPasses : AIM.passes); pass++) {
-    const landed = flyOut(throwing, null, coarse ? AIM.step : flight ? PHYSICS_STEP : AIM.step);
+    const landed = flyOut(throwing, null, coarse ? AIM.step : PHYSICS_STEP);
     const missX = goal.x - landed.x, missZ = goal.z - landed.z, miss = Math.hypot(missX, missZ);
     if (coarse && (miss < AIM.coarseClose || pass >= AIM.coarsePasses - 1)) { coarse = false; before = null; best = null; continue; }
     if (!coarse && (!best || miss < best.miss)) best = { miss, aimX: aim.x, aimZ: aim.z };
@@ -499,7 +548,7 @@ export function flutterTrial({ thing, shape, radius, density, ownMass, release =
   return {
     reset(position, velocity) {
       trial = Object.assign(Object.create(Rock.prototype), {
-        thing, shape, radius, density, ownMass, age: 0, state: 'air', soaked: 0, bend: { cup: 0, cupRate: 0, flap: 0, flapRate: 0 },
+        thing, shape, radius, density, ownMass, age: 0, state: 'air', soaked: 0, thawed: thing.water.thaws ? 0 : 1, bend: { cup: 0, cupRate: 0, flap: 0, flapRate: 0 },
         uprightAxis: thing.body.upright ? UP.clone() : shape.axes[2].clone(),
         // As it is let go (its own, from Rock's constructor), or flat, spinning at the middle of its spins (the aim's marker).
         quaternion: release?.quaternion.clone() ?? new THREE.Quaternion(),
@@ -566,7 +615,9 @@ export function skipLaunch(from, to, speed) {
 // same): its speed by strength, in the lake and in the pool (3 m across:
 // gentler, so most skips stay in it), for a stone up to `fullRadius`, beyond
 // which it goes as fullRadius / R (a rough assumption: as the cube root of
-// the mass); the hand let down to `handHeight` over the water (crouched,
+// the mass, which anything else skipped, a pizza, goes as, against a river
+// stone's of `fullRadius`, spun no faster at its rim than such a stone); the
+// hand let down to `handHeight` over the water (crouched,
 // side-arm); let go nearly level, within `elevation` (degrees from level,
 // down to up); first touching the lake where it is `shallowest` deep or more.
 export const SKIP_THROW = {
@@ -578,9 +629,55 @@ export const SKIP_THROW = {
   shallowest: 0.3,
 };
 
-/** A skip throw's speed (m/s) at strength `power` for a stone of `radius` (SKIP_THROW), in the pool or the lake. */
-export function skipSpeed(power, radius, pooled = false) {
-  return (pooled ? SKIP_THROW.poolSpeed : SKIP_THROW.speed)[power] * Math.min(1, SKIP_THROW.fullRadius / radius);
+/**
+ * How far under its middle a broad thing skipped (not a stone, whose aim is
+ * as it always was) reaches as it comes down, its face nose-up by `tilt`
+ * (radians: its own, Rock.skipTilt, drawn before it is aimed): its trailing
+ * edge, which touches first (src/main.js aims that at the touch).
+ */
+export function skipLowest(radius, tilt = THREE.MathUtils.degToRad(SKIP_TILT.mean)) { return radius * Math.sin(tilt); }
+
+/** A skip throw's speed (m/s) at strength `power` for a stone of `radius` (SKIP_THROW), in the pool or the lake; for anything else, of its `mass` (kg). */
+export function skipSpeed(power, radius, pooled = false, mass = null) {
+  const heavier = mass === null ? radius / SKIP_THROW.fullRadius : Math.cbrt(mass / (STONE_DENSITY * (4 / 3) * Math.PI * SKIP_THROW.fullRadius ** 3));
+  return (pooled ? SKIP_THROW.poolSpeed : SKIP_THROW.speed)[power] * Math.min(1, 1 / heavier);
+}
+
+// An ordinary throw's strength (src/main.js throwVelocity; the probes throw
+// the same, throwFlightTime). A normal throw takes clamp(0.42 + 0.11·d, 0.5,
+// 1.0) s to the tap d metres from the hand: the throw the splash was tuned
+// on, and within a percent of the gentlest that reaches the tap (the least
+// release speed, sqrt(g·(d − h)) from h above it). So no throw that reaches
+// the tap goes in much slower: a soft one is a lob, `soft` times as long in
+// the air, higher and steeper, at about the normal throw's speed. A hard one
+// is let go at `hardSpeed` (for a stone up to `fullRadius`; beyond it as
+// fullRadius / R, as a skip's) on the lower of the two arcs that reach the
+// tap at that speed: fast and flat, going in about twice as fast as a normal
+// throw (a 6 cm stone at the reference tap: 12.4 m/s, 73° from vertical). It is never slower than `hardLeast` times the
+// normal flight time, which a big stone, too heavy to throw that fast, keeps.
+export const THROW_STRENGTH = { soft: 1.3, hardSpeed: 12, fullRadius: 0.04, hardLeast: 0.72 };
+
+/**
+ * The flight time (s) of a throw let go at `speed` from `hand` that comes
+ * down at `target`, on the lower (flatter, shorter) of its two arcs, or null
+ * if that speed cannot reach it. With u = T², the release speed squared is
+ * D²/u + g·Δy + g²·u/4 (D the distance, Δy the target's height over the hand).
+ */
+export function lowArcTime(hand, target, speed) {
+  const distanceSquared = hand.distanceToSquared(target);
+  const sum = speed * speed - GRAVITY * (target.y - hand.y);
+  const discriminant = sum * sum - GRAVITY * GRAVITY * distanceSquared;
+  if (discriminant < 0) return null;
+  return Math.sqrt((2 * (sum - Math.sqrt(discriminant))) / (GRAVITY * GRAVITY));
+}
+
+/** An ordinary throw's flight time (s) from `hand` to `target` at strength `power`, for a stone of `radius` (THROW_STRENGTH). */
+export function throwFlightTime(hand, target, power, radius) {
+  const normal = THREE.MathUtils.clamp(0.42 + 0.11 * hand.distanceTo(target), 0.5, 1.0);
+  if (power === 'soft') return normal * THROW_STRENGTH.soft;
+  if (power !== 'hard') return normal;
+  const flat = lowArcTime(hand, target, THROW_STRENGTH.hardSpeed * Math.min(1, THROW_STRENGTH.fullRadius / radius));
+  return Math.min(flat ?? Infinity, THROW_STRENGTH.hardLeast * normal);
 }
 
 /**
@@ -843,7 +940,15 @@ export function stoneShape(geometry) {
   };
 }
 
-/** What prepareThing has made, for each definition (a thing defined again is a new definition) and each of flat or not. */
+/**
+ * The axis a floater's buoyancy is cut into columns along (buoyancyColumns):
+ * its own +y if it is kept upright (a pizza's, a duck's: the water's level
+ * then crosses its columns as it floats, where their cut is truest), else its
+ * short axis.
+ */
+function columnAxis(thing, shape) { return thing.body.upright ? UP : shape.axes[2]; }
+
+/** What prepareThing has made, for each definition (a thing defined again is a new definition). */
 const PREPARED = new WeakMap();
 /** How often prepareThing has built a fixed mesh and sliced a waterline (its buoyancy's columns): src/main.js's `budget`, which tools/quality-probe.mjs checks a throw leaves alone. */
 export const PREPARATION_WORK = { meshes: 0, waterlines: 0 };
@@ -859,29 +964,30 @@ export const PREPARATION_WORK = { meshes: 0, waterlines: 0 };
  * it keeps between throws instead (registerMesh `prepare`: a ball's painted
  * spheres).
  */
-export function prepareThing(thing, { flat = false } = {}) {
+export function prepareThing(thing) {
   const mesh = meshKind(thing.look.mesh);
   if (!mesh?.fixed) { mesh?.prepare?.(thing); return null; }
-  if (!PREPARED.has(thing)) PREPARED.set(thing, new Map());
-  const byFlat = PREPARED.get(thing);
-  if (!byFlat.has(flat)) {
-    const geometry = mesh.build(thing, { flat });
+  if (!PREPARED.has(thing)) {
+    // A fixed kind is built the same skipped or not (a stone's flat skip is drawn for each one thrown).
+    const geometry = mesh.build(thing, {});
     PREPARATION_WORK.meshes++;
     geometry.computeBoundingSphere();
     const shape = thing.body.shape === 'sphere' ? BALL_SHAPE : stoneShape(geometry);
     let columns = null;
     const buoyancy = () => {
-      if (!columns) { columns = buoyancyColumns(geometry, shape.axes[2]); PREPARATION_WORK.waterlines++; }
+      if (!columns) { columns = buoyancyColumns(geometry, columnAxis(thing, shape)); PREPARATION_WORK.waterlines++; }
       return columns;
     };
     // A floater's columns now, at its first size (another size may float where this one sinks: its columns are made as
     // it is first thrown, then kept).
     const { radius, mass } = thing.measure(thing.slider?.initial);
     const density = thing.body.density ?? mass / (shape.volume * radius ** 3);
-    if (thing.body.shape !== 'sphere' && density < WATER_DENSITY) buoyancy();
-    byFlat.set(flat, { geometry, shape, reach: geometry.boundingSphere.center.length() + geometry.boundingSphere.radius, buoyancy });
+    if (thing.body.shape !== 'sphere' && (density < WATER_DENSITY || thing.air.model === 'flutter')) buoyancy();
+    // Its own parts (registerMesh `dress`) made once and let go: the first one thrown costs no more than the next.
+    if (mesh.dress) { const parts = mesh.dress(thing, seededStream(1)); if (parts && !parts.shared) parts.geometry.dispose(); }
+    PREPARED.set(thing, { geometry, shape, reach: geometry.boundingSphere.center.length() + geometry.boundingSphere.radius, buoyancy });
   }
-  return byFlat.get(flat);
+  return PREPARED.get(thing);
 }
 
 export class Rock {
@@ -912,7 +1018,9 @@ export class Rock {
     // The ground's height at (x, z), or null over the water: the pool's deck (src/pool.js poolGround, given by src/main.js; the header).
     this.groundAt = null;
     this.groundHeight = 0;         // the ground's height under a thing tumbling or rolling along it (`ground`)
-    this.onGround = false;         // at rest on the ground (restOn), in sight as a floater is (src/main.js)
+    this.onGround = false;         // at rest on the ground (restOn)
+    this.settling = null;          // settling onto the face it lies on, at rest on the ground (restOn, settleStep)
+    this.fading = undefined;       // seconds into shrinking away, once src/main.js has begun it (fadeOut): frozen, it is no longer stepped
     this.drawn = { surface: 0, bedDepth: 1 };   // the water it was last drawn on (syncMeshes), for a knock's redraw
     this.age = 0;
     this.restTime = 0;
@@ -928,9 +1036,19 @@ export class Rock {
     this.spinRate = SPIN_LEAST + (SPIN_MOST - SPIN_LEAST) * random() ** SPIN_SKEW;
     // A fixed mesh is prepared once for its definition and shared (prepareThing); a soft one's vertices flex, so it has
     // its own copy of them. Anything else (a stone's lumps, drawn at random) is built for each one thrown.
-    const prepared = mesh.fixed ? prepareThing(this.thing, { flat: Boolean(skip) }) : null;
-    this.sharedGeometry = Boolean(prepared) && !this.thing.body.soft;
-    this.geometry = prepared ? (this.sharedGeometry ? prepared.geometry : prepared.geometry.clone()) : mesh.build(this.thing, { flat: Boolean(skip) });
+    const prepared = mesh.fixed ? prepareThing(this.thing) : null;
+    // Its own parts (registerMesh `dress`: a pizza's toppings), drawn from a stream of their own seeded from its throw's,
+    // added to its own copy of the shared mesh, their mass to its own.
+    this.dressing = prepared && mesh.dress ? mesh.dress(this.thing, seededStream(Math.floor(random() * 4294967296))) : null;
+    if (this.dressing && this.ownMass !== null) this.ownMass *= 1 + this.dressing.share;
+    // (Its own copy, though a pie's parts are its filling's, kept: a mesh shared would stay on the GPU once drawn.)
+    this.sharedGeometry = Boolean(prepared) && !this.thing.body.soft && !this.dressing;
+    this.geometry = prepared ? (this.sharedGeometry ? prepared.geometry : this.dressing ? withParts(prepared.geometry, this.dressing.geometry) : prepared.geometry.clone()) : mesh.build(this.thing, { flat: Boolean(skip) });
+    // Only what its parts are and weigh is kept: their triangles are its geometry's now.
+    if (this.dressing) {
+      if (!this.dressing.shared) this.dressing.geometry.dispose();
+      this.dressing = { name: this.dressing.name, share: this.dressing.share };
+    }
     if (!prepared) this.geometry.computeBoundingSphere();
     this.reach = prepared?.reach ?? this.geometry.boundingSphere.center.length() + this.geometry.boundingSphere.radius;   // furthest any point gets from the centre, in radii
     this.shape = this.sphere ? BALL_SHAPE : prepared?.shape ?? stoneShape(this.geometry);
@@ -941,10 +1059,15 @@ export class Rock {
     // Which way is up for it: its own +y if it is kept upright (a pizza's toppings), else its short axis, either way.
     this.uprightAxis = this.thing.body.upright ? UP.clone() : this.shape.axes[2].clone();
     // A floater that is not a sphere floats by its mesh's own volume, at any angle (buoyancyColumns).
-    this.buoyancy = this.floats && !this.sphere ? (prepared ? prepared.buoyancy() : buoyancyColumns(this.geometry, this.shape.axes[2])) : null;
+    this.buoyancy = (this.floats || this.thing.air.model === 'flutter') && !this.sphere ? (prepared ? prepared.buoyancy() : buoyancyColumns(this.geometry, columnAxis(this.thing, this.shape))) : null;
+    // Where its weight acts afloat (turnAfloat, stableAfloat): its volume's middle, moved by its `body.ballast` (a duck's
+    // heavy base), in its own frame and radii.
+    this.massCentre = this.buoyancy ? this.buoyancy.centroid.clone().add(new THREE.Vector3().fromArray(this.thing.body.ballast ?? [0, 0, 0])) : null;
     this.liftHeading = random() * Math.PI * 2;   // the direction its lumps push it (the header)
     this.body = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, time: 0, liftX: 0, liftY: 0, liftZ: 0, spinLiftX: 0, spinLiftY: 0, spinLiftZ: 0, resting: false, openUntil: undefined };
-    // Its constants under water (src/cavity.js underWater): the reference stone's for a river stone.
+    // Non-plates use the cavity's path; plates integrate their own wet forces.
+    this.plate = this.thing.air.model === 'flutter' && !this.sphere;
+    this.carriedWater = 0;
     this.body.water = underWater(this.density, this.thing.water.restingHeight);
     this.impactStep = 0;
     const look = this.thing.look;
@@ -963,11 +1086,14 @@ export class Rock {
       this.spinRate = spin;
     }
     this.bend = { cup: 0, cupRate: 0, flap: 0, flapRate: 0 };
-    // A soft thing's rest shape, which the physics reads (physicsPositions) while flex bends what is drawn.
+    // A soft thing's rest shape, which flex bends what is drawn from; the physics reads the shared mesh's, without its
+    // parts (physicsPositions).
     this.restShape = this.thing.body.soft ? this.geometry.attributes.position.array.slice() : null;
+    this.physicsShape = prepared && this.geometry !== prepared.geometry ? prepared.geometry.attributes.position.array : null;
     // What the water has done to it (soak, showWet): how wet it is (1 out of the water, drying to 0) and how far soaked through.
     this.wet = 0;
     this.soaked = 0;
+    this.thawed = this.thing.water.thaws ? 0 : 1;   // a frozen thing's share thawed (soak): it soaks and gives only as it thaws
     this.heard = [];   // its knocks on the ground since src/main.js last took them (src/sound.js)
     this.rideHeight = 0;           // the water's height under its middle as drawn (src/floaterRide.js reads it back), afloat
     this.centre = new THREE.Vector3();   // where things meet it (src/collide.js): where it is drawn, riding the water (syncMeshes)
@@ -1051,13 +1177,20 @@ export class Rock {
    * in place of a level plane: the water laps along it, a pizza's crust and
    * all; inside its rim (`water.dry`: a pizza's crust) its top is never cut,
    * the rim holding the water out (src/waterSurface.js setDryDiscs hides the
-   * water there). Its three programs (above, below, in the mirror) are its own, drawn
-   * under the loading veil (src/main.js warmUp).
+   * water there). A soft thing drapes over the waves besides (`drape`, a
+   * pizza's: showWet sets it): each of its points lifted by the water's height
+   * under it, as a sheet lying on the water, rather than the whole turned
+   * rigidly, by its drape's share (its normals the rigid tilt's: a sample
+   * of the water's slope at each point would triple the work); anything
+   * rigid has none, nor anything off the water. Its three programs (above, below, in the
+   * mirror) are its own, every floater's alike, drawn under the loading veil
+   * (src/main.js warmUp).
    */
   rideTheWater(water, { seenThroughWater, waterLevel, fogExtinction, fogColor }) {
     // Inside its rim, its share `water.dry` of its radius (src/things.js), the water never covers its top.
     const dryRadius = this.dryRadius = { value: (this.thing.water.dry ?? 0) * this.radius };
     const rideShare = this.rideShare = { value: 0 };
+    const drapeShare = this.drapeShare = { value: this.drape };
     this.ridesWater = true;   // src/main.js redraws its mirror image as the water moves under it
     const ride = (side) => (shader) => {
       Object.assign(shader.uniforms, water);
@@ -1067,7 +1200,8 @@ export class Rock {
       shader.uniforms.uFogExtinction = fogExtinction;
       shader.uniforms.uFogColor = fogColor;
       shader.uniforms.uDryRadius = dryRadius;
-      const declarations = `${FLOATER_WATER}\nuniform float uWaterLevel;\nuniform float uDryRadius;\nuniform float uRide;\nvarying vec3 vRideWorld;\nvarying vec2 vRideMiddle;\n`;
+      shader.uniforms.uDrape = drapeShare;
+      const declarations = `${FLOATER_WATER}\nuniform float uWaterLevel;\nuniform float uDryRadius;\nuniform float uRide;\nuniform float uDrape;\nvarying vec3 vRideWorld;\nvarying vec2 vRideMiddle;\n`;
       shader.vertexShader = shader.vertexShader
         .replace('#include <common>', `#include <common>\n${declarations}uniform float uSeenThroughWater;\n${side === 'below' ? SEEN_THROUGH_WATER : ''}`)
         .replace('#include <project_vertex>', `
@@ -1084,6 +1218,7 @@ export class Rock {
   vec3 turnAxis = vec3(up.z, 0.0, -up.x);
   float turnSine = length(turnAxis);
   vec3 offset = ridden.xyz - middle;
+  vec3 laid = ridden.xyz;   // where it is, as the physics has it (a soft thing drapes from there)
   if (turnSine > 1e-6) {
     turnAxis /= turnSine;
     offset = offset * up.y + cross(turnAxis, offset) * turnSine + turnAxis * dot(turnAxis, offset) * (1.0 - up.y);
@@ -1095,6 +1230,9 @@ export class Rock {
   }
   ridden.xyz = middle + offset;
   ridden.y += uRide * floaterWaterHeight(middle.xz);
+  // A soft thing draped over the waves (the header): each point on the water's height under it, by its drape's share
+  // (one more of the water's heights for each point; its normals keep the tilt over its whole width).
+  if (uDrape * uRide > 0.0) ridden.xyz = mix(ridden.xyz, laid + vec3(0.0, uRide * floaterWaterHeight(laid.xz), 0.0), uDrape);
   vRideWorld = ridden.xyz;
   vRideMiddle = middle.xz;
   ${side === 'below' ? 'ridden.xyz = mix(ridden.xyz, seenThroughWater(ridden.xyz, uWaterLevel), uSeenThroughWater);' : ''}
@@ -1119,11 +1257,11 @@ export class Rock {
   }
 
   /**
-   * Its mesh's corners as the physics has them: its rest shape, never a soft
-   * thing's give as drawn (flex bends the geometry once a frame, and the
-   * physics would then depend on how often frames are drawn).
+   * Its mesh's corners as the physics has them: its shared mesh's (prepareThing), never a soft thing's give as drawn
+   * (flex bends the geometry once a frame, and the physics would then depend on how often frames are drawn) nor its
+   * own parts (a pizza's toppings, millimetres thin, which every step's walk over its corners would pay for).
    */
-  get physicsPositions() { return this.restShape ?? this.geometry.attributes.position.array; }
+  get physicsPositions() { return this.physicsShape ?? this.restShape ?? this.geometry.attributes.position.array; }
 
   /** Its meshes: above the water, below it, and afloat in the mirror image. */
   get meshes() { return this.meshMirror ? [this.meshAbove, this.meshBelow, this.meshMirror] : [this.meshAbove, this.meshBelow]; }
@@ -1131,26 +1269,33 @@ export class Rock {
   /** Its mass (kg): a ball's or a gem's own; a stone's the nominal ball's of its density (the air's drag's, as it always was). */
   get mass() { return this.thing.byDiameter ? this.density * (4 / 3) * Math.PI * this.radius ** 3 : this.ownMass; }
 
+  /** The water a plate's face slams (kg, PLATE_WATER: half a disc's added mass), which it carries as it bobs too. */
+  get slamMass() { return PLATE_WATER.slam * WATER_DENSITY * this.radius ** 3; }
+
   /** The stone's own mass (kg), from its volume (the skim's; `mass`, the nominal ball's, is the air drag's). */
   get trueMass() { return this.density * this.shape.volume * this.radius ** 3; }
 
   /** The radius (m) of the disc with the area of its face: the ellipsoid's two long semi-axes' mean (the header). */
   get faceRadius() { return this.radius * Math.sqrt(this.shape.semiAxes[0] * this.shape.semiAxes[1]); }
 
+  /** A skip's tilt (radians, SKIP_TILT), drawn: as it is let go (a stone), or before it is aimed (a broad thing: skipLowest). */
+  skipTilt() { return THREE.MathUtils.degToRad(THREE.MathUtils.clamp(SKIP_TILT.mean + SKIP_TILT.spread * gaussian(this.random), SKIP_TILT.least, SKIP_TILT.most)); }
+
   /**
    * Let a skip stone go at `velocity` (the header): its face tilted nose-up
    * along the throw by SKIP_TILT, never to either side, its long axis
    * anywhere in the face, spinning at SKIP_SPIN about its short axis.
    */
-  launchSkip(velocity) {
+  launchSkip(velocity, tilt = this.skipTilt()) {
     this.velocity.copy(velocity);
     const heading = new THREE.Vector3(velocity.x, 0, velocity.z).normalize();
     const side = new THREE.Vector3(-heading.z, 0, heading.x);
-    const tilt = THREE.MathUtils.degToRad(THREE.MathUtils.clamp(SKIP_TILT.mean + SKIP_TILT.spread * gaussian(this.random), SKIP_TILT.least, SKIP_TILT.most));
     // The face's normal leans back against the throw (nose up), in the throw's vertical plane.
     const normal = new THREE.Vector3(0, Math.cos(tilt), 0).addScaledVector(heading, -Math.sin(tilt)).normalize();
     // The stone's frame (long, middle, short) onto the world's (a level-ish direction in the face, the one across, the normal).
-    const [long, , short] = this.shape.axes;
+    const [long, , shortAxis] = this.shape.axes;
+    // A thing kept upright (a pizza) faces up with its top, whichever way its short axis came out.
+    const short = this.thing.body.upright && shortAxis.dot(this.uprightAxis) < 0 ? shortAxis.clone().negate() : shortAxis;
     const middle = new THREE.Vector3().crossVectors(short, long).normalize();
     const turn = this.random() * Math.PI * 2;
     const inFace = new THREE.Vector3().crossVectors(normal, side).normalize().applyAxisAngle(normal, turn);
@@ -1160,7 +1305,10 @@ export class Rock {
     this.quaternion.setFromRotationMatrix(world.multiply(local));
     this.skip.normal.copy(normal);
     this.spinAxis.copy(normal);
-    this.spinRate = SKIP_SPIN.least + (SKIP_SPIN.most - SKIP_SPIN.least) * this.random();
+    // A broad thing (a pizza: anything but a stone, whose spin is as it always was) spun no faster at its rim than a
+    // stone of SKIP_THROW.fullRadius (the header).
+    const rimmed = this.thing.byDiameter ? 1 : Math.min(1, SKIP_THROW.fullRadius / this.faceRadius);
+    this.spinRate = (SKIP_SPIN.least + (SKIP_SPIN.most - SKIP_SPIN.least) * this.random()) * rimmed;
     this.syncMeshes();
   }
 
@@ -1378,6 +1526,13 @@ export class Rock {
     // Cut at the water: by a plane at its height over it (a floater that rides the water cuts itself at its true surface, rideTheWater).
     if (this.meshAbove.material.clippingPlanes.length) this.meshAbove.material.clippingPlanes[0].constant = -surface;   // keeps y ≥ surface
     if (this.meshBelow.material.clippingPlanes.length) this.meshBelow.material.clippingPlanes[0].constant = surface;    // keeps y ≤ surface
+    // At rest wholly under the water (on the bed) its part above the water draws nothing, and wholly out of it (on the
+    // deck) its part below: hidden, a thing at rest costs one draw call, not two (src/main.js keeps tens of them).
+    if (!this.floats) {
+      const resting = this.state === 'rest', centre = this.position.y + lift, reach = this.reach * this.radius;
+      this.meshAbove.visible = !(resting && centre + reach < surface);
+      this.meshBelow.visible = !(resting && centre - reach > surface);
+    }
     if (this.meshMirror) {
       if (this.meshMirror.material.clippingPlanes.length) this.meshMirror.material.clippingPlanes[0].constant = -surface;
       // Only what stands out of the water enough to show in it: a flat thing's image (a pizza's) would be a sliver, which
@@ -1392,7 +1547,7 @@ export class Rock {
     if (this.rideShare) {
       const half = this.halfHeight();
       const clear = Math.max(this.position.y - half, -this.position.y - half, 0);
-      const afloat = this.state === 'float' || (this.state === 'rest' && this.afloat);
+      const afloat = (this.state === 'float' || (this.state === 'rest' && this.afloat)) && (!this.plate || clear === 0);
       this.rideShare.value = this.state === 'ground' || this.state === 'skim' ? 0 : afloat ? 1 : Math.max(1 - clear / half, 0);
     }
     // Where it is drawn, riding the water as far as it does (src/floaterRide.js): where things meet it.
@@ -1403,29 +1558,39 @@ export class Rock {
   /**
    * dt seconds of the water on it (the header): in the water (under it,
    * afloat) it is wet through, and out of it dries over WET.drySeconds. A
-   * thing that soaks (src/things.js `water.soaks`: bread) takes up water
-   * as it is wetted, its share under the water of it: soaked towards
-   * `takes` of its volume of water over its `seconds`, heavier (it floats
-   * lower, and at rest afloat finds its new height) and limper (bendStep).
+   * frozen thing (`water.thaws`) thaws over its `seconds` wholly under, its
+   * share under of that afloat and WET.airThaw of it out of the water. A
+   * thing that soaks (src/things.js `water.soaks`: bread) takes up water as
+   * it is wetted, its share under the water of it (the lower it floats, the
+   * faster) and as far as it has thawed: soaked towards `takes` of its
+   * volume of water over its `seconds`, heavier (it floats lower, and at rest
+   * afloat finds its new height; waterlogged past water's density it sinks,
+   * a plate slowly, broadside) and limper (bendStep).
    */
   soak(dt) {
-    const inWater = this.state === 'water' || this.state === 'float' || this.afloat;
+    // On the bed (sunk, waterlogged) it is all under the water, as sinking; afloat its density's share of it (Archimedes).
+    const onBed = this.state === 'rest' && !this.afloat && !this.onGround;
+    const inWater = this.state === 'water' || this.state === 'float' || this.afloat || onBed;
     this.wet = inWater ? 1 : Math.max(this.wet - dt / WET.drySeconds, 0);
+    const under = this.state === 'water' || onBed ? 1 : inWater ? Math.min(this.density / WATER_DENSITY, 1) : 0;
+    const thaws = this.thing.water.thaws;
+    if (thaws && this.thawed < 1) this.thawed = Math.min(this.thawed + (under + (1 - under) * WET.airThaw) * dt / thaws.seconds, 1);
     const soaks = this.thing.water.soaks;
-    if (!soaks || !inWater || this.soaked >= 1) return;
-    const under = this.state === 'water' ? 1 : this.dry.density / WATER_DENSITY;
-    this.soaked += (1 - this.soaked) * under * dt / soaks.seconds;
+    if (!soaks || !inWater || this.soaked >= 1 || this.thawed <= 0) return;
+    this.soaked = Math.min(this.soaked + (1 - this.soaked) * under * this.thawed * dt / soaks.seconds, 1);
     const volume = this.dry.mass / this.dry.density;
     const mass = this.dry.mass + this.soaked * soaks.takes * WATER_DENSITY * volume;
     this.density = mass / volume;
     // A thing sized by its diameter has its density's mass (the `mass` getter); anything else keeps its own.
     if (!this.thing.byDiameter) this.ownMass = mass;
+    // Under the water it sinks as it now weighs, its constants made again as its density moves by WET.densityStep.
+    if (this.state === 'water' && Math.abs(this.density - this.body.water.density) > WET.densityStep * this.density) this.body.water = underWater(this.density, this.thing.water.restingHeight);
     // Soaked heavier than water, it sinks: from where it floats, its hole long closed.
     if (this.density >= WATER_DENSITY && this.floats) {
       this.floats = false;
       this.afloat = false;
-      this.restTime = 0;   // its time at rest afloat is over: on the bed it is counted afresh (src/main.js retires it 40 s on)
-      this.state = 'water';
+      this.restTime = 0;   // its time at rest afloat is over: on the bed it is counted afresh
+      this.state = this.plate ? 'float' : 'water';
       this.body.water = underWater(this.density, this.thing.water.restingHeight);
       Object.assign(this.body, { x: this.position.x, y: this.position.y, z: this.position.z, vx: this.velocity.x, vy: this.velocity.y, vz: this.velocity.z, resting: false, openUntil: -1 });
       return;
@@ -1440,23 +1605,44 @@ export class Rock {
   /**
    * How it looks wet (src/main.js calls this once a frame; the header): its
    * part out of the water darker and glossier by its look's `wet`, by how
-   * wet or soaked it is, and the dry disc its rim keeps (`water.dry`)
-   * shrinking as it soaks, none upside down. Its materials' colour and
+   * wet or soaked it is; a frozen thing's frost (its tint and its glow)
+   * gone as it thaws; the dry disc its rim keeps (`water.dry`) shrinking as
+   * it soaks, none upside down; and how far a soft thing drapes over the
+   * water's waves (`drape`, rideTheWater). Its materials' colours and
    * roughness are uniforms: no program changes.
    */
   showWet() {
-    const wetLook = this.thing.look.wet;
+    const wetLook = this.thing.look.wet, thaws = Boolean(this.thing.water.thaws);
     const wetness = Math.max(this.wet, this.soaked);
-    if (wetLook && wetness !== this.shownWet) {
+    if ((wetLook || thaws) && (wetness !== this.shownWet || this.thawed !== this.shownThawed)) {
       this.shownWet = wetness;
-      this.lookDry ??= { color: this.meshAbove.material.color.clone(), roughness: this.meshAbove.material.roughness };
+      this.shownThawed = this.thawed;
+      const material = this.meshAbove.material;
+      this.lookDry ??= { color: material.color.clone(), roughness: material.roughness, glow: material.emissive.clone() };
       for (const mesh of [this.meshAbove, this.meshMirror]) {
         if (!mesh) continue;
-        mesh.material.color.copy(this.lookDry.color).multiplyScalar(1 - wetLook.darker * wetness);
-        mesh.material.roughness = this.lookDry.roughness * (1 - wetLook.glossier * wetness);
+        mesh.material.color.copy(this.lookDry.color).lerp(WHITE, thaws ? this.thawed : 0).multiplyScalar(1 - (wetLook?.darker ?? 0) * wetness);
+        mesh.material.roughness = this.lookDry.roughness * (1 - (wetLook?.glossier ?? 0) * wetness);
+      }
+      // Its frost goes from all of it as it thaws, its part under the water too (which is never drawn wetter).
+      if (thaws) {
+        this.meshBelow.material.color.copy(this.lookDry.color).lerp(WHITE, this.thawed);
+        for (const mesh of this.meshes) mesh.material.emissive.copy(this.lookDry.glow).multiplyScalar(1 - this.thawed);
       }
     }
     if (this.dryRadius) this.dryRadius.value = this.dryDisc;
+    if (this.drapeShare) this.drapeShare.value = this.drape;
+  }
+
+  /**
+   * How far it drapes over the water's waves as drawn (rideTheWater): a soft
+   * thing's `body.soft.drape`, all of it as it soaks through, as far as it
+   * has thawed; nothing for anything rigid.
+   */
+  get drape() {
+    const soft = this.thing.body.soft;
+    if (!soft?.drape) return 0;
+    return Math.min(soft.drape + (1 - soft.drape) * this.soaked, 1) * this.thawed;
   }
 
   /** The radius (m) inside its rim the water does not reach as it floats (`water.dry`): less as it soaks, none upside down or not afloat. */
@@ -1562,6 +1748,12 @@ export class Rock {
 
   /** dt seconds through the air (flyStep). */
   fly(dt) {
+    // Skipped, a plate flies the skip's arc, aimSkip's, held level by its spin (the header: the air left out, as the aim
+    // leaves it; its lift would sail it up off the water and its drag bring it down short of the aim).
+    if (this.plate && this.skip) {
+      flyStep(this.position, this.velocity, this.radius, this.mass, dt, 0);
+      return;
+    }
     if (this.thing.air.model === 'flutter') { this.flutter(dt); return; }
     flyStep(this.position, this.velocity, this.radius, this.mass, dt, this.thing.air.drag);
   }
@@ -1624,6 +1816,10 @@ export class Rock {
     moments[0] = (middle * middle + short * short) * scale;
     moments[1] = (long * long + short * short) * scale;
     moments[2] = (long * long + middle * middle) * scale;
+    if (this.plate && this.state === 'float') {
+      const added = (16 / 45) * WATER_DENSITY * this.radius ** 5 * Math.min(this.carriedWater / (2 * this.slamMass), 1);
+      moments[0] += added; moments[1] += added;
+    }
     for (let index = 0; index < 3; index++) scratch.axes[index].copy(this.shape.axes[index]).applyQuaternion(this.quaternion);
     return { moments, axes: scratch.axes };
   }
@@ -1664,8 +1860,8 @@ export class Rock {
       const face = scratch.face.copy(this.shape.axes[2]).applyQuaternion(this.quaternion);
       const speed = this.velocity.length();
       const facing = speed > 1e-6 ? face.dot(this.velocity) / speed : 0;
-      cup = -Math.min(soft.cup * speed * speed, soft.most) * facing;
-      flap = soft.flap * Math.min(speed / 4, 1);
+      cup = -Math.min(soft.cup * speed * speed, soft.most) * facing * this.thawed;
+      flap = soft.flap * Math.min(speed / 4, 1) * this.thawed;
     }
     const frequency = 2 * Math.PI * soft.rate * (1 - BEND.limp * this.soaked);
     const damping = this.state === 'air' ? BEND.damping : BEND.wetDamping;
@@ -1679,7 +1875,7 @@ export class Rock {
   splat(velocity) {
     if (!this.thing.body.soft) return;
     const face = scratch.face.copy(this.shape.axes[2]).applyQuaternion(this.quaternion);
-    this.bend.cupRate += BEND.splat * face.dot(velocity) / this.radius;
+    this.bend.cupRate += BEND.splat * face.dot(velocity) / this.radius * this.thawed;
   }
 
   /** Its flight, tried (aimThrow; flutterTrial), or null for a thing whose flight is plain (flyStep says it all). */
@@ -1735,6 +1931,23 @@ export class Rock {
     // From here on it moves on still water, as the splash does (the header).
     this.position.y -= surface;
     const speed = this.velocity.length();
+    const impactVelocity = this.velocity.clone();
+    // Plates keep one direction-aware water model from first contact to the bed.
+    // Report the contact as spray/rings, without tracing a sphere's cavity from
+    // a speed the wetting face will immediately change.
+    if (this.plate) {
+      this.state = 'float';
+      this.hasFloated = true;
+      this.carriedWater = 0;
+      const face = this.shape.axes[2].clone().applyQuaternion(this.quaternion);
+      const push = Math.abs(face.dot(impactVelocity)) * this.mass * this.slamMass / (this.mass + this.slamMass);
+      const faceRadius = this.faceRadius;
+      return {
+        skim: true, slap: true, x: this.position.x, z: this.position.z, exitX: this.position.x, exitZ: this.position.z,
+        velocity: impactVelocity, exitVelocity: this.velocity.clone(), duration: 0, radius: faceRadius, mass: this.mass, push,
+        pushSpeed: push / (STONE_DENSITY * (4 / 3) * Math.PI * faceRadius ** 3), skips: 0, rock: this,
+      };
+    }
     const lift = this.liftAt(this.velocity);
     if (this.skip) {
       // A skip stone stays in the vertical plane it was thrown in (the header): its lift's push across it is left out.
@@ -1753,12 +1966,12 @@ export class Rock {
       liftX: lift.shape.x, liftY: lift.shape.y, liftZ: lift.shape.z, spinLiftX: lift.spin.x, spinLiftY: lift.spin.y, spinLiftZ: lift.spin.z, resting: false,
       openUntil: PINCH_TIME * Math.sqrt(this.radius / GRAVITY) - dt,
     });
-    return {
+    const impact = {
       x: this.position.x,
       z: this.position.z,
       height: this.position.y,   // of the centre, above the water
       speed,
-      velocity: this.velocity.clone(),
+      velocity: impactVelocity,
       radius: this.radius,
       shape: this.shape,
       contact: this.contact(),
@@ -1766,7 +1979,7 @@ export class Rock {
         rate: this.spinRate,
         axis: this.spinAxis.clone(),
         ratio: (this.spinRate * this.radius) / Math.max(speed, 1e-6),
-        alongEntry: this.spinAxis.dot(this.velocity) / Math.max(speed, 1e-6),
+        alongEntry: this.spinAxis.dot(impactVelocity) / Math.max(speed, 1e-6),
         orientation: this.quaternion.clone(),
       },
       lift: { shape: lift.shape, spin: lift.spin },
@@ -1775,6 +1988,7 @@ export class Rock {
       underWater: this.body.water,   // its constants under water (src/cavity.js), which the cavity traces its path with
       rock: this,
     };
+    return impact;
   }
 
   /**
@@ -1908,24 +2122,26 @@ export class Rock {
     const volume = this.mass / this.density;   // m³: a stone's nominal ball's, as its mass is
     const line = this.waterline(this.position.y, { plane: Boolean(this.buoyancy) });
     const share = line.share;
+    // A non-plate carries displaced water; a plate carries water only normal to its face.
     const inertia = this.mass + FLOAT.addedMass * WATER_DENSITY * volume * share;
     const buoyancy = WATER_DENSITY * GRAVITY * volume * share;
-    // Its bob's stiffness, the buoyancy's change with depth, and the damping that is FLOAT.damping of critical for it.
     const stiffness = WATER_DENSITY * GRAVITY * volume * line.slope;
-    const damping = 2 * FLOAT.damping * Math.sqrt(Math.max(stiffness, 0) * inertia);
     const half = 0.5 * (line.high - line.low);
-    // The waterplane (dV/dy) while it is in the water's surface; all its face once under.
     const waterplane = line.slope > 0 ? volume * line.slope : share > 0.5 ? volume / (2 * half) : 0;
-    const resisting = (damping + 0.5 * WATER_DENSITY * FLOAT.drag * waterplane * Math.abs(this.velocity.y)) / inertia;
-    this.velocity.y = (this.velocity.y + ((buoyancy - this.mass * GRAVITY) / inertia) * dt) / (1 + resisting * dt);
-    // Along the water, towards the drift (a gale's), slowed by the drag on its wetted section and its waves.
-    const relativeX = this.velocity.x - this.drift.x, relativeZ = this.velocity.z - this.drift.z;
-    // Its wetted cross-section against its drift: a sphere's cap's; anything else's its share of its own.
-    const section = this.buoyancy ? share * volume / (2 * this.radius) : discSegment(half, line.depth * half);
-    const slowing = 0.5 * WATER_DENSITY * FLOAT.drag * section * Math.hypot(relativeX, relativeZ) / inertia + FLOAT.slowing * Math.min(4 * share, 1);
-    const kept = 1 / (1 + slowing * dt);
-    this.velocity.x = this.drift.x + relativeX * kept;
-    this.velocity.z = this.drift.z + relativeZ * kept;
+    const normalY = this.plate ? scratch.face.copy(this.shape.axes[2]).applyQuaternion(this.quaternion).y : 0;
+    const bobInertia = this.plate ? this.mass + this.plateAddedMass(share) * normalY ** 2 : inertia;
+    const damping = 2 * FLOAT.damping * Math.sqrt(Math.max(stiffness, 0) * bobInertia);
+    if (this.plate) this.plateWaterStep(dt, share, buoyancy, damping);
+    else {
+      const resisting = (damping + 0.5 * WATER_DENSITY * FLOAT.drag * waterplane * Math.abs(this.velocity.y)) / inertia;
+      this.velocity.y = (this.velocity.y + ((buoyancy - this.mass * GRAVITY) / inertia) * dt) / (1 + resisting * dt);
+      const relativeX = this.velocity.x - this.drift.x, relativeZ = this.velocity.z - this.drift.z;
+      const section = this.buoyancy ? share * volume / (2 * this.radius) : discSegment(half, line.depth * half);
+      const slowing = 0.5 * WATER_DENSITY * FLOAT.drag * section * Math.hypot(relativeX, relativeZ) / inertia + FLOAT.slowing * Math.min(4 * share, 1);
+      const kept = 1 / (1 + slowing * dt);
+      this.velocity.x = this.drift.x + relativeX * kept;
+      this.velocity.z = this.drift.z + relativeZ * kept;
+    }
     this.position.addScaledVector(this.velocity, dt);
     if (this.buoyancy) this.turnAfloat(dt, line, buoyancy, waterplane > 0 ? damping / waterplane : 0);
     else this.spinRate *= Math.exp(-SPIN_DECAY * dt);
@@ -1937,7 +2153,7 @@ export class Rock {
     // How far it is from where it floats, from this step's waterline (a Newton step: the share's excess over its slope),
     // so the search for that height is made only as it comes to rest.
     const off = still && line.slope > 0 ? Math.abs(share - this.density / WATER_DENSITY) / line.slope : Infinity;
-    if (still && off < FLOAT.settledOffset && (!this.buoyancy || this.stableAfloat())) {
+    if (this.floats && still && off < FLOAT.settledOffset && (!this.buoyancy || this.stableAfloat())) {
       this.position.y = this.floatingHeight();
       this.velocity.set(0, 0, 0);
       this.spinRate = 0;
@@ -1945,6 +2161,46 @@ export class Rock {
       this.afloat = true;
     }
     return true;
+  }
+
+  /** Disc water carried normal to the face: half at the surface, all submerged. */
+  plateAddedMass(share) {
+    return this.slamMass * (1 + share) * Math.min(share / PLATE_WATER.wetted, 1);
+  }
+
+  /**
+   * Wet plate translation, resolved across and along its face. Increasing
+   * wetted added mass takes momentum only across the face; drag is integrated
+   * implicitly in both directions. The same equations handle entry, bobbing,
+   * rising and sinking, without an orientation-independent underwater path.
+   */
+  plateWaterStep(dt, share, buoyancy, damping) {
+    const face = scratch.face.copy(this.shape.axes[2]).applyQuaternion(this.quaternion);
+    const relative = scratch.force.copy(this.velocity);
+    relative.x -= this.drift.x; relative.z -= this.drift.z;
+    const normal = relative.dot(face);
+    const along = scratch.along.copy(relative).addScaledVector(face, -normal);
+    const added = this.plateAddedMass(share);
+    const wetted = Math.min(share / PLATE_WATER.wetted, 1);
+    const wetArea = Math.PI * this.radius ** 2 * wetted;
+    const rimArea = 2 * (this.mass / this.density) / (Math.PI * this.faceRadius) * wetted;   // its rim, edge-on (PLATE_WATER)
+    const normalDrag = 0.5 * WATER_DENSITY * this.thing.air.drag * wetArea * Math.abs(normal);
+    const skinDrag = 0.5 * WATER_DENSITY * (PLATE.skin * wetArea + PLATE_WATER.edge * rimArea) * along.length();
+    const normalMass = this.mass + added;
+    const normalDenominator = normalMass + normalDrag * dt;
+    const tangentDenominator = this.mass + (skinDrag + this.mass * FLOAT.slowing * Math.min(4 * share, 1)) * dt;
+    const keptMomentum = this.mass + Math.min(added, this.carriedWater);
+    relative.copy(along).multiplyScalar(this.mass / tangentDenominator)
+      .addScaledVector(face, normal * keptMomentum / normalDenominator);
+    // Invert the directional inertia/drag tensor for gravity and buoyancy,
+    // then the vertical spring damping (a rank-one implicit solve).
+    const response = scratch.pressure.set(0, 1 / tangentDenominator, 0)
+      .addScaledVector(face, face.y * (1 / normalDenominator - 1 / tangentDenominator));
+    relative.addScaledVector(response, (buoyancy - this.mass * GRAVITY) * dt);
+    relative.addScaledVector(response, -damping * dt * relative.y / (1 + damping * dt * response.y));
+    this.velocity.copy(relative);
+    this.velocity.x += this.drift.x; this.velocity.z += this.drift.z;
+    this.carriedWater = added;
   }
 
   /**
@@ -1961,7 +2217,7 @@ export class Rock {
       const tilt = scratch.axes[0].set(axis === 0 ? 1 : 0, 0, axis === 2 ? 1 : 0);
       this.quaternion.copy(saved).premultiply(new THREE.Quaternion().setFromAxisAngle(tilt, sign * FLOAT.stabilityTilt));
       const line = this.waterline(this.position.y);
-      const lever = scratch.lever.copy(line.centre).sub(this.buoyancy.centroid).applyQuaternion(this.quaternion);
+      const lever = scratch.lever.copy(line.centre).sub(this.massCentre).applyQuaternion(this.quaternion);
       // About x the push turns it by −lever.z, about z by lever.x: it falls on if that turns it on the way it was tilted.
       const turning = axis === 0 ? -lever.z : lever.x;
       if (turning * sign > FLOAT.toppling) { fallsAbout = { axis, sign }; break; }
@@ -1994,7 +2250,7 @@ export class Rock {
   turnAfloat(dt, line, buoyancy, damping) {
     const radius = this.radius;
     const quaternion = this.quaternion;
-    const centroid = this.buoyancy.centroid;
+    const centroid = this.massCentre;
     const middle = scratch.middle.copy(centroid).applyQuaternion(quaternion).multiplyScalar(radius);
     const lever = scratch.lever.copy(line.centre).applyQuaternion(quaternion).multiplyScalar(radius).sub(middle);
     // The push up at the lever's end: r × (0, B, 0).
@@ -2010,19 +2266,30 @@ export class Rock {
       dampZZ = damping * (plane.zz - 2 * z * plane.z + z * z * plane.area);
       dampXZ = damping * (plane.xz - x * plane.z - z * plane.x + x * z * plane.area);
     }
+    if (this.plate) {
+      // Munk moment: an edge-first disc turns broadside to its relative flow. It is deep water's: at the surface a plate
+      // planes, the water under it only, and its pressure and its displaced volume's lever turn it level, so the moment
+      // grows in only as its top goes under, in full PLATE_WATER.munkDepth of its radius down.
+      const face = scratch.face.copy(this.shape.axes[2]).applyQuaternion(quaternion);
+      const flow = scratch.force.copy(this.velocity);
+      flow.x -= this.drift.x; flow.z -= this.drift.z;
+      const under = Math.min(Math.max(-(this.position.y + line.high) / (PLATE_WATER.munkDepth * radius), 0), 1);
+      torque.addScaledVector(scratch.pressure.crossVectors(face, flow), under * this.carriedWater * face.dot(flow));
+    }
     // Its principal moments (principal: its shape's, with the water it carries) and Euler's equations (eulerTurn), the
     // damping then taken implicitly about the level axes.
-    const turned = this.eulerTurn(angular, torque, dt, 1 + FLOAT.addedInertia * line.share);
-    const { moments, axes } = this.principal(1 + FLOAT.addedInertia * line.share);
+    const turned = this.eulerTurn(angular, torque, dt, this.plate ? 1 : 1 + FLOAT.addedInertia * line.share);
+    const { moments, axes } = this.principal(this.plate ? 1 : 1 + FLOAT.addedInertia * line.share);
     // Damped: τ_x = −(zz·ω_x − xz·ω_z), τ_z = −(xx·ω_z − xz·ω_x), against the moment about each level axis.
     const momentX = moments[0] * axes[0].x ** 2 + moments[1] * axes[1].x ** 2 + moments[2] * axes[2].x ** 2;
     const momentZ = moments[0] * axes[0].z ** 2 + moments[1] * axes[1].z ** 2 + moments[2] * axes[2].z ** 2;
     const dampedX = (turned.x + (dampXZ * turned.z / momentX) * dt) / (1 + (dampZZ / momentX) * dt);
     const dampedZ = (turned.z + (dampXZ * dampedX / momentZ) * dt) / (1 + (dampXX / momentZ) * dt);
     // The water it is in slows all its turning besides (as FLOAT.slowing its drift), and its spin about the vertical as under water.
-    const slowed = 1 / (1 + FLOAT.turnSlowing * line.share * dt);
+    const plateDrag = this.plate ? WATER_DENSITY * radius ** 5 * this.thing.air.drag * PLATE.turnDrag * angular.length() : 0;
+    const slowed = 1 / (1 + (FLOAT.turnSlowing * line.share + plateDrag / Math.min(momentX, momentZ)) * dt);
     turned.x = dampedX * slowed; turned.z = dampedZ * slowed;
-    turned.y *= Math.exp(-SPIN_DECAY * dt);
+    turned.y *= Math.exp(-SPIN_DECAY * dt) * (this.plate ? slowed : 1);
     const rate = turned.length();
     this.spinRate = rate;
     if (rate > 1e-9) this.spinAxis.copy(turned).divideScalar(rate);
@@ -2059,17 +2326,47 @@ export class Rock {
     }
     this.position.y = Math.max(this.position.y, -bed - lowest);
     this.velocity.y = Math.max(this.velocity.y, 0);
+    if (this.plate && !this.floats) {
+      this.restOn(-bed);
+      this.onGround = false;
+      this.spinRate = 0;
+      this.afloat = false;
+    }
   }
 
   // ---- the ground (the header) --------------------------------------------
 
-  /** Come to rest where it is, its lowest point at `height` (it tumbled or rolled to a stop on the ground). */
+  /**
+   * Come to rest where it is, its lowest point at `height` (it tumbled or
+   * rolled to a stop on the ground). A thing kept upright (`body.upright`: a
+   * pizza, a pie, a duck) settles onto a face it can lie on over
+   * GROUND.settleSeconds (settleStep): one ballasted low (GROUND.rightsFrom:
+   * a duck) onto its base, anything else (a pie, its weight only a little
+   * low) onto whichever of its top or bottom is nearer down.
+   */
   restOn(height) {
+    this.groundHeight = height;
     this.position.y = height - this.lowestOffset();
     this.velocity.set(0, 0, 0);
     this.state = 'rest';
     this.onGround = true;
+    if (this.thing.body.upright) {
+      const up = scratch.face.copy(this.uprightAxis).applyQuaternion(this.quaternion);
+      const down = (this.thing.body.ballast?.[1] ?? 0) <= -GROUND.rightsFrom || up.y >= 0 ? UP : scratch.along.set(0, -1, 0);
+      const turn = new THREE.Quaternion().setFromUnitVectors(up, down);
+      this.settling = turn.w < 0.9999 ? { from: this.quaternion.clone(), to: turn.multiply(this.quaternion), time: 0 } : null;
+    }
     this.syncMeshes();
+  }
+
+  /** dt seconds of settling onto the ground (restOn): turned on towards the face it lies on, its lowest point kept on the ground. */
+  settleStep(dt) {
+    const settling = this.settling;
+    settling.time = Math.min(settling.time + dt, GROUND.settleSeconds);
+    const share = settling.time / GROUND.settleSeconds;
+    this.quaternion.slerpQuaternions(settling.from, settling.to, share * share * (3 - 2 * share));
+    this.position.y = this.groundHeight - this.lowestOffset();
+    if (settling.time >= GROUND.settleSeconds) this.settling = null;
   }
 
   /** Down on the ground at `height` (the header): out of it, then a bounce off it, or it settles to tumble or roll along it. */
@@ -2216,6 +2513,7 @@ export class Rock {
     } else {
       this.restTime += dt;
       if (this.afloat && surfaceAt) surface = surfaceAt(this.position.x, this.position.z);
+      if (this.settling) this.settleStep(dt);
     }
     this.bendStep(dt);
     this.soak(dt);
@@ -2226,6 +2524,7 @@ export class Rock {
     // In its cavity's air until the pinch-off, under water once the surface has closed.
     // A skip's touch opens no hole, nor does a floater's ripple: what dips under the water is seen through it.
     if (impact && !impact.skim && !impact.ripple) this.sinceImpact = 0;
+    else if (impact?.slap) this.sinceImpact = Infinity;   // a plate's slap opens no hole: what is under the water is seen through it at once
     else if (this.sinceImpact >= 0) this.sinceImpact += dt;
     if (this.sinceImpact >= 0) {
       const timeUnit = Math.sqrt(this.radius / GRAVITY);

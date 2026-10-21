@@ -31,7 +31,7 @@
 import * as THREE from 'three';
 import { inverse2d } from './stockham.mjs';
 import { SplashSystem } from '../src/splash.js';
-import { Rock } from '../src/rock.js';
+import { Rock, throwFlightTime } from '../src/rock.js';
 import { DAMPING, POOL_DAMPING, POOL_SLEEP_SECONDS } from '../src/spectralWater.js';
 import { SLOPE_VISIBLE } from '../src/rings.js';
 
@@ -63,7 +63,7 @@ function throwStone(radius, powerName, aimX, aimZ) {
   const beyond = Math.max(radius - 0.08, 0);
   const hand = new THREE.Vector3(0.30, -0.32 - 1.6 * beyond, -0.55 - 1.2 * beyond).applyMatrix4(camera.matrixWorld);
   const target = new THREE.Vector3(aimX, 0, aimZ);
-  const flightTime = THREE.MathUtils.clamp(0.42 + 0.11 * hand.distanceTo(target), 0.5, 1.0) * { soft: 1.3, normal: 1.0, hard: 0.72 }[powerName];
+  const flightTime = throwFlightTime(hand, target, powerName, radius);
   const velocity = target.clone().sub(hand).divideScalar(flightTime);
   velocity.y += 0.5 * GRAVITY * flightTime;
   const rock = new Rock({ radius, position: hand, velocity, envTexture: null });

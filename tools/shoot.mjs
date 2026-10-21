@@ -44,7 +44,9 @@
 // times count from the dip.
 // --power=soft|normal|hard throws as the strip's Lob, Normal and Hard do
 // (soft is a higher arc, so a steeper entry: about 30° from vertical against
-// 42°). --skip throws skips, as the strip's Skip does (src/rock.js): the stone
+// 42°; hard is fast and flat, twice as fast in at about 73°: src/rock.js
+// throwFlightTime).
+// --skip throws skips, as the strip's Skip does (src/rock.js): the stone
 // first touches the water at the throw's x:z (or where a nearly level
 // release puts it, src/main.js skipThrow) and skips on from there, and the
 // times count from that first touch.
