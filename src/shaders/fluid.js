@@ -16,7 +16,9 @@
 //           r the water a ray crosses (metres), g coverage (the share of the
 //           pixel and of the exposure that water covers), b the drops' sun
 //           glints (radiance over the sun's irradiance) and a the crown's
-//           aeration (its rim bead and torn edges, src/shaders/sheet.js).
+//           aeration (its rim bead and torn edges, and its froth,
+//           src/shaders/sheet.js), the share of its light scattered white,
+//           times its share of the pixel, as the coverage is.
 //
 // Droplets. Sphere impostors stretched along their motion into capsules, as a
 // camera's shutter would smear them (half a frame, uStreakSeconds). A drop
@@ -59,8 +61,12 @@
 //   - Sheet: reflects pondView and lets the scene behind through, shifted by
 //     its normal and thickness (a thin film barely bends what is behind it);
 //     sunGlitter with WATER_SLOPE_VARIANCE (its unresolved ripple). Its rim
-//     bead and torn edges, only, are aerated: mixed towards the spray's
-//     scattering colour by AERATION times the optics' aeration.
+//     bead and torn edges, and its froth (src/shaders/sheet.js), are
+//     aerated: mixed towards the spray's scattering colour by the optics'
+//     aeration over their coverage, at most 1. Its holes are the scene's:
+//     the depth pass discards them, and the optics write the sheet's share
+//     of a pixel, in the aeration as in the coverage, which the alpha
+//     applies (so the aeration is divided by it, up to a whole pixel).
 //   - Column and drop beads (a drop from one device pixel of radius up, fading
 //     in from half a pixel): lenses. A ray through a water sphere at incidence
 //     θ leaves turned by 2·(θ − asin(sin θ / 1.33)) towards its centre, in the
@@ -92,13 +98,15 @@
 // The mirror pass (src/main.js) draws the crowns, columns and drops through
 // the reflected camera as MIRROR_* below, over the dome's mirror image: the
 // Fresnel reflection of the sky cube, no refraction (a sheet or a column lets
-// the dome behind it show straight through), the sheet's aerated bead, and a
+// the dome behind it show straight through), the sheet's aerated bead and
+// froth, through the same holes (SHEET_FROTH), and a
 // drop's mean light and glints. Only what stands above the water is drawn.
 // A second draw of the same programs writes how far each is from the mirror
 // camera into the mirror's alpha (MIRROR_COMMON), so that the water can look
 // a near object's reflection up where it is rather than at infinity.
 import { GLSL_COMMON } from './scene.js';
 import { GALE_SURFACE } from './gale.js';
+import { SHEET_FROTH } from './sheet.js';
 
 // A drop's mean light (the header): this much of the sky's mean radiance and
 // of what is behind it.
@@ -354,7 +362,6 @@ ${FRESNEL}
 ${NIGHT_VISION}
 #define WATER_SLOPE_VARIANCE 0.006   // the sheet's and the column's unresolved ripple, for their glitter
 #define GLITTER_CAP 40.0
-#define AERATION 0.55                // how far the rim bead and torn edges whiten
 ${MEAN_LIGHT}
 #define BEAD_FROM 0.5                // device-pixel radius at which a drop starts to be a glass bead...
 #define BEAD_FULL 1.0                // ...and is one (two pixels wide)
@@ -484,10 +491,13 @@ void main() {
       vec3 surface = mix(refracted, reflected, fresnel);
       // The sheet and the column glitter as the pond does; a drop's glints are in the optics.
       if (sheet + column > 0.5) surface += min(sunGlitter(worldNormal, worldToViewer, sunWorld, uSunIrradiance, WATER_SLOPE_VARIANCE), vec3(GLITTER_CAP));
-      // The rim bead and torn edges are aerated: a faint white scattering, brightest towards the sun.
+      // The rim bead, torn edges and froth are aerated: a white scattering, brightest towards the sun.
       float forward = pow(clamp(0.5 - 0.5 * dot(toViewer, uSunDirView), 0.0, 1.0), 6.0);
       vec3 scattering = vec3(0.85, 0.88, 0.90) * (uSkyAmbient * 1.2 + uSunIrradiance * (0.08 + 0.7 * forward));
-      surface = mix(surface, scattering, sheet * AERATION * clamp(optics.a, 0.0, 1.0));
+      // Where holes or the sheet's edge cover part of a pixel, the optics carry that share in the
+      // aeration as in the coverage, and the alpha applies it: divide it out of the aeration.
+      float aeration = optics.a / max(min(coverage, 1.0), 1e-3);
+      surface = mix(surface, scattering, sheet * clamp(aeration, 0.0, 1.0));
       float drop = 1.0 - sheet - column;
       // On-screen radius in device pixels: a drop's from the depth pass, a column's from the water across it.
       float deviceRadius = mix(info.g, 0.5 * thickness / max(normal.z, 0.3) * uProjScale / info.r, column) / uFluidScale;
@@ -532,22 +542,29 @@ vec4 mirrorNearness(float coverage, vec3 viewPoint) {
 }
 `;
 
-// A sheet: the sky's Fresnel reflection, and its aerated bead's scattering.
+// A sheet: the sky's Fresnel reflection, and its aerated bead's and froth's
+// scattering, through its holes (SHEET_FROTH).
 export const MIRROR_SHEET_FRAGMENT = /* glsl */`
 uniform vec3 uSkyAmbient;
 varying vec3 vViewPosition;
 varying vec3 vViewNormal;
 varying vec3 vViewRimTangent;
 varying float vAeration;
+varying float vRod;
+varying vec3 vSheet;
+varying vec2 vFroth;
 ${MIRROR_COMMON}
+${SHEET_FROTH}
 void main() {
-  if ((worldFromView(vViewPosition) + cameraPosition).y < uMirrorLevel) discard;
   vec3 toViewer = normalize(-vViewPosition);
   vec3 normal = normalize(vViewNormal);
   if (dot(normal, toViewer) < 0.0) normal = -normal;
+  SheetFroth froth = sheetFroth(vSheet, vFroth, vAeration, vRod, dot(normal, toViewer));
+  if ((worldFromView(vViewPosition) + cameraPosition).y < uMirrorLevel || froth.hole) discard;
   normal = normalize(normal + vViewRimTangent);
   float fresnel = waterFresnel(dot(normal, toViewer));
-  float aerated = 0.55 * vAeration * (1.0 - fresnel);
+  float aerated = min(RIM_AERATION * vAeration + froth.whiteness, 1.0) * (1.0 - fresnel) * froth.present;
+  fresnel *= froth.present;
   if (uMirrorDistance > 0.5) { gl_FragColor = mirrorNearness(fresnel + aerated, vViewPosition); return; }
   vec3 reflected = textureCubeLodEXT(uEnvCube, worldFromView(reflect(-toViewer, normal)), 1.0).rgb;
   gl_FragColor = vec4(fresnel * reflected + aerated * uSkyAmbient * 1.2, fresnel + aerated);

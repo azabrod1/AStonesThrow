@@ -27,7 +27,7 @@ node tools/wave-probe.mjs              # the wind ripples on the CPU: real field
 node tools/foam-probe.mjs              # the foam's bubble pattern on the CPU: the shader's fade constants, antialiasing against supersampling, cost
 node tools/quality-probe.mjs           # every preset builds its sizes (__pond.budget) from every other, the calibration and its watch step down, the idle frame cap, pause/resume, no program at the first throw
 node tools/profile-probe.mjs           # runs ?profile=1 headless and checks the report's shape (its milliseconds mean nothing here)
-node tools/controls-probe.mjs          # the controls as phones' browsers lay them out (viewport tag, touch, 3×): sizes, fit, the slider's tap and drag
+node tools/controls-probe.mjs          # the controls as phones' browsers lay them out (viewport tag, touch, 3×): sizes, fit, the slider's tap and drag, the dropdown of things
 npm run site && node tools/startup-probe.mjs # delayed/failed assets, retry, saved settings and startup input races
 npm run site && node tools/site-check.mjs   # build what Pages publishes into _site/ and load it under /AStonesThrow/
 ```
