@@ -748,6 +748,15 @@
     .menu-group .menu-card { min-height: 44px; }
     .thing-favourite { width: 44px; height: 44px; padding: 11px; }
   }
+  /* A short touch screen (an iPhone SE upright, a phone on its side): the
+     dropdown's pills at the controls probe's least height (34 points) and its
+     rows and heads closer, so its twenty pills fit over the strip without
+     scrolling. */
+  @media (pointer: coarse) and (max-height: 700px) {
+    .thing-menu-card [role="menuitemradio"] { min-height: 34px; }
+    .thing-menu-pills { row-gap: 3px; }
+    .thing-menu-head { margin: 5px 2px 2px; }
+  }
   /* Screens too narrow for one row (a phone on its side, a tablet upright):
      two rows, what is thrown and the throw button, then how to throw and
      slow motion. The row break comes after the throw button (order),
