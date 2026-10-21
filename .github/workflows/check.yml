@@ -45,3 +45,4 @@ jobs:
       - run: node tools/controls-probe.mjs
       - run: node tools/quality-probe.mjs
       - run: npm run site && node tools/site-check.mjs
+      - run: node tools/startup-probe.mjs

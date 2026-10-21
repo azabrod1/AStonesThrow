@@ -10,12 +10,26 @@
 //   - the page is laid out at the device's width (the viewport tag works);
 //   - every control lies inside the screen, the strip does not overflow and
 //     it covers at most 30% of the screen's height;
+//   - on a phone in portrait (where the title's line is hidden) the first
+//     visit's cue shows over the water, clear of the strip, and goes with the
+//     first throw; elsewhere it stays hidden;
 //   - on a touch screen the stone slider is at least 44 points tall (Apple's
 //     smallest comfortable target) and, in portrait, spans most of the
 //     screen's width, and every button is at least 34 points tall;
 //   - a tap anywhere along the slider puts its thumb there (iOS moves a range
 //     input only by its thumb, so the page does this itself), dragging from
 //     there moves it, and the readout and the next stone follow;
+//   - how to throw is one row: Skip, Lob, Hard and Normal each set the
+//     throw's strength and Skip, and slow motion sets the time's scale;
+//   - the strip's chip opens the dropdown of things (src/thingMenu.js) over
+//     the strip and under the settings button, its four groups and twenty
+//     pills on the screen (on a phone in portrait without scrolling), each
+//     fitting its name and on a touch screen at least 34 points tall, the
+//     chosen one checked and focused; a pill tapped is thrown next (the
+//     dropdown closed, the focus back on the chip, the strip following, a
+//     skip asked for gone back to Normal for a ball), a press on the pond
+//     closes it without throwing, the chip pressed again closes it, and on a
+//     desktop the arrow keys and Enter choose in it and Escape closes it;
 //   - the settings button is on the screen, clear of the title, and (on a
 //     touch screen) at least 34 points tall; pressed, the panel opens on the
 //     screen, its rows that tall too, each row's value whole beside its
@@ -24,7 +38,7 @@
 //     portrait the page needs no scrolling), whose twenty pictured choices
 //     can each be opened and scrolled onto the screen and fit their names,
 //     every card one height, its name and note each one line, whole,
-//     its head staying at the panel's top as it scrolls; the strip's chip
+//     its head staying at the panel's top as it scrolls; the dropdown's foot
 //     opens the page at once, and each choice, tapped, is shown over the
 //     folds to look over (its name, size, mass, Floats or Sinks; the
 //     settings stay open) and its Use button closes the settings, the next
@@ -45,7 +59,8 @@
 //     choices fit and whose Heavy rain brings the rain; a press on the water
 //     closes it without throwing a stone, and Escape closes it too;
 //   - on a touch screen a finger dragged across the water turns the view and
-//     throws nothing, and the Reset view button then shows on the screen.
+//     throws nothing, and the Reset view button then shows on the screen,
+//     clear of the settings button.
 // Sizes are reported in points on the screen (CSS pixels times the page's
 // zoom), so a shrunken page fails them. It saves each framing's screen to
 // shots/controls-probe/<label>/ and exits with status 1 if a check fails.
@@ -147,6 +162,20 @@ for (const framing of FRAMINGS) {
   const outside = layout.parts.filter((part) => part.left < -0.5 || part.top < -0.5 || part.right > layout.screenWidth + 0.5 || part.bottom > layout.screenHeight + 0.5);
   check(outside.length === 0 && !layout.stripOverflows, `every control is on the screen${outside.length ? ` (off it: ${outside.map((part) => part.name).join(', ')})` : ''}${layout.stripOverflows ? ' (the strip overflows)' : ''}`);
   check(layout.strip.height <= LARGEST_STRIP_SHARE * layout.screenHeight, `the control strip covers at most ${Math.round(LARGEST_STRIP_SHARE * 100)}% of the screen's height (${(layout.strip.height / layout.screenHeight * 100).toFixed(1)}%)`);
+  // The first visit's cue: on a phone in portrait, over the water and clear of the strip, until the first throw.
+  const cueShown = () => page.evaluate(() => {
+    const scale = window.visualViewport ? window.visualViewport.scale : 1;
+    const cue = document.getElementById('cue');
+    if (cue.hidden || cue.getClientRects().length === 0) return null;
+    const box = cue.getBoundingClientRect();
+    return { left: box.left * scale, right: box.right * scale, top: box.top * scale, bottom: box.bottom * scale, text: cue.textContent };
+  });
+  const cue = await cueShown();
+  if (framing.touch && framing.portrait) {
+    check(!!cue && cue.left >= 0 && cue.right <= layout.screenWidth && cue.top >= 0 && cue.bottom <= layout.strip.top, `the first visit's cue shows over the water, clear of the strip ("${cue?.text ?? 'hidden'}"${cue ? `, ${Math.round(layout.strip.top - cue.bottom)} points above it` : ''})`);
+  } else {
+    check(!cue, `the first visit's cue stays hidden, the title's line saying it here`);
+  }
   if (framing.touch) {
     check(layout.slider.height >= SMALLEST_SLIDER_HEIGHT - 0.5, `the stone slider is at least ${SMALLEST_SLIDER_HEIGHT} points tall (${layout.slider.height.toFixed(1)})`);
     if (framing.portrait) check(layout.slider.width >= PORTRAIT_SLIDER_SHARE * layout.screenWidth, `the stone slider spans at least ${Math.round(PORTRAIT_SLIDER_SHARE * 100)}% of the screen's width (${(layout.slider.width / layout.screenWidth * 100).toFixed(0)}%)`);
@@ -189,6 +218,13 @@ for (const framing of FRAMINGS) {
     }
   }
 
+  if (framing.touch && framing.portrait) {
+    await page.evaluate(() => window.__pond.throwRandom());
+    await page.waitForTimeout(600);
+    const gone = { cue: await cueShown(), stored: await page.evaluate(() => localStorage.getItem('stone-pond-thrown')) };
+    check(!gone.cue && gone.stored === '1', `the cue goes with the first throw, for good on this device (${gone.cue ? 'still shown' : 'gone'}, stored ${gone.stored})`);
+  }
+
   // The settings (src/settingsPanel.js).
   const press = (selector) => (framing.touch ? page.tap(selector) : page.click(selector));
   const boxes = (selector) => page.evaluate((query) => {
@@ -204,6 +240,110 @@ for (const framing of FRAMINGS) {
   const overlaps = (first, second) => first.left < second.right && second.left < first.right && first.top < second.bottom && second.top < first.bottom;
   check(onScreen(menuButton) && !overlaps(menuButton, title), `the settings button is on the screen, clear of the title`);
   if (framing.touch) check(menuButton.height >= SMALLEST_BUTTON_HEIGHT - 0.5, `the settings button is at least ${SMALLEST_BUTTON_HEIGHT} points tall (${menuButton.height.toFixed(1)})`);
+
+  // How to throw: Skip, Lob, Hard and Normal each set the throw's strength (src/main.js POWER; Lob is soft) and Skip.
+  const throwKinds = [];
+  for (const kind of ['skip', 'lob', 'hard', 'normal']) {
+    await press(`#throw-kind [data-value="${kind}"]`);
+    throwKinds.push(await page.evaluate(() => ({ pressed: document.querySelector('#throw-kind [aria-pressed="true"]')?.dataset.value, power: window.__pond.power, skipping: window.__pond.skipping })));
+  }
+  const expectedKinds = [{ pressed: 'skip', power: 'normal', skipping: true }, { pressed: 'lob', power: 'soft', skipping: false }, { pressed: 'hard', power: 'hard', skipping: false }, { pressed: 'normal', power: 'normal', skipping: false }];
+  check(JSON.stringify(throwKinds) === JSON.stringify(expectedKinds), `Skip, Lob, Hard and Normal set the throw (${throwKinds.map((kind) => `${kind.pressed}: ${kind.power}${kind.skipping ? ', skipping' : ''}`).join('; ')})`);
+  await press('#speed [data-value="0.25"]');
+  const slowed = await page.evaluate(() => window.__pond.timeScale);
+  await press('#speed [data-value="1"]');
+  const realTime = await page.evaluate(() => window.__pond.timeScale);
+  check(slowed === 0.25 && realTime === 1, `slow motion: ¼× runs the pond at ${slowed} of real time, 1× at ${realTime}`);
+
+  // The dropdown of things (src/thingMenu.js): Skip asked for first, so choosing a ball shows it going back to Normal.
+  await press('#throw-kind [data-value="skip"]');
+  await press('#thing-chip');
+  await page.waitForTimeout(300);
+  const menu = await page.evaluate(() => {
+    const scale = window.visualViewport ? window.visualViewport.scale : 1;
+    const toBox = (rect) => ({ left: rect.left * scale, right: rect.right * scale, top: rect.top * scale, bottom: rect.bottom * scale, height: rect.height * scale });
+    const card = document.getElementById('thing-menu-card');
+    const focused = document.activeElement?.dataset?.value;
+    // Each pill as the card scrolls it into view: a short screen's card scrolls.
+    const pills = [...card.querySelectorAll('[role="menuitemradio"]')].map((pill) => {
+      pill.scrollIntoView({ block: 'nearest' });
+      return { name: pill.dataset.value, checked: pill.getAttribute('aria-checked') === 'true', clipped: pill.scrollWidth > pill.clientWidth + 0.5, ...toBox(pill.getBoundingClientRect()) };
+    });
+    card.scrollTop = 0;
+    return {
+      open: !document.getElementById('thing-menu').hidden, expanded: document.getElementById('thing-chip').getAttribute('aria-expanded'),
+      card: toBox(card.getBoundingClientRect()), scrolls: card.scrollHeight > card.clientHeight + 1, pills, focused,
+      groups: [...card.querySelectorAll('.thing-menu-head')].map((head) => head.textContent),
+    };
+  });
+  check(menu.open && menu.expanded === 'true' && onScreen(menu.card) && menu.card.bottom <= layout.strip.top + 0.5 && menu.card.top >= menuButton.bottom - 0.5,
+    `the strip's chip opens the dropdown of things over the strip and under the settings button (${menu.open ? `${Math.round(menu.card.right - menu.card.left)}×${Math.round(menu.card.height)} points` : 'not open'})`);
+  const checkedPill = menu.pills.find((pill) => pill.checked)?.name;
+  check(menu.groups.join(', ') === 'Stones, Balls, Gems, Other' && menu.pills.length === 20 && menu.pills.every(onScreen) && !menu.pills.some((pill) => pill.clipped) && (!framing.touch || menu.pills.every((pill) => pill.height >= SMALLEST_BUTTON_HEIGHT - 0.5)),
+    `its ${menu.groups.join(', ')} hold twenty pills (${menu.pills.length}), each on the screen once scrolled to and fitting its name${framing.touch ? `, at least ${SMALLEST_BUTTON_HEIGHT} points tall (smallest ${Math.min(...menu.pills.map((pill) => pill.height)).toFixed(1)})` : ''}${menu.pills.some((pill) => pill.clipped) ? ` (cut: ${menu.pills.filter((pill) => pill.clipped).map((pill) => pill.name).join(', ')})` : ''}`);
+  check(checkedPill === 'stone' && menu.focused === 'stone', `the chosen thing's pill is checked (${checkedPill}) and focused (${menu.focused})`);
+  if (framing.portrait) check(!menu.scrolls, 'on a phone in portrait the dropdown holds every pill without scrolling');
+  await page.screenshot({ path: path.join(outputFolder, `${framing.name}-menu.png`) });
+  const rocksBeforePick = await page.evaluate(() => window.__pond.rocks.length);
+  await press('#thing-menu [data-value="tennis"]');
+  await page.waitForTimeout(150);
+  const picked = await page.evaluate(() => ({
+    thing: window.__pond.thing, open: !document.getElementById('thing-menu').hidden, expanded: document.getElementById('thing-chip').getAttribute('aria-expanded'),
+    focused: document.activeElement?.id, label: document.getElementById('thing-chip-name').textContent, sliderHidden: document.getElementById('stone-size').hidden,
+    pressed: document.querySelector('#throw-kind [aria-pressed="true"]')?.dataset.value, skipping: window.__pond.skipping, skipOff: document.querySelector('#throw-kind [data-value="skip"]').getAttribute('aria-disabled'),
+  }));
+  await press('#pond');
+  await page.waitForTimeout(150);
+  const pickedThrown = await page.evaluate(() => ({ count: window.__pond.rocks.length, thing: window.__pond.rocks.at(-1)?.thing.key }));
+  check(picked.thing === 'tennis' && !picked.open && picked.expanded === 'false' && picked.focused === 'thing-chip' && picked.label === 'Tennis ball' && picked.sliderHidden && pickedThrown.count === rocksBeforePick + 1 && pickedThrown.thing === 'tennis',
+    `a pill tapped closes the dropdown (${picked.open ? 'open' : 'closed'}, focus on ${picked.focused}), the strip follows (${picked.label}, slider ${picked.sliderHidden ? 'off' : 'on'}) and the next tap on the water throws it (${pickedThrown.count - rocksBeforePick} thrown, ${pickedThrown.thing})`);
+  check(picked.pressed === 'normal' && !picked.skipping && picked.skipOff === 'true', `a skip asked for goes back to Normal for a ball, Skip greyed out (${picked.pressed}${picked.skipping ? ', skipping' : ''}, Skip off: ${picked.skipOff})`);
+  // A press on the pond (here above the card) only closes it; the chip pressed again closes it too.
+  await press('#thing-chip');
+  await page.waitForTimeout(300);
+  const [openCard] = await boxes('#thing-menu-card');
+  const rocksBeforeOutside = await page.evaluate(() => window.__pond.rocks.length);
+  const outsidePoint = { x: layout.screenWidth * 0.3 / layout.scale, y: openCard.top / 2 / layout.scale };
+  if (framing.touch) await page.touchscreen.tap(outsidePoint.x, outsidePoint.y);
+  else await page.mouse.click(outsidePoint.x, outsidePoint.y);
+  await page.waitForTimeout(150);
+  const menuAfterOutside = await page.evaluate(() => ({ open: !document.getElementById('thing-menu').hidden, rocks: window.__pond.rocks.length }));
+  check(!menuAfterOutside.open && menuAfterOutside.rocks === rocksBeforeOutside, `a press on the pond closes the dropdown without throwing (open: ${menuAfterOutside.open}, stones ${rocksBeforeOutside} -> ${menuAfterOutside.rocks})`);
+  await press('#thing-chip');
+  await page.waitForTimeout(300);
+  const toggledOpen = await page.evaluate(() => !document.getElementById('thing-menu').hidden);
+  await press('#thing-chip');
+  await page.waitForTimeout(150);
+  const toggledShut = await page.evaluate(() => ({ open: !document.getElementById('thing-menu').hidden, expanded: document.getElementById('thing-chip').getAttribute('aria-expanded') }));
+  check(toggledOpen && !toggledShut.open && toggledShut.expanded === 'false', `the chip pressed again closes the dropdown (${toggledOpen ? 'opened' : 'did not open'}, then ${toggledShut.open ? 'still open' : 'closed'}, aria-expanded ${toggledShut.expanded})`);
+  if (!framing.touch) {
+    // The keyboard: the arrow keys move from pill to pill, Enter chooses, Escape closes; the focus comes back to the chip.
+    const pillOrder = menu.pills.map((pill) => pill.name);
+    await page.focus('#thing-chip');
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(300);
+    await page.keyboard.press('ArrowRight');
+    const keyedTo = await page.evaluate(() => document.activeElement?.dataset?.value);
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(150);
+    const keyedPick = await page.evaluate(() => ({ thing: window.__pond.thing, open: !document.getElementById('thing-menu').hidden, focused: document.activeElement?.id }));
+    const expectedNext = pillOrder[pillOrder.indexOf('tennis') + 1];
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(300);
+    const reopened = await page.evaluate(() => !document.getElementById('thing-menu').hidden);
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(150);
+    const escaped = await page.evaluate(() => ({ open: !document.getElementById('thing-menu').hidden, focused: document.activeElement?.id }));
+    check(keyedTo === expectedNext && keyedPick.thing === expectedNext && !keyedPick.open && keyedPick.focused === 'thing-chip' && reopened && !escaped.open && escaped.focused === 'thing-chip',
+      `from the keyboard: Enter on the chip opens it, ArrowRight moves from tennis to ${keyedTo} (expected ${expectedNext}), Enter throws that next (${keyedPick.thing}, ${keyedPick.open ? 'open' : 'closed'}, focus on ${keyedPick.focused}); Escape closes it (${escaped.open ? 'open' : 'closed'}, focus on ${escaped.focused})`);
+  }
+  // The river stone again, through the dropdown, for the settings' checks.
+  await press('#thing-chip');
+  await page.waitForTimeout(300);
+  await press('#thing-menu [data-value="stone"]');
+  await page.waitForTimeout(150);
+  check(await page.evaluate(() => window.__pond.thing === 'stone' && document.getElementById('thing-menu').hidden), `the river stone chosen again through the dropdown`);
+
   await press('#menu-button');
   await page.waitForTimeout(400);
   const [panel] = await boxes('#settings');
@@ -311,10 +451,12 @@ for (const framing of FRAMINGS) {
     // over the folds (the settings stay open), Use closes them, and the next tap on the water throws it.
     if (await page.evaluate(() => document.getElementById('settings').hidden)) {
       await press('#thing-chip');
+      await page.waitForTimeout(300);
+      await press('#thing-more');
       await page.waitForTimeout(400);
     }
-    const onPage = await page.evaluate(() => !document.querySelector('.menu-page[data-page="thing"]').hidden);
-    check(onPage, `the strip's chip opens What to throw at once (${onPage ? 'its page' : 'not it'})`);
+    const onPage = await page.evaluate(() => !document.querySelector('.menu-page[data-page="thing"]').hidden && document.getElementById('thing-menu').hidden);
+    check(onPage, `the dropdown's foot opens What to throw at once (${onPage ? 'its page' : 'not it'})`);
     await page.evaluate((value) => { document.querySelector(`#thing [data-value="${value}"]`).closest('details').open = true; }, choice);
     await page.waitForTimeout(80);
     if (choice === 'bowling') await page.screenshot({ path: path.join(outputFolder, `${framing.name}-throw.png`) });
@@ -337,15 +479,19 @@ for (const framing of FRAMINGS) {
   }
   // What was used lately sits at the top of What to throw, a tap each: it throws at once (the settings close).
   await press('#thing-chip');
+  await page.waitForTimeout(300);
+  await press('#thing-more');
   await page.waitForTimeout(400);
   const quick = await page.evaluate(() => [...document.querySelectorAll('#thing-quick button')].map((button) => button.dataset.value));
   if (quick.includes('pizza')) await press('#thing-quick [data-value="pizza"]');
   await page.waitForTimeout(150);
   const quickPicked = await page.evaluate(() => ({ thing: window.__pond.thing, closed: document.getElementById('settings').hidden }));
   check(quick.length >= 4 && quick.includes('pizza') && quickPicked.thing === 'pizza' && quickPicked.closed, `the latest choices sit at the top (${quick.join(', ')}), and one tapped is thrown at once (${quickPicked.thing}, ${quickPicked.closed ? 'closed' : 'open'})`);
-  // The chip pressed again closes What to throw (its press is not one outside the panel, src/settingsPanel.js), where the
-  // open panel leaves it uncovered; where the panel covers it, its ‹ closes it.
+  // What to throw opened from the chip (the dropdown's foot): the chip pressed again closes it (its press is not one outside
+  // the panel, src/settingsPanel.js), where the open panel leaves it uncovered; where the panel covers it, its ‹ closes it.
   await press('#thing-chip');
+  await page.waitForTimeout(300);
+  await press('#thing-more');
   await page.waitForTimeout(400);
   const chipOpen = await page.evaluate(() => {
     const chip = document.getElementById('thing-chip');
@@ -362,24 +508,26 @@ for (const framing of FRAMINGS) {
     await page.evaluate(() => document.querySelector('.menu-page[data-page="thing"] .menu-back')?.click());
     await page.waitForTimeout(150);
   }
-  // Skip turns on for a pizza (it skips, src/things.js), and is off for what does not skip, pressed saying why.
-  await page.evaluate(() => document.getElementById('skip').click());
+  // Skip turns on for a pizza (it skips, src/things.js).
+  await page.evaluate(() => document.querySelector('#throw-kind [data-value="skip"]').click());
   await page.waitForTimeout(100);
-  const pizzaSkips = await page.evaluate(() => window.__pond.skipping);
-  check(pizzaSkips, `Skip pressed with a pizza turns on (${pizzaSkips ? 'on' : 'off'})`);
-  // The pie chosen as a user does, its card and Use (the page's controls follow it; __pond.setThing alone leaves them).
+  const pizzaSkips = await page.evaluate(() => ({ skipping: window.__pond.skipping, pressed: document.querySelector('#throw-kind [aria-pressed="true"]')?.dataset.value }));
+  check(pizzaSkips.skipping && pizzaSkips.pressed === 'skip', `Skip pressed with a pizza turns on (${pizzaSkips.skipping ? 'on' : 'off'}, ${pizzaSkips.pressed} chosen)`);
+  // The pie chosen as a user does, its card and Use (the page's controls follow it; __pond.setThing alone leaves them):
+  // it cannot skip, so the throw goes back to Normal, and Skip, pressed, stays off and says why.
   await page.evaluate(() => {
-    window.__pond.setSkip(false);
     const card = document.querySelector('#thing [data-value="pie"]');
     card.closest('details').open = true;
     card.click();
     document.getElementById('thing-use').click();
   });
   await page.waitForTimeout(100);
-  await page.evaluate(() => document.getElementById('skip').click());   // off (aria-disabled), so a tap is the page's to answer
+  const pieKind = await page.evaluate(() => ({ skipping: window.__pond.skipping, pressed: document.querySelector('#throw-kind [aria-pressed="true"]')?.dataset.value }));
+  await page.evaluate(() => document.querySelector('#throw-kind [data-value="skip"]').click());   // off (aria-disabled), so a tap is the page's to answer
   await page.waitForTimeout(100);
-  const skipHint = await page.evaluate(() => ({ skipping: window.__pond.skipping, shown: !document.getElementById('hint').hidden, text: document.getElementById('hint').textContent }));
-  check(!skipHint.skipping && skipHint.shown && skipHint.text.startsWith('A pie does not skip'), `Skip pressed with a pie stays off and says why ("${skipHint.text}")`);
+  const skipHint = await page.evaluate(() => ({ skipping: window.__pond.skipping, pressed: document.querySelector('#throw-kind [aria-pressed="true"]')?.dataset.value, shown: !document.getElementById('hint').hidden, text: document.getElementById('hint').textContent }));
+  check(!pieKind.skipping && pieKind.pressed === 'normal' && !skipHint.skipping && skipHint.pressed === 'normal' && skipHint.shown && skipHint.text.startsWith('A pie does not skip'),
+    `a pie chosen while skipping goes back to Normal (${pieKind.pressed}), and Skip pressed with it stays off and says why ("${skipHint.text}")`);
   // Arrow keys cross from one fold into the next (src/settingsPanel.js radioGroup): the next fold opens, the focus moves into
   // it and the next press carries on from there.
   await press('#menu-button');
@@ -516,8 +664,8 @@ for (const framing of FRAMINGS) {
     await session.detach();
     const dragged = await page.evaluate(() => ({ azimuth: window.__pond.orbit.azimuth, rocks: window.__pond.rocks.length }));
     const [resetButton] = await boxes('#reset-view');
-    check(dragged.azimuth < azimuthBefore - 1 && dragged.rocks === rocksBefore && !!resetButton && onScreen(resetButton),
-      `a finger dragged 120 px across the water turns the view ${(azimuthBefore - dragged.azimuth).toFixed(1)}° and throws ${dragged.rocks - rocksBefore} rocks; Reset view is on the screen`);
+    check(dragged.azimuth < azimuthBefore - 1 && dragged.rocks === rocksBefore && !!resetButton && onScreen(resetButton) && !overlaps(resetButton, menuButton),
+      `a finger dragged 120 px across the water turns the view ${(azimuthBefore - dragged.azimuth).toFixed(1)}° and throws ${dragged.rocks - rocksBefore} rocks; Reset view is on the screen, clear of the settings button`);
     await page.screenshot({ path: path.join(outputFolder, `${framing.name}-turned.png`) });
   }
   if (problems.length) { check(false, `page errors: ${problems.join(' | ')}`); }

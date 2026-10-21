@@ -116,6 +116,9 @@
 // against the cloud, and faded where the photo is darker than its sky, where
 // its land stands in front of the bolt.
 //
+// Asset requests time out after 30 seconds without progress; the current sky
+// stays until all replacement assets arrive. Initial calibration loads in parallel.
+//
 // Switching. load(place, hour) fetches the photo and its measurements, then
 // in one frame swaps the dome's texture and uniforms, fills lighting's sun
 // and sky vectors in place, captures the cube and the prefiltered map again
@@ -140,6 +143,7 @@
 // estimate (src/main.js).
 import * as THREE from 'three';
 import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
+import { loadAsset } from './loadAsset.js';
 
 // The orientation was chosen from home-view frames (mirrored: the photo
 // flipped left for right; sunAzimuth, degrees right of straight ahead, would
@@ -358,10 +362,7 @@ void main() {
 }
 `;
 
-const fetchMeasurement = (file) => fetch(new URL(`../assets/sky/${file}.json`, import.meta.url)).then((response) => {
-  if (!response.ok) throw new Error(`sky measurements: HTTP ${response.status}`);
-  return response.json();
-});
+const fetchMeasurement = (file) => loadAsset(new URL(`../assets/sky/${file}.json`, import.meta.url));
 
 /**
  * Build the environment and load its first sky.
@@ -435,7 +436,8 @@ export async function createEnvironment(renderer, { name, hour, sunAzimuth, sunB
     if (!measurements.has(file)) measurements.set(file, fetchMeasurement(file).catch((error) => { measurements.delete(file); throw error; }));
     return measurements.get(file);
   };
-  const balance = await measurementOf(SKIES[BALANCE_SKY].hours.afternoon.file);
+  // Start the calibration and panorama together, avoiding a network waterfall.
+  const balancePromise = measurementOf(SKIES[BALANCE_SKY].hours.afternoon.file);
   const balanceLuminance = luminance(sunBalance.toArray());
 
   const environment = { sky, cubeTexture: cubeTarget.texture, envTexture: null, name: null, hour: null, level: 1, hazeUniforms, targets: [], panoramaBytes: 0, load, setWeather, setFlash };
@@ -456,12 +458,22 @@ export async function createEnvironment(renderer, { name, hour, sunAzimuth, sunB
     const facingFile = place.hours[place.facing ?? firstHour].file;
     const hourName = resolveHour(skyName, requestedHour);
     const { file } = place.hours[hourName];
-    const [measurement, anchor, facing, panorama] = await Promise.all([
+    const [measurement, anchor, facing, buffer, balance] = await Promise.all([
       measurementOf(file),
       measurementOf(anchorFile),
       measurementOf(facingFile),
-      new HDRLoader().setDataType(THREE.HalfFloatType).loadAsync(new URL(`../assets/sky/${file}_2k.hdr`, import.meta.url).href),
+      loadAsset(new URL(`../assets/sky/${file}_2k.hdr`, import.meta.url), 'arrayBuffer'),
+      balancePromise,
     ]);
+    // Match HDRLoader.load's texture settings. Parse only after every asset
+    // succeeded, so a failed measurement cannot orphan a decoded panorama.
+    const decoded = new HDRLoader().setDataType(THREE.HalfFloatType).parse(buffer);
+    const panorama = new THREE.DataTexture(decoded.data, decoded.width, decoded.height, THREE.RGBAFormat, decoded.type);
+    panorama.colorSpace = THREE.LinearSRGBColorSpace;
+    panorama.minFilter = panorama.magFilter = THREE.LinearFilter;
+    panorama.generateMipmaps = false;
+    panorama.flipY = true;
+    panorama.needsUpdate = true;
     panorama.wrapS = THREE.RepeatWrapping;   // the azimuth wraps; no seam at u = 0
     const panoramaBytes = panorama.image.data.byteLength;
     panorama.onUpdate = () => { panorama.image.data = null; };   // on the GPU now: free the CPU copy

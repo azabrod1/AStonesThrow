@@ -8,6 +8,20 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0b1b22">
 <title>A Stone’s Throw</title>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.183.2/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.183.2/examples/jsm/"
+  }
+}
+</script>
+<!-- Discover the application and its dependencies while the page is parsed. -->
+<link rel="modulepreload" href="./src/main.js">
+<link rel="modulepreload" href="./src/settingsPanel.js">
+<link rel="modulepreload" href="./src/thingMenu.js">
+<link rel="modulepreload" href="./src/things.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.183.2/build/three.module.js">
 <!-- Rings spreading from a stone's entry. iOS takes no SVG for the home screen
      and rounds the square PNG's corners itself. -->
 <link rel="icon" href="assets/icon/favicon.svg" type="image/svg+xml">
@@ -125,13 +139,6 @@
     gap: 8px;
     min-width: 0;
   }
-  .group > label, .group > span.name {
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--muted);
-    white-space: nowrap;
-  }
   .segmented {
     display: inline-flex;
     border: 1px solid var(--line);
@@ -155,44 +162,9 @@
     color: var(--accent-ink);
     font-weight: 600;
   }
-  /* The Skip switch, beside the throw's strength: its name and a track
-     whose knob slides over and lights while it is on. */
-  .throw-group .switch { margin-left: 2px; }
-  .switch {
-    appearance: none;
-    border: 0;
-    background: transparent;
-    color: var(--fg);
-    font: inherit;
-    font-size: 13px;
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 4px 2px;
-    cursor: pointer;
-  }
-  .switch-track {
-    position: relative;
-    box-sizing: border-box;
-    width: 34px;
-    height: 20px;
-    border: 1px solid var(--line);
-    border-radius: 999px;
-    transition: background-color 0.15s, border-color 0.15s;
-  }
-  .switch-knob {
-    position: absolute;
-    top: 2px;
-    left: 2px;
-    width: 14px;
-    height: 14px;
-    border-radius: 50%;
-    background: var(--fg);
-    transition: transform 0.15s, background-color 0.15s;
-  }
-  .switch[aria-checked="true"] .switch-track { background: var(--accent); border-color: var(--accent); }
-  .switch[aria-checked="true"] .switch-knob { transform: translateX(14px); background: var(--accent-ink); }
-  .segmented button:focus-visible, .switch:focus-visible, .throw:focus-visible, .reset-view:focus-visible, input[type="range"]:focus-visible {
+  /* Skip, greyed out while what is thrown cannot skip: pressed, it says why (the hint). */
+  .segmented button[aria-disabled="true"] { opacity: 0.35; cursor: default; }
+  .segmented button:focus-visible, .throw:focus-visible, .reset-view:focus-visible, input[type="range"]:focus-visible, .thing-menu-card button:focus-visible {
     outline: 2px solid var(--accent);
     outline-offset: 2px;
   }
@@ -204,34 +176,33 @@
      its own. */
   /* A thing of one size (src/things.js: a golf or tennis ball) keeps the slider, off. */
   input[type="range"]:disabled { opacity: 0.35; cursor: default; }
-  .switch:disabled, .switch[aria-disabled="true"] { opacity: 0.35; cursor: default; }
-  /* What is thrown, named as the strip's names are, in a pill that opens What to throw. */
+  /* What is thrown, by name, in a pill that opens the dropdown of things (src/thingMenu.js). */
   .thing-chip {
     appearance: none;
     display: inline-flex;
     align-items: center;
-    gap: 3px;
+    gap: 5px;
     border: 1px solid var(--line);
     border-radius: 999px;
     background: rgba(238, 243, 244, 0.06);
     color: var(--fg);
     font: inherit;
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    padding: 4px 6px 4px 9px;
+    font-size: 13px;
+    font-weight: 500;
+    padding: 4px 9px 4px 12px;
     white-space: nowrap;
     cursor: pointer;
   }
+  .thing-chip:hover, .thing-chip[aria-expanded="true"] { background: rgba(238, 243, 244, 0.12); border-color: rgba(238, 243, 244, 0.3); }
   .thing-chip svg { width: 10px; height: 10px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; color: var(--muted); }
   .thing-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   /* A thing of one size (src/things.js: a golf or tennis ball): no slider, its size and mass instead. */
   .stone-group input[type="range"][hidden] { display: none; }
-  /* A line over the strip for a moment (why Skip is off). */
+  /* A line over the strip for a moment (why Skip is off), just above it (--strip-height, which the page keeps). */
   .hint {
     position: fixed;
     left: 50%;
-    bottom: calc(env(safe-area-inset-bottom, 0px) + 112px);
+    bottom: calc(var(--strip-height, 112px) + 10px);
     transform: translateX(-50%);
     max-width: min(30em, calc(100vw - 32px));
     padding: 8px 12px;
@@ -297,34 +268,161 @@
     min-width: 8.6em;   /* "24.5 cm · 20.0 kg" fits, so the slider keeps its length as the size changes */
     font-variant-numeric: tabular-nums;
   }
+  /* The throw button: the strip's one filled, bold control. The water is the
+     other way to throw, and the one that aims. */
   .throw {
     appearance: none;
-    border: 1px solid var(--line);
-    background: rgba(238, 243, 244, 0.08);
+    border: 1px solid rgba(238, 243, 244, 0.3);
+    background: rgba(238, 243, 244, 0.16);
     color: var(--fg);
     font: inherit;
-    font-size: 13px;
+    font-size: 14px;
     font-weight: 600;
-    padding: 7px 16px;
+    padding: 8px 18px;
     border-radius: 999px;
+    white-space: nowrap;
     cursor: pointer;
   }
-  .throw:hover { background: rgba(238, 243, 244, 0.16); }
-  /* Shown only while the view is away from the shore's (turned, zoomed or another view): a quieter twin of the throw button. */
+  .throw:hover { background: rgba(238, 243, 244, 0.24); }
+  /* Shown only while the view is away from the shore's (turned, zoomed or
+     another view): a pill under the settings button, where the view's
+     setting lives. */
   .reset-view {
+    position: fixed;
+    top: calc(env(safe-area-inset-top, 0px) + 62px);
+    right: calc(env(safe-area-inset-right, 0px) + 14px);
     appearance: none;
     border: 1px solid var(--line);
-    background: transparent;
+    background: var(--panel);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
     color: var(--fg);
     font: inherit;
     font-size: 13px;
     padding: 7px 14px;
     border-radius: 999px;
     cursor: pointer;
+    touch-action: manipulation;
+    z-index: 1;
   }
-  .reset-view:hover { background: rgba(238, 243, 244, 0.1); }
-  /* On a wide screen the strip is one row; on a phone the stone and the
-     throw button take the first and the row break starts the second. */
+  .reset-view:hover { background: var(--panel-strong); }
+  /* The dropdown of things (src/thingMenu.js): a box from under the settings
+     button down to the strip's top (--strip-height), its card at the box's
+     foot in the settings' glass, the things in rows of pills under their
+     groups' names, and a foot into What to throw. */
+  .thing-menu {
+    position: fixed;
+    top: calc(env(safe-area-inset-top, 0px) + 62px);
+    bottom: calc(var(--strip-height, 120px) + 8px);
+    left: calc(env(safe-area-inset-left, 0px) + 12px);
+    right: calc(env(safe-area-inset-right, 0px) + 12px);
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    align-items: flex-start;
+    pointer-events: none;
+    z-index: 2;   /* over Reset view, which a tall card reaches on a small phone */
+  }
+  .thing-menu-card {
+    pointer-events: auto;
+    width: min(560px, 100%);
+    max-height: 100%;
+    box-sizing: border-box;
+    padding: 0 10px;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    touch-action: pan-y;
+    border-radius: 16px;
+    border: 1px solid rgba(238, 243, 244, 0.12);
+    background:
+      linear-gradient(168deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.012) 38%, rgba(0, 0, 0, 0.05)),
+      rgba(7, 18, 24, 0.84);
+    backdrop-filter: blur(30px) saturate(160%);
+    -webkit-backdrop-filter: blur(30px) saturate(160%);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.09), 0 20px 60px rgba(0, 0, 0, 0.55);
+  }
+  .thing-menu-head {
+    margin: 8px 2px 4px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+  }
+  .thing-menu-pills { display: flex; flex-wrap: wrap; gap: 4px 5px; }
+  .thing-menu-card [role="menuitemradio"] {
+    appearance: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 34px;
+    padding: 3px 10px 3px 3px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: none;
+    color: var(--fg);
+    font: inherit;
+    font-size: 13px;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .thing-menu-card [role="menuitemradio"]:hover { background: rgba(238, 243, 244, 0.08); }
+  .thing-menu-card [role="menuitemradio"][aria-checked="true"] { border-color: var(--accent); background: rgba(241, 199, 122, 0.12); font-weight: 600; }
+  .thing-menu-card [role="menuitemradio"] img { width: 32px; height: 24px; flex: none; border-radius: 999px; object-fit: cover; }
+  .thing-menu-more {
+    appearance: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    box-sizing: border-box;
+    width: calc(100% + 20px);
+    min-height: 36px;
+    margin: 6px -10px 0;
+    padding: 0 14px;
+    border: 0;
+    border-top: 1px solid var(--line);
+    background: none;
+    color: var(--muted);
+    font: inherit;
+    font-size: 13px;
+    text-align: left;
+    cursor: pointer;
+  }
+  .thing-menu-more:hover { color: var(--fg); }
+  .thing-menu-more span:last-child { font-size: 18px; line-height: 1; }
+  /* The first visit's cue, on a phone in portrait, where the title's line is
+     hidden: a ripple and "Tap the water to throw" over the water. It goes
+     with the first throw, for good on this device; its ripple runs a few
+     times and rests, so a still pond costs nothing. */
+  .cue {
+    position: fixed;
+    left: 50%;
+    top: 58%;
+    transform: translate(-50%, -50%);
+    display: none;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 15px 8px 11px;
+    border-radius: 999px;
+    background: rgba(7, 18, 24, 0.62);
+    color: var(--fg);
+    font-size: 14px;
+    white-space: nowrap;
+    pointer-events: none;
+    -webkit-user-select: none;
+    user-select: none;
+    transition: opacity 0.4s;
+  }
+  .cue.gone { opacity: 0; }
+  .cue-ring { position: relative; flex: none; width: 18px; height: 18px; }
+  .cue-ring::before, .cue-ring::after { content: ''; position: absolute; border-radius: 50%; }
+  .cue-ring::before { inset: 6px; background: var(--accent); }
+  .cue-ring::after { inset: 0; border: 1.5px solid var(--accent); animation: cue-ripple 1.6s ease-out 5 both; }
+  @keyframes cue-ripple { from { transform: scale(0.35); opacity: 1; } to { transform: scale(1.5); opacity: 0; } }
+  /* On a wide screen the strip is one row; on a phone what is thrown and the
+     throw button take the first, and the row break starts the second: how to
+     throw at its left, slow motion at its right. */
   .row-break { display: none; flex-basis: 100%; height: 0; }
   /* The settings (src/settingsPanel.js): a button at the top right and the
      card it opens under it, laid out as the Moon app's menu is: the list of
@@ -629,22 +727,45 @@
     text-align: center;
     color: var(--fg);
   }
+  .load-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; padding: 0 16px; }
+  .load-actions button {
+    min-height: 44px;
+    padding: 10px 16px;
+    border: 1px solid var(--line);
+    border-radius: 24px;
+    background: var(--panel);
+    color: var(--fg);
+    font: 500 14px var(--font-ui);
+    cursor: pointer;
+  }
+  .load-actions button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   @media (pointer: coarse) {
     input[type="range"] { --thumb: 28px; --track: 6px; height: 44px; }
-    .segmented button, .switch, .throw, .reset-view, .thing-chip { min-height: 36px; }
+    .segmented button, .reset-view, .thing-chip, .thing-menu-card [role="menuitemradio"] { min-height: 36px; }
+    .throw { min-height: 40px; }
     /* A finger's targets on What to throw: 44 px (Apple's smallest comfortable). */
     .menu-group > summary, .thing-use, .thing-quick button { min-height: 44px; }
     .menu-group .menu-card { min-height: 44px; }
     .thing-favourite { width: 44px; height: 44px; padding: 11px; }
   }
-  /* Phones in portrait: two rows. The stone's slider, its name and size
-     above it, with the throw button beside it (the view's reset in its place
-     while the view is away from the shore's); then the throw's strength, the Skip switch on its name's row, and the time, each name above
-     its buttons. The row break comes after the buttons (order), wherever it
-     sits in the page. The wind and the quality are in the settings. */
+  /* Screens too narrow for one row (a phone on its side, a tablet upright):
+     two rows, what is thrown and the throw button, then how to throw and
+     slow motion. The row break comes after the throw button (order),
+     wherever it sits in the page. */
+  @media (max-width: 859px) {
+    .throw { order: 1; }
+    .row-break { display: block; order: 2; }
+    .controls > .segmented { order: 3; }
+  }
+  /* Phones in portrait: two rows. The slider for what is thrown, its chip
+     and size above it, with the throw button beside it; then how to throw at
+     the left and slow motion at the right (its auto margin takes the row's
+     room). The wind and the quality are in the settings. */
   @media (max-width: 520px) {
     .title p { display: none; }
-    .controls { gap: 6px 12px; padding-top: 8px; padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 8px); }
+    .cue { display: flex; }
+    .thing-menu-card { width: 100%; }
+    .controls { gap: 8px 12px; padding-top: 8px; padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 8px); }
     .stone-group {
       flex: 1 1 200px;
       display: grid;
@@ -653,21 +774,12 @@
       align-items: end;
       gap: 0 8px;
     }
-    /* The name and the size sit in the slider's box above its 28 px thumb. */
-    /* The chip over the slider's box, whose thumb leaves room above it: it reaches into that room, as the name did. */
-    .stone-group > .thing-chip { grid-area: name; justify-self: start; font-size: 10px; min-height: 34px; margin-bottom: -6px; }
+    /* The chip and the size sit in the slider's box above its 28 px thumb, reaching into the room the thumb leaves. */
+    .stone-group > .thing-chip { grid-area: name; justify-self: start; min-height: 34px; margin-bottom: -6px; }
     .stone-group > .readout { grid-area: size; min-width: 0; text-align: right; font-size: 12px; margin-bottom: -6px; }
     .stone-group input[type="range"] { grid-area: slider; width: 100%; }
-    .throw, .reset-view { order: 1; align-self: flex-end; margin-bottom: 4px; padding: 7px 12px; }
-    .throw.while-away { display: none; }
-    .row-break { display: block; order: 2; }
-    .group:not(.stone-group) { order: 3; flex-direction: column; gap: 2px; align-self: flex-end; }
-    .group:not(.stone-group) > span.name { font-size: 10px; }
-    /* The Skip switch sits on the throw's name row, at its right, named as the rows are. */
-    .throw-group { display: grid; grid-template-columns: 1fr auto; grid-template-areas: "name skip" "power power"; align-items: end; column-gap: 8px; }
-    .throw-group > span.name { grid-area: name; }
-    .throw-group > .segmented { grid-area: power; }
-    .throw-group > .switch { grid-area: skip; margin: 0; padding: 0 2px; font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+    .throw { align-self: flex-end; margin-bottom: 4px; padding: 8px 15px; }
+    .controls > .playback { margin-left: auto; }
     .segmented button { padding: 6px 8px; min-width: 38px; }
   }
   @media (max-width: 400px) {
@@ -681,7 +793,8 @@
     input[type="range"] { width: 120px; }
   }
   @media (prefers-reduced-motion: reduce) {
-    .veil, .switch-track, .switch-knob { transition: none; }
+    .veil, .cue { transition: none; }
+    .cue-ring::after { animation: none; }
   }
   /* Phones: the title's line is hidden there, so the readout sits on the title's row, left of the button. */
   @media (max-width: 520px) {
@@ -699,36 +812,42 @@
 
 <div class="controls" role="toolbar" aria-label="Pond controls">
   <div class="group stone-group">
-    <!-- What is thrown: the chip opens What to throw (the settings' page), the slider its size. -->
-    <button type="button" class="thing-chip" id="thing-chip" aria-haspopup="dialog" aria-controls="settings" aria-expanded="false"><span class="thing-chip-name" id="thing-chip-name">Rock</span><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M2.5 3.8 5 6.3 7.5 3.8"></path></svg></button>
+    <!-- What is thrown: the chip opens the dropdown of things (#thing-menu, src/thingMenu.js), the slider sets its size. -->
+    <button type="button" class="thing-chip" id="thing-chip" aria-haspopup="menu" aria-controls="thing-menu-card" aria-expanded="false"><span class="thing-chip-name" id="thing-chip-name">Rock</span><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M2.5 3.8 5 6.3 7.5 3.8"></path></svg></button>
     <input type="range" id="stone-size" min="1.5" max="30" step="0.5" value="6" aria-label="Size">
     <span class="readout" id="stone-readout">6 cm</span>
   </div>
-  <div class="group throw-group">
-    <span class="name">Throw</span>
-    <div class="segmented" id="power" role="group" aria-label="Throw strength">
-      <button type="button" data-value="soft">Soft</button>
-      <button type="button" data-value="normal" aria-pressed="true">Normal</button>
-      <button type="button" data-value="hard">Hard</button>
-    </div>
-    <button type="button" class="switch" id="skip" role="switch" aria-checked="false" title="Skip the rock across the water">
-      <span>Skip</span><span class="switch-track" aria-hidden="true"><span class="switch-knob"></span></span>
-    </button>
+  <!-- How it is thrown: an arc (src/main.js POWER; Lob is the code's soft) or a skip. Skip is greyed out for what cannot skip. -->
+  <div class="segmented" id="throw-kind" role="group" aria-label="How to throw">
+    <button type="button" data-value="lob" aria-pressed="false" title="A high, slow arc">Lob</button>
+    <button type="button" data-value="normal" aria-pressed="true" title="A middling arc">Normal</button>
+    <button type="button" data-value="hard" aria-pressed="false" title="Fast and flat">Hard</button>
+    <button type="button" data-value="skip" aria-pressed="false" title="Skip the rock across the water">Skip</button>
   </div>
-  <div class="group">
-    <span class="name">Speed</span>
-    <div class="segmented" id="speed" role="group" aria-label="Playback speed">
-      <button type="button" data-value="1" aria-pressed="true">Real</button>
-      <button type="button" data-value="0.25">¼</button>
-      <button type="button" data-value="0.1">⅒</button>
-    </div>
+  <!-- How fast the pond's time runs: real time, or slow motion. -->
+  <div class="segmented playback" id="speed" role="group" aria-label="Slow motion">
+    <button type="button" data-value="1" aria-pressed="true" aria-label="Real time" title="Real time">1×</button>
+    <button type="button" data-value="0.25" aria-pressed="false" aria-label="A quarter of real time" title="A quarter of real time">¼×</button>
+    <button type="button" data-value="0.1" aria-pressed="false" aria-label="A tenth of real time" title="A tenth of real time">⅒×</button>
   </div>
   <div class="row-break" aria-hidden="true"></div>
-  <button type="button" class="reset-view" id="reset-view" hidden>Reset view</button>
   <button type="button" class="throw" id="throw" aria-label="Throw a rock">Throw<span class="more"> a rock</span></button>
 </div>
 
+<!-- The dropdown of things (src/thingMenu.js): the page script builds a group of pills for each of src/things.js's groups. -->
+<div class="thing-menu" id="thing-menu" hidden>
+  <div class="thing-menu-card" id="thing-menu-card" role="menu" aria-label="What to throw">
+    <div id="thing-menu-groups"></div>
+    <button type="button" class="thing-menu-more" id="thing-more" role="menuitem" tabindex="-1"><span id="thing-more-text">More about the river stone</span><span aria-hidden="true">&rsaquo;</span></button>
+  </div>
+</div>
+
+<!-- The first visit's cue, on a phone in portrait; the canvas's label says the same to a screen reader. -->
+<div class="cue" id="cue" aria-hidden="true" hidden><span class="cue-ring"></span>Tap the water to throw</div>
+
 <div class="hint" id="hint" role="status" aria-live="polite" hidden></div>
+
+<button type="button" class="reset-view" id="reset-view" hidden>Reset view</button>
 
 <button type="button" class="menu-button" id="menu-button" aria-label="Settings" aria-expanded="false" aria-controls="settings">
   <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M4 5.5 H16 M4 10 H16 M4 14.5 H16"></path></svg>
@@ -906,26 +1025,23 @@
   </div>
 </div>
 
-<div class="veil" id="veil"><span id="veil-text">Filling the pond…</span></div>
+<div class="veil" id="veil" role="status" aria-live="polite"><span id="veil-text">Loading the pond…</span></div>
 
-<script type="importmap">
-{
-  "imports": {
-    "three": "https://cdn.jsdelivr.net/npm/three@0.183.2/build/three.module.js",
-    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.183.2/examples/jsm/"
-  }
-}
-</script>
 <script type="module">
-  import { startPond } from './src/main.js';
-  import { SettingsPanel, radioGroup } from './src/settingsPanel.js';
-  import { THINGS, thingGroups, onThingsChange } from './src/things.js';
+  // Dynamic imports are caught below: a failed dependency must not leave
+  // the loading veil up forever. Timed-out imports never start a late pond.
+  let startPond, SettingsPanel, radioGroup, ThingMenu, THINGS, thingGroups, onThingsChange;
 
   const veil = document.getElementById('veil');
   const veilText = document.getElementById('veil-text');
   const stats = document.getElementById('stats');
   const resetView = document.getElementById('reset-view');
   const params = new URLSearchParams(location.search);
+  const uiHidden = params.get('ui') === '0';   // the harness's frames: the pond alone
+  // The strip's height, for what stands just above it (the hint, the dropdown of things): --strip-height.
+  const strip = document.querySelector('.controls');
+  new ResizeObserver(() => document.documentElement.style.setProperty('--strip-height', `${strip.offsetHeight}px`)).observe(strip, { box: 'border-box' });
+  let firstThrow = null;   // the first-visit cue's going, while it shows (set once the pond is up)
 
   function segmented(id, onChange) {
     const root = document.getElementById(id);
@@ -940,35 +1056,74 @@
     };
   }
 
+  function showLoadError(message, continueWithoutRain) {
+    veilText.replaceChildren();
+    const paragraph = document.createElement('p');
+    paragraph.className = 'error';
+    paragraph.textContent = message;
+    const retry = document.createElement('button');
+    retry.type = 'button';
+    retry.textContent = 'Retry';
+    retry.addEventListener('click', () => location.reload());
+    const actions = document.createElement('div');
+    actions.className = 'load-actions';
+    actions.append(retry);
+    veilText.append(paragraph, actions);
+    if (continueWithoutRain) {
+      const proceed = document.createElement('button');
+      proceed.type = 'button';
+      proceed.textContent = 'Continue without rain';
+      proceed.addEventListener('click', () => {
+        veilText.textContent = 'Finishing the scene…';
+        continueWithoutRain();
+      }, { once: true });
+      actions.append(proceed);
+    }
+  }
+
   let pond;
+  let loadingModules = true;
   let showQuality = () => {};   // assigned once the settings exist; the calibration may call it before
   let currentView = { atHome: true, view: 'shore' };   // the last onViewChange, which comes before the settings exist too
   let showView = () => {};
   let profileDone = false;            // once the profile report is up, the readout keeps it
   try {
-    // Module scripts may await at the top level; the pond starts once its sky has loaded.
+    let importTimer;
+    try {
+      const modules = await Promise.race([
+        Promise.all([import('./src/main.js'), import('./src/settingsPanel.js'), import('./src/things.js'), import('./src/thingMenu.js')]),
+        new Promise((_, reject) => { importTimer = setTimeout(() => reject(new Error('Module load timed out')), 30000); }),
+      ]);
+      ({ startPond } = modules[0]);
+      ({ SettingsPanel, radioGroup } = modules[1]);
+      ({ THINGS, thingGroups, onThingsChange } = modules[2]);
+      ({ ThingMenu } = modules[3]);
+    } finally {
+      clearTimeout(importTimer);
+    }
+    loadingModules = false;
     pond = await startPond({
       canvas: document.getElementById('pond'),
       quality: params.get('quality') || 'auto',
-      onError: (message) => { veilText.innerHTML = ''; const p = document.createElement('p'); p.className = 'error'; p.textContent = message; veilText.append(p); },
+      onProgress: (message) => { veilText.textContent = message; },
+      onError: showLoadError,
+      onRainError: (message) => new Promise((resolve) => showLoadError(message, resolve)),
       onStats: ({ fps, droplets, quality }) => { if (!profileDone) stats.textContent = `${Math.round(fps)} fps · ${droplets} drops · ${quality}`; },
       onViewChange: (report) => {
         currentView = report;
-        resetView.hidden = report.atHome;
-        document.getElementById('throw').classList.toggle('while-away', !report.atHome);
+        resetView.hidden = report.atHome || uiHidden;
         showView();
       },
       onQualityChange: () => showQuality(),
       onProfile: (lines) => { profileDone = true; stats.classList.add('report'); stats.textContent = lines.join('\n'); },
+      onThrow: () => firstThrow?.(),
     });
   } catch (error) {
     console.error(error);
     if (!veilText.querySelector('.error')) {
-      veilText.innerHTML = '';
-      const p = document.createElement('p');
-      p.className = 'error';
-      p.textContent = 'The pond could not start. This page needs WebGL 2 with floating-point textures.';
-      veilText.append(p);
+      showLoadError(loadingModules
+        ? 'The pond could not download its files. Check the connection and retry.'
+        : 'The pond could not start. Please retry, or try a browser with WebGL 2 support.');
     }
   }
 
@@ -1030,8 +1185,6 @@
       input.addEventListener('touchmove', setFromTouch, { passive: false });
     }
     followTouch(sizeInput, applySize);
-    segmented('power', (value) => pond.setPower(value));
-    const skipSwitch = document.getElementById('skip');
     // A line over the strip for a moment.
     const hint = document.getElementById('hint');
     let hintTimer = 0;
@@ -1041,14 +1194,41 @@
       clearTimeout(hintTimer);
       hintTimer = setTimeout(() => { hint.hidden = true; }, 2600);
     };
-    skipSwitch.addEventListener('click', () => {
-      // Off for what cannot skip, and it says why when pressed.
-      if (skipSwitch.getAttribute('aria-disabled') === 'true') { showHint(skipSwitch.title); return; }
-      const on = skipSwitch.getAttribute('aria-checked') !== 'true';
-      skipSwitch.setAttribute('aria-checked', String(on));
-      pond.setSkip(on);
+    // How it is thrown: an arc (src/main.js POWER: Lob is the code's soft, a high slow arc; Hard a fast flat one), or
+    // a skip, thrown at the normal strength. Skip is greyed out for what cannot skip and, pressed, says why; choosing
+    // such a thing while skipping goes back to Normal (updateThing).
+    const THROW_KINDS = { lob: { power: 'soft', skip: false }, normal: { power: 'normal', skip: false }, hard: { power: 'hard', skip: false }, skip: { power: 'normal', skip: true } };
+    const throwKinds = document.getElementById('throw-kind');
+    const skipButton = throwKinds.querySelector('[data-value="skip"]');
+    let throwKind = 'normal';
+    const setThrowKind = (value) => {
+      throwKind = value;
+      pond.setPower(THROW_KINDS[value].power);
+      pond.setSkip(THROW_KINDS[value].skip);
+      for (const button of throwKinds.querySelectorAll('button')) button.setAttribute('aria-pressed', String(button.dataset.value === value));
+    };
+    throwKinds.addEventListener('click', (event) => {
+      const button = event.target.closest('button');
+      if (!button) return;
+      if (button.getAttribute('aria-disabled') === 'true') { showHint(button.title); return; }
+      setThrowKind(button.dataset.value);
     });
+    // Slow motion: how fast the pond's time runs.
     segmented('speed', (value) => pond.setTimeScale(Number(value)));
+    // The first visit's cue (a phone's, where the title's line is hidden): it goes with the first throw, for good on this device.
+    const cue = document.getElementById('cue');
+    const THROWN_KEY = 'stone-pond-thrown';
+    let thrownHere = false;
+    try { thrownHere = localStorage.getItem(THROWN_KEY) === '1'; } catch { /* storage refused: the cue shows each visit until a throw */ }
+    if (!thrownHere) {
+      cue.hidden = uiHidden;
+      firstThrow = () => {
+        firstThrow = null;
+        try { localStorage.setItem(THROWN_KEY, '1'); } catch { /* storage refused: it shows again next visit */ }
+        cue.classList.add('gone');
+        setTimeout(() => { cue.hidden = true; }, 400);
+      };
+    }
 
     // The settings: each choice goes to the pond, and its row and note follow.
     const settings = new SettingsPanel({ button: document.getElementById('menu-button'), panel: document.getElementById('settings') });
@@ -1130,12 +1310,38 @@
       }));
     }
     buildThings();
+    // The dropdown of things (src/thingMenu.js), built from the registry too: a group of pills for each of its groups,
+    // each pill the thing's picture and name, the chosen one checked (updateThing).
+    const menuGroups = document.getElementById('thing-menu-groups');
+    function buildMenu() {
+      menuGroups.replaceChildren(...thingGroups().map(({ name, keys }, groupIndex) => {
+        const group = document.createElement('div');
+        group.setAttribute('role', 'group');
+        const head = Object.assign(document.createElement('div'), { className: 'thing-menu-head', id: `thing-menu-head-${groupIndex}`, textContent: name });
+        head.setAttribute('aria-hidden', 'true');
+        group.setAttribute('aria-labelledby', head.id);
+        const pills = Object.assign(document.createElement('div'), { className: 'thing-menu-pills' });
+        for (const key of keys) {
+          const thing = THINGS[key];
+          const pill = Object.assign(document.createElement('button'), { type: 'button', tabIndex: -1 });
+          pill.setAttribute('role', 'menuitemradio');
+          pill.dataset.value = key;
+          const picture = Object.assign(document.createElement('img'), { src: thing.look.thumbnail, alt: '', width: 32, height: 24 });
+          picture.addEventListener('error', () => { picture.style.visibility = 'hidden'; });
+          pill.append(picture, thing.name);
+          pills.append(pill);
+        }
+        group.append(head, pills);
+        return group;
+      }));
+    }
+    buildMenu();
     /** Whether a thing floats: "Floats", "Sinks", or, one that floats plain but may sink as it is dressed (a pie's filling), "Floats or sinks". */
     const floatsOrSinks = (properties) => (!properties.floats ? 'Sinks' : properties.alwaysFloats ? 'Floats' : 'Floats or sinks');
     // What to throw. A card (or an arrow key) chooses the thing and shows it above the folds, to look over: its
     // picture, size and mass, whether it floats, skips, bends or soaks, its size to set; Use (or Enter on a card)
     // goes back to the water to throw it. Favourites and the latest choices sit at the top, one tap each, and throw
-    // at once. The strip's chip opens this page; the choice made, the focus goes back there.
+    // at once. The dropdown's foot opens this page from the strip's chip; the choice made, the focus goes back there.
     const FAVOURITES_KEY = 'stone-pond-favourites', RECENT_KEY = 'stone-pond-recent', RECENT_MOST = 4;
     const storedList = (key) => { try { const list = JSON.parse(localStorage.getItem(key) ?? '[]'); return Array.isArray(list) ? list.filter((name) => typeof name === 'string') : []; } catch { return []; } };
     const storeList = (key, list) => { try { localStorage.setItem(key, JSON.stringify(list)); } catch { /* storage refused: the list lasts this visit */ } };
@@ -1207,13 +1413,26 @@
       useChosen();
     });
     thingsRoot.addEventListener('keydown', (event) => { if (event.key === 'Enter' && event.target.closest('[role="radio"]')) { event.preventDefault(); useChosen(); } });
+    // The strip's chip opens the dropdown; a pill tapped there is thrown next, and its foot opens What to throw from
+    // the chip. Pressed while What to throw is open from it, the chip closes that. A pick in the dropdown is not one
+    // of What to throw's latest choices: those are for switching quickly there, which the dropdown does itself.
+    const thingMenu = new ThingMenu({
+      chip,
+      root: document.getElementById('thing-menu'),
+      card: document.getElementById('thing-menu-card'),
+      onChoose: (value) => { pond.setThing(value); updateThing(); },
+      onMore: () => {
+        settings.openOn('thing', chip);
+        thingsRoot.querySelector('[aria-checked="true"]')?.focus({ preventScroll: true });
+      },
+    });
     chip.addEventListener('click', () => {
       if (settings.isOpen()) { settings.hide(); return; }
-      settings.openOn('thing', chip);
-      thingsRoot.querySelector('[aria-checked="true"]')?.focus({ preventScroll: true });
+      if (thingMenu.isOpen()) thingMenu.hide();
+      else thingMenu.show();
     });
     const showThing = radioGroup(thingsRoot, (value) => { pond.setThing(value); updateThing(); });
-    onThingsChange(() => { buildThings(); updateThing(); });
+    onThingsChange(() => { buildThings(); buildMenu(); updateThing(); });
     function updateThing() {
       showThing(pond.thing);
       const thing = THINGS[pond.thing];
@@ -1224,11 +1443,15 @@
         if (chosen) fold.open = true;
         fold.querySelector('summary small').textContent = chosen ? thing.name : '';
       }
-      // Skip skips what skips (a stone, a pizza): off for anything else, and it says so.
-      skipSwitch.setAttribute('aria-disabled', String(!thing.skips));
+      // The dropdown's pill for it checked, and its foot naming it.
+      for (const pill of menuGroups.querySelectorAll('[role="menuitemradio"]')) pill.setAttribute('aria-checked', String(pill.dataset.value === pond.thing));
+      document.getElementById('thing-more-text').textContent = `More about the ${thing.name.toLowerCase()}`;
+      // Skip skips what skips (a stone, a pizza): greyed out for anything else, and it says so; a skip asked for goes back to Normal.
+      skipButton.setAttribute('aria-disabled', String(!thing.skips));
       const called = thing.called.charAt(0).toUpperCase() + thing.called.slice(1);
       const lands = floatsOrSinks(thing.properties(thing.slider ? Number(sizeInput.value) : undefined)).toLowerCase();
-      skipSwitch.title = thing.skips ? `Skip ${thing.called} across the water` : `${called} does not skip: it ${lands} where it lands.`;
+      skipButton.title = thing.skips ? `Skip ${thing.called} across the water` : `${called} does not skip: it ${lands} where it lands.`;
+      if (!thing.skips && throwKind === 'skip') setThrowKind('normal');
       // The throw button names what it throws (the thing's `called`: a rock, a ball, a gem, an apple…).
       const thrown = thing.called;
       const throwButton = document.getElementById('throw');
@@ -1252,15 +1475,25 @@
     const showWind = radioGroup(document.getElementById('wind'), (value) => { pond.setWind(value); updateWind(); });
     // The weather: the sky clouds over at once; the first rain fetches its rings' table (about 0.6 MB).
     const weatherNote = document.getElementById('weather-note');
-    let weatherChoice = null;
-    const showWeather = radioGroup(document.getElementById('weather'), (value) => {
-      weatherChoice = value;
+    let weatherRequest = 0;
+    const showWeather = radioGroup(document.getElementById('weather'), chooseWeather);
+    function chooseWeather(value) {
+      const request = ++weatherRequest;
       showWeather(value);
       settings.setValue('weather', label('weather', value));
-      if (value !== 'clear' && !pond.raining) weatherNote.textContent = 'The rain is coming\u2026';
-      pond.setWeather(value).then(() => { if (weatherChoice === value) updateWeather(); });
+      weatherNote.textContent = value !== 'clear' && !pond.raining ? 'The rain is coming…' : NOTES.weather[value];
+      pond.setWeather(value).then(() => {
+        if (weatherRequest === request) updateWeather();
+      }).catch(() => {
+        if (weatherRequest !== request) return;
+        const retry = document.createElement('button');
+        retry.type = 'button';
+        retry.textContent = 'Retry';
+        retry.addEventListener('click', () => chooseWeather(value));
+        weatherNote.replaceChildren('The rain could not be loaded. Check the connection. ', retry);
+      });
       updateWind();   // a storm brings a gale
-    });
+    }
     function updateWeather() {
       showWeather(pond.weather);
       settings.setValue('weather', label('weather', pond.weather));
@@ -1361,6 +1594,6 @@
 
     window.__pond = pond;
     requestAnimationFrame(() => requestAnimationFrame(() => veil.classList.add('gone')));
-    if (params.get('ui') === '0') for (const el of document.querySelectorAll('.title, .controls, .stats, .menu-button')) el.hidden = true;
+    if (uiHidden) for (const el of document.querySelectorAll('.title, .controls, .stats, .menu-button, .reset-view, .cue')) el.hidden = true;
   }
 </script>

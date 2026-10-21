@@ -37,11 +37,10 @@
 //    the browser lets audio start without a gesture here). Sixty throws of
 //    every kind, the pond then cleared, leave no geometry, texture or
 //    program behind. Rain (src/rain.js): each weather in
-//    turn, with a throw in the downpour and a change of preset, compiles no
-//    program (the warm-up drew the rain's), and the tile takes the preset's
+//    turn, with a throw in the downpour and a change of preset, reuses its
+//    programs after the first selection, and the tile takes the preset's
 //    size; clear again, nothing of the rain runs. The gale (src/galeWaves.js)
-//    and the storm: the gale compiles no program (the warm-up drew its passes
-//    and its spray, and the water's shaders branch on it), draws the finer
+//    and the storm: the first gale compiles its passes and spray once, draws the finer
 //    sheet that carries its waves, and a throw into it compiles none; the
 //    storm compiles none through a lightning strike; in the pool the gale
 //    raises no waves; calm again, the still sheet. pause(), resume(), pause(),
@@ -52,9 +51,15 @@
 //    many callbacks the frame runs: the probe's own waits poll on it): at 55 frames
 //    a second the calibration keeps high through the idle pond and a splash;
 //    at 20 a second the watch that follows steps down to medium within a few
-//    seconds; and on medium a pond where nothing happens draws every other
+//    seconds (even once the pond is still: at 20 a second the idle cap skips
+//    no requestAnimationFrame, so the watch counts every frame); and on medium a pond where nothing happens draws every other
 //    requestAnimationFrame at 60 a second, its simulated time still keeping
-//    up with the clock.
+//    up with the clock. Then on high: the still pond draws every other one
+//    at 60 a second too, and every fourth at 120 (a 120 Hz display); a throw
+//    at twice MAX_FRAME_RATE a second draws every other one, held to
+//    MAX_FRAME_RATE, and at MAX_FRAME_RATE every one, as at 90 a second (a
+//    90 Hz display's frames are within the ceiling's slack), the idle cap
+//    off and the simulated time keeping up throughout.
 // 3. A 2560×1440 window on high: the canvas keeps within PIXEL_BUDGET.
 //
 //   node tools/quality-probe.mjs
@@ -64,7 +69,7 @@ import { readFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { QUALITY, PIXEL_BUDGET } from '../src/main.js';
+import { QUALITY, PIXEL_BUDGET, MAX_FRAME_RATE } from '../src/main.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const FLOATER_FRAME_CALLS = 12;   // the most draw calls a basketball resting afloat may add to a frame: its halves, and its mirror image's region redrawn
@@ -392,14 +397,20 @@ check(session.after.geometries <= session.before.geometries && session.after.tex
 
 await page.evaluate(() => { window.__pond.clear(); window.__pond.resume(); });
 
-// The weather: rain compiles nothing, follows the preset's tile size, and goes when it clears.
-const programsBeforeRain = await page.evaluate(() => window.__pond.budget.programs);
+// Rain compiles on first selection, then follows presets without new programs.
+let programsBeforeRain = await page.evaluate(() => window.__pond.budget.programs);
 for (const weather of ['light-rain', 'heavy-rain']) {
   await page.evaluate((name) => window.__pond.setWeather(name), weather);
   await page.waitForFunction(() => window.__pond.raining, null, { timeout: 60000 });
   await page.evaluate(() => window.__pond.advance(0.2));
   const raining = await page.evaluate(() => ({ programs: window.__pond.budget.programs, weather: window.__pond.weather }));
-  check(raining.programs === programsBeforeRain && raining.weather === weather, `${weather} compiles no program (${raining.programs})`);
+  if (weather === 'light-rain') {
+    check(raining.programs > programsBeforeRain, 'rain programs are deferred until rain is first selected');
+    programsBeforeRain = raining.programs;
+  } else {
+    check(raining.programs === programsBeforeRain, `${weather} reuses the rain programs (${raining.programs})`);
+  }
+  check(raining.weather === weather, `the selected ${weather} is falling`);
 }
 await page.evaluate(() => { window.__pond.throwAt(0, -1.4, { radius: 0.03 }); window.__pond.advance(0.6); window.__pond.setQuality('medium'); window.__pond.advance(0.1); });
 const rainMedium = await page.evaluate(() => ({ programs: window.__pond.budget.programs, rain: window.__pond.budget.rain }));
@@ -410,11 +421,13 @@ const cleared = await page.evaluate(() => ({ raining: window.__pond.raining, pro
 check(!cleared.raining && cleared.programs === programsBeforeRain, `clear again: no rain falls, and no program was compiled (${cleared.programs})`);
 await checkBuilt(phone, 'after the rain');
 
-// The gale and the storm: nothing compiles, the gale's sheet, none in the pool.
-const programsBeforeGale = await page.evaluate(() => window.__pond.budget.programs);
+// The gale compiles once on first selection; later changes reuse it.
+let programsBeforeGale = await page.evaluate(() => window.__pond.budget.programs);
 await page.evaluate(() => { window.__pond.setWind('gale'); window.__pond.advance(0.3); });
 const galeBudget = await page.evaluate(() => ({ programs: window.__pond.budget.programs, gale: window.__pond.budget.gale }));
-check(galeBudget.programs === programsBeforeGale && galeBudget.gale.blowing && galeBudget.gale.sheetTriangles > 50000, `the gale compiles no program (${galeBudget.programs}) and draws its finer sheet (${galeBudget.gale.sheetTriangles} triangles)`);
+check(galeBudget.programs > programsBeforeGale, 'gale programs are deferred until a gale is first selected');
+programsBeforeGale = galeBudget.programs;
+check(galeBudget.gale.blowing && galeBudget.gale.sheetTriangles > 50000, `the gale blows and draws its finer sheet (${galeBudget.gale.sheetTriangles} triangles)`);
 await page.evaluate(() => { window.__pond.throwAt(0, -1.4, { radius: 0.03 }); window.__pond.advance(0.8); });
 const galeThrow = await page.evaluate(() => window.__pond.budget.programs);
 check(galeThrow === programsBeforeGale, `a throw into the gale compiles no program (${galeThrow})`);
@@ -431,7 +444,8 @@ const calmAgain = await page.evaluate(() => ({ programs: window.__pond.budget.pr
 check(!calmAgain.gale.blowing && calmAgain.gale.sheetTriangles < 5000 && calmAgain.programs === programsBeforeGale, `calm again: the still sheet (${calmAgain.gale.sheetTriangles} triangles), no program (${calmAgain.programs})`);
 await checkBuilt(phone, 'after the gale');
 
-// pause, resume, pause, resume in one tick: one frame loop, so at most one render per requestAnimationFrame (high is never capped).
+// pause, resume, pause, resume in one tick: one frame loop, so at most one render per requestAnimationFrame, and at least every
+// other (the most the idle cap, on high too now, skips of a 60 Hz requestAnimationFrame).
 const loops = await page.evaluate(() => new Promise((resolve) => {
   const pond = window.__pond;
   pond.pause(); pond.resume(); pond.pause(); pond.resume();
@@ -470,20 +484,51 @@ const slowFor = await fakePage.evaluate((from) => (performance.now() - from) / 1
 check((await pageState(fakePage)).quality === 'medium', `at 20 frames a second the watch steps down to medium (after ${slowFor.toFixed(1)} s)`);
 check(slowFor < 6, 'within a few seconds');
 await checkBuilt(faked, 'after the watch stepped down');
-// A pond where nothing happens on medium: frames at 30 a second on a 60 Hz clock.
-await fakePage.evaluate(() => { window.__fakeStep = 1000 / 60; });
-await fakePage.waitForFunction(() => window.__pond.budget.frameCapped, undefined, { timeout: 900000 }).catch(() => {});
-const capped = await fakePage.evaluate(() => new Promise((resolve) => {
+/** The renders, simulated and clock seconds over 40 faked frames at `hertz`, and whether the idle cap held at the start and the end. */
+const overFrames = (hertz) => fakePage.evaluate((step) => new Promise((resolve) => {
+  window.__fakeStep = step;
   const pond = window.__pond;
-  const start = { renders: pond.framesRendered, ticks: window.__ticks, time: pond.time, clock: performance.now() };
+  const start = { renders: pond.framesRendered, ticks: window.__ticks, time: pond.time, clock: performance.now(), capped: pond.budget.frameCapped };
   const wait = () => {
     if (window.__ticks - start.ticks < 40) { requestAnimationFrame(wait); return; }
-    resolve({ renders: pond.framesRendered - start.renders, ticks: window.__ticks - start.ticks, simulated: pond.time - start.time, clock: (performance.now() - start.clock) / 1000 });
+    resolve({ renders: pond.framesRendered - start.renders, ticks: window.__ticks - start.ticks, simulated: pond.time - start.time, clock: (performance.now() - start.clock) / 1000, capped: [start.capped, pond.budget.frameCapped] });
   };
   requestAnimationFrame(wait);
-}));
+}), 1000 / hertz);
+const drawsOneIn = (counted, every) => counted.renders >= (counted.ticks - 1) / every - 1 && counted.renders <= (counted.ticks + 1) / every + 1;
+const keepsUp = (counted) => Math.abs(counted.simulated - counted.clock) <= 2.5 / 60;
+/** Waits for the idle cap on or off as judged by a frame begun after the call (frameCapped is only updated by a frame). */
+const waitForCap = async (on) => {
+  const from = await fakePage.evaluate(() => window.__ticks);
+  await fakePage.waitForFunction(([wanted, after]) => window.__ticks > after + 1 && window.__pond.budget.frameCapped === wanted, [on, from], { timeout: 900000 }).catch(() => {});
+};
+// A pond where nothing happens on medium: frames at 30 a second on a 60 Hz clock.
+await fakePage.evaluate(() => { window.__fakeStep = 1000 / 60; });
+await waitForCap(true);
+const capped = await overFrames(60);
 check(capped.renders >= 0.4 * capped.ticks && capped.renders <= 0.6 * capped.ticks + 1, `a still pond on medium draws every other frame: ${capped.renders} renders in ${capped.ticks} frames`);
-check(Math.abs(capped.simulated - capped.clock) <= 2.5 / 60, `and its simulated time keeps up: ${capped.simulated.toFixed(3)} s simulated in ${capped.clock.toFixed(3)} s`);
+check(keepsUp(capped), `and its simulated time keeps up: ${capped.simulated.toFixed(3)} s simulated in ${capped.clock.toFixed(3)} s`);
+// High idles at 30 too; while things happen, every preset is held to
+// MAX_FRAME_RATE: a clock at twice it (a 120 Hz display) draws every other
+// frame and the idle pond every fourth, a clock at it (60 Hz) every frame.
+await fakePage.evaluate(() => window.__pond.setQuality('high'));
+await waitForCap(true);
+const highStill = await overFrames(60);
+check(highStill.capped.every(Boolean) && drawsOneIn(highStill, 60 / QUALITY.high.idleFrameRate), `a still pond on high draws every other frame at 60 Hz: ${highStill.renders} renders in ${highStill.ticks} frames`);
+const highStillFast = await overFrames(120);
+check(highStillFast.capped.every(Boolean) && drawsOneIn(highStillFast, 120 / QUALITY.high.idleFrameRate) && keepsUp(highStillFast), `and every fourth at 120 Hz: ${highStillFast.renders} renders in ${highStillFast.ticks} frames, ${highStillFast.simulated.toFixed(3)} s simulated in ${highStillFast.clock.toFixed(3)} s`);
+await fakePage.evaluate(() => window.__pond.throwAt(0, -1.4, { radius: 0.03 }));
+await waitForCap(false);
+const flyingFast = await overFrames(2 * MAX_FRAME_RATE);
+check(!flyingFast.capped.some(Boolean) && drawsOneIn(flyingFast, 2) && keepsUp(flyingFast), `a throw at ${2 * MAX_FRAME_RATE} Hz draws every other frame, ${MAX_FRAME_RATE} a second: ${flyingFast.renders} renders in ${flyingFast.ticks} frames, ${flyingFast.simulated.toFixed(3)} s simulated in ${flyingFast.clock.toFixed(3)} s`);
+await fakePage.evaluate(() => window.__pond.throwAt(0.3, -1.4, { radius: 0.03 }));
+await waitForCap(false);
+const flying = await overFrames(MAX_FRAME_RATE);
+check(!flying.capped.some(Boolean) && drawsOneIn(flying, 1) && keepsUp(flying), `and at ${MAX_FRAME_RATE} Hz every frame: ${flying.renders} renders in ${flying.ticks} frames`);
+await fakePage.evaluate(() => window.__pond.throwAt(-0.3, -1.4, { radius: 0.03 }));
+await waitForCap(false);
+const flyingNinety = await overFrames(90);
+check(!flyingNinety.capped.some(Boolean) && drawsOneIn(flyingNinety, 1) && keepsUp(flyingNinety), `and at 90 Hz every frame too, within the ceiling's slack: ${flyingNinety.renders} renders in ${flyingNinety.ticks} frames`);
 await faked.context.close();
 
 // ---- 3. the pixel budget ----------------------------------------------------
