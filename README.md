@@ -265,9 +265,16 @@ known timing, and the droplets are choreographed from them:
    azimuth and time: a tall, nearly upright wall that stands on the lip and
    leans in, 11 cm high at 90 ms for a 3 cm stone dropped straight in at
    6.3 m/s (the reference simulation's: 11 to 12 cm at 0.1 s, below). Its rim
-   thickens into a bead and grows fingers: narrow rods of water between
-   shallow arcs of rim, each ending in a round bead that swells, pinches off
-   as a drop as big as the rim is thick, and starts again; once its rim stalls
+   thickens into a bead and grows fingers: rods of water, unevenly spaced and
+   of uneven length (some only stubs), between arcs of rim that sag each
+   their own way, each ending in a bead that swells, pinches off as a drop
+   as big as the rim is thick, give or take a third, and starts again. The
+   sheet is no clean film: it wrinkles, holes open high in it as it thins
+   and the tear nears, and it carries froth, white streaks drawn out up the
+   wall and along the holes' edges, the more the bigger and faster the
+   throw (as the stone's Weber number), so a pebble's crown is glass, the
+   default stone's a clear sheet frosted at its edges, and a 30 cm rock's
+   streaked white; the foot the lip carries stays clear water. Once its rim stalls
    (about 90 ms for a 3 cm stone) the sheet tears, the arcs first and the
    fingers last, from the rim down into drops that carry its velocity. A
    thrown stone enters obliquely (about 40
@@ -465,8 +472,11 @@ stretched along their motion as a camera's shutter would smear them, all
 drawn into one buffer of depth, kind and exact normal and one of summed
 thickness, coverage, sun glints and aeration; the composite pass shades
 them and tone-maps the frame. The sheet is a clear film that barely bends
-what is behind it, aerated (a faint white) only along its rim bead and torn
-edges; the column is a lens that shows the pond and its glitter from well to
+what is behind it, aerated (whitened) along its rim bead and torn edges and
+by its froth, which scatters along the path through it, so a sheet seen
+face-on stays clear where one seen edge-on goes white; its holes are cut
+in each pass, antialiased, and those under a pixel or two only thin it to
+the right transparency, so a far sheet never sparkles; the column is a lens that shows the pond and its glitter from well to
 the side and, through its bulb, the sky upside down. A drop two device
 pixels or wider is a glass bead, the pond in its top, the sky upside down
 in its lower half, with two glints, the sun reflected off it and the sun
