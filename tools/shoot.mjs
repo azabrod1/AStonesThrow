@@ -42,9 +42,9 @@
 // the start of the frames (__pond.touchWater), draws it to (x1, z1) at an
 // even speed over `seconds`, a step every frame, and lifts it out there; the
 // times count from the dip.
-// --power=soft|normal|hard throws as the strength buttons do (soft is a
-// higher arc, so a steeper entry: about 30° from vertical against 42°).
-// --skip throws skips, as the Skip switch does (src/rock.js): the stone
+// --power=soft|normal|hard throws as the strip's Lob, Normal and Hard do
+// (soft is a higher arc, so a steeper entry: about 30° from vertical against
+// 42°). --skip throws skips, as the strip's Skip does (src/rock.js): the stone
 // first touches the water at the throw's x:z (or where a nearly level
 // release puts it, src/main.js skipThrow) and skips on from there, and the
 // times count from that first touch.
