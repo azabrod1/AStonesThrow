@@ -92,10 +92,6 @@
 // touch.js): the arc goes, a small ring marks the finger, dragging trails it
 // through the water and letting go lifts it out; it neither throws nor
 // turns the view.
-// On an existing object a still press instead grabs after GRAB_HOLD_MS;
-// a quick tap there still throws. Before that threshold, movement turns
-// the view as usual. Once grabbed the gesture stays the object's until
-// release, which drops it from rest (src/objectGrab.js and Rock.release).
 //
 // What is thrown. The Object setting (setThing, remembered on this device;
 // ?thing=) picks a kind of stone or a ball (src/things.js THINGS), and the
@@ -222,7 +218,6 @@ import { directionAt, placeDirection, clampToFrame, zoomToward, isZoomed, viewFa
 import { orbitEye, orbitFacing, orbitAbout, clampOrbit, turnOrbit, blendOrbits, orbitsMatch, keepInside, LOWEST_EYE } from './viewOrbit.js';
 import { Profiler } from './profiler.js';
 import { FingerInWater, FINGER } from './touch.js';
-import { ObjectGrab, GRAB_HOLD_MS } from './objectGrab.js';
 import { createPool, holdInPool, poolGround, poolInside, POOL } from './pool.js';
 import { createSound } from './sound.js';
 import { createFloaterRide } from './floaterRide.js';
@@ -1310,7 +1305,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     if (rock.meshMirror) sceneMain.add(rock.meshMirror);
     // The oldest out of sight goes first; one in sight only when there are too many of those (keptInSight).
     for (const [kept, most] of [[false, MAX_ROCKS], [true, MAX_IN_SIGHT]]) {
-      const among = rocks.filter((candidate) => candidate.state !== 'held' && keptInSight(candidate) === kept);
+      const among = rocks.filter((candidate) => keptInSight(candidate) === kept);
       for (let index = 0; among.length - index > most; index++) retireRock(among[index]);
     }
     lastActivity = performance.now();
@@ -1337,7 +1332,6 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
 
   /** Take a stone out of the scenes; keepMaterials frees only its geometry (warmUp keeps a stone's materials, so their program stays compiled). */
   function retireRock(rock, { keepMaterials = false } = {}) {
-    if (grab.rock === rock) endGrab();
     untrace(rock);
     sceneMain.remove(rock.meshAbove);
     sceneUnder.remove(rock.meshBelow);
@@ -1432,38 +1426,6 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   const finger = new FingerInWater(water);
   let holdTimer = 0;                  // the press's timeout to dip the finger, 0 when none
   let touching = null;                // { id }: the press whose finger is in the water
-  const grab = new ObjectGrab(camera, canvas);
-  let grabPointer = null;
-  const grabSurfaceAt = (x, z) => galeWaves.on ? galeSurfaceAt(x, z) : 0;
-
-  /** The held thing follows a swept path, staying above the bed and deck,
-   * and inside the basin until its whole body clears the wall's top. */
-  function constrainGrab(point, rock) {
-    const wanted = point.clone(), from = rock.position;
-    const reach = rock.reach * rock.radius;
-    const lowest = rock.lowestOffset();
-    const steps = Math.min(128, Math.max(1, Math.ceil(from.distanceTo(wanted) / Math.max(reach / 2, 0.025))));
-    const current = from.clone(), delta = wanted.sub(from).divideScalar(steps);
-    for (let step = 0; step < steps; step++) {
-      const inside = pooled && poolInside(pool.square, reach)(current.x, current.z);
-      current.add(delta);
-      if (inside && current.y + lowest <= POOL.deck) {
-        current.x = THREE.MathUtils.clamp(current.x, pool.square.minX + reach, pool.square.minX + pool.square.size - reach);
-        current.z = THREE.MathUtils.clamp(current.z, pool.square.minZ + reach, pool.square.minZ + pool.square.size - reach);
-      }
-      const overDeck = pooled && !poolInside(pool.square, reach)(current.x, current.z);
-      const ground = overDeck ? POOL.deck : -bedDepthAt(current.x, current.z);
-      current.y = Math.max(current.y, ground - lowest);
-    }
-    point.copy(current);
-  }
-
-  function endGrab() {
-    grab.end(grabSurfaceAt, bedDepthAt);
-    grabPointer = null;
-    canvas.style.removeProperty('cursor');
-    showAim(null);
-  }
 
   /** The finger's small ring on the water where it is (or none). */
   function showFinger(point) {
@@ -1522,50 +1484,29 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     if (pinch && activePointers.size < 2) pinch = null;
     if (pressStart?.id === event.pointerId) { pressStart = null; stopTurning(); cancelHold(); }
     if (touching?.id === event.pointerId) endTouch();
-    if (grabPointer === event.pointerId) endGrab();
-  }
-
-  function cancelInteraction() {
-    cancelHold();
-    endGrab();
-    endTouch();
-    stopTurning();
-    pressStart = null;
-    pinch = null;
-    activePointers.clear();
-    showAim(null);
   }
 
   canvas.addEventListener('pointerdown', (event) => {
-    if (!readyForInput || event.button !== 0) return;
+    if (!readyForInput) return;
     lastActivity = performance.now();
     glide = null;   // the hand takes the view from a glide where it stands
     activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
     try { canvas.setPointerCapture(event.pointerId); } catch { /* a synthetic or already released pointer */ }
     if (activePointers.size === 1) {
-      const candidate = grab.pick(rocks, event.clientX, event.clientY, event.pointerType !== 'mouse');
       pressStart = { id: event.pointerId, x: event.clientX, y: event.clientY };
       showAim(throwAim(event.clientX, event.clientY));
-      // Taps, even on objects, still throw. Only a still hold takes one.
+      // Held still, the press dips a finger in where it is then.
       const pointerId = event.pointerId;
       cancelHold();
       holdTimer = setTimeout(() => {
         holdTimer = 0;
         const held = activePointers.get(pointerId);
-        if (pressStart?.id !== pointerId || turning || pinch || !held) return;
-        if (candidate && rocks.includes(candidate) && grab.pick(rocks, held.x, held.y, event.pointerType !== 'mouse') === candidate) {
-          grab.begin(candidate, held.x, held.y);
-          grabPointer = pointerId;
-          canvas.style.cursor = 'grabbing';
-          showAim(null);
-          lastActivity = performance.now();
-        } else startTouch(pointerId, held.x, held.y);
-      }, candidate ? GRAB_HOLD_MS : HOLD_MS);
+        if (pressStart?.id === pointerId && !turning && !pinch && held) startTouch(pointerId, held.x, held.y);
+      }, HOLD_MS);
     } else if (activePointers.size === 2) {
       pressStart = null;
       stopTurning();
       cancelHold();
-      endGrab();
       endTouch();
       showAim(null);
       startPinch();
@@ -1577,10 +1518,6 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     const tracked = activePointers.get(event.pointerId);
     if (tracked) { tracked.x = event.clientX; tracked.y = event.clientY; }
     if (pinch) { if (tracked) movePinch(); return; }
-    if (grabPointer === event.pointerId) {
-      grab.move(event.clientX, event.clientY, constrainGrab, grabSurfaceAt, bedDepthAt);
-      return;
-    }
     if (touching?.id === event.pointerId) {
       const point = aimPoint(event.clientX, event.clientY, FINGER.margin);
       if (point) { finger.moveTo(point.x, point.z); showFinger(point); }
@@ -1611,26 +1548,21 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     const press = pressStart?.id === event.pointerId ? pressStart : null;
     const turned = press && turning;
     const touched = touching?.id === event.pointerId;
-    const grabbed = grabPointer === event.pointerId;
     releasePointer(event);
-    if (press && !turned && !touched && !grabbed) {
+    if (press && !turned && !touched) {
       const moved = Math.hypot(event.clientX - press.x, event.clientY - press.y);
       const hit = throwAim(event.clientX, event.clientY);
       if (hit && moved < TAP_SLOP) { throwAt(hit.x, hit.z); if (event.pointerType === 'mouse') thrownFrom = { x: event.clientX, y: event.clientY }; }
     }
-    if (event.pointerType !== 'mouse' || thrownFrom || touched || grabbed) showAim(null);
+    if (event.pointerType !== 'mouse' || thrownFrom || touched) showAim(null);
   });
   canvas.addEventListener('pointercancel', (event) => { releasePointer(event); showAim(null); });
-  canvas.addEventListener('lostpointercapture', (event) => { releasePointer(event); showAim(null); });
-  window.addEventListener('blur', cancelInteraction);
-  document.addEventListener('visibilitychange', () => { if (document.hidden) cancelInteraction(); });
   // A held press is a finger in the water; a phone's browser may open its menu on one instead.
   canvas.addEventListener('contextmenu', (event) => event.preventDefault());
   canvas.addEventListener('pointerleave', (event) => { if (!activePointers.has(event.pointerId)) showAim(null); });
   canvas.addEventListener('wheel', (event) => {
     if (!readyForInput) return;
     event.preventDefault();
-    if (grab.rock) return;
     glide = null;
     // Notches: a mouse wheel sends about 100 pixels or 3 lines each. A trackpad
     // pinch arrives as ctrl + wheel in small steps, scaled to feel like the page zoom.
@@ -1641,7 +1573,6 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   }, { passive: false });
   window.addEventListener('keydown', (event) => {
     if (!readyForInput) return;
-    if (event.key === 'Escape' && grab.rock) { cancelInteraction(); return; }
     if (event.code === 'Space' && !event.repeat && event.target === document.body) { event.preventDefault(); throwRandom(); }
     if (event.key === 'Escape' && !reportedView?.atHome) resetView();
     if ((event.key === 't' || event.key === 'T') && !event.repeat && event.target === document.body) setTracing(!tracing);
@@ -1729,7 +1660,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     surface.setDryDiscs(rocks.filter((rock) => rock.dryDisc > 0).map((rock) => ({ x: rock.meshAbove.position.x, z: rock.meshAbove.position.z, radius: rock.dryDisc })));
     // The water's height under each floater riding it, read back for the physics (src/floaterRide.js: things meet it where it is drawn).
     floaterRide.update(renderer, rocks.filter((rock) => rock.rideShare && rock.rideShare.value > 0));
-    surface.update({ underTarget, reflectionTarget, reflectionMatrix, mirrorRect: splashRect, stonesUnder: rocks.some((rock) => rock.state === 'held' || rock.state === 'skim' || rock.state === 'water' || rock.state === 'float' || rock.afloat || (rock.state === 'rest' && rock.position.y < 0)), resolution, camera, time: simulationTime });
+    surface.update({ underTarget, reflectionTarget, reflectionMatrix, mirrorRect: splashRect, stonesUnder: rocks.some((rock) => rock.state === 'skim' || rock.state === 'water' || rock.state === 'float' || rock.afloat || (rock.state === 'rest' && rock.position.y < 0)), resolution, camera, time: simulationTime });
     splash.prepareScene();   // the stones' cavities, and the patch dipping under them
     if (skip.cavity) surface.setCavities([]);
     surface.inner.visible = !skip.surface;
@@ -1957,7 +1888,6 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
 
   /** The pond back to still water at time zero: no stones, no splash, the solver cleared and asleep. */
   function clearPond() {
-    cancelInteraction();
     for (const rock of [...rocks]) retireRock(rock);
     water.clear();
     pool.dry();
@@ -2257,8 +2187,6 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     liftTouch() { endTouch(); },
     /** Whether a finger is in the water, and where ({ x, z }, or null). */
     get touching() { return finger.inWater; },
-    /** The object held by the pointer, or null (tap/hold interaction probes). */
-    get grabbed() { return grab.rock; },
     get fingerPosition() { return finger.target ? { ...finger.target } : null; },
     setDebugView(name) { debugView = name; },
     /** Set the field of view (degrees), keeping the look direction; unlike the user's zoom it may leave the home frame. */
