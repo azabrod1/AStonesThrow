@@ -32,25 +32,39 @@
 // the tile's lattice gives what each mip level loses, as the wind's ripples'
 // is found (mipAxisFactor, src/ambientWaves.js).
 //
-// The streaks (STREAK_VERTEX): drops falling through a box about the eye at
-// their terminal speed, slanted by the wind, each drawn as the streak it
-// cuts in STREAK_SECONDS. The flecks (FLECK_VERTEX): a point at each drop
-// near where the eye looks, rising and falling once over FLECK_LIFE seconds,
-// the crown and jet a drop throws up, too small to be more than a fleck of
-// white at a few metres, standing on a gale's waves (src/galeWaves.js).
+// The streaks (STREAK_VERTEX): drops of the same schedule, each falling at
+// about its terminal speed, slanted by the wind, to the very place its ring
+// opens and its fleck rises, drawn as the streak it cuts in STREAK_SECONDS.
+// Each tile whose drops can fall within STREAK_REACH of the eye (round the
+// eye, swept downwind as far as a drop drifts in its fall: streakTiles), in
+// each reading, gives a few of its drops a streak (layOutStreaks), laid out
+// again when the rain or the wind changes: the drops of its class, the tiles
+// taking turns so a drop's twins in the tiles round it, falling in step,
+// are 3 to 5 m apart (streakLayout). A slot's streak is
+// its next drop, so it starts as high as the drop falls in the slot's period
+// (about 7.5 m in light rain, 9.6 m in heavy) and there are as many streaks
+// to a cubic metre as the rain's streakDensity. The flecks (FLECK_VERTEX): a
+// point at each drop near where the eye looks, rising and falling once over
+// FLECK_LIFE seconds, the crown and jet a drop throws up, too small to be
+// more than a fleck of white at a few metres. Both stand on a gale's waves
+// (src/galeWaves.js).
 //
 // RAIN: per intensity, the rate of the drops that leave a ring one can see
 // (per m² per second), the cell (metres, dividing TILE_SIZE) and its slots
 // (enough that a slot's ring has gone before it lands its next drop), the
 // drops' sizes against the probe's reference drop (2 mm across), the rings'
-// life, the fall (m/s), and the streaks' and flecks' numbers and opacity.
+// life, the fall (m/s), the streaks per cubic metre of air and their
+// opacity, and the flecks' opacity.
 // Light rain's drops are smaller and slower and its rings live longer
 // (fewer drops cross them); heavy rain's land every few centimetres, each
 // ring broken up within half a second.
 //
 // Cost while it rains: the tile pass (9 cells, a few slots each, one table
 // lookup per drop per texel), two lookups per water pixel, the streaks'
-// quads and the flecks' points; with no rain, none of it runs.
+// quads (7,800 in still air's light rain to 21,600 in its heavy rain, up to
+// 39,000 in a gale's, most of them out of reach and dropped by the vertex
+// shader before it looks up a wave) and the flecks' points; with no rain,
+// none of it runs.
 import * as THREE from 'three';
 import { loadAsset } from './loadAsset.js';
 import { FullscreenPass, createFloatTarget } from './gpu.js';
@@ -58,13 +72,14 @@ import { mipAxisFactor } from './ambientWaves.js';
 import { RAIN_TILE_FRAGMENT, RAIN_MAX_SLOTS, STREAK_VERTEX, STREAK_FRAGMENT, FLECK_VERTEX, FLECK_FRAGMENT } from './shaders/rain.js';
 
 export const RAIN = {
-  light: { rate: 60, cell: 0.2, sizes: [0.6, 1.2], life: 0.8, fall: 4.5, dropDiameter: 0.0015, streaks: 5000, streakOpacity: 0.45, fleckOpacity: 0.5 },
-  heavy: { rate: 600, cell: 0.125, sizes: [1.0, 1.8], life: 0.45, fall: 7.5, dropDiameter: 0.003, streaks: 12000, streakOpacity: 0.45, fleckOpacity: 0.7 },
+  light: { rate: 60, cell: 0.2, sizes: [0.6, 1.2], life: 0.8, fall: 4.5, dropDiameter: 0.0015, streakDensity: 1.25, streakOpacity: 0.45, fleckOpacity: 0.5 },
+  heavy: { rate: 600, cell: 0.125, sizes: [1.0, 1.8], life: 0.45, fall: 7.5, dropDiameter: 0.003, streakDensity: 3, streakOpacity: 0.45, fleckOpacity: 0.7 },
 };
 const TILE_SIZE = 1;                 // metres
 const READINGS = 2;                  // the water reads the tile twice (RAIN_RIPPLES)
 const RAIN_LEVELS = 10;              // the water shader's table of unresolved variance (RAIN_RIPPLES)
-const STREAK_BOX = [20, 10, 20];     // metres about the eye: across, high, along
+const STREAK_REACH = 10 * Math.sqrt(4 / Math.PI);   // metres about the eye the streaks fade out by: a circle as big as a 20 m square, faded from 0.6 of it
+const STREAK_SPEEDS = [0.85, 1.15];  // the smallest drop's fall and the biggest's, times the rain's
 const STREAK_SECONDS = 1 / 30;       // the eye's persistence
 const STREAK_MIN_PIXELS = 1.2;
 const FLECK_REPEATS = 4;             // tiles each way from the one the eye looks at
@@ -104,6 +119,63 @@ export function rainSchedule({ rate, cell, sizes, life }) {
   return { slots, period: slots / perCell, cells: Math.round(TILE_SIZE / cell) };
 }
 
+/**
+ * How a rain's streaks are laid out for its schedule (the header): a tile's
+ * drops; the streaks each tile gives in each reading (picks: the streak
+ * density times the height a slot's drop falls from, over one tile and
+ * shared by the readings); and the classes the tiles take turns in, each
+ * class picks of the tile's drops, a tile's class (tileX + step·tileZ) mod
+ * classes with the step that keeps a class's tiles farthest apart (5.1 m
+ * for heavy rain's 27 classes, 3.2 m for light rain's 10, near a hexagonal
+ * lattice's best).
+ */
+export function streakLayout(rain, { cells, slots, period }) {
+  const drops = cells * cells * slots;
+  const picks = Math.min(drops, Math.max(1, Math.round(rain.streakDensity * rain.fall * period * TILE_SIZE * TILE_SIZE / READINGS)));
+  const classes = Math.floor(drops / picks);
+  const nearestTwin = (step) => {
+    let nearest = Infinity;
+    for (let alongZ = -classes; alongZ <= classes; alongZ++) {
+      for (let alongX = -classes; alongX <= classes; alongX++) {
+        if ((alongX || alongZ) && (((alongX + step * alongZ) % classes) + classes) % classes === 0) nearest = Math.min(nearest, Math.hypot(alongX, alongZ));
+      }
+    }
+    return nearest;
+  };
+  let step = 1;
+  for (let candidate = 2; candidate < classes; candidate++) if (nearestTwin(candidate) > nearestTwin(step)) step = candidate;
+  return { drops, picks, classes, step, twinDistance: classes > 1 ? nearestTwin(step) : TILE_SIZE };
+}
+
+/**
+ * The tiles whose drops can fall within STREAK_REACH of the eye, for each
+ * reading: offsets from the eye's tile, { x: [first, last], z: [first, last] }.
+ * A drop lands downwind of where it falls past the eye, by the wind (`wind`,
+ * world XZ, m/s) times the time it has left, at most the period at the
+ * biggest drop's speed: the reach, swept that far downwind (in the second
+ * reading's coordinates, RAIN_TURN times the world's), and a tile more each
+ * way, so none comes or goes in sight as the eye crosses a tile's edge.
+ */
+export function streakTiles(wind, period) {
+  const drift = [wind.x * period * STREAK_SPEEDS[1], wind.y * period * STREAK_SPEEDS[1]];
+  const readings = [drift, [0.8 * drift[0] - 0.6 * drift[1], 0.6 * drift[0] + 0.8 * drift[1]]];
+  const span = (along) => [Math.floor((Math.min(0, along) - STREAK_REACH) / TILE_SIZE) - 1, Math.ceil((Math.max(0, along) + STREAK_REACH) / TILE_SIZE) + 1];
+  return readings.map(([alongX, alongZ]) => ({ x: span(alongX), z: span(alongZ) }));
+}
+
+/** The streaks' quads for a rain under a wind (streakLayout, streakTiles). */
+export function streakCount(rain, schedule, wind) {
+  const { picks } = streakLayout(rain, schedule);
+  return streakTiles(wind, schedule.period).reduce((sum, { x, z }) => sum + picks * (x[1] - x[0] + 1) * (z[1] - z[0] + 1), 0);
+}
+
+/** The tile (integer XZ) a world point (XZ) lies in, for each reading as RAIN_RIPPLES reads the tile, set into the two vectors given. */
+function readingTiles(point, [first, second]) {
+  first.set(Math.floor(point[0] / TILE_SIZE), Math.floor(point[1] / TILE_SIZE));
+  // The second reading's tile coordinates: RAIN_TURN times the world's, shifted (src/shaders/rain.js).
+  second.set(Math.floor((0.8 * point[0] - 0.6 * point[1]) / TILE_SIZE + 0.37), Math.floor((0.6 * point[0] + 0.8 * point[1]) / TILE_SIZE + 0.71));
+}
+
 /** Download without GPU work, so a remembered rain can load alongside the sky. */
 export async function loadRainData() {
   const folder = new URL('../assets/rain/', import.meta.url);
@@ -122,6 +194,7 @@ export class Rain {
   constructor(renderer, lighting, { texels = 512, gale = {}, download = null } = {}) {
     this.renderer = renderer;
     this.intensity = null;
+    this.falling = null;          // the rain whose streaks are laid out, and its schedule (layOutStreaks)
     this.ring = null;             // ring.json, once fetched
     this.loading = null;
     this.download = download;
@@ -160,16 +233,13 @@ export class Rain {
     };
     this.setTexels(texels);
 
-    // The streaks: a quad per drop, instanced.
+    // The streaks: a quad per pick of each tile near the eye, in each reading, instanced (layOutStreaks).
     const quad = new THREE.InstancedBufferGeometry();
     quad.setAttribute('position', new THREE.Float32BufferAttribute([-1, 0, 0, 1, 0, 0, -1, 1, 0, 1, 1, 0], 3));
     quad.setIndex([0, 1, 2, 2, 1, 3]);
-    const largest = Math.max(...Object.values(RAIN).map((rain) => rain.streaks));
-    const drops = new Float32Array(largest * 4);
-    let state = 20251016;
-    const random = () => { state = (state * 16807) % 2147483647; return (state - 1) / 2147483646; };
-    for (let index = 0; index < drops.length; index++) drops[index] = random();
-    quad.setAttribute('aDrop', new THREE.InstancedBufferAttribute(drops, 4));
+    const stillAir = { x: 0, y: 0 };
+    const largestStreaks = Math.max(...Object.values(RAIN).map((rain) => streakCount(rain, rainSchedule(rain), stillAir)));
+    quad.setAttribute('aStreak', new THREE.InstancedBufferAttribute(new Float32Array(largestStreaks * 4), 4));   // grown for a wind that needs more (layOutStreaks)
     quad.instanceCount = 0;
     this.lightUniforms = {
       uSkyAmbient: { value: lighting.skyAmbient },
@@ -180,15 +250,21 @@ export class Rain {
       vertexShader: STREAK_VERTEX,
       fragmentShader: STREAK_FRAGMENT,
       uniforms: {
-        uRainTime: this.scheduleUniforms.uRainTime,
-        uBox: { value: new THREE.Vector3(...STREAK_BOX) },
+        ...this.scheduleUniforms,
+        uEyeTile: { value: [new THREE.Vector2(), new THREE.Vector2()] },
+        uTileSize: { value: TILE_SIZE },
+        uPickClasses: { value: 1 },
+        uClassStep: { value: 1 },
+        uReach: { value: STREAK_REACH },
         uFall: { value: new THREE.Vector3(0, -RAIN.light.fall, 0) },
+        uSpeeds: { value: new THREE.Vector2(...STREAK_SPEEDS) },
         uStreakSeconds: { value: STREAK_SECONDS },
         uFocalPx: { value: 1000 },
         uDropDiameter: { value: RAIN.light.dropDiameter },
         uMinPixels: { value: STREAK_MIN_PIXELS },
         uOpacity: { value: RAIN.light.streakOpacity },
         ...this.lightUniforms,
+        ...gale,   // the gale's uniforms (src/galeWaves.js): the streaks land on its waves
       },
       side: THREE.DoubleSide,   // a ribbon's winding turns with its streak against the eye
       transparent: true,
@@ -258,6 +334,7 @@ export class Rain {
   setWind(direction, speed) {
     this.wind.set(direction[0], direction[1]).normalize().multiplyScalar(speed);
     this.updateFall();
+    if (this.falling) this.layOutStreaks(this.falling.rain, this.falling.schedule);   // the tiles swept downwind change with it
   }
 
   updateFall() {
@@ -299,11 +376,12 @@ export class Rain {
   async setIntensity(name) {
     const intensity = Object.hasOwn(RAIN, name ?? '') ? name : null;
     this.intensity = intensity;
-    if (!intensity) { this.show(false); return; }
+    if (!intensity) { this.falling = null; this.show(false); return; }
     await this.load();
     if (this.intensity !== intensity) return;   // another was asked for meanwhile
     const rain = RAIN[intensity];
     const schedule = rainSchedule(rain);
+    this.falling = { rain, schedule };   // the rain laid out, for a change of wind
     this.scheduleUniforms.uRainCell.value = rain.cell;
     this.scheduleUniforms.uRainCells.value = schedule.cells;
     this.scheduleUniforms.uRainSlots.value = schedule.slots;
@@ -313,7 +391,7 @@ export class Rain {
     const streakUniforms = this.streaks.material.uniforms;
     streakUniforms.uDropDiameter.value = rain.dropDiameter;
     streakUniforms.uOpacity.value = rain.streakOpacity;
-    this.streaks.geometry.instanceCount = rain.streaks;
+    this.layOutStreaks(rain, schedule);
     this.flecks.material.uniforms.uOpacity.value = rain.fleckOpacity;
     this.layOutFlecks(schedule);
     this.updateFall();
@@ -324,6 +402,32 @@ export class Rain {
   show(raining) {
     this.sharedUniforms.uRainOn.value = raining ? 1 : 0;
     this.streaks.visible = this.flecks.visible = raining;
+  }
+
+  /** The streaks' quads: each pick of each tile whose drops can fall near the eye, for each reading (streakLayout, streakTiles). */
+  layOutStreaks(rain, schedule) {
+    const { picks, classes, step } = streakLayout(rain, schedule);
+    const count = streakCount(rain, schedule, this.wind);
+    const geometry = this.streaks.geometry;
+    let streak = geometry.getAttribute('aStreak');
+    if (streak.count < count) {
+      // A bigger buffer: three.js keeps a geometry's buffers, and the most instances it draws, until it is disposed.
+      geometry.dispose();
+      streak = new THREE.InstancedBufferAttribute(new Float32Array(count * 4), 4);
+      geometry.setAttribute('aStreak', streak);
+    }
+    let index = 0;
+    streakTiles(this.wind, schedule.period).forEach(({ x, z }, reading) => {
+      for (let tileZ = z[0]; tileZ <= z[1]; tileZ++) {
+        for (let tileX = x[0]; tileX <= x[1]; tileX++) {
+          for (let pick = 0; pick < picks; pick++) streak.setXYZW(index++, tileX, tileZ, reading, pick);
+        }
+      }
+    });
+    streak.needsUpdate = true;
+    geometry.instanceCount = count;
+    this.streaks.material.uniforms.uPickClasses.value = classes;
+    this.streaks.material.uniforms.uClassStep.value = step;
   }
 
   /** The flecks' points: each slot of each cell of each tile within FLECK_REPEATS of the focus's, for each reading. */
@@ -399,12 +503,10 @@ export class Rain {
     const focal = camera.projectionMatrix.elements[5] * resolution.y * 0.5;
     const streakUniforms = this.streaks.material.uniforms;
     streakUniforms.uFocalPx.value = focal;
+    readingTiles([camera.position.x, camera.position.z], streakUniforms.uEyeTile.value);
     const fleckUniforms = this.flecks.material.uniforms;
     fleckUniforms.uProjScale.value = focal;
-    const [first, second] = fleckUniforms.uFocusTile.value;
-    first.set(Math.floor(focus[0] / TILE_SIZE), Math.floor(focus[1] / TILE_SIZE));
-    // The second reading's tile coordinates: RAIN_TURN times the world's, shifted (src/shaders/rain.js).
-    second.set(Math.floor((0.8 * focus[0] - 0.6 * focus[1]) / TILE_SIZE + 0.37), Math.floor((0.6 * focus[0] + 0.8 * focus[1]) / TILE_SIZE + 0.71));
+    readingTiles(focus, fleckUniforms.uFocusTile.value);
   }
 
   /** Draw the tile and the streaks and flecks once with a heavy rain's settings, so their programs are built (the warm-up, src/main.js). */
