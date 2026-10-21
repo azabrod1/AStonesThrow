@@ -55,8 +55,8 @@
 //     fifteen times as long): until it has, it is rigid and frosted, and it
 //     soaks only as far as it has thawed.
 //   - A thing that flies as a plate (`air.model` 'flutter') meets the water
-//     as one too (src/rock.js PLATE_WATER): its face slaps it, and under it
-//     and afloat it carries a disc's water and meets it broadside.
+//     as one too (src/rock.js plateWaterStep): its wetting face carries a disc's
+//     water and takes normal drag, its edge skin drag; the flow turns it.
 //   - look: `mesh`, the kind of mesh it is drawn with (src/thingMeshes.js,
 //     registerMesh), that kind's own parameters, and the material's
 //     `roughness` and `reflection`; `wet`, how much `darker` and `glossier`

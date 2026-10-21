@@ -19,8 +19,7 @@
 // stone's own added mass (a fifth of its mass), so its constants are the
 // fit's and its path is as it was, while a basketball, which carries six
 // times its own mass of water, is slowed and buoyed about a sixth as hard as
-// its density alone would say; a plate (a pizza) meets the water with its
-// whole face and carries a disc's water (underWater's `form`). A thing lighter than water rises once its
+// its density alone would say. A thing lighter than water rises once its
 // hole has pinched off (src/rock.js floats it once it nears the surface);
 // the hole's slices reach only as deep as it went (buildSlices). The reference
 // simulation (tools/basilisk: a 3 cm stone straight in at 6.3 m/s) fits
@@ -178,7 +177,7 @@ const GRAVITY = 9.81;
 const WATER_DENSITY = 1000;
 const ROCK_DENSITY = 2600;
 const DENSITY_RATIO = WATER_DENSITY / ROCK_DENSITY;
-export const DRAG_COEFFICIENT = 0.46;     // C_d: the reference simulation's fit while the hole is open (tools/basilisk)...
+const DRAG_COEFFICIENT = 0.46;     // C_d: the reference simulation's fit while the hole is open (tools/basilisk)...
 const HEAD_COEFFICIENT = 0.6;      // ...and C_h, the head on the stone's front while its back is in the hole's air
 const STONE_DRAG = (3 / 8) * DENSITY_RATIO * DRAG_COEFFICIENT;   // the drag deceleration is this·v²/R
 const STONE_HEAD = (3 / 4) * DENSITY_RATIO * HEAD_COEFFICIENT;   // the head's is this·g·h/R, h the centre's depth
@@ -289,25 +288,16 @@ function growthFor(widest) {
  * The constants sinkStep moves a body of `density` (kg/m³) with (the
  * header): ρw/ρs, its inertia against the reference stone's, the drag's, the
  * head's and the lift's coefficients over R, and the height in radii its
- * centre rests at over the floor. The reference stone's are the fit's. A
- * body not a ball (`form`: a pizza, a plate moving broadside) gives its
- * `face`, the area the water meets over its volume against a ball's
- * ((4/3)·A·R/V: a 30 cm pizza's is about 16), which the drag and the head go
- * as, its `drag` coefficient over C_d (the drag's alone), and `carries`, the water it
- * carries as a share of its own volume (a disc's, broadside, (8/3)·R³/V). Its
- * lift is left a ball's: a plate sliding along the surface would plane up out
- * of it, which a body under the water cannot follow; its drag stops it within
- * a few radii instead.
+ * centre rests at over the floor. The reference stone's are the fit's.
  */
-export function underWater(density = ROCK_DENSITY, restingHeight = RESTING_HEIGHT, form = null) {
-  if (density === ROCK_DENSITY && restingHeight === RESTING_HEIGHT && !form) return STONE_UNDER_WATER;
+export function underWater(density = ROCK_DENSITY, restingHeight = RESTING_HEIGHT) {
+  if (density === ROCK_DENSITY && restingHeight === RESTING_HEIGHT) return STONE_UNDER_WATER;
   const ratio = WATER_DENSITY / density;
-  const face = form?.face ?? 1;
-  const inertia = (1 + ADDED_MASS * DENSITY_RATIO) / (1 + (form?.carries ?? ADDED_MASS) * ratio);
+  const inertia = (1 + ADDED_MASS * DENSITY_RATIO) / (1 + ADDED_MASS * ratio);
   return {
     density, ratio, inertia, restingHeight,
-    drag: (3 / 8) * ratio * DRAG_COEFFICIENT * inertia * face * (form?.drag ?? 1),
-    head: (3 / 4) * ratio * HEAD_COEFFICIENT * inertia * face,
+    drag: (3 / 8) * ratio * DRAG_COEFFICIENT * inertia,
+    head: (3 / 4) * ratio * HEAD_COEFFICIENT * inertia,
     lift: (3 / 8) * ratio * inertia,
   };
 }
@@ -388,9 +378,8 @@ function multiply(first, second) {
 
 export class Cavity {
   /**
-   * @param impact {x, z, height, speed, velocity, radius, shape, spin, lift, underWater, pathVelocity} from Rock.update (height: of
-   *   the stone's centre; underWater: its constants, underWater's, the reference stone's if absent; pathVelocity, if given, what
-   *   it goes on at under the water, a plate slowed by its slap: its path is traced from it)
+   * @param impact {x, z, height, speed, velocity, radius, shape, spin, lift, underWater} from Rock.update (height: of the stone's
+   *   centre; underWater: its constants, underWater's, the reference stone's if absent)
    * @param startTime splash time of the impact
    * @param material the mesh's material (the water shader's CAVITY_MESH variant), or null for none
    * @param cell the water grid's cell size (m): the surface patch dips under the lip by whole cells
@@ -430,7 +419,7 @@ export class Cavity {
     this.closureX = this.asymmetry.closure * radius * Math.cos(this.asymmetry.lopsidedAngle);
     this.closureZ = this.asymmetry.closure * radius * Math.sin(this.asymmetry.lopsidedAngle);
 
-    this.tracePath(impact.x, impact.height ?? ENTRY_HEIGHT * radius, impact.z, impact.pathVelocity ?? velocity, floorDepth, step, impact.lift, impact.underWater);
+    this.tracePath(impact.x, impact.height ?? ENTRY_HEIGHT * radius, impact.z, velocity, floorDepth, step, impact.lift, impact.underWater);
     this.buildSlices();
     this.buildSections(impact);
 

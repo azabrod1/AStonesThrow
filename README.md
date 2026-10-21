@@ -44,8 +44,16 @@ is remembered on the device (but the view, which opens on the shore):
   draped over the waves, soaks and, waterlogged after two or three minutes,
   sinks; a frozen one thaws first, its frost fading, and only then goes soft
   and soaks. A pie's filling is drawn at random too: apple and pumpkin float
-  low, cherry and blueberry sink. A rubber duck rights itself however it
-  lands. Each choice's picture
+  low, cherry and blueberry sink. Plates use the same direction-aware water
+  forces while entering, floating and sinking: their face takes the drag and
+  carries water, their edge meets skin drag, and the flow turns them broadside.
+  Wetting progressively slows the face rather than instantly stopping it;
+  plates make spray and rings without a sphere-shaped cavity. Wetting uses
+  submerged volume as a proxy for wetted face area; ventilation and a resolved
+  free surface are not modelled. Toppings still add mass without displacement,
+  and the frozen pizza retains its existing lighter mass presets. These are
+  approximations, not material measurements. A weighted rubber duck rights
+  itself however it lands. Each choice's picture
   (`assets/things/thumbs/`) is a harness frame of it at rest on the pool's
   deck, shrunk to 160×90: `--water=pool --thing=name
   --throws=-1.75:0.75:0.05 --times=3 --seed=1 --w=320 --h=180`, looked at
