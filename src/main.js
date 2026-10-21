@@ -163,7 +163,13 @@
 // few moments, so that every GPU program a throw needs (the stone's, the
 // splash's passes, the mirror's, the cavity's, the composite's, the specks')
 // is compiled then rather than at the first throw, then clears it all away:
-// the pond starts still, at time zero. The settings (the page's panel)
+// the pond starts still, at time zero. Rain and gale programs are warmed
+// only when selected at startup. Otherwise their first render
+// compiles them synchronously, keeping the previous frame on screen; no
+// background warm-up mutates a scene the user can interact with. The final
+// scene is drawn before readiness, even with ?paused=1. A failed startup rain
+// offers an explicit way to continue in Clear weather before revealing it.
+// The settings (the page's panel)
 // each have their own localStorage key, and the page's parameters win over
 // them: ?sky=<name> picks the place, ?time=<hour> its hour (src/sky.js:
 // a place's hours are photographs of it through a day; setSky and setHour
@@ -192,7 +198,7 @@ import * as THREE from 'three';
 import { SpectralWater } from './spectralWater.js';
 import { AmbientWaves, DEFAULT_WIND, WIND_STRENGTHS } from './ambientWaves.js';
 import { GaleWaves, GALE_STRENGTHS } from './galeWaves.js';
-import { Rain } from './rain.js';
+import { Rain, loadRainData } from './rain.js';
 import { lightningAt } from './lightning.js';
 import { Rings } from './rings.js';
 import { createEnvironment, SKY_NAMES, skyHours, resolveHour, nearestHour } from './sky.js';
@@ -374,7 +380,8 @@ const DEFAULT_WATER = 'lake';
 // with a jet then built them.
 const WARM_UP = { x: 0, z: -1.4, radius: 0.03, moments: [0.02, 0.16, 0.4], seed: 4, floaters: ['pumice', 'pizza'] };   // a floater of each program: pumice the stones', a pizza its textured one
 
-export async function startPond({ canvas, quality = 'auto', onReady, onError, onStats, onViewChange, onQualityChange, onProfile }) {
+export async function startPond({ canvas, quality = 'auto', onReady, onProgress, onError, onRainError, onStats, onViewChange, onQualityChange, onProfile }) {
+  let readyForInput = false;
   let renderer;
   try {
     renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance', alpha: false, stencil: false });
@@ -422,6 +429,16 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
   };
   const storedChoice = (key) => { try { return window.localStorage.getItem(key); } catch { return null; } };
 
+  // The weather: the page's ?weather, else the last choice here, else clear;
+  // applied once the pond is built (applyWeather, after the warm-up).
+  const storedWeather = storedChoice(WEATHER_STORAGE_KEY);
+  const requestedWeather = pageParameters.get('weather');
+  let weatherName = Object.hasOwn(WEATHERS, requestedWeather ?? '') ? requestedWeather : Object.hasOwn(WEATHERS, storedWeather ?? '') ? storedWeather : 'clear';
+  // Start network work before awaiting the sky. Settle failures immediately:
+  // even a failed sky must not leave an unhandled rain rejection behind.
+  const rainDownload = WEATHERS[weatherName].rain
+    ? loadRainData().then((data) => ({ data }), (error) => ({ error })) : null;
+
   // The sky: ?sky, else the place last chosen here; its hour ?time, else the
   // one nearest the time of day last chosen here (chosenClock).
   let chosenClock = storedChoice(TIME_STORAGE_KEY);
@@ -429,6 +446,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
   const [firstPlace, firstHour] = placeAndHour(pageParameters.get('sky') ?? storedChoice(SKY_STORAGE_KEY), pageParameters.get('time'));
   let environment;
   try {
+    onProgress?.('Loading the sky…');
     environment = await createEnvironment(renderer, { name: firstPlace, hour: firstHour, sunAzimuth: SUN_AZIMUTH, sunBalance: new THREE.Vector3(...SUN_BALANCE), lighting });
   } catch (error) {
     onError?.('The sky could not be loaded. Check the connection and reload the page.');
@@ -456,7 +474,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
   const galeSurfaceAt = (x, z) => galeWaves.sample(x, z, galeSample).height;
   // The rain (src/rain.js): its rings on the water, its streaks and flecks;
   // none until the Weather brings it (applyWeather). The pool's deck wets.
-  const rain = new Rain(renderer, lighting, { texels: settings.rainTexels, gale: galeWaves.uniforms() });
+  const rain = new Rain(renderer, lighting, { texels: settings.rainTexels, gale: galeWaves.uniforms(), download: rainDownload });
   const wetDeck = { value: 0 };
   // The rings that cross the whole pond: the splash hands them its ring
   // sources through the solver it is given (water.rings), and the surface,
@@ -500,11 +518,6 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     surface.setGale(strength > 0);
   }
   applyWind(windName);
-  // The weather: the page's ?weather, else the last choice here, else clear;
-  // applied once the pond is built (applyWeather, after the warm-up).
-  const storedWeather = storedChoice(WEATHER_STORAGE_KEY);
-  const requestedWeather = pageParameters.get('weather');
-  let weatherName = Object.hasOwn(WEATHERS, requestedWeather ?? '') ? requestedWeather : Object.hasOwn(WEATHERS, storedWeather ?? '') ? storedWeather : 'clear';
   // A storm brings its gale, unless the page's ?windStrength says otherwise.
   if (WEATHERS[weatherName].wind && !Object.hasOwn(WIND_STRENGTHS, requestedWind ?? '')) applyWind(WEATHERS[weatherName].wind);
   // The water's clarity: the page's ?water, else the last choice here, else pond.
@@ -854,7 +867,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     if (!weather.lightning) environment.setFlash(1);
     wetDeck.value = weather.wet;
     applySky();
-    return rain.setIntensity(weather.rain).catch((error) => console.error(error));
+    return rain.setIntensity(weather.rain);
   }
 
   // Lightning in a storm (src/lightning.js), each frame: the sky's light and
@@ -1449,6 +1462,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
   }
 
   canvas.addEventListener('pointerdown', (event) => {
+    if (!readyForInput) return;
     lastActivity = performance.now();
     glide = null;   // the hand takes the view from a glide where it stands
     activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
@@ -1474,6 +1488,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     }
   });
   canvas.addEventListener('pointermove', (event) => {
+    if (!readyForInput) return;
     lastActivity = performance.now();
     const tracked = activePointers.get(event.pointerId);
     if (tracked) { tracked.x = event.clientX; tracked.y = event.clientY; }
@@ -1503,6 +1518,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     if (event.pointerType === 'mouse' || pressStart) showAim(throwAim(event.clientX, event.clientY));
   });
   canvas.addEventListener('pointerup', (event) => {
+    if (!readyForInput) return;
     lastActivity = performance.now();
     const press = pressStart?.id === event.pointerId ? pressStart : null;
     const turned = press && turning;
@@ -1520,6 +1536,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
   canvas.addEventListener('contextmenu', (event) => event.preventDefault());
   canvas.addEventListener('pointerleave', (event) => { if (!activePointers.has(event.pointerId)) showAim(null); });
   canvas.addEventListener('wheel', (event) => {
+    if (!readyForInput) return;
     event.preventDefault();
     glide = null;
     // Notches: a mouse wheel sends about 100 pixels or 3 lines each. A trackpad
@@ -1530,6 +1547,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     zoomAt(event.clientX, event.clientY, view.fov * WHEEL_STEP ** -notches);
   }, { passive: false });
   window.addEventListener('keydown', (event) => {
+    if (!readyForInput) return;
     if (event.code === 'Space' && !event.repeat && event.target === document.body) { event.preventDefault(); throwRandom(); }
     if (event.key === 'Escape' && !reportedView?.atHome) resetView();
     if ((event.key === 't' || event.key === 'T') && !event.repeat && event.target === document.body) setTracing(!tracing);
@@ -1878,7 +1896,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     else moveEye({ ...orbit });
   }
 
-  // ---- warm-up: every program a throw needs, compiled under the veil -----
+  // ---- warm-up: core throws and the selected effects, under the veil -----
   // Three.js deletes a program once no material uses it. The splash's
   // materials live as long as the page; a stone's die with it, so the warm-up
   // stone's two materials are kept (programKeepers) and every later stone,
@@ -1892,8 +1910,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     let state = WARM_UP.seed;
     Math.random = () => { state = (state * 16807) % 2147483647; return (state - 1) / 2147483646; };
     marker.visible = arc.visible = true;   // the aim marker's programs too
-    rain.show(true);                       // and the rain's: its tile's pass, its streaks and flecks (none drawn: none set)
-    const galeWarmUp = galeWaves.warmUp();   // and the gale's passes and spray (its FFT's program is the ripples')
+    rain.show(Boolean(WEATHERS[weatherName].rain));   // only selected rain needs these programs now
+    const galeWarmUp = galeWaves.on ? galeWaves.warmUp() : null;   // only a selected gale needs these passes now
     // Every thing made ready to throw (src/rock.js prepareThing: a pizza's shared mesh and waterline, a ball's paints), so
     // no throw pays for it; one defined later is made ready as it is defined.
     for (const name of THING_NAMES) prepareNamed(name);
@@ -1918,7 +1936,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
       retireRock(floater, { keepMaterials: true });
     }
     floaterRide.warmUp(renderer);   // the floaters' ride's pass
-    galeWarmUp.done();
+    galeWarmUp?.done();
     marker.visible = arc.visible = false;
     rain.show(false);
     for (let step = 0; step < 180 && !rocks.some((rock) => rock.state !== 'air'); step++) simulate(1 / 60);
@@ -1943,8 +1961,21 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     warmUpReport.programs = (renderer.info.programs?.length ?? 0) - programsBefore;
     warmUpReport.milliseconds = performance.now() - started;
   }
+  onProgress?.('Preparing the water…');
+  await new Promise((resolve) => setTimeout(resolve, 0));
   warmUp();
-  await applyWeather(weatherName);   // a remembered rain falls before the veil lifts, not just after
+  onProgress?.('Finishing the scene…');
+  try {
+    await applyWeather(weatherName);   // a remembered rain falls before the veil lifts
+  } catch (error) {
+    const message = 'The rain could not be loaded. Retry or continue without rain.';
+    if (!onRainError) { onError?.(message); throw error; }
+    // The page resolves only after the user explicitly chooses to continue.
+    // No input or frame loop runs while the choice is pending.
+    await onRainError(message);
+    await applyWeather('clear');
+    try { window.localStorage.setItem(WEATHER_STORAGE_KEY, 'clear'); } catch { /* storage may be disabled */ }
+  }
 
   profiler = profiling ? new Profiler({
     applySkips(flags) {
@@ -1960,6 +1991,10 @@ export async function startPond({ canvas, quality = 'auto', onReady, onError, on
     onReport: (lines) => onProfile?.(lines),
   }) : null;
 
+  // Clear the warm-up image and draw the final sky/weather even when paused.
+  // No frame loop or input may observe the temporary warm-up scene.
+  render();
+  readyForInput = true;
   lastFrame = performance.now();
   if (running) frameRequest = requestAnimationFrame(frame);
   onReady?.();

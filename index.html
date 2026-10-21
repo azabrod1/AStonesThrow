@@ -8,6 +8,19 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0b1b22">
 <title>A Stone’s Throw</title>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.183.2/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.183.2/examples/jsm/"
+  }
+}
+</script>
+<!-- Discover the application and its dependencies while the page is parsed. -->
+<link rel="modulepreload" href="./src/main.js">
+<link rel="modulepreload" href="./src/settingsPanel.js">
+<link rel="modulepreload" href="./src/things.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.183.2/build/three.module.js">
 <!-- Rings spreading from a stone's entry. iOS takes no SVG for the home screen
      and rounds the square PNG's corners itself. -->
 <link rel="icon" href="assets/icon/favicon.svg" type="image/svg+xml">
@@ -626,6 +639,18 @@
     text-align: center;
     color: var(--fg);
   }
+  .load-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; padding: 0 16px; }
+  .load-actions button {
+    min-height: 44px;
+    padding: 10px 16px;
+    border: 1px solid var(--line);
+    border-radius: 24px;
+    background: var(--panel);
+    color: var(--fg);
+    font: 500 14px var(--font-ui);
+    cursor: pointer;
+  }
+  .load-actions button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   @media (pointer: coarse) {
     input[type="range"] { --thumb: 28px; --track: 6px; height: 44px; }
     .segmented button, .switch, .throw, .reset-view, .thing-chip { min-height: 36px; }
@@ -903,20 +928,12 @@
   </div>
 </div>
 
-<div class="veil" id="veil"><span id="veil-text">Filling the pond…</span></div>
+<div class="veil" id="veil" role="status" aria-live="polite"><span id="veil-text">Loading the pond…</span></div>
 
-<script type="importmap">
-{
-  "imports": {
-    "three": "https://cdn.jsdelivr.net/npm/three@0.183.2/build/three.module.js",
-    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.183.2/examples/jsm/"
-  }
-}
-</script>
 <script type="module">
-  import { startPond } from './src/main.js';
-  import { SettingsPanel, radioGroup } from './src/settingsPanel.js';
-  import { THINGS, thingGroups, onThingsChange } from './src/things.js';
+  // Dynamic imports are caught below: a failed dependency must not leave
+  // the loading veil up forever. Timed-out imports never start a late pond.
+  let startPond, SettingsPanel, radioGroup, THINGS, thingGroups, onThingsChange;
 
   const veil = document.getElementById('veil');
   const veilText = document.getElementById('veil-text');
@@ -937,17 +954,57 @@
     };
   }
 
+  function showLoadError(message, continueWithoutRain) {
+    veilText.replaceChildren();
+    const paragraph = document.createElement('p');
+    paragraph.className = 'error';
+    paragraph.textContent = message;
+    const retry = document.createElement('button');
+    retry.type = 'button';
+    retry.textContent = 'Retry';
+    retry.addEventListener('click', () => location.reload());
+    const actions = document.createElement('div');
+    actions.className = 'load-actions';
+    actions.append(retry);
+    veilText.append(paragraph, actions);
+    if (continueWithoutRain) {
+      const proceed = document.createElement('button');
+      proceed.type = 'button';
+      proceed.textContent = 'Continue without rain';
+      proceed.addEventListener('click', () => {
+        veilText.textContent = 'Finishing the scene…';
+        continueWithoutRain();
+      }, { once: true });
+      actions.append(proceed);
+    }
+  }
+
   let pond;
+  let loadingModules = true;
   let showQuality = () => {};   // assigned once the settings exist; the calibration may call it before
   let currentView = { atHome: true, view: 'shore' };   // the last onViewChange, which comes before the settings exist too
   let showView = () => {};
   let profileDone = false;            // once the profile report is up, the readout keeps it
   try {
-    // Module scripts may await at the top level; the pond starts once its sky has loaded.
+    let importTimer;
+    try {
+      const modules = await Promise.race([
+        Promise.all([import('./src/main.js'), import('./src/settingsPanel.js'), import('./src/things.js')]),
+        new Promise((_, reject) => { importTimer = setTimeout(() => reject(new Error('Module load timed out')), 30000); }),
+      ]);
+      ({ startPond } = modules[0]);
+      ({ SettingsPanel, radioGroup } = modules[1]);
+      ({ THINGS, thingGroups, onThingsChange } = modules[2]);
+    } finally {
+      clearTimeout(importTimer);
+    }
+    loadingModules = false;
     pond = await startPond({
       canvas: document.getElementById('pond'),
       quality: params.get('quality') || 'auto',
-      onError: (message) => { veilText.innerHTML = ''; const p = document.createElement('p'); p.className = 'error'; p.textContent = message; veilText.append(p); },
+      onProgress: (message) => { veilText.textContent = message; },
+      onError: showLoadError,
+      onRainError: (message) => new Promise((resolve) => showLoadError(message, resolve)),
       onStats: ({ fps, droplets, quality }) => { if (!profileDone) stats.textContent = `${Math.round(fps)} fps · ${droplets} drops · ${quality}`; },
       onViewChange: (report) => {
         currentView = report;
@@ -961,11 +1018,9 @@
   } catch (error) {
     console.error(error);
     if (!veilText.querySelector('.error')) {
-      veilText.innerHTML = '';
-      const p = document.createElement('p');
-      p.className = 'error';
-      p.textContent = 'The pond could not start. This page needs WebGL 2 with floating-point textures.';
-      veilText.append(p);
+      showLoadError(loadingModules
+        ? 'The pond could not download its files. Check the connection and retry.'
+        : 'The pond could not start. Please retry, or try a browser with WebGL 2 support.');
     }
   }
 
@@ -1244,15 +1299,25 @@
     const showWind = radioGroup(document.getElementById('wind'), (value) => { pond.setWind(value); updateWind(); });
     // The weather: the sky clouds over at once; the first rain fetches its rings' table (about 0.6 MB).
     const weatherNote = document.getElementById('weather-note');
-    let weatherChoice = null;
-    const showWeather = radioGroup(document.getElementById('weather'), (value) => {
-      weatherChoice = value;
+    let weatherRequest = 0;
+    const showWeather = radioGroup(document.getElementById('weather'), chooseWeather);
+    function chooseWeather(value) {
+      const request = ++weatherRequest;
       showWeather(value);
       settings.setValue('weather', label('weather', value));
-      if (value !== 'clear' && !pond.raining) weatherNote.textContent = 'The rain is coming\u2026';
-      pond.setWeather(value).then(() => { if (weatherChoice === value) updateWeather(); });
+      weatherNote.textContent = value !== 'clear' && !pond.raining ? 'The rain is coming…' : NOTES.weather[value];
+      pond.setWeather(value).then(() => {
+        if (weatherRequest === request) updateWeather();
+      }).catch(() => {
+        if (weatherRequest !== request) return;
+        const retry = document.createElement('button');
+        retry.type = 'button';
+        retry.textContent = 'Retry';
+        retry.addEventListener('click', () => chooseWeather(value));
+        weatherNote.replaceChildren('The rain could not be loaded. Check the connection. ', retry);
+      });
       updateWind();   // a storm brings a gale
-    });
+    }
     function updateWeather() {
       showWeather(pond.weather);
       settings.setValue('weather', label('weather', pond.weather));
