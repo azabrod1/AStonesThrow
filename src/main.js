@@ -96,7 +96,9 @@
 // diameter, a bowling ball's pounds, a basketball's size; a golf or tennis
 // ball has one size). measureThing gives what a throw is: its radius, mass
 // and density. A river stone is thrown as stones always were
-// (throwVelocity); anything else is aimed by src/rock.js aimThrow, which
+// (throwVelocity, at the strength's flight time, src/rock.js
+// throwFlightTime: Soft a higher lob, Hard let go at 12 m/s, fast and flat,
+// going in twice as fast as Normal); anything else is aimed by src/rock.js aimThrow, which
 // flies it against the air's drag (a tennis ball or a piece of pumice
 // would fall several centimetres short) and throws a heavy ball no faster
 // than it can be thrown (a 16 lb bowling ball 5.75 m/s), short of a tap
@@ -174,7 +176,8 @@
 // them: ?sky=<name> picks the place, ?time=<hour> its hour (src/sky.js:
 // a place's hours are photographs of it through a day; setSky and setHour
 // load another later, in place: the sun follows, and the mirror image is
-// drawn again; a place takes the hour nearest the time of day last chosen,
+// drawn again; prefetchHours fetches the hours either side ahead, so the
+// next is there when picked; a place takes the hour nearest the time of day last chosen,
 // TIME_STORAGE_KEY, and ?sky=sunrise, the old Sunrise sky, is Lakeside at
 // sunrise);
 // ?view=shore|level|high|under stands the camera at one of VIEWS (showView);
@@ -204,7 +207,7 @@ import { Rings } from './rings.js';
 import { createEnvironment, SKY_NAMES, skyHours, resolveHour, nearestHour } from './sky.js';
 import { createWaterSurface } from './waterSurface.js';
 import { createPondFloor, createShore, floorDepthAt, groundHeightAt } from './pondFloor.js';
-import { Rock, aimSkip, aimThrow, flutterTrial, prepareThing, PREPARATION_WORK, skipSpeed, SKIP_THROW, PHYSICS_STEP } from './rock.js';
+import { Rock, aimSkip, aimThrow, flutterTrial, prepareThing, PREPARATION_WORK, skipSpeed, SKIP_THROW, PHYSICS_STEP, throwFlightTime } from './rock.js';
 import { THINGS, THING_NAMES, DEFAULT_THING, defineThing, onThingsChange } from './things.js';
 import { collideThings } from './collide.js';
 import { SplashSystem, MIRROR_LAYER } from './splash.js';
@@ -269,7 +272,7 @@ const IDLE = {
   quietSeconds: 1,           // nothing moving, touched or zoomed for this long...
   tolerance: 0.004,          // ...and frames come at the preset's idleFrameRate, this many seconds early at most
 };
-const POWER = { soft: 1.3, normal: 1.0, hard: 0.72 };   // flight-time multipliers
+const POWERS = ['soft', 'normal', 'hard'];   // the throw's strengths (src/rock.js THROW_STRENGTH)
 const POND_DEPTH = 0.8;       // the depth the waves take (the solver, the wind's ripples, the rings): see the bed below
 const POND_MARGIN = 0.4;      // metres inside the solver's patch that a tap's throw keeps to...
 const MARGIN_RADII = 4;       // ...or this many of the rock's radius, if more: a 30 cm rock's splats reach 3 radii out
@@ -1202,9 +1205,9 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     return new THREE.Vector3(0.30, -0.32 - 1.6 * beyond, -0.55 - 1.2 * beyond).applyMatrix4(shoreFrame);
   }
 
-  function throwVelocity(hand, target, powerName = power) {
-    const distance = hand.distanceTo(target);
-    const flightTime = THREE.MathUtils.clamp(0.42 + 0.11 * distance, 0.5, 1.0) * POWER[powerName];
+  /** A throw's velocity from `hand` to `target` at strength `powerName` for a stone of `radius` (src/rock.js throwFlightTime), with its flight time. */
+  function throwVelocity(hand, target, powerName, radius) {
+    const flightTime = throwFlightTime(hand, target, powerName, radius);
     const velocity = target.clone().sub(hand).divideScalar(flightTime);
     velocity.y += 0.5 * 9.81 * flightTime;
     return { velocity, flightTime };
@@ -1234,7 +1237,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
    * stone, its path and where it comes down.
    */
   function thingVelocity(hand, target, powerName, measured, flight = null) {
-    const { velocity, flightTime } = throwVelocity(hand, target, powerName);
+    const { velocity, flightTime } = throwVelocity(hand, target, powerName, measured.radius);
     if (measured.thing.key === DEFAULT_THING) return { velocity, flightTime, path: null, landing: target };
     return aimThrow(hand, target, flightTime, measured, flight);
   }
@@ -2026,7 +2029,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
      * them; the setting's cards follow (onThingsChange).
      */
     defineThing,
-    setPower(name) { if (POWER[name]) power = name; },
+    setPower(name) { if (POWERS.includes(name)) power = name; },
     /** Skip on or off: taps, Space and throwRandom throw skips (the header); throwAt's `skip` option overrides it. */
     setSkip(on) { skipping = Boolean(on); },
     get skipping() { return skipping; },
@@ -2092,6 +2095,19 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       return requestSky(skyRequest.place, name).then(() => environment.hour);
     },
     get hour() { return environment.hour; },
+    /**
+     * Fetch the hours either side of the one last asked for ahead (src/sky.js
+     * prefetch), so that picking one of them next waits only on its decode:
+     * the page calls it while the Time of day page is open. Not when the
+     * browser asks to save data.
+     */
+    prefetchHours() {
+      if (typeof navigator !== 'undefined' && navigator.connection?.saveData) return;
+      const hours = skyHours(skyRequest.place);
+      const index = hours.findIndex((entry) => entry.name === skyRequest.hour);
+      if (index < 0) return;
+      for (const neighbour of [hours[index - 1], hours[index + 1]]) if (neighbour) environment.prefetch(skyRequest.place, neighbour.name);
+    },
     /**
      * The weather by name (WEATHERS: clear, light-rain, heavy-rain), remembered
      * on this device. The sky clouds over at once; the rain falls once its

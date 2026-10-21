@@ -330,8 +330,8 @@ const BEND = { damping: 0.25, wetDamping: 0.6, splat: 0.04, limp: 0.6 };
 // to find its new height every `settleSeconds`, if it has sunk FLOAT.settledOffset since.
 const WET = { drySeconds: 90, settleSeconds: 0.5 };
 const AIR_DENSITY = 1.2;   // kg/m³ (flyStep's)
-// A throw's aim (aimThrow): the flight times it tries (least, most, step; s), the passes against the air's drag and their step (s),
-// a flight of its own's passes (a plate's: at most coarsePasses of them coarse, AIM.step, until one comes down within
+// A throw's aim (aimThrow): the flight times it tries (least, most, step; s), the passes against the air's drag (flown in
+// PHYSICS_STEP, as the thing will fly), a flight of its own's passes (a plate's: at most coarsePasses of them coarse, AIM.step, until one comes down within
 // coarseClose m), how near (m) a pass must come down for no more to be flown (a plate's flight,
 // each pass hundreds of its steps, sooner) and the most (m)
 // a pass may move the aim.
@@ -387,7 +387,8 @@ export function flyStep(position, velocity, radius, mass, dt, drag = 0.47) {
  * thrown (`fastest`: of the flight times that are slow enough, the one
  * nearest the strength's, else as far as the fastest throw reaches along the
  * tap's direction) and aimed for the air's drag, which slows a light thing
- * (a tennis ball, pumice): its flight is flown (flyStep) and the aim moved
+ * (a tennis ball, pumice): its flight is flown (flyStep, in the steps the
+ * thing will fly, PHYSICS_STEP, to where it crosses the still water) and the aim moved
  * by its miss, up to AIM.passes times (and held to `fastest` after, a little
  * short). `flight`, if given, flies it as the thing itself flies (Rock
  * trialFlight: a pizza's flight as a plate, which no plain drag says), in
@@ -427,17 +428,23 @@ export function aimThrow(hand, target, flightTime, measured, flight = null) {
   // The drag's miss, flown out and taken off the aim.
   const goal = aim.clone();
   const position = new THREE.Vector3(), moving = new THREE.Vector3();
-  // A flight of its own is flown in the steps the thing is (PHYSICS_STEP): a plate's turning is not a ball's drag, and
-  // flown coarser it would come down elsewhere.
-  const flyOut = (throwing, path = null, seconds = flight ? PHYSICS_STEP : AIM.step) => {
+  // Each pass is flown in the steps the thing will fly (PHYSICS_STEP): flown coarser it comes down elsewhere (a plate's
+  // turning is not a ball's drag, and a ball's coarser steps fall ½·g·dt lower each second of its flight). A ball comes
+  // down where its last step crosses the still water, not at the step's end: a hard throw's flat step is 5 cm along the
+  // water. A plate (a flight of its own) keeps its step's end: its rim, not its centre, meets the water first, and its
+  // aim was fitted so.
+  const previous = new THREE.Vector3();
+  const flyOut = (throwing, path = null, seconds = PHYSICS_STEP) => {
     position.copy(hand);
     moving.copy(throwing);
     flight?.reset(position, moving);
     for (let step = 0; step < 3 / seconds && (position.y > 0 || moving.y > 0); step++) {
       path?.push(position.clone());
+      previous.copy(position);
       if (flight) flight.step(seconds, position, moving);
       else flyStep(position, moving, measured.radius, measured.mass, seconds, measured.thing.air.drag);
     }
+    if (!flight && position.y < 0 && previous.y > 0) position.lerpVectors(previous, position, previous.y / (previous.y - position.y));
     path?.push(position.clone());
     return position;
   };
@@ -451,7 +458,7 @@ export function aimThrow(hand, target, flightTime, measured, flight = null) {
   // steps: the coarse passes cost half as much, and the fine ones start near.
   let coarse = Boolean(flight);
   for (let pass = 0; pass < (flight ? AIM.flightPasses : AIM.passes); pass++) {
-    const landed = flyOut(throwing, null, coarse ? AIM.step : flight ? PHYSICS_STEP : AIM.step);
+    const landed = flyOut(throwing, null, coarse ? AIM.step : PHYSICS_STEP);
     const missX = goal.x - landed.x, missZ = goal.z - landed.z, miss = Math.hypot(missX, missZ);
     if (coarse && (miss < AIM.coarseClose || pass >= AIM.coarsePasses - 1)) { coarse = false; before = null; best = null; continue; }
     if (!coarse && (!best || miss < best.miss)) best = { miss, aimX: aim.x, aimZ: aim.z };
@@ -581,6 +588,43 @@ export const SKIP_THROW = {
 /** A skip throw's speed (m/s) at strength `power` for a stone of `radius` (SKIP_THROW), in the pool or the lake. */
 export function skipSpeed(power, radius, pooled = false) {
   return (pooled ? SKIP_THROW.poolSpeed : SKIP_THROW.speed)[power] * Math.min(1, SKIP_THROW.fullRadius / radius);
+}
+
+// An ordinary throw's strength (src/main.js throwVelocity; the probes throw
+// the same, throwFlightTime). A normal throw takes clamp(0.42 + 0.11·d, 0.5,
+// 1.0) s to the tap d metres from the hand: the throw the splash was tuned
+// on, and within a percent of the gentlest that reaches the tap (the least
+// release speed, sqrt(g·(d − h)) from h above it). So no throw that reaches
+// the tap goes in much slower: a soft one is a lob, `soft` times as long in
+// the air, higher and steeper, at about the normal throw's speed. A hard one
+// is let go at `hardSpeed` (for a stone up to `fullRadius`; beyond it as
+// fullRadius / R, as a skip's) on the lower of the two arcs that reach the
+// tap at that speed: fast and flat, going in about twice as fast as a normal
+// throw (a 6 cm stone at the reference tap: 12.4 m/s, 73° from vertical). It is never slower than `hardLeast` times the
+// normal flight time, which a big stone, too heavy to throw that fast, keeps.
+export const THROW_STRENGTH = { soft: 1.3, hardSpeed: 12, fullRadius: 0.04, hardLeast: 0.72 };
+
+/**
+ * The flight time (s) of a throw let go at `speed` from `hand` that comes
+ * down at `target`, on the lower (flatter, shorter) of its two arcs, or null
+ * if that speed cannot reach it. With u = T², the release speed squared is
+ * D²/u + g·Δy + g²·u/4 (D the distance, Δy the target's height over the hand).
+ */
+export function lowArcTime(hand, target, speed) {
+  const distanceSquared = hand.distanceToSquared(target);
+  const sum = speed * speed - GRAVITY * (target.y - hand.y);
+  const discriminant = sum * sum - GRAVITY * GRAVITY * distanceSquared;
+  if (discriminant < 0) return null;
+  return Math.sqrt((2 * (sum - Math.sqrt(discriminant))) / (GRAVITY * GRAVITY));
+}
+
+/** An ordinary throw's flight time (s) from `hand` to `target` at strength `power`, for a stone of `radius` (THROW_STRENGTH). */
+export function throwFlightTime(hand, target, power, radius) {
+  const normal = THREE.MathUtils.clamp(0.42 + 0.11 * hand.distanceTo(target), 0.5, 1.0);
+  if (power === 'soft') return normal * THROW_STRENGTH.soft;
+  if (power !== 'hard') return normal;
+  const flat = lowArcTime(hand, target, THROW_STRENGTH.hardSpeed * Math.min(1, THROW_STRENGTH.fullRadius / radius));
+  return Math.min(flat ?? Infinity, THROW_STRENGTH.hardLeast * normal);
 }
 
 /**

@@ -21,7 +21,9 @@ view); a drag that starts zoomed turns round what the view is looking at.
 Escape or Reset view glides back to the shore. The strip at the bottom sets
 the size of what is thrown (a stone 1.5 to 30 cm across, a bowling ball 6
 to 16 lb, a basketball size 5 to 7, a gem 5 to 1000 carats; a golf or a
-tennis ball has one size), the throw strength, Skip and the speed (real
+tennis ball has one size), the throw strength (Soft, a higher, slower lob;
+Normal; Hard, a fast, flat throw that goes in twice as fast, with a far
+bigger splash: below), Skip and the speed (real
 time, or slow motion at ¼ or ⅒). With Skip on, a flat stone is thrown low
 and level, spinning, and skips across the water (below), in the direction
 of the tap (even on the sky); its first touch lands where a level throw
@@ -72,7 +74,10 @@ is remembered on the device (but the view, which opens on the shore):
   afternoon and starlit night, Mesas' twelve hours from dawn to moonrise and
   moonlight. The land keeps still and the sun moves round it: Lakeside faces
   its afternoon sun, Mesas its sunrise and moonrise. By night the eye sees
-  as its rods do, in a moonlit blue. Another place takes its hour nearest the
+  mostly as its rods do: a moonlit blue that keeps some of the photo's
+  colour, the moon's glitter silver, dark but never black. While the Time of
+  day page is open the hours either side of the shown one are fetched
+  ahead, so the next one picked comes at once. Another place takes its hour nearest the
   time of day last chosen; the other skies are one photograph each.
 - Weather: Clear (the default), Light rain, Heavy rain or Storm. Rain comes under
   an overcast that hides the sun and greys the sky, with a haze that fades
@@ -255,8 +260,8 @@ known timing, and the droplets are choreographed from them:
    as a drop as big as the rim is thick, and starts again; once its rim stalls
    (about 90 ms for a 3 cm stone) the sheet tears, the arcs first and the
    fingers last, from the rim down into drops that carry its velocity. A
-   thrown stone enters obliquely (about 40
-   to 55° from vertical), and then a fan comes first: the same sheet model
+   thrown stone enters obliquely (about 30° from vertical thrown softly, 40
+   to 45° normally, 70 to 73° and twice as fast thrown hard), and then a fan comes first: the same sheet model
    over a sector 60° either side of the direction of travel, launched from
    the forward contact line at about 0.9 of the entry speed and 65 to 75°
    from vertical, half as thick, which flares low ahead of the crown and
@@ -493,14 +498,20 @@ stood. Poly Haven exposes each panorama to be looked at, as an adapted eye
 would see it (dawn as bright as noon), so an hour keeps its file's
 brightness against the place's sunlit anchor hour times the clear-sky light
 on the ground at its true sun's elevation against the anchor's, to the
-power 0.25 (an eye that adapts most of the way) and, below 10 lux, where
-the rods take over, to 0.1 further: sunset comes out 0.56 of the
-afternoon's, twilight at 5° below the horizon a tenth, moonlight 0.07 and
-a starlit night 0.04. While the sun is down the scene's sun is dark, or is
-the moon, a full moon's light 400,000 times the sun's at its elevation; the
-deep water's colour dims with the light. Below 10 lux the picture also
-turns towards what rods see, colourless and blue-shifted (Jensen et al.'s
-scotopic luminance, in the tone map), fully by 0.03 lux.
+power 0.2 (an eye that adapts most of the way) and, below 10 lux, where
+the rods take over, to 0.02 further: sunset comes out 0.63 of the
+afternoon's, twilight at 5° below the horizon 0.17, moonlight 0.16 and a
+starlit night 0.15, about 2.7 stops under the day (set at 4 to 5 stops
+under, the nights were a dark grey photograph). While the sun is down the
+scene's sun is dark, or is the moon, a full moon's light 400,000 times the
+sun's at its elevation; the deep water's colour dims with the light. Below
+10 lux the picture also turns towards what rods see (Jensen et al.'s
+scotopic luminance, in the tone map), fully by 0.03 lux, drawn as a film
+draws a night: tinted nearly Jensen's night blue, keeping 40% of the
+cones' colour, and going to white where it is bright, so the moon's
+glitter and a splash's glints are silver on blue water. An hour's photo is
+decoded by `src/hdr.js`, texel for texel as Three.js's HDRLoader does but
+five times as fast (`tools/hdr-test.mjs` checks every panorama).
 
 **Rain** (`src/rain.js`, `src/shaders/rain.js`; the cloud and haze in
 `src/sky.js`). The Weather setting clouds the sky over: the sun's direct
@@ -641,7 +652,8 @@ farther out, so it rises into the view rather than filling its corner.
 
 ## Development
 
-- `npm test` runs `tools/fft-test.mjs`, `tools/wave-probe.mjs`,
+- `npm test` runs `tools/load-asset-test.mjs`, `tools/hdr-test.mjs` (the
+  sky's decoder against HDRLoader, bit for bit), `tools/fft-test.mjs`, `tools/wave-probe.mjs`,
   `tools/foam-probe.mjs`, `tools/cavity-probe.mjs`, `tools/ring-probe.mjs`,
   `tools/rain-probe.mjs`, `tools/gale-probe.mjs`, `tools/skip-probe.mjs` and
   `tools/thing-probe.mjs`;
@@ -756,7 +768,8 @@ farther out, so it rises into the view rather than filling its corner.
   stone and its splash are the same every run: `tools/variety-probe.mjs`'s
   seed n + i),
   `--power=soft|normal|hard` (soft is a higher arc, so a steeper entry,
-  about 30° from vertical), `--skip` (skip throws, the times counted from
+  about 30° from vertical; hard is let go at 12 m/s, fast and flat, and goes
+  in at 12.4 m/s, 73° from vertical: `throwFlightTime` in `src/rock.js`), `--skip` (skip throws, the times counted from
   the first touch), `--trace` (each stone's path drawn as a line),
   `--wind-strength=calm|breeze|windy|gale` (the page's
   own default is calm), `--weather=clear|light-rain|heavy-rain|storm` (waits for
@@ -937,6 +950,7 @@ farther out, so it rises into the view rather than filling its corner.
   `lookAt(x, y, z)`, `resetView()`, `setWind(name)` (and `wind`: calm,
   breeze or windy, remembered on the device), `setSky(place)` and
   `setHour(name)` (and `sky`, `hour`, and `hours`, the shown place's),
+  `prefetchHours()` (fetches the hours either side of the one asked for ahead),
   `setWeather(name)` (and `weather`, and `raining`, once the rain's table
   has come and it falls), `rings` (the live rings and
   their plans), and `budget`: what the preset built (the solver's grid, the

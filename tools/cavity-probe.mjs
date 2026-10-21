@@ -51,7 +51,7 @@
 // Without diameters it runs the slider's 1.5, 4, 6, 8, 16 and 30 cm.
 import * as THREE from 'three';
 import { SplashSystem, MOUND_DELAY } from '../src/splash.js';
-import { Rock } from '../src/rock.js';
+import { Rock, throwFlightTime } from '../src/rock.js';
 import { CAVITY_LAYOUT, PINCH_TIME } from '../src/cavity.js';
 import { floorDepthAt } from '../src/pondFloor.js';
 
@@ -66,7 +66,6 @@ const VARIETY_THROWS = Number(option('variety', '24'));
 // Park–Miller, so a run repeats exactly (the stones' shapes, turns and splashes are random).
 let randomState = seed;
 Math.random = () => { randomState = (randomState * 16807) % 2147483647; return (randomState - 1) / 2147483646; };
-const POWERS = { soft: 1.3, normal: 1.0, hard: 0.72 };
 
 const GRAVITY = 9.81;
 const FRAME = 1 / 60;
@@ -84,7 +83,7 @@ const hand = new THREE.Vector3(0.30, -0.32, -0.55).applyMatrix4(camera.matrixWor
 
 function throwStone(radius, vertical, aim = [aimX, aimZ], power = 'normal', floor = POND_DEPTH) {
   const target = new THREE.Vector3(aim[0], 0, aim[1]);
-  const flightTime = THREE.MathUtils.clamp(0.42 + 0.11 * hand.distanceTo(target), 0.5, 1.0) * POWERS[power];
+  const flightTime = throwFlightTime(hand, target, power, radius);
   const velocity = target.clone().sub(hand).divideScalar(flightTime);
   velocity.y += 0.5 * GRAVITY * flightTime;
   const rock = new Rock({ radius, position: hand, velocity, envTexture: null });

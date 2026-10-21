@@ -7,7 +7,7 @@ Keep this file short. Every future session reads all of it, so most notes belong
 ```bash
 npm install                # three (served to the headless harness) and playwright
 npm start                  # static server; open http://localhost:8123/
-npm test                   # CPU checks: the solver's FFT, splat spectrum, Nyquist bins, half floats and pool walls (fft-test), the wind ripples and the Wind control (wave-probe), the foam pattern (foam-probe), the cavity (cavity-probe), the rings (ring-probe), the raindrop's ring (rain-probe), the gale's waves (gale-probe), skipping (skip-probe), the things thrown (thing-probe)
+npm test                   # CPU checks: the sky's decoder against HDRLoader (hdr-test), the solver's FFT, splat spectrum, Nyquist bins, half floats and pool walls (fft-test), the wind ripples and the Wind control (wave-probe), the foam pattern (foam-probe), the cavity (cavity-probe), the rings (ring-probe), the raindrop's ring (rain-probe), the gale's waves (gale-probe), skipping (skip-probe), the things thrown (thing-probe)
 npm run shoot -- --label=name --throws=0:-1.4:0.03 --times=0.1,0.5   # frames into shots/name/; --seed=1 --fov --look --crop --report --eval --floats=half --sky=name --time=hour --weather=light-rain|heavy-rain|storm --water=pool|murky --wind=x:z --wind-strength=breeze --power=soft --thing=basketball|bowling:16 --view=high --orbit=az:el:dist --touch=x0:z0:x1:z1:s --skip --trace; --throws=none for idle water
 node tools/jet-probe.mjs 0.03 6.3      # one Worthington jet on the CPU: timeline, drops, cost
 node tools/fan-probe.mjs 0.03 6.9 0.68 # the forward fan of an oblique entry on the CPU
