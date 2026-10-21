@@ -890,10 +890,11 @@ console.log('  per pixel and ring whose annulus holds it: the water fragment one
  * vertices make (`views`: their water points, each standing for its share of
  * the screen's pixels; the floor's look up only the rings its caustics take,
  * the youngest updateCaustics counts with a share). With `camera`
- * (HOME_VIEWS) the rings retire by it.
+ * (HOME_VIEWS) the rings retire by it; a ring pushed out fades over
+ * `fadeSeconds` (the preset's ringFade).
  */
-function minuteOfThrowing(liveLimit, views, throws, camera = null) {
-  const book = new RingSources({ depth: POND_DEPTH, liveLimit, camera });
+function minuteOfThrowing(liveLimit, views, throws, camera = null, fadeSeconds = FADE_SECONDS) {
+  const book = new RingSources({ depth: POND_DEPTH, liveLimit, fadeSeconds, camera });
   const pending = throws.flatMap(({ time, source }) => source.groups.map((group) => ({
     time: time + group.start, splat: {
       x: group.x, z: group.z, radius: group.sigma, height: group.height / RING_SOURCE.strength, velocity: group.velocity / RING_SOURCE.strength, rim: group.rim,
@@ -972,27 +973,27 @@ function patchVertices(segments) {
   // Every layer live and no camera (the rings as they would be with neither
   // bound), then each preset's limit with the camera they retire by; then a
   // stone every 1.5 s, which fills High's live rings and Low's.
-  const runs = [{ limit: MAX_RINGS, view: null }, ...Object.entries(QUALITY).flatMap(([name, preset]) => (name === 'high' ? HOME_VIEWS : HOME_VIEWS.filter((view) => view.name === 'phone')).map((view) => ({ limit: preset.rings, view })))];
+  const runs = [{ limit: MAX_RINGS, view: null }, ...Object.entries(QUALITY).flatMap(([name, preset]) => (name === 'high' ? HOME_VIEWS : HOME_VIEWS.filter((view) => view.name === 'phone')).map((view) => ({ limit: preset.rings, fade: preset.ringFade, view })))];
   const rapidThrows = [];
   for (let time = 0.5; time < 60; time += 1.5) {
     const aim = { x: -1.6 + 3.2 * random(), z: -3.4 + 3.6 * random() };
     rapidThrows.push({ time, source: splashRings(0.03, { aim, seed: 1 + Math.floor(random() * 1e6) }).sources[0] });
   }
-  const rapidRuns = [{ limit: QUALITY.high.rings, view: HOME_VIEWS.find((view) => view.name === 'desktop'), rapid: true }, { limit: QUALITY.low.rings, view: HOME_VIEWS.find((view) => view.name === 'phone'), rapid: true }];
-  for (const { limit, view, rapid } of [...runs, ...rapidRuns]) {
+  const rapidRuns = [{ limit: QUALITY.high.rings, fade: QUALITY.high.ringFade, view: HOME_VIEWS.find((view) => view.name === 'desktop'), rapid: true }, { limit: QUALITY.low.rings, fade: QUALITY.low.ringFade, view: HOME_VIEWS.find((view) => view.name === 'phone'), rapid: true }];
+  for (const { limit, fade = FADE_SECONDS, view, rapid } of [...runs, ...rapidRuns]) {
     if (rapid && limit === QUALITY.high.rings) console.log(`  the same with ${rapidThrows.length} stones, one every 1.5 s for 60 s:`);
-    const samples = minuteOfThrowing(limit, views, rapid ? rapidThrows : throws, view ? view.camera : null);
+    const samples = minuteOfThrowing(limit, views, rapid ? rapidThrows : throws, view ? view.camera : null, fade);
     const during = samples.filter((sample) => sample.time >= 20 && sample.time < 60);
     const after = samples.filter((sample) => sample.time >= 60);
     const mean = (rows, pick) => rows.reduce((sum, row) => sum + pick(row), 0) / Math.max(rows.length, 1);
     const most = (rows, pick) => rows.reduce((best, row) => Math.max(best, pick(row)), 0);
     const millions = (value) => (value / 1e6).toFixed(1);
     const names = Object.entries(QUALITY).filter(([, preset]) => preset.rings === limit).map(([name]) => name);
-    console.log(`    at most ${limit} live${names.length ? ` (${names.join(', ')})` : ' (every layer)'}, ${view ? `retiring by the ${view.name}'s view` : 'retiring by the slope alone'}: while throwing (20 to 60 s) ${mean(during, (row) => row.live + row.fading).toFixed(1)} rings drawn on average, at most ${most(during, (row) => row.live + row.fading)}; ${millions(mean(during, (row) => row.fetches))} M profile fetches a frame (at most ${millions(most(during, (row) => row.fetches))}); lookups ${millions(mean(during, (row) => row.lookups[0]))} M desktop water, ${millions(mean(during, (row) => row.lookups[1]))} M phone water (at most ${millions(most(during, (row) => row.lookups[1]))}), ${millions(mean(during, (row) => row.lookups[2]))} M desktop floor (its caustics taking ${mean(during, (row) => row.caustics).toFixed(1)} rings, at most ${most(during, (row) => row.caustics)}), ${millions(mean(during, (row) => row.lookups[3]))} M patch vertices`);
+    console.log(`    at most ${limit} live${names.length ? ` (${names.join(', ')})` : ' (every layer)'}, a pushed-out ring fading over ${fade} s, ${view ? `retiring by the ${view.name}'s view` : 'retiring by the slope alone'}: while throwing (20 to 60 s) ${mean(during, (row) => row.live + row.fading).toFixed(1)} rings drawn on average, at most ${most(during, (row) => row.live + row.fading)}; ${millions(mean(during, (row) => row.fetches))} M profile fetches a frame (at most ${millions(most(during, (row) => row.fetches))}); lookups ${millions(mean(during, (row) => row.lookups[0]))} M desktop water, ${millions(mean(during, (row) => row.lookups[1]))} M phone water (at most ${millions(most(during, (row) => row.lookups[1]))}), ${millions(mean(during, (row) => row.lookups[2]))} M desktop floor (its caustics taking ${mean(during, (row) => row.caustics).toFixed(1)} rings, at most ${most(during, (row) => row.caustics)}), ${millions(mean(during, (row) => row.lookups[3]))} M patch vertices`);
     const last = samples[samples.length - 1];
     console.log(`      after the last throw: ${mean(after.slice(0, 20), (row) => row.live + row.fading).toFixed(1)} rings drawn over its first 10 s, ${millions(mean(after.slice(0, 20), (row) => row.fetches))} M fetches, ${millions(mean(after.slice(0, 20), (row) => row.lookups[1]))} M phone lookups a frame; the last ring retires ${(last.time - 60).toFixed(0)} s after it`);
   }
-  console.log(`  (a ring pushed out by a newer one fades out over ${FADE_SECONDS} s in a spare layer: at most ${MAX_RINGS} layers in all; the floor's caustics take the youngest ${CAUSTIC_RINGS} live rings, an older one leaving them over ${CAUSTIC_FADE_SECONDS} s)`);
+  console.log(`  (a ring pushed out by a newer one fades out in a spare layer over the preset's ringFade, ${Object.entries(QUALITY).map(([name, preset]) => `${preset.ringFade} s on ${name}`).join(', ')} (${FADE_SECONDS} s by default): at most ${MAX_RINGS} layers in all; the floor's caustics take the youngest ${CAUSTIC_RINGS} live rings, an older one leaving them over ${CAUSTIC_FADE_SECONDS} s)`);
 }
 {
   // The CPU: planning a source, once; Rings.update's bookkeeping every frame (on a stand-in renderer that draws nothing).

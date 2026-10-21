@@ -101,11 +101,14 @@
 // reference stone's ring lives 90 to 120 s, so a stone every four seconds
 // or so fills High's (and a Skip throw starts a source at each touch); a
 // new one past them makes the live one closest to retiring, the faintest
-// as a rule, fade out over FADE_SECONDS (8 s) in its layer. Such a ring is
-// as a rule tens of seconds old and a millimetre or so high, so it loses
-// well under a millimetre a second and nobody sees it go. The MAX_RINGS
-// layers leave MAX_RINGS − liveLimit for rings fading out (8 on High); when
-// none is free, the ring that would stop being drawn soonest goes at once.
+// as a rule, fade out over the preset's fade (ringFade, src/main.js: 8 s on
+// High, FADE_SECONDS; 4 s on Medium and 3 s on Low, since rings fading out
+// are drawn as live ones are, and a stone every second or two would pile
+// them up on a phone) in its layer. Such a ring is as a rule tens of
+// seconds old and a millimetre or so high, so it loses well under a
+// millimetre a second and nobody sees it go. The MAX_RINGS layers leave
+// MAX_RINGS − liveLimit for rings fading out (8 on High); when none is
+// free, the ring that would stop being drawn soonest goes at once.
 //
 // Each source's sampling is planned (planSource) from a stationary-phase
 // envelope of its ring. At time τ the wavenumber k is found at
@@ -228,7 +231,8 @@
 // caustics take 6.7 rings). A stone every 1.5 s fills the live rings: on
 // High it keeps 24 drawn (30 at most) at 47 M fetches and 25 M of a
 // desktop's water lookups (26 M of a phone's, 11 M of the floor's), on Low
-// 13 at 25 M fetches and 21 M of a phone's. The weaker rings before this
+// 10 (its 3 s fade keeps the rings fading out to a couple) at 17 M fetches
+// and 17 M of a phone's. The weaker rings before this
 // calibration, two to a throw and looked up at every pixel within their
 // reach, kept 12 drawn at 33 M fetches and 22 M lookups a frame. Its last ring retires 96 to 103 s
 // after the last throw (63 s before, for rings a seventh as strong). On the
@@ -240,7 +244,7 @@ import { FullscreenPass, createFloatTarget } from './gpu.js';
 
 export const MAX_RINGS = 32;          // layers of the profile texture: live and fading sources together
 export const DEFAULT_LIVE_LIMIT = 24; // sources that count as live at once (setLiveLimit; the quality presets set it), so the rings leaving have MAX_RINGS − this layers to fade out in
-export const FADE_SECONDS = 8;        // a ring pushed out by a newer one fades out over this long: slowly enough that nobody sees it go (the header)
+export const FADE_SECONDS = 8;        // a ring pushed out by a newer one fades out over this long unless the preset says otherwise (setLiveLimit): slowly enough that nobody sees it go (the header)
 export const CAUSTIC_RINGS = 6;       // the floor's caustics take the youngest this many live rings (ringLaplacian in src/shaders/scene.js)...
 export const CAUSTIC_FADE_SECONDS = 3;   // ...and an older one leaves them over this long
 export const MAX_GROUPS = 4;          // splat groups a source holds (an oblique entry's cavity uses three)
@@ -752,23 +756,27 @@ const endOf = (source) => (source.fading ? Math.min(source.fading.end, source.pl
  * directionX, directionZ, groups, plan, fading, caustic }; how a splat
  * joins one or starts one (the header); which have faded. At most liveLimit
  * are live; a new one past that makes the live one closest to retiring (the
- * faintest, as a rule) fade out over FADE_SECONDS (fading: { start, end })
+ * faintest, as a rule) fade out over fadeSeconds (fading: { start, end })
  * in its layer, and when no layer is free the one that would stop being
  * drawn soonest goes at once. caustic is its share of the floor's caustics
  * (updateCaustics).
  */
 export class RingSources {
-  constructor({ depth = 0.8, liveLimit = DEFAULT_LIVE_LIMIT, camera = null } = {}) {
+  constructor({ depth = 0.8, liveLimit = DEFAULT_LIVE_LIMIT, fadeSeconds = FADE_SECONDS, camera = null } = {}) {
     this.depth = depth;
     this.sources = [];
     this.liveLimit = liveLimit;
+    this.fadeSeconds = fadeSeconds;
     this.camera = camera;
     this.freeLayers = Array.from({ length: MAX_RINGS }, (unused, layer) => MAX_RINGS - 1 - layer);
     this.causticTime = null;   // the world time updateCaustics last ran at
   }
 
-  /** At most this many live sources (1 to MAX_RINGS), from the next new one on. */
-  setLiveLimit(limit) { this.liveLimit = THREE.MathUtils.clamp(Math.round(limit), 1, MAX_RINGS); }
+  /** At most this many live sources (1 to MAX_RINGS), from the next new one on, a source pushed out fading over fadeSeconds. */
+  setLiveLimit(limit, fadeSeconds = FADE_SECONDS) {
+    this.liveLimit = THREE.MathUtils.clamp(Math.round(limit), 1, MAX_RINGS);
+    this.fadeSeconds = Math.max(fadeSeconds, 0.1);
+  }
 
   /**
    * The camera the rings retire by: { x, z, height, pixelsPerRadian,
@@ -829,7 +837,7 @@ export class RingSources {
       if (live.length >= this.liveLimit) {
         let soonest = live[0];
         for (const candidate of live) if (candidate.plan.end < soonest.plan.end) soonest = candidate;
-        soonest.fading = { start: time, end: time + FADE_SECONDS };
+        soonest.fading = { start: time, end: time + this.fadeSeconds };
       }
       if (this.freeLayers.length === 0) {
         let dropped = this.sources[0];
@@ -982,8 +990,8 @@ export class Rings {
   /** Rings fading out, pushed out by newer ones (RingSources). */
   get fading() { return this.book.sources.filter((source) => source.fading).length; }
 
-  /** At most this many live rings (RingSources.setLiveLimit; the quality presets set it). */
-  setLiveLimit(limit) { this.book.setLiveLimit(limit); }
+  /** At most this many live rings, a ring pushed out fading over fadeSeconds (RingSources.setLiveLimit; the quality presets set both). */
+  setLiveLimit(limit, fadeSeconds = FADE_SECONDS) { this.book.setLiveLimit(limit, fadeSeconds); }
   get liveLimit() { return this.book.liveLimit; }
 
   /** The camera the rings retire by (RingSources.setCamera). */
