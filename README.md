@@ -94,9 +94,13 @@ frame rate and the preset in use); a preset fixes it. A preset sets
 the work a frame does: High runs the 512² solver, a 254-segment water mesh
 and full-resolution targets; Medium and Low a 256² solver, 160 and 128
 segments, the under-water view and the mirror image at half resolution and
-the splash's buffers at half, and draw a pond where nothing happens at 30
-frames a second; High keeps 24 stones' rings, Medium 12 and Low 8. The
-canvas never holds more than 2.6 million pixels.
+the splash's buffers at half. Every preset draws a frame no sooner than
+about 9.7 ms after the last (a sixtieth of a second, less some slack),
+whatever the screen's refresh rate: a 60 or a 90 Hz screen draws every
+refresh, a 120 Hz one every other, 60 frames a second (72 on a 144 Hz
+one), and a pond where nothing happens at 30 frames a second; High keeps
+24 stones' rings, Medium 12 and Low 8. The canvas never holds more than
+2.6 million pixels.
 Core stone/splash programs are compiled while the page loads, under its
 veil: a stone is thrown and drawn there, then cleared away. Rain and gale
 programs are warmed only when selected at startup; otherwise
@@ -916,8 +920,11 @@ farther out, so it rises into the view rather than filling its corner.
   waves; and pausing and resuming twice
   in one tick must leave one frame loop. On a fake clock it checks that the watch after
   calibration steps down at 20 frames a second and that a still pond on
-  Medium draws every other frame with its time keeping up; and that a large
-  window keeps within the pixel budget.
+  Medium draws every other frame with its time keeping up; that on High a
+  still pond draws every other frame of a 60 Hz clock and every fourth of a
+  120 Hz one, and a throw every other frame of a 120 Hz clock (held to 60 a
+  second) and every frame of a 60 Hz one; and that a large window keeps
+  within the pixel budget.
 - `node tools/zoom-probe.mjs [--w=390 --h=844]` drives the wheel, a pinch, a
   tap and Escape through the page's own handlers and checks that what is under
   the pointer stays there; then drags, by touch and by mouse, and checks that

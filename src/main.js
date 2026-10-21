@@ -145,15 +145,25 @@
 // window.__pond.budget reports what is built, with an estimate of the GPU
 // memory the render targets hold.
 //
-// Low power. A pond where nothing happens does as little as it can. The
-// solver sleeps (no passes at all) once its last splat or foam stamp is
-// SLEEP_SECONDS of simulated time behind and nothing of the splash is left
+// Low power. On every preset frames come at most MAX_FRAME_RATE times a
+// second, whatever the display's refresh: a requestAnimationFrame sooner
+// than 1 / MAX_FRAME_RATE after the last frame drawn (by more than
+// CEILING_TOLERANCE: 7 ms, which lets a 90 Hz display's 11.1 ms through) is
+// skipped, and the next one drawn carries both intervals. A 60 Hz and a
+// 90 Hz display draw every requestAnimationFrame, a 120 Hz one (ProMotion)
+// every other, at 60 a second, and a 144 Hz one every other too, at 72.
+// A pond where nothing happens does as little as it can. The solver sleeps
+// (no passes at all) once its last splat or foam stamp is SLEEP_SECONDS of
+// simulated time behind and nothing of the splash is left
 // (src/spectralWater.js derives the time from its damping); the composite is
-// a plain tone map while no water is in the air; and on a preset with an
-// idleFrameRate, once nothing has moved, been touched or zoomed for
-// IDLE.quietSeconds, frames come at most that often (every other
-// requestAnimationFrame on a 60 Hz display), the simulated time still
-// advancing by the real time between them.
+// a plain tone map while no water is in the air; and once nothing has moved,
+// been touched or zoomed for IDLE.quietSeconds, frames are held in the same
+// way to the preset's idleFrameRate instead (30 on every preset: every other
+// requestAnimationFrame on a 60 Hz display, every fourth on a 120 Hz one).
+// The simulated time still advances by the real time between frames drawn.
+// Nothing holds frames back while the frame rate is being measured
+// (framesHeld): through a profiling run (src/profiler.js), or the
+// calibration's measurement of the idle pond (CALIBRATION says why).
 //
 // Starting is asynchronous: the sky is a photographed panorama
 // (src/sky.js) that has to load before anything is built, because the sun's
@@ -229,7 +239,8 @@ import { createFloaterRide } from './floaterRide.js';
 //   underScale    the under-water pass's and the mirror image's resolution, of
 //                 the canvas's (both are seen through ripples);
 //   fluidScale    the splash's fluid buffers', of the canvas's;
-//   idleFrameRate the frame rate of a pond where nothing happens (0: every frame);
+//   idleFrameRate the frame rate of a pond where nothing happens (Low power in
+//                 the header; 0 would hold it only to MAX_FRAME_RATE);
 //   maxDpr        the cap on device pixels per CSS pixel;
 //   rings         the stones' rings live at once (src/rings.js): past them a
 //                 newer one makes the one closest to retiring, the faintest
@@ -247,7 +258,7 @@ import { createFloaterRide } from './floaterRide.js';
 // and every mesh takes 16-bit indices (at most 254 segments: Three.js keeps
 // the index 65535 for primitive restart).
 export const QUALITY = {
-  high: { grid: 512, meshSegments: 254, underScale: 1.0, fluidScale: 1.0, idleFrameRate: 0, maxDpr: 2.0, rings: 24, ringFade: 8, rainTexels: 512 },
+  high: { grid: 512, meshSegments: 254, underScale: 1.0, fluidScale: 1.0, idleFrameRate: 30, maxDpr: 2.0, rings: 24, ringFade: 8, rainTexels: 512 },
   medium: { grid: 256, meshSegments: 160, underScale: 0.5, fluidScale: 0.5, idleFrameRate: 30, maxDpr: 2.0, rings: 12, ringFade: 4, rainTexels: 256 },
   low: { grid: 256, meshSegments: 128, underScale: 0.5, fluidScale: 0.5, idleFrameRate: 30, maxDpr: 1.5, rings: 8, ringFade: 3, rainTexels: 256 },
 };
@@ -258,8 +269,17 @@ const QUALITY_ORDER = ['high', 'medium', 'low'];
 // pond after warm-up, then of the first splash (the fluid passes run only
 // while drops are in the air, so the idle rate overestimates). From the idle
 // measurement on it keeps watching: a frame rate below sustainedMinimumFps
-// over sustainedSeconds of frames drawn one per requestAnimationFrame steps
-// down once more. It never steps up.
+// over sustainedSeconds of frames drawn with no requestAnimationFrame
+// skipped by the idle cap before them steps down once more. It never steps
+// up. It counts the frames drawn, so a held frame rate (Low power in the
+// header) must not read as a slow device. The idle measurement holds none
+// back (framesHeld): the idle cap's 30 a second is under idleMinimumFps.
+// The first splash and the watch are held to MAX_FRAME_RATE, which skips a
+// requestAnimationFrame only within 9.7 ms of the last frame drawn, so the
+// next one draws within twice that: it never holds a frame rate under 51 a
+// second, above splashMinimumFps and sustainedMinimumFps, and never steps a
+// device down. Neither cap makes a stall: reckoned so, the idle cap's
+// frames are under 60 ms apart.
 const CALIBRATION = {
   warmUpFrames: 30,          // the first mip chains and caches
   windowFrames: 60,          // frames averaged for one measurement
@@ -272,9 +292,19 @@ const CALIBRATION = {
   stallSeconds: 0.5,         // a longer interval is a stall (a hidden tab, a rebuild), not a frame rate
 };
 const IDLE = {
-  quietSeconds: 1,           // nothing moving, touched or zoomed for this long...
-  tolerance: 0.004,          // ...and frames come at the preset's idleFrameRate, this many seconds early at most
+  quietSeconds: 1,           // nothing moving, touched or zoomed for this long, and frames come at the preset's idleFrameRate
+  tolerance: 0.004,          // a frame held to the idle pond's rate comes this many seconds early at most
 };
+// Frames a second at most, on every preset and whatever the display's
+// refresh (Low power in the header), and the slack a frame held to it may
+// come early by: a 60 Hz display's frames are 16.7 ms apart and a 90 Hz
+// one's 11.1, both over 1 / MAX_FRAME_RATE − CEILING_TOLERANCE (9.7 ms),
+// so every one draws; a 120 Hz display's 8.3 ms are under it, and every
+// other one draws (a 144 Hz one's 6.9 ms too: 72 a second). The slack is
+// wider than the idle cap's so that a 90 Hz display, its frames jittering
+// by a millisecond, never loses one.
+export const MAX_FRAME_RATE = 60;
+const CEILING_TOLERANCE = 0.007;
 const POWER = { soft: 1.3, normal: 1.0, hard: 0.72 };   // flight-time multipliers
 const POND_DEPTH = 0.8;       // the depth the waves take (the solver, the wind's ripples, the rings): see the bed below
 const POND_MARGIN = 0.4;      // metres inside the solver's patch that a tap's throw keeps to...
@@ -1812,8 +1842,12 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   }
 
   // After the idle measurement the frame rate stays watched (CALIBRATION):
-  // windows of sustainedSeconds of frames drawn one per requestAnimationFrame;
-  // a capped frame or a stall starts the window again.
+  // windows of sustainedSeconds of frames drawn with no requestAnimationFrame
+  // skipped by the idle cap since the last (idleSkipped). One skipped by
+  // MAX_FRAME_RATE does not count, so a 120 Hz display is watched at the 60
+  // a second it draws; nor does the cap being on if it skipped none, so a
+  // still pond too slow to reach idleFrameRate is watched. A frame after the
+  // idle cap's skip, or a stall, starts the window again.
   const monitor = { seconds: 0, frames: 0, settle: 0 };
   function watchFrameRate(interval, everyFrame) {
     if (!automaticQuality || calibration.phase === 'idle' || calibration.phase === 'splash') return;
@@ -1828,13 +1862,18 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   }
 
   // ---- the frame loop ------------------------------------------------------
+  /** Whether frames may be held back (Low power in the header): not while a profiling run or the calibration's idle measurement times them. */
+  function framesHeld() {
+    return (!profiler || profiler.done) && !(automaticQuality && calibration.phase === 'idle');
+  }
   /** Whether frames are coming at the preset's idleFrameRate: nothing moving, touched or zoomed for IDLE.quietSeconds. */
   let frameCapped = false;
   function capFrames(now) {
-    frameCapped = settings.idleFrameRate > 0 && (!profiler || profiler.done) && activePointers.size === 0 && now - lastActivity > 1000 * IDLE.quietSeconds;
+    frameCapped = settings.idleFrameRate > 0 && framesHeld() && activePointers.size === 0 && now - lastActivity > 1000 * IDLE.quietSeconds;
     return frameCapped;
   }
   let profiler = null;
+  let idleSkipped = false;     // a requestAnimationFrame since the last frame drawn was skipped by the idle cap (watchFrameRate)
 
   function frame(now) {
     frameRequest = 0;
@@ -1847,15 +1886,24 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       profiler.frame({ interval, simulateMilliseconds: 0, renderMilliseconds: 0, calls: 0, triangles: 0 });
       return;
     }
+    // Held to the idle pond's rate, else to MAX_FRAME_RATE: a frame sooner
+    // than that is skipped, and the next one drawn carries both intervals.
     const capped = capFrames(now);
-    if (capped && interval < 1 / settings.idleFrameRate - IDLE.tolerance) return;   // this one is skipped; the next draws both intervals
+    const heldTo = capped ? settings.idleFrameRate : MAX_FRAME_RATE;
+    const slack = capped ? IDLE.tolerance : CEILING_TOLERANCE;
+    if (framesHeld() && interval < 1 / heldTo - slack) {
+      if (capped) idleSkipped = true;
+      return;
+    }
+    const everyFrame = !idleSkipped;
+    idleSkipped = false;
     lastFrame = now;
     const dtReal = Math.min(interval, 0.1);
     if (dtReal > 0) {
       fpsAverage += (1 / dtReal - fpsAverage) * 0.05;
       if ((++frames & 15) === 0) onStats?.({ fps: fpsAverage, droplets: splash.count, quality: qualityName });
       calibrate(dtReal);
-      watchFrameRate(interval, !capped);
+      watchFrameRate(interval, everyFrame);
     }
     stepGlide(now);
     const simulateStart = performance.now();
