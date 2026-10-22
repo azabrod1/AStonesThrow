@@ -633,12 +633,26 @@ console.log('\nNew ice: a hole left alone skins over; a thing afloat in one keep
   const hole = ice.holes[0];
   const shardsBefore = world.shards.length;
   world.step(40 + 30 + 2 - 5);
-  // A point of its new ice near its middle, not where a shard froze in.
-  const middle = Array.from({ length: 24 }, (unused, index) => ({ x: hole.x + 0.25 * hole.inner * Math.cos(index), z: hole.z + 0.25 * hole.inner * Math.sin(index) }))
-    .find((point) => ice.thicknessAt(point.x, point.z) < ice.thickness) ?? { x: hole.x, z: hole.z };
+  // A point of its new ice near its middle with room for the stone round it: not where a shard froze in, nor the old ice,
+  // for the stone's radius and a margin round where it lands (the candidate with the widest ring of new ice about it).
+  const newIce = (x, z) => { const thickness = ice.thicknessAt(x, z); return thickness > 0 && thickness < ice.thickness; };
+  const clearRing = (point) => {
+    let clear = 0;
+    for (let ring = 0.005; ring <= 0.06; ring += 0.005) {
+      let allNew = true;
+      for (let spoke = 0; spoke < 12 && allNew; spoke++) allNew = newIce(point.x + ring * Math.cos(spoke * Math.PI / 6), point.z + ring * Math.sin(spoke * Math.PI / 6));
+      if (!allNew) break;
+      clear = ring;
+    }
+    return clear;
+  };
+  const candidates = [];
+  for (const share of [0.15, 0.25, 0.35, 0.45]) for (let index = 0; index < 24; index++) candidates.push({ x: hole.x + share * hole.inner * Math.cos(index), z: hole.z + share * hole.inner * Math.sin(index) });
+  const middle = candidates.filter((point) => newIce(point.x, point.z)).map((point) => ({ ...point, clear: clearRing(point) }))
+    .sort((first, second) => second.clear - first.clear)[0] ?? { x: hole.x, z: hole.z, clear: 0 };
   const frozenPainted = world.frozen.filter((shard) => maskAt(ice, shard.position.x, shard.position.z)[0] > 128).length;
   const top = ice.at(middle.x, middle.z), thin = ice.thicknessAt(middle.x, middle.z);
-  console.log(`  a 16 cm stone through thick ice: ${hole.skin?.closed ? 'skinned over' : 'still open'} ${(world.time - hole.openedAt).toFixed(0)} s after the break; its middle ${top === null ? 'water' : `ground at ${(1000 * top).toFixed(2)} mm, its new ice ${(1000 * thin).toFixed(2)} mm`}; ${world.frozen.length} of ${shardsBefore} shards frozen in (${frozenPainted} painted as ice), ${world.things.filter((thing) => thing.piece).length} afloat`);
+  console.log(`  a 16 cm stone through thick ice: ${hole.skin?.closed ? 'skinned over' : 'still open'} ${(world.time - hole.openedAt).toFixed(0)} s after the break; its middle ${top === null ? 'water' : `ground at ${(1000 * top).toFixed(2)} mm, its new ice ${(1000 * thin).toFixed(2)} mm`} (clear of shards and the old ice for ${centimetres(middle.clear)} cm round); ${world.frozen.length} of ${shardsBefore} shards frozen in (${frozenPainted} painted as ice), ${world.things.filter((thing) => thing.piece).length} afloat`);
   const { release, clock, paint, freeze } = world.costs;
   console.log(`  at most a step: letting its shards go and the flood ${release.toFixed(1)} ms, the clock otherwise (drying, new ice prepared and grown) ${clock.toFixed(1)} ms, the mask's painting and sending ${paint.toFixed(1)} ms, a shard frozen in ${freeze.toFixed(1)} ms`);
   check(hole.skin?.closed && !ice.holeAt(middle.x, middle.z) && top !== null && thin > 0 && thin < ice.thickness, `a hole left alone ${hole.skin?.closed ? '' : 'did not skin over'}${top === null ? ', its middle still water' : ''}`);
@@ -646,6 +660,7 @@ console.log('\nNew ice: a hole left alone skins over; a thing afloat in one keep
   check(maskAt(ice, middle.x, middle.z)[3] > 128, 'a skinned-over hole\'s middle is not new ice in the mask');
   check(Math.max(release, clock, paint, freeze) < SKIN_MS, `the ice's clock, its painting or a shard frozen in cost ${Math.max(release, clock, paint, freeze).toFixed(1)} ms in a step`);
   // A stone at the old hole breaks the new ice: thin, it lets go no shards.
+  check(middle.clear >= 0.03 + 0.01, `a skinned-over hole has no new ice clear of its shards for a 6 cm stone to land on (${centimetres(middle.clear)} cm clear at best)`);
   const holes = ice.holes.length;
   world.throwStone(6, middle);
   world.step(4);
