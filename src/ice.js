@@ -181,7 +181,7 @@ export class IceSheet {
     this.cracks = [];            // polylines ([x0, z0, x1, z1, …]) not yet painted
     this.events = [];            // breaks and cracks since src/main.js last took them (its sound)
     this.streams = new WeakMap();   // each thing's own stream of the ice's draws, seeded from its splash's seed
-    // The mask (the header): half floats for the GPU, and R and G as floats here, to paint unions into.
+    // The mask (the header): bytes for the GPU (fillMask), and R and G as floats here, to paint unions into.
     this.holeField = new Float32Array(texels * texels).fill(MASK.holeFar);
     this.crackField = new Float32Array(texels * texels).fill(MASK.crackFar);
     this.maskData = new Uint8Array(texels * texels * 4);
