@@ -156,11 +156,11 @@ for (let frame = 0; frame < 2 * 60; frame++) {
     if (column && splash.columns.includes(column)) {
       column.updateGeometry(time);
       out.jet.t.push(round(time, 4));
-      out.jet.top.push(round(column.positions[1]));
-      // The needle's first material clears the still surface: when, and how fast it rises then.
-      if (out.jet.startTime === null && column.heightAt(0) > 0) {
+      out.jet.top.push(round(column.topHeight()));
+      // The column's first water clears the still surface (src/slenderJet.js's top node): when, and how fast it rises then.
+      if (out.jet.startTime === null && column.solver.count > 0 && column.topHeight() > 0) {
         out.jet.startTime = round(time);
-        out.jet.tipSpeed = round(column.evaluate(0, {}).vy, 4);
+        out.jet.tipSpeed = round(column.solver.velocityY[0], 4);
       }
     }
   }

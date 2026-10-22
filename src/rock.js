@@ -396,6 +396,7 @@ const PLATE_WATER = { slam: 4 / 3, wetted: 0.1, edge: 1.0, munkDepth: 1 };
 // thaws `airThaw` as fast in air as in water (the water carries its heat to it some fifteen times faster).
 // Soaking under the water, its constants there are made again once its density has moved by `densityStep` of itself.
 const WET = { drySeconds: 90, settleSeconds: 0.5, airThaw: 1 / 15, densityStep: 0.01 };
+const KNOCK_NOTHING = 1e-9;   // m: a knock that moves a thing less than this, without changing its speed, is nothing (Rock.knock)
 const WHITE = new THREE.Color(1, 1, 1);
 const AIR_DENSITY = 1.2;   // kg/m³ (flyStep's)
 // A throw's aim (aimThrow): the flight times it tries (least, most, step; s), the passes against the air's drag (flown in
@@ -1765,6 +1766,10 @@ export class Rock {
    * touch counted as a skip): it meets the water again as it comes to it.
    */
   knock(dvx, dvy, dvz, dx, dy, dz) {
+    // A knock of nothing leaves it as it is: a floater held in a hole or a pool is pushed back to its room (src/ice.js
+    // contain, src/pool.js holdInPool), lands on it within rounding, and is then pushed back by that rounding, by
+    // 1e-16 m, every step after; such a knock would otherwise wake it (below) so that it never rests.
+    if (dvx === 0 && dvy === 0 && dvz === 0 && Math.abs(dx) + Math.abs(dy) + Math.abs(dz) < KNOCK_NOTHING) return;
     if (this.state === 'skim' && (dvx !== 0 || dvy !== 0 || dvz !== 0)) {
       this.state = 'air';
       this.skip.contact = null;
