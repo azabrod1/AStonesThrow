@@ -123,7 +123,11 @@ is remembered on the device (but the view, which opens on the shore):
   under a light snow and all over under a heavy one, except on the wet sand
   by the water and where a splash's drops come down. In its freezing air a
   frozen pizza thaws only in the water and wet things barely dry. A
-  blizzard is fine snow driven by a gale.
+  blizzard is fine snow driven by a gale. The seven are one list of cards,
+  as the Water page's. Each choice's picture (`assets/weather/thumbs/`) is a
+  harness frame shrunk to 160×90: `--weather=name --throws=none --times=2
+  --seed=1 --w=320 --h=180 --orbit=120:15:2:0:0:2`, which looks along the
+  beach so the sand, the water and the haze all show.
 - Wind: Calm (the default, a still day), Breeze, Windy or Gale. A gale
   raises waves a third of a metre high out to the horizon, white-capped,
   with spray off the crests and foam in streaks along the wind; the stones
@@ -1050,7 +1054,7 @@ farther out, so it rises into the view rather than filling its corner.
   reachable by scrolling and its Pool and Murky taking, the
   Time of day page's slider spans it and, tapped at its left end, loads the
   first hour, and a lone photograph's page hides it, and the Weather page's
-  choices, rain's and snow's in two rows, fit and set the weather; it saves each screen to
+  choices, one list of cards, fit and set the weather; it saves each screen to
   `shots/controls-probe/`. The
   shoot harness and the other probes emulate a desktop browser, which ignores
   the viewport tag, so only this probe sees the page as a phone does.

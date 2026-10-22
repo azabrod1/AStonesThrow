@@ -594,10 +594,8 @@
   }
   .menu-seg button + button { border-left: 1px solid var(--line); }
   .menu-seg button[aria-checked="true"] { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
-  /* One choice over two rows of segments (Weather: the rain's, the snow's). */
-  .menu-seg-rows { display: grid; gap: 6px; }
   .menu-note { margin: 9px 2px 0; font-size: 12.5px; line-height: 1.5; color: var(--muted); }
-  /* A page of pictured choices (Location, Water): a thumbnail, the name and a line on it. */
+  /* A page of pictured choices (Location, Water, Weather): a thumbnail, the name and a line on it. */
   .menu-cards { display: grid; gap: 4px; }
   .menu-card {
     display: flex;
@@ -988,19 +986,14 @@
   <div class="menu-page" data-page="weather" hidden>
     <div class="menu-head"><button type="button" class="menu-back" aria-label="Back"><span aria-hidden="true">&lsaquo;</span></button><h3>Weather</h3></div>
     <div class="menu-field">
-      <div class="menu-field-label" id="weather-label">Sky</div>
-      <div class="menu-seg-rows" id="weather" role="radiogroup" aria-labelledby="weather-label" aria-describedby="weather-note">
-        <div class="menu-seg">
-          <button type="button" role="radio" data-value="clear">Clear</button>
-          <button type="button" role="radio" data-value="light-rain">Light rain</button>
-          <button type="button" role="radio" data-value="heavy-rain">Heavy rain</button>
-          <button type="button" role="radio" data-value="storm">Storm</button>
-        </div>
-        <div class="menu-seg">
-          <button type="button" role="radio" data-value="light-snow">Light snow</button>
-          <button type="button" role="radio" data-value="heavy-snow">Heavy snow</button>
-          <button type="button" role="radio" data-value="blizzard">Blizzard</button>
-        </div>
+      <div class="menu-cards" id="weather" role="radiogroup" aria-label="Weather" aria-describedby="weather-note">
+        <button type="button" class="menu-card" role="radio" data-value="clear"><img src="assets/weather/thumbs/clear.jpg" alt="" width="80" height="45"><span><b>Clear</b><small>Sun, or the hour’s own sky</small></span></button>
+        <button type="button" class="menu-card" role="radio" data-value="light-rain"><img src="assets/weather/thumbs/light-rain.jpg" alt="" width="80" height="45"><span><b>Light rain</b><small>A bright overcast, rings on the water</small></span></button>
+        <button type="button" class="menu-card" role="radio" data-value="heavy-rain"><img src="assets/weather/thumbs/heavy-rain.jpg" alt="" width="80" height="45"><span><b>Heavy rain</b><small>A downpour, the far bank lost</small></span></button>
+        <button type="button" class="menu-card" role="radio" data-value="storm"><img src="assets/weather/thumbs/storm.jpg" alt="" width="80" height="45"><span><b>Storm</b><small>Lightning, and the wind up to a gale</small></span></button>
+        <button type="button" class="menu-card" role="radio" data-value="light-snow"><img src="assets/weather/thumbs/light-snow.jpg" alt="" width="80" height="45"><span><b>Light snow</b><small>Drifting flakes, a dusting on the shore</small></span></button>
+        <button type="button" class="menu-card" role="radio" data-value="heavy-snow"><img src="assets/weather/thumbs/heavy-snow.jpg" alt="" width="80" height="45"><span><b>Heavy snow</b><small>Thick flakes, the shore white</small></span></button>
+        <button type="button" class="menu-card" role="radio" data-value="blizzard"><img src="assets/weather/thumbs/blizzard.jpg" alt="" width="80" height="45"><span><b>Blizzard</b><small>Snow driven sideways by a gale</small></span></button>
       </div>
       <div class="menu-note" id="weather-note" aria-live="polite"></div>
     </div>
