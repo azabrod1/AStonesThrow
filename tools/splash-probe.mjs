@@ -295,16 +295,16 @@ for (const radius of stoneRadii) {
   const bySource = ['spray', 'crown', 'fan', 'jet', 'landing', 'other'].filter((name) => result.sources[name]).map((name) => `${name} ${result.sources[name]} (to ${millimetres(result.largest[name])} mm)`).join(', ');
   console.log(`  droplets: ${total} spawned: ${bySource}; ${result.bigDrops} of 4 mm and more; at most ${result.peakAlive} alive; ${result.landingCrowns} landing crowns`);
   const cavity = result.record.splats[0];
-  // The cavity's foam: the stamps as wide as the stone and more (the jet's base's boil included), from when the hole closes.
+  // The cavity's foam: the hole's air where it closed and the jet base's boil (each stamp names its source, src/splash.js stampFoamPatch), from when the hole closes.
   const foamFrom = result.foamFrom ?? jet.start ?? 0;
-  const cavityFoam = result.record.foam.filter((stamp) => stamp.radius >= 0.55 * radius && stamp.time >= foamFrom - 1e-9 && stamp.time < foamFrom + 3);
+  const cavityFoam = result.record.foam.filter((stamp) => stamp.source === 'closure' || stamp.source === 'base');
   const widest = cavityFoam.reduce((best, stamp) => Math.max(best, stamp.radius), 0);
   const foamAmount = cavityFoam.reduce((sum, stamp) => sum + stamp.amount, 0);
   const foamEnd = cavityFoam.reduce((last, stamp) => Math.max(last, stamp.time), 0);
   console.log(`  water: cavity σ ${millimetres(cavity.radius)} mm, depth ${millimetres(-cavity.height)} mm, ${cavity.velocity.toFixed(2)} m/s; its foam ${cavityFoam.length} stamps from ${milliseconds(foamFrom)} to ${milliseconds(foamEnd)} ms, to σ ${millimetres(widest)} mm, amount ${foamAmount.toFixed(2)} in all; ${result.record.splats.length} splats, ${result.record.foam.length} foam stamps, ${result.specks} foam specks`);
-  // The landing drops' fizz: the small boils where the crown's and the jet's drops come down (narrower than 0.55 R; a
-  // surfacing bubble's is 12 mm), and how much of it lands in the busiest quarter second, which is what whitens a ring.
-  const landingFoam = result.record.foam.filter((stamp) => stamp.radius < 0.55 * radius && Math.abs(stamp.radius - 0.012) > 1e-9);
+  // The landing drops' fizz: the small boils where the crown's and the jet's drops come down, and how much of it lands
+  // in the busiest quarter second, which is what whitens a ring.
+  const landingFoam = result.record.foam.filter((stamp) => stamp.source === 'landing');
   const landingAmount = landingFoam.reduce((sum, stamp) => sum + stamp.amount, 0);
   let busiest = 0;
   for (const stamp of landingFoam) busiest = Math.max(busiest, landingFoam.filter((other) => other.time >= stamp.time && other.time < stamp.time + 0.25).reduce((sum, other) => sum + other.amount, 0));

@@ -1168,7 +1168,7 @@ export class SplashSystem {
     const middleX = 0.5 * (startX + endX), middleZ = 0.5 * (startZ + endZ);
     this.stampFoamPatch(water, foamRandom(middleX, middleZ, this.time), {
       x: middleX, z: middleZ, radius: SKIM_CHURN.radius * radius, amount: Math.min(SKIM_CHURN.amount * strength, FOAM_AMOUNT_CAP),
-      reach: 0.6, radii: [0.4, 0.8], lifetime: SKIM_CHURN.lifetime, boil: true,
+      reach: 0.6, radii: [0.4, 0.8], lifetime: SKIM_CHURN.lifetime, boil: true, source: 'skim',
     });
   }
 
@@ -1214,7 +1214,7 @@ export class SplashSystem {
     const sizeFactor = radius / REFERENCE_RADIUS;
     const random = foamRandom(x, z, foamTime);
     const span = foamSpan ?? FOAM_SPREAD * Math.sqrt(radius / GRAVITY);
-    this.stampFoamPatch(water, random, { x, z, radius: 1.1 * radius, amount: Math.min(BOIL_AMOUNT * boilScale(sizeFactor) * strength, FOAM_AMOUNT_CAP), reach: 0.8, radii: [0.3, 0.6], lifetime: BOIL_LIFETIME, boil: true, time: foamTime, span });
+    this.stampFoamPatch(water, random, { x, z, radius: 1.1 * radius, amount: Math.min(BOIL_AMOUNT * boilScale(sizeFactor) * strength, FOAM_AMOUNT_CAP), reach: 0.8, radii: [0.3, 0.6], lifetime: BOIL_LIFETIME, boil: true, time: foamTime, span, source: 'closure' });
   }
 
   /**
@@ -1258,7 +1258,7 @@ export class SplashSystem {
     const random = foamRandom(x, z, this.time);
     this.stampFoamPatch(water, random, {
       x, z, radius: 1.2 * radius, amount: Math.min(RIPPLE.foam * speed, FOAM_AMOUNT_CAP), reach: 1.0, radii: [0.3, 0.6],
-      lifetime: BOIL_LIFETIME, boil: true, time: this.time, span: FOAM_SPREAD * Math.sqrt(radius / GRAVITY),
+      lifetime: BOIL_LIFETIME, boil: true, time: this.time, span: FOAM_SPREAD * Math.sqrt(radius / GRAVITY), source: 'ripple',
     });
   }
 
@@ -1394,7 +1394,7 @@ export class SplashSystem {
    */
   startBase(base, water) {
     water.addSplat({ x: base.x, z: base.z, radius: base.radius * 0.6, height: 0.06 * base.radius, velocity: 0.05 * base.speed });
-    this.stampFoamPatch(water, foamRandom(base.x, base.z, base.time), { x: base.x, z: base.z, radius: base.radius, amount: Math.min(JET_BASE_BOIL * Math.sqrt(base.radius / REFERENCE_RADIUS), FOAM_AMOUNT_CAP), reach: 1.0, radii: [0.3, 0.6], lifetime: BOIL_LIFETIME, boil: true });
+    this.stampFoamPatch(water, foamRandom(base.x, base.z, base.time), { x: base.x, z: base.z, radius: base.radius, amount: Math.min(JET_BASE_BOIL * Math.sqrt(base.radius / REFERENCE_RADIUS), FOAM_AMOUNT_CAP), reach: 1.0, radii: [0.3, 0.6], lifetime: BOIL_LIFETIME, boil: true, source: 'base' });
     water.addFoamFlow?.({ x: base.x, z: base.z, radius: CLOSURE_FLOW * base.radius, decay: FLOW_DECAY * Math.sqrt(base.radius / GRAVITY) });
   }
 
@@ -1425,7 +1425,7 @@ export class SplashSystem {
    */
   fallBackFoam(column, foam, water) {
     const random = foamRandom(foam.x, foam.z, this.time);
-    this.stampFoamPatch(water, random, { x: foam.x, z: foam.z, radius: foam.radius, amount: Math.min(foam.amount, FALLBACK_BOIL_CAP), reach: FALLBACK_REACH, radii: [0.3, 0.6], lifetime: BOIL_LIFETIME, boil: true });
+    this.stampFoamPatch(water, random, { x: foam.x, z: foam.z, radius: foam.radius, amount: Math.min(foam.amount, FALLBACK_BOIL_CAP), reach: FALLBACK_REACH, radii: [0.3, 0.6], lifetime: BOIL_LIFETIME, boil: true, source: 'fallBack' });
     water.addFoamFlow?.({ x: foam.x, z: foam.z, radius: FALLBACK_FLOW * column.radius, decay: FLOW_DECAY * Math.sqrt(column.radius / GRAVITY) });
   }
 
@@ -1438,16 +1438,17 @@ export class SplashSystem {
    * a long span gets one more sub-stamp per FOAM_STAMP_SPACING, the amount
    * shared among them all, so the foam arrives as the air does.
    */
-  stampFoamPatch(water, random, { x, z, radius, amount, reach, radii, lifetime, boil = false, time = this.time, span = 0 }) {
+  stampFoamPatch(water, random, { x, z, radius, amount, reach, radii, lifetime, boil = false, time = this.time, span = 0, source }) {
     const pieces = 3 + Math.floor(random() * 3);
     const count = pieces + Math.floor(span / FOAM_STAMP_SPACING);
     const share = pieces / count;
     for (let piece = 0; piece < count; piece++) {
       const angle = random() * Math.PI * 2;
       const distance = reach * radius * Math.sqrt(random());
+      // `source` names the stamper for the probes' accounting (tools/splash-probe.mjs); the water ignores it.
       const foam = {
         x: x + Math.cos(angle) * distance, z: z + Math.sin(angle) * distance,
-        radius: radius * (radii[0] + (radii[1] - radii[0]) * random()), amount: amount * share * (0.4 + 0.6 * random()), lifetime, boil,
+        radius: radius * (radii[0] + (radii[1] - radii[0]) * random()), amount: amount * share * (0.4 + 0.6 * random()), lifetime, boil, source,
       };
       const at = time + span * piece / (count - 1);
       if (at > this.time) this.foamStamps.push({ time: at, foam }); else water.addFoam(foam);
@@ -1618,7 +1619,7 @@ export class SplashSystem {
         landingCrowns++;
       }
       if (hit.radius > 0.004) {
-        water.addFoam({ x: hit.x, z: hit.z, radius: hit.radius * 3, amount: LANDING_FOAM * strength, lifetime: LANDING_FOAM_LIFETIME, boil: true });
+        water.addFoam({ x: hit.x, z: hit.z, radius: hit.radius * 3, amount: LANDING_FOAM * strength, lifetime: LANDING_FOAM_LIFETIME, boil: true, source: 'landing' });
         const sprayCount = crowned ? 0 : Math.random() < LANDING_KICK_CHANCE ? 1 + Math.floor(Math.random() * LANDING_KICK_MOST) : 0;
         for (let s = 0; s < sprayCount; s++) {
           const angle = Math.random() * Math.PI * 2;
@@ -1650,7 +1651,7 @@ export class SplashSystem {
       const y = this.bubblePositions[p + 1] + this.bubbleVelocities[p + 1] * dt;
       const z = this.bubblePositions[p + 2] + (this.bubbleVelocities[p + 2] - wobble) * dt;
       if (y >= -0.002) {
-        if (Math.random() < 0.3) water.addFoam({ x, z, radius: 0.012, amount: BUBBLE_FOAM, lifetime: BOIL_LIFETIME, boil: true });
+        if (Math.random() < 0.3) water.addFoam({ x, z, radius: 0.012, amount: BUBBLE_FOAM, lifetime: BOIL_LIFETIME, boil: true, source: 'bubble' });
         // A surfacing bubble floats for a while as a speck its own size (2 to 4 mm across).
         this.foamSpecks.spawn(x, z, randomRange(-0.004, 0.004), randomRange(-0.004, 0.004), this.time, THREE.MathUtils.clamp(2 * size, 0.002, 0.004));
         this.removeBubble(i);
