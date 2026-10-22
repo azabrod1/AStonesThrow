@@ -671,7 +671,9 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   // The ice over the water (src/ice.js), off until the Ice setting freezes it (applyIce); its uniforms join the
   // water's, the rain's wet its too.
   const ice = new IceSheet({ domainMin: water.domainMin, domainSize: water.domainSize });
-  ice.uniforms.uIceWet = wetDeck;
+  // The rain's wet on the ice; in freezing air (snow's) none: no film of water stands on ice below freezing.
+  const wetIce = { value: 0 };
+  ice.uniforms.uIceWet = wetIce;
   // The rings that cross the whole pond: the splash hands them its ring
   // sources through the solver it is given (water.rings), and the surface,
   // the floor and the foam specks draw them.
@@ -1130,6 +1132,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     environment.setWeather(weather);
     if (!weather.lightning) environment.setFlash(1);
     wetDeck.value = weather.wet;
+    wetIce.value = weather.air?.freezing ? 0 : weather.wet;
     snowCover.value = weather.snowCover ?? 0;
     Object.assign(air, weather.air ?? MILD_AIR);
     setAir(air);
