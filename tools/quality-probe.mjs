@@ -369,7 +369,10 @@ const kept = await page.evaluate(() => {
   for (let index = 0; index < resting; index++) { stones.push(throwOne()); pond.advance(0.3); }
   pond.advance(5);
   const settled = stones.filter((stone) => stone.state === 'rest').length;
-  pond.advance(41);   // past the 40 s that once took a stone at rest on the bed
+  // Past the 40 s that once took a stone at rest on the bed: the stones are all that is asked of these seconds, so the
+  // pool's waves are stilled first (the solver asleep, src/spectralWater.js sleep), as they would be well before then.
+  pond.water.sleep();
+  pond.advance(41);
   const result = {
     resting, settled,
     keptAfter: stones.filter((stone) => pond.rocks.includes(stone)).length,
