@@ -425,7 +425,10 @@ to skip.
 bursts within a second (0.01 to 3 s, against 0.3 to 30 s on sea water, where
 salt keeps bubbles from merging: Anguelova & Huq 2017), so a stone leaves no
 raft. Where its hole closes, its air comes up as a boil: big bubbles,
-popping as they surface (the boil's lifetime τ is 0.45 s); the jet rises
+popping as they surface (the boil's lifetime τ is 0.45 s), arriving over
+the time the pinched-off air takes to rise from the pinch depth (about
+0.7 s for a 6 cm stone, up to 2.5 s for a rock), so at any moment only
+the bubbles just arrived show, a fizz rather than a lump; the jet rises
 from a boil of its own and leaves a fainter one where it falls back, and
 each big drop that lands leaves a speck of boil. (The map keeps a second,
 longer-lived kind, the raft of small bubbles that sea foam is; the gale's

@@ -76,8 +76,12 @@
 // two kinds (src/spectralWater.js), a boil, big bubbles, dense and popping
 // within a second (BOIL_LIFETIME), and a raft, small bubbles lasting
 // seconds, which is sea foam and the gale's whitecaps' (src/galeWaves.js);
-// a stone stamps only boils. Where the hole closes its air comes up over
-// FOAM_SPREAD·sqrt(R/g) as a boil over about the mouth; the jet rises from
+// a stone stamps only boils. Where the hole closes its air comes up as a
+// boil over about the mouth, not at once but over the time the pinched-off
+// air takes to rise from the pinch depth (BUBBLE_RISE_SPEED, at most
+// FOAM_RISE_CAP: about 0.7 s for a 6 cm stone, 2.5 s for a rock), a
+// sub-stamp every FOAM_STAMP_SPACING sharing the amount, so at any moment
+// only the bubbles just arrived show; the jet rises from
 // a boil of its own, and where it falls back it stamps a fainter one
 // (fallBackFoam: src/jet.js meets the water through columnWater, which
 // hands its foam to the splash). Each is a patch of three to five sub-stamps
@@ -278,14 +282,22 @@ const BUBBLE_CAP = 800;               // ...at most (a 16 cm stone wants 780)
 // (stampFoamPatch). The amounts are small because the water shader whitens
 // about half the water at a map value of 0.1 and nearly all of it at 0.5
 // (FOAM_PATTERN in src/shaders/scene.js), and a patch's sub-stamps overlap:
-// a sub-stamp's peak of 0.1 already reads as a mottled patch. The map under
-// a 3 cm stone's boil peaks near 0.17, a patchy fizz; under a 15 cm rock's
-// near 0.33, a churn of bubbles over dark water, never a white disc.
-const BOIL_AMOUNT = 0.09;             // a 3 cm stone's boil: its sub-stamps' peak, scaling as R / 3 cm (its air as R³, the mouth as R²) and the cavity splat's strength...
+// a sub-stamp's peak of 0.1 already reads as a mottled patch. The hole's air
+// does not come up at once: pinched off at the pinch depth it rises as
+// bubbles at BUBBLE_RISE_SPEED, so its boil arrives over that rise (0.7 s
+// for a 3 cm stone, FOAM_RISE_CAP for a rock), a sub-stamp every
+// FOAM_STAMP_SPACING sharing the amount, and at any moment only the bubbles
+// just arrived show, each bursting over BOIL_LIFETIME: a 3 cm stone's boil
+// is a faint fizz over about its mouth, a 15 cm rock's a mottled churn of
+// bubbles over dark water for two or three seconds, never a white disc.
+const BOIL_AMOUNT = 0.07;             // a 3 cm stone's boil: its sub-stamps' peaks in all, scaling as R / 3 cm (its air as R³, the mouth as R²) and the cavity splat's strength...
 const BOIL_FULL_SIZE = 2.7;           // ...up to this many times 3 cm (the 16 cm stone), then as the square root of the size beyond it...
 const FOAM_AMOUNT_CAP = 0.8;          // ...at most
 const BOIL_LIFETIME = 0.45;           // τ of a boil (s): fresh water's bubbles burst as they come up
-const FOAM_SPREAD = 0.6;              // the hole's foam comes up over this many sqrt(R/g) from its closure
+const BUBBLE_RISE_SPEED = 0.25;       // m/s: the pinched-off air rises as bubbles of millimetres to centimetres, this fast...
+const FOAM_RISE_CAP = 2.5;            // ...so the hole's boil arrives over its pinch depth at that speed, at most this long (s): a big stone's bubbles are bigger and faster
+const FOAM_STAMP_SPACING = 0.25;      // a patch spread over a span gets a sub-stamp every this many seconds, the amount shared among them
+const FOAM_SPREAD = 0.6;              // a ripple's or a knock's boil comes up over this many sqrt(R/g)
 const JET_BASE_BOIL = 0.05;           // the boil where the jet rises, its sub-stamps' peak, scaling as sqrt(R / 3 cm)
 const BUBBLE_FOAM = 0.015;            // a fizz where a bubble surfaces (a boil, popping as fast)
 const LANDING_FOAM = 0.012;           // a landing drop's foam: a boil of this peak times the drop's strength (up to 3), over three of its radii...
@@ -1024,15 +1036,17 @@ export class SplashSystem {
     const sinkSpeed = Math.max(entrySpeed * Math.cos(entryAngle), 1.0);
     const wakeStrengths = [smoothstep(0.05, 0.25, horizontalFraction) * 0.8, smoothstep(0.3, 0.5, horizontalFraction) * 0.6];
     const impulseScale = Math.min(OBLIQUE_IMPULSE / (1 + wakeStrengths[0] + wakeStrengths[1]), 1);
-    // Their foam is the air the hole held, which surfaces where it closes, so it comes then.
+    // Their foam is the air the hole held, which surfaces where it closes: from the bowl's collapse on, over the
+    // time the pinched-off air takes to rise from the pinch depth (the constants' note).
     const foamTime = this.time + cavity.closeTime;
-    this.stampCavity({ x, z, radius, speed: entrySpeed, strength: impulseScale, travelX, travelZ, foamTime }, water);
+    const foamSpan = Math.min(cavity.pinchDepth / BUBBLE_RISE_SPEED, FOAM_RISE_CAP);
+    this.stampCavity({ x, z, radius, speed: entrySpeed, strength: impulseScale, travelX, travelZ, foamTime, foamSpan }, water);
     wakeStrengths.forEach((strength, index) => {
       const step = index + 1;
       if (strength > 0) {
         this.wakes.push({
           x: x + horizontal.x * wakeStep * step, z: z + horizontal.y * wakeStep * step, start: this.time + (step * radius) / sinkSpeed,
-          radius, speed: entrySpeed, strength: strength * impulseScale, travelX, travelZ, foamTime,
+          radius, speed: entrySpeed, strength: strength * impulseScale, travelX, travelZ, foamTime, foamSpan,
         });
       }
     });
@@ -1186,15 +1200,16 @@ export class SplashSystem {
    * probes' stand-in), at once, which cannot hold a splat back. The foam
    * comes from foamTime (the cavity's closure), or now.
    */
-  stampCavity({ x, z, radius, speed, strength, travelX = 0, travelZ = 0, foamTime = this.time }, water) {
+  stampCavity({ x, z, radius, speed, strength, travelX = 0, travelZ = 0, foamTime = this.time, foamSpan }, water) {
     this.launchRing({ x, z, sigma: RING.sigma * radius, velocity: -RING.speed * speed * strength, travelX, travelZ, time: this.time + RING.delay * Math.sqrt(radius / GRAVITY) }, water);
-    // The foam comes up where the hole closed over FOAM_SPREAD·sqrt(R/g): a
+    // The foam comes up where the hole closed, from foamTime over foamSpan
+    // (the bubbles' rise from the pinch depth; a wake's is its cavity's): a
     // boil over about the mouth, within about one and a half stone radii of
     // the centre (the flows then carry it outward), and nothing after it
     // (fresh water: the constants' note).
     const sizeFactor = radius / REFERENCE_RADIUS;
     const random = foamRandom(x, z, foamTime);
-    const span = FOAM_SPREAD * Math.sqrt(radius / GRAVITY);
+    const span = foamSpan ?? FOAM_SPREAD * Math.sqrt(radius / GRAVITY);
     this.stampFoamPatch(water, random, { x, z, radius: 1.1 * radius, amount: Math.min(BOIL_AMOUNT * boilScale(sizeFactor) * strength, FOAM_AMOUNT_CAP), reach: 0.8, radii: [0.3, 0.6], lifetime: BOIL_LIFETIME, boil: true, time: foamTime, span });
   }
 
@@ -1415,16 +1430,20 @@ export class SplashSystem {
    * of radius times radii[0] to radii[1], at random offsets up to
    * reach·radius from (x, z), peaks of 0.4 to 1 times `amount`, drawn from
    * `random`; a boil or a raft of the given lifetime. They come at `time`
-   * (now if it has passed), the later ones spread over `span` seconds after.
+   * (now if it has passed), the later ones spread over `span` seconds after:
+   * a long span gets one more sub-stamp per FOAM_STAMP_SPACING, the amount
+   * shared among them all, so the foam arrives as the air does.
    */
   stampFoamPatch(water, random, { x, z, radius, amount, reach, radii, lifetime, boil = false, time = this.time, span = 0 }) {
-    const count = 3 + Math.floor(random() * 3);
+    const pieces = 3 + Math.floor(random() * 3);
+    const count = pieces + Math.floor(span / FOAM_STAMP_SPACING);
+    const share = pieces / count;
     for (let piece = 0; piece < count; piece++) {
       const angle = random() * Math.PI * 2;
       const distance = reach * radius * Math.sqrt(random());
       const foam = {
         x: x + Math.cos(angle) * distance, z: z + Math.sin(angle) * distance,
-        radius: radius * (radii[0] + (radii[1] - radii[0]) * random()), amount: amount * (0.4 + 0.6 * random()), lifetime, boil,
+        radius: radius * (radii[0] + (radii[1] - radii[0]) * random()), amount: amount * share * (0.4 + 0.6 * random()), lifetime, boil,
       };
       const at = time + span * piece / (count - 1);
       if (at > this.time) this.foamStamps.push({ time: at, foam }); else water.addFoam(foam);
