@@ -468,10 +468,10 @@ scatters more light; as it drains, the water shows through the bubble films.
 Those films use the existing bubble cells and fade to their measured mean
 opacity at a distance, adding no texture or noise layer. Close up (the
 shoot harness, `--seed=1`), a 6 cm stone thrown normally leaves a broken,
-partly see-through fizz over about its hole's mouth at 0.4 to 0.7 s and a
-few foam specks by 1 s; a 30 cm rock a churn of bubbles over dark water
-round its jet at 0.5 s, lace the flows have carried into arcs by 1.5 s and
-clear water by 2.5.
+partly see-through fizz over about its hole's mouth at 0.4 to 1 s and a
+few foam specks after; a 30 cm rock a churn of bubbles over dark water
+round its jet at 0.5 s, a few patches at 1 s, specks at 1.5 s and clear
+water by 2.5.
 The threshold's edge is one pixel wide at any distance (from the pattern's
 exact gradient and the pixel's footprint on the water), and each layer fades
 into an even white of the right strength before its cells shrink to a couple

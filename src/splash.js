@@ -91,10 +91,12 @@
 // fizz, a faint boil each, and a landing drop leaves a speck of boil of its
 // own. A thrown stone leaves little white and none for long (the constants'
 // notes say how the water shader reads the amounts): a 6 cm stone (R = 3 cm)
-// a patchy fizz over about its hole's mouth, gone but for a few foam specks
-// by about 1 s; a 30 cm rock a churn of bubbles over dark water for about
-// half a second after its hole closes, never a white disc, lace by 1.5 s
-// and clear water by 2.5. Two surface flows per stone carry it
+// a faint fizz over about its hole's mouth at 0.4 to 1 s, then a few foam
+// specks; a 16 cm stone a grey churn at its jet's foot to about 1 s; a 30 cm
+// rock a churn of bubbles over dark water for about half a second after its
+// hole closes, never a white disc, a few patches at 1 s, specks at 1.5 s
+// and clear water by 2.5 (never lace: FOAM_PATTERN in src/shaders/scene.js
+// draws a boil from its bubble layers alone). Two surface flows per stone carry it
 // (addFoamFlow): the jet's base welling up where the hole closed
 // (CLOSURE_FLOW) and the mound spreading where the jet falls back
 // (FALLBACK_FLOW), each sweeping the foam out of a disc into a ring and arcs
@@ -299,7 +301,7 @@ const BUBBLE_RISE_SPEED = 0.25;       // m/s: the pinched-off air rises as bubbl
 const FOAM_RISE_CAP = 2.5;            // ...so the hole's boil arrives over its pinch depth at that speed, at most this long (s): a big stone's bubbles are bigger and faster
 const FOAM_STAMP_SPACING = 0.25;      // a patch spread over a span gets a sub-stamp every this many seconds, the amount shared among them
 const FOAM_SPREAD = 0.6;              // a ripple's or a knock's boil comes up over this many sqrt(R/g)
-const JET_BASE_BOIL = 0.05;           // the boil where the jet rises, its sub-stamps' peak, scaling as sqrt(R / 3 cm)
+const JET_BASE_BOIL = 0.03;           // the boil where the jet rises, its sub-stamps' peak, scaling as sqrt(R / 3 cm): a grey churn at the centre, never a white disc
 const BUBBLE_FOAM = 0.015;            // a fizz where a bubble surfaces (a boil, popping as fast)
 const LANDING_FOAM = 0.006;           // a landing drop's foam: a boil of this peak times the drop's strength (up to 3), over three of its radii...
 const LANDING_FOAM_LIFETIME = 0.3;    // ...of big bubbles, bursting as they surface (s): a rock's crown rains hundreds of drops back in a ring within half a second, and the ring must not whiten
