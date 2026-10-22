@@ -42,6 +42,8 @@
 //   - the ring's upload ranges cover what was written since the last commit,
 //     across its end too, and it starts over at slot 0 once everything has
 //     landed;
+//   - a smaller preset mid-splash takes no sprite out of the air, and its
+//     ring follows once they have landed;
 //   - a change of wind moves no sprite already in the air, and one born in
 //     a gale drifts with it.
 //
@@ -388,6 +390,26 @@ for (const options of [{ radius: 0.03, power: 'normal' }, { radius: 0.15, power:
   check(JSON.stringify(whole) === '[[0,8]]', `the ring's upload of more than it holds is ${JSON.stringify(whole)}`);
   check(JSON.stringify(restart) === '[[0,2]]' && spray.geometry.instanceCount === 2, `the ring did not start over at slot 0 once everything had landed: ${JSON.stringify(restart)}, ${spray.geometry.instanceCount} drawn`);
   check(SPRAY_CAPACITY >= QUALITY.high.spray.ring, `the ring's ${SPRAY_CAPACITY} slots are fewer than High's ${QUALITY.high.spray.ring}`);
+}
+
+// ---- a change of preset mid-splash ----------------------------------------
+
+{
+  // High to Low with spray in the air: no sprite leaves the air; the smaller ring once it has all landed.
+  const spray = new SpraySystem({ capacity: 16 });
+  spray.setBudget({ ring: 16, share: 1 });
+  for (let index = 0; index < 12; index++) spray.write(0, 0.5, 0, 0, 1, 0, 0.0003, 1, index * 0.001);
+  spray.commit(0.012);
+  const flyingBefore = spray.liveCount(0.05);
+  spray.setBudget({ ring: 4, share: 0.2 });
+  spray.commit(0.05);
+  const flyingAfter = spray.liveCount(0.05), drawnAfter = spray.geometry.instanceCount, ringWhileFlying = spray.ring;
+  const landed = spray.lastDeath + 0.01;
+  spray.write(0, 0.5, 0, 0, 1, 0, 0.0003, 1, landed);
+  spray.commit(landed);
+  console.log(`\na change of preset mid-splash (16 slots to 4): ${flyingBefore} sprites in the air before, ${flyingAfter} after (${drawnAfter} drawn, the ring ${ringWhileFlying} while they fly); once they had landed, the ring ${spray.ring}, the next written at slot ${spray.next - 1}`);
+  check(flyingAfter === flyingBefore && drawnAfter === 12 && ringWhileFlying === 16, `a smaller preset mid-splash took sprites out of the air (${flyingBefore} before, ${flyingAfter} after, ${drawnAfter} drawn)`);
+  check(spray.ring === 4 && spray.next === 1 && spray.geometry.instanceCount === 1, `the smaller ring did not follow once the spray had landed (ring ${spray.ring}, next ${spray.next}, drawn ${spray.geometry.instanceCount})`);
 }
 
 // ---- the wind ------------------------------------------------------------

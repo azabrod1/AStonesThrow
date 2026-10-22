@@ -57,7 +57,9 @@
 // CPU about as many a frame (a few thousand on High), whatever the throw.
 //
 // The sprites live in a ring of SPRAY_CAPACITY slots allocated once; the
-// preset sets how much of it is used (setBudget's ring), the oldest slot is
+// preset sets how much of it is used (setBudget's ring: a smaller one once
+// the spray in the air has landed, so a change of preset takes no sprite out
+// of the air), the oldest slot is
 // reused when it is full, only the slots written since the last frame are
 // uploaded, and once every sprite has landed the next is written at slot 0
 // again, so the draw covers only what was thrown since the pond was last
@@ -326,7 +328,8 @@ export class SpraySystem {
    */
   constructor({ capacity = SPRAY_CAPACITY } = {}) {
     this.capacity = capacity;
-    this.ring = capacity;         // the slots in use (setBudget)
+    this.ring = capacity;         // the slots in use...
+    this.budgetRing = capacity;   // ...and the preset's (setBudget), which a smaller ring waits on
     this.share = 1;               // of DENSITY's sprites (setBudget)
     this.next = 0;                // the slot the next sprite takes
     this.used = 0;                // slots written since the ring last started over: the draw
@@ -368,13 +371,30 @@ export class SpraySystem {
     this.mesh.material = depth;
   }
 
-  /** The preset's spray (QUALITY.spray, src/main.js): the ring's slots in use and the share of DENSITY's sprites. */
+  /**
+   * The preset's spray (QUALITY.spray, src/main.js): the ring's slots in use
+   * and the share of DENSITY's sprites. The share holds for the sprites
+   * written from now on, a larger ring at once, and a smaller one once the
+   * spray in the air has landed (the ring is allocated whole, so waiting
+   * costs nothing), so a change of preset mid-splash, as the automatic
+   * quality's after the first splash, takes no sprite out of the air.
+   */
   setBudget({ ring, share }) {
-    this.ring = Math.max(1, Math.min(ring, this.capacity));
     this.share = share;
-    if (this.next >= this.ring) this.next = 0;
-    if (this.used > this.ring) { this.used = this.ring; this.geometry.instanceCount = this.used; }
-    if (this.dirtyStart >= this.ring) { this.dirtyStart = 0; this.dirtyCount = Math.min(this.dirtyCount, this.ring); }
+    this.budgetRing = Math.max(1, Math.min(ring, this.capacity));
+    if (this.budgetRing >= this.ring) this.ring = this.budgetRing;
+    else if (!this.mesh.visible) this.startOver();
+  }
+
+  /** Nothing in the air: the ring starts over at slot 0, at the preset's size. */
+  startOver() {
+    this.ring = this.budgetRing;
+    this.next = 0;
+    this.used = 0;
+    this.dirtyStart = 0;
+    this.dirtyCount = 0;
+    this.geometry.instanceCount = 0;
+    this.box.makeEmpty();
   }
 
   /**
@@ -407,7 +427,7 @@ export class SpraySystem {
       this.recentTime = time;
     }
     const uncrowded = this.density(sizeFactor, radius);
-    const crowding = Math.min((CROWD_RATE * CROWD_SECONDS * this.ring) / Math.max(this.recent + drops * uncrowded, 1), 1);
+    const crowding = Math.min((CROWD_RATE * CROWD_SECONDS * this.budgetRing) / Math.max(this.recent + drops * uncrowded, 1), 1);
     const density = uncrowded * crowding;
     const wanted = drops * density;
     const sprites = Math.floor(wanted) + (random() < wanted - Math.floor(wanted) ? 1 : 0);
@@ -438,13 +458,7 @@ export class SpraySystem {
     const life = landingBound(y, vy, flight);
     if (life <= 0) return;
     // Every sprite since then has landed: start the ring over, so the draw covers only what flies now.
-    if (time >= this.lastDeath && this.used > 0) {
-      this.next = 0;
-      this.used = 0;
-      this.dirtyStart = 0;
-      this.dirtyCount = 0;
-      this.box.makeEmpty();
-    }
+    if (time >= this.lastDeath && (this.used > 0 || this.ring !== this.budgetRing)) this.startOver();
     const slot = this.next;
     if (this.dirtyCount === 0) this.dirtyStart = slot;
     this.dirtyCount = Math.min(this.dirtyCount + 1, this.ring);
