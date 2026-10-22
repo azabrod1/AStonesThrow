@@ -135,6 +135,10 @@
 // throw's stone and seal move these by several per cent
 // (tools/cavity-probe.mjs prints them).
 //
+// A hole in the ice (src/ice.js) is opened as wide as the lip reaches
+// (roundLipReach, then Cavity.lipReach for this cavity's own), so the lip
+// and everything the cavity sends up stand in open water.
+//
 // The mesh: a ring grid (src/fluidMesh.js) of COLUMNS around and, from the
 // axis outward, CAP_ROWS of a flat floor at the bottom (the stone's centre,
 // which sits on it and shows through it, or the closing point once it has
@@ -289,6 +293,24 @@ function growthFor(widest) {
   }
   const blend = (widest - growthWidest[low]) / (growthWidest[high] - growthWidest[low]);
   return GROWTH_LEAST * (GROWTH_MOST / GROWTH_LEAST) ** ((low + blend) / (GROWTH_SAMPLES - 1));
+}
+
+/**
+ * How far a round hole's lip reaches (m) from its mouth's centre at the
+ * widest, for a stone of `radius` going in at `speed` with
+ * `horizontalFraction` of it along the water, at `along` (the cosine to its
+ * direction of travel): its crest at the widest the mouth opens (the surface
+ * slice of buildSlices, a deep seal's), stretched along the throw as
+ * outlineFactor stretches it, and `fall` of the lip's fall outside the
+ * crest. A stone's own hole is lopsided and lobed besides, which
+ * Cavity.lipReach measures. src/ice.js opens a hole in the ice this wide as
+ * the stone breaks through, before the splash has made its cavity, then
+ * fits it to the cavity's own lip.
+ */
+export function roundLipReach(radius, speed, horizontalFraction, along = 0, fall = 0.5) {
+  const froude = Math.max(speed, 1.0) ** 2 / (GRAVITY * radius);
+  const mouthWidest = DEEP_WIDEST + (MOUTH_WIDEST - DEEP_WIDEST) * (froude / WIDTH_FROUDE) ** WIDTH_POWER;
+  return radius * (mouthWidest * (1 + ELONGATION * horizontalFraction * along * along) * (1 + LIP_WIDTH) + fall * LIP_FALL);
 }
 
 /**
@@ -847,6 +869,29 @@ export class Cavity {
     // while the hole closes inside it.
     out.widest = time > this.widestTime ? this.mouthAt(this.widestTime) : mouth;
     out.widestWidth = LIP_WIDTH * out.widest;
+    return out;
+  }
+
+  /**
+   * How far the lip reaches from (x, z) along each azimuth of `cosines` and
+   * `sines` (into `out`, metres) at the most over the hole's life, sampled
+   * `samples` times: its crest at the widest the mouth has been, at that
+   * azimuth's outline (shape), and `fall` of its fall outside the crest,
+   * from the mouth's centre as it moves to the closure. src/ice.js opens the
+   * ice's hole this wide (roundLipReach before the cavity is made).
+   */
+  lipReach(x, z, cosines, sines, out, fall = 0.5, samples = 24) {
+    const outside = fall * LIP_FALL * this.radius;
+    const shapes = cosines.map((cosine, index) => this.shape(cosine, sines[index]));
+    out.fill(0);
+    const lip = {};
+    for (let sample = 0; sample <= samples; sample++) {
+      this.lipAt(this.closeTime * sample / samples, lip);
+      for (let index = 0; index < cosines.length; index++) {
+        const reach = (lip.x - x) * cosines[index] + (lip.z - z) * sines[index] + lip.widest * shapes[index] + lip.widestWidth + outside;
+        if (reach > out[index]) out[index] = reach;
+      }
+    }
     return out;
   }
 
