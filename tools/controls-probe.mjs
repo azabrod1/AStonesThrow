@@ -52,7 +52,9 @@
 //     (a pizza skips); its Water row opens the Water page, whose five pictured choices
 //     can each be scrolled onto the screen and fit their names, whose Pool
 //     puts the rocks in the pool (the View note follows) and whose Murky sets
-//     the pond's clarity, each with the row's value; its Time row opens the
+//     the pond's clarity, each with the row's value; its Ice row opens the
+//     Ice page, whose three choices fit and whose Thin ice freezes the water,
+//     the row and the note following; its Time row opens the
 //     Time page, whose slider spans it (44 points tall on a touch screen)
 //     and, tapped at its left end, loads the place's first hour, the row and
 //     the readout following, while a lone photograph's page hides the slider
@@ -357,7 +359,7 @@ for (const framing of FRAMINGS) {
   await page.waitForTimeout(400);
   const [panel] = await boxes('#settings');
   const rows = await boxes('#settings .menu-tier');
-  check(!!panel && onScreen(panel) && rows.length === 9, `the settings open on the screen with their nine rows (${rows.length})`);
+  check(!!panel && onScreen(panel) && rows.length === 10, `the settings open on the screen with their ten rows (${rows.length})`);
   if (framing.touch) check(rows.every((row) => row.height >= SMALLEST_BUTTON_HEIGHT - 0.5), `every settings row is at least ${SMALLEST_BUTTON_HEIGHT} points tall (smallest ${Math.min(...rows.map((row) => row.height)).toFixed(1)})`);
   const cutValues = await page.evaluate(() => [...document.querySelectorAll('#settings .menu-tier-value')].filter((value) => value.scrollWidth > value.clientWidth + 0.5).map((value) => value.textContent));
   const hinted = await page.evaluate(() => [...document.querySelectorAll('#settings .menu-tier-name small')].filter((hint) => hint.getClientRects().length > 0).length);
@@ -389,6 +391,24 @@ for (const framing of FRAMINGS) {
   check(chosen.clarity === 'murky' && chosen.row === 'Murky', `Murky sets the clarity (${chosen.clarity}) and the row's value ("${chosen.row}")`);
   await page.screenshot({ path: path.join(outputFolder, `${framing.name}-water.png`) });
   await page.evaluate(() => window.__pond.setClarity('lake'));
+  // The Ice page (src/ice.js): its three choices fit, and Thin ice freezes the water, the row and the note following.
+  await press('.menu-page[data-page="water"] .menu-back');
+  await page.waitForTimeout(400);
+  await press('#settings .menu-tier[data-open="ice"]');
+  await page.waitForTimeout(400);
+  const iceChoices = await boxes('#ice [role="radio"]');
+  const iceClipped = await page.evaluate(() => [...document.querySelectorAll('#ice [role="radio"]')].filter((choice) => choice.scrollWidth > choice.clientWidth + 0.5).map((choice) => choice.textContent));
+  check(iceChoices.length === 3 && iceChoices.every(onScreen) && iceClipped.length === 0 && (!framing.touch || iceChoices.every((choice) => choice.height >= SMALLEST_BUTTON_HEIGHT - 0.5)),
+    `the Ice page's three choices are on the screen and fit their names${iceClipped.length ? ` (not: ${iceClipped.join(', ')})` : ''}`);
+  await press('#ice [data-value="thin"]');
+  const frozen = await page.evaluate(() => ({ ice: window.__pond.ice, row: document.querySelector('.menu-tier[data-open="ice"] .menu-tier-value').textContent, note: document.getElementById('ice-note').textContent }));
+  check(frozen.ice === 'thin' && frozen.row === 'Thin ice' && frozen.note.includes('centimetre'), `Thin ice freezes the water (${frozen.ice}), the row reads "${frozen.row}", the note "${frozen.note}"`);
+  await page.screenshot({ path: path.join(outputFolder, `${framing.name}-ice.png`) });
+  await press('#ice [data-value="none"]');
+  await press('.menu-page[data-page="ice"] .menu-back');
+  await page.waitForTimeout(400);
+  await press('#settings .menu-tier[data-open="water"]');
+  await page.waitForTimeout(400);
   // The Object page (src/things.js): its folds and twenty pictured choices; each sets what is thrown, and the strip's slider follows it.
   await press('.menu-page[data-page="water"] .menu-back');
   await page.waitForTimeout(400);

@@ -181,7 +181,7 @@ function bakePattern(renderer) {
   return target;
 }
 
-export function createPondFloor(water, lighting, ambientWaves, { renderer, rings = null }) {
+export function createPondFloor(water, lighting, ambientWaves, { renderer, rings = null, ice = null }) {
   const pattern = bakePattern(renderer);
   const material = new THREE.ShaderMaterial({
     vertexShader: FLOOR_VERTEX,
@@ -203,6 +203,7 @@ export function createPondFloor(water, lighting, ambientWaves, { renderer, rings
       uPattern: { value: pattern.texture },
       ...ambientWaves.uniforms(),
       ...(rings ? rings.uniforms() : {}),
+      ...(ice ? ice.uniforms : {}),   // under the ice the surface focuses nothing (surfaceCurvature)
     },
   });
   material.addEventListener('dispose', () => pattern.dispose());

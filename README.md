@@ -39,7 +39,7 @@ is greyed out for what cannot skip, and choosing such a thing goes back to
 Toss. On a phone in portrait, where the title's line is hidden, a cue over
 the water says to tap it, until the first throw. The menu button at the
 top right opens the settings, laid out as the Moon app's menu is: a list in
-four groups (what is thrown: What to throw; the place: Location, Water and Time of
+four groups (what is thrown: What to throw; the place: Location, Water, Ice and Time of
 day; the conditions: Weather, Wind and Sound; the viewing: View and Quality), each row an icon, its name
 over a line on what it sets and where it stands, and each setting a page of
 its choices (Location and Water as pictures) with a line on each. Each choice
@@ -99,6 +99,18 @@ is remembered on the device (but the view, which opens on the shore):
   it. Behind the waterline, just behind the shore view, a sand beach rises
   into a grassy bank that takes its colour from the sky photo's own land, so
   turned round, the view sees a shore rather than water to the horizon.
+- Ice (`?ice=`): Open water (the default), Thin ice (1 cm) or Thick ice
+  (4 cm), over the lake or the pool (below). What is thrown lands on it,
+  bounces, slides far and rests, knocking into what already lies there; a
+  stone, a brick or a bowling ball goes through thin ice, a light ball, a gem
+  or a pebble does not, and only a big rock or a heavy ball lobbed high goes
+  through thick ice. A break opens
+  a jagged hole with cracks running out from it, and the stone splashes in
+  as into open water, without the crown, whose sheet would stand on ice. The
+  broken ice comes up in the hole as floating shards, the water floods the
+  ice round it and freezes glazed, and a hole left alone for 40 seconds
+  freezes over again in half a minute, its shards frozen in, its new ice
+  thin enough for the next throw to break.
 - Location (the sky photo, `?sky=`): Lakeside (the default), Mesas, Meadow,
   Alpine or Open sky, each a panorama of a place, its land and its sky. The
   photo (about 6 MB) loads while the old sky stays; then the sky, the sun's
@@ -676,6 +688,85 @@ foam is run over the six seconds before, so the sea opens as one that has
 been blowing. The eye keeps 0.45 m clear of the still water either way.
 `tools/gale-probe.mjs` checks the field on the CPU with the GPU's passes.
 
+**Ice** (`src/ice.js`; drawn by the water's shaders, `ICE_COMMON` in
+`src/shaders/scene.js`). The ice adds one piece of physics, whether it
+breaks, and borrows the rest. On it a thing is on ground (`src/rock.js`
+`ground`): it bounces, tumbles or rolls and rests as on the pool's deck, but
+slick (friction 0.1, a stone slowing at 0.12 g, a ball rolling on), so a
+throw slides metres and a hard, flat one tens of metres, out of sight past
+30 m; things on the ice, as on the deck, knock each other along
+(`src/collide.js`). A thing coming down on it strikes a blow m·v²/R (its
+speed down only, so a lob breaks where a flat throw skids; a hollow ball or
+a soft thing spreads its blow over a longer touch), and the ice holds up to
+1.28 MN/m² times its thickness squared (floating ice bears a load as h²),
+that is 128 N for thin ice and 2 kN for thick, times a spread of 20% from
+blow to blow. That strength is not measured: a punch through floating ice
+is local crushing and the plate's inertia, and the constant is set so that
+the table `tools/ice-probe.mjs` prints comes out (a 6 cm stone thrown
+normally strikes thin ice at twice what it holds, thick at an eighth; a
+30 cm rock thick ice at two and a half times), uncertain by a factor of a
+few. A blow over six tenths of what it holds stars the ice with cracks.
+One it does not hold opens a hole, and the thing, slowed by what the break
+took, goes in as into open water (`src/rock.js` breakThrough): the cavity,
+the jet, the bubbles and the foam are the open water's, but no crown or fan
+stands up (`src/splash.js`), and the drops that come down on the ice land
+there as on the deck, wetting it. The hole is as wide as the cavity's lip: opened as a round lip's for
+the throw (`roundLipReach` in `src/cavity.js`), then fitted, in the same
+step, to the cavity the splash made (`Cavity.lipReach`: its crest at the
+widest and half its fall, lopsided and drawn forward as it is), with a
+broken edge of 36 corners beyond it and a bite or two out of it, from the
+hole's own seeded stream. Radial cracks run out from its corners, random
+walks of 0.6 to 1.6 times the sheet's characteristic length (0.54 m for
+thin ice, 1.5 m for thick), with a branch now and then and sometimes an arc
+of ring crack. A thing sliding into a hole falls in; one too wide for a hole
+strikes its edge; a floater that went in by a hole comes up in it and is
+held there. The ice that was in the hole broke into pieces between its
+radial cracks, and across them where a wedge is wide or deep, each a convex
+slab of the ice's thickness, with a chip or two from the crushed middle: as
+many as float in the hole uncrowded (their rims' discs at most 55% of it;
+a 6 cm stone through thin ice makes six or so, 7 to 13 cm across). Once the
+cavity has closed they are let go a little under the water, tilted, each a
+thing (`ice-shard` in `src/things.js`, hidden from the menus; its mesh
+built to its own outline, `src/thingMeshes.js`), so they come up and float
+flat at the sheet's own freeboard by the plate model a pizza floats by,
+bump each other rim to rim (`src/collide.js`), and are held in the hole by
+its edge's reach in each direction. As they go the water the splash threw
+aside comes back over the ice round the hole, out to about one and a half
+times its reach, leaning the way the stone went, and each drop that lands on
+the ice wets a spot; the film freezes over 75 seconds, leaving the ice
+glazed, its frost gone. A hole left alone 40 seconds (nothing gone in by it,
+nothing thrown afloat in it) skins over from its edge inward in 30 seconds:
+new ice, clear and smooth, 4 mm thick a minute after its front passed and
+thinner before, so it holds a pebble but not a stone; a shard it reaches is
+frozen in, painted into the sheet where it lay. (Real ice skins over in
+minutes to hours on a calm, cold night; this is quicker, for the play of
+it.) The sheet is rigid at the pond's scales (bending waves shorter
+than its characteristic length are stiffened by orders of magnitude), so
+the solver runs on under it, seen only in the holes, and carries a stone's
+ring there as in the pool (its waves run under the ice out of sight); no
+gale blows on ice. The holes and cracks are painted into a mask over the
+patch (an RGBA8 texture of 512²: signed distances to the nearest hole's
+edge and crack, how wet, and the signed distance to new ice's front; only
+the rows that change are sent), which the water's own shaders read: where
+it says ice they draw the ice, held flat at its freeboard, and in the
+holes' open water the water, blending them over the pixel at the edge; so
+the ice costs no program of its own, and a shard is drawn as any floater
+is. The ice is a lake's: mostly clear, the water and the bed
+showing through it, a frosted mirror (the sky's cube blurred by its mip
+levels as wide as the frost spreads the reflected ray) with the sun's
+broad glare on it, a rime of frost mottling it, patches of white snow ice
+(more on thick ice), clusters of frozen bubbles; a crack is a bright line,
+its fracture face showing white down through clear ice as wide as the
+sheet's thickness seen along the refracted ray, a dark line in white ice;
+round a hole the ice is wet, and wet ice is darker and a mirror; a hole's
+new ice is clear and glassy, its old edge a faint seam. Under flat ice the light is not focused: no
+caustics on the bed and no shafts in the water but under the holes. From
+below, clear ice lets the sky's window through unrippled and white ice
+glows. A thing landing on ice is heard with the chirp floating ice is known
+for: bending waves run faster the higher they are, so from a blow d metres
+off the high arrives first, falling to the low, a "pew" the longer the
+farther it struck (`src/sound.js`); a break cracks.
+
 **Lightning** (`src/lightning.js`, drawn by `src/sky.js`). In a storm the
 strikes come from the clock, so every run has the same: one in most seven
 seconds, two to four return strokes each, decaying over 45 ms, then an
@@ -752,9 +843,25 @@ farther out, so it rises into the view rather than filling its corner.
 - `npm test` runs `tools/load-asset-test.mjs`, `tools/hdr-test.mjs` (the
   sky's decoder against HDRLoader, bit for bit), `tools/fft-test.mjs`, `tools/wave-probe.mjs`,
   `tools/foam-probe.mjs`, `tools/cavity-probe.mjs`, `tools/ring-probe.mjs`,
-  `tools/rain-probe.mjs`, `tools/gale-probe.mjs`, `tools/skip-probe.mjs` and
-  `tools/thing-probe.mjs`;
+  `tools/rain-probe.mjs`, `tools/gale-probe.mjs`, `tools/skip-probe.mjs`,
+  `tools/thing-probe.mjs` and `tools/ice-probe.mjs`;
   each exits with 1 if a check fails.
+- `node tools/ice-probe.mjs [--list]` throws every thing at thin and thick
+  ice as the app throws it, each way, with the splash on the CPU, and
+  prints what breaks what: each throw's blow against what the ice holds and
+  whether it went through, starred the ice or held (and how far it slid).
+  It checks that the pebble, the tennis ball, the basketball, the duck and
+  the pizza hold on thin ice, that the default stone breaks thin ice and
+  holds on thick and a 30 cm rock breaks thick, that each outcome is the one
+  its blow and its draw say, that whatever held rests on the ice and was
+  never under it, that every hole holds its cavity's lip and the jet's foot
+  at every moment and its cracks lie on the ice, that a stone slides four
+  times as far on ice as on the deck, that a skip skitters, that a stone
+  slid into a hole falls in and a floater that broke through floats in its
+  hole, that a stone slid into one at rest knocks it on with the momentum
+  kept, that a frozen pool keeps everything on its ice or its deck and turns
+  a slide back off its walls, that a seeded throw breaks the same hole and
+  halving the substep changes little, and what a break costs.
 - `node tools/gale-probe.mjs [--wind=x,z]` builds the gale's seed with the
   app's code and runs its evaluation and FFT passes on the CPU: the field is
   real and its packed channels are the fields; the sideways move squeezes
@@ -917,7 +1024,8 @@ farther out, so it rises into the view rather than filling its corner.
   `?time=hour` (`--time=` for the harness) its hour, over the one nearest the
   time of day last chosen (the harness's browser keeps none: the place's
   anchor hour); `?water=clear|lake|pond|murky` (`--water=` for the harness) the
-  water's clarity, `WATER_CLARITIES` in `src/main.js`;
+  water's clarity, `WATER_CLARITIES` in `src/main.js`; `?ice=none|thin|thick`
+  (`--ice=` for the harness) the ice over it, `ICE_THICKNESS` in `src/ice.js`;
   `?weather=clear|light-rain|heavy-rain|storm` (`--weather=` for the harness) the
   weather, `WEATHERS` in `src/main.js`, over the one last chosen on the
   device (a storm brings a gale, unless `?windStrength` says otherwise).
@@ -1071,7 +1179,8 @@ farther out, so it rises into the view rather than filling its corner.
   `setHour(name)` (and `sky`, `hour`, and `hours`, the shown place's),
   `prefetchHours()` (fetches the hours either side of the one asked for ahead),
   `setWeather(name)` (and `weather`, and `raining`, once the rain's table
-  has come and it falls), `rings` (the live rings and
+  has come and it falls), `setIce(name)` (and `ice`, and `iceSheet`, its
+  holes and mask), `rings` (the live rings and
   their plans), and `budget`: what the preset built (the solver's grid, the
   mesh, the pixel ratio, every target's size, an estimate of the render
   targets' memory, the programs compiled and the warm-up's, whether the
