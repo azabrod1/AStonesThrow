@@ -99,7 +99,10 @@
 // centimetre thick one a tenth of a second), with the local velocity, a
 // scatter (times form.scatter) and, at form.satellites odds, a small
 // satellite, and a ragged column sheds fine spray as it parts (form.spray over
-// 1). A ragged form starts that breakup at form.breakAt (s), whatever its tip
+// 1). Every pinch, the tip's and the breakup's, also throws spray
+// (src/spray.js, neckSpray): NECK_SPRAY of the drop's water times form.spray,
+// in drops of NECK_SPRAY_SIZE of its radius, kicked at the neck's capillary
+// speed, from a stream of its own (so the jet's draws are unchanged). A ragged form starts that breakup at form.breakAt (s), whatever its tip
 // is doing. Volumes are kept, so the drop count follows the column. Before it
 // breaks the column grows varicose beads with the drop spacing (radius ±6%
 // while it rises fast, ±12% as it slows, up to ±45% just below the front,
@@ -160,6 +163,7 @@
 // column is held inside its walls (holdWithinWalls in src/fluidMesh.js).
 import * as THREE from 'three';
 import { createRingGrid, computeGridNormals, holdWithinWalls, markChanged } from './fluidMesh.js';
+import { seededRandom, sprayDrops } from './spray.js';
 
 const GRAVITY = 9.81;
 const REFERENCE_RADIUS = 0.03;     // the stone size the tuning constants were set for
@@ -213,6 +217,9 @@ const WATER_DENSITY = 1000;
 const SURFACE_TENSION = 0.072;
 const SATELLITE_LEAST = 0.2;       // a satellite is this to SATELLITE_MOST of the drop it follows, in radius
 const SATELLITE_MOST = 0.45;
+const NECK_SPRAY = 0.03;           // a pinching neck throws this share of its drop's water as spray (times form.spray)...
+const NECK_SPRAY_SIZE = 0.12;      // ...in drops of this share of its radius on average...
+const NECK_SPRAY_MOST = 0.0004;    // ...at most this (m)
 const RIPPLE_WAVES = [3.1, 6.7];   // the beads' irregular spacing and size: two waves over the main launch window, in cycles
 const BULB_MOST = 0.32;            // a tip bulb's radius is at most this many stone radii
 
@@ -270,6 +277,7 @@ export class JetColumn {
   constructor({ x, z, radius, speed, startTime, budget, material, lean = 0, leanX = 0, leanZ = 0, form = null, random = Math.random, floor = null, bowlUnit = null, volume = null }) {
     this.form = { ...CLEAN_FORM, ...form };
     this.random = random;
+    this.sprayRandom = seededRandom(x, z, startTime, radius);   // the spray's own stream (src/spray.js): it shifts no draw of the jet's
     this.centreX = x;
     this.centreZ = z;
     this.radius = radius;
@@ -692,6 +700,7 @@ export class JetColumn {
         this.bulbRadius * this.range(SATELLITE_LEAST, SATELLITE_MOST), true);
     }
     this.evaluate(this.endTau + this.span, state);
+    this.neckSpray(splash, state, this.bulbRadius);
     const sprayCount = Math.round((1 + Math.floor(this.random() * 4)) * this.form.spray);
     for (let drop = 0; drop < sprayCount; drop++) {
       const kick = this.range(0.25, 0.8);
@@ -770,6 +779,7 @@ export class JetColumn {
           this.bulbRadius * this.range(SATELLITE_LEAST, SATELLITE_MOST), false);
       }
       // A ragged column throws fine spray as it comes apart.
+      this.neckSpray(splash, state, this.bulbRadius);
       for (let drop = Math.floor(this.random() * (this.form.spray - 1) * 2); drop > 0; drop--) {
         const kick = this.range(0.2, 0.7) * Math.sqrt(this.sizeFactor);
         const angle = this.range(0, Math.PI * 2);
@@ -820,6 +830,22 @@ export class JetColumn {
     water.addFoam({ x: fallX, z: fallZ, radius: radius * 1.3, amount: 0.3 * strength });
     splash.spawnFoamSpecks(fallX, fallZ, 0, radius * 1.6, Math.round(FALLBACK_SPECKS * strength), 0.025);
     this.finished = true;
+  }
+
+  /**
+   * The fine spray a neck throws as a drop of `radius` pinches off at `state`
+   * (src/spray.js): NECK_SPRAY of its water times form.spray, in drops of
+   * NECK_SPRAY_SIZE of its radius on average (at most NECK_SPRAY_MOST),
+   * kicked at the neck's capillary speed.
+   */
+  neckSpray(splash, state, radius) {
+    if (!splash.spray || radius <= 0) return;
+    const size = Math.min(NECK_SPRAY_SIZE * radius, NECK_SPRAY_MOST);
+    splash.spray.burst({
+      x: state.x, y: state.y, z: state.z, vx: state.vx, vy: state.vy, vz: state.vz,
+      drops: sprayDrops(NECK_SPRAY * this.form.spray * (4 / 3) * Math.PI * radius ** 3, size), radius: size,
+      kick: Math.sqrt(SURFACE_TENSION / (WATER_DENSITY * size)), spread: radius, time: splash.time, random: this.sprayRandom, sizeFactor: this.sizeFactor,
+    });
   }
 
   /** Tip and breakup drops are essential (never refused); drops of 2 mm and more are drawn as glass, like the column. */
