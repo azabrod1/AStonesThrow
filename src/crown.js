@@ -166,7 +166,20 @@
 // drops come out about the size the sheet's thickness implies, between
 // CROWN_DROP_FLOOR and CROWN_DROP_CAP (1 and 5.5 mm) for a 3 cm stone; its
 // fingers shed their beads, the fan's and a landing crown's crests drops of
-// RIM_DROP_RADIUS and up. For a 3 cm stone dropped straight in at 6.3 m/s
+// RIM_DROP_RADIUS and up. Besides its drop each torn patch throws spray
+// (src/spray.js), the film between the ligaments that a real sheet's holes
+// tear into drops under a millimetre: SPRAY_SHARE_FLOOR of the patch's water
+// for the gentlest sheet, rising with its violence (the froth's, below) by
+// SPRAY_SHARE_GAIN·violence^SPRAY_SHARE_POWER (a third for the reference
+// throw, half for a 16 cm stone, three quarters for a rock), in drops of
+// SPRAY_SIZE times the sheet's thickness there on average, spread over the
+// patch and kicked by the Taylor–Culick speed sqrt(2σ / ρh) at which a hole's
+// rim runs back through a film h thick (a landing drop's crown throws none:
+// too small and slow to be worth its sprites). A bead that pinches off leaves
+// SATELLITES satellites of about SATELLITE_SIZE of its radius, kicked at its
+// capillary speed, and a seal's spike throws SEAL_FINE finer drops. The spray
+// draws from a stream of the crown's own, seeded by the tear's phase, so it
+// spends no draw of Math.random. For a 3 cm stone dropped straight in at 6.3 m/s
 // the sheet stands whole for 90 ms, its rim peaking 11 cm up at 90 ms, 8 cm
 // out (the reference: 11 to 12 cm at 0.1 s, 8 to 10 cm out), and is gone by
 // 150 ms; thrown at 42° from vertical its forward side stands taller, 13 to
@@ -252,6 +265,7 @@
 // a wall runs up it instead of passing through onto the deck.
 import * as THREE from 'three';
 import { createRingGrid, computeGridNormals, holdWithinWalls, markChanged } from './fluidMesh.js';
+import { seededRandom, sprayDrops } from './spray.js';
 
 const GRAVITY = 9.81;
 const REFERENCE_RADIUS = 0.03;     // the stone size the tuning constants were set for
@@ -338,7 +352,9 @@ const DOME_FOLD = 0.05;            // ...of up to this share of its radius, at m
 const DOME_BURST = 0.25;           // when it bursts its sheet flies off at this times sqrt(g·R)·s, out and up
 const DOME_TILT = 12;              // a sealing crown launches this many degrees nearer vertical: a taller wall
 const SEAL_SPRAY = 8;              // the closure throws a spike of this many fine drops up from the apex (times sqrt(R / 3 cm))...
-const SEAL_SPRAY_SPEED = [0.8, 2.2];   // ...at these speeds, times sqrt(R / 3 cm) (the reference's real-air seal jet)
+const SEAL_SPRAY_SPEED = [0.8, 2.2];   // ...at these speeds, times sqrt(R / 3 cm) (the reference's real-air seal jet)...
+const SEAL_FINE = 60;              // ...and this many finer drops as spray (src/spray.js; times sqrt(R / 3 cm))...
+const SEAL_FINE_SIZE = 0.00025;    // ...of this mean radius (times (R / 3 cm)^0.3)
 const FAN_ROWS = 10;               // the forward fan of an oblique entry: rim to base...
 const FAN_COLUMNS = 41;            // ...by edge to edge across its sector
 const FAN_HALF_ANGLE = THREE.MathUtils.degToRad(60);   // the sector spans this either side of the direction of travel
@@ -358,6 +374,17 @@ const FAN_AMPLITUDE = 0.06;
 const FAN_DROP_CAP = 0.0008;       // it tears into fine drops of at most this...
 const FAN_DROP_FLOOR = 0.0003;     // ...and at least this (both times (R / 3 cm)^DROP_SIZE_POWER)...
 const FAN_RIM_DROPS = 0.2;         // ...and its rim sheds drops this fraction of the size a crown's does
+// The spray (the header, src/spray.js).
+const SPRAY_SHARE_FLOOR = 0.2;     // a torn patch throws this share of its water as spray for the gentlest sheet...
+const SPRAY_SHARE_GAIN = 0.55;     // ...rising by this times its violence (at most 1)...
+const SPRAY_SHARE_POWER = 0.7;     // ...to this power
+const SPRAY_SIZE = 1.2;            // its drops' mean radius, times the sheet's thickness there...
+const SPRAY_SIZE_RANGE = [0.0001, 0.0006];   // ...within this (m)
+const SPRAY_LEAST_FILM = 0.00005;  // m: the film the Taylor–Culick kick is reckoned for is at least this thick
+const SATELLITES = [1, 3];         // a bead pinching off leaves this many satellites...
+const SATELLITE_SIZE = 0.25;       // ...of this share of its radius on average (Rayleigh–Plateau)
+const SURFACE_TENSION = 0.072;     // N/m
+const WATER_DENSITY = 1000;        // kg/m³
 
 const randomRange = (low, high) => low + Math.random() * (high - low);
 const smoothstep = (edgeLow, edgeHigh, value) => {
@@ -557,6 +584,9 @@ export class CrownSheet {
     this.frothRing = (1.2 * radius) / FROTH_CELL;
     this.frothAlongRate = (FROTH_ALONG * Math.sqrt(Math.max(this.sizeFactor, 0.25))) / this.launchDuration;
     this.frothOffset = tearPhase * 13.7;
+    // The spray's share of a torn patch's water, and its stream (the header).
+    this.sprayShare = SPRAY_SHARE_FLOOR + SPRAY_SHARE_GAIN * Math.min(this.violence, 1) ** SPRAY_SHARE_POWER;
+    this.sprayRandom = seededRandom(tearPhase, startTime, this.centreX, this.centreZ);
     // The front's raggedness varies smoothly around the ring (TEAR_MODES at random phases),
     // so neighbouring columns tear alike and the torn edge is a curve, not a saw.
     const tearModes = TEAR_MODES.map((mode) => ({ mode, phase: randomRange(0, Math.PI * 2), amplitude: randomRange(0.5, 1) }));
@@ -965,6 +995,13 @@ export class CrownSheet {
       splash.spawnDroplet(lip.x + randomRange(-0.1, 0.1) * this.radius, DOME_HEIGHT * this.radius, lip.z + randomRange(-0.1, 0.1) * this.radius,
         Math.cos(angle) * lean, speed, Math.sin(angle) * lean, (0.0005 + 0.0009 * Math.random()) * this.sizeFactor ** 0.4);
     }
+    // And the spike's finer spray (src/spray.js), as fast.
+    const size = SEAL_FINE_SIZE * this.sizeFactor ** 0.3;
+    splash.spray?.burst({
+      x: lip.x, y: DOME_HEIGHT * this.radius, z: lip.z, vx: 0, vy: 0.5 * (SEAL_SPRAY_SPEED[0] + SEAL_SPRAY_SPEED[1]) * scale, vz: 0,
+      drops: SEAL_FINE * scale, radius: size, kick: 0.5 * (SEAL_SPRAY_SPEED[1] - SEAL_SPRAY_SPEED[0]) * scale, spread: 0.1 * this.radius,
+      time: splash.time, random: this.sprayRandom, sizeFactor: this.sizeFactor,
+    });
   }
 
   /** Tear whatever is left into droplets now (when too many crowns are alive). */
@@ -1018,6 +1055,20 @@ export class CrownSheet {
       bead.vz * boost + randomRange(-scatter, scatter),
       bead.radius,
     );
+    this.satellites(splash, bead.x, bead.y, bead.z, bead.vx, bead.vy, bead.vz, bead.radius);
+  }
+
+  /** The satellites a drop of `radius` pinching off at (x, y, z), moving at (vx, vy, vz), leaves (the header). */
+  satellites(splash, x, y, z, vx, vy, vz, radius) {
+    const spray = splash.spray;
+    if (!spray || radius <= 0) return;
+    const random = this.sprayRandom;
+    const count = SATELLITES[0] + Math.floor(random() * (SATELLITES[1] - SATELLITES[0] + 1));
+    const size = SATELLITE_SIZE * radius;
+    spray.burst({
+      x, y, z, vx: 0.95 * vx, vy: 0.95 * vy, vz: 0.95 * vz, drops: count, radius: size,
+      kick: Math.sqrt(SURFACE_TENSION / (WATER_DENSITY * size)), spread: radius, time: splash.time, random, sizeFactor: this.sizeFactor,
+    });
   }
 
   /** How far a finger's bead has grown towards its drop, in radius: from BEAD_SEED of its volume. */
@@ -1182,8 +1233,24 @@ export class CrownSheet {
           state.vz + randomRange(-scatter, scatter),
           radius,
         );
+        this.sprayFromPatch(splash, state, density);
       }
     }
+  }
+
+  /** The spray a torn patch of sheet throws besides its drop (the header): `state` the drop's place on it, `density` the drops per area. */
+  sprayFromPatch(splash, state, density) {
+    const spray = splash.spray;
+    // A landing drop's crown is too small and slow to throw spray worth its sprites.
+    if (!spray || this.landing) return;
+    const film = Math.max(state.thickness, SPRAY_LEAST_FILM);
+    const meanRadius = THREE.MathUtils.clamp(SPRAY_SIZE * state.thickness, SPRAY_SIZE_RANGE[0], SPRAY_SIZE_RANGE[1]);
+    spray.burst({
+      x: state.x, y: state.y, z: state.z, vx: state.vx, vy: state.vy, vz: state.vz,
+      drops: sprayDrops((this.sprayShare * state.thickness) / density, meanRadius), radius: meanRadius,
+      kick: Math.sqrt((2 * SURFACE_TENSION) / (WATER_DENSITY * film)), spread: 0.5 / Math.sqrt(density),
+      time: splash.time, random: this.sprayRandom, sizeFactor: this.sizeFactor,
+    });
   }
 
   // ---- per rendered frame -------------------------------------------------
