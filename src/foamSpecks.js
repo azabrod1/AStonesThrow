@@ -5,8 +5,9 @@
 // shader draws as a pattern of bubbles, lace and holes (FOAM_PATTERN in
 // src/shaders/scene.js); the specks are the bits that drift out of it and
 // the bubbles that land or surface away from it. Each is a point riding the
-// water surface, 2 to 4 mm across (most nearer 2), living 2 to 8 s (most
-// nearer 2), drifting slowly outward from where it was born and downwind with
+// water surface, 2 to 4 mm across (most nearer 2), living 0.8 to 3 s (most
+// nearer 1: fresh water's bubbles burst within a second or two, src/splash.js
+// on the foam), drifting slowly outward from where it was born and downwind with
 // the raft (the foam map's drift, src/spectralWater.js), wandering a
 // millimetre or so, and fading quickly at the end. Surface bubbles are mostly
 // clear with a bright rim, so a speck is a translucent white, dimmer than the
@@ -34,9 +35,9 @@
 import * as THREE from 'three';
 import { SPECK_VERTEX, SPECK_FRAGMENT } from './shaders/scene.js';
 
-const CAPACITY = 16384;          // specks alive at once: a 30 cm rock leaves about 6300, so two of the biggest throws fit
-const MIN_LIFE = 2;
-const MAX_LIFE = 8;
+const CAPACITY = 8192;           // specks alive at once: a 30 cm rock leaves about 1500, so several of the biggest throws fit
+const MIN_LIFE = 0.8;            // fresh water: a bubble on it bursts within a second or two (src/splash.js on the foam)
+const MAX_LIFE = 3;
 const LIFE_SKEW = 1.8;            // life = MIN + (MAX − MIN)·u^LIFE_SKEW: most specks go early
 const MIN_DIAMETER = 0.002;
 const MAX_DIAMETER = 0.004;
