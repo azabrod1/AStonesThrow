@@ -133,7 +133,8 @@
 // drifted, or a thing slid over the ice, FARTHEST_AWAY off goes at once, out
 // of sight.
 //
-// The ice. The Ice setting (setIce, remembered on this device; ?ice=)
+// The ice. Frozen water (the Water setting's Frozen, its ice thin or thick:
+// setWater, setIce, remembered on this device; ?water=frozen, ?ice=)
 // freezes the water, the lake or the pool, ICE_THICKNESS thick (src/ice.js
 // IceSheet): everything thrown has it as ground (throwAt), so it lands on it,
 // slides and rests as on the deck, or, struck hard enough, breaks through it
@@ -156,8 +157,10 @@
 // breaks and cracks sound (src/sound.js ice). A change of ice starts the pond
 // still and the ice whole (applyIce).
 //
-// The pool. The Pool water (WATER_CLARITIES.pool) puts the rocks in a tiled
-// pool instead of the lake: the solver's patch becomes a basin whose walls
+// The pool. The Pool place (PLACES: the Location setting, under Lakeside's
+// sky; its water WATER_CLARITIES.pool whatever the Water setting's clarity)
+// puts the rocks in a tiled pool instead of the lake: the solver's patch
+// becomes a basin whose walls
 // reflect the waves (src/spectralWater.js setPool), the lake's bed, beach and
 // open water give way to the pool's basin and deck (src/pool.js:
 // showScenery), the rocks rest on its floor and the eye stands on the deck
@@ -224,7 +227,9 @@
 // TIME_STORAGE_KEY, and ?sky=sunrise, the old Sunrise sky, is Lakeside at
 // sunrise);
 // ?view=shore|level|high|under stands the camera at one of VIEWS (showView);
-// ?water=pool|clear|lake|pond|murky the water (WATER_CLARITIES; setClarity);
+// ?sky=pool is the Pool (PLACES; the old ?water=pool too);
+// ?water=clear|lake|pond|murky|frozen the water (WATER_CHOICES; setWater),
+// ?ice=thin|thick its ice, frozen (none thaws it; setIce);
 // ?wind=x,z sets the direction the wind blows toward in world XZ
 // (DEFAULT_WIND otherwise); ?windStrength=calm|breeze|windy|gale the wind's
 // strength (WIND_STRENGTHS in src/ambientWaves.js, a gale's waves
@@ -421,12 +426,13 @@ const DEBUG_MODES = { under: 0, height: 1, foam: 2, env: 3, face: 4, ambient: 5 
 const DEFAULT_WIND_STRENGTH = 'calm';
 const WIND_STORAGE_KEY = 'stone-pond-wind';   // the Wind setting's last choice on this device
 const SOUND_STORAGE_KEY = 'stone-pond-sound';   // the Sound setting's last choice on this device ('off', or on)
-const WATER_STORAGE_KEY = 'stone-pond-water'; // the Water setting's
-const SKY_STORAGE_KEY = 'stone-pond-sky';     // the Location setting's
+const WATER_STORAGE_KEY = 'stone-pond-water'; // the Water setting's: a clarity, or frozen
+const SKY_STORAGE_KEY = 'stone-pond-sky';     // the Location setting's: a place (PLACES)
 const TIME_STORAGE_KEY = 'stone-pond-time';   // the Time setting's: the local time ('hh:mm') of the hour last chosen
 const WEATHER_STORAGE_KEY = 'stone-pond-weather';   // the Weather setting's
 const THING_STORAGE_KEY = 'stone-pond-thing';       // the Object setting's: what is thrown (src/things.js)
-const ICE_STORAGE_KEY = 'stone-pond-ice';           // the Ice setting's: none, thin or thick (src/ice.js ICE_THICKNESS)
+const ICE_STORAGE_KEY = 'stone-pond-frozen';        // the Water setting's ice when it is Frozen: thin or thick (src/ice.js ICE_THICKNESS)
+const OLD_ICE_STORAGE_KEY = 'stone-pond-ice';       // the Ice setting's, before Frozen was a water: none, thin or thick (migrateStoredSettings)
 // The Weather setting: the cloud's cover and the light under it, against a
 // clear sky's (src/sky.js setWeather: overcast takes the sun and greys the
 // sky), the rain's visibility (its haze), the rain (src/rain.js) and how wet
@@ -470,6 +476,38 @@ const WATER_CLARITIES = {
   murky: { absorb: [1.0, 0.45, 0.55], extinction: [3.0, 2.4, 2.7], color: [0.022, 0.082, 0.040] },
 };
 const DEFAULT_WATER = 'lake';
+// The Water setting: one of the lake's clarities (WATER_CLARITIES but the
+// pool's, which is the Pool place's own water whatever is chosen), or Frozen:
+// ice, thin unless thick was chosen (ICE_THICKNESS; setIce), over the water
+// there is, the lake's of the clarity last chosen or the pool's.
+const WATER_CHOICES = ['clear', 'lake', 'pond', 'murky', 'frozen'];
+const LAKE_CLARITIES = WATER_CHOICES.filter((name) => name !== 'frozen');
+// The places (the Location setting): a sky (src/sky.js SKIES) and what lies
+// about the water, the lake's bed and shore, or the Pool's tiled pool on its
+// deck in a lawn (src/pool.js; setPooled), by Lakeside's lake and through its
+// hours, so that choosing it from Lakeside loads no photo.
+const PLACES = { ...Object.fromEntries(SKY_NAMES.map((name) => [name, { sky: name, pool: false }])), pool: { sky: 'lakeside', pool: true } };
+const DEFAULT_PLACE = 'lakeside';
+/**
+ * Settings remembered before the Pool was a place and the ice a water,
+ * carried over once: the Water setting's Pool to the Pool place, the Ice
+ * setting's thin or thick ice to Frozen water that thick.
+ */
+function migrateStoredSettings() {
+  try {
+    const storage = window.localStorage;
+    if (storage.getItem(WATER_STORAGE_KEY) === 'pool') {
+      storage.setItem(SKY_STORAGE_KEY, 'pool');
+      storage.removeItem(WATER_STORAGE_KEY);
+    }
+    const oldIce = storage.getItem(OLD_ICE_STORAGE_KEY);
+    if (oldIce === 'thin' || oldIce === 'thick') {
+      storage.setItem(WATER_STORAGE_KEY, 'frozen');
+      storage.setItem(ICE_STORAGE_KEY, oldIce);
+    }
+    storage.removeItem(OLD_ICE_STORAGE_KEY);
+  } catch { /* storage refused: nothing remembered to carry over */ }
+}
 // The warm-up's throw (the reference stone, aimed as the profiler's) and the
 // moments after its impact it draws: the crown, the fan, the cavity, spray
 // and the mirror; the jet column; the specks and the drops' landing crowns.
@@ -527,6 +565,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     exposure: 0.55,
     night: 0,   // how far the eye sees with its rods (src/sky.js; NIGHT_VISION in src/shaders/fluid.js)
   };
+  migrateStoredSettings();
   const storedChoice = (key) => { try { return window.localStorage.getItem(key); } catch { return null; } };
 
   // The weather: the page's ?weather, else the last choice here, else clear;
@@ -539,15 +578,21 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   const rainDownload = WEATHERS[weatherName].rain
     ? loadRainData().then((data) => ({ data }), (error) => ({ error })) : null;
 
-  // The sky: ?sky, else the place last chosen here; its hour ?time, else the
-  // one nearest the time of day last chosen here (chosenClock).
+  // The place (PLACES): ?sky (or the old ?water=pool), else the place last
+  // chosen here; its sky's hour ?time, else the one nearest the time of day
+  // last chosen here (chosenClock).
   let chosenClock = storedChoice(TIME_STORAGE_KEY);
-  const placeAndHour = (place, hour) => (place === 'sunrise' ? ['lakeside', 'sunrise'] : [place, hour ?? nearestHour(place, chosenClock)]);
-  const [firstPlace, firstHour] = placeAndHour(pageParameters.get('sky') ?? storedChoice(SKY_STORAGE_KEY), pageParameters.get('time'));
+  const placeAndHour = (place, hour) => {
+    if (place === 'sunrise') return ['lakeside', 'sunrise'];
+    const known = Object.hasOwn(PLACES, place ?? '') ? place : DEFAULT_PLACE;
+    return [known, hour ?? nearestHour(PLACES[known].sky, chosenClock)];
+  };
+  const [firstPlace, firstHour] = placeAndHour(pageParameters.get('sky') ?? (pageParameters.get('water') === 'pool' ? 'pool' : null) ?? storedChoice(SKY_STORAGE_KEY), pageParameters.get('time'));
+  let placeName = firstPlace;
   let environment;
   try {
     onProgress?.('Loading the sky…');
-    environment = await createEnvironment(renderer, { name: firstPlace, hour: firstHour, sunAzimuth: SUN_AZIMUTH, sunBalance: new THREE.Vector3(...SUN_BALANCE), lighting });
+    environment = await createEnvironment(renderer, { name: PLACES[firstPlace].sky, hour: firstHour, sunAzimuth: SUN_AZIMUTH, sunBalance: new THREE.Vector3(...SUN_BALANCE), lighting });
   } catch (error) {
     onError?.('The sky could not be loaded. Check the connection and reload the page.');
     throw error;
@@ -627,24 +672,33 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   applyWind(windName);
   // A storm brings its gale, unless the page's ?windStrength says otherwise.
   if (WEATHERS[weatherName].wind && !Object.hasOwn(WIND_STRENGTHS, requestedWind ?? '')) applyWind(WEATHERS[weatherName].wind);
-  // The water's clarity: the page's ?water, else the last choice here, else pond.
+  // The water (WATER_CHOICES): the page's ?water, else the last choice here,
+  // else Lake; frozen by the page's ?ice (none thaws it), else by the water's
+  // choice; its ice thin unless ?ice, or the last choice here, says thick.
+  // lakeClarity is the lake's water, frozen or not; waterName the water drawn,
+  // the pool's in the pool.
   const storedWater = storedChoice(WATER_STORAGE_KEY);
   const requestedWater = pageParameters.get('water');
-  let waterName = Object.hasOwn(WATER_CLARITIES, requestedWater ?? '') ? requestedWater : Object.hasOwn(WATER_CLARITIES, storedWater ?? '') ? storedWater : DEFAULT_WATER;
-  pooled = waterName === 'pool';
+  const requestedIce = pageParameters.get('ice');
+  let lakeClarity = [requestedWater, storedWater].find((name) => LAKE_CLARITIES.includes(name)) ?? DEFAULT_WATER;
+  let iceThickness = ['thin', 'thick'].find((name) => name === requestedIce) ?? (storedChoice(ICE_STORAGE_KEY) === 'thick' ? 'thick' : 'thin');
+  const frozenAtStart = Object.hasOwn(ICE_THICKNESS, requestedIce ?? '') ? requestedIce !== 'none' : WATER_CHOICES.includes(requestedWater) ? requestedWater === 'frozen' : storedWater === 'frozen';
+  let waterName = DEFAULT_WATER;
+  pooled = PLACES[placeName].pool;
   water.setPool(pooled);
   applyGale();
-  function applyWater(name) {
-    waterName = name;
-    lighting.absorb.fromArray(WATER_CLARITIES[name].absorb);
-    lighting.extinction.fromArray(WATER_CLARITIES[name].extinction);
+  /** The water drawn: the lake's clarity, or the pool's own in the pool. */
+  function applyWater() {
+    waterName = pooled ? 'pool' : lakeClarity;
+    lighting.absorb.fromArray(WATER_CLARITIES[waterName].absorb);
+    lighting.extinction.fromArray(WATER_CLARITIES[waterName].extinction);
     applyWaterColor();
   }
   /** The deep water's radiance: the clarity's, lit by the hour's light (the sky's level, src/sky.js). */
   function applyWaterColor() {
     lighting.waterColor.fromArray(WATER_CLARITIES[waterName].color).multiplyScalar(environment.level);
   }
-  applyWater(waterName);
+  applyWater();
   galeWaves.setBed(floorDepthAt(water.centre[0], water.centre[1]));
   // Its view of the bed takes the absorption, set only now, and the bed's depth and albedo.
   splash.setBed({ depth: bedDepthAt(water.centre[0], water.centre[1]), albedo: pooled ? POOL.tileAlbedo : undefined });
@@ -653,10 +707,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     splash.setGround(pooled ? { square: pool.square, deck: POOL.deck, onWet: (x, z, radius) => pool.wetSpot(x, z, radius) } : null);
   }
   applyGround();
-  // The ice (the header): the page's ?ice, else the last choice here, else none.
-  const storedIce = storedChoice(ICE_STORAGE_KEY);
-  const requestedIce = pageParameters.get('ice');
-  let iceName = Object.hasOwn(ICE_THICKNESS, requestedIce ?? '') ? requestedIce : Object.hasOwn(ICE_THICKNESS, storedIce ?? '') ? storedIce : 'none';
+  // The ice (the header): Frozen water's, as chosen above.
+  let iceName = frozenAtStart ? iceThickness : 'none';
   /** The ice by name (ICE_THICKNESS), whole, over the water there is (the pool's, or the lake's): the gale stilled, the splash's drops landing on it, the solver carrying a ring under it (src/splash.js launchRing). */
   function applyIce(name = iceName) {
     iceName = name;
@@ -962,6 +1014,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   // fills lighting's sun and sky in place (src/sky.js); then what holds the
   // sun by value follows, and the mirror image is drawn again.
   let skyRequest = { place: environment.name, hour: environment.hour };   // the sky last asked for
+  let placeRequest = null;   // the place last asked for (setSky), while its sky loads
   let skyLoading = Promise.resolve();    // the loads queued so far
   /**
    * Queue a load of the place at the hour (resolveHour's); only the last
@@ -1986,7 +2039,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       ice: { name: iceName, ...ice.budget, shards: rocks.filter((rock) => rock.piece).length },
       spray: { ring: splash.spray.budgetRing, share: splash.spray.share, drawn: splash.spray.geometry.instanceCount, flying: splash.spray.alive },
       clarity: waterName,
-      sky: environment.name,
+      sky: placeName,
       frameCapped,
       calibration: automaticQuality ? calibration.phase : 'fixed',
       warmUp: { ...warmUpReport },
@@ -2134,10 +2187,11 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   }
 
   /**
-   * The water the pool's (true) or the lake's (the header: the pool): the
-   * solver's walls, the scenery, the bed the splash's drops see, and a still
-   * pond of the new kind; the eye on the same view of the new kind (or the
-   * one it glides to), or kept where it may stand there.
+   * The water the pool's (true: the Pool place) or the lake's (the header:
+   * the pool): the solver's walls, the scenery, the water's own (applyWater),
+   * the bed the splash's drops see, and a still pond of the new kind; the eye
+   * on the same view of the new kind (or the one it glides to), or kept where
+   * it may stand there.
    */
   function setPooled(asPool) {
     if (asPool === pooled) return;
@@ -2145,6 +2199,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     pooled = asPool;
     clearPond();
     water.setPool(asPool);
+    applyWater();
+    applySky();   // the absorption lights the stones under the water and the splash's view of the bed
     applyIce();   // over the new water, and the gale with it
     showScenery(asPool);
     splash.setBed({ depth: bedDepthAt(water.centre[0], water.centre[1]), albedo: asPool ? POOL.tileAlbedo : undefined });
@@ -2314,41 +2370,75 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     /** How many sounds are playing now (tools/quality-probe.mjs). */
     get soundsPlaying() { return sound.playing; },
     get soundState() { return sound.state; },
-    /** The water by name (WATER_CLARITIES: pool, clear, lake, pond, murky; the pool is the pool's basin, the others the lake), remembered on this device. */
-    setClarity(name) {
-      if (!Object.hasOwn(WATER_CLARITIES, name)) return;
-      applyWater(name);
-      setPooled(name === 'pool');
+    /**
+     * The Water setting by name (WATER_CHOICES: clear, lake, pond, murky, or
+     * frozen), remembered on this device: a clarity is the lake's water (the
+     * pool keeps its own) and thaws any ice; frozen freezes the water there
+     * is, as setIce does, its ice the thickness last chosen.
+     */
+    setWater(name) {
+      if (name === 'frozen') { this.setIce(iceThickness); return; }
+      if (!LAKE_CLARITIES.includes(name)) return;
+      lakeClarity = name;
+      applyWater();
       applySky();   // the absorption lights the stones under the water and the splash's view of the bed
+      if (iceName !== 'none') { clearPond(); applyIce('none'); }
       try { window.localStorage.setItem(WATER_STORAGE_KEY, name); } catch { /* storage refused: the choice lasts this visit */ }
     },
+    /** The Water setting's choice: the lake's clarity, or frozen. */
+    get waterChoice() { return iceName === 'none' ? lakeClarity : 'frozen'; },
+    /** The water drawn (WATER_CLARITIES): the lake's clarity, or the pool's in the pool. */
     get clarity() { return waterName; },
-    /** The ice by name (src/ice.js ICE_THICKNESS: none, thin, thick), remembered on this device: the pond starts still and the ice whole. */
+    /** Whether the place is the Pool (its tiled pool in place of the lake). */
+    get pooled() { return pooled; },
+    /**
+     * The ice by name (src/ice.js ICE_THICKNESS), remembered on this device
+     * as the Water setting: thin or thick freezes the water (Frozen, that
+     * thick), none thaws it to the clarity last chosen. The pond starts still
+     * and the ice whole.
+     */
     setIce(name) {
       if (!Object.hasOwn(ICE_THICKNESS, name)) return;
       clearPond();
+      if (name !== 'none') iceThickness = name;
       applyIce(name);
-      try { window.localStorage.setItem(ICE_STORAGE_KEY, name); } catch { /* storage refused: the choice lasts this visit */ }
+      try {
+        window.localStorage.setItem(WATER_STORAGE_KEY, name === 'none' ? lakeClarity : 'frozen');
+        if (name !== 'none') window.localStorage.setItem(ICE_STORAGE_KEY, name);
+      } catch { /* storage refused: the choice lasts this visit */ }
     },
     get ice() { return iceName; },
+    /** The thickness Frozen water's ice is, or would be (thin or thick). */
+    get iceThickness() { return iceThickness; },
     /** The ice sheet itself (src/ice.js), for the probes: its holes, its mask. */
     get iceSheet() { return ice; },
     /**
-     * The sky by place (a key of SKIES in src/sky.js), remembered on this
-     * device, at its hour nearest the time of day last chosen. Its photo
-     * loads first and the old sky stays until it has arrived; then the sky,
-     * the sun and everything they light change in one frame. Resolves to the
+     * The place by name (PLACES: a sky of SKIES in src/sky.js, or the Pool),
+     * remembered on this device, its sky at the hour nearest the time of day
+     * last chosen. Its photo loads first and the old sky stays until it has
+     * arrived; then the sky, the sun and everything they light change in one
+     * frame, and the pool or the lake with them (setPooled). Resolves to the
      * place then shown (the old one if the photo could not be fetched).
      * Choices made while one loads queue behind it, and only the last is
      * loaded.
      */
     setSky(name) {
-      const [place, hour] = placeAndHour(name);
-      if (!SKY_NAMES.includes(place)) return Promise.resolve(environment.name);
+      if (name !== 'sunrise' && !Object.hasOwn(PLACES, name ?? '')) return Promise.resolve(placeName);
+      // A place under the sky asked for already (the Pool and Lakeside) keeps its hour.
+      const sameSky = name !== 'sunrise' && PLACES[name].sky === skyRequest.place;
+      const [place, hour] = placeAndHour(name, sameSky ? skyRequest.hour : undefined);
       try { window.localStorage.setItem(SKY_STORAGE_KEY, place); } catch { /* storage refused: the choice lasts this visit */ }
-      return requestSky(place, hour);
+      const request = { place };
+      placeRequest = request;
+      return requestSky(PLACES[place].sky, hour).then(() => {
+        if (placeRequest === request && environment.name === PLACES[place].sky) {
+          placeName = place;
+          setPooled(PLACES[place].pool);
+        }
+        return placeName;
+      });
     },
-    get sky() { return environment.name; },
+    get sky() { return placeName; },
     /**
      * The hour of the place last asked for (a name from `hours`), its local
      * time remembered on this device as the time of day other places follow.

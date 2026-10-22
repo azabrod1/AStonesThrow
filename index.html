@@ -642,6 +642,7 @@
   .menu-card img { flex: none; width: 80px; height: 45px; border-radius: 7px; object-fit: cover; background: rgba(238, 243, 244, 0.08); }
   .menu-card b { display: block; font-size: 14px; font-weight: 500; }
   .menu-card small { display: block; margin-top: 2px; font-size: 12px; color: var(--muted); }
+  .menu-ice { margin-top: 14px; }   /* Frozen water's ice, under the Water page's cards */
   /* The Object page: a fold for each group of things (src/things.js),
      one open at a time, its heading the group's name, how many it holds and
      the one chosen in it; the cards inside as the Water page's. */
@@ -908,12 +909,7 @@
     </button>
     <button type="button" class="menu-tier" data-open="water">
       <svg class="menu-tier-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.8c-2.7 3.3-5.1 6.2-5.1 8.9a5.1 5.1 0 0 0 10.2 0c0-2.7-2.4-5.6-5.1-8.9z"></path><path d="M7.6 12.2a2.5 2.5 0 0 0 2.1 2.3"></path></svg>
-      <span class="menu-tier-name"><b>Water</b><small>Lake, pond or pool</small></span>
-      <span class="menu-tier-value"></span><span class="menu-tier-chevron" aria-hidden="true">&rsaquo;</span>
-    </button>
-    <button type="button" class="menu-tier" data-open="ice">
-      <svg class="menu-tier-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.6v14.8M3.6 6.3l12.8 7.4M3.6 13.7l12.8-7.4"></path><path d="M8.2 3.9 10 5.4l1.8-1.5M8.2 16.1 10 14.6l1.8 1.5M3.9 8.6l2.3.6-.4 2.2M16.1 8.6l-2.3.6.4 2.2"></path></svg>
-      <span class="menu-tier-name"><b>Ice</b><small>Open water or frozen over</small></span>
+      <span class="menu-tier-name"><b>Water</b><small>Clear, murky or frozen</small></span>
       <span class="menu-tier-value"></span><span class="menu-tier-chevron" aria-hidden="true">&rsaquo;</span>
     </button>
     <button type="button" class="menu-tier" data-open="time">
@@ -991,7 +987,18 @@
         <button type="button" class="menu-card" role="radio" data-value="lake"><img src="assets/water/thumbs/lake.jpg" alt="" width="80" height="45"><span><b>Lake</b><small>An Alpine lake: bright sand, then deep blue</small></span></button>
         <button type="button" class="menu-card" role="radio" data-value="pond"><img src="assets/water/thumbs/pond.jpg" alt="" width="80" height="45"><span><b>Pond</b><small>Green; the sand fades a little way out</small></span></button>
         <button type="button" class="menu-card" role="radio" data-value="murky"><img src="assets/water/thumbs/murky.jpg" alt="" width="80" height="45"><span><b>Murky</b><small>A lake after rain: sand only at the bank</small></span></button>
-        <button type="button" class="menu-card" role="radio" data-value="pool"><img src="assets/water/thumbs/pool.jpg" alt="" width="80" height="45"><span><b>Pool</b><small>A tiled pool; ripples bounce off its walls</small></span></button>
+        <!-- In the Pool place the lake's waters give way to the pool's own. -->
+        <button type="button" class="menu-card" role="radio" data-value="open" hidden><img src="assets/sky/thumbs/pool.jpg" alt="" width="80" height="45"><span><b>Pool water</b><small>Filtered: the tiles clear to the bottom</small></span></button>
+        <button type="button" class="menu-card" role="radio" data-value="frozen"><img src="assets/water/thumbs/frozen.jpg" alt="" width="80" height="45"><span><b>Frozen</b><small>Ice to break, crack and slide things on</small></span></button>
+      </div>
+      <!-- Frozen water's ice: shown while it is frozen. -->
+      <div class="menu-ice" id="ice-field" hidden>
+        <div class="menu-field-label" id="ice-label">Ice</div>
+        <div class="menu-seg" id="ice" role="radiogroup" aria-labelledby="ice-label" aria-describedby="ice-note">
+          <button type="button" role="radio" data-value="thin">Thin</button>
+          <button type="button" role="radio" data-value="thick">Thick</button>
+        </div>
+        <div class="menu-note" id="ice-note" aria-live="polite"></div>
       </div>
     </div>
   </div>
@@ -1004,6 +1011,7 @@
         <button type="button" class="menu-card" role="radio" data-value="meadow"><img src="assets/sky/thumbs/meadow.jpg" alt="" width="80" height="45"><span><b>Meadow</b><small>Summer trees, afternoon sun</small></span></button>
         <button type="button" class="menu-card" role="radio" data-value="alpine"><img src="assets/sky/thumbs/alpine.jpg" alt="" width="80" height="45"><span><b>Alpine</b><small>Pines, and snowy peaks up the valley</small></span></button>
         <button type="button" class="menu-card" role="radio" data-value="open"><img src="assets/sky/thumbs/open.jpg" alt="" width="80" height="45"><span><b>Open sky</b><small>Clouds out to the horizon</small></span></button>
+        <button type="button" class="menu-card" role="radio" data-value="pool"><img src="assets/sky/thumbs/pool.jpg" alt="" width="80" height="45"><span><b>Pool</b><small>A tiled pool by the lake; ripples bounce off its walls</small></span></button>
       </div>
       <div class="menu-note" id="sky-note" aria-live="polite"></div>
     </div>
@@ -1029,18 +1037,6 @@
         <button type="button" role="radio" data-value="storm">Storm</button>
       </div>
       <div class="menu-note" id="weather-note" aria-live="polite"></div>
-    </div>
-  </div>
-  <div class="menu-page" data-page="ice" hidden>
-    <div class="menu-head"><button type="button" class="menu-back" aria-label="Back"><span aria-hidden="true">&lsaquo;</span></button><h3>Ice</h3></div>
-    <div class="menu-field">
-      <div class="menu-field-label" id="ice-label">Water</div>
-      <div class="menu-seg" id="ice" role="radiogroup" aria-labelledby="ice-label" aria-describedby="ice-note">
-        <button type="button" role="radio" data-value="none">Open</button>
-        <button type="button" role="radio" data-value="thin">Thin ice</button>
-        <button type="button" role="radio" data-value="thick">Thick ice</button>
-      </div>
-      <div class="menu-note" id="ice-note" aria-live="polite"></div>
     </div>
   </div>
   <div class="menu-page" data-page="wind" hidden>
@@ -1316,7 +1312,6 @@
         turned: 'Turned by hand. Drag the water to look around; Reset view comes back to the deck.',
       },
       ice: {
-        none: 'Open water.',
         thin: 'A centimetre of ice: a stone or a bowling ball breaks through and splashes, cracks running out from its hole; a light ball, a gem or a pebble skids away. No waves rise under it.',
         thick: 'Four centimetres of ice: what is thrown clatters and slides far over it, and only a big rock, or a heavy ball lobbed high, breaks through.',
       },
@@ -1346,9 +1341,14 @@
       const name = currentView.view;
       showViewChoice(name);
       settings.setValue('view', name ? label('view', name) : 'Turned');
-      document.getElementById('view-note').textContent = (pond.clarity === 'pool' ? NOTES.poolView : NOTES.view)[name ?? 'turned'];
+      document.getElementById('view-note').textContent = (pond.pooled ? NOTES.poolView : NOTES.view)[name ?? 'turned'];
     };
-    const showWater = radioGroup(document.getElementById('water'), (value) => { pond.setClarity(value); updateWater(); });
+    // The water: the lake's clarities, or in the pool its own (open: no ice), or frozen.
+    const showWater = radioGroup(document.getElementById('water'), (value) => {
+      if (value === 'open') pond.setIce('none');
+      else pond.setWater(value);
+      updateWater();
+    });
     // The Object page, built from the registry (src/things.js): a fold
     // for each group, its things' cards inside, the chosen thing's fold open
     // and only one open at a time; built again whenever a thing is defined.
@@ -1540,16 +1540,20 @@
       settings.setValue('sound', pond.sound ? 'On' : 'Off');
     }
     updateSound();
+    // The Water page as the place has it: the lake's clarities, or the pool's own water; Frozen's ice under the cards.
+    const showIce = radioGroup(document.getElementById('ice'), (value) => { pond.setIce(value); updateWater(); });
     function updateWater() {
-      showWater(pond.clarity);
-      settings.setValue('water', label('water', pond.clarity));
+      for (const card of document.querySelectorAll('#water [data-value]')) {
+        if (card.dataset.value !== 'frozen') card.hidden = (card.dataset.value === 'open') !== pond.pooled;
+      }
+      const frozen = pond.waterChoice === 'frozen';
+      const choice = frozen ? 'frozen' : pond.pooled ? 'open' : pond.waterChoice;
+      showWater(choice);
+      settings.setValue('water', frozen ? `Frozen \u00b7 ${label('ice', pond.iceThickness)}` : label('water', choice));
+      document.getElementById('ice-field').hidden = !frozen;
+      showIce(pond.iceThickness);
+      document.getElementById('ice-note').textContent = NOTES.ice[pond.iceThickness];
       showView();   // the pool's views are told otherwise
-    }
-    const showIce = radioGroup(document.getElementById('ice'), (value) => { pond.setIce(value); updateIce(); });
-    function updateIce() {
-      showIce(pond.ice);
-      settings.setValue('ice', label('ice', pond.ice));
-      document.getElementById('ice-note').textContent = NOTES.ice[pond.ice];
     }
     const showWind = radioGroup(document.getElementById('wind'), (value) => { pond.setWind(value); updateWind(); });
     // The weather: the sky clouds over at once; the first rain fetches its rings' table (about 0.6 MB).
@@ -1613,6 +1617,7 @@
       settings.setValue('sky', label('sky', pond.sky));
       skyNote.textContent = '';
       updateTime();
+      updateWater();   // the pool has its own water
     }
     // The time of day: the shown place's hours on a slider (pond.hours), a
     // lone photograph's one hour with no slider. An hour is a photo to load,
@@ -1667,7 +1672,6 @@
     showView();
     updateThing();
     updateWater();
-    updateIce();
     updateWeather();
     updateWind();
     showQuality();

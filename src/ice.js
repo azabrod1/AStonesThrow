@@ -39,9 +39,10 @@
 // ICE.keepLeast of its speed kept) and goes in (src/rock.js breakThrough).
 // Things that do not fit through a hole meet its edge (meet), which holds or
 // breaks the same way; ones that do but whose splash would stand on the ice
-// open it wider. A hole only opens where the solver's water is (in the patch
-// less HOLE.edge; in the pool inside its walls less it): beyond, the ice
-// holds.
+// open it wider. A hole only opens where the solver's water is (holeBox: in
+// the patch less HOLE.edge, beyond which the ice holds; in the pool anywhere
+// inside its walls, its edge brought in to HOLE.wall of them, so a blow in a
+// corner breaks the ice off the tiles).
 //
 // A hole is as wide as the cavity's lip (src/cavity.js): opened at once as a
 // round hole's lip would be (roundLipReach), then, once the splash has made
@@ -147,7 +148,7 @@ export const ICE_MATERIAL = Object.freeze({ kind: 'ice', friction: 0.1, rolling:
 // most `most` open at once (past them the ice holds: a lake so broken has done its work), and `kept` in all, new ice
 // over the oldest let go past it (it holds then as the sheet does); its edge's reach kept at `reaches` azimuths.
 // A thing going in by a hole narrower than its splash's lip opens it wider if faster than `widensFrom` (m/s).
-const HOLE = { corners: 36, fall: 0.5, margin: 0.06, jag: 0.16, waves: 0.04, bites: [1, 3], bite: [0.12, 0.35], biteSpan: [2, 4], least: 1.3, edge: 0.15, most: 64, kept: 160, reaches: 72, widensFrom: 2 };
+const HOLE = { corners: 36, fall: 0.5, margin: 0.06, jag: 0.16, waves: 0.04, bites: [1, 3], bite: [0.12, 0.35], biteSpan: [2, 4], least: 1.3, edge: 0.15, wall: 0.004, most: 64, kept: 160, reaches: 72, widensFrom: 2 };
 // Cracks (settle): `count` (least, most) radial ones from a hole's corners, each `reach` (least, most) times l_c long, at
 // most `longest` (m), in steps of `step` (least, most; m), its heading wandering by `wander` (radians, σ, per 5 cm); a
 // branch at `branch` odds a step, `branchReach` of l_c long, `branchAngle` off (least, most; radians); at `ring` odds an
@@ -388,11 +389,17 @@ export class IceSheet {
   /** The holes not yet skinned over. */
   get openHoles() { return this.holes.filter((hole) => !hole.skin?.closed).length; }
 
-  /** Whether a hole may open at (x, z), `reach` (m) about it: over the solver's water, HOLE.edge inside its patch or the pool's walls. */
-  mayOpen(x, z, reach) {
+  /** Where a hole may be (the header): the solver's patch less HOLE.edge, or the pool inside its walls less HOLE.wall. */
+  get holeBox() {
     const box = this.pool ?? { minX: this.domainMin[0], minZ: this.domainMin[1], size: this.domainSize };
-    const room = reach + HOLE.edge;
-    return this.openHoles < HOLE.most && x - room > box.minX && x + room < box.minX + box.size && z - room > box.minZ && z + room < box.minZ + box.size && this.overWater(x, z);
+    const gap = this.pool ? HOLE.wall : HOLE.edge;
+    return { minX: box.minX + gap, minZ: box.minZ + gap, maxX: box.minX + box.size - gap, maxZ: box.minZ + box.size - gap };
+  }
+
+  /** Whether a hole may open at (x, z): over the solver's water, inside holeBox (its edge is brought inside it, shapeHole). */
+  mayOpen(x, z) {
+    const box = this.holeBox;
+    return this.openHoles < HOLE.most && x > box.minX && x < box.maxX && z > box.minZ && z < box.maxZ && this.overWater(x, z);
   }
 
   /** The newest hole whose outline holds (x, z), or null: it says what is there, its open water or its new ice (the header). */
@@ -508,7 +515,7 @@ export class IceSheet {
     const speed = rock.velocity.length(), horizontal = Math.hypot(rock.velocity.x, rock.velocity.z);
     const room = roundLipReach(rock.radius, speed, horizontal / Math.max(speed, 1e-6), 0, HOLE.fall);
     if (this.clearance(x, z) >= room) return { hole, broke: false, keep: 1, open: true };
-    if (speed < HOLE.widensFrom || !this.mayOpen(x, z, room)) return { hole, broke: false, keep: 1, open: false };
+    if (speed < HOLE.widensFrom || !this.mayOpen(x, z)) return { hole, broke: false, keep: 1, open: false };
     return { hole: this.openHole(rock, x, z, hole.thickness), broke: true, keep: 1, open: false };
   }
 
@@ -533,10 +540,9 @@ export class IceSheet {
     const blow = this.blow(rock);
     const x = rock.position.x, z = rock.position.z;
     const holds = this.holds(random, thickness);
-    const speed = rock.velocity.length(), horizontal = Math.hypot(rock.velocity.x, rock.velocity.z);
-    const reach = roundLipReach(rock.radius, speed, horizontal / Math.max(speed, 1e-6), 1, HOLE.fall) * (1 + HOLE.margin + HOLE.jag);
+    const speed = rock.velocity.length();
     this.lastStrike = { blow, holds, x, z };   // for tools/ice-probe.mjs
-    if (blow < holds || !this.mayOpen(x, z, reach)) {
+    if (blow < holds || !this.mayOpen(x, z)) {
       if (blow > ICE.crackShare * holds) this.star(x, z, random, blow / holds, thickness);
       return null;
     }
@@ -603,7 +609,7 @@ export class IceSheet {
    * A hole's corners from the lip's reach along each corner's azimuth
    * (`reaches`, m): each beyond it by HOLE.margin, the slow waves and its own
    * jag, deeper where a piece broke away (the header), at least `least` out,
-   * and inside where a hole may be (mayOpen's box); then its inner and outer
+   * and inside where a hole may be (holeBox); then its inner and outer
    * radius about its middle, and its edge's reach at HOLE.reaches azimuths.
    */
   shapeHole(hole, reaches) {
@@ -620,8 +626,8 @@ export class IceSheet {
         bites[corner] = Math.max(bites[corner], depth * share);
       }
     }
-    const box = this.pool ?? { minX: this.domainMin[0], minZ: this.domainMin[1], size: this.domainSize };
-    const low = [box.minX + HOLE.edge, box.minZ + HOLE.edge], high = [box.minX + box.size - HOLE.edge, box.minZ + box.size - HOLE.edge];
+    const box = this.holeBox;
+    const low = [box.minX, box.minZ], high = [box.maxX, box.maxZ];
     let outer = 0;
     for (let index = 0; index < count; index++) {
       const angle = hole.angles[index];

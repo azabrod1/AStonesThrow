@@ -426,6 +426,26 @@ console.log('\nA frozen pool: things thrown at it rest on the ice inside its wal
     check(record.broke || (rock.state === 'rest' && Math.abs(lowest - height) < 0.005), `${name} thrown at the frozen pool ended ${rock.state} at ${lowest.toFixed(3)} m, ${where}`);
   }
   console.log(`  ${outcomes.join('; ')}`);
+  // The default stone thrown into each corner, as near the walls as a throw is aimed (src/main.js POOL_MARGIN), breaks
+  // thin ice there, and a 30 cm rock too, its hole reaching to the walls and no further (src/ice.js holeBox).
+  const corners = [];
+  for (const [sideX, sideZ, value] of [[0, 0], [1, 0], [0, 1], [1, 1], [1, 0, 30]]) {
+    const x = POOL_SQUARE.minX + (sideX ? POOL_SQUARE.size - 0.25 : 0.25), z = POOL_SQUARE.minZ + (sideZ ? POOL_SQUARE.size - 0.25 : 0.25);
+    const ice = new IceSheet(PATCH);
+    ice.setThickness(ICE_THICKNESS.thin);
+    ice.setPool(POOL_SQUARE, poolGround(POOL_SQUARE));
+    const record = follow(throwOnto(ice, 'stone', { x, z, value }), ice, { pool: true, seconds: 3 });
+    const hole = ice.holes[0];
+    let nearest = Infinity;
+    for (let index = 0; hole && index < hole.corners.length; index += 2) {
+      const cornerX = hole.corners[index], cornerZ = hole.corners[index + 1];
+      nearest = Math.min(nearest, cornerX - POOL_SQUARE.minX, POOL_SQUARE.minX + POOL_SQUARE.size - cornerX, cornerZ - POOL_SQUARE.minZ, POOL_SQUARE.minZ + POOL_SQUARE.size - cornerZ);
+    }
+    const label = value ? `a ${value} cm rock` : 'the default stone';
+    corners.push(`${value ? `${value} cm ` : ''}${x.toFixed(2)}, ${z.toFixed(2)}: ${record.broke ? `broke, its edge ${centimetres(nearest)} cm from a wall` : 'held'}`);
+    check(record.broke && nearest > 0 && (!value || nearest < 0.01), `${label} thrown into the frozen pool's corner at (${x.toFixed(2)}, ${z.toFixed(2)}) ${record.broke ? `broke a hole ${centimetres(nearest)} cm from the walls` : 'did not break the thin ice'}`);
+  }
+  console.log(`  thrown into each corner of thin ice: ${corners.join('; ')}`);
   // A stone slid at the far wall comes back off it.
   const ice = new IceSheet(PATCH);
   ice.setThickness(ICE_THICKNESS.thick);
