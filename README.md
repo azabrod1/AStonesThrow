@@ -39,7 +39,7 @@ is greyed out for what cannot skip, and choosing such a thing goes back to
 Toss. On a phone in portrait, where the title's line is hidden, a cue over
 the water says to tap it, until the first throw. The menu button at the
 top right opens the settings, laid out as the Moon app's menu is: a list in
-four groups (what is thrown: What to throw; the place: Location, Water, Ice and Time of
+four groups (what is thrown: What to throw; the place: Location, Water and Time of
 day; the conditions: Weather, Wind and Sound; the viewing: View and Quality), each row an icon, its name
 over a line on what it sets and where it stands, and each setting a page of
 its choices (Location and Water as pictures) with a line on each. Each choice
@@ -72,7 +72,7 @@ is remembered on the device (but the view, which opens on the shore):
   approximations, not material measurements. A weighted rubber duck rights
   itself however it lands. Each choice's picture
   (`assets/things/thumbs/`) is a harness frame of it at rest on the pool's
-  deck, shrunk to 160×90: `--water=pool --thing=name
+  deck, shrunk to 160×90: `--sky=pool --thing=name
   --throws=-1.75:0.75:0.05 --times=3 --seed=1 --w=320 --h=180`, looked at
   where it rests (`--report` says) with `--look=x:y:z` and a `--fov` that
   frames it (a duck 4°, a pie 8°, a pizza 9°).
@@ -84,37 +84,45 @@ is remembered on the device (but the view, which opens on the shore):
   turns from it (under the water it stays under). In the pool, Shore stands
   on the deck at the pool's near corner looking down into it, Low just
   inside its near wall, and under the water the eye keeps inside its walls.
-- Water: Clear, a spring's, bluer and clearer; Lake, the
+- Water (`?water=`): Clear, a spring's, bluer and clearer; Lake, the
   default, a clear Alpine lake's (bright sand in the shallows,
   turquoise-blue where it is deep); Pond, a green pond's; Murky, a lake
-  after rain; Pool, a tiled pool on a deck in a lawn (below). Each choice's
+  after rain; or Frozen (below). In the Pool the lake's four give way to
+  the pool's own filtered water. Each choice's
   picture (`assets/water/thumbs/`) is a harness frame shrunk to 160×90:
   `--water=name --throws=0:-1.4:0.03 --times=1.0 --seed=1
   --orbit=0:35:2.4:0:0:0.8`, which looks out from over the bank so the
-  sand's fading shows each water's clarity (the pool: its shore view,
-  cropped to the pool). The lake bed
+  sand's fading shows each water's clarity (Frozen's at `--times=3`, its
+  cracks and shards). The lake bed
   slopes down from the shore, 0.7 m deep at the bottom of the view to 1.7 m
   where the rocks land and 3.5 m far out, so the sand shows in the shallows
   and is gone where the rocks land, and with it the light a ring throws on
   it. Behind the waterline, just behind the shore view, a sand beach rises
   into a grassy bank that takes its colour from the sky photo's own land, so
   turned round, the view sees a shore rather than water to the horizon.
-- Ice (`?ice=`): Open water (the default), Thin ice (1 cm) or Thick ice
-  (4 cm), over the lake or the pool (below). What is thrown lands on it,
+- Frozen (`?water=frozen`, or `?ice=thin|thick`; under the Water cards,
+  Thin, 1 cm, the default, or Thick, 4 cm), over the lake's water last
+  chosen or the pool's (below). What is thrown lands on it,
   bounces, slides far and rests, knocking into what already lies there; a
   stone, a brick or a bowling ball goes through thin ice, a light ball, a gem
   or a pebble does not, and only a big rock or a heavy ball lobbed high goes
-  through thick ice. A break opens
-  a jagged hole with cracks running out from it, and the stone splashes in
+  through thick ice, anywhere over the water, the pool's corners too. A
+  break opens a jagged hole with cracks running out from it, more and longer
+  the harder the blow, joined by rings of crack into a web, ending where
+  they meet a crack already there, and the stone splashes in
   as into open water, without the crown, whose sheet would stand on ice. The
   broken ice comes up in the hole as floating shards, the water floods the
   ice round it and freezes glazed, and a hole left alone for 40 seconds
   freezes over again in half a minute, its shards frozen in, its new ice
   thin enough for the next throw to break.
-- Location (the sky photo, `?sky=`): Lakeside (the default), Mesas, Meadow,
-  Alpine or Open sky, each a panorama of a place, its land and its sky. The
-  photo (about 6 MB) loads while the old sky stays; then the sky, the sun's
-  direction and colour and everything they light change at once.
+- Location (`?sky=`): Lakeside (the default), Mesas, Meadow, Alpine or Open
+  sky, each a panorama of a place, its land and its sky; or the Pool, a
+  tiled pool on a deck in a lawn by Lakeside's lake, through its hours
+  (below). A photo (about 6 MB) loads while the old sky stays; then the
+  sky, the sun's direction and colour and everything they light change at
+  once. Settings saved before the Pool was a place and the ice a water
+  carry over: the old Pool water opens the Pool, the old Ice its Frozen
+  water.
 - Time of day: Lakeside and Mesas were each photographed from one spot
   through a day, and a slider picks the hour: Lakeside's dawn, sunrise,
   afternoon and starlit night, Mesas' twelve hours from dawn to moonrise and
@@ -255,7 +263,7 @@ alive there is no pass and no cost per pixel. `RING_SOURCE.strength`
 scales every ring source (1: as fitted).
 
 **The pool** (`src/pool.js`, `setPool` in `src/spectralWater.js`). The
-Pool water puts the rocks in a 3 m square pool, 1.4 m deep, tiled, its
+Pool place puts the rocks in a 3 m square pool, 1.4 m deep, tiled, its
 walls rising 10 cm out of the water to a stone coping and a paved deck in a
 lawn. Its walls reflect the waves to every order, at no cost: the pool is
 the middle quarter of the solver's 6 m periodic patch, and every splat goes
@@ -360,24 +368,28 @@ known timing, and the droplets are choreographed from them:
 3. Worthington jet (`src/jet.js`): a glassy column fired up the axis from
    the bowl's floor at the pinch-off, after an oblique entry leaning back
    along the stone's path (by 0.4 of the entry angle, at most 18°) and a
-   little slower. It is water launched from a point that rises with the
+   little slower. Its water is launched from a point that rises with the
    bowl's floor, fastest first: a thin needle at up to three times the body's
-   speed, the body, and a broad slow base that the bowl's collapse builds,
-   each element then flying ballistically, so the column is a closed form in
-   launch time, azimuth and time; it stretches as it rises, its radius set by
-   volume conservation, widest at the base. A bulb at its tip pinches off
-   into drops, none to four of them, with satellites, then the column breaks
-   from the top down into drops about twice its local radius, a piece every
-   capillary time of the column, as a Rayleigh–Plateau instability does,
-   growing uneven varicose beads before it parts; its slow base falls back
-   into a mound (its ring is part of the stone's). For a 3 cm stone dropped
-   straight in at 6.3 m/s the needle clears the surface 131 ms after entry at
-   14 m/s, its first tip drop 3 mm in radius, and the column is 6 cm across
-   at the water at 0.25 s and stands 60 to 70 cm tall at half a second
-   (the reference simulation: 118 ms, 13 to 16 m/s, 2.4 mm, 5 cm, and an
-   unbroken 81 cm, an upper bound); thrown at 42° a clean jet stands 25 to
-   45 cm, its tip drops flying higher, but each throw's jet has a form of its
-   own (below);
+   speed, the body, and a broad slow base that the bowl's collapse builds
+   (the launch is fitted to the reference simulation; its body leaves at 3.2
+   times the hole's collapse speed at its pinch depth, sqrt(g·z_p), which is
+   0.75 of the reference throw's entry speed). The column in flight is
+   physics, not a drawing: the slender-jet equations of Eggers and Dupont
+   (`src/slenderJet.js`, mass and momentum along the column with surface
+   tension, viscosity and gravity, solved by material nodes on their own
+   clock), so how it thins and beads (Rayleigh–Plateau), how its tip draws
+   back into a bulb (Taylor–Culick), where it pinches, and every drop it
+   throws and that drop's size come out of the equations: a needle a
+   millimetre or two thick beads within milliseconds, a column centimetres
+   thick rises and falls back whole. Its base flies as a ballistic sleeve
+   and falls back into a mound (its ring is part of the stone's). For a 3 cm
+   stone dropped straight in at 6.3 m/s the needle clears the surface 131 ms
+   after entry at 13 m/s, its water reaches 70 cm and its largest drop is
+   6 mm (the reference simulation: 118 ms, 13 to 16 m/s, 75 to 81 cm, 6 mm;
+   `tools/jet-probe.mjs` checks the solver against the textbook growth rate,
+   retraction speed and drop size, and the jet against the simulation);
+   thrown at 42° a clean jet stands 25 to 45 cm, its drops flying higher,
+   but each throw's collapse launches its jet its own way (below);
 4. bubbles that follow the stone down its path, rise and burst into foam.
 
 Drops ring the water where they land, and the big ones (the jet's, and the
@@ -394,21 +406,28 @@ stone or a lumpy, spinning one is pushed sideways as it goes in, so its path
 curves a little. From these, the throw's size, speed and angle and a random
 stream seeded by the stone, the splash chooses (`chooseSplash` in
 `src/splash.js`): how the hole seals (deep; shallow for a flat face going in
-first; at the surface, the crown pulled shut over the hole into a low glassy
-dome, when the entry's Froude number V²/(g·R) passes Birkhoff and Isaacs'
+first; at the surface, the crown pulled shut over the hole into a low dome,
+a thin sheet whipped shut, white with air, buckled and torn, not a glass
+bell, when the entry's Froude number V²/(g·R) passes Birkhoff and Isaacs'
 108, less readily the more oblique the entry and the more irregular the
-stone), how lopsided it is, how the crown leans (a spinning stone drags
-water up on one side), and the jet's form: clean (none to four tip drops of
-varying size), leaning towards the hole's bulge and whipping, ragged (the
-column comes apart early from the top into irregular drops and spray),
-stubby (short and fat: big stones, flat entries, shallow seals), split in two
-(rare), or none at all (after a surface seal: only a low glassy mound
-heaves up and subsides). For the default 6 cm stone
-thrown normally about one throw in ten seals at the surface, four jets in
-ten are clean, a fifth to a quarter ragged, one in six leans, one in eight
-is stubby and a few split or never rise; a 1.5 cm pebble nearly always seals
-at the surface, a 16 cm stone almost never, and its jets are mostly stubby
-(`tools/variety-probe.mjs` prints the distributions).
+stone: Worthington's roughened marble dropped 15 cm threw a tall jet and
+from 140 cm none, Truscott and Techet's billiard balls at 6 m/s dome over,
+and the app does the same), what follows a seal (the hole still pinches
+under the dome and its jet bursts up through it, flinging the dome's water,
+as Truscott and Techet saw; or, when the dome closed early, it is drawn
+down into the hole before the jet arrives and the jet is trapped, the
+surface heaving and seething, as Worthington saw from 140 cm), how lopsided
+the hole is, how the crown leans (a spinning stone drags water up on one
+side), and how the collapse launches the jet: clean, leaning towards the
+hole's bulge, ragged (an uneven collapse launches the column rough, so it
+comes apart along its length), stubby (short and fat: big stones, flat
+entries, shallow seals), or none at all (a trapped jet: only a low mound
+heaves up and subsides). For the default 6 cm stone thrown normally about
+one throw in ten seals at the surface, four jets in ten are clean, a fifth
+to a quarter ragged, one in six leans, one in eight is stubby; thrown softly
+(nearer vertical) a third seal; a 1.5 cm pebble nearly always seals and its
+jet is nearly always trapped, a 16 cm stone never seals and its jets are
+mostly stubby (`tools/variety-probe.mjs` prints the distributions).
 
 **Skipping** (`src/rock.js`, a Skip throw). The thrower picks a flat stone
 and lets it go from a crouch, 30 cm over the water, nearly level, at 7, 10
@@ -757,10 +776,17 @@ the throw (`roundLipReach` in `src/cavity.js`), then fitted, in the same
 step, to the cavity the splash made (`Cavity.lipReach`: its crest at the
 widest and half its fall, lopsided and drawn forward as it is), with a
 broken edge of 36 corners beyond it and a bite or two out of it, from the
-hole's own seeded stream. Radial cracks run out from its corners, random
-walks of 0.6 to 1.6 times the sheet's characteristic length (0.54 m for
-thin ice, 1.5 m for thick), with a branch now and then and sometimes an arc
-of ring crack. A thing sliding into a hole falls in; one too wide for a hole
+hole's own seeded stream; a hole may open anywhere over the water, its edge
+brought in to 4 mm of a pool's walls. Radial cracks run out from its
+corners, three to six of them and one and a half more for each doubling of
+the blow over what the ice held, 0.35 to 1.5 times the sheet's
+characteristic length (0.54 m for thin ice, 1.5 m for thick) and now and
+then one far longer: each in straight runs of 3 to 15 cm with kinks
+between, pulled back the way it set out, forking now and then, tapering to
+a hairline. Rings of crack join neighbouring radials farther out, chords
+from one to the next, so a hard break leaves a web. A crack stops where it
+meets one already there, as real cracks do, so older breaks bound newer
+ones; a near miss stars the ice, sometimes ringed. A thing sliding into a hole falls in; one too wide for a hole
 strikes its edge; a floater that went in by a hole comes up in it and is
 held there. The ice that was in the hole broke into pieces between its
 radial cracks, and across them where a wedge is wide or deep, each a convex
@@ -786,22 +812,38 @@ it.) The sheet is rigid at the pond's scales (bending waves shorter
 than its characteristic length are stiffened by orders of magnitude), so
 the solver runs on under it, seen only in the holes, and carries a stone's
 ring there as in the pool (its waves run under the ice out of sight); no
-gale blows on ice. The holes and cracks are painted into a mask over the
-patch (an RGBA8 texture of 512²: signed distances to the nearest hole's
-edge and crack, how wet, and the signed distance to new ice's front; only
-the rows that change are sent), which the water's own shaders read: where
-it says ice they draw the ice, held flat at its freeboard, and in the
-holes' open water the water, blending them over the pixel at the edge; so
-the ice costs no program of its own, and a shard is drawn as any floater
-is. The ice is a lake's: mostly clear, the water and the bed
-showing through it, a frosted mirror (the sky's cube blurred by its mip
-levels as wide as the frost spreads the reflected ray) with the sun's
-broad glare on it, a rime of frost mottling it, patches of white snow ice
-(more on thick ice), clusters of frozen bubbles; a crack is a bright line,
-its fracture face showing white down through clear ice as wide as the
-sheet's thickness seen along the refracted ray, a dark line in white ice;
-round a hole the ice is wet, and wet ice is darker and a mirror; a hole's
-new ice is clear and glassy, its old edge a faint seam. Under flat ice the light is not focused: no
+gale blows on ice. The holes are painted into a mask over the patch (an
+RGBA8 texture of 512²: the signed distance to the nearest hole's edge, how
+wet, and the signed distance to new ice's front; only the rows that change
+are sent), which the water's own shaders read: where it says ice they draw
+the ice, held flat at its freeboard, and in the holes' open water the
+water, blending them over the pixel at the edge; so the sheet costs no
+program of its own, and a shard is drawn as any floater is. The cracks are
+drawn over it as ribbons (`src/iceCracks.js`: one mesh, one program, built
+under the loading veil), so each is as sharp as the screen, its kinks and
+its width its own, however near the eye comes: the mask's 1.2 cm texels
+would round them, and its distance field crossed zero between two cracks
+near each other, a dotted line where no crack was. The ice is a lake's,
+every part of it crisp (soft noise read as a texture magnified, the
+picture blurred): mostly clear black ice, the water and the bed showing
+through it and a mirror, the sun a small hard glint in it; its crystals'
+boundaries faint lines in patches; snow ice in wind-streaked patches with
+ragged edges (more on thick ice) and cloudy ice frozen from slush, both
+frosted, the sun's sheen on them broken into glints; frost specks and
+frozen bubbles in clusters; a veil of the light even clear ice scatters,
+greater looking along it; round a frozen pool a white rim where the ice
+froze to the tiles, and drifts against the walls. A crack is a bright line,
+brighter and dimmer along it, its fracture face showing white down through
+clear ice as wide as the sheet's thickness seen along the refracted ray, a
+dark line in snow ice; round a hole the ice is wet, and wet ice is darker
+and a mirror; a hole's new ice is clear and glassy, its old edge a faint
+seam. Under the ice in the pool the tiles keep the screen's sharpness
+however coarse the under-water pass is drawn (Medium and Low draw it at
+half resolution): the shader works out the tiles' pattern where the eye's
+ray, bent into the water, meets the basin, and multiplies the pass by that
+pattern over a screen pixel against the same over the pass's texel, so the
+grout is sharp and the pass keeps its light; still pool water does the same
+while the refraction moves the lookup by under a pixel. Under flat ice the light is not focused: no
 caustics on the bed and no shafts in the water but under the holes. From
 below, clear ice lets the sky's window through unrippled and white ice
 glows. A thing landing on ice is heard with the chirp floating ice is known
@@ -1060,14 +1102,16 @@ farther out, so it rises into the view rather than filling its corner.
   `?windStrength=calm|breeze|windy|gale` (`--wind-strength=` for the harness)
   sets its strength, over the one the Wind setting last chose on the device
   (kept in `localStorage`); calm otherwise.
-- `?sky=name` on the page (`--sky=name` for the harness) picks the sky's
-  place, a key of `SKIES` in `src/sky.js`, over the one last chosen on the
-  device (`sunrise`, the old Sunrise sky, is Lakeside at sunrise), and
-  `?time=hour` (`--time=` for the harness) its hour, over the one nearest the
-  time of day last chosen (the harness's browser keeps none: the place's
-  anchor hour); `?water=clear|lake|pond|murky` (`--water=` for the harness) the
-  water's clarity, `WATER_CLARITIES` in `src/main.js`; `?ice=none|thin|thick`
-  (`--ice=` for the harness) the ice over it, `ICE_THICKNESS` in `src/ice.js`;
+- `?sky=name` on the page (`--sky=name` for the harness) picks the place,
+  `PLACES` in `src/main.js` (a key of `SKIES` in `src/sky.js`, or `pool`, the
+  old `?water=pool` too), over the one last chosen on the device (`sunrise`,
+  the old Sunrise sky, is Lakeside at sunrise), and `?time=hour` (`--time=`
+  for the harness) its sky's hour, over the one nearest the time of day last
+  chosen (the harness's browser keeps none: the anchor hour);
+  `?water=clear|lake|pond|murky|frozen` (`--water=` for the harness) the
+  water, `WATER_CHOICES` in `src/main.js`; `?ice=thin|thick` (`--ice=` for the
+  harness) freezes it that thick, `ICE_THICKNESS` in `src/ice.js` (`none`
+  thaws it);
   `?weather=clear|light-rain|heavy-rain|storm` (`--weather=` for the harness) the
   weather, `WEATHERS` in `src/main.js`, over the one last chosen on the
   device (a storm brings a gale, unless `?windStrength` says otherwise).
@@ -1097,20 +1141,24 @@ farther out, so it rises into the view rather than filling its corner.
   # with --align=assets/sky/lakeside_sunrise_2k.hdr: dawn 2024-08-21T06:27, night 08-21T19:51;
   # and lakeside (2019, its time stamp off by a quarter of an hour) with --align alone
   ```
-- `node tools/jet-probe.mjs [radius] [entrySpeed] [profileTime] [horizontalFraction]`
-  runs one Worthington jet of the default (clean) form on the CPU over the
-  bowl its stone's cavity leaves and prints its timeline (the needle clearing
-  the surface, the tip drops, the breakup, the fall-back), its profile at the
-  given time after entry, its drops, volume budget, when its big drops land,
-  whether its normals face outward and its cost per frame; a horizontal
-  fraction makes it the leaning jet of an oblique entry.
+- `node tools/jet-probe.mjs [radius] [entrySpeed] [horizontalFraction]`
+  checks the slender-jet solver (`src/slenderJet.js`) against the textbook:
+  Rayleigh–Plateau's growth rate, Taylor–Culick's retraction speed, the drop
+  size of a breaking column, and the water kept; runs one Worthington jet of
+  the clean form on the CPU over the bowl its stone's cavity leaves (the
+  reference throw by default, checked against the reference simulation's
+  timing and heights, and against itself at other frame rates) and prints
+  its timeline, drops, water and cost per frame; checks Worthington's marble
+  and Truscott and Techet's billiard ball against the surface seal's odds,
+  timing and what follows; a horizontal fraction makes it the leaning jet of
+  an oblique entry. Part of `npm test`.
 - `node tools/variety-probe.mjs [throws=200] [--seed=1] [--aim=x:z] [--sets=default|all|grid] [--list]`
   throws stones as the app does (seed n is the shoot harness's seeded throw n
   at the same aim and power) and prints how their splashes vary: the stones'
   shapes, contacts and spins; how often each jet form and seal comes up (with
   the surface seal's chance); the
-  jets' tops, tip drops and lean, the holes' lopsidedness and the crowns'
-  heights, by form (a jet's top is its column's or its tip drops' highest,
+  jets' tops, drops and lean, the holes' lopsidedness and the crowns'
+  heights, by form (a jet's top is its column's or its drops' highest,
   flown with the splash's drag); and the cost per frame, for the default stone thrown
   normally, softly and hard and for a 16 cm stone and a pebble
   (`--sets=default` leaves out the last two; `--sets=grid` runs every size of
@@ -1203,7 +1251,9 @@ farther out, so it rises into the view rather than filling its corner.
   finger, a pill tapped is thrown next, a press on the pond closes it without
   throwing and the keyboard works it; that the settings open with their rows, each
   row's value whole beside its name, the Water page's pictured choices each
-  reachable by scrolling and its Pool and Murky taking, the
+  reachable by scrolling, its Frozen freezing the water, Thin and Thick
+  under the cards fitting and taking, and Murky thawing it, the Location
+  page's Pool putting the rocks in the pool with its own water, the
   Time of day page's slider spans it and, tapped at its left end, loads the
   first hour, and a lone photograph's page hides it, and the Weather page's
   choices set the weather; it saves each screen to
@@ -1218,11 +1268,13 @@ farther out, so it rises into the view rather than filling its corner.
   draw at the current time scale), `setDebugView(name)`, `setFov(degrees)`,
   `lookAt(x, y, z)`, `resetView()`, `setWind(name)` (and `wind`: calm,
   breeze or windy, remembered on the device), `setSky(place)` and
-  `setHour(name)` (and `sky`, `hour`, and `hours`, the shown place's),
+  `setHour(name)` (and `sky`, `pooled`, `hour`, and `hours`, the shown
+  place's), `setWater(name)` (and `waterChoice`, and `clarity`, the water
+  drawn),
   `prefetchHours()` (fetches the hours either side of the one asked for ahead),
   `setWeather(name)` (and `weather`, and `raining`, once the rain's table
-  has come and it falls), `setIce(name)` (and `ice`, and `iceSheet`, its
-  holes and mask), `rings` (the live rings and
+  has come and it falls), `setIce(name)` (and `ice`, `iceThickness`, and
+  `iceSheet`, its holes, cracks and mask), `rings` (the live rings and
   their plans), and `budget`: what the preset built (the solver's grid, the
   mesh, the pixel ratio, every target's size, an estimate of the render
   targets' memory, the programs compiled and the warm-up's, whether the

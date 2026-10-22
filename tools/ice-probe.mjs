@@ -235,7 +235,7 @@ for (const [thickness, metres] of Object.entries(ICE_THICKNESS).filter(([, metre
       const strike = record.firstStrike ?? { blow: 0, holds: 1 };
       const ratio = strike.blow / (ICE.strength * metres ** 2);
       const slid = record.touched && !record.enteredWater ? Math.hypot(rock.position.x - record.touched.x, rock.position.z - record.touched.z) : 0;
-      const outcome = record.broke ? '●' : ice.holes.length === 0 && ice.cracks.length > 0 ? '✳' : '·';
+      const outcome = record.broke ? '●' : ice.holes.length === 0 && ice.crackLines.length > 0 ? '✳' : '·';
       table.set(`${thickness} ${label} ${manner} ${power}`, { ratio, record, rock, ice, slid, outcome, strike });
       cells.push(`${outcome} ${ratio.toFixed(2).padStart(6)}${record.broke ? '' : record.gone ? ` gone past ${FARTHEST} m` : ` ${slid.toFixed(1)} m`}`.padEnd(30));
       // Every outcome is the one its own blow and draw say: through if its first blow was harder than the ice held then.
@@ -294,9 +294,9 @@ for (const [key, entry] of table) {
   const painted = performance.now();
   ice.update();
   const paintMs = performance.now() - painted;
-  for (const crack of hole.cracks) {
-    for (let index = 0; index < crack.length; index += 2) {
-      const x = crack[index], z = crack[index + 1];
+  for (const { points } of hole.cracks) {
+    for (let index = 0; index < points.length; index += 2) {
+      const x = points[index], z = points[index + 1];
       check(x > PATCH.domainMin[0] && x < PATCH.domainMin[0] + PATCH.domainSize && z > PATCH.domainMin[1] && z < PATCH.domainMin[1] + PATCH.domainSize && ice.overWater(x, z), `${key}: a crack runs off the ice to (${x.toFixed(2)}, ${z.toFixed(2)})`);
     }
   }
@@ -426,6 +426,26 @@ console.log('\nA frozen pool: things thrown at it rest on the ice inside its wal
     check(record.broke || (rock.state === 'rest' && Math.abs(lowest - height) < 0.005), `${name} thrown at the frozen pool ended ${rock.state} at ${lowest.toFixed(3)} m, ${where}`);
   }
   console.log(`  ${outcomes.join('; ')}`);
+  // The default stone thrown into each corner, as near the walls as a throw is aimed (src/main.js POOL_MARGIN), breaks
+  // thin ice there, and a 30 cm rock too, its hole reaching to the walls and no further (src/ice.js holeBox).
+  const corners = [];
+  for (const [sideX, sideZ, value] of [[0, 0], [1, 0], [0, 1], [1, 1], [1, 0, 30]]) {
+    const x = POOL_SQUARE.minX + (sideX ? POOL_SQUARE.size - 0.25 : 0.25), z = POOL_SQUARE.minZ + (sideZ ? POOL_SQUARE.size - 0.25 : 0.25);
+    const ice = new IceSheet(PATCH);
+    ice.setThickness(ICE_THICKNESS.thin);
+    ice.setPool(POOL_SQUARE, poolGround(POOL_SQUARE));
+    const record = follow(throwOnto(ice, 'stone', { x, z, value }), ice, { pool: true, seconds: 3 });
+    const hole = ice.holes[0];
+    let nearest = Infinity;
+    for (let index = 0; hole && index < hole.corners.length; index += 2) {
+      const cornerX = hole.corners[index], cornerZ = hole.corners[index + 1];
+      nearest = Math.min(nearest, cornerX - POOL_SQUARE.minX, POOL_SQUARE.minX + POOL_SQUARE.size - cornerX, cornerZ - POOL_SQUARE.minZ, POOL_SQUARE.minZ + POOL_SQUARE.size - cornerZ);
+    }
+    const label = value ? `a ${value} cm rock` : 'the default stone';
+    corners.push(`${value ? `${value} cm ` : ''}${x.toFixed(2)}, ${z.toFixed(2)}: ${record.broke ? `broke, its edge ${centimetres(nearest)} cm from a wall` : 'held'}`);
+    check(record.broke && nearest > 0 && (!value || nearest < 0.01), `${label} thrown into the frozen pool's corner at (${x.toFixed(2)}, ${z.toFixed(2)}) ${record.broke ? `broke a hole ${centimetres(nearest)} cm from the walls` : 'did not break the thin ice'}`);
+  }
+  console.log(`  thrown into each corner of thin ice: ${corners.join('; ')}`);
   // A stone slid at the far wall comes back off it.
   const ice = new IceSheet(PATCH);
   ice.setThickness(ICE_THICKNESS.thick);
@@ -633,12 +653,26 @@ console.log('\nNew ice: a hole left alone skins over; a thing afloat in one keep
   const hole = ice.holes[0];
   const shardsBefore = world.shards.length;
   world.step(40 + 30 + 2 - 5);
-  // A point of its new ice near its middle, not where a shard froze in.
-  const middle = Array.from({ length: 24 }, (unused, index) => ({ x: hole.x + 0.25 * hole.inner * Math.cos(index), z: hole.z + 0.25 * hole.inner * Math.sin(index) }))
-    .find((point) => ice.thicknessAt(point.x, point.z) < ice.thickness) ?? { x: hole.x, z: hole.z };
+  // A point of its new ice near its middle with room for the stone round it: not where a shard froze in, nor the old ice,
+  // for the stone's radius and a margin round where it lands (the candidate with the widest ring of new ice about it).
+  const newIce = (x, z) => { const thickness = ice.thicknessAt(x, z); return thickness > 0 && thickness < ice.thickness; };
+  const clearRing = (point) => {
+    let clear = 0;
+    for (let ring = 0.005; ring <= 0.06; ring += 0.005) {
+      let allNew = true;
+      for (let spoke = 0; spoke < 12 && allNew; spoke++) allNew = newIce(point.x + ring * Math.cos(spoke * Math.PI / 6), point.z + ring * Math.sin(spoke * Math.PI / 6));
+      if (!allNew) break;
+      clear = ring;
+    }
+    return clear;
+  };
+  const candidates = [];
+  for (const share of [0.15, 0.25, 0.35, 0.45]) for (let index = 0; index < 24; index++) candidates.push({ x: hole.x + share * hole.inner * Math.cos(index), z: hole.z + share * hole.inner * Math.sin(index) });
+  const middle = candidates.filter((point) => newIce(point.x, point.z)).map((point) => ({ ...point, clear: clearRing(point) }))
+    .sort((first, second) => second.clear - first.clear)[0] ?? { x: hole.x, z: hole.z, clear: 0 };
   const frozenPainted = world.frozen.filter((shard) => maskAt(ice, shard.position.x, shard.position.z)[0] > 128).length;
   const top = ice.at(middle.x, middle.z), thin = ice.thicknessAt(middle.x, middle.z);
-  console.log(`  a 16 cm stone through thick ice: ${hole.skin?.closed ? 'skinned over' : 'still open'} ${(world.time - hole.openedAt).toFixed(0)} s after the break; its middle ${top === null ? 'water' : `ground at ${(1000 * top).toFixed(2)} mm, its new ice ${(1000 * thin).toFixed(2)} mm`}; ${world.frozen.length} of ${shardsBefore} shards frozen in (${frozenPainted} painted as ice), ${world.things.filter((thing) => thing.piece).length} afloat`);
+  console.log(`  a 16 cm stone through thick ice: ${hole.skin?.closed ? 'skinned over' : 'still open'} ${(world.time - hole.openedAt).toFixed(0)} s after the break; its middle ${top === null ? 'water' : `ground at ${(1000 * top).toFixed(2)} mm, its new ice ${(1000 * thin).toFixed(2)} mm`} (clear of shards and the old ice for ${centimetres(middle.clear)} cm round); ${world.frozen.length} of ${shardsBefore} shards frozen in (${frozenPainted} painted as ice), ${world.things.filter((thing) => thing.piece).length} afloat`);
   const { release, clock, paint, freeze } = world.costs;
   console.log(`  at most a step: letting its shards go and the flood ${release.toFixed(1)} ms, the clock otherwise (drying, new ice prepared and grown) ${clock.toFixed(1)} ms, the mask's painting and sending ${paint.toFixed(1)} ms, a shard frozen in ${freeze.toFixed(1)} ms`);
   check(hole.skin?.closed && !ice.holeAt(middle.x, middle.z) && top !== null && thin > 0 && thin < ice.thickness, `a hole left alone ${hole.skin?.closed ? '' : 'did not skin over'}${top === null ? ', its middle still water' : ''}`);
@@ -646,6 +680,7 @@ console.log('\nNew ice: a hole left alone skins over; a thing afloat in one keep
   check(maskAt(ice, middle.x, middle.z)[3] > 128, 'a skinned-over hole\'s middle is not new ice in the mask');
   check(Math.max(release, clock, paint, freeze) < SKIN_MS, `the ice's clock, its painting or a shard frozen in cost ${Math.max(release, clock, paint, freeze).toFixed(1)} ms in a step`);
   // A stone at the old hole breaks the new ice: thin, it lets go no shards.
+  check(middle.clear >= 0.03 + 0.01, `a skinned-over hole has no new ice clear of its shards for a 6 cm stone to land on (${centimetres(middle.clear)} cm clear at best)`);
   const holes = ice.holes.length;
   world.throwStone(6, middle);
   world.step(4);

@@ -23,14 +23,15 @@
 // --report="js expression" is evaluated in the page after each frame and its
 // result printed as JSON (window.__pond is the app). --floats=half renders on
 // the half-float path that devices without EXT_color_buffer_float take.
-// --sky=name picks the sky's place (a key of SKIES in src/sky.js) and
-// --time=hour its hour (the place's anchor otherwise, never the time of day
-// last chosen: the harness's browser keeps no storage), --weather=
-// clear|light-rain|heavy-rain the weather (WEATHERS in src/main.js; the
-// rain waits for its ring's table before the first frame),
-// --water=pool|clear|lake|pond|murky the water (WATER_CLARITIES in src/main.js;
-// pool puts the rocks in the pool, src/pool.js), and --ice=none|thin|thick
-// the ice over it (ICE_THICKNESS in src/ice.js; none by default).
+// --sky=name picks the place (PLACES in src/main.js: a key of SKIES in
+// src/sky.js, or pool, the rocks in the pool under Lakeside's sky, src/
+// pool.js) and --time=hour its sky's hour (its anchor otherwise, never the
+// time of day last chosen: the harness's browser keeps no storage),
+// --weather=clear|light-rain|heavy-rain the weather (WEATHERS in src/main.js;
+// the rain waits for its ring's table before the first frame),
+// --water=clear|lake|pond|murky|frozen the water (WATER_CHOICES in src/
+// main.js; the old --water=pool is --sky=pool), and --ice=thin|thick freezes
+// it, that thick (ICE_THICKNESS in src/ice.js; frozen thin otherwise).
 // --wind=x:z sets the direction the wind blows toward in world XZ, and
 // --wind-strength=calm|breeze|windy its strength (the page's own default is
 // calm; breeze is the look the pond had before the Wind control).
