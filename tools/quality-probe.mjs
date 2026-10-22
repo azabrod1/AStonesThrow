@@ -547,7 +547,8 @@ const calmAgain = await page.evaluate(() => ({ programs: window.__pond.budget.pr
 check(!calmAgain.gale.blowing && calmAgain.gale.sheetTriangles < 5000 && calmAgain.programs === programsBeforeGale, `calm again: the still sheet (${calmAgain.gale.sheetTriangles} triangles), no program (${calmAgain.programs})`);
 await checkBuilt(phone, 'after the gale');
 
-part('one frame loop');
+part('one frame loop, on low');
+await page.evaluate(() => window.__pond.setQuality('low'));   // the frames counted are any preset's
 // pause, resume, pause, resume in one tick: one frame loop, so at most one render per requestAnimationFrame, and at least every
 // other (the most the idle cap, on high too now, skips of a 60 Hz requestAnimationFrame).
 const loops = await page.evaluate(() => new Promise((resolve) => {
