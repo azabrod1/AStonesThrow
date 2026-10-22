@@ -255,7 +255,7 @@ damped. A ring retires once no slope of it is steeper than
 footprint), under a third of a pixel's turn of the mirror image: the
 reference stone's after about a minute and a half, by then 35 m out; a
 1.5 cm pebble's after 50 s. At most 24 rings live on High (12 on Medium,
-8 on Low); a newer one makes the one closest to retiring, the faintest as
+10 on Low); a newer one makes the one closest to retiring, the faintest as
 a rule, fade out over 8 s on High, so slowly that nobody sees it go (4 s
 on Medium and 3 s on Low, where a ring still fading costs what a live one
 does). With no ring
