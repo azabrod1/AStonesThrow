@@ -258,8 +258,9 @@ const CROWN_SPECKS = 70;              // foam specks where a 3 cm stone's crown 
 const CROWN_SPECK_CAP = 450;          // at most (a 16 cm stone's crown wants 500)
 const LANDING_KICK_CHANCE = 0.4;      // a big drop landing without a crown kicks up droplets this often...
 const LANDING_KICK_MOST = 2;          // ...one to this many
-const LANDING_SPECK_FREE = 0.003;     // a landing drop leaves a foam speck per LANDING_SPECK_STEP of radius beyond this
-const LANDING_SPECK_STEP = 0.0015;
+const LANDING_SPECK_FREE = 0.004;     // a landing drop leaves a foam speck per LANDING_SPECK_STEP of radius beyond this...
+const LANDING_SPECK_STEP = 0.004;
+const LANDING_SPECK_MOST = 2;         // ...at most this many: a bubble or two, whatever its size (a rock's rain of 10 mm drops left thousands)
 const PATH_SLOPE_CAP = 1.2;           // the stone's path under water, horizontal over vertical, at most (50°)
 const FAN_THRESHOLD = 0.3;            // the forward fan needs this horizontal fraction of the entry speed...
 const FAN_FULL = 0.7;                 // ...and is at full strength from this one
@@ -1622,7 +1623,7 @@ export class SplashSystem {
           this.spawnDroplet(hit.x, 0.003, hit.z, Math.cos(angle) * out, randomRange(0.5, 1.8) * Math.min(hit.fallSpeed / 3, 1.5), Math.sin(angle) * out, hit.radius * randomRange(0.3, 0.5));
         }
       }
-      const specks = Math.floor((hit.radius - LANDING_SPECK_FREE) / LANDING_SPECK_STEP + Math.random());
+      const specks = Math.min(Math.floor((hit.radius - LANDING_SPECK_FREE) / LANDING_SPECK_STEP + Math.random()), LANDING_SPECK_MOST);
       if (specks > 0) this.spawnFoamSpecks(hit.x, hit.z, 0, 2 * hit.radius, specks, 0.02);
     }
 
