@@ -281,7 +281,8 @@ await page.evaluate(() => { window.__pond.setIce('thin'); window.__pond.advance(
 const iced = await page.evaluate(() => window.__pond.budget);
 check(iced.ice.name === 'thin' && iced.ice.thickness === 0.01 && iced.programs === programsBeforeIce && !iced.gale.blowing,
   `thin ice compiles no program (${programsBeforeIce} before, ${iced.programs} drawing it) and stills any gale`);
-await page.evaluate(() => { window.__pond.throwAt(0, -1.4, { radius: 0.03, power: 'normal' }); window.__pond.advance(1.0); });
+// (It flies some 0.8 s, and its shards go once its cavity has closed, some 0.3 s after.)
+await page.evaluate(() => { window.__pond.throwAt(0, -1.4, { radius: 0.03, power: 'normal' }); window.__pond.advance(1.5); });
 const broken = await page.evaluate(() => window.__pond.budget);
 check(broken.ice.holes >= 1 && broken.programs === programsBeforeIce, `a stone through thin ice breaks a hole (${broken.ice.holes}) and compiles no program (${broken.programs})`);
 check(broken.ice.shards >= 3 && broken.ice.shards <= broken.things.shards && broken.ice.wet > 0,
