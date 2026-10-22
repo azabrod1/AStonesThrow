@@ -232,6 +232,10 @@
 // environment stays complete until the latest panorama can replace it.
 // ?view=shore|level|high|under stands the camera at one of VIEWS (showView);
 // ?sky=pool is the Pool (PLACES; the old ?water=pool too);
+// ?sky=swiss is Swiss Alps, starting Frozen unless water/ice is explicit
+// or this place has a saved water choice. Entering it applies that preset;
+// changing its hour does not. Its water-level starting view reveals the
+// peaks; a custom view stays put on entry. Removed names use PLACE_ALIASES.
 // ?water=clear|lake|pond|murky|frozen the water (WATER_CHOICES; setWater),
 // ?ice=thin|thick its ice, frozen (none thaws it; setIce);
 // ?wind=x,z sets the direction the wind blows toward in world XZ
@@ -493,7 +497,12 @@ const LAKE_CLARITIES = WATER_CHOICES.filter((name) => name !== 'frozen');
 // about the water, the lake's bed and shore, or the Pool's tiled pool on its
 // deck in a lawn (src/pool.js; setPooled), by Lakeside's lake and through its
 // hours, so that choosing it from Lakeside loads no photo.
-const PLACES = { ...Object.fromEntries(SKY_NAMES.map((name) => [name, { sky: name, pool: false }])), pool: { sky: 'lakeside', pool: true } };
+const PLACES = {
+  ...Object.fromEntries(SKY_NAMES.map((name) => [name, { sky: name, pool: false }])),
+  swiss: { sky: 'swiss', pool: false, defaultWater: 'frozen', defaultView: 'level' },
+  pool: { sky: 'lakeside', pool: true },
+};
+const PLACE_ALIASES = { alpine: 'swiss', meadow: 'lakeside', open: 'lakeside' };
 const DEFAULT_PLACE = 'lakeside';
 /**
  * Settings remembered before the Pool was a place and the ice a water,
@@ -590,6 +599,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   // last chosen here (chosenClock).
   let chosenClock = storedChoice(TIME_STORAGE_KEY);
   const placeAndHour = (place, hour) => {
+    place = Object.hasOwn(PLACE_ALIASES, place ?? '') ? PLACE_ALIASES[place] : place;
     if (place === 'sunrise') return ['lakeside', 'sunrise'];
     const known = Object.hasOwn(PLACES, place ?? '') ? place : DEFAULT_PLACE;
     return [known, hour ?? nearestHour(PLACES[known].sky, chosenClock)];
@@ -680,7 +690,9 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   // A storm brings its gale, unless the page's ?windStrength says otherwise.
   if (WEATHERS[weatherName].wind && !Object.hasOwn(WIND_STRENGTHS, requestedWind ?? '')) applyWind(WEATHERS[weatherName].wind);
   // The water (WATER_CHOICES): the page's ?water, else the last choice here,
-  // else Lake; frozen by the page's ?ice (none thaws it), else by the water's
+  // else Lake. Entering Swiss Alps defaults to Frozen, but a saved water
+  // choice in that same place survives reload. Page water/ice parameters
+  // always win; frozen by the page's ?ice (none thaws it), else by the water's
   // choice; its ice thin unless ?ice, or the last choice here, says thick.
   // lakeClarity is the lake's water, frozen or not; waterName the water drawn,
   // the pool's in the pool.
@@ -689,7 +701,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   const requestedIce = pageParameters.get('ice');
   let lakeClarity = [requestedWater, storedWater].find((name) => LAKE_CLARITIES.includes(name)) ?? DEFAULT_WATER;
   let iceThickness = ['thin', 'thick'].find((name) => name === requestedIce) ?? (storedChoice(ICE_STORAGE_KEY) === 'thick' ? 'thick' : 'thin');
-  const frozenAtStart = Object.hasOwn(ICE_THICKNESS, requestedIce ?? '') ? requestedIce !== 'none' : WATER_CHOICES.includes(requestedWater) ? requestedWater === 'frozen' : storedWater === 'frozen';
+  const placeWater = storedChoice(SKY_STORAGE_KEY) === firstPlace && WATER_CHOICES.includes(storedWater) ? storedWater : PLACES[firstPlace].defaultWater ?? storedWater;
+  const frozenAtStart = Object.hasOwn(ICE_THICKNESS, requestedIce ?? '') ? requestedIce !== 'none' : WATER_CHOICES.includes(requestedWater) ? requestedWater === 'frozen' : placeWater === 'frozen';
   let waterName = DEFAULT_WATER;
   pooled = PLACES[placeName].pool;
   water.setPool(pooled);
@@ -738,7 +751,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   // widest field of view); view the current one, zoomed inside home.
   const requestedView = pageParameters.get('view');
   const viewsNow = () => (pooled ? POOL_VIEWS : VIEWS);
-  const orbit = { ...viewsNow()[Object.hasOwn(VIEWS, requestedView ?? '') ? requestedView : 'shore'] };
+  const orbit = { ...viewsNow()[Object.hasOwn(VIEWS, requestedView ?? '') ? requestedView : PLACES[firstPlace].defaultView ?? 'shore'] };
   // The ground the eye keeps over: the beach, or the pool's deck, eased in
   // over EYE_EDGE inside the pool's edge so the eye never stands at the
   // deck's lip. Under a pool's water it keeps inside the walls too.
@@ -1044,15 +1057,26 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       if (!controller.signal.aborted) console.error(error);
     }).then(() => environment.name);
   }
-  /** Commit the place and its geometry only when its latest sky and hour have arrived. */
+  /** Commit the place, its geometry and entry preset only after its latest sky and hour arrive. */
   function requestPlace(place, hour) {
     const sky = PLACES[place].sky;
     const request = { place, hour: resolveHour(sky, hour) };
     placeRequest = request;
     return requestSky(sky, request.hour).then(() => {
       if (placeRequest === request && environment.name === sky && environment.hour === request.hour) {
+        const entering = placeName !== place;
         placeName = place;
         setPooled(PLACES[place].pool);
+        if (entering && PLACES[place].defaultWater === 'frozen' && iceName === 'none') {
+          clearPond();
+          applyIce(iceThickness);
+        }
+        // From the untouched shore view, show the peaks above the ice. Keep a view the user has moved.
+        if (entering && PLACES[place].defaultView && reportedView?.atHome) showView(PLACES[place].defaultView, { glide: false });
+        try {
+          window.localStorage.setItem(SKY_STORAGE_KEY, place);
+          window.localStorage.setItem(WATER_STORAGE_KEY, iceName === 'none' ? lakeClarity : 'frozen');
+        } catch { /* storage refused: the choices last this visit */ }
       }
       return placeName;
     });
@@ -2416,7 +2440,10 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       applyWater();
       applySky();   // the absorption lights the stones under the water and the splash's view of the bed
       if (iceName !== 'none') { clearPond(); applyIce('none'); }
-      try { window.localStorage.setItem(WATER_STORAGE_KEY, name); } catch { /* storage refused: the choice lasts this visit */ }
+      try {
+        window.localStorage.setItem(WATER_STORAGE_KEY, name);
+        window.localStorage.setItem(SKY_STORAGE_KEY, placeName);
+      } catch { /* storage refused: the choices last this visit */ }
     },
     /** The Water setting's choice: the lake's clarity, or frozen. */
     get waterChoice() { return iceName === 'none' ? lakeClarity : 'frozen'; },
@@ -2436,6 +2463,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       if (name !== 'none') iceThickness = name;
       applyIce(name);
       try {
+        window.localStorage.setItem(SKY_STORAGE_KEY, placeName);
         window.localStorage.setItem(WATER_STORAGE_KEY, name === 'none' ? lakeClarity : 'frozen');
         if (name !== 'none') window.localStorage.setItem(ICE_STORAGE_KEY, name);
       } catch { /* storage refused: the choice lasts this visit */ }
@@ -2455,11 +2483,11 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
      * A new choice cancels the previous download and starts immediately.
      */
     setSky(name) {
+      name = Object.hasOwn(PLACE_ALIASES, name ?? '') ? PLACE_ALIASES[name] : name;
       if (name !== 'sunrise' && !Object.hasOwn(PLACES, name ?? '')) return Promise.resolve(placeName);
       // A place under the sky asked for already (the Pool and Lakeside) keeps its hour.
       const sameSky = name !== 'sunrise' && PLACES[name].sky === skyRequest.place;
       const [place, hour] = placeAndHour(name, sameSky ? skyRequest.hour : undefined);
-      try { window.localStorage.setItem(SKY_STORAGE_KEY, place); } catch { /* storage refused: the choice lasts this visit */ }
       return requestPlace(place, hour);
     },
     get sky() { return placeName; },
@@ -2478,7 +2506,6 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
         chosenClock = hour.clock;
         try { window.localStorage.setItem(TIME_STORAGE_KEY, hour.clock); } catch { /* storage refused: the choice lasts this visit */ }
       }
-      try { window.localStorage.setItem(SKY_STORAGE_KEY, place); } catch { /* storage refused */ }
       return requestPlace(place, name).then(() => environment.hour);
     },
     get hour() { return environment.hour; },

@@ -624,10 +624,10 @@ for (const framing of FRAMINGS) {
   await page.waitForTimeout(400);
   await press('#settings .menu-tier[data-open="sky"]');
   await page.waitForTimeout(400);
-  await press('#sky [data-value="meadow"]');
-  await page.waitForFunction(() => window.__pond.sky === 'meadow' && document.querySelector('.menu-tier[data-open="time"] .menu-tier-value').textContent === 'Afternoon', null, { timeout: 60000 }).catch(() => {});
+  await press('#sky [data-value="cove"]');
+  await page.waitForFunction(() => window.__pond.sky === 'cove' && document.querySelector('.menu-tier[data-open="time"] .menu-tier-value').textContent === 'Morning', null, { timeout: 60000 }).catch(() => {});
   const lone = await page.evaluate(() => ({ hidden: document.getElementById('time').hidden, note: document.getElementById('time-note').textContent, row: document.querySelector('.menu-tier[data-open="time"] .menu-tier-value').textContent }));
-  check(lone.hidden && lone.note.includes('single photograph') && lone.row === 'Afternoon', `under the meadow's lone photograph the slider hides, the row reads "${lone.row}" and the note "${lone.note}"`);
+  check(lone.hidden && lone.note.includes('single photograph') && lone.row === 'Morning', `under the cove's lone photograph the slider hides, the row reads "${lone.row}" and the note "${lone.note}"`);
   check(await page.locator('#time-presets').isHidden(), 'a single-hour location hides the named time buttons too');
   // The Pool: the rocks in the pool (the View note follows), and the Water page shows its own water in place of the lake's.
   await press('#sky [data-value="pool"]');

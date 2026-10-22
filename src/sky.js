@@ -39,7 +39,7 @@
 // stands where it stood that day against the land.
 //
 // The sun's colour. The scene's sun keeps the luminance of sunBalance (src/
-// main.js), the irradiance it was balanced with under BALANCE_SKY, and takes
+// main.js), the irradiance it was balanced with under BALANCE_FILE, and takes
 // the colour of the photo's sun relative to that sky's: so under the meadow
 // it is sunBalance, and at sunrise as orange against it as the photo's sun is
 // against the meadow's (lighting.sunIrradiance, filled in place).
@@ -163,14 +163,13 @@ import { loadAsset } from './loadAsset.js';
 
 // The orientation was chosen from home-view frames (mirrored: the photo
 // flipped left for right; sunAzimuth, degrees right of straight ahead, would
-// put the sun elsewhere than the scene's own place for it). Meadow 2 mirrored
-// puts tall trees on the left with sky between the crowns; as photographed
-// the whole view ahead is a wall of foliage. Lakeside as photographed puts
+// put the sun elsewhere than the scene's own place for it). Lakeside as photographed puts
 // its wooded shore on the left, mirrored the view is open water to a low far
-// shore. Lago d'Isola mirrored looks down the valley at the snowy peaks, as
-// photographed into a wall of pines. The sunrise's sun, 5° up, stands in the
+// shore. Swiss Alps uses Lago d'Isola at 4K, mirrored and facing the snowy
+// ridge across the lake, with the sun to the right. The sunrise's sun, 5° up,
+// stands in the
 // home view's top right, a dead branch in the water just left of it, either
-// way round. The open sky (clouds only) looks alike either way. Of the
+// way round. Of the
 // places with hours, Lakeside keeps its afternoon as it was, its sun ahead
 // to the right, so its sunrise is behind the eye, over the water on the
 // right (turn round to see it), as it was that morning; Mesas faces its
@@ -178,7 +177,7 @@ import { loadAsset } from './loadAsset.js';
 // afternoon and sunset to the left and behind. Between the two, every hour
 // has its light ahead at one of them. Mesas' Night panorama (18:43, the sun
 // 13° down) is left out: its sky is a haze of the towns' light. Each panorama is about 6 MB, fetched only
-// when chosen. An hour's `clock` is its local time (sky-probe's taken).
+// when chosen (Swiss Alps is 25 MB at 4K, for its detailed ridgeline). An hour's `clock` is its local time (sky-probe's taken).
 // `anchor` and `facing` (Light by the hour, Orientation) are the first hour
 // unless named. `defaultHour` may choose a starting view independently of
 // the lighting anchor. New locations face their cove opening, sunset ridge
@@ -236,9 +235,7 @@ const SKIES = {
       moonlight: { file: 'qwantani_moon_noon', label: 'Moonlight', clock: '21:06' },
     },
   },
-  meadow: { mirrored: true, hours: { afternoon: { file: 'meadow_2', label: 'Afternoon' } } },
-  alpine: { mirrored: true, hours: { midday: { file: 'lago_disola', label: 'Midday' } } },
-  open: { hours: { midday: { file: 'kloofendal_48d_partly_cloudy_puresky', label: 'Midday' } } },
+  swiss: { mirrored: true, sunAzimuth: 45, hours: { midday: { file: 'lago_disola', resolution: '4k', label: 'Midday' } } },
 };
 export const SKY_NAMES = Object.keys(SKIES);
 export const DEFAULT_SKY = 'lakeside';   // an open lake to a far shore, as the Lake water is
@@ -257,7 +254,7 @@ export function nearestHour(place, clock) {
   const apart = (other) => { const difference = Math.abs(clockMinutes(other) - wanted); return Math.min(difference, 1440 - difference); };
   return skyHours(place).filter((hour) => hour.clock).sort((first, second) => apart(first.clock) - apart(second.clock))[0]?.name;
 }
-const BALANCE_SKY = 'meadow';    // the sky the scene's sun colour (sunBalance) was chosen under
+const BALANCE_FILE = 'meadow_2';  // retained calibration, even though Meadow is no longer a location
 const SKY_EXPOSURE = Math.PI;   // see Brightness above
 const RADIANCE_CAP = 30;       // times the mean sky radiance
 const DOME_SIZE = 20000;       // metres, edge of the box
@@ -414,7 +411,7 @@ const fetchMeasurement = (file) => loadAsset(new URL(`../assets/sky/${file}.json
  * @param renderer the WebGLRenderer
  * @param options.name a key of SKIES (others fall back to DEFAULT_SKY), and options.hour one of its hours (others fall back to its anchor)
  * @param options.sunAzimuth radians from straight ahead (−Z) toward the right (+X), unless the sky sets its own
- * @param options.sunBalance the scene's sun irradiance under BALANCE_SKY (RGB Vector3)
+ * @param options.sunBalance the scene's sun irradiance under BALANCE_FILE (RGB Vector3)
  * @param options.lighting its sunDirection, sunIrradiance and skyAmbient (Vector3s) are filled in place by every load
  * @returns {Promise<{ sky, cubeTexture, envTexture, name, hour, level, targets, panoramaBytes, load }>}
  */
@@ -482,12 +479,13 @@ export async function createEnvironment(renderer, { name, hour, sunAzimuth, sunB
     return measurements.get(file);
   };
   // Start the calibration and panorama together, avoiding a network waterfall.
-  const balancePromise = measurementOf(SKIES[BALANCE_SKY].hours.afternoon.file);
+  const balancePromise = measurementOf(BALANCE_FILE);
   const balanceLuminance = luminance(sunBalance.toArray());
   // Panoramas fetched ahead (prefetch), by file, at most PREFETCHED of them, the oldest let go first. A load takes its
   // own out, or fetches it afresh if fetching it ahead failed.
   const prefetched = new Map();
-  const fetchPanorama = (file, signal) => loadAsset(new URL(`../assets/sky/${file}_2k.hdr`, import.meta.url), 'arrayBuffer', { signal });
+  const panoramaFile = ({ file, resolution = '2k' }) => `${file}_${resolution}.hdr`;
+  const fetchPanorama = (file, signal) => loadAsset(new URL(`../assets/sky/${file}`, import.meta.url), 'arrayBuffer', { signal });
   function takePanorama(file, signal) {
     const ahead = prefetched.get(file);
     prefetched.delete(file);
@@ -511,12 +509,13 @@ export async function createEnvironment(renderer, { name, hour, sunAzimuth, sunB
     const anchorFile = place.hours[place.anchor ?? firstHour].file;
     const facingFile = place.hours[place.facing ?? firstHour].file;
     const hourName = resolveHour(skyName, requestedHour);
-    const { file } = place.hours[hourName];
+    const entry = place.hours[hourName];
+    const { file } = entry;
     const [measurement, anchor, facing, buffer, balance] = await Promise.all([
       measurementOf(file),
       measurementOf(anchorFile),
       measurementOf(facingFile),
-      takePanorama(file, signal),
+      takePanorama(panoramaFile(entry), signal),
       balancePromise,
     ]);
     signal?.throwIfAborted();
@@ -591,11 +590,13 @@ export async function createEnvironment(renderer, { name, hour, sunAzimuth, sunB
    */
   function prefetch(requestedPlace, requestedHour) {
     const entry = Object.hasOwn(SKIES, requestedPlace ?? '') ? SKIES[requestedPlace].hours[requestedHour] : undefined;
-    if (!entry || prefetched.has(entry.file) || (environment.name === requestedPlace && environment.hour === requestedHour)) return;
+    if (!entry) return;
+    const file = panoramaFile(entry);
+    if (prefetched.has(file) || (environment.name === requestedPlace && environment.hour === requestedHour)) return;
     measurementOf(entry.file).catch(() => {});
-    const ahead = fetchPanorama(entry.file);
-    ahead.catch(() => { if (prefetched.get(entry.file) === ahead) prefetched.delete(entry.file); });
-    prefetched.set(entry.file, ahead);
+    const ahead = fetchPanorama(file);
+    ahead.catch(() => { if (prefetched.get(file) === ahead) prefetched.delete(file); });
+    prefetched.set(file, ahead);
     for (const file of prefetched.keys()) {
       if (prefetched.size <= PREFETCHED) break;
       prefetched.delete(file);

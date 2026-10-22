@@ -115,24 +115,30 @@ is remembered on the device (but the view, which opens on the shore):
   ice round it and freezes glazed, and a hole left alone for 40 seconds
   freezes over again in half a minute, its shards frozen in, its new ice
   thin enough for the next throw to break.
-- Location (`?sky=`): Lakeside (the default), Mesas, Meadow, Alpine or Open
-  sky, each a panorama of a place, its land and its sky; or the Pool, a
-  tiled pool on a deck in a lawn by Lakeside's lake, through its hours
-  (below). A photo (about 6 MB) loads while the old sky stays; then the
-  sky, the sun's direction and colour and everything they light change at
-  once. Settings saved before the Pool was a place and the ice a water
-  carry over: the old Pool water opens the Pool, the old Ice its Frozen
-  water.
-- Time of day: Lakeside and Mesas were each photographed from one spot
-  through a day, and a slider picks the hour: Lakeside's dawn, sunrise,
-  afternoon and starlit night, Mesas' twelve hours from dawn to moonrise and
-  moonlight. The land keeps still and the sun moves round it: Lakeside faces
-  its afternoon sun, Mesas its sunrise and moonrise. By night the eye sees
-  mostly as its rods do: a moonlit blue that keeps some of the photo's
-  colour, the moon's glitter silver, dark but never black. While the Time of
-  day page is open the hours either side of the shown one are fetched
-  ahead, so the next one picked comes at once. Another place takes its hour nearest the
-  time of day last chosen; the other skies are one photograph each.
+- Location (`?sky=`): Swiss Alps, Rocky cove, Highlands, Desert oasis,
+  Lakeside (the default), Mesas, or Pool. Swiss Alps replaces Alpine with a
+  sharper 4K Lago d’Isola panorama, framed across its snowy ridge, and starts
+  at water level with Frozen water (thin ice unless Thick was last chosen). Choosing liquid
+  water is remembered when reloading the same place; entering Swiss Alps
+  from another place reapplies Frozen. Entry from the untouched shore view
+  moves to water level; a custom view stays put. Explicit `?water=`, `?ice=`
+  and `?view=` win at startup.
+  Meadow and Open sky are retired; their old links and saved settings open
+  Lakeside, and `?sky=alpine` opens Swiss Alps. Pool is a tiled pool on a
+  deck by Lakeside's lake, through its hours. A photo (about 6 MB, or 25 MB
+  for Swiss Alps) loads while the old sky stays; then the sky, sun and
+  everything they light change together. Older Pool-water and Ice settings
+  carry over to the Pool location and Frozen water.
+- Time of day: named buttons and a slider select each photographed hour:
+  Lakeside's dawn, sunrise, afternoon and night; Mesas' twelve hours from
+  dawn to moonlight; Highlands' dawn, sunrise, noon, sunset and dusk; Desert
+  oasis' moonlight, golden hour and starlight. The land keeps still and the
+  sun moves round it. By night the eye sees mostly as its rods do: a
+  moonlit blue that keeps some of the photo's colour. Adjacent hours are
+  fetched ahead while the Time page is open. A new choice cancels a pending
+  download; another place takes the hour nearest the time last chosen.
+  Swiss Alps and Rocky cove each have one photograph, so their time controls
+  hide and explain the available light.
 - Weather: Clear (the default), Light rain, Heavy rain or Storm. Rain comes under
   an overcast that hides the sun and greys the sky, with a haze that fades
   the far shore; its drops ring the water, streak past the eye and throw up
@@ -635,8 +641,10 @@ glitter and a splash's glints are silver on blue water. An hour's photo is
 decoded by `src/hdr.js`, texel for texel as Three.js's HDRLoader does but
 five times as fast (`tools/hdr-test.mjs` checks every panorama).
 
-Three more locations are available in Location:
+The curated locations include:
 
+- **Swiss Alps** (`?sky=swiss`): a 4K upgrade of Alpine, facing Lago d’Isola’s
+  snowy ridge from water level, with Frozen water by default. One midday photo.
 - **Rocky cove** (`?sky=cove`): Secluded Beach, framed toward the sea opening
   between the boulders. One photographed morning.
 - **Highlands** (`?sky=highlands`): five Kiara panoramas, from dawn and sunrise
@@ -660,12 +668,17 @@ between tripod positions. The ridges are aligned with the probe's
 measured sun for daylight. Rogland uses `--band=0,18`; its clocks are the
 camera's local times (UTC+2), including moonlight at 05:33 on another day.
 The new HDRIs are CC0, stored locally at 2K, about 6 MB per selected hour.
-They add about 57 MB to the repository, but only the chosen panorama and up
-to two prefetched neighbours load in the browser.
+Swiss Alps uses [Lago d’Isola](https://polyhaven.com/a/lago_disola), photographed
+at 46.450379, 9.189087 in Switzerland, upgraded from the old Alpine's 2K
+asset to 4K (25 MB). Its rotation faces the snowy ridge across the lake.
+Meadow and Open sky are removed from the picker; Meadow's measurement and
+source remain for the original lighting calibration. Only the chosen
+panorama and up to two prefetched neighbours load in the browser.
 
 Reproduce the new measurements (all paths below are in `assets/sky/`):
 
 ```bash
+node tools/sky-probe.mjs assets/sky/lago_disola_4k.hdr
 node tools/sky-probe.mjs assets/sky/secluded_beach_2k.hdr
 node tools/sky-probe.mjs assets/sky/kiara_5_noon_2k.hdr --taken=2016-08-24T12:15:00+02:00 --at=-28.508926,28.56648
 node tools/sky-probe.mjs assets/sky/kiara_2_sunrise_2k.hdr --align=assets/sky/kiara_5_noon_2k.hdr --band=-15,-5
@@ -1294,9 +1307,7 @@ The sky panoramas are from [Poly Haven](https://polyhaven.com), CC0:
 *Lakeside Dawn*, *Lakeside Night* and the *Qwantani* series (Dawn, Sunrise,
 Mid Morning, Noon, Afternoon, Late Afternoon, Sunset, Dusk 1 and 2,
 Moonrise, Moon Noon) by Greg Zaal, processed by Jarod Guest, and
-*Qwantani Morning* by Jarod Guest; *Lago d'Isola* by Andreas Mischok;
-and *Kloofendal 48d Partly Cloudy (Pure Sky)* by Greg Zaal, its sky edited by
-Jarod Guest. The added *Secluded Beach* (backplates by Rico Cilliers),
+*Qwantani Morning* by Jarod Guest; *Lago d'Isola* by Andreas Mischok. The added *Secluded Beach* (backplates by Rico Cilliers),
 *Kiara 1 Dawn*, *Kiara 2 Sunrise*, *Kiara 5 Noon*, *Kiara 8 Sunset*,
 *Kiara 9 Dusk*, *Rogland Sunset*, *Rogland Clear Night* and
 *Rogland Moonlit Night* are by Greg Zaal. Source pages:

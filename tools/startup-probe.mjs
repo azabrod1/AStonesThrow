@@ -73,18 +73,20 @@ try {
   rain.release();
   await page.evaluate(() => window.pendingRain);
   assert.deepEqual(await page.evaluate(() => ({ weather: window.__pond.weather, raining: window.__pond.raining, rocks: window.__pond.rocks.length })), { weather: 'clear', raining: false, rocks: 1 });
-  const sky = hold(page, '**/assets/sky/lago_disola_2k.hdr');
+  const sky = hold(page, '**/assets/sky/lago_disola_4k.hdr');
   await sky.installed;
-  await page.evaluate(() => { window.pendingSky = window.__pond.setSky('alpine'); });
+  await page.evaluate(() => { window.pendingSky = window.__pond.setSky('swiss'); });
   await sky.arrived;
   assert.equal(await page.evaluate(() => window.__pond.sky), 'lakeside');
-  await page.evaluate(() => { window.latestSky = window.__pond.setSky('meadow'); });
+  await page.evaluate(() => { window.latestSky = window.__pond.setSky('cove'); });
   // A slow obsolete location must not hold the latest one in a queue.
-  await page.waitForFunction(() => window.__pond.sky === 'meadow', null, { timeout: 60000 });
+  await page.waitForFunction(() => window.__pond.sky === 'cove', null, { timeout: 60000 });
   sky.release();
   await page.evaluate(() => Promise.all([window.pendingSky, window.latestSky]));
-  assert.equal(await page.evaluate(() => window.__pond.sky), 'meadow');
+  assert.equal(await page.evaluate(() => window.__pond.sky), 'cove');
   assert.equal(await page.evaluate(() => window.__pond.rocks.length), 1);
+  assert.equal(await page.evaluate(() => window.__pond.waterChoice), 'lake'); // cancelled Swiss must not freeze the water
+  assert.equal(await page.evaluate(() => localStorage.getItem('stone-pond-sky')), 'cove');
   await page.evaluate(() => window.__pond.setSky('lakeside'));
   const hour = hold(page, '**/assets/sky/lakeside_night_2k.hdr');
   await hour.installed;
@@ -119,6 +121,56 @@ try {
   assert.deepEqual(errors, []);
   console.log('PASS: same-origin startup, first throw, delayed weather cancellation, latest sky bypasses a stalled download and returning to the shown hour cancels a pending one');
   await page.context().close();
+
+  const swiss = await pageFor({ width: 1280, height: 720 });
+  const swissErrors = [];
+  swiss.on('pageerror', (error) => swissErrors.push(error.message));
+  await open(swiss, '&sky=swiss');
+  await ready(swiss);
+  const swissState = () => swiss.evaluate(() => ({ place: window.__pond.sky, water: window.__pond.waterChoice, ice: window.__pond.ice, pooled: window.__pond.pooled }));
+  assert.deepEqual(await swissState(), { place: 'swiss', water: 'frozen', ice: 'thin', pooled: false });
+  assert.equal(await swiss.locator('#sky [data-value="swiss"]').count(), 1);
+  assert.equal(await swiss.evaluate(() => window.__pond.viewName), 'level');
+  assert.equal(await swiss.locator('#sky [data-value="meadow"], #sky [data-value="open"], #sky [data-value="alpine"]').count(), 0);
+  assert.equal(await swiss.evaluate(() => performance.getEntriesByType('resource').some((entry) => entry.name.endsWith('/lago_disola_4k.hdr'))), true);
+  if (process.env.SWISS_SCREENSHOT) await swiss.screenshot({ path: process.env.SWISS_SCREENSHOT });
+  await swiss.evaluate(async () => {
+    window.__pond.setWater('clear');
+    await window.__pond.setHour('midday');
+  });
+  assert.equal((await swissState()).water, 'clear'); // changing the hour must not reapply the place preset
+  await swiss.reload();
+  await ready(swiss);
+  assert.equal((await swissState()).water, 'clear'); // a deliberate thaw survives reload
+  await swiss.evaluate(async () => {
+    await window.__pond.setSky('cove');
+    await window.__pond.setSky('swiss');
+  });
+  assert.equal((await swissState()).water, 'frozen'); // entering Swiss applies its preset
+  await open(swiss, '&sky=swiss&water=lake&view=high');
+  await ready(swiss);
+  assert.equal((await swissState()).water, 'lake'); // explicit water wins over the preset and saved Frozen
+  assert.equal(await swiss.evaluate(() => window.__pond.viewName), 'high');
+  await swiss.evaluate(async () => {
+    await window.__pond.setSky('cove');
+    await window.__pond.setSky('swiss');
+  });
+  assert.equal(await swiss.evaluate(() => window.__pond.viewName), 'high'); // keep the user's custom view on entry
+  await open(swiss, '&sky=alpine&ice=none');
+  await ready(swiss);
+  assert.deepEqual(await swissState(), { place: 'swiss', water: 'lake', ice: 'none', pooled: false });
+  await swiss.evaluate(async () => {
+    await window.__pond.setSky('pool');
+    await window.__pond.setHour('sunrise', { place: 'pool' });
+  });
+  assert.deepEqual(await swiss.evaluate(() => ({ place: window.__pond.sky, hour: window.__pond.hour, pooled: window.__pond.pooled })), { place: 'pool', hour: 'sunrise', pooled: true });
+  for (const retired of ['meadow', 'open']) {
+    await swiss.evaluate((place) => window.__pond.setSky(place), retired);
+    assert.equal((await swissState()).place, 'lakeside');
+  }
+  assert.deepEqual(swissErrors, []);
+  console.log('PASS: Swiss Alps loads 4K with Frozen, remembers a thaw, respects explicit water/ice, retires old locations, and Pool keeps its geometry when its hour changes');
+  await swiss.context().close();
 
   const saved = await pageFor();
   await saved.addInitScript(() => {
