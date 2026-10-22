@@ -10,7 +10,11 @@
 // stone's mean semi-axis), where it is drawn (Rock.centre: its mesh's
 // position, which under a gale is lifted with the waves, and a floater's
 // riding the water's ripples and rings, src/floaterRide.js, so a stone in
-// the air meets a floater where it is seen). A pair meets when one of them is a floater
+// the air meets a floater where it is seen). Two flat pieces of ice (src/
+// things.js `body.meetsAtRim`, src/ice.js's shards) meet rim to rim instead:
+// discs in the level, each of its whole radius, the line between them level,
+// so pieces afloat side by side neither overlap nor push each other under.
+// A pair meets when one of them is a floater
 // (afloat, bobbing, or on its way up), or on the ground (going along it or
 // at rest on it: Rock.grounded, which a knock sets going again and the
 // ground holds up), and their spheres overlap; things that sink pass each
@@ -122,15 +126,18 @@ function collidePass(things, knocks) {
     for (let second = first + 1; second < things.length; second++) {
       const one = things[first], other = things[second];
       if (!one.collides || !other.collides || !(one.floater || other.floater || one.grounded || other.grounded)) continue;
+      // Two flat pieces of ice (the header) meet rim to rim: the line between them level, their whole radii.
+      const rims = Boolean(one.thing.body.meetsAtRim && other.thing.body.meetsAtRim);
       between.copy(other.centre).sub(one.centre);
+      if (rims) between.y = 0;
       const distance = between.length();
-      const reach = one.collisionRadius + other.collisionRadius;
+      const reach = radiusOf(one, rims) + radiusOf(other, rims);
       if (distance < 1e-9) continue;
       let normal, overlap = 0, backOne = 0, backOther = 0;
       if (distance < reach - COLLIDE.settled) {
         // Overlapping already as the step began, and passed through each other's middles in it: they meet as they were
         // then, put back there (the line between them now points the wrong way).
-        drawnAtStart(one, other);
+        drawnAtStart(one, other, rims);
         if (startBetween.dot(between) < 0 && startBetween.lengthSq() > 1e-18 && startBetween.lengthSq() < reach * reach) {
           for (const thing of [one, other]) thing.knock(0, 0, 0, thing.previous.x - thing.position.x, thing.previous.y - thing.position.y, thing.previous.z - thing.position.z);
           const apart = startBetween.length();
@@ -142,7 +149,7 @@ function collidePass(things, knocks) {
         }
       } else {
         // Apart at the step's end: did they touch on the way (the header)?
-        const touched = touchedAt(one, other, reach);
+        const touched = touchedAt(one, other, reach, rims);
         if (touched === null) continue;
         normal = between.copy(startBetween).addScaledVector(sweep, touched).divideScalar(reach);
         if (-relative.copy(other.velocity).sub(one.velocity).dot(normal) <= 0) continue;
@@ -167,7 +174,7 @@ function collidePass(things, knocks) {
       const impulse = (1 + bounce) * closing / (1 / massOne + 1 / massOther);
       one.knock(-normal.x * impulse / massOne, -normal.y * impulse / massOne, -normal.z * impulse / massOne, 0, 0, 0);
       other.knock(normal.x * impulse / massOther, normal.y * impulse / massOther, normal.z * impulse / massOther, 0, 0, 0);
-      rub(one, other, normal, impulse, massOne, massOther);
+      rub(one, other, normal, impulse, massOne, massOther, rims);
       // What the water shows of it: each floater knocked hard enough rings and throws off spray where it was struck.
       for (const [thing, mass, side] of [[one, massOne, 1], [other, massOther, -1]]) {
         const change = impulse / mass;
@@ -190,11 +197,12 @@ function collidePass(things, knocks) {
  * The fraction of the step (0 to 1) at which `one` and `other`, each moved in
  * a straight line from where it was (Rock.previous) to where it is, first
  * came within `reach` of each other, or null if they never did, or touched
- * already as the step began. Leaves the line between them as the step began
- * in startBetween and its change over the step in sweep.
+ * already as the step began (in the level alone, for `rims`). Leaves the line
+ * between them as the step began in startBetween and its change over the step
+ * in sweep.
  */
-function touchedAt(one, other, reach) {
-  drawnAtStart(one, other);
+function touchedAt(one, other, reach, rims) {
+  drawnAtStart(one, other, rims);
   sweep.copy(between).sub(startBetween);
   const a = sweep.lengthSq();
   const c = startBetween.lengthSq() - reach * reach;
@@ -224,10 +232,10 @@ const push = new THREE.Vector3();
  * spinning ball throws the other off sideways. It takes off speed and spin
  * and never adds them.
  */
-function rub(one, other, normal, impulse, massOne, massOther) {
+function rub(one, other, normal, impulse, massOne, massOther, rims) {
   // Each from its centre to the one point they touch at, between them in the share of their radii.
   const distance = push.copy(other.centre).sub(one.centre).dot(normal);
-  const radiusOne = one.collisionRadius * distance / (one.collisionRadius + other.collisionRadius);
+  const radiusOne = radiusOf(one, rims) * distance / (radiusOf(one, rims) + radiusOf(other, rims));
   const radiusOther = distance - radiusOne;
   leverOne.copy(normal).multiplyScalar(radiusOne);
   leverOther.copy(normal).multiplyScalar(-radiusOther);
@@ -253,7 +261,11 @@ function rub(one, other, normal, impulse, massOne, massOther) {
   other.spinBy(turnOther);
 }
 
-/** The line from `one` to `other` as they were drawn as the step began (into startBetween): where each was, lifted as it is now (under a gale, src/rock.js syncMeshes). */
-function drawnAtStart(one, other) {
+/** The line from `one` to `other` as they were drawn as the step began (into startBetween): where each was, lifted as it is now (under a gale, src/rock.js syncMeshes); level for `rims`. */
+function drawnAtStart(one, other, rims = false) {
   startBetween.copy(other.previous).sub(one.previous).add(other.centre).sub(other.position).sub(one.centre).add(one.position);
+  if (rims) startBetween.y = 0;
 }
+
+/** A thing's radius as it meets another (the header): its whole radius rim to rim, else its sphere's (Rock.collisionRadius). */
+function radiusOf(thing, rims) { return rims ? thing.radius : thing.collisionRadius; }

@@ -68,10 +68,17 @@
 //   - abilities: `skips` (Skip skips it: a stone, a pizza), `held` (a throw puts at
 //     most THROW_WORK into it, so a heavy thing leaves slower; a stone keeps
 //     its throw as it always was).
+//   - body.meetsAtRim: two such things meet rim to rim (src/collide.js), as
+//     discs in the level of their whole radii: flat pieces of ice afloat
+//     side by side, which must not slide into each other; anything else
+//     meets one as it meets any thing.
 // Besides: `name`, `short` (the strip's name for it), `group` (the setting's
 // heading), `note` (the card's line, one line on it: some 40 characters fit
 // a phone's card whole, a longer one is cut short) and `called` (the throw button's
-// "Throw …"; else the group's).
+// "Throw …"; else the group's). `hidden`: it is never offered (thingGroups
+// leaves it out, and the setting will not take it): a shard of ice, which
+// only the ice makes (src/ice.js), as a thing so that it floats, bumps and
+// rests as any thing does.
 //
 // defineThing checks a definition (validateThing, which says what is wrong
 // with it, so one written by hand, or by a user, fails plainly), derives
@@ -113,7 +120,11 @@
 //     cm, hollow vinyl, 120 to 250 kg/m³: it bobs high, and its heavy base
 //     rights it however it lands) and a brick (215 × 102.5 × 65 mm, 2.7 kg:
 //     about 1900 kg/m³, its density from its mesh's volume; it sinks, and
-//     lands on the deck with a thud).
+//     lands on the deck with a thud);
+//   - a shard of ice (hidden: src/ice.js breaks each one, its own outline,
+//     src/thingMeshes.js createShardGeometry): 917 kg/m³, a plate in the
+//     water as a pizza is, so it comes up and floats flat, its top a little
+//     out, as the sheet does.
 //
 // One material serves them all (src/rock.js): what tells them apart is in
 // the geometry, the vertex colours and the material's colour, roughness and
@@ -222,6 +233,8 @@ function definitionProblems(key, definition) {
   need(water.soaks === undefined || (isObject(water.soaks) && within(water.soaks.seconds, [1, 100000]) && within(water.soaks.takes, [0, 2])), 'water.soaks needs seconds (1 to 100000) and takes (0 to 2, of its volume)');
   need(water.thaws === undefined || (isObject(water.thaws) && within(water.thaws.seconds, [1, 100000])), 'water.thaws needs seconds (1 to 100000)');
   for (const ability of ['skips', 'held']) need(abilities[ability] === undefined || typeof abilities[ability] === 'boolean', `abilities.${ability} must be true or false`);
+  need(definition.hidden === undefined || typeof definition.hidden === 'boolean', 'hidden must be true or false');
+  need(body.meetsAtRim === undefined || typeof body.meetsAtRim === 'boolean', 'body.meetsAtRim must be true or false');
   const mesh = typeof look.mesh === 'string' ? meshKind(look.mesh) : undefined;
   need(mesh, `look.mesh "${String(look.mesh)}" is no registered mesh (src/thingMeshes.js)`);
   for (const field of ['roughness', 'reflection']) need(look[field] === undefined || within(look[field], [0, 4]), `look.${field} must be 0 to 4`);
@@ -405,10 +418,11 @@ export function onThingsChange(listener) {
   return () => listeners.delete(listener);
 }
 
-/** The groups, in the order their first things were defined, each with its things' keys. */
+/** The groups, in the order their first things were defined, each with its things' keys: what is offered, the hidden left out. */
 export function thingGroups() {
   const groups = new Map();
   for (const key of THING_NAMES) {
+    if (THINGS[key].hidden) continue;
     const group = THINGS[key].group;
     if (!groups.has(group)) groups.set(group, []);
     groups.get(group).push(key);
@@ -560,4 +574,17 @@ defineBuiltIn('brick', {
   air: { drag: 1.0 },
   water: { restingHeight: 0.3 },
   look: { mesh: 'brick', roughness: 0.95, reflection: 0.6 },
+});
+
+// A shard of ice (the header): each one the ice breaks has its own outline, and the mass of ice its slab holds (src/ice.js
+// shards), so its density is ice's, 917 kg/m³, as the plain one's here is (its slab's 4.65e-5 m³ at 10 cm across),
+// thrown as any thing is (tools/thing-probe.mjs). Ice is slick.
+defineBuiltIn('ice-shard', {
+  name: 'Ice shard', group: 'Other', note: 'A piece of broken ice: it floats', called: 'a shard of ice', hidden: true,
+  body: { shape: 'mesh', meetsAtRim: true, size: { by: 'fixed', diameter: 0.1, mass: 0.0426 } },
+  material: { bounce: [0.15, 0.3], friction: 0.1 },
+  air: { drag: 1.1, model: 'flutter' },
+  water: { restingHeight: 0.1 },
+  look: { mesh: 'shard', roughness: 0.12, reflection: 1.2, wet: { darker: 0, glossier: 0.3 } },
+  abilities: { held: false },
 });

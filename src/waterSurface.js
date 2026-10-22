@@ -146,7 +146,7 @@ function poolPatchGeometry(water, segments, square) {
 // The ice's uniforms when there is no ice sheet (ICE_COMMON in src/shaders/scene.js): none, off.
 const NO_ICE = () => ({
   uIceMask: { value: null }, uIceArea: { value: new THREE.Vector3(0, 0, 1) }, uIceOn: { value: 0 }, uIceTop: { value: 0 },
-  uIceThickness: { value: 0 }, uIceFar: { value: new THREE.Vector2(1, 1) }, uIceWet: { value: 0 },
+  uIceThickness: { value: 0 }, uIceFar: { value: new THREE.Vector2(1, 1) }, uIceGlaze: { value: 0.2 }, uIceWet: { value: 0 },
 });
 
 export function createWaterSurface(water, lighting, ambientWaves, { meshSegments = Math.min(water.size, 512), rings = null, skyCube = null, rain = null, haze = null, gale = null, ice = null } = {}) {

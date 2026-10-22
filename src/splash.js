@@ -61,7 +61,8 @@
 // through or went in by a hole too narrow for its splash) the lip is ice: no
 // crown or fan stands on it, and the rest is the open water's (the contact's
 // spray, the cavity, the jet, the bubbles, the foam). A drop that comes down
-// on the ice (setIce), not in a hole, is gone. On a frozen lake (water.iced)
+// on the ice (setIce), not in a hole, lands there as on the deck: it wets it
+// (src/ice.js wetSpot) and, if big, splatters. On a frozen lake (water.iced)
 // a ring goes to the solver as a pool's does (launchRing): its waves run out
 // of sight under the ice, its near field in the hole as on the lake.
 //
@@ -232,7 +233,7 @@
 // that reaches one runs up it; a drop that hits a wall's side under the deck
 // comes off it with DECK_DROPS.wall of its speed across it; one that comes
 // down on the deck is gone, wetting it (the ground's onWet, src/pool.js
-// wetSpot) and, if big, splattering a few small drops (landOnDeck).
+// wetSpot) and, if big, splattering a few small drops (landOn).
 //
 // With nothing in the air (no droplet, sheet or column) render() neither
 // clears nor reads the fluid targets: it tone-maps the scene alone
@@ -739,6 +740,7 @@ export class SplashSystem {
     this.cavities = [];  // open cavities (src/cavity.js), drawn in the main scene from cavityGroup
     this.ground = null;  // the pool's walls and deck (setGround), or none
     this.ice = null;     // the ice over the water (setIce, src/ice.js), or none
+    this.wetIce = null;  // its wetting where a drop lands on it (setIce)
     this.walls = null;   // the box the sheets and columns are held in (setGround)
     this.cavityGroup = new THREE.Group();
     this.surface = surface;
@@ -1608,14 +1610,15 @@ export class SplashSystem {
           } else if (y <= deck) {
             // Down on the deck, over the coping or from above it (or begun inside the paving, where nothing shows): it
             // lands, and wets it.
-            if (vy < 0 && (was || previousY >= deck)) this.landOnDeck(x, z, radius, vx, vy, vz);
+            if (vy < 0 && (was || previousY >= deck)) this.landOn(deck, this.ground.onWet, x, z, radius, vx, vy, vz);
             this.removeDroplet(i);
             continue;
           }
         }
       }
-      // Down on the ice (setIce): it lands there, out of the water; it rings nothing and leaves no foam.
+      // Down on the ice (setIce): it lands there, out of the water, as on the deck: it wets it; it rings nothing and leaves no foam.
       if (this.ice && vy < 0 && y <= this.ice.top && this.ice.overWater(x, z) && !this.ice.holeAt(x, z)) {
+        this.landOn(this.ice.top, this.wetIce, x, z, radius, vx, vy, vz);
         this.removeDroplet(i);
         continue;
       }
@@ -1891,23 +1894,29 @@ export class SplashSystem {
   }
 
   /**
-   * A drop come down on the pool's deck (setGround): the paving wet where it
-   * fell, and a big one splattering a few small drops back up off it.
+   * A drop come down on ground `height` high (the pool's deck, setGround;
+   * the ice, setIce): wet where it fell (`onWet(x, z, radius)`), and a big
+   * one splattering a few small drops back up off it.
    */
-  landOnDeck(x, z, radius, vx, vy, vz) {
-    this.ground.onWet?.(x, z, Math.max(radius * DECK_DROPS.wetSpread, DECK_DROPS.wetLeast));
+  landOn(height, onWet, x, z, radius, vx, vy, vz) {
+    onWet?.(x, z, Math.max(radius * DECK_DROPS.wetSpread, DECK_DROPS.wetLeast));
     if (radius < DECK_DROPS.splatterFrom) return;
     const count = 1 + Math.floor(Math.random() * DECK_DROPS.splatter);
     const fall = -vy;
     for (let drop = 0; drop < count; drop++) {
       const angle = Math.random() * Math.PI * 2, out = randomRange(0.15, 0.5) * fall;
-      this.spawnDroplet(x, this.ground.deck + 0.002, z, 0.3 * vx + Math.cos(angle) * out, randomRange(0.15, 0.4) * fall, 0.3 * vz + Math.sin(angle) * out, radius * randomRange(0.25, 0.45));
+      this.spawnDroplet(x, height + 0.002, z, 0.3 * vx + Math.cos(angle) * out, randomRange(0.15, 0.4) * fall, 0.3 * vz + Math.sin(angle) * out, radius * randomRange(0.25, 0.45));
     }
   }
 
-  /** The ice over the water (src/ice.js IceSheet, while it is on; else null): a drop that comes down on it, not in a hole, is gone. */
+  /**
+   * The ice over the water (src/ice.js IceSheet, while it is on; else null):
+   * a drop that comes down on it, not in a hole, lands there as on the deck,
+   * wetting it (src/ice.js wetSpot) and, if big, splattering.
+   */
   setIce(sheet) {
     this.ice = sheet?.on ? sheet : null;
+    this.wetIce = this.ice ? (x, z, radius) => this.ice.wetSpot(x, z, radius) : null;
   }
 
   /**

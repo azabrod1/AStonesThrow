@@ -8,7 +8,9 @@
 // on it knock each other along (src/collide.js), and through it a thing goes
 // into the water as into open water (src/rock.js breakThrough: the cavity,
 // the jet, the foam, the drops), with no crown (src/splash.js: its sheet
-// stands on ice). So whatever improves those improves the ice.
+// stands on ice). The pieces it breaks into are things (src/things.js
+// 'ice-shard'), which float as any plate does. So whatever improves those
+// improves the ice.
 //
 // The sheet. It is ICE_THICKNESS thick (h) and floats with ρi/ρw of it under
 // the water, so its top stands h·(1 − ρi/ρw) above the still water (`top`:
@@ -28,16 +30,18 @@
 // tools/ice-probe.mjs's table of what breaks what comes out, not measured:
 // a dynamic punch through floating ice is local crushing and the plate's
 // inertia, which no closed form gives, so it is uncertain by a factor of a
-// few). Only the speed down counts: a lob breaks through where a hard, flat
-// throw skids off. A blow it holds but over ICE.crackShare of what it holds
-// stars the ice with cracks (CRACK.star). One it does not hold opens a hole:
-// the thing keeps the share `keep` of its speed (the break takes about the
-// holding force times the thickness from its energy, at least ICE.keepLeast
-// of its speed kept) and goes in (src/rock.js breakThrough). Things that do
-// not fit through a hole meet its edge (meet), which holds or breaks the
-// same way; ones that do but whose splash would stand on the ice open it
-// wider. A hole only opens where the solver's water is (in the patch less
-// HOLE.edge; in the pool inside its walls less it): beyond, the ice holds.
+// few), h the ice's where it is struck (thicknessAt: a hole's new skin is
+// thinner). Only the speed down counts: a lob breaks through where a hard,
+// flat throw skids off. A blow it holds but over ICE.crackShare of what it
+// holds stars the ice with cracks (CRACK.star). One it does not hold opens a
+// hole: the thing keeps the share `keep` of its speed (the break takes about
+// the holding force times the thickness from its energy, at least
+// ICE.keepLeast of its speed kept) and goes in (src/rock.js breakThrough).
+// Things that do not fit through a hole meet its edge (meet), which holds or
+// breaks the same way; ones that do but whose splash would stand on the ice
+// open it wider. A hole only opens where the solver's water is (in the patch
+// less HOLE.edge; in the pool inside its walls less it): beyond, the ice
+// holds.
 //
 // A hole is as wide as the cavity's lip (src/cavity.js): opened at once as a
 // round hole's lip would be (roundLipReach), then, once the splash has made
@@ -50,7 +54,42 @@
 // the same hole every run). Radial cracks run out from its corners, CRACK
 // .count of them, each a random walk of CRACK.reach times l_c, with a
 // branch now and then and, at CRACK.ring odds, an arc of ring crack around
-// it (settle).
+// it (settle). How far its edge is from its middle at each azimuth is kept
+// (`reaches`, edgeReach), which holds things in it.
+//
+// Shards (SHARD, piecesOf). The ice that was in the hole broke into pieces:
+// between its radial cracks, and across them where a wedge is wide or long,
+// each piece a convex slab of the ice's thickness, and a few chips from the
+// crushed middle; as many as float in the hole without crowding it (the
+// biggest first, their rims' discs at most SHARD.fill of the hole), the rest
+// slush or pushed under the sheet. The thing that broke through pushed them
+// under; they are let go once its cavity has closed (fitCavity: the cavity's
+// closeTime, at least SHARD.leastDelay after the break), a little under the
+// water, their inner edges down, drifting out (src/main.js makes each a
+// thing, src/rock.js adrift: it floats up as any plate does, and its hole
+// holds it in, contain). A piece whose middle is over older open water (a
+// hole widened) is none: it was water.
+//
+// Flooding (FLOOD). As the cavity closes the water it threw aside comes back
+// up through the hole and over the ice round it (flood): a wet patch out to
+// FLOOD.reach of the hole's reach at each azimuth, lopsided as the waves
+// wobble it, leaning the way the thing went; and each of the splash's drops
+// that comes down on the ice wets a spot of it (wetSpot, src/splash.js). The
+// film freezes over FLOOD.dry seconds (setTime, every FLOOD.step), leaving
+// the ice glazed where it was wet: smooth, its frost gone.
+//
+// Refreezing (REFREEZE). Once a hole has been left alone REFREEZE.after
+// seconds (no thing has gone in by it, and nothing thrown floats in it: src/
+// main.js disturbs it), new ice grows over it from its edge inward, closing
+// it in REFREEZE.closing seconds (`skin`: its front, how far in from the
+// edge the new ice reaches). The new ice is thin (REFREEZE.skin, thickening
+// over REFREEZE.thickening seconds from when the front passed), so it holds
+// little: a throw at an old hole breaks it again. Where it is, the ground is
+// its top (at), things land and slide on it, and the newest hole about a
+// point says what is there (holeAt): its open water, or its new ice. A shard
+// the front reaches is frozen in (freezeIn): painted into the sheet as ice,
+// where it lay, and gone as a thing. (Real ice skins over in minutes to
+// hours on a calm, cold night; here a minute or so, for the play of it.)
 //
 // The mask (update): what the shaders know of the ice, an RGBA8 texture of
 // MASK.texels² over the solver's patch (1.2 cm texels), linearly filtered:
@@ -59,21 +98,27 @@
 // to the nearest crack, signed by its side along a crack's span (so it
 // interpolates across the crack exactly), capped at MASK.crackFar; each as
 // a byte, 127.5·(1 + d/far) (ICE_MASK in src/shaders/scene.js reads them
-// back); B and A held for the ice's wet and a hole's new skin. A hole and
-// its cracks are painted into it once, the frame after they open: holes as
-// the least of signed distances (their union), their insides by scanline
-// and the distance in a band about each edge; each crack in a band about
-// it; only what changed is converted. Beyond the patch there is ice and no
-// hole. The physics never reads the mask: it asks the holes' polygons.
+// back); B how wet the flood and the drops have left it, 0 where it never
+// was, else FLOOD.glaze up to 1 as it is wet (glazed once wet); A the signed
+// distance to new ice's front, positive where a hole has skinned over (its
+// own and any newer hole's open water left out), as R is. A hole and its
+// cracks are painted into it once, the frame after they open: holes as the
+// least of signed distances (their union, which also cuts any new ice), their
+// insides by scanline and the distance in a band about each edge; each crack
+// in a band about it; the wet and new ice as they change. Only what changed
+// is converted, and only its rows are sent to the GPU (the texture's update
+// ranges). Beyond the patch there is ice and no hole. The physics never
+// reads the mask: it asks the holes' polygons.
 //
 // The ground (ground(deck)): src/rock.js's `ground` for everything thrown
-// while the ice is on: `at` the ice's top over the water but in a hole (the
-// pool's deck round a frozen pool; a frozen lake's beach and bank behind its
-// waterline), `materialAt` the ice's own surface over the water, `meet` the
-// break (above). `contain` holds a floater that went in by a hole inside it
-// (src/collide.js, as the pool's walls hold things), so it comes up there and
-// never floats under the ice. `events` keeps the breaks and cracks for
-// src/main.js's sound (src/sound.js ice).
+// while the ice is on: `at` the ice's top over the water but in a hole's
+// open water (the pool's deck round a frozen pool; a frozen lake's beach and
+// bank behind its waterline), `materialAt` the ice's own surface over the
+// water, `meet` the break (above). `contain` holds a floater that went in by
+// a hole, or a shard of it, inside it (src/collide.js, as the pool's walls
+// hold things), so it comes up there and never floats under the ice.
+// `events` keeps the breaks and cracks for src/main.js's sound (src/sound.js
+// ice), `shards` the pieces let go for src/main.js to make.
 import * as THREE from 'three';
 import { groundHeightAt, shoreDistance } from './pondFloor.js';
 import { roundLipReach } from './cavity.js';
@@ -99,9 +144,10 @@ export const ICE_MATERIAL = Object.freeze({ kind: 'ice', friction: 0.1, rolling:
 // the lip by `margin` and a jag from 0 to `jag` of the lip's reach, besides the slow waves `waves` (amplitude, each of
 // modes 2 to 5); `bites` (least, most) where a piece broke away, each `bite` (least, most) deeper over `biteSpan`
 // corners; at least `least` collision radii wide; kept `edge` (m) inside the solver's patch or the pool's walls; at
-// most `most` holes (past them the ice holds: a lake so broken has done its work).
+// most `most` open at once (past them the ice holds: a lake so broken has done its work), and `kept` in all, new ice
+// over the oldest let go past it (it holds then as the sheet does); its edge's reach kept at `reaches` azimuths.
 // A thing going in by a hole narrower than its splash's lip opens it wider if faster than `widensFrom` (m/s).
-const HOLE = { corners: 36, fall: 0.5, margin: 0.06, jag: 0.16, waves: 0.04, bites: [1, 3], bite: [0.12, 0.35], biteSpan: [2, 4], least: 1.3, edge: 0.15, most: 64, widensFrom: 2 };
+const HOLE = { corners: 36, fall: 0.5, margin: 0.06, jag: 0.16, waves: 0.04, bites: [1, 3], bite: [0.12, 0.35], biteSpan: [2, 4], least: 1.3, edge: 0.15, most: 64, kept: 160, reaches: 72, widensFrom: 2 };
 // Cracks (settle): `count` (least, most) radial ones from a hole's corners, each `reach` (least, most) times l_c long, at
 // most `longest` (m), in steps of `step` (least, most; m), its heading wandering by `wander` (radians, σ, per 5 cm); a
 // branch at `branch` odds a step, `branchReach` of l_c long, `branchAngle` off (least, most; radians); at `ring` odds an
@@ -111,8 +157,35 @@ const CRACK = {
   count: [4, 8], reach: [0.6, 1.6], longest: 3, step: [0.03, 0.06], wander: 0.11, branch: 0.06, branchReach: [0.1, 0.35], branchAngle: [0.35, 0.9],
   ring: 0.5, ringRadius: [1.4, 2.2], ringSpan: [1.0, 2.6], star: [3, 6], starReach: [0.12, 0.45],
 };
-// The mask (the header): texels a side over the solver's patch, and the caps of its distances (m).
-const MASK = { texels: 512, holeFar: 0.06, crackFar: 0.02 };
+// Shards (the header, piecesOf): let go `leastDelay` (s) after the break at the least; each wedge between two radial
+// cracks reaches from `inner` to `outer` (least, most) of the hole's reach along its corners, broken across at `across`
+// (least, most) of the way out where it is deeper than `deep` of the reach, and in two along the edge where it spans
+// more than `widest` (radians); each piece shrunk about its middle to `gap` of itself (the water between, what was
+// crushed); `chips` (least, most) from the crushed middle, `chip` (least, most) of the reach across; none smaller than
+// `least` (m across) or `slab` times the ice's thickness (a slab, not a lump), none from ice thinner than `thinnest`
+// (m: a new skin breaks to slush), at most `most`, their rims'
+// discs at most `fill` of the hole. Each starts inside the hole's edge, its highest point `depth` (least, most) of its
+// radius under the water, its inner edge down by `tilt` (least, most; degrees), drifting at `drift`
+// (least, most; m/s) out from the hole's middle, turned to either side by up to `aside` (radians). A piece is white ice
+// at `whiteOdds` times the sheet's share of white ice, else clear.
+const SHARD = {
+  leastDelay: 0.12, inner: [0.32, 0.46], outer: [0.84, 0.94], across: [0.58, 0.68], deep: 0.45, widest: 0.85, gap: 0.86,
+  chips: [1, 3], chip: [0.12, 0.22], least: 0.02, thinnest: 0.002, most: 9, fill: 0.55, depth: [0.05, 0.3], tilt: [5, 25], drift: [0, 0.06], aside: 0.7,
+  whiteOdds: 1.5, slab: 1.5,
+};
+// Flooding (the header): the patch reaches `reach` (least, most) of the hole's reach, waved by `wobble`, leaning `lean`
+// of the hole's mean reach the way the thing went, its edge feathered over `feather` of that; a drop wets a spot by up
+// to `soak`; the film freezes away over `dry` seconds, the map dried every `step` seconds; wetted once, the ice is
+// glazed, which the mask's B keeps as `glaze` (the header). Its edge is worked out at `bins` azimuths.
+const FLOOD = { reach: [1.35, 1.8], wobble: 0.18, lean: 0.4, feather: 0.3, soak: 0.5, dry: 75, step: 0.5, glaze: 0.2, bins: 180 };
+// Refreezing (the header): a hole left alone `after` seconds skins over from its edge, closing in `closing` seconds; the
+// new ice is `skin` thick (m) once `thickening` seconds have passed since its front did, thinner before; the new ice is
+// painted every `step` seconds as it grows, `seam` (m) over the old edge (so no line of water shows along it); its field
+// is worked out `texels` a step over the `prepare` seconds before it begins (prepareSkin).
+const REFREEZE = { after: 40, closing: 30, skin: 0.004, thickening: 60, step: 0.25, seam: 0.01, texels: 600, prepare: 2 };
+// The mask (the header): texels a side over the solver's patch, and the caps of its distances (m); past `ranges` rows
+// to send since the last upload, the whole of it is sent.
+const MASK = { texels: 512, holeFar: 0.06, crackFar: 0.02, ranges: 256 };
 
 /** A seeded random stream (mulberry32), as src/rock.js's. */
 function seededStream(seed) {
@@ -164,6 +237,42 @@ function polygonEdgeDistance(corners, x, z) {
   return least;
 }
 
+/** A polygon's area (m², of either winding) and middle (its area's centroid), of corners [x0, z0, …]. */
+function polygonMiddle(corners) {
+  let twice = 0, x = 0, z = 0;
+  const count = corners.length / 2;
+  for (let index = 0, previous = count - 1; index < count; previous = index++) {
+    const ax = corners[2 * previous], az = corners[2 * previous + 1], bx = corners[2 * index], bz = corners[2 * index + 1];
+    const cross = ax * bz - bx * az;
+    twice += cross;
+    x += (ax + bx) * cross;
+    z += (az + bz) * cross;
+  }
+  return Math.abs(twice) < 1e-12 ? { area: 0, x: corners[0], z: corners[1] } : { area: Math.abs(twice) / 2, x: x / (3 * twice), z: z / (3 * twice) };
+}
+
+/** The convex hull of points [x0, z0, …] (Andrew's monotone chain), as corners [x0, z0, …] counter-clockwise. */
+function convexHull(points) {
+  const sorted = [];
+  for (let index = 0; index < points.length; index += 2) sorted.push([points[index], points[index + 1]]);
+  sorted.sort((first, second) => first[0] - second[0] || first[1] - second[1]);
+  const cross = (origin, first, second) => (first[0] - origin[0]) * (second[1] - origin[1]) - (first[1] - origin[1]) * (second[0] - origin[0]);
+  const lower = [], upper = [];
+  for (const point of sorted) {
+    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], point) <= 0) lower.pop();
+    lower.push(point);
+  }
+  for (let index = sorted.length - 1; index >= 0; index--) {
+    const point = sorted[index];
+    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], point) <= 0) upper.pop();
+    upper.push(point);
+  }
+  return [...lower.slice(0, -1), ...upper.slice(0, -1)].flat();
+}
+
+/** A mask byte for a distance `distance` (m) capped at `far` (the header). */
+const toByte = (distance, far) => Math.round(127.5 + (Math.min(Math.max(distance, -far), far) * 127.5) / far);
+
 export class IceSheet {
   /**
    * The ice over the solver's patch (`domainMin`, `domainSize`: src/
@@ -175,17 +284,26 @@ export class IceSheet {
     this.texels = texels;
     this.cell = domainSize / texels;
     this.thickness = 0;
+    this.time = 0;               // the world's clock (setTime): when a hole opened, its shards are let go, it skins over
     this.pool = null;            // the pool's square ({ minX, minZ, size }) when the water is the pool's, else the lake (setPool)
     this.deck = null;            // the pool's deck as ground (src/pool.js poolGround), round a frozen pool
-    this.holes = [];
+    this.holes = [];             // oldest first
+    this.opened = 0;             // how many holes have opened (src/main.js looks over what rests on the ice when it changes)
     this.cracks = [];            // polylines ([x0, z0, x1, z1, …]) not yet painted
     this.events = [];            // breaks and cracks since src/main.js last took them (its sound)
+    this.shards = [];            // pieces let go since src/main.js last took them (piecesOf; it makes each a thing)
     this.streams = new WeakMap();   // each thing's own stream of the ice's draws, seeded from its splash's seed
-    // The mask (the header): bytes for the GPU (fillMask), and R and G as floats here, to paint unions into.
+    // The mask (the header): bytes for the GPU (fillMask), and R, G and B as floats here, to paint unions into and dry.
     this.holeField = new Float32Array(texels * texels).fill(MASK.holeFar);
     this.crackField = new Float32Array(texels * texels).fill(MASK.crackFar);
+    this.wetField = new Float32Array(texels * texels);
+    this.wetBox = null;          // [first column, last, first row, last] holding every texel still wet, or null
+    this.wetDue = 0;             // seconds of drying not yet done (FLOOD.step)
     this.maskData = new Uint8Array(texels * texels * 4);
-    this.changed = [];           // rectangles of texels painted since the mask was last filled
+    this.changed = [];           // rectangles of texels painted since the mask was last filled (fillMask)...
+    this.sent = [];              // ...and of bytes written as they are (A, a drying B), to be sent with them (update)
+    this.rowFirst = new Int32Array(texels).fill(texels);   // update's: each row's first and last texel to send
+    this.rowLast = new Int32Array(texels).fill(-1);
     this.fillMask();
     this.texture = new THREE.DataTexture(this.maskData, texels, texels, THREE.RGBAFormat, THREE.UnsignedByteType);
     this.texture.magFilter = this.texture.minFilter = THREE.LinearFilter;
@@ -200,6 +318,7 @@ export class IceSheet {
       uIceTop: { value: 0 },
       uIceThickness: { value: 0 },
       uIceFar: { value: new THREE.Vector2(MASK.holeFar, MASK.crackFar) },   // the caps the mask's bytes span (fillMask)
+      uIceGlaze: { value: FLOOD.glaze },   // B's least once wet (fillMask)
       uIceWet: { value: 0 },   // how wet the rain has made it: src/main.js shares the weather's object
     };
     this.dirty = false;
@@ -236,16 +355,22 @@ export class IceSheet {
     this.clear();
   }
 
-  /** Whole again: no hole, no crack. */
+  /** Whole again: no hole, no crack, dry. */
   clear() {
     this.holes.length = 0;
     this.cracks.length = 0;
     this.events.length = 0;
+    this.shards.length = 0;
     this.holeField.fill(MASK.holeFar);
     this.crackField.fill(MASK.crackFar);
+    this.wetField.fill(0);
+    this.wetBox = null;
+    this.wetDue = 0;
     this.maskData.fill(0);
     this.fillMask();
     this.changed.length = 0;
+    this.sent.length = 0;
+    this.texture.clearUpdateRanges();   // all of it sent
     this.texture.needsUpdate = true;
     this.dirty = false;
   }
@@ -260,15 +385,18 @@ export class IceSheet {
     return shoreDistance(x, z) > 0;
   }
 
+  /** The holes not yet skinned over. */
+  get openHoles() { return this.holes.filter((hole) => !hole.skin?.closed).length; }
+
   /** Whether a hole may open at (x, z), `reach` (m) about it: over the solver's water, HOLE.edge inside its patch or the pool's walls. */
   mayOpen(x, z, reach) {
     const box = this.pool ?? { minX: this.domainMin[0], minZ: this.domainMin[1], size: this.domainSize };
     const room = reach + HOLE.edge;
-    return this.holes.length < HOLE.most && x - room > box.minX && x + room < box.minX + box.size && z - room > box.minZ && z + room < box.minZ + box.size && this.overWater(x, z);
+    return this.openHoles < HOLE.most && x - room > box.minX && x + room < box.minX + box.size && z - room > box.minZ && z + room < box.minZ + box.size && this.overWater(x, z);
   }
 
-  /** The hole (x, z) is in, or null. */
-  holeAt(x, z) {
+  /** The newest hole whose outline holds (x, z), or null: it says what is there, its open water or its new ice (the header). */
+  holeAbout(x, z) {
     for (let index = this.holes.length - 1; index >= 0; index--) {
       const hole = this.holes[index];
       if (Math.hypot(x - hole.x, z - hole.z) <= hole.outer && insidePolygon(hole.corners, x, z)) return hole;
@@ -276,17 +404,43 @@ export class IceSheet {
     return null;
   }
 
-  /** How far (x, z), in a hole, is from the ice (m: the farthest from the edge of any hole it is in; the holes' union is at least that open), or 0. */
+  /** Whether a hole's new ice covers (x, z), inside it (the header: its front reaches that far in from its edge). */
+  skinAt(hole, x, z) {
+    return Boolean(hole.skin) && (hole.skin.closed || polygonEdgeDistance(hole.corners, x, z) <= hole.skin.front);
+  }
+
+  /** The hole whose open water (x, z) is in, or null: the ice, or a hole's new ice. */
+  holeAt(x, z) {
+    const hole = this.holeAbout(x, z);
+    return hole && !this.skinAt(hole, x, z) ? hole : null;
+  }
+
+  /**
+   * How far (x, z), in a hole's open water, is from the ice (m: the farthest
+   * from the edge of any hole it is in, less its new ice; the holes' union is
+   * at least that open), or 0.
+   */
   clearance(x, z) {
     let clear = 0;
     for (const hole of this.holes) {
-      if (Math.hypot(x - hole.x, z - hole.z) > hole.outer || !insidePolygon(hole.corners, x, z)) continue;
-      clear = Math.max(clear, polygonEdgeDistance(hole.corners, x, z));
+      if (hole.skin?.closed || Math.hypot(x - hole.x, z - hole.z) > hole.outer || !insidePolygon(hole.corners, x, z)) continue;
+      clear = Math.max(clear, polygonEdgeDistance(hole.corners, x, z) - (hole.skin?.front ?? 0));
     }
     return clear;
   }
 
-  /** The ground's height at (x, z) (src/rock.js `ground`): the ice's top over the water but in a hole; the deck round a pool, the land behind a lake's waterline. */
+  /** How thick the ice is at (x, z) (m): the sheet's; a hole's new ice's (REFREEZE: thinner where its front passed later), or a shard's frozen into it; 0 in open water. */
+  thicknessAt(x, z) {
+    const hole = this.holeAbout(x, z);
+    if (!hole) return this.thickness;
+    if (!this.skinAt(hole, x, z)) return 0;
+    for (const piece of hole.frozen) if (Math.hypot(x - piece.x, z - piece.z) <= piece.radius && insidePolygon(piece.corners, x, z)) return piece.thickness;
+    const skin = hole.skin;
+    const passed = skin.start + (REFREEZE.closing * polygonEdgeDistance(hole.corners, x, z)) / Math.max(skin.deepest, 1e-6);
+    return REFREEZE.skin * Math.min(Math.max((this.time - passed) / REFREEZE.thickening, 0.05), 1);
+  }
+
+  /** The ground's height at (x, z) (src/rock.js `ground`): the ice's top over the water but in a hole's open water; the deck round a pool, the land behind a lake's waterline. */
   at(x, z) {
     if (!this.on) return this.deck ? this.deck.at(x, z) : null;
     if (this.pool) {
@@ -294,7 +448,9 @@ export class IceSheet {
     } else if (shoreDistance(x, z) <= 0) {
       return Math.max(groundHeightAt(x, z), this.top);
     }
-    return this.holeAt(x, z) ? null : this.top;
+    const hole = this.holeAbout(x, z);
+    if (!hole) return this.top;
+    return this.skinAt(hole, x, z) ? this.thicknessAt(x, z) * (1 - ICE.density / WATER_DENSITY) : null;
   }
 
   /** The ice's draws for a thing: a stream of its own, seeded from its splash's seed, so a seeded throw breaks alike however it is stepped. */
@@ -314,9 +470,9 @@ export class IceSheet {
     return (give * rock.mass * down * down) / (rock.plate ? rock.faceRadius : rock.collisionRadius);
   }
 
-  /** What the ice holds this time (N: the header), drawn from `random`. */
-  holds(random) {
-    return ICE.strength * this.thickness ** 2 * Math.exp(ICE.spread * gaussian(random));
+  /** What ice `thickness` thick holds this time (N: the header), drawn from `random`. */
+  holds(random, thickness = this.thickness) {
+    return ICE.strength * thickness ** 2 * Math.exp(ICE.spread * gaussian(random));
   }
 
   /**
@@ -336,22 +492,24 @@ export class IceSheet {
     if (height !== null) return this.strike(rock);
     const hole = this.holeAt(x, z);
     // Onto the water over the ice (it came over a hole's edge in the air): it strikes the ice there.
-    if (!hole) return this.strike(rock) ?? { ground: this.top };
-    // Too wide for the hole: it strikes the hole's edge, which holds (it lands on the ice beside the hole) or breaks.
-    if (hole.inner < rock.collisionRadius) {
-      const struck = this.strike(rock);
+    if (!hole) return this.strike(rock) ?? { ground: this.at(x, z) ?? this.top };
+    // Too wide for the hole: it strikes the hole's edge, which holds (it lands on the ice beside the hole) or breaks: the
+    // ice the hole broke, or its new ice's youngest, at its front.
+    if (hole.inner - (hole.skin?.front ?? 0) < rock.collisionRadius) {
+      const struck = this.strike(rock, hole.skin ? REFREEZE.skin * 0.05 : hole.thickness);
       if (struck) return struck;
       this.moveOffHole(rock, hole);
-      return { ground: this.top };
+      return { ground: this.at(rock.position.x, rock.position.z) ?? this.top };
     }
-    // It fits through. Its splash would stand on the ice if the hole is narrower than its lip: a fast one opens the
-    // hole wider (the water it throws aside breaks the edge); a slow one (sliding in off the edge) goes in without its
-    // crown.
+    // It fits through, and stirs the hole's water: it is left alone again from now (REFREEZE). Its splash would stand on
+    // the ice if the hole is narrower than its lip: a fast one opens the hole wider (the water it throws aside breaks the
+    // edge); a slow one (sliding in off the edge) goes in without its crown.
+    this.disturb(hole);
     const speed = rock.velocity.length(), horizontal = Math.hypot(rock.velocity.x, rock.velocity.z);
     const room = roundLipReach(rock.radius, speed, horizontal / Math.max(speed, 1e-6), 0, HOLE.fall);
     if (this.clearance(x, z) >= room) return { hole, broke: false, keep: 1, open: true };
     if (speed < HOLE.widensFrom || !this.mayOpen(x, z, room)) return { hole, broke: false, keep: 1, open: false };
-    return { hole: this.openHole(rock, x, z), broke: true, keep: 1, open: false };
+    return { hole: this.openHole(rock, x, z, hole.thickness), broke: true, keep: 1, open: false };
   }
 
   /** A thing over a hole too small for it, its edge holding: moved out, away from the hole's middle, until its middle is over the ice. */
@@ -366,45 +524,48 @@ export class IceSheet {
   }
 
   /**
-   * A thing striking the ice (meet; the header): null if the ice holds (a
-   * near miss stars it with cracks), else the hole it opens, broke, and the
-   * share of its speed it keeps.
+   * A thing striking the ice (meet; the header), `thickness` thick (where it
+   * is, else): null if the ice holds (a near miss stars it with cracks), else
+   * the hole it opens, broke, and the share of its speed it keeps.
    */
-  strike(rock) {
+  strike(rock, thickness = this.thicknessAt(rock.position.x, rock.position.z)) {
     const random = this.streamFor(rock);
     const blow = this.blow(rock);
-    const holds = this.holds(random);
     const x = rock.position.x, z = rock.position.z;
+    const holds = this.holds(random, thickness);
     const speed = rock.velocity.length(), horizontal = Math.hypot(rock.velocity.x, rock.velocity.z);
     const reach = roundLipReach(rock.radius, speed, horizontal / Math.max(speed, 1e-6), 1, HOLE.fall) * (1 + HOLE.margin + HOLE.jag);
     this.lastStrike = { blow, holds, x, z };   // for tools/ice-probe.mjs
     if (blow < holds || !this.mayOpen(x, z, reach)) {
-      if (blow > ICE.crackShare * holds) this.star(x, z, random, blow / holds);
+      if (blow > ICE.crackShare * holds) this.star(x, z, random, blow / holds, thickness);
       return null;
     }
     const energy = 0.5 * rock.mass * speed * speed;
-    const work = holds * this.thickness;
+    const work = holds * thickness;
     const keep = Math.sqrt(Math.max(1 - work / Math.max(energy, 1e-9), ICE.keepLeast ** 2));
-    const hole = this.openHole(rock, x, z);
-    this.events.push({ kind: 'break', x, z, strength: blow / holds, radius: rock.radius, thickness: this.thickness });
+    const hole = this.openHole(rock, x, z, thickness);
+    this.events.push({ kind: 'break', x, z, strength: blow / holds, radius: rock.radius, thickness });
     return { hole, broke: true, keep, open: false };
   }
 
   /**
-   * A hole opened at (x, z) by a thing going in there (strike, meet): as wide
-   * as a round hole's lip for its speed and its direction (roundLipReach),
-   * until fitCavity fits it to its cavity's.
+   * A hole opened at (x, z) by a thing going in there (strike, meet), in ice
+   * `thickness` thick: as wide as a round hole's lip for its speed and its
+   * direction (roundLipReach), until fitCavity fits it to its cavity's.
    */
-  openHole(rock, x, z) {
+  openHole(rock, x, z, thickness) {
     const random = this.streamFor(rock);
     const speed = rock.velocity.length(), horizontal = Math.hypot(rock.velocity.x, rock.velocity.z);
     const fraction = Math.min(horizontal / Math.max(speed, 1e-6), 1);
     const headingX = horizontal > 1e-4 ? rock.velocity.x / horizontal : 1, headingZ = horizontal > 1e-4 ? rock.velocity.z / horizontal : 0;
     const corners = HOLE.corners;
     const hole = {
-      x, z, radius: rock.radius, least: HOLE.least * rock.collisionRadius,
-      seed: Math.floor(random() * 4294967296), corners: new Float64Array(2 * corners), inner: 0, outer: 0,
-      settled: false, painted: false, cracks: [],
+      x, z, radius: rock.radius, least: HOLE.least * rock.collisionRadius, thickness,
+      seed: Math.floor(random() * 4294967296), corners: new Float64Array(2 * corners), inner: 0, outer: 0, reaches: new Float64Array(HOLE.reaches),
+      heading: { x: headingX, z: headingZ, lean: fraction },   // which way the thing went along the ice (the flood leans so)
+      settled: false, painted: false, cracks: [], crackCorners: [],
+      openedAt: this.time, quiet: this.time, releaseAt: this.time + SHARD.leastDelay, released: false,
+      skin: null, field: null, frozen: [], box: null,
     };
     // Each corner's azimuth, a little off even, from the hole's own stream.
     const shapeRandom = seededStream(hole.seed);
@@ -413,7 +574,13 @@ export class IceSheet {
     hole.sines = hole.angles.map(Math.sin);
     const reaches = hole.cosines.map((cosine, index) => roundLipReach(rock.radius, speed, fraction, cosine * headingX + hole.sines[index] * headingZ, HOLE.fall));
     this.shapeHole(hole, reaches);
+    // Past HOLE.kept, the oldest skinned over is let go (its new ice holds as the sheet does from then).
+    if (this.holes.length >= HOLE.kept) {
+      const oldest = this.holes.findIndex((candidate) => candidate.skin?.closed);
+      if (oldest >= 0) this.holes.splice(oldest, 1);
+    }
     this.holes.push(hole);
+    this.opened++;
     this.dirty = true;
     return hole;
   }
@@ -421,12 +588,15 @@ export class IceSheet {
   /**
    * Fit a hole to the cavity the thing that broke it opened (src/cavity.js,
    * src/main.js after the splash's impact): each corner out beyond the
-   * cavity's lip (Cavity.lipReach) as openHole put it beyond a round one's.
+   * cavity's lip (Cavity.lipReach) as openHole put it beyond a round one's;
+   * its shards are let go once the cavity has closed (SHARD.leastDelay at
+   * the least).
    */
   fitCavity(hole, cavity) {
     if (!hole || !cavity || hole.settled) return;
     const reaches = cavity.lipReach(hole.x, hole.z, hole.cosines, hole.sines, new Float64Array(hole.cosines.length), HOLE.fall);
     this.shapeHole(hole, reaches);
+    hole.releaseAt = hole.openedAt + Math.max(cavity.closeTime ?? 0, SHARD.leastDelay);
   }
 
   /**
@@ -434,7 +604,7 @@ export class IceSheet {
    * (`reaches`, m): each beyond it by HOLE.margin, the slow waves and its own
    * jag, deeper where a piece broke away (the header), at least `least` out,
    * and inside where a hole may be (mayOpen's box); then its inner and outer
-   * radius about its middle.
+   * radius about its middle, and its edge's reach at HOLE.reaches azimuths.
    */
   shapeHole(hole, reaches) {
     const random = seededStream(hole.seed ^ 0x5eed);
@@ -465,19 +635,41 @@ export class IceSheet {
     }
     hole.outer = outer;
     hole.inner = polygonEdgeDistance(hole.corners, hole.x, hole.z);
+    // The edge's reach about its middle at even azimuths: the nearest of its sides a ray from the middle crosses.
+    const corners = hole.corners;
+    for (let sample = 0; sample < HOLE.reaches; sample++) {
+      const angle = (2 * Math.PI * sample) / HOLE.reaches, rayX = Math.cos(angle), rayZ = Math.sin(angle);
+      let reach = Infinity;
+      for (let index = 0, previous = count - 1; index < count; previous = index++) {
+        const ax = corners[2 * previous] - hole.x, az = corners[2 * previous + 1] - hole.z;
+        const sideX = corners[2 * index] - corners[2 * previous], sideZ = corners[2 * index + 1] - corners[2 * previous + 1];
+        const across = rayX * sideZ - rayZ * sideX;
+        if (Math.abs(across) < 1e-12) continue;
+        const along = (ax * sideZ - az * sideX) / across, share = (ax * rayZ - az * rayX) / across;
+        if (along > 0 && share >= 0 && share <= 1) reach = Math.min(reach, along);
+      }
+      hole.reaches[sample] = Number.isFinite(reach) ? reach : hole.inner;
+    }
   }
 
-  /** A blow the ice held stars it (strike): CRACK.star cracks from where it struck, `share` of what it holds the blow's. */
-  star(x, z, random, share) {
+  /** How far a hole's edge is from its middle along the azimuth `angle` (radians from +x toward +z; m): its `reaches`, between samples. */
+  edgeReach(hole, angle) {
+    const position = (((angle / (2 * Math.PI)) % 1) + 1) % 1 * HOLE.reaches;
+    const index = Math.floor(position) % HOLE.reaches, share = position - Math.floor(position);
+    return hole.reaches[index] + (hole.reaches[(index + 1) % HOLE.reaches] - hole.reaches[index]) * share;
+  }
+
+  /** A blow the ice held stars it (strike): CRACK.star cracks from where it struck, `share` of what it holds the blow's, in ice `thickness` thick. */
+  star(x, z, random, share, thickness = this.thickness) {
     const count = Math.round(between(random, CRACK.star));
-    const length = this.length;
+    const length = iceLength(thickness);
     const start = 2 * Math.PI * random();
     for (let crack = 0; crack < count; crack++) {
       const heading = start + (2 * Math.PI * (crack + 0.4 * (random() - 0.5))) / count;
       const reach = between(random, CRACK.starReach) * length * Math.min(share, 1);
-      this.cracks.push(this.walk(x, z, heading, reach, random, false));
+      this.cracks.push(this.walk(x, z, heading, reach, random, false, length));
     }
-    this.events.push({ kind: 'crack', x, z, strength: share, thickness: this.thickness });
+    this.events.push({ kind: 'crack', x, z, strength: share, thickness });
     this.dirty = true;
   }
 
@@ -485,9 +677,10 @@ export class IceSheet {
    * A crack from (x, z) along `heading` (radians from +x toward +z), `reach`
    * metres long at most, wandering (CRACK.wander), stopping where the ice
    * ends (the pool's walls, the shore, the patch's edge); a branch now and
-   * then if `branches`. Returns its points; its branches go to this.cracks.
+   * then if `branches`, `length` (the ice's l_c) long. Returns its points;
+   * its branches go to this.cracks.
    */
-  walk(x, z, heading, reach, random, branches) {
+  walk(x, z, heading, reach, random, branches, length = this.length) {
     const points = [x, z];
     let travelled = 0;
     const box = this.pool ?? { minX: this.domainMin[0], minZ: this.domainMin[1], size: this.domainSize };
@@ -502,7 +695,7 @@ export class IceSheet {
       travelled += step;
       if (branches && random() < CRACK.branch) {
         const turn = between(random, CRACK.branchAngle) * (random() < 0.5 ? -1 : 1);
-        this.cracks.push(this.walk(x, z, heading + turn, between(random, CRACK.branchReach) * this.length, random, false));
+        this.cracks.push(this.walk(x, z, heading + turn, between(random, CRACK.branchReach) * length, random, false, length));
       }
     }
     return points;
@@ -513,7 +706,7 @@ export class IceSheet {
     if (hole.settled) return;
     hole.settled = true;
     const random = seededStream(hole.seed ^ 0xc4ac);
-    const length = this.length;
+    const length = iceLength(hole.thickness);
     const count = Math.round(between(random, CRACK.count));
     const corners = hole.angles.length;
     const start = random() * corners;
@@ -522,7 +715,8 @@ export class IceSheet {
       const x = hole.corners[2 * corner], z = hole.corners[2 * corner + 1];
       const heading = Math.atan2(z - hole.z, x - hole.x) + 0.3 * (random() - 0.5);
       const reach = Math.min(between(random, CRACK.reach) * length, CRACK.longest);
-      hole.cracks.push(this.walk(x, z, heading, reach, random, true));
+      hole.crackCorners.push(corner);
+      hole.cracks.push(this.walk(x, z, heading, reach, random, true, length));
     }
     if (random() < CRACK.ring) {
       const radius = between(random, CRACK.ringRadius) * (hole.inner + hole.outer) / 2;
@@ -542,21 +736,148 @@ export class IceSheet {
     this.dirty = true;
   }
 
+  // ---- shards (the header: SHARD) ------------------------------------------
+
   /**
-   * A floater that went into the water by a hole (src/rock.js iceHole), held
-   * inside it (src/collide.js `contain`, as src/pool.js holdInPool holds a
-   * thing in the pool): inside the hole's inner radius less its own, its
-   * speed outward turned back at its own bounce (the water between takes
-   * some). Returns how hard it was turned back ({ change, normalX, normalZ },
-   * the normal into the hole), or null.
+   * The pieces a hole's ice broke into (the header), from its own stream, its
+   * cracks drawn (settle): each { corners (its outline about its middle, m,
+   * the world's x and z, counter-clockwise), x, z (its middle), radius (its
+   * farthest corner), area (m²), thickness, mass (kg), white (its share of
+   * white ice) } and how it starts under the water ({ position, velocity,
+   * quaternion }); the biggest first.
+   */
+  piecesOf(hole) {
+    if (hole.thickness < SHARD.thinnest) return [];
+    this.settle(hole);
+    const random = seededStream(hole.seed ^ 0x5a4d);
+    const count = hole.angles.length;
+    const pointAt = (corner, share) => {
+      const index = ((corner % count) + count) % count;
+      return [hole.x + (hole.corners[2 * index] - hole.x) * share, hole.z + (hole.corners[2 * index + 1] - hole.z) * share];
+    };
+    const angleOf = (corner) => hole.angles[((corner % count) + count) % count] + 2 * Math.PI * Math.floor(corner / count);
+    // The wedges between its radial cracks (corner ranges round its edge, `to` past `from`), a wide one in two.
+    let starts = [...new Set(hole.crackCorners)].sort((first, second) => first - second);
+    if (starts.length < 2) starts = [0, count / 4, count / 2, (3 * count) / 4].map(Math.round);
+    const wedges = [];
+    const cut = (from, to) => {
+      if (angleOf(to) - angleOf(from) > SHARD.widest && to - from >= 4) {
+        const middle = from + Math.round((to - from) * between(random, [0.4, 0.6]));
+        cut(from, middle);
+        cut(middle, to);
+      } else wedges.push([from, to]);
+    };
+    starts.forEach((from, index) => {
+      const next = starts[(index + 1) % starts.length];
+      cut(from, next > from ? next : next + count);
+    });
+    // Each wedge from its inner edge to near the hole's, broken across where it is deep; a few chips from the middle.
+    const outlines = [];
+    for (const [from, to] of wedges) {
+      const outer = between(random, SHARD.outer), innerFrom = between(random, SHARD.inner), innerTo = between(random, SHARD.inner);
+      const across = outer - (innerFrom + innerTo) / 2 > SHARD.deep ? between(random, SHARD.across) : null;
+      const rim = [];
+      for (let corner = from; corner <= to; corner++) rim.push(...pointAt(corner, outer * (1 - 0.04 * random())));
+      if (across === null) outlines.push([...rim, ...pointAt(to, innerTo), ...pointAt(from, innerFrom)]);
+      else {
+        const acrossFrom = across * (1 + 0.06 * (random() - 0.5)), acrossTo = across * (1 + 0.06 * (random() - 0.5));
+        outlines.push([...rim, ...pointAt(to, acrossTo), ...pointAt(from, acrossFrom)]);
+        outlines.push([...pointAt(from, acrossFrom), ...pointAt(to, acrossTo), ...pointAt(to, innerTo), ...pointAt(from, innerFrom)]);
+      }
+    }
+    const meanReach = (hole.inner + hole.outer) / 2;
+    const chips = Math.round(between(random, SHARD.chips));
+    for (let chip = 0; chip < chips; chip++) {
+      const angle = 2 * Math.PI * random(), out = between(random, SHARD.inner) * this.edgeReach(hole, angle) * between(random, [0.2, 0.8]);
+      const size = between(random, SHARD.chip) * meanReach / 2;
+      const middleX = hole.x + Math.cos(angle) * out, middleZ = hole.z + Math.sin(angle) * out;
+      const sides = 3 + Math.floor(3 * random()), turn = 2 * Math.PI * random();
+      const points = [];
+      for (let side = 0; side < sides; side++) {
+        const at = turn + (2 * Math.PI * (side + 0.6 * (random() - 0.5))) / sides, reach = size * between(random, [0.6, 1]);
+        points.push(middleX + Math.cos(at) * reach, middleZ + Math.sin(at) * reach);
+      }
+      outlines.push(points);
+    }
+    // Each its hull, shrunk about its middle; then as many as float in it, the biggest first.
+    const pieces = [];
+    for (const outline of outlines) {
+      const hull = convexHull(outline);
+      const { x, z } = polygonMiddle(hull);
+      const corners = new Float64Array(hull.length);
+      let radius = 0;
+      for (let index = 0; index < hull.length; index += 2) {
+        corners[index] = (hull[index] - x) * SHARD.gap;
+        corners[index + 1] = (hull[index + 1] - z) * SHARD.gap;
+        radius = Math.max(radius, Math.hypot(corners[index], corners[index + 1]));
+      }
+      const area = polygonMiddle(corners).area;
+      if (2 * radius < Math.max(SHARD.least, SHARD.slab * hole.thickness) || area <= 0) continue;
+      // Over older open water (a hole widened) it was water.
+      if (this.holes.some((older) => older !== hole && this.holes.indexOf(older) < this.holes.indexOf(hole) && Math.hypot(x - older.x, z - older.z) <= older.outer && insidePolygon(older.corners, x, z) && !this.skinAt(older, x, z))) continue;
+      pieces.push({ corners, x, z, radius, area });
+    }
+    pieces.sort((first, second) => second.area - first.area);
+    const room = SHARD.fill * polygonMiddle(hole.corners).area;
+    const kept = [];
+    let filled = 0;
+    for (const piece of pieces) {
+      if (kept.length >= SHARD.most) break;
+      if (filled + Math.PI * piece.radius ** 2 > room) continue;
+      filled += Math.PI * piece.radius ** 2;
+      kept.push(piece);
+    }
+    // How each starts: under the water, its inner edge down, drifting out; white as the sheet is, about.
+    const thickShare = Math.min(Math.max((hole.thickness - 0.01) / 0.03, 0), 1);
+    for (const piece of kept) {
+      const outX = piece.x - hole.x, outZ = piece.z - hole.z;
+      const out = Math.hypot(outX, outZ) || 1;
+      const radialX = outX / out, radialZ = outZ / out;
+      // Inside the hole's edge as it is held there (contain).
+      const room = Math.max(this.edgeReach(hole, Math.atan2(radialZ, radialX)) - piece.radius - 0.002, 0);
+      if (out > room) { piece.x = hole.x + radialX * room; piece.z = hole.z + radialZ * room; }
+      const tilt = THREE.MathUtils.degToRad(between(random, SHARD.tilt));
+      const quaternion = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(-radialZ, 0, radialX), tilt)
+        .multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(radialX, 0, radialZ), 0.3 * (random() - 0.5)));
+      const drift = between(random, SHARD.drift), aside = SHARD.aside * (2 * random() - 1);
+      const driftX = radialX * Math.cos(aside) - radialZ * Math.sin(aside), driftZ = radialX * Math.sin(aside) + radialZ * Math.cos(aside);
+      piece.thickness = hole.thickness;
+      piece.mass = ICE.density * piece.area * hole.thickness;
+      // Some pieces are of the sheet's white ice, the rest clear (src/shaders/scene.js ICE_WHITE: more white in thick ice).
+      piece.white = random() < SHARD.whiteOdds * (0.12 + 0.28 * thickShare) ? between(random, [0.45, 0.85]) : between(random, [0, 0.1]);
+      // Its outline for its mesh (src/thingMeshes.js createShardGeometry): in its own radii, its own +y up.
+      piece.shape = { corners: piece.corners.map((value) => value / piece.radius), thickness: hole.thickness / piece.radius, white: piece.white };
+      piece.start = {
+        // Its highest point (its raised rim, tilted) under the water by `depth` of its radius: it comes up, never appears out of it.
+        position: new THREE.Vector3(piece.x, -(hole.thickness / 2 + Math.sin(tilt) * piece.radius + between(random, SHARD.depth) * piece.radius), piece.z),
+        velocity: new THREE.Vector3(driftX * drift, 0, driftZ * drift),
+        quaternion,
+      };
+      piece.hole = hole;
+    }
+    return kept;
+  }
+
+  /**
+   * A floater that went into the water by a hole (src/rock.js iceHole), or
+   * a shard of it, held inside it (src/collide.js `contain`, as src/pool.js
+   * holdInPool holds a thing in the pool): its middle no farther from the
+   * hole's than its edge's reach that way (edgeReach), less its new ice's
+   * front and its own radius as it meets things (a plate's whole radius,
+   * flat), its speed outward turned
+   * back at its own bounce (the water between takes some). Returns how hard
+   * it was turned back ({ change, normalX, normalZ }, the normal into the
+   * hole), or null.
    */
   contain(rock) {
     const hole = rock.iceHole;
     if (!this.on || !hole || !rock.floats || !(rock.state === 'water' || rock.state === 'float' || rock.afloat)) return null;
     const awayX = rock.position.x - hole.x, awayZ = rock.position.z - hole.z;
     const away = Math.hypot(awayX, awayZ);
-    const room = Math.max(hole.inner - rock.collisionRadius, 0);
-    if (away <= room || away < 1e-9) return null;
+    if (away < 1e-9) return null;
+    const reach = rock.plate ? rock.radius : rock.collisionRadius;   // a plate lies flat: its rim must not go under the ice
+    const room = Math.max(this.edgeReach(hole, Math.atan2(awayZ, awayX)) - (hole.skin?.front ?? 0) - reach, 0);
+    if (away <= room) return null;
     const normalX = -awayX / away, normalZ = -awayZ / away;
     const outward = -(rock.velocity.x * normalX + rock.velocity.z * normalZ);
     const change = outward > 0 ? (1 + rock.collisionBounce * 0.8) * outward : 0;
@@ -564,9 +885,281 @@ export class IceSheet {
     return { change, normalX, normalZ };
   }
 
+  // ---- the world's clock: shards let go, the flood, new ice (the header) ---
+
+  /** A hole stirred (a thing went in by it, or floats in it: src/main.js): it is left alone from now (REFREEZE.after). */
+  disturb(hole) {
+    if (hole && !hole.skin) hole.quiet = this.time;
+  }
+
+  /**
+   * The world's clock at `time` (s; src/main.js, each step): each hole whose
+   * cavity has closed lets its shards go (into `shards`) and floods the ice
+   * round it; the wet freezes away (FLOOD.step); holes left alone skin over,
+   * their new ice growing in (REFREEZE.step).
+   */
+  setTime(time) {
+    const passed = Math.max(time - this.time, 0);
+    this.time = time;
+    if (!this.on) return;
+    for (const hole of this.holes) {
+      if (!hole.released && time >= hole.releaseAt) {
+        hole.released = true;
+        this.flood(hole);
+        this.shards.push(...this.piecesOf(hole));
+      }
+      // Its field worked out a few rows a step in the seconds before (prepareSkin), then its new ice begins.
+      if (!hole.skin && hole.released && time - hole.quiet >= REFREEZE.after - REFREEZE.prepare && !hole.field?.ready) this.prepareSkin(hole, REFREEZE.texels);
+      if (!hole.skin && hole.field?.ready && time - hole.quiet >= REFREEZE.after) this.startSkin(hole);
+      if (hole.skin && !hole.skin.closed && time - hole.skin.painted >= REFREEZE.step) this.growSkin(hole);
+    }
+    if (this.wetBox) {
+      this.wetDue += passed;
+      if (this.wetDue >= FLOOD.step) { this.dry(this.wetDue / FLOOD.dry); this.wetDue = 0; }
+    }
+  }
+
+  /**
+   * The water come up through a hole and over the ice round it (the header:
+   * FLOOD), from the hole's own stream: wet out to FLOOD.reach of its edge's
+   * reach, waved, leaning the way the thing went, feathered.
+   */
+  flood(hole) {
+    const random = seededStream(hole.seed ^ 0xf100d);
+    const reach = between(random, FLOOD.reach);
+    const waves = [1, 2, 3, 5, 8, 13].map((mode) => ({ mode, amplitude: (FLOOD.wobble * random()) / Math.sqrt(mode), phase: 2 * Math.PI * random() }));
+    const meanReach = (hole.inner + hole.outer) / 2;
+    const lean = FLOOD.lean * hole.heading.lean * meanReach, feather = FLOOD.feather * meanReach;
+    // Its edge at even azimuths (FLOOD.bins), and the least and most of it: inside the least less the feather it is
+    // all wet, past the most dry, and only between is each texel's azimuth worth finding.
+    const edges = new Float64Array(FLOOD.bins);
+    let least = Infinity, most = 0;
+    for (let bin = 0; bin < FLOOD.bins; bin++) {
+      const angle = (2 * Math.PI * bin) / FLOOD.bins;
+      const waved = waves.reduce((sum, wave) => sum + wave.amplitude * Math.cos(wave.mode * angle + wave.phase), 0);
+      const ahead = Math.max(Math.cos(angle) * hole.heading.x + Math.sin(angle) * hole.heading.z, 0);
+      edges[bin] = this.edgeReach(hole, angle) * reach * (1 + waved) + lean * ahead;
+      least = Math.min(least, edges[bin]);
+      most = Math.max(most, edges[bin]);
+    }
+    const [firstColumn, lastColumn] = this.texelRange(hole.x - most, hole.x + most, 0);
+    const [firstRow, lastRow] = this.texelRange(hole.z - most, hole.z + most, 1);
+    if (lastColumn < firstColumn || lastRow < firstRow) return;
+    const allWet = Math.max(least - feather, 0) ** 2, mostSquared = most * most;
+    for (let row = firstRow; row <= lastRow; row++) {
+      const offsetZ = this.domainMin[1] + (row + 0.5) * this.cell - hole.z;
+      for (let column = firstColumn; column <= lastColumn; column++) {
+        const offsetX = this.domainMin[0] + (column + 0.5) * this.cell - hole.x;
+        const squared = offsetX * offsetX + offsetZ * offsetZ;
+        if (squared >= mostSquared) continue;
+        let amount = 1;
+        if (squared > allWet) {
+          const position = (((Math.atan2(offsetZ, offsetX) / (2 * Math.PI)) % 1) + 1) % 1 * FLOOD.bins;
+          const bin = Math.floor(position) % FLOOD.bins, share = position - Math.floor(position);
+          const edge = edges[bin] + (edges[(bin + 1) % FLOOD.bins] - edges[bin]) * share;
+          amount = 1 - THREE.MathUtils.smoothstep(Math.sqrt(squared), edge - feather, edge);
+        }
+        const texel = row * this.texels + column;
+        if (amount > this.wetField[texel]) this.wetField[texel] = amount;
+      }
+    }
+    this.markWet([firstColumn, lastColumn, firstRow, lastRow]);
+  }
+
+  /** A drop come down on the ice at (x, z), wetting a spot `radius` (m) across (src/splash.js): more drops, wetter. */
+  wetSpot(x, z, radius) {
+    if (!this.on) return;
+    const [firstColumn, lastColumn] = this.texelRange(x - radius, x + radius, 0);
+    const [firstRow, lastRow] = this.texelRange(z - radius, z + radius, 1);
+    if (lastColumn < firstColumn || lastRow < firstRow) return;
+    for (let row = firstRow; row <= lastRow; row++) {
+      const offsetZ = this.domainMin[1] + (row + 0.5) * this.cell - z;
+      for (let column = firstColumn; column <= lastColumn; column++) {
+        const share = 1 - Math.hypot(this.domainMin[0] + (column + 0.5) * this.cell - x, offsetZ) / radius;
+        if (share <= 0) continue;
+        const texel = row * this.texels + column;
+        this.wetField[texel] = Math.min(this.wetField[texel] + FLOOD.soak * share, 1);
+      }
+    }
+    this.markWet([firstColumn, lastColumn, firstRow, lastRow]);
+  }
+
+  /** Texels wetted in `rectangle`: to be filled (update), and within the box the drying walks. */
+  markWet(rectangle) {
+    this.changed.push(rectangle);
+    const box = this.wetBox;
+    this.wetBox = box ? [Math.min(box[0], rectangle[0]), Math.max(box[1], rectangle[1]), Math.min(box[2], rectangle[2]), Math.max(box[3], rectangle[3])] : [...rectangle];
+    this.dirty = true;
+  }
+
+  /** The wet frozen away by `share` of full wetness over the wet box (FLOOD.dry), which shrinks to what is still wet. */
+  dry(share) {
+    const [firstColumn, lastColumn, firstRow, lastRow] = this.wetBox;
+    const glaze = 255 * FLOOD.glaze, wetScale = 255 - glaze;
+    let box = null;
+    for (let row = firstRow; row <= lastRow; row++) {
+      for (let column = firstColumn; column <= lastColumn; column++) {
+        const texel = row * this.texels + column;
+        if (this.wetField[texel] <= 0) continue;
+        const wet = Math.max(this.wetField[texel] - share, 0);
+        this.wetField[texel] = wet;
+        this.maskData[4 * texel + 2] = Math.round(glaze + wet * wetScale);   // B alone (fillMask's)
+        if (wet <= 0) continue;
+        if (box) { box[0] = Math.min(box[0], column); box[1] = Math.max(box[1], column); box[2] = Math.min(box[2], row); box[3] = Math.max(box[3], row); } else box = [column, column, row, row];
+      }
+    }
+    this.sent.push(this.wetBox);
+    this.wetBox = box;
+    this.dirty = true;
+  }
+
+  /**
+   * A hole's field for its new ice (the header: REFREEZE), `texels` more of it
+   * a call (it is dear: each texel's distance to each side), so it is ready by
+   * the time its new ice begins: how far in from its edge each texel about it
+   * is (`depth`: exact inside, capped outside), the deepest, and where newer
+   * holes cut it (`clip`, their signed distances, outside them positive), so
+   * its new ice grows over its own open water only.
+   */
+  prepareSkin(hole, texels) {
+    const far = MASK.holeFar;
+    if (!hole.field) {
+      const [firstColumn, lastColumn] = this.texelRange(hole.x - hole.outer - far, hole.x + hole.outer + far, 0);
+      const [firstRow, lastRow] = this.texelRange(hole.z - hole.outer - far, hole.z + hole.outer + far, 1);
+      const width = Math.max(lastColumn - firstColumn + 1, 0), height = Math.max(lastRow - firstRow + 1, 0);
+      hole.field = { firstColumn, lastColumn, firstRow, lastRow, width, depth: new Float32Array(width * height).fill(-far), clip: null, row: firstRow, deepest: this.cell, ready: false };
+      for (const newer of this.holes.slice(this.holes.indexOf(hole) + 1)) if (newer.box) this.clipField(hole, newer);
+    }
+    const field = hole.field, corners = hole.corners, count = corners.length / 2;
+    const crossings = [];
+    let done = 0;
+    while (field.row <= field.lastRow && done < texels) {
+      const row = field.row++;
+      const z = this.domainMin[1] + (row + 0.5) * this.cell;
+      // Its insides along the row, by scanline.
+      crossings.length = 0;
+      for (let index = 0, previous = count - 1; index < count; previous = index++) {
+        const az = corners[2 * previous + 1], bz = corners[2 * index + 1];
+        if ((az > z) !== (bz > z)) crossings.push(corners[2 * previous] + ((z - az) * (corners[2 * index] - corners[2 * previous])) / (bz - az));
+      }
+      crossings.sort((first, second) => first - second);
+      for (let column = field.firstColumn; column <= field.lastColumn; column++) {
+        const x = this.domainMin[0] + (column + 0.5) * this.cell;
+        if (Math.hypot(x - hole.x, z - hole.z) > hole.outer + far) continue;
+        let inside = false;
+        for (const crossing of crossings) if (crossing < x) inside = !inside;
+        const distance = polygonEdgeDistance(corners, x, z);
+        done++;
+        field.depth[(row - field.firstRow) * field.width + column - field.firstColumn] = inside ? distance : Math.max(-distance, -far);
+        if (inside) field.deepest = Math.max(field.deepest, distance);
+      }
+    }
+    field.ready = field.row > field.lastRow;
+  }
+
+  /** A hole begins to skin over (the header: REFREEZE), its field ready (prepareSkin). */
+  startSkin(hole) {
+    hole.skin = { start: this.time, front: 0, deepest: hole.field.deepest, painted: -Infinity, closed: false };
+  }
+
+  /** A newer hole's signed distance (outside it positive) into an older one's field's clip, where their boxes meet. */
+  clipField(hole, newer) {
+    const field = hole.field;
+    if (!field || !newer.box) return;
+    const firstColumn = Math.max(field.firstColumn, newer.box[0]), lastColumn = Math.min(field.lastColumn, newer.box[1]);
+    const firstRow = Math.max(field.firstRow, newer.box[2]), lastRow = Math.min(field.lastRow, newer.box[3]);
+    if (lastColumn < firstColumn || lastRow < firstRow) return;
+    field.clip ??= new Float32Array(field.depth.length).fill(MASK.holeFar);
+    for (let row = firstRow; row <= lastRow; row++) {
+      const z = this.domainMin[1] + (row + 0.5) * this.cell;
+      for (let column = firstColumn; column <= lastColumn; column++) {
+        const x = this.domainMin[0] + (column + 0.5) * this.cell;
+        const distance = Math.min(polygonEdgeDistance(newer.corners, x, z), MASK.holeFar);
+        const signed = insidePolygon(newer.corners, x, z) ? -distance : distance;
+        const local = (row - field.firstRow) * field.width + column - field.firstColumn;
+        if (signed < field.clip[local]) field.clip[local] = signed;
+      }
+    }
+  }
+
+  /**
+   * A hole's new ice grown to now (REFREEZE): its front `closing` seconds from
+   * its edge to its deepest, painted into A as the most of what is there and
+   * its own (the front's distance, within its hole, clipped by newer holes),
+   * so it only grows; closed, its field is let go.
+   */
+  growSkin(hole) {
+    const skin = hole.skin, field = hole.field;
+    skin.front = Math.min((this.time - skin.start) / REFREEZE.closing, 1) * skin.deepest;
+    skin.painted = this.time;
+    const far = MASK.holeFar;
+    for (let row = field.firstRow; row <= field.lastRow; row++) {
+      for (let column = field.firstColumn; column <= field.lastColumn; column++) {
+        const local = (row - field.firstRow) * field.width + column - field.firstColumn;
+        const depth = field.depth[local];
+        if (depth <= -far) continue;
+        const reached = Math.min(skin.front - depth, depth + REFREEZE.seam, field.clip ? field.clip[local] : far);
+        const byte = toByte(reached, far), at = 4 * (row * this.texels + column) + 3;
+        if (byte > this.maskData[at]) this.maskData[at] = byte;
+      }
+    }
+    this.sent.push([field.firstColumn, field.lastColumn, field.firstRow, field.lastRow]);
+    this.dirty = true;
+    if (skin.front >= skin.deepest) { skin.closed = true; hole.field = null; }
+  }
+
+  /**
+   * Whether a hole's new ice has reached a shard in it (src/main.js then
+   * freezes it in): its front as far in as the shard's rim, or the hole closed.
+   */
+  reaches(rock) {
+    const hole = rock.iceHole;
+    if (!hole?.skin) return false;
+    return hole.skin.closed || polygonEdgeDistance(hole.corners, rock.position.x, rock.position.z) - rock.radius <= hole.skin.front;
+  }
+
+  /**
+   * A shard frozen into its hole's new ice (src/main.js, which then lets it
+   * go as a thing): its outline as it lies, painted into R as the sheet's ice
+   * (the most of what is there and its own signed distance, inside it
+   * positive), and kept as ice its own thickness (thicknessAt).
+   */
+  freezeIn(rock) {
+    const piece = rock.piece, hole = rock.iceHole;
+    if (!piece || !hole) return;
+    const count = piece.corners.length / 2;
+    const corners = new Float64Array(2 * count);
+    const corner = new THREE.Vector3();
+    for (let index = 0; index < count; index++) {
+      corner.set(piece.corners[2 * index] * rock.radius, 0, piece.corners[2 * index + 1] * rock.radius).applyQuaternion(rock.quaternion);
+      corners[2 * index] = rock.position.x + corner.x;
+      corners[2 * index + 1] = rock.position.z + corner.z;
+    }
+    const far = MASK.holeFar;
+    const [firstColumn, lastColumn] = this.texelRange(rock.position.x - rock.radius - far, rock.position.x + rock.radius + far, 0);
+    const [firstRow, lastRow] = this.texelRange(rock.position.z - rock.radius - far, rock.position.z + rock.radius + far, 1);
+    for (let row = firstRow; row <= lastRow; row++) {
+      const z = this.domainMin[1] + (row + 0.5) * this.cell;
+      for (let column = firstColumn; column <= lastColumn; column++) {
+        const x = this.domainMin[0] + (column + 0.5) * this.cell;
+        const distance = Math.min(polygonEdgeDistance(corners, x, z), far);
+        const signed = insidePolygon(corners, x, z) ? distance : -distance;
+        const texel = row * this.texels + column;
+        if (signed > this.holeField[texel]) this.holeField[texel] = signed;
+      }
+    }
+    if (lastColumn >= firstColumn && lastRow >= firstRow) this.changed.push([firstColumn, lastColumn, firstRow, lastRow]);
+    hole.frozen.push({ corners, x: rock.position.x, z: rock.position.z, radius: rock.radius, thickness: piece.thickness * rock.radius });
+    this.dirty = true;
+  }
+
   // ---- the mask (the header) -----------------------------------------------
 
-  /** Paint what has opened or cracked since (once a frame, src/main.js): holes' shapes are final by then (fitCavity). Returns whether the mask changed. */
+  /**
+   * Paint what has opened or cracked since, and send what changed (once a
+   * frame, src/main.js): holes' shapes are final by then (fitCavity). Returns
+   * whether the mask changed.
+   */
   update() {
     if (!this.dirty) return false;
     this.dirty = false;
@@ -579,8 +1172,24 @@ export class IceSheet {
     for (const points of this.cracks) this.paintCrack(points);
     this.cracks.length = 0;
     this.fillMask(this.changed);
+    // Only the rows painted go to the GPU (the header), each from the first texel painted in it to the last, unless so
+    // many rows that all of it is cheaper; rows already waiting to go are kept.
+    const texture = this.texture, rowFirst = this.rowFirst, rowLast = this.rowLast;
+    for (const [firstColumn, lastColumn, firstRow, lastRow] of [...this.changed, ...this.sent]) {
+      for (let row = firstRow; row <= lastRow; row++) {
+        rowFirst[row] = Math.min(rowFirst[row], firstColumn);
+        rowLast[row] = Math.max(rowLast[row], lastColumn);
+      }
+    }
+    let rows = 0;
+    for (let row = 0; row < this.texels; row++) if (rowLast[row] >= 0) rows++;
+    if (rows + texture.updateRanges.length > MASK.ranges) texture.clearUpdateRanges();
+    else for (let row = 0; row < this.texels; row++) if (rowLast[row] >= 0) texture.addUpdateRange(4 * (row * this.texels + rowFirst[row]), 4 * (rowLast[row] - rowFirst[row] + 1));
+    rowFirst.fill(this.texels);
+    rowLast.fill(-1);
     this.changed.length = 0;
-    this.texture.needsUpdate = true;
+    this.sent.length = 0;
+    texture.needsUpdate = true;
     return true;
   }
 
@@ -592,9 +1201,11 @@ export class IceSheet {
 
   /**
    * A hole into R: the signed distance to its edge, the least of it and what
-   * was there (the holes' union). Its texels' insides by scanline, each
-   * texel's middle against the edges a row crosses; the distance only in a
-   * band MASK.holeFar about each edge (deeper inside it is −holeFar).
+   * was there (the holes' union), and into A the same, which cuts whatever
+   * new ice is there (and older holes' new ice to come: clipField). Its
+   * texels' insides by scanline, each texel's middle against the edges a row
+   * crosses; the distance only in a band MASK.holeFar about each edge
+   * (deeper inside it is −holeFar).
    */
   paintHole(hole) {
     const far = MASK.holeFar;
@@ -645,9 +1256,17 @@ export class IceSheet {
         const signed = inside[local] ? -distance[local] : distance[local];
         const texel = (firstRow + row) * this.texels + firstColumn + column;
         if (signed < this.holeField[texel]) this.holeField[texel] = signed;
+        const byte = toByte(signed, far);
+        if (byte < this.maskData[4 * texel + 3]) this.maskData[4 * texel + 3] = byte;
       }
     }
-    this.changed.push([firstColumn, lastColumn, firstRow, lastRow]);
+    hole.box = [firstColumn, lastColumn, firstRow, lastRow];
+    // Older holes skinning over: their new ice is cut where this one opened.
+    for (const older of this.holes) {
+      if (older === hole) break;
+      if (older.field) this.clipField(older, hole);
+    }
+    this.changed.push(hole.box);
   }
 
   /** A crack into G, in a band about each of its segments (the header): the nearest crack's distance, signed by its side along its span. */
@@ -680,16 +1299,21 @@ export class IceSheet {
    * The fields into the texture's bytes over the rectangles of texels painted
    * since (`changed`), or all of it: each distance d as 127.5·(1 + d/far),
    * far its cap (a byte's step is 0.5 mm of a hole's edge, 0.16 mm of a
-   * crack's: finer than a pixel ever sees). B and A: none yet.
+   * crack's: finer than a pixel ever sees); B 0 where it was never wet, else
+   * FLOOD.glaze up to 1 by how wet (the header). A is painted as it is
+   * (paintHole, growSkin).
    */
   fillMask(rectangles = [[0, this.texels - 1, 0, this.texels - 1]]) {
     const holeScale = 127.5 / MASK.holeFar, crackScale = 127.5 / MASK.crackFar;
+    const glaze = 255 * FLOOD.glaze, wetScale = 255 - glaze;
     for (const [firstColumn, lastColumn, firstRow, lastRow] of rectangles) {
       for (let row = firstRow; row <= lastRow; row++) {
         for (let column = firstColumn; column <= lastColumn; column++) {
           const texel = row * this.texels + column;
           this.maskData[4 * texel] = Math.round(127.5 + this.holeField[texel] * holeScale);
           this.maskData[4 * texel + 1] = Math.round(127.5 + this.crackField[texel] * crackScale);
+          const wet = this.wetField[texel];
+          if (wet > 0 || this.maskData[4 * texel + 2] > 0) this.maskData[4 * texel + 2] = Math.round(glaze + wet * wetScale);
         }
       }
     }
@@ -697,6 +1321,9 @@ export class IceSheet {
 
   /** What src/main.js's budget reports. */
   get budget() {
-    return { thickness: this.thickness, holes: this.holes.length, maskBytes: this.maskData.byteLength };
+    return {
+      thickness: this.thickness, holes: this.holes.length, open: this.openHoles, skinning: this.holes.filter((hole) => hole.skin && !hole.skin.closed).length,
+      wet: this.wetBox ? (this.wetBox[1] - this.wetBox[0] + 1) * (this.wetBox[3] - this.wetBox[2] + 1) : 0, maskBytes: this.maskData.byteLength,
+    };
   }
 }

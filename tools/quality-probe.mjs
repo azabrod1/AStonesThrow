@@ -21,7 +21,10 @@
 //    no program (the warm-up drew both sceneries), its water mesh draws only
 //    the pool's quads, a throw into it compiles none and keeps one ring, the
 //    near field's (src/rings.js), which retires with it, and a change of
-//    preset in it keeps the pool's mesh. Every kind of thing (src/things.js)
+//    preset in it keeps the pool's mesh. The ice (src/ice.js): freezing the
+//    water, a throw that breaks it, its shards (within the preset's) and its
+//    flood, a hole's new ice and a frozen pool compile no program, and no
+//    gale blows on it. Every kind of thing (src/things.js)
 //    thrown, the floaters followed until they float in the mirror image,
 //    compiles no program, and no first throw builds a fixed mesh or slices
 //    its waterline (src/rock.js prepareThing did both under the veil; each
@@ -252,7 +255,8 @@ check(backOnLake === programsBeforePool, `back on the lake, still no new program
 await checkBuilt(phone, 'back on the lake');
 
 // The ice (src/ice.js): the water's own programs draw it (ICE_COMMON in src/shaders/scene.js), so freezing the water, a
-// throw that breaks it and a frozen pool compile nothing; on ice no gale blows, and the hole is in the budget.
+// throw that breaks it, its shards (floaters, src/things.js 'ice-shard'), the flood, a hole's new ice and a frozen pool
+// compile nothing; on ice no gale blows, and the hole, its shards (within the preset's) and the wet are in the budget.
 const programsBeforeIce = await page.evaluate(() => window.__pond.budget.programs);
 await page.evaluate(() => { window.__pond.setIce('thin'); window.__pond.advance(0.1); });
 const iced = await page.evaluate(() => window.__pond.budget);
@@ -261,6 +265,12 @@ check(iced.ice.name === 'thin' && iced.ice.thickness === 0.01 && iced.programs =
 await page.evaluate(() => { window.__pond.throwAt(0, -1.4, { radius: 0.03, power: 'normal' }); window.__pond.advance(1.0); });
 const broken = await page.evaluate(() => window.__pond.budget);
 check(broken.ice.holes >= 1 && broken.programs === programsBeforeIce, `a stone through thin ice breaks a hole (${broken.ice.holes}) and compiles no program (${broken.programs})`);
+check(broken.ice.shards >= 3 && broken.ice.shards <= broken.things.shards && broken.ice.wet > 0,
+  `its shards come up (${broken.ice.shards}, at most the preset's ${broken.things.shards}) and the ice round it is wet (${broken.ice.wet} texels)`);
+// Its new ice, begun at once (as if left alone REFREEZE.after seconds), compiles nothing.
+await page.evaluate(() => { for (const hole of window.__pond.iceSheet.holes) hole.quiet = -1e9; window.__pond.advance(1.0); });
+const skinning = await page.evaluate(() => window.__pond.budget);
+check(skinning.ice.skinning >= 1 && skinning.programs === programsBeforeIce, `a hole skinning over (${skinning.ice.skinning}) compiles no program (${skinning.programs})`);
 await page.evaluate(() => { window.__pond.setClarity('pool'); window.__pond.throwAt(0, -1, { radius: 0.03, power: 'normal' }); window.__pond.advance(1.0); });
 const frozenPool = await page.evaluate(() => window.__pond.budget);
 check(frozenPool.ice.name === 'thin' && frozenPool.programs === programsBeforeIce, `a frozen pool and a throw into it compile no program (${frozenPool.programs})`);

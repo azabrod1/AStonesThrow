@@ -106,7 +106,11 @@ is remembered on the device (but the view, which opens on the shore):
   or a pebble does not, and only a big rock or a heavy ball lobbed high goes
   through thick ice. A break opens
   a jagged hole with cracks running out from it, and the stone splashes in
-  as into open water, without the crown, whose sheet would stand on ice.
+  as into open water, without the crown, whose sheet would stand on ice. The
+  broken ice comes up in the hole as floating shards, the water floods the
+  ice round it and freezes glazed, and a hole left alone for 40 seconds
+  freezes over again in half a minute, its shards frozen in, its new ice
+  thin enough for the next throw to break.
 - Location (the sky photo, `?sky=`): Lakeside (the default), Mesas, Meadow,
   Alpine or Open sky, each a panorama of a place, its land and its sky. The
   photo (about 6 MB) loads while the old sky stays; then the sky, the sun's
@@ -690,8 +694,8 @@ few. A blow over six tenths of what it holds stars the ice with cracks.
 One it does not hold opens a hole, and the thing, slowed by what the break
 took, goes in as into open water (`src/rock.js` breakThrough): the cavity,
 the jet, the bubbles and the foam are the open water's, but no crown or fan
-stands up (`src/splash.js`), and the drops that come down on the ice are
-gone. The hole is as wide as the cavity's lip: opened as a round lip's for
+stands up (`src/splash.js`), and the drops that come down on the ice land
+there as on the deck, wetting it. The hole is as wide as the cavity's lip: opened as a round lip's for
 the throw (`roundLipReach` in `src/cavity.js`), then fitted, in the same
 step, to the cavity the splash made (`Cavity.lipReach`: its crest at the
 widest and half its fall, lopsided and drawn forward as it is), with a
@@ -701,23 +705,46 @@ walks of 0.6 to 1.6 times the sheet's characteristic length (0.54 m for
 thin ice, 1.5 m for thick), with a branch now and then and sometimes an arc
 of ring crack. A thing sliding into a hole falls in; one too wide for a hole
 strikes its edge; a floater that went in by a hole comes up in it and is
-held there. The sheet is rigid at the pond's scales (bending waves shorter
+held there. The ice that was in the hole broke into pieces between its
+radial cracks, and across them where a wedge is wide or deep, each a convex
+slab of the ice's thickness, with a chip or two from the crushed middle: as
+many as float in the hole uncrowded (their rims' discs at most 55% of it;
+a 6 cm stone through thin ice makes six or so, 7 to 13 cm across). Once the
+cavity has closed they are let go a little under the water, tilted, each a
+thing (`ice-shard` in `src/things.js`, hidden from the menus; its mesh
+built to its own outline, `src/thingMeshes.js`), so they come up and float
+flat at the sheet's own freeboard by the plate model a pizza floats by,
+bump each other rim to rim (`src/collide.js`), and are held in the hole by
+its edge's reach in each direction. As they go the water the splash threw
+aside comes back over the ice round the hole, out to about one and a half
+times its reach, leaning the way the stone went, and each drop that lands on
+the ice wets a spot; the film freezes over 75 seconds, leaving the ice
+glazed, its frost gone. A hole left alone 40 seconds (nothing gone in by it,
+nothing thrown afloat in it) skins over from its edge inward in 30 seconds:
+new ice, clear and smooth, 4 mm thick a minute after its front passed and
+thinner before, so it holds a pebble but not a stone; a shard it reaches is
+frozen in, painted into the sheet where it lay. (Real ice skins over in
+minutes to hours on a calm, cold night; this is quicker, for the play of
+it.) The sheet is rigid at the pond's scales (bending waves shorter
 than its characteristic length are stiffened by orders of magnitude), so
 the solver runs on under it, seen only in the holes, and carries a stone's
 ring there as in the pool (its waves run under the ice out of sight); no
 gale blows on ice. The holes and cracks are painted into a mask over the
-patch (an RGBA8 texture of 512², signed distances to the nearest hole's
-edge and crack), which the water's own shaders read: where it says ice
-they draw the ice, held flat at its freeboard, and in the holes the water,
-blending them over the pixel at a hole's edge; so the ice costs no program
-of its own. The ice is a lake's: mostly clear, the water and the bed
+patch (an RGBA8 texture of 512²: signed distances to the nearest hole's
+edge and crack, how wet, and the signed distance to new ice's front; only
+the rows that change are sent), which the water's own shaders read: where
+it says ice they draw the ice, held flat at its freeboard, and in the
+holes' open water the water, blending them over the pixel at the edge; so
+the ice costs no program of its own, and a shard is drawn as any floater
+is. The ice is a lake's: mostly clear, the water and the bed
 showing through it, a frosted mirror (the sky's cube blurred by its mip
 levels as wide as the frost spreads the reflected ray) with the sun's
 broad glare on it, a rime of frost mottling it, patches of white snow ice
 (more on thick ice), clusters of frozen bubbles; a crack is a bright line,
 its fracture face showing white down through clear ice as wide as the
 sheet's thickness seen along the refracted ray, a dark line in white ice;
-round a hole the ice is wet. Under flat ice the light is not focused: no
+round a hole the ice is wet, and wet ice is darker and a mirror; a hole's
+new ice is clear and glassy, its old edge a faint seam. Under flat ice the light is not focused: no
 caustics on the bed and no shafts in the water but under the holes. From
 below, clear ice lets the sky's window through unrippled and white ice
 glows. A thing landing on ice is heard with the chirp floating ice is known

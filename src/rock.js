@@ -198,7 +198,10 @@
 // displaces and its weight at its own (its volume's middle, moved by its
 // `body.ballast`: a duck's heavy base, which rights it) turn it, its rocking
 // damped as its bob is, so a pizza on its edge falls flat and one upside
-// down floats upside down; it rests only lying stably (stableAfloat).
+// down floats upside down; it rests only lying stably (stableAfloat). A
+// shard of ice (src/ice.js's pieces of a hole) is a floater from the moment
+// it is made: its mesh built to its own outline (`piece`, src/thingMeshes.js
+// shard), set adrift under the water (adrift), it floats up as a plate does.
 //
 // Plates use one water model from first wetting through bobbing or sinking
 // (plateWaterStep, turnAfloat). Drag and added mass act across the face;
@@ -1024,8 +1027,9 @@ export class Rock {
    * @param mass a ball's mass (kg; src/things.js measure); a stone's is its density's
    * @param mirrorLayer the layer the water's mirror image draws (src/splash.js MIRROR_LAYER): afloat, it is in it
    * @param water the water's uniforms (src/waterSurface.js rideUniforms): a floater given them rides the water's ripples as drawn (rideTheWater)
+   * @param piece a shard's own outline (src/ice.js shards: its corners about its middle and its thickness, in radii), which its mesh is built to
    */
-  constructor({ radius, position, velocity, envTexture, waterFog = null, thing = DEFAULT_THING, mass = null, mirrorLayer = null, skip = false, water = null }) {
+  constructor({ radius, position, velocity, envTexture, waterFog = null, thing = DEFAULT_THING, mass = null, mirrorLayer = null, skip = false, water = null, piece = null }) {
     this.radius = radius;
     this.position = position.clone();
     this.previous = position.clone();   // where it was a step ago
@@ -1070,7 +1074,8 @@ export class Rock {
     if (this.dressing && this.ownMass !== null) this.ownMass *= 1 + this.dressing.share;
     // (Its own copy, though a pie's parts are its filling's, kept: a mesh shared would stay on the GPU once drawn.)
     this.sharedGeometry = Boolean(prepared) && !this.thing.body.soft && !this.dressing;
-    this.geometry = prepared ? (this.sharedGeometry ? prepared.geometry : this.dressing ? withParts(prepared.geometry, this.dressing.geometry) : prepared.geometry.clone()) : mesh.build(this.thing, { flat: Boolean(skip) });
+    this.piece = piece;   // a shard's outline (src/ice.js), as it was broken
+    this.geometry = prepared ? (this.sharedGeometry ? prepared.geometry : this.dressing ? withParts(prepared.geometry, this.dressing.geometry) : prepared.geometry.clone()) : mesh.build(this.thing, { flat: Boolean(skip), ...(piece ? { piece } : {}) });
     // Only what its parts are and weigh is kept: their triangles are its geometry's now.
     if (this.dressing) {
       if (!this.dressing.shared) this.dressing.geometry.dispose();
@@ -2141,6 +2146,28 @@ export class Rock {
     return 0.5 * (lowest + highest);
   }
 
+  /**
+   * Set adrift under the water, a floater already (a shard of ice the ice
+   * broke and pushed under, src/ice.js shards): at `position`, moving at
+   * `velocity`, turned to `quaternion`, it floats up from there (floatStep; a
+   * plate's water model, the water it carries wholly under carried), seen
+   * through the water as a thing gone in is.
+   */
+  adrift(position, velocity, quaternion) {
+    this.position.copy(position);
+    this.previous.copy(position);
+    this.velocity.copy(velocity);
+    this.quaternion.copy(quaternion);
+    this.spinRate = 0;
+    this.state = 'float';
+    this.hasFloated = true;
+    this.carriedWater = this.plate ? this.plateAddedMass(1) : 0;
+    this.sinceImpact = Infinity;
+    this.seenThroughWater.value = 1;
+    this.wet = 1;
+    this.syncMeshes();
+  }
+
   /** From under the water (or back down from the air) to afloat: a ring if it broke the surface fast enough (`ripple`), else null. */
   startFloating(speed) {
     this.state = 'float';
@@ -2395,6 +2422,13 @@ export class Rock {
       this.settling = turn.w < 0.9999 ? { from: this.quaternion.clone(), to: turn.multiply(this.quaternion), time: 0 } : null;
     }
     this.syncMeshes();
+  }
+
+  /** Its ground gone from under it as it rests (a hole opened there, src/ice.js): it goes along the ground again, so it falls where there is none. */
+  loseGround() {
+    this.settling = null;
+    this.onGround = false;
+    this.state = 'ground';
   }
 
   /** dt seconds of settling onto the ground (restOn): turned on towards the face it lies on, its lowest point kept on the ground. */
