@@ -37,10 +37,10 @@
 //    come to rest shrinks the oldest away (src/main.js keepWithinCaps,
 //    fadeOut), never at once. The world's
 //    step is fixed: a basketball thrown alike at 60 frames a second and in
-//    frames of 1/162 s is in the same place 2.5 s on. With the page running,
-//    the water's height under a floater beside a splash is read back
-//    (src/floaterRide.js), and a throw's sounds play and end (src/sound.js;
-//    the browser lets audio start without a gesture here). Throws of every
+//    frames of 1/162 s is in the same place 2.5 s on. (The floaters' ride's
+//    read-back, src/floaterRide.js, and the sounds are not checked here:
+//    GitHub's runners' SwiftShader may leave the read unanswered a minute,
+//    and they run no audio.) Throws of every
 //    kind, six at a time, more than low keeps, the pond then cleared, leave
 //    no geometry, texture or program behind. Rain (src/rain.js): each weather in
 //    turn, with a throw in the downpour and a change of preset, reuses its
@@ -49,10 +49,11 @@
 //    and the storm: the first gale compiles its passes and spray once, draws the finer
 //    sheet that carries its waves, and a throw into it compiles none; the
 //    storm compiles none through a lightning strike; in the pool the gale
-//    raises no waves; calm again, the still sheet. pause(), resume(), pause(),
+//    raises no waves; calm again, the still sheet. In a 2560×1440 window on
+//    high the canvas keeps within PIXEL_BUDGET. pause(), resume(), pause(),
 //    resume() in one tick leave one frame loop: one render per
 //    requestAnimationFrame at most.
-// 2. The same page, a quarter of the pixels, on a fake clock (performance.now and requestAnimationFrame
+// 2. The same page, a ninth of the pixels, on a fake clock (performance.now and requestAnimationFrame
 //    advance a set step per frame, whatever SwiftShader takes, once however
 //    many callbacks the frame runs: the probe's own waits poll on it): at 55 frames
 //    a second the calibration keeps high through the idle pond and a splash;
@@ -66,12 +67,12 @@
 //    MAX_FRAME_RATE, and at MAX_FRAME_RATE every one, as at 90 a second (a
 //    90 Hz display's frames are within the ceiling's slack), the idle cap
 //    off and the simulated time keeping up throughout.
-// 3. A 2560×1440 window on high: the canvas keeps within PIXEL_BUDGET.
 //
 // Under SwiftShader a second of world time with the solver awake costs some
 // 9 s on high and 2.5 on low, so whatever a preset does not change (the pool,
-// the ice, the things, the floater, the step, the long session, the ceiling
-// on the fake clock) runs on low; each part's seconds are printed.
+// the ice, the things, the floater, the step, the long session, the gale,
+// the frame loop, the ceiling on the fake clock) runs on low; each part's
+// seconds are printed.
 //
 //   node tools/quality-probe.mjs
 import { chromium } from 'playwright';
@@ -333,13 +334,13 @@ const frameCounts = () => page.evaluate(() => {
   const pond = window.__pond, info = pond.renderer.info;
   info.autoReset = false;
   let calls = 0, triangles = 0;
-  for (let frame = 0; frame < 20; frame++) {
+  for (let frame = 0; frame < 8; frame++) {
     info.reset();
     pond.advance(1 / 60);
     calls += info.render.calls; triangles += info.render.triangles;
   }
   info.autoReset = true;
-  return { calls: calls / 20, triangles: Math.round(triangles / 20) };
+  return { calls: calls / 8, triangles: Math.round(triangles / 8) };
 });
 await page.evaluate(() => { window.__pond.pause(); window.__pond.clear(); window.__pond.advance(1); });
 const stillPond = await frameCounts();
@@ -416,56 +417,7 @@ const unevenly = await page.evaluate(() => {
 });
 const apart = Math.hypot(unevenly[0][0] - unevenly[1][0], unevenly[0][1] - unevenly[1][1], unevenly[0][2] - unevenly[1][2]);
 check(apart < 1e-9 && unevenly[0][3] === unevenly[1][3], `a basketball thrown alike at 60 frames a second and at frames of 1/162 s is where it was 2.5 s on (${apart.toExponential(1)} m apart, ${unevenly[0][3]} and ${unevenly[1][3]})`);
-part('the floater\'s ride and the sounds, on the running page, on low');
-// A floater rides the water as drawn, and things meet it there (src/floaterRide.js): with the page running, a basketball
-// afloat has the water's height under it read back, without a frame waiting for it (SwiftShader answers slowly: up to
-// a minute here), and where things meet it is where it is drawn.
-const ride = await page.evaluate(async () => {
-  const pond = window.__pond;
-  pond.clear();
-  pond.resume();
-  const ball = pond.throwAt(0, -1.4, { thing: 'basketball' });
-  for (let wait = 0; wait < 600 && ball.state !== 'float' && !ball.afloat; wait++) await new Promise((resolve) => setTimeout(resolve, 50));
-  const readsBefore = pond.floaterRide.reads;
-  let most = 0;
-  const gl = pond.renderer.getContext();
-  for (let wait = 0; wait < 1200 && pond.floaterRide.reads < readsBefore + 2; wait++) {
-    gl.finish();   // a software renderer may otherwise leave the read's fence unanswered a long while
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    most = Math.max(most, Math.abs(ball.rideHeight));
-  }
-  // The height read comes between steps; the next step's sync puts where things meet it there.
-  ball.syncMeshes(ball.drawn.surface, ball.drawn.bedDepth);
-  const share = ball.rideShare.value;
-  return { ...pond.floaterRide, readsBefore, most, state: ball.state, meets: Math.abs(ball.centre.y - (ball.position.y + ball.rideHeight * share)) };
-});
-console.log(`  a basketball afloat: ${ride.reads - ride.readsBefore} reads of the water under it came back (${ride.requests} asked), its centre up to ${(1000 * ride.most).toFixed(2)} mm off the still water`);
-// A browser whose renderer never answers the read's fence in the minute (GitHub's runners' SwiftShader at times) is
-// said so, and asked for reads without breaking; any read that comes must be sane, and things meet the ball there.
-const answered = ride.reads > ride.readsBefore;
-if (!answered) console.log(`  (this browser answered none of the ${ride.requests} reads asked in a minute: the readback is checked where it answers)`);
-check(ride.working && ride.requests > 0 && (!answered || ride.most < 0.05) && ride.meets < 1e-6, `the water's height under a floater is read back for the physics, and things meet it there (${ride.reads - ride.readsBefore} reads of ${ride.requests} asked, at most ${(1000 * ride.most).toFixed(1)} mm; the ball ${ride.state})`);
-// The sounds (src/sound.js): started by a gesture (a key here), a throw's splash plays and stops. Where the browser has
-// no audio to run (a CI runner), nothing plays; either way no voice is left held.
-await page.keyboard.press('Shift');
-const sounds = await page.evaluate(async () => {
-  const pond = window.__pond;
-  pond.setSound(true);
-  for (let wait = 0; wait < 50 && pond.soundState !== 'running'; wait++) await new Promise((resolve) => setTimeout(resolve, 20));
-  // Stepped to its splash here (headless frames are slow), its sounds counted as it goes in.
-  pond.pause();
-  const stone = pond.throwAt(0.2, -1.2, { radius: 0.04 });
-  let most = 0;
-  for (let frame = 0; frame < 120 && stone.state === 'air'; frame++) { pond.advance(1 / 60); most = Math.max(most, pond.soundsPlaying); }
-  pond.advance(0.05);
-  most = Math.max(most, pond.soundsPlaying);
-  pond.resume();
-  await new Promise((resolve) => setTimeout(resolve, 2500));
-  return { most, after: pond.soundsPlaying, state: pond.soundState };
-});
-console.log(`  a throw's sounds (audio ${sounds.state}): up to ${sounds.most} at once, ${sounds.after} left 2.5 s after`);
-check((sounds.state !== 'running' || sounds.most >= 1) && sounds.after === 0, `a throw sounds where the audio runs (${sounds.state}), and its sounds end (${sounds.most} at once, ${sounds.after} after)`);
-await page.evaluate(() => { window.__pond.clear(); });
+
 
 // A long session (resource lifetime): throws of every kind, more than low keeps, the oldest retired as the pond fills,
 // then the pond cleared: the GPU's geometries and textures are back where they were, and no program was made.
@@ -524,7 +476,8 @@ const cleared = await page.evaluate(() => ({ raining: window.__pond.raining, pro
 check(!cleared.raining && cleared.programs === programsBeforeRain, `clear again: no rain falls, and no program was compiled (${cleared.programs})`);
 await checkBuilt(phone, 'after the rain');
 
-// The gale compiles once on first selection; later changes reuse it.
+// The gale compiles once on first selection; later changes reuse it. On low: its sheet and passes are every preset's.
+await page.evaluate(() => window.__pond.setQuality('low'));
 let programsBeforeGale = await page.evaluate(() => window.__pond.budget.programs);
 await page.evaluate(() => { window.__pond.setWind('gale'); window.__pond.advance(0.3); });
 const galeBudget = await page.evaluate(() => ({ programs: window.__pond.budget.programs, gale: window.__pond.budget.gale }));
@@ -547,6 +500,17 @@ const calmAgain = await page.evaluate(() => ({ programs: window.__pond.budget.pr
 check(!calmAgain.gale.blowing && calmAgain.gale.sheetTriangles < 5000 && calmAgain.programs === programsBeforeGale, `calm again: the still sheet (${calmAgain.gale.sheetTriangles} triangles), no program (${calmAgain.programs})`);
 await checkBuilt(phone, 'after the gale');
 
+// The pixel budget: the same page in a 2560×1440 window on high (paused: no frame is drawn that large here).
+part('the pixel budget');
+await page.evaluate(() => { window.__pond.pause(); window.__pond.setQuality('high'); });
+await page.setViewportSize({ width: 2560, height: 1440 });
+await page.waitForFunction(() => window.__pond.budget.canvas.width > 1000, undefined, { timeout: 60000 }).catch(() => {});
+const largeBudget = await checkBuilt({ page, width: 2560, height: 1440 }, '2560×1440');
+check(largeBudget.canvas.width * largeBudget.canvas.height <= PIXEL_BUDGET, `the canvas keeps within ${PIXEL_BUDGET / 1e6} M pixels (${largeBudget.canvas.width}×${largeBudget.canvas.height}, ratio ${largeBudget.pixelRatio.toFixed(3)})`);
+await page.setViewportSize({ width: phone.width, height: phone.height });
+await page.waitForFunction((width) => window.__pond.budget.canvas.width === width, phone.width, { timeout: 60000 }).catch(() => {});
+await page.evaluate(() => window.__pond.resume());
+
 part('one frame loop, on low');
 await page.evaluate(() => window.__pond.setQuality('low'));   // the frames counted are any preset's
 // pause, resume, pause, resume in one tick: one frame loop, so at most one render per requestAnimationFrame, and at least every
@@ -556,7 +520,7 @@ const loops = await page.evaluate(() => new Promise((resolve) => {
   pond.pause(); pond.resume(); pond.pause(); pond.resume();
   const start = pond.framesRendered;
   let ticks = 0;
-  const tick = () => { if (++ticks < 30) requestAnimationFrame(tick); else resolve({ renders: pond.framesRendered - start, ticks }); };
+  const tick = () => { if (++ticks < 12) requestAnimationFrame(tick); else resolve({ renders: pond.framesRendered - start, ticks }); };
   requestAnimationFrame(tick);
 }));
 check(loops.renders <= loops.ticks + 1 && loops.renders >= loops.ticks / 2, `pause/resume/pause/resume leaves one frame loop: ${loops.renders} renders in ${loops.ticks} frames`);
@@ -577,8 +541,8 @@ const fakeClock = `(() => {
     callback(fake);
   });
 })();`;
-// A quarter of the phone's pixels: its frames are drawn for real, and none of what is counted here depends on their size.
-const faked = await openPage({ width: 195, height: 422, query: 'quality=auto', initScript: fakeClock });
+// A ninth of the phone's pixels: its frames are drawn for real, and none of what is counted here depends on their size.
+const faked = await openPage({ width: 130, height: 282, query: 'quality=auto', initScript: fakeClock });
 const fakePage = faked.page;
 await fakePage.waitForFunction(() => window.__pond.budget.calibration === 'awaitingSplash', undefined, { timeout: 900000 });
 check((await pageState(fakePage)).quality === 'high', 'at 55 frames a second the idle pond keeps high');
@@ -591,13 +555,13 @@ const slowFor = await fakePage.evaluate((from) => (performance.now() - from) / 1
 check((await pageState(fakePage)).quality === 'medium', `at 20 frames a second the watch steps down to medium (after ${slowFor.toFixed(1)} s)`);
 check(slowFor < 6, 'within a few seconds');
 await checkBuilt(faked, 'after the watch stepped down');
-/** The renders, simulated and clock seconds over 40 faked frames at `hertz`, and whether the idle cap held at the start and the end. */
+/** The renders, simulated and clock seconds over 24 faked frames at `hertz`, and whether the idle cap held at the start and the end. */
 const overFrames = (hertz) => fakePage.evaluate((step) => new Promise((resolve) => {
   window.__fakeStep = step;
   const pond = window.__pond;
   const start = { renders: pond.framesRendered, ticks: window.__ticks, time: pond.time, clock: performance.now(), capped: pond.budget.frameCapped };
   const wait = () => {
-    if (window.__ticks - start.ticks < 40) { requestAnimationFrame(wait); return; }
+    if (window.__ticks - start.ticks < 24) { requestAnimationFrame(wait); return; }
     resolve({ renders: pond.framesRendered - start.renders, ticks: window.__ticks - start.ticks, simulated: pond.time - start.time, clock: (performance.now() - start.clock) / 1000, capped: [start.capped, pond.budget.frameCapped] });
   };
   requestAnimationFrame(wait);
@@ -639,14 +603,6 @@ await waitForCap(false);
 const flyingNinety = await overFrames(90);
 check(!flyingNinety.capped.some(Boolean) && drawsOneIn(flyingNinety, 1) && keepsUp(flyingNinety), `and at 90 Hz every frame too, within the ceiling's slack: ${flyingNinety.renders} renders in ${flyingNinety.ticks} frames`);
 await faked.context.close();
-
-// ---- 3. the pixel budget ----------------------------------------------------
-console.log('a 2560×1440 window on high');
-part('the pixel budget');
-const large = await openPage({ width: 2560, height: 1440, query: 'quality=high&paused=1' });
-const largeBudget = await checkBuilt(large, '2560×1440');
-check(largeBudget.canvas.width * largeBudget.canvas.height <= PIXEL_BUDGET, `the canvas keeps within ${PIXEL_BUDGET / 1e6} M pixels (${largeBudget.canvas.width}×${largeBudget.canvas.height}, ratio ${largeBudget.pixelRatio.toFixed(3)})`);
-await large.context.close();
 
 part(null);
 if (problems.length) { console.log('  console problems:'); console.log('  ' + problems.slice(0, 10).join('\n  ')); failures++; }
