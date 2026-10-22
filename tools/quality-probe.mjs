@@ -45,7 +45,8 @@
 //    size; clear again, nothing of the rain runs. Snow (src/snow.js), after
 //    the gale: the first snow compiles its flakes' one program, the others
 //    and a blizzard's gale reuse it and the gale's (the ground's snow is a
-//    uniform), a throw into it compiles none, its draw adds one call; clear
+//    uniform), a throw into it compiles none, Low draws its share of the
+//    flakes, its draw adds one call; clear
 //    again, nothing of it is drawn or lies. The gale (src/galeWaves.js)
 //    and the storm: the first gale compiles its passes and spray once, draws the finer
 //    sheet that carries its waves, and a throw into it compiles none; the
@@ -512,6 +513,8 @@ for (const weather of ['light-snow', 'heavy-snow', 'blizzard']) {
   check(falling && snowing.programs === programsBeforeSnow && snowing.weather === weather && snowing.snow.flakes > 0 && snowing.snow.cover > 0 && (weather !== 'blizzard' || snowing.wind === 'gale'),
     `${weather} falls at once (${snowing.snow.flakes} flakes, the ground ${snowing.snow.cover} covered${weather === 'blizzard' ? `, wind ${snowing.wind}` : ''}) and with a throw compiles no more (${snowing.programs})`);
 }
+const lowSnow = await page.evaluate(() => { window.__pond.setQuality('low'); window.__pond.advance(0.1); const flakes = window.__pond.budget.snow.flakes; window.__pond.setQuality('high'); window.__pond.advance(0.1); return { low: flakes, high: window.__pond.budget.snow.flakes, programs: window.__pond.budget.programs }; });
+check(lowSnow.low === Math.round(lowSnow.high * 0.4) && lowSnow.programs === programsBeforeSnow, `Low draws its share of the blizzard's flakes (${lowSnow.low} of ${lowSnow.high}) and compiles nothing (${lowSnow.programs})`);
 await page.evaluate(() => { window.__pond.pause(); window.__pond.clear(); window.__pond.setWind('calm'); window.__pond.advance(1); });
 const snowDraws = await frameCounts();
 await page.evaluate(() => window.__pond.resume());

@@ -266,6 +266,10 @@ import { createFloaterRide } from './floaterRide.js';
 //                 every preset;
 //   rainTexels    the rain's tile's texels per side (src/rain.js, 1 m): 512
 //                 resolves its rings' shortest crests, 256 blurs them a little.
+//   snowShare     the share of the snow's flakes drawn (src/snow.js): each
+//                 runs its motion and, under a gale, a lookup of its waves in
+//                 the vertex shader, so a phone draws fewer; the haze carries
+//                 the snow either way.
 //   resting, afloat  the things kept at rest and afloat (the header); past
 //                 them the oldest of that kind shrinks away.
 // Every target keeps its format on every preset, so a program drawn under the
@@ -273,9 +277,9 @@ import { createFloaterRide } from './floaterRide.js';
 // and every mesh takes 16-bit indices (at most 254 segments: Three.js keeps
 // the index 65535 for primitive restart).
 export const QUALITY = {
-  high: { grid: 512, meshSegments: 254, underScale: 1.0, fluidScale: 1.0, idleFrameRate: 30, maxDpr: 2.0, rings: 24, ringFade: 8, rainTexels: 512, resting: 40, afloat: 16 },
-  medium: { grid: 256, meshSegments: 160, underScale: 0.5, fluidScale: 0.5, idleFrameRate: 30, maxDpr: 2.0, rings: 12, ringFade: 4, rainTexels: 256, resting: 30, afloat: 14 },
-  low: { grid: 256, meshSegments: 128, underScale: 0.5, fluidScale: 0.5, idleFrameRate: 30, maxDpr: 1.5, rings: 8, ringFade: 3, rainTexels: 256, resting: 20, afloat: 12 },
+  high: { grid: 512, meshSegments: 254, underScale: 1.0, fluidScale: 1.0, idleFrameRate: 30, maxDpr: 2.0, rings: 24, ringFade: 8, rainTexels: 512, snowShare: 1, resting: 40, afloat: 16 },
+  medium: { grid: 256, meshSegments: 160, underScale: 0.5, fluidScale: 0.5, idleFrameRate: 30, maxDpr: 2.0, rings: 12, ringFade: 4, rainTexels: 256, snowShare: 0.6, resting: 30, afloat: 14 },
+  low: { grid: 256, meshSegments: 128, underScale: 0.5, fluidScale: 0.5, idleFrameRate: 30, maxDpr: 1.5, rings: 8, ringFade: 3, rainTexels: 256, snowShare: 0.4, resting: 20, afloat: 12 },
 };
 export const PIXEL_BUDGET = 2.6e6;   // device pixels in the canvas, on every preset
 const QUALITY_ORDER = ['high', 'medium', 'low'];
@@ -546,6 +550,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   // snow lying on the ground (the beach's and the deck's uSnow) and the air
   // it brings (src/rock.js setAir; the deck's drying, src/pool.js).
   const snow = new Snow(lighting, { gale: galeWaves.uniforms(), haze: environment.hazeUniforms });
+  snow.setShare(settings.snowShare);
   const snowCover = { value: 0 };
   const air = { ...MILD_AIR };
   // The rings that cross the whole pond: the splash hands them its ring
@@ -1887,6 +1892,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     settings = QUALITY[name];
     rings.setLiveLimit(settings.rings, settings.ringFade);
     rain.setTexels(settings.rainTexels);
+    snow.setShare(settings.snowShare);
     water.resize(settings.grid);
     surface.setMeshSegments(settings.meshSegments);
     resize();

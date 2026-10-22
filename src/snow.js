@@ -14,8 +14,9 @@
 //
 // The flakes (FLAKE_VERTEX in src/shaders/snow.js; flakeAt is its twin
 // here, for tools/snow-probe.mjs). Each is a point in a box of SNOW[].box
-// metres about the eye, falling at `fall` (m/s, 0.8 to 1.2 times it, flake
-// by flake: snow's terminal speeds, dendrites to wet aggregates, are near 1
+// metres about the eye (lowered to reach the water when the eye is high),
+// falling at `fall` (m/s, 0.8 to 1.2 times it, flake by flake, in
+// SPEED_STEPS steps: snow's terminal speeds, dendrites to wet aggregates, are near 1
 // m/s whatever their size), carried at the wind's speed, which a flake takes
 // at once (its drag far outweighs it), swinging on an ellipse of `sway`
 // metres once every `swayPeriods` seconds (the flutter of a falling flake),
@@ -27,14 +28,20 @@
 // fainter, so far flakes thin into the haze rather than flicker. `sizes` is
 // the smallest and largest flake across (m): light snow's single crystals
 // and small clumps, heavy snow's aggregates. `flakes` fill the box; the
-// haze (the weather's visibility) carries the snow on beyond it.
+// haze (the weather's visibility) carries the snow on beyond it. The
+// shader never multiplies the clock, which runs on as long as the page is
+// open: update() wraps the wind's carry and the fall into the box, and the
+// clock to CYCLE, in doubles (Precision, src/shaders/snow.js).
 //
-// Cost while it snows: one draw of `flakes` instanced quads, their vertex
+// The quality presets (src/main.js QUALITY `snowShare`) draw that share of
+// the flakes: the snow thins on a weaker device, its look the same.
+//
+// Cost while it snows: one draw of `flakes` (times the preset's share) instanced quads, their vertex
 // shader a few dozen operations and, under a gale, one lookup of its waves;
 // no pass, no target, nothing on the CPU but a few uniforms. With no snow
 // nothing is drawn.
 import * as THREE from 'three';
-import { FLAKE_VERTEX, FLAKE_FRAGMENT } from './shaders/snow.js';
+import { FLAKE_VERTEX, FLAKE_FRAGMENT, SPEED_STEPS, SPEED_SHARE, CYCLE } from './shaders/snow.js';
 
 export const SNOW = {
   light: { flakes: 16000, box: [16, 8, 16], fall: 0.9, sizes: [0.004, 0.012], sway: 0.05, swayPeriods: [1.2, 2.6], opacity: 0.9 },
@@ -46,6 +53,14 @@ export const STREAK_MIN_PIXELS = 1.2;
 export const GUST_SHARE = 0.3;          // the gusts' speed against the wind's
 const GUST_PERIOD = 2.4;                // seconds: FLAKE_MOTION's
 const TAU = 2 * Math.PI;
+const wrap = (value, span) => value - span * Math.floor(value / span);
+/** A rate of about 2π/period, a whole number of turns in CYCLE (FLAKE_MOTION's cycleRate). */
+const cycleRate = (period) => TAU / CYCLE * Math.max(Math.round(CYCLE / period), 1);
+/** A flake's speed step (0 to SPEED_STEPS) from its size attribute, and its speed against the fall. */
+export function flakeSpeed(sizeAttribute) {
+  const step = Math.min(Math.floor(sizeAttribute * (SPEED_STEPS + 1)), SPEED_STEPS);
+  return { step, speed: 0.8 + SPEED_SHARE * step };
+}
 
 /**
  * Flake `index`'s two attributes (aFlake, aSway), each four numbers in
@@ -67,24 +82,40 @@ export function flakeAttributes(count) {
  */
 export function flakeAt(flake, sway, time, snow, drift) {
   const gustSpeed = GUST_SHARE * Math.hypot(drift[0], drift[1]);
-  const speed = 0.8 + 0.4 * flake[3];
-  const swayRate = TAU / (snow.swayPeriods[0] + (snow.swayPeriods[1] - snow.swayPeriods[0]) * sway[2]);
-  const swingX = swayRate * time + TAU * sway[0], swingZ = swayRate * time + TAU * sway[1];
-  const gustRate = TAU / GUST_PERIOD * (0.7 + 0.6 * sway[3]);
-  const gust = gustRate * time + TAU * 7 * sway[3];
+  const { speed } = flakeSpeed(flake[3]);
+  const cycleTime = wrap(time, CYCLE);   // the swings and gusts repeat in CYCLE: the same as the clock's own
+  const swayRate = cycleRate(snow.swayPeriods[0] + (snow.swayPeriods[1] - snow.swayPeriods[0]) * sway[2]);
+  const swingX = swayRate * cycleTime + TAU * sway[0], swingZ = swayRate * cycleTime + TAU * sway[1];
+  const gustPeriod = GUST_PERIOD / (0.7 + 0.6 * sway[3]);
+  const gustRate = [cycleRate(gustPeriod), cycleRate(gustPeriod / 1.7), cycleRate(gustPeriod / 1.3)];
+  const gust = gustRate.map((rate, axis) => rate * cycleTime + axis + TAU * 7 * sway[3]);
+  const gustReach = [gustSpeed / gustRate[0], 0.4 * gustSpeed / gustRate[0], gustSpeed / gustRate[0]];
   const steady = [drift[0], -snow.fall * speed, drift[1]];
   const start = [flake[0] * snow.box[0], flake[2] * snow.box[1], flake[1] * snow.box[2]];
   const place = [
-    start[0] + steady[0] * time + snow.sway * Math.sin(swingX) + (gustSpeed / gustRate) * Math.sin(gust),
-    start[1] + steady[1] * time + (gustSpeed / gustRate) * 0.4 * Math.sin(1.7 * gust + 1),
-    start[2] + steady[2] * time + snow.sway * Math.cos(swingZ) + (gustSpeed / gustRate) * Math.cos(1.3 * gust + 2),
+    start[0] + steady[0] * time + snow.sway * Math.sin(swingX) + gustReach[0] * Math.sin(gust[0]),
+    start[1] + steady[1] * time + gustReach[1] * Math.sin(gust[1]),
+    start[2] + steady[2] * time + snow.sway * Math.cos(swingZ) + gustReach[2] * Math.cos(gust[2]),
   ];
   const velocity = [
-    steady[0] + snow.sway * swayRate * Math.cos(swingX) + gustSpeed * Math.cos(gust),
-    steady[1] + gustSpeed * 0.68 * Math.cos(1.7 * gust + 1),
-    steady[2] - snow.sway * swayRate * Math.sin(swingZ) - gustSpeed * 1.3 * Math.sin(1.3 * gust + 2),
+    steady[0] + snow.sway * swayRate * Math.cos(swingX) + gustReach[0] * gustRate[0] * Math.cos(gust[0]),
+    steady[1] + gustReach[1] * gustRate[1] * Math.cos(gust[1]),
+    steady[2] - snow.sway * swayRate * Math.sin(swingZ) - gustReach[2] * gustRate[2] * Math.sin(gust[2]),
   ];
   return { place, velocity };
+}
+
+/**
+ * The uniforms that carry the clock (Precision, src/shaders/snow.js), for
+ * `snow` (an entry of SNOW) at `time` (s) in the wind `drift` ([x, z], m/s):
+ * worked out in doubles, each wrapped into the box or the cycle.
+ */
+export function clockOffsets(time, snow, drift) {
+  return {
+    cycleTime: wrap(time, CYCLE),
+    drift: [wrap(drift[0] * time, snow.box[0]), wrap(drift[1] * time, snow.box[2])],
+    fall: [wrap(0.8 * snow.fall * time, snow.box[1]), wrap(SPEED_SHARE * snow.fall * time, snow.box[1])],
+  };
 }
 
 /**
@@ -107,6 +138,7 @@ export class Snow {
    */
   constructor(lighting, { gale = {}, haze = {} } = {}) {
     this.intensity = null;
+    this.share = 1;   // of the flakes drawn (the quality preset's, setShare)
     this.wind = new THREE.Vector2();
     const quad = new THREE.InstancedBufferGeometry();
     quad.setAttribute('position', new THREE.Float32BufferAttribute([-1, 0, 0, 1, 0, 0, -1, 1, 0, 1, 1, 0], 3));
@@ -121,7 +153,9 @@ export class Snow {
       vertexShader: FLAKE_VERTEX,
       fragmentShader: FLAKE_FRAGMENT,
       uniforms: {
-        uSnowTime: { value: 0 },
+        uCycleTime: { value: 0 },
+        uDriftOffset: { value: new THREE.Vector3() },
+        uFallOffsets: { value: new THREE.Vector2() },
         uBox: { value: new THREE.Vector3(...light.box) },
         uDrift: { value: new THREE.Vector3() },
         uFall: { value: light.fall },
@@ -156,6 +190,12 @@ export class Snow {
   /** The flakes drawn while it snows (0 with none). */
   get count() { return this.on ? this.flakes.geometry.instanceCount : 0; }
 
+  /** The share of each snow's flakes drawn (the quality preset's `snowShare`, src/main.js). */
+  setShare(share) {
+    this.share = share;
+    if (this.intensity) this.flakes.geometry.instanceCount = Math.round(SNOW[this.intensity].flakes * share);
+  }
+
   /** The wind the flakes drift with: its direction (world XZ, unit) and speed (m/s); its gusts toss them. */
   setWind(direction, speed) {
     this.wind.set(direction[0], direction[1]).normalize().multiplyScalar(speed);
@@ -176,7 +216,7 @@ export class Snow {
     uniforms.uSwayPeriods.value.set(...snow.swayPeriods);
     uniforms.uSizes.value.set(...snow.sizes);
     uniforms.uOpacity.value = snow.opacity;
-    this.flakes.geometry.instanceCount = snow.flakes;
+    this.flakes.geometry.instanceCount = Math.round(snow.flakes * this.share);
     this.show(true);
   }
 
@@ -184,8 +224,12 @@ export class Snow {
 
   /** The flakes at world time `time` (seconds), for the camera, whose render target is `resolution` pixels. */
   update(time, camera, resolution) {
+    if (!this.on || !this.intensity) return;   // the warm-up draws it with none chosen: nothing to move
     const uniforms = this.flakes.material.uniforms;
-    uniforms.uSnowTime.value = time;
-    if (this.on) uniforms.uFocalPx.value = camera.projectionMatrix.elements[5] * resolution.y * 0.5;
+    const offsets = clockOffsets(time, SNOW[this.intensity], [this.wind.x, this.wind.y]);
+    uniforms.uCycleTime.value = offsets.cycleTime;
+    uniforms.uDriftOffset.value.set(offsets.drift[0], 0, offsets.drift[1]);
+    uniforms.uFallOffsets.value.set(offsets.fall[0], offsets.fall[1]);
+    uniforms.uFocalPx.value = camera.projectionMatrix.elements[5] * resolution.y * 0.5;
   }
 }

@@ -4,36 +4,56 @@
 // change both together.
 import { GALE_SURFACE } from './gale.js';
 
-// A flake's place and velocity at a time: its start in the box, carried by
-// the wind (uDrift) and falling at its terminal speed (uFall, a little more
-// or less for each flake), swinging from side to side on an ellipse of
-// uSway metres once every period between uSwayPeriods (a falling flake's
-// flutter), and tossed by the wind's gusts (uGust, m/s, GUST_PERIOD seconds
-// about), which carry it as the air does: a flake weighs nothing to the air.
-// The swing and the gusts are sines, so they average out: on average a flake
-// goes with the wind and falls at its speed.
+// A flake's place and velocity: its start in the box, carried by the wind
+// (uDrift) and falling at its terminal speed (uFall times one of SPEED_STEPS
+// + 1 speeds from 0.8 to 1.2, flake by flake), swinging from side to side on
+// an ellipse of uSway metres once every period between uSwayPeriods (a
+// falling flake's flutter), and tossed by the wind's gusts (uGust, m/s, about
+// GUST_PERIOD seconds), which carry it as the air does: a flake weighs
+// nothing to the air. The swing and the gusts are sines, so they average
+// out: on average a flake goes with the wind and falls at its speed.
+//
+// Precision. The clock runs on for as long as the page is open, and a
+// blizzard's flakes drift 12 m/s: after an hour, 43 km from where they
+// started, where a float holds millimetres. So the shader never multiplies
+// the clock: src/snow.js works out, in doubles, the wind's carry wrapped
+// into the box (uDriftOffset), the fall wrapped into it as 0.8 of the fall
+// and a step of SPEED_SHARE of it (uFallOffsets: a flake's speed step k
+// adds k of the second), and the clock wrapped to CYCLE seconds
+// (uCycleTime), every swing and gust a whole number of turns in it.
+export const SPEED_STEPS = 16;
+export const SPEED_SHARE = 0.4 / SPEED_STEPS;
+export const CYCLE = 60;            // seconds: every swing and gust repeats in it
 export const FLAKE_MOTION = /* glsl */`
 #define SNOW_TAU 6.283185307179586
+#define SPEED_STEPS ${SPEED_STEPS.toFixed(1)}
+#define SPEED_SHARE ${SPEED_SHARE}
+#define CYCLE ${CYCLE.toFixed(1)}
 #define GUST_PERIOD 2.4
-void flakeMotion(vec4 flake, vec4 sway, float time, out vec3 place, out vec3 velocity) {
-  float speed = mix(0.8, 1.2, flake.w);
+// A rate of about 2π/period, a whole number of turns in CYCLE.
+float cycleRate(float period) { return SNOW_TAU / CYCLE * max(floor(CYCLE / period + 0.5), 1.0); }
+void flakeMotion(vec4 flake, vec4 sway, out vec3 place, out vec3 velocity) {
+  float step = min(floor(flake.w * (SPEED_STEPS + 1.0)), SPEED_STEPS);
+  float speed = 0.8 + SPEED_SHARE * step;
   vec3 start = vec3(flake.x, flake.z, flake.y) * uBox;
-  float swayRate = SNOW_TAU / mix(uSwayPeriods.x, uSwayPeriods.y, sway.z);
-  vec2 swing = swayRate * time + SNOW_TAU * sway.xy;
-  float gustRate = SNOW_TAU / GUST_PERIOD * mix(0.7, 1.3, sway.w);
-  float gust = gustRate * time + SNOW_TAU * 7.0 * sway.w;
-  vec3 steady = uDrift + vec3(0.0, -uFall * speed, 0.0);
-  place = start + steady * time
+  float swayRate = cycleRate(mix(uSwayPeriods.x, uSwayPeriods.y, sway.z));
+  vec2 swing = swayRate * uCycleTime + SNOW_TAU * sway.xy;
+  float gustPeriod = GUST_PERIOD / mix(0.7, 1.3, sway.w);
+  vec3 gustRate = vec3(cycleRate(gustPeriod), cycleRate(gustPeriod / 1.7), cycleRate(gustPeriod / 1.3));
+  vec3 gust = gustRate * uCycleTime + vec3(0.0, 1.0, 2.0) + SNOW_TAU * 7.0 * sway.w;
+  vec3 gustReach = uGust / gustRate.x * vec3(1.0, 0.4, 1.0);
+  place = start + vec3(uDriftOffset.x, -(uFallOffsets.x + step * uFallOffsets.y), uDriftOffset.z)
     + uSway * vec3(sin(swing.x), 0.0, cos(swing.y))
-    + (uGust / gustRate) * vec3(sin(gust), 0.4 * sin(1.7 * gust + 1.0), cos(1.3 * gust + 2.0));
-  velocity = steady
+    + gustReach * vec3(sin(gust.x), sin(gust.y), cos(gust.z));
+  velocity = uDrift + vec3(0.0, -uFall * speed, 0.0)
     + uSway * swayRate * vec3(cos(swing.x), 0.0, -sin(swing.y))
-    + uGust * vec3(cos(gust), 0.68 * cos(1.7 * gust + 1.0), -1.3 * sin(1.3 * gust + 2.0));
+    + gustReach * gustRate * vec3(cos(gust.x), cos(gust.y), -sin(gust.z));
 }
 `;
 
 // The flakes: each at its own place and phase in a box of uBox metres about
-// the eye, wrapped round it as the eye moves, and drawn as what it sweeps in
+// the eye (lowered to reach the water when the eye is high), wrapped round
+// it as the eye moves, and drawn as what it sweeps in
 // uStreakSeconds (the eye's persistence): a capsule from where it is to
 // where it was, as wide as the flake or uMinPixels, whichever is wider, its
 // opacity the share of that capsule the flake covers, so a flake keeps its
@@ -44,7 +64,9 @@ export const FLAKE_VERTEX = /* glsl */`
 ${GALE_SURFACE}
 attribute vec4 aFlake;          // its place in the box (x, z), its phase down the box, its size (0 to 1)
 attribute vec4 aSway;           // its swing's phases (x, z), its period (0 to 1), its gusts' phase and rate
-uniform float uSnowTime;
+uniform float uCycleTime;       // s: the clock wrapped to CYCLE (Precision, above)
+uniform vec3 uDriftOffset;      // m: the wind's carry, wrapped into the box
+uniform vec2 uFallOffsets;      // m: the fall at 0.8 of uFall, and at SPEED_SHARE of it, each wrapped into the box
 uniform vec3 uBox;
 uniform vec3 uDrift;            // m/s: the wind
 uniform float uFall;            // m/s: the flakes' terminal speed
@@ -65,9 +87,11 @@ varying float vSurface;         // ...and the water's there
 ${FLAKE_MOTION}
 void main() {
   vec3 place, velocity;
-  flakeMotion(aFlake, aSway, uSnowTime, place, velocity);
-  vec3 local = mod(place - cameraPosition + 0.5 * uBox, uBox) - 0.5 * uBox;
-  vec3 head = cameraPosition + local;
+  flakeMotion(aFlake, aSway, place, velocity);
+  // The box about the eye, but never wholly above the water: an eye high over it keeps the snow down to it.
+  vec3 centre = vec3(cameraPosition.x, min(cameraPosition.y, 0.4 * uBox.y), cameraPosition.z);
+  vec3 local = mod(place - centre + 0.5 * uBox, uBox) - 0.5 * uBox;
+  vec3 head = centre + local;
   vec3 tail = head - velocity * uStreakSeconds;
   vec3 viewHead = (viewMatrix * vec4(head, 1.0)).xyz;
   vec3 viewTail = (viewMatrix * vec4(tail, 1.0)).xyz;

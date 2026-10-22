@@ -11,10 +11,14 @@
 // - how it is drawn: a blob in calm air, a streak in a blizzard's, its light
 //   (opacity times area) the same either way; a far flake's sub-pixel
 //   capsule faint, so the far snow thins into the haze;
+// - precision: a day into a blizzard, the place the shader puts together in
+//   floats from the wrapped offsets (clockOffsets) is the exact one, where
+//   the clock multiplied in floats would be metres off;
+// - the box reaches the water however high the eye;
 // - the box: each intensity's flakes per cubic metre, and how many are drawn
 //   larger than a pixel in the home view (1080 rows, 50° up and down);
 // - the cost of the CPU's part, the uniforms a frame.
-import { SNOW, STREAK_SECONDS, STREAK_MIN_PIXELS, GUST_SHARE, flakeAt, flakeDrawn, flakeAttributes } from '../src/snow.js';
+import { SNOW, STREAK_SECONDS, STREAK_MIN_PIXELS, GUST_SHARE, flakeAt, flakeDrawn, flakeAttributes, flakeSpeed, clockOffsets } from '../src/snow.js';
 
 const failures = [];
 function check(condition, message) { console.log(`${condition ? 'ok  ' : 'FAIL'} ${message}`); if (!condition) failures.push(message); }
@@ -35,7 +39,7 @@ for (const [name, snow] of Object.entries(SNOW)) {
       const span = 600;
       const start = flakeAt(flake, sway, 0, snow, drift).place;
       const end = flakeAt(flake, sway, span, snow, drift).place;
-      const speed = 0.8 + 0.4 * flake[3];
+      const { speed } = flakeSpeed(flake[3]);
       const expected = [drift[0], -snow.fall * speed, drift[1]];
       for (let axis = 0; axis < 3; axis++) worstMean = Math.max(worstMean, Math.abs((end[axis] - start[axis]) / span - expected[axis]));
       for (let step = 0; step < 50; step++) {
@@ -87,6 +91,39 @@ for (const [name, snow] of Object.entries(SNOW)) {
   check(resolved > 150, `${name}: over 150 flakes a pixel or more across in the home view (${resolved})`);
 }
 
+// Precision: the steady part of a flake's place, a day on in a blizzard's wind, as the shader sums it in floats
+// from the wrapped offsets, against the exact place (doubles) wrapped into the box; and as it would be from the
+// clock multiplied in floats.
+{
+  const snow = SNOW.blizzard, drift = [7.2, 9.6], time = 86400 + 0.37;
+  const f = Math.fround;
+  const wrapped = (value, span) => value - span * Math.floor(value / span);
+  const offsets = clockOffsets(time, snow, drift);
+  let worstWrapped = 0, worstNaive = 0;
+  for (let index = 0; index < SAMPLE; index++) {
+    const [flake] = attributes(index);
+    const { step, speed } = flakeSpeed(flake[3]);
+    const start = [flake[0] * snow.box[0], flake[2] * snow.box[1], flake[1] * snow.box[2]];
+    const exact = [wrapped(start[0] + drift[0] * time, snow.box[0]), wrapped(start[1] - snow.fall * speed * time, snow.box[1]), wrapped(start[2] + drift[1] * time, snow.box[2])];
+    const summed = [f(f(start[0]) + f(offsets.drift[0])), f(f(start[1]) - f(f(offsets.fall[0]) + f(step * f(offsets.fall[1])))), f(f(start[2]) + f(offsets.drift[1]))];
+    const naive = [f(f(start[0]) + f(f(drift[0]) * f(time))), f(f(start[1]) - f(f(f(snow.fall) * f(speed)) * f(time))), f(f(start[2]) + f(f(drift[1]) * f(time)))];
+    for (let axis = 0; axis < 3; axis++) {
+      const span = snow.box[axis === 1 ? 1 : axis === 0 ? 0 : 2];
+      const offBy = (value) => { const gap = Math.abs(wrapped(value, span) - exact[axis]); return Math.min(gap, span - gap); };
+      worstWrapped = Math.max(worstWrapped, offBy(summed[axis]));
+      worstNaive = Math.max(worstNaive, offBy(naive[axis]));
+    }
+  }
+  console.log(`\na day into a blizzard: the shader's place is ${(worstWrapped * 1000).toFixed(4)} mm off at worst; the clock multiplied in floats would be ${(worstNaive * 1000).toFixed(0)} mm off`);
+  check(worstWrapped < 1e-5, `a day on, the wrapped offsets keep a flake to within 0.01 mm (${(worstWrapped * 1000).toFixed(4)} mm)`);
+  check(worstNaive > 0.01, `(and the probe sees the problem they fix: ${(worstNaive * 1000).toFixed(0)} mm without them)`);
+  // The box's centre: at the eye, but no higher than 0.4 of its height (FLAKE_VERTEX), so its floor is under the water.
+  for (const [name, entry] of Object.entries(SNOW)) {
+    const bottoms = [1.15, 2.4, 4, 8].map((eye) => Math.min(eye, 0.4 * entry.box[1]) - 0.5 * entry.box[1]);
+    check(bottoms.every((bottom) => bottom < 0), `${name}: the box reaches the water from an eye up to 8 m high (its floor at ${bottoms.map((bottom) => bottom.toFixed(1)).join(', ')} m)`);
+  }
+}
+
 // The CPU's part: a frame sets a few uniforms (Snow.update), nothing per flake.
 const { Snow } = await import('../src/snow.js');
 const THREE = await import('three');
@@ -102,6 +139,8 @@ for (let frame = 0; frame < frames; frame++) snow.update(frame / 60, camera, res
 const microseconds = (performance.now() - started) * 1000 / frames;
 console.log(`\nSnow.update: ${microseconds.toFixed(2)} µs a frame; one draw of ${snow.count} instanced quads (${snow.count * 2} triangles)`);
 check(microseconds < 20, `the snow costs the CPU under 20 µs a frame (${microseconds.toFixed(2)})`);
+snow.setShare(0.4);
+check(snow.count === Math.round(SNOW.heavy.flakes * 0.4), `the Low preset's share draws ${snow.count} of ${SNOW.heavy.flakes}`);
 snow.setIntensity(null);
 check(!snow.on && snow.count === 0, 'with no snow nothing is drawn');
 check(STREAK_SECONDS > 0, `the capsule is swept over ${(STREAK_SECONDS * 1000).toFixed(1)} ms`);

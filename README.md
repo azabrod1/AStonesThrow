@@ -665,7 +665,12 @@ speed (0.9 to 1.1 m/s, give or take a fifth), carried at the wind's speed,
 swaying on a small ellipse and tossed by gusts of 0.3 of the wind, drawn as
 the capsule it sweeps in 1/120 s: round in still air, a streak in a
 blizzard's, with the same light either way; a flake under 1.2 pixels is
-drawn that wide and fainter, and the haze carries the snow beyond the box.
+drawn that wide and fainter, and the haze carries the snow beyond the box
+(Medium draws 0.6 of the flakes, Low 0.4). The box keeps its floor under
+the water however high the eye goes, and the shader never multiplies the
+clock: the wind's carry and the fall come wrapped into the box, worked out
+in doubles, and every sway and gust repeats in a minute, so a flake is
+where it should be however long the page has been open.
 Under a gale they are cut at its waves. On the ground the snow lies in
 value-noise patches under a light snow and whole under a heavy one, melts
 on the beach's wet sand (4 cm above the water) and on the deck where the
