@@ -41,8 +41,8 @@
 //    the water's height under a floater beside a splash is read back
 //    (src/floaterRide.js), and a throw's sounds play and end (src/sound.js;
 //    the browser lets audio start without a gesture here). Throws of every
-//    kind, more than low keeps, the pond then cleared, leave no geometry,
-//    texture or program behind. Rain (src/rain.js): each weather in
+//    kind, six at a time, more than low keeps, the pond then cleared, leave
+//    no geometry, texture or program behind. Rain (src/rain.js): each weather in
 //    turn, with a throw in the downpour and a change of preset, reuses its
 //    programs after the first selection, and the tile takes the preset's
 //    size; clear again, nothing of the rain runs. The gale (src/galeWaves.js)
@@ -479,10 +479,12 @@ const session = await page.evaluate(() => {
   const before = { geometries: memory.geometries, textures: memory.textures, programs: pond.budget.programs };
   const names = ['stone', 'basketball', 'pizza', 'frozen-pizza', 'pie', 'duck', 'tennis', 'brick', 'pumice', 'diamond', 'watermelon', 'apple', 'bowling', 'golf'];
   let most = 0;
+  // Six at a time, then 1.5 s of the world (a frame is drawn at the end of each advance: here they are what is dear).
   const throws = 36;
   for (let throwing = 0; throwing < throws; throwing++) {
     pond.throwAt(-1 + (throwing % 7) * 0.33, -0.8 - (throwing % 5) * 0.4, { thing: names[throwing % names.length] });
-    pond.advance(0.25);
+    if (throwing % 6 < 5) continue;
+    pond.advance(1.5);
     most = Math.max(most, pond.rocks.length);
   }
   pond.clear();
