@@ -113,6 +113,30 @@ try {
   console.log('PASS: saved storm/pizza waits for rain, blocks early input and reveals a clean scene');
   await saved.context().close();
 
+  // Settings saved before the Pool was a place and the ice a water (src/main.js migrateStoredSettings): the Water
+  // setting's Pool opens the Pool place, the Ice setting's thick ice Frozen water that thick, saved so from then on.
+  const older = await pageFor();
+  await older.addInitScript(() => {
+    if (sessionStorage.getItem('migrated')) return;
+    sessionStorage.setItem('migrated', '1');
+    localStorage.setItem('stone-pond-water', 'pool');
+    localStorage.setItem('stone-pond-ice', 'thick');
+  });
+  await open(older);
+  await ready(older);
+  const carried = () => older.evaluate(() => ({
+    place: window.__pond.sky, pooled: window.__pond.pooled, water: window.__pond.waterChoice, ice: window.__pond.ice,
+    saved: [localStorage.getItem('stone-pond-sky'), localStorage.getItem('stone-pond-water'), localStorage.getItem('stone-pond-frozen'), localStorage.getItem('stone-pond-ice')],
+    row: document.querySelector('.menu-tier[data-open="water"] .menu-tier-value').textContent,
+  }));
+  const expected = { place: 'pool', pooled: true, water: 'frozen', ice: 'thick', saved: ['pool', 'frozen', 'thick', null], row: 'Frozen · Thick' };
+  assert.deepEqual(await carried(), expected);
+  await older.reload();
+  await ready(older);
+  assert.deepEqual(await carried(), expected);
+  console.log('PASS: the old Pool water and Ice settings open the Pool place, frozen thick, and stay so');
+  await older.context().close();
+
   const retriedRain = await pageFor();
   await open(retriedRain);
   await ready(retriedRain);

@@ -189,7 +189,7 @@ export function radioGroup(root, onChoose) {
     const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[event.key];
     if (!step) return;
     event.preventDefault();
-    const buttons = radios();
+    const buttons = radios().filter((button) => !button.hidden);   // a hidden choice is not one
     const index = buttons.indexOf(document.activeElement);
     const next = buttons[(Math.max(index, 0) + step + buttons.length) % buttons.length];
     onChoose(next.dataset.value);

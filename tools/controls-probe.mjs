@@ -50,15 +50,17 @@
 //     choices sit at the page's top and one tapped is thrown at once; Skip
 //     pressed for a pie stays off and says why, and for a pizza turns on
 //     (a pizza skips); its Water row opens the Water page, whose five pictured choices
-//     can each be scrolled onto the screen and fit their names, whose Pool
-//     puts the rocks in the pool (the View note follows) and whose Murky sets
-//     the pond's clarity, each with the row's value; its Ice row opens the
-//     Ice page, whose three choices fit and whose Thin ice freezes the water,
-//     the row and the note following; its Time row opens the
+//     can each be scrolled onto the screen and fit their names, whose Frozen
+//     freezes the water thin, the ice's two choices showing under the cards,
+//     fitting, Thick making it thick, the row and the note following, and
+//     whose Murky thaws it and sets the pond's clarity, each with the row's
+//     value; its Time row opens the
 //     Time page, whose slider spans it (44 points tall on a touch screen)
 //     and, tapped at its left end, loads the place's first hour, the row and
 //     the readout following, while a lone photograph's page hides the slider
-//     and says why; its Weather row opens the Weather page, whose four
+//     and says why; its Location page's Pool puts the rocks in the pool (the
+//     View note follows) and the Water page shows the pool's own water in
+//     place of the lake's; its Weather row opens the Weather page, whose four
 //     choices fit and whose Heavy rain brings the rain; a press on the water
 //     closes it without throwing a stone, and Escape closes it too;
 //   - on a touch screen a finger dragged across the water turns the view and
@@ -359,7 +361,7 @@ for (const framing of FRAMINGS) {
   await page.waitForTimeout(400);
   const [panel] = await boxes('#settings');
   const rows = await boxes('#settings .menu-tier');
-  check(!!panel && onScreen(panel) && rows.length === 10, `the settings open on the screen with their ten rows (${rows.length})`);
+  check(!!panel && onScreen(panel) && rows.length === 9, `the settings open on the screen with their nine rows (${rows.length})`);
   if (framing.touch) check(rows.every((row) => row.height >= SMALLEST_BUTTON_HEIGHT - 0.5), `every settings row is at least ${SMALLEST_BUTTON_HEIGHT} points tall (smallest ${Math.min(...rows.map((row) => row.height)).toFixed(1)})`);
   const cutValues = await page.evaluate(() => [...document.querySelectorAll('#settings .menu-tier-value')].filter((value) => value.scrollWidth > value.clientWidth + 0.5).map((value) => value.textContent));
   const hinted = await page.evaluate(() => [...document.querySelectorAll('#settings .menu-tier-name small')].filter((hint) => hint.getClientRects().length > 0).length);
@@ -370,7 +372,7 @@ for (const framing of FRAMINGS) {
   // Each choice as the panel scrolls it into view: a short screen's panel scrolls.
   const choices = await page.evaluate(() => {
     const scale = window.visualViewport ? window.visualViewport.scale : 1;
-    const placed = [...document.querySelectorAll('#water [role="radio"]')].map((choice) => {
+    const placed = [...document.querySelectorAll('#water [role="radio"]:not([hidden])')].map((choice) => {
       choice.scrollIntoView({ block: 'nearest' });
       const box = choice.getBoundingClientRect();
       return { name: choice.dataset.value, left: box.left * scale, right: box.right * scale, top: box.top * scale, bottom: box.bottom * scale, height: box.height * scale };
@@ -381,31 +383,35 @@ for (const framing of FRAMINGS) {
   const [waterPanel] = await boxes('#settings');
   if (framing.touch) check(choices.length === 5 && choices.every((choice) => choice.height >= SMALLEST_BUTTON_HEIGHT - 0.5), `the Water page's five choices are at least ${SMALLEST_BUTTON_HEIGHT} points tall`);
   check(onScreen(waterPanel) && choices.length === 5 && choices.every(onScreen), `the Water page is on the screen, each of its choices once scrolled to`);
-  const clipped = await page.evaluate(() => [...document.querySelectorAll('#water [role="radio"] b')].filter((name) => name.scrollWidth > name.clientWidth).map((name) => name.textContent));
+  const clipped = await page.evaluate(() => [...document.querySelectorAll('#water [role="radio"]:not([hidden]) b')].filter((name) => name.scrollWidth > name.clientWidth).map((name) => name.textContent));
   check(clipped.length === 0, `every Water choice's name fits its card${clipped.length ? ` (not: ${clipped.join(', ')})` : ''}`);
-  await press('#water [data-value="pool"]');
-  const pooled = await page.evaluate(() => ({ clarity: window.__pond.clarity, row: document.querySelector('.menu-tier[data-open="water"] .menu-tier-value').textContent, viewNote: document.getElementById('view-note').textContent }));
-  check(pooled.clarity === 'pool' && pooled.row === 'Pool' && pooled.viewNote.includes('pool'), `Pool puts the rocks in the pool (${pooled.clarity}), the row reads "${pooled.row}", the View note "${pooled.viewNote}"`);
-  await press('#water [data-value="murky"]');
-  const chosen = await page.evaluate(() => ({ clarity: window.__pond.clarity, row: document.querySelector('.menu-tier[data-open="water"] .menu-tier-value').textContent }));
-  check(chosen.clarity === 'murky' && chosen.row === 'Murky', `Murky sets the clarity (${chosen.clarity}) and the row's value ("${chosen.row}")`);
-  await page.screenshot({ path: path.join(outputFolder, `${framing.name}-water.png`) });
-  await page.evaluate(() => window.__pond.setClarity('lake'));
-  // The Ice page (src/ice.js): its three choices fit, and Thin ice freezes the water, the row and the note following.
-  await press('.menu-page[data-page="water"] .menu-back');
-  await page.waitForTimeout(400);
-  await press('#settings .menu-tier[data-open="ice"]');
-  await page.waitForTimeout(400);
-  const iceChoices = await boxes('#ice [role="radio"]');
-  const iceClipped = await page.evaluate(() => [...document.querySelectorAll('#ice [role="radio"]')].filter((choice) => choice.scrollWidth > choice.clientWidth + 0.5).map((choice) => choice.textContent));
-  check(iceChoices.length === 3 && iceChoices.every(onScreen) && iceClipped.length === 0 && (!framing.touch || iceChoices.every((choice) => choice.height >= SMALLEST_BUTTON_HEIGHT - 0.5)),
-    `the Ice page's three choices are on the screen and fit their names${iceClipped.length ? ` (not: ${iceClipped.join(', ')})` : ''}`);
-  await press('#ice [data-value="thin"]');
-  const frozen = await page.evaluate(() => ({ ice: window.__pond.ice, row: document.querySelector('.menu-tier[data-open="ice"] .menu-tier-value').textContent, note: document.getElementById('ice-note').textContent }));
-  check(frozen.ice === 'thin' && frozen.row === 'Thin ice' && frozen.note.includes('centimetre'), `Thin ice freezes the water (${frozen.ice}), the row reads "${frozen.row}", the note "${frozen.note}"`);
+  // Frozen (src/ice.js): thin ice, its two choices under the cards, fitting; Thick makes it thick; the row and the note follow.
+  const waterRow = () => page.evaluate(() => ({ water: window.__pond.waterChoice, ice: window.__pond.ice, clarity: window.__pond.clarity, row: document.querySelector('.menu-tier[data-open="water"] .menu-tier-value').textContent, note: document.getElementById('ice-note').textContent, iceShown: !document.getElementById('ice-field').hidden }));
+  await press('#water [data-value="frozen"]');
+  await page.waitForTimeout(200);
+  const frozen = await waterRow();
+  check(frozen.water === 'frozen' && frozen.ice === 'thin' && frozen.row === 'Frozen \u00b7 Thin' && frozen.note.includes('centimetre') && frozen.iceShown, `Frozen freezes the water thin (${frozen.water}, ${frozen.ice}), the row reads "${frozen.row}", the ice's choice ${frozen.iceShown ? 'shows' : 'is hidden'}, the note "${frozen.note}"`);
+  const iceChoices = await page.evaluate(() => {
+    const scale = window.visualViewport ? window.visualViewport.scale : 1;
+    return [...document.querySelectorAll('#ice [role="radio"]')].map((choice) => {
+      choice.scrollIntoView({ block: 'nearest' });
+      const box = choice.getBoundingClientRect();
+      return { left: box.left * scale, right: box.right * scale, top: box.top * scale, bottom: box.bottom * scale, height: box.height * scale, clipped: choice.scrollWidth > choice.clientWidth + 0.5 };
+    });
+  });
+  check(iceChoices.length === 2 && iceChoices.every(onScreen) && iceChoices.every((choice) => !choice.clipped) && (!framing.touch || iceChoices.every((choice) => choice.height >= SMALLEST_BUTTON_HEIGHT - 0.5)),
+    `the ice's two choices are on the screen once scrolled to and fit their names`);
+  await press('#ice [data-value="thick"]');
+  const thick = await waterRow();
+  check(thick.ice === 'thick' && thick.row === 'Frozen \u00b7 Thick' && thick.note.includes('Four centimetres'), `Thick makes the ice thick (${thick.ice}), the row reads "${thick.row}", the note "${thick.note}"`);
   await page.screenshot({ path: path.join(outputFolder, `${framing.name}-ice.png`) });
-  await press('#ice [data-value="none"]');
-  await press('.menu-page[data-page="ice"] .menu-back');
+  await press('#ice [data-value="thin"]');
+  await press('#water [data-value="murky"]');
+  const chosen = await waterRow();
+  check(chosen.clarity === 'murky' && chosen.ice === 'none' && chosen.row === 'Murky' && !chosen.iceShown, `Murky thaws the ice (${chosen.ice}), sets the clarity (${chosen.clarity}) and the row's value ("${chosen.row}")`);
+  await page.screenshot({ path: path.join(outputFolder, `${framing.name}-water.png`) });
+  await page.evaluate(() => window.__pond.setWater('lake'));
+  await press('.menu-page[data-page="water"] .menu-back');
   await page.waitForTimeout(400);
   await press('#settings .menu-tier[data-open="water"]');
   await page.waitForTimeout(400);
@@ -617,6 +623,18 @@ for (const framing of FRAMINGS) {
   await page.waitForFunction(() => window.__pond.sky === 'meadow' && document.querySelector('.menu-tier[data-open="time"] .menu-tier-value').textContent === 'Afternoon', null, { timeout: 60000 }).catch(() => {});
   const lone = await page.evaluate(() => ({ hidden: document.getElementById('time').hidden, note: document.getElementById('time-note').textContent, row: document.querySelector('.menu-tier[data-open="time"] .menu-tier-value').textContent }));
   check(lone.hidden && lone.note.includes('single photograph') && lone.row === 'Afternoon', `under the meadow's lone photograph the slider hides, the row reads "${lone.row}" and the note "${lone.note}"`);
+  // The Pool: the rocks in the pool (the View note follows), and the Water page shows its own water in place of the lake's.
+  await press('#sky [data-value="pool"]');
+  await page.waitForFunction(() => window.__pond.sky === 'pool' && !document.querySelector('.menu-tier[data-open="sky"] .menu-tier-value').textContent.endsWith('\u2026'), null, { timeout: 60000 }).catch(() => {});
+  const pooled = await page.evaluate(() => ({
+    sky: window.__pond.sky, pooled: window.__pond.pooled, clarity: window.__pond.clarity, row: document.querySelector('.menu-tier[data-open="sky"] .menu-tier-value').textContent,
+    water: document.querySelector('.menu-tier[data-open="water"] .menu-tier-value').textContent, viewNote: document.getElementById('view-note').textContent,
+    cards: [...document.querySelectorAll('#water [role="radio"]:not([hidden])')].map((card) => card.dataset.value),
+  }));
+  check(pooled.pooled && pooled.clarity === 'pool' && pooled.row === 'Pool' && pooled.water === 'Pool water' && pooled.viewNote.includes('pool') && pooled.cards.join() === 'open,frozen',
+    `Pool puts the rocks in the pool (${pooled.sky}, its water ${pooled.clarity}), the rows read "${pooled.row}" and "${pooled.water}", the View note "${pooled.viewNote}", the Water page offers ${pooled.cards.join(', ')}`);
+  await press('#sky [data-value="lakeside"]');
+  await page.waitForFunction(() => window.__pond.sky === 'lakeside', null, { timeout: 60000 }).catch(() => {});
   await press('.menu-page[data-page="sky"] .menu-back');   // the list again: the Location page reaches the water's middle on a small phone
   await page.waitForTimeout(400);
   // The Weather page: its choices fit, and Heavy rain brings the rain.
@@ -648,7 +666,7 @@ for (const framing of FRAMINGS) {
     await page.keyboard.press('Escape');
     check(await page.evaluate(() => document.getElementById('settings').hidden), `Escape closes the settings`);
     // Skip left on for stones moves nothing of a ball's throw (review: a far tap in the pool aimed a basketball 2 m further).
-    await page.evaluate(() => { window.__pond.setClarity('pool'); window.__pond.setThing('basketball'); });
+    await page.evaluate(async () => { await window.__pond.setSky('pool'); window.__pond.setThing('basketball'); });
     await page.waitForTimeout(300);
     const tapThrow = async (skip) => {
       await page.evaluate((on) => window.__pond.setSkip(on), skip);
@@ -659,7 +677,7 @@ for (const framing of FRAMINGS) {
     const skipOff = await tapThrow(false), skipOn = await tapThrow(true);
     const apart = skipOff.velocity && skipOn.velocity ? Math.hypot(...skipOff.velocity.map((value, index) => value - skipOn.velocity[index])) : Infinity;
     check(skipOff.thing === 'basketball' && skipOn.thing === 'basketball' && !skipOn.skip && apart < 0.05, `a basketball tapped at the far pool is thrown alike with Skip off and left on for stones (${apart.toFixed(3)} m/s apart, ${skipOn.skip ? 'skipping' : 'not skipping'})`);
-    await page.evaluate(() => { window.__pond.setSkip(false); window.__pond.setClarity('lake'); window.__pond.setThing('stone'); });
+    await page.evaluate(async () => { window.__pond.setSkip(false); await window.__pond.setSky('lakeside'); window.__pond.setThing('stone'); });
     // A thing defined from outside, sized by its diameter, keeps its own size (review: it took the stones' 6 cm).
     const sized = await page.evaluate(() => {
       const pond = window.__pond;

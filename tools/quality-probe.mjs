@@ -264,7 +264,7 @@ await checkBuilt(phone, 'after the switches mid-splash');
 part('the pool and the ice, on low');
 await page.evaluate(() => window.__pond.setQuality('low'));
 const programsBeforePool = await page.evaluate(() => window.__pond.budget.programs);
-await page.evaluate(() => { window.__pond.setClarity('pool'); window.__pond.advance(0.1); });
+await page.evaluate(async () => { await window.__pond.setSky('pool'); window.__pond.advance(0.1); });
 const inPool = await page.evaluate(() => window.__pond.budget);
 check(inPool.clarity === 'pool' && inPool.programs === programsBeforePool, `the pool compiles no program (${programsBeforePool} before, ${inPool.programs} drawing it)`);
 await checkBuilt(phone, 'in the pool');
@@ -277,7 +277,7 @@ const poolLater = await page.evaluate(() => window.__pond.budget);
 check(poolLater.rings.live === 0 && poolLater.rings.passes === 0 && !poolLater.solverAsleep, `its near-field ring retires with the near field (${poolLater.rings.live} live 2.5 s after the throw), the solver still awake with the pool's waves`);
 await page.evaluate(() => window.__pond.setQuality('medium'));
 await checkBuilt(phone, 'in the pool, low -> medium');
-await page.evaluate(() => { window.__pond.setQuality('low'); window.__pond.setClarity('lake'); window.__pond.advance(0.1); });
+await page.evaluate(async () => { window.__pond.setQuality('low'); await window.__pond.setSky('lakeside'); window.__pond.advance(0.1); });
 const backOnLake = await page.evaluate(() => window.__pond.budget.programs);
 check(backOnLake === programsBeforePool, `back on the lake, still no new program (${backOnLake})`);
 await checkBuilt(phone, 'back on the lake');
@@ -300,10 +300,10 @@ check(broken.ice.shards >= 3 && broken.ice.shards <= broken.things.shards && bro
 await page.evaluate(() => { for (const hole of window.__pond.iceSheet.holes) hole.quiet = -1e9; window.__pond.advance(1.0); });
 const skinning = await page.evaluate(() => window.__pond.budget);
 check(skinning.ice.skinning >= 1 && skinning.programs === programsBeforeIce, `a hole skinning over (${skinning.ice.skinning}) compiles no program (${skinning.programs})`);
-await page.evaluate(() => { window.__pond.setClarity('pool'); window.__pond.throwAt(0, -1, { radius: 0.03, power: 'normal' }); window.__pond.advance(1.0); });
+await page.evaluate(async () => { await window.__pond.setSky('pool'); window.__pond.throwAt(0, -1, { radius: 0.03, power: 'normal' }); window.__pond.advance(1.0); });
 const frozenPool = await page.evaluate(() => window.__pond.budget);
 check(frozenPool.ice.name === 'thin' && frozenPool.programs === programsBeforeIce, `a frozen pool and a throw into it compile no program (${frozenPool.programs})`);
-await page.evaluate(() => { window.__pond.setClarity('lake'); window.__pond.setIce('none'); window.__pond.advance(0.1); });
+await page.evaluate(async () => { await window.__pond.setSky('lakeside'); window.__pond.setIce('none'); window.__pond.advance(0.1); });
 const thawed = await page.evaluate(() => window.__pond.budget);
 check(thawed.ice.name === 'none' && thawed.ice.holes === 0 && thawed.programs === programsBeforeIce, `open water again compiles nothing (${thawed.programs})`);
 await checkBuilt(phone, 'after the ice');
@@ -366,7 +366,7 @@ check(restingBall && withFloater.calls - stillPond.calls <= FLOATER_FRAME_CALLS,
 // floor, each one draw call (its part above the water hidden, src/rock.js syncMeshes), and no timer takes them; one
 // more, come to rest, shrinks the oldest away (fadeOut: partway, smaller than its own size and still there; then gone),
 // never at once.
-await page.evaluate(() => { const pond = window.__pond; pond.clear(); pond.setQuality('low'); pond.setClarity('pool'); pond.advance(0.5); });
+await page.evaluate(async () => { const pond = window.__pond; pond.clear(); pond.setQuality('low'); await pond.setSky('pool'); pond.advance(0.5); });
 const emptyPool = await frameCounts();
 const kept = await page.evaluate(() => {
   const pond = window.__pond;
@@ -404,7 +404,7 @@ check(kept.settled === kept.resting && kept.keptAfter === kept.resting, `the pre
 check(kept.oneCall === kept.resting && restingPool.calls - emptyPool.calls <= kept.resting + 2, `a stone at rest under the water is one draw call (${kept.oneCall} of ${kept.resting} with the part above hidden; ${restingPool.calls - emptyPool.calls} calls for them)`);
 check(kept.oldestFades && kept.partway?.there && kept.partway.scale > 0.05 && kept.partway.scale < 0.95 && kept.gone && kept.after.kept === kept.resting && kept.after.extraKept,
   `one more at rest shrinks the oldest away, not at once (the oldest: ${kept.oldestFades}; partway ${kept.partway ? `there, at ${kept.partway.scale.toFixed(2)} of its size` : 'never'}; then gone: ${kept.gone}; ${kept.after.kept} kept)`);
-await page.evaluate(() => { const pond = window.__pond; pond.clear(); pond.setClarity('lake'); pond.advance(0.1); });
+await page.evaluate(async () => { const pond = window.__pond; pond.clear(); await pond.setSky('lakeside'); pond.advance(0.1); });
 // The world's step is fixed (src/main.js simulate, src/rock.js PHYSICS_STEP): the same throw, drawn 60 times a second or
 // at a frame rate that steps it unevenly (a slow-motion speed of 0.37: frames of 1/162 s), goes exactly where it went.
 const unevenly = await page.evaluate(() => {
@@ -500,10 +500,10 @@ await page.waitForFunction(() => window.__pond.raining, null, { timeout: 60000 }
 await page.evaluate(() => window.__pond.advance(2.5));   // the storm's first strike is at about 1.6 s of the clock (src/lightning.js)
 const storm = await page.evaluate(() => ({ programs: window.__pond.budget.programs, wind: window.__pond.wind }));
 check(storm.programs === programsBeforeGale && storm.wind === 'gale', `the storm compiles no program through a strike (${storm.programs}), its wind a gale (${storm.wind})`);
-await page.evaluate(() => { window.__pond.setWeather('clear'); window.__pond.setClarity('pool'); window.__pond.advance(0.1); });
+await page.evaluate(async () => { window.__pond.setWeather('clear'); await window.__pond.setSky('pool'); window.__pond.advance(0.1); });
 const pooledGale = await page.evaluate(() => ({ programs: window.__pond.budget.programs, gale: window.__pond.budget.gale }));
 check(!pooledGale.gale.blowing && pooledGale.programs === programsBeforeGale, `in the pool the gale raises no waves (${pooledGale.gale.blowing ? 'blowing' : 'still'}) and nothing compiles`);
-await page.evaluate(() => { window.__pond.setClarity('lake'); window.__pond.setWind('calm'); window.__pond.advance(0.1); });
+await page.evaluate(async () => { await window.__pond.setSky('lakeside'); window.__pond.setWind('calm'); window.__pond.advance(0.1); });
 const calmAgain = await page.evaluate(() => ({ programs: window.__pond.budget.programs, gale: window.__pond.budget.gale }));
 check(!calmAgain.gale.blowing && calmAgain.gale.sheetTriangles < 5000 && calmAgain.programs === programsBeforeGale, `calm again: the still sheet (${calmAgain.gale.sheetTriangles} triangles), no program (${calmAgain.programs})`);
 await checkBuilt(phone, 'after the gale');
