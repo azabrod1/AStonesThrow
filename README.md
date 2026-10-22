@@ -421,31 +421,39 @@ and leaves a moment's white churn; the last is any stone's splash
 to skip.
 
 **Foam** (`FOAM_PATTERN` in `src/shaders/scene.js`, the map in
-`src/spectralWater.js`). Where the stone's hole closes, its air comes up as a
-boil: big bubbles, popping within a second (its lifetime τ is 0.65 s). What
-remains is a raft of small bubbles, sparse and lasting a few seconds, longer
-the bigger the stone (τ is 2.1 s for the smallest, 2.3 s for the 6 cm stone,
-2.8 s for a 16 cm stone and 3.5 s for the 30 cm rock); the jet rises from a
-boil of its own and leaves a fainter boil and raft where it falls back, and
-each drop that lands leaves a speck of boil. A thrown stone seldom leaves
-much white, so the amounts are small: the pattern below whitens about half
-the water at a map value of 0.1, and the map under a 6 cm stone's foam peaks
-near 0.17. The boil's amount grows with the stone's radius (its air goes as
-R³, the mouth it comes up through as R²), so a pebble barely fizzes and only
-a big stone's boil is solid white, at its centre, for about half a second
-after its hole closes. Each is stamped as a patch of three to five
-sub-stamps of unequal sizes at random offsets, never one round Gaussian, so
-no two rafts share a shape. Surface flows carry the foam: where the hole
-closed the jet's base wells up, and where the jet falls back the mound
-spreads, each sweeping the foam out of a disc into a ring (keeping its
-amount), so a raft turns ring-like or crescent-shaped, with arcs where the
-flow stretched it, and the place the jet fell clears. The whole raft drifts
-downwind at 3 cm/s in a breeze (with the wind's strength), and its pattern
-and specks with it. The foam map says
+`src/spectralWater.js`). A pond is fresh water, and a bubble on fresh water
+bursts within a second (0.01 to 3 s, against 0.3 to 30 s on sea water, where
+salt keeps bubbles from merging: Anguelova & Huq 2017), so a stone leaves no
+raft. Where its hole closes, its air comes up as a boil: big bubbles,
+popping as they surface (the boil's lifetime τ is 0.45 s), arriving over
+the time the pinched-off air takes to rise from the pinch depth (about
+0.7 s for a 6 cm stone, up to 2.5 s for a rock), so at any moment only
+the bubbles just arrived show, a fizz rather than a lump; the jet rises
+from a boil of its own and leaves a fainter one where it falls back, and
+each big drop that lands leaves a speck of boil. (The map keeps a second,
+longer-lived kind, the raft of small bubbles that sea foam is; the gale's
+whitecaps use it, a stone never does.) The amounts are small: the pattern
+below whitens about half the water at a map value of 0.1, and the map under
+a 6 cm stone's foam peaks near 0.17. The boil's amount grows with the
+stone's radius (its air goes as R³, the mouth it comes up through as R²) up
+to a 16 cm stone and as the square root of the size beyond it, so a pebble
+barely fizzes and a 30 cm rock churns with bubbles over dark water for about
+half a second after its hole closes, never a white disc. Each is stamped as
+a patch of three to five sub-stamps of unequal sizes at random offsets,
+never one round Gaussian, so no two boils share a shape. Surface flows carry
+the foam: where the hole closed the jet's base wells up, and where the jet
+falls back the mound spreads, each sweeping the foam out of a disc into a
+ring (keeping its amount), so a churn turns ring-like or crescent-shaped as
+it pops, with arcs where the flow stretched it, and the place the jet fell
+clears. The whole of it drifts downwind at 3 cm/s in a breeze (with the
+wind's strength), and its pattern and specks with it. The foam map says
 where and how much, but its cells are over a centimetre wide, so the water
 shader draws the raft from three layers of cellular noise: bubbles 2 to 3 mm
 across packed together, larger ones of 3 to 7 mm among them, and a lace of
-curved filaments around holes a few centimetres wide. The map's strength,
+curved filaments around holes a few centimetres wide. A boil, the bubbles a
+splash leaves bursting on fresh water, takes no lace: it is drawn from the
+bubble layers alone, and only a raft (the gale's sea foam) thins into
+filaments. The map's strength,
 lumped at 3 and 14 cm strongly enough to show from a phone 4 m away, so
 that a boil is mottled and a raft's edge broken rather than a round, even
 white, sets the threshold they must pass. Where it is strong the raft is
@@ -460,11 +468,10 @@ scatters more light; as it drains, the water shows through the bubble films.
 Those films use the existing bubble cells and fade to their measured mean
 opacity at a distance, adding no texture or noise layer. Close up (the
 shoot harness, `--seed=1`), a 6 cm stone thrown normally leaves a broken,
-partly see-through fizz over about its hole's mouth at 0.4 to 0.7 s, a few
-lacy wisps and scattered bubbles by 1.2 s and only the foam specks by 2.5 s;
-a 30 cm rock leaves a dense boil round its jet at 0.5 s, a mottled raft by
-0.9 s, sparse clumps that the flows have carried into arcs about a metre
-across by 1.5 s, a few scattered clumps by 3 s and clear water by 5.
+partly see-through fizz over about its hole's mouth at 0.4 to 1 s and a
+few foam specks after; a 30 cm rock a churn of bubbles over dark water
+round its jet at 0.5 s, a few patches at 1 s, specks at 1.5 s and clear
+water by 2.5.
 The threshold's edge is one pixel wide at any distance (from the pattern's
 exact gradient and the pixel's footprint on the water), and each layer fades
 into an even white of the right strength before its cells shrink to a couple
@@ -472,8 +479,8 @@ of pixels, so distant foam neither shimmers nor goes grey. Only pixels with
 foam compute the pattern. Foam specks (`src/foamSpecks.js`) are the bubbles
 that drift out of the raft: 2 to 4 mm points riding the waves where the
 crown stood, where the jet fell back, where drops landed and where bubbles
-surfaced, drifting outward and popping over 2 to 8 seconds, faded out where
-the raft is dense. The specks flatten into ellipses at a grazing view and
+surfaced, drifting outward and popping over 0.8 to 3 seconds (fresh water's
+bubbles), faded out where the foam is dense. The specks flatten into ellipses at a grazing view and
 fade with their projected area, so distant bubbles do not remain bright,
 camera-facing flecks.
 
