@@ -112,9 +112,16 @@
 // (Marston et al. 2016 find every sealing crown buckles). Its rim's bead
 // merges as it closes. As the rim meets, a thin spike of water shoots up from
 // the apex (sealSpray: the reference's seal jet) and breaks into fine drops.
-// The dome holds still until the hole below pinches (seal.tear), then bursts
-// from the apex down, its sheet flying off out and up (DOME_BURST): the tear.
-// Its rim sheds before the pull starts, none while it closes, and the burst
+// The dome holds still until the jet from the pinch reaches its apex
+// (seal.tear, from src/splash.js), then bursts from the apex down, its sheet
+// flung off out and up at seal.burstSpeed·s (the jet's push, Truscott &
+// Techet 2009: the jet "pulling the upper cavity almost inside-out"): the
+// tear. A dome whose jet is trapped (seal.sink) is instead drawn down into
+// the hole by the sealed cavity's falling pressure, its apex sinking from
+// DOME_HEIGHT·R to DOME_SINK·R below the water by the tear (Worthington's
+// marble from 140 cm: "the air-tube is closed over and forms a downward jet
+// which shoots down the middle of the air-tube"), where it is gone: no
+// drops. Its rim sheds before the pull starts, none while it closes, and the burst
 // takes the rest.
 //
 // Thickness is h0·(r0/r)/(1 + age/td), at least 0.2 mm, with h0 = 1.5 mm and
@@ -345,11 +352,12 @@ const FROTH_OPEN_EARLY = 0.5;      // ...and times this until the tear nears, ri
 const MODES_PER_COLUMN = 1 / 2.5;  // a grid resolves modes up to this many per column
 const DOME_COLUMNS = 64;           // a sealing crown's columns around (times sqrt(R / 3 cm)): it has no fingers
 const DOME_PULL_START = 0.35;      // the pull starts at this share of the seal time...
-const DOME_HEIGHT = 1.4;           // ...and draws the sheet onto a dome whose apex stands this many R above the still water...
+export const DOME_HEIGHT = 1.4;    // ...and draws the sheet onto a dome whose apex stands this many R above the still water...
 const DOME_ROUND = 0.8;            // ...its radius r_foot·cos(πs/2)^this at height y_foot + h·sin(πs/2) (s from its foot to its apex)...
 const DOME_FOLDS = [6, 10];        // ...buckled by this many folds around (Marston et al. 2016)...
 const DOME_FOLD = 0.05;            // ...of up to this share of its radius, at mid height
-const DOME_BURST = 0.25;           // when it bursts its sheet flies off at this times sqrt(g·R)·s, out and up
+const DOME_BURST = 0.25;           // a dome given no jet's push bursts with its sheet flying off at this times sqrt(g·R)·s, out and up
+const DOME_SINK = 1.5;             // a trapped jet's dome is drawn down to this many R below the water by the tear
 const DOME_TILT = 12;              // a sealing crown launches this many degrees nearer vertical: a taller wall
 const SEAL_SPRAY = 8;              // the closure throws a spike of this many fine drops up from the apex (times sqrt(R / 3 cm))...
 const SEAL_SPRAY_SPEED = [0.8, 2.2];   // ...at these speeds, times sqrt(R / 3 cm) (the reference's real-air seal jet)...
@@ -459,8 +467,9 @@ export class CrownSheet {
    * @param rim the stone's cavity (src/cavity.js), whose lip the sheet launches from, or null
    * @param lopsided a stone's crown's departure from round (the header): {spinX, spinZ} the spin's lift of the
    *   rim (its share of the entry speed at the azimuth's cosine and sine), speedScale, tiltShift (degrees)
-   * @param seal a surface seal (the header), or null: {time, tear}, the crown's ages (s) when its rim closes
-   *   over the hole and when the dome bursts
+   * @param seal a surface seal (the header), or null: {time, tear, sink, burstSpeed}, the crown's ages (s) when its rim
+   *   closes over the hole and when the dome bursts (or, `sink`, has been drawn down into the hole), and the speed (m/s)
+   *   its apex's water is flung at
    */
   constructor({ impact, startTime, rimDroplets, breakupDroplets, material, landing = false, fan = false, strength = 1, rim = null, lopsided = null, seal = null }) {
     const { velocity, radius } = impact;
@@ -494,7 +503,9 @@ export class CrownSheet {
     // drop's crown keeps its modes; a sealing crown's rim closes smooth.
     const fingerScale = landing ? 1 : Math.sqrt(this.sizeFactor);
     // A dome stands on its cavity's lip: a sheet with no cavity never seals.
-    this.seal = !landing && !fan && seal && rim ? { time: seal.time, start: DOME_PULL_START * seal.time, tear: Math.max(seal.tear, seal.time) } : null;
+    this.seal = !landing && !fan && seal && rim
+      ? { time: seal.time, start: DOME_PULL_START * seal.time, tear: Math.max(seal.tear, seal.time), sink: Boolean(seal.sink), burstSpeed: seal.burstSpeed ?? DOME_BURST * Math.sqrt(GRAVITY * radius) }
+      : null;
     this.fingered = !landing && !fan && !this.seal;
     this.fingers = this.fingered ? layFingers(fingerScale) : [];
     this.rows = landing ? LANDING_ROWS : fan ? FAN_ROWS : ROWS;
@@ -908,7 +919,9 @@ export class CrownSheet {
    * height y_foot + (apex − y_foot)·sin(πs/2). So the dome is a smooth bell
    * whatever the free sheet's waves and an oblique throw's lopsidedness, with
    * k buckling folds. While it stands it holds still; once it bursts (the
-   * tear) its sheet flies off at DOME_BURST·sqrt(g·R)·s, out and up.
+   * tear) its sheet flies off at the seal's burstSpeed·s, out and up; a
+   * sinking dome's apex is drawn down to DOME_SINK·R below the water by the
+   * tear instead (the header).
    */
   pullIn(out, tau, cosAngle, sinAngle, rimShape) {
     const pull = this.sealedShare();
@@ -921,10 +934,12 @@ export class CrownSheet {
     const angle = Math.atan2(sinAngle, cosAngle);
     const fold = 1 + DOME_FOLD * Math.sin(Math.PI * along) * Math.sin(this.domeFolds * angle + this.domeFoldPhase);
     const radius = footRadius * Math.cos(0.5 * Math.PI * along) ** DOME_ROUND * fold;
-    const height = footHeight + (DOME_HEIGHT * this.radius - footHeight) * Math.sin(0.5 * Math.PI * along);
+    let apex = DOME_HEIGHT * this.radius;
+    if (this.seal.sink) apex -= (DOME_HEIGHT + DOME_SINK) * this.radius * smoothstep(this.seal.time, this.seal.tear, this.age);
+    const height = footHeight + (apex - footHeight) * Math.sin(0.5 * Math.PI * along);
     const domeX = now.x + cosAngle * radius, domeZ = now.z + sinAngle * radius;
     // At rest on the dome, or flying off it once it bursts.
-    const burst = this.age >= this.breakTime ? DOME_BURST * Math.sqrt(GRAVITY * this.radius) * along : 0;
+    const burst = this.age >= this.breakTime && !this.seal.sink ? this.seal.burstSpeed * along : 0;
     const rate = this.sealRate();
     out.vx += pull * (cosAngle * burst - out.vx) + rate * (domeX - out.x);
     out.vy += pull * (burst - out.vy) + rate * (height - out.y);
@@ -963,6 +978,8 @@ export class CrownSheet {
   update(time, dt, splash) {
     this.age = time - this.startTime;
     if (this.seal && !this.sealSprayed && this.age >= this.seal.time) this.sealSpray(splash);
+    // A sunk dome is gone into the hole at the tear: no drops.
+    if (this.seal?.sink && this.age >= this.breakTime) { this.finished = true; return; }
     if (this.age < this.breakTime) {
       this.shed(dt, splash);
     } else {

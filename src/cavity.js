@@ -56,9 +56,14 @@
 // start (Duclaux et al.: 2.06; the reference simulation 1.99 after first
 // contact, a substep later), nearly independent of the entry speed, and z0
 // sets where it falls: 7.5·R down for the reference throw, as in the
-// reference, the stone then 13·R down. It is at least SHALLOWEST·R down. A
-// stone come to rest on the floor pushes no water aside, so the speed a slice
-// is pushed with is at least SLOWEST_PUSH of the entry speed.
+// reference, the stone then 13·R down. It is at least SHALLOWEST·R down and
+// at most DEEPEST_SHARE of the stone's depth then (Duclaux et al.; the
+// reference's 0.57), and where the slices' closures tie (within PINCH_TIE)
+// it is in the middle of them: a big stone that has reached the bed within
+// the pinch time leaves a hole closing all but together down its length,
+// and without the bound the pinch would jump about with the throw. A stone
+// come to rest on the floor pushes no water aside, so the speed a slice is
+// pushed with is at least SLOWEST_PUSH of the entry speed.
 //
 // After the pinch-off the hole above the neck is a bowl that stays open and
 // fills from below (the reference: 10 cm deep at 130 ms, 5 cm at 165 ms). Its
@@ -193,6 +198,8 @@ const PATH_STEP = 1 / 240;         // s: the app's substep at 60 frames a second
 const PATH_SECONDS = 1.5;
 // The walls.
 const SLICE_STEP = 1 / 6;          // slices this many radii apart
+const DEEPEST_SHARE = 0.6;         // the pinch is at most this share of the stone's depth at the pinch time (Duclaux et al. 2007)
+const PINCH_TIE = 0.01;            // slices closing within this share of the earliest closure share the pinch (its middle)
 export const PINCH_TIME = 2.06;    // the deep seal's pinch-off, in sqrt(R/g) on the splash's clock (src/rock.js reads it)...
 export const NECK_CLOSE = 0.4;     // ...and the water has closed over the stone this many sqrt(R/g) later (src/rock.js)
 export const SURFACE_HEAD = 5.25;         // z0, in R: the head in the slices' lifetimes T ∝ V/(z + z0), which sets where the pinch falls
@@ -579,13 +586,18 @@ export class Cavity {
     // A stone that has come to rest on the floor pushes no water aside: its slices' speed is floored.
     const slowest = SLOWEST_PUSH * this.sliceSpeed[0];
     for (let slice = 0; slice < count; slice++) lifeShape[slice] = Math.max(this.sliceSpeed[slice], slowest) / (slice * step + head);
+    // The earliest closure, and where: the middle of the slices that close
+    // within PINCH_TIE of it (a stone that has stopped on the bed leaves a
+    // stretch of the hole closing all but together, and the pinch is in the
+    // middle of it, not wherever rounding puts the first).
     const earliest = (scale) => {
-      let best = Infinity, bestSlice = 0;
+      let best = Infinity;
+      for (let slice = 0; slice < count; slice++) best = Math.min(best, this.sliceTime[slice] + scale * lifeShape[slice]);
+      let sum = 0, tied = 0;
       for (let slice = 0; slice < count; slice++) {
-        const closing = this.sliceTime[slice] + scale * lifeShape[slice];
-        if (closing < best) { best = closing; bestSlice = slice; }
+        if (this.sliceTime[slice] + scale * lifeShape[slice] <= best * (1 + PINCH_TIE)) { sum += slice; tied++; }
       }
-      return { time: best, slice: bestSlice };
+      return { time: best, slice: Math.round(sum / Math.max(tied, 1)) };
     };
     let low = 0, high = 1e-3;
     while (earliest(high).time < this.pinchTime && high < 1e3) high *= 2;
@@ -594,8 +606,13 @@ export class Cavity {
       if (earliest(middle).time < this.pinchTime) low = middle; else high = middle;
     }
     const scale = 0.5 * (low + high);
-    // A hole pinches at least SHALLOWEST·R down (a shallow seal's head would put it at the surface).
-    const pinchSlice = Math.min(Math.max(earliest(scale).slice, Math.round(SHALLOWEST / SLICE_STEP)), count - 1);
+    // A hole pinches at least SHALLOWEST·R down (a shallow seal's head would
+    // put it at the surface) and at most DEEPEST_SHARE of the stone's depth
+    // then (Duclaux et al. 2007; the reference's 0.57: a stone that has
+    // stopped on the bed leaves a hole whose closures all but tie down its
+    // length, and the pinch is not at the bed).
+    const deepestPinch = this.stoneAt(this.pinchTime, {}).depth * DEEPEST_SHARE;
+    const pinchSlice = Math.min(Math.max(earliest(scale).slice, Math.round(SHALLOWEST / SLICE_STEP)), Math.max(Math.round(deepestPinch / step), 1), count - 1);
     this.pinchSlice = pinchSlice;
     this.pinchDepth = pinchSlice * step;
 

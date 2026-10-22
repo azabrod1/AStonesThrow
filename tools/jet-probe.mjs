@@ -26,13 +26,28 @@
 //     1.39 m), and no drop it throws is over LARGEST_DROP;
 //   - its cost: the solver's and the drawing's milliseconds per frame (mean
 //     and worst), warm (after a few silent jets), printed; the mean under
-//     COST_MOST.
+//     COST_MOST;
+//   - the surface seal (src/splash.js chooseSplash) against what was seen
+//     (SEALS): Truscott & Techet's (2009) 5.7 cm billiard ball at 5.95 m/s
+//     domes over, 1.1 to 1.3 sqrt(R/g) after impact, and its jet bursts
+//     through; Worthington's (1908) roughened 1.5 cm marble dropped 15 cm
+//     throws its jet with no seal, from 60 cm seals and "sometimes" bursts,
+//     from 140 cm seals and its jet is trapped ("no rebounding jet");
+//   - Worthington's rule, printed and checked loosely: his marble's jet from
+//     15 cm rose "to a height which may be even greater than that from
+//     which the sphere fell"; the app's reaches at least MARBLE_LEAST of
+//     the drop height (its column, or the drops its needle breaks into,
+//     flown with the splash's drag). It falls short of his rule: the launch
+//     fitted to the 3 cm reference gives a small stone's jet too little
+//     speed (noted in src/jet.js).
 // It also prints the jet's timeline: when its water clears the surface and
 // how fast, its top, its drops (count, sizes, the first few) and the water
 // that fell back.
 import { SlenderJet } from '../src/slenderJet.js';
 import { JetColumn, CLEAN_FORM } from '../src/jet.js';
 import { Cavity } from '../src/cavity.js';
+import { chooseSplash, JET_COLLAPSE } from '../src/splash.js';
+import { seededRandom } from '../src/spray.js';
 
 const stoneRadius = Number(process.argv[2] ?? 0.03);
 const entrySpeed = Number(process.argv[3] ?? 6.3);
@@ -45,6 +60,8 @@ const RETRACTION_TOLERANCE = 0.03;
 const DROP_TOLERANCE = 0.06;
 const LARGEST_DROP = 0.012;          // m
 const COST_MOST = 3;                 // ms per frame, the solver and the drawing, warm
+const MARBLE = { radius: 0.0075, drop: 0.15 };   // Worthington's roughened marble and its fall
+const MARBLE_LEAST = 0.5;            // its jet's water reaches at least this share of the drop height
 // The reference simulation's jet (tools/basilisk/results/comparison.md) and how far from it the app may be.
 const REFERENCE = {
   emerges: [0.105, 0.16],            // s after entry: the simulation 118 ms
@@ -52,6 +69,13 @@ const REFERENCE = {
   firstDropRadius: [0.0005, 0.006],  // m: the simulation's first drops 2.4 and 3.7 mm
   highest: [0.6, 1.6],               // m: the joined top 75 to 81 cm, the highest tip 1.39 m
 };
+// The seal's observations (the header): a ball's radius and speed straight down, and what was seen.
+const SEALS = [
+  { name: "Truscott & Techet's billiard ball, 5.95 m/s", radius: 0.0286, speed: 5.95, seals: [0.5, 1], dome: [1.0, 1.4], trapped: [0, 0.25] },
+  { name: "Worthington's marble from 15 cm", radius: 0.0075, speed: Math.sqrt(2 * 9.81 * 0.15), seals: [0, 0.2] },
+  { name: "Worthington's marble from 60 cm", radius: 0.0075, speed: Math.sqrt(2 * 9.81 * 0.6), seals: [0.5, 1], trapped: [0.2, 0.7] },
+  { name: "Worthington's marble from 140 cm", radius: 0.0075, speed: Math.sqrt(2 * 9.81 * 1.4), seals: [0.8, 1], trapped: [0.8, 1] },
+];
 const failures = [];
 const check = (condition, message) => { if (!condition) failures.push(message); return condition; };
 const millimetres = (metres) => (metres * 1000).toFixed(2);
@@ -136,9 +160,7 @@ for (const segmentsPerWave of [9, 4]) {
 
 // ---- the jet ----------------------------------------------------------------
 
-const sizeFactor = stoneRadius / 0.03;
-// As SplashSystem.impact: JET_SPEED, JET_OBLIQUE_SLOWING, NEEDLE_OBLIQUE, JET_LEAN.
-const speed = Math.min(Math.max(0.75 * entrySpeed, 1.5), 8.0) * sizeFactor ** 0.15 * (1 - 0.3 * horizontalFraction);
+// As SplashSystem.impact: JET_COLLAPSE, JET_OBLIQUE_SLOWING, NEEDLE_OBLIQUE, JET_LEAN.
 const needle = 1 + (CLEAN_FORM.needle - 1) * (1 - 0.9 * horizontalFraction);
 const lean = Math.min(0.4 * Math.asin(horizontalFraction), (18 * Math.PI) / 180);
 const sinking = entrySpeed * Math.sqrt(1 - horizontalFraction ** 2);
@@ -147,9 +169,23 @@ const cavity = new Cavity({
   startTime: 0, drawn: false, lean,
 });
 const pinch = cavity.pinchTime;
+const speed = JET_COLLAPSE * Math.sqrt(9.81 * cavity.pinchDepth) * (1 - 0.3 * horizontalFraction);
 const launch = { floor: (age, out) => cavity.bowlFloorAt(cavity.pinchTime + age, out), bowlUnit: cavity.bowlUnit, volume: 0.25 * cavity.bowlVolume };
 const parkMiller = (seed) => { let state = seed; return () => { state = (state * 16807) % 2147483647; return state / 2147483647; }; };
 const makeJet = () => new JetColumn({ x: 0, z: -1.4, radius: stoneRadius, speed, startTime: 0, material: null, lean, leanX: 0, leanZ: 1, ...launch, form: { ...CLEAN_FORM, needle }, random: parkMiller(12345) });
+/** The apex a drop reaches from (y, velocity), flown with the splash's own drag and substep (src/splash.js update). */
+function dropApex(y, velocityX, velocityY, velocityZ, dropRadius) {
+  const step = 1 / 240;
+  let highest = y;
+  while (velocityY > 0) {
+    const drag = Math.min((0.00027 / dropRadius) * Math.hypot(velocityX, velocityY, velocityZ) * step, 0.5);
+    velocityX -= velocityX * drag; velocityY -= velocityY * drag; velocityZ -= velocityZ * drag;
+    velocityY -= 9.81 * step;
+    y += velocityY * step;
+    highest = Math.max(highest, y);
+  }
+  return highest;
+}
 
 /** Run a jet to its end with the given frames (seconds each, cycled), substeps of a quarter frame; what it did. */
 function runJet(frames, timed = false) {
@@ -212,6 +248,41 @@ if (isReference) {
   check(firstDrop && within(firstDrop.time + pinch, REFERENCE.firstDrop), `the first drop ${firstDrop ? firstDrop.time + pinch : 'never'} s after entry, outside ${REFERENCE.firstDrop}`);
   check(firstDrop && within(firstDrop.radius, REFERENCE.firstDropRadius), `the first drop ${firstDrop ? millimetres(firstDrop.radius) : '-'} mm, outside ${REFERENCE.firstDropRadius}`);
   check(within(highest, REFERENCE.highest), `the jet's water reaches ${highest.toFixed(2)} m, outside ${REFERENCE.highest}`);
+}
+// ---- Worthington's marble ----------------------------------------------------
+{
+  const marbleSpeed = Math.sqrt(2 * 9.81 * MARBLE.drop);
+  const marbleCavity = new Cavity({ impact: { x: 0, z: -1.4, height: MARBLE.radius, speed: marbleSpeed, velocity: { x: 0, y: -marbleSpeed, z: 0 }, radius: MARBLE.radius }, startTime: 0, drawn: false, lean: 0 });
+  const marbleJet = new JetColumn({
+    x: 0, z: -1.4, radius: MARBLE.radius, speed: JET_COLLAPSE * Math.sqrt(9.81 * marbleCavity.pinchDepth), startTime: 0, material: null,
+    floor: (age, out) => marbleCavity.bowlFloorAt(marbleCavity.pinchTime + age, out), bowlUnit: marbleCavity.bowlUnit, volume: 0.25 * marbleCavity.bowlVolume, form: { ...CLEAN_FORM }, random: parkMiller(777),
+  });
+  let highestDrop = 0, columnTop = 0;
+  const marbleSplash = { time: 0, frameSeconds: 1 / 60, spray: null, spawnDroplet: (x, y, z, vx, vy, vz, dropRadius) => { highestDrop = Math.max(highestDrop, dropApex(y, vx, vy, vz, dropRadius)); }, spawnFoamSpecks() {} };
+  for (let tick = 1; !marbleJet.finished && tick < 480; tick++) {
+    marbleSplash.time = tick / 240;
+    marbleJet.update(tick / 240, 1 / 240, marbleSplash, { addSplat() {}, addFoam() {} });
+    if (marbleJet.solver.count > 0) columnTop = Math.max(columnTop, marbleJet.topHeight());
+  }
+  const reached = Math.max(columnTop, highestDrop);
+  console.log(`\nWorthington's marble dropped ${(MARBLE.drop * 100).toFixed(0)} cm: its column reaches ${(columnTop * 100).toFixed(1)} cm, its drops ${(highestDrop * 100).toFixed(1)} cm (his jet: the drop height or more)`);
+  check(reached >= MARBLE_LEAST * MARBLE.drop, `Worthington's marble: the jet reaches ${(reached * 100).toFixed(1)} cm, under ${(MARBLE_LEAST * MARBLE.drop * 100).toFixed(0)}`);
+}
+
+// ---- the seal against what was seen ------------------------------------------
+console.log('');
+for (const seen of SEALS) {
+  const info = {
+    radius: seen.radius, speed: seen.speed, velocity: { x: 0, y: -seen.speed, z: 0 },
+    shape: { elongation: 0, flatness: 0, irregularity: 0.04 }, contact: { kind: 'point', faceAngle: 45, pointAngle: 45, bluntness: 1 }, spin: { ratio: 0, alongEntry: 1, axis: { x: 0, y: 1, z: 0 } },
+  };
+  const choice = chooseSplash(info, seededRandom(1, seen.radius), null);
+  const within = (value, [low, high]) => value >= low && value <= high;
+  const sealed = choice.seal.kind === 'surface';
+  console.log(`${seen.name} (F = ${(seen.speed ** 2 / (9.81 * seen.radius)).toFixed(0)}): seals ${(100 * choice.surfaceChance).toFixed(0)}%` + (sealed ? `, the dome ${choice.seal.dome.toFixed(2)} sqrt(R/g) after impact (${(choice.seal.dome / choice.seal.pinch).toFixed(2)} of the pinch), the jet trapped ${(100 * choice.trappedChance).toFixed(0)}%` : ''));
+  check(within(choice.surfaceChance, seen.seals), `${seen.name}: seals ${(100 * choice.surfaceChance).toFixed(0)}%, outside ${seen.seals.map((share) => `${100 * share}%`).join(' to ')}`);
+  if (seen.dome) check(sealed && within(choice.seal.dome, seen.dome), `${seen.name}: the dome ${sealed ? choice.seal.dome.toFixed(2) : 'never'} sqrt(R/g) after impact, outside ${seen.dome}`);
+  if (seen.trapped) check(sealed && within(choice.trappedChance, seen.trapped), `${seen.name}: the jet trapped ${sealed ? (100 * choice.trappedChance).toFixed(0) : '-'}%, outside ${seen.trapped.map((share) => `${100 * share}%`).join(' to ')}`);
 }
 console.log(failures.length === 0 ? '\njet-probe: all checks pass' : `\njet-probe: ${failures.length} checks fail:\n  ${failures.join('\n  ')}`);
 process.exitCode = failures.length === 0 ? 0 : 1;

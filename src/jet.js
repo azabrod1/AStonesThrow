@@ -22,7 +22,8 @@
 //
 //   u(tau) = U·(BASE_SPEED + (1 − BASE_SPEED)·(1 − tau/T_end)^BODY_POWER) + (form.needle·U − U)·exp(−tau/NEEDLE_TIME)
 //
-// (U the body's speed, which the splash sets from the entry speed), so the
+// (U the body's speed, which the splash sets from the hole's collapse speed
+// at its pinch, sqrt(g·z_p): src/splash.js JET_COLLAPSE), so the
 // needle leaves first and fastest and the column stretches as it rises. Its
 // launch radius r0(tau) is a core growing from NEEDLE_RADIUS·Rj to
 // BODY_RADIUS·Rj over BODY_GROWTH of T_end (the needle, then the body) plus
@@ -36,9 +37,19 @@
 // stone's radius R times (R / 3 cm)^JET_RADIUS_POWER (times form.radiusScale):
 // a jet is thinner the more singular the cavity's collapse, that is the higher
 // the Froude number V²/(g·R) (Gekle & Gordillo 2010 find thinner, faster jets
-// as it grows), and at a given entry speed a big stone's is lower. The rock's
+// as it grows), and at a given entry speed a big stone's is lower; but never
+// under JET_RADIUS_LEAST, since a small stone's jet is no thinner than the
+// capillary length lets it be: Li & Li (2025) measure columns 3 ± 1 mm
+// across from 20 to 40 mm spheres, and Worthington's (1908) 1.5 cm marble
+// threw "a tall jet", not a thread (a thread of 0.35 mm, which the scaling
+// alone would give it, breaks into mist within a millisecond). The rock's
 // launch is that scaling, an extrapolation: the reference simulation is of
-// the 3 cm stone only. The launch point is on the jet's axis (through where
+// the 3 cm stone only; and a small stone's comes out weak against
+// Worthington's rule (his marble's jet from 15 cm rose to the drop height
+// or more; this launch sends its column to a third of it and its needle's
+// drops to about it: tools/jet-probe.mjs), since the speed shared between
+// needle and body was fitted at the reference's Froude number alone. The
+// launch point is on the jet's axis (through where
 // the hole closes, tilted by the lean) at the bowl's floor: it starts at the
 // pinch depth and follows the floor up as the bowl fills (src/cavity.js
 // bowlFloorAt), at most RISE_SHARE of the launch speed, the flux through it
@@ -145,7 +156,8 @@ const RISE_SHARE = 0.6;            // the launch point rises with the bowl's flo
 const LEAST_FLUX = 0.1;            // the flux through a rising launch point is at least this share of a still one's
 const LAUNCH_SAMPLES = 96;         // the launch depth, volume and roughness phase are tabulated at these many times, denser early
 const DEFAULT_PINCH = 7.5;         // in R: with no bowl given, the jet's time unit is sqrt(this·R/g) and it leaves from the surface
-const JET_RADIUS_POWER = 0.25;     // the column's radii in R·(R / 3 cm)^this: fatter at a lower Froude number
+const JET_RADIUS_POWER = 0.25;     // the column's radii in R·(R / 3 cm)^this: fatter at a lower Froude number...
+const JET_RADIUS_LEAST = 0.009;    // ...and never under this (m): a needle of 0.6 mm, a body of 2.4 mm (the header)
 const MAX_TILT = THREE.MathUtils.degToRad(5);
 const WOBBLE = 0.01;               // lateral launch velocity over launch speed, times form.wobble
 const ROUGHNESS = 0.015;           // the launch radius varies by this share for a clean collapse (form.roughness)...
@@ -211,7 +223,7 @@ export class JetColumn {
     this.centreZ = z;
     this.radius = radius;
     this.sizeFactor = radius / REFERENCE_RADIUS;
-    this.columnRadius = radius * this.sizeFactor ** JET_RADIUS_POWER * this.form.radiusScale;   // Rj in the header
+    this.columnRadius = Math.max(radius * this.sizeFactor ** JET_RADIUS_POWER, JET_RADIUS_LEAST) * this.form.radiusScale;   // Rj in the header
     this.bodySpeed = speed;
     this.tipSpeed = speed * Math.max(this.form.needle, 1);   // the needle's first water, the fastest
     this.startTime = startTime;
