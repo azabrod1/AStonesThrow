@@ -25,7 +25,7 @@
 //    water, a throw that breaks it, its shards (within the preset's) and its
 //    flood, a hole's new ice and a frozen pool compile no program, and no
 //    gale blows on it. Every kind of thing (src/things.js)
-//    thrown, the floaters followed until they float in the mirror image,
+//    thrown at once, the floaters followed until they float in the mirror image,
 //    compiles no program, and no first throw builds a fixed mesh or slices
 //    its waterline (src/rock.js prepareThing did both under the veil; each
 //    throw's time on the main thread is printed, not checked: under
@@ -40,9 +40,9 @@
 //    frames of 1/162 s is in the same place 2.5 s on. With the page running,
 //    the water's height under a floater beside a splash is read back
 //    (src/floaterRide.js), and a throw's sounds play and end (src/sound.js;
-//    the browser lets audio start without a gesture here). Sixty throws of
-//    every kind, the pond then cleared, leave no geometry, texture or
-//    program behind. Rain (src/rain.js): each weather in
+//    the browser lets audio start without a gesture here). Throws of every
+//    kind, more than low keeps, the pond then cleared, leave no geometry,
+//    texture or program behind. Rain (src/rain.js): each weather in
 //    turn, with a throw in the downpour and a change of preset, reuses its
 //    programs after the first selection, and the tile takes the preset's
 //    size; clear again, nothing of the rain runs. The gale (src/galeWaves.js)
@@ -67,6 +67,11 @@
 //    90 Hz display's frames are within the ceiling's slack), the idle cap
 //    off and the simulated time keeping up throughout.
 // 3. A 2560×1440 window on high: the canvas keeps within PIXEL_BUDGET.
+//
+// Under SwiftShader a second of world time with the solver awake costs some
+// 9 s on high and 2.5 on low, so whatever a preset does not change (the pool,
+// the ice, the things, the floater, the step, the long session, the ceiling
+// on the fake clock) runs on low; each part's seconds are printed.
 //
 //   node tools/quality-probe.mjs
 import { chromium } from 'playwright';
@@ -116,6 +121,16 @@ async function openPage({ width = 390, height = 844, query, initScript = null })
 
 let failures = 0;
 const check = (passed, text) => { console.log(`  ${passed ? 'ok  ' : 'FAIL'} ${text}`); if (!passed) failures++; };
+// Each part's seconds, printed as the next begins (under SwiftShader a world second with the solver awake costs some 9 s
+// of real time on high, 2.5 on low: whatever does not need high runs on low).
+const probeStart = Date.now();
+let partStart = probeStart, partName = null;
+const part = (name) => {
+  const now = Date.now();
+  if (partName) console.log(`  (${partName}: ${((now - partStart) / 1000).toFixed(0)} s)`);
+  partName = name;
+  partStart = now;
+};
 const order = (name) => ['high', 'medium', 'low'].indexOf(name);
 
 /** What a preset should build for a window of width × height CSS pixels at devicePixelRatio. */
@@ -165,6 +180,7 @@ const largestHeight = (page) => page.evaluate(() => {
 
 // ---- 1. the real clock -------------------------------------------------------
 console.log('automatic quality on the real clock, 390×844');
+part('the page, the idle and the splash measurements');
 const phone = await openPage({ query: 'quality=auto' });
 const { page } = phone;
 const atStart = await pageState(page);
@@ -211,6 +227,7 @@ check(afterSplash.pressed.length === 1 && afterSplash.pressed[0] === 'auto' && a
 await checkBuilt(phone, 'after the splash measurement');
 
 // A button press fixes the preset: no further automatic change. Then every preset to every other.
+part('every preset to every other, and mid-splash');
 await page.evaluate(() => window.__pond.setQuality('medium'));
 const afterPress = await pageState(page);
 check(afterPress.quality === 'medium', `setQuality('medium') applies (got ${afterPress.quality})`);
@@ -234,7 +251,9 @@ const backOnHigh = await largestHeight(page);
 check(backOnHigh > 1e-4 && Number.isFinite(backOnHigh), `and back on 512² (${(backOnHigh * 1000).toFixed(2)} mm)`);
 await checkBuilt(phone, 'after the switches mid-splash');
 
-// The pool, and back to the lake.
+// The pool, and back to the lake: on low (whatever a preset's sizes, it draws the pool's quads; switched to medium in it).
+part('the pool and the ice, on low');
+await page.evaluate(() => window.__pond.setQuality('low'));
 const programsBeforePool = await page.evaluate(() => window.__pond.budget.programs);
 await page.evaluate(() => { window.__pond.setClarity('pool'); window.__pond.advance(0.1); });
 const inPool = await page.evaluate(() => window.__pond.budget);
@@ -248,8 +267,8 @@ await page.evaluate(() => window.__pond.advance(1.5));
 const poolLater = await page.evaluate(() => window.__pond.budget);
 check(poolLater.rings.live === 0 && poolLater.rings.passes === 0 && !poolLater.solverAsleep, `its near-field ring retires with the near field (${poolLater.rings.live} live 2.5 s after the throw), the solver still awake with the pool's waves`);
 await page.evaluate(() => window.__pond.setQuality('medium'));
-await checkBuilt(phone, 'in the pool, high -> medium');
-await page.evaluate(() => { window.__pond.setQuality('high'); window.__pond.setClarity('lake'); window.__pond.advance(0.1); });
+await checkBuilt(phone, 'in the pool, low -> medium');
+await page.evaluate(() => { window.__pond.setQuality('low'); window.__pond.setClarity('lake'); window.__pond.advance(0.1); });
 const backOnLake = await page.evaluate(() => window.__pond.budget.programs);
 check(backOnLake === programsBeforePool, `back on the lake, still no new program (${backOnLake})`);
 await checkBuilt(phone, 'back on the lake');
@@ -280,23 +299,24 @@ check(thawed.ice.name === 'none' && thawed.ice.holes === 0 && thawed.programs ==
 await checkBuilt(phone, 'after the ice');
 
 // Every kind of thing (src/things.js), thrown and followed until the floaters float in the mirror image, compiles no program.
+part('every kind of thing, the floater\'s draw calls, the pool\'s resting stones, the fixed step, on low');
 const programsBeforeThings = await page.evaluate(() => window.__pond.budget.programs);
 const namesBeforeThings = await programNames(page);
 // Each one's first throw makes no mesh and slices no waterline (src/rock.js prepareThing: warmUp made every thing ready;
 // a pizza's waterline took a throw 33 to 57 ms). Each is timed too, for the record: the times vary too much here to check.
 const preparedBefore = await page.evaluate(() => window.__pond.budget.preparation);
-const firstThrows = [];
-for (const thing of ['slate', 'granite', 'basalt', 'pumice', 'golf', 'tennis', 'bowling', 'basketball', 'diamond', 'apple', 'pizza', 'frozen-pizza', 'pie', 'duck', 'watermelon', 'brick']) {
-  const spent = await page.evaluate((name) => {
-    window.__pond.pause();
+// All thrown at once, each to its own spot (a world second with splashes is dear here), and followed together.
+const firstThrows = await page.evaluate((names) => {
+  const pond = window.__pond;
+  pond.pause();
+  const spent = names.map((name, index) => {
     const started = performance.now();
-    window.__pond.throwAt(0, -1.4, { thing: name });
-    const elapsed = performance.now() - started;
-    window.__pond.advance(3.0);
-    return elapsed;
-  }, thing);
-  firstThrows.push({ thing, spent });
-}
+    pond.throwAt(-1.2 + 0.6 * (index % 5), -0.6 - 0.6 * Math.floor(index / 5), { thing: name });
+    return { thing: name, spent: performance.now() - started };
+  });
+  pond.advance(2.5);
+  return spent;
+}, ['slate', 'granite', 'basalt', 'pumice', 'golf', 'tennis', 'bowling', 'basketball', 'diamond', 'apple', 'pizza', 'frozen-pizza', 'pie', 'duck', 'watermelon', 'brick']);
 console.log(`  first throws (ms on the main thread): ${firstThrows.map(({ thing, spent }) => `${thing} ${spent.toFixed(1)}`).join(', ')}`);
 const preparedAfter = await page.evaluate(() => window.__pond.budget.preparation);
 check(preparedBefore.meshes > 0 && preparedAfter.meshes === preparedBefore.meshes && preparedAfter.waterlines === preparedBefore.waterlines,
@@ -371,7 +391,7 @@ check(kept.settled === kept.resting && kept.keptAfter === kept.resting, `the pre
 check(kept.oneCall === kept.resting && restingPool.calls - emptyPool.calls <= kept.resting + 2, `a stone at rest under the water is one draw call (${kept.oneCall} of ${kept.resting} with the part above hidden; ${restingPool.calls - emptyPool.calls} calls for them)`);
 check(kept.oldestFades && kept.partway?.there && kept.partway.scale > 0.05 && kept.partway.scale < 0.95 && kept.gone && kept.after.kept === kept.resting && kept.after.extraKept,
   `one more at rest shrinks the oldest away, not at once (the oldest: ${kept.oldestFades}; partway ${kept.partway ? `there, at ${kept.partway.scale.toFixed(2)} of its size` : 'never'}; then gone: ${kept.gone}; ${kept.after.kept} kept)`);
-await page.evaluate(() => { const pond = window.__pond; pond.clear(); pond.setClarity('lake'); pond.setQuality('high'); pond.advance(0.1); });
+await page.evaluate(() => { const pond = window.__pond; pond.clear(); pond.setClarity('lake'); pond.advance(0.1); });
 // The world's step is fixed (src/main.js simulate, src/rock.js PHYSICS_STEP): the same throw, drawn 60 times a second or
 // at a frame rate that steps it unevenly (a slow-motion speed of 0.37: frames of 1/162 s), goes exactly where it went.
 const unevenly = await page.evaluate(() => {
@@ -392,6 +412,7 @@ const unevenly = await page.evaluate(() => {
 });
 const apart = Math.hypot(unevenly[0][0] - unevenly[1][0], unevenly[0][1] - unevenly[1][1], unevenly[0][2] - unevenly[1][2]);
 check(apart < 1e-9 && unevenly[0][3] === unevenly[1][3], `a basketball thrown alike at 60 frames a second and at frames of 1/162 s is where it was 2.5 s on (${apart.toExponential(1)} m apart, ${unevenly[0][3]} and ${unevenly[1][3]})`);
+part('the floater\'s ride and the sounds, on the running page, on low');
 // A floater rides the water as drawn, and things meet it there (src/floaterRide.js): with the page running, a basketball
 // afloat has the water's height under it read back, without a frame waiting for it (SwiftShader answers slowly: up to
 // a minute here), and where things meet it is where it is drawn.
@@ -442,33 +463,38 @@ console.log(`  a throw's sounds (audio ${sounds.state}): up to ${sounds.most} at
 check((sounds.state !== 'running' || sounds.most >= 1) && sounds.after === 0, `a throw sounds where the audio runs (${sounds.state}), and its sounds end (${sounds.most} at once, ${sounds.after} after)`);
 await page.evaluate(() => { window.__pond.clear(); });
 
-// A long session (resource lifetime): sixty throws of every kind, the oldest retired as the pond fills, then the pond
-// cleared: the GPU's geometries and textures are back where they were, and no program was made.
+// A long session (resource lifetime): throws of every kind, more than low keeps, the oldest retired as the pond fills,
+// then the pond cleared: the GPU's geometries and textures are back where they were, and no program was made.
+part('a long session, on low');
 const session = await page.evaluate(() => {
   const pond = window.__pond, memory = pond.renderer.info.memory;
   pond.pause();
+  pond.setQuality('low');
   pond.clear();
   pond.advance(0.5);
   const before = { geometries: memory.geometries, textures: memory.textures, programs: pond.budget.programs };
   const names = ['stone', 'basketball', 'pizza', 'frozen-pizza', 'pie', 'duck', 'tennis', 'brick', 'pumice', 'diamond', 'watermelon', 'apple', 'bowling', 'golf'];
   let most = 0;
-  for (let throwing = 0; throwing < 60; throwing++) {
+  const throws = 36;
+  for (let throwing = 0; throwing < throws; throwing++) {
     pond.throwAt(-1 + (throwing % 7) * 0.33, -0.8 - (throwing % 5) * 0.4, { thing: names[throwing % names.length] });
-    pond.advance(0.4);
+    pond.advance(0.25);
     most = Math.max(most, pond.rocks.length);
   }
   pond.clear();
   pond.advance(0.5);
   const after = { geometries: memory.geometries, textures: memory.textures, programs: pond.budget.programs };
+  pond.setQuality('high');
   pond.resume();
-  return { before, after, most };
+  return { before, after, most, throws };
 });
-console.log(`  sixty throws of every kind, at most ${session.most} in the pond at once: geometries ${session.before.geometries} → ${session.after.geometries}, textures ${session.before.textures} → ${session.after.textures}, programs ${session.before.programs} → ${session.after.programs}`);
-check(session.after.geometries <= session.before.geometries && session.after.textures <= session.before.textures && session.after.programs === session.before.programs, 'sixty throws and a clear pond leave no geometry, texture or program behind');
+console.log(`  ${session.throws} throws of every kind on low, at most ${session.most} in the pond at once: geometries ${session.before.geometries} → ${session.after.geometries}, textures ${session.before.textures} → ${session.after.textures}, programs ${session.before.programs} → ${session.after.programs}`);
+check(session.after.geometries <= session.before.geometries && session.after.textures <= session.before.textures && session.after.programs === session.before.programs, `${session.throws} throws and a clear pond leave no geometry, texture or program behind`);
 
 await page.evaluate(() => { window.__pond.clear(); window.__pond.resume(); });
 
 // Rain compiles on first selection, then follows presets without new programs.
+part('the rain, the gale and the storm');
 let programsBeforeRain = await page.evaluate(() => window.__pond.budget.programs);
 for (const weather of ['light-rain', 'heavy-rain']) {
   await page.evaluate((name) => window.__pond.setWeather(name), weather);
@@ -515,6 +541,7 @@ const calmAgain = await page.evaluate(() => ({ programs: window.__pond.budget.pr
 check(!calmAgain.gale.blowing && calmAgain.gale.sheetTriangles < 5000 && calmAgain.programs === programsBeforeGale, `calm again: the still sheet (${calmAgain.gale.sheetTriangles} triangles), no program (${calmAgain.programs})`);
 await checkBuilt(phone, 'after the gale');
 
+part('one frame loop');
 // pause, resume, pause, resume in one tick: one frame loop, so at most one render per requestAnimationFrame, and at least every
 // other (the most the idle cap, on high too now, skips of a 60 Hz requestAnimationFrame).
 const loops = await page.evaluate(() => new Promise((resolve) => {
@@ -530,6 +557,7 @@ await phone.context.close();
 
 // ---- 2. a fake clock -------------------------------------------------------
 console.log('the watch after calibration and the idle frame rate, on a fake clock');
+part('the fake clock: calibration and the watch');
 const fakeClock = `(() => {
   let fake = performance.now();
   let lastRealFrame = null;
@@ -573,6 +601,7 @@ const waitForCap = async (on) => {
   const from = await fakePage.evaluate(() => window.__ticks);
   await fakePage.waitForFunction(([wanted, after]) => window.__ticks > after + 1 && window.__pond.budget.frameCapped === wanted, [on, from], { timeout: 900000 }).catch(() => {});
 };
+part('the fake clock: the idle cap and the ceiling');
 // A pond where nothing happens on medium: frames at 30 a second on a 60 Hz clock.
 await fakePage.evaluate(() => { window.__fakeStep = 1000 / 60; });
 await waitForCap(true);
@@ -588,7 +617,8 @@ const highStill = await overFrames(60);
 check(highStill.capped.every(Boolean) && drawsOneIn(highStill, 60 / QUALITY.high.idleFrameRate), `a still pond on high draws every other frame at 60 Hz: ${highStill.renders} renders in ${highStill.ticks} frames`);
 const highStillFast = await overFrames(120);
 check(highStillFast.capped.every(Boolean) && drawsOneIn(highStillFast, 120 / QUALITY.high.idleFrameRate) && keepsUp(highStillFast), `and every fourth at 120 Hz: ${highStillFast.renders} renders in ${highStillFast.ticks} frames, ${highStillFast.simulated.toFixed(3)} s simulated in ${highStillFast.clock.toFixed(3)} s`);
-await fakePage.evaluate(() => window.__pond.throwAt(0, -1.4, { radius: 0.03 }));
+// The ceiling is every preset's: its frames with things moving are drawn on low (cheaper here).
+await fakePage.evaluate(() => { window.__pond.setQuality('low'); window.__pond.throwAt(0, -1.4, { radius: 0.03 }); });
 await waitForCap(false);
 const flyingFast = await overFrames(2 * MAX_FRAME_RATE);
 check(!flyingFast.capped.some(Boolean) && drawsOneIn(flyingFast, 2) && keepsUp(flyingFast), `a throw at ${2 * MAX_FRAME_RATE} Hz draws every other frame, ${MAX_FRAME_RATE} a second: ${flyingFast.renders} renders in ${flyingFast.ticks} frames, ${flyingFast.simulated.toFixed(3)} s simulated in ${flyingFast.clock.toFixed(3)} s`);
@@ -604,13 +634,15 @@ await faked.context.close();
 
 // ---- 3. the pixel budget ----------------------------------------------------
 console.log('a 2560×1440 window on high');
+part('the pixel budget');
 const large = await openPage({ width: 2560, height: 1440, query: 'quality=high&paused=1' });
 const largeBudget = await checkBuilt(large, '2560×1440');
 check(largeBudget.canvas.width * largeBudget.canvas.height <= PIXEL_BUDGET, `the canvas keeps within ${PIXEL_BUDGET / 1e6} M pixels (${largeBudget.canvas.width}×${largeBudget.canvas.height}, ratio ${largeBudget.pixelRatio.toFixed(3)})`);
 await large.context.close();
 
+part(null);
 if (problems.length) { console.log('  console problems:'); console.log('  ' + problems.slice(0, 10).join('\n  ')); failures++; }
 await browser.close();
 server.close();
-console.log(failures ? `${failures} check(s) failed` : 'all quality checks passed');
+console.log(`${failures ? `${failures} check(s) failed` : 'all quality checks passed'} (${((Date.now() - probeStart) / 60000).toFixed(1)} min)`);
 process.exit(failures ? 1 : 0);
