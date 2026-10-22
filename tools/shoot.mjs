@@ -42,10 +42,12 @@
 // the start of the frames (__pond.touchWater), draws it to (x1, z1) at an
 // even speed over `seconds`, a step every frame, and lifts it out there; the
 // times count from the dip.
-// --power=soft|normal|hard throws as the strip's Lob, Normal and Hard do
-// (soft is a higher arc, so a steeper entry: about 30° from vertical against
-// 42°; hard is fast and flat, twice as fast in at about 73°: src/rock.js
-// throwFlightTime).
+// --power=soft|normal|hard throws as the strip's Soft, Medium and Hard do
+// (src/main.js ARC: a soft toss is a higher arc, so a steeper entry, about
+// 33° from vertical against 42°; a hard one is fast and flat, twice as fast
+// in at about 73°: src/rock.js throwFlightTime).
+// --manner=toss|lob|skip throws as the strip's Toss, Lob and Skip do: a lob
+// the high way round, higher the harder; --skip is --manner=skip.
 // --skip throws skips, as the strip's Skip does (src/rock.js): the stone
 // first touches the water at the throw's x:z (or where a nearly level
 // release puts it, src/main.js skipThrow) and skips on from there, and the
@@ -94,6 +96,7 @@ const waterClarity = arg('water', '');
 const wind = arg('wind', '');
 const power = arg('power', 'normal');
 const skipThrows = process.argv.includes('--skip');
+const manner = arg('manner', skipThrows ? 'skip' : 'toss');
 const tracePaths = process.argv.includes('--trace');
 const windStrength = arg('wind-strength', '');
 const seed = arg('seed', '');
@@ -175,13 +178,13 @@ console.log('[shoot] idle.png');
 
 if (tracePaths) await page.evaluate(() => window.__pond.setTrace(true));
 for (const [index, [x, z, radius]] of throws.entries()) {
-  await page.evaluate(([x, z, radius, power, seed, skip]) => {
+  await page.evaluate(([x, z, radius, power, seed, manner]) => {
     if (seed !== null) {
       let state = seed;
       Math.random = () => { state = (state * 16807) % 2147483647; return (state - 1) / 2147483646; };
     }
-    window.__pond.throwAt(x, z, { radius, power, skip });
-  }, [x, z, radius, power, seed === '' ? null : Number(seed) + index, skipThrows]);
+    window.__pond.throwAt(x, z, { radius, power, manner });
+  }, [x, z, radius, power, seed === '' ? null : Number(seed) + index, manner]);
 }
 if (evalAfterThrow) await page.evaluate(evalAfterThrow);
 let flight = 0;

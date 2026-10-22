@@ -649,7 +649,8 @@ export function skipSpeed(power, radius, pooled = false, mass = null) {
 // on, and within a percent of the gentlest that reaches the tap (the least
 // release speed, sqrt(g·(d − h)) from h above it). So no throw that reaches
 // the tap goes in much slower: a soft one is a lob, `soft` times as long in
-// the air, higher and steeper, at about the normal throw's speed. A hard one
+// the air, higher and steeper, at about the normal throw's speed (the page's
+// soft Lob; its soft Toss is flatter, src/main.js ARC). A hard one
 // is let go at `hardSpeed` (for a stone up to `fullRadius`; beyond it as
 // fullRadius / R, as a skip's) on the lower of the two arcs that reach the
 // tap at that speed: fast and flat, going in about twice as fast as a normal

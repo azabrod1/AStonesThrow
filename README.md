@@ -20,20 +20,24 @@ or pinch to zoom toward what is under the pointer (down to an 8° field of
 view); a drag that starts zoomed turns round what the view is looking at.
 Escape or Reset view (under the menu button while the view is away from
 the shore's) glides back to the shore. The strip at the bottom sets what is
-thrown: its chip opens a dropdown of every thing under its group, each with
+thrown: its name opens a dropdown of every thing under its group, each with
 its picture (`src/thingMenu.js`), and its slider sets the size (a stone 1.5
 to 30 cm across, a bowling ball 6 to 16 lb, a basketball size 5 to 7, a gem
-5 to 1000 carats; a golf or a tennis ball has one size). Its second row sets
-how it is thrown, Lob (a high, slow arc; the code's soft), Normal, Hard (a
-fast, flat throw that goes in twice as fast, with a far bigger splash:
-below) or Skip, and slow motion (1×, ¼× or ⅒× real time). With Skip, a flat
-stone (or a pizza, spun like a frisbee) is thrown low and level, spinning,
-at the normal strength, and skips across the water (below), in the
-direction of the tap (even on the sky); its first touch lands where a level
-throw puts it. Skip is greyed out for what cannot skip, and choosing such a
-thing goes back to Normal. On a phone in portrait, where the title's line
-is hidden, a cue over the water says to tap it, until the first throw. The
-menu button at the
+5 to 1000 carats; a golf or a tennis ball has one size). Then how it is
+thrown, in two parts: the manner, Toss (the low way round), Lob (the high
+way) or Skip, and the strength, Soft, Medium or Hard, which is the pace
+either way (`ARC` in `src/main.js`: a toss flies flatter the harder it is
+thrown, a lob higher; a hard toss is let go fast on the low arc and goes in
+about twice as fast, with a far bigger splash: below; the medium toss is
+the throw the splash is tuned to). Then the slow-motion clock, each press
+the next rate round (1×, ¼×, ⅒× real time), lit while slow; then the throw
+button, the strip's one lit control. With Skip, a flat stone (or a pizza,
+spun like a frisbee) is thrown low and level, spinning, at the strength's
+speed, and skips across the water (below), in the direction of the tap
+(even on the sky); its first touch lands where a level throw puts it. Skip
+is greyed out for what cannot skip, and choosing such a thing goes back to
+Toss. On a phone in portrait, where the title's line is hidden, a cue over
+the water says to tap it, until the first throw. The menu button at the
 top right opens the settings, laid out as the Moon app's menu is: a list in
 four groups (what is thrown: What to throw; the place: Location, Water and Time of
 day; the conditions: Weather, Wind and Sound; the viewing: View and Quality), each row an icon, its name
@@ -394,8 +398,8 @@ at the surface, a 16 cm stone almost never, and its jets are mostly stubby
 
 **Skipping** (`src/rock.js`, a Skip throw). The thrower picks a flat stone
 and lets it go from a crouch, 30 cm over the water, nearly level, at 7, 10
-or 13 m/s (the strengths soft, normal and hard: the strip's Skip throws at
-normal, the harness's `--power` at any; a stone over 8 cm across goes slower), its
+or 13 m/s (the strip's Soft, Medium and Hard, the harness's `--power`; a
+stone over 8 cm across goes slower), its
 face tilted nose-up about 20° along the throw (Clanet, Hersen & Bocquet's
 "magic angle") and spinning fast about its short axis, which holds that
 tilt. Each touch is worked out once, on the CPU, as Bocquet (2003) models
@@ -838,9 +842,12 @@ farther out, so it rises into the view rather than filling its corner.
   `--seed=n` (Math.random seeded from n + i just before throw i, so the
   stone and its splash are the same every run: `tools/variety-probe.mjs`'s
   seed n + i),
-  `--power=soft|normal|hard` (soft is a higher arc, so a steeper entry,
-  about 30° from vertical; hard is let go at 12 m/s, fast and flat, and goes
-  in at 12.4 m/s, 73° from vertical: `throwFlightTime` in `src/rock.js`), `--skip` (skip throws, the times counted from
+  `--power=soft|normal|hard` (the strip's Soft, Medium and Hard: a soft
+  toss is a higher arc, so a steeper entry, about 33° from vertical; a hard
+  one is let go at 12 m/s, fast and flat, and goes in at 12.4 m/s, 73° from
+  vertical: `throwFlightTime` in `src/rock.js`), `--manner=toss|lob|skip`
+  (the strip's Toss, Lob and Skip: a lob the high way round, higher the
+  harder), `--skip` (skip throws, as `--manner=skip`, the times counted from
   the first touch), `--trace` (each stone's path drawn as a line),
   `--wind-strength=calm|breeze|windy|gale` (the page's
   own default is calm), `--weather=clear|light-rain|heavy-rain|storm` (waits for
@@ -1007,8 +1014,9 @@ farther out, so it rises into the view rather than filling its corner.
   height, the stone slider is 44 points tall (and most of the width in
   portrait) and every button 34, and that a tap or a drag anywhere along the
   slider sets the stone; that the first visit's cue shows on a phone in
-  portrait and goes with the first throw; that Lob, Normal, Hard and Skip set
-  the throw and 1×, ¼× and ⅒× the time; that the chip's dropdown fits over the
+  portrait and goes with the first throw; that Toss, Lob and Skip set the
+  manner, Soft, Medium and Hard the strength, and the clock goes round 1×, ¼×
+  and ⅒×; that the name's dropdown fits over the
   strip (a phone in portrait without scrolling), its pills tall enough for a
   finger, a pill tapped is thrown next, a press on the pond closes it without
   throwing and the keyboard works it; that the settings open with their rows, each
@@ -1020,8 +1028,8 @@ farther out, so it rises into the view rather than filling its corner.
   `shots/controls-probe/`. The
   shoot harness and the other probes emulate a desktop browser, which ignores
   the viewport tag, so only this probe sees the page as a phone does.
-- `window.__pond` exposes the app in the console: `throwAt(x, z, { radius, power, skip, thing, size })`,
-  `setSkip(on)` (and `skipping`), `setTrace(on)`,
+- `window.__pond` exposes the app in the console: `throwAt(x, z, { radius, power, manner, skip, thing, size })`,
+  `setPower(name)` (and `power`), `setManner(name)` (and `manner`), `setSkip(on)` (and `skipping`), `setTrace(on)`,
   `setThing(name)` (and `thing`: a key of `THINGS` in `src/things.js`, remembered
   on the device) and `setSize(value)` (and `size`: the slider's value in its unit),
   `setTimeScale` (and `timeScale`), `pause()`, `advance(seconds)` (in the frames the app would
