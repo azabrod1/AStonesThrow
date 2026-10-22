@@ -249,9 +249,10 @@ import { JetColumn, CLEAN_FORM } from './jet.js';
 import { Cavity, PINCH_TIME, SURFACE_HEAD } from './cavity.js';
 import { MAX_CAVITIES } from './waterSurface.js';
 import { FoamSpecks } from './foamSpecks.js';
+import { SpraySystem, seededRandom, sprayDrops, MIRROR_SPRAY_RADIUS } from './spray.js';
 import { RING_SOURCE } from './rings.js';
 import { STONE_DENSITY } from './things.js';
-import { PARTICLE_VERTEX, PARTICLE_DEPTH_FRAGMENT, PARTICLE_THICKNESS_FRAGMENT, COMPOSITE_FRAGMENT, MIRROR_SHEET_FRAGMENT, MIRROR_COLUMN_FRAGMENT, MIRROR_DROP_FRAGMENT, NIGHT_VISION } from './shaders/fluid.js';
+import { PARTICLE_VERTEX, SPRAY_VERTEX, PARTICLE_DEPTH_FRAGMENT, PARTICLE_THICKNESS_FRAGMENT, COMPOSITE_FRAGMENT, MIRROR_SHEET_FRAGMENT, MIRROR_COLUMN_FRAGMENT, MIRROR_DROP_FRAGMENT, NIGHT_VISION } from './shaders/fluid.js';
 import { SHEET_VERTEX, SHEET_DEPTH_FRAGMENT, SHEET_THICKNESS_FRAGMENT, COLUMN_VERTEX, COLUMN_DEPTH_FRAGMENT, COLUMN_THICKNESS_FRAGMENT } from './shaders/sheet.js';
 import { BUBBLE_VERTEX, BUBBLE_FRAGMENT } from './shaders/scene.js';
 
@@ -282,6 +283,7 @@ const CROWN_DROPLET_CAP = 2000;       // at most (a 16 cm stone thrown hard want
 const FAN_DROPLET_CAP = 600;          // at most (the same stone's fan, about 400)
 const SPRAY_DROP_RADIUS = 0.0008;     // the contact line's spray: drops of this radius...
 const SPRAY_DROP_SPREAD = 0.001;      // ...to this much more, times (R / 3 cm)^0.4
+const CONTACT_SPRAY = { water: 0.002, radius: 0.00012, bursts: 24 };   // the contact's first ejecta as spray (src/spray.js): this share of the stone's volume, drops of this mean radius (times (R / 3 cm)^0.3), from this many places round the ring
 const BUBBLES = 110;                  // bubbles a 3 cm stone drags down, scaling with R²...
 const BUBBLE_CAP = 800;               // ...at most (a 16 cm stone wants 780)
 // The foam. A pond is fresh water, and a bubble on fresh water bursts within
@@ -449,29 +451,9 @@ const boilScale = (sizeFactor) => (sizeFactor <= BOIL_FULL_SIZE ? sizeFactor : B
  * time): the foam's shapes are drawn from it rather than from Math.random, so
  * they shift no other draw of the splash (a seeded throw splashes the same
  * whatever its foam), yet no two rafts share a shape. Murmur3's finaliser over
- * the values' bits, then mulberry32.
+ * the values' bits, then mulberry32 (seededRandom, src/spray.js).
  */
-function foamRandom(...values) {
-  const finalise = (bits) => {
-    let mixed = Math.imul(bits ^ (bits >>> 16), 0x85ebca6b);
-    mixed = Math.imul(mixed ^ (mixed >>> 13), 0xc2b2ae35);
-    return (mixed ^ (mixed >>> 16)) >>> 0;
-  };
-  const number = new Float64Array(1);
-  const words = new Uint32Array(number.buffer);
-  let state = 0x9e3779b9;
-  for (const value of values) {
-    number[0] = value;
-    state = finalise(state ^ words[0]);
-    state = finalise(state ^ words[1]);
-  }
-  return () => {
-    state = (state + 0x6d2b79f5) >>> 0;
-    let mixed = Math.imul(state ^ (state >>> 15), state | 1);
-    mixed ^= mixed + Math.imul(mixed ^ (mixed >>> 7), mixed | 61);
-    return ((mixed ^ (mixed >>> 14)) >>> 0) / 4294967296;
-  };
-}
+const foamRandom = seededRandom;
 const smoothstep = (edgeLow, edgeHigh, value) => {
   const clamped = Math.min(Math.max((value - edgeLow) / (edgeHigh - edgeLow), 0), 1);
   return clamped * clamped * (3 - 2 * clamped);
@@ -796,6 +778,13 @@ export class SplashSystem {
     this.particleMesh.visible = false;
     this.particleScene = new THREE.Scene();
     this.particleScene.add(this.particleMesh);
+    // The spray (src/spray.js): the same passes, its flight a closed form of its clock.
+    this.spray = new SpraySystem();
+    this.spray.setMaterials(
+      new THREE.ShaderMaterial({ vertexShader: SPRAY_VERTEX, fragmentShader: PARTICLE_DEPTH_FRAGMENT, uniforms: { ...particleUniforms(), ...this.spray.uniforms }, depthTest: true, depthWrite: true }),
+      new THREE.ShaderMaterial({ vertexShader: SPRAY_VERTEX, fragmentShader: PARTICLE_THICKNESS_FRAGMENT, uniforms: { ...particleUniforms(), ...this.spray.uniforms }, ...summed }),
+    );
+    this.particleScene.add(this.spray.mesh);
 
     // Crown sheets: every crown's mesh shares these and swaps them per pass.
     const sheetUniforms = () => ({
@@ -848,6 +837,11 @@ export class SplashSystem {
       uniforms: { ...particleUniforms(), uLeastRadius: { value: MIRROR_DROP_RADIUS }, uEnvCube: { value: environment.cubeTexture }, uSkyAmbient: { value: lighting.skyAmbient }, uSunIrradiance: { value: lighting.sunIrradiance } },
     });
     mirrorWith(this.particleMesh, this.dropMirror, (box) => this.dropletBounds(box));
+    this.sprayMirror = mirrorPair({
+      vertexShader: SPRAY_VERTEX, fragmentShader: MIRROR_DROP_FRAGMENT,
+      uniforms: { ...particleUniforms(), ...this.spray.uniforms, uLeastRadius: { value: MIRROR_SPRAY_RADIUS }, uEnvCube: { value: environment.cubeTexture }, uSkyAmbient: { value: lighting.skyAmbient }, uSunIrradiance: { value: lighting.sunIrradiance } },
+    });
+    mirrorWith(this.spray.mesh, this.sprayMirror, (box) => this.spray.mirrorBounds(box));
     this.mirrorList = [];
     this.dropletBox = new THREE.Box3();
     this.dropletMin = new THREE.Vector3();
@@ -900,9 +894,9 @@ export class SplashSystem {
     this.targets = null;
   }
 
-  /** Something in the air or in the water is moving: droplets, sheets, columns, an open cavity, bubbles, or a stage still to come. */
+  /** Something in the air or in the water is moving: droplets, spray, sheets, columns, an open cavity, bubbles, or a stage still to come. */
   get inMotion() {
-    return this.count > 0 || this.crowns.length > 0 || this.columns.length > 0 || this.cavities.length > 0 || this.bubbleCount > 0
+    return this.count > 0 || this.spray.alive || this.crowns.length > 0 || this.columns.length > 0 || this.cavities.length > 0 || this.bubbleCount > 0
       || this.jets.length > 0 || this.plumes.length > 0 || this.wakes.length > 0 || this.poolRings.length > 0 || this.foamStamps.length > 0 || this.bases.length > 0;
   }
 
@@ -910,7 +904,7 @@ export class SplashSystem {
   get settled() { return !this.inMotion && !this.foamSpecks.alive; }
 
   /**
-   * Retire everything at once: droplets, sheets, columns, cavities, bubbles,
+   * Retire everything at once: droplets, spray, sheets, columns, cavities, bubbles,
    * foam specks, the stages still to come and the mirror list, the fluid
    * targets cleared (with `renderer`), and the splash clock back to zero.
    */
@@ -933,6 +927,8 @@ export class SplashSystem {
     this.particleGeometry.instanceCount = 0;
     this.bubblePoints.geometry.setDrawRange(0, 0);
     this.foamSpecks.reset();
+    this.spray.reset();
+    this.spray.mesh.layers.disable(MIRROR_LAYER);
     this.time = 0;
     this.sceneTime = -1;
     this.surface?.setCavities([]);
@@ -1007,6 +1003,7 @@ export class SplashSystem {
         (SPRAY_DROP_RADIUS + SPRAY_DROP_SPREAD * Math.random()) * sizeFactor ** 0.4,
       );
     }
+    this.contactSpray(x, z, radius, entrySpeed, velocity, horizontal, horizontalFraction, sizeFactor);
     const stoneCrowns = this.crowns.filter((candidate) => !candidate.landing && !candidate.fan);
     if (stoneCrowns.length >= MAX_CROWNS) {
       const oldest = stoneCrowns[0];
@@ -1127,6 +1124,32 @@ export class SplashSystem {
       driftX: horizontal.x * pathSlope, driftZ: horizontal.y * pathSlope,
     });
     return cavity;
+  }
+
+  /**
+   * The contact line's first ejecta as spray (src/spray.js): CONTACT_SPRAY's
+   * share of the stone's volume, in fine drops, from places round the
+   * contact ring, low and fast, thinner behind an oblique stone and faster
+   * ahead of it, as the contact drops go (impact). Its stream is its own.
+   */
+  contactSpray(x, z, radius, entrySpeed, velocity, horizontal, horizontalFraction, sizeFactor) {
+    const random = seededRandom(x, z, this.time, radius);
+    const range = (low, high) => low + random() * (high - low);
+    const water = (CONTACT_SPRAY.water * (4 / 3) * Math.PI * radius ** 3) / CONTACT_SPRAY.bursts;
+    const meanRadius = CONTACT_SPRAY.radius * sizeFactor ** 0.3;
+    for (let burst = 0; burst < CONTACT_SPRAY.bursts; burst++) {
+      const angle = ((burst + random()) / CONTACT_SPRAY.bursts) * Math.PI * 2;
+      const dirX = Math.cos(angle), dirZ = Math.sin(angle);
+      const forward = (dirX * horizontal.x + dirZ * horizontal.y) * horizontalFraction;
+      const tilt = THREE.MathUtils.degToRad(range(55, 80));
+      const speed = entrySpeed * range(0.5, 1.3) * (1 + 0.45 * forward);
+      this.spray.burst({
+        x: x + dirX * radius, y: 0.003, z: z + dirZ * radius,
+        vx: dirX * Math.sin(tilt) * speed + velocity.x * 0.22, vy: Math.cos(tilt) * speed, vz: dirZ * Math.sin(tilt) * speed + velocity.z * 0.22,
+        drops: sprayDrops(water * (1 - 0.45 * Math.max(-forward, 0)), meanRadius), radius: meanRadius,
+        kick: 0.15 * speed, spread: 0.2 * radius, time: this.time, random, sizeFactor,
+      });
+    }
   }
 
   /**
@@ -1697,6 +1720,7 @@ export class SplashSystem {
     this.bubbleSizeAttribute.needsUpdate = true;
     this.bubblePoints.geometry.setDrawRange(0, this.bubbleCount);
     this.foamSpecks.commit(this.time);
+    this.spray.commit(this.time);
   }
 
   // ---- rendering --------------------------------------------------------
@@ -1772,6 +1796,12 @@ export class SplashSystem {
     } else {
       this.particleMesh.layers.disable(MIRROR_LAYER);
     }
+    if (this.spray.alive && this.spray.mirrored(this.time)) {
+      this.spray.mesh.layers.enable(MIRROR_LAYER);
+      list.push(this.spray.mesh);
+    } else {
+      this.spray.mesh.layers.disable(MIRROR_LAYER);
+    }
     for (const crown of this.crowns) list.push(mirrorWith(crown.mesh, this.sheetMirror));
     for (const column of this.columns) list.push(mirrorWith(column.mesh, this.columnMirror));
   }
@@ -1809,15 +1839,17 @@ export class SplashSystem {
   setMirrorView(mirrorCamera, height) {
     const projScale = mirrorCamera.projectionMatrix.elements[5] * height * 0.5;
     // The distance materials share these uniform objects.
-    const drop = this.dropMirror.colour.uniforms;
-    drop.uProjScale.value = projScale;
-    drop.uStreakSeconds.value = this.streakSeconds;
-    drop.uSunDirView.value.copy(this.lighting.sunDirection).transformDirection(mirrorCamera.matrixWorldInverse);
+    for (const drop of [this.dropMirror.colour.uniforms, this.sprayMirror.colour.uniforms]) {
+      drop.uProjScale.value = projScale;
+      drop.uStreakSeconds.value = this.streakSeconds;
+      drop.uSunDirView.value.copy(this.lighting.sunDirection).transformDirection(mirrorCamera.matrixWorldInverse);
+    }
     this.columnMirror.colour.uniforms.uProjScale.value = projScale;
   }
 
-  setPassMaterials(particleMaterial, sheetMaterial, columnMaterial) {
+  setPassMaterials(particleMaterial, sheetMaterial, columnMaterial, sprayMaterial) {
     this.particleMesh.material = particleMaterial;
+    this.spray.mesh.material = sprayMaterial;
     for (const crown of this.crowns) crown.mesh.material = sheetMaterial;
     for (const column of this.columns) column.mesh.material = columnMaterial;
   }
@@ -1830,9 +1862,9 @@ export class SplashSystem {
     this.toneMapPass.render(renderer, output);
   }
 
-  /** Draw droplets, crown sheets and jet columns over the finished scene and present the frame to the canvas (or target). After prepareFrame. */
+  /** Draw droplets, spray, crown sheets and jet columns over the finished scene and present the frame to the canvas (or target). After prepareFrame. */
   render(renderer, camera, sceneTarget, output = null) {
-    if (this.count === 0 && this.crowns.length === 0 && this.columns.length === 0) {
+    if (this.count === 0 && !this.spray.alive && this.crowns.length === 0 && this.columns.length === 0) {
       // Nothing in the air: no fluid pass, no clear, no read of their targets.
       this.toneMap(renderer, sceneTarget, output);
       return;
@@ -1840,24 +1872,25 @@ export class SplashSystem {
     const { info, optics } = this.targets;
     const projScale = camera.projectionMatrix.elements[5] * this.fluidSize.y * 0.5;
     this.sunDirView.copy(this.lighting.sunDirection).transformDirection(camera.matrixWorldInverse);
-    for (const material of [this.depthMaterial, this.thicknessMaterial]) {
+    const spray = this.spray;
+    for (const material of [this.depthMaterial, this.thicknessMaterial, spray.depthMaterial, spray.thicknessMaterial]) {
       material.uniforms.uProjScale.value = projScale;
       material.uniforms.uStreakSeconds.value = this.streakSeconds;
       material.uniforms.uSunDirView.value.copy(this.sunDirView);
       material.uniforms.uHazeRadius.value = HAZE_RADIUS * this.fluidScale;
     }
     for (const material of [this.columnDepthMaterial, this.columnThicknessMaterial]) material.uniforms.uProjScale.value = projScale;
-    for (const material of [this.depthMaterial, this.thicknessMaterial, this.sheetDepthMaterial, this.sheetThicknessMaterial, this.columnDepthMaterial, this.columnThicknessMaterial]) {
+    for (const material of [this.depthMaterial, this.thicknessMaterial, spray.depthMaterial, spray.thicknessMaterial, this.sheetDepthMaterial, this.sheetThicknessMaterial, this.columnDepthMaterial, this.columnThicknessMaterial]) {
       material.uniforms.uSceneDepth.value = sceneTarget.depthTexture;
       material.uniforms.uResolution.value.copy(this.fluidSize);
     }
     renderer.setClearColor(0x000000, 0);
-    this.setPassMaterials(this.depthMaterial, this.sheetDepthMaterial, this.columnDepthMaterial);
+    this.setPassMaterials(this.depthMaterial, this.sheetDepthMaterial, this.columnDepthMaterial, spray.depthMaterial);
     renderer.setRenderTarget(info);
     renderer.clear(true, true, false);
     renderer.render(this.particleScene, camera);
 
-    this.setPassMaterials(this.thicknessMaterial, this.sheetThicknessMaterial, this.columnThicknessMaterial);
+    this.setPassMaterials(this.thicknessMaterial, this.sheetThicknessMaterial, this.columnThicknessMaterial, spray.thicknessMaterial);
     renderer.setRenderTarget(optics);
     renderer.clear(true, false, false);
     renderer.render(this.particleScene, camera);

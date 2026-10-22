@@ -44,6 +44,7 @@ const IDLE_VARIANTS = [
 ];
 const SPLASH_VARIANTS = [
   { name: 'no droplet passes', skip: { fluid: true } },
+  { name: 'no spray', skip: { spray: true } },
   { name: 'no mirror pass', skip: { mirror: true } },
   { name: 'no cavity drawn', skip: { cavity: true } },
   { name: 'no splash solver', skip: { solver: true } },

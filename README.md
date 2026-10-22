@@ -150,7 +150,9 @@ about 9.7 ms after the last (a sixtieth of a second, less some slack),
 whatever the screen's refresh rate: a 60 or a 90 Hz screen draws every
 refresh, a 120 Hz one every other, 60 frames a second (72 on a 144 Hz
 one), and a pond where nothing happens at 30 frames a second; High keeps
-24 stones' rings, Medium 12 and Low 8, and 40 things at rest (a stone on
+24 stones' rings, Medium 12 and Low 8, a ring of 65 536 spray sprites,
+Medium 16 384 drawing two fifths of High's and Low 8192 a fifth (each
+sprite standing for that many more drops), and 40 things at rest (a stone on
 the bottom is one draw call) and 16 afloat (a floater costs more: its
 physics, its ride and its mirror image), Medium 30 and 14, Low 20 and 12;
 up to 20 things may be on the move at once, on every preset. Past a count
@@ -540,10 +542,23 @@ refracted through it (which makes a splash sparkle against the light),
 each a point whatever the drop's size; a streak or a small bead shows the
 drop's mean light. Drops under a pixel are a mist whose brightness follows
 the water they really cover, so a lone fine drop all but vanishes. The
-splash throws tens to a few hundred drops a stone (a 16 cm stone about 1500
-over its life, at most about 700 in the air at once, most of them several
-millimetres across), not thousands of specks. The water mirrors the splash:
-while it lives, its sheets, columns and drops are drawn as cheap water into
+splash throws tens to a few thousand drops of a millimetre and more a stone
+(a 16 cm stone about 1500 over its life, at most about 700 in the air at
+once), stepped on the CPU, and besides them its spray (`src/spray.js`): the
+drops under a millimetre that a torn sheet's film, a pinching neck, the
+contact's first ejecta and a sealing dome's spike fragment into, from tens
+of thousands for the default stone to millions for a rock, a third of a
+torn patch's water for the reference toss and three quarters for a rock. Each
+spray sprite is written once and flies a closed form of its age in the
+vertex shader (two phases of linear drag, fitted to Schiller and Naumann's
+drag on a sphere within 4% at the median), through the same passes as the
+drops, so it costs a uniform and a draw a pass and nothing stepped; a
+sprite stands for one to several hundred like drops, drawn as a soft puff,
+so Medium and Low draw fewer, heavier sprites and the same mist, and a
+throttle keeps any throw within the ring's sprites. Seen from the shore it is
+the white veil round a big stone's crown and jet, and a sparkle against the
+sun. The water mirrors the splash:
+while it lives, its sheets, columns, drops and spray are drawn as cheap water into
 the mirror image the pond reflects, over just the rectangle they cover, with
 how far each is from the mirror's camera, so that the water looks a near
 thing's reflection up where it is: the jet's reflection hangs under the jet
@@ -985,7 +1000,7 @@ farther out, so it rises into the view rather than filling its corner.
   from the same seeded throw at 1/60 s per frame, it switches parts of the
   frame off one at a time (the floor pass, the water surface, the wind
   waves, the solver's sleep, three quarters of the pixels; the droplet
-  passes, the mirror pass, the cavity, the solver), each between two
+  passes, the spray, the mirror pass, the cavity, the solver), each between two
   measurements with everything on, and prints for each the median interval
   between frames (unclamped; the mean in brackets, since the median moves in
   whole display frames), its change against the baselines around it, and
@@ -1072,6 +1087,16 @@ farther out, so it rises into the view rather than filling its corner.
   makes of it at 0.5, 1 and 2 m (the solver's own dispersion and damping),
   and the CPU cost per frame. Without radii it runs the slider's 1.5, 4, 8
   and 16 cm and the 3 cm-radius reference.
+- `node tools/spray-probe.mjs` checks the spray's flight (its closed form
+  against an integration of Schiller and Naumann's drag for drops of 0.05
+  to 1 mm at 1 to 12 m/s, which fits its COAST; the terminal speeds against
+  Gunn and Kinzer's; the life the CPU reckons against the landing) and runs
+  every stone size's splash at each power, and a skip, on High, Medium and
+  Low: the sprites, the drops they stand for, the spray's water, sizes and
+  launch speeds, the most in the air (within each preset's ring) and the
+  CPU cost a frame; and that a seeded throw writes the same spray twice and
+  spends no draw of Math.random on it, and that the ring uploads what was
+  written, across its end too. In `npm test`.
 - `node tools/cavity-probe.mjs [diameter-in-cm ...] [--aim=x:z] [--seed=n] [--variety=n]` throws and
   drops each stone (1.5, 4, 6, 8 and 16 cm) and runs its cavity on the CPU:
   the timeline (the pinch-off's time and depth, the jet's start, the bowl's
@@ -1162,7 +1187,7 @@ farther out, so it rises into the view rather than filling its corner.
   solver sleeps and the frame rate is capped, the rings drawn, how many
   are fading out and the preset's limit, their passes and the spectrum
   fetches those made, the wind, the gale's sheet, the weather, the
-  rain's tile, and how many fixed meshes and waterlines `prepareThing`
+  rain's tile, the spray's ring, share and sprites drawn, and how many fixed meshes and waterlines `prepareThing`
   has made).
 
 Install the development dependencies with `npm install` (Three.js is only

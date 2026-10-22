@@ -7,7 +7,7 @@ Keep this file short. Every future session reads all of it, so most notes belong
 ```bash
 npm install                # three (served to the headless harness) and playwright
 npm start                  # static server; open http://localhost:8123/
-npm test                   # CPU checks: the sky's decoder against HDRLoader (hdr-test), the solver's FFT, splat spectrum, Nyquist bins, half floats and pool walls (fft-test), the wind ripples and the Wind control (wave-probe), the foam pattern (foam-probe), the cavity (cavity-probe), the rings (ring-probe), the raindrop's ring (rain-probe), the gale's waves (gale-probe), skipping (skip-probe), the things thrown (thing-probe), the ice (ice-probe)
+npm test                   # CPU checks: the sky's decoder against HDRLoader (hdr-test), the solver's FFT, splat spectrum, Nyquist bins, half floats and pool walls (fft-test), the wind ripples and the Wind control (wave-probe), the foam pattern (foam-probe), the cavity (cavity-probe), the rings (ring-probe), the raindrop's ring (rain-probe), the gale's waves (gale-probe), skipping (skip-probe), the things thrown (thing-probe), the ice (ice-probe), the spray (spray-probe)
 npm run shoot -- --label=name --throws=0:-1.4:0.03 --times=0.1,0.5   # frames into shots/name/; --seed=1 --fov --look --crop --report --eval --floats=half --sky=name --time=hour --weather=light-rain|heavy-rain|storm --water=pool|murky --ice=thin|thick --wind=x:z --wind-strength=breeze --power=soft --manner=lob --thing=basketball|bowling:16 --view=high --orbit=az:el:dist --touch=x0:z0:x1:z1:s --skip --trace; --throws=none for idle water
 node tools/jet-probe.mjs 0.03 6.3      # one Worthington jet on the CPU: timeline, drops, cost
 node tools/fan-probe.mjs 0.03 6.9 0.68 # the forward fan of an oblique entry on the CPU
@@ -19,6 +19,7 @@ node tools/thing-probe.mjs             # each thing thrown (src/things.js): its 
 node tools/rapier-probe.mjs            # src/collide.js against Rapier (a dev dependency, never loaded by the page) on the same contacts: results, cost, weight
 node tools/ice-probe.mjs --list        # what breaks what on thin and thick ice (src/ice.js), each hole against its cavity's lip, sliding, knocks, a frozen pool, shards, the flood, new ice, cost
 node tools/variety-probe.mjs           # how splashes vary throw to throw on the CPU (seed n = the harness's seeded throw n): jet forms, seals, tops, tip drops, lean; --list per throw
+node tools/spray-probe.mjs             # the spray (src/spray.js): its closed-form flight against integrated drag, every splash's sprites, drops, sizes, peak in the air per preset, CPU cost; seeded, no Math.random draws
 node tools/skip-probe.mjs              # Skip throws on the CPU: skips per throw, hops, angles in and out, where it goes in, cost; ?trace=1 on the page draws the paths
 node tools/zoom-probe.mjs              # drives the page's zoom, orbit and touch handlers: the anchor stays put, a drag turns and never throws, the views glide, a held press dips a finger
 node tools/sky-probe.mjs assets/sky/meadow_2_2k.hdr   # measures a sky panorama into assets/sky/meadow_2.json
@@ -40,7 +41,7 @@ Local development loads Three.js from jsDelivr through the import map. `npm run 
 - The Three.js version is pinned in three places: the import map in `index.html`, the CDN route in `tools/shoot.mjs`, and `package.json`. Change all three together.
 - Each module's opening comment is its documentation. Read it before changing the module, and update it when the behaviour changes.
 - Units are metres and seconds. The pond is a 6 m square patch; `window.__pond` drives the app (see `README.md`).
-- The crown sheet, the jet column, the forward fan and the cavity are closed-form surfaces evaluated once per rendered frame (`src/crown.js`, `src/jet.js`, `src/cavity.js`); their tear and breakup also run once per frame. Keep it that way: substep work is what a phone pays for.
+- The crown sheet, the jet column, the forward fan and the cavity are closed-form surfaces evaluated once per rendered frame (`src/crown.js`, `src/jet.js`, `src/cavity.js`); their tear and breakup also run once per frame. Keep it that way: substep work is what a phone pays for. The spray (`src/spray.js`) is written once per sprite and flown in the vertex shader; its emitters draw from their own seeded streams (`seededRandom`), never `Math.random`, so seeded throws stay as they were.
 - Tune the splash by looking at frames: close-ups through `--fov=12 --look=x:y:z` with crops, and the home view. The reference throw `0:-1.4:0.03` (a medium toss) enters at about 41° from vertical, so it is oblique. A throw's arc is its manner's and strength's flight time (`ARC` in `src/main.js`); keep the medium toss as it is, since the splash is tuned to it.
 - Use descriptive variable names, never single letters.
 - Core throw programs are compiled under the loading veil (`warmUp` in `src/main.js`). Optional rain and gale programs warm only if selected at startup, otherwise compile on first use. Never run a temporary warm-up scene after interaction starts. No preset may change a target's format. Disposing a material's last user deletes its program.

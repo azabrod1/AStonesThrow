@@ -296,14 +296,20 @@ import { IceSheet, ICE_THICKNESS } from './ice.js';
 //   resting, afloat, shards  the things kept at rest, afloat and the ice's
 //                 shards (the header); past them the oldest of that kind
 //                 shrinks away.
+//   spray         the splash's spray (src/spray.js): `ring` the slots of its
+//                 ring in use (sprites in flight at once, the oldest
+//                 overwritten past them) and `share` the share of its sprites
+//                 drawn, each standing for that many more drops, so a phone
+//                 draws fewer, heavier sprites and the same mist. Neither
+//                 rebuilds anything: the ring is allocated once.
 // Every target keeps its format on every preset, so a program drawn under the
 // loading veil (warmUp) meets no new pipeline state after a change of preset;
 // and every mesh takes 16-bit indices (at most 254 segments: Three.js keeps
 // the index 65535 for primitive restart).
 export const QUALITY = {
-  high: { grid: 512, meshSegments: 254, underScale: 1.0, fluidScale: 1.0, idleFrameRate: 30, maxDpr: 2.0, rings: 24, ringFade: 8, rainTexels: 512, resting: 40, afloat: 16, shards: 16 },
-  medium: { grid: 256, meshSegments: 160, underScale: 0.5, fluidScale: 0.5, idleFrameRate: 30, maxDpr: 2.0, rings: 12, ringFade: 4, rainTexels: 256, resting: 30, afloat: 14, shards: 10 },
-  low: { grid: 256, meshSegments: 128, underScale: 0.5, fluidScale: 0.5, idleFrameRate: 30, maxDpr: 1.5, rings: 8, ringFade: 3, rainTexels: 256, resting: 20, afloat: 12, shards: 6 },
+  high: { grid: 512, meshSegments: 254, underScale: 1.0, fluidScale: 1.0, idleFrameRate: 30, maxDpr: 2.0, rings: 24, ringFade: 8, rainTexels: 512, resting: 40, afloat: 16, shards: 16, spray: { ring: 65536, share: 1 } },
+  medium: { grid: 256, meshSegments: 160, underScale: 0.5, fluidScale: 0.5, idleFrameRate: 30, maxDpr: 2.0, rings: 12, ringFade: 4, rainTexels: 256, resting: 30, afloat: 14, shards: 10, spray: { ring: 16384, share: 0.4 } },
+  low: { grid: 256, meshSegments: 128, underScale: 0.5, fluidScale: 0.5, idleFrameRate: 30, maxDpr: 1.5, rings: 8, ringFade: 3, rainTexels: 256, resting: 20, afloat: 12, shards: 6, spray: { ring: 8192, share: 0.2 } },
 };
 export const PIXEL_BUDGET = 2.6e6;   // device pixels in the canvas, on every preset
 const QUALITY_ORDER = ['high', 'medium', 'low'];
@@ -553,7 +559,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   let qualityName = automaticQuality ? 'high' : QUALITY[quality] ? quality : 'medium';
   let settings = QUALITY[qualityName];
   // Parts of the frame the profiler switches off (src/profiler.js); all on otherwise.
-  const skip = { floor: false, surface: false, solver: false, ambient: false, fluid: false, mirror: false, cavity: false, halfDensity: false, sleep: false };
+  const skip = { floor: false, surface: false, solver: false, ambient: false, fluid: false, spray: false, mirror: false, cavity: false, halfDensity: false, sleep: false };
 
   const water = new SpectralWater(renderer, { size: settings.grid, domainSize: 6, centre: [0, -1.0], depth: POND_DEPTH });
   const windParameter = pageParameters.get('wind')?.split(',').map(Number);
@@ -591,6 +597,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   const surface = createWaterSurface(water, lighting, ambientWaves, { meshSegments: settings.meshSegments, rings, skyCube: environment.cubeTexture, rain, haze: environment.hazeUniforms, gale: galeWaves, ice });
   const floaterRide = createFloaterRide(surface.rideUniforms);   // the water under each floater, for the physics
   const splash = new SplashSystem({ environment, lighting, water, ambientWaves, surface });
+  splash.spray.setBudget(settings.spray);
   // The wind's strength: the page's ?windStrength, else the last choice here, else calm.
   // The sounds of what is thrown (src/sound.js): on unless turned off on this device, or by ?sound=off.
   const sound = createSound();
@@ -606,6 +613,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     ambientWaves.setStrength(WIND_STRENGTHS[name]);
     water.setWindStrength(WIND_STRENGTHS[name]);
     rain.setWind(windDirection, RAIN_WIND * WIND_STRENGTHS[name]);
+    const windLength = Math.hypot(windDirection[0], windDirection[1]);
+    splash.spray.setWind(windDirection[0] / windLength, windDirection[1] / windLength, WIND_STRENGTHS[name]);
     galeWaves.setFoamVelocity(water.foamUniforms.uFoamVelocity.value);
     applyGale();
   }
@@ -1852,6 +1861,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     rain.update(simulationTime, camera, resolution, viewFocus());
     rings.update(simulationTime);
     // The splash's sheets and columns to this frame, for the mirror and the droplet passes.
+    if (skip.spray) splash.spray.mesh.visible = false;
     if (!skip.fluid) splash.prepareFrame();
     const fromBelow = camera.position.y < (galeWaves.on ? galeSurfaceAt(camera.position.x, camera.position.z) : 0);
     if (!fromBelow) updateReflection();   // from below no mirror is needed; a change of view keeps it marked stale until the eye surfaces
@@ -1974,6 +1984,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       gale: { blowing: galeWaves.on, sheetTriangles: surface.sheetTriangles },
       rain: { weather: weatherName, falling: rain.on, texels: rain.texels },
       ice: { name: iceName, ...ice.budget, shards: rocks.filter((rock) => rock.piece).length },
+      spray: { ring: splash.spray.budgetRing, share: splash.spray.share, drawn: splash.spray.geometry.instanceCount, flying: splash.spray.alive },
       clarity: waterName,
       sky: environment.name,
       frameCapped,
@@ -1988,6 +1999,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     settings = QUALITY[name];
     rings.setLiveLimit(settings.rings, settings.ringFade);
     rain.setTexels(settings.rainTexels);
+    splash.spray.setBudget(settings.spray);
     water.resize(settings.grid);
     surface.setMeshSegments(settings.meshSegments);
     resize();

@@ -9,13 +9,15 @@
 //    preset drawn); the idle pond runs no pass of the rings
 //    (src/rings.js); the first throw compiles no GPU program (src/main.js
 //    compiles them all under the loading veil; a failure names the programs
-//    it compiled), and its rings outlive its
+//    it compiled), its spray (src/spray.js) flies and then is drawn no more,
+//    and its rings outlive its
 //    splash, a spectrum pass and one profile pass each; the splash
 //    measurement never steps up. After every change of preset, automatic or
 //    pressed, from every preset to every other, it checks what is actually
 //    built (window.__pond.budget) against the preset: the solver's grid and
 //    its textures, the water mesh's segments and triangles, the canvas, the
-//    main, under-water, mirror and fluid targets. A change of preset in the
+//    main, under-water, mirror and fluid targets and the spray's ring and
+//    share. A change of preset in the
 //    middle of a splash keeps the waves (the solver carries them to the new
 //    grid). The Pool water (src/pool.js): switching to it and back compiles
 //    no program (the warm-up drew both sceneries), its water mesh draws only
@@ -140,7 +142,7 @@ function expected(name, width, height, devicePixelRatio = 1) {
   const ratio = Math.min(devicePixelRatio, preset.maxDpr, Math.sqrt(PIXEL_BUDGET / (width * height)));
   const canvas = { width: Math.floor(width * ratio), height: Math.floor(height * ratio) };
   const scaled = (fraction, least) => ({ width: Math.max(least, Math.round(canvas.width * fraction)), height: Math.max(least, Math.round(canvas.height * fraction)) });
-  return { grid: preset.grid, meshSegments: preset.meshSegments, canvas, under: scaled(preset.underScale, 1), fluid: scaled(preset.fluidScale, 2) };
+  return { grid: preset.grid, meshSegments: preset.meshSegments, canvas, under: scaled(preset.underScale, 1), fluid: scaled(preset.fluidScale, 2), spray: preset.spray };
 }
 const size = ({ width, height }) => `${width}×${height}`;
 /** The quads across the water mesh: the patch's segments, or in the pool those over its square and one round it (src/waterSurface.js). */
@@ -156,6 +158,7 @@ async function checkBuilt({ page, width, height }, label) {
   check(size(budget.canvas) === size(want.canvas) && size(targets.main) === size(want.canvas), `${label}: canvas and main target ${size(want.canvas)} (${size(budget.canvas)}, ${size(targets.main)})`);
   check(size(targets.under) === size(want.under) && size(targets.reflection) === size(want.under), `${label}: under-water and mirror targets ${size(want.under)} (${size(targets.under)}, ${size(targets.reflection)})`);
   check(size(targets.fluid) === size(want.fluid), `${label}: fluid targets ${size(want.fluid)} (${size(targets.fluid)})`);
+  check(budget.spray.ring === want.spray.ring && budget.spray.share === want.spray.share, `${label}: the spray's ring ${want.spray.ring} and share ${want.spray.share} (${budget.spray.ring}, ${budget.spray.share})`);
   return budget;
 }
 const pageState = (page) => page.evaluate(() => ({
@@ -214,6 +217,8 @@ const namesBeforeThrow = await programNames(page);
 await page.evaluate(() => window.__pond.throwAt(0, -1.4, { radius: 0.03 }));
 await page.waitForFunction(() => window.__pond.splash.count > 0, undefined, { timeout: 300000 });
 const splashStart = Date.now();
+// The spray (src/spray.js) flies with the splash, and is drawn no more once it has landed.
+const sprayFlew = await page.waitForFunction(() => window.__pond.budget.spray.flying, undefined, { timeout: 300000, polling: 50 }).then(() => true, () => false);
 await page.waitForFunction(() => window.__pond.splash.count === 0, undefined, { timeout: 900000 }).catch(() => {});
 const afterSplash = await pageState(page);
 console.log(`  splash: ${afterSplash.readout} after ${((Date.now() - splashStart) / 1000).toFixed(0)} s of splash`);
@@ -221,6 +226,9 @@ const programsAfterSplash = await page.evaluate(() => window.__pond.budget.progr
 const namesAfterSplash = await programNames(page);
 const compiled = namesAfterSplash.filter((name) => !namesBeforeThrow.includes(name));
 check(programsAfterSplash === programsBeforeThrow, `the first throw compiles no program (${programsBeforeThrow} before, ${programsAfterSplash} after its splash${compiled.length ? `; new: ${compiled.join(', ')}` : ''})`);
+const sprayLanded = await page.waitForFunction(() => !window.__pond.budget.spray.flying, undefined, { timeout: 300000 }).then(() => true, () => false);
+const sprayAfter = await page.evaluate(() => window.__pond.budget.spray);
+check(sprayFlew && sprayLanded, `the first throw's spray flies (${sprayFlew}) and is drawn no more once it has landed (${sprayLanded}; ${sprayAfter.drawn} slots written)`);
 const ringsAfterSplash = await page.evaluate(() => window.__pond.budget.rings);
 check(ringsAfterSplash.live >= 1 && ringsAfterSplash.passes === 1 + ringsAfterSplash.live, `its rings outlive the splash: ${ringsAfterSplash.live} live, ${ringsAfterSplash.passes} passes a frame (a spectrum pass and one profile pass each)`);
 check(order(afterSplash.quality) >= order(afterIdle.quality), `the splash never steps the quality up (${afterIdle.quality} -> ${afterSplash.quality})`);
