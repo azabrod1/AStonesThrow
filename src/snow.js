@@ -31,7 +31,10 @@
 // haze (the weather's visibility) carries the snow on beyond it. The
 // shader never multiplies the clock, which runs on as long as the page is
 // open: update() wraps the wind's carry and the fall into the box, and the
-// clock to CYCLE, in doubles (Precision, src/shaders/snow.js).
+// clock to CYCLE, in doubles (Precision, src/shaders/snow.js). The carry is
+// summed frame by frame (the wind's speed times the frame's seconds), so a
+// change of wind turns the flakes rather than moving them all at once; the
+// gusts grow or calm over GUST_EASE seconds, for the same reason.
 //
 // The quality presets (src/main.js QUALITY `snowShare`) draw that share of
 // the flakes: the snow thins on a weaker device, its look the same.
@@ -52,6 +55,7 @@ export const STREAK_SECONDS = 1 / 120;  // a quarter of the rain's persistence (
 export const STREAK_MIN_PIXELS = 1.2;
 export const GUST_SHARE = 0.3;          // the gusts' speed against the wind's
 const GUST_PERIOD = 2.4;                // seconds: FLAKE_MOTION's
+const GUST_EASE = 1.5;                  // seconds the gusts take to follow a change of wind (their reach is uGust over their rate)
 const TAU = 2 * Math.PI;
 const wrap = (value, span) => value - span * Math.floor(value / span);
 /** A rate of about 2π/period, a whole number of turns in CYCLE (FLAKE_MOTION's cycleRate). */
@@ -140,6 +144,9 @@ export class Snow {
     this.intensity = null;
     this.share = 1;   // of the flakes drawn (the quality preset's, setShare)
     this.wind = new THREE.Vector2();
+    this.gust = 0;          // m/s: the gusts' speed now, easing toward GUST_SHARE of the wind's
+    this.clock = null;      // s: the time of the last update, from which the carry is summed (null: none yet)
+    this.carry = { drift: [0, 0], fall: [0, 0] };   // m: clockOffsets' drift and fall, summed frame by frame
     const quad = new THREE.InstancedBufferGeometry();
     quad.setAttribute('position', new THREE.Float32BufferAttribute([-1, 0, 0, 1, 0, 0, -1, 1, 0, 1, 1, 0], 3));
     quad.setIndex([0, 1, 2, 2, 1, 3]);
@@ -201,13 +208,21 @@ export class Snow {
     this.wind.set(direction[0], direction[1]).normalize().multiplyScalar(speed);
     const uniforms = this.flakes.material.uniforms;
     uniforms.uDrift.value.set(this.wind.x, 0, this.wind.y);
-    uniforms.uGust.value = GUST_SHARE * speed;
+    if (!this.on) this.easeGust(Infinity);   // no flakes to see it change: at once
+  }
+
+  /** The gusts' speed `seconds` closer to GUST_SHARE of the wind's (GUST_EASE). */
+  easeGust(seconds) {
+    const target = GUST_SHARE * this.wind.length();
+    this.gust += (target - this.gust) * (1 - Math.exp(-Math.max(seconds, 0) / GUST_EASE));
+    this.flakes.material.uniforms.uGust.value = this.gust;
   }
 
   /** Snow by intensity (a key of SNOW), or none (null). At once: nothing is fetched. */
   setIntensity(name) {
     this.intensity = Object.hasOwn(SNOW, name ?? '') ? name : null;
     if (!this.intensity) { this.show(false); return; }
+    if (!this.on) { this.clock = null; this.easeGust(Infinity); }   // a new fall: its carry from the clock, its gusts the wind's
     const snow = SNOW[this.intensity];
     const uniforms = this.flakes.material.uniforms;
     uniforms.uBox.value.set(...snow.box);
@@ -226,10 +241,23 @@ export class Snow {
   update(time, camera, resolution) {
     if (!this.on || !this.intensity) return;   // the warm-up draws it with none chosen: nothing to move
     const uniforms = this.flakes.material.uniforms;
-    const offsets = clockOffsets(time, SNOW[this.intensity], [this.wind.x, this.wind.y]);
-    uniforms.uCycleTime.value = offsets.cycleTime;
-    uniforms.uDriftOffset.value.set(offsets.drift[0], 0, offsets.drift[1]);
-    uniforms.uFallOffsets.value.set(offsets.fall[0], offsets.fall[1]);
+    const snow = SNOW[this.intensity];
+    if (this.clock === null) {
+      this.carry = clockOffsets(time, snow, [this.wind.x, this.wind.y]);
+    } else {
+      // Summed (the header): wrapped into the box as it is now, which a new intensity changes.
+      const seconds = time - this.clock;
+      const { drift: carried, fall } = this.carry;
+      carried[0] = wrap(carried[0] + this.wind.x * seconds, snow.box[0]);
+      carried[1] = wrap(carried[1] + this.wind.y * seconds, snow.box[2]);
+      fall[0] = wrap(fall[0] + 0.8 * snow.fall * seconds, snow.box[1]);
+      fall[1] = wrap(fall[1] + SPEED_SHARE * snow.fall * seconds, snow.box[1]);
+      if (seconds !== 0) this.easeGust(seconds);
+    }
+    this.clock = time;
+    uniforms.uCycleTime.value = wrap(time, CYCLE);
+    uniforms.uDriftOffset.value.set(this.carry.drift[0], 0, this.carry.drift[1]);
+    uniforms.uFallOffsets.value.set(this.carry.fall[0], this.carry.fall[1]);
     uniforms.uFocalPx.value = camera.projectionMatrix.elements[5] * resolution.y * 0.5;
   }
 }

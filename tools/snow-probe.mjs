@@ -14,6 +14,8 @@
 // - precision: a day into a blizzard, the place the shader puts together in
 //   floats from the wrapped offsets (clockOffsets) is the exact one, where
 //   the clock multiplied in floats would be metres off;
+// - a change of wind while it snows moves the flakes by a frame's carry, not
+//   all at once, and the gusts follow it over a second or two;
 // - the box reaches the water however high the eye;
 // - the box: each intensity's flakes per cubic metre, and how many are drawn
 //   larger than a pixel in the home view (1080 rows, 50° up and down);
@@ -139,6 +141,29 @@ for (let frame = 0; frame < frames; frame++) snow.update(frame / 60, camera, res
 const microseconds = (performance.now() - started) * 1000 / frames;
 console.log(`\nSnow.update: ${microseconds.toFixed(2)} µs a frame; one draw of ${snow.count} instanced quads (${snow.count * 2} triangles)`);
 check(microseconds < 20, `the snow costs the CPU under 20 µs a frame (${microseconds.toFixed(2)})`);
+
+// A change of wind while it snows: the carry is summed frame by frame, so the flakes turn rather than all jump
+// (the clock times the new wind would move them by kilometres), and the gusts grow over GUST_EASE.
+{
+  const gusty = new Snow(lighting);
+  gusty.setWind([1, 0], WINDS.calm);
+  gusty.setIntensity('heavy');
+  let time = 0;
+  for (; time < 600; time += 1 / 60) gusty.update(time, camera, resolution);
+  const expected = clockOffsets(gusty.clock, SNOW.heavy, [WINDS.calm, 0]);
+  const gap = (value, target, span) => { const off = Math.abs(((value - target) % span + span) % span); return Math.min(off, span - off); };
+  check(gap(gusty.carry.drift[0], expected.drift[0], SNOW.heavy.box[0]) < 1e-6 && gap(gusty.carry.fall[1], expected.fall[1], SNOW.heavy.box[1]) < 1e-6,
+    'in a steady wind the summed carry is clockOffsets\' (flakeAt\'s twin holds)');
+  const before = gusty.carry.drift[0], gustBefore = gusty.flakes.material.uniforms.uGust.value;
+  gusty.setWind([1, 0], WINDS.gale);
+  gusty.update(time, camera, resolution);
+  const moved = gap(gusty.carry.drift[0], before, SNOW.heavy.box[0]);
+  const gustAfter = gusty.flakes.material.uniforms.uGust.value;
+  check(moved < WINDS.gale / 50, `calm to gale ten minutes in: the flakes move ${(moved * 1000).toFixed(0)} mm in the next frame, a frame of the gale's carry`);
+  check(gustAfter - gustBefore < 0.05 * GUST_SHARE * (WINDS.gale - WINDS.calm), `...and the gusts' speed moves ${(gustAfter - gustBefore).toFixed(3)} m/s, not at once to the gale's`);
+  for (let frame = 1; frame <= 600; frame++) gusty.update(time + frame / 60, camera, resolution);
+  check(Math.abs(gusty.flakes.material.uniforms.uGust.value / (GUST_SHARE * WINDS.gale) - 1) < 0.01, 'ten seconds on, the gusts are the gale\'s');
+}
 snow.setShare(0.4);
 check(snow.count === Math.round(SNOW.heavy.flakes * 0.4), `the Low preset's share draws ${snow.count} of ${SNOW.heavy.flakes}`);
 snow.setIntensity(null);

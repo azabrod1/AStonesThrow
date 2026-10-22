@@ -55,7 +55,8 @@ void flakeMotion(vec4 flake, vec4 sway, out vec3 place, out vec3 velocity) {
 // the eye (lowered to reach the water when the eye is high), wrapped round
 // it as the eye moves, and drawn as what it sweeps in
 // uStreakSeconds (the eye's persistence): a capsule from where it is to
-// where it was, as wide as the flake or uMinPixels, whichever is wider, its
+// where it was, as the eye sees it (the sweep across the line of sight, so
+// a flake swept toward the eye is round, not edge-on), as wide as the flake or uMinPixels, whichever is wider, its
 // opacity the share of that capsule the flake covers, so a flake keeps its
 // light whether it is seen round (calm) or as a streak (a blizzard's). They
 // fade near the eye, toward the box's faces (so the wrap is not seen), into
@@ -96,12 +97,13 @@ void main() {
   vec3 viewHead = (viewMatrix * vec4(head, 1.0)).xyz;
   vec3 viewTail = (viewMatrix * vec4(tail, 1.0)).xyz;
   vec3 middle = 0.5 * (viewHead + viewTail);
+  // The sweep as the eye sees it, across the line of sight (flakeDrawn's): a flake swept toward the eye is seen round.
+  vec3 toward = middle / max(length(middle), 1e-6);
   vec3 swept = viewTail - viewHead;
+  swept -= dot(swept, toward) * toward;
   float sweptLength = length(swept);
-  vec3 along = sweptLength > 1e-7 ? swept / sweptLength : vec3(0.0, 1.0, 0.0);
-  vec3 across = cross(along, middle);
-  float acrossLength = length(across);
-  across = acrossLength > 1e-9 ? across / acrossLength : vec3(1.0, 0.0, 0.0);
+  vec3 along = sweptLength > 1e-7 ? swept / sweptLength : normalize(cross(toward, vec3(1.0, 0.0, 0.0)));
+  vec3 across = cross(along, toward);
   float depth = max(-middle.z, 1e-3);
   float diameter = mix(uSizes.x, uSizes.y, aFlake.w * aFlake.w);   // more small flakes than large
   float width = max(diameter, uMinPixels * depth / uFocalPx);
