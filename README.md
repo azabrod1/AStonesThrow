@@ -553,7 +553,7 @@ thing's reflection up where it is: the jet's reflection hangs under the jet
 and only trembles with the ripples, where the sky's streaks with them.
 
 **Sky** (`src/sky.js`). The sky is a photograph: an equirectangular HDRI
-(a lakeside with a far shore by default, or one of four others) on a dome at the far
+(a lakeside with a far shore by default, or one of seven others) on a dome at the far
 plane, turned about the vertical (and mirrored, where that puts better
 scenery ahead) so that its sun stands where the scene's does (28° right of
 straight ahead) and at the photo's own elevation, which becomes the scene's
@@ -603,6 +603,48 @@ cones' colour, and going to white where it is bright, so the moon's
 glitter and a splash's glints are silver on blue water. An hour's photo is
 decoded by `src/hdr.js`, texel for texel as Three.js's HDRLoader does but
 five times as fast (`tools/hdr-test.mjs` checks every panorama).
+
+Three more locations are available in Location:
+
+- **Rocky cove** (`?sky=cove`): Secluded Beach, framed toward the sea opening
+  between the boulders. One photographed morning.
+- **Highlands** (`?sky=highlands`): five Kiara panoramas, from dawn and sunrise
+  to noon, sunset and dusk. Starts at sunset unless a remembered clock is
+  nearer another hour; noon remains the lighting calibration anchor.
+- **Desert oasis** (`?sky=desert`): Rogland's golden hour, starry night and
+  moonlit early morning, framed toward the lower rock skyline. The water is
+  the simulation's, surrounded by the photographed desert.
+
+The Time of day page has named buttons as well as the slider. Selecting a
+new location or hour cancels an obsolete download immediately; it never
+waits behind that download or briefly applies its lighting. Returning to
+the displayed hour also cancels a pending change. Failed loads keep the
+current scene and restore the controls, so the same choice can be retried.
+The photographs still change together with their lighting in one frame;
+there is no continuous sun animation or crossfade between photographs.
+
+Kiara's camera times are approximate and its nearby rocks shift slightly
+between tripod positions. The ridges are aligned with the probe's
+`--band=-15,-5` (the valley lies below the photographic horizon), using the
+measured sun for daylight. Rogland uses `--band=0,18`; its clocks are the
+camera's local times (UTC+2), including moonlight at 05:33 on another day.
+The new HDRIs are CC0, stored locally at 2K, about 6 MB per selected hour.
+They add about 57 MB to the repository, but only the chosen panorama and up
+to two prefetched neighbours load in the browser.
+
+Reproduce the new measurements (all paths below are in `assets/sky/`):
+
+```bash
+node tools/sky-probe.mjs assets/sky/secluded_beach_2k.hdr
+node tools/sky-probe.mjs assets/sky/kiara_5_noon_2k.hdr --taken=2016-08-24T12:15:00+02:00 --at=-28.508926,28.56648
+node tools/sky-probe.mjs assets/sky/kiara_2_sunrise_2k.hdr --align=assets/sky/kiara_5_noon_2k.hdr --band=-15,-5
+node tools/sky-probe.mjs assets/sky/kiara_1_dawn_2k.hdr --taken=2016-08-24T06:20:00+02:00 --at=-28.508926,28.5664 --align=assets/sky/kiara_2_sunrise_2k.hdr --band=-15,-5
+node tools/sky-probe.mjs assets/sky/kiara_8_sunset_2k.hdr --align=assets/sky/kiara_5_noon_2k.hdr --band=-15,-5
+node tools/sky-probe.mjs assets/sky/kiara_9_dusk_2k.hdr --taken=2016-08-25T17:55:00+02:00 --at=-28.508926,28.56656 --align=assets/sky/kiara_8_sunset_2k.hdr --band=-15,-5
+node tools/sky-probe.mjs assets/sky/rogland_sunset_2k.hdr --taken=2023-09-05T17:31:00+02:00 --at=-29.68232655273397,17.949190420193943
+node tools/sky-probe.mjs assets/sky/rogland_clear_night_2k.hdr --taken=2023-09-05T21:22:00+02:00 --at=-29.68232655273397,17.949190420193943 --align=assets/sky/rogland_sunset_2k.hdr --band=0,18
+node tools/sky-probe.mjs assets/sky/rogland_moonlit_night_2k.hdr --taken=2023-09-07T05:33:00+02:00 --at=-29.68232655273397,17.949190420193943 --align=assets/sky/rogland_sunset_2k.hdr --band=0,18
+```
 
 **Rain** (`src/rain.js`, `src/shaders/rain.js`; the cloud and haze in
 `src/sky.js`). The Weather setting clouds the sky over: the sun's direct
@@ -1093,4 +1135,10 @@ Mid Morning, Noon, Afternoon, Late Afternoon, Sunset, Dusk 1 and 2,
 Moonrise, Moon Noon) by Greg Zaal, processed by Jarod Guest, and
 *Qwantani Morning* by Jarod Guest; *Lago d'Isola* by Andreas Mischok;
 and *Kloofendal 48d Partly Cloudy (Pure Sky)* by Greg Zaal, its sky edited by
-Jarod Guest.
+Jarod Guest. The added *Secluded Beach* (backplates by Rico Cilliers),
+*Kiara 1 Dawn*, *Kiara 2 Sunrise*, *Kiara 5 Noon*, *Kiara 8 Sunset*,
+*Kiara 9 Dusk*, *Rogland Sunset*, *Rogland Clear Night* and
+*Rogland Moonlit Night* are by Greg Zaal. Source pages:
+[Secluded Beach](https://polyhaven.com/a/secluded_beach),
+[Kiara](https://polyhaven.com/a/kiara_8_sunset),
+[Rogland](https://polyhaven.com/a/rogland_clear_night).

@@ -197,7 +197,8 @@
 // drawn again; prefetchHours fetches the hours either side ahead, so the
 // next is there when picked; a place takes the hour nearest the time of day last chosen,
 // TIME_STORAGE_KEY, and ?sky=sunrise, the old Sunrise sky, is Lakeside at
-// sunrise);
+// sunrise). New choices abort obsolete downloads without waiting; the old
+// environment stays complete until the latest panorama can replace it.
 // ?view=shore|level|high|under stands the camera at one of VIEWS (showView);
 // ?water=pool|clear|lake|pond|murky the water (WATER_CLARITIES; setClarity);
 // ?wind=x,z sets the direction the wind blows toward in world XZ
@@ -916,20 +917,24 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   // fills lighting's sun and sky in place (src/sky.js); then what holds the
   // sun by value follows, and the mirror image is drawn again.
   let skyRequest = { place: environment.name, hour: environment.hour };   // the sky last asked for
-  let skyLoading = Promise.resolve();    // the loads queued so far
+  let skyController;
   /**
-   * Queue a load of the place at the hour (resolveHour's); only the last
-   * asked for is loaded. Resolves when it is shown, or failed.
+   * Load the latest place and hour without waiting for a superseded photo.
+   * Aborting also guards the commit in sky.js: a late response cannot show
+   * an old choice or change its lighting. The current scene stays on failure.
    */
   function requestSky(place, hour) {
     const request = { place, hour: resolveHour(place, hour) };
     skyRequest = request;
-    skyLoading = skyLoading.then(async () => {
-      if (skyRequest !== request || (environment.name === request.place && environment.hour === request.hour)) return;
-      await environment.load(request.place, request.hour);
-      applySky();
-    }).catch((error) => console.error(error));
-    return skyLoading.then(() => environment.name);
+    skyController?.abort();
+    const controller = new AbortController();
+    skyController = controller;
+    if (environment.name === request.place && environment.hour === request.hour) return Promise.resolve(environment.name);
+    return environment.load(request.place, request.hour, { signal: controller.signal }).then(() => {
+      if (!controller.signal.aborted) applySky();
+    }).catch((error) => {
+      if (!controller.signal.aborted) console.error(error);
+    }).then(() => environment.name);
   }
   /**
    * The weather by name (WEATHERS): the sky's cloud and haze at once, the
@@ -2221,8 +2226,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
      * loads first and the old sky stays until it has arrived; then the sky,
      * the sun and everything they light change in one frame. Resolves to the
      * place then shown (the old one if the photo could not be fetched).
-     * Choices made while one loads queue behind it, and only the last is
-     * loaded.
+     * A new choice cancels the previous download and starts immediately.
      */
     setSky(name) {
       const [place, hour] = placeAndHour(name);
@@ -2235,16 +2239,18 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
      * The hour of the place last asked for (a name from `hours`), its local
      * time remembered on this device as the time of day other places follow.
      * Loads as setSky does; resolves to the hour then shown. (`time` is the
-     * simulation's clock.)
+     * simulation's clock.) The UI passes its displayed `place` so an hour
+     * selected during a location download belongs to the visible hour list.
      */
-    setHour(name) {
-      const hour = skyHours(skyRequest.place).find((entry) => entry.name === name);
+    setHour(name, { place = skyRequest.place } = {}) {
+      const hour = skyHours(place).find((entry) => entry.name === name);
       if (!hour) return Promise.resolve(environment.hour);
       if (hour.clock) {
         chosenClock = hour.clock;
         try { window.localStorage.setItem(TIME_STORAGE_KEY, hour.clock); } catch { /* storage refused: the choice lasts this visit */ }
       }
-      return requestSky(skyRequest.place, name).then(() => environment.hour);
+      try { window.localStorage.setItem(SKY_STORAGE_KEY, place); } catch { /* storage refused */ }
+      return requestSky(place, name).then(() => environment.hour);
     },
     get hour() { return environment.hour; },
     /**

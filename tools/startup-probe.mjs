@@ -79,12 +79,45 @@ try {
   await sky.arrived;
   assert.equal(await page.evaluate(() => window.__pond.sky), 'lakeside');
   await page.evaluate(() => { window.latestSky = window.__pond.setSky('meadow'); });
+  // A slow obsolete location must not hold the latest one in a queue.
+  await page.waitForFunction(() => window.__pond.sky === 'meadow', null, { timeout: 60000 });
   sky.release();
   await page.evaluate(() => Promise.all([window.pendingSky, window.latestSky]));
   assert.equal(await page.evaluate(() => window.__pond.sky), 'meadow');
   assert.equal(await page.evaluate(() => window.__pond.rocks.length), 1);
+  await page.evaluate(() => window.__pond.setSky('lakeside'));
+  const hour = hold(page, '**/assets/sky/lakeside_night_2k.hdr');
+  await hour.installed;
+  await page.evaluate(() => { window.pendingHour = window.__pond.setHour('night'); });
+  await hour.arrived;
+  await page.evaluate(() => window.__pond.setHour('afternoon'));
+  hour.release();
+  await page.evaluate(() => window.pendingHour);
+  assert.equal(await page.evaluate(() => window.__pond.hour), 'afternoon');
+  assert.equal(await page.evaluate(() => window.localStorage.getItem('stone-pond-time')), '14:41');
+  const uiHour = hold(page, '**/assets/sky/lakeside_night_2k.hdr');
+  await uiHour.installed;
+  await page.evaluate(() => {
+    const setHour = window.__pond.setHour;
+    window.uiHourLoads = [];
+    window.__pond.setHour = (...args) => {
+      const pending = setHour(...args);
+      window.uiHourLoads.push(pending);
+      return pending;
+    };
+  });
+  await page.locator('#menu-button').click();
+  await page.locator('.menu-tier[data-open="time"]').click();
+  await uiHour.arrived; // the Time page prefetches the neighbouring night
+  await page.locator('#time-presets [data-hour="night"]').click();
+  await page.locator('#time-presets [data-hour="afternoon"]').click();
+  uiHour.release();
+  await page.evaluate(() => Promise.all(window.uiHourLoads));
+  assert.equal(await page.evaluate(() => window.__pond.hour), 'afternoon');
+  assert.equal(await page.locator('#time-name').textContent(), 'Afternoon');
+  assert.equal(await page.locator('#time-presets [aria-pressed="true"]').getAttribute('data-hour'), 'afternoon');
   assert.deepEqual(errors, []);
-  console.log('PASS: same-origin startup, first throw, delayed weather cancellation and rapid sky changes');
+  console.log('PASS: same-origin startup, first throw, delayed weather cancellation, latest sky bypasses a stalled download and returning to the shown hour cancels a pending one');
   await page.context().close();
 
   const saved = await pageFor();

@@ -1,0 +1,30 @@
+{
+  "source": "secluded_beach_2k.hdr",
+  "width": 2048,
+  "height": 1024,
+  "sun": {
+    "elevation": 31.94,
+    "azimuth": 231.1,
+    "direction": [
+      0.53295,
+      0.52902,
+      0.66038
+    ],
+    "pixels": 8
+  },
+  "sunIrradiance": [
+    4.0337,
+    3.6663,
+    3.1756
+  ],
+  "skyRadiance": [
+    0.1891,
+    0.19323,
+    0.21794
+  ],
+  "horizonRadiance": {
+    "median": 0.027785,
+    "p90": 0.51742
+  },
+  "maxLuminance": 90669
+}

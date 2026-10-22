@@ -1,0 +1,42 @@
+{
+  "source": "rogland_sunset_2k.hdr",
+  "width": 2048,
+  "height": 1024,
+  "sun": {
+    "elevation": 12.79,
+    "azimuth": 216.17,
+    "direction": [
+      0.78722,
+      0.22142,
+      0.57554
+    ],
+    "pixels": 8
+  },
+  "sunIrradiance": [
+    9.7567,
+    8.4781,
+    6.4777
+  ],
+  "skyRadiance": [
+    0.28192,
+    0.36153,
+    0.53268
+  ],
+  "horizonRadiance": {
+    "median": 0.25092,
+    "p90": 0.89785
+  },
+  "maxLuminance": 175720,
+  "taken": "2023-09-05T17:31:00+02:00",
+  "at": [
+    -29.68232655273397,
+    17.949190420193943
+  ],
+  "solar": {
+    "elevation": 12.86,
+    "azimuth": 285.59
+  },
+  "light": "sun",
+  "north": 290.58,
+  "northFrom": "sun"
+}

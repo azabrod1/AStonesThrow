@@ -11,13 +11,19 @@
 // its hours (the Time setting's) and how it is turned; the environment loads
 // one to start and another whenever load() is called (Switching, below).
 //
-// Places and hours. Most places are one photograph. Lakeside and Mesas were
+// Places and hours. Four places are one photograph. Lakeside and Mesas were
 // each photographed from one spot through the day (Poly Haven's 2024 series
 // by Greg Zaal and Jarod Guest, on the shore of a dammed lake in South Africa
 // and on a hill above it 350 m away; Lakeside's afternoon is their 2019
 // panorama, from the same rock, its sun at 14:41 local time to 0.1°), so each
 // of their hours is a panorama of the same land at another time, and the
 // land keeps still while the sun moves (Orientation).
+// Highlands uses five Kiara photographs (2016); Desert oasis uses Rogland's
+// golden hour and two nights (2023). Their rock ridges are aligned using the
+// probe's --band option: Kiara's lower valley from -15° to -5°, Rogland's
+// skyline from 0° to 18°. Small viewpoint changes in Kiara remain in nearby
+// rocks. Its sunrise/sunset are lit by the measured sun; their camera times
+// are approximate, so they use skyline north rather than solar-position north.
 //
 // Orientation. The dome samples the panorama by direction as Three.js's
 // equirect lookup does (equirectUv: u = atan(z, x)/2π + ½), with the x of the
@@ -134,6 +140,8 @@
 // the one asked for, while the Time of day page is open), at most PREFETCHED
 // kept, so its load waits only on the decode, src/hdr.js (HDRLoader's
 // texels, about five times as fast).
+// A caller's AbortSignal cancels an obsolete download; it is checked again
+// before decoding or changing any lighting, including for prefetched photos.
 //
 // The panorama and a water-coloured hemisphere below the horizon (the photo's
 // own ground there would light drops and stones green from below; GROUND,
@@ -172,8 +180,34 @@ import { loadAsset } from './loadAsset.js';
 // 13° down) is left out: its sky is a haze of the towns' light. Each panorama is about 6 MB, fetched only
 // when chosen. An hour's `clock` is its local time (sky-probe's taken).
 // `anchor` and `facing` (Light by the hour, Orientation) are the first hour
-// unless named.
+// unless named. `defaultHour` may choose a starting view independently of
+// the lighting anchor. New locations face their cove opening, sunset ridge
+// or low desert skyline, chosen in rendered home and water-level views.
 const SKIES = {
+  cove: { sunAzimuth: 15, hours: { morning: { file: 'secluded_beach', label: 'Morning' } } },
+  desert: {
+    anchor: 'sunset',
+    facing: 'sunset',
+    sunAzimuth: 30,
+    hours: {
+      moonlight: { file: 'rogland_moonlit_night', label: 'Moonlight', clock: '05:33' },
+      sunset: { file: 'rogland_sunset', label: 'Golden hour', clock: '17:31' },
+      night: { file: 'rogland_clear_night', label: 'Starlight', clock: '21:22' },
+    },
+  },
+  highlands: {
+    anchor: 'noon',
+    facing: 'sunset',
+    defaultHour: 'sunset',
+    sunAzimuth: -25,
+    hours: {
+      dawn: { file: 'kiara_1_dawn', label: 'Dawn', clock: '06:20' },
+      sunrise: { file: 'kiara_2_sunrise', label: 'Sunrise', clock: '07:03' },
+      noon: { file: 'kiara_5_noon', label: 'Noon', clock: '12:15' },
+      sunset: { file: 'kiara_8_sunset', label: 'Sunset', clock: '17:34' },
+      dusk: { file: 'kiara_9_dusk', label: 'Dusk', clock: '17:55' },
+    },
+  },
   lakeside: {
     anchor: 'afternoon',
     facing: 'afternoon',
@@ -210,10 +244,10 @@ export const SKY_NAMES = Object.keys(SKIES);
 export const DEFAULT_SKY = 'lakeside';   // an open lake to a far shore, as the Lake water is
 /** A place's hours in the order of the day: their names, labels and local times (clock, 'hh:mm', or undefined for a lone photograph). */
 export const skyHours = (place) => Object.entries(SKIES[place]?.hours ?? {}).map(([name, { label, clock }]) => ({ name, label, clock }));
-/** The hour load() shows for a place asked for at `hour`: that one if the place has it, else its anchor. */
+/** The hour load() shows: the requested one, else a curated starting hour or the lighting anchor. */
 export function resolveHour(place, hour) {
   const known = SKIES[Object.hasOwn(SKIES, place ?? '') ? place : DEFAULT_SKY];
-  return Object.hasOwn(known.hours, hour ?? '') ? hour : known.anchor ?? Object.keys(known.hours)[0];
+  return Object.hasOwn(known.hours, hour ?? '') ? hour : known.defaultHour ?? known.anchor ?? Object.keys(known.hours)[0];
 }
 const clockMinutes = (clock) => { const [hours, minutes] = clock.split(':').map(Number); return hours * 60 + minutes; };
 /** The place's hour whose local time is nearest `clock` ('hh:mm'; round the day), or undefined if it has no clocks or there is no clock. */
@@ -453,11 +487,11 @@ export async function createEnvironment(renderer, { name, hour, sunAzimuth, sunB
   // Panoramas fetched ahead (prefetch), by file, at most PREFETCHED of them, the oldest let go first. A load takes its
   // own out, or fetches it afresh if fetching it ahead failed.
   const prefetched = new Map();
-  const fetchPanorama = (file) => loadAsset(new URL(`../assets/sky/${file}_2k.hdr`, import.meta.url), 'arrayBuffer');
-  function takePanorama(file) {
+  const fetchPanorama = (file, signal) => loadAsset(new URL(`../assets/sky/${file}_2k.hdr`, import.meta.url), 'arrayBuffer', { signal });
+  function takePanorama(file, signal) {
     const ahead = prefetched.get(file);
     prefetched.delete(file);
-    return ahead ? ahead.catch(() => fetchPanorama(file)) : fetchPanorama(file);
+    return ahead ? ahead.catch(() => fetchPanorama(file, signal)) : fetchPanorama(file, signal);
   }
 
   const environment = { sky, cubeTexture: cubeTarget.texture, envTexture: null, name: null, hour: null, level: 1, hazeUniforms, targets: [], panoramaBytes: 0, load, prefetch, setWeather, setFlash };
@@ -470,7 +504,7 @@ export async function createEnvironment(renderer, { name, hour, sunAzimuth, sunB
    * its hours (others fall back to its anchor) and make it the scene's, all
    * at once when it has arrived.
    */
-  async function load(requestedPlace, requestedHour) {
+  async function load(requestedPlace, requestedHour, { signal } = {}) {
     const skyName = Object.hasOwn(SKIES, requestedPlace ?? '') ? requestedPlace : DEFAULT_SKY;
     const place = SKIES[skyName];
     const firstHour = Object.keys(place.hours)[0];
@@ -482,9 +516,10 @@ export async function createEnvironment(renderer, { name, hour, sunAzimuth, sunB
       measurementOf(file),
       measurementOf(anchorFile),
       measurementOf(facingFile),
-      takePanorama(file),
+      takePanorama(file, signal),
       balancePromise,
     ]);
+    signal?.throwIfAborted();
     // HDRLoader's halves (src/hdr.js) and its texture's settings. Decode only
     // after every asset succeeded, so a failed measurement cannot orphan a
     // decoded panorama.

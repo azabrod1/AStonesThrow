@@ -1,0 +1,52 @@
+{
+  "source": "rogland_moonlit_night_2k.hdr",
+  "width": 2048,
+  "height": 1024,
+  "sun": {
+    "elevation": 30.11,
+    "azimuth": 216.13,
+    "direction": [
+      0.69866,
+      0.50166,
+      0.5101
+    ],
+    "pixels": 5
+  },
+  "sunIrradiance": [
+    7.1442,
+    6.4536,
+    6.349
+  ],
+  "skyRadiance": [
+    0.36476,
+    0.42568,
+    0.58021
+  ],
+  "horizonRadiance": {
+    "median": 0.14643,
+    "p90": 0.82863
+  },
+  "maxLuminance": 233740,
+  "taken": "2023-09-07T05:33:00+02:00",
+  "at": [
+    -29.68232655273397,
+    17.949190420193943
+  ],
+  "solar": {
+    "elevation": -18.99,
+    "azimuth": 93.73
+  },
+  "light": "moon",
+  "alignment": {
+    "reference": "rogland_sunset_2k.hdr",
+    "turn": 266.34,
+    "peak": 7.58,
+    "nextBest": 2.27,
+    "band": [
+      0,
+      18
+    ]
+  },
+  "north": 196.92,
+  "northFrom": "skyline"
+}
