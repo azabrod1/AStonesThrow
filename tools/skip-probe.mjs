@@ -143,7 +143,7 @@ function runThrow(radius, power, seed, pooled = false) {
   rock.launchSkip(velocity);
   if (pooled) {
     rock.skip.inside = poolInside(POOL_SQUARE, radius);
-    rock.groundAt = poolGround(POOL_SQUARE);
+    rock.ground = poolGround(POOL_SQUARE);
   }
   const insidePool = poolInside(POOL_SQUARE, 0);
   let underDeck = false, firstWater = null;

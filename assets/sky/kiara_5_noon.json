@@ -1,0 +1,42 @@
+{
+  "source": "kiara_5_noon_2k.hdr",
+  "width": 2048,
+  "height": 1024,
+  "sun": {
+    "elevation": 51.19,
+    "azimuth": 221.99,
+    "direction": [
+      0.46578,
+      0.77925,
+      0.41931
+    ],
+    "pixels": 10
+  },
+  "sunIrradiance": [
+    12.922,
+    13.087,
+    14.294
+  ],
+  "skyRadiance": [
+    0.74499,
+    0.74374,
+    0.85113
+  ],
+  "horizonRadiance": {
+    "median": 0.17911,
+    "p90": 0.29278
+  },
+  "maxLuminance": 314760,
+  "taken": "2016-08-24T12:15:00+02:00",
+  "at": [
+    -28.508926,
+    28.56648
+  ],
+  "solar": {
+    "elevation": 50.58,
+    "azimuth": 357.29
+  },
+  "light": "sun",
+  "north": 224.7,
+  "northFrom": "sun"
+}

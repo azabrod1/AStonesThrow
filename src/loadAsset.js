@@ -3,8 +3,12 @@
 // never total transfer time. Aborting includes the body, so a stalled request
 // cannot commit a late scene change. Compressed responses are decoded by fetch;
 // their Content-Length must not be used as the decoded body's size.
-export async function loadAsset(url, type = 'json', { timeout = 30000 } = {}) {
+// An optional caller signal also cancels a superseded location or hour.
+export async function loadAsset(url, type = 'json', { timeout = 30000, signal } = {}) {
   const controller = new AbortController();
+  const abort = () => controller.abort(signal.reason);
+  signal?.throwIfAborted();
+  signal?.addEventListener('abort', abort, { once: true });
   let timer;
   const resetTimeout = () => {
     clearTimeout(timer);
@@ -35,5 +39,6 @@ export async function loadAsset(url, type = 'json', { timeout = 30000 } = {}) {
     return await new Response(new Blob(chunks))[type]();
   } finally {
     clearTimeout(timer);
+    signal?.removeEventListener('abort', abort);
   }
 }

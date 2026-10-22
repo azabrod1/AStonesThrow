@@ -275,7 +275,7 @@ await page.mouse.up();
 check(mouseTouching && !(await page.evaluate(() => window.__pond.touching)) && (await rockCount()) === before, 'a mouse held still dips the finger too, and lifts it on release without throwing');
 
 // The pool.
-await page.evaluate(() => { window.__pond.setClarity('pool'); window.__pond.resetView(); window.__pond.settleView(); });
+await page.evaluate(async () => { await window.__pond.setSky('pool'); window.__pond.resetView(); window.__pond.settleView(); });
 const square = await page.evaluate(() => window.__pond.water.poolSquare);
 const insideBy = ({ x, z }) => Math.min(x - square.minX, square.minX + square.size - x, z - square.minZ, square.minZ + square.size - z);
 const deck = 0.1;   // POOL.deck (src/pool.js)
@@ -331,7 +331,7 @@ const deckThrow = await page.evaluate(() => {
   return { x: position.x, z: position.z, count: window.__pond.rocks.length };
 });
 check(deckThrow.count === before + 1 && insideBy(deckThrow) > 0.2, `a tap on the deck beyond the pool throws inside its walls, landing ${(insideBy(deckThrow) * 100).toFixed(0)} cm in from the nearest`);
-await page.evaluate(() => window.__pond.setClarity('lake'));
+await page.evaluate(async () => await window.__pond.setSky('lakeside'));
 
 if (problems.length) { console.log('page errors:'); console.log(problems.join('\n')); failures++; }
 await browser.close();

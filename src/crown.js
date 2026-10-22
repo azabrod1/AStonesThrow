@@ -107,14 +107,25 @@
 // vertical. From DOME_PULL_START of its seal time a pull P (a smoothstep, 1
 // at the seal time) draws every element onto a dome (pullIn): a smooth bell
 // over the hole from the lip's crest to an apex DOME_HEIGHT·R above the still
-// water (the reference's real-air runs close about 4 cm up: a low dome), the
+// water (the reference's real-air runs close about 4 cm up: a low dome), no
+// glass bell but a thin sheet whipped shut: its froth's violence and, as the
+// pull closes it, its whiteness are at least DOME_FROTH, and holes open all
+// over it at DOME_OPEN of FROTH_OPEN (Worthington's "bubble" is "doomed to almost immediate
+// destruction"; Truscott & Techet's dome is a ragged splash curtain), the
 // sheet's rim at the apex, its foot on the lip, buckled by a few folds around
 // (Marston et al. 2016 find every sealing crown buckles). Its rim's bead
 // merges as it closes. As the rim meets, a thin spike of water shoots up from
 // the apex (sealSpray: the reference's seal jet) and breaks into fine drops.
-// The dome holds still until the hole below pinches (seal.tear), then bursts
-// from the apex down, its sheet flying off out and up (DOME_BURST): the tear.
-// Its rim sheds before the pull starts, none while it closes, and the burst
+// The dome holds still until the jet from the pinch reaches its apex
+// (seal.tear, from src/splash.js), then bursts from the apex down, its sheet
+// flung off out and up at seal.burstSpeed·s (the jet's push, Truscott &
+// Techet 2009: the jet "pulling the upper cavity almost inside-out"): the
+// tear. A dome whose jet is trapped (seal.sink) is instead drawn down into
+// the hole by the sealed cavity's falling pressure, its apex sinking from
+// DOME_HEIGHT·R to DOME_SINK·R below the water by the tear (Worthington's
+// marble from 140 cm: "the air-tube is closed over and forms a downward jet
+// which shoots down the middle of the air-tube"), where it is gone: no
+// drops. Its rim sheds until it meets over the hole, and the burst
 // takes the rest.
 //
 // Thickness is h0·(r0/r)/(1 + age/td), at least 0.2 mm, with h0 = 1.5 mm and
@@ -166,7 +177,20 @@
 // drops come out about the size the sheet's thickness implies, between
 // CROWN_DROP_FLOOR and CROWN_DROP_CAP (1 and 5.5 mm) for a 3 cm stone; its
 // fingers shed their beads, the fan's and a landing crown's crests drops of
-// RIM_DROP_RADIUS and up. For a 3 cm stone dropped straight in at 6.3 m/s
+// RIM_DROP_RADIUS and up. Besides its drop each torn patch throws spray
+// (src/spray.js), the film between the ligaments that a real sheet's holes
+// tear into drops under a millimetre: SPRAY_SHARE_FLOOR of the patch's water
+// for the gentlest sheet, rising with its violence (the froth's, below) by
+// SPRAY_SHARE_GAIN·violence^SPRAY_SHARE_POWER (a third for the reference
+// throw, half for a 16 cm stone, three quarters for a rock), in drops of
+// SPRAY_SIZE times the sheet's thickness there on average, spread over the
+// patch and kicked by the Taylor–Culick speed sqrt(2σ / ρh) at which a hole's
+// rim runs back through a film h thick (a landing drop's crown throws none:
+// too small and slow to be worth its sprites). A bead that pinches off leaves
+// SATELLITES satellites of about SATELLITE_SIZE of its radius, kicked at its
+// capillary speed, and a seal's spike throws SEAL_FINE finer drops. The spray
+// draws from a stream of the crown's own, seeded by the tear's phase, so it
+// spends no draw of Math.random. For a 3 cm stone dropped straight in at 6.3 m/s
 // the sheet stands whole for 90 ms, its rim peaking 11 cm up at 90 ms, 8 cm
 // out (the reference: 11 to 12 cm at 0.1 s, 8 to 10 cm out), and is gone by
 // 150 ms; thrown at 42° from vertical its forward side stands taller, 13 to
@@ -252,6 +276,7 @@
 // a wall runs up it instead of passing through onto the deck.
 import * as THREE from 'three';
 import { createRingGrid, computeGridNormals, holdWithinWalls, markChanged } from './fluidMesh.js';
+import { seededRandom, sprayDrops } from './spray.js';
 
 const GRAVITY = 9.81;
 const REFERENCE_RADIUS = 0.03;     // the stone size the tuning constants were set for
@@ -331,14 +356,19 @@ const FROTH_OPEN_EARLY = 0.5;      // ...and times this until the tear nears, ri
 const MODES_PER_COLUMN = 1 / 2.5;  // a grid resolves modes up to this many per column
 const DOME_COLUMNS = 64;           // a sealing crown's columns around (times sqrt(R / 3 cm)): it has no fingers
 const DOME_PULL_START = 0.35;      // the pull starts at this share of the seal time...
-const DOME_HEIGHT = 1.4;           // ...and draws the sheet onto a dome whose apex stands this many R above the still water...
+export const DOME_HEIGHT = 1.4;    // ...and draws the sheet onto a dome whose apex stands this many R above the still water...
 const DOME_ROUND = 0.8;            // ...its radius r_foot·cos(πs/2)^this at height y_foot + h·sin(πs/2) (s from its foot to its apex)...
 const DOME_FOLDS = [6, 10];        // ...buckled by this many folds around (Marston et al. 2016)...
-const DOME_FOLD = 0.05;            // ...of up to this share of its radius, at mid height
-const DOME_BURST = 0.25;           // when it bursts its sheet flies off at this times sqrt(g·R)·s, out and up
+const DOME_FOLD = 0.08;            // ...of up to this share of its radius, at mid height
+const DOME_FROTH = 0.7;            // a sealing sheet's violence and, as it closes, its whiteness are at least this: sucked in, it whips, buckles and carries air (the header)
+const DOME_OPEN = 0.5;             // ...and holes open all over the closing dome at this share of FROTH_OPEN
+const DOME_BURST = 0.25;           // a dome given no jet's push bursts with its sheet flying off at this times sqrt(g·R)·s, out and up
+const DOME_SINK = 1.5;             // a trapped jet's dome is drawn down to this many R below the water by the tear
 const DOME_TILT = 12;              // a sealing crown launches this many degrees nearer vertical: a taller wall
 const SEAL_SPRAY = 8;              // the closure throws a spike of this many fine drops up from the apex (times sqrt(R / 3 cm))...
-const SEAL_SPRAY_SPEED = [0.8, 2.2];   // ...at these speeds, times sqrt(R / 3 cm) (the reference's real-air seal jet)
+const SEAL_SPRAY_SPEED = [0.8, 2.2];   // ...at these speeds, times sqrt(R / 3 cm) (the reference's real-air seal jet)...
+const SEAL_FINE = 60;              // ...and this many finer drops as spray (src/spray.js; times sqrt(R / 3 cm))...
+const SEAL_FINE_SIZE = 0.00025;    // ...of this mean radius (times (R / 3 cm)^0.3)
 const FAN_ROWS = 10;               // the forward fan of an oblique entry: rim to base...
 const FAN_COLUMNS = 41;            // ...by edge to edge across its sector
 const FAN_HALF_ANGLE = THREE.MathUtils.degToRad(60);   // the sector spans this either side of the direction of travel
@@ -358,6 +388,17 @@ const FAN_AMPLITUDE = 0.06;
 const FAN_DROP_CAP = 0.0008;       // it tears into fine drops of at most this...
 const FAN_DROP_FLOOR = 0.0003;     // ...and at least this (both times (R / 3 cm)^DROP_SIZE_POWER)...
 const FAN_RIM_DROPS = 0.2;         // ...and its rim sheds drops this fraction of the size a crown's does
+// The spray (the header, src/spray.js).
+const SPRAY_SHARE_FLOOR = 0.2;     // a torn patch throws this share of its water as spray for the gentlest sheet...
+const SPRAY_SHARE_GAIN = 0.55;     // ...rising by this times its violence (at most 1)...
+const SPRAY_SHARE_POWER = 0.7;     // ...to this power
+const SPRAY_SIZE = 1.2;            // its drops' mean radius, times the sheet's thickness there...
+const SPRAY_SIZE_RANGE = [0.0001, 0.0006];   // ...within this (m)
+const SPRAY_LEAST_FILM = 0.00005;  // m: the film the Taylor–Culick kick is reckoned for is at least this thick
+const SATELLITES = [1, 3];         // a bead pinching off leaves this many satellites...
+const SATELLITE_SIZE = 0.25;       // ...of this share of its radius on average (Rayleigh–Plateau)
+const SURFACE_TENSION = 0.072;     // N/m
+const WATER_DENSITY = 1000;        // kg/m³
 
 const randomRange = (low, high) => low + Math.random() * (high - low);
 const smoothstep = (edgeLow, edgeHigh, value) => {
@@ -432,8 +473,9 @@ export class CrownSheet {
    * @param rim the stone's cavity (src/cavity.js), whose lip the sheet launches from, or null
    * @param lopsided a stone's crown's departure from round (the header): {spinX, spinZ} the spin's lift of the
    *   rim (its share of the entry speed at the azimuth's cosine and sine), speedScale, tiltShift (degrees)
-   * @param seal a surface seal (the header), or null: {time, tear}, the crown's ages (s) when its rim closes
-   *   over the hole and when the dome bursts
+   * @param seal a surface seal (the header), or null: {time, tear, sink, burstSpeed}, the crown's ages (s) when its rim
+   *   closes over the hole and when the dome bursts (or, `sink`, has been drawn down into the hole), and the speed (m/s)
+   *   its apex's water is flung at
    */
   constructor({ impact, startTime, rimDroplets, breakupDroplets, material, landing = false, fan = false, strength = 1, rim = null, lopsided = null, seal = null }) {
     const { velocity, radius } = impact;
@@ -467,7 +509,9 @@ export class CrownSheet {
     // drop's crown keeps its modes; a sealing crown's rim closes smooth.
     const fingerScale = landing ? 1 : Math.sqrt(this.sizeFactor);
     // A dome stands on its cavity's lip: a sheet with no cavity never seals.
-    this.seal = !landing && !fan && seal && rim ? { time: seal.time, start: DOME_PULL_START * seal.time, tear: Math.max(seal.tear, seal.time) } : null;
+    this.seal = !landing && !fan && seal && rim
+      ? { time: seal.time, start: DOME_PULL_START * seal.time, tear: Math.max(seal.tear, seal.time), sink: Boolean(seal.sink), burstSpeed: seal.burstSpeed ?? DOME_BURST * Math.sqrt(GRAVITY * radius) }
+      : null;
     this.fingered = !landing && !fan && !this.seal;
     this.fingers = this.fingered ? layFingers(fingerScale) : [];
     this.rows = landing ? LANDING_ROWS : fan ? FAN_ROWS : ROWS;
@@ -554,9 +598,13 @@ export class CrownSheet {
     // The froth (the header): how violent the throw is, and its noise's cells,
     // placed by the tear's phase so it costs no draw of its own.
     this.violence = Math.min(FROTH_GAIN * (this.sizeFactor * (speed / FROTH_SPEED) ** 2) ** FROTH_POWER, FROTH_MOST);
+    if (this.seal) this.violence = Math.max(this.violence, DOME_FROTH);
     this.frothRing = (1.2 * radius) / FROTH_CELL;
     this.frothAlongRate = (FROTH_ALONG * Math.sqrt(Math.max(this.sizeFactor, 0.25))) / this.launchDuration;
     this.frothOffset = tearPhase * 13.7;
+    // The spray's share of a torn patch's water, and its stream (the header).
+    this.sprayShare = SPRAY_SHARE_FLOOR + SPRAY_SHARE_GAIN * Math.min(this.violence, 1) ** SPRAY_SHARE_POWER;
+    this.sprayRandom = seededRandom(tearPhase, startTime, this.centreX, this.centreZ);
     // The front's raggedness varies smoothly around the ring (TEAR_MODES at random phases),
     // so neighbouring columns tear alike and the torn edge is a curve, not a saw.
     const tearModes = TEAR_MODES.map((mode) => ({ mode, phase: randomRange(0, Math.PI * 2), amplitude: randomRange(0.5, 1) }));
@@ -878,7 +926,9 @@ export class CrownSheet {
    * height y_foot + (apex − y_foot)·sin(πs/2). So the dome is a smooth bell
    * whatever the free sheet's waves and an oblique throw's lopsidedness, with
    * k buckling folds. While it stands it holds still; once it bursts (the
-   * tear) its sheet flies off at DOME_BURST·sqrt(g·R)·s, out and up.
+   * tear) its sheet flies off at the seal's burstSpeed·s, out and up; a
+   * sinking dome's apex is drawn down to DOME_SINK·R below the water by the
+   * tear instead (the header).
    */
   pullIn(out, tau, cosAngle, sinAngle, rimShape) {
     const pull = this.sealedShare();
@@ -891,10 +941,12 @@ export class CrownSheet {
     const angle = Math.atan2(sinAngle, cosAngle);
     const fold = 1 + DOME_FOLD * Math.sin(Math.PI * along) * Math.sin(this.domeFolds * angle + this.domeFoldPhase);
     const radius = footRadius * Math.cos(0.5 * Math.PI * along) ** DOME_ROUND * fold;
-    const height = footHeight + (DOME_HEIGHT * this.radius - footHeight) * Math.sin(0.5 * Math.PI * along);
+    let apex = DOME_HEIGHT * this.radius;
+    if (this.seal.sink) apex -= (DOME_HEIGHT + DOME_SINK) * this.radius * smoothstep(this.seal.time, this.seal.tear, this.age);
+    const height = footHeight + (apex - footHeight) * Math.sin(0.5 * Math.PI * along);
     const domeX = now.x + cosAngle * radius, domeZ = now.z + sinAngle * radius;
     // At rest on the dome, or flying off it once it bursts.
-    const burst = this.age >= this.breakTime ? DOME_BURST * Math.sqrt(GRAVITY * this.radius) * along : 0;
+    const burst = this.age >= this.breakTime && !this.seal.sink ? this.seal.burstSpeed * along : 0;
     const rate = this.sealRate();
     out.vx += pull * (cosAngle * burst - out.vx) + rate * (domeX - out.x);
     out.vy += pull * (burst - out.vy) + rate * (height - out.y);
@@ -933,6 +985,8 @@ export class CrownSheet {
   update(time, dt, splash) {
     this.age = time - this.startTime;
     if (this.seal && !this.sealSprayed && this.age >= this.seal.time) this.sealSpray(splash);
+    // A sunk dome is gone into the hole at the tear: no drops.
+    if (this.seal?.sink && this.age >= this.breakTime) { this.finished = true; return; }
     if (this.age < this.breakTime) {
       this.shed(dt, splash);
     } else {
@@ -965,6 +1019,13 @@ export class CrownSheet {
       splash.spawnDroplet(lip.x + randomRange(-0.1, 0.1) * this.radius, DOME_HEIGHT * this.radius, lip.z + randomRange(-0.1, 0.1) * this.radius,
         Math.cos(angle) * lean, speed, Math.sin(angle) * lean, (0.0005 + 0.0009 * Math.random()) * this.sizeFactor ** 0.4);
     }
+    // And the spike's finer spray (src/spray.js), as fast.
+    const size = SEAL_FINE_SIZE * this.sizeFactor ** 0.3;
+    splash.spray?.burst({
+      x: lip.x, y: DOME_HEIGHT * this.radius, z: lip.z, vx: 0, vy: 0.5 * (SEAL_SPRAY_SPEED[0] + SEAL_SPRAY_SPEED[1]) * scale, vz: 0,
+      drops: SEAL_FINE * scale, radius: size, kick: 0.5 * (SEAL_SPRAY_SPEED[1] - SEAL_SPRAY_SPEED[0]) * scale, spread: 0.1 * this.radius,
+      time: splash.time, random: this.sprayRandom, sizeFactor: this.sizeFactor,
+    });
   }
 
   /** Tear whatever is left into droplets now (when too many crowns are alive). */
@@ -1018,6 +1079,20 @@ export class CrownSheet {
       bead.vz * boost + randomRange(-scatter, scatter),
       bead.radius,
     );
+    this.satellites(splash, bead.x, bead.y, bead.z, bead.vx, bead.vy, bead.vz, bead.radius);
+  }
+
+  /** The satellites a drop of `radius` pinching off at (x, y, z), moving at (vx, vy, vz), leaves (the header). */
+  satellites(splash, x, y, z, vx, vy, vz, radius) {
+    const spray = splash.spray;
+    if (!spray || radius <= 0) return;
+    const random = this.sprayRandom;
+    const count = SATELLITES[0] + Math.floor(random() * (SATELLITES[1] - SATELLITES[0] + 1));
+    const size = SATELLITE_SIZE * radius;
+    spray.burst({
+      x, y, z, vx: 0.95 * vx, vy: 0.95 * vy, vz: 0.95 * vz, drops: count, radius: size,
+      kick: Math.sqrt(SURFACE_TENSION / (WATER_DENSITY * size)), spread: radius, time: splash.time, random, sizeFactor: this.sizeFactor,
+    });
   }
 
   /** How far a finger's bead has grown towards its drop, in radius: from BEAD_SEED of its volume. */
@@ -1061,8 +1136,8 @@ export class CrownSheet {
   shed(dt, splash) {
     // The instability grows with time, so the shedding rate ramps up linearly;
     // over the sheet's life each finger (or crest) sheds its share. A sealing
-    // crown's rim sheds before the pull starts and not while it closes.
-    const shedding = this.seal ? this.seal.start : this.breakTime;
+    // crown's rim sheds until it meets over the hole.
+    const shedding = this.seal ? this.seal.time : this.breakTime;
     if (this.age > shedding) return;
     const rate = (2 * this.age) / (shedding * shedding);
     if (this.fingered) {
@@ -1182,8 +1257,24 @@ export class CrownSheet {
           state.vz + randomRange(-scatter, scatter),
           radius,
         );
+        this.sprayFromPatch(splash, state, density);
       }
     }
+  }
+
+  /** The spray a torn patch of sheet throws besides its drop (the header): `state` the drop's place on it, `density` the drops per area. */
+  sprayFromPatch(splash, state, density) {
+    const spray = splash.spray;
+    // A landing drop's crown is too small and slow to throw spray worth its sprites.
+    if (!spray || this.landing) return;
+    const film = Math.max(state.thickness, SPRAY_LEAST_FILM);
+    const meanRadius = THREE.MathUtils.clamp(SPRAY_SIZE * state.thickness, SPRAY_SIZE_RANGE[0], SPRAY_SIZE_RANGE[1]);
+    spray.burst({
+      x: state.x, y: state.y, z: state.z, vx: state.vx, vy: state.vy, vz: state.vz,
+      drops: sprayDrops((this.sprayShare * state.thickness) / density, meanRadius), radius: meanRadius,
+      kick: Math.sqrt((2 * SURFACE_TENSION) / (WATER_DENSITY * film)), spread: 0.5 / Math.sqrt(density),
+      time: splash.time, random: this.sprayRandom, sizeFactor: this.sizeFactor,
+    });
   }
 
   // ---- per rendered frame -------------------------------------------------
@@ -1194,10 +1285,11 @@ export class CrownSheet {
     const end = this.feedEnd();
     const state = this.state;
     // The froth's open share as the sheet thins away: more for a violent
-    // throw, more as the tear nears, none on a dome until it bursts.
+    // throw, more as the tear nears; on a standing dome DOME_OPEN of it (and
+    // at least that all over, below: a sealing sheet is thin and torn, no bell).
     const nearTear = smoothstep(0.5 * this.breakTime, this.breakTime, this.age);
-    const opening = this.seal && this.age < this.breakTime ? 0
-      : FROTH_OPEN * (FROTH_OPEN_FLOOR + (1 - FROTH_OPEN_FLOOR) * Math.min(this.violence, 1)) * (FROTH_OPEN_EARLY + (1 - FROTH_OPEN_EARLY) * nearTear);
+    const opening = FROTH_OPEN * (FROTH_OPEN_FLOOR + (1 - FROTH_OPEN_FLOOR) * Math.min(this.violence, 1)) * (FROTH_OPEN_EARLY + (1 - FROTH_OPEN_EARLY) * nearTear)
+      * (this.seal && this.age < this.breakTime ? DOME_OPEN : 1);
     // Row by row: until the sheet tears a row shares its launch time, which launchAt then works out once.
     for (let row = 0; row < this.rows; row++) {
       for (let column = 0; column < this.columns; column++) {
@@ -1217,8 +1309,16 @@ export class CrownSheet {
         // froth; and holes open only high in the flying sheet, where it is thinnest.
         const thinned = 1 - Math.min(Math.max(state.remaining, 0), 1);
         const flying = 1 - state.carry;
-        this.froths[vertex * 2] = this.violence * (FROTH_FLOOR + (1 - FROTH_FLOOR) * thinned) * flying * flying;
-        this.froths[vertex * 2 + 1] = opening * thinned * thinned * flying ** 4;
+        let whiteness = this.violence * (FROTH_FLOOR + (1 - FROTH_FLOOR) * thinned) * flying * flying;
+        let holes = opening * thinned * thinned * flying ** 4;
+        if (this.seal) {
+          // A dome's sheet is whipped shut whole, thinned or not: white and torn all over as it closes.
+          const closing = this.sealedShare();
+          whiteness = Math.max(whiteness, DOME_FROTH * closing * flying * flying);
+          holes = Math.max(holes, DOME_OPEN * FROTH_OPEN * closing * flying ** 4);
+        }
+        this.froths[vertex * 2] = whiteness;
+        this.froths[vertex * 2 + 1] = holes;
       }
     }
     holdWithinWalls(this.positions, this.walls);

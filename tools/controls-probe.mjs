@@ -19,15 +19,16 @@
 //   - a tap anywhere along the slider puts its thumb there (iOS moves a range
 //     input only by its thumb, so the page does this itself), dragging from
 //     there moves it, and the readout and the next stone follow;
-//   - how to throw is one row: Skip, Lob, Hard and Normal each set the
-//     throw's strength and Skip, and slow motion sets the time's scale;
+//   - how to throw is one row: Toss, Lob and Skip set the throw's manner,
+//     Soft, Medium and Hard its strength, and the slow-motion clock goes
+//     round the time's rates (1×, ¼×, ⅒×) and lights while slow;
 //   - the strip's chip opens the dropdown of things (src/thingMenu.js) over
 //     the strip and under the settings button, its four groups and twenty
 //     pills on the screen (on a phone in portrait without scrolling), each
 //     fitting its name and on a touch screen at least 34 points tall, the
 //     chosen one checked and focused; a pill tapped is thrown next (the
 //     dropdown closed, the focus back on the chip, the strip following, a
-//     skip asked for gone back to Normal for a ball), a press on the pond
+//     skip asked for gone back to Toss for a ball), a press on the pond
 //     closes it without throwing, the chip pressed again closes it, and on a
 //     desktop the arrow keys and Enter choose in it and Escape closes it;
 //   - the settings button is on the screen, clear of the title, and (on a
@@ -49,13 +50,17 @@
 //     choices sit at the page's top and one tapped is thrown at once; Skip
 //     pressed for a pie stays off and says why, and for a pizza turns on
 //     (a pizza skips); its Water row opens the Water page, whose five pictured choices
-//     can each be scrolled onto the screen and fit their names, whose Pool
-//     puts the rocks in the pool (the View note follows) and whose Murky sets
-//     the pond's clarity, each with the row's value; its Time row opens the
+//     can each be scrolled onto the screen and fit their names, whose Frozen
+//     freezes the water thin, the ice's two choices showing under the cards,
+//     fitting, Thick making it thick, the row and the note following, and
+//     whose Murky thaws it and sets the pond's clarity, each with the row's
+//     value; its Time row opens the
 //     Time page, whose slider spans it (44 points tall on a touch screen)
 //     and, tapped at its left end, loads the place's first hour, the row and
 //     the readout following, while a lone photograph's page hides the slider
-//     and says why; its Weather row opens the Weather page, whose seven
+//     and says why; its Location page's Pool puts the rocks in the pool (the
+//     View note follows) and the Water page shows the pool's own water in
+//     place of the lake's; its Weather row opens the Weather page, whose seven
 //     choices (one list of cards) fit, whose Heavy rain brings the rain
 //     and whose Heavy snow the snow, at once; a press on the water
 //     closes it without throwing a stone, and Escape closes it too;
@@ -242,22 +247,30 @@ for (const framing of FRAMINGS) {
   check(onScreen(menuButton) && !overlaps(menuButton, title), `the settings button is on the screen, clear of the title`);
   if (framing.touch) check(menuButton.height >= SMALLEST_BUTTON_HEIGHT - 0.5, `the settings button is at least ${SMALLEST_BUTTON_HEIGHT} points tall (${menuButton.height.toFixed(1)})`);
 
-  // How to throw: Skip, Lob, Hard and Normal each set the throw's strength (src/main.js POWER; Lob is soft) and Skip.
+  // How to throw: Toss, Lob and Skip set the manner (src/main.js MANNERS), Soft, Medium and Hard the strength (ARC), each on its own.
+  const throwState = () => page.evaluate(() => ({ manner: document.querySelector('#manner [aria-pressed="true"]')?.dataset.value, power: document.querySelector('#power [aria-pressed="true"]')?.dataset.value, pondManner: window.__pond.manner, pondPower: window.__pond.power, skipping: window.__pond.skipping }));
   const throwKinds = [];
-  for (const kind of ['skip', 'lob', 'hard', 'normal']) {
-    await press(`#throw-kind [data-value="${kind}"]`);
-    throwKinds.push(await page.evaluate(() => ({ pressed: document.querySelector('#throw-kind [aria-pressed="true"]')?.dataset.value, power: window.__pond.power, skipping: window.__pond.skipping })));
+  for (const [group, value] of [['manner', 'skip'], ['power', 'hard'], ['manner', 'lob'], ['power', 'soft'], ['manner', 'toss'], ['power', 'normal']]) {
+    await press(`#${group} [data-value="${value}"]`);
+    throwKinds.push(await throwState());
   }
-  const expectedKinds = [{ pressed: 'skip', power: 'normal', skipping: true }, { pressed: 'lob', power: 'soft', skipping: false }, { pressed: 'hard', power: 'hard', skipping: false }, { pressed: 'normal', power: 'normal', skipping: false }];
-  check(JSON.stringify(throwKinds) === JSON.stringify(expectedKinds), `Skip, Lob, Hard and Normal set the throw (${throwKinds.map((kind) => `${kind.pressed}: ${kind.power}${kind.skipping ? ', skipping' : ''}`).join('; ')})`);
-  await press('#speed [data-value="0.25"]');
-  const slowed = await page.evaluate(() => window.__pond.timeScale);
-  await press('#speed [data-value="1"]');
-  const realTime = await page.evaluate(() => window.__pond.timeScale);
-  check(slowed === 0.25 && realTime === 1, `slow motion: ¼× runs the pond at ${slowed} of real time, 1× at ${realTime}`);
+  const expectedKinds = [
+    { manner: 'skip', power: 'normal', skipping: true }, { manner: 'skip', power: 'hard', skipping: true }, { manner: 'lob', power: 'hard', skipping: false },
+    { manner: 'lob', power: 'soft', skipping: false }, { manner: 'toss', power: 'soft', skipping: false }, { manner: 'toss', power: 'normal', skipping: false },
+  ];
+  const kindsRight = throwKinds.every((state, index) => state.manner === expectedKinds[index].manner && state.pondManner === state.manner && state.power === expectedKinds[index].power && state.pondPower === state.power && state.skipping === expectedKinds[index].skipping);
+  check(kindsRight, `Toss, Lob and Skip set the manner and Soft, Medium and Hard the strength, each keeping the other (${throwKinds.map((state) => `${state.power} ${state.manner}${state.skipping ? ', skipping' : ''}`).join('; ')})`);
+  // Slow motion: the clock goes round 1×, ¼×, ⅒× and back, lit while slow.
+  const slowSteps = [];
+  for (let presses = 0; presses < 3; presses++) {
+    await press('#slow');
+    slowSteps.push(await page.evaluate(() => ({ scale: window.__pond.timeScale, rate: document.getElementById('slow-rate').textContent, lit: document.getElementById('slow').getAttribute('aria-pressed') })));
+  }
+  const slowRight = JSON.stringify(slowSteps) === JSON.stringify([{ scale: 0.25, rate: '¼×', lit: 'true' }, { scale: 0.1, rate: '⅒×', lit: 'true' }, { scale: 1, rate: '1×', lit: 'false' }]);
+  check(slowRight, `slow motion: the clock's presses run the pond at ${slowSteps.map((step) => `${step.scale} (${step.rate}${step.lit === 'true' ? ', lit' : ''})`).join(', ')}`);
 
-  // The dropdown of things (src/thingMenu.js): Skip asked for first, so choosing a ball shows it going back to Normal.
-  await press('#throw-kind [data-value="skip"]');
+  // The dropdown of things (src/thingMenu.js): Skip asked for first, so choosing a ball shows it going back to Toss.
+  await press('#manner [data-value="skip"]');
   await press('#thing-chip');
   await page.waitForTimeout(300);
   const menu = await page.evaluate(() => {
@@ -291,14 +304,14 @@ for (const framing of FRAMINGS) {
   const picked = await page.evaluate(() => ({
     thing: window.__pond.thing, open: !document.getElementById('thing-menu').hidden, expanded: document.getElementById('thing-chip').getAttribute('aria-expanded'),
     focused: document.activeElement?.id, label: document.getElementById('thing-chip-name').textContent, sliderHidden: document.getElementById('stone-size').hidden,
-    pressed: document.querySelector('#throw-kind [aria-pressed="true"]')?.dataset.value, skipping: window.__pond.skipping, skipOff: document.querySelector('#throw-kind [data-value="skip"]').getAttribute('aria-disabled'),
+    pressed: document.querySelector('#manner [aria-pressed="true"]')?.dataset.value, skipping: window.__pond.skipping, skipOff: document.querySelector('#manner [data-value="skip"]').getAttribute('aria-disabled'),
   }));
   await press('#pond');
   await page.waitForTimeout(150);
   const pickedThrown = await page.evaluate(() => ({ count: window.__pond.rocks.length, thing: window.__pond.rocks.at(-1)?.thing.key }));
   check(picked.thing === 'tennis' && !picked.open && picked.expanded === 'false' && picked.focused === 'thing-chip' && picked.label === 'Tennis ball' && picked.sliderHidden && pickedThrown.count === rocksBeforePick + 1 && pickedThrown.thing === 'tennis',
     `a pill tapped closes the dropdown (${picked.open ? 'open' : 'closed'}, focus on ${picked.focused}), the strip follows (${picked.label}, slider ${picked.sliderHidden ? 'off' : 'on'}) and the next tap on the water throws it (${pickedThrown.count - rocksBeforePick} thrown, ${pickedThrown.thing})`);
-  check(picked.pressed === 'normal' && !picked.skipping && picked.skipOff === 'true', `a skip asked for goes back to Normal for a ball, Skip greyed out (${picked.pressed}${picked.skipping ? ', skipping' : ''}, Skip off: ${picked.skipOff})`);
+  check(picked.pressed === 'toss' && !picked.skipping && picked.skipOff === 'true', `a skip asked for goes back to Toss for a ball, Skip greyed out (${picked.pressed}${picked.skipping ? ', skipping' : ''}, Skip off: ${picked.skipOff})`);
   // A press on the pond (here above the card) only closes it; the chip pressed again closes it too.
   await press('#thing-chip');
   await page.waitForTimeout(300);
@@ -360,7 +373,7 @@ for (const framing of FRAMINGS) {
   // Each choice as the panel scrolls it into view: a short screen's panel scrolls.
   const choices = await page.evaluate(() => {
     const scale = window.visualViewport ? window.visualViewport.scale : 1;
-    const placed = [...document.querySelectorAll('#water [role="radio"]')].map((choice) => {
+    const placed = [...document.querySelectorAll('#water [role="radio"]:not([hidden])')].map((choice) => {
       choice.scrollIntoView({ block: 'nearest' });
       const box = choice.getBoundingClientRect();
       return { name: choice.dataset.value, left: box.left * scale, right: box.right * scale, top: box.top * scale, bottom: box.bottom * scale, height: box.height * scale };
@@ -371,16 +384,38 @@ for (const framing of FRAMINGS) {
   const [waterPanel] = await boxes('#settings');
   if (framing.touch) check(choices.length === 5 && choices.every((choice) => choice.height >= SMALLEST_BUTTON_HEIGHT - 0.5), `the Water page's five choices are at least ${SMALLEST_BUTTON_HEIGHT} points tall`);
   check(onScreen(waterPanel) && choices.length === 5 && choices.every(onScreen), `the Water page is on the screen, each of its choices once scrolled to`);
-  const clipped = await page.evaluate(() => [...document.querySelectorAll('#water [role="radio"] b')].filter((name) => name.scrollWidth > name.clientWidth).map((name) => name.textContent));
+  const clipped = await page.evaluate(() => [...document.querySelectorAll('#water [role="radio"]:not([hidden]) b')].filter((name) => name.scrollWidth > name.clientWidth).map((name) => name.textContent));
   check(clipped.length === 0, `every Water choice's name fits its card${clipped.length ? ` (not: ${clipped.join(', ')})` : ''}`);
-  await press('#water [data-value="pool"]');
-  const pooled = await page.evaluate(() => ({ clarity: window.__pond.clarity, row: document.querySelector('.menu-tier[data-open="water"] .menu-tier-value').textContent, viewNote: document.getElementById('view-note').textContent }));
-  check(pooled.clarity === 'pool' && pooled.row === 'Pool' && pooled.viewNote.includes('pool'), `Pool puts the rocks in the pool (${pooled.clarity}), the row reads "${pooled.row}", the View note "${pooled.viewNote}"`);
+  // Frozen (src/ice.js): thin ice, its two choices under the cards, fitting; Thick makes it thick; the row and the note follow.
+  const waterRow = () => page.evaluate(() => ({ water: window.__pond.waterChoice, ice: window.__pond.ice, clarity: window.__pond.clarity, row: document.querySelector('.menu-tier[data-open="water"] .menu-tier-value').textContent, note: document.getElementById('ice-note').textContent, iceShown: !document.getElementById('ice-field').hidden }));
+  await press('#water [data-value="frozen"]');
+  await page.waitForTimeout(200);
+  const frozen = await waterRow();
+  check(frozen.water === 'frozen' && frozen.ice === 'thin' && frozen.row === 'Frozen \u00b7 Thin' && frozen.note.includes('centimetre') && frozen.iceShown, `Frozen freezes the water thin (${frozen.water}, ${frozen.ice}), the row reads "${frozen.row}", the ice's choice ${frozen.iceShown ? 'shows' : 'is hidden'}, the note "${frozen.note}"`);
+  const iceChoices = await page.evaluate(() => {
+    const scale = window.visualViewport ? window.visualViewport.scale : 1;
+    return [...document.querySelectorAll('#ice [role="radio"]')].map((choice) => {
+      choice.scrollIntoView({ block: 'nearest' });
+      const box = choice.getBoundingClientRect();
+      return { left: box.left * scale, right: box.right * scale, top: box.top * scale, bottom: box.bottom * scale, height: box.height * scale, clipped: choice.scrollWidth > choice.clientWidth + 0.5 };
+    });
+  });
+  check(iceChoices.length === 2 && iceChoices.every(onScreen) && iceChoices.every((choice) => !choice.clipped) && (!framing.touch || iceChoices.every((choice) => choice.height >= SMALLEST_BUTTON_HEIGHT - 0.5)),
+    `the ice's two choices are on the screen once scrolled to and fit their names`);
+  await press('#ice [data-value="thick"]');
+  const thick = await waterRow();
+  check(thick.ice === 'thick' && thick.row === 'Frozen \u00b7 Thick' && thick.note.includes('Four centimetres'), `Thick makes the ice thick (${thick.ice}), the row reads "${thick.row}", the note "${thick.note}"`);
+  await page.screenshot({ path: path.join(outputFolder, `${framing.name}-ice.png`) });
+  await press('#ice [data-value="thin"]');
   await press('#water [data-value="murky"]');
-  const chosen = await page.evaluate(() => ({ clarity: window.__pond.clarity, row: document.querySelector('.menu-tier[data-open="water"] .menu-tier-value').textContent }));
-  check(chosen.clarity === 'murky' && chosen.row === 'Murky', `Murky sets the clarity (${chosen.clarity}) and the row's value ("${chosen.row}")`);
+  const chosen = await waterRow();
+  check(chosen.clarity === 'murky' && chosen.ice === 'none' && chosen.row === 'Murky' && !chosen.iceShown, `Murky thaws the ice (${chosen.ice}), sets the clarity (${chosen.clarity}) and the row's value ("${chosen.row}")`);
   await page.screenshot({ path: path.join(outputFolder, `${framing.name}-water.png`) });
-  await page.evaluate(() => window.__pond.setClarity('lake'));
+  await page.evaluate(() => window.__pond.setWater('lake'));
+  await press('.menu-page[data-page="water"] .menu-back');
+  await page.waitForTimeout(400);
+  await press('#settings .menu-tier[data-open="water"]');
+  await page.waitForTimeout(400);
   // The Object page (src/things.js): its folds and twenty pictured choices; each sets what is thrown, and the strip's slider follows it.
   await press('.menu-page[data-page="water"] .menu-back');
   await page.waitForTimeout(400);
@@ -510,12 +545,12 @@ for (const framing of FRAMINGS) {
     await page.waitForTimeout(150);
   }
   // Skip turns on for a pizza (it skips, src/things.js).
-  await page.evaluate(() => document.querySelector('#throw-kind [data-value="skip"]').click());
+  await page.evaluate(() => document.querySelector('#manner [data-value="skip"]').click());
   await page.waitForTimeout(100);
-  const pizzaSkips = await page.evaluate(() => ({ skipping: window.__pond.skipping, pressed: document.querySelector('#throw-kind [aria-pressed="true"]')?.dataset.value }));
+  const pizzaSkips = await page.evaluate(() => ({ skipping: window.__pond.skipping, pressed: document.querySelector('#manner [aria-pressed="true"]')?.dataset.value }));
   check(pizzaSkips.skipping && pizzaSkips.pressed === 'skip', `Skip pressed with a pizza turns on (${pizzaSkips.skipping ? 'on' : 'off'}, ${pizzaSkips.pressed} chosen)`);
   // The pie chosen as a user does, its card and Use (the page's controls follow it; __pond.setThing alone leaves them):
-  // it cannot skip, so the throw goes back to Normal, and Skip, pressed, stays off and says why.
+  // it cannot skip, so the manner goes back to Toss, and Skip, pressed, stays off and says why.
   await page.evaluate(() => {
     const card = document.querySelector('#thing [data-value="pie"]');
     card.closest('details').open = true;
@@ -523,12 +558,12 @@ for (const framing of FRAMINGS) {
     document.getElementById('thing-use').click();
   });
   await page.waitForTimeout(100);
-  const pieKind = await page.evaluate(() => ({ skipping: window.__pond.skipping, pressed: document.querySelector('#throw-kind [aria-pressed="true"]')?.dataset.value }));
-  await page.evaluate(() => document.querySelector('#throw-kind [data-value="skip"]').click());   // off (aria-disabled), so a tap is the page's to answer
+  const pieKind = await page.evaluate(() => ({ skipping: window.__pond.skipping, pressed: document.querySelector('#manner [aria-pressed="true"]')?.dataset.value }));
+  await page.evaluate(() => document.querySelector('#manner [data-value="skip"]').click());   // off (aria-disabled), so a tap is the page's to answer
   await page.waitForTimeout(100);
-  const skipHint = await page.evaluate(() => ({ skipping: window.__pond.skipping, pressed: document.querySelector('#throw-kind [aria-pressed="true"]')?.dataset.value, shown: !document.getElementById('hint').hidden, text: document.getElementById('hint').textContent }));
-  check(!pieKind.skipping && pieKind.pressed === 'normal' && !skipHint.skipping && skipHint.pressed === 'normal' && skipHint.shown && skipHint.text.startsWith('A pie does not skip'),
-    `a pie chosen while skipping goes back to Normal (${pieKind.pressed}), and Skip pressed with it stays off and says why ("${skipHint.text}")`);
+  const skipHint = await page.evaluate(() => ({ skipping: window.__pond.skipping, pressed: document.querySelector('#manner [aria-pressed="true"]')?.dataset.value, shown: !document.getElementById('hint').hidden, text: document.getElementById('hint').textContent }));
+  check(!pieKind.skipping && pieKind.pressed === 'toss' && !skipHint.skipping && skipHint.pressed === 'toss' && skipHint.shown && skipHint.text.startsWith('A pie does not skip'),
+    `a pie chosen while skipping goes back to Toss (${pieKind.pressed}), and Skip pressed with it stays off and says why ("${skipHint.text}")`);
   // Arrow keys cross from one fold into the next (src/settingsPanel.js radioGroup): the next fold opens, the focus moves into
   // it and the next press carries on from there.
   await press('#menu-button');
@@ -581,14 +616,32 @@ for (const framing of FRAMINGS) {
       `a tap at the slider's left end loads ${hour.time} (the first hour, ${hour.first.name}), the row reads "${hour.row}", the readout "${hour.readout}"`);
     await page.screenshot({ path: path.join(outputFolder, `${framing.name}-time.png`) });
   }
+  const timeButtons = await page.locator('#time-presets button').evaluateAll((buttons) => buttons.map((button) => ({ height: button.getBoundingClientRect().height, fits: button.scrollWidth <= button.clientWidth })));
+  check(timeButtons.length === 4 && timeButtons.every((button) => button.height >= 44 && button.fits), 'the four named time buttons fit their labels and have 44 px touch targets');
+  await press('#time-presets [data-hour="afternoon"]');
+  await page.waitForFunction(() => window.__pond.hour === 'afternoon' && document.getElementById('time-name').textContent === 'Afternoon', null, { timeout: 60000 });
+  check(await page.locator('#time-presets [data-hour="afternoon"]').getAttribute('aria-pressed') === 'true' && await page.locator('#time-presets [aria-pressed="true"]').count() === 1, 'a named hour changes the scene, readout and selected button together');
   await press('.menu-page[data-page="time"] .menu-back');
   await page.waitForTimeout(400);
   await press('#settings .menu-tier[data-open="sky"]');
   await page.waitForTimeout(400);
-  await press('#sky [data-value="meadow"]');
-  await page.waitForFunction(() => window.__pond.sky === 'meadow' && document.querySelector('.menu-tier[data-open="time"] .menu-tier-value').textContent === 'Afternoon', null, { timeout: 60000 }).catch(() => {});
+  await press('#sky [data-value="cove"]');
+  await page.waitForFunction(() => window.__pond.sky === 'cove' && document.querySelector('.menu-tier[data-open="time"] .menu-tier-value').textContent === 'Morning', null, { timeout: 60000 }).catch(() => {});
   const lone = await page.evaluate(() => ({ hidden: document.getElementById('time').hidden, note: document.getElementById('time-note').textContent, row: document.querySelector('.menu-tier[data-open="time"] .menu-tier-value').textContent }));
-  check(lone.hidden && lone.note.includes('single photograph') && lone.row === 'Afternoon', `under the meadow's lone photograph the slider hides, the row reads "${lone.row}" and the note "${lone.note}"`);
+  check(lone.hidden && lone.note.includes('single photograph') && lone.row === 'Morning', `under the cove's lone photograph the slider hides, the row reads "${lone.row}" and the note "${lone.note}"`);
+  check(await page.locator('#time-presets').isHidden(), 'a single-hour location hides the named time buttons too');
+  // The Pool: the rocks in the pool (the View note follows), and the Water page shows its own water in place of the lake's.
+  await press('#sky [data-value="pool"]');
+  await page.waitForFunction(() => window.__pond.sky === 'pool' && !document.querySelector('.menu-tier[data-open="sky"] .menu-tier-value').textContent.endsWith('\u2026'), null, { timeout: 60000 }).catch(() => {});
+  const pooled = await page.evaluate(() => ({
+    sky: window.__pond.sky, pooled: window.__pond.pooled, clarity: window.__pond.clarity, row: document.querySelector('.menu-tier[data-open="sky"] .menu-tier-value').textContent,
+    water: document.querySelector('.menu-tier[data-open="water"] .menu-tier-value').textContent, viewNote: document.getElementById('view-note').textContent,
+    cards: [...document.querySelectorAll('#water [role="radio"]:not([hidden])')].map((card) => card.dataset.value),
+  }));
+  check(pooled.pooled && pooled.clarity === 'pool' && pooled.row === 'Pool' && pooled.water === 'Pool water' && pooled.viewNote.includes('pool') && pooled.cards.join() === 'open,frozen',
+    `Pool puts the rocks in the pool (${pooled.sky}, its water ${pooled.clarity}), the rows read "${pooled.row}" and "${pooled.water}", the View note "${pooled.viewNote}", the Water page offers ${pooled.cards.join(', ')}`);
+  await press('#sky [data-value="lakeside"]');
+  await page.waitForFunction(() => window.__pond.sky === 'lakeside', null, { timeout: 60000 }).catch(() => {});
   await press('.menu-page[data-page="sky"] .menu-back');   // the list again: the Location page reaches the water's middle on a small phone
   await page.waitForTimeout(400);
   // The Weather page: its choices fit, Heavy rain brings the rain and Heavy snow the snow.
@@ -634,7 +687,7 @@ for (const framing of FRAMINGS) {
     await page.keyboard.press('Escape');
     check(await page.evaluate(() => document.getElementById('settings').hidden), `Escape closes the settings`);
     // Skip left on for stones moves nothing of a ball's throw (review: a far tap in the pool aimed a basketball 2 m further).
-    await page.evaluate(() => { window.__pond.setClarity('pool'); window.__pond.setThing('basketball'); });
+    await page.evaluate(async () => { await window.__pond.setSky('pool'); window.__pond.setThing('basketball'); });
     await page.waitForTimeout(300);
     const tapThrow = async (skip) => {
       await page.evaluate((on) => window.__pond.setSkip(on), skip);
@@ -645,7 +698,7 @@ for (const framing of FRAMINGS) {
     const skipOff = await tapThrow(false), skipOn = await tapThrow(true);
     const apart = skipOff.velocity && skipOn.velocity ? Math.hypot(...skipOff.velocity.map((value, index) => value - skipOn.velocity[index])) : Infinity;
     check(skipOff.thing === 'basketball' && skipOn.thing === 'basketball' && !skipOn.skip && apart < 0.05, `a basketball tapped at the far pool is thrown alike with Skip off and left on for stones (${apart.toFixed(3)} m/s apart, ${skipOn.skip ? 'skipping' : 'not skipping'})`);
-    await page.evaluate(() => { window.__pond.setSkip(false); window.__pond.setClarity('lake'); window.__pond.setThing('stone'); });
+    await page.evaluate(async () => { window.__pond.setSkip(false); await window.__pond.setSky('lakeside'); window.__pond.setThing('stone'); });
     // A thing defined from outside, sized by its diameter, keeps its own size (review: it took the stones' 6 cm).
     const sized = await page.evaluate(() => {
       const pond = window.__pond;

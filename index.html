@@ -126,7 +126,7 @@
     touch-action: manipulation;   /* quick taps on the buttons never zoom the page */
     display: flex;
     flex-wrap: wrap;
-    gap: 10px 22px;
+    gap: 10px 28px;   /* between the strip's parts: what is thrown, how, slow motion, the button; 8 px inside a part (.group) */
     align-items: center;
     justify-content: center;
     background: linear-gradient(to top, var(--panel-strong), var(--panel) 70%, transparent);
@@ -145,11 +145,12 @@
     border-radius: 999px;
     overflow: hidden;
   }
+  /* A choice made is a quiet, lighter pill: the strip's one lit control is the throw button. */
   .segmented button {
     appearance: none;
     border: 0;
     background: transparent;
-    color: var(--fg);
+    color: var(--muted);
     font: inherit;
     font-size: 13px;
     padding: 6px 12px;
@@ -157,14 +158,36 @@
     min-width: 44px;
   }
   .segmented button + button { border-left: 1px solid var(--line); }
+  .segmented button:hover { color: var(--fg); }
   .segmented button[aria-pressed="true"] {
-    background: var(--accent);
-    color: var(--accent-ink);
+    background: rgba(238, 243, 244, 0.14);
+    color: var(--fg);
     font-weight: 600;
   }
+  /* Slow motion: a clock and the time's rate (1×, ¼×, ⅒×), lit while the pond runs slow; a press goes on to the next rate. */
+  .slow {
+    appearance: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: transparent;
+    color: var(--muted);
+    font: inherit;
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+    padding: 6px 11px 6px 9px;
+    white-space: nowrap;
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+  .slow svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+  .slow:hover { color: var(--fg); }
+  .slow[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); background: rgba(241, 199, 122, 0.12); font-weight: 600; }
   /* Skip, greyed out while what is thrown cannot skip: pressed, it says why (the hint). */
   .segmented button[aria-disabled="true"] { opacity: 0.35; cursor: default; }
-  .segmented button:focus-visible, .throw:focus-visible, .reset-view:focus-visible, input[type="range"]:focus-visible, .thing-menu-card button:focus-visible {
+  .segmented button:focus-visible, .slow:focus-visible, .throw:focus-visible, .reset-view:focus-visible, input[type="range"]:focus-visible, .thing-menu-card button:focus-visible {
     outline: 2px solid var(--accent);
     outline-offset: 2px;
   }
@@ -176,25 +199,26 @@
      its own. */
   /* A thing of one size (src/things.js: a golf or tennis ball) keeps the slider, off. */
   input[type="range"]:disabled { opacity: 0.35; cursor: default; }
-  /* What is thrown, by name, in a pill that opens the dropdown of things (src/thingMenu.js). */
+  /* What is thrown, by name with a chevron: the strip's one dropdown (src/thingMenu.js), so the one word
+     with a chevron. No box round it; a faint fill under the pointer or while its dropdown is open. */
   .thing-chip {
     appearance: none;
     display: inline-flex;
     align-items: center;
-    gap: 5px;
-    border: 1px solid var(--line);
-    border-radius: 999px;
-    background: rgba(238, 243, 244, 0.06);
+    gap: 4px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
     color: var(--fg);
     font: inherit;
-    font-size: 13px;
+    font-size: 14px;
     font-weight: 500;
-    padding: 4px 9px 4px 12px;
+    padding: 6px 6px 6px 8px;
     white-space: nowrap;
     cursor: pointer;
   }
-  .thing-chip:hover, .thing-chip[aria-expanded="true"] { background: rgba(238, 243, 244, 0.12); border-color: rgba(238, 243, 244, 0.3); }
-  .thing-chip svg { width: 10px; height: 10px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; color: var(--muted); }
+  .thing-chip:hover, .thing-chip[aria-expanded="true"] { background: rgba(238, 243, 244, 0.1); }
+  .thing-chip svg { width: 11px; height: 11px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; color: var(--muted); margin-top: 1px; }
   .thing-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   /* A thing of one size (src/things.js: a golf or tennis ball): no slider, its size and mass instead. */
   .stone-group input[type="range"][hidden] { display: none; }
@@ -264,26 +288,28 @@
     box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
   }
   .readout {
+    color: var(--muted);   /* a line, not a control */
     font-size: 13px;
     min-width: 8.6em;   /* "24.5 cm · 20.0 kg" fits, so the slider keeps its length as the size changes */
     font-variant-numeric: tabular-nums;
   }
-  /* The throw button: the strip's one filled, bold control. The water is the
-     other way to throw, and the one that aims. */
+  /* The throw button: the strip's one lit control, in the accent. The water is
+     the other way to throw, and the one that aims. */
   .throw {
     appearance: none;
-    border: 1px solid rgba(238, 243, 244, 0.3);
-    background: rgba(238, 243, 244, 0.16);
-    color: var(--fg);
+    border: 0;
+    background: var(--accent);
+    color: var(--accent-ink);
     font: inherit;
     font-size: 14px;
     font-weight: 600;
-    padding: 8px 18px;
+    padding: 9px 20px;
     border-radius: 999px;
     white-space: nowrap;
     cursor: pointer;
+    box-shadow: 0 1px 6px rgba(0, 0, 0, 0.35);
   }
-  .throw:hover { background: rgba(238, 243, 244, 0.24); }
+  .throw:hover { filter: brightness(1.06); }
   /* Shown only while the view is away from the shore's (turned, zoomed or
      another view): a pill under the settings button, where the view's
      setting lives. */
@@ -616,6 +642,7 @@
   .menu-card img { flex: none; width: 80px; height: 45px; border-radius: 7px; object-fit: cover; background: rgba(238, 243, 244, 0.08); }
   .menu-card b { display: block; font-size: 14px; font-weight: 500; }
   .menu-card small { display: block; margin-top: 2px; font-size: 12px; color: var(--muted); }
+  .menu-ice { margin-top: 14px; }   /* Frozen water's ice, under the Water page's cards */
   /* The Object page: a fold for each group of things (src/things.js),
      one open at a time, its heading the group's name, how many it holds and
      the one chosen in it; the cards inside as the Water page's. */
@@ -698,6 +725,14 @@
   .time-readout b { font-size: 16px; font-weight: 500; }
   .time-readout span, .time-ends { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
   .time-ends { display: flex; justify-content: space-between; margin: 0 2px; }
+  .time-presets { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 16px; }
+  .time-presets[hidden] { display: none; }
+  .time-preset { min-height: 48px; padding: 9px 12px; border: 1px solid var(--line); border-radius: 10px; color: inherit; background: transparent; text-align: left; cursor: pointer; font: inherit; }
+  .time-preset span { display: block; font-size: 13px; }
+  .time-preset small { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+  .time-preset[aria-pressed="true"] { border-color: var(--accent); background: rgba(245, 201, 120, 0.12); }
+  .time-preset:hover { background: rgba(245, 201, 120, 0.08); }
+  .time-preset:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .settings input[type="range"] { display: block; width: 100%; }
   .settings input[type="range"][hidden], .time-ends[hidden] { display: none; }
   .menu-button:focus-visible, .menu-tier:focus-visible, .menu-back:focus-visible, .menu-seg button:focus-visible, .menu-card:focus-visible {
@@ -741,7 +776,7 @@
   .load-actions button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   @media (pointer: coarse) {
     input[type="range"] { --thumb: 28px; --track: 6px; height: 44px; }
-    .segmented button, .reset-view, .thing-chip, .thing-menu-card [role="menuitemradio"] { min-height: 36px; }
+    .segmented button, .slow, .reset-view, .thing-chip, .thing-menu-card [role="menuitemradio"] { min-height: 36px; }
     .throw { min-height: 40px; }
     /* A finger's targets on What to throw: 44 px (Apple's smallest comfortable). */
     .menu-group > summary, .thing-use, .thing-quick button { min-height: 44px; }
@@ -761,20 +796,20 @@
      two rows, what is thrown and the throw button, then how to throw and
      slow motion. The row break comes after the throw button (order),
      wherever it sits in the page. */
-  @media (max-width: 859px) {
+  @media (max-width: 1023px) {
     .throw { order: 1; }
     .row-break { display: block; order: 2; }
-    .controls > .segmented { order: 3; }
+    .throw-group, .controls > .slow { order: 3; }
   }
-  /* Phones in portrait: two rows. The slider for what is thrown, its chip
+  /* Phones in portrait: two rows. The slider for what is thrown, its name
      and size above it, with the throw button beside it; then how to throw at
      the left and slow motion at the right (its auto margin takes the row's
-     room). The wind and the quality are in the settings. */
+     room), the segments tight enough for a 375 px screen. The wind and the quality are in the settings. */
   @media (max-width: 520px) {
     .title p { display: none; }
     .cue { display: flex; }
     .thing-menu-card { width: 100%; }
-    .controls { gap: 8px 12px; padding-top: 8px; padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 8px); }
+    .controls { gap: 8px 10px; padding-top: 8px; padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 8px); }
     .stone-group {
       flex: 1 1 200px;
       display: grid;
@@ -784,12 +819,12 @@
       gap: 0 8px;
     }
     /* The chip and the size sit in the slider's box above its 28 px thumb, reaching into the room the thumb leaves. */
-    .stone-group > .thing-chip { grid-area: name; justify-self: start; min-height: 34px; margin-bottom: -6px; }
+    .stone-group > .thing-chip { grid-area: name; justify-self: start; min-height: 34px; margin-bottom: -6px; margin-left: -8px; }
     .stone-group > .readout { grid-area: size; min-width: 0; text-align: right; font-size: 12px; margin-bottom: -6px; }
     .stone-group input[type="range"] { grid-area: slider; width: 100%; }
     .throw { align-self: flex-end; margin-bottom: 4px; padding: 8px 15px; }
-    .controls > .playback { margin-left: auto; }
-    .segmented button { padding: 6px 8px; min-width: 38px; }
+    .controls > .slow { margin-left: auto; padding: 6px 9px 6px 8px; }
+    .segmented button { padding: 6px 6px; min-width: 36px; }
   }
   @media (max-width: 400px) {
     .throw .more { display: none; }
@@ -799,6 +834,7 @@
     .controls { gap: 4px 12px; padding-top: 6px; padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 6px); }
     .group { gap: 6px; }
     .segmented button { padding: 6px 7px; min-width: 38px; }
+    .controls > .slow { margin-left: auto; }
     input[type="range"] { width: 120px; }
   }
   @media (prefers-reduced-motion: reduce) {
@@ -826,19 +862,22 @@
     <input type="range" id="stone-size" min="1.5" max="30" step="0.5" value="6" aria-label="Size">
     <span class="readout" id="stone-readout">6 cm</span>
   </div>
-  <!-- How it is thrown: an arc (src/main.js POWER; Lob is the code's soft) or a skip. Skip is greyed out for what cannot skip. -->
-  <div class="segmented" id="throw-kind" role="group" aria-label="How to throw">
-    <button type="button" data-value="lob" aria-pressed="false" title="A high, slow arc">Lob</button>
-    <button type="button" data-value="normal" aria-pressed="true" title="A middling arc">Normal</button>
-    <button type="button" data-value="hard" aria-pressed="false" title="Fast and flat">Hard</button>
-    <button type="button" data-value="skip" aria-pressed="false" title="Skip the rock across the water">Skip</button>
+  <!-- How it is thrown (src/main.js ARC): the manner, a toss (the low way round), a lob (the high way) or a skip, and the
+       strength, which is the pace either way. Skip is greyed out for what cannot skip. -->
+  <div class="group throw-group">
+    <div class="segmented" id="manner" role="group" aria-label="How to throw">
+      <button type="button" data-value="toss" aria-pressed="true" title="Thrown the low way round">Toss</button>
+      <button type="button" data-value="lob" aria-pressed="false" title="Thrown high">Lob</button>
+      <button type="button" data-value="skip" aria-pressed="false" title="Skip the rock across the water">Skip</button>
+    </div>
+    <div class="segmented" id="power" role="group" aria-label="How hard">
+      <button type="button" data-value="soft" aria-pressed="false" title="Thrown gently">Soft</button>
+      <button type="button" data-value="normal" aria-pressed="true" title="Thrown as one would">Medium</button>
+      <button type="button" data-value="hard" aria-pressed="false" title="Thrown hard">Hard</button>
+    </div>
   </div>
-  <!-- How fast the pond's time runs: real time, or slow motion. -->
-  <div class="segmented playback" id="speed" role="group" aria-label="Slow motion">
-    <button type="button" data-value="1" aria-pressed="true" aria-label="Real time" title="Real time">1×</button>
-    <button type="button" data-value="0.25" aria-pressed="false" aria-label="A quarter of real time" title="A quarter of real time">¼×</button>
-    <button type="button" data-value="0.1" aria-pressed="false" aria-label="A tenth of real time" title="A tenth of real time">⅒×</button>
-  </div>
+  <!-- How fast the pond's time runs: real time, or slow motion, a press going on to the next rate. -->
+  <button type="button" class="slow" id="slow" aria-pressed="false" aria-label="Slow motion: off, real time" title="Slow motion"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.2"></circle><path d="M8 4.6 V8 L10.4 9.6"></path></svg><span id="slow-rate">1×</span></button>
   <div class="row-break" aria-hidden="true"></div>
   <button type="button" class="throw" id="throw" aria-label="Throw a rock">Throw<span class="more"> a rock</span></button>
 </div>
@@ -878,7 +917,7 @@
     </button>
     <button type="button" class="menu-tier" data-open="water">
       <svg class="menu-tier-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.8c-2.7 3.3-5.1 6.2-5.1 8.9a5.1 5.1 0 0 0 10.2 0c0-2.7-2.4-5.6-5.1-8.9z"></path><path d="M7.6 12.2a2.5 2.5 0 0 0 2.1 2.3"></path></svg>
-      <span class="menu-tier-name"><b>Water</b><small>Lake, pond or pool</small></span>
+      <span class="menu-tier-name"><b>Water</b><small>Clear, murky or frozen</small></span>
       <span class="menu-tier-value"></span><span class="menu-tier-chevron" aria-hidden="true">&rsaquo;</span>
     </button>
     <button type="button" class="menu-tier" data-open="time">
@@ -956,7 +995,18 @@
         <button type="button" class="menu-card" role="radio" data-value="lake"><img src="assets/water/thumbs/lake.jpg" alt="" width="80" height="45"><span><b>Lake</b><small>An Alpine lake: bright sand, then deep blue</small></span></button>
         <button type="button" class="menu-card" role="radio" data-value="pond"><img src="assets/water/thumbs/pond.jpg" alt="" width="80" height="45"><span><b>Pond</b><small>Green; the sand fades a little way out</small></span></button>
         <button type="button" class="menu-card" role="radio" data-value="murky"><img src="assets/water/thumbs/murky.jpg" alt="" width="80" height="45"><span><b>Murky</b><small>A lake after rain: sand only at the bank</small></span></button>
-        <button type="button" class="menu-card" role="radio" data-value="pool"><img src="assets/water/thumbs/pool.jpg" alt="" width="80" height="45"><span><b>Pool</b><small>A tiled pool; ripples bounce off its walls</small></span></button>
+        <!-- In the Pool place the lake's waters give way to the pool's own. -->
+        <button type="button" class="menu-card" role="radio" data-value="open" hidden><img src="assets/sky/thumbs/pool.jpg" alt="" width="80" height="45"><span><b>Pool water</b><small>Filtered: the tiles clear to the bottom</small></span></button>
+        <button type="button" class="menu-card" role="radio" data-value="frozen"><img src="assets/water/thumbs/frozen.jpg" alt="" width="80" height="45"><span><b>Frozen</b><small>Ice to break, crack and slide things on</small></span></button>
+      </div>
+      <!-- Frozen water's ice: shown while it is frozen. -->
+      <div class="menu-ice" id="ice-field" hidden>
+        <div class="menu-field-label" id="ice-label">Ice</div>
+        <div class="menu-seg" id="ice" role="radiogroup" aria-labelledby="ice-label" aria-describedby="ice-note">
+          <button type="button" role="radio" data-value="thin">Thin</button>
+          <button type="button" role="radio" data-value="thick">Thick</button>
+        </div>
+        <div class="menu-note" id="ice-note" aria-live="polite"></div>
       </div>
     </div>
   </div>
@@ -964,11 +1014,13 @@
     <div class="menu-head"><button type="button" class="menu-back" aria-label="Back"><span aria-hidden="true">&lsaquo;</span></button><h3>Location</h3></div>
     <div class="menu-field">
       <div class="menu-cards" id="sky" role="radiogroup" aria-label="Location" aria-describedby="sky-note">
+        <button type="button" class="menu-card" role="radio" data-value="swiss"><img src="assets/sky/thumbs/swiss.jpg" alt="" width="80" height="45"><span><b>Swiss Alps</b><small>Snowy peaks at Lago d’Isola · starts frozen</small></span></button>
+        <button type="button" class="menu-card" role="radio" data-value="cove"><img src="assets/sky/thumbs/cove.jpg" alt="" width="80" height="45"><span><b>Rocky cove</b><small>Sheltered rocks, a bright sea horizon</small></span></button>
+        <button type="button" class="menu-card" role="radio" data-value="highlands"><img src="assets/sky/thumbs/highlands.jpg" alt="" width="80" height="45"><span><b>Highlands</b><small>Mountain ridges · dawn to dusk</small></span></button>
+        <button type="button" class="menu-card" role="radio" data-value="desert"><img src="assets/sky/thumbs/desert.jpg" alt="" width="80" height="45"><span><b>Desert oasis</b><small>Golden rocks · moonlight and stars</small></span></button>
         <button type="button" class="menu-card" role="radio" data-value="lakeside"><img src="assets/sky/thumbs/lakeside.jpg" alt="" width="80" height="45"><span><b>Lakeside</b><small>A wooded shore, a far bank</small></span></button>
         <button type="button" class="menu-card" role="radio" data-value="mesas"><img src="assets/sky/thumbs/mesas.jpg" alt="" width="80" height="45"><span><b>Mesas</b><small>Wide water to flat-topped hills</small></span></button>
-        <button type="button" class="menu-card" role="radio" data-value="meadow"><img src="assets/sky/thumbs/meadow.jpg" alt="" width="80" height="45"><span><b>Meadow</b><small>Summer trees, afternoon sun</small></span></button>
-        <button type="button" class="menu-card" role="radio" data-value="alpine"><img src="assets/sky/thumbs/alpine.jpg" alt="" width="80" height="45"><span><b>Alpine</b><small>Pines, and snowy peaks up the valley</small></span></button>
-        <button type="button" class="menu-card" role="radio" data-value="open"><img src="assets/sky/thumbs/open.jpg" alt="" width="80" height="45"><span><b>Open sky</b><small>Clouds out to the horizon</small></span></button>
+        <button type="button" class="menu-card" role="radio" data-value="pool"><img src="assets/sky/thumbs/pool.jpg" alt="" width="80" height="45"><span><b>Pool</b><small>A tiled pool by the lake; ripples bounce off its walls</small></span></button>
       </div>
       <div class="menu-note" id="sky-note" aria-live="polite"></div>
     </div>
@@ -981,6 +1033,7 @@
       <input type="range" id="time" min="0" max="0" step="1" value="0" aria-labelledby="time-label" aria-describedby="time-note">
       <div class="time-ends" id="time-ends" aria-hidden="true"><span id="time-first"></span><span id="time-last"></span></div>
       <div class="menu-note" id="time-note" aria-live="polite"></div>
+      <div class="time-presets" id="time-presets" role="group" aria-label="Choose a time of day"></div>
     </div>
   </div>
   <div class="menu-page" data-page="weather" hidden>
@@ -1205,27 +1258,38 @@
       clearTimeout(hintTimer);
       hintTimer = setTimeout(() => { hint.hidden = true; }, 2600);
     };
-    // How it is thrown: an arc (src/main.js POWER: Lob is the code's soft, a high slow arc; Hard a fast flat one), or
-    // a skip, thrown at the normal strength. Skip is greyed out for what cannot skip and, pressed, says why; choosing
-    // such a thing while skipping goes back to Normal (updateThing).
-    const THROW_KINDS = { lob: { power: 'soft', skip: false }, normal: { power: 'normal', skip: false }, hard: { power: 'hard', skip: false }, skip: { power: 'normal', skip: true } };
-    const throwKinds = document.getElementById('throw-kind');
-    const skipButton = throwKinds.querySelector('[data-value="skip"]');
-    let throwKind = 'normal';
-    const setThrowKind = (value) => {
-      throwKind = value;
-      pond.setPower(THROW_KINDS[value].power);
-      pond.setSkip(THROW_KINDS[value].skip);
-      for (const button of throwKinds.querySelectorAll('button')) button.setAttribute('aria-pressed', String(button.dataset.value === value));
+    // How it is thrown (src/main.js ARC): the manner, Toss, Lob or Skip, and the strength, Soft, Medium (the code's
+    // normal) or Hard. Skip is greyed out for what cannot skip and, pressed, says why; choosing such a thing while
+    // skipping goes back to Toss (updateThing).
+    const manners = document.getElementById('manner');
+    const skipButton = manners.querySelector('[data-value="skip"]');
+    const showManner = (value) => {
+      for (const button of manners.querySelectorAll('button')) button.setAttribute('aria-pressed', String(button.dataset.value === value));
     };
-    throwKinds.addEventListener('click', (event) => {
+    const setManner = (value) => { pond.setManner(value); showManner(value); };
+    manners.addEventListener('click', (event) => {
       const button = event.target.closest('button');
       if (!button) return;
       if (button.getAttribute('aria-disabled') === 'true') { showHint(button.title); return; }
-      setThrowKind(button.dataset.value);
+      setManner(button.dataset.value);
     });
-    // Slow motion: how fast the pond's time runs.
-    segmented('speed', (value) => pond.setTimeScale(Number(value)));
+    segmented('power', (value) => pond.setPower(value));
+    // Slow motion: how fast the pond's time runs, each press the next rate round (SLOW_RATES), lit while slow.
+    const SLOW_RATES = [{ scale: 1, rate: '1×', said: 'off, real time' }, { scale: 0.25, rate: '¼×', said: 'a quarter of real time' }, { scale: 0.1, rate: '⅒×', said: 'a tenth of real time' }];
+    const slowButton = document.getElementById('slow');
+    const showSlow = (scale) => {
+      const step = SLOW_RATES.find((candidate) => candidate.scale === scale) ?? SLOW_RATES[0];
+      document.getElementById('slow-rate').textContent = step.rate;
+      slowButton.setAttribute('aria-pressed', String(step.scale !== 1));
+      slowButton.setAttribute('aria-label', `Slow motion: ${step.said}`);
+    };
+    slowButton.addEventListener('click', () => {
+      const at = SLOW_RATES.findIndex((candidate) => candidate.scale === pond.timeScale);
+      const next = SLOW_RATES[(at + 1) % SLOW_RATES.length];
+      pond.setTimeScale(next.scale);
+      showSlow(next.scale);
+    });
+    showSlow(pond.timeScale);
     // The first visit's cue (a phone's, where the title's line is hidden): it goes with the first throw, for good on this device.
     const cue = document.getElementById('cue');
     const THROWN_KEY = 'stone-pond-thrown';
@@ -1259,6 +1323,10 @@
         under: 'Under the water, the sky in a bright window overhead and the tiles mirrored in the surface past it.',
         turned: 'Turned by hand. Drag the water to look around; Reset view comes back to the deck.',
       },
+      ice: {
+        thin: 'A centimetre of ice: a stone or a bowling ball breaks through and splashes, cracks running out from its hole; a light ball, a gem or a pebble skids away. No waves rise under it.',
+        thick: 'Four centimetres of ice: what is thrown clatters and slides far over it, and only a big rock, or a heavy ball lobbed high, breaks through.',
+      },
       wind: {
         calm: 'Still water: the shore stands in it as in a mirror.',
         breeze: 'Light ripples that blur the reflections.',
@@ -1280,17 +1348,22 @@
         'heavy-snow': 'Heavy snow: big flakes thick in the air, the shore white, the far bank lost in the snow. A frozen pizza stays frozen out of the water.',
         blizzard: 'A blizzard: heavy snow driven sideways by a gale, the world beyond the pond gone white.',
       },
-      time: 'Each hour is a photograph of this place, taken from one spot through a day: the land stays where it is and the sun moves round it.',
-      oneTime: 'This place is a single photograph. Lakeside and Mesas were photographed through the day: pick one of them under Location to change the hour.',
+      time: 'Choose a moment below or slide through the day. Each is a real photograph, aligned to keep the landscape in place.',
+      oneTime: 'This place is a single photograph. Try Highlands, Desert oasis, Lakeside or Mesas for changing light.',
     };
     const showViewChoice = radioGroup(document.getElementById('view'), (value) => pond.showView(value));
     showView = () => {
       const name = currentView.view;
       showViewChoice(name);
       settings.setValue('view', name ? label('view', name) : 'Turned');
-      document.getElementById('view-note').textContent = (pond.clarity === 'pool' ? NOTES.poolView : NOTES.view)[name ?? 'turned'];
+      document.getElementById('view-note').textContent = (pond.pooled ? NOTES.poolView : NOTES.view)[name ?? 'turned'];
     };
-    const showWater = radioGroup(document.getElementById('water'), (value) => { pond.setClarity(value); updateWater(); });
+    // The water: the lake's clarities, or in the pool its own (open: no ice), or frozen.
+    const showWater = radioGroup(document.getElementById('water'), (value) => {
+      if (value === 'open') pond.setIce('none');
+      else pond.setWater(value);
+      updateWater();
+    });
     // The Object page, built from the registry (src/things.js): a fold
     // for each group, its things' cards inside, the chosen thing's fold open
     // and only one open at a time; built again whenever a thing is defined.
@@ -1460,12 +1533,13 @@
       // The dropdown's pill for it checked, and its foot naming it.
       for (const pill of menuGroups.querySelectorAll('[role="menuitemradio"]')) pill.setAttribute('aria-checked', String(pill.dataset.value === pond.thing));
       document.getElementById('thing-more-text').textContent = `More about the ${thing.name.toLowerCase()}`;
-      // Skip skips what skips (a stone, a pizza): greyed out for anything else, and it says so; a skip asked for goes back to Normal.
+      // Skip skips what skips (a stone, a pizza): greyed out for anything else, and it says so; a skip asked for goes back to Toss.
       skipButton.setAttribute('aria-disabled', String(!thing.skips));
       const called = thing.called.charAt(0).toUpperCase() + thing.called.slice(1);
       const lands = floatsOrSinks(thing.properties(thing.slider ? Number(sizeInput.value) : undefined)).toLowerCase();
       skipButton.title = thing.skips ? `Skip ${thing.called} across the water` : `${called} does not skip: it ${lands} where it lands.`;
-      if (!thing.skips && throwKind === 'skip') setThrowKind('normal');
+      if (!thing.skips && pond.manner === 'skip') setManner('toss');
+      showManner(pond.manner);
       // The throw button names what it throws (the thing's `called`: a rock, a ball, a gem, an apple…).
       const thrown = thing.called;
       const throwButton = document.getElementById('throw');
@@ -1481,9 +1555,19 @@
       settings.setValue('sound', pond.sound ? 'On' : 'Off');
     }
     updateSound();
+    // The Water page as the place has it: the lake's clarities, or the pool's own water; Frozen's ice under the cards.
+    const showIce = radioGroup(document.getElementById('ice'), (value) => { pond.setIce(value); updateWater(); });
     function updateWater() {
-      showWater(pond.clarity);
-      settings.setValue('water', label('water', pond.clarity));
+      for (const card of document.querySelectorAll('#water [data-value]')) {
+        if (card.dataset.value !== 'frozen') card.hidden = (card.dataset.value === 'open') !== pond.pooled;
+      }
+      const frozen = pond.waterChoice === 'frozen';
+      const choice = frozen ? 'frozen' : pond.pooled ? 'open' : pond.waterChoice;
+      showWater(choice);
+      settings.setValue('water', frozen ? `Frozen \u00b7 ${label('ice', pond.iceThickness)}` : label('water', choice));
+      document.getElementById('ice-field').hidden = !frozen;
+      showIce(pond.iceThickness);
+      document.getElementById('ice-note').textContent = NOTES.ice[pond.iceThickness];
       showView();   // the pool's views are told otherwise
     }
     const showWind = radioGroup(document.getElementById('wind'), (value) => { pond.setWind(value); updateWind(); });
@@ -1528,9 +1612,10 @@
     };
     // A sky loads its photo first (about 6 MB); the old one stays until then.
     const skyNote = document.getElementById('sky-note');
-    let skyChoice = null;   // the sky last picked here, while it loads
+    let sceneChoice = 0;   // ignores callbacks from an older location OR hour
     const showSky = radioGroup(document.getElementById('sky'), (value) => {
-      skyChoice = value;
+      const choice = ++sceneChoice;
+      timeChoice = null;
       showSky(value);
       if (value === pond.sky) updateSky();
       else {
@@ -1539,7 +1624,7 @@
       }
       // Always asked, so a load still queued for an earlier pick is dropped.
       pond.setSky(value).then((shown) => {
-        if (skyChoice !== value) return;   // another was picked since: its load reports
+        if (sceneChoice !== choice) return;
         updateSky();
         if (shown !== value) skyNote.textContent = 'That place could not be loaded. Check the connection and try again.';
       });
@@ -1549,6 +1634,7 @@
       settings.setValue('sky', label('sky', pond.sky));
       skyNote.textContent = '';
       updateTime();
+      updateWater();   // the pool has its own water
     }
     // The time of day: the shown place's hours on a slider (pond.hours), a
     // lone photograph's one hour with no slider. An hour is a photo to load,
@@ -1556,7 +1642,9 @@
     // asked for loads (pond.setHour).
     const timeInput = document.getElementById('time');
     const timeNote = document.getElementById('time-note');
+    const timePresets = document.getElementById('time-presets');
     let timeChoice = null;   // the hour last picked here, while it loads
+    let timePresetsPlace;
     const hourText = (hour) => (hour.clock ? `${hour.label} \u00b7 ${hour.clock}` : hour.label);
     function showHour(index) {
       const hours = pond.hours;
@@ -1566,9 +1654,28 @@
       timeInput.value = String(index);
       timeInput.style.setProperty('--fraction', String(hours.length > 1 ? index / (hours.length - 1) : 0));
       timeInput.setAttribute('aria-valuetext', hourText(hour));
+      for (const button of timePresets.children) button.setAttribute('aria-pressed', String(button.dataset.hour === hour.name));
     }
     function updateTime() {
       const hours = pond.hours;
+      timeChoice = null;
+      timePresets.hidden = hours.length < 2;
+      if (timePresetsPlace !== pond.sky) {
+        timePresetsPlace = pond.sky;
+        timePresets.replaceChildren(...hours.map((hour, index) => {
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'time-preset';
+          button.dataset.hour = hour.name;
+          const name = document.createElement('span');
+          name.textContent = hour.label;
+          const clock = document.createElement('small');
+          clock.textContent = hour.clock ?? '';
+          button.append(name, clock);
+          button.addEventListener('click', () => { timeInput.value = String(index); chooseHour(); });
+          return button;
+        }));
+      }
       const index = Math.max(0, hours.findIndex((hour) => hour.name === pond.hour));
       timeInput.max = String(hours.length - 1);
       timeInput.hidden = hours.length < 2;
@@ -1584,18 +1691,23 @@
       const hour = pond.hours[index];
       if (!hour) return;
       showHour(index);
-      timeChoice = hour.name;
-      if (hour.name === pond.hour) { updateTime(); return; }
+      const place = pond.sky;
+      if (timeChoice === `${place}:${hour.name}`) return;
+      const choice = ++sceneChoice;
+      timeChoice = `${place}:${hour.name}`;
       settings.setValue('time', `${hourText(hour)}\u2026`);
       timeNote.textContent = `Loading ${hour.label.toLowerCase()}\u2026`;
-      pond.setHour(hour.name).then((shown) => {
-        if (timeChoice !== hour.name) return;   // another was picked since: its load reports
-        updateTime();
+      // Ask even for the displayed hour: returning to it cancels a pending one.
+      // Use the displayed place, whose hours these are, even during a location load.
+      pond.setHour(hour.name, { place }).then((shown) => {
+        if (sceneChoice !== choice) return;
+        updateSky();
         if (shown !== hour.name) timeNote.textContent = 'That hour could not be loaded. Check the connection and try again.';
         else if (settings.isOpen() && settings.currentPage === 'time') pond.prefetchHours();
       });
     }
     timeInput.addEventListener('input', chooseHour);
+    timeInput.addEventListener('change', () => chooseHour());
     followTouch(timeInput, chooseHour);
     // An hour is a 6 MB photo: opening the page fetches the hours either side of the shown one ahead
     // (pond.prefetchHours), and each hour shown while it is open fetches its own, so the next is there when picked.

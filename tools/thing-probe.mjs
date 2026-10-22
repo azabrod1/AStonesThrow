@@ -158,7 +158,7 @@ function throwThing(name, { x = 0, z = -1.4, power = 'normal', value, pooled = f
   // Aimed as heavy as it is thrown (a pizza's toppings, a pie's filling: src/main.js throwAt).
   if (name !== 'stone') ({ velocity, landing } = aimThrow(hand, target, flightTime, { ...measured, mass: rock.mass }, rock.trialFlight()));
   rock.velocity.copy(velocity);
-  if (pooled) rock.groundAt = poolGround(POOL_SQUARE);
+  if (pooled) rock.ground = poolGround(POOL_SQUARE);
   return { rock, measured, hand, target, landing, launch: velocity.clone() };
 }
 
@@ -342,7 +342,7 @@ for (const name of THING_NAMES) {
   const measured = measure(name, name === 'bowling' ? 16 : undefined);
   const rock = new Rock({ radius: measured.radius, position: new THREE.Vector3(0, POOL.deck + 1 + measured.radius, 1.5), velocity: new THREE.Vector3(0, 0, 0), envTexture: null, thing: name, mass: measured.mass });
   rock.spinRate = 0;
-  rock.groundAt = poolGround(POOL_SQUARE);
+  rock.ground = poolGround(POOL_SQUARE);
   const record = follow(rock, { seconds: 10, pooled: true });
   const ratios = record.apexes.map((apex) => (apex - POOL.deck - rock.ellipsoidDepth()) / 1);
   const [least, most] = THINGS[name].material.bounce;
@@ -354,7 +354,7 @@ for (const name of THING_NAMES) {
 {
   const measured = measure('basketball');
   const rock = new Rock({ radius: measured.radius, position: new THREE.Vector3(0, POOL.deck + measured.radius, 1.2), velocity: new THREE.Vector3(0, 0, -1.5), envTexture: null, thing: 'basketball', mass: measured.mass });
-  rock.groundAt = poolGround(POOL_SQUARE);
+  rock.ground = poolGround(POOL_SQUARE);
   rock.state = 'ground';
   const record = follow(rock, { seconds: 15, floor: POOL.depth, pooled: true });
   console.log(`  a basketball rolled at 1.5 m/s towards the pool: ${[...record.states].join(' → ')}`);
@@ -642,7 +642,7 @@ console.log('\nThe rubber duck (body.ballast): let go on the water at any angle,
     const rock = new Rock({ radius: thing.radius, position: new THREE.Vector3(0, POOL.deck + 0.5, 1.5), velocity: new THREE.Vector3(), envTexture: null, thing: name, mass: thing.mass });
     rock.quaternion.setFromAxisAngle(new THREE.Vector3(1, 0, 0), angle);
     rock.spinRate = 0;
-    rock.groundAt = poolGround(POOL_SQUARE);
+    rock.ground = poolGround(POOL_SQUARE);
     follow(rock, { seconds: 10, pooled: true });
     for (let step = 0; step < 120; step++) rock.update(STEP, floorDepthAt);
     const up = rock.uprightAxis.clone().applyQuaternion(rock.quaternion).y, gap = rock.position.y + rock.lowestOffset() - POOL.deck;
@@ -686,7 +686,7 @@ console.log('\nA throw\'s own random stream (src/rock.js `random`): a basketball
     randomState = 4242;
     const measured = measure('basketball');
     const ball = new Rock({ radius: measured.radius, position: new THREE.Vector3(0, 1.2, -3.5), velocity: new THREE.Vector3(0.2, 0, 0), envTexture: null, thing: 'basketball', mass: measured.mass });
-    ball.groundAt = poolGround(POOL_SQUARE);
+    ball.ground = poolGround(POOL_SQUARE);
     const heights = [];
     let rising = false;
     for (let time = 0; time < 3; time += STEP) {
@@ -995,7 +995,7 @@ console.log('\nThings meeting things (src/collide.js):');
   const bobbed = new Rock({ radius: measure('basketball').radius, position: new THREE.Vector3(1.37, 0.14, -1), velocity: new THREE.Vector3(3, 1, 0), envTexture: null, thing: 'basketball', mass: measure('basketball').mass });
   Object.assign(bobbed, { state: 'air', hasFloated: true });
   bobbed.previous.copy(bobbed.position);
-  bobbed.groundAt = poolGround(POOL_SQUARE);
+  bobbed.ground = poolGround(POOL_SQUARE);
   let through = false;
   for (let step = 0; step < 240; step++) {
     bobbed.update(STEP, POOL.depth);

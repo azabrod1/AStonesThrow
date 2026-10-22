@@ -23,14 +23,16 @@
 // --report="js expression" is evaluated in the page after each frame and its
 // result printed as JSON (window.__pond is the app). --floats=half renders on
 // the half-float path that devices without EXT_color_buffer_float take.
-// --sky=name picks the sky's place (a key of SKIES in src/sky.js) and
-// --time=hour its hour (the place's anchor otherwise, never the time of day
-// last chosen: the harness's browser keeps no storage), --weather=
-// clear|light-rain|heavy-rain|storm|light-snow|heavy-snow|blizzard the
-// weather (WEATHERS in src/main.js; the rain waits for its ring's table
-// before the first frame), and
-// --water=pool|clear|lake|pond|murky the water (WATER_CLARITIES in src/main.js;
-// pool puts the rocks in the pool, src/pool.js).
+// --sky=name picks the place (PLACES in src/main.js: a key of SKIES in
+// src/sky.js, or pool, the rocks in the pool under Lakeside's sky, src/
+// pool.js) and --time=hour its sky's hour (its anchor otherwise, never the
+// time of day last chosen: the harness's browser keeps no storage),
+// --weather=clear|light-rain|heavy-rain|storm|light-snow|heavy-snow|blizzard
+// the weather (WEATHERS in src/main.js; the rain waits for its ring's table
+// before the first frame),
+// --water=clear|lake|pond|murky|frozen the water (WATER_CHOICES in src/
+// main.js; the old --water=pool is --sky=pool), and --ice=thin|thick freezes
+// it, that thick (ICE_THICKNESS in src/ice.js; frozen thin otherwise).
 // --wind=x:z sets the direction the wind blows toward in world XZ, and
 // --wind-strength=calm|breeze|windy its strength (the page's own default is
 // calm; breeze is the look the pond had before the Wind control).
@@ -43,10 +45,13 @@
 // the start of the frames (__pond.touchWater), draws it to (x1, z1) at an
 // even speed over `seconds`, a step every frame, and lifts it out there; the
 // times count from the dip.
-// --power=soft|normal|hard throws as the strength buttons do (soft is a
-// higher arc, so a steeper entry: about 30° from vertical against 42°; hard
-// is fast and flat, twice as fast in at about 73°: src/rock.js throwFlightTime).
-// --skip throws skips, as the Skip switch does (src/rock.js): the stone
+// --power=soft|normal|hard throws as the strip's Soft, Medium and Hard do
+// (src/main.js ARC: a soft toss is a higher arc, so a steeper entry, about
+// 33° from vertical against 42°; a hard one is fast and flat, twice as fast
+// in at about 73°: src/rock.js throwFlightTime).
+// --manner=toss|lob|skip throws as the strip's Toss, Lob and Skip do: a lob
+// the high way round, higher the harder; --skip is --manner=skip.
+// --skip throws skips, as the strip's Skip does (src/rock.js): the stone
 // first touches the water at the throw's x:z (or where a nearly level
 // release puts it, src/main.js skipThrow) and skips on from there, and the
 // times count from that first touch.
@@ -91,9 +96,11 @@ const sky = arg('sky', '');
 const skyTime = arg('time', '');
 const weather = arg('weather', '');
 const waterClarity = arg('water', '');
+const iceName = arg('ice', '');
 const wind = arg('wind', '');
 const power = arg('power', 'normal');
 const skipThrows = process.argv.includes('--skip');
+const manner = arg('manner', skipThrows ? 'skip' : 'toss');
 const tracePaths = process.argv.includes('--trace');
 const windStrength = arg('wind-strength', '');
 const seed = arg('seed', '');
@@ -144,7 +151,7 @@ const problems = [];
 page.on('pageerror', (e) => problems.push(String(e)));
 page.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') problems.push(m.text()); });
 
-const url = `http://localhost:${port}/index.html?quality=${quality}&paused=1${keepUi ? '' : '&ui=0'}${floats ? `&floats=${floats}` : ''}${sky ? `&sky=${sky}` : ''}${skyTime ? `&time=${skyTime}` : ''}${weather ? `&weather=${weather}` : ''}${waterClarity ? `&water=${waterClarity}` : ''}${wind ? `&wind=${wind.replace(':', ',')}` : ''}${windStrength ? `&windStrength=${windStrength}` : ''}${thingName ? `&thing=${thingName}` : ''}`;
+const url = `http://localhost:${port}/index.html?quality=${quality}&paused=1${keepUi ? '' : '&ui=0'}${floats ? `&floats=${floats}` : ''}${sky ? `&sky=${sky}` : ''}${skyTime ? `&time=${skyTime}` : ''}${weather ? `&weather=${weather}` : ''}${waterClarity ? `&water=${waterClarity}` : ''}${iceName ? `&ice=${iceName}` : ''}${wind ? `&wind=${wind.replace(':', ',')}` : ''}${windStrength ? `&windStrength=${windStrength}` : ''}${thingName ? `&thing=${thingName}` : ''}`;
 console.log(`[shoot] ${url} -> ${outDir}`);
 await page.goto(url, { waitUntil: 'domcontentloaded' });
 try {
@@ -175,13 +182,13 @@ console.log('[shoot] idle.png');
 
 if (tracePaths) await page.evaluate(() => window.__pond.setTrace(true));
 for (const [index, [x, z, radius]] of throws.entries()) {
-  await page.evaluate(([x, z, radius, power, seed, skip]) => {
+  await page.evaluate(([x, z, radius, power, seed, manner]) => {
     if (seed !== null) {
       let state = seed;
       Math.random = () => { state = (state * 16807) % 2147483647; return (state - 1) / 2147483646; };
     }
-    window.__pond.throwAt(x, z, { radius, power, skip });
-  }, [x, z, radius, power, seed === '' ? null : Number(seed) + index, skipThrows]);
+    window.__pond.throwAt(x, z, { radius, power, manner });
+  }, [x, z, radius, power, seed === '' ? null : Number(seed) + index, manner]);
 }
 if (evalAfterThrow) await page.evaluate(evalAfterThrow);
 let flight = 0;

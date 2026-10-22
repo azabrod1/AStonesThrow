@@ -31,7 +31,11 @@
 //   - gem: a brilliant cut (createGemGeometry: a table, a crown of facets,
 //     the girdle, a pavilion to the culet), stretched by its `look.stretch`,
 //     each facet's colour `look.color` at its own brightness, a diamond's
-//     `look.fire` of them in the spectrum's colours.
+//     `look.fire` of them in the spectrum's colours;
+//   - shard: a piece of broken ice, a slab of its piece's outline and
+//     thickness (createShardGeometry: src/ice.js breaks each one, and
+//     src/rock.js hands the builder its `piece`), clear and dark, clouded
+//     white, its broken sides white.
 // A new kind of look (a pizza's disc, a feather's vane) is a builder
 // registered here; its definition then names it. Every geometry carries a
 // colour per vertex and is drawn with the material src/rock.js makes; a kind
@@ -49,9 +53,11 @@ export const SKIP_STONE = { squash: [0.26, 0.12], surfaceNoise: 0.6 };
 const MESHES = new Map();
 
 /**
- * Register a mesh's kind: `build(definition, { flat })` returns its unit-sized
- * geometry (a colour per vertex; for a stone, a list of separate triangles,
- * src/rock.js integrates its shape over them), `color(definition)` the
+ * Register a mesh's kind: `build(definition, { flat, piece })` returns its
+ * unit-sized geometry (a colour per vertex; for a stone, a list of separate
+ * triangles, src/rock.js integrates its shape over them; `flat`, a stone
+ * picked for skipping; `piece`, a shard's own outline, which src/rock.js is
+ * given and passes on), `color(definition)` the
  * material's colour (drawn when the thing is made, after its geometry),
  * `glow(definition)`, if it has one, the material's emissive colour (null
  * for none), and `texture(definition)`, if it has one, the material's map (its colours
@@ -1001,6 +1007,73 @@ export function createBrickGeometry() {
   return geometry;
 }
 
+// A shard of ice (src/ice.js: a piece of the sheet a thing broke through,
+// src/things.js 'ice-shard'): a slab of the sheet's thickness whose outline
+// is its piece's (`piece`: its corners about its middle, convex, in unit
+// radii in the sheet's plane, its own +y up, and its thickness in unit
+// radii), so each one is its own and none is built twice. Its faces are
+// flat. Its top and bottom are the sheet's clear ice, the colour of the
+// water seen through it (its piece's `clear`, given by src/main.js: the
+// pool's tiles' aqua; SHARD_LOOK.clear, a lake's dark, without),
+// clouded white by its piece's `white` share (the sheet's white ice and
+// frozen bubbles), paler in a band SHARD_LOOK.rim of the way in from its rim,
+// where the light comes up through its broken edge; its broken sides scatter
+// the light white (SHARD_LOOK). With no piece (a thing defined or thrown
+// plain, tools/thing-probe.mjs) it is SHARD_LOOK.plain's: a broken hexagon.
+const SHARD_LOOK = {
+  clear: linear(34, 50, 58), white: linear(206, 214, 224), edge: linear(150, 166, 182), side: linear(188, 200, 214),
+  rim: 0.12,          // the paler band round its top, of the way in from its rim
+  edgeWhite: 0.8,     // the band's colour over the top's at its edge, for clear ice
+  plain: { corners: [1, 0, 0.55, 0.78, -0.45, 0.9, -1, 0.05, -0.52, -0.82, 0.48, -0.8], thickness: 0.15, white: 0.2 },
+};
+
+/**
+ * A shard's geometry (the header) for its `piece` ({ corners, thickness,
+ * white }), separate triangles wound outward, each face's normal its own:
+ * its top and bottom fanned from its middle to a ring SHARD_LOOK.rim in from
+ * its rim, and a band from there to its rim; a quad for each side.
+ */
+export function createShardGeometry(piece = SHARD_LOOK.plain) {
+  const corners = piece.corners, count = corners.length / 2, half = piece.thickness / 2;
+  const positions = [], normals = [], colors = [];
+  const color = new THREE.Color();
+  const middle = color.copy(piece.clear ?? SHARD_LOOK.clear).lerp(SHARD_LOOK.white, piece.white).toArray();
+  const rim = new THREE.Color().copy(color).lerp(SHARD_LOOK.edge, SHARD_LOOK.edgeWhite * (1 - piece.white)).toArray();
+  const side = SHARD_LOOK.side.toArray();
+  const inset = 1 - SHARD_LOOK.rim;
+  // The way round its corners: counter-clockwise seen from above (+y) is (u, w) turning from +w to +u.
+  let twice = 0;
+  for (let index = 0; index < count; index++) {
+    const next = (index + 1) % count;
+    twice += corners[2 * index + 1] * corners[2 * next] - corners[2 * index] * corners[2 * next + 1];
+  }
+  const order = twice >= 0 ? 1 : -1;
+  const push = (point, normal, tint) => { positions.push(...point); normals.push(...normal); colors.push(...tint); };
+  for (let step = 0; step < count; step++) {
+    const index = order > 0 ? step : count - 1 - step, next = order > 0 ? (step + 1) % count : (2 * count - 2 - step) % count;
+    const ax = corners[2 * index], az = corners[2 * index + 1], bx = corners[2 * next], bz = corners[2 * next + 1];
+    const innerAX = ax * inset, innerAZ = az * inset, innerBX = bx * inset, innerBZ = bz * inset;
+    // Its top and bottom: a triangle from its middle to the ring, and the band from the ring to this side.
+    for (const [y, up] of [[half, 1], [-half, -1]]) {
+      const normal = [0, up, 0];
+      const triangle = (first, second, third) => (up > 0 ? [first, second, third] : [first, third, second]);
+      for (const [point, tint] of triangle([[0, y, 0], middle], [[innerAX, y, innerAZ], middle], [[innerBX, y, innerBZ], middle])) push(point, normal, tint);
+      for (const [point, tint] of triangle([[innerAX, y, innerAZ], middle], [[ax, y, az], rim], [[bx, y, bz], rim])) push(point, normal, tint);
+      for (const [point, tint] of triangle([[innerAX, y, innerAZ], middle], [[bx, y, bz], rim], [[innerBX, y, innerBZ], middle])) push(point, normal, tint);
+    }
+    // This side, outward (its normal across the side, level).
+    const length = Math.hypot(bx - ax, bz - az) || 1;
+    const normal = [-(bz - az) / length, 0, (bx - ax) / length];
+    push([ax, half, az], normal, side); push([ax, -half, az], normal, side); push([bx, -half, bz], normal, side);
+    push([ax, half, az], normal, side); push([bx, -half, bz], normal, side); push([bx, half, bz], normal, side);
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  return geometry;
+}
+
 // A fruit pie in its tin: a solid turned about its axis from a profile
 // (PIE.profile: the tin's floor and its flared, fluted wall, its flange, the
 // crust's crimped rim and the domed top crust), PIE.segments round, its
@@ -1336,6 +1409,11 @@ registerMesh('pie', {
   dress: (definition, random) => pieFilling(random), heaviest: Math.max(...PIE.fillings.map((filling) => filling.share)),
 });
 registerMesh('duck', { build: () => createDuckGeometry(), color: () => new THREE.Color(1, 1, 1), fixed: true });
+// Each shard its own piece's (src/ice.js), so none is fixed; it draws no random numbers. Its volume is the plain one's.
+registerMesh('shard', {
+  build: (definition, { piece } = {}) => createShardGeometry(piece), color: () => new THREE.Color(1, 1, 1),
+  volume: () => meshVolume(createShardGeometry()),
+});
 // Its material's colour: white, or its look's `tint` over its paint; `frost` (0 to 1) lays a pale bloom over it all,
 // the material's emissive colour (a frozen pizza's: a uniform, so no program of its own).
 registerMesh('pizza', {
