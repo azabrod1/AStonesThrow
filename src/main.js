@@ -519,8 +519,13 @@ function migrateStoredSettings() {
 // seed 4 raises a clean jet 90 cm tall (tools/variety-probe.mjs --list), so
 // the column's three programs are built too, where an unseeded throw raised
 // none about one time in thirty (its jet form "none") and the first throw
-// with a jet then built them.
-const WARM_UP = { x: 0, z: -1.4, radius: 0.03, moments: [0.02, 0.16, 0.4], seed: 4, floaters: ['pumice', 'pizza', 'ice-shard'] };   // a floater of each program: pumice the stones', a pizza its textured one, a shard of ice its clear one (src/rock.js seenThrough)
+// with a jet then built them. With the water Frozen at the start (as rain
+// and the gale, the ice warms only if chosen at the start, else its first
+// break builds what it needs), that throw goes into open water, the ice
+// lifted for it, and a second breaks a sheet made thin for it, followed
+// iceSeconds past its impact, its shards let go by then; the ice as chosen
+// comes back after.
+const WARM_UP = { x: 0, z: -1.4, radius: 0.03, moments: [0.02, 0.16, 0.4], seed: 4, floaters: ['pumice', 'pizza', 'ice-shard'], iceSeconds: 0.6 };   // a floater of each program: pumice the stones', a pizza its textured one, a shard of ice its clear one (src/rock.js seenThrough)
 
 export async function startPond({ canvas, quality = 'auto', onReady, onProgress, onError, onRainError, onStats, onViewChange, onQualityChange, onProfile, onThrow }) {
   let readyForInput = false;
@@ -2226,9 +2231,20 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   // made the same way, finds their program.
   const warmUpReport = { programs: 0, milliseconds: 0 };
   const programKeepers = [];
+  /** The ice for the warm-up alone (warmUp): its sheet as `name` has it, the gale left as it is (applyIce restores both). */
+  function iceForWarmUp(name) {
+    ice.setThickness(ICE_THICKNESS[name]);
+    ice.setPool(pooled ? pool.square : null, pooled ? poolGround(pool.square) : null);
+    water.iced = ice.on;
+    splash.setIce(ice);
+  }
   function warmUp() {
     const started = performance.now();
     const programsBefore = renderer.info.programs?.length ?? 0;
+    // Frozen at the start (WARM_UP): the throws below go into open water first, so the crown's programs are built too;
+    // the ice comes back after its own break.
+    const chosenIce = iceName;
+    if (chosenIce !== 'none') iceForWarmUp('none');
     const random = Math.random;
     let state = WARM_UP.seed;
     Math.random = () => { state = (state * 16807) % 2147483647; return (state - 1) / 2147483646; };
@@ -2279,10 +2295,26 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
         showScenery(pooled);
       }
     }
-    Math.random = random;
     programKeepers.push(stone.meshAbove.material, stone.meshBelow.material);
     retireRock(stone, { keepMaterials: true });
     clearPond();
+    // The ice's break, when the water is Frozen at the start (WARM_UP): through a sheet made thin for it, so it breaks
+    // whatever ice was chosen (on thick ice the stone above would skid), its hole, cracks, flood and shards let go and
+    // drawn above, below and in the mirror; so the first break a person makes builds nothing on the device (a GPU builds
+    // a pipeline the first time a program draws in a state). Then the ice as chosen, whole.
+    if (chosenIce !== 'none') {
+      iceForWarmUp('thin');
+      const breaker = throwAt(WARM_UP.x, WARM_UP.z, { radius: WARM_UP.radius, power: 'normal', thing: DEFAULT_THING });
+      for (let step = 0; step < 180 && breaker.state === 'air'; step++) simulate(1 / 60);
+      for (let step = 0; step < 60 * WARM_UP.iceSeconds; step++) simulate(1 / 60);
+      for (const rock of rocks) if (rock.meshMirror) rock.meshMirror.visible = true;
+      viewChanged = true;
+      render();
+      renderFrom(VIEWS.under);
+      clearPond();
+      applyIce(chosenIce);
+    }
+    Math.random = random;
     warmUpReport.programs = (renderer.info.programs?.length ?? 0) - programsBefore;
     warmUpReport.milliseconds = performance.now() - started;
   }

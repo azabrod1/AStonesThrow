@@ -167,7 +167,9 @@ up to 20 things may be on the move at once, on every preset. Past a count
 the oldest of that kind shrinks away over 0.6 s, never vanishing at once.
 The canvas never holds more than 2.6 million pixels.
 Core stone/splash programs are compiled while the page loads, under its
-veil: a stone is thrown and drawn there, then cleared away. Rain and gale
+veil: a stone is thrown and drawn there, then cleared away (with the water
+Frozen, into open water first, then a second through a sheet made thin for
+it, so the first break builds nothing, then the ice as chosen). Rain and gale
 programs are warmed only when selected at startup; otherwise
 they compile on first use, which can briefly pause that first interaction.
 No background warm-up modifies the live scene. The final scene, including

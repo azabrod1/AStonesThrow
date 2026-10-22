@@ -135,6 +135,26 @@ try {
   await ready(older);
   assert.deepEqual(await carried(), expected);
   console.log('PASS: the old Pool water and Ice settings open the Pool place, frozen thick, and stay so');
+  // Frozen at the start, the warm-up breaks the ice under the veil (src/main.js warmUp), so the first break a person
+  // makes (a big rock through thick ice: on thick ice the warm-up's stone would skid) builds no program, nor does a
+  // throw into open water after (the warm-up threw into open water first).
+  const firstBreak = await older.evaluate(() => {
+    const pond = window.__pond, programs = () => pond.renderer.info.programs.length;
+    const before = programs();
+    pond.setThing('granite');
+    pond.setSize(29.5);
+    pond.throwAt(0, -1.4, { power: 'normal' });
+    pond.advance(1.6);
+    const broken = { programs: programs(), holes: pond.iceSheet.holes.length };
+    pond.setThing('stone');
+    pond.setWater('lake');
+    pond.throwAt(0.3, -1.6, { radius: 0.03, power: 'normal' });
+    pond.advance(0.5);
+    return { before, broken, openWater: programs() };
+  });
+  assert.ok(firstBreak.broken.holes > 0, 'the big rock did not break the thick ice');
+  assert.deepEqual([firstBreak.broken.programs, firstBreak.openWater], [firstBreak.before, firstBreak.before], `programs built after the start: ${JSON.stringify(firstBreak)}`);
+  console.log(`PASS: started frozen thick, the first break and a throw into open water after build no program (${firstBreak.before})`);
   await older.context().close();
 
   const retriedRain = await pageFor();
