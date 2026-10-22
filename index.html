@@ -539,7 +539,7 @@
   /* A page's head stays at the top while the page scrolls under it, clear of the panel's edge. */
   .menu-head {
     display: flex; align-items: center; gap: 4px; padding: 10px 10px 10px; margin: -8px -8px 0;
-    position: sticky; top: -8px; z-index: 1; background: rgba(9, 21, 27, 0.97); border-radius: 16px 16px 0 0;
+    position: sticky; top: -8px; z-index: 1; background: rgb(9, 21, 27); border-radius: 16px 16px 0 0;   /* opaque: a page scrolled under it must not show through */
   }
   .menu-head h3 {
     margin: 0;

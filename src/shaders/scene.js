@@ -1651,7 +1651,9 @@ vec3 snowShade(vec2 point) {
 // little above the horizon, at LAND_LEVEL of its mip chain and averaged
 // either side, so the photo's detail does not streak toward the eye; under
 // the horizon a photo shows whatever stood at the photographer's feet, often
-// water), mottled and shaded by the bank's slope against level ground. From LAND_NEAR to
+// water), mottled and shaded by the bank's slope against level ground, and
+// never brighter than ground of GRASS_ALBEDO_MOST (where the photo shows sky
+// at the horizon, under cloud a white one). From LAND_NEAR to
 // LAND_FAR away all of it becomes that colour, so the land runs into the
 // photo's own. Seen in the mirror the directions are the mirror camera's,
 // so its reflection does too. Under snow (SNOW_COVER) the sand and the grass
@@ -1678,6 +1680,8 @@ ${SNOW_COVER}
 #define GRASS_TO 4.5         // ...to here
 #define SNOW_MELT_HEIGHT 0.04  // metres above the water the snow melts on the wet sand to (half a metre up the beach)
 #define SNOW_FAR 0.5         // the far land's share under the snow
+#define GRASS_ALBEDO_MOST 0.3  // the brightest the bank's grass is drawn, as an albedo (fresh grass about 0.25)
+#define LUMINANCE vec3(0.2126, 0.7152, 0.0722)
 void main() {
   vec3 normal = normalize(vNormal);
   vec3 sand = floorSand(vWorld.xz) * PATTERN_RANGE * DRY_SAND * mix(WET_SHADE, 1.0, smoothstep(0.0, WET_HEIGHT, vWorld.y));
@@ -1689,7 +1693,12 @@ void main() {
     vec3 land = photoLand(toLand.xz);
     float level = max(uSunDir.y, 0.0) + SKY_LIGHT * 0.25;
     float slopeShade = (max(dot(normal, uSunDir), 0.0) + SKY_LIGHT * 0.25 * normal.y) / level;
-    vec3 grassColor = land * slopeShade * (1.0 + (0.6 * valueNoise(vWorld.xz * 2.3 + 5.0) - 0.3) * (1.0 - far));
+    // Where the photo shows sky at the horizon, the grass would take the sky's light (a cloud's, white): no brighter
+    // than ground of GRASS_ALBEDO_MOST in the light on it.
+    float lightOn = dot(uSunIrradiance * max(uSunDir.y, 0.0) + uSkyAmbient * SKY_LIGHT, LUMINANCE);
+    float grassLevel = max(dot(land, LUMINANCE), 1e-6);
+    vec3 grassLand = land * min(1.0, GRASS_ALBEDO_MOST * lightOn / grassLevel);
+    vec3 grassColor = grassLand * slopeShade * (1.0 + (0.6 * valueNoise(vWorld.xz * 2.3 + 5.0) - 0.3) * (1.0 - far));
     color = mix(color, grassColor, grass);
     if (uSnow > 0.0) land = mix(land, SNOW_ALBEDO * (uSunIrradiance * max(uSunDir.y, 0.0) + uSkyAmbient * SKY_LIGHT), SNOW_FAR * uSnow);
     color = mix(color, land, far);

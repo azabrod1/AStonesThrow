@@ -389,7 +389,9 @@ const THING_STORAGE_KEY = 'stone-pond-thing';       // the Object setting's: wha
 // (about a third of a clear day's light, 10 km to see), a downpour from a
 // dark one (an eighth, 1.5 km), a storm's from a darker one (a twentieth,
 // 800 m), with lightning (src/lightning.js) and a gale (`wind`: choosing it
-// sets the Wind setting too, unless the page's ?windStrength says).
+// raises the wind to it, unless the page's ?windStrength says, and leaving it
+// for a weather without one brings back the Wind setting's own choice; the
+// gale is not remembered as that choice).
 // Snow (src/snow.js) falls from a brighter cloud than rain (its flakes and
 // the snow on the ground send light back up to it): light snow from about
 // 0.55 of a clear day's light, 1.5 km to see; heavy snow from a third,
@@ -589,6 +591,11 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     galeWaves.setFoamVelocity(water.foamUniforms.uFoamVelocity.value);
     applyGale();
   }
+  /** The wind blowing `name` (applyWind) once the pond runs: the eye moved clear of a gale's waves (galeClearance). */
+  function blowWind(name) {
+    applyWind(name);
+    moveEye({ ...orbit });
+  }
   /** The gale's waves, as the wind and the water have them: a pool's basin is too small to raise any. */
   function applyGale() {
     const strength = pooled ? 0 : GALE_STRENGTHS[windName] ?? 0;
@@ -596,6 +603,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     surface.setGale(strength > 0);
   }
   applyWind(windName);
+  // The Wind setting's own choice (setWind), which a storm's or a blizzard's gale overrides only while it lasts.
+  let windChoice = windName;
   // A storm brings its gale, unless the page's ?windStrength says otherwise.
   if (WEATHERS[weatherName].wind && !Object.hasOwn(WIND_STRENGTHS, requestedWind ?? '')) applyWind(WEATHERS[weatherName].wind);
   // The water's clarity: the page's ?water, else the last choice here, else pond.
@@ -2186,11 +2195,11 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     get skipping() { return skipping; },
     /** Trace each stone (the header; ?trace=1, the T key) from its next step on; off takes the traces away. */
     setTrace(on) { setTracing(on); },
-    /** The wind's strength by name (WIND_STRENGTHS: calm, breeze, windy), remembered on this device. */
+    /** The wind's strength by name (WIND_STRENGTHS: calm, breeze, windy, gale), remembered on this device. */
     setWind(name) {
       if (!Object.hasOwn(WIND_STRENGTHS, name)) return;
-      applyWind(name);
-      moveEye({ ...orbit });   // a gale's eye stands clear of its waves (galeClearance)
+      windChoice = name;
+      blowWind(name);
       try { window.localStorage.setItem(WIND_STORAGE_KEY, name); } catch { /* storage refused: the choice lasts this visit */ }
     },
     get wind() { return windName; },
@@ -2268,7 +2277,9 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     setWeather(name) {
       if (!Object.hasOwn(WEATHERS, name)) return Promise.resolve(weatherName);
       try { window.localStorage.setItem(WEATHER_STORAGE_KEY, name); } catch { /* storage refused: the choice lasts this visit */ }
-      if (WEATHERS[name].wind) this.setWind(WEATHERS[name].wind);
+      // A storm's or a blizzard's gale while it lasts, then the Wind setting's own choice again (WEATHERS).
+      if (WEATHERS[name].wind) blowWind(WEATHERS[name].wind);
+      else if (WEATHERS[weatherName].wind) blowWind(windChoice);
       return applyWeather(name).then(() => weatherName);
     },
     get weather() { return weatherName; },

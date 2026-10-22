@@ -491,6 +491,24 @@ check(!pooledGale.gale.blowing && pooledGale.programs === programsBeforeGale, `i
 await page.evaluate(() => { window.__pond.setClarity('lake'); window.__pond.setWind('calm'); window.__pond.advance(0.1); });
 const calmAgain = await page.evaluate(() => ({ programs: window.__pond.budget.programs, gale: window.__pond.budget.gale }));
 check(!calmAgain.gale.blowing && calmAgain.gale.sheetTriangles < 5000 && calmAgain.programs === programsBeforeGale, `calm again: the still sheet (${calmAgain.gale.sheetTriangles} triangles), no program (${calmAgain.programs})`);
+// A storm's gale lasts while it does: the Wind setting's own choice comes back after it, and is the one remembered.
+const windBack = await page.evaluate(async () => {
+  const pond = window.__pond;
+  pond.setWind('breeze');
+  await pond.setWeather('storm');
+  const during = pond.wind;
+  await pond.setWeather('clear');
+  const after = pond.wind, remembered = localStorage.getItem('stone-pond-wind');
+  await pond.setWeather('storm');
+  pond.setWind('windy');   // chosen during the storm: kept after it
+  await pond.setWeather('clear');
+  const chosen = pond.wind;
+  pond.setWind('calm');
+  pond.advance(0.1);
+  return { during, after, remembered, chosen };
+});
+check(windBack.during === 'gale' && windBack.after === 'breeze' && windBack.remembered === 'breeze' && windBack.chosen === 'windy',
+  `a storm's gale (${windBack.during}) gives way to the Wind setting's breeze after it (${windBack.after}, remembered ${windBack.remembered}); a wind chosen during it stays (${windBack.chosen})`);
 await checkBuilt(phone, 'after the gale');
 
 // The snow: its first selection compiles its flakes' program, then it reuses it; it falls at once, adds one draw

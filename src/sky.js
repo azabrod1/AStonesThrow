@@ -93,10 +93,14 @@
 //
 // Weather (setWeather; the Weather setting, src/main.js). Rain comes under
 // cloud: `cover` of it (0 to 1) takes that share of the sun's direct light
-// away and turns the dome toward the cloud's: its luminance evened out about
-// the clear sky's mean (to the power 1 − OVERCAST_FLATTEN, so the sun and
-// its glow sink and the shaded land lifts, as under a cloud deck), greyed to
-// OVERCAST_TINT, and scaled to the cloud's brightness, which is all the
+// away and turns the dome's sky toward the cloud's: its luminance evened out
+// about the clear sky's mean (to the power 1 − OVERCAST_FLATTEN, so the sun
+// and its glow sink), greyed to OVERCAST_TINT, and scaled to the cloud's
+// brightness. The photo's land (darker than its sky) keeps its colour, but
+// for its blue (far water's reflected sky, the far haze), and is dimmed as the light on it is (the cloud's over
+// the clear hour's), or its trees would go as grey and pale as the cloud,
+// and the grass by the pond, which takes their colour (PHOTO_LAND in
+// src/shaders/scene.js), with them. The cloud's brightness is all the
 // light of the clear hour (its sky's and its sun's on level ground) times
 // the weather's `light` (a rain cloud's share of a clear day's light),
 // softened as the hours' light is (adaptedLight: under the rods' threshold,
@@ -320,6 +324,7 @@ uniform float uRadianceCap;
 uniform float uOvercast;       // the cloud's cover, 0 to 1 (Weather, below)
 uniform float uSkyMean;        // the clear dome's mean radiance (luminance), which cloud evens the sky toward
 uniform float uOvercastScale;  // the overcast dome's brightness against the clear one's
+uniform float uOvercastLand;   // the light on the land under the cloud against the clear hour's
 uniform vec3 uOvercastTint;    // the cloud's colour, at unit luminance
 uniform vec3 uHazeColor;       // the rain's haze (HAZE in src/shaders/scene.js)
 uniform float uHazeDensity;
@@ -364,9 +369,15 @@ void main() {
   float brightest = max(radiance.r, max(radiance.g, radiance.b));
   radiance *= min(1.0, uRadianceCap / max(brightest, 1e-6));
   float photoLevel = max(dot(radiance, vec3(0.2126, 0.7152, 0.0722)), 1e-6);
+  // The photo's land: darker than its sky. Under cloud it keeps its detail, dimmed as the light on it is, and its blue
+  // goes grey: the sky's blue reflected in far water and the far haze are the sky's light, which cloud greys.
+  float land = 1.0 - smoothstep(0.25, 0.9, photoLevel / uSkyMean);
   if (uOvercast > 0.0) {
     vec3 grey = photoLevel * pow(photoLevel / uSkyMean, -OVERCAST_FLATTEN) * uOvercastTint;
-    radiance = mix(radiance, grey, uOvercast) * mix(1.0, uOvercastScale, uOvercast);
+    vec3 sky = mix(radiance, grey, uOvercast) * mix(1.0, uOvercastScale, uOvercast);
+    float blueness = (radiance.b - max(radiance.r, radiance.g)) / photoLevel;
+    vec3 shaded = mix(radiance, photoLevel * uOvercastTint, smoothstep(0.0, 0.25, blueness) * uOvercast) * mix(1.0, uOvercastLand, uOvercast);
+    radiance = mix(sky, shaded, land);
   }
   radiance *= uFlash;
   if (uBolt.z > 0.0) radiance += boltLight(direction, 1.0 - smoothstep(0.4, 0.8, photoLevel / uSkyMean)) * uSkyMean * mix(1.0, uOvercastScale, uOvercast) * vec3(0.85, 0.9, 1.0);
@@ -403,6 +414,7 @@ export async function createEnvironment(renderer, { name, hour, sunAzimuth, sunB
         uOvercast: { value: 0 },
         uSkyMean: { value: 1 },
         uOvercastScale: { value: 1 },
+        uOvercastLand: { value: 1 },
         uOvercastTint: { value: new THREE.Vector3(...OVERCAST_TINT) },
         uFlash: { value: 1 },
         uBolt: { value: new THREE.Vector4() },
@@ -602,6 +614,7 @@ export async function createEnvironment(renderer, { name, hour, sunAzimuth, sunB
     domeUniforms.uOvercast.value = cover;
     domeUniforms.uSkyMean.value = luminance(clear.sky.toArray());
     domeUniforms.uOvercastScale.value = cloudLuminance / Math.max(luminance(clear.sky.toArray()), 1e-9);
+    domeUniforms.uOvercastLand.value = Math.PI * cloudLuminance / Math.max(clearLight, 1e-9);
     hazeUniforms.uHazeDensity.value = Number.isFinite(visibility) ? 3 / visibility : 0;
     hazeUniforms.uHazeColor.value.copy(lighting.skyAmbient).multiplyScalar(hazeBrightness);
 
