@@ -300,8 +300,8 @@ const FOAM_STAMP_SPACING = 0.25;      // a patch spread over a span gets a sub-s
 const FOAM_SPREAD = 0.6;              // a ripple's or a knock's boil comes up over this many sqrt(R/g)
 const JET_BASE_BOIL = 0.05;           // the boil where the jet rises, its sub-stamps' peak, scaling as sqrt(R / 3 cm)
 const BUBBLE_FOAM = 0.015;            // a fizz where a bubble surfaces (a boil, popping as fast)
-const LANDING_FOAM = 0.012;           // a landing drop's foam: a boil of this peak times the drop's strength (up to 3), over three of its radii...
-const LANDING_FOAM_LIFETIME = 0.6;    // ...of big bubbles, lasting this (s)
+const LANDING_FOAM = 0.006;           // a landing drop's foam: a boil of this peak times the drop's strength (up to 3), over three of its radii...
+const LANDING_FOAM_LIFETIME = 0.3;    // ...of big bubbles, bursting as they surface (s): a rock's crown rains hundreds of drops back in a ring within half a second, and the ring must not whiten
 const FALLBACK_BOIL_CAP = 0.12;       // the jet's fall-back stamps its foam as a boil of at most this peak
 // Surface flows (addFoamFlow in src/spectralWater.js), which sweep the foam
 // out of a disc into a ring: the jet's base welling up where the hole closed,
