@@ -111,8 +111,11 @@ try {
   await page.locator('#menu-button').click();
   await page.locator('.menu-tier[data-open="time"]').click();
   await uiHour.arrived; // the Time page prefetches the neighbouring night
+  // Well under loadAsset's 30 s inactivity timeout, which would abort the held download anyway.
+  const abandonedPrefetch = page.waitForEvent('requestfailed', (request) => request.url().endsWith('/lakeside_night_2k.hdr'), { timeout: 15000 });
   await page.locator('#time-presets [data-hour="night"]').click();
   await page.locator('#time-presets [data-hour="afternoon"]').click();
+  await abandonedPrefetch; // the night load took the prefetch over, so superseding it stops that download too
   uiHour.release();
   await page.evaluate(() => Promise.all(window.uiHourLoads));
   assert.equal(await page.evaluate(() => window.__pond.hour), 'afternoon');

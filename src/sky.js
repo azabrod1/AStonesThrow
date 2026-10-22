@@ -140,8 +140,9 @@
 // the one asked for, while the Time of day page is open), at most PREFETCHED
 // kept, so its load waits only on the decode, src/hdr.js (HDRLoader's
 // texels, about five times as fast).
-// A caller's AbortSignal cancels an obsolete download; it is checked again
-// before decoding or changing any lighting, including for prefetched photos.
+// A caller's AbortSignal cancels an obsolete download, a prefetched one it
+// has taken over too; it is checked again before decoding or changing any
+// lighting. A prefetch let go (more than PREFETCHED) is aborted.
 //
 // The panorama and a water-coloured hemisphere below the horizon (the photo's
 // own ground there would light drops and stones green from below; GROUND,
@@ -481,15 +482,19 @@ export async function createEnvironment(renderer, { name, hour, sunAzimuth, sunB
   // Start the calibration and panorama together, avoiding a network waterfall.
   const balancePromise = measurementOf(BALANCE_FILE);
   const balanceLuminance = luminance(sunBalance.toArray());
-  // Panoramas fetched ahead (prefetch), by file, at most PREFETCHED of them, the oldest let go first. A load takes its
-  // own out, or fetches it afresh if fetching it ahead failed.
+  // Panoramas fetched ahead (prefetch), by file, each its download and the controller that aborts it, at most
+  // PREFETCHED of them, the oldest let go (aborted) first. A load takes its own out, its signal then aborting that
+  // download too, or fetches it afresh if fetching it ahead failed.
   const prefetched = new Map();
   const panoramaFile = ({ file, resolution = '2k' }) => `${file}_${resolution}.hdr`;
   const fetchPanorama = (file, signal) => loadAsset(new URL(`../assets/sky/${file}`, import.meta.url), 'arrayBuffer', { signal });
   function takePanorama(file, signal) {
     const ahead = prefetched.get(file);
     prefetched.delete(file);
-    return ahead ? ahead.catch(() => fetchPanorama(file, signal)) : fetchPanorama(file, signal);
+    if (!ahead) return fetchPanorama(file, signal);
+    if (signal?.aborted) ahead.controller.abort(signal.reason);
+    else signal?.addEventListener('abort', () => ahead.controller.abort(signal.reason), { once: true });
+    return ahead.download.catch(() => fetchPanorama(file, signal));
   }
 
   const environment = { sky, cubeTexture: cubeTarget.texture, envTexture: null, name: null, hour: null, level: 1, hazeUniforms, targets: [], panoramaBytes: 0, load, prefetch, setWeather, setFlash };
@@ -594,12 +599,14 @@ export async function createEnvironment(renderer, { name, hour, sunAzimuth, sunB
     const file = panoramaFile(entry);
     if (prefetched.has(file) || (environment.name === requestedPlace && environment.hour === requestedHour)) return;
     measurementOf(entry.file).catch(() => {});
-    const ahead = fetchPanorama(file);
-    ahead.catch(() => { if (prefetched.get(file) === ahead) prefetched.delete(file); });
+    const controller = new AbortController();
+    const ahead = { download: fetchPanorama(file, controller.signal), controller };
+    ahead.download.catch(() => { if (prefetched.get(file) === ahead) prefetched.delete(file); });
     prefetched.set(file, ahead);
-    for (const file of prefetched.keys()) {
+    for (const [oldestFile, oldest] of prefetched) {
       if (prefetched.size <= PREFETCHED) break;
-      prefetched.delete(file);
+      oldest.controller.abort();
+      prefetched.delete(oldestFile);
     }
   }
 
