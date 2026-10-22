@@ -386,8 +386,9 @@ stone or a lumpy, spinning one is pushed sideways as it goes in, so its path
 curves a little. From these, the throw's size, speed and angle and a random
 stream seeded by the stone, the splash chooses (`chooseSplash` in
 `src/splash.js`): how the hole seals (deep; shallow for a flat face going in
-first; at the surface, the crown pulled shut over the hole into a low glassy
-dome, when the entry's Froude number V²/(g·R) passes Birkhoff and Isaacs'
+first; at the surface, the crown pulled shut over the hole into a low dome,
+a thin sheet whipped shut, white with air, buckled and torn, not a glass
+bell, when the entry's Froude number V²/(g·R) passes Birkhoff and Isaacs'
 108, less readily the more oblique the entry and the more irregular the
 stone: Worthington's roughened marble dropped 15 cm threw a tall jet and
 from 140 cm none, Truscott and Techet's billiard balls at 6 m/s dome over,

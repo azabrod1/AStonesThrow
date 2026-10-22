@@ -107,7 +107,11 @@
 // vertical. From DOME_PULL_START of its seal time a pull P (a smoothstep, 1
 // at the seal time) draws every element onto a dome (pullIn): a smooth bell
 // over the hole from the lip's crest to an apex DOME_HEIGHT·R above the still
-// water (the reference's real-air runs close about 4 cm up: a low dome), the
+// water (the reference's real-air runs close about 4 cm up: a low dome), no
+// glass bell but a thin sheet whipped shut: its froth's violence and, as the
+// pull closes it, its whiteness are at least DOME_FROTH, and holes open all
+// over it at DOME_OPEN of FROTH_OPEN (Worthington's "bubble" is "doomed to almost immediate
+// destruction"; Truscott & Techet's dome is a ragged splash curtain), the
 // sheet's rim at the apex, its foot on the lip, buckled by a few folds around
 // (Marston et al. 2016 find every sealing crown buckles). Its rim's bead
 // merges as it closes. As the rim meets, a thin spike of water shoots up from
@@ -121,7 +125,7 @@
 // DOME_HEIGHT·R to DOME_SINK·R below the water by the tear (Worthington's
 // marble from 140 cm: "the air-tube is closed over and forms a downward jet
 // which shoots down the middle of the air-tube"), where it is gone: no
-// drops. Its rim sheds before the pull starts, none while it closes, and the burst
+// drops. Its rim sheds until it meets over the hole, and the burst
 // takes the rest.
 //
 // Thickness is h0·(r0/r)/(1 + age/td), at least 0.2 mm, with h0 = 1.5 mm and
@@ -355,7 +359,9 @@ const DOME_PULL_START = 0.35;      // the pull starts at this share of the seal 
 export const DOME_HEIGHT = 1.4;    // ...and draws the sheet onto a dome whose apex stands this many R above the still water...
 const DOME_ROUND = 0.8;            // ...its radius r_foot·cos(πs/2)^this at height y_foot + h·sin(πs/2) (s from its foot to its apex)...
 const DOME_FOLDS = [6, 10];        // ...buckled by this many folds around (Marston et al. 2016)...
-const DOME_FOLD = 0.05;            // ...of up to this share of its radius, at mid height
+const DOME_FOLD = 0.08;            // ...of up to this share of its radius, at mid height
+const DOME_FROTH = 0.7;            // a sealing sheet's violence and, as it closes, its whiteness are at least this: sucked in, it whips, buckles and carries air (the header)
+const DOME_OPEN = 0.5;             // ...and holes open all over the closing dome at this share of FROTH_OPEN
 const DOME_BURST = 0.25;           // a dome given no jet's push bursts with its sheet flying off at this times sqrt(g·R)·s, out and up
 const DOME_SINK = 1.5;             // a trapped jet's dome is drawn down to this many R below the water by the tear
 const DOME_TILT = 12;              // a sealing crown launches this many degrees nearer vertical: a taller wall
@@ -592,6 +598,7 @@ export class CrownSheet {
     // The froth (the header): how violent the throw is, and its noise's cells,
     // placed by the tear's phase so it costs no draw of its own.
     this.violence = Math.min(FROTH_GAIN * (this.sizeFactor * (speed / FROTH_SPEED) ** 2) ** FROTH_POWER, FROTH_MOST);
+    if (this.seal) this.violence = Math.max(this.violence, DOME_FROTH);
     this.frothRing = (1.2 * radius) / FROTH_CELL;
     this.frothAlongRate = (FROTH_ALONG * Math.sqrt(Math.max(this.sizeFactor, 0.25))) / this.launchDuration;
     this.frothOffset = tearPhase * 13.7;
@@ -1129,8 +1136,8 @@ export class CrownSheet {
   shed(dt, splash) {
     // The instability grows with time, so the shedding rate ramps up linearly;
     // over the sheet's life each finger (or crest) sheds its share. A sealing
-    // crown's rim sheds before the pull starts and not while it closes.
-    const shedding = this.seal ? this.seal.start : this.breakTime;
+    // crown's rim sheds until it meets over the hole.
+    const shedding = this.seal ? this.seal.time : this.breakTime;
     if (this.age > shedding) return;
     const rate = (2 * this.age) / (shedding * shedding);
     if (this.fingered) {
@@ -1278,10 +1285,11 @@ export class CrownSheet {
     const end = this.feedEnd();
     const state = this.state;
     // The froth's open share as the sheet thins away: more for a violent
-    // throw, more as the tear nears, none on a dome until it bursts.
+    // throw, more as the tear nears; on a standing dome DOME_OPEN of it (and
+    // at least that all over, below: a sealing sheet is thin and torn, no bell).
     const nearTear = smoothstep(0.5 * this.breakTime, this.breakTime, this.age);
-    const opening = this.seal && this.age < this.breakTime ? 0
-      : FROTH_OPEN * (FROTH_OPEN_FLOOR + (1 - FROTH_OPEN_FLOOR) * Math.min(this.violence, 1)) * (FROTH_OPEN_EARLY + (1 - FROTH_OPEN_EARLY) * nearTear);
+    const opening = FROTH_OPEN * (FROTH_OPEN_FLOOR + (1 - FROTH_OPEN_FLOOR) * Math.min(this.violence, 1)) * (FROTH_OPEN_EARLY + (1 - FROTH_OPEN_EARLY) * nearTear)
+      * (this.seal && this.age < this.breakTime ? DOME_OPEN : 1);
     // Row by row: until the sheet tears a row shares its launch time, which launchAt then works out once.
     for (let row = 0; row < this.rows; row++) {
       for (let column = 0; column < this.columns; column++) {
@@ -1301,8 +1309,16 @@ export class CrownSheet {
         // froth; and holes open only high in the flying sheet, where it is thinnest.
         const thinned = 1 - Math.min(Math.max(state.remaining, 0), 1);
         const flying = 1 - state.carry;
-        this.froths[vertex * 2] = this.violence * (FROTH_FLOOR + (1 - FROTH_FLOOR) * thinned) * flying * flying;
-        this.froths[vertex * 2 + 1] = opening * thinned * thinned * flying ** 4;
+        let whiteness = this.violence * (FROTH_FLOOR + (1 - FROTH_FLOOR) * thinned) * flying * flying;
+        let holes = opening * thinned * thinned * flying ** 4;
+        if (this.seal) {
+          // A dome's sheet is whipped shut whole, thinned or not: white and torn all over as it closes.
+          const closing = this.sealedShare();
+          whiteness = Math.max(whiteness, DOME_FROTH * closing * flying * flying);
+          holes = Math.max(holes, DOME_OPEN * FROTH_OPEN * closing * flying ** 4);
+        }
+        this.froths[vertex * 2] = whiteness;
+        this.froths[vertex * 2 + 1] = holes;
       }
     }
     holdWithinWalls(this.positions, this.walls);
