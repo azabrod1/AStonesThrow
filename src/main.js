@@ -206,9 +206,12 @@
 // (framesHeld): through a profiling run (src/profiler.js), or the
 // calibration's measurement of the idle pond (CALIBRATION says why).
 //
-// Starting is asynchronous: the sky is a photographed panorama
-// (src/sky.js) that has to load before anything is built, because the sun's
-// elevation is the photo's. Before the pond reports ready, under the page's
+// Starting is asynchronous: the sky is a photographed panorama (src/sky.js),
+// about 5 MB, the longest wait. The page asks for it from its head, before
+// any module has run (index.html), and the pond is built and its programs
+// warmed up while it downloads (src/sky.js Starting): the sun and the sky's
+// light are the photo's, filled in place once it is shown (awaitSky, then
+// applySky). Before the pond reports ready, under the page's
 // loading veil, warmUp throws a stone (and a floater, drawn once in the
 // mirror image) and draws its flight and splash at a
 // few moments, so that every GPU program a throw needs (the stone's, the
@@ -437,6 +440,9 @@ const WEATHER_STORAGE_KEY = 'stone-pond-weather';   // the Weather setting's
 const THING_STORAGE_KEY = 'stone-pond-thing';       // the Object setting's: what is thrown (src/things.js)
 const ICE_STORAGE_KEY = 'stone-pond-frozen';        // the Water setting's ice when it is Frozen: thin or thick (src/ice.js ICE_THICKNESS)
 const OLD_ICE_STORAGE_KEY = 'stone-pond-ice';       // the Ice setting's, before Frozen was a water: none, thin or thick (migrateStoredSettings)
+// Not a setting: the files of the sky last shown here (src/sky.js `assets`), which index.html fetches first next time.
+// Dropped as another place or hour is chosen, written again once it is shown (rememberSkyAssets).
+const SKY_ASSETS_STORAGE_KEY = 'stone-pond-sky-assets';
 // The Weather setting: the cloud's cover and the light under it, against a
 // clear sky's (src/sky.js setWeather: overcast takes the sun and greys the
 // sky), the rain's visibility (its haze), the rain (src/rain.js) and how wet
@@ -598,13 +604,29 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   };
   const [firstPlace, firstHour] = placeAndHour(pageParameters.get('sky') ?? (pageParameters.get('water') === 'pool' ? 'pool' : null) ?? storedChoice(SKY_STORAGE_KEY), pageParameters.get('time'));
   let placeName = firstPlace;
+  // The sky (src/sky.js Starting): its maps now, its photo on its way while
+  // the pond is built and its programs warmed up (warmUp), awaited after them
+  // (awaitSky); a failure is reported then, or before the warm-up if it came
+  // first.
+  const skyFailure = 'The sky could not be loaded. Check the connection and reload the page.';
   let environment;
   try {
-    onProgress?.('Loading the sky…');
-    environment = await createEnvironment(renderer, { name: PLACES[firstPlace].sky, hour: firstHour, sunAzimuth: SUN_AZIMUTH, sunBalance: new THREE.Vector3(...SUN_BALANCE), lighting });
+    environment = createEnvironment(renderer, { name: PLACES[firstPlace].sky, hour: firstHour, sunAzimuth: SUN_AZIMUTH, sunBalance: new THREE.Vector3(...SUN_BALANCE), lighting });
   } catch (error) {
-    onError?.('The sky could not be loaded. Check the connection and reload the page.');
+    onError?.(skyFailure);
     throw error;
+  }
+  let skyOutcome = null;   // once the first sky has settled: {} shown, or { error }
+  const skyArrival = environment.firstLoad.then(() => { skyOutcome = {}; }, (error) => { skyOutcome = { error }; });
+  async function awaitSky() {
+    if (!skyOutcome) {
+      onProgress?.('Loading the sky…');
+      await skyArrival;
+    }
+    if (skyOutcome.error) {
+      onError?.(skyFailure);
+      throw skyOutcome.error;
+    }
   }
   const sunDirection = lighting.sunDirection;
 
@@ -1025,7 +1047,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   // The sky (setSky): a load replaces the dome and the environment maps and
   // fills lighting's sun and sky in place (src/sky.js); then what holds the
   // sun by value follows, and the mirror image is drawn again.
-  let skyRequest = { place: environment.name, hour: environment.hour };   // the sky last asked for
+  let skyRequest = { place: PLACES[firstPlace].sky, hour: resolveHour(PLACES[firstPlace].sky, firstHour) };   // the sky last asked for
   let placeRequest = null;   // the place last asked for (setSky), while its sky loads
   let skyLoading = Promise.resolve();    // the loads queued so far
   /**
@@ -1039,8 +1061,16 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       if (skyRequest !== request || (environment.name === request.place && environment.hour === request.hour)) return;
       await environment.load(request.place, request.hour);
       applySky();
+      rememberSkyAssets();
     }).catch((error) => console.error(error));
     return skyLoading.then(() => environment.name);
+  }
+  /** What the sky shown fetched, for index.html to ask for first next time (SKY_ASSETS_STORAGE_KEY); forgetSkyAssets as another is chosen. */
+  function rememberSkyAssets() {
+    try { window.localStorage.setItem(SKY_ASSETS_STORAGE_KEY, JSON.stringify(environment.assets)); } catch { /* storage refused: nothing fetched early */ }
+  }
+  function forgetSkyAssets() {
+    try { window.localStorage.removeItem(SKY_ASSETS_STORAGE_KEY); } catch { /* storage refused */ }
   }
   /**
    * The weather by name (WEATHERS): the sky's cloud and haze at once, the
@@ -2318,9 +2348,13 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     warmUpReport.programs = (renderer.info.programs?.length ?? 0) - programsBefore;
     warmUpReport.milliseconds = performance.now() - started;
   }
+  if (skyOutcome?.error) await awaitSky();   // a sky failed already: no warm-up for nothing
   onProgress?.('Preparing the water…');
   await new Promise((resolve) => setTimeout(resolve, 0));
   warmUp();
+  await awaitSky();
+  applySky();
+  rememberSkyAssets();
   onProgress?.('Finishing the scene…');
   try {
     await applyWeather(weatherName);   // a remembered rain falls before the veil lifts
@@ -2471,6 +2505,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       const sameSky = name !== 'sunrise' && PLACES[name].sky === skyRequest.place;
       const [place, hour] = placeAndHour(name, sameSky ? skyRequest.hour : undefined);
       try { window.localStorage.setItem(SKY_STORAGE_KEY, place); } catch { /* storage refused: the choice lasts this visit */ }
+      if (PLACES[place].sky !== skyRequest.place || resolveHour(PLACES[place].sky, hour) !== skyRequest.hour) forgetSkyAssets();
       const request = { place };
       placeRequest = request;
       return requestSky(PLACES[place].sky, hour).then(() => {
@@ -2495,6 +2530,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
         chosenClock = hour.clock;
         try { window.localStorage.setItem(TIME_STORAGE_KEY, hour.clock); } catch { /* storage refused: the choice lasts this visit */ }
       }
+      if (name !== skyRequest.hour) forgetSkyAssets();
       return requestSky(skyRequest.place, name).then(() => environment.hour);
     },
     get hour() { return environment.hour; },

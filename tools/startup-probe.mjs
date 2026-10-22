@@ -10,9 +10,12 @@ import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../_site');
 const prefix = '/AStonesThrow/';
+const served = new Map();   // requests by path, all pages together
+const servedCount = (asset) => served.get(`${prefix}${asset}`) ?? 0;
 const server = createServer(async (request, response) => {
   try {
     const pathname = new URL(request.url, 'http://localhost').pathname;
+    served.set(pathname, (served.get(pathname) ?? 0) + 1);
     if (!pathname.startsWith(prefix)) throw new Error('outside site');
     const relative = pathname.slice(prefix.length) || 'index.html';
     const body = await readFile(path.join(root, relative));
@@ -56,6 +59,12 @@ try {
   await ready(page);
   assert.equal(await page.title(), 'A Stone’s Throw');
   assert.equal(await page.evaluate(() => performance.getEntriesByType('resource').some((entry) => entry.name.includes('/assets/rain/'))), false);
+  // The first sky is asked for from the page's head (index.html), before any module has run, and its load takes the
+  // requests over (src/loadAsset.js): on a first visit the default place's files, each fetched once.
+  const firstVisitSky = ['assets/sky/lakeside_2k.hdr', 'assets/sky/lakeside.json', 'assets/sky/meadow_2.json'];
+  assert.deepEqual(firstVisitSky.map(servedCount), [1, 1, 1], 'each of the first sky\'s files fetched once');
+  assert.deepEqual(await page.evaluate(() => ({ early: window.__earlyAssets?.size, remembered: JSON.parse(localStorage.getItem('stone-pond-sky-assets')).map((href) => new URL(href).pathname) })),
+    { early: 0, remembered: firstVisitSky.map((asset) => `${prefix}${asset}`) }, 'the head\'s first-visit files are the ones the default sky loads');
   const first = await page.evaluate(() => {
     const pond = window.__pond;
     const target = pond.renderer.getRenderTarget();
@@ -85,6 +94,15 @@ try {
   assert.equal(await page.evaluate(() => window.__pond.rocks.length), 1);
   assert.deepEqual(errors, []);
   console.log('PASS: same-origin startup, first throw, delayed weather cancellation and rapid sky changes');
+  // The next visit asks first for the sky shown last (src/main.js SKY_ASSETS_STORAGE_KEY), Meadow's, once.
+  const meadowBefore = servedCount('assets/sky/meadow_2_2k.hdr');
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await ready(page);
+  assert.equal(await page.evaluate(() => window.__pond.sky), 'meadow');
+  assert.equal(servedCount('assets/sky/meadow_2_2k.hdr') - meadowBefore, 1);
+  assert.equal(await page.evaluate(() => window.__earlyAssets?.size), 0);
+  assert.deepEqual(errors, []);
+  console.log('PASS: the first sky is fetched from the page\'s head, the default on a first visit, the last one shown after');
   await page.context().close();
 
   const saved = await pageFor();

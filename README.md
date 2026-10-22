@@ -180,7 +180,11 @@ creates `_site/vendor/three`). Dependency failures offer Retry. Modules have a
 30-second deadline; sky and rain transfers time out only after 30 seconds
 without progress, so slow downloads can finish. Sky calibration and the panorama
 load together, and a failed replacement leaves the current sky visible.
-Module preloads begin dependency downloads as the page is parsed. A remembered
+The published page preloads every module it imports (the site build lists the
+whole import graph), so they download at once as the page is parsed, and it asks
+for the first sky's photo from its head, before any module has run: the sky
+shown last on the device, or on a first visit the default place's. The pond is
+built and its programs compiled while the photo downloads. A remembered
 rain downloads alongside the sky; failure offers Retry and Continue without
 rain under the veil. Continuing selects and remembers Clear weather, renders
 that scene, then enables input. Later rain failures offer Retry beside the weather controls,

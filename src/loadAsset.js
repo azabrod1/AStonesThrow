@@ -3,8 +3,28 @@
 // never total transfer time. Aborting includes the body, so a stalled request
 // cannot commit a late scene change. Compressed responses are decoded by fetch;
 // their Content-Length must not be used as the decoded body's size.
+//
+// A request the page started before any module ran (index.html's early
+// fetch of the first sky: window.__earlyAssets, its url's href to its
+// response and controller) is taken over by the first load of that url,
+// under the same timeout from then on; dropEarlyAssets aborts the ones no
+// load took (a sky remembered that is not the one shown).
+function takeEarly(url) {
+  const early = globalThis.__earlyAssets;
+  const href = String(url);
+  const request = early?.get(href);
+  if (request) early.delete(href);
+  return request;
+}
+export function dropEarlyAssets() {
+  const early = globalThis.__earlyAssets;
+  if (!early) return;
+  for (const { controller } of early.values()) controller.abort();
+  early.clear();
+}
 export async function loadAsset(url, type = 'json', { timeout = 30000 } = {}) {
-  const controller = new AbortController();
+  const early = takeEarly(url);
+  const controller = early?.controller ?? new AbortController();
   let timer;
   const resetTimeout = () => {
     clearTimeout(timer);
@@ -12,7 +32,7 @@ export async function loadAsset(url, type = 'json', { timeout = 30000 } = {}) {
   };
   resetTimeout();
   try {
-    const response = await fetch(url, { signal: controller.signal });
+    const response = await (early?.response ?? fetch(url, { signal: controller.signal }));
     if (!response.ok) throw new Error(`Asset HTTP ${response.status}: ${url}`);
     resetTimeout();
     const chunks = [];

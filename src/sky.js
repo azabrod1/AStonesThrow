@@ -122,6 +122,16 @@
 // Asset requests time out after 30 seconds without progress; the current sky
 // stays until all replacement assets arrive. Initial calibration loads in parallel.
 //
+// Starting. createEnvironment returns at once, its first sky still on its
+// way (firstLoad): the dome, the cube and the prefiltered map exist from the
+// start, captured once from the empty dome (the sun straight up, dark), so
+// every material made while the photo downloads takes the maps it will keep,
+// at their final sizes, and the capture's programs are built meanwhile
+// (src/main.js builds the pond and warms its programs up before it awaits
+// firstLoad). The page may have asked for the photo before any module ran
+// (index.html's early fetch, src/loadAsset.js takes it over); each load
+// lists what it fetched (`assets`), for the page to ask for first next time.
+//
 // Switching. load(place, hour) fetches the photo and its measurements, then
 // in one frame swaps the dome's texture and uniforms, fills lighting's sun
 // and sky vectors in place, captures the cube and the prefiltered map again
@@ -151,7 +161,7 @@
 // estimate (src/main.js).
 import * as THREE from 'three';
 import { decodeHdr } from './hdr.js';
-import { loadAsset } from './loadAsset.js';
+import { loadAsset, dropEarlyAssets } from './loadAsset.js';
 
 // The orientation was chosen from home-view frames (mirrored: the photo
 // flipped left for right; sunAzimuth, degrees right of straight ahead, would
@@ -373,18 +383,21 @@ void main() {
 }
 `;
 
-const fetchMeasurement = (file) => loadAsset(new URL(`../assets/sky/${file}.json`, import.meta.url));
+const measurementUrl = (file) => new URL(`../assets/sky/${file}.json`, import.meta.url).href;
+const panoramaUrl = (file) => new URL(`../assets/sky/${file}_2k.hdr`, import.meta.url).href;
+const fetchMeasurement = (file) => loadAsset(measurementUrl(file));
 
 /**
- * Build the environment and load its first sky.
+ * Build the environment and start loading its first sky (firstLoad, which
+ * resolves once it is shown; until then the maps hold the empty dome).
  * @param renderer the WebGLRenderer
  * @param options.name a key of SKIES (others fall back to DEFAULT_SKY), and options.hour one of its hours (others fall back to its anchor)
  * @param options.sunAzimuth radians from straight ahead (−Z) toward the right (+X), unless the sky sets its own
  * @param options.sunBalance the scene's sun irradiance under BALANCE_SKY (RGB Vector3)
  * @param options.lighting its sunDirection, sunIrradiance and skyAmbient (Vector3s) are filled in place by every load
- * @returns {Promise<{ sky, cubeTexture, envTexture, name, hour, level, targets, panoramaBytes, load }>}
+ * @returns {{ sky, cubeTexture, envTexture, name, hour, level, targets, panoramaBytes, assets, firstLoad, load }}
  */
-export async function createEnvironment(renderer, { name, hour, sunAzimuth, sunBalance, lighting }) {
+export function createEnvironment(renderer, { name, hour, sunAzimuth, sunBalance, lighting }) {
   // The haze's colour and density, shared with every material that hazes (HAZE in src/shaders/scene.js).
   const hazeUniforms = { uHazeColor: { value: new THREE.Vector3() }, uHazeDensity: { value: 0 } };
   const sky = new THREE.Mesh(
@@ -453,14 +466,14 @@ export async function createEnvironment(renderer, { name, hour, sunAzimuth, sunB
   // Panoramas fetched ahead (prefetch), by file, at most PREFETCHED of them, the oldest let go first. A load takes its
   // own out, or fetches it afresh if fetching it ahead failed.
   const prefetched = new Map();
-  const fetchPanorama = (file) => loadAsset(new URL(`../assets/sky/${file}_2k.hdr`, import.meta.url), 'arrayBuffer');
+  const fetchPanorama = (file) => loadAsset(panoramaUrl(file), 'arrayBuffer');
   function takePanorama(file) {
     const ahead = prefetched.get(file);
     prefetched.delete(file);
     return ahead ? ahead.catch(() => fetchPanorama(file)) : fetchPanorama(file);
   }
 
-  const environment = { sky, cubeTexture: cubeTarget.texture, envTexture: null, name: null, hour: null, level: 1, hazeUniforms, targets: [], panoramaBytes: 0, load, prefetch, setWeather, setFlash };
+  const environment = { sky, cubeTexture: cubeTarget.texture, envTexture: null, name: null, hour: null, level: 1, hazeUniforms, targets: [], panoramaBytes: 0, assets: [], firstLoad: null, load, prefetch, setWeather, setFlash };
   // The hour's light under a clear sky (load), which the weather covers (applyWeather).
   const clear = { sun: new THREE.Vector3(), sky: new THREE.Vector3(), lux: 1, level: 1 };
   let weather = { cover: 0, light: 1, visibility: Infinity };
@@ -478,13 +491,15 @@ export async function createEnvironment(renderer, { name, hour, sunAzimuth, sunB
     const facingFile = place.hours[place.facing ?? firstHour].file;
     const hourName = resolveHour(skyName, requestedHour);
     const { file } = place.hours[hourName];
-    const [measurement, anchor, facing, buffer, balance] = await Promise.all([
+    const arrivals = Promise.all([
       measurementOf(file),
       measurementOf(anchorFile),
       measurementOf(facingFile),
       takePanorama(file),
       balancePromise,
     ]);
+    dropEarlyAssets();   // the page's early fetches this load has not taken: not this sky's
+    const [measurement, anchor, facing, buffer, balance] = await arrivals;
     // HDRLoader's halves (src/hdr.js) and its texture's settings. Decode only
     // after every asset succeeded, so a failed measurement cannot orphan a
     // decoded panorama.
@@ -544,7 +559,8 @@ export async function createEnvironment(renderer, { name, hour, sunAzimuth, sunB
     applyWeather();
     previous?.dispose();
 
-    Object.assign(environment, { name: skyName, hour: hourName, panoramaBytes });
+    const assets = [panoramaUrl(file), ...new Set([file, anchorFile, facingFile, SKIES[BALANCE_SKY].hours.afternoon.file].map(measurementUrl))];
+    Object.assign(environment, { name: skyName, hour: hourName, panoramaBytes, assets });
     return skyName;
   }
 
@@ -571,9 +587,11 @@ export async function createEnvironment(renderer, { name, hour, sunAzimuth, sunB
    * The weather over the sky: `cover` (0 clear to 1 overcast), the light
    * that reaches the ground under it against a clear sky's (`light`), and
    * the rain's `visibility` (metres; Infinity for none). Applied at once,
-   * the cube and the prefiltered map captured again (Weather, above).
+   * the cube and the prefiltered map captured again (Weather, above); the
+   * weather already over it changes nothing.
    */
   function setWeather({ cover = 0, light = 1, visibility = Infinity } = {}) {
+    if (cover === weather.cover && light === weather.light && visibility === weather.visibility) return;
     weather = { cover, light, visibility };
     applyWeather();
   }
@@ -631,6 +649,9 @@ export async function createEnvironment(renderer, { name, hour, sunAzimuth, sunB
     else domeUniforms.uBolt.value.z = 0;
   }
 
-  await load(name, hour);
+  // The empty dome's capture (Starting): the maps, at their sizes, before any photo.
+  lighting.sunDirection.set(0, 1, 0);
+  applyWeather();
+  environment.firstLoad = load(name, hour);
   return environment;
 }
