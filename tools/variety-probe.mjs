@@ -20,15 +20,15 @@
 //   - the regimes: how often each jet form and each seal came up (with the
 //     surface seal's chance, src/splash.js chooseSplash), and a jet leaning
 //     more than LEANING_DEGREES;
-//   - the jet: its top (the highest its column reached or its tip drops
-//     reach, flown with the splash's own drag; the highest drop of 1.5 mm and
-//     more too, the crown's included), the tip
-//     beads (count and radii), its lean from
+//   - the jet: its top (the highest its column reached or the drops it
+//     throws up reach, flown with the splash's own drag; the highest drop of
+//     1.5 mm and more too, the crown's included), the drops of 1 mm and more
+//     its column (src/slenderJet.js) throws upward (count and radii), its lean from
 //     vertical, the hole's lopsidedness (the mouth's widest over its
 //     narrowest while it is open) and the crown's height, overall and by form;
 //   - the CPU cost per frame (mean, 95th percentile, worst);
 // with --list, every throw of the first set on a line of its own (its seed,
-// form, seal and the surface seal's chance, asymmetry, lean, top, tip beads),
+// form, seal and the surface seal's chance, asymmetry, lean, top, the jet's drops),
 // and checks, failing with exit code 1 if any check fails:
 //   - no throw of the default stone at normal power makes an invisible
 //     splash: its crown's rim rises at least VISIBLE_CROWN, and its jet's top
@@ -38,7 +38,7 @@
 //   - the default stone's throws are not all alike: at least four jet forms
 //     come up at least MIN_SHARE of the time each and none more than
 //     MAX_SHARE; the jet's top has a coefficient of variation of at least
-//     MIN_HEIGHT_SPREAD; the tip beads take at least three counts; the lean
+//     MIN_HEIGHT_SPREAD; the jet's drops take at least three counts; the lean
 //     spreads by at least MIN_LEAN_SPREAD degrees (as a vector, its direction
 //     varying too: the root of the summed variances of its two components).
 //     Why these numbers: side by side, two jets whose heights differ by a
@@ -116,9 +116,9 @@ function throwStone(radius, power, seed) {
   throw new Error('the stone never reached the water');
 }
 
-// The tip beads each jet pinches off (a split tip's two halves count as two),
-// and the highest they fly (their apex, flown from where they left with the
-// splash's own drag and substep, src/splash.js update).
+// The drops each jet throws up, and the highest they fly (their apex, flown
+// from where they left with the splash's own drag and substep, src/splash.js
+// update).
 let tipRecord = null;
 let tipApex = 0;
 function apex(y, velocityX, velocityY, velocityZ, radius) {
@@ -133,17 +133,19 @@ function apex(y, velocityX, velocityY, velocityZ, radius) {
   }
   return highest;
 }
-const pinchTip = JetColumn.prototype.pinchTip;
-JetColumn.prototype.pinchTip = function (splash) {
-  const before = splash.count;
-  const split = this.form.splitTip && this.tipDrops === 0;
-  pinchTip.call(this, splash);
-  if (!tipRecord) return;
-  // The tip drop (or the two of a split tip) are the first drops this pinch spawned.
-  for (let index = before; index < Math.min(before + (split ? 2 : 1), splash.count); index++) {
-    tipRecord.push(splash.radii[index]);
-    tipApex = Math.max(tipApex, apex(splash.positions[index * 3 + 1], splash.velocities[index * 3], splash.velocities[index * 3 + 1], splash.velocities[index * 3 + 2], splash.radii[index]));
+// The drops a column throws upward of JET_DROP and more (src/jet.js hands
+// them over from the solver, src/slenderJet.js), and the highest they fly.
+const JET_DROP = 0.001;
+const handOver = JetColumn.prototype.handOver;
+JetColumn.prototype.handOver = function (splash) {
+  if (tipRecord) {
+    for (const event of this.solver.events) {
+      if (event.kind !== 'drop' || event.landing || event.radius < JET_DROP || event.vy <= 0) continue;
+      tipRecord.push(event.radius);
+      tipApex = Math.max(tipApex, apex(event.y, event.vx, event.vy, event.vz, event.radius));
+    }
   }
+  handOver.call(this, splash);
 };
 
 function runThrow(radius, power, seed) {
@@ -160,7 +162,6 @@ function runThrow(radius, power, seed) {
     leanVector: [THREE.MathUtils.radToDeg(Math.atan(choice.lean.x)), THREE.MathUtils.radToDeg(Math.atan(choice.lean.z))],
     jetTop: 0, dropTop: 0, crownTop: 0, lopsided: 1, frames: [],
   };
-  const columns = new Set();
   for (let frame = 0; frame < 6 * 60; frame++) {
     const started = performance.now();
     splash.setFrameSeconds(FRAME);
@@ -173,8 +174,7 @@ function runThrow(radius, power, seed) {
     if (splash.count > 0 || splash.crowns.length > 0 || splash.columns.length > 0) result.frames.push(spent);
     if (splash.crowns.includes(crown)) for (let vertex = 1; vertex < crown.positions.length; vertex += 3) result.crownTop = Math.max(result.crownTop, crown.positions[vertex]);
     for (const column of splash.columns) {
-      columns.add(column);
-      result.jetTop = Math.max(result.jetTop, column.positions[1]);
+      result.jetTop = Math.max(result.jetTop, column.topHeight());
     }
     for (let index = 0; index < splash.count; index++) if (splash.radii[index] >= 0.0015) result.dropTop = Math.max(result.dropTop, splash.positions[index * 3 + 1]);
     if (cavity && splash.cavities.includes(cavity) && cavity.age < cavity.pinchTime && cavity.lip.mouth > 0.9 * cavity.radius) {
@@ -185,7 +185,6 @@ function runThrow(radius, power, seed) {
   }
   result.tipBeads = tipRecord.slice();
   result.jetTop = Math.max(result.jetTop, tipApex);
-  result.columns = columns.size;
   tipRecord = null;
   return result;
 }
@@ -237,16 +236,16 @@ for (const [setIndex, set] of sets.entries()) {
   console.log(`  jet top ${spread(tops, 100, 1)} cm (mean ${(100 * mean(tops)).toFixed(1)}, spread ${(deviation(tops) / Math.max(mean(tops), 1e-9)).toFixed(2)}); highest drop ${spread(results.map((result) => result.dropTop), 100, 1)} cm; crown ${spread(results.map((result) => result.crownTop), 100, 1)} cm`);
   // The lean's spread as a vector (its direction varies as well as its angle): the root of the variances of its two components.
   const leanSpread = Math.hypot(deviation(results.map((result) => result.leanVector[0])), deviation(results.map((result) => result.leanVector[1])));
-  console.log(`  tip beads: ${shares(tipCounts, throwCount)} (counts); radii ${tipRadii.length ? spread(tipRadii, 1000, 1) : '-'} mm; lean ${spread(results.map((result) => result.lean), 1, 0)}° (spread as a vector ${leanSpread.toFixed(1)}°); two columns ${percent(results.filter((result) => result.columns > 1).length / throwCount)}`);
+  console.log(`  the jet's drops of ${(JET_DROP * 1000).toFixed(0)} mm and more, thrown up: ${shares(tipCounts, throwCount)} (counts); radii ${tipRadii.length ? spread(tipRadii, 1000, 1) : '-'} mm; lean ${spread(results.map((result) => result.lean), 1, 0)}° (spread as a vector ${leanSpread.toFixed(1)}°)`);
   for (const regime of Object.keys(regimes)) {
     const ofRegime = results.filter((result) => result.regime === regime);
-    console.log(`    ${regime.padEnd(8)} top ${spread(ofRegime.map((result) => result.jetTop), 100, 1)} cm, tip beads ${mean(ofRegime.map((result) => result.tipBeads.length)).toFixed(1)}, lean ${mean(ofRegime.map((result) => result.lean)).toFixed(0)}°, highest drop ${(100 * mean(ofRegime.map((result) => result.dropTop))).toFixed(1)} cm`);
+    console.log(`    ${regime.padEnd(8)} top ${spread(ofRegime.map((result) => result.jetTop), 100, 1)} cm, drops ${mean(ofRegime.map((result) => result.tipBeads.length)).toFixed(1)}, lean ${mean(ofRegime.map((result) => result.lean)).toFixed(0)}°, highest drop ${(100 * mean(ofRegime.map((result) => result.dropTop))).toFixed(1)} cm`);
   }
   const frames = results.flatMap((result) => result.frames);
   console.log(`  CPU: ${mean(frames).toFixed(2)} ms per frame on average, 95th percentile ${quantile(frames, 0.95).toFixed(2)}, worst ${Math.max(...frames).toFixed(2)} ms`);
   if (listing && setIndex === 0) {
     for (const result of results) {
-      console.log(`    seed ${result.seed}: ${result.regime} (${result.seal} seal; the surface seal's chance ${(100 * result.surfaceChance).toFixed(0)}%), asymmetry ${result.asymmetry.toFixed(2)}, lean ${result.lean.toFixed(0)}°, top ${(100 * result.jetTop).toFixed(1)} cm, highest drop ${(100 * result.dropTop).toFixed(1)} cm, tip beads ${result.tipBeads.map((bead) => (1000 * bead).toFixed(1)).join(' ') || 'none'}; ${result.impact.contact.kind} first, spin ratio ${result.impact.spin.ratio.toFixed(3)}`);
+      console.log(`    seed ${result.seed}: ${result.regime} (${result.seal} seal; the surface seal's chance ${(100 * result.surfaceChance).toFixed(0)}%), asymmetry ${result.asymmetry.toFixed(2)}, lean ${result.lean.toFixed(0)}°, top ${(100 * result.jetTop).toFixed(1)} cm, highest drop ${(100 * result.dropTop).toFixed(1)} cm, the jet's drops ${result.tipBeads.map((bead) => (1000 * bead).toFixed(1)).join(' ') || 'none'}; ${result.impact.contact.kind} first, spin ratio ${result.impact.spin.ratio.toFixed(3)}`);
     }
   }
   if (set.checked) {
@@ -260,7 +259,7 @@ for (const [setIndex, set] of sets.entries()) {
     check(Math.max(...Object.values(regimes)) <= MAX_SHARE * throwCount, `${set.label}: one jet form comes up more than ${percent(MAX_SHARE)} of the time`);
     const heightSpread = deviation(tops) / Math.max(mean(tops), 1e-9);
     check(heightSpread >= MIN_HEIGHT_SPREAD, `${set.label}: the jet's top spreads by ${heightSpread.toFixed(2)} of its mean, under ${MIN_HEIGHT_SPREAD}`);
-    check(Object.keys(tipCounts).length >= 3, `${set.label}: the tip beads take only ${Object.keys(tipCounts).length} counts`);
+    check(Object.keys(tipCounts).length >= 3, `${set.label}: the jet's drops take only ${Object.keys(tipCounts).length} counts`);
     check(leanSpread >= MIN_LEAN_SPREAD, `${set.label}: the lean spreads by ${leanSpread.toFixed(1)}°, under ${MIN_LEAN_SPREAD}°`);
   }
 }

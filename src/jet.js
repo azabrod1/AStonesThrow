@@ -1,187 +1,152 @@
 // The Worthington jet: the water fired up the axis when the air cavity behind
 // a stone pinches off (src/cavity.js; the splash starts it at the pinch-off).
 //
-// The hole's walls meet on the axis at the pinch and fire water up it, from
-// the floor of the bowl that is left above the neck. The reference
-// simulation (tools/basilisk, a 3 cm stone straight in at 6.3 m/s) shows three
-// parts: a needle a few millimetres thick that clears the surface within about
-// 10 ms at 13 to 16 m/s, shedding drops of 2 to 6 mm; the column's body under
-// it, slower; and, as the bowl fills, a broad slow base that the collapse
-// builds under the column, 5 cm across at the surface 0.25 s after entry. The
-// column is all of it: water launched from a point on the jet's axis, each
-// element then flying ballistically under gravity alone (a column is not a
-// sheet, so there is no drag), so it is a closed form in launch time tau,
-// azimuth and time.
+// Its flight is physics: the column of water is integrated by the slender-jet
+// equations (src/slenderJet.js: mass and momentum along the column, with
+// surface tension, viscosity and gravity), so how it thins, whether and where
+// it beads, how its tip draws back into a bulb, where it pinches, and every
+// drop it throws and that drop's size come out of the equations. This module
+// feeds it the water as the collapse launches it, hands the drops and the
+// water that falls back to the splash, and draws it.
 //
-// The launch. In the bowl's time unit sqrt(z_p/g) (z_p the pinch depth, the
-// collapse's own time scale; src/cavity.js bowlUnit) the material leaves over
-// T_end = LAUNCH_END, at
+// The launch (the inflow). The hole's walls meet on the axis at the pinch and
+// fire water up it, from the floor of the bowl that is left above the neck;
+// that collapse is not solved here (a two-dimensional flow), so the water it
+// launches is given, fitted to the reference simulation (tools/basilisk, a
+// 3 cm stone straight in at 6.3 m/s): a needle a few millimetres thick that
+// clears the surface within about 10 ms at 13 to 16 m/s, the column's body
+// under it, slower, and, as the bowl fills, a broad slow base, 5 cm across at
+// the surface 0.25 s after entry. In the bowl's time unit sqrt(z_p/g) (z_p the
+// pinch depth, the collapse's own time scale; src/cavity.js bowlUnit) the
+// water leaves over T_end = LAUNCH_END, at
 //
 //   u(tau) = U·(BASE_SPEED + (1 − BASE_SPEED)·(1 − tau/T_end)^BODY_POWER) + (form.needle·U − U)·exp(−tau/NEEDLE_TIME)
 //
-// (U the body's speed, which the splash sets from the entry speed), so the
-// needle leaves first and fastest and the column stretches as it rises, and
-// the base's last material still leaves at BASE_SPEED·U, standing wide on the
-// water. Its launch radius r0(tau) is a core growing from NEEDLE_RADIUS·Rj to
+// (U the body's speed, which the splash sets from the hole's collapse speed
+// at its pinch, sqrt(g·z_p): src/splash.js JET_COLLAPSE), so the
+// needle leaves first and fastest and the column stretches as it rises. Its
+// launch radius r0(tau) is a core growing from NEEDLE_RADIUS·Rj to
 // BODY_RADIUS·Rj over BODY_GROWTH of T_end (the needle, then the body) plus
 // the base, growing as (tau/T_end)^BASE_POWER to BASE_RADIUS·Rj at T_end times
-// a scale chosen so that the jet launches the volume the splash gives it (a
-// share of the water that fills the bowl, src/splash.js JET_SHARE): the late,
-// slow material is the broad base. Rj is the stone's radius R times
-// (R / 3 cm)^JET_RADIUS_POWER (times form.radiusScale): a jet is thinner the
-// more singular the cavity's collapse, that is the higher the Froude number
-// V²/(g·R) (Gekle & Gordillo 2010 find thinner, faster jets as it grows), and
-// at a given entry speed a big stone's is lower, so its jet is fatter than a
-// scaled-up copy of a small one's. The launch point is on the jet's axis
-// (through where the hole closes, tilted by the lean) at the bowl's floor: it
-// starts at the pinch depth and follows the floor up as the bowl fills
-// (src/cavity.js bowlFloorAt), at most RISE_SHARE of the launch speed (the
-// neck zips up faster than any of it leaves), so the late material leaves near
-// the surface; the launch depth and the launched volume are tabulated once
-// (LAUNCH_SAMPLES). Elements leave along the lean with a tilt of up to 5° per
-// jet plus a lateral wobble of about 1% of u (times form.wobble) along the
-// main launch, so the column leans and bends gently. The splash leans it by
-// `lean` (back along an oblique stone's path, see JET_LEAN, and towards a
-// lopsided hole's bulge, src/splash.js): its launch direction is cos(lean) up
-// and sin(lean) across before the tilt. Its elements keep that sideways speed
-// while gravity turns them, so a leaning column arcs over like a fountain and
-// its drops land well downrange; a whip (form.bend) leans the tip's elements
-// more than the base's, by bend·(1/2 − tau/T) of u across (T the main launch,
-// below), so a leaning column curves away rather than standing as a rod. With
-// a = t − tau,
+// a scale chosen so that the two launch the volume the splash gives the jet
+// (a share of the water that fills the bowl, src/splash.js JET_SHARE). The
+// base is the bowl's water welling up under the column, a broad mound rather
+// than a jet (the splash draws it on the water: startBase), so the solver is
+// fed the core alone and the base's water is counted straight into what
+// falls back (below). Rj is the
+// stone's radius R times (R / 3 cm)^JET_RADIUS_POWER (times form.radiusScale):
+// a jet is thinner the more singular the cavity's collapse, that is the higher
+// the Froude number V²/(g·R) (Gekle & Gordillo 2010 find thinner, faster jets
+// as it grows), and at a given entry speed a big stone's is lower; but never
+// under JET_RADIUS_LEAST, since a small stone's jet is no thinner than the
+// capillary length lets it be: Li & Li (2025) measure columns 3 ± 1 mm
+// across from 20 to 40 mm spheres, and Worthington's (1908) 1.5 cm marble
+// threw "a tall jet", not a thread (a thread of 0.35 mm, which the scaling
+// alone would give it, breaks into mist within a millisecond). The rock's
+// launch is that scaling, an extrapolation: the reference simulation is of
+// the 3 cm stone only; and a small stone's comes out weak against
+// Worthington's rule (his marble's jet from 15 cm rose to the drop height
+// or more; this launch sends its column to a third of it and its needle's
+// drops to about it: tools/jet-probe.mjs), since the speed shared between
+// needle and body was fitted at the reference's Froude number alone. The
+// launch point is on the jet's axis (through where
+// the hole closes, tilted by the lean) at the bowl's floor: it starts at the
+// pinch depth and follows the floor up as the bowl fills (src/cavity.js
+// bowlFloorAt), at most RISE_SHARE of the launch speed, the flux through it
+// π·r0²·(u − w) (w its rise, the flux at least LEAST_FLUX of a still point's);
+// the launch depth and the launched volume are tabulated once
+// (LAUNCH_SAMPLES). The water leaves along the lean (`lean`, cos(lean) up and
+// sin(lean) across, from src/splash.js: back along an oblique stone's path
+// and towards a lopsided hole's bulge), tilted by up to 5° per jet, its
+// direction wandering by WOBBLE of its speed times form.wobble (two slow
+// waves a side over the first MAIN_SHARE of the launch): an irregular
+// collapse throws its water a little sideways, unevenly.
 //
-//   position = launch point(tau) + u·direction(tau)·a − ½·g·a²·up
+// What starts the breakup. A real collapse is never perfectly smooth, and the
+// column amplifies whatever unevenness it is launched with (Rayleigh–Plateau):
+// the launch radius varies by form.roughness (ROUGHNESS for a clean jet) in
+// a sum of waves along the launch (ROUGHNESS_WAVES times the column's most
+// unstable wavelength there, 9 launch radii, at phases from the jet's own
+// stream). A clean collapse's jet is smooth and breaks mostly from its tip
+// (end-pinching); a rough, lopsided one's breaks along its length sooner. How
+// much each unevenness grows is the physics': a needle a millimetre or two
+// thick beads within milliseconds, a column centimetres thick needs longer
+// than its flight.
 //
-// and ∂position/∂tau, the spacing of neighbouring elements, is closed form
-// (the launch point's rise included). Volume is conserved: an element carries
-// π·r0²·(u − w)·dtau (w the launch point's rise along the axis, the flux at
-// least LEAST_FLUX of a still point's) spread over |∂position/∂tau|·dtau of
-// column, so the column radius is r0·sqrt((u − w)/|∂position/∂tau|), capped at
-// BUNCH_CAP·r0 where elements bunch (a fat foot). The material launched in the
-// first MAIN_SHARE of T_end, the needle and the body (T, the main launch),
-// breaks into drops; the base falls back. For a 3 cm stone dropped in at
-// 6.3 m/s the clean form's needle leaves at 14 m/s and clears the surface
-// about 17 ms after the pinch, 131 ms after entry, at 14 m/s (the reference:
-// 118 ms, 13 to 16 m/s); 0.25 s after entry the column is about 6 cm across
-// at the water, 5 cm across 5 cm up and 3 cm across at mid-height (the
-// reference: 6, 4.5 and 3 cm), launched with about 0.6 litres, most of it in
-// the base, and its top stands 60 to 70 cm up at 0.4 to 0.5 s (the
-// reference's joined top, 75 to 81 cm by 0.33 s and coasting on to 1.39 m at
-// 0.67 s, is an upper bound: its needle focused perfectly on its axis and
-// never broke).
+// Forms. src/splash.js (jetForm) draws each throw's collapse: its focus (the
+// needle's speed, form.needle: a smooth symmetric collapse focuses a fast
+// needle, Gekle & Gordillo 2010; an irregular or oblique one less), its
+// thickness (form.radiusScale), speed (the splash's speedScale), lean,
+// wobble and roughness. These set only the launch; what the column then does
+// is the solver's.
 //
-// The column's free end is a cap. At first it is the tip bulb, the material
-// of the first bead's share of T (form.beadShares, BULB_SHARE when the form
-// gives none) gathered into a ball of form.firstBulb launch radii r0(0) (1.6
-// for the default form: a radius of 3 mm on a 3 cm stone's needle, as the
-// reference's first tip drops), grown in as it emerges. Once it has cleared the surface it
-// pinches off after form.gatherScale capillary times sqrt(ρ·r³/σ) of its own,
-// or sooner once the neck just behind it is thinner than form.neckRatio of the
-// bulb, or at the latest when it starts to fall: one drop with the bulb's
-// radius and velocity (a split tip: two side by side, parting at 0.12 to
-// 0.3 m/s), up to form.tipSatellites satellites of SATELLITE_LEAST to
-// SATELLITE_MOST of its radius from its neck, a little slower, and one to four
-// fine drops (times form.spray). For the reference throw the first leaves
-// 135 ms after entry, 3 mm in radius, at 12 m/s (the reference's: 2.4 and
-// 3.7 mm from 120 ms on). The next bead's material then gathers into a new bulb (radius from
-// its volume) over form.gatherScale capillary times, thinning the neck under
-// it, and pinches again, up to form.tipBeads drops while the end still rises;
-// a form with no tip beads keeps its bulb on the column until the column
-// breaks, when the bulb leaves first, unless its needle is faster than
-// NEEDLE_HOLD times the body, which no bulb survives: it pinches one. Then the
-// column breaks from the top down, a piece at a time: each piece, the
-// material for one drop of 1.9 local column radii (the Rayleigh–Plateau size,
-// times form.dropSpread: 0.65 to 1.35, but at most form.dropCap of DROP_MOST·Rj,
-// less up to 17% at random), gathers into a bulb at the end and pinches off
-// BREAK_PACE capillary times sqrt(ρ·r³/σ) of its local column after the last
-// (times form.breakScale and half to one and a half at random, so the rhythm
-// is ragged: a needle sheds a drop every few milliseconds, a column a
-// centimetre thick one a tenth of a second), with the local velocity, a
-// scatter (times form.scatter) and, at form.satellites odds, a small
-// satellite, and a ragged column sheds fine spray as it parts (form.spray over
-// 1). Every pinch, the tip's and the breakup's, also throws spray
-// (src/spray.js, neckSpray): NECK_SPRAY of the drop's water times form.spray,
-// in drops of NECK_SPRAY_SIZE of its radius, kicked at the neck's capillary
-// speed, from a stream of its own (so the jet's draws are unchanged). A ragged form starts that breakup at form.breakAt (s), whatever its tip
-// is doing. Volumes are kept, so the drop count follows the column. Before it
-// breaks the column grows varicose beads with the drop spacing (radius ±6%
-// while it rises fast, ±12% as it slows, up to ±45% just below the front,
-// necks where the pieces will part), which catch the sun; form.irregularity
-// makes their spacing and size uneven, by two waves of their own along the
-// launch.
+// Stepping. The solver steps on its own clock, each step's length from its
+// own state (src/slenderJet.js), at most STEP_INFLOW of the needle's time
+// plus the launch's age (the inflow's own pace); update() takes whole steps
+// up to the splash's time and never cuts one short, so a seeded throw's jet
+// is the same however the frames fell. It is a little behind the splash
+// (less than a step), so drops are carried on ballistically to the splash's
+// time when they are handed over and the mesh is drawn carried on too. Every
+// new node leaves the launch point once the segment behind the column is
+// EMIT_LENGTH launch radii long (within EMIT_LEAST and EMIT_MOST). Once the
+// launch is over the column's foot stands in the pool (the solver's
+// `anchored`).
 //
-// Forms. CLEAN_FORM is a clean jet; src/splash.js (jetForm) draws each
-// throw's form: a clean jet varies its needle, its tip beads (none to four, of
-// 3.5 to 9.5% of T each), its first bulb, neck, bead sizes, satellites,
-// wobble, irregularity and breakup; a leaning one whips; a stubby one is fat
-// and slow, with hardly a needle (radiusScale over 1, few tip beads, slow
-// breakup); a ragged one has a small bulb, breaks from the top within a
-// quarter of its rise, fast, into drops of very mixed sizes flung wide with
-// spray; a split jet is two columns, each with `share` of the water (its radii
-// scaled by sqrt(share)); the form of a throw with no jet ('none') is a fat
-// column launched at a fifth of the speed with no needle once the bowl has
-// nearly filled, a glassy mound a few centimetres high that subsides in small
-// drops. Every draw comes from the jet's own random stream (`random`), so a
-// seeded throw's jet is the same however the frames fell.
+// Drops. A piece the solver lets go as a drop (one bead) becomes a droplet of
+// its water's radius and momentum (drops of LENS_DROP_RADIUS and more drawn
+// as glass, like the column); drops under LEAST_DROP are not worth one and
+// their water falls back. A piece that reaches the water leaves as droplets
+// node by node, so it lands (and rings) where it reaches it. Every pinch also
+// throws spray (src/spray.js, neckSpray): NECK_SPRAY of the water of the
+// drop that pinched off times form.spray, in drops of NECK_SPRAY_SIZE of its
+// radius, kicked at the neck's capillary speed, from a stream of its own.
 //
-// Meanwhile the column's foot is the element now crossing BASE_DEPTH below
-// the bowl's floor (or the surface, once the bowl has flattened): the launch
-// point while the jet is fed, then climbing the column as the slow base falls
-// back. The foot stands on the water: over its last FOOT_ROWS rows the rings
-// turn level (no faster than their spacing allows, so they never cut through
-// each other), never narrow downward and widen at most FOOT_SLOPE per unit of
-// height, and its last ring slides down the column's axis until none of it
-// stands above the water. The column is spent once the foot has climbed to
-// within half a piece of its end, or what is left has come down onto the
-// water (within three of its radii, where a tube bent as tightly as a falling
-// stub bends would fold into itself): then a stub still in the air becomes one
-// last drop, and the water gets, where the foot element has gone (downrange of
-// the collapse point when the column leans), a mound (height 0.22·R times the
-// strength: the cube root of the fallen volume against FALLBACK_VOLUME, times
-// (R / 3 cm)^FALLBACK_SIZE, which keeps the strength of the rings the pond's
-// waves were calibrated with, the earlier jet having fallen back a volume
-// growing as R^3.6 where this one's grows as R^2.4) with foam, a patch of foam
-// specks in a disc of 1.6·R (FALLBACK_SPECKS times the strength) and a small
-// secondary ring's push, which the splash leaves out (columnWater): the stone's
-// ring (RING in src/splash.js) is fitted to a reference ring that holds it.
+// Falling back. The column's water that drains back into the pool (the
+// solver's `fallen`: what comes down under the bowl's floor or the surface,
+// BASE_DEPTH below it) makes, when the column is gone, a mound at the foot
+// (height 0.22·R times the strength: the cube root of the fallen volume
+// against FALLBACK_VOLUME, times (R / 3 cm)^FALLBACK_SIZE, which keeps the
+// strength of the rings the pond's waves were calibrated with) with foam, a
+// patch of foam specks in a disc of 1.6·R (FALLBACK_SPECKS times the
+// strength) and a small secondary ring's push, which the splash leaves out
+// (columnWater): the stone's ring (RING in src/splash.js) is fitted to a
+// reference ring that holds it. A column still up after LONGEST seconds lets
+// everything go as drops.
 //
-// updateGeometry() evaluates a ROWS × COLUMNS ring grid (src/fluidMesh.js)
-// once per rendered frame: CAP_ROWS rows of the cap's upper half, then rows
-// placed by arc length below the cap's centre, crowded towards it where the
-// bulb, neck and beads are, each ring the larger of column and bulb, smoothly
-// blended, down to the foot. update() runs every simulation substep and
-// checks the tip, while the breakup advances once per rendered frame:
-// whenever a frame's worth of simulated time (SplashSystem.frameSeconds) has
-// passed, so it moves on every frame at any time scale (a column that has come
-// down onto the water falls back at once). SplashSystem draws the mesh with
-// the column materials in src/shaders/sheet.js through the droplets'
-// screen-space fluid passes, where the composite shades it as a glass lens;
-// drops of LENS_DROP_RADIUS and more are flagged to be drawn the same way
-// (with their motion streak held short), so the tip drop looks like the bulb
-// it was. Below the bowl's floor the column is inside the water, and the
-// cavity's walls hide it. In the pool (`walls`, set by SplashSystem) the
-// column is held inside its walls (holdWithinWalls in src/fluidMesh.js).
+// updateGeometry() draws the solver's pieces once per rendered frame into one
+// ROWS × COLUMNS ring grid (src/fluidMesh.js): a ring per node along each
+// piece, around the column's local radius (the mean of the segments either
+// side), a bead larger than BEAD_SHOWN of its column as BEAD_RINGS rings of
+// its sphere, each free end a hemisphere of CAP_RINGS rings and a pole, the
+// pieces joined by rings of no radius (which draw nothing); normals from the
+// shapes (a ring's slope, a sphere's latitude); aRound 1 on spheres and caps
+// (the composite's lens). A long column with more nodes than rows is drawn
+// through every few of them. SplashSystem draws the mesh with the column
+// materials in src/shaders/sheet.js through the droplets' screen-space fluid
+// passes, where the composite shades it as a glass lens. Below the bowl's
+// floor the column is inside the water, and the cavity's walls hide it. In
+// the pool (`walls`, set by SplashSystem) the column is held inside its walls
+// (holdWithinWalls in src/fluidMesh.js).
 import * as THREE from 'three';
-import { createRingGrid, computeGridNormals, holdWithinWalls, markChanged } from './fluidMesh.js';
+import { createRingGrid, holdWithinWalls, markChanged } from './fluidMesh.js';
 import { seededRandom, sprayDrops } from './spray.js';
+import { SlenderJet, WATER } from './slenderJet.js';
 
 const GRAVITY = 9.81;
-const REFERENCE_RADIUS = 0.03;     // the stone size the tuning constants were set for
-const ROWS = 48;                   // end cap (row 0, a pole) to foot
-const COLUMNS = 24;                // around the axis
-const CAP_ROWS = 6;                // rows of the cap's upper half, pole to 75°
-const ROW_POWER = 1.6;             // rows below the cap crowd towards it, where the bulb and beads are
-const FOOT_ROWS = 5;               // the last rows, the foot, never narrow downward...
-const FOOT_SLOPE = 1.5;            // ...nor widen by more than this per unit of height
-const ARC_SAMPLES = 40;            // centreline samples for placing rows by arc length
-const BASE_DEPTH = 0.004;          // the foot is where the column dips this far under the water (or the bowl's floor)
+const REFERENCE_RADIUS = 0.03;     // the stone size the launch was fitted for
+const ROWS = 200;                  // rings in the grid
+const COLUMNS = 16;                // around the axis
+const CAP_RINGS = 4;               // rings over a free end's hemisphere, besides its pole
+const BEAD_RINGS = 6;              // rings around a bead's sphere
+const BEAD_SHOWN = 0.9;            // a bead wider than this many of its column's radii is drawn as a sphere
+const NODES = 1536;                // the solver's capacity
 // The launch (the header), in the bowl's time unit sqrt(z_p/g) and the body's speed U.
-const LAUNCH_END = 1.63;           // T_end: the last material leaves this long after the pinch...
-const MAIN_SHARE = 0.4;            // ...and what leaves before this share of it (T, the main launch) breaks into drops
+const LAUNCH_END = 1.63;           // T_end: the last water leaves this long after the pinch
+const MAIN_SHARE = 0.4;            // the wobble's waves span this share of it
 const NEEDLE_TIME = 0.026;         // the needle's extra speed decays over this
-const NEEDLE = 3.0;                // the needle's first material leaves at this many times U (form.needle)
+const NEEDLE = 3.0;                // the needle's first water leaves at this many times U (form.needle)
 const BODY_POWER = 1.6;            // the body's speed falls as U·(1 − tau/T_end)^this...
-const BASE_SPEED = 0.12;           // ...to this share of U, the base's last material, so the foot stands wide on the water
+const BASE_SPEED = 0.12;           // ...to this share of U, the base's last water
 const NEEDLE_RADIUS = 0.065;       // launch radius in Rj: the needle's...
 const BODY_RADIUS = 0.27;          // ...the body's, reached over BODY_GROWTH of T_end...
 const BODY_GROWTH = 0.12;
@@ -189,83 +154,59 @@ const BASE_RADIUS = 1.67;          // ...and the base's at T_end, growing as (ta
 const BASE_POWER = 0.8;
 const RISE_SHARE = 0.6;            // the launch point rises with the bowl's floor at most this share of the launch speed
 const LEAST_FLUX = 0.1;            // the flux through a rising launch point is at least this share of a still one's
-const LAUNCH_SAMPLES = 96;         // the launch depth and volume are tabulated at these many times, denser early
+const LAUNCH_SAMPLES = 96;         // the launch depth, volume and roughness phase are tabulated at these many times, denser early
 const DEFAULT_PINCH = 7.5;         // in R: with no bowl given, the jet's time unit is sqrt(this·R/g) and it leaves from the surface
-const JET_RADIUS_POWER = 0.25;     // the column's radii in R·(R / 3 cm)^this: fatter at a lower Froude number
+const JET_RADIUS_POWER = 0.25;     // the column's radii in R·(R / 3 cm)^this: fatter at a lower Froude number...
+const JET_RADIUS_LEAST = 0.009;    // ...and never under this (m): a needle of 0.6 mm, a body of 2.4 mm (the header)
 const MAX_TILT = THREE.MathUtils.degToRad(5);
-const WOBBLE = 0.01;               // lateral launch velocity over launch speed (0.1 of the old drops' scatter)
-const BULB_SHARE = 0.015;          // a tip bulb is the material of this fraction of T
-const FIRST_BULB = 1.6;            // the first bulb's radius in launch radii at the tip
-const NECK_RATIO = 0.45;           // the tip pinches when the neck is this thin against the bulb
-const NECK_THINNING = 0.6;         // a gathering bulb thins the neck under it by up to this fraction
-const BUNCH_CAP = 1.4;             // the column never fattens beyond this many launch radii
-const END_CAP = 1.15;              // a free end rounds into a cap this many column radii wide
-const TIP_BEADS = 2;               // tip drops a jet pinches off at most, unless its form says otherwise
-const NEEDLE_HOLD = 1.5;           // a needle faster than this many times the body cannot keep its bulb: it pinches at least one
-const DROP_RADII = 1.9;            // breakup drops in local column radii (Rayleigh–Plateau)...
-const DROP_MOST = 0.3;             // ...at most this many Rj (times form.dropCap)
-const RIPPLE_RISING = 0.06;        // varicose amplitude (of the radius) while the jet rises...
-const RIPPLE_SLOWING = 0.12;       // ...once it has slowed, and anywhere during the breakup
-const RIPPLE_FRONT = 0.33;         // extra amplitude just below the breakup front, decaying over RIPPLE_DEPTH drops
-const RIPPLE_DEPTH = 2;
-const BREAK_PACE = 1.0;            // a breakup piece pinches off this many capillary times sqrt(ρ·r³/σ) of its column after the last
+const WOBBLE = 0.01;               // lateral launch velocity over launch speed, times form.wobble
+const ROUGHNESS = 0.015;           // the launch radius varies by this share for a clean collapse (form.roughness)...
+const ROUGHNESS_WAVES = [0.45, 0.7, 1.0, 1.45, 2.2];   // ...in waves of these many of the column's most unstable wavelength
+const UNSTABLE_WAVELENGTH = 9.02;  // Rayleigh–Plateau's most unstable wavelength, in radii
+const BASE_DEPTH = 0.004;          // the water the column drains into is this far under the bowl's floor (or the surface)
+const SLEEVE_START = 0.3;          // the sleeve starts where the base's launch radius is this share of the core's...
+const SLEEVE_TAPER = 0.25;         // ...and widens from the core's radius over this share of what it spans
+const SLEEVE_RINGS = 18;           // rings along the sleeve
+const BUNCH_CAP = 1.4;             // where the sleeve's water bunches, its radius is at most this many launch radii
+const EMIT_LENGTH = 1.2;           // a node leaves the launch point once its segment is this many launch radii long...
+const EMIT_LEAST = 0.0004;         // ...and at least this (m)...
+const EMIT_MOST = 0.03;            // ...or this long, whatever its radius (m)
+const STEP_INFLOW = 0.3;           // a step is at most this share of the needle's time plus the launch's age
+const LEAST_DROP = 0.00025;        // m: drops smaller than this are not handed over; their water falls back
+const LONGEST = 6;                 // s: a column still up after this lets go of everything
 const FALLBACK_VOLUME = 2.9e-4;    // m³: a fallen volume this big from a 3 cm stone makes a mound and a ring of strength 1...
 const FALLBACK_SIZE = 0.43;        // ...times (R / 3 cm)^this, so the rings keep the strength they were calibrated with (the header)
 const FALLBACK_SPECKS = 35;        // foam specks where the jet falls back, times the mound's strength
 const LENS_DROP_RADIUS = 0.002;    // drops this big are drawn as glass like the column
-const WATER_DENSITY = 1000;
-const SURFACE_TENSION = 0.072;
-const SATELLITE_LEAST = 0.2;       // a satellite is this to SATELLITE_MOST of the drop it follows, in radius
-const SATELLITE_MOST = 0.45;
 const NECK_SPRAY = 0.03;           // a pinching neck throws this share of its drop's water as spray (times form.spray)...
 const NECK_SPRAY_SIZE = 0.12;      // ...in drops of this share of its radius on average...
 const NECK_SPRAY_MOST = 0.0004;    // ...at most this (m)
-const RIPPLE_WAVES = [3.1, 6.7];   // the beads' irregular spacing and size: two waves over the main launch window, in cycles
-const BULB_MOST = 0.32;            // a tip bulb's radius is at most this many stone radii
 
 /**
- * A jet's form (the header): what makes one Worthington jet unlike another.
- * The splash picks these per throw (src/splash.js); the defaults are a clean
- * jet. `share` is the jet's part of the water (a split jet's columns share it).
+ * A jet's form (the header): how the collapse launches its water. The splash
+ * picks these per throw (src/splash.js); the defaults are a clean collapse.
  */
 export const CLEAN_FORM = Object.freeze({
-  tipBeads: TIP_BEADS,       // tip drops pinched off at most (0: the bulb stays on until the column breaks)
-  beadShares: null,          // each tip bead's material in shares of T (BULB_SHARE when null)
-  firstBulb: FIRST_BULB,     // the first bulb's radius in launch radii at the tip (at most BULB_MOST stone radii)
-  gatherScale: 0.4,          // a tip bead gathers over this many capillary times sqrt(ρ·r³/σ)
-  neckRatio: NECK_RATIO,     // the first tip pinches when its neck is this thin against the bulb
-  needle: NEEDLE,            // the needle's first material leaves at this many times the body's speed
-  radiusScale: 1,            // the column's radii
-  breakScale: 1,             // the breakup's pace, in BREAK_PACE capillary times a piece
-  breakAt: null,             // an age (s) at which the column starts breaking from the top, whatever its tip does (a ragged jet)
-  dropSpread: [0.65, 1.35],  // breakup drops in Rayleigh–Plateau sizes (DROP_RADII local radii)...
-  dropCap: 0.9,              // ...at most this many DROP_MOST·Rj
-  scatter: 1,                // the breakup drops' velocity scatter
-  satellites: 0.6,           // the chance of a satellite after each breakup drop
-  tipSatellites: 1,          // satellites after each tip drop, at most (0 to this)
-  spray: 1,                  // the neck's fine spray at each pinch
-  wobble: 1,                 // the column's lateral wobble
-  irregularity: 0.25,        // the varicose beads' spacing and size, off by up to this share
-  splitTip: false,           // the first tip drop leaves as two drops side by side
-  bend: 0,                   // a whip: the tip leaves leaning this share of the launch speed more than the base (towards the lean)
-  share: 1,                  // the jet's part of the water
+  needle: NEEDLE,            // the needle's first water leaves at this many times the body's speed
+  radiusScale: 1,            // the column's launch radii
+  roughness: ROUGHNESS,      // how unevenly it is launched (the radius's share)
+  wobble: 1,                 // how far its direction wanders
+  spray: 1,                  // the necks' fine spray at each pinch
 });
 
 const smoothstep = (edgeLow, edgeHigh, value) => {
   const clamped = Math.min(Math.max((value - edgeLow) / (edgeHigh - edgeLow), 0), 1);
   return clamped * clamped * (3 - 2 * clamped);
 };
-const smoothMax = (first, second, softness) => 0.5 * (first + second + Math.sqrt((first - second) ** 2 + softness * softness));
-const sphereRadius = (volume) => Math.cbrt((3 * volume) / (4 * Math.PI));
+const sphereRadius = (volume) => Math.cbrt((3 * Math.max(volume, 0)) / (4 * Math.PI));
 const NO_BOWL = (age, out) => { out.depth = 0; out.rise = 0; return out; };
 
 export class JetColumn {
   /**
    * @param x,z where the hole closes: the jet's axis meets the surface there
    * @param radius the stone's radius
-   * @param speed the body's launch speed U (the needle's first material leaves at form.needle times it)
+   * @param speed the body's launch speed U (the needle's first water leaves at form.needle times it)
    * @param startTime splash time of the pinch-off
-   * @param budget droplets the jet may spawn in all (tip drops and breakup drops are never refused)
    * @param material the material the mesh starts with (the splash swaps it per pass)
    * @param lean how far the column leans from vertical (radians), towards the unit direction (leanX, leanZ)
    * @param form the jet's form (CLEAN_FORM's fields, the header)
@@ -274,31 +215,28 @@ export class JetColumn {
    * @param bowlUnit the bowl's time unit (s): sqrt(z_p/g) (src/cavity.js bowlUnit)
    * @param volume the water it launches (m³; the base's radius is scaled to it), or null for the base's own
    */
-  constructor({ x, z, radius, speed, startTime, budget, material, lean = 0, leanX = 0, leanZ = 0, form = null, random = Math.random, floor = null, bowlUnit = null, volume = null }) {
+  constructor({ x, z, radius, speed, startTime, material, lean = 0, leanX = 0, leanZ = 0, form = null, random = Math.random, floor = null, bowlUnit = null, volume = null }) {
     this.form = { ...CLEAN_FORM, ...form };
     this.random = random;
-    this.sprayRandom = seededRandom(x, z, startTime, radius);   // the spray's own stream (src/spray.js): it shifts no draw of the jet's
+    this.sprayRandom = seededRandom(x, z, startTime, radius);   // the spray's own stream (src/spray.js)
     this.centreX = x;
     this.centreZ = z;
     this.radius = radius;
     this.sizeFactor = radius / REFERENCE_RADIUS;
-    this.columnRadius = radius * this.sizeFactor ** JET_RADIUS_POWER * this.form.radiusScale * Math.sqrt(this.form.share);   // Rj in the header
+    this.columnRadius = Math.max(radius * this.sizeFactor ** JET_RADIUS_POWER, JET_RADIUS_LEAST) * this.form.radiusScale;   // Rj in the header
     this.bodySpeed = speed;
-    this.tipSpeed = speed * Math.max(this.form.needle, 1);   // the needle's first material, the fastest
-    this.tipBeads = this.form.tipBeads === 0 && this.form.needle > NEEDLE_HOLD ? 1 : this.form.tipBeads;
+    this.tipSpeed = speed * Math.max(this.form.needle, 1);   // the needle's first water, the fastest
     this.startTime = startTime;
     this.walls = null;   // the pool's walls, inset (src/splash.js setGround), or none
     this.age = 0;
     this.finished = false;
-    this.budget = budget;
     this.floor = floor ?? NO_BOWL;
     const unit = bowlUnit ?? Math.sqrt((DEFAULT_PINCH * radius) / GRAVITY);
     this.launchEnd = LAUNCH_END * unit;
-    this.launchDuration = MAIN_SHARE * this.launchEnd;   // T, the main launch: what breaks into drops
     this.needleTime = NEEDLE_TIME * unit;
 
     // Launch direction per unit speed: up by cos(lean), across by sin(lean),
-    // plus the jet's own small tilt (and the wobble, in evaluate).
+    // plus the jet's own small tilt and the wobble (launchDirection).
     this.upShare = Math.cos(lean);
     this.leanX = Math.sin(lean) * leanX;
     this.leanZ = Math.sin(lean) * leanZ;
@@ -309,39 +247,49 @@ export class JetColumn {
     const heading = this.range(0, Math.PI * 2);
     this.tiltX = this.leanX + Math.tan(tilt) * Math.cos(heading);
     this.tiltZ = this.leanZ + Math.tan(tilt) * Math.sin(heading);
-    // The whip (form.bend): across by bend·(1/2 − tau/T) of the launch speed,
-    // towards the lean, or a heading of its own for an upright jet.
-    const bendHeading = lean > 1e-6 ? Math.atan2(leanZ, leanX) : this.range(0, Math.PI * 2);
-    this.bendX = this.form.bend * Math.cos(bendHeading);
-    this.bendZ = this.form.bend * Math.sin(bendHeading);
-    // Lateral wobble along the launch window: two slow modes per axis.
+    // The wobble: two slow waves a side over the main launch.
+    const span = MAIN_SHARE * this.launchEnd;
     const mode = (amplitude, cycles) => ({
       amplitude: WOBBLE * this.form.wobble * amplitude * this.range(0.6, 1) * (this.random() < 0.5 ? -1 : 1),
-      frequency: (Math.PI * 2 * cycles * this.range(0.8, 1.25)) / this.launchDuration,
+      frequency: (Math.PI * 2 * cycles * this.range(0.8, 1.25)) / span,
       phase: this.range(0, Math.PI * 2),
     });
     this.wobbleX = [mode(0.8, 0.7), mode(0.5, 1.6)];
     this.wobbleZ = [mode(0.8, 0.7), mode(0.5, 1.6)];
+    // The launch's unevenness: waves along its unstable phase (the header).
+    const weights = ROUGHNESS_WAVES.map(() => this.range(0.4, 1));
+    const norm = Math.sqrt(weights.reduce((sum, weight) => sum + 0.5 * weight * weight, 0)) || 1;
+    this.roughWaves = ROUGHNESS_WAVES.map((multiple, index) => ({ multiple: multiple * this.range(0.85, 1.18), weight: weights[index] / norm, phase: this.range(0, Math.PI * 2) }));
     this.baseScale = 1;
     this.buildLaunch(volume);
+    // Where the sleeve starts: the first water whose base is SLEEVE_START of its core.
+    this.sleeveTop = this.launchEnd;
+    if (this.baseScale > 0) {
+      for (let sample = 0; sample <= 200; sample++) {
+        const tau = this.launchEnd * (sample / 200) ** 2;
+        if (this.baseScale * this.baseRadius(tau) >= SLEEVE_START * this.coreRadius(tau)) { this.sleeveTop = tau; break; }
+      }
+    }
 
-    // The end of the column: launch time of its first material, and the bulb
-    // gathering there (the material of `span` launch seconds, which becomes a
-    // drop of radius `bulbRadius`).
-    this.phase = 'tip';                // 'tip', then 'breakup'
-    this.tipDrops = 0;
-    this.endTau = 0;
-    this.span = this.beadShare(0) * this.launchDuration;
-    this.firstBulbRadius = Math.min(this.form.firstBulb * this.launchRadius(0), BULB_MOST * radius);
-    this.maxDropRadius = this.form.dropCap * DROP_MOST * this.columnRadius;
-    this.bulbRadius = this.firstBulbRadius;
-    this.gatherStart = 0;
-    this.gatherTime = 0;
-    this.emerged = null;               // the age at which the first bulb cleared the surface
-    this.pieceStart = 0;               // the age at which the current breakup piece started to gather...
-    this.nextPinch = 0;                // ...and the age at which it pinches off
-    this.breakClock = 0;               // simulated time since the breakup last advanced
-    this.dropsSpawned = 0;
+    // The column: a first segment of the water launched over a quarter of
+    // the needle's time, already in flight, then the inflow.
+    this.solver = new SlenderJet({ capacity: NODES, gravity: GRAVITY, water: WATER, random: seededRandom(x, z, startTime, radius, 3) });
+    this.solver.fallen = this.baseWater;   // the sleeve's water falls back (the header)
+    this.solverTime = 0;
+    this.launching = true;
+    this.fallenHandled = 0;
+    this.dropCount = 0;          // drops handed over (for the probes)
+    this.largestDrop = 0;
+    this.highest = 0;            // the highest any of its water has been (m)
+    this.firstDrop = null;       // {age, radius, speed} of the first drop handed over
+    const seed = 0.25 * this.needleTime;
+    const point = this.launchPoint(0, {}), direction = this.launchDirection(0, {});
+    const start = this.launchSpeed(0);
+    this.solver.push(point.x + direction.x * start * seed, point.y + direction.y * start * seed, point.z + direction.z * start * seed, direction.x * start, direction.y * start - GRAVITY * seed, direction.z * start);
+    this.placeInflow(seed);
+    this.solver.volume[0] = this.volume(0, seed);
+    this.solver.inflow = true;
+    this.solverTime = seed;
 
     this.positions = new Float32Array(ROWS * COLUMNS * 3);
     this.normals = new Float32Array(ROWS * COLUMNS * 3);
@@ -360,28 +308,24 @@ export class JetColumn {
       this.columnCos[column] = Math.cos((column / COLUMNS) * Math.PI * 2);
       this.columnSin[column] = Math.sin((column / COLUMNS) * Math.PI * 2);
     }
-    this.arcTaus = new Float64Array(ARC_SAMPLES);
-    this.arcLengths = new Float64Array(ARC_SAMPLES);
-    this.arcPhases = new Float64Array(ARC_SAMPLES);
-    const rowArray = () => new Float64Array(ROWS - CAP_ROWS);
-    this.rows = { x: rowArray(), y: rowArray(), z: rowArray(), axisX: rowArray(), axisY: rowArray(), axisZ: rowArray(), radius: rowArray(), water: rowArray(), round: rowArray() };   // the rows below the cap, before they are written
-    // The beads' irregularity: two waves along the launch time, of their own phases.
-    this.rippleWaves = RIPPLE_WAVES.map((cycles) => ({ frequency: (Math.PI * 2 * cycles * this.range(0.8, 1.25)) / this.launchDuration, phase: this.range(0, Math.PI * 2) }));
-    this.state = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, axisX: 0, axisY: 1, axisZ: 0, spacing: 0, radius: 0 };
-    this.end = { tau: 0, radius: 0, gather: 0, neckGather: 0 };
+    // The drawn nodes, carried on to the frame's time, and the rings they make.
+    this.drawX = new Float64Array(NODES); this.drawY = new Float64Array(NODES); this.drawZ = new Float64Array(NODES);
+    this.ring = { count: 0, centre: new Float64Array(ROWS * 3), axis: new Float64Array(ROWS * 3), radius: new Float64Array(ROWS), water: new Float64Array(ROWS), round: new Float64Array(ROWS), along: new Float64Array(ROWS * 2) };
+    this.frame = { firstX: 1, firstY: 0, firstZ: 0 };
     this.bowl = { depth: 0, rise: 0 };
   }
 
   /** A draw from the jet's stream between two values. */
   range(low, high) { return low + this.random() * (high - low); }
 
-  // ---- the model --------------------------------------------------------
+  // ---- the launch ----------------------------------------------------------
 
   /**
    * Tabulate the launch (the header): at LAUNCH_SAMPLES + 1 launch times,
    * crowded towards the start (tau = T_end·(i/n)²), the launch point's depth
    * below the surface (rising with the bowl's floor, at most RISE_SHARE of the
-   * launch speed) and the volume launched so far. Given a volume, the base's
+   * launch speed), the volume launched so far and the unstable phase (2π per
+   * most unstable wavelength of column launched). Given a volume, the base's
    * radius is scaled so that the jet launches just that: the volume is a
    * quadratic in the scale k, A + 2·B·k + C·k² over the needle's and body's
    * radius and the base's.
@@ -391,10 +335,12 @@ export class JetColumn {
     this.launchTaus = new Float64Array(samples + 1);
     this.launchDepths = new Float64Array(samples + 1);
     this.launchVolumes = new Float64Array(samples + 1);
+    this.launchPhases = new Float64Array(samples + 1);
     const cores = new Float64Array(samples + 1), crosses = new Float64Array(samples + 1), bases = new Float64Array(samples + 1);
+    const lengths = new Float64Array(samples + 1);
     const bowl = { depth: 0, rise: 0 };
     let depth = this.floor(0, bowl).depth;
-    let core = 0, cross = 0, base = 0;
+    let core = 0, cross = 0, base = 0, launched = 0;
     this.launchDepths[0] = depth;
     for (let index = 1; index <= samples; index++) {
       const tau = this.launchEnd * (index / samples) ** 2;
@@ -406,21 +352,33 @@ export class JetColumn {
       const rose = Math.min(Math.max(depth - floorDepth, 0), RISE_SHARE * speed * this.upShare * step);
       depth = Math.max(depth - rose, Math.min(floorDepth, depth));
       // The flux through the launch point, which rises along the axis at rose/(step·cos lean).
-      const flux = Math.PI * Math.max(speed - rose / (step * this.upShare), LEAST_FLUX * speed) * step;
+      const through = Math.max(speed - rose / (step * this.upShare), LEAST_FLUX * speed) * step;
+      const flux = Math.PI * through;
       const coreRadius = this.coreRadius(middle), baseRadius = this.baseRadius(middle);
       core += coreRadius * coreRadius * flux;
       cross += coreRadius * baseRadius * flux;
       base += baseRadius * baseRadius * flux;
+      launched += through;
       this.launchTaus[index] = tau;
       this.launchDepths[index] = depth;
       cores[index] = core; crosses[index] = cross; bases[index] = base;
+      lengths[index] = launched;
     }
     if (target !== null && base > 0) {
       const excess = core - target;
       this.baseScale = excess >= 0 ? 0 : (-cross + Math.sqrt(cross * cross - base * excess)) / base;
     }
+    // The solver takes the core; the base's water flies as the sleeve (the header) and falls back.
     const scale = this.baseScale;
-    for (let index = 0; index <= samples; index++) this.launchVolumes[index] = cores[index] + 2 * scale * crosses[index] + scale * scale * bases[index];
+    this.baseWater = 2 * scale * cross + scale * scale * base;
+    for (let index = 0; index <= samples; index++) this.launchVolumes[index] = cores[index];
+    // The unstable phase: column launched over its most unstable wavelength, 2π each.
+    let phase = 0;
+    for (let index = 1; index <= samples; index++) {
+      const middle = 0.5 * (this.launchTaus[index - 1] + this.launchTaus[index]);
+      phase += (Math.PI * 2 * (lengths[index] - lengths[index - 1])) / (UNSTABLE_WAVELENGTH * Math.max(this.launchRadius(middle, false), 1e-5));
+      this.launchPhases[index] = phase;
+    }
   }
 
   /** The launch table's interval holding tau and the blend across it, into `out` {index, blend}. */
@@ -433,11 +391,13 @@ export class JetColumn {
     return out;
   }
 
-  /** The launch point's depth below the surface (along the axis's height) for the material launched at tau. */
-  launchDepth(tau) {
+  tabulated(table, tau) {
     const sample = this.launchSample(tau, this.sample ??= {});
-    return this.launchDepths[sample.index] + (this.launchDepths[sample.index + 1] - this.launchDepths[sample.index]) * sample.blend;
+    return table[sample.index] + (table[sample.index + 1] - table[sample.index]) * sample.blend;
   }
+
+  /** The launch point's depth below the surface (along the axis's height) for the water launched at tau. */
+  launchDepth(tau) { return this.tabulated(this.launchDepths, tau); }
 
   /** How fast the launch point rises (m/s, vertically) at tau. */
   launchRise(tau) {
@@ -453,14 +413,15 @@ export class JetColumn {
     return body + (this.tipSpeed - this.bodySpeed) * Math.exp(-tau / this.needleTime);
   }
 
-  /** d launchSpeed / d tau. */
-  launchSpeedSlope(tau) {
-    if (tau >= this.launchEnd) return 0;
-    return (-this.bodySpeed * (1 - BASE_SPEED) * BODY_POWER / this.launchEnd) * Math.max(1 - tau / this.launchEnd, 0) ** (BODY_POWER - 1)
-      - ((this.tipSpeed - this.bodySpeed) / this.needleTime) * Math.exp(-tau / this.needleTime);
+  /** The launch radius at tau; `rough`: with the launch's unevenness (the header). */
+  launchRadius(tau, rough = true) {
+    const smooth = this.coreRadius(tau);
+    if (!rough || this.form.roughness <= 0) return smooth;
+    const phase = this.tabulated(this.launchPhases, tau);
+    let wave = 0;
+    for (const component of this.roughWaves) wave += component.weight * Math.sin(phase / component.multiple + component.phase);
+    return smooth * (1 + this.form.roughness * wave);
   }
-
-  launchRadius(tau) { return this.coreRadius(tau) + this.baseScale * this.baseRadius(tau); }
 
   /** The needle's and the body's part of the launch radius (the header). */
   coreRadius(tau) {
@@ -474,362 +435,194 @@ export class JetColumn {
     return this.columnRadius * (BASE_RADIUS - BODY_RADIUS) * share ** BASE_POWER;
   }
 
-  /** The material of the index-th tip bead, in shares of T. */
-  beadShare(index) { return this.form.beadShares?.[index] ?? BULB_SHARE; }
-
-  /** The beads' irregularity at launch time tau, −1 to 1: `second` takes the other quadrature, for their sizes. */
-  rippleNoise(tau, second = false) {
-    const [first, other] = this.rippleWaves;
-    return second
-      ? 0.6 * Math.cos(first.frequency * tau + first.phase) + 0.4 * Math.cos(other.frequency * tau + other.phase)
-      : 0.6 * Math.sin(first.frequency * tau + first.phase) + 0.4 * Math.sin(other.frequency * tau + other.phase);
-  }
-
-  /** Volume launched per second at launch time tau (through the rising launch point). */
-  volumeRate(tau) {
-    const launchRadius = this.launchRadius(tau);
-    const speed = this.launchSpeed(tau);
-    return Math.PI * launchRadius * launchRadius * Math.max(speed - this.launchRise(tau) / this.upShare, LEAST_FLUX * speed);
-  }
-
-  /** Volume launched between two launch times (from the table). */
+  /** Volume launched between two launch times: the table's, with the unevenness of the radius at the middle. */
   volume(tauFrom, tauTo) {
     tauFrom = Math.max(tauFrom, 0);
     tauTo = Math.min(tauTo, this.launchEnd);
     if (tauTo <= tauFrom) return 0;
-    return this.launchedBy(tauTo) - this.launchedBy(tauFrom);
+    const middle = 0.5 * (tauFrom + tauTo);
+    const unevenness = this.launchRadius(middle) / Math.max(this.launchRadius(middle, false), 1e-9);
+    return (this.tabulated(this.launchVolumes, tauTo) - this.tabulated(this.launchVolumes, tauFrom)) * unevenness * unevenness;
   }
 
-  /** Volume launched by launch time tau. */
-  launchedBy(tau) {
-    const sample = this.launchSample(tau, this.sample ??= {});
-    return this.launchVolumes[sample.index] + (this.launchVolumes[sample.index + 1] - this.launchVolumes[sample.index]) * sample.blend;
+  /** The launch point at tau, into `out` {x, y, z}. */
+  launchPoint(tau, out) {
+    const depth = this.launchDepth(tau);
+    out.x = this.centreX - this.axisSlopeX * depth;
+    out.y = -depth;
+    out.z = this.centreZ - this.axisSlopeZ * depth;
+    return out;
   }
 
-  /** Height of the element launched at tau, now. */
+  /** The launch direction per unit speed at tau (the lean, tilt and wobble), into `out` {x, y, z}. */
+  launchDirection(tau, out) {
+    let lateralX = this.tiltX, lateralZ = this.tiltZ;
+    for (const mode of this.wobbleX) lateralX += mode.amplitude * Math.sin(mode.frequency * tau + mode.phase);
+    for (const mode of this.wobbleZ) lateralZ += mode.amplitude * Math.sin(mode.frequency * tau + mode.phase);
+    out.x = lateralX;
+    out.y = this.upShare;
+    out.z = lateralZ;
+    return out;
+  }
+
+  /** d launchSpeed / d tau. */
+  launchSpeedSlope(tau) {
+    if (tau >= this.launchEnd) return 0;
+    return (-this.bodySpeed * (1 - BASE_SPEED) * BODY_POWER / this.launchEnd) * Math.max(1 - tau / this.launchEnd, 0) ** (BODY_POWER - 1)
+      - ((this.tipSpeed - this.bodySpeed) / this.needleTime) * Math.exp(-tau / this.needleTime);
+  }
+
+  /** The height of the water launched at tau, flown ballistically to now (the sleeve). */
   heightAt(tau) {
     const age = Math.max(this.age - tau, 0);
     return -this.launchDepth(tau) + this.launchSpeed(tau) * this.upShare * age - 0.5 * GRAVITY * age * age;
   }
 
   /**
-   * State of the element launched at tau, now: position, velocity, the unit
-   * axis of the column there (pointing to the end), the spacing
-   * |∂position/∂tau| and the column radius.
+   * The sleeve (the header): the water launched at tau, flown ballistically
+   * to now, into `out` {x, y, z, axisX, axisY, axisZ, radius, core}: its
+   * place, the column's axis there (pointing up it), the radius the whole
+   * launch makes there (core and base, r0·sqrt((u − w)/|∂position/∂tau|),
+   * the flux spread over the spacing of its neighbours) and the core's alone.
    */
-  evaluate(tau, out) {
+  sleeveAt(tau, out) {
     tau = Math.min(Math.max(tau, 0), this.launchEnd);
-    const speed = this.launchSpeed(tau);
-    const speedSlope = this.launchSpeedSlope(tau);
+    const speed = this.launchSpeed(tau), speedSlope = this.launchSpeedSlope(tau);
     const age = Math.max(this.age - tau, 0);
     let lateralX = this.tiltX, slopeX = 0, lateralZ = this.tiltZ, slopeZ = 0;
-    if (this.bendX !== 0 || this.bendZ !== 0) {
-      const main = tau < this.launchDuration;
-      const along = main ? 0.5 - tau / this.launchDuration : -0.5;
-      const alongSlope = main ? -1 / this.launchDuration : 0;
-      lateralX += this.bendX * along; slopeX += this.bendX * alongSlope;
-      lateralZ += this.bendZ * along; slopeZ += this.bendZ * alongSlope;
-    }
-    for (const mode of this.wobbleX) {
-      const angle = mode.frequency * tau + mode.phase;
-      lateralX += mode.amplitude * Math.sin(angle);
-      slopeX += mode.amplitude * mode.frequency * Math.cos(angle);
-    }
-    for (const mode of this.wobbleZ) {
-      const angle = mode.frequency * tau + mode.phase;
-      lateralZ += mode.amplitude * Math.sin(angle);
-      slopeZ += mode.amplitude * mode.frequency * Math.cos(angle);
-    }
-    // The launch point: on the axis, launchDepth below the surface, rising at `rise`.
-    const depth = this.launchDepth(tau);
-    const rise = this.launchRise(tau);
+    for (const mode of this.wobbleX) { const angle = mode.frequency * tau + mode.phase; lateralX += mode.amplitude * Math.sin(angle); slopeX += mode.amplitude * mode.frequency * Math.cos(angle); }
+    for (const mode of this.wobbleZ) { const angle = mode.frequency * tau + mode.phase; lateralZ += mode.amplitude * Math.sin(angle); slopeZ += mode.amplitude * mode.frequency * Math.cos(angle); }
+    const depth = this.launchDepth(tau), rise = this.launchRise(tau);
     out.x = this.centreX - this.axisSlopeX * depth + speed * lateralX * age;
     out.y = -depth + speed * this.upShare * age - 0.5 * GRAVITY * age * age;
     out.z = this.centreZ - this.axisSlopeZ * depth + speed * lateralZ * age;
-    out.vx = speed * lateralX;
-    out.vy = speed * this.upShare - GRAVITY * age;
-    out.vz = speed * lateralZ;
-    // ∂position/∂tau = the launch point's motion + (d launch velocity / d tau)·a − launch velocity + g·a·up.
+    // ∂position/∂tau: the launch point's motion + (d launch velocity / d tau)·a − launch velocity + g·a·up.
     const alongX = this.axisSlopeX * rise + (speedSlope * lateralX + speed * slopeX) * age - speed * lateralX;
     const alongY = rise + (speedSlope * age - speed) * this.upShare + GRAVITY * age;
     const alongZ = this.axisSlopeZ * rise + (speedSlope * lateralZ + speed * slopeZ) * age - speed * lateralZ;
     const spacing = Math.sqrt(alongX * alongX + alongY * alongY + alongZ * alongZ);
-    out.spacing = spacing;
     if (spacing > 1e-9) { out.axisX = -alongX / spacing; out.axisY = -alongY / spacing; out.axisZ = -alongZ / spacing; } else { out.axisX = 0; out.axisY = 1; out.axisZ = 0; }
-    const launchRadius = this.launchRadius(tau);
     const flux = Math.max(speed - rise / this.upShare, LEAST_FLUX * speed);
-    out.radius = spacing > 1e-9 ? Math.min(launchRadius * Math.sqrt(flux / spacing), BUNCH_CAP * launchRadius) : BUNCH_CAP * launchRadius;
+    const stretch = spacing > 1e-9 ? Math.min(Math.sqrt(flux / spacing), BUNCH_CAP) : BUNCH_CAP;
+    const core = this.coreRadius(tau);
+    out.radius = (core + this.baseScale * this.baseRadius(tau)) * stretch;
+    out.core = core * stretch;
     return out;
   }
 
-  /** Launch time of the material now at the foot: the column's base, where it dips under the bowl's floor or the surface. */
-  footTau() {
-    const threshold = -this.floor(this.age, this.bowl).depth - BASE_DEPTH;
+  /** The launch time of the sleeve's water now at the water it stands in (the bowl's floor, or the surface). */
+  sleeveFoot() {
+    const level = -this.floor(this.age, this.bowl).depth - BASE_DEPTH;
     const limit = Math.min(this.age, this.launchEnd);
-    if (this.heightAt(limit) >= threshold - 1e-7) return limit;
-    let low = Math.min(this.endTau, limit);
-    let high = limit;
-    if (this.heightAt(low) < threshold) return low;
+    if (this.heightAt(limit) >= level) return limit;
+    let low = this.sleeveTop, high = limit;
+    if (this.heightAt(low) < level) return low;
     for (let step = 0; step < 24; step++) {
       const middle = 0.5 * (low + high);
-      if (this.heightAt(middle) >= threshold) low = middle; else high = middle;
+      if (this.heightAt(middle) >= level) low = middle; else high = middle;
     }
     return low;
   }
 
-  /** Launch seconds of column that make one Rayleigh–Plateau drop where the column has the given local radius (irregular by the form). */
-  rippleSpan(tau, localRadius) {
-    const dropRadius = Math.min(DROP_RADII * Math.max(localRadius, 1e-4), this.maxDropRadius);
-    return Math.max((((4 / 3) * Math.PI * dropRadius ** 3) / Math.max(this.volumeRate(tau), 1e-12)) * (1 + this.form.irregularity * this.rippleNoise(tau)), 1e-6);
-  }
-
-  /** Varicose amplitude at launch time tau: growing as the jet slows, strongest just below the breakup front, bead by bead irregular. */
-  rippleAmplitude(tau) {
-    const irregular = 1 + this.form.irregularity * this.rippleNoise(tau, true);
-    if (this.phase === 'tip') return (RIPPLE_RISING + (RIPPLE_SLOWING - RIPPLE_RISING) * smoothstep(2 * this.launchDuration, 3.5 * this.launchDuration, this.age)) * irregular;
-    const below = Math.max(tau - (this.endTau + this.span), 0) / Math.max(this.span, 1e-9);
-    return (RIPPLE_SLOWING + RIPPLE_FRONT * Math.exp(-below / RIPPLE_DEPTH)) * irregular;
-  }
-
-  /** The column's free end now: the launch time its cap is centred on, the cap's radius, and how far its bulb has gathered. */
-  endShape(foot, out) {
-    if (this.phase === 'tip' && this.tipDrops === 0) {
-      out.radius = this.firstBulbRadius * Math.cbrt(Math.min(this.age / this.span, 1));
-      out.tau = Math.min(this.endTau + 0.5 * this.span, foot);
-      out.gather = 1;
-      out.neckGather = 0;   // the first neck is the column's own, thinned by stretching
-      return out;
+  /** Hold the solver's last node at the launch point for tau, moving with the water launched there; its radius for the solver. */
+  placeInflow(tau) {
+    const solver = this.solver;
+    const point = this.launchPoint(tau, this.pointScratch ??= {});
+    const direction = this.launchDirection(tau, this.directionScratch ??= {});
+    const speed = this.launchSpeed(tau);
+    const node = solver.count - 1;
+    if (node < 0 || solver.chainEnd[node] !== 1 || !solver.inflow) {
+      solver.push(point.x, point.y, point.z, direction.x * speed, direction.y * speed, direction.z * speed);
+    } else {
+      solver.positionX[node] = point.x; solver.positionY[node] = point.y; solver.positionZ[node] = point.z;
+      solver.velocityX[node] = direction.x * speed; solver.velocityY[node] = direction.y * speed; solver.velocityZ[node] = direction.z * speed;
     }
-    const progress = this.phase === 'tip' ? (this.age - this.gatherStart) / this.gatherTime : (this.age - this.pieceStart) / Math.max(this.nextPinch - this.pieceStart, 1e-6);
-    const gather = this.span > 0 ? Math.min(Math.max(progress, 0), 1) : 1;
-    const eased = smoothstep(0, 1, gather);
-    const endRadius = END_CAP * this.evaluate(this.endTau, this.state).radius;
-    out.radius = endRadius + (this.bulbRadius - endRadius) * eased;
-    out.tau = Math.min(this.endTau + 0.5 * this.span * eased, foot);
-    out.gather = gather;
-    out.neckGather = eased;
-    return out;
+    solver.inflowRadius = this.launchRadius(tau);
   }
 
-  // ---- per substep --------------------------------------------------------
+  // ---- per substep ---------------------------------------------------------
 
-  /** Advance to the given splash time: pinch the tip, or break up from the top. */
+  /** Advance to the given splash time: the solver's whole steps up to it, the drops it lets go and the water it drains. */
   update(time, dt, splash, water) {
     this.age = time - this.startTime;
     if (this.finished) return;
-    if (this.phase === 'tip') {
-      this.updateTip(splash);
-    } else {
-      // The breakup is the costly part, so it advances once per rendered frame;
-      // a column that has come down onto the water falls back at once.
-      this.breakClock += dt;
-      if (this.breakClock >= splash.frameSeconds * (1 - 1e-6)) {
-        this.breakClock = 0;
-        this.advanceBreakup(splash, water, false);
-      } else if (this.heightAt(this.endTau) < this.radius - this.floor(this.age, this.bowl).depth) {
-        const foot = this.footTau();
-        if (this.spent(foot)) this.fallBack(splash, water, foot);
+    const solver = this.solver;
+    for (;;) {
+      if (solver.count === 0 && !this.launching) break;
+      if (!solver.fresh) solver.measure();
+      let step = solver.stableStep();
+      if (this.launching) step = Math.min(step, STEP_INFLOW * (this.needleTime + this.solverTime));
+      if (this.solverTime + step > this.age) break;
+      const from = this.solverTime;
+      const to = from + step;
+      solver.advance(step, this.launching ? this.volume(from, to) : 0);
+      this.solverTime = to;
+      if (this.launching) {
+        this.placeInflow(to);
+        // A node leaves the launch point once the segment behind the column is long enough.
+        const node = solver.count - 1;
+        if (node > 0 && !solver.chainEnd[node - 1]) {
+          const length = Math.hypot(solver.positionX[node] - solver.positionX[node - 1], solver.positionY[node] - solver.positionY[node - 1], solver.positionZ[node] - solver.positionZ[node - 1]);
+          if (length > Math.min(Math.max(EMIT_LENGTH * solver.inflowRadius, EMIT_LEAST), EMIT_MOST)) {
+            solver.push(solver.positionX[node], solver.positionY[node], solver.positionZ[node], solver.velocityX[node], solver.velocityY[node], solver.velocityZ[node]);
+          }
+        }
+        if (to >= this.launchEnd) { this.launching = false; solver.inflow = false; solver.anchored = true; }
       }
+      solver.waterLevel = -this.floor(to, this.bowl).depth - BASE_DEPTH;
+      solver.landingLevel = Math.min(0, solver.waterLevel + BASE_DEPTH);
+      solver.refine(this.startTime + to);
+      this.handOver(splash);
+      if (to > LONGEST) { solver.releaseAll(this.startTime + to); this.handOver(splash); this.launching = false; }
     }
+    if (!this.launching && solver.count === 0) this.fallBack(splash, water);
   }
 
   /** Break whatever is left into drops now (when too many jets are alive). */
   finishNow(splash, water) {
     if (this.finished) return;
-    if (this.phase === 'tip') {
-      this.pinchTip(splash);
-      if (this.phase === 'tip') this.startBreakup();
-    }
-    this.advanceBreakup(splash, water, true);
+    this.solver.releaseAll(this.startTime + this.solverTime);
+    this.handOver(splash);
+    this.launching = false;
+    this.fallBack(splash, water);
   }
 
-  updateTip(splash) {
-    const state = this.state;
-    const end = this.endShape(this.footTau(), this.end);
-    const falling = this.evaluate(end.tau, state).vy <= 0;
-    // A ragged jet's top comes apart early, whatever its tip does.
-    if (this.form.breakAt !== null && this.age >= this.form.breakAt) {
-      this.startBreakup(this.tipDrops === 0);
-      return;
+  /** The solver's events: drops to the splash, carried on to its time; spray at every pinch. */
+  handOver(splash) {
+    const events = this.solver.events;
+    for (const event of events) {
+      if (event.kind === 'pinch') { this.neckSpray(splash, event, event.radius); continue; }
+      this.highest = Math.max(this.highest, event.y + event.radius);
+      if (event.radius < LEAST_DROP) { this.solver.fallen += event.volume; continue; }
+      const carried = Math.max(splash.time - event.time, 0);
+      splash.spawnDroplet(
+        event.x + event.vx * carried, event.y + event.vy * carried - 0.5 * GRAVITY * carried * carried, event.z + event.vz * carried,
+        event.vx, event.vy - GRAVITY * carried, event.vz, event.radius, event.radius >= LENS_DROP_RADIUS,
+      );
+      this.dropCount++;
+      this.largestDrop = Math.max(this.largestDrop, event.radius);
+      if (!event.landing && this.firstDrop === null) this.firstDrop = { age: event.time - this.startTime, radius: event.radius, speed: Math.hypot(event.vx, event.vy, event.vz), height: event.y };
     }
-    if (this.tipDrops === 0) {
-      if (this.age < this.span) return;
-      // The needle's bulb pinches once it has cleared the surface and had a
-      // capillary time (times form.gatherScale) to gather, or sooner if its
-      // neck is thin enough, or when it starts to fall.
-      if (this.emerged === null && this.evaluate(end.tau, state).y > 0) this.emerged = this.age;
-      const ripe = this.emerged !== null && this.age - this.emerged >= this.form.gatherScale * Math.sqrt((WATER_DENSITY * this.firstBulbRadius ** 3) / SURFACE_TENSION);
-      const neck = this.evaluate(this.endTau + this.span, state).radius;
-      // With no tip beads the bulb rides the column up and leaves first when it breaks.
-      if (this.tipBeads === 0) { if (falling) this.startBreakup(true); }
-      else if (ripe || (this.emerged !== null && neck < this.form.neckRatio * this.firstBulbRadius) || falling) this.pinchTip(splash);
-    } else if (end.gather >= 1) {
-      this.pinchTip(splash);
-    } else if (falling) {
-      this.startBreakup();
-    }
+    events.length = 0;
   }
 
-  /**
-   * The bulb at the end leaves as a drop (or, a split tip, as two side by
-   * side), with up to form.tipSatellites satellites from its neck and a few
-   * fine drops.
-   */
-  pinchTip(splash) {
-    const state = this.state;
-    this.evaluate(this.endTau + 0.5 * this.span, state);
-    if (this.form.splitTip && this.tipDrops === 0) {
-      // Two drops of half the bulb each, parting across the column.
-      const half = this.bulbRadius * Math.cbrt(0.5);
-      const angle = this.range(0, Math.PI * 2);
-      const parting = this.range(0.12, 0.3) * Math.sqrt(this.sizeFactor);
-      for (const side of [-1, 1]) {
-        const acrossX = Math.cos(angle) * side, acrossZ = Math.sin(angle) * side;
-        this.spawn(splash, state.x + acrossX * half, state.y, state.z + acrossZ * half,
-          state.vx + acrossX * parting, state.vy * this.range(0.92, 1), state.vz + acrossZ * parting, half, true);
-      }
-    } else {
-      this.spawn(splash, state.x, state.y, state.z, state.vx, state.vy, state.vz, this.bulbRadius, true);
-    }
-    // Satellites from the neck, a little slower than the drop they follow.
-    const satellites = Math.floor(this.random() * (this.form.tipSatellites + 1));
-    for (let satellite = 0; satellite < satellites; satellite++) {
-      this.evaluate(this.endTau + this.span * this.range(0.75, 1.05), state);
-      const slower = this.range(0.9, 0.98);
-      this.spawn(splash, state.x, state.y, state.z, state.vx * slower, state.vy * slower, state.vz * slower,
-        this.bulbRadius * this.range(SATELLITE_LEAST, SATELLITE_MOST), true);
-    }
-    this.evaluate(this.endTau + this.span, state);
-    this.neckSpray(splash, state, this.bulbRadius);
-    const sprayCount = Math.round((1 + Math.floor(this.random() * 4)) * this.form.spray);
-    for (let drop = 0; drop < sprayCount; drop++) {
-      const kick = this.range(0.25, 0.8);
-      const angle = this.range(0, Math.PI * 2);
-      const rise = this.range(-0.3, 0.6);
-      this.spawn(splash, state.x, state.y, state.z,
-        state.vx + kick * Math.cos(angle), state.vy + kick * rise, state.vz + kick * Math.sin(angle),
-        (0.0006 + 0.0009 * this.random()) * this.sizeFactor ** 0.4, false);
-    }
-    this.endTau += this.span;
-    this.tipDrops++;
-    const nextSpan = this.beadShare(this.tipDrops) * this.launchDuration;
-    if (this.tipDrops < this.tipBeads && this.endTau + nextSpan < this.footTau()) {
-      this.span = nextSpan;
-      this.bulbRadius = Math.min(sphereRadius(this.volume(this.endTau, this.endTau + this.span)), BULB_MOST * this.radius);
-      this.gatherStart = this.age;
-      this.gatherTime = this.form.gatherScale * Math.sqrt((WATER_DENSITY * this.bulbRadius ** 3) / SURFACE_TENSION);
-    } else {
-      this.startBreakup();
-    }
-  }
-
-  /** The column starts breaking from the top; `bulbFirst`: the bulb still on it leaves first, at once. */
-  startBreakup(bulbFirst = false) {
-    this.phase = 'breakup';
-    this.breakClock = 0;
-    if (bulbFirst) {
-      // The first bulb as it is drawn (endShape), grown in as it emerged, leaves at once.
-      this.bulbRadius = this.firstBulbRadius * Math.cbrt(Math.min(this.age / Math.max(this.span, 1e-9), 1));
-      this.pieceStart = this.nextPinch = this.age;
-      return;
-    }
-    this.choosePiece();
-  }
-
-  /**
-   * The material for the next breakup drop: 1.9 local column radii times the
-   * form's spread (0.65 to 1.35 for a clean jet), at most form.dropCap of
-   * DROP_MOST·Rj (less 17% at random). It gathers at the end and pinches off
-   * BREAK_PACE capillary times of the local column (times form.breakScale,
-   * and half to one and a half at random, so the drops come off in an
-   * irregular rhythm) after the last: a needle sheds a drop every few
-   * milliseconds, a column a centimetre thick one a tenth of a second.
-   */
-  choosePiece(start = this.age) {
-    const local = this.evaluate(this.endTau, this.state).radius;
-    const [least, most] = this.form.dropSpread;
-    const dropRadius = Math.min(DROP_RADII * local * this.range(least, most), this.maxDropRadius * this.range(0.83, 1));
-    const dropVolume = (4 / 3) * Math.PI * dropRadius ** 3;
-    let span = dropVolume / Math.max(this.volumeRate(this.endTau), 1e-12);
-    span *= dropVolume / Math.max(this.volume(this.endTau, this.endTau + span), 1e-12);
-    this.span = Math.min(span, this.launchEnd - this.endTau);
-    this.bulbRadius = sphereRadius(this.volume(this.endTau, this.endTau + this.span));
-    this.pieceStart = start;
-    this.nextPinch = start + BREAK_PACE * this.form.breakScale * Math.sqrt((WATER_DENSITY * local ** 3) / SURFACE_TENSION) * this.range(0.5, 1.5);
-  }
-
-  /**
-   * Pinch off the piece at the end once its time has come (every piece of
-   * the main launch when `everything`), then, once the base has fallen back
-   * to the end, let the rest fall back.
-   */
-  advanceBreakup(splash, water, everything) {
-    const state = this.state;
-    const foot = this.footTau();
-    while (this.span > 0 && this.endTau + this.span <= Math.min(foot, this.launchDuration) && (everything || this.age >= this.nextPinch)) {
-      this.evaluate(this.endTau + 0.5 * this.span, state);
-      const scatter = (0.03 * Math.sqrt(state.vx * state.vx + state.vy * state.vy + state.vz * state.vz) + 0.04) * this.form.scatter;
-      this.spawn(splash, state.x, state.y, state.z,
-        state.vx + this.range(-scatter, scatter), state.vy + this.range(-scatter, scatter), state.vz + this.range(-scatter, scatter),
-        this.bulbRadius, true);
-      if (this.random() < this.form.satellites) {
-        this.evaluate(this.endTau + this.span, state);
-        this.spawn(splash, state.x, state.y, state.z,
-          state.vx + this.range(-scatter, scatter), state.vy + this.range(-scatter, scatter), state.vz + this.range(-scatter, scatter),
-          this.bulbRadius * this.range(SATELLITE_LEAST, SATELLITE_MOST), false);
-      }
-      // A ragged column throws fine spray as it comes apart.
-      this.neckSpray(splash, state, this.bulbRadius);
-      for (let drop = Math.floor(this.random() * (this.form.spray - 1) * 2); drop > 0; drop--) {
-        const kick = this.range(0.2, 0.7) * Math.sqrt(this.sizeFactor);
-        const angle = this.range(0, Math.PI * 2);
-        this.spawn(splash, state.x, state.y, state.z,
-          state.vx + kick * Math.cos(angle), state.vy + kick * this.range(-0.4, 0.8), state.vz + kick * Math.sin(angle),
-          (0.0006 + 0.0012 * this.random()) * this.sizeFactor ** 0.4, false);
-      }
-      this.endTau += this.span;
-      // The next piece's time runs from this one's pinch, so a fast-breaking needle sheds several a frame.
-      this.choosePiece(Math.min(this.nextPinch, this.age));
-    }
-    if (everything || this.spent(foot)) this.fallBack(splash, water, foot);
-  }
-
-  /**
-   * Whether the column is spent, once its end has started to fall (a slow
-   * column still rising out of the water is not): the base has fallen back to
-   * within half a piece of its end, or what is left, from its end to the
-   * foot, has come down onto the water (within three of its radii of it,
-   * where a tube bent as tightly as a falling stub bends would fold into
-   * itself).
-   */
-  spent(foot) {
-    if (this.evaluate(this.endTau, this.state).vy > 0) return false;
-    if (foot - this.endTau < 0.5 * this.span) return true;
-    const middle = 0.5 * (this.endTau + foot);
-    const above = -this.floor(this.age, this.bowl).depth + 3 * this.evaluate(middle, this.state).radius;
-    return this.heightAt(this.endTau) < above && this.heightAt(middle) < above;
-  }
-
-  /** The column is gone: a stub still in the air becomes one last drop, the rest makes a mound and a ring at the base. */
-  fallBack(splash, water, foot) {
-    const state = this.state;
-    let fallen = this.volume(foot, this.launchEnd);
-    const stub = this.volume(this.endTau, foot);
-    if (stub > 0) {
-      this.evaluate(0.5 * (this.endTau + foot), state);
-      if (state.y > 2 * this.launchRadius(foot)) this.spawn(splash, state.x, state.y, state.z, state.vx, state.vy, state.vz, Math.min(sphereRadius(stub), this.maxDropRadius / this.form.dropCap), true);
-      else fallen += stub;
-    }
+  /** The column is gone: the water it drained makes a mound, a ring and foam at its foot. */
+  fallBack(splash, water) {
+    if (this.finished) return;
+    this.finished = true;
+    const fallen = this.solver.fallen;
+    if (fallen <= 0) return;
     const strength = Math.cbrt(fallen / FALLBACK_VOLUME) * this.sizeFactor ** FALLBACK_SIZE;
     const radius = this.radius;
-    // A leaning column falls back downrange, where its foot has gone.
-    this.evaluate(foot, state);
-    const fallX = state.x, fallZ = state.z;
+    // A leaning column falls back downrange, where its foot went.
+    const point = this.launchPoint(this.launchEnd, {});
+    const direction = this.launchDirection(this.launchEnd, {});
+    const drift = this.launchSpeed(this.launchEnd) * 2 * this.launchSpeed(this.launchEnd) * this.upShare / GRAVITY;
+    const fallX = point.x + direction.x * drift, fallZ = point.z + direction.z * drift;
     water.addSplat({ x: fallX, z: fallZ, radius: radius * 0.9, height: 0.22 * radius * strength });
     water.addSplat({ x: fallX, z: fallZ, radius: radius * 1.5, velocity: -0.18 * strength, rim: 1.8 });
     water.addFoam({ x: fallX, z: fallZ, radius: radius * 1.3, amount: 0.3 * strength });
     splash.spawnFoamSpecks(fallX, fallZ, 0, radius * 1.6, Math.round(FALLBACK_SPECKS * strength), 0.025);
-    this.finished = true;
   }
 
   /**
@@ -844,164 +637,257 @@ export class JetColumn {
     splash.spray.burst({
       x: state.x, y: state.y, z: state.z, vx: state.vx, vy: state.vy, vz: state.vz,
       drops: sprayDrops(NECK_SPRAY * this.form.spray * (4 / 3) * Math.PI * radius ** 3, size), radius: size,
-      kick: Math.sqrt(SURFACE_TENSION / (WATER_DENSITY * size)), spread: radius, time: splash.time, random: this.sprayRandom, sizeFactor: this.sizeFactor,
+      kick: Math.sqrt(WATER.surfaceTension / (WATER.density * size)), spread: radius, time: splash.time, random: this.sprayRandom, sizeFactor: this.sizeFactor,
     });
   }
 
-  /** Tip and breakup drops are essential (never refused); drops of 2 mm and more are drawn as glass, like the column. */
-  spawn(splash, x, y, z, vx, vy, vz, radius, essential) {
-    if (!essential && this.dropsSpawned >= this.budget) return;
-    this.dropsSpawned++;
-    splash.spawnDroplet(x, y, z, vx, vy, vz, radius, radius >= LENS_DROP_RADIUS);
+  /** The highest point of the column's water now (m), for the probes. */
+  topHeight() {
+    const solver = this.solver;
+    let top = -Infinity;
+    for (let node = 0; node < solver.count; node++) top = Math.max(top, solver.positionY[node] + solver.beadRadius(node));
+    return top;
   }
 
-  // ---- per rendered frame -------------------------------------------------
+  // ---- per rendered frame ------------------------------------------------
 
-  /** Evaluate the grid at the given splash time and upload it. */
+  /** Draw the solver's pieces as they are now, carried on to the splash's time (the header). */
   updateGeometry(time) {
     this.age = time - this.startTime;
-    const state = this.state;
-    const foot = Math.max(this.footTau(), this.endTau);
-    const end = this.endShape(foot, this.end);
-    const capRadius = end.radius;
-    const capTau = end.tau;
-
-    // The cap's upper half, pole first.
-    this.evaluate(capTau, state);
-    const capX = state.x, capY = state.y, capZ = state.z;
-    const capAxisX = state.axisX, capAxisY = state.axisY, capAxisZ = state.axisZ;
-    for (let row = 0; row < CAP_ROWS; row++) {
-      const polar = (row / CAP_ROWS) * Math.PI * 0.5;
-      const lift = capRadius * Math.cos(polar);
-      this.writeRing(row, capX + capAxisX * lift, capY + capAxisY * lift, capZ + capAxisZ * lift, capAxisX, capAxisY, capAxisZ, capRadius * Math.sin(polar), capRadius, 1);
+    const solver = this.solver;
+    const count = solver.count;
+    if (!solver.fresh) solver.measure();
+    const carried = Math.max(this.age - this.solverTime, 0);
+    const fall = 0.5 * GRAVITY * carried * carried;
+    for (let node = 0; node < count; node++) {
+      const held = solver.held(node);
+      this.drawX[node] = solver.positionX[node] + (held ? 0 : solver.velocityX[node] * carried);
+      this.drawY[node] = solver.positionY[node] + (held ? 0 : solver.velocityY[node] * carried - fall);
+      this.drawZ[node] = solver.positionZ[node] + (held ? 0 : solver.velocityZ[node] * carried);
+      if (!held) this.highest = Math.max(this.highest, this.drawY[node]);
     }
-
-    // Arc length and varicose phase down the centreline from the cap's centre
-    // to the foot. The phase advances by 2π per drop's worth of column and is
-    // π (a neck) where the gathering bulb's material ends, so the beads stand
-    // where the next drops will.
-    const arcTaus = this.arcTaus;
-    const arcLengths = this.arcLengths;
-    const arcPhases = this.arcPhases;
-    const neckEnd = this.endTau + this.span;
-    let previousX = capX, previousY = capY, previousZ = capZ;
-    let length = 0;
-    let phase = 0;
-    let neckPhase = null;
-    for (let sample = 0; sample < ARC_SAMPLES; sample++) {
-      const tau = capTau + ((foot - capTau) * sample) / (ARC_SAMPLES - 1);
-      this.evaluate(tau, state);
-      length += Math.sqrt((state.x - previousX) ** 2 + (state.y - previousY) ** 2 + (state.z - previousZ) ** 2);
-      if (sample > 0) {
-        const step = tau - arcTaus[sample - 1];
-        phase += (Math.PI * 2 * step) / this.rippleSpan(tau - 0.5 * step, state.radius);
-        if (neckPhase === null && tau >= neckEnd) neckPhase = phase - ((Math.PI * 2) * (tau - neckEnd)) / this.rippleSpan(tau, state.radius);
-      }
-      arcTaus[sample] = tau;
-      arcLengths[sample] = length;
-      arcPhases[sample] = phase;
-      previousX = state.x; previousY = state.y; previousZ = state.z;
+    const ring = this.ring;
+    ring.count = 0;
+    // Tube rings in all: past the rows, the long pieces are drawn through every few nodes.
+    let needed = 0, chainStart = 0;
+    while (chainStart < count) {
+      let chainLast = chainStart;
+      while (chainLast < count - 1 && !solver.chainEnd[chainLast]) chainLast++;
+      needed += 2 * (CAP_RINGS + 1);
+      for (let node = chainStart; node <= chainLast; node++) needed += this.beadShown(node, chainStart, chainLast) ? BEAD_RINGS : 1;
+      chainStart = chainLast + 1;
     }
-    const phaseShift = Math.PI - (neckPhase ?? 0);
-
-    // Rows below the cap's centre, crowded towards it: the bulb's underside,
-    // the neck and the beads need them, the smooth lower column does not.
-    const belowRows = ROWS - CAP_ROWS;
-    const rows = this.rows;
-    let sample = 0;
-    for (let index = 0; index < belowRows; index++) {
-      const distance = length * (index / (belowRows - 1)) ** ROW_POWER;
-      while (sample < ARC_SAMPLES - 2 && arcLengths[sample + 1] < distance) sample++;
-      const segment = arcLengths[sample + 1] - arcLengths[sample];
-      const blend = segment > 1e-12 ? Math.min(Math.max((distance - arcLengths[sample]) / segment, 0), 1) : 0;
-      const tau = arcTaus[sample] + (arcTaus[sample + 1] - arcTaus[sample]) * blend;
-      const ripplePhase = arcPhases[sample] + (arcPhases[sample + 1] - arcPhases[sample]) * blend + phaseShift;
-      this.evaluate(tau, state);
-      // Varicose beads, and a gathering bulb draws the column under it into a neck.
-      const neckWeight = end.neckGather * (1 - smoothstep(neckEnd, neckEnd + 0.5 * this.span, tau));
-      const columnRadius = state.radius * (1 + this.rippleAmplitude(tau) * Math.cos(ripplePhase)) * (1 - NECK_THINNING * neckWeight);
-      const bulbRadius = Math.sqrt(Math.max(capRadius * capRadius - distance * distance, 0));
-      const ringRadius = smoothMax(columnRadius, bulbRadius, 0.3 * columnRadius);
-      // Water seen through the ring: the bulb's where the bulb is the surface.
-      const bulbShare = smoothstep(-0.2, 0.2, (bulbRadius - columnRadius) / Math.max(capRadius, 1e-6));
-      rows.x[index] = state.x; rows.y[index] = state.y; rows.z[index] = state.z;
-      rows.axisX[index] = state.axisX; rows.axisY[index] = state.axisY; rows.axisZ[index] = state.axisZ;
-      rows.radius[index] = ringRadius;
-      rows.water[index] = ringRadius + (capRadius - ringRadius) * bulbShare;
-      rows.round[index] = bulbShare;
+    const stride = Math.max(1, Math.ceil(needed / (ROWS - SLEEVE_RINGS - 4)));
+    chainStart = 0;
+    while (chainStart < count && ring.count < ROWS - SLEEVE_RINGS - 4) {
+      let chainLast = chainStart;
+      while (chainLast < count - 1 && !solver.chainEnd[chainLast]) chainLast++;
+      this.drawChain(chainStart, chainLast, stride);
+      chainStart = chainLast + 1;
     }
-    // The foot stands on the water. While the column still stands its last
-    // FOOT_ROWS rows turn level, as water piled on water stands (each ring
-    // turning from the one above by no more than their spacing allows, so the
-    // rings never cut through each other), never narrow downward (the base's
-    // last, slowest material is thinner than what it carries) and never widen
-    // faster than FOOT_SLOPE per unit of height. The last ring then slides
-    // down the column's axis until no part of it stands above the water, so
-    // once the launch is over and the base has risen off the water a skirt
-    // still carries it down to the water.
-    const water = -this.floor(this.age, this.bowl).depth - BASE_DEPTH;
-    const last = belowRows - 1;
-    if (length > 2 * rows.radius[last]) {
-      for (let index = belowRows - FOOT_ROWS; index < belowRows; index++) {
-        const level = (index - (belowRows - FOOT_ROWS) + 1) / FOOT_ROWS;
-        let axisX = rows.axisX[index] * (1 - level), axisY = rows.axisY[index] * (1 - level) + level, axisZ = rows.axisZ[index] * (1 - level);
-        let axisLength = Math.sqrt(axisX * axisX + axisY * axisY + axisZ * axisZ) || 1;
-        axisX /= axisLength; axisY /= axisLength; axisZ /= axisLength;
-        const aboveX = rows.axisX[index - 1], aboveY = rows.axisY[index - 1], aboveZ = rows.axisZ[index - 1];
-        const turn = Math.acos(Math.min(Math.max(axisX * aboveX + axisY * aboveY + axisZ * aboveZ, -1), 1));
-        const spacing = Math.sqrt((rows.x[index] - rows.x[index - 1]) ** 2 + (rows.y[index] - rows.y[index - 1]) ** 2 + (rows.z[index] - rows.z[index - 1]) ** 2);
-        const allowed = Math.atan2(0.5 * spacing, Math.max(rows.radius[index], rows.radius[index - 1]));
-        if (turn > allowed) {
-          const share = allowed / turn;
-          axisX = aboveX + (axisX - aboveX) * share; axisY = aboveY + (axisY - aboveY) * share; axisZ = aboveZ + (axisZ - aboveZ) * share;
-          axisLength = Math.sqrt(axisX * axisX + axisY * axisY + axisZ * axisZ) || 1;
-          axisX /= axisLength; axisY /= axisLength; axisZ /= axisLength;
-        }
-        rows.axisX[index] = axisX; rows.axisY[index] = axisY; rows.axisZ[index] = axisZ;
-        const drop = Math.abs(rows.y[index - 1] - rows.y[index]);
-        rows.radius[index] = Math.min(Math.max(rows.radius[index], rows.radius[index - 1]), rows.radius[index - 1] + FOOT_SLOPE * drop);
-        rows.water[index] = Math.min(Math.max(rows.water[index], rows.water[index - 1]), rows.water[index - 1] + FOOT_SLOPE * drop);
-      }
+    this.drawSleeve();
+    // The unused rows: rings of no radius on the last point drawn.
+    const lastRing = Math.max(ring.count - 1, 0);
+    const restX = ring.count > 0 ? ring.centre[lastRing * 3] : this.centreX, restY = ring.count > 0 ? ring.centre[lastRing * 3 + 1] : -1, restZ = ring.count > 0 ? ring.centre[lastRing * 3 + 2] : this.centreZ;
+    for (let row = 0; row < ROWS; row++) {
+      if (row < ring.count) this.writeRing(row);
+      else this.writePoint(row, restX, restY, restZ);
     }
-    const tilt = Math.sqrt(Math.max(1 - rows.axisY[last] * rows.axisY[last], 0));
-    const sunk = water - rows.radius[last] * tilt;
-    const slide = Math.max(rows.y[last] - sunk, 0) / Math.max(rows.axisY[last], 0.5);
-    rows.x[last] -= rows.axisX[last] * slide;
-    rows.z[last] -= rows.axisZ[last] * slide;
-    rows.y[last] = Math.min(rows.y[last], sunk);
-    for (let index = 0; index < belowRows; index++) {
-      this.writeRing(CAP_ROWS + index, rows.x[index], rows.y[index], rows.z[index], rows.axisX[index], rows.axisY[index], rows.axisZ[index], rows.radius[index], rows.water[index], rows.round[index]);
-    }
-
+    this.mesh.visible = ring.count > 0;
     holdWithinWalls(this.positions, this.walls);
-    computeGridNormals(this.positions, this.normals, ROWS, COLUMNS);
     markChanged(this.geometry, ['position', 'normal', 'aRadius', 'aRound']);
   }
 
+  /** The column's radius at a node: the mean of its segments' either side (the drawing). */
+  tubeRadius(node, first, last) {
+    const solver = this.solver;
+    const before = node > first ? solver.segmentRadius[node - 1] : 0;
+    const after = node < last ? solver.segmentRadius[node] : 0;
+    return node > first && node < last ? 0.5 * (before + after) : Math.max(before, after);
+  }
+
+  beadShown(node, first, last) {
+    const bead = this.solver.beadRadius(node);
+    return bead > 0 && bead > BEAD_SHOWN * this.tubeRadius(node, first, last);
+  }
+
+  /** The rings of one piece from its first node to its last: a cap, a ring per node (a sphere per bead), a cap. */
+  drawChain(first, last, stride) {
+    const solver = this.solver;
+    const axis = this.axisScratch ??= { x: 0, y: 1, z: 0 };
+    const nodeAxis = (node) => {
+      const before = Math.max(node - 1, first), after = Math.min(node + 1, last);
+      let alongX = this.drawX[after] - this.drawX[before], alongY = this.drawY[after] - this.drawY[before], alongZ = this.drawZ[after] - this.drawZ[before];
+      const length = Math.sqrt(alongX * alongX + alongY * alongY + alongZ * alongZ);
+      if (length < 1e-9) { alongX = 0; alongY = -1; alongZ = 0; } else { alongX /= length; alongY /= length; alongZ /= length; }
+      // The chain runs from its top (first) down to its foot: the axis points along it.
+      axis.x = alongX; axis.y = alongY; axis.z = alongZ;
+      return axis;
+    };
+    // Its top: a hemisphere over the first node (or its bead's upper half).
+    const topRadius = Math.max(this.tubeRadius(first, first, last), solver.beadRadius(first));
+    nodeAxis(first);
+    const topX = this.drawX[first], topY = this.drawY[first], topZ = this.drawZ[first];
+    const topAxisX = axis.x, topAxisY = axis.y, topAxisZ = axis.z;
+    if (!this.beadShown(first, first, last)) {
+      for (let ring = 0; ring <= CAP_RINGS; ring++) {
+        const polar = (ring / (CAP_RINGS + 1)) * Math.PI * 0.5;
+        this.addRing(topX - topAxisX * topRadius * Math.cos(polar), topY - topAxisY * topRadius * Math.cos(polar), topZ - topAxisZ * topRadius * Math.cos(polar),
+          topAxisX, topAxisY, topAxisZ, topRadius * Math.sin(polar), topRadius, 1, -Math.cos(polar), Math.sin(polar));
+      }
+    } else {
+      this.addRing(topX - topAxisX * topRadius, topY - topAxisY * topRadius, topZ - topAxisZ * topRadius, topAxisX, topAxisY, topAxisZ, 0, topRadius, 1, -1, 0);
+    }
+    for (let node = first; node <= last; node++) {
+      const shown = this.beadShown(node, first, last);
+      if (!shown && node !== first && node !== last && (node - first) % stride !== 0) continue;
+      nodeAxis(node);
+      const centreX = this.drawX[node], centreY = this.drawY[node], centreZ = this.drawZ[node];
+      if (shown) {
+        // A sphere, merging into the column above and below.
+        const bead = solver.beadRadius(node);
+        const above = node > first ? solver.segmentRadius[node - 1] : 0;
+        const below = node < last ? solver.segmentRadius[node] : 0;
+        for (let ring = 0; ring < BEAD_RINGS; ring++) {
+          const polar = ((ring + 0.5) / BEAD_RINGS) * Math.PI;
+          const side = polar < Math.PI * 0.5 ? above : below;
+          const sphere = bead * Math.sin(polar);
+          const radius = Math.max(sphere, side);
+          const onSphere = sphere >= side;
+          this.addRing(centreX - axis.x * bead * Math.cos(polar), centreY - axis.y * bead * Math.cos(polar), centreZ - axis.z * bead * Math.cos(polar),
+            axis.x, axis.y, axis.z, radius, onSphere ? bead : radius, onSphere ? 1 : 0, onSphere ? -Math.cos(polar) : 0, onSphere ? Math.sin(polar) : 1);
+        }
+        continue;
+      }
+      const radius = this.tubeRadius(node, first, last);
+      // The slope of the surface along the axis, from the segments either side.
+      const before = node > first ? solver.segmentRadius[node - 1] : radius;
+      const after = node < last ? solver.segmentRadius[node] : radius;
+      const spanLength = (node > first ? solver.segmentLength[node - 1] : 0) + (node < last ? solver.segmentLength[node] : 0);
+      const slope = spanLength > 1e-9 ? (2 * (after - before)) / spanLength : 0;
+      const tilt = 1 / Math.sqrt(1 + slope * slope);
+      this.addRing(centreX, centreY, centreZ, axis.x, axis.y, axis.z, radius, radius, 0, -slope * tilt, tilt);
+    }
+    // Its foot: a hemisphere under the last node (or its bead's lower pole).
+    const footRadius = Math.max(this.tubeRadius(last, first, last), solver.beadRadius(last));
+    nodeAxis(last);
+    const footX = this.drawX[last], footY = this.drawY[last], footZ = this.drawZ[last];
+    if (!this.beadShown(last, first, last)) {
+      for (let ring = CAP_RINGS; ring >= 0; ring--) {
+        const polar = (ring / (CAP_RINGS + 1)) * Math.PI * 0.5;
+        this.addRing(footX + axis.x * footRadius * Math.cos(polar), footY + axis.y * footRadius * Math.cos(polar), footZ + axis.z * footRadius * Math.cos(polar),
+          axis.x, axis.y, axis.z, footRadius * Math.sin(polar), footRadius, 1, Math.cos(polar), Math.sin(polar));
+      }
+    } else {
+      this.addRing(footX + axis.x * footRadius, footY + axis.y * footRadius, footZ + axis.z * footRadius, axis.x, axis.y, axis.z, 0, footRadius, 1, 1, 0);
+    }
+  }
+
   /**
-   * One ring of the grid around the given centre and axis. `waterRadius` is
-   * the radius the thickness pass sees through, `round` 1 where the surface is
-   * the bulb's sphere and 0 where it is the tube (the composite's lens).
+   * The sleeve's rings (the header): from a pole at its top, where it has
+   * the core's radius and is hidden in the solver's column, widening to the
+   * whole launch's radius over SLEEVE_TAPER of its span, down to the water
+   * it stands in, closed under it. The axis runs down it, as a piece's does.
    */
-  writeRing(row, centreX, centreY, centreZ, axisX, axisY, axisZ, ringRadius, waterRadius, round) {
-    // A frame across the axis, from world x (the axis is never far from vertical).
-    const along = axisX;
-    let firstX = 1 - along * axisX, firstY = -along * axisY, firstZ = -along * axisZ;
-    const firstLength = Math.sqrt(firstX * firstX + firstY * firstY + firstZ * firstZ) || 1;
+  drawSleeve() {
+    if (this.baseScale <= 0 || this.age <= this.sleeveTop) return;
+    const top = this.sleeveTop, foot = this.sleeveFoot();
+    if (foot <= top + 1e-6) return;
+    const state = this.sleeveState ??= {};
+    const samples = this.sleeveSamples ??= Array.from({ length: SLEEVE_RINGS }, () => ({ x: 0, y: 0, z: 0, axisX: 0, axisY: 0, axisZ: 0, radius: 0, along: 0 }));
+    let along = 0;
+    for (let index = 0; index < SLEEVE_RINGS; index++) {
+      const share = index / (SLEEVE_RINGS - 1);
+      const tau = top + (foot - top) * share;
+      this.sleeveAt(tau, state);
+      const sample = samples[index];
+      if (index > 0) along += Math.hypot(state.x - samples[index - 1].x, state.y - samples[index - 1].y, state.z - samples[index - 1].z);
+      sample.x = state.x; sample.y = state.y; sample.z = state.z;
+      sample.axisX = -state.axisX; sample.axisY = -state.axisY; sample.axisZ = -state.axisZ;
+      const widen = smoothstep(0, SLEEVE_TAPER, share);
+      sample.radius = state.core + (state.radius - state.core) * widen;
+      sample.along = along;
+    }
+    const first = samples[0], last = samples[SLEEVE_RINGS - 1];
+    this.addRing(first.x - first.axisX * first.radius, first.y - first.axisY * first.radius, first.z - first.axisZ * first.radius, first.axisX, first.axisY, first.axisZ, 0, first.radius, 1, -1, 0);
+    for (let index = 0; index < SLEEVE_RINGS; index++) {
+      const sample = samples[index];
+      const before = samples[Math.max(index - 1, 0)], after = samples[Math.min(index + 1, SLEEVE_RINGS - 1)];
+      const span = after.along - before.along;
+      const slope = span > 1e-9 ? (after.radius - before.radius) / span : 0;
+      const tilt = 1 / Math.sqrt(1 + slope * slope);
+      this.addRing(sample.x, sample.y, sample.z, sample.axisX, sample.axisY, sample.axisZ, sample.radius, sample.radius, 0, -slope * tilt, tilt);
+    }
+    this.addRing(last.x + last.axisX * last.radius, last.y + last.axisY * last.radius, last.z + last.axisZ * last.radius, last.axisX, last.axisY, last.axisZ, 0, last.radius, 1, 1, 0);
+  }
+
+  /** Queue a ring: centre, unit axis, radius, the water's radius behind it, roundness, and its normal's parts along the axis and outward. */
+  addRing(centreX, centreY, centreZ, axisX, axisY, axisZ, radius, waterRadius, round, normalAlong, normalOut) {
+    const ring = this.ring;
+    if (ring.count >= ROWS) return;
+    const index = ring.count++;
+    ring.centre[index * 3] = centreX; ring.centre[index * 3 + 1] = centreY; ring.centre[index * 3 + 2] = centreZ;
+    ring.axis[index * 3] = axisX; ring.axis[index * 3 + 1] = axisY; ring.axis[index * 3 + 2] = axisZ;
+    ring.radius[index] = radius;
+    ring.water[index] = waterRadius;
+    ring.round[index] = round;
+    ring.along[index * 2] = normalAlong;
+    ring.along[index * 2 + 1] = normalOut;
+  }
+
+  /**
+   * Write a queued ring into the grid, its vertices around its axis in a
+   * frame carried along the piece (the previous ring's, turned onto this
+   * axis), so the tube does not twist; its normals from its shape.
+   */
+  writeRing(row) {
+    const ring = this.ring;
+    const axisX = ring.axis[row * 3], axisY = ring.axis[row * 3 + 1], axisZ = ring.axis[row * 3 + 2];
+    const frame = this.frame;
+    let firstX = frame.firstX, firstY = frame.firstY, firstZ = frame.firstZ;
+    if (row === 0 || ring.radius[row - 1] === 0 && ring.radius[row] === 0) { firstX = Math.abs(axisX) < 0.9 ? 1 : 0; firstY = 0; firstZ = Math.abs(axisX) < 0.9 ? 0 : 1; }
+    // Turn the carried vector onto this ring's plane.
+    const along = firstX * axisX + firstY * axisY + firstZ * axisZ;
+    firstX -= along * axisX; firstY -= along * axisY; firstZ -= along * axisZ;
+    let firstLength = Math.sqrt(firstX * firstX + firstY * firstY + firstZ * firstZ);
+    if (firstLength < 1e-6) {
+      firstX = Math.abs(axisX) < 0.9 ? 1 - axisX * axisX : -axisY * axisX;
+      firstY = Math.abs(axisX) < 0.9 ? -axisX * axisY : 1 - axisY * axisY;
+      firstZ = Math.abs(axisX) < 0.9 ? -axisX * axisZ : -axisY * axisZ;
+      firstLength = Math.sqrt(firstX * firstX + firstY * firstY + firstZ * firstZ) || 1;
+    }
     firstX /= firstLength; firstY /= firstLength; firstZ /= firstLength;
+    frame.firstX = firstX; frame.firstY = firstY; frame.firstZ = firstZ;
     // second = first × axis, so the rings wind with outward grid normals.
     const secondX = firstY * axisZ - firstZ * axisY;
     const secondY = firstZ * axisX - firstX * axisZ;
     const secondZ = firstX * axisY - firstY * axisX;
+    const centreX = ring.centre[row * 3], centreY = ring.centre[row * 3 + 1], centreZ = ring.centre[row * 3 + 2];
+    const radius = ring.radius[row];
+    const normalAlong = ring.along[row * 2], normalOut = ring.along[row * 2 + 1];
     for (let column = 0; column < COLUMNS; column++) {
       const vertex = row * COLUMNS + column;
-      const cosAngle = this.columnCos[column] * ringRadius;
-      const sinAngle = this.columnSin[column] * ringRadius;
-      this.positions[vertex * 3] = centreX + firstX * cosAngle + secondX * sinAngle;
-      this.positions[vertex * 3 + 1] = centreY + firstY * cosAngle + secondY * sinAngle;
-      this.positions[vertex * 3 + 2] = centreZ + firstZ * cosAngle + secondZ * sinAngle;
-      this.radii[vertex] = waterRadius;
-      this.roundness[vertex] = round;
+      const cosAngle = this.columnCos[column], sinAngle = this.columnSin[column];
+      const outX = firstX * cosAngle + secondX * sinAngle, outY = firstY * cosAngle + secondY * sinAngle, outZ = firstZ * cosAngle + secondZ * sinAngle;
+      this.positions[vertex * 3] = centreX + outX * radius;
+      this.positions[vertex * 3 + 1] = centreY + outY * radius;
+      this.positions[vertex * 3 + 2] = centreZ + outZ * radius;
+      this.normals[vertex * 3] = outX * normalOut + axisX * normalAlong;
+      this.normals[vertex * 3 + 1] = outY * normalOut + axisY * normalAlong;
+      this.normals[vertex * 3 + 2] = outZ * normalOut + axisZ * normalAlong;
+      this.radii[vertex] = ring.water[row];
+      this.roundness[vertex] = ring.round[row];
+    }
+  }
+
+  /** A row with nothing to draw: every vertex on one point. */
+  writePoint(row, x, y, z) {
+    for (let column = 0; column < COLUMNS; column++) {
+      const vertex = row * COLUMNS + column;
+      this.positions[vertex * 3] = x; this.positions[vertex * 3 + 1] = y; this.positions[vertex * 3 + 2] = z;
+      this.normals[vertex * 3] = 0; this.normals[vertex * 3 + 1] = 1; this.normals[vertex * 3 + 2] = 0;
+      this.radii[vertex] = 0;
+      this.roundness[vertex] = 0;
     }
   }
 

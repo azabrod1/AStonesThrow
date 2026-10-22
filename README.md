@@ -368,24 +368,28 @@ known timing, and the droplets are choreographed from them:
 3. Worthington jet (`src/jet.js`): a glassy column fired up the axis from
    the bowl's floor at the pinch-off, after an oblique entry leaning back
    along the stone's path (by 0.4 of the entry angle, at most 18°) and a
-   little slower. It is water launched from a point that rises with the
+   little slower. Its water is launched from a point that rises with the
    bowl's floor, fastest first: a thin needle at up to three times the body's
-   speed, the body, and a broad slow base that the bowl's collapse builds,
-   each element then flying ballistically, so the column is a closed form in
-   launch time, azimuth and time; it stretches as it rises, its radius set by
-   volume conservation, widest at the base. A bulb at its tip pinches off
-   into drops, none to four of them, with satellites, then the column breaks
-   from the top down into drops about twice its local radius, a piece every
-   capillary time of the column, as a Rayleigh–Plateau instability does,
-   growing uneven varicose beads before it parts; its slow base falls back
-   into a mound (its ring is part of the stone's). For a 3 cm stone dropped
-   straight in at 6.3 m/s the needle clears the surface 131 ms after entry at
-   14 m/s, its first tip drop 3 mm in radius, and the column is 6 cm across
-   at the water at 0.25 s and stands 60 to 70 cm tall at half a second
-   (the reference simulation: 118 ms, 13 to 16 m/s, 2.4 mm, 5 cm, and an
-   unbroken 81 cm, an upper bound); thrown at 42° a clean jet stands 25 to
-   45 cm, its tip drops flying higher, but each throw's jet has a form of its
-   own (below);
+   speed, the body, and a broad slow base that the bowl's collapse builds
+   (the launch is fitted to the reference simulation; its body leaves at 3.2
+   times the hole's collapse speed at its pinch depth, sqrt(g·z_p), which is
+   0.75 of the reference throw's entry speed). The column in flight is
+   physics, not a drawing: the slender-jet equations of Eggers and Dupont
+   (`src/slenderJet.js`, mass and momentum along the column with surface
+   tension, viscosity and gravity, solved by material nodes on their own
+   clock), so how it thins and beads (Rayleigh–Plateau), how its tip draws
+   back into a bulb (Taylor–Culick), where it pinches, and every drop it
+   throws and that drop's size come out of the equations: a needle a
+   millimetre or two thick beads within milliseconds, a column centimetres
+   thick rises and falls back whole. Its base flies as a ballistic sleeve
+   and falls back into a mound (its ring is part of the stone's). For a 3 cm
+   stone dropped straight in at 6.3 m/s the needle clears the surface 131 ms
+   after entry at 13 m/s, its water reaches 70 cm and its largest drop is
+   6 mm (the reference simulation: 118 ms, 13 to 16 m/s, 75 to 81 cm, 6 mm;
+   `tools/jet-probe.mjs` checks the solver against the textbook growth rate,
+   retraction speed and drop size, and the jet against the simulation);
+   thrown at 42° a clean jet stands 25 to 45 cm, its drops flying higher,
+   but each throw's collapse launches its jet its own way (below);
 4. bubbles that follow the stone down its path, rise and burst into foam.
 
 Drops ring the water where they land, and the big ones (the jet's, and the
@@ -402,21 +406,28 @@ stone or a lumpy, spinning one is pushed sideways as it goes in, so its path
 curves a little. From these, the throw's size, speed and angle and a random
 stream seeded by the stone, the splash chooses (`chooseSplash` in
 `src/splash.js`): how the hole seals (deep; shallow for a flat face going in
-first; at the surface, the crown pulled shut over the hole into a low glassy
-dome, when the entry's Froude number V²/(g·R) passes Birkhoff and Isaacs'
+first; at the surface, the crown pulled shut over the hole into a low dome,
+a thin sheet whipped shut, white with air, buckled and torn, not a glass
+bell, when the entry's Froude number V²/(g·R) passes Birkhoff and Isaacs'
 108, less readily the more oblique the entry and the more irregular the
-stone), how lopsided it is, how the crown leans (a spinning stone drags
-water up on one side), and the jet's form: clean (none to four tip drops of
-varying size), leaning towards the hole's bulge and whipping, ragged (the
-column comes apart early from the top into irregular drops and spray),
-stubby (short and fat: big stones, flat entries, shallow seals), split in two
-(rare), or none at all (after a surface seal: only a low glassy mound
-heaves up and subsides). For the default 6 cm stone
-thrown normally about one throw in ten seals at the surface, four jets in
-ten are clean, a fifth to a quarter ragged, one in six leans, one in eight
-is stubby and a few split or never rise; a 1.5 cm pebble nearly always seals
-at the surface, a 16 cm stone almost never, and its jets are mostly stubby
-(`tools/variety-probe.mjs` prints the distributions).
+stone: Worthington's roughened marble dropped 15 cm threw a tall jet and
+from 140 cm none, Truscott and Techet's billiard balls at 6 m/s dome over,
+and the app does the same), what follows a seal (the hole still pinches
+under the dome and its jet bursts up through it, flinging the dome's water,
+as Truscott and Techet saw; or, when the dome closed early, it is drawn
+down into the hole before the jet arrives and the jet is trapped, the
+surface heaving and seething, as Worthington saw from 140 cm), how lopsided
+the hole is, how the crown leans (a spinning stone drags water up on one
+side), and how the collapse launches the jet: clean, leaning towards the
+hole's bulge, ragged (an uneven collapse launches the column rough, so it
+comes apart along its length), stubby (short and fat: big stones, flat
+entries, shallow seals), or none at all (a trapped jet: only a low mound
+heaves up and subsides). For the default 6 cm stone thrown normally about
+one throw in ten seals at the surface, four jets in ten are clean, a fifth
+to a quarter ragged, one in six leans, one in eight is stubby; thrown softly
+(nearer vertical) a third seal; a 1.5 cm pebble nearly always seals and its
+jet is nearly always trapped, a 16 cm stone never seals and its jets are
+mostly stubby (`tools/variety-probe.mjs` prints the distributions).
 
 **Skipping** (`src/rock.js`, a Skip throw). The thrower picks a flat stone
 and lets it go from a crouch, 30 cm over the water, nearly level, at 7, 10
@@ -1088,20 +1099,24 @@ farther out, so it rises into the view rather than filling its corner.
   # with --align=assets/sky/lakeside_sunrise_2k.hdr: dawn 2024-08-21T06:27, night 08-21T19:51;
   # and lakeside (2019, its time stamp off by a quarter of an hour) with --align alone
   ```
-- `node tools/jet-probe.mjs [radius] [entrySpeed] [profileTime] [horizontalFraction]`
-  runs one Worthington jet of the default (clean) form on the CPU over the
-  bowl its stone's cavity leaves and prints its timeline (the needle clearing
-  the surface, the tip drops, the breakup, the fall-back), its profile at the
-  given time after entry, its drops, volume budget, when its big drops land,
-  whether its normals face outward and its cost per frame; a horizontal
-  fraction makes it the leaning jet of an oblique entry.
+- `node tools/jet-probe.mjs [radius] [entrySpeed] [horizontalFraction]`
+  checks the slender-jet solver (`src/slenderJet.js`) against the textbook:
+  Rayleigh–Plateau's growth rate, Taylor–Culick's retraction speed, the drop
+  size of a breaking column, and the water kept; runs one Worthington jet of
+  the clean form on the CPU over the bowl its stone's cavity leaves (the
+  reference throw by default, checked against the reference simulation's
+  timing and heights, and against itself at other frame rates) and prints
+  its timeline, drops, water and cost per frame; checks Worthington's marble
+  and Truscott and Techet's billiard ball against the surface seal's odds,
+  timing and what follows; a horizontal fraction makes it the leaning jet of
+  an oblique entry. Part of `npm test`.
 - `node tools/variety-probe.mjs [throws=200] [--seed=1] [--aim=x:z] [--sets=default|all|grid] [--list]`
   throws stones as the app does (seed n is the shoot harness's seeded throw n
   at the same aim and power) and prints how their splashes vary: the stones'
   shapes, contacts and spins; how often each jet form and seal comes up (with
   the surface seal's chance); the
-  jets' tops, tip drops and lean, the holes' lopsidedness and the crowns'
-  heights, by form (a jet's top is its column's or its tip drops' highest,
+  jets' tops, drops and lean, the holes' lopsidedness and the crowns'
+  heights, by form (a jet's top is its column's or its drops' highest,
   flown with the splash's drag); and the cost per frame, for the default stone thrown
   normally, softly and hard and for a 16 cm stone and a pebble
   (`--sets=default` leaves out the last two; `--sets=grid` runs every size of
