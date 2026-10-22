@@ -301,7 +301,12 @@ vec3 sunGlitter(vec3 normal, vec3 toViewer, vec3 toSun, vec3 sunIrradiance, floa
 //   lace    FOAM_LACE_CELL cells, the edges of a power diagram (cells of
 //           unequal size), each edge its own thickness, warped by value
 //           noise so they curve, sinking smoothly into each cell: the
-//           filaments around the holes that a thinning raft opens;
+//           filaments around the holes that a thinning raft opens. A
+//           raft's only: a boil, bubbles bursting as they surface (all a
+//           splash leaves on fresh water, src/splash.js), takes the lace
+//           as an unresolved layer, its median, as the map's boil share
+//           passes FOAM_LACE_BOIL_FROM to FOAM_LACE_BOIL_TO, so it is
+//           bubbles alone and covers about the same;
 //   coarse  FOAM_COARSE_CELL cells, a bubble 3 to 7 mm across in each;
 //   fine    FOAM_FINE_CELL cells, a bubble 1.7 to 3.3 mm across in each,
 //           packed so they nearly touch.
@@ -387,6 +392,8 @@ export const FOAM_PATTERN = /* glsl */`
 #define FOAM_CLUMP_FREQUENCY 35.0          // into filaments of uneven width, fragments and clumps (per metre)
 #define FOAM_FADE_START 0.18               // footprint over cell size
 #define FOAM_FADE_END 0.45
+#define FOAM_LACE_BOIL_FROM 0.5            // the lace goes as the map's boil share rises from this...
+#define FOAM_LACE_BOIL_TO 0.8              // ...to this: a boil is bubbles, a raft lace
 // Medians and spreads of the layers, measured over a large area: what a
 // fading layer tends to, and the width it hands to the threshold.
 #define FOAM_LACE_MEDIAN -0.61
@@ -515,7 +522,11 @@ FoamLook foamLook(vec2 position, vec2 acrossX, vec2 acrossY, float foam, vec2 fo
   float footprint = sqrt(sqrt(dot(acrossX, acrossX) * dot(acrossY, acrossY)));
   float fineFade = smoothstep(FOAM_FADE_START, FOAM_FADE_END, footprint / FOAM_FINE_CELL);
   float coarseFade = smoothstep(FOAM_FADE_START, FOAM_FADE_END, footprint / FOAM_COARSE_CELL);
-  float laceFade = smoothstep(FOAM_FADE_START, FOAM_FADE_END, footprint / FOAM_LACE_CELL);
+  // A boil is bubbles bursting as they surface, never a lace: where the map is
+  // mostly boil the lace layer is taken as unresolved (its median, and its
+  // spread widening the edge), so the cover stays and the filaments go. Only a
+  // raft, sea foam (the gale's whitecaps), thins into lace.
+  float laceFade = max(smoothstep(FOAM_FADE_START, FOAM_FADE_END, footprint / FOAM_LACE_CELL), smoothstep(FOAM_LACE_BOIL_FROM, FOAM_LACE_BOIL_TO, boilFraction));
   vec2 gradient = vec2(0.0);   // of the pattern, per metre
 
   // The lace: 1 on an edge, falling with the distance from it.

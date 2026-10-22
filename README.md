@@ -450,7 +450,10 @@ wind's strength), and its pattern and specks with it. The foam map says
 where and how much, but its cells are over a centimetre wide, so the water
 shader draws the raft from three layers of cellular noise: bubbles 2 to 3 mm
 across packed together, larger ones of 3 to 7 mm among them, and a lace of
-curved filaments around holes a few centimetres wide. The map's strength,
+curved filaments around holes a few centimetres wide. A boil, the bubbles a
+splash leaves bursting on fresh water, takes no lace: it is drawn from the
+bubble layers alone, and only a raft (the gale's sea foam) thins into
+filaments. The map's strength,
 lumped at 3 and 14 cm strongly enough to show from a phone 4 m away, so
 that a boil is mottled and a raft's edge broken rather than a round, even
 white, sets the threshold they must pass. Where it is strong the raft is

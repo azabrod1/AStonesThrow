@@ -35,7 +35,7 @@
 import * as THREE from 'three';
 import { SPECK_VERTEX, SPECK_FRAGMENT } from './shaders/scene.js';
 
-const CAPACITY = 8192;           // specks alive at once: a 30 cm rock leaves about 1500, so several of the biggest throws fit
+const CAPACITY = 8192;           // specks alive at once: a 30 cm rock leaves about 3000 over its life, so two of the biggest throws fit
 const MIN_LIFE = 0.8;            // fresh water: a bubble on it bursts within a second or two (src/splash.js on the foam)
 const MAX_LIFE = 3;
 const LIFE_SKEW = 1.8;            // life = MIN + (MAX − MIN)·u^LIFE_SKEW: most specks go early

@@ -176,8 +176,8 @@
 // 1600 to 1900 drops: 680 from the crown (2.5 to 9 mm), 310 from the fan,
 // 70 contact spray, a few large ones from the jet, 250 to 500 from the crowns
 // of the 40 to 70 drops that throw one where they land and 300 to 400 kicked
-// up by the rest; at most 730 to 840 are alive at once, and it leaves 3400
-// to 3700 foam specks. Its CPU work on a desktop is under a millisecond a frame on average
+// up by the rest; at most 730 to 840 are alive at once, and it leaves about
+// 1300 foam specks (a 30 cm rock about 3000), each gone within a second or three. Its CPU work on a desktop is under a millisecond a frame on average
 // and a few milliseconds in the worst frames, where the crown tears and drops
 // land (tools/splash-probe.mjs measures all of this).
 //
