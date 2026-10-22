@@ -244,28 +244,51 @@
 // spinBy); knock moves it, and under the water its path with it, and wakes
 // it afloat.
 //
-// Ground. A thing can come down on ground rather than water: the pool's
-// deck, its height given by `groundAt` (src/pool.js poolGround, which
-// src/main.js hands everything thrown in the pool): short of the pool (a
-// big stone skipped slowly, a heavy ball thrown as far as it goes) or
-// skipped out over a wall. It lands only where it
-// was over the ground the step before too: one coming from over the water
-// meets the ground's side. On the ground it lands as the thing does on
-// paving (meetGround, with its THINGS `ground`): it bounces off at `bounce`
-// of the speed it came down at, the friction taking `friction` times the
-// push off the ground from its speed along it. A stone's lumps turn its
-// path by up to GROUND.scatter and it tumbles end over end (its spin about
-// the level axis across its path, at GROUND.tumble of its speed over its
-// radius) until it comes down slower than GROUND.settle; then it tumbles
-// along (`ground`, alongGround), its ellipsoid on it (ellipsoidDepth: the
-// lumpy mesh would lift it off as it turns), slowing at
-// GROUND.tumbling·g. A thing kept upright (a pizza, a pie, a duck) settles
-// at rest onto a face it lies on (restOn: a ballasted one onto its base). A
-// ball keeps at least `roll` of its speed along the
+// Ground. A thing can come down on ground rather than water. What ground
+// there is, is its `ground` (src/main.js hands it to everything thrown), or
+// null:
+//   - at(x, z): the ground's height there, or null over open water: the
+//     pool's deck (src/pool.js poolGround), short of the pool (a big stone
+//     skipped slowly, a heavy ball thrown as far as it goes) or skipped out
+//     over a wall; a frozen lake's ice (src/ice.js), everywhere but its holes;
+//   - material (optional; or materialAt(x, z), where it differs from place
+//     to place: a frozen lake's beach is no ice): the ground's own surface,
+//     where it changes how a thing goes along it ({ kind, friction, rolling,
+//     tumbling, tumble }, each optional): ice is slick, so a thing on it takes the lesser of its
+//     own friction and rolling resistance and the ice's, a stone slows at the
+//     ice's `tumbling`·g and turns end over end at its `tumble`, and its
+//     knock is heard as on ice (src/sound.js);
+//   - meet(rock, height) (optional): asked whenever the thing comes down on
+//     the ground (at `height`) or onto the water (height null), before
+//     anything else is done: the ice says whether it holds (`{ ground:
+//     height }`: it lands on it, even over a hole too small for it), or
+//     whether it goes into the water through a hole (`{ hole, broke }`:
+//     broke, the ice gave way under it this step, or a hole was opened wide
+//     enough for its splash; `keep`, the share of its speed the break left
+//     it), or has no opinion (null: open water). src/ice.js says when ice
+//     breaks; the thing then goes in as into open water (breakThrough), and
+//     its impact says so (`throughIce`, src/splash.js: no crown stands on
+//     ice), and keeps the hole it went in by (`iceHole`, src/ice.js contain).
+// It lands only where it was over the ground the step before too: one
+// coming from over the water meets the ground's side. On the ground it lands
+// as the thing does on paving (meetGround, with its THINGS `material`): it
+// bounces off at `bounce` of the speed it came down at, the friction taking
+// `friction` times the push off the ground from its speed along it. A
+// stone's lumps turn its path by up to GROUND.scatter and it tumbles end
+// over end (its spin about the level axis across its path, at GROUND.tumble
+// of its speed over its radius) until it comes down slower than
+// GROUND.settle; then it tumbles along (`ground`, alongGround), its
+// ellipsoid on it (ellipsoidDepth: the lumpy mesh would lift it off as it
+// turns), slowing at GROUND.tumbling·g. A thing kept upright (a pizza, a
+// pie, a duck) settles at rest onto a face it lies on (restOn: a ballasted
+// one onto its base). A ball keeps at least `roll` of its speed along the
 // ground (friction brings it to rolling, 5/7 for a solid ball, 3/5 for a
 // shell) and spins as it rolls, and once down it rolls along, slowing at
-// `rolling`·g. Either rests once slower than GROUND.stopped; over the
-// ground's edge it falls again (into the pool).
+// `rolling`·g. Either rests once slower than GROUND.stopped. Over the
+// ground's edge, or down a step of more than GROUND.step (off the deck onto
+// a frozen pool's ice), it falls again; up a step it cannot climb (a frozen
+// pool's wall, from the ice) it is turned back off it, at its own bounce,
+// along whichever axis of its move rose (the pool's walls are square).
 import * as THREE from 'three';
 import { SEEN_THROUGH_WATER, FLOATER_WATER } from './shaders/scene.js';
 import { PINCH_TIME, NECK_CLOSE, SPIN_DECAY, sinkStep, underWater } from './cavity.js';
@@ -335,6 +358,7 @@ const GROUND = {
   stopped: 0.05,               // m/s: ...and either rests once slower than this
   tumble: 0.5,                 // a stone turns end over end at this times its speed over its radius (it skids as it tumbles)...
   tumbleMost: 60,              // ...at most this (rad/s)
+  step: 0.01,                  // m: a rise or a drop in the ground under a thing going along it of more than this is a wall or an edge
   settleSeconds: 0.25,         // s: a thing kept upright settles onto the face it lies on over this (Rock.restOn)...
   rightsFrom: 0.1,             // ...onto its base if its `body.ballast` is this far down (radii: a duck's, not a pie's)
 };
@@ -1016,9 +1040,11 @@ export class Rock {
     this.afloat = false;           // at rest on the water (the header's floating)
     this.hasFloated = false;       // has floated, so bobbed clear it comes back in quietly
     this.drift = { x: 0, z: 0 };   // m/s: what a gale drifts it at, afloat (src/main.js)
-    // The ground's height at (x, z), or null over the water: the pool's deck (src/pool.js poolGround, given by src/main.js; the header).
-    this.groundAt = null;
-    this.groundHeight = 0;         // the ground's height under a thing tumbling or rolling along it (`ground`)
+    // What ground there is besides the water ({ at, material, meet }; the header): the pool's deck, a frozen lake's ice
+    // (given by src/main.js), or none.
+    this.ground = null;
+    this.iceHole = null;           // the hole in the ice it went into the water by (src/ice.js), which holds a floater in
+    this.groundHeight = null;      // the ground's height under a thing tumbling or rolling along it (`ground`), once it has met it
     this.onGround = false;         // at rest on the ground (restOn)
     this.settling = null;          // settling onto the face it lies on, at rest on the ground (restOn, settleStep)
     this.fading = undefined;       // seconds into shrinking away, once src/main.js has begun it (fadeOut): frozen, it is no longer stepped
@@ -1681,7 +1707,10 @@ export class Rock {
   // ---- meeting other things (src/collide.js) -------------------------------
 
   /** Whether it can meet another thing: flying, skimming, under the water, or afloat (not at rest on the bed or the deck). */
-  get collides() { return this.state === 'air' || this.state === 'skim' || this.state === 'water' || this.state === 'float' || this.afloat; }
+  get collides() { return this.state === 'air' || this.state === 'skim' || this.state === 'water' || this.state === 'float' || this.afloat || this.grounded; }
+
+  /** Whether it is on the ground (the header): going along it, or at rest on it (the deck, the ice), where things meet it as they meet a floater. */
+  get grounded() { return this.state === 'ground' || (this.state === 'rest' && this.onGround); }
 
   /** Whether it is a floater on (or rising to, or bobbed clear of) the water; one thrown is not, until it has gone in. */
   get floater() { return this.floats && (this.state !== 'air' || this.hasFloated); }
@@ -1737,13 +1766,21 @@ export class Rock {
       this.skip.skips++;
     }
     this.velocity.x += dvx; this.velocity.y += dvy; this.velocity.z += dvz;
-    this.position.x += dx; this.position.y += dy; this.position.z += dz;
+    // On the ground it is moved only along it: the ground holds it up.
+    this.position.x += dx; this.position.y += this.grounded ? 0 : dy; this.position.z += dz;
     if (this.state === 'water') {
       const body = this.body;
       body.vx += dvx; body.vy += dvy; body.vz += dvz;
       body.x += dx; body.y += dy; body.z += dz;
     }
     if (this.afloat && this.state === 'rest') { this.state = 'float'; this.afloat = false; }
+    // On the ground it goes along it again, or, knocked up off it, flies.
+    if (this.grounded && (dvx !== 0 || dvy !== 0 || dvz !== 0)) {
+      this.settling = null;
+      this.onGround = false;
+      if (this.velocity.y > GROUND.settle) this.state = 'air';
+      else { this.state = 'ground'; this.velocity.y = 0; }
+    }
     this.syncMeshes(this.drawn.surface, this.drawn.bedDepth);   // drawn where it now is, on the water it was drawn on
   }
 
@@ -2373,37 +2410,47 @@ export class Rock {
   /** Down on the ground at `height` (the header): out of it, then a bounce off it, or it settles to tumble or roll along it. */
   meetGround(height, dt) {
     this.position.y = height + this.ellipsoidDepth();
+    this.groundHeight = height;
     if (this.velocity.y >= -GROUND.settle) {
       this.state = 'ground';
       this.alongGround(dt);
       return;
     }
     this.splat(this.velocity);
-    const ground = this.thing.material;
+    const material = this.thing.material;
+    const surface = this.groundSurface;   // the ground's own (the header: ice)
     const fall = -this.velocity.y;
-    this.heard.push({ speed: fall, radius: this.radius, bounce: this.collisionBounce });   // its knock on the deck (src/sound.js)
-    const bounce = ground.bounce[0] + (ground.bounce[1] - ground.bounce[0]) * this.random();
+    this.heard.push({ speed: fall, radius: this.radius, bounce: this.collisionBounce, surface: surface?.kind });   // its knock on the ground (src/sound.js)
+    const bounce = material.bounce[0] + (material.bounce[1] - material.bounce[0]) * this.random();
     this.velocity.y = bounce * fall;
     const along = Math.hypot(this.velocity.x, this.velocity.z);
     // The friction slows it along the ground, a ball no lower than rolling.
-    const least = ground.roll ? ground.roll * along : 0;
-    const kept = along > 1e-9 ? Math.max(along - ground.friction * (1 + bounce) * fall, least) / along : 0;
-    const turn = ground.roll ? 0 : GROUND.scatter * (2 * this.random() - 1);
+    const friction = Math.min(material.friction, surface?.friction ?? Infinity);
+    const least = material.roll ? material.roll * along : 0;
+    const kept = along > 1e-9 ? Math.max(along - friction * (1 + bounce) * fall, least) / along : 0;
+    const turn = material.roll ? 0 : GROUND.scatter * (2 * this.random() - 1);
     const velocityX = this.velocity.x * kept, velocityZ = this.velocity.z * kept;
     this.velocity.x = velocityX * Math.cos(turn) - velocityZ * Math.sin(turn);
     this.velocity.z = velocityX * Math.sin(turn) + velocityZ * Math.cos(turn);
     this.spinAlongGround();
   }
 
-  /** Tumbling or rolling along the ground (the header); over its edge it falls again, and it rests once slower than GROUND.stopped. */
+  /**
+   * Tumbling or rolling along the ground (the header): over its edge, or
+   * down a step, it falls again; up a step it cannot climb it is turned back
+   * off it; it rests once slower than GROUND.stopped.
+   */
   alongGround(dt) {
-    const height = this.groundAt?.(this.position.x, this.position.z) ?? null;
-    if (height === null) { this.state = 'air'; return; }
+    let height = this.ground?.at(this.position.x, this.position.z) ?? null;
+    const before = this.groundHeight ?? height;
+    if (height === null || height < before - GROUND.step) { this.state = 'air'; return; }
+    if (height > before + GROUND.step) height = this.turnBackFromStep();
     this.groundHeight = height;
     this.velocity.y = 0;
     this.position.y = height + this.ellipsoidDepth();
     const along = Math.hypot(this.velocity.x, this.velocity.z);
-    const slowing = this.thing.material.roll ? this.thing.material.rolling : GROUND.tumbling;
+    const material = this.thing.material, surface = this.groundSurface;
+    const slowing = material.roll ? Math.min(material.rolling, surface?.rolling ?? Infinity) : surface?.tumbling ?? GROUND.tumbling;
     const slowed = Math.max(along - slowing * GRAVITY * dt, 0);
     if (slowed < GROUND.stopped) { this.restOn(height); return; }
     this.velocity.x *= slowed / along;
@@ -2411,12 +2458,55 @@ export class Rock {
     this.spinAlongGround();
   }
 
-  /** Its spin about the level axis across its path: a ball's rolling, v/R; a stone's tumble, GROUND.tumble of that (at most GROUND.tumbleMost). */
+  /** The ground's own surface where it is (the header: its `materialAt`, else its `material`), or null. */
+  get groundSurface() {
+    const ground = this.ground;
+    return (ground?.materialAt ? ground.materialAt(this.position.x, this.position.z) : ground?.material) ?? null;
+  }
+
+  /**
+   * Up a step it cannot climb (alongGround: a frozen pool's wall, met from
+   * its ice): back where it was along each axis whose move alone rose (both,
+   * if neither alone did: a corner), that part of its velocity turned back
+   * at its own bounce. Returns the ground's height where it then is.
+   */
+  turnBackFromStep() {
+    const at = (x, z) => this.ground.at(x, z) ?? -Infinity;
+    const rises = (x, z) => at(x, z) > this.groundHeight + GROUND.step;
+    let alongX = rises(this.position.x, this.previous.z), alongZ = rises(this.previous.x, this.position.z);
+    if (!alongX && !alongZ) alongX = alongZ = true;
+    if (alongX) { this.position.x = this.previous.x; this.velocity.x *= -this.collisionBounce; }
+    if (alongZ) { this.position.z = this.previous.z; this.velocity.z *= -this.collisionBounce; }
+    this.heard.push({ speed: Math.hypot(alongX ? this.velocity.x : 0, alongZ ? this.velocity.z : 0) / Math.max(this.collisionBounce, 0.05), radius: this.radius, bounce: this.collisionBounce });
+    return this.ground.at(this.position.x, this.position.z) ?? this.groundHeight;
+  }
+
+  /**
+   * Its spin about the level axis across its path: a ball's rolling, v/R; a
+   * stone's tumble, GROUND.tumble of that, or the ground's own `tumble`
+   * (ice: it slides more than it tumbles), at most GROUND.tumbleMost.
+   */
   spinAlongGround() {
     const along = Math.hypot(this.velocity.x, this.velocity.z);
     if (along < 1e-6) return;
     this.spinAxis.set(this.velocity.z / along, 0, -this.velocity.x / along);
-    this.spinRate = this.thing.material.roll ? along / this.radius : Math.min(GROUND.tumble * along / this.radius, GROUND.tumbleMost);
+    const tumble = this.groundSurface?.tumble ?? GROUND.tumble;
+    this.spinRate = this.thing.material.roll ? along / this.radius : Math.min(tumble * along / this.radius, GROUND.tumbleMost);
+  }
+
+  /**
+   * Through the ice into the water (the header: the ground's `meet` said it
+   * broke, or opened its hole wider): slowed by what the break took (`keep`
+   * of its speed), it goes in from the water's level as into open water
+   * (goIn), its impact marked `throughIce` (src/splash.js: no crown stands
+   * on the ice). Returns the impact.
+   */
+  breakThrough(met, dt) {
+    this.velocity.multiplyScalar(met.keep ?? 1);
+    this.iceHole = met.hole;
+    const impact = this.goIn(dt, 0);
+    impact.throughIce = !met.open;
+    return impact;
   }
 
   /**
@@ -2438,30 +2528,46 @@ export class Rock {
     this.previous.copy(this.position);
     let impact = null;
     // Down on the ground (the header), if it was over it the step before too (else it met the ground's side, src/pool.js).
-    const groundBefore = this.state === 'air' && this.groundAt ? this.groundAt(this.position.x, this.position.z) : null;
+    const ground = this.ground;
+    const groundBefore = this.state === 'air' && ground ? ground.at(this.position.x, this.position.z) : null;
     if (this.state === 'air') this.fly(dt);
-    const groundNow = groundBefore !== null ? this.groundAt(this.position.x, this.position.z) : null;
+    const groundNow = groundBefore !== null ? ground.at(this.position.x, this.position.z) : null;
     if (groundNow !== null && this.position.y - this.ellipsoidDepth() <= groundNow) {
-      this.meetGround(groundNow, dt);
+      // Ice may give way under it (the header: the ground's `meet`); else it lands on the ground.
+      const met = ground.meet?.(this, groundNow) ?? null;
+      if (met?.hole) impact = this.breakThrough(met, dt);
+      else this.meetGround(groundNow, dt);
     } else if (this.state === 'air') {
       // Only near the water is the mesh worth walking for its lowest point.
       if (surfaceAt && this.position.y <= this.reach * this.radius + CREST_REACH) surface = surfaceAt(this.position.x, this.position.z);
       const touching = this.position.y - surface <= this.reach * this.radius && this.position.y + this.lowestOffset() <= surface;
-      // A skip stone's contact is worked out at once: if it skips, the stone follows it (`skim`) and the touch is reported.
       // In a pool, a touch beyond a wall is the wall's (src/pool.js turns the stone back off it).
       const walled = this.skip?.inside && !this.skip.inside(this.position.x, this.position.z);
-      const contact = touching && this.velocity.y < 0 && this.skip && !walled ? this.skim(surface) : null;
-      if (contact?.skips) {
+      // On a frozen lake the water is only in its holes (the header: the ground's `meet`): one too small for it is the
+      // ice's edge, which holds (it lands on the ice) or breaks (it goes in through it).
+      const met = touching && this.velocity.y < 0 && !walled && ground?.meet ? ground.meet(this, null) : null;
+      // A skip stone's contact is worked out at once: if it skips, the stone follows it (`skim`) and the touch is reported
+      // (on open water: a hole wide enough for it is that).
+      const open = !met || (met.ground === undefined && !met.broke);
+      const contact = touching && this.velocity.y < 0 && this.skip && !walled && open ? this.skim(surface) : null;
+      if (met && met.ground !== undefined) {
+        this.meetGround(met.ground, dt);
+      } else if (met?.broke) {
+        impact = this.breakThrough(met, dt);
+      } else if (contact?.skips) {
         this.state = 'skim';
         this.skip.contact = contact;
         impact = this.skimReport(contact);
       } else if (touching && this.velocity.y < 0 && !walled) {
+        if (met?.hole) this.iceHole = met.hole;
         // A floater that bobbed clear comes back in quietly if slow (the header); anything else goes in as a throw does.
         if (this.hasFloated && -this.velocity.y < FLOAT.quietEntry) {
           this.position.y -= surface;
           impact = this.startFloating(this.velocity.y);
         } else {
           impact = this.goIn(dt, surface);
+          // Into a hole in the ice too narrow for its splash: no crown stands on the ice (src/splash.js).
+          if (met?.hole && !met.open) impact.throughIce = true;
         }
       }
     } else if (this.state === 'skim') {
@@ -2521,6 +2627,13 @@ export class Rock {
     if (this.state !== 'rest' && !this.turned) {
       const spin = new THREE.Quaternion().setFromAxisAngle(this.spinAxis, this.spinRate * dt);
       this.quaternion.premultiply(spin);
+      // Turned as it goes along the ground, or just off it, it stays on it (its ellipsoid's reach down changes as it
+      // turns); in the air, only if the turn took it under the ground by less than a step (more is a wall's side).
+      if (this.state === 'ground' && this.groundHeight !== null) this.position.y = this.groundHeight + this.ellipsoidDepth();
+      else if (this.state === 'air' && this.ground) {
+        const under = this.ground.at(this.position.x, this.position.z), bottom = this.position.y - this.ellipsoidDepth();
+        if (under !== null && bottom < under && bottom > under - GROUND.step) this.position.y += under - bottom;
+      }
     }
     // In its cavity's air until the pinch-off, under water once the surface has closed.
     // A skip's touch opens no hole, nor does a floater's ripple: what dips under the water is seen through it.

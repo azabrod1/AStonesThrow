@@ -125,9 +125,13 @@ function holdAirborne(rock, square) {
   }
 }
 
-/** The ground round the pool (src/rock.js groundAt): the deck's height outside the walls, null over the water inside them. */
+/**
+ * The ground round the pool (src/rock.js `ground`): its `at(x, z)` the
+ * deck's height outside the walls, null over the water inside them (a frozen
+ * pool's ice is src/ice.js's, over this).
+ */
 export function poolGround(square) {
-  return (x, z) => (x >= square.minX && x <= square.minX + square.size && z >= square.minZ && z <= square.minZ + square.size ? null : POOL.deck);
+  return { at: (x, z) => (x >= square.minX && x <= square.minX + square.size && z >= square.minZ && z <= square.minZ + square.size ? null : POOL.deck) };
 }
 
 /** Whether (x, z) lies inside the pool's walls less `margin` (a skip stone's radius: where it may touch the water; the aim's margin). */
@@ -184,7 +188,7 @@ function basinGeometry(pool, bottom, top, withFloor) {
  * the lighting's objects, the solver's grid sizes and the sky's cube, so
  * they follow a change of sky, water or quality.
  */
-export function createPool(water, lighting, ambientWaves, environment, { rings = null, haze = null, wet = { value: 0 } } = {}) {
+export function createPool(water, lighting, ambientWaves, environment, { rings = null, haze = null, wet = { value: 0 }, ice = null } = {}) {
   const pool = water.poolSquare;
   // Where the splash's drops came down on the deck (wetSpot): a map over the pool and WET_MAP.reach round it.
   const wetSpan = pool.size + 2 * WET_MAP.reach;
@@ -217,6 +221,7 @@ export function createPool(water, lighting, ambientWaves, environment, { rings =
       uDeck: { value: POOL.deck },
       ...ambientWaves.uniforms(),
       ...(rings ? rings.uniforms() : {}),
+      ...(ice ? ice.uniforms : {}),   // under a frozen pool's ice its surface focuses nothing (surfaceCurvature)
     },
   });
   const deckMaterial = new THREE.ShaderMaterial({

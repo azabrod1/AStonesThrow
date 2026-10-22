@@ -28,6 +28,135 @@ vec3 withHaze(vec3 color, float distance) {
 }
 `;
 
+// The ice (src/ice.js) as the water's own shaders draw it: a frozen lake is
+// its water's surface frozen, so the water's shaders draw the ice where its
+// mask (src/ice.js: R the signed distance to the nearest hole's edge, G the
+// distance to the nearest crack, each a byte over ±uIceFar) says there is
+// ice, and the water in its holes, blending the two over the pixel at a
+// hole's edge. WATER_VERTEX holds the patch flat under the ice;
+// WATER_FRAGMENT shades it (iceSurface); WATER_UNDER_FRAGMENT draws its
+// underside (iceCeiling). With the ice off (uIceOn 0) none of it runs.
+//
+// What it looks like (iceLook): a lake's ice is mostly clear ("black ice":
+// the water under it shows through, dark, and it mirrors the sky as still
+// water does), with patches of white snow ice that scatter the light
+// (ICE_WHITE: a share growing with the thickness, thick ice having more snow
+// ice on top), a frost that roughens the mirror in patches (ICE_FROST, the
+// rms slope of its unresolved roughness, evened to its mean where a pixel
+// spans many patches: seen along the ice, any change in how it reflects is
+// stretched into bands that read as waves), and bubbles frozen into it
+// (ICE_BUBBLE, clusters of white dots a few millimetres across, fading to
+// their mean as they shrink under a pixel). It is flat: frozen, it has no
+// ripples to bend the mirror.
+//
+// A crack is a fracture through the sheet: seen down through clear ice its
+// face shows as a white band on its far side, as wide as the sheet's
+// thickness seen along the refracted ray (h·tan θt times the share of the
+// view across the crack), fading with depth; in white ice it is a dark
+// line, water seeping up into it. The hole's broken edge is a fracture face
+// too, seen through the ice on its near side; around it the ice is wet,
+// darker, for ICE_WET_EDGE.
+export const ICE_COMMON = /* glsl */`
+uniform sampler2D uIceMask;
+uniform vec3 uIceArea;         // the mask's corner (x, z) and side (m)
+uniform float uIceOn;          // 1 while there is ice
+uniform float uIceTop;         // its top over the still water (m)
+uniform float uIceThickness;   // m
+uniform vec2 uIceFar;          // the caps of the mask's distances, a hole's and a crack's (m)
+uniform float uIceWet;         // how wet the rain has made it (src/main.js WEATHERS)
+#define ICE_INDEX 1.31
+#define ICE_WHITE vec2(0.12, 0.4)      // the share of the sheet that is white ice, thin (new, mostly clear) and thick
+#define ICE_WHITE_ALBEDO 0.62
+#define ICE_FROST vec2(0.06, 0.12)     // the frost's rms slope, from glazed to frosted
+#define ICE_MILK 0.07                  // the light even clear ice scatters back, against white ice's
+#define ICE_RIME 0.22                  // a rime of frost mottles it, at most this share of white ice's light
+#define ICE_BUBBLE 0.012               // metres: a cell of frozen bubbles...
+#define ICE_BUBBLE_CLUSTERS 0.12       // ...found in clusters over this share of the sheet
+#define ICE_CRACK_HALF_WIDTH 0.0007    // metres: a crack's own line
+#define ICE_WET_EDGE 0.04              // metres round a hole the ice is wet
+#define ICE_SKY_LIGHT 1.4
+#define ICE_FROST_LEVELS 320.0         // the sky cube's texels a radian, about (CUBE_SIZE in src/sky.js, 512, over π/2)...
+#define ICE_FROST_COARSEST 4.5         // ...blurred no further than this level (coarser, its faces' seams show)
+#define ICE_UNDER_GLOW 0.35            // the light white ice lets through to its underside, against what falls on its top
+
+// The mask at a world point: the signed distance to the nearest hole's edge
+// (negative in a hole) and to the nearest crack (signed by its side along
+// it). Beyond the mask, ice with no hole.
+vec2 iceMaskAt(vec2 worldXZ) {
+  vec2 uv = (worldXZ - uIceArea.xy) / uIceArea.z;
+  if (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0)))) return uIceFar;
+  return (texture2D(uIceMask, uv).rg * 255.0 - 127.5) / 127.5 * uIceFar;
+}
+
+// How much of a pixel footprint metres across at a point the mask says is
+// holeDistance from a hole's edge is ice: the edge antialiased. At the
+// mask's cap no edge is near, however wide the pixel (far off, where a hole
+// is finer than a pixel, it is ice).
+float iceCover(float holeDistance, float footprint) {
+  if (holeDistance >= 0.95 * uIceFar.x) return 1.0;
+  return smoothstep(-0.5, 0.5, holeDistance / max(footprint, 1e-5));
+}
+
+struct IceLook {
+  float white;           // the share of white ice
+  float slopeVariance;   // the frost's unresolved slope, for the mirror's blur and the sun's sheen
+  float bubbles;         // the share of the pixel frozen bubbles whiten
+};
+
+IceLook iceLook(vec2 worldXZ, float footprint) {
+  IceLook look;
+  float thickShare = smoothstep(0.01, 0.04, uIceThickness);
+  float whiteShare = mix(ICE_WHITE.x, ICE_WHITE.y, thickShare);
+  float patches = 0.5 * valueNoise(worldXZ * 0.55 + 3.1) + 0.27 * valueNoise(worldXZ * 1.9 + 7.7) + 0.15 * valueNoise(worldXZ * 6.3 + 1.3) + 0.08 * valueNoise(worldXZ * 23.0);
+  look.white = smoothstep(1.0 - whiteShare - 0.08, 1.0 - whiteShare + 0.08, patches) * (0.75 + 0.25 * valueNoise(worldXZ * 4.0 + 9.0));
+  // The rime: a mottle of frost over it all, in drifts a few decimetres across with a grain of centimetres, evened
+  // to its mean where a pixel spans its grain.
+  float rime = smoothstep(0.3, 0.95, 0.6 * valueNoise(worldXZ * 2.7 + 21.0) + 0.4 * valueNoise(worldXZ * 8.3 + 4.0)) * mix(0.55 + 0.45 * valueNoise(worldXZ * 31.0), 0.775, smoothstep(0.01, 0.05, footprint));
+  look.white = max(look.white, ICE_RIME * rime);
+  float frosted = mix(smoothstep(0.3, 0.75, valueNoise(worldXZ * 0.9 + 11.0)), 0.5, smoothstep(0.02, 0.15, footprint));
+  float frost = mix(mix(ICE_FROST.x, ICE_FROST.y, frosted), ICE_FROST.x, uIceWet);   // a film of rain glazes it
+  look.slopeVariance = frost * frost;
+  // Frozen bubbles: clusters of them (ICE_BUBBLE_CLUSTERS of the sheet, by
+  // a noise), in each cell of a cluster a dot of 0.7 to 2.5 mm radius at
+  // odds growing to its middle, half seen through the ice; under a pixel,
+  // their mean.
+  vec2 cell = floor(worldXZ / ICE_BUBBLE);
+  float seed = hash21(cell);
+  float cluster = smoothstep(1.0 - ICE_BUBBLE_CLUSTERS, 1.0 - 0.3 * ICE_BUBBLE_CLUSTERS, valueNoise(worldXZ * 3.1 + 5.0) * 0.7 + valueNoise(worldXZ * 9.0 + 2.0) * 0.3);
+  float present = step(1.0 - 0.55 * cluster, seed);
+  vec2 centre = (cell + 0.2 + 0.6 * vec2(hash21(cell + 17.0), hash21(cell + 41.0))) * ICE_BUBBLE;
+  float radius = mix(0.0007, 0.0025, hash21(cell + 73.0));
+  float speck = present * (1.0 - smoothstep(radius - 0.5 * footprint, radius + 0.5 * footprint, distance(worldXZ, centre)));
+  float mean = 0.55 * cluster * 3.14159 * 0.0016 * 0.0016 / (ICE_BUBBLE * ICE_BUBBLE);
+  look.bubbles = 0.55 * mix(speck, mean, smoothstep(0.0015, 0.006, footprint)) * (1.0 - look.white);
+  return look;
+}
+
+// A crack's own line at the surface, fromLine metres off it: its share of
+// a pixel footprint across (a line finer than the pixel, fainter).
+float iceCrackLine(float fromLine, float footprint) {
+  return (1.0 - smoothstep(ICE_CRACK_HALF_WIDTH - 0.5 * footprint, ICE_CRACK_HALF_WIDTH + 0.5 * footprint, abs(fromLine)))
+    * min(2.0 * ICE_CRACK_HALF_WIDTH / max(footprint, 1e-5), 1.0);
+}
+
+// A fracture face (a crack's, or a hole's broken edge) seen down through
+// clear ice, at a point along metres from its line on the side the view
+// looks across it to (positive where the face lies under the point), for a
+// view whose horizontal share across the line is across and whose
+// zenith's sine is sine: lit as white where the refracted ray meets the
+// face, fading with depth. The face reaches the sheet's thickness down.
+float fractureFace(float along, float across, float sine, float footprint) {
+  float sineInside = clamp(sine / ICE_INDEX, 0.0, 0.99);
+  float tangent = sineInside / sqrt(1.0 - sineInside * sineInside);
+  float width = uIceThickness * tangent * abs(across) + 1e-4;
+  // From its line, where it is brightest, fading out down the face (no hard far edge: the mask's distance there runs
+  // round the crack's turns), and as a band narrower than the pixel.
+  float depthShare = clamp(along / width, 0.0, 1.0);
+  float fade = (1.0 - depthShare) * (1.0 - depthShare);
+  return smoothstep(-0.5 * footprint, 0.5 * footprint, along) * fade * min(width / max(footprint, 1e-5), 1.0);
+}
+`;
+
 export const GLSL_COMMON = /* glsl */`
 #define PI 3.141592653589793
 
@@ -288,6 +417,7 @@ vec3 sunGlitter(vec3 normal, vec3 toViewer, vec3 toSun, vec3 sunIrradiance, floa
   float shadowing = beckmannShadowing(nDotV, slopeVariance) * beckmannShadowing(max(nDotL, 1e-3), slopeVariance);
   return sunIrradiance * distribution * shadowing * fresnel / max(4.0 * nDotV * nDotL, 1e-3) * nDotL;
 }
+${ICE_COMMON}
 `;
 
 // The foam's bubble pattern, for WATER_FRAGMENT. The foam map
@@ -680,7 +810,11 @@ void main() {
 #endif
   float height = uInner > 0.5 ? texture2D(uHeight, domainUv).r + ambientHeight(world.xz) : 0.0;
   if (uInner > 0.5 && uRingCount > 0) height += ringHeight(world.xz, uMeshCell);
-  world.y += height * mask;
+  // Under the ice (ICE_COMMON) the surface lies still, the sheet's top its freeboard over the water (things rest on it
+  // there, src/ice.js top): the sheet is rigid.
+  float icedHere = uIceOn > 0.5 ? smoothstep(0.0, 0.02, iceMaskAt(world.xz).x) : 0.0;
+  height *= 1.0 - icedHere;
+  world.y += height * mask + uIceTop * icedHere;
   vRest = world.xz;
 #ifdef CAVITY_MESH
   // The cavity is built on still water (src/cavity.js); the gale lifts it with the column.
@@ -721,6 +855,7 @@ uniform sampler2D uHeight;
 uniform sampler2D uFoam;
 uniform vec2 uFoamDrift;          // how far the wind has carried the foam (m): its pattern drifts with the map
 uniform sampler2D uReflection;    // the sky dome seen through a mirrored camera; alpha: nearness (MIRROR_COMMON, src/shaders/fluid.js)
+uniform samplerCube uSkyCube;     // the sky as the droplets reflect it (src/sky.js), mipmapped: the ice's frosted mirror
 uniform mat4 uReflectionMatrix;   // world -> reflection texture coordinates
 uniform vec4 uMirrorNear;         // the splash's image in the mirror, uv corners (x0, y0, x1, y1); empty (x0 > x1) when none
 uniform vec2 uMirrorSize;         // the mirror image's pixels
@@ -858,6 +993,83 @@ vec3 nearReflection(vec2 rippleUv, vec3 ray) {
   return texture2D(uReflection, flatTexel).rgb;
 }
 
+// The ice's surface at this pixel (ICE_COMMON; mask iceMaskAt's here,
+// footprint the pixel's on the water), before the haze: the mirror (the
+// still mirror's texel, turned by the frozen ripples, blurred toward the
+// sky's mean by the frost), with ice's Fresnel; under it the clear ice's
+// view of the water as still water shows it (the under-water pass, unbent)
+// or the light white ice and bubbles scatter; the sun's sheen on the frost;
+// the cracks and the hole's broken edge, their fracture faces seen through
+// the clear ice (fractureFace), and the wet round a hole.
+vec3 iceSurface(vec2 mask, float footprint) {
+  IceLook look = iceLook(vWorld.xz, footprint);
+  vec3 toCamera = cameraPosition - vWorld;
+  float viewDist = length(toCamera);
+  vec3 v = toCamera / viewDist;
+  vec3 n = vec3(0.0, 1.0, 0.0);
+  // Wet round a hole (the water the splash threw, and the edge's own seep), its edge ragged.
+  float wet = max(uIceWet, (1.0 - smoothstep(0.0, ICE_WET_EDGE, mask.x + 0.015 * (valueNoise(vWorld.xz * 40.0) - 0.5))) * 0.8);
+  float slopeVariance = mix(look.slopeVariance, ICE_FROST.x * ICE_FROST.x, wet);
+  float nDotV = max(dot(n, v), 0.0);
+  float fresnel = 0.018 + 0.982 * pow(1.0 - nDotV, 5.0);
+  vec3 reflectedRay = reflect(-v, n);
+  reflectedRay.y = max(reflectedRay.y, 0.001);
+  vec4 reflectCoord = uReflectionMatrix * vec4(reflectedRay, 0.0);
+  vec4 stillRayCoord = uReflectionMatrix * vec4(-v.x, v.y, -v.z, 0.0);
+  vec4 stillPointCoord = uReflectionMatrix * vec4(vWorld.x, uMirrorLevel, vWorld.z, 1.0);
+  vec2 reflectUv = stillPointCoord.xy / max(stillPointCoord.w, 1e-4) + reflectCoord.xy / max(reflectCoord.w, 1e-4) - stillRayCoord.xy / max(stillRayCoord.w, 1e-4);
+  vec3 reflected = uMirrorNear.x > uMirrorNear.z ? texture2D(uReflection, clamp(reflectUv, vec2(0.002), vec2(0.998))).rgb : nearReflection(reflectUv, reflectedRay);
+  // Frost spreads the reflected ray over about twice its rms slope: past a little frost the mirror is the sky's cube
+  // (the dome, which the mirror image holds but for what is near) blurred by its mip levels that wide (ICE_FROST_LEVELS
+  // a radian), the frost's own light (its milk) besides.
+  float spread = 2.0 * sqrt(slopeVariance);
+  vec3 frosted = textureCubeLodEXT(uSkyCube, reflectedRay, clamp(log2(max(spread * ICE_FROST_LEVELS, 1.0)), 0.0, ICE_FROST_COARSEST)).rgb;
+  reflected = mix(reflected, frosted, smoothstep(0.02, 0.12, spread));
+  vec2 screenUv = gl_FragCoord.xy / uResolution;
+  float surfaceDistZ = -vViewZ;
+  float rawDepth = texture2D(uUnderDepth, screenUv).r;
+  float underDistZ = rawDepth >= 1.0 ? uFar : -perspectiveDepthToViewZ(rawDepth, uNear, uFar);
+  float path = max(underDistZ - surfaceDistZ, 0.0) * viewDist / max(surfaceDistZ, 1e-4);
+  vec3 under = mix(uWaterColor, texture2D(uUnderColor, screenUv).rgb, exp(-uExtinction * path));
+  vec3 light = uSunIrradiance * max(dot(n, uSunDir), 0.0) + uSkyAmbient * ICE_SKY_LIGHT;
+  float grain = 0.85 + 0.15 * valueNoise(vWorld.xz * 70.0) + 0.1 * (valueNoise(vWorld.xz * 9.0) - 0.5);
+  vec3 scattered = ICE_WHITE_ALBEDO * light * mix(1.0, 0.6, wet) * mix(1.0, grain, smoothstep(0.004, 0.0005, footprint) * 0.5 + 0.5);
+  float white = clamp(look.white + look.bubbles + ICE_MILK * (1.0 - wet), 0.0, 1.0);
+  float clear = 1.0 - look.white;
+  // The fractures (ICE_COMMON): near a crack or a hole, the mask's gradient says which way its line runs.
+  float face = 0.0, line = 0.0;
+  if (mask.x < 0.95 * uIceFar.x || abs(mask.y) < 0.95 * uIceFar.y) {
+    float offset = 0.006;
+    vec2 alongX = iceMaskAt(vWorld.xz + vec2(offset, 0.0)), alongZ = iceMaskAt(vWorld.xz + vec2(0.0, offset));
+    vec2 travel = normalize(vWorld.xz - cameraPosition.xz + 1e-6);   // the way the eye's ray goes, level
+    float sine = length(v.xz);
+    vec2 crackGradient = vec2(alongX.y - mask.y, alongZ.y - mask.y) / offset;
+    // A crack's distance changes at one metre a metre across it. Where the field changes far faster it is a seam
+    // (between a texel by a crack and one past any crack's reach, the cap's sign unknown, or between two cracks' sides):
+    // no crack there.
+    float crackSlope = length(crackGradient);
+    if (abs(mask.y) < 0.95 * uIceFar.y && crackSlope > 0.2 && crackSlope < 1.8) {
+      float across = dot(travel, normalize(crackGradient));
+      face = max(face, fractureFace(-mask.y * sign(across), across, sine, footprint));
+      // Its line, brighter and dimmer along it as the break opened more or less.
+      line = iceCrackLine(mask.y, footprint) * (0.55 + 0.45 * valueNoise(vWorld.xz * 18.0));
+    }
+    vec2 edgeGradient = vec2(alongX.x - mask.x, alongZ.x - mask.x) / offset;
+    if (mask.x < 0.95 * uIceFar.x && dot(edgeGradient, edgeGradient) > 1e-6) {
+      float across = dot(travel, normalize(edgeGradient));
+      if (across < 0.0) face = max(face, fractureFace(mask.x, across, sine, footprint));
+    }
+  }
+  vec3 body = mix(under, scattered, white);
+  // A fracture face in clear ice turns the light back as a mirror would: it shows white, as the sky's light it sends up.
+  body = mix(body, scattered * 1.15, face * clear);
+  vec3 color = mix(body, reflected, fresnel * mix(1.0 - 0.6 * look.white, 1.0, wet));
+  color += min(sunGlitter(n, v, uSunDir, uSunIrradiance, slopeVariance + 1e-5), vec3(400.0)) * mix(1.0 - 0.5 * look.white, 1.0, wet);
+  // The crack's own line: bright in clear ice (its edges catch the light), dark in white ice (water seeps up it).
+  color = mix(color, mix(scattered * 1.2, under * 0.6, look.white), line);
+  return color;
+}
+
 void main() {
   if (cameraPosition.y > vWorld.y) {
     for (int index = 0; index < DRY_DISCS; index++) {
@@ -866,6 +1078,23 @@ void main() {
       if (dot(fromCentre, fromCentre) < uDryDiscs[index].z) discard;
     }
   }
+  // The ice (ICE_COMMON): where its mask says ice, the surface is the ice's (iceSurface), blended with the water's over
+  // the pixel at a hole's edge. A cavity's lip stands on no ice: what of it reaches over the ice, above the water, is gone.
+  float iceFootprint = max(length(dFdx(vWorld.xz)), length(dFdy(vWorld.xz)));
+  float iced = 0.0;
+  vec2 iceAt = vec2(0.0);
+#ifdef CAVITY_MESH
+  if (uIceOn > 0.5 && vWorld.y > -0.002 && iceMaskAt(vWorld.xz).x > 0.0) discard;
+#else
+  if (uIceOn > 0.5) {
+    iceAt = iceMaskAt(vWorld.xz);
+    iced = iceCover(iceAt.x, iceFootprint);
+    if (iced > 0.999) {
+      gl_FragColor = vec4(min(withHaze(iceSurface(iceAt, iceFootprint), length(cameraPosition - vWorld)), vec3(1000.0)), 1.0);
+      return;
+    }
+  }
+#endif
   float texelStep = 1.0 / uN;
   float hl = texture2D(uHeight, vDomainUv - vec2(texelStep, 0.0)).r;
   float hr = texture2D(uHeight, vDomainUv + vec2(texelStep, 0.0)).r;
@@ -1045,6 +1274,7 @@ void main() {
     color = mix(color, foamColor, look.cover * look.opacity);
   }
 
+  if (iced > 0.0) color = mix(color, iceSurface(iceAt, iceFootprint), iced);
   color = withHaze(color, viewDist);
   gl_FragColor = vec4(min(color, vec3(1000.0)), 1.0);
 }
@@ -1132,7 +1362,9 @@ vec3 floorSand(vec2 point) {
 // detail; outside the splash's patch, mask 0, there is nothing to sample);
 // the ambient ripples', a web of caustics drifting with them; and the
 // rings' (src/rings.js), each averaged over the pixel's footprint where its
-// sunlight crossed the surface, so a ring throws a ring of light. Called in
+// sunlight crossed the surface, so a ring throws a ring of light; under the
+// ice (ICE_COMMON) none of them, the frozen surface flat, but where the
+// sunlight crossed a hole's water. Called in
 // uniform control flow (it takes the crossing's screen derivatives).
 // causticLight is the irradiance against the sun's own for a focus of
 // 1 + focusing · depth · curvature (src/pondFloor.js): 1/focus for small
@@ -1161,6 +1393,8 @@ float surfaceCurvature(vec2 surfacePoint) {
   vec2 surfaceAcrossY = dFdy(surfacePoint);
   float curvature = laplacian * mask + ambientLaplacian(surfacePoint);
   if (uRingCount > 0) curvature += ringLaplacian(surfacePoint, surfaceAcrossX, surfaceAcrossY);
+  // Under the ice (ICE_COMMON) the surface is flat: it focuses nothing; only a hole's water does.
+  if (uIceOn > 0.5) curvature *= 1.0 - smoothstep(0.0, 0.02, iceMaskAt(surfacePoint).x);
   return curvature;
 }
 float causticLight(float focus) {
@@ -1251,7 +1485,8 @@ vec3 poolTiles(vec3 point, vec3 normal) {
 // mean sunlight dimmed by the water on its way down and on to the eye, and
 // scattered toward the eye by a forward-peaked phase function
 // (Henyey–Greenstein, SHAFT_FORWARD): bright looking toward the sun, faint
-// away from it.
+// away from it. Under the ice (ICE_COMMON) the sunlight is not focused, and
+// there are shafts only under its holes.
 export const UNDER_FOG = /* glsl */`
 uniform vec3 uExtinction;
 uniform vec3 uWaterColor;
@@ -1281,6 +1516,8 @@ vec3 underwaterShafts(vec3 origin, vec3 direction, float distance) {
     float depth = max(-point.y, 0.0);
     vec2 crossing = point.xz + toSun.xz / toSun.y * depth;
     float curvature = texture2DLodEXT(uAmbientHeight, crossing / uAmbientTileSize, SHAFT_LEVEL).a * uAmbientMetresPerUnit * gustEnvelope(crossing, uGustTime);
+    if (uIceOn > 0.5) curvature *= 1.0 - smoothstep(0.0, 0.02, iceMaskAt(crossing).x);   // under the ice, flat: no shafts
+
     float focus = 1.0 + focusing * depth * curvature;
     float irradiance = sqrt(1.0 + SHAFT_BLUR * SHAFT_BLUR) * inversesqrt(focus * focus + SHAFT_BLUR * SHAFT_BLUR);
     sum += (min(irradiance, 3.0) - 1.0) * exp(-uExtinction * (along + depth / refractedCosine));
@@ -1401,6 +1638,17 @@ void main() {
     float galeJacobian;
     slope += galeSlope(vRest, galeJacobian);
   }
+  // Under the ice (ICE_COMMON) the surface is still: its window shows the sky unrippled (iceCeiling below).
+  float iceFootprint = max(length(acrossX), length(acrossY));
+  float iced = 0.0;
+  vec2 iceAt = vec2(0.0);
+#ifndef CAVITY_MESH
+  if (uIceOn > 0.5) {
+    iceAt = iceMaskAt(vWorld.xz);
+    iced = iceCover(iceAt.x, iceFootprint);
+    slope *= 1.0 - iced;
+  }
+#endif
 #ifdef CAVITY_MESH
   vec3 n = normalize(vNormalWorld);
 #else
@@ -1452,8 +1700,17 @@ void main() {
 #endif
     color = mix(sky, color, fresnel);
   }
-  float foam = texture2D(uFoam, vDomainUv).r * vMask;
+  float foam = texture2D(uFoam, vDomainUv).r * vMask * (1.0 - iced);
   color = mix(color, (uSunIrradiance * max(uSunDir.y, 0.0) + uSkyAmbient) * FOAM_SEEN, smoothstep(0.05, 0.6, foam) * 0.8);
+  // The ice's underside: clear ice lets the window's sky through as still water does; white ice and its bubbles glow
+  // with the light they scatter down through the sheet; its cracks show dark.
+  if (iced > 0.0) {
+    IceLook look = iceLook(vWorld.xz, iceFootprint);
+    float white = clamp(look.white + look.bubbles, 0.0, 1.0);
+    vec3 glow = (uSunIrradiance * max(uSunDir.y, 0.0) + uSkyAmbient) * ICE_UNDER_GLOW;
+    vec3 ceiling = mix(color, glow, 0.85 * white) * (1.0 - 0.6 * iceCrackLine(iceAt.y, iceFootprint));
+    color = mix(color, ceiling, iced);
+  }
   gl_FragColor = vec4(min(throughWater(color, vWorld), vec3(1000.0)), 1.0);
 }
 `;

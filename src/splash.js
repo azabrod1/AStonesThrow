@@ -57,6 +57,14 @@
 // Each stage also stamps the height field and the foam map. A stone falling
 // straight in makes none of the oblique parts.
 //
+// Through ice (src/ice.js: the impact's `throughIce`, a thing that broke
+// through or went in by a hole too narrow for its splash) the lip is ice: no
+// crown or fan stands on it, and the rest is the open water's (the contact's
+// spray, the cavity, the jet, the bubbles, the foam). A drop that comes down
+// on the ice (setIce), not in a hole, is gone. On a frozen lake (water.iced)
+// a ring goes to the solver as a pool's does (launchRing): its waves run out
+// of sight under the ice, its near field in the hole as on the lake.
+//
 // A skip stone's touch (src/rock.js: the stone skims off the water within
 // tens of milliseconds) makes none of the stages (skim): it sends out a ring,
 // RING's source for a ball of the stone's face radius carrying the push the
@@ -713,6 +721,7 @@ export class SplashSystem {
     this.bases = [];        // scheduled: a jet's base meeting the water, when the hole's bowl has flattened
     this.cavities = [];  // open cavities (src/cavity.js), drawn in the main scene from cavityGroup
     this.ground = null;  // the pool's walls and deck (setGround), or none
+    this.ice = null;     // the ice over the water (setIce, src/ice.js), or none
     this.walls = null;   // the box the sheets and columns are held in (setGround)
     this.cavityGroup = new THREE.Group();
     this.surface = surface;
@@ -921,7 +930,11 @@ export class SplashSystem {
 
   // ---- choreography ----------------------------------------------------
 
-  /** Build the splash for a stone that has just touched the water. */
+  /**
+   * Build the splash for a stone that has just touched the water. Returns
+   * its cavity (src/cavity.js), which a hole in the ice is fitted to
+   * (src/ice.js fitCavity).
+   */
   impact(info, water) {
     const { x, z, speed, velocity, radius } = info;
     const sizeFactor = radius / REFERENCE_RADIUS;
@@ -984,20 +997,24 @@ export class SplashSystem {
     // A surface seal: the crown domes over the hole, its rim closing about
     // sqrt(R/g) after entry, and bursts from the top when the hole under it
     // pinches; its smooth rim sheds a third of the drops, the burst the rest.
+    // Through the ice (src/ice.js; info.throughIce, src/rock.js breakThrough) the lip is ice: no sheet stands on it,
+    // neither the crown nor the fan; the contact's spray flies, and the rest of the splash is the open water's.
     const sealed = choice.seal.kind === 'surface';
     const timeUnit = Math.sqrt(radius / GRAVITY);
     const rimShed = sealed ? Math.round(rimCount / 3) : rimCount;
-    const crown = new CrownSheet({
-      impact: info, startTime: this.time, rimDroplets: rimShed,
-      breakupDroplets: crownCount - sprayCount - rimShed, material: this.sheetDepthMaterial, rim: cavity, lopsided: choice.crown,
-      seal: sealed ? { time: choice.seal.dome * timeUnit, tear: cavity.pinchTime } : null,
-    });
-    this.crowns.push(crown);
-    this.particleScene.add(crown.mesh);
+    if (!info.throughIce) {
+      const crown = new CrownSheet({
+        impact: info, startTime: this.time, rimDroplets: rimShed,
+        breakupDroplets: crownCount - sprayCount - rimShed, material: this.sheetDepthMaterial, rim: cavity, lopsided: choice.crown,
+        seal: sealed ? { time: choice.seal.dome * timeUnit, tear: cavity.pinchTime } : null,
+      });
+      this.crowns.push(crown);
+      this.particleScene.add(crown.mesh);
+    }
 
     // The forward fan of an oblique entry: a thin, fast, low sheet ahead of
     // the crown, at a strength growing with the horizontal fraction.
-    const fanStrength = THREE.MathUtils.clamp((horizontalFraction - FAN_THRESHOLD) / (FAN_FULL - FAN_THRESHOLD), 0, 1);
+    const fanStrength = info.throughIce ? 0 : THREE.MathUtils.clamp((horizontalFraction - FAN_THRESHOLD) / (FAN_FULL - FAN_THRESHOLD), 0, 1);
     if (fanStrength > 0) {
       const fanCount = Math.round(THREE.MathUtils.clamp(FAN_DROPLETS * sizeFactor ** DROPLET_COUNT_POWER * Math.sqrt(entrySpeed / 6), 15, FAN_DROPLET_CAP) * fanStrength);
       const fan = new CrownSheet({
@@ -1088,6 +1105,7 @@ export class SplashSystem {
       spawned: 0, depth: Math.min(0.55, radius * 7), spread: sizeFactor,
       driftX: horizontal.x * pathSlope, driftZ: horizontal.y * pathSlope,
     });
+    return cavity;
   }
 
   /**
@@ -1209,7 +1227,9 @@ export class SplashSystem {
     const travel = Math.hypot(travelX, travelZ);
     const pairHeight = RING.ahead * travel * Math.abs(velocity) * Math.sqrt(sigma / GRAVITY);
     const directionX = travel > 0 ? travelX / travel : 1, directionZ = travel > 0 ? travelZ / travel : 0;
-    if (water.rings && water.pool) {
+    // A frozen lake's (water.iced, src/ice.js) as a pool's: its hole is too small for the analytic ring to read across,
+    // and its waves run under the ice, so the solver carries it (out of sight but in the holes).
+    if (water.rings && (water.pool || water.iced)) {
       this.poolRings.push({ time, x, z, sigma, velocity, pairHeight: travel > 0 ? pairHeight : 0, directionX, directionZ });
     } else if (water.rings) {
       water.rings.add({
@@ -1571,6 +1591,11 @@ export class SplashSystem {
           }
         }
       }
+      // Down on the ice (setIce): it lands there, out of the water; it rings nothing and leaves no foam.
+      if (this.ice && vy < 0 && y <= this.ice.top && this.ice.overWater(x, z) && !this.ice.holeAt(x, z)) {
+        this.removeDroplet(i);
+        continue;
+      }
       if ((y <= 0 && vy < 0) || this.ages[i] > 6) {
         if (y <= 0 && radius > 0.0016) landings.push({ x, z, radius, fallSpeed: -vy, speed: Math.sqrt(vx * vx + vy * vy + vz * vz), velocityX: vx, velocityZ: vz, flight: this.ages[i] });
         this.removeDroplet(i);
@@ -1855,6 +1880,11 @@ export class SplashSystem {
       const angle = Math.random() * Math.PI * 2, out = randomRange(0.15, 0.5) * fall;
       this.spawnDroplet(x, this.ground.deck + 0.002, z, 0.3 * vx + Math.cos(angle) * out, randomRange(0.15, 0.4) * fall, 0.3 * vz + Math.sin(angle) * out, radius * randomRange(0.25, 0.45));
     }
+  }
+
+  /** The ice over the water (src/ice.js IceSheet, while it is on; else null): a drop that comes down on it, not in a hole, is gone. */
+  setIce(sheet) {
+    this.ice = sheet?.on ? sheet : null;
   }
 
   /**

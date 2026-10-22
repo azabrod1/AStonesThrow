@@ -82,7 +82,7 @@
 // inside the pool); if no such touch lies along the tap's direction, along
 // the direction of the tap brought onto the water as a throw is; failing
 // that (a big stone thrown slowly in the pool) as far as it reaches, on the
-// deck, which it lands on as ground (src/rock.js groundAt, src/pool.js
+// deck, which it lands on as ground (src/rock.js `ground`, src/pool.js
 // poolGround). The aim's ring and arc show where it comes down. From there it skips on as
 // src/rock.js works out, out of the patch and the pool too. While a
 // press aims (or a mouse hovers) a ring on the water and a faint arc from
@@ -129,7 +129,23 @@
 // on the move (flying, skimming, sinking, tumbling); past a cap the oldest
 // of that kind shrinks away over FADE_SECONDS where it is, frozen
 // (keepWithinCaps, fadeOut), never vanishing at once. A floater a gale has
-// drifted FARTHEST_AFLOAT away goes at once, out of sight.
+// drifted, or a thing slid over the ice, FARTHEST_AWAY off goes at once, out
+// of sight.
+//
+// The ice. The Ice setting (setIce, remembered on this device; ?ice=)
+// freezes the water, the lake or the pool, ICE_THICKNESS thick (src/ice.js
+// IceSheet): everything thrown has it as ground (throwAt), so it lands on it,
+// slides and rests as on the deck, or, struck hard enough, breaks through it
+// and goes in as into open water (src/rock.js breakThrough), its hole fitted
+// to the splash's cavity in the step it opens (simulate: ice.fitCavity); a
+// floater that went in by a hole is held in it (collideThings' contain). Its
+// holes and cracks are painted into its mask once a frame (render:
+// ice.update), which the water's shaders draw it by (ICE_COMMON in
+// src/shaders/scene.js: the ice is the water's surface frozen, so it costs
+// no program of its own). On ice there is no gale (applyGale), a finger dips
+// only into a hole, the drops that land on it are gone (src/splash.js
+// setIce), and its breaks and cracks sound (src/sound.js ice). A change of
+// ice starts the pond still and the ice whole (applyIce).
 //
 // The pool. The Pool water (WATER_CLARITIES.pool) puts the rocks in a tiled
 // pool instead of the lake: the solver's patch becomes a basin whose walls
@@ -241,6 +257,7 @@ import { FingerInWater, FINGER } from './touch.js';
 import { createPool, holdInPool, poolGround, poolInside, POOL } from './pool.js';
 import { createSound } from './sound.js';
 import { createFloaterRide } from './floaterRide.js';
+import { IceSheet, ICE_THICKNESS } from './ice.js';
 
 // Quality presets. The splash lives in a few dozen pixels, so the fluid
 // buffer's resolution is what it is made of: a drop narrower than a buffer
@@ -343,7 +360,7 @@ const POOL_MARGIN = 0.25;     // metres inside the pool's walls a throw keeps to
 const EYE_EDGE = 0.3;         // metres inside the pool's edge over which the deck's height eases in for the eye
 const MOVING_MOST = 20;        // things on the move (flying, skimming, sinking, tumbling) at once: past this the oldest fades out (keepWithinCaps)
 const FADE_SECONDS = 0.6;      // a thing past a cap shrinks away over this long (fadeOut)
-const FARTHEST_AFLOAT = 30;    // m: a floater a gale has drifted this far from the pond is out of sight, and goes
+const FARTHEST_AWAY = 30;      // m: a floater a gale has drifted, or a thing slid over the ice, this far from the pond is out of sight, and goes
 const CATCH_UP = 12;           // a frame moves the world at most this many of its steps (simulate: 50 ms; the old frame's 12 substeps)
 const TRACE = { points: 4000, step: 0.01, marks: 100, cross: 0.06 };   // a stone's traced path (setTracing): at most this many points, one per this many metres it moves; at most this many touches and arc tops marked; a touch's cross this many metres each way
 const MIN_FOV = 8;            // degrees: the narrowest zoom
@@ -393,6 +410,7 @@ const SKY_STORAGE_KEY = 'stone-pond-sky';     // the Location setting's
 const TIME_STORAGE_KEY = 'stone-pond-time';   // the Time setting's: the local time ('hh:mm') of the hour last chosen
 const WEATHER_STORAGE_KEY = 'stone-pond-weather';   // the Weather setting's
 const THING_STORAGE_KEY = 'stone-pond-thing';       // the Object setting's: what is thrown (src/things.js)
+const ICE_STORAGE_KEY = 'stone-pond-ice';           // the Ice setting's: none, thin or thick (src/ice.js ICE_THICKNESS)
 // The Weather setting: the cloud's cover and the light under it, against a
 // clear sky's (src/sky.js setWeather: overcast takes the sun and greys the
 // sky), the rain's visibility (its haze), the rain (src/rain.js) and how wet
@@ -542,6 +560,10 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   // none until the Weather brings it (applyWeather). The pool's deck wets.
   const rain = new Rain(renderer, lighting, { texels: settings.rainTexels, gale: galeWaves.uniforms(), download: rainDownload });
   const wetDeck = { value: 0 };
+  // The ice over the water (src/ice.js), off until the Ice setting freezes it (applyIce); its uniforms join the
+  // water's, the rain's wet its too.
+  const ice = new IceSheet({ domainMin: water.domainMin, domainSize: water.domainSize });
+  ice.uniforms.uIceWet = wetDeck;
   // The rings that cross the whole pond: the splash hands them its ring
   // sources through the solver it is given (water.rings), and the surface,
   // the floor and the foam specks draw them.
@@ -552,11 +574,11 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   // the water is the pool's (setPooled). The bed the splash's holes and the
   // rocks rest on is the lake's (src/pondFloor.js), or the pool's floor,
   // whose walls hold the rocks in (holdInPool).
-  const pool = createPool(water, lighting, ambientWaves, environment, { rings, haze: environment.hazeUniforms, wet: wetDeck });
+  const pool = createPool(water, lighting, ambientWaves, environment, { rings, haze: environment.hazeUniforms, wet: wetDeck, ice });
   let pooled = false;
   const bedDepthAt = (x, z) => (pooled ? POOL.depth : floorDepthAt(x, z));
   water.floorDepthAt = bedDepthAt;
-  const surface = createWaterSurface(water, lighting, ambientWaves, { meshSegments: settings.meshSegments, rings, skyCube: environment.cubeTexture, rain, haze: environment.hazeUniforms, gale: galeWaves });
+  const surface = createWaterSurface(water, lighting, ambientWaves, { meshSegments: settings.meshSegments, rings, skyCube: environment.cubeTexture, rain, haze: environment.hazeUniforms, gale: galeWaves, ice });
   const floaterRide = createFloaterRide(surface.rideUniforms);   // the water under each floater, for the physics
   const splash = new SplashSystem({ environment, lighting, water, ambientWaves, surface });
   // The wind's strength: the page's ?windStrength, else the last choice here, else calm.
@@ -577,9 +599,9 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     galeWaves.setFoamVelocity(water.foamUniforms.uFoamVelocity.value);
     applyGale();
   }
-  /** The gale's waves, as the wind and the water have them: a pool's basin is too small to raise any. */
+  /** The gale's waves, as the wind and the water have them: a pool's basin is too small to raise any, and ice holds the water still. */
   function applyGale() {
-    const strength = pooled ? 0 : GALE_STRENGTHS[windName] ?? 0;
+    const strength = pooled || ice.on ? 0 : GALE_STRENGTHS[windName] ?? 0;
     galeWaves.setStrength(strength);
     surface.setGale(strength > 0);
   }
@@ -612,10 +634,24 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     splash.setGround(pooled ? { square: pool.square, deck: POOL.deck, onWet: (x, z, radius) => pool.wetSpot(x, z, radius) } : null);
   }
   applyGround();
+  // The ice (the header): the page's ?ice, else the last choice here, else none.
+  const storedIce = storedChoice(ICE_STORAGE_KEY);
+  const requestedIce = pageParameters.get('ice');
+  let iceName = Object.hasOwn(ICE_THICKNESS, requestedIce ?? '') ? requestedIce : Object.hasOwn(ICE_THICKNESS, storedIce ?? '') ? storedIce : 'none';
+  /** The ice by name (ICE_THICKNESS), whole, over the water there is (the pool's, or the lake's): the gale stilled, the splash's drops landing on it, the solver carrying a ring under it (src/splash.js launchRing). */
+  function applyIce(name = iceName) {
+    iceName = name;
+    ice.setThickness(ICE_THICKNESS[name]);
+    ice.setPool(pooled ? pool.square : null, pooled ? poolGround(pool.square) : null);
+    water.iced = ice.on;
+    splash.setIce(ice);
+    applyGale();
+  }
+  applyIce();
 
   const camera = new THREE.PerspectiveCamera(48, 1, 0.05, 60000);
   // The floor's pattern is baked once, a tile laid out on the world (src/pondFloor.js).
-  const floor = createPondFloor(water, lighting, ambientWaves, { renderer, rings });
+  const floor = createPondFloor(water, lighting, ambientWaves, { renderer, rings, ice });
   surface.setBed(floor.material.uniforms);   // the bed its mirror shows from under the water
   const floorPattern = floor.material.uniforms.uPattern.value;   // RGBA8, with its mip chain
   const floorPatternBytes = Math.round(floorPattern.image.width * floorPattern.image.height * 4 * (floorPattern.generateMipmaps ? 4 / 3 : 1));
@@ -1361,8 +1397,9 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       // In the pool it touches and skims only inside the walls, less its radius (src/pool.js holds it off them).
       if (pooled) rock.skip.inside = poolInside(pool.square, radius);
     }
-    // In the pool the deck is ground (src/pool.js poolGround).
-    if (pooled) rock.groundAt = poolGround(pool.square);
+    // In the pool the deck is ground (src/pool.js poolGround); on ice the ice is, over the deck round a frozen pool (src/ice.js).
+    if (ice.on) rock.ground = ice.ground;
+    else if (pooled) rock.ground = poolGround(pool.square);
     rocks.push(rock);
     sceneMain.add(rock.meshAbove);
     sceneUnder.add(rock.meshBelow);
@@ -1516,7 +1553,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   /** Dip the finger in under the client point, if it is over the water. */
   function startTouch(pointerId, clientX, clientY) {
     const point = aimPoint(clientX, clientY, FINGER.margin);
-    if (!point) return;
+    // On ice a finger dips only into a hole (the header).
+    if (!point || (ice.on && !ice.holeAt(point.x, point.z))) return;
     touching = { id: pointerId };
     finger.dip(point.x, point.z);
     showFinger(point);
@@ -1599,7 +1637,9 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     if (pinch) { if (tracked) movePinch(); return; }
     if (touching?.id === event.pointerId) {
       const point = aimPoint(event.clientX, event.clientY, FINGER.margin);
-      if (point) { finger.moveTo(point.x, point.z); showFinger(point); }
+      // Dragged out of its hole onto the ice, it lifts out.
+      if (point && ice.on && !ice.holeAt(point.x, point.z)) endTouch();
+      else if (point) { finger.moveTo(point.x, point.z); showFinger(point); }
       return;
     }
     if (pressStart?.id === event.pointerId) {
@@ -1677,6 +1717,10 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       simulationTime += step;
     }
   }
+  /** What holds things in (src/collide.js `contain`): the pool's walls, a hole in the ice; null with neither. */
+  function containThings(rock) {
+    return (pooled ? holdInPool(rock, pool.square) : null) ?? (ice.on ? ice.contain(rock) : null);
+  }
   function simulate(dt) {
     const frame = Math.min(dt, CATCH_UP * PHYSICS_STEP);
     // The tear and breakup fronts advance once per frame, so the splash needs the frame's length first.
@@ -1699,13 +1743,24 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
         if (tracing && (rock.state === 'air' || rock.state === 'skim' || impact)) traceRock(rock, impact);
         if (impact?.skim) { splash.skim(impact, water); sound.skip(impact, seenAfter()); }
         else if (impact?.ripple) { splash.ripple(impact, water); sound.ripple(impact, seenAfter()); }
-        else if (impact) { splash.impact(impact, water); sound.splash(impact, seenAfter()); }
-        for (const knock of rock.heard.splice(0)) sound.knock(knock, seenAfter());
+        else if (impact) {
+          const cavity = splash.impact(impact, water);
+          // A hole it broke in the ice, fitted to its cavity now, before the mask is painted (src/ice.js fitCavity).
+          if (impact.throughIce) ice.fitCavity(rock.iceHole, cavity);
+          sound.splash(impact, seenAfter());
+        }
+        // On ice its knock chirps (src/sound.js), the longer the farther from the ear (the eye).
+        for (const knock of rock.heard.splice(0)) {
+          sound.knock(knock.surface === 'ice' ? { ...knock, thickness: ice.thickness, distance: camera.position.distanceTo(rock.position) } : knock, seenAfter());
+        }
         if (impact && !impact.ripple) lastImpact = { x: impact.x, z: impact.z };
       }
+      // The ice's breaks and stars (src/ice.js events): its crack.
+      for (const event of ice.events.splice(0)) sound.ice(event, seenAfter());
       // A thing striking a floater, floaters bumping, the pool's walls turning things back (and a skipping stone off
-      // their sides, src/pool.js): src/collide.js; the knocked floater rings and throws off spray.
-      for (const { ripple, knock } of collideThings(stepping, pooled ? (rock) => holdInPool(rock, pool.square) : null)) {
+      // their sides, src/pool.js), a hole in the ice holding a floater in (src/ice.js contain): src/collide.js; the
+      // knocked floater rings and throws off spray.
+      for (const { ripple, knock } of collideThings(stepping, containThings)) {
         splash.ripple(ripple, water);
         splash.knock(knock);
         sound.knock({ speed: knock.closing, radius: ripple.rock.radius, bounce: ripple.rock.collisionBounce }, seenAfter());
@@ -1721,7 +1776,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
         const left = 1 - THREE.MathUtils.smoothstep(rock.fading, 0, FADE_SECONDS);
         if (left <= 0) retireRock(rock);
         else for (const mesh of rock.meshes) mesh.scale.setScalar(rock.radius * left);   // its meshes are scaled by its radius (src/rock.js)
-      } else if (rock.floats && Math.hypot(rock.position.x, rock.position.z) > FARTHEST_AFLOAT) retireRock(rock);
+      } else if ((rock.floats || rock.grounded) && Math.hypot(rock.position.x, rock.position.z) > FARTHEST_AWAY) retireRock(rock);
     }
     keepWithinCaps();   // things settle, and a lower preset keeps fewer
     if (!skip.solver) {
@@ -1737,6 +1792,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   function render() {
     for (const rock of rocks) { rock.flex(); rock.showWet(); }   // a soft thing's shape, and how wet each looks, as drawn now (src/rock.js)
     pool.setTime(simulationTime);            // its deck's splashed patches dry by it
+    ice.update();                            // what broke or cracked since, into its mask (src/ice.js)
     renderer.info.reset();
     framesRendered++;
     camera.updateMatrixWorld();
@@ -1805,6 +1861,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     uSunDir: { value: lighting.sunDirection },
     uSunIrradiance: { value: lighting.sunIrradiance },
     ...ambientWaves.uniforms(),
+    ...ice.uniforms,   // no shafts under the ice (underwaterShafts)
   });
   const hiddenFromBelow = () => [environment.sky, shore, pool.walls, pool.yard, marker, arc, ...rocks.map((rock) => rock.meshAbove)];
   function renderFromBelow() {
@@ -1867,6 +1924,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       wind: windName,
       gale: { blowing: galeWaves.on, sheetTriangles: surface.sheetTriangles },
       rain: { weather: weatherName, falling: rain.on, texels: rain.texels },
+      ice: { name: iceName, ...ice.budget },
       clarity: waterName,
       sky: environment.name,
       frameCapped,
@@ -2004,6 +2062,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     for (const rock of [...rocks]) retireRock(rock);
     water.clear();
     pool.dry();
+    ice.clear();   // whole again
     splash.reset(renderer);
     rings.reset();
     simulationTime = 0;
@@ -2025,7 +2084,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     pooled = asPool;
     clearPond();
     water.setPool(asPool);
-    applyGale();
+    applyIce();   // over the new water, and the gale with it
     showScenery(asPool);
     splash.setBed({ depth: bedDepthAt(water.centre[0], water.centre[1]), albedo: asPool ? POOL.tileAlbedo : undefined });
     applyGround();
@@ -2203,6 +2262,16 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       try { window.localStorage.setItem(WATER_STORAGE_KEY, name); } catch { /* storage refused: the choice lasts this visit */ }
     },
     get clarity() { return waterName; },
+    /** The ice by name (src/ice.js ICE_THICKNESS: none, thin, thick), remembered on this device: the pond starts still and the ice whole. */
+    setIce(name) {
+      if (!Object.hasOwn(ICE_THICKNESS, name)) return;
+      clearPond();
+      applyIce(name);
+      try { window.localStorage.setItem(ICE_STORAGE_KEY, name); } catch { /* storage refused: the choice lasts this visit */ }
+    },
+    get ice() { return iceName; },
+    /** The ice sheet itself (src/ice.js), for the probes: its holes, its mask. */
+    get iceSheet() { return ice; },
     /**
      * The sky by place (a key of SKIES in src/sky.js), remembered on this
      * device, at its hour nearest the time of day last chosen. Its photo

@@ -1,16 +1,20 @@
 // Things meeting things on the water: a stone or a ball striking a floater
 // (a basketball, a tennis ball, a light bowling ball, pumice: src/rock.js
-// `float`), and floaters bumping into each other. src/main.js calls
+// `float`), and floaters bumping into each other; and on the ground (the
+// pool's deck, a frozen lake's ice, src/ice.js): a thing sliding or rolling
+// into another, or coming down on one, knocks it along. src/main.js calls
 // collideThings every substep once the things have moved, and
-// tools/thing-probe.mjs checks it.
+// tools/thing-probe.mjs and tools/ice-probe.mjs check it.
 //
 // Each thing is a sphere for this (Rock.collisionRadius: a ball's radius, a
 // stone's mean semi-axis), where it is drawn (Rock.centre: its mesh's
 // position, which under a gale is lifted with the waves, and a floater's
 // riding the water's ripples and rings, src/floaterRide.js, so a stone in
 // the air meets a floater where it is seen). A pair meets when one of them is a floater
-// (afloat, bobbing, or on its way up) and their spheres overlap; things
-// that sink pass each other, as stones always have. Overlapping, they are
+// (afloat, bobbing, or on its way up), or on the ground (going along it or
+// at rest on it: Rock.grounded, which a knock sets going again and the
+// ground holds up), and their spheres overlap; things that sink pass each
+// other, as stones always have. Overlapping, they are
 // moved apart along the line between their centres, each by its share of
 // the overlap (the lighter the more); closing, they exchange the impulse of
 // a collision along that line,
@@ -117,7 +121,7 @@ function collidePass(things, knocks) {
   for (let first = 0; first < things.length; first++) {
     for (let second = first + 1; second < things.length; second++) {
       const one = things[first], other = things[second];
-      if (!one.collides || !other.collides || !(one.floater || other.floater)) continue;
+      if (!one.collides || !other.collides || !(one.floater || other.floater || one.grounded || other.grounded)) continue;
       between.copy(other.centre).sub(one.centre);
       const distance = between.length();
       const reach = one.collisionRadius + other.collisionRadius;

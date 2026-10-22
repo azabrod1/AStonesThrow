@@ -24,7 +24,8 @@
 //     down at it leaves at (a range: a stone's lumps strike unevenly),
 //     `friction` (Coulomb), `roll` ('solid', 'shell' or none: a ball keeps 5/7
 //     or 3/5 of its speed along the ground once it rolls; a thing that does
-//     not roll tumbles) and `rolling`, its rolling resistance.
+//     not roll tumbles; a shell is hollow, and strikes ice softer, src/ice.js)
+//     and `rolling`, its rolling resistance.
 //   - air: `drag`, its drag coefficient in flight (on the disc of its nominal
 //     radius: 0.47 a ball's; a pizza, flat on, more), and its `model`:
 //     `ballistic` (it tumbles as it flies) or `flutter` (a flat thing: a plate
@@ -337,6 +338,7 @@ export function defineThing(key, definition, { trial = true } = {}) {
     look: { ...DEFAULTS.look, thumbnail: `assets/things/thumbs/${key}.jpg`, ...definition.look },
     abilities: { ...DEFAULTS.abilities, ...definition.abilities },
     material: { ...definition.material, roll: definition.material.roll ? ROLLS[definition.material.roll] : null },
+    hollow: definition.material.roll === 'shell',   // a ball whose roll is a shell's is hollow (src/ice.js spreads its blow)
     sphere: definition.body.shape === 'sphere',
     byDiameter: size.by === 'diameter',
     sizeShare: size.share ?? null,

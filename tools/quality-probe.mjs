@@ -251,6 +251,24 @@ const backOnLake = await page.evaluate(() => window.__pond.budget.programs);
 check(backOnLake === programsBeforePool, `back on the lake, still no new program (${backOnLake})`);
 await checkBuilt(phone, 'back on the lake');
 
+// The ice (src/ice.js): the water's own programs draw it (ICE_COMMON in src/shaders/scene.js), so freezing the water, a
+// throw that breaks it and a frozen pool compile nothing; on ice no gale blows, and the hole is in the budget.
+const programsBeforeIce = await page.evaluate(() => window.__pond.budget.programs);
+await page.evaluate(() => { window.__pond.setIce('thin'); window.__pond.advance(0.1); });
+const iced = await page.evaluate(() => window.__pond.budget);
+check(iced.ice.name === 'thin' && iced.ice.thickness === 0.01 && iced.programs === programsBeforeIce && !iced.gale.blowing,
+  `thin ice compiles no program (${programsBeforeIce} before, ${iced.programs} drawing it) and stills any gale`);
+await page.evaluate(() => { window.__pond.throwAt(0, -1.4, { radius: 0.03, power: 'normal' }); window.__pond.advance(1.0); });
+const broken = await page.evaluate(() => window.__pond.budget);
+check(broken.ice.holes >= 1 && broken.programs === programsBeforeIce, `a stone through thin ice breaks a hole (${broken.ice.holes}) and compiles no program (${broken.programs})`);
+await page.evaluate(() => { window.__pond.setClarity('pool'); window.__pond.throwAt(0, -1, { radius: 0.03, power: 'normal' }); window.__pond.advance(1.0); });
+const frozenPool = await page.evaluate(() => window.__pond.budget);
+check(frozenPool.ice.name === 'thin' && frozenPool.programs === programsBeforeIce, `a frozen pool and a throw into it compile no program (${frozenPool.programs})`);
+await page.evaluate(() => { window.__pond.setClarity('lake'); window.__pond.setIce('none'); window.__pond.advance(0.1); });
+const thawed = await page.evaluate(() => window.__pond.budget);
+check(thawed.ice.name === 'none' && thawed.ice.holes === 0 && thawed.programs === programsBeforeIce, `open water again compiles nothing (${thawed.programs})`);
+await checkBuilt(phone, 'after the ice');
+
 // Every kind of thing (src/things.js), thrown and followed until the floaters float in the mirror image, compiles no program.
 const programsBeforeThings = await page.evaluate(() => window.__pond.budget.programs);
 const namesBeforeThings = await programNames(page);
