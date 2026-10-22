@@ -919,6 +919,11 @@
       <span class="menu-tier-name"><b>Water</b><small>Lake, pond or pool</small></span>
       <span class="menu-tier-value"></span><span class="menu-tier-chevron" aria-hidden="true">&rsaquo;</span>
     </button>
+    <button type="button" class="menu-tier" data-open="ice">
+      <svg class="menu-tier-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.6v14.8M3.6 6.3l12.8 7.4M3.6 13.7l12.8-7.4"></path><path d="M8.2 3.9 10 5.4l1.8-1.5M8.2 16.1 10 14.6l1.8 1.5M3.9 8.6l2.3.6-.4 2.2M16.1 8.6l-2.3.6.4 2.2"></path></svg>
+      <span class="menu-tier-name"><b>Ice</b><small>Open water or frozen over</small></span>
+      <span class="menu-tier-value"></span><span class="menu-tier-chevron" aria-hidden="true">&rsaquo;</span>
+    </button>
     <button type="button" class="menu-tier" data-open="time">
       <svg class="menu-tier-icon" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7.2"></circle><path d="M10 6v4l2.7 1.7"></path></svg>
       <span class="menu-tier-name"><b>Time of day</b><small>Dawn to night</small></span>
@@ -1036,6 +1041,18 @@
         <button type="button" role="radio" data-value="storm">Storm</button>
       </div>
       <div class="menu-note" id="weather-note" aria-live="polite"></div>
+    </div>
+  </div>
+  <div class="menu-page" data-page="ice" hidden>
+    <div class="menu-head"><button type="button" class="menu-back" aria-label="Back"><span aria-hidden="true">&lsaquo;</span></button><h3>Ice</h3></div>
+    <div class="menu-field">
+      <div class="menu-field-label" id="ice-label">Water</div>
+      <div class="menu-seg" id="ice" role="radiogroup" aria-labelledby="ice-label" aria-describedby="ice-note">
+        <button type="button" role="radio" data-value="none">Open</button>
+        <button type="button" role="radio" data-value="thin">Thin ice</button>
+        <button type="button" role="radio" data-value="thick">Thick ice</button>
+      </div>
+      <div class="menu-note" id="ice-note" aria-live="polite"></div>
     </div>
   </div>
   <div class="menu-page" data-page="wind" hidden>
@@ -1310,6 +1327,11 @@
         under: 'Under the water, the sky in a bright window overhead and the tiles mirrored in the surface past it.',
         turned: 'Turned by hand. Drag the water to look around; Reset view comes back to the deck.',
       },
+      ice: {
+        none: 'Open water.',
+        thin: 'A centimetre of ice: a stone or a bowling ball breaks through and splashes, cracks running out from its hole; a light ball, a gem or a pebble skids away. No waves rise under it.',
+        thick: 'Four centimetres of ice: what is thrown clatters and slides far over it, and only a big rock, or a heavy ball lobbed high, breaks through.',
+      },
       wind: {
         calm: 'Still water: the shore stands in it as in a mirror.',
         breeze: 'Light ripples that blur the reflections.',
@@ -1535,6 +1557,12 @@
       settings.setValue('water', label('water', pond.clarity));
       showView();   // the pool's views are told otherwise
     }
+    const showIce = radioGroup(document.getElementById('ice'), (value) => { pond.setIce(value); updateIce(); });
+    function updateIce() {
+      showIce(pond.ice);
+      settings.setValue('ice', label('ice', pond.ice));
+      document.getElementById('ice-note').textContent = NOTES.ice[pond.ice];
+    }
     const showWind = radioGroup(document.getElementById('wind'), (value) => { pond.setWind(value); updateWind(); });
     // The weather: the sky clouds over at once; the first rain fetches its rings' table (about 0.6 MB).
     const weatherNote = document.getElementById('weather-note');
@@ -1678,6 +1706,7 @@
     showView();
     updateThing();
     updateWater();
+    updateIce();
     updateWeather();
     updateWind();
     showQuality();
