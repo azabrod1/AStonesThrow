@@ -1,194 +1,217 @@
-// CPU probe of the Worthington jet (src/jet.js), without a browser.
+// CPU probe of the Worthington jet: the slender-jet solver (src/slenderJet.js)
+// against the physics it should reproduce, and the jet (src/jet.js) against
+// the reference simulation (tools/basilisk), without a browser.
 //
-// Runs one JetColumn of the default (clean) form over the bowl the stone's
-// cavity leaves (src/cavity.js, a deep seal for a stone dropped straight in,
-// or thrown with the given horizontal fraction), with stand-ins for the
-// splash and the water, substeps of 1/240 s and a geometry evaluation every
-// 1/60 s, and prints its timeline (the needle clearing the surface, tip
-// pinches, breakup, fall-back), the drops it made, the volume accounting,
-// whether the grid normals face outward, and the CPU cost per frame (after a
-// few silent jets, so the code is warm).
+//   node tools/jet-probe.mjs [stoneRadius=0.03] [entrySpeed=6.3] [horizontalFraction=0]
 //
-//   node tools/jet-probe.mjs [stoneRadius=0.03] [entrySpeed=6.3] [profileSecondsAfterEntry=0.3] [horizontalFraction=0]
-//
-// A horizontal fraction of the entry speed makes the jet of an oblique entry,
-// as SplashSystem.impact does: its body slower by 0.3 times it, its needle's
-// extra speed lower by 0.9 times it, and leaning back (here towards +z, the
-// stone having travelled towards −z) by 0.4 of the entry angle, at most 18°;
-// the lean line says where its top and its drops went.
-//
-// The profile line gives the column's diameter where it leaves the water and
-// up it, at the given time after the stone's entry. The landing lines fly the
-// drops of 4 mm and more (the ones that throw a crown where they land) with
-// the splash's own drag and substeps, and say when and how fast they reach
-// the water.
-import { JetColumn } from '../src/jet.js';
+// Checks, failing with exit code 1 if any fails:
+//   - the solver, on columns of water 1 mm in radius without gravity:
+//     a varicose wave grows at the slender-jet model's rate
+//     sqrt(σ/(2ρa³)·x²(1 − x²)) (x = k·a; within GROWTH_TOLERANCE at x = 0.4
+//     and 0.7, past the start-up transient, the column perturbed at rest);
+//     a free end draws back at Taylor–Culick's sqrt(σ/(ρa)) (within
+//     RETRACTION_TOLERANCE); a column perturbed at the most unstable
+//     wavelength breaks into drops of 1.89 radii (Rayleigh: the water of one
+//     wavelength; within DROP_TOLERANCE, the satellites between them under
+//     a radius); and every one of these keeps its water to rounding;
+//   - the jet of the given stone (by default the reference: a 3 cm stone
+//     straight in at 6.3 m/s), run as the splash runs it (over the bowl the
+//     stone's cavity leaves, src/cavity.js, a clean form, frames of 1/60 s in
+//     substeps of 1/240 s): it is the same, drop for drop, when the frames
+//     fall otherwise (1/30 s, and uneven ones), since the solver steps on
+//     its own clock; for the reference it clears the surface, throws its
+//     first drop and reaches its highest within REFERENCE's ranges of the
+//     simulation's (results/comparison.md: 118 ms, drops of 2 to 6 mm from
+//     120 ms on, the joined top 75 to 81 cm at 0.2 to 0.33 s, the highest tip
+//     1.39 m), and no drop it throws is over LARGEST_DROP;
+//   - its cost: the solver's and the drawing's milliseconds per frame (mean
+//     and worst), warm (after a few silent jets), printed; the mean under
+//     COST_MOST.
+// It also prints the jet's timeline: when its water clears the surface and
+// how fast, its top, its drops (count, sizes, the first few) and the water
+// that fell back.
+import { SlenderJet } from '../src/slenderJet.js';
+import { JetColumn, CLEAN_FORM } from '../src/jet.js';
 import { Cavity } from '../src/cavity.js';
 
 const stoneRadius = Number(process.argv[2] ?? 0.03);
 const entrySpeed = Number(process.argv[3] ?? 6.3);
-const profileAfterEntry = Number(process.argv[4] ?? 0.3);
-const horizontalFraction = Number(process.argv[5] ?? 0);
+const horizontalFraction = Number(process.argv[4] ?? 0);
+const isReference = process.argv.length <= 2;
+
+const SURFACE_TENSION = 0.072, DENSITY = 1000;
+const GROWTH_TOLERANCE = 0.08;
+const RETRACTION_TOLERANCE = 0.03;
+const DROP_TOLERANCE = 0.06;
+const LARGEST_DROP = 0.012;          // m
+const COST_MOST = 3;                 // ms per frame, the solver and the drawing, warm
+// The reference simulation's jet (tools/basilisk/results/comparison.md) and how far from it the app may be.
+const REFERENCE = {
+  emerges: [0.105, 0.16],            // s after entry: the simulation 118 ms
+  firstDrop: [0.11, 0.2],            // s after entry: the simulation 120 ms
+  firstDropRadius: [0.0005, 0.006],  // m: the simulation's first drops 2.4 and 3.7 mm
+  highest: [0.6, 1.6],               // m: the joined top 75 to 81 cm, the highest tip 1.39 m
+};
+const failures = [];
+const check = (condition, message) => { if (!condition) failures.push(message); return condition; };
+const millimetres = (metres) => (metres * 1000).toFixed(2);
+
+// ---- the solver against the physics ------------------------------------------
+
+/** A straight column along x, radius a0·(1 + amplitude·cos(k·s)), at rest, no gravity. */
+function column(radius, wavenumber, wavelengths, amplitude, segmentsPerWave = 9) {
+  const solver = new SlenderJet({ capacity: 4000, gravity: 0 });
+  const wavelength = (2 * Math.PI) / wavenumber;
+  const segments = Math.round(wavelengths * segmentsPerWave);
+  const spacing = (wavelength * wavelengths) / segments;
+  for (let node = 0; node <= segments; node++) solver.push(node * spacing, 0, 0, 0, 0, 0);
+  for (let segment = 0; segment < segments; segment++) {
+    const local = radius * (1 + amplitude * Math.cos(wavenumber * (segment + 0.5) * spacing));
+    solver.volume[segment] = Math.PI * local * local * spacing;
+  }
+  return { solver, wavelength };
+}
+function run(solver, seconds) {
+  let time = 0;
+  while (time < seconds) {
+    const step = Math.min(solver.stableStep(), seconds - time);
+    solver.advance(step);
+    time += step;
+    solver.refine(time);
+  }
+}
+/** The varicose amplitude over the column's middle two wavelengths (a share of its radius). */
+function amplitude(solver, wavelength, radius) {
+  solver.measure();
+  const middle = 0.5 * (solver.positionX[0] + solver.positionX[solver.count - 1]);
+  let least = Infinity, most = 0;
+  for (let node = 0; node < solver.count - 1; node++) {
+    if (solver.chainEnd[node]) continue;
+    const centre = 0.5 * (solver.positionX[node] + solver.positionX[node + 1]);
+    if (Math.abs(centre - middle) > wavelength) continue;
+    least = Math.min(least, solver.segmentRadius[node]);
+    most = Math.max(most, solver.segmentRadius[node]);
+  }
+  return (most - least) / (2 * radius);
+}
+const radius = 0.001;
+for (const share of [0.4, 0.7]) {
+  const { solver, wavelength } = column(radius, share / radius, 12, 0.002);
+  const theory = Math.sqrt((SURFACE_TENSION / (2 * DENSITY * radius ** 3)) * share * share * (1 - share * share));
+  const span = 2 / theory;
+  run(solver, span);   // past the start-up transient (a perturbation at rest grows as cosh)
+  const before = amplitude(solver, wavelength, radius);
+  run(solver, span);
+  const growth = Math.log(amplitude(solver, wavelength, radius) / before) / span;
+  console.log(`Rayleigh–Plateau at k·a = ${share}: grows at ${growth.toFixed(1)} /s, the model's ${theory.toFixed(1)} /s`);
+  check(Math.abs(growth / theory - 1) <= GROWTH_TOLERANCE, `growth at k·a = ${share}: ${growth.toFixed(1)} /s against ${theory.toFixed(1)}`);
+}
+{
+  const solver = new SlenderJet({ capacity: 4000, gravity: 0 });
+  const spacing = 1.2 * radius, segments = 400;
+  for (let node = 0; node <= segments; node++) solver.push(node * spacing, 0, 0, 0, 0, 0);
+  for (let segment = 0; segment < segments; segment++) solver.volume[segment] = Math.PI * radius * radius * spacing;
+  run(solver, 0.06);
+  const early = solver.positionX[0];
+  run(solver, 0.06);
+  const speed = (solver.positionX[0] - early) / 0.06;
+  const theory = Math.sqrt(SURFACE_TENSION / (DENSITY * radius));
+  console.log(`Taylor–Culick: the free end draws back at ${speed.toFixed(3)} m/s, sqrt(σ/ρa) ${theory.toFixed(3)} m/s, its bulb ${millimetres(solver.beadRadius(0))} mm`);
+  check(Math.abs(speed / theory - 1) <= RETRACTION_TOLERANCE, `Taylor–Culick: ${speed.toFixed(3)} m/s against ${theory.toFixed(3)}`);
+}
+for (const segmentsPerWave of [9, 4]) {
+  const { solver } = column(radius, 0.7 / radius, 16, 0.01, segmentsPerWave);
+  const water = solver.water();
+  run(solver, 0.25);
+  const drops = solver.events.filter((event) => event.kind === 'drop');
+  const sizes = drops.map((drop) => drop.radius / radius).sort((first, second) => second - first);
+  // The main drops: past the two bulbs the ends gathered, those over a radius.
+  const main = sizes.slice(2).filter((size) => size > 1);
+  const kept = (solver.water() + drops.reduce((sum, drop) => sum + drop.volume, 0)) / water - 1;
+  const mean = main.reduce((sum, size) => sum + size, 0) / Math.max(main.length, 1);
+  console.log(`breakup (${segmentsPerWave} segments a wavelength): ${main.length} main drops of ${mean.toFixed(2)} radii (Rayleigh 1.89), satellites ${sizes.filter((size) => size < 1).slice(0, 4).map((size) => size.toFixed(2)).join(' ')}; water kept to ${kept.toExponential(1)}`);
+  check(main.length >= 10 && Math.abs(mean / 1.89 - 1) <= DROP_TOLERANCE, `breakup at ${segmentsPerWave} segments a wavelength: main drops ${mean.toFixed(2)} radii`);
+  check(Math.abs(kept) < 1e-9, `breakup: water off by ${kept}`);
+}
+
+// ---- the jet ----------------------------------------------------------------
+
 const sizeFactor = stoneRadius / 0.03;
-// As SplashSystem.impact: JET_SPEED, JET_OBLIQUE_SLOWING, NEEDLE_OBLIQUE.
+// As SplashSystem.impact: JET_SPEED, JET_OBLIQUE_SLOWING, NEEDLE_OBLIQUE, JET_LEAN.
 const speed = Math.min(Math.max(0.75 * entrySpeed, 1.5), 8.0) * sizeFactor ** 0.15 * (1 - 0.3 * horizontalFraction);
-const needle = 1 + (3.0 - 1) * (1 - 0.9 * horizontalFraction);
+const needle = 1 + (CLEAN_FORM.needle - 1) * (1 - 0.9 * horizontalFraction);
 const lean = Math.min(0.4 * Math.asin(horizontalFraction), (18 * Math.PI) / 180);
-const leaning = { lean, leanX: 0, leanZ: 1 };
-const budget = Math.round(Math.min(Math.max(220 * sizeFactor ** 1.3, 80), 1200));
-// The cavity's bowl: a deep seal, its nominal timing.
 const sinking = entrySpeed * Math.sqrt(1 - horizontalFraction ** 2);
 const cavity = new Cavity({
   impact: { x: 0, z: -1.4, height: stoneRadius, speed: entrySpeed, velocity: { x: 0, y: -sinking, z: -entrySpeed * horizontalFraction }, radius: stoneRadius },
   startTime: 0, drawn: false, lean,
 });
-const pinchDelay = cavity.pinchTime;   // the jet starts at the pinch-off
-// As SplashSystem.impact: the jet carries JET_SHARE (0.25) of the water that fills the bowl.
-const bowl = { floor: (age, out) => cavity.bowlFloorAt(cavity.pinchTime + age, out), bowlUnit: cavity.bowlUnit, volume: 0.25 * cavity.bowlVolume };
-const form = { needle };
+const pinch = cavity.pinchTime;
+const launch = { floor: (age, out) => cavity.bowlFloorAt(cavity.pinchTime + age, out), bowlUnit: cavity.bowlUnit, volume: 0.25 * cavity.bowlVolume };
+const parkMiller = (seed) => { let state = seed; return () => { state = (state * 16807) % 2147483647; return state / 2147483647; }; };
+const makeJet = () => new JetColumn({ x: 0, z: -1.4, radius: stoneRadius, speed, startTime: 0, material: null, lean, leanX: 0, leanZ: 1, ...launch, form: { ...CLEAN_FORM, needle }, random: parkMiller(12345) });
 
-const drops = [];
-const splash = {
-  frameSeconds: 1 / 60,
-  spawnDroplet: (x, y, z, vx, vy, vz, radius) => drops.push({ time: clock, x, y, z, vx, vy, vz, radius }),
-  spawnFoamSpecks: (x, z, innerRadius, outerRadius, count) => splats.push({ time: clock, kind: 'specks', radius: outerRadius, count }),
-};
-const splats = [];
-const water = { addSplat: (splat) => splats.push({ time: clock, kind: 'splat', ...splat }), addFoam: (foam) => splats.push({ time: clock, kind: 'foam', ...foam }) };
+/** Run a jet to its end with the given frames (seconds each, cycled), substeps of a quarter frame; what it did. */
+function runJet(frames, timed = false) {
+  const jet = makeJet();
+  const drops = [];
+  const splash = { time: 0, frameSeconds: frames[0], spray: null, spawnDroplet: (x, y, z, vx, vy, vz, dropRadius) => drops.push({ time: splash.time, x, y, z, vx, vy, vz, radius: dropRadius }), spawnFoamSpecks() {} };
+  const water = { addSplat() {}, addFoam() {} };
+  const record = { jet, drops, emerged: null, emergeSpeed: 0, top: 0, update: [], geometry: [] };
+  let time = 0;
+  for (let frame = 0; !jet.finished && time < 4; frame++) {
+    const seconds = frames[frame % frames.length];
+    splash.frameSeconds = seconds;
+    let started = performance.now();
+    for (let substep = 0; substep < 4; substep++) {
+      time += seconds / 4;
+      splash.time = time;
+      jet.update(time, seconds / 4, splash, water);
+    }
+    const updated = performance.now();
+    if (!jet.finished) jet.updateGeometry(time);
+    const drawn = performance.now();
+    if (timed) { record.update.push(updated - started); record.geometry.push(drawn - updated); }
+    const top = jet.solver.count > 0 ? jet.topHeight() : -Infinity;
+    record.top = Math.max(record.top, top);
+    if (record.emerged === null && top > 0) { record.emerged = time + pinch; record.emergeSpeed = jet.solver.velocityY[0]; }
+    started = drawn;
+  }
+  return record;
+}
+for (let warmUp = 0; warmUp < 3; warmUp++) runJet([1 / 60]);
+const steady = runJet([1 / 60], true);
+const halting = runJet([1 / 30]);
+const uneven = runJet([1 / 60, 1 / 45, 1 / 120, 1 / 50]);
+// The same jet whatever the frames: its drops' radii (each frame pattern hands them over carried on to its own time).
+const sameDrops = (first, second) => first.drops.length === second.drops.length && first.drops.every((drop, index) => Math.abs(drop.radius - second.drops[index].radius) < 1e-12);
+check(sameDrops(steady, halting), `frames of 1/30 s change the jet: ${halting.drops.length} drops against ${steady.drops.length}`);
+check(sameDrops(steady, uneven), `uneven frames change the jet: ${uneven.drops.length} drops against ${steady.drops.length}`);
 
-let clock = 0;
-for (let warmUp = 0; warmUp < 5; warmUp++) {
-  const quiet = new JetColumn({ x: 0, z: -1.4, radius: stoneRadius, speed, startTime: 0, budget, material: null, ...leaning, ...bowl, form });
-  const nowhere = { frameSeconds: 1 / 60, spawnDroplet() {}, spawnFoamSpecks() {}, addSplat() {}, addFoam() {} };
-  for (let tick = 1; !quiet.finished && tick < 480; tick++) {
-    quiet.update(tick / 240, 1 / 240, nowhere, nowhere);
-    if (tick % 4 === 0) quiet.updateGeometry(tick / 240);
-  }
+const { jet, drops } = steady;
+const big = drops.filter((drop) => drop.radius >= 0.002);
+const thrown = drops.filter((drop) => drop.vy > 0);
+const firstDrop = thrown.find((drop) => drop.radius >= 0.001) ?? thrown[0];
+const largest = drops.reduce((most, drop) => Math.max(most, drop.radius), 0);
+const highest = Math.max(steady.top, jet.highest);
+console.log(`\nstone ${millimetres(stoneRadius)} mm at ${entrySpeed} m/s${horizontalFraction > 0 ? ` (horizontal fraction ${horizontalFraction}, lean ${((lean * 180) / Math.PI).toFixed(1)}°)` : ''}: body ${speed.toFixed(2)} m/s, needle ${jet.tipSpeed.toFixed(2)} m/s, ` +
+  `pinch ${(pinch * 1000).toFixed(0)} ms after entry, ${(cavity.pinchDepth * 1000).toFixed(0)} mm down, launch over ${(jet.launchEnd * 1000).toFixed(0)} ms, Rj ${millimetres(jet.columnRadius)} mm`);
+console.log(`  clears the surface ${steady.emerged === null ? 'never' : `${(steady.emerged * 1000).toFixed(0)} ms after entry, rising ${steady.emergeSpeed.toFixed(1)} m/s`}; its water reaches ${(highest * 100).toFixed(1)} cm; gone ${((jet.age + pinch) * 1000).toFixed(0)} ms after entry`);
+console.log(`  drops: ${drops.length}, ${big.length} of 2 mm and more, the largest ${millimetres(largest)} mm; the first thrown up ${firstDrop ? `${((firstDrop.time + pinch) * 1000).toFixed(0)} ms after entry, ${millimetres(firstDrop.radius)} mm, ${Math.hypot(firstDrop.vx, firstDrop.vy, firstDrop.vz).toFixed(1)} m/s, ${(firstDrop.y * 100).toFixed(1)} cm up` : 'none'}`);
+console.log(`  the first ten thrown up (ms after entry / radius mm / height cm / speed m/s): ${thrown.slice(0, 10).map((drop) => `${((drop.time + pinch) * 1000).toFixed(0)}/${millimetres(drop.radius)}/${(drop.y * 100).toFixed(0)}/${Math.hypot(drop.vx, drop.vy, drop.vz).toFixed(1)}`).join('  ')}`);
+console.log(`  water: launched ${((jet.volume(0, jet.launchEnd) + jet.baseWater) * 1e6).toFixed(0)} ml (the sleeve's ${(jet.baseWater * 1e6).toFixed(0)}), fell back ${(jet.solver.fallen * 1e6).toFixed(0)} ml, in drops ${(drops.reduce((sum, drop) => sum + (4 / 3) * Math.PI * drop.radius ** 3, 0) * 1e6).toFixed(0)} ml`);
+const mean = (values) => values.reduce((sum, value) => sum + value, 0) / Math.max(values.length, 1);
+const updateMean = mean(steady.update), geometryMean = mean(steady.geometry);
+const worst = Math.max(...steady.update.map((value, index) => value + steady.geometry[index]));
+console.log(`  CPU, warm: ${updateMean.toFixed(2)} ms per frame stepping, ${geometryMean.toFixed(2)} drawing, the worst frame ${worst.toFixed(1)} ms`);
+check(largest <= LARGEST_DROP, `a drop of ${millimetres(largest)} mm, over ${millimetres(LARGEST_DROP)}`);
+check(updateMean + geometryMean <= COST_MOST, `the jet costs ${(updateMean + geometryMean).toFixed(2)} ms a frame, over ${COST_MOST}`);
+if (isReference) {
+  const within = (value, [low, high]) => value !== null && value !== undefined && value >= low && value <= high;
+  check(within(steady.emerged, REFERENCE.emerges), `the jet clears the surface ${steady.emerged} s after entry, outside ${REFERENCE.emerges}`);
+  check(firstDrop && within(firstDrop.time + pinch, REFERENCE.firstDrop), `the first drop ${firstDrop ? firstDrop.time + pinch : 'never'} s after entry, outside ${REFERENCE.firstDrop}`);
+  check(firstDrop && within(firstDrop.radius, REFERENCE.firstDropRadius), `the first drop ${firstDrop ? millimetres(firstDrop.radius) : '-'} mm, outside ${REFERENCE.firstDropRadius}`);
+  check(within(highest, REFERENCE.highest), `the jet's water reaches ${highest.toFixed(2)} m, outside ${REFERENCE.highest}`);
 }
-const jet = new JetColumn({ x: 0, z: -1.4, radius: stoneRadius, speed, startTime: 0, budget, material: null, ...leaning, ...bowl, form });
-const totalVolume = jet.volume(0, jet.launchEnd);
-const substep = 1 / 240;
-let frameSeconds = 0;
-let geometryMilliseconds = 0;
-let geometryCalls = 0;
-let updateMilliseconds = 0;
-let updateCalls = 0;
-let lastPhase = jet.phase;
-let profiled = false;
-let lastTipDrops = 0;
-let worstInward = 0;
-const millimetres = (metres) => (metres * 1000).toFixed(1);
-console.log(`stone ${millimetres(stoneRadius)} mm at ${entrySpeed} m/s${horizontalFraction > 0 ? ` (horizontal fraction ${horizontalFraction}, lean ${(lean * 180 / Math.PI).toFixed(1)}°)` : ''}: body ${speed.toFixed(2)} m/s, needle ${jet.tipSpeed.toFixed(2)} m/s, ` +
-  `pinch ${(cavity.pinchDepth * 1000).toFixed(0)} mm down, T ${(jet.launchDuration * 1000).toFixed(0)} ms of ${(jet.launchEnd * 1000).toFixed(0)} ms, ` +
-  `first bulb ${millimetres(jet.firstBulbRadius)} mm, jet volume ${(totalVolume * 1e6).toFixed(1)} ml, budget ${budget} drops, jet starts ${(pinchDelay * 1000).toFixed(0)} ms after entry`);
-let emerged = false;
-
-while (!jet.finished && clock < 2) {
-  clock += substep;
-  const dropsBeforeUpdate = drops.length;
-  let started = performance.now();
-  jet.update(clock, substep, splash, water);
-  updateMilliseconds += performance.now() - started;
-  updateCalls++;
-  if (!emerged && jet.heightAt(0) > 0) {
-    emerged = true;
-    console.log(`  ${(clock * 1000).toFixed(0)} ms (${((clock + pinchDelay) * 1000).toFixed(0)} after entry): the needle clears the surface at ${jet.evaluate(0, jet.state).vy.toFixed(2)} m/s`);
-  }
-  if (jet.tipDrops !== lastTipDrops) {
-    // The tip drop is the largest of those this pinch made (the rest are the neck's spray).
-    const drop = drops.slice(dropsBeforeUpdate).reduce((largest, candidate) => (candidate.radius > largest.radius ? candidate : largest));
-    console.log(`  ${(clock * 1000).toFixed(0)} ms (${((clock + pinchDelay) * 1000).toFixed(0)} after entry): tip drop ${jet.tipDrops}, radius ${millimetres(drop.radius)} mm at ${millimetres(drop.y)} mm high, rising ${drop.vy.toFixed(2)} m/s`);
-    lastTipDrops = jet.tipDrops;
-  }
-  if (jet.phase !== lastPhase) {
-    console.log(`  ${(clock * 1000).toFixed(0)} ms (${((clock + pinchDelay) * 1000).toFixed(0)} after entry): breakup starts at tau ${(jet.endTau / jet.launchDuration).toFixed(2)} T, foot at ${(jet.footTau() / jet.launchDuration).toFixed(2)} T`);
-    lastPhase = jet.phase;
-  }
-  if (!profiled && clock + pinchDelay >= profileAfterEntry - 1e-9) {
-    profiled = true;
-    jet.updateGeometry(clock);
-    const columns = 24;
-    const rows = jet.positions.length / 3 / columns;
-    const rings = [];
-    for (let row = 6; row < rows; row++) {
-      const first = (row * columns) * 3, opposite = (row * columns + columns / 2) * 3;
-      rings.push({
-        y: 0.5 * (jet.positions[first + 1] + jet.positions[opposite + 1]),
-        diameter: Math.hypot(jet.positions[first] - jet.positions[opposite], jet.positions[first + 1] - jet.positions[opposite + 1], jet.positions[first + 2] - jet.positions[opposite + 2]),
-      });
-    }
-    const top = jet.positions[1];
-    if (lean > 0) console.log(`  lean ${(clock + pinchDelay).toFixed(3)} s after entry: top ${millimetres(jet.positions[2] + 1.4)} mm back from the collapse point, ${(Math.atan2(jet.positions[2] + 1.4, top) * 180 / Math.PI).toFixed(1)}° from vertical`);
-    // Rings run from the cap down to the foot; interpolate the diameter at a height.
-    const diameterAt = (height) => {
-      for (let index = 1; index < rings.length; index++) {
-        const upper = rings[index - 1], lower = rings[index];
-        if (lower.y <= height && upper.y >= height) return lower.diameter + (upper.diameter - lower.diameter) * (height - lower.y) / Math.max(upper.y - lower.y, 1e-9);
-      }
-      return NaN;
-    };
-    console.log(`  profile ${(clock + pinchDelay).toFixed(3)} s after entry: top ${millimetres(top)} mm, diameter ${millimetres(diameterAt(0))} mm at the water, ${millimetres(diameterAt(0.05))} mm 5 cm up, ${millimetres(diameterAt(0.5 * top))} mm at mid-height, ${millimetres(diameterAt(0.85 * top))} mm under the bulb, bulb ${millimetres(2 * jet.end.radius)} mm`);
-  }
-  frameSeconds += substep;
-  if (frameSeconds >= 1 / 60 - 1e-9 && !jet.finished) {
-    frameSeconds = 0;
-    started = performance.now();
-    jet.updateGeometry(clock);
-    geometryMilliseconds += performance.now() - started;
-    geometryCalls++;
-    // Normals of the rings below the cap must point away from the ring's centre.
-    const columns = 24;
-    const rows = jet.positions.length / 3 / columns;
-    for (let row = 7; row < rows - 1; row++) {
-      let centreX = 0, centreY = 0, centreZ = 0;
-      for (let column = 0; column < columns; column++) {
-        const vertex = (row * columns + column) * 3;
-        centreX += jet.positions[vertex] / columns; centreY += jet.positions[vertex + 1] / columns; centreZ += jet.positions[vertex + 2] / columns;
-      }
-      for (let column = 0; column < columns; column++) {
-        const vertex = (row * columns + column) * 3;
-        const outX = jet.positions[vertex] - centreX, outY = jet.positions[vertex + 1] - centreY, outZ = jet.positions[vertex + 2] - centreZ;
-        const outLength = Math.hypot(outX, outY, outZ);
-        if (outLength < 1e-6) continue;
-        const facing = (outX * jet.normals[vertex] + outY * jet.normals[vertex + 1] + outZ * jet.normals[vertex + 2]) / outLength;
-        worstInward = Math.min(worstInward, facing);
-      }
-    }
-    if (geometryCalls % 6 === 0) {
-      const top = jet.positions[1];
-      const footY = jet.positions[((rows - 1) * columns) * 3 + 1];
-      let widest = 0;
-      for (let row = 6; row < rows; row++) widest = Math.max(widest, Math.hypot(jet.positions[(row * columns) * 3] - jet.positions[(row * columns + 12) * 3], jet.positions[(row * columns) * 3 + 2] - jet.positions[(row * columns + 12) * 3 + 2]) / 2);
-      const middle = jet.evaluate(0.5 * (jet.endTau + jet.footTau()), jet.state);
-      console.log(`    ${(clock * 1000).toFixed(0)} ms: top ${millimetres(top)} mm, foot ${millimetres(footY)} mm, cap ${millimetres(jet.end.radius)} mm, mid-column radius ${millimetres(middle.radius)} mm, widest ring ${millimetres(widest)} mm, drops so far ${drops.length}`);
-    }
-  }
-}
-const volumeOf = (radius) => (4 / 3) * Math.PI * radius ** 3;
-const dropVolume = drops.reduce((sum, drop) => sum + volumeOf(drop.radius), 0);
-const fallen = jet.volume(jet.footTau(), jet.launchEnd);
-const big = drops.filter((drop) => drop.radius > 0.002);
-console.log(`  ${(clock * 1000).toFixed(0)} ms (${((clock + pinchDelay) * 1000).toFixed(0)} after entry): column gone`);
-console.log(`drops: ${drops.length} (${big.length} over 2 mm), radii ${big.map((drop) => millimetres(drop.radius)).join(' ')}`);
-console.log(`volume: drops ${(dropVolume * 1e6).toFixed(1)} ml + fallen back about ${(fallen * 1e6).toFixed(1)} ml of ${(totalVolume * 1e6).toFixed(1)} ml launched`);
-console.log(`water: ${splats.map((splat) => `${splat.kind} r ${millimetres(splat.radius)} mm${splat.height ? ` h ${millimetres(splat.height)} mm` : ''}${splat.velocity ? ` v ${splat.velocity.toFixed(2)}` : ''}${splat.amount ? ` amount ${splat.amount.toFixed(2)}` : ''}${splat.count ? ` count ${splat.count}` : ''}`).join('; ')}`);
-// Fly the big drops to the water as SplashSystem.update does.
-const landings = [];
-for (const drop of drops.filter((candidate) => candidate.radius >= 0.004)) {
-  let { x, y, z, vx, vy, vz } = drop;
-  let time = drop.time;
-  while (time < 3) {
-    const speed = Math.hypot(vx, vy, vz);
-    const drag = Math.min((0.00027 / drop.radius) * speed * substep, 0.5);
-    vx -= vx * drag; vy -= vy * drag; vz -= vz * drag;
-    vy -= 9.81 * substep;
-    x += vx * substep; y += vy * substep; z += vz * substep;
-    time += substep;
-    if (y <= 0 && vy < 0) break;
-  }
-  landings.push({ time: time + pinchDelay, radius: drop.radius, speed: Math.hypot(vx, vy, vz), offset: Math.hypot(x, z + 1.4) });
-}
-landings.sort((first, second) => first.time - second.time);
-console.log(`landings of drops over 4 mm (s after entry, radius, speed, distance from the jet): ${landings.map((landing) => `${landing.time.toFixed(3)} s ${millimetres(landing.radius)} mm ${landing.speed.toFixed(2)} m/s ${millimetres(landing.offset)} mm`).join('; ')}`);
-console.log(`normals: worst outward cosine ${worstInward.toFixed(3)} (negative means some point inward)`);
-console.log(`CPU: ${(geometryMilliseconds / Math.max(geometryCalls, 1) * 1000).toFixed(0)} µs per frame for the geometry over ${geometryCalls} frames, ${(updateMilliseconds / updateCalls * 1000).toFixed(1)} µs per substep update`);
+console.log(failures.length === 0 ? '\njet-probe: all checks pass' : `\njet-probe: ${failures.length} checks fail:\n  ${failures.join('\n  ')}`);
+process.exitCode = failures.length === 0 ? 0 : 1;

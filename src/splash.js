@@ -41,17 +41,19 @@
 //      the body under it, and a broad slow base that the bowl's collapse
 //      builds, so it stretches as it rises. Its body leaves at JET_SPEED of
 //      the entry speed (the needle up to three times faster), carrying
-//      JET_SHARE of the water that fills the bowl. Its tip pinches off into
-//      drops, then the column breaks from the top down into drops about twice
-//      its local radius while its slow base falls back into a mound (its ring
-//      is part of the stone's, above). After an oblique entry it leans back
+//      JET_SHARE of the water that fills the bowl. The column in flight is
+//      physics (src/slenderJet.js, the slender-jet equations): where it
+//      beads, how its tip draws back and pinches, the drops it throws and
+//      their sizes come out of it, and what it drains back into the pool
+//      makes a mound (its ring is part of the stone's, above). After an
+//      oblique entry it leans back
 //      along the stone's path by JET_LEAN·θ (at most JET_LEAN_CAP) and, from a
 //      dragged cavity, is slower by JET_OBLIQUE_SLOWING times the horizontal
 //      fraction and its needle's extra speed lower by NEEDLE_OBLIQUE times it
-//      (a sheared hole focuses less). Each throw's jet
-//      has a form of its own (the variety notes above chooseSplash): clean,
-//      with none to four tip drops, leaning towards a lopsided hole's bulge,
-//      ragged, stubby, split in two, or none at all (only a low mound).
+//      (a sheared hole focuses less). Each throw's collapse launches its jet
+//      its own way (the variety notes above chooseSplash): clean, leaning
+//      towards a lopsided hole's bulge, ragged, stubby, or none at all (only
+//      a low mound).
 //   4. Bubbles entrained with the stone follow it down its path, rise and
 //      burst into foam.
 // Each stage also stamps the height field and the foam map. A stone falling
@@ -250,7 +252,7 @@ import { BUBBLE_VERTEX, BUBBLE_FRAGMENT } from './shaders/scene.js';
 const GRAVITY = 9.81;
 const REFERENCE_RADIUS = 0.03;   // the stone size the tuning constants were set for
 const MAX_CROWNS = 5;            // an older crown tears at once when another arrives
-const MAX_JETS = 4;              // an older jet breaks into drops at once when another starts (a split jet is two)
+const MAX_JETS = 4;              // an older jet breaks into drops at once when another starts
 const LANDING_CROWN_RADIUS = 0.004;   // drops this big throw a crown where they land...
 const MAX_LANDING_CROWNS = 6;         // ...while fewer than this many are alive...
 const LANDING_CROWN_FLIGHT = 0.05;    // ...if they have flown this long (s)...
@@ -497,24 +499,25 @@ const smoothstep = (edgeLow, edgeHigh, value) => {
 //     lopsided the hole is (`hole`, src/cavity.js: an oval following the
 //     stone's own outline, a bulge, lobes and an off-centre closure) and how
 //     far the jet leans towards the bulge.
-//   - the jet's form, drawn with weights. A clean jet needs a symmetric,
-//     singular collapse to focus it (Gekle & Gordillo 2010), which an
-//     irregular stone breaks: leaning (a lopsided collapse throws the column
-//     towards the bulge, BULGE_LEAN plus LEANING_EXTRA, whipping as it goes)
-//     grows with the asymmetry; ragged (the column comes apart early from the
-//     top into irregular drops and spray) with the asymmetry, faster for a
-//     fast entry, and with an oblique one; stubby (short and fat: the collapse
-//     focuses less) with the stone's size (its lower Froude number) and a
-//     blunt entry; split (two columns from a strongly lopsided collapse) is
-//     rare; a clean jet takes the rest, its tip beads (0 to 4, of varying
-//     sizes, with satellites), its height and its beads varying throw to
-//     throw. After a surface seal the dome takes the jet's push: a weak ragged
-//     or stubby jet, or none (no jet clears the water: once the bowl has
-//     nearly filled, MOUND_DELAY, a low glassy mound heaves up and subsides
-//     in a fizz of small drops); after a shallow seal mostly a stubby one.
-//     For the default 6 cm stone thrown normally four jets in ten are clean,
-//     a fifth to a quarter ragged, one in six leans, one in eight is stubby
-//     and a few split or never rise (tools/variety-probe.mjs).
+//   - the jet's form: how the collapse launches it (jetForm), drawn with
+//     weights. The collapse is not solved here, only the column it throws
+//     (src/slenderJet.js), so the forms set the launch alone: its focus, the
+//     needle's speed (a clean, fast needle needs a symmetric, singular
+//     collapse, Gekle & Gordillo 2010, which an irregular stone breaks), its
+//     thickness, speed, lean, wobble and how unevenly it leaves (the seed the
+//     column's own instability grows). Leaning (a lopsided collapse throws
+//     the column towards the bulge, BULGE_LEAN plus LEANING_EXTRA) grows with
+//     the asymmetry; ragged (an uneven, turbulent collapse, launched rough,
+//     so the column comes apart along its length) with the asymmetry, faster
+//     for a fast entry, and with an oblique one; stubby (short and fat: the
+//     collapse focuses less) with the stone's size (its lower Froude number)
+//     and a blunt entry; a clean jet takes the rest. After a surface seal the
+//     dome takes the jet's push: a weak ragged or stubby jet, or none (no jet
+//     clears the water: once the bowl has nearly filled, MOUND_DELAY, a low
+//     glassy mound heaves up and subsides); after a shallow seal mostly a
+//     stubby one. For the default 6 cm stone thrown normally four jets in ten
+//     are clean, a fifth to a quarter ragged, one in six leans, one in eight
+//     is stubby and a few never rise (tools/variety-probe.mjs).
 // Every jet also leans back along an oblique stone's path (JET_LEAN) and
 // sideways where the lift bent the funnel (PATH_LEAN), at most JET_LEAN_MOST.
 const SEAL_FROUDE = 108;              // the surface seal's boundary for a vertical smooth sphere: (ρ/ρa)²/6400 (Birkhoff & Isaacs 1951)...
@@ -606,7 +609,6 @@ function chooseSplash(info, random, fixed = null) {
         leaning: 0.05 + 0.55 * asymmetry,
         ragged: 0.1 + 0.3 * asymmetry * (0.5 + fast) + 0.15 * oblique,
         stubby: 0.12 + 0.5 * big + 0.25 * smoothstep(0.5, 1.5, blunt),
-        split: 0.015 + 0.08 * asymmetry * asymmetry,
       };
   const regime = fixed?.regime ?? pick(weights);
   return { seal, asymmetry, hole, crown, regime, range, random, sizeFactor, surfaceChance, nominal: Boolean(fixed?.regime) };
@@ -624,64 +626,51 @@ function lightJet(density = STONE_DENSITY) {
 }
 
 /**
- * A jet's form for its regime (src/jet.js, CLEAN_FORM), its launch speed's
- * scale and its own lean towards the hole's bulge (degrees), from the
- * throw's stream.
+ * A jet's form for its regime (src/jet.js, CLEAN_FORM): how the collapse
+ * launches its water (its focus, thickness, unevenness and wobble), its
+ * launch speed's scale and its own lean towards the hole's bulge (degrees),
+ * from the throw's stream. What the column then does is src/slenderJet.js's.
+ * A collapse is the less even the more lopsided the stone's hole (the
+ * roughness grows with the asymmetry).
  */
-function jetForm(regime, choice, bodySpeed) {
-  const { range, random, asymmetry } = choice;
-  const count = (weights) => { let draw = random(); for (let value = 0; value < weights.length; value++) { draw -= weights[value]; if (draw <= 0) return value; } return weights.length - 1; };
-  const beadShares = () => Array.from({ length: 5 }, () => range(0.035, 0.095));
+function jetForm(regime, choice) {
+  const { range, asymmetry } = choice;
   const bulgeLean = BULGE_LEAN[0] + (BULGE_LEAN[1] - BULGE_LEAN[0]) * asymmetry;
-  const rise = bodySpeed / GRAVITY;   // how long the body rises
   const sealed = choice.seal.kind === 'surface';
-  // A jet that pinches many tip beads pinches its first sooner (a thicker
-  // neck will do) and gathers the next ones faster.
-  const clean = (tipBeads = count([0.08, 0.25, 0.3, 0.24, 0.13])) => ({
-    ...CLEAN_FORM,
-    tipBeads, beadShares: beadShares(), firstBulb: range(1.3, 1.95), neckRatio: range(0.42, 0.52) + 0.05 * tipBeads, gatherScale: range(0.25, 0.5) * (1 - 0.12 * tipBeads), needle: range(2.5, 3.3),
-    radiusScale: range(0.85, 1.15), breakScale: range(0.8, 1.3), dropSpread: [0.55, 1.4], dropCap: range(0.8, 1.2),
-    scatter: range(0.8, 1.6), satellites: range(0.4, 0.8), tipSatellites: Math.floor(range(0, 3)), wobble: range(0.7, 1.6),
-    irregularity: range(0.15, 0.4), splitTip: random() < 0.1, bend: range(-0.02, 0.03),
-  });
+  const rough = (low, high) => range(low, high) * (1 + 2 * asymmetry);
   switch (regime) {
     case 'leaning':
+      // A lopsided collapse throws the column towards the bulge, focusing it less.
       return {
-        form: { ...clean(count([0.25, 0.4, 0.25, 0.1])), bend: range(0.03, 0.08), wobble: range(1, 2), needle: range(1.8, 2.6) },
+        form: { ...CLEAN_FORM, needle: range(1.8, 2.6), radiusScale: range(0.9, 1.15), roughness: rough(0.012, 0.025), wobble: range(1, 2) },
         speedScale: range(0.75, 0.95), lean: bulgeLean + range(LEANING_EXTRA[0], LEANING_EXTRA[1]),
       };
     case 'ragged':
+      // An uneven, turbulent collapse: the column is launched rough, so it comes apart along its length.
       return {
-        form: {
-          ...CLEAN_FORM, tipBeads: 0, firstBulb: range(0.9, 1.3), radiusScale: range(0.9, 1.3), breakAt: range(0.1, 0.25) * rise, needle: range(1.5, 2.5),
-          breakScale: range(0.3, 0.6), dropSpread: [0.3, 1.6], dropCap: 0.8, scatter: range(3, 5), satellites: 0.9, tipSatellites: 0,
-          spray: range(2.5, 4), wobble: range(2.5, 4), irregularity: range(0.5, 0.7), bend: range(-0.05, 0.05),
-        },
+        form: { ...CLEAN_FORM, needle: range(1.5, 2.5), radiusScale: range(0.9, 1.3), roughness: rough(0.03, 0.06), wobble: range(2, 3.5), spray: range(2.5, 4) },
         speedScale: sealed ? range(0.55, 0.8) : range(0.75, 1.0), lean: bulgeLean * range(0.8, 1.4),
       };
     case 'stubby':
+      // A collapse that focuses little: fat and slow, with hardly a needle.
       return {
-        form: {
-          ...CLEAN_FORM, tipBeads: count([0.55, 0.45]), beadShares: beadShares(), firstBulb: range(1.5, 2.1), radiusScale: 1 + range(0.3, 0.6) / Math.sqrt(Math.max(choice.sizeFactor, 1)), needle: range(1.0, 1.4),
-          breakScale: range(1.3, 2.0), dropSpread: [0.7, 1.3], dropCap: 1.2, satellites: 0.4, wobble: 0.8, irregularity: 0.2,
-        },
+        form: { ...CLEAN_FORM, needle: range(1.0, 1.4), radiusScale: 1 + range(0.3, 0.6) / Math.sqrt(Math.max(choice.sizeFactor, 1)), roughness: rough(0.01, 0.02), wobble: 0.8 },
         speedScale: sealed ? range(0.45, 0.6) : range(0.55, 0.75), lean: bulgeLean * range(0.5, 1),
       };
     case 'none':
       // No jet clears the water: the collapse under the dome only heaves a
-      // low, broad glassy mound (a few centimetres for the default stone),
-      // which subsides in a fizz of small drops.
+      // low, broad mound (a few centimetres for the default stone).
       return {
-        form: {
-          ...CLEAN_FORM, tipBeads: 0, firstBulb: 1.0, radiusScale: range(1.2, 1.4), breakScale: range(1.3, 1.8), dropSpread: [0.5, 1.0], needle: 1,
-          dropCap: 0.6, scatter: 0.6, satellites: 0.1, wobble: 0.5, irregularity: 0.2,
-        },
+        form: { ...CLEAN_FORM, needle: 1, radiusScale: range(1.2, 1.4), roughness: 0.01, wobble: 0.5 },
         speedScale: range(0.15, 0.22), lean: bulgeLean * range(0.3, 1),
       };
     default:
       // A probe's fixed clean jet (chooseSplash's `fixed`) is the nominal one.
       if (choice.nominal) return { form: { ...CLEAN_FORM }, speedScale: 1, lean: 0 };
-      return { form: clean(), speedScale: range(0.85, 1.12), lean: bulgeLean * range(0.3, 1) };
+      return {
+        form: { ...CLEAN_FORM, needle: range(2.5, 3.3), radiusScale: range(0.85, 1.15), roughness: rough(0.008, 0.02), wobble: range(0.7, 1.6) },
+        speedScale: range(0.85, 1.12), lean: bulgeLean * range(0.3, 1),
+      };
   }
 }
 
@@ -961,7 +950,7 @@ export class SplashSystem {
     // dragged cavity, and an oblique entry's sheared hole focuses its needle less.
     const baseBodySpeed = THREE.MathUtils.clamp(JET_SPEED * entrySpeed, 1.5, 8.0) * sizeFactor ** 0.15 * (1 - JET_OBLIQUE_SLOWING * horizontalFraction) * lightJet(info.density);
     const focus = 1 - NEEDLE_OBLIQUE * horizontalFraction;
-    const shape = jetForm(choice.regime, choice, baseBodySpeed);
+    const shape = jetForm(choice.regime, choice);
     const lean = this.jetLean(cavity, horizontal, horizontalFraction, jetLean, shape.lean, choice.hole.lopsidedAngle);
     cavity.setLean(lean.x, lean.z);
     // What this throw chose, for the probes (tools/variety-probe.mjs) and the shoot harness's reports.
@@ -1061,41 +1050,19 @@ export class SplashSystem {
     this.bases.push({ time: this.time + cavity.closeTime, x: closure.x, z: closure.z, radius, speed: entrySpeed });
     const bodySpeed = baseBodySpeed * shape.speedScale;
     const unfocused = (form) => ({ ...form, needle: 1 + (form.needle - 1) * focus });
-    const total = Math.round(THREE.MathUtils.clamp(220 * sizeFactor ** 1.3, 80, 1200));
     const leanAngle = Math.atan(Math.hypot(lean.x, lean.z));
     const leanLength = Math.hypot(lean.x, lean.z) || 1;
     // A throw with no jet ('none') only heaves a mound, once the bowl has nearly filled.
     const jetStart = cavity.pinchTime + (choice.regime === 'none' ? MOUND_DELAY * cavity.bowlUnit : 0);
     const jet = {
-      x: closure.x, z: closure.z, radius, start: this.time + jetStart, total, bodySpeed,
+      x: closure.x, z: closure.z, radius, start: this.time + jetStart, bodySpeed,
       floor: (age, out) => cavity.bowlFloorAt(jetStart + age, out), bowlUnit: cavity.bowlUnit,
       // The jet carries JET_SHARE of the water that fills the bowl, more for a fatter form, less for a slower one.
       volume: JET_SHARE * cavity.bowlVolume * shape.form.radiusScale ** 2 * shape.speedScale,
       lean: leanAngle, leanX: lean.x / leanLength, leanZ: lean.z / leanLength, form: unfocused(shape.form), regime: choice.regime,
       random: foamRandom(seed, radius, 1),
     };
-    if (choice.regime === 'split') {
-      // Two columns from a strongly lopsided collapse, side by side and parting.
-      const { range } = choice;
-      const across = choice.hole.lopsidedAngle + Math.PI / 2 + range(-0.6, 0.6);
-      const share = range(0.35, 0.65);
-      const apart = range(0.15, 0.3) * radius;
-      const parting = Math.tan(THREE.MathUtils.degToRad(range(4, 9)));
-      [share, 1 - share].forEach((part, index) => {
-        const side = index === 0 ? 1 : -1;
-        const tiltX = lean.x + side * parting * Math.cos(across), tiltZ = lean.z + side * parting * Math.sin(across);
-        const length = Math.hypot(tiltX, tiltZ) || 1;
-        this.jets.push({
-          ...jet, x: closure.x + side * apart * Math.cos(across), z: closure.z + side * apart * Math.sin(across),
-          total: Math.round(total * part), bodySpeed: bodySpeed * range(0.88, 1.08), volume: jet.volume * part,
-          lean: Math.atan(length), leanX: tiltX / length, leanZ: tiltZ / length,
-          form: unfocused({ ...jetForm('clean', choice, bodySpeed).form, tipBeads: Math.floor(range(0, 3)), share: part }), companion: index > 0,
-          random: foamRandom(seed, radius, 2 + index),
-        });
-      });
-    } else {
-      this.jets.push(jet);
-    }
+    this.jets.push(jet);
 
     // 4. Bubbles follow the stone down its path, in a cloud as wide as the stone.
     this.plumes.push({
@@ -1390,8 +1357,7 @@ export class SplashSystem {
 
   /**
    * The cavity has closed: fire the column from the mound where it closed, in
-   * a boil, keeping at most MAX_JETS; a split jet's second column shares the
-   * first's mound. Every throw fires one, if only the low mound of the form
+   * a boil, keeping at most MAX_JETS. Every throw fires one, if only the low mound of the form
    * 'none': the warm-up's throw (src/main.js) must draw the column's
    * programs, whatever form it draws.
    */
@@ -1403,7 +1369,7 @@ export class SplashSystem {
     }
     const column = new JetColumn({
       x: jet.x, z: jet.z, radius: jet.radius, speed: jet.bodySpeed, bowlUnit: jet.bowlUnit, volume: jet.volume,
-      startTime: jet.start, budget: jet.total, material: this.columnDepthMaterial,
+      startTime: jet.start, material: this.columnDepthMaterial,
       lean: jet.lean, leanX: jet.leanX, leanZ: jet.leanZ, form: jet.form, random: jet.random, floor: jet.floor,
     });
     this.columns.push(column);
