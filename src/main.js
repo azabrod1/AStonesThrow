@@ -276,7 +276,6 @@ import { createSound } from './sound.js';
 import { createFloaterRide } from './floaterRide.js';
 import { IceSheet, ICE_THICKNESS } from './ice.js';
 import { IceCracks } from './iceCracks.js';
-import { linear } from './thingMeshes.js';
 
 // Quality presets. The splash lives in a few dozen pixels, so the fluid
 // buffer's resolution is what it is made of: a drop narrower than a buffer
@@ -481,7 +480,6 @@ const WATER_CLARITIES = {
   murky: { absorb: [1.0, 0.45, 0.55], extinction: [3.0, 2.4, 2.7], color: [0.022, 0.082, 0.040] },
 };
 const DEFAULT_WATER = 'lake';
-const SHARD_POOL_CLEAR = linear(150, 190, 204);   // a shard's clear ice in the pool: its tiles seen through it (addShard)
 // The Water setting: one of the lake's clarities (WATER_CLARITIES but the
 // pool's, which is the Pool place's own water whatever is chosen), or Frozen:
 // ice, thin unless thick was chosen (ICE_THICKNESS; setIce), over the water
@@ -522,7 +520,7 @@ function migrateStoredSettings() {
 // the column's three programs are built too, where an unseeded throw raised
 // none about one time in thirty (its jet form "none") and the first throw
 // with a jet then built them.
-const WARM_UP = { x: 0, z: -1.4, radius: 0.03, moments: [0.02, 0.16, 0.4], seed: 4, floaters: ['pumice', 'pizza'] };   // a floater of each program: pumice the stones', a pizza its textured one
+const WARM_UP = { x: 0, z: -1.4, radius: 0.03, moments: [0.02, 0.16, 0.4], seed: 4, floaters: ['pumice', 'pizza', 'ice-shard'] };   // a floater of each program: pumice the stones', a pizza its textured one, a shard of ice its clear one (src/rock.js seenThrough)
 
 export async function startPond({ canvas, quality = 'auto', onReady, onProgress, onError, onRainError, onStats, onViewChange, onQualityChange, onProfile, onThrow }) {
   let readyForInput = false;
@@ -1500,9 +1498,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
    */
   function addShard(piece) {
     const { position, velocity, quaternion } = piece.start;
-    // Its clear ice the colour of the water seen through it (src/thingMeshes.js): in the pool its tiles' aqua.
-    const shape = pooled ? { ...piece.shape, clear: SHARD_POOL_CLEAR } : piece.shape;
-    const rock = new Rock({ radius: piece.radius, position, velocity, envTexture: environment.envTexture, waterFog: { extinction: lighting.extinction, color: lighting.waterColor }, thing: 'ice-shard', mass: piece.mass, mirrorLayer: MIRROR_LAYER, water: surface.rideUniforms, piece: shape });
+    const rock = new Rock({ radius: piece.radius, position, velocity, envTexture: environment.envTexture, waterFog: { extinction: lighting.extinction, color: lighting.waterColor }, thing: 'ice-shard', mass: piece.mass, mirrorLayer: MIRROR_LAYER, water: surface.rideUniforms, piece: piece.shape });
     rock.adrift(position, velocity, quaternion);
     rock.iceHole = piece.hole;
     rock.ground = ice.ground;

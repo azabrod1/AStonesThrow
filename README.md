@@ -756,7 +756,16 @@ thing (`ice-shard` in `src/things.js`, hidden from the menus; its mesh
 built to its own outline, `src/thingMeshes.js`), so they come up and float
 flat at the sheet's own freeboard by the plate model a pizza floats by,
 bump each other rim to rim (`src/collide.js`), and are held in the hole by
-its edge's reach in each direction. As they go the water the splash threw
+its edge's reach in each direction. A shard is drawn as clear ice
+(`look.seenThrough`, `src/rock.js`): its outline broken along its sides
+(scaled back to its own area, so its mass stays ice's), its top showing
+what lies under it through its milk (the sheet's, for its thickness) and
+the sheet's own snow, frost, bubbles and crystal lines, its rim rounded and
+whiter. Under the water ice bends light all but as water does, so from
+above its submerged part is all but invisible: the under-water pass draws
+only its sides' inner faces, bright with the light turned back off them, a
+band along its far edges as wide as it is thick seen aslant, and, faintly,
+its top where a ripple has washed over it. As they go the water the splash threw
 aside comes back over the ice round the hole, out to about one and a half
 times its reach, leaning the way the stone went, and each drop that lands on
 the ice wets a spot; the film freezes over 75 seconds, leaving the ice
