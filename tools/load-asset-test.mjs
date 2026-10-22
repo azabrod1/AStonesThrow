@@ -42,6 +42,16 @@ try {
     await assert.rejects(loadAsset(`${origin}/${endpoint}`, 'arrayBuffer', { timeout: 100 }), { name: 'AbortError' });
   }
   console.log('PASS: stalled headers and a body stalled after partial data both abort');
+  for (const endpoint of ['headers-stall', 'body-stall', 'slow']) {
+    const controller = new AbortController();
+    const pending = loadAsset(`${origin}/${endpoint}`, 'arrayBuffer', { signal: controller.signal });
+    setTimeout(() => controller.abort(), 60);
+    await assert.rejects(pending, { name: 'AbortError' });
+  }
+  const cancelled = new AbortController();
+  cancelled.abort();
+  await assert.rejects(loadAsset(`${origin}/compressed`, 'json', { signal: cancelled.signal }), { name: 'AbortError' });
+  console.log('PASS: caller cancellation aborts before headers, during streaming and before a request');
   await assert.rejects(loadAsset(`${origin}/missing`), /HTTP 404/);
   await assert.rejects(loadAsset(`${origin}/invalid`), SyntaxError);
   assert.deepEqual(await loadAsset(`${origin}/compressed`), json);

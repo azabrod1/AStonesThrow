@@ -84,6 +84,9 @@
 //                      else the reference's north plus the turn;
 //     northFrom        'sun' or 'skyline' (the alignment's turn, when both
 //                      are there, is printed against the sun's as a check).
+//   --band=low,high    elevation band for skyline alignment (degrees;
+//                      default -2,3). Mountain ridges need a higher band
+//                      than a lake's far shore. Stored with the measurement.
 // The two agree: across Poly Haven's thirteen Qwantani panoramas the turn
 // from the skyline and the turn from the sun's true positions differed by
 // 0.5° at most. Lined up this way, the photos' own time stamps turn out to be
@@ -275,11 +278,11 @@ export function solarPosition(moment, latitude, longitude) {
 }
 
 /** The skyline's features (ALIGN_BAND): rows of the sky-over-land gradient, each normalised and clipped. */
-function skylineFeatures({ width, height, pixels }) {
+function skylineFeatures({ width, height, pixels }, band) {
   const rows = [];
   for (let row = 0; row < height; row++) {
     const elevation = degrees(elevationOfRow(row, height));
-    if (elevation < ALIGN_BAND[0] || elevation > ALIGN_BAND[1]) continue;
+    if (elevation < band[0] || elevation > band[1]) continue;
     const logarithm = new Float64Array(width);
     for (let column = 0; column < width; column++) {
       const base = (row * width + column) * 3;
@@ -310,9 +313,9 @@ function skylineFeatures({ width, height, pixels }) {
  * and its next best turn (more than a 60th of the circle away), in standard
  * deviations of the correlation over all turns.
  */
-export function alignSkyline(reference, image) {
-  const referenceFeatures = skylineFeatures(reference);
-  const imageFeatures = skylineFeatures(image);
+export function alignSkyline(reference, image, band = ALIGN_BAND) {
+  const referenceFeatures = skylineFeatures(reference, band);
+  const imageFeatures = skylineFeatures(image, band);
   const width = image.width;
   const correlation = new Float64Array(width);
   for (let shift = 0; shift < width; shift++) {
@@ -441,9 +444,11 @@ if (isMain) {
     });
   }
   if (alignTo) {
+    const band = option('band') ? option('band').split(',').map(Number) : ALIGN_BAND;
+    if (band.length !== 2 || !band.every(Number.isFinite) || band[0] < -90 || band[1] > 90 || band[1] - band[0] < 1) throw new Error('--band needs two elevations at least one degree apart');
     const referenceMeasurement = JSON.parse(await readFile(measurementPath(alignTo), 'utf8'));
     if (referenceMeasurement.north === undefined) { console.error(`${alignTo}'s measurement has no north: probe it first`); process.exit(1); }
-    measurement.alignment = { reference: path.basename(alignTo), ...alignSkyline(parseRgbe(await readFile(alignTo)), image) };
+    measurement.alignment = { reference: path.basename(alignTo), ...alignSkyline(parseRgbe(await readFile(alignTo)), image, band), ...(option('band') ? { band } : {}) };
     if (measurement.alignment.peak - measurement.alignment.nextBest < 1) console.warn(`warning: the skyline's peak (${measurement.alignment.peak}σ) is barely clear of the next best turn (${measurement.alignment.nextBest}σ)`);
     northFromSkyline = wrapDegrees(referenceMeasurement.north + measurement.alignment.turn);
   }
