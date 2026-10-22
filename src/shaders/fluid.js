@@ -231,7 +231,8 @@ void main() {
 // The spray (src/spray.js): each sprite's flight a closed form of its age,
 // written once at its birth. Two phases of linear drag (src/spray.js says
 // why): for t1 a fast one of response time τ1 towards (wind x, −g·τ1, wind
-// z), then a slow one of τ2 towards (wind x, −g·τ2, wind z), τ2·COAST
+// z), then a slow one of τ2 towards (wind x, −g·τ2, wind z) (the wind's
+// drift as it was at the sprite's birth), τ2·COAST
 // across the water; in each v(t) = v∞ + (v₀ − v∞)·e^(−t/τ) and
 // x(t) = x₀ + v∞·t + τ·(v₀ − v∞)·(1 − e^(−t/τ)). It is left out before its
 // birth, past its life and once it is under the still water (the gale lifts
@@ -242,24 +243,23 @@ export const SPRAY_VERTEX = /* glsl */`
 attribute vec4 aOrigin;          // x, y, z at birth, and the splash time it was born
 attribute vec4 aLaunch;          // its velocity then, and how long it may fly
 attribute vec4 aDrop;            // radius, the drops it stands for, τ1, t1
-attribute float aSlow;           // τ2
+attribute vec3 aSlow;            // τ2, and the drift the wind gave it at its birth (world x, z, m/s)
 uniform float uTime;             // the splash time
-uniform vec2 uSprayWind;         // the drift the wind gives a drop (world x, z, m/s)
 ${DROP_BODY}
 void main() {
   float age = uTime - aOrigin.w;
   if (age < 0.0 || age >= aLaunch.w || aDrop.x < uLeastRadius) { cullDrop(); return; }
   float fastTau = aDrop.z;
   float early = min(age, aDrop.w);
-  vec3 fastTerminal = vec3(uSprayWind.x, -SPRAY_GRAVITY * fastTau, uSprayWind.y);
+  vec3 fastTerminal = vec3(aSlow.y, -SPRAY_GRAVITY * fastTau, aSlow.z);
   float fastDecay = exp(-early / fastTau);
   vec3 launch = aLaunch.xyz - fastTerminal;
   vec3 centre = aOrigin.xyz + fastTerminal * early + fastTau * launch * (1.0 - fastDecay);
   vec3 velocity = fastTerminal + launch * fastDecay;
   // The slow phase from where the fast one left it (nothing yet while age is under t1).
   float late = age - early;
-  vec3 slowTau = vec3(SPRAY_COAST, 1.0, SPRAY_COAST) * aSlow;
-  vec3 slowTerminal = vec3(uSprayWind.x, -SPRAY_GRAVITY * aSlow, uSprayWind.y);
+  vec3 slowTau = vec3(SPRAY_COAST, 1.0, SPRAY_COAST) * aSlow.x;
+  vec3 slowTerminal = vec3(aSlow.y, -SPRAY_GRAVITY * aSlow.x, aSlow.z);
   vec3 slowDecay = exp(-late / slowTau);
   vec3 rest = velocity - slowTerminal;
   centre += slowTerminal * late + slowTau * rest * (1.0 - slowDecay);

@@ -41,13 +41,15 @@
 //     often with the spray as with a spray that writes nothing;
 //   - the ring's upload ranges cover what was written since the last commit,
 //     across its end too, and it starts over at slot 0 once everything has
-//     landed.
+//     landed;
+//   - a change of wind moves no sprite already in the air, and one born in
+//     a gale drifts with it.
 //
 //   node tools/spray-probe.mjs
 import * as THREE from 'three';
 import { SplashSystem } from '../src/splash.js';
 import { Rock, throwFlightTime } from '../src/rock.js';
-import { SpraySystem, seededRandom, sprayDrops, sprayFlight, flightPosition, landingBound, terminalSpeed, dragDeceleration, COAST, SPRAY_CAPACITY } from '../src/spray.js';
+import { SpraySystem, seededRandom, sprayDrops, sprayFlight, flightPosition, landingBound, terminalSpeed, dragDeceleration, COAST, SPRAY_CAPACITY, SPRAY_STRIDE } from '../src/spray.js';
 import { QUALITY } from '../src/main.js';
 
 const GRAVITY = 9.81;
@@ -288,7 +290,7 @@ function runSplash({ radius, power = 'normal', skip = false, seed = 11, budget =
     }
     if (splash.settled && frame > 30) break;
   }
-  const result = { impact, sprites, cpuWater, tally: { ...spray.tally }, peak, peakTime, frameMilliseconds, draws: randomDraws, data: mute ? null : spray.data.slice(0, spray.used * 13), spray };
+  const result = { impact, sprites, cpuWater, tally: { ...spray.tally }, peak, peakTime, frameMilliseconds, draws: randomDraws, data: mute ? null : spray.data.slice(0, spray.used * SPRAY_STRIDE), spray };
   Math.random = originalRandom;
   return result;
 }
@@ -361,7 +363,7 @@ for (const options of [{ radius: 0.03, power: 'normal' }, { radius: 0.15, power:
 // ---- the ring ------------------------------------------------------------
 
 {
-  const ranges = (spray) => spray.buffer.updateRanges.map(({ start, count }) => [start / 13, count / 13]);
+  const ranges = (spray) => spray.buffer.updateRanges.map(({ start, count }) => [start / SPRAY_STRIDE, count / SPRAY_STRIDE]);
   const spray = new SpraySystem({ capacity: 8 });
   const writeMany = (count, time) => { for (let index = 0; index < count; index++) spray.write(0, 0.5, 0, 0, 1, 0, 0.0003, 1, time); };
   writeMany(5, 0);
@@ -386,6 +388,25 @@ for (const options of [{ radius: 0.03, power: 'normal' }, { radius: 0.15, power:
   check(JSON.stringify(whole) === '[[0,8]]', `the ring's upload of more than it holds is ${JSON.stringify(whole)}`);
   check(JSON.stringify(restart) === '[[0,2]]' && spray.geometry.instanceCount === 2, `the ring did not start over at slot 0 once everything had landed: ${JSON.stringify(restart)}, ${spray.geometry.instanceCount} drawn`);
   check(SPRAY_CAPACITY >= QUALITY.high.spray.ring, `the ring's ${SPRAY_CAPACITY} slots are fewer than High's ${QUALITY.high.spray.ring}`);
+}
+
+// ---- the wind ------------------------------------------------------------
+
+{
+  // A sprite keeps the drift it was born in: a change of wind moves no drop already in the air.
+  const spray = new SpraySystem();
+  spray.setWind(1, 0, 0.3);
+  spray.write(0, 0.3, 0, 0.5, 2, 0, 0.0003, 1, 0);
+  const before = { x: 0, y: 0, z: 0 }, after = { x: 0, y: 0, z: 0 };
+  spray.positionAt(0, 0.2, before);
+  spray.setWind(0, 1, 4);
+  spray.positionAt(0, 0.2, after);
+  spray.write(0, 0.3, 0, 0.5, 2, 0, 0.0003, 1, 0);
+  const blown = spray.positionAt(1, 0.2, { x: 0, y: 0, z: 0 });
+  const moved = Math.hypot(after.x - before.x, after.y - before.y, after.z - before.z);
+  console.log(`\nthe wind: a drop in the air moves ${(1000 * moved).toFixed(3)} mm when the wind turns from calm to a gale; one born in the gale drifts ${(100 * blown.z).toFixed(1)} cm across it in 0.2 s`);
+  check(moved < 1e-6, `a change of wind moves a drop already in the air by ${(1000 * moved).toFixed(2)} mm`);
+  check(blown.z > 0.05, `a drop born in a gale drifts only ${(100 * blown.z).toFixed(1)} cm across it in 0.2 s`);
 }
 
 if (failures.length > 0) {

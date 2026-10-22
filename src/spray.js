@@ -68,13 +68,17 @@
 // random stream (seededRandom), so the spray spends no draw of Math.random
 // and a seeded throw splashes the same with it as without it.
 //
+// Each sprite keeps the wind's drift it was born in (setWind), so a change
+// of the Wind setting moves no drop already in the air.
+//
 // The mirror (src/main.js) draws the sprites from MIRROR_SPRAY_RADIUS up,
 // while one of them flies; mirrorBounds gives it a box round every flight,
 // reckoned at birth.
 import * as THREE from 'three';
 
 export const SPRAY_CAPACITY = 65536;
-const STRIDE = 13;                       // floats a slot: origin and birth, launch and life, radius, weight, τ1, t1, τ2
+export const SPRAY_STRIDE = 15;          // floats a slot: origin and birth, launch and life, radius, weight, τ1, t1, τ2 and the wind's drift at birth (x, z)
+const STRIDE = SPRAY_STRIDE;
 const GRAVITY = 9.81;
 export const SPRAY_LEAST_RADIUS = 0.00005;
 export const SPRAY_MOST_RADIUS = 0.001;  // larger fragments are the CPU's drops
@@ -330,7 +334,7 @@ export class SpraySystem {
     this.mirrorDeath = -Infinity; // and the last the mirror draws
     this.dirtyStart = 0;          // the run of slots written since the last commit
     this.dirtyCount = 0;
-    this.windX = 0;               // the drift a drop is blown to (m/s), the bounds' (setWind)
+    this.windX = 0;               // the drift a drop born now is blown to (m/s; setWind), which it keeps
     this.windZ = 0;
     this.box = new THREE.Box3();  // round every flight since the ring started over
     this.direction = [0, 0, 0];   // burst's scratch
@@ -348,10 +352,10 @@ export class SpraySystem {
     geometry.setAttribute('aOrigin', new THREE.InterleavedBufferAttribute(this.buffer, 4, 0));
     geometry.setAttribute('aLaunch', new THREE.InterleavedBufferAttribute(this.buffer, 4, 4));
     geometry.setAttribute('aDrop', new THREE.InterleavedBufferAttribute(this.buffer, 4, 8));
-    geometry.setAttribute('aSlow', new THREE.InterleavedBufferAttribute(this.buffer, 1, 12));
+    geometry.setAttribute('aSlow', new THREE.InterleavedBufferAttribute(this.buffer, 3, 12));
     geometry.instanceCount = 0;
     this.geometry = geometry;
-    this.uniforms = { uTime: { value: 0 }, uSprayWind: { value: new THREE.Vector2() } };
+    this.uniforms = { uTime: { value: 0 } };
     this.mesh = new THREE.Mesh(geometry);
     this.mesh.frustumCulled = false;
     this.mesh.visible = false;
@@ -373,11 +377,14 @@ export class SpraySystem {
     if (this.dirtyStart >= this.ring) { this.dirtyStart = 0; this.dirtyCount = Math.min(this.dirtyCount, this.ring); }
   }
 
-  /** The wind's drift at the spray's height: a direction (world x, z, unit) and the wind's strength. */
+  /**
+   * The wind's drift at the spray's height: a direction (world x, z, unit)
+   * and the wind's strength. A sprite keeps the drift it was born in, so a
+   * change of wind moves no drop already in the air.
+   */
   setWind(directionX, directionZ, strength) {
     this.windX = directionX * SPRAY_WIND * strength;
     this.windZ = directionZ * SPRAY_WIND * strength;
-    this.uniforms.uSprayWind.value.set(this.windX, this.windZ);
   }
 
   /** Sprites per drop for a stone of size factor `sizeFactor` (R / 3 cm) and drops of mean radius `radius`, at most 1. */
@@ -447,6 +454,7 @@ export class SpraySystem {
     data[base] = x; data[base + 1] = y; data[base + 2] = z; data[base + 3] = time;
     data[base + 4] = vx; data[base + 5] = vy; data[base + 6] = vz; data[base + 7] = life;
     data[base + 8] = radius; data[base + 9] = weight; data[base + 10] = flight.fastTau; data[base + 11] = flight.fastTime; data[base + 12] = flight.slowTau;
+    data[base + 13] = this.windX; data[base + 14] = this.windZ;
     this.lastDeath = Math.max(this.lastDeath, time + life);
     if (radius >= MIRROR_SPRAY_RADIUS) this.mirrorDeath = Math.max(this.mirrorDeath, time + life);
     // Its flight's box: no further out than the wind's drift for its life and its launch's reach against it in each phase, no higher than its apex.
@@ -524,7 +532,7 @@ export class SpraySystem {
     const age = time - data[base + 3];
     if (age < 0 || age >= data[base + 7]) return null;
     flightPosition(data[base], data[base + 1], data[base + 2], data[base + 4], data[base + 5], data[base + 6],
-      data[base + 10], data[base + 11], data[base + 12], this.windX, this.windZ, age, out);
+      data[base + 10], data[base + 11], data[base + 12], data[base + 13], data[base + 14], age, out);
     return out.y < 0 ? null : out;
   }
 }
