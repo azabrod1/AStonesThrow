@@ -52,7 +52,7 @@
 //    raises no waves; calm again, the still sheet. pause(), resume(), pause(),
 //    resume() in one tick leave one frame loop: one render per
 //    requestAnimationFrame at most.
-// 2. The same page on a fake clock (performance.now and requestAnimationFrame
+// 2. The same page, a quarter of the pixels, on a fake clock (performance.now and requestAnimationFrame
 //    advance a set step per frame, whatever SwiftShader takes, once however
 //    many callbacks the frame runs: the probe's own waits poll on it): at 55 frames
 //    a second the calibration keeps high through the idle pond and a splash;
@@ -577,7 +577,8 @@ const fakeClock = `(() => {
     callback(fake);
   });
 })();`;
-const faked = await openPage({ query: 'quality=auto', initScript: fakeClock });
+// A quarter of the phone's pixels: its frames are drawn for real, and none of what is counted here depends on their size.
+const faked = await openPage({ width: 195, height: 422, query: 'quality=auto', initScript: fakeClock });
 const fakePage = faked.page;
 await fakePage.waitForFunction(() => window.__pond.budget.calibration === 'awaitingSplash', undefined, { timeout: 900000 });
 check((await pageState(fakePage)).quality === 'high', 'at 55 frames a second the idle pond keeps high');
