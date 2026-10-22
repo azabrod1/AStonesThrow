@@ -148,10 +148,13 @@
 // `shards` kept), and floods the ice round it, which freezes glazed; a hole
 // left alone skins over with new ice, freezing in the shards it reaches
 // (ice.freezeIn: they go as things), unless something thrown floats in it
-// (ice.disturb). Its holes, cracks, wet and new ice are painted into its mask
-// once a frame (render: ice.update), which the water's shaders draw it by
+// (ice.disturb). Its holes, wet and new ice are painted into its mask once a
+// frame (render: ice.update), which the water's shaders draw it by
 // (ICE_COMMON in src/shaders/scene.js: the ice is the water's surface frozen,
-// so it costs no program of its own; a shard is drawn as a floater is). On
+// so the sheet costs no program of its own; a shard is drawn as a floater
+// is), and its cracks are drawn over it as ribbons (iceCracks, src/
+// iceCracks.js: one mesh and one program, built under the veil by warmUp
+// whether there is ice or not). On
 // ice there is no gale (applyGale), a finger dips only into a hole's open
 // water, the drops that land on it wet it (src/splash.js setIce), and its
 // breaks and cracks sound (src/sound.js ice). A change of ice starts the pond
@@ -272,6 +275,8 @@ import { createPool, holdInPool, poolGround, poolInside, POOL } from './pool.js'
 import { createSound } from './sound.js';
 import { createFloaterRide } from './floaterRide.js';
 import { IceSheet, ICE_THICKNESS } from './ice.js';
+import { IceCracks } from './iceCracks.js';
+import { linear } from './thingMeshes.js';
 
 // Quality presets. The splash lives in a few dozen pixels, so the fluid
 // buffer's resolution is what it is made of: a drop narrower than a buffer
@@ -476,6 +481,7 @@ const WATER_CLARITIES = {
   murky: { absorb: [1.0, 0.45, 0.55], extinction: [3.0, 2.4, 2.7], color: [0.022, 0.082, 0.040] },
 };
 const DEFAULT_WATER = 'lake';
+const SHARD_POOL_CLEAR = linear(150, 190, 204);   // a shard's clear ice in the pool: its tiles seen through it (addShard)
 // The Water setting: one of the lake's clarities (WATER_CLARITIES but the
 // pool's, which is the Pool place's own water whatever is chosen), or Frozen:
 // ice, thin unless thick was chosen (ICE_THICKNESS; setIce), over the water
@@ -1002,6 +1008,9 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   }
   const resolution = new THREE.Vector2();
   let dpr = 1;
+  // The ice's cracks (src/iceCracks.js), drawn over the sheet as ribbons: one draw call, one program (warmUp draws it).
+  const iceCracks = new IceCracks(ice, lighting, resolution);
+  sceneMain.add(iceCracks.mesh);
 
   // ---- the view ----------------------------------------------------------
   const viewEuler = new THREE.Euler(0, 0, 0, 'YXZ');
@@ -1491,7 +1500,9 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
    */
   function addShard(piece) {
     const { position, velocity, quaternion } = piece.start;
-    const rock = new Rock({ radius: piece.radius, position, velocity, envTexture: environment.envTexture, waterFog: { extinction: lighting.extinction, color: lighting.waterColor }, thing: 'ice-shard', mass: piece.mass, mirrorLayer: MIRROR_LAYER, water: surface.rideUniforms, piece: piece.shape });
+    // Its clear ice the colour of the water seen through it (src/thingMeshes.js): in the pool its tiles' aqua.
+    const shape = pooled ? { ...piece.shape, clear: SHARD_POOL_CLEAR } : piece.shape;
+    const rock = new Rock({ radius: piece.radius, position, velocity, envTexture: environment.envTexture, waterFog: { extinction: lighting.extinction, color: lighting.waterColor }, thing: 'ice-shard', mass: piece.mass, mirrorLayer: MIRROR_LAYER, water: surface.rideUniforms, piece: shape });
     rock.adrift(position, velocity, quaternion);
     rock.iceHole = piece.hole;
     rock.ground = ice.ground;
@@ -1903,7 +1914,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   function render() {
     for (const rock of rocks) { rock.flex(); rock.showWet(); }   // a soft thing's shape, and how wet each looks, as drawn now (src/rock.js)
     pool.setTime(simulationTime);            // its deck's splashed patches dry by it
-    ice.update();                            // what broke or cracked since, into its mask (src/ice.js)
+    ice.update();                            // what broke or opened since, into its mask (src/ice.js)
+    iceCracks.update();                      // and the cracks made since, onto it (src/iceCracks.js)
     renderer.info.reset();
     framesRendered++;
     camera.updateMatrixWorld();
@@ -2015,6 +2027,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       splash: sum(Object.values(splash.targets)),
       sky: sum(environment.targets) + environment.panoramaBytes,
       floor: floorPatternBytes,
+      ice: ice.budget.maskBytes + iceCracks.bytes,
     };
     return { ...parts, total: Object.values(parts).reduce((total, bytes) => total + bytes, 0) };
   }
@@ -2036,7 +2049,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       wind: windName,
       gale: { blowing: galeWaves.on, sheetTriangles: surface.sheetTriangles },
       rain: { weather: weatherName, falling: rain.on, texels: rain.texels },
-      ice: { name: iceName, ...ice.budget, shards: rocks.filter((rock) => rock.piece).length },
+      ice: { name: iceName, ...ice.budget, shards: rocks.filter((rock) => rock.piece).length, cracks: ice.crackLines.length, crackVertices: iceCracks.vertices },
       spray: { ring: splash.spray.budgetRing, share: splash.spray.share, drawn: splash.spray.geometry.instanceCount, flying: splash.spray.alive },
       clarity: waterName,
       sky: placeName,
@@ -2243,6 +2256,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     // materials (a pizza's: above, below and in the mirror): their programs too.
     const floaters = WARM_UP.floaters.map((name) => throwAt(WARM_UP.x, WARM_UP.z, { thing: name }));
     for (const floater of floaters) floater.meshMirror.visible = true;
+    iceCracks.warmUp(WARM_UP.x + 0.4, WARM_UP.z);   // the cracks' program, over ice or none
     viewChanged = true;
     render();
     for (const floater of floaters) {
@@ -2260,6 +2274,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       render();
       if (index === 0) {
         renderFrom(VIEWS.under);   // the cavity is open: the surface's and the cavity's programs from below
+        iceCracks.endWarmUp();
         // The other water's scenery (the pool's, or the lake's), from above
         // and below, so a change of water compiles nothing.
         showScenery(!pooled);

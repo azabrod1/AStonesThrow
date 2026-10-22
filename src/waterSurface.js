@@ -146,7 +146,7 @@ function poolPatchGeometry(water, segments, square) {
 // The ice's uniforms when there is no ice sheet (ICE_COMMON in src/shaders/scene.js): none, off.
 const NO_ICE = () => ({
   uIceMask: { value: null }, uIceArea: { value: new THREE.Vector3(0, 0, 1) }, uIceOn: { value: 0 }, uIceTop: { value: 0 },
-  uIceThickness: { value: 0 }, uIceFar: { value: new THREE.Vector2(1, 1) }, uIceGlaze: { value: 0.2 }, uIceWet: { value: 0 },
+  uIceThickness: { value: 0 }, uIceFar: { value: 1 }, uIceGlaze: { value: 0.2 }, uIceWet: { value: 0 }, uIcePool: { value: new THREE.Vector4() },
 });
 
 export function createWaterSurface(water, lighting, ambientWaves, { meshSegments = Math.min(water.size, 512), rings = null, skyCube = null, rain = null, haze = null, gale = null, ice = null } = {}) {
@@ -190,6 +190,8 @@ export function createWaterSurface(water, lighting, ambientWaves, { meshSegments
     ...(rain ? rain.uniforms() : { uRainOn: { value: 0 } }),
     ...(haze ?? { uHazeColor: { value: new THREE.Vector3() }, uHazeDensity: { value: 0 } }),
     ...(ice ? ice.uniforms : NO_ICE()),
+    uPool: { value: new THREE.Vector4() },   // the pool's corner (x, z), side and depth; depth 0 in a lake (setPool)
+    uDeck: { value: 0 },
   };
   // Two materials sharing every uniform object but uInner.
   const material = (inner) => new THREE.ShaderMaterial({
@@ -222,7 +224,7 @@ export function createWaterSurface(water, lighting, ambientWaves, { meshSegments
 
   // From below (the header): the sky's cube shows through the window, and
   // past it the bed, or a pool's basin (uPool's depth 0 for none).
-  const underUniforms = { ...uniforms, uPool: { value: new THREE.Vector4() }, uDeck: { value: 0 } };
+  const underUniforms = uniforms;
   const underMaterial = (inner) => new THREE.ShaderMaterial({
     vertexShader: WATER_VERTEX,
     fragmentShader: WATER_UNDER_FRAGMENT,
@@ -300,8 +302,8 @@ export function createWaterSurface(water, lighting, ambientWaves, { meshSegments
       pool = square;
       if (square && !poolGeometry) poolGeometry = poolPatchGeometry(water, segments, square);
       inner.geometry = square ? poolGeometry : patchGeometry;
-      underUniforms.uPool.value.set(square?.minX ?? 0, square?.minZ ?? 0, square?.size ?? 0, square?.depth ?? 0);
-      underUniforms.uDeck.value = square?.deck ?? 0;
+      uniforms.uPool.value.set(square?.minX ?? 0, square?.minZ ?? 0, square?.size ?? 0, square?.depth ?? 0);
+      uniforms.uDeck.value = square?.deck ?? 0;
     },
     /** Whether the surface is a pool's (setPool). */
     get pooled() { return pool !== null; },

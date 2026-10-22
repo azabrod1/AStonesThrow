@@ -235,7 +235,7 @@ for (const [thickness, metres] of Object.entries(ICE_THICKNESS).filter(([, metre
       const strike = record.firstStrike ?? { blow: 0, holds: 1 };
       const ratio = strike.blow / (ICE.strength * metres ** 2);
       const slid = record.touched && !record.enteredWater ? Math.hypot(rock.position.x - record.touched.x, rock.position.z - record.touched.z) : 0;
-      const outcome = record.broke ? '●' : ice.holes.length === 0 && ice.cracks.length > 0 ? '✳' : '·';
+      const outcome = record.broke ? '●' : ice.holes.length === 0 && ice.crackLines.length > 0 ? '✳' : '·';
       table.set(`${thickness} ${label} ${manner} ${power}`, { ratio, record, rock, ice, slid, outcome, strike });
       cells.push(`${outcome} ${ratio.toFixed(2).padStart(6)}${record.broke ? '' : record.gone ? ` gone past ${FARTHEST} m` : ` ${slid.toFixed(1)} m`}`.padEnd(30));
       // Every outcome is the one its own blow and draw say: through if its first blow was harder than the ice held then.
@@ -294,9 +294,9 @@ for (const [key, entry] of table) {
   const painted = performance.now();
   ice.update();
   const paintMs = performance.now() - painted;
-  for (const crack of hole.cracks) {
-    for (let index = 0; index < crack.length; index += 2) {
-      const x = crack[index], z = crack[index + 1];
+  for (const { points } of hole.cracks) {
+    for (let index = 0; index < points.length; index += 2) {
+      const x = points[index], z = points[index + 1];
       check(x > PATCH.domainMin[0] && x < PATCH.domainMin[0] + PATCH.domainSize && z > PATCH.domainMin[1] && z < PATCH.domainMin[1] + PATCH.domainSize && ice.overWater(x, z), `${key}: a crack runs off the ice to (${x.toFixed(2)}, ${z.toFixed(2)})`);
     }
   }

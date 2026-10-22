@@ -1012,16 +1012,18 @@ export function createBrickGeometry() {
 // is its piece's (`piece`: its corners about its middle, convex, in unit
 // radii in the sheet's plane, its own +y up, and its thickness in unit
 // radii), so each one is its own and none is built twice. Its faces are
-// flat. Its top and bottom are the sheet's clear ice, dark over the water,
+// flat. Its top and bottom are the sheet's clear ice, the colour of the
+// water seen through it (its piece's `clear`, given by src/main.js: the
+// pool's tiles' aqua; SHARD_LOOK.clear, a lake's dark, without),
 // clouded white by its piece's `white` share (the sheet's white ice and
 // frozen bubbles), paler in a band SHARD_LOOK.rim of the way in from its rim,
 // where the light comes up through its broken edge; its broken sides scatter
 // the light white (SHARD_LOOK). With no piece (a thing defined or thrown
 // plain, tools/thing-probe.mjs) it is SHARD_LOOK.plain's: a broken hexagon.
 const SHARD_LOOK = {
-  clear: linear(22, 30, 38), white: linear(206, 214, 224), edge: linear(150, 166, 182), side: linear(188, 200, 214),
+  clear: linear(34, 50, 58), white: linear(206, 214, 224), edge: linear(150, 166, 182), side: linear(188, 200, 214),
   rim: 0.12,          // the paler band round its top, of the way in from its rim
-  edgeWhite: 0.55,    // the band's colour over the top's at its edge, for clear ice
+  edgeWhite: 0.8,     // the band's colour over the top's at its edge, for clear ice
   plain: { corners: [1, 0, 0.55, 0.78, -0.45, 0.9, -1, 0.05, -0.52, -0.82, 0.48, -0.8], thickness: 0.15, white: 0.2 },
 };
 
@@ -1035,7 +1037,7 @@ export function createShardGeometry(piece = SHARD_LOOK.plain) {
   const corners = piece.corners, count = corners.length / 2, half = piece.thickness / 2;
   const positions = [], normals = [], colors = [];
   const color = new THREE.Color();
-  const middle = color.copy(SHARD_LOOK.clear).lerp(SHARD_LOOK.white, piece.white).toArray();
+  const middle = color.copy(piece.clear ?? SHARD_LOOK.clear).lerp(SHARD_LOOK.white, piece.white).toArray();
   const rim = new THREE.Color().copy(color).lerp(SHARD_LOOK.edge, SHARD_LOOK.edgeWhite * (1 - piece.white)).toArray();
   const side = SHARD_LOOK.side.toArray();
   const inset = 1 - SHARD_LOOK.rim;

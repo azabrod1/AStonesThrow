@@ -52,11 +52,22 @@
 // edge is broken: a polygon of HOLE.corners corners, each out beyond the lip
 // by HOLE.margin and a jag of its own, with a few bites where a piece broke
 // away, drawn from the hole's own seeded stream (so a seeded throw breaks
-// the same hole every run). Radial cracks run out from its corners, CRACK
-// .count of them, each a random walk of CRACK.reach times l_c, with a
-// branch now and then and, at CRACK.ring odds, an arc of ring crack around
-// it (settle). How far its edge is from its middle at each azimuth is kept
-// (`reaches`, edgeReach), which holds things in it.
+// the same hole every run). How far its edge is from its middle at each
+// azimuth is kept (`reaches`, edgeReach), which holds things in it.
+//
+// Cracks (CRACK; settle, walk, ring, star). A punch through floating ice
+// cracks it radially from where it broke, and the harder the blow the more
+// radial cracks (CRACK.perDoubling for each doubling over what it held);
+// rings of crack join them farther out, so a hard break leaves a web. Each
+// runs in straight runs with kinks between, pulled back the way it is
+// going, and forks now and then; it tapers to a hairline at its tip, and
+// stops where the ice ends or where it meets a crack already there, as a
+// real crack runs into another and stops (a T: older breaks' cracks bound
+// newer ones, and a crazed sheet builds up). A near miss stars the ice
+// (star), now and then with a ring round the star. Each crack is a polyline
+// with a half-width at each point and a shade (crackLines), drawn by
+// src/iceCracks.js; its draws come from its hole's seeded stream, or the
+// thing's (a seeded throw cracks alike).
 //
 // Shards (SHARD, piecesOf). The ice that was in the hole broke into pieces:
 // between its radial cracks, and across them where a wedge is wide or long,
@@ -95,18 +106,17 @@
 // The mask (update): what the shaders know of the ice, an RGBA8 texture of
 // MASK.texels² over the solver's patch (1.2 cm texels), linearly filtered:
 // R the signed distance to the nearest hole's edge, negative inside one (ice
-// where it is positive), capped at MASK.holeFar either way; G the distance
-// to the nearest crack, signed by its side along a crack's span (so it
-// interpolates across the crack exactly), capped at MASK.crackFar; each as
-// a byte, 127.5·(1 + d/far) (ICE_MASK in src/shaders/scene.js reads them
-// back); B how wet the flood and the drops have left it, 0 where it never
+// where it is positive), capped at MASK.holeFar either way, as a byte,
+// 127.5·(1 + d/far) (ICE_COMMON in src/shaders/scene.js reads it back); G
+// spare; B how wet the flood and the drops have left it, 0 where it never
 // was, else FLOOD.glaze up to 1 as it is wet (glazed once wet); A the signed
 // distance to new ice's front, positive where a hole has skinned over (its
-// own and any newer hole's open water left out), as R is. A hole and its
-// cracks are painted into it once, the frame after they open: holes as the
-// least of signed distances (their union, which also cuts any new ice), their
-// insides by scanline and the distance in a band about each edge; each crack
-// in a band about it; the wet and new ice as they change. Only what changed
+// own and any newer hole's open water left out), as R is. A hole is painted
+// into it once, the frame after it opens: as the least of signed distances
+// (the holes' union, which also cuts any new ice), its inside by scanline
+// and the distance in a band about each edge; the wet and new ice as they
+// change. (Cracks are not in it: a texel is 1.2 cm, too coarse for a crack's
+// kinks and its width; src/iceCracks.js draws them from crackLines.) Only what changed
 // is converted, and only its rows are sent to the GPU (the texture's update
 // ranges). Beyond the patch there is ice and no hole. The physics never
 // reads the mask: it asks the holes' polygons.
@@ -149,14 +159,27 @@ export const ICE_MATERIAL = Object.freeze({ kind: 'ice', friction: 0.1, rolling:
 // over the oldest let go past it (it holds then as the sheet does); its edge's reach kept at `reaches` azimuths.
 // A thing going in by a hole narrower than its splash's lip opens it wider if faster than `widensFrom` (m/s).
 const HOLE = { corners: 36, fall: 0.5, margin: 0.06, jag: 0.16, waves: 0.04, bites: [1, 3], bite: [0.12, 0.35], biteSpan: [2, 4], least: 1.3, edge: 0.15, wall: 0.004, most: 64, kept: 160, reaches: 72, widensFrom: 2 };
-// Cracks (settle): `count` (least, most) radial ones from a hole's corners, each `reach` (least, most) times l_c long, at
-// most `longest` (m), in steps of `step` (least, most; m), its heading wandering by `wander` (radians, σ, per 5 cm); a
-// branch at `branch` odds a step, `branchReach` of l_c long, `branchAngle` off (least, most; radians); at `ring` odds an
-// arc of ring crack at `ringRadius` (least, most) hole radii, over `ringSpan` (least, most; radians); a blow the ice
-// holds stars it with `star` (least, most) cracks `starReach` of l_c long.
+// Cracks (walk, settle, star; the header). A crack runs straight for a `run` (least, most; m), then kinks by `kink`
+// (radians, σ), pulled `pull` of the way back toward where it is going; its points `step` (m) apart, each off the run's
+// line by `wobble` (m, σ: the break's roughness, finer still in src/iceCracks.js). It forks at `fork` odds a run, the
+// branch `forkAngle` (least, most; radians) to one side and `forkReach` (least, most) of what is left of its reach long,
+// both arms `forkNarrows` as wide. Its half-width is `width` (least, most; m) where it starts, narrowing by
+// `narrowing` of itself along its reach and to `hairline` (m) over the last `taper` of it, each run `widthWander` (σ)
+// wider or narrower; its shade (how open, so how white) `shade` (least, most).
+// A hole's: `radials` (least, most) from its corners, `perDoubling` more for each doubling of the blow over what the ice
+// held, at most `most`; each `reach` (least, most) times l_c long, at most `longest` (m), and at `runaway` odds one
+// `runawayReach` (least, most) times l_c, wider. At `ring` odds (again at `secondRing`, farther out) chords of ring
+// crack join radials that reach `ringRadius` (least, most) of the hole's mean reach, from each to the next at `chord`
+// odds, aimed `chordBow` (radians) outward of straight. A blow the ice held stars it with `star` (least, most) cracks
+// `starReach` (least, most) of l_c long, `starWidth` as wide, and at `bullseye` odds a ring of chords round them.
+// Segments are kept in a grid of `cell` (m) squares, so a new one finds the cracks it meets; past `mostSegments` of them
+// no crack runs on (the sheet is crazed enough; src/iceCracks.js draws as many).
 const CRACK = {
-  count: [4, 8], reach: [0.6, 1.6], longest: 3, step: [0.03, 0.06], wander: 0.11, branch: 0.06, branchReach: [0.1, 0.35], branchAngle: [0.35, 0.9],
-  ring: 0.5, ringRadius: [1.4, 2.2], ringSpan: [1.0, 2.6], star: [3, 6], starReach: [0.12, 0.45],
+  run: [0.03, 0.15], kink: 0.24, pull: 0.3, step: 0.02, wobble: 0.0006, fork: 0.13, forkAngle: [0.3, 0.75], forkReach: [0.25, 0.65], forkNarrows: 0.75,
+  width: [0.0005, 0.0013], narrowing: 0.45, hairline: 0.00012, taper: 0.3, widthWander: 0.22, shade: [0.45, 1],
+  radials: [3, 6], perDoubling: 1.6, most: 12, reach: [0.35, 1.5], longest: 3, runaway: 0.3, runawayReach: [2, 4],
+  ring: 0.55, secondRing: 0.3, ringRadius: [1.5, 2.6], chord: 0.75, chordBow: 0.18,
+  star: [3, 6], starReach: [0.12, 0.45], starWidth: 0.6, bullseye: 0.3, cell: 0.05, mostSegments: 24000,
 };
 // Shards (the header, piecesOf): let go `leastDelay` (s) after the break at the least; each wedge between two radial
 // cracks reaches from `inner` to `outer` (least, most) of the hole's reach along its corners, broken across at `across`
@@ -186,7 +209,7 @@ const FLOOD = { reach: [1.35, 1.8], wobble: 0.18, lean: 0.4, feather: 0.3, soak:
 const REFREEZE = { after: 40, closing: 30, skin: 0.004, thickening: 60, step: 0.25, seam: 0.01, texels: 600, prepare: 2 };
 // The mask (the header): texels a side over the solver's patch, and the caps of its distances (m); past `ranges` rows
 // to send since the last upload, the whole of it is sent.
-const MASK = { texels: 512, holeFar: 0.06, crackFar: 0.02, ranges: 256 };
+const MASK = { texels: 512, holeFar: 0.06, ranges: 256 };
 
 /** A seeded random stream (mulberry32), as src/rock.js's. */
 function seededStream(seed) {
@@ -290,13 +313,16 @@ export class IceSheet {
     this.deck = null;            // the pool's deck as ground (src/pool.js poolGround), round a frozen pool
     this.holes = [];             // oldest first
     this.opened = 0;             // how many holes have opened (src/main.js looks over what rests on the ice when it changes)
-    this.cracks = [];            // polylines ([x0, z0, x1, z1, …]) not yet painted
+    this.crackLines = [];        // every crack since the ice was made whole (walk), oldest first, for src/iceCracks.js to draw
+    this.crackEpoch = 0;         // counts the times it was made whole: src/iceCracks.js starts again when it changes
+    this.crackCount = 0;         // cracks walked (their ids)
+    this.crackSegments = [];     // every crack's segments, [ax, az, bx, bz, id, …], and a grid of them (CRACK.cell: crackMet)
+    this.crackGrid = new Map();
     this.events = [];            // breaks and cracks since src/main.js last took them (its sound)
     this.shards = [];            // pieces let go since src/main.js last took them (piecesOf; it makes each a thing)
     this.streams = new WeakMap();   // each thing's own stream of the ice's draws, seeded from its splash's seed
     // The mask (the header): bytes for the GPU (fillMask), and R, G and B as floats here, to paint unions into and dry.
     this.holeField = new Float32Array(texels * texels).fill(MASK.holeFar);
-    this.crackField = new Float32Array(texels * texels).fill(MASK.crackFar);
     this.wetField = new Float32Array(texels * texels);
     this.wetBox = null;          // [first column, last, first row, last] holding every texel still wet, or null
     this.wetDue = 0;             // seconds of drying not yet done (FLOOD.step)
@@ -318,7 +344,8 @@ export class IceSheet {
       uIceOn: { value: 0 },
       uIceTop: { value: 0 },
       uIceThickness: { value: 0 },
-      uIceFar: { value: new THREE.Vector2(MASK.holeFar, MASK.crackFar) },   // the caps the mask's bytes span (fillMask)
+      uIceFar: { value: MASK.holeFar },   // the cap a hole's distance's bytes span (fillMask)
+      uIcePool: { value: new THREE.Vector4() },   // the pool's square (corner x, z, side) and 1 over a frozen pool, else 0 (setPool)
       uIceGlaze: { value: FLOOD.glaze },   // B's least once wet (fillMask)
       uIceWet: { value: 0 },   // how wet the rain has made it: src/main.js shares the weather's object
     };
@@ -353,17 +380,21 @@ export class IceSheet {
   setPool(square, deck = null) {
     this.pool = square ?? null;
     this.deck = square ? deck : null;
+    if (square) this.uniforms.uIcePool.value.set(square.minX, square.minZ, square.size, 1);
+    else this.uniforms.uIcePool.value.set(0, 0, 0, 0);
     this.clear();
   }
 
   /** Whole again: no hole, no crack, dry. */
   clear() {
     this.holes.length = 0;
-    this.cracks.length = 0;
+    this.crackLines.length = 0;
+    this.crackSegments.length = 0;
+    this.crackGrid.clear();
+    this.crackEpoch++;
     this.events.length = 0;
     this.shards.length = 0;
     this.holeField.fill(MASK.holeFar);
-    this.crackField.fill(MASK.crackFar);
     this.wetField.fill(0);
     this.wetBox = null;
     this.wetDue = 0;
@@ -549,24 +580,25 @@ export class IceSheet {
     const energy = 0.5 * rock.mass * speed * speed;
     const work = holds * thickness;
     const keep = Math.sqrt(Math.max(1 - work / Math.max(energy, 1e-9), ICE.keepLeast ** 2));
-    const hole = this.openHole(rock, x, z, thickness);
+    const hole = this.openHole(rock, x, z, thickness, blow / holds);
     this.events.push({ kind: 'break', x, z, strength: blow / holds, radius: rock.radius, thickness });
     return { hole, broke: true, keep, open: false };
   }
 
   /**
    * A hole opened at (x, z) by a thing going in there (strike, meet), in ice
-   * `thickness` thick: as wide as a round hole's lip for its speed and its
+   * `thickness` thick, by a blow `strength` times what the ice held (its
+   * cracks: settle): as wide as a round hole's lip for its speed and its
    * direction (roundLipReach), until fitCavity fits it to its cavity's.
    */
-  openHole(rock, x, z, thickness) {
+  openHole(rock, x, z, thickness, strength = 1) {
     const random = this.streamFor(rock);
     const speed = rock.velocity.length(), horizontal = Math.hypot(rock.velocity.x, rock.velocity.z);
     const fraction = Math.min(horizontal / Math.max(speed, 1e-6), 1);
     const headingX = horizontal > 1e-4 ? rock.velocity.x / horizontal : 1, headingZ = horizontal > 1e-4 ? rock.velocity.z / horizontal : 0;
     const corners = HOLE.corners;
     const hole = {
-      x, z, radius: rock.radius, least: HOLE.least * rock.collisionRadius, thickness,
+      x, z, radius: rock.radius, least: HOLE.least * rock.collisionRadius, thickness, strength,
       seed: Math.floor(random() * 4294967296), corners: new Float64Array(2 * corners), inner: 0, outer: 0, reaches: new Float64Array(HOLE.reaches),
       heading: { x: headingX, z: headingZ, lean: fraction },   // which way the thing went along the ice (the flood leans so)
       settled: false, painted: false, cracks: [], crackCorners: [],
@@ -665,80 +697,223 @@ export class IceSheet {
     return hole.reaches[index] + (hole.reaches[(index + 1) % HOLE.reaches] - hole.reaches[index]) * share;
   }
 
-  /** A blow the ice held stars it (strike): CRACK.star cracks from where it struck, `share` of what it holds the blow's, in ice `thickness` thick. */
+  /** A blow the ice held stars it (strike): CRACK.star cracks from where it struck, `share` of what it holds the blow's, in ice `thickness` thick, at CRACK.bullseye odds ringed. */
   star(x, z, random, share, thickness = this.thickness) {
     const count = Math.round(between(random, CRACK.star));
     const length = iceLength(thickness);
     const start = 2 * Math.PI * random();
-    for (let crack = 0; crack < count; crack++) {
-      const heading = start + (2 * Math.PI * (crack + 0.4 * (random() - 0.5))) / count;
+    const arms = [];
+    for (let index = 0; index < count; index++) {
+      const heading = start + (2 * Math.PI * (index + 0.4 * (random() - 0.5))) / count;
       const reach = between(random, CRACK.starReach) * length * Math.min(share, 1);
-      this.cracks.push(this.walk(x, z, heading, reach, random, false, length));
+      const crack = this.walk(x, z, heading, reach, random, { width: between(random, CRACK.width) * CRACK.starWidth, forks: false });
+      if (crack) arms.push({ crack, angle: heading });
+    }
+    if (arms.length >= 3 && random() < CRACK.bullseye) {
+      const shortest = Math.min(...arms.map(({ crack }) => crack.length));
+      this.ring(x, z, arms, shortest * between(random, [0.45, 0.75]), random, CRACK.starWidth);
     }
     this.events.push({ kind: 'crack', x, z, strength: share, thickness });
     this.dirty = true;
   }
 
-  /**
-   * A crack from (x, z) along `heading` (radians from +x toward +z), `reach`
-   * metres long at most, wandering (CRACK.wander), stopping where the ice
-   * ends (the pool's walls, the shore, the patch's edge); a branch now and
-   * then if `branches`, `length` (the ice's l_c) long. Returns its points;
-   * its branches go to this.cracks.
-   */
-  walk(x, z, heading, reach, random, branches, length = this.length) {
-    const points = [x, z];
-    let travelled = 0;
+  /** Whether a crack may run on at (x, z): over the ice (inside the pool's walls, off the shore, in the patch), and in no hole. */
+  crackMayRun(x, z) {
     const box = this.pool ?? { minX: this.domainMin[0], minZ: this.domainMin[1], size: this.domainSize };
-    const inside = (pointX, pointZ) => pointX > box.minX && pointX < box.minX + box.size && pointZ > box.minZ && pointZ < box.minZ + box.size && this.overWater(pointX, pointZ);
-    while (travelled < reach) {
-      const step = Math.min(between(random, CRACK.step), reach - travelled);
-      heading += CRACK.wander * gaussian(random) * Math.sqrt(step / 0.05);
-      const nextX = x + Math.cos(heading) * step, nextZ = z + Math.sin(heading) * step;
-      if (!inside(nextX, nextZ)) break;
-      x = nextX; z = nextZ;
-      points.push(x, z);
-      travelled += step;
-      if (branches && random() < CRACK.branch) {
-        const turn = between(random, CRACK.branchAngle) * (random() < 0.5 ? -1 : 1);
-        this.cracks.push(this.walk(x, z, heading + turn, between(random, CRACK.branchReach) * length, random, false, length));
-      }
-    }
-    return points;
+    return x > box.minX && x < box.minX + box.size && z > box.minZ && z < box.minZ + box.size && this.overWater(x, z) && !this.holeAbout(x, z);
   }
 
-  /** A hole's cracks (the header), once its shape is final: radial ones from its corners and, at CRACK.ring odds, an arc of ring crack. */
+  /** A crack's segment into the grid (CRACK.cell), so the cracks after it find it (crackMet). */
+  addCrackSegment(ax, az, bx, bz, id) {
+    const index = this.crackSegments.length;
+    this.crackSegments.push(ax, az, bx, bz, id);
+    const cell = CRACK.cell;
+    for (let column = Math.floor(Math.min(ax, bx) / cell); column <= Math.floor(Math.max(ax, bx) / cell); column++) {
+      for (let row = Math.floor(Math.min(az, bz) / cell); row <= Math.floor(Math.max(az, bz) / cell); row++) {
+        const key = (column + 4096) * 8192 + row + 4096;
+        const list = this.crackGrid.get(key);
+        if (list) list.push(index); else this.crackGrid.set(key, [index]);
+      }
+    }
+  }
+
+  /**
+   * Where the segment from (ax, az) to (bx, bz) first meets a crack already
+   * there, not crack `id` nor its `parent` (a branch starts on it), past its
+   * own first tenth of a millimetre: { x, z }, or null.
+   */
+  crackMet(ax, az, bx, bz, id, parent) {
+    const cell = CRACK.cell, segments = this.crackSegments;
+    const alongX = bx - ax, alongZ = bz - az;
+    const length = Math.hypot(alongX, alongZ);
+    if (length < 1e-9) return null;
+    let first = Infinity;
+    for (let column = Math.floor(Math.min(ax, bx) / cell); column <= Math.floor(Math.max(ax, bx) / cell); column++) {
+      for (let row = Math.floor(Math.min(az, bz) / cell); row <= Math.floor(Math.max(az, bz) / cell); row++) {
+        const list = this.crackGrid.get((column + 4096) * 8192 + row + 4096);
+        if (!list) continue;
+        for (const index of list) {
+          const owner = segments[index + 4];
+          if (owner === id || owner === parent) continue;
+          const cx = segments[index], cz = segments[index + 1], acrossX = segments[index + 2] - cx, acrossZ = segments[index + 3] - cz;
+          const denominator = alongX * acrossZ - alongZ * acrossX;
+          if (Math.abs(denominator) < 1e-14) continue;
+          const share = ((cx - ax) * acrossZ - (cz - az) * acrossX) / denominator;
+          const other = ((cx - ax) * alongZ - (cz - az) * alongX) / denominator;
+          if (share * length > 1e-4 && share <= 1 && other >= 0 && other <= 1) first = Math.min(first, share);
+        }
+      }
+    }
+    return Number.isFinite(first) ? { x: ax + alongX * first, z: az + alongZ * first } : null;
+  }
+
+  /**
+   * A crack from (x, z) setting out along `heading` (radians from +x toward
+   * +z), at most `reach` (m) long (CRACK: straight runs and kinks, toward
+   * `target` ({ x, z }) if given, else the way it set out), `width` its
+   * half-width at the start (m), `shade` how open; forking if `forks`. It
+   * stops where the ice ends (crackMayRun: on the wall, the shore, a hole's
+   * edge, within a few tenths of a millimetre) or on a crack it meets
+   * (crackMet), and past CRACK.mostSegments in all. Returns it ({ points:
+   * [x0, z0, …], widths (each point's half-width, m), shade, id, length (m) },
+   * also in crackLines, for src/iceCracks.js), or null if it could not set
+   * out; its branches go to crackLines and to `into` if given.
+   */
+  walk(x, z, heading, reach, random, { width, shade = between(random, CRACK.shade), forks = true, target = null, parent = -1, into = null }) {
+    const crack = { points: [x, z], widths: [], shade, id: this.crackCount++, length: 0 };
+    const setOut = heading;
+    let lineX = x, lineZ = z, travelled = 0, runLeft = between(random, CRACK.run), runLength = runLeft;
+    let widthFrom = 1, widthTo = Math.min(Math.max(1 + CRACK.widthWander * gaussian(random), 0.55), 1.5), narrowed = 1;
+    const halfWidth = (along) => {
+      const run = widthFrom + (widthTo - widthFrom) * (1 - runLeft / Math.max(runLength, 1e-9));
+      const base = width * narrowed * run * (1 - (CRACK.narrowing * along) / reach);
+      const tip = Math.min(Math.max((reach - along) / (CRACK.taper * reach), 0), 1);
+      return CRACK.hairline + Math.max(base - CRACK.hairline, 0) * tip ** 0.7;
+    };
+    crack.widths.push(halfWidth(0));
+    while (travelled < reach - 1e-9 && this.crackSegments.length < 5 * CRACK.mostSegments) {
+      const step = Math.min(CRACK.step, reach - travelled, runLeft);
+      const wobble = CRACK.wobble * gaussian(random);
+      const nextLineX = lineX + Math.cos(heading) * step, nextLineZ = lineZ + Math.sin(heading) * step;
+      let pointX = nextLineX - Math.sin(heading) * wobble, pointZ = nextLineZ + Math.cos(heading) * wobble;
+      const points = crack.points, lastX = points[points.length - 2], lastZ = points[points.length - 1];
+      let stop = false, share = 1;
+      if (!this.crackMayRun(pointX, pointZ)) {
+        // To where the ice ends, by halving.
+        let inside = 0, outside = 1;
+        for (let halving = 0; halving < 7; halving++) {
+          const middle = (inside + outside) / 2;
+          if (this.crackMayRun(lastX + (pointX - lastX) * middle, lastZ + (pointZ - lastZ) * middle)) inside = middle; else outside = middle;
+        }
+        share = inside;
+        pointX = lastX + (pointX - lastX) * inside;
+        pointZ = lastZ + (pointZ - lastZ) * inside;
+        stop = true;
+      }
+      const met = this.crackMet(lastX, lastZ, pointX, pointZ, crack.id, parent);
+      if (met) {
+        share *= Math.hypot(met.x - lastX, met.z - lastZ) / Math.max(Math.hypot(pointX - lastX, pointZ - lastZ), 1e-12);
+        pointX = met.x;
+        pointZ = met.z;
+        stop = true;
+      }
+      travelled += step * share;
+      if (Math.hypot(pointX - lastX, pointZ - lastZ) > 2e-4) {
+        points.push(pointX, pointZ);
+        crack.widths.push(halfWidth(travelled));
+        this.addCrackSegment(lastX, lastZ, pointX, pointZ, crack.id);
+      }
+      if (stop) break;
+      lineX = nextLineX;
+      lineZ = nextLineZ;
+      runLeft -= step;
+      if (runLeft > 1e-9) continue;
+      // A kink, pulled back toward where it is going; the next run a little wider or narrower.
+      const aim = target ? Math.atan2(target.z - lineZ, target.x - lineX) : setOut;
+      heading += CRACK.kink * gaussian(random) + CRACK.pull * Math.atan2(Math.sin(aim - heading), Math.cos(aim - heading));
+      runLeft = runLength = between(random, CRACK.run);
+      widthFrom = widthTo;
+      widthTo = Math.min(Math.max(1 + CRACK.widthWander * gaussian(random), 0.55), 1.5);
+      if (forks && random() < CRACK.fork && reach - travelled > 0.04) {
+        // A fork: a branch to one side, the crack bending a little to the other, both narrower.
+        const side = random() < 0.5 ? -1 : 1, turn = between(random, CRACK.forkAngle);
+        const branch = this.walk(points[points.length - 2], points[points.length - 1], heading + side * turn, (reach - travelled) * between(random, CRACK.forkReach), random,
+          { width: width * narrowed * (1 - (CRACK.narrowing * travelled) / reach) * CRACK.forkNarrows, shade: shade * 0.9, forks: false, parent: crack.id, into });
+        if (branch && into) into.push(branch);
+        heading -= side * 0.3 * turn;
+        narrowed *= CRACK.forkNarrows;
+      }
+    }
+    if (crack.points.length < 4) return null;
+    crack.length = travelled;
+    this.crackLines.push(crack);
+    return crack;
+  }
+
+  /**
+   * Chords of ring crack `radius` (m) about (x, z) (the header): from each of
+   * `arms` ({ crack, angle }: radial cracks and the way they set out) that
+   * reaches it to the next round that does, at CRACK.chord odds each, bowed
+   * outward, `widthShare` as wide as a crack; into `into` if given.
+   */
+  ring(x, z, arms, radius, random, widthShare, into = null) {
+    const reaching = [];
+    for (const { crack, angle } of arms) {
+      const points = crack.points;
+      for (let index = 2; index < points.length; index += 2) {
+        if (Math.hypot(points[index] - x, points[index + 1] - z) < radius * (1 + 0.08 * gaussian(random))) continue;
+        reaching.push({ crack, angle: ((angle % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI), x: points[index], z: points[index + 1] });
+        break;
+      }
+    }
+    reaching.sort((first, second) => first.angle - second.angle);
+    if (reaching.length < 2) return;
+    for (let index = 0; index < reaching.length; index++) {
+      const from = reaching[index], to = reaching[(index + 1) % reaching.length];
+      const gap = ((to.angle - from.angle) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI);
+      if (gap > 2.2 || gap < 0.15 || random() > CRACK.chord) continue;
+      const alongX = to.x - from.x, alongZ = to.z - from.z, distance = Math.hypot(alongX, alongZ);
+      const outward = Math.sign(alongX * ((from.z + to.z) / 2 - z) - alongZ * ((from.x + to.x) / 2 - x)) || 1;
+      const heading = Math.atan2(alongZ, alongX) + outward * CRACK.chordBow * (0.5 + random());
+      const chord = this.walk(from.x, from.z, heading, distance * 1.4, random, { width: between(random, CRACK.width) * widthShare, forks: false, target: { x: to.x, z: to.z }, parent: from.crack.id });
+      if (chord && into) into.push(chord);
+    }
+  }
+
+  /**
+   * A hole's cracks (the header), once its shape is final: radial ones from
+   * its corners, more for a harder blow, at CRACK.runaway odds one running
+   * far; and at CRACK.ring odds a ring of chords joining them, and another
+   * farther out at CRACK.secondRing odds.
+   */
   settle(hole) {
     if (hole.settled) return;
     hole.settled = true;
     const random = seededStream(hole.seed ^ 0xc4ac);
     const length = iceLength(hole.thickness);
-    const count = Math.round(between(random, CRACK.count));
+    const doublings = Math.max(Math.log2(Math.max(hole.strength, 1)), 0);
+    const count = Math.min(Math.round(between(random, CRACK.radials) + CRACK.perDoubling * doublings), CRACK.most);
     const corners = hole.angles.length;
     const start = random() * corners;
-    for (let crack = 0; crack < count; crack++) {
-      const corner = Math.floor(start + (corners * (crack + 0.5 * (random() - 0.5))) / count) % corners;
+    const runaway = random() < CRACK.runaway ? Math.floor(random() * count) : -1;
+    const radials = [];
+    for (let index = 0; index < count; index++) {
+      const corner = Math.floor(start + (corners * (index + 0.5 * (random() - 0.5))) / count) % corners;
       const x = hole.corners[2 * corner], z = hole.corners[2 * corner + 1];
       const heading = Math.atan2(z - hole.z, x - hole.x) + 0.3 * (random() - 0.5);
-      const reach = Math.min(between(random, CRACK.reach) * length, CRACK.longest);
+      const far = index === runaway;
+      const reach = Math.min(between(random, far ? CRACK.runawayReach : CRACK.reach) * length, CRACK.longest);
       hole.crackCorners.push(corner);
-      hole.cracks.push(this.walk(x, z, heading, reach, random, true, length));
+      const crack = this.walk(x, z, heading, reach, random, { width: between(random, CRACK.width) * (far ? 1.25 : 1), into: hole.cracks });
+      if (!crack) continue;
+      hole.cracks.push(crack);
+      radials.push({ crack, angle: heading });
     }
-    if (random() < CRACK.ring) {
+    if (radials.length >= 3 && random() < CRACK.ring) {
       const radius = between(random, CRACK.ringRadius) * (hole.inner + hole.outer) / 2;
-      const span = between(random, CRACK.ringSpan), from = 2 * Math.PI * random();
-      const points = [];
-      const steps = Math.max(Math.ceil((span * radius) / 0.04), 2);
-      const box = this.pool ?? { minX: this.domainMin[0], minZ: this.domainMin[1], size: this.domainSize };
-      for (let step = 0; step <= steps; step++) {
-        const angle = from + (span * step) / steps, out = radius * (1 + 0.04 * gaussian(random));
-        const x = hole.x + Math.cos(angle) * out, z = hole.z + Math.sin(angle) * out;
-        if (!(x > box.minX && x < box.minX + box.size && z > box.minZ && z < box.minZ + box.size && this.overWater(x, z))) break;
-        points.push(x, z);
-      }
-      if (points.length >= 4) hole.cracks.push(points);
+      this.ring(hole.x, hole.z, radials, radius, random, 0.8, hole.cracks);
+      if (random() < CRACK.secondRing) this.ring(hole.x, hole.z, radials, radius * between(random, [1.5, 2.2]), random, 0.65, hole.cracks);
     }
-    this.cracks.push(...hole.cracks);
     this.dirty = true;
   }
 
@@ -883,7 +1058,9 @@ export class IceSheet {
     if (away < 1e-9) return null;
     const reach = rock.plate ? rock.radius : rock.collisionRadius;   // a plate lies flat: its rim must not go under the ice
     const room = Math.max(this.edgeReach(hole, Math.atan2(awayZ, awayX)) - (hole.skin?.front ?? 0) - reach, 0);
-    if (away <= room) return null;
+    // A hundredth of a millimetre's slack: one held at the edge, then come to rest there, lies at its room give or take
+    // the rounding, and knocked each step for that it would never rest.
+    if (away <= room + 1e-5) return null;
     const normalX = -awayX / away, normalZ = -awayZ / away;
     const outward = -(rock.velocity.x * normalX + rock.velocity.z * normalZ);
     const change = outward > 0 ? (1 + rock.collisionBounce * 0.8) * outward : 0;
@@ -1175,8 +1352,6 @@ export class IceSheet {
       this.paintHole(hole);
       hole.painted = true;
     }
-    for (const points of this.cracks) this.paintCrack(points);
-    this.cracks.length = 0;
     this.fillMask(this.changed);
     // Only the rows painted go to the GPU (the header), each from the first texel painted in it to the last, unless so
     // many rows that all of it is cheaper; rows already waiting to go are kept.
@@ -1275,32 +1450,6 @@ export class IceSheet {
     this.changed.push(hole.box);
   }
 
-  /** A crack into G, in a band about each of its segments (the header): the nearest crack's distance, signed by its side along its span. */
-  paintCrack(points) {
-    const far = MASK.crackFar;
-    const count = points.length / 2;
-    for (let segment = 0; segment + 1 < count; segment++) {
-      const ax = points[2 * segment], az = points[2 * segment + 1], bx = points[2 * segment + 2], bz = points[2 * segment + 3];
-      const firstJoint = segment > 0, lastJoint = segment + 2 < count;   // its ends where the crack goes on
-      const [firstColumn, lastColumn] = this.texelRange(Math.min(ax, bx) - far, Math.max(ax, bx) + far, 0);
-      const [firstRow, lastRow] = this.texelRange(Math.min(az, bz) - far, Math.max(az, bz) + far, 1);
-      if (lastColumn < firstColumn || lastRow < firstRow) continue;
-      for (let row = firstRow; row <= lastRow; row++) {
-        const z = this.domainMin[1] + (row + 0.5) * this.cell;
-        for (let column = firstColumn; column <= lastColumn; column++) {
-          const x = this.domainMin[0] + (column + 0.5) * this.cell;
-          segmentDistance(x, z, ax, az, bx, bz, nearest);
-          if (nearest.distance >= far) continue;
-          // Signed by its side along the span, and past a joint (where the next segment carries the side on); unsigned past the crack's tips.
-          const signed = (nearest.along >= 0 || firstJoint) && (nearest.along <= 1 || lastJoint) ? Math.sign(nearest.side || 1) * nearest.distance : nearest.distance;
-          const texel = row * this.texels + column;
-          if (Math.abs(signed) < Math.abs(this.crackField[texel])) this.crackField[texel] = signed;
-        }
-      }
-      this.changed.push([firstColumn, lastColumn, firstRow, lastRow]);
-    }
-  }
-
   /**
    * The fields into the texture's bytes over the rectangles of texels painted
    * since (`changed`), or all of it: each distance d as 127.5·(1 + d/far),
@@ -1310,14 +1459,14 @@ export class IceSheet {
    * (paintHole, growSkin).
    */
   fillMask(rectangles = [[0, this.texels - 1, 0, this.texels - 1]]) {
-    const holeScale = 127.5 / MASK.holeFar, crackScale = 127.5 / MASK.crackFar;
+    const holeScale = 127.5 / MASK.holeFar;
     const glaze = 255 * FLOOD.glaze, wetScale = 255 - glaze;
     for (const [firstColumn, lastColumn, firstRow, lastRow] of rectangles) {
       for (let row = firstRow; row <= lastRow; row++) {
         for (let column = firstColumn; column <= lastColumn; column++) {
           const texel = row * this.texels + column;
           this.maskData[4 * texel] = Math.round(127.5 + this.holeField[texel] * holeScale);
-          this.maskData[4 * texel + 1] = Math.round(127.5 + this.crackField[texel] * crackScale);
+          this.maskData[4 * texel + 1] = 255;   // spare
           const wet = this.wetField[texel];
           if (wet > 0 || this.maskData[4 * texel + 2] > 0) this.maskData[4 * texel + 2] = Math.round(glaze + wet * wetScale);
         }
