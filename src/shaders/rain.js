@@ -9,8 +9,8 @@ import { GALE_SURFACE } from './gale.js';
 // each cell holds uRainSlots drops at once, and each slot lands a drop every
 // uRainPeriod seconds, from its own offset in time, at a new place in its
 // cell and with a new size each time: a hash of the cell (wrapped, so the
-// tile repeats), the slot and the cycle. Nothing is stored: the tile's pass
-// and the flecks evaluate the same drops from the clock.
+// tile repeats), the slot and the cycle. Nothing is stored: the tile's pass,
+// the flecks and the streaks evaluate the same drops from the clock.
 export const RAIN_MAX_SLOTS = 6;   // the most drops a cell holds at once (src/rain.js's schedules keep under it)
 
 export const RAIN_DROPS = /* glsl */`
@@ -29,19 +29,33 @@ vec3 rainHash(vec3 point) {
 struct RainDrop {
   vec2 place;    // in its cell, 0 to 1 on each axis
   float size;    // against the reference drop
-  float age;     // seconds since it landed
+  float age;     // seconds since it landed (less than 0 before it lands)
 };
-// The drop a slot of a cell (an integer cell, any tile's) holds now.
-RainDrop rainDrop(vec2 cell, float slot) {
+// A drop of a slot of a cell (an integer cell, any tile's): "later" drops on
+// from the one it holds now (0 that one; 1 the one it lands next, in -age seconds).
+RainDrop rainDropAt(vec2 cell, float slot, float later) {
   vec2 wrapped = mod(cell, uRainCells);
   float offset = rainHash(vec3(wrapped, slot + 0.5)).x * uRainPeriod;
-  float cycle = floor((uRainTime + offset) / uRainPeriod);
+  float cycle = floor((uRainTime + offset) / uRainPeriod) + later;
   vec3 random = rainHash(vec3(wrapped + 17.31 * slot, cycle + 0.5));
   RainDrop drop;
   drop.place = random.xy;
   drop.size = mix(uRainSizes.x, uRainSizes.y, random.z);
   drop.age = uRainTime + offset - cycle * uRainPeriod;
   return drop;
+}
+// The drop a slot of a cell holds now.
+RainDrop rainDrop(vec2 cell, float slot) { return rainDropAt(cell, slot, 0.0); }
+`;
+
+// Where a tile's drop lands on the water (world XZ), the tile read as
+// RAIN_RIPPLES reads it: `inTile` its place in the reading's tiles, the
+// second reading turned back and shifted back.
+export const RAIN_WORLD = /* glsl */`
+#define RAIN_TURN_BACK mat2(0.8, -0.6, 0.6, 0.8)
+#define RAIN_SHIFT vec2(0.37, 0.71)
+vec2 rainWorld(vec2 inTile, int reading, float tileSize) {
+  return (reading == 0 ? inTile : RAIN_TURN_BACK * (inTile - RAIN_SHIFT)) * tileSize;
 }
 `;
 
@@ -124,20 +138,39 @@ float rainUnresolvedVariance(vec2 worldXZ) {
 }
 `;
 
-// The streaks: drops falling through a box of uBox metres about the eye,
-// each at its own place and phase (aDrop), wrapped round the box as the eye
-// moves, falling at uFall times its own speed, and drawn as the streak it
-// cuts in uStreakSeconds (the eye's persistence): a ribbon in view space
-// from where it is to where it was, turned across the line of sight, as
-// wide as the drop or uMinPixels, whichever is wider, its opacity the share
-// of that width the drop covers. They fade near the eye, toward the box's
-// sides (so the wrap is not seen) and are cut at the water. A drop is a
-// lens: it shows the light round it, so a streak takes the sky's light.
+// The streaks: each a drop of the schedule, falling to where its ring opens
+// and its fleck rises. A streak is one pick (aStreak.w) of one tile near the
+// eye (aStreak.xy: its offset from uEyeTile, the tile the eye stands over;
+// aStreak.z: the reading, 0 or 1, as RAIN_RIPPLES reads the tile). A drop
+// is the same in every tile, falling in step, so the tiles take turns: each
+// is of one of uPickClasses classes (laid as tileX + uClassStep·tileZ, which
+// keeps a class's tiles 3 to 5 m apart, src/rain.js streakLayout), and its
+// picks are its class's drops, so no drop falls in step with its twin a
+// metre or two away. The streak is its slot's next drop,
+// as high over where that lands as it falls in the time left, slanted by
+// the wind (uFall), a bigger drop a little faster (uSpeeds); under a gale it lands on
+// the waves (galeHeight, as the flecks stand on them). It is drawn as the
+// streak it cuts in uStreakSeconds (the eye's persistence): a ribbon in view
+// space from where it is to where it was, turned across the line of sight,
+// as wide as the drop or uMinPixels, whichever is wider, its opacity the
+// share of that width the drop covers. They fade near the eye and toward
+// uReach from it (the tiles reach a tile past it, and as far downwind as a
+// drop drifts in its fall, so none comes or goes in sight as the eye crosses
+// a tile's edge, src/rain.js streakTiles), and are cut where they land. A
+// drop is a lens: it shows the light round it, so a streak takes the sky's
+// light.
 export const STREAK_VERTEX = /* glsl */`
-attribute vec4 aDrop;           // its place in the box (x, z), its phase down the box, its size (0 to 1)
-uniform float uRainTime;
-uniform vec3 uBox;
+${RAIN_DROPS}
+${RAIN_WORLD}
+${GALE_SURFACE}
+attribute vec4 aStreak;         // its tile's offset from uEyeTile (x, z), the reading (0 or 1), its pick
+uniform vec2 uEyeTile[2];       // the tile the eye stands over, for each reading
+uniform float uTileSize;        // metres
+uniform float uPickClasses;     // the classes the tiles take turns in
+uniform float uClassStep;       // a tile's class: (tileX + uClassStep·tileZ) mod uPickClasses
+uniform float uReach;           // metres from the eye the streaks fade out by
 uniform vec3 uFall;             // m/s: the fall (down, and along the wind)
+uniform vec2 uSpeeds;           // the smallest drop's and the biggest's, times uFall
 uniform float uStreakSeconds;
 uniform float uFocalPx;         // render-target pixels per unit tan
 uniform float uDropDiameter;    // metres
@@ -147,11 +180,21 @@ varying float vAlpha;
 varying float vAcross;
 varying float vHeight;
 void main() {
-  float speed = mix(0.85, 1.15, aDrop.w);
-  vec3 fall = uFall * speed;
-  vec3 start = vec3(aDrop.x, aDrop.z, aDrop.y) * uBox;
-  vec3 local = mod(start + fall * uRainTime - cameraPosition + 0.5 * uBox, uBox) - 0.5 * uBox;
-  vec3 head = cameraPosition + local;
+  int reading = int(aStreak.z + 0.5);
+  vec2 tile = uEyeTile[reading] + aStreak.xy;
+  float which = mod(tile.x + uClassStep * tile.y, uPickClasses) + uPickClasses * aStreak.w;   // which of the tile's drops
+  float slot = mod(which, uRainSlots);
+  float cellIndex = floor(which / uRainSlots);
+  vec2 cell = vec2(mod(cellIndex, uRainCells), floor(cellIndex / uRainCells));
+  RainDrop drop = rainDropAt(cell, slot, 1.0);   // the drop it lands next, in -drop.age seconds
+  vec2 landingXZ = rainWorld(tile + (cell + drop.place) / uRainCells, reading, uTileSize);
+  float sizeShare = (drop.size - uRainSizes.x) / max(uRainSizes.y - uRainSizes.x, 1e-6);
+  vec3 fall = uFall * mix(uSpeeds.x, uSpeeds.y, sizeShare);
+  // Out of reach (most of the tiles' corners): nothing drawn, and no wave looked up.
+  float edge = 1.0 - smoothstep(0.6, 1.0, length(landingXZ + fall.xz * drop.age - cameraPosition.xz) / uReach);
+  if (edge <= 0.0) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); vAlpha = 0.0; vAcross = 0.0; vHeight = -1.0; return; }
+  float ground = uGaleMetresPerUnit > 0.0 ? galeHeight(landingXZ) : 0.0;
+  vec3 head = vec3(landingXZ.x, ground, landingXZ.y) + fall * drop.age;
   vec3 tail = head - fall * uStreakSeconds;
   vec3 viewHead = (viewMatrix * vec4(head, 1.0)).xyz;
   vec3 viewTail = (viewMatrix * vec4(tail, 1.0)).xyz;
@@ -160,14 +203,13 @@ void main() {
   vec3 across = cross(viewTail - viewHead, point);
   float acrossLength = length(across);
   across = acrossLength > 1e-9 ? across / acrossLength : vec3(1.0, 0.0, 0.0);
-  float diameter = uDropDiameter * mix(0.7, 1.3, aDrop.w);
+  float diameter = uDropDiameter * mix(0.7, 1.3, sizeShare);
   float width = max(diameter, uMinPixels * depth / uFocalPx);
   point += across * position.x * 0.5 * width;
   float near = smoothstep(0.4, 1.5, depth);
-  float edge = 1.0 - smoothstep(0.3, 0.5, max(abs(local.x) / uBox.x, abs(local.z) / uBox.z));
   vAlpha = -point.z > 0.05 ? uOpacity * (diameter / width) * near * edge : 0.0;
   vAcross = position.x;
-  vHeight = mix(head.y, tail.y, position.y);
+  vHeight = mix(head.y, tail.y, position.y) - ground;   // above where it lands: cut below
   gl_Position = projectionMatrix * vec4(point, 1.0);
 }
 `;
@@ -199,6 +241,7 @@ void main() {
 // cut by the area it really covers, as the foam specks are.
 export const FLECK_VERTEX = /* glsl */`
 ${RAIN_DROPS}
+${RAIN_WORLD}
 ${GALE_SURFACE}
 attribute vec3 aSchedule;       // the cell (x, z) in the tile, the slot
 attribute vec3 aRepeat;         // the tile's offset from the focus's tile (x, z), the reading (0 or 1)
@@ -211,8 +254,6 @@ uniform float uFleckSize;       // metres across, for the reference drop
 uniform float uFleckHeight;     // metres the jet rises, for the reference drop
 uniform float uOpacity;
 varying float vAlpha;
-#define RAIN_TURN_BACK mat2(0.8, -0.6, 0.6, 0.8)
-#define RAIN_SHIFT vec2(0.37, 0.71)
 void main() {
   RainDrop drop = rainDrop(aSchedule.xy, aSchedule.z);
   float life = uFleckLife * drop.size;
@@ -220,7 +261,7 @@ void main() {
   int reading = int(aRepeat.z + 0.5);
   vec2 tile = uFocusTile[reading] + aRepeat.xy;
   vec2 inTile = (tile + (aSchedule.xy + drop.place) / uRainCells);   // in tiles
-  vec2 world = (reading == 0 ? inTile : RAIN_TURN_BACK * (inTile - RAIN_SHIFT)) * uTileSize;
+  vec2 world = rainWorld(inTile, reading, uTileSize);
   float along = drop.age / life;
   float height = uFleckHeight * drop.size * 4.0 * along * (1.0 - along);
   if (uGaleMetresPerUnit > 0.0) height += galeHeight(world);   // on the gale's waves

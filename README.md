@@ -608,8 +608,14 @@ time turned and shifted, so the repeat does not show; far off, where the
 rings are finer than a pixel, what the mip levels average away comes back as
 roughness, from the rings' slope spectrum by Campbell's theorem (as the
 wind's ripples do). The falling drops are streaks, each the path it cuts in
-the eye's 1/30 s, slanted by the wind, in a 20 m box about the eye; where a
-drop lands near where the eye looks, a fleck of white rises and falls.
+the eye's 1/30 s, slanted by the wind: drops of the same schedule, so each
+falls to the very place its ring opens and its fleck of white rises and
+falls. A few of each tile's drops near the eye fall as streaks, about as many
+to a cubic metre as before, fading out 11 m away. Since every tile drops the
+same drops at the same moments, the tiles take turns, so a drop's twin a
+metre away does not fall beside it in step (its twins are 3 to 5 m apart);
+what is left of the repeat is a gentle swell in how many streaks are in view
+(about 8% over a second, against 2% for drops wholly at random).
 
 **Gale** (`src/galeWaves.js`; its shaders in `src/shaders/gale.js` and
 `src/shaders/spectral.js`). A gale of 18 m/s over 1.5 km of open water
