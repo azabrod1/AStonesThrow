@@ -34,6 +34,9 @@ const server = createServer((request, response) => {
 await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
 const origin = `http://127.0.0.1:${server.address().port}`;
 try {
+  // Node's fetch loads its HTTP client at its first request, which on a cold CI runner can take longer than the
+  // deadlines below (it aborted the first of them there once): one untimed request first.
+  await (await fetch(`${origin}/compressed?warm`)).arrayBuffer();
   const started = performance.now();
   assert.deepEqual(await loadAsset(`${origin}/slow`, 'json', { timeout: 300 }), json);
   assert(performance.now() - started > 300);
