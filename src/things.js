@@ -75,6 +75,9 @@
 //     discs in the level of their whole radii: flat pieces of ice afloat
 //     side by side, which must not slide into each other; anything else
 //     meets one as it meets any thing.
+//   - edible: fish eat it (src/fish.js): once it has settled in the water they
+//     come to it and bite, and after as many bites as its mass says
+//     (edibleBites) it is gone (a frozen one only once thawed).
 // Besides: `name`, `short` (the strip's name for it), `group` (the setting's
 // heading), `note` (the card's line, one line on it: some 40 characters fit
 // a phone's card whole, a longer one is cut short) and `called` (the throw button's
@@ -237,6 +240,7 @@ function definitionProblems(key, definition) {
   need(water.thaws === undefined || (isObject(water.thaws) && within(water.thaws.seconds, [1, 100000])), 'water.thaws needs seconds (1 to 100000)');
   for (const ability of ['skips', 'held']) need(abilities[ability] === undefined || typeof abilities[ability] === 'boolean', `abilities.${ability} must be true or false`);
   need(definition.hidden === undefined || typeof definition.hidden === 'boolean', 'hidden must be true or false');
+  need(definition.edible === undefined || typeof definition.edible === 'boolean', 'edible must be true or false');
   need(body.meetsAtRim === undefined || typeof body.meetsAtRim === 'boolean', 'body.meetsAtRim must be true or false');
   const mesh = typeof look.mesh === 'string' ? meshKind(look.mesh) : undefined;
   need(mesh, `look.mesh "${String(look.mesh)}" is no registered mesh (src/thingMeshes.js)`);
@@ -491,7 +495,7 @@ defineBuiltIn('ruby', gem('Ruby', 'Red corundum, an oval', 4000, { color: [190, 
 defineBuiltIn('sapphire', gem('Sapphire', 'Blue corundum, an oval', 4000, { color: [25, 55, 185], stretch: 1.25, contrast: [0.5, 1.0], roughness: 0.06, reflection: 1.5 }));
 
 defineBuiltIn('apple', {
-  name: 'Apple', group: 'Other', note: 'A quarter of it is air: it floats, low', called: 'an apple',
+  name: 'Apple', group: 'Other', note: 'A quarter of it is air: it floats, low', called: 'an apple', edible: true,
   body: { shape: 'sphere', density: 815, size: { by: 'mass', unit: 'g', min: 100, max: 300, step: 10, initial: 180 } },
   material: { bounce: [0.25, 0.35], friction: 0.6, roll: 'solid', rolling: 0.06 },
   water: { restingHeight: 0.95 },
@@ -500,7 +504,7 @@ defineBuiltIn('apple', {
 // A pizza's give (body.soft): the air cups it and flaps it; afloat it drapes over the waves, wholly once soaked.
 const PIZZA_GIVE = { cup: 0.0025, most: 0.12, flap: 0.05, rate: 3, drape: 0.7 };
 defineBuiltIn('pizza', {
-  name: 'Pizza', group: 'Other', note: 'Random toppings: it sails, skims, soaks', called: 'a pizza',
+  name: 'Pizza', group: 'Other', note: 'Random toppings: it sails, skims, soaks', called: 'a pizza', edible: true,
   body: {
     shape: 'mesh',
     upright: true,
@@ -515,7 +519,7 @@ defineBuiltIn('pizza', {
   abilities: { skips: true },   // flat and spinning, it skims (src/rock.js skim), as a stone does
 });
 defineBuiltIn('frozen-pizza', {
-  name: 'Frozen pizza', short: 'Frozen', group: 'Other', note: 'Rigid and frosted: it thaws, then soaks', called: 'a frozen pizza',
+  name: 'Frozen pizza', short: 'Frozen', group: 'Other', note: 'Rigid and frosted: it thaws, then soaks', called: 'a frozen pizza', edible: true,
   body: {
     shape: 'mesh',
     upright: true,
@@ -537,7 +541,7 @@ defineBuiltIn('frozen-pizza', {
 // it, the air under its crust high (what floats an apple pie): its weight is a little under its volume's middle
 // (`ballast`), so under the water it turns back right way up, where the flow had turned it on its edge.
 defineBuiltIn('pie', {
-  name: 'Pie', group: 'Other', note: 'Filled at random: it floats or sinks', called: 'a pie',
+  name: 'Pie', group: 'Other', note: 'Filled at random: it floats or sinks', called: 'a pie', edible: true,
   body: {
     shape: 'mesh',
     upright: true,
@@ -550,7 +554,7 @@ defineBuiltIn('pie', {
   look: { mesh: 'pie', roughness: 0.7, reflection: 0.8, wet: { darker: 0.2, glossier: 0.4 } },
 });
 defineBuiltIn('watermelon', {
-  name: 'Watermelon', group: 'Other', note: 'Nearly as heavy as water: it floats low', called: 'a watermelon',
+  name: 'Watermelon', group: 'Other', note: 'Nearly as heavy as water: it floats low', called: 'a watermelon', edible: true,
   body: { shape: 'mesh', density: 960, size: { by: 'mass', unit: 'kg', min: 2, max: 10, step: 0.5, initial: 5 } },
   material: { bounce: [0.08, 0.15], friction: 0.6 },
   water: { restingHeight: 0.9 },

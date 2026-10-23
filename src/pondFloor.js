@@ -94,8 +94,45 @@ import { FullscreenPass } from './gpu.js';
 // src/shaders/scene.js is its GLSL twin, which sinks the floor's mesh and
 // raises the land's.
 export const SHORE = { z: 2.72, bend: 60, slope: 0.45, deep: 3.5, beach: 0.08, beachTop: 0.4, bank: 1.3, bankFrom: 3, bankTo: 8 };
-/** How far out into the lake a world XZ point lies from the waterline (m; negative on the beach). */
+// The Koi pond's shore (setShoreKind('koi'; src/main.js PLACES `koi`), in place of the lake's: a closed, asymmetric
+// outline about KOI_SHORE.centre, as a Japanese garden's pond is (its lobes, a bay, a broad point), its radius at the
+// angle θ from the centre base + Σ amplitude·cos(k·θ + phase) (KOI_SHORE.lobes): 9 m across, 7 m from the near shore,
+// 60 cm in front of the shore view's eye, to the far one. Out from it (s, koiShoreDistance) the bed drops
+// steeply under a stone edge to a shelf 35 cm down, then to 1.35 m, as a koi pond's does; but along the pebble beach
+// (KOI_SHORE.beach, a span of angles: the suhama of a Japanese garden) it shelves gently. Behind it the ground rises
+// over a low lip (higher at the stone edge than at the beach) and mounds gently away from the water. LAKE_BED in
+// src/shaders/scene.js is its GLSL twin (KOI_LOBES): change both.
+export const KOI_SHORE = {
+  centre: [0, -1.2], base: 4.0,
+  lobes: [[0.55, 2, -0.5], [0.4, 3, 0.7 - Math.PI / 2], [0.2, 5, 1.9]],   // [amplitude (m), k, phase]
+  beach: [0.15, 1.05],   // rad: the pebble beach's span of θ, on the right of the far half
+  shelf: 0.35, deep: 1.35, lip: 0.08, beachLip: 0.08, mound: 0.3,
+};
+let shoreKind = 'lake';
+const shoreKindUniform = { value: 0 };   // LAKE_BED's uKoiPond: 1 for the Koi pond's shore
+/** The shore in force: 'lake' (the lake's, SHORE) or 'koi' (the Koi pond's, KOI_SHORE); every function here and LAKE_BED follow it. */
+export function setShoreKind(kind) {
+  shoreKind = kind === 'koi' ? 'koi' : 'lake';
+  shoreKindUniform.value = shoreKind === 'koi' ? 1 : 0;
+}
+export const getShoreKind = () => shoreKind;
+/** The Koi pond's outline's radius (m) at the angle θ about its centre. */
+export function koiShoreRadius(angle) {
+  return KOI_SHORE.lobes.reduce((radius, [amplitude, k, phase]) => radius + amplitude * Math.cos(k * angle + phase), KOI_SHORE.base);
+}
+/** How much of the pebble beach's shelving the shore at θ takes, 0 to 1. */
+function koiBeach(angle) {
+  const [from, to] = KOI_SHORE.beach;
+  return smoothstep(from, from + 0.25, angle) * (1 - smoothstep(to - 0.25, to, angle));
+}
+/** How far into the Koi pond a world XZ point lies from its waterline (m; negative on its ground). */
+export function koiShoreDistance(x, z) {
+  const dx = x - KOI_SHORE.centre[0], dz = z - KOI_SHORE.centre[1];
+  return koiShoreRadius(Math.atan2(dz, dx)) - Math.hypot(dx, dz);
+}
+/** How far out into the lake a world XZ point lies from the waterline (m; negative on the beach); the Koi pond's in its place. */
 export function shoreDistance(x, z) {
+  if (shoreKind === 'koi') return koiShoreDistance(x, z);
   return SHORE.z + (x * x) / (2 * SHORE.bend) - z;
 }
 const smoothstep = (low, high, value) => { const share = Math.min(Math.max((value - low) / (high - low), 0), 1); return share * share * (3 - 2 * share); };
@@ -103,8 +140,23 @@ const smoothstep = (low, high, value) => { const share = Math.min(Math.max((valu
 export function landHeight(inland) {
   return SHORE.beachTop * Math.tanh(SHORE.beach * inland / SHORE.beachTop) + SHORE.bank * smoothstep(SHORE.bankFrom, SHORE.bankTo, inland);
 }
-/** The lake bed's depth (m) under a world XZ point: positive in the lake, negative (the land's height) on land. */
+/** The Koi pond's bed's depth (m) under a world XZ point: positive in the water, negative (the ground's height) on land. */
+export function koiFloorDepthAt(x, z) {
+  const offshore = koiShoreDistance(x, z);
+  {
+    const beach = koiBeach(Math.atan2(z - KOI_SHORE.centre[1], x - KOI_SHORE.centre[0]));
+    if (offshore >= 0) {
+      const edged = KOI_SHORE.shelf * smoothstep(0, 0.25, offshore) + (KOI_SHORE.deep - KOI_SHORE.shelf) * smoothstep(0.6, 2.0, offshore);
+      return edged + (KOI_SHORE.deep * smoothstep(0, 2.6, offshore) - edged) * beach;
+    }
+    const inland = -offshore;
+    const lip = KOI_SHORE.lip + (KOI_SHORE.beachLip - KOI_SHORE.lip) * beach;
+    return -(lip * Math.tanh(inland / (0.3 + 0.5 * beach)) + KOI_SHORE.mound * smoothstep(2, 7, inland));
+  }
+}
+/** The lake bed's depth (m) under a world XZ point: positive in the lake, negative (the land's height) on land; the Koi pond's in its place. */
 export function floorDepthAt(x, z) {
+  if (shoreKind === 'koi') return koiFloorDepthAt(x, z);
   const offshore = shoreDistance(x, z);
   return offshore >= 0 ? SHORE.deep * Math.tanh(SHORE.slope * offshore / SHORE.deep) : -landHeight(-offshore);
 }
@@ -118,6 +170,7 @@ function shoreUniforms() {
     uShore: { value: new THREE.Vector4(SHORE.z, SHORE.bend, SHORE.slope, SHORE.deep) },
     uLand: { value: new THREE.Vector4(SHORE.beach, SHORE.beachTop, SHORE.bank, 0) },
     uBank: { value: new THREE.Vector2(SHORE.bankFrom, SHORE.bankTo) },
+    uKoiPond: shoreKindUniform,
   };
 }
 const BANK = [0, 2.45];                                         // under the shore view's eye: the bed's mesh centres here
@@ -248,9 +301,37 @@ function landGeometry() {
  * also puts on the mirror's layer, lit as the bed and fading into the sky's
  * photo far off. It shares the floor's baked sand and the sky's cube map
  * (src/sky.js, refilled in place by a new sky); `snow` is the weather's
- * snow cover, a uniform's shared object.
+ * snow cover, a uniform's shared object. With `koi`, the Koi pond's ground
+ * all round its outline (koiLandGeometry) in place of the lake's beach.
  */
-export function createShore(floor, lighting, environment, { snow = { value: 0 } } = {}) {
+// The Koi pond's ground (createShore's `koi`): rings about the pond's outline (KOI_SHORE), from under its water's edge
+// out to the horizon, KOI_LAND.around to a ring, each ring KOI_LAND.growth farther out than the last.
+const KOI_LAND = { around: 240, wet: [-0.5, -0.25, -0.1, 0], first: 0.03, growth: 1.2, far: 6000 };
+function koiLandGeometry() {
+  const rows = [...KOI_LAND.wet];
+  for (let step = KOI_LAND.first; rows.at(-1) < KOI_LAND.far; step *= KOI_LAND.growth) rows.push(rows.at(-1) + step);
+  const positions = [];
+  for (const out of rows) {
+    for (let spoke = 0; spoke < KOI_LAND.around; spoke++) {
+      const angle = (spoke / KOI_LAND.around) * Math.PI * 2;
+      const radius = koiShoreRadius(angle) + out;
+      positions.push(KOI_SHORE.centre[0] + Math.cos(angle) * radius, 0, KOI_SHORE.centre[1] + Math.sin(angle) * radius);
+    }
+  }
+  const indices = [];
+  for (let row = 0; row < rows.length - 1; row++) {
+    for (let spoke = 0; spoke < KOI_LAND.around; spoke++) {
+      const here = row * KOI_LAND.around + spoke, next = row * KOI_LAND.around + (spoke + 1) % KOI_LAND.around;
+      indices.push(here, next, here + KOI_LAND.around, next, next + KOI_LAND.around, here + KOI_LAND.around);   // facing up
+    }
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setIndex(indices);
+  return geometry;
+}
+
+export function createShore(floor, lighting, environment, { snow = { value: 0 }, koi = false } = {}) {
   const material = new THREE.ShaderMaterial({
     vertexShader: LAND_VERTEX,
     fragmentShader: LAND_FRAGMENT,
@@ -267,7 +348,7 @@ export function createShore(floor, lighting, environment, { snow = { value: 0 } 
       uSnow: snow,   // the snow lying on it, 0 to 1 (src/main.js WEATHERS)
     },
   });
-  const mesh = new THREE.Mesh(landGeometry(), material);
+  const mesh = new THREE.Mesh(koi ? koiLandGeometry() : landGeometry(), material);
   mesh.frustumCulled = false;
   return mesh;
 }
