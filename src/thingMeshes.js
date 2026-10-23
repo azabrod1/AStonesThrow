@@ -32,10 +32,11 @@
 //     the girdle, a pavilion to the culet), stretched by its `look.stretch`,
 //     each facet's colour `look.color` at its own brightness, a diamond's
 //     `look.fire` of them in the spectrum's colours;
-//   - shard: a piece of broken ice, a slab of its piece's outline and
-//     thickness (createShardGeometry: src/ice.js breaks each one, and
-//     src/rock.js hands the builder its `piece`), clear and dark, clouded
-//     white, its broken sides white.
+//   - shard: a piece of broken ice, a slab of its piece's outline, broken,
+//     and thickness (createShardGeometry: src/ice.js breaks each one, and
+//     src/rock.js hands the builder its `piece`), clear (what lies under it
+//     shows through: its `clearShare`), clouded white, its rim rounded and
+//     whiter, its broken sides white.
 // A new kind of look (a pizza's disc, a feather's vane) is a builder
 // registered here; its definition then names it. Every geometry carries a
 // colour per vertex and is drawn with the material src/rock.js makes; a kind
@@ -1011,36 +1012,84 @@ export function createBrickGeometry() {
 // src/things.js 'ice-shard'): a slab of the sheet's thickness whose outline
 // is its piece's (`piece`: its corners about its middle, convex, in unit
 // radii in the sheet's plane, its own +y up, and its thickness in unit
-// radii), so each one is its own and none is built twice. Its faces are
-// flat. Its top and bottom are the sheet's clear ice, the colour of the
-// water seen through it (its piece's `clear`, given by src/main.js: the
-// pool's tiles' aqua; SHARD_LOOK.clear, a lake's dark, without),
-// clouded white by its piece's `white` share (the sheet's white ice and
-// frozen bubbles), paler in a band SHARD_LOOK.rim of the way in from its rim,
-// where the light comes up through its broken edge; its broken sides scatter
-// the light white (SHARD_LOOK). With no piece (a thing defined or thrown
-// plain, tools/thing-probe.mjs) it is SHARD_LOOK.plain's: a broken hexagon.
+// radii), so each one is its own and none is built twice. Its edges are
+// broken: each side cut into two to four, each cut point off the side's line
+// by up to SHARD_LOOK.jag of its length, the outline then scaled about its
+// middle to the piece's own area (its mass and its volume stay ice's). It
+// is clear ice, seen through: its `clearShare` (an attribute, 0 to 1) is how
+// much of what lies under it shows through (src/rock.js `seenThrough`, a
+// look that draws it so; under the water, where ice and water bend light
+// all but alike, it is drawn from above only as src/rock.js says), the rest
+// its own light: its top and bottom as milky as the sheet's clear ice for
+// its thickness (its piece's `milk`) and clouded white by its piece's
+// `white` share (the sheet's snow ice and frozen bubbles); a
+// band SHARD_LOOK.rim of the way in from its rim whiter and less clear, its
+// normals tipped out toward the edge by SHARD_LOOK.round (a broken edge,
+// rounded as it melts, catches the light); its broken sides white. With no
+// piece (a thing defined or thrown plain, tools/thing-probe.mjs) it is
+// SHARD_LOOK.plain's: a broken hexagon.
 const SHARD_LOOK = {
-  clear: linear(34, 50, 58), white: linear(206, 214, 224), edge: linear(150, 166, 182), side: linear(188, 200, 214),
-  rim: 0.12,          // the paler band round its top, of the way in from its rim
-  edgeWhite: 0.8,     // the band's colour over the top's at its edge, for clear ice
+  clear: linear(10, 13, 16), white: linear(206, 214, 224), edge: linear(150, 166, 182), side: linear(188, 200, 214),
+  rim: 0.06,          // the whiter band round its top, of the way in from its rim
+  edgeWhite: 0.6,     // the band's colour over the top's at its edge, for clear ice
+  through: 0.92,      // the share of what is under it a clear piece shows (the rest its milk)...
+  rimThrough: 0.55,   // ...at its edge...
+  sideThrough: 0.2,   // ...and through a side
+  jag: 0.05,          // how far a cut point is off its side's line, at most, of the side's length
+  round: 0.6,         // radians the band's normals are tipped out at the edge
+  milk: 0.15,         // its clear ice's milk, without a piece's own (src/ice.js: the sheet's, for its thickness)
   plain: { corners: [1, 0, 0.55, 0.78, -0.45, 0.9, -1, 0.05, -0.52, -0.82, 0.48, -0.8], thickness: 0.15, white: 0.2 },
 };
 
+/** A polygon's area (of either winding), corners [x0, z0, …]. */
+function outlineArea(corners) {
+  let twice = 0;
+  for (let index = 0, count = corners.length / 2; index < count; index++) {
+    const next = (index + 1) % count;
+    twice += corners[2 * index] * corners[2 * next + 1] - corners[2 * next] * corners[2 * index + 1];
+  }
+  return Math.abs(twice) / 2;
+}
+
+/** A piece's outline broken along its sides (SHARD_LOOK.jag), at its own area: drawn from a stream seeded by its corners, so the same piece breaks alike. */
+function brokenOutline(corners) {
+  let state = 0;
+  for (const value of corners) state = Math.imul(state ^ Math.round(value * 1e5), 0x9e3779b1) >>> 0;
+  const random = () => { state = (state + 0x6d2b79f5) >>> 0; let mixed = Math.imul(state ^ (state >>> 15), 1 | state); mixed ^= mixed + Math.imul(mixed ^ (mixed >>> 7), 61 | mixed); return ((mixed ^ (mixed >>> 14)) >>> 0) / 4294967296; };
+  const count = corners.length / 2, broken = [];
+  for (let index = 0; index < count; index++) {
+    const next = (index + 1) % count;
+    const ax = corners[2 * index], az = corners[2 * index + 1], bx = corners[2 * next], bz = corners[2 * next + 1];
+    const length = Math.hypot(bx - ax, bz - az) || 1, acrossX = -(bz - az) / length, acrossZ = (bx - ax) / length;
+    const cuts = 2 + Math.floor(3 * random());
+    broken.push(ax, az);
+    for (let cut = 1; cut < cuts; cut++) {
+      const along = (cut + 0.6 * (random() - 0.5)) / cuts, off = SHARD_LOOK.jag * length * (2 * random() - 1);
+      broken.push(ax + (bx - ax) * along + acrossX * off, az + (bz - az) * along + acrossZ * off);
+    }
+  }
+  const scale = Math.sqrt(outlineArea(corners) / Math.max(outlineArea(broken), 1e-12));
+  return broken.map((value) => value * scale);
+}
+
 /**
  * A shard's geometry (the header) for its `piece` ({ corners, thickness,
- * white }), separate triangles wound outward, each face's normal its own:
- * its top and bottom fanned from its middle to a ring SHARD_LOOK.rim in from
- * its rim, and a band from there to its rim; a quad for each side.
+ * white }), separate triangles wound outward: its top and bottom fanned
+ * from its middle to a ring SHARD_LOOK.rim in from its broken rim, and a
+ * band from there to its rim, its normals tipped out at the rim; a quad for
+ * each side. Its `clearShare` per vertex says how much shows through.
  */
 export function createShardGeometry(piece = SHARD_LOOK.plain) {
-  const corners = piece.corners, count = corners.length / 2, half = piece.thickness / 2;
-  const positions = [], normals = [], colors = [];
-  const color = new THREE.Color();
-  const middle = color.copy(piece.clear ?? SHARD_LOOK.clear).lerp(SHARD_LOOK.white, piece.white).toArray();
-  const rim = new THREE.Color().copy(color).lerp(SHARD_LOOK.edge, SHARD_LOOK.edgeWhite * (1 - piece.white)).toArray();
+  const corners = brokenOutline(piece.corners), count = corners.length / 2, half = piece.thickness / 2;
+  const positions = [], normals = [], colors = [], clearShares = [];
+  // Its white: its snow ice, and its clear ice's milk (the sheet's, for its thickness: src/ice.js).
+  const white = piece.white + (1 - piece.white) * (piece.milk ?? SHARD_LOOK.milk);
+  const middle = new THREE.Color().copy(SHARD_LOOK.clear).lerp(SHARD_LOOK.white, white).toArray();
+  const rim = new THREE.Color().fromArray(middle).lerp(SHARD_LOOK.edge, SHARD_LOOK.edgeWhite * (1 - white)).toArray();
   const side = SHARD_LOOK.side.toArray();
+  const middleThrough = SHARD_LOOK.through * (1 - white), rimThrough = SHARD_LOOK.rimThrough * (1 - white);
   const inset = 1 - SHARD_LOOK.rim;
+  const tipUp = Math.cos(SHARD_LOOK.round), tipOut = Math.sin(SHARD_LOOK.round);
   // The way round its corners: counter-clockwise seen from above (+y) is (u, w) turning from +w to +u.
   let twice = 0;
   for (let index = 0; index < count; index++) {
@@ -1048,29 +1097,31 @@ export function createShardGeometry(piece = SHARD_LOOK.plain) {
     twice += corners[2 * index + 1] * corners[2 * next] - corners[2 * index] * corners[2 * next + 1];
   }
   const order = twice >= 0 ? 1 : -1;
-  const push = (point, normal, tint) => { positions.push(...point); normals.push(...normal); colors.push(...tint); };
+  const push = (point, normal, tint, through) => { positions.push(...point); normals.push(...normal); colors.push(...tint); clearShares.push(through); };
   for (let step = 0; step < count; step++) {
     const index = order > 0 ? step : count - 1 - step, next = order > 0 ? (step + 1) % count : (2 * count - 2 - step) % count;
     const ax = corners[2 * index], az = corners[2 * index + 1], bx = corners[2 * next], bz = corners[2 * next + 1];
     const innerAX = ax * inset, innerAZ = az * inset, innerBX = bx * inset, innerBZ = bz * inset;
-    // Its top and bottom: a triangle from its middle to the ring, and the band from the ring to this side.
+    const length = Math.hypot(bx - ax, bz - az) || 1;
+    const outX = -(bz - az) / length, outZ = (bx - ax) / length;   // this side's outward normal, level
+    // Its top and bottom: a triangle from its middle to the ring, and the band from the ring to this side, its normals
+    // tipped out at the rim.
     for (const [y, up] of [[half, 1], [-half, -1]]) {
-      const normal = [0, up, 0];
+      const flat = [0, up, 0], tipped = [outX * tipOut, up * tipUp, outZ * tipOut];
       const triangle = (first, second, third) => (up > 0 ? [first, second, third] : [first, third, second]);
-      for (const [point, tint] of triangle([[0, y, 0], middle], [[innerAX, y, innerAZ], middle], [[innerBX, y, innerBZ], middle])) push(point, normal, tint);
-      for (const [point, tint] of triangle([[innerAX, y, innerAZ], middle], [[ax, y, az], rim], [[bx, y, bz], rim])) push(point, normal, tint);
-      for (const [point, tint] of triangle([[innerAX, y, innerAZ], middle], [[bx, y, bz], rim], [[innerBX, y, innerBZ], middle])) push(point, normal, tint);
+      for (const corner of triangle([[0, y, 0], flat, middle, middleThrough], [[innerAX, y, innerAZ], flat, middle, middleThrough], [[innerBX, y, innerBZ], flat, middle, middleThrough])) push(...corner);
+      for (const corner of triangle([[innerAX, y, innerAZ], flat, middle, middleThrough], [[ax, y, az], tipped, rim, rimThrough], [[bx, y, bz], tipped, rim, rimThrough])) push(...corner);
+      for (const corner of triangle([[innerAX, y, innerAZ], flat, middle, middleThrough], [[bx, y, bz], tipped, rim, rimThrough], [[innerBX, y, innerBZ], flat, middle, middleThrough])) push(...corner);
     }
     // This side, outward (its normal across the side, level).
-    const length = Math.hypot(bx - ax, bz - az) || 1;
-    const normal = [-(bz - az) / length, 0, (bx - ax) / length];
-    push([ax, half, az], normal, side); push([ax, -half, az], normal, side); push([bx, -half, bz], normal, side);
-    push([ax, half, az], normal, side); push([bx, -half, bz], normal, side); push([bx, half, bz], normal, side);
+    const normal = [outX, 0, outZ];
+    for (const point of [[ax, half, az], [ax, -half, az], [bx, -half, bz], [ax, half, az], [bx, -half, bz], [bx, half, bz]]) push(point, normal, side, SHARD_LOOK.sideThrough);
   }
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
   geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
   geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  geometry.setAttribute('clearShare', new THREE.Float32BufferAttribute(clearShares, 1));
   return geometry;
 }
 

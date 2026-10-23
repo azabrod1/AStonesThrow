@@ -22,6 +22,36 @@
 <link rel="modulepreload" href="./src/thingMenu.js">
 <link rel="modulepreload" href="./src/things.js">
 <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.183.2/build/three.module.js">
+<!-- The first sky's photo (about 5 MB) and measurements, asked for now, while
+     the modules download, not once they have run (src/sky.js Starting): the
+     files of the sky last shown here (src/main.js SKY_ASSETS_STORAGE_KEY),
+     or on a first visit the default place's (Lakeside in the afternoon;
+     tools/startup-probe.mjs checks these are the files it loads). None when
+     the page's parameters choose the sky. src/loadAsset.js takes each over.
+     Before the stylesheet below, which a script would wait for. -->
+<script>
+  (() => {
+    const parameters = new URLSearchParams(location.search);
+    if (parameters.has('sky') || parameters.has('time') || parameters.get('water') === 'pool') return;
+    const firstVisitSky = ['assets/sky/lakeside_2k.hdr', 'assets/sky/lakeside.json', 'assets/sky/meadow_2.json'];
+    let assets;
+    try {
+      const remembered = localStorage.getItem('stone-pond-sky-assets');
+      const chosen = ['stone-pond-sky', 'stone-pond-time'].some((key) => localStorage.getItem(key) !== null) || localStorage.getItem('stone-pond-water') === 'pool';
+      assets = remembered ? JSON.parse(remembered) : chosen ? [] : firstVisitSky;
+    } catch { return; }
+    if (!Array.isArray(assets) || !assets.length) return;
+    window.__earlyAssets = new Map();
+    for (const asset of assets) {
+      const url = new URL(String(asset), document.baseURI);
+      if (url.origin !== location.origin) continue;
+      const controller = new AbortController();
+      const response = fetch(url, { signal: controller.signal });
+      response.catch(() => {});   // a failure is the load's to report, once it takes the request over
+      window.__earlyAssets.set(url.href, { response, controller });
+    }
+  })();
+</script>
 <!-- Rings spreading from a stone's entry. iOS takes no SVG for the home screen
      and rounds the square PNG's corners itself. -->
 <link rel="icon" href="assets/icon/favicon.svg" type="image/svg+xml">

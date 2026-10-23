@@ -146,6 +146,7 @@ export const ICE = {
   crackShare: 0.6,       // a blow it holds but over this share of what it holds stars it with cracks
   give: { shell: 0.15, soft: 0.3 },   // a hollow ball's blow (its touch lasts some ten times a stone's), and a soft thing's, against a rigid thing's of its mass and speed
   keepLeast: 0.4,        // the least share of its speed a thing keeps breaking through
+  scatter: 12,           // per metre: the light clear ice scatters back (a shard's milk; ICE_SCATTER in src/shaders/scene.js, its twin, draws the sheet's)
 };
 // The Ice setting's choices (src/main.js): the sheet's thickness, metres. Everything here takes metres.
 export const ICE_THICKNESS = { none: 0, thin: 0.01, thick: 0.04 };
@@ -191,11 +192,11 @@ const CRACK = {
 // discs at most `fill` of the hole. Each starts inside the hole's edge, its highest point `depth` (least, most) of its
 // radius under the water, its inner edge down by `tilt` (least, most; degrees), drifting at `drift`
 // (least, most; m/s) out from the hole's middle, turned to either side by up to `aside` (radians). A piece is white ice
-// at `whiteOdds` times the sheet's share of white ice, else clear.
+// at `whiteOdds` times the sheet's share of white ice, `whiteShare` (least, most) white, else clear.
 const SHARD = {
   leastDelay: 0.12, inner: [0.32, 0.46], outer: [0.84, 0.94], across: [0.58, 0.68], deep: 0.45, widest: 0.85, gap: 0.86,
   chips: [1, 3], chip: [0.12, 0.22], least: 0.02, thinnest: 0.002, most: 9, fill: 0.55, depth: [0.05, 0.3], tilt: [5, 25], drift: [0, 0.06], aside: 0.7,
-  whiteOdds: 1.5, slab: 1.5,
+  whiteOdds: 0.8, whiteShare: [0.3, 0.6], slab: 1.5,
 };
 // Flooding (the header): the patch reaches `reach` (least, most) of the hole's reach, waved by `wobble`, leaning `lean`
 // of the hole's mean reach the way the thing went, its edge feathered over `feather` of that; a drop wets a spot by up
@@ -1026,9 +1027,11 @@ export class IceSheet {
       piece.thickness = hole.thickness;
       piece.mass = ICE.density * piece.area * hole.thickness;
       // Some pieces are of the sheet's white ice, the rest clear (src/shaders/scene.js ICE_WHITE: more white in thick ice).
-      piece.white = random() < SHARD.whiteOdds * (0.12 + 0.28 * thickShare) ? between(random, [0.45, 0.85]) : between(random, [0, 0.1]);
-      // Its outline for its mesh (src/thingMeshes.js createShardGeometry): in its own radii, its own +y up.
-      piece.shape = { corners: piece.corners.map((value) => value / piece.radius), thickness: hole.thickness / piece.radius, white: piece.white };
+      piece.white = random() < SHARD.whiteOdds * (0.12 + 0.28 * thickShare) ? between(random, SHARD.whiteShare) : between(random, [0, 0.1]);
+      // Its outline for its mesh (src/thingMeshes.js createShardGeometry): in its own radii, its own +y up; and how milky
+      // its clear ice is, as the sheet's (ICE.scatter, src/shaders/scene.js ICE_SCATTER's twin), seen a little aslant.
+      const milk = 1 - Math.exp(-ICE.scatter * hole.thickness / 0.8);
+      piece.shape = { corners: piece.corners.map((value) => value / piece.radius), thickness: hole.thickness / piece.radius, white: piece.white, milk };
       piece.start = {
         // Its highest point (its raised rim, tilted) under the water by `depth` of its radius: it comes up, never appears out of it.
         position: new THREE.Vector3(piece.x, -(hole.thickness / 2 + Math.sin(tilt) * piece.radius + between(random, SHARD.depth) * piece.radius), piece.z),

@@ -134,7 +134,7 @@ ${ICE_UNIFORMS}
 #define ICE_SNOW_STREAK 3.0            // snow ice's patches this many times longer along the wind than across it
 #define ICE_CLOUDY 0.18                // the share of light cloudy ice scatters back, where it is (iceLook)...
 #define ICE_CLOUDY_BAND 0.07           // ...round the snow ice, this far under its threshold in the snow's field
-#define ICE_SCATTER 12.0               // per metre of the refracted ray's path: the light clear ice scatters back (its veil)
+#define ICE_SCATTER 12.0               // per metre of the refracted ray's path: the light clear ice scatters back (its veil; src/ice.js ICE.scatter, its twin, a shard's)
 #define ICE_GRAIN 0.16                 // m: its crystals' size, about (their grid warped, so some are half that, some twice)...
 #define ICE_GRAIN_LINE 0.0005          // ...the half-width of the boundary between two (m)...
 #define ICE_GRAIN_SEEN 0.28            // ...and how white it shows, at most, against white ice (where it shows: iceLook)
@@ -237,11 +237,11 @@ struct IceLook {
 IceLook iceLook(vec2 worldXZ, float footprint) {
   IceLook look;
   float thickShare = smoothstep(0.01, 0.04, uIceThickness);
-  // Round a frozen pool: how far its nearest wall is.
+  // Round a frozen pool: how far its nearest wall is (outside its walls, far: a shard's own look, pieceWhite).
   float fromWall = 1e3;
   if (uIcePool.w > 0.5) {
     vec2 inside = min(worldXZ - uIcePool.xy, uIcePool.xy + uIcePool.z - worldXZ);
-    fromWall = min(inside.x, inside.y);
+    fromWall = min(inside.x, inside.y) < 0.0 ? 1e3 : min(inside.x, inside.y);
   }
   // Snow ice: an fbm thresholded at the share, its edge ragged to the pixel, thin there and thick inside, laid out in
   // streaks along the wind that blew it (ICE_SNOW_STREAK); drifted against a pool's walls.
@@ -2361,6 +2361,80 @@ vec3 seenThroughWater(vec3 world, float level) {
   }
   vec2 seen = cameraPosition.xz + fromEye * (crossing * (height + depth) / (height * reach));
   return vec3(seen.x, world.y, seen.y);
+}
+`;
+
+// What a clear floater (src/rock.js `seenThrough`: a shard of ice) shows
+// through its top, in the main pass from above the water: the under-water
+// pass at its pixel (the pool's tiles or the bed, its own body under the
+// water left out of it), dimmed along the way down through the water as
+// WATER_FRAGMENT dims what its surface shows, times its `clearShare` and
+// the share its face does not mirror (Schlick's Fresnel for its normal),
+// with what its milk scatters back lit as the sheet's (clearScatter);
+// none from under the water, and none once it is a few centimetres clear of
+// the water (`height`, its point's: in the air, on the deck), where that
+// pass shows what is far behind it. viewPosition and normal are the
+// standard material's (view space).
+export const SEEN_UNDER_CLEAR = /* glsl */`
+uniform vec3 uSunDir;
+uniform vec3 uSunIrradiance;
+uniform vec3 uSkyAmbient;
+uniform sampler2D uUnderColor;
+uniform sampler2D uUnderDepth;
+uniform vec2 uResolution;
+uniform float uNear;
+uniform float uFar;
+uniform vec3 uExtinction;
+uniform vec3 uWaterColor;
+vec3 seenUnderClear(vec3 viewPosition, vec3 normal, float clearShare, float height) {
+  if (cameraPosition.y < 0.0 || clearShare <= 0.0) return vec3(0.0);
+  vec2 screenUv = gl_FragCoord.xy / uResolution;
+  float surfaceDistZ = max(viewPosition.z, 1e-4);
+  float rawDepth = texture2D(uUnderDepth, screenUv).r;
+  float underDistZ = rawDepth >= 1.0 ? uFar : -(uNear * uFar) / ((uFar - uNear) * rawDepth - uFar);
+  float path = max(underDistZ - surfaceDistZ, 0.0) * length(viewPosition) / surfaceDistZ;
+  vec3 underneath = mix(uWaterColor, texture2D(uUnderColor, screenUv).rgb, exp(-uExtinction * path));
+  float facing = abs(dot(normalize(viewPosition), normal));
+  float mirrored = 0.02 + 0.98 * pow(1.0 - facing, 5.0);
+  return underneath * clearShare * (1.0 - mirrored) * (1.0 - smoothstep(0.02, 0.08, height));
+}
+// The light its milk and white ice scatter back (albedo, its colour): as the sheet's white ice is lit
+// (WATER_FRAGMENT iceSurface), by the scene's sun and sky, not the material's lights.
+vec3 clearScatter(vec3 albedo) {
+  return albedo * (uSunIrradiance * max(uSunDir.y, 0.0) + uSkyAmbient * 1.4);
+}
+// The sheet's own look on a piece of it (ICE_COMMON iceLook: its snow ice, frost specks, bubbles and crystals' lines),
+// at a point on the piece (onPiece, m from its middle, so it goes where the piece goes), PIECE_LOOK_SCALE times finer
+// (a piece a hand across would lie inside one of the sheet's patches, all one white), over a footprint: the share of
+// white it adds, which hides that much of what shows through.
+#define PIECE_LOOK_SCALE 2.5
+float pieceWhite(vec2 onPiece, float footprint) {
+  IceLook look = iceLook(onPiece * PIECE_LOOK_SCALE + 41.0, footprint * PIECE_LOOK_SCALE);
+  return clamp(look.white + look.bubbles + ICE_GRAIN_SEEN * look.grain, 0.0, 1.0);
+}
+`;
+
+// A clear floater's sides seen from inside, down through its top (src/rock.js
+// `seenThrough`, its part under the water from above): the light in the ice
+// turned back off them (all but totally: past the critical angle, ice to
+// water near enough to it), so as bright as white ice lit by the sun and
+// the sky (CLEAR_SIDE_LIGHT of it), fading down the face (`depth`, the
+// point's height against the water's, negative: CLEAR_SIDE_FADE metres),
+// and over what lies behind by CLEAR_SIDE_COVER; its top under a film of
+// water its own light over what lies under it by CLEAR_FILM_COVER.
+export const CLEAR_SIDES_INSIDE = /* glsl */`
+uniform vec3 uSunDir;
+uniform vec3 uSunIrradiance;
+uniform vec3 uSkyAmbient;
+#define CLEAR_SIDE_LIGHT 0.45
+#define CLEAR_SIDE_FADE 0.08
+#define CLEAR_SIDE_COVER 0.85     // how much of what is behind a side's inner face it hides
+#define CLEAR_FILM_COVER 0.35     // and its top, under a film of water, its own light over what is under it
+vec3 clearSideInside(float depth) {
+  return (uSunIrradiance * max(uSunDir.y, 0.0) + uSkyAmbient * 1.4) * CLEAR_SIDE_LIGHT * exp(depth / CLEAR_SIDE_FADE);
+}
+vec3 clearFilm(vec3 albedo) {
+  return albedo * (uSunIrradiance * max(uSunDir.y, 0.0) + uSkyAmbient * 1.4);
 }
 `;
 

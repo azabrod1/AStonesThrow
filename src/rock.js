@@ -294,7 +294,7 @@
 // pool's wall, from the ice) it is turned back off it, at its own bounce,
 // along whichever axis of its move rose (the pool's walls are square).
 import * as THREE from 'three';
-import { SEEN_THROUGH_WATER, FLOATER_WATER } from './shaders/scene.js';
+import { SEEN_THROUGH_WATER, SEEN_UNDER_CLEAR, CLEAR_SIDES_INSIDE, FLOATER_WATER } from './shaders/scene.js';
 import { PINCH_TIME, NECK_CLOSE, SPIN_DECAY, sinkStep, underWater } from './cavity.js';
 import { THINGS, DEFAULT_THING, WATER_DENSITY, STONE_DENSITY } from './things.js';
 import { meshKind, withParts } from './thingMeshes.js';
@@ -1227,8 +1227,20 @@ export class Rock {
    * under it, as a sheet lying on the water, rather than the whole turned
    * rigidly, by its drape's share (its normals the rigid tilt's: a sample
    * of the water's slope at each point would triple the work); anything
-   * rigid has none, nor anything off the water. Its three programs (above, below, in the
-   * mirror) are its own, every floater's alike, drawn under the loading veil
+   * rigid has none, nor anything off the water. A clear thing (`look.seenThrough`: a
+   * shard of ice) shows what lies under it through its top, by its mesh's
+   * `clearShare`: the under-water pass at its pixel, dimmed by the water on
+   * the way as the water's own surface dims it (WATER_FRAGMENT), less where
+   * its face mirrors more, and none once it is clear of the water (in the
+   * air, on the deck); and under the water, where ice bends light all but as
+   * water does, it is drawn from above see-through, over what lies under it,
+   * by its sides' inner faces (CLEAR_SIDES_INSIDE: seen down through its
+   * top, the light in it turned back off them, a bright band along its far
+   * edges as wide as it is thick seen aslant) and faintly by its top where a
+   * ripple has washed over it (CLEAR_FILM_COVER), so that pass shows what
+   * lies under it, the band and the film. Its
+   * programs (above, below, in the mirror; a clear thing's above and below
+   * its own) are every floater's alike, drawn under the loading veil
    * (src/main.js warmUp).
    */
   rideTheWater(water, { seenThroughWater, waterLevel, fogExtinction, fogColor }) {
@@ -1236,6 +1248,9 @@ export class Rock {
     const dryRadius = this.dryRadius = { value: (this.thing.water.dry ?? 0) * this.radius };
     const rideShare = this.rideShare = { value: 0 };
     const drapeShare = this.drapeShare = { value: this.drape };
+    const seenThrough = Boolean(this.thing.look.seenThrough);
+    // A clear thing's part under the water draws both its faces (its sides' inner ones, from above), see-through.
+    if (seenThrough) Object.assign(this.meshBelow.material, { side: THREE.DoubleSide, transparent: true, depthWrite: false });
     this.ridesWater = true;   // src/main.js redraws its mirror image as the water moves under it
     const ride = (side) => (shader) => {
       Object.assign(shader.uniforms, water);
@@ -1246,9 +1261,10 @@ export class Rock {
       shader.uniforms.uFogColor = fogColor;
       shader.uniforms.uDryRadius = dryRadius;
       shader.uniforms.uDrape = drapeShare;
-      const declarations = `${FLOATER_WATER}\nuniform float uWaterLevel;\nuniform float uDryRadius;\nuniform float uRide;\nuniform float uDrape;\nvarying vec3 vRideWorld;\nvarying vec2 vRideMiddle;\n`;
+      const clear = seenThrough && side === 'above', clearBelow = seenThrough && side === 'below';
+      const declarations = `${FLOATER_WATER}\nuniform float uWaterLevel;\nuniform float uDryRadius;\nuniform float uRide;\nuniform float uDrape;\nvarying vec3 vRideWorld;\nvarying vec2 vRideMiddle;\n${clear ? 'varying float vClearShare;\n' : ''}${clearBelow ? 'varying float vRideUp;\n' : ''}`;
       shader.vertexShader = shader.vertexShader
-        .replace('#include <common>', `#include <common>\n${declarations}uniform float uSeenThroughWater;\n${side === 'below' ? SEEN_THROUGH_WATER : ''}`)
+        .replace('#include <common>', `#include <common>\n${declarations}uniform float uSeenThroughWater;\n${side === 'below' ? SEEN_THROUGH_WATER : ''}${clear ? 'attribute float clearShare;\n' : ''}`)
         .replace('#include <project_vertex>', `
   vec4 ridden = modelMatrix * vec4(transformed, 1.0);
   vec3 middle = (modelMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
@@ -1280,14 +1296,23 @@ export class Rock {
   if (uDrape * uRide > 0.0) ridden.xyz = mix(ridden.xyz, laid + vec3(0.0, uRide * floaterWaterHeight(laid.xz), 0.0), uDrape);
   vRideWorld = ridden.xyz;
   vRideMiddle = middle.xz;
+  ${clear ? 'vClearShare = clearShare;' : ''}
+  ${clearBelow ? 'vRideUp = inverseTransformDirection(vNormal, viewMatrix).y;' : ''}
   ${side === 'below' ? 'ridden.xyz = mix(ridden.xyz, seenThroughWater(ridden.xyz, uWaterLevel), uSeenThroughWater);' : ''}
   vec4 mvPosition = viewMatrix * ridden;
   gl_Position = projectionMatrix * mvPosition;`);
       shader.fragmentShader = shader.fragmentShader
-        .replace('#include <common>', `#include <common>\n${declarations}uniform vec3 uFogExtinction;\nuniform vec3 uFogColor;`)
+        .replace('#include <common>', `#include <common>\n${declarations}uniform vec3 uFogExtinction;\nuniform vec3 uFogColor;\n${clear ? SEEN_UNDER_CLEAR : ''}${clearBelow ? CLEAR_SIDES_INSIDE : ''}`)
         .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
   ${side === 'below' ? '' : '// Inside its rim (a pizza\'s crust holds the water out) its top is never under it.\n  if (distance(vRideWorld.xz, vRideMiddle) >= uDryRadius)'}
-  if (vRideWorld.y ${side === 'below' ? '>' : '<'} uWaterLevel + floaterWaterHeight(vRideWorld.xz)) discard;`)
+  if (vRideWorld.y ${side === 'below' ? '>' : '<'} uWaterLevel + floaterWaterHeight(vRideWorld.xz)) discard;
+  ${clearBelow ? '// A clear thing under the water, seen from above: its sides\' inner faces and its top under a film of water (the header).\n  if (cameraPosition.y > uWaterLevel && (abs(vRideUp) > 0.5 ? !gl_FrontFacing || vRideUp < 0.0 : gl_FrontFacing)) discard;' : ''}`)
+        .replace('#include <opaque_fragment>', `${clear ? `vec2 onPiece = vRideWorld.xz - vRideMiddle;
+  float pieceLooks = pieceWhite(onPiece, max(length(dFdx(onPiece)), length(dFdy(onPiece))));
+  outgoingLight = totalSpecular + clearScatter(mix(diffuseColor.rgb, vec3(ICE_WHITE_ALBEDO), pieceLooks)) + seenUnderClear(vViewPosition, normal, vClearShare * (1.0 - pieceLooks), vRideWorld.y);` : ''}
+  ${clearBelow ? 'float clearCover = 1.0;\n  if (cameraPosition.y > uWaterLevel) {\n    outgoingLight = abs(vRideUp) <= 0.5 ? clearSideInside(vRideWorld.y - uWaterLevel) : totalSpecular + clearFilm(diffuseColor.rgb);\n    clearCover = abs(vRideUp) <= 0.5 ? CLEAR_SIDE_COVER : CLEAR_FILM_COVER;\n  }' : ''}
+  #include <opaque_fragment>
+  ${clearBelow ? 'gl_FragColor.a = clearCover;' : ''}`)
         .replace('#include <fog_fragment>', `#include <fog_fragment>
   ${side === 'below' ? 'if (cameraPosition.y < 0.0) gl_FragColor.rgb = mix(uFogColor, gl_FragColor.rgb, exp(-uFogExtinction * length(vViewPosition)));' : ''}`)
         .replace('#include <dithering_fragment>', `#include <dithering_fragment>
@@ -1297,7 +1322,7 @@ export class Rock {
       if (!mesh) continue;
       mesh.material.clippingPlanes = [];
       mesh.material.onBeforeCompile = ride(side);
-      mesh.material.customProgramCacheKey = () => `ride-${side}`;
+      mesh.material.customProgramCacheKey = () => `ride-${side}${seenThrough && side !== 'mirror' ? '-clear' : ''}`;
     }
   }
 
