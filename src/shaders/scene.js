@@ -15,7 +15,7 @@ import { MAX_RINGS, PROFILE_TEXELS, PROFILE_MAPPING, RING_TEXTURE_UNITS } from '
 import { RAIN_RIPPLES } from './rain.js';
 import { GALE_SURFACE } from './gale.js';
 
-// The rain's haze (src/sky.js setWeather): what lies d metres off fades
+// The weather's haze (rain's, snow's, a fog's; src/sky.js setWeather): what lies d metres off fades
 // toward uHazeColor, the overcast's horizon, by 1 − exp(−uHazeDensity·d)
 // (uHazeDensity 3/visibility: a dark object at the visibility keeps 5% of its
 // contrast). The dome fades the same way, to the distance its land stands
@@ -25,6 +25,35 @@ uniform vec3 uHazeColor;
 uniform float uHazeDensity;
 vec3 withHaze(vec3 color, float distance) {
   return uHazeDensity > 0.0 ? mix(color, uHazeColor, 1.0 - exp(-uHazeDensity * distance)) : color;
+}
+`;
+
+// Snow lying on the ground (uSnow, the weather's cover, 0 to 1: src/main.js
+// WEATHERS, src/snow.js), for the beach's, the deck's and the ice's shaders
+// (GLSL_COMMON holds it, after ICE_COMMON; on the ice, iceSurface). Thin, it
+// lies in patches, the ground showing between them; whole, it covers all.
+// The patches are value noise, a few metres and a metre across: they mean
+// nothing but that a first snow lies unevenly. Fresh snow is white, a little
+// blue (its ice takes some red), shaded a little by its drifts (snowShade),
+// and lit as the ground under it is.
+export const SNOW_COVER = /* glsl */`
+uniform float uSnow;
+#define SNOW_ALBEDO vec3(0.86, 0.89, 0.93)
+float snowCover(vec2 point) {
+  if (uSnow <= 0.0) return 0.0;
+  float patches = 0.6 * valueNoise(point * 0.7) + 0.4 * valueNoise(point * 2.9 + 3.0);
+  return smoothstep(patches - 0.12, patches + 0.12, 1.25 * uSnow - 0.1);
+}
+// On the ice, smooth, the wind packs it into drifts with crisp edges: the same patches, a finer noise in their edges,
+// as sharp as the pixel's footprint (m) lets them be.
+float snowOnIce(vec2 point, float footprint) {
+  if (uSnow <= 0.0) return 0.0;
+  float patches = 0.6 * valueNoise(point * 0.7) + 0.4 * valueNoise(point * 2.9 + 3.0) + 0.12 * (valueNoise(point * 14.0 + 11.0) - 0.5);
+  float edge = max(0.025, 2.0 * footprint);
+  return smoothstep(patches - edge, patches + edge, 1.25 * uSnow - 0.1);
+}
+vec3 snowShade(vec2 point) {
+  return SNOW_ALBEDO * (0.88 + 0.08 * valueNoise(point * 1.9 + 7.0) + 0.04 * valueNoise(point * 11.0));
 }
 `;
 
@@ -121,6 +150,7 @@ ${ICE_UNIFORMS}
 #define ICE_FROST_COARSEST 4.5         // ...blurred no further than this level (coarser, its faces' seams show)...
 #define ICE_FROST_SKY 2.5              // ...and no brighter than this times the sky's mean (iceSurface: the sun is the sheen's)
 #define ICE_UNDER_GLOW 0.35            // the light white ice lets through to its underside, against what falls on its top
+#define ICE_SNOW_GLOW 0.4              // and under snow on it, against that
 
 // The mask at a world point (the header). Beyond it, dry ice with no hole.
 struct IceMask {
@@ -553,6 +583,7 @@ vec3 sunGlitter(vec3 normal, vec3 toViewer, vec3 toSun, vec3 sunIrradiance, floa
   return sunIrradiance * distribution * shadowing * fresnel / max(4.0 * nDotV * nDotL, 1e-3) * nDotL;
 }
 ${ICE_COMMON}
+${SNOW_COVER}
 `;
 
 // The foam's bubble pattern, for WATER_FRAGMENT. The foam map
@@ -1264,6 +1295,7 @@ vec3 poolDetail(vec3 point, vec2 acrossX, vec2 acrossY, float underDistZ, float 
 // sun's sheen on the frost; the hole's broken edge, its fracture face seen
 // through the clear ice (fractureFace), and the wet round a hole; new ice
 // over a hole clear and glazed, its old edge a seam (ICE_COMMON's header).
+// Snow lies on it as on the ground (SNOW_COVER), but where it is new or wet.
 // Its cracks are drawn over it (src/iceCracks.js). In the pool the tiles
 // under it keep their detail (poolDetail; acrossX and acrossY the pixel's
 // footprint on the surface, taken where the derivatives are good).
@@ -1341,6 +1373,9 @@ vec3 iceSurface(IceMask mask, float footprint, vec2 acrossX, vec2 acrossY) {
   color += min(sunGlitter(n, v, uSunDir, uSunIrradiance, slopeVariance + 1e-5) * mix(look.glints, 1.0, max(wet, newIce)), vec3(400.0)) * mix(1.0 - 0.5 * look.white, 1.0, wet);
   // An old edge in new ice: a faint dark seam.
   color = mix(color, under * 0.7, 0.5 * seam);
+  // Snow lying on it (SNOW_COVER), as on the ground: none on new ice, none where it is wet (the flood's, a drop's).
+  float snow = snowOnIce(vWorld.xz, footprint) * (1.0 - newIce) * (1.0 - wet);
+  if (snow > 0.0) color = mix(color, snowShade(vWorld.xz) * light, snow);
   return color;
 }
 
@@ -1917,6 +1952,9 @@ void main() {
     float seam = smoothstep(0.0, 0.004, iceAt.skin) * iceLine(iceAt.hole, 0.0007, iceFootprint);
     vec3 glow = (uSunIrradiance * max(uSunDir.y, 0.0) + uSkyAmbient) * ICE_UNDER_GLOW;
     vec3 ceiling = mix(color, glow, 0.85 * white) * (1.0 - 0.3 * seam);
+    // Snow on it (SNOW_COVER, iceSurface) shuts the window: only the light it lets through glows.
+    float snow = snowOnIce(vWorld.xz, iceFootprint) * (1.0 - newIce) * (1.0 - max(uIceWet, iceAt.wet));
+    ceiling = mix(ceiling, glow * ICE_SNOW_GLOW, snow);
     color = mix(color, ceiling, iced);
   }
   gl_FragColor = vec4(min(throughWater(color, vWorld), vec3(1000.0)), 1.0);
@@ -1993,6 +2031,8 @@ varying float vFace;
 varying float vNearSide;
 varying float vBelow;
 ${GLSL_COMMON}
+${HAZE}
+#define CRACK_SNOWED 0.85   // the share of a crack the snow on the ice hides
 void main() {
   float footprint = max(fwidth(vAcross), 1e-6);
   IceMask mask = iceMaskAt(vWorldXZ);
@@ -2015,9 +2055,11 @@ void main() {
   float lineCover = line * vShade * along * mix(1.0, 0.5, wet);
   float faceCover = face * vShade * 0.7 * (1.0 - look.white) * mix(1.0, 0.5, wet) * (1.0 - lineCover);
   vec3 lineColor = mix(scattered * 1.35, scattered * 0.2, look.white);
-  float cover = lineCover + faceCover;
+  // Snow lying on the ice (SNOW_COVER) hides its cracks but for a faint line where the snow parted.
+  float cover = (lineCover + faceCover) * (1.0 - CRACK_SNOWED * snowOnIce(vWorldXZ, footprint) * (1.0 - wet));
   if (cover < 1e-4) discard;
-  gl_FragColor = vec4(min((lineColor * lineCover + scattered * 1.1 * faceCover) / cover, vec3(1000.0)), cover);
+  vec3 crackColor = (lineColor * lineCover + scattered * 1.1 * faceCover) / (lineCover + faceCover);
+  gl_FragColor = vec4(min(withHaze(crackColor, distance(cameraPosition, vec3(vWorldXZ.x, uIceTop, vWorldXZ.y))), vec3(1000.0)), cover);
 }
 `;
 
@@ -2142,7 +2184,9 @@ void main() {
 // one the droplets reflect, src/sky.js), a little above the horizon, at
 // LAND_LEVEL of its mip chain and averaged either side, so the photo's
 // detail does not streak toward the eye. (Under the horizon a photo shows
-// whatever stood at the photographer's feet, often water.)
+// whatever stood at the photographer's feet, often water.) Or from another
+// cube, at another level: the beach's grass reads the land as it is before
+// the haze (src/sky.js landCube), since it stands too near to be lost in it.
 const PHOTO_LAND = /* glsl */`
 uniform samplerCube uSkyCube;   // the sky, as the droplets reflect it (src/sky.js)
 #define LAND_NEAR 8.0        // metres away: the land becomes the photo's from here...
@@ -2150,14 +2194,14 @@ uniform samplerCube uSkyCube;   // the sky, as the droplets reflect it (src/sky.
 #define LAND_HEIGHTS vec2(0.018, 0.04)  // the photo's land is read this high above the horizon (direction's y)...
 #define LAND_SPAN 0.05                  // ...and this far to either side (direction's sideways share)...
 #define LAND_LEVEL 3.0                  // ...at this level of the cube's mip chain (512 a face: 1.4° a texel)
-vec3 photoLand(vec2 toward) {
+vec3 photoLand(samplerCube cube, float level, vec2 toward) {
   vec2 across = normalize(toward);
   vec2 side = vec2(-across.y, across.x) * LAND_SPAN;
   vec3 sum = vec3(0.0);
   for (int tap = -1; tap <= 1; tap++) {
     vec2 turned = normalize(across + side * float(tap));
-    sum += textureCubeLodEXT(uSkyCube, vec3(turned.x, LAND_HEIGHTS.x, turned.y), LAND_LEVEL).rgb;
-    sum += textureCubeLodEXT(uSkyCube, vec3(turned.x, LAND_HEIGHTS.y, turned.y), LAND_LEVEL).rgb;
+    sum += textureCubeLodEXT(cube, vec3(turned.x, LAND_HEIGHTS.x, turned.y), level).rgb;
+    sum += textureCubeLodEXT(cube, vec3(turned.x, LAND_HEIGHTS.y, turned.y), level).rgb;
   }
   return sum / 6.0;
 }
@@ -2186,26 +2230,6 @@ void main() {
 }
 `;
 
-// Snow lying on the ground (uSnow, the weather's cover, 0 to 1: src/main.js
-// WEATHERS, src/snow.js), for the beach's and the deck's shaders. Thin, it
-// lies in patches, the ground showing between them; whole, it covers all.
-// The patches are value noise, a few metres and a metre across: they mean
-// nothing but that a first snow lies unevenly. Fresh snow is white, a little
-// blue (its ice takes some red), shaded a little by its drifts (snowShade),
-// and lit as the ground under it is.
-export const SNOW_COVER = /* glsl */`
-uniform float uSnow;
-#define SNOW_ALBEDO vec3(0.86, 0.89, 0.93)
-float snowCover(vec2 point) {
-  if (uSnow <= 0.0) return 0.0;
-  float patches = 0.6 * valueNoise(point * 0.7) + 0.4 * valueNoise(point * 2.9 + 3.0);
-  return smoothstep(patches - 0.12, patches + 0.12, 1.25 * uSnow - 0.1);
-}
-vec3 snowShade(vec2 point) {
-  return SNOW_ALBEDO * (0.88 + 0.08 * valueNoise(point * 1.9 + 7.0) + 0.04 * valueNoise(point * 11.0));
-}
-`;
-
 // The land: the beach's sand (FLOOR_SAND, as the bed's) in the sun and the
 // sky's light (as the bed's, without the water, DRY_SAND of it), darker where
 // it is wet, up to WET_HEIGHT above the water; from GRASS_FROM to GRASS_TO
@@ -2222,11 +2246,16 @@ vec3 snowShade(vec2 point) {
 // so its reflection does too. Under snow (SNOW_COVER) the sand and the grass
 // lie under it, but for the wet sand by the water, where it melts (up to
 // SNOW_MELT_HEIGHT), and the far land takes SNOW_FAR of it: the photo's
-// trees and far water stand out of any snow.
+// trees and far water stand out of any snow. In haze (HAZE: rain's, snow's,
+// a fog's) the grass takes the land before the haze (photoLand), and the
+// beach fades by its distance, as the water does, but for the far land, the
+// photo's own, hazed as the dome is.
 export const LAND_FRAGMENT = /* glsl */`
 uniform vec3 uSunDir;
 uniform vec3 uSunIrradiance;
 uniform vec3 uSkyAmbient;
+uniform samplerCube uLandCube;   // the land before the haze, for the grass (src/sky.js landCube)...
+uniform float uLandLevel;        // ...at this level of its mip chain
 varying vec3 vWorld;
 varying vec3 vNormal;
 varying float vInland;
@@ -2234,7 +2263,7 @@ ${GLSL_COMMON}
 ${FLOOR_PATTERN_TILE}
 ${FLOOR_SAND}
 ${PHOTO_LAND}
-${SNOW_COVER}
+${HAZE}
 #define SKY_LIGHT 1.4        // the sky's light on the sand, as the bed's
 #define DRY_SAND vec3(0.68, 0.6, 0.5)   // the beach's dry sand, against the bed's: darker and warmer, as the photos' banks are
 #define WET_HEIGHT 0.12      // metres above the water the sand is wet to...
@@ -2253,14 +2282,15 @@ void main() {
   float grass = smoothstep(GRASS_FROM, GRASS_TO, vInland);
   float far = smoothstep(LAND_NEAR, LAND_FAR, length(toLand));
   if (grass > 0.0 || far > 0.0) {
-    vec3 land = photoLand(toLand.xz);
+    vec3 land = photoLand(uSkyCube, LAND_LEVEL, toLand.xz);
     float level = max(uSunDir.y, 0.0) + SKY_LIGHT * 0.25;
     float slopeShade = (max(dot(normal, uSunDir), 0.0) + SKY_LIGHT * 0.25 * normal.y) / level;
     // Where the photo shows sky at the horizon, the grass would take the sky's light (a cloud's, white): no brighter
     // than ground of GRASS_ALBEDO_MOST in the light on it.
     float lightOn = dot(uSunIrradiance * max(uSunDir.y, 0.0) + uSkyAmbient * SKY_LIGHT, LUMINANCE);
-    float grassLevel = max(dot(land, LUMINANCE), 1e-6);
-    vec3 grassLand = land * min(1.0, GRASS_ALBEDO_MOST * lightOn / grassLevel);
+    vec3 nearLand = photoLand(uLandCube, uLandLevel, toLand.xz);
+    float grassLevel = max(dot(nearLand, LUMINANCE), 1e-6);
+    vec3 grassLand = nearLand * min(1.0, GRASS_ALBEDO_MOST * lightOn / grassLevel);
     vec3 grassColor = grassLand * slopeShade * (1.0 + (0.6 * valueNoise(vWorld.xz * 2.3 + 5.0) - 0.3) * (1.0 - far));
     color = mix(color, grassColor, grass);
     if (uSnow > 0.0) land = mix(land, SNOW_ALBEDO * (uSunIrradiance * max(uSunDir.y, 0.0) + uSkyAmbient * SKY_LIGHT), SNOW_FAR * uSnow);
@@ -2268,6 +2298,8 @@ void main() {
   }
   float snow = snowCover(vWorld.xz) * smoothstep(0.5 * SNOW_MELT_HEIGHT, SNOW_MELT_HEIGHT, vWorld.y) * (1.0 - far);
   if (snow > 0.0) color = mix(color, snowShade(vWorld.xz) * (uSunIrradiance * max(dot(normal, uSunDir), 0.0) + uSkyAmbient * SKY_LIGHT), snow);
+  // The haze by its distance (HAZE), but on the far land, which is the photo's, hazed already.
+  if (uHazeDensity > 0.0) color = mix(color, uHazeColor, (1.0 - exp(-uHazeDensity * length(toLand))) * (1.0 - far));
   gl_FragColor = vec4(color, 1.0);
 }
 `;
@@ -2636,7 +2668,6 @@ ${GLSL_COMMON}
 ${PHOTO_LAND}
 ${MIRROR_NEARNESS_OUTPUT}
 ${HAZE}
-${SNOW_COVER}
 #define WET_STONE 0.62      // wet stone's albedo against dry (water in its pores)
 #define WET_GRASS 0.85
 #define SKY_LIGHT 1.4
@@ -2681,7 +2712,7 @@ void main() {
   vec3 color = ground * (uSunIrradiance * max(uSunDir.y, 0.0) + uSkyAmbient * SKY_LIGHT);
   vec3 toGround = vWorld - cameraPosition;
   float far = smoothstep(LAND_NEAR, LAND_FAR, length(toGround));
-  if (far > 0.0) color = mix(color, photoLand(toGround.xz), far);
+  if (far > 0.0) color = mix(color, photoLand(uSkyCube, LAND_LEVEL, toGround.xz), far);
   color = withHaze(color, length(toGround));
 #ifdef MIRROR_NEARNESS
   gl_FragColor = vec4(color, mirrorNearness(vWorld));

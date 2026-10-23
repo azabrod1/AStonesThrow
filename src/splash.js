@@ -890,6 +890,7 @@ export class SplashSystem {
       uRefract: { value: 1.4 },
       uFluidScale: { value: 1.0 },
       uProjScale: { value: 1000 },
+      ...(environment.hazeUniforms ?? { uHazeColor: { value: new THREE.Vector3() }, uHazeDensity: { value: 0 } }),   // the weather's haze (src/sky.js)
     });
     this.toneMapPass = new FullscreenPass(TONE_MAP_FRAGMENT, { uScene: { value: null }, uExposure: { value: lighting.exposure }, uNight: { value: 0 } });
 

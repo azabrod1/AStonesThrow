@@ -28,8 +28,9 @@ export class IceCracks {
    * @param ice the sheet (src/ice.js IceSheet): its crackLines and uniforms
    * @param lighting src/main.js's: the sun, the sky's light, the water's extinction (shared vectors)
    * @param resolution the drawing buffer's size in pixels (a shared Vector2)
+   * @param haze the weather's haze uniforms (src/sky.js hazeUniforms), which the cracks fade into with distance
    */
-  constructor(ice, lighting, resolution) {
+  constructor(ice, lighting, resolution, haze) {
     this.ice = ice;
     const capacity = CRACK_DRAW.vertices;
     this.lineData = new Float32Array(4 * capacity);
@@ -51,6 +52,7 @@ export class IceCracks {
         uSkyAmbient: { value: lighting.skyAmbient },
         uExtinction: { value: lighting.extinction },
         uResolution: { value: resolution },
+        ...haze,   // the weather's haze (src/sky.js)
       },
       vertexShader: ICE_CRACK_VERTEX,
       fragmentShader: ICE_CRACK_FRAGMENT,

@@ -659,8 +659,8 @@ for (const framing of FRAMINGS) {
     return placed;
   });
   const weatherClipped = await page.evaluate(() => [...document.querySelectorAll('#weather [role="radio"] b')].filter((name) => name.scrollWidth > name.clientWidth).map((name) => name.textContent));
-  check(weatherChoices.length === 7 && weatherChoices.every(onScreen) && weatherClipped.length === 0 && (!framing.touch || weatherChoices.every((choice) => choice.height >= SMALLEST_BUTTON_HEIGHT - 0.5)),
-    `the Weather page's seven cards are on the screen once scrolled to and fit their names${weatherClipped.length ? ` (not: ${weatherClipped.join(', ')})` : ''}`);
+  check(weatherChoices.length === 8 && weatherChoices.every(onScreen) && weatherClipped.length === 0 && (!framing.touch || weatherChoices.every((choice) => choice.height >= SMALLEST_BUTTON_HEIGHT - 0.5)),
+    `the Weather page's eight cards are on the screen once scrolled to and fit their names${weatherClipped.length ? ` (not: ${weatherClipped.join(', ')})` : ''}`);
   await press('#weather [data-value="heavy-rain"]');
   await page.waitForFunction(() => window.__pond.raining, null, { timeout: 60000 }).catch(() => {});
   const rainy = await page.evaluate(() => ({ weather: window.__pond.weather, raining: window.__pond.raining, row: document.querySelector('.menu-tier[data-open="weather"] .menu-tier-value').textContent }));

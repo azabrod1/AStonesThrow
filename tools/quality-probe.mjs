@@ -52,7 +52,8 @@
 //    and a blizzard's gale reuse it and the gale's (the ground's snow is a
 //    uniform), a throw into it compiles none, Low draws its share of the
 //    flakes, its draw adds one call; clear
-//    again, nothing of it is drawn or lies. The gale (src/galeWaves.js)
+//    again, nothing of it is drawn or lies. Fog compiles and draws nothing
+//    more, a throw into it neither, and stills the wind while it lasts. The gale (src/galeWaves.js)
 //    and the storm: the first gale compiles its passes and spray once, draws the finer
 //    sheet that carries its waves, and a throw into it compiles none; the
 //    storm compiles none through a lightning strike; in the pool the gale
@@ -563,6 +564,25 @@ check(snowDraws.calls === clearDraws.calls + 1, `the snow adds one draw call to 
 await page.evaluate(() => { window.__pond.setWeather('clear'); window.__pond.advance(0.1); });
 const unsnowed = await page.evaluate(() => ({ snowing: window.__pond.snowing, snow: window.__pond.budget.snow, programs: window.__pond.budget.programs }));
 check(!unsnowed.snowing && unsnowed.snow.flakes === 0 && unsnowed.snow.cover === 0 && unsnowed.programs === programsBeforeSnow, `clear again: no snow falls or lies, and no program was compiled (${unsnowed.programs})`);
+
+part('the fog');
+// Fog is the haze alone (src/sky.js): uniforms, the stones' FogExp2 among them, so it compiles nothing and draws
+// nothing more, a throw into it neither; it stills a gale while it lasts, and clear again gives the wind back.
+await page.evaluate(() => { window.__pond.setWind('windy'); window.__pond.pause(); window.__pond.clear(); window.__pond.setWind('calm'); window.__pond.advance(1); });
+const clearHere = await frameCounts();
+await page.evaluate(() => { window.__pond.resume(); window.__pond.setWind('windy'); window.__pond.advance(0.1); });
+const programsBeforeFog = await page.evaluate(() => window.__pond.budget.programs);
+await page.evaluate(() => { window.__pond.setWeather('fog'); window.__pond.pause(); window.__pond.clear(); window.__pond.advance(1); });
+const fogDraws = await frameCounts();
+await page.evaluate(() => { window.__pond.resume(); window.__pond.throwAt(0, -1.4, { radius: 0.03 }); window.__pond.advance(0.6); });
+const foggy = await page.evaluate(() => ({ programs: window.__pond.budget.programs, weather: window.__pond.weather, wind: window.__pond.wind, raining: window.__pond.raining, snowing: window.__pond.snowing }));
+console.log(`  a still pond's frame in fog: ${fogDraws.calls} calls, ${fogDraws.triangles} triangles (clear: ${clearHere.calls}, ${clearHere.triangles})`);
+check(foggy.weather === 'fog' && foggy.wind === 'calm' && !foggy.raining && !foggy.snowing && foggy.programs === programsBeforeFog && fogDraws.calls === clearHere.calls && fogDraws.triangles === clearHere.triangles,
+  `fog stills the wind (${foggy.wind}), neither rains nor snows, compiles nothing with a throw (${programsBeforeFog} → ${foggy.programs}) and draws what a clear frame does (${fogDraws.calls} calls, ${fogDraws.triangles} triangles)`);
+await page.evaluate(() => { window.__pond.setWeather('clear'); window.__pond.advance(0.1); });
+const unfogged = await page.evaluate(() => ({ wind: window.__pond.wind, programs: window.__pond.budget.programs }));
+check(unfogged.wind === 'windy' && unfogged.programs === programsBeforeFog, `clear again: the wind is the Wind setting's again (${unfogged.wind}), no program compiled (${unfogged.programs})`);
+await page.evaluate(() => { window.__pond.setWind('calm'); window.__pond.advance(0.1); });
 
 // The pixel budget: the same page in a 2560×1440 window on high (paused: no frame is drawn that large here).
 part('the pixel budget');

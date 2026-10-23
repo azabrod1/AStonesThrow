@@ -119,7 +119,19 @@
 // at most LAND_DISTANCE, where the photo's land stands. Snow's haze is
 // brighter (the weather's `hazeBrightness`, over HAZE_BRIGHTNESS): its
 // flakes scatter the cloud's light back as white as they are, where rain's
-// drops let it through. A clear sky leaves everything as it was.
+// drops let it through. A fog is the haze with no cloud over it, in a layer
+// of its own depth (`hazeLayer`, for HAZE_LAYER): the dome's sky shows
+// through it overhead and the photo's sun as a pale disc; the haze takes
+// the sun's direct light along its path through the layer (at most
+// LAND_DISTANCE) and gives it back as cloud does, its `light` of the clear
+// hour's (`shade`, in applyWeather: cloud's cover and the haze's share
+// together; under rain's and snow's full cover it is the cover). The haze
+// also reaches Three.js's own materials (the stones, the things) as the
+// main scene's FogExp2 (`fog`), its chunks made HAZE's, and the grass by
+// the pond reads the land as it was before the haze (`landCube`: the
+// cube's LAND_LEVEL, captured once without the haze and copied before the
+// hazed capture; with no haze the cube itself). A clear sky leaves
+// everything as it was.
 //
 // Lightning (setFlash; src/lightning.js says when and how bright): a flash
 // multiplies the dome's light, the scene's ambient sky and the haze's colour
@@ -268,12 +280,26 @@ const DOME_SIZE = 20000;       // metres, edge of the box
 const CUBE_SIZE = 512;         // the droplets' cube, per face
 const PREFETCHED = 2;          // panoramas fetched ahead and kept until loaded (prefetch): an hour's two neighbours, 6 MB each
 const PREFILTER_SIZE = 128;    // the capture the stones' prefiltered map is made from, per face
+const LAND_LEVEL = 3;          // the cube's mip level the grass reads the land at (PHOTO_LAND in src/shaders/scene.js)...
+const LAND_CUBE_SIZE = CUBE_SIZE >> LAND_LEVEL;   // ...and that level's size: the land before the haze, copied from it
 const GROUND = [0.10, 0.17, 0.20];   // the cube's ground hemisphere: the pond as the drops see it, under a sunlit sky
 const ADAPTATION = 0.8;        // how far the eye adapts to an hour's light (Light by the hour)...
 const ROD_ADAPTATION = 0.98;   // ...and, below NIGHT_VISION_LIGHT[0], its rods (adaptedLight)
 const DOWN_SUN_ELEVATION = 1;  // degrees: where the scene's dark sun stands while the true one is down
 const OVERCAST_TINT = [0.95, 0.99, 1.07];   // a rain cloud's grey, a little blue, at about unit luminance
 const HAZE_BRIGHTNESS = 0.6;   // rain's haze against the cloud's mean: an overcast's horizon is under half its zenith (CIE)
+const HAZE_LAYER = 1000;       // metres: the rain's and the snow's depth, which a ray climbing out of it crosses (a fog's is its own)
+const LAND_DISTANCE = 400;     // metres: where the photo's land is taken to stand (its near trees and its far shore alike)
+
+// The haze for Three.js's own materials (the stones and the things, src/rock.js; the aim's marker and arc): the
+// main scene's FogExp2 (environment.fog), its chunks made HAZE's (src/shaders/scene.js), 1 − exp(−density·distance)
+// by the distance to the eye rather than the view depth. Its density is 0 but in haze, which leaves the colour as it
+// was; the scene keeps it always, so no weather changes a program.
+THREE.ShaderChunk.fog_vertex = THREE.ShaderChunk.fog_vertex.replace('vFogDepth = - mvPosition.z;', 'vFogDepth = length( mvPosition.xyz );');
+THREE.ShaderChunk.fog_fragment = THREE.ShaderChunk.fog_fragment.replace(
+  'float fogFactor = 1.0 - exp( - fogDensity * fogDensity * vFogDepth * vFogDepth );',
+  'float fogFactor = 1.0 - exp( - fogDensity * vFogDepth );',
+);
 // The light on level ground under a clear sky (illuminance): the sun's, through
 // SUN_DEPTH optical depths per air mass (Kasten and Young's), outside the
 // atmosphere SUN_OUTSIDE; the sky's, SKY_LIGHT[0] + SKY_LIGHT[1]·sin(h)^0.6
@@ -364,8 +390,8 @@ uniform float uFlash;          // the sky's light under lightning, against its o
 uniform vec4 uBolt;            // a bolt: its bearing (radians from −Z toward +X), its top's elevation, its brightness against the cloud (0: none), a seed
 varying vec3 vDirection;
 #define OVERCAST_FLATTEN 0.6   // the luminance's power about the mean that cloud takes away: the sun and its glow sink, the shade lifts
-#define HAZE_LAYER 1000.0      // metres: the rain's depth, which a ray climbing out of it crosses
-#define LAND_DISTANCE 400.0    // metres: where the photo's land is taken to stand (its near trees and its far shore alike)
+uniform float uHazeLayer;      // metres: the haze's depth, which a ray climbing out of it crosses (Weather, above)
+#define LAND_DISTANCE ${LAND_DISTANCE.toFixed(1)}
 #define BOLT_WIDTH 0.0012      // radians: a bolt's core
 #define BOLT_GLOW 0.015        // radians: the rain it lights about it
 #define BOLT_GLOW_SHARE 0.04
@@ -413,7 +439,7 @@ void main() {
   }
   radiance *= uFlash;
   if (uBolt.z > 0.0) radiance += boltLight(direction, 1.0 - smoothstep(0.4, 0.8, photoLevel / uSkyMean)) * uSkyMean * mix(1.0, uOvercastScale, uOvercast) * vec3(0.85, 0.9, 1.0);
-  if (uHazeDensity > 0.0) radiance = mix(radiance, uHazeColor, 1.0 - exp(-uHazeDensity * min(HAZE_LAYER / max(direction.y, 1e-4), LAND_DISTANCE)));
+  if (uHazeDensity > 0.0) radiance = mix(radiance, uHazeColor, 1.0 - exp(-uHazeDensity * min(uHazeLayer / max(direction.y, 1e-4), LAND_DISTANCE)));
   gl_FragColor = vec4(radiance, 1.0);
 }
 `;
@@ -450,6 +476,7 @@ export async function createEnvironment(renderer, { name, hour, sunAzimuth, sunB
         uOvercastTint: { value: new THREE.Vector3(...OVERCAST_TINT) },
         uFlash: { value: 1 },
         uBolt: { value: new THREE.Vector4() },
+        uHazeLayer: { value: HAZE_LAYER },
         ...hazeUniforms,
       },
       side: THREE.BackSide,
@@ -485,6 +512,25 @@ export async function createEnvironment(renderer, { name, hour, sunAzimuth, sunB
     cubeCamera.position.set(0, 1.15, 0);
     return cubeCamera;
   });
+  // The land before the haze (the grass's, PHOTO_LAND in src/shaders/scene.js): in haze the cube is captured once
+  // without it and its LAND_LEVEL copied into landTarget, before the hazed capture; with none the grass reads the
+  // cube itself. The copy's program is compiled here, under the loading veil.
+  const landTarget = new THREE.WebGLCubeRenderTarget(LAND_CUBE_SIZE, { type: THREE.HalfFloatType, generateMipmaps: false, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false });
+  const landCamera = new THREE.CubeCamera(0.1, 10, landTarget);
+  const landCopy = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.ShaderMaterial({
+    vertexShader: 'varying vec3 vDirection;\nvoid main() { vDirection = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+    fragmentShader: `uniform samplerCube uCube;\nvarying vec3 vDirection;\nvoid main() { gl_FragColor = vec4(textureCubeLodEXT(uCube, normalize(vDirection), ${LAND_LEVEL.toFixed(1)}).rgb, 1.0); }`,
+    uniforms: { uCube: { value: cubeTarget.texture } },
+    side: THREE.BackSide,
+    depthTest: false,
+    depthWrite: false,
+  }));
+  const landCopyScene = new THREE.Scene();
+  landCopy.frustumCulled = false;
+  landCopyScene.add(landCopy);
+  landCamera.update(renderer, landCopyScene);
+  const landCube = { value: cubeTarget.texture };   // shared uniform objects (src/pondFloor.js createShore)
+  const landLevel = { value: LAND_LEVEL };
   const pmrem = new THREE.PMREMGenerator(renderer);
   let envTarget = null;
   // Each measurement is fetched once: a place's hours all read its anchor's and its facing hour's.
@@ -511,10 +557,11 @@ export async function createEnvironment(renderer, { name, hour, sunAzimuth, sunB
     return ahead.download.catch(() => fetchPanorama(file, signal));
   }
 
-  const environment = { sky, cubeTexture: cubeTarget.texture, envTexture: null, name: null, hour: null, level: 1, hazeUniforms, targets: [], panoramaBytes: 0, load, prefetch, setWeather, setFlash };
+  const fog = new THREE.FogExp2(0x000000, 0);   // the haze for the main scene's built-in materials (above)
+  const environment = { sky, cubeTexture: cubeTarget.texture, envTexture: null, name: null, hour: null, level: 1, hazeUniforms, fog, landCube, landLevel, targets: [], panoramaBytes: 0, load, prefetch, setWeather, setFlash };
   // The hour's light under a clear sky (load), which the weather covers (applyWeather).
   const clear = { sun: new THREE.Vector3(), sky: new THREE.Vector3(), lux: 1, level: 1 };
-  let weather = { cover: 0, light: 1, visibility: Infinity, hazeBrightness: HAZE_BRIGHTNESS };
+  let weather = { cover: 0, light: 1, visibility: Infinity, hazeBrightness: HAZE_BRIGHTNESS, hazeLayer: HAZE_LAYER };
 
   /**
    * Load a sky (a key of SKIES; others fall back to DEFAULT_SKY) at one of
@@ -627,29 +674,35 @@ export async function createEnvironment(renderer, { name, hour, sunAzimuth, sunB
   /**
    * The weather over the sky: `cover` (0 clear to 1 overcast), the light
    * that reaches the ground under it against a clear sky's (`light`), and
-   * the rain's or the snow's `visibility` (metres; Infinity for none) and
-   * its haze's brightness against the cloud's (`hazeBrightness`). Applied at once,
-   * the cube and the prefiltered map captured again (Weather, above).
+   * the rain's, the snow's or the fog's `visibility` (metres; Infinity for
+   * none), its haze's brightness against the cloud's (`hazeBrightness`) and
+   * its depth (`hazeLayer`, metres). Applied at once, the cube and the
+   * prefiltered map captured again (Weather, above).
    */
-  function setWeather({ cover = 0, light = 1, visibility = Infinity, hazeBrightness = HAZE_BRIGHTNESS } = {}) {
-    weather = { cover, light, visibility, hazeBrightness };
+  function setWeather({ cover = 0, light = 1, visibility = Infinity, hazeBrightness = HAZE_BRIGHTNESS, hazeLayer = HAZE_LAYER } = {}) {
+    weather = { cover, light, visibility, hazeBrightness, hazeLayer };
     applyWeather();
   }
 
   /** The lighting of the hour (clear) under the weather; then the cube and the prefiltered map. */
   function applyWeather() {
-    const { cover, light, visibility, hazeBrightness } = weather;
+    const { cover, light, visibility, hazeBrightness, hazeLayer } = weather;
     const sunSine = Math.max(lighting.sunDirection.y, 0);
+    const hazeDensity = Number.isFinite(visibility) ? 3 / visibility : 0;
+    // What reaches the ground of the sun's direct light: what the cloud leaves, through the haze along the sun's path
+    // (as the dome's, at most LAND_DISTANCE). The rest, `shade`, the cloud's or the haze's light gives back.
+    const sunThrough = Math.exp(-hazeDensity * Math.min(hazeLayer / Math.max(sunSine, 1e-4), LAND_DISTANCE));
+    const shade = 1 - (1 - cover) * sunThrough;
     // The clear hour's light on level ground, in the sky's units: the sky's
     // (π times its mean radiance) and the sun's (sunIrradiance over π, the
     // SKY_EXPOSURE convention). Under cloud all of it comes from the cloud.
     const clearLight = Math.PI * luminance(clear.sky.toArray()) + luminance(clear.sun.toArray()) * sunSine / SKY_EXPOSURE;
     // The cloud lets `light` of the hour's light through, seen by an eye adapted to it.
-    const lux = clear.lux * (cover > 0 ? 1 - cover + cover * light : 1);
+    const lux = clear.lux * (shade > 0 ? 1 - shade + shade * light : 1);
     const cloudLuminance = clearLight * adaptedLight(clear.lux * light) / adaptedLight(clear.lux) / Math.PI;
-    lighting.sunIrradiance.copy(clear.sun).multiplyScalar(1 - cover);
-    lighting.skyAmbient.copy(clear.sky).lerp(new THREE.Vector3(...OVERCAST_TINT).multiplyScalar(cloudLuminance), cover);
-    const weatherLevel = cover > 0 ? (Math.PI * luminance(lighting.skyAmbient.toArray()) + luminance(lighting.sunIrradiance.toArray()) * sunSine / SKY_EXPOSURE) / clearLight : 1;
+    lighting.sunIrradiance.copy(clear.sun).multiplyScalar(1 - shade);
+    lighting.skyAmbient.copy(clear.sky).lerp(new THREE.Vector3(...OVERCAST_TINT).multiplyScalar(cloudLuminance), shade);
+    const weatherLevel = shade > 0 ? (Math.PI * luminance(lighting.skyAmbient.toArray()) + luminance(lighting.sunIrradiance.toArray()) * sunSine / SKY_EXPOSURE) / clearLight : 1;
     const level = clear.level * weatherLevel;
     const rodsFrom = Math.log10(NIGHT_VISION_LIGHT[0]);
     lighting.night = THREE.MathUtils.smoothstep(rodsFrom - Math.log10(lux), 0, rodsFrom - Math.log10(NIGHT_VISION_LIGHT[1]));
@@ -658,15 +711,25 @@ export async function createEnvironment(renderer, { name, hour, sunAzimuth, sunB
     domeUniforms.uSkyMean.value = luminance(clear.sky.toArray());
     domeUniforms.uOvercastScale.value = cloudLuminance / Math.max(luminance(clear.sky.toArray()), 1e-9);
     domeUniforms.uOvercastLand.value = Math.PI * cloudLuminance / Math.max(clearLight, 1e-9);
-    hazeUniforms.uHazeDensity.value = Number.isFinite(visibility) ? 3 / visibility : 0;
+    hazeUniforms.uHazeDensity.value = hazeDensity;
+    domeUniforms.uHazeLayer.value = hazeLayer;
+    fog.density = hazeDensity;
     hazeUniforms.uHazeColor.value.copy(lighting.skyAmbient).multiplyScalar(hazeBrightness);
 
     const previousAutoClear = renderer.autoClear;
     renderer.autoClear = true;
+    if (hazeDensity > 0) {
+      hazeUniforms.uHazeDensity.value = 0;
+      cubeCameras[0].update(renderer, captureScene);
+      landCamera.update(renderer, landCopyScene);
+      hazeUniforms.uHazeDensity.value = hazeDensity;
+    }
+    landCube.value = hazeDensity > 0 ? landTarget.texture : cubeTarget.texture;
+    landLevel.value = hazeDensity > 0 ? 0 : LAND_LEVEL;
     for (const cubeCamera of cubeCameras) cubeCamera.update(renderer, captureScene);
     renderer.autoClear = previousAutoClear;
     envTarget = pmrem.fromCubemap(prefilterSource.texture, envTarget);
-    Object.assign(environment, { envTexture: envTarget.texture, level, targets: [cubeTarget, prefilterSource, envTarget] });
+    Object.assign(environment, { envTexture: envTarget.texture, level, targets: [cubeTarget, prefilterSource, envTarget, landTarget] });
     unlit.ambient.copy(lighting.skyAmbient);
     unlit.haze.copy(hazeUniforms.uHazeColor.value);
     setFlash(flash.level, flash.bolt);
@@ -686,6 +749,7 @@ export async function createEnvironment(renderer, { name, hour, sunAzimuth, sunB
     domeUniforms.uFlash.value = level;
     lighting.skyAmbient.copy(unlit.ambient).multiplyScalar(level);
     hazeUniforms.uHazeColor.value.copy(unlit.haze).multiplyScalar(level);
+    fog.color.setRGB(hazeUniforms.uHazeColor.value.x, hazeUniforms.uHazeColor.value.y, hazeUniforms.uHazeColor.value.z);
     if (bolt && bolt.brightness > 0) domeUniforms.uBolt.value.set(bolt.bearing, bolt.top, bolt.brightness, bolt.seed);
     else domeUniforms.uBolt.value.z = 0;
   }

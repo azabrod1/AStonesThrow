@@ -1,8 +1,8 @@
 // Snow over the pond: the flakes falling through a box about the eye. The
 // overcast and the haze that come with it are the sky's (src/sky.js
-// setWeather); the snow lying on the beach, the bank and the pool's deck is
-// their shaders' (uSnow: LAND_FRAGMENT and DECK_FRAGMENT in
-// src/shaders/scene.js); a frozen thing's thaw and a wet thing's drying in
+// setWeather); the snow lying on the beach, the bank, the pool's deck and
+// the ice is their shaders' (uSnow: SNOW_COVER in src/shaders/scene.js, for
+// LAND_FRAGMENT, DECK_FRAGMENT and the water's iceSurface); a frozen thing's thaw and a wet thing's drying in
 // the cold air are src/rock.js's (setAir). The Weather setting (src/main.js
 // WEATHERS) sets them all.
 //

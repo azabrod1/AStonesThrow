@@ -140,7 +140,7 @@ is remembered on the device (but the view, which opens on the shore):
   Swiss Alps and Rocky cove each have one photograph, so their time controls
   hide and explain the available light.
 - Weather: Clear (the default), Light rain, Heavy rain, Storm, Light snow,
-  Heavy snow or Blizzard. Rain comes under
+  Heavy snow, Blizzard or Fog. Rain comes under
   an overcast that hides the sun and greys the sky, with a haze that fades
   the far shore; its drops ring the water, streak past the eye and throw up
   flecks where they land, and the pool's deck goes dark with wet. A light
@@ -152,8 +152,15 @@ is remembered on the device (but the view, which opens on the shore):
   shore; it lies on the beach, the bank and the pool's deck, in patches
   under a light snow and all over under a heavy one, except on the wet sand
   by the water and where a splash's drops come down. In its freezing air a
-  frozen pizza thaws only in the water and wet things barely dry. A
-  blizzard is fine snow driven by a gale. The seven are one list of cards,
+  frozen pizza thaws only in the water and wet things barely dry. On a
+  frozen lake or pool it lies on the ice as on the ground, in drifts with
+  crisp edges, but not in a hole, on its new ice or where the water has
+  wet it, and it hides the ice's cracks. A
+  blizzard is fine snow driven by a gale. Fog is a cloud on the ground
+  under a clear sky: a hundred metres to see, still air (it calms the wind
+  while it lasts), the beach, the bank, the stones, the things and the
+  splash fading white with their distance, and the sun a pale disc through
+  it where it stands high enough. The eight are one list of cards,
   as the Water page's. Each choice's picture (`assets/weather/thumbs/`) is a
   harness frame shrunk to 160×90: `--weather=name --throws=none --times=2
   --seed=1 --w=320 --h=180 --orbit=120:15:2:0:0:2`, which looks along the
@@ -796,11 +803,41 @@ where it should be however long the page has been open.
 Under a gale they are cut at its waves. On the ground the snow lies in
 value-noise patches under a light snow and whole under a heavy one, melts
 on the beach's wet sand (4 cm above the water) and on the deck where the
-splash's drops land, and whitens the far land half way. In its air (`setAir`
+splash's drops land, and whitens the far land half way. On the ice it lies
+in the same patches, their edges sharpened by a finer noise as far as the
+pixel allows (wind-packed drifts on a smooth sheet), but not on a hole's
+water or new ice, nor where a flood or a drop has wet it; it covers 0.85
+of each crack, and seen from under the water it shuts the ice's window to
+the sky. In its air (`setAir`
 in `src/rock.js`) a frozen thing thaws only in the water and wet things,
 and the deck's splashed patches, dry a twentieth as fast.
 `tools/snow-probe.mjs` checks the flakes' motion (its twin on the CPU,
 `flakeAt`) and drawing.
+
+**Fog** (`WEATHERS` in `src/main.js`; the haze in `src/sky.js`). Fog is
+the haze alone, under a clear sky: 100 m to see (dense fog, by the
+meteorologists' measure, is under 200 m) in a layer 60 m deep, a morning's
+radiation fog over a lake. The dome fades as under rain's haze, by the
+distance a ray climbs out of the layer, so the horizon and the land are
+lost and the sky overhead keeps a trace of its own. Along the sun's path the
+haze takes its direct light (exp(−3·60/(100·sin h)): 6% at 40° up, none
+near the horizon) and gives it back as the fog's own light, as cloud does
+(0.6 of the clear hour's); the photo's sun shows through as a pale disc
+with a glow about it, and its glint on the water as a pale one. The haze is
+0.95 of the light in it: fog's droplets scatter and hardly absorb. It
+comes in still air and leaves the deck damp. Everything near the pond
+fades by its distance as the water does, 1 − exp(−3d/visibility): the
+beach and the bank (but the far land, the photo's own, which the dome has
+hazed), the splash's water in the air (the composite, by its depth), the
+ice's cracks and the stones and things, Three.js's own materials, through
+the main scene's `FogExp2`, whose chunks are made the haze's; the scene
+keeps it in every weather, at density 0 in clear air, so changing the
+weather compiles nothing and clear frames are as they were. The bank's
+grass takes its colour from the photo's land at the horizon, which the haze
+fills, so in haze the cube is captured once without it and its land's mip
+level copied to a 64² cube the grass reads (`landCube`); the far land keeps
+the hazed one. That is one more capture of the sky when a hazy weather is
+chosen, and nothing a frame.
 
 **Ice** (`src/ice.js`; drawn by the water's shaders, `ICE_COMMON` in
 `src/shaders/scene.js`). The ice adds one piece of physics, whether it
@@ -1116,7 +1153,7 @@ farther out, so it rises into the view rather than filling its corner.
   harder), `--skip` (skip throws, as `--manner=skip`, the times counted from
   the first touch), `--trace` (each stone's path drawn as a line),
   `--wind-strength=calm|breeze|windy|gale` (the page's
-  own default is calm), `--weather=clear|light-rain|heavy-rain|storm|light-snow|heavy-snow|blizzard` (waits for
+  own default is calm), `--weather=clear|light-rain|heavy-rain|storm|light-snow|heavy-snow|blizzard|fog` (waits for
   the rain's table before the first frame). With
   `--eval="window.__pond.setTimeScale(0.1)"` the frames are slow motion, 1/600 s
   of world time each, so `--times=0.07,0.0716667,…` are consecutive frames;
@@ -1165,10 +1202,10 @@ farther out, so it rises into the view rather than filling its corner.
   water, `WATER_CHOICES` in `src/main.js`; `?ice=thin|thick` (`--ice=` for the
   harness) freezes it that thick, `ICE_THICKNESS` in `src/ice.js` (`none`
   thaws it);
-  `?weather=clear|light-rain|heavy-rain|storm|light-snow|heavy-snow|blizzard`
+  `?weather=clear|light-rain|heavy-rain|storm|light-snow|heavy-snow|blizzard|fog`
   (`--weather=` for the harness) the weather, `WEATHERS` in `src/main.js`,
   over the one last chosen on the device (a storm or a blizzard brings a
-  gale while it lasts, unless `?windStrength` says otherwise).
+  gale while it lasts, a fog the calm, unless `?windStrength` says otherwise).
 - `?view=shore|level|high|under` on the page (`--view=` for the harness) opens on
   one of the View setting's choices (`VIEWS` in `src/main.js`);
   `--orbit=azimuth:elevation:distance[:x:y:z]` stands the harness's camera on
@@ -1272,7 +1309,8 @@ farther out, so it rises into the view rather than filling its corner.
   tile takes the preset's size, and a clear sky again stops it; the first
   snow compiles its flakes' one program and every later one, a throw into
   it and a blizzard's gale none more, it adds one draw call, and clear
-  again neither falls nor lies; the gale
+  again neither falls nor lies; fog compiles and draws nothing more, a
+  throw into it neither, and calms the wind till it clears; the gale
   compiles no program and draws its finer sheet, a throw into it and the
   storm through a lightning strike neither, and in the pool it raises no
   waves; and pausing and resuming twice
