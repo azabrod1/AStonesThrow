@@ -155,7 +155,7 @@ const url = `http://localhost:${port}/index.html?quality=${quality}&paused=1${ke
 console.log(`[shoot] ${url} -> ${outDir}`);
 await page.goto(url, { waitUntil: 'domcontentloaded' });
 try {
-  await page.waitForFunction(() => !!window.__pond, { timeout: 60000 });
+  await page.waitForFunction(() => !!window.__pond, null, { timeout: 60000 });   // (the function's argument, then the options)
 } catch {
   console.error('[shoot] the pond never became ready');
   console.error(problems.join('\n'));
