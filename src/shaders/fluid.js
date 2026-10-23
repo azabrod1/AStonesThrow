@@ -108,7 +108,7 @@
 // A second draw of the same programs writes how far each is from the mirror
 // camera into the mirror's alpha (MIRROR_COMMON), so that the water can look
 // a near object's reflection up where it is rather than at infinity.
-import { GLSL_COMMON } from './scene.js';
+import { GLSL_COMMON, HAZE } from './scene.js';
 import { GALE_SURFACE } from './gale.js';
 import { SHEET_FROTH } from './sheet.js';
 import { COAST } from '../spray.js';
@@ -424,6 +424,7 @@ varying vec2 vUv;
 ${GLSL_COMMON}
 ${FRESNEL}
 ${NIGHT_VISION}
+${HAZE}
 #define WATER_SLOPE_VARIANCE 0.006   // the sheet's and the column's unresolved ripple, for their glitter
 #define GLITTER_CAP 40.0
 ${MEAN_LIGHT}
@@ -568,6 +569,9 @@ void main() {
       float detail = sheet + column * smoothstep(COLUMN_DETAIL_FROM, COLUMN_DETAIL_FULL, deviceRadius)
         + drop * smoothstep(DETAIL_FROM, DETAIL_FULL, deviceRadius) * smoothstep(0.3, 0.9, coverage);
       fluid = mix(meanLight, surface, detail);
+      // In haze (src/sky.js) the water in the air fades by its distance, as the scene behind it does; a fine drop's
+      // mean light is the haze's already, the scene's and the sky's.
+      fluid = withHaze(fluid, length(position));
       float glass = max(sheet + column, drop * smoothstep(BEAD_FROM, BEAD_FULL, deviceRadius));
       alpha = mix(alpha, min(coverage, 1.0), glass);
     }

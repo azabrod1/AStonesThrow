@@ -245,10 +245,10 @@
 // (DEFAULT_WIND otherwise); ?windStrength=calm|breeze|windy|gale the wind's
 // strength (WIND_STRENGTHS in src/ambientWaves.js, a gale's waves
 // GALE_STRENGTHS in src/galeWaves.js; setWind);
-// ?weather=clear|light-rain|heavy-rain|storm|light-snow|heavy-snow|blizzard
+// ?weather=clear|light-rain|heavy-rain|storm|light-snow|heavy-snow|blizzard|fog
 // the weather (WEATHERS: the sky's cloud and haze, src/sky.js, the rain,
 // src/rain.js, the snow, src/snow.js, a storm's lightning,
-// src/lightning.js, and a storm's or a blizzard's gale; setWeather); each otherwise
+// src/lightning.js, a storm's or a blizzard's gale and a fog's calm; setWeather); each otherwise
 // the one last chosen on this device, or lakeside's afternoon, lake, calm
 // and clear; ?paused=1
 // starts with the clock stopped
@@ -470,12 +470,22 @@ const SKY_ASSETS_STORAGE_KEY = 'stone-pond-sky-assets';
 // 400 m; a blizzard, fine snow broken by a gale, from a fifth, 150 m (a
 // blizzard's visibility is under a quarter mile). Its haze is brighter than rain's (`hazeBrightness`, src/
 // sky.js); `snowCover` is the snow lying on the ground (the beach's, the
-// bank's and the pool's deck's: patches, or all of it; SNOW_COVER in src/
+// bank's, the pool's deck's and the ice's: patches, or all of it; SNOW_COVER in src/
 // shaders/scene.js), the paving between its patches damp (`wet`); and its
 // air is freezing and damp (`air`: src/rock.js setAir, the deck's drying,
 // src/pool.js).
+// Fog is a cloud on the ground under a clear sky (`cover` 0): a haze about
+// 100 m to see (a dense fog's, by the meteorologists' measure under 200 m)
+// and FOG_LAYER deep, which takes the sun's direct light along its path
+// through it and gives it back as its own pale light (src/sky.js), so the
+// sun shows through it as a pale disc where it stands high enough. Its haze
+// is nearly as bright as the light in it: its droplets scatter, they hardly
+// absorb. It comes in still air (`wind`: calm, as a gale comes with a storm),
+// damp (the deck dries slowly, a little wet).
+const FOG_LAYER = 60;   // metres: a radiation fog's depth (50 to 100 m in the morning over a lake)
 const SNOW_AIR = { freezing: true, drying: 0.05 };
 const MILD_AIR = { freezing: false, drying: 1 };
+const FOG_AIR = { freezing: false, drying: 0.2 };
 const WEATHERS = {
   clear: { cover: 0, light: 1, visibility: Infinity, rain: null, wet: 0 },
   'light-rain': { cover: 1, light: 0.35, visibility: 10000, rain: 'light', wet: 0.5 },
@@ -484,6 +494,7 @@ const WEATHERS = {
   'light-snow': { cover: 1, light: 0.55, visibility: 1500, hazeBrightness: 0.85, rain: null, wet: 0.2, snow: 'light', snowCover: 0.45, air: SNOW_AIR },
   'heavy-snow': { cover: 1, light: 0.35, visibility: 400, hazeBrightness: 0.9, rain: null, wet: 0.3, snow: 'heavy', snowCover: 1, air: SNOW_AIR },
   blizzard: { cover: 1, light: 0.22, visibility: 150, hazeBrightness: 0.9, rain: null, wet: 0.3, snow: 'blizzard', snowCover: 1, air: SNOW_AIR, wind: 'gale' },
+  fog: { cover: 0, light: 0.6, visibility: 100, hazeBrightness: 0.95, hazeLayer: FOG_LAYER, rain: null, wet: 0.15, air: FOG_AIR, wind: 'calm' },
 };
 const GALE_EYE_CLEARANCE = 0.45;  // m the eye keeps from the still water under a gale: its crests and troughs reach about 0.4
 const RIDE_MIRROR_MARGIN = 0.05;  // m: a floater's mirror image is reckoned this much roomier, for the water it rides as drawn (src/rock.js rideTheWater)
@@ -687,7 +698,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   const rain = new Rain(renderer, lighting, { texels: settings.rainTexels, gale: galeWaves.uniforms(), download: rainDownload });
   const wetDeck = { value: 0 };
   // The snow (src/snow.js): its flakes, none until the Weather brings it; the
-  // snow lying on the ground (the beach's and the deck's uSnow) and the air
+  // snow lying on the ground (the beach's, the deck's and the ice's uSnow) and the air
   // it brings (src/rock.js setAir; the deck's drying, src/pool.js).
   const snow = new Snow(lighting, { gale: galeWaves.uniforms(), haze: environment.hazeUniforms });
   snow.setShare(settings.snowShare);
@@ -699,6 +710,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   // The rain's wet on the ice; in freezing air (snow's) none: no film of water stands on ice below freezing.
   const wetIce = { value: 0 };
   ice.uniforms.uIceWet = wetIce;
+  // The snow lying on the ice, as on the ground (SNOW_COVER in src/shaders/scene.js, drawn by the water's shaders).
+  ice.uniforms.uSnow = snowCover;
   // The rings that cross the whole pond: the splash hands them its ring
   // sources through the solver it is given (water.rings), and the surface,
   // the floor and the foam specks draw them.
@@ -750,7 +763,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     surface.setGale(strength > 0);
   }
   applyWind(windName);
-  // The Wind setting's own choice (setWind), which a storm's or a blizzard's gale overrides only while it lasts.
+  // The Wind setting's own choice (setWind), which a storm's or a blizzard's gale, or a fog's calm, overrides only while it lasts.
   let windChoice = windName;
   // A storm brings its gale, unless the page's ?windStrength says otherwise.
   if (WEATHERS[weatherName].wind && !Object.hasOwn(WIND_STRENGTHS, requestedWind ?? '')) applyWind(WEATHERS[weatherName].wind);
@@ -861,6 +874,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   const sceneUnder = new THREE.Scene();
   sceneUnder.add(floor, splash.bubblePoints, sunUnder);
   const sceneMain = new THREE.Scene();
+  // The haze for the built-in materials in it, the stones' and the things' (src/sky.js): 0 but in haze.
+  sceneMain.fog = environment.fog;
   sceneMain.add(environment.sky, surface.inner, surface.outer, splash.cavityGroup, splash.foamSpecks.points, sun, rain.streaks, rain.flecks, snow.flakes, galeWaves.spray);
   // MIRROR_LAYER holds what the water mirrors: the sky dome, far shore
   // included, and while a splash lives its crowns, columns and drops. The
@@ -1088,7 +1103,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   const resolution = new THREE.Vector2();
   let dpr = 1;
   // The ice's cracks (src/iceCracks.js), drawn over the sheet as ribbons: one draw call, one program (warmUp draws it).
-  const iceCracks = new IceCracks(ice, lighting, resolution);
+  const iceCracks = new IceCracks(ice, lighting, resolution, environment.hazeUniforms);
   sceneMain.add(iceCracks.mesh);
 
   // ---- the view ----------------------------------------------------------
@@ -2643,14 +2658,14 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     },
     /**
      * The weather by name (WEATHERS: clear, light-rain, heavy-rain, storm,
-     * light-snow, heavy-snow, blizzard), remembered on this device. The sky
+     * light-snow, heavy-snow, blizzard, fog), remembered on this device. The sky
      * clouds over and the snow falls at once; the rain falls once its ring's
      * table has come (the first time, about 0.6 MB). Resolves when it falls.
      */
     setWeather(name) {
       if (!Object.hasOwn(WEATHERS, name)) return Promise.resolve(weatherName);
       try { window.localStorage.setItem(WEATHER_STORAGE_KEY, name); } catch { /* storage refused: the choice lasts this visit */ }
-      // A storm's or a blizzard's gale while it lasts, then the Wind setting's own choice again (WEATHERS).
+      // A storm's or a blizzard's gale, or a fog's calm, while it lasts, then the Wind setting's own choice again (WEATHERS).
       if (WEATHERS[name].wind) blowWind(WEATHERS[name].wind);
       else if (WEATHERS[weatherName].wind) blowWind(windChoice);
       return applyWeather(name).then(() => weatherName);

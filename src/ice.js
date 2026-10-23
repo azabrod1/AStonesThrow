@@ -349,6 +349,7 @@ export class IceSheet {
       uIcePool: { value: new THREE.Vector4() },   // the pool's square (corner x, z, side) and 1 over a frozen pool, else 0 (setPool)
       uIceGlaze: { value: FLOOD.glaze },   // B's least once wet (fillMask)
       uIceWet: { value: 0 },   // how wet the rain has made it: src/main.js shares the weather's object
+      uSnow: { value: 0 },     // the snow lying on it (SNOW_COVER in src/shaders/scene.js): src/main.js shares the weather's object
     };
     this.dirty = false;
     // The ground (src/rock.js `ground`): the ice, over the deck round a frozen pool.

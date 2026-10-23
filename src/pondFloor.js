@@ -261,6 +261,9 @@ export function createShore(floor, lighting, environment, { snow = { value: 0 } 
       uSunIrradiance: { value: lighting.sunIrradiance },
       uSkyAmbient: { value: lighting.skyAmbient },
       uSkyCube: { value: environment.cubeTexture },
+      uLandCube: environment.landCube,     // the land before the haze, for the grass (src/sky.js)
+      uLandLevel: environment.landLevel,
+      ...environment.hazeUniforms,
       uSnow: snow,   // the snow lying on it, 0 to 1 (src/main.js WEATHERS)
     },
   });

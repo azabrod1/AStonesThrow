@@ -1077,6 +1077,7 @@
         <button type="button" class="menu-card" role="radio" data-value="light-snow"><img src="assets/weather/thumbs/light-snow.jpg" alt="" width="80" height="45"><span><b>Light snow</b><small>Drifting flakes, a dusting on the shore</small></span></button>
         <button type="button" class="menu-card" role="radio" data-value="heavy-snow"><img src="assets/weather/thumbs/heavy-snow.jpg" alt="" width="80" height="45"><span><b>Heavy snow</b><small>Thick flakes, the shore white</small></span></button>
         <button type="button" class="menu-card" role="radio" data-value="blizzard"><img src="assets/weather/thumbs/blizzard.jpg" alt="" width="80" height="45"><span><b>Blizzard</b><small>Snow driven sideways by a gale</small></span></button>
+        <button type="button" class="menu-card" role="radio" data-value="fog"><img src="assets/weather/thumbs/fog.jpg" alt="" width="80" height="45"><span><b>Fog</b><small>Still and white, the sun a pale disc</small></span></button>
       </div>
       <div class="menu-note" id="weather-note" aria-live="polite"></div>
     </div>
@@ -1377,6 +1378,7 @@
         'light-snow': 'A bright overcast and a light snow: flakes drifting down and melting on the water, a dusting on the shore.',
         'heavy-snow': 'Heavy snow: big flakes thick in the air, the shore white, the far bank lost in the snow. A frozen pizza stays frozen out of the water.',
         blizzard: 'A blizzard: heavy snow driven sideways by a gale, the world beyond the pond gone white.',
+        fog: 'A dense fog on a still day: a hundred metres to see, the far shore and the beach fading white, the sun a pale disc where it is high enough to burn through.',
       },
       time: 'Choose a moment below or slide through the day. Each is a real photograph, aligned to keep the landscape in place.',
       oneTime: 'This place is a single photograph. Try Highlands, Desert oasis, Lakeside or Mesas for changing light.',
@@ -1621,7 +1623,7 @@
         retry.addEventListener('click', () => chooseWeather(value));
         weatherNote.replaceChildren('The rain could not be loaded. Check the connection. ', retry);
       });
-      updateWind();   // a storm or a blizzard brings a gale
+      updateWind();   // a storm or a blizzard brings a gale, a fog the calm
     }
     function updateWeather() {
       showWeather(pond.weather);
