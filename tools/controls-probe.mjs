@@ -68,8 +68,7 @@
 //
 // --root serves another checkout (a git archive of an earlier commit, say);
 // the screenshots and the checks then describe that version.
-import { chromium } from 'playwright';
-import { existsSync } from 'node:fs';
+import { launchBrowser } from './browser.mjs';
 import { mkdir, readFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import path from 'node:path';
@@ -105,12 +104,8 @@ const server = createServer(async (request, response) => {
   }
 });
 await new Promise((resolve) => server.listen(0, resolve));
-const containerChromium = '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
-const browser = await chromium.launch({
-  headless: true,
-  executablePath: process.env.PW_CHROMIUM || (existsSync(containerChromium) ? containerChromium : undefined),
-  args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--enable-webgl', '--disable-gpu-sandbox'],
-});
+// The GPU if there is one, else SwiftShader (tools/browser.mjs).
+const browser = await launchBrowser();
 await mkdir(outputFolder, { recursive: true });
 
 let failures = 0;

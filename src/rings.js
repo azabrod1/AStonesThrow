@@ -167,32 +167,53 @@
 //      divided by √k and by k^{3/2} for the asymptotic sums below; float32
 //      where the device renders it, else half floats, scaled by
 //      COEFFICIENT_SCALE into their normal range;
-//   2. one profile pass per source drawn (RING_PROFILE_FRAGMENT) writes its
-//      layer of PROFILE_TEXELS radii. Texel i is at u = i/(N − 1), so the
-//      first is the centre and the last the reach and linear filtering is
-//      exact at both ends; its radius is R·(u² + a·u)/(1 + a), a =
-//      PROFILE_MAPPING: 7.5e-5·R apart at the centre and 9e-4·R at the rim
-//      (3 mm and 3.6 cm for a 40 m reach), fine enough that what the water
-//      reads between texels matches the exact profile (tools/ring-probe.mjs).
-//      Outside its annulus it writes zero at once: inside innerRadius (no
-//      wave is slower than SLOWEST_GROUP_SPEED, the capillary-gravity
-//      minimum, so at age τ no part of the ring is nearer its centre than
-//      that times τ, less the source's own extent (SOURCE_EXTENT of its
-//      widest splat's σ·rim, and its offsets), but the Airy tail of the
-//      caustic there, exponentially small: INNER_SHARE keeps a margin) and
-//      beyond outerRadius, so a young ring costs little and an old one less.
-//      Elsewhere terms with kr < DIRECT_LIMIT evaluate J0 and J1 in full
-//      (Abramowitz and Stegun 9.4.1 to 9.4.6), the rest by their Hankel
-//      asymptotics to 1/(kr) with the phase kr − π/4 advanced from term to
-//      term by a rotation (Δk·r per step), so a term costs a fetch and a
-//      dozen multiply-adds. Then the near field is faded out (NEAR_FIELD), a
-//      ring leaving faded by its fade, and it writes ∂η0/∂r, ∂η1/∂r, η1 and
-//      η0, times RING_TEXTURE_UNITS, half floats, tapered to zero over the
-//      last 15% of R;
-//   3. the array's mip chain is rebuilt once (Three.js, after the last layer),
+//   2. one partial pass (RING_PARTIAL_FRAGMENT) over PROFILE_TEXELS radii
+//      by PROFILE_SLICES rows for each source drawn: a row sums, at every
+//      radius, the part of its source's profile that one slice of its
+//      wavenumbers makes (the slices are contiguous runs of the grid, each
+//      a PROFILE_SLICES-th of the wavenumbers in use). Texel i is at
+//      u = i/(N − 1), so the first is the centre and the last the reach and
+//      linear filtering is exact at both ends; its radius is
+//      R·(u² + a·u)/(1 + a), a = PROFILE_MAPPING: 7.5e-5·R apart at the
+//      centre and 9e-4·R at the rim (3 mm and 3.6 cm for a 40 m reach), fine
+//      enough that what the water reads between texels matches the exact
+//      profile (tools/ring-probe.mjs). Outside its annulus it writes zero at
+//      once: inside innerRadius (no wave is slower than
+//      SLOWEST_GROUP_SPEED, the capillary-gravity minimum, so at age τ no
+//      part of the ring is nearer its centre than that times τ, less the
+//      source's own extent (SOURCE_EXTENT of its widest splat's σ·rim, and
+//      its offsets), but the Airy tail of the caustic there, exponentially
+//      small: INNER_SHARE keeps a margin) and beyond outerRadius, so a young
+//      ring costs little and an old one less. Elsewhere terms with
+//      kr < DIRECT_LIMIT evaluate J0 and J1 in full (Abramowitz and Stegun
+//      9.4.1 to 9.4.6), the rest by their Hankel asymptotics to 1/(kr) with
+//      the phase kr − π/4 found at the slice's first such term and advanced
+//      from term to term by a rotation (Δk·r per step), so a term costs a
+//      fetch and a dozen multiply-adds. Then the near field is faded out
+//      (NEAR_FIELD), a ring leaving faded by its fade, and it writes its
+//      slice's part of ∂η0/∂r, ∂η1/∂r, η1 and η0, times
+//      RING_TEXTURE_UNITS, tapered to zero over the last 15% of R: all of
+//      that is linear in the sums, so the parts add up to the profile.
+//      float32 where the device renders it; on half floats, which would
+//      round each part apart, a source takes one row, its whole sum (as
+//      precise as one pass a ring was, and as slow);
+//   3. one resolve pass per source drawn (RING_RESOLVE_FRAGMENT) writes its
+//      layer, half floats: at each radius the sum of its rows (WebGL 2 draws
+//      into one layer of an array at a time);
+//   4. the array's mip chain is rebuilt once (Three.js, after the last layer),
 //      so that a pixel reads a ring averaged over its own footprint along the
 //      radius (textureGrad, GLSL_COMMON in src/shaders/scene.js), and far
 //      ripples average to flat instead of shimmering.
+// Why slices: a profile has only PROFILE_TEXELS radii, too few fragments to
+// keep a GPU busy, and each radius sums up to some 1400 wavenumbers one after
+// another. Summed whole in one fragment, a ring's pass waited on its terms'
+// fetches in turn: five rings took 1.4 ms of a desktop's GPU (an M5 Max on
+// Metal) whatever their fetches, 0.14 ms at 100 terms a radius, 1.5 at 1423.
+// In PROFILE_SLICES rows the same sums run in sixteen times the fragments,
+// each sixteen times shorter: 8 slices took 0.23 ms for the five, 16 and
+// more 0.17 (32 holds twice the memory and saves nothing), most of which is
+// now the resolve passes' (some 20 µs a layer, the GPU's cost of a pass) and
+// the mip chain's.
 // The water surface adds each ring's slope to its normal and its height to
 // the inner patch's displacement, the floor's caustics its Laplacian, the
 // foam specks and a crown's foot ride its height (GLSL_COMMON's ringSlope,
@@ -209,10 +230,17 @@
 // (desktop); the weaker rings before this calibration, two to a throw and
 // looked up at every pixel within their reach, kept 12 drawn at 33 M fetches
 // and 22 M lookups a frame. Its last ring retires 96 to 103 s after the last
-// throw (63 s before, for rings a seventh as strong). On the CPU a source is
-// planned when it starts, about 0.7 ms on a desktop (a zoom plans the live
-// ones again, one a frame), and update's bookkeeping takes some 40 µs a
-// frame.
+// throw (63 s before, for rings a seventh as strong). On the GPU, five
+// reference stones' rings, 3 or 20 s old (6.9 and 11.7 M fetches), take
+// 0.17 ms of a frame on a desktop (Chrome on Metal, an M5 Max: Rings.update
+// timed to the GPU's finish), where a pass a ring summing each radius whole
+// took 1.34 to 1.40 ms; a whole frame of the home view with them 3 s old,
+// timed so, 2.1 ms (1.6 ms at a phone's 390×844 at 3×), where it took 3.4
+// to 3.6 (2.8 to 3.0), and 1.5 (1.2) with no ring drawn. The partial sums'
+// target holds PROFILE_TEXELS × MAX_RINGS × PROFILE_SLICES float32 texels
+// (6.3 MB; bytes counts it). On the CPU a source is planned when it starts,
+// about 0.7 ms on a desktop (a zoom plans the live ones again, one a frame),
+// and update's bookkeeping takes some 40 µs a frame.
 import * as THREE from 'three';
 import { FullscreenPass, createFloatTarget } from './gpu.js';
 
@@ -221,6 +249,7 @@ export const DEFAULT_LIVE_LIMIT = 10; // sources that count as live at once (set
 export const FADE_SECONDS = 1.5;      // a ring pushed out by a newer one fades out over this long
 export const MAX_GROUPS = 4;          // splat groups a source holds (an oblique entry's cavity uses three)
 export const PROFILE_TEXELS = 2048;   // radii per profile
+export const PROFILE_SLICES = 16;     // stretches of a ring's wavenumbers the partial pass sums apart, each in a row of its own (the header)
 export const MAX_WAVENUMBERS = 2048;  // wavenumbers per source at most
 export const PROFILE_MAPPING = 0.18;  // a: the radius at u is R·(u² + a·u)/(1 + a)
 export const DIRECT_LIMIT = 12;       // kr under which J0 and J1 are evaluated in full
@@ -620,65 +649,80 @@ void main() {
 }
 `;
 
-// 2. One source's profile (the header), into its layer: texel i is the radius
-// at u = i/(PROFILE_TEXELS − 1). With w0, w1 the weights of the spectrum and
-// x = kr: η0 = Σ w0 J0(x), ∂η0/∂r = −Σ w0 k J1(x), η1 = Σ w1 J1(x),
-// ∂η1/∂r = Σ w1 k (J0(x) − J1(x)/x). For x ≥ DIRECT_LIMIT, with C + iS =
-// e^{i(x − π/4)} and A = √(2/(π r)):
+// 2. The profiles' partial sums (the header): ring n's slice s (n its index
+// among the rings drawn this frame), row n·M + s, holds at texel i, the radius
+// at u = i/(PROFILE_TEXELS − 1), the part of that ring's profile its
+// wavenumbers with index in [s·N/M, (s + 1)·N/M) make (N those in use; M =
+// SLICES, the materials' define: PROFILE_SLICES, or 1 on half floats). With
+// w0, w1 the weights of the spectrum and x = kr: η0 = Σ w0 J0(x), ∂η0/∂r =
+// −Σ w0 k J1(x), η1 = Σ w1 J1(x), ∂η1/∂r = Σ w1 k (J0(x) − J1(x)/x). For
+// x ≥ DIRECT_LIMIT, with C + iS = e^{i(x − π/4)} and A = √(2/(π r)):
 //     J0 ≈ √(2/(πx)) (C + S/(8x)),   J1 ≈ √(2/(πx)) (S + 3C/(8x)),   J1' ≈ √(2/(πx)) (C − 7S/(8x)),
 // so η0 = A(Σ (w0/√k) C + Σ (w0/k^{3/2}) S/(8r)), and so on: six running sums
 // of the fetched weights against C and S, which advance by the rotation
-// e^{iΔk·r} each term. Their dropped 1/x² terms are under 0.1% at x = 12.
-export const RING_PROFILE_FRAGMENT = /* glsl */`
+// e^{iΔk·r} each term from the slice's first, whose phase is found afresh.
+// Their dropped 1/x² terms are under 0.1% at x = 12. All that follows the
+// sums (A and 1/(8r), the near field's fade, the output's scale and the
+// taper) is linear in them, with factors of the radius alone, so each slice
+// applies it to its own part, and the parts add up to the profile.
+export const RING_PARTIAL_FRAGMENT = /* glsl */`
 #define PI 3.141592653589793
+#define MAX_RINGS ${MAX_RINGS}
+#define TEXELS ${PROFILE_TEXELS.toFixed(1)}
+#define MAPPING ${PROFILE_MAPPING}
 #define DIRECT_LIMIT ${DIRECT_LIMIT.toFixed(1)}
 #define TAPER_START ${TAPER_START}
 uniform sampler2D uSpectrum;
-uniform int uLayer;
-uniform vec4 uGrid;           // Δk (rad/m), wavenumbers in use, reach R (m), mapping a
-uniform float uInner;         // m: inside this the ring has nothing (the header)...
-uniform float uOuter;         // ...nor beyond this
-uniform vec3 uNearField;      // m, m, share: inside the first radius the ring is hidden by the share, fading in to the second (NEAR_FIELD)
-uniform float uNearOnly;      // 1 for a pool's near-field ring (the header): what the fade hides, its sign turned
-uniform float uTexels;
-uniform float uOutputScale;   // RING_TEXTURE_UNITS / COEFFICIENT_SCALE, times the fade of a ring leaving
+uniform vec4 uGrids[MAX_RINGS];        // per ring drawn: Δk (rad/m), wavenumbers in use, reach R (m), its layer (its row of the spectrum)
+uniform vec4 uAnnuli[MAX_RINGS];       // per ring drawn: m, m: nothing inside the first radius nor beyond the second (the header); 1 for a pool's near-field ring (the header: what the fade hides, its sign turned); RING_TEXTURE_UNITS / COEFFICIENT_SCALE times a leaving ring's fade
+uniform vec4 uNearFields[MAX_RINGS];   // per ring drawn: m, m, share: inside the first radius the ring is hidden by the share, fading in to the second (NEAR_FIELD)
 ${RING_MATH}
 void main() {
-  float position = (gl_FragCoord.x - 0.5) / (uTexels - 1.0);   // texel i: i/(N − 1)
-  float mapping = uGrid.w;
-  float reach = uGrid.z;
-  float radius = reach * (position * position + mapping * position) / (1.0 + mapping);
-  if (radius < uInner || radius > uOuter) { gl_FragColor = vec4(0.0); return; }
-  float step = uGrid.x;
-  int count = int(uGrid.y);
+  int row = int(gl_FragCoord.y);
+  int ring = row / SLICES;
+  int slice = row - ring * SLICES;
+  vec4 grid = uGrids[ring];
+  vec4 annulus = uAnnuli[ring];
+  float position = (gl_FragCoord.x - 0.5) / (TEXELS - 1.0);   // texel i: i/(PROFILE_TEXELS − 1)
+  float reach = grid.z;
+  float radius = reach * (position * position + MAPPING * position) / (1.0 + MAPPING);
+  if (radius < annulus.x || radius > annulus.y) { gl_FragColor = vec4(0.0); return; }
+  float step = grid.x;
+  int count = int(grid.y);
+  int layer = int(grid.w);
+  int first = slice * count / SLICES;
+  int last = (slice + 1) * count / SLICES;
   float directTerms = DIRECT_LIMIT / max(radius * step, 1e-9) - 0.5;   // the centre (texel 0) takes every term in full
   int directCount = directTerms >= float(count) ? count : int(ceil(directTerms));
   float height0 = 0.0, slope0 = 0.0, height1 = 0.0, slope1 = 0.0;
-  for (int index = 0; index < directCount; index++) {
-    vec4 weights = texelFetch(uSpectrum, ivec2(index, uLayer), 0);
+  int directLast = min(last, directCount);
+  for (int index = first; index < directLast; index++) {
+    vec4 weights = texelFetch(uSpectrum, ivec2(index, layer), 0);
     float wavenumber = (float(index) + 0.5) * step;
     float root = sqrt(wavenumber);
     float zeroth = weights.x * root;
-    float first = weights.z * root;
+    float firstOrder = weights.z * root;
     float argument = wavenumber * radius;
     float j0 = besselJ0(argument);
     float j1 = besselJ1(argument);
     height0 += zeroth * j0;
     slope0 -= zeroth * wavenumber * j1;
-    height1 += first * j1;
-    slope1 += first * wavenumber * (j0 - (argument > 1e-6 ? j1 / argument : 0.5));   // J1(x)/x → ½ at the centre
+    height1 += firstOrder * j1;
+    slope1 += firstOrder * wavenumber * (j0 - (argument > 1e-6 ? j1 / argument : 0.5));   // J1(x)/x → ½ at the centre
   }
-  if (directCount < count) {
-    vec2 start = sineCosine((float(directCount) + 0.5) * step * radius - 0.25 * PI);
+  int asymptoticFirst = max(first, directCount);
+  if (asymptoticFirst < last) {
+    float turnAngle = step * radius;
+    vec2 start = sineCosine((float(asymptoticFirst) + 0.5) * turnAngle - 0.25 * PI);
     float cosine = start.y;
     float sine = start.x;
-    vec2 turn = sineCosine(step * radius);
+    vec2 turn = sineCosine(turnAngle);
     float turnCosine = turn.y;
     float turnSine = turn.x;
     float cosineSum0 = 0.0, sineSum0 = 0.0, scaledSineSum0 = 0.0;
     float sineSum1 = 0.0, cosineSum1 = 0.0, scaledCosineSum1 = 0.0;
-    for (int index = directCount; index < count; index++) {
-      vec4 weights = texelFetch(uSpectrum, ivec2(index, uLayer), 0);
+    for (int index = asymptoticFirst; index < last; index++) {
+      vec4 weights = texelFetch(uSpectrum, ivec2(index, layer), 0);
       float wavenumber = (float(index) + 0.5) * step;
       cosineSum0 += weights.x * cosine;
       sineSum0 += weights.y * sine;
@@ -702,16 +746,30 @@ void main() {
   // quintic, flat to its second derivative at both ends, so the slopes it
   // makes have no kink for the texels to cut. A near-field ring shows what
   // the fade hides, turned over: m − 1, whose slope is the fade's own.
-  float fadeWidth = max(uNearField.y - uNearField.x, 1e-6);
-  float across = clamp((radius - uNearField.x) / fadeWidth, 0.0, 1.0);
-  float shown = 1.0 - uNearOnly - uNearField.z * (1.0 - across * across * across * (10.0 - 15.0 * across + 6.0 * across * across));
-  float shownSlope = uNearField.z * 30.0 * across * across * (1.0 - across) * (1.0 - across) / fadeWidth;
+  vec4 nearField = uNearFields[ring];
+  float fadeWidth = max(nearField.y - nearField.x, 1e-6);
+  float across = clamp((radius - nearField.x) / fadeWidth, 0.0, 1.0);
+  float shown = 1.0 - annulus.z - nearField.z * (1.0 - across * across * across * (10.0 - 15.0 * across + 6.0 * across * across));
+  float shownSlope = nearField.z * 30.0 * across * across * (1.0 - across) * (1.0 - across) / fadeWidth;
   slope0 = shown * slope0 + shownSlope * height0;
   slope1 = shown * slope1 + shownSlope * height1;
   height0 *= shown;
   height1 *= shown;
   float taper = 1.0 - smoothstep(TAPER_START * reach, reach, radius);
-  gl_FragColor = vec4(slope0, slope1, height1, height0) * (uOutputScale * taper);
+  gl_FragColor = vec4(slope0, slope1, height1, height0) * (annulus.w * taper);
+}
+`;
+
+// 3. One ring's profile, into its layer: texel i the sum of its SLICES rows
+// of partial sums at texel i (the header).
+export const RING_RESOLVE_FRAGMENT = /* glsl */`
+uniform sampler2D uPartials;
+uniform int uRow;             // the ring's first row of partial sums
+void main() {
+  ivec2 texel = ivec2(int(gl_FragCoord.x), uRow);
+  vec4 sum = vec4(0.0);
+  for (int slice = 0; slice < SLICES; slice++) sum += texelFetch(uPartials, texel + ivec2(0, slice), 0);
+  gl_FragColor = sum;
 }
 `;
 
@@ -867,6 +925,14 @@ export class Rings {
     this.fetchesRun = 0;     // ...and the spectrum fetches its profile passes made (texels computed × wavenumbers summed)
 
     this.spectrumTarget = createFloatTarget(MAX_WAVENUMBERS, MAX_RINGS);
+    // The profiles' partial sums, PROFILE_SLICES rows a ring, float32 where
+    // the device renders it (createFloatTarget). Half floats would round each
+    // slice's part apart, and the parts can be as large as the sum, so on half
+    // floats a ring takes one row: its whole sum, as one profile pass made it
+    // before the sums were sliced (as precise, and as slow).
+    this.partialTarget = createFloatTarget(PROFILE_TEXELS, MAX_RINGS * PROFILE_SLICES);
+    if (this.partialTarget.texture.type !== THREE.FloatType) this.partialTarget.setSize(PROFILE_TEXELS, MAX_RINGS);
+    this.slices = this.partialTarget.height / MAX_RINGS;
     this.profileTarget = new THREE.WebGLArrayRenderTarget(PROFILE_TEXELS, 1, MAX_RINGS, {
       type: THREE.HalfFloatType,
       format: THREE.RGBAFormat,
@@ -891,17 +957,16 @@ export class Rings {
       uSplats: { value: Array.from({ length: MAX_RINGS * MAX_GROUPS }, () => new THREE.Vector4()) },
       uPairs: { value: Array.from({ length: MAX_RINGS * MAX_GROUPS }, () => new THREE.Vector4()) },
     });
-    this.profilePass = new FullscreenPass(RING_PROFILE_FRAGMENT, {
+    this.partialPass = new FullscreenPass(RING_PARTIAL_FRAGMENT, {
       uSpectrum: { value: this.spectrumTarget.texture },
-      uLayer: { value: 0 },
-      uGrid: { value: new THREE.Vector4() },
-      uInner: { value: 0 },
-      uOuter: { value: 0 },
-      uNearField: { value: new THREE.Vector3() },
-      uNearOnly: { value: 0 },
-      uTexels: { value: PROFILE_TEXELS },
-      uOutputScale: { value: RING_TEXTURE_UNITS / COEFFICIENT_SCALE },
-    });
+      uGrids: { value: Array.from({ length: MAX_RINGS }, () => new THREE.Vector4()) },
+      uAnnuli: { value: Array.from({ length: MAX_RINGS }, () => new THREE.Vector4()) },
+      uNearFields: { value: Array.from({ length: MAX_RINGS }, () => new THREE.Vector4()) },
+    }, { defines: { SLICES: this.slices } });
+    this.resolvePass = new FullscreenPass(RING_RESOLVE_FRAGMENT, {
+      uPartials: { value: this.partialTarget.texture },
+      uRow: { value: 0 },
+    }, { defines: { SLICES: this.slices } });
 
     this.sharedUniforms = {
       uRingCount: { value: 0 },
@@ -931,10 +996,12 @@ export class Rings {
   /** The camera the rings retire by (RingSources.setCamera). */
   setCamera(camera) { this.book.setCamera(camera); }
 
-  /** Bytes the rings' render targets hold: the spectrum and the profiles with their mip chain. */
+  /** Bytes the rings' render targets hold: the spectrum, the profiles' partial sums, and the profiles with their mip chain. */
   get bytes() {
-    const spectrumBytes = MAX_WAVENUMBERS * MAX_RINGS * 4 * (this.spectrumTarget.texture.type === THREE.FloatType ? 4 : 2);
-    return Math.round(spectrumBytes + PROFILE_TEXELS * MAX_RINGS * 4 * 2 * 2);
+    const texelBytes = (target) => 4 * (target.texture.type === THREE.FloatType ? 4 : 2);
+    const spectrumBytes = MAX_WAVENUMBERS * MAX_RINGS * texelBytes(this.spectrumTarget);
+    const partialBytes = PROFILE_TEXELS * MAX_RINGS * this.slices * texelBytes(this.partialTarget);
+    return Math.round(spectrumBytes + partialBytes + PROFILE_TEXELS * MAX_RINGS * 4 * 2 * 2);   // a 1-texel-high layer's mip chain halves its width only: twice its texels
   }
 
   /** Every ring gone at once (the app's clearPond). */
@@ -948,8 +1015,8 @@ export class Rings {
 
   /**
    * Retire the rings that have faded, then (if any live) run the spectrum
-   * pass and one profile pass per live ring for world time `time`, and hand
-   * the materials the live rings' places.
+   * pass, the partial pass over every ring drawn and one resolve pass per
+   * ring for world time `time`, and hand the materials the rings' places.
    */
   update(time) {
     this.book.retire(time);
@@ -987,53 +1054,60 @@ export class Rings {
     const previousTarget = renderer.getRenderTarget();
     this.spectrumPass.render(renderer, this.spectrumTarget);
 
-    const profile = this.profilePass.material.uniforms;
+    // The partial sums of every ring drawn, in one pass over their rows only.
+    const partial = this.partialPass.material.uniforms;
+    this.sources.forEach((source, index) => {
+      const frame = frames[index];
+      partial.uGrids.value[index].set(source.plan.step, frame.count, source.plan.reach, source.layer);
+      partial.uAnnuli.value[index].set(frame.inner, frame.outer, source.nearOnly ? 1 : 0, frame.shown * RING_TEXTURE_UNITS / COEFFICIENT_SCALE);
+      partial.uNearFields.value[index].set(frame.near.inner, frame.near.outer, frame.near.hide, 0);
+      this.fetchesRun += texelsBetween(frame.inner, frame.outer, source.plan.reach) * frame.count;
+    });
+    this.partialTarget.viewport.set(0, 0, PROFILE_TEXELS, this.sources.length * this.slices);
+    this.partialPass.render(renderer, this.partialTarget);
+
+    const resolve = this.resolvePass.material.uniforms;
     const texture = this.profileTarget.texture;
     this.sources.forEach((source, index) => {
       const frame = frames[index];
-      profile.uLayer.value = source.layer;
-      profile.uGrid.value.set(source.plan.step, frame.count, source.plan.reach, PROFILE_MAPPING);
-      profile.uInner.value = frame.inner;
-      profile.uOuter.value = frame.outer;
-      profile.uNearField.value.set(frame.near.inner, frame.near.outer, frame.near.hide);
-      profile.uNearOnly.value = source.nearOnly ? 1 : 0;
-      profile.uOutputScale.value = frame.shown * RING_TEXTURE_UNITS / COEFFICIENT_SCALE;
+      resolve.uRow.value = index * this.slices;
       // Three.js rebuilds the array's mip chain after a render into it: once, after the last layer.
       texture.generateMipmaps = index === this.sources.length - 1;
       renderer.setRenderTarget(this.profileTarget, source.layer);
-      renderer.render(this.profilePass.scene, this.passCamera);
+      renderer.render(this.resolvePass.scene, this.passCamera);
       shared.uRingPlaces.value[index].set(source.centreX, source.centreZ, source.directionX, source.directionZ);
       shared.uRingShapes.value[index].set(source.plan.reach, frame.outer, source.layer, frame.inner);
-      this.fetchesRun += texelsBetween(frame.inner, frame.outer, source.plan.reach) * frame.count;
     });
     texture.generateMipmaps = true;
-    this.passesRun = 1 + this.sources.length;
+    this.passesRun = 2 + this.sources.length;
     renderer.setRenderTarget(previousTarget);
   }
 
   /**
    * Every layer of the profile texture zeroed, with its mip chain, so the
-   * texture is complete before the first ring (and both passes compiled):
-   * each layer drawn with no wavenumbers in use.
+   * texture is complete before the first ring (and every pass compiled): the
+   * partial sums of every row drawn with no wavenumbers in use, and each
+   * layer resolved from them.
    */
   clearTextures() {
     const renderer = this.renderer;
     const previousTarget = renderer.getRenderTarget();
     for (const grid of this.spectrumPass.material.uniforms.uGrids.value) grid.set(0, 0, 0, 0);
     this.spectrumPass.render(renderer, this.spectrumTarget);
-    const profile = this.profilePass.material.uniforms;
-    profile.uGrid.value.set(1, 0, 1, PROFILE_MAPPING);
-    profile.uInner.value = 0;
-    profile.uOuter.value = 1;
-    profile.uNearField.value.set(0, 0, 0);
-    profile.uNearOnly.value = 0;
-    profile.uOutputScale.value = RING_TEXTURE_UNITS / COEFFICIENT_SCALE;
+    const partial = this.partialPass.material.uniforms;
+    for (let index = 0; index < MAX_RINGS; index++) {
+      partial.uGrids.value[index].set(1, 0, 1, index);
+      partial.uAnnuli.value[index].set(0, 1, 0, RING_TEXTURE_UNITS / COEFFICIENT_SCALE);
+      partial.uNearFields.value[index].set(0, 0, 0, 0);
+    }
+    this.partialTarget.viewport.set(0, 0, PROFILE_TEXELS, MAX_RINGS * this.slices);
+    this.partialPass.render(renderer, this.partialTarget);
     const texture = this.profileTarget.texture;
     for (let layer = 0; layer < MAX_RINGS; layer++) {
-      profile.uLayer.value = layer;
+      this.resolvePass.material.uniforms.uRow.value = layer * this.slices;
       texture.generateMipmaps = layer === MAX_RINGS - 1;
       renderer.setRenderTarget(this.profileTarget, layer);
-      renderer.render(this.profilePass.scene, this.passCamera);
+      renderer.render(this.resolvePass.scene, this.passCamera);
     }
     texture.generateMipmaps = true;
     renderer.setRenderTarget(previousTarget);

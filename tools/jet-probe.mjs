@@ -19,7 +19,7 @@
 //
 // The profile line gives the column's diameter where it leaves the water and
 // up it, at the given time after the stone's entry. The landing lines fly the
-// drops of 4 mm and more (the ones that throw a crown where they land) with
+// drops of 3.5 mm and more (LANDING_CROWN_RADIUS in src/splash.js: the ones that throw a crown where they land) with
 // the splash's own drag and substeps, and say when and how fast they reach
 // the water.
 import { JetColumn } from '../src/jet.js';
@@ -174,7 +174,7 @@ console.log(`volume: drops ${(dropVolume * 1e6).toFixed(1)} ml + fallen back abo
 console.log(`water: ${splats.map((splat) => `${splat.kind} r ${millimetres(splat.radius)} mm${splat.height ? ` h ${millimetres(splat.height)} mm` : ''}${splat.velocity ? ` v ${splat.velocity.toFixed(2)}` : ''}${splat.amount ? ` amount ${splat.amount.toFixed(2)}` : ''}${splat.count ? ` count ${splat.count}` : ''}`).join('; ')}`);
 // Fly the big drops to the water as SplashSystem.update does.
 const landings = [];
-for (const drop of drops.filter((candidate) => candidate.radius >= 0.004)) {
+for (const drop of drops.filter((candidate) => candidate.radius >= 0.0035)) {
   let { x, y, z, vx, vy, vz } = drop;
   let time = drop.time;
   while (time < 3) {
@@ -189,6 +189,6 @@ for (const drop of drops.filter((candidate) => candidate.radius >= 0.004)) {
   landings.push({ time: time + pinchDelay, radius: drop.radius, speed: Math.hypot(vx, vy, vz), offset: Math.hypot(x, z + 1.4) });
 }
 landings.sort((first, second) => first.time - second.time);
-console.log(`landings of drops over 4 mm (s after entry, radius, speed, distance from the jet): ${landings.map((landing) => `${landing.time.toFixed(3)} s ${millimetres(landing.radius)} mm ${landing.speed.toFixed(2)} m/s ${millimetres(landing.offset)} mm`).join('; ')}`);
+console.log(`landings of drops of 3.5 mm and more (s after entry, radius, speed, distance from the jet): ${landings.map((landing) => `${landing.time.toFixed(3)} s ${millimetres(landing.radius)} mm ${landing.speed.toFixed(2)} m/s ${millimetres(landing.offset)} mm`).join('; ')}`);
 console.log(`normals: worst outward cosine ${worstInward.toFixed(3)} (negative means some point inward)`);
 console.log(`CPU: ${(geometryMilliseconds / Math.max(geometryCalls, 1) * 1000).toFixed(0)} µs per frame for the geometry over ${geometryCalls} frames, ${(updateMilliseconds / updateCalls * 1000).toFixed(1)} µs per substep update`);

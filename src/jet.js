@@ -78,7 +78,7 @@
 // pinches off after form.gatherScale capillary times sqrt(ρ·r³/σ) of its own,
 // or sooner once the neck just behind it is thinner than form.neckRatio of the
 // bulb, or at the latest when it starts to fall: one drop with the bulb's
-// radius and velocity (a split tip: two side by side, parting at 0.12 to
+// radius and velocity (broken up if bigger than DROP_CEILING, below; a split tip: two side by side, parting at 0.12 to
 // 0.3 m/s), up to form.tipSatellites satellites of SATELLITE_LEAST to
 // SATELLITE_MOST of its radius from its neck, a little slower, and one to four
 // fine drops (times form.spray). For the reference throw the first leaves
@@ -100,7 +100,16 @@
 // scatter (times form.scatter) and, at form.satellites odds, a small
 // satellite, and a ragged column sheds fine spray as it parts (form.spray over
 // 1). A ragged form starts that breakup at form.breakAt (s), whatever its tip
-// is doing. Volumes are kept, so the drop count follows the column. Before it
+// is doing. Volumes are kept, so the drop count follows the column. A lump
+// bigger than DROP_CEILING (src/crown.js: 4 mm in radius, the most surface
+// tension holds together in flight), a piece of a column more than about
+// 4 mm thick or a big tip bulb, does not fly whole: it leaves as drops of 2.4
+// to 4 mm that hold its water (breakLump, src/crown.js), starting within it
+// and parting at its capillary speed sqrt(σ/(ρ·r)), the first in its place
+// and the rest out of the jet's budget, past which the rest of its water is
+// lost (spawn). So the reference throw's column, whose pieces are 7 to 8 mm,
+// flies as one to two hundred drops of 2 to 4 mm, not a dozen marbles, and
+// its bigger tip bulbs (up to 7 mm) as a few each. Before it
 // breaks the column grows varicose beads with the drop spacing (radius ±6%
 // while it rises fast, ±12% as it slows, up to ±45% just below the front,
 // necks where the pieces will part), which catch the sun; form.irregularity
@@ -160,6 +169,7 @@
 // column is held inside its walls (holdWithinWalls in src/fluidMesh.js).
 import * as THREE from 'three';
 import { createRingGrid, computeGridNormals, holdWithinWalls, markChanged } from './fluidMesh.js';
+import { DROP_CEILING, breakLump } from './crown.js';
 
 const GRAVITY = 9.81;
 const REFERENCE_RADIUS = 0.03;     // the stone size the tuning constants were set for
@@ -334,6 +344,7 @@ export class JetColumn {
     this.nextPinch = 0;                // ...and the age at which it pinches off
     this.breakClock = 0;               // simulated time since the breakup last advanced
     this.dropsSpawned = 0;
+    this.lump = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0 };   // scratch for spawn
 
     this.positions = new Float32Array(ROWS * COLUMNS * 3);
     this.normals = new Float32Array(ROWS * COLUMNS * 3);
@@ -822,9 +833,24 @@ export class JetColumn {
     this.finished = true;
   }
 
-  /** Tip and breakup drops are essential (never refused); drops of 2 mm and more are drawn as glass, like the column. */
+  /**
+   * Tip and breakup drops are essential (never refused); drops of 2 mm and
+   * more are drawn as glass, like the column. A lump bigger than DROP_CEILING
+   * (a fat column's piece, a big bulb) cannot fly whole: it breaks into drops
+   * (breakLump, src/crown.js) that part at its capillary speed
+   * sqrt(σ/(ρ·r)), its first never refused if it is essential, the rest out
+   * of the budget; past the budget the rest of its volume is lost.
+   */
   spawn(splash, x, y, z, vx, vy, vz, radius, essential) {
     if (!essential && this.dropsSpawned >= this.budget) return;
+    if (radius > DROP_CEILING) {
+      const lump = this.lump;
+      lump.x = x; lump.y = y; lump.z = z; lump.vx = vx; lump.vy = vy; lump.vz = vz;
+      this.dropsSpawned += breakLump(lump, radius, DROP_CEILING, Math.max(this.budget - this.dropsSpawned, 1), radius,
+        Math.sqrt(SURFACE_TENSION / (WATER_DENSITY * radius)), this.random,
+        (pieceX, pieceY, pieceZ, pieceVX, pieceVY, pieceVZ, piece) => splash.spawnDroplet(pieceX, pieceY, pieceZ, pieceVX, pieceVY, pieceVZ, piece, piece >= LENS_DROP_RADIUS));
+      return;
+    }
     this.dropsSpawned++;
     splash.spawnDroplet(x, y, z, vx, vy, vz, radius, radius >= LENS_DROP_RADIUS);
   }

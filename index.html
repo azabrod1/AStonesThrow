@@ -16,6 +16,14 @@
   }
 }
 </script>
+<!-- The sky's photo is most of what the page downloads: start it now, not
+     once Three.js and the page's modules have come (startFirstPanorama in
+     src/skies.js says how the environment takes it). -->
+<script type="module" async>
+  import { startFirstPanorama } from './src/skies.js';
+  startFirstPanorama();
+</script>
+<link rel="modulepreload" href="./src/loadAsset.js">
 <!-- Discover the application and its dependencies while the page is parsed. -->
 <link rel="modulepreload" href="./src/main.js">
 <link rel="modulepreload" href="./src/settingsPanel.js">

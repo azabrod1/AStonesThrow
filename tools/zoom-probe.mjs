@@ -29,8 +29,7 @@
 // check and exits with status 1 if any fails.
 //
 //   node tools/zoom-probe.mjs [--w=1280 --h=720]
-import { chromium } from 'playwright';
-import { existsSync } from 'node:fs';
+import { launchBrowser } from './browser.mjs';
 import { readFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import path from 'node:path';
@@ -53,12 +52,8 @@ const server = createServer(async (request, response) => {
   }
 });
 await new Promise((resolve) => server.listen(0, resolve));
-const containerChromium = '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
-const browser = await chromium.launch({
-  headless: true,
-  executablePath: process.env.PW_CHROMIUM || (existsSync(containerChromium) ? containerChromium : undefined),
-  args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--enable-webgl', '--disable-gpu-sandbox'],
-});
+// The GPU if there is one, else SwiftShader (tools/browser.mjs).
+const browser = await launchBrowser();
 const context = await browser.newContext({ viewport: { width, height } });
 await context.route('https://cdn.jsdelivr.net/npm/three@0.183.2/**', async (route) => {
   const relative = new URL(route.request().url()).pathname.replace('/npm/three@0.183.2/', '');

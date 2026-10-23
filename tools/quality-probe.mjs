@@ -9,8 +9,9 @@
 //    preset drawn); the idle pond runs no pass of the rings
 //    (src/rings.js); the first throw compiles no GPU program (src/main.js
 //    compiles them all under the loading veil; a failure names the programs
-//    it compiled), and its rings outlive its
-//    splash, a spectrum pass and one profile pass each; the splash
+//    it compiled), its drops draw rings of their own (src/dropRings.js,
+//    whose table its impact fetched), and its rings outlive its splash, a
+//    spectrum pass, a partial pass and one resolve pass each; the splash
 //    measurement never steps up. After every change of preset, automatic or
 //    pressed, from every preset to every other, it checks what is actually
 //    built (window.__pond.budget) against the preset: the solver's grid and
@@ -28,8 +29,8 @@
 //    throw's time on the main thread is printed, not checked: under
 //    SwiftShader one throw's varies from 2 to over 60 ms); a basketball
 //    resting afloat adds at most FLOATER_FRAME_CALLS draw calls a frame
-//    (its mirror image redrawn as the water moves; calls and triangles
-//    printed). The world's
+//    (its mirror image redrawn as the water moves; the passes of its
+//    throw's rings left out; calls and triangles printed). The world's
 //    step is fixed: a basketball thrown alike at 60 frames a second and in
 //    frames of 1/162 s is in the same place 2.5 s on. With the page running,
 //    the water's height under a floater beside a splash is read back
@@ -57,8 +58,7 @@
 // 3. A 2560×1440 window on high: the canvas keeps within PIXEL_BUDGET.
 //
 //   node tools/quality-probe.mjs
-import { chromium } from 'playwright';
-import { existsSync } from 'node:fs';
+import { launchBrowser } from './browser.mjs';
 import { readFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import path from 'node:path';
@@ -79,12 +79,8 @@ const server = createServer(async (request, response) => {
   }
 });
 await new Promise((resolve) => server.listen(0, resolve));
-const containerChromium = '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
-const browser = await chromium.launch({
-  headless: true,
-  executablePath: process.env.PW_CHROMIUM || (existsSync(containerChromium) ? containerChromium : undefined),
-  args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--enable-webgl', '--disable-gpu-sandbox', '--autoplay-policy=no-user-gesture-required'],
-});
+// The GPU if there is one, else SwiftShader (tools/browser.mjs).
+const browser = await launchBrowser(['--autoplay-policy=no-user-gesture-required']);
 const problems = [];
 async function openPage({ width = 390, height = 844, query, initScript = null }) {
   const context = await browser.newContext({ viewport: { width, height }, deviceScaleFactor: 1 });   // 1×: the logic is the same and SwiftShader is slow
@@ -159,10 +155,11 @@ const atStart = await pageState(page);
 check(atStart.quality === 'high', `starts on high (got ${atStart.quality})`);
 await checkBuilt(phone, 'at the start');
 
-// The idle measurement: 30 warm-up frames and 60 measured. Wait for the readout to show a preset and the frames to pass.
+// The idle measurement: 30 warm-up frames and 60 measured. Wait for the readout to show a preset and the calibration
+// to leave its idle phase (on a fast GPU it stays on high, so waiting for a step-down would wait out the timeout).
 const idleStart = Date.now();
 await page.waitForFunction(() => /fps/.test(document.getElementById('stats').textContent), undefined, { timeout: 300000 });
-await page.waitForFunction(() => window.__pond.quality !== 'high', undefined, { timeout: 600000 }).catch(() => {});
+await page.waitForFunction(() => window.__pond.budget.calibration !== 'idle', undefined, { timeout: 600000 }).catch(() => {});
 const afterIdle = await pageState(page);
 const idleFps = Number(/(\d+) fps/.exec(afterIdle.readout)?.[1]);
 console.log(`  idle: ${afterIdle.readout} after ${((Date.now() - idleStart) / 1000).toFixed(0)} s`);
@@ -192,8 +189,10 @@ const programsAfterSplash = await page.evaluate(() => window.__pond.budget.progr
 const namesAfterSplash = await programNames(page);
 const compiled = namesAfterSplash.filter((name) => !namesBeforeThrow.includes(name));
 check(programsAfterSplash === programsBeforeThrow, `the first throw compiles no program (${programsBeforeThrow} before, ${programsAfterSplash} after its splash${compiled.length ? `; new: ${compiled.join(', ')}` : ''})`);
+const dropRingsAfterSplash = await page.evaluate(() => ({ ready: window.__pond.dropRings.ready, added: window.__pond.dropRings.added }));
+check(dropRingsAfterSplash.ready && dropRingsAfterSplash.added > 0, `its drops drew rings of their own (${dropRingsAfterSplash.added}), their table fetched at its impact`);
 const ringsAfterSplash = await page.evaluate(() => window.__pond.budget.rings);
-check(ringsAfterSplash.live >= 1 && ringsAfterSplash.passes === 1 + ringsAfterSplash.live, `its rings outlive the splash: ${ringsAfterSplash.live} live, ${ringsAfterSplash.passes} passes a frame (a spectrum pass and one profile pass each)`);
+check(ringsAfterSplash.live >= 1 && ringsAfterSplash.passes === 2 + ringsAfterSplash.live, `its rings outlive the splash: ${ringsAfterSplash.live} live, ${ringsAfterSplash.passes} passes a frame (a spectrum pass, a partial pass and one resolve pass each)`);
 check(order(afterSplash.quality) >= order(afterIdle.quality), `the splash never steps the quality up (${afterIdle.quality} -> ${afterSplash.quality})`);
 check(afterSplash.pressed.length === 1 && afterSplash.pressed[0] === 'auto' && afterSplash.row.toLowerCase().endsWith(afterSplash.quality), `the settings show Auto, drawing ${afterSplash.quality} (row: ${afterSplash.row})`);
 await checkBuilt(phone, 'after the splash measurement');
@@ -270,7 +269,8 @@ check(programsAfterThings === programsBeforeThings, `every kind of thing thrown,
 
 // What a floater resting on moving water costs a frame (src/main.js updateReflection: its mirror image is redrawn, in a
 // scissored region, as the water it rides moves): the draw calls and triangles of a frame with a basketball afloat,
-// against the still pond's. GPU-free counts: SwiftShader's milliseconds mean nothing.
+// against the still pond's, less the passes of the rings its throw left (src/rings.js: a quad each, the rings' cost,
+// not the floater's). GPU-free counts: SwiftShader's milliseconds mean nothing.
 const frameCounts = () => page.evaluate(() => {
   const pond = window.__pond, info = pond.renderer.info;
   info.autoReset = false;
@@ -278,7 +278,8 @@ const frameCounts = () => page.evaluate(() => {
   for (let frame = 0; frame < 20; frame++) {
     info.reset();
     pond.advance(1 / 60);
-    calls += info.render.calls; triangles += info.render.triangles;
+    const ringPasses = pond.budget.rings.passes;
+    calls += info.render.calls - ringPasses; triangles += info.render.triangles - 2 * ringPasses;
   }
   info.autoReset = true;
   return { calls: calls / 20, triangles: Math.round(triangles / 20) };

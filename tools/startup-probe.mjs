@@ -2,9 +2,8 @@
 // No CDN mocks: the deployed runtime must be entirely same-origin.
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
-import { chromium } from 'playwright';
+import { launchBrowser } from './browser.mjs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -22,13 +21,8 @@ const server = createServer(async (request, response) => {
 });
 await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
 const origin = `http://127.0.0.1:${server.address().port}`;
-// PW_CHROMIUM picks a browser; otherwise the cloud container's preinstalled one, as the other probes do.
-const containerChromium = '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
-const browser = await chromium.launch({
-  headless: true,
-  executablePath: process.env.PW_CHROMIUM || (existsSync(containerChromium) ? containerChromium : undefined),
-  args: process.env.PW_HARDWARE ? [] : ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'],
-});
+// The GPU if there is one, else SwiftShader (tools/browser.mjs).
+const browser = await launchBrowser();
 async function pageFor(viewport = { width: 390, height: 844 }) {
   const context = await browser.newContext({ viewport });
   await context.route('https://cdn.jsdelivr.net/**', (route) => route.abort());
@@ -73,7 +67,7 @@ try {
   rain.release();
   await page.evaluate(() => window.pendingRain);
   assert.deepEqual(await page.evaluate(() => ({ weather: window.__pond.weather, raining: window.__pond.raining, rocks: window.__pond.rocks.length })), { weather: 'clear', raining: false, rocks: 1 });
-  const sky = hold(page, '**/assets/sky/lago_disola_2k.hdr');
+  const sky = hold(page, '**/assets/sky/lago_disola_2k.jpg');
   await sky.installed;
   await page.evaluate(() => { window.pendingSky = window.__pond.setSky('alpine'); });
   await sky.arrived;
@@ -93,7 +87,7 @@ try {
     localStorage.setItem('stone-pond-thing', 'pizza');
   });
   const savedRain = hold(saved, '**/assets/rain/*.bin');
-  const savedSky = hold(saved, '**/assets/sky/lakeside_2k.hdr');
+  const savedSky = hold(saved, '**/assets/sky/lakeside_2k.jpg');
   await savedRain.installed;
   await savedSky.installed;
   await open(saved);
@@ -192,7 +186,7 @@ try {
   console.log('PASS: saved rain failure offers an escape, renders before input, remembers Clear and permits rain retry');
   await failedStartupRain.context().close();
 
-  for (const asset of ['vendor/three/build/three.module.min.js', 'assets/sky/lakeside_2k.hdr']) {
+  for (const asset of ['vendor/three/build/three.module.min.js', 'assets/sky/lakeside_2k.jpg']) {
     const failed = await pageFor();
     await failed.route(`**/${asset}`, (route) => route.abort());
     await open(failed);
@@ -206,7 +200,7 @@ try {
     await failed.context().close();
   }
 
-  for (const asset of ['vendor/three/build/three.module.min.js', 'assets/sky/lakeside_2k.hdr', 'assets/rain/ring_profile.bin']) {
+  for (const asset of ['vendor/three/build/three.module.min.js', 'assets/sky/lakeside_2k.jpg', 'assets/rain/ring_profile.bin']) {
     const delayed = await pageFor();
     const moduleCase = asset.startsWith('vendor/');
     if (moduleCase) {

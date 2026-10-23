@@ -7,9 +7,21 @@
 // tools/sky-probe.mjs: the sun's direction in the file's frame, its
 // irradiance, and the sky's mean radiance; for a place's hours (below) also
 // what lights it, the true sun's position and where north is in the file.
-// SKIES lists the places (the Location setting's choices, src/main.js), each with
-// its hours (the Time setting's) and how it is turned; the environment loads
-// one to start and another whenever load() is called (Switching, below).
+// SKIES (src/skies.js, with the choice of an hour and the panoramas'
+// downloads) lists the places (the Location setting's choices, src/main.js),
+// each with its hours (the Time setting's) and how it is turned; the
+// environment loads one to start and another whenever load() is called
+// (Switching, below).
+//
+// The photo. The page loads each panorama as a JPEG gain map,
+// assets/sky/<name>_2k.jpg, a tenth to a thirtieth of the Radiance file
+// (<name>_2k.hdr) it is encoded from: tools/sky-encode.mjs writes it, matched
+// to the arithmetic of Three.js's UltraHDRLoader, which decodes it here to
+// the half floats the Radiance file gave, the sun's disc and all
+// (decodePanorama). The site publishes only the JPEGs; the Radiance files
+// stay the source, which tools/sky-probe.mjs measures. The decode takes a
+// little longer than the Radiance file's parse did (90 ms against 55 on an
+// M5 Max, 300 against 215 slowed four times), for seconds of download saved.
 //
 // Places and hours. Most places are one photograph. Lakeside and Mesas were
 // each photographed from one spot through the day (Poly Haven's 2024 series
@@ -117,7 +129,9 @@
 // its land stands in front of the bolt.
 //
 // Asset requests time out after 30 seconds without progress; the current sky
-// stays until all replacement assets arrive. Initial calibration loads in parallel.
+// stays until all replacement assets arrive. Initial calibration loads in
+// parallel, and the first panorama's download starts from index.html's head,
+// before the modules (startFirstPanorama in src/skies.js).
 //
 // Switching. load(place, hour) fetches the photo and its measurements, then
 // in one frame swaps the dome's texture and uniforms, fills lighting's sun
@@ -142,79 +156,12 @@
 // reports its render targets and the panorama's bytes for the memory
 // estimate (src/main.js).
 import * as THREE from 'three';
-import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
+import { UltraHDRLoader } from 'three/addons/loaders/UltraHDRLoader.js';
 import { loadAsset } from './loadAsset.js';
+import { SKIES, DEFAULT_SKY, resolveHour, fetchPanorama } from './skies.js';
 
-// The orientation was chosen from home-view frames (mirrored: the photo
-// flipped left for right; sunAzimuth, degrees right of straight ahead, would
-// put the sun elsewhere than the scene's own place for it). Meadow 2 mirrored
-// puts tall trees on the left with sky between the crowns; as photographed
-// the whole view ahead is a wall of foliage. Lakeside as photographed puts
-// its wooded shore on the left, mirrored the view is open water to a low far
-// shore. Lago d'Isola mirrored looks down the valley at the snowy peaks, as
-// photographed into a wall of pines. The sunrise's sun, 5° up, stands in the
-// home view's top right, a dead branch in the water just left of it, either
-// way round. The open sky (clouds only) looks alike either way. Of the
-// places with hours, Lakeside keeps its afternoon as it was, its sun ahead
-// to the right, so its sunrise is behind the eye, over the water on the
-// right (turn round to see it), as it was that morning; Mesas faces its
-// moonrise, east, so its dawn, sunrise and moon stand ahead and its
-// afternoon and sunset to the left and behind. Between the two, every hour
-// has its light ahead at one of them. Mesas' Night panorama (18:43, the sun
-// 13° down) is left out: its sky is a haze of the towns' light. Each panorama is about 6 MB, fetched only
-// when chosen. An hour's `clock` is its local time (sky-probe's taken).
-// `anchor` and `facing` (Light by the hour, Orientation) are the first hour
-// unless named.
-const SKIES = {
-  lakeside: {
-    anchor: 'afternoon',
-    facing: 'afternoon',
-    hours: {
-      dawn: { file: 'lakeside_dawn', label: 'Dawn', clock: '06:27' },
-      sunrise: { file: 'lakeside_sunrise', label: 'Sunrise', clock: '06:58' },
-      afternoon: { file: 'lakeside', label: 'Afternoon', clock: '14:41' },
-      night: { file: 'lakeside_night', label: 'Night', clock: '19:51' },
-    },
-  },
-  mesas: {
-    anchor: 'afternoon',
-    facing: 'moonrise',
-    hours: {
-      dawn: { file: 'qwantani_dawn', label: 'Dawn', clock: '06:28' },
-      sunrise: { file: 'qwantani_sunrise', label: 'Sunrise', clock: '06:43' },
-      morning: { file: 'qwantani_morning', label: 'Morning', clock: '08:09' },
-      'mid-morning': { file: 'qwantani_mid_morning', label: 'Mid-morning', clock: '10:05' },
-      noon: { file: 'qwantani_noon', label: 'Noon', clock: '12:18' },
-      afternoon: { file: 'qwantani_afternoon', label: 'Afternoon', clock: '14:04' },
-      'late-afternoon': { file: 'qwantani_late_afternoon', label: 'Late afternoon', clock: '16:04' },
-      sunset: { file: 'qwantani_sunset', label: 'Sunset', clock: '17:09' },
-      dusk: { file: 'qwantani_dusk_1', label: 'Dusk', clock: '17:47' },
-      twilight: { file: 'qwantani_dusk_2', label: 'Twilight', clock: '18:06' },
-      moonrise: { file: 'qwantani_moonrise', label: 'Moonrise', clock: '19:41' },
-      moonlight: { file: 'qwantani_moon_noon', label: 'Moonlight', clock: '21:06' },
-    },
-  },
-  meadow: { mirrored: true, hours: { afternoon: { file: 'meadow_2', label: 'Afternoon' } } },
-  alpine: { mirrored: true, hours: { midday: { file: 'lago_disola', label: 'Midday' } } },
-  open: { hours: { midday: { file: 'kloofendal_48d_partly_cloudy_puresky', label: 'Midday' } } },
-};
-export const SKY_NAMES = Object.keys(SKIES);
-export const DEFAULT_SKY = 'lakeside';   // an open lake to a far shore, as the Lake water is
-/** A place's hours in the order of the day: their names, labels and local times (clock, 'hh:mm', or undefined for a lone photograph). */
-export const skyHours = (place) => Object.entries(SKIES[place]?.hours ?? {}).map(([name, { label, clock }]) => ({ name, label, clock }));
-/** The hour load() shows for a place asked for at `hour`: that one if the place has it, else its anchor. */
-export function resolveHour(place, hour) {
-  const known = SKIES[Object.hasOwn(SKIES, place ?? '') ? place : DEFAULT_SKY];
-  return Object.hasOwn(known.hours, hour ?? '') ? hour : known.anchor ?? Object.keys(known.hours)[0];
-}
-const clockMinutes = (clock) => { const [hours, minutes] = clock.split(':').map(Number); return hours * 60 + minutes; };
-/** The place's hour whose local time is nearest `clock` ('hh:mm'; round the day), or undefined if it has no clocks or there is no clock. */
-export function nearestHour(place, clock) {
-  if (!/^\d{2}:\d{2}$/.test(clock ?? '')) return undefined;
-  const wanted = clockMinutes(clock);
-  const apart = (other) => { const difference = Math.abs(clockMinutes(other) - wanted); return Math.min(difference, 1440 - difference); };
-  return skyHours(place).filter((hour) => hour.clock).sort((first, second) => apart(first.clock) - apart(second.clock))[0]?.name;
-}
+export { SKY_NAMES, DEFAULT_SKY, skyHours, resolveHour, nearestHour } from './skies.js';
+
 const BALANCE_SKY = 'meadow';    // the sky the scene's sun colour (sunBalance) was chosen under
 const SKY_EXPOSURE = Math.PI;   // see Brightness above
 const RADIANCE_CAP = 30;       // times the mean sky radiance
@@ -365,6 +312,25 @@ void main() {
 const fetchMeasurement = (file) => loadAsset(new URL(`../assets/sky/${file}.json`, import.meta.url));
 
 /**
+ * A panorama's half floats ({ data, width, height, type }) from its JPEG gain
+ * map (The photo, above). UltraHDRLoader.parse (three 0.183.2) answers by
+ * callback, and once its JPEGs are decoding it can fail only by throwing
+ * inside a promise no caller holds; its _applyGainmapToSDR is handed this
+ * promise's reject instead, so a broken file fails the load rather than
+ * leaving it waiting. A file that is no gain map at all throws at once.
+ */
+function decodePanorama(buffer) {
+  return new Promise((resolve, reject) => {
+    const loader = new UltraHDRLoader().setDataType(THREE.HalfFloatType);
+    const applyGainMap = loader._applyGainmapToSDR;
+    if (typeof applyGainMap === 'function') {
+      loader._applyGainmapToSDR = (metadata, base, gainMap, onSuccess) => applyGainMap.call(loader, metadata, base, gainMap, onSuccess, (error) => reject(error instanceof Error ? error : new Error(String(error))));
+    }
+    loader.parse(buffer, resolve);
+  });
+}
+
+/**
  * Build the environment and load its first sky.
  * @param renderer the WebGLRenderer
  * @param options.name a key of SKIES (others fall back to DEFAULT_SKY), and options.hour one of its hours (others fall back to its anchor)
@@ -462,12 +428,14 @@ export async function createEnvironment(renderer, { name, hour, sunAzimuth, sunB
       measurementOf(file),
       measurementOf(anchorFile),
       measurementOf(facingFile),
-      loadAsset(new URL(`../assets/sky/${file}_2k.hdr`, import.meta.url), 'arrayBuffer'),
+      fetchPanorama(file),
       balancePromise,
     ]);
-    // Match HDRLoader.load's texture settings. Parse only after every asset
-    // succeeded, so a failed measurement cannot orphan a decoded panorama.
-    const decoded = new HDRLoader().setDataType(THREE.HalfFloatType).parse(buffer);
+    // Decode only after every asset succeeded, so a failed measurement cannot
+    // orphan a decoded panorama. The texture is set as the sky was drawn from
+    // the Radiance files (HDRLoader.load's settings: no mipmaps, linear
+    // filtering, rows flipped), not as UltraHDRLoader.load sets its own.
+    const decoded = await decodePanorama(buffer);
     const panorama = new THREE.DataTexture(decoded.data, decoded.width, decoded.height, THREE.RGBAFormat, decoded.type);
     panorama.colorSpace = THREE.LinearSRGBColorSpace;
     panorama.minFilter = panorama.magFilter = THREE.LinearFilter;
