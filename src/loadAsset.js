@@ -3,12 +3,13 @@
 // never total transfer time. Aborting includes the body, so a stalled request
 // cannot commit a late scene change. Compressed responses are decoded by fetch;
 // their Content-Length must not be used as the decoded body's size.
+// An optional caller signal also cancels a superseded location or hour.
 //
 // A request the page started before any module ran (index.html's early
 // fetch of the first sky: window.__earlyAssets, its url's href to its
 // response and controller) is taken over by the first load of that url,
-// under the same timeout from then on; dropEarlyAssets aborts the ones no
-// load took (a sky remembered that is not the one shown).
+// under the same timeout and signal from then on; dropEarlyAssets aborts the
+// ones no load took (a sky remembered that is not the one shown).
 function takeEarly(url) {
   const early = globalThis.__earlyAssets;
   const href = String(url);
@@ -22,9 +23,12 @@ export function dropEarlyAssets() {
   for (const { controller } of early.values()) controller.abort();
   early.clear();
 }
-export async function loadAsset(url, type = 'json', { timeout = 30000 } = {}) {
+export async function loadAsset(url, type = 'json', { timeout = 30000, signal } = {}) {
+  signal?.throwIfAborted();
   const early = takeEarly(url);
   const controller = early?.controller ?? new AbortController();
+  const abort = () => controller.abort(signal.reason);
+  signal?.addEventListener('abort', abort, { once: true });
   let timer;
   const resetTimeout = () => {
     clearTimeout(timer);
@@ -55,5 +59,6 @@ export async function loadAsset(url, type = 'json', { timeout = 30000 } = {}) {
     return await new Response(new Blob(chunks))[type]();
   } finally {
     clearTimeout(timer);
+    signal?.removeEventListener('abort', abort);
   }
 }

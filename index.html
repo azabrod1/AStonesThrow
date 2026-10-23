@@ -755,6 +755,14 @@
   .time-readout b { font-size: 16px; font-weight: 500; }
   .time-readout span, .time-ends { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
   .time-ends { display: flex; justify-content: space-between; margin: 0 2px; }
+  .time-presets { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 16px; }
+  .time-presets[hidden] { display: none; }
+  .time-preset { min-height: 48px; padding: 9px 12px; border: 1px solid var(--line); border-radius: 10px; color: inherit; background: transparent; text-align: left; cursor: pointer; font: inherit; }
+  .time-preset span { display: block; font-size: 13px; }
+  .time-preset small { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+  .time-preset[aria-pressed="true"] { border-color: var(--accent); background: rgba(245, 201, 120, 0.12); }
+  .time-preset:hover { background: rgba(245, 201, 120, 0.08); }
+  .time-preset:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .settings input[type="range"] { display: block; width: 100%; }
   .settings input[type="range"][hidden], .time-ends[hidden] { display: none; }
   .menu-button:focus-visible, .menu-tier:focus-visible, .menu-back:focus-visible, .menu-seg button:focus-visible, .menu-card:focus-visible {
@@ -1036,11 +1044,12 @@
     <div class="menu-head"><button type="button" class="menu-back" aria-label="Back"><span aria-hidden="true">&lsaquo;</span></button><h3>Location</h3></div>
     <div class="menu-field">
       <div class="menu-cards" id="sky" role="radiogroup" aria-label="Location" aria-describedby="sky-note">
+        <button type="button" class="menu-card" role="radio" data-value="swiss"><img src="assets/sky/thumbs/swiss.jpg" alt="" width="80" height="45"><span><b>Swiss Alps</b><small>Snowy peaks at Lago d’Isola · starts frozen</small></span></button>
+        <button type="button" class="menu-card" role="radio" data-value="cove"><img src="assets/sky/thumbs/cove.jpg" alt="" width="80" height="45"><span><b>Rocky cove</b><small>Sheltered rocks, a bright sea horizon</small></span></button>
+        <button type="button" class="menu-card" role="radio" data-value="highlands"><img src="assets/sky/thumbs/highlands.jpg" alt="" width="80" height="45"><span><b>Highlands</b><small>Mountain ridges · dawn to dusk</small></span></button>
+        <button type="button" class="menu-card" role="radio" data-value="desert"><img src="assets/sky/thumbs/desert.jpg" alt="" width="80" height="45"><span><b>Desert oasis</b><small>Golden rocks · moonlight and stars</small></span></button>
         <button type="button" class="menu-card" role="radio" data-value="lakeside"><img src="assets/sky/thumbs/lakeside.jpg" alt="" width="80" height="45"><span><b>Lakeside</b><small>A wooded shore, a far bank</small></span></button>
         <button type="button" class="menu-card" role="radio" data-value="mesas"><img src="assets/sky/thumbs/mesas.jpg" alt="" width="80" height="45"><span><b>Mesas</b><small>Wide water to flat-topped hills</small></span></button>
-        <button type="button" class="menu-card" role="radio" data-value="meadow"><img src="assets/sky/thumbs/meadow.jpg" alt="" width="80" height="45"><span><b>Meadow</b><small>Summer trees, afternoon sun</small></span></button>
-        <button type="button" class="menu-card" role="radio" data-value="alpine"><img src="assets/sky/thumbs/alpine.jpg" alt="" width="80" height="45"><span><b>Alpine</b><small>Pines, and snowy peaks up the valley</small></span></button>
-        <button type="button" class="menu-card" role="radio" data-value="open"><img src="assets/sky/thumbs/open.jpg" alt="" width="80" height="45"><span><b>Open sky</b><small>Clouds out to the horizon</small></span></button>
         <button type="button" class="menu-card" role="radio" data-value="pool"><img src="assets/sky/thumbs/pool.jpg" alt="" width="80" height="45"><span><b>Pool</b><small>A tiled pool by the lake; ripples bounce off its walls</small></span></button>
       </div>
       <div class="menu-note" id="sky-note" aria-live="polite"></div>
@@ -1054,6 +1063,7 @@
       <input type="range" id="time" min="0" max="0" step="1" value="0" aria-labelledby="time-label" aria-describedby="time-note">
       <div class="time-ends" id="time-ends" aria-hidden="true"><span id="time-first"></span><span id="time-last"></span></div>
       <div class="menu-note" id="time-note" aria-live="polite"></div>
+      <div class="time-presets" id="time-presets" role="group" aria-label="Choose a time of day"></div>
     </div>
   </div>
   <div class="menu-page" data-page="weather" hidden>
@@ -1363,8 +1373,8 @@
         'heavy-rain': 'A dark sky and a downpour: the water hammered with rings and splashes, the far bank lost in the rain.',
         storm: 'A storm: a darker sky, a downpour, lightning, and the wind up to a gale.',
       },
-      time: 'Each hour is a photograph of this place, taken from one spot through a day: the land stays where it is and the sun moves round it.',
-      oneTime: 'This place is a single photograph. Lakeside and Mesas were photographed through the day: pick one of them under Location to change the hour.',
+      time: 'Choose a moment below or slide through the day. Each is a real photograph, aligned to keep the landscape in place.',
+      oneTime: 'This place is a single photograph. Try Highlands, Desert oasis, Lakeside or Mesas for changing light.',
     };
     const showViewChoice = radioGroup(document.getElementById('view'), (value) => pond.showView(value));
     showView = () => {
@@ -1626,9 +1636,10 @@
     };
     // A sky loads its photo first (about 6 MB); the old one stays until then.
     const skyNote = document.getElementById('sky-note');
-    let skyChoice = null;   // the sky last picked here, while it loads
+    let sceneChoice = 0;   // ignores callbacks from an older location OR hour
     const showSky = radioGroup(document.getElementById('sky'), (value) => {
-      skyChoice = value;
+      const choice = ++sceneChoice;
+      timeChoice = null;
       showSky(value);
       if (value === pond.sky) updateSky();
       else {
@@ -1637,7 +1648,7 @@
       }
       // Always asked, so a load still queued for an earlier pick is dropped.
       pond.setSky(value).then((shown) => {
-        if (skyChoice !== value) return;   // another was picked since: its load reports
+        if (sceneChoice !== choice) return;
         updateSky();
         if (shown !== value) skyNote.textContent = 'That place could not be loaded. Check the connection and try again.';
       });
@@ -1655,7 +1666,9 @@
     // asked for loads (pond.setHour).
     const timeInput = document.getElementById('time');
     const timeNote = document.getElementById('time-note');
+    const timePresets = document.getElementById('time-presets');
     let timeChoice = null;   // the hour last picked here, while it loads
+    let timePresetsPlace;
     const hourText = (hour) => (hour.clock ? `${hour.label} \u00b7 ${hour.clock}` : hour.label);
     function showHour(index) {
       const hours = pond.hours;
@@ -1665,9 +1678,28 @@
       timeInput.value = String(index);
       timeInput.style.setProperty('--fraction', String(hours.length > 1 ? index / (hours.length - 1) : 0));
       timeInput.setAttribute('aria-valuetext', hourText(hour));
+      for (const button of timePresets.children) button.setAttribute('aria-pressed', String(button.dataset.hour === hour.name));
     }
     function updateTime() {
       const hours = pond.hours;
+      timeChoice = null;
+      timePresets.hidden = hours.length < 2;
+      if (timePresetsPlace !== pond.sky) {
+        timePresetsPlace = pond.sky;
+        timePresets.replaceChildren(...hours.map((hour, index) => {
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'time-preset';
+          button.dataset.hour = hour.name;
+          const name = document.createElement('span');
+          name.textContent = hour.label;
+          const clock = document.createElement('small');
+          clock.textContent = hour.clock ?? '';
+          button.append(name, clock);
+          button.addEventListener('click', () => { timeInput.value = String(index); chooseHour(); });
+          return button;
+        }));
+      }
       const index = Math.max(0, hours.findIndex((hour) => hour.name === pond.hour));
       timeInput.max = String(hours.length - 1);
       timeInput.hidden = hours.length < 2;
@@ -1683,18 +1715,23 @@
       const hour = pond.hours[index];
       if (!hour) return;
       showHour(index);
-      timeChoice = hour.name;
-      if (hour.name === pond.hour) { updateTime(); return; }
+      const place = pond.sky;
+      if (timeChoice === `${place}:${hour.name}`) return;
+      const choice = ++sceneChoice;
+      timeChoice = `${place}:${hour.name}`;
       settings.setValue('time', `${hourText(hour)}\u2026`);
       timeNote.textContent = `Loading ${hour.label.toLowerCase()}\u2026`;
-      pond.setHour(hour.name).then((shown) => {
-        if (timeChoice !== hour.name) return;   // another was picked since: its load reports
-        updateTime();
+      // Ask even for the displayed hour: returning to it cancels a pending one.
+      // Use the displayed place, whose hours these are, even during a location load.
+      pond.setHour(hour.name, { place }).then((shown) => {
+        if (sceneChoice !== choice) return;
+        updateSky();
         if (shown !== hour.name) timeNote.textContent = 'That hour could not be loaded. Check the connection and try again.';
         else if (settings.isOpen() && settings.currentPage === 'time') pond.prefetchHours();
       });
     }
     timeInput.addEventListener('input', chooseHour);
+    timeInput.addEventListener('change', () => chooseHour());
     followTouch(timeInput, chooseHour);
     // An hour is a 6 MB photo: opening the page fetches the hours either side of the shown one ahead
     // (pond.prefetchHours), and each hour shown while it is open fetches its own, so the next is there when picked.
