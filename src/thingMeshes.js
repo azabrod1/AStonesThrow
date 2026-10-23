@@ -23,6 +23,10 @@
 //     its stalk's nub (createWatermelonGeometry);
 //   - brick: a box of a brick's proportions, its edges rounded, mottled clay
 //     (createBrickGeometry);
+//   - tv and iphone: closed rectangular slabs with rounded corners, their
+//     screens on +y; vertex colours draw the bezel, glass, phone wallpaper,
+//     camera lenses and TV vents (createDeviceGeometry). Both share the
+//     stone's material program and cache their geometry between throws;
 //   - pie: a fruit pie in its tin, its rim crimped, each one thrown filled
 //     at random (pieFilling: apple under a closed crust, cherry or blueberry
 //     under a lattice, open pumpkin; createPieGeometry);
@@ -1008,6 +1012,74 @@ export function createBrickGeometry() {
   return geometry;
 }
 
+// Electronics: a single closed slab, so the rendered hull is also the
+// displaced volume. The long dimension is two unit radii. Round the x/z
+// corners independently of the thickness: a phone's corners are much wider
+// than its thin edge. Details are vertex colours, not extra overlapping
+// solids or textures; preparing one uses no random draws or new programs.
+const DEVICES = {
+  tv: { half: [1, 1.8 / 54, 32 / 54], corner: 0.035 },
+  iphone: { half: [7.2 / 15, 0.8 / 15, 1], corner: 0.12 },
+};
+const DEVICE_COLORS = {
+  bezel: linear(18, 21, 27), edge: linear(143, 157, 178), back: linear(65, 85, 115),
+  glass: linear(23, 43, 64), reflection: linear(92, 128, 150),
+  blue: linear(40, 111, 219), violet: linear(128, 66, 190), coral: linear(245, 143, 126),
+  lens: linear(27, 66, 99), silver: linear(220, 229, 238),
+};
+
+/** A TV or iPhone (the header), separate triangles with the screen facing +y. */
+export function createDeviceGeometry(kind) {
+  const { half: [halfX, halfY, halfZ], corner } = DEVICES[kind];
+  const geometry = new THREE.BoxGeometry(2 * halfX, 2 * halfY, 2 * halfZ, 64, 1, 96);
+  const positions = geometry.attributes.position, normals = geometry.attributes.normal;
+  const colors = new Float32Array(positions.count * 3);
+  const color = new THREE.Color();
+  const phone = kind === 'iphone';
+  for (let vertex = 0; vertex < positions.count; vertex++) {
+    let across = positions.getX(vertex), along = positions.getZ(vertex);
+    const coreX = THREE.MathUtils.clamp(across, -halfX + corner, halfX - corner);
+    const coreZ = THREE.MathUtils.clamp(along, -halfZ + corner, halfZ - corner);
+    const outX = across - coreX, outZ = along - coreZ;
+    const distance = Math.hypot(outX, outZ);
+    if (distance > corner) {
+      across = coreX + corner * outX / distance;
+      along = coreZ + corner * outZ / distance;
+      positions.setXYZ(vertex, across, positions.getY(vertex), along);
+    }
+    const front = normals.getY(vertex) > 0.5, back = normals.getY(vertex) < -0.5;
+    if (!front && !back && distance > 0) normals.setXYZ(vertex, outX / distance, 0, outZ / distance);
+    color.copy(phone ? (front ? DEVICE_COLORS.bezel : back ? DEVICE_COLORS.back : DEVICE_COLORS.edge) : DEVICE_COLORS.bezel);
+    const horizontal = across / halfX, vertical = along / halfZ;
+    if (front && Math.abs(horizontal) < (phone ? 0.88 : 0.95) && Math.abs(vertical) < (phone ? 0.93 : 0.88)) {
+      if (phone) {
+        color.copy(DEVICE_COLORS.blue).lerp(DEVICE_COLORS.violet, (vertical + 1) / 2);
+        color.lerp(DEVICE_COLORS.coral, smoothstep(-0.35, 0.9, vertical - 0.45 * Math.sin(horizontal * 3)));
+        // The camera island and the home indicator, at opposite ends of the glass.
+        if (Math.abs(horizontal) < 0.32 && Math.abs(vertical + 0.81) < 0.045) color.copy(DEVICE_COLORS.bezel);
+        if (Math.abs(horizontal) < 0.35 && Math.abs(vertical - 0.85) < 0.014) color.copy(DEVICE_COLORS.silver);
+      } else {
+        color.copy(DEVICE_COLORS.glass).lerp(DEVICE_COLORS.reflection, 0.32 * smoothstep(-1, 1, horizontal - vertical));
+      }
+    } else if (back && phone) {
+      // Three camera lenses in the upper corner of the blue back.
+      for (const [lensX, lensZ] of [[-0.27, -0.75], [-0.27, -0.48], [0.01, -0.615]]) {
+        const lensDistance = Math.hypot(across - lensX, along - lensZ);
+        if (lensDistance < 0.115) color.copy(DEVICE_COLORS.edge);
+        if (lensDistance < 0.088) color.copy(DEVICE_COLORS.bezel);
+        if (lensDistance < 0.055) color.copy(DEVICE_COLORS.lens);
+      }
+    } else if (back && !phone && Math.abs(horizontal) < 0.7 && Math.abs(vertical) < 0.6) {
+      if (Math.abs(Math.sin(across * 100)) < 0.45) color.copy(DEVICE_COLORS.glass);
+    }
+    colors.set([color.r, color.g, color.b], vertex * 3);
+  }
+  geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  const triangles = geometry.toNonIndexed();
+  geometry.dispose();
+  return triangles;
+}
+
 // A shard of ice (src/ice.js: a piece of the sheet a thing broke through,
 // src/things.js 'ice-shard'): a slab of the sheet's thickness whose outline
 // is its piece's (`piece`: its corners about its middle, convex, in unit
@@ -1455,6 +1527,9 @@ registerMesh('ball', {
 registerMesh('apple', { build: () => createAppleGeometry(), color: () => new THREE.Color(1, 1, 1), fixed: true });
 registerMesh('watermelon', { build: () => createWatermelonGeometry(), color: () => new THREE.Color(1, 1, 1), fixed: true });
 registerMesh('brick', { build: () => createBrickGeometry(), color: () => new THREE.Color(1, 1, 1), fixed: true });
+for (const kind of ['tv', 'iphone']) {
+  registerMesh(kind, { build: () => createDeviceGeometry(kind), color: () => new THREE.Color(1, 1, 1), fixed: true });
+}
 registerMesh('pie', {
   build: () => createPieGeometry(), color: () => new THREE.Color(1, 1, 1), fixed: true,
   dress: (definition, random) => pieFilling(random), heaviest: Math.max(...PIE.fillings.map((filling) => filling.share)),

@@ -62,6 +62,9 @@
 //     can be made and stepped;
 //   - mass, density and volume agree for every thing not sized by its
 //     diameter, the volume measured here from its mesh;
+//   - the TV and iPhone have their specified rectangular dimensions and
+//     sink; a plate's terminal speed is measured released level without
+//     spin, since a tumbling rectangular plate can temporarily fall faster;
 //   - making each thing as it is thrown, once prepared (src/rock.js
 //     prepareThing), costs a fixed mesh's under FIXED_THROW_MS, or on a
 //     busy machine under STONE_SHARE of a river stone's (the table printed
@@ -214,6 +217,15 @@ for (const [size, diameter, grams] of [[5, 0.222, 480], [6, 0.23, 540], [7, 0.23
   const ball = measure('basketball', size);
   check(near(2 * ball.radius, diameter, 1e-6) && near(ball.mass, grams / 1000, 1e-6), `basketball: size ${size} is ${centimetres(2 * ball.radius)} cm and ${(1000 * ball.mass).toFixed(0)} g`);
 }
+for (const [name, dimensions, mass] of [['tv', [0.54, 0.018, 0.32], 3.6], ['iphone', [0.072, 0.008, 0.15], 0.18]]) {
+  const thing = THINGS[name], measured = measure(name);
+  const geometry = meshKind(thing.look.mesh).build(thing, {});
+  geometry.computeBoundingBox();
+  const bounds = geometry.boundingBox.getSize(new THREE.Vector3()).multiplyScalar(measured.radius).toArray();
+  check(bounds.every((length, axis) => near(length, dimensions[axis], 1e-6)) && near(measured.mass, mass, 1e-6), `${name}: wrong dimensions or mass (${bounds.join(' × ')} m, ${measured.mass} kg)`);
+  check(!thing.properties().floats && !thing.skips, `${name}: should sink and offer Toss/Lob, not Skip`);
+  geometry.dispose();
+}
 
 // ---- each thing in the lake ----
 const lake = [];
@@ -258,6 +270,8 @@ for (const name of THING_NAMES) {
       const bed = floorDepthAt(rock.position.x, rock.position.z);
       // Let go from rest under 10 m of water, its hole long closed: it sinks at its terminal speed.
       const settling = new Rock({ radius: measured.radius, position: new THREE.Vector3(0, -2 * measured.radius, 0), velocity: new THREE.Vector3(), envTexture: null, thing: name, mass: measured.mass });
+      // The analytical plate speed is broadside, not the fastest part of a tumble.
+      if (settling.plate) { settling.quaternion.identity(); settling.spinRate = 0; }
       settling.goIn(STEP);
       settling.body.openUntil = -1;
       let sinking = 0;
