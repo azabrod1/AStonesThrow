@@ -16,13 +16,6 @@
   }
 }
 </script>
-<!-- The sky's photo is most of what the page downloads: start it now, not
-     once Three.js and the page's modules have come (startFirstPanorama in
-     src/skies.js says how the environment takes it). -->
-<script type="module" async>
-  import { startFirstPanorama } from './src/skies.js';
-  startFirstPanorama();
-</script>
 <link rel="modulepreload" href="./src/loadAsset.js">
 <!-- Discover the application and its dependencies while the page is parsed. -->
 <link rel="modulepreload" href="./src/main.js">
@@ -30,6 +23,36 @@
 <link rel="modulepreload" href="./src/thingMenu.js">
 <link rel="modulepreload" href="./src/things.js">
 <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.183.2/build/three.module.js">
+<!-- The first sky's photo (0.2 to 0.8 MB) and measurements, asked for now, while
+     the modules download, not once they have run (src/sky.js Starting): the
+     files of the sky last shown here (src/main.js SKY_ASSETS_STORAGE_KEY),
+     or on a first visit the default place's (Lakeside in the afternoon;
+     tools/startup-probe.mjs checks these are the files it loads). None when
+     the page's parameters choose the sky. src/loadAsset.js takes each over.
+     Before the stylesheet below, which a script would wait for. -->
+<script>
+  (() => {
+    const parameters = new URLSearchParams(location.search);
+    if (parameters.has('sky') || parameters.has('time') || parameters.get('water') === 'pool') return;
+    const firstVisitSky = ['assets/sky/lakeside_2k.jpg', 'assets/sky/lakeside.json', 'assets/sky/meadow_2.json'];
+    let assets;
+    try {
+      const remembered = localStorage.getItem('stone-pond-sky-assets');
+      const chosen = ['stone-pond-sky', 'stone-pond-time'].some((key) => localStorage.getItem(key) !== null) || localStorage.getItem('stone-pond-water') === 'pool';
+      assets = remembered ? JSON.parse(remembered) : chosen ? [] : firstVisitSky;
+    } catch { return; }
+    if (!Array.isArray(assets) || !assets.length) return;
+    window.__earlyAssets = new Map();
+    for (const asset of assets) {
+      const url = new URL(String(asset), document.baseURI);
+      if (url.origin !== location.origin) continue;
+      const controller = new AbortController();
+      const response = fetch(url, { signal: controller.signal });
+      response.catch(() => {});   // a failure is the load's to report, once it takes the request over
+      window.__earlyAssets.set(url.href, { response, controller });
+    }
+  })();
+</script>
 <!-- Rings spreading from a stone's entry. iOS takes no SVG for the home screen
      and rounds the square PNG's corners itself. -->
 <link rel="icon" href="assets/icon/favicon.svg" type="image/svg+xml">
@@ -573,7 +596,7 @@
   /* A page's head stays at the top while the page scrolls under it, clear of the panel's edge. */
   .menu-head {
     display: flex; align-items: center; gap: 4px; padding: 10px 10px 10px; margin: -8px -8px 0;
-    position: sticky; top: -8px; z-index: 1; background: rgba(9, 21, 27, 0.97); border-radius: 16px 16px 0 0;
+    position: sticky; top: -8px; z-index: 1; background: rgb(9, 21, 27); border-radius: 16px 16px 0 0;   /* opaque: a page scrolled under it must not show through */
   }
   .menu-head h3 {
     margin: 0;
@@ -629,7 +652,7 @@
   .menu-seg button + button { border-left: 1px solid var(--line); }
   .menu-seg button[aria-checked="true"] { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
   .menu-note { margin: 9px 2px 0; font-size: 12.5px; line-height: 1.5; color: var(--muted); }
-  /* A page of pictured choices (Location, Water): a thumbnail, the name and a line on it. */
+  /* A page of pictured choices (Location, Water, Weather): a thumbnail, the name and a line on it. */
   .menu-cards { display: grid; gap: 4px; }
   .menu-card {
     display: flex;
@@ -650,6 +673,7 @@
   .menu-card img { flex: none; width: 80px; height: 45px; border-radius: 7px; object-fit: cover; background: rgba(238, 243, 244, 0.08); }
   .menu-card b { display: block; font-size: 14px; font-weight: 500; }
   .menu-card small { display: block; margin-top: 2px; font-size: 12px; color: var(--muted); }
+  .menu-ice { margin-top: 14px; }   /* Frozen water's ice, under the Water page's cards */
   /* The Object page: a fold for each group of things (src/things.js),
      one open at a time, its heading the group's name, how many it holds and
      the one chosen in it; the cards inside as the Water page's. */
@@ -732,6 +756,14 @@
   .time-readout b { font-size: 16px; font-weight: 500; }
   .time-readout span, .time-ends { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
   .time-ends { display: flex; justify-content: space-between; margin: 0 2px; }
+  .time-presets { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 16px; }
+  .time-presets[hidden] { display: none; }
+  .time-preset { min-height: 48px; padding: 9px 12px; border: 1px solid var(--line); border-radius: 10px; color: inherit; background: transparent; text-align: left; cursor: pointer; font: inherit; }
+  .time-preset span { display: block; font-size: 13px; }
+  .time-preset small { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+  .time-preset[aria-pressed="true"] { border-color: var(--accent); background: rgba(245, 201, 120, 0.12); }
+  .time-preset:hover { background: rgba(245, 201, 120, 0.08); }
+  .time-preset:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .settings input[type="range"] { display: block; width: 100%; }
   .settings input[type="range"][hidden], .time-ends[hidden] { display: none; }
   .menu-button:focus-visible, .menu-tier:focus-visible, .menu-back:focus-visible, .menu-seg button:focus-visible, .menu-card:focus-visible {
@@ -916,7 +948,7 @@
     </button>
     <button type="button" class="menu-tier" data-open="water">
       <svg class="menu-tier-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.8c-2.7 3.3-5.1 6.2-5.1 8.9a5.1 5.1 0 0 0 10.2 0c0-2.7-2.4-5.6-5.1-8.9z"></path><path d="M7.6 12.2a2.5 2.5 0 0 0 2.1 2.3"></path></svg>
-      <span class="menu-tier-name"><b>Water</b><small>Lake, pond or pool</small></span>
+      <span class="menu-tier-name"><b>Water</b><small>Clear, murky or frozen</small></span>
       <span class="menu-tier-value"></span><span class="menu-tier-chevron" aria-hidden="true">&rsaquo;</span>
     </button>
     <button type="button" class="menu-tier" data-open="time">
@@ -927,7 +959,7 @@
     <hr class="menu-rule">
     <button type="button" class="menu-tier" data-open="weather">
       <svg class="menu-tier-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M5.5 12.5a2.75 2.75 0 0 1 .4-5.47 4.25 4.25 0 0 1 8.2.57 2.5 2.5 0 0 1 .4 4.9z"></path><path d="M7.4 15.2l-.9 2M10.4 15.2l-.9 2M13.4 15.2l-.9 2"></path></svg>
-      <span class="menu-tier-name"><b>Weather</b><small>Rain and storms</small></span>
+      <span class="menu-tier-name"><b>Weather</b><small>Rain, snow and storms</small></span>
       <span class="menu-tier-value"></span><span class="menu-tier-chevron" aria-hidden="true">&rsaquo;</span>
     </button>
     <button type="button" class="menu-tier" data-open="wind">
@@ -994,7 +1026,18 @@
         <button type="button" class="menu-card" role="radio" data-value="lake"><img src="assets/water/thumbs/lake.jpg" alt="" width="80" height="45"><span><b>Lake</b><small>An Alpine lake: bright sand, then deep blue</small></span></button>
         <button type="button" class="menu-card" role="radio" data-value="pond"><img src="assets/water/thumbs/pond.jpg" alt="" width="80" height="45"><span><b>Pond</b><small>Green; the sand fades a little way out</small></span></button>
         <button type="button" class="menu-card" role="radio" data-value="murky"><img src="assets/water/thumbs/murky.jpg" alt="" width="80" height="45"><span><b>Murky</b><small>A lake after rain: sand only at the bank</small></span></button>
-        <button type="button" class="menu-card" role="radio" data-value="pool"><img src="assets/water/thumbs/pool.jpg" alt="" width="80" height="45"><span><b>Pool</b><small>A tiled pool; ripples bounce off its walls</small></span></button>
+        <!-- In the Pool place the lake's waters give way to the pool's own. -->
+        <button type="button" class="menu-card" role="radio" data-value="open" hidden><img src="assets/sky/thumbs/pool.jpg" alt="" width="80" height="45"><span><b>Pool water</b><small>Filtered: the tiles clear to the bottom</small></span></button>
+        <button type="button" class="menu-card" role="radio" data-value="frozen"><img src="assets/water/thumbs/frozen.jpg" alt="" width="80" height="45"><span><b>Frozen</b><small>Ice to break, crack and slide things on</small></span></button>
+      </div>
+      <!-- Frozen water's ice: shown while it is frozen. -->
+      <div class="menu-ice" id="ice-field" hidden>
+        <div class="menu-field-label" id="ice-label">Ice</div>
+        <div class="menu-seg" id="ice" role="radiogroup" aria-labelledby="ice-label" aria-describedby="ice-note">
+          <button type="button" role="radio" data-value="thin">Thin</button>
+          <button type="button" role="radio" data-value="thick">Thick</button>
+        </div>
+        <div class="menu-note" id="ice-note" aria-live="polite"></div>
       </div>
     </div>
   </div>
@@ -1002,11 +1045,13 @@
     <div class="menu-head"><button type="button" class="menu-back" aria-label="Back"><span aria-hidden="true">&lsaquo;</span></button><h3>Location</h3></div>
     <div class="menu-field">
       <div class="menu-cards" id="sky" role="radiogroup" aria-label="Location" aria-describedby="sky-note">
+        <button type="button" class="menu-card" role="radio" data-value="swiss"><img src="assets/sky/thumbs/swiss.jpg" alt="" width="80" height="45"><span><b>Swiss Alps</b><small>Snowy peaks at Lago d’Isola · starts frozen</small></span></button>
+        <button type="button" class="menu-card" role="radio" data-value="cove"><img src="assets/sky/thumbs/cove.jpg" alt="" width="80" height="45"><span><b>Rocky cove</b><small>Sheltered rocks, a bright sea horizon</small></span></button>
+        <button type="button" class="menu-card" role="radio" data-value="highlands"><img src="assets/sky/thumbs/highlands.jpg" alt="" width="80" height="45"><span><b>Highlands</b><small>Mountain ridges · dawn to dusk</small></span></button>
+        <button type="button" class="menu-card" role="radio" data-value="desert"><img src="assets/sky/thumbs/desert.jpg" alt="" width="80" height="45"><span><b>Desert oasis</b><small>Golden rocks · moonlight and stars</small></span></button>
         <button type="button" class="menu-card" role="radio" data-value="lakeside"><img src="assets/sky/thumbs/lakeside.jpg" alt="" width="80" height="45"><span><b>Lakeside</b><small>A wooded shore, a far bank</small></span></button>
         <button type="button" class="menu-card" role="radio" data-value="mesas"><img src="assets/sky/thumbs/mesas.jpg" alt="" width="80" height="45"><span><b>Mesas</b><small>Wide water to flat-topped hills</small></span></button>
-        <button type="button" class="menu-card" role="radio" data-value="meadow"><img src="assets/sky/thumbs/meadow.jpg" alt="" width="80" height="45"><span><b>Meadow</b><small>Summer trees, afternoon sun</small></span></button>
-        <button type="button" class="menu-card" role="radio" data-value="alpine"><img src="assets/sky/thumbs/alpine.jpg" alt="" width="80" height="45"><span><b>Alpine</b><small>Pines, and snowy peaks up the valley</small></span></button>
-        <button type="button" class="menu-card" role="radio" data-value="open"><img src="assets/sky/thumbs/open.jpg" alt="" width="80" height="45"><span><b>Open sky</b><small>Clouds out to the horizon</small></span></button>
+        <button type="button" class="menu-card" role="radio" data-value="pool"><img src="assets/sky/thumbs/pool.jpg" alt="" width="80" height="45"><span><b>Pool</b><small>A tiled pool by the lake; ripples bounce off its walls</small></span></button>
       </div>
       <div class="menu-note" id="sky-note" aria-live="polite"></div>
     </div>
@@ -1019,17 +1064,21 @@
       <input type="range" id="time" min="0" max="0" step="1" value="0" aria-labelledby="time-label" aria-describedby="time-note">
       <div class="time-ends" id="time-ends" aria-hidden="true"><span id="time-first"></span><span id="time-last"></span></div>
       <div class="menu-note" id="time-note" aria-live="polite"></div>
+      <div class="time-presets" id="time-presets" role="group" aria-label="Choose a time of day"></div>
     </div>
   </div>
   <div class="menu-page" data-page="weather" hidden>
     <div class="menu-head"><button type="button" class="menu-back" aria-label="Back"><span aria-hidden="true">&lsaquo;</span></button><h3>Weather</h3></div>
     <div class="menu-field">
-      <div class="menu-field-label" id="weather-label">Sky</div>
-      <div class="menu-seg" id="weather" role="radiogroup" aria-labelledby="weather-label" aria-describedby="weather-note">
-        <button type="button" role="radio" data-value="clear">Clear</button>
-        <button type="button" role="radio" data-value="light-rain">Light rain</button>
-        <button type="button" role="radio" data-value="heavy-rain">Heavy rain</button>
-        <button type="button" role="radio" data-value="storm">Storm</button>
+      <div class="menu-cards" id="weather" role="radiogroup" aria-label="Weather" aria-describedby="weather-note">
+        <button type="button" class="menu-card" role="radio" data-value="clear"><img src="assets/weather/thumbs/clear.jpg" alt="" width="80" height="45"><span><b>Clear</b><small>Sun, or the hour’s own sky</small></span></button>
+        <button type="button" class="menu-card" role="radio" data-value="light-rain"><img src="assets/weather/thumbs/light-rain.jpg" alt="" width="80" height="45"><span><b>Light rain</b><small>A bright overcast, rings on the water</small></span></button>
+        <button type="button" class="menu-card" role="radio" data-value="heavy-rain"><img src="assets/weather/thumbs/heavy-rain.jpg" alt="" width="80" height="45"><span><b>Heavy rain</b><small>A downpour, the far bank lost</small></span></button>
+        <button type="button" class="menu-card" role="radio" data-value="storm"><img src="assets/weather/thumbs/storm.jpg" alt="" width="80" height="45"><span><b>Storm</b><small>Lightning, and the wind up to a gale</small></span></button>
+        <button type="button" class="menu-card" role="radio" data-value="light-snow"><img src="assets/weather/thumbs/light-snow.jpg" alt="" width="80" height="45"><span><b>Light snow</b><small>Drifting flakes, a dusting on the shore</small></span></button>
+        <button type="button" class="menu-card" role="radio" data-value="heavy-snow"><img src="assets/weather/thumbs/heavy-snow.jpg" alt="" width="80" height="45"><span><b>Heavy snow</b><small>Thick flakes, the shore white</small></span></button>
+        <button type="button" class="menu-card" role="radio" data-value="blizzard"><img src="assets/weather/thumbs/blizzard.jpg" alt="" width="80" height="45"><span><b>Blizzard</b><small>Snow driven sideways by a gale</small></span></button>
+        <button type="button" class="menu-card" role="radio" data-value="fog"><img src="assets/weather/thumbs/fog.jpg" alt="" width="80" height="45"><span><b>Fog</b><small>Still and white, the sun a pale disc</small></span></button>
       </div>
       <div class="menu-note" id="weather-note" aria-live="polite"></div>
     </div>
@@ -1306,6 +1355,10 @@
         under: 'Under the water, the sky in a bright window overhead and the tiles mirrored in the surface past it.',
         turned: 'Turned by hand. Drag the water to look around; Reset view comes back to the deck.',
       },
+      ice: {
+        thin: 'A centimetre of ice: a stone or a bowling ball breaks through and splashes, cracks running out from its hole; a light ball, a gem or a pebble skids away. No waves rise under it.',
+        thick: 'Four centimetres of ice: what is thrown clatters and slides far over it, and only a big rock, or a heavy ball lobbed high, breaks through.',
+      },
       wind: {
         calm: 'Still water: the shore stands in it as in a mirror.',
         breeze: 'Light ripples that blur the reflections.',
@@ -1323,18 +1376,27 @@
         'light-rain': 'A bright overcast and a light rain: rings spreading on the water, a fleck where each drop lands, faint streaks falling.',
         'heavy-rain': 'A dark sky and a downpour: the water hammered with rings and splashes, the far bank lost in the rain.',
         storm: 'A storm: a darker sky, a downpour, lightning, and the wind up to a gale.',
+        'light-snow': 'A bright overcast and a light snow: flakes drifting down and melting on the water, a dusting on the shore.',
+        'heavy-snow': 'Heavy snow: big flakes thick in the air, the shore white, the far bank lost in the snow. A frozen pizza stays frozen out of the water.',
+        blizzard: 'A blizzard: heavy snow driven sideways by a gale, the world beyond the pond gone white.',
+        fog: 'A dense fog on a still day: a hundred metres to see, the far shore and the beach fading white, the sun a pale disc where it is high enough to burn through.',
       },
-      time: 'Each hour is a photograph of this place, taken from one spot through a day: the land stays where it is and the sun moves round it.',
-      oneTime: 'This place is a single photograph. Lakeside and Mesas were photographed through the day: pick one of them under Location to change the hour.',
+      time: 'Choose a moment below or slide through the day. Each is a real photograph, aligned to keep the landscape in place.',
+      oneTime: 'This place is a single photograph. Try Highlands, Desert oasis, Lakeside or Mesas for changing light.',
     };
     const showViewChoice = radioGroup(document.getElementById('view'), (value) => pond.showView(value));
     showView = () => {
       const name = currentView.view;
       showViewChoice(name);
       settings.setValue('view', name ? label('view', name) : 'Turned');
-      document.getElementById('view-note').textContent = (pond.clarity === 'pool' ? NOTES.poolView : NOTES.view)[name ?? 'turned'];
+      document.getElementById('view-note').textContent = (pond.pooled ? NOTES.poolView : NOTES.view)[name ?? 'turned'];
     };
-    const showWater = radioGroup(document.getElementById('water'), (value) => { pond.setClarity(value); updateWater(); });
+    // The water: the lake's clarities, or in the pool its own (open: no ice), or frozen.
+    const showWater = radioGroup(document.getElementById('water'), (value) => {
+      if (value === 'open') pond.setIce('none');
+      else pond.setWater(value);
+      updateWater();
+    });
     // The Object page, built from the registry (src/things.js): a fold
     // for each group, its things' cards inside, the chosen thing's fold open
     // and only one open at a time; built again whenever a thing is defined.
@@ -1526,13 +1588,24 @@
       settings.setValue('sound', pond.sound ? 'On' : 'Off');
     }
     updateSound();
+    // The Water page as the place has it: the lake's clarities, or the pool's own water; Frozen's ice under the cards.
+    const showIce = radioGroup(document.getElementById('ice'), (value) => { pond.setIce(value); updateWater(); });
     function updateWater() {
-      showWater(pond.clarity);
-      settings.setValue('water', label('water', pond.clarity));
+      for (const card of document.querySelectorAll('#water [data-value]')) {
+        if (card.dataset.value !== 'frozen') card.hidden = (card.dataset.value === 'open') !== pond.pooled;
+      }
+      const frozen = pond.waterChoice === 'frozen';
+      const choice = frozen ? 'frozen' : pond.pooled ? 'open' : pond.waterChoice;
+      showWater(choice);
+      settings.setValue('water', frozen ? `Frozen \u00b7 ${label('ice', pond.iceThickness)}` : label('water', choice));
+      document.getElementById('ice-field').hidden = !frozen;
+      showIce(pond.iceThickness);
+      document.getElementById('ice-note').textContent = NOTES.ice[pond.iceThickness];
       showView();   // the pool's views are told otherwise
     }
     const showWind = radioGroup(document.getElementById('wind'), (value) => { pond.setWind(value); updateWind(); });
-    // The weather: the sky clouds over at once; the first rain fetches its rings' table (about 0.6 MB).
+    // The weather: the sky clouds over and the snow falls at once; the first rain fetches its rings' table (about 0.6 MB).
+    const RAINY = ['light-rain', 'heavy-rain', 'storm'];
     const weatherNote = document.getElementById('weather-note');
     let weatherRequest = 0;
     const showWeather = radioGroup(document.getElementById('weather'), chooseWeather);
@@ -1540,7 +1613,7 @@
       const request = ++weatherRequest;
       showWeather(value);
       settings.setValue('weather', label('weather', value));
-      weatherNote.textContent = value !== 'clear' && !pond.raining ? 'The rain is coming…' : NOTES.weather[value];
+      weatherNote.textContent = RAINY.includes(value) && !pond.raining ? 'The rain is coming…' : NOTES.weather[value];
       pond.setWeather(value).then(() => {
         if (weatherRequest === request) updateWeather();
       }).catch(() => {
@@ -1551,7 +1624,7 @@
         retry.addEventListener('click', () => chooseWeather(value));
         weatherNote.replaceChildren('The rain could not be loaded. Check the connection. ', retry);
       });
-      updateWind();   // a storm brings a gale
+      updateWind();   // a storm or a blizzard brings a gale, a fog the calm
     }
     function updateWeather() {
       showWeather(pond.weather);
@@ -1572,9 +1645,10 @@
     };
     // A sky loads its photo first (about 6 MB); the old one stays until then.
     const skyNote = document.getElementById('sky-note');
-    let skyChoice = null;   // the sky last picked here, while it loads
+    let sceneChoice = 0;   // ignores callbacks from an older location OR hour
     const showSky = radioGroup(document.getElementById('sky'), (value) => {
-      skyChoice = value;
+      const choice = ++sceneChoice;
+      timeChoice = null;
       showSky(value);
       if (value === pond.sky) updateSky();
       else {
@@ -1583,7 +1657,7 @@
       }
       // Always asked, so a load still queued for an earlier pick is dropped.
       pond.setSky(value).then((shown) => {
-        if (skyChoice !== value) return;   // another was picked since: its load reports
+        if (sceneChoice !== choice) return;
         updateSky();
         if (shown !== value) skyNote.textContent = 'That place could not be loaded. Check the connection and try again.';
       });
@@ -1593,6 +1667,7 @@
       settings.setValue('sky', label('sky', pond.sky));
       skyNote.textContent = '';
       updateTime();
+      updateWater();   // the pool has its own water
     }
     // The time of day: the shown place's hours on a slider (pond.hours), a
     // lone photograph's one hour with no slider. An hour is a photo to load,
@@ -1600,7 +1675,9 @@
     // asked for loads (pond.setHour).
     const timeInput = document.getElementById('time');
     const timeNote = document.getElementById('time-note');
+    const timePresets = document.getElementById('time-presets');
     let timeChoice = null;   // the hour last picked here, while it loads
+    let timePresetsPlace;
     const hourText = (hour) => (hour.clock ? `${hour.label} \u00b7 ${hour.clock}` : hour.label);
     function showHour(index) {
       const hours = pond.hours;
@@ -1610,9 +1687,28 @@
       timeInput.value = String(index);
       timeInput.style.setProperty('--fraction', String(hours.length > 1 ? index / (hours.length - 1) : 0));
       timeInput.setAttribute('aria-valuetext', hourText(hour));
+      for (const button of timePresets.children) button.setAttribute('aria-pressed', String(button.dataset.hour === hour.name));
     }
     function updateTime() {
       const hours = pond.hours;
+      timeChoice = null;
+      timePresets.hidden = hours.length < 2;
+      if (timePresetsPlace !== pond.sky) {
+        timePresetsPlace = pond.sky;
+        timePresets.replaceChildren(...hours.map((hour, index) => {
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'time-preset';
+          button.dataset.hour = hour.name;
+          const name = document.createElement('span');
+          name.textContent = hour.label;
+          const clock = document.createElement('small');
+          clock.textContent = hour.clock ?? '';
+          button.append(name, clock);
+          button.addEventListener('click', () => { timeInput.value = String(index); chooseHour(); });
+          return button;
+        }));
+      }
       const index = Math.max(0, hours.findIndex((hour) => hour.name === pond.hour));
       timeInput.max = String(hours.length - 1);
       timeInput.hidden = hours.length < 2;
@@ -1628,18 +1724,23 @@
       const hour = pond.hours[index];
       if (!hour) return;
       showHour(index);
-      timeChoice = hour.name;
-      if (hour.name === pond.hour) { updateTime(); return; }
+      const place = pond.sky;
+      if (timeChoice === `${place}:${hour.name}`) return;
+      const choice = ++sceneChoice;
+      timeChoice = `${place}:${hour.name}`;
       settings.setValue('time', `${hourText(hour)}\u2026`);
       timeNote.textContent = `Loading ${hour.label.toLowerCase()}\u2026`;
-      pond.setHour(hour.name).then((shown) => {
-        if (timeChoice !== hour.name) return;   // another was picked since: its load reports
-        updateTime();
+      // Ask even for the displayed hour: returning to it cancels a pending one.
+      // Use the displayed place, whose hours these are, even during a location load.
+      pond.setHour(hour.name, { place }).then((shown) => {
+        if (sceneChoice !== choice) return;
+        updateSky();
         if (shown !== hour.name) timeNote.textContent = 'That hour could not be loaded. Check the connection and try again.';
         else if (settings.isOpen() && settings.currentPage === 'time') pond.prefetchHours();
       });
     }
     timeInput.addEventListener('input', chooseHour);
+    timeInput.addEventListener('change', () => chooseHour());
     followTouch(timeInput, chooseHour);
     // An hour is a 6 MB photo: opening the page fetches the hours either side of the shown one ahead
     // (pond.prefetchHours), and each hour shown while it is open fetches its own, so the next is there when picked.

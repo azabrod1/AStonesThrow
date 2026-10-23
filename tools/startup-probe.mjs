@@ -9,9 +9,12 @@ import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../_site');
 const prefix = '/AStonesThrow/';
+const served = new Map();   // requests by path, all pages together
+const servedCount = (asset) => served.get(`${prefix}${asset}`) ?? 0;
 const server = createServer(async (request, response) => {
   try {
     const pathname = new URL(request.url, 'http://localhost').pathname;
+    served.set(pathname, (served.get(pathname) ?? 0) + 1);
     if (!pathname.startsWith(prefix)) throw new Error('outside site');
     const relative = pathname.slice(prefix.length) || 'index.html';
     const body = await readFile(path.join(root, relative));
@@ -50,6 +53,12 @@ try {
   await ready(page);
   assert.equal(await page.title(), 'A Stone’s Throw');
   assert.equal(await page.evaluate(() => performance.getEntriesByType('resource').some((entry) => entry.name.includes('/assets/rain/'))), false);
+  // The first sky is asked for from the page's head (index.html), before any module has run, and its load takes the
+  // requests over (src/loadAsset.js): on a first visit the default place's files, each fetched once.
+  const firstVisitSky = ['assets/sky/lakeside_2k.jpg', 'assets/sky/lakeside.json', 'assets/sky/meadow_2.json'];
+  assert.deepEqual(firstVisitSky.map(servedCount), [1, 1, 1], 'each of the first sky\'s files fetched once');
+  assert.deepEqual(await page.evaluate(() => ({ early: window.__earlyAssets?.size, remembered: JSON.parse(localStorage.getItem('stone-pond-sky-assets')).map((href) => new URL(href).pathname) })),
+    { early: 0, remembered: firstVisitSky.map((asset) => `${prefix}${asset}`) }, 'the head\'s first-visit files are the ones the default sky loads');
   const first = await page.evaluate(() => {
     const pond = window.__pond;
     const target = pond.renderer.getRenderTarget();
@@ -67,19 +76,117 @@ try {
   rain.release();
   await page.evaluate(() => window.pendingRain);
   assert.deepEqual(await page.evaluate(() => ({ weather: window.__pond.weather, raining: window.__pond.raining, rocks: window.__pond.rocks.length })), { weather: 'clear', raining: false, rocks: 1 });
-  const sky = hold(page, '**/assets/sky/lago_disola_2k.jpg');
+  const sky = hold(page, '**/assets/sky/lago_disola_4k.jpg');
   await sky.installed;
-  await page.evaluate(() => { window.pendingSky = window.__pond.setSky('alpine'); });
+  await page.evaluate(() => { window.pendingSky = window.__pond.setSky('swiss'); });
   await sky.arrived;
   assert.equal(await page.evaluate(() => window.__pond.sky), 'lakeside');
-  await page.evaluate(() => { window.latestSky = window.__pond.setSky('meadow'); });
+  await page.evaluate(() => { window.latestSky = window.__pond.setSky('cove'); });
+  // A slow obsolete location must not hold the latest one in a queue.
+  await page.waitForFunction(() => window.__pond.sky === 'cove', null, { timeout: 60000 });
   sky.release();
   await page.evaluate(() => Promise.all([window.pendingSky, window.latestSky]));
-  assert.equal(await page.evaluate(() => window.__pond.sky), 'meadow');
+  assert.equal(await page.evaluate(() => window.__pond.sky), 'cove');
   assert.equal(await page.evaluate(() => window.__pond.rocks.length), 1);
+  assert.equal(await page.evaluate(() => window.__pond.waterChoice), 'lake'); // cancelled Swiss must not freeze the water
+  assert.equal(await page.evaluate(() => localStorage.getItem('stone-pond-sky')), 'cove');
+  await page.evaluate(() => window.__pond.setSky('lakeside'));
+  const hour = hold(page, '**/assets/sky/lakeside_night_2k.jpg');
+  await hour.installed;
+  await page.evaluate(() => { window.pendingHour = window.__pond.setHour('night'); });
+  await hour.arrived;
+  await page.evaluate(() => window.__pond.setHour('afternoon'));
+  hour.release();
+  await page.evaluate(() => window.pendingHour);
+  assert.equal(await page.evaluate(() => window.__pond.hour), 'afternoon');
+  assert.equal(await page.evaluate(() => window.localStorage.getItem('stone-pond-time')), '14:41');
+  const uiHour = hold(page, '**/assets/sky/lakeside_night_2k.jpg');
+  await uiHour.installed;
+  await page.evaluate(() => {
+    const setHour = window.__pond.setHour;
+    window.uiHourLoads = [];
+    window.__pond.setHour = (...args) => {
+      const pending = setHour(...args);
+      window.uiHourLoads.push(pending);
+      return pending;
+    };
+  });
+  await page.locator('#menu-button').click();
+  await page.locator('.menu-tier[data-open="time"]').click();
+  await uiHour.arrived; // the Time page prefetches the neighbouring night
+  // Well under loadAsset's 30 s inactivity timeout, which would abort the held download anyway.
+  const abandonedPrefetch = page.waitForEvent('requestfailed', (request) => request.url().endsWith('/lakeside_night_2k.jpg'), { timeout: 15000 });
+  await page.locator('#time-presets [data-hour="night"]').click();
+  await page.locator('#time-presets [data-hour="afternoon"]').click();
+  await abandonedPrefetch; // the night load took the prefetch over, so superseding it stops that download too
+  uiHour.release();
+  await page.evaluate(() => Promise.all(window.uiHourLoads));
+  assert.equal(await page.evaluate(() => window.__pond.hour), 'afternoon');
+  assert.equal(await page.locator('#time-name').textContent(), 'Afternoon');
+  assert.equal(await page.locator('#time-presets [aria-pressed="true"]').getAttribute('data-hour'), 'afternoon');
   assert.deepEqual(errors, []);
-  console.log('PASS: same-origin startup, first throw, delayed weather cancellation and rapid sky changes');
+  console.log('PASS: same-origin startup, first throw, delayed weather cancellation, latest sky bypasses a stalled download and returning to the shown hour cancels a pending one');
+  // The next visit asks first for the sky shown last (src/main.js SKY_ASSETS_STORAGE_KEY), here the Rocky cove's, once.
+  await page.evaluate(() => window.__pond.setSky('cove'));
+  const coveBefore = servedCount('assets/sky/secluded_beach_2k.jpg');
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await ready(page);
+  assert.equal(await page.evaluate(() => window.__pond.sky), 'cove');
+  assert.equal(servedCount('assets/sky/secluded_beach_2k.jpg') - coveBefore, 1);
+  assert.equal(await page.evaluate(() => window.__earlyAssets?.size), 0);
+  assert.deepEqual(errors, []);
+  console.log('PASS: the first sky is fetched from the page\'s head, the default on a first visit, the last one shown after');
   await page.context().close();
+
+  const swiss = await pageFor({ width: 1280, height: 720 });
+  const swissErrors = [];
+  swiss.on('pageerror', (error) => swissErrors.push(error.message));
+  await open(swiss, '&sky=swiss');
+  await ready(swiss);
+  const swissState = () => swiss.evaluate(() => ({ place: window.__pond.sky, water: window.__pond.waterChoice, ice: window.__pond.ice, pooled: window.__pond.pooled }));
+  assert.deepEqual(await swissState(), { place: 'swiss', water: 'frozen', ice: 'thin', pooled: false });
+  assert.equal(await swiss.locator('#sky [data-value="swiss"]').count(), 1);
+  assert.equal(await swiss.evaluate(() => window.__pond.viewName), 'level');
+  assert.equal(await swiss.locator('#sky [data-value="meadow"], #sky [data-value="open"], #sky [data-value="alpine"]').count(), 0);
+  assert.equal(await swiss.evaluate(() => performance.getEntriesByType('resource').some((entry) => entry.name.endsWith('/lago_disola_4k.jpg'))), true);
+  if (process.env.SWISS_SCREENSHOT) await swiss.screenshot({ path: process.env.SWISS_SCREENSHOT });
+  await swiss.evaluate(async () => {
+    window.__pond.setWater('clear');
+    await window.__pond.setHour('midday');
+  });
+  assert.equal((await swissState()).water, 'clear'); // changing the hour must not reapply the place preset
+  await swiss.reload();
+  await ready(swiss);
+  assert.equal((await swissState()).water, 'clear'); // a deliberate thaw survives reload
+  await swiss.evaluate(async () => {
+    await window.__pond.setSky('cove');
+    await window.__pond.setSky('swiss');
+  });
+  assert.equal((await swissState()).water, 'frozen'); // entering Swiss applies its preset
+  await open(swiss, '&sky=swiss&water=lake&view=high');
+  await ready(swiss);
+  assert.equal((await swissState()).water, 'lake'); // explicit water wins over the preset and saved Frozen
+  assert.equal(await swiss.evaluate(() => window.__pond.viewName), 'high');
+  await swiss.evaluate(async () => {
+    await window.__pond.setSky('cove');
+    await window.__pond.setSky('swiss');
+  });
+  assert.equal(await swiss.evaluate(() => window.__pond.viewName), 'high'); // keep the user's custom view on entry
+  await open(swiss, '&sky=alpine&ice=none');
+  await ready(swiss);
+  assert.deepEqual(await swissState(), { place: 'swiss', water: 'lake', ice: 'none', pooled: false });
+  await swiss.evaluate(async () => {
+    await window.__pond.setSky('pool');
+    await window.__pond.setHour('sunrise', { place: 'pool' });
+  });
+  assert.deepEqual(await swiss.evaluate(() => ({ place: window.__pond.sky, hour: window.__pond.hour, pooled: window.__pond.pooled })), { place: 'pool', hour: 'sunrise', pooled: true });
+  for (const retired of ['meadow', 'open']) {
+    await swiss.evaluate((place) => window.__pond.setSky(place), retired);
+    assert.equal((await swissState()).place, 'lakeside');
+  }
+  assert.deepEqual(swissErrors, []);
+  console.log('PASS: Swiss Alps loads 4K with Frozen, remembers a thaw, respects explicit water/ice, retires old locations, and Pool keeps its geometry when its hour changes');
+  await swiss.context().close();
 
   const saved = await pageFor();
   await saved.addInitScript(() => {
@@ -106,6 +213,50 @@ try {
   }
   console.log('PASS: saved storm/pizza waits for rain, blocks early input and reveals a clean scene');
   await saved.context().close();
+
+  // Settings saved before the Pool was a place and the ice a water (src/main.js migrateStoredSettings): the Water
+  // setting's Pool opens the Pool place, the Ice setting's thick ice Frozen water that thick, saved so from then on.
+  const older = await pageFor();
+  await older.addInitScript(() => {
+    if (sessionStorage.getItem('migrated')) return;
+    sessionStorage.setItem('migrated', '1');
+    localStorage.setItem('stone-pond-water', 'pool');
+    localStorage.setItem('stone-pond-ice', 'thick');
+  });
+  await open(older);
+  await ready(older);
+  const carried = () => older.evaluate(() => ({
+    place: window.__pond.sky, pooled: window.__pond.pooled, water: window.__pond.waterChoice, ice: window.__pond.ice,
+    saved: [localStorage.getItem('stone-pond-sky'), localStorage.getItem('stone-pond-water'), localStorage.getItem('stone-pond-frozen'), localStorage.getItem('stone-pond-ice')],
+    row: document.querySelector('.menu-tier[data-open="water"] .menu-tier-value').textContent,
+  }));
+  const expected = { place: 'pool', pooled: true, water: 'frozen', ice: 'thick', saved: ['pool', 'frozen', 'thick', null], row: 'Frozen · Thick' };
+  assert.deepEqual(await carried(), expected);
+  await older.reload();
+  await ready(older);
+  assert.deepEqual(await carried(), expected);
+  console.log('PASS: the old Pool water and Ice settings open the Pool place, frozen thick, and stay so');
+  // Frozen at the start, the warm-up breaks the ice under the veil (src/main.js warmUp), so the first break a person
+  // makes (a big rock through thick ice: on thick ice the warm-up's stone would skid) builds no program, nor does a
+  // throw into open water after (the warm-up threw into open water first).
+  const firstBreak = await older.evaluate(() => {
+    const pond = window.__pond, programs = () => pond.renderer.info.programs.length;
+    const before = programs();
+    pond.setThing('granite');
+    pond.setSize(29.5);
+    pond.throwAt(0, -1.4, { power: 'normal' });
+    pond.advance(1.6);
+    const broken = { programs: programs(), holes: pond.iceSheet.holes.length };
+    pond.setThing('stone');
+    pond.setWater('lake');
+    pond.throwAt(0.3, -1.6, { radius: 0.03, power: 'normal' });
+    pond.advance(0.5);
+    return { before, broken, openWater: programs() };
+  });
+  assert.ok(firstBreak.broken.holes > 0, 'the big rock did not break the thick ice');
+  assert.deepEqual([firstBreak.broken.programs, firstBreak.openWater], [firstBreak.before, firstBreak.before], `programs built after the start: ${JSON.stringify(firstBreak)}`);
+  console.log(`PASS: started frozen thick, the first break and a throw into open water after build no program (${firstBreak.before})`);
+  await older.context().close();
 
   const retriedRain = await pageFor();
   await open(retriedRain);

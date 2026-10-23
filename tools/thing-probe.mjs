@@ -91,7 +91,7 @@
 //
 //   node tools/thing-probe.mjs
 import * as THREE from 'three';
-import { Rock, aimThrow, aimSkip, prepareThing, skipLowest, skipSpeed, SKIP_THROW, throwFlightTime } from '../src/rock.js';
+import { Rock, setAir, aimThrow, aimSkip, prepareThing, skipLowest, skipSpeed, SKIP_THROW, throwFlightTime } from '../src/rock.js';
 import { THINGS, THING_NAMES, WATER_DENSITY, defineThing, validateThing } from '../src/things.js';
 import { floorDepthAt } from '../src/pondFloor.js';
 import { holdInPool, poolGround, POOL } from '../src/pool.js';
@@ -158,7 +158,7 @@ function throwThing(name, { x = 0, z = -1.4, power = 'normal', value, pooled = f
   // Aimed as heavy as it is thrown (a pizza's toppings, a pie's filling: src/main.js throwAt).
   if (name !== 'stone') ({ velocity, landing } = aimThrow(hand, target, flightTime, { ...measured, mass: rock.mass }, rock.trialFlight()));
   rock.velocity.copy(velocity);
-  if (pooled) rock.groundAt = poolGround(POOL_SQUARE);
+  if (pooled) rock.ground = poolGround(POOL_SQUARE);
   return { rock, measured, hand, target, landing, launch: velocity.clone() };
 }
 
@@ -342,7 +342,7 @@ for (const name of THING_NAMES) {
   const measured = measure(name, name === 'bowling' ? 16 : undefined);
   const rock = new Rock({ radius: measured.radius, position: new THREE.Vector3(0, POOL.deck + 1 + measured.radius, 1.5), velocity: new THREE.Vector3(0, 0, 0), envTexture: null, thing: name, mass: measured.mass });
   rock.spinRate = 0;
-  rock.groundAt = poolGround(POOL_SQUARE);
+  rock.ground = poolGround(POOL_SQUARE);
   const record = follow(rock, { seconds: 10, pooled: true });
   const ratios = record.apexes.map((apex) => (apex - POOL.deck - rock.ellipsoidDepth()) / 1);
   const [least, most] = THINGS[name].material.bounce;
@@ -354,7 +354,7 @@ for (const name of THING_NAMES) {
 {
   const measured = measure('basketball');
   const rock = new Rock({ radius: measured.radius, position: new THREE.Vector3(0, POOL.deck + measured.radius, 1.2), velocity: new THREE.Vector3(0, 0, -1.5), envTexture: null, thing: 'basketball', mass: measured.mass });
-  rock.groundAt = poolGround(POOL_SQUARE);
+  rock.ground = poolGround(POOL_SQUARE);
   rock.state = 'ground';
   const record = follow(rock, { seconds: 15, floor: POOL.depth, pooled: true });
   console.log(`  a basketball rolled at 1.5 m/s towards the pool: ${[...record.states].join(' → ')}`);
@@ -507,6 +507,24 @@ console.log('\nWaterlogged, thawing, draping (src/rock.js soak, showWet, drape):
     return Math.abs(plate.bend.cup);
   });
   check(cups[0] < 1e-4 && cups[1] > 1e-3, `a frozen pizza cups in the air (${cups[0].toFixed(4)}), or a thawed one does not (${cups[1].toFixed(4)})`);
+  // Under snow (setAir: the Weather's air, src/main.js): out of the water a frozen pizza does not thaw and a wet thing
+  // dries a twentieth as fast; afloat, its share in the water thaws as before.
+  const outOfWater = (air) => {
+    setAir(air);
+    const plate = new Rock({ radius: 0.15, position: new THREE.Vector3(0, 2, 0), velocity: new THREE.Vector3(), envTexture: null, thing: 'frozen-pizza', mass: 0.3 });
+    plate.wet = 1;
+    for (let step = 0; step < 60 * 240; step++) plate.soak(STEP);
+    return { thawed: plate.thawed, wet: plate.wet };
+  };
+  const mild = outOfWater({}), snowy = outOfWater({ freezing: true, drying: 0.05 });
+  setAir({ freezing: true, drying: 0.05 });
+  const frozenInSnow = afloatAt('frozen-pizza', 0, -1.4);
+  for (let step = 0; step < 60 * 240; step++) frozenInSnow.update(STEP, floorDepthAt);
+  setAir({});
+  console.log(`  a minute out of the water: thawed ${(100 * mild.thawed).toFixed(1)}% and wet ${(100 * mild.wet).toFixed(0)}% in mild air, ${(100 * snowy.thawed).toFixed(1)}% and ${(100 * snowy.wet).toFixed(0)}% under snow; afloat under snow thawed ${(100 * frozenInSnow.thawed).toFixed(0)}% (mild ${(100 * minute.thawed).toFixed(0)}%)`);
+  check(mild.thawed > 0.01 && snowy.thawed === 0, `out of the water a frozen pizza thaws in mild air (${mild.thawed.toFixed(3)}) and not under snow (${snowy.thawed.toFixed(3)})`);
+  check(near(1 - snowy.wet, 0.05 * (1 - mild.wet), 1e-6), `under snow a wet thing dries a twentieth as fast (${(1 - snowy.wet).toFixed(4)} against ${(1 - mild.wet).toFixed(4)} a minute)`);
+  check(frozenInSnow.thawed > 0.8 * minute.thawed && frozenInSnow.thawed < minute.thawed, `afloat under snow a frozen pizza thaws by its share in the water (${frozenInSnow.thawed.toFixed(3)} against ${minute.thawed.toFixed(3)} in mild air)`);
 }
 
 console.log('\nPlates meeting the water across targets, sizes and powers (including review seed 41514)');
@@ -624,7 +642,7 @@ console.log('\nThe rubber duck (body.ballast): let go on the water at any angle,
     const rock = new Rock({ radius: thing.radius, position: new THREE.Vector3(0, POOL.deck + 0.5, 1.5), velocity: new THREE.Vector3(), envTexture: null, thing: name, mass: thing.mass });
     rock.quaternion.setFromAxisAngle(new THREE.Vector3(1, 0, 0), angle);
     rock.spinRate = 0;
-    rock.groundAt = poolGround(POOL_SQUARE);
+    rock.ground = poolGround(POOL_SQUARE);
     follow(rock, { seconds: 10, pooled: true });
     for (let step = 0; step < 120; step++) rock.update(STEP, floorDepthAt);
     const up = rock.uprightAxis.clone().applyQuaternion(rock.quaternion).y, gap = rock.position.y + rock.lowestOffset() - POOL.deck;
@@ -668,7 +686,7 @@ console.log('\nA throw\'s own random stream (src/rock.js `random`): a basketball
     randomState = 4242;
     const measured = measure('basketball');
     const ball = new Rock({ radius: measured.radius, position: new THREE.Vector3(0, 1.2, -3.5), velocity: new THREE.Vector3(0.2, 0, 0), envTexture: null, thing: 'basketball', mass: measured.mass });
-    ball.groundAt = poolGround(POOL_SQUARE);
+    ball.ground = poolGround(POOL_SQUARE);
     const heights = [];
     let rising = false;
     for (let time = 0; time < 3; time += STEP) {
@@ -977,7 +995,7 @@ console.log('\nThings meeting things (src/collide.js):');
   const bobbed = new Rock({ radius: measure('basketball').radius, position: new THREE.Vector3(1.37, 0.14, -1), velocity: new THREE.Vector3(3, 1, 0), envTexture: null, thing: 'basketball', mass: measure('basketball').mass });
   Object.assign(bobbed, { state: 'air', hasFloated: true });
   bobbed.previous.copy(bobbed.position);
-  bobbed.groundAt = poolGround(POOL_SQUARE);
+  bobbed.ground = poolGround(POOL_SQUARE);
   let through = false;
   for (let step = 0; step < 240; step++) {
     bobbed.update(STEP, POOL.depth);

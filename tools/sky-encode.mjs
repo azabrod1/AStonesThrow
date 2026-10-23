@@ -1,12 +1,13 @@
 // Encodes the sky's panoramas for the page: each assets/sky/<name>_2k.hdr
-// (Poly Haven's Radiance file, the source that tools/sky-probe.mjs measures,
-// kept in the repository but not published, tools/build-site.mjs) becomes
-// assets/sky/<name>_2k.jpg, the file src/sky.js loads: a JPEG gain map that
-// Three.js's UltraHDRLoader decodes to half floats.
+// (or _4k: Swiss Alps'; Poly Haven's Radiance file, the source that
+// tools/sky-probe.mjs measures, kept in the repository but not published,
+// tools/build-site.mjs) becomes assets/sky/<name>_2k.jpg (_4k.jpg), the file
+// src/sky.js loads: a JPEG gain map that Three.js's UltraHDRLoader decodes
+// to half floats.
 //
 //   node tools/sky-encode.mjs [assets/sky/name_2k.hdr ...] [--verify] [--quality=n]
 //
-// With no files, every assets/sky/*_2k.hdr. Never edit a .jpg: rerun this.
+// With no files, every assets/sky/*_<n>k.hdr. Never edit a .jpg: rerun this.
 // --verify also decodes each file with the pinned UltraHDRLoader in the
 // headless browser (tools/browser.mjs) and checks that it gives exactly the
 // half floats this tool's model of it gives; rerun it after a Three.js
@@ -70,7 +71,11 @@
 // the dome's cap, which leaves only the hue above it): the median and the
 // 99th percentile.
 //
-// Measured on the nineteen panoramas: 0.17 to 0.62 MB a file against the
+// The ten panoramas added after (Highlands, Desert oasis, Rocky cove and
+// Swiss Alps' 4K) come to 0.23 to 0.76 MB at 2K and 1.8 MB at 4K (against
+// 25.6), off by 0.5 to 2.0% at the median and 4.1 to 13% at the 99th
+// percentile (the starlit desert's); their frames were not compared.
+// Measured on the first nineteen panoramas: 0.17 to 0.62 MB a file against the
 // .hdr's 5.3 to 6.6 (5.4 MB in all against 113); over the sky the luminance
 // is off by 0.4 to 1.3% at the median and 1.5 to 12% at the 99th percentile
 // (the darkest leaves of foliage). Frames of every place and hour (the home
@@ -94,7 +99,7 @@ const SDR_TOP = 250;           // the byte each block's brightest channel is rai
 const BLOCK = 8;               // the JPEG's block: the gain map's cell
 const GROUND_FROM = 2;         // degrees below the horizon where the blur starts...
 const GROUND_FULL = 4;         // ...and where it is whole
-const GROUND_BLUR = 16;        // pixels: the radius of each of its three box passes
+const GROUND_BLUR = 16;        // pixels of a 2K panorama (2048 wide; a 4K's twice as many): the radius of each of its three box passes
 const DARKEST_CODE = 0.5;      // the coded value a block of black is exposed for
 const DOME_CAP = 30;           // src/sky.js's RADIANCE_CAP: times the sky's mean radiance, over which the dome shows only the hue
 const CONTRAST = 4;            // a block whose brightest pixel's coded value is this many times its darkest's follows each pixel
@@ -181,7 +186,7 @@ function blurGround({ width, height, pixels }) {
   const rowAt = (degreesBelow) => Math.floor(height / 2 + (degreesBelow / 180) * height);
   const fromRow = rowAt(GROUND_FROM), fullRow = rowAt(GROUND_FULL);
   const sharp = pixels.slice(3 * fromRow * width);
-  blurRows(pixels, width, height, fromRow, GROUND_BLUR);
+  blurRows(pixels, width, height, fromRow, Math.round(GROUND_BLUR * width / 2048));
   for (let row = fromRow; row < Math.min(fullRow, height); row++) {
     const blurred = (row - fromRow) / (fullRow - fromRow);
     for (let index = 3 * row * width; index < 3 * (row + 1) * width; index++) pixels[index] = (1 - blurred) * sharp[index - 3 * fromRow * width] + blurred * pixels[index];

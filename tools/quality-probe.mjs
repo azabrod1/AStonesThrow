@@ -9,21 +9,26 @@
 //    preset drawn); the idle pond runs no pass of the rings
 //    (src/rings.js); the first throw compiles no GPU program (src/main.js
 //    compiles them all under the loading veil; a failure names the programs
-//    it compiled), its drops draw rings of their own (src/dropRings.js,
-//    whose table its impact fetched), and its rings outlive its splash, a
-//    spectrum pass, a partial pass and one resolve pass each; the splash
+//    it compiled), its spray (src/spray.js) flies and then is drawn no more,
+//    its drops draw rings of their own (src/dropRings.js, whose table its
+//    impact fetched), and its rings outlive its splash, a spectrum pass, a
+//    partial pass and one resolve pass each; the splash
 //    measurement never steps up. After every change of preset, automatic or
 //    pressed, from every preset to every other, it checks what is actually
 //    built (window.__pond.budget) against the preset: the solver's grid and
 //    its textures, the water mesh's segments and triangles, the canvas, the
-//    main, under-water, mirror and fluid targets. A change of preset in the
+//    main, under-water, mirror and fluid targets and the spray's ring and
+//    share. A change of preset in the
 //    middle of a splash keeps the waves (the solver carries them to the new
 //    grid). The Pool water (src/pool.js): switching to it and back compiles
 //    no program (the warm-up drew both sceneries), its water mesh draws only
 //    the pool's quads, a throw into it compiles none and keeps one ring, the
 //    near field's (src/rings.js), which retires with it, and a change of
-//    preset in it keeps the pool's mesh. Every kind of thing (src/things.js)
-//    thrown, the floaters followed until they float in the mirror image,
+//    preset in it keeps the pool's mesh. The ice (src/ice.js): freezing the
+//    water, a throw that breaks it, its shards (within the preset's) and its
+//    flood, a hole's new ice and a frozen pool compile no program, and no
+//    gale blows on it. Every kind of thing (src/things.js)
+//    thrown at once, the floaters followed until they float in the mirror image,
 //    compiles no program, and no first throw builds a fixed mesh or slices
 //    its waterline (src/rock.js prepareThing did both under the veil; each
 //    throw's time on the main thread is printed, not checked: under
@@ -35,22 +40,29 @@
 //    each one draw call, and one more come to rest shrinks the oldest away
 //    (src/main.js keepWithinCaps, fadeOut), never at once. The world's step
 //    is fixed: a basketball thrown alike at 60 frames a second and in frames
-//    of 1/162 s is in the same place 2.5 s on. With the page running,
-//    the water's height under a floater beside a splash is read back
-//    (src/floaterRide.js), and a throw's sounds play and end (src/sound.js;
-//    the browser lets audio start without a gesture here). Sixty throws of
-//    every kind, the pond then cleared, leave no geometry, texture or
-//    program behind. Rain (src/rain.js): each weather in
+//    of 1/162 s is in the same place 2.5 s on. (The floaters' ride's
+//    read-back, src/floaterRide.js, and the sounds are not checked here:
+//    GitHub's runners' SwiftShader may leave the read unanswered a minute,
+//    and they run no audio.) Throws of every kind, six at a time, more than
+//    low keeps, the pond then cleared, leave no geometry, texture or program
+//    behind. Rain (src/rain.js): each weather in
 //    turn, with a throw in the downpour and a change of preset, reuses its
 //    programs after the first selection, and the tile takes the preset's
-//    size; clear again, nothing of the rain runs. The gale (src/galeWaves.js)
+//    size; clear again, nothing of the rain runs. Snow (src/snow.js), after
+//    the gale: the first snow compiles its flakes' one program, the others
+//    and a blizzard's gale reuse it and the gale's (the ground's snow is a
+//    uniform), a throw into it compiles none, Low draws its share of the
+//    flakes, its draw adds one call; clear
+//    again, nothing of it is drawn or lies. Fog compiles and draws nothing
+//    more, a throw into it neither, and stills the wind while it lasts. The gale (src/galeWaves.js)
 //    and the storm: the first gale compiles its passes and spray once, draws the finer
 //    sheet that carries its waves, and a throw into it compiles none; the
 //    storm compiles none through a lightning strike; in the pool the gale
-//    raises no waves; calm again, the still sheet. pause(), resume(), pause(),
+//    raises no waves; calm again, the still sheet. In a 2560×1440 window on
+//    high the canvas keeps within PIXEL_BUDGET. pause(), resume(), pause(),
 //    resume() in one tick leave one frame loop: one render per
 //    requestAnimationFrame at most.
-// 2. The same page on a fake clock (performance.now and requestAnimationFrame
+// 2. The same page, a ninth of the pixels, on a fake clock (performance.now and requestAnimationFrame
 //    advance a set step per frame, whatever SwiftShader takes, once however
 //    many callbacks the frame runs: the probe's own waits poll on it): at 55 frames
 //    a second the calibration keeps high through the idle pond and a splash;
@@ -64,7 +76,12 @@
 //    MAX_FRAME_RATE, and at MAX_FRAME_RATE every one, as at 90 a second (a
 //    90 Hz display's frames are within the ceiling's slack), the idle cap
 //    off and the simulated time keeping up throughout.
-// 3. A 2560×1440 window on high: the canvas keeps within PIXEL_BUDGET.
+//
+// Under SwiftShader a second of world time with the solver awake costs some
+// 9 s on high and 2.5 on low, so whatever a preset does not change (the pool,
+// the ice, the things, the floater, the step, the long session, the gale,
+// the frame loop, the ceiling on the fake clock) runs on low; each part's
+// seconds are printed.
 //
 //   node tools/quality-probe.mjs
 import { launchBrowser } from './browser.mjs';
@@ -109,6 +126,16 @@ async function openPage({ width = 390, height = 844, query, initScript = null })
 
 let failures = 0;
 const check = (passed, text) => { console.log(`  ${passed ? 'ok  ' : 'FAIL'} ${text}`); if (!passed) failures++; };
+// Each part's seconds, printed as the next begins (under SwiftShader a world second with the solver awake costs some 9 s
+// of real time on high, 2.5 on low: whatever does not need high runs on low).
+const probeStart = Date.now();
+let partStart = probeStart, partName = null;
+const part = (name) => {
+  const now = Date.now();
+  if (partName) console.log(`  (${partName}: ${((now - partStart) / 1000).toFixed(0)} s)`);
+  partName = name;
+  partStart = now;
+};
 const order = (name) => ['high', 'medium', 'low'].indexOf(name);
 
 /** What a preset should build for a window of width × height CSS pixels at devicePixelRatio. */
@@ -117,7 +144,7 @@ function expected(name, width, height, devicePixelRatio = 1) {
   const ratio = Math.min(devicePixelRatio, preset.maxDpr, Math.sqrt(PIXEL_BUDGET / (width * height)));
   const canvas = { width: Math.floor(width * ratio), height: Math.floor(height * ratio) };
   const scaled = (fraction, least) => ({ width: Math.max(least, Math.round(canvas.width * fraction)), height: Math.max(least, Math.round(canvas.height * fraction)) });
-  return { grid: preset.grid, meshSegments: preset.meshSegments, canvas, under: scaled(preset.underScale, 1), fluid: scaled(preset.fluidScale, 2) };
+  return { grid: preset.grid, meshSegments: preset.meshSegments, canvas, under: scaled(preset.underScale, 1), fluid: scaled(preset.fluidScale, 2), spray: preset.spray };
 }
 const size = ({ width, height }) => `${width}×${height}`;
 /** The quads across the water mesh: the patch's segments, or in the pool those over its square and one round it (src/waterSurface.js). */
@@ -133,6 +160,7 @@ async function checkBuilt({ page, width, height }, label) {
   check(size(budget.canvas) === size(want.canvas) && size(targets.main) === size(want.canvas), `${label}: canvas and main target ${size(want.canvas)} (${size(budget.canvas)}, ${size(targets.main)})`);
   check(size(targets.under) === size(want.under) && size(targets.reflection) === size(want.under), `${label}: under-water and mirror targets ${size(want.under)} (${size(targets.under)}, ${size(targets.reflection)})`);
   check(size(targets.fluid) === size(want.fluid), `${label}: fluid targets ${size(want.fluid)} (${size(targets.fluid)})`);
+  check(budget.spray.ring === want.spray.ring && budget.spray.share === want.spray.share, `${label}: the spray's ring ${want.spray.ring} and share ${want.spray.share} (${budget.spray.ring}, ${budget.spray.share})`);
   return budget;
 }
 const pageState = (page) => page.evaluate(() => ({
@@ -158,6 +186,7 @@ const largestHeight = (page) => page.evaluate(() => {
 
 // ---- 1. the real clock -------------------------------------------------------
 console.log('automatic quality on the real clock, 390×844');
+part('the page, the idle and the splash measurements');
 const phone = await openPage({ query: 'quality=auto' });
 const { page } = phone;
 const atStart = await pageState(page);
@@ -191,6 +220,8 @@ const namesBeforeThrow = await programNames(page);
 await page.evaluate(() => window.__pond.throwAt(0, -1.4, { radius: 0.03 }));
 await page.waitForFunction(() => window.__pond.splash.count > 0, undefined, { timeout: 300000 });
 const splashStart = Date.now();
+// The spray (src/spray.js) flies with the splash, and is drawn no more once it has landed.
+const sprayFlew = await page.waitForFunction(() => window.__pond.budget.spray.flying, undefined, { timeout: 300000, polling: 50 }).then(() => true, () => false);
 await page.waitForFunction(() => window.__pond.splash.count === 0, undefined, { timeout: 900000 }).catch(() => {});
 const afterSplash = await pageState(page);
 console.log(`  splash: ${afterSplash.readout} after ${((Date.now() - splashStart) / 1000).toFixed(0)} s of splash`);
@@ -200,6 +231,9 @@ const compiled = namesAfterSplash.filter((name) => !namesBeforeThrow.includes(na
 check(programsAfterSplash === programsBeforeThrow, `the first throw compiles no program (${programsBeforeThrow} before, ${programsAfterSplash} after its splash${compiled.length ? `; new: ${compiled.join(', ')}` : ''})`);
 const dropRingsAfterSplash = await page.evaluate(() => ({ ready: window.__pond.dropRings.ready, added: window.__pond.dropRings.added }));
 check(dropRingsAfterSplash.ready && dropRingsAfterSplash.added > 0, `its drops drew rings of their own (${dropRingsAfterSplash.added}), their table fetched at its impact`);
+const sprayLanded = await page.waitForFunction(() => !window.__pond.budget.spray.flying, undefined, { timeout: 300000 }).then(() => true, () => false);
+const sprayAfter = await page.evaluate(() => window.__pond.budget.spray);
+check(sprayFlew && sprayLanded, `the first throw's spray flies (${sprayFlew}) and is drawn no more once it has landed (${sprayLanded}; ${sprayAfter.drawn} slots written)`);
 const ringsAfterSplash = await page.evaluate(() => window.__pond.budget.rings);
 check(ringsAfterSplash.live >= 1 && ringsAfterSplash.passes === 2 + ringsAfterSplash.live, `its rings outlive the splash: ${ringsAfterSplash.live} live, ${ringsAfterSplash.passes} passes a frame (a spectrum pass, a partial pass and one resolve pass each)`);
 check(order(afterSplash.quality) >= order(afterIdle.quality), `the splash never steps the quality up (${afterIdle.quality} -> ${afterSplash.quality})`);
@@ -207,6 +241,7 @@ check(afterSplash.pressed.length === 1 && afterSplash.pressed[0] === 'auto' && a
 await checkBuilt(phone, 'after the splash measurement');
 
 // A button press fixes the preset: no further automatic change. Then every preset to every other.
+part('every preset to every other, and mid-splash');
 await page.evaluate(() => window.__pond.setQuality('medium'));
 const afterPress = await pageState(page);
 check(afterPress.quality === 'medium', `setQuality('medium') applies (got ${afterPress.quality})`);
@@ -230,9 +265,11 @@ const backOnHigh = await largestHeight(page);
 check(backOnHigh > 1e-4 && Number.isFinite(backOnHigh), `and back on 512² (${(backOnHigh * 1000).toFixed(2)} mm)`);
 await checkBuilt(phone, 'after the switches mid-splash');
 
-// The pool, and back to the lake.
+// The pool, and back to the lake: on low (whatever a preset's sizes, it draws the pool's quads; switched to medium in it).
+part('the pool and the ice, on low');
+await page.evaluate(() => window.__pond.setQuality('low'));
 const programsBeforePool = await page.evaluate(() => window.__pond.budget.programs);
-await page.evaluate(() => { window.__pond.setClarity('pool'); window.__pond.advance(0.1); });
+await page.evaluate(async () => { await window.__pond.setSky('pool'); window.__pond.advance(0.1); });
 const inPool = await page.evaluate(() => window.__pond.budget);
 check(inPool.clarity === 'pool' && inPool.programs === programsBeforePool, `the pool compiles no program (${programsBeforePool} before, ${inPool.programs} drawing it)`);
 await checkBuilt(phone, 'in the pool');
@@ -244,30 +281,57 @@ await page.evaluate(() => window.__pond.advance(1.5));
 const poolLater = await page.evaluate(() => window.__pond.budget);
 check(poolLater.rings.live === 0 && poolLater.rings.passes === 0 && !poolLater.solverAsleep, `its near-field ring retires with the near field (${poolLater.rings.live} live 2.5 s after the throw), the solver still awake with the pool's waves`);
 await page.evaluate(() => window.__pond.setQuality('medium'));
-await checkBuilt(phone, 'in the pool, high -> medium');
-await page.evaluate(() => { window.__pond.setQuality('high'); window.__pond.setClarity('lake'); window.__pond.advance(0.1); });
+await checkBuilt(phone, 'in the pool, low -> medium');
+await page.evaluate(async () => { window.__pond.setQuality('low'); await window.__pond.setSky('lakeside'); window.__pond.advance(0.1); });
 const backOnLake = await page.evaluate(() => window.__pond.budget.programs);
 check(backOnLake === programsBeforePool, `back on the lake, still no new program (${backOnLake})`);
 await checkBuilt(phone, 'back on the lake');
 
+// The ice (src/ice.js): the water's own programs draw it (ICE_COMMON in src/shaders/scene.js), so freezing the water, a
+// throw that breaks it, its shards (floaters, src/things.js 'ice-shard'), the flood, a hole's new ice and a frozen pool
+// compile nothing; on ice no gale blows, and the hole, its shards (within the preset's) and the wet are in the budget.
+const programsBeforeIce = await page.evaluate(() => window.__pond.budget.programs);
+await page.evaluate(() => { window.__pond.setIce('thin'); window.__pond.advance(0.1); });
+const iced = await page.evaluate(() => window.__pond.budget);
+check(iced.ice.name === 'thin' && iced.ice.thickness === 0.01 && iced.programs === programsBeforeIce && !iced.gale.blowing,
+  `thin ice compiles no program (${programsBeforeIce} before, ${iced.programs} drawing it) and stills any gale`);
+// (It flies some 0.8 s, and its shards go once its cavity has closed, some 0.3 s after.)
+await page.evaluate(() => { window.__pond.throwAt(0, -1.4, { radius: 0.03, power: 'normal' }); window.__pond.advance(1.5); });
+const broken = await page.evaluate(() => window.__pond.budget);
+check(broken.ice.holes >= 1 && broken.programs === programsBeforeIce, `a stone through thin ice breaks a hole (${broken.ice.holes}) and compiles no program (${broken.programs})`);
+check(broken.ice.shards >= 3 && broken.ice.shards <= broken.things.shards && broken.ice.wet > 0,
+  `its shards come up (${broken.ice.shards}, at most the preset's ${broken.things.shards}) and the ice round it is wet (${broken.ice.wet} texels)`);
+// Its new ice, begun at once (as if left alone REFREEZE.after seconds), compiles nothing.
+await page.evaluate(() => { for (const hole of window.__pond.iceSheet.holes) hole.quiet = -1e9; window.__pond.advance(1.0); });
+const skinning = await page.evaluate(() => window.__pond.budget);
+check(skinning.ice.skinning >= 1 && skinning.programs === programsBeforeIce, `a hole skinning over (${skinning.ice.skinning}) compiles no program (${skinning.programs})`);
+await page.evaluate(async () => { await window.__pond.setSky('pool'); window.__pond.throwAt(0, -1, { radius: 0.03, power: 'normal' }); window.__pond.advance(1.0); });
+const frozenPool = await page.evaluate(() => window.__pond.budget);
+check(frozenPool.ice.name === 'thin' && frozenPool.programs === programsBeforeIce, `a frozen pool and a throw into it compile no program (${frozenPool.programs})`);
+await page.evaluate(async () => { await window.__pond.setSky('lakeside'); window.__pond.setIce('none'); window.__pond.advance(0.1); });
+const thawed = await page.evaluate(() => window.__pond.budget);
+check(thawed.ice.name === 'none' && thawed.ice.holes === 0 && thawed.programs === programsBeforeIce, `open water again compiles nothing (${thawed.programs})`);
+await checkBuilt(phone, 'after the ice');
+
 // Every kind of thing (src/things.js), thrown and followed until the floaters float in the mirror image, compiles no program.
+part('every kind of thing, the floater\'s draw calls, the pool\'s resting stones, the fixed step, on low');
 const programsBeforeThings = await page.evaluate(() => window.__pond.budget.programs);
 const namesBeforeThings = await programNames(page);
 // Each one's first throw makes no mesh and slices no waterline (src/rock.js prepareThing: warmUp made every thing ready;
 // a pizza's waterline took a throw 33 to 57 ms). Each is timed too, for the record: the times vary too much here to check.
 const preparedBefore = await page.evaluate(() => window.__pond.budget.preparation);
-const firstThrows = [];
-for (const thing of ['slate', 'granite', 'basalt', 'pumice', 'golf', 'tennis', 'bowling', 'basketball', 'diamond', 'apple', 'pizza', 'frozen-pizza', 'pie', 'duck', 'watermelon', 'brick']) {
-  const spent = await page.evaluate((name) => {
-    window.__pond.pause();
+// All thrown at once, each to its own spot (a world second with splashes is dear here), and followed together.
+const firstThrows = await page.evaluate((names) => {
+  const pond = window.__pond;
+  pond.pause();
+  const spent = names.map((name, index) => {
     const started = performance.now();
-    window.__pond.throwAt(0, -1.4, { thing: name });
-    const elapsed = performance.now() - started;
-    window.__pond.advance(3.0);
-    return elapsed;
-  }, thing);
-  firstThrows.push({ thing, spent });
-}
+    pond.throwAt(-1.2 + 0.6 * (index % 5), -0.6 - 0.6 * Math.floor(index / 5), { thing: name });
+    return { thing: name, spent: performance.now() - started };
+  });
+  pond.advance(2.5);
+  return spent;
+}, ['slate', 'granite', 'basalt', 'pumice', 'golf', 'tennis', 'bowling', 'basketball', 'diamond', 'apple', 'pizza', 'frozen-pizza', 'pie', 'duck', 'watermelon', 'brick']);
 console.log(`  first throws (ms on the main thread): ${firstThrows.map(({ thing, spent }) => `${thing} ${spent.toFixed(1)}`).join(', ')}`);
 const preparedAfter = await page.evaluate(() => window.__pond.budget.preparation);
 check(preparedBefore.meshes > 0 && preparedAfter.meshes === preparedBefore.meshes && preparedAfter.waterlines === preparedBefore.waterlines,
@@ -282,16 +346,17 @@ check(programsAfterThings === programsBeforeThings, `every kind of thing thrown,
 // not the floater's). GPU-free counts: SwiftShader's milliseconds mean nothing.
 const frameCounts = () => page.evaluate(() => {
   const pond = window.__pond, info = pond.renderer.info;
+  const autoReset = info.autoReset;   // the page's (src/main.js: off, render() resets once a frame), put back after
   info.autoReset = false;
   let calls = 0, triangles = 0;
-  for (let frame = 0; frame < 20; frame++) {
+  for (let frame = 0; frame < 8; frame++) {
     info.reset();
     pond.advance(1 / 60);
     const ringPasses = pond.budget.rings.passes;
     calls += info.render.calls - ringPasses; triangles += info.render.triangles - 2 * ringPasses;
   }
-  info.autoReset = true;
-  return { calls: calls / 20, triangles: Math.round(triangles / 20) };
+  info.autoReset = autoReset;
+  return { calls: calls / 8, triangles: Math.round(triangles / 8) };
 });
 await page.evaluate(() => { window.__pond.pause(); window.__pond.clear(); window.__pond.advance(1); });
 const stillPond = await frameCounts();
@@ -309,7 +374,7 @@ check(restingBall && withFloater.calls - stillPond.calls <= FLOATER_FRAME_CALLS,
 // floor, each one draw call (its part above the water hidden, src/rock.js syncMeshes), and no timer takes them; one
 // more, come to rest, shrinks the oldest away (fadeOut: partway, smaller than its own size and still there; then gone),
 // never at once.
-await page.evaluate(() => { const pond = window.__pond; pond.clear(); pond.setQuality('low'); pond.setClarity('pool'); pond.advance(0.5); });
+await page.evaluate(async () => { const pond = window.__pond; pond.clear(); pond.setQuality('low'); await pond.setSky('pool'); pond.advance(0.5); });
 const emptyPool = await frameCounts();
 const kept = await page.evaluate(() => {
   const pond = window.__pond;
@@ -321,7 +386,10 @@ const kept = await page.evaluate(() => {
   for (let index = 0; index < resting; index++) { stones.push(throwOne()); pond.advance(0.3); }
   pond.advance(5);
   const settled = stones.filter((stone) => stone.state === 'rest').length;
-  pond.advance(41);   // past the 40 s that once took a stone at rest on the bed
+  // Past the 40 s that once took a stone at rest on the bed: the stones are all that is asked of these seconds, so the
+  // pool's waves are stilled first (the solver asleep, src/spectralWater.js sleep), as they would be well before then.
+  pond.water.sleep();
+  pond.advance(41);
   const result = {
     resting, settled,
     keptAfter: stones.filter((stone) => pond.rocks.includes(stone)).length,
@@ -345,7 +413,7 @@ check(kept.settled === kept.resting && kept.keptAfter === kept.resting, `the pre
 check(kept.oneCall === kept.resting && restingPool.calls - emptyPool.calls <= kept.resting + 2, `a stone at rest under the water is one draw call (${kept.oneCall} of ${kept.resting} with the part above hidden; ${restingPool.calls - emptyPool.calls} calls for them)`);
 check(kept.oldestFades && kept.partway?.there && kept.partway.scale > 0.05 && kept.partway.scale < 0.95 && kept.gone && kept.after.kept === kept.resting && kept.after.extraKept,
   `one more at rest shrinks the oldest away, not at once (the oldest: ${kept.oldestFades}; partway ${kept.partway ? `there, at ${kept.partway.scale.toFixed(2)} of its size` : 'never'}; then gone: ${kept.gone}; ${kept.after.kept} kept)`);
-await page.evaluate(() => { const pond = window.__pond; pond.clear(); pond.setClarity('lake'); pond.setQuality('high'); pond.advance(0.1); });
+await page.evaluate(async () => { const pond = window.__pond; pond.clear(); await pond.setSky('lakeside'); pond.advance(0.1); });
 // The world's step is fixed (src/main.js simulate, src/rock.js PHYSICS_STEP): the same throw, drawn 60 times a second or
 // at a frame rate that steps it unevenly (a slow-motion speed of 0.37: frames of 1/162 s), goes exactly where it went.
 const unevenly = await page.evaluate(() => {
@@ -366,83 +434,42 @@ const unevenly = await page.evaluate(() => {
 });
 const apart = Math.hypot(unevenly[0][0] - unevenly[1][0], unevenly[0][1] - unevenly[1][1], unevenly[0][2] - unevenly[1][2]);
 check(apart < 1e-9 && unevenly[0][3] === unevenly[1][3], `a basketball thrown alike at 60 frames a second and at frames of 1/162 s is where it was 2.5 s on (${apart.toExponential(1)} m apart, ${unevenly[0][3]} and ${unevenly[1][3]})`);
-// A floater rides the water as drawn, and things meet it there (src/floaterRide.js): with the page running, a basketball
-// afloat has the water's height under it read back, without a frame waiting for it (SwiftShader answers slowly: up to
-// a minute here), and where things meet it is where it is drawn.
-const ride = await page.evaluate(async () => {
-  const pond = window.__pond;
-  pond.clear();
-  pond.resume();
-  const ball = pond.throwAt(0, -1.4, { thing: 'basketball' });
-  for (let wait = 0; wait < 600 && ball.state !== 'float' && !ball.afloat; wait++) await new Promise((resolve) => setTimeout(resolve, 50));
-  const readsBefore = pond.floaterRide.reads;
-  let most = 0;
-  const gl = pond.renderer.getContext();
-  for (let wait = 0; wait < 1200 && pond.floaterRide.reads < readsBefore + 2; wait++) {
-    gl.finish();   // a software renderer may otherwise leave the read's fence unanswered a long while
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    most = Math.max(most, Math.abs(ball.rideHeight));
-  }
-  // The height read comes between steps; the next step's sync puts where things meet it there.
-  ball.syncMeshes(ball.drawn.surface, ball.drawn.bedDepth);
-  const share = ball.rideShare.value;
-  return { ...pond.floaterRide, readsBefore, most, state: ball.state, meets: Math.abs(ball.centre.y - (ball.position.y + ball.rideHeight * share)) };
-});
-console.log(`  a basketball afloat: ${ride.reads - ride.readsBefore} reads of the water under it came back (${ride.requests} asked), its centre up to ${(1000 * ride.most).toFixed(2)} mm off the still water`);
-// A browser whose renderer never answers the read's fence in the minute (GitHub's runners' SwiftShader at times) is
-// said so, and asked for reads without breaking; any read that comes must be sane, and things meet the ball there.
-const answered = ride.reads > ride.readsBefore;
-if (!answered) console.log(`  (this browser answered none of the ${ride.requests} reads asked in a minute: the readback is checked where it answers)`);
-check(ride.working && ride.requests > 0 && (!answered || ride.most < 0.05) && ride.meets < 1e-6, `the water's height under a floater is read back for the physics, and things meet it there (${ride.reads - ride.readsBefore} reads of ${ride.requests} asked, at most ${(1000 * ride.most).toFixed(1)} mm; the ball ${ride.state})`);
-// The sounds (src/sound.js): started by a gesture (a key here), a throw's splash plays and stops. Where the browser has
-// no audio to run (a CI runner), nothing plays; either way no voice is left held.
-await page.keyboard.press('Shift');
-const sounds = await page.evaluate(async () => {
-  const pond = window.__pond;
-  pond.setSound(true);
-  for (let wait = 0; wait < 50 && pond.soundState !== 'running'; wait++) await new Promise((resolve) => setTimeout(resolve, 20));
-  // Stepped to its splash here (headless frames are slow), its sounds counted as it goes in.
-  pond.pause();
-  const stone = pond.throwAt(0.2, -1.2, { radius: 0.04 });
-  let most = 0;
-  for (let frame = 0; frame < 120 && stone.state === 'air'; frame++) { pond.advance(1 / 60); most = Math.max(most, pond.soundsPlaying); }
-  pond.advance(0.05);
-  most = Math.max(most, pond.soundsPlaying);
-  pond.resume();
-  await new Promise((resolve) => setTimeout(resolve, 2500));
-  return { most, after: pond.soundsPlaying, state: pond.soundState };
-});
-console.log(`  a throw's sounds (audio ${sounds.state}): up to ${sounds.most} at once, ${sounds.after} left 2.5 s after`);
-check((sounds.state !== 'running' || sounds.most >= 1) && sounds.after === 0, `a throw sounds where the audio runs (${sounds.state}), and its sounds end (${sounds.most} at once, ${sounds.after} after)`);
-await page.evaluate(() => { window.__pond.clear(); });
 
-// A long session (resource lifetime): sixty throws of every kind, the oldest retired as the pond fills, then the pond
-// cleared: the GPU's geometries and textures are back where they were, and no program was made.
+
+// A long session (resource lifetime): throws of every kind, more than low keeps, the oldest retired as the pond fills,
+// then the pond cleared: the GPU's geometries and textures are back where they were, and no program was made.
+part('a long session, on low');
 const session = await page.evaluate(() => {
   const pond = window.__pond, memory = pond.renderer.info.memory;
   pond.pause();
+  pond.setQuality('low');
   pond.clear();
   pond.advance(0.5);
   const before = { geometries: memory.geometries, textures: memory.textures, programs: pond.budget.programs };
   const names = ['stone', 'basketball', 'pizza', 'frozen-pizza', 'pie', 'duck', 'tennis', 'brick', 'pumice', 'diamond', 'watermelon', 'apple', 'bowling', 'golf'];
   let most = 0;
-  for (let throwing = 0; throwing < 60; throwing++) {
+  // Six at a time, then 1.5 s of the world (a frame is drawn at the end of each advance: here they are what is dear).
+  const throws = 36;
+  for (let throwing = 0; throwing < throws; throwing++) {
     pond.throwAt(-1 + (throwing % 7) * 0.33, -0.8 - (throwing % 5) * 0.4, { thing: names[throwing % names.length] });
-    pond.advance(0.4);
+    if (throwing % 6 < 5) continue;
+    pond.advance(1.5);
     most = Math.max(most, pond.rocks.length);
   }
   pond.clear();
   pond.advance(0.5);
   const after = { geometries: memory.geometries, textures: memory.textures, programs: pond.budget.programs };
+  pond.setQuality('high');
   pond.resume();
-  return { before, after, most };
+  return { before, after, most, throws };
 });
-console.log(`  sixty throws of every kind, at most ${session.most} in the pond at once: geometries ${session.before.geometries} → ${session.after.geometries}, textures ${session.before.textures} → ${session.after.textures}, programs ${session.before.programs} → ${session.after.programs}`);
-check(session.after.geometries <= session.before.geometries && session.after.textures <= session.before.textures && session.after.programs === session.before.programs, 'sixty throws and a clear pond leave no geometry, texture or program behind');
+console.log(`  ${session.throws} throws of every kind on low, at most ${session.most} in the pond at once: geometries ${session.before.geometries} → ${session.after.geometries}, textures ${session.before.textures} → ${session.after.textures}, programs ${session.before.programs} → ${session.after.programs}`);
+check(session.after.geometries <= session.before.geometries && session.after.textures <= session.before.textures && session.after.programs === session.before.programs, `${session.throws} throws and a clear pond leave no geometry, texture or program behind`);
 
 await page.evaluate(() => { window.__pond.clear(); window.__pond.resume(); });
 
 // Rain compiles on first selection, then follows presets without new programs.
+part('the rain, the gale and the storm');
 let programsBeforeRain = await page.evaluate(() => window.__pond.budget.programs);
 for (const weather of ['light-rain', 'heavy-rain']) {
   await page.evaluate((name) => window.__pond.setWeather(name), weather);
@@ -466,7 +493,8 @@ const cleared = await page.evaluate(() => ({ raining: window.__pond.raining, pro
 check(!cleared.raining && cleared.programs === programsBeforeRain, `clear again: no rain falls, and no program was compiled (${cleared.programs})`);
 await checkBuilt(phone, 'after the rain');
 
-// The gale compiles once on first selection; later changes reuse it.
+// The gale compiles once on first selection; later changes reuse it. On low: its sheet and passes are every preset's.
+await page.evaluate(() => window.__pond.setQuality('low'));
 let programsBeforeGale = await page.evaluate(() => window.__pond.budget.programs);
 await page.evaluate(() => { window.__pond.setWind('gale'); window.__pond.advance(0.3); });
 const galeBudget = await page.evaluate(() => ({ programs: window.__pond.budget.programs, gale: window.__pond.budget.gale }));
@@ -481,14 +509,96 @@ await page.waitForFunction(() => window.__pond.raining, null, { timeout: 60000 }
 await page.evaluate(() => window.__pond.advance(2.5));   // the storm's first strike is at about 1.6 s of the clock (src/lightning.js)
 const storm = await page.evaluate(() => ({ programs: window.__pond.budget.programs, wind: window.__pond.wind }));
 check(storm.programs === programsBeforeGale && storm.wind === 'gale', `the storm compiles no program through a strike (${storm.programs}), its wind a gale (${storm.wind})`);
-await page.evaluate(() => { window.__pond.setWeather('clear'); window.__pond.setClarity('pool'); window.__pond.advance(0.1); });
+await page.evaluate(async () => { window.__pond.setWeather('clear'); await window.__pond.setSky('pool'); window.__pond.advance(0.1); });
 const pooledGale = await page.evaluate(() => ({ programs: window.__pond.budget.programs, gale: window.__pond.budget.gale }));
 check(!pooledGale.gale.blowing && pooledGale.programs === programsBeforeGale, `in the pool the gale raises no waves (${pooledGale.gale.blowing ? 'blowing' : 'still'}) and nothing compiles`);
-await page.evaluate(() => { window.__pond.setClarity('lake'); window.__pond.setWind('calm'); window.__pond.advance(0.1); });
+await page.evaluate(async () => { await window.__pond.setSky('lakeside'); window.__pond.setWind('calm'); window.__pond.advance(0.1); });
 const calmAgain = await page.evaluate(() => ({ programs: window.__pond.budget.programs, gale: window.__pond.budget.gale }));
 check(!calmAgain.gale.blowing && calmAgain.gale.sheetTriangles < 5000 && calmAgain.programs === programsBeforeGale, `calm again: the still sheet (${calmAgain.gale.sheetTriangles} triangles), no program (${calmAgain.programs})`);
+// A storm's gale lasts while it does: the Wind setting's own choice comes back after it, and is the one remembered.
+const windBack = await page.evaluate(async () => {
+  const pond = window.__pond;
+  pond.setWind('breeze');
+  await pond.setWeather('storm');
+  const during = pond.wind;
+  await pond.setWeather('clear');
+  const after = pond.wind, remembered = localStorage.getItem('stone-pond-wind');
+  await pond.setWeather('storm');
+  pond.setWind('windy');   // chosen during the storm: kept after it
+  await pond.setWeather('clear');
+  const chosen = pond.wind;
+  pond.setWind('calm');
+  pond.advance(0.1);
+  return { during, after, remembered, chosen };
+});
+check(windBack.during === 'gale' && windBack.after === 'breeze' && windBack.remembered === 'breeze' && windBack.chosen === 'windy',
+  `a storm's gale (${windBack.during}) gives way to the Wind setting's breeze after it (${windBack.after}, remembered ${windBack.remembered}); a wind chosen during it stays (${windBack.chosen})`);
 await checkBuilt(phone, 'after the gale');
 
+part('the snow');
+// The snow: its first selection compiles its flakes' program, then it reuses it; it falls at once, adds one draw
+// call, and goes when it clears. After the gale's checks: a blizzard brings a gale, whose programs are compiled now.
+await page.evaluate(() => { window.__pond.pause(); window.__pond.clear(); window.__pond.advance(1); });
+const clearDraws = await frameCounts();
+await page.evaluate(() => window.__pond.resume());
+let programsBeforeSnow = await page.evaluate(() => window.__pond.budget.programs);
+for (const weather of ['light-snow', 'heavy-snow', 'blizzard']) {
+  await page.evaluate((name) => window.__pond.setWeather(name), weather);
+  const falling = await page.evaluate(() => window.__pond.snowing);
+  await page.evaluate(() => window.__pond.advance(0.1));
+  const first = await page.evaluate(() => window.__pond.budget.programs);
+  if (weather === 'light-snow') {
+    check(first === programsBeforeSnow + 1, `the first snow compiles its flakes' one program (${programsBeforeSnow} → ${first})`);
+    programsBeforeSnow = first;
+  }
+  await page.evaluate(() => { window.__pond.throwAt(0, -1.4, { radius: 0.03 }); window.__pond.advance(0.6); });
+  const snowing = await page.evaluate(() => ({ programs: window.__pond.budget.programs, weather: window.__pond.weather, snow: window.__pond.budget.snow, wind: window.__pond.wind }));
+  check(falling && snowing.programs === programsBeforeSnow && snowing.weather === weather && snowing.snow.flakes > 0 && snowing.snow.cover > 0 && (weather !== 'blizzard' || snowing.wind === 'gale'),
+    `${weather} falls at once (${snowing.snow.flakes} flakes, the ground ${snowing.snow.cover} covered${weather === 'blizzard' ? `, wind ${snowing.wind}` : ''}) and with a throw compiles no more (${snowing.programs})`);
+}
+const lowSnow = await page.evaluate(() => { window.__pond.setQuality('low'); window.__pond.advance(0.1); const flakes = window.__pond.budget.snow.flakes; window.__pond.setQuality('high'); window.__pond.advance(0.1); return { low: flakes, high: window.__pond.budget.snow.flakes, programs: window.__pond.budget.programs }; });
+check(lowSnow.low === Math.round(lowSnow.high * 0.4) && lowSnow.programs === programsBeforeSnow, `Low draws its share of the blizzard's flakes (${lowSnow.low} of ${lowSnow.high}) and compiles nothing (${lowSnow.programs})`);
+await page.evaluate(() => { window.__pond.pause(); window.__pond.clear(); window.__pond.setWind('calm'); window.__pond.advance(1); });
+const snowDraws = await frameCounts();
+await page.evaluate(() => window.__pond.resume());
+console.log(`  a still pond's frame: ${clearDraws.calls} calls, ${clearDraws.triangles} triangles clear; ${snowDraws.calls} calls, ${snowDraws.triangles} triangles in a blizzard`);
+check(snowDraws.calls === clearDraws.calls + 1, `the snow adds one draw call to a frame (${clearDraws.calls} → ${snowDraws.calls})`);
+await page.evaluate(() => { window.__pond.setWeather('clear'); window.__pond.advance(0.1); });
+const unsnowed = await page.evaluate(() => ({ snowing: window.__pond.snowing, snow: window.__pond.budget.snow, programs: window.__pond.budget.programs }));
+check(!unsnowed.snowing && unsnowed.snow.flakes === 0 && unsnowed.snow.cover === 0 && unsnowed.programs === programsBeforeSnow, `clear again: no snow falls or lies, and no program was compiled (${unsnowed.programs})`);
+
+part('the fog');
+// Fog is the haze alone (src/sky.js): uniforms, the stones' FogExp2 among them, so it compiles nothing and draws
+// nothing more, a throw into it neither; it stills a gale while it lasts, and clear again gives the wind back.
+await page.evaluate(() => { window.__pond.setWind('windy'); window.__pond.pause(); window.__pond.clear(); window.__pond.setWind('calm'); window.__pond.advance(1); });
+const clearHere = await frameCounts();
+await page.evaluate(() => { window.__pond.resume(); window.__pond.setWind('windy'); window.__pond.advance(0.1); });
+const programsBeforeFog = await page.evaluate(() => window.__pond.budget.programs);
+await page.evaluate(() => { window.__pond.setWeather('fog'); window.__pond.pause(); window.__pond.clear(); window.__pond.advance(1); });
+const fogDraws = await frameCounts();
+await page.evaluate(() => { window.__pond.resume(); window.__pond.throwAt(0, -1.4, { radius: 0.03 }); window.__pond.advance(0.6); });
+const foggy = await page.evaluate(() => ({ programs: window.__pond.budget.programs, weather: window.__pond.weather, wind: window.__pond.wind, raining: window.__pond.raining, snowing: window.__pond.snowing }));
+console.log(`  a still pond's frame in fog: ${fogDraws.calls} calls, ${fogDraws.triangles} triangles (clear: ${clearHere.calls}, ${clearHere.triangles})`);
+check(foggy.weather === 'fog' && foggy.wind === 'calm' && !foggy.raining && !foggy.snowing && foggy.programs === programsBeforeFog && fogDraws.calls === clearHere.calls && fogDraws.triangles === clearHere.triangles,
+  `fog stills the wind (${foggy.wind}), neither rains nor snows, compiles nothing with a throw (${programsBeforeFog} → ${foggy.programs}) and draws what a clear frame does (${fogDraws.calls} calls, ${fogDraws.triangles} triangles)`);
+await page.evaluate(() => { window.__pond.setWeather('clear'); window.__pond.advance(0.1); });
+const unfogged = await page.evaluate(() => ({ wind: window.__pond.wind, programs: window.__pond.budget.programs }));
+check(unfogged.wind === 'windy' && unfogged.programs === programsBeforeFog, `clear again: the wind is the Wind setting's again (${unfogged.wind}), no program compiled (${unfogged.programs})`);
+await page.evaluate(() => { window.__pond.setWind('calm'); window.__pond.advance(0.1); });
+
+// The pixel budget: the same page in a 2560×1440 window on high (paused: no frame is drawn that large here).
+part('the pixel budget');
+await page.evaluate(() => { window.__pond.pause(); window.__pond.setQuality('high'); });
+await page.setViewportSize({ width: 2560, height: 1440 });
+await page.waitForFunction(() => window.__pond.budget.canvas.width > 1000, undefined, { timeout: 60000 }).catch(() => {});
+const largeBudget = await checkBuilt({ page, width: 2560, height: 1440 }, '2560×1440');
+check(largeBudget.canvas.width * largeBudget.canvas.height <= PIXEL_BUDGET, `the canvas keeps within ${PIXEL_BUDGET / 1e6} M pixels (${largeBudget.canvas.width}×${largeBudget.canvas.height}, ratio ${largeBudget.pixelRatio.toFixed(3)})`);
+await page.setViewportSize({ width: phone.width, height: phone.height });
+await page.waitForFunction((width) => window.__pond.budget.canvas.width === width, phone.width, { timeout: 60000 }).catch(() => {});
+await page.evaluate(() => window.__pond.resume());
+
+part('one frame loop, on low');
+await page.evaluate(() => window.__pond.setQuality('low'));   // the frames counted are any preset's
 // pause, resume, pause, resume in one tick: one frame loop, so at most one render per requestAnimationFrame, and at least every
 // other (the most the idle cap, on high too now, skips of a 60 Hz requestAnimationFrame).
 const loops = await page.evaluate(() => new Promise((resolve) => {
@@ -496,7 +606,7 @@ const loops = await page.evaluate(() => new Promise((resolve) => {
   pond.pause(); pond.resume(); pond.pause(); pond.resume();
   const start = pond.framesRendered;
   let ticks = 0;
-  const tick = () => { if (++ticks < 30) requestAnimationFrame(tick); else resolve({ renders: pond.framesRendered - start, ticks }); };
+  const tick = () => { if (++ticks < 12) requestAnimationFrame(tick); else resolve({ renders: pond.framesRendered - start, ticks }); };
   requestAnimationFrame(tick);
 }));
 check(loops.renders <= loops.ticks + 1 && loops.renders >= loops.ticks / 2, `pause/resume/pause/resume leaves one frame loop: ${loops.renders} renders in ${loops.ticks} frames`);
@@ -504,6 +614,7 @@ await phone.context.close();
 
 // ---- 2. a fake clock -------------------------------------------------------
 console.log('the watch after calibration and the idle frame rate, on a fake clock');
+part('the fake clock: calibration and the watch');
 const fakeClock = `(() => {
   let fake = performance.now();
   let lastRealFrame = null;
@@ -516,7 +627,8 @@ const fakeClock = `(() => {
     callback(fake);
   });
 })();`;
-const faked = await openPage({ query: 'quality=auto', initScript: fakeClock });
+// A ninth of the phone's pixels: its frames are drawn for real, and none of what is counted here depends on their size.
+const faked = await openPage({ width: 130, height: 282, query: 'quality=auto', initScript: fakeClock });
 const fakePage = faked.page;
 await fakePage.waitForFunction(() => window.__pond.budget.calibration === 'awaitingSplash', undefined, { timeout: 900000 });
 check((await pageState(fakePage)).quality === 'high', 'at 55 frames a second the idle pond keeps high');
@@ -529,13 +641,13 @@ const slowFor = await fakePage.evaluate((from) => (performance.now() - from) / 1
 check((await pageState(fakePage)).quality === 'medium', `at 20 frames a second the watch steps down to medium (after ${slowFor.toFixed(1)} s)`);
 check(slowFor < 6, 'within a few seconds');
 await checkBuilt(faked, 'after the watch stepped down');
-/** The renders, simulated and clock seconds over 40 faked frames at `hertz`, and whether the idle cap held at the start and the end. */
+/** The renders, simulated and clock seconds over 24 faked frames at `hertz`, and whether the idle cap held at the start and the end. */
 const overFrames = (hertz) => fakePage.evaluate((step) => new Promise((resolve) => {
   window.__fakeStep = step;
   const pond = window.__pond;
   const start = { renders: pond.framesRendered, ticks: window.__ticks, time: pond.time, clock: performance.now(), capped: pond.budget.frameCapped };
   const wait = () => {
-    if (window.__ticks - start.ticks < 40) { requestAnimationFrame(wait); return; }
+    if (window.__ticks - start.ticks < 24) { requestAnimationFrame(wait); return; }
     resolve({ renders: pond.framesRendered - start.renders, ticks: window.__ticks - start.ticks, simulated: pond.time - start.time, clock: (performance.now() - start.clock) / 1000, capped: [start.capped, pond.budget.frameCapped] });
   };
   requestAnimationFrame(wait);
@@ -547,6 +659,7 @@ const waitForCap = async (on) => {
   const from = await fakePage.evaluate(() => window.__ticks);
   await fakePage.waitForFunction(([wanted, after]) => window.__ticks > after + 1 && window.__pond.budget.frameCapped === wanted, [on, from], { timeout: 900000 }).catch(() => {});
 };
+part('the fake clock: the idle cap and the ceiling');
 // A pond where nothing happens on medium: frames at 30 a second on a 60 Hz clock.
 await fakePage.evaluate(() => { window.__fakeStep = 1000 / 60; });
 await waitForCap(true);
@@ -562,7 +675,8 @@ const highStill = await overFrames(60);
 check(highStill.capped.every(Boolean) && drawsOneIn(highStill, 60 / QUALITY.high.idleFrameRate), `a still pond on high draws every other frame at 60 Hz: ${highStill.renders} renders in ${highStill.ticks} frames`);
 const highStillFast = await overFrames(120);
 check(highStillFast.capped.every(Boolean) && drawsOneIn(highStillFast, 120 / QUALITY.high.idleFrameRate) && keepsUp(highStillFast), `and every fourth at 120 Hz: ${highStillFast.renders} renders in ${highStillFast.ticks} frames, ${highStillFast.simulated.toFixed(3)} s simulated in ${highStillFast.clock.toFixed(3)} s`);
-await fakePage.evaluate(() => window.__pond.throwAt(0, -1.4, { radius: 0.03 }));
+// The ceiling is every preset's: its frames with things moving are drawn on low (cheaper here).
+await fakePage.evaluate(() => { window.__pond.setQuality('low'); window.__pond.throwAt(0, -1.4, { radius: 0.03 }); });
 await waitForCap(false);
 const flyingFast = await overFrames(2 * MAX_FRAME_RATE);
 check(!flyingFast.capped.some(Boolean) && drawsOneIn(flyingFast, 2) && keepsUp(flyingFast), `a throw at ${2 * MAX_FRAME_RATE} Hz draws every other frame, ${MAX_FRAME_RATE} a second: ${flyingFast.renders} renders in ${flyingFast.ticks} frames, ${flyingFast.simulated.toFixed(3)} s simulated in ${flyingFast.clock.toFixed(3)} s`);
@@ -576,15 +690,9 @@ const flyingNinety = await overFrames(90);
 check(!flyingNinety.capped.some(Boolean) && drawsOneIn(flyingNinety, 1) && keepsUp(flyingNinety), `and at 90 Hz every frame too, within the ceiling's slack: ${flyingNinety.renders} renders in ${flyingNinety.ticks} frames`);
 await faked.context.close();
 
-// ---- 3. the pixel budget ----------------------------------------------------
-console.log('a 2560×1440 window on high');
-const large = await openPage({ width: 2560, height: 1440, query: 'quality=high&paused=1' });
-const largeBudget = await checkBuilt(large, '2560×1440');
-check(largeBudget.canvas.width * largeBudget.canvas.height <= PIXEL_BUDGET, `the canvas keeps within ${PIXEL_BUDGET / 1e6} M pixels (${largeBudget.canvas.width}×${largeBudget.canvas.height}, ratio ${largeBudget.pixelRatio.toFixed(3)})`);
-await large.context.close();
-
+part(null);
 if (problems.length) { console.log('  console problems:'); console.log('  ' + problems.slice(0, 10).join('\n  ')); failures++; }
 await browser.close();
 server.close();
-console.log(failures ? `${failures} check(s) failed` : 'all quality checks passed');
+console.log(`${failures ? `${failures} check(s) failed` : 'all quality checks passed'} (${((Date.now() - probeStart) / 60000).toFixed(1)} min)`);
 process.exit(failures ? 1 : 0);

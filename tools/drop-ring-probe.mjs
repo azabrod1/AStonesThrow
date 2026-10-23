@@ -81,8 +81,8 @@ function run({ radius, x, z, pool, limit }) {
   };
   const splash = new SplashSystem({ environment: { cubeTexture: null }, lighting, water, ambientWaves: { uniforms: () => ({}) } });
   if (pool) splash.setGround({ square, deck: POOL.deck, onWet: () => {} });
-  const landOnDeck = splash.landOnDeck.bind(splash);
-  splash.landOnDeck = (landX, landZ, landRadius, ...rest) => { if (landRadius >= DROP_RING.least) deckLandings++; return landOnDeck(landX, landZ, landRadius, ...rest); };
+  const landOn = splash.landOn.bind(splash);
+  splash.landOn = (height, onWet, landX, landZ, landRadius, ...rest) => { if (landRadius >= DROP_RING.least) deckLandings++; return landOn(height, onWet, landX, landZ, landRadius, ...rest); };
   const candidates = [];
   const rings = [];
   const add = dropRings.add.bind(dropRings);

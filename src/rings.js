@@ -97,7 +97,7 @@
 // MERGE.seconds earlier within MERGE.reach of its σ (the pushes down an
 // oblique entry's path), and the source's centre is the strength-weighted
 // centroid of its splats. At most liveLimit sources are live (the quality
-// presets' rings, src/main.js: 24 on High, 12 on Medium, 8 on Low). A
+// presets' rings, src/main.js: 24 on High, 12 on Medium, 10 on Low). A
 // reference stone's ring lives 90 to 120 s, so a stone every four seconds
 // or so fills High's (and a Skip throw starts a source at each touch); a
 // new one past them makes the live one closest to retiring, the faintest
@@ -245,14 +245,14 @@
 //
 // The cost. A minute of throwing (tools/ring-probe.mjs: the default stone
 // every 3 to 5 s at random places in view, then quiet) keeps about 11 rings
-// drawn on High and on Medium (9.2 on Low, those fading out among them),
-// whose profile passes fetch 20 M spectrum texels a frame (18 M on Low) and
+// drawn on High and on Medium (9.7 on Low, those fading out among them),
+// whose profile passes fetch 20 M spectrum texels a frame (18.5 M on Low) and
 // whose lookups come to about 10.4 M of the water's pixels' on a desktop,
 // 10.9 M on a phone, and 8.3 M of the floor's (desktop: its caustics take 6.7
 // rings). A stone every 1.5 s fills the live rings: on High it keeps 24 drawn
 // (30 at most) at 47 M fetches and 25 M of a desktop's water lookups (26 M of
-// a phone's, 11 M of the floor's), on Low 10 (its 3 s fade keeps the rings
-// fading out to a couple) at 17 M fetches and 17 M of a phone's. The weaker
+// a phone's, 11 M of the floor's), on Low 12 (its 3 s fade keeps the rings
+// fading out to a couple) at 22 M fetches and 19 M of a phone's. The weaker
 // rings before this calibration, two to a throw and looked up at every pixel
 // within their reach, kept 12 drawn at 33 M fetches and 22 M lookups a frame.
 // Its last ring retires 96 to 103 s after the last throw (63 s before, for
