@@ -157,8 +157,12 @@ vec2 galeSlope(vec2 restXZ, out float jacobian) {
 // passes its derivatives, a vertex shader the spacing it needs. The caller
 // branches on uRingCount, so with no ring alive none of this runs. Per ring
 // and pixel inside its annulus: one fetch (two for the floor's Laplacian)
-// and about 35 operations.
+// and about 35 operations. The rings come oldest first; the floor's
+// Laplacian takes only the youngest uCausticRings of them (CAUSTIC_RINGS
+// live ones, and those leaving the caustics, src/rings.js), each times its
+// share in uRingCaustics.
 #define MAX_RINGS ${MAX_RINGS}
+#define RING_CAUSTIC_VECTORS ${Math.ceil(MAX_RINGS / 4)}
 #define RING_PROFILE_TEXELS ${PROFILE_TEXELS.toFixed(1)}
 #define RING_PROFILE_MAPPING ${PROFILE_MAPPING.toFixed(4)}
 #define RING_METRES_PER_UNIT ${(1 / RING_TEXTURE_UNITS).toFixed(4)}
@@ -167,6 +171,8 @@ uniform int uRingCount;
 uniform vec4 uRingPlaces[MAX_RINGS];   // centre x, z; the direction θ is measured from, x, z
 uniform vec4 uRingShapes[MAX_RINGS];   // reach R (m), outer radius (m, at most R), layer, inner radius (m)
 uniform highp sampler2DArray uRingProfiles;
+uniform int uCausticRings;                          // the floor's caustics take the youngest this many rings...
+uniform vec4 uRingCaustics[RING_CAUSTIC_VECTORS];   // ...each by its share: ring i's is component i % 4 of vector i / 4
 
 // Where radius r lies along a ring's profile as a texture coordinate, and its
 // rate of change with r: u, then (u·(N − 1) + ½)/N.
@@ -223,10 +229,14 @@ vec2 ringSlope(vec2 worldXZ, vec2 acrossX, vec2 acrossY) {
 // The rings' Laplacian (1/m), for the floor's caustics: ∂²η0/∂r² + (∂η0/∂r)/r,
 // and (∂²η1/∂r² + (∂η1/∂r)/r − η1/r²)·cos θ, the second derivative differenced
 // over twice RING_CAUSTIC_STEP. Each lookup is averaged over the footprint.
+// Only the youngest uCausticRings rings, each times its share (src/rings.js).
 float ringLaplacian(vec2 worldXZ, vec2 acrossX, vec2 acrossY) {
   float laplacian = 0.0;
-  for (int index = 0; index < MAX_RINGS; index++) {
-    if (index >= uRingCount) break;
+  for (int rank = 0; rank < MAX_RINGS; rank++) {
+    int index = uRingCount - 1 - rank;   // rank 0 the youngest: the rings come oldest first
+    if (rank >= uCausticRings || index < 0) break;
+    float share = uRingCaustics[index / 4][index % 4];
+    if (share <= 0.0) continue;
     vec4 place = uRingPlaces[index];
     vec4 shape = uRingShapes[index];
     vec2 offset = worldXZ - place.xy;
@@ -246,7 +256,7 @@ float ringLaplacian(vec2 worldXZ, vec2 acrossX, vec2 acrossY) {
     vec2 bend = (outerProfile.xy - innerProfile.xy) / (2.0 * RING_CAUSTIC_STEP);
     float zeroth = bend.x + mean.x / middle;
     float first = bend.y + mean.y / middle - mean.z / (middle * middle);
-    laplacian += zeroth + first * dot(outward, place.zw);
+    laplacian += share * (zeroth + first * dot(outward, place.zw));
   }
   return laplacian * RING_METRES_PER_UNIT;
 }

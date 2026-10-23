@@ -44,7 +44,8 @@
 // times count from the dip.
 // --power=soft|normal|hard throws as the strip's Soft, Medium and Hard do
 // (src/main.js ARC: a soft toss is a higher arc, so a steeper entry, about
-// 33° from vertical against 42°; a hard one flatter).
+// 33° from vertical against 42°; a hard one is fast and flat, twice as fast
+// in at about 73°: src/rock.js throwFlightTime).
 // --manner=toss|lob|skip throws as the strip's Toss, Lob and Skip do: a lob
 // the high way round, higher the harder; --skip is --manner=skip.
 // --skip throws skips, as the strip's Skip does (src/rock.js): the stone

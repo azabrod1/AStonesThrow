@@ -46,14 +46,14 @@ import * as THREE from 'three';
 import { SplashSystem } from '../src/splash.js';
 import { CrownSheet, DROP_CEILING } from '../src/crown.js';
 import { JetColumn } from '../src/jet.js';
-import { Rock } from '../src/rock.js';
+import { Rock, throwFlightTime } from '../src/rock.js';
 import { DAMPING } from '../src/spectralWater.js';
 
 const option = (name, fallback) => { const hit = process.argv.find((argument) => argument.startsWith(`--${name}=`)); return hit ? hit.slice(name.length + 3) : fallback; };
 const radii = process.argv.slice(2).filter((argument) => !argument.startsWith('--')).map(Number);
 const stoneRadii = radii.length > 0 ? radii : [0.0075, 0.02, 0.03, 0.04, 0.08, 0.15];
 const [aimX, aimZ] = option('aim', '0:-1.4').split(':').map(Number);
-const power = { soft: 1.3, normal: 1.0, hard: 0.72 }[option('power', 'normal')];
+const powerName = option('power', 'normal');
 const vertical = process.argv.includes('--vertical');
 
 const GRAVITY = 9.81;
@@ -74,7 +74,7 @@ const hand = new THREE.Vector3(0.30, -0.32, -0.55).applyMatrix4(camera.matrixWor
 /** Fly a stone from the hand to the aim point as the app does; returns the impact and the stone. */
 function throwStone(radius) {
   const target = new THREE.Vector3(aimX, 0, aimZ);
-  const flightTime = THREE.MathUtils.clamp(0.42 + 0.11 * hand.distanceTo(target), 0.5, 1.0) * power;
+  const flightTime = throwFlightTime(hand, target, powerName, radius);
   const velocity = target.clone().sub(hand).divideScalar(flightTime);
   velocity.y += 0.5 * GRAVITY * flightTime;
   const rock = new Rock({ radius, position: hand, velocity, envTexture: null });
@@ -289,7 +289,7 @@ const failures = [];
 
 // Warm up, then measure.
 for (const warmUpRadius of [0.03, 0.08, 0.03, 0.08]) runSplash(warmUpRadius, { silent: true });
-console.log(`aim (${aimX}, ${aimZ}), ${option('power', 'normal')} power${vertical ? ', dropped straight in' : ''}; frames of 1/60 s in ${SUBSTEPS} substeps`);
+console.log(`aim (${aimX}, ${aimZ}), ${powerName} power${vertical ? ', dropped straight in' : ''}; frames of 1/60 s in ${SUBSTEPS} substeps`);
 for (const radius of stoneRadii) {
   const result = runSplash(radius);
   const { impact, crown, fan, jet } = result;

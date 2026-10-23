@@ -87,15 +87,18 @@
 // sun at the hour's elevation (no moon), to the 1 − ADAPTATION, and below
 // the rods' threshold to the 1 − ROD_ADAPTATION further. The eye adapts
 // most of the way, not all: twilight and night come out darker than the
-// photograph shows them, never black. Where the true sun is down
+// photograph shows them, about 2.7 stops under the day, dark but never
+// black (at 4 to 5 stops under, as they were first set, they were a dark
+// grey photograph on a phone). Where the true sun is down
 // (sky-probe's light 'none') the sky is all the light, and the scene's sun
 // is dark, low where the true one is; where the moon lights the photo
 // ('moon') it is the scene's sun, its light a full moon's, MOON_DIMMING
 // times the sun's at its elevation. Below NIGHT_VISION_LIGHT[0] the eye's
 // rods take over from its cones, alone by NIGHT_VISION_LIGHT[1] (a full
 // moon low in the sky): lighting.night, from 0 to 1 between the two in the
-// logarithm of the light, mixes the picture towards what rods see
-// (NIGHT_VISION in src/shaders/fluid.js). That factor is the environment's
+// logarithm of the light, mixes the picture towards what rods see, drawn
+// as a moonlit blue that keeps some of the cones' colour (NIGHT_VISION in
+// src/shaders/fluid.js). That factor is the environment's
 // `level` (1 for a single photograph and an anchor): the deep water's colour
 // (src/main.js), a radiance lit by what falls on the water, takes it, and so
 // does the cube's ground hemisphere.
@@ -139,7 +142,11 @@
 // into the same targets (every material holding them keeps them) and frees
 // the old photo. Nothing new is compiled: the dome, the capture's ground and
 // the PMREM generator live as long as the environment. Until the photo has
-// arrived the old sky stays, whole.
+// arrived the old sky stays, whole. The photo (0.2 to 0.6 MB) is most of the
+// wait: prefetch(place, hour) fetches an hour's photo and measurements ahead
+// without showing them (src/main.js prefetchHours: the hours either side of
+// the one asked for, while the Time of day page is open), at most PREFETCHED
+// kept, so its load waits only on the decode (decodePanorama).
 //
 // The panorama and a water-coloured hemisphere below the horizon (the photo's
 // own ground there would light drops and stones green from below; GROUND,
@@ -167,10 +174,11 @@ const SKY_EXPOSURE = Math.PI;   // see Brightness above
 const RADIANCE_CAP = 30;       // times the mean sky radiance
 const DOME_SIZE = 20000;       // metres, edge of the box
 const CUBE_SIZE = 512;         // the droplets' cube, per face
+const PREFETCHED = 2;          // panoramas fetched ahead and kept until loaded (prefetch): an hour's two neighbours, 0.2 to 0.6 MB each
 const PREFILTER_SIZE = 128;    // the capture the stones' prefiltered map is made from, per face
 const GROUND = [0.10, 0.17, 0.20];   // the cube's ground hemisphere: the pond as the drops see it, under a sunlit sky
-const ADAPTATION = 0.75;       // how far the eye adapts to an hour's light (Light by the hour)...
-const ROD_ADAPTATION = 0.9;    // ...and, below NIGHT_VISION_LIGHT[0], its rods (adaptedLight)
+const ADAPTATION = 0.8;        // how far the eye adapts to an hour's light (Light by the hour)...
+const ROD_ADAPTATION = 0.98;   // ...and, below NIGHT_VISION_LIGHT[0], its rods (adaptedLight)
 const DOWN_SUN_ELEVATION = 1;  // degrees: where the scene's dark sun stands while the true one is down
 const OVERCAST_TINT = [0.95, 0.99, 1.07];   // a rain cloud's grey, a little blue, at about unit luminance
 const HAZE_BRIGHTNESS = 0.6;   // the haze against the cloud's mean: an overcast's horizon is under half its zenith (CIE)
@@ -215,9 +223,11 @@ const lightOf = (measurement) => measurement.light ?? 'sun';
  * How bright an hour's light looks to an eye adapted to it, in arbitrary
  * units: the light (lux) to the 1 − ADAPTATION; below NIGHT_VISION_LIGHT[0],
  * where the rods take over and adapt further, to the 1 − ROD_ADAPTATION
- * from there. So the starlit night shows its land and its stars, about 5
- * stops under the day, where the cones' adaptation alone would leave it 7
- * under, black. ROD_ADAPTATION was chosen from frames of the night hours.
+ * from there. So the starlit night shows its land, its reflections and its
+ * stars, 2.8 stops under the day, where the cones' adaptation alone would
+ * leave it 5.2 under, black; moonrise and moonlight come out a little
+ * brighter (2.7), and twilight 5° down brighter again (2.6), so the hours
+ * keep their order. Both constants were chosen from frames of the hours.
  */
 function adaptedLight(lux) {
   const rodsFrom = NIGHT_VISION_LIGHT[0];
@@ -405,8 +415,16 @@ export async function createEnvironment(renderer, { name, hour, sunAzimuth, sunB
   // Start the calibration and panorama together, avoiding a network waterfall.
   const balancePromise = measurementOf(SKIES[BALANCE_SKY].hours.afternoon.file);
   const balanceLuminance = luminance(sunBalance.toArray());
+  // Panoramas fetched ahead (prefetch), by file, at most PREFETCHED of them, the oldest let go first. A load takes its
+  // own out, or fetches it afresh if fetching it ahead failed (fetchPanorama, src/skies.js).
+  const prefetched = new Map();
+  function takePanorama(file) {
+    const ahead = prefetched.get(file);
+    prefetched.delete(file);
+    return ahead ? ahead.catch(() => fetchPanorama(file)) : fetchPanorama(file);
+  }
 
-  const environment = { sky, cubeTexture: cubeTarget.texture, envTexture: null, name: null, hour: null, level: 1, hazeUniforms, targets: [], panoramaBytes: 0, load, setWeather, setFlash };
+  const environment = { sky, cubeTexture: cubeTarget.texture, envTexture: null, name: null, hour: null, level: 1, hazeUniforms, targets: [], panoramaBytes: 0, load, prefetch, setWeather, setFlash };
   // The hour's light under a clear sky (load), which the weather covers (applyWeather).
   const clear = { sun: new THREE.Vector3(), sky: new THREE.Vector3(), lux: 1, level: 1 };
   let weather = { cover: 0, light: 1, visibility: Infinity };
@@ -428,7 +446,7 @@ export async function createEnvironment(renderer, { name, hour, sunAzimuth, sunB
       measurementOf(file),
       measurementOf(anchorFile),
       measurementOf(facingFile),
-      fetchPanorama(file),
+      takePanorama(file),
       balancePromise,
     ]);
     // Decode only after every asset succeeded, so a failed measurement cannot
@@ -493,6 +511,25 @@ export async function createEnvironment(renderer, { name, hour, sunAzimuth, sunB
 
     Object.assign(environment, { name: skyName, hour: hourName, panoramaBytes });
     return skyName;
+  }
+
+  /**
+   * Fetch a place's hour ahead of its load (Switching, above): its panorama
+   * and its measurements, so that loading it waits on nothing. Nothing is
+   * decoded or shown; the hour shown, one unknown and one already fetched
+   * ahead are passed over.
+   */
+  function prefetch(requestedPlace, requestedHour) {
+    const entry = Object.hasOwn(SKIES, requestedPlace ?? '') ? SKIES[requestedPlace].hours[requestedHour] : undefined;
+    if (!entry || prefetched.has(entry.file) || (environment.name === requestedPlace && environment.hour === requestedHour)) return;
+    measurementOf(entry.file).catch(() => {});
+    const ahead = fetchPanorama(entry.file);
+    ahead.catch(() => { if (prefetched.get(entry.file) === ahead) prefetched.delete(entry.file); });
+    prefetched.set(entry.file, ahead);
+    for (const file of prefetched.keys()) {
+      if (prefetched.size <= PREFETCHED) break;
+      prefetched.delete(file);
+    }
   }
 
   /**
