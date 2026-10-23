@@ -247,9 +247,10 @@ function landGeometry() {
  * The beach (the header): its own mesh in the main scene, which the caller
  * also puts on the mirror's layer, lit as the bed and fading into the sky's
  * photo far off. It shares the floor's baked sand and the sky's cube map
- * (src/sky.js, refilled in place by a new sky).
+ * (src/sky.js, refilled in place by a new sky); `snow` is the weather's
+ * snow cover, a uniform's shared object.
  */
-export function createShore(floor, lighting, environment) {
+export function createShore(floor, lighting, environment, { snow = { value: 0 } } = {}) {
   const material = new THREE.ShaderMaterial({
     vertexShader: LAND_VERTEX,
     fragmentShader: LAND_FRAGMENT,
@@ -260,6 +261,7 @@ export function createShore(floor, lighting, environment) {
       uSunIrradiance: { value: lighting.sunIrradiance },
       uSkyAmbient: { value: lighting.skyAmbient },
       uSkyCube: { value: environment.cubeTexture },
+      uSnow: snow,   // the snow lying on it, 0 to 1 (src/main.js WEATHERS)
     },
   });
   const mesh = new THREE.Mesh(landGeometry(), material);

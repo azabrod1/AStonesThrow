@@ -60,8 +60,9 @@
 //     the readout following, while a lone photograph's page hides the slider
 //     and says why; its Location page's Pool puts the rocks in the pool (the
 //     View note follows) and the Water page shows the pool's own water in
-//     place of the lake's; its Weather row opens the Weather page, whose four
-//     choices fit and whose Heavy rain brings the rain; a press on the water
+//     place of the lake's; its Weather row opens the Weather page, whose seven
+//     choices (one list of cards) fit, whose Heavy rain brings the rain
+//     and whose Heavy snow the snow, at once; a press on the water
 //     closes it without throwing a stone, and Escape closes it too;
 //   - on a touch screen a finger dragged across the water turns the view and
 //     throws nothing, and the Reset view button then shows on the screen,
@@ -643,17 +644,31 @@ for (const framing of FRAMINGS) {
   await page.waitForFunction(() => window.__pond.sky === 'lakeside', null, { timeout: 60000 }).catch(() => {});
   await press('.menu-page[data-page="sky"] .menu-back');   // the list again: the Location page reaches the water's middle on a small phone
   await page.waitForTimeout(400);
-  // The Weather page: its choices fit, and Heavy rain brings the rain.
+  // The Weather page: its choices fit, Heavy rain brings the rain and Heavy snow the snow.
   await press('#settings .menu-tier[data-open="weather"]');
   await page.waitForTimeout(400);
-  const weatherChoices = await boxes('#weather [role="radio"]');
-  const weatherClipped = await page.evaluate(() => [...document.querySelectorAll('#weather [role="radio"]')].filter((choice) => choice.scrollWidth > choice.clientWidth).map((choice) => choice.textContent));
-  check(weatherChoices.length === 4 && weatherChoices.every(onScreen) && weatherClipped.length === 0 && (!framing.touch || weatherChoices.every((choice) => choice.height >= SMALLEST_BUTTON_HEIGHT - 0.5)),
-    `the Weather page's four choices are on the screen and fit their labels${weatherClipped.length ? ` (not: ${weatherClipped.join(', ')})` : ''}`);
+  // Each card as the panel scrolls it into view, as the Water page's: a short screen's panel scrolls.
+  const weatherChoices = await page.evaluate(() => {
+    const scale = window.visualViewport ? window.visualViewport.scale : 1;
+    const placed = [...document.querySelectorAll('#weather [role="radio"]')].map((choice) => {
+      choice.scrollIntoView({ block: 'nearest' });
+      const box = choice.getBoundingClientRect();
+      return { left: box.left * scale, right: box.right * scale, top: box.top * scale, bottom: box.bottom * scale, height: box.height * scale };
+    });
+    document.getElementById('settings').scrollTop = 0;
+    return placed;
+  });
+  const weatherClipped = await page.evaluate(() => [...document.querySelectorAll('#weather [role="radio"] b')].filter((name) => name.scrollWidth > name.clientWidth).map((name) => name.textContent));
+  check(weatherChoices.length === 7 && weatherChoices.every(onScreen) && weatherClipped.length === 0 && (!framing.touch || weatherChoices.every((choice) => choice.height >= SMALLEST_BUTTON_HEIGHT - 0.5)),
+    `the Weather page's seven cards are on the screen once scrolled to and fit their names${weatherClipped.length ? ` (not: ${weatherClipped.join(', ')})` : ''}`);
   await press('#weather [data-value="heavy-rain"]');
   await page.waitForFunction(() => window.__pond.raining, null, { timeout: 60000 }).catch(() => {});
   const rainy = await page.evaluate(() => ({ weather: window.__pond.weather, raining: window.__pond.raining, row: document.querySelector('.menu-tier[data-open="weather"] .menu-tier-value').textContent }));
   check(rainy.weather === 'heavy-rain' && rainy.raining && rainy.row === 'Heavy rain', `Heavy rain brings the rain (${rainy.weather}, falling: ${rainy.raining}), the row reads "${rainy.row}"`);
+  await press('#weather [data-value="heavy-snow"]');
+  const snowy = await page.evaluate(() => ({ weather: window.__pond.weather, raining: window.__pond.raining, snowing: window.__pond.snowing, row: document.querySelector('.menu-tier[data-open="weather"] .menu-tier-value').textContent, checked: [...document.querySelectorAll('#weather [aria-checked="true"]')].map((choice) => choice.dataset.value) }));
+  check(snowy.weather === 'heavy-snow' && snowy.snowing && !snowy.raining && snowy.row === 'Heavy snow' && snowy.checked.join() === 'heavy-snow',
+    `Heavy snow brings the snow at once and stops the rain (${snowy.weather}, snowing: ${snowy.snowing}, raining: ${snowy.raining}), the row reads "${snowy.row}", one choice checked (${snowy.checked.join(', ')})`);
   await page.screenshot({ path: path.join(outputFolder, `${framing.name}-weather.png`) });
   await press('#weather [data-value="clear"]');
   await press('.menu-page[data-page="weather"] .menu-back');

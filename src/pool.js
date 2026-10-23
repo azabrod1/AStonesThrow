@@ -41,8 +41,9 @@
 // The splash's drops that land on the deck wet it (wetSpot, from
 // src/splash.js setGround): a map of how wet, WET_MAP, over the pool and
 // round it, which the drops soak, the more the wetter, and which dries a
-// little every WET_MAP.step, its thin edges first; the deck's shader
-// darkens the stone and the grass by it.
+// little every WET_MAP.step, its thin edges first (in the cold, damp air
+// under snow, `air.drying` as fast: src/rock.js setAir); the deck's shader
+// darkens the stone and the grass by it, and melts the snow lying there.
 import * as THREE from 'three';
 import { POOL_VERTEX, POOL_FRAGMENT, DECK_VERTEX, DECK_FRAGMENT } from './shaders/scene.js';
 import { squareRingsGeometry, OUTER_HALF_SIZE } from './waterSurface.js';
@@ -188,7 +189,7 @@ function basinGeometry(pool, bottom, top, withFloor) {
  * the lighting's objects, the solver's grid sizes and the sky's cube, so
  * they follow a change of sky, water or quality.
  */
-export function createPool(water, lighting, ambientWaves, environment, { rings = null, haze = null, wet = { value: 0 }, ice = null } = {}) {
+export function createPool(water, lighting, ambientWaves, environment, { rings = null, haze = null, wet = { value: 0 }, snow = { value: 0 }, air = { drying: 1 }, ice = null } = {}) {
   const pool = water.poolSquare;
   // Where the splash's drops came down on the deck (wetSpot): a map over the pool and WET_MAP.reach round it.
   const wetSpan = pool.size + 2 * WET_MAP.reach;
@@ -234,6 +235,7 @@ export function createPool(water, lighting, ambientWaves, environment, { rings =
       uSkyCube: { value: environment.cubeTexture },
       uPool: poolUniform,
       uWet: wet,
+      uSnow: snow,
       uWetMap: { value: wetMap },
       uWetArea: wetArea,
       ...(haze ?? { uHazeColor: { value: new THREE.Vector3() }, uHazeDensity: { value: 0 } }),
@@ -287,7 +289,7 @@ export function createPool(water, lighting, ambientWaves, environment, { rings =
       wetDue += time - wetClock;
       wetClock = time;
       if (wetDue < WET_MAP.step || !wetAny) { if (!wetAny) wetDue = 0; return; }
-      const drying = wetDue / WET_MAP.dry;
+      const drying = air.drying * wetDue / WET_MAP.dry;
       wetDue = 0;
       wetAny = false;
       for (let cell = 0; cell < wetness.length; cell++) {

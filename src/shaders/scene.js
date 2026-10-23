@@ -2186,6 +2186,26 @@ void main() {
 }
 `;
 
+// Snow lying on the ground (uSnow, the weather's cover, 0 to 1: src/main.js
+// WEATHERS, src/snow.js), for the beach's and the deck's shaders. Thin, it
+// lies in patches, the ground showing between them; whole, it covers all.
+// The patches are value noise, a few metres and a metre across: they mean
+// nothing but that a first snow lies unevenly. Fresh snow is white, a little
+// blue (its ice takes some red), shaded a little by its drifts (snowShade),
+// and lit as the ground under it is.
+export const SNOW_COVER = /* glsl */`
+uniform float uSnow;
+#define SNOW_ALBEDO vec3(0.86, 0.89, 0.93)
+float snowCover(vec2 point) {
+  if (uSnow <= 0.0) return 0.0;
+  float patches = 0.6 * valueNoise(point * 0.7) + 0.4 * valueNoise(point * 2.9 + 3.0);
+  return smoothstep(patches - 0.12, patches + 0.12, 1.25 * uSnow - 0.1);
+}
+vec3 snowShade(vec2 point) {
+  return SNOW_ALBEDO * (0.88 + 0.08 * valueNoise(point * 1.9 + 7.0) + 0.04 * valueNoise(point * 11.0));
+}
+`;
+
 // The land: the beach's sand (FLOOR_SAND, as the bed's) in the sun and the
 // sky's light (as the bed's, without the water, DRY_SAND of it), darker where
 // it is wet, up to WET_HEIGHT above the water; from GRASS_FROM to GRASS_TO
@@ -2194,10 +2214,15 @@ void main() {
 // little above the horizon, at LAND_LEVEL of its mip chain and averaged
 // either side, so the photo's detail does not streak toward the eye; under
 // the horizon a photo shows whatever stood at the photographer's feet, often
-// water), mottled and shaded by the bank's slope against level ground. From LAND_NEAR to
+// water), mottled and shaded by the bank's slope against level ground, and
+// never brighter than ground of GRASS_ALBEDO_MOST (where the photo shows sky
+// at the horizon, under cloud a white one). From LAND_NEAR to
 // LAND_FAR away all of it becomes that colour, so the land runs into the
 // photo's own. Seen in the mirror the directions are the mirror camera's,
-// so its reflection does too.
+// so its reflection does too. Under snow (SNOW_COVER) the sand and the grass
+// lie under it, but for the wet sand by the water, where it melts (up to
+// SNOW_MELT_HEIGHT), and the far land takes SNOW_FAR of it: the photo's
+// trees and far water stand out of any snow.
 export const LAND_FRAGMENT = /* glsl */`
 uniform vec3 uSunDir;
 uniform vec3 uSunIrradiance;
@@ -2209,12 +2234,17 @@ ${GLSL_COMMON}
 ${FLOOR_PATTERN_TILE}
 ${FLOOR_SAND}
 ${PHOTO_LAND}
+${SNOW_COVER}
 #define SKY_LIGHT 1.4        // the sky's light on the sand, as the bed's
 #define DRY_SAND vec3(0.68, 0.6, 0.5)   // the beach's dry sand, against the bed's: darker and warmer, as the photos' banks are
 #define WET_HEIGHT 0.12      // metres above the water the sand is wet to...
 #define WET_SHADE 0.6        // ...and as dark as this at the water
 #define GRASS_FROM 2.5       // metres inland: the sand turns to grass from here...
 #define GRASS_TO 4.5         // ...to here
+#define SNOW_MELT_HEIGHT 0.04  // metres above the water the snow melts on the wet sand to (half a metre up the beach)
+#define SNOW_FAR 0.5         // the far land's share under the snow
+#define GRASS_ALBEDO_MOST 0.3  // the brightest the bank's grass is drawn, as an albedo (fresh grass about 0.25)
+#define LUMINANCE vec3(0.2126, 0.7152, 0.0722)
 void main() {
   vec3 normal = normalize(vNormal);
   vec3 sand = floorSand(vWorld.xz) * PATTERN_RANGE * DRY_SAND * mix(WET_SHADE, 1.0, smoothstep(0.0, WET_HEIGHT, vWorld.y));
@@ -2226,9 +2256,18 @@ void main() {
     vec3 land = photoLand(toLand.xz);
     float level = max(uSunDir.y, 0.0) + SKY_LIGHT * 0.25;
     float slopeShade = (max(dot(normal, uSunDir), 0.0) + SKY_LIGHT * 0.25 * normal.y) / level;
-    vec3 grassColor = land * slopeShade * (1.0 + (0.6 * valueNoise(vWorld.xz * 2.3 + 5.0) - 0.3) * (1.0 - far));
-    color = mix(mix(color, grassColor, grass), land, far);
+    // Where the photo shows sky at the horizon, the grass would take the sky's light (a cloud's, white): no brighter
+    // than ground of GRASS_ALBEDO_MOST in the light on it.
+    float lightOn = dot(uSunIrradiance * max(uSunDir.y, 0.0) + uSkyAmbient * SKY_LIGHT, LUMINANCE);
+    float grassLevel = max(dot(land, LUMINANCE), 1e-6);
+    vec3 grassLand = land * min(1.0, GRASS_ALBEDO_MOST * lightOn / grassLevel);
+    vec3 grassColor = grassLand * slopeShade * (1.0 + (0.6 * valueNoise(vWorld.xz * 2.3 + 5.0) - 0.3) * (1.0 - far));
+    color = mix(color, grassColor, grass);
+    if (uSnow > 0.0) land = mix(land, SNOW_ALBEDO * (uSunIrradiance * max(uSunDir.y, 0.0) + uSkyAmbient * SKY_LIGHT), SNOW_FAR * uSnow);
+    color = mix(color, land, far);
   }
+  float snow = snowCover(vWorld.xz) * smoothstep(0.5 * SNOW_MELT_HEIGHT, SNOW_MELT_HEIGHT, vWorld.y) * (1.0 - far);
+  if (snow > 0.0) color = mix(color, snowShade(vWorld.xz) * (uSunIrradiance * max(dot(normal, uSunDir), 0.0) + uSkyAmbient * SKY_LIGHT), snow);
   gl_FragColor = vec4(color, 1.0);
 }
 `;
@@ -2645,7 +2684,9 @@ void main() {
 // at the horizon that way (PHOTO_LAND, as the beach's does), so the ground
 // runs into the photo's own. (Near by, that colour is the photo's far,
 // hazy shore, often its water: the beach's bank takes it, a lawn may not.)
-// Lit by the sun and the sky, as the beach is.
+// Lit by the sun and the sky, as the beach is. Under snow (SNOW_COVER) the
+// deck and the lawn lie under it but where the splash's drops came down,
+// which melt it: there the paving shows, wet.
 export const DECK_VERTEX = /* glsl */`
 varying vec3 vWorld;
 void main() {
@@ -2669,6 +2710,7 @@ ${GLSL_COMMON}
 ${PHOTO_LAND}
 ${MIRROR_NEARNESS_OUTPUT}
 ${HAZE}
+${SNOW_COVER}
 #define WET_STONE 0.62      // wet stone's albedo against dry (water in its pores)
 #define WET_GRASS 0.85
 #define SKY_LIGHT 1.4
@@ -2707,7 +2749,10 @@ void main() {
   vec3 albedo = (outside < COPING_WIDTH ? coping : paver) * mix(1.0, WET_STONE, wet);
   float lawn = smoothstep(COPING_WIDTH + DECK_WIDTH, COPING_WIDTH + DECK_WIDTH + 0.08, outside);
   vec3 grass = GRASS_COLOR * (1.0 + 0.6 * valueNoise(point * 2.3 + 5.0) - 0.3) * (0.8 + 0.4 * valueNoise(point * 13.0)) * mix(1.0, WET_GRASS, wet);
-  vec3 color = mix(albedo, grass, lawn) * (uSunIrradiance * max(uSunDir.y, 0.0) + uSkyAmbient * SKY_LIGHT);
+  vec3 ground = mix(albedo, grass, lawn);
+  float snow = snowCover(point) * (1.0 - splashed);
+  if (snow > 0.0) ground = mix(ground, snowShade(point), snow);
+  vec3 color = ground * (uSunIrradiance * max(uSunDir.y, 0.0) + uSkyAmbient * SKY_LIGHT);
   vec3 toGround = vWorld - cameraPosition;
   float far = smoothstep(LAND_NEAR, LAND_FAR, length(toGround));
   if (far > 0.0) color = mix(color, photoLand(toGround.xz), far);

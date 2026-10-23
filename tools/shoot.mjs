@@ -27,8 +27,9 @@
 // src/sky.js, or pool, the rocks in the pool under Lakeside's sky, src/
 // pool.js) and --time=hour its sky's hour (its anchor otherwise, never the
 // time of day last chosen: the harness's browser keeps no storage),
-// --weather=clear|light-rain|heavy-rain the weather (WEATHERS in src/main.js;
-// the rain waits for its ring's table before the first frame),
+// --weather=clear|light-rain|heavy-rain|storm|light-snow|heavy-snow|blizzard
+// the weather (WEATHERS in src/main.js; the rain waits for its ring's table
+// before the first frame),
 // --water=clear|lake|pond|murky|frozen the water (WATER_CHOICES in src/
 // main.js; the old --water=pool is --sky=pool), and --ice=thin|thick freezes
 // it, that thick (ICE_THICKNESS in src/ice.js; frozen thin otherwise).
@@ -154,13 +155,13 @@ const url = `http://localhost:${port}/index.html?quality=${quality}&paused=1${ke
 console.log(`[shoot] ${url} -> ${outDir}`);
 await page.goto(url, { waitUntil: 'domcontentloaded' });
 try {
-  await page.waitForFunction(() => !!window.__pond, { timeout: 60000 });
+  await page.waitForFunction(() => !!window.__pond, null, { timeout: 60000 });   // (the function's argument, then the options)
 } catch {
   console.error('[shoot] the pond never became ready');
   console.error(problems.join('\n'));
   await browser.close(); server.close(); process.exit(1);
 }
-if (weather && weather !== 'clear') await page.waitForFunction(() => window.__pond.raining, null, { timeout: 60000 });
+if (weather && weather !== 'clear') await page.waitForFunction(() => window.__pond.raining || window.__pond.snowing, null, { timeout: 60000 });
 // The loading veil fades out over a moment once the pond is ready; a frame taken meanwhile would catch it.
 await page.evaluate(() => document.getElementById('veil')?.remove());
 await page.evaluate(() => window.__pond.pause());
