@@ -185,7 +185,9 @@ up to 20 things may be on the move at once, on every preset. Past a count
 the oldest of that kind shrinks away over 0.6 s, never vanishing at once.
 The canvas never holds more than 2.6 million pixels.
 Core stone/splash programs are compiled while the page loads, under its
-veil: a stone is thrown and drawn there, then cleared away. Rain and gale
+veil: a stone is thrown and drawn there, then cleared away (with the water
+Frozen, into open water first, then a second through a sheet made thin for
+it, so the first break builds nothing, then the ice as chosen). Rain and gale
 programs are warmed only when selected at startup; otherwise
 they compile on first use, which can briefly pause that first interaction.
 No background warm-up modifies the live scene. The final scene, including
@@ -196,7 +198,11 @@ creates `_site/vendor/three`). Dependency failures offer Retry. Modules have a
 30-second deadline; sky and rain transfers time out only after 30 seconds
 without progress, so slow downloads can finish. Sky calibration and the panorama
 load together, and a failed replacement leaves the current sky visible.
-Module preloads begin dependency downloads as the page is parsed. A remembered
+The published page preloads every module it imports (the site build lists the
+whole import graph), so they download at once as the page is parsed, and it asks
+for the first sky's photo from its head, before any module has run: the sky
+shown last on the device, or on a first visit the default place's. The pond is
+built and its programs compiled while the photo downloads. A remembered
 rain downloads alongside the sky; failure offers Retry and Continue without
 rain under the veil. Continuing selects and remembers Clear weather, renders
 that scene, then enables input. Later rain failures offer Retry beside the weather controls,
@@ -851,7 +857,16 @@ thing (`ice-shard` in `src/things.js`, hidden from the menus; its mesh
 built to its own outline, `src/thingMeshes.js`), so they come up and float
 flat at the sheet's own freeboard by the plate model a pizza floats by,
 bump each other rim to rim (`src/collide.js`), and are held in the hole by
-its edge's reach in each direction. As they go the water the splash threw
+its edge's reach in each direction. A shard is drawn as clear ice
+(`look.seenThrough`, `src/rock.js`): its outline broken along its sides
+(scaled back to its own area, so its mass stays ice's), its top showing
+what lies under it through its milk (the sheet's, for its thickness) and
+the sheet's own snow, frost, bubbles and crystal lines, its rim rounded and
+whiter. Under the water ice bends light all but as water does, so from
+above its submerged part is all but invisible: the under-water pass draws
+only its sides' inner faces, bright with the light turned back off them, a
+band along its far edges as wide as it is thick seen aslant, and, faintly,
+its top where a ripple has washed over it. As they go the water the splash threw
 aside comes back over the ice round the hole, out to about one and a half
 times its reach, leaning the way the stone went, and each drop that lands on
 the ice wets a spot; the film freezes over 75 seconds, leaving the ice
