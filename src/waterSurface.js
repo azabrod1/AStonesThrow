@@ -174,6 +174,7 @@ export function createWaterSurface(water, lighting, ambientWaves, { meshSegments
     uCell: water.gridUniforms.uCell,
     uExtinction: { value: lighting.extinction },
     uWaterColor: { value: lighting.waterColor },
+    uAbsorb: { value: lighting.absorb },
     uRoughness: { value: 0.07 },
     uDomainMin: { value: new THREE.Vector2(water.domainMin[0], water.domainMin[1]) },
     uDomainSize: { value: water.domainSize },

@@ -19,6 +19,11 @@
 //      shader's image no more than 1.6 times as much as it changes the
 //      supersampled one (shimmer would change it far more);
 //      also checks mean brightness within 10%, including the wet films;
+//      a breaking wave's churned boil scatters more than a drained raft and a
+//      splash's boil on fresh water less (one clear layer); the surface holds
+//      at most FOAM_BOIL_HOLD of a splash's boil, a faint one whole; the
+//      cloud under it is tinted by each Water setting's absorption; its churn
+//      keeps the cloud's mean light;
 //   3. prints the cell visits per foam pixel at each framing, the cost;
 //   4. runs the foam map's step (FOAM_FRAGMENT in src/shaders/spectral.js)
 //      with its arithmetic, on a corner of the Medium grid: a flow keeps the
@@ -163,7 +168,7 @@ function resolvedShade(cells) {
 }
 
 // foamLook in the shader: cover, opacity and shade. across = [dx/dpixelX, dz/dpixelX, dx/dpixelY, dz/dpixelY].
-function foamLook(worldX, worldZ, across, foam, resolveAll = false, boilFraction = 0) {
+function foamLook(worldX, worldZ, across, foam, resolveAll = false, boilFraction = 0, freshFraction = 0) {
   const footprint = Math.sqrt(Math.hypot(across[0], across[1]) * Math.hypot(across[2], across[3]));
   const fadeOf = (cell) => resolveAll ? 0 : smoothstep(defines.FOAM_FADE_START, defines.FOAM_FADE_END, footprint / cell);
   const fineFade = fadeOf(defines.FOAM_FINE_CELL), coarseFade = fadeOf(defines.FOAM_COARSE_CELL);
@@ -198,27 +203,29 @@ function foamLook(worldX, worldZ, across, foam, resolveAll = false, boilFraction
   const inRange = Math.abs(bubble) < defines.FOAM_BUBBLE_CLAMP - 1e-3 ? 1 : 0;
   gradientX += defines.FOAM_BUBBLE_WEIGHT * (1 - coarseFade) * inRange * bubbleGradient[0]; gradientY += defines.FOAM_BUBBLE_WEIGHT * (1 - coarseFade) * inRange * bubbleGradient[1];
   bubble = mix(bubble, defines.FOAM_UNION_MEDIAN, coarseFade);
+  // A fresh-water boil's lumps are FOAM_FRESH_LUMPS of a raft's.
+  const lumps = mix(1, defines.FOAM_FRESH_LUMPS, freshFraction);
   const clumpFade = resolveAll ? 0 : smoothstep(defines.FOAM_FADE_START, defines.FOAM_FADE_END, footprint * defines.FOAM_CLUMP_FREQUENCY);
   let clump = 0;
   if (clumpFade < 1) {
     const noise = valueNoiseWithGradient(worldX * defines.FOAM_CLUMP_FREQUENCY + 57.3, worldZ * defines.FOAM_CLUMP_FREQUENCY + 57.3);
     clump = (noise.value - 0.5) * (1 - clumpFade);
-    gradientX += defines.FOAM_CLUMP * defines.FOAM_CLUMP_FREQUENCY * (1 - clumpFade) * noise.gradientX;
-    gradientY += defines.FOAM_CLUMP * defines.FOAM_CLUMP_FREQUENCY * (1 - clumpFade) * noise.gradientY;
+    gradientX += lumps * defines.FOAM_CLUMP * defines.FOAM_CLUMP_FREQUENCY * (1 - clumpFade) * noise.gradientX;
+    gradientY += lumps * defines.FOAM_CLUMP * defines.FOAM_CLUMP_FREQUENCY * (1 - clumpFade) * noise.gradientY;
   }
   const raggedFade = resolveAll ? 0 : smoothstep(defines.FOAM_FADE_START, defines.FOAM_FADE_END, footprint * defines.FOAM_RAGGED_FREQUENCY);
   const ragged = raggedFade < 1 ? (valueNoise(worldX * defines.FOAM_RAGGED_FREQUENCY + 31.7, worldZ * defines.FOAM_RAGGED_FREQUENCY + 31.7) - 0.5) * (1 - raggedFade) : 0;
-  const density = defines.FOAM_LOG_SCALE * Math.log(foam / defines.FOAM_MID) + defines.FOAM_RAGGED * ragged + defines.FOAM_CLUMP * clump;
+  const density = defines.FOAM_LOG_SCALE * Math.log(foam / defines.FOAM_MID) + lumps * (defines.FOAM_RAGGED * ragged + defines.FOAM_CLUMP * clump);
   const value = defines.FOAM_LACE_WEIGHT * lace + defines.FOAM_BUBBLE_WEIGHT * bubble + density;
   const change = Math.abs(gradientX * across[0] + gradientY * across[1]) + Math.abs(gradientX * across[2] + gradientY * across[3]);
   const spreadOfFaded = defines.FOAM_LACE_WEIGHT * defines.FOAM_LACE_SPREAD * laceFade + defines.FOAM_BUBBLE_WEIGHT * (defines.FOAM_FINE_SPREAD * fineFade * (1 - coarseFade) + defines.FOAM_UNION_SPREAD * coarseFade)
-    + defines.FOAM_CLUMP * defines.FOAM_CLUMP_SPREAD * clumpFade + defines.FOAM_RAGGED * defines.FOAM_CLUMP_SPREAD * raggedFade;
+    + lumps * (defines.FOAM_CLUMP * defines.FOAM_CLUMP_SPREAD * clumpFade + defines.FOAM_RAGGED * defines.FOAM_CLUMP_SPREAD * raggedFade);
   const width = 0.5 * change + defines.FOAM_FADED_EDGE * spreadOfFaded + 1e-3;
   const winner = coarseWins ? coarse : fine, winnerFade = coarseWins ? coarseFade : fineFade;
   const shade = winner ? mix(resolvedShade(winner), defines.FOAM_FADED_SHADE, winnerFade) : defines.FOAM_FADED_SHADE;
-  const wetness = (1 - smoothstep(0.25, defines.FOAM_FILM_PACKED, foam)) * mix(1, 0.75, boilFraction);
+  const wetness = mix((1 - smoothstep(0.25, defines.FOAM_FILM_PACKED, foam)) * mix(1, 0.75, boilFraction), 1, freshFraction);
   const film = coarse ? mix(filmOpacity(coarse, footprint, defines.FOAM_COARSE_CELL), defines.FOAM_FILM_MEAN, coarseFade) : defines.FOAM_FILM_MEAN;
-  return { cover: smoothstep(-width, width, value), opacity: mix(defines.FOAM_THIN_OPACITY, 1, smoothstep(0, defines.FOAM_OPAQUE, value)) * mix(1, film, wetness), shade };
+  return { cover: smoothstep(-width, width, value), opacity: mix(defines.FOAM_THIN_OPACITY, 1, smoothstep(0, defines.FOAM_OPAQUE, value)) * mix(1, film, wetness) * mix(1, defines.FOAM_FRESH_OPACITY, freshFraction), shade };
 }
 
 const failures = [];
@@ -254,24 +261,66 @@ check(Math.abs(mean(samples.film) - defines.FOAM_FILM_MEAN) < 0.02, `mean film o
 // A bubble's material may drain, but must not turn a thick, multilayer boil
 // into transparent holes; and a boil, drawn from the bubble layers with its
 // lace held at the lace's median, must cover about what a raft of the same
-// map value does (the structure changes, the footprint hardly).
-let materialIsBounded = true, denseKeepsFill = true, raftCover = 0, boilCover = 0, raftOpacity = 0, boilOpacity = 0;
+// map value does (the structure changes, the footprint hardly). The two
+// boils go opposite ways against a raft. A breaking wave's (the gale's
+// whitecaps) is churned froth, many small bubbles packed layers deep, which
+// scatters more than a drained raft's single layer of films. A splash's boil
+// on fresh water is no froth at all: with no salt to hold them apart its
+// bubbles never pack, surfacing one layer deep with clear films and bursting
+// (freshFraction 1), so it scatters less than either.
+let materialIsBounded = true, denseKeepsFill = true, raftCover = 0, boilCover = 0, raftOpacity = 0, boilOpacity = 0, freshCover = 0, freshOpacity = 0;
 for (let index = 0; index < 1000; index++) {
   const worldX = seededRandom() * 2, worldZ = seededRandom() * 2;
   const across = [0.0001, 0, 0, 0.0001];
   const raftLook = foamLook(worldX, worldZ, across, 0.2, true, 0);
   const boilLook = foamLook(worldX, worldZ, across, 0.2, true, 1);
+  const freshLook = foamLook(worldX, worldZ, across, 0.2, true, 1, 1);
   const denseLook = foamLook(worldX, worldZ, across, 1, true, 1);
-  materialIsBounded &&= [raftLook, boilLook, denseLook].every((look) => Number.isFinite(look.opacity) && look.opacity >= 0 && look.opacity <= 1);
+  materialIsBounded &&= [raftLook, boilLook, freshLook, denseLook].every((look) => Number.isFinite(look.opacity) && look.opacity >= 0 && look.opacity <= 1);
   denseKeepsFill &&= denseLook.opacity >= defines.FOAM_THIN_OPACITY;
   raftCover += raftLook.cover / 1000;
   boilCover += boilLook.cover / 1000;
+  freshCover += freshLook.cover / 1000;
   raftOpacity += raftLook.opacity * raftLook.cover / 1000;   // the foam's opacity where there is foam
   boilOpacity += boilLook.opacity * boilLook.cover / 1000;
+  freshOpacity += freshLook.opacity * freshLook.cover / 1000;
 }
 check(materialIsBounded, 'wet-film opacity stays finite and in [0, 1]');
-check(boilOpacity / boilCover >= raftOpacity / raftCover && denseKeepsFill, `fresh froth scatters more than a drained raft (opacity ${(boilOpacity / boilCover).toFixed(3)} against ${(raftOpacity / raftCover).toFixed(3)}); thick foam keeps its opaque fill`);
-check(Math.abs(raftCover - boilCover) < 0.06, `a boil's bubbles cover about what a raft's lace does at the same map value (raft ${raftCover.toFixed(3)}, boil ${boilCover.toFixed(3)})`);
+check(boilOpacity / boilCover >= raftOpacity / raftCover && denseKeepsFill, `a breaking wave's churned froth scatters more than a drained raft (opacity ${(boilOpacity / boilCover).toFixed(3)} against ${(raftOpacity / raftCover).toFixed(3)}); thick foam keeps its opaque fill`);
+check(freshOpacity / freshCover < 0.75 * raftOpacity / raftCover, `a fresh-water boil's single layer of clear bubbles scatters less than either (opacity ${(freshOpacity / freshCover).toFixed(3)}, under three quarters of the raft's)`);
+check(Math.abs(raftCover - boilCover) < 0.06, `a boil's bubbles cover about what a raft's lace does at the same map value (raft ${raftCover.toFixed(3)}, boil ${boilCover.toFixed(3)}; fresh water's, lumped less, ${freshCover.toFixed(3)})`);
+
+// A splash's boil divided (freshBoilSurface, freshBoilCloud in the shader):
+// the surface holds at most FOAM_BOIL_HOLD of it, and a faint boil, a
+// pebble's fizz, all of it; the rest is the cloud under the surface. The
+// deep cloud's colour, per Water setting (WATER_CLARITIES in src/main.js),
+// is the Kubelka–Munk R∞ of the water's absorption against the cloud's
+// scattering: pale, never brighter than white, and losing most where the
+// water absorbs most (the red; a green pond's blue too). The churn's
+// stretched noise must keep the cloud's mean light (its median about 0.5)
+// while varying it enough to show as lumps.
+{
+  const surfaceShare = (boil) => boil * (1 + (boil / defines.FOAM_BOIL_HOLD) ** 4) ** -0.25;
+  const held = Math.max(...[0.5, 1, 2, 5, 20].map((times) => surfaceShare(times * defines.FOAM_BOIL_HOLD)));
+  check(held <= defines.FOAM_BOIL_HOLD, `the surface holds at most ${held.toFixed(4)} of a boil (FOAM_BOIL_HOLD ${defines.FOAM_BOIL_HOLD})`);
+  const faint = surfaceShare(0.5 * defines.FOAM_BOIL_HOLD) / (0.5 * defines.FOAM_BOIL_HOLD);
+  check(faint > 0.98, `a boil of half that is ${(100 * faint).toFixed(1)}% surface: a faint fizz has no cloud to speak of`);
+  const mainSource = readFileSync(path.join(root, 'src/main.js'), 'utf8');
+  const clarities = [...mainSource.matchAll(/^ {2}(\w+): \{ absorb: \[([^\]]+)\]/gm)].map((match) => ({ name: match[1], absorb: match[2].split(',').map(Number) }));
+  check(clarities.length >= 4, `read ${clarities.length} water clarities from src/main.js`);
+  for (const { name, absorb } of clarities) {
+    const deep = absorb.map((perMetre) => { const ratio = perMetre / defines.FOAM_CLOUD_SCATTER; return 1 + ratio - Math.sqrt(ratio * ratio + 2 * ratio); });
+    const reddest = absorb.indexOf(Math.max(...absorb));
+    check(deep.every((share) => share > 0.4 && share < 1) && deep[reddest] === Math.min(...deep), `${name}: a deep cloud sends back ${deep.map((share) => share.toFixed(2)).join(', ')} (r, g, b), least where the water absorbs most`);
+  }
+  const churn = [];
+  for (let index = 0; index < 20000; index++) {
+    const worldX = seededRandom() * 4, worldZ = seededRandom() * 4, frequency = defines.FOAM_CHURN_FREQUENCY;
+    churn.push(smoothstep(0.3, 0.7, 0.65 * valueNoise(worldX * frequency + 71.3, worldZ * frequency + 71.3) + 0.35 * valueNoise(worldX * 2.7 * frequency + 13.1, worldZ * 2.7 * frequency + 13.1)));
+  }
+  const median = quantile(churn, 0.5), range = quantile(churn, 0.9) - quantile(churn, 0.1);
+  check(Math.abs(median - 0.5) < 0.05 && range > 0.6, `the cloud's churn: median ${median.toFixed(3)}, 10–90% range ${range.toFixed(2)} (the light varies by ±${(100 * defines.FOAM_CHURN * range / 2).toFixed(0)}% across it)`);
+}
 
 // 2. A raft seen from the home camera: σ 12 cm, a map value of 0.25 at its centre.
 const camera = [0, 1.15, 2.45], impact = [0, 0, -1.4];
