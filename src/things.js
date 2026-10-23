@@ -64,7 +64,10 @@
 //     registerMesh), that kind's own parameters, and the material's
 //     `roughness` and `reflection`; `wet`, how much `darker` and `glossier`
 //     it looks wet (out of the water it dries, src/rock.js showWet; a stone
-//     darkens most, a gem not at all); `thumbnail`, its card's picture.
+//     darkens most, a gem not at all); `thumbnail`, its card's picture;
+//     `seenThrough`, clear (a shard of ice): afloat, what lies under it shows
+//     through its top by its mesh's `clearShare`, and under the water it is
+//     not drawn from above (src/rock.js).
 //   - abilities: `skips` (Skip skips it: a stone, a pizza), `held` (a throw puts at
 //     most THROW_WORK into it, so a heavy thing leaves slower; a stone keeps
 //     its throw as it always was).
@@ -240,6 +243,7 @@ function definitionProblems(key, definition) {
   for (const field of ['roughness', 'reflection']) need(look[field] === undefined || within(look[field], [0, 4]), `look.${field} must be 0 to 4`);
   need(look.thumbnail === undefined || typeof look.thumbnail === 'string', 'look.thumbnail must be a path');
   need(look.wet === undefined || (isObject(look.wet) && within(look.wet.darker, [0, 1]) && within(look.wet.glossier, [0, 1])), 'look.wet needs darker and glossier, each 0 to 1');
+  need(look.seenThrough === undefined || typeof look.seenThrough === 'boolean', 'look.seenThrough must be true or false');
   // The mesh's own fields (src/thingMeshes.js registerMesh `check`).
   if (mesh?.check) problems.push(...mesh.check(look));
   return problems;
@@ -585,6 +589,6 @@ defineBuiltIn('ice-shard', {
   material: { bounce: [0.15, 0.3], friction: 0.1 },
   air: { drag: 1.1, model: 'flutter' },
   water: { restingHeight: 0.1 },
-  look: { mesh: 'shard', roughness: 0.12, reflection: 1.2, wet: { darker: 0, glossier: 0.3 } },
+  look: { mesh: 'shard', roughness: 0.06, reflection: 0.5, wet: { darker: 0, glossier: 0.3 }, seenThrough: true },
   abilities: { held: false },
 });

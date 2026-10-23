@@ -206,9 +206,12 @@
 // (framesHeld): through a profiling run (src/profiler.js), or the
 // calibration's measurement of the idle pond (CALIBRATION says why).
 //
-// Starting is asynchronous: the sky is a photographed panorama
-// (src/sky.js) that has to load before anything is built, because the sun's
-// elevation is the photo's. Before the pond reports ready, under the page's
+// Starting is asynchronous: the sky is a photographed panorama (src/sky.js),
+// about 5 MB, the longest wait. The page asks for it from its head, before
+// any module has run (index.html), and the pond is built and its programs
+// warmed up while it downloads (src/sky.js Starting): the sun and the sky's
+// light are the photo's, filled in place once it is shown (awaitSky, then
+// applySky). Before the pond reports ready, under the page's
 // loading veil, warmUp throws a stone (and a floater, drawn once in the
 // mirror image) and draws its flight and splash at a
 // few moments, so that every GPU program a throw needs (the stone's, the
@@ -281,7 +284,6 @@ import { createSound } from './sound.js';
 import { createFloaterRide } from './floaterRide.js';
 import { IceSheet, ICE_THICKNESS } from './ice.js';
 import { IceCracks } from './iceCracks.js';
-import { linear } from './thingMeshes.js';
 
 // Quality presets. The splash lives in a few dozen pixels, so the fluid
 // buffer's resolution is what it is made of: a drop narrower than a buffer
@@ -443,6 +445,9 @@ const WEATHER_STORAGE_KEY = 'stone-pond-weather';   // the Weather setting's
 const THING_STORAGE_KEY = 'stone-pond-thing';       // the Object setting's: what is thrown (src/things.js)
 const ICE_STORAGE_KEY = 'stone-pond-frozen';        // the Water setting's ice when it is Frozen: thin or thick (src/ice.js ICE_THICKNESS)
 const OLD_ICE_STORAGE_KEY = 'stone-pond-ice';       // the Ice setting's, before Frozen was a water: none, thin or thick (migrateStoredSettings)
+// Not a setting: the files of the sky last shown here (src/sky.js `assets`), which index.html fetches first next time.
+// Dropped as another place or hour is chosen, written again once it is shown (rememberSkyAssets).
+const SKY_ASSETS_STORAGE_KEY = 'stone-pond-sky-assets';
 // The Weather setting: the cloud's cover and the light under it, against a
 // clear sky's (src/sky.js setWeather: overcast takes the sun and greys the
 // sky), the rain's visibility (its haze), the rain (src/rain.js) and how wet
@@ -486,7 +491,6 @@ const WATER_CLARITIES = {
   murky: { absorb: [1.0, 0.45, 0.55], extinction: [3.0, 2.4, 2.7], color: [0.022, 0.082, 0.040] },
 };
 const DEFAULT_WATER = 'lake';
-const SHARD_POOL_CLEAR = linear(150, 190, 204);   // a shard's clear ice in the pool: its tiles seen through it (addShard)
 // The Water setting: one of the lake's clarities (WATER_CLARITIES but the
 // pool's, which is the Pool place's own water whatever is chosen), or Frozen:
 // ice, thin unless thick was chosen (ICE_THICKNESS; setIce), over the water
@@ -531,8 +535,13 @@ function migrateStoredSettings() {
 // seed 4 raises a clean jet 90 cm tall (tools/variety-probe.mjs --list), so
 // the column's three programs are built too, where an unseeded throw raised
 // none about one time in thirty (its jet form "none") and the first throw
-// with a jet then built them.
-const WARM_UP = { x: 0, z: -1.4, radius: 0.03, moments: [0.02, 0.16, 0.4], seed: 4, floaters: ['pumice', 'pizza'] };   // a floater of each program: pumice the stones', a pizza its textured one
+// with a jet then built them. With the water Frozen at the start (as rain
+// and the gale, the ice warms only if chosen at the start, else its first
+// break builds what it needs), that throw goes into open water, the ice
+// lifted for it, and a second breaks a sheet made thin for it, followed
+// iceSeconds past its impact, its shards let go by then; the ice as chosen
+// comes back after.
+const WARM_UP = { x: 0, z: -1.4, radius: 0.03, moments: [0.02, 0.16, 0.4], seed: 4, floaters: ['pumice', 'pizza', 'ice-shard'], iceSeconds: 0.6 };   // a floater of each program: pumice the stones', a pizza its textured one, a shard of ice its clear one (src/rock.js seenThrough)
 
 export async function startPond({ canvas, quality = 'auto', onReady, onProgress, onError, onRainError, onStats, onViewChange, onQualityChange, onProfile, onThrow }) {
   let readyForInput = false;
@@ -606,13 +615,29 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   };
   const [firstPlace, firstHour] = placeAndHour(pageParameters.get('sky') ?? (pageParameters.get('water') === 'pool' ? 'pool' : null) ?? storedChoice(SKY_STORAGE_KEY), pageParameters.get('time'));
   let placeName = firstPlace;
+  // The sky (src/sky.js Starting): its maps now, its photo on its way while
+  // the pond is built and its programs warmed up (warmUp), awaited after them
+  // (awaitSky); a failure is reported then, or before the warm-up if it came
+  // first.
+  const skyFailure = 'The sky could not be loaded. Check the connection and reload the page.';
   let environment;
   try {
-    onProgress?.('Loading the sky…');
-    environment = await createEnvironment(renderer, { name: PLACES[firstPlace].sky, hour: firstHour, sunAzimuth: SUN_AZIMUTH, sunBalance: new THREE.Vector3(...SUN_BALANCE), lighting });
+    environment = createEnvironment(renderer, { name: PLACES[firstPlace].sky, hour: firstHour, sunAzimuth: SUN_AZIMUTH, sunBalance: new THREE.Vector3(...SUN_BALANCE), lighting });
   } catch (error) {
-    onError?.('The sky could not be loaded. Check the connection and reload the page.');
+    onError?.(skyFailure);
     throw error;
+  }
+  let skyOutcome = null;   // once the first sky has settled: {} shown, or { error }
+  const skyArrival = environment.firstLoad.then(() => { skyOutcome = {}; }, (error) => { skyOutcome = { error }; });
+  async function awaitSky() {
+    if (!skyOutcome) {
+      onProgress?.('Loading the sky…');
+      await skyArrival;
+    }
+    if (skyOutcome.error) {
+      onError?.(skyFailure);
+      throw skyOutcome.error;
+    }
   }
   const sunDirection = lighting.sunDirection;
 
@@ -1036,7 +1061,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   // The sky (setSky): a load replaces the dome and the environment maps and
   // fills lighting's sun and sky in place (src/sky.js); then what holds the
   // sun by value follows, and the mirror image is drawn again.
-  let skyRequest = { place: environment.name, hour: environment.hour };   // the sky last asked for
+  let skyRequest = { place: PLACES[firstPlace].sky, hour: resolveHour(PLACES[firstPlace].sky, firstHour) };   // the sky last asked for
   let skyController;
   let placeRequest = null;   // shared by location and hour choices, including the Pool
   /**
@@ -1050,9 +1075,15 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     skyController?.abort();
     const controller = new AbortController();
     skyController = controller;
-    if (environment.name === request.place && environment.hour === request.hour) return Promise.resolve(environment.name);
+    if (environment.name === request.place && environment.hour === request.hour) {
+      rememberSkyAssets();
+      return Promise.resolve(environment.name);
+    }
+    forgetSkyAssets();   // remembered again once this one is shown
     return environment.load(request.place, request.hour, { signal: controller.signal }).then(() => {
-      if (!controller.signal.aborted) applySky();
+      if (controller.signal.aborted) return;
+      applySky();
+      rememberSkyAssets();
     }).catch((error) => {
       if (!controller.signal.aborted) console.error(error);
     }).then(() => environment.name);
@@ -1080,6 +1111,13 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       }
       return placeName;
     });
+  }
+  /** What the sky shown fetched, for index.html to ask for first next time (SKY_ASSETS_STORAGE_KEY); forgetSkyAssets as another is chosen. */
+  function rememberSkyAssets() {
+    try { window.localStorage.setItem(SKY_ASSETS_STORAGE_KEY, JSON.stringify(environment.assets)); } catch { /* storage refused: nothing fetched early */ }
+  }
+  function forgetSkyAssets() {
+    try { window.localStorage.removeItem(SKY_ASSETS_STORAGE_KEY); } catch { /* storage refused */ }
   }
   /**
    * The weather by name (WEATHERS): the sky's cloud and haze at once, the
@@ -1542,9 +1580,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
    */
   function addShard(piece) {
     const { position, velocity, quaternion } = piece.start;
-    // Its clear ice the colour of the water seen through it (src/thingMeshes.js): in the pool its tiles' aqua.
-    const shape = pooled ? { ...piece.shape, clear: SHARD_POOL_CLEAR } : piece.shape;
-    const rock = new Rock({ radius: piece.radius, position, velocity, envTexture: environment.envTexture, waterFog: { extinction: lighting.extinction, color: lighting.waterColor }, thing: 'ice-shard', mass: piece.mass, mirrorLayer: MIRROR_LAYER, water: surface.rideUniforms, piece: shape });
+    const rock = new Rock({ radius: piece.radius, position, velocity, envTexture: environment.envTexture, waterFog: { extinction: lighting.extinction, color: lighting.waterColor }, thing: 'ice-shard', mass: piece.mass, mirrorLayer: MIRROR_LAYER, water: surface.rideUniforms, piece: piece.shape });
     rock.adrift(position, velocity, quaternion);
     rock.iceHole = piece.hole;
     rock.ground = ice.ground;
@@ -2272,9 +2308,20 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   // made the same way, finds their program.
   const warmUpReport = { programs: 0, milliseconds: 0 };
   const programKeepers = [];
+  /** The ice for the warm-up alone (warmUp): its sheet as `name` has it, the gale left as it is (applyIce restores both). */
+  function iceForWarmUp(name) {
+    ice.setThickness(ICE_THICKNESS[name]);
+    ice.setPool(pooled ? pool.square : null, pooled ? poolGround(pool.square) : null);
+    water.iced = ice.on;
+    splash.setIce(ice);
+  }
   function warmUp() {
     const started = performance.now();
     const programsBefore = renderer.info.programs?.length ?? 0;
+    // Frozen at the start (WARM_UP): the throws below go into open water first, so the crown's programs are built too;
+    // the ice comes back after its own break.
+    const chosenIce = iceName;
+    if (chosenIce !== 'none') iceForWarmUp('none');
     const random = Math.random;
     let state = WARM_UP.seed;
     Math.random = () => { state = (state * 16807) % 2147483647; return (state - 1) / 2147483646; };
@@ -2325,16 +2372,36 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
         showScenery(pooled);
       }
     }
-    Math.random = random;
     programKeepers.push(stone.meshAbove.material, stone.meshBelow.material);
     retireRock(stone, { keepMaterials: true });
     clearPond();
+    // The ice's break, when the water is Frozen at the start (WARM_UP): through a sheet made thin for it, so it breaks
+    // whatever ice was chosen (on thick ice the stone above would skid), its hole, cracks, flood and shards let go and
+    // drawn above, below and in the mirror; so the first break a person makes builds nothing on the device (a GPU builds
+    // a pipeline the first time a program draws in a state). Then the ice as chosen, whole.
+    if (chosenIce !== 'none') {
+      iceForWarmUp('thin');
+      const breaker = throwAt(WARM_UP.x, WARM_UP.z, { radius: WARM_UP.radius, power: 'normal', thing: DEFAULT_THING });
+      for (let step = 0; step < 180 && breaker.state === 'air'; step++) simulate(1 / 60);
+      for (let step = 0; step < 60 * WARM_UP.iceSeconds; step++) simulate(1 / 60);
+      for (const rock of rocks) if (rock.meshMirror) rock.meshMirror.visible = true;
+      viewChanged = true;
+      render();
+      renderFrom(VIEWS.under);
+      clearPond();
+      applyIce(chosenIce);
+    }
+    Math.random = random;
     warmUpReport.programs = (renderer.info.programs?.length ?? 0) - programsBefore;
     warmUpReport.milliseconds = performance.now() - started;
   }
+  if (skyOutcome?.error) await awaitSky();   // a sky failed already: no warm-up for nothing
   onProgress?.('Preparing the water…');
   await new Promise((resolve) => setTimeout(resolve, 0));
   warmUp();
+  await awaitSky();
+  applySky();
+  rememberSkyAssets();
   onProgress?.('Finishing the scene…');
   try {
     await applyWeather(weatherName);   // a remembered rain falls before the veil lifts

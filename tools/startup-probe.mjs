@@ -10,9 +10,12 @@ import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../_site');
 const prefix = '/AStonesThrow/';
+const served = new Map();   // requests by path, all pages together
+const servedCount = (asset) => served.get(`${prefix}${asset}`) ?? 0;
 const server = createServer(async (request, response) => {
   try {
     const pathname = new URL(request.url, 'http://localhost').pathname;
+    served.set(pathname, (served.get(pathname) ?? 0) + 1);
     if (!pathname.startsWith(prefix)) throw new Error('outside site');
     const relative = pathname.slice(prefix.length) || 'index.html';
     const body = await readFile(path.join(root, relative));
@@ -56,6 +59,12 @@ try {
   await ready(page);
   assert.equal(await page.title(), 'A Stone’s Throw');
   assert.equal(await page.evaluate(() => performance.getEntriesByType('resource').some((entry) => entry.name.includes('/assets/rain/'))), false);
+  // The first sky is asked for from the page's head (index.html), before any module has run, and its load takes the
+  // requests over (src/loadAsset.js): on a first visit the default place's files, each fetched once.
+  const firstVisitSky = ['assets/sky/lakeside_2k.hdr', 'assets/sky/lakeside.json', 'assets/sky/meadow_2.json'];
+  assert.deepEqual(firstVisitSky.map(servedCount), [1, 1, 1], 'each of the first sky\'s files fetched once');
+  assert.deepEqual(await page.evaluate(() => ({ early: window.__earlyAssets?.size, remembered: JSON.parse(localStorage.getItem('stone-pond-sky-assets')).map((href) => new URL(href).pathname) })),
+    { early: 0, remembered: firstVisitSky.map((asset) => `${prefix}${asset}`) }, 'the head\'s first-visit files are the ones the default sky loads');
   const first = await page.evaluate(() => {
     const pond = window.__pond;
     const target = pond.renderer.getRenderTarget();
@@ -123,6 +132,16 @@ try {
   assert.equal(await page.locator('#time-presets [aria-pressed="true"]').getAttribute('data-hour'), 'afternoon');
   assert.deepEqual(errors, []);
   console.log('PASS: same-origin startup, first throw, delayed weather cancellation, latest sky bypasses a stalled download and returning to the shown hour cancels a pending one');
+  // The next visit asks first for the sky shown last (src/main.js SKY_ASSETS_STORAGE_KEY), here the Rocky cove's, once.
+  await page.evaluate(() => window.__pond.setSky('cove'));
+  const coveBefore = servedCount('assets/sky/secluded_beach_2k.hdr');
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await ready(page);
+  assert.equal(await page.evaluate(() => window.__pond.sky), 'cove');
+  assert.equal(servedCount('assets/sky/secluded_beach_2k.hdr') - coveBefore, 1);
+  assert.equal(await page.evaluate(() => window.__earlyAssets?.size), 0);
+  assert.deepEqual(errors, []);
+  console.log('PASS: the first sky is fetched from the page\'s head, the default on a first visit, the last one shown after');
   await page.context().close();
 
   const swiss = await pageFor({ width: 1280, height: 720 });
@@ -223,6 +242,26 @@ try {
   await ready(older);
   assert.deepEqual(await carried(), expected);
   console.log('PASS: the old Pool water and Ice settings open the Pool place, frozen thick, and stay so');
+  // Frozen at the start, the warm-up breaks the ice under the veil (src/main.js warmUp), so the first break a person
+  // makes (a big rock through thick ice: on thick ice the warm-up's stone would skid) builds no program, nor does a
+  // throw into open water after (the warm-up threw into open water first).
+  const firstBreak = await older.evaluate(() => {
+    const pond = window.__pond, programs = () => pond.renderer.info.programs.length;
+    const before = programs();
+    pond.setThing('granite');
+    pond.setSize(29.5);
+    pond.throwAt(0, -1.4, { power: 'normal' });
+    pond.advance(1.6);
+    const broken = { programs: programs(), holes: pond.iceSheet.holes.length };
+    pond.setThing('stone');
+    pond.setWater('lake');
+    pond.throwAt(0.3, -1.6, { radius: 0.03, power: 'normal' });
+    pond.advance(0.5);
+    return { before, broken, openWater: programs() };
+  });
+  assert.ok(firstBreak.broken.holes > 0, 'the big rock did not break the thick ice');
+  assert.deepEqual([firstBreak.broken.programs, firstBreak.openWater], [firstBreak.before, firstBreak.before], `programs built after the start: ${JSON.stringify(firstBreak)}`);
+  console.log(`PASS: started frozen thick, the first break and a throw into open water after build no program (${firstBreak.before})`);
   await older.context().close();
 
   const retriedRain = await pageFor();
