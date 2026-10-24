@@ -2130,6 +2130,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       // freezes; holes skin over.
       ice.setTime(stepsTime);
       for (const piece of ice.shards.splice(0).slice(0, settings.shards)) stepping.push(addShard(piece));
+      // What lies on the ice, and whether its weight breaks it (src/ice.js weigh: that thing goes in this step).
+      ice.weigh(stepping);
       for (const rock of stepping) {
         // A gale drifts a floater downwind (src/rock.js); the pool has no gale's waves.
         if (rock.floats) rock.setDrift(galeWaves.on && !pooled ? galeWaves.windDirection : null);

@@ -38,6 +38,13 @@
 //     its slide;
 //   - a break (the step, the fit, the cracks and the mask's painting) costs
 //     under BREAK_MS;
+//   - weakened and weight (src/ice.js weakness, weigh): golf balls lobbed
+//     again and again at one spot on thin ice (each blow cracking it) break
+//     it within REPEATS.cracks throws, though not at once; 100 ct diamonds
+//     (too light to crack it) never do in REPEATS.never, nor leave a weak
+//     spot, nor 6 cm stones on thick ice; a 30 cm rock set down at rest
+//     goes through thin ice but not thick, a 16 lb bowling ball rests on
+//     thin ice alone, two side by side break it, two 2 m apart do not;
 //   - shards (src/ice.js piecesOf, each made a thing as src/main.js makes
 //     it, src/rock.js adrift): a 6 cm stone through thin ice, a 16 cm one
 //     and a 30 cm rock through thick, each lets go SHARDS pieces the step
@@ -80,6 +87,7 @@ const MOMENTUM_KEPT = 0.05;  // of the striker's momentum
 const STEP_TOLERANCE = 0.15; // of a slide
 const BREAK_MS = 25;
 const SHARDS = [3, 12];      // pieces a break lets go (least, most)
+const REPEATS = { cracks: 8, never: 30 };   // throws again and again at one spot: one that cracks breaks it within `cracks`; one that does not, never in `never`
 const OUTLINE_TOLERANCE = 0.001;   // m: two shards' outlines overlap at rest by less than this, and lie inside their hole by it
 const SHARD_SECONDS = 15;    // s a break's shards are followed for
 const SKIN_MS = 15;          // a step of the ice's clock (a hole's shards let go and its flood, new ice) or a shard frozen in costs under this (it was 45 to 60 ms before it was spread over steps; here 2 to 8, as the runner allows)
@@ -528,6 +536,7 @@ function iceWorld({ diameter = 6, thickness = 'thin', seed = 1, x = 0, z = -1.4,
       let started = performance.now();
       ice.setTime(world.time);
       const pieces = ice.shards.splice(0);
+      ice.weigh(world.things);
       const spent = performance.now() - started;
       if (pieces.length > 0) world.costs.release = Math.max(world.costs.release, spent);
       else world.costs.clock = Math.max(world.costs.clock, spent);
@@ -583,6 +592,51 @@ const maskAt = (ice, x, z) => {
   return [...ice.maskData.slice(4 * texel, 4 * texel + 4)];
 };
 const GLAZE = 51;   // B once wet and dry (src/ice.js FLOOD.glaze, 0.2 of 255)
+
+console.log('\nWeakened and weight (src/ice.js weakness, weigh): the same throw again and again at one spot, and things set down on the ice');
+{
+  // Again and again at (0, -1.4): a throw that cracks thin ice there breaks it in a few; one that never cracks it, never.
+  const again = (name, { manner = 'toss', thickness = 'thin', value, times }) => {
+    const ice = new IceSheet(PATCH);
+    ice.setThickness(ICE_THICKNESS[thickness]);
+    for (let throwIndex = 1; throwIndex <= times; throwIndex++) {
+      const record = follow(throwOnto(ice, name, { manner, value, seed: throwIndex }), ice, { seconds: 12 });
+      if (record.broke) return { broke: throwIndex, weak: ice.weakSpots.length };
+    }
+    return { broke: null, weak: ice.weakSpots.length };
+  };
+  const golf = again('golf', { manner: 'lob', times: REPEATS.cracks });
+  const diamond = again('diamond', { value: 100, times: REPEATS.never });
+  const stone = again('stone', { thickness: 'thick', times: REPEATS.never });
+  console.log(`  golf balls lobbed at thin ice: ${golf.broke ? `through on throw ${golf.broke}, ${golf.weak} weak spot(s) before` : `held ${REPEATS.cracks} throws`}; 100 ct diamonds tossed: ${diamond.broke ? `through on throw ${diamond.broke}` : `held ${REPEATS.never}, ${diamond.weak} weak spots`}; 6 cm stones tossed at thick ice: ${stone.broke ? `through on throw ${stone.broke}` : `held ${REPEATS.never}, ${stone.weak} weak spots`}`);
+  check(golf.broke !== null && golf.broke > 1, `golf balls lobbed again and again at one spot on thin ice did not break it after cracking it (${golf.broke})`);
+  check(diamond.broke === null && diamond.weak === 0, `100 ct diamonds, too light to crack thin ice, broke or cracked it (${diamond.broke}, ${diamond.weak} weak spots)`);
+  check(stone.broke === null, `6 cm stones broke thick ice (throw ${stone.broke})`);
+
+  // Set down at rest: what the ice bears.
+  const setDown = (thickness, things) => {
+    const world = iceWorld({ thickness });
+    const rocks = things.map(({ name, value, x }) => {
+      const measured = measure(name, value);
+      const rock = new Rock({ radius: measured.radius, position: new THREE.Vector3(x, world.ice.top + measured.radius + 0.002, -1.4), velocity: new THREE.Vector3(0, -0.05, 0), envTexture: null, thing: name, mass: measured.mass });
+      return world.add(rock);
+    });
+    world.step(3);
+    return { through: rocks.filter((rock) => rock.iceHole).length, holes: world.ice.holes.length };
+  };
+  const cases = [
+    ['a 30 cm rock on thin ice', 'thin', [{ name: 'stone', value: 30, x: 0 }], true],
+    ['a 30 cm rock on thick ice', 'thick', [{ name: 'stone', value: 30, x: 0 }], false],
+    ['a 16 lb bowling ball on thin ice', 'thin', [{ name: 'bowling', value: 16, x: 0 }], false],
+    ['two 16 lb bowling balls side by side on thin ice', 'thin', [{ name: 'bowling', value: 16, x: -0.12 }, { name: 'bowling', value: 16, x: 0.12 }], true],
+    ['two 16 lb bowling balls 2 m apart on thin ice', 'thin', [{ name: 'bowling', value: 16, x: -1 }, { name: 'bowling', value: 16, x: 1 }], false],
+  ];
+  for (const [label, thickness, things, breaks] of cases) {
+    const { through, holes } = setDown(thickness, things);
+    console.log(`  ${label}: ${holes ? `gave way, ${through} through` : 'held'}`);
+    check((holes > 0) === breaks && (!breaks || through > 0), `${label}: ${holes ? 'gave way' : 'held'}, which it should not`);
+  }
+}
 
 console.log('\nShards: the pieces a break lets go, followed as things (src/rock.js adrift, src/collide.js, src/ice.js contain)');
 for (const [diameter, thickness, seed] of [[6, 'thin', 1], [16, 'thick', 2], [30, 'thick', 3]]) {

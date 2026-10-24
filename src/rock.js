@@ -1067,6 +1067,7 @@ export class Rock {
     this.iceHole = null;           // the hole in the ice it went into the water by (src/ice.js), which holds a floater in
     this.groundHeight = null;      // the ground's height under a thing tumbling or rolling along it (`ground`), once it has met it
     this.onGround = false;         // at rest on the ground (restOn)
+    this.fallsThrough = null;      // the ice gave way under it as it lay or went along it (src/ice.js weigh): it goes in, next step
     this.settling = null;          // settling onto the face it lies on, at rest on the ground (restOn, settleStep)
     this.fading = undefined;       // seconds into shrinking away, once src/main.js has begun it (fadeOut): frozen, it is no longer stepped
     this.drawn = { surface: 0, bedDepth: 1 };   // the water it was last drawn on (syncMeshes), for a knock's redraw
@@ -2727,7 +2728,13 @@ export class Rock {
     const groundBefore = this.state === 'air' && ground ? ground.at(this.position.x, this.position.z) : null;
     if (this.state === 'air') this.fly(dt);
     const groundNow = groundBefore !== null ? ground.at(this.position.x, this.position.z) : null;
-    if (groundNow !== null && this.position.y - this.ellipsoidDepth() <= groundNow) {
+    if (this.fallsThrough) {
+      // The ice gave way under its weight (src/ice.js weigh): it goes in through the hole, at the speed weigh gave it.
+      this.onGround = false;
+      this.settling = null;
+      impact = this.breakThrough(this.fallsThrough, dt);
+      this.fallsThrough = null;
+    } else if (groundNow !== null && this.position.y - this.ellipsoidDepth() <= groundNow) {
       // Ice may give way under it (the header: the ground's `meet`); else it lands on the ground.
       const met = ground.meet?.(this, groundNow) ?? null;
       if (met?.hole) impact = this.breakThrough(met, dt);

@@ -44,6 +44,28 @@
 // inside its walls, its edge brought in to HOLE.wall of them, so a blow in a
 // corner breaks the ice off the tiles).
 //
+// Weakened (weakSpots, weakness). Ice cracked through holds less: a star
+// cracks it radially, and round a hole it is radially cracked and has a free
+// edge, so the wedges between the cracks bear a load as beams fixed at one
+// end, not as a plate (radial cracking comes at a half to a third of the
+// load that breaks floating ice through). Each star and each hole leaves a
+// weak spot: there the ice holds ICE.cracked of what it held whole at the
+// spot's middle, back to whole at its reach (the star's arms' mean length;
+// the hole's edge and its radials'); spots over each other each take their
+// share, to ICE.weakest at the least. So hits the ice held but that cracked
+// it, again on the same spot, break it; light things that never crack it
+// (a small gem), however many, never do: whole ice bent short of cracking
+// is as strong after as before.
+//
+// Weight (weigh, loadAt). What lies on the ice, or goes along it, bears on
+// it: a floating plate spreads a load over about its characteristic length
+// l_c, so the weight bearing at a point is each thing's weight times
+// e^(−(d/l_c)²), d its distance. Where it is more than the ice holds there
+// (its mean, as weakened), the ice gives way under the heaviest thing there,
+// which goes in at ICE.falls (a 30 cm rock set down on thin ice; two heavy
+// bowling balls side by side). And a blow strikes ice already bearing that
+// weight about it: it holds the blow less the load there.
+//
 // A hole is as wide as the cavity's lip (src/cavity.js): opened at once as a
 // round hole's lip would be (roundLipReach), then, once the splash has made
 // its cavity, fitted to that cavity's own lip, lopsided and drawn forward as
@@ -154,6 +176,9 @@ export const ICE = {
   crackShare: 0.6,       // a blow it holds but over this share of what it holds stars it with cracks
   give: { shell: 0.15, soft: 0.3 },   // a hollow ball's blow (its touch lasts some ten times a stone's), and a soft thing's, against a rigid thing's of its mass and speed
   keepLeast: 0.4,        // the least share of its speed a thing keeps breaking through
+  cracked: 0.55,         // cracked ice (a star, round a hole) holds this share of what it held, at the middle of its cracks...
+  weakest: 0.25,         // ...cracked again and again, at least this share
+  falls: 0.3,            // m/s: a thing the ice gives way under, at rest or going along it, goes in at this
   scatter: 12,           // per metre: the light clear ice scatters back (a shard's milk; ICE_SCATTER in src/shaders/scene.js, its twin, draws the sheet's)
 };
 // The Ice setting's choices (src/main.js): the sheet's thickness, metres. Everything here takes metres.
@@ -362,6 +387,8 @@ export class IceSheet {
     this.crackCount = 0;         // cracks walked (their ids)
     this.crackSegments = [];     // every crack's segments, [ax, az, bx, bz, id, …], and a grid of them (CRACK.cell: crackMet)
     this.crackGrid = new Map();
+    this.weakSpots = [];         // where cracks have weakened it (a star, round a hole): { x, z, reach, share } (weakness)
+    this.onIce = [];             // what is on it, and its weight (weigh), each step
     this.events = [];            // breaks and cracks since src/main.js last took them (its sound)
     this.shards = [];            // pieces let go since src/main.js last took them (piecesOf; it makes each a thing)
     this.streams = new WeakMap();   // each thing's own stream of the ice's draws, seeded from its splash's seed
@@ -437,6 +464,7 @@ export class IceSheet {
     this.crackSegments.length = 0;
     this.crackGrid.clear();
     this.crackEpoch++;
+    this.weakSpots.length = 0;
     this.events.length = 0;
     this.shards.length = 0;
     this.holeField.fill(MASK.holeFar);
@@ -553,9 +581,74 @@ export class IceSheet {
     return (give * rock.mass * down * down) / (rock.plate ? rock.faceRadius : rock.collisionRadius);
   }
 
-  /** What ice `thickness` thick holds this time (N: the header), drawn from `random`. */
-  holds(random, thickness = this.thickness) {
-    return ICE.strength * thickness ** 2 * Math.exp(ICE.spread * gaussian(random));
+  /** What ice `thickness` thick holds this time (N: the header), drawn from `random`, at (x, z) if given (cracked there, less: weakness). */
+  holds(random, thickness = this.thickness, x = null, z = null) {
+    return ICE.strength * thickness ** 2 * Math.exp(ICE.spread * gaussian(random)) * (x === null ? 1 : this.weakness(x, z));
+  }
+
+  /**
+   * The share of what it would hold whole that the ice holds at (x, z) (the
+   * header: Weakened): each weak spot whose reach it is in takes it down
+   * toward ICE.cracked at its middle (back to whole at its reach), spots
+   * over each other each taking their share, to ICE.weakest at the least.
+   */
+  weakness(x, z) {
+    let share = 1;
+    for (const spot of this.weakSpots) {
+      const distance = Math.hypot(x - spot.x, z - spot.z);
+      if (distance < spot.reach) share *= 1 - (1 - spot.share) * (1 - distance / spot.reach);
+    }
+    return Math.max(share, ICE.weakest);
+  }
+
+  /**
+   * The weight bearing on the ice at (x, z) (N; the header: Weight): of each
+   * thing on it (weigh's `onIce`) but `except`, its weight times
+   * e^(−(d/l_c)²), d its distance and l_c the ice's characteristic length
+   * there: a floating plate spreads a load over about l_c.
+   */
+  loadAt(x, z, except = null, thickness = this.thicknessAt(x, z)) {
+    const length = iceLength(thickness);
+    let load = 0;
+    for (const { rock, weight } of this.onIce) {
+      if (rock === except) continue;
+      const share = Math.hypot(rock.position.x - x, rock.position.z - z) / length;
+      if (share < 3) load += weight * Math.exp(-share * share);
+    }
+    return load;
+  }
+
+  /**
+   * What is on the ice this step (src/main.js, before the things move; the
+   * header: Weight): each thing at rest on it or going along it, over the
+   * water and in no hole, and its weight; then, if the weight bearing
+   * somewhere is more than the ice holds there (its mean, cracked as it is),
+   * it gives way under the heaviest thing there, which goes in as through a
+   * broken hole at ICE.falls (src/rock.js `fallsThrough`). One break a step.
+   */
+  weigh(things) {
+    this.onIce.length = 0;
+    if (!this.on) return;
+    for (const rock of things) {
+      if (!rock.grounded || rock.fallsThrough) continue;
+      const x = rock.position.x, z = rock.position.z;
+      if (!this.overWater(x, z) || this.holeAt(x, z)) continue;
+      this.onIce.push({ rock, weight: rock.mass * GRAVITY });
+    }
+    let heaviest = null;
+    for (const entry of this.onIce) {
+      const x = entry.rock.position.x, z = entry.rock.position.z, thickness = this.thicknessAt(x, z);
+      const load = entry.weight + this.loadAt(x, z, entry.rock, thickness);
+      const holds = ICE.strength * thickness ** 2 * this.weakness(x, z);
+      if (load > holds && this.mayOpen(x, z) && (!heaviest || entry.weight > heaviest.entry.weight)) heaviest = { entry, load, holds, thickness };
+    }
+    if (!heaviest) return;
+    const { entry: { rock }, load, holds, thickness } = heaviest;
+    const x = rock.position.x, z = rock.position.z;
+    rock.velocity.set(rock.velocity.x, -ICE.falls, rock.velocity.z);
+    const hole = this.openHole(rock, x, z, thickness, load / holds);
+    this.events.push({ kind: 'break', x, z, strength: load / holds, radius: rock.radius, thickness });
+    rock.fallsThrough = { hole, broke: true, keep: 1, open: false };
   }
 
   /**
@@ -615,18 +708,19 @@ export class IceSheet {
     const random = this.streamFor(rock);
     const blow = this.blow(rock);
     const x = rock.position.x, z = rock.position.z;
-    const holds = this.holds(random, thickness);
+    // What it holds there, cracked as it is (weakness), less what already bears on it there (loadAt: the header's Weight).
+    const holds = Math.max(this.holds(random, thickness, x, z) - this.loadAt(x, z, rock, thickness), 0);
     const speed = rock.velocity.length();
     this.lastStrike = { blow, holds, x, z };   // for tools/ice-probe.mjs
     if (blow < holds || !this.mayOpen(x, z)) {
-      if (blow > ICE.crackShare * holds) this.star(x, z, random, blow / holds, thickness);
+      if (blow > ICE.crackShare * holds) this.star(x, z, random, blow / Math.max(holds, 1e-9), thickness);
       return null;
     }
     const energy = 0.5 * rock.mass * speed * speed;
     const work = holds * thickness;
     const keep = Math.sqrt(Math.max(1 - work / Math.max(energy, 1e-9), ICE.keepLeast ** 2));
-    const hole = this.openHole(rock, x, z, thickness, blow / holds);
-    this.events.push({ kind: 'break', x, z, strength: blow / holds, radius: rock.radius, thickness });
+    const hole = this.openHole(rock, x, z, thickness, blow / Math.max(holds, 1e-9));
+    this.events.push({ kind: 'break', x, z, strength: blow / Math.max(holds, 1e-9), radius: rock.radius, thickness });
     return { hole, broke: true, keep, open: false };
   }
 
@@ -761,6 +855,8 @@ export class IceSheet {
       const shortest = Math.min(...arms.map(({ crack }) => crack.length));
       this.ring(x, z, arms, shortest * between(random, [0.45, 0.75]), random, CRACK.starWidth);
     }
+    // Cracked through, it holds less there (weakness), out to its arms' mean length.
+    if (arms.length > 0) this.weakSpots.push({ x, z, reach: arms.reduce((sum, { crack }) => sum + crack.length, 0) / arms.length, share: ICE.cracked });
     this.events.push({ kind: 'crack', x, z, strength: share, thickness });
     this.dirty = true;
   }
@@ -975,6 +1071,8 @@ export class IceSheet {
       const crack = this.walk(x, z, heading, between(random, CRACK.fringeReach) * length, random, { width: between(random, CRACK.width) * CRACK.fringeWidth, forks: false, time });
       if (crack) hole.cracks.push(crack);
     }
+    // The ice round it cracked radially, and a free edge: it holds less there (weakness), out past its radials' mean length.
+    if (radials.length > 0) this.weakSpots.push({ x: hole.x, z: hole.z, reach: hole.outer + radials.reduce((sum, { crack }) => sum + crack.length, 0) / radials.length, share: ICE.cracked });
     if (radials.length >= 3 && random() < CRACK.ring) {
       const radius = between(random, CRACK.ringRadius) * (hole.inner + hole.outer) / 2;
       this.ring(hole.x, hole.z, radials, radius, random, 0.8, hole.cracks);

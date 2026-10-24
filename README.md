@@ -896,7 +896,18 @@ hole's crushed edge a fringe of short ones. Rings of crack join
 neighbouring radials farther out, each curving round the hole from one
 radial until it runs into the next, so a hard break leaves a web. A crack
 stops where it meets one already there, as real cracks do, so older breaks
-bound newer ones; a near miss stars the ice, sometimes ringed. A crack runs
+bound newer ones; a near miss stars the ice, sometimes ringed. Ice cracked
+through holds less: a star, and the ice round a hole (cracked radially, its
+edge free), leave a weak spot that holds about half what it did at its
+middle, whole again at its cracks' reach, spots over each other weaker
+still. So hits that crack it, again at one spot, break it (golf balls lobbed
+at thin ice: through on the second), while things too light to crack it (a
+small gem), however many, never do. What lies on the ice bears on it, each
+thing's weight spread over about the sheet's characteristic length: where
+the weight is more than the ice holds there, it gives way under the
+heaviest thing (a 30 cm rock set down on thin ice; two 16 lb bowling balls
+side by side, though one alone rests), and a blow strikes ice already
+bearing what lies about it. A crack runs
 out at 8 m/s from where it starts, when the crack it starts from reached
 there (a real one runs at hundreds of metres a second, at once to the eye;
 run out over a few frames the break is seen to spread from the blow, its
