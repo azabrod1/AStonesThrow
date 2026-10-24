@@ -8,6 +8,8 @@
 // - two minutes of swimming each place keeps every fish in its water, at a
 //   speed its kind can swim, and its company together: a school's fish a
 //   body length or two from their nearest neighbour, a shoal's a few;
+// - no fish's drawn body or fin (src/fishMeshes.js) is ever into the bed,
+//   on the Koi pond's steep banks or a lake's shore (src/fish.js KEEL);
 // - a stone coming down frightens the fish under where it will land before
 //   it lands: they bolt away from it, and their group takes fright after
 //   them; a thing lying still on the bed frightens none;
@@ -15,18 +17,22 @@
 //   has settled: no more than FEEDERS at a time, each biting at its edge,
 //   at the surface; a sunk one they bite where it lies; none while wary;
 // - nothing passes through a fish: stones and bowling balls dropped onto
-//   them, a pizza sinking among them, one adrift, a stone lying on the bed
-//   and their own food: no fish's body ever enters a thing, and keepClear
+//   them, a pizza sinking among them, one adrift, a stone lying on the bed,
+//   a bowling ball held among them (a Rock, as src/main.js sees it:
+//   fishSee), parked on a koi and dragged through them, and their own food: no fish's body ever enters a thing, and keepClear
 //   rarely has to push one (they get out of the way first);
 // - under ice and a gale's waves they keep deeper (setConditions);
 // - edible things (src/things.js `edible`) and their bites (edibleBites);
 // - the population draws no Math.random (its own seeded stream): a seeded
 //   throw is the same with fish, and the same place's fish swim the same;
 // - the cost: a frame's step for each place, with a throw's threats.
-import { FishPopulation, FISH_BY_PLACE, FISH_SPECIES, FEEDERS, edibleBites } from '../src/fish.js';
+import { FishPopulation, FISH_BY_PLACE, FISH_SPECIES, FEEDERS, edibleBites, fishSee } from '../src/fish.js';
+import { Rock } from '../src/rock.js';
+import * as THREE from 'three';
 import { floorDepthAt, koiFloorDepthAt, KOI_SHORE } from '../src/pondFloor.js';
 import { POOL } from '../src/pool.js';
 import { THINGS } from '../src/things.js';
+import { fishBody, fishFins } from '../src/fishMeshes.js';
 
 const failures = [];
 function check(condition, message) { console.log(`${condition ? 'ok  ' : 'FAIL'} ${message}`); if (!condition) failures.push(message); }
@@ -111,6 +117,45 @@ for (const place of ['lakeside', 'koi']) {
   check(jump * 60 < 5, `${place}: unfrightened, none turns faster than ${(jump * 60).toFixed(1)} rad/s (under 5)`);
 }
 check(new FishPopulation().fish.length === 0 && (() => { const pool = new FishPopulation(); pool.setWaters({ place: 'pool', ...BASIN }); return pool.fish.length === 0; })(), 'the Pool has no fish');
+
+console.log('\nwhole body off the bed:');
+{
+  // Each kind's drawn fish (src/fishMeshes.js, at rest: unbent, unbanked), its points below its middle: their lowest
+  // in shares of its depth within its keel's (src/fish.js KEEL) reach, and swum, each one over the bed under it.
+  const KEEL_REACH = 1.02;
+  const lowPoints = {};
+  Math.random = realRandom;   // three's geometries draw their ids from it; the fish never do
+  for (const [name, species] of Object.entries(FISH_SPECIES)) {
+    const points = [];
+    for (const geometry of [fishBody(species.shape), fishFins(species.shape)]) {
+      const position = geometry.attributes.position;
+      for (let index = 0; index < position.count; index++) if (position.getY(index) < -0.2 * species.shape.depth) points.push([position.getX(index), position.getY(index), position.getZ(index)]);
+    }
+    lowPoints[name] = points;
+  }
+  Math.random = () => { throw new Error('the fish drew Math.random'); };
+  for (const place of ['koi', 'lakeside', 'highlands']) {
+    const population = new FishPopulation({ seed: 1 });   // src/main.js's
+    population.setWaters({ place, ...waterOf(place) });
+    let worst = Infinity, worstAt = '';
+    for (let frame = 0; frame < 120 / FRAME; frame++) {
+      population.step(FRAME);
+      for (const fish of population.fish) {
+        const cosPitch = Math.cos(fish.pitch), sinPitch = Math.sin(fish.pitch), cosHeading = Math.cos(fish.heading), sinHeading = Math.sin(fish.heading);
+        for (const [along, down, across] of lowPoints[Object.keys(FISH_SPECIES).find((name) => FISH_SPECIES[name] === fish.species)]) {
+          // The instance's matrix (src/fishMeshes.js): forward, up and side, by its length.
+          const forward = along * fish.length, upward = down * fish.length, sideways = across * fish.length;
+          const x = fish.x + cosHeading * cosPitch * forward - cosHeading * sinPitch * upward - sinHeading * sideways;
+          const y = fish.y + sinPitch * forward + cosPitch * upward;
+          const z = fish.z + sinHeading * cosPitch * forward - sinHeading * sinPitch * upward + cosHeading * sideways;
+          const clear = y + waterOf(place).depthAt(x, z);
+          if (clear < worst) { worst = clear; worstAt = `${fish.species.name} at ${(frame * FRAME).toFixed(1)} s`; }
+        }
+      }
+    }
+    check(worst > 0, `${place}: two minutes, no fish's body or fin is ever into the bed, nose and tail too on its slopes (the nearest ${(worst * 100).toFixed(1)} cm over it, ${worstAt})`);
+  }
+}
 
 console.log('\nfright:');
 {
@@ -247,7 +292,7 @@ console.log('\nnothing passes through a fish:');
     let least = Infinity, pushed = 0, pushedFrames = 0, frames = 0;
     for (let frame = 0; frame < seconds / FRAME; frame++) {
       const things = makeThings(frame * FRAME, population);
-      population.step(FRAME, { threats: things, foods: makeFoods ? makeFoods(things) : [] });
+      population.step(FRAME, { threats: things.filter((thing) => !thing.unseen), foods: makeFoods ? makeFoods(things) : [] });   // what they do not see is still there
       for (const thing of things) if (thing.y - thing.radius <= 0) least = Math.min(least, clearance(population, thing));
       pushed = Math.max(pushed, population.pushed);
       if (population.pushed > 0.002) pushedFrames++;
@@ -281,6 +326,24 @@ console.log('\nnothing passes through a fish:');
   // A floating pizza they feed at, from under it.
   scenario('a floating pizza they feed at', 'koi', KOI, 16, 40, () => [{ id: 'pizza', x: 0.5, y: -0.005, z: -1.5, radius: 0.15, thickness: 0.012, normal: [0, 1, 0], vx: 0, vy: 0, vz: 0, inAir: false, still: true }],
     { foods: () => [{ id: 'pizza', x: 0.5, y: -0.005, z: -1.5, radius: 0.15, floating: true, settled: 10 }] });
+  // A bowling ball held in the water (src/objectGrab.js; a Rock held, seen as src/main.js sees it, fishSee): parked
+  // on a koi, then dragged at the hand's 0.6 m/s from one koi to the next.
+  Math.random = realRandom;   // a Rock's look draws from it; the fish never do
+  const ball = new Rock({ radius: 0.108, position: new THREE.Vector3(0, -0.3, -1.2), velocity: new THREE.Vector3(), envTexture: null, thing: 'bowling', mass: 6.35 });
+  Math.random = () => { throw new Error('the fish drew Math.random'); };
+  ball.state = 'rest';
+  ball.hold();
+  const hand = new THREE.Vector3();
+  scenario('a bowling ball held among them, parked and dragged', 'koi', KOI, 18, 30, (time, population) => {
+    const koi = population.fish[Math.floor(Math.max(time - 3, 0) / 2) % population.fish.length];
+    if (time === 0) hand.set(koi.x, koi.y, koi.z);   // parked on one, as it was a frame before
+    else if (time > 3) {
+      const towardX = koi.x - hand.x, towardY = Math.min(koi.y, -0.12) - hand.y, towardZ = koi.z - hand.z, toward = Math.hypot(towardX, towardY, towardZ);
+      if (toward > 1e-6) hand.addScaledVector(new THREE.Vector3(towardX, towardY, towardZ), Math.min(1, 0.6 * FRAME / toward));
+    }
+    ball.moveHeld(hand, 0, koiFloorDepthAt(hand.x, hand.z));
+    return [fishSee(ball, FRAME, { radius: ball.radius * 1.05 })?.threat ?? { x: ball.position.x, y: ball.position.y, z: ball.position.z, radius: ball.radius, unseen: true }];
+  }, { pushes: 0.05 });
   // Stones lying on the bed where the fish swim.
   scenario('stones lying on the bed', 'koi', KOI, 17, 60, () => [[0, -1.2], [1, -0.5], [-1, -2]].map(([x, z]) => ({ x, y: -koiFloorDepthAt(x, z) + 0.06, z, radius: 0.06, vx: 0, vy: 0, vz: 0, inAir: false, still: true })), { pushes: 0.02 });
 }

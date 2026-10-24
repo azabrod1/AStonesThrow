@@ -296,7 +296,7 @@ import { createSound } from './sound.js';
 import { createFloaterRide } from './floaterRide.js';
 import { IceSheet, ICE_THICKNESS } from './ice.js';
 import { IceCracks } from './iceCracks.js';
-import { FishPopulation, edibleBites } from './fish.js';
+import { FishPopulation, edibleBites, fishSee, FISH_STILL } from './fish.js';
 import { createFishView } from './fishMeshes.js';
 import { createKoiGarden, koiGround, holdInGarden, keepInPond } from './koiGarden.js';
 
@@ -430,11 +430,9 @@ const HOME_TARGET = [0, 0.12, -1.0];
 const TAP_SLOP = 14;          // CSS pixels a press may move and still throw; past them it turns the view
 const HOLD_MS = 300;          // a press held this long within TAP_SLOP dips a finger into the water
 // The fish (swimFish, src/fish.js): how far a splash frightens them (m, and m per m of the thing's radius: a 6 cm stone
-// 0.8 m, a 30 cm rock 2.2 m, times each kind's shyness), and a finger dipping in; what moves slower than FISH_STILL
-// (m/s) only stands in their way; how far under the still surface their backs keep in open water, under ice (more its
+// 0.8 m, a 30 cm rock 2.2 m, times each kind's shyness), and a finger dipping in; how far under the still surface their backs keep in open water, under ice (more its
 // thickness) and under a gale's waves; a bite's dimple at the surface (m).
 const FISH_ALARM = { least: 0.5, perRadius: 11, finger: 0.6 };
-const FISH_STILL = 0.12;
 const FISH_GAP = { open: 0.04, ice: 0.06, gale: 0.35 };
 const FISH_BITE = { radius: 0.018, dimple: 0.0015, shrink: 0.45 };   // and as it is eaten a thing is drawn smaller, by this share once eaten (its body as it was)
 const FISH_LAKE_INSET = { side: 0.4, far: 0.8 };   // m: the lake's fish keep this far inside the solver's patch at its sides and far edge, where the shore view sees into the water
@@ -2270,7 +2268,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
    * or is in their way, the finger too; what is edible in the water, once
    * settled (src/things.js `edible`; a frozen thing once thawed), they come
    * to and bite, each bite counted against it (edibleBites; at the surface,
-   * a dimple in the water), and eaten it shrinks away (fadeOut).
+   * a dimple in the water), and eaten it shrinks away (fadeOut). What of
+   * each thing they see is src/fish.js fishSee's.
    */
   function swimFish(seconds) {
     if (fishes.fish.length === 0 || seconds <= 0) return;
@@ -2278,23 +2277,9 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     const threats = [], foods = [];
     for (const rock of rocks) {
       if (rock.fading !== undefined) continue;
-      const last = rock.fishSeen ?? rock.position.clone();
-      const speed = last.distanceTo(rock.position) / seconds;
-      rock.fishSeen = (rock.fishSeen ?? new THREE.Vector3()).copy(rock.position);
-      const { x, y, z } = rock.centre.lengthSq() > 0 ? rock.centre : rock.position;   // where it is drawn (src/rock.js syncMeshes)
-      const shape = fishShapeOf(rock);
-      const { velocity } = rock;
-      if (rock.state === 'air') {
-        threats.push({ x, y, z, ...shape, vx: velocity.x, vy: velocity.y, vz: velocity.z, inAir: true });
-        rock.stillFor = 0;
-        continue;
-      }
-      const inWater = rock.state === 'water' || rock.state === 'skim' || rock.state === 'float' || rock.afloat || (rock.state === 'rest' && !rock.onGround && y < 0);
-      if (!inWater) continue;
-      const still = speed < FISH_STILL;
-      threats.push({ id: rock, x, y, z, ...shape, vx: still ? 0 : velocity.x, vy: still ? 0 : velocity.y, vz: still ? 0 : velocity.z, inAir: false, still });
-      rock.stillFor = still ? (rock.stillFor ?? 0) + seconds : 0;
-      if (rock.thing.edible && rock.thawed > 0.9) foods.push({ id: rock, x, y, z, radius: rock.radius, floating: rock.state === 'float' || rock.afloat, settled: rock.stillFor });
+      const seen = fishSee(rock, seconds, fishShapeOf(rock));
+      if (seen?.threat) threats.push(seen.threat);
+      if (seen?.food) foods.push(seen.food);
     }
     if (finger.inWater) {
       if (!fingerSeen) fishes.startle(finger.position.x, -0.05, finger.position.z, FISH_ALARM.finger);   // it dips in

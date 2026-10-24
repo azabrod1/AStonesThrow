@@ -28,7 +28,8 @@
 // its own. A group follows a goal, a point in its water it wanders to, and
 // now and then rests, hanging nearly still; its fish steer by the boids'
 // three rules (Reynolds 1987: keep apart, line up, keep together), weighted
-// by the company kept, toward the goal.
+// by the company kept, toward the goal; one strayed out of sight of all of
+// them (COMPANY's reach) swims back to the nearest.
 //
 // Each fish is a heading, a pitch and a speed: it turns toward where its
 // rules want it to go no faster than its kind's turn rate, speeds up and
@@ -37,7 +38,9 @@
 // beat: Bainbridge 1958). Its water (setWaters) is a box in plan (the
 // solver's patch in a lake, the basin in a pond) and, at each point, the
 // depth of the bed; it keeps between its kind's depths, off the bed and off
-// the surface (deeper under ice and a gale's waves: setConditions).
+// the surface (deeper under ice and a gale's waves: setConditions): its
+// whole body off the bed, fins too, its nose and tail over a sloping bank as
+// well as its middle (bodyBand, KEEL), never swimming or turning into it.
 //
 // Fright (startle, step's `threats`): a fish sees what is coming. A thing in
 // the air coming down within ANTICIPATE seconds of the water, or one moving
@@ -52,7 +55,7 @@
 // thing lying still on the bed is only an obstacle to swim round.
 //
 // Nothing ever passes through a fish (keepClear). Each thing in the water,
-// or coming down to it, is a rounded disc (`radius` its reach, `thickness`
+// or coming down to it, or held in it (fishSee), is a rounded disc (`radius` its reach, `thickness`
 // its half-thickness about its `normal`: a pizza's, a stone's flat; without
 // them a ball), and each fish its spine, SPINE points from nose to tail,
 // each as thick as its body there. A fish foresees, CLEAR.ahead seconds on,
@@ -157,7 +160,54 @@ const CLEAR = { ahead: 0.9, every: 0.1, gap: 0.012, sweep: 0.05, slowed: 0.5, se
 // in shares of its body's depth (the tail's: its fin's half spread, `tail`).
 const KEEP_OUT = { ways: 16, passes: 12 };   // keepClear: the ways in plan it tries out of a thing, and steps along each
 const SPINE = [[0.45, 0.3], [0.25, 0.5], [0, 0.5], [-0.22, 0.38], [-0.45, 'tail']];
+// Its keel for the bed (bodyBand): points along it (body lengths from its middle, + toward the nose) and its lowest
+// point drawn there, fins too (src/fishMeshes.js), in shares of its depth below its middle: the deepest of any kind's
+// (a pike's anal fin, a minnow's pelvics), each point's the lowest either side of it, as tools/fish-probe.mjs
+// measures them on the drawn fish; few, since each is a look at the bed.
+// And its paired fins' reach to either side (body lengths, a koi's the widest): the bed is looked at there too, and
+// its slope across the fish taken at every point.
+const KEEL = [[0.5, 0.37], [0.15, 0.76], [-0.25, 0.76], [-0.5, 0.61]];
+const KEEL_SIDE = 0.15;
 const BODY_HALF_HEIGHT = 0.5;  // its depth's share above its centre (its back): its centre keeps its depth's half under the surface
+
+// What moves slower than this (m/s) only stands in the fish's way (fishSee; src/main.js's finger too).
+export const FISH_STILL = 0.12;
+
+/**
+ * A thing as the fish see it (src/main.js swimFish), from its Rock
+ * (src/rock.js) and its shape as they keep clear of it (`shape`: radius,
+ * thickness, normal), `seconds` since they last looked: { threat, food },
+ * either may be missing; null where it is out of their water. Coming down
+ * through the air, a threat on its arc (inAir); in the water, moving or
+ * still (FISH_STILL): thrown in, afloat, sunk, and held too, dragged through
+ * the water or parked in it wherever it reaches below the surface
+ * (src/objectGrab.js), moving as the hand moves it (held, it has no
+ * velocity of its own: src/rock.js hold). An edible thing in the water,
+ * thawed and not held, is food too, `settled` for as long as it has lain
+ * still. It keeps on the rock where they last saw it (fishSeen) and how long
+ * it has lain still (stillFor).
+ */
+export function fishSee(rock, seconds, shape) {
+  const last = rock.fishSeen ?? rock.position.clone();
+  const held = rock.state === 'held';
+  const movedX = rock.position.x - last.x, movedY = rock.position.y - last.y, movedZ = rock.position.z - last.z;
+  const speed = Math.hypot(movedX, movedY, movedZ) / seconds;
+  const velocity = held ? { x: movedX / seconds, y: movedY / seconds, z: movedZ / seconds } : rock.velocity;
+  rock.fishSeen = (rock.fishSeen ?? rock.position.clone()).copy(rock.position);
+  const { x, y, z } = rock.centre.lengthSq() > 0 ? rock.centre : rock.position;   // where it is drawn (src/rock.js syncMeshes)
+  if (rock.state === 'air') {
+    rock.stillFor = 0;
+    return { threat: { x, y, z, ...shape, vx: velocity.x, vy: velocity.y, vz: velocity.z, inAir: true } };
+  }
+  const inWater = rock.state === 'water' || rock.state === 'skim' || rock.state === 'float' || rock.afloat || (rock.state === 'rest' && !rock.onGround && y < 0)
+    || (held && y - shape.radius < 0);
+  if (!inWater) return null;
+  const still = speed < FISH_STILL;
+  rock.stillFor = still ? (rock.stillFor ?? 0) + seconds : 0;
+  const threat = { id: rock, x, y, z, ...shape, vx: still ? 0 : velocity.x, vy: still ? 0 : velocity.y, vz: still ? 0 : velocity.z, inAir: false, still };
+  const food = rock.thing.edible && rock.thawed > 0.9 && !held ? { id: rock, x, y, z, radius: rock.radius, floating: rock.state === 'float' || rock.afloat, settled: rock.stillFor } : undefined;
+  return { threat, food };
+}
 
 /** How many bites a thing of `mass` (kg) takes to eat (src/main.js): a 30 cm pizza 95 (koi at it half a minute or so), a watermelon 500. */
 export function edibleBites(mass) {
@@ -301,7 +351,7 @@ export class FishPopulation {
   /** A way (x, z, unit) to flee turned off the shallows (a shore, the bed rising): the nearest to it, either side, that keeps deep enough ahead. */
   offShallows(fish, x, z) {
     const ahead = 0.3 + fish.length;
-    const deep = (angle) => this.band(fish.species, fish.length, fish.x + Math.cos(angle) * ahead, fish.z + Math.sin(angle) * ahead);
+    const deep = (angle) => this.bodyBand(fish, fish.x + Math.cos(angle) * ahead, fish.z + Math.sin(angle) * ahead, angle, 0);
     const way = Math.atan2(z, x);
     for (const off of [0, 0.5, -0.5, 1, -1, 1.5, -1.5, 2, -2, 2.6, -2.6]) if (deep(way + off)) return [Math.cos(way + off), Math.sin(way + off)];
     return [x, z];
@@ -359,9 +409,10 @@ export class FishPopulation {
     const keep = this.keepFromWalls(fish);
     out.x = clamp(x, bounds.minX + keep, bounds.maxX - keep);
     out.z = clamp(z, bounds.minZ + keep, bounds.maxZ - keep);
-    const kept = this.band(fish.species, fish.length, out.x, out.z, fish.feeding);
-    out.y = kept ? clamp(y, kept[1], kept[0]) : Math.min(y, -(this.surfaceGap + BODY_HALF_HEIGHT * fish.species.shape.depth * fish.length));
-    return Boolean(kept);
+    const [top, bottom] = this.bodyLimits(fish, out.x, out.z, fish.heading, fish.pitch, fish.feeding);
+    // Too shallow for it there (it never swims there, step; a push might): off the bed rather than under the surface.
+    out.y = Math.max(Math.min(y, top), bottom);
+    return bottom <= top;
   }
 
   /**
@@ -413,6 +464,41 @@ export class FishPopulation {
     const top = -(feeding ? Math.max(this.surfaceGap, 0.015) + half : Math.max(species.depth[0], this.surfaceGap + half));
     const bottom = -Math.min(feeding ? Infinity : species.depth[1], bed - CLEARANCE - half);   // to food on the bed, whatever its depth
     return bottom < top ? [top, bottom] : null;
+  }
+
+  /**
+   * The depths (m) a fish's centre may take at (x, z), heading and pitched
+   * as given, [top, bottom] as band's, with its whole body off the bed: its
+   * keel (KEEL) clear of the bed under each point of it and under its fins
+   * either side, nose and tail on a sloping bed too, not only its middle. bodyBand: null where too shallow.
+   */
+  bodyLimits(fish, x, z, heading, pitch, feeding = false) {
+    // The same pose asked again within a step (steer's checks, then holdInWater) is answered from the last.
+    const last = fish.bodyLimits;
+    if (last && last.x === x && last.z === z && last.heading === heading && last.pitch === pitch && last.feeding === feeding && last.surfaceGap === this.surfaceGap) return last.limits;
+    const { species, length } = fish;
+    const band = this.band(species, length, x, z, feeding);
+    const half = BODY_HALF_HEIGHT * species.shape.depth * length;
+    const top = band ? band[0] : -(this.surfaceGap + half);
+    let bottom = band ? band[1] : -(this.water.depthAt(x, z) - CLEARANCE - half);
+    const forwardX = Math.cos(heading) * Math.cos(pitch), forwardZ = Math.sin(heading) * Math.cos(pitch), rise = Math.sin(pitch), level = Math.cos(pitch);
+    const side = KEEL_SIDE * length;
+    const across = 0.5 * Math.abs(this.water.depthAt(x - Math.sin(heading) * side, z + Math.cos(heading) * side) - this.water.depthAt(x + Math.sin(heading) * side, z - Math.cos(heading) * side));
+    for (const [along, low] of KEEL) {
+      const reach = along * length;
+      const bed = this.water.depthAt(x + forwardX * reach, z + forwardZ * reach) - across;   // under the fin on the shallow side
+      bottom = Math.max(bottom, CLEARANCE - bed - rise * reach + low * species.shape.depth * length * level);
+    }
+    const kept = fish.bodyLimits ??= { limits: [0, 0] };
+    Object.assign(kept, { x, z, heading, pitch, feeding, surfaceGap: this.surfaceGap });
+    kept.limits[0] = band ? top : Math.min(top, bottom - 1e-6);   // where even its middle has too little water, too shallow
+    kept.limits[1] = bottom;
+    return kept.limits;
+  }
+
+  bodyBand(fish, x, z, heading, pitch, feeding = false) {
+    const limits = this.bodyLimits(fish, x, z, heading, pitch, feeding);
+    return limits[1] <= limits[0] ? limits : null;
   }
 
   /** A point in the water for a fish of the kind: within `reach` of `near` (anywhere, without), at a depth it keeps. */
@@ -630,11 +716,12 @@ export class FishPopulation {
         wantX += toGoalX / toGoal * company.goal * (resting ? 0.1 : 1);
         wantZ += toGoalZ / toGoal * company.goal * (resting ? 0.1 : 1);
         if (company.reach > 0) {
-          let alignX = 0, alignZ = 0, middleX = 0, middleZ = 0, middleY = 0, near = 0;
+          let alignX = 0, alignZ = 0, middleX = 0, middleZ = 0, middleY = 0, near = 0, nearest = null, nearestApart = Infinity;
           for (const other of group.members) {
             if (other === fish) continue;
             const apartX = fish.x - other.x, apartZ = fish.z - other.z, apartY = fish.y - other.y;
             const apart = Math.hypot(apartX, apartZ, apartY);
+            if (apart < nearestApart) { nearest = other; nearestApart = apart; }
             if (apart > company.reach * length) continue;
             near++;
             alignX += Math.cos(other.heading); alignZ += Math.sin(other.heading);
@@ -654,6 +741,11 @@ export class FishPopulation {
             // Its own depth, as far from its company's as the company keeps apart (a school stays a school in depth too).
             const own = DEPTH.own[species.company], middle = middleY / near, spread = 1.5 * company.apart * length;
             goalY = middle + clamp((ownY - middle) * own, -spread, spread);
+          } else if (nearest) {
+            // Strayed out of sight of every groupmate (it started apart, or fled farther): back to the nearest.
+            const towardX = nearest.x - fish.x, towardZ = nearest.z - fish.z, toward = Math.hypot(towardX, towardZ) || 1;
+            wantX += towardX / toward * company.together; wantZ += towardZ / toward * company.together;
+            goalY = nearest.y;
           }
         }
       }
@@ -707,7 +799,7 @@ export class FishPopulation {
     // The shallows: turned back toward deeper water (the bed's slope).
     const ahead = 0.3 + length;
     const aheadX = fish.x + Math.cos(fish.heading) * ahead, aheadZ = fish.z + Math.sin(fish.heading) * ahead;
-    if (!this.band(species, length, aheadX, aheadZ, feeding)) {
+    if (!this.bodyBand(fish, aheadX, aheadZ, fish.heading, 0, feeding)) {
       const step = 0.2;
       const slopeX = this.water.depthAt(fish.x + step, fish.z) - this.water.depthAt(fish.x - step, fish.z);
       const slopeZ = this.water.depthAt(fish.x, fish.z + step) - this.water.depthAt(fish.x, fish.z - step);
@@ -722,6 +814,7 @@ export class FishPopulation {
     fish.wantX += (wantX - fish.wantX) * settle;
     fish.wantZ += (wantZ - fish.wantZ) * settle;
     const turnRate = species.turn * (fish.cStart > 0 ? C_START.turn : fish.fright > 0 ? FLEE_TURN : feeding ? 1.3 : 1);
+    const wasHeading = fish.heading, wasPitch = fish.pitch;
     let turn = 0;
     if (Math.hypot(fish.wantX, fish.wantZ) > 1e-3) {
       const off = wrapAngle(Math.atan2(fish.wantZ, fish.wantX) - fish.heading);
@@ -734,7 +827,7 @@ export class FishPopulation {
     const acceleration = (fish.fright > 0 ? ACCELERATION.burst : ACCELERATION.cruise) * length;
     fish.speed += clamp(wantSpeed - fish.speed, -acceleration * dt * 1.5, acceleration * dt);
     // Up or down to its depth (the goal's, the group's, the food's), slowly, as its pitch allows.
-    const band = this.band(species, length, fish.x, fish.z, feeding);
+    const band = this.bodyBand(fish, fish.x, fish.z, fish.heading, fish.pitch, feeding);
     let wantedY = goalY + wantY * 0.5;
     if (band) wantedY = clamp(wantedY, band[1], band[0]);
     const climbMost = Math.max(fish.speed, 0.3 * length) * 0.45;
@@ -746,8 +839,10 @@ export class FishPopulation {
     fish.z += Math.sin(fish.heading) * fish.speed * dt;
     // Never into water too shallow for it, or onto the land: where it would be, it stays, slowing (the shallows' turn
     // above takes it back out).
-    if (!this.band(species, length, fish.x, fish.z, feeding) && this.band(species, length, wasX, wasZ, feeding)) {
-      fish.x = wasX; fish.z = wasZ;
+    // Its whole body (bodyBand), nose and tail over a sloping bed too; nor turned or pitched into it where it is.
+    if (!this.bodyBand(fish, fish.x, fish.z, fish.heading, fish.pitch, feeding)) {
+      if (this.bodyBand(fish, wasX, wasZ, fish.heading, fish.pitch, feeding)) { fish.x = wasX; fish.z = wasZ; }
+      else if (this.bodyBand(fish, wasX, wasZ, wasHeading, wasPitch, feeding)) { fish.x = wasX; fish.z = wasZ; fish.heading = wasHeading; fish.pitch = wasPitch; }
       fish.speed *= Math.max(0, 1 - 3 * dt);
     }
     fish.y += fish.climb * dt;

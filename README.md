@@ -370,7 +370,8 @@ Asagi, Yamabuki, Tancho) and a goldfish; the Pool none. A school keeps
 about a body length apart and turns together, a shoal keeps loosely
 together, a pike or a trout keeps alone (boids: apart, aligned, together,
 toward a goal the group wanders to). Each fish ranges through the whole
-water, picking a new depth every few seconds, swims at its own pace (speeding
+water, its whole body (fins too, nose and tail on a sloping bank) kept off
+the bed, picking a new depth every few seconds, swims at its own pace (speeding
 up and coasting), rests now and then, and its tail beats once a stride (two
 thirds of a body length), never faster than 4 beats a second. What it wants
 is eased over a fraction of a second and it eases into its turns, so it
@@ -381,7 +382,8 @@ thing: each whips round (a C-start) and dashes away, diving, a few body
 lengths a second and never over 0.8 m/s, its group taking fright a moment
 later; at a wall or a shore it turns along it, never into it, and it stays
 wary a few seconds. Nothing passes through a fish: each foresees, about a
-second ahead, where each thing in the water (or coming down to it) will be,
+second ahead, where each thing in the water (or coming down to it, or held
+in it and dragged) will be,
 as a rounded disc of its own reach and thickness (a pizza's flat, a ball's
 round), and bolts from one coming at it or swims round one lying still;
 one still too close (a bowling ball dropped onto a koi in the shallows) is
