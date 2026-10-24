@@ -46,3 +46,21 @@ jobs:
       - run: node tools/quality-probe.mjs
       - run: npm run site && node tools/site-check.mjs
       - run: node tools/startup-probe.mjs
+
+  # Trial: does a macOS runner give Chrome its GPU (Metal)? PW_GPU=hardware fails at once if not.
+  gpu-trial:
+    runs-on: macos-latest
+    env:
+      PW_GPU: hardware
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install chromium
+      - run: node tools/controls-probe.mjs
+      - run: node tools/quality-probe.mjs
+      - run: npm run site && node tools/site-check.mjs
+      - run: node tools/startup-probe.mjs
