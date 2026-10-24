@@ -2310,6 +2310,7 @@ ${LAKE_BED}
 #define KOI_EARTH vec3(0.12, 0.1, 0.075)
 #define KOI_MOSS_TO vec2(3.0, 5.0)
 #define KOI_LAWN vec3(0.07, 0.115, 0.04)  // the garden's lawn beyond the moss
+#define KOI_SHADE 0.3                    // the garden's ground behind its planting, under its trees, against its lawn
 #define KOI_COBBLE 0.16                   // m: a cobble's cell at the stone edge
 // The cobbles set along the edge: the nearest jittered point and the next (as the pool's, in cells of KOI_COBBLE), so
 // each is its own rounded stone with dark gaps: (its distance from its middle in cells, its hash, the gap's distance).
@@ -2375,7 +2376,8 @@ void main() {
     float grassLevel = max(dot(nearLand, LUMINANCE), 1e-6);
     vec3 grassLand = nearLand * min(1.0, GRASS_ALBEDO_MOST * lightOn / grassLevel);
     // Round the Koi pond, a garden's lawn of its own (the photo's land there is the lake's far shore).
-    if (uKoiPond > 0.5) grassLand = KOI_LAWN * (uSunIrradiance * max(uSunDir.y, 0.0) + uSkyAmbient * SKY_LIGHT) * (0.85 + 0.3 * valueNoise(vWorld.xz * 0.6 + 2.0));
+    // Behind its planting the ground lies in its trees' shade (src/koiGarden.js): dark, as the photo's is.
+    if (uKoiPond > 0.5) grassLand = KOI_LAWN * (uSunIrradiance * max(uSunDir.y, 0.0) + uSkyAmbient * SKY_LIGHT) * (0.85 + 0.3 * valueNoise(vWorld.xz * 0.6 + 2.0)) * mix(1.0, KOI_SHADE, smoothstep(1.5, 3.5, vInland));
     vec3 grassColor = grassLand * slopeShade * (1.0 + (0.6 * valueNoise(vWorld.xz * 2.3 + 5.0) - 0.3) * (1.0 - far));
     color = mix(color, grassColor, grass);
     if (uSnow > 0.0) land = mix(land, SNOW_ALBEDO * (uSunIrradiance * max(uSunDir.y, 0.0) + uSkyAmbient * SKY_LIGHT), SNOW_FAR * uSnow);

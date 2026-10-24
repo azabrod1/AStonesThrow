@@ -118,12 +118,17 @@ is remembered on the device (but the view, which opens on the shore):
   thin enough for the next throw to break.
 - Location (`?sky=`): Swiss Alps, Rocky cove, Highlands, Desert oasis,
   Lakeside (the default), Mesas, Pool, or Koi pond (`?sky=koi`): a pond in
-  a Japanese garden by Lakeside's lake, through its hours, about 9 m across,
-  its shore irregular (lobes, a bay, a broad point), stone-edged in
-  stretches with moss running to the water between them, a pebble beach
-  along one side, a few weathered granite boulders set in groups and one
-  as an island, a lawn round it, its own clear green water over gravel, and
-  koi. Swiss Alps replaces Alpine with a
+  a Japanese garden under its own panorama (Poly Haven's Ninomaru Teien,
+  the garden of Nagoya Castle, its sun behind leaves, so its brightness is
+  taken from its sky: `shadedSun` in `src/sky.js`), about 9 m across, its
+  shore irregular (lobes, a bay, a broad point), its far and side banks
+  planted to the water with clipped shrubs (karikomi) in rows rising above
+  the eye, a Kasuga stone lantern among them, the garden's trees behind; a
+  lawn on the near bank, its own clear green water over gravel, and koi.
+  Nothing thrown comes down on the ground there: every aim is kept 0.6 m
+  inside the water, and a thing skipped or slid on to a bank is caught by
+  the shrubs where they are drawn (`src/koiGarden.js`,
+  `tools/garden-probe.mjs`). Swiss Alps replaces Alpine with a
   sharper 4K Lago d’Isola panorama, framed across its snowy ridge, and starts
   at water level with Frozen water (thin ice unless Thick was last chosen). Choosing liquid
   water is remembered when reloading the same place; entering Swiss Alps
@@ -366,7 +371,12 @@ the water or a finger dipping in those near it, the farther the bigger the
 thing: each whips round (a C-start) and dashes away, diving, a few body
 lengths a second and never over 0.8 m/s, its group taking fright a moment
 later; at a wall or a shore it turns along it, never into it, and it stays
-wary a few seconds. Something edible that has settled in the water brings
+wary a few seconds. Nothing passes through a fish: each foresees, about a
+second ahead, where each thing in the water (or coming down to it) will be,
+as a rounded disc of its own reach and thickness (a pizza's flat, a ball's
+round), and bolts from one coming at it or swims round one lying still;
+one still too close (a bowling ball dropped onto a koi in the shallows) is
+held off its surface the shortest way that keeps it in its water. Something edible that has settled in the water brings
 them, groupmates following the first: up to six at it, each at its own spot
 at its edge, biting (a dimple in the water at the surface) and backing off;
 eaten (bites as its dry mass says), it shrinks away. They are scenery
@@ -382,8 +392,8 @@ and its own seed (countershaded, muted wild colours; a koi's variety and
 patches), with overlapping scales, a lateral line, a gill cover's edge and
 a small dark eye, lit as the bed is, a silvery flank mirroring the light
 from above, its outline taking the water's colour; and a soft shadow on the
-bed down-sun of it. A frame's fish cost about 25 µs of CPU for their
-behaviour and 15 µs for their instances, and three draw calls a kind
+bed down-sun of it. A frame's fish cost up to about 75 µs of CPU for their
+behaviour (Lakeside's 13, with a throw in the water) and 15 µs for their instances, and three draw calls a kind
 (`tools/fish-probe.mjs` checks the behaviour and its cost).
 
 **Splash** (`src/splash.js`). A stone entering water goes through stages with

@@ -51,6 +51,18 @@
 // later. Afterwards it stays wary for a few seconds, and will not feed. A
 // thing lying still on the bed is only an obstacle to swim round.
 //
+// Nothing ever passes through a fish (keepClear). Each thing in the water,
+// or coming down to it, is a rounded disc (`radius` its reach, `thickness`
+// its half-thickness about its `normal`: a pizza's, a stone's flat; without
+// them a ball), and each fish its spine, SPINE points from nose to tail,
+// each as thick as its body there. A fish foresees, CLEAR.ahead seconds on,
+// where each thing will be (on its arc in the air, then on into the water)
+// and where it will itself be: if they would touch, it bolts from a thing
+// that moves and swims round one that lies still. Should a thing still come
+// on it faster than it can get away (a bowling ball dropped onto it), it is
+// held off the thing's surface by CLEAR.gap, pushed out the way that
+// surface faces, else sideways. Its own food it may touch, never enter.
+//
 // Food (step's `foods`): a kind that eats (`eats`) comes to something edible
 // in the water (src/things.js `edible`: a pizza, a pie, fruit) within
 // FEED.sense once it has settled and the fish is no longer wary, and its
@@ -137,6 +149,14 @@ const PITCH_MOST = 0.4;        // rad: the steepest a fish climbs or dives, nose
 // How fast what a fish wants is eased in (a second's share: cruising, fleeing), how fast it turns into line with it
 // (per second), and how fast its bend and its pitch follow: no fish wavers or trembles.
 const STEADY = { cruising: 2.5, fleeing: 12, turn: 3, bend: 3, pitch: 2.5 };
+// Keeping clear of things (keepClear, the header): how far ahead (s) and how often (s) a fish foresees them; the gap
+// it keeps (m), its tail's sweep (body lengths); a thing gone in carries on at `slowed` of its speed; one in the air
+// is foreseen once it is `seen` (s) from the water, a little before it frightens the fish round where it lands (ANTICIPATE).
+const CLEAR = { ahead: 0.9, every: 0.1, gap: 0.012, sweep: 0.05, slowed: 0.5, seen: 0.65 };
+// Its spine for that: points along it (body lengths from its middle, + toward the nose) and its half-thickness there,
+// in shares of its body's depth (the tail's: its fin's half spread, `tail`).
+const KEEP_OUT = { ways: 16, passes: 12 };   // keepClear: the ways in plan it tries out of a thing, and steps along each
+const SPINE = [[0.45, 0.3], [0.25, 0.5], [0, 0.5], [-0.22, 0.38], [-0.45, 'tail']];
 const BODY_HALF_HEIGHT = 0.5;  // its depth's share above its centre (its back): its centre keeps its depth's half under the surface
 
 /** How many bites a thing of `mass` (kg) takes to eat (src/main.js): a 30 cm pizza 95 (koi at it half a minute or so), a watermelon 500. */
@@ -148,6 +168,41 @@ const range = (random, [least, most]) => least + (most - least) * random();
 const wrapAngle = (angle) => Math.atan2(Math.sin(angle), Math.cos(angle));
 const clamp = (value, least, most) => Math.min(Math.max(value, least), most);
 const smoothstep = (low, high, value) => { const share = clamp((value - low) / (high - low), 0, 1); return share * share * (3 - 2 * share); };
+
+/** Where a thing's centre will be `after` seconds on, into `out`: in the air on its arc, then on into the water at CLEAR.slowed of the speed it went in at; in the water as it goes. */
+function thingAt(thing, after, out) {
+  const vx = thing.vx ?? 0, vy = thing.vy ?? 0, vz = thing.vz ?? 0;
+  if (!thing.inAir) { out.x = thing.x + vx * after; out.y = thing.y + vy * after; out.z = thing.z + vz * after; return out; }
+  const entry = thing.y > 0 ? (vy + Math.sqrt(vy * vy + 2 * GRAVITY * thing.y)) / GRAVITY : 0;
+  const flown = Math.min(after, entry), swum = after - flown;
+  out.x = thing.x + vx * flown; out.y = thing.y + vy * flown - 0.5 * GRAVITY * flown * flown; out.z = thing.z + vz * flown;
+  if (swum > 0) { out.x += vx * CLEAR.slowed * swum; out.y += (vy - GRAVITY * entry) * CLEAR.slowed * swum; out.z += vz * CLEAR.slowed * swum; }
+  return out;
+}
+
+/**
+ * How far the point (x, y, z) is outside a thing centred at (centreX, centreY, centreZ) (m, negative inside): a
+ * rounded disc (the header), else a ball. The way out from its surface there into `away` (unit; its `x, y, z`).
+ */
+function outsideThing(thing, centreX, centreY, centreZ, x, y, z, away) {
+  const apartX = x - centreX, apartY = y - centreY, apartZ = z - centreZ;
+  let outX = apartX, outY = apartY, outZ = apartZ, rounding = thing.radius;
+  if (thing.normal) {
+    const [normalX, normalY, normalZ] = thing.normal;
+    rounding = Math.min(thing.thickness, thing.radius);
+    const core = thing.radius - rounding;
+    const along = apartX * normalX + apartY * normalY + apartZ * normalZ;
+    const flatX = apartX - along * normalX, flatY = apartY - along * normalY, flatZ = apartZ - along * normalZ;
+    const flat = Math.hypot(flatX, flatY, flatZ);
+    const past = flat > core ? (flat - core) / flat : 0;   // its share of the way past the disc's core
+    outX = flatX * past + along * normalX; outY = flatY * past + along * normalY; outZ = flatZ * past + along * normalZ;
+  }
+  const distance = Math.hypot(outX, outY, outZ);
+  if (distance > 1e-9) { away.x = outX / distance; away.y = outY / distance; away.z = outZ / distance; }
+  else { away.x = 0; away.y = 1; away.z = 0; }
+  return distance - rounding;
+}
+const heldNow = { x: 0, y: 0, z: 0 }, thingNow = { x: 0, y: 0, z: 0 }, awayNow = { x: 0, y: 0, z: 0 }, awayWorst = { x: 0, y: 0, z: 0 };
 
 /**
  * The fish of one water (the header): `fish` the swimmers, `groups` their
@@ -162,6 +217,7 @@ export class FishPopulation {
     this.water = null;
     this.surfaceGap = SURFACE_GAP;
     this.bites = [];
+    this.pushed = 0;   // m: the farthest keepClear has had to push a fish since step began (tools/fish-probe.mjs)
     this.random = seededRandom(seed, 0);
   }
 
@@ -201,7 +257,9 @@ export class FishPopulation {
             wantX: 0, wantZ: 0,   // where it wants to go, eased (STEADY)
             pace: range(this.random, PACE.rate), paceAt: this.random() * Math.PI * 2,   // its burst and coast (PACE)
             depthShare: this.random() ** DEPTH.upper, depthUntil: range(this.random, DEPTH.seconds),   // where in its depths it is going (DEPTH)
-            food: null, biteIn: 0, backOff: 0, feedAngle: null,
+            food: null, biteIn: 0, backOff: 0, feedAngle: null, feeding: false,
+            // Its spine (SPINE): each point's distance along it (m) and half-thickness, its tail's sweep with it.
+            spine: SPINE.map(([along, share]) => [along * length, (share === 'tail' ? Math.max(species.shape.tail * 0.5, 0.06) : share * species.shape.depth * 0.5) * length + CLEAR.sweep * length]),
           };
           group.members.push(fish);
           this.fish.push(fish);
@@ -231,13 +289,116 @@ export class FishPopulation {
     if (alongZ < 0) alongZ *= room(fish.z - bounds.minZ - keep);
     if (alongZ > 0) alongZ *= room(bounds.maxZ - keep - fish.z);
     const left = Math.hypot(alongX, alongZ);
-    if (left > 0.3) return [alongX / left, alongZ / left];
+    if (left > 0.3) return this.offShallows(fish, alongX / left, alongZ / left);
     // Cornered head-on: along the wall, whichever way it was leaning, else out of the corner toward the middle.
     const middleX = (bounds.minX + bounds.maxX) / 2 - fish.x, middleZ = (bounds.minZ + bounds.maxZ) / 2 - fish.z;
     const towardX = alongX + 0.3 * Math.sign(middleX) * (Math.abs(x) < Math.abs(z) ? 1 : 0.3);
     const towardZ = alongZ + 0.3 * Math.sign(middleZ) * (Math.abs(z) < Math.abs(x) ? 1 : 0.3);
     const length = Math.hypot(towardX, towardZ) || 1;
-    return [towardX / length, towardZ / length];
+    return this.offShallows(fish, towardX / length, towardZ / length);
+  }
+
+  /** A way (x, z, unit) to flee turned off the shallows (a shore, the bed rising): the nearest to it, either side, that keeps deep enough ahead. */
+  offShallows(fish, x, z) {
+    const ahead = 0.3 + fish.length;
+    const deep = (angle) => this.band(fish.species, fish.length, fish.x + Math.cos(angle) * ahead, fish.z + Math.sin(angle) * ahead);
+    const way = Math.atan2(z, x);
+    for (const off of [0, 0.5, -0.5, 1, -1, 1.5, -1.5, 2, -2, 2.6, -2.6]) if (deep(way + off)) return [Math.cos(way + off), Math.sin(way + off)];
+    return [x, z];
+  }
+
+  /**
+   * How far a fish at (x, y, z), heading and pitched as given, is clear of a
+   * thing centred at (centreX, centreY, centreZ) (m; negative, into it): its
+   * nearest spine point's (SPINE), less its body's thickness there; the way
+   * out from the thing there into `away`.
+   */
+  clearOf(fish, thing, centreX, centreY, centreZ, x, y, z, heading, pitch, away) {
+    const forwardX = Math.cos(heading) * Math.cos(pitch), forwardY = Math.sin(pitch), forwardZ = Math.sin(heading) * Math.cos(pitch);
+    let least = Infinity;
+    for (const [along, thickness] of fish.spine) {
+      const clear = outsideThing(thing, centreX, centreY, centreZ, x + forwardX * along, y + forwardY * along, z + forwardZ * along, awayNow) - thickness;
+      if (clear < least) { least = clear; away.x = awayNow.x; away.y = awayNow.y; away.z = awayNow.z; }
+    }
+    return least;
+  }
+
+  /**
+   * The first time within CLEAR.ahead (s) a fish going on as it goes would
+   * come within CLEAR.gap of a thing going on as it goes (thingAt), or null;
+   * where the thing then is into `at`.
+   */
+  foresee(fish, thing, at) {
+    // Something in the air it sees only as it is about to come in (ANTICIPATE).
+    if (thing.inAir && thing.y > 0) {
+      const vy = thing.vy ?? 0;
+      if ((vy + Math.sqrt(vy * vy + 2 * GRAVITY * thing.y)) / GRAVITY > CLEAR.seen) return null;
+    }
+    const forwardX = Math.cos(fish.heading) * Math.cos(fish.pitch), forwardZ = Math.sin(fish.heading) * Math.cos(fish.pitch);
+    const within = thing.radius + 0.5 * fish.length + fish.spine[fish.spine.length - 1][1] + CLEAR.gap * 2;   // nearer than this, worth a closer look
+    for (let after = 0; after <= CLEAR.ahead + 1e-9; after += CLEAR.every) {
+      thingAt(thing, after, at);
+      if (at.y - thing.radius > 0) continue;   // still above the water
+      const x = fish.x + forwardX * fish.speed * after, y = fish.y + fish.climb * after, z = fish.z + forwardZ * fish.speed * after;
+      if (Math.abs(x - at.x) > within || Math.abs(z - at.z) > within || Math.abs(y - at.y) > within) continue;
+      if (this.clearOf(fish, thing, at.x, at.y, at.z, x, y, z, fish.heading, fish.pitch, awayWorst) < CLEAR.gap * 2) return after;
+    }
+    return null;
+  }
+
+  /** A fish held inside its water (the box, nose and tail too; under the surface, over the bed), as it was left by its swim or a push. Whether the box held it. */
+  holdInWater(fish) {
+    const wasX = fish.x, wasZ = fish.z;
+    this.heldAt(fish, fish.x, fish.y, fish.z, fish);
+    return fish.x !== wasX || fish.z !== wasZ;
+  }
+
+  /** Where a fish at (x, y, z) is held in its water (holdInWater), into `out`; false where the water is too shallow for it there. */
+  heldAt(fish, x, y, z, out) {
+    const { bounds } = this.water;
+    const keep = this.keepFromWalls(fish);
+    out.x = clamp(x, bounds.minX + keep, bounds.maxX - keep);
+    out.z = clamp(z, bounds.minZ + keep, bounds.maxZ - keep);
+    const kept = this.band(fish.species, fish.length, out.x, out.z, fish.feeding);
+    out.y = kept ? clamp(y, kept[1], kept[0]) : Math.min(y, -(this.surfaceGap + BODY_HALF_HEIGHT * fish.species.shape.depth * fish.length));
+    return Boolean(kept);
+  }
+
+  /**
+   * Nothing passes through a fish (the header): held `gap` off every thing
+   * in the water (its own food it may touch, never enter). Inside one, it
+   * goes the shortest way out that keeps it in its water: the way the
+   * thing's surface faces, or, where that is the bed, the surface, a wall or
+   * the shallows (a koi between a sinking ball and the shore), whichever
+   * way in plan (KEEP_OUT.ways) clears it soonest.
+   */
+  keepClear(fish, threats) {
+    for (const thing of threats) {
+      if (thing.y - thing.radius > 0) continue;   // above the water
+      if (Math.hypot(fish.x - thing.x, fish.y - thing.y, fish.z - thing.z) > thing.radius + fish.length + 0.1) continue;   // nowhere near
+      const gap = thing.id !== undefined && thing.id === fish.food?.id ? 0 : CLEAR.gap;
+      const clear = this.clearOf(fish, thing, thing.x, thing.y, thing.z, fish.x, fish.y, fish.z, fish.heading, fish.pitch, awayWorst) - gap;
+      if (clear >= -1e-9) continue;
+      let best = null;
+      const tryWay = (wayX, wayY, wayZ) => {
+        let distance = -clear;
+        for (let pass = 0; pass < KEEP_OUT.passes; pass++) {
+          if (best && distance >= best.distance) return;
+          if (!this.heldAt(fish, fish.x + wayX * distance, fish.y + wayY * distance, fish.z + wayZ * distance, heldNow)) return;
+          const left = this.clearOf(fish, thing, thing.x, thing.y, thing.z, heldNow.x, heldNow.y, heldNow.z, fish.heading, fish.pitch, awayNow) - gap;
+          if (left >= -1e-9) { best = { distance, x: heldNow.x, y: heldNow.y, z: heldNow.z }; return; }
+          distance += Math.max(-left, 0.01) * 1.5;   // a little past, so a way that clears slowly (from under a ball) gets there
+        }
+      };
+      tryWay(awayWorst.x, awayWorst.y, awayWorst.z);
+      for (let way = 0; way < KEEP_OUT.ways; way++) {
+        const angle = (way / KEEP_OUT.ways) * Math.PI * 2;
+        tryWay(Math.cos(angle), 0, Math.sin(angle));
+      }
+      if (!best) continue;   // nowhere in its water clear of it (never, but for a thing as big as the water)
+      this.pushed = Math.max(this.pushed, Math.hypot(best.x - fish.x, best.y - fish.y, best.z - fish.z));
+      fish.x = best.x; fish.y = best.y; fish.z = best.z;
+    }
   }
 
   /** Under ice or a gale's waves the fish keep deeper: `surfaceGap` (m) under the still surface for their backs. */
@@ -298,14 +459,19 @@ export class FishPopulation {
     const random = this.random;
     let awayX = fish.x - x, awayZ = fish.z - z;
     const length = Math.hypot(awayX, awayZ);
-    // Straight under it: any way away (its heading's, turned); else away, scattered.
-    const away = length < 1e-3 ? fish.heading + Math.PI / 2 * (random() < 0.5 ? 1 : -1) : Math.atan2(awayZ, awayX);
-    const angle = away + (random() * 2 - 1) * FRIGHT.spread;
+    // Away, scattered; but from over its own body (within its length of its middle), across its heading, the short way
+    // out from under it: to the side away from it (straight over it, either).
+    const acrossX = -Math.sin(fish.heading), acrossZ = Math.cos(fish.heading);
+    const side = awayX * acrossX + awayZ * acrossZ;
+    const over = length < fish.length;
+    const away = over ? Math.atan2(acrossZ, acrossX) + (side > 1e-3 ? 0 : side < -1e-3 ? Math.PI : random() < 0.5 ? 0 : Math.PI) : Math.atan2(awayZ, awayX);
+    const angle = away + (random() * 2 - 1) * FRIGHT.spread * (over ? 0.4 : 1);
     awayX = Math.cos(angle); awayZ = Math.sin(angle);
     const seconds = range(random, FRIGHT.seconds) * (0.6 + 0.4 * closeness);
     if (fish.fright > seconds * 0.5 && fish.fleeX * awayX + fish.fleeZ * awayZ > 0) return;   // already fleeing this way
+    // Already fleeing, it turns its flight this way without whipping round again (its C-start is the first fright's).
+    if (fish.fright <= 0) fish.cStart = C_START.seconds;
     fish.fright = Math.max(fish.fright, seconds);
-    fish.cStart = C_START.seconds;
     fish.fleeX = awayX; fish.fleeZ = awayZ;
     fish.wary = range(random, FRIGHT.wary);
     fish.food = null;
@@ -327,11 +493,14 @@ export class FishPopulation {
    * frightens those near it; one that lies still is in the way. `foods`:
    * what they may eat, [{id, x, y, z, radius, floating, settled}] (settled:
    * seconds it has lain or floated still). Returns the bites, [{id, x, y, z,
-   * floating}], taken since.
+   * floating}], taken since. A thing's `radius` is its reach from its
+   * centre, `thickness` and `normal` (optional) make it a rounded disc
+   * (keepClear), `id` the food's it is.
    */
   step(seconds, { threats = [], foods = [] } = {}) {
     if (!this.water || this.fish.length === 0) return [];
     this.bites = [];
+    this.pushed = 0;
     const steps = Math.max(1, Math.ceil(seconds / (1 / 30) - 1e-9));
     const dt = seconds / steps;
     for (let index = 0; index < steps; index++) this.stepOnce(dt, threats, foods);
@@ -497,13 +666,29 @@ export class FishPopulation {
       const apart = Math.hypot(apartX, apartZ, fish.y - other.y);
       if (apart < reach && apart > 1e-6) { wantX += apartX / apart * 2 * (reach - apart) / reach; wantZ += apartZ / apart * 2 * (reach - apart) / reach; }
     }
-    // Things in the water: swum round.
-    for (const threat of threats) {
-      if (threat.inAir) continue;
-      const apartX = fish.x - threat.x, apartZ = fish.z - threat.z, apartY = fish.y - threat.y;
-      const reach = threat.radius + length * 0.8;
-      const apart = Math.hypot(apartX, apartZ, apartY);
-      if (apart < reach && apart > 1e-6) { wantX += apartX / apart * 3 * (reach - apart) / reach; wantZ += apartZ / apart * 3 * (reach - apart) / reach; }
+    // Things: foreseen (foresee), it bolts from one coming on it and swims round one lying still; near one, it eases off
+    // (its own food it comes up to: keepClear holds it off).
+    for (const thing of threats) {
+      const ownFood = thing.id !== undefined && thing.id === fish.food?.id;
+      if (!ownFood) {
+        const soon = this.foresee(fish, thing, thingNow);
+        if (soon !== null) {
+          if (!thing.still) this.frighten(fish, thingNow.x, thingNow.z, 1 - soon / CLEAR.ahead);
+          else {
+            // Round it: across its heading, to the side away from the thing, the more the sooner it would touch.
+            const acrossX = -Math.sin(fish.heading), acrossZ = Math.cos(fish.heading);
+            const side = (fish.x - thing.x) * acrossX + (fish.z - thing.z) * acrossZ >= 0 ? 1 : -1;
+            const urgency = 1 - soon / CLEAR.ahead;
+            wantX += acrossX * side * 4 * urgency; wantZ += acrossZ * side * 4 * urgency;
+            wantY += Math.sign(fish.y - thing.y) * urgency;
+            wantSpeed *= 1 - 0.5 * urgency;
+          }
+        }
+      }
+      if (ownFood || thing.y - thing.radius > 0 || Math.hypot(fish.x - thing.x, fish.y - thing.y, fish.z - thing.z) > thing.radius + 1.6 * length + 0.1) continue;
+      const clear = this.clearOf(fish, thing, thing.x, thing.y, thing.z, fish.x, fish.y, fish.z, fish.heading, fish.pitch, awayWorst);
+      const near = length;
+      if (clear < near) { const push = 3 * (1 - Math.max(clear, 0) / near); wantX += awayWorst.x * push; wantZ += awayWorst.z * push; wantY += awayWorst.y * push * 0.5; }
     }
     // The water's sides: turned back from them, and from where its heading would take it within a second.
     const { bounds } = this.water;
@@ -530,6 +715,7 @@ export class FishPopulation {
       wantX += slopeX / slope * 3; wantZ += slopeZ / slope * 3;
     }
 
+    fish.feeding = feeding;
     // What it wants, eased over a fraction of a second (STEADY), so pulls that trade places from step to step never
     // make it waver; then turn toward it, no faster than it can, easing into and out of the turn.
     const settle = Math.min(1, (fish.fright > 0 ? STEADY.fleeing : STEADY.cruising) * dt);
@@ -566,15 +752,10 @@ export class FishPopulation {
     }
     fish.y += fish.climb * dt;
     // Never out of its water: inside the box, nose and tail too, under the surface, over the bed. Held at a wall it
-    // slows and turns along it rather than pressing into it.
-    const heldX = clamp(fish.x, bounds.minX + keep, bounds.maxX - keep), heldZ = clamp(fish.z, bounds.minZ + keep, bounds.maxZ - keep);
-    if (heldX !== fish.x || heldZ !== fish.z) {
-      fish.speed *= Math.max(0, 1 - 3 * dt);   // the walls' push above turns it
-      fish.x = heldX; fish.z = heldZ;
-    }
-    const kept = this.band(species, length, fish.x, fish.z, feeding);
-    if (kept) fish.y = clamp(fish.y, kept[1], kept[0]);
-    else fish.y = Math.min(fish.y, -(this.surfaceGap + BODY_HALF_HEIGHT * species.shape.depth * length));
+    // slows and turns along it rather than pressing into it (the walls' push above turns it).
+    if (this.holdInWater(fish)) fish.speed *= Math.max(0, 1 - 3 * dt);
+    // Never into a thing (keepClear).
+    this.keepClear(fish, threats);
     // The tail beats once a stride, at least slowly while it hangs still; a flick after a bite or as it bolts.
     // Never faster than TAIL_MOST beats a second: a faster beat would shimmer at the screen's sixty frames, not swim.
     const frequency = clamp(Math.abs(fish.speed) / (STRIDE * length), 0.6, TAIL_MOST);

@@ -288,7 +288,7 @@ import { IceSheet, ICE_THICKNESS } from './ice.js';
 import { IceCracks } from './iceCracks.js';
 import { FishPopulation, edibleBites } from './fish.js';
 import { createFishView } from './fishMeshes.js';
-import { createKoiGarden, koiGround, holdOffStones } from './koiGarden.js';
+import { createKoiGarden, koiGround, holdInGarden, keepInPond } from './koiGarden.js';
 
 // Quality presets. The splash lives in a few dozen pixels, so the fluid
 // buffer's resolution is what it is made of: a drop narrower than a buffer
@@ -419,6 +419,7 @@ const FISH_STILL = 0.12;
 const FISH_GAP = { open: 0.04, ice: 0.06, gale: 0.35 };
 const FISH_BITE = { radius: 0.018, dimple: 0.0015, shrink: 0.45 };   // and as it is eaten a thing is drawn smaller, by this share once eaten (its body as it was)
 const FISH_LAKE_INSET = { side: 0.4, far: 0.8 };   // m: the lake's fish keep this far inside the solver's patch at its sides and far edge, where the shore view sees into the water
+const FISH_SHAPE_SLACK = 1.05;   // a thing's reach and thickness as the fish keep clear of it, over its mesh's (fishShapeOf)
 const KOI_BED_ALBEDO = 0.3;   // the Koi pond's gravel and silt, for what the splash's drops show of its bed (src/splash.js setBed)
 const ORBIT_TURN = Math.PI;   // radians the view turns for a drag across the canvas's height
 const GLIDE_SECONDS = 1.0;    // a glide to another view
@@ -552,14 +553,15 @@ const LAKE_CLARITIES = WATER_CHOICES.filter((name) => name !== 'frozen');
 // (`koi`), a pond in a Japanese garden under the same sky: the lake's open
 // water inside a closed, irregular shore of its own (KOI_SHORE in
 // src/pondFloor.js, setShoreKind; setKoiPond), stone-edged with a pebble
-// beach, its own water (WATER_CLARITIES.koi) and stones (src/koiGarden.js).
+// beach, its own water (WATER_CLARITIES.koi) and a garden round it, out of
+// reach behind a hedge (src/koiGarden.js).
 // Each place's fish are
 // src/fish.js's (FISH_BY_PLACE, by the place's name).
 const PLACES = {
   ...Object.fromEntries(SKY_NAMES.map((name) => [name, { sky: name, pool: false }])),
   swiss: { sky: 'swiss', pool: false, defaultWater: 'frozen', defaultView: 'level' },
   pool: { sky: 'lakeside', pool: true },
-  koi: { sky: 'lakeside', pool: false, koi: true },
+  koi: { sky: 'garden', pool: false, koi: true },
 };
 const PLACE_ALIASES = { alpine: 'swiss', meadow: 'lakeside', open: 'lakeside' };
 const DEFAULT_PLACE = 'lakeside';
@@ -923,10 +925,9 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   // water is the pool's (showScenery).
   sceneUnder.add(pool.basin);
   sceneMain.add(pool.walls, pool.mirrorWalls, pool.yard, pool.mirrorYard);
-  // The Koi pond's stones (src/koiGarden.js): above the water, in the under-water pass and in the mirror; shown in the Koi pond.
-  const garden = createKoiGarden({ envTexture: environment.envTexture, waterFog: { extinction: lighting.extinction, color: lighting.waterColor }, mirrorLayer: MIRROR_LAYER, lighting });
-  sceneMain.add(garden.above, garden.mirror);
-  sceneUnder.add(garden.below);
+  // The Koi pond's garden (src/koiGarden.js): in the main scene and the mirror; shown in the Koi pond.
+  const garden = createKoiGarden({ envTexture: environment.envTexture, mirrorLayer: MIRROR_LAYER, lighting });
+  sceneMain.add(...garden.meshes);
   /** The lake's bed, beach and open water, or the pool's basin and deck: the meshes only (setPooled changes the water). */
   function showScenery(asPool) {
     floor.visible = shore.visible = !asPool;
@@ -1664,6 +1665,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     const thrownAs = MANNERS.includes(options.manner) ? options.manner : options.skip === undefined ? manner : options.skip ? 'skip' : 'toss';
     const skips = thrownAs === 'skip' && thing.skips;
     const target = new THREE.Vector3(x, 0, z);
+    if (koiPond) keepInPond(target, radius);   // nothing thrown comes down on the Koi pond's ground (src/koiGarden.js)
     // Made first, so a thing that flutters is aimed by its own flight (src/rock.js trialFlight) and a skip by its own
     // mass (a pizza's toppings and all); a skip is let go lower, from the hand let down (skipThrow).
     const rock = new Rock({ radius, position: handPosition(radius), velocity: new THREE.Vector3(), envTexture: environment.envTexture, waterFog: { extinction: lighting.extinction, color: lighting.waterColor }, thing: name, mass, mirrorLayer: MIRROR_LAYER, skip: skips, water: surface.rideUniforms });
@@ -1684,7 +1686,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     // In the pool the deck is ground (src/pool.js poolGround); on ice the ice is, over the deck round a frozen pool (src/ice.js).
     if (ice.on) rock.ground = ice.ground;
     else if (pooled) rock.ground = poolGround(pool.square);
-    else if (koiPond) rock.ground = koiGround;   // the Koi pond's stones and its garden's ground (src/koiGarden.js)
+    else if (koiPond) rock.ground = koiGround;   // the Koi pond's lawn (src/koiGarden.js)
     rocks.push(rock);
     sceneMain.add(rock.meshAbove);
     sceneUnder.add(rock.meshBelow);
@@ -1777,11 +1779,13 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   const waterPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
   const pointer = new THREE.Vector2();
   const throwMargin = () => Math.max(pooled ? POOL_MARGIN : POND_MARGIN, MARGIN_RADII * measureThing(thingName).radius);
-  /** The point ({ x, z }, changed in place) brought inside the solver's patch, or the pool's walls, less `margin`. */
+  /** The point ({ x, z }, changed in place) brought inside the solver's patch, or the pool's walls, less `margin`; in the Koi pond inside its shore too. */
   function keepOnWater(point, margin) {
     const bounds = pooled ? pool.square : { minX: water.domainMin[0], minZ: water.domainMin[1], size: water.domainSize };
     point.x = THREE.MathUtils.clamp(point.x, bounds.minX + margin, bounds.minX + bounds.size - margin);
     point.z = THREE.MathUtils.clamp(point.z, bounds.minZ + margin, bounds.minZ + bounds.size - margin);
+    // In the Koi pond, well inside its shore too: nothing thrown comes down on the ground (src/koiGarden.js).
+    if (koiPond) keepInPond(point, margin);
     return point;
   }
   /** The water under the pointer, brought onto the water less `margin` (keepOnWater) unless `keep` is false. */
@@ -2023,9 +2027,9 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       simulationTime += step;
     }
   }
-  /** What holds things in (src/collide.js `contain`): the pool's walls, the Koi pond's stones, a hole in the ice; null with none. */
+  /** What holds things in (src/collide.js `contain`): the pool's walls, the Koi pond's hedge, a hole in the ice; null with none. */
   function containThings(rock) {
-    return (pooled ? holdInPool(rock, pool.square) : null) ?? (koiPond ? holdOffStones(rock) : null) ?? (ice.on ? ice.contain(rock) : null);
+    return (pooled ? holdInPool(rock, pool.square) : null) ?? (koiPond ? holdInGarden(rock) : null) ?? (ice.on ? ice.contain(rock) : null);
   }
   function simulate(dt) {
     const frame = Math.min(dt, CATCH_UP * PHYSICS_STEP);
@@ -2077,6 +2081,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
         splash.knock(knock);
         sound.knock({ speed: knock.closing, radius: ripple.rock.radius, bounce: ripple.rock.collisionBounce }, seenAfter());
       }
+      // A thing come down behind the Koi pond's front shrubs is lost in the garden (src/koiGarden.js holdInGarden).
+      for (const rock of stepping) if (rock.lostInGarden && rock.fading === undefined) fadeOut(rock);
       stepsTime += PHYSICS_STEP;
     }
     advanceSplash(end);
@@ -2129,16 +2135,18 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       const last = rock.fishSeen ?? rock.position.clone();
       const speed = last.distanceTo(rock.position) / seconds;
       rock.fishSeen = (rock.fishSeen ?? new THREE.Vector3()).copy(rock.position);
-      const { x, y, z } = rock.position;
+      const { x, y, z } = rock.centre.lengthSq() > 0 ? rock.centre : rock.position;   // where it is drawn (src/rock.js syncMeshes)
+      const shape = fishShapeOf(rock);
+      const { velocity } = rock;
       if (rock.state === 'air') {
-        threats.push({ x, y, z, radius: rock.radius, vx: rock.velocity.x, vy: rock.velocity.y, vz: rock.velocity.z, inAir: true });
+        threats.push({ x, y, z, ...shape, vx: velocity.x, vy: velocity.y, vz: velocity.z, inAir: true });
         rock.stillFor = 0;
         continue;
       }
       const inWater = rock.state === 'water' || rock.state === 'skim' || rock.state === 'float' || rock.afloat || (rock.state === 'rest' && !rock.onGround && y < 0);
       if (!inWater) continue;
       const still = speed < FISH_STILL;
-      threats.push({ x, y, z, radius: rock.radius, inAir: false, still });
+      threats.push({ id: rock, x, y, z, ...shape, vx: still ? 0 : velocity.x, vy: still ? 0 : velocity.y, vz: still ? 0 : velocity.z, inAir: false, still });
       rock.stillFor = still ? (rock.stillFor ?? 0) + seconds : 0;
       if (rock.thing.edible && rock.thawed > 0.9) foods.push({ id: rock, x, y, z, radius: rock.radius, floating: rock.state === 'float' || rock.afloat, settled: rock.stillFor });
     }
@@ -2160,6 +2168,31 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     }
   }
   let fingerSeen = null;   // where swimFish last saw the finger
+
+  /**
+   * A thing as the fish keep clear of it (src/fish.js keepClear): its reach
+   * from its centre and its half-thickness about its short axis (a pizza's,
+   * a flat stone's), from its mesh's corners, as it is turned and scaled now
+   * (a ball's its radius); FISH_SHAPE_SLACK over, for its soft bend and its
+   * mesh's facets.
+   */
+  function fishShapeOf(rock) {
+    const scale = rock.radius * (rock.eatenScale ?? 1) * FISH_SHAPE_SLACK;
+    if (rock.sphere) return { radius: rock.radius * (rock.eatenScale ?? 1) * FISH_SHAPE_SLACK };
+    if (!rock.fishShape) {
+      const axis = rock.shape.axes[2], corners = rock.geometry.attributes.position;
+      let reach = 0, thickness = 0;
+      for (let corner = 0; corner < corners.count; corner++) {
+        const cornerX = corners.getX(corner), cornerY = corners.getY(corner), cornerZ = corners.getZ(corner);
+        reach = Math.max(reach, Math.hypot(cornerX, cornerY, cornerZ));
+        thickness = Math.max(thickness, Math.abs(cornerX * axis.x + cornerY * axis.y + cornerZ * axis.z));
+      }
+      rock.fishShape = { reach, thickness, axis: axis.clone(), normal: new THREE.Vector3() };
+    }
+    const { reach, thickness, axis, normal } = rock.fishShape;
+    normal.copy(axis).applyQuaternion(rock.meshAbove.quaternion);
+    return { radius: reach * scale, thickness: thickness * scale, normal: [normal.x, normal.y, normal.z] };
+  }
 
   let framesRendered = 0;
   function render() {
@@ -2240,7 +2273,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     ...ambientWaves.uniforms(),
     ...ice.uniforms,   // no shafts under the ice (underwaterShafts)
   });
-  const hiddenFromBelow = () => [environment.sky, shore, koiLand, pool.walls, pool.yard, garden.above, marker, arc, ...rocks.map((rock) => rock.meshAbove)];
+  const hiddenFromBelow = () => [environment.sky, shore, koiLand, pool.walls, pool.yard, ...garden.meshes, marker, arc, ...rocks.map((rock) => rock.meshAbove)];
   function renderFromBelow() {
     renderer.setRenderTarget(mainTarget);
     renderer.clear(true, true, false);
@@ -2569,7 +2602,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
         // The other water's scenery (the pool's, or the lake's), from above
         // and below, so a change of water compiles nothing.
         showScenery(!pooled);
-        garden.setVisible(true, { building: false });   // the Koi pond's stones' programs too, whatever the place (src/koiGarden.js builds them only when shown)
+        garden.setVisible(true, { building: false });   // the Koi pond's garden's programs too, whatever the place (src/koiGarden.js builds it only when shown)
         koiLand.visible = true;
         render();
         renderFrom(VIEWS.under);

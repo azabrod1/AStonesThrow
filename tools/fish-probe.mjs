@@ -14,6 +14,10 @@
 // - something edible floating in the Koi pond brings the koi to it once it
 //   has settled: no more than FEEDERS at a time, each biting at its edge,
 //   at the surface; a sunk one they bite where it lies; none while wary;
+// - nothing passes through a fish: stones and bowling balls dropped onto
+//   them, a pizza sinking among them, one adrift, a stone lying on the bed
+//   and their own food: no fish's body ever enters a thing, and keepClear
+//   rarely has to push one (they get out of the way first);
 // - under ice and a gale's waves they keep deeper (setConditions);
 // - edible things (src/things.js `edible`) and their bites (edibleBites);
 // - the population draws no Math.random (its own seeded stream): a seeded
@@ -180,7 +184,7 @@ console.log('\nfood:');
   let firstBite = null, bites = [], mostAt = 0;
   for (let frame = 0; frame < 60 / FRAME; frame++) {
     pizza.settled += FRAME;
-    const taken = population.step(FRAME, { foods: [pizza], threats: [{ ...pizza, inAir: false, still: true }] });
+    const taken = population.step(FRAME, { foods: [pizza], threats: [{ ...pizza, thickness: 0.012, normal: [0, 1, 0], inAir: false, still: true }] });
     if (taken.length && firstBite === null) firstBite = frame * FRAME;
     bites.push(...taken);
     mostAt = Math.max(mostAt, population.fish.filter((fish) => fish.food?.id === 'pizza').length);
@@ -229,6 +233,56 @@ console.log('\nfood:');
   lake.setWaters({ place: 'lakeside', ...LAKE });
   for (let frame = 0; frame < 30 / FRAME; frame++) lake.step(FRAME, { foods: [{ id: 'apple', x: 0, y: 0, z: -0.5, radius: 0.04, floating: true, settled: 10 }] });
   check(lake.fish.filter((fish) => !fish.species.eats).every((fish) => !fish.food), 'a pike never comes to food');
+}
+
+console.log('\nnothing passes through a fish:');
+{
+  // A fish's least clearance of a thing (src/fish.js clearOf: its spine less its thickness).
+  const away = { x: 0, y: 0, z: 0 };
+  const clearance = (population, thing) => Math.min(...population.fish.map((fish) => population.clearOf(fish, thing, thing.x, thing.y, thing.z, fish.x, fish.y, fish.z, fish.heading, fish.pitch, away)));
+  const scenario = (name, place, water, seed, seconds, makeThings, { foods: makeFoods = null, pushes = 0.1 } = {}) => {
+    const population = new FishPopulation({ seed });
+    population.setWaters({ place, ...water });
+    for (let frame = 0; frame < 8 / FRAME; frame++) population.step(FRAME);
+    let least = Infinity, pushed = 0, pushedFrames = 0, frames = 0;
+    for (let frame = 0; frame < seconds / FRAME; frame++) {
+      const things = makeThings(frame * FRAME, population);
+      population.step(FRAME, { threats: things, foods: makeFoods ? makeFoods(things) : [] });
+      for (const thing of things) if (thing.y - thing.radius <= 0) least = Math.min(least, clearance(population, thing));
+      pushed = Math.max(pushed, population.pushed);
+      if (population.pushed > 0.002) pushedFrames++;
+      frames++;
+    }
+    check(least >= -1e-6, `${name}: no fish ever inside it (least clearance ${(least * 100).toFixed(1)} cm)`);
+    check(pushedFrames / frames < pushes, `${name}: they get out of its way, held off it in ${(100 * pushedFrames / frames).toFixed(1)}% of frames (the farthest ${(pushed * 100).toFixed(1)} cm)`);
+  };
+  // A thing falling from 1.5 m onto a fish every 1.5 s, sinking at its own speed once in, to the bed.
+  const dropped = (radius, sink, bedAt) => (time, population) => {
+    const cycle = Math.floor(time / 1.5), into = time - cycle * 1.5;
+    population.target ??= [];
+    if (!population.target[cycle]) { const fish = population.fish[cycle % population.fish.length]; population.target[cycle] = { x: fish.x, z: fish.z }; }
+    const { x, z } = population.target[cycle];
+    const fall = Math.sqrt(2 * 1.5 / 9.81);
+    if (into < fall) return [{ x, y: 1.5 - 0.5 * 9.81 * into * into, z, radius, vx: 0, vy: -9.81 * into, vz: 0, inAir: true }];
+    const bed = -bedAt(x, z) + radius;
+    const y = Math.max(-sink * (into - fall), bed);
+    return [{ x, y, z, radius, vx: 0, vy: y > bed ? -sink : 0, vz: 0, inAir: false, still: y <= bed }];
+  };
+  scenario('stones dropped onto the koi', 'koi', KOI, 11, 30, dropped(0.04, 1.2, koiFloorDepthAt));
+  scenario('bowling balls dropped onto the koi', 'koi', KOI, 12, 30, dropped(0.11, 2.5, koiFloorDepthAt), { pushes: 0.15 });
+  scenario('stones dropped onto the minnows', 'lakeside', LAKE, 13, 30, dropped(0.04, 1.2, floorDepthAt));
+  // A pizza (a disc 15 cm across its half, 1 cm thick) adrift at the surface, through the koi.
+  scenario('a pizza adrift through them', 'koi', KOI, 14, 30, (time) => [{ id: 'pizza', x: -2.5 + 0.15 * time, y: -0.005, z: -1.2, radius: 0.15, thickness: 0.012, normal: [0, 1, 0], vx: 0.15, vy: 0, vz: 0, inAir: false, still: false }]);
+  // A pizza sinking slowly, tilted, among them, then lying on the bed; they come to eat it.
+  scenario('a pizza sinking, then eaten on the bed', 'koi', KOI, 15, 40, (time) => {
+    const bed = -koiFloorDepthAt(0, -1.2) + 0.012, y = Math.max(-0.12 * time, bed);
+    return [{ id: 'pizza', x: 0, y, z: -1.2, radius: 0.15, thickness: 0.012, normal: [0.3, 0.95, 0], vx: 0, vy: y > bed ? -0.12 : 0, vz: 0, inAir: false, still: y <= bed }];
+  }, { foods: ([pizza]) => [{ id: 'pizza', x: pizza.x, y: pizza.y, z: pizza.z, radius: 0.15, floating: false, settled: pizza.still ? 10 : 0 }] });
+  // A floating pizza they feed at, from under it.
+  scenario('a floating pizza they feed at', 'koi', KOI, 16, 40, () => [{ id: 'pizza', x: 0.5, y: -0.005, z: -1.5, radius: 0.15, thickness: 0.012, normal: [0, 1, 0], vx: 0, vy: 0, vz: 0, inAir: false, still: true }],
+    { foods: () => [{ id: 'pizza', x: 0.5, y: -0.005, z: -1.5, radius: 0.15, floating: true, settled: 10 }] });
+  // Stones lying on the bed where the fish swim.
+  scenario('stones lying on the bed', 'koi', KOI, 17, 60, () => [[0, -1.2], [1, -0.5], [-1, -2]].map(([x, z]) => ({ x, y: -koiFloorDepthAt(x, z) + 0.06, z, radius: 0.06, vx: 0, vy: 0, vz: 0, inAir: false, still: true })), { pushes: 0.02 });
 }
 
 console.log('\nice and gale:');

@@ -265,8 +265,13 @@ const SKIES = {
     },
   },
   swiss: { mirrored: true, sunAzimuth: 45, hours: { midday: { file: 'lago_disola', resolution: '4k', label: 'Midday' } } },
+  // The Koi pond's own (src/main.js PLACES `koi`), no place of its own (`ownPlace`): Ninomaru Teien, the garden of
+  // Nagoya Castle, in April's afternoon light through its trees (`shadedSun`: its brightness from its sky, the sun
+  // being behind leaves).
+  garden: { ownPlace: false, shadedSun: true, sunAzimuth: 100, hours: { afternoon: { file: 'ninomaru_teien', label: 'Afternoon', clock: '15:09' } } },
 };
-export const SKY_NAMES = Object.keys(SKIES);
+/** The skies that are each a place of their own (the Location setting's lakes; the Koi pond takes the garden's). */
+export const SKY_NAMES = Object.keys(SKIES).filter((name) => SKIES[name].ownPlace !== false);
 export const DEFAULT_SKY = 'lakeside';   // an open lake to a far shore, as the Lake water is
 /** A place's hours in the order of the day: their names, labels and local times (clock, 'hh:mm', or undefined for a lone photograph). */
 export const skyHours = (place) => Object.entries(SKIES[place]?.hours ?? {}).map(([name, { label, clock }]) => ({ name, label, clock }));
@@ -636,7 +641,11 @@ export function createEnvironment(renderer, { name, hour, sunAzimuth, sunBalance
 
     // The brightness: the anchor's as a single photograph's, the hour's
     // light against the anchor's (Light by the hour).
-    const anchorScale = (balanceLuminance / luminance(anchor.sunIrradiance)) * SKY_EXPOSURE;
+    // A sun seen through leaves (`shadedSun`: the garden's) measures dim against its sky: such a photograph takes its
+    // brightness from its sky instead, as bright as the balance's under its sun.
+    const anchorScale = (place.shadedSun
+      ? (balanceLuminance / luminance(balance.sunIrradiance)) * (luminance(balance.skyRadiance) / luminance(anchor.skyRadiance))
+      : balanceLuminance / luminance(anchor.sunIrradiance)) * SKY_EXPOSURE;
     const level = file === anchorFile ? 1 : adaptedLight(hourLight(measurement)) / adaptedLight(hourLight(anchor));
     const scale = anchorScale * level;
     if (sunlit) {
