@@ -2790,7 +2790,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     get fish() {
       return {
         drawCalls: fishView.drawCalls,
-        fish: fishes.fish.map((one) => ({ kind: one.species.name, length: one.length, x: one.x, y: one.y, z: one.z, speed: one.speed, frightened: one.fright > 0, feeding: Boolean(one.food) })),
+        fish: fishes.fish.map((one) => ({ kind: one.species.name, length: one.length, x: one.x, y: one.y, z: one.z, heading: one.heading, speed: one.speed, frightened: one.fright > 0, feeding: Boolean(one.food) })),
       };
     },
     /**

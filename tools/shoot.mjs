@@ -58,8 +58,9 @@
 // --trace draws each stone's path as a line (__pond.setTrace).
 // --wait=seconds waits that long for the pond to be ready (60 by default).
 // --fish=none leaves the water without fish (src/fish.js; ?fish=none), and
-// --look=fish:n turns the view to fish n (__pond.fish's order) as it is after
-// the pre-roll.
+// --look=fish:n turns the view, after the pre-roll, to fish n
+// (__pond.fish's order); fish:n:side looks at it from beside it, under the
+// water.
 // --thing=name[:value] throws that (a key of THINGS in src/things.js: a
 // kind of stone, golf, tennis, bowling, basketball; ?thing=), at that
 // slider value (a bowling ball's pounds, a basketball's size; a stone's
@@ -183,7 +184,17 @@ if (look && !look.startsWith('fish:')) await page.evaluate((l) => { const [x, y,
 if (thingValue) await page.evaluate((value) => window.__pond.setSize(value), Number(thingValue));
 await page.evaluate((seconds) => window.__pond.advance(seconds), preRoll);
 if (look.startsWith('fish:')) {
-  const where = await page.evaluate((index) => { const one = window.__pond.fish.fish[index]; if (one) window.__pond.lookAtUnderWater(one.x, one.y, one.z); return one; }, Number(look.slice(5)));
+  // `side` (fish:n:side): from under the water, level with it, beside it, at a few of its lengths.
+  const [index, side] = look.slice(5).split(':');
+  const where = await page.evaluate(([index, side]) => {
+    const one = window.__pond.fish.fish[index];
+    if (!one) return one;
+    if (side) window.__pond.setOrbit({ azimuth: (-one.heading * 180) / Math.PI, elevation: 4, distance: 0.25 + 2.2 * one.length, pivot: [one.x, one.y, one.z] });
+    else window.__pond.lookAtUnderWater(one.x, one.y, one.z);
+    return one;
+  }, [Number(index), side === 'side']);
+  // A frame drawn with the view turned: a thousandth of a second on (the fish moves a fraction of a millimetre).
+  await page.evaluate(() => { window.__pond.setTimeScale(1); window.__pond.advance(0.001); });
   console.log('[shoot] fish', JSON.stringify(where));
 }
 await page.screenshot({ path: path.join(outDir, 'idle.png'), timeout: 180000 });

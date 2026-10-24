@@ -65,6 +65,9 @@ export const FISH_PATTERNS = ['minnow', 'perch', 'pike', 'trout', 'char', 'bass'
 const RINGS = 30;        // the body's cross-sections, snout to tail root
 const AROUND = 20;       // and the points round each
 const BODY_END = 0.8;    // the tail's root, as a share of the length from the nose
+// The caudal peduncle's end (fishBody): `rings` more sections over `reach` (body lengths) past the tail root, flattening
+// to a keel `edge` (body lengths) thick as deep as the tail fin's root, which it reaches into.
+const PEDUNCLE = { rings: 3, reach: 0.03, edge: 0.004 };
 const PART = { body: 0, tail: 1, dorsal: 2, pectoral: 3, pelvic: 4, anal: 5 };
 const SHADOW = { darkest: 0.85, blur: 0.025, spread: 0.25 };   // the shadow's share of the sunlight at most, its blur per metre over the bed (m/m), and how far its strength falls per metre up
 
@@ -112,8 +115,30 @@ export function fishBody(shape) {
       parts.infos.push(PART.body, along, Math.acos(Math.max(-1, Math.min(1, up))) / Math.PI, Math.sign(across));
     }
   }
+  // The caudal peduncle closed into the tail: past the tail root the body flattens to a thin keel as deep as the tail
+  // fin's root (PEDUNCLE), reaching into the fin, so no opening shows between body and tail.
+  const end = sectionAt(shape, 1), rootHalf = end.back * 1.1;
+  for (let ring = 1; ring <= PEDUNCLE.rings; ring++) {
+    const share = ring / PEDUNCLE.rings;
+    const x = 0.5 - BODY_END - share * PEDUNCLE.reach;
+    const back = THREE.MathUtils.lerp(end.back, rootHalf, share), belly = THREE.MathUtils.lerp(end.belly, rootHalf, share);
+    const side = end.side * (1 - share) + PEDUNCLE.edge * share;
+    for (let point = 0; point < AROUND; point++) {
+      const angle = (point / AROUND) * Math.PI * 2;
+      const up = Math.cos(angle), across = Math.sin(angle);
+      const y = (up > 0 ? back : belly) * Math.sign(up) * Math.pow(Math.abs(up), 0.85 - 0.5 * share);
+      const z = side * Math.sign(across) * Math.pow(Math.abs(across), 0.8);
+      parts.positions.push(x, y, z); parts.normals.push(0, 0, 0);
+      parts.infos.push(PART.body, 1, Math.acos(Math.max(-1, Math.min(1, up))) / Math.PI, Math.sign(across));
+    }
+  }
+  // Its end sealed to a point on the keel's middle.
+  const last = parts.positions.length / 3;
+  parts.positions.push(0.5 - BODY_END - PEDUNCLE.reach - 0.002, 0, 0); parts.normals.push(-1, 0, 0); parts.infos.push(PART.body, 1, 0.5, 0);
+  const rings = RINGS + PEDUNCLE.rings;
+  for (let point = 0; point < AROUND; point++) parts.indices.push(last, 1 + (rings - 1) * AROUND + (point + 1) % AROUND, 1 + (rings - 1) * AROUND + point);
   for (let point = 0; point < AROUND; point++) parts.indices.push(0, 1 + point, 1 + (point + 1) % AROUND);
-  for (let ring = 0; ring < RINGS - 1; ring++) {
+  for (let ring = 0; ring < rings - 1; ring++) {
     for (let point = 0; point < AROUND; point++) {
       const here = 1 + ring * AROUND + point, next = 1 + ring * AROUND + (point + 1) % AROUND;
       parts.indices.push(here, here + AROUND, next, next, here + AROUND, next + AROUND);
@@ -146,7 +171,7 @@ export function fishFins(shape) {
   };
   const xAt = (along) => 0.5 - along * BODY_END;
   // The tail: its root the body's end, its edge the fork (`fork` > 0) or a round (< 0); `along` is up it, -1 to 1.
-  const tailRoot = 0.5 - BODY_END + 0.015, reach = tailRoot + 0.5, spread = shape.tail / 2;
+  const tailRoot = 0.5 - BODY_END - 0.012, reach = tailRoot + 0.5, spread = shape.tail / 2;   // its root inside the peduncle's keel
   const rootHalf = sectionAt(shape, 1).back * 1.1;
   membrane(PART.tail, 0, 12, 5, (along, out) => {
     const span = 2 * along - 1;
