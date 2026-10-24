@@ -498,6 +498,7 @@ const APPLE = {
   tall: [0.9, 1.06], lopsided: 0.05, lobes: [0, 0.035], stalkLength: [0.22, 0.4], stalkRadius: 0.035,
 };
 
+const APPLE_SPHERE = { sphere: null };   // the unit icosphere every apple starts from, made once
 /** An apple's geometry, of unit radius (the header), indexed, its normals the surface's; its own, from `random`. */
 export function createAppleGeometry(random = Math.random) {
   const between = ([least, most]) => least + (most - least) * random();
@@ -507,10 +508,16 @@ export function createAppleGeometry(random = Math.random) {
   const tall = between(APPLE.tall), shoulder = between(APPLE.shoulder), lobes = between(APPLE.lobes), lobeTurn = random() * Math.PI * 2;
   const leanAngle = random() * Math.PI * 2, lopsided = APPLE.lopsided * random();
   const dimple = between(APPLE.stalkDimple), dimpleWidth = between(APPLE.dimpleWidth);
-  const { positions, indices } = icosphere(4);
-  const colors = new Float32Array(positions.length);
+  // The unit sphere is made once (APPLE_SPHERE); each apple its own copy of it, in typed arrays, the stalk's corners
+  // after its own.
+  APPLE_SPHERE.sphere ??= icosphere(4);
+  const sphere = APPLE_SPHERE.sphere, sphereCount = sphere.positions.length;
+  const positions = new Float32Array(sphereCount + 12 * 3), colors = new Float32Array(sphereCount + 12 * 3);
+  positions.set(sphere.positions);
+  const indices = new Uint32Array(sphere.indices.length + 6 * 6);
+  indices.set(sphere.indices);
   const color = new THREE.Color();
-  for (let vertex = 0; vertex < positions.length; vertex += 3) {
+  for (let vertex = 0; vertex < sphereCount; vertex += 3) {
     const x = positions[vertex], y = positions[vertex + 1], z = positions[vertex + 2];
     const fromTop = Math.acos(Math.min(Math.max(y, -1), 1)), fromBottom = Math.PI - fromTop, around = Math.atan2(z, x);
     let scale = (1 - dimple * Math.exp(-((fromTop / dimpleWidth) ** 2)) - APPLE.calyxDimple[0] * Math.exp(-((fromBottom / APPLE.calyxDimple[1]) ** 2))) * (1 + shoulder * y);
@@ -524,25 +531,26 @@ export function createAppleGeometry(random = Math.random) {
     colors[vertex] = color.r; colors[vertex + 1] = color.g; colors[vertex + 2] = color.b;
   }
   // The stalk: a thin tapered hexagonal prism from the dimple's floor, leaning its own way.
-  const allPositions = [...positions], allColors = [...colors], allIndices = [...indices];
   const base = (1 - dimple - 0.02) * tall, length = between(APPLE.stalkLength), lean = 0.06 + 0.08 * random();
-  const first = allPositions.length / 3;
+  const first = sphereCount / 3;
   for (let ring = 0; ring < 2; ring++) {
     const height = base + ring * length, radius = APPLE.stalkRadius * (1 - 0.4 * ring);
     for (let side = 0; side < 6; side++) {
-      const angle = (side / 6) * Math.PI * 2;
-      allPositions.push(lean * ring * Math.cos(leanAngle) + radius * Math.cos(angle), height, lean * ring * Math.sin(leanAngle) + radius * Math.sin(angle));
-      allColors.push(APPLE.stalk.r, APPLE.stalk.g, APPLE.stalk.b);
+      const angle = (side / 6) * Math.PI * 2, at = 3 * (first + ring * 6 + side);
+      positions[at] = lean * ring * Math.cos(leanAngle) + radius * Math.cos(angle);
+      positions[at + 1] = height;
+      positions[at + 2] = lean * ring * Math.sin(leanAngle) + radius * Math.sin(angle);
+      colors[at] = APPLE.stalk.r; colors[at + 1] = APPLE.stalk.g; colors[at + 2] = APPLE.stalk.b;
     }
   }
-  for (let side = 0; side < 6; side++) {
+  for (let side = 0, at = sphere.indices.length; side < 6; side++, at += 6) {
     const next = (side + 1) % 6;
-    allIndices.push(first + side, first + 6 + side, first + next, first + next, first + 6 + side, first + 6 + next);
+    indices.set([first + side, first + 6 + side, first + next, first + next, first + 6 + side, first + 6 + next], at);
   }
   const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute('position', new THREE.Float32BufferAttribute(allPositions, 3));
-  geometry.setAttribute('color', new THREE.Float32BufferAttribute(allColors, 3));
-  geometry.setIndex(allIndices);
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  geometry.setIndex(new THREE.BufferAttribute(indices, 1));
   geometry.computeVertexNormals();
   return geometry;
 }
