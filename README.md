@@ -501,12 +501,15 @@ as the air takes to come up, so a big stone's boil is denser as well as
 wider and longer. The surface holds only so much of it: on fresh water one
 layer of bubbles bursts at a time, and the rest is the cloud of bubbles
 just under the surface, which most of a real boil's white is. So the water
-shader draws a boil up to that hold (a map value of 0.035) as one layer of
-clear-filmed bubbles on the surface, and the rest as the cloud, a milky,
-pale turquoise tint of the water seen through the surface (its colour the
-water's own absorption against the bubbles' scattering), churned in lumps,
-under the sky's reflection; the gale's whitecaps, a breaking wave's packed
-froth, stay white. A pebble's boil is nearly all fizz; a big stone's mostly
+shader draws a boil up to that hold (a map value of 0.035) as bubbles
+bursting on the surface, a random few at a time and most of them small,
+each a clear cap whitening toward its edge that swells, glints and bursts
+within half a second, and the rest as the cloud, a milky tint of the water
+seen through the surface (its colour the water's own absorption against the
+bubbles' scattering, the lake's blue-green paled), churned in lumps that
+break up its edge, under the sky's reflection; the gale's whitecaps, a
+breaking wave's packed froth, stay white. Foam specks ride over a boil's
+cloud as over clear water. A pebble's boil is nearly all fizz; a big stone's mostly
 cloud. Each is stamped as
 a patch of three to five sub-stamps of unequal sizes at random offsets,
 never one round Gaussian, so no two boils share a shape. Surface flows carry
@@ -534,8 +537,7 @@ layer of bubbles, lets the water show through. The larger bubbles have clear
 centres and bright rims, with milky fine bubbles between them. The map's
 separate boil and raft amounts control this material: a breaking wave's
 dense froth scatters more light; as it drains, the water shows through the
-bubble films; a splash's boil, one layer of clear bubbles, scatters less
-than either.
+bubble films.
 Those films use the existing bubble cells and fade to their measured mean
 opacity at a distance, adding no texture or noise layer. Close up (the
 shoot harness, `--seed=1`, `--view=high --fov=16`), a 6 cm stone thrown

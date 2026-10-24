@@ -105,7 +105,7 @@
 // fizz, a faint boil each, and a landing drop leaves a speck of boil of its
 // own. The water shader draws a boil as fresh water's (FOAM_PATTERN in
 // src/shaders/scene.js, its last paragraph): the surface holds only one layer
-// of bursting bubbles, clear-filmed, drawn as foam, and the rest of the boil
+// of bursting bubbles, drawn a few at a time, clear and glinting, and the rest of the boil
 // is the cloud of bubbles under it, a milky tint of the water seen through
 // the surface, never lace and never packed white froth. So a thrown stone
 // leaves little solid white and none for long: a 6 cm stone (R = 3 cm) a
