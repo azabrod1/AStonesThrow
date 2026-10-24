@@ -401,14 +401,18 @@ const plantingFrom = (angle) => 0.04 + 0.03 * Math.sin(3.1 * angle + 1);
 // spaced `spacing` (m) along the bank give or take, each `along`, `up` and `deep` (m, least and most: radii), a share
 // `skip` of them left out (a gap the row behind fills).
 const ROWS = [
-  { fineness: 1, behind: [0, 0], spacing: 0.62, along: [0.36, 0.62], up: [0.3, 0.6], deep: [0.3, 0.42], skip: 0 },
-  { fineness: 0.85, behind: [0.5, 0.8], spacing: 0.95, along: [0.5, 0.9], up: [0.6, 1.0], deep: [0.45, 0.6], skip: 0.12 },
-  { fineness: 0.6, behind: [1.4, 1.8], spacing: 1.25, along: [0.7, 1.15], up: [1.0, 1.5], deep: [0.6, 0.8], skip: 0.05 },
-  { fineness: 0.4, behind: [2.6, 3.2], spacing: 1.5, along: [1.0, 1.5], up: [1.5, 2.2], deep: [0.8, 1.1], skip: 0 },
+  { fineness: 1, behind: [0, 0], spacing: 0.8, along: [0.36, 0.62], up: [0.3, 0.6], deep: [0.3, 0.42], skip: 0 },
+  { fineness: 0.85, behind: [0.5, 0.8], spacing: 1.2, along: [0.5, 0.9], up: [0.6, 1.0], deep: [0.45, 0.6], skip: 0.12 },
+  { fineness: 0.6, behind: [1.4, 1.8], spacing: 1.15, along: [0.75, 1.2], up: [1.2, 1.7], deep: [0.6, 0.8], skip: 0 },
+  { fineness: 0.4, behind: [2.6, 3.2], spacing: 1.3, along: [1.2, 1.7], up: [2.4, 3.1], deep: [0.8, 1.1], skip: 0 },
 ];
 // Each shrub's own shape, besides its row's: a share of them clipped low and broad (`broad`: its height times
 // `flatter`, its length times `longer`), as karikomi are, among the rounded ones.
 const SHAPES = { broad: 0.3, flatter: 0.6, longer: 1.35 };
+// Each shrub's form (gardenGeometry `plant`), as karikomi are clipped: a single mound, a cloud of merged lobes, a broad
+// base with a crown or two on it, or a wave of low lobes along the bank; `weight` how often.
+const FORMS = [{ name: 'round', weight: 2 }, { name: 'cloud', weight: 4 }, { name: 'tiered', weight: 2 }, { name: 'wave', weight: 2 }];
+const BACK_FORMS = [{ name: 'round', weight: 3 }, { name: 'tiered', weight: 2 }];
 // The banks' ends run back from the pond this far (m), shrubs every `spacing`.
 const ENDS = { back: 3.2, spacing: 0.75 };
 // The lantern: θ, how far behind the planting's beginning, and how low the shrubs before it keep (m, their `up`).
@@ -418,9 +422,46 @@ function gardenGeometry(random) {
   const between = ([least, most]) => least + (most - least) * random();
   const lantern = behindShore(LANTERN_AT.angle, plantingFrom(LANTERN_AT.angle) + LANTERN_AT.behind);
   const nearLantern = (x, z) => Math.hypot(x - lantern.x, z - lantern.z);
-  const plant = (x, z, facing, along, up, deep, fineness = 1) => {
-    // Each its kind's green (src/koiGarden.js FOLIAGE_LOOK: tint), sunk a quarter into the ground.
-    foliage.add(shrub({ along, up, deep, seed: 10 + random() * 90, fineness }), new THREE.Matrix4().makeRotationY(facing).setPosition(x, groundAt(x, z) - up * 0.22, z), { tint: random() });
+  // A shrub (FORMS): its lobes, each a clipped cushion (shrub) in the shrub's own frame (x along the bank, z away from
+  // it, y up), merged into one mass of its kind's green (FOLIAGE_LOOK: tint), each sunk a quarter into the ground or
+  // set on the lobe below it.
+  const plant = (x, z, facing, along, up, deep, fineness = 1, forms = FORMS) => {
+    const tint = random();
+    const turn = new THREE.Matrix4().makeRotationY(facing);
+    const lobe = (offsetX, offsetZ, lobeAlong, lobeUp, lobeDeep, lift = 0) => {
+      const offset = new THREE.Vector3(offsetX, 0, offsetZ).applyMatrix4(turn);
+      const atX = x + offset.x, atZ = z + offset.z;
+      const sizeShare = Math.max(lobeAlong / along, lobeUp / up, 0.5);
+      foliage.add(shrub({ along: lobeAlong, up: lobeUp, deep: lobeDeep, seed: 10 + random() * 90, fineness: fineness * (0.45 + 0.55 * sizeShare) }),
+        new THREE.Matrix4().makeRotationY(facing + (random() - 0.5) * 0.6).setPosition(atX, groundAt(atX, atZ) - lobeUp * 0.22 + lift, atZ), { tint });
+    };
+    let draw = random() * forms.reduce((sum, form) => sum + form.weight, 0);
+    const form = forms.find((one) => (draw -= one.weight) < 0)?.name ?? 'round';
+    if (form === 'round') lobe(0, 0, along, up, deep);
+    else if (form === 'cloud') {
+      // A mass of several, the middle one largest, the others round it at their own heights.
+      lobe(0, 0, along * 0.78, up * 0.85, deep * 0.85);
+      const count = 3 + Math.floor(random() * 3);
+      for (let index = 0; index < count; index++) {
+        const angle = (index / count) * Math.PI * 2 + random() * 0.8, share = 0.45 + 0.25 * random();
+        lobe(Math.cos(angle) * along * 0.55, Math.sin(angle) * deep * 0.4, along * share, up * share * (0.75 + 0.5 * random()), deep * share, up * 0.12 * random());
+      }
+    } else if (form === 'tiered') {
+      // A broad low base, a smaller crown or two set on it.
+      lobe(0, 0, along * 1.1, up * 0.55, deep * 1.05);
+      const crowns = 1 + Math.floor(random() * 2);
+      for (let index = 0; index < crowns; index++) {
+        const share = 0.45 + 0.2 * random();
+        lobe((random() - 0.5) * along * 0.6, (random() - 0.5) * deep * 0.3, along * share, up * share, deep * share, up * 0.42);
+      }
+    } else {
+      // A wave: low lobes in a row along the bank, rising and falling.
+      const count = 3 + Math.floor(random() * 2);
+      for (let index = 0; index < count; index++) {
+        const share = 0.42 + 0.12 * random();
+        lobe((index - (count - 1) / 2) * along * 0.48, (random() - 0.5) * deep * 0.25, along * share, up * (0.55 + 0.4 * random()), deep * (0.75 + 0.2 * random()));
+      }
+    }
   };
   for (const row of ROWS) {
     for (let angle = GARDEN.from, guard = 0; sectorDepth(angle) >= -1e-9 && guard < 400; guard++) {
@@ -433,7 +474,7 @@ function gardenGeometry(random) {
       const fromLantern = nearLantern(x, z);
       if (row !== ROWS[0] && fromLantern < LANTERN_AT.clear) continue;
       if (row === ROWS[0] && fromLantern < LANTERN_AT.clear * 1.2) up = Math.min(up, LANTERN_AT.below);
-      plant(x, z, facingPond(x, z) + Math.PI / 2, along, up, deep, row.fineness);
+      plant(x, z, facingPond(x, z) + Math.PI / 2, along, up, deep, row.fineness, row.behind[0] > 1 ? BACK_FORMS : FORMS);   // the rows behind, mostly hidden, simpler
     }
   }
   // The ends, running back from the pond.
