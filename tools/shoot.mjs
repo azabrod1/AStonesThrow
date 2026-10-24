@@ -60,7 +60,7 @@
 // --fish=none leaves the water without fish (src/fish.js; ?fish=none), and
 // --look=fish:n turns the view, after the pre-roll, to fish n
 // (__pond.fish's order); fish:n:side looks at it from beside it, under the
-// water.
+// water, fish:n:behind from behind it.
 // --thing=name[:value] throws that (a key of THINGS in src/things.js: a
 // kind of stone, golf, tennis, bowling, basketball; ?thing=), at that
 // slider value (a bowling ball's pounds, a basketball's size; a stone's
@@ -189,10 +189,13 @@ if (look.startsWith('fish:')) {
   const where = await page.evaluate(([index, side]) => {
     const one = window.__pond.fish.fish[index];
     if (!one) return one;
-    if (side) window.__pond.setOrbit({ azimuth: (-one.heading * 180) / Math.PI, elevation: 4, distance: 0.25 + 2.2 * one.length, pivot: [one.x, one.y, one.z] });
+    // From beside it, or from behind it (`behind`).
+    const azimuth = side === 'behind' ? Math.atan2(-Math.cos(one.heading), -Math.sin(one.heading)) : -one.heading;
+    if (side) window.__pond.setOrbit({ azimuth: (azimuth * 180) / Math.PI, elevation: 4, distance: 0.25 + 2.2 * one.length, pivot: [one.x, one.y, one.z] });
     else window.__pond.lookAtUnderWater(one.x, one.y, one.z);
     return one;
-  }, [Number(index), side === 'side']);
+  }, [Number(index), side ?? null]);
+  if (fov) await page.evaluate((f) => window.__pond.setFov(Number(f)), fov);   // the orbit's own field of view, narrowed again
   // A frame drawn with the view turned: a thousandth of a second on (the fish moves a fraction of a millimetre).
   await page.evaluate(() => { window.__pond.setTimeScale(1); window.__pond.advance(0.001); });
   console.log('[shoot] fish', JSON.stringify(where));

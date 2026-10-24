@@ -12,11 +12,18 @@
 // (above the middle) and the belly (below) are there and as wide as the
 // flanks, from the kind's `shape` (src/fish.js): its depth and width, where
 // it is deepest (`peak`), how pointed its snout (`snout`: a koi's blunt, a
-// pike's long), narrowing to a slender tail root. Its fins (fishFins) are
-// membranes, each a grid so it can bend: the tail, forked or rounded
-// (`fork`) and as tall as `tail`; one or two dorsal fins, a trout's small
-// adipose fin, the anal fin, along the body where `shape` puts them and as
-// high; and the pectoral and pelvic fins in pairs, set out from the body.
+// pike's long), narrowing to a caudal peduncle deep and flattened from side
+// to side; and not quite even (BODY_FORM): its cheeks fuller to the gill
+// cover, its back pinched to a ridge, its belly flatter, its skin uneven; a
+// koi's two pairs of barbels at its mouth. Its fins (fishFins) are
+// membranes, each a grid so it can bend, fanned with rays, pleated between
+// them and torn and notched at their edges (FIN_FORM), none a clean shape:
+// the tail, forked or rounded (`fork`, its lobes' tips rounded) and as tall
+// as `tail`, its fleshy base two sheets starting on the body's last section
+// (so the body runs on into it, closed) and meeting as the rays leave it;
+// one or two dorsal fins, a trout's small adipose fin, the anal fin, along
+// the body where `shape` puts them and as high; and the pectoral and pelvic
+// fins in pairs, fans from a narrow root set out from the body.
 // Each vertex carries `finInfo`: which part it is, and where on it (along
 // and around the body, or along a fin's root and out to its edge).
 //
@@ -65,25 +72,47 @@ export const FISH_PATTERNS = ['minnow', 'perch', 'pike', 'trout', 'char', 'bass'
 const RINGS = 30;        // the body's cross-sections, snout to tail root
 const AROUND = 20;       // and the points round each
 const BODY_END = 0.8;    // the tail's root, as a share of the length from the nose
-// The caudal peduncle's end (fishBody): `rings` more sections over `reach` (body lengths) past the tail root, flattening
-// to a keel `edge` (body lengths) thick as deep as the tail fin's root, which it reaches into.
-const PEDUNCLE = { rings: 3, reach: 0.03, edge: 0.004 };
+const TAIL_BASE = 0.22;  // the tail fin's fleshy base: the share of its reach over which its two sides meet (fishFins)
+// A koi's barbels (fishBody): each pair's length and how far behind the snout it springs (body lengths) and how
+// steeply it hangs; their root radius, sections and points round each.
+const BARBELS = { pairs: [[0.045, 0.012, 0.6], [0.028, 0.03, 0.8]], radius: 0.0035, steps: 6, around: 5 };
 const PART = { body: 0, tail: 1, dorsal: 2, pectoral: 3, pelvic: 4, anal: 5 };
 const SHADOW = { darkest: 0.85, blur: 0.025, spread: 0.25 };   // the shadow's share of the sunlight at most, its blur per metre over the bed (m/m), and how far its strength falls per metre up
 
-/** A share of the greatest depth or width along the body (`along` 0 at the snout to 1 at the tail root): rising as a snout of `power` to `peak`, falling to `root` at the tail. */
-function profile(along, peak, power, root) {
+// The body's form not quite even (fishBody): the cheeks fuller ahead of the gill cover, the back pinched to a ridge,
+// the belly flatter, and its skin uneven by `uneven` (shares of its section).
+const BODY_FORM = { cheeks: 0.06, ridge: 0.22, belly: 0.1, uneven: 0.035 };
+// A fin's membrane (fishFins): its rays' count, its pleats between them (body lengths, at its edge), how far each
+// ray's tip reaches past or short of the next (`ragged`, a share of the fin's reach) and the notch between ray tips
+// (`notch`), as a real fin's edge is torn and scalloped.
+const FIN_FORM = { pleat: 0.004, ragged: 0.07, notch: 0.06 };
+const smoothstep = (low, high, value) => { const share = Math.min(Math.max((value - low) / (high - low), 0), 1); return share * share * (3 - 2 * share); };
+/** A smooth value noise in two dimensions, 0 to 1. */
+function formNoise(x, y) {
+  const hash = (a, b) => { const value = Math.sin(a * 127.1 + b * 311.7) * 43758.5453; return value - Math.floor(value); };
+  const ix = Math.floor(x), iy = Math.floor(y), fx = x - ix, fy = y - iy;
+  const ux = fx * fx * (3 - 2 * fx), uy = fy * fy * (3 - 2 * fy);
+  return (hash(ix, iy) * (1 - ux) + hash(ix + 1, iy) * ux) * (1 - uy) + (hash(ix, iy + 1) * (1 - ux) + hash(ix + 1, iy + 1) * ux) * uy;
+}
+
+/**
+ * A share of the greatest depth or width along the body (`along` 0 at the snout to 1 at the tail root): rising as a
+ * snout of `power` to `peak`, falling to `root` at the tail, the sooner the higher `early` (the width's, so the rear
+ * of the body is flattened from side to side, a blade seen from behind, not a tube).
+ */
+function profile(along, peak, power, root, early = 1) {
   if (along < peak) return Math.pow(Math.sin(0.5 * Math.PI * along / peak), power);
-  const fall = (along - peak) / (1 - peak);
+  const fall = Math.pow((along - peak) / (1 - peak), 1 / early);
   return root + (1 - root) * (1 - fall) * (1 - 0.35 * fall * (1 - fall)) * Math.cos(0.25 * Math.PI * fall);
 }
 /** The body's half-depth above (back) and below (belly) and half-width at `along`, in body lengths. */
 function sectionAt(shape, along) {
   const snout = shape.snout ?? 0.7, peak = shape.peak ?? 0.38;
   return {
-    back: 0.5 * shape.depth * profile(along, peak, 0.5 + 0.4 * snout, 0.3),
-    belly: 0.5 * shape.depth * 0.85 * profile(along, Math.min(peak + 0.1, 0.6), 0.65 + 0.35 * snout, 0.3),
-    side: 0.5 * shape.width * profile(along, peak - 0.08, 0.4 + 0.3 * snout, 0.14),
+    // Narrowing to a caudal peduncle a third to two fifths as deep as the body (deep and flattened, as a fish's is).
+    back: 0.5 * shape.depth * profile(along, peak, 0.5 + 0.4 * snout, 0.38),
+    belly: 0.5 * shape.depth * 0.85 * profile(along, Math.min(peak + 0.1, 0.6), 0.65 + 0.35 * snout, 0.4),
+    side: 0.5 * shape.width * profile(along, peak - 0.08, 0.4 + 0.3 * snout, 0.13, 1.6),
   };
 }
 
@@ -108,40 +137,54 @@ export function fishBody(shape) {
     for (let point = 0; point < AROUND; point++) {
       const angle = (point / AROUND) * Math.PI * 2;
       const up = Math.cos(angle), across = Math.sin(angle);
-      // A rounded oval, fuller than an ellipse at the flanks.
-      const y = (up > 0 ? back : belly) * Math.sign(up) * Math.pow(Math.abs(up), 0.85);
-      const z = side * Math.sign(across) * Math.pow(Math.abs(across), 0.8);
+      // A rounded oval, fuller than an ellipse at the flanks; then not quite even (BODY_FORM): the head's cheeks
+      // fuller to the gill cover's edge, the back pinched to a ridge, the belly flatter, and the skin a little uneven.
+      let y = (up > 0 ? back : belly) * Math.sign(up) * Math.pow(Math.abs(up), 0.85);
+      let z = side * Math.sign(across) * Math.pow(Math.abs(across), 0.8);
+      const cheeks = 1 + BODY_FORM.cheeks * smoothstep(0.06, 0.16, along) * (1 - smoothstep(0.2, 0.24, along)) * (1 - 0.6 * Math.abs(up));
+      const ridge = 1 - BODY_FORM.ridge * Math.pow(Math.max(up, 0), 3) * smoothstep(0.22, 0.35, along) * (1 - smoothstep(0.7, 0.95, along));
+      const uneven = 1 + BODY_FORM.uneven * (formNoise(along * 9, angle * 1.6) - 0.5) * smoothstep(0.03, 0.1, along);
+      z *= cheeks * ridge * uneven;
+      y *= (up < 0 ? 1 - BODY_FORM.belly * Math.pow(-up, 2) : 1) * uneven;
       parts.positions.push(x, y, z); parts.normals.push(0, 0, 0);
       parts.infos.push(PART.body, along, Math.acos(Math.max(-1, Math.min(1, up))) / Math.PI, Math.sign(across));
     }
   }
-  // The caudal peduncle closed into the tail: past the tail root the body flattens to a thin keel as deep as the tail
-  // fin's root (PEDUNCLE), reaching into the fin, so no opening shows between body and tail.
-  const end = sectionAt(shape, 1), rootHalf = end.back * 1.1;
-  for (let ring = 1; ring <= PEDUNCLE.rings; ring++) {
-    const share = ring / PEDUNCLE.rings;
-    const x = 0.5 - BODY_END - share * PEDUNCLE.reach;
-    const back = THREE.MathUtils.lerp(end.back, rootHalf, share), belly = THREE.MathUtils.lerp(end.belly, rootHalf, share);
-    const side = end.side * (1 - share) + PEDUNCLE.edge * share;
-    for (let point = 0; point < AROUND; point++) {
-      const angle = (point / AROUND) * Math.PI * 2;
-      const up = Math.cos(angle), across = Math.sin(angle);
-      const y = (up > 0 ? back : belly) * Math.sign(up) * Math.pow(Math.abs(up), 0.85 - 0.5 * share);
-      const z = side * Math.sign(across) * Math.pow(Math.abs(across), 0.8);
-      parts.positions.push(x, y, z); parts.normals.push(0, 0, 0);
-      parts.infos.push(PART.body, 1, Math.acos(Math.max(-1, Math.min(1, up))) / Math.PI, Math.sign(across));
-    }
-  }
-  // Its end sealed to a point on the keel's middle.
-  const last = parts.positions.length / 3;
-  parts.positions.push(0.5 - BODY_END - PEDUNCLE.reach - 0.002, 0, 0); parts.normals.push(-1, 0, 0); parts.infos.push(PART.body, 1, 0.5, 0);
-  const rings = RINGS + PEDUNCLE.rings;
-  for (let point = 0; point < AROUND; point++) parts.indices.push(last, 1 + (rings - 1) * AROUND + (point + 1) % AROUND, 1 + (rings - 1) * AROUND + point);
+  // Its end, at the tail root, is closed by the tail fin's fleshy base (fishFins), which starts on its last section.
+  const rings = RINGS;
   for (let point = 0; point < AROUND; point++) parts.indices.push(0, 1 + point, 1 + (point + 1) % AROUND);
   for (let ring = 0; ring < rings - 1; ring++) {
     for (let point = 0; point < AROUND; point++) {
       const here = 1 + ring * AROUND + point, next = 1 + ring * AROUND + (point + 1) % AROUND;
       parts.indices.push(here, here + AROUND, next, next, here + AROUND, next + AROUND);
+    }
+  }
+  // A koi's barbels (`barbels`): two pairs at the corners of its mouth, slender, tapering, hanging forward and down,
+  // its skin's own colour (BARBELS).
+  if (shape.barbels) {
+    const head = sectionAt(shape, 0.04);
+    for (const [length, from, down] of BARBELS.pairs) {
+      for (const side of [1, -1]) {
+        const start = new THREE.Vector3(0.5 - from, -head.belly * 0.55, side * head.side * 0.7);
+        const curve = new THREE.QuadraticBezierCurve3(start, start.clone().add(new THREE.Vector3(length * 0.45, -length * down * 0.4, side * length * 0.3)), start.clone().add(new THREE.Vector3(length * 0.55, -length * down, side * length * 0.45)));
+        const first = parts.positions.length / 3;
+        for (let step = 0; step <= BARBELS.steps; step++) {
+          const share = step / BARBELS.steps, centre = curve.getPoint(share), tangent = curve.getTangent(share);
+          const across = new THREE.Vector3(0, 1, 0).cross(tangent).normalize(), up = tangent.clone().cross(across).normalize();
+          const radius = BARBELS.radius * (1 - 0.8 * share);
+          for (let point = 0; point < BARBELS.around; point++) {
+            const angle = (point / BARBELS.around) * Math.PI * 2;
+            const at = centre.clone().addScaledVector(across, Math.cos(angle) * radius).addScaledVector(up, Math.sin(angle) * radius);
+            parts.positions.push(at.x, at.y, at.z); parts.normals.push(0, 0, 0); parts.infos.push(PART.body, 0.03, 0.75, side);
+          }
+        }
+        for (let step = 0; step < BARBELS.steps; step++) {
+          for (let point = 0; point < BARBELS.around; point++) {
+            const here = first + step * BARBELS.around + point, next = first + step * BARBELS.around + (point + 1) % BARBELS.around;
+            parts.indices.push(here, next, here + BARBELS.around, next, next + BARBELS.around, here + BARBELS.around);
+          }
+        }
+      }
     }
   }
   const geometry = geometryOf(parts);
@@ -153,13 +196,24 @@ export function fishBody(shape) {
 /** A kind's fins, a unit long fish's (the header): finInfo (part, along its root 0 to 1, out to its edge 0 to 1, side). */
 export function fishFins(shape) {
   const parts = { positions: [], normals: [], infos: [], indices: [] };
-  // A membrane: a grid over (along, out) of points at(along, out), its normal fixed.
-  const membrane = (part, side, columns, rows, at, normal) => {
+  // A membrane: a grid over (along its root, out to its edge) of points at(along, out), `rays` rays fanning across it
+  // (FIN_FORM): pleated between them, so the light catches it in stripes; its edge ragged, each ray's tip reaching its
+  // own way, the membrane between them notched back. Its normals are worked out from its pleats.
+  let membraneSeed = 1;
+  const membrane = (part, side, rays, rows, at, normal, ragged = 1) => {
     const first = parts.positions.length / 3;
+    const columns = rays * 2;
+    const seed = membraneSeed++ * 7.3;
+    const flat = new THREE.Vector3(...normal);
     for (let row = 0; row <= rows; row++) {
       for (let column = 0; column <= columns; column++) {
         const along = column / columns, out = row / rows;
-        parts.positions.push(...at(along, out)); parts.normals.push(...normal); parts.infos.push(part, along, out, side);
+        const between = Math.abs(Math.sin(Math.PI * along * rays));   // 0 on a ray, 1 midway between two
+        const reach = 1 + ragged * (FIN_FORM.ragged * (formNoise(along * rays * 0.7, seed) - 0.5) * 2 - FIN_FORM.notch * Math.pow(between, 1.5));
+        const edgeward = Math.pow(out, 1.5);
+        const point = new THREE.Vector3(...at(along, out * (1 + (reach - 1) * edgeward)));
+        point.addScaledVector(flat, ragged * FIN_FORM.pleat * Math.cos(2 * Math.PI * along * rays) * out);
+        parts.positions.push(point.x, point.y, point.z); parts.normals.push(...normal); parts.infos.push(part, along, out, side);
       }
     }
     for (let row = 0; row < rows; row++) {
@@ -171,17 +225,27 @@ export function fishFins(shape) {
   };
   const xAt = (along) => 0.5 - along * BODY_END;
   // The tail: its root the body's end, its edge the fork (`fork` > 0) or a round (< 0); `along` is up it, -1 to 1.
-  const tailRoot = 0.5 - BODY_END - 0.012, reach = tailRoot + 0.5, spread = shape.tail / 2;   // its root inside the peduncle's keel
-  const rootHalf = sectionAt(shape, 1).back * 1.1;
-  membrane(PART.tail, 0, 12, 5, (along, out) => {
-    const span = 2 * along - 1;
-    const length = reach * (1 - (shape.fork ?? 0.2) * Math.pow(1 - Math.abs(span), 1.6) * 0.75);
-    const height = THREE.MathUtils.lerp(rootHalf, spread, Math.pow(out, 0.8)) * span;
-    return [tailRoot - out * length, height, 0];
-  }, [0, 0, 1]);
+  const tailRoot = 0.5 - BODY_END, reach = tailRoot + 0.5, spread = shape.tail / 2;   // its root inside the peduncle's keel
+  const end = sectionAt(shape, 1);   // the body's last section, the tail fin's root
+  // Its base fleshy (TAIL_BASE): a sheet each side starting on the body's last section, its outline exactly (the
+  // body's rounded oval, fishBody), so the body's surface runs on into it and its end is closed; the two meet in the
+  // middle as the rays leave the flesh.
+  for (const side of [1, -1]) {
+    membrane(PART.tail, side, 18, 7, (along, out) => {
+      const span = 2 * along - 1;
+      // Forked (or rounded), its lobes' tips rounded off rather than pointed.
+      const length = reach * (1 - (shape.fork ?? 0.2) * Math.pow(1 - Math.abs(span), 1.6) * 0.75) * (1 - 0.22 * Math.pow(Math.abs(span), 5));
+      const rootHeight = span > 0 ? end.back : end.belly;
+      const height = THREE.MathUtils.lerp(rootHeight, spread, Math.pow(out, 0.75)) * span;
+      // The body's section at that height: |up| = |span|^(1/0.85), its half width side·|across|^0.8.
+      const up = Math.pow(Math.abs(span), 1 / 0.85), across = Math.sqrt(Math.max(1 - up * up, 0));
+      const flesh = end.side * Math.pow(across, 0.8) * Math.pow(Math.max(0, 1 - out / TAIL_BASE), 1.5);
+      return [tailRoot - out * length, height, side * (flesh + 0.0004)];
+    }, [0, 0, side]);
+  }
   // The median fins along the back and the belly: [from, to, height] along the body.
   const median = (part, [from, to, height], down) => {
-    membrane(part, 0, 8, 4, (along, out) => {
+    membrane(part, 0, Math.max(4, Math.round(40 * (to - from))), 4, (along, out) => {
       const at = THREE.MathUtils.lerp(from, to, along);
       const section = sectionAt(shape, at);
       const root = down ? -section.belly * 0.92 : section.back * 0.92;
@@ -201,17 +265,20 @@ export function fishFins(shape) {
       const heading = new THREE.Vector3(direction[0], direction[1], direction[2] * side).normalize();
       const chord = new THREE.Vector3(-1, 0, 0);
       const normal = new THREE.Vector3().crossVectors(chord, heading).normalize().multiplyScalar(side);
-      membrane(part, side, 4, 4, (along, out) => {
-        const rootX = xAt(at) - along * length * 0.35;
+      // A fan from a narrow root: its rays spread as they go out, its leading ray the longest, its tip rounded.
+      membrane(part, side, part === PART.pectoral ? 9 : 6, 5, (along, out) => {
+        const rootX = xAt(at) - along * length * (0.18 + 0.5 * out);
         const rootY = height * section.belly, rootZ = side * section.side * (part === PART.pectoral ? 0.85 : 0.35);
-        const outward = out * length * (1 - 0.45 * along);
+        const outward = out * length * (1 - 0.4 * Math.pow(along, 1.6)) * (0.85 + 0.15 * Math.sin(Math.PI * Math.min(along * 1.4, 1)));
         return [rootX + heading.x * outward, rootY + heading.y * outward, rootZ + heading.z * outward];
-      }, normal.toArray());
+      }, normal.toArray(), 0.4);   // small: their edges less torn, their pleats finer
     }
   };
   paired(PART.pectoral, 0.2, shape.pectoral, -0.35, [-0.75, -0.3, 0.6]);
   paired(PART.pelvic, 0.46, shape.pelvic, -0.85, [-0.8, -0.5, 0.3]);
-  return geometryOf(parts);
+  const geometry = geometryOf(parts);
+  geometry.computeVertexNormals();   // from the pleats (the shader turns a back face's to its viewer)
+  return geometry;
 }
 
 // The swimming (the header), shared by the body and the fins.
@@ -422,8 +489,12 @@ void main() {
   float rayBlur = fwidth(rays) * 1.5 + 0.02;
   float ray = 1.0 - smoothstep(0.08 - rayBlur, 0.22 + rayBlur, abs(fract(rays) - 0.5));
   ray *= 1.0 - smoothstep(0.4, 1.0, rayBlur);
-  albedo = finColor(part, edge) * mix(1.0, 0.7, ray);
-  alpha = mix(0.75, 0.3, smoothstep(0.35, 1.0, edge)) + 0.2 * ray;
+  // Its membrane uneven: thicker and thinner in patches, a little darker toward its root.
+  float uneven = fishNoise(vec2(vInfo.y * 9.0, edge * 5.0) + vSeed * 23.0 + part * 3.1);
+  albedo = finColor(part, edge) * mix(1.0, 0.72, ray) * (0.85 + 0.25 * uneven) * mix(0.82, 1.0, smoothstep(0.0, 0.4, edge));
+  alpha = mix(0.6, 0.18, smoothstep(0.25, 1.0, edge)) * (0.75 + 0.5 * uneven) + 0.28 * ray * (1.0 - 0.5 * edge);
+  // The tail's fleshy base solid, the membrane thinning only past it (fishFins TAIL_BASE).
+  if (part > 0.5 && part < 1.5) alpha = mix(1.0, alpha, smoothstep(${(TAIL_BASE * 0.9).toFixed(3)}, ${(TAIL_BASE * 1.8).toFixed(3)}, edge));
   // Seen edge on it shows as a line of its own colour, not of what is behind it.
   alpha = min(alpha * mix(1.0, 2.2, pow(1.0 - abs(dot(normalize(vNormal), toEye)), 3.0)), 0.95);
   // Its frayed edge.
@@ -447,13 +518,13 @@ void main() {
     float apart = length((scalePoint - centre) * vec2(0.85, 1.0));
     if (apart < 0.78) { scaleDistance = apart / 0.78; scaleId = vec2(x, row); }
   }
-  float scaleShown = (1.0 - smoothstep(0.25, 0.6, scaleBlur)) * smoothstep(0.08, 0.16, vInfo.y) * (1.0 - smoothstep(0.92, 0.99, vInfo.y));
+  float scaleShown = (1.0 - smoothstep(0.25, 0.6, scaleBlur)) * smoothstep(0.08, 0.16, vInfo.y);
   float rim = smoothstep(0.78 - scaleBlur, 0.95, scaleDistance);
   float tilt = fishHash(scaleId + vSeed * 13.0);
-  albedo *= 1.0 - scaleShown * (0.14 * rim + 0.08 * (tilt - 0.5) - 0.04 * (1.0 - scaleDistance));
+  albedo *= 1.0 - scaleShown * (0.1 * rim + 0.03 * (tilt - 0.5) - 0.03 * (1.0 - scaleDistance));
   // An Asagi's net: its scales' edges pale.
   if (int(uPattern + 0.5) == 11 && floor(vSeed * 8.0) == 5.0) albedo = mix(albedo, vec3(0.72, 0.78, 0.82), 0.45 * rim * smoothstep(0.0, 0.3, 1.0 - scaleBlur) * (1.0 - smoothstep(1.2, 1.7, around)));
-  sheen *= mix(1.0, 0.4 + 1.2 * tilt, scaleShown);
+  sheen *= mix(1.0, 0.75 + 0.5 * tilt, scaleShown);
   // The lateral line, along the flank from the gill cover to the tail.
   float lineHeight = 0.12 + 0.18 * (1.0 - vInfo.y);
   float lineBlur = fwidth(height) * 1.2 + 0.005;
@@ -466,12 +537,12 @@ void main() {
   albedo *= 1.0 - 0.3 * (1.0 - smoothstep(0.012, 0.025, vInfo.y)) * (1.0 - smoothstep(0.02, 0.05 + fwidth(height), abs(height + 0.15)));
   // The eye: a gold ring round a dark pupil, high on the head, with a glint.
   vec2 eyeAt = vec2((0.5 - vLocal.x) - 0.08, vLocal.y - 0.1 * uBodyDepth);
-  float eyeSize = 0.018 + 0.03 * max(0.22 - uBodyDepth, 0.0);
+  float eyeSize = 0.013 + 0.025 * max(0.22 - uBodyDepth, 0.0);
   float eye = length(eyeAt);
   float eyeBlur = fwidth(eye) + 1e-4;
   float iris = 1.0 - smoothstep(eyeSize - eyeBlur, eyeSize + eyeBlur, eye);
-  float pupil = 1.0 - smoothstep(eyeSize * 0.62 - eyeBlur, eyeSize * 0.62 + eyeBlur, eye);
-  albedo = mix(albedo, mix(vec3(0.22, 0.17, 0.08), vec3(0.4, 0.33, 0.16), smoothstep(0.6, 1.0, eye / eyeSize)), iris);
+  float pupil = 1.0 - smoothstep(eyeSize * 0.7 - eyeBlur, eyeSize * 0.7 + eyeBlur, eye);
+  albedo = mix(albedo, mix(vec3(0.16, 0.12, 0.05), vec3(0.34, 0.27, 0.12), smoothstep(0.65, 1.0, eye / eyeSize)), iris);
   albedo = mix(albedo, vec3(0.008), pupil);
   specular = mix(0.25, 2.5, iris);
 #endif
@@ -503,6 +574,9 @@ void main() {
   float flankFacing = 1.0 - smoothstep(0.35, 0.85, abs(normal.y));
   color += sheen * upward * flankFacing * (skyDown * 0.6 + sunDown * pow(max(dot(mirrored, refractedSun), 0.0), 24.0) * 1.5);
 #ifndef FIN
+  // Its wet skin: a glaze of the bright water above, at glancing angles (Fresnel), on any fish.
+  float glancing = pow(1.0 - max(dot(normal, toEye), 0.0), 4.0);
+  color += skyDown * 0.2 * upward * (0.04 + 0.96 * glancing) * (0.6 + 0.4 * normal.y);
   // At its outline its skin mirrors the water about it, and the light in the water dims toward it (a body, not a cut-out).
   float grazing = pow(1.0 - max(dot(normal, toEye), 0.0), 3.0);
   color = mix(color, uFogColor * mix(0.9, 3.0, smoothstep(-0.5, 0.9, mirrored.y)), 0.55 * grazing);

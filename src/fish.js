@@ -89,7 +89,7 @@ import { seededRandom } from './spray.js';
 // eats, whether it comes to food; company and count (FISH_BY_PLACE says how
 // many). The body's shape and markings are src/fishMeshes.js's: `shape`, in
 // shares of its length (its body's depth and width, where it is deepest,
-// how pointed its snout, its tail's spread and fork, each fin's span along
+// how pointed its snout, whether it has barbels (a koi's two pairs), its tail's spread and fork, each fin's span along
 // the body and height, how many scales along it) and `pattern`
 // (FISH_PATTERNS there).
 export const FISH_SPECIES = {
@@ -104,8 +104,8 @@ export const FISH_SPECIES = {
   pupfish: { name: 'Pupfish', length: [0.04, 0.065], depth: [0.06, 3], cruise: 1.5, burst: 7, turn: 3.2, shy: 1.2, eats: true, company: 'school', shape: { depth: 0.3, width: 0.15, tail: 0.2, fork: -0.15, snout: 0.55, peak: 0.4, dorsal: [0.45, 0.6, 0.11], anal: [0.55, 0.68, 0.09], pectoral: 0.1, pelvic: 0.06, scales: 28 }, pattern: 'pupfish' },
   mullet: { name: 'Grey mullet', length: [0.3, 0.45], depth: [0.1, 3], cruise: 0.8, burst: 5, turn: 2.4, shy: 1.2, eats: true, company: 'shoal', shape: { depth: 0.2, width: 0.15, tail: 0.22, fork: 0.45, snout: 0.5, peak: 0.36, dorsal: [0.3, 0.38, 0.09], dorsal2: [0.55, 0.63, 0.08], anal: [0.6, 0.7, 0.07], pectoral: 0.1, pelvic: 0.07, scales: 42 }, pattern: 'mullet' },
   wrasse: { name: 'Ballan wrasse', length: [0.25, 0.4], depth: [0.1, 3], cruise: 0.5, burst: 4, turn: 2.6, shy: 0.8, eats: true, company: 'alone', shape: { depth: 0.3, width: 0.15, tail: 0.2, fork: -0.15, snout: 0.65, peak: 0.4, dorsal: [0.25, 0.76, 0.08], anal: [0.6, 0.76, 0.08], pectoral: 0.11, pelvic: 0.07, scales: 40 }, pattern: 'wrasse' },
-  koi: { name: 'Koi', length: [0.35, 0.6], depth: [0.08, 3], cruise: 0.38, burst: 3, turn: 1.8, shy: 0.55, eats: true, company: 'shoal', shape: { depth: 0.25, width: 0.16, tail: 0.24, fork: 0.22, snout: 0.5, peak: 0.38, dorsal: [0.33, 0.66, 0.08], anal: [0.64, 0.73, 0.07], pectoral: 0.14, pelvic: 0.09, scales: 32 }, pattern: 'koi' },
-  goldfish: { name: 'Goldfish', length: [0.14, 0.22], depth: [0.08, 3], cruise: 0.7, burst: 4, turn: 2.2, shy: 0.7, eats: true, company: 'alone', shape: { depth: 0.36, width: 0.17, tail: 0.32, fork: 0.35, snout: 0.5, peak: 0.38, dorsal: [0.36, 0.62, 0.13], anal: [0.63, 0.72, 0.09], pectoral: 0.13, pelvic: 0.09, scales: 28 }, pattern: 'goldfish' },
+  koi: { name: 'Koi', length: [0.35, 0.6], depth: [0.08, 3], cruise: 0.38, burst: 3, turn: 1.8, shy: 0.55, eats: true, company: 'shoal', shape: { depth: 0.25, width: 0.17, tail: 0.24, fork: 0.22, snout: 0.25, barbels: true, peak: 0.38, dorsal: [0.33, 0.66, 0.08], anal: [0.64, 0.73, 0.07], pectoral: 0.14, pelvic: 0.09, scales: 32 }, pattern: 'koi' },
+  goldfish: { name: 'Goldfish', length: [0.14, 0.22], depth: [0.08, 3], cruise: 0.7, burst: 4, turn: 2.2, shy: 0.7, eats: true, company: 'alone', shape: { depth: 0.36, width: 0.17, tail: 0.32, fork: 0.35, snout: 0.3, peak: 0.38, dorsal: [0.36, 0.62, 0.13], anal: [0.63, 0.72, 0.09], pectoral: 0.13, pelvic: 0.09, scales: 28 }, pattern: 'goldfish' },
 };
 
 // Each place's fish (src/main.js PLACES): kinds and how many; none in the Pool.
