@@ -23,6 +23,10 @@
 // to the lake bed, where it settles into the sand (sinkStep in src/cavity.js,
 // which traces the cavity along the same path; the splash tells the stone
 // when its hole pinches off, setCavityTimes).
+// A held thing (hold, moveHeld, release) follows the hand in world space,
+// without integrating its old flight or sink. Release starts from rest in
+// the air, afloat or submerged at its new position; a submerged release
+// has no impact cavity. The hand keeps it clear of the bed and pool walls.
 //
 // Under a gale (src/galeWaves.js) the water moves up and down. The stone
 // meets it at the height of the waves under it (update's surfaceAt, the
@@ -1607,7 +1611,7 @@ export class Rock {
       if (this.meshMirror.material.clippingPlanes.length) this.meshMirror.material.clippingPlanes[0].constant = -surface;
       // Only what stands out of the water enough to show in it: a flat thing's image (a pizza's) would be a sliver, which
       // the mirror's ripples break into stray lines (FLOAT.mirrorLeast).
-      const afloat = this.state === 'float' || this.afloat;
+      const afloat = this.state === 'float' || this.afloat || this.state === 'held';
       this.meshMirror.visible = afloat && this.position.y + (this.buoyancy && this.extent ? this.extent.high : this.waterline(this.position.y).high) > FLOAT.mirrorLeast;
     }
     this.waterLevel.value = surface;
@@ -1618,7 +1622,7 @@ export class Rock {
       const half = this.halfHeight();
       const clear = Math.max(this.position.y - half, -this.position.y - half, 0);
       const afloat = (this.state === 'float' || (this.state === 'rest' && this.afloat)) && (!this.plate || clear === 0);
-      this.rideShare.value = this.state === 'ground' || this.state === 'skim' ? 0 : afloat ? 1 : Math.max(1 - clear / half, 0);
+      this.rideShare.value = this.state === 'held' || this.state === 'ground' || this.state === 'skim' ? 0 : afloat ? 1 : Math.max(1 - clear / half, 0);
     }
     // Where it is drawn, riding the water as far as it does (src/floaterRide.js): where things meet it.
     this.centre.copy(this.meshAbove.position);
@@ -1734,6 +1738,81 @@ export class Rock {
     for (const mesh of this.meshes) {
       mesh.position.lerpVectors(before.position, after.position, share);
       mesh.quaternion.slerpQuaternions(before.quaternion, after.quaternion, share);
+    }
+  }
+
+  /** Pick up where it is drawn, including the waves' lift, without a jump. */
+  hold() {
+    if (this.state === 'held') return;
+    this.position.copy(this.meshAbove.position);
+    this.position.y += this.rideHeight * (this.rideShare?.value ?? 0);
+    this.rideHeight = 0;
+    this.quaternion.copy(this.meshAbove.quaternion);
+    this.state = 'held';
+    this.settling = null;
+    this.carriedWater = 0;
+    this.afloat = false;
+    this.onGround = false;
+    this.restTime = 0;
+    this.velocity.set(0, 0, 0);
+    this.spinRate = 0;
+    if (this.skip) this.skip.contact = null;
+    this.sinceImpact = -1;
+    this.cavityTimes = null;
+    this.seenThroughWater.value = 1;
+    this.heldGlow = this.meshes.map((mesh) => mesh.material.emissive.clone());
+    for (const mesh of this.meshes) mesh.material.emissive.addScalar(0.03);   // a little brighter (the ring under it says it is held)
+    this.moveHeld(this.position, this.drawn.surface, this.drawn.bedDepth);
+  }
+
+  /** The hand's position, in world metres. No interpolation from the old flight. */
+  moveHeld(position, surface = 0, bedDepth = 1) {
+    this.position.copy(position);
+    this.previous.copy(position);
+    this.syncMeshes(surface, bedDepth);
+    if (this.drawnBefore) {
+      this.drawnBefore.position.copy(this.stepEnd.position);
+      this.drawnBefore.quaternion.copy(this.stepEnd.quaternion);
+    }
+  }
+
+  /** Let go from rest; sinking and buoyancy resume here, with no stale cavity. */
+  release(surface = 0, bedDepth = 1) {
+    if (this.state !== 'held') return;
+    this.meshes.forEach((mesh, index) => mesh.material.emissive.copy(this.heldGlow[index]));
+    this.heldGlow = null;
+    this.velocity.set(0, 0, 0);
+    this.restTime = 0;
+    this.hasFloated = false;
+    const ground = this.ground?.at(this.position.x, this.position.z) ?? null;
+    if (ground !== null || this.position.y + this.lowestOffset() >= surface) {
+      this.state = 'air';
+      this.seenThroughWater.value = 0;
+    } else {
+      // Undo syncMeshes' stretched water column, keeping the drawn position
+      // continuous even when a gale has raised or lowered the surface.
+      this.position.y = this.position.y >= surface ? this.position.y - surface
+        : (this.position.y - surface) / Math.max(1 + surface / bedDepth, 0.01);
+      // Plates keep their directional water model even after soaking makes them sink.
+      if (this.floats || this.plate) {
+        this.state = 'float';
+        this.hasFloated = true;
+      } else {
+        this.state = 'water';
+        Object.assign(this.body, {
+          x: this.position.x, y: this.position.y, z: this.position.z,
+          vx: 0, vy: 0, vz: 0, time: 0, resting: false, openUntil: -1,
+          liftX: 0, liftY: 0, liftZ: 0, spinLiftX: 0, spinLiftY: 0, spinLiftZ: 0,
+        });
+      }
+      this.sinceImpact = Infinity;
+      this.seenThroughWater.value = 1;
+    }
+    this.previous.copy(this.position);
+    this.syncMeshes(surface, bedDepth);
+    if (this.drawnBefore) {
+      this.drawnBefore.position.copy(this.stepEnd.position);
+      this.drawnBefore.quaternion.copy(this.stepEnd.quaternion);
     }
   }
 
@@ -2594,6 +2673,13 @@ export class Rock {
    * the water's height there (m); null for still water.
    */
   update(dt, pondDepth, surfaceAt = null) {
+    if (this.state === 'held') {
+      const surface = surfaceAt?.(this.position.x, this.position.z) ?? 0;
+      const bedDepth = typeof pondDepth === 'function' ? pondDepth(this.position.x, this.position.z) : pondDepth;
+      if (this.position.y + this.lowestOffset() < surface) this.wet = 1;
+      this.moveHeld(this.position, surface, bedDepth);
+      return null;
+    }
     let surface = 0;
     this.age += dt;
     this.turned = false;   // a floater not round turns itself afloat (turnAfloat); anything else turns by its spin below

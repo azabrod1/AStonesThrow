@@ -10,9 +10,14 @@ GitHub Pages on every push. Locally, open `index.html` through any static
 server (`npm start`, then http://localhost:8123/). Development loads Three.js
 from a CDN; `npm run site` packages it alongside the published site.
 
-Tap or click the water to throw a rock there (beyond the simulated patch,
-at its nearest point). Space throws one at random; the rocks are always
-thrown from the shore. Press and hold still for a moment and a hand dips
+Tap or click to throw a rock there, even when tapping an existing object
+(beyond the simulated patch, at its nearest point). Hold an existing object
+you can see still for a quarter of a second to pick it up: a ring under it
+marks where it will come down, it follows your drag (leaving a wake through
+the water), and drops from rest when released. Moving before the hold activates
+turns the view instead. Escape cancels a grab and drops the object. Space
+throws one at random; the rocks are always thrown from the shore. Press
+and hold still on empty water for a moment and a hand dips
 into the water there instead: drag to trail it through, leaving a wake, and
 let go to lift it out (`src/touch.js`). Drag the water to walk the view round the pond and
 up or down (from just above the water to nearly straight down), and scroll
