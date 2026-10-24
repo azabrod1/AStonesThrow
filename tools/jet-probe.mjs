@@ -23,7 +23,15 @@
 //     first drop and reaches its highest within REFERENCE's ranges of the
 //     simulation's (results/comparison.md: 118 ms, drops of 2 to 6 mm from
 //     120 ms on, the joined top 75 to 81 cm at 0.2 to 0.33 s, the highest tip
-//     1.39 m), and no drop it throws is over LARGEST_DROP;
+//     1.39 m), and no lump it throws is over LARGEST_DROP (a big stone's are
+//     bigger: the air tears them in flight, src/splash.js);
+//   - for the reference, the bigger stones of the sweep's table
+//     (assets/jet/sweep.json: src/jet.js sweepGains), each one's clean jet
+//     straight down against the simulated run the table took its gains from:
+//     it clears the surface, throws its first drop and reaches its highest
+//     within SWEPT's shares of the run's (tools/basilisk/jet-fit.mjs
+//     measureJet, as tools/basilisk/sweep.py measures the run), its lumps
+//     printed beside the run's drops;
 //   - its cost: the solver's and the drawing's milliseconds per frame (mean
 //     and worst), warm (after a few silent jets), printed; the mean under
 //     COST_MOST;
@@ -48,6 +56,8 @@ import { JetColumn, CLEAN_FORM } from '../src/jet.js';
 import { Cavity } from '../src/cavity.js';
 import { chooseSplash, JET_COLLAPSE } from '../src/splash.js';
 import { seededRandom } from '../src/spray.js';
+import { measureJet } from './basilisk/jet-fit.mjs';
+import SWEEP from '../assets/jet/sweep.js';
 
 const stoneRadius = Number(process.argv[2] ?? 0.03);
 const entrySpeed = Number(process.argv[3] ?? 6.3);
@@ -62,6 +72,12 @@ const LARGEST_DROP = 0.012;          // m
 const COST_MOST = 3;                 // ms per frame, the solver and the drawing, warm
 const MARBLE = { radius: 0.0075, drop: 0.15 };   // Worthington's roughened marble and its fall
 const MARBLE_LEAST = 0.5;            // its jet's water reaches at least this share of the drop height
+// How far from the sweep's runs (assets/jet/sweep.json) the jets of its bigger stones may be: when they clear
+// the surface and how high their water reaches against the joined column's highest, as shares of the
+// simulation's. The lumps they throw up (as handed over, before the air tears them) are printed by water (half
+// of it in bigger lumps) beside the simulation's drops, not checked: the app's column mostly falls back in
+// pieces that land as they are, which the simulation's connectivity counts as drops.
+const SWEPT = { emerges: [0.85, 1.25], highest: [0.6, 1.6] };
 // The reference simulation's jet (tools/basilisk/results/comparison.md) and how far from it the app may be.
 const REFERENCE = {
   emerges: [0.105, 0.16],            // s after entry: the simulation 118 ms
@@ -240,7 +256,7 @@ const mean = (values) => values.reduce((sum, value) => sum + value, 0) / Math.ma
 const updateMean = mean(steady.update), geometryMean = mean(steady.geometry);
 const worst = Math.max(...steady.update.map((value, index) => value + steady.geometry[index]));
 console.log(`  CPU, warm: ${updateMean.toFixed(2)} ms per frame stepping, ${geometryMean.toFixed(2)} drawing, the worst frame ${worst.toFixed(1)} ms`);
-check(largest <= LARGEST_DROP, `a drop of ${millimetres(largest)} mm, over ${millimetres(LARGEST_DROP)}`);
+if (isReference) check(largest <= LARGEST_DROP, `a drop of ${millimetres(largest)} mm, over ${millimetres(LARGEST_DROP)}`);
 check(updateMean + geometryMean <= COST_MOST, `the jet costs ${(updateMean + geometryMean).toFixed(2)} ms a frame, over ${COST_MOST}`);
 if (isReference) {
   const within = (value, [low, high]) => value !== null && value !== undefined && value >= low && value <= high;
@@ -249,6 +265,25 @@ if (isReference) {
   check(firstDrop && within(firstDrop.radius, REFERENCE.firstDropRadius), `the first drop ${firstDrop ? millimetres(firstDrop.radius) : '-'} mm, outside ${REFERENCE.firstDropRadius}`);
   check(within(highest, REFERENCE.highest), `the jet's water reaches ${highest.toFixed(2)} m, outside ${REFERENCE.highest}`);
 }
+// ---- the sweep's stones -------------------------------------------------------
+// Every size the sweep's table holds above the reference (src/jet.js
+// sweepGains), its clean jet straight down at its run's speed against that
+// run (assets/jet/sweep.json, tools/basilisk/sweep.py).
+if (isReference) {
+  const within = (value, low, high) => value !== null && value !== undefined && value >= low && value <= high;
+  for (const size of SWEEP.table.filter((row) => row.run)) {
+    const run = SWEEP.runs.find((candidate) => candidate.name === size.run);
+    const sim = { emerges: run.jet.emerges, drop: run.drops.radius_by_water_p50, top: run.jet.top };
+    const app = measureJet(size.radius, run.speed, null, CLEAN_FORM, run.depth);
+    const drop = app.drops.byWaterP50;
+    console.log(`\nthe sweep's ${(size.radius * 200).toFixed(0)} cm stone at ${run.speed} m/s (${run.name}; gains column ${size.column.toFixed(2)}, thread ${size.thread.toFixed(2)}, needle ${size.needle.toFixed(2)}): ` +
+      `clears the surface ${(app.emerges * 1000).toFixed(0)} ms after entry (the simulation ${(sim.emerges * 1000).toFixed(0)}), its lumps by water ${drop === null ? '-' : millimetres(drop)} mm (${millimetres(sim.drop)}), ` +
+      `its water reaches ${app.highest.toFixed(2)} m (the joined column ${sim.top.toFixed(2)})`);
+    check(within(app.emerges, SWEPT.emerges[0] * sim.emerges, SWEPT.emerges[1] * sim.emerges), `the ${size.run} jet clears the surface ${app.emerges} s after entry, the simulation's ${sim.emerges}`);
+    check(within(app.highest, SWEPT.highest[0] * sim.top, SWEPT.highest[1] * sim.top), `the ${size.run} jet's water reaches ${app.highest.toFixed(2)} m, the simulation's column ${sim.top.toFixed(2)}`);
+  }
+}
+
 // ---- Worthington's marble ----------------------------------------------------
 {
   const marbleSpeed = Math.sqrt(2 * 9.81 * MARBLE.drop);

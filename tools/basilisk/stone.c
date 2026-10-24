@@ -2,7 +2,8 @@
 # A stone entering a pond: the reference splash
 
 A stone of radius R = 3 cm and density 2600 kg/m³ enters still water
-vertically at 6.3 m/s. The pond is 0.8 m deep. The flow is computed in
+vertically at 6.3 m/s. The pond is 0.8 m deep. (These are the defaults: see
+"Other stones" for the arguments that change them.) The flow is computed in
 axisymmetric coordinates with Basilisk: two-phase (water and air)
 incompressible Navier–Stokes, a VOF interface with surface tension,
 gravity through reduced.h, momentum-conserving advection, on an adaptive
@@ -12,8 +13,39 @@ Coordinates (axi.h): x runs along the axis, upward, with the still surface at
 x = 0 and the pond's floor at x = -0.8 m; y is the distance from the axis.
 The domain is a 4 m square: up to 3.2 m above the water and out to 4 m from
 the axis. The floor and the far wall are free-slip walls and the sky is an
-outflow. Beyond SPONGE m from the axis the velocity is relaxed to rest, so the
+outflow. Beyond SPONGE from the axis the velocity is relaxed to rest, so the
 rings are absorbed instead of coming back from the wall.
+
+## Other stones
+
+`radius=`, `density=`, `speed=` and `depth=` set the stone's radius (m),
+density (kg/m³) and entry speed (m/s) and the pond's depth (m). The lengths
+above and below are the 3 cm stone's and scale with its radius (SCALE, R over
+3 cm): the domain (4 m), the sponge, the splash zone and the other regions of
+the mesh, the band for the rings, the gauges and profiles, SINK and the
+floor's brake; the depth does not. The output periods about the splash and the
+dumps' scale with sqrt(R/g) (TIME_SCALE). So `level=` gives the same cells per
+stone radius whatever the radius (12: 31, 13: 61), logged at the start and
+written in parameters.txt with the depth, the domain and where the stone stops
+on the floor (`floor_stop`). `rings=0` leaves out the band of fine cells
+along the surface that follows the rings, for runs about the splash alone. A
+run stops at `end=`; outputs that would go on past it stop there too.
+
+## MPI
+
+Built with -D_MPI=1 (run.sh --mpi N), the run is split over N ranks: every
+sum (the force's samples, the gauges, the regions' and the drops' measures)
+is reduced over them and the first rank writes the files, the axis's cells
+and the facets gathered to it. One rank (or no MPI) gives the serial run to
+the bit. On N ranks the Poisson solver's Gauss–Seidel sweeps visit the cells
+in another order, so the solution differs within the solver's tolerance
+(TOLERANCE, 1e-3), as a serial run differs when only that tolerance changes:
+the reference at level 11 to 20 ms on 8 ranks is within 1.6 cells of the
+serial run's interface, a serial run with TOLERANCE 0.7e-3 within 1.7. Built
+with -DJACOBI=1 (an order-free smoother) as well, the 8 ranks keep to the
+serial interface within 0.2 cells. With the few tens of thousands of cells a
+run at level 12 has, MPI hardly pays (the 30 cm rock to 0.1 s: 12.9 s on one
+rank, 11.5 s on 8): run the sweep's stones side by side, one rank each.
 
 ## The stone
 
@@ -82,7 +114,8 @@ depends on the air's inertia.
 
 The tree is adapted on the volume fraction, the velocity and the stone's mask
 with `adapt_regions()`, a copy of adapt_wavelet() whose maximum level depends
-on the place (and on time). The splash zone (r < 0.3 m, under 1.2 m high)
+on the place (and on time). The splash zone (r < 0.3 m, under 1.2 m high:
+10 and 40 radii)
 gets the finest level, `level=` (13: 0.488 mm, 61 cells per stone radius;
 14: 123). It coarsens outward to level 10 beyond 2.4 m. A band around the
 still surface is held at level 11 out to 1.6 m and level 10 out to 2.4 m, so
@@ -118,6 +151,7 @@ the air as well).
 
     ./stone [level=14] [path=app|free|constant] [end=4] [fine=0.7] [air=1.2]
             [late=] [airmu=1.8e-5] [shape=front|sphere] [airadapt=0|1]
+            [radius=0.03] [density=2600] [speed=6.3] [depth=0.8] [rings=1]
 
 Compiled with -DBODY_GRAVITY=1, gravity is a body force instead of reduced.h's
 interfacial one (a check: the cavity's walls come out the same).
@@ -143,30 +177,33 @@ interfacial one (a check: the cavity's walls come out the same).
 
 /** ## Parameters */
 
-#define RADIUS 0.03
-#define RHO_STONE 2600.
-#define ENTRY_SPEED 6.3
+double RADIUS = 0.03;       // radius=, density=, speed= and depth= change them (see "Other stones")
+double RHO_STONE = 2600.;
+double ENTRY_SPEED = 6.3;
+double DEPTH = 0.8;
 #define RHO_WATER 1000.
 #define MU_WATER 1.0e-3
 #define SIGMA 0.072
 #define GRAVITY 9.81
-#define DEPTH 0.8
-#define DOMAIN 4.0
-#define SPONGE 2.6          // m from the axis: the sponge starts here...
+/* The lengths below are the reference stone's, scaled with the radius
+(SCALE), and the splash's times with sqrt(R/g) (TIME_SCALE). */
+#define SCALE (RADIUS/0.03)
+#define TIME_SCALE sqrt(SCALE)
+#define DOMAIN (4.0*SCALE)
+#define SPONGE (2.6*SCALE)  // from the axis: the sponge starts here...
 #define SPONGE_RATE 10.     // ...relaxing the velocity at up to this rate (1/s) at the far wall
-#define FLOOR_GAP 0.002     // the stone stops this far above the floor...
-#define BRAKE 0.015         // ...braked over this distance
+#define FLOOR_GAP (0.002*SCALE) // the stone stops this far above the floor...
+#define BRAKE (0.015*SCALE)     // ...braked over this distance
 #define F_TOL 1e-3          // adaptation tolerances: volume fraction...
 #define U_TOL 0.02          // ...velocity (m/s)...
 #define S_TOL 1e-3          // ...stone mask
 #define FORCE_SAMPLES 360
-#define SINK 2.0            // m above the still surface: water higher than this is removed (see remove_blobs)
+#define SINK (2.0*SCALE)    // above the still surface: water higher than this is removed (see remove_blobs)
 #ifndef MIN_BLOB
 # define MIN_BLOB 3         // drops and bubbles narrower than this many cells are removed
 #endif
 
-const double STONE_MASS = RHO_STONE*4./3.*M_PI*RADIUS*RADIUS*RADIUS;
-const double STONE_VOLUME = 4./3.*M_PI*RADIUS*RADIUS*RADIUS;
+#define STONE_MASS (RHO_STONE*4./3.*M_PI*RADIUS*RADIUS*RADIUS)
 
 int max_level = 14;
 double RHO_AIR = 1.2;       // air= and airmu= change them (see "The air" above)
@@ -177,12 +214,14 @@ bool air_adapt = false;     // whether the air's velocity is adapted away from t
 double end_time = 4.;
 double fine_until = 0.7;
 double late_after = 1e30;    // late=: after it the splash zone drops to level 11 (the rings only)
+bool rings = true;           // rings=0: no band of fine cells for the rings (see "Resolution")
 
 #define NGAUGES 8
-const double GAUGES[NGAUGES] = {0.1, 0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 2.4};
+const double GAUGES[NGAUGES] = {0.1, 0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 2.4}; // times SCALE
 // Column limits for the gauges: on cell edges of every level >= 6 (the base grid).
-#define GAUGE_LOW (-0.8 + 11*0.0625)
-#define GAUGE_HIGH (-0.8 + 15*0.0625)
+#define BASE_CELL (DOMAIN/64.)
+#define GAUGE_LOW (-DEPTH + floor ((DEPTH - 0.1*SCALE)/BASE_CELL)*BASE_CELL)
+#define GAUGE_HIGH (-DEPTH + (floor ((DEPTH - 0.1*SCALE)/BASE_CELL) + 4.)*BASE_CELL)
 
 /** ## The stone's state */
 
@@ -194,7 +233,7 @@ double contact_time = -1.;   // when its lowest point reached the still surface
 scalar stone[];
 face vector stone_face[];
 
-/** Sky outflow (x = 3.2 m). */
+/** Sky outflow (x = 3.2 m for the reference). */
 u.n[right] = neumann(0.);
 p[right] = dirichlet(0.);
 pf[right] = dirichlet(0.);
@@ -206,23 +245,23 @@ double min_cell () { return DOMAIN/(1 << max_level); }
 int max_level_at (double x, double y)
 {
   int splash = t > late_after ? min(max_level, 11) : t > fine_until ? min(max_level, 12) : max_level;
-  if (y < 0.3 && x < 1.2)
+  if (y < 0.3*SCALE && x < 1.2*SCALE)
     return splash;
-  if (y < 0.6 && x < 1.2)
+  if (y < 0.6*SCALE && x < 1.2*SCALE)
     return min(max_level, 13);
-  if (y < 1.2 && x < 1.2)
+  if (y < 1.2*SCALE && x < 1.2*SCALE)
     return min(max_level, 12);
-  if (y < 2.4)
+  if (y < 2.4*SCALE)
     return min(max_level, 11);
   return min(max_level, 10);
 }
 
 int min_level_at (double x, double y)
 {
-  // The band follows the rings out (at the shallow-water speed sqrt(g·0.8) = 2.8 m/s).
-  if (fabs(x) < 0.025 && y < 0.2 + 3.*t) {
-    if (y < 1.6) return min(max_level, 11);
-    if (y < 2.4) return min(max_level, 10);
+  // The band follows the rings out (a little faster than the shallow-water speed sqrt(g·depth)).
+  if (rings && fabs(x) < 0.025*SCALE && y < 0.2*SCALE + 3.*sqrt(DEPTH/0.8)*t) {
+    if (y < 1.6*SCALE) return min(max_level, 11);
+    if (y < 2.4*SCALE) return min(max_level, 10);
   }
   return 6;
 }
@@ -460,6 +499,11 @@ int main (int argc, char * argv[])
     else if (!strcmp (name, "airmu")) MU_AIR = atof (value);
     else if (!strcmp (name, "shape")) front_only = !strcmp (value, "front");
     else if (!strcmp (name, "airadapt")) air_adapt = atoi (value);
+    else if (!strcmp (name, "radius")) RADIUS = atof (value);
+    else if (!strcmp (name, "density")) RHO_STONE = atof (value);
+    else if (!strcmp (name, "speed")) ENTRY_SPEED = atof (value);
+    else if (!strcmp (name, "depth")) DEPTH = atof (value);
+    else if (!strcmp (name, "rings")) rings = atoi (value);
     else {
       fprintf (stderr, "unknown argument '%s'\n", name);
       return 1;
@@ -496,7 +540,7 @@ event init (t = 0)
     stone_mask ();
   }
   else {
-    double gap = max(2.*min_cell(), 5e-4);
+    double gap = max(2.*min_cell(), 5e-4*SCALE);
     stone_x = RADIUS + gap;
     stone_u = -ENTRY_SPEED;
     stone_force = 0.;
@@ -504,7 +548,7 @@ event init (t = 0)
     for (int l = 7; l <= max_level; l++)
       refine (level < l && level < max_level_at (x, y) &&
 	      ((sq(x - stone_x) + sq(y) < sq(RADIUS + 8.*L0/(1 << l))) ||
-	       (fabs(x) < 4.*L0/(1 << l) && y < 2.*RADIUS + 0.05) ||
+	       (fabs(x) < 4.*L0/(1 << l) && y < 2.*RADIUS + 0.05*SCALE) ||
 	       level < min_level_at (x, y)));
     fraction (f, -x);
     stone_mask ();
@@ -513,11 +557,19 @@ event init (t = 0)
       u.y[] = 0.;
     }
   }
+  if (pid() > 0)
+    return 0;
+  if (DOMAIN - DEPTH < 40.*RADIUS)
+    fprintf (stderr, "warning: the sky is only %g radii above the water\n", (DOMAIN - DEPTH)/RADIUS);
+  fprintf (stderr, "%g cells per stone radius (%g mm cells), domain %g m, %d ranks\n",
+	   RADIUS/min_cell(), min_cell()*1000., DOMAIN, npe());
   FILE * fp = fopen ("parameters.txt", "w");
   fprintf (fp, "max_level %d\nmin_cell %g\nmode %d\nend_time %g\nfine_until %g\nlate_after %g\n"
-	   "radius %g\nrho_stone %g\nentry_speed %g\nstone_start %g\nrho_air %g\nmu_air %g\nfront_only %d\nair_adapt %d\n",
+	   "radius %g\nrho_stone %g\nentry_speed %g\nstone_start %g\nrho_air %g\nmu_air %g\nfront_only %d\nair_adapt %d\n"
+	   "depth %g\ndomain %g\nrings %d\ncells_per_radius %g\nfloor_stop %g\nranks %d\n",
 	   max_level, min_cell(), mode, end_time, fine_until, late_after,
-	   RADIUS, RHO_STONE, ENTRY_SPEED, stone_x, RHO_AIR, MU_AIR, front_only, air_adapt);
+	   RADIUS, RHO_STONE, ENTRY_SPEED, stone_x, RHO_AIR, MU_AIR, front_only, air_adapt,
+	   DEPTH, DOMAIN, rings, RADIUS/min_cell(), X0 + RADIUS + FLOOR_GAP, npe());
   fclose (fp);
 }
 
@@ -545,7 +597,7 @@ event advection_term (i++)
       rhov[] = (1. - stone[])*rhov[] + stone[]*cm[]*RHO_STONE;
 }
 
-/** The sponge beyond SPONGE m from the axis. */
+/** The sponge beyond SPONGE from the axis. */
 event acceleration (i++)
 {
   face vector av = a;
@@ -691,16 +743,18 @@ event adapt (i++)
 
 event stone_log (i += 4)
 {
+  double water = 0., inside = 0.;
+  foreach (reduction(+:water) reduction(+:inside)) {
+    water += 2.*M_PI*f[]*dv();
+    inside += 2.*M_PI*f[]*stone[]*dv();
+  }
+  if (pid() > 0)
+    return 0;
   static FILE * fp = NULL;
   if (!fp) {
     fp = fopen ("stone.csv", i == 0 ? "w" : "a");
     if (i == 0)
       fprintf (fp, "t,step,dt,stone_x,stone_u,force,force_far,cells,mgp,mgpf,mgu,water_volume,water_in_stone,removed_water,added_water,cpu\n");
-  }
-  double water = 0., inside = 0.;
-  foreach (reduction(+:water) reduction(+:inside)) {
-    water += 2.*M_PI*f[]*dv();
-    inside += 2.*M_PI*f[]*stone[]*dv();
   }
   fprintf (fp, "%.7f,%d,%.4e,%.7f,%.6f,%.5f,%.5f,%ld,%d,%d,%d,%.12e,%.6e,%.6e,%.6e,%.1f\n",
 	   t, i, dt, stone_x, stone_u, stone_force, stone_force_far, grid->tn,
@@ -710,22 +764,25 @@ event stone_log (i += 4)
 
 void write_gauges ()
 {
+  double column[NGAUGES] = {0};
+  foreach (serial)
+    if (x - Delta/2. >= GAUGE_LOW - 1e-9 && x + Delta/2. <= GAUGE_HIGH + 1e-9)
+      for (int g = 0; g < NGAUGES; g++)
+	if (y - Delta/2. <= GAUGES[g]*SCALE && GAUGES[g]*SCALE < y + Delta/2.)
+	  column[g] += f[]*Delta;
+  mpi_all_reduce_array (column, MPI_DOUBLE, MPI_SUM, NGAUGES);
+  if (pid() > 0)
+    return;
   static FILE * fp = NULL;
   if (!fp) {
     fp = fopen ("gauges.csv", t == 0 ? "w" : "a");
     if (t == 0) {
       fprintf (fp, "t");
       for (int g = 0; g < NGAUGES; g++)
-	fprintf (fp, ",r%g", GAUGES[g]);
+	fprintf (fp, ",r%g", GAUGES[g]*SCALE);
       fprintf (fp, "\n");
     }
   }
-  double column[NGAUGES] = {0};
-  foreach (serial)
-    if (x - Delta/2. >= GAUGE_LOW - 1e-9 && x + Delta/2. <= GAUGE_HIGH + 1e-9)
-      for (int g = 0; g < NGAUGES; g++)
-	if (y - Delta/2. <= GAUGES[g] && GAUGES[g] < y + Delta/2.)
-	  column[g] += f[]*Delta;
   fprintf (fp, "%.4f", t);
   for (int g = 0; g < NGAUGES; g++)
     fprintf (fp, ",%.7e", GAUGE_LOW + column[g]);
@@ -737,13 +794,10 @@ void write_gauges ()
 2.4 m, by the same column integral as the gauges, in `profiles.txt` (time,
 then the elevations). From these the rings can be followed on by linear
 theory, and their linearity checked. */
-#define PROFILE_STEP 0.005
+#define PROFILE_STEP (0.005*SCALE)
 #define NPROFILE 480
 void write_profile ()
 {
-  static FILE * fp = NULL;
-  if (!fp)
-    fp = fopen ("profiles.txt", "a");
   double column[NPROFILE] = {0};
   foreach (serial)
     if (x - Delta/2. >= GAUGE_LOW - 1e-9 && x + Delta/2. <= GAUGE_HIGH + 1e-9) {
@@ -752,6 +806,12 @@ void write_profile ()
       for (int k = lo; k <= hi; k++)
         column[k] += f[]*Delta;
     }
+  mpi_all_reduce_array (column, MPI_DOUBLE, MPI_SUM, NPROFILE);
+  if (pid() > 0)
+    return;
+  static FILE * fp = NULL;
+  if (!fp)
+    fp = fopen ("profiles.txt", "a");
   fprintf (fp, "%.4f", t);
   for (int k = 0; k < NPROFILE; k++)
     fprintf (fp, " %.5e", GAUGE_LOW + column[k]);
@@ -769,17 +829,36 @@ static int compare_axis (const void * a, const void * b)
 
 void write_axis_runs ()
 {
-  static FILE * fp = NULL;
-  if (!fp)
-    fp = fopen ("axis.txt", t == 0 ? "w" : "a");
   int n = 0, size = 1024;
   AxisCell * cells = malloc (size*sizeof(AxisCell));
   foreach (serial)
-    if (y < Delta && x < 1.5) {
+    if (y < Delta && x < 1.5*SCALE) {
       if (n == size)
 	cells = realloc (cells, (size *= 2)*sizeof(AxisCell));
       cells[n++] = (AxisCell){x, Delta, f[]};
     }
+#if _MPI
+  // The first rank gathers every rank's cells on the axis.
+  int counts[npe()], offsets[npe()];
+  int values = 3*n;
+  MPI_Gather (&values, 1, MPI_INT, counts, 1, MPI_INT, 0, MPI_COMM_WORLD);
+  AxisCell * all = NULL;
+  if (pid() == 0) {
+    int total = 0;
+    for (int rank = 0; rank < npe(); rank++)
+      offsets[rank] = total, total += counts[rank];
+    all = malloc (max(total, 3)*sizeof(double));
+    n = total/3;
+  }
+  MPI_Gatherv (cells, values, MPI_DOUBLE, all, counts, offsets, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+  free (cells);
+  if (pid() > 0)
+    return;
+  cells = all;
+#endif
+  static FILE * fp = NULL;
+  if (!fp)
+    fp = fopen ("axis.txt", t == 0 ? "w" : "a");
   qsort (cells, n, sizeof(AxisCell), compare_axis);
   // Each cell's water sits against the wetter of its two neighbours.
   fprintf (fp, "%.5f %.6f %.6f", t, stone_x, stone_u);
@@ -814,33 +893,20 @@ void write_axis_runs ()
 water and of air. */
 void write_regions (bool drops_now)
 {
-  static FILE * fp = NULL, * fd = NULL;
-  if (!fp) {
-    fp = fopen ("regions.csv", t == 0 ? "w" : "a");
-    if (t == 0)
-      fprintf (fp, "t,stone_x,cavity_bottom,mouth_radius,pinched,bubble_bottom,bubble_volume,"
-	       "rim_x,rim_y,crown_outer,jet_tip,water_bodies,air_bodies\n");
-  }
-  if (drops_now && !fd) {
-    fd = fopen ("drops.csv", t == 0 ? "w" : "a");
-    if (t == 0)
-      fprintf (fd, "t,volume,radius,x,y,u,v,y_min,x_min,x_max\n");
-  }
-
   // Air: everything that is not water and not the stone.
   scalar air[];
   foreach()
     air[] = (f[] < 0.5 && stone[] < 0.5);
   int nair = tag (air);
-  int sky = interpolate (air, 2.5, 2.0, linear = false);
+  int sky = interpolate (air, X0 + 0.825*L0, 0.5*L0, linear = false);
   int above_stone = interpolate (air, stone_x + RADIUS + 3.*min_cell(), min_cell()/2., linear = false);
   double cavity_bottom = HUGE, mouth = 0., bubble_bottom = HUGE, bubble_volume = 0.;
   foreach (serial) {
-    if (air[] == sky && sky && y < 0.3 && x < 0.) {
+    if (air[] == sky && sky && y < 0.3*SCALE && x < 0.) {
       if (x - Delta/2. < cavity_bottom)
 	cavity_bottom = x - Delta/2.;
     }
-    if (air[] == sky && sky && y < 0.3 && x - Delta/2. <= 0. && 0. < x + Delta/2.)
+    if (air[] == sky && sky && y < 0.3*SCALE && x - Delta/2. <= 0. && 0. < x + Delta/2.)
       if (y + Delta/2. > mouth)
 	mouth = y + Delta/2.;
     if (above_stone && air[] == above_stone && above_stone != sky) {
@@ -849,6 +915,10 @@ void write_regions (bool drops_now)
 	bubble_bottom = x - Delta/2.;
     }
   }
+  mpi_all_reduce (cavity_bottom, MPI_DOUBLE, MPI_MIN);
+  mpi_all_reduce (mouth, MPI_DOUBLE, MPI_MAX);
+  mpi_all_reduce (bubble_bottom, MPI_DOUBLE, MPI_MIN);
+  mpi_all_reduce (bubble_volume, MPI_DOUBLE, MPI_SUM);
   bool pinched = above_stone && sky && above_stone != sky;
 
   // Water: the pond is the region holding the deep water.
@@ -856,7 +926,7 @@ void write_regions (bool drops_now)
   foreach()
     water[] = f[] > 0.01;
   int nwater = tag (water);
-  int pond = interpolate (water, -0.5, 1.0, linear = false);
+  int pond = interpolate (water, -0.625*DEPTH, 1.0*SCALE, linear = false);
   double rim_x = -HUGE, rim_y = 0., outer = 0., tip = -HUGE;
   double vol[nwater], cx[nwater], cy[nwater], cu[nwater], cv[nwater], ymin[nwater], xmin[nwater], xmax[nwater];
   for (int j = 0; j < nwater; j++)
@@ -865,9 +935,9 @@ void write_regions (bool drops_now)
     if (water[] > 0) {
       int j = water[] - 1;
       if (water[] == pond) {
-	if (y > RADIUS/2. && y < 0.4 && x > 0. && x + Delta/2. > rim_x)
+	if (y > RADIUS/2. && y < 0.4*SCALE && x > 0. && x + Delta/2. > rim_x)
 	  rim_x = x + Delta/2., rim_y = y;
-	if (y < 0.4 && x > 0.005 && y + Delta/2. > outer)
+	if (y < 0.4*SCALE && x > 0.005*SCALE && y + Delta/2. > outer)
 	  outer = y + Delta/2.;
 	if (y < Delta && x + Delta/2. > tip)
 	  tip = x + Delta/2.;
@@ -880,6 +950,39 @@ void write_regions (bool drops_now)
 	xmax[j] = max(xmax[j], x + Delta/2.);
       }
     }
+#if _MPI
+  // The rim is the highest point over every rank (with its distance out).
+  struct { double x; int rank; } rim = {rim_x, pid()}, highest;
+  MPI_Allreduce (&rim, &highest, 1, MPI_DOUBLE_INT, MPI_MAXLOC, MPI_COMM_WORLD);
+  rim_x = highest.x;
+  MPI_Bcast (&rim_y, 1, MPI_DOUBLE, highest.rank, MPI_COMM_WORLD);
+  mpi_all_reduce (outer, MPI_DOUBLE, MPI_MAX);
+  mpi_all_reduce (tip, MPI_DOUBLE, MPI_MAX);
+  if (drops_now) {
+    mpi_all_reduce_array (vol, MPI_DOUBLE, MPI_SUM, nwater);
+    mpi_all_reduce_array (cx, MPI_DOUBLE, MPI_SUM, nwater);
+    mpi_all_reduce_array (cy, MPI_DOUBLE, MPI_SUM, nwater);
+    mpi_all_reduce_array (cu, MPI_DOUBLE, MPI_SUM, nwater);
+    mpi_all_reduce_array (cv, MPI_DOUBLE, MPI_SUM, nwater);
+    mpi_all_reduce_array (ymin, MPI_DOUBLE, MPI_MIN, nwater);
+    mpi_all_reduce_array (xmin, MPI_DOUBLE, MPI_MIN, nwater);
+    mpi_all_reduce_array (xmax, MPI_DOUBLE, MPI_MAX, nwater);
+  }
+#endif
+  if (pid() > 0)
+    return;
+  static FILE * fp = NULL, * fd = NULL;
+  if (!fp) {
+    fp = fopen ("regions.csv", t == 0 ? "w" : "a");
+    if (t == 0)
+      fprintf (fp, "t,stone_x,cavity_bottom,mouth_radius,pinched,bubble_bottom,bubble_volume,"
+	       "rim_x,rim_y,crown_outer,jet_tip,water_bodies,air_bodies\n");
+  }
+  if (drops_now && !fd) {
+    fd = fopen ("drops.csv", t == 0 ? "w" : "a");
+    if (t == 0)
+      fprintf (fd, "t,volume,radius,x,y,u,v,y_min,x_min,x_max\n");
+  }
   fprintf (fp, "%.5f,%.6f,%.6f,%.6f,%d,%.6f,%.6e,%.6f,%.6f,%.6f,%.6f,%d,%d\n",
 	   t, stone_x, cavity_bottom == HUGE ? nodata : cavity_bottom, mouth, pinched,
 	   bubble_bottom == HUGE ? nodata : bubble_bottom, bubble_volume,
@@ -897,15 +1000,12 @@ void write_regions (bool drops_now)
 
 void write_facets ()
 {
-  char name[80];
-  sprintf (name, "facets/t%07.4f.txt", t);
-  FILE * fp = fopen (name, "w");
-  if (!fp) {
-    system ("mkdir -p facets");
-    fp = fopen (name, "w");
-  }
+  // Every rank writes its facets into memory; the first gathers them into the file.
+  char * text = NULL;
+  size_t length = 0;
+  FILE * fp = open_memstream (&text, &length);
   foreach (serial)
-    if (f[] > 1e-6 && f[] < 1. - 1e-6 && y < 0.6 && x < 1.5) {
+    if (f[] > 1e-6 && f[] < 1. - 1e-6 && y < 0.6*SCALE && x < 1.5*SCALE) {
       coord n = interface_normal (point, f);
       double alpha = plane_alpha (f[], n);
       coord segment[2];
@@ -915,6 +1015,31 @@ void write_facets ()
 		 x + segment[1].x*Delta, y + segment[1].y*Delta);
     }
   fclose (fp);
+#if _MPI
+  int own = length, sizes[npe()], offsets[npe()], total = 0;
+  MPI_Gather (&own, 1, MPI_INT, sizes, 1, MPI_INT, 0, MPI_COMM_WORLD);
+  char * all = NULL;
+  if (pid() == 0) {
+    for (int rank = 0; rank < npe(); rank++)
+      offsets[rank] = total, total += sizes[rank];
+    all = malloc (total + 1);
+  }
+  MPI_Gatherv (text, own, MPI_CHAR, all, sizes, offsets, MPI_CHAR, 0, MPI_COMM_WORLD);
+  free (text);
+  if (pid() > 0)
+    return;
+  text = all, length = total;
+#endif
+  char name[80];
+  sprintf (name, "facets/t%07.4f.txt", t);
+  FILE * out = fopen (name, "w");
+  if (!out) {
+    system ("mkdir -p facets");
+    out = fopen (name, "w");
+  }
+  fwrite (text, 1, length, out);
+  fclose (out);
+  free (text);
 }
 
 void write_dump ()
@@ -922,6 +1047,8 @@ void write_dump ()
   char name[80];
   sprintf (name, "dump-%06.3f", t);
   dump (file = name);
+  if (pid() > 0)
+    return;
   sprintf (name, "dump-%06.3f.stone", t);
   FILE * fp = fopen (name, "w");
   fprintf (fp, "%.12g %.12g %.12g %.12g %.12g %d %.12g %.12g\n", stone_x, stone_u, stone_force,
@@ -931,20 +1058,23 @@ void write_dump ()
 
 /** Output times: fine through the splash, coarse for the rings (output
 events also cap the time step, so the late ones are sparse). */
-event gauges_early (t = 0; t <= 1.; t += 1e-3) write_gauges();
+#define UNTIL(limit) min(limit, end_time*(1. + 1e-9)) // the last output at end= is kept
+event gauges_early (t = 0; t <= UNTIL(1.); t += 1e-3) write_gauges();
 event gauges_late (t = 1.002; t <= end_time; t += 2e-3) write_gauges();
-event axis_early (t = 0; t <= 0.25; t += 1e-4) write_axis_runs();
-event axis_middle (t = 0.2505; t <= 1.; t += 5e-4) write_axis_runs();
-event axis_late (t = 1.002; t <= end_time; t += 2e-3) write_axis_runs();
-event regions_early (t = 0; t <= 1.; t += 5e-4)
-  write_regions (fmod (t + 1e-9, 1e-3) < 2e-4);
-event regions_late (t = 1.005; t <= end_time; t += 5e-3) write_regions (true);
+event axis_early (t = 0; t <= UNTIL(0.25*TIME_SCALE); t += 1e-4*TIME_SCALE) write_axis_runs();
+event axis_middle (t = 0.2505*TIME_SCALE; t <= UNTIL(1.*TIME_SCALE); t += 5e-4*TIME_SCALE)
+  write_axis_runs();
+event axis_late (t = 1.002*TIME_SCALE; t <= end_time; t += 2e-3*TIME_SCALE) write_axis_runs();
+event regions_early (t = 0; t <= UNTIL(1.*TIME_SCALE); t += 5e-4*TIME_SCALE)
+  write_regions (fmod (t + 1e-9*TIME_SCALE, 1e-3*TIME_SCALE) < 2e-4*TIME_SCALE);
+event regions_late (t = 1.005*TIME_SCALE; t <= end_time; t += 5e-3*TIME_SCALE) write_regions (true);
 event profiles (t = 0.1; t <= end_time; t += 5e-3) write_profile();
-event facets_early (t = 0; t <= 0.3; t += 1e-3) write_facets();
-event facets_middle (t = 0.302; t <= 0.7; t += 2e-3) write_facets();
-event facets_late (t = 0.71; t <= end_time; t += 1e-2) write_facets();
-event dumps_early (t = 0; t <= 1.; t += 0.025) write_dump();
-event dumps_late (t = 1.25; t <= end_time; t += 0.25) write_dump();
+event facets_early (t = 0; t <= UNTIL(0.3*TIME_SCALE); t += 1e-3*TIME_SCALE) write_facets();
+event facets_middle (t = 0.302*TIME_SCALE; t <= UNTIL(0.7*TIME_SCALE); t += 2e-3*TIME_SCALE)
+  write_facets();
+event facets_late (t = 0.71*TIME_SCALE; t <= end_time; t += 1e-2*TIME_SCALE) write_facets();
+event dumps_early (t = 0; t <= UNTIL(1.*TIME_SCALE); t += 0.025*TIME_SCALE) write_dump();
+event dumps_late (t = 1.25*TIME_SCALE; t <= end_time; t += 0.25*TIME_SCALE) write_dump();
 
 #if SNAPSHOTS
 event snapshots (t = 0.005; t <= 0.2; t += 0.005)
@@ -966,6 +1096,16 @@ event progress (i += 50)
     if (speed > fastest)
       fastest = speed, fastest_x = x, fastest_y = y, fastest_f = f[], fastest_stone = stone[];
   }
+#if _MPI
+  struct { double speed; int rank; } mine = {fastest, pid()}, best;
+  MPI_Allreduce (&mine, &best, 1, MPI_DOUBLE_INT, MPI_MAXLOC, MPI_COMM_WORLD);
+  double where[5] = {fastest, fastest_x, fastest_y, fastest_f, fastest_stone};
+  MPI_Bcast (where, 5, MPI_DOUBLE, best.rank, MPI_COMM_WORLD);
+  fastest = where[0], fastest_x = where[1], fastest_y = where[2];
+  fastest_f = where[3], fastest_stone = where[4];
+#endif
+  if (pid() > 0)
+    return 0;
   fprintf (stderr, "i %d t %.5f dt %.3e stone %.4f %.3f F %.2f cells %ld mgp %d mgu %d cpu %.0f"
 	   " | fastest %.2f m/s at (%.4f, %.4f) f %.2f stone %.2f\n",
 	   i, t, dt, stone_x, stone_u, stone_force, grid->tn, mgp.i, mgu.i, perf.t,
@@ -974,5 +1114,7 @@ event progress (i += 50)
 
 event finish (t = end_time)
 {
-  fprintf (stderr, "finished at t = %g, contact at %g\n", t, contact_time);
+  if (pid() == 0)
+    fprintf
+ (stderr, "finished at t = %g, contact at %g\n", t, contact_time);
 }

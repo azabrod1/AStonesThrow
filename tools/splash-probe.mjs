@@ -35,9 +35,10 @@
 //     median, 95th percentile and worst, and which frame that was), after a
 //     few silent throws so the code is warm.
 //
-// and checks, failing with exit code 1, that no source asks for a drop bigger
-// than DROP_CEILING (src/crown.js: a bigger lump breaks into drops; the
-// splash's spawnDroplet would clip it).
+// and checks, failing with exit code 1, that no source but the jet's lumps
+// (which the air tears in flight, src/splash.js) asks for a drop bigger than
+// DROP_CEILING (src/crown.js: a bigger lump breaks into drops; the splash's
+// spawnDroplet would clip it).
 //
 //   node tools/splash-probe.mjs [radius ...] [--aim=x:z] [--power=normal|soft|hard] [--vertical]
 //
@@ -132,13 +133,13 @@ function runSplash(radius, { silent = false } = {}) {
   const dropRadii = [];
   let overCeiling = 0;
   const spawnDroplet = splash.spawnDroplet.bind(splash);
-  splash.spawnDroplet = (x, y, z, vx, vy, vz, dropRadius, lens) => {
+  splash.spawnDroplet = (x, y, z, vx, vy, vz, dropRadius, lens, lump) => {
     sources[source] = (sources[source] ?? 0) + 1;
     largest[source] = Math.max(largest[source] ?? 0, dropRadius);
     volumes[source] = (volumes[source] ?? 0) + (4 / 3) * Math.PI * dropRadius ** 3;
     dropRadii.push(dropRadius);
-    if (dropRadius > DROP_CEILING * (1 + 1e-9)) overCeiling++;
-    spawnDroplet(x, y, z, vx, vy, vz, dropRadius, lens);
+    if (dropRadius > DROP_CEILING * (1 + 1e-9) && !lump) overCeiling++;
+    spawnDroplet(x, y, z, vx, vy, vz, dropRadius, lens, lump);
   };
   let specks = 0;
   const spawnSpeck = splash.foamSpecks.spawn.bind(splash.foamSpecks);
@@ -203,11 +204,9 @@ function runSplash(radius, { silent = false } = {}) {
     if (jetColumn && splash.columns.includes(jetColumn)) {
       const positions = jetColumn.positions;
       if (positions[1] > result.jet.top) { result.jet.top = positions[1]; result.jet.topTime = time; }
-      const columns = 24;
-      for (let row = 6; row < positions.length / 3 / columns; row++) {
-        const first = row * columns * 3, opposite = (row * columns + columns / 2) * 3;
-        result.jet.widest = Math.max(result.jet.widest, Math.hypot(positions[first] - positions[opposite], positions[first + 1] - positions[opposite + 1], positions[first + 2] - positions[opposite + 2]));
-      }
+      // The drawn rings' radii (src/jet.js updateGeometry): the column, its beads and the sleeve at its foot.
+      const ring = jetColumn.ring;
+      for (let row = 0; row < ring.count; row++) result.jet.widest = Math.max(result.jet.widest, 2 * ring.radius[row]);
     } else if (jetColumn && result.jet.gone === null) {
       result.jet.gone = time;
     }

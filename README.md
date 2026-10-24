@@ -422,7 +422,15 @@ known timing, and the droplets are choreographed from them:
    `tools/jet-probe.mjs` checks the solver against the textbook growth rate,
    retraction speed and drop size, and the jet against the simulation);
    thrown at 42° a clean jet stands 25 to 45 cm, its drops flying higher,
-   but each throw's collapse launches its jet its own way (below);
+   but each throw's collapse launches its jet its own way (below). Bigger
+   stones' launches come from a sweep of simulations of 10 to 30 cm stones
+   (`tools/basilisk/README.md`, `assets/jet/sweep.json`): a 30 cm rock's
+   hole pinches 4 R down, not the reference's 7.5, so the cavity's head
+   scales with the Froude number, and its column, 0.5 R thick at the base
+   and 2 cm thick ten radii up, carries the air its collapse entrained
+   (drawn white, bumpy, its base a mound no wider than 1.2 R) and sheds
+   centimetre lumps, which fly whole until the air tears them (by their
+   Weber number) instead of leaving as strings of 4 mm beads;
 4. bubbles that follow the stone down its path, rise and burst into foam.
 
 Drops ring the water where they land, and the big ones (the jet's, and the
