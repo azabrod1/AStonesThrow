@@ -88,6 +88,9 @@
 //   - halving the substep moves a floater's highest bob by under
 //     STEP_TOLERANCE and its rest not at all;
 //   - a floater's middle step costs under STEP_COST_MS.
+//   - held things stay at the hand without an impact, release from rest,
+//     float or sink from their new position, and can be lifted and dropped
+//     again; picking's apparent/physical water positions round-trip.
 //
 //   node tools/thing-probe.mjs
 import * as THREE from 'three';
@@ -98,6 +101,7 @@ import { holdInPool, poolGround, POOL } from '../src/pool.js';
 import { collideThings } from '../src/collide.js';
 import { SplashSystem } from '../src/splash.js';
 import { meshKind } from '../src/thingMeshes.js';
+import { apparentPoint, physicalPoint } from '../src/objectGrab.js';
 
 const GRAVITY = 9.81;
 const STEP = 1 / 240;
@@ -1214,6 +1218,81 @@ console.log('\nThings meeting things (src/collide.js):');
   console.log(floating.map((entry) => `${entry.name} ${(1000 * middle(entry.record.stepCosts)).toFixed(1)} µs (mean ${(1000 * entry.record.cost / entry.record.floatSteps).toFixed(1)}) × ${entry.record.floatSteps}`).join(", "));
   console.log(`A floater's middle step costs at most ${(1000 * cost).toFixed(2)} µs`);
   check(cost < STEP_COST_MS, `a floater's step costs ${(1000 * cost).toFixed(2)} µs`);
+}
+
+// ---- holding and releasing things, including an old sink/cavity ----
+{
+  for (const name of THING_NAMES) {
+    const { rock } = throwThing(name);
+    follow(rock, { seconds: 18 });
+    const glow = rock.meshAbove.material.emissive.clone();
+    rock.hold();
+    const heldAt = new THREE.Vector3(0.4, -0.5, -1);
+    rock.moveHeld(heldAt, 0, 1.4);
+    let impacts = 0;
+    for (let step = 0; step < 240; step++) if (rock.update(STEP, 1.4)) impacts++;
+    rock.drawAt(0.35);
+    check(rock.state === 'held' && rock.position.distanceTo(heldAt) < 1e-9 && rock.meshAbove.position.distanceTo(heldAt) < 1e-9 && impacts === 0,
+      `${name}: a held thing moves, interpolates from its old flight, or makes an impact`);
+    rock.release(0, 1.4);
+    check(rock.velocity.lengthSq() === 0 && rock.meshAbove.material.emissive.equals(glow) && rock.restTime === 0,
+      `${name}: releasing retains momentum, highlight or retirement time`);
+    const releasePosition = rock.position.clone();
+    const releasedImpact = rock.update(STEP, 1.4);
+    // Asymmetric things rotate about their mass centre, which also shifts the mesh origin.
+    // A small first step is physical; a jump to the old sinking body's coordinates is not.
+    check(!releasedImpact && rock.position.distanceTo(releasePosition) < 0.01
+      && (!rock.plate || rock.state === 'float')
+      && (rock.floats ? rock.velocity.y > 0 : rock.velocity.y < 0), `${name}: submerged release uses the old sink or wrong buoyancy`);
+    rock.hold();
+    rock.moveHeld(new THREE.Vector3(-0.2, 0.8, -0.5));
+    rock.release();
+    let newImpacts = 0;
+    for (let step = 0; step < 240; step++) {
+      const impact = rock.update(STEP, 1.4);
+      if (impact && !impact.ripple && (!impact.skim || impact.slap)) newImpacts++;
+    }
+    check(newImpacts === 1 && rock.position.y < 0.8, `${name}: lifting and dropping fails to make exactly one fresh entry`);
+    rock.dispose();
+  }
+  const skipped = new Rock({ radius: 0.03, position: new THREE.Vector3(0, 1, 0), velocity: new THREE.Vector3(0, -1, -9), envTexture: null, skip: true });
+  skipped.hold();
+  skipped.moveHeld(new THREE.Vector3(0.3, -0.5, -1));
+  skipped.release();
+  skipped.update(STEP, 1.4);
+  check(skipped.state === 'water' && skipped.seenThroughWater.value === 1 && skipped.velocity.y < 0,
+    'an underwater skip-stone release must remain refracted and sink without a new cavity');
+  skipped.dispose();
+  const { rock: grounded } = throwThing('pizza');
+  grounded.ground = poolGround(POOL_SQUARE);
+  grounded.position.set(0, POOL.deck, 2);
+  grounded.restOn(POOL.deck);
+  grounded.syncMeshes();
+  grounded.hold();
+  check(!grounded.settling && !grounded.onGround && !grounded.collides, 'pickup retains a ground-settling animation or collision response');
+  grounded.moveHeld(new THREE.Vector3(0, POOL.deck + 0.2, 2));
+  grounded.release();
+  check(grounded.state === 'air', 'a thing released over the deck does not fall from rest');
+  for (let step = 0; step < 480; step++) grounded.update(STEP, 1.4);
+  check(grounded.grounded && Math.abs(grounded.position.y + grounded.lowestOffset() - POOL.deck) < 0.002,
+    'a picked-up thing does not settle back onto the deck');
+  grounded.dispose();
+
+  // The wave's stretched water column must not jump on release.
+  const { rock } = throwThing('bowling', { value: 16 });
+  rock.hold();
+  rock.moveHeld(new THREE.Vector3(0.2, -0.5, -1), 0.15, 1.4);
+  const drawn = rock.meshAbove.position.clone();
+  rock.release(0.15, 1.4);
+  check(rock.meshAbove.position.distanceTo(drawn) < 1e-9, 'release under a gale jumps between world and water coordinates');
+  rock.dispose();
+  const eye = new THREE.Vector3(0.7, 1.1, 2.5);
+  for (const depth of [0.01, 0.4, 1.4]) for (const side of [-1, 0, 1]) {
+    const point = new THREE.Vector3(side, -depth, -1);
+    const seen = apparentPoint(point, eye, 0);
+    check(physicalPoint(seen, eye, 0).distanceTo(point) < 1e-5, 'picking refraction does not round-trip');
+  }
+  console.log('\nHolding: every thing stays held, drops from rest, resumes buoyancy or sinking, and makes a fresh entry when dropped again; refraction round-trips');
 }
 
 if (failures.length > 0) {

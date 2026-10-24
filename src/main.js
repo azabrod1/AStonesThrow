@@ -93,6 +93,13 @@
 // touch.js): the arc goes, a small ring marks the finger, dragging trails it
 // through the water and letting go lifts it out; it neither throws nor
 // turns the view.
+// On an existing object a still press instead grabs after GRAB_HOLD_MS;
+// a quick tap there still throws. Before that threshold, movement turns
+// the view as usual. Once grabbed the gesture stays the object's until
+// release, which drops it from rest (src/objectGrab.js and Rock.release).
+// Held, a ring on what is under it (the water, the deck, the ice or the
+// bank) marks where it will come down, and carried through the surface it
+// wades, leaving a wake as a finger of its size does (followHeld).
 //
 // What is thrown. The Object setting (setThing, remembered on this device;
 // ?thing=) picks a kind of stone or a ball (src/things.js THINGS), and the
@@ -283,6 +290,7 @@ import { directionAt, placeDirection, clampToFrame, zoomToward, isZoomed, viewFa
 import { orbitEye, orbitFacing, orbitAbout, clampOrbit, turnOrbit, blendOrbits, orbitsMatch, keepInside, LOWEST_EYE } from './viewOrbit.js';
 import { Profiler } from './profiler.js';
 import { FingerInWater, FINGER } from './touch.js';
+import { ObjectGrab, GRAB_HOLD_MS } from './objectGrab.js';
 import { createPool, holdInPool, poolGround, poolInside, POOL } from './pool.js';
 import { createSound } from './sound.js';
 import { createFloaterRide } from './floaterRide.js';
@@ -1757,9 +1765,9 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   function keepWithinCaps() {
     const most = { resting: settings.resting, afloat: settings.afloat, shards: settings.shards, moving: MOVING_MOST };
     const count = { resting: 0, afloat: 0, shards: 0, moving: 0 };
-    for (const rock of rocks) if (rock.fading === undefined) count[kindOf(rock)]++;
+    for (const rock of rocks) if (rock.fading === undefined && rock.state !== 'held') count[kindOf(rock)]++;
     for (const rock of rocks) {   // the oldest first
-      if (rock.fading !== undefined) continue;
+      if (rock.fading !== undefined || rock.state === 'held') continue;
       const kind = kindOf(rock);
       if (count[kind] > most[kind]) { fadeOut(rock); count[kind]--; }
     }
@@ -1770,6 +1778,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
 
   /** Take a stone out of the scenes; keepMaterials frees only its geometry (warmUp keeps a stone's materials, so their program stays compiled). */
   function retireRock(rock, { keepMaterials = false } = {}) {
+    if (grab.rock === rock) endGrab();
     untrace(rock);
     sceneMain.remove(rock.meshAbove);
     sceneUnder.remove(rock.meshBelow);
@@ -1868,6 +1877,84 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   const finger = new FingerInWater(water);
   let holdTimer = 0;                  // the press's timeout to dip the finger, 0 when none
   let touching = null;                // { id }: the press whose finger is in the water
+  const grab = new ObjectGrab(camera, canvas, lighting.extinction);
+  let grabPointer = null;
+  let heldWake = null;                // the held thing as a finger of its size (src/touch.js) while held
+  const grabSurfaceAt = (x, z) => galeWaves.on ? galeSurfaceAt(x, z) : 0;
+
+  /** The held thing follows a swept path, staying above the bed and deck,
+   * inside the basin until its whole body clears the wall's top, and inside
+   * an ice hole until it clears the rim (over the ice it rests on it). */
+  function constrainGrab(point, rock) {
+    const wanted = point.clone(), from = rock.position;
+    const reach = rock.reach * rock.radius;
+    const lowest = rock.lowestOffset();
+    const steps = Math.min(128, Math.max(1, Math.ceil(from.distanceTo(wanted) / Math.max(reach / 2, 0.025))));
+    const current = from.clone(), delta = wanted.sub(from).divideScalar(steps);
+    // In the basin as holdInPool keeps things there: a ball against a wall is in, not on the deck.
+    const inBasin = (x, z) => pooled && poolInside(pool.square, rock.radius)(x, z);
+    const rim = ice.top - 1e-6;
+    let hole = ice.on && from.y + lowest < rim ? rock.iceHole : null;
+    for (let step = 0; step < steps; step++) {
+      const inside = inBasin(current.x, current.z);
+      current.add(delta);
+      if (inside && current.y + lowest <= POOL.deck) {
+        current.x = THREE.MathUtils.clamp(current.x, pool.square.minX + reach, pool.square.minX + pool.square.size - reach);
+        current.z = THREE.MathUtils.clamp(current.z, pool.square.minZ + reach, pool.square.minZ + pool.square.size - reach);
+      }
+      // A step from the deck into the basin crosses the wall at its top.
+      const overDeck = pooled && !(inside && inBasin(current.x, current.z));
+      // Lowered into a hole, it stays in that one until its whole body clears the rim again.
+      if (ice.on && !hole && current.y + lowest < rim) hole = ice.holeAt(current.x, current.z);
+      if (hole) {
+        const awayX = current.x - hole.x, awayZ = current.z - hole.z;
+        const distance = Math.hypot(awayX, awayZ);
+        const room = Math.max(ice.edgeReach(hole, Math.atan2(awayZ, awayX)) - (hole.skin?.front ?? 0) - reach, 0);
+        if (distance > room) {
+          current.x = hole.x + awayX * room / distance;
+          current.z = hole.z + awayZ * room / distance;
+        }
+      }
+      const ground = overDeck ? POOL.deck : (rock.ground?.at(current.x, current.z) ?? -bedDepthAt(current.x, current.z));
+      current.y = Math.max(current.y, ground - lowest);
+      if (current.y + lowest >= rim) hole = null;
+    }
+    if (ice.on) rock.iceHole = hole;
+    point.copy(current);
+  }
+
+  /** Whether a held thing stands through the surface where the solver shows a wake: not on the bank, the ice or the deck. */
+  function wading(rock) {
+    const { x, z } = rock.position, surface = grabSurfaceAt(x, z);
+    return rock.position.y + rock.lowestOffset() < surface && rock.position.y + rock.reach * rock.radius > surface && bedDepthAt(x, z) > 0
+      && (!ice.on || Boolean(ice.holeAt(x, z))) && (!pooled || poolInside(pool.square, 0)(x, z));
+  }
+
+  /** Once a frame while a thing is held: its ring on what is under it, and its wake through the surface. */
+  function followHeld(seconds) {
+    const rock = grab.rock;
+    if (!rock) return;
+    const { x, z } = rock.position;
+    const ground = rock.ground?.at(x, z) ?? null, surface = grabSurfaceAt(x, z);
+    arc.visible = false;
+    // Wholly under the water the thing shows itself; a ring on the surface would stand apart from it.
+    marker.visible = ground !== null || rock.position.y + rock.reach * rock.radius > surface;
+    marker.scale.setScalar(Math.max(rock.radius, 0.03) / 0.055);   // the ring's inside about its size
+    marker.position.set(x, 0.004 + (ground ?? surface), z);
+    if (!wading(rock)) heldWake.lift();
+    else if (heldWake.inWater) heldWake.moveTo(x, z);
+    else heldWake.dip(x, z);
+    heldWake.advance(seconds);
+  }
+
+  function endGrab() {
+    if (grab.rock && ice.on) grab.rock.iceHole = ice.holeAt(grab.rock.position.x, grab.rock.position.z);
+    grab.end(grabSurfaceAt, bedDepthAt);
+    heldWake = null;   // let go in the water, it is the water's again: no lift
+    grabPointer = null;
+    canvas.style.removeProperty('cursor');
+    showAim(null);
+  }
 
   /** The finger's small ring on the water where it is (or none). */
   function showFinger(point) {
@@ -1927,29 +2014,57 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     if (pinch && activePointers.size < 2) pinch = null;
     if (pressStart?.id === event.pointerId) { pressStart = null; stopTurning(); cancelHold(); }
     if (touching?.id === event.pointerId) endTouch();
+    if (grabPointer === event.pointerId) endGrab();
+  }
+
+  function cancelInteraction() {
+    cancelHold();
+    endGrab();
+    endTouch();
+    stopTurning();
+    pressStart = null;
+    pinch = null;
+    activePointers.clear();
+    showAim(null);
   }
 
   canvas.addEventListener('pointerdown', (event) => {
-    if (!readyForInput) return;
+    if (!readyForInput || event.button !== 0) return;
     lastActivity = performance.now();
     glide = null;   // the hand takes the view from a glide where it stands
     activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
     try { canvas.setPointerCapture(event.pointerId); } catch { /* a synthetic or already released pointer */ }
     if (activePointers.size === 1) {
+      const candidate = grab.pick(rocks, event.clientX, event.clientY, event.pointerType !== 'mouse');
       pressStart = { id: event.pointerId, x: event.clientX, y: event.clientY };
       showAim(throwAim(event.clientX, event.clientY));
-      // Held still, the press dips a finger in where it is then.
+      // Taps, even on objects, still throw. Only a still hold takes one.
       const pointerId = event.pointerId;
       cancelHold();
       holdTimer = setTimeout(() => {
         holdTimer = 0;
         const held = activePointers.get(pointerId);
-        if (pressStart?.id === pointerId && !turning && !pinch && held) startTouch(pointerId, held.x, held.y);
-      }, HOLD_MS);
+        if (pressStart?.id !== pointerId || turning || pinch || !held) return;
+        if (candidate && rocks.includes(candidate) && grab.pick(rocks, held.x, held.y, event.pointerType !== 'mouse') === candidate) {
+          // A thing carried onto the lake's bank must land on it too.
+          candidate.ground ??= { at: (x, z) => { const depth = bedDepthAt(x, z); return depth <= 0 ? -depth : null; } };
+          grab.begin(candidate, held.x, held.y);
+          untrace(candidate);
+          grabPointer = pointerId;
+          canvas.style.cursor = 'grabbing';
+          showAim(null);
+          // Picked up where it is in the water, it is already wading: no dimple.
+          heldWake = new FingerInWater(water, candidate.radius);
+          if (wading(candidate)) heldWake.dip(candidate.position.x, candidate.position.z, true);
+          followHeld(0);
+          lastActivity = performance.now();
+        } else startTouch(pointerId, held.x, held.y);
+      }, candidate ? GRAB_HOLD_MS : HOLD_MS);
     } else if (activePointers.size === 2) {
       pressStart = null;
       stopTurning();
       cancelHold();
+      endGrab();
       endTouch();
       showAim(null);
       startPinch();
@@ -1961,6 +2076,10 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     const tracked = activePointers.get(event.pointerId);
     if (tracked) { tracked.x = event.clientX; tracked.y = event.clientY; }
     if (pinch) { if (tracked) movePinch(); return; }
+    if (grabPointer === event.pointerId) {
+      grab.move(event.clientX, event.clientY, constrainGrab, grabSurfaceAt, bedDepthAt);
+      return;
+    }
     if (touching?.id === event.pointerId) {
       const point = aimPoint(event.clientX, event.clientY, FINGER.margin);
       // Dragged out of its hole onto the ice, it lifts out.
@@ -1993,8 +2112,9 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     const press = pressStart?.id === event.pointerId ? pressStart : null;
     const turned = press && turning;
     const touched = touching?.id === event.pointerId;
+    const grabbed = grabPointer === event.pointerId;
     releasePointer(event);
-    if (press && !turned && !touched) {
+    if (press && !turned && !touched && !grabbed) {
       const moved = Math.hypot(event.clientX - press.x, event.clientY - press.y);
       const hit = throwAim(event.clientX, event.clientY);
       if (hit && moved < TAP_SLOP) {
@@ -2003,15 +2123,20 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
         if (event.pointerType === 'mouse') thrownFrom = { x: event.clientX, y: event.clientY };
       }
     }
-    if (event.pointerType !== 'mouse' || thrownFrom || touched) showAim(null);
+    if (event.pointerType !== 'mouse' || thrownFrom || touched || grabbed) showAim(null);
   });
   canvas.addEventListener('pointercancel', (event) => { releasePointer(event); showAim(null); });
+  // After a pointerup this is a no-op, so a mouse keeps its aim; otherwise the capture was taken away mid-gesture.
+  canvas.addEventListener('lostpointercapture', (event) => { if (activePointers.has(event.pointerId)) { releasePointer(event); showAim(null); } });
+  window.addEventListener('blur', cancelInteraction);
+  document.addEventListener('visibilitychange', () => { if (document.hidden) cancelInteraction(); });
   // A held press is a finger in the water; a phone's browser may open its menu on one instead.
   canvas.addEventListener('contextmenu', (event) => event.preventDefault());
   canvas.addEventListener('pointerleave', (event) => { if (!activePointers.has(event.pointerId)) showAim(null); });
   canvas.addEventListener('wheel', (event) => {
     if (!readyForInput) return;
     event.preventDefault();
+    if (grab.rock) return;
     glide = null;
     // Notches: a mouse wheel sends about 100 pixels or 3 lines each. A trackpad
     // pinch arrives as ctrl + wheel in small steps, scaled to feel like the page zoom.
@@ -2022,6 +2147,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   }, { passive: false });
   window.addEventListener('keydown', (event) => {
     if (!readyForInput) return;
+    if (event.key === 'Escape' && grab.rock) { cancelInteraction(); return; }
     if (event.code === 'Space' && !event.repeat && event.target === document.body) { event.preventDefault(); throwRandom(); }
     if (event.key === 'Escape' && !reportedView?.atHome) resetView();
     if ((event.key === 't' || event.key === 'T') && !event.repeat && event.target === document.body) setTracing(!tracing);
@@ -2053,6 +2179,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     // The tear and breakup fronts advance once per frame, so the splash needs the frame's length first.
     splash.setFrameSeconds(frame);
     finger.advance(frame);   // the finger's wake along its path this frame (src/touch.js)
+    followHeld(frame);
     const end = simulationTime + frame;
     stepsTime = Math.max(stepsTime, simulationTime);
     const stepping = rocks.filter((rock) => rock.fading === undefined);   // a thing fading out is frozen (fadeOut)
@@ -2120,6 +2247,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     for (const rock of rocks) rock.drawAt(rock.fading === undefined ? 1 - (stepsTime - end) / PHYSICS_STEP : 1);
     // What is past a cap shrinks away (keepWithinCaps), and goes; a floater a gale drifts out of sight goes at once.
     for (const rock of [...rocks]) {
+      if (rock.state === 'held') continue;
       if (rock.fading !== undefined) {
         rock.fading += frame;
         const left = 1 - THREE.MathUtils.smoothstep(rock.fading, 0, FADE_SECONDS);
@@ -2239,7 +2367,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     surface.setDryDiscs(rocks.filter((rock) => rock.dryDisc > 0).map((rock) => ({ x: rock.meshAbove.position.x, z: rock.meshAbove.position.z, radius: rock.dryDisc })));
     // The water's height under each floater riding it, read back for the physics (src/floaterRide.js: things meet it where it is drawn).
     floaterRide.update(renderer, rocks.filter((rock) => rock.rideShare && rock.rideShare.value > 0));
-    surface.update({ underTarget, reflectionTarget, reflectionMatrix, mirrorRect: splashRect, stonesUnder: rocks.some((rock) => rock.state === 'skim' || rock.state === 'water' || rock.state === 'float' || rock.afloat || (rock.state === 'rest' && rock.position.y < 0)), resolution, camera, time: simulationTime });
+    surface.update({ underTarget, reflectionTarget, reflectionMatrix, mirrorRect: splashRect, stonesUnder: rocks.some((rock) => rock.state === 'held' || rock.state === 'skim' || rock.state === 'water' || rock.state === 'float' || rock.afloat || (rock.state === 'rest' && rock.position.y < 0)), resolution, camera, time: simulationTime });
     splash.prepareScene();   // the stones' cavities, and the patch dipping under them
     if (skip.cavity) surface.setCavities([]);
     surface.inner.visible = !skip.surface;
@@ -2497,6 +2625,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
 
   /** The pond back to still water at time zero: no stones, no splash, the solver cleared and asleep. */
   function clearPond() {
+    cancelInteraction();
     for (const rock of [...rocks]) retireRock(rock);
     water.clear();
     pool.dry();
@@ -2933,6 +3062,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     liftTouch() { endTouch(); },
     /** Whether a finger is in the water, and where ({ x, z }, or null). */
     get touching() { return finger.inWater; },
+    /** The object held by the pointer, or null (tap/hold interaction probes). */
+    get grabbed() { return grab.rock; },
     get fingerPosition() { return finger.target ? { ...finger.target } : null; },
     setDebugView(name) { debugView = name; },
     /** Set the field of view (degrees), keeping the look direction; unlike the user's zoom it may leave the home frame. */

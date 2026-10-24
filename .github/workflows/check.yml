@@ -1,10 +1,11 @@
 name: Check
 
 # Every pull request (main's deploy runs npm test itself) runs the CPU
-# probes, then the browser probes headless:
-# Chromium renders WebGL through SwiftShader, which is correct but slow, so
-# their frame rates mean nothing; their CPU timings (a throw's cost) and
-# counts (programs, draw calls) do.
+# probes, and beside them the browser probes headless on a macOS runner's GPU
+# (Metal; free for a public repository). GitHub's Linux runners have none, and
+# SwiftShader took some 27 minutes over the browser probes where Metal takes
+# about 5, in two jobs side by side. PW_GPU=hardware fails rather than fall
+# back to SwiftShader (tools/browser.mjs).
 on:
   pull_request:
   workflow_dispatch:
@@ -33,7 +34,21 @@ jobs:
       - run: node tools/pool-probe.mjs
 
   browser:
-    runs-on: ubuntu-latest
+    name: browser (${{ matrix.part }})
+    runs-on: macos-latest
+    env:
+      PW_GPU: hardware
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - part: controls
+            run: node tools/controls-probe.mjs
+          - part: quality, site, startup
+            run: |
+              node tools/quality-probe.mjs
+              npm run site && node tools/site-check.mjs
+              node tools/startup-probe.mjs
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -41,8 +56,5 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
-      - run: npx playwright install --with-deps chromium
-      - run: node tools/controls-probe.mjs
-      - run: node tools/quality-probe.mjs
-      - run: npm run site && node tools/site-check.mjs
-      - run: node tools/startup-probe.mjs
+      - run: npx playwright install chromium
+      - run: ${{ matrix.run }}

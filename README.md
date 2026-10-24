@@ -10,9 +10,14 @@ GitHub Pages on every push. Locally, open `index.html` through any static
 server (`npm start`, then http://localhost:8123/). Development loads Three.js
 from a CDN; `npm run site` packages it alongside the published site.
 
-Tap or click the water to throw a rock there (beyond the simulated patch,
-at its nearest point). Space throws one at random; the rocks are always
-thrown from the shore. Press and hold still for a moment and a hand dips
+Tap or click to throw a rock there, even when tapping an existing object
+(beyond the simulated patch, at its nearest point). Hold an existing object
+you can see still for a quarter of a second to pick it up: a ring under it
+marks where it will come down, it follows your drag (leaving a wake through
+the water), and drops from rest when released. Moving before the hold activates
+turns the view instead. Escape cancels a grab and drops the object. Space
+throws one at random; the rocks are always thrown from the shore. Press
+and hold still on empty water for a moment and a hand dips
 into the water there instead: drag to trail it through, leaving a wake, and
 let go to lift it out (`src/touch.js`). Drag the water to walk the view round the pond and
 up or down (from just above the water to nearly straight down), and scroll
@@ -553,11 +558,22 @@ each big drop that lands leaves a speck of boil. (The map keeps a second,
 longer-lived kind, the raft of small bubbles that sea foam is; the gale's
 whitecaps use it, a stone never does.) The amounts are small: the pattern
 below whitens about half the water at a map value of 0.1, and the map under
-a 6 cm stone's foam peaks near 0.17. The boil's amount grows with the
-stone's radius (its air goes as R³, the mouth it comes up through as R²) up
-to a 16 cm stone and as the square root of the size beyond it, so a pebble
-barely fizzes and a 30 cm rock churns with bubbles over dark water for about
-half a second after its hole closes, never a white disc. Each is stamped as
+a 6 cm stone's foam peaks near 0.1. The hole's boil grows with the stone's
+radius (its air goes as R³, the mouth it comes up through as R²) for as long
+as the air takes to come up, so a big stone's boil is denser as well as
+wider and longer. The surface holds only so much of it: on fresh water one
+layer of bubbles bursts at a time, and the rest is the cloud of bubbles
+just under the surface, which most of a real boil's white is. So the water
+shader draws a boil up to that hold (a map value of 0.035) as bubbles
+bursting on the surface, a random few at a time and most of them small,
+each a clear cap whitening toward its edge that swells, glints and bursts
+within half a second, and the rest as the cloud, a milky tint of the water
+seen through the surface (its colour the water's own absorption against the
+bubbles' scattering, the lake's blue-green paled), churned in lumps that
+break up its edge, under the sky's reflection; the gale's whitecaps, a
+breaking wave's packed froth, stay white. Foam specks ride over a boil's
+cloud as over clear water. A pebble's boil is nearly all fizz; a big stone's mostly
+cloud. Each is stamped as
 a patch of three to five sub-stamps of unequal sizes at random offsets,
 never one round Gaussian, so no two boils share a shape. Surface flows carry
 the foam: where the hole closed the jet's base wells up, and where the jet
@@ -582,15 +598,19 @@ and clumps, then only the biggest bubbles are left, so a raft thins from its
 edge inward the way foam pops, and foam just over the threshold, a single
 layer of bubbles, lets the water show through. The larger bubbles have clear
 centres and bright rims, with milky fine bubbles between them. The map's
-separate boil and raft amounts control this material: fresh, dense froth
-scatters more light; as it drains, the water shows through the bubble films.
+separate boil and raft amounts control this material: a breaking wave's
+dense froth scatters more light; as it drains, the water shows through the
+bubble films.
 Those films use the existing bubble cells and fade to their measured mean
 opacity at a distance, adding no texture or noise layer. Close up (the
-shoot harness, `--seed=1`), a 6 cm stone thrown normally leaves a broken,
-partly see-through fizz over about its hole's mouth at 0.4 to 1 s and a
-few foam specks after; a 30 cm rock a churn of bubbles over dark water
-round its jet at 0.5 s, a few patches at 1 s, specks at 1.5 s and clear
-water by 2.5.
+shoot harness, `--seed=1`, `--view=high --fov=16`), a 6 cm stone thrown
+normally leaves a faint milky ring and a see-through fizz over about its
+hole's mouth at 0.3 to 0.8 s and a few foam specks after; a 20 cm rock a
+milky, soft-edged churn about 30 cm across from 0.4 to 1.4 s, thinning to
+patches at 1.7 s and clear water by 2.2, with hardly any solid white
+(about 5 cm² of it, against 180 cm² when the boil was drawn as surface
+froth). From the bank, where the surface mostly mirrors the sky, either is
+a faint pale patch.
 The threshold's edge is one pixel wide at any distance (from the pattern's
 exact gradient and the pixel's footprint on the water), and each layer fades
 into an even white of the right strength before its cells shrink to a couple
@@ -1406,8 +1426,9 @@ farther out, so it rises into the view rather than filling its corner.
   inside the walls.
 - `node tools/controls-probe.mjs [--root=path] [--label=name]` loads the page
   as phones' browsers do (mobile layout by the viewport tag, touch, 3× pixels)
-  at a large phone's portrait and landscape and a small phone's portrait and
-  landscape, and in a desktop window, and checks that the page is laid out at the device's
+  at a large phone's portrait and a small phone's portrait and landscape
+  (a large phone's landscape has room wherever the small one's does), and in
+  a desktop window, and checks that the page is laid out at the device's
   width, every control is on the screen, the strip covers at most 30% of the
   height, the stone slider is 44 points tall (and most of the width in
   portrait) and every button 34, and that a tap or a drag anywhere along the
