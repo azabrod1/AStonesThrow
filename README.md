@@ -1353,8 +1353,9 @@ farther out, so it rises into the view rather than filling its corner.
   inside the walls.
 - `node tools/controls-probe.mjs [--root=path] [--label=name]` loads the page
   as phones' browsers do (mobile layout by the viewport tag, touch, 3× pixels)
-  at a large phone's portrait and landscape and a small phone's portrait and
-  landscape, and in a desktop window, and checks that the page is laid out at the device's
+  at a large phone's portrait and a small phone's portrait and landscape
+  (a large phone's landscape has room wherever the small one's does), and in
+  a desktop window, and checks that the page is laid out at the device's
   width, every control is on the screen, the strip covers at most 30% of the
   height, the stone slider is 44 points tall (and most of the width in
   portrait) and every button 34, and that a tap or a drag anywhere along the
