@@ -911,7 +911,14 @@ bearing what lies about it. A piece afloat in a hole is ice too: a pebble
 thrown at one lands on its top, bounces and slides as on the sheet, while
 the piece can carry it (a piece of thick ice some 70 g), and pushes it
 under and goes into the water when it cannot (a piece of thin ice, a few
-grams); anything else meets a piece as its slab, not a ball round it. A crack runs
+grams); anything else meets a piece as its slab, not a ball round it. A
+blow more than a piece's own ice holds breaks it (a 6 cm stone on a piece of
+thin ice): it splits along a line or two through the blow, its parts set
+where they broke while the stone's cavity is open under them, then dipping
+and drifting apart; struck short of breaking, a piece is pushed down a
+centimetre or so, tipping on the side struck, and rocks back. Awash or just
+under, a piece stays in sight, its white ice and its edges seen through the
+water over it, fading as it goes deeper. A crack runs
 out at 8 m/s from where it starts, when the crack it starts from reached
 there (a real one runs at hundreds of metres a second, at once to the eye;
 run out over a few frames the break is seen to spread from the blow, its

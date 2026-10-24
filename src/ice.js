@@ -198,7 +198,10 @@ export const ICE = {
 // Pieces afloat as ground (pieceUnder): a point within `margin` (m) of a piece's outline is over it; a piece is ground
 // only lying within `flattest` (its up's height) of flat, and its top no more than `awash` (m) under the still water; a
 // thing resting on one goes along again once the piece's top under it is `settle` (m) from where it rests.
-const PIECE = { margin: 0.006, flattest: 0.6, awash: 0.002, settle: 0.002 };
+// Struck, a piece is driven down at most `dip` (m/s) and tipped at most `tipMost` (rad/s) (pushPiece); broken (splitPiece),
+// along a line within `offLine` of its radius of the blow, two lines over `twoLines` times what it held, its parts
+// driven apart at `apart` (least, most; m/s).
+const PIECE = { margin: 0.006, flattest: 0.6, awash: 0.002, settle: 0.002, dip: 0.05, tipMost: 2, offLine: 0.15, twoLines: 2.5, apart: [0.03, 0.1] };
 const pieceUp = new THREE.Vector3(), pieceLocal = new THREE.Vector3(), pieceTurn = new THREE.Quaternion();
 
 /**
@@ -383,6 +386,31 @@ function polygonMiddle(corners) {
     z += (az + bz) * cross;
   }
   return Math.abs(twice) < 1e-12 ? { area: 0, x: corners[0], z: corners[1] } : { area: Math.abs(twice) / 2, x: x / (3 * twice), z: z / (3 * twice) };
+}
+
+/**
+ * A convex polygon (corners [x0, z0, …]) cut by the line through (x, z) at
+ * `angle` (radians from +x toward +z): its parts either side, each convex
+ * (one, the polygon itself, if the line misses it).
+ */
+function splitConvex(corners, x, z, angle) {
+  const directionX = Math.cos(angle), directionZ = Math.sin(angle);
+  const side = (index) => (corners[index] - x) * directionZ - (corners[index + 1] - z) * directionX;
+  const left = [], right = [];
+  const count = corners.length / 2;
+  for (let index = 0; index < count; index++) {
+    const next = (index + 1) % count;
+    const here = side(2 * index), there = side(2 * next);
+    (here >= 0 ? left : right).push(corners[2 * index], corners[2 * index + 1]);
+    if ((here >= 0) !== (there >= 0)) {
+      const share = here / (here - there);
+      const crossX = corners[2 * index] + (corners[2 * next] - corners[2 * index]) * share;
+      const crossZ = corners[2 * index + 1] + (corners[2 * next + 1] - corners[2 * index + 1]) * share;
+      left.push(crossX, crossZ);
+      right.push(crossX, crossZ);
+    }
+  }
+  return [left, right].filter((part) => part.length >= 6);
 }
 
 /** The convex hull of points [x0, z0, …] (Andrew's monotone chain), as corners [x0, z0, …] counter-clockwise. */
@@ -760,23 +788,122 @@ export class IceSheet {
   }
 
   /**
-   * A thing coming down on a piece afloat (meet; the header: Pieces): its
-   * blow drives the piece down (its momentum shared with the piece and the
-   * water a plate moving face on carries), and if it, with what already lies
-   * on the piece, is more than the piece carries, the piece goes under and
-   * the thing goes into the hole's water (`{ hole, open }`); else it lands on
-   * the piece's top (`{ ground }`).
+   * A thing coming down on a piece afloat (meet; the header: Pieces). Its
+   * blow (blow: as on the sheet) over what the piece's own ice holds breaks
+   * it (splitPiece), and the thing goes on into the water through it, as
+   * through the sheet (`{ hole, broke, keep }`: no crown stands on ice).
+   * Else it drives the piece down where it struck (pushPiece: its momentum
+   * shared with the piece and the water a plate carries face on), and if it,
+   * with what already lies on the piece, is more than the piece carries, the
+   * piece goes under there and the thing goes into the water past it; else it
+   * lands on the piece's top (`{ ground }`).
    */
   landOnPiece(rock, { rock: piece, top }) {
+    const x = rock.position.x, z = rock.position.z;
+    const hole = this.holeAt(x, z) ?? piece.iceHole;
+    const random = this.streamFor(rock);
+    const thickness = piece.piece.thickness * piece.radius;
+    const blow = this.blow(rock), holds = this.holds(random, thickness);
+    if (blow >= holds && this.splitPiece(piece, x, z, blow / holds, random, rock)) {
+      const speed = rock.velocity.length(), energy = 0.5 * rock.mass * speed * speed;
+      const keep = Math.sqrt(Math.max(1 - (holds * thickness) / Math.max(energy, 1e-9), ICE.keepLeast ** 2));
+      this.events.push({ kind: 'break', x, z, strength: blow / holds, radius: rock.radius, thickness });
+      return { hole, broke: true, keep, open: false };
+    }
     const down = Math.max(-rock.velocity.y, 0);
     const carried = piece.mass + (piece.plate ? piece.plateAddedMass(1) : 0);
-    piece.knock(0, -(rock.mass * down) / (rock.mass + carried), 0, 0, 0, 0);
+    this.pushPiece(piece, x, z, (rock.mass * down) / (rock.mass + carried));
     const lying = this.onPieces.get(piece)?.mass ?? 0;
     if (rock.mass + lying > this.pieceCarries(piece)) {
       rock.dunked = piece;   // it pushed the piece under and goes down past it: they do not meet (src/collide.js)
-      return { hole: this.holeAt(rock.position.x, rock.position.z), broke: false, keep: 1, open: true };
+      return { hole, broke: false, keep: 1, open: false };
     }
     return { ground: top };
+  }
+
+  /**
+   * A piece afloat driven down at (x, z) at `speed` (m/s; landOnPiece,
+   * dunkPieces): at most PIECE.dip (the water under a plate stops it within
+   * a centimetre or two; past its freeboard little lifts it back, so more
+   * would sink it from sight), and tipped, the side struck going down, at
+   * that speed over a quarter of its radius for each radius off its middle
+   * it was struck, at most PIECE.tipMost.
+   */
+  pushPiece(piece, x, z, speed) {
+    const push = Math.min(speed, PIECE.dip);
+    if (push <= 0) return;
+    piece.knock(0, -push, 0, 0, 0, 0);
+    const offX = x - piece.position.x, offZ = z - piece.position.z, off = Math.hypot(offX, offZ);
+    if (off < 1e-4) return;
+    // About up × the way to where it was struck: that side goes down.
+    const rate = Math.min((push * off) / (0.25 * piece.radius * piece.radius), PIECE.tipMost);
+    const angular = pieceUp.copy(piece.spinAxis).multiplyScalar(piece.spinRate).add(pieceLocal.set(offZ / off, 0, -offX / off).multiplyScalar(rate));
+    piece.spinRate = angular.length();
+    if (piece.spinRate > 1e-9) piece.spinAxis.copy(angular).divideScalar(piece.spinRate);
+  }
+
+  /**
+   * A piece afloat broken by a blow at (x, z) `share` times what it held
+   * (landOnPiece): split along a line through near where it was struck (two
+   * lines, across each other, if the blow was over PIECE.twoLines times what
+   * it held), each part a piece of its own (a shard let go: `shards`, which
+   * src/main.js makes things) where it was, as the piece lay, set there while
+   * the thing's cavity is open under it (fitCavity), then moving as the piece
+   * moved and driven apart from the blow, its edge at the blow first down
+   * (wedgeSpin); a part smaller than a shard may be (SHARD.least) is crushed
+   * to slush; `by`, what broke it, goes down between them and never meets
+   * them (src/collide.js). The piece goes (`brokenUp`: src/main.js retires it). Returns
+   * whether it broke (a piece too small to split is only pushed).
+   */
+  splitPiece(piece, x, z, share, random, by = null) {
+    const thickness = piece.piece.thickness * piece.radius;
+    if (2 * piece.radius < 2 * Math.max(SHARD.least, SHARD.slab * thickness)) return false;
+    // Its outline as it lies, seen from above (world x and z).
+    const corners = piece.piece.corners, outline = [];
+    for (let index = 0; index < corners.length; index += 2) {
+      pieceLocal.set(corners[index] * piece.radius, 0, corners[index + 1] * piece.radius).applyQuaternion(piece.quaternion);
+      outline.push(piece.position.x + pieceLocal.x, piece.position.z + pieceLocal.z);
+    }
+    const nearX = x + PIECE.offLine * piece.radius * (2 * random() - 1), nearZ = z + PIECE.offLine * piece.radius * (2 * random() - 1);
+    const first = Math.PI * random();
+    let parts = splitConvex(outline, nearX, nearZ, first);
+    if (share > PIECE.twoLines) parts = parts.flatMap((part) => splitConvex(part, nearX, nearZ, first + Math.PI / 2 + 0.6 * (random() - 0.5)));
+    const least = Math.max(SHARD.least, SHARD.slab * thickness);
+    const made = [];
+    for (const part of parts) {
+      const { x: middleX, z: middleZ, area } = polygonMiddle(part);
+      const partCorners = new Float64Array(part.length);
+      let radius = 0;
+      for (let index = 0; index < part.length; index += 2) {
+        partCorners[index] = part[index] - middleX;
+        partCorners[index + 1] = part[index + 1] - middleZ;
+        radius = Math.max(radius, Math.hypot(partCorners[index], partCorners[index + 1]));
+      }
+      if (2 * radius < least || area <= 0) continue;
+      // Driven apart from the blow, its edge at it going down first.
+      let awayX = middleX - x, awayZ = middleZ - z;
+      const away = Math.hypot(awayX, awayZ) || 1;
+      awayX /= away; awayZ /= away;
+      const apart = between(random, PIECE.apart);
+      made.push({
+        corners: partCorners, x: middleX, z: middleZ, radius, area, wedge: true, thickness, hole: piece.iceHole,
+        mass: ICE.density * area * thickness, white: piece.piece.white,
+        shape: { corners: partCorners.map((value) => value / radius), thickness: thickness / radius, white: piece.piece.white, milk: piece.piece.milk },
+        start: {
+          position: new THREE.Vector3(middleX, piece.position.y, middleZ),
+          velocity: new THREE.Vector3(piece.velocity.x + awayX * apart, piece.velocity.y - PIECE.dip, piece.velocity.z + awayZ * apart),
+          quaternion: new THREE.Quaternion(),
+          spin: wedgeSpin(awayX, awayZ, Math.min(PIECE.dip / (2 * radius), PIECE.tipMost), 0),
+          setFor: 0,
+          by,
+        },
+      });
+    }
+    if (made.length < 2) return false;
+    this.shards.push(...made);
+    this.pieces.delete(piece);
+    piece.brokenUp = true;
+    return true;
   }
 
   /**
@@ -799,7 +926,9 @@ export class IceSheet {
   dunkPieces() {
     for (const [piece, { mass, things }] of this.onPieces) {
       if (mass <= this.pieceCarries(piece)) continue;
-      piece.knock(0, -ICE.falls * mass / (mass + piece.mass), 0, 0, 0, 0);
+      const middleX = things.reduce((sum, rock) => sum + rock.mass * rock.position.x, 0) / mass;
+      const middleZ = things.reduce((sum, rock) => sum + rock.mass * rock.position.z, 0) / mass;
+      this.pushPiece(piece, middleX, middleZ, (ICE.falls * mass) / (mass + piece.mass));
       for (const rock of things) {
         rock.velocity.y = -ICE.falls;
         rock.dunked = piece;
@@ -944,10 +1073,14 @@ export class IceSheet {
    * src/main.js after the splash's impact): each corner out beyond the
    * cavity's lip (Cavity.lipReach) as openHole put it beyond a round one's;
    * the water comes up through it once the cavity has closed (SHARD.leastDelay
-   * at the least: flood).
+   * at the least: flood). The parts of a piece afloat that `rock` broke
+   * (splitPiece; still to be made, in `shards`) stay set where they broke
+   * until that cavity closes, as a hole's wedges do (src/rock.js breakAway).
    */
-  fitCavity(hole, cavity) {
-    if (!hole || !cavity || hole.settled) return;
+  fitCavity(hole, cavity, rock = null) {
+    if (!cavity) return;
+    if (rock) for (const part of this.shards) if (part.start.by === rock) part.start.setFor = Math.max(cavity.closeTime ?? 0, SHARD.leastDelay);
+    if (!hole || hole.settled) return;
     const reaches = cavity.lipReach(hole.x, hole.z, hole.cosines, hole.sines, new Float64Array(hole.cosines.length), HOLE.fall);
     this.shapeHole(hole, reaches);
     hole.floodAt = hole.openedAt + Math.max(cavity.closeTime ?? 0, SHARD.leastDelay);

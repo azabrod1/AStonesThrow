@@ -2144,7 +2144,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
         else if (impact) {
           const cavity = splash.impact(impact, water);
           // A hole it broke in the ice, fitted to its cavity now, before the mask is painted (src/ice.js fitCavity).
-          if (impact.throughIce) ice.fitCavity(rock.iceHole, cavity);
+          if (impact.throughIce) ice.fitCavity(rock.iceHole, cavity, rock);
           sound.splash(impact, seenAfter());
         }
         if (impact && readyForInput) dropRings.load();   // their table, at the first impact after the warm-up (src/dropRings.js)
@@ -2170,6 +2170,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     // A shard afloat that a hole's new ice has reached is frozen into it (src/ice.js freezeIn), and goes as a thing; a
     // hole something thrown floats in is not left alone, so it stays open (src/ice.js disturb).
     for (const rock of [...rocks]) {
+      // A piece of ice broken into pieces (src/ice.js splitPiece): its pieces are things now, and it goes.
+      if (rock.brokenUp) { retireRock(rock); continue; }
       if (rock.fading !== undefined || !rock.iceHole || !(rock.state === 'float' || rock.afloat)) continue;
       if (!rock.piece) ice.disturb(rock.iceHole);
       else if (ice.reaches(rock)) { ice.freezeIn(rock); retireRock(rock); }

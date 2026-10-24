@@ -1069,6 +1069,7 @@ export class Rock {
     this.onGround = false;         // at rest on the ground (restOn)
     this.fallsThrough = null;      // the ice gave way under it as it lay or went along it (src/ice.js weigh): it goes in, next step
     this.dunked = null;            // a piece of ice afloat it pushed under (src/ice.js landOnPiece): it goes down past it (src/collide.js)
+    this.brokenUp = false;         // a piece of ice broken into pieces of its own (src/ice.js splitPiece): it meets nothing, and goes
     this.settling = null;          // settling onto the face it lies on, at rest on the ground (restOn, settleStep)
     this.fading = undefined;       // seconds into shrinking away, once src/main.js has begun it (fadeOut): frozen, it is no longer stepped
     this.drawn = { surface: 0, bedDepth: 1 };   // the water it was last drawn on (syncMeshes), for a knock's redraw
@@ -1242,9 +1243,10 @@ export class Rock {
    * water does, it is drawn from above see-through, over what lies under it,
    * by its sides' inner faces (CLEAR_SIDES_INSIDE: seen down through its
    * top, the light in it turned back off them, a bright band along its far
-   * edges as wide as it is thick seen aslant) and faintly by its top where a
-   * ripple has washed over it (CLEAR_FILM_COVER), so that pass shows what
-   * lies under it, the band and the film. Its
+   * edges as wide as it is thick seen aslant) and by its top under the water
+   * over it, its white ice too, fading as the water over it deepens
+   * (CLEAR_FILM_FADE: awash, plainly there), so that pass shows what lies
+   * under it, the band and the film. Its
    * programs (above, below, in the mirror; a clear thing's above and below
    * its own) are every floater's alike, drawn under the loading veil
    * (src/main.js warmUp).
@@ -1316,7 +1318,15 @@ export class Rock {
         .replace('#include <opaque_fragment>', `${clear ? `vec2 onPiece = vRideWorld.xz - vRideMiddle;
   float pieceLooks = pieceWhite(onPiece, max(length(dFdx(onPiece)), length(dFdy(onPiece))));
   outgoingLight = totalSpecular + clearScatter(mix(diffuseColor.rgb, vec3(ICE_WHITE_ALBEDO), pieceLooks)) + seenUnderClear(vViewPosition, normal, vClearShare * (1.0 - pieceLooks), vRideWorld.y);` : ''}
-  ${clearBelow ? 'float clearCover = 1.0;\n  if (cameraPosition.y > uWaterLevel) {\n    outgoingLight = abs(vRideUp) <= 0.5 ? clearSideInside(vRideWorld.y - uWaterLevel) : totalSpecular + clearFilm(diffuseColor.rgb);\n    clearCover = abs(vRideUp) <= 0.5 ? CLEAR_SIDE_COVER : CLEAR_FILM_COVER;\n  }' : ''}
+  ${clearBelow ? `float clearCover = 1.0;
+  if (cameraPosition.y > uWaterLevel) {
+    // Its top under a film of water: its own look, white ice and all, fading with the water over it (CLEAR_SIDES_INSIDE).
+    vec2 onPiece = vRideWorld.xz - vRideMiddle;
+    float pieceLooks = pieceWhite(onPiece, max(length(dFdx(onPiece)), length(dFdy(onPiece))));
+    float film = max(uWaterLevel + floaterWaterHeight(vRideWorld.xz) - vRideWorld.y, 0.0);
+    outgoingLight = abs(vRideUp) <= 0.5 ? clearSideInside(vRideWorld.y - uWaterLevel) : totalSpecular + clearFilm(mix(diffuseColor.rgb, vec3(ICE_WHITE_ALBEDO), pieceLooks));
+    clearCover = abs(vRideUp) <= 0.5 ? CLEAR_SIDE_COVER : mix(CLEAR_FILM_COVER, CLEAR_FILM_WHITE, pieceLooks) * exp(-film / CLEAR_FILM_FADE);
+  }` : ''}
   #include <opaque_fragment>
   ${clearBelow ? 'gl_FragColor.a = clearCover;' : ''}`)
         .replace('#include <fog_fragment>', `#include <fog_fragment>
@@ -1832,7 +1842,7 @@ export class Rock {
   // ---- meeting other things (src/collide.js) -------------------------------
 
   /** Whether it can meet another thing: flying, skimming, under the water, or afloat (not at rest on the bed or the deck). */
-  get collides() { return this.state === 'air' || this.state === 'skim' || this.state === 'water' || this.state === 'float' || this.afloat || this.grounded; }
+  get collides() { return !this.brokenUp && (this.state === 'air' || this.state === 'skim' || this.state === 'water' || this.state === 'float' || this.afloat || this.grounded); }
 
   /** Whether it is on the ground (the header): going along it, or at rest on it (the deck, the ice), where things meet it as they meet a floater. */
   get grounded() { return this.state === 'ground' || (this.state === 'rest' && this.onGround); }
@@ -2300,9 +2310,11 @@ export class Rock {
    * (while the thing's cavity is open under it; state 'set': nothing meets
    * it, it is drawn as above the water), then is set adrift, driven down as
    * the water comes back up through its hole (`velocity`, `spin`); a chip,
-   * pushed under, is adrift at once.
+   * pushed under, is adrift at once (a part of a piece broken afloat too,
+   * `by` what broke it).
    */
-  breakAway({ position, velocity, quaternion, spin = null, setFor = 0 }) {
+  breakAway({ position, velocity, quaternion, spin = null, setFor = 0, by = null }) {
+    this.brokenBy = by;   // what broke it off a piece of ice afloat (src/ice.js splitPiece): they never meet (src/collide.js)
     if (setFor <= 0) { this.adrift(position, velocity, quaternion, spin); return; }
     this.position.copy(position);
     this.previous.copy(position);

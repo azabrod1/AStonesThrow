@@ -2506,6 +2506,18 @@ vec3 seenThroughWater(vec3 world, float level) {
 }
 `;
 
+export const PIECE_LOOK = /* glsl */`
+// The sheet's own look on a piece of it (ICE_COMMON iceLook: its snow ice, frost specks, bubbles and crystals' lines),
+// at a point on the piece (onPiece, m from its middle, so it goes where the piece goes), PIECE_LOOK_SCALE times finer
+// (a piece a hand across would lie inside one of the sheet's patches, all one white), over a footprint: the share of
+// white it adds, which hides that much of what shows through.
+#define PIECE_LOOK_SCALE 2.5
+float pieceWhite(vec2 onPiece, float footprint) {
+  IceLook look = iceLook(onPiece * PIECE_LOOK_SCALE + 41.0, footprint * PIECE_LOOK_SCALE);
+  return clamp(look.white + look.bubbles, 0.0, 1.0);
+}
+`;
+
 // What a clear floater (src/rock.js `seenThrough`: a shard of ice) shows
 // through its top, in the main pass from above the water: the under-water
 // pass at its pixel (the pool's tiles or the bed, its own body under the
@@ -2518,6 +2530,7 @@ vec3 seenThroughWater(vec3 world, float level) {
 // pass shows what is far behind it. viewPosition and normal are the
 // standard material's (view space).
 export const SEEN_UNDER_CLEAR = /* glsl */`
+${PIECE_LOOK}
 uniform vec3 uSunDir;
 uniform vec3 uSunIrradiance;
 uniform vec3 uSkyAmbient;
@@ -2545,15 +2558,6 @@ vec3 seenUnderClear(vec3 viewPosition, vec3 normal, float clearShare, float heig
 vec3 clearScatter(vec3 albedo) {
   return albedo * (uSunIrradiance * max(uSunDir.y, 0.0) + uSkyAmbient * 1.4);
 }
-// The sheet's own look on a piece of it (ICE_COMMON iceLook: its snow ice, frost specks, bubbles and crystals' lines),
-// at a point on the piece (onPiece, m from its middle, so it goes where the piece goes), PIECE_LOOK_SCALE times finer
-// (a piece a hand across would lie inside one of the sheet's patches, all one white), over a footprint: the share of
-// white it adds, which hides that much of what shows through.
-#define PIECE_LOOK_SCALE 2.5
-float pieceWhite(vec2 onPiece, float footprint) {
-  IceLook look = iceLook(onPiece * PIECE_LOOK_SCALE + 41.0, footprint * PIECE_LOOK_SCALE);
-  return clamp(look.white + look.bubbles, 0.0, 1.0);
-}
 `;
 
 // A clear floater's sides seen from inside, down through its top (src/rock.js
@@ -2563,15 +2567,21 @@ float pieceWhite(vec2 onPiece, float footprint) {
 // the sky (CLEAR_SIDE_LIGHT of it), fading down the face (`depth`, the
 // point's height against the water's, negative: CLEAR_SIDE_FADE metres),
 // and over what lies behind by CLEAR_SIDE_COVER; its top under a film of
-// water its own light over what lies under it by CLEAR_FILM_COVER.
+// water its own light, its white ice and bubbles too (PIECE_LOOK), over what
+// lies under it by CLEAR_FILM_COVER where clear and CLEAR_FILM_WHITE where
+// white, fading with the water over it (CLEAR_FILM_FADE): a piece pushed
+// awash stays in sight, one deep under is all but gone.
 export const CLEAR_SIDES_INSIDE = /* glsl */`
+${PIECE_LOOK}
 uniform vec3 uSunDir;
 uniform vec3 uSunIrradiance;
 uniform vec3 uSkyAmbient;
 #define CLEAR_SIDE_LIGHT 0.45
 #define CLEAR_SIDE_FADE 0.08
 #define CLEAR_SIDE_COVER 0.85     // how much of what is behind a side's inner face it hides
-#define CLEAR_FILM_COVER 0.35     // and its top, under a film of water, its own light over what is under it
+#define CLEAR_FILM_COVER 0.35     // and its top, under a film of water, its own light over what is under it, where clear...
+#define CLEAR_FILM_WHITE 0.85     // ...and where its white ice and bubbles are (PIECE_LOOK)...
+#define CLEAR_FILM_FADE 0.04      // ...fading with the water over it, by e over this (m): awash it is plainly there
 vec3 clearSideInside(float depth) {
   return (uSunIrradiance * max(uSunDir.y, 0.0) + uSkyAmbient * 1.4) * CLEAR_SIDE_LIGHT * exp(depth / CLEAR_SIDE_FADE);
 }

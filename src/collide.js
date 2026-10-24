@@ -136,9 +136,9 @@ function collidePass(things, knocks) {
     for (let second = first + 1; second < things.length; second++) {
       const one = things[first], other = things[second];
       if (!one.collides || !other.collides || !(one.floater || other.floater || one.grounded || other.grounded)) continue;
-      // What broke a hole went down between its pieces (src/ice.js SHARD.clear), and what pushed a piece under went down
-      // past it (src/ice.js landOnPiece, dunkPieces): it never meets them.
-      if ((one.piece && (one.iceHole?.by === other || other.dunked === one)) || (other.piece && (other.iceHole?.by === one || one.dunked === other))) continue;
+      // What broke a hole went down between its pieces (src/ice.js SHARD.clear), what broke a piece afloat between its
+      // parts (splitPiece), and what pushed a piece under went down past it (landOnPiece, dunkPieces): it never meets them.
+      if ((one.piece && (one.iceHole?.by === other || one.brokenBy === other || other.dunked === one)) || (other.piece && (other.iceHole?.by === one || other.brokenBy === one || one.dunked === other))) continue;
       // A thing on the ground on a piece lies on it as on the ice (src/ice.js pieceUnder): the ground holds it, not a meeting.
       if ((one.piece && !other.piece && other.grounded) || (other.piece && !one.piece && one.grounded)) continue;
       // Two flat pieces of ice (the header) meet rim to rim: the line between them level, their whole radii.
