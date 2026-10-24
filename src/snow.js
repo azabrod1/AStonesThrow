@@ -31,14 +31,18 @@
 // of a snow day near freezing, crystals stuck together as they fall; one in
 // eight is over 4 cm, FLAKE_VERTEX's squared mix). `flakes` fill the box;
 // the haze (the weather's visibility) carries the snow on beyond it. A
-// blizzard's are about as many as its haze implies, its flakes alone, each
-// hiding what is behind its own area, letting one see about 240 m (the
-// haze's 150 m; tools/snow-probe.mjs prints it); heavy snow's big flakes
-// hide more than its haze (100 m against 400), as the near snow of a big
-// snow day does. Fewer read as a moderate fall. Real heavy snow has some
-// thousand flakes a cubic metre, most too small to draw. The near ones
-// make a fall look heavy, so a deeper box with as many flakes looks
-// thinner, not thicker. The
+// blizzard's hide about what its haze does: its flakes alone, each hiding
+// what is behind its own area, let one see about 160 m (the haze's 150 m;
+// tools/snow-probe.mjs prints it); heavy snow's big flakes hide more than
+// its haze (100 m against 400), as the near snow of a big snow day does.
+// Fewer read as a moderate fall. Real heavy snow has some thousand flakes a
+// cubic metre, most too small to draw. The near ones make a fall look
+// heavy, so a deeper box with as many flakes looks thinner, not thicker.
+// What a flake costs is its vertices, whatever its size (only the few
+// nearest cover many pixels), so thickness comes cheapest from bigger
+// flakes: a blizzard's real snow is fine (the gale breaks the crystals),
+// but its drawn flakes, each standing for many of them, run to 25 mm,
+// 120,000 of them looking thicker than 180,000 of 16 mm at most. The
 // shader never multiplies the clock, which runs on as long as the page is
 // open: update() wraps the wind's carry and the fall into the box, and the
 // clock to CYCLE, in doubles (Precision, src/shaders/snow.js). The carry is
@@ -59,7 +63,7 @@ import { FLAKE_VERTEX, FLAKE_FRAGMENT, SPEED_STEPS, SPEED_SHARE, CYCLE } from '.
 export const SNOW = {
   light: { flakes: 16000, box: [16, 8, 16], fall: 0.9, sizes: [0.004, 0.012], sway: 0.05, swayPeriods: [1.2, 2.6], opacity: 0.9 },
   heavy: { flakes: 120000, box: [16, 8, 16], fall: 1.1, sizes: [0.008, 0.05], sway: 0.08, swayPeriods: [1.0, 2.2], opacity: 0.9 },
-  blizzard: { flakes: 180000, box: [12, 6, 12], fall: 1.0, sizes: [0.004, 0.016], sway: 0.04, swayPeriods: [0.8, 1.6], opacity: 1 },
+  blizzard: { flakes: 120000, box: [12, 6, 12], fall: 1.0, sizes: [0.005, 0.025], sway: 0.04, swayPeriods: [0.8, 1.6], opacity: 1 },
 };
 export const STREAK_SECONDS = 1 / 120;  // a quarter of the rain's persistence (src/rain.js): the eye follows a flake falling a metre a second
 export const STREAK_MIN_PIXELS = 1.2;
