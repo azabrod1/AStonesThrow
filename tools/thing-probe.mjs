@@ -26,7 +26,17 @@
 //     (within SHORE_TOLERANCE), and floats off when the wind turns;
 //   - a sinker rests on the bed; let go under deep water it sinks at its
 //     terminal speed, sqrt((8/3)·(ρs/ρw − 1)·g·R/C_d) (a 16 lb bowling ball
-//     1.5 m/s, a golf ball 0.4 m/s), within SINK_TOLERANCE;
+//     1.5 m/s, a golf ball 0.4 m/s), within SINK_TOLERANCE; a plate (a TV,
+//     a phone, a pie) let go level sinks, while it still falls broadside
+//     (within BROADSIDE_TILT of level: a thin one soon flutters), at
+//     sqrt(2·(ρs/ρw − 1)·g·V/(C·A)), A its face's area measured here from
+//     its mesh's silhouette (silhouetteArea, not the model's own), within
+//     SINK_TOLERANCE; let go as it is thrown (a little tilted, spinning on its
+//     face) a thin one flutters, as a thin plate this light for its size does
+//     in water (Field et al. 1997), and its mean descent over the last
+//     PLATE_SINK_LATE of PLATE_SINK_SECONDS is within FLUTTER_BAND of the
+//     broadside speed; at rest it lies on the bed, along its slope: no part
+//     of it in the drawn bed and its lowest on it, within BED_TOLERANCE;
 //   - on the deck each comes back up from its first bounce at its `bounce`
 //     squared of the height it fell (a basketball about 0.72, a bowling ball
 //     under 0.07), then rests on the paving; a ball rolled off the deck goes
@@ -63,8 +73,7 @@
 //   - mass, density and volume agree for every thing not sized by its
 //     diameter, the volume measured here from its mesh;
 //   - the TV and iPhone have their specified rectangular dimensions and
-//     sink; a plate's terminal speed is measured released level without
-//     spin, since a tumbling rectangular plate can temporarily fall faster;
+//     sink;
 //   - making each thing as it is thrown, once prepared (src/rock.js
 //     prepareThing), costs a fixed mesh's under FIXED_THROW_MS, or on a
 //     busy machine under STONE_SHARE of a river stone's (the table printed
@@ -112,6 +121,11 @@ const AIM_MISS = 0.05;                 // m
 const REST_SECONDS = 24;              // s: a watermelon (960 kg/m³) dives over a metre and rises slowly, resting after 13 to 21 s as its throw falls (40 throws)
 const FLOAT_DEPTH_TOLERANCE = 0.003;   // m
 const SINK_TOLERANCE = 0.02;           // of the terminal speed
+const PLATE_SINK_SECONDS = 10;         // s: a plate let go under deep water sinks this long...
+const PLATE_SINK_LATE = 4;             // s: ...let go as thrown, its speed the mean descent over its last this long (a few flutters)...
+const FLUTTER_BAND = 1 / 3;            // ...within this share of its broadside speed
+const BROADSIDE_TILT = THREE.MathUtils.degToRad(2);   // let go level, it falls broadside while within this of level
+const BED_TOLERANCE = 0.003;           // m: a plate at rest on the bed lies this near it
 const STEP_TOLERANCE = 0.1;            // of the highest bob
 const FIXED_THROW_MS = 1;              // ms: the most making a prepared thing (a fixed mesh's, src/rock.js prepareThing) may take as it is thrown...
 const STONE_LOAD_MS = 3;               // ...unless a river stone's throw takes more than this (a busy machine: it takes 2.2 ms on a quiet one)...
@@ -167,6 +181,39 @@ function throwThing(name, { x = 0, z = -1.4, power = 'normal', value, pooled = f
   rock.velocity.copy(velocity);
   if (pooled) rock.ground = poolGround(POOL_SQUARE);
   return { rock, measured, hand, target, landing, launch: velocity.clone() };
+}
+
+/**
+ * The area (in nominal radii squared) a mesh of separate triangles covers seen along `axis`: its triangles' shadows on
+ * a fine grid across it, each cell counted once however many cover it. A measurement of its own, against the model's
+ * (src/rock.js faceArea), for a plate's broadside sinking speed.
+ */
+function silhouetteArea(geometry, axis, cells = 600) {
+  const positions = geometry.attributes.position.array;
+  const acrossU = new THREE.Vector3(1, 0, 0);
+  if (Math.abs(acrossU.dot(axis)) > 0.9) acrossU.set(0, 0, 1);
+  acrossU.addScaledVector(axis, -acrossU.dot(axis)).normalize();
+  const acrossV = new THREE.Vector3().crossVectors(axis, acrossU);
+  const u = [], v = [];
+  for (let index = 0; index < positions.length; index += 3) {
+    const point = new THREE.Vector3().fromArray(positions, index);
+    u.push(point.dot(acrossU)); v.push(point.dot(acrossV));
+  }
+  const leastU = Math.min(...u), leastV = Math.min(...v), size = Math.max(Math.max(...u) - leastU, Math.max(...v) - leastV) / cells;
+  const covered = new Uint8Array((cells + 1) * (cells + 1));
+  for (let first = 0; first < u.length; first += 3) {
+    const [au, bu, cu] = [u[first], u[first + 1], u[first + 2]], [av, bv, cv] = [v[first], v[first + 1], v[first + 2]];
+    const area = (bu - au) * (cv - av) - (cu - au) * (bv - av);
+    if (Math.abs(area) < 1e-14) continue;
+    for (let column = Math.floor((Math.min(au, bu, cu) - leastU) / size); column <= Math.ceil((Math.max(au, bu, cu) - leastU) / size) && column <= cells; column++) {
+      for (let row = Math.floor((Math.min(av, bv, cv) - leastV) / size); row <= Math.ceil((Math.max(av, bv, cv) - leastV) / size) && row <= cells; row++) {
+        const pointU = leastU + (column + 0.5) * size, pointV = leastV + (row + 0.5) * size;
+        const weightB = ((pointU - au) * (cv - av) - (cu - au) * (pointV - av)) / area, weightC = ((bu - au) * (pointV - av) - (pointU - au) * (bv - av)) / area;
+        if (weightB >= 0 && weightC >= 0 && weightB + weightC <= 1) covered[column * (cells + 1) + row] = 1;
+      }
+    }
+  }
+  return covered.reduce((sum, cell) => sum + cell, 0) * size * size;
 }
 
 /** Steps a thing until it rests (or `seconds`), recording what the probe reports. */
@@ -233,8 +280,10 @@ for (const [name, dimensions, mass] of [['tv', [0.54, 0.018, 0.32], 3.6], ['ipho
 
 // ---- each thing in the lake ----
 const lake = [];
-for (const name of THING_NAMES) {
+for (const [index, name] of THING_NAMES.entries()) {
   for (const value of name === 'bowling' ? [8, 16] : [undefined]) {
+    // Each from a random state of its own, so what it draws (a stone's lumps) is the same whatever drew before it.
+    randomState = 1 + 7919 * (index + 1) + (value ?? 0);
     const { rock, measured, target } = throwThing(name, { value });
     const record = follow(rock);
     const label = `${THINGS[name].name}${value ? ` ${value} lb` : ''}`;
@@ -272,21 +321,55 @@ for (const name of THING_NAMES) {
       }
     } else {
       const bed = floorDepthAt(rock.position.x, rock.position.z);
-      // Let go from rest under 10 m of water, its hole long closed: it sinks at its terminal speed.
-      const settling = new Rock({ radius: measured.radius, position: new THREE.Vector3(0, -2 * measured.radius, 0), velocity: new THREE.Vector3(), envTexture: null, thing: name, mass: measured.mass });
-      // The analytical plate speed is broadside, not the fastest part of a tumble.
-      if (settling.plate) { settling.quaternion.identity(); settling.spinRate = 0; }
-      settling.goIn(STEP);
-      settling.body.openUntil = -1;
-      let sinking = 0;
-      // Its speed along its path: a flat gem glides a little (its lift), so it falls a little slower.
-      for (let time = 0; time < 6 && (settling.state === 'water' || settling.state === 'float'); time += STEP) { settling.update(STEP, 10); sinking = Math.max(sinking, settling.velocity.length()); }
-      // Its own density on the drag's nominal ball; a plate's on its broad face.
-      const terminal = Math.sqrt((8 / 3) * (rock.density / WATER_DENSITY - 1) * GRAVITY * measured.radius / (rock.plate ? rock.thing.air.drag * (4 / 3) * Math.PI / rock.shape.volume : DRAG_COEFFICIENT));
-      line += `; sinks at ${sinking.toFixed(2)} m/s (terminal ${terminal.toFixed(2)}), rests ${centimetres(-rock.position.y)} cm down on the bed's ${centimetres(bed)} after ${record.restAt?.toFixed(1)} s`;
+      // Let go from rest under 10 m of water, its hole long closed: it sinks at its terminal speed. Its speed along its
+      // path at its fastest (a flat gem glides a little, its lift, so it falls a little slower); a plate's let go level
+      // (without spin: `level`) at its fastest while it still falls broadside, within BROADSIDE_TILT of level (a thin one
+      // soon starts to flutter: broadside is not how it stays), and its mean descent over its last PLATE_SINK_LATE let go
+      // as thrown. Each against the terminal speed of its own density (a pie's filling is drawn for each one made): its
+      // own on the drag's nominal ball, a plate's on its broad face, its silhouette's area.
+      const sinkFrom = (level) => {
+        const settling = new Rock({ radius: measured.radius, position: new THREE.Vector3(0, -2 * measured.radius, 0), velocity: new THREE.Vector3(), envTexture: null, thing: name, mass: measured.mass });
+        if (level) { settling.quaternion.identity(); settling.spinRate = 0; }
+        settling.goIn(STEP);
+        settling.body.openUntil = -1;
+        const face = new THREE.Vector3();
+        let fastest = 0, late = null, broadside = true;
+        const seconds = settling.plate ? PLATE_SINK_SECONDS : 6;
+        for (let time = 0; time < seconds && (settling.state === 'water' || settling.state === 'float'); time += STEP) {
+          settling.update(STEP, 10);
+          broadside &&= !settling.plate || face.copy(settling.shape.axes[2]).applyQuaternion(settling.quaternion).y ** 2 > Math.cos(BROADSIDE_TILT) ** 2;
+          if (broadside) fastest = Math.max(fastest, settling.velocity.length());
+          if (time >= seconds - PLATE_SINK_LATE) late ??= { time, y: settling.position.y };
+          if (late) late.speed = (late.y - settling.position.y) / Math.max(time - late.time, STEP);
+        }
+        const terminal = settling.density <= WATER_DENSITY ? 0 : settling.plate
+          ? Math.sqrt(2 * (settling.density / WATER_DENSITY - 1) * GRAVITY * settling.shape.volume * measured.radius ** 3 / (settling.thing.air.drag * silhouetteArea(settling.geometry, settling.shape.axes[2]) * measured.radius ** 2))
+          : Math.sqrt((8 / 3) * (settling.density / WATER_DENSITY - 1) * GRAVITY * measured.radius / DRAG_COEFFICIENT);
+        return { fastest, late: late?.speed ?? 0, terminal };
+      };
+      const sunk = sinkFrom(rock.plate), thrown = rock.plate ? sinkFrom(false) : null;
+      const sinking = sunk.fastest, terminal = sunk.terminal, fluttering = thrown?.late;
+      // (A pie let go here has a filling of its own, which may float it.)
+      const speed = (measured, sunk) => (sunk.terminal > 0 ? `at ${measured.toFixed(2)} m/s (terminal ${sunk.terminal.toFixed(2)})` : 'not at all (its filling floats it)');
+      line += `; sinks${rock.plate ? ' broadside' : ''} ${speed(sinking, sunk)}${rock.plate ? `, as let go ${speed(fluttering, thrown)}` : ''}, rests ${centimetres(-rock.position.y)} cm down on the bed's ${centimetres(bed)} after ${record.restAt?.toFixed(1)} s`;
       check(rock.state === 'rest' && rock.position.y < 0, `${label}: has not come to rest on the bed (${rock.state})`);
       // A gem's flat cut, a brick's slab, glides a little more (its lift): SINK_TOLERANCE twice over.
-      check(Math.abs(sinking - terminal) < (['gem', 'brick'].includes(THINGS[name].look.mesh) ? 2 : 1) * SINK_TOLERANCE * terminal, `${label}: sinks at ${sinking.toFixed(2)} m/s, its terminal speed ${terminal.toFixed(2)}`);
+      check(terminal === 0 || Math.abs(sinking - terminal) < (['gem', 'brick'].includes(THINGS[name].look.mesh) ? 2 : 1) * SINK_TOLERANCE * terminal, `${label}: sinks at ${sinking.toFixed(2)} m/s, its terminal speed ${terminal.toFixed(2)}`);
+      // (One whose filling floats it, a pie's, is not let go to sink.)
+      if (rock.plate && thrown.terminal > 0) check(Math.abs(fluttering / thrown.terminal - 1) < FLUTTER_BAND, `${label}: let go as thrown it sinks at ${fluttering.toFixed(2)} m/s on average, its broadside speed ${thrown.terminal.toFixed(2)}`);
+      if (rock.plate) {
+        // Settled onto the face it lies on, it lies on the bed as drawn (floorDepthAt under each of its points), along its slope.
+        for (let time = 0; rock.settling && time < 1; time += STEP) rock.update(STEP, floorDepthAt);
+        const point = new THREE.Vector3(), positions = rock.geometry.attributes.position.array;
+        let lowest = Infinity;
+        for (let index = 0; index < positions.length; index += 3) {
+          point.fromArray(positions, index).applyQuaternion(rock.quaternion).multiplyScalar(rock.radius).add(rock.position);
+          lowest = Math.min(lowest, point.y + floorDepthAt(point.x, point.z));
+        }
+        const tilt = THREE.MathUtils.radToDeg(Math.acos(Math.abs(new THREE.Vector3(0, 1, 0).applyQuaternion(rock.quaternion).y)));
+        line += `, lying ${tilt.toFixed(0)}° off level, its lowest ${centimetres(lowest)} cm over the bed`;
+        check(Math.abs(lowest) < BED_TOLERANCE, `${label}: at rest its lowest point is ${centimetres(lowest)} cm over the drawn bed`);
+      }
     }
     console.log(line);
   }
@@ -1004,10 +1087,17 @@ console.log('\nThings meeting things (src/collide.js):');
   Object.assign(pumice, { state: 'float', hasFloated: true });
   pumice.position.y = pumice.floatingHeight();
   pumice.velocity.x = 1;
-  let farthest = -Infinity;
-  for (let time = 0; time < 0.5; time += STEP) { pumice.update(STEP, POOL.depth); collideThings([pumice], contain); farthest = Math.max(farthest, pumice.position.x); }
-  console.log(`  a skipped 3 cm pumice afloat driven at a wall at 1 m/s: it gets to x = ${farthest.toFixed(3)} m, the wall less its radius ${(wallX - pumice.radius).toFixed(3)}`);
-  check(farthest <= wallX - pumice.radius + 1e-6, `a skipped pumice afloat went through the pool's wall (to x = ${farthest.toFixed(3)})`);
+  // The wall holds it where its mesh reaches it (src/pool.js reachesAcross): its farthest point, as it is turned, never past it.
+  const point = new THREE.Vector3(), corners = pumice.geometry.attributes.position.array;
+  let farthest = -Infinity, centre = -Infinity;
+  for (let time = 0; time < 0.5; time += STEP) {
+    pumice.update(STEP, POOL.depth);
+    collideThings([pumice], contain);
+    centre = Math.max(centre, pumice.position.x);
+    for (let index = 0; index < corners.length; index += 3) farthest = Math.max(farthest, pumice.position.x + point.fromArray(corners, index).applyQuaternion(pumice.quaternion).x * pumice.radius);
+  }
+  console.log(`  a skipped 3 cm pumice afloat driven at a wall at 1 m/s: its centre gets to x = ${centre.toFixed(3)} m, its farthest point ${farthest.toFixed(4)}, the wall ${wallX.toFixed(3)}`);
+  check(farthest <= wallX + 1e-6, `a skipped pumice afloat went through the pool's wall (its farthest point to x = ${farthest.toFixed(4)})`);
 
   // A basketball bobbed clear and knocked at a wall: in the air, below the wall's top, the wall's side turns it back (review: it went through and onto the deck).
   const bobbed = new Rock({ radius: measure('basketball').radius, position: new THREE.Vector3(1.37, 0.14, -1), velocity: new THREE.Vector3(3, 1, 0), envTexture: null, thing: 'basketball', mass: measure('basketball').mass });

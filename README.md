@@ -76,9 +76,12 @@ is remembered on the device (but the view, which opens on the shore):
   and the frozen pizza retains its existing lighter mass presets. These are
   approximations, not material measurements. A weighted rubber duck rights
   itself however it lands. The TV (54 × 32 × 1.8 cm, 3.6 kg) and iPhone
-  (15 × 7.2 × 0.8 cm, 180 g) are rigid plates: they slap the water, sink
-  and settle onto a broad face. Choose them under Other or use `?thing=tv`
-  and `?thing=iphone`; both support Toss and Lob. Each choice's picture
+  (15 × 7.2 × 0.8 cm, 180 g) are rigid plates, met by the water and the air
+  on their own faces' area: they slap the water, flutter down as thin plates
+  do, and come to rest lying along the lake bed's slope. In the pool they
+  land wherever they fit, their slap standing no crown, and its walls meet
+  their corners. Choose them under Other or use `?thing=tv` and
+  `?thing=iphone`; both support Toss and Lob. Each choice's picture
   (`assets/things/thumbs/`) is a harness frame of it at rest on the pool's
   deck, shrunk to 160×90: `--sky=pool --thing=name
   --throws=-1.75:0.75:0.05 --times=3 --seed=1 --w=320 --h=180`, looked at

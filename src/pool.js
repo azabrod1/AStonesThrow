@@ -30,7 +30,9 @@
 //
 // The stones and their holes take the pool's floor, POOL.depth, as their
 // bed, and its walls hold a stone under the water, or afloat, inside them
-// (holdInPool): a wall turns it back. Anything in the air that meets a
+// (holdInPool): a wall turns it back where it touches, its own mesh's reach
+// towards the wall as it is turned (reachesAcross: a TV's corner, not the
+// circle of half its length). Anything in the air that meets a
 // wall's side below its top, coming from inside (a skipping stone, a
 // floater bobbed clear), comes back off it (holdAirborne). The deck is ground to
 // whatever comes down on it (poolGround: src/rock.js bounces it, and
@@ -62,10 +64,27 @@ const WET_MAP = { reach: 1.5, cell: 0.015, soak: 0.55, dry: 40, step: 0.25 };
 const MAIN_WALL_FROM = -0.1;   // m: the walls the main scene draws reach this far under the water, below any trough
 const WALL_KEPT = 0.4;         // a skipping stone comes back off a wall with this share of its speed across it
 const WALL_WATER = 0.8;        // a thing in the water comes back off a wall at its own bounce times this (holdInPool)
+const ACROSS = { x: new THREE.Vector3(1, 0, 0), z: new THREE.Vector3(0, 0, 1) };
+const ACROSS_BACK = { x: new THREE.Vector3(-1, 0, 0), z: new THREE.Vector3(0, 0, -1) };
+
+/**
+ * How far `rock` reaches from its centre towards the walls across `axis`
+ * ('x' or 'z': the one on its low side, the one on its high side; m), as it
+ * is turned now (or by `quaternion`): a ball's radius, anything else's mesh
+ * (Rock.lowestAlong). Null when it is, and was a step ago, clear of both
+ * walls however it is turned (its `reach`), so its mesh is walked only near
+ * a wall.
+ */
+function reachesAcross(rock, axis, square, quaternion = rock.quaternion) {
+  const far = rock.reach * rock.radius, low = axis === 'x' ? square.minX : square.minZ;
+  const clear = (point) => point[axis] > low + far && point[axis] < low + square.size - far;
+  if (clear(rock.position) && clear(rock.previous)) return null;
+  return [-rock.lowestAlong(ACROSS[axis], quaternion), -rock.lowestAlong(ACROSS_BACK[axis], quaternion)];
+}
 
 /**
  * A thing under the water or afloat (src/rock.js) held inside the pool's
- * walls (the square, water.poolSquare): the wall it meets turns it back, at
+ * walls (the square, water.poolSquare): the wall it reaches (reachesAcross) turns it back, at
  * its own bounce (Rock.collisionBounce) times WALL_WATER (the water between
  * it and the tiles takes some), and it carries on along the wall; under the
  * water its path (sinkStep's body) with it (Rock.knock). In the air the
@@ -90,7 +109,9 @@ export function holdInPool(rock, square) {
   if (rock.state === 'air' || rock.state === 'ground' || (rock.state === 'rest' && !afloat)) return null;
   let held = null;
   for (const [axis, low] of [['x', square.minX], ['z', square.minZ]]) {
-    const lowest = low + rock.radius, highest = low + square.size - rock.radius;
+    const reaches = reachesAcross(rock, axis, square);
+    if (!reaches) continue;
+    const lowest = low + reaches[0], highest = low + square.size - reaches[1];
     const side = rock.position[axis] < lowest ? 1 : rock.position[axis] > highest ? -1 : 0;   // the wall's normal, into the pool
     if (side === 0) continue;
     const into = -side * rock.velocity[axis];   // its speed into the wall
@@ -109,7 +130,7 @@ export function holdInPool(rock, square) {
  * A thing in the air (a skip stone between touches, a floater bobbed clear,
  * a thing knocked up off the water; a skip stone skimming follows its
  * contact's path, and on the deck src/rock.js moves things): its centre past
- * a wall less its radius, its bottom lower than the wall's top, having been
+ * a wall less its reach towards it (reachesAcross), its bottom lower than the wall's top, having been
  * inside the step before, it has met the wall's side, and comes back off it,
  * a skip stone with WALL_KEPT of its speed across it, anything else at its
  * own bounce (Rock.collisionBounce). One that clears the wall's top passes
@@ -117,12 +138,17 @@ export function holdInPool(rock, square) {
  * never inside.)
  */
 function holdAirborne(rock, square) {
-  const outside = (point, axis, low) => point[axis] < low + rock.radius || point[axis] > low + square.size - rock.radius;
-  const beyond = (point) => outside(point, 'x', square.minX) || outside(point, 'z', square.minZ);
-  if (!beyond(rock.position) || beyond(rock.previous) || rock.position.y - rock.ellipsoidDepth() > POOL.deck) return;
+  // Its reach now, and as it was turned a step ago, where it was then (a skip stone turns a quarter of a radian a step).
+  const turnedBefore = rock.drawnBefore?.quaternion ?? rock.quaternion;
+  const reaches = { x: reachesAcross(rock, 'x', square), z: reachesAcross(rock, 'z', square) };
+  if (!reaches.x && !reaches.z) return;
+  const reachedBefore = { x: reaches.x && reachesAcross(rock, 'x', square, turnedBefore), z: reaches.z && reachesAcross(rock, 'z', square, turnedBefore) };
+  const outside = (point, axis, low, within = reaches) => within[axis] !== null && (point[axis] < low + within[axis][0] || point[axis] > low + square.size - within[axis][1]);
+  const beyond = (point, within) => outside(point, 'x', square.minX, within) || outside(point, 'z', square.minZ, within);
+  if (!beyond(rock.position, reaches) || beyond(rock.previous, reachedBefore) || rock.position.y - rock.ellipsoidDepth() > POOL.deck) return;
   for (const [axis, low] of [['x', square.minX], ['z', square.minZ]]) {
     if (!outside(rock.position, axis, low)) continue;
-    rock.position[axis] = THREE.MathUtils.clamp(rock.position[axis], low + rock.radius, low + square.size - rock.radius);
+    rock.position[axis] = THREE.MathUtils.clamp(rock.position[axis], low + reaches[axis][0], low + square.size - reaches[axis][1]);
     rock.velocity[axis] *= -(rock.skip ? WALL_KEPT : rock.collisionBounce);
   }
 }
