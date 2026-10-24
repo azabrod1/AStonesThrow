@@ -459,11 +459,12 @@ const RIDE_TILT = 0.36;   // the most a floater is tilted as it rides the water 
  * not on its end; a stone: its flat faces, never its rim or its end; at least
  * its short axis's).
  * Its own frame's directions, each the one that points down as it lies on it.
- * Worked out once for each shape.
+ * Worked out once for each mesh (its `positions`, which belong to one kind of
+ * thing, so to one `ballast`; a shape may be shared by things of other meshes).
  */
 const restFacesOf = new WeakMap();
 function restFaces(shape, positions, ballast) {
-  if (restFacesOf.has(shape)) return restFacesOf.get(shape);
+  if (restFacesOf.has(positions)) return restFacesOf.get(positions);
   const weight = shape.centroid.clone().add(new THREE.Vector3().fromArray(ballast ?? [0, 0, 0]));
   const across = new THREE.Vector3(), other = new THREE.Vector3(), point = new THREE.Vector3();
   const faces = [];
@@ -483,7 +484,7 @@ function restFaces(shape, positions, ballast) {
     if (insideOutline(outline, weight.dot(across), weight.dot(other), margin)) faces.push(down);
   }
   if (faces.length === 0) faces.push(shape.axes[2].clone(), shape.axes[2].clone().negate());
-  restFacesOf.set(shape, faces);
+  restFacesOf.set(positions, faces);
   return faces;
 }
 
@@ -2597,12 +2598,12 @@ export class Rock {
   // ---- the ground (the header) --------------------------------------------
 
   /**
-   * Come to rest where it is, its lowest point at `height` (it tumbled or
-   * rolled to a stop on the ground). A thing kept upright (`body.upright`: a
-   * pizza, a pie, a duck) settles onto a face it can lie on over
-   * GROUND.settleSeconds (settleStep): one ballasted low (GROUND.rightsFrom:
-   * a duck) onto its base, anything else (a pie, its weight only a little
-   * low) onto whichever of its top or bottom is nearer down.
+   * Come to rest where it is, its lowest point at `height` (it slid or
+   * rolled to a stop on the ground). Anything but a ball settles onto a face
+   * it can lie on over GROUND.settleSeconds (settleStep): the one it was
+   * tipping onto as it slid (slideStep), turned as far as it had turned about
+   * the vertical, else its face nearest down (lyingAttitude: a thing kept
+   * upright, a pizza, a pie, a duck, onto its base or its top or bottom).
    */
   restOn(height) {
     this.groundHeight = height;
@@ -2622,7 +2623,7 @@ export class Rock {
    * upright (`body.upright`) onto its base if ballasted low (GROUND.rightsFrom:
    * a duck), else onto whichever of its top or bottom is nearer down (a pie);
    * anything else onto its face nearest down that it can lie on (restFaces: a
-   * brick flat, on its side or on its end, a stone on a flat face). A new
+   * brick flat or on its side, never on its end, a stone on a flat face). A new
    * quaternion.
    */
   lyingAttitude() {
