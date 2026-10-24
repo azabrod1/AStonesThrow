@@ -11,6 +11,16 @@
 // its hours (the Time setting's) and how it is turned; the environment loads
 // one to start and another whenever load() is called (Switching, below).
 //
+// The photo. The page loads each panorama as a JPEG gain map,
+// assets/sky/<name>_2k.jpg (Swiss Alps' _4k.jpg), a tenth to a thirtieth of
+// the Radiance file (<name>_2k.hdr) it is encoded from: tools/sky-encode.mjs
+// writes it, matched to the arithmetic of Three.js's UltraHDRLoader, which
+// decodes it here to the half floats the Radiance file gave, the sun's disc
+// and all (decodePanorama). The site publishes only the JPEGs; the Radiance
+// files stay the source, which tools/sky-probe.mjs measures. The decode takes
+// a little longer than the Radiance file's parse did (90 ms against 55 on an
+// M5 Max, 300 against 215 slowed four times), for seconds of download saved.
+//
 // Places and hours. Four places are one photograph. Lakeside and Mesas were
 // each photographed from one spot through the day (Poly Haven's 2024 series
 // by Greg Zaal and Jarod Guest, on the shore of a dammed lake in South Africa
@@ -162,15 +172,14 @@
 // into the same targets (every material holding them keeps them) and frees
 // the old photo. Nothing new is compiled: the dome, the capture's ground and
 // the PMREM generator live as long as the environment. Until the photo has
-// arrived the old sky stays, whole. The photo (about 6 MB) is most of the
+// arrived the old sky stays, whole. The photo (0.2 to 0.8 MB) is most of the
 // wait: prefetch(place, hour) fetches an hour's photo and measurements ahead
 // without showing them (src/main.js prefetchHours: the hours either side of
 // the one asked for, while the Time of day page is open), at most PREFETCHED
-// kept, so its load waits only on the decode, src/hdr.js (HDRLoader's
-// texels, about five times as fast).
+// kept, so its load waits only on the decode (decodePanorama).
 // A caller's AbortSignal cancels an obsolete download, a prefetched one it
-// has taken over too; it is checked again before decoding or changing any
-// lighting. A prefetch let go (more than PREFETCHED) is aborted.
+// has taken over too; it is checked again before decoding, after it and
+// before changing any lighting. A prefetch let go (more than PREFETCHED) is aborted.
 //
 // The panorama and a water-coloured hemisphere below the horizon (the photo's
 // own ground there would light drops and stones green from below; GROUND,
@@ -187,7 +196,7 @@
 // reports its render targets and the panorama's bytes for the memory
 // estimate (src/main.js).
 import * as THREE from 'three';
-import { decodeHdr } from './hdr.js';
+import { UltraHDRLoader } from 'three/addons/loaders/UltraHDRLoader.js';
 import { loadAsset, dropEarlyAssets } from './loadAsset.js';
 
 // The orientation was chosen from home-view frames (mirrored: the photo
@@ -205,8 +214,8 @@ import { loadAsset, dropEarlyAssets } from './loadAsset.js';
 // moonrise, east, so its dawn, sunrise and moon stand ahead and its
 // afternoon and sunset to the left and behind. Between the two, every hour
 // has its light ahead at one of them. Mesas' Night panorama (18:43, the sun
-// 13° down) is left out: its sky is a haze of the towns' light. Each panorama is about 6 MB, fetched only
-// when chosen (Swiss Alps is 25 MB at 4K, for its detailed ridgeline). An hour's `clock` is its local time (sky-probe's taken).
+// 13° down) is left out: its sky is a haze of the towns' light. Each panorama is 0.2 to 0.8 MB, fetched only
+// when chosen (Swiss Alps is 1.8 MB at 4K, for its detailed ridgeline). An hour's `clock` is its local time (sky-probe's taken).
 // `anchor` and `facing` (Light by the hour, Orientation) are the first hour
 // unless named. `defaultHour` may choose a starting view independently of
 // the lighting anchor. New locations face their cove opening, sunset ridge
@@ -288,7 +297,7 @@ const SKY_EXPOSURE = Math.PI;   // see Brightness above
 const RADIANCE_CAP = 30;       // times the mean sky radiance
 const DOME_SIZE = 20000;       // metres, edge of the box
 const CUBE_SIZE = 512;         // the droplets' cube, per face
-const PREFETCHED = 2;          // panoramas fetched ahead and kept until loaded (prefetch): an hour's two neighbours, 6 MB each
+const PREFETCHED = 2;          // panoramas fetched ahead and kept until loaded (prefetch): an hour's two neighbours, 0.2 to 0.8 MB each
 const PREFILTER_SIZE = 128;    // the capture the stones' prefiltered map is made from, per face
 const LAND_LEVEL = 3;          // the cube's mip level the grass reads the land at (PHOTO_LAND in src/shaders/scene.js)...
 const LAND_CUBE_SIZE = CUBE_SIZE >> LAND_LEVEL;   // ...and that level's size: the land before the haze, copied from it
@@ -455,9 +464,28 @@ void main() {
 `;
 
 const measurementUrl = (file) => new URL(`../assets/sky/${file}.json`, import.meta.url).href;
-const panoramaFile = ({ file, resolution = '2k' }) => `${file}_${resolution}.hdr`;   // an hour's panorama
+const panoramaFile = ({ file, resolution = '2k' }) => `${file}_${resolution}.jpg`;   // an hour's panorama (The photo)
 const panoramaUrl = (name) => new URL(`../assets/sky/${name}`, import.meta.url).href;
 const fetchMeasurement = (file) => loadAsset(measurementUrl(file));
+
+/**
+ * A panorama's half floats ({ data, width, height, type }) from its JPEG gain
+ * map (The photo, above). UltraHDRLoader.parse (three 0.183.2) answers by
+ * callback, and once its JPEGs are decoding it can fail only by throwing
+ * inside a promise no caller holds; its _applyGainmapToSDR is handed this
+ * promise's reject instead, so a broken file fails the load rather than
+ * leaving it waiting. A file that is no gain map at all throws at once.
+ */
+function decodePanorama(buffer) {
+  return new Promise((resolve, reject) => {
+    const loader = new UltraHDRLoader().setDataType(THREE.HalfFloatType);
+    const applyGainMap = loader._applyGainmapToSDR;
+    if (typeof applyGainMap === 'function') {
+      loader._applyGainmapToSDR = (metadata, base, gainMap, onSuccess) => applyGainMap.call(loader, metadata, base, gainMap, onSuccess, (error) => reject(error instanceof Error ? error : new Error(String(error))));
+    }
+    loader.parse(buffer, resolve);
+  });
+}
 
 /**
  * Build the environment and start loading its first sky (firstLoad, which
@@ -600,11 +628,13 @@ export function createEnvironment(renderer, { name, hour, sunAzimuth, sunBalance
     dropEarlyAssets();   // the page's early fetches this load has not taken: not this sky's
     const [measurement, anchor, facing, buffer, balance] = await arrivals;
     signal?.throwIfAborted();
-    // HDRLoader's halves (src/hdr.js) and its texture's settings. Decode only
-    // after every asset succeeded, so a failed measurement cannot orphan a
-    // decoded panorama.
-    const decoded = decodeHdr(buffer);
-    const panorama = new THREE.DataTexture(decoded.data, decoded.width, decoded.height, THREE.RGBAFormat, THREE.HalfFloatType);
+    // Decode only after every asset succeeded, so a failed measurement cannot
+    // orphan a decoded panorama. The texture is set as the sky was drawn from
+    // the Radiance files (HDRLoader.load's settings: no mipmaps, linear
+    // filtering, rows flipped), not as UltraHDRLoader.load sets its own.
+    const decoded = await decodePanorama(buffer);
+    signal?.throwIfAborted();
+    const panorama = new THREE.DataTexture(decoded.data, decoded.width, decoded.height, THREE.RGBAFormat, decoded.type);
     panorama.colorSpace = THREE.LinearSRGBColorSpace;
     panorama.minFilter = panorama.magFilter = THREE.LinearFilter;
     panorama.generateMipmaps = false;

@@ -3,7 +3,8 @@
 // waves (src/ambientWaves.js) and the rings that cross the pond
 // (src/rings.js) ride on both: they displace the inner patch with the
 // splash's waves and shade all the water (WATER_VERTEX and WATER_FRAGMENT say
-// how). The sheet reaches OUTER_HALF_SIZE metres from the patch's centre,
+// how); the rings a splash's drops leave (src/dropRings.js) only shade it,
+// a fraction of a millimetre high. The sheet reaches OUTER_HALF_SIZE metres from the patch's centre,
 // so seen from the shore view's eye (1.15 m up) its edge is 0.007° below the
 // horizon, and from the high view's (2.4 m) 0.015°, and the water meets the
 // sky dome's horizon with no strip of the photo's own ground between them
@@ -149,7 +150,7 @@ const NO_ICE = () => ({
   uIceThickness: { value: 0 }, uIceFar: { value: 1 }, uIceGlaze: { value: 0.2 }, uIceWet: { value: 0 }, uIcePool: { value: new THREE.Vector4() }, uSnow: { value: 0 },
 });
 
-export function createWaterSurface(water, lighting, ambientWaves, { meshSegments = Math.min(water.size, 512), rings = null, skyCube = null, rain = null, haze = null, gale = null, ice = null } = {}) {
+export function createWaterSurface(water, lighting, ambientWaves, { meshSegments = Math.min(water.size, 512), rings = null, dropRings = null, skyCube = null, rain = null, haze = null, gale = null, ice = null } = {}) {
   const uniforms = {
     uHeight: { value: water.heightTexture },
     uFoam: { value: water.foamTexture },
@@ -189,6 +190,7 @@ export function createWaterSurface(water, lighting, ambientWaves, { meshSegments
     ...ambientWaves.uniforms(),
     ...(rings ? rings.uniforms() : {}),
     ...(rain ? rain.uniforms() : { uRainOn: { value: 0 } }),
+    ...(dropRings ? dropRings.uniforms() : { uDropRingCount: { value: 0 } }),
     ...(haze ?? { uHazeColor: { value: new THREE.Vector3() }, uHazeDensity: { value: 0 } }),
     ...(ice ? ice.uniforms : NO_ICE()),
     uPool: { value: new THREE.Vector4() },   // the pool's corner (x, z), side and depth; depth 0 in a lake (setPool)
