@@ -178,9 +178,13 @@ export const ICE = {
   keepLeast: 0.4,        // the least share of its speed a thing keeps breaking through
   cracked: 0.55,         // cracked ice (a star, round a hole) holds this share of what it held, at the middle of its cracks...
   weakest: 0.25,         // ...cracked again and again, at least this share
+  loadedLeast: 0.05,     // bearing a load near all it holds, it still holds a blow of this share of what it would whole (strike)
   falls: 0.3,            // m/s: a thing the ice gives way under, at rest or going along it, goes in at this
   scatter: 12,           // per metre: the light clear ice scatters back (a shard's milk; ICE_SCATTER in src/shaders/scene.js, its twin, draws the sheet's)
 };
+// Weak spots (weaken): a star's within `merge` of an earlier star's reach is that spot cracked again; at most `most` in
+// all (weakness walks them for each thing on the ice each step), the oldest star's going first, else the oldest hole's.
+export const WEAK = { merge: 0.5, most: 64 };
 // The Ice setting's choices (src/main.js): the sheet's thickness, metres. Everything here takes metres.
 export const ICE_THICKNESS = { none: 0, thin: 0.01, thick: 0.04 };
 // The ice's own surface (src/rock.js `ground` material): slick. A stone on it slides more than it tumbles.
@@ -196,29 +200,29 @@ const HOLE = { corners: 36, fall: 0.5, margin: 0.06, jag: 0.16, waves: 0.04, bit
 // Cracks (walk, settle, star; the header). A crack runs straight for a `run` (least, most; m), then kinks by `kink`
 // (radians, σ), pulled `pull` of the way back toward where it is going; its points `step` (m) apart, each off the run's
 // line by `wobble` (m, σ: the break's roughness, finer still in src/iceCracks.js). Short runs and small kinks, so it is
-// rough at every scale its points resolve (long runs between sharp kinks read as a polygon's edges). It forks at `fork` odds a run, the
-// branch `forkAngle` (least, most; radians) to one side and `forkReach` (least, most) of what is left of its reach long,
-// both arms `forkNarrows` as wide. Its half-width is `width` (least, most; m) where it starts, narrowing by
-// `narrowing` of itself along its reach and to `hairline` (m) over the last `taper` of it, each run `widthWander` (σ)
-// wider or narrower; its shade (how open, so how white) `shade` (least, most).
-// A hole's: `radials` (least, most) from its corners, `perDoubling` more for each doubling of the blow over what the ice
-// held, at most `most`; each `reach` (least, most) times l_c long, at most `longest` (m), and at `runaway` odds one
-// `runawayReach` (least, most) times l_c, wider. Round its edge, where the ice was crushed, `fringe` (least, most; and
-// `perDoubling` more for each doubling) short cracks `fringeReach` (least, most) of l_c long, `fringeWidth` as wide. At
-// `ring` odds (again at `secondRing`, farther out) ring cracks join radials that reach `ringRadius` (least, most) of
-// the hole's mean reach, from each to the next at `chord` odds, curving round the hole (walk's `about`: steered back to
-// the ring by `ringHold` of its share off it). A blow the ice held stars it with `star` (least, most) cracks
-// `starReach` (least, most) of l_c long, `starWidth` as wide, and at `bullseye` odds a ring of chords round them.
-// Segments are kept in a grid of `cell` (m) squares, so a new one finds the cracks it meets; past `mostSegments` of them
-// no crack runs on (the sheet is crazed enough; src/iceCracks.js draws as many). Each runs out at `speed` (m/s) from
-// where it starts, when the crack it starts from reached there: a crack in ice runs at hundreds of metres a second, at
-// once to the eye, but run out over a few frames the break is seen to spread from the blow, one event, its rings
-// following its radials (each point's time, `times`; src/iceCracks.js draws it as far as it has run).
+// rough at every scale its points resolve (long runs between sharp kinks read as a polygon's edges). It forks at `fork`
+// odds a run, the branch `forkAngle` (least, most; radians) to one side and `forkReach` (least, most) of what is left
+// of its reach long, both arms `forkNarrows` as wide. Its half-width is `width` (least, most; m) where it starts,
+// narrowing by `narrowing` of itself along its reach and to `hairline` (m) over the last `taper` of it, each run
+// `widthWander` (σ) wider or narrower; its shade (how open, so how white) `shade` (least, most). A hole's: `radials`
+// (least, most) from its corners, `perDoubling` more for each doubling of the blow over what the ice held, at most
+// `most`; each `reach` (least, most) times l_c long, at most `longest` (m), and at `runaway` odds one `runawayReach`
+// (least, most) times l_c, wider. Round its edge, where the ice was crushed, `fringe` (least, most; and `perDoubling`
+// more for each doubling, at most `fringeMost`) short cracks `fringeReach` (least, most) of l_c long, `fringeWidth` as
+// wide. At `ring` odds (again at `secondRing`, farther out) ring cracks join radials that reach `ringRadius` (least,
+// most) of the hole's mean reach, from each to the next at `chord` odds, curving round the hole (walk's `about`:
+// steered back to the ring by `ringHold` of its share off it). A blow the ice held stars it with `star` (least, most)
+// cracks `starReach` (least, most) of l_c long, `starWidth` as wide, and at `bullseye` odds a ring of chords round
+// them. Segments are kept in a grid of `cell` (m) squares, so a new one finds the cracks it meets; past `mostSegments`
+// of them no crack runs on (the sheet is crazed enough; src/iceCracks.js draws as many). Each runs out at `speed` (m/s)
+// from where it starts, when the crack it starts from reached there: a crack in ice runs at hundreds of metres a
+// second, at once to the eye, but run out over a few frames the break is seen to spread from the blow, one event, its
+// rings following its radials (each point's time, `times`; src/iceCracks.js draws it as far as it has run).
 const CRACK = {
   run: [0.008, 0.045], kink: 0.15, pull: 0.22, step: 0.01, wobble: 0.0006, fork: 0.13, forkAngle: [0.3, 0.75], forkReach: [0.25, 0.65], forkNarrows: 0.75,
   width: [0.0005, 0.0013], narrowing: 0.45, hairline: 0.00012, taper: 0.3, widthWander: 0.22, shade: [0.45, 1],
   radials: [3, 6], perDoubling: 1.6, most: 12, reach: [0.35, 1.5], longest: 3, runaway: 0.3, runawayReach: [2, 4],
-  fringe: [6, 12], fringeReach: [0.06, 0.22], fringeWidth: 0.7,
+  fringe: [6, 12], fringeMost: 18, fringeReach: [0.06, 0.22], fringeWidth: 0.7,
   ring: 0.55, secondRing: 0.3, ringRadius: [1.5, 2.6], chord: 0.75, ringHold: 2,
   star: [3, 6], starReach: [0.12, 0.45], starWidth: 0.6, bullseye: 0.3, cell: 0.05, mostSegments: 24000, speed: 8,
 };
@@ -233,15 +237,15 @@ const CRACK = {
 // other as they broke, meeting by their outlines: src/collide.js). A wedge stays where it broke, flat in the sheet,
 // cracked free, while the thing's cavity is open under it; as the water comes back up through the hole (floodAt) it is
 // driven down: its inner edge at `push` (least, most) of the speed the thing came down at, at most `pushMost` (m/s),
-// hinged at its outer edge (its middle half that, its tilt about the hole's tangent at a quarter that over its radius,
-// at most `tipMost` rad/s: the water under it soon stops it, so it dips and mostly comes back; now and then one goes
-// over); its inner edge never inside `clear` of the thing's radius from where it broke (the thing went down through
-// there); and jostled, it turns about the vertical at `turn` (least, most; rad/s) either way. A chip, crushed and
-// pushed under, starts inside the hole's edge, its highest point `depth` (least, most) of its radius under the water,
-// tilted by `tilt` (least, most; degrees). Each drifts at `drift` (least, most; m/s) out from the hole's middle, turned
-// to either side by up to `aside` (radians). A piece is white ice at `whiteOdds` times the sheet's share of white ice,
-// `whiteShare` (least, most) white, else clear. The flood waits for the cavity to close (fitCavity), `leastDelay` (s)
-// at the least.
+// its middle at half that, and it tips about the hole's tangent, inner edge down, at a quarter of that over its radius
+// (at most `tipMost` rad/s): about half the turn of a hinge at its outer edge (v/2R), so its outer edge dips a little
+// too, and it dips and mostly comes back rather than going over (now and then one does); its inner edge never inside
+// `clear` of the thing's radius from where it broke (the thing went down through there); and jostled, it turns about
+// the vertical at `turn` (least, most; rad/s) either way. A chip, crushed and pushed under, starts inside the hole's
+// edge, its highest point `depth` (least, most) of its radius under the water, tilted by `tilt` (least, most; degrees).
+// Each drifts at `drift` (least, most; m/s) out from the hole's middle, turned to either side by up to `aside`
+// (radians). A piece is white ice at `whiteOdds` times the sheet's share of white ice, `whiteShare` (least, most)
+// white, else clear. The flood waits for the cavity to close (fitCavity), `leastDelay` (s) at the least.
 const SHARD = {
   push: [0.008, 0.016], pushMost: 0.08, tipMost: 1.5, clear: 1, turn: [0.3, 1.2],
   leastDelay: 0.12, inner: [0.1, 0.28], outer: [0.93, 0.99], ragged: 0.05, across: [0.42, 0.72], slant: 0.1, deep: 0.5, widest: 0.85, gap: [0.88, 0.96],
@@ -587,6 +591,31 @@ export class IceSheet {
   }
 
   /**
+   * A weak spot (the header: Weakened; { x, z, reach, share, hole: the hole
+   * it is round, or null }): a star's whose middle is inside an earlier
+   * star's WEAK.merge of its reach is that one cracked again (its share
+   * taken by the new one's, to ICE.weakest; its reach the greater), so the
+   * spots are as many as the places cracked, not the blows; past WEAK.most
+   * the oldest star's goes, else the oldest hole's (a hole's goes with its
+   * hole too: openHole).
+   */
+  weaken(spot) {
+    if (!spot.hole) {
+      const again = this.weakSpots.find((other) => !other.hole && Math.hypot(other.x - spot.x, other.z - spot.z) < WEAK.merge * other.reach);
+      if (again) {
+        again.share = Math.max(again.share * spot.share, ICE.weakest);
+        again.reach = Math.max(again.reach, spot.reach);
+        return;
+      }
+    }
+    this.weakSpots.push(spot);
+    if (this.weakSpots.length > WEAK.most) {
+      const oldest = this.weakSpots.findIndex((other) => !other.hole);
+      this.weakSpots.splice(oldest >= 0 ? oldest : 0, 1);
+    }
+  }
+
+  /**
    * The share of what it would hold whole that the ice holds at (x, z) (the
    * header: Weakened): each weak spot whose reach it is in takes it down
    * toward ICE.cracked at its middle (back to whole at its reach), spots
@@ -708,19 +737,21 @@ export class IceSheet {
     const random = this.streamFor(rock);
     const blow = this.blow(rock);
     const x = rock.position.x, z = rock.position.z;
-    // What it holds there, cracked as it is (weakness), less what already bears on it there (loadAt: the header's Weight).
-    const holds = Math.max(this.holds(random, thickness, x, z) - this.loadAt(x, z, rock, thickness), 0);
+    // What it holds there, cracked as it is (weakness), less what already bears on it there (loadAt: the header's Weight),
+    // and at least ICE.loadedLeast of what it would whole: very weak there, never nothing (a blow over nothing would be
+    // a break of endless strength, its cracks without number).
+    const holds = Math.max(this.holds(random, thickness, x, z) - this.loadAt(x, z, rock, thickness), ICE.loadedLeast * ICE.strength * thickness ** 2);
     const speed = rock.velocity.length();
     this.lastStrike = { blow, holds, x, z };   // for tools/ice-probe.mjs
     if (blow < holds || !this.mayOpen(x, z)) {
-      if (blow > ICE.crackShare * holds) this.star(x, z, random, blow / Math.max(holds, 1e-9), thickness);
+      if (blow > ICE.crackShare * holds) this.star(x, z, random, blow / holds, thickness);
       return null;
     }
     const energy = 0.5 * rock.mass * speed * speed;
     const work = holds * thickness;
     const keep = Math.sqrt(Math.max(1 - work / Math.max(energy, 1e-9), ICE.keepLeast ** 2));
-    const hole = this.openHole(rock, x, z, thickness, blow / Math.max(holds, 1e-9));
-    this.events.push({ kind: 'break', x, z, strength: blow / Math.max(holds, 1e-9), radius: rock.radius, thickness });
+    const hole = this.openHole(rock, x, z, thickness, blow / holds);
+    this.events.push({ kind: 'break', x, z, strength: blow / holds, radius: rock.radius, thickness });
     return { hole, broke: true, keep, open: false };
   }
 
@@ -757,7 +788,11 @@ export class IceSheet {
     // Past HOLE.kept, the oldest skinned over is let go (its new ice holds as the sheet does from then).
     if (this.holes.length >= HOLE.kept) {
       const oldest = this.holes.findIndex((candidate) => candidate.skin?.closed);
-      if (oldest >= 0) this.holes.splice(oldest, 1);
+      if (oldest >= 0) {
+        // Its weak spot goes with it: it holds as the sheet does from then.
+        const [gone] = this.holes.splice(oldest, 1);
+        this.weakSpots = this.weakSpots.filter((spot) => spot.hole !== gone);
+      }
     }
     this.holes.push(hole);
     this.opened++;
@@ -856,7 +891,7 @@ export class IceSheet {
       this.ring(x, z, arms, shortest * between(random, [0.45, 0.75]), random, CRACK.starWidth);
     }
     // Cracked through, it holds less there (weakness), out to its arms' mean length.
-    if (arms.length > 0) this.weakSpots.push({ x, z, reach: arms.reduce((sum, { crack }) => sum + crack.length, 0) / arms.length, share: ICE.cracked });
+    if (arms.length > 0) this.weaken({ x, z, reach: arms.reduce((sum, { crack }) => sum + crack.length, 0) / arms.length, share: ICE.cracked, hole: null });
     this.events.push({ kind: 'crack', x, z, strength: share, thickness });
     this.dirty = true;
   }
@@ -1062,7 +1097,7 @@ export class IceSheet {
       radials.push({ crack, angle: heading });
     }
     // The crushed edge's fringe: short cracks from its corners, not a radial's (no wedge of shards, no ring, ends at one).
-    const fringe = Math.round(between(random, CRACK.fringe) + CRACK.perDoubling * doublings);
+    const fringe = Math.min(Math.round(between(random, CRACK.fringe) + CRACK.perDoubling * doublings), CRACK.fringeMost);
     for (let index = 0; index < fringe; index++) {
       const corner = Math.floor(random() * corners);
       const x = hole.corners[2 * corner], z = hole.corners[2 * corner + 1];
@@ -1072,7 +1107,7 @@ export class IceSheet {
       if (crack) hole.cracks.push(crack);
     }
     // The ice round it cracked radially, and a free edge: it holds less there (weakness), out past its radials' mean length.
-    if (radials.length > 0) this.weakSpots.push({ x: hole.x, z: hole.z, reach: hole.outer + radials.reduce((sum, { crack }) => sum + crack.length, 0) / radials.length, share: ICE.cracked });
+    if (radials.length > 0) this.weaken({ x: hole.x, z: hole.z, reach: hole.outer + radials.reduce((sum, { crack }) => sum + crack.length, 0) / radials.length, share: ICE.cracked, hole });
     if (radials.length >= 3 && random() < CRACK.ring) {
       const radius = between(random, CRACK.ringRadius) * (hole.inner + hole.outer) / 2;
       this.ring(hole.x, hole.z, radials, radius, random, 0.8, hole.cracks);
