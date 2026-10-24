@@ -81,6 +81,7 @@ const WALL_WATER = 0.8;        // a thing in the water comes back off a wall at 
  * the same step, and a floater turned back hard rings the water.
  */
 export function holdInPool(rock, square) {
+  if (rock.state === 'held') return null;   // the hand constrains it against the same walls
   // In the air (any thing: a thrown one, a floater bobbed clear, a skip between touches) the walls' sides turn it back.
   if (rock.state === 'air') { holdAirborne(rock, square); return null; }
   if (rock.skip && rock.state === 'skim') return null;
