@@ -283,16 +283,21 @@
 // bounces off at `bounce` of the speed it came down at, the friction taking
 // `friction` times the push off the ground from its speed along it. A
 // stone's lumps turn its path by up to GROUND.scatter and it tumbles end
-// over end (its spin about the level axis across its path, at GROUND.tumble
-// of its speed over its radius) until it comes down slower than
-// GROUND.settle; then it tumbles along (`ground`, alongGround), its
-// ellipsoid on it (ellipsoidDepth: the lumpy mesh would lift it off as it
-// turns), slowing at GROUND.tumbling·g. A thing kept upright (a pizza, a
-// pie, a duck) settles at rest onto a face it lies on (restOn: a ballasted
-// one onto its base). A ball keeps at least `roll` of its speed along the
-// ground (friction brings it to rolling, 5/7 for a solid ball, 3/5 for a
-// shell) and spins as it rolls, and once down it rolls along, slowing at
-// `rolling`·g. Either rests once slower than GROUND.stopped. Over the
+// over end between its hops (its spin about the level axis across its path,
+// at GROUND.tumble of its speed over its radius) until it comes down slower
+// than GROUND.settle; then it slides along (`ground`, alongGround,
+// slideStep), slowing at GROUND.tumbling·g: it tips onto the face nearest
+// down that it can lie on (lyingAttitude: restFaces, from its mesh, a brick
+// flat or on its side but never on its end, a stone on a flat face; a thing
+// kept upright, a pizza, a pie, a duck, onto its top or bottom, a ballasted
+// one onto its base), its mesh's lowest point on the ground, and turns
+// slowly about the vertical as it slides (GROUND.turning), never tumbling,
+// so that it rests on that face (restOn). A ball keeps at least `roll` of
+// its speed along the ground (friction brings it to rolling, 5/7 for a solid
+// ball, 3/5 for a shell) and spins as it rolls, and once down it rolls along,
+// slowing at `rolling`·g; one that rolls about its own axis (an apple) turns
+// onto its side and veers as a cone does (rollStep). Either rests once
+// slower than GROUND.stopped. Over the
 // ground's edge, or down a step of more than GROUND.step (off the deck onto
 // a frozen pool's ice), it falls again; up a step it cannot climb (a frozen
 // pool's wall, from the ice) it is turned back off it, at its own bounce,
@@ -369,6 +374,12 @@ const GROUND = {
   step: 0.01,                  // m: a rise or a drop in the ground under a thing going along it of more than this is a wall or an edge
   settleSeconds: 0.25,         // s: a thing kept upright settles onto the face it lies on over this (Rock.restOn)...
   rightsFrom: 0.1,             // ...onto its base if its `body.ballast` is this far down (radii: a duck's, not a pie's)
+  tipSeconds: 0.2,             // s: a thing that does not roll tips onto the face it slides on over this, for a quarter turn (Rock.slideStep)...
+  faceBand: 0.04,              // radii: ...a face being its mesh's points this near its lowest (restFaces)...
+  faceMargin: 0.02,            // radii: ...that its weight falls inside of by at least this...
+  leastTip: 25,                // degrees: ...and it would have to be tipped by at least this to fall off (a brick on its end, 17°, is knocked over)
+  turning: 0.1,                // it turns about the vertical as it slides at up to this times its speed over its face's radius, either way...
+  aligning: 8,                 // rad/s: a ball that rolls about its own axis (`material.rollsAbout`: an apple) turns onto its side at up to this
 };
 // A flat thing's flight (`air.model` 'flutter', src/things.js: a pizza; the header): a plate in the air, its attitude its
 // own, turned by the air's push and its spin. The push on its face is ½ρv²·πR² times C_N(α) = `slope`·sin α·cos² α +
@@ -438,6 +449,66 @@ const scratch = {
 const UP = new THREE.Vector3(0, 1, 0);
 const BUOYANCY = { columns: 20 };
 const RIDE_TILT = 0.36;   // the most a floater is tilted as it rides the water as drawn (rideTheWater): the slope's tangent, 20°
+
+/**
+ * The faces a thing can lie on (Rock.lyingAttitude): of its six principal
+ * directions (its shape's axes, either way), each with its weight (its
+ * volume's middle, moved by its `ballast`) over the outline of its mesh's
+ * points within GROUND.faceBand of their lowest that way, by GROUND.faceMargin
+ * and by GROUND.leastTip seen from its weight (a brick: flat or on its side,
+ * not on its end; a stone: its flat faces, never its rim or its end; at least
+ * its short axis's).
+ * Its own frame's directions, each the one that points down as it lies on it.
+ * Worked out once for each shape.
+ */
+const restFacesOf = new WeakMap();
+function restFaces(shape, positions, ballast) {
+  if (restFacesOf.has(shape)) return restFacesOf.get(shape);
+  const weight = shape.centroid.clone().add(new THREE.Vector3().fromArray(ballast ?? [0, 0, 0]));
+  const across = new THREE.Vector3(), other = new THREE.Vector3(), point = new THREE.Vector3();
+  const faces = [];
+  for (const axis of shape.axes) for (const sign of [1, -1]) {
+    const down = axis.clone().multiplyScalar(sign);
+    across.set(Math.abs(down.x) < 0.9 ? 1 : 0, Math.abs(down.x) < 0.9 ? 0 : 1, 0).cross(down).normalize();
+    other.crossVectors(down, across);
+    let lowest = -Infinity;
+    for (let index = 0; index < positions.length; index += 3) lowest = Math.max(lowest, down.x * positions[index] + down.y * positions[index + 1] + down.z * positions[index + 2]);
+    const outline = [];
+    for (let index = 0; index < positions.length; index += 3) {
+      point.fromArray(positions, index);
+      if (point.dot(down) >= lowest - GROUND.faceBand) outline.push([point.dot(across), point.dot(other)]);
+    }
+    const height = lowest - weight.dot(down);
+    const margin = Math.max(GROUND.faceMargin, height * Math.tan(THREE.MathUtils.degToRad(GROUND.leastTip)));
+    if (insideOutline(outline, weight.dot(across), weight.dot(other), margin)) faces.push(down);
+  }
+  if (faces.length === 0) faces.push(shape.axes[2].clone(), shape.axes[2].clone().negate());
+  restFacesOf.set(shape, faces);
+  return faces;
+}
+
+/** Whether (x, y) is inside the convex outline of `points` ([x, y] pairs) by at least `margin`. */
+function insideOutline(points, x, y, margin) {
+  if (points.length < 3) return false;
+  points.sort((one, other) => one[0] - other[0] || one[1] - other[1]);
+  const turn = (origin, one, other) => (one[0] - origin[0]) * (other[1] - origin[1]) - (one[1] - origin[1]) * (other[0] - origin[0]);
+  const hull = [];
+  for (const pass of [points, [...points].reverse()]) {
+    const start = hull.length;
+    for (const point of pass) {
+      while (hull.length >= start + 2 && turn(hull[hull.length - 2], hull[hull.length - 1], point) <= 0) hull.pop();
+      hull.push(point);
+    }
+    hull.pop();
+  }
+  if (hull.length < 3) return false;
+  // Counter-clockwise: inside is to the left of every edge.
+  return hull.every((from, index) => {
+    const to = hull[(index + 1) % hull.length];
+    const length = Math.hypot(to[0] - from[0], to[1] - from[1]);
+    return length > 0 && turn(from, to, [x, y]) / length >= margin;
+  });
+}
 
 /** A standard normal draw (Box–Muller, from `random`). */
 function gaussian(random = Math.random) {
@@ -1068,6 +1139,7 @@ export class Rock {
     this.groundHeight = null;      // the ground's height under a thing tumbling or rolling along it (`ground`), once it has met it
     this.onGround = false;         // at rest on the ground (restOn)
     this.settling = null;          // settling onto the face it lies on, at rest on the ground (restOn, settleStep)
+    this.sliding = null;           // tipping onto the face it slides on, and its turn about the vertical (startSliding, slideStep)
     this.fading = undefined;       // seconds into shrinking away, once src/main.js has begun it (fadeOut): frozen, it is no longer stepped
     this.drawn = { surface: 0, bedDepth: 1 };   // the water it was last drawn on (syncMeshes), for a knock's redraw
     this.age = 0;
@@ -1904,6 +1976,7 @@ export class Rock {
     // On the ground it goes along it again, or, knocked up off it, flies.
     if (this.grounded && (dvx !== 0 || dvy !== 0 || dvz !== 0)) {
       this.settling = null;
+      this.sliding = null;   // it slides on from as it is now (alongGround)
       this.onGround = false;
       if (this.velocity.y > GROUND.settle) this.state = 'air';
       else { this.state = 'ground'; this.velocity.y = 0; }
@@ -2537,20 +2610,121 @@ export class Rock {
     this.velocity.set(0, 0, 0);
     this.state = 'rest';
     this.onGround = true;
+    // What it was tipping onto as it slid (slideStep), turned as far as it had turned about the vertical; else the face nearest down.
+    const to = this.sliding ? this.slidAttitude(this.sliding, 1, new THREE.Quaternion()) : this.sphere ? null : this.lyingAttitude();
+    this.sliding = null;
+    this.settling = to && Math.abs(to.dot(this.quaternion)) < 0.99995 ? { from: this.quaternion.clone(), to, time: 0 } : null;
+    this.syncMeshes();
+  }
+
+  /**
+   * How it comes to lie on the ground from as it is turned now: a thing kept
+   * upright (`body.upright`) onto its base if ballasted low (GROUND.rightsFrom:
+   * a duck), else onto whichever of its top or bottom is nearer down (a pie);
+   * anything else onto its face nearest down that it can lie on (restFaces: a
+   * brick flat, on its side or on its end, a stone on a flat face). A new
+   * quaternion.
+   */
+  lyingAttitude() {
+    const turn = new THREE.Quaternion();
     if (this.thing.body.upright) {
       const up = scratch.face.copy(this.uprightAxis).applyQuaternion(this.quaternion);
       const down = (this.thing.body.ballast?.[1] ?? 0) <= -GROUND.rightsFrom || up.y >= 0 ? UP : scratch.along.set(0, -1, 0);
-      const turn = new THREE.Quaternion().setFromUnitVectors(up, down);
-      this.settling = turn.w < 0.9999 ? { from: this.quaternion.clone(), to: turn.multiply(this.quaternion), time: 0 } : null;
+      turn.setFromUnitVectors(up, down);
+    } else {
+      let nearest = null, lowest = Infinity;
+      for (const face of restFaces(this.shape, this.physicsPositions, this.thing.body.ballast)) {
+        const along = scratch.face.copy(face).applyQuaternion(this.quaternion);
+        if (along.y < lowest) { lowest = along.y; nearest = face; }
+      }
+      turn.setFromUnitVectors(scratch.face.copy(nearest).applyQuaternion(this.quaternion), scratch.along.set(0, -1, 0));
     }
-    this.syncMeshes();
+    return turn.multiply(this.quaternion);
   }
 
   /** Its ground gone from under it as it rests (a hole opened there, src/ice.js): it goes along the ground again, so it falls where there is none. */
   loseGround() {
     this.settling = null;
+    this.sliding = null;
     this.onGround = false;
     this.state = 'ground';
+  }
+
+  /**
+   * Begins sliding along the ground at `speed` (slideStep): what it tips onto
+   * (lyingAttitude) over GROUND.tipSeconds for a quarter turn (a half turn
+   * √2 that), and its turn about the vertical, drawn either way up to
+   * GROUND.turning times its speed over its face's radius.
+   */
+  startSliding(speed) {
+    const to = this.lyingAttitude();
+    const angle = 2 * Math.acos(Math.min(Math.abs(to.dot(this.quaternion)), 1));
+    const turnRate = (2 * this.random() - 1) * GROUND.turning * speed / this.faceRadius;
+    this.spinRate = 0;
+    // It came down on its ellipsoid (meetGround, as the air's landing finds it): its height goes over to its mesh's as it tips.
+    const depth = this.position.y - this.groundHeight;
+    return { from: this.quaternion.clone(), to, time: 0, seconds: GROUND.tipSeconds * Math.sqrt(angle / (Math.PI / 2)), turnRate, speed: Math.max(speed, 1e-6), turned: 0, depth, lowest: null };
+  }
+
+  /** Where it is turned to, `share` of the way through tipping (smoothstepped), and turned about the vertical as far as it has: into `into`. */
+  slidAttitude(sliding, share, into) {
+    into.slerpQuaternions(sliding.from, sliding.to, share * share * (3 - 2 * share));
+    return into.premultiply(scratch.step.setFromAxisAngle(UP, sliding.turned));
+  }
+
+  /**
+   * dt seconds of sliding at `speed` (alongGround), a thing that does not
+   * roll: it tips onto its face (startSliding) and slides flat on it, its
+   * lowest point on the ground at `height`, never tumbling; it turns about
+   * the vertical as it goes, slower as it slows, so that its turn and its
+   * slide stop together (a sliding, spinning body's friction shares itself
+   * between the two).
+   */
+  slideStep(height, speed, dt) {
+    const sliding = this.sliding;
+    sliding.time = Math.min(sliding.time + dt, sliding.seconds);
+    sliding.turned += sliding.turnRate * (speed / sliding.speed) * dt;
+    const tipped = sliding.seconds > 0 ? sliding.time / sliding.seconds : 1;
+    this.slidAttitude(sliding, tipped, this.quaternion);
+    // Its lowest point is walked for while it tips, its height eased down to it from the ellipsoid's it came down on
+    // (never with its mesh in the ground: a brick's corner is outside its ellipsoid); lying on its face, a turn about
+    // the vertical leaves it where it is.
+    const eased = tipped * tipped * (3 - 2 * tipped);
+    const reach = tipped < 1 ? -this.lowestOffset() : -(sliding.lowest ??= this.lowestOffset());
+    const depth = tipped < 1 ? Math.max((1 - eased) * sliding.depth + eased * reach, reach) : reach;
+    this.position.y = height + depth;
+    this.turned = true;
+  }
+
+  /**
+   * A ball that rolls about its own axis (`material.rollsAbout`, of its own
+   * frame: an apple, about its core) turns onto its side as it rolls, its
+   * axis onto the one it rolls about (at up to GROUND.aligning), and, a little
+   * wider at one end (`material.curve`: its girth's change along its axis, per
+   * radius), rolls as a cone does, its path curving towards its narrower end
+   * (its axis's −) by `curve` over its radius per metre.
+   */
+  rollStep(speed, dt) {
+    const rolls = this.thing.material.rollsAbout;
+    const own = scratch.face.fromArray(rolls).applyQuaternion(this.quaternion);
+    const across = scratch.along.copy(this.spinAxis);
+    if (own.dot(across) < 0) across.negate();
+    const angle = own.angleTo(across);
+    if (angle > 1e-4) {
+      const axis = scratch.turned.crossVectors(own, across).normalize();
+      this.quaternion.premultiply(scratch.step.setFromAxisAngle(axis, Math.min(angle, GROUND.aligning * dt)));
+    }
+    // Its narrow end (its axis's −, the wider being +) to one side of its path: the path turns towards it.
+    const narrow = scratch.face.fromArray(rolls).applyQuaternion(this.quaternion).negate();
+    const side = (this.velocity.z * narrow.x - this.velocity.x * narrow.z) / Math.max(speed, 1e-9);   // narrow · (UP × v̂)
+    const turn = (this.thing.material.curve ?? 0) / this.radius * speed * dt * side;
+    if (Math.abs(turn) < 1e-9) return;
+    const cosine = Math.cos(turn), sine = Math.sin(turn);
+    const velocityX = this.velocity.x, velocityZ = this.velocity.z;
+    this.velocity.x = velocityX * cosine + velocityZ * sine;
+    this.velocity.z = velocityZ * cosine - velocityX * sine;
+    this.quaternion.premultiply(scratch.step.setFromAxisAngle(UP, turn));
+    this.spinAlongGround();
   }
 
   /** dt seconds of settling onto the ground (restOn): turned on towards the face it lies on, its lowest point kept on the ground. */
@@ -2567,6 +2741,7 @@ export class Rock {
   meetGround(height, dt) {
     this.position.y = height + this.ellipsoidDepth();
     this.groundHeight = height;
+    this.sliding = null;
     if (this.velocity.y >= -GROUND.settle) {
       this.state = 'ground';
       this.alongGround(dt);
@@ -2599,19 +2774,27 @@ export class Rock {
   alongGround(dt) {
     let height = this.ground?.at(this.position.x, this.position.z) ?? null;
     const before = this.groundHeight ?? height;
-    if (height === null || height < before - GROUND.step) { this.state = 'air'; return; }
+    if (height === null || height < before - GROUND.step) { this.state = 'air'; this.sliding = null; return; }
     if (height > before + GROUND.step) height = this.turnBackFromStep();
     this.groundHeight = height;
     this.velocity.y = 0;
-    this.position.y = height + this.ellipsoidDepth();
     const along = Math.hypot(this.velocity.x, this.velocity.z);
     const material = this.thing.material, surface = this.groundSurface;
-    const slowing = material.roll ? Math.min(material.rolling, surface?.rolling ?? Infinity) : surface?.tumbling ?? GROUND.tumbling;
+    // A ball's rolling resistance is the lesser of its own and the ground's (ice is smoother than the deck), but one
+    // that rolls about its own axis (an apple) is slowed by its own lumps and give whatever it rolls on.
+    const slowing = material.roll ? (material.rollsAbout ? material.rolling : Math.min(material.rolling, surface?.rolling ?? Infinity)) : surface?.tumbling ?? GROUND.tumbling;
     const slowed = Math.max(along - slowing * GRAVITY * dt, 0);
+    if (!material.roll) this.sliding ??= this.startSliding(along);
     if (slowed < GROUND.stopped) { this.restOn(height); return; }
     this.velocity.x *= slowed / along;
     this.velocity.z *= slowed / along;
-    this.spinAlongGround();
+    if (material.roll) {
+      this.position.y = height + this.radius;
+      this.spinAlongGround();
+      if (material.rollsAbout) this.rollStep(slowed, dt);
+    } else {
+      this.slideStep(height, slowed, dt);
+    }
   }
 
   /** The ground's own surface where it is (the header: its `materialAt`, else its `material`), or null. */
@@ -2659,6 +2842,7 @@ export class Rock {
    */
   breakThrough(met, dt) {
     this.velocity.multiplyScalar(met.keep ?? 1);
+    this.sliding = null;
     this.iceHole = met.hole;
     const impact = this.goIn(dt, 0);
     impact.throughIce = !met.open;
