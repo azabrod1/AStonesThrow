@@ -167,13 +167,62 @@ throughout, to 0.2 s, is the coarser check. The brief asked for 100 cells
 per radius: not affordable here, and the crown shows why more resolution is
 not simply better in an axisymmetric model.
 
+## The sweep of bigger stones (`assets/jet/sweep.json`)
+
+The app's jet was fitted to the reference alone; a 30 cm rock's was an
+extrapolation. `stone.c` now takes `radius=`, `speed=` and `depth=` (its
+lengths and output periods scale with the radius), and a sweep of runs on a
+Mac at 31 cells per radius, in the app's 1.7 m pond, with real air (their
+Froude numbers are below Birkhoff and Isaacs' surface-seal boundary):
+10 cm at 6.3 m/s (light air, which it needed), 16 cm at 4, 6.3 and 8 m/s and
+30 cm at 4, 6.2 and 8 m/s. `sweep.py` tabulates each run's pinch-off, seal,
+jet (when it clears the surface, its height over time, its radius at the
+surface and two, five and ten radii up, its drops) and volumes, fits the
+app's launch to them with `jet-fit.mjs` and writes `assets/jet/sweep.json`
+and its module twin `sweep.js` (read by `src/jet.js`): never edit them.
+
+What it found. Every stone's hole pinches 2.2 sqrt(R/g) after contact, but
+deeper in radii the lower the Froude number (7.5 R for the reference at
+F = 135, 4.8 R for the 16 cm stone at F = 50, 4.1 R for the rock at F = 26,
+2.3 R at F = 11), where the app's cavity had 4.3 R and 2.7 R: `src/cavity.js`
+now scales its head with the Froude number. The rock's jet clears the
+surface at 0.27 s at 35 m/s, its joined column reaches 4.7 m at 0.8 s and
+its drops 7 m, and its column is thick: 0.5 R two radii up and 0.16 R
+(2.4 cm) ten radii up, shedding centimetre drops (median 1.3 cm by count,
+3.8 cm by water: the top of the column breaking off whole); the needle is
+only 1.6 times faster than the body (the reference's 3). The jet carries 0.4
+to 0.5 of the bowl's water (the reference's 0.38). These are clean jets, an
+upper bound: the runs are axisymmetric and the stone a smooth sphere, so the
+app keeps a real rock's irregular collapse as a seeded variation
+(`src/splash.js` chooseSplash). With real air the 10 cm stone and the rock at
+61 cells per radius surface-sealed (F = 81 and 26, the crown's thin sheet
+drawn in: as the level-13 reference did), so the 10 cm run uses light air
+and the fine check of the rock restarts the coarse run from 34 ms before
+its pinch-off (`d30-real-L13jet`). Light air blows up at the pinch-off with
+the Basilisk of September 2026 on macOS (the neck's air at thousands of
+metres a second, the time step at 1e-12: the 6 cm control, a 16 cm and two
+30 cm runs), which the reference's Basilisk did not; the sweep's real-air
+runs are unaffected, and the 6 cm control therefore stands on the reference
+results as they are. The fine check (61 cells per radius, restarted from
+the coarse run 34 ms before its pinch-off) agrees with the coarse rock on
+what the app takes: the jet clears the surface at 272 against 273 ms, at 33
+against 36 m/s, its column is 0.42 against 0.47 R thick two radii up, 0.26
+against 0.29 R five up and 0.155 R ten up at both; its drops are smaller
+(median 1.0 against 1.4 cm: the finer grid holds smaller ones) and its
+needle's thread stays joined longer.
+
 ## Files
 
 - `stone.c`: the simulation. Its opening comment documents the setup, the
   arguments and the outputs.
 - `run.sh`: builds `stone.c` into a run directory and starts it in the
-  background (niced, one thread), or resumes a run killed midway from its
-  latest dump.
+  background (niced, one thread or `--mpi N` ranks), or resumes a run
+  killed midway from its latest dump.
+- `sweep.py`: tabulates a sweep of runs (above) and, with `jet-fit.mjs`, the
+  app's gains per stone size, into `assets/jet/sweep.json` and `sweep.js`.
+- `jet-fit.mjs`: the app's clean jet measured as `sweep.py` measures a run,
+  and the gains that bring it closest (`tools/jet-probe.mjs` uses its
+  measurement).
 - `analyse.py`: turns a run into the files under `results/`, with the app's
   numbers and the other resolutions on the plots.
 - `app-numbers.mjs`: the app's splash for the same case as time series
@@ -191,7 +240,13 @@ not simply better in an axisymmetric model.
 
 Basilisk's `qcc` must be built ([installation](http://basilisk.fr/src/INSTALL));
 `BASILISK` points at its `src/` and is on the `PATH`. Python needs numpy and
-matplotlib.
+matplotlib. On a Mac: the Xcode command-line tools, the tarball unpacked
+into `~/basilisk`, then `cd ~/basilisk/src && ln -s config.osx config &&
+make -k && make` (the first make fails on parts that are not needed); for
+MPI, `brew install open-mpi` (`run.sh --mpi` builds with `mpicc` and adds
+`-D_DARWIN_C_SOURCE`, which Basilisk's config gives only its own compiler).
+`stone.c`'s opening comment says what MPI buys: little at level 12, so the
+sweep's stones run side by side on one rank each.
 
 ```sh
 export BASILISK=/path/to/basilisk/src PATH=$PATH:$BASILISK
@@ -200,6 +255,9 @@ tools/basilisk/run.sh runs/L11 level=11 end=0.2 air=0.12               # the coa
 tools/basilisk/run.sh runs/L13 level=13 end=0.056 air=0.12             # the finer check (its crown closes)
 tools/basilisk/run.sh runs/L12real level=12 end=0.06 air=1.2 airadapt=1   # real air: the surface seal
 tools/basilisk/run.sh --resume runs/L12                                # after a restart
+tools/basilisk/run.sh runs/d30 level=12 radius=0.15 speed=6.17 depth=1.7 air=1.2 rings=0 end=2.2   # the sweep's rock (see above)
+tools/basilisk/run.sh --mpi 6 runs/d30fine level=13 radius=0.15 speed=6.17 depth=1.7 air=1.2 rings=0 end=1.2
+python3 tools/basilisk/sweep.py runs/d10 runs/d16 runs/d16v4 runs/d16v8 runs/d30 runs/d30v4 runs/d30v8 --out assets/jet/sweep.json
 node tools/basilisk/app-numbers.mjs runs/app.json
 python3 tools/basilisk/rings.py runs/L12 --start 1.0 --end 8 --out tools/basilisk/results   # first: analyse.py reads its rings_linear.csv
 python3 tools/basilisk/analyse.py runs/L12 --check runs/L11 --check runs/L13 --app runs/app.json --out tools/basilisk/results

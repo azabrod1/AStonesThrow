@@ -428,7 +428,15 @@ known timing, and the droplets are choreographed from them:
    `tools/jet-probe.mjs` checks the solver against the textbook growth rate,
    retraction speed and drop size, and the jet against the simulation);
    thrown at 42° a clean jet stands 25 to 45 cm, its drops flying higher,
-   but each throw's collapse launches its jet its own way (below);
+   but each throw's collapse launches its jet its own way (below). Bigger
+   stones' launches come from a sweep of simulations of 10 to 30 cm stones
+   (`tools/basilisk/README.md`, `assets/jet/sweep.json`): a 30 cm rock's
+   hole pinches 4 R down, not the reference's 7.5, so the cavity's head
+   scales with the Froude number, and its column, 0.5 R thick at the base
+   and 2 cm thick ten radii up, carries the air its collapse entrained
+   (drawn white, bumpy, its base a mound no wider than 1.2 R) and sheds
+   centimetre lumps, which fly whole until the air tears them (by their
+   Weber number) instead of leaving as strings of 4 mm beads;
 4. bubbles that follow the stone down its path, rise and burst into foam.
 
 Drops ring the water where they land, and the big ones (the jet's, and the
@@ -833,7 +841,10 @@ its haze is whiter (0.85 to 0.9 of the cloud against rain's 0.6) and
 thicker (1.5 km, 400 m, 150 m to see). A snowflake meets the water at about
 1 m/s, weighing milligrams: it melts and leaves no ring, so the water is
 left as the wind has it. The flakes are one instanced draw in a box about
-the eye (16, 40 and 60 thousand of them), each falling at its terminal
+the eye (16, 120 and 120 thousand of them: heavy snow's the big soft
+clumps of a snow day, up to 5 cm across, and a blizzard's up to 2.5 cm,
+drawn bigger than its fine snow so that fewer flakes, a flake's cost,
+hide what its haze does), each falling at its terminal
 speed (0.9 to 1.1 m/s, give or take a fifth), carried at the wind's speed,
 swaying on a small ellipse and tossed by gusts of 0.3 of the wind, drawn as
 the capsule it sweeps in 1/120 s: round in still air, a streak in a
