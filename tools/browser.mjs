@@ -3,8 +3,10 @@
 // It uses the machine's GPU when there is one, and SwiftShader (Chrome's
 // software renderer, every shader run on the CPU) when there is none. A
 // Mac's GPU draws a frame tens of times faster than SwiftShader and keeps
-// the processor free; the cloud container and GitHub's runners have no GPU,
-// so there SwiftShader is the only renderer.
+// the processor free; the cloud container and GitHub's Linux runners have no
+// GPU, so there SwiftShader is the only renderer. Its macOS runners have Metal
+// (an Apple Paravirtual device): CI's browser probes run there, asking for it
+// with PW_GPU=hardware.
 //
 // It launches with the platform's hardware backend first (Metal on a Mac,
 // Direct3D on Windows, Vulkan on Linux), opens a blank page and asks WebGL 2
@@ -17,7 +19,8 @@
 // prints the renderer on stderr, once.
 //
 //   PW_GPU=software   always SwiftShader (byte-for-byte comparisons with
-//                     frames made in the cloud; CI is software by default)
+//                     frames made in the cloud; CI is software unless it
+//                     asks for hardware)
 //   PW_GPU=hardware   the GPU, failing rather than falling back
 //   PW_CHROMIUM       a browser to launch instead of Playwright's own
 // PW_HARDWARE=1 (the startup probe's old switch) means PW_GPU=hardware.

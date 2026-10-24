@@ -43,5 +43,5 @@ Local development loads Three.js from jsDelivr through the import map. `npm run 
 ## The cloud container
 
 - WebGL renders headless through SwiftShader. It is correct but slow, so frame rates measured there mean nothing.
-- Every tool that opens a browser launches it through `tools/browser.mjs`: the GPU when there is one (a Mac's Metal), SwiftShader otherwise and on CI. Frames differ slightly between the two, so compare frames from one renderer; `PW_GPU=software` forces SwiftShader.
+- Every tool that opens a browser launches it through `tools/browser.mjs`: the GPU when there is one (a Mac's Metal), SwiftShader otherwise. CI's browser probes run on a macOS runner's GPU (`PW_GPU=hardware` in `.github/workflows/check.yml`). Frames differ slightly between the two, so compare frames from one renderer; `PW_GPU=software` forces SwiftShader.
 - WebGPU compute and offscreen render-to-texture with readback work headless, on a localhost page only. Presenting a WebGPU canvas fails, so capture WebGPU frames by reading back an offscreen texture.

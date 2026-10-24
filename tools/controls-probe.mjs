@@ -5,8 +5,10 @@
 // phone's browser does not: without the tag it lays the page out 980 pixels
 // wide and shrinks it to fit, so every control comes out at less than half
 // its size. This probe emulates a phone's browser (isMobile, touch, the
-// device's pixel ratio) at a large phone's portrait and landscape and a small
-// phone's portrait and landscape, plus a desktop window, and for each checks:
+// device's pixel ratio) at a large phone's portrait and a small phone's
+// portrait and landscape, plus a desktop window, and for each checks (a large
+// phone on its side is left out: it has room every way the small one has,
+// under the same breakpoints, so whatever fits on the small one fits there):
 //   - the page is laid out at the device's width (the viewport tag works);
 //   - every control lies inside the screen, the strip does not overflow and
 //     it covers at most 30% of the screen's height;
@@ -90,7 +92,6 @@ const outputFolder = path.join(repository, 'shots', 'controls-probe', label);
 const FRAMINGS = [
   { name: 'phone', width: 430, height: 932, pixelRatio: 3, touch: true, portrait: true },        // a large iPhone in portrait
   { name: 'small-phone', width: 375, height: 667, pixelRatio: 2, touch: true, portrait: true },  // an iPhone SE
-  { name: 'phone-landscape', width: 932, height: 430, pixelRatio: 3, touch: true, portrait: false },
   { name: 'small-phone-landscape', width: 667, height: 375, pixelRatio: 2, touch: true, portrait: false },
   { name: 'desktop', width: 1280, height: 720, pixelRatio: 1, touch: false, portrait: false },
 ];
