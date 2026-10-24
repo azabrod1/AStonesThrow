@@ -257,14 +257,16 @@ for (const name of THING_NAMES) {
     } else {
       const bed = floorDepthAt(rock.position.x, rock.position.z);
       // Let go from rest under 10 m of water, its hole long closed: it sinks at its terminal speed.
-      const settling = new Rock({ radius: measured.radius, position: new THREE.Vector3(0, -2 * measured.radius, 0), velocity: new THREE.Vector3(), envTexture: null, thing: name, mass: measured.mass });
+      // The same as the one thrown: drawn again until it is (a pie's filling is drawn for each one made).
+      let settling = null;
+      for (let tries = 0; tries < 40 && !(settling && Math.abs(settling.density - rock.density) < 1e-6); tries++) settling = new Rock({ radius: measured.radius, position: new THREE.Vector3(0, -2 * measured.radius, 0), velocity: new THREE.Vector3(), envTexture: null, thing: name, mass: measured.mass });
       settling.goIn(STEP);
       settling.body.openUntil = -1;
       let sinking = 0;
       // Its speed along its path: a flat gem glides a little (its lift), so it falls a little slower.
       for (let time = 0; time < 6 && (settling.state === 'water' || settling.state === 'float'); time += STEP) { settling.update(STEP, 10); sinking = Math.max(sinking, settling.velocity.length()); }
       // Its own density on the drag's nominal ball; a plate's on its broad face.
-      const terminal = Math.sqrt((8 / 3) * (rock.density / WATER_DENSITY - 1) * GRAVITY * measured.radius / (rock.plate ? rock.thing.air.drag * (4 / 3) * Math.PI / rock.shape.volume : DRAG_COEFFICIENT));
+      const terminal = Math.sqrt((8 / 3) * (settling.density / WATER_DENSITY - 1) * GRAVITY * measured.radius / (settling.plate ? settling.thing.air.drag * (4 / 3) * Math.PI / settling.shape.volume : DRAG_COEFFICIENT));
       line += `; sinks at ${sinking.toFixed(2)} m/s (terminal ${terminal.toFixed(2)}), rests ${centimetres(-rock.position.y)} cm down on the bed's ${centimetres(bed)} after ${record.restAt?.toFixed(1)} s`;
       check(rock.state === 'rest' && rock.position.y < 0, `${label}: has not come to rest on the bed (${rock.state})`);
       // A gem's flat cut, a brick's slab, glides a little more (its lift): SINK_TOLERANCE twice over.
