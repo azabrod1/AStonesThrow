@@ -907,7 +907,11 @@ thing's weight spread over about the sheet's characteristic length: where
 the weight is more than the ice holds there, it gives way under the
 heaviest thing (a 30 cm rock set down on thin ice; two 16 lb bowling balls
 side by side, though one alone rests), and a blow strikes ice already
-bearing what lies about it. A crack runs
+bearing what lies about it. A piece afloat in a hole is ice too: a pebble
+thrown at one lands on its top, bounces and slides as on the sheet, while
+the piece can carry it (a piece of thick ice some 70 g), and pushes it
+under and goes into the water when it cannot (a piece of thin ice, a few
+grams); anything else meets a piece as its slab, not a ball round it. A crack runs
 out at 8 m/s from where it starts, when the crack it starts from reached
 there (a real one runs at hundreds of metres a second, at once to the eye;
 run out over a few frames the break is seen to spread from the blow, its

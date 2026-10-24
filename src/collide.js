@@ -17,7 +17,11 @@
 // two that each have their own outline (Rock.piece: a wedge broken out of
 // the sheet, lying beside its neighbours as it broke) meet by those outlines
 // as they are turned, seen from above (outlineOverlap: the separating axes
-// of two convex polygons), apart along the axis they overlap least on.
+// of two convex polygons), apart along the axis they overlap least on. A
+// piece and anything else meet as the thing's sphere and the piece's slab
+// (slabOverlap: its outline, its thickness, as it is turned), so what comes
+// down on a piece meets its top, not a ball round it; what lies on a piece
+// lies on it as ground (src/ice.js pieceUnder) and does not meet it.
 // What broke a hole in the ice never meets that hole's pieces: it went down
 // between them, their inner edges clear of it (src/ice.js SHARD.clear).
 // A pair meets when one of them is a floater
@@ -132,8 +136,11 @@ function collidePass(things, knocks) {
     for (let second = first + 1; second < things.length; second++) {
       const one = things[first], other = things[second];
       if (!one.collides || !other.collides || !(one.floater || other.floater || one.grounded || other.grounded)) continue;
-      // What broke a hole went down between its pieces (src/ice.js SHARD.clear): it never meets them.
-      if ((one.piece && one.iceHole?.by === other) || (other.piece && other.iceHole?.by === one)) continue;
+      // What broke a hole went down between its pieces (src/ice.js SHARD.clear), and what pushed a piece under went down
+      // past it (src/ice.js landOnPiece, dunkPieces): it never meets them.
+      if ((one.piece && (one.iceHole?.by === other || other.dunked === one)) || (other.piece && (other.iceHole?.by === one || one.dunked === other))) continue;
+      // A thing on the ground on a piece lies on it as on the ice (src/ice.js pieceUnder): the ground holds it, not a meeting.
+      if ((one.piece && !other.piece && other.grounded) || (other.piece && !one.piece && one.grounded)) continue;
       // Two flat pieces of ice (the header) meet rim to rim: the line between them level, their whole radii.
       const rims = Boolean(one.thing.body.meetsAtRim && other.thing.body.meetsAtRim);
       between.copy(other.centre).sub(one.centre);
@@ -149,6 +156,16 @@ function collidePass(things, knocks) {
         if (!outlines || outlines.depth < COLLIDE.settled) continue;
         normal = between.set(outlines.normalX, 0, outlines.normalZ);
         overlap = outlines.depth;
+      } else if (Boolean(one.piece) !== Boolean(other.piece)) {
+        // A piece of ice and anything else: the thing's sphere against the piece's slab, as it is turned (the header).
+        const piece = one.piece ? one : other, thing = piece === one ? other : one;
+        if (thing.centre.distanceTo(piece.centre) >= piece.radius + thing.collisionRadius) continue;
+        const slab = slabOverlap(piece, thing);
+        if (!slab || slab.depth < COLLIDE.settled) continue;
+        // From the first towards the second: slabOverlap's normal points from the piece to the thing.
+        normal = between.copy(slab.normal);
+        if (piece !== one) normal.negate();
+        overlap = slab.depth;
       } else if (distance < reach - COLLIDE.settled) {
         // Overlapping already as the step began, and passed through each other's middles in it: they meet as they were
         // then, put back there (the line between them now points the wrong way).
@@ -284,6 +301,66 @@ function drawnAtStart(one, other, rims = false) {
 
 /** A thing's radius as it meets another (the header): its whole radius rim to rim, else its sphere's (Rock.collisionRadius). */
 function radiusOf(thing, rims) { return rims ? thing.radius : thing.collisionRadius; }
+
+const slabLocal = new THREE.Vector3(), slabNearest = new THREE.Vector3(), slabTurn = new THREE.Quaternion();
+const slabResult = { normal: new THREE.Vector3(), depth: 0 };
+
+/**
+ * How `thing`'s sphere (its collisionRadius about its centre) overlaps a
+ * shard's slab (`piece`: its outline, convex, and its thickness, as it is
+ * turned): null if apart, else the normal from the slab to the sphere (unit,
+ * world) and the depth (m). Its middle outside the slab: from the slab's
+ * nearest point; inside: out through the face or the side it is nearest.
+ */
+export function slabOverlap(piece, thing) {
+  const corners = piece.piece.corners, radius = piece.radius, half = (piece.piece.thickness * radius) / 2;
+  const inverse = slabTurn.copy(piece.quaternion).invert();
+  const local = slabLocal.copy(thing.centre).sub(piece.centre).applyQuaternion(inverse);
+  // The nearest point of its outline to the middle's (x, z), and whether the middle is inside it.
+  let inside = true, nearestX = local.x, nearestZ = local.z, edgeDistance = Infinity, edgeNormalX = 0, edgeNormalZ = 0;
+  let twice = 0;
+  const count = corners.length / 2;
+  for (let index = 0; index < count; index++) {
+    const next = (index + 1) % count;
+    twice += corners[2 * index] * corners[2 * next + 1] - corners[2 * next] * corners[2 * index + 1];
+  }
+  const winding = twice >= 0 ? 1 : -1;
+  for (let index = 0; index < count; index++) {
+    const next = (index + 1) % count;
+    const ax = corners[2 * index] * radius, az = corners[2 * index + 1] * radius;
+    const bx = corners[2 * next] * radius, bz = corners[2 * next + 1] * radius;
+    const alongX = bx - ax, alongZ = bz - az, length = Math.hypot(alongX, alongZ) || 1;
+    // Outward across this side: for a counter-clockwise outline (x toward z), to its right.
+    const outX = (winding * alongZ) / length, outZ = (-winding * alongX) / length;
+    const out = (local.x - ax) * outX + (local.z - az) * outZ;
+    if (out > 0) inside = false;
+    const share = Math.min(Math.max(((local.x - ax) * alongX + (local.z - az) * alongZ) / (length * length), 0), 1);
+    const pointX = ax + alongX * share, pointZ = az + alongZ * share;
+    const distance = Math.hypot(local.x - pointX, local.z - pointZ);
+    if (distance < edgeDistance) { edgeDistance = distance; nearestX = pointX; nearestZ = pointZ; edgeNormalX = outX; edgeNormalZ = outZ; }
+  }
+  const sphere = thing.collisionRadius;
+  if (inside) { nearestX = local.x; nearestZ = local.z; }
+  const nearestY = Math.min(Math.max(local.y, -half), half);
+  if (!inside || Math.abs(local.y) > half) {
+    slabNearest.set(local.x - nearestX, local.y - nearestY, local.z - nearestZ);
+    const distance = slabNearest.length();
+    if (distance >= sphere || distance < 1e-12) return null;
+    slabResult.normal.copy(slabNearest).divideScalar(distance).applyQuaternion(piece.quaternion);
+    slabResult.depth = sphere - distance;
+    return slabResult;
+  }
+  // Its middle inside the slab: out the nearer of its faces and its nearest side.
+  const toFace = half - Math.abs(local.y);
+  if (toFace <= edgeDistance) {
+    slabResult.normal.set(0, Math.sign(local.y) || 1, 0).applyQuaternion(piece.quaternion);
+    slabResult.depth = toFace + sphere;
+  } else {
+    slabResult.normal.set(edgeNormalX, 0, edgeNormalZ).applyQuaternion(piece.quaternion);
+    slabResult.depth = edgeDistance + sphere;
+  }
+  return slabResult;
+}
 
 const outlineCorner = new THREE.Vector3();
 const outlineOne = [], outlineOther = [];

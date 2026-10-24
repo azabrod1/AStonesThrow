@@ -1068,6 +1068,7 @@ export class Rock {
     this.groundHeight = null;      // the ground's height under a thing tumbling or rolling along it (`ground`), once it has met it
     this.onGround = false;         // at rest on the ground (restOn)
     this.fallsThrough = null;      // the ice gave way under it as it lay or went along it (src/ice.js weigh): it goes in, next step
+    this.dunked = null;            // a piece of ice afloat it pushed under (src/ice.js landOnPiece): it goes down past it (src/collide.js)
     this.settling = null;          // settling onto the face it lies on, at rest on the ground (restOn, settleStep)
     this.fading = undefined;       // seconds into shrinking away, once src/main.js has begun it (fadeOut): frozen, it is no longer stepped
     this.drawn = { surface: 0, bedDepth: 1 };   // the water it was last drawn on (syncMeshes), for a knock's redraw

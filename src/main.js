@@ -1670,6 +1670,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     rock.breakAway(piece.start);
     rock.iceHole = piece.hole;
     rock.ground = ice.ground;
+    ice.adopt(rock);   // ground in its hole while it floats there (src/ice.js pieceUnder)
     rocks.push(rock);
     sceneMain.add(rock.meshAbove);
     sceneUnder.add(rock.meshBelow);
@@ -1716,6 +1717,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   /** Take a stone out of the scenes; keepMaterials frees only its geometry (warmUp keeps a stone's materials, so their program stays compiled). */
   function retireRock(rock, { keepMaterials = false } = {}) {
     if (grab.rock === rock) endGrab();
+    ice.forget(rock);
     untrace(rock);
     sceneMain.remove(rock.meshAbove);
     sceneUnder.remove(rock.meshBelow);

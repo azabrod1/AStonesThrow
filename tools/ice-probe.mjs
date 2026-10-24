@@ -57,6 +57,10 @@
 //     every one comes up and rests afloat, flat (on either face), at the height it floats at,
 //     its outline inside its hole, none overlapping another's (src/collide.js
 //     outlineOverlap) by more than OUTLINE_TOLERANCE;
+//   - a pebble dropped on a piece afloat rests on it on thick ice (a piece
+//     there carries some 70 g), pushes it under and goes into the water on
+//     thin (a few grams), and is never flung by meeting it (no faster after
+//     a step than gravity makes it);
 //   - the flood: the ice round the hole is wet once its cavity has closed
 //     (floodAt; its shards went the step after the break), dry but glazed
 //     FLOOD.dry seconds on, the far ice never wet; drops that land on the
@@ -552,6 +556,7 @@ function iceWorld({ diameter = 6, thickness = 'thin', seed = 1, x = 0, z = -1.4,
         shard.iceHole = piece.hole;
         shard.ground = ice.ground;
         shard.pieceOf = piece;
+        ice.adopt(shard);
         world.shards.push(shard);
         world.things.push(shard);
       }
@@ -715,6 +720,29 @@ for (const [diameter, thickness, seed] of [[6, 'thin', 1], [16, 'thick', 2], [30
   check(outside === 0, `${label}: ${outside} shards are outside their hole`);
   check(overlap < OUTLINE_TOLERANCE, `${label}: two shards' outlines overlap by ${(1000 * overlap).toFixed(1)} mm`);
   check(same, `${label}: the same seeded throw let go other pieces`);
+}
+
+console.log('\nA pebble on a piece afloat (src/ice.js pieceUnder, landOnPiece; src/collide.js slabOverlap)');
+for (const [thickness, diameter, carries] of [['thick', 16, true], ['thin', 6, false]]) {
+  const world = iceWorld({ diameter, thickness, seed: 1 });
+  world.throwStone(diameter);
+  world.step(10);
+  const piece = world.shards.filter((shard) => shard.state === 'rest' || shard.state === 'float').sort((one, other) => other.radius - one.radius)[0];
+  if (!check(piece, `${thickness} ice: no piece afloat to drop a pebble on`)) continue;
+  const pebble = world.add(new Rock({ radius: 0.01, position: new THREE.Vector3(piece.position.x, 0.05, piece.position.z), velocity: new THREE.Vector3(0, -2, 0), envTexture: null, thing: 'stone' }));
+  // Never faster after a step than gravity alone makes it: no meeting flings it (a ball round the piece once did).
+  let gained = 0;
+  for (let time = 0; time < 3; time += STEP) {
+    const before = pebble.velocity.length();
+    world.step(STEP);
+    gained = Math.max(gained, pebble.velocity.length() - before - GRAVITY * STEP);
+  }
+  const top = world.ice.pieceUnder(pebble.position.x, pebble.position.z)?.top;
+  const resting = pebble.state === 'rest' && pebble.onGround && top !== undefined && Math.abs(pebble.position.y + pebble.lowestOffset() - top) < 0.003;
+  const under = pebble.state === 'water' || (pebble.state === 'rest' && pebble.position.y < -0.05);
+  console.log(`  a 2 cm pebble dropped at 2 m/s on a ${centimetres(2 * piece.radius)} cm piece of ${thickness} ice (it carries ${(1000 * world.ice.pieceCarries(piece)).toFixed(0)} g): ${resting ? 'rests on it' : under ? 'pushed it under and went into the water' : pebble.state}; gained at most ${gained.toFixed(2)} m/s in a step`);
+  check(carries ? resting : under, `a pebble dropped on a piece of ${thickness} ice ${resting ? 'rests on it' : under ? 'went under' : `ended ${pebble.state}`}, which it should not`);
+  check(gained < 0.05, `a pebble dropped on a piece of ${thickness} ice was flung, gaining ${gained.toFixed(2)} m/s in a step`);
 }
 
 console.log('\nThe flood: the ice round a hole wet once its cavity has closed, then glazed; drops wet it');

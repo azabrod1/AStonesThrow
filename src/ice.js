@@ -66,6 +66,19 @@
 // bowling balls side by side). And a blow strikes ice already bearing that
 // weight about it: it holds the blow less the load there.
 //
+// Pieces (pieceUnder, landOnPiece, bearPiece). A piece afloat in a hole is
+// ice too: what comes down on it meets its top (the ground's `at` there:
+// src/main.js adopts each shard), not the water, and lands, bounces, slides
+// and rests on it as on the sheet; its blow drives the piece down, sharing
+// its momentum with the piece and the water a plate carries face on. A piece
+// carries what lies on it up to the water its freeboard would displace, ρw/ρi
+// − 1 of its own mass (pieceCarries: a few grams for a hand-sized piece of
+// thin ice, some 70 g for a 30 cm piece of thick): past that it goes under,
+// and what was on it goes into the water, past it (src/collide.js). What
+// rests on a piece that drifts or bobs from under it goes along again.
+// Anything else meets a piece as its sphere against the piece's slab (src/
+// collide.js slabOverlap), not a ball round it.
+//
 // A hole is as wide as the cavity's lip (src/cavity.js): opened at once as a
 // round hole's lip would be (roundLipReach), then, once the splash has made
 // its cavity, fitted to that cavity's own lip, lopsided and drawn forward as
@@ -182,6 +195,30 @@ export const ICE = {
   falls: 0.3,            // m/s: a thing the ice gives way under, at rest or going along it, goes in at this
   scatter: 12,           // per metre: the light clear ice scatters back (a shard's milk; ICE_SCATTER in src/shaders/scene.js, its twin, draws the sheet's)
 };
+// Pieces afloat as ground (pieceUnder): a point within `margin` (m) of a piece's outline is over it; a piece is ground
+// only lying within `flattest` (its up's height) of flat, and its top no more than `awash` (m) under the still water; a
+// thing resting on one goes along again once the piece's top under it is `settle` (m) from where it rests.
+const PIECE = { margin: 0.006, flattest: 0.6, awash: 0.002, settle: 0.002 };
+const pieceUp = new THREE.Vector3(), pieceLocal = new THREE.Vector3(), pieceTurn = new THREE.Quaternion();
+
+/**
+ * The height of a piece's top over (x, z) (pieceUnder), or null if (x, z) is
+ * not over it (its outline, as it is turned, PIECE.margin wider) or it lies
+ * too steep: its top a plane through its middle lifted half its thickness
+ * along its up (either face), met by the vertical through (x, z).
+ */
+function pieceTopAt(rock, x, z) {
+  const up = pieceUp.set(0, 1, 0).applyQuaternion(rock.quaternion);
+  if (up.y < 0) up.negate();
+  if (up.y < PIECE.flattest) return null;
+  const half = (rock.piece.thickness * rock.radius) / 2, position = rock.position;
+  const topX = position.x + up.x * half, topY = position.y + up.y * half, topZ = position.z + up.z * half;
+  const y = topY - (up.x * (x - topX) + up.z * (z - topZ)) / up.y;
+  const local = pieceLocal.set(x - position.x, y - position.y, z - position.z).applyQuaternion(pieceTurn.copy(rock.quaternion).invert());
+  const outline = rock.pieceOutline ??= Float64Array.from(rock.piece.corners, (value) => value * rock.radius);
+  return insidePolygon(outline, local.x, local.z) || polygonEdgeDistance(outline, local.x, local.z) <= PIECE.margin ? y : null;
+}
+
 // Weak spots (weaken): a star's within `merge` of an earlier star's reach is that spot cracked again; at most `most` in
 // all (weakness walks them for each thing on the ice each step), the oldest star's going first, else the oldest hole's.
 export const WEAK = { merge: 0.5, most: 64 };
@@ -392,7 +429,9 @@ export class IceSheet {
     this.crackSegments = [];     // every crack's segments, [ax, az, bx, bz, id, …], and a grid of them (CRACK.cell: crackMet)
     this.crackGrid = new Map();
     this.weakSpots = [];         // where cracks have weakened it (a star, round a hole): { x, z, reach, share } (weakness)
+    this.pieces = new Set();     // its pieces afloat as things (src/main.js adopts them): ground in their holes (pieceUnder)
     this.onIce = [];             // what is on it, and its weight (weigh), each step
+    this.onPieces = new Map();   // each piece afloat and what lies on it, each step (weigh: bearPiece)
     this.events = [];            // breaks and cracks since src/main.js last took them (its sound)
     this.shards = [];            // pieces let go since src/main.js last took them (piecesOf; it makes each a thing)
     this.streams = new WeakMap();   // each thing's own stream of the ice's draws, seeded from its splash's seed
@@ -428,7 +467,8 @@ export class IceSheet {
     this.dirty = false;
     // The ground (src/rock.js `ground`): the ice, over the deck round a frozen pool.
     this.groundObject = {
-      at: (x, z) => this.at(x, z),
+      // In a hole, a piece afloat there is ground too (pieceUnder): its top.
+      at: (x, z) => this.at(x, z) ?? (this.pieces.size ? this.pieceUnder(x, z)?.top ?? null : null),
       materialAt: (x, z) => (this.overWater(x, z) ? ICE_MATERIAL : null),
       meet: (rock, height) => this.meet(rock, height),
     };
@@ -469,6 +509,7 @@ export class IceSheet {
     this.crackGrid.clear();
     this.crackEpoch++;
     this.weakSpots.length = 0;
+    this.pieces.clear();
     this.events.length = 0;
     this.shards.length = 0;
     this.holeField.fill(MASK.holeFar);
@@ -657,13 +698,16 @@ export class IceSheet {
    */
   weigh(things) {
     this.onIce.length = 0;
+    this.onPieces.clear();
     if (!this.on) return;
     for (const rock of things) {
       if (!rock.grounded || rock.fallsThrough) continue;
       const x = rock.position.x, z = rock.position.z;
-      if (!this.overWater(x, z) || this.holeAt(x, z)) continue;
+      if (!this.overWater(x, z)) continue;
+      if (this.holeAt(x, z)) { this.bearPiece(rock); continue; }
       this.onIce.push({ rock, weight: rock.mass * GRAVITY });
     }
+    this.dunkPieces();
     let heaviest = null;
     for (const entry of this.onIce) {
       const x = entry.rock.position.x, z = entry.rock.position.z, thickness = this.thicknessAt(x, z);
@@ -680,6 +724,90 @@ export class IceSheet {
     rock.fallsThrough = { hole, broke: true, keep: 1, open: false };
   }
 
+  // ---- its pieces afloat as ground (the header: Pieces) ----------------------
+
+  /** A piece let go (src/main.js addShard: a shard made a thing) is ground in its hole from now (pieceUnder) until forget. */
+  adopt(rock) { if (rock.piece) this.pieces.add(rock); }
+
+  /** A piece gone (faded, retired, frozen in): no longer ground. */
+  forget(rock) { this.pieces.delete(rock); }
+
+  /**
+   * The piece afloat whose top is over (x, z), or within PIECE.margin of its
+   * outline (a pebble does not fall into the crack between two), and that
+   * top's height there ({ rock, top }), or null: a piece lying flat enough
+   * (either face up, PIECE.flattest) and not awash (its top no lower than
+   * PIECE.awash under the still water).
+   */
+  pieceUnder(x, z) {
+    for (const rock of this.pieces) {
+      if (rock.fading !== undefined) continue;
+      const reach = rock.radius + PIECE.margin;
+      if (Math.abs(x - rock.position.x) > reach || Math.abs(z - rock.position.z) > reach) continue;
+      const top = pieceTopAt(rock, x, z);
+      if (top !== null && top > -PIECE.awash) return { rock, top };
+    }
+    return null;
+  }
+
+  /**
+   * What a piece afloat carries before it goes under (kg): the water its
+   * freeboard would displace, ρw/ρi − 1 of its own mass (a 7 cm piece of
+   * thin ice a few grams, a 20 cm piece of thick ice some 80).
+   */
+  pieceCarries(piece) {
+    return piece.mass * (WATER_DENSITY / ICE.density - 1);
+  }
+
+  /**
+   * A thing coming down on a piece afloat (meet; the header: Pieces): its
+   * blow drives the piece down (its momentum shared with the piece and the
+   * water a plate moving face on carries), and if it, with what already lies
+   * on the piece, is more than the piece carries, the piece goes under and
+   * the thing goes into the hole's water (`{ hole, open }`); else it lands on
+   * the piece's top (`{ ground }`).
+   */
+  landOnPiece(rock, { rock: piece, top }) {
+    const down = Math.max(-rock.velocity.y, 0);
+    const carried = piece.mass + (piece.plate ? piece.plateAddedMass(1) : 0);
+    piece.knock(0, -(rock.mass * down) / (rock.mass + carried), 0, 0, 0, 0);
+    const lying = this.onPieces.get(piece)?.mass ?? 0;
+    if (rock.mass + lying > this.pieceCarries(piece)) {
+      rock.dunked = piece;   // it pushed the piece under and goes down past it: they do not meet (src/collide.js)
+      return { hole: this.holeAt(rock.position.x, rock.position.z), broke: false, keep: 1, open: true };
+    }
+    return { ground: top };
+  }
+
+  /**
+   * A thing on the ground in a hole (weigh): on a piece, its weight on it
+   * (onPieces), and if the piece has drifted or bobbed from under it (its
+   * top PIECE.settle from where it rests, or gone), it goes along the ground
+   * again (src/rock.js loseGround: on the piece's top, or into the water).
+   */
+  bearPiece(rock) {
+    const under = this.pieceUnder(rock.position.x, rock.position.z);
+    if (rock.state === 'rest' && (!under || Math.abs(under.top - rock.groundHeight) > PIECE.settle)) rock.loseGround();
+    if (!under) return;
+    const lying = this.onPieces.get(under.rock) ?? { mass: 0, things: [] };
+    lying.mass += rock.mass;
+    lying.things.push(rock);
+    this.onPieces.set(under.rock, lying);
+  }
+
+  /** Each piece carrying more than it can (weigh: onPieces, pieceCarries) goes under, and what lies on it goes into the water at ICE.falls. */
+  dunkPieces() {
+    for (const [piece, { mass, things }] of this.onPieces) {
+      if (mass <= this.pieceCarries(piece)) continue;
+      piece.knock(0, -ICE.falls * mass / (mass + piece.mass), 0, 0, 0, 0);
+      for (const rock of things) {
+        rock.velocity.y = -ICE.falls;
+        rock.dunked = piece;
+        rock.fallsThrough = { hole: this.holeAt(rock.position.x, rock.position.z) ?? piece.iceHole, broke: false, keep: 1, open: true };
+      }
+    }
+  }
+
   /**
    * A thing coming down on the ground (`height`) or onto the water (null)
    * (src/rock.js `ground` meet; the header): `{ ground: height }` if the ice
@@ -694,8 +822,19 @@ export class IceSheet {
     if (!this.on) return null;
     const x = rock.position.x, z = rock.position.z;
     if (!this.overWater(x, z)) return null;
+    // Down on a piece afloat in a hole (the ground there: pieceUnder), not on the sheet.
+    if (height !== null && this.pieces.size && this.holeAt(x, z)) {
+      const under = this.pieceUnder(x, z);
+      if (under) return this.landOnPiece(rock, under);
+    }
     if (height !== null) return this.strike(rock);
     const hole = this.holeAt(x, z);
+    // At the water in a hole where a piece lies (come over it from a crack between pieces, or from the open water): it
+    // meets the piece, not the water.
+    if (hole && this.pieces.size) {
+      const under = this.pieceUnder(x, z);
+      if (under) return this.landOnPiece(rock, under);
+    }
     // Onto the water over the ice (it came over a hole's edge in the air): it strikes the ice there.
     if (!hole) return this.strike(rock) ?? { ground: this.at(x, z) ?? this.top };
     // Too wide for the hole: it strikes the hole's edge, which holds (it lands on the ice beside the hole) or breaks: the
@@ -1552,6 +1691,7 @@ export class IceSheet {
   freezeIn(rock) {
     const piece = rock.piece, hole = rock.iceHole;
     if (!piece || !hole) return;
+    this.pieces.delete(rock);
     const count = piece.corners.length / 2;
     const corners = new Float64Array(2 * count);
     const corner = new THREE.Vector3();
