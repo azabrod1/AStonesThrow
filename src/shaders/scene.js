@@ -12,7 +12,7 @@
 // uniforms it declares come from AmbientWaves.uniforms() and Rings.uniforms()
 // and stay inactive in shaders that never call the functions using them.
 import { MAX_RINGS, PROFILE_TEXELS, PROFILE_MAPPING, RING_TEXTURE_UNITS } from '../rings.js';
-import { RAIN_RIPPLES } from './rain.js';
+import { RAIN_RIPPLES, DROP_RING_SLOPES } from './rain.js';
 import { GALE_SURFACE } from './gale.js';
 
 // The weather's haze (rain's, snow's, a fog's; src/sky.js setWeather): what lies d metres off fades
@@ -1149,6 +1149,7 @@ ${GLSL_COMMON}
 ${POOL_TILES}
 ${FOAM_PATTERN}
 ${RAIN_RIPPLES}
+${DROP_RING_SLOPES}
 ${HAZE}
 
 // The slope variance of the ambient ripples that this pixel's lookup no
@@ -1422,7 +1423,8 @@ void main() {
   // distance. The rings' slopes (src/rings.js) add, averaged over the
   // pixel's footprint; what that averages away is left out of the roughness
   // (a ring is a few thousandths steep where it is finer than a pixel, under
-  // the ripples' own unresolved slope).
+  // the ripples' own unresolved slope). So do the drop rings' (src/
+  // dropRings.js: the little rings a splash's drops leave where they land).
   float gust = gustEnvelope(vWorld.xz, uGustTime);
   float subGridSpread = uRoughness * uRoughness;
 #ifdef CAVITY_MESH
@@ -1439,6 +1441,7 @@ void main() {
     surfaceSlope += rainSlope(vWorld.xz) * ride;
     slopeVariance += rainUnresolvedVariance(vWorld.xz) * ride;
   }
+  if (uDropRingCount > 0) surfaceSlope += dropRingSlope(vWorld.xz, acrossX, acrossY) * ride;
   float galeJacobian = 1.0;
   if (uGaleMetresPerUnit > 0.0) {
     surfaceSlope += galeSlope(vRest, galeJacobian) * ride;
@@ -1456,6 +1459,7 @@ void main() {
     slope += rainSlope(vWorld.xz);
     slopeVariance += rainUnresolvedVariance(vWorld.xz);
   }
+  if (uDropRingCount > 0) slope += dropRingSlope(vWorld.xz, acrossX, acrossY);
   float galeJacobian = 1.0;
   if (uGaleMetresPerUnit > 0.0) {
     slope += galeSlope(vRest, galeJacobian);
@@ -1853,6 +1857,7 @@ ${LAKE_BED}
 ${FLOOR_PATTERN_TILE}
 ${FLOOR_SAND}
 ${RAIN_RIPPLES}
+${DROP_RING_SLOPES}
 ${POOL_TILES}
 #define BED_STEPS 16
 #define BED_REACH 6.0        // metres along the mirrored ray
@@ -1874,6 +1879,7 @@ void main() {
   vec2 slope = vec2(hr - hl, hu - hd) / (2.0 * uCell) * vMask + ambientSlopeAtFullGust(vWorld.xz) * gust;
   if (uRingCount > 0) slope += ringSlope(vWorld.xz, acrossX, acrossY);
   if (uRainOn > 0.5) slope += rainSlope(vWorld.xz);
+  if (uDropRingCount > 0) slope += dropRingSlope(vWorld.xz, acrossX, acrossY);
   if (uGaleMetresPerUnit > 0.0) {
     float galeJacobian;
     slope += galeSlope(vRest, galeJacobian);

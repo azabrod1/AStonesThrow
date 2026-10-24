@@ -2,9 +2,8 @@
 // No CDN mocks: the deployed runtime must be entirely same-origin.
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
-import { chromium } from 'playwright';
+import { launchBrowser } from './browser.mjs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -25,13 +24,8 @@ const server = createServer(async (request, response) => {
 });
 await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
 const origin = `http://127.0.0.1:${server.address().port}`;
-// PW_CHROMIUM picks a browser; otherwise the cloud container's preinstalled one, as the other probes do.
-const containerChromium = '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
-const browser = await chromium.launch({
-  headless: true,
-  executablePath: process.env.PW_CHROMIUM || (existsSync(containerChromium) ? containerChromium : undefined),
-  args: process.env.PW_HARDWARE ? [] : ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'],
-});
+// The GPU if there is one, else SwiftShader (tools/browser.mjs).
+const browser = await launchBrowser();
 async function pageFor(viewport = { width: 390, height: 844 }) {
   const context = await browser.newContext({ viewport });
   await context.route('https://cdn.jsdelivr.net/**', (route) => route.abort());
@@ -61,7 +55,7 @@ try {
   assert.equal(await page.evaluate(() => performance.getEntriesByType('resource').some((entry) => entry.name.includes('/assets/rain/'))), false);
   // The first sky is asked for from the page's head (index.html), before any module has run, and its load takes the
   // requests over (src/loadAsset.js): on a first visit the default place's files, each fetched once.
-  const firstVisitSky = ['assets/sky/lakeside_2k.hdr', 'assets/sky/lakeside.json', 'assets/sky/meadow_2.json'];
+  const firstVisitSky = ['assets/sky/lakeside_2k.jpg', 'assets/sky/lakeside.json', 'assets/sky/meadow_2.json'];
   assert.deepEqual(firstVisitSky.map(servedCount), [1, 1, 1], 'each of the first sky\'s files fetched once');
   assert.deepEqual(await page.evaluate(() => ({ early: window.__earlyAssets?.size, remembered: JSON.parse(localStorage.getItem('stone-pond-sky-assets')).map((href) => new URL(href).pathname) })),
     { early: 0, remembered: firstVisitSky.map((asset) => `${prefix}${asset}`) }, 'the head\'s first-visit files are the ones the default sky loads');
@@ -82,7 +76,7 @@ try {
   rain.release();
   await page.evaluate(() => window.pendingRain);
   assert.deepEqual(await page.evaluate(() => ({ weather: window.__pond.weather, raining: window.__pond.raining, rocks: window.__pond.rocks.length })), { weather: 'clear', raining: false, rocks: 1 });
-  const sky = hold(page, '**/assets/sky/lago_disola_4k.hdr');
+  const sky = hold(page, '**/assets/sky/lago_disola_4k.jpg');
   await sky.installed;
   await page.evaluate(() => { window.pendingSky = window.__pond.setSky('swiss'); });
   await sky.arrived;
@@ -97,7 +91,7 @@ try {
   assert.equal(await page.evaluate(() => window.__pond.waterChoice), 'lake'); // cancelled Swiss must not freeze the water
   assert.equal(await page.evaluate(() => localStorage.getItem('stone-pond-sky')), 'cove');
   await page.evaluate(() => window.__pond.setSky('lakeside'));
-  const hour = hold(page, '**/assets/sky/lakeside_night_2k.hdr');
+  const hour = hold(page, '**/assets/sky/lakeside_night_2k.jpg');
   await hour.installed;
   await page.evaluate(() => { window.pendingHour = window.__pond.setHour('night'); });
   await hour.arrived;
@@ -106,7 +100,7 @@ try {
   await page.evaluate(() => window.pendingHour);
   assert.equal(await page.evaluate(() => window.__pond.hour), 'afternoon');
   assert.equal(await page.evaluate(() => window.localStorage.getItem('stone-pond-time')), '14:41');
-  const uiHour = hold(page, '**/assets/sky/lakeside_night_2k.hdr');
+  const uiHour = hold(page, '**/assets/sky/lakeside_night_2k.jpg');
   await uiHour.installed;
   await page.evaluate(() => {
     const setHour = window.__pond.setHour;
@@ -121,7 +115,7 @@ try {
   await page.locator('.menu-tier[data-open="time"]').click();
   await uiHour.arrived; // the Time page prefetches the neighbouring night
   // Well under loadAsset's 30 s inactivity timeout, which would abort the held download anyway.
-  const abandonedPrefetch = page.waitForEvent('requestfailed', (request) => request.url().endsWith('/lakeside_night_2k.hdr'), { timeout: 15000 });
+  const abandonedPrefetch = page.waitForEvent('requestfailed', (request) => request.url().endsWith('/lakeside_night_2k.jpg'), { timeout: 15000 });
   await page.locator('#time-presets [data-hour="night"]').click();
   await page.locator('#time-presets [data-hour="afternoon"]').click();
   await abandonedPrefetch; // the night load took the prefetch over, so superseding it stops that download too
@@ -134,11 +128,11 @@ try {
   console.log('PASS: same-origin startup, first throw, delayed weather cancellation, latest sky bypasses a stalled download and returning to the shown hour cancels a pending one');
   // The next visit asks first for the sky shown last (src/main.js SKY_ASSETS_STORAGE_KEY), here the Rocky cove's, once.
   await page.evaluate(() => window.__pond.setSky('cove'));
-  const coveBefore = servedCount('assets/sky/secluded_beach_2k.hdr');
+  const coveBefore = servedCount('assets/sky/secluded_beach_2k.jpg');
   await page.reload({ waitUntil: 'domcontentloaded' });
   await ready(page);
   assert.equal(await page.evaluate(() => window.__pond.sky), 'cove');
-  assert.equal(servedCount('assets/sky/secluded_beach_2k.hdr') - coveBefore, 1);
+  assert.equal(servedCount('assets/sky/secluded_beach_2k.jpg') - coveBefore, 1);
   assert.equal(await page.evaluate(() => window.__earlyAssets?.size), 0);
   assert.deepEqual(errors, []);
   console.log('PASS: the first sky is fetched from the page\'s head, the default on a first visit, the last one shown after');
@@ -154,7 +148,7 @@ try {
   assert.equal(await swiss.locator('#sky [data-value="swiss"]').count(), 1);
   assert.equal(await swiss.evaluate(() => window.__pond.viewName), 'level');
   assert.equal(await swiss.locator('#sky [data-value="meadow"], #sky [data-value="open"], #sky [data-value="alpine"]').count(), 0);
-  assert.equal(await swiss.evaluate(() => performance.getEntriesByType('resource').some((entry) => entry.name.endsWith('/lago_disola_4k.hdr'))), true);
+  assert.equal(await swiss.evaluate(() => performance.getEntriesByType('resource').some((entry) => entry.name.endsWith('/lago_disola_4k.jpg'))), true);
   if (process.env.SWISS_SCREENSHOT) await swiss.screenshot({ path: process.env.SWISS_SCREENSHOT });
   await swiss.evaluate(async () => {
     window.__pond.setWater('clear');
@@ -200,7 +194,7 @@ try {
     localStorage.setItem('stone-pond-thing', 'pizza');
   });
   const savedRain = hold(saved, '**/assets/rain/*.bin');
-  const savedSky = hold(saved, '**/assets/sky/lakeside_2k.hdr');
+  const savedSky = hold(saved, '**/assets/sky/lakeside_2k.jpg');
   await savedRain.installed;
   await savedSky.installed;
   await open(saved);
@@ -343,7 +337,7 @@ try {
   console.log('PASS: saved rain failure offers an escape, renders before input, remembers Clear and permits rain retry');
   await failedStartupRain.context().close();
 
-  for (const asset of ['vendor/three/build/three.module.min.js', 'assets/sky/lakeside_2k.hdr']) {
+  for (const asset of ['vendor/three/build/three.module.min.js', 'assets/sky/lakeside_2k.jpg']) {
     const failed = await pageFor();
     await failed.route(`**/${asset}`, (route) => route.abort());
     await open(failed);
@@ -357,7 +351,7 @@ try {
     await failed.context().close();
   }
 
-  for (const asset of ['vendor/three/build/three.module.min.js', 'assets/sky/lakeside_2k.hdr', 'assets/rain/ring_profile.bin']) {
+  for (const asset of ['vendor/three/build/three.module.min.js', 'assets/sky/lakeside_2k.jpg', 'assets/rain/ring_profile.bin']) {
     const delayed = await pageFor();
     const moduleCase = asset.startsWith('vendor/');
     if (moduleCase) {

@@ -16,8 +16,9 @@
 //     run, tools/variety-probe.mjs gives their odds), when it starts, its
 //     column's top and when, its widest diameter, when it is gone;
 //   - the droplets: spawned by source (contact spray, crown, fan, jet, the
-//     crowns of landing drops, the rest), the most alive at once, the largest,
-//     and how many are 4 mm and more;
+//     crowns of landing drops, the rest) with the largest of each, their
+//     radii (median, 90th percentile), the water they carry by source, the
+//     most alive at once and the landing crowns;
 //   - the water: the cavity splat (σ, depth, downward velocity), its foam
 //     (from when the hole's bowl has flattened into the surface, over the
 //     bubbles' rise: stamps, reach, amount), all the foam stamps, the specks;
@@ -34,6 +35,10 @@
 //     median, 95th percentile and worst, and which frame that was), after a
 //     few silent throws so the code is warm.
 //
+// and checks, failing with exit code 1, that no source asks for a drop bigger
+// than DROP_CEILING (src/crown.js: a bigger lump breaks into drops; the
+// splash's spawnDroplet would clip it).
+//
 //   node tools/splash-probe.mjs [radius ...] [--aim=x:z] [--power=normal|soft|hard] [--vertical]
 //
 // Radii in metres (default the slider's 1.5, 4, 8, 16 and 30 cm diameters and the
@@ -41,7 +46,7 @@
 // throw's speed instead.
 import * as THREE from 'three';
 import { SplashSystem } from '../src/splash.js';
-import { CrownSheet } from '../src/crown.js';
+import { CrownSheet, DROP_CEILING } from '../src/crown.js';
 import { JetColumn } from '../src/jet.js';
 import { Rock, throwFlightTime } from '../src/rock.js';
 import { DAMPING } from '../src/spectralWater.js';
@@ -123,12 +128,16 @@ function runSplash(radius, { silent = false } = {}) {
   const { record, water, splash } = standIns();
   const sources = {};
   const largest = {};
-  let bigDrops = 0;
+  const volumes = {};
+  const dropRadii = [];
+  let overCeiling = 0;
   const spawnDroplet = splash.spawnDroplet.bind(splash);
   splash.spawnDroplet = (x, y, z, vx, vy, vz, dropRadius, lens) => {
     sources[source] = (sources[source] ?? 0) + 1;
     largest[source] = Math.max(largest[source] ?? 0, dropRadius);
-    if (dropRadius >= 0.004) bigDrops++;
+    volumes[source] = (volumes[source] ?? 0) + (4 / 3) * Math.PI * dropRadius ** 3;
+    dropRadii.push(dropRadius);
+    if (dropRadius > DROP_CEILING * (1 + 1e-9)) overCeiling++;
     spawnDroplet(x, y, z, vx, vy, vz, dropRadius, lens);
   };
   let specks = 0;
@@ -150,7 +159,7 @@ function runSplash(radius, { silent = false } = {}) {
     choice: splash.lastChoice ? { regime: splash.lastChoice.regime, seal: splash.lastChoice.seal.kind } : null,
     // The hole's foam comes when its bowl has flattened into the surface (src/cavity.js closeTime).
     foamFrom: splash.cavities[0] ? splash.cavities[0].startTime + splash.cavities[0].closeTime : null,
-    peakAlive: 0, frameMilliseconds: [], sources, largest, specks: 0, landingCrowns: 0, bigDrops: 0, record,
+    peakAlive: 0, frameMilliseconds: [], sources, largest, volumes, dropRadii, specks: 0, landingCrowns: 0, overCeiling: 0, record,
   };
   let jetColumn = null;
   for (let frame = 0; frame < 6 * 60; frame++) {
@@ -206,7 +215,7 @@ function runSplash(radius, { silent = false } = {}) {
   }
   result.specks = specks;
   result.landingCrowns = landingCrowns;
-  result.bigDrops = bigDrops;
+  result.overCeiling = overCeiling;
   if (!silent) return result;
   return null;
 }
@@ -278,6 +287,8 @@ function ringAt(record, pointX, pointZ, stoneRadius) {
   return { height: crest - trough, crestTime: crestSample * RING_STEP, wavelength: (GRAVITY * (2 * halfPeriod) ** 2) / (2 * Math.PI) };
 }
 
+const failures = [];
+
 // Warm up, then measure.
 for (const warmUpRadius of [0.03, 0.08, 0.03, 0.08]) runSplash(warmUpRadius, { silent: true });
 console.log(`aim (${aimX}, ${aimZ}), ${powerName} power${vertical ? ', dropped straight in' : ''}; frames of 1/60 s in ${SUBSTEPS} substeps`);
@@ -286,14 +297,19 @@ for (const radius of stoneRadii) {
   const { impact, crown, fan, jet } = result;
   const angle = Math.asin(Math.min(Math.hypot(impact.velocity.x, impact.velocity.z) / impact.speed, 1)) * 180 / Math.PI;
   console.log(`\nstone ${centimetres(2 * radius)} cm across (radius ${millimetres(radius)} mm, size factor ${(radius / 0.03).toFixed(2)}): enters at ${impact.speed.toFixed(2)} m/s, ${angle.toFixed(0)}° from vertical`);
-  console.log(`  crown: launch ${milliseconds(crown.launch)} ms, drag time ${milliseconds(crown.drag)} ms, h0 ${millimetres(crown.thickness)} mm; rim peaks ${centimetres(crown.height)} cm up at ${milliseconds(crown.heightTime)} ms, ${centimetres(crown.reach)} cm out, ${centimetres(crown.span)} cm across; tears at ${milliseconds(crown.breakTime)} ms, gone at ${milliseconds(crown.endTime)} ms; drops up to ${millimetres(crown.maxDrop)} mm`);
+  console.log(`  crown: launch ${milliseconds(crown.launch)} ms, drag time ${milliseconds(crown.drag)} ms, h0 ${millimetres(crown.thickness)} mm; rim peaks ${centimetres(crown.height)} cm up at ${milliseconds(crown.heightTime)} ms, ${centimetres(crown.reach)} cm out, ${centimetres(crown.span)} cm across; tears at ${milliseconds(crown.breakTime)} ms, gone at ${milliseconds(crown.endTime)} ms; into lumps up to ${millimetres(crown.maxDrop)} mm${crown.maxDrop > DROP_CEILING ? `, drops up to ${millimetres(DROP_CEILING)} mm` : ''}`);
   if (fan) console.log(`  fan: reaches ${centimetres(fan.reach)} cm, gone at ${milliseconds(fan.endTime)} ms`);
   const form = result.choice ? ` (${result.choice.regime} form, ${result.choice.seal} seal)` : '';
   if (jet.start !== null) console.log(`  jet${form}: starts at ${milliseconds(jet.start)} ms, top ${centimetres(jet.top)} cm at ${milliseconds(jet.topTime)} ms, widest ${millimetres(jet.widest)} mm across, gone at ${jet.gone === null ? '-' : milliseconds(jet.gone)} ms`);
   else if (result.choice) console.log(`  jet${form}: none`);
   const total = Object.values(result.sources).reduce((sum, count) => sum + count, 0);
   const bySource = ['spray', 'crown', 'fan', 'jet', 'landing', 'other'].filter((name) => result.sources[name]).map((name) => `${name} ${result.sources[name]} (to ${millimetres(result.largest[name])} mm)`).join(', ');
-  console.log(`  droplets: ${total} spawned: ${bySource}; ${result.bigDrops} of 4 mm and more; at most ${result.peakAlive} alive; ${result.landingCrowns} landing crowns`);
+  const sortedRadii = [...result.dropRadii].sort((first, second) => first - second);
+  const percentile = (share) => sortedRadii[Math.min(Math.floor(share * sortedRadii.length), sortedRadii.length - 1)];
+  const water = ['crown', 'fan', 'jet'].filter((name) => result.volumes[name]).map((name) => `${name} ${(result.volumes[name] * 1e6).toFixed(1)}`).join(', ');
+  const totalVolume = Object.values(result.volumes).reduce((sum, volume) => sum + volume, 0);
+  console.log(`  droplets: ${total} spawned: ${bySource}; radii median ${millimetres(percentile(0.5))}, 90th percentile ${millimetres(percentile(0.9))} mm; water ${(totalVolume * 1e6).toFixed(1)} ml (${water}); at most ${result.peakAlive} alive; ${result.landingCrowns} landing crowns`);
+  if (result.overCeiling > 0) failures.push(`stone of radius ${millimetres(radius)} mm: ${result.overCeiling} drops over the ceiling (${millimetres(DROP_CEILING)} mm), the largest ${millimetres(sortedRadii.at(-1))} mm`);
   const cavity = result.record.splats[0];
   // The cavity's foam: the hole's air where it closed and the jet base's boil (each stamp names its source, src/splash.js stampFoamPatch), from when the hole closes.
   const foamFrom = result.foamFrom ?? jet.start ?? 0;
@@ -319,3 +335,5 @@ for (const radius of stoneRadii) {
   const worst = frames.indexOf(sorted.at(-1));
   console.log(`  CPU: ${mean.toFixed(2)} ms per frame on average over ${frames.length} frames, median ${sorted[Math.floor(0.5 * sorted.length)].toFixed(2)}, 95th percentile ${sorted[Math.floor(0.95 * sorted.length)].toFixed(2)}, worst ${sorted.at(-1).toFixed(2)} ms (frame ${worst + 1})`);
 }
+console.log(failures.length === 0 ? `\nsplash-probe: no drop over the ceiling (${millimetres(DROP_CEILING)} mm)` : `\nsplash-probe: ${failures.length} checks fail:\n  ${failures.join('\n  ')}`);
+process.exitCode = failures.length === 0 ? 0 : 1;

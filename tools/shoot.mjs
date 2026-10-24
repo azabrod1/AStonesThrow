@@ -63,8 +63,7 @@
 // --seed=n seeds Math.random (Park–Miller, from n + i) just before throw i,
 // so its stone and its splash are the same every run, and the same as
 // tools/variety-probe.mjs's seed n + i at the same aim and power.
-import { chromium } from 'playwright';
-import { existsSync } from 'node:fs';
+import { launchBrowser } from './browser.mjs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import path from 'node:path';
@@ -125,14 +124,8 @@ await new Promise((resolve) => server.listen(0, resolve));
 const port = server.address().port;
 await mkdir(outDir, { recursive: true });
 
-// PW_CHROMIUM picks a browser; otherwise use the cloud container's preinstalled
-// Chromium when it is there, and Playwright's own download everywhere else.
-const containerChromium = '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
-const browser = await chromium.launch({
-  headless: true,
-  executablePath: process.env.PW_CHROMIUM || (existsSync(containerChromium) ? containerChromium : undefined),
-  args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--enable-webgl', '--disable-gpu-sandbox'],
-});
+// The GPU if there is one, else SwiftShader (tools/browser.mjs).
+const browser = await launchBrowser();
 const context = await browser.newContext({ viewport: { width, height }, deviceScaleFactor: dpr });
 await context.route('https://cdn.jsdelivr.net/npm/three@0.183.2/**', async (route) => {
   const url = new URL(route.request().url());
@@ -162,6 +155,12 @@ try {
   await browser.close(); server.close(); process.exit(1);
 }
 if (weather && weather !== 'clear' && weather !== 'fog') await page.waitForFunction(() => window.__pond.raining || window.__pond.snowing, null, { timeout: 60000 });
+// The drop rings' table (src/dropRings.js), which the page fetches at the first impact: fetched now, so the
+// first throw's drops ring in every run, however long the fetch takes.
+if (throws.length > 0) {
+  await page.evaluate(() => window.__pond.dropRings?.load());
+  await page.waitForFunction(() => !window.__pond.dropRings || window.__pond.dropRings.ready, null, { timeout: 60000 });
+}
 // The loading veil fades out over a moment once the pond is ready; a frame taken meanwhile would catch it.
 await page.evaluate(() => document.getElementById('veil')?.remove());
 await page.evaluate(() => window.__pond.pause());

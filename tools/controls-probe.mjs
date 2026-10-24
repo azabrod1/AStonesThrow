@@ -75,8 +75,7 @@
 //
 // --root serves another checkout (a git archive of an earlier commit, say);
 // the screenshots and the checks then describe that version.
-import { chromium } from 'playwright';
-import { existsSync } from 'node:fs';
+import { launchBrowser } from './browser.mjs';
 import { mkdir, readFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import path from 'node:path';
@@ -100,7 +99,7 @@ const SMALLEST_BUTTON_HEIGHT = 34;     // points
 const PORTRAIT_SLIDER_SHARE = 0.55;    // of the screen's width
 const LARGEST_STRIP_SHARE = 0.3;       // of the screen's height: the pond is the point
 
-const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.mjs': 'text/javascript', '.json': 'application/json', '.hdr': 'application/octet-stream' };
+const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.mjs': 'text/javascript', '.json': 'application/json', '.jpg': 'image/jpeg' };
 const server = createServer(async (request, response) => {
   try {
     const file = path.join(root, decodeURIComponent(new URL(request.url, 'http://localhost').pathname));
@@ -112,12 +111,8 @@ const server = createServer(async (request, response) => {
   }
 });
 await new Promise((resolve) => server.listen(0, resolve));
-const containerChromium = '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
-const browser = await chromium.launch({
-  headless: true,
-  executablePath: process.env.PW_CHROMIUM || (existsSync(containerChromium) ? containerChromium : undefined),
-  args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--enable-webgl', '--disable-gpu-sandbox'],
-});
+// The GPU if there is one, else SwiftShader (tools/browser.mjs).
+const browser = await launchBrowser();
 await mkdir(outputFolder, { recursive: true });
 
 let failures = 0;

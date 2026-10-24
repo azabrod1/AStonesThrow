@@ -2,8 +2,11 @@
 // that draws their rings into the rain's tile (RAIN_TILE_FRAGMENT), the
 // water's lookup of that tile (RAIN_RIPPLES), the falling streaks
 // (STREAK_VERTEX, STREAK_FRAGMENT) and the flecks a drop throws up where it
-// lands (FLECK_VERTEX, FLECK_FRAGMENT). src/rain.js says what each is.
+// lands (FLECK_VERTEX, FLECK_FRAGMENT). src/rain.js says what each is. The
+// rings a splash's drops leave (DROP_RING_SLOPES) read the same table;
+// src/dropRings.js says what they are.
 import { GALE_SURFACE } from './gale.js';
+import { MAX_DROP_RINGS } from '../dropRings.js';
 
 // The schedule. The tile is cut into uRainCells² cells of uRainCell metres;
 // each cell holds uRainSlots drops at once, and each slot lands a drop every
@@ -95,7 +98,7 @@ void main() {
         float time = drop.age / pow(drop.size, 1.5);     // and seconds
         if (distance >= uRainCell || radius >= uProfileRadius || time >= uLife) continue;
         vec2 lookup = (vec2(radius / uProfileRadius, time / uProfileTime) * (uProfileTexels - 1.0) + 0.5) / uProfileTexels;
-        vec2 ring = texture2D(uProfile, lookup).rg;
+        vec2 ring = textureLod(uProfile, lookup, 0.0).rg;   // the base level: the table has a mip chain for the drop rings
         float fade = (1.0 - smoothstep(uLife * (1.0 - uFadeShare), uLife, time)) * (1.0 - smoothstep(uRainCell * (1.0 - uEdgeShare), uRainCell, distance));
         field.x += fade * drop.size * ring.x;
         field.yz += fade * ring.y * away / max(distance, 1e-6);
@@ -135,6 +138,49 @@ float rainUnresolvedVariance(vec2 worldXZ) {
   float level = clamp(0.5 * log2(max(max(dot(acrossX, acrossX), dot(acrossY, acrossY)), 1e-8)), 0.0, float(RAIN_LEVELS - 1) - 0.001);
   int lower = int(level);
   return mix(uRainUnresolved[lower], uRainUnresolved[lower + 1], level - float(lower));
+}
+`;
+
+// The drop rings (src/dropRings.js): the slope (∂h/∂x, ∂h/∂z) of each live
+// ring, the table's radial slope at r/f and its age (already in the table's
+// seconds) along its radius, times its weight, fading over the last
+// uDropRingEdgeShare of the radius it is drawn to. The lookup is averaged
+// over the pixel's footprint along the radius (acrossX, acrossY: dFdx and
+// dFdy of the world XZ), as ringSlope's is (src/shaders/scene.js), at the
+// table's mip level that footprint asks for. A pixel outside the box that
+// holds every ring's disc (uDropRingBounds) costs four comparisons, one
+// inside it a distance test per ring, one inside a ring's disc a fetch and
+// some 25 operations more. The caller branches on uDropRingCount.
+export const DROP_RING_SLOPES = /* glsl */`
+#define MAX_DROP_RINGS ${MAX_DROP_RINGS}
+uniform int uDropRingCount;
+uniform vec4 uDropRingBounds;                   // the box that holds every ring's disc: least x, z; most x, z (m)
+uniform vec4 uDropRingPlaces[MAX_DROP_RINGS];   // centre x, z (m); the radius it is drawn to (m); its size f
+uniform vec2 uDropRingTimes[MAX_DROP_RINGS];    // its age in the table's seconds; its weight (its fall's scale times its fade)
+uniform sampler2D uDropRingProfile;   // the rain's table (src/rain.js): (height in mm, radial slope) over radius and time, mipmapped
+uniform vec2 uDropRingTexels;         // its texels: radii, times
+uniform float uDropRingTableRadius;   // metres it spans
+uniform float uDropRingTableTime;     // seconds it spans
+uniform float uDropRingEdgeShare;
+vec2 dropRingSlope(vec2 worldXZ, vec2 acrossX, vec2 acrossY) {
+  vec2 slope = vec2(0.0);
+  if (any(lessThan(worldXZ, uDropRingBounds.xy)) || any(greaterThan(worldXZ, uDropRingBounds.zw))) return slope;
+  for (int index = 0; index < MAX_DROP_RINGS; index++) {
+    if (index >= uDropRingCount) break;
+    vec4 place = uDropRingPlaces[index];
+    vec2 offset = worldXZ - place.xy;
+    float distanceSquared = dot(offset, offset);
+    if (distanceSquared >= place.z * place.z) continue;
+    float distance = sqrt(distanceSquared);
+    vec2 outward = offset / max(distance, 1e-6);
+    vec2 timing = uDropRingTimes[index];
+    float rate = (uDropRingTexels.x - 1.0) / (uDropRingTexels.x * uDropRingTableRadius * place.w);   // texture u per metre
+    vec2 lookup = vec2(distance * rate + 0.5 / uDropRingTexels.x, (timing.x / uDropRingTableTime * (uDropRingTexels.y - 1.0) + 0.5) / uDropRingTexels.y);
+    float radial = textureGrad(uDropRingProfile, lookup, vec2(rate * dot(outward, acrossX), 0.0), vec2(rate * dot(outward, acrossY), 0.0)).g;
+    float edge = 1.0 - smoothstep(place.z * (1.0 - uDropRingEdgeShare), place.z, distance);
+    slope += timing.y * edge * radial * outward;
+  }
+  return slope;
 }
 `;
 
