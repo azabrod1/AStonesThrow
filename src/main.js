@@ -97,6 +97,9 @@
 // a quick tap there still throws. Before that threshold, movement turns
 // the view as usual. Once grabbed the gesture stays the object's until
 // release, which drops it from rest (src/objectGrab.js and Rock.release).
+// Held, a ring on what is under it (the water, the deck, the ice or the
+// bank) marks where it will come down, and carried through the surface it
+// wades, leaving a wake as a finger of its size does (followHeld).
 //
 // What is thrown. The Object setting (setThing, remembered on this device;
 // ?thing=) picks a kind of stone or a ball (src/things.js THINGS), and the
@@ -1809,8 +1812,9 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   const finger = new FingerInWater(water);
   let holdTimer = 0;                  // the press's timeout to dip the finger, 0 when none
   let touching = null;                // { id }: the press whose finger is in the water
-  const grab = new ObjectGrab(camera, canvas);
+  const grab = new ObjectGrab(camera, canvas, lighting.extinction);
   let grabPointer = null;
+  let heldWake = null;                // the held thing as a finger of its size (src/touch.js) while held
   const grabSurfaceAt = (x, z) => galeWaves.on ? galeSurfaceAt(x, z) : 0;
 
   /** The held thing follows a swept path, staying above the bed and deck,
@@ -1854,9 +1858,34 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     point.copy(current);
   }
 
+  /** Whether a held thing stands through the surface where the solver shows a wake: not on the bank, the ice or the deck. */
+  function wading(rock) {
+    const { x, z } = rock.position, surface = grabSurfaceAt(x, z);
+    return rock.position.y + rock.lowestOffset() < surface && rock.position.y + rock.reach * rock.radius > surface && bedDepthAt(x, z) > 0
+      && (!ice.on || Boolean(ice.holeAt(x, z))) && (!pooled || poolInside(pool.square, 0)(x, z));
+  }
+
+  /** Once a frame while a thing is held: its ring on what is under it, and its wake through the surface. */
+  function followHeld(seconds) {
+    const rock = grab.rock;
+    if (!rock) return;
+    const { x, z } = rock.position;
+    const ground = rock.ground?.at(x, z) ?? null, surface = grabSurfaceAt(x, z);
+    arc.visible = false;
+    // Wholly under the water the thing shows itself; a ring on the surface would stand apart from it.
+    marker.visible = ground !== null || rock.position.y + rock.reach * rock.radius > surface;
+    marker.scale.setScalar(Math.max(rock.radius, 0.03) / 0.055);   // the ring's inside about its size
+    marker.position.set(x, 0.004 + (ground ?? surface), z);
+    if (!wading(rock)) heldWake.lift();
+    else if (heldWake.inWater) heldWake.moveTo(x, z);
+    else heldWake.dip(x, z);
+    heldWake.advance(seconds);
+  }
+
   function endGrab() {
     if (grab.rock && ice.on) grab.rock.iceHole = ice.holeAt(grab.rock.position.x, grab.rock.position.z);
     grab.end(grabSurfaceAt, bedDepthAt);
+    heldWake = null;   // let go in the water, it is the water's again: no lift
     grabPointer = null;
     canvas.style.removeProperty('cursor');
     showAim(null);
@@ -1959,6 +1988,10 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
           grabPointer = pointerId;
           canvas.style.cursor = 'grabbing';
           showAim(null);
+          // Picked up where it is in the water, it is already wading: no dimple.
+          heldWake = new FingerInWater(water, candidate.radius);
+          if (wading(candidate)) heldWake.dip(candidate.position.x, candidate.position.z, true);
+          followHeld(0);
           lastActivity = performance.now();
         } else startTouch(pointerId, held.x, held.y);
       }, candidate ? GRAB_HOLD_MS : HOLD_MS);
@@ -2081,6 +2114,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     // The tear and breakup fronts advance once per frame, so the splash needs the frame's length first.
     splash.setFrameSeconds(frame);
     finger.advance(frame);   // the finger's wake along its path this frame (src/touch.js)
+    followHeld(frame);
     const end = simulationTime + frame;
     stepsTime = Math.max(stepsTime, simulationTime);
     const stepping = rocks.filter((rock) => rock.fading === undefined);   // a thing fading out is frozen (fadeOut)

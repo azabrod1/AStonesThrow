@@ -17,6 +17,9 @@
 // frame (a jump farther than that is spread over them, each as strong as
 // the speed allows). Splats off the solver's patch (or out of the pool) are
 // refused, so the caller keeps the finger FINGER.margin inside it.
+// A thing carried through the surface (src/main.js, a held thing's wake) is
+// a finger of its own `radius`, its dimple, bump and push scaled with it;
+// picked up where it already was in the water, it enters without a dimple.
 //
 // Pure bookkeeping with no Three.js, so tools can drive it in Node.
 export const FINGER = {
@@ -31,8 +34,10 @@ export const FINGER = {
 };
 
 export class FingerInWater {
-  constructor(water) {
+  constructor(water, radius = FINGER.radius) {
     this.water = water;
+    this.radius = radius;
+    this.scale = radius / FINGER.radius;   // the dimple, bump and push grow with the size
     this.position = null;   // { x, z } while in the water
     this.target = null;
     this.travelled = 0;     // path since the last splat pair, m
@@ -40,12 +45,12 @@ export class FingerInWater {
 
   get inWater() { return this.position !== null; }
 
-  /** Dip in at (x, z). */
-  dip(x, z) {
+  /** Dip in at (x, z); quietly (no dimple) for one already in the water. */
+  dip(x, z, quietly = false) {
     this.position = { x, z };
     this.target = { x, z };
     this.travelled = 0;
-    this.water.addSplat({ x, z, radius: 1.3 * FINGER.radius, height: -FINGER.dip });
+    if (!quietly) this.water.addSplat({ x, z, radius: 1.3 * this.radius, height: -FINGER.dip * this.scale });
   }
 
   /** Where the finger is wanted next (it gets there at the next advance). */
@@ -63,12 +68,12 @@ export class FingerInWater {
     const speed = Math.min(distance / seconds, FINGER.fastest);
     const directionX = alongX / distance, directionZ = alongZ / distance;
     const pairs = Math.min(Math.floor((this.travelled + distance) / FINGER.spacing), FINGER.mostSplats);
-    const height = FINGER.push * speed;
+    const height = FINGER.push * this.scale * speed;
     for (let pair = 1; pair <= pairs; pair++) {
       const share = pair / pairs;
       const x = fromX + alongX * share, z = fromZ + alongZ * share;
-      this.water.addSplat({ x: x + directionX * FINGER.radius, z: z + directionZ * FINGER.radius, radius: FINGER.radius, height, rim: 1 });
-      this.water.addSplat({ x, z, radius: FINGER.radius, height: -height, rim: 1 });
+      this.water.addSplat({ x: x + directionX * this.radius, z: z + directionZ * this.radius, radius: this.radius, height, rim: 1 });
+      this.water.addSplat({ x, z, radius: this.radius, height: -height, rim: 1 });
     }
     this.travelled = pairs > 0 ? 0 : this.travelled + distance;
     this.position = { ...this.target };
@@ -77,7 +82,7 @@ export class FingerInWater {
   /** Lift out where it is. */
   lift() {
     if (!this.inWater) return;
-    this.water.addSplat({ x: this.position.x, z: this.position.z, radius: 1.3 * FINGER.radius, height: FINGER.lift });
+    this.water.addSplat({ x: this.position.x, z: this.position.z, radius: 1.3 * this.radius, height: FINGER.lift * this.scale });
     this.position = null;
     this.target = null;
   }

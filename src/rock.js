@@ -1761,7 +1761,7 @@ export class Rock {
     this.cavityTimes = null;
     this.seenThroughWater.value = 1;
     this.heldGlow = this.meshes.map((mesh) => mesh.material.emissive.clone());
-    for (const mesh of this.meshes) mesh.material.emissive.add(new THREE.Color(0.055, 0.09, 0.1));
+    for (const mesh of this.meshes) mesh.material.emissive.addScalar(0.03);   // a little brighter (the ring under it says it is held)
     this.moveHeld(this.position, this.drawn.surface, this.drawn.bedDepth);
   }
 
