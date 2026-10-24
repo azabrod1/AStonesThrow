@@ -835,7 +835,8 @@ its haze is whiter (0.85 to 0.9 of the cloud against rain's 0.6) and
 thicker (1.5 km, 400 m, 150 m to see). A snowflake meets the water at about
 1 m/s, weighing milligrams: it melts and leaves no ring, so the water is
 left as the wind has it. The flakes are one instanced draw in a box about
-the eye (16, 40 and 60 thousand of them), each falling at its terminal
+the eye (16, 120 and 180 thousand of them: heavy snow's and a blizzard's
+as many as their haze implies), each falling at its terminal
 speed (0.9 to 1.1 m/s, give or take a fifth), carried at the wind's speed,
 swaying on a small ellipse and tossed by gusts of 0.3 of the wind, drawn as
 the capsule it sweeps in 1/120 s: round in still air, a streak in a

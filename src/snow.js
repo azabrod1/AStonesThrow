@@ -28,7 +28,14 @@
 // fainter, so far flakes thin into the haze rather than flicker. `sizes` is
 // the smallest and largest flake across (m): light snow's single crystals
 // and small clumps, heavy snow's aggregates. `flakes` fill the box; the
-// haze (the weather's visibility) carries the snow on beyond it. The
+// haze (the weather's visibility) carries the snow on beyond it. Heavy
+// snow's and a blizzard's are about as many as their haze implies: their
+// flakes alone, each hiding what is behind its own area, would let one see
+// about 430 m and 240 m (the haze's 400 m and 150 m; tools/snow-probe.mjs
+// prints it), where fewer read as a moderate fall. Real heavy snow has
+// some thousand flakes a cubic metre, most too small to draw. The
+// near ones make a fall look heavy, so a deeper box with as many flakes
+// looks thinner, not thicker. The
 // shader never multiplies the clock, which runs on as long as the page is
 // open: update() wraps the wind's carry and the fall into the box, and the
 // clock to CYCLE, in doubles (Precision, src/shaders/snow.js). The carry is
@@ -48,8 +55,8 @@ import { FLAKE_VERTEX, FLAKE_FRAGMENT, SPEED_STEPS, SPEED_SHARE, CYCLE } from '.
 
 export const SNOW = {
   light: { flakes: 16000, box: [16, 8, 16], fall: 0.9, sizes: [0.004, 0.012], sway: 0.05, swayPeriods: [1.2, 2.6], opacity: 0.9 },
-  heavy: { flakes: 40000, box: [16, 8, 16], fall: 1.1, sizes: [0.006, 0.022], sway: 0.08, swayPeriods: [1.0, 2.2], opacity: 0.9 },
-  blizzard: { flakes: 60000, box: [12, 6, 12], fall: 1.0, sizes: [0.004, 0.016], sway: 0.04, swayPeriods: [0.8, 1.6], opacity: 1 },
+  heavy: { flakes: 120000, box: [16, 8, 16], fall: 1.1, sizes: [0.006, 0.022], sway: 0.08, swayPeriods: [1.0, 2.2], opacity: 0.9 },
+  blizzard: { flakes: 180000, box: [12, 6, 12], fall: 1.0, sizes: [0.004, 0.016], sway: 0.04, swayPeriods: [0.8, 1.6], opacity: 1 },
 };
 export const STREAK_SECONDS = 1 / 120;  // a quarter of the rain's persistence (src/rain.js): the eye follows a flake falling a metre a second
 export const STREAK_MIN_PIXELS = 1.2;
@@ -68,13 +75,22 @@ export function flakeSpeed(sizeAttribute) {
 
 /**
  * Flake `index`'s two attributes (aFlake, aSway), each four numbers in
- * [0, 1) from one seeded stream: the same flakes every run.
+ * [0, 1) from one seeded stream: the same flakes every run. The stream
+ * is Park–Miller's (state × 16807 mod 2³¹ − 1), its product split in
+ * 32-bit halves (Carta's), the same numbers in 0.6 of the time of a
+ * floating-point modulo: built at startup, a blizzard's are 1.4 million.
  */
 export function flakeAttributes(count) {
   const flakes = new Float32Array(count * 4);
   const sways = new Float32Array(count * 4);
   let state = 20261021;
-  const random = () => { state = (state * 16807) % 2147483647; return (state - 1) / 2147483646; };
+  const random = () => {
+    let low = 16807 * (state & 0xffff);
+    const high = 16807 * (state >>> 16);
+    low += ((high & 0x7fff) << 16) + (high >>> 15);
+    state = low > 0x7fffffff ? low - 0x7fffffff : low;
+    return (state - 1) / 2147483646;
+  };
   for (let index = 0; index < count * 4; index++) { flakes[index] = random(); sways[index] = random(); }
   return { flakes, sways };
 }

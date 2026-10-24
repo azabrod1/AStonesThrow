@@ -17,7 +17,8 @@
 // - a change of wind while it snows moves the flakes by a frame's carry, not
 //   all at once, and the gusts follow it over a second or two;
 // - the box reaches the water however high the eye;
-// - the box: each intensity's flakes per cubic metre, and how many are drawn
+// - the box: each intensity's flakes per cubic metre, the visibility they
+//   alone would give (against its haze's, src/main.js WEATHERS), and how many are drawn
 //   larger than a pixel in the home view (1080 rows, 50° up and down);
 // - the cost of the CPU's part, the uniforms a frame.
 import { SNOW, STREAK_SECONDS, STREAK_MIN_PIXELS, GUST_SHARE, flakeAt, flakeDrawn, flakeAttributes, flakeSpeed, clockOffsets } from '../src/snow.js';
@@ -89,7 +90,13 @@ for (const [name, snow] of Object.entries(SNOW)) {
     const size = snow.sizes[0] + (snow.sizes[1] - snow.sizes[0]) * all.flakes[index * 4 + 3] ** 2;
     if (size * FOCAL / depth >= 1) resolved++;
   }
-  console.log(`     ${(snow.flakes / volume).toFixed(1)} flakes per m³; ${inView} in the home view, ${resolved} of them over a pixel across`);
+  // The visibility the flakes alone give (3 over their extinction, as src/sky.js reckons the haze's): each hides
+  // its own area (a millimetre's diffraction is too narrow a cone to dim what is behind), its diameter that of
+  // FLAKE_VERTEX, small + Δ w² for w even in [0, 1), whose square averages small² + 2 small Δ/3 + Δ²/5.
+  const [small, large] = snow.sizes, spread = large - small;
+  const meanArea = Math.PI / 4 * (small * small + 2 * small * spread / 3 + spread * spread / 5);
+  const ownVisibility = 3 / (snow.flakes / volume * meanArea);
+  console.log(`     ${(snow.flakes / volume).toFixed(1)} flakes per m³, alone ${ownVisibility.toFixed(0)} m to see; ${inView} in the home view, ${resolved} of them over a pixel across`);
   check(resolved > 150, `${name}: over 150 flakes a pixel or more across in the home view (${resolved})`);
 }
 
