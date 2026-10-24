@@ -688,8 +688,9 @@ ${SNOW_COVER}
 // the water through its surface spreads over a wider cone, and only some of
 // it comes back off the surface's underside), and churned: two octaves of
 // value noise, sliding FOAM_CHURN_SPEED each its own way, vary the light it
-// sends back by up to FOAM_CHURN either way, so a big boil heaves in lumps
-// rather than glowing as a ring. A pebble's boil, under the hold, is nearly
+// sends back by up to FOAM_CHURN either way (a dense cloud's brightest lumps
+// held at a deep cloud's, so its mean dims a little), so a big boil heaves
+// in lumps rather than glowing as a ring. A pebble's boil, under the hold, is nearly
 // all surface, a fizz; a big stone's is mostly cloud. tools/foam-probe.mjs
 // checks the hold, the deep cloud's colour on every Water setting, the churn's
 // spread and the fresh layer's opacity. Cost: the map is read once, as
@@ -756,10 +757,12 @@ export const FOAM_PATTERN = /* glsl */`
 #define FOAM_CLOUD_HALF 0.07               // the cloud's map value that sends back half what a deep cloud does (Kubelka–Munk)
 #define FOAM_CLOUD_SCATTER 5.0             // per metre: the cloud's Kubelka–Munk scattering, against the water's absorption
 #define FOAM_CLOUD_LIGHT 0.38              // a deep cloud's light out through the surface, against white foam's under the same light
-#define FOAM_CHURN 0.8                     // the light the cloud sends back varies by up to this share either way, over lumps...
+#define FOAM_CHURN 0.8                     // the light the cloud sends back varies by up to this share either way (never past a deep cloud's), over lumps...
 #define FOAM_CHURN_FREQUENCY 10.0          // ...of this (per metre, about 10 cm across) and 2.7 times it...
 #define FOAM_CHURN_SPEED 0.05              // ...each sliding this fast (m/s) its own way, so the lumps change as they cross
 
+// tools/foam-probe.mjs twins these two (surfaceShare, the deep cloud's colour,
+// the churn): change both.
 // A splash's boil on fresh water (the header's last paragraph): the share the
 // surface holds, drawn by foamLook, a soft minimum of the boil and
 // FOAM_BOIL_HOLD, boil·(1 + (boil/hold)⁴)^(−1/4): all of a faint boil, at
@@ -776,7 +779,7 @@ vec3 freshBoilCloud(vec3 refracted, float cloud, vec3 light, vec3 absorb, vec2 p
   vec2 slide = FOAM_CHURN_SPEED * time * vec2(0.8, 0.6);
   // Two octaves of value noise, about 0.5 ± 0.15, stretched to fill 0 to 1.
   float churn = smoothstep(0.3, 0.7, 0.65 * valueNoise((position + slide) * FOAM_CHURN_FREQUENCY + 71.3) + 0.35 * valueNoise((position - slide.yx) * 2.7 * FOAM_CHURN_FREQUENCY + 13.1));
-  float sentBack = cloud / (cloud + FOAM_CLOUD_HALF) * clamp(1.0 + FOAM_CHURN * (2.0 * churn - 1.0), 0.0, 1.0 / max(cloud / (cloud + FOAM_CLOUD_HALF), 1e-3));
+  float sentBack = clamp(cloud / (cloud + FOAM_CLOUD_HALF) * (1.0 + FOAM_CHURN * (2.0 * churn - 1.0)), 0.0, 1.0);
   vec3 ratio = absorb / FOAM_CLOUD_SCATTER;
   vec3 deep = 1.0 + ratio - sqrt(ratio * ratio + 2.0 * ratio);
   return mix(refracted, FOAM_CLOUD_LIGHT * deep * light, sentBack);

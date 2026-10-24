@@ -265,7 +265,7 @@ export function createWaterSurface(water, lighting, ambientWaves, { meshSegments
     cavityUnderMaterial,
     /** The bed the surface mirrors from below: the floor's uniforms (src/pondFloor.js), shared. */
     setBed(floorUniforms) {
-      for (const name of ['uShore', 'uLand', 'uBank', 'uPattern', 'uAbsorb']) underUniforms[name] = floorUniforms[name];
+      for (const name of ['uShore', 'uLand', 'uBank', 'uPattern']) underUniforms[name] = floorUniforms[name];
     },
     /** Draw the patch and the sheet as seen from under the water (true), or from above again (false). */
     fromBelow(below) {

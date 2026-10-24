@@ -267,42 +267,50 @@ check(Math.abs(mean(samples.film) - defines.FOAM_FILM_MEAN) < 0.02, `mean film o
 // scatters more than a drained raft's single layer of films. A splash's boil
 // on fresh water is no froth at all: with no salt to hold them apart its
 // bubbles never pack, surfacing one layer deep with clear films and bursting
-// (freshFraction 1), so it scatters less than either.
-let materialIsBounded = true, denseKeepsFill = true, raftCover = 0, boilCover = 0, raftOpacity = 0, boilOpacity = 0, freshCover = 0, freshOpacity = 0;
+// (freshFraction 1), so it scatters less than either. It is compared at
+// FOAM_BOIL_HOLD, the most of a fresh boil the surface ever holds, against a
+// raft of that map value.
+let materialIsBounded = true, denseKeepsFill = true, raftCover = 0, boilCover = 0, raftOpacity = 0, boilOpacity = 0;
+let thinRaftCover = 0, thinRaftOpacity = 0, freshCover = 0, freshOpacity = 0;
 for (let index = 0; index < 1000; index++) {
   const worldX = seededRandom() * 2, worldZ = seededRandom() * 2;
   const across = [0.0001, 0, 0, 0.0001];
   const raftLook = foamLook(worldX, worldZ, across, 0.2, true, 0);
   const boilLook = foamLook(worldX, worldZ, across, 0.2, true, 1);
-  const freshLook = foamLook(worldX, worldZ, across, 0.2, true, 1, 1);
+  const thinRaftLook = foamLook(worldX, worldZ, across, defines.FOAM_BOIL_HOLD, true, 0);
+  const freshLook = foamLook(worldX, worldZ, across, defines.FOAM_BOIL_HOLD, true, 1, 1);
   const denseLook = foamLook(worldX, worldZ, across, 1, true, 1);
-  materialIsBounded &&= [raftLook, boilLook, freshLook, denseLook].every((look) => Number.isFinite(look.opacity) && look.opacity >= 0 && look.opacity <= 1);
+  materialIsBounded &&= [raftLook, boilLook, thinRaftLook, freshLook, denseLook].every((look) => Number.isFinite(look.opacity) && look.opacity >= 0 && look.opacity <= 1);
   denseKeepsFill &&= denseLook.opacity >= defines.FOAM_THIN_OPACITY;
   raftCover += raftLook.cover / 1000;
   boilCover += boilLook.cover / 1000;
+  thinRaftCover += thinRaftLook.cover / 1000;
   freshCover += freshLook.cover / 1000;
   raftOpacity += raftLook.opacity * raftLook.cover / 1000;   // the foam's opacity where there is foam
   boilOpacity += boilLook.opacity * boilLook.cover / 1000;
+  thinRaftOpacity += thinRaftLook.opacity * thinRaftLook.cover / 1000;
   freshOpacity += freshLook.opacity * freshLook.cover / 1000;
 }
 check(materialIsBounded, 'wet-film opacity stays finite and in [0, 1]');
 check(boilOpacity / boilCover >= raftOpacity / raftCover && denseKeepsFill, `a breaking wave's churned froth scatters more than a drained raft (opacity ${(boilOpacity / boilCover).toFixed(3)} against ${(raftOpacity / raftCover).toFixed(3)}); thick foam keeps its opaque fill`);
-check(freshOpacity / freshCover < 0.75 * raftOpacity / raftCover, `a fresh-water boil's single layer of clear bubbles scatters less than either (opacity ${(freshOpacity / freshCover).toFixed(3)}, under three quarters of the raft's)`);
-check(Math.abs(raftCover - boilCover) < 0.06, `a boil's bubbles cover about what a raft's lace does at the same map value (raft ${raftCover.toFixed(3)}, boil ${boilCover.toFixed(3)}; fresh water's, lumped less, ${freshCover.toFixed(3)})`);
+check(Math.abs(raftCover - boilCover) < 0.06, `a boil's bubbles cover about what a raft's lace does at the same map value (raft ${raftCover.toFixed(3)}, boil ${boilCover.toFixed(3)})`);
+check(freshOpacity / freshCover < 0.75 * thinRaftOpacity / thinRaftCover, `at FOAM_BOIL_HOLD a fresh-water boil's single layer of clear bubbles scatters less than a raft (opacity ${(freshOpacity / freshCover).toFixed(3)} against ${(thinRaftOpacity / thinRaftCover).toFixed(3)}; cover ${freshCover.toFixed(3)} against ${thinRaftCover.toFixed(3)})`);
 
-// A splash's boil divided (freshBoilSurface, freshBoilCloud in the shader):
-// the surface holds at most FOAM_BOIL_HOLD of it, and a faint boil, a
-// pebble's fizz, all of it; the rest is the cloud under the surface. The
+// A splash's boil divided (freshBoilSurface, freshBoilCloud in the shader,
+// whose twins these are: change both, as for foamLook): the surface's share
+// rises with the boil to FOAM_BOIL_HOLD and no further, all of a faint boil,
+// a pebble's fizz; the rest is the cloud under the surface. The
 // deep cloud's colour, per Water setting (WATER_CLARITIES in src/main.js),
 // is the Kubelka–Munk R∞ of the water's absorption against the cloud's
 // scattering: pale, never brighter than white, and losing most where the
 // water absorbs most (the red; a green pond's blue too). The churn's
-// stretched noise must keep the cloud's mean light (its median about 0.5)
-// while varying it enough to show as lumps.
+// stretched noise is centred (its median about 0.5), so a thin cloud keeps
+// its mean light, and varies enough to show as lumps.
 {
   const surfaceShare = (boil) => boil * (1 + (boil / defines.FOAM_BOIL_HOLD) ** 4) ** -0.25;
-  const held = Math.max(...[0.5, 1, 2, 5, 20].map((times) => surfaceShare(times * defines.FOAM_BOIL_HOLD)));
-  check(held <= defines.FOAM_BOIL_HOLD, `the surface holds at most ${held.toFixed(4)} of a boil (FOAM_BOIL_HOLD ${defines.FOAM_BOIL_HOLD})`);
+  const shares = [0.25, 0.5, 1, 2, 5, 20, 100].map((times) => surfaceShare(times * defines.FOAM_BOIL_HOLD));
+  const rising = shares.every((share, index) => index === 0 || share > shares[index - 1]);
+  check(rising && Math.abs(shares.at(-1) / defines.FOAM_BOIL_HOLD - 1) < 0.01, `the surface's share rises with the boil to ${shares.at(-1).toFixed(4)} at 100 times FOAM_BOIL_HOLD (${defines.FOAM_BOIL_HOLD}), ${(shares[4] / defines.FOAM_BOIL_HOLD).toFixed(3)} of it at 5 times`);
   const faint = surfaceShare(0.5 * defines.FOAM_BOIL_HOLD) / (0.5 * defines.FOAM_BOIL_HOLD);
   check(faint > 0.98, `a boil of half that is ${(100 * faint).toFixed(1)}% surface: a faint fizz has no cloud to speak of`);
   const mainSource = readFileSync(path.join(root, 'src/main.js'), 'utf8');
