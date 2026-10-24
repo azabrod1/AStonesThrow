@@ -55,8 +55,10 @@
 // of a disc into a ring and keeps its amount), and is stamped by splashes and
 // by fast surface motion; FOAM_FRAGMENT says how. The water shader turns the
 // amount into a bubble pattern (FOAM_PATTERN in src/shaders/scene.js), about
-// 90% covered at 0.5, half at 0.1 and nothing below FOAM_PRESENT ≈ 0.001, the
-// pattern drifting with the map: foamUniforms.uFoamDrift is how far the wind
+// 90% covered at 0.5, half at 0.1 and nothing below FOAM_PRESENT ≈ 0.001 (a
+// splash's boil, past what the surface holds, as the cloud of bubbles under
+// it instead, a milky tint of the water seen through it), the pattern
+// drifting with the map: foamUniforms.uFoamDrift is how far the wind
 // has carried it since the map was last cleared, foamUniforms.uFoamVelocity
 // the drift's velocity, which the specks ride too.
 //

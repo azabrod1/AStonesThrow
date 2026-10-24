@@ -175,6 +175,7 @@ export function createWaterSurface(water, lighting, ambientWaves, { meshSegments
     uCell: water.gridUniforms.uCell,
     uExtinction: { value: lighting.extinction },
     uWaterColor: { value: lighting.waterColor },
+    uAbsorb: { value: lighting.absorb },
     uRoughness: { value: 0.07 },
     uDomainMin: { value: new THREE.Vector2(water.domainMin[0], water.domainMin[1]) },
     uDomainSize: { value: water.domainSize },
@@ -266,7 +267,7 @@ export function createWaterSurface(water, lighting, ambientWaves, { meshSegments
     cavityUnderMaterial,
     /** The bed the surface mirrors from below: the floor's uniforms (src/pondFloor.js), shared. */
     setBed(floorUniforms) {
-      for (const name of ['uShore', 'uLand', 'uBank', 'uPattern', 'uAbsorb']) underUniforms[name] = floorUniforms[name];
+      for (const name of ['uShore', 'uLand', 'uBank', 'uPattern']) underUniforms[name] = floorUniforms[name];
     },
     /** Draw the patch and the sheet as seen from under the water (true), or from above again (false). */
     fromBelow(below) {
