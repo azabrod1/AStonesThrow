@@ -15,10 +15,10 @@
 //   optics  (optics pass, summed: additive in all four channels)
 //           r the water a ray crosses (metres), g coverage (the share of the
 //           pixel and of the exposure that water covers), b the drops' sun
-//           glints (radiance over the sun's irradiance) and a the crown's
-//           aeration (its rim bead and torn edges, and its froth,
-//           src/shaders/sheet.js), the share of its light scattered white,
-//           times its share of the pixel, as the coverage is.
+//           glints (radiance over the sun's irradiance) and a the aeration
+//           (the crown's rim bead, torn edges and froth, and a column's
+//           bubbly water, src/shaders/sheet.js), the share of its light
+//           scattered white, times its share of the pixel, as the coverage is.
 //
 // Droplets. Sphere impostors stretched along their motion into capsules, as a
 // camera's shutter would smear them (half a frame, uStreakSeconds). A drop
@@ -556,13 +556,15 @@ void main() {
       vec3 surface = mix(refracted, reflected, fresnel);
       // The sheet and the column glitter as the pond does; a drop's glints are in the optics.
       if (sheet + column > 0.5) surface += min(sunGlitter(worldNormal, worldToViewer, sunWorld, uSunIrradiance, WATER_SLOPE_VARIANCE), vec3(GLITTER_CAP));
-      // The rim bead, torn edges and froth are aerated: a white scattering, brightest towards the sun.
+      // The rim bead, torn edges and froth, and a column's bubbly water, are aerated: a white scattering, brightest towards the sun.
       float forward = pow(clamp(0.5 - 0.5 * dot(toViewer, uSunDirView), 0.0, 1.0), 6.0);
       vec3 scattering = vec3(0.85, 0.88, 0.90) * (uSkyAmbient * 1.2 + uSunIrradiance * (0.08 + 0.7 * forward));
       // Where holes or the sheet's edge cover part of a pixel, the optics carry that share in the
       // aeration as in the coverage, and the alpha applies it: divide it out of the aeration.
       float aeration = optics.a / max(min(coverage, 1.0), 1e-3);
-      surface = mix(surface, scattering, sheet * clamp(aeration, 0.0, 1.0));
+      // A column's white water is a body, not a film: lit by the sky and shaded by the sun on its side.
+      vec3 columnScattering = scattering * (0.55 + 0.45 * clamp(dot(worldNormal, sunWorld), 0.0, 1.0));
+      surface = mix(surface, mix(scattering, columnScattering, column), (sheet + column) * clamp(aeration, 0.0, 1.0));
       float drop = 1.0 - sheet - column;
       // On-screen radius in device pixels: a drop's from the depth pass, a column's from the water across it.
       float deviceRadius = mix(info.g, 0.5 * thickness / max(normal.z, 0.3) * uProjScale / info.r, column) / uFluidScale;
