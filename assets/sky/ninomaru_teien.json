@@ -1,30 +1,30 @@
 {
-  "source": "ninomaru_teien_2k.hdr",
-  "width": 2048,
-  "height": 1024,
+  "source": "ninomaru_teien_4k.hdr",
+  "width": 4096,
+  "height": 2048,
   "sun": {
-    "elevation": 19.44,
-    "azimuth": 215.79,
+    "elevation": 19.46,
+    "azimuth": 215.82,
     "direction": [
-      0.76489,
-      0.33276,
-      0.55155
+      0.76454,
+      0.33314,
+      0.55181
     ],
-    "pixels": 77
+    "pixels": 266
   },
   "sunIrradiance": [
-    0.5886,
-    0.52769,
-    0.44773
+    0.55098,
+    0.49776,
+    0.42739
   ],
   "skyRadiance": [
-    1.321,
-    1.4676,
-    1.7684
+    1.3252,
+    1.471,
+    1.7708
   ],
   "horizonRadiance": {
-    "median": 0.10804,
-    "p90": 0.42397
+    "median": 0.1027,
+    "p90": 0.42639
   },
-  "maxLuminance": 1565.5
+  "maxLuminance": 1742.2
 }

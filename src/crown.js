@@ -80,9 +80,10 @@
 // it, from BEAD_SEED of the drop it will shed (the rim's own thickening) to
 // all of it. The drop is BEAD_RIM times the rim's thickness there then (a
 // ligament pinches into drops about that big; within the sheet's drops' range,
-// each off by up to BEAD_JITTER): on a 16 cm stone's crown beads of 2.5 to 7
-// mm radius, which it sheds, sixty-odd before it tears; on a 3 cm stone's 1 to
-// 2.5 mm, a few shed. It is drawn as a droplet at the tip
+// each off by up to BEAD_JITTER): on a 3 cm stone's 1 to 2.5 mm, a few shed;
+// on a 16 cm stone's crown the rim gathers 2.5 to 7 mm's worth a bead,
+// sixty-odd before it tears, drawn at most DROP_CEILING and each leaving as
+// several drops (up to about ten; Drop sizes, below). It is drawn as a droplet at the tip
 // (SplashSystem.prepareFrame takes them through beadsInto), so it is the round
 // glass bead a drop is, on a finger shaded as a rod of water (aRod,
 // src/shaders/sheet.js), its normal leaning across it (FINGER_LEAN). When the
@@ -175,22 +176,23 @@
 // The torn part becomes droplets that carry the local (decayed) sheet
 // velocity, each holding the volume of the patch of sheet it came from, so the
 // drops come out about the size the sheet's thickness implies, between
-// CROWN_DROP_FLOOR and CROWN_DROP_CAP (1 and 5.5 mm) for a 3 cm stone; its
-// fingers shed their beads, the fan's and a landing crown's crests drops of
-// RIM_DROP_RADIUS and up. Besides its drop each torn patch throws spray
-// (src/spray.js), the film between the ligaments that a real sheet's holes
-// tear into drops under a millimetre: SPRAY_SHARE_FLOOR of the patch's water
-// for the gentlest sheet, rising with its violence (the froth's, below) by
-// SPRAY_SHARE_GAIN·violence^SPRAY_SHARE_POWER (a third for the reference
-// throw, half for a 16 cm stone, three quarters for a rock), in drops of
-// SPRAY_SIZE times the sheet's thickness there on average, spread over the
-// patch and kicked by the Taylor–Culick speed sqrt(2σ / ρh) at which a hole's
-// rim runs back through a film h thick (a landing drop's crown throws none:
-// too small and slow to be worth its sprites). A bead that pinches off leaves
-// SATELLITES satellites of about SATELLITE_SIZE of its radius, kicked at its
-// capillary speed, and a seal's spike throws SEAL_FINE finer drops. The spray
-// draws from a stream of the crown's own, seeded by the tear's phase, so it
-// spends no draw of Math.random. For a 3 cm stone dropped straight in at 6.3 m/s
+// CROWN_DROP_FLOOR and CROWN_DROP_CAP (1 and 5.5 mm) for a 3 cm stone, a
+// patch holding more than a drop of DROP_CEILING breaking into several
+// (Drop sizes, below); its fingers shed their beads, the fan's and a landing
+// crown's crests drops of RIM_DROP_RADIUS and up. Besides its drop each torn
+// patch throws spray (src/spray.js), the film between the ligaments that a
+// real sheet's holes tear into drops under a millimetre: SPRAY_SHARE_FLOOR of
+// the patch's water for the gentlest sheet, rising with its violence (the
+// froth's, below) by SPRAY_SHARE_GAIN·violence^SPRAY_SHARE_POWER (a third for
+// the reference throw, half for a 16 cm stone, three quarters for a rock), in
+// drops of SPRAY_SIZE times the sheet's thickness there on average, spread
+// over the patch and kicked by the Taylor–Culick speed sqrt(2σ / ρh) at which
+// a hole's rim runs back through a film h thick (a landing drop's crown throws
+// none: too small and slow to be worth its sprites). A bead that pinches off
+// leaves SATELLITES satellites of about SATELLITE_SIZE of its radius, kicked
+// at its capillary speed, and a seal's spike throws SEAL_FINE finer drops.
+// The spray draws from a stream of the crown's own, seeded by the tear's
+// phase, so it spends no draw of Math.random. For a 3 cm stone dropped straight in at 6.3 m/s
 // the sheet stands whole for 90 ms, its rim peaking 11 cm up at 90 ms, 8 cm
 // out (the reference: 11 to 12 cm at 0.1 s, 8 to 10 cm out), and is gone by
 // 150 ms; thrown at 42° from vertical its forward side stands taller, 13 to
@@ -209,16 +211,38 @@
 // needs). The launch speed does not change with R, so a big stone's rim flies
 // nearly ballistic, up to u²/2g, and a small one's is held near u·τd: the rim's
 // height grows about as R for small stones and more slowly for big ones. Its
-// drops hold the volume of a sheet h0 thick over an area ∝ R² shared among a
-// count ∝ s^1.6 (SplashSystem.impact), so their radii, the caps on them
-// included, go as s^DROP_SIZE_POWER (s^0.47 by that count). Thrown at about
+// patches hold the volume of a sheet h0 thick over an area ∝ R² shared among
+// a count ∝ s^1.6 (SplashSystem.impact), so the lumps they make, the caps on
+// them included, go as s^DROP_SIZE_POWER (s^0.47 by that count); the drops
+// do not (Drop sizes, below). Thrown at about
 // 6.3 m/s, 42° from vertical and sealing deep, a 1.5 cm stone's sheet
 // reaches about 5 cm up and is gone by 96 ms (sealing at the surface, as it
 // nearly always does, it closes into a dome 1 cm high); a 4 cm stone's 11 cm, a 6 cm
 // stone's 14 cm (11 cm dropped straight in); a 16 cm stone's sheet is 4 mm
 // thick, stands for 160 ms with its rim 25 to 40 cm high, nearly ballistic,
-// is gone by 256 ms and tears into drops of 2.5 to 9 mm
-// (tools/splash-probe.mjs measures these).
+// is gone by 256 ms and tears into lumps of up to 9 mm, which fly as about
+// 1960 drops of 2.4 to 4 mm (tools/splash-probe.mjs measures these).
+//
+// Drop sizes. No drop flies bigger than DROP_CEILING (4 mm in radius),
+// whatever the sheet's thickness says: surface tension holds a free drop
+// together over the capillary length sqrt(σ/ρg) = 2.7 mm, which does not
+// grow with the stone, and air and its own wobble break a bigger lump within
+// tens of milliseconds (the biggest raindrops are about 3 mm; a splash's
+// lumps fly slower and not as long, so they may be a little bigger). So a
+// torn patch, a finger's bead or a crest's drop that would be bigger breaks
+// into drops of LUMP_PIECE_LEAST to 1 times DROP_CEILING that hold its water
+// (breakLump), spread over where it came from: a big stone's sheet tears into
+// more drops, not bigger ones. The extra drops come out of the splash's cap
+// (spareDroplets: CROWN_DROPLET_CAP or FAN_DROPLET_CAP in src/splash.js less
+// the drops the sheet was given), earned by the rim's and the tear's drops
+// alike as they come, so they are spread over the whole sheet; where they
+// run out a lump flies as one drop of at most DROP_CEILING and the rest of
+// its water is lost, the cap being the cost's limit. A 3 cm stone's sheet
+// needs few (a handful of its patches are over 4 mm); a 16 cm stone's, on
+// High (crownDrops 3500 in src/main.js), loses about a tenth of its water
+// (445 of some 500 ml flies), on Medium and Low (2000) about 40% (290 ml);
+// a 30 cm stone's about 88% on High (490 of 4000 ml). The fan's drops and a
+// landing crown's are far under the ceiling.
 //
 // A large drop landing makes a small crown of its own, the classic
 // drop-impact crown: the same model with the drop's radius and landing speed
@@ -232,8 +256,8 @@
 // waves (aRide), since most drops land on water the splash has disturbed. It
 // keeps the 3 cm stone's drag and drain times and h0 = 1.5 mm·sqrt(R / 3 cm),
 // which is what it was tuned with (a drop's crown is no stone's scaled down). A
-// jet's 7 mm drop landing at 2.2 m/s stands whole for 19 ms, its rim then
-// 14 mm up and 43 mm across, and is gone by 31 ms.
+// 4 mm drop (DROP_CEILING, the biggest) landing at 2.2 m/s stands whole for
+// 11 ms, its rim then 10 mm up and 23 mm across, and is gone by 17 ms.
 //
 // An oblique entry also throws a forward fan (`fan`, made by the splash when
 // more than 0.3 of the entry speed is horizontal), a thin fast sheet ahead
@@ -313,6 +337,13 @@ const CROWN_DROP_CAP = 0.0055;     // it tears into drops of at most this...
 const CROWN_DROP_FLOOR = 0.001;    // ...and at least this (both times (R / 3 cm)^DROP_SIZE_POWER)
 const RIM_DROP_RADIUS = 0.0015;    // the fan's and a landing crown's crests shed drops of this...
 const RIM_DROP_SPREAD = 0.0025;    // ...to this much more (the same scaling; a landing crown's as (R / 3 cm)^0.4)
+// No drop flies bigger than this (radius, m), whatever threw it (the header's
+// "Drop sizes"): surface tension holds a free drop together only up to a few
+// capillary lengths (sqrt(σ/ρg) = 2.7 mm); the biggest raindrops are about
+// 3 mm in radius, and a splash's lumps, flying slower than a raindrop falls
+// and for a few tenths of a second, can be a little bigger before they break.
+export const DROP_CEILING = 0.004;
+const LUMP_PIECE_LEAST = 0.6;      // a lump too big to fly whole breaks into drops of this to 1 times the largest allowed, in radius
 const TAIL_THICKNESS = 0.6;        // tail material leaves the ring at this fraction of h0
 const MIN_THICKNESS = 0.0002;
 const BEAD_END = 0.08;             // the bead is the material of the first 8% of T
@@ -407,6 +438,41 @@ const smoothstep = (edgeLow, edgeHigh, value) => {
 };
 
 /**
+ * A lump of water too big to fly as one drop (bigger than `largest`, which is
+ * at most DROP_CEILING; the header's Drop sizes) breaks into drops that hold
+ * its volume: each LUMP_PIECE_LEAST to 1 times `largest` in radius at random,
+ * the last two sharing what is left, so none is a speck. At most `allowed`
+ * drops (at least one; the callers' drop budgets, kept for cost): the last of
+ * them is as random as the rest, and whatever is left is lost. They start
+ * within `spread` of the lump's centre `from` (x, y, z) with its velocity
+ * (vx, vy, vz) give or take `scatter` m/s; `random` gives 0 to 1, and
+ * `spawn(x, y, z, vx, vy, vz, radius)` makes a drop. Returns how many it made.
+ */
+export function breakLump(from, radius, largest, allowed, spread, scatter, random, spawn) {
+  const least = LUMP_PIECE_LEAST * largest;
+  let left = radius ** 3;
+  let count = 0;
+  while (left > 0 && count < allowed) {
+    let piece;
+    if (left <= largest ** 3) piece = Math.cbrt(left);
+    else if (count === allowed - 1) piece = least + (largest - least) * random();
+    else {
+      piece = least + (largest - least) * random();
+      // Never leave less than the least drop: share the last two equally.
+      if (left - piece ** 3 < least ** 3) piece = Math.cbrt(0.5 * left);
+    }
+    left -= piece ** 3;
+    count++;
+    spawn(
+      from.x + spread * (2 * random() - 1), from.y + spread * (2 * random() - 1), from.z + spread * (2 * random() - 1),
+      from.vx + scatter * (2 * random() - 1), from.vy + scatter * (2 * random() - 1), from.vz + scatter * (2 * random() - 1),
+      piece,
+    );
+  }
+  return count;
+}
+
+/**
  * A stone's crown's fingers (the header): about evenly spaced around the
  * ring from a random start, each with its axis, its root's half-width and
  * its length (the extra launch speed of the rim's material at its axis).
@@ -477,7 +543,7 @@ export class CrownSheet {
    *   closes over the hole and when the dome bursts (or, `sink`, has been drawn down into the hole), and the speed (m/s)
    *   its apex's water is flung at
    */
-  constructor({ impact, startTime, rimDroplets, breakupDroplets, material, landing = false, fan = false, strength = 1, rim = null, lopsided = null, seal = null }) {
+  constructor({ impact, startTime, rimDroplets, breakupDroplets, spareDroplets = 0, material, landing = false, fan = false, strength = 1, rim = null, lopsided = null, seal = null }) {
     const { velocity, radius } = impact;
     const speed = Math.max(impact.speed, 1.0);
     this.centreX = impact.x;
@@ -661,6 +727,13 @@ export class CrownSheet {
     const totalWeight = this.crests.reduce((sum, crest) => sum + crest.weight, 0) || 1;
     for (const crest of this.crests) crest.share = (crest.weight / totalWeight) * rimDroplets;
     this.breakupRemaining = breakupDroplets;   // still to come from the tear
+    // The spare drops (spareDroplets, under the splash's cap) for lumps too
+    // big to fly whole (breakLump), shared by the rim and the tear in
+    // proportion to their drops: each of theirs earns its share of a spare,
+    // and what one leaves unspent another may take.
+    const spare = Math.max(spareDroplets, 0) / Math.max(rimDroplets + breakupDroplets, 1);
+    this.spareRate = spare;                    // spares earned per drop of the budget
+    this.spareCarry = 0;                       // spares earned and not yet spent
     this.tearCarry = 0;                        // fraction of a droplet owed
     this.pieceAreas = new Float64Array(this.rows);
 
@@ -1041,14 +1114,18 @@ export class CrownSheet {
    * `share` of the radius of the drop it grows to (the cube root of its share
    * by volume), which is the rim's thickness there now times BEAD_RIM (a
    * ligament pinches into drops about that big), times the finger's own
-   * jitter, within the sheet's drops' range.
+   * jitter, within the sheet's drops' range; drawn at most DROP_CEILING (a
+   * bigger bead, `lump`, is a thick rim's ligament holding more water than
+   * one drop: letBeadGo breaks it up).
    */
   placeBead(finger, share) {
     const column = finger.column;
     const state = this.evaluate(0, this.columnCos[column], this.columnSin[column], this.columnSpeedFactor[column], this.columnThicknessFactor[column], this.state, 0, this.columnFingerFactor[column], false, this.columnRimShape?.[column]);
     const tipX = state.x, tipY = state.y, tipZ = state.z;
-    const radius = share * THREE.MathUtils.clamp(BEAD_RIM * state.thickness * finger.jitter, this.minDropRadius, this.maxDropRadius);
+    const lump = share * THREE.MathUtils.clamp(BEAD_RIM * state.thickness * finger.jitter, this.minDropRadius, this.maxDropRadius);
+    const radius = Math.min(lump, share * DROP_CEILING);
     const bead = finger.bead;
+    bead.lump = lump;
     bead.vx = state.vx; bead.vy = state.vy; bead.vz = state.vz;
     const below = this.evaluate(BEAD_END * this.launchDuration, this.columnCos[column], this.columnSin[column], this.columnSpeedFactor[column], this.columnThicknessFactor[column], this.stateOther, 0, this.columnFingerFactor[column], false, this.columnRimShape?.[column]);
     const alongX = tipX - below.x, alongY = tipY - below.y, alongZ = tipZ - below.z;
@@ -1065,13 +1142,24 @@ export class CrownSheet {
     return bead;
   }
 
-  /** A finger's bead pinches off, grown to `share` of its drop's radius: a drop of its size flying on from the tip. */
+  /**
+   * A finger's bead pinches off, grown to `share` of its drop's radius: a
+   * drop of its size flying on from the tip, or, where the rim's ligament
+   * held more than the largest drop, its lump broken into several.
+   */
   letBeadGo(finger, share, splash) {
     const bead = this.placeBead(finger, share);
     finger.jitter = randomRange(1 - BEAD_JITTER, 1 + BEAD_JITTER);
     const speed = Math.sqrt(bead.vx * bead.vx + bead.vy * bead.vy + bead.vz * bead.vz);
     const boost = randomRange(1.0, 1.08);
     const scatter = 0.05 * speed;
+    this.spareCarry += this.spareRate;
+    if (bead.lump > bead.radius) {
+      bead.vx *= boost; bead.vy *= boost; bead.vz *= boost;
+      this.spawnLump(bead, bead.lump, bead.lump, scatter, splash);
+      this.satellites(splash, bead.x, bead.y, bead.z, bead.vx / boost, bead.vy / boost, bead.vz / boost, bead.radius);
+      return;
+    }
     splash.spawnDroplet(
       bead.x, bead.y, bead.z,
       bead.vx * boost + randomRange(-scatter, scatter),
@@ -1093,6 +1181,17 @@ export class CrownSheet {
       x, y, z, vx: 0.95 * vx, vy: 0.95 * vy, vz: 0.95 * vz, drops: count, radius: size,
       kick: Math.sqrt(SURFACE_TENSION / (WATER_DENSITY * size)), spread: radius, time: splash.time, random, sizeFactor: this.sizeFactor,
     });
+  }
+
+  /**
+   * A lump bigger than DROP_CEILING breaks into drops (breakLump), as many
+   * as the spares earned allow; returns how many.
+   */
+  spawnLump(from, radius, spread, scatter, splash) {
+    const count = breakLump(from, radius, DROP_CEILING, 1 + Math.floor(this.spareCarry), spread, scatter, Math.random,
+      (x, y, z, vx, vy, vz, piece) => splash.spawnDroplet(x, y, z, vx, vy, vz, piece));
+    this.spareCarry -= count - 1;
+    return count;
   }
 
   /** How far a finger's bead has grown towards its drop, in radius: from BEAD_SEED of its volume. */
@@ -1160,13 +1259,15 @@ export class CrownSheet {
         const speed = Math.sqrt(state.vx * state.vx + state.vy * state.vy + state.vz * state.vz);
         const boost = randomRange(1.0, 1.08);
         const scatter = 0.05 * speed;
-        splash.spawnDroplet(
-          state.x, state.y, state.z,
-          state.vx * boost + randomRange(-scatter, scatter),
-          state.vy * boost + randomRange(-scatter, scatter),
-          state.vz * boost + randomRange(-scatter, scatter),
-          (RIM_DROP_RADIUS + RIM_DROP_SPREAD * Math.random() ** 1.5) * (this.landing ? this.sizeFactor ** 0.4 : this.dropScale) * (this.fan ? FAN_RIM_DROPS : 1),
-        );
+        const scatterX = randomRange(-scatter, scatter), scatterY = randomRange(-scatter, scatter), scatterZ = randomRange(-scatter, scatter);
+        const radius = (RIM_DROP_RADIUS + RIM_DROP_SPREAD * Math.random() ** 1.5) * (this.landing ? this.sizeFactor ** 0.4 : this.dropScale) * (this.fan ? FAN_RIM_DROPS : 1);
+        this.spareCarry += this.spareRate;
+        if (radius > DROP_CEILING) {
+          state.vx *= boost; state.vy *= boost; state.vz *= boost;
+          this.spawnLump(state, radius, radius, scatter, splash);
+          continue;
+        }
+        splash.spawnDroplet(state.x, state.y, state.z, state.vx * boost + scatterX, state.vy * boost + scatterY, state.vz * boost + scatterZ, radius);
       }
     }
   }
@@ -1246,10 +1347,18 @@ export class CrownSheet {
         this.tearCarry -= 1;
         const angle = this.columnAngle[column] + randomRange(-halfWidth, halfWidth);
         this.evaluateAt(randomRange(pieceFrom, pieceTo), angle, state);
-        // Each drop holds the volume of the patch of sheet it came from.
+        // Each drop holds the volume of the patch of sheet it came from; a
+        // patch holding more than a drop of DROP_CEILING breaks into
+        // several, spread over it (1/density is its area).
         const volumeRadius = Math.cbrt((3 * state.thickness) / (4 * Math.PI * density));
         const radius = THREE.MathUtils.clamp(volumeRadius * randomRange(0.7, 1.25), this.minDropRadius, this.maxDropRadius);
         const scatter = 0.04 * Math.sqrt(state.vx * state.vx + state.vy * state.vy + state.vz * state.vz) + 0.05;
+        this.spareCarry += this.spareRate;
+        this.sprayFromPatch(splash, state, density);
+        if (radius > DROP_CEILING) {
+          this.spawnLump(state, radius, 0.5 / Math.sqrt(density), scatter, splash);
+          continue;
+        }
         splash.spawnDroplet(
           state.x, state.y, state.z,
           state.vx + randomRange(-scatter, scatter),
@@ -1257,7 +1366,6 @@ export class CrownSheet {
           state.vz + randomRange(-scatter, scatter),
           radius,
         );
-        this.sprayFromPatch(splash, state, density);
       }
     }
   }

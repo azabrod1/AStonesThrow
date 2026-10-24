@@ -12,8 +12,9 @@
 //      rendered frame; src/ambientWaves.js), under a gale its waves and
 //      their foam (src/galeWaves.js), the profiles of the rings that
 //      cross the pond (GPU, while any lives; src/rings.js), the rain's
-//      tile of raindrops' rings (GPU, while it rains; src/rain.js) and the
-//      splash's sheets and columns (CPU);
+//      tile of raindrops' rings (GPU, while it rains; src/rain.js), the
+//      places of the little rings the splash's drops leave (CPU, uniforms
+//      only; src/dropRings.js) and the splash's sheets and columns (CPU);
 //   4. while a splash lives, draw it into the water's mirror image (below);
 //   5. render what is under the surface (the lake bed or the pool's basin,
 //      submerged stones, bubbles) to a texture with depth, the stones,
@@ -268,6 +269,7 @@ import { Rain, loadRainData } from './rain.js';
 import { Snow } from './snow.js';
 import { lightningAt } from './lightning.js';
 import { Rings } from './rings.js';
+import { DropRings } from './dropRings.js';
 import { createEnvironment, SKY_NAMES, skyHours, resolveHour, nearestHour } from './sky.js';
 import { createWaterSurface } from './waterSurface.js';
 import { createPondFloor, createShore, floorDepthAt, groundHeightAt, setShoreKind, KOI_SHORE } from './pondFloor.js';
@@ -315,6 +317,15 @@ import { createKoiGarden, koiGround, holdInGarden, keepInPond } from './koiGarde
 //                 every preset;
 //   rainTexels    the rain's tile's texels per side (src/rain.js, 1 m): 512
 //                 resolves its rings' shortest crests, 256 blurs them a little.
+//   dropRings     the rings the splash's drops leave drawn at once
+//                 (src/dropRings.js): a drop landing when all are taken gets
+//                 none, and has the faintest of those that have formed fade
+//                 out. Each costs the water pixels within its few
+//                 centimetres a lookup, and those in the box about them all
+//                 a distance test.
+//   crownDrops    the most drops a stone's crown throws (src/splash.js
+//                 setCrownDropletCap): a big stone's sheet tears into drops of
+//                 4 mm and under, and loses the water it has none left for.
 //   snowShare     the share of the snow's flakes drawn (src/snow.js): each
 //                 runs its motion and, under a gale, a lookup of its waves in
 //                 the vertex shader, so a phone draws fewer; the haze carries
@@ -333,9 +344,9 @@ import { createKoiGarden, koiGround, holdInGarden, keepInPond } from './koiGarde
 // and every mesh takes 16-bit indices (at most 254 segments: Three.js keeps
 // the index 65535 for primitive restart).
 export const QUALITY = {
-  high: { grid: 512, meshSegments: 254, underScale: 1.0, fluidScale: 1.0, idleFrameRate: 30, maxDpr: 2.0, rings: 24, ringFade: 8, rainTexels: 512, snowShare: 1, resting: 40, afloat: 16, shards: 16, spray: { ring: 65536, share: 1 } },
-  medium: { grid: 256, meshSegments: 160, underScale: 0.5, fluidScale: 0.5, idleFrameRate: 30, maxDpr: 2.0, rings: 12, ringFade: 4, rainTexels: 256, snowShare: 0.6, resting: 30, afloat: 14, shards: 10, spray: { ring: 16384, share: 0.4 } },
-  low: { grid: 256, meshSegments: 128, underScale: 0.5, fluidScale: 0.5, idleFrameRate: 30, maxDpr: 1.5, rings: 10, ringFade: 3, rainTexels: 256, snowShare: 0.4, resting: 20, afloat: 12, shards: 6, spray: { ring: 8192, share: 0.2 } },
+  high: { grid: 512, meshSegments: 254, underScale: 1.0, fluidScale: 1.0, idleFrameRate: 30, maxDpr: 2.0, rings: 24, ringFade: 8, rainTexels: 512, dropRings: 24, crownDrops: 3500, snowShare: 1, resting: 40, afloat: 16, shards: 16, spray: { ring: 65536, share: 1 } },
+  medium: { grid: 256, meshSegments: 160, underScale: 0.5, fluidScale: 0.5, idleFrameRate: 30, maxDpr: 2.0, rings: 12, ringFade: 4, rainTexels: 256, dropRings: 16, crownDrops: 2000, snowShare: 0.6, resting: 30, afloat: 14, shards: 10, spray: { ring: 16384, share: 0.4 } },
+  low: { grid: 256, meshSegments: 128, underScale: 0.5, fluidScale: 0.5, idleFrameRate: 30, maxDpr: 1.5, rings: 10, ringFade: 3, rainTexels: 256, dropRings: 12, crownDrops: 2000, snowShare: 0.4, resting: 20, afloat: 12, shards: 6, spray: { ring: 8192, share: 0.2 } },
 };
 export const PIXEL_BUDGET = 2.6e6;   // device pixels in the canvas, on every preset
 const QUALITY_ORDER = ['high', 'medium', 'low'];
@@ -741,6 +752,11 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   const rings = new Rings(renderer, { depth: POND_DEPTH });
   rings.setLiveLimit(settings.rings, settings.ringFade);
   water.rings = rings;
+  // The little rings the splash's drops leave where they land (src/dropRings.js):
+  // the splash hands them through the water too (water.dropRings), and they
+  // read the rain's table, fetched at the first impact.
+  const dropRings = new DropRings({ rain, liveLimit: settings.dropRings });
+  water.dropRings = dropRings;
   // The pool (src/pool.js), whose meshes the scenes take below; pooled while
   // the water is the pool's (setPooled). The bed the splash's holes and the
   // rocks rest on is the lake's (src/pondFloor.js), or the pool's floor,
@@ -750,9 +766,10 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   let koiPond = false;   // the lake's shore is the Koi pond's (PLACES `koi`; setKoiPond)
   const bedDepthAt = (x, z) => (pooled ? POOL.depth : floorDepthAt(x, z));
   water.floorDepthAt = bedDepthAt;
-  const surface = createWaterSurface(water, lighting, ambientWaves, { meshSegments: settings.meshSegments, rings, skyCube: environment.cubeTexture, rain, haze: environment.hazeUniforms, gale: galeWaves, ice });
+  const surface = createWaterSurface(water, lighting, ambientWaves, { meshSegments: settings.meshSegments, rings, dropRings, skyCube: environment.cubeTexture, rain, haze: environment.hazeUniforms, gale: galeWaves, ice });
   const floaterRide = createFloaterRide(surface.rideUniforms);   // the water under each floater, for the physics
   const splash = new SplashSystem({ environment, lighting, water, ambientWaves, surface });
+  splash.setCrownDropletCap(settings.crownDrops);
   splash.spray.setBudget(settings.spray);
   // The wind's strength: the page's ?windStrength, else the last choice here, else calm.
   // The sounds of what is thrown (src/sound.js): on unless turned off on this device, or by ?sound=off.
@@ -2063,6 +2080,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
           if (impact.throughIce) ice.fitCavity(rock.iceHole, cavity);
           sound.splash(impact, seenAfter());
         }
+        if (impact && readyForInput) dropRings.load();   // their table, at the first impact after the warm-up (src/dropRings.js)
         // On ice its knock chirps (src/sound.js), the longer the farther from the ear (the eye).
         for (const knock of rock.heard.splice(0)) {
           sound.knock(knock.surface === 'ice' ? { ...knock, thickness: ice.thickness, distance: camera.position.distanceTo(rock.position) } : knock, seenAfter());
@@ -2211,6 +2229,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     rain.update(simulationTime, camera, resolution, viewFocus());
     snow.update(simulationTime, camera, resolution);
     rings.update(simulationTime);
+    dropRings.update(simulationTime);
     // The splash's sheets and columns to this frame, for the mirror and the droplet passes.
     if (skip.spray) splash.spray.mesh.visible = false;
     if (!skip.fluid) splash.prepareFrame();
@@ -2331,6 +2350,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       programs: renderer.info.programs?.length ?? 0,
       solverAsleep: water.asleep,
       rings: { live: rings.live, fading: rings.fading, limit: rings.liveLimit, passes: rings.passesRun, fetches: rings.fetchesRun },
+      dropRings: { live: dropRings.live, limit: dropRings.liveLimit, ready: dropRings.ready },
       things: { kept: rocks.length, fading: rocks.filter((rock) => rock.fading !== undefined).length, resting: settings.resting, afloat: settings.afloat, shards: settings.shards, moving: MOVING_MOST },
       wind: windName,
       gale: { blowing: galeWaves.on, sheetTriangles: surface.sheetTriangles },
@@ -2352,6 +2372,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     qualityName = name;
     settings = QUALITY[name];
     rings.setLiveLimit(settings.rings, settings.ringFade);
+    dropRings.setLiveLimit(settings.dropRings);
+    splash.setCrownDropletCap(settings.crownDrops);
     rain.setTexels(settings.rainTexels);
     snow.setShare(settings.snowShare);
     splash.spray.setBudget(settings.spray);
@@ -2481,6 +2503,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     ice.clear();   // whole again
     splash.reset(renderer);
     rings.reset();
+    dropRings.reset();
     simulationTime = 0;
     stepsTime = 0;
     viewChanged = true;   // the mirror image is drawn whole again, without the splash
@@ -2985,6 +3008,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     ambientWaves,
     galeWaves,
     rings,
+    dropRings,
     splash,
     surface,
     sceneUnder,

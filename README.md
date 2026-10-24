@@ -137,7 +137,7 @@ is remembered on the device (but the view, which opens on the shore):
   and `?view=` win at startup.
   Meadow and Open sky are retired; their old links and saved settings open
   Lakeside, and `?sky=alpine` opens Swiss Alps. Pool is a tiled pool on a
-  deck by Lakeside's lake, through its hours. A photo (about 6 MB, or 25 MB
+  deck by Lakeside's lake, through its hours. A photo (0.2 to 0.8 MB, or 1.8 MB
   for Swiss Alps) loads while the old sky stays; then the sky, sun and
   everything they light change together. Older Pool-water and Ice settings
   carry over to the Pool location and Frozen water.
@@ -188,7 +188,8 @@ about 9.7 ms after the last (a sixtieth of a second, less some slack),
 whatever the screen's refresh rate: a 60 or a 90 Hz screen draws every
 refresh, a 120 Hz one every other, 60 frames a second (72 on a 144 Hz
 one), and a pond where nothing happens at 30 frames a second; High keeps
-24 stones' rings, Medium 12 and Low 8, a ring of 65 536 spray sprites,
+24 stones' rings, Medium 12 and Low 10, 24 of the little rings the
+splash's drops leave (16 and 12), a ring of 65 536 spray sprites,
 Medium 16 384 drawing two fifths of High's and Low 8192 a fifth (each
 sprite standing for that many more drops), and 40 things at rest (a stone on
 the bottom is one draw call) and 16 afloat (a floater costs more: its
@@ -278,9 +279,12 @@ and a cos θ part, so it runs stronger ahead (1.3 to 1.5 times). Near the
 stone, while the splash stands, linear theory would dig the hole's bowl
 under the drawn cavity and jet, so there the ring fades in over about its
 first second. While any ring lives, a GPU pass evaluates each ring's
-spectrum at the frame's time and one pass per ring sums it into a radial
-profile of height and slope out to its reach (2 to 40 m), mipmapped; the
-water adds every ring's slope to its normal everywhere and its height to
+spectrum at the frame's time, a second sums it into radial profiles of
+height and slope out to each ring's reach (2 to 40 m), every radius's sum
+split into 16 slices of the wavenumbers that the GPU runs side by side,
+and one pass per ring adds its slices into its profile, mipmapped: five
+rings take about 0.17 ms of a frame on a desktop's GPU, where summing each
+radius whole took 1.4 ms. The water adds every ring's slope to its normal everywhere and its height to
 the inner patch, the floor the curvature of the youngest six to the
 caustics (a ring's curvature falls fast as its waves lengthen; an older
 one's light fades out over 3 s), the foam specks and a crown's foot ride
@@ -605,7 +609,9 @@ allows it scales as a Froude-similar splash does: lengths with the radius,
 times with √(R/g), speeds with the entry speed. The crown's sheet is as thick
 as the stone is big, so air and surface tension slow it less, it drains
 slower and stands longer: a 16 cm stone's crown stands for 160 ms, its rim
-25 to 40 cm high, and tears into drops of up to 9 mm, while a 1.5 cm
+25 to 40 cm high, and tears into some 3000 drops on High (2000 on Medium and Low), none over 4 mm in radius
+(surface tension holds no bigger drop together in flight, so a big sheet
+tears into more drops, not bigger ones), while a 1.5 cm
 pebble's rises 5 cm when it seals deep (it nearly always seals at the
 surface instead, under a dome 1 cm high). Its rim fingers as a decelerating rim does, so a
 big crown has more fingers rather than a few huge petals: 24 on a 16 cm
@@ -670,8 +676,10 @@ and only trembles with the ripples, where the sky's streaks with them.
 plane, turned about the vertical (and mirrored, where that puts better
 scenery ahead) so that its sun stands where the scene's does (28° right of
 straight ahead) and at the photo's own elevation, which becomes the scene's
-(27° for the meadow, 5° at sunrise, 50° in the Alps). Its brightness is
-anchored on the sun: `tools/sky-probe.mjs` measures the photo's sun
+(27° for the meadow, 5° at sunrise, 50° in the Alps). The page loads it as
+a JPEG gain map (`tools/sky-encode.mjs`), a tenth to a thirtieth of the
+HDRI's bytes, that Three.js's UltraHDRLoader decodes to the HDRI's own half
+floats. Its brightness is anchored on the sun: `tools/sky-probe.mjs` measures the photo's sun
 irradiance and sky radiance, and the dome is scaled so that its sun matches
 the scene's (times π, the scene's convention for diffuse light), so the
 photo's own balance of sky and sun carries over, and the sky's mean radiance
@@ -713,9 +721,7 @@ sun's at its elevation; the deep water's colour dims with the light. Below
 scotopic luminance, in the tone map), fully by 0.03 lux, drawn as a film
 draws a night: tinted nearly Jensen's night blue, keeping 40% of the
 cones' colour, and going to white where it is bright, so the moon's
-glitter and a splash's glints are silver on blue water. An hour's photo is
-decoded by `src/hdr.js`, texel for texel as Three.js's HDRLoader does but
-five times as fast (`tools/hdr-test.mjs` checks every panorama).
+glitter and a splash's glints are silver on blue water.
 
 The curated locations include:
 
@@ -743,10 +749,11 @@ between tripod positions. The ridges are aligned with the probe's
 `--band=-15,-5` (the valley lies below the photographic horizon), using the
 measured sun for daylight. Rogland uses `--band=0,18`; its clocks are the
 camera's local times (UTC+2), including moonlight at 05:33 on another day.
-The new HDRIs are CC0, stored locally at 2K, about 6 MB per selected hour.
+The new HDRIs are CC0, stored locally at 2K (about 6 MB each), and the page
+loads each hour's JPEG gain map, 0.2 to 0.8 MB.
 Swiss Alps uses [Lago d’Isola](https://polyhaven.com/a/lago_disola), photographed
 at 46.450379, 9.189087 in Switzerland, upgraded from the old Alpine's 2K
-asset to 4K (25 MB). Its rotation faces the snowy ridge across the lake.
+asset to 4K (25 MB; its JPEG 1.8 MB). Its rotation faces the snowy ridge across the lake.
 Meadow and Open sky are removed from the picker; Meadow's measurement and
 source remain for the original lighting calibration. Only the chosen
 panorama and up to two prefetched neighbours load in the browser.
@@ -800,6 +807,18 @@ same drops at the same moments, the tiles take turns, so a drop's twin a
 metre away does not fall beside it in step (its twins are 3 to 5 m apart);
 what is left of the repeat is a gentle swell in how many streaks are in view
 (about 8% over a second, against 2% for drops wholly at random).
+
+**Drop rings** (`src/dropRings.js`; its shader `DROP_RING_SLOPES` in
+`src/shaders/rain.js`). Each of a splash's drops 1.5 mm in radius or more
+leaves where it lands the little concentric rings a raindrop does, which
+the solver's 1.2 cm cells cannot hold: the rain's own ring, scaled to the
+drop (f, its diameter over 2 mm, at most 3) and weighted by its fall
+(√f·v/6.5 m/s, the ring's energy a share of the drop's), its slopes added
+to the water's as the stones' rings' are, averaged over each pixel's
+footprint. A lump's drops landing together make one ring; at most 24 are
+drawn on High, the first of a burst kept until their crests have formed,
+and each lives under 1.2 s. The rain's table is fetched once, at the first
+impact, and shared with the rain.
 
 **Gale** (`src/galeWaves.js`; its shaders in `src/shaders/gale.js` and
 `src/shaders/spectral.js`). A gale of 18 m/s over 1.5 km of open water
@@ -1050,11 +1069,12 @@ farther out, so it rises into the view rather than filling its corner.
 
 ## Development
 
-- `npm test` runs `tools/load-asset-test.mjs`, `tools/hdr-test.mjs` (the
-  sky's decoder against HDRLoader, bit for bit), `tools/fft-test.mjs`, `tools/wave-probe.mjs`,
-  `tools/foam-probe.mjs`, `tools/cavity-probe.mjs`, `tools/ring-probe.mjs`,
-  `tools/rain-probe.mjs`, `tools/gale-probe.mjs`, `tools/skip-probe.mjs`,
-  `tools/thing-probe.mjs` and `tools/ice-probe.mjs`;
+- `npm test` runs `tools/load-asset-test.mjs`, `tools/fft-test.mjs`,
+  `tools/wave-probe.mjs`, `tools/foam-probe.mjs`, `tools/cavity-probe.mjs`,
+  `tools/ring-probe.mjs`, `tools/rain-probe.mjs`, `tools/snow-probe.mjs`,
+  `tools/gale-probe.mjs`, `tools/skip-probe.mjs`, `tools/thing-probe.mjs`,
+  `tools/ice-probe.mjs`, `tools/spray-probe.mjs`, `tools/jet-probe.mjs` and
+  `tools/drop-ring-probe.mjs`;
   each exits with 1 if a check fails.
 - `node tools/ice-probe.mjs [--list]` throws every thing at thin and thick
   ice as the app throws it, each way, with the splash on the CPU, and
@@ -1126,7 +1146,8 @@ farther out, so it rises into the view rather than filling its corner.
 - Deployment: `.github/workflows/deploy.yml` runs the tests and `npm run site`
   on every push to `main` and publishes `_site/` to GitHub Pages. `npm run site`
   (`tools/build-site.mjs`) copies only what the page loads: `index.html`,
-  `src/` and `assets/`. A new file or folder loaded at run time outside those
+  `src/` and `assets/`, less the skies' Radiance files (`.hdr`), which only
+  the tools read. A new file or folder loaded at run time outside those
   must be added to its list. `node tools/site-check.mjs`, after
   `npm run site`, serves `_site/` under `/AStonesThrow/` as Pages does and
   checks that the pond starts, rain falls once asked for (its files load only
@@ -1150,7 +1171,12 @@ farther out, so it rises into the view rather than filling its corner.
   each of the Wind control's strengths scales the field, its roughness and
   the foam's drift as it should, and Breeze restores them exactly; it prints
   the cost of a frame.
-- `node tools/ring-probe.mjs [--all] [--gpu[=half]]` checks the rings
+- `node tools/drop-ring-probe.mjs [--list]` throws the reference stone into
+  the lake and a 12 cm rock into the pool on the CPU and counts the drops
+  that ring where they land (when, how far, how fast), the rings drawn
+  (sizes, weights, lives; merged, turned away, made to fade early) at each
+  preset's limit, and checks the limit holds and every ring retires in time.
+- `node tools/ring-probe.mjs [--all] [--gpu]` checks the rings
   (`src/rings.js`) on the CPU: an isolated ring source evolved by the
   solver's own lattice, injection, dispersion and damping against the rings'
   Hankel integral and their sampled scheme (they agree to under 3% over 2 m
@@ -1169,7 +1195,7 @@ farther out, so it rises into the view rather than filling its corner.
   rings: how many live, the profile passes' fetches, the lookups of the
   water's and the floor's pixels; the CPU's). `--gpu` reads the rings'
   spectrum and profiles back from a headless page against the same sums in
-  float64 (`--gpu=half` on the half-float path); `--all` runs every stone
+  float64; `--all` runs every stone
   size.
 - `npm run shoot -- --label=name --throws=x:z:radius --times=0.1,0.5` renders
   deterministic frames headlessly (Playwright + Chromium) into `shots/name/`,
@@ -1247,6 +1273,18 @@ farther out, so it rises into the view rather than filling its corner.
   `--orbit=azimuth:elevation:distance[:x:y:z]` stands the harness's camera on
   any orbit (degrees, degrees, metres, and the pivot; `src/viewOrbit.js`).
   The rocks are thrown from the shore whatever the view.
+- `node tools/sky-encode.mjs [assets/sky/name_2k.hdr ...] [--verify]` encodes
+  each sky's Radiance file (every one, by default) as the JPEG gain map the
+  page loads, `assets/sky/name_2k.jpg`: a base image and a gain map, matched
+  to the arithmetic of Three.js's UltraHDRLoader so that it decodes to the
+  half floats the Radiance file gave, the sun's disc and all, in 0.2 to
+  0.6 MB against 5 to 7. The gain map is constant over each 8×8 block (so
+  that every browser decodes it alike) except where a block holds the sun or
+  a sharp edge, and the photo's ground below the horizon, which the water
+  hides, is blurred. It prints each file's size and its error over the sky;
+  `--verify` decodes the files with the pinned loader in the headless
+  browser and checks they come out as the tool modelled them. A new
+  panorama, or a Three.js upgrade, needs this run.
 - `node tools/sky-probe.mjs assets/sky/name_2k.hdr [--png=preview.png]`
   measures a sky panorama (the sun's direction, the sun's irradiance, the
   sky's mean radiance, the horizon's) and writes `assets/sky/name.json`,
@@ -1405,12 +1443,12 @@ farther out, so it rises into the view rather than filling its corner.
   `setWeather(name)` (and `weather`, and `raining`, once the rain's table
   has come and it falls, and `snowing`), `setIce(name)` (and `ice`, `iceThickness`, and
   `iceSheet`, its holes, cracks and mask), `rings` (the live rings and
-  their plans), and `budget`: what the preset built (the solver's grid, the
+  their plans), `dropRings` (the drops' rings drawn, src/dropRings.js), and `budget`: what the preset built (the solver's grid, the
   mesh, the pixel ratio, every target's size, an estimate of the render
   targets' memory, the programs compiled and the warm-up's, whether the
   solver sleeps and the frame rate is capped, the rings drawn, how many
   are fading out and the preset's limit, their passes and the spectrum
-  fetches those made, the wind, the gale's sheet, the weather, the
+  fetches those made, the drops' rings drawn and their limit, the wind, the gale's sheet, the weather, the
   rain's tile, the snow's flakes and cover, the spray's ring, share and sprites drawn, the last frame's draw calls
   and triangles, and how many fixed meshes and waterlines `prepareThing`
   has made).

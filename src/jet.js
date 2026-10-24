@@ -95,7 +95,13 @@
 // Drops. A piece the solver lets go as a drop (one bead) becomes a droplet of
 // its water's radius and momentum (drops of LENS_DROP_RADIUS and more drawn
 // as glass, like the column); drops under LEAST_DROP are not worth one and
-// their water falls back. A piece that reaches the water leaves as droplets
+// their water falls back. A drop bigger than DROP_CEILING (src/crown.js: 4
+// mm in radius, the most surface tension holds together in flight; the
+// reference throw's are up to 6 mm) does not fly whole: it leaves as drops of
+// 2.4 to 4 mm that hold its water (breakLump, src/crown.js), starting within
+// it and parting at its capillary speed sqrt(σ/(ρ·r)), at most LUMP_PIECES
+// of them, past which the rest of its water is lost (for cost), from a stream
+// of its own. A piece that reaches the water leaves as droplets
 // node by node, so it lands (and rings) where it reaches it. Every pinch also
 // throws spray (src/spray.js, neckSpray): NECK_SPRAY of the water of the
 // drop that pinched off times form.spray, in drops of NECK_SPRAY_SIZE of its
@@ -131,6 +137,7 @@ import * as THREE from 'three';
 import { createRingGrid, holdWithinWalls, markChanged } from './fluidMesh.js';
 import { seededRandom, sprayDrops } from './spray.js';
 import { SlenderJet, WATER } from './slenderJet.js';
+import { DROP_CEILING, breakLump } from './crown.js';
 
 const GRAVITY = 9.81;
 const REFERENCE_RADIUS = 0.03;     // the stone size the launch was fitted for
@@ -178,6 +185,7 @@ const FALLBACK_VOLUME = 2.9e-4;    // m³: a fallen volume this big from a 3 cm 
 const FALLBACK_SIZE = 0.43;        // ...times (R / 3 cm)^this, so the rings keep the strength they were calibrated with (the header)
 const FALLBACK_SPECKS = 35;        // foam specks where the jet falls back, times the mound's strength
 const LENS_DROP_RADIUS = 0.002;    // drops this big are drawn as glass like the column
+const LUMP_PIECES = 64;            // a drop over DROP_CEILING breaks into at most this many (the header's Drops)
 const NECK_SPRAY = 0.03;           // a pinching neck throws this share of its drop's water as spray (times form.spray)...
 const NECK_SPRAY_SIZE = 0.12;      // ...in drops of this share of its radius on average...
 const NECK_SPRAY_MOST = 0.0004;    // ...at most this (m)
@@ -219,6 +227,8 @@ export class JetColumn {
     this.form = { ...CLEAN_FORM, ...form };
     this.random = random;
     this.sprayRandom = seededRandom(x, z, startTime, radius);   // the spray's own stream (src/spray.js)
+    this.lumpRandom = seededRandom(x, z, startTime, radius, 4);   // the broken lumps' own (breakUp)
+    this.lump = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0 };     // scratch for breakUp
     this.centreX = x;
     this.centreZ = z;
     this.radius = radius;
@@ -595,15 +605,22 @@ export class JetColumn {
       this.highest = Math.max(this.highest, event.y + event.radius);
       if (event.radius < LEAST_DROP) { this.solver.fallen += event.volume; continue; }
       const carried = Math.max(splash.time - event.time, 0);
-      splash.spawnDroplet(
-        event.x + event.vx * carried, event.y + event.vy * carried - 0.5 * GRAVITY * carried * carried, event.z + event.vz * carried,
-        event.vx, event.vy - GRAVITY * carried, event.vz, event.radius, event.radius >= LENS_DROP_RADIUS,
-      );
+      const x = event.x + event.vx * carried, y = event.y + event.vy * carried - 0.5 * GRAVITY * carried * carried, z = event.z + event.vz * carried;
+      if (event.radius > DROP_CEILING) this.breakUp(splash, x, y, z, event.vx, event.vy - GRAVITY * carried, event.vz, event.radius);
+      else splash.spawnDroplet(x, y, z, event.vx, event.vy - GRAVITY * carried, event.vz, event.radius, event.radius >= LENS_DROP_RADIUS);
       this.dropCount++;
       this.largestDrop = Math.max(this.largestDrop, event.radius);
       if (!event.landing && this.firstDrop === null) this.firstDrop = { age: event.time - this.startTime, radius: event.radius, speed: Math.hypot(event.vx, event.vy, event.vz), height: event.y };
     }
     events.length = 0;
+  }
+
+  /** A drop too big to fly whole (over DROP_CEILING) leaves as several (the header's Drops). */
+  breakUp(splash, x, y, z, vx, vy, vz, radius) {
+    const lump = this.lump;
+    lump.x = x; lump.y = y; lump.z = z; lump.vx = vx; lump.vy = vy; lump.vz = vz;
+    breakLump(lump, radius, DROP_CEILING, LUMP_PIECES, radius, Math.sqrt(WATER.surfaceTension / (WATER.density * radius)), this.lumpRandom,
+      (pieceX, pieceY, pieceZ, pieceVX, pieceVY, pieceVZ, piece) => splash.spawnDroplet(pieceX, pieceY, pieceZ, pieceVX, pieceVY, pieceVZ, piece, piece >= LENS_DROP_RADIUS));
   }
 
   /** The column is gone: the water it drained makes a mound, a ring and foam at its foot. */
