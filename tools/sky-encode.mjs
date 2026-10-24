@@ -65,6 +65,13 @@
 // blurred, fully by GROUND_FULL, which takes away two thirds of the bytes.
 // Should the scene ever show the photo's ground, encode it sharp again.
 //
+// A panorama in SHARP_TO is softened above that many degrees too (softenSky,
+// a blur of SKY_BLUR, eased in over SKY_EASE degrees): the garden's
+// (src/sky.js `garden`, the Koi pond's) is a canopy of leaves overhead, the
+// dearest thing a JPEG holds, seen only past the top of the view or blurred
+// by the water's ripples in its reflection: sharp to 20° it is 0.70 MB
+// against 1.28.
+//
 // Each file's line: its bytes against the .hdr's, how many blocks follow
 // each pixel, the boost's range, the brightest pixel decoded against the
 // .hdr's, and the luminance's error over the sky above the horizon (after
@@ -99,6 +106,9 @@ const SDR_TOP = 250;           // the byte each block's brightest channel is rai
 const BLOCK = 8;               // the JPEG's block: the gain map's cell
 const GROUND_FROM = 2;         // degrees below the horizon where the blur starts...
 const GROUND_FULL = 4;         // ...and where it is whole
+const SHARP_TO = { ninomaru_teien_2k: 20 };   // degrees above the horizon a panorama is kept sharp to (softenSky); the rest whole
+const SKY_BLUR = 6;            // pixels of a 2K panorama: the radius of each box pass softening it above SHARP_TO
+const SKY_EASE = 8;            // degrees over which that softening comes in
 const GROUND_BLUR = 16;        // pixels of a 2K panorama (2048 wide; a 4K's twice as many): the radius of each of its three box passes
 const DARKEST_CODE = 0.5;      // the coded value a block of black is exposed for
 const DOME_CAP = 30;           // src/sky.js's RADIANCE_CAP: times the sky's mean radiance, over which the dome shows only the hue
@@ -193,6 +203,18 @@ function blurGround({ width, height, pixels }) {
   }
 }
 
+/** The sky above `sharpTo` degrees softened (the header), eased in over SKY_EASE degrees. */
+function softenSky({ width, height, pixels }, sharpTo) {
+  const rowAt = (degreesUp) => Math.floor(height / 2 - (degreesUp / 180) * height);
+  const sharp = pixels.slice();
+  blurRows(pixels, width, height, 0, Math.round(SKY_BLUR * width / 2048));
+  const from = rowAt(sharpTo), whole = rowAt(sharpTo + SKY_EASE);
+  for (let row = 0; row < height; row++) {
+    const soft = row > from ? 0 : Math.min(1, (from - row) / Math.max(from - whole, 1));
+    for (let index = 3 * row * width; index < 3 * (row + 1) * width; index++) pixels[index] = (1 - soft) * sharp[index] + soft * pixels[index];
+  }
+}
+
 /** Rec. 709 luminance of the RGB triple at `index` (in triples) of `pixels`. */
 const luminanceOf = (pixels, index) => 0.2126 * pixels[3 * index] + 0.7152 * pixels[3 * index + 1] + 0.0722 * pixels[3 * index + 2];
 
@@ -249,7 +271,8 @@ async function encodePanorama(hdrPath, quality) {
   const name = path.basename(hdrPath, '.hdr');
   const panorama = await readPanorama(hdrPath);
   const { width, height } = panorama;
-  const reference = panorama.pixels.slice();
+  if (SHARP_TO[name] !== undefined) softenSky(panorama, SHARP_TO[name]);
+  const reference = panorama.pixels.slice();   // the report's (over the sky: as softened, if it is)
   blurGround(panorama);
   const target = panorama.pixels;
 

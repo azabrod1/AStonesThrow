@@ -135,8 +135,17 @@ for (const framing of FRAMINGS) {
   const page = await context.newPage();
   const problems = [];
   page.on('pageerror', (error) => problems.push(String(error)));
-  await page.goto(`http://localhost:${server.address().port}/index.html?quality=low&paused=1`, { waitUntil: 'domcontentloaded' });
-  await page.waitForFunction(() => !!window.__pond, undefined, { timeout: 180000 });
+  // The page as the framing's device lays it out: its pointer a finger's (pointer: coarse) on a touch screen. The
+  // browser's touch emulation now and then has not taken when the page first loads (frames on CI's macOS runner: a
+  // phone laid out with a mouse's controls), so the page is loaded again until it reports the framing's pointer.
+  let pointerTook = false;
+  for (let load = 0; load < 3 && !pointerTook; load++) {
+    if (load === 0) await page.goto(`http://localhost:${server.address().port}/index.html?quality=low&paused=1`, { waitUntil: 'domcontentloaded' });
+    else await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => !!window.__pond, undefined, { timeout: 180000 });
+    pointerTook = await page.waitForFunction((touch) => matchMedia('(pointer: coarse)').matches === touch, framing.touch, { timeout: 5000 }).then(() => true, () => false);
+  }
+  check(pointerTook, `the page reports the framing's pointer (${framing.touch ? 'a finger: pointer coarse' : 'a mouse: pointer fine'})`);
   await page.evaluate(() => window.__pond.advance(0.05));
   await page.waitForTimeout(900);   // the veil fades over 0.6 s
   await page.screenshot({ path: path.join(outputFolder, `${framing.name}.png`) });

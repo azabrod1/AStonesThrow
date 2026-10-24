@@ -1803,14 +1803,46 @@ export const LAKE_BED = /* glsl */`
 uniform vec4 uShore;   // the waterline's z, its bend (m), the bed's slope out from it and the depth it levels off at
 uniform vec4 uLand;    // the beach's slope up from the water and the height it levels off at, the bank's height
 uniform vec2 uBank;    // how far inland the bank starts and ends (m)
+uniform float uKoiPond;   // 1: the Koi pond's shore in place of the lake's (below)
+float koiShoreRadius(float angle);
+float koiAngle(vec2 point);
 float shoreDistance(vec2 point) {
+  if (uKoiPond > 0.5) return koiShoreRadius(koiAngle(point)) - length(point - vec2(0.0, -1.2));
   return uShore.x + point.x * point.x / (2.0 * uShore.y) - point.y;
 }
 float landHeight(float inland) {
   return uLand.y * tanh(uLand.x * inland / uLand.y) + uLand.z * smoothstep(uBank.x, uBank.y, inland);
 }
+// The Koi pond's shore (uKoiPond 1): KOI_SHORE in src/pondFloor.js, its twin.
+#define KOI_CENTRE vec2(0.0, -1.2)
+#define KOI_BASE 4.0
+#define KOI_BEACH vec2(0.15, 1.05)
+#define KOI_SHELF 0.35
+#define KOI_DEEP 1.35
+#define KOI_LIP 0.08
+#define KOI_BEACH_LIP 0.08
+#define KOI_MOUND 0.3
+float koiAngle(vec2 point) {
+  vec2 offset = point - KOI_CENTRE;
+  return atan(offset.y, offset.x);
+}
+float koiShoreRadius(float angle) {
+  return KOI_BASE + 0.55 * cos(2.0 * angle - 0.5) + 0.4 * cos(3.0 * angle + 0.7 - 1.5707963) + 0.2 * cos(5.0 * angle + 1.9);
+}
+float koiBeach(float angle) {
+  return smoothstep(KOI_BEACH.x, KOI_BEACH.x + 0.25, angle) * (1.0 - smoothstep(KOI_BEACH.y - 0.25, KOI_BEACH.y, angle));
+}
 float floorDepthAt(vec2 point) {
   float offshore = shoreDistance(point);
+  if (uKoiPond > 0.5) {
+    float beach = koiBeach(koiAngle(point));
+    if (offshore >= 0.0) {
+      float edged = KOI_SHELF * smoothstep(0.0, 0.25, offshore) + (KOI_DEEP - KOI_SHELF) * smoothstep(0.6, 2.0, offshore);
+      return mix(edged, KOI_DEEP * smoothstep(0.0, 2.6, offshore), beach);
+    }
+    float inland = -offshore;
+    return -(mix(KOI_LIP, KOI_BEACH_LIP, beach) * tanh(inland / (0.3 + 0.5 * beach)) + KOI_MOUND * smoothstep(2.0, 7.0, inland));
+  }
   return offshore >= 0.0 ? uShore.w * tanh(uShore.z * offshore / uShore.w) : -landHeight(-offshore);
 }
 `;
@@ -2317,9 +2349,12 @@ ${UNDER_FOG}
 ${CAUSTICS}
 ${FLOOR_SAND}
 
+uniform float uKoiPond;   // 1: the Koi pond's bed (below)
+#define KOI_BED vec3(0.46, 0.45, 0.38)   // the Koi pond's bed against the lake's sand: grey gravel, silt and a film of algae
 void main() {
-  // Sand with pebbles and silt (FLOOR_SAND).
+  // Sand with pebbles and silt (FLOOR_SAND); the Koi pond's, darker gravel under silt and algae, in drifts.
   vec3 sand = floorSand(vFloorPoint);
+  if (uKoiPond > 0.5) sand *= KOI_BED * (0.7 + 0.5 * valueNoise(vFloorPoint * 0.7 + 11.0));
 
   // Caustics: where the surfaces above focus the sun, on the floor point this
   // pixel really shows. The floor is drawn on the straight line from the eye
@@ -2433,7 +2468,35 @@ ${FLOOR_PATTERN_TILE}
 ${FLOOR_SAND}
 ${PHOTO_LAND}
 ${HAZE}
+${LAKE_BED}
 #define SKY_LIGHT 1.4        // the sky's light on the sand, as the bed's
+// The Koi pond's ground (uKoiPond): at the water a band of river stones, wide along its pebble beach (koiBeach) and
+// narrow under its stone edge, dark where wet; then a garden's moss, mottled, with the bare earth showing through;
+// from KOI_MOSS_TO inland the bank's grass as the lake's.
+#define KOI_STONES vec2(0.25, 1.3)        // metres inland the stones reach: under the edge, along the beach
+#define KOI_STONE_TINT vec3(0.62, 0.6, 0.56)
+#define KOI_MOSS vec3(0.075, 0.105, 0.04)
+#define KOI_EARTH vec3(0.12, 0.1, 0.075)
+#define KOI_MOSS_TO vec2(3.0, 5.0)
+#define KOI_LAWN vec3(0.07, 0.115, 0.04)  // the garden's lawn beyond the moss
+#define KOI_SHADE 0.3                    // the garden's ground behind its planting, under its trees, against its lawn
+#define KOI_COBBLE 0.16                   // m: a cobble's cell at the stone edge
+// The cobbles set along the edge: the nearest jittered point and the next (as the pool's, in cells of KOI_COBBLE), so
+// each is its own rounded stone with dark gaps: (its distance from its middle in cells, its hash, the gap's distance).
+vec3 koiCobble(vec2 point) {
+  vec2 cell = floor(point);
+  float nearest = 8.0, next = 8.0, which = 0.0;
+  for (int row = -1; row <= 1; row++) {
+    for (int column = -1; column <= 1; column++) {
+      vec2 other = cell + vec2(float(column), float(row));
+      vec2 centre = other + 0.15 + 0.7 * vec2(hash21(other), hash21(other + 19.7));
+      float apart = length(point - centre);
+      if (apart < nearest) { next = nearest; nearest = apart; which = hash21(other + 3.1); }
+      else if (apart < next) next = apart;
+    }
+  }
+  return vec3(nearest, which, 0.5 * (next - nearest));
+}
 #define DRY_SAND vec3(0.68, 0.6, 0.5)   // the beach's dry sand, against the bed's: darker and warmer, as the photos' banks are
 #define WET_HEIGHT 0.12      // metres above the water the sand is wet to...
 #define WET_SHADE 0.6        // ...and as dark as this at the water
@@ -2446,10 +2509,31 @@ ${HAZE}
 void main() {
   vec3 normal = normalize(vNormal);
   vec3 sand = floorSand(vWorld.xz) * PATTERN_RANGE * DRY_SAND * mix(WET_SHADE, 1.0, smoothstep(0.0, WET_HEIGHT, vWorld.y));
+  float grassFrom = GRASS_FROM, grassTo = GRASS_TO;
+  if (uKoiPond > 0.5) {
+    float beach = koiBeach(koiAngle(vWorld.xz));
+    vec3 pebbles = floorSand(vWorld.xz * 0.7) * PATTERN_RANGE * KOI_STONE_TINT;
+    // The stone edge: cobbles, each its own grey or brown, rounded (darker to its rim), moss and earth between them.
+    vec3 cobble = koiCobble(vWorld.xz / KOI_COBBLE);
+    float cobbleBlur = length(fwidth(vWorld.xz)) / KOI_COBBLE + 1e-3;
+    vec3 cobbleColor = mix(vec3(0.36, 0.35, 0.33), vec3(0.4, 0.35, 0.28), cobble.y) * (0.75 + 0.5 * hash21(vec2(cobble.y * 91.0, 3.0))) * mix(0.6, 1.0, smoothstep(0.75, 0.2, cobble.x));
+    cobbleColor = mix(KOI_EARTH * 0.8 + KOI_MOSS * 0.5, cobbleColor, smoothstep(0.03 - cobbleBlur, 0.08 + cobbleBlur, cobble.z));
+    cobbleColor = mix(cobbleColor, vec3(0.3, 0.29, 0.27), smoothstep(0.3, 0.8, cobbleBlur));
+    vec3 stones = mix(cobbleColor, pebbles, beach) * mix(WET_SHADE, 1.0, smoothstep(0.0, 0.05, vWorld.y));
+    float mossy = 0.7 + 0.6 * valueNoise(vWorld.xz * 2.7) ;
+    vec3 ground = mix(KOI_EARTH, KOI_MOSS * mossy * (0.85 + 0.3 * valueNoise(vWorld.xz * 19.0)), smoothstep(0.3, 0.55, valueNoise(vWorld.xz * 1.3 + 4.0) * 0.5 + 0.35 + 0.15 * smoothstep(0.4, 2.0, vInland)));
+    // The edge's stones come and go along it: stretches of cobbles, and between them the moss runs down to the water.
+    float stretch = smoothstep(0.35, 0.6, valueNoise(vec2(koiAngle(vWorld.xz) * 2.2, 3.0)));
+    float stoneReach = mix(KOI_STONES.x * stretch, KOI_STONES.y, beach) * (0.75 + 0.5 * valueNoise(vWorld.xz * 3.3));
+    sand = mix(stones, ground, smoothstep(stoneReach - 0.08, stoneReach + 0.08, vInland));
+    grassFrom = KOI_MOSS_TO.x; grassTo = KOI_MOSS_TO.y;
+  }
   vec3 color = sand * (uSunIrradiance * max(dot(normal, uSunDir), 0.0) + uSkyAmbient * SKY_LIGHT);
   vec3 toLand = vWorld - cameraPosition;
-  float grass = smoothstep(GRASS_FROM, GRASS_TO, vInland);
-  float far = smoothstep(LAND_NEAR, LAND_FAR, length(toLand));
+  float grass = smoothstep(grassFrom, grassTo, vInland);
+  // Round the Koi pond the garden's lawn runs on farther before the photo's land takes over (the photo's own lake shore
+  // lies where the lake's beach would end).
+  float far = uKoiPond > 0.5 ? smoothstep(4.0 * LAND_NEAR, 2.0 * LAND_FAR, length(toLand)) : smoothstep(LAND_NEAR, LAND_FAR, length(toLand));
   if (grass > 0.0 || far > 0.0) {
     vec3 land = photoLand(uSkyCube, LAND_LEVEL, toLand.xz);
     float level = max(uSunDir.y, 0.0) + SKY_LIGHT * 0.25;
@@ -2460,6 +2544,9 @@ void main() {
     vec3 nearLand = photoLand(uLandCube, uLandLevel, toLand.xz);
     float grassLevel = max(dot(nearLand, LUMINANCE), 1e-6);
     vec3 grassLand = nearLand * min(1.0, GRASS_ALBEDO_MOST * lightOn / grassLevel);
+    // Round the Koi pond, a garden's lawn of its own (the photo's land there is the lake's far shore).
+    // Behind its planting the ground lies in its trees' shade (src/koiGarden.js): dark, as the photo's is.
+    if (uKoiPond > 0.5) grassLand = KOI_LAWN * (uSunIrradiance * max(uSunDir.y, 0.0) + uSkyAmbient * SKY_LIGHT) * (0.85 + 0.3 * valueNoise(vWorld.xz * 0.6 + 2.0)) * mix(1.0, KOI_SHADE, smoothstep(1.5, 3.5, vInland));
     vec3 grassColor = grassLand * slopeShade * (1.0 + (0.6 * valueNoise(vWorld.xz * 2.3 + 5.0) - 0.3) * (1.0 - far));
     color = mix(color, grassColor, grass);
     if (uSnow > 0.0) land = mix(land, SNOW_ALBEDO * (uSunIrradiance * max(uSunDir.y, 0.0) + uSkyAmbient * SKY_LIGHT), SNOW_FAR * uSnow);

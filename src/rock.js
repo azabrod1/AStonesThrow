@@ -262,10 +262,12 @@
 //   - material (optional; or materialAt(x, z), where it differs from place
 //     to place: a frozen lake's beach is no ice): the ground's own surface,
 //     where it changes how a thing goes along it ({ kind, friction, rolling,
-//     tumbling, tumble }, each optional): ice is slick, so a thing on it takes the lesser of its
+//     tumbling, tumble, give, rollingLeast }, each optional): ice is slick, so a thing on it takes the lesser of its
 //     own friction and rolling resistance and the ice's, a stone slows at the
 //     ice's `tumbling`·g and turns end over end at its `tumble`, and its
-//     knock is heard as on ice (src/sound.js);
+//     knock is heard as on ice (src/sound.js); a lawn is soft (src/koiGarden.js):
+//     a thing bounces off it at `give` of its own bounce, and a ball rolls on
+//     it against at least `rollingLeast`;
 //   - meet(rock, height) (optional): asked whenever the thing comes down on
 //     the ground (at `height`) or onto the water (height null), before
 //     anything else is done: the ice says whether it holds (`{ ground:
@@ -2577,7 +2579,7 @@ export class Rock {
     const surface = this.groundSurface;   // the ground's own (the header: ice)
     const fall = -this.velocity.y;
     this.heard.push({ speed: fall, radius: this.radius, bounce: this.collisionBounce, surface: surface?.kind });   // its knock on the ground (src/sound.js)
-    const bounce = material.bounce[0] + (material.bounce[1] - material.bounce[0]) * this.random();
+    const bounce = (material.bounce[0] + (material.bounce[1] - material.bounce[0]) * this.random()) * (surface?.give ?? 1);
     this.velocity.y = bounce * fall;
     const along = Math.hypot(this.velocity.x, this.velocity.z);
     // The friction slows it along the ground, a ball no lower than rolling.
@@ -2606,7 +2608,7 @@ export class Rock {
     this.position.y = height + this.ellipsoidDepth();
     const along = Math.hypot(this.velocity.x, this.velocity.z);
     const material = this.thing.material, surface = this.groundSurface;
-    const slowing = material.roll ? Math.min(material.rolling, surface?.rolling ?? Infinity) : surface?.tumbling ?? GROUND.tumbling;
+    const slowing = material.roll ? Math.max(Math.min(material.rolling, surface?.rolling ?? Infinity), surface?.rollingLeast ?? 0) : surface?.tumbling ?? GROUND.tumbling;
     const slowed = Math.max(along - slowing * GRAVITY * dt, 0);
     if (slowed < GROUND.stopped) { this.restOn(height); return; }
     this.velocity.x *= slowed / along;

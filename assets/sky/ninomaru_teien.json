@@ -1,0 +1,30 @@
+{
+  "source": "ninomaru_teien_2k.hdr",
+  "width": 2048,
+  "height": 1024,
+  "sun": {
+    "elevation": 19.44,
+    "azimuth": 215.79,
+    "direction": [
+      0.76489,
+      0.33276,
+      0.55155
+    ],
+    "pixels": 77
+  },
+  "sunIrradiance": [
+    0.5886,
+    0.52769,
+    0.44773
+  ],
+  "skyRadiance": [
+    1.321,
+    1.4676,
+    1.7684
+  ],
+  "horizonRadiance": {
+    "median": 0.10804,
+    "p90": 0.42397
+  },
+  "maxLuminance": 1565.5
+}

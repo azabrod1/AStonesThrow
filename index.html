@@ -1027,7 +1027,7 @@
         <button type="button" class="menu-card" role="radio" data-value="lake"><img src="assets/water/thumbs/lake.jpg" alt="" width="80" height="45"><span><b>Lake</b><small>An Alpine lake: bright sand, then deep blue</small></span></button>
         <button type="button" class="menu-card" role="radio" data-value="pond"><img src="assets/water/thumbs/pond.jpg" alt="" width="80" height="45"><span><b>Pond</b><small>Green; the sand fades a little way out</small></span></button>
         <button type="button" class="menu-card" role="radio" data-value="murky"><img src="assets/water/thumbs/murky.jpg" alt="" width="80" height="45"><span><b>Murky</b><small>A lake after rain: sand only at the bank</small></span></button>
-        <!-- In the Pool place the lake's waters give way to the pool's own. -->
+        <!-- In the Pool place the lake's waters give way to the pool's own; in the Koi pond to the pond's (updateWater). -->
         <button type="button" class="menu-card" role="radio" data-value="open" hidden><img src="assets/sky/thumbs/pool.jpg" alt="" width="80" height="45"><span><b>Pool water</b><small>Filtered: the tiles clear to the bottom</small></span></button>
         <button type="button" class="menu-card" role="radio" data-value="frozen"><img src="assets/water/thumbs/frozen.jpg" alt="" width="80" height="45"><span><b>Frozen</b><small>Ice to break, crack and slide things on</small></span></button>
       </div>
@@ -1053,6 +1053,7 @@
         <button type="button" class="menu-card" role="radio" data-value="lakeside"><img src="assets/sky/thumbs/lakeside.jpg" alt="" width="80" height="45"><span><b>Lakeside</b><small>A wooded shore, a far bank</small></span></button>
         <button type="button" class="menu-card" role="radio" data-value="mesas"><img src="assets/sky/thumbs/mesas.jpg" alt="" width="80" height="45"><span><b>Mesas</b><small>Wide water to flat-topped hills</small></span></button>
         <button type="button" class="menu-card" role="radio" data-value="pool"><img src="assets/sky/thumbs/pool.jpg" alt="" width="80" height="45"><span><b>Pool</b><small>A tiled pool by the lake; ripples bounce off its walls</small></span></button>
+        <button type="button" class="menu-card" role="radio" data-value="koi"><img src="assets/sky/thumbs/koi.jpg" alt="" width="80" height="45"><span><b>Koi pond</b><small>A pond in a Japanese garden, clipped shrubs, a stone lantern and koi</small></span></button>
       </div>
       <div class="menu-note" id="sky-note" aria-live="polite"></div>
     </div>
@@ -1591,12 +1592,21 @@
     updateSound();
     // The Water page as the place has it: the lake's clarities, or the pool's own water; Frozen's ice under the cards.
     const showIce = radioGroup(document.getElementById('ice'), (value) => { pond.setIce(value); updateWater(); });
+    const OPEN_WATER = {
+      pool: { image: 'assets/sky/thumbs/pool.jpg', name: 'Pool water', note: 'Filtered: the tiles clear to the bottom' },
+      koi: { image: 'assets/sky/thumbs/koi.jpg', name: 'Pond water', note: 'Clear and green: the koi show to the gravel' },
+    };
     function updateWater() {
       for (const card of document.querySelectorAll('#water [data-value]')) {
-        if (card.dataset.value !== 'frozen') card.hidden = (card.dataset.value === 'open') !== pond.pooled;
+        if (card.dataset.value !== 'frozen') card.hidden = (card.dataset.value === 'open') !== pond.ownWater;
       }
+      const open = OPEN_WATER[pond.koi ? 'koi' : 'pool'];
+      const openCard = document.querySelector('#water [data-value="open"]');
+      openCard.querySelector('img').src = open.image;
+      openCard.querySelector('b').textContent = open.name;
+      openCard.querySelector('small').textContent = open.note;
       const frozen = pond.waterChoice === 'frozen';
-      const choice = frozen ? 'frozen' : pond.pooled ? 'open' : pond.waterChoice;
+      const choice = frozen ? 'frozen' : pond.ownWater ? 'open' : pond.waterChoice;
       showWater(choice);
       settings.setValue('water', frozen ? `Frozen \u00b7 ${label('ice', pond.iceThickness)}` : label('water', choice));
       document.getElementById('ice-field').hidden = !frozen;

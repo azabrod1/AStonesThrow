@@ -56,6 +56,11 @@
 // release puts it, src/main.js skipThrow) and skips on from there, and the
 // times count from that first touch.
 // --trace draws each stone's path as a line (__pond.setTrace).
+// --wait=seconds waits that long for the pond to be ready (60 by default).
+// --fish=none leaves the water without fish (src/fish.js; ?fish=none), and
+// --look=fish:n turns the view, after the pre-roll, to fish n
+// (__pond.fish's order); fish:n:side looks at it from beside it, under the
+// water, fish:n:behind from behind it.
 // --thing=name[:value] throws that (a key of THINGS in src/things.js: a
 // kind of stone, golf, tennis, bowling, basketball; ?thing=), at that
 // slider value (a bowling ball's pounds, a basketball's size; a stone's
@@ -107,6 +112,8 @@ const viewName = arg('view', '');
 const touchArgument = arg('touch', '');
 const orbitArgument = arg('orbit', '');
 const [thingName, thingValue] = arg('thing', '').split(':');
+const fishArgument = arg('fish', '');
+const readySeconds = Number(arg('wait', '60'));   // how long the pond may take to be ready (a busy machine's software GL may need more)
 
 const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.mjs': 'text/javascript', '.json': 'application/json', '.png': 'image/png', '.css': 'text/css' };
 const server = createServer(async (request, response) => {
@@ -144,11 +151,11 @@ const problems = [];
 page.on('pageerror', (e) => problems.push(String(e)));
 page.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') problems.push(m.text()); });
 
-const url = `http://localhost:${port}/index.html?quality=${quality}&paused=1${keepUi ? '' : '&ui=0'}${floats ? `&floats=${floats}` : ''}${sky ? `&sky=${sky}` : ''}${skyTime ? `&time=${skyTime}` : ''}${weather ? `&weather=${weather}` : ''}${waterClarity ? `&water=${waterClarity}` : ''}${iceName ? `&ice=${iceName}` : ''}${wind ? `&wind=${wind.replace(':', ',')}` : ''}${windStrength ? `&windStrength=${windStrength}` : ''}${thingName ? `&thing=${thingName}` : ''}`;
+const url = `http://localhost:${port}/index.html?quality=${quality}&paused=1${keepUi ? '' : '&ui=0'}${floats ? `&floats=${floats}` : ''}${sky ? `&sky=${sky}` : ''}${skyTime ? `&time=${skyTime}` : ''}${weather ? `&weather=${weather}` : ''}${waterClarity ? `&water=${waterClarity}` : ''}${iceName ? `&ice=${iceName}` : ''}${wind ? `&wind=${wind.replace(':', ',')}` : ''}${windStrength ? `&windStrength=${windStrength}` : ''}${thingName ? `&thing=${thingName}` : ''}${fishArgument ? `&fish=${fishArgument}` : ''}`;
 console.log(`[shoot] ${url} -> ${outDir}`);
 await page.goto(url, { waitUntil: 'domcontentloaded' });
 try {
-  await page.waitForFunction(() => !!window.__pond, null, { timeout: 60000 });   // (the function's argument, then the options)
+  await page.waitForFunction(() => !!window.__pond, null, { timeout: 1000 * readySeconds });   // (the function's argument, then the options)
 } catch {
   console.error('[shoot] the pond never became ready');
   console.error(problems.join('\n'));
@@ -173,9 +180,26 @@ if (orbitArgument) {
   }, orbitArgument);
 }
 if (fov) await page.evaluate((f) => window.__pond.setFov(Number(f)), fov);
-if (look) await page.evaluate((l) => { const [x, y, z] = l.split(':').map(Number); window.__pond.lookAt(x, y, z); }, look);
+if (look && !look.startsWith('fish:')) await page.evaluate((l) => { const [x, y, z] = l.split(':').map(Number); window.__pond.lookAt(x, y, z); }, look);
 if (thingValue) await page.evaluate((value) => window.__pond.setSize(value), Number(thingValue));
 await page.evaluate((seconds) => window.__pond.advance(seconds), preRoll);
+if (look.startsWith('fish:')) {
+  // `side` (fish:n:side): from under the water, level with it, beside it, at a few of its lengths.
+  const [index, side] = look.slice(5).split(':');
+  const where = await page.evaluate(([index, side]) => {
+    const one = window.__pond.fish.fish[index];
+    if (!one) return one;
+    // From beside it, or from behind it (`behind`).
+    const azimuth = side === 'behind' ? Math.atan2(-Math.cos(one.heading), -Math.sin(one.heading)) : -one.heading;
+    if (side) window.__pond.setOrbit({ azimuth: (azimuth * 180) / Math.PI, elevation: 4, distance: 0.25 + 2.2 * one.length, pivot: [one.x, one.y, one.z] });
+    else window.__pond.lookAtUnderWater(one.x, one.y, one.z);
+    return one;
+  }, [Number(index), side ?? null]);
+  if (fov) await page.evaluate((f) => window.__pond.setFov(Number(f)), fov);   // the orbit's own field of view, narrowed again
+  // A frame drawn with the view turned: a thousandth of a second on (the fish moves a fraction of a millimetre).
+  await page.evaluate(() => { window.__pond.setTimeScale(1); window.__pond.advance(0.001); });
+  console.log('[shoot] fish', JSON.stringify(where));
+}
 await page.screenshot({ path: path.join(outDir, 'idle.png'), timeout: 180000 });
 console.log('[shoot] idle.png');
 
