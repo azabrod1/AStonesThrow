@@ -57,10 +57,13 @@
 //
 // Cracks (CRACK; settle, walk, ring, star). A punch through floating ice
 // cracks it radially from where it broke, and the harder the blow the more
-// radial cracks (CRACK.perDoubling for each doubling over what it held);
-// rings of crack join them farther out, so a hard break leaves a web. Each
-// runs in straight runs with kinks between, pulled back the way it is
-// going, and forks now and then; it tapers to a hairline at its tip, and
+// radial cracks (CRACK.perDoubling for each doubling over what it held),
+// and a fringe of short ones round the crushed edge; rings of crack curve
+// round from one radial to the next farther out, so a hard break leaves a
+// web. Each runs in short runs with small kinks between (rough at every
+// scale), pulled back the way it is going, and forks now and then; it runs
+// out from where the blow struck at CRACK.speed, each point at its own time
+// (`times`, which src/iceCracks.js draws by); it tapers to a hairline at its tip, and
 // stops where the ice ends or where it meets a crack already there, as a
 // real crack runs into another and stops (a T: older breaks' cracks bound
 // newer ones, and a crazed sheet builds up). A near miss stars the ice
@@ -73,14 +76,18 @@
 // between its radial cracks, and across them where a wedge is wide or long,
 // each piece a convex slab of the ice's thickness, and a few chips from the
 // crushed middle; as many as float in the hole without crowding it (the
-// biggest first, their rims' discs at most SHARD.fill of the hole), the rest
-// slush or pushed under the sheet. The thing that broke through pushed them
-// under; they are let go once its cavity has closed (fitCavity: the cavity's
-// closeTime, at least SHARD.leastDelay after the break), a little under the
-// water, their inner edges down, drifting out (src/main.js makes each a
-// thing, src/rock.js adrift: it floats up as any plate does, and its hole
-// holds it in, contain). A piece whose middle is over older open water (a
-// hole widened) is none: it was water.
+// biggest first, their areas at most SHARD.fill of the hole's), the rest
+// slush or pushed under the sheet. They are there from the break on, never
+// gone and back: let go the step after it (once the hole is fitted to its
+// cavity), each wedge set where it broke, flat in the sheet, cracked free,
+// while the cavity is open under it; as the water comes back up through the
+// hole it is driven down, its inner edge first, hinged at its outer edge
+// (src/rock.js breakAway); each chip starts a little under the water; then
+// each floats up as any plate does
+// (src/main.js makes each a thing, src/rock.js adrift), held in its hole by
+// its own outline (contain) and meeting its neighbours by theirs (src/
+// collide.js). A piece whose middle is over older open water (a hole
+// widened) is none: it was water.
 //
 // Flooding (FLOOD). As the cavity closes the water it threw aside comes back
 // up through the hole and over the ice round it (flood): a wet patch out to
@@ -136,6 +143,7 @@ import { roundLipReach } from './cavity.js';
 
 const GRAVITY = 9.81;
 const WATER_DENSITY = 1000;
+const containCorner = new THREE.Vector3();   // contain's, kept between calls
 
 export const ICE = {
   density: 917,          // kg/m³
@@ -162,40 +170,57 @@ export const ICE_MATERIAL = Object.freeze({ kind: 'ice', friction: 0.1, rolling:
 const HOLE = { corners: 36, fall: 0.5, margin: 0.06, jag: 0.16, waves: 0.04, bites: [1, 3], bite: [0.12, 0.35], biteSpan: [2, 4], least: 1.3, edge: 0.15, wall: 0.004, most: 64, kept: 160, reaches: 72, widensFrom: 2 };
 // Cracks (walk, settle, star; the header). A crack runs straight for a `run` (least, most; m), then kinks by `kink`
 // (radians, σ), pulled `pull` of the way back toward where it is going; its points `step` (m) apart, each off the run's
-// line by `wobble` (m, σ: the break's roughness, finer still in src/iceCracks.js). It forks at `fork` odds a run, the
+// line by `wobble` (m, σ: the break's roughness, finer still in src/iceCracks.js). Short runs and small kinks, so it is
+// rough at every scale its points resolve (long runs between sharp kinks read as a polygon's edges). It forks at `fork` odds a run, the
 // branch `forkAngle` (least, most; radians) to one side and `forkReach` (least, most) of what is left of its reach long,
 // both arms `forkNarrows` as wide. Its half-width is `width` (least, most; m) where it starts, narrowing by
 // `narrowing` of itself along its reach and to `hairline` (m) over the last `taper` of it, each run `widthWander` (σ)
 // wider or narrower; its shade (how open, so how white) `shade` (least, most).
 // A hole's: `radials` (least, most) from its corners, `perDoubling` more for each doubling of the blow over what the ice
 // held, at most `most`; each `reach` (least, most) times l_c long, at most `longest` (m), and at `runaway` odds one
-// `runawayReach` (least, most) times l_c, wider. At `ring` odds (again at `secondRing`, farther out) chords of ring
-// crack join radials that reach `ringRadius` (least, most) of the hole's mean reach, from each to the next at `chord`
-// odds, aimed `chordBow` (radians) outward of straight. A blow the ice held stars it with `star` (least, most) cracks
+// `runawayReach` (least, most) times l_c, wider. Round its edge, where the ice was crushed, `fringe` (least, most; and
+// `perDoubling` more for each doubling) short cracks `fringeReach` (least, most) of l_c long, `fringeWidth` as wide. At
+// `ring` odds (again at `secondRing`, farther out) ring cracks join radials that reach `ringRadius` (least, most) of
+// the hole's mean reach, from each to the next at `chord` odds, curving round the hole (walk's `about`: steered back to
+// the ring by `ringHold` of its share off it). A blow the ice held stars it with `star` (least, most) cracks
 // `starReach` (least, most) of l_c long, `starWidth` as wide, and at `bullseye` odds a ring of chords round them.
 // Segments are kept in a grid of `cell` (m) squares, so a new one finds the cracks it meets; past `mostSegments` of them
-// no crack runs on (the sheet is crazed enough; src/iceCracks.js draws as many).
+// no crack runs on (the sheet is crazed enough; src/iceCracks.js draws as many). Each runs out at `speed` (m/s) from
+// where it starts, when the crack it starts from reached there: a crack in ice runs at hundreds of metres a second, at
+// once to the eye, but run out over a few frames the break is seen to spread from the blow, one event, its rings
+// following its radials (each point's time, `times`; src/iceCracks.js draws it as far as it has run).
 const CRACK = {
-  run: [0.03, 0.15], kink: 0.24, pull: 0.3, step: 0.02, wobble: 0.0006, fork: 0.13, forkAngle: [0.3, 0.75], forkReach: [0.25, 0.65], forkNarrows: 0.75,
+  run: [0.008, 0.045], kink: 0.15, pull: 0.22, step: 0.01, wobble: 0.0006, fork: 0.13, forkAngle: [0.3, 0.75], forkReach: [0.25, 0.65], forkNarrows: 0.75,
   width: [0.0005, 0.0013], narrowing: 0.45, hairline: 0.00012, taper: 0.3, widthWander: 0.22, shade: [0.45, 1],
   radials: [3, 6], perDoubling: 1.6, most: 12, reach: [0.35, 1.5], longest: 3, runaway: 0.3, runawayReach: [2, 4],
-  ring: 0.55, secondRing: 0.3, ringRadius: [1.5, 2.6], chord: 0.75, chordBow: 0.18,
-  star: [3, 6], starReach: [0.12, 0.45], starWidth: 0.6, bullseye: 0.3, cell: 0.05, mostSegments: 24000,
+  fringe: [6, 12], fringeReach: [0.06, 0.22], fringeWidth: 0.7,
+  ring: 0.55, secondRing: 0.3, ringRadius: [1.5, 2.6], chord: 0.75, ringHold: 2,
+  star: [3, 6], starReach: [0.12, 0.45], starWidth: 0.6, bullseye: 0.3, cell: 0.05, mostSegments: 24000, speed: 8,
 };
-// Shards (the header, piecesOf): let go `leastDelay` (s) after the break at the least; each wedge between two radial
-// cracks reaches from `inner` to `outer` (least, most) of the hole's reach along its corners, broken across at `across`
-// (least, most) of the way out where it is deeper than `deep` of the reach, and in two along the edge where it spans
-// more than `widest` (radians); each piece shrunk about its middle to `gap` of itself (the water between, what was
+// Shards (the header, piecesOf): let go the step after the break; each wedge between two radial cracks reaches from
+// `inner` to `outer` (least, most) of the hole's reach along its corners (a slice narrowing to the blow; each corner of
+// its outer edge in by up to `ragged` of that), broken across at `across` (least, most) of the way out, each end
+// `slant` more or less, where it is deeper than `deep` of the reach, and in two along the edge where it spans more than
+// `widest` (radians); each piece shrunk about its middle to `gap` (least, most) of itself (the water between, what was
 // crushed); `chips` (least, most) from the crushed middle, `chip` (least, most) of the reach across; none smaller than
 // `least` (m across) or `slab` times the ice's thickness (a slab, not a lump), none from ice thinner than `thinnest`
-// (m: a new skin breaks to slush), at most `most`, their rims'
-// discs at most `fill` of the hole. Each starts inside the hole's edge, its highest point `depth` (least, most) of its
-// radius under the water, its inner edge down by `tilt` (least, most; degrees), drifting at `drift`
-// (least, most; m/s) out from the hole's middle, turned to either side by up to `aside` (radians). A piece is white ice
-// at `whiteOdds` times the sheet's share of white ice, `whiteShare` (least, most) white, else clear.
+// (m: a new skin breaks to slush), at most `most`, their own areas at most `fill` of the hole's (they lie beside each
+// other as they broke, meeting by their outlines: src/collide.js). A wedge stays where it broke, flat in the sheet,
+// cracked free, while the thing's cavity is open under it; as the water comes back up through the hole (floodAt) it is
+// driven down: its inner edge at `push` (least, most) of the speed the thing came down at, at most `pushMost` (m/s),
+// hinged at its outer edge (its middle half that, its tilt about the hole's tangent at a quarter that over its radius,
+// at most `tipMost` rad/s: the water under it soon stops it, so it dips and mostly comes back; now and then one goes
+// over); its inner edge never inside `clear` of the thing's radius from where it broke (the thing went down through
+// there); and jostled, it turns about the vertical at `turn` (least, most; rad/s) either way. A chip, crushed and
+// pushed under, starts inside the hole's edge, its highest point `depth` (least, most) of its radius under the water,
+// tilted by `tilt` (least, most; degrees). Each drifts at `drift` (least, most; m/s) out from the hole's middle, turned
+// to either side by up to `aside` (radians). A piece is white ice at `whiteOdds` times the sheet's share of white ice,
+// `whiteShare` (least, most) white, else clear. The flood waits for the cavity to close (fitCavity), `leastDelay` (s)
+// at the least.
 const SHARD = {
-  leastDelay: 0.12, inner: [0.32, 0.46], outer: [0.84, 0.94], across: [0.58, 0.68], deep: 0.45, widest: 0.85, gap: 0.86,
-  chips: [1, 3], chip: [0.12, 0.22], least: 0.02, thinnest: 0.002, most: 9, fill: 0.55, depth: [0.05, 0.3], tilt: [5, 25], drift: [0, 0.06], aside: 0.7,
+  push: [0.008, 0.016], pushMost: 0.08, tipMost: 1.5, clear: 1, turn: [0.3, 1.2],
+  leastDelay: 0.12, inner: [0.1, 0.28], outer: [0.93, 0.99], ragged: 0.05, across: [0.42, 0.72], slant: 0.1, deep: 0.5, widest: 0.85, gap: [0.88, 0.96],
+  chips: [2, 5], chip: [0.12, 0.22], least: 0.02, thinnest: 0.002, most: 12, fill: 0.62, depth: [0.05, 0.3], tilt: [5, 25], drift: [0.01, 0.08], aside: 0.7,
   whiteOdds: 0.8, whiteShare: [0.3, 0.6], slab: 1.5,
 };
 // Flooding (the header): the patch reaches `reach` (least, most) of the hole's reach, waved by `wobble`, leaning `lean`
@@ -217,6 +242,24 @@ function seededStream(seed) {
   let state = seed >>> 0;
   return () => { state = (state + 0x6d2b79f5) >>> 0; let t = Math.imul(state ^ (state >>> 15), 1 | state); t ^= t + Math.imul(t ^ (t >>> 7), 61 | t); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
 }
+/** A wedge's spin as it is let go (piecesOf): `tip` (rad/s) about the hole's tangent, inner edge down, and `turn` about the vertical. */
+function wedgeSpin(radialX, radialZ, tip, turn) {
+  const axis = new THREE.Vector3(-radialZ * tip, turn, radialX * tip);
+  const rate = axis.length();
+  return { axis: rate > 0 ? axis.divideScalar(rate) : axis.set(0, 1, 0), rate };
+}
+
+/**
+ * The way a ring crack goes on from (x, z) (walk's `about`): along the ring
+ * `about` ({ x, z, radius, turn }), turned back toward it by CRACK.ringHold of
+ * its share off it (at most 0.6 rad).
+ */
+function ringAim(about, x, z) {
+  const azimuth = Math.atan2(z - about.z, x - about.x);
+  const off = (Math.hypot(x - about.x, z - about.z) - about.radius) / about.radius;
+  return azimuth + about.turn * (Math.PI / 2 + Math.min(Math.max(CRACK.ringHold * off, -0.6), 0.6));
+}
+
 /** A standard normal draw (Box–Muller). */
 function gaussian(random) {
   return Math.sqrt(-2 * Math.log(1 - random())) * Math.cos(2 * Math.PI * random());
@@ -604,7 +647,10 @@ export class IceSheet {
       seed: Math.floor(random() * 4294967296), corners: new Float64Array(2 * corners), inner: 0, outer: 0, reaches: new Float64Array(HOLE.reaches),
       heading: { x: headingX, z: headingZ, lean: fraction },   // which way the thing went along the ice (the flood leans so)
       settled: false, painted: false, cracks: [], crackCorners: [],
-      openedAt: this.time, quiet: this.time, releaseAt: this.time + SHARD.leastDelay, released: false,
+      // Its pieces are let go at the next step (setTime: the hole fitted to its cavity by then), its flood once the cavity closes.
+      openedAt: this.time, quiet: this.time, releaseAt: this.time, released: false, floodAt: this.time + SHARD.leastDelay, flooded: false,
+      down: Math.max(-rock.velocity.y, 0),   // the speed it came down at (m/s): what drives its pieces under
+      by: rock,                              // what broke it: it went down between its pieces, and never meets them (src/collide.js)
       skin: null, field: null, frozen: [], box: null,
     };
     // Each corner's azimuth, a little off even, from the hole's own stream.
@@ -629,14 +675,14 @@ export class IceSheet {
    * Fit a hole to the cavity the thing that broke it opened (src/cavity.js,
    * src/main.js after the splash's impact): each corner out beyond the
    * cavity's lip (Cavity.lipReach) as openHole put it beyond a round one's;
-   * its shards are let go once the cavity has closed (SHARD.leastDelay at
-   * the least).
+   * the water comes up through it once the cavity has closed (SHARD.leastDelay
+   * at the least: flood).
    */
   fitCavity(hole, cavity) {
     if (!hole || !cavity || hole.settled) return;
     const reaches = cavity.lipReach(hole.x, hole.z, hole.cosines, hole.sines, new Float64Array(hole.cosines.length), HOLE.fall);
     this.shapeHole(hole, reaches);
-    hole.releaseAt = hole.openedAt + Math.max(cavity.closeTime ?? 0, SHARD.leastDelay);
+    hole.floodAt = hole.openedAt + Math.max(cavity.closeTime ?? 0, SHARD.leastDelay);
   }
 
   /**
@@ -772,17 +818,21 @@ export class IceSheet {
   /**
    * A crack from (x, z) setting out along `heading` (radians from +x toward
    * +z), at most `reach` (m) long (CRACK: straight runs and kinks, toward
-   * `target` ({ x, z }) if given, else the way it set out), `width` its
+   * `target` ({ x, z }) if given, round the ring `about` ({ x, z, radius,
+   * turn: +1 the way the azimuth grows, −1 the other }) if given, else the
+   * way it set out), `width` its
    * half-width at the start (m), `shade` how open; forking if `forks`. It
    * stops where the ice ends (crackMayRun: on the wall, the shore, a hole's
    * edge, within a few tenths of a millimetre) or on a crack it meets
-   * (crackMet), and past CRACK.mostSegments in all. Returns it ({ points:
-   * [x0, z0, …], widths (each point's half-width, m), shade, id, length (m) },
+   * (crackMet), and past CRACK.mostSegments in all. It sets out at `time`
+   * (s, the ice's clock; now if not given) and runs at CRACK.speed. Returns
+   * it ({ points: [x0, z0, …], widths (each point's half-width, m), times
+   * (when the crack reached each point, s), shade, id, length (m) },
    * also in crackLines, for src/iceCracks.js), or null if it could not set
    * out; its branches go to crackLines and to `into` if given.
    */
-  walk(x, z, heading, reach, random, { width, shade = between(random, CRACK.shade), forks = true, target = null, parent = -1, into = null }) {
-    const crack = { points: [x, z], widths: [], shade, id: this.crackCount++, length: 0 };
+  walk(x, z, heading, reach, random, { width, shade = between(random, CRACK.shade), forks = true, target = null, about = null, parent = -1, into = null, time = this.time }) {
+    const crack = { points: [x, z], widths: [], times: [time], shade, id: this.crackCount++, length: 0 };
     const setOut = heading;
     let lineX = x, lineZ = z, travelled = 0, runLeft = between(random, CRACK.run), runLength = runLeft;
     let widthFrom = 1, widthTo = Math.min(Math.max(1 + CRACK.widthWander * gaussian(random), 0.55), 1.5), narrowed = 1;
@@ -823,6 +873,7 @@ export class IceSheet {
       if (Math.hypot(pointX - lastX, pointZ - lastZ) > 2e-4) {
         points.push(pointX, pointZ);
         crack.widths.push(halfWidth(travelled));
+        crack.times.push(time + travelled / CRACK.speed);
         this.addCrackSegment(lastX, lastZ, pointX, pointZ, crack.id);
       }
       if (stop) break;
@@ -831,7 +882,7 @@ export class IceSheet {
       runLeft -= step;
       if (runLeft > 1e-9) continue;
       // A kink, pulled back toward where it is going; the next run a little wider or narrower.
-      const aim = target ? Math.atan2(target.z - lineZ, target.x - lineX) : setOut;
+      const aim = about ? ringAim(about, lineX, lineZ) : target ? Math.atan2(target.z - lineZ, target.x - lineX) : setOut;
       heading += CRACK.kink * gaussian(random) + CRACK.pull * Math.atan2(Math.sin(aim - heading), Math.cos(aim - heading));
       runLeft = runLength = between(random, CRACK.run);
       widthFrom = widthTo;
@@ -840,7 +891,7 @@ export class IceSheet {
         // A fork: a branch to one side, the crack bending a little to the other, both narrower.
         const side = random() < 0.5 ? -1 : 1, turn = between(random, CRACK.forkAngle);
         const branch = this.walk(points[points.length - 2], points[points.length - 1], heading + side * turn, (reach - travelled) * between(random, CRACK.forkReach), random,
-          { width: width * narrowed * (1 - (CRACK.narrowing * travelled) / reach) * CRACK.forkNarrows, shade: shade * 0.9, forks: false, parent: crack.id, into });
+          { width: width * narrowed * (1 - (CRACK.narrowing * travelled) / reach) * CRACK.forkNarrows, shade: shade * 0.9, forks: false, parent: crack.id, into, time: time + travelled / CRACK.speed });
         if (branch && into) into.push(branch);
         heading -= side * 0.3 * turn;
         narrowed *= CRACK.forkNarrows;
@@ -853,10 +904,11 @@ export class IceSheet {
   }
 
   /**
-   * Chords of ring crack `radius` (m) about (x, z) (the header): from each of
-   * `arms` ({ crack, angle }: radial cracks and the way they set out) that
-   * reaches it to the next round that does, at CRACK.chord odds each, bowed
-   * outward, `widthShare` as wide as a crack; into `into` if given.
+   * Ring crack `radius` (m) about (x, z) (the header): from each of `arms`
+   * ({ crack, angle }: radial cracks and the way they set out) that reaches
+   * it, round to the next that does, at CRACK.chord odds each, curving with
+   * the ring (walk's `about`) until it runs into that one; `widthShare` as
+   * wide as a crack; into `into` if given.
    */
   ring(x, z, arms, radius, random, widthShare, into = null) {
     const reaching = [];
@@ -864,7 +916,7 @@ export class IceSheet {
       const points = crack.points;
       for (let index = 2; index < points.length; index += 2) {
         if (Math.hypot(points[index] - x, points[index + 1] - z) < radius * (1 + 0.08 * gaussian(random))) continue;
-        reaching.push({ crack, angle: ((angle % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI), x: points[index], z: points[index + 1] });
+        reaching.push({ crack, angle: ((angle % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI), x: points[index], z: points[index + 1], time: crack.times[index / 2] });
         break;
       }
     }
@@ -874,10 +926,10 @@ export class IceSheet {
       const from = reaching[index], to = reaching[(index + 1) % reaching.length];
       const gap = ((to.angle - from.angle) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI);
       if (gap > 2.2 || gap < 0.15 || random() > CRACK.chord) continue;
-      const alongX = to.x - from.x, alongZ = to.z - from.z, distance = Math.hypot(alongX, alongZ);
-      const outward = Math.sign(alongX * ((from.z + to.z) / 2 - z) - alongZ * ((from.x + to.x) / 2 - x)) || 1;
-      const heading = Math.atan2(alongZ, alongX) + outward * CRACK.chordBow * (0.5 + random());
-      const chord = this.walk(from.x, from.z, heading, distance * 1.4, random, { width: between(random, CRACK.width) * widthShare, forks: false, target: { x: to.x, z: to.z }, parent: from.crack.id });
+      // Round the way the radials' azimuths grow (atan2's: from +x toward +z), its own radius the ring's where it starts.
+      const about = { x, z, radius: Math.hypot(from.x - x, from.z - z), turn: 1 };
+      const heading = ringAim(about, from.x, from.z);
+      const chord = this.walk(from.x, from.z, heading, about.radius * gap * 1.4, random, { width: between(random, CRACK.width) * widthShare, forks: false, about, parent: from.crack.id, time: from.time });
       if (chord && into) into.push(chord);
     }
   }
@@ -900,16 +952,28 @@ export class IceSheet {
     const runaway = random() < CRACK.runaway ? Math.floor(random() * count) : -1;
     const radials = [];
     for (let index = 0; index < count; index++) {
-      const corner = Math.floor(start + (corners * (index + 0.5 * (random() - 0.5))) / count) % corners;
+      const corner = Math.floor(start + (corners * (index + 0.85 * (random() - 0.5))) / count) % corners;
       const x = hole.corners[2 * corner], z = hole.corners[2 * corner + 1];
       const heading = Math.atan2(z - hole.z, x - hole.x) + 0.3 * (random() - 0.5);
       const far = index === runaway;
       const reach = Math.min(between(random, far ? CRACK.runawayReach : CRACK.reach) * length, CRACK.longest);
       hole.crackCorners.push(corner);
-      const crack = this.walk(x, z, heading, reach, random, { width: between(random, CRACK.width) * (far ? 1.25 : 1), into: hole.cracks });
+      // It ran out from the blow, through the ice that broke, reaching the hole's edge this long after.
+      const time = hole.openedAt + Math.hypot(x - hole.x, z - hole.z) / CRACK.speed;
+      const crack = this.walk(x, z, heading, reach, random, { width: between(random, CRACK.width) * (far ? 1.25 : 1), into: hole.cracks, time });
       if (!crack) continue;
       hole.cracks.push(crack);
       radials.push({ crack, angle: heading });
+    }
+    // The crushed edge's fringe: short cracks from its corners, not a radial's (no wedge of shards, no ring, ends at one).
+    const fringe = Math.round(between(random, CRACK.fringe) + CRACK.perDoubling * doublings);
+    for (let index = 0; index < fringe; index++) {
+      const corner = Math.floor(random() * corners);
+      const x = hole.corners[2 * corner], z = hole.corners[2 * corner + 1];
+      const heading = Math.atan2(z - hole.z, x - hole.x) + 0.9 * (random() - 0.5);
+      const time = hole.openedAt + Math.hypot(x - hole.x, z - hole.z) / CRACK.speed;
+      const crack = this.walk(x, z, heading, between(random, CRACK.fringeReach) * length, random, { width: between(random, CRACK.width) * CRACK.fringeWidth, forks: false, time });
+      if (crack) hole.cracks.push(crack);
     }
     if (radials.length >= 3 && random() < CRACK.ring) {
       const radius = between(random, CRACK.ringRadius) * (hole.inner + hole.outer) / 2;
@@ -938,6 +1002,12 @@ export class IceSheet {
       const index = ((corner % count) + count) % count;
       return [hole.x + (hole.corners[2 * index] - hole.x) * share, hole.z + (hole.corners[2 * index + 1] - hole.z) * share];
     };
+    // A wedge's inner edge is clear of the thing that went down through its middle (SHARD.clear of its radius).
+    const innerAt = (corner) => {
+      const index = ((corner % count) + count) % count;
+      const reach = Math.hypot(hole.corners[2 * index] - hole.x, hole.corners[2 * index + 1] - hole.z);
+      return Math.min(Math.max(between(random, SHARD.inner), SHARD.clear * hole.radius / Math.max(reach, 1e-6)), 0.7);
+    };
     const angleOf = (corner) => hole.angles[((corner % count) + count) % count] + 2 * Math.PI * Math.floor(corner / count);
     // The wedges between its radial cracks (corner ranges round its edge, `to` past `from`), a wide one in two.
     let starts = [...new Set(hole.crackCorners)].sort((first, second) => first - second);
@@ -957,15 +1027,17 @@ export class IceSheet {
     // Each wedge from its inner edge to near the hole's, broken across where it is deep; a few chips from the middle.
     const outlines = [];
     for (const [from, to] of wedges) {
-      const outer = between(random, SHARD.outer), innerFrom = between(random, SHARD.inner), innerTo = between(random, SHARD.inner);
+      const outer = between(random, SHARD.outer), innerFrom = innerAt(from), innerTo = innerAt(to);
       const across = outer - (innerFrom + innerTo) / 2 > SHARD.deep ? between(random, SHARD.across) : null;
+      // Broken off the sheet raggedly: each corner of its outer edge at its own share of the hole's reach.
       const rim = [];
-      for (let corner = from; corner <= to; corner++) rim.push(...pointAt(corner, outer * (1 - 0.04 * random())));
-      if (across === null) outlines.push([...rim, ...pointAt(to, innerTo), ...pointAt(from, innerFrom)]);
+      for (let corner = from; corner <= to; corner++) rim.push(...pointAt(corner, outer * (1 - SHARD.ragged * random())));
+      if (across === null) outlines.push({ points: [...rim, ...pointAt(to, innerTo), ...pointAt(from, innerFrom)], wedge: true });
       else {
-        const acrossFrom = across * (1 + 0.06 * (random() - 0.5)), acrossTo = across * (1 + 0.06 * (random() - 0.5));
-        outlines.push([...rim, ...pointAt(to, acrossTo), ...pointAt(from, acrossFrom)]);
-        outlines.push([...pointAt(from, acrossFrom), ...pointAt(to, acrossTo), ...pointAt(to, innerTo), ...pointAt(from, innerFrom)]);
+        // Across at a slant: each end at its own share.
+        const acrossFrom = Math.max(across + SHARD.slant * (2 * random() - 1), innerFrom + 0.12), acrossTo = Math.max(across + SHARD.slant * (2 * random() - 1), innerTo + 0.12);
+        outlines.push({ points: [...rim, ...pointAt(to, acrossTo), ...pointAt(from, acrossFrom)], wedge: true });
+        outlines.push({ points: [...pointAt(from, acrossFrom), ...pointAt(to, acrossTo), ...pointAt(to, innerTo), ...pointAt(from, innerFrom)], wedge: true });
       }
     }
     const meanReach = (hole.inner + hole.outer) / 2;
@@ -980,25 +1052,26 @@ export class IceSheet {
         const at = turn + (2 * Math.PI * (side + 0.6 * (random() - 0.5))) / sides, reach = size * between(random, [0.6, 1]);
         points.push(middleX + Math.cos(at) * reach, middleZ + Math.sin(at) * reach);
       }
-      outlines.push(points);
+      outlines.push({ points, wedge: false });
     }
     // Each its hull, shrunk about its middle; then as many as float in it, the biggest first.
     const pieces = [];
-    for (const outline of outlines) {
+    for (const { points: outline, wedge } of outlines) {
       const hull = convexHull(outline);
       const { x, z } = polygonMiddle(hull);
       const corners = new Float64Array(hull.length);
+      const gap = between(random, SHARD.gap);
       let radius = 0;
       for (let index = 0; index < hull.length; index += 2) {
-        corners[index] = (hull[index] - x) * SHARD.gap;
-        corners[index + 1] = (hull[index + 1] - z) * SHARD.gap;
+        corners[index] = (hull[index] - x) * gap;
+        corners[index + 1] = (hull[index + 1] - z) * gap;
         radius = Math.max(radius, Math.hypot(corners[index], corners[index + 1]));
       }
       const area = polygonMiddle(corners).area;
       if (2 * radius < Math.max(SHARD.least, SHARD.slab * hole.thickness) || area <= 0) continue;
       // Over older open water (a hole widened) it was water.
       if (this.holes.some((older) => older !== hole && this.holes.indexOf(older) < this.holes.indexOf(hole) && Math.hypot(x - older.x, z - older.z) <= older.outer && insidePolygon(older.corners, x, z) && !this.skinAt(older, x, z))) continue;
-      pieces.push({ corners, x, z, radius, area });
+      pieces.push({ corners, x, z, radius, area, wedge });
     }
     pieces.sort((first, second) => second.area - first.area);
     const room = SHARD.fill * polygonMiddle(hole.corners).area;
@@ -1006,11 +1079,12 @@ export class IceSheet {
     let filled = 0;
     for (const piece of pieces) {
       if (kept.length >= SHARD.most) break;
-      if (filled + Math.PI * piece.radius ** 2 > room) continue;
-      filled += Math.PI * piece.radius ** 2;
+      if (filled + piece.area > room) continue;
+      filled += piece.area;
       kept.push(piece);
     }
-    // How each starts: under the water, its inner edge down, drifting out; white as the sheet is, about.
+    // How each starts (SHARD): a wedge where it broke, driven down, its inner edge first; a chip under the water; each
+    // drifting out; white as the sheet is, about.
     const thickShare = Math.min(Math.max((hole.thickness - 0.01) / 0.03, 0), 1);
     for (const piece of kept) {
       const outX = piece.x - hole.x, outZ = piece.z - hole.z;
@@ -1018,10 +1092,10 @@ export class IceSheet {
       const radialX = outX / out, radialZ = outZ / out;
       // Inside the hole's edge as it is held there (contain).
       const room = Math.max(this.edgeReach(hole, Math.atan2(radialZ, radialX)) - piece.radius - 0.002, 0);
-      if (out > room) { piece.x = hole.x + radialX * room; piece.z = hole.z + radialZ * room; }
-      const tilt = THREE.MathUtils.degToRad(between(random, SHARD.tilt));
+      if (!piece.wedge && out > room) { piece.x = hole.x + radialX * room; piece.z = hole.z + radialZ * room; }
+      const tilt = piece.wedge ? 0 : THREE.MathUtils.degToRad(between(random, SHARD.tilt));
       const quaternion = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(-radialZ, 0, radialX), tilt)
-        .multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(radialX, 0, radialZ), 0.3 * (random() - 0.5)));
+        .multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(radialX, 0, radialZ), piece.wedge ? 0 : 0.3 * (random() - 0.5)));
       const drift = between(random, SHARD.drift), aside = SHARD.aside * (2 * random() - 1);
       const driftX = radialX * Math.cos(aside) - radialZ * Math.sin(aside), driftZ = radialX * Math.sin(aside) + radialZ * Math.cos(aside);
       piece.thickness = hole.thickness;
@@ -1032,11 +1106,23 @@ export class IceSheet {
       // its clear ice is, as the sheet's (ICE.scatter, src/shaders/scene.js ICE_SCATTER's twin), seen a little aslant.
       const milk = 1 - Math.exp(-ICE.scatter * hole.thickness / 0.8);
       piece.shape = { corners: piece.corners.map((value) => value / piece.radius), thickness: hole.thickness / piece.radius, white: piece.white, milk };
-      piece.start = {
+      // A wedge: set in the sheet where it broke, its middle where the sheet's is (it floats there), until the water comes
+      // back up through the hole (floodAt); then its inner edge driven down at `inner`, turning about the tangent at its
+      // outer edge, its middle going down at half that.
+      const inner = Math.min(between(random, SHARD.push) * hole.down, SHARD.pushMost);
+      piece.start = piece.wedge ? {
+        position: new THREE.Vector3(piece.x, hole.thickness * (0.5 - ICE.density / WATER_DENSITY), piece.z),
+        setFor: Math.max(hole.floodAt - this.time, 0),
+        velocity: new THREE.Vector3(driftX * drift, -0.5 * inner, driftZ * drift),
+        quaternion,
+        // Tipping about the tangent and, jostled, turning about the vertical either way (SHARD.turn), as one spin.
+        spin: wedgeSpin(radialX, radialZ, Math.min(inner / (4 * piece.radius), SHARD.tipMost), (random() < 0.5 ? -1 : 1) * between(random, SHARD.turn)),
+      } : {
         // Its highest point (its raised rim, tilted) under the water by `depth` of its radius: it comes up, never appears out of it.
         position: new THREE.Vector3(piece.x, -(hole.thickness / 2 + Math.sin(tilt) * piece.radius + between(random, SHARD.depth) * piece.radius), piece.z),
         velocity: new THREE.Vector3(driftX * drift, 0, driftZ * drift),
         quaternion,
+        spin: null,
       };
       piece.hole = hole;
     }
@@ -1049,7 +1135,8 @@ export class IceSheet {
    * holdInPool holds a thing in the pool): its middle no farther from the
    * hole's than its edge's reach that way (edgeReach), less its new ice's
    * front and its own radius as it meets things (a plate's whole radius,
-   * flat), its speed outward turned
+   * flat; a shard, each corner of its own outline inside the edge), its
+   * speed outward turned
    * back at its own bounce (the water between takes some). Returns how hard
    * it was turned back ({ change, normalX, normalZ }, the normal into the
    * hole), or null.
@@ -1060,15 +1147,30 @@ export class IceSheet {
     const awayX = rock.position.x - hole.x, awayZ = rock.position.z - hole.z;
     const away = Math.hypot(awayX, awayZ);
     if (away < 1e-9) return null;
-    const reach = rock.plate ? rock.radius : rock.collisionRadius;   // a plate lies flat: its rim must not go under the ice
-    const room = Math.max(this.edgeReach(hole, Math.atan2(awayZ, awayX)) - (hole.skin?.front ?? 0) - reach, 0);
+    const front = hole.skin?.front ?? 0;
+    // How far past the edge it is: a shard by its own outline's corners as it is turned, each against the edge at its
+    // own azimuth (a wedge broken from the hole's rim lies right up to it, which its disc would not); anything else by
+    // its middle, its reach in from the edge (a plate lies flat: its rim must not go under the ice).
+    let over;
+    if (rock.piece) {
+      over = -Infinity;
+      const corners = rock.piece.corners, corner = containCorner;
+      for (let index = 0; index < corners.length; index += 2) {
+        corner.set(corners[index] * rock.radius, 0, corners[index + 1] * rock.radius).applyQuaternion(rock.quaternion);
+        const cornerX = awayX + corner.x, cornerZ = awayZ + corner.z;
+        over = Math.max(over, Math.hypot(cornerX, cornerZ) - Math.max(this.edgeReach(hole, Math.atan2(cornerZ, cornerX)) - front, 0));
+      }
+    } else {
+      const reach = rock.plate ? rock.radius : rock.collisionRadius;
+      over = away - Math.max(this.edgeReach(hole, Math.atan2(awayZ, awayX)) - front - reach, 0);
+    }
     // A hundredth of a millimetre's slack: one held at the edge, then come to rest there, lies at its room give or take
     // the rounding, and knocked each step for that it would never rest.
-    if (away <= room + 1e-5) return null;
+    if (over <= 1e-5) return null;
     const normalX = -awayX / away, normalZ = -awayZ / away;
     const outward = -(rock.velocity.x * normalX + rock.velocity.z * normalZ);
     const change = outward > 0 ? (1 + rock.collisionBounce * 0.8) * outward : 0;
-    rock.knock(normalX * change, 0, normalZ * change, normalX * (away - room), 0, normalZ * (away - room));
+    rock.knock(normalX * change, 0, normalZ * change, normalX * over, 0, normalZ * over);
     return { change, normalX, normalZ };
   }
 
@@ -1080,23 +1182,26 @@ export class IceSheet {
   }
 
   /**
-   * The world's clock at `time` (s; src/main.js, each step): each hole whose
-   * cavity has closed lets its shards go (into `shards`) and floods the ice
-   * round it; the wet freezes away (FLOOD.step); holes left alone skin over,
-   * their new ice growing in (REFREEZE.step).
+   * The world's clock at `time` (s; src/main.js, each step): each hole opened
+   * the step before lets its shards go (into `shards`), and each whose cavity
+   * has closed floods the ice round it; the wet freezes away (FLOOD.step);
+   * holes left alone skin over, their new ice growing in (REFREEZE.step).
    */
   setTime(time) {
     const passed = Math.max(time - this.time, 0);
     this.time = time;
     if (!this.on) return;
     for (const hole of this.holes) {
-      if (!hole.released && time >= hole.releaseAt) {
+      if (!hole.released && time > hole.releaseAt) {
         hole.released = true;
-        this.flood(hole);
         this.shards.push(...this.piecesOf(hole));
       }
+      if (!hole.flooded && time >= hole.floodAt) {
+        hole.flooded = true;
+        this.flood(hole);
+      }
       // Its field worked out a few rows a step in the seconds before (prepareSkin), then its new ice begins.
-      if (!hole.skin && hole.released && time - hole.quiet >= REFREEZE.after - REFREEZE.prepare && !hole.field?.ready) this.prepareSkin(hole, REFREEZE.texels);
+      if (!hole.skin && hole.flooded && time - hole.quiet >= REFREEZE.after - REFREEZE.prepare && !hole.field?.ready) this.prepareSkin(hole, REFREEZE.texels);
       if (!hole.skin && hole.field?.ready && time - hole.quiet >= REFREEZE.after) this.startSkin(hole);
       if (hole.skin && !hole.skin.closed && time - hole.skin.painted >= REFREEZE.step) this.growSkin(hole);
     }

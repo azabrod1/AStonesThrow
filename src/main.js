@@ -1660,14 +1660,14 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
 
   /**
    * A shard the ice let go (src/ice.js piecesOf: a piece of a hole's ice,
-   * pushed under as it broke) made a thing (src/things.js 'ice-shard', its
+   * driven down as it broke, or crushed and pushed under) made a thing (src/things.js 'ice-shard', its
    * own outline and mass), adrift under the water where it starts, held in
    * its hole and on the ice as anything thrown is.
    */
   function addShard(piece) {
-    const { position, velocity, quaternion } = piece.start;
+    const { position, velocity } = piece.start;
     const rock = new Rock({ radius: piece.radius, position, velocity, envTexture: environment.envTexture, waterFog: { extinction: lighting.extinction, color: lighting.waterColor }, thing: 'ice-shard', mass: piece.mass, mirrorLayer: MIRROR_LAYER, water: surface.rideUniforms, piece: piece.shape });
-    rock.adrift(position, velocity, quaternion);
+    rock.breakAway(piece.start);
     rock.iceHole = piece.hole;
     rock.ground = ice.ground;
     rocks.push(rock);
@@ -2125,8 +2125,9 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     const seenAfter = () => Math.max(stepsTime + PHYSICS_STEP - end, 0) / Math.max(timeScale, 0.01) + presented;
     while (stepsTime < end - 1e-12) {
       advanceSplash(stepsTime);
-      // The ice's clock (src/ice.js setTime): a hole whose cavity has closed lets its shards go (each a thing, the
-      // biggest first, no more than the preset keeps) and floods the ice round it; the wet freezes; holes skin over.
+      // The ice's clock (src/ice.js setTime): a hole opened the step before lets its shards go (each a thing, the
+      // biggest first, no more than the preset keeps), and floods the ice round it once its cavity has closed; the wet
+      // freezes; holes skin over.
       ice.setTime(stepsTime);
       for (const piece of ice.shards.splice(0).slice(0, settings.shards)) stepping.push(addShard(piece));
       for (const rock of stepping) {

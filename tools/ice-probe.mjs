@@ -40,12 +40,13 @@
 //     under BREAK_MS;
 //   - shards (src/ice.js piecesOf, each made a thing as src/main.js makes
 //     it, src/rock.js adrift): a 6 cm stone through thin ice, a 16 cm one
-//     and a 30 cm rock through thick, each lets go SHARDS pieces once its
-//     cavity has closed, each of ice's density, their rims' discs at most
-//     SHARD.fill of the hole, each starting inside it, the same pieces for
-//     the same seeded throw; followed SHARD_SECONDS with the things' meetings
-//     and the hole's hold, every one comes up and rests afloat, flat, at the
-//     height it floats at, inside its hole, none overlapping another;
+//     and a 30 cm rock through thick, each lets go SHARDS pieces the step
+//     after the break, each of ice's density, their areas at most
+//     SHARD.fill of the hole's, the same pieces for the same seeded throw;
+//     followed SHARD_SECONDS with the things' meetings and the hole's hold,
+//     every one comes up and rests afloat, flat (on either face), at the height it floats at,
+//     its outline inside its hole, none overlapping another's (src/collide.js
+//     outlineOverlap) by more than OUTLINE_TOLERANCE;
 //   - the flood: the ice round the hole is wet once its shards go, dry but
 //     glazed FLOOD.dry seconds on, the far ice never wet; drops that land on
 //     the ice wet it;
@@ -62,7 +63,7 @@ import { Rock, aimThrow, aimSkip, skipSpeed, SKIP_THROW, throwFlightTime } from 
 import { THINGS, THING_NAMES } from '../src/things.js';
 import { floorDepthAt } from '../src/pondFloor.js';
 import { holdInPool, poolGround, POOL } from '../src/pool.js';
-import { collideThings } from '../src/collide.js';
+import { collideThings, outlineOverlap } from '../src/collide.js';
 import { SplashSystem } from '../src/splash.js';
 import { IceSheet, ICE, ICE_THICKNESS } from '../src/ice.js';
 
@@ -78,7 +79,8 @@ const SLIDE_RATIO = 4;
 const MOMENTUM_KEPT = 0.05;  // of the striker's momentum
 const STEP_TOLERANCE = 0.15; // of a slide
 const BREAK_MS = 25;
-const SHARDS = [3, 9];       // pieces a break lets go (least, most)
+const SHARDS = [3, 12];      // pieces a break lets go (least, most)
+const OUTLINE_TOLERANCE = 0.001;   // m: two shards' outlines overlap at rest by less than this, and lie inside their hole by it
 const SHARD_SECONDS = 15;    // s a break's shards are followed for
 const SKIN_MS = 15;          // a step of the ice's clock (a hole's shards let go and its flood, new ice) or a shard frozen in costs under this (it was 45 to 60 ms before it was spread over steps; here 2 to 8, as the runner allows)
 const LONGEST = 40;          // s: a thing not at rest on the ice nor through it by then fails...
@@ -531,7 +533,8 @@ function iceWorld({ diameter = 6, thickness = 'thin', seed = 1, x = 0, z = -1.4,
       else world.costs.clock = Math.max(world.costs.clock, spent);
       for (const piece of pieces) {
         const shard = new Rock({ radius: piece.radius, position: piece.start.position, velocity: piece.start.velocity, envTexture: null, thing: 'ice-shard', mass: piece.mass, piece: piece.shape });
-        shard.adrift(piece.start.position, piece.start.velocity, piece.start.quaternion);
+        shard.breakAway(piece.start);
+        piece.hole.letGo ??= world.time;
         shard.iceHole = piece.hole;
         shard.ground = ice.ground;
         shard.pieceOf = piece;
@@ -591,30 +594,37 @@ for (const [diameter, thickness, seed] of [[6, 'thin', 1], [16, 'thick', 2], [30
   const hole = ice.holes[0];
   if (!check(hole, `${label}: no hole`)) continue;
   const holeArea = Math.abs(hole.corners.reduce((sum, value, index, corners) => (index % 2 ? sum : sum + value * corners[(index + 3) % corners.length] - corners[(index + 2) % corners.length] * corners[index + 1]), 0)) / 2;
-  const discs = shards.reduce((sum, shard) => sum + Math.PI * shard.radius ** 2, 0);
-  const lateness = hole.releaseAt - hole.openedAt;
+  const discs = shards.reduce((sum, shard) => sum + shard.pieceOf.area, 0);
+  const lateness = (hole.letGo ?? Infinity) - hole.openedAt;
   let outside = 0, unsettled = 0, tilted = 0, overlap = 0, density = 0;
   for (const shard of shards) {
-    const away = Math.hypot(shard.position.x - hole.x, shard.position.z - hole.z);
-    const room = ice.edgeReach(hole, Math.atan2(shard.position.z - hole.z, shard.position.x - hole.x)) - shard.radius;
-    if (away > room + 0.003) outside++;
+    // Each corner of its outline, as it is turned, inside the hole's edge at its own azimuth.
+    const corners = shard.piece.corners;
+    let past = 0;
+    for (let index = 0; index < corners.length; index += 2) {
+      const corner = new THREE.Vector3(corners[index] * shard.radius, 0, corners[index + 1] * shard.radius).applyQuaternion(shard.quaternion);
+      const cornerX = shard.position.x + corner.x - hole.x, cornerZ = shard.position.z + corner.z - hole.z;
+      past = Math.max(past, Math.hypot(cornerX, cornerZ) - ice.edgeReach(hole, Math.atan2(cornerZ, cornerX)));
+    }
+    if (past > OUTLINE_TOLERANCE) outside++;
     if (!(shard.afloat && shard.state === 'rest') || Math.abs(shard.position.y - shard.floatingHeight()) > 0.003) unsettled++;
-    if (new THREE.Vector3(0, 1, 0).applyQuaternion(shard.quaternion).y < Math.cos(THREE.MathUtils.degToRad(5))) tilted++;
+    // Flat on either face: a slab driven under may come up over (clear ice looks the same either way up).
+    if (Math.abs(new THREE.Vector3(0, 1, 0).applyQuaternion(shard.quaternion).y) < Math.cos(THREE.MathUtils.degToRad(5))) tilted++;
     density = Math.max(density, Math.abs(shard.density / 917 - 1));
-    for (const other of shards) if (other !== shard) overlap = Math.max(overlap, shard.radius + other.radius - Math.hypot(shard.position.x - other.position.x, shard.position.z - other.position.z));
+    for (const other of shards) if (other !== shard) overlap = Math.max(overlap, outlineOverlap(shard, other)?.depth ?? 0);
   }
   const again = iceWorld({ diameter, thickness, seed });
   again.throwStone(diameter);
   again.step(lateness + 2.5);
   const same = again.shards.length === shards.length && again.shards.every((shard, index) => shard.pieceOf.corners.every((value, corner) => value === shards[index].pieceOf.corners[corner]));
-  console.log(`  ${label}: ${shards.length} shards ${centimetres(Math.min(...shards.map((shard) => 2 * shard.radius)))} to ${centimetres(Math.max(...shards.map((shard) => 2 * shard.radius)))} cm across, let go ${lateness.toFixed(2)} s after the break; their discs ${(100 * discs / holeArea).toFixed(0)}% of the hole; after ${SHARD_SECONDS} s ${shards.length - unsettled} at rest afloat, ${tilted} tilted, ${outside} outside the hole, overlapping by ${Math.max(1000 * overlap, 0).toFixed(1)} mm at most; again ${same ? 'the same pieces' : 'other pieces'}`);
+  console.log(`  ${label}: ${shards.length} shards ${centimetres(Math.min(...shards.map((shard) => 2 * shard.radius)))} to ${centimetres(Math.max(...shards.map((shard) => 2 * shard.radius)))} cm across, let go ${(1000 * lateness).toFixed(1)} ms after the break; their areas ${(100 * discs / holeArea).toFixed(0)}% of the hole's; after ${SHARD_SECONDS} s ${shards.length - unsettled} at rest afloat, ${tilted} tilted, ${outside} outside the hole, overlapping by ${Math.max(1000 * overlap, 0).toFixed(1)} mm at most; again ${same ? 'the same pieces' : 'other pieces'}`);
   check(shards.length >= SHARDS[0] && shards.length <= SHARDS[1], `${label}: ${shards.length} shards`);
-  check(lateness >= 0.12 - 1e-9, `${label}: its shards were let go ${lateness.toFixed(2)} s after the break, before its cavity closed`);
-  check(discs <= 0.55 * holeArea + 1e-9, `${label}: its shards' discs cover ${(100 * discs / holeArea).toFixed(0)}% of the hole`);
+  check(lateness <= 1.5 * STEP, `${label}: its shards were let go ${(1000 * lateness).toFixed(1)} ms after the break, not at it`);
+  check(discs <= 0.62 * holeArea + 1e-9, `${label}: its shards' areas cover ${(100 * discs / holeArea).toFixed(0)}% of the hole's`);
   check(density < 1e-3, `${label}: a shard's density is off ice's by ${(100 * density).toFixed(2)}%`);
   check(unsettled === 0 && tilted === 0, `${label}: after ${SHARD_SECONDS} s ${unsettled} shards are not at rest afloat at their height, ${tilted} not flat`);
   check(outside === 0, `${label}: ${outside} shards are outside their hole`);
-  check(overlap < 0.001, `${label}: two shards overlap by ${(1000 * overlap).toFixed(1)} mm`);
+  check(overlap < OUTLINE_TOLERANCE, `${label}: two shards' outlines overlap by ${(1000 * overlap).toFixed(1)} mm`);
   check(same, `${label}: the same seeded throw let go other pieces`);
 }
 

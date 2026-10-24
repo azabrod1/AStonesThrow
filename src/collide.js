@@ -13,7 +13,13 @@
 // the air meets a floater where it is seen). Two flat pieces of ice (src/
 // things.js `body.meetsAtRim`, src/ice.js's shards) meet rim to rim instead:
 // discs in the level, each of its whole radius, the line between them level,
-// so pieces afloat side by side neither overlap nor push each other under.
+// so pieces afloat side by side neither overlap nor push each other under;
+// two that each have their own outline (Rock.piece: a wedge broken out of
+// the sheet, lying beside its neighbours as it broke) meet by those outlines
+// as they are turned, seen from above (outlineOverlap: the separating axes
+// of two convex polygons), apart along the axis they overlap least on.
+// What broke a hole in the ice never meets that hole's pieces: it went down
+// between them, their inner edges clear of it (src/ice.js SHARD.clear).
 // A pair meets when one of them is a floater
 // (afloat, bobbing, or on its way up), or on the ground (going along it or
 // at rest on it: Rock.grounded, which a knock sets going again and the
@@ -126,6 +132,8 @@ function collidePass(things, knocks) {
     for (let second = first + 1; second < things.length; second++) {
       const one = things[first], other = things[second];
       if (!one.collides || !other.collides || !(one.floater || other.floater || one.grounded || other.grounded)) continue;
+      // What broke a hole went down between its pieces (src/ice.js SHARD.clear): it never meets them.
+      if ((one.piece && one.iceHole?.by === other) || (other.piece && other.iceHole?.by === one)) continue;
       // Two flat pieces of ice (the header) meet rim to rim: the line between them level, their whole radii.
       const rims = Boolean(one.thing.body.meetsAtRim && other.thing.body.meetsAtRim);
       between.copy(other.centre).sub(one.centre);
@@ -134,7 +142,14 @@ function collidePass(things, knocks) {
       const reach = radiusOf(one, rims) + radiusOf(other, rims);
       if (distance < 1e-9) continue;
       let normal, overlap = 0, backOne = 0, backOther = 0;
-      if (distance < reach - COLLIDE.settled) {
+      if (rims && one.piece && other.piece) {
+        // Two pieces of ice by their own outlines (the header): within their discs, overlapping as polygons, or not met.
+        if (distance >= reach) continue;
+        const outlines = outlineOverlap(one, other);
+        if (!outlines || outlines.depth < COLLIDE.settled) continue;
+        normal = between.set(outlines.normalX, 0, outlines.normalZ);
+        overlap = outlines.depth;
+      } else if (distance < reach - COLLIDE.settled) {
         // Overlapping already as the step began, and passed through each other's middles in it: they meet as they were
         // then, put back there (the line between them now points the wrong way).
         drawnAtStart(one, other, rims);
@@ -269,3 +284,52 @@ function drawnAtStart(one, other, rims = false) {
 
 /** A thing's radius as it meets another (the header): its whole radius rim to rim, else its sphere's (Rock.collisionRadius). */
 function radiusOf(thing, rims) { return rims ? thing.radius : thing.collisionRadius; }
+
+const outlineCorner = new THREE.Vector3();
+const outlineOne = [], outlineOther = [];
+
+/** A shard's outline (Rock.piece: its corners about its middle, in radii) as it is turned, seen from above: [x, z, …] in m, into `into`. */
+function worldOutline(thing, into) {
+  const corners = thing.piece.corners, centre = thing.centre;
+  into.length = 0;
+  for (let index = 0; index < corners.length; index += 2) {
+    outlineCorner.set(corners[index] * thing.radius, 0, corners[index + 1] * thing.radius).applyQuaternion(thing.quaternion);
+    into.push(centre.x + outlineCorner.x, centre.z + outlineCorner.z);
+  }
+  return into;
+}
+
+/**
+ * How two shards' outlines (worldOutline: convex) overlap, seen from above:
+ * null if some axis separates them, else the axis they overlap least along
+ * ({ normalX, normalZ }, unit, from `one` towards `other`) and by how much
+ * (`depth`, m). The separating axis theorem, over both polygons' edges.
+ */
+export function outlineOverlap(one, other) {
+  const first = worldOutline(one, outlineOne), second = worldOutline(other, outlineOther);
+  let depth = Infinity, normalX = 0, normalZ = 0;
+  for (const polygon of [first, second]) {
+    for (let index = 0; index < polygon.length; index += 2) {
+      const next = (index + 2) % polygon.length;
+      let axisX = -(polygon[next + 1] - polygon[index + 1]), axisZ = polygon[next] - polygon[index];
+      const length = Math.hypot(axisX, axisZ);
+      if (length < 1e-12) continue;
+      axisX /= length; axisZ /= length;
+      let lowOne = Infinity, highOne = -Infinity, lowOther = Infinity, highOther = -Infinity;
+      for (let corner = 0; corner < first.length; corner += 2) {
+        const along = first[corner] * axisX + first[corner + 1] * axisZ;
+        lowOne = Math.min(lowOne, along); highOne = Math.max(highOne, along);
+      }
+      for (let corner = 0; corner < second.length; corner += 2) {
+        const along = second[corner] * axisX + second[corner + 1] * axisZ;
+        lowOther = Math.min(lowOther, along); highOther = Math.max(highOther, along);
+      }
+      const overlap = Math.min(highOne, highOther) - Math.max(lowOne, lowOther);
+      if (overlap <= 0) return null;
+      if (overlap < depth) { depth = overlap; normalX = axisX; normalZ = axisZ; }
+    }
+  }
+  // From the first towards the second.
+  if ((other.centre.x - one.centre.x) * normalX + (other.centre.z - one.centre.z) * normalZ < 0) { normalX = -normalX; normalZ = -normalZ; }
+  return { normalX, normalZ, depth };
+}

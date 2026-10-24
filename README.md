@@ -112,11 +112,13 @@ is remembered on the device (but the view, which opens on the shore):
   stone, a brick or a bowling ball goes through thin ice, a light ball, a gem
   or a pebble does not, and only a big rock or a heavy ball lobbed high goes
   through thick ice, anywhere over the water, the pool's corners too. A
-  break opens a jagged hole with cracks running out from it, more and longer
-  the harder the blow, joined by rings of crack into a web, ending where
-  they meet a crack already there, and the stone splashes in
-  as into open water, without the crown, whose sheet would stand on ice. The
-  broken ice comes up in the hole as floating shards, the water floods the
+  break opens a jagged hole with cracks running out from where it struck,
+  more and longer the harder the blow, joined by rings of crack curving
+  round into a web, ending where they meet a crack already there, and the
+  stone splashes in as into open water, without the crown, whose sheet
+  would stand on ice. The broken ice is there from the first moment: slices
+  narrowing to the blow lie where they broke while the splash is open under
+  them, then dip as the water comes back and float in the hole; the water floods the
   ice round it and freezes glazed, and a hole left alone for 40 seconds
   freezes over again in half a minute, its shards frozen in, its new ice
   thin enough for the next throw to break.
@@ -887,33 +889,44 @@ brought in to 4 mm of a pool's walls. Radial cracks run out from its
 corners, three to six of them and one and a half more for each doubling of
 the blow over what the ice held, 0.35 to 1.5 times the sheet's
 characteristic length (0.54 m for thin ice, 1.5 m for thick) and now and
-then one far longer: each in straight runs of 3 to 15 cm with kinks
-between, pulled back the way it set out, forking now and then, tapering to
-a hairline. Rings of crack join neighbouring radials farther out, chords
-from one to the next, so a hard break leaves a web. A crack stops where it
-meets one already there, as real cracks do, so older breaks bound newer
-ones; a near miss stars the ice, sometimes ringed. A thing sliding into a hole falls in; one too wide for a hole
+then one far longer: each in short runs of 1 to 4.5 cm with small kinks
+between, rough at every scale its points resolve, pulled back the way it
+set out, forking now and then, tapering to a hairline; and round the
+hole's crushed edge a fringe of short ones. Rings of crack join
+neighbouring radials farther out, each curving round the hole from one
+radial until it runs into the next, so a hard break leaves a web. A crack
+stops where it meets one already there, as real cracks do, so older breaks
+bound newer ones; a near miss stars the ice, sometimes ringed. A crack runs
+out at 8 m/s from where it starts, when the crack it starts from reached
+there (a real one runs at hundreds of metres a second, at once to the eye;
+run out over a few frames the break is seen to spread from the blow, its
+rings after its radials), and is drawn only as far as it has run. A thing sliding into a hole falls in; one too wide for a hole
 strikes its edge; a floater that went in by a hole comes up in it and is
 held there. The ice that was in the hole broke into pieces between its
-radial cracks, and across them where a wedge is wide or deep, each a convex
-slab of the ice's thickness, with a chip or two from the crushed middle: as
-many as float in the hole uncrowded (their rims' discs at most 55% of it;
-a 6 cm stone through thin ice makes six or so, 7 to 13 cm across). Once the
-cavity has closed they are let go a little under the water, tilted, each a
-thing (`ice-shard` in `src/things.js`, hidden from the menus; its mesh
-built to its own outline, `src/thingMeshes.js`), so they come up and float
-flat at the sheet's own freeboard by the plate model a pizza floats by,
-bump each other rim to rim (`src/collide.js`), and are held in the hole by
-its edge's reach in each direction. A shard is drawn as clear ice
+radial cracks, slices narrowing to the blow out to the hole's ragged edge,
+and across them at a slant where a slice is wide or deep, each a convex
+slab of the ice's thickness, with a few chips from the crushed middle: as
+many as float in the hole (their own areas at most 62% of its; a 6 cm stone
+through thin ice makes up to twelve, 7 to 11 cm across). They are let go the
+step after the break, each a thing (`ice-shard` in `src/things.js`, hidden
+from the menus; its mesh built to its own outline, `src/thingMeshes.js`):
+a slice stays set where it broke, flat in the sheet, while the cavity is
+open under it (`Rock.breakAway`), then as the water comes back up through
+the hole dips, its inner edge first, and turns a little, jostled; the chips
+come up from under the water. They float flat at the sheet's own freeboard
+by the plate model a pizza floats by (now and then one comes up the other
+way over), meet each other by their own outlines (`src/collide.js`), and
+are held in the hole by their outlines' corners against its edge. The thing
+that broke the hole went down between them and never meets them. A shard is drawn as clear ice
 (`look.seenThrough`, `src/rock.js`): its outline broken along its sides
 (scaled back to its own area, so its mass stays ice's), its top showing
 what lies under it through its milk (the sheet's, for its thickness) and
-the sheet's own snow, frost, bubbles and crystal lines, its rim rounded and
-whiter. Under the water ice bends light all but as water does, so from
+the sheet's own snow, frost and bubbles, its rim rounded and whiter, its
+broken sides glassy. Under the water ice bends light all but as water does, so from
 above its submerged part is all but invisible: the under-water pass draws
 only its sides' inner faces, bright with the light turned back off them, a
 band along its far edges as wide as it is thick seen aslant, and, faintly,
-its top where a ripple has washed over it. As they go the water the splash threw
+its top where a ripple has washed over it. As the cavity closes the water the splash threw
 aside comes back over the ice round the hole, out to about one and a half
 times its reach, leaning the way the stone went, and each drop that lands on
 the ice wets a spot; the film freezes over 75 seconds, leaving the ice
@@ -941,8 +954,9 @@ would round them, and its distance field crossed zero between two cracks
 near each other, a dotted line where no crack was. The ice is a lake's,
 every part of it crisp (soft noise read as a texture magnified, the
 picture blurred): mostly clear black ice, the water and the bed showing
-through it and a mirror, the sun a small hard glint in it; its crystals'
-boundaries faint lines in patches; snow ice in wind-streaked patches with
+through it and a mirror, the sun a small hard glint in it (its crystals'
+boundaries are not drawn: on black ice they are all but unseen, and drawn
+as lines they read as a grid of cracks); snow ice in wind-streaked patches with
 ragged edges (more on thick ice) and cloudy ice frozen from slush, both
 frosted, the sun's sheen on them broken into glints; frost specks and
 frozen bubbles in clusters; a veil of the light even clear ice scatters,

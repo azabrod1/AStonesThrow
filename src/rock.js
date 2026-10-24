@@ -1622,7 +1622,7 @@ export class Rock {
       const half = this.halfHeight();
       const clear = Math.max(this.position.y - half, -this.position.y - half, 0);
       const afloat = (this.state === 'float' || (this.state === 'rest' && this.afloat)) && (!this.plate || clear === 0);
-      this.rideShare.value = this.state === 'held' || this.state === 'ground' || this.state === 'skim' ? 0 : afloat ? 1 : Math.max(1 - clear / half, 0);
+      this.rideShare.value = this.state === 'held' || this.state === 'set' || this.state === 'ground' || this.state === 'skim' ? 0 : afloat ? 1 : Math.max(1 - clear / half, 0);
     }
     // Where it is drawn, riding the water as far as it does (src/floaterRide.js): where things meet it.
     this.centre.copy(this.meshAbove.position);
@@ -2273,20 +2273,45 @@ export class Rock {
    * broke and pushed under, src/ice.js shards): at `position`, moving at
    * `velocity`, turned to `quaternion`, it floats up from there (floatStep; a
    * plate's water model, the water it carries wholly under carried), seen
-   * through the water as a thing gone in is.
+   * through the water as a thing gone in is; turning at `spin` ({ axis, rate:
+   * rad/s }: a wedge of ice driven down, hinged at its outer edge) if given.
    */
-  adrift(position, velocity, quaternion) {
+  adrift(position, velocity, quaternion, spin = null) {
     this.position.copy(position);
     this.previous.copy(position);
     this.velocity.copy(velocity);
     this.quaternion.copy(quaternion);
-    this.spinRate = 0;
+    this.spinRate = spin?.rate ?? 0;
+    if (spin) this.spinAxis.copy(spin.axis).normalize();
     this.state = 'float';
     this.hasFloated = true;
     this.carriedWater = this.plate ? this.plateAddedMass(1) : 0;
     this.sinceImpact = Infinity;
     this.seenThroughWater.value = 1;
     this.wet = 1;
+    this.syncMeshes();
+  }
+
+  /**
+   * A piece of ice a break let go (src/ice.js piecesOf `start`): a wedge
+   * stays set where it broke, flat in the sheet, for its `setFor` seconds
+   * (while the thing's cavity is open under it; state 'set': nothing meets
+   * it, it is drawn as above the water), then is set adrift, driven down as
+   * the water comes back up through its hole (`velocity`, `spin`); a chip,
+   * pushed under, is adrift at once.
+   */
+  breakAway({ position, velocity, quaternion, spin = null, setFor = 0 }) {
+    if (setFor <= 0) { this.adrift(position, velocity, quaternion, spin); return; }
+    this.position.copy(position);
+    this.previous.copy(position);
+    this.velocity.set(0, 0, 0);
+    this.quaternion.copy(quaternion);
+    this.spinRate = 0;
+    this.state = 'set';
+    this.setFor = setFor;
+    this.letGo = { velocity: velocity.clone(), spin };
+    this.sinceImpact = -1;
+    this.seenThroughWater.value = 0;
     this.syncMeshes();
   }
 
@@ -2689,6 +2714,13 @@ export class Rock {
     this.drawnBefore.position.copy(this.stepEnd.position);
     this.drawnBefore.quaternion.copy(this.stepEnd.quaternion);
     this.previous.copy(this.position);
+    // A piece of ice still set in the sheet it broke from (breakAway): still, until the water comes back up through its hole.
+    if (this.state === 'set') {
+      this.setFor -= dt;
+      if (this.setFor <= 0) this.adrift(this.position, this.letGo.velocity, this.quaternion, this.letGo.spin);
+      else this.syncMeshes();
+      return null;
+    }
     let impact = null;
     // Down on the ground (the header), if it was over it the step before too (else it met the ground's side, src/pool.js).
     const ground = this.ground;
