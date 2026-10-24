@@ -16,13 +16,14 @@
   }
 }
 </script>
+<link rel="modulepreload" href="./src/loadAsset.js">
 <!-- Discover the application and its dependencies while the page is parsed. -->
 <link rel="modulepreload" href="./src/main.js">
 <link rel="modulepreload" href="./src/settingsPanel.js">
 <link rel="modulepreload" href="./src/thingMenu.js">
 <link rel="modulepreload" href="./src/things.js">
 <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.183.2/build/three.module.js">
-<!-- The first sky's photo (about 5 MB) and measurements, asked for now, while
+<!-- The first sky's photo (0.2 to 0.8 MB) and measurements, asked for now, while
      the modules download, not once they have run (src/sky.js Starting): the
      files of the sky last shown here (src/main.js SKY_ASSETS_STORAGE_KEY),
      or on a first visit the default place's (Lakeside in the afternoon;
@@ -33,7 +34,7 @@
   (() => {
     const parameters = new URLSearchParams(location.search);
     if (parameters.has('sky') || parameters.has('time') || parameters.get('water') === 'pool') return;
-    const firstVisitSky = ['assets/sky/lakeside_2k.hdr', 'assets/sky/lakeside.json', 'assets/sky/meadow_2.json'];
+    const firstVisitSky = ['assets/sky/lakeside_2k.jpg', 'assets/sky/lakeside.json', 'assets/sky/meadow_2.json'];
     let assets;
     try {
       const remembered = localStorage.getItem('stone-pond-sky-assets');
@@ -805,6 +806,7 @@
   }
   .load-actions button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   @media (pointer: coarse) {
+    .keys { display: none; }   /* no keyboard, no Space */
     input[type="range"] { --thumb: 28px; --track: 6px; height: 44px; }
     .segmented button, .slow, .reset-view, .thing-chip, .thing-menu-card [role="menuitemradio"] { min-height: 36px; }
     .throw { min-height: 40px; }
@@ -877,11 +879,11 @@
   }
 </style>
 
-<canvas id="pond" aria-label="A pond. Tap or click the water to throw a rock. Scroll or pinch to zoom."></canvas>
+<canvas id="pond" aria-label="A pond. Tap or click to throw. Hold an object to pick it up, drag to move it, and release to drop it. Drag the water to look around. Scroll or pinch to zoom."></canvas>
 
 <div class="title">
   <h1>A Stone’s Throw</h1>
-  <p>Tap the water to throw a rock, hold to touch it, drag to look around. Space throws one for you; scroll or pinch to look closer.</p>
+  <p>Tap to throw. Hold an object to pick it up; release to drop. Hold the water to touch it, drag to look around. Scroll or pinch to look closer.<span class="keys"> Space throws one for you.</span></p>
 </div>
 <div class="stats" id="stats" aria-live="off"></div>
 

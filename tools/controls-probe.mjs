@@ -5,8 +5,10 @@
 // phone's browser does not: without the tag it lays the page out 980 pixels
 // wide and shrinks it to fit, so every control comes out at less than half
 // its size. This probe emulates a phone's browser (isMobile, touch, the
-// device's pixel ratio) at a large phone's portrait and landscape and a small
-// phone's portrait and landscape, plus a desktop window, and for each checks:
+// device's pixel ratio) at a large phone's portrait and a small phone's
+// portrait and landscape, plus a desktop window, and for each checks (a large
+// phone on its side is left out: it has room every way the small one has,
+// under the same breakpoints, so whatever fits on the small one fits there):
 //   - the page is laid out at the device's width (the viewport tag works);
 //   - every control lies inside the screen, the strip does not overflow and
 //     it covers at most 30% of the screen's height;
@@ -75,8 +77,7 @@
 //
 // --root serves another checkout (a git archive of an earlier commit, say);
 // the screenshots and the checks then describe that version.
-import { chromium } from 'playwright';
-import { existsSync } from 'node:fs';
+import { launchBrowser } from './browser.mjs';
 import { mkdir, readFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import path from 'node:path';
@@ -91,7 +92,6 @@ const outputFolder = path.join(repository, 'shots', 'controls-probe', label);
 const FRAMINGS = [
   { name: 'phone', width: 430, height: 932, pixelRatio: 3, touch: true, portrait: true },        // a large iPhone in portrait
   { name: 'small-phone', width: 375, height: 667, pixelRatio: 2, touch: true, portrait: true },  // an iPhone SE
-  { name: 'phone-landscape', width: 932, height: 430, pixelRatio: 3, touch: true, portrait: false },
   { name: 'small-phone-landscape', width: 667, height: 375, pixelRatio: 2, touch: true, portrait: false },
   { name: 'desktop', width: 1280, height: 720, pixelRatio: 1, touch: false, portrait: false },
 ];
@@ -100,7 +100,7 @@ const SMALLEST_BUTTON_HEIGHT = 34;     // points
 const PORTRAIT_SLIDER_SHARE = 0.55;    // of the screen's width
 const LARGEST_STRIP_SHARE = 0.3;       // of the screen's height: the pond is the point
 
-const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.mjs': 'text/javascript', '.json': 'application/json', '.hdr': 'application/octet-stream' };
+const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.mjs': 'text/javascript', '.json': 'application/json', '.jpg': 'image/jpeg' };
 const server = createServer(async (request, response) => {
   try {
     const file = path.join(root, decodeURIComponent(new URL(request.url, 'http://localhost').pathname));
@@ -112,12 +112,8 @@ const server = createServer(async (request, response) => {
   }
 });
 await new Promise((resolve) => server.listen(0, resolve));
-const containerChromium = '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
-const browser = await chromium.launch({
-  headless: true,
-  executablePath: process.env.PW_CHROMIUM || (existsSync(containerChromium) ? containerChromium : undefined),
-  args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--enable-webgl', '--disable-gpu-sandbox'],
-});
+// The GPU if there is one, else SwiftShader (tools/browser.mjs).
+const browser = await launchBrowser();
 await mkdir(outputFolder, { recursive: true });
 
 let failures = 0;

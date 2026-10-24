@@ -8,7 +8,9 @@
 // train of crests closing up on the slowest waves, 1.7 cm long, 0.23 m/s),
 // and writes it as a table of height and radial slope over radius and time
 // (assets/rain/ring.json and ring_profile.bin), fetched the first time it
-// rains, or alongside the sky when rainy weather is remembered. Downloads
+// rains, or alongside the sky when rainy weather is remembered, or at the
+// first impact for the drop rings (src/dropRings.js, which share it: it is
+// uploaded with its mip chain, tableMipmaps, for their lookups). Downloads
 // time out after 30 seconds without progress and may be retried; intensity
 // changes during a download still use the latest selection. Each frame one pass
 // (RAIN_TILE_FRAGMENT in src/shaders/rain.js)
@@ -117,6 +119,37 @@ export function rainSchedule({ rate, cell, sizes, life }) {
   const slots = Math.max(1, Math.ceil(perCell * longestRing));
   if (slots > RAIN_MAX_SLOTS) throw new Error(`a rain of ${rate} per m² per second needs ${slots} drops a cell, over RAIN_MAX_SLOTS (${RAIN_MAX_SLOTS}): make its cells smaller`);
   return { slots, period: slots / perCell, cells: Math.round(TILE_SIZE / cell) };
+}
+
+/**
+ * The ring's table (two channels over width radii and height times) and its
+ * mip chain down to 1×1, each level's texel the mean of the texels it
+ * covers in the one above.
+ */
+export function tableMipmaps(table, width, height) {
+  const levels = [{ data: table, width, height }];
+  while (width > 1 || height > 1) {
+    const above = levels[levels.length - 1];
+    const nextWidth = Math.max(1, width >> 1), nextHeight = Math.max(1, height >> 1);
+    const data = new Float32Array(nextWidth * nextHeight * 2);
+    for (let row = 0; row < nextHeight; row++) {
+      const rowFrom = Math.floor(row * height / nextHeight), rowTo = Math.floor((row + 1) * height / nextHeight);
+      for (let column = 0; column < nextWidth; column++) {
+        const columnFrom = Math.floor(column * width / nextWidth), columnTo = Math.floor((column + 1) * width / nextWidth);
+        for (let channel = 0; channel < 2; channel++) {
+          let sum = 0;
+          for (let sourceRow = rowFrom; sourceRow < rowTo; sourceRow++) {
+            for (let sourceColumn = columnFrom; sourceColumn < columnTo; sourceColumn++) sum += above.data[(sourceRow * width + sourceColumn) * 2 + channel];
+          }
+          data[(row * nextWidth + column) * 2 + channel] = sum / ((rowTo - rowFrom) * (columnTo - columnFrom));
+        }
+      }
+    }
+    levels.push({ data, width: nextWidth, height: nextHeight });
+    width = nextWidth;
+    height = nextHeight;
+  }
+  return levels;
 }
 
 /**
@@ -350,10 +383,17 @@ export class Rain {
       const result = download ? await download : { data: await loadRainData() };
       if (result.error) throw result.error;
       const { ring, table } = result.data;
-      const halves = new Uint16Array(table.length);
-      for (let index = 0; index < table.length; index++) halves[index] = THREE.DataUtils.toHalfFloat(table[index]);
-      const texture = new THREE.DataTexture(halves, ring.radii, ring.times, THREE.RGFormat, THREE.HalfFloatType);
-      texture.minFilter = texture.magFilter = THREE.LinearFilter;
+      // With its mip chain, for the drop rings' lookups (src/dropRings.js); the tile reads its base level.
+      const levels = tableMipmaps(table, ring.radii, ring.times).map(({ data, width, height }) => {
+        const halves = new Uint16Array(data.length);
+        for (let index = 0; index < data.length; index++) halves[index] = THREE.DataUtils.toHalfFloat(data[index]);
+        return { data: halves, width, height };
+      });
+      const texture = new THREE.DataTexture(levels[0].data, ring.radii, ring.times, THREE.RGFormat, THREE.HalfFloatType);
+      texture.mipmaps = levels;
+      texture.generateMipmaps = false;
+      texture.minFilter = THREE.LinearMipmapLinearFilter;
+      texture.magFilter = THREE.LinearFilter;
       texture.needsUpdate = true;
       const uniforms = this.tilePass.material.uniforms;
       uniforms.uProfile.value = texture;

@@ -27,10 +27,13 @@
 // glide into its water and out goes over the water and never through the
 // deck, and a tap on the deck throws inside the walls. Prints one line per
 // check and exits with status 1 if any fails.
+// Also holds existing objects: quick taps still throw, an early drag turns
+// the camera, a hold lifts and drops from rest, and cancellation or a pinch
+// cannot leave a held object or accidentally throw another; one lifted out
+// of its ice hole can be set down on the ice.
 //
 //   node tools/zoom-probe.mjs [--w=1280 --h=720]
-import { chromium } from 'playwright';
-import { existsSync } from 'node:fs';
+import { launchBrowser } from './browser.mjs';
 import { readFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import path from 'node:path';
@@ -53,12 +56,8 @@ const server = createServer(async (request, response) => {
   }
 });
 await new Promise((resolve) => server.listen(0, resolve));
-const containerChromium = '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
-const browser = await chromium.launch({
-  headless: true,
-  executablePath: process.env.PW_CHROMIUM || (existsSync(containerChromium) ? containerChromium : undefined),
-  args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--enable-webgl', '--disable-gpu-sandbox'],
-});
+// The GPU if there is one, else SwiftShader (tools/browser.mjs).
+const browser = await launchBrowser();
 const context = await browser.newContext({ viewport: { width, height } });
 await context.route('https://cdn.jsdelivr.net/npm/three@0.183.2/**', async (route) => {
   const relative = new URL(route.request().url()).pathname.replace('/npm/three@0.183.2/', '');
@@ -332,6 +331,119 @@ const deckThrow = await page.evaluate(() => {
 });
 check(deckThrow.count === before + 1 && insideBy(deckThrow) > 0.2, `a tap on the deck beyond the pool throws inside its walls, landing ${(insideBy(deckThrow) * 100).toFixed(0)} cm in from the nearest`);
 await page.evaluate(async () => await window.__pond.setSky('lakeside'));
+
+// Existing objects use a hold, not a tap. Settle one with its real CPU
+// steps without paying for hundreds of unrelated water-solver frames.
+async function objectFixture() {
+  return page.evaluate(async () => {
+    const pond = window.__pond;
+    pond.clear();
+    await pond.setSky('pool');
+    pond.showView('shore', { glide: false });
+    const rock = pond.throwAt(0, -1, { thing: 'basketball' });
+    for (let step = 0; step < 3840; step++) rock.update(1 / 240, 1.4);
+    return window.__probe.onScreen(rock.meshAbove.position.toArray());
+  });
+}
+const grabbedState = () => page.evaluate(() => ({ held: !!window.__pond.grabbed, count: window.__pond.rocks.length,
+  state: window.__pond.rocks[0]?.state, position: window.__pond.rocks[0]?.position.toArray(), velocity: window.__pond.rocks[0]?.velocity.toArray(),
+  orbit: window.__pond.orbit, touching: window.__pond.touching }));
+const objectPointer = (type, point, id = 1) => page.evaluate(({ type, point, id }) => window.__probe.pointer(type, id, ...point), { type, point, id });
+let objectPoint = await objectFixture();
+await page.evaluate((point) => { window.__probe.pointer('pointerdown', 1, ...point); window.__probe.pointer('pointerup', 1, ...point); }, objectPoint);
+let objectState = await grabbedState();
+check(objectState.count === 2 && !objectState.held && objectState.state === 'rest', 'a quick tap on an existing object throws without interrupting it');
+objectPoint = await objectFixture();
+const beforeGrab = await grabbedState();
+await objectPointer('pointerdown', objectPoint);
+await page.waitForTimeout(320);
+check((await grabbedState()).held && !(await grabbedState()).touching, 'a still hold grabs the existing object instead of touching the water');
+const liftedPoint = [objectPoint[0] + 40, objectPoint[1] - 90];
+await objectPointer('pointermove', liftedPoint);
+objectState = await grabbedState();
+check(objectState.held && objectState.position[1] > beforeGrab.position[1] + 0.1 && JSON.stringify(objectState.orbit) === JSON.stringify(beforeGrab.orbit),
+  'dragging after a hold lifts the object and leaves the camera fixed');
+await objectPointer('pointerup', liftedPoint);
+objectState = await grabbedState();
+check(!objectState.held && objectState.count === 1 && objectState.state === 'air' && objectState.velocity.every((speed) => speed === 0),
+  'releasing drops the same object from rest without another throw');
+objectPoint = await objectFixture();
+await objectPointer('pointerdown', objectPoint);
+await objectPointer('pointermove', [objectPoint[0] + 60, objectPoint[1]]);
+await page.waitForTimeout(320);
+await objectPointer('pointerup', [objectPoint[0] + 60, objectPoint[1]]);
+objectState = await grabbedState();
+check(objectState.count === 1 && !objectState.held && objectState.orbit.azimuth !== beforeGrab.orbit.azimuth, 'moving before the hold turns the camera, never grabbing or throwing');
+for (const ending of ['pointercancel', 'lostpointercapture', 'blur', 'pinch']) {
+  objectPoint = await objectFixture();
+  await objectPointer('pointerdown', objectPoint);
+  await page.waitForTimeout(320);
+  if (ending === 'blur') await page.evaluate(() => window.dispatchEvent(new Event('blur')));
+  else if (ending === 'pinch') {
+    await objectPointer('pointerdown', [objectPoint[0] + 80, objectPoint[1]], 2);
+    await objectPointer('pointerup', [objectPoint[0] + 80, objectPoint[1]], 2);
+  } else await objectPointer(ending, objectPoint);
+  await objectPointer('pointerup', objectPoint);
+  objectState = await grabbedState();
+  check(!objectState.held && objectState.state !== 'held' && objectState.count === 1, `${ending} releases a held object without a throw`);
+}
+objectPoint = await objectFixture();
+await objectPointer('pointerdown', objectPoint);
+await page.waitForTimeout(320);
+await objectPointer('pointermove', [objectPoint[0] + width * 2, objectPoint[1]]);
+let heldBounds = await page.evaluate(() => {
+  const rock = window.__pond.rocks[0];
+  return { position: { x: rock.position.x, z: rock.position.z }, reach: rock.reach * rock.radius };
+});
+check(insideBy(heldBounds.position) >= heldBounds.reach - 1e-6, 'a held object cannot pass through the pool wall below its top');
+await objectPointer('pointermove', [objectPoint[0], objectPoint[1] + height * 2]);
+const heldBottom = await page.evaluate(() => { const rock = window.__pond.rocks[0]; return rock.position.y + rock.lowestOffset(); });
+check(heldBottom >= -1.4 - 1e-6, 'dragging down cannot put a held object through the pool floor');
+await objectPointer('pointerup', objectPoint);
+
+// The current ground API also covers frozen water: a held object stays on top of intact ice.
+// A ball at rest on the ice in the pool's middle: thrown, it rolls off onto the deck.
+const ballOnIce = () => page.evaluate(() => {
+  const pond = window.__pond;
+  pond.clear(); pond.setIce('thick'); pond.showView('shore', { glide: false });
+  const rock = pond.throwAt(0, -1, { thing: 'tennis' });
+  rock.position.set(0, 0, -1);
+  rock.restOn(pond.iceSheet.top);
+  for (let step = 0; step < 240; step++) rock.update(1 / 240, 1.4);
+  return window.__probe.onScreen(rock.meshAbove.position.toArray());
+});
+objectPoint = await ballOnIce();
+await objectPointer('pointerdown', objectPoint);
+await page.waitForTimeout(320);
+check((await grabbedState()).held, 'a thing resting on ice can be picked up');
+await objectPointer('pointermove', [objectPoint[0], objectPoint[1] + 80]);
+const aboveIce = await page.evaluate(() => {
+  const rock = window.__pond.rocks[0];
+  return rock.position.y + rock.lowestOffset() >= window.__pond.iceSheet.top - 1e-6;
+});
+check(aboveIce, 'dragging a held object down cannot push it through intact ice');
+await objectPointer('pointerup', objectPoint);
+check((await grabbedState()).count === 1 && !(await grabbedState()).held, 'release on ice ends the grab without another throw');
+
+// Lifted out of the hole it went in by and set down on the ice, a thing stays where it is put.
+objectPoint = await ballOnIce();
+await objectPointer('pointerdown', objectPoint);
+await page.waitForTimeout(320);
+// Held, it no longer steps, so the hole it came out of (one beside it) stays its own.
+const hole = await page.evaluate(() => {
+  const pond = window.__pond, rock = pond.grabbed;
+  rock.iceHole = pond.iceSheet.openHole(rock, rock.position.x + 0.4, rock.position.z, pond.iceSheet.thickness);
+  return { x: rock.iceHole.x, z: rock.iceHole.z };
+});
+await objectPointer('pointermove', [objectPoint[0], objectPoint[1] - 90]);
+await objectPointer('pointermove', [objectPoint[0], objectPoint[1] + 80]);
+await objectPointer('pointermove', [objectPoint[0] - 60, objectPoint[1] + 80]);
+const setDown = await page.evaluate((hole) => {
+  const rock = window.__pond.rocks[0];
+  return { fromHole: Math.hypot(rock.position.x - hole.x, rock.position.z - hole.z), onIce: rock.position.y + rock.lowestOffset() >= window.__pond.iceSheet.top - 1e-6 };
+}, hole);
+check(setDown.onIce && setDown.fromHole > 0.3, `a thing lifted from its hole and set on the ice stays on the ice, ${(setDown.fromHole * 100).toFixed(0)} cm from the hole`);
+await objectPointer('pointerup', [objectPoint[0] - 60, objectPoint[1] + 80]);
 
 if (problems.length) { console.log('page errors:'); console.log(problems.join('\n')); failures++; }
 await browser.close();

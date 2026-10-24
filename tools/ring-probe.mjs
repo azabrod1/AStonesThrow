@@ -69,7 +69,7 @@
 //      fills); and the CPU's: planning a source (once),
 //      Rings.update's bookkeeping (each frame, on a stand-in renderer), and
 //      a zoom's planning the live rings again, which must take one a frame.
-// With --gpu (or --gpu=half, the half-float path) it also loads the page
+// With --gpu it also loads the page
 // headless, throws the reference stone and reads back the rings' spectrum
 // and profiles 1 and 6 s after the impact, against the same sums in float64:
 // the shaders' arithmetic must stay under SLOPE_VISIBLE/2 of slope, beyond
@@ -77,7 +77,7 @@
 // --all runs section 2 for every stone size (the default runs the 1.5, 6 and
 // 16 cm stones and the vertical drop). Exits with status 1 if a check fails.
 //
-//   node tools/ring-probe.mjs [--all] [--gpu[=half]]
+//   node tools/ring-probe.mjs [--all] [--gpu]
 import * as THREE from 'three';
 import { performance } from 'node:perf_hooks';
 import { SplashSystem } from '../src/splash.js';
@@ -87,7 +87,7 @@ import { QUALITY } from '../src/main.js';
 import {
   RingSources, Rings, planSource, innerRadius, outerRadius, usedCount, nearField, texelsBetween, ringFrequency, ringGroupSpeed, ringDamping, splatSpectrum, profileRadius,
   INNER_SHARE, SLOWEST_GROUP_SPEED, PROFILE_TEXELS, PROFILE_MAPPING, DIRECT_LIMIT, TAPER_START, SLOPE_VISIBLE, RING_DAMPING, RING_SOURCE, REACH, WINDOW,
-  MAX_RINGS, MAX_WAVENUMBERS, MAX_GROUPS, COEFFICIENT_SCALE, RING_TEXTURE_UNITS, FADE_SECONDS, CAUSTIC_RINGS, CAUSTIC_FADE_SECONDS,
+  MAX_RINGS, MAX_WAVENUMBERS, MAX_GROUPS, COEFFICIENT_SCALE, RING_TEXTURE_UNITS, FADE_SECONDS, CAUSTIC_RINGS, CAUSTIC_FADE_SECONDS, PROFILE_SLICES,
 } from '../src/rings.js';
 
 const started = performance.now();
@@ -231,7 +231,7 @@ function ringWeights(source, time, { step, count, used = count, damping = filmDa
   return { zeroth, first, step, count: used };
 }
 
-// ---- the near-field mask (NEAR_FIELD, RING_PROFILE_FRAGMENT) ----
+// ---- the near-field mask (NEAR_FIELD, RING_PARTIAL_FRAGMENT) ----
 /** The share of the ring shown at a radius and the share's slope, for a source's nearField(). */
 function nearFieldShown(near, radius) {
   const width = Math.max(near.outer - near.inner, 1e-6);
@@ -239,13 +239,15 @@ function nearFieldShown(near, radius) {
   return { shown: 1 - near.hide * (1 - across ** 3 * (10 - 15 * across + 6 * across * across)), slope: near.hide * 30 * across * across * (1 - across) ** 2 / width };
 }
 
-// ---- the profile pass (RING_PROFILE_FRAGMENT) on arrays, in float64 ----
+// ---- the profile passes (RING_PARTIAL_FRAGMENT, RING_RESOLVE_FRAGMENT) on arrays, in float64 ----
 /**
  * Texel i of the profile at radius profileRadius(i/(PROFILE_TEXELS − 1), reach):
- * (∂η0/∂r, ∂η1/∂r, η1, η0) in metres, tapered, as the shader writes it (before
+ * (∂η0/∂r, ∂η1/∂r, η1, η0) in metres, tapered, as the passes write it (before
  * RING_TEXTURE_UNITS): zero outside [inner, outer], J0 and J1 in full below
  * kr = DIRECT_LIMIT, above it their first-order Hankel asymptotics with the
- * phase advanced by rotation; the near field `near` (nearField) masked.
+ * phase advanced by rotation; the near field `near` (nearField) masked. The
+ * GPU sums the wavenumbers in slices (PROFILE_SLICES), each its phase found
+ * afresh, and adds the slices' parts: in exact arithmetic the same sum.
  */
 function schemeProfile(weights, reach, inner = 0, outer = Infinity, near = null) {
   const { zeroth, first, step, count } = weights;
@@ -873,7 +875,7 @@ function ringMeasures(series, sample = 0.01) {
 // ---- 4. the cost of a frame ----
 console.log('\n4. The cost of a frame while rings live');
 console.log(`  spectrum pass (whenever any ring lives): ${MAX_WAVENUMBERS}×${MAX_RINGS} fragments, those past the wavenumbers a ring sums that frame write zero at once; per wavenumber, for each of its splat groups (at most ${MAX_GROUPS}): one exp, a sine and cosine, J0 and J1 of the splat's offset, two exps and four Bessel values more for a pair`);
-console.log(`  profile pass, per ring: ${PROFILE_TEXELS} fragments, those outside its annulus (inner: ${INNER_SHARE}·${SLOWEST_GROUP_SPEED} m/s × age less the source's extent; outer: its leading packet) write zero at once, the others fetch every wavenumber it sums then (to the shortest wave still steep enough to show); J0 and J1 in full below kr = ${DIRECT_LIMIT}, above it about a dozen multiply-adds per fetch; then the array's mip chain (${PROFILE_TEXELS}×1×${MAX_RINGS})`);
+console.log(`  partial pass, per ring: ${PROFILE_TEXELS}×${PROFILE_SLICES} fragments, those outside its annulus (inner: ${INNER_SHARE}·${SLOWEST_GROUP_SPEED} m/s × age less the source's extent; outer: its leading packet) write zero at once, the others fetch their slice of the wavenumbers it sums then (to the shortest wave still steep enough to show), every wavenumber once a texel; J0 and J1 in full below kr = ${DIRECT_LIMIT}, above it about a dozen multiply-adds per fetch; then a resolve pass per ring (${PROFILE_TEXELS} fragments adding its ${PROFILE_SLICES} slices) and the array's mip chain (${PROFILE_TEXELS}×1×${MAX_RINGS})`);
 for (const row of costRows) {
   const millions = (fetches) => (fetches / 1e6).toFixed(2);
   console.log(`    ${row.name.padEnd(13)} ${String(row.count).padStart(5)} wavenumbers at most × ${row.groups} groups (${row.pairs} with a pair): at 0.1, 1, 5, 10, 20, 40, 60 s ${row.byAge.map((cost) => millions(cost.fetches)).join(', ')} M fetches; ${millions(row.mean)} M a frame over its ${row.lifetime.toFixed(0)} s`);
@@ -1035,7 +1037,7 @@ function patchVertices(segments) {
 }
 
 // ---- the GPU's own profiles (--gpu) ----
-if (gpuArgument) await gpuCheck(gpuArgument === '--gpu=half');
+if (gpuArgument) await gpuCheck();
 
 console.log(`\n${failures === 0 ? 'ring-probe: all checks pass' : `ring-probe: ${failures} check(s) failed`} (${((performance.now() - started) / 1000).toFixed(1)} s)`);
 process.exit(failures === 0 ? 0 : 1);
@@ -1047,15 +1049,14 @@ process.exit(failures === 0 ? 0 : 1);
  * (mip level 0), against ringWeights and schemeProfile in float64 with the
  * sources' own splats and plans.
  */
-async function gpuCheck(half) {
-  const { chromium } = await import('playwright');
-  const { existsSync } = await import('node:fs');
+async function gpuCheck() {
+  const { launchBrowser } = await import('./browser.mjs');
   const { readFile } = await import('node:fs/promises');
   const { createServer } = await import('node:http');
   const path = await import('node:path');
   const { fileURLToPath } = await import('node:url');
   const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-  console.log(`\nThe GPU's rings against float64 (${half ? 'half floats' : 'float32 where the device renders it'})`);
+  console.log(`\nThe GPU's rings against float64 (float32 where the device renders it)`);
   const server = createServer(async (request, response) => {
     try {
       const url = new URL(request.url, 'http://localhost');
@@ -1067,12 +1068,8 @@ async function gpuCheck(half) {
     }
   });
   await new Promise((resolve) => server.listen(0, resolve));
-  const containerChromium = '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
-  const browser = await chromium.launch({
-    headless: true,
-    executablePath: process.env.PW_CHROMIUM || (existsSync(containerChromium) ? containerChromium : undefined),
-    args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--enable-webgl', '--disable-gpu-sandbox'],
-  });
+  // The GPU if there is one, else SwiftShader (tools/browser.mjs).
+  const browser = await launchBrowser();
   const context = await browser.newContext({ viewport: { width: 320, height: 240 } });
   await context.route('https://cdn.jsdelivr.net/npm/three@0.183.2/**', async (route) => {
     const relative = new URL(route.request().url()).pathname.replace('/npm/three@0.183.2/', '');
@@ -1081,7 +1078,7 @@ async function gpuCheck(half) {
   const page = await context.newPage();
   const problems = [];
   page.on('pageerror', (error) => problems.push(String(error)));
-  await page.goto(`http://localhost:${server.address().port}/index.html?paused=1&ui=0&quality=low${half ? '&floats=half' : ''}`);
+  await page.goto(`http://localhost:${server.address().port}/index.html?paused=1&ui=0&quality=low`);
   await page.waitForFunction(() => !!window.__pond, { timeout: 120000 });
   await page.evaluate(() => {
     let state = 12345;
