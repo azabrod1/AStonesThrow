@@ -1814,24 +1814,30 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   const grabSurfaceAt = (x, z) => galeWaves.on ? galeSurfaceAt(x, z) : 0;
 
   /** The held thing follows a swept path, staying above the bed and deck,
-   * and inside the basin until its whole body clears the wall's top. */
+   * inside the basin until its whole body clears the wall's top, and inside
+   * an ice hole until it clears the rim (over the ice it rests on it). */
   function constrainGrab(point, rock) {
     const wanted = point.clone(), from = rock.position;
     const reach = rock.reach * rock.radius;
     const lowest = rock.lowestOffset();
     const steps = Math.min(128, Math.max(1, Math.ceil(from.distanceTo(wanted) / Math.max(reach / 2, 0.025))));
     const current = from.clone(), delta = wanted.sub(from).divideScalar(steps);
+    // In the basin as holdInPool keeps things there: a ball against a wall is in, not on the deck.
+    const inBasin = (x, z) => pooled && poolInside(pool.square, rock.radius)(x, z);
+    const rim = ice.top - 1e-6;
+    let hole = ice.on && from.y + lowest < rim ? rock.iceHole : null;
     for (let step = 0; step < steps; step++) {
-      const inside = pooled && poolInside(pool.square, reach)(current.x, current.z);
+      const inside = inBasin(current.x, current.z);
       current.add(delta);
       if (inside && current.y + lowest <= POOL.deck) {
         current.x = THREE.MathUtils.clamp(current.x, pool.square.minX + reach, pool.square.minX + pool.square.size - reach);
         current.z = THREE.MathUtils.clamp(current.z, pool.square.minZ + reach, pool.square.minZ + pool.square.size - reach);
       }
-      const overDeck = pooled && !poolInside(pool.square, reach)(current.x, current.z);
-      // Carry out of an ice hole only once the whole object clears its rim.
-      const hole = ice.on ? rock.iceHole : null;
-      if (hole && current.y + lowest <= ice.top) {
+      // A step from the deck into the basin crosses the wall at its top.
+      const overDeck = pooled && !(inside && inBasin(current.x, current.z));
+      // Lowered into a hole, it stays in that one until its whole body clears the rim again.
+      if (ice.on && !hole && current.y + lowest < rim) hole = ice.holeAt(current.x, current.z);
+      if (hole) {
         const awayX = current.x - hole.x, awayZ = current.z - hole.z;
         const distance = Math.hypot(awayX, awayZ);
         const room = Math.max(ice.edgeReach(hole, Math.atan2(awayZ, awayX)) - (hole.skin?.front ?? 0) - reach, 0);
@@ -1842,7 +1848,9 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       }
       const ground = overDeck ? POOL.deck : (rock.ground?.at(current.x, current.z) ?? -bedDepthAt(current.x, current.z));
       current.y = Math.max(current.y, ground - lowest);
+      if (current.y + lowest >= rim) hole = null;
     }
+    if (ice.on) rock.iceHole = hole;
     point.copy(current);
   }
 
@@ -2020,7 +2028,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     if (event.pointerType !== 'mouse' || thrownFrom || touched || grabbed) showAim(null);
   });
   canvas.addEventListener('pointercancel', (event) => { releasePointer(event); showAim(null); });
-  canvas.addEventListener('lostpointercapture', (event) => { releasePointer(event); showAim(null); });
+  // After a pointerup this is a no-op, so a mouse keeps its aim; otherwise the capture was taken away mid-gesture.
+  canvas.addEventListener('lostpointercapture', (event) => { if (activePointers.has(event.pointerId)) { releasePointer(event); showAim(null); } });
   window.addEventListener('blur', cancelInteraction);
   document.addEventListener('visibilitychange', () => { if (document.hidden) cancelInteraction(); });
   // A held press is a finger in the water; a phone's browser may open its menu on one instead.

@@ -29,7 +29,8 @@
 // check and exits with status 1 if any fails.
 // Also holds existing objects: quick taps still throw, an early drag turns
 // the camera, a hold lifts and drops from rest, and cancellation or a pinch
-// cannot leave a held object or accidentally throw another.
+// cannot leave a held object or accidentally throw another; one lifted out
+// of its ice hole can be set down on the ice.
 //
 //   node tools/zoom-probe.mjs [--w=1280 --h=720]
 import { launchBrowser } from './browser.mjs';
@@ -401,13 +402,17 @@ check(heldBottom >= -1.4 - 1e-6, 'dragging down cannot put a held object through
 await objectPointer('pointerup', objectPoint);
 
 // The current ground API also covers frozen water: a held object stays on top of intact ice.
-objectPoint = await page.evaluate(() => {
+// A ball at rest on the ice in the pool's middle: thrown, it rolls off onto the deck.
+const ballOnIce = () => page.evaluate(() => {
   const pond = window.__pond;
   pond.clear(); pond.setIce('thick'); pond.showView('shore', { glide: false });
   const rock = pond.throwAt(0, -1, { thing: 'tennis' });
-  for (let step = 0; step < 2400; step++) rock.update(1 / 240, 1.4);
+  rock.position.set(0, 0, -1);
+  rock.restOn(pond.iceSheet.top);
+  for (let step = 0; step < 240; step++) rock.update(1 / 240, 1.4);
   return window.__probe.onScreen(rock.meshAbove.position.toArray());
 });
+objectPoint = await ballOnIce();
 await objectPointer('pointerdown', objectPoint);
 await page.waitForTimeout(320);
 check((await grabbedState()).held, 'a thing resting on ice can be picked up');
@@ -419,6 +424,26 @@ const aboveIce = await page.evaluate(() => {
 check(aboveIce, 'dragging a held object down cannot push it through intact ice');
 await objectPointer('pointerup', objectPoint);
 check((await grabbedState()).count === 1 && !(await grabbedState()).held, 'release on ice ends the grab without another throw');
+
+// Lifted out of the hole it went in by and set down on the ice, a thing stays where it is put.
+objectPoint = await ballOnIce();
+await objectPointer('pointerdown', objectPoint);
+await page.waitForTimeout(320);
+// Held, it no longer steps, so the hole it came out of (one beside it) stays its own.
+const hole = await page.evaluate(() => {
+  const pond = window.__pond, rock = pond.grabbed;
+  rock.iceHole = pond.iceSheet.openHole(rock, rock.position.x + 0.4, rock.position.z, pond.iceSheet.thickness);
+  return { x: rock.iceHole.x, z: rock.iceHole.z };
+});
+await objectPointer('pointermove', [objectPoint[0], objectPoint[1] - 90]);
+await objectPointer('pointermove', [objectPoint[0], objectPoint[1] + 80]);
+await objectPointer('pointermove', [objectPoint[0] - 60, objectPoint[1] + 80]);
+const setDown = await page.evaluate((hole) => {
+  const rock = window.__pond.rocks[0];
+  return { fromHole: Math.hypot(rock.position.x - hole.x, rock.position.z - hole.z), onIce: rock.position.y + rock.lowestOffset() >= window.__pond.iceSheet.top - 1e-6 };
+}, hole);
+check(setDown.onIce && setDown.fromHole > 0.3, `a thing lifted from its hole and set on the ice stays on the ice, ${(setDown.fromHole * 100).toFixed(0)} cm from the hole`);
+await objectPointer('pointerup', [objectPoint[0] - 60, objectPoint[1] + 80]);
 
 if (problems.length) { console.log('page errors:'); console.log(problems.join('\n')); failures++; }
 await browser.close();
