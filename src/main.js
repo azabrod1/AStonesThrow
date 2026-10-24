@@ -62,7 +62,8 @@
 // rock's radius) when it is beyond (or on the sky): a splash nearer the
 // patch's edge would ring across it, since the patch is periodic. In the pool
 // it is brought inside the pool's walls less POOL_MARGIN instead, so the
-// splash stands clear of them. A skip keeps the tap's direction, even on
+// splash stands clear of them (a plate's slap, which stands nothing, less
+// only its own reach). A skip keeps the tap's direction, even on
 // the sky (aimPoint's `keep` off): its first touch lands along it (below).
 // For testing, ?trace=1, the T key or setTrace
 // traces each stone from the hand (traceRock): its path, its track on the
@@ -414,7 +415,7 @@ const POWERS = ['soft', 'normal', 'hard'];   // the throw's strengths (ARC's key
 const POND_DEPTH = 0.8;       // the depth the waves take (the solver, the wind's ripples, the rings): see the bed below
 const POND_MARGIN = 0.4;      // metres inside the solver's patch that a tap's throw keeps to...
 const MARGIN_RADII = 4;       // ...or this many of the rock's radius, if more: a 30 cm rock's splats reach 3 radii out
-const POOL_MARGIN = 0.25;     // metres inside the pool's walls a throw keeps to (or MARGIN_RADII of the rock's radius)
+const POOL_MARGIN = 0.25;     // metres inside the pool's walls a throw keeps to (or MARGIN_RADII of the rock's radius; a plate, its reach: throwMargin)
 const EYE_EDGE = 0.3;         // metres inside the pool's edge over which the deck's height eases in for the eye
 const MOVING_MOST = 20;        // things on the move (flying, skimming, sinking, tumbling) at once: past this the oldest fades out (keepWithinCaps)
 const FADE_SECONDS = 0.6;      // a thing past a cap shrinks away over this long (fadeOut)
@@ -1741,7 +1742,14 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   const raycaster = new THREE.Raycaster();
   const waterPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
   const pointer = new THREE.Vector2();
-  const throwMargin = () => Math.max(pooled ? POOL_MARGIN : POND_MARGIN, MARGIN_RADII * measureThing(thingName).radius);
+  // A plate's slap (src/rock.js goIn) stands no crown and opens no hole, its fan held inside the pool's walls and its ring
+  // reflected by them, so in the pool it keeps only itself inside them (its reach), not MARGIN_RADII: a TV may land
+  // anywhere it fits, not only mid-pool.
+  const throwMargin = () => {
+    const { thing, radius } = measureThing(thingName);
+    const slaps = pooled && thing.air.model === 'flutter' && !thing.sphere;
+    return Math.max(pooled ? POOL_MARGIN : POND_MARGIN, (slaps ? prepareThing(thing)?.reach ?? MARGIN_RADII : MARGIN_RADII) * radius);
+  };
   /** The point ({ x, z }, changed in place) brought inside the solver's patch, or the pool's walls, less `margin`. */
   function keepOnWater(point, margin) {
     const bounds = pooled ? pool.square : { minX: water.domainMin[0], minZ: water.domainMin[1], size: water.domainSize };
