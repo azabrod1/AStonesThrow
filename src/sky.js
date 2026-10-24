@@ -277,7 +277,7 @@ const SKIES = {
   // The Koi pond's own (src/main.js PLACES `koi`), no place of its own (`ownPlace`): Ninomaru Teien, the garden of
   // Nagoya Castle, in April's afternoon light through its trees (`shadedSun`: its brightness from its sky, the sun
   // being behind leaves).
-  garden: { ownPlace: false, shadedSun: true, sunAzimuth: 100, hours: { afternoon: { file: 'ninomaru_teien', resolution: '4k', label: 'Afternoon', clock: '15:09' } } },
+  garden: { ownPlace: false, shadedSun: true, sunAzimuth: 100, hours: { afternoon: { file: 'ninomaru_teien', label: 'Afternoon', clock: '15:09' } } },
 };
 /** The skies that are each a place of their own (the Location setting's lakes; the Koi pond takes the garden's). */
 export const SKY_NAMES = Object.keys(SKIES).filter((name) => SKIES[name].ownPlace !== false);
