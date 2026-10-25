@@ -510,55 +510,81 @@ export function createGemGeometry(definition, random = Math.random) {
 // ---- the food --------------------------------------------------------------
 
 // An apple: a sphere drawn in at its stalk's dimple and its calyx's, a little
-// wider above its middle, red over yellow-green in streaks, with pale
-// lenticels, and its stalk.
+// wider above its middle, with pale lenticels, and its stalk. No two alike
+// (createAppleGeometry draws each its own): its variety's colours (APPLE
+// varieties: red, green, yellow, or red over green), how much of it is
+// flushed and streaked, a little taller or squatter, lopsided, its
+// shoulders lobed (as a Red Delicious's are), its dimple deeper or
+// shallower and its stalk its own length and lean.
 const APPLE = {
-  red: linear(168, 22, 28), blush: linear(205, 60, 40), green: linear(178, 170, 62), stalk: linear(92, 62, 34), lenticel: linear(230, 210, 150),
-  stalkDimple: [0.2, 0.38], calyxDimple: [0.12, 0.4], shoulder: 0.05, stalkLength: 0.32, stalkRadius: 0.035,
+  varieties: [
+    { weight: 3, ground: linear(178, 170, 62), blush: linear(205, 60, 40), red: linear(168, 22, 28), flushed: [0.55, 0.95] },   // red, Gala-like
+    { weight: 2, ground: linear(150, 178, 70), blush: linear(170, 160, 60), red: linear(120, 150, 50), flushed: [0, 0.15] },    // green, Granny Smith-like
+    { weight: 1, ground: linear(214, 190, 80), blush: linear(222, 150, 70), red: linear(200, 110, 50), flushed: [0.05, 0.3] },  // yellow, Golden-like, a little blushed
+    { weight: 2, ground: linear(160, 168, 64), blush: linear(196, 70, 44), red: linear(150, 26, 30), flushed: [0.25, 0.6] },    // red over green, half flushed
+  ],
+  stalk: linear(92, 62, 34), lenticel: linear(230, 210, 150),
+  stalkDimple: [0.14, 0.26], dimpleWidth: [0.32, 0.44], calyxDimple: [0.12, 0.4], shoulder: [0.02, 0.08],
+  tall: [0.9, 1.06], lopsided: 0.05, lobes: [0, 0.035], stalkLength: [0.22, 0.4], stalkRadius: 0.035,
 };
 
-/** An apple's geometry, of unit radius (the header), indexed, its normals the surface's. */
-export function createAppleGeometry() {
-  if (!ballCache.has('apple')) {
-    const { positions, indices } = icosphere(4);
-    const colors = new Float32Array(positions.length);
-    const color = new THREE.Color();
-    for (let vertex = 0; vertex < positions.length; vertex += 3) {
-      const x = positions[vertex], y = positions[vertex + 1], z = positions[vertex + 2];
-      const fromTop = Math.acos(Math.min(Math.max(y, -1), 1)), fromBottom = Math.PI - fromTop;
-      const scale = (1 - APPLE.stalkDimple[0] * Math.exp(-((fromTop / APPLE.stalkDimple[1]) ** 2)) - APPLE.calyxDimple[0] * Math.exp(-((fromBottom / APPLE.calyxDimple[1]) ** 2))) * (1 + APPLE.shoulder * y);
-      positions[vertex] = x * scale; positions[vertex + 1] = y * scale; positions[vertex + 2] = z * scale;
-      // Red streaked down from the stalk over a yellow-green ground, greener near the calyx.
-      const streak = valueNoise3(Math.atan2(z, x) * 5, y * 1.5, 0.5);
-      const red = smoothstep(-0.7, 0.3, y) * smoothstep(0.25, 0.6, streak + 0.25);
-      color.copy(APPLE.green).lerp(APPLE.blush, smoothstep(0, 1, red + 0.2)).lerp(APPLE.red, red);
-      if (valueNoise3(x * 40, y * 40, z * 40) > 0.94) color.lerp(APPLE.lenticel, 0.3);
-      colors[vertex] = color.r; colors[vertex + 1] = color.g; colors[vertex + 2] = color.b;
-    }
-    // The stalk: a thin tapered hexagonal prism from the dimple's floor, leaning a little.
-    const allPositions = [...positions], allColors = [...colors], allIndices = [...indices];
-    const base = 1 - APPLE.stalkDimple[0] - 0.02;
-    const first = allPositions.length / 3;
-    for (let ring = 0; ring < 2; ring++) {
-      const height = base + ring * APPLE.stalkLength, radius = APPLE.stalkRadius * (1 - 0.4 * ring), lean = 0.08 * ring;
-      for (let side = 0; side < 6; side++) {
-        const angle = (side / 6) * Math.PI * 2;
-        allPositions.push(lean + radius * Math.cos(angle), height, radius * Math.sin(angle));
-        allColors.push(APPLE.stalk.r, APPLE.stalk.g, APPLE.stalk.b);
-      }
-    }
-    for (let side = 0; side < 6; side++) {
-      const next = (side + 1) % 6;
-      allIndices.push(first + side, first + 6 + side, first + next, first + next, first + 6 + side, first + 6 + next);
-    }
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.Float32BufferAttribute(allPositions, 3));
-    geometry.setAttribute('color', new THREE.Float32BufferAttribute(allColors, 3));
-    geometry.setIndex(allIndices);
-    geometry.computeVertexNormals();
-    ballCache.set('apple', geometry);
+const APPLE_SPHERE = { sphere: null };   // the unit icosphere every apple starts from, made once
+/** An apple's geometry, of unit radius (the header), indexed, its normals the surface's; its own, from `random`. */
+export function createAppleGeometry(random = Math.random) {
+  const between = ([least, most]) => least + (most - least) * random();
+  let draw = random() * APPLE.varieties.reduce((sum, { weight }) => sum + weight, 0);
+  const variety = APPLE.varieties.find(({ weight }) => (draw -= weight) < 0) ?? APPLE.varieties[0];
+  const flushed = between(variety.flushed), seed = random() * 50;
+  const tall = between(APPLE.tall), shoulder = between(APPLE.shoulder), lobes = between(APPLE.lobes), lobeTurn = random() * Math.PI * 2;
+  const leanAngle = random() * Math.PI * 2, lopsided = APPLE.lopsided * random();
+  const dimple = between(APPLE.stalkDimple), dimpleWidth = between(APPLE.dimpleWidth);
+  // The unit sphere is made once (APPLE_SPHERE); each apple its own copy of it, in typed arrays, the stalk's corners
+  // after its own.
+  APPLE_SPHERE.sphere ??= icosphere(4);
+  const sphere = APPLE_SPHERE.sphere, sphereCount = sphere.positions.length;
+  const positions = new Float32Array(sphereCount + 12 * 3), colors = new Float32Array(sphereCount + 12 * 3);
+  positions.set(sphere.positions);
+  const indices = new Uint32Array(sphere.indices.length + 6 * 6);
+  indices.set(sphere.indices);
+  const color = new THREE.Color();
+  for (let vertex = 0; vertex < sphereCount; vertex += 3) {
+    const x = positions[vertex], y = positions[vertex + 1], z = positions[vertex + 2];
+    const fromTop = Math.acos(Math.min(Math.max(y, -1), 1)), fromBottom = Math.PI - fromTop, around = Math.atan2(z, x);
+    let scale = (1 - dimple * Math.exp(-((fromTop / dimpleWidth) ** 2)) - APPLE.calyxDimple[0] * Math.exp(-((fromBottom / APPLE.calyxDimple[1]) ** 2))) * (1 + shoulder * y);
+    scale *= 1 + lobes * Math.cos(5 * around + lobeTurn) * Math.max(y, 0) + lopsided * Math.cos(around - leanAngle);   // lobed shoulders, one side fuller
+    positions[vertex] = x * scale; positions[vertex + 1] = y * scale * tall; positions[vertex + 2] = z * scale;
+    // Its flush streaked down from the stalk over its ground colour, less toward the calyx.
+    const streak = valueNoise3(around * 5 + seed, y * 1.5, 0.5);
+    const red = smoothstep(-0.7, 0.3, y + 1.4 * (flushed - 0.6)) * smoothstep(0.25, 0.6, streak + flushed - 0.35);
+    color.copy(variety.ground).lerp(variety.blush, smoothstep(0, 1, red + 0.2 * flushed)).lerp(variety.red, red);
+    if (valueNoise3(x * 40 + seed, y * 40, z * 40) > 0.94) color.lerp(APPLE.lenticel, 0.3);
+    colors[vertex] = color.r; colors[vertex + 1] = color.g; colors[vertex + 2] = color.b;
   }
-  return ballCache.get('apple').clone();
+  // The stalk: a thin tapered hexagonal prism from the dimple's floor, leaning its own way.
+  const base = (1 - dimple - 0.02) * tall, length = between(APPLE.stalkLength), lean = 0.06 + 0.08 * random();
+  const first = sphereCount / 3;
+  for (let ring = 0; ring < 2; ring++) {
+    const height = base + ring * length, radius = APPLE.stalkRadius * (1 - 0.4 * ring);
+    for (let side = 0; side < 6; side++) {
+      const angle = (side / 6) * Math.PI * 2, at = 3 * (first + ring * 6 + side);
+      positions[at] = lean * ring * Math.cos(leanAngle) + radius * Math.cos(angle);
+      positions[at + 1] = height;
+      positions[at + 2] = lean * ring * Math.sin(leanAngle) + radius * Math.sin(angle);
+      colors[at] = APPLE.stalk.r; colors[at + 1] = APPLE.stalk.g; colors[at + 2] = APPLE.stalk.b;
+    }
+  }
+  for (let side = 0, at = sphere.indices.length; side < 6; side++, at += 6) {
+    const next = (side + 1) % 6;
+    indices.set([first + side, first + 6 + side, first + next, first + next, first + 6 + side, first + 6 + next], at);
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  geometry.setIndex(new THREE.BufferAttribute(indices, 1));
+  geometry.computeVertexNormals();
+  // How much it veers as it rolls on its side (src/things.js apple's `curve`, tuned on the middle shoulder): by its own.
+  geometry.userData.curveScale = shoulder / ((APPLE.shoulder[0] + APPLE.shoulder[1]) / 2);
+  return geometry;
 }
 
 // A pizza: a disc of unit radius turned about its axis from a profile (its
@@ -2177,7 +2203,8 @@ registerMesh('ball', {
     for (let index = 0; index < paints; index++) createBallGeometry(definition, () => (index + 0.5) / paints).dispose();
   },
 });
-registerMesh('apple', { build: () => createAppleGeometry(), color: () => new THREE.Color(1, 1, 1), fixed: true });
+// Each apple its own (createAppleGeometry: drawn from Math.random, as a ball's paint is), sized by the middle one's volume.
+registerMesh('apple', { build: () => createAppleGeometry(), color: () => new THREE.Color(1, 1, 1), volume: () => meshVolume(createAppleGeometry(() => 0.5).toNonIndexed()) });
 registerMesh('watermelon', { build: () => createWatermelonGeometry(), color: () => new THREE.Color(1, 1, 1), fixed: true });
 registerMesh('brick', { build: () => createBrickGeometry(), color: () => new THREE.Color(1, 1, 1), fixed: true });
 for (const kind of ['tv', 'iphone']) {

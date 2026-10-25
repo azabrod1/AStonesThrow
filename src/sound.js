@@ -207,6 +207,8 @@ export function createSound() {
      * `after` seconds from now.
      */
     knock({ speed, radius, bounce, surface = null, thickness = 0, distance = 5 }, after = 0) {
+      // On grass (the Koi pond's lawn, src/koiGarden.js) a dull thud: quieter, hardly ringing.
+      if (surface === 'grass') { speed *= 0.5; bounce *= 0.2; }
       const loudness = clamp(speed * 0.12, 0, 0.9);
       const sound = voice(loudness, after);
       if (!sound) return;

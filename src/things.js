@@ -33,7 +33,9 @@
 //     the ice's); `rollsAbout`, a ball's own axis it rolls about on its side
 //     (an apple's core: its own lumps and give then slow it, on ice too), and
 //     `curve`, its path's curvature on its side times its radius (a cone
-//     rolls round towards its narrow end, that axis's −: src/rock.js rollStep).
+//     rolls round towards its narrow end, that axis's −: src/rock.js rollStep;
+//     a mesh drawn each its own scales it by its geometry's
+//     `userData.curveScale`).
 //   - air: `drag`, its drag coefficient in flight (on the disc of its nominal
 //     radius: 0.47 a ball's; a pizza, flat on, more), and its `model`:
 //     `ballistic` (it tumbles as it flies) or `flutter` (a flat thing: a plate
@@ -93,6 +95,9 @@
 //     discs in the level of their whole radii: flat pieces of ice afloat
 //     side by side, which must not slide into each other; anything else
 //     meets one as it meets any thing.
+//   - edible: fish eat it (src/fish.js): once it has settled in the water they
+//     come to it and bite, and after as many bites as its mass says
+//     (edibleBites) it is gone (a frozen one only once thawed).
 // Besides: `name`, `short` (the strip's name for it), `group` (the setting's
 // heading), `note` (the card's line, one line on it: some 40 characters fit
 // a phone's card whole, a longer one is cut short) and `called` (the throw button's
@@ -276,6 +281,7 @@ function definitionProblems(key, definition) {
   need(water.columnsAlong === undefined || (Array.isArray(water.columnsAlong) && water.columnsAlong.length === 3 && water.columnsAlong.every((value) => within(value, [-1, 1])) && Math.hypot(...water.columnsAlong) > 0.1), 'water.columnsAlong must be three numbers from -1 to 1, not all near 0');
   for (const ability of ['skips', 'held']) need(abilities[ability] === undefined || typeof abilities[ability] === 'boolean', `abilities.${ability} must be true or false`);
   need(definition.hidden === undefined || typeof definition.hidden === 'boolean', 'hidden must be true or false');
+  need(definition.edible === undefined || typeof definition.edible === 'boolean', 'edible must be true or false');
   need(body.meetsAtRim === undefined || typeof body.meetsAtRim === 'boolean', 'body.meetsAtRim must be true or false');
   const mesh = typeof look.mesh === 'string' ? meshKind(look.mesh) : undefined;
   need(mesh, `look.mesh "${String(look.mesh)}" is no registered mesh (src/thingMeshes.js)`);
@@ -533,11 +539,13 @@ defineBuiltIn('ruby', gem('Ruby', 'Red corundum, an oval', 4000, { color: [190, 
 defineBuiltIn('sapphire', gem('Sapphire', 'Blue corundum, an oval', 4000, { color: [25, 55, 185], stretch: 1.25, contrast: [0.5, 1.0], roughness: 0.06, reflection: 1.5 }));
 
 defineBuiltIn('apple', {
-  name: 'Apple', group: 'Other', note: 'A quarter of it is air: it floats, low', called: 'an apple',
+  name: 'Apple', group: 'Other', note: 'A quarter of it is air: it floats, low', called: 'an apple', edible: true,
   body: { shape: 'sphere', density: 815, size: { by: 'mass', unit: 'g', min: 100, max: 300, step: 10, initial: 180 } },
-  // Lumpy and soft, it rolls on its side about its core, wider at its shoulder than its calyx (src/thingMeshes.js APPLE's
-  // `shoulder`, 0.05): a cone, its path veering towards its calyx, though by a sixth of what so slight a cone rolling true
-  // would (its dimples and lumps keep it off its girth); its own give and lumps slow it, on ice as on the deck.
+  // Lumpy and soft, it rolls on its side about its core, wider at its shoulder than its calyx (src/thingMeshes.js
+  // createAppleGeometry: each apple's own shoulder, 0.02 to 0.08): a cone, its path veering towards its calyx, though by a
+  // sixth of what so slight a cone rolling true would (its dimples and lumps keep it off its girth). `curve` is the middle
+  // shoulder's (0.05), each apple's scaled by its own (its geometry's curveScale, 0.4 to 1.6); its own give and lumps slow
+  // it, on ice as on the deck.
   material: { bounce: [0.25, 0.35], friction: 0.6, roll: 'solid', rolling: 0.15, rollsAbout: [0, 1, 0], curve: 0.008 },
   water: { restingHeight: 0.95 },
   look: { mesh: 'apple', roughness: 0.45, reflection: 1.0 },
@@ -545,7 +553,7 @@ defineBuiltIn('apple', {
 // A pizza's give (body.soft): the air cups it and flaps it; afloat it drapes over the waves, wholly once soaked.
 const PIZZA_GIVE = { cup: 0.0025, most: 0.12, flap: 0.05, rate: 3, drape: 0.7 };
 defineBuiltIn('pizza', {
-  name: 'Pizza', group: 'Other', note: 'Random toppings: it sails, skims, soaks', called: 'a pizza',
+  name: 'Pizza', group: 'Other', note: 'Random toppings: it sails, skims, soaks', called: 'a pizza', edible: true,
   body: {
     shape: 'mesh',
     upright: true,
@@ -560,7 +568,7 @@ defineBuiltIn('pizza', {
   abilities: { skips: true },   // flat and spinning, it skims (src/rock.js skim), as a stone does
 });
 defineBuiltIn('frozen-pizza', {
-  name: 'Frozen pizza', short: 'Frozen', group: 'Other', note: 'Rigid and frosted: it thaws, then soaks', called: 'a frozen pizza',
+  name: 'Frozen pizza', short: 'Frozen', group: 'Other', note: 'Rigid and frosted: it thaws, then soaks', called: 'a frozen pizza', edible: true,
   body: {
     shape: 'mesh',
     upright: true,
@@ -582,7 +590,7 @@ defineBuiltIn('frozen-pizza', {
 // it, the air under its crust high (what floats an apple pie): its weight is a little under its volume's middle
 // (`ballast`), so under the water it turns back right way up, where the flow had turned it on its edge.
 defineBuiltIn('pie', {
-  name: 'Pie', group: 'Other', note: 'Filled at random: it floats or sinks', called: 'a pie',
+  name: 'Pie', group: 'Other', note: 'Filled at random: it floats or sinks', called: 'a pie', edible: true,
   body: {
     shape: 'mesh',
     upright: true,
@@ -595,7 +603,7 @@ defineBuiltIn('pie', {
   look: { mesh: 'pie', roughness: 0.7, reflection: 0.8, wet: { darker: 0.2, glossier: 0.4 } },
 });
 defineBuiltIn('watermelon', {
-  name: 'Watermelon', group: 'Other', note: 'Nearly as heavy as water: it floats low', called: 'a watermelon',
+  name: 'Watermelon', group: 'Other', note: 'Nearly as heavy as water: it floats low', called: 'a watermelon', edible: true,
   body: { shape: 'mesh', density: 960, size: { by: 'mass', unit: 'kg', min: 2, max: 10, step: 0.5, initial: 5 } },
   material: { bounce: [0.08, 0.15], friction: 0.6 },
   water: { restingHeight: 0.9 },
@@ -664,7 +672,7 @@ defineBuiltIn('ice-shard', {
 // ball's of like volume (src/thingMeshes.js asUnitBall), which its splash is sized by: a stone of its radius displaces
 // what it does. Thrown, it tumbles end over end. Its buoyancy is cut finer (`columns`), for enough across its girth.
 defineBuiltIn('banana', {
-  name: 'Banana', group: 'Other', note: 'For scale: it floats, just', called: 'a banana',
+  name: 'Banana', group: 'Other', note: 'For scale: it floats, just', called: 'a banana', edible: true,
   body: { shape: 'mesh', density: 920, size: { by: 'mass', unit: 'g', min: 100, max: 250, step: 10, initial: 160 } },
   material: { bounce: [0.12, 0.22], friction: 0.7 },
   air: { drag: 1.1 },
@@ -677,7 +685,7 @@ defineBuiltIn('banana', {
 // sinks, in two or three minutes afloat.
 const BREAD_GIVE = { cup: 0.004, most: 0.15, flap: 0.07, rate: 4, drape: 0.8 };
 defineBuiltIn('bread', {
-  name: 'Slice of bread', short: 'Bread', group: 'Other', note: 'For the ducks: it floats, soaks, sinks', called: 'a slice of bread',
+  name: 'Slice of bread', short: 'Bread', group: 'Other', note: 'For the ducks: it floats, soaks, sinks', called: 'a slice of bread', edible: true,
   body: { shape: 'mesh', soft: BREAD_GIVE, size: { by: 'fixed', diameter: 0.13, mass: 0.03 } },
   material: { bounce: [0.03, 0.08], friction: 0.9 },
   air: { drag: 1.1, model: 'flutter' },
@@ -691,7 +699,7 @@ defineBuiltIn('bread', {
 // sponge soaks through its bare underside and sides, slowed by its frosting: waterlogged (0.62 of its volume), it
 // sinks, in three or four minutes afloat. Thrown, it tumbles.
 defineBuiltIn('cake', {
-  name: 'Birthday cake', short: 'Cake', group: 'Other', note: 'Sponge and frosting: floats, then soaks', called: 'a cake',
+  name: 'Birthday cake', short: 'Cake', group: 'Other', note: 'Sponge and frosting: floats, then soaks', called: 'a cake', edible: true,
   body: {
     shape: 'mesh',
     upright: true,

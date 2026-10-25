@@ -230,7 +230,7 @@ function silhouetteArea(geometry, axis, cells = 600) {
 
 /** Steps a thing until it rests (or `seconds`), recording what the probe reports. */
 function follow(rock, { seconds = 30, step = STEP, floor = floorDepthAt, pooled = false } = {}) {
-  const record = { crossing: null, deepest: 0, surfaced: null, highestBob: -Infinity, ripples: 0, impacts: 0, fastestSink: 0, restAt: null, cost: 0, floatSteps: 0, stepCosts: [], apexes: [], states: new Set() };
+  const record = { crossing: null, deepest: 0, surfaced: null, highestBob: -Infinity, ripples: 0, impacts: 0, fastestSink: 0, restAt: null, cost: 0, floatSteps: 0, stepCosts: [], apexes: [], rebounds: [], states: new Set() };
   let previousY = rock.position.y, rising = false;
   for (let time = 0; time < seconds; time += step) {
     const wasAir = rock.state === 'air';
@@ -258,8 +258,9 @@ function follow(rock, { seconds = 30, step = STEP, floor = floorDepthAt, pooled 
     }
     if (rock.state === 'float' && record.surfaced === null) record.surfaced = time;
     if (record.surfaced !== null && (rock.state === 'float' || rock.state === 'air')) record.highestBob = Math.max(record.highestBob, rock.position.y);
-    // Apexes on the deck: the top of each rise.
+    // Apexes on the deck: the top of each rise; and each bounce's speed up off it over its speed down onto it, squared.
     if (rock.state === 'air' && rock.velocity.y <= 0 && rising) record.apexes.push(previousY);
+    if (velocityBefore.y < 0 && rock.velocity.y > 0 && rock.state === 'air') record.rebounds.push((rock.velocity.y / -velocityBefore.y) ** 2);
     rising = rock.velocity.y > 0;
     previousY = rock.position.y;
     if (rock.state === 'rest') { record.restAt = time; break; }
@@ -480,11 +481,14 @@ for (const [index, name] of THING_NAMES.entries()) {
   const ratios = record.apexes.map((apex) => (apex - POOL.deck - rock.ellipsoidDepth()) / 1);
   const [least, most] = THINGS[name].material.bounce;
   console.log(`  ${THINGS[name].name.padEnd(14)} ${ratios.slice(0, 4).map((ratio) => ratio.toFixed(3)).join(', ') || 'no bounce'}; ${rock.state} ${centimetres(rock.position.y + rock.lowestOffset() - POOL.deck)} cm over the deck`);
+  // Its first bounce, by its speeds (off the deck over onto it, squared: its rise over its fall, wherever on it it
+  // landed and left, which its height above the deck at its apex does not say for a thing turned as it rises, a duck).
   // A fluttering thing falls slower than free, so its first rise is not its bounce squared of the drop: its speeds are
   // checked instead. One reaching far past its nominal radius (a banana, a toy slide: theirs is their ball's of like
   // volume) comes down on an end, which turns much of its bounce into spin.
   const long = (prepareThing(THINGS[name])?.farthest ?? 1) > 2;
-  if (ratios.length > 0 && THINGS[name].air.model !== 'flutter' && !long) check(ratios[0] > 0.95 * least * least && ratios[0] < 1.05 * most * most, `${THINGS[name].name}: came back ${ratios[0].toFixed(3)} of its fall, its bounce ${least}–${most} squared`);
+  const rebound = record.rebounds[0];
+  if (rebound !== undefined && THINGS[name].air.model !== 'flutter' && !long) check(rebound > 0.95 * least * least && rebound < 1.05 * most * most, `${THINGS[name].name}: came back ${rebound.toFixed(3)} of its fall, its bounce ${least}–${most} squared`);
   check(rock.state === 'rest' && Math.abs(rock.position.y + rock.lowestOffset() - POOL.deck) < 0.01, `${THINGS[name].name}: has not come to rest on the deck (${rock.state}, ${rock.position.y.toFixed(3)} m)`);
 }
 {

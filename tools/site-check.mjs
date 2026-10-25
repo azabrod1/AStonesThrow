@@ -61,7 +61,7 @@ page.on('pageerror', (error) => failures.push(`page error: ${error}`));
 
 await page.goto(`http://localhost:${port}${PAGES_PATH}`, { waitUntil: 'domcontentloaded' });
 let started = true;
-try { await page.waitForFunction(() => !!window.__pond, { timeout: 120000 }); } catch { started = false; }
+try { await page.waitForFunction(() => !!window.__pond, null, { timeout: 120000 }); } catch { started = false; }   // (the function's argument, then the options)
 let rained = false;
 if (started) {
   await page.evaluate(() => window.__pond.setWeather('heavy-rain'));

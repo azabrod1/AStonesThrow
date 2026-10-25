@@ -97,7 +97,9 @@ is remembered on the device (but the view, which opens on the shore):
   water; it is held high enough to clear the water, and tumbles slowly. A
   long thin thing's nominal radius (a banana's, the slide's) is its ball's
   of like volume, so its splash is sized by what it displaces; the strip
-  shows its length. Each choice's picture
+  shows its length. Fish eat what is edible (an apple, a banana, a
+  watermelon, a pizza, a frozen one once thawed, a pie, bread, a cake):
+  below. Each choice's picture
   (`assets/things/thumbs/`) is a harness frame of it at rest on the pool's
   deck, shrunk to 160×90: `--sky=pool --thing=name
   --throws=-1.75:0.75:0.05 --times=3 --seed=1 --w=320 --h=180`, looked at
@@ -146,7 +148,18 @@ is remembered on the device (but the view, which opens on the shore):
   freezes over again in half a minute, its shards frozen in, its new ice
   thin enough for the next throw to break.
 - Location (`?sky=`): Swiss Alps, Rocky cove, Highlands, Desert oasis,
-  Lakeside (the default), Mesas, or Pool. Swiss Alps replaces Alpine with a
+  Lakeside (the default), Mesas, Pool, or Koi pond (`?sky=koi`): a pond in
+  a Japanese garden under its own panorama (Poly Haven's Ninomaru Teien,
+  the garden of Nagoya Castle, its sun behind leaves, so its brightness is
+  taken from its sky: `shadedSun` in `src/sky.js`), about 9 m across, its
+  shore irregular (lobes, a bay, a broad point), its far and side banks
+  planted to the water with clipped shrubs (karikomi) in rows rising above
+  the eye, a Kasuga stone lantern among them, the garden's trees behind; a
+  lawn on the near bank, its own clear green water over gravel, and koi.
+  Nothing thrown comes down on the ground there: every aim is kept 0.6 m
+  inside the water, and a thing skipped or slid on to a bank is caught by
+  the shrubs where they are drawn (`src/koiGarden.js`,
+  `tools/garden-probe.mjs`). Swiss Alps replaces Alpine with a
   sharper 4K Lago d’Isola panorama, framed across its snowy ridge, and starts
   at water level with Frozen water (thin ice unless Thick was last chosen). Choosing liquid
   water is remembered when reloading the same place; entering Swiss Alps
@@ -371,6 +384,54 @@ had before the control; Windy 1.8.
 `src/collide.js`). What can be thrown is a registry of plain, validated
 definitions (`defineThing`); `__pond.defineThing(key, definition)` adds one.
 `tools/thing-probe.mjs` checks them.
+
+**Fish** (`src/fish.js`, drawn by `src/fishMeshes.js`). Each place's water
+has the fish such water holds, a few of each, chosen for quality over
+number: Lakeside a school of minnows, a shoal of perch and a pike; Swiss
+Alps brown trout and Arctic char; Highlands trout and minnows; Mesas a
+largemouth bass and bluegill; Desert oasis pupfish (blue males, brown
+females) and tilapia; Rocky cove grey mullet and a wrasse; the Koi pond
+seven koi of the classic varieties (Kohaku, Sanke, Showa, Ogon, Chagoi,
+Asagi, Yamabuki, Tancho) and a goldfish; the Pool none. A school keeps
+about a body length apart and turns together, a shoal keeps loosely
+together, a pike or a trout keeps alone (boids: apart, aligned, together,
+toward a goal the group wanders to). Each fish ranges through the whole
+water, its whole body (fins too, nose and tail on a sloping bank) kept off
+the bed, picking a new depth every few seconds, swims at its own pace (speeding
+up and coasting), rests now and then, and its tail beats once a stride (two
+thirds of a body length), never faster than 4 beats a second. What it wants
+is eased over a fraction of a second and it eases into its turns, so it
+never wavers. A thing thrown frightens the fish under where it will land
+about half a second before it lands, and a splash, a thing moving through
+the water or a finger dipping in those near it, the farther the bigger the
+thing: each whips round (a C-start) and dashes away, diving, a few body
+lengths a second and never over 0.8 m/s, its group taking fright a moment
+later; at a wall or a shore it turns along it, never into it, and it stays
+wary a few seconds. Nothing passes through a fish: each foresees, about a
+second ahead, where each thing in the water (or coming down to it, or held
+in it and dragged) will be,
+as a rounded disc of its own reach and thickness (a pizza's flat, a ball's
+round), and bolts from one coming at it or swims round one lying still;
+one still too close (a bowling ball dropped onto a koi in the shallows) is
+held off its surface the shortest way that keeps it in its water. Something edible that has settled in the water brings
+them, groupmates following the first: up to six at it, each at its own spot
+at its edge, biting (a dimple in the water at the surface) and backing off;
+eaten (bites as its dry mass says), it shrinks away. They are scenery
+otherwise: the physics never meets them. Their randomness is their own
+seeded stream, never `Math.random`. Each kind is one instanced body, one
+instanced set of fins and one instanced shadow, drawn in the under-water
+pass where the still surface shows them: a body shaped by its kind (depth,
+width, where it is deepest, its snout), forked or rounded tail, dorsal,
+anal, pectoral and pelvic fins as bending membranes, see-through with their
+rays; swum in the vertex shader (a wave back along the body growing to the
+tail, a C into turns, the paired fins rowing); marked per pixel by its kind
+and its own seed (countershaded, muted wild colours; a koi's variety and
+patches), with overlapping scales, a lateral line, a gill cover's edge and
+a small dark eye, lit as the bed is, a silvery flank mirroring the light
+from above, its outline taking the water's colour; and a soft shadow on the
+bed down-sun of it. A frame's fish cost up to about 75 µs of CPU for their
+behaviour (Lakeside's 13, with a throw in the water) and 15 µs for their instances, and three draw calls a kind
+(`tools/fish-probe.mjs` checks the behaviour and its cost).
 
 **Splash** (`src/splash.js`). A stone entering water goes through stages with
 known timing, and the droplets are choreographed from them:
@@ -1487,7 +1548,7 @@ farther out, so it rises into the view rather than filling its corner.
   are fading out and the preset's limit, their passes and the spectrum
   fetches those made, the drops' rings drawn and their limit, the wind, the gale's sheet, the weather, the
   rain's tile, the snow's flakes and cover, the spray's ring, share and sprites drawn, the last frame's draw calls
-  and triangles, and how many fixed meshes and waterlines `prepareThing`
+  and triangles, the automatic calibration's phase and the idle frame rate it measured, and how many fixed meshes and waterlines `prepareThing`
   has made).
 
 Install the development dependencies with `npm install` (Three.js is only

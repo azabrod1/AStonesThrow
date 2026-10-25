@@ -274,8 +274,13 @@ const SKIES = {
     },
   },
   swiss: { mirrored: true, sunAzimuth: 45, hours: { midday: { file: 'lago_disola', resolution: '4k', label: 'Midday' } } },
+  // The Koi pond's own (src/main.js PLACES `koi`), no place of its own (`ownPlace`): Ninomaru Teien, the garden of
+  // Nagoya Castle, in April's afternoon light through its trees (`shadedSun`: its sun behind leaves, the light on
+  // level ground the balance's, most of it the sky's).
+  garden: { ownPlace: false, shadedSun: true, sunAzimuth: 100, hours: { afternoon: { file: 'ninomaru_teien', label: 'Afternoon', clock: '15:09' } } },
 };
-export const SKY_NAMES = Object.keys(SKIES);
+/** The skies that are each a place of their own (the Location setting's lakes; the Koi pond takes the garden's). */
+export const SKY_NAMES = Object.keys(SKIES).filter((name) => SKIES[name].ownPlace !== false);
 export const DEFAULT_SKY = 'lakeside';   // an open lake to a far shore, as the Lake water is
 /** A place's hours in the order of the day: their names, labels and local times (clock, 'hh:mm', or undefined for a lone photograph). */
 export const skyHours = (place) => Object.entries(SKIES[place]?.hours ?? {}).map(([name, { label, clock }]) => ({ name, label, clock }));
@@ -666,12 +671,19 @@ export function createEnvironment(renderer, { name, hour, sunAzimuth, sunBalance
 
     // The brightness: the anchor's as a single photograph's, the hour's
     // light against the anchor's (Light by the hour).
-    const anchorScale = (balanceLuminance / luminance(anchor.sunIrradiance)) * SKY_EXPOSURE;
+    // A sun seen through leaves (`shadedSun`: the garden's) measures dim against its sky: such a photograph is
+    // exposed instead so that its light on level ground, its sun's and its sky's together, is the balance's, its sun
+    // keeping its own small share of it (so the floor's caustics are faint, as in shade).
+    const levelLight = (measured) => luminance(measured.sunIrradiance) * Math.max(Math.sin(THREE.MathUtils.degToRad(measured.sun.elevation)), 0) + Math.PI * luminance(measured.skyRadiance);
+    const balanceScale = (balanceLuminance / luminance(balance.sunIrradiance)) * SKY_EXPOSURE;
+    const anchorScale = place.shadedSun ? balanceScale * levelLight(balance) / levelLight(anchor) : (balanceLuminance / luminance(anchor.sunIrradiance)) * SKY_EXPOSURE;
     const level = file === anchorFile ? 1 : adaptedLight(hourLight(measurement)) / adaptedLight(hourLight(anchor));
     const scale = anchorScale * level;
     if (sunlit) {
       const sunColour = new THREE.Vector3().fromArray(measurement.sunIrradiance).divide(new THREE.Vector3().fromArray(balance.sunIrradiance)).multiply(sunBalance);
-      const sunLuminance = balanceLuminance * (scale / anchorScale) * (luminance(measurement.sunIrradiance) / luminance(anchor.sunIrradiance));
+      // The photo's sun on the dome's scale (sunIrradiance is π times a physical irradiance: SKY_EXPOSURE): the
+      // balance's at its anchor hour, a shaded sun's (shadedSun) its own small share.
+      const sunLuminance = luminance(measurement.sunIrradiance) * scale / SKY_EXPOSURE;
       clear.sun.copy(sunColour.multiplyScalar(sunLuminance / luminance(sunColour.toArray())));
     } else {
       clear.sun.set(0, 0, 0);
