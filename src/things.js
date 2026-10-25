@@ -66,7 +66,11 @@
 //     buoyancy is cut into across its widest (src/rock.js buoyancyColumns;
 //     20 unless it says): a long thin thing needs more for enough across
 //     its girth (a banana, 40), or, lying with its columns level, the
-//     water's push on it comes in steps and it never settles.
+//     water's push on it comes in steps and it never settles; `columnsAlong`,
+//     the axis they are cut along in its own frame (its own +y if it is kept
+//     upright, else its short axis): a thing that may float lying any way up
+//     needs one slanted to all its faces (a toy slide's, [1, 1, 1]), for the
+//     same reason.
 //   - A thing that flies as a plate (`air.model` 'flutter') meets the water
 //     as one too (src/rock.js plateWaterStep): its wetting face carries a disc's
 //     water and takes normal drag, its edge skin drag; the flow turns it.
@@ -649,14 +653,14 @@ defineBuiltIn('ice-shard', {
 // A banana (the header): about 920 kg/m³ whole, ripe (Ambon bananas, measured by what they displace, 932 falling to
 // 890 kg/m³ as they ripened), so it floats with all but a sliver of it under. Long and thin, its nominal radius is its
 // ball's of like volume (src/thingMeshes.js asUnitBall), which its splash is sized by: a stone of its radius displaces
-// what it does. Thrown, it tumbles end over end.
+// what it does. Thrown, it tumbles end over end. Its buoyancy is cut finer (`columns`), for enough across its girth.
 defineBuiltIn('banana', {
   name: 'Banana', group: 'Food', note: 'For scale: it floats, just', called: 'a banana',
   body: { shape: 'mesh', density: 920, size: { by: 'mass', unit: 'g', min: 100, max: 250, step: 10, initial: 160 } },
   material: { bounce: [0.12, 0.22], friction: 0.7 },
   air: { drag: 1.1 },
   water: { restingHeight: 0.55, columns: 40 },
-  look: { mesh: 'banana', roughness: 0.55, reflection: 0.8, wet: { darker: 0.08, glossier: 0.45 } },
+  look: { mesh: 'banana', roughness: 0.45, reflection: 0.8, wet: { darker: 0.08, glossier: 0.45 } },
 });
 // A slice of sandwich bread (the header), 12 cm and 30 g: white bread's crumb is 4 to 6 cm³ a gram, so the slice is
 // about 175 kg/m³ and floats nearly all out of the water, a plate in the air as a pizza is, and floppier. Its crumb is
@@ -694,7 +698,7 @@ defineBuiltIn('cake', {
 defineBuiltIn('snowball', {
   name: 'Snowball', group: 'Other', note: 'Packed snow: it floats, soaked to slush', called: 'a snowball',
   body: { shape: 'sphere', density: 450, size: { by: 'diameter', unit: 'cm', min: 5, max: 15, step: 0.5, initial: 8 } },
-  material: { bounce: [0.03, 0.1], friction: 0.9, roll: 'solid', rolling: 0.2 },
+  material: { bounce: [0.03, 0.1], friction: 0.9, roll: 'solid', rolling: 0.4 },
   water: { restingHeight: 0.95, soaks: { seconds: 6, takes: 0.45 } },
   look: { mesh: 'snowball', roughness: 0.8, reflection: 0.7, wet: { darker: 0.3, glossier: 0.5 } },
 });
@@ -702,7 +706,9 @@ defineBuiltIn('snowball', {
 // litres (src/thingMeshes.js), so it is about 104 kg/m³ and floats nine tenths out of the water. Its nominal radius
 // is its hull's ball of like volume (0.211 m, a 42 cm ball: its splash is a thing's that displaces as much), its size
 // shown as its length. A throw puts no more than THROW_WORK into it, and it tumbles slowly (`air.spin`), dragged by
-// the air on more than its ball's disc.
+// the air on more than its ball's disc. Kept upright, it settles on the deck on its feet or upside down, not balanced
+// on a corner; afloat the water leaves it as it lands (on its feet, its side or upside down: it is no heavier low
+// down), its buoyancy cut slantwise to all its faces (`columnsAlong`).
 defineBuiltIn('slide', {
   name: 'Toy slide', short: 'Slide', group: 'Other', note: 'Hollow plastic, 4 kg: it floats high', called: 'a toy slide',
   body: { shape: 'mesh', upright: true, size: { by: 'fixed', diameter: 0.422, mass: 4.1 } },

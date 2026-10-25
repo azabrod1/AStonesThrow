@@ -27,7 +27,9 @@
 //   - the strip's chip opens the dropdown of things (src/thingMenu.js) over
 //     the strip and under the settings button, its groups and a pill for
 //     each thing offered (src/things.js thingGroups, which the page is asked)
-//     on the screen (on a phone in portrait without scrolling), each
+//     on the screen once scrolled to (on a touch screen each group's row
+//     sideways; on a phone in portrait the card itself without scrolling,
+//     and as tall as its groups' rows, whatever the number of things), each
 //     fitting its name and on a touch screen at least 34 points tall, the
 //     chosen one checked and focused; a pill tapped is thrown next (the
 //     dropdown closed, the focus back on the chip, the strip following, a
@@ -277,13 +279,19 @@ for (const framing of FRAMINGS) {
     const toBox = (rect) => ({ left: rect.left * scale, right: rect.right * scale, top: rect.top * scale, bottom: rect.bottom * scale, height: rect.height * scale });
     const card = document.getElementById('thing-menu-card');
     const focused = document.activeElement?.dataset?.value;
-    // Each pill as the card scrolls it into view: a short screen's card scrolls.
+    // Each pill as the card scrolls it into view (a short screen's card scrolls), and its row (a touch screen's
+    // rows scroll sideways); then each row and the card back to their starts.
+    const rows = [...card.querySelectorAll('.thing-menu-pills')];
+    // The rows' pills as they stand before any is scrolled to: one row of pills each on a touch screen.
+    const rowTops = rows.map((row) => new Set([...row.children].map((pill) => Math.round(pill.getBoundingClientRect().top))).size);
     const pills = [...card.querySelectorAll('[role="menuitemradio"]')].map((pill) => {
-      pill.scrollIntoView({ block: 'nearest' });
+      pill.scrollIntoView({ block: 'nearest', inline: 'nearest' });
       return { name: pill.dataset.value, checked: pill.getAttribute('aria-checked') === 'true', clipped: pill.scrollWidth > pill.clientWidth + 0.5, ...toBox(pill.getBoundingClientRect()) };
     });
+    for (const row of rows) row.scrollLeft = 0;
     card.scrollTop = 0;
     return {
+      rowTops,
       open: !document.getElementById('thing-menu').hidden, expanded: document.getElementById('thing-chip').getAttribute('aria-expanded'),
       card: toBox(card.getBoundingClientRect()), scrolls: card.scrollHeight > card.clientHeight + 1, pills, focused,
       groups: [...card.querySelectorAll('.thing-menu-head')].map((head) => head.textContent),
@@ -298,7 +306,8 @@ for (const framing of FRAMINGS) {
   check(menu.groups.join(', ') === offered.map((group) => group.name).join(', ') && menu.pills.length === offeredCount && menu.pills.every(onScreen) && !menu.pills.some((pill) => pill.clipped) && (!framing.touch || menu.pills.every((pill) => pill.height >= SMALLEST_BUTTON_HEIGHT - 0.5)),
     `its ${menu.groups.join(', ')} hold a pill for each of the ${offeredCount} things offered (${menu.pills.length}), each on the screen once scrolled to and fitting its name${framing.touch ? `, at least ${SMALLEST_BUTTON_HEIGHT} points tall (smallest ${Math.min(...menu.pills.map((pill) => pill.height)).toFixed(1)})` : ''}${menu.pills.some((pill) => pill.clipped) ? ` (cut: ${menu.pills.filter((pill) => pill.clipped).map((pill) => pill.name).join(', ')})` : ''}`);
   check(checkedPill === 'stone' && menu.focused === 'stone', `the chosen thing's pill is checked (${checkedPill}) and focused (${menu.focused})`);
-  if (framing.portrait) check(!menu.scrolls, 'on a phone in portrait the dropdown holds every pill without scrolling');
+  if (framing.portrait) check(!menu.scrolls, 'on a phone in portrait the dropdown holds every row without scrolling');
+  if (framing.touch) check(menu.rowTops.every((count) => count === 1), `on a touch screen each group's pills are one row, scrolled sideways (rows of ${menu.rowTops.join(', ')} lines)`);
   await page.screenshot({ path: path.join(outputFolder, `${framing.name}-menu.png`) });
   const rocksBeforePick = await page.evaluate(() => window.__pond.rocks.length);
   await press('#thing-menu [data-value="tennis"]');

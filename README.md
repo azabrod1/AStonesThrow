@@ -26,7 +26,9 @@ view); a drag that starts zoomed turns round what the view is looking at.
 Escape or Reset view (under the menu button while the view is away from
 the shore's) glides back to the shore. The strip at the bottom sets what is
 thrown: its name opens a dropdown of every thing under its group, each with
-its picture (`src/thingMenu.js`), and its slider sets the size (a stone 1.5
+its picture (`src/thingMenu.js`; on a phone each group is one row a finger
+scrolls sideways, so the dropdown stays as tall as its groups however many
+things there are), and its slider sets the size (a stone 1.5
 to 30 cm across, a bowling ball 6 to 16 lb, a basketball size 5 to 7, a gem
 5 to 1000 carats; a golf or a tennis ball has one size). Then how it is
 thrown, in two parts: the manner, Toss (the low way round), Lob (the high
@@ -1410,7 +1412,8 @@ farther out, so it rises into the view rather than filling its corner.
   portrait and goes with the first throw; that Toss, Lob and Skip set the
   manner, Soft, Medium and Hard the strength, and the clock goes round 1×, ¼×
   and ⅒×; that the name's dropdown fits over the
-  strip (a phone in portrait without scrolling), its pills tall enough for a
+  strip (a phone in portrait without scrolling, each group one row there that
+  scrolls sideways to every pill), its pills tall enough for a
   finger, a pill tapped is thrown next, a press on the pond closes it without
   throwing and the keyboard works it; that the settings open with their rows, each
   row's value whole beside its name, the Water page's pictured choices each

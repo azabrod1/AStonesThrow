@@ -1139,7 +1139,7 @@ const BANANA = {
   stem: 0.55, cut: 0.95, flare: 0.15,  // ...its stem's radius (cm) taking over at its neck, flaring by `flare` from `cut` on
   ridges: 5, ridge: 0.05,
   rows: 100, around: 40,
-  yellow: linear(236, 200, 52), green: linear(150, 168, 56), stalk: linear(116, 122, 52), end: linear(56, 40, 24),
+  yellow: linear(252, 216, 58), green: linear(170, 184, 60), stalk: linear(116, 122, 52), end: linear(56, 40, 24),
   spot: linear(112, 70, 28), ridgeLine: linear(170, 130, 40),
 };
 
@@ -1175,7 +1175,7 @@ export function createBananaGeometry() {
         const body = smoothstep(0.03, 0.08, share) * smoothstep(0.9, 0.84, share);
         color.copy(BANANA.yellow).lerp(BANANA.green, 0.7 * smoothstep(0.7, 0.9, share)).lerp(BANANA.stalk, smoothstep(0.86, 0.93, share));
         color.lerp(BANANA.ridgeLine, 0.35 * Math.max(Math.cos(ridges * angle), 0) ** 16 * body);
-        color.lerp(BANANA.spot, 0.85 * smoothstep(0.76, 0.84, valueNoise3(x * 1.7, y * 1.7, z * 1.7)) * body);
+        color.lerp(BANANA.spot, 0.85 * smoothstep(0.8, 0.87, valueNoise3(x * 1.7, y * 1.7, z * 1.7)) * body);
         color.lerp(BANANA.end, Math.max(smoothstep(0.035, 0.01, share), index === 0 || share > 0.995 ? 1 : 0));
         colors[at] = color.r; colors[at + 1] = color.g; colors[at + 2] = color.b;
       });
@@ -1798,8 +1798,8 @@ function fillingParts(filling, random) {
 // round, each border fluted into CAKE.shells shells. Its unit radius is its
 // borders' reach. Coloured per vertex: the frosting white, faintly streaked
 // by the spatula, the borders pink, its underside baked brown, rainbow
-// sprinkles over its top and a few down its side (one vertex each, by a
-// hash of its place in the grid, so every cake's are the same). Each cake
+// sprinkles over its top (one vertex each, by a hash of its place in the
+// grid, so every cake's are the same). Each cake
 // thrown has its own candles, one to six drawn at random (registerMesh
 // `dress`, cakeCandles: thin striped candles on its top, each count's made
 // once), drawn but not weighed or floated: a few grams, a few millimetres
@@ -1816,7 +1816,7 @@ const CAKE = {
   flute: [0.3, 0.25],   // cm: a shell's swell out and up at its crest
   frosting: linear(250, 246, 238), streak: linear(232, 226, 218), border: linear(244, 150, 186), groove: linear(214, 104, 148), base: linear(192, 132, 64),
   sprinkles: [[232, 52, 60], [250, 196, 40], [70, 186, 90], [60, 130, 230], [170, 90, 210], [250, 130, 40]].map((rgb) => linear(...rgb)),
-  sprinkled: { top: 0.09, side: 0.03 },
+  sprinkled: { top: 0.09 },
   candles: { weights: [2, 3, 3, 2, 2, 1], radius: 0.024, height: 0.5, ring: 0.5, segments: 10, rows: 12, sunk: 0.02, wick: [0.006, 0.05],
     stripes: [[[246, 140, 180], [255, 250, 245]], [[110, 170, 240], [255, 250, 245]], [[250, 210, 80], [255, 250, 245]]] },
 };
@@ -2006,7 +2006,7 @@ export function createDuckGeometry() {
 const SNOWBALL = {
   detail: 4, lumps: [[2.3, 0.07], [7, 0.025]], pressed: 0.95,
   palms: [[0.2, 0.9, 0.3], [-0.6, -0.5, 0.6], [0.8, -0.3, -0.5], [-0.3, 0.2, -0.9], [0.5, -0.9, 0.2]],
-  snow: linear(242, 245, 251), shade: linear(184, 198, 224), glint: linear(255, 255, 255),
+  snow: linear(246, 248, 252), shade: linear(196, 208, 230), glint: linear(255, 255, 255),
 };
 
 /** A snowball's geometry (the header), of unit radius about its middle; made once, cloned. */
@@ -2020,11 +2020,12 @@ export function createSnowballGeometry() {
       const x = positions[vertex], y = positions[vertex + 1], z = positions[vertex + 2];
       const lumps = SNOWBALL.lumps.map(([frequency, height]) => height * (valueNoise3(x * frequency + 5, y * frequency, z * frequency) - 0.5) * 2);
       let radius = 1 + lumps[0] + lumps[1];
+      const hollow = smoothstep(0, -0.07, lumps[0] + lumps[1]);   // its lumps' troughs, before any palm pressed it
       // Pressed flat: no further out than any palm's plane along its direction.
       for (const palm of palms) { const facing = x * palm.x + y * palm.y + z * palm.z; if (facing > 0.2) radius = Math.min(radius, SNOWBALL.pressed / facing); }
       positions[vertex] = x * radius; positions[vertex + 1] = y * radius; positions[vertex + 2] = z * radius;
       // Its hollows shaded bluish, a glint where a grain catches the light.
-      color.copy(SNOWBALL.snow).lerp(SNOWBALL.shade, 0.75 * smoothstep(0.98, 0.9, radius) + 0.25 * smoothstep(0.5, 0.2, valueNoise3(x * 12, y * 12, z * 12)));
+      color.copy(SNOWBALL.snow).lerp(SNOWBALL.shade, 0.45 * hollow + 0.15 * smoothstep(0.5, 0.2, valueNoise3(x * 12, y * 12, z * 12)));
       if (valueNoise3(x * 30 + 9, y * 30, z * 30) > 0.86) color.lerp(SNOWBALL.glint, 0.8);
       colors[vertex] = color.r; colors[vertex + 1] = color.g; colors[vertex + 2] = color.b;
     }
@@ -2060,7 +2061,7 @@ const SLIDE = {
   // Its chute's bed, its middle from its top to its foot (its underside on the ground there), leaving its top `slope`
   // degrees below level, the cubic's handles `reach` (m) long; its rails' height, thickness and place across it.
   chute: { from: [-0.206, 0.53], to: [0.495, 0.02], slope: 25, reach: [0.3, 0.22], rail: [0.07, 0.04, 0.21] },
-  chuteColour: linear(250, 194, 30), sideColour: linear(212, 48, 38), stepColour: linear(40, 110, 206),
+  chuteColour: linear(255, 210, 28), sideColour: linear(228, 50, 38), stepColour: linear(36, 120, 226),
 };
 
 /** A toy slide's geometry (the header) for its definition (its nominal radius, half its `diameter`). */
