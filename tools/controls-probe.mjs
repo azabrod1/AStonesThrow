@@ -25,8 +25,9 @@
 //     Soft, Medium and Hard its strength, and the slow-motion clock goes
 //     round the time's rates (1×, ¼×, ⅒×) and lights while slow;
 //   - the strip's chip opens the dropdown of things (src/thingMenu.js) over
-//     the strip and under the settings button, its four groups and twenty
-//     pills on the screen (on a phone in portrait without scrolling), each
+//     the strip and under the settings button, its groups and a pill for
+//     each thing offered (src/things.js thingGroups, which the page is asked)
+//     on the screen (on a phone in portrait without scrolling), each
 //     fitting its name and on a touch screen at least 34 points tall, the
 //     chosen one checked and focused; a pill tapped is thrown next (the
 //     dropdown closed, the focus back on the chip, the strip following, a
@@ -38,8 +39,10 @@
 //     screen, its rows that tall too, each row's value whole beside its
 //     name; its What to throw row opens that page, its things in a fold for
 //     each group (the chosen thing's open, one at a time: on a phone in
-//     portrait the page needs no scrolling), whose twenty pictured choices
-//     can each be opened and scrolled onto the screen and fit their names,
+//     portrait the page with the Stones open, the first, needs no scrolling;
+//     a fold of more cards scrolls, its head staying put), whose pictured
+//     choices, one for each thing offered, can each be opened and scrolled
+//     onto the screen and fit their names,
 //     every card one height, its name and note each one line, whole,
 //     its head staying at the panel's top as it scrolls; the dropdown's foot
 //     opens the page at once, and each choice, tapped, is shown over the
@@ -295,11 +298,14 @@ for (const framing of FRAMINGS) {
       groups: [...card.querySelectorAll('.thing-menu-head')].map((head) => head.textContent),
     };
   });
+  // What the page offers (src/things.js, as the page has it): its groups and how many things each holds.
+  const offered = await page.evaluate(async () => (await import('./src/things.js')).thingGroups().map(({ name, keys }) => ({ name, count: keys.length })));
+  const offeredCount = offered.reduce((sum, group) => sum + group.count, 0);
   check(menu.open && menu.expanded === 'true' && onScreen(menu.card) && menu.card.bottom <= layout.strip.top + 0.5 && menu.card.top >= menuButton.bottom - 0.5,
     `the strip's chip opens the dropdown of things over the strip and under the settings button (${menu.open ? `${Math.round(menu.card.right - menu.card.left)}×${Math.round(menu.card.height)} points` : 'not open'})`);
   const checkedPill = menu.pills.find((pill) => pill.checked)?.name;
-  check(menu.groups.join(', ') === 'Stones, Balls, Gems, Other' && menu.pills.length === 20 && menu.pills.every(onScreen) && !menu.pills.some((pill) => pill.clipped) && (!framing.touch || menu.pills.every((pill) => pill.height >= SMALLEST_BUTTON_HEIGHT - 0.5)),
-    `its ${menu.groups.join(', ')} hold twenty pills (${menu.pills.length}), each on the screen once scrolled to and fitting its name${framing.touch ? `, at least ${SMALLEST_BUTTON_HEIGHT} points tall (smallest ${Math.min(...menu.pills.map((pill) => pill.height)).toFixed(1)})` : ''}${menu.pills.some((pill) => pill.clipped) ? ` (cut: ${menu.pills.filter((pill) => pill.clipped).map((pill) => pill.name).join(', ')})` : ''}`);
+  check(menu.groups.join(', ') === offered.map((group) => group.name).join(', ') && menu.pills.length === offeredCount && menu.pills.every(onScreen) && !menu.pills.some((pill) => pill.clipped) && (!framing.touch || menu.pills.every((pill) => pill.height >= SMALLEST_BUTTON_HEIGHT - 0.5)),
+    `its ${menu.groups.join(', ')} hold a pill for each of the ${offeredCount} things offered (${menu.pills.length}), each on the screen once scrolled to and fitting its name${framing.touch ? `, at least ${SMALLEST_BUTTON_HEIGHT} points tall (smallest ${Math.min(...menu.pills.map((pill) => pill.height)).toFixed(1)})` : ''}${menu.pills.some((pill) => pill.clipped) ? ` (cut: ${menu.pills.filter((pill) => pill.clipped).map((pill) => pill.name).join(', ')})` : ''}`);
   check(checkedPill === 'stone' && menu.focused === 'stone', `the chosen thing's pill is checked (${checkedPill}) and focused (${menu.focused})`);
   if (framing.portrait) check(!menu.scrolls, 'on a phone in portrait the dropdown holds every pill without scrolling');
   await page.screenshot({ path: path.join(outputFolder, `${framing.name}-menu.png`) });
@@ -421,18 +427,20 @@ for (const framing of FRAMINGS) {
   await page.waitForTimeout(400);
   await press('#settings .menu-tier[data-open="water"]');
   await page.waitForTimeout(400);
-  // The Object page (src/things.js): its folds and twenty pictured choices; each sets what is thrown, and the strip's slider follows it.
+  // The Object page (src/things.js): its folds and a pictured choice for each thing offered; each sets what is thrown, and the strip's slider follows it.
   await press('.menu-page[data-page="water"] .menu-back');
   await page.waitForTimeout(400);
   await press('#settings .menu-tier[data-open="thing"]');
   await page.waitForTimeout(400);
-  // Its folds (src/things.js groups): the chosen thing's open alone; with it, a phone in portrait sees the whole page without scrolling.
+  // Its folds (src/things.js groups): the chosen thing's open alone; with the Stones open (the first, the river stone's), a
+  // phone in portrait sees the whole page without scrolling. A fold of more cards (Other's) scrolls under the page's head:
+  // with Apple's 44-point cards it cannot fit an iPhone SE.
   const folds = await page.evaluate(() => {
     const panel = document.getElementById('settings');
     return { names: [...document.querySelectorAll('#thing .menu-group')].map((fold) => fold.dataset.group), open: [...document.querySelectorAll('#thing .menu-group[open]')].map((fold) => fold.dataset.group), scrolls: panel.scrollHeight > panel.clientHeight + 1 };
   });
-  check(folds.names.length === 4 && folds.open.length === 1 && folds.open[0] === 'Stones', `the Object page folds its things into ${folds.names.join(', ')}, the chosen one's open (${folds.open.join(', ')})`);
-  if (framing.portrait) check(!folds.scrolls, 'with one fold open the Object page fits a phone in portrait without scrolling');
+  check(folds.names.join(', ') === offered.map((group) => group.name).join(', ') && folds.open.length === 1 && folds.open[0] === 'Stones', `the Object page folds its things into ${folds.names.join(', ')}, the chosen one's open (${folds.open.join(', ')})`);
+  if (framing.portrait) check(!folds.scrolls, 'with the Stones open the Object page fits a phone in portrait without scrolling');
   // Each fold opened in turn (the others shut), each of its cards scrolled to.
   const things = await page.evaluate(async () => {
     const scale = window.visualViewport ? window.visualViewport.scale : 1;
@@ -453,7 +461,7 @@ for (const framing of FRAMINGS) {
     return placed;
   });
   const [thingPanel] = await boxes('#settings');
-  check(onScreen(thingPanel) && things.length === 20 && things.every(onScreen) && things.every((choice) => choice.others === 0) && (!framing.touch || things.every((choice) => choice.height >= SMALLEST_BUTTON_HEIGHT - 0.5)), `the Object page is on the screen, each of its twenty choices once its fold is open (the others shut) and it is scrolled to${framing.touch ? `, at least ${SMALLEST_BUTTON_HEIGHT} points tall` : ''}`);
+  check(onScreen(thingPanel) && things.length === offeredCount && things.every(onScreen) && things.every((choice) => choice.others === 0) && (!framing.touch || things.every((choice) => choice.height >= SMALLEST_BUTTON_HEIGHT - 0.5)), `the Object page is on the screen, each of its ${offeredCount} choices (${things.length}) once its fold is open (the others shut) and it is scrolled to${framing.touch ? `, at least ${SMALLEST_BUTTON_HEIGHT} points tall` : ''}`);
   // Every card one height (review: a note on two lines made its card taller than the rest), each line whole.
   const heights = things.map((choice) => choice.height), cut = things.filter((choice) => choice.cut).map((choice) => choice.name);
   check(Math.max(...heights) - Math.min(...heights) < 0.5 && cut.length === 0, `What to throw's cards are one height (${Math.min(...heights).toFixed(1)} to ${Math.max(...heights).toFixed(1)} points), their names and notes whole${cut.length ? `; cut short: ${cut.join(', ')}` : ''}`);
@@ -485,6 +493,8 @@ for (const framing of FRAMINGS) {
     ['tennis', { row: 'Tennis ball', label: 'Tennis ball', readout: '6.7 cm · 58 g', disabled: true }],
     ['granite', { button: 'Throw a rock', row: 'Granite', label: 'Granite', disabled: false, minimum: 1.5, maximum: 30 }],
     ['diamond', { button: 'Throw a gem', row: 'Diamond', label: 'Diamond', readout: '100 ct · 3 cm', minimum: 5, maximum: 1000, disabled: false }],
+    ['tv', { button: 'Throw a TV', row: 'TV', label: 'TV', readout: '54 cm · 3.6 kg', disabled: true }],
+    ['iphone', { button: 'Throw an iPhone', row: 'iPhone', label: 'iPhone', readout: '15 cm · 180 g', disabled: true }],
     ['pizza', { button: 'Throw a pizza', row: 'Pizza', label: 'Pizza', readout: '30 cm · 380 g', minimum: 1, maximum: 3, disabled: false }],
     ['stone', { row: 'River stone', label: 'Rock', disabled: false, minimum: 1.5, maximum: 30 }],
   ]) {

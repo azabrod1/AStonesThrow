@@ -90,6 +90,10 @@ import { createServer } from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { QUALITY, PIXEL_BUDGET, MAX_FRAME_RATE } from '../src/main.js';
+import { THINGS, THING_NAMES, DEFAULT_THING } from '../src/things.js';
+
+// Every thing offered (src/things.js; a hidden one, a shard of ice, is made by the ice: the ice's part throws through it).
+const OFFERED = THING_NAMES.filter((name) => !THINGS[name].hidden);
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const FLOATER_FRAME_CALLS = 12;   // the most draw calls a basketball resting afloat may add to a frame: its halves, and its mirror image's region redrawn
@@ -326,12 +330,12 @@ const firstThrows = await page.evaluate((names) => {
   pond.pause();
   const spent = names.map((name, index) => {
     const started = performance.now();
-    pond.throwAt(-1.2 + 0.6 * (index % 5), -0.6 - 0.6 * Math.floor(index / 5), { thing: name });
+    pond.throwAt(-1.5 + 0.6 * (index % 6), -0.6 - 0.6 * Math.floor(index / 6), { thing: name });
     return { thing: name, spent: performance.now() - started };
   });
   pond.advance(2.5);
   return spent;
-}, ['slate', 'granite', 'basalt', 'pumice', 'golf', 'tennis', 'bowling', 'basketball', 'diamond', 'apple', 'pizza', 'frozen-pizza', 'pie', 'duck', 'watermelon', 'brick']);
+}, OFFERED.filter((name) => name !== DEFAULT_THING));   // the river stone thrown already
 console.log(`  first throws (ms on the main thread): ${firstThrows.map(({ thing, spent }) => `${thing} ${spent.toFixed(1)}`).join(', ')}`);
 const preparedAfter = await page.evaluate(() => window.__pond.budget.preparation);
 check(preparedBefore.meshes > 0 && preparedAfter.meshes === preparedBefore.meshes && preparedAfter.waterlines === preparedBefore.waterlines,
@@ -439,14 +443,13 @@ check(apart < 1e-9 && unevenly[0][3] === unevenly[1][3], `a basketball thrown al
 // A long session (resource lifetime): throws of every kind, more than low keeps, the oldest retired as the pond fills,
 // then the pond cleared: the GPU's geometries and textures are back where they were, and no program was made.
 part('a long session, on low');
-const session = await page.evaluate(() => {
+const session = await page.evaluate((names) => {
   const pond = window.__pond, memory = pond.renderer.info.memory;
   pond.pause();
   pond.setQuality('low');
   pond.clear();
   pond.advance(0.5);
   const before = { geometries: memory.geometries, textures: memory.textures, programs: pond.budget.programs };
-  const names = ['stone', 'basketball', 'pizza', 'frozen-pizza', 'pie', 'duck', 'tennis', 'brick', 'pumice', 'diamond', 'watermelon', 'apple', 'bowling', 'golf'];
   let most = 0;
   // Six at a time, then 1.5 s of the world (a frame is drawn at the end of each advance: here they are what is dear).
   const throws = 36;
@@ -462,7 +465,7 @@ const session = await page.evaluate(() => {
   pond.setQuality('high');
   pond.resume();
   return { before, after, most, throws };
-});
+}, OFFERED);   // more throws than things: each thrown at least once
 console.log(`  ${session.throws} throws of every kind on low, at most ${session.most} in the pond at once: geometries ${session.before.geometries} → ${session.after.geometries}, textures ${session.before.textures} → ${session.after.textures}, programs ${session.before.programs} → ${session.after.programs}`);
 check(session.after.geometries <= session.before.geometries && session.after.textures <= session.before.textures && session.after.programs === session.before.programs, `${session.throws} throws and a clear pond leave no geometry, texture or program behind`);
 
