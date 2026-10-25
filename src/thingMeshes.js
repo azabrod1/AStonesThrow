@@ -1201,7 +1201,7 @@ function bananaLength() {
 const BREAD = {
   thickness: 1.3, crust: 0.35, round: 0.5,   // cm; the crust's band in from the rim; the rim's rounding, of its half-thickness
   points: 96, rings: 12,
-  crumb: linear(238, 226, 194), pore: linear(196, 176, 132), crustLight: linear(196, 132, 62), crustDark: linear(128, 74, 30),
+  crumb: linear(250, 238, 204), pore: linear(226, 206, 160), crustLight: linear(200, 136, 64), crustDark: linear(132, 76, 30),
 };
 
 /** A slice's outline (the header), in centimetres about its area's middle, counter-clockwise. */
@@ -1225,7 +1225,7 @@ export function createBreadGeometry(definition) {
     paint: (a, b, c, inset) => {
       // Its crumb, pitted with pores; its crust darker to the rim.
       const pores = valueNoise3(a / scale * 2.2, b / scale * 2.2, c > 0 ? 3.5 : 7.5);
-      color.copy(BREAD.crumb).lerp(BREAD.pore, 0.75 * smoothstep(0.62, 0.8, pores));
+      color.copy(BREAD.crumb).lerp(BREAD.pore, 0.6 * smoothstep(0.62, 0.8, pores));
       return color.lerp(BREAD.crustLight, smoothstep(1.4 * crust, 0.9 * crust, inset)).lerp(BREAD.crustDark, smoothstep(0.6 * crust, 0, inset));
     },
   });

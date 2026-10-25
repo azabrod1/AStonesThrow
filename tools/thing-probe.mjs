@@ -341,10 +341,10 @@ for (const [index, name] of THING_NAMES.entries()) {
         line += `, its ${columns?.count} columns holding ${(100 * held).toFixed(1)}% of its mesh's volume`;
         check(columns && Math.abs(held - 1) < COLUMN_VOLUME, `${label}: its buoyancy's columns hold ${(100 * held).toFixed(1)}% of its volume`);
       }
-      if (rock.thing.body.upright && (rock.plate || rock.thing.body.ballast)) {
+      if (rock.thing.body.upright && (rock.plate || (rock.thing.body.ballast?.[1] ?? 0) < 0)) {
         // Its top up and out of the water: its own +y up, its highest point (a pizza's crust, a pie's rim, a duck's head) over
-        // the water. (A plate is let go flat and a ballasted thing rights itself; anything else kept upright, a toy slide,
-        // floats as the water leaves it, on its feet or upside down, and is kept upright for the deck.)
+        // the water. (A plate is let go flat and a thing weighted low rights itself; anything else kept upright, a toy
+        // slide or a cake, floats as the water leaves it, either way up, and is kept upright for the deck.)
         const up = new THREE.Vector3(0, 1, 0).applyQuaternion(rock.quaternion).y, top = rock.position.y + rock.waterline(rock.position.y).high;
         line += `; its top ${up > 0 ? 'up' : 'down'}, ${centimetres(top)} cm out of the water`;
         check(up > 0.98 && top > 0, `${label}: afloat with its top ${up > 0 ? 'up' : 'down'}, ${centimetres(top)} cm out of the water`);

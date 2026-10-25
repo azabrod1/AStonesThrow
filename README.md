@@ -103,7 +103,8 @@ is remembered on the device (but the view, which opens on the shore):
   deck, shrunk to 160×90: `--sky=pool --thing=name
   --throws=-1.75:0.75:0.05 --times=3 --seed=1 --w=320 --h=180`, looked at
   where it rests (`--report` says) with `--look=x:y:z` and a `--fov` that
-  frames it (a duck 4°, a pie 8°, a pizza 9°).
+  frames it (a duck 4°, a pie 8°, a pizza 9°, a toy slide 24°; the cake's
+  with `--seed=3`, on which it lands right way up).
 - View: Shore, standing on the bank as the page opens; Low, down at the
   water, the splash against the far shore; High, from above, the rings
   spreading over the pond; Under, under the water, looking up at the rocks

@@ -677,13 +677,15 @@ defineBuiltIn('bread', {
 });
 // A birthday cake (the header), two layers under buttercream, with a random number of candles: sponge cake is 0.3
 // to 0.4 g/cm³ (some 75% air) and buttercream about 0.9, so the whole is about 460 kg/m³ and floats half out. Its
-// frosting's weight is high in it, a little over its middle (`ballast`), which lands either way up stays. Its
+// frosting's weight is high in it, a little over its middle (`ballast`), so either way up it lands it stays; kept
+// upright, on the deck it settles flat, on its top or its base, never on its edge. Its
 // sponge soaks through its bare underside and sides, slowed by its frosting: waterlogged (0.62 of its volume), it
 // sinks, in three or four minutes afloat. Thrown, it tumbles.
 defineBuiltIn('cake', {
   name: 'Birthday cake', short: 'Cake', group: 'Food', note: 'Sponge and frosting: floats, then soaks', called: 'a cake',
   body: {
     shape: 'mesh',
+    upright: true,
     ballast: [0, 0.03, 0],
     size: { by: 'preset', unit: 'size', initial: 2, presets: [{ value: 1, name: 'Small', label: '16 cm', diameter: 0.16, mass: 0.66 }, { value: 2, name: 'Party', label: '22 cm', diameter: 0.22, mass: 1.7 }, { value: 3, name: 'Big', label: '28 cm', diameter: 0.28, mass: 3.5 }] },
   },
