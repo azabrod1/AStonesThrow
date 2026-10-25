@@ -1727,16 +1727,17 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
 
   /**
    * A shard the ice let go (src/ice.js piecesOf: a piece of a hole's ice,
-   * pushed under as it broke) made a thing (src/things.js 'ice-shard', its
+   * driven down as it broke, or crushed and pushed under) made a thing (src/things.js 'ice-shard', its
    * own outline and mass), adrift under the water where it starts, held in
    * its hole and on the ice as anything thrown is.
    */
   function addShard(piece) {
-    const { position, velocity, quaternion } = piece.start;
+    const { position, velocity } = piece.start;
     const rock = new Rock({ radius: piece.radius, position, velocity, envTexture: environment.envTexture, waterFog: { extinction: lighting.extinction, color: lighting.waterColor }, thing: 'ice-shard', mass: piece.mass, mirrorLayer: MIRROR_LAYER, water: surface.rideUniforms, piece: piece.shape });
-    rock.adrift(position, velocity, quaternion);
+    rock.breakAway(piece.start);
     rock.iceHole = piece.hole;
     rock.ground = ice.ground;
+    ice.adopt(rock);   // ground in its hole while it floats there (src/ice.js pieceUnder)
     rocks.push(rock);
     sceneMain.add(rock.meshAbove);
     sceneUnder.add(rock.meshBelow);
@@ -1783,6 +1784,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   /** Take a stone out of the scenes; keepMaterials frees only its geometry (warmUp keeps a stone's materials, so their program stays compiled). */
   function retireRock(rock, { keepMaterials = false } = {}) {
     if (grab.rock === rock) endGrab();
+    ice.forget(rock);
     untrace(rock);
     sceneMain.remove(rock.meshAbove);
     sceneUnder.remove(rock.meshBelow);
@@ -1928,7 +1930,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       }
       // In the Koi pond, out of the planting: never carried into the shrubs (src/koiGarden.js holdInGarden leaves it be).
       if (koiPond) keepOutOfGarden(current, rock.collisionRadius);
-      const ground = overDeck ? POOL.deck : (rock.ground?.at(current.x, current.z) ?? -bedDepthAt(current.x, current.z));
+      const ground = overDeck ? POOL.deck : (rock.ground?.at(current.x, current.z, rock) ?? -bedDepthAt(current.x, current.z));
       current.y = Math.max(current.y, ground - lowest);
       if (current.y + lowest >= rim) hole = null;
     }
@@ -1948,7 +1950,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     const rock = grab.rock;
     if (!rock) return;
     const { x, z } = rock.position;
-    const ground = rock.ground?.at(x, z) ?? null, surface = grabSurfaceAt(x, z);
+    const ground = rock.ground?.at(x, z, rock) ?? null, surface = grabSurfaceAt(x, z);
     arc.visible = false;
     // Wholly under the water the thing shows itself; a ring on the surface would stand apart from it.
     marker.visible = ground !== null || rock.position.y + rock.reach * rock.radius > surface;
@@ -2203,10 +2205,11 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     const seenAfter = () => Math.max(stepsTime + PHYSICS_STEP - end, 0) / Math.max(timeScale, 0.01) + presented;
     while (stepsTime < end - 1e-12) {
       advanceSplash(stepsTime);
-      // The ice's clock (src/ice.js setTime): a hole whose cavity has closed lets its shards go (each a thing, the
-      // biggest first, no more than the preset keeps) and floods the ice round it; the wet freezes; holes skin over.
+      // The ice's clock (src/ice.js setTime): a hole floods the ice round it once its cavity has closed; the wet
+      // freezes; holes skin over. (What it lets go was made things at the end of the step before.)
       ice.setTime(stepsTime);
-      for (const piece of ice.shards.splice(0).slice(0, settings.shards)) stepping.push(addShard(piece));
+      // What lies on the ice, and whether its weight breaks it (src/ice.js weigh: that thing goes in this step).
+      ice.weigh(stepping);
       for (const rock of stepping) {
         // A gale drifts a floater downwind (src/rock.js); the pool has no gale's waves.
         if (rock.floats) rock.setDrift(galeWaves.on && !pooled ? galeWaves.windDirection : null);
@@ -2217,7 +2220,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
         else if (impact) {
           const cavity = splash.impact(impact, water);
           // A hole it broke in the ice, fitted to its cavity now, before the mask is painted (src/ice.js fitCavity).
-          if (impact.throughIce) ice.fitCavity(rock.iceHole, cavity);
+          if (impact.throughIce) ice.fitCavity(rock.iceHole, cavity, rock);
           sound.splash(impact, seenAfter());
         }
         if (impact && readyForInput) dropRings.load();   // their table, at the first impact after the warm-up (src/dropRings.js)
@@ -2242,6 +2245,12 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       // A thing come down behind the Koi pond's front shrubs is lost in the garden (src/koiGarden.js holdInGarden).
       for (const rock of stepping) if (rock.lostInGarden && rock.fading === undefined) fadeOut(rock);
       stepsTime += PHYSICS_STEP;
+      // At the step's end, what it made and unmade of the ice's pieces, together, whatever the frame: what the ice lets
+      // go by now (src/ice.js letGo: a hole's shards the step after its break, the parts of a piece split in this step)
+      // made things, each the biggest first and no more than the preset keeps; a piece broken up (splitPiece) gone.
+      ice.letGo(stepsTime);
+      for (const piece of ice.shards.splice(0).slice(0, settings.shards)) stepping.push(addShard(piece));
+      for (let index = stepping.length - 1; index >= 0; index--) if (stepping[index].brokenUp) retireRock(stepping.splice(index, 1)[0]);
       // The fish on their own clock (src/fish.js advance: whole FISH_STEP steps to this step's end), each step seeing the
       // things as they are then, so a seeded throw is the same with fish at any frame rate.
       fishes.advance(stepsTime, fishLook, fishBitten);
