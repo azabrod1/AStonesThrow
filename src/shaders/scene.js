@@ -2755,22 +2755,51 @@ void main() {
 // A speck is lit like the foam map in WATER_FRAGMENT (white under the sun and
 // sky, on a level surface), dimmed by uBrightness. Unresolved (its true size,
 // vPixelSize, under SPECK_DOME_FROM pixels, whatever minimum it is widened
-// to) it is a soft grain. Resolved (from SPECK_DOME_TO) it is drawn as
-// FOAM_PATTERN draws a bursting bubble: a clear dome whose film, seen edge
-// on at its limb, whitens as the radius⁴ from SPECK_CAP_WHITE at the top to
-// SPECK_EDGE_WHITE at the edge, the limb one pixel soft, with the sun's
-// glint where the dome's normal is the half vector between the viewer and
-// the sun (sunGlitter's lobe with FOAM_GLINT_VARIANCE, widened by the
-// dome's turn across a pixel so a small dome's glint is a soft spot, not a
-// flicker), added as light, not as cover. Never a flat ring with a hole.
+// to) it is a soft grain. Resolved (from SPECK_DOME_TO) it is a floating
+// bubble's cap seen from above: nearly clear, the water showing through it
+// (SPECK_CAP_WHITE), with a thin bright rim where its film turns edge on.
+// The film's white is the sky's Fresnel reflection off it, which climbs
+// toward grazing incidence: it rises as (1 − cosθ)², cosθ = sqrt(1 − r²) the
+// dome's normal toward the viewer, from the cap's to SPECK_EDGE_WHITE at the
+// limb, where the film mirrors the sky whole. A film's own two-face Fresnel
+// falls faster, nearer (1 − cosθ)⁴ (0.11 at 60° where the square gives
+// 0.28), but at that power the rim of a speck 10 to 20 pixels across came
+// out too faint to read in frames; the square was tuned by them. Three
+// quarters of its white lies in the outer 15% of the radius, under a pixel
+// until a speck is some 13 pixels across, so a pixel takes the profile's
+// mean over the span of radii it covers, from its centre out by a pixel
+// (wider across the squash, where the disc is foreshortened), in closed form:
+// over u = r², the area, ∫(1 − sqrt(1 − u))² du = 2u − u²/2 + (4/3)(1 − u)^1.5.
+// The rim never thins below a pixel and keeps its light, spread over that
+// pixel, and the same span rounds off the limb, a pixel soft. Just inside
+// the rim a faint shadow, cover without light (SPECK_MENISCUS), where the
+// meniscus at the bubble's base bends the light away: the dark line beside
+// the bright one is what makes an edge look like glass, though over the
+// dark water of a high view it hardly shows. The sun's glint is its mirror
+// image on the dome, where the dome's normal is the half vector between the
+// viewer and the sun: sunGlitter's lobe, with SPECK_GLINT_VARIANCE (a smooth
+// film's slopes, spread by a couple of degrees as it wobbles) widened by the
+// dome's turn across a pixel, so the glint is never smaller than a pixel and
+// does not flicker as the speck moves. SPECK_GLINT is the film's two faces
+// times π: the white beside the glint is drawn as the sun's irradiance with
+// no Lambertian 1/π (src/sky.js), against which a mirror's highlight under
+// the same sun is π times sunGlitter's lobe. So the glint is a soft spot on
+// a speck under some 8 pixels across, a distinct bright point from about 12,
+// and on a bright one nearly white from about 25 (tuned by frames at the
+// high view, the sun to the side). It is added as light, not as cover, and
+// scaled by the speck's fade and its shine: a film's reflectance follows its
+// thickness (thin-film interference), from nearly nothing to four times a
+// single face's, which the two faces average. Never a flat ring with a hole.
 export const SPECK_FRAGMENT = /* glsl */`
 #define SPECK_PI 3.141592653589793
 #define SPECK_DOME_FROM 3.5           // pixels of true size from which a speck starts to be drawn as a dome...
 #define SPECK_DOME_TO 5.0             // ...and is one
-#define SPECK_CAP_WHITE 0.04          // FOAM_BUBBLE_CAP_WHITE: the water shows through the cap...
-#define SPECK_EDGE_WHITE 0.75         // ...FOAM_BUBBLE_EDGE_WHITE: its film seen edge on
-#define SPECK_GLINT 2.0               // FOAM_GLINT: the film's two faces
-#define SPECK_GLINT_VARIANCE 0.02     // FOAM_GLINT_VARIANCE: the film's sheen
+#define SPECK_CAP_WHITE 0.04          // the water shows through the cap...
+#define SPECK_EDGE_WHITE 1.0          // ...its film seen edge on mirrors the sky whole
+#define SPECK_MENISCUS 0.15           // the meniscus's shadow just inside the rim, as cover
+#define SPECK_MENISCUS_WIDTH 0.08     // radii, or a pixel if wider
+#define SPECK_GLINT (2.0 * SPECK_PI)  // the film's two faces, times π against the white beside it
+#define SPECK_GLINT_VARIANCE 0.002    // a smooth film's slope variance (2.6° rms)
 uniform vec3 uSunDir;
 uniform vec3 uSunIrradiance;
 uniform vec3 uSkyAmbient;
@@ -2784,20 +2813,38 @@ varying float vSurfaceAspect;
 varying vec3 vToViewer;
 varying vec3 vToSun;
 varying vec3 vHalfVector;
+// ∫(1 − cosθ)² du over the area u = r² from 0, cosθ = sqrt(1 − u); nothing past the limb.
+float speckFilmArea(float area) {
+  area = min(area, 1.0);
+  float rest = 1.0 - area;
+  return 2.0 * area - 0.5 * area * area + (4.0 / 3.0) * rest * sqrt(rest);
+}
 void main() {
   vec2 offset = gl_PointCoord * 2.0 - 1.0;
   offset += vSurfaceAxis * dot(offset, vSurfaceAxis) * (1.0 / vSurfaceAspect - 1.0);
   float radiusSquared = dot(offset, offset);
   if (radiusSquared > 1.0) discard;
+  float radius = sqrt(radiusSquared);
   float pixel = 2.0 / max(vDrawn, 1.0);   // a pixel, in radii
+  // A pixel along the radius here: 1/vSurfaceAspect wider along the squash.
+  float acrossSquash = radius > 1e-4 ? dot(offset, vSurfaceAxis) / radius : 0.0;
+  float radialPixel = pixel * sqrt(1.0 + (1.0 / (vSurfaceAspect * vSurfaceAspect) - 1.0) * acrossSquash * acrossSquash);
   float dome = smoothstep(SPECK_DOME_FROM, SPECK_DOME_TO, vPixelSize * vSurfaceAspect);
   float grain = exp(-3.0 * radiusSquared);
-  float limb = 1.0 - smoothstep(1.0 - pixel, 1.0, sqrt(radiusSquared));
-  float film = mix(SPECK_CAP_WHITE, SPECK_EDGE_WHITE, radiusSquared * radiusSquared) * limb;
+  // The film's white, its mean over the radii from here out by a pixel; limb: the share of them on the disc.
+  float outer = radius + radialPixel;
+  float span = outer * outer - radiusSquared;
+  float limb = (min(outer * outer, 1.0) - radiusSquared) / span;
+  float rim = (speckFilmArea(outer * outer) - speckFilmArea(radiusSquared)) / span;
+  float film = SPECK_CAP_WHITE * limb + (SPECK_EDGE_WHITE - SPECK_CAP_WHITE) * rim;
   float shape = mix(grain, film, dome);
+  // The meniscus's shadow, a band ending where the rim's pixel begins.
+  float band = max(SPECK_MENISCUS_WIDTH, radialPixel);
+  float meniscus = smoothstep(1.0 - 3.0 * band, 1.0 - 1.8 * band, radius) * (1.0 - smoothstep(1.0 - 1.8 * band, 1.0 - band, radius));
   vec3 light = uSunIrradiance * max(uSunDir.y, 0.0) + uSkyAmbient * 1.5;
   vec3 color = vec3(0.94, 0.96, 0.97) * light * uBrightness;
   float alpha = vAlpha * shape * uOpacity;
+  float shadow = vAlpha * SPECK_MENISCUS * meniscus * dome;
   // The sun's glint on the dome.
   vec3 normal = vec3(offset, sqrt(max(1.0 - radiusSquared, 0.0)));
   float nDotH = max(dot(normal, vHalfVector), 1e-3);
@@ -2807,7 +2854,7 @@ void main() {
   float distribution = exp(-(1.0 - cosineSquared) / (cosineSquared * variance)) / (SPECK_PI * variance * cosineSquared * cosineSquared);
   float fresnel = 0.02 + 0.98 * pow(1.0 - max(dot(vToViewer, vHalfVector), 0.0), 5.0);
   vec3 glint = uSunIrradiance * distribution * fresnel / (4.0 * nDotV) * SPECK_GLINT * step(0.0, dot(normal, vToSun)) * limb * dome * vAlpha;
-  gl_FragColor = vec4(color * alpha + min(glint, vec3(40.0)), alpha);
+  gl_FragColor = vec4(color * alpha + min(glint, vec3(40.0)), alpha + shadow);
 }
 `;
 

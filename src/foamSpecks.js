@@ -17,9 +17,11 @@
 // a few bright), dimmer than the raft: a lone one is faint, a cluster of them
 // reads as foam. Their discs project onto the mean water plane, so a low view
 // sees ellipses, and their opacity follows projected area with no minimum
-// brightness at a distance. A resolved bubble is a clear dome whose film
-// whitens toward its limb, with the sun's glint on it (SPECK_FRAGMENT); an
-// unresolved one a soft grain. The splash makes them where the crown's base
+// brightness at a distance. A resolved bubble is a nearly clear cap with a
+// thin bright rim, where its film turns edge on and mirrors the sky, a faint
+// shadow just inside it and the sun's glint on it, a soft spot on a small
+// one and a white point on a large one (SPECK_FRAGMENT); an unresolved one a
+// soft grain. The splash makes them where the crown's base
 // was, where the jet falls
 // back, where drops land and where bubbles surface. A patch of them
 // (spawnPatch) is never an even scatter: its specks gather in rafts of about
