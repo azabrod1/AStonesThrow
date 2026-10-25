@@ -270,10 +270,12 @@
 //   - material (optional; or materialAt(x, z), where it differs from place
 //     to place: a frozen lake's beach is no ice): the ground's own surface,
 //     where it changes how a thing goes along it ({ kind, friction, rolling,
-//     tumbling, tumble }, each optional): ice is slick, so a thing on it takes the lesser of its
+//     tumbling, tumble, give, rollingLeast }, each optional): ice is slick, so a thing on it takes the lesser of its
 //     own friction and rolling resistance and the ice's, a stone slows at the
 //     ice's `tumbling`·g and turns end over end at its `tumble`, and its
-//     knock is heard as on ice (src/sound.js);
+//     knock is heard as on ice (src/sound.js); a lawn is soft (src/koiGarden.js):
+//     a thing bounces off it at `give` of its own bounce, and a ball rolls on
+//     it against at least `rollingLeast`;
 //   - meet(rock, height) (optional): asked whenever the thing comes down on
 //     the ground (at `height`) or onto the water (height null), before
 //     anything else is done: the ice says whether it holds (`{ ground:
@@ -2848,7 +2850,9 @@ export class Rock {
    * axis onto the one it rolls about (at up to GROUND.aligning), and, a little
    * wider at one end (`material.curve`: its girth's change along its axis, per
    * radius), rolls as a cone does, its path curving towards its narrower end
-   * (its axis's −) by `curve` over its radius per metre.
+   * (its axis's −) by `curve` over its radius per metre, scaled by its own
+   * geometry's `userData.curveScale` where its mesh draws each its own (an
+   * apple's shoulder).
    */
   rollStep(speed, dt) {
     const rolls = this.thing.material.rollsAbout;
@@ -2863,7 +2867,8 @@ export class Rock {
     // Its narrow end (its axis's −, the wider being +) to one side of its path: the path turns towards it.
     const narrow = scratch.face.fromArray(rolls).applyQuaternion(this.quaternion).negate();
     const side = (this.velocity.z * narrow.x - this.velocity.x * narrow.z) / Math.max(speed, 1e-9);   // narrow · (UP × v̂)
-    const turn = (this.thing.material.curve ?? 0) / this.radius * speed * dt * side;
+    const curve = (this.thing.material.curve ?? 0) * (this.geometry.userData.curveScale ?? 1);
+    const turn = curve / this.radius * speed * dt * side;
     if (Math.abs(turn) < 1e-9) return;
     const cosine = Math.cos(turn), sine = Math.sin(turn);
     const velocityX = this.velocity.x, velocityZ = this.velocity.z;
@@ -2898,7 +2903,7 @@ export class Rock {
     const surface = this.groundSurface;   // the ground's own (the header: ice)
     const fall = -this.velocity.y;
     this.heard.push({ speed: fall, radius: this.radius, bounce: this.collisionBounce, surface: surface?.kind });   // its knock on the ground (src/sound.js)
-    const bounce = material.bounce[0] + (material.bounce[1] - material.bounce[0]) * this.random();
+    const bounce = (material.bounce[0] + (material.bounce[1] - material.bounce[0]) * this.random()) * (surface?.give ?? 1);
     this.velocity.y = bounce * fall;
     const along = Math.hypot(this.velocity.x, this.velocity.z);
     // The friction slows it along the ground, a ball no lower than rolling.
@@ -2927,8 +2932,10 @@ export class Rock {
     const along = Math.hypot(this.velocity.x, this.velocity.z);
     const material = this.thing.material, surface = this.groundSurface;
     // A ball's rolling resistance is the lesser of its own and the ground's (ice is smoother than the deck), but one
-    // that rolls about its own axis (an apple) is slowed by its own lumps and give whatever it rolls on.
-    const slowing = material.roll ? (material.rollsAbout ? material.rolling : Math.min(material.rolling, surface?.rolling ?? Infinity)) : surface?.tumbling ?? GROUND.tumbling;
+    // that rolls about its own axis (an apple) is slowed by its own lumps and give whatever it rolls on; a lawn holds
+    // either back by at least its `rollingLeast`.
+    const rolling = material.rollsAbout ? material.rolling : Math.min(material.rolling, surface?.rolling ?? Infinity);
+    const slowing = material.roll ? Math.max(rolling, surface?.rollingLeast ?? 0) : surface?.tumbling ?? GROUND.tumbling;
     const slowed = Math.max(along - slowing * GRAVITY * dt, 0);
     if (!material.roll) this.sliding ??= this.startSliding(along);
     if (slowed < GROUND.stopped) { this.restOn(height); return; }

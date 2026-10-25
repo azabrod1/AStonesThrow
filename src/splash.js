@@ -60,8 +60,8 @@
 //      collapse's water the jet holds aloft (src/jet.js aloftShare), which
 //      the splash hands the ring's source every step: a trapped or stubby
 //      jet, taking little water up, leaves the whole heave to the pond.
-//   4. Bubbles entrained with the stone follow it down its path, rise and
-//      burst into foam.
+//   4. Bubbles entrained with the stone follow it down its path, in swarms
+//      (BUBBLE_SWARM), rise and burst into foam, each leaving a speck.
 // Each stage also stamps the height field and the foam map. A stone falling
 // straight in makes none of the oblique parts.
 //
@@ -147,10 +147,13 @@
 // is moved the same way (src/rock.js).
 //
 // Foam specks (src/foamSpecks.js) are the grain of the foam a splash leaves:
-// a patch where the crown's base was once it has gone, one where the jet
-// falls back, a few where each drop lands (by its size) and one where each
-// bubble surfaces. They ride the surface for 0.8 to 3 s, most of them nearer
-// 1: fresh water's bubbles burst within a second or two.
+// a patch where the crown's base was once it has gone (its specks surfacing
+// over CROWN_SPECK_SPAN·sqrt(R/g) after it, as its foot's air comes up), one
+// where the jet falls back (src/jet.js), a few where each drop lands (by its
+// size) and one where each bubble surfaces, its own size. A patch is lumps
+// with gaps, never an even scatter (spawnPatch there). They ride the surface
+// for 0.8 to 3 s, most of them nearer 1: fresh water's bubbles burst within
+// a second or two.
 //
 // How the splash scales with the stone's radius R, against s = R / 3 cm (the
 // size the constants were tuned at) and the entry speed V. Wherever the
@@ -309,6 +312,7 @@ const LANDING_REFERENCE = 0.0086;     // the drop size the landing crown was tun
 const LANDING_BREAKUP = 12;           // its crown's breakup droplets (scaling with the drop's area)
 const CROWN_SPECKS = 70;              // foam specks where a 3 cm stone's crown stood (scaling with its area)
 const CROWN_SPECK_CAP = 450;          // at most (a 16 cm stone's crown wants 500)
+const CROWN_SPECK_SPAN = 7;           // they surface over this many sqrt(R/g) after the crown has gone (0.4 s for a 3 cm stone), as its foot's air comes up
 const LANDING_KICK_CHANCE = 0.4;      // a big drop landing without a crown kicks up droplets this often...
 const LANDING_KICK_MOST = 2;          // ...one to this many
 const LANDING_SPECK_FREE = 0.004;     // a landing drop leaves a foam speck per LANDING_SPECK_STEP of radius beyond this...
@@ -326,7 +330,9 @@ const SPRAY_DROP_RADIUS = 0.0008;     // the contact line's spray: drops of this
 const SPRAY_DROP_SPREAD = 0.001;      // ...to this much more, times (R / 3 cm)^0.4
 const CONTACT_SPRAY = { water: 0.002, radius: 0.00012, bursts: 24 };   // the contact's first ejecta as spray (src/spray.js): this share of the stone's volume, drops of this mean radius (times (R / 3 cm)^0.3), from this many places round the ring
 const BUBBLES = 110;                  // bubbles a 3 cm stone drags down, scaling with R²...
-const BUBBLE_CAP = 800;               // ...at most (a 16 cm stone wants 780)
+const BUBBLE_CAP = 800;               // ...at most (a 16 cm stone wants 780)...
+const BUBBLE_SWARM = 5;               // ...in swarms of one to this many of like size, within BUBBLE_SWARM_SPREAD, drifting as one: they surface as clumps, not an even sprinkle
+const BUBBLE_SWARM_SPREAD = 0.01;     // m
 // The foam. A pond is fresh water, and a bubble on fresh water bursts within
 // a second (0.01 to 3 s against 0.3 to 30 s on sea water, Anguelova & Huq
 // 2017: salt holds bubbles apart, which is why the sea rafts and whitecaps
@@ -1456,12 +1462,15 @@ export class SplashSystem {
     this.particleScene.add(crown.mesh);
   }
 
-  /** A crown has gone. A stone's leaves foam specks where its base stood, 0.9 to 2.2 stone radii from its centre. */
+  /**
+   * A crown has gone. A stone's leaves foam specks where its base stood, 0.9
+   * to 2.2 stone radii from its centre, surfacing over CROWN_SPECK_SPAN.
+   */
   retireCrown(crown) {
     if (!crown.landing && !crown.fan) {
       const radius = crown.radius;
       const count = Math.round(THREE.MathUtils.clamp(CROWN_SPECKS * crown.sizeFactor ** 2, 40, CROWN_SPECK_CAP));
-      this.spawnFoamSpecks(crown.centreX, crown.centreZ, 0.9 * radius, 2.2 * radius, count, 0.03);
+      this.spawnFoamSpecks(crown.centreX, crown.centreZ, 0.9 * radius, 2.2 * radius, count, 0.03, CROWN_SPECK_SPAN * Math.sqrt(radius / GRAVITY));
     }
     this.particleScene.remove(crown.mesh);
     crown.dispose();
@@ -1564,9 +1573,13 @@ export class SplashSystem {
     }
   }
 
-  /** `count` foam specks in rafts over the ring between two radii around (x, z), drifting outward at up to `driftSpeed` m/s. */
-  spawnFoamSpecks(x, z, innerRadius, outerRadius, count, driftSpeed) {
-    this.foamSpecks.spawnPatch(x, z, innerRadius, outerRadius, count, this.time, driftSpeed);
+  /**
+   * `count` foam specks in rafts over the ring between two radii around (x,
+   * z), drifting outward at up to `driftSpeed` m/s, surfacing over `span`
+   * seconds from now (src/foamSpecks.js spawnPatch).
+   */
+  spawnFoamSpecks(x, z, innerRadius, outerRadius, count, driftSpeed, span = 0) {
+    this.foamSpecks.spawnPatch(x, z, innerRadius, outerRadius, count, this.time, driftSpeed, span);
   }
 
   /**
@@ -1648,7 +1661,8 @@ export class SplashSystem {
     for (const cavity of this.cavities) cavity.update(this.time);
     for (const cavity of this.cavities.filter((candidate) => candidate.finished)) this.retireCavity(cavity);
 
-    // Bubble plumes.
+    // Bubble plumes, in swarms (BUBBLE_SWARM): a swarm's bubbles are of like
+    // size and share a drift, so they rise together and surface as a clump.
     for (const plume of this.plumes) {
       const phase = Math.min((this.time - plume.start) / plume.duration, 1);
       const shouldHave = Math.round(plume.total * phase);
@@ -1656,12 +1670,19 @@ export class SplashSystem {
         const depth = plume.depth * (0.1 + 0.9 * Math.random()) * phase;
         const angle = Math.random() * Math.PI * 2;
         const offset = Math.random() * 0.05 * (0.3 + depth) * plume.spread;
-        this.spawnBubble(
-          plume.x + Math.cos(angle) * offset + plume.driftX * depth, -depth, plume.z + Math.sin(angle) * offset + plume.driftZ * depth,
-          randomRange(-0.05, 0.05), randomRange(0.10, 0.32), randomRange(-0.05, 0.05),
-          0.0006 + 0.0022 * Math.random() ** 2,
-        );
-        plume.spawned++;
+        const swarmX = plume.x + Math.cos(angle) * offset + plume.driftX * depth, swarmZ = plume.z + Math.sin(angle) * offset + plume.driftZ * depth;
+        const swarmSize = 0.0006 + 0.0022 * Math.random() ** 2;
+        const driftX = randomRange(-0.05, 0.05), driftZ = randomRange(-0.05, 0.05);
+        const swarm = Math.min(shouldHave - plume.spawned, 1 + Math.floor(Math.random() * BUBBLE_SWARM));
+        for (let member = 0; member < swarm; member++) {
+          const scatterAngle = Math.random() * Math.PI * 2, scatter = BUBBLE_SWARM_SPREAD * Math.sqrt(Math.random());
+          this.spawnBubble(
+            swarmX + Math.cos(scatterAngle) * scatter, -depth - BUBBLE_SWARM_SPREAD * (Math.random() - 0.5), swarmZ + Math.sin(scatterAngle) * scatter,
+            driftX + randomRange(-0.01, 0.01), randomRange(0.10, 0.32), driftZ + randomRange(-0.01, 0.01),
+            swarmSize * randomRange(0.75, 1.25),
+          );
+          plume.spawned++;
+        }
       }
     }
     this.plumes = this.plumes.filter((plume) => plume.spawned < plume.total);
@@ -1791,8 +1812,8 @@ export class SplashSystem {
       const z = this.bubblePositions[p + 2] + (this.bubbleVelocities[p + 2] - wobble) * dt;
       if (y >= -0.002) {
         if (Math.random() < 0.3) water.addFoam({ x, z, radius: 0.012, amount: BUBBLE_FOAM, lifetime: BOIL_LIFETIME, boil: true, source: 'bubble' });
-        // A surfacing bubble floats for a while as a speck its own size (2 to 4 mm across).
-        this.foamSpecks.spawn(x, z, randomRange(-0.004, 0.004), randomRange(-0.004, 0.004), this.time, THREE.MathUtils.clamp(2 * size, 0.002, 0.004));
+        // A surfacing bubble floats for a while as a speck its own size (1.2 to 5.6 mm across).
+        this.foamSpecks.spawn(x, z, randomRange(-0.004, 0.004), randomRange(-0.004, 0.004), this.time, 2 * size);
         this.removeBubble(i);
         continue;
       }
