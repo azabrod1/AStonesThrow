@@ -11,13 +11,21 @@
 //   drawn planting begins (plantingFront), never passes into it by more
 //   than CAUGHT_WITHIN, and never comes to rest on the lawn behind the
 //   waterline under the planting; one sent over it is lost in the garden;
+// - a thing held in the hand and dragged into the planting (src/main.js
+//   constrainGrab) is kept out of it (keepOutOfGarden), never knocked by it
+//   nor lost in the garden (holdInGarden leaves a held thing be);
+// - the surface seen from below marches to the Koi pond's bed, not the
+//   lake's: every uniform the shore's GLSL twin (LAKE_BED) declares is one
+//   the water shares from the floor (BED_UNIFORMS, src/waterSurface.js setBed);
 // - the cost: the garden's build and its triangles.
 import * as THREE from 'three';
 import { Rock } from '../src/rock.js';
 import { THINGS, THING_NAMES } from '../src/things.js';
 import { setShoreKind, koiFloorDepthAt, koiShoreDistance, koiShoreRadius, KOI_SHORE } from '../src/pondFloor.js';
-import { koiGround, holdInGarden, keepInPond, plantingFront, createKoiGarden, KOI_AIM, GARDEN } from '../src/koiGarden.js';
+import { koiGround, holdInGarden, keepInPond, keepOutOfGarden, plantingFront, createKoiGarden, KOI_AIM, GARDEN } from '../src/koiGarden.js';
 import { collideThings } from '../src/collide.js';
+import { BED_UNIFORMS } from '../src/waterSurface.js';
+import { LAKE_BED } from '../src/shaders/scene.js';
 
 const CAUGHT_WITHIN = 0.03;   // m: the most a thing may go into the planting past where it is drawn
 const STEP = 1 / 240;
@@ -78,6 +86,42 @@ console.log('\nthe planting catches:');
   check(deepest <= CAUGHT_WITHIN, `${sent} things sent at the banks: none goes into the planting past where it is drawn by more than ${CAUGHT_WITHIN * 100} cm (the deepest ${(deepest * 100).toFixed(1)} cm, ${worst})`);
   check(restingOnLawn === 0, `none comes to rest on the ground under the planting (${restingOnLawn})`);
   console.log(`  ${lost} of ${sent} sent over the planting are lost in the garden`);
+}
+
+console.log('\nthe bed seen from below:');
+{
+  const declared = [...LAKE_BED.matchAll(/^uniform \w+ (\w+);/gm)].map((match) => match[1]);
+  const missing = declared.filter((name) => !BED_UNIFORMS.includes(name));
+  check(declared.includes('uKoiPond') && missing.length === 0, `the water seen from below shares every uniform of the shore's twin (${declared.join(', ')})${missing.length ? `; not ${missing.join(', ')}` : ''}`);
+}
+
+console.log('\nheld in the hand:');
+{
+  // Dragged from the water 1.5 m into the planting at each angle of the banks, the hand's point kept out of it as
+  // src/main.js constrainGrab keeps it, the planting's pass run on it each step as on everything.
+  let dragged = 0, deepest = -Infinity, knocked = 0, lost = 0;
+  const span = (((GARDEN.to - GARDEN.from) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+  for (let share = 0.05; share < 1; share += 0.1) {
+    const angle = GARDEN.from + share * span;
+    const rock = new Rock({ radius: 0.03, position: new THREE.Vector3(), velocity: new THREE.Vector3(), envTexture: null, thing: 'stone' });
+    rock.ground = koiGround;
+    rock.hold();
+    dragged++;
+    for (let out = koiShoreRadius(angle) - 0.3; out < koiShoreRadius(angle) + 1.5; out += 0.01) {
+      const point = new THREE.Vector3(KOI_SHORE.centre[0] + Math.cos(angle) * out, 0.15, KOI_SHORE.centre[1] + Math.sin(angle) * out);
+      keepOutOfGarden(point, rock.collisionRadius);
+      rock.moveHeld(point);
+      collideThings([rock], holdInGarden);
+      if (rock.lostInGarden) lost++;
+      if (rock.velocity.lengthSq() > 0) knocked++;
+      const front = plantingFront(rock.position.x, rock.position.y, rock.position.z, rock.collisionRadius);
+      deepest = Math.max(deepest, -koiShoreDistance(rock.position.x, rock.position.z) + rock.collisionRadius - front);
+    }
+    rock.release();
+    collideThings([rock], holdInGarden);
+    if (rock.lostInGarden) lost++;
+  }
+  check(lost === 0 && knocked === 0 && deepest <= 1e-6, `${dragged} stones held and dragged into the planting: kept out of it (at most ${(100 * Math.max(deepest, 0)).toFixed(2)} cm in), knocked ${knocked} times, lost ${lost}, let go there`);
 }
 
 console.log(failures.length ? `\n${failures.length} FAILED` : '\nall ok');

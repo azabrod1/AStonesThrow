@@ -118,7 +118,7 @@ export function setShoreKind(kind) {
 export const getShoreKind = () => shoreKind;
 /** The Koi pond's outline's radius (m) at the angle θ about its centre. */
 export function koiShoreRadius(angle) {
-  return KOI_SHORE.lobes.reduce((radius, [amplitude, k, phase]) => radius + amplitude * Math.cos(k * angle + phase), KOI_SHORE.base);
+  return KOI_SHORE.lobes.reduce((radius, [amplitude, lobeCount, phase]) => radius + amplitude * Math.cos(lobeCount * angle + phase), KOI_SHORE.base);
 }
 /** How much of the pebble beach's shelving the shore at θ takes, 0 to 1. */
 function koiBeach(angle) {

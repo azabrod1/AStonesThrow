@@ -25,8 +25,12 @@
 // - edible things (src/things.js `edible`) and their bites (edibleBites);
 // - the population draws no Math.random (its own seeded stream): a seeded
 //   throw is the same with fish, and the same place's fish swim the same;
+// - at any frame rate: stepped on the world's clock (advance) over uneven
+//   frames, as src/main.js steps them, they swim, take fright and bite
+//   exactly as over even ones, and are drawn between their last two steps
+//   (showAt);
 // - the cost: a frame's step for each place, with a throw's threats.
-import { FishPopulation, FISH_BY_PLACE, FISH_SPECIES, FEEDERS, edibleBites, fishSee } from '../src/fish.js';
+import { FishPopulation, FISH_BY_PLACE, FISH_SPECIES, FEEDERS, FISH_STEP, edibleBites, fishSee } from '../src/fish.js';
 import { Rock } from '../src/rock.js';
 import * as THREE from 'three';
 import { floorDepthAt, koiFloorDepthAt, KOI_SHORE } from '../src/pondFloor.js';
@@ -55,7 +59,41 @@ function inWater(population, fish, slack = 1e-6) {
 }
 const nearestApart = (fish, members) => Math.min(...members.filter((other) => other !== fish).map((other) => Math.hypot(other.x - fish.x, other.y - fish.y, other.z - fish.z)));
 
-console.log('places:');
+// The Koi pond's fish over 40 s, a pizza afloat among them from the start and a stone coming down at 12 s, what they see
+// (look) a function of their own clock alone; the world's clock run on in frames of `frames` (cycled), the fish asked
+// at each of its 1/240 s steps (src/main.js). Each fish where it ends, and every bite.
+function koiOver(frames) {
+  const population = new FishPopulation({ seed: 3 });
+  population.setWaters({ place: 'koi', ...KOI });
+  const middle = { x: KOI_SHORE.centre[0], z: KOI_SHORE.centre[1] };
+  const look = () => {
+    const time = population.clock;
+    const pizza = { id: 'pizza', x: middle.x + 0.5, y: 0.01, z: middle.z, radius: 0.15, floating: true, settled: time };
+    const threats = [{ ...pizza, thickness: 0.012, normal: [0, 1, 0], inAir: false, still: true }];
+    const fall = time - 12;
+    if (fall > 0 && fall < 0.6) threats.push({ x: middle.x - 0.8, y: 2 - 4.9 * fall * fall, z: middle.z, radius: 0.03, vx: 0, vy: -9.81 * fall, vz: 0, inAir: true });
+    return { threats, foods: [pizza] };
+  };
+  const bites = [];
+  let world = 0, physics = 0, frame = 0, drawnWithin = true;
+  while (world < 40) {
+    world += frames[frame++ % frames.length];
+    while (physics < world - 1e-12) { physics += 1 / 240; population.advance(physics, look, (taken) => bites.push(...taken.map((bite) => `${bite.x.toFixed(9)} ${bite.z.toFixed(9)}`))); }
+    population.showAt(world);
+    // Drawn between where each fish was before its last step and where it is.
+    drawnWithin &&= population.fish.every((fish) => !fish.before || Math.min(fish.before.x, fish.x) - 1e-9 <= fish.shown.x && fish.shown.x <= Math.max(fish.before.x, fish.x) + 1e-9);
+  }
+  return { at: population.fish.map((fish) => `${fish.x} ${fish.y} ${fish.z} ${fish.heading}`).join('; '), bites, drawnWithin };
+}
+
+console.log('at any frame rate:');
+{
+  const even = koiOver([1 / 60]), uneven = koiOver([1 / 60, 1 / 45, 1 / 120, 1 / 50]);
+  check(even.bites.length > 0 && even.at === uneven.at && even.bites.join() === uneven.bites.join(), `over uneven frames as over even ones: every fish where it was, the same ${even.bites.length} bites (${uneven.bites.length})`);
+  check(even.drawnWithin && uneven.drawnWithin, 'each fish drawn between its last two steps');
+}
+
+console.log('\nplaces:');
 for (const [place, kinds] of Object.entries(FISH_BY_PLACE)) {
   const population = new FishPopulation({ seed: 1 });
   population.setWaters({ place, ...waterOf(place) });
@@ -83,12 +121,12 @@ for (const [place, kinds] of Object.entries(FISH_BY_PLACE)) {
     }
   }
   check(out === 0, `${place}: two minutes, every fish stays in its water (${out} fish-frames out)`);
-  const spans = depths.map(([low, high]) => high - low).sort((a, b) => a - b);
+  const spans = depths.map(([low, high]) => high - low).sort((one, other) => one - other);
   if (spans.length) check(spans[Math.floor(spans.length / 2)] > 0.15, `${place}: they change depth, not keeping one level (half rose or sank over ${spans[Math.floor(spans.length / 2)].toFixed(2)} m or more)`);
   check(tooFast === 0, `${place}: unfrightened, none swims faster than 1.6 times its cruise (${tooFast})`);
   for (const [company, samples] of Object.entries(spacing)) {
     if (samples.length === 0) continue;
-    const mean = samples.reduce((a, b) => a + b, 0) / samples.length;
+    const mean = samples.reduce((sum, sample) => sum + sample, 0) / samples.length;
     const [least, most] = company === 'school' ? [0.6, 3] : [1, 8];
     check(mean >= least && mean <= most, `${place}: a ${company}'s fish ${mean.toFixed(2)} body lengths from their nearest (${least} to ${most})`);
   }
@@ -164,7 +202,7 @@ console.log('\nfright:');
   for (let frame = 0; frame < 20 / FRAME; frame++) population.step(FRAME);
   // A 6 cm stone coming down at 7 m/s over the middle of the koi.
   // Over the koi nearest the pond's middle, so the walls leave them room to flee.
-  const koi = population.fish.filter((fish) => fish.species === FISH_SPECIES.koi).sort((a, b) => Math.hypot(a.x, a.z + 1) - Math.hypot(b.x, b.z + 1));
+  const koi = population.fish.filter((fish) => fish.species === FISH_SPECIES.koi).sort((one, other) => Math.hypot(one.x, one.z + 1) - Math.hypot(other.x, other.z + 1));
   const middle = { x: koi[0].x + 0.1, z: koi[0].z };
   const radius = 0.03, alarm = (0.5 + 11 * radius) * FISH_SPECIES.koi.shy;
   const near = population.fish.filter((fish) => Math.hypot(fish.x - middle.x, fish.z - middle.z, Math.max(Math.abs(fish.y) - 0.4, 0)) < alarm * 0.9);   // as startle measures
@@ -179,7 +217,7 @@ console.log('\nfright:');
   for (let frame = 0; frame < 1 / FRAME; frame++) population.step(FRAME);
   const after = near.map((fish) => Math.hypot(fish.x - middle.x, fish.z - middle.z));
   const fled = after.filter((distance, index) => distance > before[index] + 0.15).length;
-  check(fled >= Math.ceil(near.length * 0.6), `a second on, ${fled} of ${near.length} are at least 15 cm farther away (mean ${(after.reduce((a, b) => a + b, 0) / after.length).toFixed(2)} m, from ${(before.reduce((a, b) => a + b, 0) / before.length).toFixed(2)})`);
+  check(fled >= Math.ceil(near.length * 0.6), `a second on, ${fled} of ${near.length} are at least 15 cm farther away (mean ${(after.reduce((sum, apart) => sum + apart, 0) / after.length).toFixed(2)} m, from ${(before.reduce((a, b) => a + b, 0) / before.length).toFixed(2)})`);
   const groupMates = population.fish.filter((fish) => !near.includes(fish) && fish.group.members.some((other) => near.includes(other)));
   check(groupMates.length === 0 || groupMates.some((fish) => fish.wary > 0), `their group takes fright after them (${groupMates.filter((fish) => fish.wary > 0).length} of ${groupMates.length} others wary)`);
   // Frightened against a wall, again and again: they bolt along it, never into it, no faster than BURST_MOST.

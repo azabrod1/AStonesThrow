@@ -15,7 +15,8 @@
 // the pond's water (keepInPond). What is drawn is what catches: a thing come
 // to the planting (skipped on to the bank, slid off the ice) is caught where it meets
 // it, as a shrub catches a ball, losing its speed into it, and drops at its
-// foot (holdInGarden). Where it meets it is the drawn garden's own: its
+// foot (holdInGarden); a thing held in the hand is kept out of it
+// (keepOutOfGarden). Where it meets it is the drawn garden's own: its
 // nearest corner along each direction from the pond at each height
 // (catchTable). One that comes down behind the front shrubs is lost in the
 // garden (`lostInGarden`: src/main.js lets it fade). The ground in front, on
@@ -117,9 +118,12 @@ export function plantingFront(x, y, z, radius) {
  * speed into the planting all but taken (GARDEN.kept) and half its speed
  * along it, so it drops at the planting's foot; come down well behind where
  * the planting begins, it is lost in the garden (`lostInGarden`). Returns
- * how hard it was turned back ({ change, normalX, normalZ }) or null.
+ * how hard it was turned back ({ change, normalX, normalZ }) or null. A
+ * thing held in the hand is left to it (keepOutOfGarden).
  */
 export function holdInGarden(rock) {
+  // Held, the hand keeps it out of the planting (keepOutOfGarden), as the pool's walls leave a held thing to it.
+  if (rock.state === 'held') return null;
   const { x, y, z } = rock.position;
   const apartX = x - KOI_SHORE.centre[0], apartZ = z - KOI_SHORE.centre[1];
   const out = Math.hypot(apartX, apartZ), angle = Math.atan2(apartZ, apartX);
@@ -139,18 +143,37 @@ export function holdInGarden(rock) {
   return { change, normalX, normalZ };
 }
 
+/**
+ * Where a thing held in the hand may be (src/main.js constrainGrab): its
+ * sphere of `radius` at `point` brought back toward the pond, along its
+ * direction from the pond's centre, to where the drawn planting begins
+ * (plantingFront), so it is never carried into the shrubs, nor let go
+ * there to be lost (holdInGarden). `point` changed in place.
+ */
+export function keepOutOfGarden(point, radius) {
+  const apartX = point.x - KOI_SHORE.centre[0], apartZ = point.z - KOI_SHORE.centre[1];
+  const out = Math.hypot(apartX, apartZ), angle = Math.atan2(apartZ, apartX);
+  if (out < 1e-9 || sectorDepth(angle) * out < -radius - 0.5) return point;   // nowhere near the banks
+  const into = out - koiShoreRadius(angle) + radius - plantingFront(point.x, point.y, point.z, radius);
+  if (into > 0) {
+    point.x -= (apartX / out) * into;
+    point.z -= (apartZ / out) * into;
+  }
+  return point;
+}
+
 // ---- the scenery's shapes -------------------------------------------------
 
 /** A smooth value noise in three dimensions, 0 to 1. */
 function noise3(x, y, z, seed) {
-  const hash = (a, b, c) => { const value = Math.sin(a * 127.1 + b * 311.7 + c * 74.7 + seed * 19.19) * 43758.5453; return value - Math.floor(value); };
+  const hash = (column, row, layer) => { const value = Math.sin(column * 127.1 + row * 311.7 + layer * 74.7 + seed * 19.19) * 43758.5453; return value - Math.floor(value); };
   const ix = Math.floor(x), iy = Math.floor(y), iz = Math.floor(z);
-  const ease = (t) => t * t * (3 - 2 * t);
+  const ease = (share) => share * share * (3 - 2 * share);
   const ux = ease(x - ix), uy = ease(y - iy), uz = ease(z - iz);
-  const lerp = (a, b, t) => a + (b - a) * t;
-  return lerp(
-    lerp(lerp(hash(ix, iy, iz), hash(ix + 1, iy, iz), ux), lerp(hash(ix, iy + 1, iz), hash(ix + 1, iy + 1, iz), ux), uy),
-    lerp(lerp(hash(ix, iy, iz + 1), hash(ix + 1, iy, iz + 1), ux), lerp(hash(ix, iy + 1, iz + 1), hash(ix + 1, iy + 1, iz + 1), ux), uy),
+  const mix = (from, to, share) => from + (to - from) * share;
+  return mix(
+    mix(mix(hash(ix, iy, iz), hash(ix + 1, iy, iz), ux), mix(hash(ix, iy + 1, iz), hash(ix + 1, iy + 1, iz), ux), uy),
+    mix(mix(hash(ix, iy, iz + 1), hash(ix + 1, iy, iz + 1), ux), mix(hash(ix, iy + 1, iz + 1), hash(ix + 1, iy + 1, iz + 1), ux), uy),
     uz);
 }
 
@@ -306,8 +329,8 @@ function lanternRoof({ across, rise, thick, curl }) {
   for (let ring = 0; ring < rings; ring++) {
     for (let step = 0; step < around; step++) {
       const next = (step + 1) % around;
-      const a = ring * around + step, b = ring * around + next, c = (ring + 1) * around + step, d = (ring + 1) * around + next;
-      indices.push(a, c, b, b, c, d);
+      const here = ring * around + step, onward = ring * around + next, above = (ring + 1) * around + step, aboveOnward = (ring + 1) * around + next;
+      indices.push(here, above, onward, onward, above, aboveOnward);
     }
   }
   for (let step = 0; step < around; step++) {

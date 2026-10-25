@@ -78,7 +78,10 @@
 //
 // Everything random (where the fish start, each one's size and markings,
 // their goals, their fright) draws from the population's own stream
-// (seededRandom), never Math.random, so a seeded throw is the same with fish.
+// (seededRandom), never Math.random, and they step on the world's clock in
+// whole steps of FISH_STEP (advance), each seeing the things as they are at
+// that step, drawn between their last two (showAt): so a seeded throw is the
+// same with fish, at any frame rate.
 // tools/fish-probe.mjs swims them on the CPU and checks all of the above.
 import { seededRandom } from './spray.js';
 
@@ -172,9 +175,12 @@ const BODY_HALF_HEIGHT = 0.5;  // its depth's share above its centre (its back):
 
 // What moves slower than this (m/s) only stands in the fish's way (fishSee; src/main.js's finger too).
 export const FISH_STILL = 0.12;
+// s: the fish's step (advance): src/main.js steps them on the world's clock in whole steps of it, and draws them
+// between their last two (showAt).
+export const FISH_STEP = 1 / 30;
 
 /**
- * A thing as the fish see it (src/main.js swimFish), from its Rock
+ * A thing as the fish see it (src/main.js fishLook), from its Rock
  * (src/rock.js) and its shape as they keep clear of it (`shape`: radius,
  * thickness, normal), `seconds` since they last looked: { threat, food },
  * either may be missing; null where it is out of their water. Coming down
@@ -215,6 +221,8 @@ export function edibleBites(mass) {
 }
 
 const range = (random, [least, most]) => least + (most - least) * random();
+// What src/fishMeshes.js draws of a fish (showAt).
+const DRAWN = ['x', 'y', 'z', 'heading', 'pitch', 'phase', 'beat', 'bend'];
 const wrapAngle = (angle) => Math.atan2(Math.sin(angle), Math.cos(angle));
 const clamp = (value, least, most) => Math.min(Math.max(value, least), most);
 const smoothstep = (low, high, value) => { const share = clamp((value - low) / (high - low), 0, 1); return share * share * (3 - 2 * share); };
@@ -284,6 +292,7 @@ export class FishPopulation {
     this.fish = [];
     this.groups = [];
     this.time = 0;
+    this.clock = null;   // the world's time they have been stepped to (advance): set by the first
     for (const { species: speciesName, count } of FISH_BY_PLACE[place] ?? []) {
       const species = FISH_SPECIES[speciesName];
       const groupCount = species.company === 'alone' ? count : 1;
@@ -572,7 +581,7 @@ export class FishPopulation {
   }
 
   /**
-   * Swim every fish `seconds` on (in steps of at most 1/30 s). `threats`:
+   * Swim every fish `seconds` on (in steps of at most FISH_STEP). `threats`:
    * what frightens or is in the way, [{x, y, z, radius, vx, vy, vz, inAir,
    * still}]: a thing in the air (inAir) frightens the fish under where it
    * comes down if it will within ANTICIPATE; one in the water that moves
@@ -581,16 +590,59 @@ export class FishPopulation {
    * seconds it has lain or floated still). Returns the bites, [{id, x, y, z,
    * floating}], taken since. A thing's `radius` is its reach from its
    * centre, `thickness` and `normal` (optional) make it a rounded disc
-   * (keepClear), `id` the food's it is.
+   * (keepClear), `id` the food's it is. Each fish's drawn state as it was
+   * before is kept (`before`: showAt).
    */
   step(seconds, { threats = [], foods = [] } = {}) {
     if (!this.water || this.fish.length === 0) return [];
     this.bites = [];
     this.pushed = 0;
-    const steps = Math.max(1, Math.ceil(seconds / (1 / 30) - 1e-9));
+    for (const fish of this.fish) {
+      const before = (fish.before ??= {});
+      for (const key of DRAWN) before[key] = fish[key];
+    }
+    const steps = Math.max(1, Math.ceil(seconds / FISH_STEP - 1e-9));
     const dt = seconds / steps;
     for (let index = 0; index < steps; index++) this.stepOnce(dt, threats, foods);
     return this.bites;
+  }
+
+  /**
+   * The fish on their own clock, in whole FISH_STEP steps up to `time` (s,
+   * the world's: src/main.js asks at each of its physics steps), `look()`
+   * asked before each step for what they see then ({ threats, foods }:
+   * fishSee), `bitten(bites)` told each step's bites: so a seeded throw is
+   * the same with fish at any frame rate (tools/fish-probe.mjs checks). The
+   * first call sets the clock.
+   */
+  advance(time, look, bitten = () => {}) {
+    this.clock ??= time;
+    if (!this.water || this.fish.length === 0) { this.clock = Math.max(this.clock, time); return; }   // none to step (the Pool)
+    while (this.clock + FISH_STEP <= time + 1e-9) {
+      this.clock += FISH_STEP;
+      const bites = this.step(FISH_STEP, look());
+      if (bites.length > 0) bitten(bites);
+    }
+  }
+
+  /**
+   * Each fish as drawn at `time` (s, the world's), a step behind its clock
+   * (advance): its state between where it was before its last step and
+   * where it is (`shown`, which src/fishMeshes.js draws), so it swims
+   * smoothly whatever the frame rate.
+   */
+  showAt(time) {
+    // Drawn at `time` less a step: before was the clock less a step, now the clock.
+    const share = this.clock === null ? 1 : clamp((time - this.clock) / FISH_STEP, 0, 1);
+    for (const fish of this.fish) {
+      const before = fish.before ?? fish, shown = (fish.shown ??= {});
+      for (const key of DRAWN) shown[key] = before[key] + (fish[key] - before[key]) * share;
+      shown.heading = before.heading + wrapAngle(fish.heading - before.heading) * share;
+      // Its tail's phase wraps (stepOnce): round the shorter way.
+      let turned = fish.phase - before.phase;
+      if (turned < -Math.PI * 64) turned += 2 * Math.PI * 64;
+      shown.phase = before.phase + turned * share;
+    }
   }
 
   stepOnce(dt, threats, foods) {

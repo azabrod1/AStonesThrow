@@ -89,7 +89,7 @@ const FIN_FORM = { pleat: 0.004, ragged: 0.07, notch: 0.06 };
 const smoothstep = (low, high, value) => { const share = Math.min(Math.max((value - low) / (high - low), 0), 1); return share * share * (3 - 2 * share); };
 /** A smooth value noise in two dimensions, 0 to 1. */
 function formNoise(x, y) {
-  const hash = (a, b) => { const value = Math.sin(a * 127.1 + b * 311.7) * 43758.5453; return value - Math.floor(value); };
+  const hash = (column, row) => { const value = Math.sin(column * 127.1 + row * 311.7) * 43758.5453; return value - Math.floor(value); };
   const ix = Math.floor(x), iy = Math.floor(y), fx = x - ix, fy = y - iy;
   const ux = fx * fx * (3 - 2 * fx), uy = fy * fy * (3 - 2 * fy);
   return (hash(ix, iy) * (1 - ux) + hash(ix + 1, iy) * ux) * (1 - uy) + (hash(ix, iy + 1) * (1 - ux) + hash(ix + 1, iy + 1) * ux) * uy;
@@ -722,7 +722,7 @@ export function createFishView(lighting, { bedDepthAt = () => 1, seenThrough = (
       if (disposeMaterials) mesh.material.dispose();
     }
   }
-  /** Each fish where it is now: its matrix (place, heading, pitch, length), its swim, and its shadow on the bed. */
+  /** Each fish where it is drawn (src/fish.js showAt): its matrix (place, heading, pitch, length), its swim, and its shadow on the bed. */
   function update() {
     seenUniform.value = seenThrough() ? 1 : 0;
     const sun = lighting.sunDirection;
@@ -732,24 +732,25 @@ export function createFishView(lighting, { bedDepthAt = () => 1, seenThrough = (
     const toSunX = sunSine > 1e-5 ? sun.x / sunSine : 0, toSunZ = sunSine > 1e-5 ? sun.z / sunSine : 0;
     for (const { body, fins, shadow, fish, swim, finSwim, shadowInfo } of kinds) {
       fish.forEach((one, index) => {
-        const cosPitch = Math.cos(one.pitch), sinPitch = Math.sin(one.pitch);
-        forward.set(Math.cos(one.heading) * cosPitch, sinPitch, Math.sin(one.heading) * cosPitch);
-        up.set(-Math.cos(one.heading) * sinPitch, cosPitch, -Math.sin(one.heading) * sinPitch);
+        const drawn = one.shown ?? one;   // as src/fish.js showAt has it, between its last two steps
+        const cosPitch = Math.cos(drawn.pitch), sinPitch = Math.sin(drawn.pitch);
+        forward.set(Math.cos(drawn.heading) * cosPitch, sinPitch, Math.sin(drawn.heading) * cosPitch);
+        up.set(-Math.cos(drawn.heading) * sinPitch, cosPitch, -Math.sin(drawn.heading) * sinPitch);
         side.crossVectors(forward, up);
         matrix.makeBasis(forward, up, side).scale(scale.setScalar(one.length));
-        matrix.setPosition(one.x, one.y, one.z);
+        matrix.setPosition(drawn.x, drawn.y, drawn.z);
         body.setMatrixAt(index, matrix);
         fins.setMatrixAt(index, matrix);
-        swim.setXYZW(index, one.phase, one.beat, one.bend, one.seed);
-        finSwim.setXYZW(index, one.phase, one.beat, one.bend, one.seed);
+        swim.setXYZW(index, drawn.phase, drawn.beat, drawn.bend, one.seed);
+        finSwim.setXYZW(index, drawn.phase, drawn.beat, drawn.bend, one.seed);
         // Its shadow: down-sun of it on the bed by tan θt times its height over it (two steps to meet a sloping bed).
-        let height = Math.max(bedDepthAt(one.x, one.z) + one.y, 0);
-        let x = one.x - toSunX * run * height, z = one.z - toSunZ * run * height;
-        height = Math.max(bedDepthAt(x, z) + one.y, 0);
-        x = one.x - toSunX * run * height; z = one.z - toSunZ * run * height;
+        let height = Math.max(bedDepthAt(drawn.x, drawn.z) + drawn.y, 0);
+        let x = drawn.x - toSunX * run * height, z = drawn.z - toSunZ * run * height;
+        height = Math.max(bedDepthAt(x, z) + drawn.y, 0);
+        x = drawn.x - toSunX * run * height; z = drawn.z - toSunZ * run * height;
         const bed = -bedDepthAt(x, z);
         const reach = 0.5 * one.length + 2 * (SHADOW.blur * height + 0.004);
-        forward.set(Math.cos(one.heading), 0, Math.sin(one.heading));
+        forward.set(Math.cos(drawn.heading), 0, Math.sin(drawn.heading));
         up.set(0, 1, 0);
         side.crossVectors(forward, up);
         matrix.makeBasis(forward, up, side).scale(scale.set(reach, 1, 0.5 * one.length * one.species.shape.depth * 0.7 + 2 * (SHADOW.blur * height + 0.004)));

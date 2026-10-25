@@ -297,9 +297,9 @@ import { createSound } from './sound.js';
 import { createFloaterRide } from './floaterRide.js';
 import { IceSheet, ICE_THICKNESS } from './ice.js';
 import { IceCracks } from './iceCracks.js';
-import { FishPopulation, edibleBites, fishSee, FISH_STILL } from './fish.js';
+import { FishPopulation, edibleBites, fishSee, FISH_STILL, FISH_STEP } from './fish.js';
 import { createFishView } from './fishMeshes.js';
-import { createKoiGarden, koiGround, holdInGarden, keepInPond } from './koiGarden.js';
+import { createKoiGarden, koiGround, holdInGarden, keepInPond, keepOutOfGarden } from './koiGarden.js';
 
 // Quality presets. The splash lives in a few dozen pixels, so the fluid
 // buffer's resolution is what it is made of: a drop narrower than a buffer
@@ -430,7 +430,7 @@ const WHEEL_STEP = 0.9;       // field of view factor per wheel notch
 const HOME_TARGET = [0, 0.12, -1.0];
 const TAP_SLOP = 14;          // CSS pixels a press may move and still throw; past them it turns the view
 const HOLD_MS = 300;          // a press held this long within TAP_SLOP dips a finger into the water
-// The fish (swimFish, src/fish.js): how far a splash frightens them (m, and m per m of the thing's radius: a 6 cm stone
+// The fish (fishLook, fishBitten; src/fish.js): how far a splash frightens them (m, and m per m of the thing's radius: a 6 cm stone
 // 0.8 m, a 30 cm rock 2.2 m, times each kind's shyness), and a finger dipping in; how far under the still surface their backs keep in open water, under ice (more its
 // thickness) and under a gale's waves; a bite's dimple at the surface (m).
 const FISH_ALARM = { least: 0.5, perRadius: 11, finger: 0.6 };
@@ -1921,6 +1921,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
           current.z = hole.z + awayZ * room / distance;
         }
       }
+      // In the Koi pond, out of the planting: never carried into the shrubs (src/koiGarden.js holdInGarden leaves it be).
+      if (koiPond) keepOutOfGarden(current, rock.collisionRadius);
       const ground = overDeck ? POOL.deck : (rock.ground?.at(current.x, current.z) ?? -bedDepthAt(current.x, current.z));
       current.y = Math.max(current.y, ground - lowest);
       if (current.y + lowest >= rim) hole = null;
@@ -2235,9 +2237,14 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       // A thing come down behind the Koi pond's front shrubs is lost in the garden (src/koiGarden.js holdInGarden).
       for (const rock of stepping) if (rock.lostInGarden && rock.fading === undefined) fadeOut(rock);
       stepsTime += PHYSICS_STEP;
+      // The fish on their own clock (src/fish.js advance: whole FISH_STEP steps to this step's end), each step seeing the
+      // things as they are then, so a seeded throw is the same with fish at any frame rate.
+      fishes.advance(stepsTime, fishLook, fishBitten);
+      // What faded in this step (lost in the garden, eaten) is frozen from the next (fadeOut), whatever the frame.
+      for (let index = stepping.length - 1; index >= 0; index--) if (stepping[index].fading !== undefined) stepping.splice(index, 1);
     }
     advanceSplash(end);
-    swimFish(frame);
+    fishes.showAt(end);   // each fish drawn between its last two steps (src/fishMeshes.js)
     // A shard afloat that a hole's new ice has reached is frozen into it (src/ice.js freezeIn), and goes as a thing; a
     // hole something thrown floats in is not left alone, so it stays open (src/ice.js disturb).
     for (const rock of [...rocks]) {
@@ -2272,31 +2279,34 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   }
 
   /**
-   * The fish swum on `seconds` (src/fish.js): what is thrown frightens them
-   * or is in their way, the finger too; what is edible in the water, once
-   * settled (src/things.js `edible`; a frozen thing once thawed), they come
-   * to and bite, each bite counted against it (edibleBites; at the surface,
-   * a dimple in the water), and eaten it shrinks away (fadeOut). What of
-   * each thing they see is src/fish.js fishSee's.
+   * What the fish see at one of their steps (src/fish.js advance asks): what
+   * is thrown frightens them or is in their way, the finger too; what is
+   * edible in the water, once settled (src/things.js `edible`; a frozen
+   * thing once thawed), they come to (fishBitten). What of each thing they
+   * see is src/fish.js fishSee's, a FISH_STEP since they last looked.
    */
-  function swimFish(seconds) {
-    if (fishes.fish.length === 0 || seconds <= 0) return;
+  function fishLook() {
     fishes.setConditions({ surfaceGap: ice.on ? FISH_GAP.ice + ice.thickness : galeWaves.on && !pooled ? FISH_GAP.gale : FISH_GAP.open });
     const threats = [], foods = [];
     for (const rock of rocks) {
       if (rock.fading !== undefined) continue;
-      const seen = fishSee(rock, seconds, fishShapeOf(rock));
+      const seen = fishSee(rock, FISH_STEP, fishShapeOf(rock));
       if (seen?.threat) threats.push(seen.threat);
       if (seen?.food) foods.push(seen.food);
     }
     if (finger.inWater) {
       if (!fingerSeen) fishes.startle(finger.position.x, -0.05, finger.position.z, FISH_ALARM.finger);   // it dips in
       const last = fingerSeen ?? finger.position;
-      const moved = Math.hypot(finger.position.x - last.x, finger.position.z - last.z) / seconds;
+      const moved = Math.hypot(finger.position.x - last.x, finger.position.z - last.z) / FISH_STEP;
       fingerSeen = { ...finger.position };
       threats.push({ x: finger.position.x, y: -0.05, z: finger.position.z, radius: FINGER.radius, inAir: false, still: moved < FISH_STILL });
     } else fingerSeen = null;
-    for (const bite of fishes.step(seconds, { threats, foods })) {
+    return { threats, foods };
+  }
+
+  /** A step's bites (src/fish.js advance): each counted against its thing (edibleBites; at the surface, a dimple in the water), which shrinks away and goes once eaten (fadeOut). */
+  function fishBitten(bites) {
+    for (const bite of bites) {
       const rock = bite.id;
       if (!rocks.includes(rock) || rock.fading !== undefined) continue;
       rock.eaten = (rock.eaten ?? 0) + 1 / edibleBites(rock.dry.mass);   // as thrown: the water it soaked up is no food
@@ -2306,7 +2316,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       if (rock.eaten >= 1) fadeOut(rock);
     }
   }
-  let fingerSeen = null;   // where swimFish last saw the finger
+  let fingerSeen = null;   // where the fish last saw the finger (fishLook)
 
   /**
    * A thing as the fish keep clear of it (src/fish.js keepClear): its reach

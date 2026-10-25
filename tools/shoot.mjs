@@ -179,8 +179,8 @@ if (orbitArgument) {
     window.__pond.setOrbit({ azimuth, elevation, distance, pivot: pivot.length === 3 ? pivot : undefined });
   }, orbitArgument);
 }
-if (fov) await page.evaluate((f) => window.__pond.setFov(Number(f)), fov);
-if (look && !look.startsWith('fish:')) await page.evaluate((l) => { const [x, y, z] = l.split(':').map(Number); window.__pond.lookAt(x, y, z); }, look);
+if (fov) await page.evaluate((degrees) => window.__pond.setFov(Number(degrees)), fov);
+if (look && !look.startsWith('fish:')) await page.evaluate((point) => { const [x, y, z] = point.split(':').map(Number); window.__pond.lookAt(x, y, z); }, look);
 if (thingValue) await page.evaluate((value) => window.__pond.setSize(value), Number(thingValue));
 await page.evaluate((seconds) => window.__pond.advance(seconds), preRoll);
 if (look.startsWith('fish:')) {
@@ -195,7 +195,7 @@ if (look.startsWith('fish:')) {
     else window.__pond.lookAtUnderWater(one.x, one.y, one.z);
     return one;
   }, [Number(index), side ?? null]);
-  if (fov) await page.evaluate((f) => window.__pond.setFov(Number(f)), fov);   // the orbit's own field of view, narrowed again
+  if (fov) await page.evaluate((degrees) => window.__pond.setFov(Number(degrees)), fov);   // the orbit's own field of view, narrowed again
   // A frame drawn with the view turned: a thousandth of a second on (the fish moves a fraction of a millimetre).
   await page.evaluate(() => { window.__pond.setTimeScale(1); window.__pond.advance(0.001); });
   console.log('[shoot] fish', JSON.stringify(where));
