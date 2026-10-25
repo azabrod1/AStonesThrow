@@ -136,6 +136,11 @@ for (const framing of FRAMINGS) {
   });
   await context.route('https://fonts.googleapis.com/**', (route) => route.fulfill({ status: 200, contentType: 'text/css', body: '' }));
   const page = await context.newPage();
+  // Touches through the browser's own input go through one DevTools session for the framing, detached when it ends
+  // (sessions made and detached tap by tap were the likeliest way the page lost its touch emulation part way through
+  // a framing: a coarse pointer gone, every slider back to its desktop height).
+  let cdpSession = null;
+  const touchSession = async () => (cdpSession ??= await context.newCDPSession(page));
   const problems = [];
   page.on('pageerror', (error) => problems.push(String(error)));
   // The page as the framing's device lays it out: its pointer a finger's (pointer: coarse) on a touch screen. The
@@ -199,7 +204,7 @@ for (const framing of FRAMINGS) {
 
     if (layout.layoutWidth === framing.width) {
       // Touches through the browser's own input, as a finger's would arrive.
-      const session = await context.newCDPSession(page);
+      const session = await touchSession();
       const touch = (type, x, y) => session.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y }] });
       const sliderState = () => page.evaluate(() => {
         const slider = document.getElementById('stone-size');
@@ -226,7 +231,6 @@ for (const framing of FRAMINGS) {
       await touch('touchEnd', endX, endY);
       const dragged = await sliderState();
       check(Math.abs(dragged.value - expected(0.6)) <= initial.step + 1e-9, `a drag from 20% to 60% along the slider ends at ${dragged.value} cm (expected about ${expected(0.6)})`);
-      await session.detach();
     } else {
       console.log('  (the tap and drag checks need the page laid out at the device\'s width; skipped)');
     }
@@ -621,6 +625,12 @@ for (const framing of FRAMINGS) {
     const time = document.getElementById('time'), stone = document.getElementById('stone-size');
     return `coarse pointer ${matchMedia('(pointer: coarse)').matches}, any coarse ${matchMedia('(any-pointer: coarse)').matches}, hover ${matchMedia('(hover: hover)').matches}, its height ${getComputedStyle(time).height}, the stone slider's ${getComputedStyle(stone).height}, zoom ${window.visualViewport?.scale ?? 1}, ${window.innerWidth} CSS pixels wide`;
   })) + (settled ? '' : ', the panel not settled in 5 s');
+  // The browser, not the page: a touch framing whose emulation is gone (no coarse pointer) is said, and given it back.
+  if (framing.touch && !(await page.evaluate(() => matchMedia('(pointer: coarse)').matches))) {
+    console.log('         (the browser had lost its touch emulation by the Time page: no coarse pointer; it is given back)');
+    await (await touchSession()).send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
+    await page.waitForTimeout(200);
+  }
   const pressed = Date.now();
   for (const until = pressed + 2000; ;) {
     settled = await page.waitForFunction(() => !document.querySelector('.menu-page-leaving') && [...document.querySelectorAll('#settings .menu-page')].every((menuPage) => !(menuPage.getAnimations?.() ?? []).length), null, { timeout: 5000 }).then(() => true, () => false);
@@ -635,10 +645,9 @@ for (const framing of FRAMINGS) {
   if (timeSlider) {
     const tapX = (timeSlider.left + 4) / layout.scale, tapY = (timeSlider.top + timeSlider.height / 2) / layout.scale;
     if (framing.touch) {
-      const session = await context.newCDPSession(page);
+      const session = await touchSession();
       await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: tapX, y: tapY }] });
       await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
-      await session.detach();
     } else {
       await page.mouse.click(tapX, tapY);
     }
@@ -753,7 +762,7 @@ for (const framing of FRAMINGS) {
       `a foam ball defined from outside, 20 to 80 cm, is thrown at its own 40 cm (${(200 * sized.thrown).toFixed(1)}), at 60 when asked (${(200 * sized.asked).toFixed(1)}), its slider kept to 80 (${sized.clamped}); the stones keep 6 cm (${sized.stone})`);
   } else {
     // A real finger (the browser's touch input, not synthetic pointers) dragged across the water.
-    const session = await context.newCDPSession(page);
+    const session = await touchSession();
     const touch = (type, x, y) => session.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y }] });
     const azimuthBefore = await page.evaluate(() => window.__pond.orbit.azimuth);
     const rocksBefore = await page.evaluate(() => window.__pond.rocks.length);
@@ -761,7 +770,6 @@ for (const framing of FRAMINGS) {
     await touch('touchStart', from.x, from.y);
     for (let step = 1; step <= 6; step++) await touch('touchMove', from.x + 20 * step, from.y);
     await touch('touchEnd', from.x + 120, from.y);
-    await session.detach();
     const dragged = await page.evaluate(() => ({ azimuth: window.__pond.orbit.azimuth, rocks: window.__pond.rocks.length }));
     const [resetButton] = await boxes('#reset-view');
     check(dragged.azimuth < azimuthBefore - 1 && dragged.rocks === rocksBefore && !!resetButton && onScreen(resetButton) && !overlaps(resetButton, menuButton),
@@ -769,6 +777,7 @@ for (const framing of FRAMINGS) {
     await page.screenshot({ path: path.join(outputFolder, `${framing.name}-turned.png`) });
   }
   if (problems.length) { check(false, `page errors: ${problems.join(' | ')}`); }
+  await cdpSession?.detach().catch(() => {});
   await context.close();
 }
 
