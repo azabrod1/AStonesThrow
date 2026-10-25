@@ -1100,7 +1100,12 @@ struct FreshBubbles {
 // pixel the film's mean over the radii within half a pixel of it (its own
 // footprint along the radius), a meniscus's faint shadow and the sun's
 // glint. Only the cell under the pixel is visited, as no bubble leaves its
-// cell. Where cells shrink toward a pixel (FOAM_FADE_START to FOAM_FADE_END
+// cell. Whether its bubble lives is decided by the boil at the bubble's
+// centre, filled carried there along filledSlope, its change per metre:
+// decided under each pixel, a bubble across a boil's changing edge was cut
+// along the line where the boil crossed its draw, a half moon or a chipped
+// disc (tools/foam-probe.mjs samples an even boil, where the two agree).
+// Where cells shrink toward a pixel (FOAM_FADE_START to FOAM_FADE_END
 // cells per pixel) the bubbles fade into their mean white, which the spans
 // keep (SURFACE_BUBBLE); the shadow, under 0.2% of the light in the mean,
 // fades out with them. FOAM_BUBBLE_MOST is as many more bubbles as the
@@ -1109,7 +1114,7 @@ struct FreshBubbles {
 // already as white as a film gets), so the boil whitens as it did from afar
 // and fizzes with more, clearer bubbles close to. filled: the surface's
 // share of the boil over FOAM_BOIL_HOLD; time: world seconds.
-FreshBubbles freshBubbles(vec2 position, vec2 acrossX, vec2 acrossY, float filled, vec3 surfaceNormal, float time) {
+FreshBubbles freshBubbles(vec2 position, vec2 acrossX, vec2 acrossY, float filled, vec2 filledSlope, vec3 surfaceNormal, float time) {
   FreshBubbles bubbles = FreshBubbles(0.0, 0.0, 0.0, surfaceNormal, FOAM_BUBBLE_GLINT_VARIANCE);
   float footprint = sqrt(sqrt(dot(acrossX, acrossX) * dot(acrossY, acrossY)));
   float fade = smoothstep(FOAM_FADE_START, FOAM_FADE_END, footprint / FOAM_BUBBLE_CELL);
@@ -1136,7 +1141,8 @@ FreshBubbles freshBubbles(vec2 position, vec2 acrossX, vec2 acrossY, float fille
     // A pixel along the radius here, in radii: the pixel's own footprint that way, longer where the view foreshortens the water.
     vec2 outward = offset / max(length(offset), 1e-6);
     float radialPixel = max(length(vec2(dot(outward, acrossX), dot(outward, acrossY))) / (FOAM_BUBBLE_CELL * max(radius, 1e-3)), 1e-3);
-    float lives = step(shape.z, alive);
+    float filledThere = max(filled + dot(filledSlope, (cell + centre - inCells) * FOAM_BUBBLE_CELL), 0.0);
+    float lives = step(shape.z, FOAM_BUBBLE_MOST * min(filledThere * filledThere, 1.0));
     vec2 film = bubbleFilm(max(radial - 0.5 * radialPixel, 0.0), radial + 0.5 * radialPixel) * lives;   // x: the share on the cap; y: its white
     bubbles.white = mix(film.y, meanWhite, fade);
     bubbles.shadow = bubbleMeniscus(radial, radialPixel) * lives * (1.0 - fade);
@@ -1709,6 +1715,13 @@ void main() {
   boilSurface *= level;
   boilCloud *= level;
 #endif
+  // How the boil the surface holds changes over the water (per metre), from
+  // its change across the pixel, taken here in uniform control flow:
+  // freshBubbles decides each bubble by the boil at its centre.
+  vec2 boilChange = vec2(dFdx(boilSurface), dFdy(boilSurface));
+  float footprintArea = acrossX.x * acrossY.y - acrossX.y * acrossY.x;
+  vec2 boilSlope = vec2(acrossY.y * boilChange.x - acrossX.y * boilChange.y, acrossX.x * boilChange.y - acrossY.x * boilChange.x)
+    / (abs(footprintArea) > 1e-12 ? footprintArea : 1e-12);
   vec3 v = toCamera / viewDist;
   float nDotV = max(dot(n, v), 0.0);
   float fresnel = 0.02 + 0.98 * pow(1.0 - nDotV, 5.0);
@@ -1839,7 +1852,7 @@ void main() {
   }
   // The bubbles bursting on the surface over a splash's boil (freshBubbles), lit as the foam is, their caps glinting.
   if (boilSurface > FOAM_PRESENT) {
-    FreshBubbles bubbles = freshBubbles(vWorld.xz - uFoamDrift, acrossX, acrossY, boilSurface / FOAM_BOIL_HOLD, n, uGustTime);
+    FreshBubbles bubbles = freshBubbles(vWorld.xz - uFoamDrift, acrossX, acrossY, boilSurface / FOAM_BOIL_HOLD, boilSlope / FOAM_BOIL_HOLD, n, uGustTime);
     color = mix(color * (1.0 - bubbles.shadow), FOAM_ALBEDO * foamLight, bubbles.white);
     if (bubbles.glint > 0.0) color += bubbles.glint * FOAM_BUBBLE_GLINT * min(sunGlitter(bubbles.domeNormal, v, uSunDir, uSunIrradiance, bubbles.glintVariance), vec3(40.0));
   }
