@@ -63,7 +63,7 @@
 //     thin (a few grams), and is never flung by meeting it (no faster after
 //     a step than gravity makes it); a 6 cm stone dropped on a piece of
 //     thin ice breaks it into pieces that float at rest, flat and apart,
-//     on thick ice pushes it under no deeper than PIECE_DIP; a stone at rest
+//     on thick ice pushes it under no deeper than PIECE_DIP; a pizza at rest
 //     on the sheet at a hole's lip meets a piece put under it (only what lies
 //     on a piece does not meet it); a piece lifted and let go drops into
 //     its hole and floats again, never landing on itself; a watermelon or a
@@ -104,6 +104,7 @@ const BREAK_MS = 25;
 const SHARDS = [3, 12];      // pieces a break lets go (least, most)
 const REPEATS = { cracks: 8, never: 30 };   // throws again and again at one spot: one that cracks breaks it within `cracks`; one that does not, never in `never`
 const PIECE_DIP = 0.03;     // m: a piece of ice afloat pushed under by a thing goes no deeper than this
+const PIECE_UNDER = 0.005;  // m: a piece put this far into the sphere of a thing at rest at a hole's lip
 const OUTLINE_TOLERANCE = 0.001;   // m: two shards' outlines overlap at rest by less than this, and lie inside their hole by it
 const SHARD_SECONDS = 15;    // s a break's shards are followed for
 const WEIGH = { things: 60, steps: 2000, mostMicroseconds: 60 };   // things at rest on the ice weighed each step, at most this a step (they cost some 350 µs before weigh kept its answer)
@@ -548,27 +549,13 @@ function iceWorld({ diameter = 6, thickness = 'thin', seed = 1, x = 0, z = -1.4,
   world.add = (rock) => { rock.ground = ice.ground; world.things.push(rock); return rock; };
   world.step = (seconds) => {
     for (const until = world.time + seconds; world.time < until - 1e-9; world.time += STEP) {
-      // What the ice's clock costs a step: letting a hole's shards go (the step after its break), or else the rest of it,
-      // flooding round a hole whose cavity has closed, drying, preparing and growing new ice, and weighing what lies on
-      // it (weigh); the break's own painting is the break's (BREAK_MS).
+      // What the ice's clock costs a step: flooding round a hole whose cavity has closed, drying, preparing and growing
+      // new ice, and weighing what lies on it (weigh); a hole's shards let go are the step's end's (below), the break's
+      // own painting the break's (BREAK_MS).
       let started = performance.now();
       ice.setTime(world.time);
-      const pieces = ice.shards.splice(0);
       ice.weigh(world.things);
-      const spent = performance.now() - started;
-      if (pieces.length > 0) world.costs.release = Math.max(world.costs.release, spent);
-      else world.costs.clock = Math.max(world.costs.clock, spent);
-      for (const piece of pieces) {
-        const shard = new Rock({ radius: piece.radius, position: piece.start.position, velocity: piece.start.velocity, envTexture: null, thing: 'ice-shard', mass: piece.mass, piece: piece.shape });
-        shard.breakAway(piece.start);
-        piece.hole.letGo ??= world.time;
-        shard.iceHole = piece.hole;
-        shard.ground = ice.ground;
-        shard.pieceOf = piece;
-        ice.adopt(shard);
-        world.shards.push(shard);
-        world.things.push(shard);
-      }
+      world.costs.clock = Math.max(world.costs.clock, performance.now() - started);
       for (const thing of world.things) {
         const impact = thing.update(STEP, floorDepthAt);
         if (impact && !impact.skim && !impact.ripple) {
@@ -578,10 +565,28 @@ function iceWorld({ diameter = 6, thickness = 'thin', seed = 1, x = 0, z = -1.4,
         thing.heard.length = 0;
       }
       collideThings(world.things, (thing) => ice.contain(thing));
-      // A piece broken into pieces goes (src/ice.js splitPiece; src/main.js retires it).
+      // At the step's end, as src/main.js: what the ice lets go by the next step's time (a hole's shards the step after
+      // its break, the parts of a piece split in this one) made things, and a piece broken up (splitPiece) gone. Its cost
+      // is the release's.
+      started = performance.now();
+      ice.letGo(world.time + STEP);
+      const pieces = ice.shards.splice(0);
+      if (pieces.length > 0) world.costs.release = Math.max(world.costs.release, performance.now() - started);
+      for (const piece of pieces) {
+        const shard = new Rock({ radius: piece.radius, position: piece.start.position, velocity: piece.start.velocity, envTexture: null, thing: 'ice-shard', mass: piece.mass, piece: piece.shape });
+        shard.breakAway(piece.start);
+        piece.hole.letGo ??= world.time + STEP;
+        shard.iceHole = piece.hole;
+        shard.ground = ice.ground;
+        shard.pieceOf = piece;
+        ice.adopt(shard);
+        world.shards.push(shard);
+        world.things.push(shard);
+      }
       for (const broken of world.things.filter((thing) => thing.brokenUp)) {
         world.things.splice(world.things.indexOf(broken), 1);
         world.shards.splice(world.shards.indexOf(broken), 1);
+        ice.forget(broken);
         world.broken.push(broken);
       }
       splash.update(STEP, water);
@@ -823,30 +828,32 @@ for (const name of ['watermelon', 'pie']) {
   check(thing.iceHole && deepest < 0.005, `a ${name} that broke thin ice ${thing.iceHole ? `drifts through its hole's pieces (${(1000 * deepest).toFixed(1)} mm)` : 'did not go through'}`);
 }
 
-// A stone at rest on the sheet at a hole's lip meets a piece that drifts under it (slabOverlap), as in the air; only what
-// lies on a piece does not meet that one (src/ice.js pieceUnder). The piece is put under it, its slab a millimetre into
-// its sphere (about the most it can: the stone sits on the ice, and a piece's top is no higher).
+// A thing at rest on the sheet at a hole's lip meets a piece that drifts under it (slabOverlap), as in the air; only what
+// lies on a piece does not meet that one (src/ice.js pieceUnder). A pizza, its sphere reaching well over the hole from
+// the ice it lies on (a stone's reaches its slab by a millimetre or two at most, and only as its random shape lies), the
+// piece put under it until its slab is PIECE_UNDER into that sphere.
 {
   const world = iceWorld({ diameter: 16, thickness: 'thick', seed: 1 });
   world.throwStone(16);
   world.step(10);
   const piece = world.shards.filter((shard) => shard.state === 'rest' || shard.state === 'float').sort((one, other) => other.radius - one.radius)[0];
   const hole = piece.iceHole, angle = Math.atan2(piece.position.z - hole.z, piece.position.x - hole.x);
-  const out = world.ice.edgeReach(hole, angle) + 0.005;
-  const stone = world.add(new Rock({ radius: 0.03, position: new THREE.Vector3(hole.x + Math.cos(angle) * out, world.ice.top + 0.032, hole.z + Math.sin(angle) * out), velocity: new THREE.Vector3(0, -0.05, 0), envTexture: null, thing: 'stone' }));
+  const measured = measure('pizza');
+  const out = world.ice.edgeReach(hole, angle) + 0.05;
+  const pizza = world.add(new Rock({ radius: measured.radius, position: new THREE.Vector3(hole.x + Math.cos(angle) * out, world.ice.top + 0.03, hole.z + Math.sin(angle) * out), velocity: new THREE.Vector3(0, -0.05, 0), envTexture: null, thing: 'pizza', mass: measured.mass }));
   world.step(3);
-  for (let moved = 0; moved < 0.3 && (slabOverlap(piece, stone)?.depth ?? 0) < 0.001; moved += 0.001) {
+  for (let moved = 0; moved < 0.3 && (slabOverlap(piece, pizza)?.depth ?? 0) < PIECE_UNDER; moved += 0.001) {
     piece.position.x += 0.001 * Math.cos(angle);
     piece.position.z += 0.001 * Math.sin(angle);
     piece.syncMeshes();
   }
-  const before = slabOverlap(piece, stone)?.depth ?? 0;
-  const resting = stone.state === 'rest' && stone.grounded && world.ice.at(stone.position.x, stone.position.z) !== null;
-  collideThings([piece, stone]);
-  const after = slabOverlap(piece, stone)?.depth ?? 0;
-  console.log(`  a 6 cm stone at rest on thick ice at a hole's lip, a piece put ${(1000 * before).toFixed(1)} mm into it: ${after < before / 2 ? `they meet, ${(1000 * after).toFixed(1)} mm after a pass` : 'they pass through each other'}`);
-  check(resting && before >= 0.001, `a stone at a hole's lip: ${resting ? `the piece reached only ${(1000 * before).toFixed(1)} mm into it` : `it is not at rest on the ice (${stone.state})`}`);
-  check(after < before / 2, `a piece under a stone at rest on the ice at a hole's lip passed through it (${(1000 * before).toFixed(1)} mm, then ${(1000 * after).toFixed(1)} mm)`);
+  const before = slabOverlap(piece, pizza)?.depth ?? 0;
+  const resting = pizza.grounded && world.ice.at(pizza.position.x, pizza.position.z) !== null;
+  collideThings([piece, pizza]);
+  const after = slabOverlap(piece, pizza)?.depth ?? 0;
+  console.log(`  a pizza at rest on thick ice at a hole's lip, a piece put ${(1000 * before).toFixed(1)} mm into it: ${after < before / 2 ? `they meet, ${(1000 * after).toFixed(1)} mm after a pass` : 'they pass through each other'}`);
+  check(resting && before >= PIECE_UNDER, `a pizza at a hole's lip: ${resting ? `the piece reached only ${(1000 * before).toFixed(1)} mm into it` : `it is not on the ice (${pizza.state})`}`);
+  check(after < before / 2, `a piece under a pizza at rest on the ice at a hole's lip passed through it (${(1000 * before).toFixed(1)} mm, then ${(1000 * after).toFixed(1)} mm)`);
 }
 
 // A 6 cm stone dropped on a piece: thin ice breaks under it into pieces of its own; thick does not, and goes under it, a

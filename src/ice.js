@@ -1618,9 +1618,10 @@ export class IceSheet {
 
   /**
    * Each hole opened before `time` (s) lets its shards go (into `shards`):
-   * setTime's, and src/main.js's at a frame's end with the next step's time,
-   * so a hole broken on a frame's last step is drawn with its pieces, never
-   * empty; asked again at that time, it lets nothing more go.
+   * src/main.js asks at each step's end with the next step's time, and makes
+   * them things with the parts of any piece split in that step, so neither a
+   * hole nor a split piece is ever drawn empty; setTime asks again at that
+   * time, and nothing more goes.
    */
   letGo(time) {
     if (!this.on) return;

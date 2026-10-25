@@ -2127,11 +2127,9 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     const seenAfter = () => Math.max(stepsTime + PHYSICS_STEP - end, 0) / Math.max(timeScale, 0.01) + presented;
     while (stepsTime < end - 1e-12) {
       advanceSplash(stepsTime);
-      // The ice's clock (src/ice.js setTime): a hole opened the step before lets its shards go (each a thing, the
-      // biggest first, no more than the preset keeps), and floods the ice round it once its cavity has closed; the wet
-      // freezes; holes skin over.
+      // The ice's clock (src/ice.js setTime): a hole floods the ice round it once its cavity has closed; the wet
+      // freezes; holes skin over. (What it lets go was made things at the end of the step before.)
       ice.setTime(stepsTime);
-      for (const piece of ice.shards.splice(0).slice(0, settings.shards)) stepping.push(addShard(piece));
       // What lies on the ice, and whether its weight breaks it (src/ice.js weigh: that thing goes in this step).
       ice.weigh(stepping);
       for (const rock of stepping) {
@@ -2165,17 +2163,17 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
         sound.knock({ speed: knock.closing, radius: ripple.rock.radius, bounce: ripple.rock.collisionBounce }, seenAfter());
       }
       stepsTime += PHYSICS_STEP;
+      // At the step's end, what it made and unmade of the ice's pieces, together, whatever the frame: what the ice lets
+      // go by now (src/ice.js letGo: a hole's shards the step after its break, the parts of a piece split in this step)
+      // made things, each the biggest first and no more than the preset keeps; a piece broken up (splitPiece) gone.
+      ice.letGo(stepsTime);
+      for (const piece of ice.shards.splice(0).slice(0, settings.shards)) stepping.push(addShard(piece));
+      for (let index = stepping.length - 1; index >= 0; index--) if (stepping[index].brokenUp) retireRock(stepping.splice(index, 1)[0]);
     }
-    // What the ice lets go by the next step's start (a hole broken on this frame's last step; the parts of a piece split
-    // in it, src/ice.js splitPiece) made things now, as that step would first: drawn this frame, never a frame empty.
-    ice.letGo(stepsTime);
-    for (const piece of ice.shards.splice(0).slice(0, settings.shards)) addShard(piece);
     advanceSplash(end);
     // A shard afloat that a hole's new ice has reached is frozen into it (src/ice.js freezeIn), and goes as a thing; a
     // hole something thrown floats in is not left alone, so it stays open (src/ice.js disturb).
     for (const rock of [...rocks]) {
-      // A piece of ice broken into pieces (src/ice.js splitPiece): its pieces are things now, and it goes.
-      if (rock.brokenUp) { retireRock(rock); continue; }
       if (rock.fading !== undefined || !rock.iceHole || !(rock.state === 'float' || rock.afloat)) continue;
       if (!rock.piece) ice.disturb(rock.iceHole);
       else if (ice.reaches(rock)) { ice.freezeIn(rock); retireRock(rock); }
