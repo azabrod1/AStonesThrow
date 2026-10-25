@@ -522,8 +522,8 @@ layer of bubbles bursts at a time, and the rest is the cloud of bubbles
 just under the surface, which most of a real boil's white is. So the water
 shader draws a boil up to that hold (a map value of 0.035) as bubbles
 bursting on the surface, a random few at a time and most of them small,
-each a clear cap whitening toward its edge that swells, glints and bursts
-within half a second, and the rest as the cloud, a milky tint of the water
+each a clear cap with a thin bright rim (as a foam speck is drawn) that
+swells, glints and bursts within half a second, and the rest as the cloud, a milky tint of the water
 seen through the surface (its colour the water's own absorption against the
 bubbles' scattering, the lake's blue-green paled), churned in lumps that
 break up its edge, under the sky's reflection; the gale's whitecaps, a
