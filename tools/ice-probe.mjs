@@ -88,7 +88,7 @@ import { Rock, aimThrow, aimSkip, skipSpeed, SKIP_THROW, throwFlightTime } from 
 import { THINGS, THING_NAMES } from '../src/things.js';
 import { floorDepthAt } from '../src/pondFloor.js';
 import { holdInPool, poolGround, POOL } from '../src/pool.js';
-import { collideThings, outlineOverlap, slabOverlap, passingBy } from '../src/collide.js';
+import { collideThings, outlineOverlap, slabOverlap, passingBy, passBy, passesBy } from '../src/collide.js';
 import { SplashSystem } from '../src/splash.js';
 import { IceSheet, ICE, ICE_THICKNESS, WEAK } from '../src/ice.js';
 
@@ -606,12 +606,16 @@ function iceWorld({ diameter = 6, thickness = 'thin', seed = 1, x = 0, z = -1.4,
         world.broken.push(broken);
       }
       splash.update(STEP, water);
-      // Once a frame (src/main.js): the mask painted, shards frozen in, holes with a floater in them stirred.
+      // Once a frame (src/main.js render): the mask painted.
       if (Math.round(world.time / STEP) % 4 === 0) {
         started = performance.now();
         const painting = ice.holes.some((hole) => !hole.painted);
         ice.update();
         if (!painting) world.costs.paint = Math.max(world.costs.paint, performance.now() - started);
+      }
+      // At each step's end (src/main.js endStep): shards frozen in, holes with a floater in them stirred, what rests where
+      // a hole has opened let fall.
+      {
         for (const thing of [...world.things]) {
           if (!thing.iceHole || !(thing.state === 'float' || thing.afloat)) continue;
           if (!thing.piece) ice.disturb(thing.iceHole);
@@ -827,6 +831,51 @@ for (const [thickness, diameter, carries] of [['thick', 16, true], ['thin', 6, f
   const afloat = (piece.afloat || piece.state === 'float' || piece.state === 'rest') && Math.abs(piece.position.y - piece.floatingHeight()) < 0.01;
   console.log(`  a ${centimetres(2 * piece.radius)} cm piece of thick ice lifted to 15 cm and let go: its own top ${heldGround === null ? 'no ground under it' : `ground at ${centimetres(heldGround)} cm`}; ${onItself ? 'landed on itself' : afloat ? 'dropped into its hole and floats' : `ended ${piece.state} at ${centimetres(piece.position.y)} cm`}`);
   check(!onItself && afloat && (heldGround === null || heldGround < liftedTo.y - piece.radius * piece.piece.thickness), `a piece afloat lifted and let go ${onItself ? 'landed on itself' : `ended ${piece.state} at ${centimetres(piece.position.y)} cm`} (the ground under it held: ${heldGround})`);
+}
+
+// The pairs that pass each other by (src/collide.js passBy): a pair passing for two reasons (what broke a hole and split
+// one of its pieces: until the hole floods, and until they are apart) passes until both have ended; a piece of a hole
+// not yet flooded, taken in hand and put back in it, passes the hole's breaker again (src/ice.js adopt, as src/main.js
+// endGrab calls it).
+{
+  const sphere = (x) => ({ centre: new THREE.Vector3(x, 0, 0), radius: 0.05, collisionRadius: 0.05 });
+  const piece = sphere(0), thing = sphere(0.02);
+  let flooded = false;
+  passBy(piece, thing);
+  passBy(piece, thing, () => flooded);
+  const overlapping = passesBy(piece, thing);
+  thing.centre.x = 0.5;
+  const apartNotFlooded = passesBy(thing, piece);
+  flooded = true;
+  thing.centre.x = 0.02;
+  const floodedOverlapping = passesBy(piece, thing);
+  const piece2 = sphere(0), thing2 = sphere(0.02);
+  let flooded2 = false;
+  passBy(piece2, thing2, () => flooded2);
+  passBy(piece2, thing2);
+  flooded2 = true;
+  const floodedStillOverlapping = passesBy(piece2, thing2);
+  thing2.centre.x = 0.5;
+  const ended = !passesBy(piece2, thing2) && !passingBy(piece2, thing2) && !passingBy(thing2, piece2);
+  // (Once apart, that reason has ended for good: the first pair, apart before the flood, meets once the hole floods.)
+  console.log(`  a pair passing until a flood and until apart: overlapping ${overlapping}, apart before the flood ${apartNotFlooded}, then flooded ${floodedOverlapping}; one flooded while overlapping ${floodedStillOverlapping}, then apart ${!ended}`);
+  check(overlapping && apartNotFlooded && !floodedOverlapping && floodedStillOverlapping && ended, `a pair passing for two reasons passes until both have ended (overlapping ${overlapping}, apart before the flood ${apartNotFlooded}, then flooded ${floodedOverlapping}; flooded while overlapping ${floodedStillOverlapping}, then apart ${!ended})`);
+
+  const world = iceWorld({ diameter: 16, thickness: 'thin', seed: 1 });
+  const stone = world.throwStone(16);
+  for (let time = 0; time < 2 && world.shards.length === 0; time += STEP) world.step(STEP);
+  const shard = world.shards.find((candidate) => candidate.iceHole && !candidate.iceHole.flooded && passingBy(candidate, stone));
+  let taken = false, forgotten = false, again = false;
+  if (shard) {
+    taken = true;
+    shard.hold();
+    forgotten = !passingBy(shard, stone);
+    shard.release();
+    world.ice.adopt(shard);
+    again = passingBy(shard, stone);
+  }
+  console.log(`  a piece of a hole not yet flooded taken in hand: ${taken ? `its pass with the breaker forgotten ${forgotten}, put back and passing it again ${again}` : 'none found'}`);
+  check(taken && forgotten && again, `a piece of a hole not yet flooded, taken and put back, passes the hole's breaker again (${taken ? `forgotten ${forgotten}, again ${again}` : 'no piece found'})`);
 }
 
 // A floater that broke thin ice (a watermelon, a pie) floats back up in its own hole: it passes its pieces by only until

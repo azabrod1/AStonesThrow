@@ -784,8 +784,12 @@ export class IceSheet {
 
   // ---- its pieces afloat as ground (the header: Pieces) ----------------------
 
-  /** A piece let go (src/main.js addShard: a shard made a thing) is ground in its hole from now (pieceUnder) until forget. */
-  /** A piece let go (src/main.js makes it a thing): ground while it floats in its hole, and passed by what broke the hole until it floods (src/collide.js passBy). */
+  /**
+   * A piece let go (src/main.js addShard: a shard made a thing), or put back
+   * by the hand (src/main.js endGrab): ground in its hole from now
+   * (pieceUnder) until forget, and passed by what broke the hole until it
+   * floods (src/collide.js passBy).
+   */
   adopt(rock) {
     if (!rock.piece) return;
     this.pieces.add(rock);
@@ -1656,7 +1660,9 @@ export class IceSheet {
     for (const hole of this.holes) {
       if (!hole.flooded && time >= hole.floodAt) {
         hole.flooded = true;
-        // What broke it is down past its pieces now (its cavity closed): it meets them again (adopt), come back up afloat.
+        // What broke it is down past its pieces now (its cavity closed): it meets them again (adopt), come back up afloat,
+        // and the hole no longer keeps it.
+        hole.by = null;
         this.flood(hole);
       }
       // Its field worked out a few rows a step in the seconds before (prepareSkin), then its new ice begins.

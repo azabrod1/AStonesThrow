@@ -32,14 +32,15 @@
 // garden more coarsely made (COARSE: its shrubs' spheres, from the same
 // draws), the water's ripples breaking its image anyway, and so is the
 // scene's on a preset that asks (setCoarse: Low); what catches is the fine
-// garden's, whatever is drawn. Built once, the first time it is shown or
+// garden's, whatever is drawn (on Low it is let go once its catch table is
+// made). Built once, the first time it is shown or
 // met (builtGarden), seeded (seededRandom), never Math.random.
 import * as THREE from 'three';
 import { seededRandom } from './spray.js';
 import { KOI_SHORE, koiShoreRadius, koiShoreDistance, koiFloorDepthAt } from './pondFloor.js';
 
-const MIRROR_NEARNESS_SCALE = 4;
-const COARSE = 0.5;   // the coarse garden's shrubs (the header) as finely made as this of the fine's: about a third of its triangles   // as src/rock.js's: the mirror image's alpha is 1 − this / distance
+const MIRROR_NEARNESS_SCALE = 4;   // as src/rock.js's: the mirror image's alpha is 1 − this / distance
+const COARSE = 0.5;   // the coarse garden's shrubs (the header) as finely made as this of the fine's: about a third of its triangles
 const UP = new THREE.Vector3(0, 1, 0);
 const GROUND_ALBEDO = new THREE.Vector3(0.1, 0.13, 0.06);   // the lawn's, for the light it throws back up
 // The planted banks (the header): the sector of θ about the pond's centre they take, from `from` round through π (the
@@ -524,6 +525,12 @@ function builtGarden(detail = 1) {
   built[detail] ??= gardenGeometry(seededRandom(7, 3), detail);
   return built[detail];
 }
+/** The fine garden let go once the catch table is made from it, where nothing draws it (Low: setCoarse); built again if asked for. */
+function letGoOfFine() {
+  if (!table || !built[1]) return;
+  for (const geometry of Object.values(built[1])) geometry.dispose();
+  delete built[1];
+}
 let table = null;
 /**
  * The catch table (CATCH; the header): for each direction about the pond's
@@ -719,16 +726,23 @@ export function createKoiGarden({ envTexture, mirrorLayer, lighting }) {
           mirrored.geometry.dispose();
           mirrored.geometry = builtGarden(COARSE)[lookName];
         }
-        this.setCoarse(coarse);
         catchTable();
+        this.setCoarse(coarse);
       }
       for (const mesh of meshes) mesh.visible = visible;
     },
-    /** The scene's garden coarse as the mirror's (a preset's `gardenCoarse`: Low), or fine; built when it is first shown. */
+    /**
+     * The scene's garden coarse as the mirror's (a preset's `gardenCoarse`:
+     * Low), or fine; built when it is first shown. Coarse, the fine garden is
+     * let go once its catch table is made (letGoOfFine); fine again, it is
+     * built again (a change from Low the person makes; the automatic quality
+     * only steps down).
+     */
     setCoarse(asCoarse) {
       coarse = asCoarse;
       if (!shown) return;
       for (const [lookName, [main]] of Object.entries(byLook)) main.geometry = builtGarden(coarse ? COARSE : 1)[lookName];
+      if (coarse) letGoOfFine();
     },
   };
 }

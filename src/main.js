@@ -1984,7 +1984,12 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   }
 
   function endGrab() {
-    if (grab.rock && ice.on) grab.rock.iceHole = ice.holeAt(grab.rock.position.x, grab.rock.position.z);
+    if (grab.rock && ice.on) {
+      grab.rock.iceHole = ice.holeAt(grab.rock.position.x, grab.rock.position.z);
+      // A piece of ice put back in a hole not yet flooded passes what broke it again, as one let go there does (the hand's
+      // taking it forgot its pairs: src/rock.js hold).
+      if (grab.rock.piece) ice.adopt(grab.rock);
+    }
     grab.end(grabSurfaceAt, bedDepthAt);
     heldWake = null;   // let go in the water, it is the water's again: no lift
     grabPointer = null;
@@ -2272,13 +2277,11 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     advanceSplash(end);
     fishes.showAt(end);   // each fish drawn between its last two steps (src/fishMeshes.js)
     for (const rock of rocks) rock.drawAt(rock.fading === undefined ? 1 - (stepsTime - end) / PHYSICS_STEP : 1);
-    // What fades shrinks away (fadeOut: it is frozen, so only how it looks goes by the frame), and goes.
-    for (const rock of [...rocks]) {
+    // What fades is drawn shrinking away (endStep counts its fade and retires it).
+    for (const rock of rocks) {
       if (rock.fading === undefined || rock.state === 'held') continue;
-      rock.fading += frame;
       const left = 1 - THREE.MathUtils.smoothstep(rock.fading, 0, FADE_SECONDS);
-      if (left <= 0) retireRock(rock);
-      else for (const mesh of rock.meshes) mesh.scale.setScalar(rock.radius * (rock.eatenScale ?? 1) * left);   // its meshes are scaled by its radius (src/rock.js), less what the fish ate
+      for (const mesh of rock.meshes) mesh.scale.setScalar(rock.radius * (rock.eatenScale ?? 1) * left);   // its meshes are scaled by its radius (src/rock.js), less what the fish ate
     }
     if (!skip.solver) {
       // The solver sleeps once its waves and foam have faded and nothing of the splash is left (the header);
@@ -2294,7 +2297,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
    * the same step whatever the frame rate, and a seeded game goes alike at
    * 60 frames a second and at 120 (tools/frame-rate-probe.mjs):
    *   - what faded in this step (lost in the garden, eaten) is frozen from
-   *     the next (fadeOut);
+   *     the next (fadeOut); what fades has faded a step more, and goes once
+   *     FADE_SECONDS have;
    *   - a shard afloat that a hole's new ice has reached is frozen into it
    *     (src/ice.js freezeIn), and goes as a thing; a hole something thrown
    *     floats in is not left alone, so it stays open (src/ice.js disturb);
@@ -2306,6 +2310,11 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
    */
   function endStep(stepping) {
     for (let index = stepping.length - 1; index >= 0; index--) if (stepping[index].fading !== undefined) stepping.splice(index, 1);
+    for (const rock of [...rocks]) {
+      if (rock.fading === undefined || rock.state === 'held') continue;
+      rock.fading += PHYSICS_STEP;
+      if (rock.fading >= FADE_SECONDS) retireRock(rock);
+    }
     for (const rock of [...stepping]) {
       if (!rock.iceHole || !(rock.state === 'float' || rock.afloat)) continue;
       if (!rock.piece) ice.disturb(rock.iceHole);

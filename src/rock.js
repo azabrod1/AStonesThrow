@@ -500,12 +500,12 @@ function distinctPoints(positions) {
   const table = new Int32Array(size).fill(-1);
   const kept = [];
   for (let index = 0; index < count; index++) {
-    const x = bits[3 * index], y = bits[3 * index + 1], z = bits[3 * index + 2];
-    let slot = (Math.imul(x, 73856093) ^ Math.imul(y, 19349663) ^ Math.imul(z, 83492791)) & (size - 1);
+    const xBits = bits[3 * index], yBits = bits[3 * index + 1], zBits = bits[3 * index + 2];
+    let slot = (Math.imul(xBits, 73856093) ^ Math.imul(yBits, 19349663) ^ Math.imul(zBits, 83492791)) & (size - 1);
     for (;;) {
       const at = table[slot];
       if (at === -1) { table[slot] = index; kept.push(index); break; }
-      if (bits[3 * at] === x && bits[3 * at + 1] === y && bits[3 * at + 2] === z) break;
+      if (bits[3 * at] === xBits && bits[3 * at + 1] === yBits && bits[3 * at + 2] === zBits) break;
       slot = (slot + 1) & (size - 1);
     }
   }
@@ -1247,6 +1247,7 @@ export class Rock {
     this.brokenUp = false;         // a piece of ice broken into pieces of its own (src/ice.js splitPiece): it meets nothing, and goes
     this.settling = null;          // settling onto the face it lies on, at rest on the ground (restOn, settleStep)
     this.sliding = null;           // tipping onto the face it slides on, and its turn about the vertical (startSliding, slideStep)
+    this.passing = null;           // the things it passes by for now, and why (src/collide.js passBy)
     this.fading = undefined;       // seconds into shrinking away, once src/main.js has begun it (fadeOut): frozen, it is no longer stepped
     this.drawn = { surface: 0, bedDepth: 1 };   // the water it was last drawn on (syncMeshes), for a knock's redraw
     this.age = 0;
@@ -1868,8 +1869,6 @@ export class Rock {
     // Soaked heavier than water, it sinks: from where it floats, its hole long closed.
     if (this.density >= WATER_DENSITY && this.floats) {
       this.floats = false;
-      this.afloat = false;
-      this.restTime = 0;   // its time at rest afloat is over: on the bed it is counted afresh
       this.setState(this.plate ? 'float' : 'water');
       this.body.water = underWater(this.density, this.thing.water.restingHeight);
       Object.assign(this.body, { x: this.position.x, y: this.position.y, z: this.position.z, vx: this.velocity.x, vy: this.velocity.y, vz: this.velocity.z, resting: false, openUntil: -1 });
@@ -1878,7 +1877,6 @@ export class Rock {
     // At rest afloat, now and again: has it sunk to float lower? Then it floats on, settling again.
     if (this.afloat && this.state === 'rest' && (this.restTime % WET.settleSeconds) < dt && Math.abs(this.floatingHeight() - this.position.y) > FLOAT.settledOffset) {
       this.setState('float');
-      this.afloat = false;
     }
   }
 
@@ -1963,7 +1961,7 @@ export class Rock {
     this.carriedWater = 0;
     this.velocity.set(0, 0, 0);
     this.spinRate = 0;
-    forgetPasses(this);   // lifted out of whatever it was going down past (src/collide.js passBy)
+    forgetPasses(this);   // lifted out of whatever it was going down past (src/collide.js passBy; a piece put back in its hole passes its breaker again: src/main.js endGrab)
     this.sinceImpact = -1;
     this.cavityTimes = null;
     this.seenThroughWater.value = 1;
@@ -2031,7 +2029,7 @@ export class Rock {
   setDrift(direction) {
     this.drift.x = direction ? direction.x * FLOAT.drift : 0;
     this.drift.z = direction ? direction.y * FLOAT.drift : 0;
-    if ((this.drift.x !== 0 || this.drift.z !== 0) && this.afloat && this.state === 'rest') { this.setState('float'); this.afloat = false; }
+    if ((this.drift.x !== 0 || this.drift.z !== 0) && this.afloat && this.state === 'rest') this.setState('float');
   }
 
   // ---- meeting other things (src/collide.js) -------------------------------
@@ -2076,7 +2074,7 @@ export class Rock {
     const angular = scratch.angular.copy(this.spinAxis).multiplyScalar(this.spinRate).add(change);
     this.spinRate = angular.length();
     if (this.spinRate > 1e-9) this.spinAxis.copy(angular).divideScalar(this.spinRate);
-    if (this.afloat && this.state === 'rest') { this.setState('float'); this.afloat = false; }
+    if (this.afloat && this.state === 'rest') this.setState('float');
   }
 
   /** How much of the speed it meets another thing at it gives back: the middle of its bounce (src/things.js `ground`). */
@@ -2095,8 +2093,7 @@ export class Rock {
     // 1e-16 m, every step after; such a knock would otherwise wake it (below) so that it never rests.
     if (dvx === 0 && dvy === 0 && dvz === 0 && Math.abs(dx) + Math.abs(dy) + Math.abs(dz) < KNOCK_NOTHING) return;
     if (this.state === 'skim' && (dvx !== 0 || dvy !== 0 || dvz !== 0)) {
-      this.setState('air');
-      this.skip.contact = null;
+      this.setState('air');   // its touch let go (setState)
       this.skip.skips++;
     }
     this.velocity.x += dvx; this.velocity.y += dvy; this.velocity.z += dvz;
@@ -2107,12 +2104,10 @@ export class Rock {
       body.vx += dvx; body.vy += dvy; body.vz += dvz;
       body.x += dx; body.y += dy; body.z += dz;
     }
-    if (this.afloat && this.state === 'rest') { this.setState('float'); this.afloat = false; }
+    if (this.afloat && this.state === 'rest') this.setState('float');
     // On the ground it goes along it again, or, knocked up off it, flies.
     if (this.grounded && (dvx !== 0 || dvy !== 0 || dvz !== 0)) {
-      this.settling = null;
-      this.sliding = null;   // it slides on from as it is now (alongGround)
-      this.onGround = false;
+      this.sliding = null;   // it slides on from as it is now (alongGround); off its rest, setState lets go of the rest
       if (this.velocity.y > GROUND.settle) this.setState('air');
       else { this.setState('ground'); this.velocity.y = 0; }
     }
@@ -2843,10 +2838,7 @@ export class Rock {
 
   /** Its ground gone from under it as it rests (a hole opened there, src/ice.js): it goes along the ground again, so it falls where there is none. */
   loseGround() {
-    this.settling = null;
-    this.sliding = null;
-    this.onGround = false;
-    this.setState('ground');
+    this.setState('ground');   // its rest let go (setState)
   }
 
   /**
@@ -2976,7 +2968,7 @@ export class Rock {
   alongGround(dt) {
     let height = this.ground?.at(this.position.x, this.position.z, this) ?? null;
     const before = this.groundHeight ?? height;
-    if (height === null || height < before - GROUND.step) { this.setState('air'); this.sliding = null; return; }
+    if (height === null || height < before - GROUND.step) { this.setState('air'); return; }
     if (height > before + GROUND.step) height = this.turnBackFromStep();
     this.groundHeight = height;
     this.velocity.y = 0;
@@ -3046,7 +3038,6 @@ export class Rock {
    */
   breakThrough(met, dt) {
     this.velocity.multiplyScalar(met.keep ?? 1);
-    this.sliding = null;
     this.iceHole = met.hole;
     const impact = this.goIn(dt, 0);
     impact.throughIce = !met.open;
@@ -3092,9 +3083,7 @@ export class Rock {
     const groundNow = groundBefore !== null ? ground.at(this.position.x, this.position.z, this) : null;
     if (this.fallsThrough) {
       // The ice gave way under its weight (src/ice.js weigh): it goes in through the hole, at the speed weigh gave it.
-      this.onGround = false;
-      this.settling = null;
-      impact = this.breakThrough(this.fallsThrough, dt);
+      impact = this.breakThrough(this.fallsThrough, dt);   // into the water: its rest let go (setState)
       this.fallsThrough = null;
     } else if (groundNow !== null && this.position.y - this.ellipsoidDepth() <= groundNow) {
       // Ice may give way under it (the header: the ground's `meet`); else it lands on the ground.
@@ -3144,8 +3133,7 @@ export class Rock {
         // Off the water, flying on for what is left of the step.
         this.position.copy(contact.exitPosition);
         this.velocity.copy(contact.exitVelocity);
-        this.setState('air');
-        this.skip.contact = null;
+        this.setState('air');   // its touch let go (setState)
         this.afterSkip();
         this.fly(contact.age - contact.duration);
       }
