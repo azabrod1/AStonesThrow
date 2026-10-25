@@ -1226,7 +1226,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     }).then(() => environment.name);
   }
   /** Commit the place, its geometry and entry preset only after its latest sky and hour arrive. */
-  function requestPlace(place, hour) {
+  function requestPlace(place, hour, { remember = true } = {}) {
     const sky = PLACES[place].sky;
     const request = { place, hour: resolveHour(sky, hour) };
     placeRequest = request;
@@ -1243,10 +1243,12 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
         }
         // From the untouched shore view, show the peaks above the ice. Keep a view the user has moved.
         if (entering && PLACES[place].defaultView && reportedView?.atHome) showView(PLACES[place].defaultView, { glide: false });
-        try {
-          window.localStorage.setItem(SKY_STORAGE_KEY, place);
-          window.localStorage.setItem(WATER_STORAGE_KEY, iceName === 'none' ? lakeClarity : 'frozen');
-        } catch { /* storage refused: the choices last this visit */ }
+        if (remember) {   // not after Reset all (resetSettings), which forgets them
+          try {
+            window.localStorage.setItem(SKY_STORAGE_KEY, place);
+            window.localStorage.setItem(WATER_STORAGE_KEY, iceName === 'none' ? lakeClarity : 'frozen');
+          } catch { /* storage refused: the choices last this visit */ }
+        }
       }
       return placeName;
     });
@@ -3040,6 +3042,31 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       if (automaticQuality) Object.assign(calibration, { phase: 'idle', frames: 0, seconds: 0, idleFps: null });
       else if (!QUALITY[name]) return;
       applyQuality(automaticQuality ? 'high' : name);
+    },
+    /**
+     * Every setting as a first visit has it (the settings' Reset all): the
+     * river stone at each thing's first size, Lakeside at its own hour, the
+     * Lake water thawed (its ice thin when frozen again), clear, calm, sound
+     * on, Auto quality, the shore view; and the choices remembered on this
+     * device forgotten, the time of day among them. Resolves once the place
+     * and the weather have come.
+     */
+    resetSettings() {
+      this.setThing(DEFAULT_THING);
+      for (const thing of Object.values(THINGS)) thingSizes[sizeKey(thing)] = thing.slider?.initial ?? null;
+      const weather = this.setWeather('clear');
+      this.setWind(DEFAULT_WIND_STRENGTH);
+      iceThickness = 'thin';
+      this.setWater(DEFAULT_WATER);
+      this.setSound(true);
+      if (!automaticQuality) this.setQuality('auto');   // already Auto: its calibration keeps what it found
+      chosenClock = null;
+      const place = requestPlace(...placeAndHour(DEFAULT_PLACE), { remember: false });
+      showView('shore');
+      for (const key of [THING_STORAGE_KEY, WEATHER_STORAGE_KEY, WIND_STORAGE_KEY, WATER_STORAGE_KEY, ICE_STORAGE_KEY, SOUND_STORAGE_KEY, SKY_STORAGE_KEY, TIME_STORAGE_KEY]) {
+        try { window.localStorage.removeItem(key); } catch { /* storage refused: nothing was kept */ }
+      }
+      return Promise.all([place, weather]).then(() => undefined);
     },
     pause() {
       running = false;

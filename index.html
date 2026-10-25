@@ -593,6 +593,8 @@
     text-overflow: ellipsis;
   }
   .menu-tier-chevron { flex: none; font-size: 16px; line-height: 1; color: rgba(238, 243, 244, 0.5); }
+  /* Reset all, asking again after a first press. */
+  .menu-reset.armed, .menu-reset.armed .menu-tier-icon { color: var(--accent); }
   /* A page's head stays at the top while the page scrolls under it, clear of the panel's edge. */
   .menu-head {
     display: flex; align-items: center; gap: 4px; padding: 10px 10px 10px; margin: -8px -8px 0;
@@ -1002,6 +1004,11 @@
       <svg class="menu-tier-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M3.6 14.6a6.6 6.6 0 1 1 12.8 0"></path><path d="M10 12.9l3.2-4.1"></path></svg>
       <span class="menu-tier-name"><b>Quality</b><small>Detail and smoothness</small></span>
       <span class="menu-tier-value"></span><span class="menu-tier-chevron" aria-hidden="true">&rsaquo;</span>
+    </button>
+    <hr class="menu-rule">
+    <button type="button" class="menu-tier menu-reset" id="reset-settings">
+      <svg class="menu-tier-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M1.75 4v4.5h4.5"></path><path d="M3.63 12.25a6.75 6.75 0 1 0 1.6-7.02L1.75 8.5"></path></svg>
+      <span class="menu-tier-name"><b>Reset all</b><small>Every setting as on a first visit</small></span>
     </button>
   </div>
   <div class="menu-page" data-page="thing" hidden>
@@ -1775,6 +1782,45 @@
     // An hour is a 6 MB photo: opening the page fetches the hours either side of the shown one ahead
     // (pond.prefetchHours), and each hour shown while it is open fetches its own, so the next is there when picked.
     document.querySelector('.menu-tier[data-open="time"]').addEventListener('click', () => pond.prefetchHours());
+    // Reset all: a first press asks again in the row's own words, and a second within a few seconds sets every
+    // setting as a first visit has it (pond.resetSettings). Favourites and the latest choices stay.
+    const resetButton = document.getElementById('reset-settings');
+    const resetName = resetButton.querySelector('b'), resetLine = resetButton.querySelector('small');
+    let resetTimer = 0;
+    const disarmReset = () => {
+      clearTimeout(resetTimer);
+      resetTimer = 0;
+      resetButton.classList.remove('armed');
+      resetName.textContent = 'Reset all';
+      resetLine.textContent = 'Every setting as on a first visit';
+    };
+    resetButton.addEventListener('click', () => {
+      if (!resetTimer) {
+        resetButton.classList.add('armed');
+        resetName.textContent = 'Press again to reset';
+        resetLine.textContent = 'Favourites stay';
+        resetTimer = setTimeout(disarmReset, 3000);
+        return;
+      }
+      disarmReset();
+      const choice = ++sceneChoice;   // a place or an hour still coming for an earlier pick reports nothing
+      timeChoice = null;
+      weatherRequest += 1;
+      for (const key of Object.keys(sliderValues)) delete sliderValues[key];
+      resetLine.textContent = 'Resetting\u2026';
+      const reset = pond.resetSettings();
+      updateThing();
+      updateWater();
+      updateWeather();
+      updateWind();
+      updateSound();
+      showQuality();
+      reset.then(() => {
+        if (sceneChoice === choice) updateSky();
+        updateWeather();
+        if (!resetTimer) disarmReset();
+      });
+    });
     showView();
     updateThing();
     updateWater();
