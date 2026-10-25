@@ -24,8 +24,10 @@
 // lies on it as ground (src/ice.js pieceUnder) and does not meet that
 // piece; anything else on the ground (on the sheet at a hole's lip, on
 // another piece) meets it by its slab.
-// What broke a hole in the ice never meets that hole's pieces: it went down
-// between them, their inner edges clear of it (src/ice.js SHARD.clear).
+// What broke a hole in the ice does not meet that hole's pieces until the
+// hole floods (its cavity closed): it went down between them, their inner
+// edges clear of it (src/ice.js SHARD.clear); what broke a piece afloat, or
+// pushed one under, passes it by until they are apart (passesBy).
 // A pair meets when one of them is a floater
 // (afloat, bobbing, or on its way up), or on the ground (going along it or
 // at rest on it: Rock.grounded, which a knock sets going again and the
@@ -131,6 +133,23 @@ function containPass(things, contain, knocks) {
   return turned;
 }
 
+/**
+ * Whether `piece` and `thing` pass each other by (collidePass): what broke
+ * the piece's hole, or broke it off a piece afloat, or pushed it under. A
+ * part's breaker and what pushed a piece under are let meet it again once
+ * they are apart (their spheres clear of each other).
+ */
+function passesBy(piece, thing) {
+  if (!piece.piece) return false;
+  if (piece.iceHole?.by === thing) return true;
+  const broke = piece.brokenBy === thing, pushed = thing.dunked === piece;
+  if (!broke && !pushed) return false;
+  if (thing.centre.distanceTo(piece.centre) < piece.radius + thing.collisionRadius) return true;
+  if (broke) piece.brokenBy = null;
+  if (pushed) thing.dunked = null;
+  return false;
+}
+
 /** One pass over the pairs (collideThings), its knocks added to `knocks`; whether any pair met. */
 function collidePass(things, knocks) {
   let met = false;
@@ -139,8 +158,9 @@ function collidePass(things, knocks) {
       const one = things[first], other = things[second];
       if (!one.collides || !other.collides || !(one.floater || other.floater || one.grounded || other.grounded)) continue;
       // What broke a hole went down between its pieces (src/ice.js SHARD.clear), what broke a piece afloat between its
-      // parts (splitPiece), and what pushed a piece under went down past it (landOnPiece, dunkPieces): it never meets them.
-      if ((one.piece && (one.iceHole?.by === other || one.brokenBy === other || other.dunked === one)) || (other.piece && (other.iceHole?.by === one || other.brokenBy === one || one.dunked === other))) continue;
+      // parts (splitPiece), and what pushed a piece under went down past it (landOnPiece, dunkPieces): they do not meet
+      // until the hole floods (src/ice.js setTime), or, a part or a piece pushed under, until they are apart.
+      if (passesBy(one, other) || passesBy(other, one)) continue;
       // Two flat pieces of ice (the header) meet rim to rim: the line between them level, their whole radii.
       const rims = Boolean(one.thing.body.meetsAtRim && other.thing.body.meetsAtRim);
       between.copy(other.centre).sub(one.centre);
@@ -162,7 +182,7 @@ function collidePass(things, knocks) {
         if (thing.centre.distanceTo(piece.centre) >= piece.radius + thing.collisionRadius) continue;
         // On the ground on this piece, it lies on it as on the ice (src/ice.js pieceUnder): the ground holds it, not a
         // meeting. On the sheet at a hole's lip, or on another piece, it meets it by its slab.
-        if (thing.grounded && thing.ground?.pieceUnder?.(thing.position.x, thing.position.z)?.rock === piece) continue;
+        if (thing.grounded && thing.ground?.pieceUnder?.(thing.position.x, thing.position.z, thing)?.rock === piece) continue;
         const slab = slabOverlap(piece, thing);
         if (!slab || slab.depth < COLLIDE.settled) continue;
         // From the first towards the second: slabOverlap's normal points from the piece to the thing.

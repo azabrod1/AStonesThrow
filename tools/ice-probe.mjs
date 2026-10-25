@@ -47,7 +47,8 @@
 //     thin ice alone, two side by side break it, two 2 m apart do not; a
 //     blow beside a load more than the ice holds breaks it with a finite
 //     strength (ICE.loadedLeast); stars at one place are one weak spot, and
-//     scattered ones at most WEAK.most;
+//     scattered ones at most WEAK.most; WEIGH.things at rest on the ice
+//     cost weigh under WEIGH.mostMicroseconds a step, one moved weighed again;
 //   - shards (src/ice.js piecesOf, each made a thing as src/main.js makes
 //     it, src/rock.js adrift): a 6 cm stone through thin ice, a 16 cm one
 //     and a 30 cm rock through thick, each lets go SHARDS pieces the step
@@ -64,7 +65,9 @@
 //     thin ice breaks it into pieces that float at rest, flat and apart,
 //     on thick ice pushes it under no deeper than PIECE_DIP; a stone at rest
 //     on the sheet at a hole's lip meets a piece put under it (only what lies
-//     on a piece does not meet it);
+//     on a piece does not meet it); a piece lifted and let go drops into
+//     its hole and floats again, never landing on itself; a watermelon or a
+//     pie that broke thin ice meets its hole's pieces once it has flooded;
 //   - the flood: the ice round the hole is wet once its cavity has closed
 //     (floodAt; its shards went the step after the break), dry but glazed
 //     FLOOD.dry seconds on, the far ice never wet; drops that land on the
@@ -103,6 +106,7 @@ const REPEATS = { cracks: 8, never: 30 };   // throws again and again at one spo
 const PIECE_DIP = 0.03;     // m: a piece of ice afloat pushed under by a thing goes no deeper than this
 const OUTLINE_TOLERANCE = 0.001;   // m: two shards' outlines overlap at rest by less than this, and lie inside their hole by it
 const SHARD_SECONDS = 15;    // s a break's shards are followed for
+const WEIGH = { things: 60, steps: 2000, mostMicroseconds: 60 };   // things at rest on the ice weighed each step, at most this a step (they cost some 350 µs before weigh kept its answer)
 const SKIN_MS = 15;          // a step of the ice's clock (a hole's shards let go; its flood, new ice, the weighing) or a shard frozen in costs under this (it was 45 to 60 ms before it was spread over steps; here 2 to 8, as the runner allows)
 const LONGEST = 40;          // s: a thing not at rest on the ice nor through it by then fails...
 const FARTHEST = 30;         // m: ...unless it has slid this far from the pond's middle, where src/main.js lets it go (FARTHEST_AWAY)
@@ -658,6 +662,31 @@ console.log('\nWeakened and weight (src/ice.js weakness, weigh): the same throw 
     check((holes > 0) === breaks && (!breaks || through > 0), `${label}: ${holes ? 'gave way' : 'held'}, which it should not`);
   }
 
+  // Things at rest on the ice cost weigh next to nothing a step: it held, and nothing has moved (src/ice.js `held`); one
+  // set down beside them weighs them all again.
+  {
+    const ice = new IceSheet(PATCH);
+    ice.setThickness(ICE_THICKNESS.thick);
+    seedRandom(5);
+    const resting = [];
+    for (let index = 0; index < WEIGH.things; index++) {
+      const rock = new Rock({ radius: 0.03, position: new THREE.Vector3(-2 + 4 * Math.random(), ice.top + 0.03, -3 + 3 * Math.random()), velocity: new THREE.Vector3(), envTexture: null, thing: 'stone' });
+      rock.ground = ice.ground;
+      rock.restOn(ice.top);
+      resting.push(rock);
+    }
+    for (let step = 0; step < 50; step++) ice.weigh(resting);
+    const started = performance.now();
+    for (let step = 0; step < WEIGH.steps; step++) ice.weigh(resting);
+    const perStep = (performance.now() - started) / WEIGH.steps;
+    const keptAnswer = ice.held.entries.length;
+    resting[0].position.x += 0.01;
+    ice.weigh(resting);
+    const weighedAgain = ice.held.entries[0].x === resting[0].position.x;
+    console.log(`  ${WEIGH.things} stones at rest on thick ice: weighing them costs ${(1000 * perStep).toFixed(1)} µs a step (${keptAnswer} held), one moved weighs them again: ${weighedAgain}`);
+    check(1000 * perStep < WEIGH.mostMicroseconds && weighedAgain, `${WEIGH.things} things at rest on the ice cost weigh ${(1000 * perStep).toFixed(1)} µs a step${weighedAgain ? '' : ', and one moved is not weighed again'}`);
+  }
+
   // Struck beside a load more than the ice holds there (weigh breaks at the mean; a blow draws its own, lower): it holds
   // ICE.loadedLeast of what it would whole, so the break's strength is the blow's over that, never endless.
   {
@@ -754,6 +783,44 @@ for (const [thickness, diameter, carries] of [['thick', 16, true], ['thin', 6, f
   console.log(`  a 2 cm pebble dropped at 2 m/s on a ${centimetres(2 * piece.radius)} cm piece of ${thickness} ice (it carries ${(1000 * world.ice.pieceCarries(piece)).toFixed(0)} g): ${resting ? 'rests on it' : under ? 'pushed it under and went into the water' : pebble.state}; gained at most ${gained.toFixed(2)} m/s in a step`);
   check(carries ? resting : under, `a pebble dropped on a piece of ${thickness} ice ${resting ? 'rests on it' : under ? 'went under' : `ended ${pebble.state}`}, which it should not`);
   check(gained < 0.05, `a pebble dropped on a piece of ${thickness} ice was flung, gaining ${gained.toFixed(2)} m/s in a step`);
+}
+
+// A piece afloat picked up, lifted and let go (src/main.js grab): its own top is no ground under it, held or falling
+// (src/ice.js pieceUnder leaves out what asks, and what is held), so it drops into its hole and floats again; it never
+// lands on itself (once it pushed itself under and went in past itself).
+{
+  const world = iceWorld({ diameter: 16, thickness: 'thick', seed: 1 });
+  world.throwStone(16);
+  world.step(10);
+  const piece = world.shards.filter((shard) => shard.state === 'rest' || shard.state === 'float').sort((one, other) => other.radius - one.radius)[0];
+  piece.hold();
+  const liftedTo = new THREE.Vector3(piece.position.x, 0.15, piece.position.z);
+  piece.moveHeld(liftedTo);
+  const heldGround = world.ice.ground.at(liftedTo.x, liftedTo.z, piece);
+  piece.release();
+  for (let time = 0; time < 8; time += STEP) {
+    piece.update(STEP, floorDepthAt);
+    collideThings(world.things, (thing) => world.ice.contain(thing));
+  }
+  const onItself = piece.dunked === piece;
+  const afloat = (piece.afloat || piece.state === 'float' || piece.state === 'rest') && Math.abs(piece.position.y - piece.floatingHeight()) < 0.01;
+  console.log(`  a ${centimetres(2 * piece.radius)} cm piece of thick ice lifted to 15 cm and let go: its own top ${heldGround === null ? 'no ground under it' : `ground at ${centimetres(heldGround)} cm`}; ${onItself ? 'landed on itself' : afloat ? 'dropped into its hole and floats' : `ended ${piece.state} at ${centimetres(piece.position.y)} cm`}`);
+  check(!onItself && afloat && (heldGround === null || heldGround < liftedTo.y - piece.radius * piece.piece.thickness), `a piece afloat lifted and let go ${onItself ? 'landed on itself' : `ended ${piece.state} at ${centimetres(piece.position.y)} cm`} (the ground under it held: ${heldGround})`);
+}
+
+// A floater that broke thin ice (a watermelon, a pie) floats back up in its own hole: it passes its pieces by only until
+// the hole floods (src/ice.js setTime), then meets them as anything afloat does, never drifting through them.
+for (const name of ['watermelon', 'pie']) {
+  const world = iceWorld({ thickness: 'thin', seed: 1 });
+  const measured = measure(name);
+  const thing = world.add(new Rock({ radius: measured.radius, position: new THREE.Vector3(0, 1.2, -1.4), velocity: new THREE.Vector3(0, -3, 0), envTexture: null, thing: name, mass: measured.mass }));
+  let deepest = 0;
+  for (let time = 0; time < 25; time += STEP) {
+    world.step(STEP);
+    if (thing.iceHole?.flooded) for (const shard of world.shards) if (shard.iceHole === thing.iceHole) deepest = Math.max(deepest, slabOverlap(shard, thing)?.depth ?? 0);
+  }
+  console.log(`  a ${name} through thin ice and back up in its hole: ${thing.iceHole ? `${world.shards.filter((shard) => shard.iceHole === thing.iceHole).length} pieces, overlapping it by ${(1000 * deepest).toFixed(1)} mm at most once the hole flooded` : 'it held'}`);
+  check(thing.iceHole && deepest < 0.005, `a ${name} that broke thin ice ${thing.iceHole ? `drifts through its hole's pieces (${(1000 * deepest).toFixed(1)} mm)` : 'did not go through'}`);
 }
 
 // A stone at rest on the sheet at a hole's lip meets a piece that drifts under it (slabOverlap), as in the air; only what

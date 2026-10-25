@@ -459,6 +459,8 @@ export class IceSheet {
     this.weakSpots = [];         // where cracks have weakened it (a star, round a hole): { x, z, reach, share } (weakness)
     this.pieces = new Set();     // its pieces afloat as things (src/main.js adopts them): ground in their holes (pieceUnder)
     this.onIce = [];             // what is on it, and its weight (weigh), each step
+    this.weakened = 0;           // a count of the weak spots' changes (weaken, clear): weigh's last answer stands while it is the same
+    this.held = { entries: [], weakened: -1, opened: -1, open: -1 };   // what weigh last found the ice held, and the ice as it was
     this.onPieces = new Map();   // each piece afloat and what lies on it, each step (weigh: bearPiece)
     this.events = [];            // breaks and cracks since src/main.js last took them (its sound)
     this.shards = [];            // pieces let go since src/main.js last took them (piecesOf; it makes each a thing)
@@ -496,12 +498,13 @@ export class IceSheet {
     // The ground (src/rock.js `ground`): the ice, over the deck round a frozen pool.
     this.groundObject = {
       // In a hole, a piece afloat there is ground too (pieceUnder): its top.
-      at: (x, z) => this.at(x, z) ?? (this.pieces.size ? this.pieceUnder(x, z)?.top ?? null : null),
+      // `asker`, the thing asking (src/rock.js): a piece is no ground under itself.
+      at: (x, z, asker = null) => this.at(x, z) ?? (this.pieces.size ? this.pieceUnder(x, z, asker)?.top ?? null : null),
       materialAt: (x, z) => (this.overWater(x, z) ? ICE_MATERIAL : null),
       meet: (rock, height) => this.meet(rock, height),
       // The piece afloat a thing on the ground at (x, z) lies on, as `at` finds it: none over the sheet (src/collide.js: it
       // does not meet that one).
-      pieceUnder: (x, z) => (this.pieces.size && this.at(x, z) === null ? this.pieceUnder(x, z) : null),
+      pieceUnder: (x, z, asker = null) => (this.pieces.size && this.at(x, z) === null ? this.pieceUnder(x, z, asker) : null),
     };
   }
 
@@ -540,6 +543,7 @@ export class IceSheet {
     this.crackGrid.clear();
     this.crackEpoch++;
     this.weakSpots.length = 0;
+    this.weakened++;
     this.pieces.clear();
     this.events.length = 0;
     this.shards.length = 0;
@@ -672,6 +676,7 @@ export class IceSheet {
    * hole too: openHole).
    */
   weaken(spot) {
+    this.weakened++;
     if (!spot.hole) {
       const again = this.weakSpots.find((other) => !other.hole && Math.hypot(other.x - spot.x, other.z - spot.z) < WEAK.merge * other.reach);
       if (again) {
@@ -726,6 +731,10 @@ export class IceSheet {
    * somewhere is more than the ice holds there (its mean, cracked as it is),
    * it gives way under the heaviest thing there, which goes in as through a
    * broken hole at ICE.falls (src/rock.js `fallsThrough`). One break a step.
+   * It held last step and nothing on it has moved, come or gone, and the ice
+   * under it is as it was (no hole opened or closed, no spot weakened, no
+   * new ice thicker under a thing): it holds still, unweighed (`held`), so
+   * things at rest on the ice cost a step next to nothing.
    */
   weigh(things) {
     this.onIce.length = 0;
@@ -739,14 +748,28 @@ export class IceSheet {
       this.onIce.push({ rock, weight: rock.mass * GRAVITY });
     }
     this.dunkPieces();
+    const held = this.held, open = this.openHoles;
+    let same = held.weakened === this.weakened && held.opened === this.opened && held.open === open && held.entries.length === this.onIce.length;
+    for (let index = 0; index < this.onIce.length; index++) {
+      const entry = this.onIce[index], x = entry.rock.position.x, z = entry.rock.position.z;
+      entry.x = x;
+      entry.z = z;
+      entry.thickness = this.thicknessAt(x, z);
+      const before = held.entries[index];
+      if (same && !(before.rock === entry.rock && before.x === x && before.z === z && before.weight === entry.weight && before.thickness === entry.thickness)) same = false;
+    }
+    if (same) return;
     let heaviest = null;
     for (const entry of this.onIce) {
-      const x = entry.rock.position.x, z = entry.rock.position.z, thickness = this.thicknessAt(x, z);
+      const { x, z, thickness } = entry;
       const load = entry.weight + this.loadAt(x, z, entry.rock, thickness);
       const holds = ICE.strength * thickness ** 2 * this.weakness(x, z);
       if (load > holds && this.mayOpen(x, z) && (!heaviest || entry.weight > heaviest.entry.weight)) heaviest = { entry, load, holds, thickness };
     }
-    if (!heaviest) return;
+    if (!heaviest) {
+      Object.assign(held, { entries: this.onIce.slice(), weakened: this.weakened, opened: this.opened, open });
+      return;
+    }
     const { entry: { rock }, load, holds, thickness } = heaviest;
     const x = rock.position.x, z = rock.position.z;
     rock.velocity.set(rock.velocity.x, -ICE.falls, rock.velocity.z);
@@ -768,11 +791,12 @@ export class IceSheet {
    * outline (a pebble does not fall into the crack between two), and that
    * top's height there ({ rock, top }), or null: a piece lying flat enough
    * (either face up, PIECE.flattest) and not awash (its top no lower than
-   * PIECE.awash under the still water).
+   * PIECE.awash under the still water). Never `asker` itself (a piece is no
+   * ground under itself), nor a piece held (src/main.js grab).
    */
-  pieceUnder(x, z) {
+  pieceUnder(x, z, asker = null) {
     for (const rock of this.pieces) {
-      if (rock.fading !== undefined) continue;
+      if (rock.fading !== undefined || rock === asker || rock.state === 'held') continue;
       const reach = rock.radius + PIECE.margin;
       if (Math.abs(x - rock.position.x) > reach || Math.abs(z - rock.position.z) > reach) continue;
       const top = pieceTopAt(rock, x, z);
@@ -854,8 +878,9 @@ export class IceSheet {
    * the thing's cavity is open under it (fitCavity), then moving as the piece
    * moved and driven apart from the blow, its edge at the blow first down
    * (wedgeSpin); a part smaller than a shard may be (SHARD.least) is crushed
-   * to slush; `by`, what broke it, goes down between them and never meets
-   * them (src/collide.js). The piece goes (`brokenUp`: src/main.js retires it). Returns
+   * to slush; `by`, what broke it, goes down between them, meeting them
+   * only once they are adrift and apart (src/collide.js passesBy). The piece
+   * goes (`brokenUp`: src/main.js retires it). Returns
    * whether it broke (a piece too small to split is only pushed).
    */
   splitPiece(piece, x, z, share, random, by = null) {
@@ -916,7 +941,7 @@ export class IceSheet {
    * again (src/rock.js loseGround: on the piece's top, or into the water).
    */
   bearPiece(rock) {
-    const under = this.pieceUnder(rock.position.x, rock.position.z);
+    const under = this.pieceUnder(rock.position.x, rock.position.z, rock);
     if (rock.state === 'rest' && (!under || Math.abs(under.top - rock.groundHeight) > PIECE.settle)) rock.loseGround();
     if (!under) return;
     const lying = this.onPieces.get(under.rock) ?? { mass: 0, things: [] };
@@ -956,7 +981,7 @@ export class IceSheet {
     if (!this.overWater(x, z)) return null;
     // Down on a piece afloat in a hole (the ground there: pieceUnder), not on the sheet.
     if (height !== null && this.pieces.size && this.holeAt(x, z)) {
-      const under = this.pieceUnder(x, z);
+      const under = this.pieceUnder(x, z, rock);
       if (under) return this.landOnPiece(rock, under);
     }
     if (height !== null) return this.strike(rock);
@@ -964,7 +989,7 @@ export class IceSheet {
     // At the water in a hole where a piece lies (come over it from a crack between pieces, or from the open water): it
     // meets the piece, not the water.
     if (hole && this.pieces.size) {
-      const under = this.pieceUnder(x, z);
+      const under = this.pieceUnder(x, z, rock);
       if (under) return this.landOnPiece(rock, under);
     }
     // Onto the water over the ice (it came over a hole's edge in the air): it strikes the ice there.
@@ -1046,7 +1071,7 @@ export class IceSheet {
       // Its pieces are let go at the next step (setTime: the hole fitted to its cavity by then), its flood once the cavity closes.
       openedAt: this.time, quiet: this.time, releaseAt: this.time, released: false, floodAt: this.time + SHARD.leastDelay, flooded: false,
       down: Math.max(-rock.velocity.y, 0),   // the speed it came down at (m/s): what drives its pieces under
-      by: rock,                              // what broke it: it went down between its pieces, and never meets them (src/collide.js)
+      by: rock,                              // what broke it: it went down between its pieces, and meets them only once the hole floods (src/collide.js)
       skin: null, field: null, frozen: [], box: null,
     };
     // Each corner's azimuth, a little off even, from the hole's own stream.
@@ -1063,6 +1088,7 @@ export class IceSheet {
         // Its weak spot goes with it: it holds as the sheet does from then.
         const [gone] = this.holes.splice(oldest, 1);
         this.weakSpots = this.weakSpots.filter((spot) => spot.hole !== gone);
+        this.weakened++;
       }
     }
     this.holes.push(hole);
@@ -1399,9 +1425,10 @@ export class IceSheet {
    * the world's x and z, counter-clockwise), x, z (its middle), radius (its
    * farthest corner), area (m²), thickness, mass (kg), white (its share of
    * white ice) } and how it starts under the water ({ position, velocity,
-   * quaternion }); the biggest first.
+   * quaternion }, set for the time from `time` to the flood); the biggest
+   * first.
    */
-  piecesOf(hole) {
+  piecesOf(hole, time = this.time) {
     if (hole.thickness < SHARD.thinnest) return [];
     this.settle(hole);
     const random = seededStream(hole.seed ^ 0x5a4d);
@@ -1520,7 +1547,7 @@ export class IceSheet {
       const inner = Math.min(between(random, SHARD.push) * hole.down, SHARD.pushMost);
       piece.start = piece.wedge ? {
         position: new THREE.Vector3(piece.x, hole.thickness * (0.5 - ICE.density / WATER_DENSITY), piece.z),
-        setFor: Math.max(hole.floodAt - this.time, 0),
+        setFor: Math.max(hole.floodAt - time, 0),
         velocity: new THREE.Vector3(driftX * drift, -0.5 * inner, driftZ * drift),
         quaternion,
         // Tipping about the tangent and, jostled, turning about the vertical either way (SHARD.turn), as one spin.
@@ -1590,6 +1617,21 @@ export class IceSheet {
   }
 
   /**
+   * Each hole opened before `time` (s) lets its shards go (into `shards`):
+   * setTime's, and src/main.js's at a frame's end with the next step's time,
+   * so a hole broken on a frame's last step is drawn with its pieces, never
+   * empty; asked again at that time, it lets nothing more go.
+   */
+  letGo(time) {
+    if (!this.on) return;
+    for (const hole of this.holes) {
+      if (hole.released || !(time > hole.releaseAt)) continue;
+      hole.released = true;
+      this.shards.push(...this.piecesOf(hole, time));
+    }
+  }
+
+  /**
    * The world's clock at `time` (s; src/main.js, each step): each hole opened
    * the step before lets its shards go (into `shards`), and each whose cavity
    * has closed floods the ice round it; the wet freezes away (FLOOD.step);
@@ -1599,13 +1641,13 @@ export class IceSheet {
     const passed = Math.max(time - this.time, 0);
     this.time = time;
     if (!this.on) return;
+    this.letGo(time);
     for (const hole of this.holes) {
-      if (!hole.released && time > hole.releaseAt) {
-        hole.released = true;
-        this.shards.push(...this.piecesOf(hole));
-      }
       if (!hole.flooded && time >= hole.floodAt) {
         hole.flooded = true;
+        // What broke it is down past its pieces now (its cavity closed): it meets them again (src/collide.js), come back
+        // up afloat, and the hole no longer keeps it.
+        hole.by = null;
         this.flood(hole);
       }
       // Its field worked out a few rows a step in the seconds before (prepareSkin), then its new ice begins.

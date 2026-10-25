@@ -2174,9 +2174,10 @@ ${HAZE}
 #define CRACK_SNOWED 0.85   // the share of a crack the snow on the ice hides
 #define CRACK_TIP 0.004     // s: a crack's running tip fades in over this (a few millimetres behind it)
 void main() {
+  // Its footprint before any discard: a 2×2 block part discarded leaves derivatives undefined on some GPUs.
+  float footprint = max(fwidth(vAcross), 1e-6);
   // Not reached yet (src/ice.js times): it runs out from where it started.
   if (vTime > uIceClock) discard;
-  float footprint = max(fwidth(vAcross), 1e-6);
   IceMask mask = iceMaskAt(vWorldXZ);
   if (mask.hole < 0.0) discard;
   float jag = ICE_CRACK_JAG * (valueNoise(vWorldXZ * 330.0) + 0.6 * valueNoise(vWorldXZ * 910.0 + 5.0) - 0.8) * (1.0 - smoothstep(0.0008, 0.003, footprint));

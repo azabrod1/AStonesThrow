@@ -1852,7 +1852,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
           current.z = hole.z + awayZ * room / distance;
         }
       }
-      const ground = overDeck ? POOL.deck : (rock.ground?.at(current.x, current.z) ?? -bedDepthAt(current.x, current.z));
+      const ground = overDeck ? POOL.deck : (rock.ground?.at(current.x, current.z, rock) ?? -bedDepthAt(current.x, current.z));
       current.y = Math.max(current.y, ground - lowest);
       if (current.y + lowest >= rim) hole = null;
     }
@@ -1872,7 +1872,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     const rock = grab.rock;
     if (!rock) return;
     const { x, z } = rock.position;
-    const ground = rock.ground?.at(x, z) ?? null, surface = grabSurfaceAt(x, z);
+    const ground = rock.ground?.at(x, z, rock) ?? null, surface = grabSurfaceAt(x, z);
     arc.visible = false;
     // Wholly under the water the thing shows itself; a ring on the surface would stand apart from it.
     marker.visible = ground !== null || rock.position.y + rock.reach * rock.radius > surface;
@@ -2166,6 +2166,10 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       }
       stepsTime += PHYSICS_STEP;
     }
+    // What the ice lets go by the next step's start (a hole broken on this frame's last step; the parts of a piece split
+    // in it, src/ice.js splitPiece) made things now, as that step would first: drawn this frame, never a frame empty.
+    ice.letGo(stepsTime);
+    for (const piece of ice.shards.splice(0).slice(0, settings.shards)) addShard(piece);
     advanceSplash(end);
     // A shard afloat that a hole's new ice has reached is frozen into it (src/ice.js freezeIn), and goes as a thing; a
     // hole something thrown floats in is not left alone, so it stays open (src/ice.js disturb).
