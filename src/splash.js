@@ -594,7 +594,10 @@ const smoothstep = (edgeLow, edgeHigh, value) => {
 //     is irregular (the clean jets of the sweep of big stones, src/jet.js's
 //     Sizes, are axisymmetric: the cleanest possible, an upper bound), so a
 //     30 cm rock's jet is clean about one throw in six; a clean jet takes
-//     the rest. After a surface seal
+//     the rest, less the more lopsided the collapse (its needle needs the
+//     walls to meet at a point, so past asymmetry 0.6 its odds fall, to
+//     none at 1: a brick, whose hole is as lopsided as they come, never
+//     throws one, where it threw one in five). After a surface seal
 //     that the jet bursts through, the same forms; a trapped jet is none (no
 //     jet clears the water: once the bowl has nearly filled, MOUND_DELAY, a
 //     low mound heaves up, seething with the dome's air, and subsides);
@@ -693,10 +696,11 @@ export function chooseSplash(info, random, fixed = null) {
   const fast = smoothstep(5.5, 8, speed);
   const big = smoothstep(1.4, 2.7, sizeFactor);
   const oblique = smoothstep(0.55, 0.85, horizontalFraction);
+  const focused = 1 - smoothstep(0.6, 1.0, asymmetry);   // a clean jet's odds: a lopsided collapse does not focus one
   const weights = trapped ? { none: 1 }
-    : sealKind === 'shallow' ? { stubby: 1.0, clean: 0.35, ragged: 0.25, leaning: 0.2 * asymmetry, none: 0.06 }
+    : sealKind === 'shallow' ? { stubby: 1.0, clean: 0.35 * focused, ragged: 0.25, leaning: 0.2 * asymmetry, none: 0.06 }
       : {
-        clean: 0.65 - 0.45 * big,
+        clean: (0.65 - 0.45 * big) * focused,
         leaning: 0.05 + 0.55 * asymmetry,
         ragged: 0.1 + 0.3 * asymmetry * (0.5 + fast) + 0.15 * oblique + 0.35 * big,
         stubby: 0.12 + 0.4 * big + 0.25 * smoothstep(0.5, 1.5, blunt),
