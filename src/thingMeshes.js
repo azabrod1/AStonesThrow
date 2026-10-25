@@ -23,6 +23,10 @@
 //     its stalk's nub (createWatermelonGeometry);
 //   - brick: a box of a brick's proportions, its edges rounded, mottled clay
 //     (createBrickGeometry);
+//   - tv and iphone: closed rectangular slabs with rounded corners, their
+//     screens on +y; vertex colours draw the bezel, glass, phone wallpaper,
+//     camera lenses and TV vents (createDeviceGeometry). Both share the
+//     stone's material program and cache their geometry between throws;
 //   - pie: a fruit pie in its tin, its rim crimped, each one thrown filled
 //     at random (pieFilling: apple under a closed crust, cherry or blueberry
 //     under a lattice, open pumpkin; createPieGeometry);
@@ -946,6 +950,33 @@ export function createWatermelonGeometry() {
   return geometry;
 }
 
+/**
+ * A point of a box of half-sizes `half` whose edges are rounded by `round`
+ * (a radius for each axis; 0 leaves that axis's edges square: a device's
+ * outline is rounded, its thin edge is not), from the plain box's point on
+ * its face across `axis` (each coordinate −1 to 1 of its half-size, `axis`'s
+ * ±1). Within the rounding the face's square is laid onto the rounding's
+ * sphere, or circle, by the cube-to-sphere map, which never folds a grid,
+ * as pushing its points out along the radius does where the rounding spans
+ * several of its cells. Its position and normal (the face's own across an
+ * axis left square).
+ */
+function onRoundedBox(point, axis, half, round) {
+  // The inner box's point, and how far out of it the point is, in the rounding's radii (a cube's −1..1).
+  const core = point.map((value, index) => Math.min(Math.max(value * half[index], round[index] - half[index]), half[index] - round[index]));
+  const out = point.map((value, index) => (round[index] > 0 ? (value * half[index] - core[index]) / round[index] : 0));
+  const squares = out.map((value) => value * value);
+  const mapped = out.map((value, index) => {
+    const first = squares[(index + 1) % 3], second = squares[(index + 2) % 3];
+    return value * Math.sqrt(Math.max(1 - first / 2 - second / 2 + first * second / 3, 0));
+  });
+  const position = core.map((value, index) => value + round[index] * mapped[index]);
+  if (round[axis] === 0) return { position, normal: [0, 1, 2].map((index) => (index === axis ? Math.sign(point[axis]) : 0)) };
+  const normal = mapped.map((value, index) => (round[index] > 0 ? value / round[index] : 0));
+  const length = Math.hypot(...normal);
+  return { position, normal: normal.map((value) => value / length) };
+}
+
 // A brick: a box of BRICK's proportions (its half-length 1), its edges
 // rounded by BRICK.round, mottled red-orange clay flecked with darker grains
 // and pale mortar crumbs; a grid on each face, so the mottling has room.
@@ -955,21 +986,11 @@ const BRICK = {
   clay: linear(196, 98, 58), dark: linear(138, 60, 38), light: linear(222, 138, 92), mortar: linear(212, 202, 184),
 };
 
-/** A brick's geometry (the header), separate triangles, its normals the rounded box's. */
+/** A brick's geometry (the header), separate triangles, its normals the rounded box's (onRoundedBox). */
 export function createBrickGeometry() {
-  const [halfX, halfY, halfZ] = BRICK.half;
-  const inner = [halfX - BRICK.round, halfY - BRICK.round, halfZ - BRICK.round];
   const color = new THREE.Color();
   const positions = [], normals = [], colors = [];
-  // A face's corner (each axis in −1..1 across the face) on the rounded box: the point on the inner box, out along its normal by the rounding.
-  const onBox = (point) => {
-    const box = [point[0] * halfX, point[1] * halfY, point[2] * halfZ];
-    const core = box.map((value, axis) => Math.min(Math.max(value, -inner[axis]), inner[axis]));
-    const out = box.map((value, axis) => value - core[axis]);
-    const length = Math.hypot(...out) || 1;
-    const normal = out.map((value) => value / length);
-    return { position: core.map((value, axis) => value + normal[axis] * BRICK.round), normal };
-  };
+  const round = [BRICK.round, BRICK.round, BRICK.round];
   const paint = ([x, y, z]) => {
     const grain = valueNoise3(x * 9, y * 9, z * 9), fleck = valueNoise3(x * 40 + 3, y * 40, z * 40);
     color.copy(BRICK.clay).lerp(BRICK.light, smoothstep(0.55, 0.85, grain) * 0.7).lerp(BRICK.dark, smoothstep(0.45, 0.15, grain) * 0.6);
@@ -986,7 +1007,7 @@ export function createBrickGeometry() {
       point[axis] = sign;
       point[first] = -1 + (2 * column) / columns;
       point[second] = -1 + (2 * row) / rows;
-      return onBox(point);
+      return onRoundedBox(point, axis, BRICK.half, round);
     };
     for (let column = 0; column < columns; column++) {
       for (let row = 0; row < rows; row++) {
@@ -999,6 +1020,172 @@ export function createBrickGeometry() {
           colors.push(...paint(vertex.position));
         }
       }
+    }
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  return geometry;
+}
+
+// A TV and an iPhone: each a slab of its own half-sizes (`half`, its length
+// two unit radii), its outline's corners rounded by `corner` and its thin
+// edge square (onRoundedBox), its screen on +y. It is one closed hull, so
+// what is drawn is what the water displaces, and its details are vertex
+// colours, so it shares the stone's program. Its screen side and its back
+// are each a grid of their own whose lines fall on their details' edges
+// (deviceLines): a cell inside a detail with edges (the bezel, a TV's vents,
+// a phone's camera island and home indicator) is painted whole, so the
+// edges are sharp however few the cells; one that shades (a phone's
+// wallpaper, a TV's sheen, a lens) is painted corner by corner, on lines
+// DEVICE_SPACING apart (LENS_SPACING about the lenses). The rim joins the
+// screen side's edge to the back's however each is cut, so the hull has no
+// gaps.
+const DEVICES = {
+  tv: { half: [1, 1.8 / 54, 32 / 54], corner: 0.035 },
+  iphone: { half: [7.2 / 15, 0.8 / 15, 1], corner: 0.12 },
+};
+const DEVICE_CUTS = 4;          // segments across each rounded corner's part of a side: its quarter circle in twice this
+const DEVICE_SPACING = 0.1;     // unit radii between the lines where a side shades
+const LENS_SPACING = 0.015;     // ...and about a phone's lenses
+// A phone's lenses on its back (unit radii; its top is −z, so seen from behind with its top up, +x is on the left: the
+// lenses top left, as an iPhone's are), each a ring, its dark surround and its glass, out to these radii.
+const LENSES = { at: [[0.27, -0.75], [0.27, -0.48], [-0.01, -0.615]], rings: [0.115, 0.088, 0.055] };
+// A TV's vents: slots across its back every `every` unit radii, `width` wide, within `reach` of its half-sizes.
+const VENTS = { every: Math.PI / 100, width: 2 * Math.asin(0.45) / 100, reach: [0.7, 0.6] };
+const DEVICE_COLORS = {
+  bezel: linear(18, 21, 27), edge: linear(143, 157, 178), back: linear(65, 85, 115),
+  glass: linear(23, 43, 64), reflection: linear(92, 128, 150),
+  blue: linear(40, 111, 219), violet: linear(128, 66, 190), coral: linear(245, 143, 126),
+  lens: linear(27, 66, 99), silver: linear(220, 229, 238),
+};
+
+/**
+ * A device side's lines across one axis (the header), in −1..1 of its
+ * half-size `half`: DEVICE_CUTS across each end's rounding (`corner`), one
+ * about every `spacing` between (none for a side that does not shade there),
+ * and its details' `edges`.
+ */
+function deviceLines(half, corner, spacing, edges = []) {
+  const inner = 1 - corner / half;
+  const lines = [...edges];
+  for (let cut = 0; cut <= DEVICE_CUTS; cut++) lines.push(inner + (1 - inner) * cut / DEVICE_CUTS, -inner - (1 - inner) * cut / DEVICE_CUTS);
+  const between = Number.isFinite(spacing) ? Math.max(1, Math.round((2 * inner * half) / spacing)) : 1;
+  for (let step = 1; step < between; step++) lines.push(-inner + (2 * inner * step) / between);
+  lines.sort((first, second) => first - second);
+  return lines.filter((line, index) => index === 0 || line - lines[index - 1] > 1e-9);
+}
+
+/** A TV or iPhone (the header), separate triangles with the screen facing +y. */
+export function createDeviceGeometry(kind) {
+  const { half, corner } = DEVICES[kind];
+  const round = [corner, 0, corner];
+  const color = new THREE.Color();
+  const paint = (shade) => [shade.r, shade.g, shade.b];
+  let sides;
+  if (kind === 'iphone') {
+    // Its lenses' square, painted corner by corner, a line beyond their rings all round (so no corner of the long cells
+    // past it takes a ring's colour).
+    const lensLines = (axis) => {
+      const reach = LENSES.at.map((lens) => lens[axis === 0 ? 0 : 1]), margin = LENSES.rings[0] + LENS_SPACING;
+      const from = Math.min(...reach) - margin, to = Math.max(...reach) + margin;
+      const count = Math.ceil((to - from) / LENS_SPACING);
+      return Array.from({ length: count + 1 }, (_, step) => (from + ((to - from) * step) / count) / half[axis]);
+    };
+    sides = [{
+      // The glass to 0.88 and 0.93 of its half-sizes; the camera island at its top, the home indicator at its foot.
+      across: deviceLines(half[0], corner, DEVICE_SPACING, [-0.88, 0.88, -0.32, 0.32, -0.35, 0.35]),
+      along: deviceLines(half[2], corner, DEVICE_SPACING, [-0.93, 0.93, -0.855, -0.765, 0.836, 0.864]),
+      cell: (across, along) => {
+        if (Math.abs(across) > 0.88 || Math.abs(along) > 0.93) return DEVICE_COLORS.bezel;
+        if (Math.abs(across) < 0.32 && Math.abs(along + 0.81) < 0.045) return DEVICE_COLORS.bezel;
+        if (Math.abs(across) < 0.35 && Math.abs(along - 0.85) < 0.014) return DEVICE_COLORS.silver;
+        return null;
+      },
+      // Its wallpaper: blue to violet down it, a wave of coral over its foot.
+      shade: (across, along) => {
+        color.copy(DEVICE_COLORS.blue).lerp(DEVICE_COLORS.violet, (along + 1) / 2);
+        return color.lerp(DEVICE_COLORS.coral, smoothstep(-0.35, 0.9, along - 0.45 * Math.sin(across * 3)));
+      },
+    }, {
+      across: deviceLines(half[0], corner, Infinity, lensLines(0)),
+      along: deviceLines(half[2], corner, Infinity, lensLines(2)),
+      cell: () => null,
+      shade: (across, along) => {
+        color.copy(DEVICE_COLORS.back);
+        for (const [lensX, lensZ] of LENSES.at) {
+          const distance = Math.hypot(across * half[0] - lensX, along * half[2] - lensZ);
+          if (distance < LENSES.rings[0]) color.copy(DEVICE_COLORS.edge);
+          if (distance < LENSES.rings[1]) color.copy(DEVICE_COLORS.bezel);
+          if (distance < LENSES.rings[2]) color.copy(DEVICE_COLORS.lens);
+        }
+        return color;
+      },
+    }];
+  } else {
+    // The vents' slots, each one's two edges.
+    const slots = [];
+    for (let middle = 0; middle + VENTS.width / 2 < VENTS.reach[0]; middle += VENTS.every) {
+      for (const at of middle === 0 ? [0] : [middle, -middle]) slots.push(at - VENTS.width / 2, at + VENTS.width / 2);
+    }
+    const vent = (across) => Math.abs(across) < VENTS.reach[0] && Math.abs(across - VENTS.every * Math.round(across / VENTS.every)) < VENTS.width / 2;
+    sides = [{
+      // The glass to 0.95 and 0.88 of its half-sizes, a sheen across it.
+      across: deviceLines(half[0], corner, DEVICE_SPACING, [-0.95, 0.95]),
+      along: deviceLines(half[2], corner, DEVICE_SPACING, [-0.88, 0.88]),
+      cell: (across, along) => (Math.abs(across) > 0.95 || Math.abs(along) > 0.88 ? DEVICE_COLORS.bezel : null),
+      shade: (across, along) => color.copy(DEVICE_COLORS.glass).lerp(DEVICE_COLORS.reflection, 0.32 * smoothstep(-1, 1, across - along)),
+    }, {
+      across: deviceLines(half[0], corner, Infinity, slots.map((edge) => edge / half[0])),
+      along: deviceLines(half[2], corner, Infinity, [-VENTS.reach[1], VENTS.reach[1]]),
+      cell: (across, along) => (vent(across * half[0]) && Math.abs(along) < VENTS.reach[1] ? DEVICE_COLORS.glass : DEVICE_COLORS.bezel),
+      shade: () => DEVICE_COLORS.bezel,
+    }];
+  }
+  const positions = [], normals = [], colors = [];
+  const first = new THREE.Vector3(), second = new THREE.Vector3(), facing = new THREE.Vector3();
+  // A triangle of three points ({ position, normal, color }), wound to face the way their normals do.
+  const emit = (a, b, c) => {
+    first.fromArray(b.position).sub(facing.fromArray(a.position));
+    second.fromArray(c.position).sub(facing);
+    facing.set(0, 0, 0);
+    for (const point of [a, b, c]) facing.x += point.normal[0], facing.y += point.normal[1], facing.z += point.normal[2];
+    for (const point of first.cross(second).dot(facing) >= 0 ? [a, b, c] : [a, c, b]) {
+      positions.push(...point.position);
+      normals.push(...point.normal);
+      colors.push(...point.color);
+    }
+  };
+  // The screen side (+y) and the back (−y): each cell its two triangles.
+  sides.forEach(({ across, along, cell, shade }, index) => {
+    const sign = index === 0 ? 1 : -1;
+    for (let column = 0; column + 1 < across.length; column++) {
+      for (let row = 0; row + 1 < along.length; row++) {
+        const whole = cell((across[column] + across[column + 1]) / 2, (along[row] + along[row + 1]) / 2);
+        const corners = [[column, row], [column + 1, row], [column + 1, row + 1], [column, row + 1]].map(([x, z]) => ({
+          ...onRoundedBox([across[x], sign, along[z]], 1, half, round), color: paint(whole ?? shade(across[x], along[z])),
+        }));
+        emit(corners[0], corners[1], corners[2]);
+        emit(corners[0], corners[2], corners[3]);
+      }
+    }
+  });
+  // The rim, each of its four sides from the screen side's edge to the back's, through their own points: each next
+  // triangle takes the nearer next point of either edge, so the two need not be cut alike.
+  const rim = paint(kind === 'iphone' ? DEVICE_COLORS.edge : DEVICE_COLORS.bezel);
+  for (const [axis, sign] of [[0, 1], [0, -1], [2, 1], [2, -1]]) {
+    const edge = (lines, height) => lines.map((line) => {
+      const point = [0, height, 0];
+      point[axis] = sign;
+      point[2 - axis] = line;
+      return { ...onRoundedBox(point, axis, half, round), color: rim, line };
+    });
+    const top = edge(axis === 0 ? sides[0].along : sides[0].across, 1), bottom = edge(axis === 0 ? sides[1].along : sides[1].across, -1);
+    let upper = 0, lower = 0;
+    while (upper + 1 < top.length || lower + 1 < bottom.length) {
+      if (lower + 1 >= bottom.length || (upper + 1 < top.length && top[upper + 1].line <= bottom[lower + 1].line)) emit(top[upper], top[++upper], bottom[lower]);
+      else emit(top[upper], bottom[++lower], bottom[lower - 1]);
     }
   }
   const geometry = new THREE.BufferGeometry();
@@ -1455,6 +1642,9 @@ registerMesh('ball', {
 registerMesh('apple', { build: () => createAppleGeometry(), color: () => new THREE.Color(1, 1, 1), fixed: true });
 registerMesh('watermelon', { build: () => createWatermelonGeometry(), color: () => new THREE.Color(1, 1, 1), fixed: true });
 registerMesh('brick', { build: () => createBrickGeometry(), color: () => new THREE.Color(1, 1, 1), fixed: true });
+for (const kind of ['tv', 'iphone']) {
+  registerMesh(kind, { build: () => createDeviceGeometry(kind), color: () => new THREE.Color(1, 1, 1), fixed: true });
+}
 registerMesh('pie', {
   build: () => createPieGeometry(), color: () => new THREE.Color(1, 1, 1), fixed: true,
   dress: (definition, random) => pieFilling(random), heaviest: Math.max(...PIE.fillings.map((filling) => filling.share)),

@@ -128,6 +128,9 @@
 //     rights it however it lands) and a brick (215 × 102.5 × 65 mm, 2.7 kg:
 //     about 1900 kg/m³, its density from its mesh's volume; it sinks, and
 //     lands on the deck with a thud);
+//   - a flat-screen TV (54 × 32 × 1.8 cm, 3.6 kg) and an iPhone
+//     (15 × 7.2 × 0.8 cm, 180 g), rigid rectangular plates with their
+//     screens on +y: they slap the water, sink and settle on a broad face;
 //   - a shard of ice (hidden: src/ice.js breaks each one, its own outline,
 //     src/thingMeshes.js createShardGeometry): 917 kg/m³, a plate in the
 //     water as a pizza is, so it comes up and floats flat, its top a little
@@ -587,6 +590,24 @@ defineBuiltIn('brick', {
   air: { drag: 1.0 },
   water: { restingHeight: 0.3 },
   look: { mesh: 'brick', roughness: 0.95, reflection: 0.6 },
+});
+
+defineBuiltIn('tv', {
+  name: 'TV', group: 'Other', note: 'A flat screen, 3.6 kg: it sinks', called: 'a TV',
+  body: { shape: 'mesh', upright: true, size: { by: 'fixed', diameter: 0.54, mass: 3.6 } },
+  material: { bounce: [0.06, 0.12], friction: 0.65 },
+  air: { drag: 1.15, model: 'flutter' },
+  water: { restingHeight: 1.8 / 54 },
+  look: { mesh: 'tv', roughness: 0.25, reflection: 1.0, wet: { darker: 0.05, glossier: 0.25 } },
+});
+
+defineBuiltIn('iphone', {
+  name: 'iPhone', group: 'Other', note: 'Glass and metal, 180 g: it sinks', called: 'an iPhone',
+  body: { shape: 'mesh', upright: true, size: { by: 'fixed', diameter: 0.15, mass: 0.18 } },
+  material: { bounce: [0.12, 0.22], friction: 0.4 },
+  air: { drag: 1.1, model: 'flutter' },
+  water: { restingHeight: 0.8 / 15 },
+  look: { mesh: 'iphone', roughness: 0.18, reflection: 1.1, wet: { darker: 0.03, glossier: 0.2 } },
 });
 
 // A shard of ice (the header): each one the ice breaks has its own outline, and the mass of ice its slab holds (src/ice.js

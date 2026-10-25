@@ -34,21 +34,17 @@
 // than a jet (the splash draws it on the water: startBase), so the solver is
 // fed the core alone and the base's water is counted straight into what
 // falls back (below). Rj is the
-// stone's radius R times (R / 3 cm)^JET_RADIUS_POWER (times form.radiusScale):
-// a jet is thinner the more singular the cavity's collapse, that is the higher
-// the Froude number V²/(g·R) (Gekle & Gordillo 2010 find thinner, faster jets
-// as it grows), and at a given entry speed a big stone's is lower; but never
-// under JET_RADIUS_LEAST, since a small stone's jet is no thinner than the
-// capillary length lets it be: Li & Li (2025) measure columns 3 ± 1 mm
-// across from 20 to 40 mm spheres, and Worthington's (1908) 1.5 cm marble
-// threw "a tall jet", not a thread (a thread of 0.35 mm, which the scaling
-// alone would give it, breaks into mist within a millisecond). The rock's
-// launch is that scaling, an extrapolation: the reference simulation is of
-// the 3 cm stone only; and a small stone's comes out weak against
-// Worthington's rule (his marble's jet from 15 cm rose to the drop height
-// or more; this launch sends its column to a third of it and its needle's
-// drops to about it: tools/jet-probe.mjs), since the speed shared between
-// needle and body was fitted at the reference's Froude number alone. The
+// stone's radius R times the sweep's `column` gain (Sizes, below; times
+// form.radiusScale), never under JET_RADIUS_LEAST, since a small stone's jet
+// is no thinner than the capillary length lets it be: Li & Li (2025) measure
+// columns 3 ± 1 mm across from 20 to 40 mm spheres, and Worthington's (1908)
+// 1.5 cm marble threw "a tall jet", not a thread (a thread of 0.35 mm, which
+// a scaling alone would give it, breaks into mist within a millisecond). A
+// small stone's comes out weak against Worthington's rule (his marble's jet
+// from 15 cm rose to the drop height or more; this launch sends its column
+// to a third of it and its needle's drops to about it: tools/jet-probe.mjs),
+// since the speed shared between needle and body was fitted at the
+// reference's Froude number alone. The
 // launch point is on the jet's axis (through where
 // the hole closes, tilted by the lean) at the bowl's floor: it starts at the
 // pinch depth and follows the floor up as the bowl fills (src/cavity.js
@@ -80,6 +76,41 @@
 // wobble and roughness. These set only the launch; what the column then does
 // is the solver's.
 //
+// Sizes. The launch was fitted to the reference simulation of the 3 cm
+// stone; bigger stones take three gains from a sweep of simulations of 10,
+// 16 and 30 cm stones at 4, 6 and 8 m/s (tools/basilisk/sweep.py, which fits
+// them with tools/basilisk/jet-fit.mjs and writes assets/jet/sweep.json and
+// its module twin sweep.js, read here: sweepGains, linear in ln R between
+// the sizes and clamped past the largest, the reference's own below it):
+// `column`, Rj over R; `thread`, a factor on the needle's launch radius; and
+// `needle`, a factor on the needle's speed over the body's. A jet is thinner
+// the more singular the collapse, that is the higher the Froude number
+// V²/(g·R) (Gekle & Gordillo 2010), and a big stone's is lower: the sweep's
+// 30 cm rock at 6.2 m/s (F = 26) throws a column 0.47 R thick two radii up
+// and 0.16 R ten radii up, its front only 1.6 times its body's speed where
+// the reference's is 3 (CLEAN_FORM.needle). With the hole pinching where the
+// sweep says (src/cavity.js HEAD_FROUDE) the gains come out near 1: the
+// speed and the taper follow from the pinch depth. The sweep's jets are
+// axisymmetric, the cleanest possible; a real rough rock's collapse is
+// irregular, which the forms draw (src/splash.js chooseSplash weights
+// ragged and stubby up with the size).
+//
+// Air. The water a big stone's column carries up is bubbly: the collapse
+// entrains air at the pinch and in the bowl, and a real big jet is white.
+// Each node carries its water's launch time (the solver's stamp), and the
+// drawing gives it the share of its light its bubbles scatter (aAir, shaded
+// white by src/shaders/sheet.js and fluid.js): none in the needle's first
+// water, rising over AIR_LAUNCH of the launch to AIR_MOST times form.air,
+// and none below AIR_SIZES[0] of the reference's size (its jet is glass),
+// all from AIR_SIZES[1]; blotched by AIR_BLOTCH along the bumps.
+//
+// Bumps. A real column's surface is uneven around as well as along it. The
+// drawn radius varies by BUMPS times sqrt(form.roughness / ROUGHNESS) in
+// waves of BUMP_AROUND lobes around the ring and BUMP_ALONG cycles per
+// unstable wavelength along the launch's phase (so they ride with the
+// water), on columns thicker than BUMP_RADII (a needle stays smooth), the
+// normals turned with them; the solver's water is untouched.
+//
 // Stepping. The solver steps on its own clock, each step's length from its
 // own state (src/slenderJet.js), at most STEP_INFLOW of the needle's time
 // plus the launch's age (the inflow's own pace); update() takes whole steps
@@ -96,12 +127,11 @@
 // its water's radius and momentum (drops of LENS_DROP_RADIUS and more drawn
 // as glass, like the column); drops under LEAST_DROP are not worth one and
 // their water falls back. A drop bigger than DROP_CEILING (src/crown.js: 4
-// mm in radius, the most surface tension holds together in flight; the
-// reference throw's are up to 6 mm) does not fly whole: it leaves as drops of
-// 2.4 to 4 mm that hold its water (breakLump, src/crown.js), starting within
-// it and parting at its capillary speed sqrt(σ/(ρ·r)), at most LUMP_PIECES
-// of them, past which the rest of its water is lost (for cost), from a stream
-// of its own. A piece that reaches the water leaves as droplets
+// mm in radius, the most surface tension holds together at a raindrop's
+// speed) flies whole as a lump until the air tears it (src/splash.js's
+// Lumps: by its Weber number, so a lump lobbed slowly reaches its apex whole
+// and comes apart as it falls, as a big stone's centimetre lumps do). A
+// piece that reaches the water leaves as droplets
 // node by node, so it lands (and rings) where it reaches it. Every pinch also
 // throws spray (src/spray.js, neckSpray): NECK_SPRAY of the water of the
 // drop that pinched off times form.spray, in drops of NECK_SPRAY_SIZE of its
@@ -137,7 +167,8 @@ import * as THREE from 'three';
 import { createRingGrid, holdWithinWalls, markChanged } from './fluidMesh.js';
 import { seededRandom, sprayDrops } from './spray.js';
 import { SlenderJet, WATER } from './slenderJet.js';
-import { DROP_CEILING, breakLump } from './crown.js';
+import { DROP_CEILING } from './crown.js';
+import SWEEP from '../assets/jet/sweep.js';
 
 const GRAVITY = 9.81;
 const REFERENCE_RADIUS = 0.03;     // the stone size the launch was fitted for
@@ -163,7 +194,7 @@ const RISE_SHARE = 0.6;            // the launch point rises with the bowl's flo
 const LEAST_FLUX = 0.1;            // the flux through a rising launch point is at least this share of a still one's
 const LAUNCH_SAMPLES = 96;         // the launch depth, volume and roughness phase are tabulated at these many times, denser early
 const DEFAULT_PINCH = 7.5;         // in R: with no bowl given, the jet's time unit is sqrt(this·R/g) and it leaves from the surface
-const JET_RADIUS_POWER = 0.25;     // the column's radii in R·(R / 3 cm)^this: fatter at a lower Froude number...
+const JET_RADIUS_POWER = 0.25;     // a stone smaller than the reference: the column's radii in R·(R / 3 cm)^this...
 const JET_RADIUS_LEAST = 0.009;    // ...and never under this (m): a needle of 0.6 mm, a body of 2.4 mm (the header)
 const MAX_TILT = THREE.MathUtils.degToRad(5);
 const WOBBLE = 0.01;               // lateral launch velocity over launch speed, times form.wobble
@@ -185,10 +216,19 @@ const FALLBACK_VOLUME = 2.9e-4;    // m³: a fallen volume this big from a 3 cm 
 const FALLBACK_SIZE = 0.43;        // ...times (R / 3 cm)^this, so the rings keep the strength they were calibrated with (the header)
 const FALLBACK_SPECKS = 35;        // foam specks where the jet falls back, times the mound's strength
 const LENS_DROP_RADIUS = 0.002;    // drops this big are drawn as glass like the column
-const LUMP_PIECES = 64;            // a drop over DROP_CEILING breaks into at most this many (the header's Drops)
 const NECK_SPRAY = 0.03;           // a pinching neck throws this share of its drop's water as spray (times form.spray)...
 const NECK_SPRAY_SIZE = 0.12;      // ...in drops of this share of its radius on average...
 const NECK_SPRAY_MOST = 0.0004;    // ...at most this (m)
+// Air (the header): the bubbles the bowl's water carries up the column.
+const AIR_MOST = 0.9;              // the share of the light the column's water scatters, for a big stone...
+const AIR_SIZES = [1.2, 3.2];      // ...reached over these size factors (R / 3 cm): none for the reference stone...
+const AIR_LAUNCH = [0.01, 0.12];   // ...and along the launch, from none in the needle's first water to all from this share of T_end
+const AIR_BLOTCH = 0.5;            // the whiteness varies by this share with the bumps (the bubbles gather where the water does)
+// Bumps (the header): the drawn column's unevenness around and along it.
+const BUMPS = 0.1;                 // the radius varies by this share, times sqrt(form.roughness / ROUGHNESS)...
+const BUMP_RADII = [0.003, 0.015]; // ...on a column this thick and more (m), none thinner than the first
+const BUMP_AROUND = [2, 3, 4, 5];  // the waves' lobes around the column...
+const BUMP_ALONG = [0.5, 0.9, 1.4, 2.3];   // ...and their cycles per unstable wavelength along it (the launch's phase)
 
 /**
  * A jet's form (the header): how the collapse launches its water. The splash
@@ -200,7 +240,33 @@ export const CLEAN_FORM = Object.freeze({
   roughness: ROUGHNESS,      // how unevenly it is launched (the radius's share)
   wobble: 1,                 // how far its direction wanders
   spray: 1,                  // the necks' fine spray at each pinch
+  air: 1,                    // how bubbly its water is (the header's Air)
 });
+
+// The sweep's gains by stone size (sweepGains), smallest first.
+const SWEEP_SIZES = [...SWEEP.table].sort((first, second) => first.radius - second.radius);
+
+/**
+ * The launch's gains for a stone of `radius` (m), the header's Sizes:
+ * `column`, Rj over R; `thread`, a factor on the needle's launch radius; and
+ * `needle`, a factor on the needle's speed over the body's (form.needle − 1).
+ * From the reference stone up they come from the sweep's table
+ * (assets/jet/sweep.json, written by tools/basilisk/sweep.py), linear in
+ * ln R between its sizes and clamped past its largest; below the reference
+ * stone the column's radii are R·(R / 3 cm)^JET_RADIUS_POWER and the thread
+ * and the needle the reference's.
+ */
+export function sweepGains(radius) {
+  if (radius <= REFERENCE_RADIUS) return { column: (radius / REFERENCE_RADIUS) ** JET_RADIUS_POWER, thread: 1, needle: 1 };
+  const upper = SWEEP_SIZES.findIndex((size) => size.radius >= radius);
+  const pick = ({ column, thread, needle }) => ({ column, thread, needle });
+  if (upper < 0) return pick(SWEEP_SIZES[SWEEP_SIZES.length - 1]);
+  if (upper === 0) return pick(SWEEP_SIZES[0]);
+  const lower = SWEEP_SIZES[upper - 1], higher = SWEEP_SIZES[upper];
+  const share = Math.log(radius / lower.radius) / Math.log(higher.radius / lower.radius);
+  const blend = (name) => lower[name] + (higher[name] - lower[name]) * share;
+  return { column: blend('column'), thread: blend('thread'), needle: blend('needle') };
+}
 
 const smoothstep = (edgeLow, edgeHigh, value) => {
   const clamped = Math.min(Math.max((value - edgeLow) / (edgeHigh - edgeLow), 0), 1);
@@ -223,19 +289,19 @@ export class JetColumn {
    * @param bowlUnit the bowl's time unit (s): sqrt(z_p/g) (src/cavity.js bowlUnit)
    * @param volume the water it launches (m³; the base's radius is scaled to it), or null for the base's own
    */
-  constructor({ x, z, radius, speed, startTime, material, lean = 0, leanX = 0, leanZ = 0, form = null, random = Math.random, floor = null, bowlUnit = null, volume = null }) {
+  constructor({ x, z, radius, speed, startTime, material, lean = 0, leanX = 0, leanZ = 0, form = null, random = Math.random, floor = null, bowlUnit = null, volume = null, gains = null }) {
     this.form = { ...CLEAN_FORM, ...form };
     this.random = random;
     this.sprayRandom = seededRandom(x, z, startTime, radius);   // the spray's own stream (src/spray.js)
-    this.lumpRandom = seededRandom(x, z, startTime, radius, 4);   // the broken lumps' own (breakUp)
-    this.lump = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0 };     // scratch for breakUp
     this.centreX = x;
     this.centreZ = z;
     this.radius = radius;
     this.sizeFactor = radius / REFERENCE_RADIUS;
-    this.columnRadius = Math.max(radius * this.sizeFactor ** JET_RADIUS_POWER, JET_RADIUS_LEAST) * this.form.radiusScale;   // Rj in the header
+    this.gains = gains ?? sweepGains(radius);   // the column's, the thread's and the needle's (the header's Sizes)
+    this.columnRadius = Math.max(radius * this.gains.column, JET_RADIUS_LEAST) * this.form.radiusScale;   // Rj in the header
+    this.needleRadius = Math.min(NEEDLE_RADIUS * this.gains.thread, BODY_RADIUS);   // the needle's launch radius in Rj
     this.bodySpeed = speed;
-    this.tipSpeed = speed * Math.max(this.form.needle, 1);   // the needle's first water, the fastest
+    this.tipSpeed = speed * (1 + Math.max(this.form.needle - 1, 0) * this.gains.needle);   // the needle's first water, the fastest
     this.startTime = startTime;
     this.walls = null;   // the pool's walls, inset (src/splash.js setGround), or none
     this.age = 0;
@@ -270,6 +336,12 @@ export class JetColumn {
     const weights = ROUGHNESS_WAVES.map(() => this.range(0.4, 1));
     const norm = Math.sqrt(weights.reduce((sum, weight) => sum + 0.5 * weight * weight, 0)) || 1;
     this.roughWaves = ROUGHNESS_WAVES.map((multiple, index) => ({ multiple: multiple * this.range(0.85, 1.18), weight: weights[index] / norm, phase: this.range(0, Math.PI * 2) }));
+    // The bumps' waves (the header), their weights normalised to a swing of about one; the air its water carries.
+    const bumpWeights = BUMP_AROUND.map(() => this.range(0.4, 1));
+    const bumpNorm = Math.sqrt(bumpWeights.reduce((sum, weight) => sum + 0.5 * weight * weight, 0)) || 1;
+    this.bumpWaves = BUMP_AROUND.map((around, index) => ({ around, along: BUMP_ALONG[index] * this.range(0.85, 1.18), weight: bumpWeights[index] / bumpNorm, phase: this.range(0, Math.PI * 2) }));
+    this.bumps = BUMPS * Math.sqrt(this.form.roughness / ROUGHNESS);
+    this.airMost = Math.min(AIR_MOST * smoothstep(AIR_SIZES[0], AIR_SIZES[1], this.sizeFactor) * this.form.air, 1);
     this.baseScale = 1;
     this.buildLaunch(volume);
     // Where the sleeve starts: the first water whose base is SLEEVE_START of its core.
@@ -295,7 +367,7 @@ export class JetColumn {
     const seed = 0.25 * this.needleTime;
     const point = this.launchPoint(0, {}), direction = this.launchDirection(0, {});
     const start = this.launchSpeed(0);
-    this.solver.push(point.x + direction.x * start * seed, point.y + direction.y * start * seed, point.z + direction.z * start * seed, direction.x * start, direction.y * start - GRAVITY * seed, direction.z * start);
+    this.solver.push(point.x + direction.x * start * seed, point.y + direction.y * start * seed, point.z + direction.z * start * seed, direction.x * start, direction.y * start - GRAVITY * seed, direction.z * start, 0);
     this.placeInflow(seed);
     this.solver.volume[0] = this.volume(0, seed);
     this.solver.inflow = true;
@@ -305,8 +377,10 @@ export class JetColumn {
     this.normals = new Float32Array(ROWS * COLUMNS * 3);
     this.radii = new Float32Array(ROWS * COLUMNS);
     this.roundness = new Float32Array(ROWS * COLUMNS);
+    this.air = new Float32Array(ROWS * COLUMNS);
     this.mesh = createRingGrid(ROWS, COLUMNS, {
       position: [this.positions, 3],
+      aAir: [this.air, 1],
       normal: [this.normals, 3],
       aRadius: [this.radii, 1],
       aRound: [this.roundness, 1],
@@ -320,7 +394,7 @@ export class JetColumn {
     }
     // The drawn nodes, carried on to the frame's time, and the rings they make.
     this.drawX = new Float64Array(NODES); this.drawY = new Float64Array(NODES); this.drawZ = new Float64Array(NODES);
-    this.ring = { count: 0, centre: new Float64Array(ROWS * 3), axis: new Float64Array(ROWS * 3), radius: new Float64Array(ROWS), water: new Float64Array(ROWS), round: new Float64Array(ROWS), along: new Float64Array(ROWS * 2) };
+    this.ring = { count: 0, centre: new Float64Array(ROWS * 3), axis: new Float64Array(ROWS * 3), radius: new Float64Array(ROWS), water: new Float64Array(ROWS), round: new Float64Array(ROWS), along: new Float64Array(ROWS * 2), air: new Float64Array(ROWS), phase: new Float64Array(ROWS) };
     this.frame = { firstX: 1, firstY: 0, firstZ: 0 };
     this.bowl = { depth: 0, rise: 0 };
   }
@@ -433,10 +507,20 @@ export class JetColumn {
     return smooth * (1 + this.form.roughness * wave);
   }
 
+  /** The share of the light the water launched at tau scatters from its bubbles (the header's Air). */
+  airAt(tau) {
+    return this.airMost * smoothstep(AIR_LAUNCH[0] * this.launchEnd, AIR_LAUNCH[1] * this.launchEnd, tau);
+  }
+
+  /** The launch's unstable phase of the water launched at tau (the header), the bumps' coordinate along the column. */
+  phaseAt(tau) {
+    return this.tabulated(this.launchPhases, tau);
+  }
+
   /** The needle's and the body's part of the launch radius (the header). */
   coreRadius(tau) {
     const share = Math.min(Math.max(tau / this.launchEnd, 0), 1);
-    return this.columnRadius * (NEEDLE_RADIUS + (BODY_RADIUS - NEEDLE_RADIUS) * (1 - Math.exp(-share / BODY_GROWTH)));
+    return this.columnRadius * (this.needleRadius + (BODY_RADIUS - this.needleRadius) * (1 - Math.exp(-share / BODY_GROWTH)));
   }
 
   /** The base's part of the launch radius, before its scale (the header). */
@@ -542,10 +626,11 @@ export class JetColumn {
     const speed = this.launchSpeed(tau);
     const node = solver.count - 1;
     if (node < 0 || solver.chainEnd[node] !== 1 || !solver.inflow) {
-      solver.push(point.x, point.y, point.z, direction.x * speed, direction.y * speed, direction.z * speed);
+      solver.push(point.x, point.y, point.z, direction.x * speed, direction.y * speed, direction.z * speed, tau);
     } else {
       solver.positionX[node] = point.x; solver.positionY[node] = point.y; solver.positionZ[node] = point.z;
       solver.velocityX[node] = direction.x * speed; solver.velocityY[node] = direction.y * speed; solver.velocityZ[node] = direction.z * speed;
+      solver.stamp[node] = tau;
     }
     solver.inflowRadius = this.launchRadius(tau);
   }
@@ -574,7 +659,7 @@ export class JetColumn {
         if (node > 0 && !solver.chainEnd[node - 1]) {
           const length = Math.hypot(solver.positionX[node] - solver.positionX[node - 1], solver.positionY[node] - solver.positionY[node - 1], solver.positionZ[node] - solver.positionZ[node - 1]);
           if (length > Math.min(Math.max(EMIT_LENGTH * solver.inflowRadius, EMIT_LEAST), EMIT_MOST)) {
-            solver.push(solver.positionX[node], solver.positionY[node], solver.positionZ[node], solver.velocityX[node], solver.velocityY[node], solver.velocityZ[node]);
+            solver.push(solver.positionX[node], solver.positionY[node], solver.positionZ[node], solver.velocityX[node], solver.velocityY[node], solver.velocityZ[node], solver.stamp[node]);
           }
         }
         if (to >= this.launchEnd) { this.launching = false; solver.inflow = false; solver.anchored = true; }
@@ -606,21 +691,13 @@ export class JetColumn {
       if (event.radius < LEAST_DROP) { this.solver.fallen += event.volume; continue; }
       const carried = Math.max(splash.time - event.time, 0);
       const x = event.x + event.vx * carried, y = event.y + event.vy * carried - 0.5 * GRAVITY * carried * carried, z = event.z + event.vz * carried;
-      if (event.radius > DROP_CEILING) this.breakUp(splash, x, y, z, event.vx, event.vy - GRAVITY * carried, event.vz, event.radius);
-      else splash.spawnDroplet(x, y, z, event.vx, event.vy - GRAVITY * carried, event.vz, event.radius, event.radius >= LENS_DROP_RADIUS);
+      // A lump over DROP_CEILING flies whole until the air tears it (the header's Drops; src/splash.js's Lumps).
+      splash.spawnDroplet(x, y, z, event.vx, event.vy - GRAVITY * carried, event.vz, event.radius, event.radius >= LENS_DROP_RADIUS, event.radius > DROP_CEILING);
       this.dropCount++;
       this.largestDrop = Math.max(this.largestDrop, event.radius);
       if (!event.landing && this.firstDrop === null) this.firstDrop = { age: event.time - this.startTime, radius: event.radius, speed: Math.hypot(event.vx, event.vy, event.vz), height: event.y };
     }
     events.length = 0;
-  }
-
-  /** A drop too big to fly whole (over DROP_CEILING) leaves as several (the header's Drops). */
-  breakUp(splash, x, y, z, vx, vy, vz, radius) {
-    const lump = this.lump;
-    lump.x = x; lump.y = y; lump.z = z; lump.vx = vx; lump.vy = vy; lump.vz = vz;
-    breakLump(lump, radius, DROP_CEILING, LUMP_PIECES, radius, Math.sqrt(WATER.surfaceTension / (WATER.density * radius)), this.lumpRandom,
-      (pieceX, pieceY, pieceZ, pieceVX, pieceVY, pieceVZ, piece) => splash.spawnDroplet(pieceX, pieceY, pieceZ, pieceVX, pieceVY, pieceVZ, piece, piece >= LENS_DROP_RADIUS));
   }
 
   /** The column is gone: the water it drained makes a mound, a ring and foam at its foot. */
@@ -712,7 +789,7 @@ export class JetColumn {
     }
     this.mesh.visible = ring.count > 0;
     holdWithinWalls(this.positions, this.walls);
-    markChanged(this.geometry, ['position', 'normal', 'aRadius', 'aRound']);
+    markChanged(this.geometry, ['position', 'normal', 'aRadius', 'aRound', 'aAir']);
   }
 
   /** The column's radius at a node: the mean of its segments' either side (the drawing). */
@@ -746,20 +823,22 @@ export class JetColumn {
     nodeAxis(first);
     const topX = this.drawX[first], topY = this.drawY[first], topZ = this.drawZ[first];
     const topAxisX = axis.x, topAxisY = axis.y, topAxisZ = axis.z;
+    let air = this.airAt(solver.stamp[first]), phase = this.phaseAt(solver.stamp[first]);
     if (!this.beadShown(first, first, last)) {
       for (let ring = 0; ring <= CAP_RINGS; ring++) {
         const polar = (ring / (CAP_RINGS + 1)) * Math.PI * 0.5;
         this.addRing(topX - topAxisX * topRadius * Math.cos(polar), topY - topAxisY * topRadius * Math.cos(polar), topZ - topAxisZ * topRadius * Math.cos(polar),
-          topAxisX, topAxisY, topAxisZ, topRadius * Math.sin(polar), topRadius, 1, -Math.cos(polar), Math.sin(polar));
+          topAxisX, topAxisY, topAxisZ, topRadius * Math.sin(polar), topRadius, 1, -Math.cos(polar), Math.sin(polar), air, phase);
       }
     } else {
-      this.addRing(topX - topAxisX * topRadius, topY - topAxisY * topRadius, topZ - topAxisZ * topRadius, topAxisX, topAxisY, topAxisZ, 0, topRadius, 1, -1, 0);
+      this.addRing(topX - topAxisX * topRadius, topY - topAxisY * topRadius, topZ - topAxisZ * topRadius, topAxisX, topAxisY, topAxisZ, 0, topRadius, 1, -1, 0, air, phase);
     }
     for (let node = first; node <= last; node++) {
       const shown = this.beadShown(node, first, last);
       if (!shown && node !== first && node !== last && (node - first) % stride !== 0) continue;
       nodeAxis(node);
       const centreX = this.drawX[node], centreY = this.drawY[node], centreZ = this.drawZ[node];
+      air = this.airAt(solver.stamp[node]); phase = this.phaseAt(solver.stamp[node]);
       if (shown) {
         // A sphere, merging into the column above and below.
         const bead = solver.beadRadius(node);
@@ -772,7 +851,7 @@ export class JetColumn {
           const radius = Math.max(sphere, side);
           const onSphere = sphere >= side;
           this.addRing(centreX - axis.x * bead * Math.cos(polar), centreY - axis.y * bead * Math.cos(polar), centreZ - axis.z * bead * Math.cos(polar),
-            axis.x, axis.y, axis.z, radius, onSphere ? bead : radius, onSphere ? 1 : 0, onSphere ? -Math.cos(polar) : 0, onSphere ? Math.sin(polar) : 1);
+            axis.x, axis.y, axis.z, radius, onSphere ? bead : radius, onSphere ? 1 : 0, onSphere ? -Math.cos(polar) : 0, onSphere ? Math.sin(polar) : 1, air, phase);
         }
         continue;
       }
@@ -783,20 +862,21 @@ export class JetColumn {
       const spanLength = (node > first ? solver.segmentLength[node - 1] : 0) + (node < last ? solver.segmentLength[node] : 0);
       const slope = spanLength > 1e-9 ? (2 * (after - before)) / spanLength : 0;
       const tilt = 1 / Math.sqrt(1 + slope * slope);
-      this.addRing(centreX, centreY, centreZ, axis.x, axis.y, axis.z, radius, radius, 0, -slope * tilt, tilt);
+      this.addRing(centreX, centreY, centreZ, axis.x, axis.y, axis.z, radius, radius, 0, -slope * tilt, tilt, air, phase);
     }
     // Its foot: a hemisphere under the last node (or its bead's lower pole).
     const footRadius = Math.max(this.tubeRadius(last, first, last), solver.beadRadius(last));
     nodeAxis(last);
     const footX = this.drawX[last], footY = this.drawY[last], footZ = this.drawZ[last];
+    air = this.airAt(solver.stamp[last]); phase = this.phaseAt(solver.stamp[last]);
     if (!this.beadShown(last, first, last)) {
       for (let ring = CAP_RINGS; ring >= 0; ring--) {
         const polar = (ring / (CAP_RINGS + 1)) * Math.PI * 0.5;
         this.addRing(footX + axis.x * footRadius * Math.cos(polar), footY + axis.y * footRadius * Math.cos(polar), footZ + axis.z * footRadius * Math.cos(polar),
-          axis.x, axis.y, axis.z, footRadius * Math.sin(polar), footRadius, 1, Math.cos(polar), Math.sin(polar));
+          axis.x, axis.y, axis.z, footRadius * Math.sin(polar), footRadius, 1, Math.cos(polar), Math.sin(polar), air, phase);
       }
     } else {
-      this.addRing(footX + axis.x * footRadius, footY + axis.y * footRadius, footZ + axis.z * footRadius, axis.x, axis.y, axis.z, 0, footRadius, 1, 1, 0);
+      this.addRing(footX + axis.x * footRadius, footY + axis.y * footRadius, footZ + axis.z * footRadius, axis.x, axis.y, axis.z, 0, footRadius, 1, 1, 0, air, phase);
     }
   }
 
@@ -811,7 +891,7 @@ export class JetColumn {
     const top = this.sleeveTop, foot = this.sleeveFoot();
     if (foot <= top + 1e-6) return;
     const state = this.sleeveState ??= {};
-    const samples = this.sleeveSamples ??= Array.from({ length: SLEEVE_RINGS }, () => ({ x: 0, y: 0, z: 0, axisX: 0, axisY: 0, axisZ: 0, radius: 0, along: 0 }));
+    const samples = this.sleeveSamples ??= Array.from({ length: SLEEVE_RINGS }, () => ({ x: 0, y: 0, z: 0, axisX: 0, axisY: 0, axisZ: 0, radius: 0, along: 0, air: 0, phase: 0 }));
     let along = 0;
     for (let index = 0; index < SLEEVE_RINGS; index++) {
       const share = index / (SLEEVE_RINGS - 1);
@@ -824,22 +904,23 @@ export class JetColumn {
       const widen = smoothstep(0, SLEEVE_TAPER, share);
       sample.radius = state.core + (state.radius - state.core) * widen;
       sample.along = along;
+      sample.air = this.airAt(tau); sample.phase = this.phaseAt(tau);
     }
     const first = samples[0], last = samples[SLEEVE_RINGS - 1];
-    this.addRing(first.x - first.axisX * first.radius, first.y - first.axisY * first.radius, first.z - first.axisZ * first.radius, first.axisX, first.axisY, first.axisZ, 0, first.radius, 1, -1, 0);
+    this.addRing(first.x - first.axisX * first.radius, first.y - first.axisY * first.radius, first.z - first.axisZ * first.radius, first.axisX, first.axisY, first.axisZ, 0, first.radius, 1, -1, 0, first.air, first.phase);
     for (let index = 0; index < SLEEVE_RINGS; index++) {
       const sample = samples[index];
       const before = samples[Math.max(index - 1, 0)], after = samples[Math.min(index + 1, SLEEVE_RINGS - 1)];
       const span = after.along - before.along;
       const slope = span > 1e-9 ? (after.radius - before.radius) / span : 0;
       const tilt = 1 / Math.sqrt(1 + slope * slope);
-      this.addRing(sample.x, sample.y, sample.z, sample.axisX, sample.axisY, sample.axisZ, sample.radius, sample.radius, 0, -slope * tilt, tilt);
+      this.addRing(sample.x, sample.y, sample.z, sample.axisX, sample.axisY, sample.axisZ, sample.radius, sample.radius, 0, -slope * tilt, tilt, sample.air, sample.phase);
     }
-    this.addRing(last.x + last.axisX * last.radius, last.y + last.axisY * last.radius, last.z + last.axisZ * last.radius, last.axisX, last.axisY, last.axisZ, 0, last.radius, 1, 1, 0);
+    this.addRing(last.x + last.axisX * last.radius, last.y + last.axisY * last.radius, last.z + last.axisZ * last.radius, last.axisX, last.axisY, last.axisZ, 0, last.radius, 1, 1, 0, last.air, last.phase);
   }
 
-  /** Queue a ring: centre, unit axis, radius, the water's radius behind it, roundness, and its normal's parts along the axis and outward. */
-  addRing(centreX, centreY, centreZ, axisX, axisY, axisZ, radius, waterRadius, round, normalAlong, normalOut) {
+  /** Queue a ring: centre, unit axis, radius, the water's radius behind it, roundness, its normal's parts along the axis and outward, its water's air and launch phase. */
+  addRing(centreX, centreY, centreZ, axisX, axisY, axisZ, radius, waterRadius, round, normalAlong, normalOut, air = 0, phase = 0) {
     const ring = this.ring;
     if (ring.count >= ROWS) return;
     const index = ring.count++;
@@ -848,6 +929,7 @@ export class JetColumn {
     ring.radius[index] = radius;
     ring.water[index] = waterRadius;
     ring.round[index] = round;
+    ring.air[index] = air; ring.phase[index] = phase;
     ring.along[index * 2] = normalAlong;
     ring.along[index * 2 + 1] = normalOut;
   }
@@ -882,18 +964,38 @@ export class JetColumn {
     const centreX = ring.centre[row * 3], centreY = ring.centre[row * 3 + 1], centreZ = ring.centre[row * 3 + 2];
     const radius = ring.radius[row];
     const normalAlong = ring.along[row * 2], normalOut = ring.along[row * 2 + 1];
+    // The bumps (the header): the radius's share of unevenness here, its waves around the ring and along the launch's phase.
+    const bumps = this.bumps * smoothstep(BUMP_RADII[0], BUMP_RADII[1], ring.water[row]);
+    const phase = ring.phase[row], air = ring.air[row];
     for (let column = 0; column < COLUMNS; column++) {
       const vertex = row * COLUMNS + column;
       const cosAngle = this.columnCos[column], sinAngle = this.columnSin[column];
       const outX = firstX * cosAngle + secondX * sinAngle, outY = firstY * cosAngle + secondY * sinAngle, outZ = firstZ * cosAngle + secondZ * sinAngle;
-      this.positions[vertex * 3] = centreX + outX * radius;
-      this.positions[vertex * 3 + 1] = centreY + outY * radius;
-      this.positions[vertex * 3 + 2] = centreZ + outZ * radius;
-      this.normals[vertex * 3] = outX * normalOut + axisX * normalAlong;
-      this.normals[vertex * 3 + 1] = outY * normalOut + axisY * normalAlong;
-      this.normals[vertex * 3 + 2] = outZ * normalOut + axisZ * normalAlong;
-      this.radii[vertex] = ring.water[row];
+      let bumped = 1, outward = normalOut, around = 0;
+      if (bumps > 0) {
+        let wave = 0, slope = 0;
+        for (const mode of this.bumpWaves) {
+          const angle = (mode.around * column * Math.PI * 2) / COLUMNS + mode.along * phase + mode.phase;
+          wave += mode.weight * Math.sin(angle);
+          slope += mode.weight * mode.around * Math.cos(angle);
+        }
+        bumped = 1 + bumps * wave;
+        // The normal turns around the ring against the bump's slope (dr/dθ over r), within the ring's plane.
+        const across = bumps * slope;
+        const length = Math.sqrt(bumped * bumped + across * across);
+        outward = (normalOut * bumped) / length;
+        around = (-normalOut * across) / length;
+      }
+      const tangentX = -firstX * sinAngle + secondX * cosAngle, tangentY = -firstY * sinAngle + secondY * cosAngle, tangentZ = -firstZ * sinAngle + secondZ * cosAngle;
+      this.positions[vertex * 3] = centreX + outX * radius * bumped;
+      this.positions[vertex * 3 + 1] = centreY + outY * radius * bumped;
+      this.positions[vertex * 3 + 2] = centreZ + outZ * radius * bumped;
+      this.normals[vertex * 3] = outX * outward + tangentX * around + axisX * normalAlong;
+      this.normals[vertex * 3 + 1] = outY * outward + tangentY * around + axisY * normalAlong;
+      this.normals[vertex * 3 + 2] = outZ * outward + tangentZ * around + axisZ * normalAlong;
+      this.radii[vertex] = ring.water[row] * bumped;
       this.roundness[vertex] = ring.round[row];
+      this.air[vertex] = bumps > 0 ? Math.min(air * (1 + AIR_BLOTCH * (bumped - 1) / bumps), 1) : air;
     }
   }
 
@@ -905,6 +1007,7 @@ export class JetColumn {
       this.normals[vertex * 3] = 0; this.normals[vertex * 3 + 1] = 1; this.normals[vertex * 3 + 2] = 0;
       this.radii[vertex] = 0;
       this.roundness[vertex] = 0;
+      this.air[vertex] = 0;
     }
   }
 

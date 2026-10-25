@@ -267,7 +267,7 @@
 // lower its frame rate and when its solver may sleep.
 import * as THREE from 'three';
 import { FullscreenPass, createFloatTarget } from './gpu.js';
-import { CrownSheet, DOME_HEIGHT, DROP_CEILING } from './crown.js';
+import { CrownSheet, DOME_HEIGHT, DROP_CEILING, breakLump } from './crown.js';
 import { JetColumn, CLEAN_FORM } from './jet.js';
 import { Cavity, PINCH_TIME, SURFACE_HEAD } from './cavity.js';
 import { MAX_CAVITIES } from './waterSurface.js';
@@ -290,6 +290,17 @@ const LANDING_CROWN_RADIUS = 0.0035;   // drops this big throw a crown where the
 const MAX_LANDING_CROWNS = 6;         // ...while fewer than this many are alive...
 const LANDING_CROWN_FLIGHT = 0.05;    // ...if they have flown this long (s)...
 const LANDING_CROWN_SPEED = 1.0;      // ...and fall this fast (m/s): not the drops a crown's torn foot drops back
+// Lumps (src/jet.js's Drops): a drop bigger than DROP_CEILING flies whole until the air tears it, at a Weber number
+// ρ_air·v²·2r/σ of WEBER_CRITICAL (bag breakup, Pilch & Erdman 1987: from about 12), into pieces of 0.6 to 1 times
+// LUMP_BREAK.largest of its radius (at most .pieces of them: src/crown.js breakLump), parting at its capillary
+// speed; a piece still over the ceiling breaks again when its own Weber number says so. So a lump thrown fast
+// bursts into spray at once, and one lobbed slowly flies whole to its apex and breaks as it falls and speeds up:
+// a big stone's jet sheds centimetre lumps that come apart in the air.
+const AIR_DENSITY = 1.2;
+const WATER_SURFACE_TENSION = 0.072;
+const WATER_DENSITY_LUMPS = 1000;
+const WEBER_CRITICAL = 12;
+const LUMP_BREAK = { largest: 0.72, pieces: 8 };
 const LANDING_REFERENCE = 0.0086;     // the drop size the landing crown was tuned at (bigger than any drop now: DROP_CEILING)
 const LANDING_BREAKUP = 12;           // its crown's breakup droplets (scaling with the drop's area)
 const CROWN_SPECKS = 70;              // foam specks where a 3 cm stone's crown stood (scaling with its area)
@@ -567,7 +578,11 @@ const smoothstep = (edgeLow, edgeHigh, value) => {
 //     so the column comes apart along its length) with the asymmetry, faster
 //     for a fast entry, and with an oblique one; stubby (short and fat: the
 //     collapse focuses less) with the stone's size (its lower Froude number)
-//     and a blunt entry; a clean jet takes the rest. After a surface seal
+//     and a blunt entry; ragged with the size too, since a rock's collapse
+//     is irregular (the clean jets of the sweep of big stones, src/jet.js's
+//     Sizes, are axisymmetric: the cleanest possible, an upper bound), so a
+//     30 cm rock's jet is clean about one throw in six; a clean jet takes
+//     the rest. After a surface seal
 //     that the jet bursts through, the same forms; a trapped jet is none (no
 //     jet clears the water: once the bowl has nearly filled, MOUND_DELAY, a
 //     low mound heaves up, seething with the dome's air, and subsides);
@@ -669,10 +684,10 @@ export function chooseSplash(info, random, fixed = null) {
   const weights = trapped ? { none: 1 }
     : sealKind === 'shallow' ? { stubby: 1.0, clean: 0.35, ragged: 0.25, leaning: 0.2 * asymmetry, none: 0.06 }
       : {
-        clean: 0.65 - 0.25 * big,
+        clean: 0.65 - 0.45 * big,
         leaning: 0.05 + 0.55 * asymmetry,
-        ragged: 0.1 + 0.3 * asymmetry * (0.5 + fast) + 0.15 * oblique,
-        stubby: 0.12 + 0.5 * big + 0.25 * smoothstep(0.5, 1.5, blunt),
+        ragged: 0.1 + 0.3 * asymmetry * (0.5 + fast) + 0.15 * oblique + 0.35 * big,
+        stubby: 0.12 + 0.4 * big + 0.25 * smoothstep(0.5, 1.5, blunt),
       };
   const regime = fixed?.regime ?? pick(weights);
   return { seal, trapped, trappedChance, asymmetry, hole, crown, regime, range, random, sizeFactor, surfaceChance, nominal: Boolean(fixed?.regime) };
@@ -706,7 +721,7 @@ function jetForm(regime, choice) {
     case 'leaning':
       // A lopsided collapse throws the column towards the bulge, focusing it less.
       return {
-        form: { ...CLEAN_FORM, needle: range(1.8, 2.6), radiusScale: range(0.9, 1.15), roughness: rough(0.012, 0.025), wobble: range(1, 2) },
+        form: { ...CLEAN_FORM, needle: range(1.8, 2.6), radiusScale: range(0.9, 1.15), roughness: rough(0.012, 0.025), wobble: range(1, 2), air: 1.1 },
         speedScale: range(0.75, 0.95), lean: bulgeLean + range(LEANING_EXTRA[0], LEANING_EXTRA[1]),
       };
     case 'ragged':
@@ -714,18 +729,19 @@ function jetForm(regime, choice) {
       return {
         form: { ...CLEAN_FORM, needle: range(1.5, 2.5), radiusScale: range(0.9, 1.3), roughness: rough(0.03, 0.06), wobble: range(2, 3.5), spray: range(2.5, 4) },
         speedScale: sealed ? range(0.55, 0.8) : range(0.75, 1.0), lean: bulgeLean * range(0.8, 1.4),
+        air: range(1.1, 1.4),
       };
     case 'stubby':
       // A collapse that focuses little: fat and slow, with hardly a needle.
       return {
-        form: { ...CLEAN_FORM, needle: range(1.0, 1.4), radiusScale: 1 + range(0.3, 0.6) / Math.sqrt(Math.max(choice.sizeFactor, 1)), roughness: rough(0.01, 0.02), wobble: 0.8 },
+        form: { ...CLEAN_FORM, needle: range(1.0, 1.4), radiusScale: 1 + range(0.3, 0.6) / Math.sqrt(Math.max(choice.sizeFactor, 1)), roughness: rough(0.01, 0.02), wobble: 0.8, air: 1.2 },
         speedScale: sealed ? range(0.45, 0.6) : range(0.55, 0.75), lean: bulgeLean * range(0.5, 1),
       };
     case 'none':
       // No jet clears the water: the collapse under the dome only heaves a
       // low, broad mound (a few centimetres for the default stone).
       return {
-        form: { ...CLEAN_FORM, needle: 1, radiusScale: range(1.2, 1.4), roughness: 0.01, wobble: 0.5 },
+        form: { ...CLEAN_FORM, needle: 1, radiusScale: range(1.2, 1.4), roughness: 0.01, wobble: 0.5, air: 1.3 },
         speedScale: range(0.15, 0.22), lean: bulgeLean * range(0.3, 1),
       };
     default:
@@ -1539,13 +1555,14 @@ export class SplashSystem {
 
   /**
    * `lens`: draw the drop as glass like the jet column it came from
-   * (unblurred, refracting). No drop is bigger than DROP_CEILING: the sheets
-   * and columns break bigger lumps up themselves (src/crown.js breakLump),
-   * and this clips whatever else would be.
+   * (unblurred, refracting). `lump`: it may be bigger than DROP_CEILING (the
+   * jet's lumps, which the air tears in flight: Lumps above); otherwise no
+   * drop is, the sheets break bigger lumps up themselves (src/crown.js
+   * breakLump), and this clips whatever else would be.
    */
-  spawnDroplet(x, y, z, vx, vy, vz, radius, lens = false) {
+  spawnDroplet(x, y, z, vx, vy, vz, radius, lens = false, lump = false) {
     if (this.count >= this.capacity) return;
-    if (radius > DROP_CEILING) radius = DROP_CEILING;
+    if (radius > DROP_CEILING && !lump) radius = DROP_CEILING;
     const i = this.count++;
     this.positions[i * 3] = x; this.positions[i * 3 + 1] = y; this.positions[i * 3 + 2] = z;
     this.velocities[i * 3] = vx; this.velocities[i * 3 + 1] = vy; this.velocities[i * 3 + 2] = vz;
@@ -1640,6 +1657,15 @@ export class SplashSystem {
       let vx = this.velocities[p], vy = this.velocities[p + 1], vz = this.velocities[p + 2];
       const radius = this.radii[i];
       const speed = Math.hypot(vx, vy, vz);
+      if (radius > DROP_CEILING && (AIR_DENSITY * speed * speed * 2 * radius) / WATER_SURFACE_TENSION >= WEBER_CRITICAL) {
+        // The air tears the lump (Lumps above): its pieces fly on from where it is, on its own stream.
+        const lump = this.lumpScratch ??= { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0 };
+        lump.x = this.positions[p]; lump.y = this.positions[p + 1]; lump.z = this.positions[p + 2]; lump.vx = vx; lump.vy = vy; lump.vz = vz;
+        this.removeDroplet(i);
+        breakLump(lump, radius, LUMP_BREAK.largest * radius, LUMP_BREAK.pieces, radius, Math.sqrt(WATER_SURFACE_TENSION / (WATER_DENSITY_LUMPS * radius)), seededRandom(lump.x, lump.z, this.time, radius),
+          (pieceX, pieceY, pieceZ, pieceVX, pieceVY, pieceVZ, piece) => this.spawnDroplet(pieceX, pieceY, pieceZ, pieceVX, pieceVY, pieceVZ, piece, true, piece > DROP_CEILING));
+        continue;
+      }
       const drag = Math.min(0.00027 / radius * speed * dt, 0.5);
       vx -= vx * drag; vy -= vy * drag; vz -= vz * drag;
       vy -= GRAVITY * dt;
@@ -1717,7 +1743,7 @@ export class SplashSystem {
         for (let s = 0; s < sprayCount; s++) {
           const angle = Math.random() * Math.PI * 2;
           const out = randomRange(0.2, 0.9) * Math.min(hit.fallSpeed / 3, 1.5);
-          this.spawnDroplet(hit.x, 0.003, hit.z, Math.cos(angle) * out, randomRange(0.5, 1.8) * Math.min(hit.fallSpeed / 3, 1.5), Math.sin(angle) * out, hit.radius * randomRange(0.3, 0.5));
+          this.spawnDroplet(hit.x, 0.003, hit.z, Math.cos(angle) * out, randomRange(0.5, 1.8) * Math.min(hit.fallSpeed / 3, 1.5), Math.sin(angle) * out, Math.min(hit.radius * randomRange(0.3, 0.5), DROP_CEILING));
         }
       }
       const specks = Math.min(Math.floor((hit.radius - LANDING_SPECK_FREE) / LANDING_SPECK_STEP + Math.random()), LANDING_SPECK_MOST);
@@ -1990,7 +2016,7 @@ export class SplashSystem {
     const fall = -vy;
     for (let drop = 0; drop < count; drop++) {
       const angle = Math.random() * Math.PI * 2, out = randomRange(0.15, 0.5) * fall;
-      this.spawnDroplet(x, height + 0.002, z, 0.3 * vx + Math.cos(angle) * out, randomRange(0.15, 0.4) * fall, 0.3 * vz + Math.sin(angle) * out, radius * randomRange(0.25, 0.45));
+      this.spawnDroplet(x, height + 0.002, z, 0.3 * vx + Math.cos(angle) * out, randomRange(0.15, 0.4) * fall, 0.3 * vz + Math.sin(angle) * out, Math.min(radius * randomRange(0.25, 0.45), DROP_CEILING));
     }
   }
 

@@ -66,9 +66,12 @@
 // like a sphere; 0 on the tube, a lens only across its axis) and its smooth
 // normal. A ray through a cylinder of radius r at offset s crosses
 // 2·sqrt(r² − s²) = 2·r·|n·v| of water, as it does through a sphere, so the
-// optics pass writes r·|n·v| for each of the two faces it meets, and full
-// coverage. A column narrower than uMinPixelRadius is widened to it along its
-// normals (outward), as droplets are, so it never breaks into dashes.
+// optics pass writes r·|n·v| for each of the two faces it meets, full
+// coverage, and half the water's aeration (aAir: the share of the light its
+// bubbles scatter, src/jet.js's Air; the two faces add up to it), which the
+// composite shades as the sheet's froth, white towards the sun. A column
+// narrower than uMinPixelRadius is widened to it along its normals
+// (outward), as droplets are, so it never breaks into dashes.
 //
 // The mirror pass (src/main.js) draws both meshes with these vertex shaders
 // and the MIRROR_* fragments of src/shaders/fluid.js.
@@ -277,12 +280,14 @@ void main() {
 export const COLUMN_VERTEX = /* glsl */`
 attribute float aRadius;
 attribute float aRound;
+attribute float aAir;
 uniform float uProjScale;        // pixels per world unit at distance 1
 uniform float uMinPixelRadius;
 varying vec3 vViewPosition;
 varying vec3 vViewNormal;
 varying float vRadius;
 varying float vRound;
+varying float vAir;
 ${GALE_SURFACE}
 void main() {
   vec4 viewPosition = modelViewMatrix * vec4(position, 1.0);
@@ -299,6 +304,7 @@ void main() {
   vViewNormal = viewNormal;
   vRadius = aRadius;
   vRound = aRound;
+  vAir = aAir;
   gl_Position = projectionMatrix * viewPosition;
 }
 `;
@@ -325,10 +331,12 @@ uniform vec2 uResolution;
 varying vec3 vViewPosition;
 varying vec3 vViewNormal;
 varying float vRadius;
+varying float vAir;
 void main() {
   float sceneDepth = texture2D(uSceneDepth, gl_FragCoord.xy / uResolution).r;
   if (gl_FragCoord.z > sceneDepth) discard;
   float facing = abs(dot(normalize(vViewNormal), normalize(-vViewPosition)));
-  gl_FragColor = vec4(vRadius * facing, 1.0, 0.0, 0.0);
+  // Its aeration, half from each of the ray's two faces (the composite divides by the coverage, at most 1).
+  gl_FragColor = vec4(vRadius * facing, 1.0, 0.0, 0.5 * vAir);
 }
 `;

@@ -816,11 +816,13 @@
     .thing-favourite { width: 44px; height: 44px; padding: 11px; }
   }
   /* A short touch screen (an iPhone SE upright, a phone on its side): the
-     dropdown's pills at the controls probe's least height (34 points) and its
-     rows and heads closer, so its twenty pills fit over the strip without
+     dropdown's pills at the controls probe's least height (34 points), their
+     pictures and ends narrower, so Other's pack into three rows, not four,
+     and its rows and heads closer, so they all fit over the strip without
      scrolling. */
   @media (pointer: coarse) and (max-height: 700px) {
-    .thing-menu-card [role="menuitemradio"] { min-height: 34px; }
+    .thing-menu-card [role="menuitemradio"] { min-height: 34px; gap: 5px; padding-right: 8px; }
+    .thing-menu-card [role="menuitemradio"] img { width: 28px; height: 21px; }
     .thing-menu-pills { row-gap: 3px; }
     .thing-menu-head { margin: 5px 2px 2px; }
   }

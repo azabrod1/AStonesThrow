@@ -27,7 +27,9 @@
 // between two neighbouring nodes a segment holds a fixed volume of water,
 // its radius that volume over its length (sqrt(V/(π·L))), and each node is
 // pulled along its two segments by their forces F, and down by gravity.
-// Volume is kept exactly and momentum to rounding. The nodes are points in
+// Volume is kept exactly and momentum to rounding. Each node also carries a
+// number its caller stamps on it (src/jet.js: its water's launch time),
+// interpolated when a segment is split. The nodes are points in
 // space, so a column whose water was thrown up at a slant arcs over as a
 // fountain does. The model's one approximation is the slenderness (the flow
 // uniform across the column), which is what makes it one-dimensional and
@@ -157,7 +159,8 @@ export class SlenderJet {
     this.bead = nodes();                       // the lumped sphere's volume at the node (m³)
     this.volume = nodes();                     // the segment's from this node to the next (m³)
     this.chainEnd = new Uint8Array(capacity);  // 1: the last node of its chain (no segment to the next)
-    this.stored = [this.positionX, this.positionY, this.positionZ, this.velocityX, this.velocityY, this.velocityZ, this.bead, this.volume, this.chainEnd];
+    this.stamp = nodes();                      // a number the caller stamps on each node (src/jet.js: its water's launch time), carried with it
+    this.stored = [this.positionX, this.positionY, this.positionZ, this.velocityX, this.velocityY, this.velocityZ, this.bead, this.volume, this.chainEnd, this.stamp];
     // Rebuilt each step: per segment (indexed by its first node) and per node.
     this.segmentLength = nodes();
     this.tangentX = nodes(); this.tangentY = nodes(); this.tangentZ = nodes();
@@ -205,12 +208,13 @@ export class SlenderJet {
     return total;
   }
 
-  /** Add a node at the end of the last chain; the segment to it starts empty. */
-  push(x, y, z, vx, vy, vz) {
+  /** Add a node at the end of the last chain, with its stamp; the segment to it starts empty. */
+  push(x, y, z, vx, vy, vz, stamp = 0) {
     if (this.count >= this.capacity) return -1;
     const node = this.count++;
     this.positionX[node] = x; this.positionY[node] = y; this.positionZ[node] = z;
     this.velocityX[node] = vx; this.velocityY[node] = vy; this.velocityZ[node] = vz;
+    this.stamp[node] = stamp;
     this.bead[node] = 0;
     this.volume[node] = 0;
     this.chainEnd[node] = 1;
@@ -559,6 +563,7 @@ export class SlenderJet {
     const end = node + pieces;   // where the old next node now is
     const startX = this.positionX[node], startY = this.positionY[node], startZ = this.positionZ[node];
     const startVX = this.velocityX[node], startVY = this.velocityY[node], startVZ = this.velocityZ[node];
+    const startStamp = this.stamp[node];
     for (let piece = 0; piece < pieces; piece++) {
       const index = node + piece;
       this.volume[index] = water * this.weights[piece];
@@ -571,6 +576,7 @@ export class SlenderJet {
       this.velocityX[index] = startVX + (this.velocityX[end] - startVX) * along;
       this.velocityY[index] = startVY + (this.velocityY[end] - startVY) * along;
       this.velocityZ[index] = startVZ + (this.velocityZ[end] - startVZ) * along;
+      this.stamp[index] = startStamp + (this.stamp[end] - startStamp) * along;
       this.bead[index] = 0;
     }
     this.measureAround(node, end - 1);
@@ -679,6 +685,7 @@ export class SlenderJet {
         this.positionX[written] = this.positionX[node]; this.positionY[written] = this.positionY[node]; this.positionZ[written] = this.positionZ[node];
         this.velocityX[written] = this.velocityX[node]; this.velocityY[written] = this.velocityY[node]; this.velocityZ[written] = this.velocityZ[node];
         this.bead[written] = this.bead[node];
+        this.stamp[written] = this.stamp[node];
       }
       if (kept) { this.volume[written - 1] = incoming; this.chainEnd[written - 1] = 0; }
       this.chainEnd[written] = 1;

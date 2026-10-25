@@ -52,7 +52,7 @@ is remembered on the device (but the view, which opens on the shore):
 - What to throw (`?thing=`): stones (a river stone, the default; slate,
   granite, basalt, pumice), balls (golf, tennis, bowling, basketball), gems
   (diamond, emerald, ruby, sapphire) and others (an apple, a watermelon, a
-  pizza, a frozen pizza, a pie, a rubber duck, a brick), each the size, weight
+  pizza, a frozen pizza, a pie, a rubber duck, a brick, a TV, an iPhone), each the size, weight
   and density of the real thing (`src/things.js`). The foot of the strip's
   dropdown opens this page. What is lighter than water floats; the rest sink.
   What comes to rest stays, on the bed or the pool's floor as on the deck, up
@@ -75,7 +75,13 @@ is remembered on the device (but the view, which opens on the shore):
   free surface are not modelled. Toppings still add mass without displacement,
   and the frozen pizza retains its existing lighter mass presets. These are
   approximations, not material measurements. A weighted rubber duck rights
-  itself however it lands. Each choice's picture
+  itself however it lands. The TV (54 × 32 × 1.8 cm, 3.6 kg) and iPhone
+  (15 × 7.2 × 0.8 cm, 180 g) are rigid plates, met by the water and the air
+  on their own faces' area: they slap the water, flutter down as thin plates
+  do, and come to rest lying along the lake bed's slope. In the pool they
+  land wherever they fit, their slap standing no crown, and its walls meet
+  their corners. Choose them under Other or use `?thing=tv` and
+  `?thing=iphone`; both support Toss and Lob. Each choice's picture
   (`assets/things/thumbs/`) is a harness frame of it at rest on the pool's
   deck, shrunk to 160×90: `--sky=pool --thing=name
   --throws=-1.75:0.75:0.05 --times=3 --seed=1 --w=320 --h=180`, looked at
@@ -422,7 +428,15 @@ known timing, and the droplets are choreographed from them:
    `tools/jet-probe.mjs` checks the solver against the textbook growth rate,
    retraction speed and drop size, and the jet against the simulation);
    thrown at 42° a clean jet stands 25 to 45 cm, its drops flying higher,
-   but each throw's collapse launches its jet its own way (below);
+   but each throw's collapse launches its jet its own way (below). Bigger
+   stones' launches come from a sweep of simulations of 10 to 30 cm stones
+   (`tools/basilisk/README.md`, `assets/jet/sweep.json`): a 30 cm rock's
+   hole pinches 4 R down, not the reference's 7.5, so the cavity's head
+   scales with the Froude number, and its column, 0.5 R thick at the base
+   and 2 cm thick ten radii up, carries the air its collapse entrained
+   (drawn white, bumpy, its base a mound no wider than 1.2 R) and sheds
+   centimetre lumps, which fly whole until the air tears them (by their
+   Weber number) instead of leaving as strings of 4 mm beads;
 4. bubbles that follow the stone down its path, rise and burst into foam.
 
 Drops ring the water where they land, and the big ones (the jet's, and the
@@ -827,7 +841,10 @@ its haze is whiter (0.85 to 0.9 of the cloud against rain's 0.6) and
 thicker (1.5 km, 400 m, 150 m to see). A snowflake meets the water at about
 1 m/s, weighing milligrams: it melts and leaves no ring, so the water is
 left as the wind has it. The flakes are one instanced draw in a box about
-the eye (16, 40 and 60 thousand of them), each falling at its terminal
+the eye (16, 120 and 120 thousand of them: heavy snow's the big soft
+clumps of a snow day, up to 5 cm across, and a blizzard's up to 2.5 cm,
+drawn bigger than its fine snow so that fewer flakes, a flake's cost,
+hide what its haze does), each falling at its terminal
 speed (0.9 to 1.1 m/s, give or take a fifth), carried at the wind's speed,
 swaying on a small ellipse and tossed by gusts of 0.3 of the wind, drawn as
 the capsule it sweeps in 1/120 s: round in still air, a streak in a

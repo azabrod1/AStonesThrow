@@ -56,7 +56,12 @@
 // start (Duclaux et al.: 2.06; the reference simulation 1.99 after first
 // contact, a substep later), nearly independent of the entry speed, and z0
 // sets where it falls: 7.5·R down for the reference throw, as in the
-// reference, the stone then 13·R down. It is at least SHALLOWEST·R down and
+// reference, the stone then 13·R down. Below HEAD_FROUDE, z0 is scaled by
+// (F/HEAD_FROUDE)^HEAD_POWER, fitted to the sweep of bigger stones
+// (tools/basilisk/sweep.py): their holes pinch deeper in radii the lower the
+// Froude number, 4.8·R for a 16 cm stone at 6.3 m/s (F = 50) and 4.1·R for a
+// 30 cm rock (F = 26), as Duclaux et al.'s z_p ∝ R·√F goes, where one z0
+// put them at 4.3·R and 2.7·R. It is at least SHALLOWEST·R down and
 // at most DEEPEST_SHARE of the stone's depth then (Duclaux et al.; the
 // reference's 0.57), and where the slices' closures tie (within PINCH_TIE)
 // it is in the middle of them: a big stone that has reached the bed within
@@ -206,7 +211,9 @@ const DEEPEST_SHARE = 0.6;         // the pinch is at most this share of the sto
 const PINCH_TIE = 0.01;            // slices closing within this share of the earliest closure share the pinch (its middle)
 export const PINCH_TIME = 2.06;    // the deep seal's pinch-off, in sqrt(R/g) on the splash's clock (src/rock.js reads it)...
 export const NECK_CLOSE = 0.4;     // ...and the water has closed over the stone this many sqrt(R/g) later (src/rock.js)
-export const SURFACE_HEAD = 5.25;         // z0, in R: the head in the slices' lifetimes T ∝ V/(z + z0), which sets where the pinch falls
+export const SURFACE_HEAD = 5.25;         // z0, in R: the head in the slices' lifetimes T ∝ V/(z + z0), which sets where the pinch falls...
+const HEAD_FROUDE = 81;            // ...times (F / this)^HEAD_POWER below this Froude number (the sweep: a big stone's hole pinches deeper, in R)
+const HEAD_POWER = 0.85;
 const SLOWEST_PUSH = 0.2;          // a slice is pushed open at least as hard as by this share of the entry speed
 const SHALLOWEST = 1;              // in R: the pinch is at least this deep
 const OPENING = 4;                 // k in a² = R²·(1 + B·s − (1 + B)·s^k): a slice opens fast, stands, then closes
@@ -603,7 +610,8 @@ export class Cavity {
     this.surfaceTime = this.sliceTime[0];
 
     // C: the earliest closure t_s(z) + C·V(z)/(z + z0) comes at the pinch time.
-    const head = this.seal.head * radius;
+    // The head, less at a low Froude number (the header): the sweep's pinch depths, 4.1 R for a 30 cm rock (F 26) and 4.8 R for a 16 cm stone (F 50).
+    const head = this.seal.head * radius * Math.min((this.froude / HEAD_FROUDE) ** HEAD_POWER, 1);
     const lifeShape = new Float64Array(count);
     // A stone that has come to rest on the floor pushes no water aside: its slices' speed is floored.
     const slowest = SLOWEST_PUSH * this.sliceSpeed[0];
