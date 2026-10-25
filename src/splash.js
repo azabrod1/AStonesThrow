@@ -55,7 +55,11 @@
 //      (a sheared hole focuses less). Each throw's collapse launches its jet
 //      its own way (the variety notes above chooseSplash): clean, leaning
 //      towards a lopsided hole's bulge, ragged, stubby, or none at all (only
-//      a low mound).
+//      a low mound). The pond heaves under the jet as the ring's linear
+//      theory says (src/rings.js NEAR_FIELD), less the share of the
+//      collapse's water the jet holds aloft (src/jet.js aloftShare), which
+//      the splash hands the ring's source every step: a trapped or stubby
+//      jet, taking little water up, leaves the whole heave to the pond.
 //   4. Bubbles entrained with the stone follow it down its path, rise and
 //      burst into foam.
 // Each stage also stamps the height field and the foam map. A stone falling
@@ -267,7 +271,7 @@
 // lower its frame rate and when its solver may sleep.
 import * as THREE from 'three';
 import { FullscreenPass, createFloatTarget } from './gpu.js';
-import { CrownSheet, DOME_HEIGHT, DROP_CEILING, breakLump } from './crown.js';
+import { CrownSheet, DOME_HEIGHT, DROP_CEILING, FROTH_SPEED, FROTH_POWER, breakLump } from './crown.js';
 import { JetColumn, CLEAN_FORM } from './jet.js';
 import { Cavity, PINCH_TIME, SURFACE_HEAD } from './cavity.js';
 import { MAX_CAVITIES } from './waterSurface.js';
@@ -351,7 +355,8 @@ const BUBBLE_RISE_SPEED = 0.25;       // m/s: the pinched-off air rises as bubbl
 const FOAM_RISE_CAP = 2.5;            // ...so the hole's boil arrives over its pinch depth at that speed, at most this long (s): a big stone's bubbles are bigger and faster
 const FOAM_STAMP_SPACING = 0.25;      // a patch spread over a span gets a sub-stamp every this many seconds, the amount shared among them (or each with all of it, sustained)
 const FOAM_SPREAD = 0.6;              // a ripple's or a knock's boil comes up over this many sqrt(R/g)
-const JET_BASE_BOIL = 0.03;           // the boil where the jet rises, its sub-stamps' peak, scaling as sqrt(R / 3 cm): a grey churn at the centre, never a white disc
+const JET_BASE_BOIL = 0.03;           // the boil where the jet rises, its sub-stamps' peak, scaling as sqrt(R / 3 cm): a grey churn at the centre, never a white disc...
+const BASE_FROTH_MOST = 4;            // ...times (V / FROTH_SPEED)^(2·FROTH_POWER), the crown's froth law in the entry speed (src/crown.js), at most this: a hard throw's heave churns white, a pebble's is glass
 const BUBBLE_FOAM = 0.015;            // a fizz where a bubble surfaces (a boil, popping as fast)
 const LANDING_FOAM = 0.006;           // a landing drop's foam: a boil of this peak times the drop's strength (up to 3), over three of its radii...
 const LANDING_FOAM_LIFETIME = 0.3;    // ...of big bubbles, bursting as they surface (s): a rock's crown rains hundreds of drops back in a ring within half a second, and the ring must not whiten
@@ -372,6 +377,7 @@ const LIGHT_JET = [0.4, 0.6];         // ...a lighter thing's at this much of it
 const JET_OBLIQUE_SLOWING = 0.3;      // ...and from a dragged cavity is slower by this times the horizontal fraction...
 const NEEDLE_OBLIQUE = 0.9;           // ...and its needle's extra speed lower by this times it: a sheared hole focuses less
 const JET_SHARE = 0.25;               // the jet carries this share of the water that fills the bowl left above the neck
+const HEAVE_VERTICAL = Math.cos(THREE.MathUtils.degToRad(42));   // the pond's heave under the jet (src/rings.js NEAR_FIELD) goes with the vertical share of the entry speed against the reference throw's, at most 1: a flat entry drives less water down, while the ring's push goes with the whole speed
 export const MOUND_DELAY = 0.8;              // a throw with no jet heaves its mound this many of the bowl's time units after the pinch, the bowl nearly full
 // The ring a stone sends across the pond (stampCavity, src/rings.js), fitted
 // to the reference simulation's (tools/basilisk/results/rings_linear.md): a
@@ -1129,7 +1135,10 @@ export class SplashSystem {
     // time the pinched-off air takes to rise from the pinch depth (the constants' note).
     const foamTime = this.time + cavity.closeTime;
     const foamSpan = Math.min(cavity.pinchDepth / BUBBLE_RISE_SPEED, FOAM_RISE_CAP);
-    this.stampCavity({ x, z, radius, speed: entrySpeed, strength: impulseScale, travelX, travelZ, foamTime, foamSpan }, water);
+    // The ring's source, once made, is handed to the jet: the pond's heave under the jet is the ring's less the
+    // share the jet holds aloft (src/rings.js NEAR_FIELD.jet, src/jet.js aloftShare), published each step (update).
+    const ring = { source: null, heave: Math.min(Math.sqrt(Math.max(1 - horizontalFraction * horizontalFraction, 0)) / HEAVE_VERTICAL, 1) };
+    this.stampCavity({ x, z, radius, speed: entrySpeed, strength: impulseScale, travelX, travelZ, foamTime, foamSpan, ring }, water);
     wakeStrengths.forEach((strength, index) => {
       const step = index + 1;
       if (strength > 0) {
@@ -1158,6 +1167,7 @@ export class SplashSystem {
       volume: JET_SHARE * cavity.bowlVolume * shape.form.radiusScale ** 2 * shape.speedScale,
       lean: leanAngle, leanX: lean.x / leanLength, leanZ: lean.z / leanLength, form: unfocused(shape.form), regime: choice.regime,
       random: foamRandom(seed, radius, 1),
+      ring,
     };
     this.jets.push(jet);
 
@@ -1266,17 +1276,18 @@ export class SplashSystem {
    * near-field ring, released when the solver takes them: at the end of this
    * frame (setFrameSeconds), so the near field it hides is the solver's own.
    */
-  releasePoolRing({ x, z, sigma, velocity, pairHeight, directionX, directionZ }, water) {
+  releasePoolRing({ x, z, sigma, velocity, pairHeight, directionX, directionZ, ring = null }, water) {
     const strength = RING_SOURCE.strength;
     water.addSplat({ x, z, radius: sigma, velocity: velocity * strength, rim: RING.rim });
     if (pairHeight !== 0) {
       water.addSplat({ x: x + directionX * 0.8 * sigma, z: z + directionZ * 0.8 * sigma, radius: 0.8 * sigma, height: pairHeight * strength, rim: 1 });
       water.addSplat({ x: x - directionX * 0.8 * sigma, z: z - directionZ * 0.8 * sigma, radius: 0.8 * sigma, height: -pairHeight * strength, rim: 1 });
     }
-    water.rings.add({
+    const source = water.rings.add({
       x, z, radius: sigma, velocity, rim: RING.rim, nearOnly: true,
       pair: pairHeight !== 0 ? { height: pairHeight, radius: 0.8 * sigma, offset: 0.8 * sigma, directionX, directionZ } : null,
     }, Math.max(this.frameEnd, this.time));
+    if (ring && source) { ring.source = source; source.heave = ring.heave ?? 1; }   // the jet's heave reads it (update)
   }
 
   /**
@@ -1292,8 +1303,8 @@ export class SplashSystem {
    * probes' stand-in), at once, which cannot hold a splat back. The foam
    * comes from foamTime (the cavity's closure), or now.
    */
-  stampCavity({ x, z, radius, speed, strength, travelX = 0, travelZ = 0, foamTime = this.time, foamSpan }, water) {
-    this.launchRing({ x, z, sigma: RING.sigma * radius, velocity: -RING.speed * speed * strength, travelX, travelZ, time: this.time + RING.delay * Math.sqrt(radius / GRAVITY) }, water);
+  stampCavity({ x, z, radius, speed, strength, travelX = 0, travelZ = 0, foamTime = this.time, foamSpan, ring = null }, water) {
+    this.launchRing({ x, z, sigma: RING.sigma * radius, velocity: -RING.speed * speed * strength, travelX, travelZ, time: this.time + RING.delay * Math.sqrt(radius / GRAVITY), ring }, water);
     // The foam comes up where the hole closed, from foamTime over foamSpan
     // (the bubbles' rise from the pinch depth; a wake's is its cavity's): a
     // boil over about the mouth, within about one and a half stone radii of
@@ -1313,19 +1324,20 @@ export class SplashSystem {
    * run that way. To the analytic rings, held for the pool
    * (releasePoolRing), or to the solver at once (stampCavity's header).
    */
-  launchRing({ x, z, sigma, velocity, travelX = 0, travelZ = 0, time }, water) {
+  launchRing({ x, z, sigma, velocity, travelX = 0, travelZ = 0, time, ring = null }, water) {
     const travel = Math.hypot(travelX, travelZ);
     const pairHeight = RING.ahead * travel * Math.abs(velocity) * Math.sqrt(sigma / GRAVITY);
     const directionX = travel > 0 ? travelX / travel : 1, directionZ = travel > 0 ? travelZ / travel : 0;
     // A frozen lake's (water.iced, src/ice.js) as a pool's: its hole is too small for the analytic ring to read across,
     // and its waves run under the ice, so the solver carries it (out of sight but in the holes).
     if (water.rings && (water.pool || water.iced)) {
-      this.poolRings.push({ time, x, z, sigma, velocity, pairHeight: travel > 0 ? pairHeight : 0, directionX, directionZ });
+      this.poolRings.push({ time, x, z, sigma, velocity, pairHeight: travel > 0 ? pairHeight : 0, directionX, directionZ, ring });
     } else if (water.rings) {
-      water.rings.add({
+      const source = water.rings.add({
         x, z, radius: sigma, velocity, rim: RING.rim,
         pair: travel > 0 ? { height: pairHeight, radius: 0.8 * sigma, offset: 0.8 * sigma, directionX, directionZ } : null,
       }, time);
+      if (ring && source) { ring.source = source; source.heave = ring.heave ?? 1; }   // the jet's heave reads it (update)
     } else {
       water.addSplat({ x, z, radius: sigma, velocity, rim: RING.rim });
       if (travel > 0) {
@@ -1473,23 +1485,27 @@ export class SplashSystem {
       startTime: jet.start, material: this.columnDepthMaterial,
       lean: jet.lean, leanX: jet.leanX, leanZ: jet.leanZ, form: jet.form, random: jet.random, floor: jet.floor,
     });
+    column.ringSource = jet.ring ?? null;   // its ring's source (a holder: the source once made): the heave under the jet is the ring's less the jet's share (update)
     this.columns.push(column);
     this.particleScene.add(column.mesh);
   }
 
   /**
    * The bowl has flattened into the surface: where the jet rose, its base
-   * meets the water in a low mound and a boil (a trapped jet's seething with
-   * the dome's air, `boil` times it), and wells up, sweeping the foam out
-   * from under it.
+   * meets the water in a boil (a trapped jet's seething with the dome's
+   * air, `boil` times it; frothier the faster the entry, by the crown's
+   * froth law, up to BASE_FROTH_MOST) and wells up, sweeping the foam out
+   * from under it. The heave itself is the pond's: the ring's near field,
+   * less the share the jet holds aloft (src/rings.js NEAR_FIELD).
    */
   startBase(base, water) {
-    water.addSplat({ x: base.x, z: base.z, radius: base.radius * 0.6, height: 0.06 * base.radius, velocity: 0.05 * base.speed });
-    this.stampFoamPatch(water, foamRandom(base.x, base.z, base.time), { x: base.x, z: base.z, radius: base.radius, amount: Math.min(JET_BASE_BOIL * (base.boil ?? 1) * Math.sqrt(base.radius / REFERENCE_RADIUS), FOAM_AMOUNT_CAP), reach: 1.0, radii: [0.3, 0.6], lifetime: BOIL_LIFETIME, boil: true, source: 'base' });
+    const froth = Math.min((base.speed / FROTH_SPEED) ** (2 * FROTH_POWER), BASE_FROTH_MOST);
+    this.stampFoamPatch(water, foamRandom(base.x, base.z, base.time), { x: base.x, z: base.z, radius: base.radius, amount: Math.min(JET_BASE_BOIL * (base.boil ?? 1) * froth * Math.sqrt(base.radius / REFERENCE_RADIUS), FOAM_AMOUNT_CAP), reach: 1.0, radii: [0.3, 0.6], lifetime: BOIL_LIFETIME, boil: true, source: 'base' });
     water.addFoamFlow?.({ x: base.x, z: base.z, radius: CLOSURE_FLOW * base.radius, decay: FLOW_DECAY * Math.sqrt(base.radius / GRAVITY) });
   }
 
   retireColumn(column) {
+    if (column.ringSource?.source) column.ringSource.source.aloft = 0;   // its water is back in the pond (fallBack)
     this.particleScene.remove(column.mesh);
     column.dispose();
     this.columns.splice(this.columns.indexOf(column), 1);
@@ -1758,6 +1774,10 @@ export class SplashSystem {
     // Jet columns pinch off their tips, break up and fall back, the same way.
     for (const column of this.columns) column.update(this.time, dt, this, this.columnWater(column, water));
     for (const column of this.columns.filter((candidate) => candidate.finished)) this.retireColumn(column);
+    // Each ring's source learns the share of its jet's water aloft: the heave under the jet is the ring's less
+    // NEAR_FIELD.jet times it (src/rings.js); two jets on one source (stones thrown together) hand it the larger.
+    for (const column of this.columns) if (column.ringSource?.source) column.ringSource.source.aloft = 0;
+    for (const column of this.columns) if (column.ringSource?.source) column.ringSource.source.aloft = Math.max(column.ringSource.source.aloft, column.aloftShare(this.time - column.startTime));
 
     // Bubbles rise, wobble and burst at the surface.
     for (let i = this.bubbleCount - 1; i >= 0; i--) {

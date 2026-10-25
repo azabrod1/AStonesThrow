@@ -74,23 +74,48 @@
 // hole is deep, then, as the bowl fills into a dish (`settle`: 1.3 to 2.25
 // sqrt(σ/g) after the release, 0.15 to 0.23 s after the reference throw's
 // entry), the hidden disc shrinks to the jet's base (0.25σ to 1.5σ beyond
-// the splats' offsets: 4.6 to 12 cm for the reference throw), which is let
-// through from 3 to 5 sqrt(σ/g) (0.29 to 0.44 s). From the mouth outward
-// linear theory is right from about 0.2 s on: at 10 cm the reference
-// simulation's surface sinks to 27 mm down at 0.25 s, rises through flat at
-// 0.375 s and over a 29 mm crest at 0.475 s; this ring's to 25 mm down,
-// through flat at 0.36 s and over 24 mm at 0.45 to 0.5 s, and as drawn
-// through the base's fade 28 mm down at 0.24 s, 17 mm at 8 cm where the
-// simulation's dish is 25 (a wider base left the dish flat inside 8 cm). The
-// drawn dish rides the surface whole by
-// then (src/cavity.js aCavity), so it sinks into the first trough with its
-// lip as the hole ends, one swing down and up; the centre, which linear
-// theory digs too deep before the jet's water has left it, stays hidden
-// under the dish's floor and comes through as the mound under the jet's
-// foot (the simulation's cone there), 4 cm high at 0.4 s. Hidden inside 4σ
-// until 2.5 sqrt(σ/g) and let through over 0.25 to 0.36 s, as it was, the
-// trough was dug out of still water right after the dish had flattened
-// and come to rest, a dip and a heave that read as a snap.
+// the splats' offsets: 4.6 to 12 cm for the reference throw). From the
+// mouth outward linear theory is right from about 0.2 s on: at 10 cm the
+// reference simulation's surface sinks to 27 mm down at 0.25 s, rises
+// through flat at 0.375 s and over a 29 mm crest at 0.475 s; this ring's to
+// 25 mm down, through flat at 0.36 s and over 24 mm at 0.45 to 0.5 s, and
+// as drawn through the base's fade 28 mm down at 0.24 s, 17 mm at 8 cm
+// where the simulation's dish is 25 (a wider base left the dish flat inside
+// 8 cm). The drawn dish rides the surface whole by then (src/cavity.js
+// aCavity), so it sinks into the first trough with its lip as the hole
+// ends, one swing down and up.
+//
+// The centre is the jet's. Linear theory digs it too deep while the hole is
+// open and then heaves it too high: all the water its push took down comes
+// back as a mound, 39 mm at 0.36 s for the reference stone dropped straight
+// in, where the simulation's cone under the jet is 25, since a real
+// collapse sends the rest up the Worthington jet, and that water is not in
+// the pond until it falls back. So the centre is held hidden until `from`
+// (3 sqrt(σ/g) after the release, 0.29 s after the reference's entry), when
+// linear theory's centre has risen back to the surface, and from then on
+// what shows of it is the pond's heave less `jet` of it times the share of
+// the jet's launched water still aloft (src/jet.js aloftShare: its launch
+// tables and each parcel's flight, which the splash hands the source every
+// step): 0.6 of the heave while the jet holds all its water, all of it once
+// that water is back, which for the reference stone's base, the bulk of its
+// water, is within 0.15 s of the launch's end at 0.36 s. The drawn centre
+// then rises to about 25 mm at 0.35 s, 28 at 0.4, 30 at 0.43 and falls
+// through flat by 0.5 s, as the simulation's cone does (its 2 to 4 cm
+// profiles: 25 to 27 mm at 0.35 s, 14 to 25 at 0.4 and 0.45, 4 at 0.5),
+// under the trumpet the jet's own sleeve draws at its foot; a jet that is
+// trapped or stubby, taking little water up, leaves the whole heave to the
+// pond. The heave is also the throw's (`heave`, from src/splash.js): the
+// vertical share of its entry speed against the reference throw's, at most
+// 1, since a flat entry drives less water down while the ring's push,
+// fitted to the far ring, goes with the whole speed; a hard throw at 73°
+// from vertical keeps 0.4 of linear theory's 9 cm, and the reduction lets
+// go over `ringing`, when what is left at the centre is the pond's ringing,
+// not the heave. Hidden inside 4σ until 2.5 sqrt(σ/g) and let through over
+// 0.25 to 0.36 s, as it was, the trough was dug out of still water right
+// after the dish had flattened and come to rest, a dip and a heave that
+// read as a snap; let through whole by a fixed time, the heave under a hard
+// throw's jet stood 9 cm, glass-smooth, and under every jet the jet's own
+// water as well.
 //
 // In a pool (src/spectralWater.js setPool) the ring has walls to come back
 // off, which an analytic ring cannot: its source goes into the solver, whose
@@ -316,24 +341,29 @@ export const SOURCE_EXTENT = 4;       // ...less this many of the source's wides
 export const OUTER = { share: 0.1, margin: 1.25 };   // the ring is drawn out to margin × the farthest packet still SLOPE_VISIBLE·share steep, and to the shortest such wave
 // The drawn splash (the cavity and the crown) is the near field: the ring is
 // faded out inside `outer` of the source's widest σ beyond its offsets (from
-// `inner` out, the more the nearer its centre, by a quintic), until `from`,
-// and fully in by `to`, in sqrt(σ/g) after its release. Linear theory makes
-// the hole's wide, deep bowl there (8 cm deep for the reference stone at
-// 0.15 s, as the simulation's funnel is), which would leave the drawn cavity
-// standing over it. The bowl is the hole's, so the wide region is hidden
-// only while the hole is deep: it has pinched 0.8 sqrt(σ/g) after the
-// release for every stone, and its bowl has filled to a dish a radius deep
-// by about 1.5 and a tenth of one by about 2.1 (tools/cavity-probe.mjs);
-// over `settle` the hidden region shrinks to the jet's base (`base`, inner
-// and outer in σ), so the ring's first trough, which the reference
-// simulation has at the mouth from 0.2 s on (as this ring does: the
-// header), forms under the dish as it fills, and the dish, riding the
-// surface whole by then (src/cavity.js), sinks into it with its lip. The
-// centre is let through between `from` and `to`, once the trough has left
-// it and what linear theory has there is the mound under the jet's foot,
-// as the simulation's cone is (4 cm high at 0.4 s for the reference stone);
-// sooner, it would dig the dish's floor out again.
-export const NEAR_FIELD = { inner: 0, outer: 4, from: 3, to: 5, settle: [1.3, 2.25], base: { inner: 0.25, outer: 1.5 } };
+// `inner` out, the more the nearer its centre, by a quintic) while the hole
+// is deep, in sqrt(σ/g) after its release. Linear theory makes the hole's
+// wide, deep bowl there (8 cm deep for the reference stone at 0.15 s, as
+// the simulation's funnel is), which would leave the drawn cavity standing
+// over it. The bowl is the hole's, so the wide region is hidden only while
+// the hole is deep: it has pinched 0.8 sqrt(σ/g) after the release for
+// every stone, and its bowl has filled to a dish a radius deep by about 1.5
+// and a tenth of one by about 2.1 (tools/cavity-probe.mjs); over `settle`
+// the hidden region shrinks to the jet's base (`base`, inner and outer in
+// σ), so the ring's first trough, which the reference simulation has at the
+// mouth from 0.2 s on (as this ring does: the header), forms under the dish
+// as it fills, and the dish, riding the surface whole by then
+// (src/cavity.js), sinks into it with its lip. The centre (the header):
+// wholly hidden until `from`, when linear theory's centre has risen back to
+// the surface, the hiding fading over `to` into the jet's: of the heave the
+// throw keeps (source.heave, the vertical share of its entry speed against
+// the reference throw's, back to all of it over `ringing`), `jet` of it is
+// hidden times the share of the jet's water aloft (source.aloft, src/jet.js
+// aloftShare, set each step by the splash); sooner than `from`, it would dig
+// the dish's floor out again. A near-field ring (the pool's) retires at
+// `end`, by when every jet's water is back and the centre is the pond's
+// ringing.
+export const NEAR_FIELD = { inner: 0, outer: 4, from: 3, to: 4, settle: [1.3, 2.25], base: { inner: 0.25, outer: 1.5 }, jet: 0.4, ringing: [6, 12], end: 16 };
 const WAVENUMBER_CAP = 400;           // rad/m: 1.6 cm waves, which the film damps within 15 cm
 const GAUSSIAN_REACH = 4.29;          // σ·k at which a splat's Gaussian spectrum is 1e-4: the rest adds under 3e-5 to a slope
 const MERGE = { seconds: 0.05, reach: 3 };   // a splat joins a source started this recently, this many of its σ away
@@ -545,17 +575,22 @@ export function nearField(source, time) {
   const unit = Math.sqrt(widest / GRAVITY);
   const age = time - Math.min(...source.groups.map((group) => group.start));
   const settled = THREE.MathUtils.smoothstep(age, NEAR_FIELD.settle[0] * unit, NEAR_FIELD.settle[1] * unit);
+  const heave = source.heave ?? 1;
+  const heaveShare = heave + (1 - heave) * THREE.MathUtils.smoothstep(age, NEAR_FIELD.ringing[0] * unit, NEAR_FIELD.ringing[1] * unit);
   return {
     inner: offset + THREE.MathUtils.lerp(NEAR_FIELD.inner, NEAR_FIELD.base.inner, settled) * widest,
     outer: offset + THREE.MathUtils.lerp(NEAR_FIELD.outer, NEAR_FIELD.base.outer, settled) * widest,
-    hide: 1 - THREE.MathUtils.smoothstep(age, NEAR_FIELD.from * unit, NEAR_FIELD.to * unit),
+    // The centre: hidden under the drawn hole until `from`; then what shows of it is the throw's heave share (an
+    // oblique entry's less, back to all of it over `ringing`) less `jet` of that times the share of the jet's water
+    // aloft (the header).
+    hide: Math.max(1 - THREE.MathUtils.smoothstep(age, NEAR_FIELD.from * unit, NEAR_FIELD.to * unit), 1 - (1 - NEAR_FIELD.jet * (source.aloft ?? 0)) * heaveShare),
   };
 }
 
-/** When a source's near field is fully in (world seconds): a near-field ring (the header) retires then. */
+/** When a source's near field is surely in (world seconds: `end`, past the jet's water's return): a near-field ring (the header) retires then. */
 export function nearFieldEnd(source) {
   const widest = Math.max(...source.groups.map((group) => group.sigma));
-  return Math.min(...source.groups.map((group) => group.start)) + NEAR_FIELD.to * Math.sqrt(widest / GRAVITY);
+  return Math.min(...source.groups.map((group) => group.start)) + NEAR_FIELD.end * Math.sqrt(widest / GRAVITY);
 }
 
 /** How many profile texels lie between two radii of a profile of this reach (what a profile pass computes). */
@@ -922,7 +957,7 @@ export class RingSources {
     }
     source.groups.push(group);
     this.arrange(source);
-    return true;
+    return source;
   }
 
   /** The source's centre (its splats' strength-weighted centroid), direction, the splats' offsets along it, and its plan. */

@@ -149,6 +149,20 @@
 // reference ring that holds it. A column still up after LONGEST seconds lets
 // everything go as drops.
 //
+// The pond's heave under the jet. The ring's linear theory (src/rings.js)
+// heaves the centre with all the water its push took down, 39 mm at 0.36 s
+// for the reference stone, where the simulation's cone under the jet is 25:
+// a real collapse sends the rest up the jet, and that water is not in the
+// pond until it falls back. aloftShare gives, at any age, the share of the
+// water this jet launches (core and base) that is up now: launched by then
+// and not yet back at the surface by its ballistic flight (returnTimes:
+// each launch interval's depth and speed up). The splash hands it to the
+// ring's source every step, and the near field hides NEAR_FIELD.jet of its
+// centre times it. For the reference stone it is 1 as the launch ends and
+// for 40 ms after, 0.3 at 0.45 s after entry and 0.1 at 0.5 s: the base's
+// water, nine tenths of what is launched, flies for at most a few tenths of
+// a second; the body's and the needle's drops, the rest, for up to two.
+//
 // updateGeometry() draws the solver's pieces once per rendered frame into one
 // ROWS × COLUMNS ring grid (src/fluidMesh.js): a ring per node along each
 // piece, around the column's local radius (the mean of the segments either
@@ -456,6 +470,18 @@ export class JetColumn {
     const scale = this.baseScale;
     this.baseWater = 2 * scale * cross + scale * scale * base;
     for (let index = 0; index <= samples; index++) this.launchVolumes[index] = cores[index];
+    // All the water launched by each sample, core and base, and when the water of each interval is back in the
+    // pond: launched at its middle, from its depth, at its speed up, flown ballistically to the surface again
+    // (aloftShare, the header's heave).
+    this.launchTotals = new Float64Array(samples + 1);
+    this.returnTimes = new Float64Array(samples + 1);
+    for (let index = 1; index <= samples; index++) {
+      this.launchTotals[index] = cores[index] + 2 * scale * crosses[index] + scale * scale * bases[index];
+      const middle = 0.5 * (this.launchTaus[index - 1] + this.launchTaus[index]);
+      const up = this.launchSpeed(middle) * this.upShare;
+      const depth = 0.5 * (this.launchDepths[index - 1] + this.launchDepths[index]);
+      this.returnTimes[index] = middle + (up + Math.sqrt(Math.max(up * up - 2 * GRAVITY * depth, 0))) / GRAVITY;
+    }
     // The unstable phase: column launched over its most unstable wavelength, 2π each.
     let phase = 0;
     for (let index = 1; index <= samples; index++) {
@@ -463,6 +489,27 @@ export class JetColumn {
       phase += (Math.PI * 2 * (lengths[index] - lengths[index - 1])) / (UNSTABLE_WAVELENGTH * Math.max(this.launchRadius(middle, false), 1e-5));
       this.launchPhases[index] = phase;
     }
+  }
+
+  /**
+   * The share of all the water this jet launches that is up now, at an age
+   * of the jet (the header's heave): launched by now and not yet back at
+   * the surface by its ballistic flight (returnTimes). Nothing before the
+   * launch, nearly all of it as the launch ends, the base's bulk back
+   * within a few tenths of a second after, the needle's drops last.
+   */
+  aloftShare(age) {
+    const totals = this.launchTotals, returns = this.returnTimes;
+    const samples = totals.length - 1;
+    const total = totals[samples];
+    if (!(total > 0) || age <= 0) return 0;
+    let aloft = 0;
+    for (let index = 1; index <= samples; index++) {
+      const middle = 0.5 * (this.launchTaus[index - 1] + this.launchTaus[index]);
+      if (middle > age) break;
+      if (returns[index] > age) aloft += totals[index] - totals[index - 1];
+    }
+    return Math.min(aloft / total, 1);
   }
 
   /** The launch table's interval holding tau and the blend across it, into `out` {index, blend}. */

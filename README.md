@@ -300,8 +300,11 @@ a dish (0.15 to 0.23 s after the reference throw's entry) the ring is let
 through from the mouth outward, and the dish, which by then rides the water
 whole as its lip always does, sinks with it into the ring's first trough,
 2.5 cm deep at the mouth at 0.25 s as in the simulation; the centre, the
-jet's foot, is let through last, by about 0.45 s, when what the ring has
-there is the simulation's mound under the jet. While any ring lives, a GPU
+jet's foot, shows the pond's heave less the share of the collapse's water
+the jet holds aloft (the jet reports it every step from its launch), so the
+mound under the jet is the simulation's 2.5 cm rather than linear theory's
+4, and a flat, hard entry's heave is lower still, by the vertical share of
+its speed, since the ring's push goes with the whole speed. While any ring lives, a GPU
 pass evaluates each ring's spectrum at the frame's time, a second sums it
 into radial profiles of height and slope out to each ring's reach (2 to
 40 m), every radius's sum split into 16 slices of the wavenumbers that the
@@ -338,8 +341,8 @@ checks the field is the four Gaussians, stays even about every wall as it
 evolves and is the open patch's field read at the point and its mirror
 images). A ring's source therefore goes into the solver too, and the rings
 draw only what its near field hides under the drawn splash, turned over and
-for its first half second or so (a rock's first second), so the splash looks
-as it does on the lake. A
+for about a second (a rock's three), until the jet's water is back, so the
+splash looks as it does on the lake. A
 basin's waves cannot spread away, so the pool damps them less than the
 lake's solver does but never less than 0.05/s, its walls and floor damping
 even the longest: a 6 cm stone's rings run back and forth off the walls for
