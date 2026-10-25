@@ -976,6 +976,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       ? { minX: pool.square.minX, minZ: pool.square.minZ, maxX: pool.square.minX + pool.square.size, maxZ: pool.square.minZ + pool.square.size }
       : koiPond ? { minX: KOI_SHORE.centre[0] - koiReach, minZ: KOI_SHORE.centre[1] - koiReach, maxX: KOI_SHORE.centre[0] + koiReach, maxZ: KOI_SHORE.centre[1] + koiReach }
       : { minX: water.domainMin[0] + FISH_LAKE_INSET.side, minZ: water.domainMin[1] + FISH_LAKE_INSET.far, maxX: water.domainMin[0] + water.domainSize - FISH_LAKE_INSET.side, maxZ: water.domainMin[1] + water.domainSize };
+    fishes.setConditions(fishConditions());   // they start as deep as they will keep (setWaters places them)
     fishes.setWaters({ place: fishOn ? placeName : 'none', bounds, depthAt: bedDepthAt });
     fishView.show(fishes);
   }
@@ -1778,8 +1779,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     }
   }
 
-  /** Start a thing shrinking away where it is (simulate: over FADE_SECONDS, then retireRock), frozen: no more steps or knocks. */
-  function fadeOut(rock) { rock.fading = 0; }
+  /** Start a thing shrinking away where it is (simulate: over FADE_SECONDS, then retireRock), frozen: no more steps or knocks; `fadedAt`, the world's time it began (tools/frame-rate-probe.mjs). */
+  function fadeOut(rock) { rock.fading = 0; rock.fadedAt = stepsTime; }
 
   /** Take a stone out of the scenes; keepMaterials frees only its geometry (warmUp keeps a stone's materials, so their program stays compiled). */
   function retireRock(rock, { keepMaterials = false } = {}) {
@@ -2176,7 +2177,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   // that end (Rock.drawAt). A frame longer than CATCH_UP steps moves the world only so far: a slow device slows the
   // world rather than piling up steps it cannot afford.
   let stepsTime = 0;
-  let holesSeen = 0;   // the holes the ice had opened when things at rest on it were last looked over (simulate)
+  let holesSeen = 0;   // the holes the ice had opened when things at rest on it were last looked over (endStep)
   splash.setStoneStep(PHYSICS_STEP);   // its cavities trace their stones in the stones' own steps, not its pieces of them
   function advanceSplash(until) {
     while (simulationTime < until - 1e-9) {
@@ -2196,7 +2197,9 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     finger.advance(frame);   // the finger's wake along its path this frame (src/touch.js)
     followHeld(frame);
     const end = simulationTime + frame;
-    stepsTime = Math.max(stepsTime, simulationTime);
+    // The steps' clock counts whole steps; the splash's adds up pieces of them (advanceSplash), so it may stray a rounding
+    // past it, which must not move the steps (a game would then go otherwise at another frame rate).
+    if (simulationTime > stepsTime + 1e-9) stepsTime = simulationTime;
     const stepping = rocks.filter((rock) => rock.fading === undefined);   // a thing fading out is frozen (fadeOut)
     // When what this step finds is seen, in real seconds from now (the header): the step's end past the moment the frame
     // draws (a step at most: more in slow motion) and the frame's way to the screen, about a frame (src/sound.js plays
@@ -2254,35 +2257,19 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       // The fish on their own clock (src/fish.js advance: whole FISH_STEP steps to this step's end), each step seeing the
       // things as they are then, so a seeded throw is the same with fish at any frame rate.
       fishes.advance(stepsTime, fishLook, fishBitten);
-      // What faded in this step (lost in the garden, eaten) is frozen from the next (fadeOut), whatever the frame.
-      for (let index = stepping.length - 1; index >= 0; index--) if (stepping[index].fading !== undefined) stepping.splice(index, 1);
+      endStep(stepping);
     }
     advanceSplash(end);
     fishes.showAt(end);   // each fish drawn between its last two steps (src/fishMeshes.js)
-    // A shard afloat that a hole's new ice has reached is frozen into it (src/ice.js freezeIn), and goes as a thing; a
-    // hole something thrown floats in is not left alone, so it stays open (src/ice.js disturb).
-    for (const rock of [...rocks]) {
-      if (rock.fading !== undefined || !rock.iceHole || !(rock.state === 'float' || rock.afloat)) continue;
-      if (!rock.piece) ice.disturb(rock.iceHole);
-      else if (ice.reaches(rock)) { ice.freezeIn(rock); retireRock(rock); }
-    }
-    // A hole opened under a thing at rest on the ice: its ground is gone, and it falls in (src/rock.js loseGround).
-    if (ice.opened !== holesSeen) {
-      holesSeen = ice.opened;
-      for (const rock of rocks) if (rock.fading === undefined && rock.state === 'rest' && rock.onGround && ice.holeAt(rock.position.x, rock.position.z)) rock.loseGround();
-    }
     for (const rock of rocks) rock.drawAt(rock.fading === undefined ? 1 - (stepsTime - end) / PHYSICS_STEP : 1);
-    // What is past a cap shrinks away (keepWithinCaps), and goes; a floater a gale drifts out of sight goes at once.
+    // What fades shrinks away (fadeOut: it is frozen, so only how it looks goes by the frame), and goes.
     for (const rock of [...rocks]) {
-      if (rock.state === 'held') continue;
-      if (rock.fading !== undefined) {
-        rock.fading += frame;
-        const left = 1 - THREE.MathUtils.smoothstep(rock.fading, 0, FADE_SECONDS);
-        if (left <= 0) retireRock(rock);
-        else for (const mesh of rock.meshes) mesh.scale.setScalar(rock.radius * (rock.eatenScale ?? 1) * left);   // its meshes are scaled by its radius (src/rock.js), less what the fish ate
-      } else if ((rock.floats || rock.grounded) && Math.hypot(rock.position.x, rock.position.z) > FARTHEST_AWAY) retireRock(rock);
+      if (rock.fading === undefined || rock.state === 'held') continue;
+      rock.fading += frame;
+      const left = 1 - THREE.MathUtils.smoothstep(rock.fading, 0, FADE_SECONDS);
+      if (left <= 0) retireRock(rock);
+      else for (const mesh of rock.meshes) mesh.scale.setScalar(rock.radius * (rock.eatenScale ?? 1) * left);   // its meshes are scaled by its radius (src/rock.js), less what the fish ate
     }
-    keepWithinCaps();   // things settle, and a lower preset keeps fewer
     if (!skip.solver) {
       // The solver sleeps once its waves and foam have faded and nothing of the splash is left (the header);
       // the profiler's 'solver kept awake' step keeps it stepping.
@@ -2293,6 +2280,39 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   }
 
   /**
+   * The rest of a physics step's end (simulate), there so that it falls at
+   * the same step whatever the frame rate, and a seeded game goes alike at
+   * 60 frames a second and at 120 (tools/frame-rate-probe.mjs):
+   *   - what faded in this step (lost in the garden, eaten) is frozen from
+   *     the next (fadeOut);
+   *   - a shard afloat that a hole's new ice has reached is frozen into it
+   *     (src/ice.js freezeIn), and goes as a thing; a hole something thrown
+   *     floats in is not left alone, so it stays open (src/ice.js disturb);
+   *   - a hole opened under a thing at rest on the ice: its ground is gone,
+   *     and it falls in (src/rock.js loseGround);
+   *   - a floater a gale drifts out of sight goes at once;
+   *   - what is past a cap starts to shrink away (keepWithinCaps: things
+   *     settle, and a lower preset keeps fewer).
+   */
+  function endStep(stepping) {
+    for (let index = stepping.length - 1; index >= 0; index--) if (stepping[index].fading !== undefined) stepping.splice(index, 1);
+    for (const rock of [...stepping]) {
+      if (!rock.iceHole || !(rock.state === 'float' || rock.afloat)) continue;
+      if (!rock.piece) ice.disturb(rock.iceHole);
+      else if (ice.reaches(rock)) { ice.freezeIn(rock); retireRock(stepping.splice(stepping.indexOf(rock), 1)[0]); }
+    }
+    if (ice.opened !== holesSeen) {
+      holesSeen = ice.opened;
+      for (const rock of stepping) if (rock.state === 'rest' && rock.onGround && ice.holeAt(rock.position.x, rock.position.z)) rock.loseGround();
+    }
+    for (const rock of [...stepping]) {
+      if (rock.state !== 'held' && (rock.floats || rock.grounded) && Math.hypot(rock.position.x, rock.position.z) > FARTHEST_AWAY) retireRock(stepping.splice(stepping.indexOf(rock), 1)[0]);
+    }
+    keepWithinCaps();
+    for (let index = stepping.length - 1; index >= 0; index--) if (stepping[index].fading !== undefined) stepping.splice(index, 1);
+  }
+
+  /**
    * What the fish see at one of their steps (src/fish.js advance asks): what
    * is thrown frightens them or is in their way, the finger too; what is
    * edible in the water, once settled (src/things.js `edible`; a frozen
@@ -2300,7 +2320,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
    * see is src/fish.js fishSee's, a FISH_STEP since they last looked.
    */
   function fishLook() {
-    fishes.setConditions({ surfaceGap: ice.on ? FISH_GAP.ice + ice.thickness : galeWaves.on && !pooled ? FISH_GAP.gale : FISH_GAP.open });
+    fishes.setConditions(fishConditions());
     const threats = [], foods = [];
     for (const rock of rocks) {
       if (rock.fading !== undefined) continue;
@@ -2331,6 +2351,10 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     }
   }
   let fingerSeen = null;   // where the fish last saw the finger (fishLook)
+  /** How far under the surface the fish keep (src/fish.js setConditions): under the ice its thickness more, in a gale's waves more. */
+  function fishConditions() {
+    return { surfaceGap: ice.on ? FISH_GAP.ice + ice.thickness : galeWaves.on && !pooled ? FISH_GAP.gale : FISH_GAP.open };
+  }
 
   /**
    * A thing as the fish keep clear of it (src/fish.js keepClear): its reach
@@ -2353,7 +2377,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       rock.fishShape = { reach, thickness, axis: axis.clone(), normal: new THREE.Vector3() };
     }
     const { reach, thickness, axis, normal } = rock.fishShape;
-    normal.copy(axis).applyQuaternion(rock.meshAbove.quaternion);
+    normal.copy(axis).applyQuaternion(rock.quaternion);   // as the world has it at this step, not as the frame draws it (drawAt)
     return { radius: reach * scale, thickness: thickness * scale, normal: [normal.x, normal.y, normal.z] };
   }
 
@@ -2654,6 +2678,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     dropRings.reset();
     simulationTime = 0;
     stepsTime = 0;
+    fishes.rewind();   // their clock is the world's (src/fish.js advance)
     viewChanged = true;   // the mirror image is drawn whole again, without the splash
     mirroredRect.set(0, 0, 0, 0);
     splashRect.set(0, 0, 0, 0);
@@ -3052,6 +3077,17 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       lastFrame = performance.now();
       if (!frameRequest) frameRequest = requestAnimationFrame(frame);
     },
+    /**
+     * Each of `frames` (s) simulated as a frame, nothing drawn: a game stepped
+     * at any frame rate, for tools/frame-rate-probe.mjs (drawing would read the
+     * water under the floaters back from the GPU, src/floaterRide.js, a frame
+     * or two late by design).
+     */
+    stepFrames(frames) {
+      for (const seconds of frames) simulate(seconds);
+    },
+    /** The place's fish as they start (src/fish.js setWaters), for tools/frame-rate-probe.mjs. */
+    restartFish() { applyFish(); },
     /**
      * Deterministic stepping for screenshots: simulate `seconds` of world time
      * in the frames the app would draw, 1/60 s of real time each (so a time

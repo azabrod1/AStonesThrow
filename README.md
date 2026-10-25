@@ -1496,6 +1496,16 @@ farther out, so it rises into the view rather than filling its corner.
   120 Hz one, and a throw every other frame of a 120 Hz clock (held to 60 a
   second) and every frame of a 60 Hz one; and that a large window keeps
   within the pixel budget.
+- `node tools/frame-rate-probe.mjs [--scene=koi,pool]` plays seeded games
+  twice, in frames of 1/60 s and in frames of 1/60, 1/45, 1/120 and 1/50 s,
+  and checks they end the same, exactly: every thing thrown (its place, turn,
+  state, and when it began to fade), every fish, the ice's holes and the next
+  draw of `Math.random`. The scenes: throws among the lake's fish and more
+  floaters than Low keeps; a break through thin ice, a stone into its hole, a
+  brick slid and a pebble onto a shard; the koi and their food; the pool with
+  more stones than Low keeps at rest. Nothing is drawn
+  (`__pond.stepFrames`), so the floaters' ride, read back from the drawn
+  water, is left out.
 - `node tools/zoom-probe.mjs [--w=390 --h=844]` drives the wheel, a pinch, a
   tap and Escape through the page's own handlers and checks that what is under
   the pointer stays there; then drags, by touch and by mouse, and checks that
@@ -1537,7 +1547,8 @@ farther out, so it rises into the view rather than filling its corner.
   `setThing(name)` (and `thing`: a key of `THINGS` in `src/things.js`, remembered
   on the device) and `setSize(value)` (and `size`: the slider's value in its unit),
   `setTimeScale` (and `timeScale`), `pause()`, `advance(seconds)` (in the frames the app would
-  draw at the current time scale), `setDebugView(name)`, `setFov(degrees)`,
+  draw at the current time scale), `stepFrames(frames)` (each a frame of that many seconds, nothing
+  drawn), `restartFish()` (the place's fish as they start), `setDebugView(name)`, `setFov(degrees)`,
   `lookAt(x, y, z)`, `resetView()`, `setWind(name)` (and `wind`: calm,
   breeze or windy, remembered on the device), `setSky(place)` and
   `setHour(name)` (and `sky`, `pooled`, `hour`, and `hours`, the shown

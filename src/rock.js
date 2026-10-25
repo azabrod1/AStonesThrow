@@ -2268,7 +2268,7 @@ export class Rock {
       return {
         skim: true, slap: true, x: this.position.x, z: this.position.z, exitX: this.position.x, exitZ: this.position.z,
         velocity: impactVelocity, exitVelocity: this.velocity.clone(), duration: 0, radius: faceRadius, mass: this.mass, push,
-        pushSpeed: push / (STONE_DENSITY * (4 / 3) * Math.PI * faceRadius ** 3), skips: 0, rock: this,
+        pushSpeed: push / (STONE_DENSITY * (4 / 3) * Math.PI * faceRadius ** 3), skips: 0, rock: this, seed: this.splashSeed,
       };
     }
     const lift = this.liftAt(this.velocity);
@@ -2332,7 +2332,7 @@ export class Rock {
       x: this.position.x, z: this.position.z, exitX: contact.exitPosition.x, exitZ: contact.exitPosition.z,
       velocity: this.velocity.clone(), exitVelocity: contact.exitVelocity.clone(), duration: contact.duration,
       radius: face, mass, push, pushSpeed: push / (STONE_DENSITY * (4 / 3) * Math.PI * face ** 3),
-      skips: this.skip.skips, rock: this,
+      skips: this.skip.skips, rock: this, seed: this.splashSeed,
     };
   }
 

@@ -626,6 +626,16 @@ export class FishPopulation {
   }
 
   /**
+   * The world's clock started again from 0 (src/main.js clearPond): the fish
+   * stay as they are and count their steps from the next `advance`, or they
+   * would wait out every second they had swum before stepping again.
+   */
+  rewind() {
+    this.clock = null;
+    for (const fish of this.fish) fish.before = null;
+  }
+
+  /**
    * Each fish as drawn at `time` (s, the world's), a step behind its clock
    * (advance): its state between where it was before its last step and
    * where it is (`shown`, which src/fishMeshes.js draws), so it swims

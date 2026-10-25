@@ -42,8 +42,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - part: controls
-            run: node tools/controls-probe.mjs
+          - part: controls, frame rate
+            run: |
+              node tools/controls-probe.mjs
+              node tools/frame-rate-probe.mjs
           - part: quality, site, startup
             run: |
               node tools/quality-probe.mjs

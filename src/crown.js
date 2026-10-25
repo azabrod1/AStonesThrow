@@ -301,6 +301,7 @@
 import * as THREE from 'three';
 import { createRingGrid, computeGridNormals, holdWithinWalls, markChanged } from './fluidMesh.js';
 import { seededRandom, sprayDrops } from './spray.js';
+import { splashRandom } from './splashRandom.js';
 
 const GRAVITY = 9.81;
 const REFERENCE_RADIUS = 0.03;     // the stone size the tuning constants were set for
@@ -431,7 +432,7 @@ const SATELLITE_SIZE = 0.25;       // ...of this share of its radius on average 
 const SURFACE_TENSION = 0.072;     // N/m
 const WATER_DENSITY = 1000;        // kg/m³
 
-const randomRange = (low, high) => low + Math.random() * (high - low);
+const randomRange = (low, high) => low + splashRandom() * (high - low);
 const smoothstep = (edgeLow, edgeHigh, value) => {
   const clamped = Math.min(Math.max((value - edgeLow) / (edgeHigh - edgeLow), 0), 1);
   return clamped * clamped * (3 - 2 * clamped);
@@ -1090,7 +1091,7 @@ export class CrownSheet {
       const angle = randomRange(0, Math.PI * 2);
       const lean = randomRange(0, 0.12) * speed;
       splash.spawnDroplet(lip.x + randomRange(-0.1, 0.1) * this.radius, DOME_HEIGHT * this.radius, lip.z + randomRange(-0.1, 0.1) * this.radius,
-        Math.cos(angle) * lean, speed, Math.sin(angle) * lean, (0.0005 + 0.0009 * Math.random()) * this.sizeFactor ** 0.4);
+        Math.cos(angle) * lean, speed, Math.sin(angle) * lean, (0.0005 + 0.0009 * splashRandom()) * this.sizeFactor ** 0.4);
     }
     // And the spike's finer spray (src/spray.js), as fast.
     const size = SEAL_FINE_SIZE * this.sizeFactor ** 0.3;
@@ -1188,7 +1189,7 @@ export class CrownSheet {
    * as the spares earned allow; returns how many.
    */
   spawnLump(from, radius, spread, scatter, splash) {
-    const count = breakLump(from, radius, DROP_CEILING, 1 + Math.floor(this.spareCarry), spread, scatter, Math.random,
+    const count = breakLump(from, radius, DROP_CEILING, 1 + Math.floor(this.spareCarry), spread, scatter, splashRandom,
       (x, y, z, vx, vy, vz, piece) => splash.spawnDroplet(x, y, z, vx, vy, vz, piece));
     this.spareCarry -= count - 1;
     return count;
@@ -1260,7 +1261,7 @@ export class CrownSheet {
         const boost = randomRange(1.0, 1.08);
         const scatter = 0.05 * speed;
         const scatterX = randomRange(-scatter, scatter), scatterY = randomRange(-scatter, scatter), scatterZ = randomRange(-scatter, scatter);
-        const radius = (RIM_DROP_RADIUS + RIM_DROP_SPREAD * Math.random() ** 1.5) * (this.landing ? this.sizeFactor ** 0.4 : this.dropScale) * (this.fan ? FAN_RIM_DROPS : 1);
+        const radius = (RIM_DROP_RADIUS + RIM_DROP_SPREAD * splashRandom() ** 1.5) * (this.landing ? this.sizeFactor ** 0.4 : this.dropScale) * (this.fan ? FAN_RIM_DROPS : 1);
         this.spareCarry += this.spareRate;
         if (radius > DROP_CEILING) {
           state.vx *= boost; state.vy *= boost; state.vz *= boost;
