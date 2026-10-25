@@ -23,7 +23,8 @@
 //      splash's boil on fresh water (FRESH_BOIL, freshBubbles,
 //      freshBoilCloud): the surface holds at most FOAM_BOIL_HOLD of it, a
 //      faint one whole; its bubbles fill the share of cells they should,
-//      their mean white matches the one they fade to and they show no grid;
+//      their mean white matches the one they fade to, and drawn where they
+//      start to fade is within 5% of it, and they show no grid;
 //      the cloud under them is tinted by each Water setting's absorption and
 //      its churn spreads wide enough to show;
 //   3. prints the cell visits per foam pixel at each framing, the cost;
@@ -288,9 +289,13 @@ check(Math.abs(raftCover - boilCover) < 0.06, `a boil's bubbles cover about what
 // freshBoilCloud in src/shaders/scene.js, whose twins these are: change
 // both). The surface's share rises with the boil to FOAM_BOIL_HOLD and no
 // further, all of a faint boil, a pebble's fizz. Its bubbles: alive in
-// filled²·FOAM_BUBBLE_MOST of the cells; drawn, their mean white over many
-// cells and moments is the white they fade to when unresolved, so a boil
-// keeps its strength with distance; and one cell over, the white is no more
+// filled²·FOAM_BUBBLE_MOST of the cells; their mean white over many cells
+// and moments is the white they fade to when unresolved, and drawn (each
+// pixel the film's mean over the radii within half a pixel of it, a square
+// pixel's, SURFACE_BUBBLE's bubbleFilm) at the footprint where they start to fade it
+// is within 5% of the same places point-sampled (the bubbles under a
+// pixel lose some), so a boil keeps its strength with distance;
+// and one cell over, the white is no more
 // alike than anywhere else (no grid). The deep cloud's colour, per Water
 // setting (WATER_CLARITIES in src/main.js), is the Kubelka–Munk R∞ of the
 // water's absorption against the cloud's scattering: pale, never brighter
@@ -308,10 +313,19 @@ check(Math.abs(raftCover - boilCover) < 0.06, `a boil's bubbles cover about what
   const [smallest, largest] = defines.FOAM_BUBBLE_RADII;
   const aliveShare = (filled) => defines.FOAM_BUBBLE_MOST * clamp(filled * filled, 0, 1);
   const span = largest - smallest;
+  // The film (SURFACE_BUBBLE): its white (1 − cosθ)² from the cap's to the edge's, whose mean over the cap is 1/6 of the way.
+  const capWhite = defines.FOAM_BUBBLE_CAP_WHITE, edgeWhite = defines.FOAM_BUBBLE_EDGE_WHITE;
   const meanWhite = (filled) => aliveShare(filled) * Math.PI * (smallest * smallest + 2 * smallest * span / 3 + span * span / 5)
-    * (defines.FOAM_BUBBLE_CAP_WHITE + (defines.FOAM_BUBBLE_EDGE_WHITE - defines.FOAM_BUBBLE_CAP_WHITE) / 3) * (1 - 0.5 * defines.FOAM_BUBBLE_RISE);
-  // freshBubbles resolved, at a point (metres) and time (s); also whether its cell's bubble is alive.
-  const bubbleAt = (worldX, worldZ, filled, time) => {
+    * (capWhite + (edgeWhite - capWhite) / 6) * (1 - 0.5 * defines.FOAM_BUBBLE_RISE);
+  const filmArea = (area) => { const within = Math.min(area, 1), rest = 1 - within; return 2 * within - 0.5 * within * within + (4 / 3) * rest * Math.sqrt(rest); };
+  // bubbleFilm's white: the film's mean by area over the radii from inner to outer.
+  const filmBetween = (inner, outer) => {
+    const innerArea = inner * inner, outerArea = outer * outer, spanArea = outerArea - innerArea;
+    return (capWhite * (Math.min(outerArea, 1) - Math.min(innerArea, 1)) + (edgeWhite - capWhite) * (filmArea(outerArea) - filmArea(innerArea))) / spanArea;
+  };
+  // freshBubbles resolved, at a point (metres) and time (s), point-sampled or, given a pixel's footprint (metres), as
+  // drawn there; also whether its cell's bubble is alive.
+  const bubbleAt = (worldX, worldZ, filled, time, footprint = 0) => {
     const inCellsX = worldX / defines.FOAM_BUBBLE_CELL, inCellsZ = worldZ / defines.FOAM_BUBBLE_CELL;
     const cellX = Math.floor(inCellsX), cellZ = Math.floor(inCellsZ);
     const clock = time / defines.FOAM_BUBBLE_LIFE + foamHash(cellX + 41, cellZ + 7)[0];
@@ -322,8 +336,12 @@ check(Math.abs(raftCover - boilCover) < 0.06, `a boil's bubbles cover about what
     const centreX = mix(largest, 1 - largest, place[0]), centreZ = mix(largest, 1 - largest, place[1]);
     const radial = Math.hypot(inCellsX - cellX - centreX, inCellsZ - cellZ - centreZ) / Math.max(radius, 1e-4);
     const alive = shape[2] <= aliveShare(filled);
-    const towardEdge = Math.min(radial, 1) ** 4;
-    return { alive, white: alive && radial < 1 ? mix(defines.FOAM_BUBBLE_CAP_WHITE, defines.FOAM_BUBBLE_EDGE_WHITE, towardEdge) : 0 };
+    if (!alive) return { alive, white: 0 };
+    if (footprint > 0) {
+      const edge = footprint / defines.FOAM_BUBBLE_CELL / Math.max(radius, 1e-3);
+      return { alive, white: filmBetween(Math.max(radial - 0.5 * edge, 0), radial + 0.5 * edge) };
+    }
+    return { alive, white: radial < 1 ? mix(capWhite, edgeWhite, (1 - Math.sqrt(1 - radial * radial)) ** 2) : 0 };
   };
   for (const filled of [1, 0.5]) {
     let aliveCells = 0, whiteSum = 0;
@@ -336,6 +354,19 @@ check(Math.abs(raftCover - boilCover) < 0.06, `a boil's bubbles cover about what
     const aliveMeasured = aliveCells / samples, whiteMeasured = whiteSum / samples;
     check(Math.abs(aliveMeasured / aliveShare(filled) - 1) < 0.05, `at ${filled} of the hold, bubbles in ${(100 * aliveMeasured).toFixed(1)}% of the cells (${(100 * aliveShare(filled)).toFixed(1)}%: filled²·FOAM_BUBBLE_MOST)`);
     check(Math.abs(whiteMeasured / meanWhite(filled) - 1) < 0.1, `at ${filled} of the hold, the bubbles' mean white ${whiteMeasured.toFixed(4)}, the white they fade to ${meanWhite(filled).toFixed(4)}`);
+  }
+  {
+    // Drawn where the fade starts (FOAM_FADE_START cells a pixel), against point samples of the same places: a bubble
+    // under a pixel loses some (SURFACE_BUBBLE), but most of the white is in the big ones.
+    const fadeStart = defines.FOAM_FADE_START * defines.FOAM_BUBBLE_CELL;
+    let pointSum = 0, drawnSum = 0;
+    for (let index = 0; index < 200000; index++) {
+      const worldX = seededRandom() * 4.8, worldZ = seededRandom() * 4.8, time = seededRandom() * 30;
+      pointSum += bubbleAt(worldX, worldZ, 1, time).white;
+      drawnSum += bubbleAt(worldX, worldZ, 1, time, fadeStart).white;
+    }
+    const loss = 1 - drawnSum / pointSum;
+    check(Math.abs(loss) < 0.05, `drawn at ${(1000 * fadeStart).toFixed(1)} mm a pixel, where they start to fade, the bubbles whiten ${(100 * loss).toFixed(1)}% less than point-sampled`);
   }
   {
     // One cell over against a random distance away: the white's correlation at the lattice's own step (bubbles at

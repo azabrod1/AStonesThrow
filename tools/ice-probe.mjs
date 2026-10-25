@@ -881,6 +881,10 @@ for (const [thickness, diameter, breaks] of [['thin', 6, true], ['thick', 16, fa
   const piece = world.shards.filter((shard) => shard.state === 'rest' || shard.state === 'float').sort((one, other) => other.radius - one.radius)[0];
   if (!check(piece, `${thickness} ice: no piece afloat to drop a stone on`)) continue;
   const before = world.shards.length, top = (shard) => shard.position.y + (shard.piece.thickness * shard.radius) / 2;
+  // The stone's shape is a seeded draw of its own, as a thrown thing's is (throwOnto): its blow, m·v²/R, follows its
+  // collision radius, and the first throw's splash (its foam and bubbles) takes what it needs from Math.random before
+  // this, so an unseeded stone's shape, and whether the piece breaks, would follow the splash's draws.
+  seedRandom(1);
   const stone = world.add(new Rock({ radius: 0.03, position: new THREE.Vector3(piece.position.x + 0.3 * piece.radius, 0.06, piece.position.z), velocity: new THREE.Vector3(0, -4, 0), envTexture: null, thing: 'stone' }));
   let deepest = 0;
   for (let time = 0; time < 4; time += STEP) {

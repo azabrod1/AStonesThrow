@@ -144,7 +144,8 @@
 // against FALLBACK_VOLUME, times (R / 3 cm)^FALLBACK_SIZE, which keeps the
 // strength of the rings the pond's waves were calibrated with) with foam, a
 // patch of foam specks in a disc of 1.6·R (FALLBACK_SPECKS times the
-// strength) and a small secondary ring's push, which the splash leaves out
+// strength, surfacing over FALLBACK_SPECK_SPAN·sqrt(R/g) as the mound's air
+// comes up) and a small secondary ring's push, which the splash leaves out
 // (columnWater): the stone's ring (RING in src/splash.js) is fitted to a
 // reference ring that holds it. A column still up after LONGEST seconds lets
 // everything go as drops.
@@ -214,7 +215,8 @@ const LEAST_DROP = 0.00025;        // m: drops smaller than this are not handed 
 const LONGEST = 6;                 // s: a column still up after this lets go of everything
 const FALLBACK_VOLUME = 2.9e-4;    // m³: a fallen volume this big from a 3 cm stone makes a mound and a ring of strength 1...
 const FALLBACK_SIZE = 0.43;        // ...times (R / 3 cm)^this, so the rings keep the strength they were calibrated with (the header)
-const FALLBACK_SPECKS = 35;        // foam specks where the jet falls back, times the mound's strength
+const FALLBACK_SPECKS = 35;        // foam specks where the jet falls back, times the mound's strength...
+const FALLBACK_SPECK_SPAN = 5;     // ...surfacing over this many sqrt(R/g) after it (0.3 s for a 3 cm stone's)
 const LENS_DROP_RADIUS = 0.002;    // drops this big are drawn as glass like the column
 const NECK_SPRAY = 0.03;           // a pinching neck throws this share of its drop's water as spray (times form.spray)...
 const NECK_SPRAY_SIZE = 0.12;      // ...in drops of this share of its radius on average...
@@ -716,7 +718,7 @@ export class JetColumn {
     water.addSplat({ x: fallX, z: fallZ, radius: radius * 0.9, height: 0.22 * radius * strength });
     water.addSplat({ x: fallX, z: fallZ, radius: radius * 1.5, velocity: -0.18 * strength, rim: 1.8 });
     water.addFoam({ x: fallX, z: fallZ, radius: radius * 1.3, amount: 0.3 * strength });
-    splash.spawnFoamSpecks(fallX, fallZ, 0, radius * 1.6, Math.round(FALLBACK_SPECKS * strength), 0.025);
+    splash.spawnFoamSpecks(fallX, fallZ, 0, radius * 1.6, Math.round(FALLBACK_SPECKS * strength), 0.025, FALLBACK_SPECK_SPAN * Math.sqrt(radius / GRAVITY));
   }
 
   /**
