@@ -16,7 +16,11 @@
 //     its mass and its mesh's own volume (src/rock.js), a pizza's being a disc;
 //     one sized by its mass and density is as big as they make its mesh's own
 //     volume (a cut gem). A thing sized by its diameter has a sphere's mass of
-//     its density (`mass` in src/rock.js), as the river stone always has.
+//     its density (`mass` in src/rock.js), as the river stone always has. Its
+//     nominal radius is half its length, or, for a long thin thing (a
+//     banana, a toy slide), its ball's of like volume: its splash is sized
+//     by it, as by what it displaces, and its mesh says how long it is
+//     (src/thingMeshes.js unitLength), which the strip shows.
 //     `size.share`, a family's name, makes things share one slider value (the
 //     stones' 'stones'); otherwise each thing keeps its own.
 //   - material: how it meets the pool's deck and other things (src/rock.js
@@ -30,7 +34,9 @@
 //     radius: 0.47 a ball's; a pizza, flat on, more), and its `model`:
 //     `ballistic` (it tumbles as it flies) or `flutter` (a flat thing: a plate
 //     in the air, turned by the air's push on its face and its spin, let go
-//     flat with a little tilt, src/rock.js Rock.flutter).
+//     flat with a little tilt, src/rock.js Rock.flutter); `spin`, [least,
+//     most] rad/s, its own tumble where a stone's (5 to 30) is wrong for it
+//     (a toy slide a metre long turns over a few times a second at most).
 //   - body.upright: its own +y is its top (a pizza's toppings): which way up
 //     it is let go, which way its rim keeps the water off afloat (the water
 //     turns it as it will: upside down it stays so), the axis its buoyancy is
@@ -56,7 +62,15 @@
 //     goes limp; its rim no longer holds the water out); `thaws`, for a
 //     frozen thing, the `seconds` it takes wholly under to thaw (in air some
 //     fifteen times as long): until it has, it is rigid and frosted, and it
-//     soaks only as far as it has thawed.
+//     soaks only as far as it has thawed. `columns`, how many columns its
+//     buoyancy is cut into across its widest (src/rock.js buoyancyColumns;
+//     20 unless it says): a long thin thing needs more for enough across
+//     its girth (a banana, 40), or, lying with its columns level, the
+//     water's push on it comes in steps and it never settles; `columnsAlong`,
+//     the axis they are cut along in its own frame (its own +y if it is kept
+//     upright, else its short axis): a thing that may float lying any way up
+//     needs one slanted to all its faces (a toy slide's, [1, 1, 1]), for the
+//     same reason.
 //   - A thing that flies as a plate (`air.model` 'flutter') meets the water
 //     as one too (src/rock.js plateWaterStep): its wetting face carries a disc's
 //     water and takes normal drag, its edge skin drag; the flow turns it.
@@ -119,11 +133,25 @@
 //     soft and soaks), a pie (12, 23 or 28 cm in its tin, thrown flat, filled
 //     at random: apple, about 860 kg/m³, and pumpkin float low, cherry and
 //     blueberry sink), a watermelon (2 to 10 kg at 960 kg/m³: it floats with
-//     only a sliver of its back above the water), a rubber duck (5, 9 or 25
-//     cm, hollow vinyl, 120 to 250 kg/m³: it bobs high, and its heavy base
-//     rights it however it lands) and a brick (215 × 102.5 × 65 mm, 2.7 kg:
-//     about 1900 kg/m³, its density from its mesh's volume; it sinks, and
-//     lands on the deck with a thud);
+//     only a sliver of its back above the water), a banana (100 to 250 g,
+//     about 920 kg/m³ whole: it floats with all but a sliver under, and
+//     tumbles end over end in the air), a slice of bread (12 cm, 30 g, about
+//     175 kg/m³: a floppier plate than a pizza, it floats nearly all out,
+//     then soaks fast and, waterlogged in about two minutes, sinks), a
+//     birthday cake (16, 22 or 28 cm, sponge under buttercream, about 460
+//     kg/m³, with one to six candles drawn at random: it floats half out
+//     and, waterlogged in two or three minutes, sinks), a rubber duck (5, 9
+//     or 25 cm, hollow vinyl, 120 to 250 kg/m³: it bobs high, and its heavy
+//     base rights it however it lands), a
+//     brick (215 × 102.5 × 65 mm, 2.7 kg: about 1900 kg/m³, its density from
+//     its mesh's volume; it sinks, and lands on the deck with a thud), a
+//     flat-screen TV (54 × 32 × 1.8 cm, 3.6 kg) and an iPhone (15 × 7.2 ×
+//     0.8 cm, 180 g), rigid rectangular plates with their screens on +y
+//     (they slap the water, sink and settle on a broad face), a snowball (5
+//     to 15 cm, packed snow at 450 kg/m³: it floats half out, then soaks to
+//     slush in under half a minute and floats on, nine tenths under) and a
+//     toddler's toy slide (99 × 46 × 70 cm, 4.1 kg, hollow plastic: about
+//     104 kg/m³, it floats nine tenths out);
 //   - a shard of ice (hidden: src/ice.js breaks each one, its own outline,
 //     src/thingMeshes.js createShardGeometry): 917 kg/m³, a plate in the
 //     water as a pizza is, so it comes up and floats flat, its top a little
@@ -133,7 +161,7 @@
 // the geometry, the vertex colours and the material's colour, roughness and
 // reflection, which are uniforms, so no thing compiles a program of its own
 // (src/main.js warmUp).
-import { meshKind, unitVolume } from './thingMeshes.js';
+import { meshKind, unitVolume, unitLength } from './thingMeshes.js';
 
 export const WATER_DENSITY = 1000;
 export const STONE_DENSITY = 2600;   // a river stone's: the splash and the cavity were fitted to it (tools/basilisk)
@@ -160,6 +188,8 @@ const LIMITS = {
   mass: [0.0001, 100],      // kg
   centimetres: [0.5, 200],  // a slider sized by its diameter
   bounce: [0, 1], friction: [0, 5], rolling: [0, 1], drag: [0.01, 10],
+  spin: 100,                   // rad/s: the most a thing's own tumble (air.spin) may be
+  columns: [8, 60],            // its buoyancy's columns across its widest (water.columns)
   restingHeight: [0.001, 2],   // its centre over the bed at rest, in radii
   text: 120,                   // characters in a name, group or note
 };
@@ -231,10 +261,13 @@ function definitionProblems(key, definition) {
   need(!material.roll || within(material.rolling, LIMITS.rolling), 'a thing that rolls needs material.rolling, 0 to 1');
   need(air.drag === undefined || within(air.drag, LIMITS.drag), `air.drag must be ${LIMITS.drag.join(' to ')}`);
   need(air.model === undefined || AIR_MODELS.includes(air.model), `air.model must be one of ${AIR_MODELS.join(', ')}`);
+  need(air.spin === undefined || (Array.isArray(air.spin) && air.spin.length === 2 && air.spin.every(isNumber) && air.spin[0] >= 0 && air.spin[0] <= air.spin[1] && air.spin[1] <= LIMITS.spin), `air.spin must be [least, most] within 0 to ${LIMITS.spin} rad/s`);
   need(within(water.restingHeight, LIMITS.restingHeight), `water.restingHeight must be ${LIMITS.restingHeight.join(' to ')} radii`);
   need(water.dry === undefined || (isNumber(water.dry) && water.dry > 0 && water.dry < 1), 'water.dry must lie between 0 and 1');
   need(water.soaks === undefined || (isObject(water.soaks) && within(water.soaks.seconds, [1, 100000]) && within(water.soaks.takes, [0, 2])), 'water.soaks needs seconds (1 to 100000) and takes (0 to 2, of its volume)');
   need(water.thaws === undefined || (isObject(water.thaws) && within(water.thaws.seconds, [1, 100000])), 'water.thaws needs seconds (1 to 100000)');
+  need(water.columns === undefined || (Number.isInteger(water.columns) && within(water.columns, LIMITS.columns)), `water.columns must be a whole number from ${LIMITS.columns.join(' to ')}`);
+  need(water.columnsAlong === undefined || (Array.isArray(water.columnsAlong) && water.columnsAlong.length === 3 && water.columnsAlong.every((value) => within(value, [-1, 1])) && Math.hypot(...water.columnsAlong) > 0.1), 'water.columnsAlong must be three numbers from -1 to 1, not all near 0');
   for (const ability of ['skips', 'held']) need(abilities[ability] === undefined || typeof abilities[ability] === 'boolean', `abilities.${ability} must be true or false`);
   need(definition.hidden === undefined || typeof definition.hidden === 'boolean', 'hidden must be true or false');
   need(body.meetsAtRim === undefined || typeof body.meetsAtRim === 'boolean', 'body.meetsAtRim must be true or false');
@@ -312,9 +345,12 @@ function propertiesFor(definition, measure, readout) {
     const volume = definition.body.shape === 'mesh' ? unitVolume(definition) : null;
     const density = definition.body.density ?? (volume ? mass / (volume * radius ** 3) : mass / ((4 / 3) * Math.PI * radius ** 3));
     const preset = size.by === 'preset' ? size.presets.find((candidate) => candidate.value === Math.round(value)) ?? size.presets[0] : null;
-    const text = size.by === 'fixed' ? `${centimetres(2 * radius)} · ${grams(mass)}`
+    // Its size as its length: its diameter, or, where its mesh says its nominal radius is not half its length (a
+    // banana's is its ball's of like volume), its mesh's own length (src/thingMeshes.js unitLength).
+    const length = unitLength(definition) * radius;
+    const text = size.by === 'fixed' ? `${centimetres(length)} · ${grams(mass)}`
       : preset?.name ? `${preset.name} · ${preset.label}`
-        : size.by === 'mass' ? `${readout(value)} · ${centimetres(2 * radius)}`
+        : size.by === 'mass' ? `${readout(value)} · ${centimetres(length)}`
           : `${readout(value)} · ${grams(mass)}`;
     // Dressed as it is thrown (src/thingMeshes.js registerMesh `heaviest`: a pie's filling), it may sink though it floats plain.
     const heaviest = meshKind(definition.look.mesh)?.heaviest ?? 0;
@@ -580,6 +616,24 @@ defineBuiltIn('brick', {
   look: { mesh: 'brick', roughness: 0.95, reflection: 0.6 },
 });
 
+defineBuiltIn('tv', {
+  name: 'TV', group: 'Other', note: 'A flat screen, 3.6 kg: it sinks', called: 'a TV',
+  body: { shape: 'mesh', upright: true, size: { by: 'fixed', diameter: 0.54, mass: 3.6 } },
+  material: { bounce: [0.06, 0.12], friction: 0.65 },
+  air: { drag: 1.15, model: 'flutter' },
+  water: { restingHeight: 1.8 / 54 },
+  look: { mesh: 'tv', roughness: 0.25, reflection: 1.0, wet: { darker: 0.05, glossier: 0.25 } },
+});
+
+defineBuiltIn('iphone', {
+  name: 'iPhone', group: 'Other', note: 'Glass and metal, 180 g: it sinks', called: 'an iPhone',
+  body: { shape: 'mesh', upright: true, size: { by: 'fixed', diameter: 0.15, mass: 0.18 } },
+  material: { bounce: [0.12, 0.22], friction: 0.4 },
+  air: { drag: 1.1, model: 'flutter' },
+  water: { restingHeight: 0.8 / 15 },
+  look: { mesh: 'iphone', roughness: 0.18, reflection: 1.1, wet: { darker: 0.03, glossier: 0.2 } },
+});
+
 // A shard of ice (the header): each one the ice breaks has its own outline, and the mass of ice its slab holds (src/ice.js
 // shards), so its density is ice's, 917 kg/m³, as the plain one's here is (its slab's 4.65e-5 m³ at 10 cm across),
 // thrown as any thing is (tools/thing-probe.mjs). Ice is slick.
@@ -591,4 +645,77 @@ defineBuiltIn('ice-shard', {
   water: { restingHeight: 0.1 },
   look: { mesh: 'shard', roughness: 0.06, reflection: 0.5, wet: { darker: 0, glossier: 0.3 }, seenThrough: true },
   abilities: { held: false },
+});
+
+// The things below are defined after the shard so that every thing before keeps its place in THING_NAMES (the probes
+// seed each thing's throws by it); the menu lists each group's in the order defined.
+
+// A banana (the header): about 920 kg/m³ whole, ripe (Ambon bananas, measured by what they displace, 932 falling to
+// 890 kg/m³ as they ripened), so it floats with all but a sliver of it under. Long and thin, its nominal radius is its
+// ball's of like volume (src/thingMeshes.js asUnitBall), which its splash is sized by: a stone of its radius displaces
+// what it does. Thrown, it tumbles end over end. Its buoyancy is cut finer (`columns`), for enough across its girth.
+defineBuiltIn('banana', {
+  name: 'Banana', group: 'Other', note: 'For scale: it floats, just', called: 'a banana',
+  body: { shape: 'mesh', density: 920, size: { by: 'mass', unit: 'g', min: 100, max: 250, step: 10, initial: 160 } },
+  material: { bounce: [0.12, 0.22], friction: 0.7 },
+  air: { drag: 1.1 },
+  water: { restingHeight: 0.55, columns: 40 },
+  look: { mesh: 'banana', roughness: 0.45, reflection: 0.8, wet: { darker: 0.08, glossier: 0.45 } },
+});
+// A slice of sandwich bread (the header), 12 cm and 30 g: white bread's crumb is 4 to 6 cm³ a gram, so the slice is
+// about 175 kg/m³ and floats nearly all out of the water, a plate in the air as a pizza is, and floppier. Its crumb is
+// some 85% air, open to the water: it soaks fast, and waterlogged (its pores all but full, 0.88 of its volume) it
+// sinks, in two or three minutes afloat.
+const BREAD_GIVE = { cup: 0.004, most: 0.15, flap: 0.07, rate: 4, drape: 0.8 };
+defineBuiltIn('bread', {
+  name: 'Slice of bread', short: 'Bread', group: 'Other', note: 'For the ducks: it floats, soaks, sinks', called: 'a slice of bread',
+  body: { shape: 'mesh', soft: BREAD_GIVE, size: { by: 'fixed', diameter: 0.13, mass: 0.03 } },
+  material: { bounce: [0.03, 0.08], friction: 0.9 },
+  air: { drag: 1.1, model: 'flutter' },
+  water: { restingHeight: 0.1, soaks: { seconds: 25, takes: 0.88 } },
+  look: { mesh: 'bread', roughness: 1.0, reflection: 0.5, wet: { darker: 0.2, glossier: 0.3 } },
+});
+// A birthday cake (the header), two layers under buttercream, with a random number of candles: sponge cake is 0.3
+// to 0.4 g/cm³ (some 75% air) and buttercream about 0.9, so the whole is about 460 kg/m³ and floats half out. Its
+// frosting's weight is high in it, a little over its middle (`ballast`), so either way up it lands it stays; kept
+// upright, on the deck it settles flat, on its top or its base, never on its edge. Its
+// sponge soaks through its bare underside and sides, slowed by its frosting: waterlogged (0.62 of its volume), it
+// sinks, in three or four minutes afloat. Thrown, it tumbles.
+defineBuiltIn('cake', {
+  name: 'Birthday cake', short: 'Cake', group: 'Other', note: 'Sponge and frosting: floats, then soaks', called: 'a cake',
+  body: {
+    shape: 'mesh',
+    upright: true,
+    ballast: [0, 0.03, 0],
+    size: { by: 'preset', unit: 'size', initial: 2, presets: [{ value: 1, name: 'Small', label: '16 cm', diameter: 0.16, mass: 0.66 }, { value: 2, name: 'Party', label: '22 cm', diameter: 0.22, mass: 1.7 }, { value: 3, name: 'Big', label: '28 cm', diameter: 0.28, mass: 3.5 }] },
+  },
+  material: { bounce: [0.02, 0.06], friction: 0.9 },
+  air: { drag: 0.9 },
+  water: { restingHeight: 0.45, soaks: { seconds: 60, takes: 0.62 } },
+  look: { mesh: 'cake', roughness: 0.6, reflection: 0.7, wet: { darker: 0.12, glossier: 0.35 } },
+});
+// A snowball (the header), packed by hand, about 450 kg/m³ (packed snow is 300 to 500): it floats half out, then the
+// water floods the air between its grains, as much as 0.45 of its volume, in under half a minute, and it floats on as
+// slush, nearly all under (ice and water, still lighter than water). Melting it would take tens of minutes.
+defineBuiltIn('snowball', {
+  name: 'Snowball', group: 'Other', note: 'Packed snow: it floats, soaked to slush', called: 'a snowball',
+  body: { shape: 'sphere', density: 450, size: { by: 'diameter', unit: 'cm', min: 5, max: 15, step: 0.5, initial: 8 } },
+  material: { bounce: [0.03, 0.1], friction: 0.9, roll: 'solid', rolling: 0.4 },
+  water: { restingHeight: 0.95, soaks: { seconds: 6, takes: 0.45 } },
+  look: { mesh: 'snowball', roughness: 0.8, reflection: 0.7, wet: { darker: 0.3, glossier: 0.5 } },
+});
+// A toddler's slide (the header), 99 × 46 × 70 cm and 4.1 kg (9 lb), moulded with hollow walls: its hull holds 39
+// litres (src/thingMeshes.js), so it is about 104 kg/m³ and floats nine tenths out of the water. Its nominal radius
+// is its hull's ball of like volume (0.211 m, a 42 cm ball: its splash is a thing's that displaces as much), its size
+// shown as its length. A throw puts no more than THROW_WORK into it, and it tumbles slowly (`air.spin`), dragged by
+// the air on more than its ball's disc. Kept upright, it settles on the deck on its feet or upside down, not balanced
+// on a corner; afloat the water leaves it as it lands (on its feet, its side or upside down: it is no heavier low
+// down), its buoyancy cut slantwise to all its faces (`columnsAlong`).
+defineBuiltIn('slide', {
+  name: 'Toy slide', short: 'Slide', group: 'Other', note: 'Hollow plastic, 4 kg: it floats high', called: 'a toy slide',
+  body: { shape: 'mesh', upright: true, size: { by: 'fixed', diameter: 0.422, mass: 4.1 } },
+  material: { bounce: [0.15, 0.25], friction: 0.5 },
+  air: { drag: 2.2, spin: [1, 4] },
+  water: { restingHeight: 0.8, columnsAlong: [1, 1, 1] },
+  look: { mesh: 'slide', roughness: 0.45, reflection: 0.9, wet: { darker: 0.02, glossier: 0.3 } },
 });

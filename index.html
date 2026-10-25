@@ -815,12 +815,31 @@
     .menu-group .menu-card { min-height: 44px; }
     .thing-favourite { width: 44px; height: 44px; padding: 11px; }
   }
+  /* A touch screen: each group's pills in one row that scrolls sideways
+     under a finger, the card's edge cutting off the last in view (there is
+     more), so the dropdown is as tall as its groups however many things each
+     holds; a wider screen with a pointer wraps them. */
+  @media (pointer: coarse) {
+    .thing-menu-pills {
+      flex-wrap: nowrap;
+      overflow-x: auto;
+      margin: 0 -10px;
+      padding: 0 10px;
+      scroll-padding-inline: 10px;
+      overscroll-behavior-x: contain;
+      touch-action: pan-x pan-y;
+      scrollbar-width: none;
+    }
+    .thing-menu-pills::-webkit-scrollbar { display: none; }
+    .thing-menu-card [role="menuitemradio"] { flex: none; }
+  }
   /* A short touch screen (an iPhone SE upright, a phone on its side): the
-     dropdown's pills at the controls probe's least height (34 points) and its
-     rows and heads closer, so its twenty pills fit over the strip without
-     scrolling. */
+     dropdown's pills at the controls probe's least height (34 points), their
+     pictures and ends narrower, and its rows and heads closer, so its rows fit
+     over the strip without scrolling. */
   @media (pointer: coarse) and (max-height: 700px) {
-    .thing-menu-card [role="menuitemradio"] { min-height: 34px; }
+    .thing-menu-card [role="menuitemradio"] { min-height: 34px; gap: 5px; padding-right: 8px; }
+    .thing-menu-card [role="menuitemradio"] img { width: 28px; height: 21px; }
     .thing-menu-pills { row-gap: 3px; }
     .thing-menu-head { margin: 5px 2px 2px; }
   }

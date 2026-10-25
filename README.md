@@ -26,7 +26,9 @@ view); a drag that starts zoomed turns round what the view is looking at.
 Escape or Reset view (under the menu button while the view is away from
 the shore's) glides back to the shore. The strip at the bottom sets what is
 thrown: its name opens a dropdown of every thing under its group, each with
-its picture (`src/thingMenu.js`), and its slider sets the size (a stone 1.5
+its picture (`src/thingMenu.js`; on a phone each group is one row a finger
+scrolls sideways, so the dropdown stays as tall as its groups however many
+things there are), and its slider sets the size (a stone 1.5
 to 30 cm across, a bowling ball 6 to 16 lb, a basketball size 5 to 7, a gem
 5 to 1000 carats; a golf or a tennis ball has one size). Then how it is
 thrown, in two parts: the manner, Toss (the low way round), Lob (the high
@@ -52,8 +54,9 @@ is remembered on the device (but the view, which opens on the shore):
 - What to throw (`?thing=`): stones (a river stone, the default; slate,
   granite, basalt, pumice), balls (golf, tennis, bowling, basketball), gems
   (diamond, emerald, ruby, sapphire) and others (an apple, a watermelon, a
-  pizza, a frozen pizza, a pie, a rubber duck, a brick), each the size, weight
-  and density of the real thing (`src/things.js`). The foot of the strip's
+  pizza, a frozen pizza, a pie, a rubber duck, a brick, a TV, an iPhone, a
+  banana, a slice of bread, a birthday cake, a snowball, a toy slide), each
+  the size, weight and density of the real thing (`src/things.js`). The foot of the strip's
   dropdown opens this page. What is lighter than water floats; the rest sink.
   What comes to rest stays, on the bed or the pool's floor as on the deck, up
   to the quality preset's count (below); past it the oldest shrinks away.
@@ -75,12 +78,32 @@ is remembered on the device (but the view, which opens on the shore):
   free surface are not modelled. Toppings still add mass without displacement,
   and the frozen pizza retains its existing lighter mass presets. These are
   approximations, not material measurements. A weighted rubber duck rights
-  itself however it lands. Each choice's picture
+  itself however it lands. The TV (54 × 32 × 1.8 cm, 3.6 kg) and iPhone
+  (15 × 7.2 × 0.8 cm, 180 g) are rigid plates, met by the water and the air
+  on their own faces' area: they slap the water, flutter down as thin plates
+  do, and come to rest lying along the lake bed's slope. In the pool they
+  land wherever they fit, their slap standing no crown, and its walls meet
+  their corners. Choose them under Other or use `?thing=tv` and
+  `?thing=iphone`; both support Toss and Lob. A banana (about 920 kg/m³
+  whole) tumbles end over end and floats with only a sliver out. A slice
+  of bread (30 g, about 175 kg/m³) flutters down floppier than a pizza,
+  floats nearly all out, then soaks and sinks in about two minutes. A
+  birthday cake (sponge under buttercream, about 460 kg/m³) comes with one
+  to six candles, floats half out, and soaks and sinks in two or three
+  minutes. A snowball (packed snow, 450 kg/m³) floats half out, then soaks
+  to slush in under half a minute and floats on, nine tenths under: slush
+  is still lighter than water. A toddler's toy slide (99 × 46 × 70 cm,
+  4.1 kg, hollow walls holding 39 litres) floats nine tenths out of the
+  water; it is held high enough to clear the water, and tumbles slowly. A
+  long thin thing's nominal radius (a banana's, the slide's) is its ball's
+  of like volume, so its splash is sized by what it displaces; the strip
+  shows its length. Each choice's picture
   (`assets/things/thumbs/`) is a harness frame of it at rest on the pool's
   deck, shrunk to 160×90: `--sky=pool --thing=name
   --throws=-1.75:0.75:0.05 --times=3 --seed=1 --w=320 --h=180`, looked at
   where it rests (`--report` says) with `--look=x:y:z` and a `--fov` that
-  frames it (a duck 4°, a pie 8°, a pizza 9°).
+  frames it (a duck 4°, a pie 8°, a pizza 9°, a toy slide 24°; the cake's
+  with `--seed=3`, on which it lands right way up).
 - View: Shore, standing on the bank as the page opens; Low, down at the
   water, the splash against the far shore; High, from above, the rings
   spreading over the pond; Under, under the water, looking up at the rocks
@@ -837,7 +860,10 @@ its haze is whiter (0.85 to 0.9 of the cloud against rain's 0.6) and
 thicker (1.5 km, 400 m, 150 m to see). A snowflake meets the water at about
 1 m/s, weighing milligrams: it melts and leaves no ring, so the water is
 left as the wind has it. The flakes are one instanced draw in a box about
-the eye (16, 40 and 60 thousand of them), each falling at its terminal
+the eye (16, 120 and 120 thousand of them: heavy snow's the big soft
+clumps of a snow day, up to 5 cm across, and a blizzard's up to 2.5 cm,
+drawn bigger than its fine snow so that fewer flakes, a flake's cost,
+hide what its haze does), each falling at its terminal
 speed (0.9 to 1.1 m/s, give or take a fifth), carried at the wind's speed,
 swaying on a small ellipse and tossed by gusts of 0.3 of the wind, drawn as
 the capsule it sweeps in 1/120 s: round in still air, a streak in a
@@ -1422,7 +1448,8 @@ farther out, so it rises into the view rather than filling its corner.
   portrait and goes with the first throw; that Toss, Lob and Skip set the
   manner, Soft, Medium and Hard the strength, and the clock goes round 1×, ¼×
   and ⅒×; that the name's dropdown fits over the
-  strip (a phone in portrait without scrolling), its pills tall enough for a
+  strip (a phone in portrait without scrolling, each group one row there that
+  scrolls sideways to every pill), its pills tall enough for a
   finger, a pill tapped is thrown next, a press on the pond closes it without
   throwing and the keyboard works it; that the settings open with their rows, each
   row's value whole beside its name, the Water page's pictured choices each
