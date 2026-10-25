@@ -2692,16 +2692,25 @@ uniform float uTime;
 uniform vec2 uFoamVelocity;  // the surface's drift downwind (m/s), which carries the raft too
 uniform float uProjScale;    // render-target pixels per world unit at distance 1
 uniform float uMinPixelSize;
+uniform vec3 uSunDir;
 varying float vAlpha;
 varying float vPixelSize;    // the speck's true size on screen (pixels), whatever it is drawn at
+varying float vDrawn;        // and the size it is drawn at
 varying vec2 vSurfaceAxis;
 varying float vSurfaceAspect;
+varying vec3 vToViewer;      // in the sprite's frame (x right, y down, z toward the viewer): to the viewer...
+varying vec3 vToSun;         // ...to the sun...
+varying vec3 vHalfVector;    // ...and between them, where the dome's normal glints
 ${GLSL_COMMON}
 ${FRESH_BOIL}
 void main() {
   float age = uTime - aTiming.x;
   float life = aTiming.y;
-  if (age < 0.0 || age >= life) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); gl_PointSize = 0.0; vAlpha = 0.0; vPixelSize = 0.0; vSurfaceAxis = vec2(0.0, 1.0); vSurfaceAspect = 1.0; return; }
+  if (age < 0.0 || age >= life) {
+    gl_Position = vec4(2.0, 2.0, 2.0, 1.0); gl_PointSize = 0.0; vAlpha = 0.0; vPixelSize = 0.0; vDrawn = 1.0; vSurfaceAxis = vec2(0.0, 1.0); vSurfaceAspect = 1.0;
+    vToViewer = vec3(0.0, 0.0, 1.0); vToSun = vToViewer; vHalfVector = vToViewer;
+    return;
+  }
   float phase = aTiming.w;
   vec2 place = position.xz + aDrift * SPECK_DRIFT_SECONDS * (1.0 - exp(-age / SPECK_DRIFT_SECONDS)) + uFoamVelocity * age;
   place += SPECK_WANDER * vec2(sin(age * 1.3 + phase) + 0.5 * sin(age * 3.1 + 2.0 * phase), cos(age * 1.1 + 1.7 * phase) + 0.5 * sin(age * 2.7 + 3.0 * phase));
@@ -2722,6 +2731,14 @@ void main() {
   float drawn = max(pixelSize, least);
   gl_PointSize = drawn;
   vPixelSize = pixelSize;
+  vDrawn = drawn;
+  // The dome's lighting, in the sprite's frame: view x is right, view y is up where gl_PointCoord's y is down.
+  vec3 toViewer = normalize(-viewPosition.xyz);
+  vec3 toSun = normalize(mat3(viewMatrix) * uSunDir);
+  vec3 halfVector = normalize(toViewer + toSun);
+  vToViewer = vec3(toViewer.x, -toViewer.y, toViewer.z);
+  vToSun = vec3(toSun.x, -toSun.y, toSun.z);
+  vHalfVector = vec3(halfVector.x, -halfVector.y, halfVector.z);
   // A floating bubble sits in the water plane, not in the screen plane.
   // Keep its projected short axis at least 1.5 pixels and conserve its area
   // in alpha. This also removes the constant-bright snow at a distance.
@@ -2736,11 +2753,24 @@ void main() {
 `;
 
 // A speck is lit like the foam map in WATER_FRAGMENT (white under the sun and
-// sky, on a level surface), dimmed by uBrightness. Resolved over five pixels
-// or more (its true size, vPixelSize, not the minimum it may be widened to)
-// it is a translucent disc a little brighter at its rim, which is how a
-// small surface bubble looks; smaller, a soft blob.
+// sky, on a level surface), dimmed by uBrightness. Unresolved (its true size,
+// vPixelSize, under SPECK_DOME_FROM pixels, whatever minimum it is widened
+// to) it is a soft grain. Resolved (from SPECK_DOME_TO) it is drawn as
+// FOAM_PATTERN draws a bursting bubble: a clear dome whose film, seen edge
+// on at its limb, whitens as the radius⁴ from SPECK_CAP_WHITE at the top to
+// SPECK_EDGE_WHITE at the edge, the limb one pixel soft, with the sun's
+// glint where the dome's normal is the half vector between the viewer and
+// the sun (sunGlitter's lobe with FOAM_GLINT_VARIANCE, widened by the
+// dome's turn across a pixel so a small dome's glint is a soft spot, not a
+// flicker), added as light, not as cover. Never a flat ring with a hole.
 export const SPECK_FRAGMENT = /* glsl */`
+#define SPECK_PI 3.141592653589793
+#define SPECK_DOME_FROM 3.5           // pixels of true size from which a speck starts to be drawn as a dome...
+#define SPECK_DOME_TO 5.0             // ...and is one
+#define SPECK_CAP_WHITE 0.04          // FOAM_BUBBLE_CAP_WHITE: the water shows through the cap...
+#define SPECK_EDGE_WHITE 0.75         // ...FOAM_BUBBLE_EDGE_WHITE: its film seen edge on
+#define SPECK_GLINT 2.0               // FOAM_GLINT: the film's two faces
+#define SPECK_GLINT_VARIANCE 0.02     // FOAM_GLINT_VARIANCE: the film's sheen
 uniform vec3 uSunDir;
 uniform vec3 uSunIrradiance;
 uniform vec3 uSkyAmbient;
@@ -2748,20 +2778,36 @@ uniform float uOpacity;
 uniform float uBrightness;
 varying float vAlpha;
 varying float vPixelSize;
+varying float vDrawn;
 varying vec2 vSurfaceAxis;
 varying float vSurfaceAspect;
+varying vec3 vToViewer;
+varying vec3 vToSun;
+varying vec3 vHalfVector;
 void main() {
   vec2 offset = gl_PointCoord * 2.0 - 1.0;
   offset += vSurfaceAxis * dot(offset, vSurfaceAxis) * (1.0 / vSurfaceAspect - 1.0);
   float radiusSquared = dot(offset, offset);
   if (radiusSquared > 1.0) discard;
-  float bubble = (0.12 + 0.88 * smoothstep(0.2, 0.7, radiusSquared)) * (1.0 - smoothstep(0.75, 1.0, radiusSquared));
-  float blob = exp(-3.0 * radiusSquared);
-  float shape = mix(blob, bubble, smoothstep(3.5, 5.0, vPixelSize * vSurfaceAspect));
+  float pixel = 2.0 / max(vDrawn, 1.0);   // a pixel, in radii
+  float dome = smoothstep(SPECK_DOME_FROM, SPECK_DOME_TO, vPixelSize * vSurfaceAspect);
+  float grain = exp(-3.0 * radiusSquared);
+  float limb = 1.0 - smoothstep(1.0 - pixel, 1.0, sqrt(radiusSquared));
+  float film = mix(SPECK_CAP_WHITE, SPECK_EDGE_WHITE, radiusSquared * radiusSquared) * limb;
+  float shape = mix(grain, film, dome);
   vec3 light = uSunIrradiance * max(uSunDir.y, 0.0) + uSkyAmbient * 1.5;
   vec3 color = vec3(0.94, 0.96, 0.97) * light * uBrightness;
   float alpha = vAlpha * shape * uOpacity;
-  gl_FragColor = vec4(color * alpha, alpha);
+  // The sun's glint on the dome.
+  vec3 normal = vec3(offset, sqrt(max(1.0 - radiusSquared, 0.0)));
+  float nDotH = max(dot(normal, vHalfVector), 1e-3);
+  float nDotV = max(dot(normal, vToViewer), 1e-3);
+  float variance = SPECK_GLINT_VARIANCE + pixel * pixel;
+  float cosineSquared = nDotH * nDotH;
+  float distribution = exp(-(1.0 - cosineSquared) / (cosineSquared * variance)) / (SPECK_PI * variance * cosineSquared * cosineSquared);
+  float fresnel = 0.02 + 0.98 * pow(1.0 - max(dot(vToViewer, vHalfVector), 0.0), 5.0);
+  vec3 glint = uSunIrradiance * distribution * fresnel / (4.0 * nDotV) * SPECK_GLINT * step(0.0, dot(normal, vToSun)) * limb * dome * vAlpha;
+  gl_FragColor = vec4(color * alpha + min(glint, vec3(40.0)), alpha);
 }
 `;
 

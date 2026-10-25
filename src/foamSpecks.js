@@ -17,8 +17,10 @@
 // a few bright), dimmer than the raft: a lone one is faint, a cluster of them
 // reads as foam. Their discs project onto the mean water plane, so a low view
 // sees ellipses, and their opacity follows projected area with no minimum
-// brightness at a distance. Resolved bubbles have clear centres and bright
-// rims. The splash makes them where the crown's base was, where the jet falls
+// brightness at a distance. A resolved bubble is a clear dome whose film
+// whitens toward its limb, with the sun's glint on it (SPECK_FRAGMENT); an
+// unresolved one a soft grain. The splash makes them where the crown's base
+// was, where the jet falls
 // back, where drops land and where bubbles surface. A patch of them
 // (spawnPatch) is never an even scatter: its specks gather in rafts of about
 // RAFT_SPECKS (a clump of clusters of two to six within a few millimetres,
@@ -69,7 +71,7 @@ const LOPSIDE = 0.7;              // the rafts favour one side of the ring, chos
 const BIRTH_JITTER = 0.15;        // a raft's clusters surface over this long (s) after the raft
 const OPACITY = 0.6;              // a speck of full shine
 const BRIGHTNESS = 0.75;          // against the raft's white
-const MIN_PIXEL_SIZE = 2.5;       // smaller specks are drawn this wide (CSS pixels), soft and faint
+const MIN_PIXEL_SIZE = 3;         // smaller specks are drawn about this wide (CSS pixels), soft and faint
 
 const randomRange = (random, low, high) => low + random() * (high - low);
 /** A standard normal draw (Box–Muller, one of the pair). */
