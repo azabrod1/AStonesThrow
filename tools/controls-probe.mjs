@@ -610,11 +610,22 @@ for (const framing of FRAMINGS) {
   await press('#menu-button');
   await page.waitForTimeout(400);
   await press('#settings .menu-tier[data-open="time"]');
-  await page.waitForTimeout(400);
-  const [timePanel] = await boxes('#settings');
-  const [timeSlider] = await boxes('#time');
-  check(!!timeSlider && onScreen(timePanel) && onScreen(timeSlider) && timeSlider.right - timeSlider.left >= 0.8 * (timePanel.right - timePanel.left) && (!framing.touch || timeSlider.height >= 43.5),
-    `the Time page is on the screen, its slider ${timeSlider ? `${(timeSlider.right - timeSlider.left).toFixed(0)}×${timeSlider.height.toFixed(0)}` : 'missing'} points across the page`);
+  // Measured once the page has slid in (src/settingsPanel.js settle: no slide running, no page leaving), and again for up
+  // to two seconds while it is short of its size; what the page has then is said if it never is.
+  let timePanel, timeSlider;
+  const timeFits = () => !!timeSlider && onScreen(timePanel) && onScreen(timeSlider) && timeSlider.right - timeSlider.left >= 0.8 * (timePanel.right - timePanel.left) && (!framing.touch || timeSlider.height >= 43.5);
+  for (const until = Date.now() + 2000; ;) {
+    await page.waitForFunction(() => !document.querySelector('.menu-page-leaving') && [...document.querySelectorAll('#settings .menu-page')].every((menuPage) => !(menuPage.getAnimations?.() ?? []).length), null, { timeout: 5000 }).catch(() => {});
+    [timePanel] = await boxes('#settings');
+    [timeSlider] = await boxes('#time');
+    if (timeFits() || Date.now() > until) break;
+    await page.waitForTimeout(100);
+  }
+  const timeState = timeFits() ? '' : await page.evaluate(() => {
+    const time = document.getElementById('time'), stone = document.getElementById('stone-size');
+    return `; coarse pointer ${matchMedia('(pointer: coarse)').matches}, any coarse ${matchMedia('(any-pointer: coarse)').matches}, hover ${matchMedia('(hover: hover)').matches}, its height ${getComputedStyle(time).height}, the stone slider's ${getComputedStyle(stone).height}, zoom ${window.visualViewport?.scale ?? 1}, ${window.innerWidth} CSS pixels wide`;
+  });
+  check(timeFits(), `the Time page is on the screen, its slider ${timeSlider ? `${(timeSlider.right - timeSlider.left).toFixed(0)}×${timeSlider.height.toFixed(0)}` : 'missing'} points across the page${timeState}`);
   if (timeSlider) {
     const tapX = (timeSlider.left + 4) / layout.scale, tapY = (timeSlider.top + timeSlider.height / 2) / layout.scale;
     if (framing.touch) {
