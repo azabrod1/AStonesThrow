@@ -2508,6 +2508,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       sky: placeName,
       frameCapped,
       calibration: automaticQuality ? calibration.phase : 'fixed',
+      idleFps: calibration.idleFps,   // what the idle measurement measured (null before it, or with a fixed preset)
       warmUp: { ...warmUpReport },
       preparation: { ...PREPARATION_WORK },
     };
@@ -2531,7 +2532,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
 
   // The calibration (CALIBRATION above): 'idle' measures the still pond,
   // 'splash' the first splash, then it is done. Only when the quality is automatic.
-  const calibration = { phase: 'idle', frames: 0, seconds: 0 };
+  const calibration = { phase: 'idle', frames: 0, seconds: 0, idleFps: null };
   function stepDown(steps) {
     const index = Math.min(QUALITY_ORDER.indexOf(qualityName) + steps, QUALITY_ORDER.length - 1);
     if (QUALITY_ORDER[index] !== qualityName) applyQuality(QUALITY_ORDER[index]);
@@ -2557,6 +2558,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     const measuredFrames = calibration.frames - (calibration.phase === 'idle' ? CALIBRATION.warmUpFrames : 5);
     const fps = measuredFrames / Math.max(calibration.seconds, 1e-3);
     if (calibration.phase === 'idle') {
+      calibration.idleFps = fps;
       if (fps < CALIBRATION.splashMinimumFps) stepDown(2);
       else if (fps < CALIBRATION.idleMinimumFps) stepDown(1);
       Object.assign(calibration, { phase: 'awaitingSplash', frames: 0, seconds: 0 });
@@ -3035,7 +3037,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     /** A preset by name, which ends the automatic calibration; 'auto' starts it again from high. */
     setQuality(name) {
       automaticQuality = name === 'auto';
-      if (automaticQuality) Object.assign(calibration, { phase: 'idle', frames: 0, seconds: 0 });
+      if (automaticQuality) Object.assign(calibration, { phase: 'idle', frames: 0, seconds: 0, idleFps: null });
       else if (!QUALITY[name]) return;
       applyQuality(automaticQuality ? 'high' : name);
     },

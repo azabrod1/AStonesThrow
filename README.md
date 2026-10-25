@@ -1548,7 +1548,7 @@ farther out, so it rises into the view rather than filling its corner.
   are fading out and the preset's limit, their passes and the spectrum
   fetches those made, the drops' rings drawn and their limit, the wind, the gale's sheet, the weather, the
   rain's tile, the snow's flakes and cover, the spray's ring, share and sprites drawn, the last frame's draw calls
-  and triangles, and how many fixed meshes and waterlines `prepareThing`
+  and triangles, the automatic calibration's phase and the idle frame rate it measured, and how many fixed meshes and waterlines `prepareThing`
   has made).
 
 Install the development dependencies with `npm install` (Three.js is only
