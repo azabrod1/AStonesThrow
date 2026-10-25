@@ -1763,13 +1763,13 @@ export class Rock {
     this.quaternion.copy(this.meshAbove.quaternion);
     this.state = 'held';
     this.settling = null;
-    this.dunked = null;
     this.carriedWater = 0;
     this.afloat = false;
     this.onGround = false;
     this.restTime = 0;
     this.velocity.set(0, 0, 0);
     this.spinRate = 0;
+    this.dunked = null;
     if (this.skip) this.skip.contact = null;
     this.sinceImpact = -1;
     this.cavityTimes = null;
