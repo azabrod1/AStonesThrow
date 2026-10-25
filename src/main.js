@@ -342,6 +342,9 @@ import { createKoiGarden, koiGround, holdInGarden, keepInPond, keepOutOfGarden }
 //   resting, afloat, shards  the things kept at rest, afloat and the ice's
 //                 shards (the header); past them the oldest of that kind
 //                 shrinks away.
+//   gardenCoarse  the Koi pond's garden drawn as coarsely as the mirror draws
+//                 it (src/koiGarden.js setCoarse: a third of its triangles);
+//                 it catches things alike either way.
 //   spray         the splash's spray (src/spray.js): `ring` the slots of its
 //                 ring in use (sprites in flight at once, the oldest
 //                 overwritten past them) and `share` the share of its sprites
@@ -353,9 +356,9 @@ import { createKoiGarden, koiGround, holdInGarden, keepInPond, keepOutOfGarden }
 // and every mesh takes 16-bit indices (at most 254 segments: Three.js keeps
 // the index 65535 for primitive restart).
 export const QUALITY = {
-  high: { grid: 512, meshSegments: 254, underScale: 1.0, fluidScale: 1.0, idleFrameRate: 30, maxDpr: 2.0, rings: 24, ringFade: 8, rainTexels: 512, dropRings: 24, crownDrops: 3500, snowShare: 1, resting: 40, afloat: 16, shards: 16, spray: { ring: 65536, share: 1 } },
-  medium: { grid: 256, meshSegments: 160, underScale: 0.5, fluidScale: 0.5, idleFrameRate: 30, maxDpr: 2.0, rings: 12, ringFade: 4, rainTexels: 256, dropRings: 16, crownDrops: 2000, snowShare: 0.6, resting: 30, afloat: 14, shards: 10, spray: { ring: 16384, share: 0.4 } },
-  low: { grid: 256, meshSegments: 128, underScale: 0.5, fluidScale: 0.5, idleFrameRate: 30, maxDpr: 1.5, rings: 10, ringFade: 3, rainTexels: 256, dropRings: 12, crownDrops: 2000, snowShare: 0.4, resting: 20, afloat: 12, shards: 6, spray: { ring: 8192, share: 0.2 } },
+  high: { grid: 512, meshSegments: 254, underScale: 1.0, fluidScale: 1.0, idleFrameRate: 30, maxDpr: 2.0, rings: 24, ringFade: 8, rainTexels: 512, dropRings: 24, crownDrops: 3500, snowShare: 1, resting: 40, afloat: 16, shards: 16, gardenCoarse: false, spray: { ring: 65536, share: 1 } },
+  medium: { grid: 256, meshSegments: 160, underScale: 0.5, fluidScale: 0.5, idleFrameRate: 30, maxDpr: 2.0, rings: 12, ringFade: 4, rainTexels: 256, dropRings: 16, crownDrops: 2000, snowShare: 0.6, resting: 30, afloat: 14, shards: 10, gardenCoarse: false, spray: { ring: 16384, share: 0.4 } },
+  low: { grid: 256, meshSegments: 128, underScale: 0.5, fluidScale: 0.5, idleFrameRate: 30, maxDpr: 1.5, rings: 10, ringFade: 3, rainTexels: 256, dropRings: 12, crownDrops: 2000, snowShare: 0.4, resting: 20, afloat: 12, shards: 6, gardenCoarse: true, spray: { ring: 8192, share: 0.2 } },
 };
 export const PIXEL_BUDGET = 2.6e6;   // device pixels in the canvas, on every preset
 const QUALITY_ORDER = ['high', 'medium', 'low'];
@@ -952,6 +955,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   sceneMain.add(pool.walls, pool.mirrorWalls, pool.yard, pool.mirrorYard);
   // The Koi pond's garden (src/koiGarden.js): in the main scene and the mirror; shown in the Koi pond.
   const garden = createKoiGarden({ envTexture: environment.envTexture, mirrorLayer: MIRROR_LAYER, lighting });
+  garden.setCoarse(settings.gardenCoarse);
   sceneMain.add(...garden.meshes);
   /** The lake's bed, beach and open water, or the pool's basin and deck: the meshes only (setPooled changes the water). */
   function showScenery(asPool) {
@@ -2555,6 +2559,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     splash.spray.setBudget(settings.spray);
     water.resize(settings.grid);
     surface.setMeshSegments(settings.meshSegments);
+    garden.setCoarse(settings.gardenCoarse);   // the Koi pond's garden as the mirror draws it (src/koiGarden.js)
     resize();
     monitor.settle = CALIBRATION.settleSeconds;
     onQualityChange?.(name);
