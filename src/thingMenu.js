@@ -1,7 +1,10 @@
 // The dropdown of things to throw: the strip's chip opens it above the strip,
 // a card in the settings panel's glass (src/settingsPanel.js) listing every
 // thing under its group (src/things.js thingGroups), each a pill with its
-// picture and name, the chosen one ringed. A tap on a pill chooses that thing
+// picture and name, the chosen one ringed: on a touch screen each group's
+// pills in one row a finger scrolls sideways, so it is as tall as its groups
+// however many things there are (index.html), the chosen one scrolled into
+// its row as it opens. A tap on a pill chooses that thing
 // and closes it; its foot opens the settings' What to throw page, to look the
 // chosen thing over. The page script (index.html) builds the pills and says
 // what a choice and the foot do (onChoose, onMore); this holds the opening,
