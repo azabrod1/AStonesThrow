@@ -499,6 +499,9 @@ export class IceSheet {
       at: (x, z) => this.at(x, z) ?? (this.pieces.size ? this.pieceUnder(x, z)?.top ?? null : null),
       materialAt: (x, z) => (this.overWater(x, z) ? ICE_MATERIAL : null),
       meet: (rock, height) => this.meet(rock, height),
+      // The piece afloat a thing on the ground at (x, z) lies on, as `at` finds it: none over the sheet (src/collide.js: it
+      // does not meet that one).
+      pieceUnder: (x, z) => (this.pieces.size && this.at(x, z) === null ? this.pieceUnder(x, z) : null),
     };
   }
 

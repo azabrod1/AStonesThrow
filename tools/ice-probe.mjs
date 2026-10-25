@@ -62,7 +62,9 @@
 //     thin (a few grams), and is never flung by meeting it (no faster after
 //     a step than gravity makes it); a 6 cm stone dropped on a piece of
 //     thin ice breaks it into pieces that float at rest, flat and apart,
-//     on thick ice pushes it under no deeper than PIECE_DIP;
+//     on thick ice pushes it under no deeper than PIECE_DIP; a stone at rest
+//     on the sheet at a hole's lip meets a piece put under it (only what lies
+//     on a piece does not meet it);
 //   - the flood: the ice round the hole is wet once its cavity has closed
 //     (floodAt; its shards went the step after the break), dry but glazed
 //     FLOOD.dry seconds on, the far ice never wet; drops that land on the
@@ -80,7 +82,7 @@ import { Rock, aimThrow, aimSkip, skipSpeed, SKIP_THROW, throwFlightTime } from 
 import { THINGS, THING_NAMES } from '../src/things.js';
 import { floorDepthAt } from '../src/pondFloor.js';
 import { holdInPool, poolGround, POOL } from '../src/pool.js';
-import { collideThings, outlineOverlap } from '../src/collide.js';
+import { collideThings, outlineOverlap, slabOverlap } from '../src/collide.js';
 import { SplashSystem } from '../src/splash.js';
 import { IceSheet, ICE, ICE_THICKNESS, WEAK } from '../src/ice.js';
 
@@ -752,6 +754,32 @@ for (const [thickness, diameter, carries] of [['thick', 16, true], ['thin', 6, f
   console.log(`  a 2 cm pebble dropped at 2 m/s on a ${centimetres(2 * piece.radius)} cm piece of ${thickness} ice (it carries ${(1000 * world.ice.pieceCarries(piece)).toFixed(0)} g): ${resting ? 'rests on it' : under ? 'pushed it under and went into the water' : pebble.state}; gained at most ${gained.toFixed(2)} m/s in a step`);
   check(carries ? resting : under, `a pebble dropped on a piece of ${thickness} ice ${resting ? 'rests on it' : under ? 'went under' : `ended ${pebble.state}`}, which it should not`);
   check(gained < 0.05, `a pebble dropped on a piece of ${thickness} ice was flung, gaining ${gained.toFixed(2)} m/s in a step`);
+}
+
+// A stone at rest on the sheet at a hole's lip meets a piece that drifts under it (slabOverlap), as in the air; only what
+// lies on a piece does not meet that one (src/ice.js pieceUnder). The piece is put under it, its slab a millimetre into
+// its sphere (about the most it can: the stone sits on the ice, and a piece's top is no higher).
+{
+  const world = iceWorld({ diameter: 16, thickness: 'thick', seed: 1 });
+  world.throwStone(16);
+  world.step(10);
+  const piece = world.shards.filter((shard) => shard.state === 'rest' || shard.state === 'float').sort((one, other) => other.radius - one.radius)[0];
+  const hole = piece.iceHole, angle = Math.atan2(piece.position.z - hole.z, piece.position.x - hole.x);
+  const out = world.ice.edgeReach(hole, angle) + 0.005;
+  const stone = world.add(new Rock({ radius: 0.03, position: new THREE.Vector3(hole.x + Math.cos(angle) * out, world.ice.top + 0.032, hole.z + Math.sin(angle) * out), velocity: new THREE.Vector3(0, -0.05, 0), envTexture: null, thing: 'stone' }));
+  world.step(3);
+  for (let moved = 0; moved < 0.3 && (slabOverlap(piece, stone)?.depth ?? 0) < 0.001; moved += 0.001) {
+    piece.position.x += 0.001 * Math.cos(angle);
+    piece.position.z += 0.001 * Math.sin(angle);
+    piece.syncMeshes();
+  }
+  const before = slabOverlap(piece, stone)?.depth ?? 0;
+  const resting = stone.state === 'rest' && stone.grounded && world.ice.at(stone.position.x, stone.position.z) !== null;
+  collideThings([piece, stone]);
+  const after = slabOverlap(piece, stone)?.depth ?? 0;
+  console.log(`  a 6 cm stone at rest on thick ice at a hole's lip, a piece put ${(1000 * before).toFixed(1)} mm into it: ${after < before / 2 ? `they meet, ${(1000 * after).toFixed(1)} mm after a pass` : 'they pass through each other'}`);
+  check(resting && before >= 0.001, `a stone at a hole's lip: ${resting ? `the piece reached only ${(1000 * before).toFixed(1)} mm into it` : `it is not at rest on the ice (${stone.state})`}`);
+  check(after < before / 2, `a piece under a stone at rest on the ice at a hole's lip passed through it (${(1000 * before).toFixed(1)} mm, then ${(1000 * after).toFixed(1)} mm)`);
 }
 
 // A 6 cm stone dropped on a piece: thin ice breaks under it into pieces of its own; thick does not, and goes under it, a

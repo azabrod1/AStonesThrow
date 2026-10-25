@@ -21,7 +21,9 @@
 // piece and anything else meet as the thing's sphere and the piece's slab
 // (slabOverlap: its outline, its thickness, as it is turned), so what comes
 // down on a piece meets its top, not a ball round it; what lies on a piece
-// lies on it as ground (src/ice.js pieceUnder) and does not meet it.
+// lies on it as ground (src/ice.js pieceUnder) and does not meet that
+// piece; anything else on the ground (on the sheet at a hole's lip, on
+// another piece) meets it by its slab.
 // What broke a hole in the ice never meets that hole's pieces: it went down
 // between them, their inner edges clear of it (src/ice.js SHARD.clear).
 // A pair meets when one of them is a floater
@@ -139,8 +141,6 @@ function collidePass(things, knocks) {
       // What broke a hole went down between its pieces (src/ice.js SHARD.clear), what broke a piece afloat between its
       // parts (splitPiece), and what pushed a piece under went down past it (landOnPiece, dunkPieces): it never meets them.
       if ((one.piece && (one.iceHole?.by === other || one.brokenBy === other || other.dunked === one)) || (other.piece && (other.iceHole?.by === one || other.brokenBy === one || one.dunked === other))) continue;
-      // A thing on the ground on a piece lies on it as on the ice (src/ice.js pieceUnder): the ground holds it, not a meeting.
-      if ((one.piece && !other.piece && other.grounded) || (other.piece && !one.piece && one.grounded)) continue;
       // Two flat pieces of ice (the header) meet rim to rim: the line between them level, their whole radii.
       const rims = Boolean(one.thing.body.meetsAtRim && other.thing.body.meetsAtRim);
       between.copy(other.centre).sub(one.centre);
@@ -160,6 +160,9 @@ function collidePass(things, knocks) {
         // A piece of ice and anything else: the thing's sphere against the piece's slab, as it is turned (the header).
         const piece = one.piece ? one : other, thing = piece === one ? other : one;
         if (thing.centre.distanceTo(piece.centre) >= piece.radius + thing.collisionRadius) continue;
+        // On the ground on this piece, it lies on it as on the ice (src/ice.js pieceUnder): the ground holds it, not a
+        // meeting. On the sheet at a hole's lip, or on another piece, it meets it by its slab.
+        if (thing.grounded && thing.ground?.pieceUnder?.(thing.position.x, thing.position.z)?.rock === piece) continue;
         const slab = slabOverlap(piece, thing);
         if (!slab || slab.depth < COLLIDE.settled) continue;
         // From the first towards the second: slabOverlap's normal points from the piece to the thing.
