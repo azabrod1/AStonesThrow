@@ -241,6 +241,8 @@ function segmentDistance(x, z, ax, az, bx, bz, out) {
   return out;
 }
 const nearest = { distance: 0, along: 0, side: 0 };
+// The polygon helpers below are src/rock.js's too (restFaces' outlines).
+export { convexHull, insidePolygon, polygonEdgeDistance };
 
 /** Whether (x, z) is inside a closed polygon of corners [x0, z0, x1, z1, …] (crossing number). */
 function insidePolygon(corners, x, z) {

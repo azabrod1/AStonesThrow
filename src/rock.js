@@ -313,6 +313,7 @@ import { SEEN_THROUGH_WATER, SEEN_UNDER_CLEAR, CLEAR_SIDES_INSIDE, FLOATER_WATER
 import { PINCH_TIME, NECK_CLOSE, SPIN_DECAY, sinkStep, underWater } from './cavity.js';
 import { THINGS, DEFAULT_THING, WATER_DENSITY, STONE_DENSITY } from './things.js';
 import { meshKind, withParts } from './thingMeshes.js';
+import { convexHull, insidePolygon, polygonEdgeDistance } from './ice.js';
 
 // The stone's geometry is src/thingMeshes.js's now; the probes take it from here as they always did.
 export { createRockGeometry } from './thingMeshes.js';
@@ -496,27 +497,11 @@ function restFaces(shape, positions, ballast) {
   return faces;
 }
 
-/** Whether (x, y) is inside the convex outline of `points` ([x, y] pairs) by at least `margin`. */
+/** Whether (x, y) is inside the convex outline of `points` ([x, y] pairs) by at least `margin` (src/ice.js's polygons). */
 function insideOutline(points, x, y, margin) {
   if (points.length < 3) return false;
-  points.sort((one, other) => one[0] - other[0] || one[1] - other[1]);
-  const turn = (origin, one, other) => (one[0] - origin[0]) * (other[1] - origin[1]) - (one[1] - origin[1]) * (other[0] - origin[0]);
-  const hull = [];
-  for (const pass of [points, [...points].reverse()]) {
-    const start = hull.length;
-    for (const point of pass) {
-      while (hull.length >= start + 2 && turn(hull[hull.length - 2], hull[hull.length - 1], point) <= 0) hull.pop();
-      hull.push(point);
-    }
-    hull.pop();
-  }
-  if (hull.length < 3) return false;
-  // Counter-clockwise: inside is to the left of every edge.
-  return hull.every((from, index) => {
-    const to = hull[(index + 1) % hull.length];
-    const length = Math.hypot(to[0] - from[0], to[1] - from[1]);
-    return length > 0 && turn(from, to, [x, y]) / length >= margin;
-  });
+  const hull = convexHull(points.flat());
+  return hull.length >= 6 && insidePolygon(hull, x, y) && polygonEdgeDistance(hull, x, y) >= margin;
 }
 
 /** A standard normal draw (Box–Muller, from `random`). */
@@ -1872,6 +1857,7 @@ export class Rock {
     this.quaternion.copy(this.meshAbove.quaternion);
     this.state = 'held';
     this.settling = null;
+    this.sliding = null;
     this.carriedWater = 0;
     this.afloat = false;
     this.onGround = false;
