@@ -511,8 +511,8 @@ known timing, and the droplets are choreographed from them:
    back into a bulb (Taylor–Culick), where it pinches, and every drop it
    throws and that drop's size come out of the equations: a needle a
    millimetre or two thick beads within milliseconds, a column centimetres
-   thick rises and falls back whole. Its base flies as a ballistic sleeve
-   and falls back into a mound (its ring is part of the stone's). For a 3 cm
+   thick rises and falls back whole. Its base widens the column's foot into
+   a trumpet and falls back into a mound (its ring is part of the stone's). For a 3 cm
    stone dropped straight in at 6.3 m/s the needle clears the surface 131 ms
    after entry at 13 m/s, its water reaches 70 cm and its largest drop is
    6 mm (the reference simulation: 118 ms, 13 to 16 m/s, 75 to 81 cm, 6 mm;

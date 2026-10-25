@@ -204,7 +204,7 @@ function runSplash(radius, { silent = false } = {}) {
     if (jetColumn && splash.columns.includes(jetColumn)) {
       const positions = jetColumn.positions;
       if (positions[1] > result.jet.top) { result.jet.top = positions[1]; result.jet.topTime = time; }
-      // The drawn rings' radii (src/jet.js updateGeometry): the column, its beads and the sleeve at its foot.
+      // The drawn rings' radii (src/jet.js updateGeometry): the column, its beads and the base widening its foot.
       const ring = jetColumn.ring;
       for (let row = 0; row < ring.count; row++) result.jet.widest = Math.max(result.jet.widest, 2 * ring.radius[row]);
     } else if (jetColumn && result.jet.gone === null) {

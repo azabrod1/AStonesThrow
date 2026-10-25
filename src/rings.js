@@ -102,7 +102,7 @@
 // then rises to about 25 mm at 0.35 s, 28 at 0.4, 30 at 0.43 and falls
 // through flat by 0.5 s, as the simulation's cone does (its 2 to 4 cm
 // profiles: 25 to 27 mm at 0.35 s, 14 to 25 at 0.4 and 0.45, 4 at 0.5),
-// under the trumpet the jet's own sleeve draws at its foot; a jet that is
+// under the trumpet the jet draws at its foot; a jet that is
 // trapped or stubby, taking little water up, leaves the whole heave to the
 // pond. The heave is also the throw's (`heave`, from src/splash.js): the
 // vertical share of its entry speed against the reference throw's, at most

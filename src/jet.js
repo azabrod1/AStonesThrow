@@ -31,9 +31,14 @@
 // a scale chosen so that the two launch the volume the splash gives the jet
 // (a share of the water that fills the bowl, src/splash.js JET_SHARE). The
 // base is the bowl's water welling up under the column, a broad mound rather
-// than a jet (the splash draws it on the water: startBase), so the solver is
-// fed the core alone and the base's water is counted straight into what
-// falls back (below). Rj is the
+// than a jet (the splash draws it on the water: startBase, and the pond's
+// heave, below), so the solver is fed the core alone and the base's water is
+// counted straight into what falls back (below); the column is drawn
+// widening into it at its foot (baseWidthAt: each ring the solver's radius
+// plus the base's launch radius for its water, stretched as the launch
+// stretches it, from where the base is BASE_START of the core over
+// BASE_TAPER of the launch left), a trumpet 6 cm across at the water for the
+// reference throw. Rj is the
 // stone's radius R times the sweep's `column` gain (Sizes, below; times
 // form.radiusScale), never under JET_RADIUS_LEAST, since a small stone's jet
 // is no thinner than the capillary length lets it be: Li & Li (2025) measure
@@ -102,7 +107,10 @@
 // white by src/shaders/sheet.js and fluid.js): none in the needle's first
 // water, rising over AIR_LAUNCH of the launch to AIR_MOST times form.air,
 // and none below AIR_SIZES[0] of the reference's size (its jet is glass),
-// all from AIR_SIZES[1]; blotched by AIR_BLOTCH along the bumps.
+// all from AIR_SIZES[1]; blotched by AIR_BLOTCH along the bumps. A ring
+// widened by the base carries the core's share of its section of that air,
+// so the trumpet at a big stone's foot is glass under the white column (a
+// cone of flat white a hand wide read as a block of ice).
 //
 // Bumps. A real column's surface is uneven around as well as along it. The
 // drawn radius varies by BUMPS times sqrt(form.roughness / ROUGHNESS) in
@@ -217,10 +225,9 @@ const ROUGHNESS = 0.015;           // the launch radius varies by this share for
 const ROUGHNESS_WAVES = [0.45, 0.7, 1.0, 1.45, 2.2];   // ...in waves of these many of the column's most unstable wavelength
 const UNSTABLE_WAVELENGTH = 9.02;  // Rayleigh–Plateau's most unstable wavelength, in radii
 const BASE_DEPTH = 0.004;          // the water the column drains into is this far under the bowl's floor (or the surface)
-const SLEEVE_START = 0.3;          // the sleeve starts where the base's launch radius is this share of the core's...
-const SLEEVE_TAPER = 0.25;         // ...and widens from the core's radius over this share of what it spans
-const SLEEVE_RINGS = 18;           // rings along the sleeve
-const BUNCH_CAP = 1.4;             // where the sleeve's water bunches, its radius is at most this many launch radii
+const BASE_START = 0.3;            // the base widens the column from where its launch radius is this share of the core's...
+const BASE_TAPER = 0.25;           // ...over this share of the launch left after that
+const BUNCH_CAP = 1.4;             // where the base's water bunches, its width is at most this many launch radii
 const EMIT_LENGTH = 1.2;           // a node leaves the launch point once its segment is this many launch radii long...
 const EMIT_LEAST = 0.0004;         // ...and at least this (m)...
 const EMIT_MOST = 0.03;            // ...or this long, whatever its radius (m)
@@ -360,19 +367,19 @@ export class JetColumn {
     this.airMost = Math.min(AIR_MOST * smoothstep(AIR_SIZES[0], AIR_SIZES[1], this.sizeFactor) * this.form.air, 1);
     this.baseScale = 1;
     this.buildLaunch(volume);
-    // Where the sleeve starts: the first water whose base is SLEEVE_START of its core.
-    this.sleeveTop = this.launchEnd;
+    // Where the base starts widening the column: the first water whose base is BASE_START of its core.
+    this.baseTop = this.launchEnd;
     if (this.baseScale > 0) {
       for (let sample = 0; sample <= 200; sample++) {
         const tau = this.launchEnd * (sample / 200) ** 2;
-        if (this.baseScale * this.baseRadius(tau) >= SLEEVE_START * this.coreRadius(tau)) { this.sleeveTop = tau; break; }
+        if (this.baseScale * this.baseRadius(tau) >= BASE_START * this.coreRadius(tau)) { this.baseTop = tau; break; }
       }
     }
 
     // The column: a first segment of the water launched over a quarter of
     // the needle's time, already in flight, then the inflow.
     this.solver = new SlenderJet({ capacity: NODES, gravity: GRAVITY, water: WATER, random: seededRandom(x, z, startTime, radius, 3) });
-    this.solver.fallen = this.baseWater;   // the sleeve's water falls back (the header)
+    this.solver.fallen = this.baseWater;   // the base's water falls back (the header)
     this.solverTime = 0;
     this.launching = true;
     this.fallenHandled = 0;
@@ -468,7 +475,7 @@ export class JetColumn {
       const excess = core - target;
       this.baseScale = excess >= 0 ? 0 : (-cross + Math.sqrt(cross * cross - base * excess)) / base;
     }
-    // The solver takes the core; the base's water flies as the sleeve (the header) and falls back.
+    // The solver takes the core; the base's water widens the column's foot and falls back (the header).
     const scale = this.baseScale;
     this.baseWater = 2 * scale * cross + scale * scale * base;
     for (let index = 0; index <= samples; index++) this.launchVolumes[index] = cores[index];
@@ -615,56 +622,36 @@ export class JetColumn {
       - ((this.tipSpeed - this.bodySpeed) / this.needleTime) * Math.exp(-tau / this.needleTime);
   }
 
-  /** The height of the water launched at tau, flown ballistically to now (the sleeve). */
-  heightAt(tau) {
-    const age = Math.max(this.age - tau, 0);
-    return -this.launchDepth(tau) + this.launchSpeed(tau) * this.upShare * age - 0.5 * GRAVITY * age * age;
-  }
-
   /**
-   * The sleeve (the header): the water launched at tau, flown ballistically
-   * to now, into `out` {x, y, z, axisX, axisY, axisZ, radius, core}: its
-   * place, the column's axis there (pointing up it), the radius the whole
-   * launch makes there (core and base, r0·sqrt((u − w)/|∂position/∂tau|),
-   * the flux spread over the spacing of its neighbours) and the core's alone.
+   * The width the base's water adds to the column around the water launched
+   * at tau (the header): the base's launch radius, scaled to the jet's
+   * volume, stretched as the ballistic launch stretches its water
+   * (sqrt((u − w)/|∂position/∂tau|), the flux spread over the spacing of its
+   * neighbours, at most BUNCH_CAP) and tapered in from baseTop over
+   * BASE_TAPER of the launch left. It widens the solver's own rings
+   * (drawChain): drawn as a surface of its own, flown ballistically from the
+   * launch, the base parted from the column the solver bends, its rings cut
+   * through each other where the launch folded back, and its foot, found
+   * anew each frame, flickered, a block at a big stone's foot.
    */
-  sleeveAt(tau, out) {
-    tau = Math.min(Math.max(tau, 0), this.launchEnd);
+  baseWidthAt(tau) {
+    if (this.baseScale <= 0 || tau <= this.baseTop) return 0;
+    tau = Math.min(tau, this.launchEnd);
+    const widen = smoothstep(this.baseTop, this.baseTop + BASE_TAPER * (this.launchEnd - this.baseTop), tau);
     const speed = this.launchSpeed(tau), speedSlope = this.launchSpeedSlope(tau);
     const age = Math.max(this.age - tau, 0);
     let lateralX = this.tiltX, slopeX = 0, lateralZ = this.tiltZ, slopeZ = 0;
     for (const mode of this.wobbleX) { const angle = mode.frequency * tau + mode.phase; lateralX += mode.amplitude * Math.sin(angle); slopeX += mode.amplitude * mode.frequency * Math.cos(angle); }
     for (const mode of this.wobbleZ) { const angle = mode.frequency * tau + mode.phase; lateralZ += mode.amplitude * Math.sin(angle); slopeZ += mode.amplitude * mode.frequency * Math.cos(angle); }
-    const depth = this.launchDepth(tau), rise = this.launchRise(tau);
-    out.x = this.centreX - this.axisSlopeX * depth + speed * lateralX * age;
-    out.y = -depth + speed * this.upShare * age - 0.5 * GRAVITY * age * age;
-    out.z = this.centreZ - this.axisSlopeZ * depth + speed * lateralZ * age;
+    const rise = this.launchRise(tau);
     // ∂position/∂tau: the launch point's motion + (d launch velocity / d tau)·a − launch velocity + g·a·up.
     const alongX = this.axisSlopeX * rise + (speedSlope * lateralX + speed * slopeX) * age - speed * lateralX;
     const alongY = rise + (speedSlope * age - speed) * this.upShare + GRAVITY * age;
     const alongZ = this.axisSlopeZ * rise + (speedSlope * lateralZ + speed * slopeZ) * age - speed * lateralZ;
     const spacing = Math.sqrt(alongX * alongX + alongY * alongY + alongZ * alongZ);
-    if (spacing > 1e-9) { out.axisX = -alongX / spacing; out.axisY = -alongY / spacing; out.axisZ = -alongZ / spacing; } else { out.axisX = 0; out.axisY = 1; out.axisZ = 0; }
     const flux = Math.max(speed - rise / this.upShare, LEAST_FLUX * speed);
     const stretch = spacing > 1e-9 ? Math.min(Math.sqrt(flux / spacing), BUNCH_CAP) : BUNCH_CAP;
-    const core = this.coreRadius(tau);
-    out.radius = (core + this.baseScale * this.baseRadius(tau)) * stretch;
-    out.core = core * stretch;
-    return out;
-  }
-
-  /** The launch time of the sleeve's water now at the water it stands in (the bowl's floor, or the surface). */
-  sleeveFoot() {
-    const level = -this.floor(this.age, this.bowl).depth - BASE_DEPTH;
-    const limit = Math.min(this.age, this.launchEnd);
-    if (this.heightAt(limit) >= level) return limit;
-    let low = this.sleeveTop, high = limit;
-    if (this.heightAt(low) < level) return low;
-    for (let step = 0; step < 24; step++) {
-      const middle = 0.5 * (low + high);
-      if (this.heightAt(middle) >= level) low = middle; else high = middle;
-    }
-    return low;
+    return this.baseScale * this.baseRadius(tau) * stretch * widen;
   }
 
   /** Hold the solver's last node at the launch point for tau, moving with the water launched there; its radius for the solver. */
@@ -820,15 +807,14 @@ export class JetColumn {
       for (let node = chainStart; node <= chainLast; node++) needed += this.beadShown(node, chainStart, chainLast) ? BEAD_RINGS : 1;
       chainStart = chainLast + 1;
     }
-    const stride = Math.max(1, Math.ceil(needed / (ROWS - SLEEVE_RINGS - 4)));
+    const stride = Math.max(1, Math.ceil(needed / (ROWS - 4)));
     chainStart = 0;
-    while (chainStart < count && ring.count < ROWS - SLEEVE_RINGS - 4) {
+    while (chainStart < count && ring.count < ROWS - 4) {
       let chainLast = chainStart;
       while (chainLast < count - 1 && !solver.chainEnd[chainLast]) chainLast++;
       this.drawChain(chainStart, chainLast, stride);
       chainStart = chainLast + 1;
     }
-    this.drawSleeve();
     // The unused rows: rings of no radius on the last point drawn.
     const lastRing = Math.max(ring.count - 1, 0);
     const restX = ring.count > 0 ? ring.centre[lastRing * 3] : this.centreX, restY = ring.count > 0 ? ring.centre[lastRing * 3 + 1] : -1, restZ = ring.count > 0 ? ring.centre[lastRing * 3 + 2] : this.centreZ;
@@ -854,10 +840,26 @@ export class JetColumn {
     return bead > 0 && bead > BEAD_SHOWN * this.tubeRadius(node, first, last);
   }
 
-  /** The rings of one piece from its first node to its last: a cap, a ring per node (a sphere per bead), a cap. */
+  /**
+   * The rings of one piece from its first node to its last: a cap, a ring per
+   * node (a sphere per bead), a cap. Each ring is the solver's radius plus
+   * the base's width for its water (baseWidthAt), and carries the core's
+   * share of its section of its water's air (the header). The trumpet the
+   * base widens the foot into stands on the chord from where the base starts
+   * to the foot: its rings move onto the chord and across it by the base's
+   * share over the core (a column kinks at its foot, where its water is
+   * young, by tens of degrees a node, and rings as wide as the base on such
+   * an axis cut through each other into a folded sheet), and under the water
+   * the column stands in it closes as a funnel no wider than it is deep (the
+   * base is the pond's mound: under the surface there is no column but the
+   * core, and a clear pond shows what is drawn there).
+   */
   drawChain(first, last, stride) {
     const solver = this.solver;
     const axis = this.axisScratch ??= { x: 0, y: 1, z: 0 };
+    const centre = this.centreScratch ??= { x: 0, y: 0, z: 0 };
+    const baseAt = (node) => this.baseWidthAt(solver.stamp[node]);
+    const airOf = (node, core, base) => this.airAt(solver.stamp[node]) * (base > 0 ? (core / (core + base)) ** 2 : 1);
     const nodeAxis = (node) => {
       const before = Math.max(node - 1, first), after = Math.min(node + 1, last);
       let alongX = this.drawX[after] - this.drawX[before], alongY = this.drawY[after] - this.drawY[before], alongZ = this.drawZ[after] - this.drawZ[before];
@@ -867,12 +869,47 @@ export class JetColumn {
       axis.x = alongX; axis.y = alongY; axis.z = alongZ;
       return axis;
     };
+    // The trumpet's chord, from the first node the base widens to the foot.
+    const level = -this.floor(this.age, this.bowl).depth - BASE_DEPTH;
+    const chord = this.chordScratch ??= { valid: false, x: 0, y: -1, z: 0, x0: 0, y0: 0, z0: 0 };
+    chord.valid = false;
+    let trumpetTop = -1;
+    for (let node = first; node <= last; node++) if (solver.stamp[node] > this.baseTop) { trumpetTop = node; break; }
+    if (trumpetTop >= 0 && trumpetTop < last) {
+      const chordX = this.drawX[last] - this.drawX[trumpetTop], chordY = this.drawY[last] - this.drawY[trumpetTop], chordZ = this.drawZ[last] - this.drawZ[trumpetTop];
+      const length = Math.sqrt(chordX * chordX + chordY * chordY + chordZ * chordZ);
+      if (length > 1e-6) {
+        chord.x = chordX / length; chord.y = chordY / length; chord.z = chordZ / length;
+        chord.x0 = this.drawX[trumpetTop]; chord.y0 = this.drawY[trumpetTop]; chord.z0 = this.drawZ[trumpetTop];
+        chord.valid = true;
+      }
+    }
+    let surfaceBase = 0;   // the base's width at the lowest ring above the level so far (the rings run top to foot)
+    const closedBelow = (node, base) => this.drawY[node] < level ? Math.max(surfaceBase - (level - this.drawY[node]), 0) : base;
+    /** The ring at a node: its centre and axis into the scratches, and the base's width there (the header of the method). */
+    const placeRing = (node, core, base) => {
+      nodeAxis(node);
+      centre.x = this.drawX[node]; centre.y = this.drawY[node]; centre.z = this.drawZ[node];
+      if (base <= 0) return 0;
+      if (centre.y < level) base = Math.max(surfaceBase - (level - centre.y), 0); else surfaceBase = base;
+      if (!chord.valid || base <= 0) return base;
+      const share = smoothstep(0, 1, base / Math.max(core, 1e-6));
+      const along = (centre.x - chord.x0) * chord.x + (centre.y - chord.y0) * chord.y + (centre.z - chord.z0) * chord.z;
+      centre.x += (chord.x0 + chord.x * along - centre.x) * share;
+      centre.y += (chord.y0 + chord.y * along - centre.y) * share;
+      centre.z += (chord.z0 + chord.z * along - centre.z) * share;
+      axis.x += (chord.x - axis.x) * share; axis.y += (chord.y - axis.y) * share; axis.z += (chord.z - axis.z) * share;
+      const length = Math.sqrt(axis.x * axis.x + axis.y * axis.y + axis.z * axis.z) || 1;
+      axis.x /= length; axis.y /= length; axis.z /= length;
+      return base;
+    };
     // Its top: a hemisphere over the first node (or its bead's upper half).
-    const topRadius = Math.max(this.tubeRadius(first, first, last), solver.beadRadius(first));
-    nodeAxis(first);
-    const topX = this.drawX[first], topY = this.drawY[first], topZ = this.drawZ[first];
+    const topCore = this.tubeRadius(first, first, last);
+    const topBase = placeRing(first, topCore, baseAt(first));
+    const topRadius = Math.max(topCore + topBase, solver.beadRadius(first));
+    const topX = centre.x, topY = centre.y, topZ = centre.z;
     const topAxisX = axis.x, topAxisY = axis.y, topAxisZ = axis.z;
-    let air = this.airAt(solver.stamp[first]), phase = this.phaseAt(solver.stamp[first]);
+    let air = airOf(first, topCore, topBase), phase = this.phaseAt(solver.stamp[first]);
     if (!this.beadShown(first, first, last)) {
       for (let ring = 0; ring <= CAP_RINGS; ring++) {
         const polar = (ring / (CAP_RINGS + 1)) * Math.PI * 0.5;
@@ -885,14 +922,16 @@ export class JetColumn {
     for (let node = first; node <= last; node++) {
       const shown = this.beadShown(node, first, last);
       if (!shown && node !== first && node !== last && (node - first) % stride !== 0) continue;
-      nodeAxis(node);
-      const centreX = this.drawX[node], centreY = this.drawY[node], centreZ = this.drawZ[node];
-      air = this.airAt(solver.stamp[node]); phase = this.phaseAt(solver.stamp[node]);
+      const core = this.tubeRadius(node, first, last);
+      const base = placeRing(node, core, baseAt(node));
+      const centreX = centre.x, centreY = centre.y, centreZ = centre.z;
+      phase = this.phaseAt(solver.stamp[node]);
+      air = airOf(node, core, base);
       if (shown) {
         // A sphere, merging into the column above and below.
         const bead = solver.beadRadius(node);
-        const above = node > first ? solver.segmentRadius[node - 1] : 0;
-        const below = node < last ? solver.segmentRadius[node] : 0;
+        const above = node > first ? solver.segmentRadius[node - 1] + base : 0;
+        const below = node < last ? solver.segmentRadius[node] + base : 0;
         for (let ring = 0; ring < BEAD_RINGS; ring++) {
           const polar = ((ring + 0.5) / BEAD_RINGS) * Math.PI;
           const side = polar < Math.PI * 0.5 ? above : below;
@@ -904,20 +943,21 @@ export class JetColumn {
         }
         continue;
       }
-      const radius = this.tubeRadius(node, first, last);
-      // The slope of the surface along the axis, from the segments either side.
-      const before = node > first ? solver.segmentRadius[node - 1] : radius;
-      const after = node < last ? solver.segmentRadius[node] : radius;
+      const radius = core + base;
+      // The slope of the surface along the axis, from the segments either side (the base's width at their nodes).
+      const before = node > first ? solver.segmentRadius[node - 1] + 0.5 * (base + closedBelow(node - 1, baseAt(node - 1))) : radius;
+      const after = node < last ? solver.segmentRadius[node] + 0.5 * (base + closedBelow(node + 1, baseAt(node + 1))) : radius;
       const spanLength = (node > first ? solver.segmentLength[node - 1] : 0) + (node < last ? solver.segmentLength[node] : 0);
       const slope = spanLength > 1e-9 ? (2 * (after - before)) / spanLength : 0;
       const tilt = 1 / Math.sqrt(1 + slope * slope);
       this.addRing(centreX, centreY, centreZ, axis.x, axis.y, axis.z, radius, radius, 0, -slope * tilt, tilt, air, phase);
     }
     // Its foot: a hemisphere under the last node (or its bead's lower pole).
-    const footRadius = Math.max(this.tubeRadius(last, first, last), solver.beadRadius(last));
-    nodeAxis(last);
-    const footX = this.drawX[last], footY = this.drawY[last], footZ = this.drawZ[last];
-    air = this.airAt(solver.stamp[last]); phase = this.phaseAt(solver.stamp[last]);
+    const footCore = this.tubeRadius(last, first, last);
+    const footBase = placeRing(last, footCore, baseAt(last));
+    const footRadius = Math.max(footCore + footBase, solver.beadRadius(last));
+    const footX = centre.x, footY = centre.y, footZ = centre.z;
+    air = airOf(last, footCore, footBase); phase = this.phaseAt(solver.stamp[last]);
     if (!this.beadShown(last, first, last)) {
       for (let ring = CAP_RINGS; ring >= 0; ring--) {
         const polar = (ring / (CAP_RINGS + 1)) * Math.PI * 0.5;
@@ -927,45 +967,6 @@ export class JetColumn {
     } else {
       this.addRing(footX + axis.x * footRadius, footY + axis.y * footRadius, footZ + axis.z * footRadius, axis.x, axis.y, axis.z, 0, footRadius, 1, 1, 0, air, phase);
     }
-  }
-
-  /**
-   * The sleeve's rings (the header): from a pole at its top, where it has
-   * the core's radius and is hidden in the solver's column, widening to the
-   * whole launch's radius over SLEEVE_TAPER of its span, down to the water
-   * it stands in, closed under it. The axis runs down it, as a piece's does.
-   */
-  drawSleeve() {
-    if (this.baseScale <= 0 || this.age <= this.sleeveTop) return;
-    const top = this.sleeveTop, foot = this.sleeveFoot();
-    if (foot <= top + 1e-6) return;
-    const state = this.sleeveState ??= {};
-    const samples = this.sleeveSamples ??= Array.from({ length: SLEEVE_RINGS }, () => ({ x: 0, y: 0, z: 0, axisX: 0, axisY: 0, axisZ: 0, radius: 0, along: 0, air: 0, phase: 0 }));
-    let along = 0;
-    for (let index = 0; index < SLEEVE_RINGS; index++) {
-      const share = index / (SLEEVE_RINGS - 1);
-      const tau = top + (foot - top) * share;
-      this.sleeveAt(tau, state);
-      const sample = samples[index];
-      if (index > 0) along += Math.hypot(state.x - samples[index - 1].x, state.y - samples[index - 1].y, state.z - samples[index - 1].z);
-      sample.x = state.x; sample.y = state.y; sample.z = state.z;
-      sample.axisX = -state.axisX; sample.axisY = -state.axisY; sample.axisZ = -state.axisZ;
-      const widen = smoothstep(0, SLEEVE_TAPER, share);
-      sample.radius = state.core + (state.radius - state.core) * widen;
-      sample.along = along;
-      sample.air = this.airAt(tau); sample.phase = this.phaseAt(tau);
-    }
-    const first = samples[0], last = samples[SLEEVE_RINGS - 1];
-    this.addRing(first.x - first.axisX * first.radius, first.y - first.axisY * first.radius, first.z - first.axisZ * first.radius, first.axisX, first.axisY, first.axisZ, 0, first.radius, 1, -1, 0, first.air, first.phase);
-    for (let index = 0; index < SLEEVE_RINGS; index++) {
-      const sample = samples[index];
-      const before = samples[Math.max(index - 1, 0)], after = samples[Math.min(index + 1, SLEEVE_RINGS - 1)];
-      const span = after.along - before.along;
-      const slope = span > 1e-9 ? (after.radius - before.radius) / span : 0;
-      const tilt = 1 / Math.sqrt(1 + slope * slope);
-      this.addRing(sample.x, sample.y, sample.z, sample.axisX, sample.axisY, sample.axisZ, sample.radius, sample.radius, 0, -slope * tilt, tilt, sample.air, sample.phase);
-    }
-    this.addRing(last.x + last.axisX * last.radius, last.y + last.axisY * last.radius, last.z + last.axisZ * last.radius, last.axisX, last.axisY, last.axisZ, 0, last.radius, 1, 1, 0, last.air, last.phase);
   }
 
   /** Queue a ring: centre, unit axis, radius, the water's radius behind it, roundness, its normal's parts along the axis and outward, its water's air and launch phase. */
