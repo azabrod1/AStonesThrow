@@ -66,20 +66,31 @@
 // its ring by tens of percent). RING_SOURCE.strength multiplies every source
 // (1: as fitted); tools/ring-probe.mjs checks the fit.
 //
-// The near field. Near the stone, while the splash stands, linear theory
-// makes the hole's bowl (5 to 7 cm deep at 0.15 s for the reference stone,
-// as the simulation's funnel is) and a central mound after it, under the
-// drawn cavity, crown and jet, which would stand over a bowl or sink into a
-// mound. So the ring is faded out there (NEAR_FIELD), the more the nearer its
-// centre, so the fade itself is never steep: inside 4σ while the hole is
-// drawn, then, once it has filled, only over the jet's base (0.5σ to 1.75σ:
-// 3 to 10.5 cm for the reference stone, from about 0.35 s), until
-// 11·sqrt(σ/g) after its release, fully in by 16·sqrt(σ/g) (0.86 and 1.25 s
-// for the reference stone), when only a few millimetres of it are left
-// there. The ring's first trough and crest leave the centre while the jet
-// stands (the simulation has them 10 cm out at 0.3 and 0.5 s, as this ring
-// does); hidden inside 4σ until then, they showed only once 24 cm out, about
-// 0.75 s after entry, and the rings looked late after the splash.
+// The near field. Near the stone, while the hole is deep, linear theory
+// makes the hole's bowl (8 cm deep at 0.15 s for the reference stone, as the
+// simulation's funnel is) under the drawn cavity and crown, which would
+// stand over it. So the ring is faded out there (NEAR_FIELD), the more the
+// nearer its centre, so the fade itself is never steep: inside 4σ while the
+// hole is deep, then, as the bowl fills into a dish (`settle`: 1.3 to 2.25
+// sqrt(σ/g) after the release, 0.15 to 0.23 s after the reference throw's
+// entry), the hidden disc shrinks to the jet's base (0.25σ to 1.5σ beyond
+// the splats' offsets: 4.6 to 12 cm for the reference throw), which is let
+// through from 3 to 5 sqrt(σ/g) (0.29 to 0.44 s). From the mouth outward
+// linear theory is right from about 0.2 s on: at 10 cm the reference
+// simulation's surface sinks to 27 mm down at 0.25 s, rises through flat at
+// 0.375 s and over a 29 mm crest at 0.475 s; this ring's to 25 mm down,
+// through flat at 0.36 s and over 24 mm at 0.45 to 0.5 s, and as drawn
+// through the base's fade 28 mm down at 0.24 s, 17 mm at 8 cm where the
+// simulation's dish is 25 (a wider base left the dish flat inside 8 cm). The
+// drawn dish rides the surface whole by
+// then (src/cavity.js aCavity), so it sinks into the first trough with its
+// lip as the hole ends, one swing down and up; the centre, which linear
+// theory digs too deep before the jet's water has left it, stays hidden
+// under the dish's floor and comes through as the mound under the jet's
+// foot (the simulation's cone there), 4 cm high at 0.4 s. Hidden inside 4σ
+// until 2.5 sqrt(σ/g) and let through over 0.25 to 0.36 s, as it was, the
+// trough was dug out of still water right after the dish had flattened
+// and come to rest, a dip and a heave that read as a snap.
 //
 // In a pool (src/spectralWater.js setPool) the ring has walls to come back
 // off, which an analytic ring cannot: its source goes into the solver, whose
@@ -303,23 +314,26 @@ export const SLOWEST_GROUP_SPEED = 0.177;   // m/s: c_g's minimum (4.3 cm waves)
 export const INNER_SHARE = 0.85;      // the profile pass writes zero inside this share of that radius...
 export const SOURCE_EXTENT = 4;       // ...less this many of the source's widest σ·rim (a Gaussian keeps 3e-4 of its peak there)
 export const OUTER = { share: 0.1, margin: 1.25 };   // the ring is drawn out to margin × the farthest packet still SLOPE_VISIBLE·share steep, and to the shortest such wave
-// The drawn splash (the cavity, the crown, the jet and the solver's mound)
-// is the near field: the ring is faded out inside `outer` of the source's
-// widest σ beyond its offsets (from `inner` out, the more the nearer its
-// centre, by a quintic), until `from`, and fully in by `to`, in sqrt(σ/g)
-// after its release. Linear theory makes the hole's wide, deep bowl there
-// (5 to 7 cm deep for the reference stone at 0.15 s, as the simulation's
-// funnel is), which would leave the drawn cavity standing over it, and then
-// a central mound under the drawn jet. The bowl is the hole's, so the wide
-// region is hidden only while the hole is drawn: the hole has filled 2.2 to
-// 3 sqrt(σ/g) after the release for every stone (tools/cavity-probe.mjs),
-// and over `settle` the hidden region shrinks to the jet's base (`base`,
-// inner and outer in σ), so the ring's first trough and crest, which the
-// reference simulation has 8 to 24 cm out from 0.25 s on (as this ring
-// does), show as they leave the centre rather than once past 4σ. By `to`
-// the ring has gone out past the jet, and what is left near the centre is a
-// few mm.
-export const NEAR_FIELD = { inner: 0, outer: 4, from: 11, to: 16, settle: [2.5, 4], base: { inner: 0.5, outer: 1.75 } };
+// The drawn splash (the cavity and the crown) is the near field: the ring is
+// faded out inside `outer` of the source's widest σ beyond its offsets (from
+// `inner` out, the more the nearer its centre, by a quintic), until `from`,
+// and fully in by `to`, in sqrt(σ/g) after its release. Linear theory makes
+// the hole's wide, deep bowl there (8 cm deep for the reference stone at
+// 0.15 s, as the simulation's funnel is), which would leave the drawn cavity
+// standing over it. The bowl is the hole's, so the wide region is hidden
+// only while the hole is deep: it has pinched 0.8 sqrt(σ/g) after the
+// release for every stone, and its bowl has filled to a dish a radius deep
+// by about 1.5 and a tenth of one by about 2.1 (tools/cavity-probe.mjs);
+// over `settle` the hidden region shrinks to the jet's base (`base`, inner
+// and outer in σ), so the ring's first trough, which the reference
+// simulation has at the mouth from 0.2 s on (as this ring does: the
+// header), forms under the dish as it fills, and the dish, riding the
+// surface whole by then (src/cavity.js), sinks into it with its lip. The
+// centre is let through between `from` and `to`, once the trough has left
+// it and what linear theory has there is the mound under the jet's foot,
+// as the simulation's cone is (4 cm high at 0.4 s for the reference stone);
+// sooner, it would dig the dish's floor out again.
+export const NEAR_FIELD = { inner: 0, outer: 4, from: 3, to: 5, settle: [1.3, 2.25], base: { inner: 0.25, outer: 1.5 } };
 const WAVENUMBER_CAP = 400;           // rad/m: 1.6 cm waves, which the film damps within 15 cm
 const GAUSSIAN_REACH = 4.29;          // σ·k at which a splat's Gaussian spectrum is 1e-4: the rest adds under 3e-5 to a slope
 const MERGE = { seconds: 0.05, reach: 3 };   // a splat joins a source started this recently, this many of its σ away

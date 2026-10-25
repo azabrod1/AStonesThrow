@@ -294,12 +294,18 @@ k·√(νω/8) per second (Lamb; van Dorn), 0.03/s for 30 cm waves where the
 solver damps 0.3/s (the ring comes out 3 to 9% under the clean
 simulation's at 0.5 to 2 m). An oblique entry's ring is a symmetric part
 and a cos θ part, so it runs stronger ahead (1.3 to 1.5 times). Near the
-stone, while the splash stands, linear theory would dig the hole's bowl
-under the drawn cavity and jet, so there the ring fades in over about its
-first second. While any ring lives, a GPU pass evaluates each ring's
-spectrum at the frame's time, a second sums it into radial profiles of
-height and slope out to each ring's reach (2 to 40 m), every radius's sum
-split into 16 slices of the wavenumbers that the GPU runs side by side,
+stone, while the hole is deep, linear theory would dig the hole's bowl
+under the drawn cavity, so there the ring is hidden; as the bowl fills into
+a dish (0.15 to 0.23 s after the reference throw's entry) the ring is let
+through from the mouth outward, and the dish, which by then rides the water
+whole as its lip always does, sinks with it into the ring's first trough,
+2.5 cm deep at the mouth at 0.25 s as in the simulation; the centre, the
+jet's foot, is let through last, by about 0.45 s, when what the ring has
+there is the simulation's mound under the jet. While any ring lives, a GPU
+pass evaluates each ring's spectrum at the frame's time, a second sums it
+into radial profiles of height and slope out to each ring's reach (2 to
+40 m), every radius's sum split into 16 slices of the wavenumbers that the
+GPU runs side by side,
 and one pass per ring adds its slices into its profile, mipmapped: five
 rings take about 0.17 ms of a frame on a desktop's GPU, where summing each
 radius whole took 1.4 ms. The water adds every ring's slope to its normal everywhere and its height to
@@ -332,7 +338,8 @@ checks the field is the four Gaussians, stays even about every wall as it
 evolves and is the open patch's field read at the point and its mirror
 images). A ring's source therefore goes into the solver too, and the rings
 draw only what its near field hides under the drawn splash, turned over and
-for its first second or so, so the splash looks as it does on the lake. A
+for its first half second or so (a rock's first second), so the splash looks
+as it does on the lake. A
 basin's waves cannot spread away, so the pool damps them less than the
 lake's solver does but never less than 0.05/s, its walls and floor damping
 even the longest: a 6 cm stone's rings run back and forth off the walls for
@@ -419,10 +426,11 @@ known timing, and the droplets are choreographed from them:
    wobbles with depth, and closes off-centre, towards its bulge. For a 3 cm
    stone thrown at 6.3 m/s the mouth widens to 3.6 R, and sealing deep the
    hole pinches about 6 R down at about 115 ms and its bowl has flattened by
-   about 240 ms. The ring (Rings, above) is a push released just after entry,
-   fitted to the reference simulation's; an oblique entry drags it forward,
-   so the ring runs stronger ahead than behind; its foam comes when the bowl
-   has flattened;
+   about 240 ms, riding the water down into the ring's first trough rather
+   than into still water. The ring (Rings, above) is a push released just
+   after entry, fitted to the reference simulation's; an oblique entry drags
+   it forward, so the ring runs stronger ahead than behind; its foam comes
+   when the bowl has flattened;
 3. Worthington jet (`src/jet.js`): a glassy column fired up the axis from
    the bowl's floor at the pinch-off, after an oblique entry leaning back
    along the stone's path (by 0.4 of the entry angle, at most 18°) and a

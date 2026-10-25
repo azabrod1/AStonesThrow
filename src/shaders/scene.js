@@ -1049,7 +1049,11 @@ FreshBubbles freshBubbles(vec2 position, vec2 acrossX, vec2 acrossY, float fille
 //     that cavity's shift, down below the hole's floor and along its axis, so
 //     the patch dips under the cavity's lip in a well that holds the cavity
 //     and never shows through the hole (src/cavity.js says how the circle
-//     and the shift are chosen). The moved vertices get no mask, so the
+//     and the shift are chosen). A moved vertex keeps the surface's height
+//     where it came from (the splash's, the wind's and the rings'), as the
+//     mesh over it rides the same height, so the well goes down with the
+//     dish when a ring's trough forms under the hole; under the ice the
+//     height is already nothing. The moved vertices get no mask, so the
 //     hidden well never computes foam.
 //   CAVITY_MESH (the cavity's own mesh): positions and normals come from the
 //     mesh, built in world coordinates. aCavity.x, how far the vertex rides
@@ -1117,7 +1121,7 @@ void main() {
     vec2 fromMouth = world.xz - uCavityMouths[index].xy;
     if (dot(fromMouth, fromMouth) < uCavityMouths[index].z) {
       vec3 still = vec3(world.x + uCavityShifts[index].x, uCavityShifts[index].y, world.z + uCavityShifts[index].z);
-      world = vec3(still.x, still.y + (uGaleMetresPerUnit > 0.0 ? galeLift(still) : 0.0), still.z);
+      world = vec3(still.x, still.y + height * mask + (uGaleMetresPerUnit > 0.0 ? galeLift(still) : 0.0), still.z);
       mask = 0.0;
     }
   }
