@@ -32,6 +32,19 @@
 //     under a lattice, open pumpkin; createPieGeometry);
 //   - duck: a rubber duck, a smooth union of ellipsoids, yellow, its bill
 //     orange (createDuckGeometry);
+//   - banana: a ridged tube swept along a curved spine, yellow with sugar
+//     spots, its stem and blossom end dark, scaled to a unit ball's volume
+//     (createBananaGeometry);
+//   - bread: a slice of a sandwich loaf, a slab of its outline with its rim
+//     rounded (slabMesh), pale pitted crumb inside golden crust
+//     (createBreadGeometry);
+//   - cake: a frosted birthday cake turned from a profile, piped borders,
+//     sprinkles, each one thrown with one to six candles drawn at random
+//     (createCakeGeometry, cakeCandles);
+//   - snowball: a lumpy ball pressed flat where the palms packed it, white,
+//     bluish in its hollows (createSnowballGeometry);
+//   - slide: a toddler's moulded slide, its side panels, steps, platform,
+//     chute and rails each a slab of their own (createSlideGeometry).
 //   - gem: a brilliant cut (createGemGeometry: a table, a crown of facets,
 //     the girdle, a pavilion to the culet), stretched by its `look.stretch`,
 //     each facet's colour `look.color` at its own brightness, a diamond's
@@ -91,10 +104,13 @@ const MESHES = new Map();
  * the next (a pie's fillings); src/rock.js adds them to its copy of the
  * shared mesh (withParts) and their mass to its own. Only a `fixed` kind is
  * dressed; `heaviest` is the most share its dressing adds (src/things.js:
- * whether a thing that floats plain may sink dressed).
+ * whether a thing that floats plain may sink dressed). `length(definition)`,
+ * for a kind whose nominal radius is not half its length (a banana's is its
+ * ball's of like volume), is its length in its unit radii, which src/things.js
+ * shows as its size (unitLength); without one it is two (a diameter).
  */
-export function registerMesh(kind, { build, color, texture = null, glow = null, fixed = false, volume = null, prepare = null, check = null, sharedStream = false, dress = null, heaviest = 0 }) {
-  MESHES.set(kind, { build, color, texture, glow, fixed, prepare, check, sharedStream, dress, heaviest, volume: volume ?? (fixed ? (definition) => meshVolume(build(definition, {})) : null) });
+export function registerMesh(kind, { build, color, texture = null, glow = null, fixed = false, volume = null, prepare = null, check = null, sharedStream = false, dress = null, heaviest = 0, length = null }) {
+  MESHES.set(kind, { build, color, texture, glow, fixed, prepare, check, sharedStream, dress, heaviest, length, volume: volume ?? (fixed ? (definition) => meshVolume(build(definition, {})) : null) });
 }
 
 // What the looks' checks (registerMesh `check`) ask of a field.
@@ -111,6 +127,16 @@ export function unitVolume(definition) {
   if (!volume) return null;
   if (!VOLUMES.has(definition)) VOLUMES.set(definition, volume(definition));
   return VOLUMES.get(definition);
+}
+
+const LENGTHS = new WeakMap();   // definition → its mesh's unit length, measured once
+
+/** The length of `definition`'s mesh in its unit radii (registerMesh `length`), measured once; 2 for a kind that has none. */
+export function unitLength(definition) {
+  const length = meshKind(definition.look?.mesh)?.length;
+  if (!length) return 2;
+  if (!LENGTHS.has(definition)) LENGTHS.set(definition, length(definition));
+  return LENGTHS.get(definition);
 }
 
 /** The volume a closed geometry of separate triangles (no index) encloses: the sum of the tetrahedra its faces make with the origin. */
@@ -484,55 +510,81 @@ export function createGemGeometry(definition, random = Math.random) {
 // ---- the food --------------------------------------------------------------
 
 // An apple: a sphere drawn in at its stalk's dimple and its calyx's, a little
-// wider above its middle, red over yellow-green in streaks, with pale
-// lenticels, and its stalk.
+// wider above its middle, with pale lenticels, and its stalk. No two alike
+// (createAppleGeometry draws each its own): its variety's colours (APPLE
+// varieties: red, green, yellow, or red over green), how much of it is
+// flushed and streaked, a little taller or squatter, lopsided, its
+// shoulders lobed (as a Red Delicious's are), its dimple deeper or
+// shallower and its stalk its own length and lean.
 const APPLE = {
-  red: linear(168, 22, 28), blush: linear(205, 60, 40), green: linear(178, 170, 62), stalk: linear(92, 62, 34), lenticel: linear(230, 210, 150),
-  stalkDimple: [0.2, 0.38], calyxDimple: [0.12, 0.4], shoulder: 0.05, stalkLength: 0.32, stalkRadius: 0.035,
+  varieties: [
+    { weight: 3, ground: linear(178, 170, 62), blush: linear(205, 60, 40), red: linear(168, 22, 28), flushed: [0.55, 0.95] },   // red, Gala-like
+    { weight: 2, ground: linear(150, 178, 70), blush: linear(170, 160, 60), red: linear(120, 150, 50), flushed: [0, 0.15] },    // green, Granny Smith-like
+    { weight: 1, ground: linear(214, 190, 80), blush: linear(222, 150, 70), red: linear(200, 110, 50), flushed: [0.05, 0.3] },  // yellow, Golden-like, a little blushed
+    { weight: 2, ground: linear(160, 168, 64), blush: linear(196, 70, 44), red: linear(150, 26, 30), flushed: [0.25, 0.6] },    // red over green, half flushed
+  ],
+  stalk: linear(92, 62, 34), lenticel: linear(230, 210, 150),
+  stalkDimple: [0.14, 0.26], dimpleWidth: [0.32, 0.44], calyxDimple: [0.12, 0.4], shoulder: [0.02, 0.08],
+  tall: [0.9, 1.06], lopsided: 0.05, lobes: [0, 0.035], stalkLength: [0.22, 0.4], stalkRadius: 0.035,
 };
 
-/** An apple's geometry, of unit radius (the header), indexed, its normals the surface's. */
-export function createAppleGeometry() {
-  if (!ballCache.has('apple')) {
-    const { positions, indices } = icosphere(4);
-    const colors = new Float32Array(positions.length);
-    const color = new THREE.Color();
-    for (let vertex = 0; vertex < positions.length; vertex += 3) {
-      const x = positions[vertex], y = positions[vertex + 1], z = positions[vertex + 2];
-      const fromTop = Math.acos(Math.min(Math.max(y, -1), 1)), fromBottom = Math.PI - fromTop;
-      const scale = (1 - APPLE.stalkDimple[0] * Math.exp(-((fromTop / APPLE.stalkDimple[1]) ** 2)) - APPLE.calyxDimple[0] * Math.exp(-((fromBottom / APPLE.calyxDimple[1]) ** 2))) * (1 + APPLE.shoulder * y);
-      positions[vertex] = x * scale; positions[vertex + 1] = y * scale; positions[vertex + 2] = z * scale;
-      // Red streaked down from the stalk over a yellow-green ground, greener near the calyx.
-      const streak = valueNoise3(Math.atan2(z, x) * 5, y * 1.5, 0.5);
-      const red = smoothstep(-0.7, 0.3, y) * smoothstep(0.25, 0.6, streak + 0.25);
-      color.copy(APPLE.green).lerp(APPLE.blush, smoothstep(0, 1, red + 0.2)).lerp(APPLE.red, red);
-      if (valueNoise3(x * 40, y * 40, z * 40) > 0.94) color.lerp(APPLE.lenticel, 0.3);
-      colors[vertex] = color.r; colors[vertex + 1] = color.g; colors[vertex + 2] = color.b;
-    }
-    // The stalk: a thin tapered hexagonal prism from the dimple's floor, leaning a little.
-    const allPositions = [...positions], allColors = [...colors], allIndices = [...indices];
-    const base = 1 - APPLE.stalkDimple[0] - 0.02;
-    const first = allPositions.length / 3;
-    for (let ring = 0; ring < 2; ring++) {
-      const height = base + ring * APPLE.stalkLength, radius = APPLE.stalkRadius * (1 - 0.4 * ring), lean = 0.08 * ring;
-      for (let side = 0; side < 6; side++) {
-        const angle = (side / 6) * Math.PI * 2;
-        allPositions.push(lean + radius * Math.cos(angle), height, radius * Math.sin(angle));
-        allColors.push(APPLE.stalk.r, APPLE.stalk.g, APPLE.stalk.b);
-      }
-    }
-    for (let side = 0; side < 6; side++) {
-      const next = (side + 1) % 6;
-      allIndices.push(first + side, first + 6 + side, first + next, first + next, first + 6 + side, first + 6 + next);
-    }
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.Float32BufferAttribute(allPositions, 3));
-    geometry.setAttribute('color', new THREE.Float32BufferAttribute(allColors, 3));
-    geometry.setIndex(allIndices);
-    geometry.computeVertexNormals();
-    ballCache.set('apple', geometry);
+const APPLE_SPHERE = { sphere: null };   // the unit icosphere every apple starts from, made once
+/** An apple's geometry, of unit radius (the header), indexed, its normals the surface's; its own, from `random`. */
+export function createAppleGeometry(random = Math.random) {
+  const between = ([least, most]) => least + (most - least) * random();
+  let draw = random() * APPLE.varieties.reduce((sum, { weight }) => sum + weight, 0);
+  const variety = APPLE.varieties.find(({ weight }) => (draw -= weight) < 0) ?? APPLE.varieties[0];
+  const flushed = between(variety.flushed), seed = random() * 50;
+  const tall = between(APPLE.tall), shoulder = between(APPLE.shoulder), lobes = between(APPLE.lobes), lobeTurn = random() * Math.PI * 2;
+  const leanAngle = random() * Math.PI * 2, lopsided = APPLE.lopsided * random();
+  const dimple = between(APPLE.stalkDimple), dimpleWidth = between(APPLE.dimpleWidth);
+  // The unit sphere is made once (APPLE_SPHERE); each apple its own copy of it, in typed arrays, the stalk's corners
+  // after its own.
+  APPLE_SPHERE.sphere ??= icosphere(4);
+  const sphere = APPLE_SPHERE.sphere, sphereCount = sphere.positions.length;
+  const positions = new Float32Array(sphereCount + 12 * 3), colors = new Float32Array(sphereCount + 12 * 3);
+  positions.set(sphere.positions);
+  const indices = new Uint32Array(sphere.indices.length + 6 * 6);
+  indices.set(sphere.indices);
+  const color = new THREE.Color();
+  for (let vertex = 0; vertex < sphereCount; vertex += 3) {
+    const x = positions[vertex], y = positions[vertex + 1], z = positions[vertex + 2];
+    const fromTop = Math.acos(Math.min(Math.max(y, -1), 1)), fromBottom = Math.PI - fromTop, around = Math.atan2(z, x);
+    let scale = (1 - dimple * Math.exp(-((fromTop / dimpleWidth) ** 2)) - APPLE.calyxDimple[0] * Math.exp(-((fromBottom / APPLE.calyxDimple[1]) ** 2))) * (1 + shoulder * y);
+    scale *= 1 + lobes * Math.cos(5 * around + lobeTurn) * Math.max(y, 0) + lopsided * Math.cos(around - leanAngle);   // lobed shoulders, one side fuller
+    positions[vertex] = x * scale; positions[vertex + 1] = y * scale * tall; positions[vertex + 2] = z * scale;
+    // Its flush streaked down from the stalk over its ground colour, less toward the calyx.
+    const streak = valueNoise3(around * 5 + seed, y * 1.5, 0.5);
+    const red = smoothstep(-0.7, 0.3, y + 1.4 * (flushed - 0.6)) * smoothstep(0.25, 0.6, streak + flushed - 0.35);
+    color.copy(variety.ground).lerp(variety.blush, smoothstep(0, 1, red + 0.2 * flushed)).lerp(variety.red, red);
+    if (valueNoise3(x * 40 + seed, y * 40, z * 40) > 0.94) color.lerp(APPLE.lenticel, 0.3);
+    colors[vertex] = color.r; colors[vertex + 1] = color.g; colors[vertex + 2] = color.b;
   }
-  return ballCache.get('apple').clone();
+  // The stalk: a thin tapered hexagonal prism from the dimple's floor, leaning its own way.
+  const base = (1 - dimple - 0.02) * tall, length = between(APPLE.stalkLength), lean = 0.06 + 0.08 * random();
+  const first = sphereCount / 3;
+  for (let ring = 0; ring < 2; ring++) {
+    const height = base + ring * length, radius = APPLE.stalkRadius * (1 - 0.4 * ring);
+    for (let side = 0; side < 6; side++) {
+      const angle = (side / 6) * Math.PI * 2, at = 3 * (first + ring * 6 + side);
+      positions[at] = lean * ring * Math.cos(leanAngle) + radius * Math.cos(angle);
+      positions[at + 1] = height;
+      positions[at + 2] = lean * ring * Math.sin(leanAngle) + radius * Math.sin(angle);
+      colors[at] = APPLE.stalk.r; colors[at + 1] = APPLE.stalk.g; colors[at + 2] = APPLE.stalk.b;
+    }
+  }
+  for (let side = 0, at = sphere.indices.length; side < 6; side++, at += 6) {
+    const next = (side + 1) % 6;
+    indices.set([first + side, first + 6 + side, first + next, first + next, first + 6 + side, first + 6 + next], at);
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  geometry.setIndex(new THREE.BufferAttribute(indices, 1));
+  geometry.computeVertexNormals();
+  // How much it veers as it rolls on its side (src/things.js apple's `curve`, tuned on the middle shoulder): by its own.
+  geometry.userData.curveScale = shoulder / ((APPLE.shoulder[0] + APPLE.shoulder[1]) / 2);
+  return geometry;
 }
 
 // A pizza: a disc of unit radius turned about its axis from a profile (its
@@ -715,6 +767,153 @@ function turnedMesh(attributes, radii, segments) {
   const geometry = smooth.toNonIndexed();
   smooth.dispose();
   return geometry;
+}
+
+/** `geometry` (separate triangles) made to face out: wound the other way, its normals turned, if its volume came out negative (meshVolume). */
+function facingOut(geometry) {
+  if (meshVolume(geometry) >= 0) return geometry;
+  for (const attribute of Object.values(geometry.attributes)) {
+    const array = attribute.array, size = attribute.itemSize;
+    for (let first = 0; first < array.length; first += 3 * size) {
+      for (let component = 0; component < size; component++) {
+        const second = first + size + component, third = first + 2 * size + component;
+        const kept = array[second];
+        array[second] = array[third];
+        array[third] = kept;
+      }
+    }
+  }
+  const normals = geometry.attributes.normal?.array ?? [];
+  for (let index = 0; index < normals.length; index++) normals[index] = -normals[index];
+  return geometry;
+}
+
+/** The volume a closed geometry of separate triangles encloses and its volume's middle ([x, y, z]): its faces' tetrahedra with the origin. */
+function volumeCentroid(geometry) {
+  const positions = geometry.attributes.position.array;
+  let volume = 0;
+  const centroid = [0, 0, 0];
+  for (let index = 0; index < positions.length; index += 9) {
+    const ax = positions[index], ay = positions[index + 1], az = positions[index + 2];
+    const bx = positions[index + 3], by = positions[index + 4], bz = positions[index + 5];
+    const cx = positions[index + 6], cy = positions[index + 7], cz = positions[index + 8];
+    const tetrahedron = (ax * (by * cz - bz * cy) + ay * (bz * cx - bx * cz) + az * (bx * cy - by * cx)) / 6;
+    volume += tetrahedron;
+    centroid[0] += tetrahedron * (ax + bx + cx) / 4; centroid[1] += tetrahedron * (ay + by + cy) / 4; centroid[2] += tetrahedron * (az + bz + cz) / 4;
+  }
+  return { volume, centroid: centroid.map((sum) => sum / volume) };
+}
+
+/**
+ * `geometry` (separate triangles) moved so that its volume's middle is its
+ * origin and scaled to a unit ball's volume, 4π/3: a thing's nominal radius
+ * is then its ball's of like volume (a banana's: src/things.js).
+ */
+function asUnitBall(geometry) {
+  const { volume, centroid } = volumeCentroid(geometry);
+  const scale = Math.cbrt(((4 / 3) * Math.PI) / volume);
+  const positions = geometry.attributes.position.array;
+  for (let index = 0; index < positions.length; index += 3) {
+    for (let axis = 0; axis < 3; axis++) positions[index + axis] = (positions[index + axis] - centroid[axis]) * scale;
+  }
+  return geometry;
+}
+
+/** The longest side of a geometry's bounding box, in its own units (registerMesh `length`). */
+function longestSide(geometry) {
+  geometry.computeBoundingBox();
+  const size = geometry.boundingBox.getSize(new THREE.Vector3());
+  return Math.max(size.x, size.y, size.z);
+}
+
+/** Separate-triangle geometries joined into one (their attributes alike: position, normal, colour). */
+function joined(geometries) {
+  const geometry = new THREE.BufferGeometry();
+  for (const name of Object.keys(geometries[0].attributes)) {
+    const arrays = geometries.map((part) => part.attributes[name].array);
+    const array = new Float32Array(arrays.reduce((sum, part) => sum + part.length, 0));
+    let at = 0;
+    for (const part of arrays) { array.set(part, at); at += part.length; }
+    geometry.setAttribute(name, new THREE.BufferAttribute(array, geometries[0].attributes[name].itemSize));
+  }
+  return geometry;
+}
+
+/**
+ * A slab (a slice of bread, a toy slide's parts): `outline`, [a, b] points
+ * round it either way, star-shaped about its origin, stood `thickness`
+ * across a third axis c, its rim rounded by `round` of its half-thickness
+ * (in `edge` steps each side), each face `rings` rings in to its middle.
+ * `place(a, b, c)` puts each point where it goes ([x, y, z]: a slice as it
+ * is, a slide's chute bent along its slope) and `paint(a, b, c, inset)`
+ * colours it (a THREE.Color; `inset`, how far in from the rim the point is
+ * along its ray from the middle). Smooth (turnedMesh, the outline's points
+ * its columns and the profile round its rim its rows), separate triangles,
+ * facing out.
+ */
+function slabMesh({ outline, thickness, round = 0.5, rings = 8, edge = 4, place, paint }) {
+  const half = thickness / 2, corner = round * half;
+  // The profile from one face's middle out, round the rim and in over the other: a face's rows by their share of the
+  // way to where the rounding starts, the rim's by their inset and height.
+  const rows = [];
+  for (let ring = 0; ring < rings; ring++) rows.push({ share: ring / rings, across: -half });
+  for (let step = 0; step <= edge; step++) {
+    const angle = (Math.PI / 2) * (step / edge - 1);
+    rows.push({ inset: corner * (1 - Math.cos(angle)), across: corner - half + corner * Math.sin(angle) });
+  }
+  for (let step = corner < half ? 0 : 1; step <= edge; step++) {
+    const angle = (Math.PI / 2) * (step / edge);
+    rows.push({ inset: corner * (1 - Math.cos(angle)), across: half - corner + corner * Math.sin(angle) });
+  }
+  for (let ring = rings - 1; ring >= 0; ring--) rows.push({ share: ring / rings, across: half });
+  const columns = outline.length + 1, count = columns * rows.length;
+  const positions = new Float32Array(count * 3), colors = new Float32Array(count * 3);
+  for (let column = 0; column < columns; column++) {
+    const [outA, outB] = outline[column % outline.length];
+    const reach = Math.hypot(outA, outB);
+    rows.forEach((row, index) => {
+      const along = row.share !== undefined ? row.share * (1 - corner / reach) : 1 - row.inset / reach;
+      const a = outA * along, b = outB * along;
+      const at = (column * rows.length + index) * 3;
+      positions.set(place(a, b, row.across), at);
+      const color = paint(a, b, row.across, reach * (1 - along));
+      colors[at] = color.r; colors[at + 1] = color.g; colors[at + 2] = color.b;
+    });
+  }
+  return facingOut(turnedMesh({ position: positions, color: colors }, rows.map((row) => (row.share === 0 ? 0 : 1)), outline.length));
+}
+
+/** A closed outline ([a, b] points) resampled to `count` points evenly along its length. */
+function evenly(points, count) {
+  const lengths = [0];
+  for (let index = 1; index <= points.length; index++) {
+    const [a, b] = points[index - 1], [c, d] = points[index % points.length];
+    lengths.push(lengths[index - 1] + Math.hypot(c - a, d - b));
+  }
+  const total = lengths.at(-1), even = [];
+  let segment = 0;
+  for (let step = 0; step < count; step++) {
+    const distance = (total * step) / count;
+    while (lengths[segment + 1] < distance) segment++;
+    const share = (distance - lengths[segment]) / Math.max(lengths[segment + 1] - lengths[segment], 1e-12);
+    const [a, b] = points[segment], [c, d] = points[(segment + 1) % points.length];
+    even.push([a + (c - a) * share, b + (d - b) * share]);
+  }
+  return even;
+}
+
+/** A closed outline moved so that its area's middle is its origin (outlineArea's, of its points [a, b]). */
+function aboutItsMiddle(points) {
+  let twice = 0, middleA = 0, middleB = 0;
+  points.forEach(([a, b], index) => {
+    const [c, d] = points[(index + 1) % points.length];
+    const cross = a * d - c * b;
+    twice += cross;
+    middleA += (a + c) * cross;
+    middleB += (b + d) * cross;
+  });
+  middleA /= 3 * twice; middleB /= 3 * twice;
+  return points.map(([a, b]) => [a - middleA, b - middleB]);
 }
 
 /** One of `choices` drawn from `random`, each as likely as its `weight` (a pizza's recipe, a pie's filling). */
@@ -948,6 +1147,120 @@ export function createWatermelonGeometry() {
   const geometry = smooth.toNonIndexed();
   smooth.dispose();
   return geometry;
+}
+
+// A banana: a tube swept along a spine that curves BANANA.bend radians over
+// its length, both ends up as it lies, its girth swelling from its blunt
+// blossom end (sin^BANANA.swell) and narrowing at its neck into its stem,
+// whose cut end flares a little; five low ridges run along it (BANANA.ridge
+// of its girth). Ripe: yellow, greener towards its stem, flecked with brown
+// sugar spots, faintly darker along its ridges, its blossom end and its
+// stem's cut end dark. Made in centimetres, then set about its volume's
+// middle and scaled to a unit ball's volume (asUnitBall): its nominal radius
+// is its ball's of like volume (src/things.js), its length bananaLength()
+// of those radii. Smooth, then cut into separate triangles.
+const BANANA = {
+  length: 20, girth: 1.9, bend: 1.2,   // cm along its spine, stem and all; its radius at its thickest; radians its spine turns
+  swell: 0.4, neck: 0.92,              // its girth goes as sin(π·s/neck)^swell, s its share of the way from its tip...
+  stem: 0.55, cut: 0.95, flare: 0.15,  // ...its stem's radius (cm) taking over at its neck, flaring by `flare` from `cut` on
+  ridges: 5, ridge: 0.05,
+  rows: 100, around: 40,
+  yellow: linear(252, 216, 58), green: linear(170, 184, 60), stalk: linear(116, 122, 52), end: linear(56, 40, 24),
+  spot: linear(112, 70, 28), ridgeLine: linear(170, 130, 40),
+};
+
+/** A banana's geometry (the header): its unit ball's volume, about its middle; made once, cloned. */
+export function createBananaGeometry() {
+  if (!ballCache.has('banana')) {
+    const { length, girth, bend, swell, neck, stem, cut, flare, ridges, ridge, rows, around } = BANANA;
+    const curve = length / bend;
+    // Its rows from its stem's cut end (its middle, then its rim) to its blossom end's tip, finer near the tip.
+    const shares = [1];
+    for (let row = 0; row <= rows; row++) shares.push(1 - row / rows);
+    shares.splice(-1, 0, 0.006, 0.002);
+    const radiusAt = (share) => {
+      const body = share < neck ? girth * Math.sin((Math.PI * share) / neck) ** swell : 0;
+      const stalk = share > 0.75 ? stem * (1 + flare * smoothstep(cut, 1, share)) : 0;
+      return (body ** 6 + stalk ** 6) ** (1 / 6);   // a soft maximum: its neck's narrowing into its stem
+    };
+    const columns = around + 1, count = columns * shares.length;
+    const positions = new Float32Array(count * 3), colors = new Float32Array(count * 3);
+    const color = new THREE.Color();
+    for (let column = 0; column < columns; column++) {
+      const angle = (2 * Math.PI * column) / around, cos = Math.cos(angle), sin = Math.sin(angle);
+      shares.forEach((share, index) => {
+        // Its spine's point, and its normal towards the curve's centre (its binormal is z).
+        const turn = bend * (share - 0.5);
+        const spineX = curve * Math.sin(turn), spineY = curve * (1 - Math.cos(turn)), normalX = -Math.sin(turn), normalY = Math.cos(turn);
+        const ridged = 1 + ridge * Math.cos(ridges * angle) * smoothstep(0.02, 0.15, share) * smoothstep(0.92, 0.8, share);
+        const radius = index === 0 ? 0 : radiusAt(share) * ridged;
+        const x = spineX + radius * cos * normalX, y = spineY + radius * cos * normalY, z = radius * sin;
+        const at = (column * shares.length + index) * 3;
+        positions[at] = x; positions[at + 1] = y; positions[at + 2] = z;
+        // Yellow, greener to its stem, its stem green-brown; spots and ridge lines on its body; its ends dark.
+        const body = smoothstep(0.03, 0.08, share) * smoothstep(0.9, 0.84, share);
+        color.copy(BANANA.yellow).lerp(BANANA.green, 0.7 * smoothstep(0.7, 0.9, share)).lerp(BANANA.stalk, smoothstep(0.86, 0.93, share));
+        color.lerp(BANANA.ridgeLine, 0.35 * Math.max(Math.cos(ridges * angle), 0) ** 16 * body);
+        color.lerp(BANANA.spot, 0.85 * smoothstep(0.8, 0.87, valueNoise3(x * 1.7, y * 1.7, z * 1.7)) * body);
+        color.lerp(BANANA.end, Math.max(smoothstep(0.035, 0.01, share), index === 0 || share > 0.995 ? 1 : 0));
+        colors[at] = color.r; colors[at + 1] = color.g; colors[at + 2] = color.b;
+      });
+    }
+    const radii = shares.map((share, index) => (index === 0 || share === 0 ? 0 : 1));
+    ballCache.set('banana', asUnitBall(facingOut(turnedMesh({ position: positions, color: colors }, radii, around))));
+  }
+  return ballCache.get('banana').clone();
+}
+
+/** A banana's length, end to end, in its nominal radii (registerMesh `length`). */
+function bananaLength() {
+  return longestSide(createBananaGeometry());
+}
+
+// A slice of bread from a sandwich loaf, BREAD.thickness thick: its outline
+// a square foot with rounded corners, straight sides and the loaf's domed
+// crown, overhanging them a little (breadOutline), its rim rounded
+// (slabMesh); its crumb pale, pitted with darker pores, its crust golden
+// brown round its rim and over a band of its faces. Its nominal radius is
+// its definition's (src/things.js: half its diameter, the outline's
+// farthest reach from its middle), its faces across its own y.
+const BREAD = {
+  thickness: 1.3, crust: 0.35, round: 0.5,   // cm; the crust's band in from the rim; the rim's rounding, of its half-thickness
+  points: 96, rings: 12,
+  crumb: linear(250, 238, 204), pore: linear(226, 206, 160), crustLight: linear(200, 136, 64), crustDark: linear(132, 76, 30),
+};
+
+/** A slice's outline (the header), in centimetres about its area's middle, counter-clockwise. */
+function breadOutline() {
+  const right = [];
+  for (let step = 0; step <= 8; step++) { const angle = -Math.PI / 2 + (Math.PI / 2) * (step / 8); right.push([4.6 + Math.cos(angle), -5 + Math.sin(angle)]); }
+  right.push([5.63, -2.5], [5.66, 0], [5.6, 2.0], [5.78, 2.5], [6.05, 2.85], [6.1, 3.15], [5.98, 3.45]);
+  for (let step = 1; step <= 16; step++) { const angle = (Math.PI / 2) * (step / 16); right.push([5.98 * Math.cos(angle), 3.45 + 2.95 * Math.sin(angle)]); }
+  const left = right.slice(0, -1).reverse().map(([a, b]) => [-a, b]);
+  return aboutItsMiddle(evenly([[0, -6], ...right, ...left], BREAD.points));
+}
+
+/** A slice of bread's geometry (the header) for its definition (its nominal radius, half its `diameter`). */
+export function createBreadGeometry(definition) {
+  const scale = 0.01 / (definition.body.size.diameter / 2);   // centimetres to its nominal radii
+  const outline = breadOutline().map(([a, b]) => [a * scale, b * scale]);
+  const crust = BREAD.crust * scale, color = new THREE.Color();
+  return slabMesh({
+    outline, thickness: BREAD.thickness * scale, round: BREAD.round, rings: BREAD.rings,
+    place: (a, b, c) => [a, c, b],
+    paint: (a, b, c, inset) => {
+      // Its crumb, pitted with pores; its crust darker to the rim.
+      const pores = valueNoise3(a / scale * 2.2, b / scale * 2.2, c > 0 ? 3.5 : 7.5);
+      color.copy(BREAD.crumb).lerp(BREAD.pore, 0.6 * smoothstep(0.62, 0.8, pores));
+      return color.lerp(BREAD.crustLight, smoothstep(1.4 * crust, 0.9 * crust, inset)).lerp(BREAD.crustDark, smoothstep(0.6 * crust, 0, inset));
+    },
+  });
+}
+
+/** A slice's longest side, crust to crust (its height), in its nominal radii (registerMesh `length`): its outline's, unbuilt. */
+function breadLength(definition) {
+  const outline = breadOutline(), along = (axis) => Math.max(...outline.map((point) => point[axis])) - Math.min(...outline.map((point) => point[axis]));
+  return (0.01 * Math.max(along(0), along(1))) / (definition.body.size.diameter / 2);
 }
 
 /**
@@ -1212,16 +1525,17 @@ export function createDeviceGeometry(kind) {
 // `white` share (the sheet's snow ice and frozen bubbles); a
 // band SHARD_LOOK.rim of the way in from its rim whiter and less clear, its
 // normals tipped out toward the edge by SHARD_LOOK.round (a broken edge,
-// rounded as it melts, catches the light); its broken sides white. With no
+// rounded as it melts, catches the light); its broken sides glassy, a
+// little frosted, half seen through. With no
 // piece (a thing defined or thrown plain, tools/thing-probe.mjs) it is
 // SHARD_LOOK.plain's: a broken hexagon.
 const SHARD_LOOK = {
-  clear: linear(10, 13, 16), white: linear(206, 214, 224), edge: linear(150, 166, 182), side: linear(188, 200, 214),
+  clear: linear(10, 13, 16), white: linear(206, 214, 224), edge: linear(150, 166, 182), side: linear(120, 136, 152),
   rim: 0.06,          // the whiter band round its top, of the way in from its rim
   edgeWhite: 0.6,     // the band's colour over the top's at its edge, for clear ice
   through: 0.92,      // the share of what is under it a clear piece shows (the rest its milk)...
   rimThrough: 0.55,   // ...at its edge...
-  sideThrough: 0.2,   // ...and through a side
+  sideThrough: 0.5,   // ...and through a side (a fresh break in clear ice is glassy, a little frosted)
   jag: 0.05,          // how far a cut point is off its side's line, at most, of the side's length
   round: 0.6,         // radians the band's normals are tipped out at the edge
   milk: 0.15,         // its clear ice's milk, without a piece's own (src/ice.js: the sheet's, for its thickness)
@@ -1504,6 +1818,113 @@ function fillingParts(filling, random) {
   return geometry;
 }
 
+// A birthday cake: two layers of sponge under buttercream, a solid turned
+// about its axis from a profile (CAKE.profile, in centimetres: its bare
+// baked underside, a border of piped shells round its foot, its frosted
+// side, a border round its top's edge and its flat top), CAKE.segments
+// round, each border fluted into CAKE.shells shells. Its unit radius is its
+// borders' reach. Coloured per vertex: the frosting white, faintly streaked
+// by the spatula, the borders pink, its underside baked brown, rainbow
+// sprinkles over its top (one vertex each, by a hash of its place in the
+// grid, so every cake's are the same). Each cake
+// thrown has its own candles, one to six drawn at random (registerMesh
+// `dress`, cakeCandles: thin striped candles on its top, each count's made
+// once), drawn but not weighed or floated: a few grams, a few millimetres
+// thin. Smooth, then cut into separate triangles.
+const CAKE = {
+  segments: 96, topRings: 18, shells: 24, reach: 11,
+  // (radius, height in cm, part, how far out it is fluted: 0 to 1) from its underside's middle out, up and in over its top.
+  profile: [
+    [0, -5.2, 'base', 0], [3, -5.2, 'base', 0], [6, -5.2, 'base', 0], [9, -5.2, 'base', 0], [10.2, -5.2, 'base', 0],
+    [10.45, -5.15, 'border', 0.3], [10.8, -4.95, 'border', 0.8], [11, -4.6, 'border', 1], [10.9, -4.25, 'border', 0.8], [10.65, -4.0, 'border', 0.3],
+    [10.6, -3.5, 'side', 0], [10.6, 0, 'side', 0], [10.6, 3.6, 'side', 0],
+    [10.75, 4.0, 'border', 0.3], [10.95, 4.45, 'border', 0.8], [10.85, 5.0, 'border', 1], [10.5, 5.4, 'border', 1], [10.0, 5.55, 'border', 0.8], [9.5, 5.35, 'border', 0.4], [9.2, 5.0, 'border', 0],
+  ],
+  flute: [0.3, 0.25],   // cm: a shell's swell out and up at its crest
+  frosting: linear(250, 246, 238), streak: linear(232, 226, 218), border: linear(244, 150, 186), groove: linear(214, 104, 148), base: linear(192, 132, 64),
+  sprinkles: [[232, 52, 60], [250, 196, 40], [70, 186, 90], [60, 130, 230], [170, 90, 210], [250, 130, 40]].map((rgb) => linear(...rgb)),
+  sprinkled: { top: 0.09 },
+  candles: { weights: [2, 3, 3, 2, 2, 1], radius: 0.024, height: 0.5, ring: 0.5, segments: 10, rows: 12, sunk: 0.02, wick: [0.006, 0.05],
+    stripes: [[[246, 140, 180], [255, 250, 245]], [[110, 170, 240], [255, 250, 245]], [[250, 210, 80], [255, 250, 245]]] },
+};
+
+/** A cake's solid (the header): its sponge, frosting and borders, a colour per vertex. */
+export function createCakeGeometry() {
+  const scale = 1 / CAKE.reach;
+  const top = CAKE.profile.at(-1)[1];
+  const profile = [...CAKE.profile];
+  for (let ring = CAKE.topRings - 1; ring >= 0; ring--) profile.push([(CAKE.profile.at(-1)[0] * ring) / CAKE.topRings, top, 'top', 0]);
+  const rows = profile.length, columns = CAKE.segments + 1;
+  const positions = new Float32Array(columns * rows * 3), colors = new Float32Array(columns * rows * 3);
+  const color = new THREE.Color();
+  for (let column = 0; column < columns; column++) {
+    const angle = (column / CAKE.segments) * Math.PI * 2;
+    // Each shell swells to its crest and narrows to the next: a teardrop's run round the border.
+    const shell = Math.abs(Math.sin((CAKE.shells * angle) / 2)) ** 0.7;
+    profile.forEach(([radius, height, part, fluted], row) => {
+      const out = radius + CAKE.flute[0] * fluted * shell, up = height + (height > 0 ? CAKE.flute[1] : -CAKE.flute[1] * 0.5) * fluted * shell;
+      const x = out * Math.cos(angle), z = out * Math.sin(angle);
+      positions.set([x * scale, up * scale, z * scale], (column * rows + row) * 3);
+      if (part === 'base') color.copy(CAKE.base);
+      else if (part === 'border') color.copy(CAKE.border).lerp(CAKE.groove, 0.5 * (1 - shell) * fluted);
+      else color.copy(CAKE.frosting).lerp(CAKE.streak, 0.6 * smoothstep(0.55, 0.8, valueNoise3(angle * 9, height * 0.4, 1.5)));
+      // A sprinkle on this vertex, or not: the same for every cake (a hash of its place), none on the seam's twin column.
+      const sprinkled = CAKE.sprinkled[part] ?? 0;
+      const cell = column % CAKE.segments;
+      if (sprinkled > 0 && radius > 0 && hash3(cell * 1.31, row * 2.77, 0.5) < sprinkled) color.copy(CAKE.sprinkles[Math.floor(hash3(cell * 3.7, row * 1.9, 2.5) * CAKE.sprinkles.length)]);
+      colors.set([color.r, color.g, color.b], (column * rows + row) * 3);
+    });
+  }
+  return turnedMesh({ position: positions, color: colors }, profile.map(([radius]) => radius), CAKE.segments);
+}
+
+const CAKE_CANDLES = new Map();   // each count's candles, made once (cakeCandles)
+
+/**
+ * A cake's candles (the header), one to six drawn from `random` by
+ * CAKE.candles.weights: their triangles (every count's made by the first
+ * cake, and shared), their weight no share of the cake's, and their count.
+ */
+export function cakeCandles(random = Math.random) {
+  const { weights } = CAKE.candles;
+  if (CAKE_CANDLES.size === 0) weights.forEach((weight, index) => CAKE_CANDLES.set(index + 1, candleParts(index + 1)));
+  const count = weightedPick(weights.map((weight, index) => ({ weight, count: index + 1 })), random).count;
+  return { geometry: CAKE_CANDLES.get(count), share: 0, name: `${count} candle${count === 1 ? '' : 's'}`, shared: true };
+}
+
+/** `count` candles on a cake's top (one in its middle, more round a ring), each a striped cylinder and its wick. */
+function candleParts(count) {
+  const { radius, height, ring, segments, rows, sunk, wick, stripes } = CAKE.candles;
+  const top = CAKE.profile.at(-1)[1] / CAKE.reach;
+  const color = new THREE.Color();
+  const candles = [];
+  for (let index = 0; index < count; index++) {
+    const turn = (2 * Math.PI * index) / count + 0.4;
+    const centreX = count === 1 ? 0 : ring * Math.cos(turn), centreZ = count === 1 ? 0 : ring * Math.sin(turn);
+    const [stripe, ground] = stripes[index % stripes.length].map((rgb) => linear(...rgb));
+    // Its profile: its foot (sunk into the frosting), its side, its shoulder in to its wick and the wick's tip.
+    const profile = [[0, top - sunk, 'wax'], [radius, top - sunk, 'wax']];
+    for (let row = 1; row <= rows; row++) profile.push([radius, top - sunk + ((height + sunk) * row) / rows, 'wax']);
+    profile.push([wick[0], top + height, 'wick'], [wick[0], top + height + wick[1], 'wick'], [0, top + height + wick[1], 'wick']);
+    const columns = segments + 1, rowCount = profile.length;
+    const positions = new Float32Array(columns * rowCount * 3), colors = new Float32Array(columns * rowCount * 3);
+    for (let column = 0; column < columns; column++) {
+      const angle = (column / segments) * Math.PI * 2;
+      profile.forEach(([out, y, part], row) => {
+        positions.set([centreX + out * Math.cos(angle), y, centreZ + out * Math.sin(angle)], (column * rowCount + row) * 3);
+        // A spiral stripe round its wax; its wick dark.
+        if (part === 'wick') color.setRGB(0.02, 0.02, 0.02);
+        else color.copy(ground).lerp(stripe, smoothstep(-0.2, 0.2, Math.sin(angle + ((y - top) / height) * 14)));
+        colors.set([color.r, color.g, color.b], (column * rowCount + row) * 3);
+      });
+    }
+    candles.push(turnedMesh({ position: positions, color: colors }, profile.map(([out]) => out), segments));
+  }
+  const geometry = joined(candles);
+  for (const candle of candles) candle.dispose();
+  return geometry;
+}
+
 // ---- the toys ----------------------------------------------------------------
 
 // A rubber duck: a smooth union of ellipsoids (DUCK.parts: its body, flat
@@ -1604,6 +2025,149 @@ export function createDuckGeometry() {
   return ballCache.get('duck').clone();
 }
 
+// A snowball, packed by hand: a ball (its body is one: src/things.js) made
+// lumpy by two noises (SNOWBALL.lumps: [frequency, height]) and pressed
+// flat where the palms packed it (SNOWBALL.palms, each a plane
+// SNOWBALL.pressed out from its middle). White, bluish grey in its hollows,
+// glinting here and there. Indexed, its normals the surface's.
+const SNOWBALL = {
+  detail: 4, lumps: [[2.3, 0.07], [7, 0.025]], pressed: 0.95,
+  palms: [[0.2, 0.9, 0.3], [-0.6, -0.5, 0.6], [0.8, -0.3, -0.5], [-0.3, 0.2, -0.9], [0.5, -0.9, 0.2]],
+  snow: linear(246, 248, 252), shade: linear(196, 208, 230), glint: linear(255, 255, 255),
+};
+
+/** A snowball's geometry (the header), of unit radius about its middle; made once, cloned. */
+export function createSnowballGeometry() {
+  if (!ballCache.has('snowball')) {
+    const { positions, indices } = icosphere(SNOWBALL.detail);
+    const palms = SNOWBALL.palms.map((palm) => new THREE.Vector3(...palm).normalize());
+    const colors = new Float32Array(positions.length);
+    const color = new THREE.Color();
+    for (let vertex = 0; vertex < positions.length; vertex += 3) {
+      const x = positions[vertex], y = positions[vertex + 1], z = positions[vertex + 2];
+      const lumps = SNOWBALL.lumps.map(([frequency, height]) => height * (valueNoise3(x * frequency + 5, y * frequency, z * frequency) - 0.5) * 2);
+      let radius = 1 + lumps[0] + lumps[1];
+      const hollow = smoothstep(0, -0.07, lumps[0] + lumps[1]);   // its lumps' troughs, before any palm pressed it
+      // Pressed flat: no further out than any palm's plane along its direction.
+      for (const palm of palms) { const facing = x * palm.x + y * palm.y + z * palm.z; if (facing > 0.2) radius = Math.min(radius, SNOWBALL.pressed / facing); }
+      positions[vertex] = x * radius; positions[vertex + 1] = y * radius; positions[vertex + 2] = z * radius;
+      // Its hollows shaded bluish, a glint where a grain catches the light.
+      color.copy(SNOWBALL.snow).lerp(SNOWBALL.shade, 0.45 * hollow + 0.15 * smoothstep(0.5, 0.2, valueNoise3(x * 12, y * 12, z * 12)));
+      if (valueNoise3(x * 30 + 9, y * 30, z * 30) > 0.86) color.lerp(SNOWBALL.glint, 0.8);
+      colors[vertex] = color.r; colors[vertex + 1] = color.g; colors[vertex + 2] = color.b;
+    }
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    geometry.setIndex(indices);
+    geometry.computeVertexNormals();
+    ballCache.set('snowball', geometry);
+  }
+  return ballCache.get('snowball').clone();
+}
+
+// A toddler's slide, moulded plastic with hollow walls SLIDE.wall thick, in
+// metres as it stands (x along it, from its ladder to the chute's foot; y up;
+// z across): two side panels, its handles their tops, with two steps and a
+// platform between them, and its chute, a bed with a rail along each side,
+// running from the platform down a curve (a cubic from SLIDE.chute.slope
+// below level at its top to level at its foot) to the ground. Each part is a
+// closed slab (slabMesh), its edges rounded, and they meet without
+// overlapping, so the water's columns through it pair (src/rock.js
+// buoyancyColumns). Its chute and rails yellow, its sides red, its steps
+// blue, each mottled a little as moulded plastic is. Built standing, then
+// set about its volume's middle. Its nominal radius is
+// its definition's (src/things.js: its hull's ball of like volume, so its
+// splash is a thing's that displaces as much), its length slideLength() of
+// those radii.
+const SLIDE = {
+  wall: 0.04, round: 0.6, gap: 0.002,   // m: its walls' thickness, their edges' rounding (of half of it), the room between its parts
+  half: 0.23,                            // m: its half-width
+  foot: [-0.495, -0.218], handle: { centre: [-0.32, 0.6], radius: 0.1 },   // its side panels' foot along the ground (x), and their handles' arc
+  steps: [{ x: [-0.468, -0.35], y: 0.19 }, { x: [-0.446, -0.33], y: 0.37 }, { x: [-0.42, -0.216], y: 0.53 }],   // its steps, the last its platform (their middles' height)
+  // Its chute's bed, its middle from its top to its foot (its underside on the ground there), leaving its top `slope`
+  // degrees below level, the cubic's handles `reach` (m) long; its rails' height, thickness and place across it.
+  chute: { from: [-0.206, 0.53], to: [0.495, 0.02], slope: 25, reach: [0.3, 0.22], rail: [0.07, 0.04, 0.21] },
+  chuteColour: linear(255, 210, 28), sideColour: linear(228, 50, 38), stepColour: linear(36, 120, 226),
+};
+
+/** A toy slide's geometry (the header) for its definition (its nominal radius, half its `diameter`). */
+export function createSlideGeometry(definition) {
+  const scale = 1 / (definition.body.size.diameter / 2);   // metres to its nominal radii
+  const { wall, round, gap } = SLIDE;
+  const color = new THREE.Color();
+  const mottled = (base) => (a, b, c) => color.copy(base).multiplyScalar(0.94 + 0.12 * valueNoise3(a * 30, b * 30, c * 30 + 4));
+  const rounded = (halfA, halfB, corner, steps = 6) => {
+    // A rounded rectangle's outline, counter-clockwise.
+    const points = [];
+    for (const [signA, signB, from] of [[1, 1, 0], [-1, 1, Math.PI / 2], [-1, -1, Math.PI], [1, -1, 1.5 * Math.PI]]) {
+      for (let step = 0; step <= steps; step++) {
+        const angle = from + (Math.PI / 2) * (step / steps);
+        points.push([signA * (halfA - corner) + corner * Math.cos(angle), signB * (halfB - corner) + corner * Math.sin(angle)]);
+      }
+    }
+    return evenly(points, Math.max(24, Math.round((halfA + halfB) / 0.012)));
+  };
+  const parts = [];
+  // The side panels: a foot along the ground, a back edge up to the handle's arc over the top, and the ladder's edge
+  // down from it; each about its own middle, so that it is star-shaped about it (slabMesh), and put back.
+  const [footFront, footBack] = SLIDE.foot, { centre, radius } = SLIDE.handle;
+  const panel = [[footFront, 0], [footBack, 0], [footBack, centre[1] - 0.05]];
+  for (let step = 0; step <= 16; step++) { const angle = (Math.PI * step) / 16; panel.push([centre[0] + radius * Math.cos(angle), centre[1] + radius * Math.sin(angle)]); }
+  const even = evenly(panel, 90), centred = aboutItsMiddle(even);
+  const offset = [even[0][0] - centred[0][0], even[0][1] - centred[0][1]];
+  for (const side of [-1, 1]) {
+    const across = side * (SLIDE.half - wall / 2);
+    parts.push(slabMesh({ outline: centred, thickness: wall, round, rings: 6, place: (a, b, c) => [(a + offset[0]) * scale, (b + offset[1]) * scale, (across + c) * scale], paint: mottled(SLIDE.sideColour) }));
+  }
+  // The steps and the platform, between the panels.
+  const between = SLIDE.half - wall - gap;
+  for (const { x: [from, to], y } of SLIDE.steps) {
+    const middle = (from + to) / 2;
+    parts.push(slabMesh({ outline: rounded((to - from) / 2, between, 0.02), thickness: wall, round, rings: 4, place: (a, b, c) => [(middle + a) * scale, (y + c) * scale, b * scale], paint: mottled(SLIDE.stepColour) }));
+  }
+  // The chute: its bed's middle along a cubic, from the platform down to the ground, measured along its length.
+  const { from, to, slope, reach: [leaving, arriving], rail } = SLIDE.chute;
+  const down = THREE.MathUtils.degToRad(slope);
+  const controls = [from, [from[0] + leaving * Math.cos(down), from[1] - leaving * Math.sin(down)], [to[0] - arriving, to[1]], to];
+  const bezier = (t) => [0, 1].map((axis) => (1 - t) ** 3 * controls[0][axis] + 3 * (1 - t) ** 2 * t * controls[1][axis] + 3 * (1 - t) * t * t * controls[2][axis] + t ** 3 * controls[3][axis]);
+  const table = [{ t: 0, along: 0, point: bezier(0) }];
+  for (let step = 1; step <= 200; step++) {
+    const t = step / 200, point = bezier(t), last = table.at(-1);
+    table.push({ t, along: last.along + Math.hypot(point[0] - last.point[0], point[1] - last.point[1]), point });
+  }
+  const length = table.at(-1).along;
+  // The bed's middle at `along` (m from its top) and its normal there, up out of the bed.
+  const frame = (along) => {
+    const at = Math.min(Math.max(along, 0), length);
+    let index = 1;
+    while (index < table.length - 1 && table[index].along < at) index++;
+    const before = table[index - 1], after = table[index], share = (at - before.along) / Math.max(after.along - before.along, 1e-12);
+    const x = before.point[0] + (after.point[0] - before.point[0]) * share, y = before.point[1] + (after.point[1] - before.point[1]) * share;
+    const tangentX = after.point[0] - before.point[0], tangentY = after.point[1] - before.point[1], tangentLength = Math.hypot(tangentX, tangentY);
+    return { x, y, normalX: -tangentY / tangentLength, normalY: tangentX / tangentLength };
+  };
+  const bent = (along, up, across) => { const { x, y, normalX, normalY } = frame(along + length / 2); return [(x + up * normalX) * scale, (y + up * normalY) * scale, across * scale]; };
+  parts.push(slabMesh({ outline: rounded(length / 2, SLIDE.half, 0.04, 8), thickness: wall, round, rings: 10, place: (a, b, c) => bent(a, c, b), paint: mottled(SLIDE.chuteColour) }));
+  const [railHeight, railThickness, railAt] = rail;
+  for (const side of [-1, 1]) {
+    parts.push(slabMesh({
+      outline: rounded(length / 2 - 0.01, railHeight / 2, 0.025), thickness: railThickness, round, rings: 4,
+      place: (a, b, c) => bent(a, wall / 2 + railHeight / 2 + b, side * railAt + c), paint: mottled(SLIDE.chuteColour),
+    }));
+  }
+  // About its volume's middle: it turns about its own, not its foot's.
+  const geometry = joined(parts);
+  for (const part of parts) part.dispose();
+  const { centroid } = volumeCentroid(geometry);
+  return geometry.translate(-centroid[0], -centroid[1], -centroid[2]);
+}
+
+/** A slide's length, from its ladder's foot to its chute's, in its nominal radii (registerMesh `length`): unbuilt. */
+function slideLength(definition) {
+  return (SLIDE.chute.to[0] - SLIDE.foot[0]) / (definition.body.size.diameter / 2);
+}
+
 // ---- the kinds -------------------------------------------------------------
 
 registerMesh('stone', {
@@ -1639,7 +2203,8 @@ registerMesh('ball', {
     for (let index = 0; index < paints; index++) createBallGeometry(definition, () => (index + 0.5) / paints).dispose();
   },
 });
-registerMesh('apple', { build: () => createAppleGeometry(), color: () => new THREE.Color(1, 1, 1), fixed: true });
+// Each apple its own (createAppleGeometry: drawn from Math.random, as a ball's paint is), sized by the middle one's volume.
+registerMesh('apple', { build: () => createAppleGeometry(), color: () => new THREE.Color(1, 1, 1), volume: () => meshVolume(createAppleGeometry(() => 0.5).toNonIndexed()) });
 registerMesh('watermelon', { build: () => createWatermelonGeometry(), color: () => new THREE.Color(1, 1, 1), fixed: true });
 registerMesh('brick', { build: () => createBrickGeometry(), color: () => new THREE.Color(1, 1, 1), fixed: true });
 for (const kind of ['tv', 'iphone']) {
@@ -1650,6 +2215,14 @@ registerMesh('pie', {
   dress: (definition, random) => pieFilling(random), heaviest: Math.max(...PIE.fillings.map((filling) => filling.share)),
 });
 registerMesh('duck', { build: () => createDuckGeometry(), color: () => new THREE.Color(1, 1, 1), fixed: true });
+registerMesh('banana', { build: () => createBananaGeometry(), color: () => new THREE.Color(1, 1, 1), fixed: true, length: () => bananaLength() });
+registerMesh('bread', { build: (definition) => createBreadGeometry(definition), color: () => new THREE.Color(1, 1, 1), fixed: true, length: (definition) => breadLength(definition) });
+registerMesh('cake', {
+  build: () => facingOut(createCakeGeometry()), color: () => new THREE.Color(1, 1, 1), fixed: true,
+  dress: (definition, random) => cakeCandles(random),
+});
+registerMesh('snowball', { build: () => createSnowballGeometry(), color: () => new THREE.Color(1, 1, 1), fixed: true });
+registerMesh('slide', { build: (definition) => createSlideGeometry(definition), color: () => new THREE.Color(1, 1, 1), fixed: true, length: (definition) => slideLength(definition) });
 // Each shard its own piece's (src/ice.js), so none is fixed; it draws no random numbers. Its volume is the plain one's.
 registerMesh('shard', {
   build: (definition, { piece } = {}) => createShardGeometry(piece), color: () => new THREE.Color(1, 1, 1),

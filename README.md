@@ -26,7 +26,9 @@ view); a drag that starts zoomed turns round what the view is looking at.
 Escape or Reset view (under the menu button while the view is away from
 the shore's) glides back to the shore. The strip at the bottom sets what is
 thrown: its name opens a dropdown of every thing under its group, each with
-its picture (`src/thingMenu.js`), and its slider sets the size (a stone 1.5
+its picture (`src/thingMenu.js`; on a phone each group is one row a finger
+scrolls sideways, so the dropdown stays as tall as its groups however many
+things there are), and its slider sets the size (a stone 1.5
 to 30 cm across, a bowling ball 6 to 16 lb, a basketball size 5 to 7, a gem
 5 to 1000 carats; a golf or a tennis ball has one size). Then how it is
 thrown, in two parts: the manner, Toss (the low way round), Lob (the high
@@ -52,8 +54,9 @@ is remembered on the device (but the view, which opens on the shore):
 - What to throw (`?thing=`): stones (a river stone, the default; slate,
   granite, basalt, pumice), balls (golf, tennis, bowling, basketball), gems
   (diamond, emerald, ruby, sapphire) and others (an apple, a watermelon, a
-  pizza, a frozen pizza, a pie, a rubber duck, a brick, a TV, an iPhone), each the size, weight
-  and density of the real thing (`src/things.js`). The foot of the strip's
+  pizza, a frozen pizza, a pie, a rubber duck, a brick, a TV, an iPhone, a
+  banana, a slice of bread, a birthday cake, a snowball, a toy slide), each
+  the size, weight and density of the real thing (`src/things.js`). The foot of the strip's
   dropdown opens this page. What is lighter than water floats; the rest sink.
   What comes to rest stays, on the bed or the pool's floor as on the deck, up
   to the quality preset's count (below); past it the oldest shrinks away.
@@ -81,12 +84,28 @@ is remembered on the device (but the view, which opens on the shore):
   do, and come to rest lying along the lake bed's slope. In the pool they
   land wherever they fit, their slap standing no crown, and its walls meet
   their corners. Choose them under Other or use `?thing=tv` and
-  `?thing=iphone`; both support Toss and Lob. Each choice's picture
+  `?thing=iphone`; both support Toss and Lob. A banana (about 920 kg/m³
+  whole) tumbles end over end and floats with only a sliver out. A slice
+  of bread (30 g, about 175 kg/m³) flutters down floppier than a pizza,
+  floats nearly all out, then soaks and sinks in about two minutes. A
+  birthday cake (sponge under buttercream, about 460 kg/m³) comes with one
+  to six candles, floats half out, and soaks and sinks in two or three
+  minutes. A snowball (packed snow, 450 kg/m³) floats half out, then soaks
+  to slush in under half a minute and floats on, nine tenths under: slush
+  is still lighter than water. A toddler's toy slide (99 × 46 × 70 cm,
+  4.1 kg, hollow walls holding 39 litres) floats nine tenths out of the
+  water; it is held high enough to clear the water, and tumbles slowly. A
+  long thin thing's nominal radius (a banana's, the slide's) is its ball's
+  of like volume, so its splash is sized by what it displaces; the strip
+  shows its length. Fish eat what is edible (an apple, a banana, a
+  watermelon, a pizza, a frozen one once thawed, a pie, bread, a cake):
+  below. Each choice's picture
   (`assets/things/thumbs/`) is a harness frame of it at rest on the pool's
   deck, shrunk to 160×90: `--sky=pool --thing=name
   --throws=-1.75:0.75:0.05 --times=3 --seed=1 --w=320 --h=180`, looked at
   where it rests (`--report` says) with `--look=x:y:z` and a `--fov` that
-  frames it (a duck 4°, a pie 8°, a pizza 9°).
+  frames it (a duck 4°, a pie 8°, a pizza 9°, a toy slide 24°; the cake's
+  with `--seed=3`, on which it lands right way up).
 - View: Shore, standing on the bank as the page opens; Low, down at the
   water, the splash against the far shore; High, from above, the rings
   spreading over the pond; Under, under the water, looking up at the rocks
@@ -118,16 +137,29 @@ is remembered on the device (but the view, which opens on the shore):
   stone, a brick or a bowling ball goes through thin ice, a light ball, a gem
   or a pebble does not, and only a big rock or a heavy ball lobbed high goes
   through thick ice, anywhere over the water, the pool's corners too. A
-  break opens a jagged hole with cracks running out from it, more and longer
-  the harder the blow, joined by rings of crack into a web, ending where
-  they meet a crack already there, and the stone splashes in
-  as into open water, without the crown, whose sheet would stand on ice. The
-  broken ice comes up in the hole as floating shards, the water floods the
+  break opens a jagged hole with cracks running out from where it struck,
+  more and longer the harder the blow, joined by rings of crack curving
+  round into a web, ending where they meet a crack already there, and the
+  stone splashes in as into open water, without the crown, whose sheet
+  would stand on ice. The broken ice is there from the first moment: slices
+  narrowing to the blow lie where they broke while the splash is open under
+  them, then dip as the water comes back and float in the hole; the water floods the
   ice round it and freezes glazed, and a hole left alone for 40 seconds
   freezes over again in half a minute, its shards frozen in, its new ice
   thin enough for the next throw to break.
 - Location (`?sky=`): Swiss Alps, Rocky cove, Highlands, Desert oasis,
-  Lakeside (the default), Mesas, or Pool. Swiss Alps replaces Alpine with a
+  Lakeside (the default), Mesas, Pool, or Koi pond (`?sky=koi`): a pond in
+  a Japanese garden under its own panorama (Poly Haven's Ninomaru Teien,
+  the garden of Nagoya Castle, its sun behind leaves, so its brightness is
+  taken from its sky: `shadedSun` in `src/sky.js`), about 9 m across, its
+  shore irregular (lobes, a bay, a broad point), its far and side banks
+  planted to the water with clipped shrubs (karikomi) in rows rising above
+  the eye, a Kasuga stone lantern among them, the garden's trees behind; a
+  lawn on the near bank, its own clear green water over gravel, and koi.
+  Nothing thrown comes down on the ground there: every aim is kept 0.6 m
+  inside the water, and a thing skipped or slid on to a bank is caught by
+  the shrubs where they are drawn (`src/koiGarden.js`,
+  `tools/garden-probe.mjs`). Swiss Alps replaces Alpine with a
   sharper 4K Lago d’Isola panorama, framed across its snowy ridge, and starts
   at water level with Frozen water (thin ice unless Thick was last chosen). Choosing liquid
   water is remembered when reloading the same place; entering Swiss Alps
@@ -353,6 +385,54 @@ had before the control; Windy 1.8.
 definitions (`defineThing`); `__pond.defineThing(key, definition)` adds one.
 `tools/thing-probe.mjs` checks them.
 
+**Fish** (`src/fish.js`, drawn by `src/fishMeshes.js`). Each place's water
+has the fish such water holds, a few of each, chosen for quality over
+number: Lakeside a school of minnows, a shoal of perch and a pike; Swiss
+Alps brown trout and Arctic char; Highlands trout and minnows; Mesas a
+largemouth bass and bluegill; Desert oasis pupfish (blue males, brown
+females) and tilapia; Rocky cove grey mullet and a wrasse; the Koi pond
+seven koi of the classic varieties (Kohaku, Sanke, Showa, Ogon, Chagoi,
+Asagi, Yamabuki, Tancho) and a goldfish; the Pool none. A school keeps
+about a body length apart and turns together, a shoal keeps loosely
+together, a pike or a trout keeps alone (boids: apart, aligned, together,
+toward a goal the group wanders to). Each fish ranges through the whole
+water, its whole body (fins too, nose and tail on a sloping bank) kept off
+the bed, picking a new depth every few seconds, swims at its own pace (speeding
+up and coasting), rests now and then, and its tail beats once a stride (two
+thirds of a body length), never faster than 4 beats a second. What it wants
+is eased over a fraction of a second and it eases into its turns, so it
+never wavers. A thing thrown frightens the fish under where it will land
+about half a second before it lands, and a splash, a thing moving through
+the water or a finger dipping in those near it, the farther the bigger the
+thing: each whips round (a C-start) and dashes away, diving, a few body
+lengths a second and never over 0.8 m/s, its group taking fright a moment
+later; at a wall or a shore it turns along it, never into it, and it stays
+wary a few seconds. Nothing passes through a fish: each foresees, about a
+second ahead, where each thing in the water (or coming down to it, or held
+in it and dragged) will be,
+as a rounded disc of its own reach and thickness (a pizza's flat, a ball's
+round), and bolts from one coming at it or swims round one lying still;
+one still too close (a bowling ball dropped onto a koi in the shallows) is
+held off its surface the shortest way that keeps it in its water. Something edible that has settled in the water brings
+them, groupmates following the first: up to six at it, each at its own spot
+at its edge, biting (a dimple in the water at the surface) and backing off;
+eaten (bites as its dry mass says), it shrinks away. They are scenery
+otherwise: the physics never meets them. Their randomness is their own
+seeded stream, never `Math.random`. Each kind is one instanced body, one
+instanced set of fins and one instanced shadow, drawn in the under-water
+pass where the still surface shows them: a body shaped by its kind (depth,
+width, where it is deepest, its snout), forked or rounded tail, dorsal,
+anal, pectoral and pelvic fins as bending membranes, see-through with their
+rays; swum in the vertex shader (a wave back along the body growing to the
+tail, a C into turns, the paired fins rowing); marked per pixel by its kind
+and its own seed (countershaded, muted wild colours; a koi's variety and
+patches), with overlapping scales, a lateral line, a gill cover's edge and
+a small dark eye, lit as the bed is, a silvery flank mirroring the light
+from above, its outline taking the water's colour; and a soft shadow on the
+bed down-sun of it. A frame's fish cost up to about 75 µs of CPU for their
+behaviour (Lakeside's 13, with a throw in the water) and 15 µs for their instances, and three draw calls a kind
+(`tools/fish-probe.mjs` checks the behaviour and its cost).
+
 **Splash** (`src/splash.js`). A stone entering water goes through stages with
 known timing, and the droplets are choreographed from them:
 
@@ -494,8 +574,8 @@ coming quicker and quicker (2.7 m long and 16 cm high, then 1.6 m and 9 cm,
 0.9 m and 5 cm, 0.6 m and 3 cm), all in the vertical plane it was thrown
 in. In the pool it is thrown gentler (6, 7.5 or 9 m/s), so most skips stay
 in it, coming back off the far wall; a hard one may clear the wall and land
-on the paving, where it bounces low, tumbling end over end, and tumbles to a
-stop a few metres on. Every touch sends out a ring, throws a fan of spray ahead
+on the paving, where it bounces low, tumbling end over end, then tips onto a
+flat face and scrapes to a stop. Every touch sends out a ring, throws a fan of spray ahead
 and leaves a moment's white churn; the last is any stone's splash
 (`tools/skip-probe.mjs` prints all of it). A 30 cm rock is thrown too slowly
 to skip.
@@ -873,9 +953,12 @@ and the deck's splashed patches, dry a twentieth as fast.
 **Ice** (`src/ice.js`; drawn by the water's shaders, `ICE_COMMON` in
 `src/shaders/scene.js`). The ice adds one piece of physics, whether it
 breaks, and borrows the rest. On it a thing is on ground (`src/rock.js`
-`ground`): it bounces, tumbles or rolls and rests as on the pool's deck, but
+`ground`): it bounces, slides or rolls and rests as on the pool's deck, but
 slick (friction 0.1, a stone slowing at 0.12 g, a ball rolling on), so a
-throw slides metres and a hard, flat one tens of metres, out of sight past
+throw slides metres: whatever does not roll tips onto a face it can lie on (a
+brick flat or on its side, a stone on a flat face) and slides on it, turning
+slowly about the vertical, never tumbling; an apple rolls on its side and
+veers off, its own lumps stopping it in a few metres; and a hard, flat one tens of metres, out of sight past
 30 m; things on the ice, as on the deck, knock each other along
 (`src/collide.js`). A thing coming down on it strikes a blow m·v²/R (its
 speed down only, so a lob breaks where a flat throw skids; a hollow ball or
@@ -902,33 +985,66 @@ brought in to 4 mm of a pool's walls. Radial cracks run out from its
 corners, three to six of them and one and a half more for each doubling of
 the blow over what the ice held, 0.35 to 1.5 times the sheet's
 characteristic length (0.54 m for thin ice, 1.5 m for thick) and now and
-then one far longer: each in straight runs of 3 to 15 cm with kinks
-between, pulled back the way it set out, forking now and then, tapering to
-a hairline. Rings of crack join neighbouring radials farther out, chords
-from one to the next, so a hard break leaves a web. A crack stops where it
-meets one already there, as real cracks do, so older breaks bound newer
-ones; a near miss stars the ice, sometimes ringed. A thing sliding into a hole falls in; one too wide for a hole
+then one far longer: each in short runs of 1 to 4.5 cm with small kinks
+between, rough at every scale its points resolve, pulled back the way it
+set out, forking now and then, tapering to a hairline; and round the
+hole's crushed edge a fringe of short ones. Rings of crack join
+neighbouring radials farther out, each curving round the hole from one
+radial until it runs into the next, so a hard break leaves a web. A crack
+stops where it meets one already there, as real cracks do, so older breaks
+bound newer ones; a near miss stars the ice, sometimes ringed. Ice cracked
+through holds less: a star, and the ice round a hole (cracked radially, its
+edge free), leave a weak spot that holds about half what it did at its
+middle, whole again at its cracks' reach, spots over each other weaker
+still. So hits that crack it, again at one spot, break it (golf balls lobbed
+at thin ice: through on the second), while things too light to crack it (a
+small gem), however many, never do. What lies on the ice bears on it, each
+thing's weight spread over about the sheet's characteristic length: where
+the weight is more than the ice holds there, it gives way under the
+heaviest thing (a 30 cm rock set down on thin ice; two 16 lb bowling balls
+side by side, though one alone rests), and a blow strikes ice already
+bearing what lies about it. A piece afloat in a hole is ice too: a pebble
+thrown at one lands on its top, bounces and slides as on the sheet, while
+the piece can carry it (a piece of thick ice some 70 g), and pushes it
+under and goes into the water when it cannot (a piece of thin ice, a few
+grams); anything else meets a piece as its slab, not a ball round it. A
+blow more than a piece's own ice holds breaks it (a 6 cm stone on a piece of
+thin ice): it splits along a line or two through the blow, its parts set
+where they broke while the stone's cavity is open under them, then dipping
+and drifting apart; struck short of breaking, a piece is pushed down a
+centimetre or so, tipping on the side struck, and rocks back. Awash or just
+under, a piece stays in sight, its white ice and its edges seen through the
+water over it, fading as it goes deeper. A crack runs
+out at 8 m/s from where it starts, when the crack it starts from reached
+there (a real one runs at hundreds of metres a second, at once to the eye;
+run out over a few frames the break is seen to spread from the blow, its
+rings after its radials), and is drawn only as far as it has run. A thing sliding into a hole falls in; one too wide for a hole
 strikes its edge; a floater that went in by a hole comes up in it and is
 held there. The ice that was in the hole broke into pieces between its
-radial cracks, and across them where a wedge is wide or deep, each a convex
-slab of the ice's thickness, with a chip or two from the crushed middle: as
-many as float in the hole uncrowded (their rims' discs at most 55% of it;
-a 6 cm stone through thin ice makes six or so, 7 to 13 cm across). Once the
-cavity has closed they are let go a little under the water, tilted, each a
-thing (`ice-shard` in `src/things.js`, hidden from the menus; its mesh
-built to its own outline, `src/thingMeshes.js`), so they come up and float
-flat at the sheet's own freeboard by the plate model a pizza floats by,
-bump each other rim to rim (`src/collide.js`), and are held in the hole by
-its edge's reach in each direction. A shard is drawn as clear ice
+radial cracks, slices narrowing to the blow out to the hole's ragged edge,
+and across them at a slant where a slice is wide or deep, each a convex
+slab of the ice's thickness, with a few chips from the crushed middle: as
+many as float in the hole (their own areas at most 62% of its; a 6 cm stone
+through thin ice makes up to twelve, 7 to 11 cm across). They are let go the
+step after the break, each a thing (`ice-shard` in `src/things.js`, hidden
+from the menus; its mesh built to its own outline, `src/thingMeshes.js`):
+a slice stays set where it broke, flat in the sheet, while the cavity is
+open under it (`Rock.breakAway`), then as the water comes back up through
+the hole dips, its inner edge first, and turns a little, jostled; the chips
+come up from under the water. They float flat at the sheet's own freeboard
+by the plate model a pizza floats by (now and then one comes up the other
+way over), meet each other by their own outlines (`src/collide.js`), and
+are held in the hole by their outlines' corners against its edge. The thing
+that broke the hole went down between them and never meets them. A shard is drawn as clear ice
 (`look.seenThrough`, `src/rock.js`): its outline broken along its sides
 (scaled back to its own area, so its mass stays ice's), its top showing
 what lies under it through its milk (the sheet's, for its thickness) and
-the sheet's own snow, frost, bubbles and crystal lines, its rim rounded and
-whiter. Under the water ice bends light all but as water does, so from
+the sheet's own snow, frost and bubbles, its rim rounded and whiter, its
+broken sides glassy. Under the water ice bends light all but as water does, so from
 above its submerged part is all but invisible: the under-water pass draws
 only its sides' inner faces, bright with the light turned back off them, a
 band along its far edges as wide as it is thick seen aslant, and, faintly,
-its top where a ripple has washed over it. As they go the water the splash threw
+its top where a ripple has washed over it. As the cavity closes the water the splash threw
 aside comes back over the ice round the hole, out to about one and a half
 times its reach, leaning the way the stone went, and each drop that lands on
 the ice wets a spot; the film freezes over 75 seconds, leaving the ice
@@ -956,8 +1072,9 @@ would round them, and its distance field crossed zero between two cracks
 near each other, a dotted line where no crack was. The ice is a lake's,
 every part of it crisp (soft noise read as a texture magnified, the
 picture blurred): mostly clear black ice, the water and the bed showing
-through it and a mirror, the sun a small hard glint in it; its crystals'
-boundaries faint lines in patches; snow ice in wind-streaked patches with
+through it and a mirror, the sun a small hard glint in it (its crystals'
+boundaries are not drawn: on black ice they are all but unseen, and drawn
+as lines they read as a grid of cracks); snow ice in wind-streaked patches with
 ragged edges (more on thick ice) and cloudy ice frozen from slush, both
 frosted, the sun's sheen on them broken into glints; frost specks and
 frozen bubbles in clusters; a veil of the light even clear ice scatters,
@@ -1401,7 +1518,8 @@ farther out, so it rises into the view rather than filling its corner.
   portrait and goes with the first throw; that Toss, Lob and Skip set the
   manner, Soft, Medium and Hard the strength, and the clock goes round 1×, ¼×
   and ⅒×; that the name's dropdown fits over the
-  strip (a phone in portrait without scrolling), its pills tall enough for a
+  strip (a phone in portrait without scrolling, each group one row there that
+  scrolls sideways to every pill), its pills tall enough for a
   finger, a pill tapped is thrown next, a press on the pond closes it without
   throwing and the keyboard works it; that the settings open with their rows, each
   row's value whole beside its name, the Water page's pictured choices each
@@ -1436,7 +1554,7 @@ farther out, so it rises into the view rather than filling its corner.
   are fading out and the preset's limit, their passes and the spectrum
   fetches those made, the drops' rings drawn and their limit, the wind, the gale's sheet, the weather, the
   rain's tile, the snow's flakes and cover, the spray's ring, share and sprites drawn, the last frame's draw calls
-  and triangles, and how many fixed meshes and waterlines `prepareThing`
+  and triangles, the automatic calibration's phase and the idle frame rate it measured, and how many fixed meshes and waterlines `prepareThing`
   has made).
 
 Install the development dependencies with `npm install` (Three.js is only

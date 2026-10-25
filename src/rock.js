@@ -10,8 +10,9 @@
 //
 // In the air it follows a ballistic arc with a little drag and tumbles, at
 // SPIN_LEAST to SPIN_MOST rad/s about a random axis (most stones turn
-// slowly, a few fast). The moment its lowest point (of the tumbling mesh, not
-// of a sphere) touches the surface it reports the impact (position, its
+// slowly, a few fast; a thing with its own `air.spin`, its own range). The
+// moment its lowest point (of the tumbling mesh, not of a sphere) touches
+// the surface it reports the impact (position, its
 // centre's height, speed, direction, radius, and the stone's own properties
 // below) so the splash can be built from it (the cavity follows the stone
 // down from there): the splash starts at first contact, not once the stone is
@@ -261,17 +262,20 @@
 // Ground. A thing can come down on ground rather than water. What ground
 // there is, is its `ground` (src/main.js hands it to everything thrown), or
 // null:
-//   - at(x, z): the ground's height there, or null over open water: the
-//     pool's deck (src/pool.js poolGround), short of the pool (a big stone
+//   - at(x, z, asker): the ground's height there, or null over open water
+//     (`asker`, the thing asking: a piece of ice afloat is no ground under
+//     itself): the pool's deck (src/pool.js poolGround), short of the pool (a big stone
 //     skipped slowly, a heavy ball thrown as far as it goes) or skipped out
 //     over a wall; a frozen lake's ice (src/ice.js), everywhere but its holes;
 //   - material (optional; or materialAt(x, z), where it differs from place
 //     to place: a frozen lake's beach is no ice): the ground's own surface,
 //     where it changes how a thing goes along it ({ kind, friction, rolling,
-//     tumbling, tumble }, each optional): ice is slick, so a thing on it takes the lesser of its
+//     tumbling, tumble, give, rollingLeast }, each optional): ice is slick, so a thing on it takes the lesser of its
 //     own friction and rolling resistance and the ice's, a stone slows at the
 //     ice's `tumbling`·g and turns end over end at its `tumble`, and its
-//     knock is heard as on ice (src/sound.js);
+//     knock is heard as on ice (src/sound.js); a lawn is soft (src/koiGarden.js):
+//     a thing bounces off it at `give` of its own bounce, and a ball rolls on
+//     it against at least `rollingLeast`;
 //   - meet(rock, height) (optional): asked whenever the thing comes down on
 //     the ground (at `height`) or onto the water (height null), before
 //     anything else is done: the ice says whether it holds (`{ ground:
@@ -289,16 +293,21 @@
 // bounces off at `bounce` of the speed it came down at, the friction taking
 // `friction` times the push off the ground from its speed along it. A
 // stone's lumps turn its path by up to GROUND.scatter and it tumbles end
-// over end (its spin about the level axis across its path, at GROUND.tumble
-// of its speed over its radius) until it comes down slower than
-// GROUND.settle; then it tumbles along (`ground`, alongGround), its
-// ellipsoid on it (ellipsoidDepth: the lumpy mesh would lift it off as it
-// turns), slowing at GROUND.tumbling·g. A thing kept upright (a pizza, a
-// pie, a duck) settles at rest onto a face it lies on (restOn: a ballasted
-// one onto its base). A ball keeps at least `roll` of its speed along the
-// ground (friction brings it to rolling, 5/7 for a solid ball, 3/5 for a
-// shell) and spins as it rolls, and once down it rolls along, slowing at
-// `rolling`·g. Either rests once slower than GROUND.stopped. Over the
+// over end between its hops (its spin about the level axis across its path,
+// at GROUND.tumble of its speed over its radius) until it comes down slower
+// than GROUND.settle; then it slides along (`ground`, alongGround,
+// slideStep), slowing at GROUND.tumbling·g: it tips onto the face nearest
+// down that it can lie on (lyingAttitude: restFaces, from its mesh, a brick
+// flat or on its side but never on its end, a stone on a flat face; a thing
+// kept upright, a pizza, a pie, a duck, onto its top or bottom, a ballasted
+// one onto its base), its mesh's lowest point on the ground, and turns
+// slowly about the vertical as it slides (GROUND.turning), never tumbling,
+// so that it rests on that face (restOn). A ball keeps at least `roll` of
+// its speed along the ground (friction brings it to rolling, 5/7 for a solid
+// ball, 3/5 for a shell) and spins as it rolls, and once down it rolls along,
+// slowing at `rolling`·g; one that rolls about its own axis (an apple) turns
+// onto its side and veers as a cone does (rollStep). Either rests once
+// slower than GROUND.stopped. Over the
 // ground's edge, or down a step of more than GROUND.step (off the deck onto
 // a frozen pool's ice), it falls again; up a step it cannot climb (a frozen
 // pool's wall, from the ice) it is turned back off it, at its own bounce,
@@ -307,7 +316,8 @@ import * as THREE from 'three';
 import { SEEN_THROUGH_WATER, SEEN_UNDER_CLEAR, CLEAR_SIDES_INSIDE, FLOATER_WATER } from './shaders/scene.js';
 import { PINCH_TIME, NECK_CLOSE, SPIN_DECAY, sinkStep, underWater } from './cavity.js';
 import { THINGS, DEFAULT_THING, WATER_DENSITY, STONE_DENSITY } from './things.js';
-import { meshKind, withParts } from './thingMeshes.js';
+import { meshKind, meshVolume, withParts } from './thingMeshes.js';
+import { convexHull, insidePolygon, polygonEdgeDistance } from './ice.js';
 
 // The stone's geometry is src/thingMeshes.js's now; the probes take it from here as they always did.
 export { createRockGeometry } from './thingMeshes.js';
@@ -375,6 +385,12 @@ const GROUND = {
   step: 0.01,                  // m: a rise or a drop in the ground under a thing going along it of more than this is a wall or an edge
   settleSeconds: 0.25,         // s: a thing kept upright settles onto the face it lies on over this (Rock.restOn)...
   rightsFrom: 0.1,             // ...onto its base if its `body.ballast` is this far down (radii: a duck's, not a pie's)
+  tipSeconds: 0.2,             // s: a thing that does not roll tips onto the face it slides on over this, for a quarter turn (Rock.slideStep)...
+  faceBand: 0.04,              // radii: ...a face being its mesh's points this near its lowest (restFaces)...
+  faceMargin: 0.02,            // radii: ...that its weight falls inside of by at least this...
+  leastTip: 25,                // degrees: ...and it would have to be tipped by at least this to fall off (a brick on its end, 17°, is knocked over)
+  turning: 0.1,                // it turns about the vertical as it slides at up to this times its speed over its face's radius, either way...
+  aligning: 8,                 // rad/s: a ball that rolls about its own axis (`material.rollsAbout`: an apple) turns onto its side at up to this
 };
 // A flat thing's flight (`air.model` 'flutter', src/things.js: a pizza; the header): a plate in the air, its attitude its
 // own, turned by the air's push and its spin (R here its face's disc, Rock.plateRadius). The push on its face is ½ρv²·πR² times C_N(α) = `slope`·sin α·cos² α +
@@ -427,7 +443,7 @@ const AIR_DENSITY = 1.2;   // kg/m³ (flyStep's)
 // coarseClose m), how near (m) a pass must come down for no more to be flown (a plate's flight,
 // each pass hundreds of its steps, sooner) and the most (m)
 // a pass may move the aim.
-const AIM = { times: [0.3, 2.0, 0.01], passes: 6, flightPasses: 9, coarsePasses: 5, coarseClose: 0.03, step: 1 / 120, close: 0.003, flightClose: 0.01, farthestStep: 1.5 };
+const AIM = { times: [0.3, 2.0, 0.01], passes: 6, flightPasses: 14, coarsePasses: 5, coarseClose: 0.03, step: 1 / 120, close: 0.003, flightClose: 0.01, farthestStep: 1.5 };
 // A ball's shape and contact (the header).
 const BALL_SHAPE = Object.freeze({
   volume: (4 / 3) * Math.PI, centroid: new THREE.Vector3(), axes: [new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0, 1)],
@@ -444,8 +460,55 @@ const scratch = {
   bed: new THREE.Vector3(),
 };
 const UP = new THREE.Vector3(0, 1, 0);
-const BUOYANCY = { columns: 20 };
+// A floater's columns (buoyancyColumns): this many across its widest, cut again on a grid turned by each of `turns`
+// (radians) if they hold its mesh's volume worse than `held` of it.
+const BUOYANCY = { columns: 20, held: 0.02, turns: [0.5, 0.7, 0.3] };
 const RIDE_TILT = 0.36;   // the most a floater is tilted as it rides the water as drawn (rideTheWater): the slope's tangent, 20°
+
+/**
+ * The faces a thing can lie on (Rock.lyingAttitude): of its six principal
+ * directions (its shape's axes, either way), each with its weight (its
+ * volume's middle, moved by its `ballast`) over the outline of its mesh's
+ * points within GROUND.faceBand of their lowest that way, by GROUND.faceMargin
+ * and by GROUND.leastTip seen from its weight (a brick: flat or on its side,
+ * not on its end; a stone: its flat faces, never its rim or its end; at least
+ * its short axis's).
+ * Its own frame's directions, each the one that points down as it lies on it.
+ * Worked out once for each mesh (its `positions`, which belong to one kind of
+ * thing, so to one `ballast`; a shape may be shared by things of other meshes).
+ */
+const restFacesOf = new WeakMap();
+function restFaces(shape, positions, ballast) {
+  if (restFacesOf.has(positions)) return restFacesOf.get(positions);
+  const weight = shape.centroid.clone().add(new THREE.Vector3().fromArray(ballast ?? [0, 0, 0]));
+  const across = new THREE.Vector3(), other = new THREE.Vector3(), point = new THREE.Vector3();
+  const faces = [];
+  for (const axis of shape.axes) for (const sign of [1, -1]) {
+    const down = axis.clone().multiplyScalar(sign);
+    across.set(Math.abs(down.x) < 0.9 ? 1 : 0, Math.abs(down.x) < 0.9 ? 0 : 1, 0).cross(down).normalize();
+    other.crossVectors(down, across);
+    let lowest = -Infinity;
+    for (let index = 0; index < positions.length; index += 3) lowest = Math.max(lowest, down.x * positions[index] + down.y * positions[index + 1] + down.z * positions[index + 2]);
+    const outline = [];
+    for (let index = 0; index < positions.length; index += 3) {
+      point.fromArray(positions, index);
+      if (point.dot(down) >= lowest - GROUND.faceBand) outline.push([point.dot(across), point.dot(other)]);
+    }
+    const height = lowest - weight.dot(down);
+    const margin = Math.max(GROUND.faceMargin, height * Math.tan(THREE.MathUtils.degToRad(GROUND.leastTip)));
+    if (insideOutline(outline, weight.dot(across), weight.dot(other), margin)) faces.push(down);
+  }
+  if (faces.length === 0) faces.push(shape.axes[2].clone(), shape.axes[2].clone().negate());
+  restFacesOf.set(positions, faces);
+  return faces;
+}
+
+/** Whether (x, y) is inside the convex outline of `points` ([x, y] pairs) by at least `margin` (src/ice.js's polygons). */
+function insideOutline(points, x, y, margin) {
+  if (points.length < 3) return false;
+  const hull = convexHull(points.flat());
+  return hull.length >= 6 && insidePolygon(hull, x, y) && polygonEdgeDistance(hull, x, y) >= margin;
+}
 
 /** A standard normal draw (Box–Muller, from `random`). */
 function gaussian(random = Math.random) {
@@ -781,7 +844,8 @@ function capShare(depth) {
 
 /**
  * A mesh floater's buoyancy (the header): its solid cut into columns along
- * `axis` (its short axis), BUOYANCY.columns across its widest, each the
+ * `axis` (its short axis), `columns` across its widest (BUOYANCY.columns,
+ * or its thing's own `water.columns`: a banana's 40), each the
  * stretch of the column inside the mesh (a column's crossings of the
  * surface, paired from the bottom up), with its share of the volume (the
  * shares made to add to 1, so the columns hold the mesh's own volume). The
@@ -791,14 +855,33 @@ function capShare(depth) {
  * as a disc on its edge does and is turned flat by the push, not told to
  * be. Made once for a fixed mesh (prepareThing), as a stone of pumice is
  * thrown for one drawn at random; triangles find their columns from their
- * own corners, so a mesh of thousands takes a millisecond or two.
+ * own corners, so a mesh of thousands takes a millisecond or two. A wall
+ * thinner than a column's width lying along the grid's lines (a toy slide's
+ * side panels) is hit by a whole row of columns or by none, so a cut that
+ * holds the mesh's own volume worse than BUOYANCY.held is made again on the
+ * grid turned by each of BUOYANCY.turns about the axis, which crosses such a
+ * wall slantwise, and the truest cut kept (every other thing's first cut
+ * holds it, so theirs is the grid it always was).
  */
-export function buoyancyColumns(geometry, axis) {
+export function buoyancyColumns(geometry, axis, columns = BUOYANCY.columns) {
+  const volume = meshVolume(geometry);
+  let best = null;
+  for (const turn of [0, ...BUOYANCY.turns]) {
+    const cut = columnsOf(geometry, axis, turn, columns);
+    if (!best || Math.abs(cut.volume / volume - 1) < Math.abs(best.volume / volume - 1)) best = cut;
+    if (Math.abs(best.volume / volume - 1) < BUOYANCY.held) break;
+  }
+  return best;
+}
+
+/** A mesh's columns (buoyancyColumns) along `axis`, `columns` across its widest, on a grid turned `turn` radians about it. */
+function columnsOf(geometry, axis, turn, columns) {
   const positions = geometry.attributes.position.array;
   const along = axis.clone().normalize();
   const acrossU = new THREE.Vector3(1, 0, 0);
   if (Math.abs(acrossU.dot(along)) > 0.9) acrossU.set(0, 0, 1);
   acrossU.addScaledVector(along, -acrossU.dot(along)).normalize();
+  if (turn !== 0) acrossU.applyAxisAngle(along, turn);
   const acrossV = new THREE.Vector3().crossVectors(along, acrossU);
   const count = positions.length / 3;
   const u = new Float64Array(count), v = new Float64Array(count), h = new Float64Array(count);
@@ -811,7 +894,7 @@ export function buoyancyColumns(geometry, axis) {
     leastU = Math.min(leastU, u[vertex]); mostU = Math.max(mostU, u[vertex]);
     leastV = Math.min(leastV, v[vertex]); mostV = Math.max(mostV, v[vertex]);
   }
-  const cell = Math.max(mostU - leastU, mostV - leastV) / BUOYANCY.columns;
+  const cell = Math.max(mostU - leastU, mostV - leastV) / columns;
   // The columns' middles a little off the grid's round numbers, so none runs exactly through a mesh's corner or edge.
   const originU = leastU + cell * 0.5013, originV = leastV + cell * 0.4987;
   const across = Math.ceil((mostU - leastU) / cell) + 1, down = Math.ceil((mostV - leastV) / cell) + 1;
@@ -1019,11 +1102,13 @@ export function stoneShape(geometry) {
 
 /**
  * The axis a floater's buoyancy is cut into columns along (buoyancyColumns):
- * its own +y if it is kept upright (a pizza's, a duck's: the water's level
- * then crosses its columns as it floats, where their cut is truest), else its
+ * its own `water.columnsAlong` if it says (src/things.js: a toy slide's,
+ * slanted to all its faces, as it may float lying any way up), else its own
+ * +y if it is kept upright (a pizza's, a duck's: the water's level then
+ * crosses its columns as it floats, where their cut is truest), else its
  * short axis.
  */
-function columnAxis(thing, shape) { return thing.body.upright ? UP : shape.axes[2]; }
+function columnAxis(thing, shape) { return thing.water.columnsAlong ? new THREE.Vector3(...thing.water.columnsAlong).normalize() : thing.body.upright ? UP : shape.axes[2]; }
 
 /** What prepareThing has made, for each definition (a thing defined again is a new definition). */
 const PREPARED = new WeakMap();
@@ -1033,7 +1118,8 @@ export const PREPARATION_WORK = { meshes: 0, waterlines: 0 };
 /**
  * A fixed mesh's thing (src/thingMeshes.js registerMesh `fixed`) made ready
  * to throw, once: its geometry, its shape (stoneShape), how far it reaches
- * and its buoyancy's columns (buoyancyColumns, made the first time a size
+ * (`reach`, its bounding sphere's; `farthest`, its farthest point's) and its
+ * buoyancy's columns (buoyancyColumns, made the first time a size
  * of it floats, and kept), which every one thrown shares. Slicing a pizza's
  * mesh for its waterline took a throw over 30 ms; src/main.js prepares
  * every thing under the loading veil, and one defined later as it is
@@ -1052,7 +1138,7 @@ export function prepareThing(thing) {
     const shape = thing.body.shape === 'sphere' ? BALL_SHAPE : stoneShape(geometry);
     let columns = null;
     const buoyancy = () => {
-      if (!columns) { columns = buoyancyColumns(geometry, columnAxis(thing, shape)); PREPARATION_WORK.waterlines++; }
+      if (!columns) { columns = buoyancyColumns(geometry, columnAxis(thing, shape), thing.water.columns); PREPARATION_WORK.waterlines++; }
       return columns;
     };
     // A floater's columns now, at its first size (another size may float where this one sinks: its columns are made as
@@ -1063,7 +1149,12 @@ export function prepareThing(thing) {
     // Its own parts (registerMesh `dress`) made once and let go: the first one thrown costs no more than the next.
     if (mesh.dress) { const parts = mesh.dress(thing, seededStream(1)); if (parts && !parts.shared) parts.geometry.dispose(); }
     if (thing.air.model === 'flutter' && thing.body.shape !== 'sphere') plateFace(shape, geometry);
-    PREPARED.set(thing, { geometry, shape, reach: geometry.boundingSphere.center.length() + geometry.boundingSphere.radius, buoyancy });
+    // How far its farthest point is from its middle, in radii, however it is turned (the hand holds it clear of the
+    // water: src/main.js handPosition); `reach`, its bounding sphere's, is looser.
+    const positions = geometry.attributes.position.array;
+    let farthest = 0;
+    for (let index = 0; index < positions.length; index += 3) farthest = Math.max(farthest, positions[index] ** 2 + positions[index + 1] ** 2 + positions[index + 2] ** 2);
+    PREPARED.set(thing, { geometry, shape, reach: geometry.boundingSphere.center.length() + geometry.boundingSphere.radius, farthest: Math.sqrt(farthest), buoyancy });
   }
   return PREPARED.get(thing);
 }
@@ -1101,7 +1192,11 @@ export class Rock {
     this.groundHeight = null;      // the ground's height under a thing tumbling or rolling along it (`ground`), once it has met it
     this.groundNormal = UP.clone();   // the normal of the plane it rests on (restOn: a sloping bed's)
     this.onGround = false;         // at rest on the ground (restOn)
+    this.fallsThrough = null;      // the ice gave way under it as it lay or went along it (src/ice.js weigh): it goes in, next step
+    this.dunked = null;            // a piece of ice afloat it pushed under (src/ice.js landOnPiece): it goes down past it, meeting it again once apart (src/collide.js)
+    this.brokenUp = false;         // a piece of ice broken into pieces of its own (src/ice.js splitPiece): it meets nothing, and goes
     this.settling = null;          // settling onto the face it lies on, at rest on the ground (restOn, settleStep)
+    this.sliding = null;           // tipping onto the face it slides on, and its turn about the vertical (startSliding, slideStep)
     this.fading = undefined;       // seconds into shrinking away, once src/main.js has begun it (fadeOut): frozen, it is no longer stepped
     this.drawn = { surface: 0, bedDepth: 1 };   // the water it was last drawn on (syncMeshes), for a knock's redraw
     this.age = 0;
@@ -1115,7 +1210,9 @@ export class Rock {
     const random = this.random;
     this.quaternion = new THREE.Quaternion().setFromEuler(new THREE.Euler(random() * 6, random() * 6, random() * 6));
     this.spinAxis = new THREE.Vector3(random() - 0.5, random() - 0.5, random() - 0.5).normalize();
-    this.spinRate = SPIN_LEAST + (SPIN_MOST - SPIN_LEAST) * random() ** SPIN_SKEW;
+    // Its tumble: a stone's, or its own (`air.spin`: a toy slide a metre long turns slower than a pebble).
+    const [spinLeast, spinMost] = this.thing.air.spin ?? [SPIN_LEAST, SPIN_MOST];
+    this.spinRate = spinLeast + (spinMost - spinLeast) * random() ** SPIN_SKEW;
     // A fixed mesh is prepared once for its definition and shared (prepareThing); a soft one's vertices flex, so it has
     // its own copy of them. Anything else (a stone's lumps, drawn at random) is built for each one thrown.
     const prepared = mesh.fixed ? prepareThing(this.thing) : null;
@@ -1142,7 +1239,7 @@ export class Rock {
     // Which way is up for it: its own +y if it is kept upright (a pizza's toppings), else its short axis, either way.
     this.uprightAxis = this.thing.body.upright ? UP.clone() : this.shape.axes[2].clone();
     // A floater that is not a sphere floats by its mesh's own volume, at any angle (buoyancyColumns).
-    this.buoyancy = (this.floats || this.thing.air.model === 'flutter') && !this.sphere ? (prepared ? prepared.buoyancy() : buoyancyColumns(this.geometry, columnAxis(this.thing, this.shape))) : null;
+    this.buoyancy = (this.floats || this.thing.air.model === 'flutter') && !this.sphere ? (prepared ? prepared.buoyancy() : buoyancyColumns(this.geometry, columnAxis(this.thing, this.shape), this.thing.water.columns)) : null;
     // Where its weight acts afloat (turnAfloat, stableAfloat): its volume's middle, moved by its `body.ballast` (a duck's
     // heavy base), in its own frame and radii.
     this.massCentre = this.buoyancy ? this.buoyancy.centroid.clone().add(new THREE.Vector3().fromArray(this.thing.body.ballast ?? [0, 0, 0])) : null;
@@ -1275,9 +1372,10 @@ export class Rock {
    * water does, it is drawn from above see-through, over what lies under it,
    * by its sides' inner faces (CLEAR_SIDES_INSIDE: seen down through its
    * top, the light in it turned back off them, a bright band along its far
-   * edges as wide as it is thick seen aslant) and faintly by its top where a
-   * ripple has washed over it (CLEAR_FILM_COVER), so that pass shows what
-   * lies under it, the band and the film. Its
+   * edges as wide as it is thick seen aslant) and by its top under the water
+   * over it, its white ice too, fading as the water over it deepens
+   * (CLEAR_FILM_FADE: awash, plainly there), so that pass shows what lies
+   * under it, the band and the film. Its
    * programs (above, below, in the mirror; a clear thing's above and below
    * its own) are every floater's alike, drawn under the loading veil
    * (src/main.js warmUp).
@@ -1349,7 +1447,15 @@ export class Rock {
         .replace('#include <opaque_fragment>', `${clear ? `vec2 onPiece = vRideWorld.xz - vRideMiddle;
   float pieceLooks = pieceWhite(onPiece, max(length(dFdx(onPiece)), length(dFdy(onPiece))));
   outgoingLight = totalSpecular + clearScatter(mix(diffuseColor.rgb, vec3(ICE_WHITE_ALBEDO), pieceLooks)) + seenUnderClear(vViewPosition, normal, vClearShare * (1.0 - pieceLooks), vRideWorld.y);` : ''}
-  ${clearBelow ? 'float clearCover = 1.0;\n  if (cameraPosition.y > uWaterLevel) {\n    outgoingLight = abs(vRideUp) <= 0.5 ? clearSideInside(vRideWorld.y - uWaterLevel) : totalSpecular + clearFilm(diffuseColor.rgb);\n    clearCover = abs(vRideUp) <= 0.5 ? CLEAR_SIDE_COVER : CLEAR_FILM_COVER;\n  }' : ''}
+  ${clearBelow ? `float clearCover = 1.0;
+  if (cameraPosition.y > uWaterLevel) {
+    // Its top under a film of water: its own look, white ice and all, fading with the water over it (CLEAR_SIDES_INSIDE).
+    vec2 onPiece = vRideWorld.xz - vRideMiddle;
+    float pieceLooks = pieceWhite(onPiece, max(length(dFdx(onPiece)), length(dFdy(onPiece))));
+    float film = max(uWaterLevel + floaterWaterHeight(vRideWorld.xz) - vRideWorld.y, 0.0);
+    outgoingLight = abs(vRideUp) <= 0.5 ? clearSideInside(vRideWorld.y - uWaterLevel) : totalSpecular + clearFilm(mix(diffuseColor.rgb, vec3(ICE_WHITE_ALBEDO), pieceLooks));
+    clearCover = abs(vRideUp) <= 0.5 ? CLEAR_SIDE_COVER : mix(CLEAR_FILM_COVER, CLEAR_FILM_WHITE, pieceLooks) * exp(-film / CLEAR_FILM_FADE);
+  }` : ''}
   #include <opaque_fragment>
   ${clearBelow ? 'gl_FragColor.a = clearCover;' : ''}`)
         .replace('#include <fog_fragment>', `#include <fog_fragment>
@@ -1671,7 +1777,7 @@ export class Rock {
       const half = this.halfHeight();
       const clear = Math.max(this.position.y - half, -this.position.y - half, 0);
       const afloat = (this.state === 'float' || (this.state === 'rest' && this.afloat)) && (!this.plate || clear === 0);
-      this.rideShare.value = this.state === 'held' || this.state === 'ground' || this.state === 'skim' ? 0 : afloat ? 1 : Math.max(1 - clear / half, 0);
+      this.rideShare.value = this.state === 'held' || this.state === 'set' || this.state === 'ground' || this.state === 'skim' ? 0 : afloat ? 1 : Math.max(1 - clear / half, 0);
     }
     // Where it is drawn, riding the water as far as it does (src/floaterRide.js): where things meet it.
     this.centre.copy(this.meshAbove.position);
@@ -1799,12 +1905,14 @@ export class Rock {
     this.quaternion.copy(this.meshAbove.quaternion);
     this.state = 'held';
     this.settling = null;
+    this.sliding = null;
     this.carriedWater = 0;
     this.afloat = false;
     this.onGround = false;
     this.restTime = 0;
     this.velocity.set(0, 0, 0);
     this.spinRate = 0;
+    this.dunked = null;
     if (this.skip) this.skip.contact = null;
     this.sinceImpact = -1;
     this.cavityTimes = null;
@@ -1833,7 +1941,7 @@ export class Rock {
     this.velocity.set(0, 0, 0);
     this.restTime = 0;
     this.hasFloated = false;
-    const ground = this.ground?.at(this.position.x, this.position.z) ?? null;
+    const ground = this.ground?.at(this.position.x, this.position.z, this) ?? null;
     if (ground !== null || this.position.y + this.lowestOffset() >= surface) {
       this.state = 'air';
       this.seenThroughWater.value = 0;
@@ -1879,7 +1987,7 @@ export class Rock {
   // ---- meeting other things (src/collide.js) -------------------------------
 
   /** Whether it can meet another thing: flying, skimming, under the water, or afloat (not at rest on the bed or the deck). */
-  get collides() { return this.state === 'air' || this.state === 'skim' || this.state === 'water' || this.state === 'float' || this.afloat || this.grounded; }
+  get collides() { return !this.brokenUp && (this.state === 'air' || this.state === 'skim' || this.state === 'water' || this.state === 'float' || this.afloat || this.grounded); }
 
   /** Whether it is on the ground (the header): going along it, or at rest on it (the deck, the ice), where things meet it as they meet a floater. */
   get grounded() { return this.state === 'ground' || (this.state === 'rest' && this.onGround); }
@@ -1953,6 +2061,7 @@ export class Rock {
     // On the ground it goes along it again, or, knocked up off it, flies.
     if (this.grounded && (dvx !== 0 || dvy !== 0 || dvz !== 0)) {
       this.settling = null;
+      this.sliding = null;   // it slides on from as it is now (alongGround)
       this.onGround = false;
       if (this.velocity.y > GROUND.settle) this.state = 'air';
       else { this.state = 'ground'; this.velocity.y = 0; }
@@ -2322,20 +2431,47 @@ export class Rock {
    * broke and pushed under, src/ice.js shards): at `position`, moving at
    * `velocity`, turned to `quaternion`, it floats up from there (floatStep; a
    * plate's water model, the water it carries wholly under carried), seen
-   * through the water as a thing gone in is.
+   * through the water as a thing gone in is; turning at `spin` ({ axis, rate:
+   * rad/s }: a wedge of ice driven down, hinged at its outer edge) if given.
    */
-  adrift(position, velocity, quaternion) {
+  adrift(position, velocity, quaternion, spin = null) {
     this.position.copy(position);
     this.previous.copy(position);
     this.velocity.copy(velocity);
     this.quaternion.copy(quaternion);
-    this.spinRate = 0;
+    this.spinRate = spin?.rate ?? 0;
+    if (spin) this.spinAxis.copy(spin.axis).normalize();
     this.state = 'float';
     this.hasFloated = true;
     this.carriedWater = this.plate ? this.plateAddedMass(1) : 0;
     this.sinceImpact = Infinity;
     this.seenThroughWater.value = 1;
     this.wet = 1;
+    this.syncMeshes();
+  }
+
+  /**
+   * A piece of ice a break let go (src/ice.js piecesOf `start`): a wedge
+   * stays set where it broke, flat in the sheet, for its `setFor` seconds
+   * (while the thing's cavity is open under it; state 'set': nothing meets
+   * it, it is drawn as above the water), then is set adrift, driven down as
+   * the water comes back up through its hole (`velocity`, `spin`); a chip,
+   * pushed under, is adrift at once (a part of a piece broken afloat too,
+   * `by` what broke it).
+   */
+  breakAway({ position, velocity, quaternion, spin = null, setFor = 0, by = null }) {
+    this.brokenBy = by;   // what broke it off a piece of ice afloat (src/ice.js splitPiece): they meet only once it is adrift and they are apart (src/collide.js)
+    if (setFor <= 0) { this.adrift(position, velocity, quaternion, spin); return; }
+    this.position.copy(position);
+    this.previous.copy(position);
+    this.velocity.set(0, 0, 0);
+    this.quaternion.copy(quaternion);
+    this.spinRate = 0;
+    this.state = 'set';
+    this.setFor = setFor;
+    this.letGo = { velocity: velocity.clone(), spin };
+    this.sinceImpact = -1;
+    this.seenThroughWater.value = 0;
     this.syncMeshes();
   }
 
@@ -2606,13 +2742,13 @@ export class Rock {
   /**
    * Come to rest where it is, its lowest point on the plane through
    * `height` under its middle whose normal is `normal` (level ground; a
-   * sloping bed's, aground): it tumbled or rolled to a stop on the ground,
-   * or a plate sank onto the bed. A thing kept upright (`body.upright`: a
-   * pizza, a pie, a duck) settles onto a face it can lie on over
-   * GROUND.settleSeconds (settleStep), lying along the plane: one ballasted
-   * low (GROUND.rightsFrom: a duck) onto its base, anything else (a pie, its
-   * weight only a little low) onto whichever of its top or bottom is nearer
-   * down.
+   * sloping bed's, aground): it slid or rolled to a stop on the ground, or a
+   * plate sank onto the bed. Anything but a ball settles onto a face it can
+   * lie on over GROUND.settleSeconds (settleStep), lying along the plane: the
+   * one it was tipping onto as it slid (slideStep, on level ground only),
+   * turned as far as it had turned about the vertical, else its face nearest
+   * down (lyingAttitude: a thing kept upright, a pizza, a pie, a duck, onto
+   * its base or its top or bottom).
    */
   restOn(height, normal = UP) {
     this.groundHeight = height;
@@ -2621,20 +2757,125 @@ export class Rock {
     this.velocity.set(0, 0, 0);
     this.state = 'rest';
     this.onGround = true;
+    // What it was tipping onto as it slid (slideStep), turned as far as it had turned about the vertical; else the face nearest down.
+    const to = this.sliding ? this.slidAttitude(this.sliding, 1, new THREE.Quaternion()) : this.sphere ? null : this.lyingAttitude(normal);
+    this.sliding = null;
+    this.settling = to && Math.abs(to.dot(this.quaternion)) < 0.99995 ? { from: this.quaternion.clone(), to, time: 0 } : null;
+    this.syncMeshes();
+  }
+
+  /**
+   * How it comes to lie on the ground from as it is turned now: a thing kept
+   * upright (`body.upright`) onto its base if ballasted low (GROUND.rightsFrom:
+   * a duck), else onto whichever of its top or bottom is nearer down (a pie);
+   * anything else onto its face nearest down that it can lie on (restFaces: a
+   * brick flat or on its side, never on its end, a stone on a flat face),
+   * down being against `normal`, the plane it lies on's (level ground; a
+   * sloping bed's, restOn). A new quaternion.
+   */
+  lyingAttitude(normal = UP) {
+    const turn = new THREE.Quaternion();
     if (this.thing.body.upright) {
       const up = scratch.face.copy(this.uprightAxis).applyQuaternion(this.quaternion);
       const down = (this.thing.body.ballast?.[1] ?? 0) <= -GROUND.rightsFrom || up.dot(normal) >= 0 ? normal : scratch.along.copy(normal).negate();
-      const turn = new THREE.Quaternion().setFromUnitVectors(up, down);
-      this.settling = turn.w < 0.9999 ? { from: this.quaternion.clone(), to: turn.multiply(this.quaternion), time: 0 } : null;
+      turn.setFromUnitVectors(up, down);
+    } else {
+      let nearest = null, lowest = Infinity;
+      for (const face of restFaces(this.shape, this.physicsPositions, this.thing.body.ballast)) {
+        const along = scratch.face.copy(face).applyQuaternion(this.quaternion).dot(normal);
+        if (along < lowest) { lowest = along; nearest = face; }
+      }
+      turn.setFromUnitVectors(scratch.face.copy(nearest).applyQuaternion(this.quaternion), scratch.along.copy(normal).negate());
     }
-    this.syncMeshes();
+    return turn.multiply(this.quaternion);
   }
 
   /** Its ground gone from under it as it rests (a hole opened there, src/ice.js): it goes along the ground again, so it falls where there is none. */
   loseGround() {
     this.settling = null;
+    this.sliding = null;
     this.onGround = false;
     this.state = 'ground';
+  }
+
+  /**
+   * Begins sliding along the ground at `speed` (slideStep): what it tips onto
+   * (lyingAttitude) over GROUND.tipSeconds for a quarter turn (a half turn
+   * √2 that), and its turn about the vertical, drawn either way up to
+   * GROUND.turning times its speed over its face's radius.
+   */
+  startSliding(speed) {
+    const to = this.lyingAttitude();
+    const angle = 2 * Math.acos(Math.min(Math.abs(to.dot(this.quaternion)), 1));
+    const turnRate = (2 * this.random() - 1) * GROUND.turning * speed / this.faceRadius;
+    this.spinRate = 0;
+    // It came down on its ellipsoid (meetGround, as the air's landing finds it): its height goes over to its mesh's as it tips.
+    const depth = this.position.y - this.groundHeight;
+    return { from: this.quaternion.clone(), to, time: 0, seconds: GROUND.tipSeconds * Math.sqrt(angle / (Math.PI / 2)), turnRate, speed: Math.max(speed, 1e-6), turned: 0, depth, lowest: null };
+  }
+
+  /** Where it is turned to, `share` of the way through tipping (smoothstepped), and turned about the vertical as far as it has: into `into`. */
+  slidAttitude(sliding, share, into) {
+    into.slerpQuaternions(sliding.from, sliding.to, share * share * (3 - 2 * share));
+    return into.premultiply(scratch.step.setFromAxisAngle(UP, sliding.turned));
+  }
+
+  /**
+   * dt seconds of sliding at `speed` (alongGround), a thing that does not
+   * roll: it tips onto its face (startSliding) and slides flat on it, its
+   * lowest point on the ground at `height`, never tumbling; it turns about
+   * the vertical as it goes, slower as it slows, so that its turn and its
+   * slide stop together (a sliding, spinning body's friction shares itself
+   * between the two).
+   */
+  slideStep(height, speed, dt) {
+    const sliding = this.sliding;
+    sliding.time = Math.min(sliding.time + dt, sliding.seconds);
+    sliding.turned += sliding.turnRate * (speed / sliding.speed) * dt;
+    const tipped = sliding.seconds > 0 ? sliding.time / sliding.seconds : 1;
+    this.slidAttitude(sliding, tipped, this.quaternion);
+    // Its lowest point is walked for while it tips, its height eased down to it from the ellipsoid's it came down on
+    // (never with its mesh in the ground: a brick's corner is outside its ellipsoid); lying on its face, a turn about
+    // the vertical leaves it where it is.
+    const eased = tipped * tipped * (3 - 2 * tipped);
+    const reach = tipped < 1 ? -this.lowestOffset() : -(sliding.lowest ??= this.lowestOffset());
+    const depth = tipped < 1 ? Math.max((1 - eased) * sliding.depth + eased * reach, reach) : reach;
+    this.position.y = height + depth;
+    this.turned = true;
+  }
+
+  /**
+   * A ball that rolls about its own axis (`material.rollsAbout`, of its own
+   * frame: an apple, about its core) turns onto its side as it rolls, its
+   * axis onto the one it rolls about (at up to GROUND.aligning), and, a little
+   * wider at one end (`material.curve`: its girth's change along its axis, per
+   * radius), rolls as a cone does, its path curving towards its narrower end
+   * (its axis's −) by `curve` over its radius per metre, scaled by its own
+   * geometry's `userData.curveScale` where its mesh draws each its own (an
+   * apple's shoulder).
+   */
+  rollStep(speed, dt) {
+    const rolls = this.thing.material.rollsAbout;
+    const own = scratch.face.fromArray(rolls).applyQuaternion(this.quaternion);
+    const across = scratch.along.copy(this.spinAxis);
+    if (own.dot(across) < 0) across.negate();
+    const angle = own.angleTo(across);
+    if (angle > 1e-4) {
+      const axis = scratch.turned.crossVectors(own, across).normalize();
+      this.quaternion.premultiply(scratch.step.setFromAxisAngle(axis, Math.min(angle, GROUND.aligning * dt)));
+    }
+    // Its narrow end (its axis's −, the wider being +) to one side of its path: the path turns towards it.
+    const narrow = scratch.face.fromArray(rolls).applyQuaternion(this.quaternion).negate();
+    const side = (this.velocity.z * narrow.x - this.velocity.x * narrow.z) / Math.max(speed, 1e-9);   // narrow · (UP × v̂)
+    const curve = (this.thing.material.curve ?? 0) * (this.geometry.userData.curveScale ?? 1);
+    const turn = curve / this.radius * speed * dt * side;
+    if (Math.abs(turn) < 1e-9) return;
+    const cosine = Math.cos(turn), sine = Math.sin(turn);
+    const velocityX = this.velocity.x, velocityZ = this.velocity.z;
+    this.velocity.x = velocityX * cosine + velocityZ * sine;
+    this.velocity.z = velocityZ * cosine - velocityX * sine;
+    this.quaternion.premultiply(scratch.step.setFromAxisAngle(UP, turn));
+    this.spinAlongGround();
   }
 
   /** dt seconds of settling onto the ground (restOn): turned on towards the face it lies on, its lowest point kept on the ground's plane. */
@@ -2651,6 +2892,7 @@ export class Rock {
   meetGround(height, dt) {
     this.position.y = height + this.ellipsoidDepth();
     this.groundHeight = height;
+    this.sliding = null;
     if (this.velocity.y >= -GROUND.settle) {
       this.state = 'ground';
       this.alongGround(dt);
@@ -2661,7 +2903,7 @@ export class Rock {
     const surface = this.groundSurface;   // the ground's own (the header: ice)
     const fall = -this.velocity.y;
     this.heard.push({ speed: fall, radius: this.radius, bounce: this.collisionBounce, surface: surface?.kind });   // its knock on the ground (src/sound.js)
-    const bounce = material.bounce[0] + (material.bounce[1] - material.bounce[0]) * this.random();
+    const bounce = (material.bounce[0] + (material.bounce[1] - material.bounce[0]) * this.random()) * (surface?.give ?? 1);
     this.velocity.y = bounce * fall;
     const along = Math.hypot(this.velocity.x, this.velocity.z);
     // The friction slows it along the ground, a ball no lower than rolling.
@@ -2681,21 +2923,31 @@ export class Rock {
    * off it; it rests once slower than GROUND.stopped.
    */
   alongGround(dt) {
-    let height = this.ground?.at(this.position.x, this.position.z) ?? null;
+    let height = this.ground?.at(this.position.x, this.position.z, this) ?? null;
     const before = this.groundHeight ?? height;
-    if (height === null || height < before - GROUND.step) { this.state = 'air'; return; }
+    if (height === null || height < before - GROUND.step) { this.state = 'air'; this.sliding = null; return; }
     if (height > before + GROUND.step) height = this.turnBackFromStep();
     this.groundHeight = height;
     this.velocity.y = 0;
-    this.position.y = height + this.ellipsoidDepth();
     const along = Math.hypot(this.velocity.x, this.velocity.z);
     const material = this.thing.material, surface = this.groundSurface;
-    const slowing = material.roll ? Math.min(material.rolling, surface?.rolling ?? Infinity) : surface?.tumbling ?? GROUND.tumbling;
+    // A ball's rolling resistance is the lesser of its own and the ground's (ice is smoother than the deck), but one
+    // that rolls about its own axis (an apple) is slowed by its own lumps and give whatever it rolls on; a lawn holds
+    // either back by at least its `rollingLeast`.
+    const rolling = material.rollsAbout ? material.rolling : Math.min(material.rolling, surface?.rolling ?? Infinity);
+    const slowing = material.roll ? Math.max(rolling, surface?.rollingLeast ?? 0) : surface?.tumbling ?? GROUND.tumbling;
     const slowed = Math.max(along - slowing * GRAVITY * dt, 0);
+    if (!material.roll) this.sliding ??= this.startSliding(along);
     if (slowed < GROUND.stopped) { this.restOn(height); return; }
     this.velocity.x *= slowed / along;
     this.velocity.z *= slowed / along;
-    this.spinAlongGround();
+    if (material.roll) {
+      this.position.y = height + this.radius;
+      this.spinAlongGround();
+      if (material.rollsAbout) this.rollStep(slowed, dt);
+    } else {
+      this.slideStep(height, slowed, dt);
+    }
   }
 
   /** The ground's own surface where it is (the header: its `materialAt`, else its `material`), or null. */
@@ -2711,14 +2963,14 @@ export class Rock {
    * at its own bounce. Returns the ground's height where it then is.
    */
   turnBackFromStep() {
-    const at = (x, z) => this.ground.at(x, z) ?? -Infinity;
+    const at = (x, z) => this.ground.at(x, z, this) ?? -Infinity;
     const rises = (x, z) => at(x, z) > this.groundHeight + GROUND.step;
     let alongX = rises(this.position.x, this.previous.z), alongZ = rises(this.previous.x, this.position.z);
     if (!alongX && !alongZ) alongX = alongZ = true;
     if (alongX) { this.position.x = this.previous.x; this.velocity.x *= -this.collisionBounce; }
     if (alongZ) { this.position.z = this.previous.z; this.velocity.z *= -this.collisionBounce; }
     this.heard.push({ speed: Math.hypot(alongX ? this.velocity.x : 0, alongZ ? this.velocity.z : 0) / Math.max(this.collisionBounce, 0.05), radius: this.radius, bounce: this.collisionBounce });
-    return this.ground.at(this.position.x, this.position.z) ?? this.groundHeight;
+    return this.ground.at(this.position.x, this.position.z, this) ?? this.groundHeight;
   }
 
   /**
@@ -2743,6 +2995,7 @@ export class Rock {
    */
   breakThrough(met, dt) {
     this.velocity.multiplyScalar(met.keep ?? 1);
+    this.sliding = null;
     this.iceHole = met.hole;
     const impact = this.goIn(dt, 0);
     impact.throughIce = !met.open;
@@ -2773,13 +3026,29 @@ export class Rock {
     this.drawnBefore.position.copy(this.stepEnd.position);
     this.drawnBefore.quaternion.copy(this.stepEnd.quaternion);
     this.previous.copy(this.position);
+    // A piece of ice still set in the sheet it broke from (breakAway): still, until the water comes back up through its hole.
+    if (this.state === 'set') {
+      this.setFor -= dt;
+      if (this.setFor <= 0) {
+        this.brokenBy = null;   // its breaker's cavity closed: it is down past it
+        this.adrift(this.position, this.letGo.velocity, this.quaternion, this.letGo.spin);
+      }
+      else this.syncMeshes();
+      return null;
+    }
     let impact = null;
     // Down on the ground (the header), if it was over it the step before too (else it met the ground's side, src/pool.js).
     const ground = this.ground;
-    const groundBefore = this.state === 'air' && ground ? ground.at(this.position.x, this.position.z) : null;
+    const groundBefore = this.state === 'air' && ground ? ground.at(this.position.x, this.position.z, this) : null;
     if (this.state === 'air') this.fly(dt);
-    const groundNow = groundBefore !== null ? ground.at(this.position.x, this.position.z) : null;
-    if (groundNow !== null && this.position.y - this.ellipsoidDepth() <= groundNow) {
+    const groundNow = groundBefore !== null ? ground.at(this.position.x, this.position.z, this) : null;
+    if (this.fallsThrough) {
+      // The ice gave way under its weight (src/ice.js weigh): it goes in through the hole, at the speed weigh gave it.
+      this.onGround = false;
+      this.settling = null;
+      impact = this.breakThrough(this.fallsThrough, dt);
+      this.fallsThrough = null;
+    } else if (groundNow !== null && this.position.y - this.ellipsoidDepth() <= groundNow) {
       // Ice may give way under it (the header: the ground's `meet`); else it lands on the ground.
       const met = ground.meet?.(this, groundNow) ?? null;
       if (met?.hole) impact = this.breakThrough(met, dt);
@@ -2872,14 +3141,17 @@ export class Rock {
     this.bendStep(dt);
     this.soak(dt);
     if (this.state !== 'rest' && !this.turned) {
+      const clearBefore = this.state === 'air' && this.ground ? this.position.y - this.ellipsoidDepth() : null;
       const spin = new THREE.Quaternion().setFromAxisAngle(this.spinAxis, this.spinRate * dt);
       this.quaternion.premultiply(spin);
       // Turned as it goes along the ground, or just off it, it stays on it (its ellipsoid's reach down changes as it
-      // turns); in the air, only if the turn took it under the ground by less than a step (more is a wall's side).
+      // turns); in the air, only if the turn took it under the ground by less than a step (more is a wall's side), or
+      // however far if it was on or over the ground before the turn (a banana tumbling end over end off a bounce
+      // reaches centimetres further down in a step; beside a wall it was under the ground's height already).
       if (this.state === 'ground' && this.groundHeight !== null) this.position.y = this.groundHeight + this.ellipsoidDepth();
       else if (this.state === 'air' && this.ground) {
-        const under = this.ground.at(this.position.x, this.position.z), bottom = this.position.y - this.ellipsoidDepth();
-        if (under !== null && bottom < under && bottom > under - GROUND.step) this.position.y += under - bottom;
+        const under = this.ground.at(this.position.x, this.position.z, this), bottom = this.position.y - this.ellipsoidDepth();
+        if (under !== null && bottom < under && (bottom > under - GROUND.step || clearBefore >= under - 1e-9)) this.position.y += under - bottom;
       }
     }
     // In its cavity's air until the pinch-off, under water once the surface has closed.

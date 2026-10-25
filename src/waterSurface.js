@@ -65,6 +65,10 @@
 import * as THREE from 'three';
 import { WATER_VERTEX, WATER_FRAGMENT, WATER_UNDER_FRAGMENT } from './shaders/scene.js';
 
+// The floor's uniforms the surface seen from below shares (setBed): its march to the bed (LAKE_BED, every uniform it
+// declares; tools/garden-probe.mjs checks) and the bed's pattern.
+export const BED_UNIFORMS = ['uShore', 'uLand', 'uBank', 'uKoiPond', 'uPattern'];
+
 export const OUTER_HALF_SIZE = 9000;
 const OUTER_GROWTH = 1.25;   // each of the outer sheet's square rings this many times the last's half size...
 const OUTER_CUTS = 8;        // ...and each of its sides cut into this many quads
@@ -267,7 +271,7 @@ export function createWaterSurface(water, lighting, ambientWaves, { meshSegments
     cavityUnderMaterial,
     /** The bed the surface mirrors from below: the floor's uniforms (src/pondFloor.js), shared. */
     setBed(floorUniforms) {
-      for (const name of ['uShore', 'uLand', 'uBank', 'uPattern']) underUniforms[name] = floorUniforms[name];
+      for (const name of BED_UNIFORMS) underUniforms[name] = floorUniforms[name];
     },
     /** Draw the patch and the sheet as seen from under the water (true), or from above again (false). */
     fromBelow(below) {

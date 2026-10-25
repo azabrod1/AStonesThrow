@@ -4,7 +4,8 @@
 // 1. The page at phone size with ?quality=auto, unpaused, on the real clock:
 //    it starts on high; the idle measurement steps it down (under SwiftShader
 //    the frame rate is far below the thresholds, so to low; on a real GPU it
-//    may stay high and the probe only checks consistency); the readout and
+//    may stay high and the probe only checks it against the frame rate the
+//    measurement took, budget.idleFps); the readout and
 //    the settings' Quality page follow (Auto chosen, its row naming the
 //    preset drawn); the idle pond runs no pass of the rings
 //    (src/rings.js); the first throw compiles no GPU program (src/main.js
@@ -203,11 +204,14 @@ const idleStart = Date.now();
 await page.waitForFunction(() => /fps/.test(document.getElementById('stats').textContent), undefined, { timeout: 300000 });
 await page.waitForFunction(() => window.__pond.budget.calibration !== 'idle', undefined, { timeout: 600000 }).catch(() => {});
 const afterIdle = await pageState(page);
-const idleFps = Number(/(\d+) fps/.exec(afterIdle.readout)?.[1]);
-console.log(`  idle: ${afterIdle.readout} after ${((Date.now() - idleStart) / 1000).toFixed(0)} s`);
-if (idleFps < 30) check(afterIdle.quality === 'low', `idle below 30 fps steps down to low (got ${afterIdle.quality})`);
-else if (idleFps < 50) check(afterIdle.quality === 'medium', `idle below 50 fps steps down to medium (got ${afterIdle.quality})`);
-else check(afterIdle.quality === 'high', `idle at ${idleFps} fps stays high (got ${afterIdle.quality})`);
+// Judged by the frame rate the calibration measured (budget.idleFps: its 60 frames after the warm-up), not the
+// readout's: that is a running average taken later, so a few frames that miss vsync in the window can put one
+// under 50 and leave the other at 59.
+const idleFps = await page.evaluate(() => window.__pond.budget.idleFps ?? NaN);
+console.log(`  idle: measured ${idleFps.toFixed(1)} fps; readout ${afterIdle.readout} after ${((Date.now() - idleStart) / 1000).toFixed(0)} s`);
+if (idleFps < 30) check(afterIdle.quality === 'low', `idle at ${idleFps.toFixed(1)} fps, below 30, steps down to low (got ${afterIdle.quality})`);
+else if (idleFps < 50) check(afterIdle.quality === 'medium', `idle at ${idleFps.toFixed(1)} fps, below 50, steps down to medium (got ${afterIdle.quality})`);
+else check(afterIdle.quality === 'high', `idle at ${idleFps.toFixed(1)} fps stays high (got ${afterIdle.quality})`);
 check(afterIdle.pressed.length === 1 && afterIdle.pressed[0] === 'auto' && afterIdle.row.toLowerCase().endsWith(afterIdle.quality), `the settings show Auto, drawing ${afterIdle.quality} (chosen: ${afterIdle.pressed.join(',') || 'none'}; row: ${afterIdle.row})`);
 await checkBuilt(phone, 'after the idle measurement');
 // The readout refreshes every 16 frames: give it that long.
