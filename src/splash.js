@@ -1287,7 +1287,7 @@ export class SplashSystem {
       x, z, radius: sigma, velocity, rim: RING.rim, nearOnly: true,
       pair: pairHeight !== 0 ? { height: pairHeight, radius: 0.8 * sigma, offset: 0.8 * sigma, directionX, directionZ } : null,
     }, Math.max(this.frameEnd, this.time));
-    if (ring && source) { ring.source = source; source.heave = ring.heave ?? 1; }   // the jet's heave reads it (update)
+    if (ring && typeof source === 'object') { ring.source = source; source.heave = ring.heave ?? 1; }   // the jet's heave reads it (update; a stand-in's add may answer true)
   }
 
   /**
@@ -1337,7 +1337,7 @@ export class SplashSystem {
         x, z, radius: sigma, velocity, rim: RING.rim,
         pair: travel > 0 ? { height: pairHeight, radius: 0.8 * sigma, offset: 0.8 * sigma, directionX, directionZ } : null,
       }, time);
-      if (ring && source) { ring.source = source; source.heave = ring.heave ?? 1; }   // the jet's heave reads it (update)
+      if (ring && typeof source === 'object') { ring.source = source; source.heave = ring.heave ?? 1; }   // the jet's heave reads it (update; a stand-in's add may answer true)
     } else {
       water.addSplat({ x, z, radius: sigma, velocity, rim: RING.rim });
       if (travel > 0) {
