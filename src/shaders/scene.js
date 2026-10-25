@@ -2653,10 +2653,15 @@ void main() {
 // splash, ambient waves and rings together (plus SPECK_LIFT, so the
 // triangulated surface never covers it). It fades in over a tenth of a second and out
 // over its last SPECK_FADE seconds, shrinking as it goes.
-// A speck smaller than uMinPixelSize is drawn at that size, soft, with its
+// A speck smaller than uMinPixelSize is drawn at about that size (three
+// quarters to one and a quarter of it, by its phase, so a field of
+// unresolved specks is not a field of identical dots), soft, with its
 // opacity cut by the projected area it really covers: a
 // hard dot of a pixel or two would flicker as it moves across pixels, and far
 // specks should read as a faint grain where they gather, not as bright dots.
+// Only a speck resolved over a few pixels is drawn as a bubble, with a clear
+// centre and a bright rim (SPECK_FRAGMENT); one widened to the minimum is a
+// soft blob, whatever it is drawn at.
 // Each disc projects onto the mean water plane, becoming an ellipse at a
 // grazing angle; an unresolved short axis widens to 1.5 pixels with the
 // matching loss of opacity. Wave displacement still supplies its height.
@@ -2664,7 +2669,9 @@ void main() {
 // fades out where the foam the surface shows is between SPECK_RAFT_LOW and
 // SPECK_RAFT_HIGH: specks are the bits that drift out of the raft. Of a
 // splash's boil the surface shows only what it holds (FRESH_BOIL), under
-// SPECK_RAFT_LOW: a speck rides over a boil's cloud.
+// SPECK_RAFT_LOW: a speck rides over a boil's cloud. Each speck has a shine
+// of its own (aShine, src/foamSpecks.js: most faint, a few bright), a share
+// of uOpacity, so no two in a patch are alike.
 export const SPECK_VERTEX = /* glsl */`
 #define SPECK_DRIFT_SECONDS 1.6
 #define SPECK_WANDER 0.0012
@@ -2675,6 +2682,7 @@ export const SPECK_VERTEX = /* glsl */`
 #define SPECK_RING_SPACING 0.01   // metres: the rings' height under a speck, read this smooth
 attribute vec2 aDrift;       // initial outward drift, m/s
 attribute vec4 aTiming;      // birth (splash seconds), life (s), diameter (m), random phase
+attribute float aShine;      // its own brightness, a share of uOpacity (src/foamSpecks.js)
 uniform sampler2D uHeight;
 uniform sampler2D uFoam;
 uniform vec2 uDomainMin;
@@ -2685,7 +2693,7 @@ uniform vec2 uFoamVelocity;  // the surface's drift downwind (m/s), which carrie
 uniform float uProjScale;    // render-target pixels per world unit at distance 1
 uniform float uMinPixelSize;
 varying float vAlpha;
-varying float vPixelSize;
+varying float vPixelSize;    // the speck's true size on screen (pixels), whatever it is drawn at
 varying vec2 vSurfaceAxis;
 varying float vSurfaceAspect;
 ${GLSL_COMMON}
@@ -2710,9 +2718,10 @@ void main() {
   float fadeOut = 1.0 - smoothstep(life - SPECK_FADE, life, age);
   float fade = smoothstep(0.0, 0.1, age) * fadeOut * outsideRaft;
   float pixelSize = aTiming.z * (0.6 + 0.4 * fadeOut) * uProjScale / max(-viewPosition.z, 0.05);
-  float drawn = max(pixelSize, uMinPixelSize);
+  float least = uMinPixelSize * (0.75 + 0.5 * fract(phase * 2.3183));
+  float drawn = max(pixelSize, least);
   gl_PointSize = drawn;
-  vPixelSize = drawn;
+  vPixelSize = pixelSize;
   // A floating bubble sits in the water plane, not in the screen plane.
   // Keep its projected short axis at least 1.5 pixels and conserve its area
   // in alpha. This also removes the constant-bright snow at a distance.
@@ -2721,15 +2730,16 @@ void main() {
   vSurfaceAxis /= max(length(vSurfaceAxis), 1e-5);
   float surfaceAspect = abs(dot(normalize(-viewPosition.xyz), viewNormal));
   vSurfaceAspect = max(surfaceAspect, min(1.0, 1.5 / drawn));
-  vAlpha = fade * (pixelSize * pixelSize) / (drawn * drawn) * surfaceAspect / vSurfaceAspect;
+  vAlpha = aShine * fade * (pixelSize * pixelSize) / (drawn * drawn) * surfaceAspect / vSurfaceAspect;
   gl_Position = projectionMatrix * viewPosition;
 }
 `;
 
 // A speck is lit like the foam map in WATER_FRAGMENT (white under the sun and
-// sky, on a level surface), dimmed by uBrightness. Drawn over five pixels or more it is a
-// translucent disc a little brighter at its rim, which is how a small surface
-// bubble looks; smaller, a soft blob.
+// sky, on a level surface), dimmed by uBrightness. Resolved over five pixels
+// or more (its true size, vPixelSize, not the minimum it may be widened to)
+// it is a translucent disc a little brighter at its rim, which is how a
+// small surface bubble looks; smaller, a soft blob.
 export const SPECK_FRAGMENT = /* glsl */`
 uniform vec3 uSunDir;
 uniform vec3 uSunIrradiance;

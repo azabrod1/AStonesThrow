@@ -572,10 +572,16 @@ exact gradient and the pixel's footprint on the water), and each layer fades
 into an even white of the right strength before its cells shrink to a couple
 of pixels, so distant foam neither shimmers nor goes grey. Only pixels with
 foam compute the pattern. Foam specks (`src/foamSpecks.js`) are the bubbles
-that drift out of the raft: 2 to 4 mm points riding the waves where the
-crown stood, where the jet fell back, where drops landed and where bubbles
-surfaced, drifting outward and popping over 0.8 to 3 seconds (fresh water's
-bubbles), faded out where the foam is dense. The specks flatten into ellipses at a grazing view and
+that drift out of the raft: 1 to 7 mm points (most under 2, the odd big
+bubble among them, each with a shine of its own, most faint and a few
+bright) riding the waves where the crown stood, where the jet fell back,
+where drops landed and where bubbles surfaced, drifting outward and popping
+over 0.8 to 3 seconds (fresh water's bubbles; the big ones first), faded out
+where the foam is dense. A patch of them is lumps with gaps, never an even
+scatter: its specks gather in rafts of a dozen or so (clumps of clusters a
+few millimetres across, spread over centimetres), favouring one side, with
+strays alone between them, and the rafts surface over a few tenths of a
+second rather than in one frame. The specks flatten into ellipses at a grazing view and
 fade with their projected area, so distant bubbles do not remain bright,
 camera-facing flecks.
 
