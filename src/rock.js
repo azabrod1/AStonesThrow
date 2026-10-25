@@ -480,6 +480,42 @@ const BUOYANCY = { columns: 20, held: 0.02, turns: [0.5, 0.7, 0.3] };
 const RIDE_TILT = 0.36;   // the most a floater is tilted as it rides the water as drawn (rideTheWater): the slope's tangent, 20°
 
 /**
+ * A mesh's points (`positions`, x y z after x y z), each once: a mesh is
+ * drawn as triangles, so most of its points are there six times over (a
+ * pizza's 21,888 are 3,688). Its lowest point along any direction is among
+ * them, worked out with the same arithmetic, so Rock.lowestAlong finds the
+ * same value, to the last bit, in a sixth of the work. Worked out once for
+ * each mesh's array (the first time it is asked; src/rock.js prepareThing
+ * asks for each fixed mesh under the loading veil): the points' bits hashed
+ * into a table twice their number.
+ */
+const distinctPointsOf = new WeakMap();
+function distinctPoints(positions) {
+  let points = distinctPointsOf.get(positions);
+  if (points) return points;
+  const count = positions.length / 3;
+  const floats = positions instanceof Float32Array ? positions : Float32Array.from(positions);
+  const bits = new Uint32Array(floats.buffer, floats.byteOffset, floats.length);
+  const size = 2 ** Math.ceil(Math.log2(2 * count + 1));
+  const table = new Int32Array(size).fill(-1);
+  const kept = [];
+  for (let index = 0; index < count; index++) {
+    const x = bits[3 * index], y = bits[3 * index + 1], z = bits[3 * index + 2];
+    let slot = (Math.imul(x, 73856093) ^ Math.imul(y, 19349663) ^ Math.imul(z, 83492791)) & (size - 1);
+    for (;;) {
+      const at = table[slot];
+      if (at === -1) { table[slot] = index; kept.push(index); break; }
+      if (bits[3 * at] === x && bits[3 * at + 1] === y && bits[3 * at + 2] === z) break;
+      slot = (slot + 1) & (size - 1);
+    }
+  }
+  points = new Float32Array(3 * kept.length);
+  kept.forEach((index, at) => { points[3 * at] = positions[3 * index]; points[3 * at + 1] = positions[3 * index + 1]; points[3 * at + 2] = positions[3 * index + 2]; });
+  distinctPointsOf.set(positions, points);
+  return points;
+}
+
+/**
  * The faces a thing can lie on (Rock.lyingAttitude): of its six principal
  * directions (its shape's axes, either way), each with its weight (its
  * volume's middle, moved by its `ballast`) over the outline of its mesh's
@@ -1168,6 +1204,7 @@ export function prepareThing(thing) {
     const positions = geometry.attributes.position.array;
     let farthest = 0;
     for (let index = 0; index < positions.length; index += 3) farthest = Math.max(farthest, positions[index] ** 2 + positions[index + 1] ** 2 + positions[index + 2] ** 2);
+    if (thing.body.shape !== 'sphere') distinctPoints(positions);   // its lowest point's walk (Rock.lowestAlong), now rather than at a throw
     PREPARED.set(thing, { geometry, shape, reach: geometry.boundingSphere.center.length() + geometry.boundingSphere.radius, farthest: Math.sqrt(farthest), buoyancy });
   }
   return PREPARED.get(thing);
@@ -1635,7 +1672,7 @@ export class Rock {
   /** How far its lowest point lies below its centre along `up` (a unit vector: the level's, or a sloping bed's normal; negative, metres), as it is turned now (or by `quaternion`). */
   lowestAlong(up, quaternion = this.quaternion) {
     if (this.sphere) return -this.radius;
-    const positions = this.physicsPositions;
+    const positions = distinctPoints(this.physicsPositions);
     // A mesh point's height along `up` is the rotation's rows, weighted by `up`, dotted with it (along the level, the
     // second row: exactly the arithmetic it always was, so a seeded throw goes as it went).
     const rotation = rockRotation.makeRotationFromQuaternion(quaternion).elements;
