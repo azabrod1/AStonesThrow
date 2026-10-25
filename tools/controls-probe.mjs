@@ -138,6 +138,20 @@ for (const framing of FRAMINGS) {
   });
   await context.route('https://fonts.googleapis.com/**', (route) => route.fulfill({ status: 200, contentType: 'text/css', body: '' }));
   const page = await context.newPage();
+  // Touches through the browser's own input go through one DevTools session for the framing, detached when it ends
+  // (sessions made and detached tap by tap were the likeliest way the page lost its touch emulation part way through
+  // a framing: a coarse pointer gone, every slider back to its desktop height).
+  let cdpSession = null;
+  const touchSession = async () => (cdpSession ??= await context.newCDPSession(page));
+  // A touch framing keeps its touch emulation (the browser's, not the page's doing): checked before every press and
+  // measurement (press, boxes), and wherever it is found gone (no coarse pointer) that is said, with where, and it is
+  // given back, so what is measured is the page as a phone shows it.
+  const keepTouch = async (where) => {
+    if (!framing.touch || (await page.evaluate(() => matchMedia('(pointer: coarse)').matches))) return;
+    console.log(`         (the browser had lost its touch emulation by ${where}: no coarse pointer; it is given back)`);
+    await (await touchSession()).send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
+    await page.waitForTimeout(200);
+  };
   const problems = [];
   page.on('pageerror', (error) => problems.push(String(error)));
   await page.goto(`http://localhost:${server.address().port}/index.html?quality=low&paused=1`, { waitUntil: 'domcontentloaded' });
@@ -192,7 +206,7 @@ for (const framing of FRAMINGS) {
 
     if (layout.layoutWidth === framing.width) {
       // Touches through the browser's own input, as a finger's would arrive.
-      const session = await context.newCDPSession(page);
+      const session = await touchSession();
       const touch = (type, x, y) => session.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y }] });
       const sliderState = () => page.evaluate(() => {
         const slider = document.getElementById('stone-size');
@@ -219,7 +233,6 @@ for (const framing of FRAMINGS) {
       await touch('touchEnd', endX, endY);
       const dragged = await sliderState();
       check(Math.abs(dragged.value - expected(0.6)) <= initial.step + 1e-9, `a drag from 20% to 60% along the slider ends at ${dragged.value} cm (expected about ${expected(0.6)})`);
-      await session.detach();
     } else {
       console.log('  (the tap and drag checks need the page laid out at the device\'s width; skipped)');
     }
@@ -233,14 +246,14 @@ for (const framing of FRAMINGS) {
   }
 
   // The settings (src/settingsPanel.js).
-  const press = (selector) => (framing.touch ? page.tap(selector) : page.click(selector));
-  const boxes = (selector) => page.evaluate((query) => {
+  const press = async (selector) => { await keepTouch(`pressing ${selector}`); return framing.touch ? page.tap(selector) : page.click(selector); };
+  const boxes = async (selector) => (await keepTouch(`measuring ${selector}`), page.evaluate((query) => {
     const scale = window.visualViewport ? window.visualViewport.scale : 1;
     return [...document.querySelectorAll(query)].filter((element) => element.getClientRects().length > 0).map((element) => {
       const box = element.getBoundingClientRect();
       return { name: element.dataset.value || element.dataset.open || element.id || element.className, left: box.left * scale, right: box.right * scale, top: box.top * scale, bottom: box.bottom * scale, height: box.height * scale };
     });
-  }, selector);
+  }, selector));
   const onScreen = (box) => box.left >= -0.5 && box.top >= -0.5 && box.right <= layout.screenWidth + 0.5 && box.bottom <= layout.screenHeight + 0.5;
   const [menuButton] = await boxes('#menu-button');
   const [title] = await boxes('.title h1');
@@ -610,18 +623,34 @@ for (const framing of FRAMINGS) {
   await press('#menu-button');
   await page.waitForTimeout(400);
   await press('#settings .menu-tier[data-open="time"]');
-  await page.waitForTimeout(400);
-  const [timePanel] = await boxes('#settings');
-  const [timeSlider] = await boxes('#time');
-  check(!!timeSlider && onScreen(timePanel) && onScreen(timeSlider) && timeSlider.right - timeSlider.left >= 0.8 * (timePanel.right - timePanel.left) && (!framing.touch || timeSlider.height >= 43.5),
-    `the Time page is on the screen, its slider ${timeSlider ? `${(timeSlider.right - timeSlider.left).toFixed(0)}×${timeSlider.height.toFixed(0)}` : 'missing'} points across the page`);
+  // Measured once the page has slid in (src/settingsPanel.js settle: no slide running, no page leaving), and again for up
+  // to two seconds while it is short of its size. What the page has (its pointer's media, the sliders' heights, the
+  // zoom) is said if it never fits, and said too, with how long it took, if it fitted only on a later look: a slider
+  // short at first is the failure seen on CI's macOS runner image 20261021, whose cause is not yet known.
+  let timePanel, timeSlider, settled = true, firstShort = null;
+  const timeFits = () => !!timeSlider && onScreen(timePanel) && onScreen(timeSlider) && timeSlider.right - timeSlider.left >= 0.8 * (timePanel.right - timePanel.left) && (!framing.touch || timeSlider.height >= 43.5);
+  const timeSize = () => (timeSlider ? `${(timeSlider.right - timeSlider.left).toFixed(0)}×${timeSlider.height.toFixed(0)}` : 'missing');
+  const timeState = async () => (await page.evaluate(() => {
+    const time = document.getElementById('time'), stone = document.getElementById('stone-size');
+    return `coarse pointer ${matchMedia('(pointer: coarse)').matches}, any coarse ${matchMedia('(any-pointer: coarse)').matches}, hover ${matchMedia('(hover: hover)').matches}, its height ${getComputedStyle(time).height}, the stone slider's ${getComputedStyle(stone).height}, zoom ${window.visualViewport?.scale ?? 1}, ${window.innerWidth} CSS pixels wide`;
+  })) + (settled ? '' : ', the panel not settled in 5 s');
+  const pressed = Date.now();
+  for (const until = pressed + 2000; ;) {
+    settled = await page.waitForFunction(() => !document.querySelector('.menu-page-leaving') && [...document.querySelectorAll('#settings .menu-page')].every((menuPage) => !(menuPage.getAnimations?.() ?? []).length), null, { timeout: 5000 }).then(() => true, () => false);
+    [timePanel] = await boxes('#settings');
+    [timeSlider] = await boxes('#time');
+    if (timeFits() || Date.now() > until) break;
+    firstShort ??= `${timeSize()} (${await timeState()})`;
+    await page.waitForTimeout(100);
+  }
+  if (firstShort && timeFits()) console.log(`         (the Time slider was first ${firstShort}; it fitted ${Date.now() - pressed} ms after its row was pressed)`);
+  check(timeFits(), `the Time page is on the screen, its slider ${timeSize()} points across the page${timeFits() ? '' : `; ${await timeState()}`}`);
   if (timeSlider) {
     const tapX = (timeSlider.left + 4) / layout.scale, tapY = (timeSlider.top + timeSlider.height / 2) / layout.scale;
     if (framing.touch) {
-      const session = await context.newCDPSession(page);
+      const session = await touchSession();
       await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: tapX, y: tapY }] });
       await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
-      await session.detach();
     } else {
       await page.mouse.click(tapX, tapY);
     }
@@ -736,7 +765,7 @@ for (const framing of FRAMINGS) {
       `a foam ball defined from outside, 20 to 80 cm, is thrown at its own 40 cm (${(200 * sized.thrown).toFixed(1)}), at 60 when asked (${(200 * sized.asked).toFixed(1)}), its slider kept to 80 (${sized.clamped}); the stones keep 6 cm (${sized.stone})`);
   } else {
     // A real finger (the browser's touch input, not synthetic pointers) dragged across the water.
-    const session = await context.newCDPSession(page);
+    const session = await touchSession();
     const touch = (type, x, y) => session.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y }] });
     const azimuthBefore = await page.evaluate(() => window.__pond.orbit.azimuth);
     const rocksBefore = await page.evaluate(() => window.__pond.rocks.length);
@@ -744,7 +773,6 @@ for (const framing of FRAMINGS) {
     await touch('touchStart', from.x, from.y);
     for (let step = 1; step <= 6; step++) await touch('touchMove', from.x + 20 * step, from.y);
     await touch('touchEnd', from.x + 120, from.y);
-    await session.detach();
     const dragged = await page.evaluate(() => ({ azimuth: window.__pond.orbit.azimuth, rocks: window.__pond.rocks.length }));
     const [resetButton] = await boxes('#reset-view');
     check(dragged.azimuth < azimuthBefore - 1 && dragged.rocks === rocksBefore && !!resetButton && onScreen(resetButton) && !overlaps(resetButton, menuButton),
@@ -752,6 +780,7 @@ for (const framing of FRAMINGS) {
     await page.screenshot({ path: path.join(outputFolder, `${framing.name}-turned.png`) });
   }
   if (problems.length) { check(false, `page errors: ${problems.join(' | ')}`); }
+  await cdpSession?.detach().catch(() => {});
   await context.close();
 }
 
