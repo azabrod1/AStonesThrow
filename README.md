@@ -511,8 +511,8 @@ coming quicker and quicker (2.7 m long and 16 cm high, then 1.6 m and 9 cm,
 0.9 m and 5 cm, 0.6 m and 3 cm), all in the vertical plane it was thrown
 in. In the pool it is thrown gentler (6, 7.5 or 9 m/s), so most skips stay
 in it, coming back off the far wall; a hard one may clear the wall and land
-on the paving, where it bounces low, tumbling end over end, and tumbles to a
-stop a few metres on. Every touch sends out a ring, throws a fan of spray ahead
+on the paving, where it bounces low, tumbling end over end, then tips onto a
+flat face and scrapes to a stop. Every touch sends out a ring, throws a fan of spray ahead
 and leaves a moment's white churn; the last is any stone's splash
 (`tools/skip-probe.mjs` prints all of it). A 30 cm rock is thrown too slowly
 to skip.
@@ -884,9 +884,12 @@ and the deck's splashed patches, dry a twentieth as fast.
 **Ice** (`src/ice.js`; drawn by the water's shaders, `ICE_COMMON` in
 `src/shaders/scene.js`). The ice adds one piece of physics, whether it
 breaks, and borrows the rest. On it a thing is on ground (`src/rock.js`
-`ground`): it bounces, tumbles or rolls and rests as on the pool's deck, but
+`ground`): it bounces, slides or rolls and rests as on the pool's deck, but
 slick (friction 0.1, a stone slowing at 0.12 g, a ball rolling on), so a
-throw slides metres and a hard, flat one tens of metres, out of sight past
+throw slides metres: whatever does not roll tips onto a face it can lie on (a
+brick flat or on its side, a stone on a flat face) and slides on it, turning
+slowly about the vertical, never tumbling; an apple rolls on its side and
+veers off, its own lumps stopping it in a few metres; and a hard, flat one tens of metres, out of sight past
 30 m; things on the ice, as on the deck, knock each other along
 (`src/collide.js`). A thing coming down on it strikes a blow m·v²/R (its
 speed down only, so a lob breaks where a flat throw skids; a hollow ball or
