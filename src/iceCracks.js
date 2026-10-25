@@ -16,7 +16,10 @@
 // the ice, its program one material's, see-through (blended over the
 // sheet, writing no depth, drawn before the other see-through things), on
 // the main camera's layer only: the mirror image never holds it. From
-// under the water it is drawn just under the sheet, dark.
+// under the water it is drawn just under the sheet, dark. Each vertex keeps
+// when the crack reached it (src/ice.js `times`), and a crack is drawn only
+// as far as it has run by the ice's clock (uIceClock), so a break spreads
+// from its blow.
 import * as THREE from 'three';
 import { ICE_CRACK_VERTEX, ICE_CRACK_FRAGMENT } from './shaders/scene.js';
 
@@ -35,13 +38,16 @@ export class IceCracks {
     const capacity = CRACK_DRAW.vertices;
     this.lineData = new Float32Array(4 * capacity);
     this.shapeData = new Float32Array(4 * capacity);
+    this.timeData = new Float32Array(capacity);
     this.indexData = new Uint16Array(3 * capacity);
     const geometry = new THREE.BufferGeometry();
     this.lineAttribute = new THREE.BufferAttribute(this.lineData, 4).setUsage(THREE.DynamicDrawUsage);
     this.shapeAttribute = new THREE.BufferAttribute(this.shapeData, 4).setUsage(THREE.DynamicDrawUsage);
+    this.timeAttribute = new THREE.BufferAttribute(this.timeData, 1).setUsage(THREE.DynamicDrawUsage);
     this.indexAttribute = new THREE.BufferAttribute(this.indexData, 1).setUsage(THREE.DynamicDrawUsage);
     geometry.setAttribute('aLine', this.lineAttribute);
     geometry.setAttribute('aShape', this.shapeAttribute);
+    geometry.setAttribute('aTime', this.timeAttribute);
     geometry.setIndex(this.indexAttribute);
     geometry.setDrawRange(0, 0);
     this.material = new THREE.ShaderMaterial({
@@ -52,6 +58,7 @@ export class IceCracks {
         uSkyAmbient: { value: lighting.skyAmbient },
         uExtinction: { value: lighting.extinction },
         uResolution: { value: resolution },
+        uIceClock: { value: 0 },   // the ice's clock (src/ice.js time): how far each crack has run
         ...haze,   // the weather's haze (src/sky.js)
       },
       vertexShader: ICE_CRACK_VERTEX,
@@ -75,6 +82,7 @@ export class IceCracks {
   update() {
     if (this.warming) return;
     const ice = this.ice, lines = ice.crackLines;
+    this.material.uniforms.uIceClock.value = ice.time;
     if (ice.crackEpoch !== this.epoch) {
       this.epoch = ice.crackEpoch;
       this.drawn = this.vertices = this.indices = 0;
@@ -95,7 +103,7 @@ export class IceCracks {
 
   /** The vertices and indices from these on to the GPU, and the draw to them. */
   send(firstVertex, firstIndex) {
-    for (const [attribute, size] of [[this.lineAttribute, 4], [this.shapeAttribute, 4]]) {
+    for (const [attribute, size] of [[this.lineAttribute, 4], [this.shapeAttribute, 4], [this.timeAttribute, 1]]) {
       attribute.clearUpdateRanges();
       attribute.addUpdateRange(size * firstVertex, size * (this.vertices - firstVertex));
       attribute.needsUpdate = true;
@@ -114,7 +122,7 @@ export class IceCracks {
   warmUp(x, z) {
     this.warming = true;
     const firstVertex = this.vertices, firstIndex = this.indices;
-    this.append({ points: [x, z, x + 0.03, z + 0.01, x + 0.06, z], widths: [0.001, 0.001, 0.0005], shade: 1 });
+    this.append({ points: [x, z, x + 0.03, z + 0.01, x + 0.06, z], widths: [0.001, 0.001, 0.0005], times: [-1e6, -1e6, -1e6], shade: 1 });
     this.send(firstVertex, firstIndex);
     this.mesh.visible = true;
   }
@@ -148,6 +156,7 @@ export class IceCracks {
         const vertex = this.vertices++;
         this.lineData.set([points[2 * index], points[2 * index + 1], normalX, normalZ], 4 * vertex);
         this.shapeData.set([side, widths[index] ?? widths[widths.length - 1], miter, crack.shade], 4 * vertex);
+        this.timeData[vertex] = crack.times?.[index] ?? -1e6;
       }
     }
     for (let segment = 0; segment + 1 < count; segment++) {
@@ -158,5 +167,5 @@ export class IceCracks {
   }
 
   /** The GPU memory its buffers hold (bytes), for src/main.js's budget. */
-  get bytes() { return this.lineData.byteLength + this.shapeData.byteLength + this.indexData.byteLength; }
+  get bytes() { return this.lineData.byteLength + this.shapeData.byteLength + this.timeData.byteLength + this.indexData.byteLength; }
 }

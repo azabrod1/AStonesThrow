@@ -262,8 +262,9 @@
 // Ground. A thing can come down on ground rather than water. What ground
 // there is, is its `ground` (src/main.js hands it to everything thrown), or
 // null:
-//   - at(x, z): the ground's height there, or null over open water: the
-//     pool's deck (src/pool.js poolGround), short of the pool (a big stone
+//   - at(x, z, asker): the ground's height there, or null over open water
+//     (`asker`, the thing asking: a piece of ice afloat is no ground under
+//     itself): the pool's deck (src/pool.js poolGround), short of the pool (a big stone
 //     skipped slowly, a heavy ball thrown as far as it goes) or skipped out
 //     over a wall; a frozen lake's ice (src/ice.js), everywhere but its holes;
 //   - material (optional; or materialAt(x, z), where it differs from place
@@ -1189,6 +1190,9 @@ export class Rock {
     this.groundHeight = null;      // the ground's height under a thing tumbling or rolling along it (`ground`), once it has met it
     this.groundNormal = UP.clone();   // the normal of the plane it rests on (restOn: a sloping bed's)
     this.onGround = false;         // at rest on the ground (restOn)
+    this.fallsThrough = null;      // the ice gave way under it as it lay or went along it (src/ice.js weigh): it goes in, next step
+    this.dunked = null;            // a piece of ice afloat it pushed under (src/ice.js landOnPiece): it goes down past it, meeting it again once apart (src/collide.js)
+    this.brokenUp = false;         // a piece of ice broken into pieces of its own (src/ice.js splitPiece): it meets nothing, and goes
     this.settling = null;          // settling onto the face it lies on, at rest on the ground (restOn, settleStep)
     this.sliding = null;           // tipping onto the face it slides on, and its turn about the vertical (startSliding, slideStep)
     this.fading = undefined;       // seconds into shrinking away, once src/main.js has begun it (fadeOut): frozen, it is no longer stepped
@@ -1366,9 +1370,10 @@ export class Rock {
    * water does, it is drawn from above see-through, over what lies under it,
    * by its sides' inner faces (CLEAR_SIDES_INSIDE: seen down through its
    * top, the light in it turned back off them, a bright band along its far
-   * edges as wide as it is thick seen aslant) and faintly by its top where a
-   * ripple has washed over it (CLEAR_FILM_COVER), so that pass shows what
-   * lies under it, the band and the film. Its
+   * edges as wide as it is thick seen aslant) and by its top under the water
+   * over it, its white ice too, fading as the water over it deepens
+   * (CLEAR_FILM_FADE: awash, plainly there), so that pass shows what lies
+   * under it, the band and the film. Its
    * programs (above, below, in the mirror; a clear thing's above and below
    * its own) are every floater's alike, drawn under the loading veil
    * (src/main.js warmUp).
@@ -1440,7 +1445,15 @@ export class Rock {
         .replace('#include <opaque_fragment>', `${clear ? `vec2 onPiece = vRideWorld.xz - vRideMiddle;
   float pieceLooks = pieceWhite(onPiece, max(length(dFdx(onPiece)), length(dFdy(onPiece))));
   outgoingLight = totalSpecular + clearScatter(mix(diffuseColor.rgb, vec3(ICE_WHITE_ALBEDO), pieceLooks)) + seenUnderClear(vViewPosition, normal, vClearShare * (1.0 - pieceLooks), vRideWorld.y);` : ''}
-  ${clearBelow ? 'float clearCover = 1.0;\n  if (cameraPosition.y > uWaterLevel) {\n    outgoingLight = abs(vRideUp) <= 0.5 ? clearSideInside(vRideWorld.y - uWaterLevel) : totalSpecular + clearFilm(diffuseColor.rgb);\n    clearCover = abs(vRideUp) <= 0.5 ? CLEAR_SIDE_COVER : CLEAR_FILM_COVER;\n  }' : ''}
+  ${clearBelow ? `float clearCover = 1.0;
+  if (cameraPosition.y > uWaterLevel) {
+    // Its top under a film of water: its own look, white ice and all, fading with the water over it (CLEAR_SIDES_INSIDE).
+    vec2 onPiece = vRideWorld.xz - vRideMiddle;
+    float pieceLooks = pieceWhite(onPiece, max(length(dFdx(onPiece)), length(dFdy(onPiece))));
+    float film = max(uWaterLevel + floaterWaterHeight(vRideWorld.xz) - vRideWorld.y, 0.0);
+    outgoingLight = abs(vRideUp) <= 0.5 ? clearSideInside(vRideWorld.y - uWaterLevel) : totalSpecular + clearFilm(mix(diffuseColor.rgb, vec3(ICE_WHITE_ALBEDO), pieceLooks));
+    clearCover = abs(vRideUp) <= 0.5 ? CLEAR_SIDE_COVER : mix(CLEAR_FILM_COVER, CLEAR_FILM_WHITE, pieceLooks) * exp(-film / CLEAR_FILM_FADE);
+  }` : ''}
   #include <opaque_fragment>
   ${clearBelow ? 'gl_FragColor.a = clearCover;' : ''}`)
         .replace('#include <fog_fragment>', `#include <fog_fragment>
@@ -1762,7 +1775,7 @@ export class Rock {
       const half = this.halfHeight();
       const clear = Math.max(this.position.y - half, -this.position.y - half, 0);
       const afloat = (this.state === 'float' || (this.state === 'rest' && this.afloat)) && (!this.plate || clear === 0);
-      this.rideShare.value = this.state === 'held' || this.state === 'ground' || this.state === 'skim' ? 0 : afloat ? 1 : Math.max(1 - clear / half, 0);
+      this.rideShare.value = this.state === 'held' || this.state === 'set' || this.state === 'ground' || this.state === 'skim' ? 0 : afloat ? 1 : Math.max(1 - clear / half, 0);
     }
     // Where it is drawn, riding the water as far as it does (src/floaterRide.js): where things meet it.
     this.centre.copy(this.meshAbove.position);
@@ -1897,6 +1910,7 @@ export class Rock {
     this.restTime = 0;
     this.velocity.set(0, 0, 0);
     this.spinRate = 0;
+    this.dunked = null;
     if (this.skip) this.skip.contact = null;
     this.sinceImpact = -1;
     this.cavityTimes = null;
@@ -1925,7 +1939,7 @@ export class Rock {
     this.velocity.set(0, 0, 0);
     this.restTime = 0;
     this.hasFloated = false;
-    const ground = this.ground?.at(this.position.x, this.position.z) ?? null;
+    const ground = this.ground?.at(this.position.x, this.position.z, this) ?? null;
     if (ground !== null || this.position.y + this.lowestOffset() >= surface) {
       this.state = 'air';
       this.seenThroughWater.value = 0;
@@ -1971,7 +1985,7 @@ export class Rock {
   // ---- meeting other things (src/collide.js) -------------------------------
 
   /** Whether it can meet another thing: flying, skimming, under the water, or afloat (not at rest on the bed or the deck). */
-  get collides() { return this.state === 'air' || this.state === 'skim' || this.state === 'water' || this.state === 'float' || this.afloat || this.grounded; }
+  get collides() { return !this.brokenUp && (this.state === 'air' || this.state === 'skim' || this.state === 'water' || this.state === 'float' || this.afloat || this.grounded); }
 
   /** Whether it is on the ground (the header): going along it, or at rest on it (the deck, the ice), where things meet it as they meet a floater. */
   get grounded() { return this.state === 'ground' || (this.state === 'rest' && this.onGround); }
@@ -2415,20 +2429,47 @@ export class Rock {
    * broke and pushed under, src/ice.js shards): at `position`, moving at
    * `velocity`, turned to `quaternion`, it floats up from there (floatStep; a
    * plate's water model, the water it carries wholly under carried), seen
-   * through the water as a thing gone in is.
+   * through the water as a thing gone in is; turning at `spin` ({ axis, rate:
+   * rad/s }: a wedge of ice driven down, hinged at its outer edge) if given.
    */
-  adrift(position, velocity, quaternion) {
+  adrift(position, velocity, quaternion, spin = null) {
     this.position.copy(position);
     this.previous.copy(position);
     this.velocity.copy(velocity);
     this.quaternion.copy(quaternion);
-    this.spinRate = 0;
+    this.spinRate = spin?.rate ?? 0;
+    if (spin) this.spinAxis.copy(spin.axis).normalize();
     this.state = 'float';
     this.hasFloated = true;
     this.carriedWater = this.plate ? this.plateAddedMass(1) : 0;
     this.sinceImpact = Infinity;
     this.seenThroughWater.value = 1;
     this.wet = 1;
+    this.syncMeshes();
+  }
+
+  /**
+   * A piece of ice a break let go (src/ice.js piecesOf `start`): a wedge
+   * stays set where it broke, flat in the sheet, for its `setFor` seconds
+   * (while the thing's cavity is open under it; state 'set': nothing meets
+   * it, it is drawn as above the water), then is set adrift, driven down as
+   * the water comes back up through its hole (`velocity`, `spin`); a chip,
+   * pushed under, is adrift at once (a part of a piece broken afloat too,
+   * `by` what broke it).
+   */
+  breakAway({ position, velocity, quaternion, spin = null, setFor = 0, by = null }) {
+    this.brokenBy = by;   // what broke it off a piece of ice afloat (src/ice.js splitPiece): they meet only once it is adrift and they are apart (src/collide.js)
+    if (setFor <= 0) { this.adrift(position, velocity, quaternion, spin); return; }
+    this.position.copy(position);
+    this.previous.copy(position);
+    this.velocity.set(0, 0, 0);
+    this.quaternion.copy(quaternion);
+    this.spinRate = 0;
+    this.state = 'set';
+    this.setFor = setFor;
+    this.letGo = { velocity: velocity.clone(), spin };
+    this.sinceImpact = -1;
+    this.seenThroughWater.value = 0;
     this.syncMeshes();
   }
 
@@ -2877,7 +2918,7 @@ export class Rock {
    * off it; it rests once slower than GROUND.stopped.
    */
   alongGround(dt) {
-    let height = this.ground?.at(this.position.x, this.position.z) ?? null;
+    let height = this.ground?.at(this.position.x, this.position.z, this) ?? null;
     const before = this.groundHeight ?? height;
     if (height === null || height < before - GROUND.step) { this.state = 'air'; this.sliding = null; return; }
     if (height > before + GROUND.step) height = this.turnBackFromStep();
@@ -2915,14 +2956,14 @@ export class Rock {
    * at its own bounce. Returns the ground's height where it then is.
    */
   turnBackFromStep() {
-    const at = (x, z) => this.ground.at(x, z) ?? -Infinity;
+    const at = (x, z) => this.ground.at(x, z, this) ?? -Infinity;
     const rises = (x, z) => at(x, z) > this.groundHeight + GROUND.step;
     let alongX = rises(this.position.x, this.previous.z), alongZ = rises(this.previous.x, this.position.z);
     if (!alongX && !alongZ) alongX = alongZ = true;
     if (alongX) { this.position.x = this.previous.x; this.velocity.x *= -this.collisionBounce; }
     if (alongZ) { this.position.z = this.previous.z; this.velocity.z *= -this.collisionBounce; }
     this.heard.push({ speed: Math.hypot(alongX ? this.velocity.x : 0, alongZ ? this.velocity.z : 0) / Math.max(this.collisionBounce, 0.05), radius: this.radius, bounce: this.collisionBounce });
-    return this.ground.at(this.position.x, this.position.z) ?? this.groundHeight;
+    return this.ground.at(this.position.x, this.position.z, this) ?? this.groundHeight;
   }
 
   /**
@@ -2978,13 +3019,29 @@ export class Rock {
     this.drawnBefore.position.copy(this.stepEnd.position);
     this.drawnBefore.quaternion.copy(this.stepEnd.quaternion);
     this.previous.copy(this.position);
+    // A piece of ice still set in the sheet it broke from (breakAway): still, until the water comes back up through its hole.
+    if (this.state === 'set') {
+      this.setFor -= dt;
+      if (this.setFor <= 0) {
+        this.brokenBy = null;   // its breaker's cavity closed: it is down past it
+        this.adrift(this.position, this.letGo.velocity, this.quaternion, this.letGo.spin);
+      }
+      else this.syncMeshes();
+      return null;
+    }
     let impact = null;
     // Down on the ground (the header), if it was over it the step before too (else it met the ground's side, src/pool.js).
     const ground = this.ground;
-    const groundBefore = this.state === 'air' && ground ? ground.at(this.position.x, this.position.z) : null;
+    const groundBefore = this.state === 'air' && ground ? ground.at(this.position.x, this.position.z, this) : null;
     if (this.state === 'air') this.fly(dt);
-    const groundNow = groundBefore !== null ? ground.at(this.position.x, this.position.z) : null;
-    if (groundNow !== null && this.position.y - this.ellipsoidDepth() <= groundNow) {
+    const groundNow = groundBefore !== null ? ground.at(this.position.x, this.position.z, this) : null;
+    if (this.fallsThrough) {
+      // The ice gave way under its weight (src/ice.js weigh): it goes in through the hole, at the speed weigh gave it.
+      this.onGround = false;
+      this.settling = null;
+      impact = this.breakThrough(this.fallsThrough, dt);
+      this.fallsThrough = null;
+    } else if (groundNow !== null && this.position.y - this.ellipsoidDepth() <= groundNow) {
       // Ice may give way under it (the header: the ground's `meet`); else it lands on the ground.
       const met = ground.meet?.(this, groundNow) ?? null;
       if (met?.hole) impact = this.breakThrough(met, dt);
@@ -3086,7 +3143,7 @@ export class Rock {
       // reaches centimetres further down in a step; beside a wall it was under the ground's height already).
       if (this.state === 'ground' && this.groundHeight !== null) this.position.y = this.groundHeight + this.ellipsoidDepth();
       else if (this.state === 'air' && this.ground) {
-        const under = this.ground.at(this.position.x, this.position.z), bottom = this.position.y - this.ellipsoidDepth();
+        const under = this.ground.at(this.position.x, this.position.z, this), bottom = this.position.y - this.ellipsoidDepth();
         if (under !== null && bottom < under && (bottom > under - GROUND.step || clearBefore >= under - 1e-9)) this.position.y += under - bottom;
       }
     }

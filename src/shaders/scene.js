@@ -75,10 +75,6 @@ vec3 snowShade(vec2 point) {
 // picture blurred. A lake's or a pool's ice is mostly clear ("black ice":
 // the water under it shows through and it mirrors the sky as still water
 // does), and these tell it from water:
-//   - its crystals (ICE_GRAIN): a sheet frozen on still water is a mosaic of
-//     crystals a hand across, their boundaries faint lines, some seen more
-//     than others (iceGrain: a jittered grid's cells, the border by the
-//     difference of the nearest two points' distances);
 //   - snow ice (ICE_WHITE: the share of the sheet it covers, growing with
 //     the thickness): white patches with ragged edges (an fbm thresholded,
 //     its octaves down to the pixel), thin at their edges and thick inside,
@@ -135,9 +131,6 @@ ${ICE_UNIFORMS}
 #define ICE_CLOUDY 0.18                // the share of light cloudy ice scatters back, where it is (iceLook)...
 #define ICE_CLOUDY_BAND 0.07           // ...round the snow ice, this far under its threshold in the snow's field
 #define ICE_SCATTER 12.0               // per metre of the refracted ray's path: the light clear ice scatters back (its veil; src/ice.js ICE.scatter, its twin, a shard's)
-#define ICE_GRAIN 0.16                 // m: its crystals' size, about (their grid warped, so some are half that, some twice)...
-#define ICE_GRAIN_LINE 0.0005          // ...the half-width of the boundary between two (m)...
-#define ICE_GRAIN_SEEN 0.28            // ...and how white it shows, at most, against white ice (where it shows: iceLook)
 #define ICE_FROST vec2(0.012, 0.1)     // the frost's rms slope, where the ice is bare (black ice, a mirror) and where frosted...
 #define ICE_GLAZED 0.015               // ...and wet, glazed or new ice's
 #define ICE_SPECK 0.007                // m: a cell of frost specks, found where the ice is frosted
@@ -205,33 +198,11 @@ vec2 iceFbm(vec2 worldXZ, float frequency, float footprint) {
   return vec2(sum / 0.9921875, 1.5 * change);
 }
 
-// The crystals' boundaries (the header): how far (m) the point is from the
-// border between the two crystals nearest it, about (half the difference of
-// its distances to their points, on a grid warped so the crystals differ in
-// size and shape), and how plainly that border shows (0 to 1).
-vec2 iceGrain(vec2 worldXZ) {
-  vec2 position = worldXZ / ICE_GRAIN + 0.9 * vec2(valueNoise(worldXZ * 2.3 + 3.0), valueNoise(worldXZ * 2.3 + 19.0));
-  vec2 cell = floor(position), local = fract(position);
-  float first = 9.0, second = 9.0;
-  vec2 firstCell = vec2(0.0), secondCell = vec2(0.0);
-  for (int row = -1; row <= 1; row++) {
-    for (int column = -1; column <= 1; column++) {
-      vec2 offset = vec2(float(column), float(row));
-      vec2 point = offset + 0.12 + 0.76 * vec2(hash21(cell + offset), hash21(cell + offset + 31.7));
-      float distance = length(point - local);
-      if (distance < first) { second = first; secondCell = firstCell; first = distance; firstCell = cell + offset; }
-      else if (distance < second) { second = distance; secondCell = cell + offset; }
-    }
-  }
-  return vec2(0.5 * (second - first) * ICE_GRAIN, hash21(firstCell + secondCell * 1.37 + 7.1));
-}
-
 struct IceLook {
   float white;           // the share of snow ice and frost specks (the light scattered back)
   float slopeVariance;   // the frost's unresolved slope, for the mirror's blur and the sun's sheen
   float glints;          // the sun's sheen on it broken into its crystals' glints: 1 on the mean
   float bubbles;         // the share of the pixel frozen bubbles whiten
-  float grain;           // a crystal boundary's share of the pixel, times how plainly it shows
 };
 
 IceLook iceLook(vec2 worldXZ, float footprint) {
@@ -281,13 +252,6 @@ IceLook iceLook(vec2 worldXZ, float footprint) {
   // pixel, their mean): a sheen even over a patch reads as a blur.
   float facet = hash21(floor(worldXZ / ICE_GLINT) + 91.0);
   look.glints = mix(1.0, mix(1.0, 13.0 * pow(facet, 12.0), frosted), 1.0 - smoothstep(0.5 * ICE_GLINT, 2.0 * ICE_GLINT, footprint));
-  // The crystals' boundaries, in the clear ice, in patches as the light catches them; none where a pixel is coarser.
-  look.grain = 0.0;
-  float grainShows = footprint < 0.02 && covered < 1.0 ? smoothstep(0.4, 0.75, valueNoise(worldXZ * 1.1 + 40.0)) * (1.0 - covered) * (1.0 - smoothstep(0.004, 0.02, footprint)) : 0.0;
-  if (grainShows > 0.0) {
-    vec2 grain = iceGrain(worldXZ);
-    look.grain = iceLine(grain.x, ICE_GRAIN_LINE, footprint) * grain.y * grainShows;
-  }
   // Frozen bubbles: clusters of them (ICE_BUBBLE_CLUSTERS of the sheet, by
   // a noise), in each cell of a cluster a dot of 0.7 to 2.5 mm radius at
   // odds growing to its middle, half seen through the ice; under a pixel,
@@ -1453,7 +1417,6 @@ vec3 iceSurface(IceMask mask, float footprint, vec2 acrossX, vec2 acrossY) {
   float newIce = smoothstep(-0.5 * footprint, 0.5 * footprint, mask.skin) * (1.0 - smoothstep(-0.5 * footprint, 0.5 * footprint, mask.hole));
   look.white *= 1.0 - newIce;
   look.bubbles *= 1.0 - newIce;
-  look.grain *= 1.0 - newIce;
   // The hole's edge (ICE_COMMON): the mask's gradient says which way it runs. Lapped by its open water, it is a fracture
   // face seen through the ice; skinned over beside it, a seam.
   float face = 0.0, seam = 0.0, lapped = 1.0;
@@ -1508,7 +1471,7 @@ vec3 iceSurface(IceMask mask, float footprint, vec2 acrossX, vec2 acrossY) {
   float sineInside = clamp(length(v.xz) / ICE_INDEX, 0.0, 0.99);
   float through = mix(uIceThickness, min(uIceThickness, 0.004), newIce) / sqrt(1.0 - sineInside * sineInside);
   float veil = (1.0 - exp(-ICE_SCATTER * through)) * (1.0 - 0.6 * wet);
-  float white = clamp(look.white + look.bubbles + ICE_GRAIN_SEEN * look.grain + veil, 0.0, 1.0);
+  float white = clamp(look.white + look.bubbles + veil, 0.0, 1.0);
   float clear = 1.0 - look.white;
   vec3 body = mix(under, scattered, white);
   // A fracture face in clear ice turns the light back as a mirror would: it shows white, as the sky's light it sends up.
@@ -2145,7 +2108,9 @@ export const ICE_CRACK_VERTEX = /* glsl */`
 ${ICE_UNIFORMS}
 attribute vec4 aLine;
 attribute vec4 aShape;
+attribute float aTime;
 uniform vec2 uResolution;
+varying float vTime;        // s: when the crack reached here (src/iceCracks.js)
 varying vec2 vWorldXZ;
 varying float vAcross;      // m off the line, by its side
 varying float vHalfWidth;   // m
@@ -2173,6 +2138,7 @@ void main() {
   vAcross = side * extent;
   vHalfWidth = aShape.y;
   vShade = aShape.w;
+  vTime = aTime;
   vBelow = below;
   vWorldXZ = world.xz;
   gl_Position = projectionMatrix * viewMatrix * vec4(world, 1.0);
@@ -2186,12 +2152,16 @@ void main() {
 // faces send back; over snow ice the line is dark (water seeps up it) and
 // the face unseen; wet, both fainter. None over a hole's water or its new
 // ice (the mask). From under the water a crack is a dark line across the
-// light the sheet lets down, dimmed by the water between.
+// light the sheet lets down, dimmed by the water between. None yet where the
+// crack has not run to (src/ice.js `times`, by uIceClock), its running tip
+// fading in over CRACK_TIP.
 export const ICE_CRACK_FRAGMENT = /* glsl */`
 uniform vec3 uSunDir;
 uniform vec3 uSunIrradiance;
 uniform vec3 uSkyAmbient;
 uniform vec3 uExtinction;
+uniform float uIceClock;
+varying float vTime;
 varying vec2 vWorldXZ;
 varying float vAcross;
 varying float vHalfWidth;
@@ -2202,13 +2172,17 @@ varying float vBelow;
 ${GLSL_COMMON}
 ${HAZE}
 #define CRACK_SNOWED 0.85   // the share of a crack the snow on the ice hides
+#define CRACK_TIP 0.004     // s: a crack's running tip fades in over this (a few millimetres behind it)
 void main() {
+  // Its footprint before any discard: a 2×2 block part discarded leaves derivatives undefined on some GPUs.
   float footprint = max(fwidth(vAcross), 1e-6);
+  // Not reached yet (src/ice.js times): it runs out from where it started.
+  if (vTime > uIceClock) discard;
   IceMask mask = iceMaskAt(vWorldXZ);
   if (mask.hole < 0.0) discard;
   float jag = ICE_CRACK_JAG * (valueNoise(vWorldXZ * 330.0) + 0.6 * valueNoise(vWorldXZ * 910.0 + 5.0) - 0.8) * (1.0 - smoothstep(0.0008, 0.003, footprint));
   float across = vAcross + jag;
-  float line = iceLine(across, vHalfWidth, footprint);
+  float line = iceLine(across, vHalfWidth, footprint) * clamp((uIceClock - vTime) / CRACK_TIP, 0.0, 1.0);
   if (vBelow > 0.5) {
     float seen = exp(-dot(uExtinction, vec3(1.0 / 3.0)) * distance(cameraPosition, vec3(vWorldXZ.x, uIceTop, vWorldXZ.y)));
     gl_FragColor = vec4(vec3(0.0), 0.5 * line * vShade * seen);
@@ -2533,6 +2507,18 @@ vec3 seenThroughWater(vec3 world, float level) {
 }
 `;
 
+export const PIECE_LOOK = /* glsl */`
+// The sheet's own look on a piece of it (ICE_COMMON iceLook: its snow ice, frost specks, bubbles and crystals' lines),
+// at a point on the piece (onPiece, m from its middle, so it goes where the piece goes), PIECE_LOOK_SCALE times finer
+// (a piece a hand across would lie inside one of the sheet's patches, all one white), over a footprint: the share of
+// white it adds, which hides that much of what shows through.
+#define PIECE_LOOK_SCALE 2.5
+float pieceWhite(vec2 onPiece, float footprint) {
+  IceLook look = iceLook(onPiece * PIECE_LOOK_SCALE + 41.0, footprint * PIECE_LOOK_SCALE);
+  return clamp(look.white + look.bubbles, 0.0, 1.0);
+}
+`;
+
 // What a clear floater (src/rock.js `seenThrough`: a shard of ice) shows
 // through its top, in the main pass from above the water: the under-water
 // pass at its pixel (the pool's tiles or the bed, its own body under the
@@ -2545,6 +2531,7 @@ vec3 seenThroughWater(vec3 world, float level) {
 // pass shows what is far behind it. viewPosition and normal are the
 // standard material's (view space).
 export const SEEN_UNDER_CLEAR = /* glsl */`
+${PIECE_LOOK}
 uniform vec3 uSunDir;
 uniform vec3 uSunIrradiance;
 uniform vec3 uSkyAmbient;
@@ -2572,15 +2559,6 @@ vec3 seenUnderClear(vec3 viewPosition, vec3 normal, float clearShare, float heig
 vec3 clearScatter(vec3 albedo) {
   return albedo * (uSunIrradiance * max(uSunDir.y, 0.0) + uSkyAmbient * 1.4);
 }
-// The sheet's own look on a piece of it (ICE_COMMON iceLook: its snow ice, frost specks, bubbles and crystals' lines),
-// at a point on the piece (onPiece, m from its middle, so it goes where the piece goes), PIECE_LOOK_SCALE times finer
-// (a piece a hand across would lie inside one of the sheet's patches, all one white), over a footprint: the share of
-// white it adds, which hides that much of what shows through.
-#define PIECE_LOOK_SCALE 2.5
-float pieceWhite(vec2 onPiece, float footprint) {
-  IceLook look = iceLook(onPiece * PIECE_LOOK_SCALE + 41.0, footprint * PIECE_LOOK_SCALE);
-  return clamp(look.white + look.bubbles + ICE_GRAIN_SEEN * look.grain, 0.0, 1.0);
-}
 `;
 
 // A clear floater's sides seen from inside, down through its top (src/rock.js
@@ -2590,15 +2568,21 @@ float pieceWhite(vec2 onPiece, float footprint) {
 // the sky (CLEAR_SIDE_LIGHT of it), fading down the face (`depth`, the
 // point's height against the water's, negative: CLEAR_SIDE_FADE metres),
 // and over what lies behind by CLEAR_SIDE_COVER; its top under a film of
-// water its own light over what lies under it by CLEAR_FILM_COVER.
+// water its own light, its white ice and bubbles too (PIECE_LOOK), over what
+// lies under it by CLEAR_FILM_COVER where clear and CLEAR_FILM_WHITE where
+// white, fading with the water over it (CLEAR_FILM_FADE): a piece pushed
+// awash stays in sight, one deep under is all but gone.
 export const CLEAR_SIDES_INSIDE = /* glsl */`
+${PIECE_LOOK}
 uniform vec3 uSunDir;
 uniform vec3 uSunIrradiance;
 uniform vec3 uSkyAmbient;
 #define CLEAR_SIDE_LIGHT 0.45
 #define CLEAR_SIDE_FADE 0.08
 #define CLEAR_SIDE_COVER 0.85     // how much of what is behind a side's inner face it hides
-#define CLEAR_FILM_COVER 0.35     // and its top, under a film of water, its own light over what is under it
+#define CLEAR_FILM_COVER 0.35     // and its top, under a film of water, its own light over what is under it, where clear...
+#define CLEAR_FILM_WHITE 0.85     // ...and where its white ice and bubbles are (PIECE_LOOK)...
+#define CLEAR_FILM_FADE 0.04      // ...fading with the water over it, by e over this (m): awash it is plainly there
 vec3 clearSideInside(float depth) {
   return (uSunIrradiance * max(uSunDir.y, 0.0) + uSkyAmbient * 1.4) * CLEAR_SIDE_LIGHT * exp(depth / CLEAR_SIDE_FADE);
 }

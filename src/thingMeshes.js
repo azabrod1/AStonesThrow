@@ -1499,16 +1499,17 @@ export function createDeviceGeometry(kind) {
 // `white` share (the sheet's snow ice and frozen bubbles); a
 // band SHARD_LOOK.rim of the way in from its rim whiter and less clear, its
 // normals tipped out toward the edge by SHARD_LOOK.round (a broken edge,
-// rounded as it melts, catches the light); its broken sides white. With no
+// rounded as it melts, catches the light); its broken sides glassy, a
+// little frosted, half seen through. With no
 // piece (a thing defined or thrown plain, tools/thing-probe.mjs) it is
 // SHARD_LOOK.plain's: a broken hexagon.
 const SHARD_LOOK = {
-  clear: linear(10, 13, 16), white: linear(206, 214, 224), edge: linear(150, 166, 182), side: linear(188, 200, 214),
+  clear: linear(10, 13, 16), white: linear(206, 214, 224), edge: linear(150, 166, 182), side: linear(120, 136, 152),
   rim: 0.06,          // the whiter band round its top, of the way in from its rim
   edgeWhite: 0.6,     // the band's colour over the top's at its edge, for clear ice
   through: 0.92,      // the share of what is under it a clear piece shows (the rest its milk)...
   rimThrough: 0.55,   // ...at its edge...
-  sideThrough: 0.2,   // ...and through a side
+  sideThrough: 0.5,   // ...and through a side (a fresh break in clear ice is glassy, a little frosted)
   jag: 0.05,          // how far a cut point is off its side's line, at most, of the side's length
   round: 0.6,         // radians the band's normals are tipped out at the edge
   milk: 0.15,         // its clear ice's milk, without a piece's own (src/ice.js: the sheet's, for its thickness)
