@@ -10,8 +10,9 @@
 //
 // In the air it follows a ballistic arc with a little drag and tumbles, at
 // SPIN_LEAST to SPIN_MOST rad/s about a random axis (most stones turn
-// slowly, a few fast). The moment its lowest point (of the tumbling mesh, not
-// of a sphere) touches the surface it reports the impact (position, its
+// slowly, a few fast; a thing with its own `air.spin`, its own range). The
+// moment its lowest point (of the tumbling mesh, not of a sphere) touches
+// the surface it reports the impact (position, its
 // centre's height, speed, direction, radius, and the stone's own properties
 // below) so the splash can be built from it (the cavity follows the stone
 // down from there): the splash starts at first contact, not once the stone is
@@ -307,7 +308,7 @@ import * as THREE from 'three';
 import { SEEN_THROUGH_WATER, SEEN_UNDER_CLEAR, CLEAR_SIDES_INSIDE, FLOATER_WATER } from './shaders/scene.js';
 import { PINCH_TIME, NECK_CLOSE, SPIN_DECAY, sinkStep, underWater } from './cavity.js';
 import { THINGS, DEFAULT_THING, WATER_DENSITY, STONE_DENSITY } from './things.js';
-import { meshKind, withParts } from './thingMeshes.js';
+import { meshKind, meshVolume, withParts } from './thingMeshes.js';
 
 // The stone's geometry is src/thingMeshes.js's now; the probes take it from here as they always did.
 export { createRockGeometry } from './thingMeshes.js';
@@ -427,7 +428,7 @@ const AIR_DENSITY = 1.2;   // kg/m³ (flyStep's)
 // coarseClose m), how near (m) a pass must come down for no more to be flown (a plate's flight,
 // each pass hundreds of its steps, sooner) and the most (m)
 // a pass may move the aim.
-const AIM = { times: [0.3, 2.0, 0.01], passes: 6, flightPasses: 9, coarsePasses: 5, coarseClose: 0.03, step: 1 / 120, close: 0.003, flightClose: 0.01, farthestStep: 1.5 };
+const AIM = { times: [0.3, 2.0, 0.01], passes: 6, flightPasses: 14, coarsePasses: 5, coarseClose: 0.03, step: 1 / 120, close: 0.003, flightClose: 0.01, farthestStep: 1.5 };
 // A ball's shape and contact (the header).
 const BALL_SHAPE = Object.freeze({
   volume: (4 / 3) * Math.PI, centroid: new THREE.Vector3(), axes: [new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0, 1)],
@@ -444,7 +445,9 @@ const scratch = {
   bed: new THREE.Vector3(),
 };
 const UP = new THREE.Vector3(0, 1, 0);
-const BUOYANCY = { columns: 20 };
+// A floater's columns (buoyancyColumns): this many across its widest, cut again on a grid turned by each of `turns`
+// (radians) if they hold its mesh's volume worse than `held` of it.
+const BUOYANCY = { columns: 20, held: 0.02, turns: [0.5, 0.7, 0.3] };
 const RIDE_TILT = 0.36;   // the most a floater is tilted as it rides the water as drawn (rideTheWater): the slope's tangent, 20°
 
 /** A standard normal draw (Box–Muller, from `random`). */
@@ -781,7 +784,8 @@ function capShare(depth) {
 
 /**
  * A mesh floater's buoyancy (the header): its solid cut into columns along
- * `axis` (its short axis), BUOYANCY.columns across its widest, each the
+ * `axis` (its short axis), `columns` across its widest (BUOYANCY.columns,
+ * or its thing's own `water.columns`: a banana's 40), each the
  * stretch of the column inside the mesh (a column's crossings of the
  * surface, paired from the bottom up), with its share of the volume (the
  * shares made to add to 1, so the columns hold the mesh's own volume). The
@@ -791,14 +795,33 @@ function capShare(depth) {
  * as a disc on its edge does and is turned flat by the push, not told to
  * be. Made once for a fixed mesh (prepareThing), as a stone of pumice is
  * thrown for one drawn at random; triangles find their columns from their
- * own corners, so a mesh of thousands takes a millisecond or two.
+ * own corners, so a mesh of thousands takes a millisecond or two. A wall
+ * thinner than a column's width lying along the grid's lines (a toy slide's
+ * side panels) is hit by a whole row of columns or by none, so a cut that
+ * holds the mesh's own volume worse than BUOYANCY.held is made again on the
+ * grid turned by each of BUOYANCY.turns about the axis, which crosses such a
+ * wall slantwise, and the truest cut kept (every other thing's first cut
+ * holds it, so theirs is the grid it always was).
  */
-export function buoyancyColumns(geometry, axis) {
+export function buoyancyColumns(geometry, axis, columns = BUOYANCY.columns) {
+  const volume = meshVolume(geometry);
+  let best = null;
+  for (const turn of [0, ...BUOYANCY.turns]) {
+    const cut = columnsOf(geometry, axis, turn, columns);
+    if (!best || Math.abs(cut.volume / volume - 1) < Math.abs(best.volume / volume - 1)) best = cut;
+    if (Math.abs(best.volume / volume - 1) < BUOYANCY.held) break;
+  }
+  return best;
+}
+
+/** A mesh's columns (buoyancyColumns) along `axis`, `columns` across its widest, on a grid turned `turn` radians about it. */
+function columnsOf(geometry, axis, turn, columns) {
   const positions = geometry.attributes.position.array;
   const along = axis.clone().normalize();
   const acrossU = new THREE.Vector3(1, 0, 0);
   if (Math.abs(acrossU.dot(along)) > 0.9) acrossU.set(0, 0, 1);
   acrossU.addScaledVector(along, -acrossU.dot(along)).normalize();
+  if (turn !== 0) acrossU.applyAxisAngle(along, turn);
   const acrossV = new THREE.Vector3().crossVectors(along, acrossU);
   const count = positions.length / 3;
   const u = new Float64Array(count), v = new Float64Array(count), h = new Float64Array(count);
@@ -811,7 +834,7 @@ export function buoyancyColumns(geometry, axis) {
     leastU = Math.min(leastU, u[vertex]); mostU = Math.max(mostU, u[vertex]);
     leastV = Math.min(leastV, v[vertex]); mostV = Math.max(mostV, v[vertex]);
   }
-  const cell = Math.max(mostU - leastU, mostV - leastV) / BUOYANCY.columns;
+  const cell = Math.max(mostU - leastU, mostV - leastV) / columns;
   // The columns' middles a little off the grid's round numbers, so none runs exactly through a mesh's corner or edge.
   const originU = leastU + cell * 0.5013, originV = leastV + cell * 0.4987;
   const across = Math.ceil((mostU - leastU) / cell) + 1, down = Math.ceil((mostV - leastV) / cell) + 1;
@@ -1019,11 +1042,13 @@ export function stoneShape(geometry) {
 
 /**
  * The axis a floater's buoyancy is cut into columns along (buoyancyColumns):
- * its own +y if it is kept upright (a pizza's, a duck's: the water's level
- * then crosses its columns as it floats, where their cut is truest), else its
+ * its own `water.columnsAlong` if it says (src/things.js: a toy slide's,
+ * slanted to all its faces, as it may float lying any way up), else its own
+ * +y if it is kept upright (a pizza's, a duck's: the water's level then
+ * crosses its columns as it floats, where their cut is truest), else its
  * short axis.
  */
-function columnAxis(thing, shape) { return thing.body.upright ? UP : shape.axes[2]; }
+function columnAxis(thing, shape) { return thing.water.columnsAlong ? new THREE.Vector3(...thing.water.columnsAlong).normalize() : thing.body.upright ? UP : shape.axes[2]; }
 
 /** What prepareThing has made, for each definition (a thing defined again is a new definition). */
 const PREPARED = new WeakMap();
@@ -1033,7 +1058,8 @@ export const PREPARATION_WORK = { meshes: 0, waterlines: 0 };
 /**
  * A fixed mesh's thing (src/thingMeshes.js registerMesh `fixed`) made ready
  * to throw, once: its geometry, its shape (stoneShape), how far it reaches
- * and its buoyancy's columns (buoyancyColumns, made the first time a size
+ * (`reach`, its bounding sphere's; `farthest`, its farthest point's) and its
+ * buoyancy's columns (buoyancyColumns, made the first time a size
  * of it floats, and kept), which every one thrown shares. Slicing a pizza's
  * mesh for its waterline took a throw over 30 ms; src/main.js prepares
  * every thing under the loading veil, and one defined later as it is
@@ -1052,7 +1078,7 @@ export function prepareThing(thing) {
     const shape = thing.body.shape === 'sphere' ? BALL_SHAPE : stoneShape(geometry);
     let columns = null;
     const buoyancy = () => {
-      if (!columns) { columns = buoyancyColumns(geometry, columnAxis(thing, shape)); PREPARATION_WORK.waterlines++; }
+      if (!columns) { columns = buoyancyColumns(geometry, columnAxis(thing, shape), thing.water.columns); PREPARATION_WORK.waterlines++; }
       return columns;
     };
     // A floater's columns now, at its first size (another size may float where this one sinks: its columns are made as
@@ -1063,7 +1089,12 @@ export function prepareThing(thing) {
     // Its own parts (registerMesh `dress`) made once and let go: the first one thrown costs no more than the next.
     if (mesh.dress) { const parts = mesh.dress(thing, seededStream(1)); if (parts && !parts.shared) parts.geometry.dispose(); }
     if (thing.air.model === 'flutter' && thing.body.shape !== 'sphere') plateFace(shape, geometry);
-    PREPARED.set(thing, { geometry, shape, reach: geometry.boundingSphere.center.length() + geometry.boundingSphere.radius, buoyancy });
+    // How far its farthest point is from its middle, in radii, however it is turned (the hand holds it clear of the
+    // water: src/main.js handPosition); `reach`, its bounding sphere's, is looser.
+    const positions = geometry.attributes.position.array;
+    let farthest = 0;
+    for (let index = 0; index < positions.length; index += 3) farthest = Math.max(farthest, positions[index] ** 2 + positions[index + 1] ** 2 + positions[index + 2] ** 2);
+    PREPARED.set(thing, { geometry, shape, reach: geometry.boundingSphere.center.length() + geometry.boundingSphere.radius, farthest: Math.sqrt(farthest), buoyancy });
   }
   return PREPARED.get(thing);
 }
@@ -1115,7 +1146,9 @@ export class Rock {
     const random = this.random;
     this.quaternion = new THREE.Quaternion().setFromEuler(new THREE.Euler(random() * 6, random() * 6, random() * 6));
     this.spinAxis = new THREE.Vector3(random() - 0.5, random() - 0.5, random() - 0.5).normalize();
-    this.spinRate = SPIN_LEAST + (SPIN_MOST - SPIN_LEAST) * random() ** SPIN_SKEW;
+    // Its tumble: a stone's, or its own (`air.spin`: a toy slide a metre long turns slower than a pebble).
+    const [spinLeast, spinMost] = this.thing.air.spin ?? [SPIN_LEAST, SPIN_MOST];
+    this.spinRate = spinLeast + (spinMost - spinLeast) * random() ** SPIN_SKEW;
     // A fixed mesh is prepared once for its definition and shared (prepareThing); a soft one's vertices flex, so it has
     // its own copy of them. Anything else (a stone's lumps, drawn at random) is built for each one thrown.
     const prepared = mesh.fixed ? prepareThing(this.thing) : null;
@@ -1142,7 +1175,7 @@ export class Rock {
     // Which way is up for it: its own +y if it is kept upright (a pizza's toppings), else its short axis, either way.
     this.uprightAxis = this.thing.body.upright ? UP.clone() : this.shape.axes[2].clone();
     // A floater that is not a sphere floats by its mesh's own volume, at any angle (buoyancyColumns).
-    this.buoyancy = (this.floats || this.thing.air.model === 'flutter') && !this.sphere ? (prepared ? prepared.buoyancy() : buoyancyColumns(this.geometry, columnAxis(this.thing, this.shape))) : null;
+    this.buoyancy = (this.floats || this.thing.air.model === 'flutter') && !this.sphere ? (prepared ? prepared.buoyancy() : buoyancyColumns(this.geometry, columnAxis(this.thing, this.shape), this.thing.water.columns)) : null;
     // Where its weight acts afloat (turnAfloat, stableAfloat): its volume's middle, moved by its `body.ballast` (a duck's
     // heavy base), in its own frame and radii.
     this.massCentre = this.buoyancy ? this.buoyancy.centroid.clone().add(new THREE.Vector3().fromArray(this.thing.body.ballast ?? [0, 0, 0])) : null;

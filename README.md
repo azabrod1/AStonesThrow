@@ -51,9 +51,11 @@ its choices (Location and Water as pictures) with a line on each. Each choice
 is remembered on the device (but the view, which opens on the shore):
 - What to throw (`?thing=`): stones (a river stone, the default; slate,
   granite, basalt, pumice), balls (golf, tennis, bowling, basketball), gems
-  (diamond, emerald, ruby, sapphire) and others (an apple, a watermelon, a
-  pizza, a frozen pizza, a pie, a rubber duck, a brick, a TV, an iPhone), each the size, weight
-  and density of the real thing (`src/things.js`). The foot of the strip's
+  (diamond, emerald, ruby, sapphire), food (an apple, a pizza, a frozen
+  pizza, a pie, a watermelon, a banana, a slice of bread, a birthday cake)
+  and others (a rubber duck, a brick, a TV, an iPhone, a snowball, a toy
+  slide), each the size, weight and density of the real thing
+  (`src/things.js`). The foot of the strip's
   dropdown opens this page. What is lighter than water floats; the rest sink.
   What comes to rest stays, on the bed or the pool's floor as on the deck, up
   to the quality preset's count (below); past it the oldest shrinks away.
@@ -81,7 +83,20 @@ is remembered on the device (but the view, which opens on the shore):
   do, and come to rest lying along the lake bed's slope. In the pool they
   land wherever they fit, their slap standing no crown, and its walls meet
   their corners. Choose them under Other or use `?thing=tv` and
-  `?thing=iphone`; both support Toss and Lob. Each choice's picture
+  `?thing=iphone`; both support Toss and Lob. A banana (about 920 kg/m³
+  whole) tumbles end over end and floats with only a sliver out. A slice
+  of bread (30 g, about 175 kg/m³) flutters down floppier than a pizza,
+  floats nearly all out, then soaks and sinks in about two minutes. A
+  birthday cake (sponge under buttercream, about 460 kg/m³) comes with one
+  to six candles, floats half out, and soaks and sinks in two or three
+  minutes. A snowball (packed snow, 450 kg/m³) floats half out, then soaks
+  to slush in under half a minute and floats on, nine tenths under: slush
+  is still lighter than water. A toddler's toy slide (99 × 46 × 70 cm,
+  4.1 kg, hollow walls holding 39 litres) floats nine tenths out of the
+  water; it is held high enough to clear the water, and tumbles slowly. A
+  long thin thing's nominal radius (a banana's, the slide's) is its ball's
+  of like volume, so its splash is sized by what it displaces; the strip
+  shows its length. Each choice's picture
   (`assets/things/thumbs/`) is a harness frame of it at rest on the pool's
   deck, shrunk to 160×90: `--sky=pool --thing=name
   --throws=-1.75:0.75:0.05 --times=3 --seed=1 --w=320 --h=180`, looked at
