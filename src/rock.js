@@ -2905,14 +2905,17 @@ export class Rock {
     this.bendStep(dt);
     this.soak(dt);
     if (this.state !== 'rest' && !this.turned) {
+      const clearBefore = this.state === 'air' && this.ground ? this.position.y - this.ellipsoidDepth() : null;
       const spin = new THREE.Quaternion().setFromAxisAngle(this.spinAxis, this.spinRate * dt);
       this.quaternion.premultiply(spin);
       // Turned as it goes along the ground, or just off it, it stays on it (its ellipsoid's reach down changes as it
-      // turns); in the air, only if the turn took it under the ground by less than a step (more is a wall's side).
+      // turns); in the air, only if the turn took it under the ground by less than a step (more is a wall's side), or
+      // however far if it was on or over the ground before the turn (a banana tumbling end over end off a bounce
+      // reaches centimetres further down in a step; beside a wall it was under the ground's height already).
       if (this.state === 'ground' && this.groundHeight !== null) this.position.y = this.groundHeight + this.ellipsoidDepth();
       else if (this.state === 'air' && this.ground) {
         const under = this.ground.at(this.position.x, this.position.z), bottom = this.position.y - this.ellipsoidDepth();
-        if (under !== null && bottom < under && bottom > under - GROUND.step) this.position.y += under - bottom;
+        if (under !== null && bottom < under && (bottom > under - GROUND.step || clearBefore >= under - 1e-9)) this.position.y += under - bottom;
       }
     }
     // In its cavity's air until the pinch-off, under water once the surface has closed.
