@@ -3,7 +3,7 @@
 // struck hard enough, breaks through into the water.
 //
 // The ice adds one piece of physics, whether it breaks, and borrows the rest:
-// on it a thing is on ground (src/rock.js `ground`: it bounces, tumbles,
+// on it a thing is on ground (src/rock.js `ground`: it bounces, slides,
 // rolls and rests as on the pool's deck, the ice slick: ICE_MATERIAL), things
 // on it knock each other along (src/collide.js), and through it a thing goes
 // into the water as into open water (src/rock.js breakThrough: the cavity,
@@ -227,7 +227,8 @@ function pieceTopAt(rock, x, z) {
 export const WEAK = { merge: 0.5, most: 64 };
 // The Ice setting's choices (src/main.js): the sheet's thickness, metres. Everything here takes metres.
 export const ICE_THICKNESS = { none: 0, thin: 0.01, thick: 0.04 };
-// The ice's own surface (src/rock.js `ground` material): slick. A stone on it slides more than it tumbles.
+// The ice's own surface (src/rock.js `ground` material): slick. A stone on it slides, slowing at `tumbling`·g; between
+// its hops it turns end over end at `tumble` (of its speed over its radius).
 export const ICE_MATERIAL = Object.freeze({ kind: 'ice', friction: 0.1, rolling: 0.01, tumbling: 0.12, tumble: 0.15 });
 // A hole (the header): corners round it; the lip's fall it takes in (Cavity.lipReach's `fall`); each corner out beyond
 // the lip by `margin` and a jag from 0 to `jag` of the lip's reach, besides the slow waves `waves` (amplitude, each of
@@ -352,6 +353,8 @@ function segmentDistance(x, z, ax, az, bx, bz, out) {
   return out;
 }
 const nearest = { distance: 0, along: 0, side: 0 };
+// The polygon helpers below are src/rock.js's too (restFaces' outlines).
+export { convexHull, insidePolygon, polygonEdgeDistance };
 
 /** Whether (x, z) is inside a closed polygon of corners [x0, z0, x1, z1, …] (crossing number). */
 function insidePolygon(corners, x, z) {

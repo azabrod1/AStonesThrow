@@ -1439,6 +1439,17 @@ console.log('\nThings meeting things (src/collide.js):');
   check(grounded.grounded && Math.abs(grounded.position.y + grounded.lowestOffset() - POOL.deck) < 0.002,
     'a picked-up thing does not settle back onto the deck');
   grounded.dispose();
+  // Picked up as it slides (a brick along the deck: src/rock.js slideStep), its slide goes with the pickup: let go over
+  // the water it sinks and lies along the bed (lyingAttitude), not as the old slide had it.
+  const { rock: sliding } = throwThing('brick');
+  sliding.ground = poolGround(POOL_SQUARE);
+  sliding.position.set(-2, POOL.deck + 0.2, 2);
+  sliding.velocity.set(2, -0.5, 0);
+  let slid = false;
+  for (let step = 0; step < 480 && !slid; step++) { sliding.update(STEP, 1.4); slid = Boolean(sliding.sliding); }
+  sliding.hold();
+  check(slid && !sliding.sliding, `a thing picked up as it slides keeps its slide (${slid ? 'kept' : 'it never slid'})`);
+  sliding.dispose();
 
   // The wave's stretched water column must not jump on release.
   const { rock } = throwThing('bowling', { value: 16 });

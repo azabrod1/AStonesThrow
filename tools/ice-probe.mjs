@@ -21,7 +21,10 @@
 //     HOLE.fall of its fall) and the jet's foot, all round; its cracks lie on
 //     the ice inside the patch;
 //   - a thing that held rests on the ice, never under its top but in a hole,
-//     having slid farther than on the pool's deck; a stone slid on the ice
+//     having slid farther than on the pool's deck; one that does not roll
+//     slides flat once it has tipped onto a face (its height steady to
+//     BOB_TOLERANCE, never tumbling) and rests lying on that face (src/rock.js
+//     lyingAttitude: never on an edge or its end); a stone slid on the ice
 //     goes SLIDE_RATIO times as far as on the deck;
 //   - a Skip throw onto the ice skitters (it strikes the ice at least twice)
 //     and rests on it;
@@ -100,6 +103,7 @@ const HOLDS = 0.6;           // ...and one that must not at most this (the blow'
 const SLIDE_RATIO = 4;
 const MOMENTUM_KEPT = 0.05;  // of the striker's momentum
 const STEP_TOLERANCE = 0.15; // of a slide
+const BOB_TOLERANCE = 0.0005; // m: a thing sliding flat on its face keeps its height to this
 const BREAK_MS = 25;
 const SHARDS = [3, 12];      // pieces a break lets go (least, most)
 const REPEATS = { cracks: 8, never: 30 };   // throws again and again at one spot: one that cracks breaks it within `cracks`; one that does not, never in `never`
@@ -194,6 +198,12 @@ function follow(rock, ice, { step = STEP, others = [], pool = false, seconds = L
     if (!record.firstStrike && ice.lastStrike && ice.lastStrike !== strikeBefore) record.firstStrike = ice.lastStrike;
     collideThings(things, contain);
     record.states.add(rock.state);
+    // Sliding on its face once tipped onto it (src/rock.js slideStep): its height steady.
+    const sliding = rock.state === 'ground' ? rock.sliding : null;
+    if (sliding && sliding.time >= sliding.seconds) {
+      if (record.flat?.sliding !== sliding) record.flat = { sliding, height: rock.position.y };
+      record.bob = Math.max(record.bob ?? 0, Math.abs(rock.position.y - record.flat.height));
+    }
     if (rock.heard.length > heardBefore) {
       record.strikes += rock.heard.length - heardBefore;
       record.touched ??= rock.position.clone();
@@ -226,8 +236,9 @@ function follow(rock, ice, { step = STEP, others = [], pool = false, seconds = L
     }
     splash.update(step, water);
     // Under the ice's top while over unbroken ice (and not gone in by a hole): it went through the ice unseen. What the
-    // ground holds up, as on the deck: its ellipsoid as it goes (src/rock.js ellipsoidDepth), its mesh at rest (restOn).
-    const lowest = rock.state === 'rest' ? rock.position.y + rock.lowestOffset() : rock.position.y - rock.ellipsoidDepth();
+    // ground holds up, as on the deck: its ellipsoid in the air (src/rock.js ellipsoidDepth), its mesh as it slides on
+    // it (slideStep) and at rest (restOn).
+    const lowest = rock.state === 'rest' || rock.state === 'ground' ? rock.position.y + rock.lowestOffset() : rock.position.y - rock.ellipsoidDepth();
     if (!record.enteredWater && rock.state !== 'water' && ice.overWater(rock.position.x, rock.position.z) && !ice.holeAt(rock.position.x, rock.position.z)) {
       record.belowIce = Math.max(record.belowIce, ice.top - lowest);
     }
@@ -272,6 +283,11 @@ for (const [thickness, metres] of Object.entries(ICE_THICKNESS).filter(([, metre
         check(record.gone || (record.rest !== null && rock.state === 'rest' && rock.onGround && Math.abs(rock.position.y + rock.lowestOffset() - ice.top) < 0.005),
           `${label} ${manner} ${power} on ${thickness} ice: held, but did not come to rest on it (${rock.state}, ${rock.position.y.toFixed(3)} m)`);
         check(!record.enteredWater, `${label} ${manner} ${power} on ${thickness} ice: held, yet went into the water`);
+        check((record.bob ?? 0) <= BOB_TOLERANCE, `${label} ${manner} ${power} on ${thickness} ice: its height changed by ${centimetres(record.bob)} cm as it slid on its face`);
+        if (!record.gone && !rock.sphere) {
+          for (let step = 0; step < 240 && rock.settling; step++) rock.update(STEP, floorDepthAt);
+          check(Math.abs(rock.quaternion.dot(rock.lyingAttitude())) > 0.9999, `${label} ${manner} ${power} on ${thickness} ice: rests not lying on a face (on an edge or an end)`);
+        }
       } else {
         check(record.impact && record.throughIce, `${label} ${manner} ${power} on ${thickness} ice: went through without its impact saying so`);
       }

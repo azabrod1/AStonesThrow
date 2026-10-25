@@ -29,7 +29,11 @@
 //     `friction` (Coulomb), `roll` ('solid', 'shell' or none: a ball keeps 5/7
 //     or 3/5 of its speed along the ground once it rolls; a thing that does
 //     not roll tumbles; a shell is hollow, and strikes ice softer, src/ice.js)
-//     and `rolling`, its rolling resistance.
+//     and `rolling`, its rolling resistance (on ice the lesser of its own and
+//     the ice's); `rollsAbout`, a ball's own axis it rolls about on its side
+//     (an apple's core: its own lumps and give then slow it, on ice too), and
+//     `curve`, its path's curvature on its side times its radius (a cone
+//     rolls round towards its narrow end, that axis's −: src/rock.js rollStep).
 //   - air: `drag`, its drag coefficient in flight (on the disc of its nominal
 //     radius: 0.47 a ball's; a pizza, flat on, more), and its `model`:
 //     `ballistic` (it tumbles as it flies) or `flutter` (a flat thing: a plate
@@ -259,6 +263,8 @@ function definitionProblems(key, definition) {
   need(within(material.friction, LIMITS.friction), `material.friction must be ${LIMITS.friction.join(' to ')}`);
   need(material.roll === undefined || material.roll === null || (typeof material.roll === 'string' && Object.hasOwn(ROLLS, material.roll)), 'material.roll must be solid, shell or none');
   need(!material.roll || within(material.rolling, LIMITS.rolling), 'a thing that rolls needs material.rolling, 0 to 1');
+  need(material.rollsAbout === undefined || (material.roll && body.shape === 'sphere' && Array.isArray(material.rollsAbout) && material.rollsAbout.length === 3 && material.rollsAbout.every(isNumber) && Math.abs(Math.hypot(...material.rollsAbout) - 1) < 1e-6), 'material.rollsAbout must be a unit [x, y, z] of a sphere that rolls');
+  need(material.curve === undefined || (material.rollsAbout && within(material.curve, [0, 0.5])), 'material.curve needs material.rollsAbout, and is 0 to 0.5');
   need(air.drag === undefined || within(air.drag, LIMITS.drag), `air.drag must be ${LIMITS.drag.join(' to ')}`);
   need(air.model === undefined || AIR_MODELS.includes(air.model), `air.model must be one of ${AIR_MODELS.join(', ')}`);
   need(air.spin === undefined || (Array.isArray(air.spin) && air.spin.length === 2 && air.spin.every(isNumber) && air.spin[0] >= 0 && air.spin[0] <= air.spin[1] && air.spin[1] <= LIMITS.spin), `air.spin must be [least, most] within 0 to ${LIMITS.spin} rad/s`);
@@ -529,7 +535,10 @@ defineBuiltIn('sapphire', gem('Sapphire', 'Blue corundum, an oval', 4000, { colo
 defineBuiltIn('apple', {
   name: 'Apple', group: 'Other', note: 'A quarter of it is air: it floats, low', called: 'an apple',
   body: { shape: 'sphere', density: 815, size: { by: 'mass', unit: 'g', min: 100, max: 300, step: 10, initial: 180 } },
-  material: { bounce: [0.25, 0.35], friction: 0.6, roll: 'solid', rolling: 0.06 },
+  // Lumpy and soft, it rolls on its side about its core, wider at its shoulder than its calyx (src/thingMeshes.js APPLE's
+  // `shoulder`, 0.05): a cone, its path veering towards its calyx, though by a sixth of what so slight a cone rolling true
+  // would (its dimples and lumps keep it off its girth); its own give and lumps slow it, on ice as on the deck.
+  material: { bounce: [0.25, 0.35], friction: 0.6, roll: 'solid', rolling: 0.15, rollsAbout: [0, 1, 0], curve: 0.008 },
   water: { restingHeight: 0.95 },
   look: { mesh: 'apple', roughness: 0.45, reflection: 1.0 },
 });
