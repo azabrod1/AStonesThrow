@@ -1506,6 +1506,15 @@ farther out, so it rises into the view rather than filling its corner.
   more stones than Low keeps at rest. Nothing is drawn
   (`__pond.stepFrames`), so the floaters' ride, read back from the drawn
   water, is left out.
+- `node tools/grab-probe.mjs` takes seeded throws in hand in each state they
+  pass through (in the air, skimming, going in, at rest on the bed, afloat
+  and at rest afloat, sliding and settling on thick ice, a piece of thin ice
+  set in its sheet and afloat, on the pool's floor, in the Koi pond),
+  carries each and lets it go over a surface of its own (the water, the
+  ice, a hole in it, the pool's deck, the garden's planting), and checks
+  that it is taken clean of every other state (src/rock.js setState), stays
+  held and never fades while carried, and once let go is kept and lies no
+  deeper in the bed than a stone settles into the sand.
 - `node tools/zoom-probe.mjs [--w=390 --h=844]` drives the wheel, a pinch, a
   tap and Escape through the page's own handlers and checks that what is under
   the pointer stays there; then drags, by touch and by mouse, and checks that
@@ -1548,7 +1557,8 @@ farther out, so it rises into the view rather than filling its corner.
   on the device) and `setSize(value)` (and `size`: the slider's value in its unit),
   `setTimeScale` (and `timeScale`), `pause()`, `advance(seconds)` (in the frames the app would
   draw at the current time scale), `stepFrames(frames)` (each a frame of that many seconds, nothing
-  drawn), `restartFish()` (the place's fish as they start), `setDebugView(name)`, `setFov(degrees)`,
+  drawn), `restartFish()` (the place's fish as they start), `holdThing(rock)`, `carryHeld(x, y, z)` and
+  `letGo()` (the hand's hold, drag and release, as a press does them), `bedDepthAt(x, z)`, `poolSquare`, `setDebugView(name)`, `setFov(degrees)`,
   `lookAt(x, y, z)`, `resetView()`, `setWind(name)` (and `wind`: calm,
   breeze or windy, remembered on the device), `setSky(place)` and
   `setHour(name)` (and `sky`, `pooled`, `hour`, and `hours`, the shown

@@ -1963,6 +1963,21 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     heldWake.advance(seconds);
   }
 
+  /** The hand takes `rock` under the client point (clientX, clientY): a still hold on it (the pointer's), or __pond.holdThing. */
+  function takeHold(rock, clientX, clientY) {
+    // A thing carried onto the lake's bank must land on it too.
+    rock.ground ??= { at: (x, z) => { const depth = bedDepthAt(x, z); return depth <= 0 ? -depth : null; } };
+    grab.begin(rock, clientX, clientY);
+    untrace(rock);
+    canvas.style.cursor = 'grabbing';
+    showAim(null);
+    // Picked up where it is in the water, it is already wading: no dimple.
+    heldWake = new FingerInWater(water, rock.radius);
+    if (wading(rock)) heldWake.dip(rock.position.x, rock.position.z, true);
+    followHeld(0);
+    lastActivity = performance.now();
+  }
+
   function endGrab() {
     if (grab.rock && ice.on) grab.rock.iceHole = ice.holeAt(grab.rock.position.x, grab.rock.position.z);
     grab.end(grabSurfaceAt, bedDepthAt);
@@ -2062,18 +2077,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
         const held = activePointers.get(pointerId);
         if (pressStart?.id !== pointerId || turning || pinch || !held) return;
         if (candidate && rocks.includes(candidate) && grab.pick(rocks, held.x, held.y, event.pointerType !== 'mouse') === candidate) {
-          // A thing carried onto the lake's bank must land on it too.
-          candidate.ground ??= { at: (x, z) => { const depth = bedDepthAt(x, z); return depth <= 0 ? -depth : null; } };
-          grab.begin(candidate, held.x, held.y);
-          untrace(candidate);
+          takeHold(candidate, held.x, held.y);
           grabPointer = pointerId;
-          canvas.style.cursor = 'grabbing';
-          showAim(null);
-          // Picked up where it is in the water, it is already wading: no dimple.
-          heldWake = new FingerInWater(water, candidate.radius);
-          if (wading(candidate)) heldWake.dip(candidate.position.x, candidate.position.z, true);
-          followHeld(0);
-          lastActivity = performance.now();
         } else startTouch(pointerId, held.x, held.y);
       }, candidate ? GRAB_HOLD_MS : HOLD_MS);
     } else if (activePointers.size === 2) {
@@ -3088,6 +3093,30 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     },
     /** The place's fish as they start (src/fish.js setWaters), for tools/frame-rate-probe.mjs. */
     restartFish() { applyFish(); },
+    /**
+     * The hand takes `rock` (as a still hold on it does, under where it is
+     * drawn), carries it towards world (x, y, z) as a drag does (constrainGrab
+     * keeps it out of the bed, the walls, the ice and the Koi pond's planting),
+     * and lets it go: for tools/grab-probe.mjs.
+     */
+    holdThing(rock) {
+      if (grab.rock) endGrab();
+      const seen = rock.meshAbove.position.clone().project(camera), rect = canvas.getBoundingClientRect();
+      takeHold(rock, rect.left + (seen.x + 1) / 2 * rect.width, rect.top + (1 - seen.y) / 2 * rect.height);
+    },
+    carryHeld(x, y, z) {
+      const rock = grab.rock;
+      if (!rock) return;
+      const point = new THREE.Vector3(x, y, z);
+      constrainGrab(point, rock);
+      rock.moveHeld(point, grabSurfaceAt(point.x, point.z), bedDepthAt(point.x, point.z));
+      followHeld(0);
+    },
+    letGo() { endGrab(); },
+    /** The bed's depth (m, down positive) at (x, z): the lake's, the pool's or the Koi pond's. */
+    bedDepthAt(x, z) { return bedDepthAt(x, z); },
+    /** The pool's square ({ minX, minZ, size }, src/pool.js). */
+    get poolSquare() { return { ...pool.square }; },
     /**
      * Deterministic stepping for screenshots: simulate `seconds` of world time
      * in the frames the app would draw, 1/60 s of real time each (so a time
