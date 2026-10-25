@@ -602,21 +602,27 @@ for (const framing of FRAMINGS) {
   await page.waitForTimeout(400);
   await press('#settings .menu-tier[data-open="time"]');
   // Measured once the page has slid in (src/settingsPanel.js settle: no slide running, no page leaving), and again for up
-  // to two seconds while it is short of its size; what the page has then is said if it never is.
-  let timePanel, timeSlider;
+  // to two seconds while it is short of its size. What the page has (its pointer's media, the sliders' heights, the
+  // zoom) is said if it never fits, and said too, with how long it took, if it fitted only on a later look: a slider
+  // short at first is the failure seen on CI's macOS runner image 20261021, whose cause is not yet known.
+  let timePanel, timeSlider, settled = true, firstShort = null;
   const timeFits = () => !!timeSlider && onScreen(timePanel) && onScreen(timeSlider) && timeSlider.right - timeSlider.left >= 0.8 * (timePanel.right - timePanel.left) && (!framing.touch || timeSlider.height >= 43.5);
-  for (const until = Date.now() + 2000; ;) {
-    await page.waitForFunction(() => !document.querySelector('.menu-page-leaving') && [...document.querySelectorAll('#settings .menu-page')].every((menuPage) => !(menuPage.getAnimations?.() ?? []).length), null, { timeout: 5000 }).catch(() => {});
+  const timeSize = () => (timeSlider ? `${(timeSlider.right - timeSlider.left).toFixed(0)}×${timeSlider.height.toFixed(0)}` : 'missing');
+  const timeState = async () => (await page.evaluate(() => {
+    const time = document.getElementById('time'), stone = document.getElementById('stone-size');
+    return `coarse pointer ${matchMedia('(pointer: coarse)').matches}, any coarse ${matchMedia('(any-pointer: coarse)').matches}, hover ${matchMedia('(hover: hover)').matches}, its height ${getComputedStyle(time).height}, the stone slider's ${getComputedStyle(stone).height}, zoom ${window.visualViewport?.scale ?? 1}, ${window.innerWidth} CSS pixels wide`;
+  })) + (settled ? '' : ', the panel not settled in 5 s');
+  const pressed = Date.now();
+  for (const until = pressed + 2000; ;) {
+    settled = await page.waitForFunction(() => !document.querySelector('.menu-page-leaving') && [...document.querySelectorAll('#settings .menu-page')].every((menuPage) => !(menuPage.getAnimations?.() ?? []).length), null, { timeout: 5000 }).then(() => true, () => false);
     [timePanel] = await boxes('#settings');
     [timeSlider] = await boxes('#time');
     if (timeFits() || Date.now() > until) break;
+    firstShort ??= `${timeSize()} (${await timeState()})`;
     await page.waitForTimeout(100);
   }
-  const timeState = timeFits() ? '' : await page.evaluate(() => {
-    const time = document.getElementById('time'), stone = document.getElementById('stone-size');
-    return `; coarse pointer ${matchMedia('(pointer: coarse)').matches}, any coarse ${matchMedia('(any-pointer: coarse)').matches}, hover ${matchMedia('(hover: hover)').matches}, its height ${getComputedStyle(time).height}, the stone slider's ${getComputedStyle(stone).height}, zoom ${window.visualViewport?.scale ?? 1}, ${window.innerWidth} CSS pixels wide`;
-  });
-  check(timeFits(), `the Time page is on the screen, its slider ${timeSlider ? `${(timeSlider.right - timeSlider.left).toFixed(0)}×${timeSlider.height.toFixed(0)}` : 'missing'} points across the page${timeState}`);
+  if (firstShort && timeFits()) console.log(`         (the Time slider was first ${firstShort}; it fitted ${Date.now() - pressed} ms after its row was pressed)`);
+  check(timeFits(), `the Time page is on the screen, its slider ${timeSize()} points across the page${timeFits() ? '' : `; ${await timeState()}`}`);
   if (timeSlider) {
     const tapX = (timeSlider.left + 4) / layout.scale, tapY = (timeSlider.top + timeSlider.height / 2) / layout.scale;
     if (framing.touch) {
