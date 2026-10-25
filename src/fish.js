@@ -67,7 +67,7 @@
 // surface faces, else sideways. Its own food it may touch, never enter.
 //
 // Food (step's `foods`): a kind that eats (`eats`) comes to something edible
-// in the water (src/things.js `edible`: a pizza, a pie, fruit) within
+// in the water (src/things.js `edible`: a pizza, a pie, fruit, bread, a cake) within
 // FEED.sense once it has settled and the fish is no longer wary, and its
 // groupmates follow it there: up to FEEDERS at a time, each to
 // the near side of it, at the surface under a floater or at a sunk one

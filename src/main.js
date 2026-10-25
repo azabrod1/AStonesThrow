@@ -418,6 +418,7 @@ const POWERS = ['soft', 'normal', 'hard'];   // the throw's strengths (ARC's key
 const POND_DEPTH = 0.8;       // the depth the waves take (the solver, the wind's ripples, the rings): see the bed below
 const POND_MARGIN = 0.4;      // metres inside the solver's patch that a tap's throw keeps to...
 const MARGIN_RADII = 4;       // ...or this many of the rock's radius, if more: a 30 cm rock's splats reach 3 radii out
+const HAND_CLEARANCE = 0.01;  // m: the least a held thing's farthest point is over the water (handPosition)
 const POOL_MARGIN = 0.25;     // metres inside the pool's walls a throw keeps to (or MARGIN_RADII of the rock's radius; a plate, its reach: throwMargin)
 const EYE_EDGE = 0.3;         // metres inside the pool's edge over which the deck's height eases in for the eye
 const MOVING_MOST = 20;        // things on the move (flying, skimming, sinking, tumbling) at once: past this the oldest fades out (keepWithinCaps)
@@ -1615,9 +1616,13 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   // the camera stands. A rock over 16 cm across leaves it lower and farther
   // out, by its size beyond that, so that from the shore it rises into the
   // view from below its edge rather than filling the corner of it.
-  function handPosition(radius = measureThing(thingName).radius) {
+  function handPosition(radius = measureThing(thingName).radius, thing = THINGS[thingName]) {
     const beyond = Math.max(radius - 0.08, 0);
-    return new THREE.Vector3(0.30, -0.32 - 1.6 * beyond, -0.55 - 1.2 * beyond).applyMatrix4(shoreFrame);
+    const hand = new THREE.Vector3(0.30, -0.32 - 1.6 * beyond, -0.55 - 1.2 * beyond).applyMatrix4(shoreFrame);
+    // Held clear of the water however it is turned, its farthest point HAND_CLEARANCE over it (a toy slide's chute's foot
+    // is a metre from its ladder's): everything held lower than that before is still where it was.
+    hand.y = Math.max(hand.y, (prepareThing(thing)?.farthest ?? 1) * radius + HAND_CLEARANCE);
+    return hand;
   }
 
   /** A throw's velocity from `hand` to `target` at strength `powerName` and manner `mannerName` for a stone of `radius` (ARC; src/rock.js throwFlightTime), with its flight time. */
@@ -1692,11 +1697,11 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     if (koiPond) keepInPond(target, radius);   // nothing thrown comes down on the Koi pond's ground (src/koiGarden.js)
     // Made first, so a thing that flutters is aimed by its own flight (src/rock.js trialFlight) and a skip by its own
     // mass (a pizza's toppings and all); a skip is let go lower, from the hand let down (skipThrow).
-    const rock = new Rock({ radius, position: handPosition(radius), velocity: new THREE.Vector3(), envTexture: environment.envTexture, waterFog: { extinction: lighting.extinction, color: lighting.waterColor }, thing: name, mass, mirrorLayer: MIRROR_LAYER, skip: skips, water: surface.rideUniforms });
+    const rock = new Rock({ radius, position: handPosition(radius, thing), velocity: new THREE.Vector3(), envTexture: environment.envTexture, waterFog: { extinction: lighting.extinction, color: lighting.waterColor }, thing: name, mass, mirrorLayer: MIRROR_LAYER, skip: skips, water: surface.rideUniforms });
     // A broad thing's tilt drawn first, so it is aimed by its own (a stone's is drawn as it is let go, as it always was).
     const tilt = skips && !thing.byDiameter ? rock.skipTilt() : undefined;
-    const skipped = skips ? skipThrow(handPosition(radius), target, { thing, radius, mass: rock.mass }, options.power ?? power, tilt) : null;
-    const hand = skipped?.hand ?? handPosition(radius);
+    const skipped = skips ? skipThrow(handPosition(radius, thing), target, { thing, radius, mass: rock.mass }, options.power ?? power, tilt) : null;
+    const hand = skipped?.hand ?? handPosition(radius, thing);
     if (skipped) { rock.position.copy(hand); rock.previous.copy(hand); rock.syncMeshes(); }
     thingShapes.set(name, rock.shape);
     // Aimed as heavy as it is (a pie's filling, a pizza's toppings and all: its fastest its own).
@@ -1849,8 +1854,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     marker.visible = true;
     marker.scale.setScalar(1);
     const measured = measureThing(thingName);
-    const skipped = skipsNow() ? skipThrow(handPosition(measured.radius), hit, measured) : null;
-    const hand = skipped?.hand ?? handPosition(measured.radius);
+    const skipped = skipsNow() ? skipThrow(handPosition(measured.radius, measured.thing), hit, measured) : null;
+    const hand = skipped?.hand ?? handPosition(measured.radius, measured.thing);
     // A fluttering thing's arc is its flight's (src/rock.js flutterTrial), its shape its prepared one's (or the last thrown's).
     const shape = thingShapes.get(thingName) ?? prepareThing(measured.thing)?.shape;
     const flight = measured.thing.air.model === 'flutter' && shape ? flutterTrial({ thing: measured.thing, shape, radius: measured.radius, density: measured.mass / (shape.volume * measured.radius ** 3), ownMass: measured.mass }) : null;
@@ -2725,7 +2730,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       const prepared = prepareThing(measured.thing);
       if (!prepared) continue;
       const trial = flutterTrial({ thing: measured.thing, shape: prepared.shape, radius: measured.radius, density: measured.mass / (prepared.shape.volume * measured.radius ** 3), ownMass: measured.mass });
-      thingVelocity(handPosition(measured.radius), new THREE.Vector3(WARM_UP.x, 0, WARM_UP.z), 'normal', measured, trial);
+      thingVelocity(handPosition(measured.radius, measured.thing), new THREE.Vector3(WARM_UP.x, 0, WARM_UP.z), 'normal', measured, trial);
     }
     const stone = throwAt(WARM_UP.x, WARM_UP.z, { radius: WARM_UP.radius, power: 'normal', thing: DEFAULT_THING });
     // A floater's mirror image (src/rock.js meshMirror), in the whole mirror drawn now, and a textured thing's
