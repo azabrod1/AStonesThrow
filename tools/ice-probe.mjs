@@ -876,6 +876,18 @@ for (const [thickness, diameter, carries] of [['thick', 16, true], ['thin', 6, f
   }
   console.log(`  a piece of a hole not yet flooded taken in hand: ${taken ? `its pass with the breaker forgotten ${forgotten}, put back and passing it again ${again}` : 'none found'}`);
   check(taken && forgotten && again, `a piece of a hole not yet flooded, taken and put back, passes the hole's breaker again (${taken ? `forgotten ${forgotten}, again ${again}` : 'no piece found'})`);
+  // The breaker gone before its hole floods (faded past a cap: src/main.js retireRock, ice.forget): the hole no longer
+  // names it, so a piece put back then passes nothing gone.
+  let goneLetGo = false;
+  if (shard) {
+    world.ice.forget(stone);
+    shard.hold();
+    shard.release();
+    world.ice.adopt(shard);
+    goneLetGo = world.ice.holes.every((hole) => hole.by !== stone) && !passingBy(shard, stone);
+  }
+  console.log(`  the breaker gone before its hole floods: ${shard ? `no hole names it and a piece put back passes it ${!goneLetGo}` : 'no piece found'}`);
+  check(goneLetGo, `a hole's breaker gone before the flood is let go: a piece put back does not pass it (${shard ? `passes ${!goneLetGo}` : 'no piece found'})`);
 }
 
 // A floater that broke thin ice (a watermelon, a pie) floats back up in its own hole: it passes its pieces by only until

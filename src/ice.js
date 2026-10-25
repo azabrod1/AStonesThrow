@@ -797,8 +797,15 @@ export class IceSheet {
     if (hole?.by && !hole.flooded) passBy(rock, hole.by, () => hole.flooded);
   }
 
-  /** A piece gone (faded, retired, frozen in): no longer ground. */
-  forget(rock) { this.pieces.delete(rock); }
+  /**
+   * A thing gone (faded, retired, frozen in): a piece no longer ground, and
+   * a hole it broke no longer names it (adopt would pair a piece let go or
+   * put back later with a thing gone, a pair nothing ends).
+   */
+  forget(rock) {
+    this.pieces.delete(rock);
+    for (const hole of this.holes) if (hole.by === rock) hole.by = null;
+  }
 
   /**
    * The piece afloat whose top is over (x, z), or within PIECE.margin of its

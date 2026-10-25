@@ -1783,7 +1783,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     }
   }
 
-  /** Start a thing shrinking away where it is (simulate: over FADE_SECONDS, then retireRock), frozen: no more steps or knocks; `fadedAt`, the world's time it began (tools/frame-rate-probe.mjs). */
+  /** Start a thing shrinking away where it is (endStep: over FADE_SECONDS, then retireRock), frozen: no more steps or knocks; `fadedAt`, the world's time it began (tools/frame-rate-probe.mjs). */
   function fadeOut(rock) { rock.fading = 0; rock.fadedAt = stepsTime; }
 
   /** Take a stone out of the scenes; keepMaterials frees only its geometry (warmUp keeps a stone's materials, so their program stays compiled). */
