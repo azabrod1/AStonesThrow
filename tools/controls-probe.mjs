@@ -141,6 +141,15 @@ for (const framing of FRAMINGS) {
   // a framing: a coarse pointer gone, every slider back to its desktop height).
   let cdpSession = null;
   const touchSession = async () => (cdpSession ??= await context.newCDPSession(page));
+  // A touch framing keeps its touch emulation (the browser's, not the page's doing): checked before every press and
+  // measurement (press, boxes), and wherever it is found gone (no coarse pointer) that is said, with where, and it is
+  // given back, so what is measured is the page as a phone shows it.
+  const keepTouch = async (where) => {
+    if (!framing.touch || (await page.evaluate(() => matchMedia('(pointer: coarse)').matches))) return;
+    console.log(`         (the browser had lost its touch emulation by ${where}: no coarse pointer; it is given back)`);
+    await (await touchSession()).send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
+    await page.waitForTimeout(200);
+  };
   const problems = [];
   page.on('pageerror', (error) => problems.push(String(error)));
   await page.goto(`http://localhost:${server.address().port}/index.html?quality=low&paused=1`, { waitUntil: 'domcontentloaded' });
@@ -235,14 +244,14 @@ for (const framing of FRAMINGS) {
   }
 
   // The settings (src/settingsPanel.js).
-  const press = (selector) => (framing.touch ? page.tap(selector) : page.click(selector));
-  const boxes = (selector) => page.evaluate((query) => {
+  const press = async (selector) => { await keepTouch(`pressing ${selector}`); return framing.touch ? page.tap(selector) : page.click(selector); };
+  const boxes = async (selector) => (await keepTouch(`measuring ${selector}`), page.evaluate((query) => {
     const scale = window.visualViewport ? window.visualViewport.scale : 1;
     return [...document.querySelectorAll(query)].filter((element) => element.getClientRects().length > 0).map((element) => {
       const box = element.getBoundingClientRect();
       return { name: element.dataset.value || element.dataset.open || element.id || element.className, left: box.left * scale, right: box.right * scale, top: box.top * scale, bottom: box.bottom * scale, height: box.height * scale };
     });
-  }, selector);
+  }, selector));
   const onScreen = (box) => box.left >= -0.5 && box.top >= -0.5 && box.right <= layout.screenWidth + 0.5 && box.bottom <= layout.screenHeight + 0.5;
   const [menuButton] = await boxes('#menu-button');
   const [title] = await boxes('.title h1');
@@ -616,12 +625,6 @@ for (const framing of FRAMINGS) {
     const time = document.getElementById('time'), stone = document.getElementById('stone-size');
     return `coarse pointer ${matchMedia('(pointer: coarse)').matches}, any coarse ${matchMedia('(any-pointer: coarse)').matches}, hover ${matchMedia('(hover: hover)').matches}, its height ${getComputedStyle(time).height}, the stone slider's ${getComputedStyle(stone).height}, zoom ${window.visualViewport?.scale ?? 1}, ${window.innerWidth} CSS pixels wide`;
   })) + (settled ? '' : ', the panel not settled in 5 s');
-  // The browser, not the page: a touch framing whose emulation is gone (no coarse pointer) is said, and given it back.
-  if (framing.touch && !(await page.evaluate(() => matchMedia('(pointer: coarse)').matches))) {
-    console.log('         (the browser had lost its touch emulation by the Time page: no coarse pointer; it is given back)');
-    await (await touchSession()).send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
-    await page.waitForTimeout(200);
-  }
   const pressed = Date.now();
   for (const until = pressed + 2000; ;) {
     settled = await page.waitForFunction(() => !document.querySelector('.menu-page-leaving') && [...document.querySelectorAll('#settings .menu-page')].every((menuPage) => !(menuPage.getAnimations?.() ?? []).length), null, { timeout: 5000 }).then(() => true, () => false);
