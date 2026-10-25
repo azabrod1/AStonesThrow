@@ -324,6 +324,7 @@ import { PINCH_TIME, NECK_CLOSE, SPIN_DECAY, sinkStep, underWater } from './cavi
 import { THINGS, DEFAULT_THING, WATER_DENSITY, STONE_DENSITY } from './things.js';
 import { meshKind, meshVolume, withParts } from './thingMeshes.js';
 import { convexHull, insidePolygon, polygonEdgeDistance } from './ice.js';
+import { passBy, forgetPasses } from './collide.js';
 
 // The stone's geometry is src/thingMeshes.js's now; the probes take it from here as they always did.
 export { createRockGeometry } from './thingMeshes.js';
@@ -1206,7 +1207,6 @@ export class Rock {
     this.groundNormal = UP.clone();   // the normal of the plane it rests on (restOn: a sloping bed's)
     this.onGround = false;         // at rest on the ground (restOn)
     this.fallsThrough = null;      // the ice gave way under it as it lay or went along it (src/ice.js weigh): it goes in, next step
-    this.dunked = null;            // a piece of ice afloat it pushed under (src/ice.js landOnPiece): it goes down past it, meeting it again once apart (src/collide.js)
     this.brokenUp = false;         // a piece of ice broken into pieces of its own (src/ice.js splitPiece): it meets nothing, and goes
     this.settling = null;          // settling onto the face it lies on, at rest on the ground (restOn, settleStep)
     this.sliding = null;           // tipping onto the face it slides on, and its turn about the vertical (startSliding, slideStep)
@@ -1926,7 +1926,7 @@ export class Rock {
     this.carriedWater = 0;
     this.velocity.set(0, 0, 0);
     this.spinRate = 0;
-    this.dunked = null;
+    forgetPasses(this);   // lifted out of whatever it was going down past (src/collide.js passBy)
     this.sinceImpact = -1;
     this.cavityTimes = null;
     this.seenThroughWater.value = 1;
@@ -2473,7 +2473,9 @@ export class Rock {
    * `by` what broke it).
    */
   breakAway({ position, velocity, quaternion, spin = null, setFor = 0, by = null }) {
-    this.brokenBy = by;   // what broke it off a piece of ice afloat (src/ice.js splitPiece): they meet only once it is adrift and they are apart (src/collide.js)
+    // What broke it off a piece of ice afloat (src/ice.js splitPiece): they meet once they are apart (src/collide.js passBy); one
+    // set in the sheet meets nothing while it is, and is down past its breaker by the time it is let go.
+    if (by && setFor <= 0) passBy(this, by);
     if (setFor <= 0) { this.adrift(position, velocity, quaternion, spin); return; }
     this.position.copy(position);
     this.previous.copy(position);
@@ -3041,10 +3043,7 @@ export class Rock {
     // A piece of ice still set in the sheet it broke from (breakAway): still, until the water comes back up through its hole.
     if (this.state === 'set') {
       this.setFor -= dt;
-      if (this.setFor <= 0) {
-        this.brokenBy = null;   // its breaker's cavity closed: it is down past it
-        this.adrift(this.position, this.letGo.velocity, this.quaternion, this.letGo.spin);
-      }
+      if (this.setFor <= 0) this.adrift(this.position, this.letGo.velocity, this.quaternion, this.letGo.spin);
       else this.syncMeshes();
       return null;
     }

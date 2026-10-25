@@ -175,6 +175,7 @@
 import * as THREE from 'three';
 import { groundHeightAt, shoreDistance } from './pondFloor.js';
 import { roundLipReach } from './cavity.js';
+import { passBy } from './collide.js';
 
 const GRAVITY = 9.81;
 const WATER_DENSITY = 1000;
@@ -784,7 +785,13 @@ export class IceSheet {
   // ---- its pieces afloat as ground (the header: Pieces) ----------------------
 
   /** A piece let go (src/main.js addShard: a shard made a thing) is ground in its hole from now (pieceUnder) until forget. */
-  adopt(rock) { if (rock.piece) this.pieces.add(rock); }
+  /** A piece let go (src/main.js makes it a thing): ground while it floats in its hole, and passed by what broke the hole until it floods (src/collide.js passBy). */
+  adopt(rock) {
+    if (!rock.piece) return;
+    this.pieces.add(rock);
+    const hole = rock.iceHole;
+    if (hole?.by && !hole.flooded) passBy(rock, hole.by, () => hole.flooded);
+  }
 
   /** A piece gone (faded, retired, frozen in): no longer ground. */
   forget(rock) { this.pieces.delete(rock); }
@@ -845,7 +852,7 @@ export class IceSheet {
     this.pushPiece(piece, x, z, (rock.mass * down) / (rock.mass + carried));
     const lying = this.onPieces.get(piece)?.mass ?? 0;
     if (rock.mass + lying > this.pieceCarries(piece)) {
-      rock.dunked = piece;   // it pushed the piece under and goes down past it: they do not meet (src/collide.js)
+      passBy(piece, rock);   // it pushed the piece under and goes down past it: they meet once apart (src/collide.js)
       return { hole, broke: false, keep: 1, open: false };
     }
     return { ground: top };
@@ -962,7 +969,7 @@ export class IceSheet {
       this.pushPiece(piece, middleX, middleZ, (ICE.falls * mass) / (mass + piece.mass));
       for (const rock of things) {
         rock.velocity.y = -ICE.falls;
-        rock.dunked = piece;
+        passBy(piece, rock);
         rock.fallsThrough = { hole: this.holeAt(rock.position.x, rock.position.z) ?? piece.iceHole, broke: false, keep: 1, open: true };
       }
     }
@@ -1074,7 +1081,7 @@ export class IceSheet {
       // Its pieces are let go at the next step (setTime: the hole fitted to its cavity by then), its flood once the cavity closes.
       openedAt: this.time, quiet: this.time, releaseAt: this.time, released: false, floodAt: this.time + SHARD.leastDelay, flooded: false,
       down: Math.max(-rock.velocity.y, 0),   // the speed it came down at (m/s): what drives its pieces under
-      by: rock,                              // what broke it: it went down between its pieces, and meets them only once the hole floods (src/collide.js)
+      by: rock,                              // what broke it: it went down between its pieces, and meets them only once the hole floods (adopt)
       skin: null, field: null, frozen: [], box: null,
     };
     // Each corner's azimuth, a little off even, from the hole's own stream.
@@ -1649,9 +1656,7 @@ export class IceSheet {
     for (const hole of this.holes) {
       if (!hole.flooded && time >= hole.floodAt) {
         hole.flooded = true;
-        // What broke it is down past its pieces now (its cavity closed): it meets them again (src/collide.js), come back
-        // up afloat, and the hole no longer keeps it.
-        hole.by = null;
+        // What broke it is down past its pieces now (its cavity closed): it meets them again (adopt), come back up afloat.
         this.flood(hole);
       }
       // Its field worked out a few rows a step in the seconds before (prepareSkin), then its new ice begins.

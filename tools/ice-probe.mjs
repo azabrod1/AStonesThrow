@@ -88,7 +88,7 @@ import { Rock, aimThrow, aimSkip, skipSpeed, SKIP_THROW, throwFlightTime } from 
 import { THINGS, THING_NAMES } from '../src/things.js';
 import { floorDepthAt } from '../src/pondFloor.js';
 import { holdInPool, poolGround, POOL } from '../src/pool.js';
-import { collideThings, outlineOverlap, slabOverlap } from '../src/collide.js';
+import { collideThings, outlineOverlap, slabOverlap, passingBy } from '../src/collide.js';
 import { SplashSystem } from '../src/splash.js';
 import { IceSheet, ICE, ICE_THICKNESS, WEAK } from '../src/ice.js';
 
@@ -823,7 +823,7 @@ for (const [thickness, diameter, carries] of [['thick', 16, true], ['thin', 6, f
     piece.update(STEP, floorDepthAt);
     collideThings(world.things, (thing) => world.ice.contain(thing));
   }
-  const onItself = piece.dunked === piece;
+  const onItself = passingBy(piece, piece);   // a piece pushed under by itself (src/collide.js passBy)
   const afloat = (piece.afloat || piece.state === 'float' || piece.state === 'rest') && Math.abs(piece.position.y - piece.floatingHeight()) < 0.01;
   console.log(`  a ${centimetres(2 * piece.radius)} cm piece of thick ice lifted to 15 cm and let go: its own top ${heldGround === null ? 'no ground under it' : `ground at ${centimetres(heldGround)} cm`}; ${onItself ? 'landed on itself' : afloat ? 'dropped into its hole and floats' : `ended ${piece.state} at ${centimetres(piece.position.y)} cm`}`);
   check(!onItself && afloat && (heldGround === null || heldGround < liftedTo.y - piece.radius * piece.piece.thickness), `a piece afloat lifted and let go ${onItself ? 'landed on itself' : `ended ${piece.state} at ${centimetres(piece.position.y)} cm`} (the ground under it held: ${heldGround})`);

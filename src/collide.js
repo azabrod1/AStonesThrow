@@ -27,7 +27,10 @@
 // What broke a hole in the ice does not meet that hole's pieces until the
 // hole floods (its cavity closed): it went down between them, their inner
 // edges clear of it (src/ice.js SHARD.clear); what broke a piece afloat, or
-// pushed one under, passes it by until they are apart (passesBy).
+// pushed one under, passes it by until they are apart. All of these are
+// one list of pairs, each with how it ends (passBy: src/ice.js adopt and
+// landOnPiece, src/rock.js breakAway); src/main.js forgets a thing's as it
+// goes, and the hand's taking it does too (forgetPasses).
 // A pair meets when one of them is a floater
 // (afloat, bobbing, or on its way up), or on the ground (going along it or
 // at rest on it: Rock.grounded, which a knock sets going again and the
@@ -133,20 +136,41 @@ function containPass(things, contain, knocks) {
   return turned;
 }
 
+// The pairs that pass each other by (the header): each thing's, by the other, as { piece, thing, until }.
+const passing = new WeakMap();
+
 /**
- * Whether `piece` and `thing` pass each other by (collidePass): what broke
- * the piece's hole, or broke it off a piece afloat, or pushed it under. A
- * part's breaker and what pushed a piece under are let meet it again once
- * they are apart (their spheres clear of each other).
+ * `piece` (of ice) and `thing` pass each other by until `until()` is true,
+ * or, `until` 'apart', until they are apart: the thing's sphere clear of the
+ * piece's radius.
  */
-function passesBy(piece, thing) {
-  if (!piece.piece) return false;
-  if (piece.iceHole?.by === thing) return true;
-  const broke = piece.brokenBy === thing, pushed = thing.dunked === piece;
-  if (!broke && !pushed) return false;
-  if (thing.centre.distanceTo(piece.centre) < piece.radius + thing.collisionRadius) return true;
-  if (broke) piece.brokenBy = null;
-  if (pushed) thing.dunked = null;
+export function passBy(piece, thing, until = 'apart') {
+  const pair = { piece, thing, until };
+  for (const [one, other] of [[piece, thing], [thing, piece]]) {
+    if (!passing.has(one)) passing.set(one, new Map());
+    passing.get(one).set(other, pair);
+  }
+}
+
+/** Whether `one` and `other` pass each other by now (tools/ice-probe.mjs). */
+export function passingBy(one, other) {
+  return passing.get(one)?.has(other) ?? false;
+}
+
+/** A thing's pairs ended: it is gone, or the hand has taken it. */
+export function forgetPasses(thing) {
+  for (const other of passing.get(thing)?.keys() ?? []) passing.get(other)?.delete(thing);
+  passing.delete(thing);
+}
+
+/** Whether `one` and `other` pass each other by (collidePass); a pair that has ended is forgotten. */
+function passesBy(one, other) {
+  const pair = passing.get(one)?.get(other);
+  if (!pair) return false;
+  const { piece, thing, until } = pair;
+  if (until === 'apart' ? thing.centre.distanceTo(piece.centre) < piece.radius + thing.collisionRadius : !until()) return true;
+  passing.get(one).delete(other);
+  passing.get(other)?.delete(one);
   return false;
 }
 
@@ -160,7 +184,7 @@ function collidePass(things, knocks) {
       // What broke a hole went down between its pieces (src/ice.js SHARD.clear), what broke a piece afloat between its
       // parts (splitPiece), and what pushed a piece under went down past it (landOnPiece, dunkPieces): they do not meet
       // until the hole floods (src/ice.js setTime), or, a part or a piece pushed under, until they are apart.
-      if (passesBy(one, other) || passesBy(other, one)) continue;
+      if (passesBy(one, other)) continue;
       // Two flat pieces of ice (the header) meet rim to rim: the line between them level, their whole radii.
       const rims = Boolean(one.thing.body.meetsAtRim && other.thing.body.meetsAtRim);
       between.copy(other.centre).sub(one.centre);
