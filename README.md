@@ -53,11 +53,10 @@ its choices (Location and Water as pictures) with a line on each. Each choice
 is remembered on the device (but the view, which opens on the shore):
 - What to throw (`?thing=`): stones (a river stone, the default; slate,
   granite, basalt, pumice), balls (golf, tennis, bowling, basketball), gems
-  (diamond, emerald, ruby, sapphire), food (an apple, a pizza, a frozen
-  pizza, a pie, a watermelon, a banana, a slice of bread, a birthday cake)
-  and others (a rubber duck, a brick, a TV, an iPhone, a snowball, a toy
-  slide), each the size, weight and density of the real thing
-  (`src/things.js`). The foot of the strip's
+  (diamond, emerald, ruby, sapphire) and others (an apple, a watermelon, a
+  pizza, a frozen pizza, a pie, a rubber duck, a brick, a TV, an iPhone, a
+  banana, a slice of bread, a birthday cake, a snowball, a toy slide), each
+  the size, weight and density of the real thing (`src/things.js`). The foot of the strip's
   dropdown opens this page. What is lighter than water floats; the rest sink.
   What comes to rest stays, on the bed or the pool's floor as on the deck, up
   to the quality preset's count (below); past it the oldest shrinks away.

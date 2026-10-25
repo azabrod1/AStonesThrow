@@ -120,7 +120,7 @@
 //     basketball (sizes 5 to 7: 87 kg/m³, it floats 4.3 cm under);
 //   - gems, cut as brilliants, 5 to 1000 carats (1 ct = 0.2 g), all sinking:
 //     diamond (3510), emerald (2760), ruby and sapphire (corundum, 4000);
-//   - food: an apple (100 to 300 g at 815 kg/m³: a quarter of it is
+//   - other things: an apple (100 to 300 g at 815 kg/m³: a quarter of it is
 //     air, so it floats, low), a pizza (20, 30 or 40 cm across, a disc with
 //     its crust and cheese, each one thrown dressed with a recipe's toppings
 //     drawn at random, 5 to 14% more weight; about 450 kg/m³, mostly airy
@@ -137,12 +137,12 @@
 //     about 920 kg/m³ whole: it floats with all but a sliver under, and
 //     tumbles end over end in the air), a slice of bread (12 cm, 30 g, about
 //     175 kg/m³: a floppier plate than a pizza, it floats nearly all out,
-//     then soaks fast and, waterlogged in about two minutes, sinks) and a
+//     then soaks fast and, waterlogged in about two minutes, sinks), a
 //     birthday cake (16, 22 or 28 cm, sponge under buttercream, about 460
 //     kg/m³, with one to six candles drawn at random: it floats half out
-//     and, waterlogged in two or three minutes, sinks);
-//   - other things: a rubber duck (5, 9 or 25 cm, hollow vinyl, 120 to 250
-//     kg/m³: it bobs high, and its heavy base rights it however it lands), a
+//     and, waterlogged in two or three minutes, sinks), a rubber duck (5, 9
+//     or 25 cm, hollow vinyl, 120 to 250 kg/m³: it bobs high, and its heavy
+//     base rights it however it lands), a
 //     brick (215 × 102.5 × 65 mm, 2.7 kg: about 1900 kg/m³, its density from
 //     its mesh's volume; it sinks, and lands on the deck with a thud), a
 //     flat-screen TV (54 × 32 × 1.8 cm, 3.6 kg) and an iPhone (15 × 7.2 ×
@@ -527,7 +527,7 @@ defineBuiltIn('ruby', gem('Ruby', 'Red corundum, an oval', 4000, { color: [190, 
 defineBuiltIn('sapphire', gem('Sapphire', 'Blue corundum, an oval', 4000, { color: [25, 55, 185], stretch: 1.25, contrast: [0.5, 1.0], roughness: 0.06, reflection: 1.5 }));
 
 defineBuiltIn('apple', {
-  name: 'Apple', group: 'Food', note: 'A quarter of it is air: it floats, low', called: 'an apple',
+  name: 'Apple', group: 'Other', note: 'A quarter of it is air: it floats, low', called: 'an apple',
   body: { shape: 'sphere', density: 815, size: { by: 'mass', unit: 'g', min: 100, max: 300, step: 10, initial: 180 } },
   material: { bounce: [0.25, 0.35], friction: 0.6, roll: 'solid', rolling: 0.06 },
   water: { restingHeight: 0.95 },
@@ -536,7 +536,7 @@ defineBuiltIn('apple', {
 // A pizza's give (body.soft): the air cups it and flaps it; afloat it drapes over the waves, wholly once soaked.
 const PIZZA_GIVE = { cup: 0.0025, most: 0.12, flap: 0.05, rate: 3, drape: 0.7 };
 defineBuiltIn('pizza', {
-  name: 'Pizza', group: 'Food', note: 'Random toppings: it sails, skims, soaks', called: 'a pizza',
+  name: 'Pizza', group: 'Other', note: 'Random toppings: it sails, skims, soaks', called: 'a pizza',
   body: {
     shape: 'mesh',
     upright: true,
@@ -551,7 +551,7 @@ defineBuiltIn('pizza', {
   abilities: { skips: true },   // flat and spinning, it skims (src/rock.js skim), as a stone does
 });
 defineBuiltIn('frozen-pizza', {
-  name: 'Frozen pizza', short: 'Frozen', group: 'Food', note: 'Rigid and frosted: it thaws, then soaks', called: 'a frozen pizza',
+  name: 'Frozen pizza', short: 'Frozen', group: 'Other', note: 'Rigid and frosted: it thaws, then soaks', called: 'a frozen pizza',
   body: {
     shape: 'mesh',
     upright: true,
@@ -573,7 +573,7 @@ defineBuiltIn('frozen-pizza', {
 // it, the air under its crust high (what floats an apple pie): its weight is a little under its volume's middle
 // (`ballast`), so under the water it turns back right way up, where the flow had turned it on its edge.
 defineBuiltIn('pie', {
-  name: 'Pie', group: 'Food', note: 'Filled at random: it floats or sinks', called: 'a pie',
+  name: 'Pie', group: 'Other', note: 'Filled at random: it floats or sinks', called: 'a pie',
   body: {
     shape: 'mesh',
     upright: true,
@@ -586,7 +586,7 @@ defineBuiltIn('pie', {
   look: { mesh: 'pie', roughness: 0.7, reflection: 0.8, wet: { darker: 0.2, glossier: 0.4 } },
 });
 defineBuiltIn('watermelon', {
-  name: 'Watermelon', group: 'Food', note: 'Nearly as heavy as water: it floats low', called: 'a watermelon',
+  name: 'Watermelon', group: 'Other', note: 'Nearly as heavy as water: it floats low', called: 'a watermelon',
   body: { shape: 'mesh', density: 960, size: { by: 'mass', unit: 'kg', min: 2, max: 10, step: 0.5, initial: 5 } },
   material: { bounce: [0.08, 0.15], friction: 0.6 },
   water: { restingHeight: 0.9 },
@@ -655,7 +655,7 @@ defineBuiltIn('ice-shard', {
 // ball's of like volume (src/thingMeshes.js asUnitBall), which its splash is sized by: a stone of its radius displaces
 // what it does. Thrown, it tumbles end over end. Its buoyancy is cut finer (`columns`), for enough across its girth.
 defineBuiltIn('banana', {
-  name: 'Banana', group: 'Food', note: 'For scale: it floats, just', called: 'a banana',
+  name: 'Banana', group: 'Other', note: 'For scale: it floats, just', called: 'a banana',
   body: { shape: 'mesh', density: 920, size: { by: 'mass', unit: 'g', min: 100, max: 250, step: 10, initial: 160 } },
   material: { bounce: [0.12, 0.22], friction: 0.7 },
   air: { drag: 1.1 },
@@ -668,7 +668,7 @@ defineBuiltIn('banana', {
 // sinks, in two or three minutes afloat.
 const BREAD_GIVE = { cup: 0.004, most: 0.15, flap: 0.07, rate: 4, drape: 0.8 };
 defineBuiltIn('bread', {
-  name: 'Slice of bread', short: 'Bread', group: 'Food', note: 'For the ducks: it floats, soaks, sinks', called: 'a slice of bread',
+  name: 'Slice of bread', short: 'Bread', group: 'Other', note: 'For the ducks: it floats, soaks, sinks', called: 'a slice of bread',
   body: { shape: 'mesh', soft: BREAD_GIVE, size: { by: 'fixed', diameter: 0.13, mass: 0.03 } },
   material: { bounce: [0.03, 0.08], friction: 0.9 },
   air: { drag: 1.1, model: 'flutter' },
@@ -682,7 +682,7 @@ defineBuiltIn('bread', {
 // sponge soaks through its bare underside and sides, slowed by its frosting: waterlogged (0.62 of its volume), it
 // sinks, in three or four minutes afloat. Thrown, it tumbles.
 defineBuiltIn('cake', {
-  name: 'Birthday cake', short: 'Cake', group: 'Food', note: 'Sponge and frosting: floats, then soaks', called: 'a cake',
+  name: 'Birthday cake', short: 'Cake', group: 'Other', note: 'Sponge and frosting: floats, then soaks', called: 'a cake',
   body: {
     shape: 'mesh',
     upright: true,
