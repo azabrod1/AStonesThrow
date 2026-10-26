@@ -13,8 +13,11 @@
 // nothing on the water and the water's own waves go on as they were.
 //
 // The flakes (FLAKE_VERTEX in src/shaders/snow.js; flakeAt is its twin
-// here, for tools/snow-probe.mjs). Each is a point in a box of SNOW[].box
-// metres about the eye (lowered to reach the water when the eye is high),
+// here, for tools/snow-probe.mjs). Each is a point in one of two boxes
+// about the eye: the near, SNOW[].box metres (lowered to reach the water
+// when the eye is high), or the far (FAR: the near box's size times its
+// `span`, standing on the water, with `flakes` times as many flakes spread
+// through its far larger volume, so thinner a cubic metre),
 // falling at `fall` (m/s, 0.8 to 1.2 times it, flake by flake, in
 // SPEED_STEPS steps: snow's terminal speeds, dendrites to wet aggregates, are near 1
 // m/s whatever their size), carried at the wind's speed, which a flake takes
@@ -31,22 +34,38 @@
 // the smallest and largest flake across (m): light snow's single crystals
 // and small clumps, heavy snow's aggregates up to 5 cm (the big soft flakes
 // of a snow day near freezing, crystals stuck together as they fall; one in
-// eight is over 4 cm, FLAKE_VERTEX's squared mix). `flakes` fill the box;
-// the haze (the weather's visibility) carries the snow on beyond it. A
-// blizzard's hide about what its haze does: its flakes alone, each hiding
-// what is behind its own area, let one see about 160 m (the haze's 150 m;
-// tools/snow-probe.mjs prints it); heavy snow's big flakes hide more than
-// its haze (100 m against 400), as the near snow of a big snow day does.
-// Fewer read as a moderate fall. Real heavy snow has some thousand flakes a
-// cubic metre, most too small to draw. The near ones make a fall look
-// heavy, so a deeper box with as many flakes looks thinner, not thicker.
-// What a flake costs is its vertices, whatever its size (only the few
-// nearest cover many pixels), so thickness comes cheapest from bigger
+// eight is over 4 cm, FLAKE_VERTEX's squared mix). `flakes` fill the near
+// box. A blizzard's hide about what its haze does: its flakes alone, each
+// hiding what is behind its own area, let one see about 160 m (the haze's
+// 150 m; tools/snow-probe.mjs prints it); heavy snow's big flakes hide more
+// than its haze (100 m against 400), as the near snow of a big snow day
+// does. Fewer read as a moderate fall. Real heavy snow has some thousand
+// flakes a cubic metre, most too small to draw. The near ones make a fall
+// look heavy, so a deeper box with as many flakes looks thinner, not
+// thicker. What a flake costs is its vertices, whatever its size (only the
+// few nearest cover many pixels), so thickness comes cheapest from bigger
 // flakes: a blizzard's real snow is fine (the gale breaks the crystals),
 // but its drawn flakes, each standing for many of them, run to 25 mm,
-// 120,000 of them looking thicker than 180,000 of 16 mm at most. The
+// 120,000 of them looking thicker than 180,000 of 16 mm at most.
+//
+// The far box is what makes the fall deep. Snow fills the air to the far
+// bank, and what tells the eye so is the far snow: flakes a pixel or two
+// across sinking slowly (a flake's speed across the eye is its fall over its
+// distance, so one 20 m off creeps at an eighth of one 2.5 m off), the far
+// water and the bank seen through their grain, and, as the eye orbits, the
+// near flakes sliding across them. Within the near box alone no flake is
+// farther than its faces (8 m for heavy snow, the pond's far edge), and the
+// snow reads as a slab in front of the scene, the haze beyond it a plain
+// fog. The far box carries the flakes on to its faces, FAR.span times
+// farther, at FAR.flakes times the near count: few a cubic metre, since
+// what the eye sees of a shell of snow grows as the square of its distance
+// (a flake at 20 m stands in the view for sixty-four at 2.5 m), and most of
+// them resolved (at 20 m a 1080-row phone's pixel is 8 mm, heavy snow's
+// flakes 8 to 50). Beyond the far box the haze (the weather's visibility)
+// carries the snow on. The two boxes hand over across the near box's faces,
+// where its flakes fade out and the far ones in. The
 // shader never multiplies the clock, which runs on as long as the page is
-// open: update() wraps the wind's carry and the fall into the box, and the
+// open: update() wraps the wind's carry and the fall into each box, and the
 // clock to CYCLE, in doubles (Precision, src/shaders/snow.js). The carry is
 // summed frame by frame (the wind's speed times the frame's seconds), so a
 // change of wind turns the flakes rather than moving them all at once; the
@@ -55,10 +74,11 @@
 // The quality presets (src/main.js QUALITY `snowShare`) draw that share of
 // the flakes: the snow thins on a weaker device, its look the same.
 //
-// Cost while it snows: one draw of `flakes` (times the preset's share) instanced quads, their vertex
-// shader a few dozen operations and, under a gale, one lookup of its waves;
-// no pass, no target, nothing on the CPU but a few uniforms. With no snow
-// nothing is drawn.
+// Cost while it snows: one draw of `flakes` near and FAR.flakes times as
+// many far (times the preset's share) instanced quads, their vertex shader a
+// few dozen operations and, under a gale, one lookup of its waves; the far
+// flakes a pixel or two each; no pass, no target, nothing on the CPU but a
+// few uniforms. With no snow nothing is drawn.
 import * as THREE from 'three';
 import { FLAKE_VERTEX, FLAKE_FRAGMENT, SPEED_STEPS, SPEED_SHARE, CYCLE } from './shaders/snow.js';
 
@@ -67,6 +87,14 @@ export const SNOW = {
   heavy: { flakes: 120000, box: [16, 8, 16], fall: 1.1, sizes: [0.008, 0.05], sway: 0.08, swayPeriods: [1.0, 2.2], opacity: 0.9 },
   blizzard: { flakes: 120000, box: [12, 6, 12], fall: 1.0, sizes: [0.005, 0.025], sway: 0.04, swayPeriods: [0.8, 1.6], opacity: 1 },
 };
+// The far box: the near box's size times `span` (its floor FAR_FLOOR under the water, FLAKE_VERTEX), holding
+// `flakes` times the near count (a tenth of the near density, in 13.5 times the volume); its flakes are
+// interleaved with the near ones at that ratio, so any share of the instances draws both (farFlags).
+export const FAR = { span: [3, 1.5, 3], flakes: 4 / 3 };
+/** The far box of `snow` (an entry of SNOW), metres. */
+export const farBox = (snow) => snow.box.map((side, axis) => side * FAR.span[axis]);
+/** The instances drawn for `snow` (an entry of SNOW): its near flakes and the far ones. */
+export const instancesOf = (snow) => Math.round(snow.flakes * (1 + FAR.flakes));
 export const STREAK_SECONDS = 1 / 120;  // real seconds: a quarter of the rain's persistence (src/rain.js): the eye follows a flake falling a metre a second
 export const STREAK_MIN_PIXELS = 1.2;
 export const GUST_SHARE = 0.3;          // the gusts' speed against the wind's
@@ -83,15 +111,18 @@ export function flakeSpeed(sizeAttribute) {
 }
 
 /**
- * Flake `index`'s two attributes (aFlake, aSway), each four numbers in
+ * Instance `index`'s two attributes (aFlake, aSway), each four numbers in
  * [0, 1) from one seeded stream: the same flakes every run. The stream
  * is Park–Miller's (state × 16807 mod 2³¹ − 1), its product split in
  * 32-bit halves (Carta's), the same numbers in 0.6 of the time of a
- * floating-point modulo: built at startup, a blizzard's are 1.4 million.
+ * floating-point modulo: built at startup, a blizzard's are 2.2 million.
+ * `fars` is its third (aFar): 1 for a far flake, interleaved so that the
+ * first n instances, whatever n, hold near and far ones at FAR.flakes.
  */
 export function flakeAttributes(count) {
   const flakes = new Float32Array(count * 4);
   const sways = new Float32Array(count * 4);
+  const fars = farFlags(count);
   let state = 20261021;
   const random = () => {
     let low = 16807 * (state & 0xffff);
@@ -101,15 +132,25 @@ export function flakeAttributes(count) {
     return (state - 1) / 2147483646;
   };
   for (let index = 0; index < count * 4; index++) { flakes[index] = random(); sways[index] = random(); }
-  return { flakes, sways };
+  return { flakes, sways, fars };
+}
+
+/** Which of `count` instances are far flakes: 1 where the running share of far ones (FAR.flakes of the near) steps up. */
+export function farFlags(count) {
+  const flags = new Float32Array(count);
+  const farShare = FAR.flakes / (1 + FAR.flakes);
+  for (let index = 0; index < count; index++) flags[index] = Math.floor((index + 1) * farShare) > Math.floor(index * farShare) ? 1 : 0;
+  return flags;
 }
 
 /**
  * Where a flake is and how it moves at `time` (FLAKE_MOTION's twin):
  * `flake` and `sway` its attributes, `snow` an entry of SNOW, `drift` the
- * wind's [x, z] (m/s). Unwrapped: the shader wraps the place into the box.
+ * wind's [x, z] (m/s), `far` whether it is a far flake (its start in the far
+ * box). Unwrapped: the shader wraps the place into the box.
  */
-export function flakeAt(flake, sway, time, snow, drift) {
+export function flakeAt(flake, sway, time, snow, drift, far = false) {
+  const box = far ? farBox(snow) : snow.box;
   const gustSpeed = GUST_SHARE * Math.hypot(drift[0], drift[1]);
   const { speed } = flakeSpeed(flake[3]);
   const cycleTime = wrap(time, CYCLE);   // the swings and gusts repeat in CYCLE: the same as the clock's own
@@ -120,7 +161,7 @@ export function flakeAt(flake, sway, time, snow, drift) {
   const gust = gustRate.map((rate, axis) => rate * cycleTime + axis + TAU * 7 * sway[3]);
   const gustReach = [gustSpeed / gustRate[0], 0.4 * gustSpeed / gustRate[0], gustSpeed / gustRate[0]];
   const steady = [drift[0], -snow.fall * speed, drift[1]];
-  const start = [flake[0] * snow.box[0], flake[2] * snow.box[1], flake[1] * snow.box[2]];
+  const start = [flake[0] * box[0], flake[2] * box[1], flake[1] * box[2]];
   const place = [
     start[0] + steady[0] * time + snow.sway * Math.sin(swingX) + gustReach[0] * Math.sin(gust[0]),
     start[1] + steady[1] * time + gustReach[1] * Math.sin(gust[1]),
@@ -137,14 +178,16 @@ export function flakeAt(flake, sway, time, snow, drift) {
 /**
  * The uniforms that carry the clock (Precision, src/shaders/snow.js), for
  * `snow` (an entry of SNOW) at `time` (s) in the wind `drift` ([x, z], m/s):
- * worked out in doubles, each wrapped into the box or the cycle.
+ * worked out in doubles, each wrapped into the near box (`drift`, `fall`),
+ * the far box (`farDrift`, `farFall`) or the cycle.
  */
 export function clockOffsets(time, snow, drift) {
-  return {
-    cycleTime: wrap(time, CYCLE),
-    drift: [wrap(drift[0] * time, snow.box[0]), wrap(drift[1] * time, snow.box[2])],
-    fall: [wrap(0.8 * snow.fall * time, snow.box[1]), wrap(SPEED_SHARE * snow.fall * time, snow.box[1])],
-  };
+  const offsets = (box) => ({
+    drift: [wrap(drift[0] * time, box[0]), wrap(drift[1] * time, box[2])],
+    fall: [wrap(0.8 * snow.fall * time, box[1]), wrap(SPEED_SHARE * snow.fall * time, box[1])],
+  });
+  const near = offsets(snow.box), far = offsets(farBox(snow));
+  return { cycleTime: wrap(time, CYCLE), drift: near.drift, fall: near.fall, farDrift: far.drift, farFall: far.fall };
 }
 
 /**
@@ -171,14 +214,15 @@ export class Snow {
     this.wind = new THREE.Vector2();
     this.gust = 0;          // m/s: the gusts' speed now, easing toward GUST_SHARE of the wind's
     this.clock = null;      // s: the time of the last update, from which the carry is summed (null: none yet)
-    this.carry = { drift: [0, 0], fall: [0, 0] };   // m: clockOffsets' drift and fall, summed frame by frame
+    this.carry = { drift: [0, 0], fall: [0, 0], farDrift: [0, 0], farFall: [0, 0] };   // m: clockOffsets', summed frame by frame
     const quad = new THREE.InstancedBufferGeometry();
     quad.setAttribute('position', new THREE.Float32BufferAttribute([-1, 0, 0, 1, 0, 0, -1, 1, 0, 1, 1, 0], 3));
     quad.setIndex([0, 1, 2, 2, 1, 3]);
-    const largest = Math.max(...Object.values(SNOW).map((snow) => snow.flakes));
-    const { flakes, sways } = flakeAttributes(largest);
+    const largest = Math.max(...Object.values(SNOW).map(instancesOf));
+    const { flakes, sways, fars } = flakeAttributes(largest);
     quad.setAttribute('aFlake', new THREE.InstancedBufferAttribute(flakes, 4));
     quad.setAttribute('aSway', new THREE.InstancedBufferAttribute(sways, 4));
+    quad.setAttribute('aFar', new THREE.InstancedBufferAttribute(fars, 1));
     quad.instanceCount = 0;
     const light = SNOW.light;
     this.flakes = new THREE.Mesh(quad, new THREE.ShaderMaterial({
@@ -188,7 +232,10 @@ export class Snow {
         uCycleTime: { value: 0 },
         uDriftOffset: { value: new THREE.Vector3() },
         uFallOffsets: { value: new THREE.Vector2() },
+        uFarDriftOffset: { value: new THREE.Vector3() },
+        uFarFallOffsets: { value: new THREE.Vector2() },
         uBox: { value: new THREE.Vector3(...light.box) },
+        uFarBox: { value: new THREE.Vector3(...farBox(light)) },
         uDrift: { value: new THREE.Vector3() },
         uFall: { value: light.fall },
         uSway: { value: light.sway },
@@ -219,13 +266,13 @@ export class Snow {
   /** Whether it is snowing. */
   get on() { return this.flakes.visible; }
 
-  /** The flakes drawn while it snows (0 with none). */
+  /** The flakes drawn while it snows, near and far (0 with none). */
   get count() { return this.on ? this.flakes.geometry.instanceCount : 0; }
 
   /** The share of each snow's flakes drawn (the quality preset's `snowShare`, src/main.js). */
   setShare(share) {
     this.share = share;
-    if (this.intensity) this.flakes.geometry.instanceCount = Math.round(SNOW[this.intensity].flakes * share);
+    if (this.intensity) this.flakes.geometry.instanceCount = Math.round(instancesOf(SNOW[this.intensity]) * share);
   }
 
   /** The wind the flakes drift with: its direction (world XZ, unit) and speed (m/s); its gusts toss them. */
@@ -254,12 +301,13 @@ export class Snow {
     const snow = SNOW[this.intensity];
     const uniforms = this.flakes.material.uniforms;
     uniforms.uBox.value.set(...snow.box);
+    uniforms.uFarBox.value.set(...farBox(snow));
     uniforms.uFall.value = snow.fall;
     uniforms.uSway.value = snow.sway;
     uniforms.uSwayPeriods.value.set(...snow.swayPeriods);
     uniforms.uSizes.value.set(...snow.sizes);
     uniforms.uOpacity.value = snow.opacity;
-    this.flakes.geometry.instanceCount = Math.round(snow.flakes * this.share);
+    this.flakes.geometry.instanceCount = Math.round(instancesOf(snow) * this.share);
     this.show(true);
   }
 
@@ -273,19 +321,24 @@ export class Snow {
     if (this.clock === null) {
       this.carry = clockOffsets(time, snow, [this.wind.x, this.wind.y]);
     } else {
-      // Summed (the header): wrapped into the box as it is now, which a new intensity changes.
+      // Summed (the header): wrapped into each box as it is now, which a new intensity changes.
       const seconds = time - this.clock;
-      const { drift: carried, fall } = this.carry;
-      carried[0] = wrap(carried[0] + this.wind.x * seconds, snow.box[0]);
-      carried[1] = wrap(carried[1] + this.wind.y * seconds, snow.box[2]);
-      fall[0] = wrap(fall[0] + 0.8 * snow.fall * seconds, snow.box[1]);
-      fall[1] = wrap(fall[1] + SPEED_SHARE * snow.fall * seconds, snow.box[1]);
+      const sum = (carried, fall, box) => {
+        carried[0] = wrap(carried[0] + this.wind.x * seconds, box[0]);
+        carried[1] = wrap(carried[1] + this.wind.y * seconds, box[2]);
+        fall[0] = wrap(fall[0] + 0.8 * snow.fall * seconds, box[1]);
+        fall[1] = wrap(fall[1] + SPEED_SHARE * snow.fall * seconds, box[1]);
+      };
+      sum(this.carry.drift, this.carry.fall, snow.box);
+      sum(this.carry.farDrift, this.carry.farFall, farBox(snow));
       if (seconds !== 0) this.easeGust(seconds);
     }
     this.clock = time;
     uniforms.uCycleTime.value = wrap(time, CYCLE);
     uniforms.uDriftOffset.value.set(this.carry.drift[0], 0, this.carry.drift[1]);
     uniforms.uFallOffsets.value.set(this.carry.fall[0], this.carry.fall[1]);
+    uniforms.uFarDriftOffset.value.set(this.carry.farDrift[0], 0, this.carry.farDrift[1]);
+    uniforms.uFarFallOffsets.value.set(this.carry.farFall[0], this.carry.farFall[1]);
     uniforms.uFocalPx.value = camera.projectionMatrix.elements[5] * resolution.y * 0.5;
   }
 }
