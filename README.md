@@ -925,7 +925,8 @@ about 3% of the sea), a foam map on the tile takes a dense boil that pops
 within a second and a raft that drains over five, which the water shades
 as it shades a splash's foam, the raft gathered into thin wavering streaks
 along the wind; and spray is torn off where the boil says a crest has just
-broken, wisps of drops blown downwind as streaks. When the gale rises its
+broken, a trickle of drops blown downwind as streaks (the eye's blur, so
+shorter in slow motion, as the rain's and the snow's). When the gale rises its
 foam is run over the six seconds before, so the sea opens as one that has
 been blowing. The eye keeps 0.45 m clear of the still water either way.
 `tools/gale-probe.mjs` checks the field on the CPU with the GPU's passes.

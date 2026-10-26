@@ -21,7 +21,9 @@
 // at once (its drag far outweighs it), swinging on an ellipse of `sway`
 // metres once every `swayPeriods` seconds (the flutter of a falling flake),
 // and tossed by the wind's gusts, GUST_SHARE of its speed: a blizzard's
-// flakes swirl. Each is drawn as the capsule it sweeps in STREAK_SECONDS,
+// flakes swirl. Each is drawn as the capsule it sweeps in STREAK_SECONDS
+// of real time (that times the slow motion's scale of world time,
+// setTimeScale),
 // so a light snow's flakes in calm air are round and a blizzard's streak
 // sideways, each keeping its light (its opacity the share of its capsule
 // it covers); a flake under STREAK_MIN_PIXELS across is drawn that wide and
@@ -65,7 +67,7 @@ export const SNOW = {
   heavy: { flakes: 120000, box: [16, 8, 16], fall: 1.1, sizes: [0.008, 0.05], sway: 0.08, swayPeriods: [1.0, 2.2], opacity: 0.9 },
   blizzard: { flakes: 120000, box: [12, 6, 12], fall: 1.0, sizes: [0.005, 0.025], sway: 0.04, swayPeriods: [0.8, 1.6], opacity: 1 },
 };
-export const STREAK_SECONDS = 1 / 120;  // a quarter of the rain's persistence (src/rain.js): the eye follows a flake falling a metre a second
+export const STREAK_SECONDS = 1 / 120;  // real seconds: a quarter of the rain's persistence (src/rain.js): the eye follows a flake falling a metre a second
 export const STREAK_MIN_PIXELS = 1.2;
 export const GUST_SHARE = 0.3;          // the gusts' speed against the wind's
 const GUST_PERIOD = 2.4;                // seconds: FLAKE_MOTION's
@@ -148,12 +150,12 @@ export function clockOffsets(time, snow, drift) {
 /**
  * How a flake is drawn (FLAKE_VERTEX's): `diameter` (m), `speed` (m/s
  * across the line of sight) at `depth` (m) for a camera of `focal` pixels
- * per unit tan: its capsule's width and length (m) and the share of it the
- * flake covers.
+ * per unit tan, in slow motion of `timeScale`: its capsule's width and
+ * length (m) and the share of it the flake covers.
  */
-export function flakeDrawn(diameter, speed, depth, focal) {
+export function flakeDrawn(diameter, speed, depth, focal, timeScale = 1) {
   const width = Math.max(diameter, STREAK_MIN_PIXELS * depth / focal);
-  const swept = speed * STREAK_SECONDS;
+  const swept = speed * STREAK_SECONDS * timeScale;
   return { width, length: swept + width, covered: (diameter * diameter) / (width * (swept + width)) };
 }
 
@@ -233,6 +235,9 @@ export class Snow {
     uniforms.uDrift.value.set(this.wind.x, 0, this.wind.y);
     if (!this.on) this.easeGust(Infinity);   // no flakes to see it change: at once
   }
+
+  /** The slow motion's scale (world seconds a real one): a flake sweeps its capsule over the world time the eye's persistence spans (flakeDrawn's timeScale). */
+  setTimeScale(scale) { this.flakes.material.uniforms.uStreakSeconds.value = STREAK_SECONDS * scale; }
 
   /** The gusts' speed `seconds` closer to GUST_SHARE of the wind's (GUST_EASE). */
   easeGust(seconds) {

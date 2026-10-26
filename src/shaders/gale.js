@@ -52,15 +52,25 @@ float galeLift(vec3 stillPoint) {
 `;
 
 // The spray the gale tears off its breaking crests (src/galeWaves.js,
-// GaleSpray): drops on a jittered grid of the gale's tile, uSprayCell apart,
-// GALE_SPRAY_SLOTS to a cell, each leaving the water on a cycle of its own
-// (its life, SPRAY_LIFE times 0.7 to 1.3) from its place on it as a wisp
-// of drops (the ribbon's third coordinate: which of them), each blown
-// downwind at its own speed and falling as it goes, drawn as the streak it
-// cuts in
-// SPRAY_STREAK_SECONDS (the eye's persistence, as the rain's streaks are: a
-// ribbon facing the eye, at least uMinPixels wide, its opacity cut by the
-// width it really covers). Nothing is stored: a drop shows only where a
+// GaleSpray): drops on a grid of the gale's tile, uSprayCell apart,
+// GALE_SPRAY_SLOTS to a cell. Each slot sheds uWispDrops drops in turn (the
+// ribbon's third coordinate: which of them), one every 1/uWispDrops of its
+// life (SPRAY_LIFE times 0.7 to 1.3), so a crest throws a trickle, not
+// bursts of drops that leave one point together and fan out; and each time
+// a drop leaves (its flight) it draws afresh where in the cell it leaves
+// from and how it flies: blown downwind at its own speed, a little across,
+// rising and falling as it goes. It is drawn as what it sweeps in
+// uStreakSeconds, the eye's persistence in world seconds (src/galeWaves.js
+// SPRAY_STREAK_SECONDS times the time scale, setTimeScale: in slow motion
+// the eye sees less of the flight, so a drop that streaks at real time is a
+// bead at a tenth, as the splash's drops shorten), a capsule as the snow's
+// flakes are (FLAKE_VERTEX in src/shaders/snow.js): from where it is to
+// where it was, as the eye sees it (the sweep across the line of sight, so
+// a drop blown toward the eye is seen round), with round ends, as wide as
+// the drop or uMinPixels, whichever is wider, its opacity the share of that
+// width the drop covers, as the rain's streaks' is. A drop within a metre
+// or so of the eye fades out, as the rain's do: one passing the lens would
+// cross the screen as a rod. Nothing is stored: a drop shows only where a
 // crest broke within its age, which the whitecaps' boil remembers (it is
 // laid where a crest breaks, GALE_BOIL deep, and pops over uBoilLifetime):
 // the boil now, put back by its decay over the drop's age, is how hard the
@@ -76,21 +86,24 @@ ${GALE_SURFACE}
 #define SPRAY_RISE 0.9              // m/s up
 #define SPRAY_SPEED 3.5             // m/s downwind
 #define SPRAY_DIAMETER 0.004        // metres: a drop
-#define SPRAY_STREAK_SECONDS 0.03   // the eye's persistence
 #define SPRAY_FROM 0.04             // of a crest breaking in full, where spray starts...
 #define SPRAY_FULL 0.3              // ...and is at its thickest
-attribute vec3 aSpray;          // per drop: its cell (x, z) in the block, its slot
+#define SPRAY_FLIGHTS 251.0         // a drop's draws repeat after this many flights
+attribute vec3 aSpray;          // per slot: its cell (x, z) in the block, its slot
 uniform vec2 uSprayOrigin;      // the cell index of the block's corner
 uniform float uSprayCell;       // metres
 uniform float uSprayCellsPerTile;
+uniform float uWispDrops;       // drops a slot sheds in turn
 uniform float uTime;            // world seconds
 uniform vec2 uWind;             // world XZ the wind blows toward, unit length
 uniform float uBoilLifetime;    // seconds
+uniform float uStreakSeconds;   // world seconds: the eye's persistence
 uniform float uFocalPx;         // render-target pixels per unit tan
 uniform float uMinPixels;
 uniform float uOpacity;
 varying float vAlpha;
-varying float vAcross;
+varying vec2 vShape;            // across (−1 to 1) and along the capsule, in half its widths
+varying float vReach;           // half the swept segment's length, in half widths
 vec3 sprayHash(vec3 point) {
   vec3 mixed = fract(point * vec3(0.1031, 0.1030, 0.0973));
   mixed += dot(mixed, mixed.yxz + 33.33);
@@ -99,31 +112,43 @@ vec3 sprayHash(vec3 point) {
 void main() {
   vec2 cell = uSprayOrigin + aSpray.xy;
   vec3 random = sprayHash(vec3(mod(cell, uSprayCellsPerTile), aSpray.z + 1.0));
-  vec3 another = sprayHash(random * 91.7 + 3.1 + position.z * 17.3);   // this drop of the wisp's own
-  vec2 rest = (cell + random.xy) * uSprayCell;
   float life = SPRAY_LIFE * (0.7 + 0.6 * random.y);
-  float age = mod(uTime + random.z * 37.0, life);
+  float clock = uTime + random.z * 37.0 + position.z * life / uWispDrops;   // each drop of the slot a share of a life behind the one before
+  float age = mod(clock, life);
+  float flight = mod(floor(clock / life), SPRAY_FLIGHTS);
+  vec3 another = sprayHash(random * 91.7 + 3.1 + position.z * 17.3 + flight * 0.618);   // this flight's own
+  vec3 place = sprayHash(another * 47.3 + 11.9);
+  vec2 rest = (cell + place.xy) * uSprayCell;
   vec2 foam = textureLod(uGaleFoam, rest / uGaleTileSize + 0.5 / uGaleFoamTexels, 0.0).rg;
   float breaking = max(foam.r - foam.g, 0.0) * exp(age / uBoilLifetime) / GALE_BOIL;
   float strength = smoothstep(SPRAY_FROM, SPRAY_FULL, breaking);
-  vAcross = position.x;
-  if (uGaleMetresPerUnit <= 0.0 || strength <= 0.0) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); vAlpha = 0.0; return; }
+  if (uGaleMetresPerUnit <= 0.0 || strength <= 0.0) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); vAlpha = 0.0; vShape = vec2(0.0); vReach = 0.0; return; }
   vec2 drift = uWind * SPRAY_SPEED * (0.6 + 0.8 * another.y) + (another.zx - 0.5) * 1.5;
   float rise = SPRAY_RISE * (0.4 + another.z);
   vec3 head = vec3(rest.x + drift.x * age, galeHeight(rest) + rise * age - 4.9 * age * age, rest.y + drift.y * age);
   vec3 velocity = vec3(drift.x, rise - 9.81 * age, drift.y);
-  vec3 tail = head - velocity * min(SPRAY_STREAK_SECONDS, age);
+  vec3 tail = head - velocity * min(uStreakSeconds, age);
   vec3 viewHead = (viewMatrix * vec4(head, 1.0)).xyz;
   vec3 viewTail = (viewMatrix * vec4(tail, 1.0)).xyz;
-  vec3 point = mix(viewHead, viewTail, position.y);
-  float depth = max(-point.z, 1e-3);
-  vec3 across = cross(viewTail - viewHead, point);
-  float acrossLength = length(across);
-  across = acrossLength > 1e-9 ? across / acrossLength : vec3(1.0, 0.0, 0.0);
+  vec3 middle = 0.5 * (viewHead + viewTail);
+  // The sweep as the eye sees it, across the line of sight (the snow's): a drop blown toward the eye is seen round.
+  vec3 toward = middle / max(length(middle), 1e-6);
+  vec3 swept = viewTail - viewHead;
+  swept -= dot(swept, toward) * toward;
+  float sweptLength = length(swept);
+  vec3 along = sweptLength > 1e-7 ? swept / sweptLength : normalize(cross(toward, vec3(1.0, 0.0, 0.0)));
+  vec3 across = cross(along, toward);
+  float depth = max(-middle.z, 1e-3);
   float diameter = SPRAY_DIAMETER * (0.5 + another.x);
   float width = max(diameter, uMinPixels * depth / uFocalPx);
-  point += across * position.x * 0.5 * width;
-  vAlpha = -point.z > 0.05 ? uOpacity * strength * (1.0 - age / life) * (diameter / width) : 0.0;
+  float halfWidth = 0.5 * width;
+  float reach = 0.5 * sweptLength + halfWidth;
+  float end = position.y * 2.0 - 1.0;
+  vec3 point = middle + along * end * reach + across * position.x * halfWidth;
+  float near = smoothstep(0.4, 1.5, depth);
+  vAlpha = -point.z > 0.05 ? uOpacity * strength * (1.0 - age / life) * (diameter / width) * near : 0.0;
+  vShape = vec2(position.x, end * reach / halfWidth);
+  vReach = 0.5 * sweptLength / halfWidth;
   gl_Position = projectionMatrix * vec4(point, 1.0);
 }
 `;
@@ -134,12 +159,15 @@ uniform vec3 uSkyAmbient;
 uniform vec3 uSunIrradiance;
 uniform vec3 uSunDir;
 varying float vAlpha;
-varying float vAcross;
+varying vec2 vShape;
+varying float vReach;
 #define SPRAY_SKY 1.5
 #define SPRAY_SUN 0.12
 void main() {
   if (vAlpha <= 0.0) discard;
-  float alpha = vAlpha * (1.0 - smoothstep(0.2, 1.0, abs(vAcross)));
+  float distance = length(vec2(vShape.x, max(abs(vShape.y) - vReach, 0.0)));   // from the swept segment, in half widths
+  float alpha = vAlpha * (1.0 - smoothstep(0.2, 1.0, distance));
+  if (alpha < 0.002) discard;
   vec3 light = uSkyAmbient * SPRAY_SKY + uSunIrradiance * max(uSunDir.y, 0.0) * SPRAY_SUN;
   gl_FragColor = vec4(light * alpha, alpha);
 }

@@ -36,7 +36,9 @@
 //
 // The streaks (STREAK_VERTEX): drops of the same schedule, each falling at
 // about its terminal speed, slanted by the wind, to the very place its ring
-// opens and its fleck rises, drawn as the streak it cuts in STREAK_SECONDS.
+// opens and its fleck rises, drawn as the streak it cuts in STREAK_SECONDS
+// of real time (so of world time that times the slow motion's scale,
+// setTimeScale: in slow motion a streak shortens, as the splash's drops do).
 // Each tile whose drops can fall within STREAK_REACH of the eye (round the
 // eye, swept downwind as far as a drop drifts in its fall: streakTiles), in
 // each reading, gives a few of its drops a streak (layOutStreaks), laid out
@@ -82,7 +84,7 @@ const READINGS = 2;                  // the water reads the tile twice (RAIN_RIP
 const RAIN_LEVELS = 10;              // the water shader's table of unresolved variance (RAIN_RIPPLES)
 const STREAK_REACH = 10 * Math.sqrt(4 / Math.PI);   // metres about the eye the streaks fade out by: a circle as big as a 20 m square, faded from 0.6 of it
 const STREAK_SPEEDS = [0.85, 1.15];  // the smallest drop's fall and the biggest's, times the rain's
-const STREAK_SECONDS = 1 / 30;       // the eye's persistence
+const STREAK_SECONDS = 1 / 30;       // real seconds: the eye's persistence
 const STREAK_MIN_PIXELS = 1.2;
 const FLECK_REPEATS = 4;             // tiles each way from the one the eye looks at
 const FLECK_LIFE = 0.12;             // seconds, for the reference drop
@@ -369,6 +371,9 @@ export class Rain {
     this.updateFall();
     if (this.falling) this.layOutStreaks(this.falling.rain, this.falling.schedule);   // the tiles swept downwind change with it
   }
+
+  /** The slow motion's scale (world seconds a real one): the streaks are cut over the world time the eye's persistence spans. */
+  setTimeScale(scale) { this.streaks.material.uniforms.uStreakSeconds.value = STREAK_SECONDS * scale; }
 
   updateFall() {
     const fall = this.intensity ? RAIN[this.intensity].fall : RAIN.light.fall;

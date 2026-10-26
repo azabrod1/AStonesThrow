@@ -76,10 +76,13 @@
 //
 // Spray (GALE_SPRAY_VERTEX in src/shaders/gale.js says how): drops torn off
 // the crests where the whitecaps' boil says one has just broken, streaks
-// blown downwind, a wisp of SPRAY_DROPS from each of SPRAY_SLOTS places in
+// blown downwind, SPRAY_DROPS in turn from each of SPRAY_SLOTS slots in
 // cells SPRAY_CELL apart on the tile, over SPRAY_BLOCK cells a side just
 // ahead of the eye (updateView), where spray can be seen at all: an
-// instanced set of ribbons each, as the rain's streaks are.
+// instanced set of capsules each, as the snow's flakes are. Each is drawn
+// as what it sweeps in the eye's persistence, SPRAY_STREAK_SECONDS of real
+// time, so of world time that times the slow motion's scale
+// (setTimeScale).
 //
 // The gale's strength (setStrength): 0 is no gale (nothing runs), 1 the
 // gale; the one uniform its heights and displacements are scaled by, as the
@@ -121,6 +124,7 @@ const SPIN_UP_SECONDS = 6;
 const SPRAY_CELL = 0.25;       // metres
 const SPRAY_SLOTS = 3;
 const SPRAY_DROPS = 3;
+const SPRAY_STREAK_SECONDS = 0.03;   // real seconds: the eye's persistence
 const SPRAY_BLOCK = 64;        // cells a side: 16 m
 const SPRAY_AHEAD = 6;         // metres ahead of the eye, at most as far as where it looks at the water
 const SPRAY_OPACITY = 0.8;
@@ -467,7 +471,7 @@ export class GaleWaves {
       }
     }
     const sprayGeometry = new THREE.InstancedBufferGeometry();
-    // A ribbon per drop of the wisp: corners (across, along, which drop).
+    // A capsule per drop of the slot: corners (across, along, which drop).
     const corners = [], indices = [];
     for (let drop = 0; drop < SPRAY_DROPS; drop++) {
       corners.push(-1, 0, drop, 1, 0, drop, -1, 1, drop, 1, 1, drop);
@@ -485,9 +489,11 @@ export class GaleWaves {
         uSprayOrigin: { value: new THREE.Vector2() },
         uSprayCell: { value: settings.tileSize / cellsPerTile },
         uSprayCellsPerTile: { value: cellsPerTile },
+        uWispDrops: { value: SPRAY_DROPS },
         uTime: { value: 0 },
         uWind: { value: this.windDirection },
         uBoilLifetime: { value: BOIL_LIFETIME },
+        uStreakSeconds: { value: SPRAY_STREAK_SECONDS },
         uFocalPx: { value: 1000 },
         uMinPixels: { value: SPRAY_MIN_PIXELS },
         uOpacity: { value: SPRAY_OPACITY },
@@ -495,7 +501,7 @@ export class GaleWaves {
         uSunIrradiance: { value: lighting?.sunIrradiance ?? new THREE.Vector3() },
         uSunDir: { value: lighting?.sunDirection ?? new THREE.Vector3(0, 1, 0) },
       },
-      side: THREE.DoubleSide,   // a ribbon's winding turns with its streak against the eye
+      side: THREE.DoubleSide,   // a capsule's winding turns with its streak against the eye
       transparent: true,
       depthWrite: false,
       blending: THREE.CustomBlending,
@@ -526,6 +532,9 @@ export class GaleWaves {
     this.sharedUniforms.uGaleMetresPerUnit.value = strength / HEIGHT_TEXTURE_UNITS;
     for (let level = 0; level < this.unresolvedVariance.length; level++) this.unresolvedVariance[level] = this.fullVariance[level] * strength * strength;
   }
+
+  /** The slow motion's scale (world seconds a real one): the spray streaks over the world time the eye's persistence spans. */
+  setTimeScale(scale) { this.spray.material.uniforms.uStreakSeconds.value = SPRAY_STREAK_SECONDS * scale; }
 
   /** Mip levels of the textures, for the size of the water shader's unresolvedVariance table. */
   get levels() { return this.passes + 1; }

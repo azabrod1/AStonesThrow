@@ -3035,7 +3035,11 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     get snowing() { return snow.on; },
     /** The shown place's hours, in the order of the day: { name, label, clock } (clock 'hh:mm', or undefined for a lone photograph). */
     get hours() { return skyHours(environment.name); },
-    setTimeScale(scale) { timeScale = scale; },
+    setTimeScale(scale) {
+      timeScale = scale;
+      // The eye's persistence is real time: in slow motion the streaks span less of the world's (the splash's follow its frame, setFrameSeconds).
+      for (const streaked of [galeWaves, rain, snow]) streaked.setTimeScale(scale);
+    },
     /** A preset by name, which ends the automatic calibration; 'auto' starts it again from high. */
     setQuality(name) {
       automaticQuality = name === 'auto';
