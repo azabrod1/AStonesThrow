@@ -253,6 +253,12 @@ void main() {
 // seconds (uRaftKeep); the water shows the raft gathered into the wind's
 // streaks (galeStreaks in src/shaders/scene.js). The whole map drifts
 // downwind with the surface (uDrift), taken from upstream, semi-Lagrangian.
+// Its b and a are two clocks of the crest's breaking there, for the spray
+// (GALE_SPRAY_VERTEX in src/shaders/gale.js, which asks whether a crest was
+// breaking at a puff's leaving): the seconds since the point last began to
+// break past GALE_SPRAY_BREAKING, and since it stopped (0 while it breaks),
+// each at most GALE_CLOCK_MOST. They belong to the waves, not to the foam,
+// so they stay put (the texel's own, unfiltered) while the foam drifts.
 export const GALE_FOAM_FRAGMENT = /* glsl */`
 uniform sampler2D uPrevious;      // the map a step ago: (foam, raft)
 uniform sampler2D uDisplacement;  // the gale's fields (GALE_EVALUATE_FRAGMENT), in texture units
@@ -262,6 +268,7 @@ uniform float uFieldTexels;       // the fields' texels per side
 uniform float uTexels;            // the map's
 uniform vec2 uDrift;              // the surface's drift this step, in the tile's uv
 uniform float uStep;              // seconds
+uniform float uClockStep;         // seconds of world time since the last step (uStep is at most LONGEST_STEP of it)
 uniform float uBoilKeep;          // exp(−step/τ) of the boil
 uniform float uRaftKeep;          // and of the raft
 #define GALE_BREAK_START 0.66
@@ -269,10 +276,13 @@ uniform float uRaftKeep;          // and of the raft
 #define GALE_BOIL 0.6
 #define GALE_RAFT_RATE 1.0
 #define GALE_RAFT_MOST 0.5
+#define GALE_SPRAY_BREAKING 0.15
+#define GALE_CLOCK_MOST 4.0
 
 void main() {
   vec2 uv = gl_FragCoord.xy / uTexels;
   vec2 before = texture2D(uPrevious, uv - uDrift).rg;
+  vec2 clocks = texelFetch(uPrevious, ivec2(gl_FragCoord.xy), 0).ba;   // since it began to break, since it stopped
   // The fields' texel n holds the field at n·cell; the map's texel centre is at uv·tile.
   vec2 fieldUv = uv + 0.5 / uFieldTexels - 0.5 / uTexels;
   vec4 derivatives = texture2D(uDerivatives, fieldUv) * uMetresPerUnit;
@@ -282,7 +292,10 @@ void main() {
   float boil = max(before.r - before.g, 0.0) * uBoilKeep;
   boil = max(boil, breaking * GALE_BOIL);
   float raft = min(before.g * uRaftKeep + breaking * GALE_RAFT_RATE * uStep, GALE_RAFT_MOST);
-  gl_FragColor = vec4(boil + raft, raft, 0.0, 1.0);
+  bool broken = breaking > GALE_SPRAY_BREAKING;
+  float sinceBegan = broken && clocks.y > 0.0 ? 0.0 : min(clocks.x + uClockStep, GALE_CLOCK_MOST);   // a break begins where the last had stopped
+  float sinceStopped = broken ? 0.0 : min(clocks.y + uClockStep, GALE_CLOCK_MOST);
+  gl_FragColor = vec4(boil + raft, raft, sinceBegan, sinceStopped);
 }
 `;
 

@@ -67,22 +67,23 @@
 // Whitecaps (GALE_FOAM_FRAGMENT says how): a foam map of FOAM_TEXELS² on
 // the tile, at rest positions, in the units of the solver's foam map (the
 // whole foam and its raft), which the water shades as it shades a splash's
-// foam. One step a rendered frame, of the world time since the last; the
+// foam, and two clocks of the crests' breaking, which the spray reads. One
+// step a rendered frame, of the world time since the last; the
 // map keeps what the breaking crests left, so when the gale rises it is
 // first run over SPIN_UP_SECONDS before the moment, in SPIN_UP_STEPS, so
 // the water opens on a sea that has been blowing (a moment's work under the
 // veil, or as the setting changes). The foam drifts downwind with the
 // splash's (FOAM_DRIFT in src/spectralWater.js, foamVelocity).
 //
-// Spray (GALE_SPRAY_VERTEX in src/shaders/gale.js says how): drops torn off
-// the crests where the whitecaps' boil says one has just broken, streaks
-// blown downwind, SPRAY_DROPS in turn from each of SPRAY_SLOTS slots in
-// cells SPRAY_CELL apart on the tile, over SPRAY_BLOCK cells a side just
-// ahead of the eye (updateView), where spray can be seen at all: an
-// instanced set of capsules each, as the snow's flakes are. Each is drawn
-// as what it sweeps in the eye's persistence, SPRAY_STREAK_SECONDS of real
-// time, so of world time that times the slow motion's scale
-// (setTimeScale).
+// Spray (GALE_SPRAY_VERTEX in src/shaders/gale.js says how): spindrift,
+// the mist the wind tears off the crests while they break, which the foam
+// map's clocks say (GALE_FOAM_FRAGMENT), blown downwind over the waves as
+// soft, wispy puffs (mistNoiseTexture), SPRAY_PUFFS in turn from each of
+// SPRAY_SLOTS emitters in cells SPRAY_CELL apart on the tile, over
+// SPRAY_BLOCK cells a side just ahead of the eye (updateView), where spray
+// can be seen at all: an instanced set of sheets facing the eye. A puff
+// leaves at the crests' speed (the peak wave's) and takes the air's near the
+// water, SPRAY_AIR_SHARE of the wind's.
 //
 // The gale's strength (setStrength): 0 is no gale (nothing runs), 1 the
 // gale; the one uniform its heights and displacements are scaled by, as the
@@ -95,6 +96,7 @@ import * as THREE from 'three';
 import { FullscreenPass, createFloatTarget } from './gpu.js';
 import { GALE_EVALUATE_FRAGMENT, GALE_FOAM_FRAGMENT, FFT_PASS_FRAGMENT } from './shaders/spectral.js';
 import { GALE_SPRAY_VERTEX, GALE_SPRAY_FRAGMENT } from './shaders/gale.js';
+import { HAZE } from './shaders/scene.js';
 import { runInverseFft } from './spectralWater.js';
 import { latticeIndex, mipAxisFactor } from './ambientWaves.js';
 
@@ -121,14 +123,14 @@ const BOIL_LIFETIME = 0.8;     // seconds: a whitecap's big bubbles
 const RAFT_LIFETIME = 5.0;     // its raft's
 const LONGEST_STEP = 0.1;      // seconds: a longer gap between frames steps the foam this far
 const SPIN_UP_SECONDS = 6;
-const SPRAY_CELL = 0.25;       // metres
-const SPRAY_SLOTS = 3;
-const SPRAY_DROPS = 3;
-const SPRAY_STREAK_SECONDS = 0.03;   // real seconds: the eye's persistence
-const SPRAY_BLOCK = 64;        // cells a side: 16 m
+const SPRAY_CELL = 0.5;        // metres
+const SPRAY_SLOTS = 2;
+const SPRAY_PUFFS = 4;
+const SPRAY_BLOCK = 32;        // cells a side: 16 m
 const SPRAY_AHEAD = 6;         // metres ahead of the eye, at most as far as where it looks at the water
-const SPRAY_OPACITY = 0.8;
-const SPRAY_MIN_PIXELS = 1.2;
+const SPRAY_AIR_SHARE = 0.35;  // of the wind's speed (ten metres up), the air's a few centimetres over the waves
+const SPRAY_OPACITY = 0.9;
+const NOISE_TEXELS = 64;       // the mist's wisps, per side
 const SPIN_UP_STEPS = 40;
 
 
@@ -380,6 +382,47 @@ export class GaleSurface {
   }
 }
 
+/**
+ * The mist's wisps (GALE_SPRAY_FRAGMENT's uSprayNoise): NOISE_TEXELS² of
+ * tileable fBm, value noise on lattices of 4 to 32 cells to the tile, each
+ * octave half the weight of the one before, from a hash (never Math.random:
+ * the same every run), stretched to fill 0 to 255.
+ */
+function mistNoiseTexture() {
+  const latticeValue = (column, row, octave) => {
+    let hash = Math.imul(column, 374761393) ^ Math.imul(row, 668265263) ^ Math.imul(octave + 1, 1274126177);
+    hash = Math.imul(hash ^ (hash >>> 13), 1103515245);
+    return ((hash ^ (hash >>> 16)) >>> 0) / 4294967296;
+  };
+  const ease = (share) => share * share * (3 - 2 * share);
+  const values = new Float32Array(NOISE_TEXELS * NOISE_TEXELS);
+  for (let row = 0; row < NOISE_TEXELS; row++) {
+    for (let column = 0; column < NOISE_TEXELS; column++) {
+      let sum = 0;
+      for (let octave = 0, cells = 4, weight = 1; cells <= 32; octave++, cells *= 2, weight *= 0.5) {
+        const x = column / NOISE_TEXELS * cells, y = row / NOISE_TEXELS * cells;
+        const left = Math.floor(x), bottom = Math.floor(y);
+        const across = ease(x - left), up = ease(y - bottom);
+        const at = (stepRight, stepUp) => latticeValue((left + stepRight) % cells, (bottom + stepUp) % cells, octave);
+        const lower = at(0, 0) + (at(1, 0) - at(0, 0)) * across;
+        const upper = at(0, 1) + (at(1, 1) - at(0, 1)) * across;
+        sum += weight * (lower + (upper - lower) * up);
+      }
+      values[row * NOISE_TEXELS + column] = sum;
+    }
+  }
+  let lowest = Infinity, highest = -Infinity;
+  for (const value of values) { lowest = Math.min(lowest, value); highest = Math.max(highest, value); }
+  const bytes = Uint8Array.from(values, (value) => Math.round(255 * (value - lowest) / (highest - lowest)));
+  const texture = new THREE.DataTexture(bytes, NOISE_TEXELS, NOISE_TEXELS, THREE.RedFormat, THREE.UnsignedByteType);
+  texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+  texture.magFilter = THREE.LinearFilter;
+  texture.minFilter = THREE.LinearMipmapLinearFilter;
+  texture.generateMipmaps = true;
+  texture.needsUpdate = true;
+  return texture;
+}
+
 export class GaleWaves {
   /**
    * @param renderer THREE.WebGLRenderer
@@ -387,8 +430,9 @@ export class GaleWaves {
    * @param centre world XZ of the patch's centre (the sideways move starts out from it, GLSL_COMMON)
    * @param sharedWith the ripples (AmbientWaves): its shared uniforms take the gale's
    * @param lighting its skyAmbient, sunIrradiance and sunDirection light the spray
+   * @param haze the haze's uniforms (src/sky.js): far spray fades into it
    */
-  constructor(renderer, { windDirection, centre = [0, 0], sharedWith = null, lighting = null, settings = GALE } = {}) {
+  constructor(renderer, { windDirection, centre = [0, 0], sharedWith = null, lighting = null, haze = {}, settings = GALE } = {}) {
     this.renderer = renderer;
     this.settings = settings;
     const size = settings.texels;
@@ -437,6 +481,7 @@ export class GaleWaves {
       uTexels: { value: FOAM_TEXELS },
       uDrift: { value: new THREE.Vector2() },
       uStep: { value: 0 },
+      uClockStep: { value: 0 },
       uBoilKeep: { value: 1 },
       uRaftKeep: { value: 1 },
     });
@@ -471,37 +516,42 @@ export class GaleWaves {
       }
     }
     const sprayGeometry = new THREE.InstancedBufferGeometry();
-    // A capsule per drop of the slot: corners (across, along, which drop).
+    // A sheet per puff of the slot: corners (across, along, which puff).
     const corners = [], indices = [];
-    for (let drop = 0; drop < SPRAY_DROPS; drop++) {
-      corners.push(-1, 0, drop, 1, 0, drop, -1, 1, drop, 1, 1, drop);
-      indices.push(4 * drop, 4 * drop + 1, 4 * drop + 2, 4 * drop + 2, 4 * drop + 1, 4 * drop + 3);
+    for (let puff = 0; puff < SPRAY_PUFFS; puff++) {
+      corners.push(-1, -1, puff, 1, -1, puff, -1, 1, puff, 1, 1, puff);
+      indices.push(4 * puff, 4 * puff + 1, 4 * puff + 2, 4 * puff + 2, 4 * puff + 1, 4 * puff + 3);
     }
     sprayGeometry.setAttribute('position', new THREE.Float32BufferAttribute(corners, 3));
     sprayGeometry.setIndex(indices);
     sprayGeometry.setAttribute('aSpray', new THREE.InstancedBufferAttribute(sprayCells, 3));
     sprayGeometry.instanceCount = sprayCount;
+    this.sprayNoise = mistNoiseTexture();
     this.spray = new THREE.Mesh(sprayGeometry, new THREE.ShaderMaterial({
       vertexShader: GALE_SPRAY_VERTEX,
-      fragmentShader: GALE_SPRAY_FRAGMENT,
+      fragmentShader: `${HAZE}\n${GALE_SPRAY_FRAGMENT}`,
       uniforms: {
         ...this.sharedUniforms,
+        uHazeColor: haze.uHazeColor ?? { value: new THREE.Vector3() },
+        uHazeDensity: haze.uHazeDensity ?? { value: 0 },
         uSprayOrigin: { value: new THREE.Vector2() },
+        uSprayFocus: { value: new THREE.Vector2() },
+        uSprayReach: { value: (SPRAY_BLOCK / 2 - 1) * settings.tileSize / cellsPerTile },
         uSprayCell: { value: settings.tileSize / cellsPerTile },
         uSprayCellsPerTile: { value: cellsPerTile },
-        uWispDrops: { value: SPRAY_DROPS },
+        uPuffs: { value: SPRAY_PUFFS },
         uTime: { value: 0 },
         uWind: { value: this.windDirection },
+        uAirSpeed: { value: SPRAY_AIR_SHARE * settings.windSpeed },
+        uCrestSpeed: { value: GRAVITY / seaState(settings).peakFrequency },   // deep water's, g/ω: the lake is deeper than half the peak wave's length
         uBoilLifetime: { value: BOIL_LIFETIME },
-        uStreakSeconds: { value: SPRAY_STREAK_SECONDS },
-        uFocalPx: { value: 1000 },
-        uMinPixels: { value: SPRAY_MIN_PIXELS },
         uOpacity: { value: SPRAY_OPACITY },
+        uSprayNoise: { value: this.sprayNoise },
         uSkyAmbient: { value: lighting?.skyAmbient ?? new THREE.Vector3(1, 1, 1) },
         uSunIrradiance: { value: lighting?.sunIrradiance ?? new THREE.Vector3() },
         uSunDir: { value: lighting?.sunDirection ?? new THREE.Vector3(0, 1, 0) },
       },
-      side: THREE.DoubleSide,   // a capsule's winding turns with its streak against the eye
+      side: THREE.DoubleSide,   // a sheet's winding turns with the wind against the eye
       transparent: true,
       depthWrite: false,
       blending: THREE.CustomBlending,
@@ -533,26 +583,24 @@ export class GaleWaves {
     for (let level = 0; level < this.unresolvedVariance.length; level++) this.unresolvedVariance[level] = this.fullVariance[level] * strength * strength;
   }
 
-  /** The slow motion's scale (world seconds a real one): the spray streaks over the world time the eye's persistence spans. */
-  setTimeScale(scale) { this.spray.material.uniforms.uStreakSeconds.value = SPRAY_STREAK_SECONDS * scale; }
-
   /** Mip levels of the textures, for the size of the water shader's unresolvedVariance table. */
   get levels() { return this.passes + 1; }
 
   /**
-   * The spray to the frame: its clock, its size on the screen, and its
-   * block, about SPRAY_AHEAD in front of the eye toward where it looks at the
-   * water (focus, world XZ), and no farther than that.
+   * The spray to the frame: its clock and its block, about SPRAY_AHEAD in
+   * front of the eye toward where it looks at the water (focus, world XZ),
+   * and no farther than that.
    */
-  updateView(time, camera, resolution, focus) {
+  updateView(time, camera, focus) {
     if (!this.on) return;
     const uniforms = this.spray.material.uniforms;
     uniforms.uTime.value = time;
-    uniforms.uFocalPx.value = camera.projectionMatrix.elements[5] * resolution.y * 0.5;
     const towardX = focus[0] - camera.position.x, towardZ = focus[1] - camera.position.z;
     const along = Math.min(SPRAY_AHEAD / Math.max(Math.hypot(towardX, towardZ), 1e-6), 1);
+    const centreX = camera.position.x + towardX * along, centreZ = camera.position.z + towardZ * along;
     const cell = uniforms.uSprayCell.value;
-    uniforms.uSprayOrigin.value.set(Math.floor((camera.position.x + towardX * along) / cell) - SPRAY_BLOCK / 2, Math.floor((camera.position.z + towardZ * along) / cell) - SPRAY_BLOCK / 2);
+    uniforms.uSprayFocus.value.set(centreX, centreZ);
+    uniforms.uSprayOrigin.value.set(Math.floor(centreX / cell) - SPRAY_BLOCK / 2, Math.floor(centreZ / cell) - SPRAY_BLOCK / 2);
   }
 
   /** The surface's drift downwind (m/s, a Vector2): the foam's, which the splash's follows too (src/spectralWater.js). */
@@ -614,7 +662,8 @@ export class GaleWaves {
 
   /** One step of the foam map from its time to `time` (at most LONGEST_STEP; none backwards). */
   stepFoam(time) {
-    const step = Math.min(Math.max(time - this.foamTime, 0), LONGEST_STEP);
+    const elapsed = Math.max(time - this.foamTime, 0);
+    const step = Math.min(elapsed, LONGEST_STEP);
     this.foamTime = time;
     if (step === 0) return;
     const uniforms = this.foamPass.material.uniforms;
@@ -623,6 +672,7 @@ export class GaleWaves {
     uniforms.uMetresPerUnit.value = this.sharedUniforms.uGaleMetresPerUnit.value;
     uniforms.uDrift.value.copy(this.foamVelocity).multiplyScalar(step / this.settings.tileSize);
     uniforms.uStep.value = step;
+    uniforms.uClockStep.value = elapsed;   // the breaking's clocks keep the world's time, however long the step
     uniforms.uBoilKeep.value = Math.exp(-step / BOIL_LIFETIME);
     uniforms.uRaftKeep.value = Math.exp(-step / RAFT_LIFETIME);
     this.foamPass.render(this.renderer, target);

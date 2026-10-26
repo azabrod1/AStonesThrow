@@ -731,7 +731,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   // The gale's waves (src/galeWaves.js): their uniforms join the ripples'
   // before any material spreads those in; they blow only under a gale, and
   // never in the pool (applyGale).
-  const galeWaves = new GaleWaves(renderer, { windDirection, centre: water.centre, sharedWith: ambientWaves, lighting });
+  const galeWaves = new GaleWaves(renderer, { windDirection, centre: water.centre, sharedWith: ambientWaves, lighting, haze: environment.hazeUniforms });
   // The water's height at world (x, z) under the gale (its CPU sum), for the stones, the mirror and the eye.
   const galeSample = { height: 0, slopeX: 0, slopeZ: 0 };
   const galeSurfaceAt = (x, z) => galeWaves.sample(x, z, galeSample).height;
@@ -2371,7 +2371,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     camera.updateMatrixWorld();
     if (!skip.ambient) ambientWaves.update(simulationTime);
     galeWaves.update(simulationTime);   // nothing with no gale
-    galeWaves.updateView(simulationTime, camera, resolution, viewFocus());
+    galeWaves.updateView(simulationTime, camera, viewFocus());
     updateLightning(simulationTime);
     rain.update(simulationTime, camera, resolution, viewFocus());
     snow.update(simulationTime, camera, resolution);
@@ -3038,7 +3038,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     setTimeScale(scale) {
       timeScale = scale;
       // The eye's persistence is real time: in slow motion the streaks span less of the world's (the splash's follow its frame, setFrameSeconds).
-      for (const streaked of [galeWaves, rain, snow]) streaked.setTimeScale(scale);
+      for (const streaked of [rain, snow]) streaked.setTimeScale(scale);
     },
     /** A preset by name, which ends the automatic calibration; 'auto' starts it again from high. */
     setQuality(name) {
