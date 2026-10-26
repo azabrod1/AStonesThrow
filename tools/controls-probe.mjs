@@ -423,6 +423,7 @@ for (const framing of FRAMINGS) {
   check(clipped.length === 0, `every Water choice's name fits its card${clipped.length ? ` (not: ${clipped.join(', ')})` : ''}`);
   // Frozen (src/ice.js): thin ice, its two choices under the cards, fitting; Thick makes it thick; the row and the note follow.
   const waterRow = () => page.evaluate(() => ({ water: window.__pond.waterChoice, ice: window.__pond.ice, clarity: window.__pond.clarity, row: document.querySelector('.menu-tier[data-open="water"] .menu-tier-value').textContent, note: document.getElementById('ice-note').textContent, iceShown: !document.getElementById('ice-field').hidden }));
+  await page.evaluate(() => window.__pond.advance(12));   // the fish have an old clock when Frozen clears the pond
   await press('#water [data-value="frozen"]');
   await page.waitForTimeout(200);
   const frozen = await waterRow();
@@ -445,6 +446,12 @@ for (const framing of FRAMINGS) {
   await press('#water [data-value="murky"]');
   const chosen = await waterRow();
   check(chosen.clarity === 'murky' && chosen.ice === 'none' && chosen.row === 'Murky' && !chosen.iceShown, `Murky thaws the ice (${chosen.ice}), sets the clarity (${chosen.clarity}) and the row's value ("${chosen.row}")`);
+  const swimming = await page.evaluate(() => {
+    const pond = window.__pond, before = pond.fish.fish;
+    pond.advance(1);
+    return { count: before.length, moved: pond.fish.fish.filter((fish, index) => Math.hypot(fish.x - before[index].x, fish.y - before[index].y, fish.z - before[index].z) > 1e-6).length };
+  });
+  check(swimming.count > 0 && swimming.moved === swimming.count, `all ${swimming.count} fish swim immediately after Frozen is thawed (${swimming.moved} moved)`);
   await page.screenshot({ path: path.join(outputFolder, `${framing.name}-water.png`) });
   await page.evaluate(() => window.__pond.setWater('lake'));
   await press('.menu-page[data-page="water"] .menu-back');

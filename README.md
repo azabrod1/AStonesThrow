@@ -940,19 +940,28 @@ clear day's light for light snow, 0.35 for heavy, 0.22 for a blizzard), and
 its haze is whiter (0.85 to 0.9 of the cloud against rain's 0.6) and
 thicker (1.5 km, 400 m, 150 m to see). A snowflake meets the water at about
 1 m/s, weighing milligrams: it melts and leaves no ring, so the water is
-left as the wind has it. The flakes are one instanced draw in a box about
-the eye (16, 120 and 120 thousand of them: heavy snow's the big soft
-clumps of a snow day, up to 5 cm across, and a blizzard's up to 2.5 cm,
-drawn bigger than its fine snow so that fewer flakes, a flake's cost,
-hide what its haze does), each falling at its terminal
+left as the wind has it. The flakes are one instanced draw in two boxes
+about the eye: a near box (16, 120 and 120 thousand of them: heavy snow's
+the big soft clumps of a snow day, up to 5 cm across, and a blizzard's up
+to 2.5 cm, drawn bigger than its fine snow so that fewer flakes, a flake's
+cost, hide what its haze does) and a far box three times as wide standing
+on the water, with a third more flakes at a tenth of the density: the far
+snow, a pixel or two across and sinking slowly, that makes the fall deep
+(a flake's speed across the eye is its fall over its distance) where the
+near box alone stops at the pond's far edge and reads as a slab in front
+of the scene. Each falls at its terminal
 speed (0.9 to 1.1 m/s, give or take a fifth), carried at the wind's speed,
 swaying on a small ellipse and tossed by gusts of 0.3 of the wind, drawn as
 the capsule it sweeps in 1/120 s: round in still air, a streak in a
 blizzard's, with the same light either way; a flake under 1.2 pixels is
-drawn that wide and fainter, and the haze carries the snow beyond the box
-(Medium draws 0.6 of the flakes, Low 0.4). The box keeps its floor under
+drawn that wide and fainter, and the haze carries the snow beyond the far
+box (Medium draws 0.6 of the flakes, Low 0.4). A flake is a white
+scatterer in the cloud's light, lit from above by the cloud and from below
+by the ground, so it is grey against the sky (about 0.6 of the cloud seen
+level, darker from below) and white against the dark water and the trees.
+The near box keeps its floor under
 the water however high the eye goes, and the shader never multiplies the
-clock: the wind's carry and the fall come wrapped into the box, worked out
+clock: the wind's carry and the fall come wrapped into each box, worked out
 in doubles, and every sway and gust repeats in a minute, so a flake is
 where it should be however long the page has been open.
 Under a gale they are cut at its waves. On the ground the snow lies in

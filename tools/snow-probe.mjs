@@ -16,12 +16,16 @@
 //   the clock multiplied in floats would be metres off;
 // - a change of wind while it snows moves the flakes by a frame's carry, not
 //   all at once, and the gusts follow it over a second or two;
-// - the box reaches the water however high the eye;
-// - the box: each intensity's flakes per cubic metre, the visibility they
-//   alone would give (against its haze's, src/main.js WEATHERS), and how many are drawn
-//   larger than a pixel in the home view (1080 rows, 50° up and down);
+// - the near box reaches the water however high the eye;
+// - the boxes: each intensity's flakes per cubic metre, near and far, the
+//   visibility the near ones alone would give (against its haze's,
+//   src/main.js WEATHERS), how many are drawn larger than a pixel in the
+//   home view (1080 rows, 50° up and down), and the far snow's grain at the
+//   horizon (flakes a pixel column crosses beyond the near box);
+// - the far flakes interleaved with the near at FAR.flakes, whatever share
+//   of the instances a quality preset draws;
 // - the cost of the CPU's part, the uniforms a frame.
-import { SNOW, STREAK_SECONDS, STREAK_MIN_PIXELS, GUST_SHARE, flakeAt, flakeDrawn, flakeAttributes, flakeSpeed, clockOffsets } from '../src/snow.js';
+import { SNOW, FAR, STREAK_SECONDS, STREAK_MIN_PIXELS, GUST_SHARE, flakeAt, flakeDrawn, flakeAttributes, farFlags, farBox, instancesOf, flakeSpeed, clockOffsets } from '../src/snow.js';
 
 const failures = [];
 function check(condition, message) { console.log(`${condition ? 'ok  ' : 'FAIL'} ${message}`); if (!condition) failures.push(message); }
@@ -39,16 +43,17 @@ for (const [name, snow] of Object.entries(SNOW)) {
     let worstMean = 0, worstDerivative = 0, rising = 0, fastestSideways = 0;
     for (let index = 0; index < SAMPLE; index++) {
       const [flake, sway] = attributes(index);
+      const far = index % 2 === 1;   // every other one a far flake: the same motion from a start in the far box
       const span = 600;
-      const start = flakeAt(flake, sway, 0, snow, drift).place;
-      const end = flakeAt(flake, sway, span, snow, drift).place;
+      const start = flakeAt(flake, sway, 0, snow, drift, far).place;
+      const end = flakeAt(flake, sway, span, snow, drift, far).place;
       const { speed } = flakeSpeed(flake[3]);
       const expected = [drift[0], -snow.fall * speed, drift[1]];
       for (let axis = 0; axis < 3; axis++) worstMean = Math.max(worstMean, Math.abs((end[axis] - start[axis]) / span - expected[axis]));
       for (let step = 0; step < 50; step++) {
         const time = step * 0.37;
-        const { velocity } = flakeAt(flake, sway, time, snow, drift);
-        const before = flakeAt(flake, sway, time - 1e-4, snow, drift).place, after = flakeAt(flake, sway, time + 1e-4, snow, drift).place;
+        const { velocity } = flakeAt(flake, sway, time, snow, drift, far);
+        const before = flakeAt(flake, sway, time - 1e-4, snow, drift, far).place, after = flakeAt(flake, sway, time + 1e-4, snow, drift, far).place;
         for (let axis = 0; axis < 3; axis++) worstDerivative = Math.max(worstDerivative, Math.abs((after[axis] - before[axis]) / 2e-4 - velocity[axis]));
         if (velocity[1] > 0) rising++;
         fastestSideways = Math.max(fastestSideways, Math.hypot(velocity[0] - drift[0], velocity[2] - drift[1]));
@@ -76,20 +81,29 @@ for (const [name, snow] of Object.entries(SNOW)) {
   const far = flakeDrawn(snow.sizes[0], snow.fall, 8, FOCAL);
   check(far.covered < 0.5, `${name}: its smallest flake 8 m off is drawn ${STREAK_MIN_PIXELS} px wide at ${(far.covered * 100).toFixed(0)}% opacity`);
 
-  // The box: density, and the flakes resolved (wider than a pixel) in the home view's frustum.
+  // The boxes: density, and the flakes resolved (wider than a pixel) in the home view's frustum, near and far.
   const volume = snow.box[0] * snow.box[1] * snow.box[2];
-  let inView = 0, resolved = 0;
-  const all = flakeAttributes(snow.flakes);
+  const farSides = farBox(snow), farVolume = farSides[0] * farSides[1] * farSides[2];
+  const instances = instancesOf(snow);
+  const all = flakeAttributes(instances);
+  const nearCount = instances - all.fars.reduce((sum, flag) => sum + flag, 0), farCount = instances - nearCount;
   const halfTan = Math.tan((50 / 2) * Math.PI / 180), aspect = 16 / 9;
-  for (let index = 0; index < snow.flakes; index++) {
-    const x = (all.flakes[index * 4] - 0.5) * snow.box[0], y = (all.flakes[index * 4 + 2] - 0.5) * snow.box[1], z = (all.flakes[index * 4 + 1] - 0.5) * snow.box[2];
-    if (z >= -0.25 || y + 1.15 < 0) continue;   // behind the eye or under the water (the eye 1.15 m up, looking along −Z)
+  const seen = { near: { inView: 0, resolved: 0 }, far: { inView: 0, resolved: 0 } };
+  for (let index = 0; index < instances; index++) {
+    const isFar = all.fars[index] === 1, box = isFar ? farSides : snow.box;
+    // The near box about the eye (1.15 m up, looking along −Z); the far box standing on the water, its floor 0.5 m under.
+    const x = (all.flakes[index * 4] - 0.5) * box[0], y = isFar ? all.flakes[index * 4 + 2] * box[1] - 0.5 - 1.15 : (all.flakes[index * 4 + 2] - 0.5) * box[1], z = (all.flakes[index * 4 + 1] - 0.5) * box[2];
+    if (z >= -0.25 || y + 1.15 < 0) continue;   // behind the eye or under the water
     const depth = -z;
     if (Math.abs(x) > depth * halfTan * aspect || Math.abs(y) > depth * halfTan) continue;
-    inView++;
+    const reach = Math.max(Math.abs(x) / snow.box[0], Math.abs(z) / snow.box[2], Math.abs(y) / snow.box[1]);   // into the near box's faces
+    if (isFar ? reach < 0.35 : reach > 0.5) continue;   // faded out: the far flake inside the near box, the near one past its faces
+    const counted = seen[isFar ? 'far' : 'near'];
+    counted.inView++;
     const size = snow.sizes[0] + (snow.sizes[1] - snow.sizes[0]) * all.flakes[index * 4 + 3] ** 2;
-    if (size * FOCAL / depth >= 1) resolved++;
+    if (size * FOCAL / depth >= 1) counted.resolved++;
   }
+  const inView = seen.near.inView, resolved = seen.near.resolved;
   // The visibility the flakes alone give (3 over their extinction, as src/sky.js reckons the haze's): each hides
   // its own area (a millimetre's diffraction is too narrow a cone to dim what is behind), its diameter that of
   // FLAKE_VERTEX, small + Δ w² for w even in [0, 1), whose square averages small² + 2 small Δ/3 + Δ²/5.
@@ -98,6 +112,28 @@ for (const [name, snow] of Object.entries(SNOW)) {
   const ownVisibility = 3 / (snow.flakes / volume * meanArea);
   console.log(`     ${(snow.flakes / volume).toFixed(1)} flakes per m³, alone ${ownVisibility.toFixed(0)} m to see; ${inView} in the home view, ${resolved} of them over a pixel across`);
   check(resolved > 150, `${name}: over 150 flakes a pixel or more across in the home view (${resolved})`);
+  // The far snow: a pixel column at the horizon crosses the far box from the near box's faces to its own, and sees
+  // a shell's flakes as the square of its distance (the volume a pixel's cone holds).
+  const farDensity = farCount / farVolume;
+  const nearFace = 0.5 * snow.box[2], farFace = 0.5 * farSides[2];
+  const grain = farDensity * (farFace ** 3 - nearFace ** 3) / 3 / (FOCAL * FOCAL);
+  console.log(`     far: ${farCount} flakes in ${farSides.join(' × ')} m, ${farDensity.toFixed(2)} per m³ (${(farDensity / (snow.flakes / volume) * 100).toFixed(0)}% of the near); ${seen.far.inView} in the home view, ${seen.far.resolved} over a pixel; at the horizon a pixel column crosses ${grain.toFixed(3)} of them beyond the near box`);
+  check(Math.abs(farCount / nearCount - FAR.flakes) < 1e-3, `${name}: the far flakes are ${FAR.flakes.toFixed(3)} of the near (${farCount} to ${nearCount})`);
+  // Light snow's small flakes are under a pixel beyond the near box at 1080 rows (drawn 1.2 px wide and faint); a phone's 2500 resolves them.
+  const farResolvable = snow.sizes[1] * FOCAL / farFace >= 1;
+  check(seen.far.inView > 1000 && (!farResolvable || seen.far.resolved > 1000), `${name}: over a thousand far flakes in the home view${farResolvable ? ', a pixel or more across' : ' (its small flakes under a pixel there)'} (${seen.far.inView}, ${seen.far.resolved} resolved)`);
+  check(farFace >= 3 * nearFace, `${name}: the far box reaches ${farFace} m, three times the near box's ${nearFace}`);
+}
+
+// The far flakes interleaved with the near: the first n instances, whatever n, hold them at FAR.flakes of the near, within one.
+{
+  const flags = farFlags(1000);
+  let farSoFar = 0, worst = 0;
+  for (let count = 1; count <= 1000; count++) {
+    farSoFar += flags[count - 1];
+    worst = Math.max(worst, Math.abs(farSoFar - (count - farSoFar) * FAR.flakes));
+  }
+  check(worst < 1 + FAR.flakes, `any first n instances hold far flakes at ${FAR.flakes.toFixed(3)} of the near, within one (worst ${worst.toFixed(2)})`);
 }
 
 // Precision: the steady part of a flake's place, a day on in a blizzard's wind, as the shader sums it in floats
@@ -111,25 +147,29 @@ for (const [name, snow] of Object.entries(SNOW)) {
   let worstWrapped = 0, worstNaive = 0;
   for (let index = 0; index < SAMPLE; index++) {
     const [flake] = attributes(index);
+    const far = index % 2 === 1, box = far ? farBox(snow) : snow.box;
+    const driftOffset = far ? offsets.farDrift : offsets.drift, fallOffset = far ? offsets.farFall : offsets.fall;
     const { step, speed } = flakeSpeed(flake[3]);
-    const start = [flake[0] * snow.box[0], flake[2] * snow.box[1], flake[1] * snow.box[2]];
-    const exact = [wrapped(start[0] + drift[0] * time, snow.box[0]), wrapped(start[1] - snow.fall * speed * time, snow.box[1]), wrapped(start[2] + drift[1] * time, snow.box[2])];
-    const summed = [f(f(start[0]) + f(offsets.drift[0])), f(f(start[1]) - f(f(offsets.fall[0]) + f(step * f(offsets.fall[1])))), f(f(start[2]) + f(offsets.drift[1]))];
+    const start = [flake[0] * box[0], flake[2] * box[1], flake[1] * box[2]];
+    const exact = [wrapped(start[0] + drift[0] * time, box[0]), wrapped(start[1] - snow.fall * speed * time, box[1]), wrapped(start[2] + drift[1] * time, box[2])];
+    const summed = [f(f(start[0]) + f(driftOffset[0])), f(f(start[1]) - f(f(fallOffset[0]) + f(step * f(fallOffset[1])))), f(f(start[2]) + f(driftOffset[1]))];
     const naive = [f(f(start[0]) + f(f(drift[0]) * f(time))), f(f(start[1]) - f(f(f(snow.fall) * f(speed)) * f(time))), f(f(start[2]) + f(f(drift[1]) * f(time)))];
     for (let axis = 0; axis < 3; axis++) {
-      const span = snow.box[axis === 1 ? 1 : axis === 0 ? 0 : 2];
+      const span = box[axis === 1 ? 1 : axis === 0 ? 0 : 2];
       const offBy = (value) => { const gap = Math.abs(wrapped(value, span) - exact[axis]); return Math.min(gap, span - gap); };
       worstWrapped = Math.max(worstWrapped, offBy(summed[axis]));
       worstNaive = Math.max(worstNaive, offBy(naive[axis]));
     }
   }
-  console.log(`\na day into a blizzard: the shader's place is ${(worstWrapped * 1000).toFixed(4)} mm off at worst; the clock multiplied in floats would be ${(worstNaive * 1000).toFixed(0)} mm off`);
-  check(worstWrapped < 1e-5, `a day on, the wrapped offsets keep a flake to within 0.01 mm (${(worstWrapped * 1000).toFixed(4)} mm)`);
+  console.log(`\na day into a blizzard: the shader's place is ${(worstWrapped * 1000).toFixed(4)} mm off at worst, near box or far; the clock multiplied in floats would be ${(worstNaive * 1000).toFixed(0)} mm off`);
+  check(worstWrapped < 1e-5, `a day on, the wrapped offsets keep a flake to within 0.01 mm in either box (${(worstWrapped * 1000).toFixed(4)} mm)`);
   check(worstNaive > 0.01, `(and the probe sees the problem they fix: ${(worstNaive * 1000).toFixed(0)} mm without them)`);
-  // The box's centre: at the eye, but no higher than 0.4 of its height (FLAKE_VERTEX), so its floor is under the water.
+  // The near box's centre: at the eye, but no higher than 0.4 of its height (FLAKE_VERTEX), so its floor is under the water.
+  // The far box stands on the water, its floor 0.5 m under (FAR_FLOOR), and holds an eye up to 8 m high.
   for (const [name, entry] of Object.entries(SNOW)) {
     const bottoms = [1.15, 2.4, 4, 8].map((eye) => Math.min(eye, 0.4 * entry.box[1]) - 0.5 * entry.box[1]);
-    check(bottoms.every((bottom) => bottom < 0), `${name}: the box reaches the water from an eye up to 8 m high (its floor at ${bottoms.map((bottom) => bottom.toFixed(1)).join(', ')} m)`);
+    check(bottoms.every((bottom) => bottom < 0), `${name}: the near box reaches the water from an eye up to 8 m high (its floor at ${bottoms.map((bottom) => bottom.toFixed(1)).join(', ')} m)`);
+    check(farBox(entry)[1] - 0.5 > 8, `${name}: the far box's ceiling, ${(farBox(entry)[1] - 0.5).toFixed(1)} m up, is over an eye 8 m high`);
   }
 }
 
@@ -146,7 +186,7 @@ const frames = 20000;
 const started = performance.now();
 for (let frame = 0; frame < frames; frame++) snow.update(frame / 60, camera, resolution);
 const microseconds = (performance.now() - started) * 1000 / frames;
-console.log(`\nSnow.update: ${microseconds.toFixed(2)} µs a frame; one draw of ${snow.count} instanced quads (${snow.count * 2} triangles)`);
+console.log(`\nSnow.update: ${microseconds.toFixed(2)} µs a frame; one draw of ${snow.count} instanced quads, near and far (${snow.count * 2} triangles)`);
 check(microseconds < 20, `the snow costs the CPU under 20 µs a frame (${microseconds.toFixed(2)})`);
 
 // A change of wind while it snows: the carry is summed frame by frame, so the flakes turn rather than all jump
@@ -159,8 +199,10 @@ check(microseconds < 20, `the snow costs the CPU under 20 µs a frame (${microse
   for (; time < 600; time += 1 / 60) gusty.update(time, camera, resolution);
   const expected = clockOffsets(gusty.clock, SNOW.heavy, [WINDS.calm, 0]);
   const gap = (value, target, span) => { const off = Math.abs(((value - target) % span + span) % span); return Math.min(off, span - off); };
-  check(gap(gusty.carry.drift[0], expected.drift[0], SNOW.heavy.box[0]) < 1e-6 && gap(gusty.carry.fall[1], expected.fall[1], SNOW.heavy.box[1]) < 1e-6,
-    'in a steady wind the summed carry is clockOffsets\' (flakeAt\'s twin holds)');
+  const heavyFar = farBox(SNOW.heavy);
+  check(gap(gusty.carry.drift[0], expected.drift[0], SNOW.heavy.box[0]) < 1e-6 && gap(gusty.carry.fall[1], expected.fall[1], SNOW.heavy.box[1]) < 1e-6
+    && gap(gusty.carry.farDrift[0], expected.farDrift[0], heavyFar[0]) < 1e-6 && gap(gusty.carry.farFall[1], expected.farFall[1], heavyFar[1]) < 1e-6,
+    'in a steady wind the summed carry is clockOffsets\', near box and far (flakeAt\'s twin holds)');
   const before = gusty.carry.drift[0], gustBefore = gusty.flakes.material.uniforms.uGust.value;
   gusty.setWind([1, 0], WINDS.gale);
   gusty.update(time, camera, resolution);
@@ -172,7 +214,7 @@ check(microseconds < 20, `the snow costs the CPU under 20 µs a frame (${microse
   check(Math.abs(gusty.flakes.material.uniforms.uGust.value / (GUST_SHARE * WINDS.gale) - 1) < 0.01, 'ten seconds on, the gusts are the gale\'s');
 }
 snow.setShare(0.4);
-check(snow.count === Math.round(SNOW.heavy.flakes * 0.4), `the Low preset's share draws ${snow.count} of ${SNOW.heavy.flakes}`);
+check(snow.count === Math.round(instancesOf(SNOW.heavy) * 0.4), `the Low preset's share draws ${snow.count} of ${instancesOf(SNOW.heavy)}, near and far`);
 snow.setIntensity(null);
 check(!snow.on && snow.count === 0, 'with no snow nothing is drawn');
 check(STREAK_SECONDS > 0, `the capsule is swept over ${(STREAK_SECONDS * 1000).toFixed(1)} ms`);
