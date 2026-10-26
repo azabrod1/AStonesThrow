@@ -2655,6 +2655,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     dropRings.reset();
     simulationTime = 0;
     stepsTime = 0;
+    fishes.resetClock();
     viewChanged = true;   // the mirror image is drawn whole again, without the splash
     mirroredRect.set(0, 0, 0, 0);
     splashRect.set(0, 0, 0, 0);

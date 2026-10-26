@@ -94,6 +94,25 @@ console.log('at any frame rate:');
 }
 
 console.log('\nplaces:');
+{
+  const population = new FishPopulation({ seed: 1 });
+  const control = new FishPopulation({ seed: 1 });
+  for (const one of [population, control]) {
+    one.setWaters({ place: 'lakeside', ...LAKE });
+    one.advance(0, () => ({}));
+    one.advance(12, () => ({}));
+  }
+  const snapshot = () => population.fish.map((fish) => [fish.x, fish.y, fish.z, fish.phase]);
+  const before = JSON.stringify(snapshot());
+  const age = population.time;
+  population.resetClock();
+  check(population.time === age && JSON.stringify(snapshot()) === before, 'resetting the world clock preserves the fish and their own timers');
+  check(population.fish.every((fish) => fish.shown.x === fish.x && fish.shown.phase === fish.phase), 'resetting the clock synchronizes the drawn fish');
+  population.advance(1, () => ({}));
+  control.advance(13, () => ({}));
+  check(population.time > age + 0.99 && JSON.stringify(snapshot()) !== before, 'fish swim immediately after the world clock resets');
+  check(population.fish.every((fish, index) => ['x', 'y', 'z', 'phase'].every((key) => Math.abs(fish[key] - control.fish[index][key]) < 1e-9)), 'a clock reset preserves the uninterrupted swimming behavior');
+}
 for (const [place, kinds] of Object.entries(FISH_BY_PLACE)) {
   const population = new FishPopulation({ seed: 1 });
   population.setWaters({ place, ...waterOf(place) });

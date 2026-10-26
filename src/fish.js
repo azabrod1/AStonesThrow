@@ -81,7 +81,10 @@
 // (seededRandom), never Math.random, and they step on the world's clock in
 // whole steps of FISH_STEP (advance), each seeing the things as they are at
 // that step, drawn between their last two (showAt): so a seeded throw is the
-// same with fish, at any frame rate.
+// same with fish, at any frame rate. When the world's clock goes back to
+// zero (src/main.js clearPond: Frozen water, a new place) theirs goes with
+// it (resetClock), each fish kept where it is with its own timers, or they
+// would hang until the world caught up with the old clock.
 // tools/fish-probe.mjs swims them on the CPU and checks all of the above.
 import { seededRandom } from './spray.js';
 
@@ -605,6 +608,16 @@ export class FishPopulation {
     const dt = seconds / steps;
     for (let index = 0; index < steps; index++) this.stepOnce(dt, threats, foods);
     return this.bites;
+  }
+
+  /** Rebase on a reset world clock, keeping the swimmers and their own timers. */
+  resetClock(time = 0) {
+    this.clock = time;
+    for (const fish of this.fish) {
+      const before = (fish.before ??= {});
+      for (const key of DRAWN) before[key] = fish[key];
+    }
+    this.showAt(time);
   }
 
   /**
