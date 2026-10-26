@@ -259,11 +259,11 @@ await page.evaluate(([x, y]) => { window.__probe.pointer('pointermove', 1, x + 1
 const [afterX, afterY] = await page.evaluate((point) => window.__probe.onScreen(point), centreWater);
 check(Math.hypot(afterX - width / 2, afterY - height / 2) < 0.5 && (await page.evaluate(() => window.__pond.zoomed)),
   `and turns round it, still zoomed: that point ${Math.hypot(afterX - width / 2, afterY - height / 2).toFixed(3)} px from the centre after the turn (${Math.hypot(centreX - width / 2, centreY - height / 2).toFixed(3)} px at its first step)`);
-// Zoomed, the turn is slower by the zoom: the same pixels turn the eye by the field of view's share of the frame's.
+// Zoomed, the turn is slower by the zoom: the same pixels (the second move, 14 px on to 120 px) turn the eye by the field of view's share of the frame's.
 const turnedZoomed = await orbit();
 const zoomedFov = await fov();
-check(Math.abs((repivoted.azimuth - turnedZoomed.azimuth) - 120 * turnPerPixel * zoomedFov / homeFov) < 1e-6,
-  `zoomed to ${zoomedFov.toFixed(2)}°, the drag's last 120 px turned the eye ${(repivoted.azimuth - turnedZoomed.azimuth).toFixed(3)}° (${(120 * turnPerPixel * zoomedFov / homeFov).toFixed(3)}° expected: ${(zoomedFov / homeFov).toFixed(3)} of the unzoomed turn)`);
+check(Math.abs((repivoted.azimuth - turnedZoomed.azimuth) - (120 - 14) * turnPerPixel * zoomedFov / homeFov) < 1e-6,
+  `zoomed to ${zoomedFov.toFixed(2)}°, the drag's last ${120 - 14} px turned the eye ${(repivoted.azimuth - turnedZoomed.azimuth).toFixed(3)}° (${((120 - 14) * turnPerPixel * zoomedFov / homeFov).toFixed(3)}° expected: ${(zoomedFov / homeFov).toFixed(3)} of the unzoomed turn)`);
 
 // Under the water a drag keeps the eye under it: clear of the surface and of the bed.
 await page.evaluate(() => { window.__pond.showView('under'); window.__pond.settleView(); });
