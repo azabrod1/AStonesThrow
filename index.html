@@ -994,6 +994,11 @@
       <span class="menu-tier-name"><b>Sound</b><small>Splashes, knocks and bounces</small></span>
       <span class="menu-tier-value"></span><span class="menu-tier-chevron" aria-hidden="true">&rsaquo;</span>
     </button>
+    <button type="button" class="menu-tier" data-open="effects">
+      <svg class="menu-tier-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M2.5 10c2.2-3.3 4.9-5 8-5 2.3 0 4.3 1.1 6 3.2L18 6.6v6.8l-1.5-1.6c-1.7 2.1-3.7 3.2-6 3.2-3.1 0-5.8-1.7-8-5z"></path><circle cx="6.4" cy="9.2" r="0.7"></circle></svg>
+      <span class="menu-tier-name"><b>Effects</b><small>Fish in the water</small></span>
+      <span class="menu-tier-value"></span><span class="menu-tier-chevron" aria-hidden="true">&rsaquo;</span>
+    </button>
     <hr class="menu-rule">
     <button type="button" class="menu-tier" data-open="view">
       <svg class="menu-tier-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M1.8 10S4.8 4.8 10 4.8 18.2 10 18.2 10 15.2 15.2 10 15.2 1.8 10 1.8 10z"></path><circle cx="10" cy="10" r="2.4"></circle></svg>
@@ -1132,6 +1137,17 @@
         <button type="button" role="radio" data-value="off">Off</button>
       </div>
       <div class="menu-note" id="sound-note">Each thing sounds as it meets the water, the deck and other things: a stone plunks, a basketball booms, a pizza slaps. Made as it happens, from how fast, how big and how lively it is.</div>
+    </div>
+  </div>
+  <div class="menu-page" data-page="effects" hidden>
+    <div class="menu-head"><button type="button" class="menu-back" aria-label="Back"><span aria-hidden="true">&lsaquo;</span></button><h3>Effects</h3></div>
+    <div class="menu-field">
+      <div class="menu-field-label" id="fish-label">Fish</div>
+      <div class="menu-seg" id="fish" role="radiogroup" aria-labelledby="fish-label" aria-describedby="fish-note">
+        <button type="button" role="radio" data-value="on">On</button>
+        <button type="button" role="radio" data-value="off">Off</button>
+      </div>
+      <div class="menu-note" id="fish-note"></div>
     </div>
   </div>
   <div class="menu-page" data-page="quality" hidden>
@@ -1616,6 +1632,20 @@
       settings.setValue('sound', pond.sound ? 'On' : 'Off');
     }
     updateSound();
+    // The Effects page: the fish, in or out of every water (the pond remembers the choice).
+    const FISH_NOTES = {
+      on: 'Each water has the fish such water holds: minnows, perch and a pike in the lake, trout in the mountains, koi in the Koi pond. A thing thrown frightens them, and what is edible is eaten.',
+      off: 'The water is empty: nothing swims, and nothing is eaten.',
+    };
+    const fishNote = document.getElementById('fish-note');
+    const showFish = radioGroup(document.getElementById('fish'), (value) => { pond.setFish(value === 'on'); updateEffects(); });
+    function updateEffects() {
+      const on = pond.fishOn;
+      showFish(on ? 'on' : 'off');
+      fishNote.textContent = FISH_NOTES[on ? 'on' : 'off'];
+      settings.setValue('effects', on ? 'Fish on' : 'Fish off');
+    }
+    updateEffects();
     // The Water page as the place has it: the lake's clarities, or the pool's own water; Frozen's ice under the cards.
     const showIce = radioGroup(document.getElementById('ice'), (value) => { pond.setIce(value); updateWater(); });
     const OPEN_WATER = {
@@ -1814,6 +1844,7 @@
       updateWeather();
       updateWind();
       updateSound();
+      updateEffects();
       showQuality();
       reset.then(() => {
         if (sceneChoice === choice) updateSky();

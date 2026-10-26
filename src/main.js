@@ -257,7 +257,9 @@
 // ?weather=clear|light-rain|heavy-rain|storm|light-snow|heavy-snow|blizzard|fog
 // the weather (WEATHERS: the sky's cloud and haze, src/sky.js, the rain,
 // src/rain.js, the snow, src/snow.js, a storm's lightning,
-// src/lightning.js, a storm's or a blizzard's gale and a fog's calm; setWeather); each otherwise
+// src/lightning.js, a storm's or a blizzard's gale and a fog's calm; setWeather);
+// ?fish=off (or none, the harness's --fish=none) leaves every water without
+// fish (the Effects setting; setFish); each otherwise
 // the one last chosen on this device, or lakeside's afternoon, lake, calm
 // and clear; ?paused=1
 // starts with the clock stopped
@@ -477,6 +479,7 @@ const DEBUG_MODES = { under: 0, height: 1, foam: 2, env: 3, face: 4, ambient: 5 
 const DEFAULT_WIND_STRENGTH = 'calm';
 const WIND_STORAGE_KEY = 'stone-pond-wind';   // the Wind setting's last choice on this device
 const SOUND_STORAGE_KEY = 'stone-pond-sound';   // the Sound setting's last choice on this device ('off', or on)
+const FISH_STORAGE_KEY = 'stone-pond-fish';     // the Effects setting's fish, last chosen on this device ('off', or on)
 const WATER_STORAGE_KEY = 'stone-pond-water'; // the Water setting's: a clarity, or frozen
 const SKY_STORAGE_KEY = 'stone-pond-sky';     // the Location setting's: a place (PLACES)
 const TIME_STORAGE_KEY = 'stone-pond-time';   // the Time setting's: the local time ('hh:mm') of the hour last chosen
@@ -964,8 +967,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   }
   showScenery(pooled);
   // The fish (src/fish.js; drawn by src/fishMeshes.js in the under-water pass): the place's, in its water (applyFish);
-  // ?fish=none leaves every water empty.
-  const fishOn = pageParameters.get('fish') !== 'none';
+  // ?fish=off or none, or the Effects setting's Off remembered on this device, leaves every water empty (setFish).
+  let fishOn = !['none', 'off'].includes(pageParameters.get('fish') ?? storedChoice(FISH_STORAGE_KEY));
   const fishes = new FishPopulation({ seed: Number(pageParameters.get('fishSeed') ?? 1) });
   const fishView = createFishView(lighting, { bedDepthAt: (x, z) => bedDepthAt(x, z), seenThrough: () => pooled });
   sceneUnder.add(fishView.group);
@@ -2898,6 +2901,15 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       try { window.localStorage.setItem(SOUND_STORAGE_KEY, on ? 'on' : 'off'); } catch { /* storage refused: the choice lasts this visit */ }
     },
     get sound() { return sound.enabled; },
+    /** The fish in or out of every water (the Effects setting): put in or taken out now (applyFish), remembered on this device. */
+    setFish(on) {
+      if (Boolean(on) !== fishOn) {
+        fishOn = Boolean(on);
+        applyFish();
+      }
+      try { window.localStorage.setItem(FISH_STORAGE_KEY, fishOn ? 'on' : 'off'); } catch { /* storage refused: the choice lasts this visit */ }
+    },
+    get fishOn() { return fishOn; },
     /** The floaters' ride read back (src/floaterRide.js): how many reads have come back and whether reading works (tools/quality-probe.mjs). */
     get floaterRide() { return { reads: floaterRide.reads, requests: floaterRide.requests, working: floaterRide.working }; },
     /** How many sounds are playing now (tools/quality-probe.mjs). */
@@ -3062,11 +3074,12 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       iceThickness = 'thin';
       this.setWater(DEFAULT_WATER);
       this.setSound(true);
+      this.setFish(true);
       if (!automaticQuality) this.setQuality('auto');   // already Auto: its calibration keeps what it found
       chosenClock = null;
       const place = requestPlace(...placeAndHour(DEFAULT_PLACE), { remember: false });
       showView('shore');
-      for (const key of [THING_STORAGE_KEY, WEATHER_STORAGE_KEY, WIND_STORAGE_KEY, WATER_STORAGE_KEY, ICE_STORAGE_KEY, SOUND_STORAGE_KEY, SKY_STORAGE_KEY, TIME_STORAGE_KEY]) {
+      for (const key of [THING_STORAGE_KEY, WEATHER_STORAGE_KEY, WIND_STORAGE_KEY, WATER_STORAGE_KEY, ICE_STORAGE_KEY, SOUND_STORAGE_KEY, FISH_STORAGE_KEY, SKY_STORAGE_KEY, TIME_STORAGE_KEY]) {
         try { window.localStorage.removeItem(key); } catch { /* storage refused: nothing was kept */ }
       }
       return Promise.all([place, weather]).then(() => undefined);

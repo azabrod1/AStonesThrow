@@ -206,6 +206,10 @@ is remembered on the device (but the view, which opens on the shore):
   with spray off the crests and foam in streaks along the wind; the stones
   and their splashes ride them, and the Low view's eye stands above them.
   The pool is too small for waves: there a gale only ripples hard.
+- Effects: Fish on (the default) or off. Off, every water is empty:
+  nothing swims, nothing is startled and nothing is eaten (`?fish=off` on
+  the page, `--fish=none` for the harness; remembered on the device like
+  the other settings).
 - Quality: Auto, Low, Medium or High.
 Auto starts on High everywhere and steps down by itself if the idle
 pond or the first splash renders too slowly, and later whenever the frame
