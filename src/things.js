@@ -168,8 +168,9 @@
 //
 // One material serves them all (src/rock.js): what tells them apart is in
 // the geometry, the vertex colours and the material's colour, roughness and
-// reflection, which are uniforms, so no thing compiles a program of its own
-// (src/main.js warmUp).
+// reflection, which are uniforms, and a stone's grain (src/shaders/stone.js:
+// its kind and seed, uniforms too, no kind for anything else), so no thing
+// compiles a program of its own (src/main.js warmUp).
 import { meshKind, unitVolume, unitLength } from './thingMeshes.js';
 
 export const WATER_DENSITY = 1000;

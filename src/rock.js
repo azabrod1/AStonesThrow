@@ -316,7 +316,8 @@ import * as THREE from 'three';
 import { SEEN_THROUGH_WATER, SEEN_UNDER_CLEAR, CLEAR_SIDES_INSIDE, FLOATER_WATER } from './shaders/scene.js';
 import { PINCH_TIME, NECK_CLOSE, SPIN_DECAY, sinkStep, underWater } from './cavity.js';
 import { THINGS, DEFAULT_THING, WATER_DENSITY, STONE_DENSITY } from './things.js';
-import { meshKind, meshVolume, withParts } from './thingMeshes.js';
+import { cornersOf, meshKind, meshVolume, withParts } from './thingMeshes.js';
+import { stoneDetail, stoneUniforms } from './shaders/stone.js';
 import { convexHull, insidePolygon, polygonEdgeDistance } from './ice.js';
 
 // The stone's geometry is src/thingMeshes.js's now; the probes take it from here as they always did.
@@ -876,7 +877,7 @@ export function buoyancyColumns(geometry, axis, columns = BUOYANCY.columns) {
 
 /** A mesh's columns (buoyancyColumns) along `axis`, `columns` across its widest, on a grid turned `turn` radians about it. */
 function columnsOf(geometry, axis, turn, columns) {
-  const positions = geometry.attributes.position.array;
+  const positions = cornersOf(geometry);
   const along = axis.clone().normalize();
   const acrossU = new THREE.Vector3(1, 0, 0);
   if (Math.abs(acrossU.dot(along)) > 0.9) acrossU.set(0, 0, 1);
@@ -979,6 +980,21 @@ function faceArea(geometry, axis) {
   return doubled / 4;
 }
 
+/**
+ * The furthest any corner of `mesh` (a geometry, or a stone's physics mesh, its position attribute) gets from the
+ * origin, in radii: its bounding sphere's centre and radius, found as THREE.BufferGeometry.computeBoundingSphere finds
+ * them (the centre its box's middle, the radius the furthest corner from there), so a stone's reach is the arithmetic
+ * it always was.
+ */
+export function reachOf(mesh) {
+  const attribute = mesh.isBufferAttribute ? mesh : mesh.attributes.position;
+  const centre = reachBox.setFromBufferAttribute(attribute).getCenter(reachCentre);
+  let furthestSquared = 0;
+  for (let corner = 0; corner < attribute.count; corner++) furthestSquared = Math.max(furthestSquared, centre.distanceToSquared(reachCorner.fromBufferAttribute(attribute, corner)));
+  return centre.length() + Math.sqrt(furthestSquared);
+}
+const reachBox = new THREE.Box3(), reachCentre = new THREE.Vector3(), reachCorner = new THREE.Vector3();
+
 /** A plate's shape (stoneShape's, of its `geometry`) given its face as the disc of its area, in radii (`faceDisc`: Rock.plateRadius). */
 function plateFace(shape, geometry) {
   shape.faceDisc = Math.sqrt(faceArea(geometry, shape.axes[2]) / Math.PI);
@@ -1041,7 +1057,7 @@ function symmetricEigen(matrix) {
  * ellipsoid.
  */
 export function stoneShape(geometry) {
-  const positions = geometry.attributes.position.array;
+  const positions = cornersOf(geometry);
   let volume = 0;
   let centroidX = 0, centroidY = 0, centroidZ = 0;
   const moments = new Float64Array(9);   // ∫ x·xᵀ dV about the origin
@@ -1230,8 +1246,11 @@ export class Rock {
       this.dressing = { name: this.dressing.name, share: this.dressing.share };
     }
     if (!prepared) this.geometry.computeBoundingSphere();
-    this.reach = prepared?.reach ?? this.geometry.boundingSphere.center.length() + this.geometry.boundingSphere.radius;   // furthest any point gets from the centre, in radii
-    this.shape = this.sphere ? BALL_SHAPE : prepared?.shape ?? stoneShape(this.geometry);
+    // A stone's physics mesh (src/thingMeshes.js createRockGeometry): the faces its shape, its contact, its lowest point
+    // and its buoyancy are worked out over, while its geometry, a finer mesh of the same surface, is only drawn.
+    const physics = this.geometry.userData.physics ?? null;
+    this.reach = prepared?.reach ?? reachOf(physics ?? this.geometry);   // furthest any point gets from the centre, in radii
+    this.shape = this.sphere ? BALL_SHAPE : prepared?.shape ?? stoneShape(physics ?? this.geometry);
     // Its density: its definition's, or its mass over its volume (a sphere's; a mesh's own, as a pizza's disc).
     const volume = this.sphere ? (4 / 3) * Math.PI * radius ** 3 : this.shape.volume * radius ** 3;
     this.density = this.thing.body.density ?? this.ownMass / volume;
@@ -1239,7 +1258,7 @@ export class Rock {
     // Which way is up for it: its own +y if it is kept upright (a pizza's toppings), else its short axis, either way.
     this.uprightAxis = this.thing.body.upright ? UP.clone() : this.shape.axes[2].clone();
     // A floater that is not a sphere floats by its mesh's own volume, at any angle (buoyancyColumns).
-    this.buoyancy = (this.floats || this.thing.air.model === 'flutter') && !this.sphere ? (prepared ? prepared.buoyancy() : buoyancyColumns(this.geometry, columnAxis(this.thing, this.shape), this.thing.water.columns)) : null;
+    this.buoyancy = (this.floats || this.thing.air.model === 'flutter') && !this.sphere ? (prepared ? prepared.buoyancy() : buoyancyColumns(physics ?? this.geometry, columnAxis(this.thing, this.shape), this.thing.water.columns)) : null;
     // Where its weight acts afloat (turnAfloat, stableAfloat): its volume's middle, moved by its `body.ballast` (a duck's
     // heavy base), in its own frame and radii.
     this.massCentre = this.buoyancy ? this.buoyancy.centroid.clone().add(new THREE.Vector3().fromArray(this.thing.body.ballast ?? [0, 0, 0])) : null;
@@ -1270,7 +1289,7 @@ export class Rock {
     // A soft thing's rest shape, which flex bends what is drawn from; the physics reads the shared mesh's, without its
     // parts (physicsPositions).
     this.restShape = this.thing.body.soft ? this.geometry.attributes.position.array.slice() : null;
-    this.physicsShape = prepared && this.geometry !== prepared.geometry ? prepared.geometry.attributes.position.array : null;
+    this.physicsShape = physics ? physics.array : prepared && this.geometry !== prepared.geometry ? prepared.geometry.attributes.position.array : null;
     // What the water has done to it (soak, showWet): how wet it is (1 out of the water, drying to 0) and how far soaked through.
     this.wet = 0;
     this.soaked = 0;
@@ -1282,6 +1301,9 @@ export class Rock {
     this.dry = { mass: this.mass, density: this.density };   // as thrown, before any soaking (the `mass` getter: a stone's is its density's)
     const glow = mesh.glow?.(this.thing) ?? null;      // a look's own light (a frozen pizza's frost)
     const map = mesh.texture?.(this.thing) ?? null;   // a textured look's (a pizza's top); its own program (src/main.js warmUp)
+    // A stone's grain and relief, drawn pixel by pixel (src/shaders/stone.js): every thing's program has it, a stone's
+    // kind and seed in its uniforms, and no kind for anything else, so the program stays the one they all share.
+    const stone = this.stone = stoneUniforms(this.geometry.userData.stone ?? null);
     const makeMaterial = (clipNormalY) => new THREE.MeshStandardMaterial({
       color: baseColor,
       ...(glow ? { emissive: glow } : {}),
@@ -1296,12 +1318,15 @@ export class Rock {
     this.meshAbove = new THREE.Mesh(this.geometry, makeMaterial(1));
     this.meshBelow = new THREE.Mesh(this.geometry, makeMaterial(-1));
     this.meshBelow.material.envMapIntensity = 0.35;
+    this.meshAbove.material.onBeforeCompile = (shader) => stoneDetail(shader, stone);
+    this.meshAbove.material.customProgramCacheKey = () => 'above';
     // The part above the water in the water's mirror image, afloat (the header): its distance in alpha.
     // Only a floater has one (a mesh and a material draw random ids, which would move a seeded stone's splash).
     this.meshMirror = null;
     if (this.floats) {
       this.meshMirror = new THREE.Mesh(this.geometry, makeMaterial(1));
       this.meshMirror.material.onBeforeCompile = (shader) => {
+        stoneDetail(shader, stone);
         shader.fragmentShader = shader.fragmentShader.replace('#include <dithering_fragment>', `#include <dithering_fragment>
   gl_FragColor.a = 1.0 - ${MIRROR_NEARNESS_SCALE.toFixed(1)} / max(length(vViewPosition), 0.05);`);
       };
@@ -1320,6 +1345,7 @@ export class Rock {
     const fogExtinction = { value: waterFog?.extinction ?? new THREE.Vector3() };
     const fogColor = { value: waterFog?.color ?? new THREE.Vector3() };
     this.meshBelow.material.onBeforeCompile = (shader) => {
+      stoneDetail(shader, stone);
       shader.uniforms.uSeenThroughWater = seenThroughWater;
       shader.uniforms.uWaterLevel = waterLevel;
       shader.uniforms.uFogExtinction = fogExtinction;
@@ -1390,6 +1416,7 @@ export class Rock {
     if (seenThrough) Object.assign(this.meshBelow.material, { side: THREE.DoubleSide, transparent: true, depthWrite: false });
     this.ridesWater = true;   // src/main.js redraws its mirror image as the water moves under it
     const ride = (side) => (shader) => {
+      stoneDetail(shader, this.stone);
       Object.assign(shader.uniforms, water);
       shader.uniforms.uRide = rideShare;
       shader.uniforms.uWaterLevel = waterLevel;
