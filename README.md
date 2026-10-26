@@ -536,7 +536,7 @@ crown: the same sheet model with the drop's radius and speed, standing for
 about 20 ms.
 
 No two throws splash alike, as no two stones go in alike. Each stone
-(`src/rock.js`) is its own faceted lump, and it reports at impact its shape
+(`src/rock.js`) is its own lump (faceted for the physics, drawn smooth), and it reports at impact its shape
 (elongation and flatness from the principal axes of its solid, and how lumpy
 it is), what touched the water first (a flat face, an edge or a point, and
 how blunt it was there) and its spin (rate, axis, and ω·R/V); a tilted flat
@@ -1174,7 +1174,13 @@ what a sun overhead would give), so a crest draws a thin bright line where
 its focus meets the sand, eased into 0.45 to 2.6 times the sun's own light
 (`src/pondFloor.js`), crisp enough that the ripples' web and a ring's light
 stand out on the shallow sand.
-Stones are procedural geometry, lumpy, worn smooth and speckled, with a
+Stones are procedural geometry, lumpy and worn smooth: the physics walks a
+320-face mesh of the surface (`src/thingMeshes.js` `createRockGeometry`, its
+random draws as they always were, so a seeded throw keeps its splash), the
+eye is given the same surface cut nine times finer, and each kind's grain
+and relief (a river stone's speckle, slate's layers, granite's mica and
+quartz, basalt's vesicles, pumice's pits) are drawn pixel by pixel
+(`src/shaders/stone.js`). They have a
 small rigid-body model: a ballistic arc, quadratic drag under water, and a
 settle into the sand. A rock over 16 cm across leaves the hand lower and
 farther out, so it rises into the view rather than filling its corner.

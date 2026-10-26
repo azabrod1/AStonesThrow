@@ -1151,8 +1151,9 @@ console.log('\nThings meeting things (src/collide.js):');
   Object.assign(pumice, { state: 'float', hasFloated: true });
   pumice.position.y = pumice.floatingHeight();
   pumice.velocity.x = 1;
-  // The wall holds it where its mesh reaches it (src/pool.js reachesAcross): its farthest point, as it is turned, never past it.
-  const point = new THREE.Vector3(), corners = pumice.geometry.attributes.position.array;
+  // The wall holds it where its mesh reaches it (src/pool.js reachesAcross): its farthest point, as it is turned, never past
+  // it. The mesh the physics walks (a stone's drawn mesh is finer, and bulges a fraction of a millimetre past this one's faces).
+  const point = new THREE.Vector3(), corners = pumice.physicsPositions;
   let farthest = -Infinity, centre = -Infinity;
   for (let time = 0; time < 0.5; time += STEP) {
     pumice.update(STEP, POOL.depth);
