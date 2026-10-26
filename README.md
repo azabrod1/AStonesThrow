@@ -924,12 +924,9 @@ the sideways move crowds the water past breaking (its Jacobian under 0.66,
 about 3% of the sea), a foam map on the tile takes a dense boil that pops
 within a second and a raft that drains over five, which the water shades
 as it shades a splash's foam, the raft gathered into thin wavering streaks
-along the wind; and spindrift, the fine spume the wind tears off a crest
-while it breaks (two clocks in the foam map say when each point began and
-stopped breaking), is blown downwind over the waves as soft, wispy puffs of
-mist that thin and dissolve within a second. When the gale rises its
-foam is run over the six seconds before, so the sea opens as one that has
-been blowing. The eye keeps 0.45 m clear of the still water either way.
+along the wind. When the gale rises its foam is run over the six seconds
+before, so the sea opens as one that has been blowing. The eye keeps
+0.45 m clear of the still water either way.
 `tools/gale-probe.mjs` checks the field on the CPU with the GPU's passes.
 
 **Snow** (`src/snow.js`, `src/shaders/snow.js`; the cloud and haze in

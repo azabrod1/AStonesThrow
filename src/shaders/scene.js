@@ -369,6 +369,10 @@ float ambientLaplacian(vec2 worldXZ) {
 }
 
 ${GALE_SURFACE}
+// How much of the sideways move a rest position takes (above).
+float galeSideways(vec2 restXZ) {
+  return smoothstep(GALE_SIDEWAYS_FROM, GALE_SIDEWAYS_TO, length(restXZ - uGaleCentre));
+}
 
 // Where the gale moves the still surface's point at restXZ: (Dx, h, Dz) in
 // metres, read at mip level lod (a vertex reads the waves no shorter than

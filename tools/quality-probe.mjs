@@ -56,7 +56,7 @@
 //    flakes, its draw adds one call; clear
 //    again, nothing of it is drawn or lies. Fog compiles and draws nothing
 //    more, a throw into it neither, and stills the wind while it lasts. The gale (src/galeWaves.js)
-//    and the storm: the first gale compiles its passes and spray once, draws the finer
+//    and the storm: the first gale compiles its passes once, draws the finer
 //    sheet that carries its waves, and a throw into it compiles none; the
 //    storm compiles none through a lightning strike; in the pool the gale
 //    raises no waves; calm again, the still sheet. In a 2560×1440 window on

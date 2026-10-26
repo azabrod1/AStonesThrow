@@ -23,7 +23,7 @@
 //   6. render the main scene (sky dome, water surface refracting pass 5 and
 //      reflecting the mirror image, the stones' cavities in it
 //      (src/cavity.js), foam specks riding the surface, stones above the
-//      surface, the rain's streaks and flecks, the snow's flakes, the gale's spray) to an HDR
+//      surface, the rain's streaks and flecks, the snow's flakes) to an HDR
 //      texture with depth;
 //   7. draw the splash's water over it and tone-map to the canvas; with no
 //      water in the air, only the tone map (src/splash.js).
@@ -731,7 +731,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   // The gale's waves (src/galeWaves.js): their uniforms join the ripples'
   // before any material spreads those in; they blow only under a gale, and
   // never in the pool (applyGale).
-  const galeWaves = new GaleWaves(renderer, { windDirection, centre: water.centre, sharedWith: ambientWaves, lighting, haze: environment.hazeUniforms });
+  const galeWaves = new GaleWaves(renderer, { windDirection, centre: water.centre, sharedWith: ambientWaves });
   // The water's height at world (x, z) under the gale (its CPU sum), for the stones, the mirror and the eye.
   const galeSample = { height: 0, slopeX: 0, slopeZ: 0 };
   const galeSurfaceAt = (x, z) => galeWaves.sample(x, z, galeSample).height;
@@ -931,7 +931,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   const sceneMain = new THREE.Scene();
   // The haze for the built-in materials in it, the stones' and the things' (src/sky.js): 0 but in haze.
   sceneMain.fog = environment.fog;
-  sceneMain.add(environment.sky, surface.inner, surface.outer, splash.cavityGroup, splash.foamSpecks.points, sun, rain.streaks, rain.flecks, snow.flakes, galeWaves.spray);
+  sceneMain.add(environment.sky, surface.inner, surface.outer, splash.cavityGroup, splash.foamSpecks.points, sun, rain.streaks, rain.flecks, snow.flakes);
   // MIRROR_LAYER holds what the water mirrors: the sky dome, far shore
   // included, and while a splash lives its crowns, columns and drops. The
   // cavities are not on it: a hole lies below the mirror plane, so the water
@@ -2371,7 +2371,6 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     camera.updateMatrixWorld();
     if (!skip.ambient) ambientWaves.update(simulationTime);
     galeWaves.update(simulationTime);   // nothing with no gale
-    galeWaves.updateView(simulationTime, camera, viewFocus());
     updateLightning(simulationTime);
     rain.update(simulationTime, camera, resolution, viewFocus());
     snow.update(simulationTime, camera, resolution);
