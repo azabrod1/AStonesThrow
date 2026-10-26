@@ -22,7 +22,15 @@ into the water there instead: drag to trail it through, leaving a wake, and
 let go to lift it out (`src/touch.js`). Drag the water to walk the view round the pond and
 up or down (from just above the water to nearly straight down), and scroll
 or pinch to zoom toward what is under the pointer (down to an 8° field of
-view); a drag that starts zoomed turns round what the view is looking at.
+view); a drag that starts zoomed turns round what the view is looking at,
+slower the closer the zoom. Zooming out past the opening frame steps the
+eye straight back along its line of sight, up to twice its distance from
+what it looks at, so from the shore the view backs up the bank behind the
+thrower and the hand comes into the frame; zooming in walks back up to the
+frame before it narrows. The thing about to be thrown is previewed in the
+hand, see-through, at the size the strip sets, let down for a skip,
+turning slowly; it is gone the moment a throw leaves the hand and fades
+back (`?preview=off` leaves it out).
 Escape or Reset view (under the menu button while the view is away from
 the shore's) glides back to the shore. The strip at the bottom sets what is
 thrown: its name opens a dropdown of every thing under its group, each with
@@ -106,13 +114,17 @@ is remembered on the device (but the view, which opens on the shore):
   where it rests (`--report` says) with `--look=x:y:z` and a `--fov` that
   frames it (a duck 4°, a pie 8°, a pizza 9°, a toy slide 24°; the cake's
   with `--seed=3`, on which it lands right way up).
-- View: Shore, standing on the bank as the page opens; Low, down at the
+- View: Shore, standing on the bank as the page opens; Behind, over the
+  thrower's shoulder, a metre back and a little above the shore's eye, so
+  the hand with the preview of the thing in it, the arc of the throw and
+  where it lands are all in frame; Low, down at the
   water, the splash against the far shore; High, from above, the rings
   spreading over the pond; Under, under the water, looking up at the rocks
   coming down through the sky's bright window, their air cavities silver
   mirrors, the sun's shafts slanting down. A choice glides there; a drag
   turns from it (under the water it stays under). In the pool, Shore stands
-  on the deck at the pool's near corner looking down into it, Low just
+  on the deck at the pool's near corner looking down into it, Behind on the
+  deck behind the hand, Low just
   inside its near wall, and under the water the eye keeps inside its walls.
 - Water (`?water=`): Clear, a spring's, bluer and clearer; Lake, the
   default, a clear Alpine lake's (bright sand in the shallows,
@@ -1383,11 +1395,13 @@ farther out, so it rises into the view rather than filling its corner.
   (`--weather=` for the harness) the weather, `WEATHERS` in `src/main.js`,
   over the one last chosen on the device (a storm or a blizzard brings a
   gale while it lasts, unless `?windStrength` says otherwise).
-- `?view=shore|level|high|under` on the page (`--view=` for the harness) opens on
+- `?view=shore|behind|level|high|under` on the page (`--view=` for the harness) opens on
   one of the View setting's choices (`VIEWS` in `src/main.js`);
   `--orbit=azimuth:elevation:distance[:x:y:z]` stands the harness's camera on
   any orbit (degrees, degrees, metres, and the pivot; `src/viewOrbit.js`).
-  The rocks are thrown from the shore whatever the view.
+  The rocks are thrown from the shore whatever the view. The harness leaves
+  the preview of the thing in the hand out (`?preview=off`) unless
+  `--preview=1`, so frames from any orbit stay as they were.
 - `node tools/sky-encode.mjs [assets/sky/name_2k.hdr ...] [--verify]` encodes
   each sky's Radiance file (every one, by default) as the JPEG gain map the
   page loads, `assets/sky/name_2k.jpg`: a base image and a gain map, matched
@@ -1511,10 +1525,17 @@ farther out, so it rises into the view rather than filling its corner.
   within the pixel budget.
 - `node tools/zoom-probe.mjs [--w=390 --h=844]` drives the wheel, a pinch, a
   tap and Escape through the page's own handlers and checks that what is under
-  the pointer stays there; then drags, by touch and by mouse, and checks that
+  the pointer stays there, that zooming out past the frame steps the eye
+  back along its line of sight (to twice the frame's distance, the pivot
+  still at the centre) and that zooming in walks back up to the frame
+  first; then drags, by touch and by mouse, and checks that
   they turn the view about its pivot, keep the eye above the water and throw
   nothing, that a drag that starts zoomed turns round what the view shows,
-  and that the View choices and Reset view glide where they should; in the
+  slower by the zoom,
+  and that the View choices and Reset view glide where they should, the
+  hand and the preview of the thing in it in frame from Behind, the
+  preview following the choice, the size and the manner and gone for a
+  moment after a throw; in the
   pool, that the views stand where they should, the eye under its water
   keeps inside its walls and comes back out once turned from one, a glide
   into its water and out goes over the water, and a tap on the deck throws

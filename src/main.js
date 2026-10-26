@@ -43,7 +43,7 @@
 // wider, and the frame is drawn from below (renderFromBelow): no mirror, no
 // under-water pass, the bed, stones and bubbles faded by the water to the
 // eye, the surface and the cavities with their from-below shading (Snell's
-// window, the mirror past it, the sun's shafts), and nothing in the air. Wherever it stands, the view zooms by narrowing the field of view
+// window, the mirror past it, the sun's shafts), and nothing in the air. Wherever it stands, the view zooms in by narrowing the field of view
 // (from the frame's 48° landscape or 62° portrait down to 8°) and turning
 // the camera, horizon level, so that what is under the pointer stays there
 // (src/viewZoom.js): the mouse wheel by 0.9 per notch, a two-finger pinch
@@ -52,9 +52,22 @@
 // unzoomed frame, so zooming all the way out returns to it, and turns with
 // it; a drag that starts zoomed first moves the pivot to what the view looks
 // at (the water under its centre, or a point as far off as the pivot was),
-// so it turns round that. The rocks are always thrown from the shore, by a
-// hand beside and below the shore view's eye, so every throw enters the
-// water as the tools reproduce it. The mirror image of the sky is
+// so it turns round that, and turns slower the narrower the field of view,
+// so what is under the finger still follows it. Zoomed out past the frame,
+// the eye steps straight back along its line of sight instead (zoomTo: the
+// same notches and pinches, the field of view the frame's, the pivot still
+// at its centre), to FARTHEST_BACK times the frame's distance from the pivot:
+// from the shore that is up the bank behind the thrower, the hand in the
+// lower middle of the frame, and zooming back in walks up to the frame
+// again before the field of view narrows; Escape and Reset view come home
+// from there too. The rocks are always thrown from the shore, by a hand
+// beside and below the shore view's eye, just outside its frame, so every
+// throw enters the water as the tools reproduce it; the Behind view
+// (VIEWS.behind) stands over the thrower's shoulder, the hand and the whole
+// arc of the throw in frame, and the thing about to be thrown is previewed
+// in the hand (buildPreview, PREVIEW: see-through, at the strip's size, let
+// down for a skip, turning slowly, gone for a moment after each throw;
+// ?preview=off leaves it out). The mirror image of the sky is
 // re-rendered at the next frame whenever the view has changed, and while a
 // splash lives it is drawn over where the splash's own mirror image falls,
 // each frame (updateReflection). A tap throws at the water under it, brought
@@ -287,7 +300,8 @@ import { collideThings } from './collide.js';
 import { SplashSystem, MIRROR_LAYER } from './splash.js';
 import { createFloatTarget, FullscreenPass, configureFloatSupport, renderTargetBytes } from './gpu.js';
 import { UNDER_BACKGROUND_FRAGMENT } from './shaders/scene.js';
-import { directionAt, placeDirection, clampToFrame, zoomToward, isZoomed, viewFacing } from './viewZoom.js';
+import { directionAt, placeDirection, clampToFrame, isZoomed, viewFacing } from './viewZoom.js';
+import { meshKind } from './thingMeshes.js';
 import { orbitEye, orbitFacing, orbitAbout, clampOrbit, turnOrbit, blendOrbits, orbitsMatch, keepInside, LOWEST_EYE } from './viewOrbit.js';
 import { Profiler } from './profiler.js';
 import { FingerInWater, FINGER } from './touch.js';
@@ -428,6 +442,11 @@ const CATCH_UP = 12;           // a frame moves the world at most this many of i
 const TRACE = { points: 4000, step: 0.01, marks: 100, cross: 0.06 };   // a stone's traced path (setTracing): at most this many points, one per this many metres it moves; at most this many touches and arc tops marked; a touch's cross this many metres each way
 const MIN_FOV = 8;            // degrees: the narrowest zoom
 const WHEEL_STEP = 0.9;       // field of view factor per wheel notch
+const FARTHEST_BACK = 2.0;    // zoomed out past the frame, the eye steps back to at most this many times the frame's distance from the pivot (zoomTo)
+// The thing about to be thrown, previewed in the hand (buildPreview): its opacity; how fast it turns about the
+// vertical (radians a second); how long it is gone after a person's throw (seconds of real time) and then takes to
+// fade back; and the seed its stone's lumps are drawn with (previewRandom: never Math.random, so seeded throws stay).
+const PREVIEW = { opacity: 0.5, turn: 0.35, gone: 0.35, fade: 0.3, seed: 11 };
 const HOME_TARGET = [0, 0.12, -1.0];
 const TAP_SLOP = 14;          // CSS pixels a press may move and still throw; past them it turns the view
 const HOLD_MS = 300;          // a press held this long within TAP_SLOP dips a finger into the water
@@ -443,13 +462,19 @@ const KOI_BED_ALBEDO = 0.3;   // the Koi pond's gravel and silt, for what the sp
 const ORBIT_TURN = Math.PI;   // radians the view turns for a drag across the canvas's height
 const GLIDE_SECONDS = 1.0;    // a glide to another view
 // The View setting's choices (src/viewOrbit.js): the shore view the page
-// opens with, 1.15 m above the water's edge; down at the water, its eye 16 cm
+// opens with, 1.15 m above the water's edge; behind the thrower, over the
+// shoulder, 1.6 m up and a metre back from the shore eye, a little to its
+// left of the hand, looking at where the rocks land, so the hand (with the
+// preview of the thing in it, buildPreview) and the whole arc of a throw are
+// in frame, the hand in the lower middle of it on a desktop and on a phone;
+// down at the water, its eye 16 cm
 // up, 1.9 m from where the rocks land; high above, 2.4 m up and a little to
 // the side, looking down on where they land; under the water, 0.85 m down
 // over the shallows, 1.5 m short of where they land, looking up and out
 // toward it and the sun, its shafts coming down through Snell's window.
 const VIEWS = {
   shore: orbitAbout({ x: 0, y: 1.15, z: 2.45 }, { x: HOME_TARGET[0], y: HOME_TARGET[1], z: HOME_TARGET[2] }),
+  behind: orbitAbout({ x: 0.1, y: 1.6, z: 3.5 }, { x: HOME_TARGET[0], y: HOME_TARGET[1], z: HOME_TARGET[2] }),
   level: orbitAbout({ x: 0, y: 0.16, z: 0.5 }, { x: 0, y: 0.1, z: -1.4 }),
   high: orbitAbout({ x: 1.0, y: 2.4, z: 0.6 }, { x: 0, y: 0, z: -1.3 }),
   under: orbitAbout({ x: -0.7, y: -0.85, z: -0.1 }, { x: 0, y: -0.3, z: -1.4 }),
@@ -903,6 +928,9 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   Object.assign(orbit, clampOrbit(orbit, eyeBounds(orbit)));   // the views stand within them, but under a gale
   const home = { ...orbitFacing(orbit), fov: 48 };
   const view = { ...home };
+  // The frame's distance from the pivot: zoomed out past the frame the eye steps back from it (zoomTo), and a View
+  // choice, a glide's end, a new pivot or the API's orbit makes the orbit's distance the frame's again (settleFrame).
+  let frameDistance = orbit.distance;
   // The thrower's hand stands beside and below the shore view's eye, wherever the camera is (handPosition).
   const shoreEye = orbitEye(VIEWS.shore);
   const shoreFacing = orbitFacing(VIEWS.shore);
@@ -995,6 +1023,91 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   arc.visible = false;
   arc.frustumCulled = false;
   sceneMain.add(marker, arc);
+
+  // The thing about to be thrown, previewed in the hand (PREVIEW; the header): the chosen thing at the strip's size,
+  // see-through, where handPosition holds it (let down for a skip, as skipThrow lets the hand down), turning slowly
+  // about the vertical so that it reads as a preview and not a thing hanging in the air, gone the moment a person's
+  // throw leaves the hand (previewThrown) and faded back in. It is in the main scene alone, above the water: in no
+  // mirror image (it is on no MIRROR_LAYER), not from under the water (hiddenFromBelow), never among the rocks
+  // (nothing meets it, the grab cannot pick it, the fish ignore it), and never culled (a draw off screen costs next to
+  // nothing, and the warm-up's frames compile its programs with the hand out of frame). Its geometry is its thing's
+  // prepared one (src/rock.js prepareThing: shared, so never disposed here) or built for it with a seeded stream in
+  // place of Math.random (previewRandom), so a seeded throw's stone stays the stone it was; its material a see-through
+  // twin of a rock's (src/rock.js makeMaterial), of which warmUp draws one plain and one textured under the veil and
+  // keeps both (programKeepers), so no later choice compiles a program. ?preview=off leaves it out, as the shoot
+  // harness does unless asked (tools/shoot.mjs --preview=1), so frames from any orbit stay as they were.
+  const previewOn = pageParameters.get('preview') !== 'off';
+  const preview = { mesh: null, thing: null, flat: false, ownsGeometry: false, radius: 0, goneUntil: 0, turned: 0, drawnAt: 0 };
+  /** `build` run with Math.random a seeded stream from PREVIEW.seed (Park–Miller), Math.random itself put back after. */
+  function previewRandom(build) {
+    const random = Math.random;
+    let state = PREVIEW.seed;
+    Math.random = () => { state = (state * 16807) % 2147483647; return (state - 1) / 2147483646; };
+    try { return build(); } finally { Math.random = random; }
+  }
+  function disposePreview() {
+    if (!preview.mesh) return;
+    sceneMain.remove(preview.mesh);
+    if (preview.ownsGeometry) preview.mesh.geometry.dispose();
+    if (!programKeepers.includes(preview.mesh.material)) preview.mesh.material.dispose();
+    preview.mesh = null;
+  }
+  /**
+   * The preview of `name` (what is chosen, as a rule) at its size and in
+   * the manner now: built afresh when the thing or its flatness (a flat
+   * stone for a skip, as throwAt throws one) has changed, else only placed.
+   */
+  function buildPreview(name = thingName) {
+    if (!previewOn) return;
+    const { thing, radius } = measureThing(name);
+    const flat = skipsNow() && thing.skips && Boolean(thing.byDiameter);
+    if (!preview.mesh || preview.thing !== thing || preview.flat !== flat) {
+      disposePreview();
+      const kind = meshKind(thing.look.mesh);
+      const prepared = prepareThing(thing);
+      const geometry = prepared ? prepared.geometry : previewRandom(() => kind.build(thing, { flat }));
+      if (!prepared) geometry.computeBoundingSphere();
+      const look = thing.look;
+      const glow = kind.glow?.(thing) ?? null;
+      const map = kind.texture?.(thing) ?? null;
+      const material = new THREE.MeshStandardMaterial({
+        color: previewRandom(() => kind.color(thing)),
+        ...(glow ? { emissive: glow } : {}),
+        vertexColors: true,
+        ...(map ? { map } : {}),
+        roughness: look.roughness,
+        metalness: 0,
+        envMap: environment.envTexture,
+        envMapIntensity: look.reflection,
+        transparent: true,
+        opacity: PREVIEW.opacity,
+        depthWrite: false,
+      });
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.frustumCulled = false;
+      sceneMain.add(mesh);
+      Object.assign(preview, { mesh, thing, flat, ownsGeometry: !prepared });
+    }
+    preview.radius = radius;
+    const hand = handPosition(radius, thing);
+    if (skipsNow() && thing.skips) hand.y = Math.min(hand.y, SKIP_THROW.handHeight);
+    preview.mesh.position.copy(hand);
+    preview.mesh.scale.setScalar(radius);
+  }
+  /** A person's throw has left the hand: the preview is gone for PREVIEW.gone seconds, then fades back (updatePreview). */
+  function previewThrown() { preview.goneUntil = performance.now() + PREVIEW.gone * 1000; }
+  /** Once a frame (render), at the real time `now`: the preview turned on by the time since the last frame, gone after a throw and faded back. */
+  function updatePreview(now) {
+    const mesh = preview.mesh;
+    if (!mesh) return;
+    const seconds = THREE.MathUtils.clamp((now - preview.drawnAt) / 1000, 0, 0.1);
+    preview.drawnAt = now;
+    preview.turned = (preview.turned + PREVIEW.turn * seconds) % (2 * Math.PI);
+    mesh.rotation.y = preview.turned;
+    const back = (now - preview.goneUntil) / 1000;
+    mesh.visible = back > 0;
+    mesh.material.opacity = PREVIEW.opacity * THREE.MathUtils.clamp(back / PREVIEW.fade, 0, 1);
+  }
 
   // Debug views for development: show the under-water pass, the height
   // field, the foam, the environment cube or the ambient waves' height tile.
@@ -1310,6 +1423,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   function applySky() {
     garden.setEnvironment(environment.envTexture);
     garden.setLight();
+    if (preview.mesh) preview.mesh.material.envMap = environment.envTexture;   // a new sky's map (the rocks take theirs as thrown)
     applyWaterColor();
     applySunLights();
     splash.updateLighting();
@@ -1393,10 +1507,68 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     const reach = toWater <= 3 * orbit.distance ? toWater : orbit.distance;
     const pivot = { x: camera.position.x + centre.x * reach, y: camera.position.y + centre.y * reach, z: camera.position.z + centre.z * reach };
     placeOrbit(orbitAbout(camera.position, pivot));
+    settleFrame();
     Object.assign(home, orbitFacing(orbit));
     view.yaw = home.yaw;
     view.pitch = home.pitch;
     viewFromApi = false;
+  }
+
+  /** The orbit's distance is the frame's now: the eye stands on its frame (showView, a glide's end, pivotOnView, setOrbit). */
+  function settleFrame() { frameDistance = orbit.reach ?? orbit.distance; }
+
+  /** How many times the frame's distance the eye stands from the pivot, stepped back by zooming out past the frame (zoomTo); 1 on it. */
+  function steppedBack() { return (orbit.reach ?? orbit.distance) / frameDistance; }
+
+  /** A glide under way ends where it is (a hand or the wheel takes the view from it): that is the frame now. */
+  function abandonGlide() {
+    if (!glide) return;
+    glide = null;
+    settleFrame();
+  }
+
+  /**
+   * The zoom as one number, how many times nearer than the frame the view
+   * looks: over 1 the field of view is narrowed, the frame's over it
+   * (src/viewZoom.js); under 1 the eye has stepped back from the pivot, the
+   * frame's distance over its own, its field of view the frame's; 1 is the frame.
+   */
+  function zoomLevel() { return view.fov < home.fov - 1e-9 ? home.fov / view.fov : 1 / steppedBack(); }
+
+  /** The field of view `fov` with the world direction `direction` kept under the device point (placeDirection), inside the frame. */
+  function narrowTo(fov, direction, ndcX, ndcY) {
+    const placed = placeDirection(direction, ndcX, ndcY, fov, camera.aspect);
+    const next = clampToFrame({ yaw: placed.yaw, pitch: placed.pitch, fov }, home, camera.aspect);
+    if (isZoomed(next, view)) setView(next);   // otherwise nothing moved: at a limit
+  }
+
+  /** The eye `times` the frame's distance from the pivot along its line of sight, as far as its bounds allow; the view the frame's. */
+  function stepBackTo(times) {
+    const distance = frameDistance * times;
+    if (Math.abs(distance - (orbit.reach ?? orbit.distance)) < 1e-9) return;
+    const { reach, ...next } = orbit;
+    next.distance = distance;
+    moveEye(next);
+  }
+
+  /**
+   * Zoom to `level` (zoomLevel): the world direction `direction` (the one
+   * under the device point, as a rule) is kept under that point while the
+   * field of view narrows or widens (narrowTo); past the frame the eye
+   * steps straight back along its line of sight instead, the pivot still at
+   * the frame's centre (stepBackTo), to FARTHEST_BACK times the frame's
+   * distance, and zooming back in walks up to the frame before the field
+   * of view narrows again.
+   */
+  function zoomTo(level, ndcX, ndcY, direction = directionAt(view, camera.aspect, ndcX, ndcY)) {
+    const wanted = Math.max(level, 1 / FARTHEST_BACK);
+    if (wanted > 1 + 1e-9) {
+      if (steppedBack() > 1 + 1e-9) stepBackTo(1);
+      narrowTo(Math.max(home.fov / wanted, MIN_FOV), direction, ndcX, ndcY);
+    } else {
+      if (view.fov < home.fov - 1e-9) narrowTo(home.fov, direction, ndcX, ndcY);   // the frame again, exactly
+      stepBackTo(1 / wanted);
+    }
   }
 
   /** The widest field of view (degrees) of the frame from an orbit: 48° landscape, 62° portrait, wider under the water. */
@@ -1436,7 +1608,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     view.fov = glide.fromFov + (home.fov - glide.fromFov) * eased;
     Object.assign(view, clampToFrame(view, home, camera.aspect));
     viewFromApi = false;
-    if (progress >= 1) glide = null;
+    if (progress >= 1) { glide = null; settleFrame(); }
     applyView();
   }
 
@@ -1446,6 +1618,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     if (gliding) { glideTo(viewsNow()[name], name); return; }
     glide = null;
     placeOrbit(clampOrbit(viewsNow()[name], eyeBounds(viewsNow()[name])));
+    settleFrame();
     Object.assign(home, orbitFacing(orbit), { fov: frameFov() });
     setView(home);
   }
@@ -1455,15 +1628,6 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   function toDeviceCoordinates(clientX, clientY) {
     const rect = canvas.getBoundingClientRect();
     return { x: ((clientX - rect.left) / rect.width) * 2 - 1, y: -((clientY - rect.top) / rect.height) * 2 + 1 };
-  }
-
-  /** Zoom to a field of view, keeping what is under the client point there (zooming out also heads home). */
-  function zoomAt(clientX, clientY, fov) {
-    const point = toDeviceCoordinates(clientX, clientY);
-    const target = THREE.MathUtils.clamp(fov, MIN_FOV, home.fov);
-    let next = zoomToward(view, home, camera.aspect, point.x, point.y, target);
-    if (fov > view.fov) next = clampToFrame(next, home, camera.aspect);
-    if (isZoomed(next, view)) setView(next);   // otherwise nothing moved: at a limit
   }
 
   /** Width and height of `fraction` of the canvas's resolution, at least one pixel. */
@@ -1583,6 +1747,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     if (!MANNERS.includes(name)) return;
     manner = name;
     skipping = name === 'skip';
+    buildPreview();   // a skip's stone is flat, and let go lower
   }
   // What is thrown (the Object setting, src/things.js): the page's ?thing, else the last choice here, else a river stone;
   // and each kind's slider value (thingSizes: its own, or its family's, src/things.js `size.share`: the stones share one).
@@ -1610,6 +1775,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     const thing = THINGS[name];
     if (!thing.sizeShare || thingSizes[thing.sizeShare] === undefined) thingSizes[sizeKey(thing)] = thing.slider?.initial ?? null;
     prepareNamed(name);
+    if (name === thingName) buildPreview();   // the chosen thing, defined again: its preview is the new definition's
   });
   let timeScale = 1;
   let simulationTime = 0;
@@ -1802,6 +1968,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   function throwRandom() {
     const point = keepOnWater({ x: THREE.MathUtils.randFloatSpread(1.8), z: -0.3 - Math.random() * 2.2 }, throwMargin());
     const rock = throwAt(point.x, point.z);
+    previewThrown();
     onThrow?.(rock);
     return rock;
   }
@@ -2007,18 +2174,17 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     return { x: 0.5 * (first.x + second.x), y: 0.5 * (first.y + second.y), distance: Math.max(Math.hypot(first.x - second.x, first.y - second.y), 1) };
   }
 
+  /** A pinch begins: the zoom and the world direction under the fingers' midpoint, which the pinch keeps under it (zoomTo). */
   function startPinch() {
     const span = pinchSpan();
     const point = toDeviceCoordinates(span.x, span.y);
-    pinch = { distance: span.distance, fov: view.fov, direction: directionAt(view, camera.aspect, point.x, point.y) };
+    pinch = { distance: span.distance, level: zoomLevel(), direction: directionAt(view, camera.aspect, point.x, point.y) };
   }
 
   function movePinch() {
     const span = pinchSpan();
     const point = toDeviceCoordinates(span.x, span.y);
-    const fov = THREE.MathUtils.clamp((pinch.fov * pinch.distance) / span.distance, MIN_FOV, home.fov);
-    const placed = placeDirection(pinch.direction, point.x, point.y, fov, camera.aspect);
-    setView(clampToFrame({ yaw: placed.yaw, pitch: placed.pitch, fov }, home, camera.aspect));
+    zoomTo((pinch.level * span.distance) / pinch.distance, point.x, point.y, pinch.direction);
   }
 
   function stopTurning() {
@@ -2048,7 +2214,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   canvas.addEventListener('pointerdown', (event) => {
     if (!readyForInput || event.button !== 0) return;
     lastActivity = performance.now();
-    glide = null;   // the hand takes the view from a glide where it stands
+    abandonGlide();   // the hand takes the view from a glide where it stands
     activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
     try { canvas.setPointerCapture(event.pointerId); } catch { /* a synthetic or already released pointer */ }
     if (activePointers.size === 1) {
@@ -2113,7 +2279,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
         showAim(null);
       }
       if (turning) {
-        moveEye(turnOrbit(orbit, event.clientX - turning.x, event.clientY - turning.y, ORBIT_TURN / Math.max(canvas.clientHeight, 1), eyeBounds(orbit)));
+        // Slower the narrower the field of view (the header), so what is under the finger follows it at any zoom.
+        moveEye(turnOrbit(orbit, event.clientX - turning.x, event.clientY - turning.y, (ORBIT_TURN * view.fov / home.fov) / Math.max(canvas.clientHeight, 1), eyeBounds(orbit)));
         turning.x = event.clientX;
         turning.y = event.clientY;
         return;
@@ -2136,6 +2303,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       const hit = throwAim(event.clientX, event.clientY);
       if (hit && moved < TAP_SLOP) {
         const rock = throwAt(hit.x, hit.z);   // thrown first: onThrow?.(throwAt(…)) would not throw at all without an onThrow
+        previewThrown();
         onThrow?.(rock);
         if (event.pointerType === 'mouse') thrownFrom = { x: event.clientX, y: event.clientY };
       }
@@ -2154,13 +2322,14 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     if (!readyForInput) return;
     event.preventDefault();
     if (grab.rock) return;
-    glide = null;
+    abandonGlide();
     // Notches: a mouse wheel sends about 100 pixels or 3 lines each. A trackpad
     // pinch arrives as ctrl + wheel in small steps, scaled to feel like the page zoom.
     let notches = event.deltaMode === 1 ? event.deltaY / 3 : event.deltaMode === 2 ? event.deltaY : event.deltaY / 100;
     if (event.ctrlKey) notches *= 10;
     notches = THREE.MathUtils.clamp(notches, -4, 4);
-    zoomAt(event.clientX, event.clientY, view.fov * WHEEL_STEP ** -notches);
+    const point = toDeviceCoordinates(event.clientX, event.clientY);
+    zoomTo(zoomLevel() * WHEEL_STEP ** notches, point.x, point.y);   // a notch up (deltaY under 0) zooms in by 1 / WHEEL_STEP
   }, { passive: false });
   window.addEventListener('keydown', (event) => {
     if (!readyForInput) return;
@@ -2362,6 +2531,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   let framesRendered = 0;
   function render() {
     for (const rock of rocks) { rock.flex(); rock.showWet(); }   // a soft thing's shape, and how wet each looks, as drawn now (src/rock.js)
+    updatePreview(performance.now());        // the thing in the hand, turned on, gone after a throw and back
     fishView.update();                       // each fish where it swims now
     pool.setTime(simulationTime);            // its deck's splashed patches dry by it
     ice.update();                            // what broke or opened since, into its mask (src/ice.js)
@@ -2439,7 +2609,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     ...ambientWaves.uniforms(),
     ...ice.uniforms,   // no shafts under the ice (underwaterShafts)
   });
-  const hiddenFromBelow = () => [environment.sky, shore, koiLand, pool.walls, pool.yard, ...garden.meshes, marker, arc, ...rocks.map((rock) => rock.meshAbove)];
+  const hiddenFromBelow = () => [environment.sky, shore, koiLand, pool.walls, pool.yard, ...garden.meshes, marker, arc, ...(preview.mesh ? [preview.mesh] : []), ...rocks.map((rock) => rock.meshAbove)];
   function renderFromBelow() {
     renderer.setRenderTarget(mainTarget);
     renderer.clear(true, true, false);
@@ -2752,9 +2922,15 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     for (const floater of floaters) floater.meshMirror.visible = true;
     iceCracks.warmUp(WARM_UP.x + 0.4, WARM_UP.z);   // the cracks' program, over ice or none
     const fishWarmUp = fishView.warmUp();   // the fish's one program, whatever lives here (none in the Pool)
+    // The preview's programs (buildPreview: a see-through material, textured and plain): a pizza's preview drawn in
+    // this frame and a stone's in the next, their materials kept (programKeepers); then the chosen thing's, below.
+    buildPreview('pizza');
+    if (preview.mesh) programKeepers.push(preview.mesh.material);
     viewChanged = true;
     render();
     fishWarmUp.done();
+    buildPreview(DEFAULT_THING);
+    if (preview.mesh) programKeepers.push(preview.mesh.material);
     for (const floater of floaters) {
       programKeepers.push(floater.meshAbove.material, floater.meshBelow.material, floater.meshMirror.material);
       retireRock(floater, { keepMaterials: true });
@@ -2785,6 +2961,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     programKeepers.push(stone.meshAbove.material, stone.meshBelow.material);
     retireRock(stone, { keepMaterials: true });
     clearPond();
+    buildPreview();   // the chosen thing's, in the hand from the first frame shown
     // The ice's break, when the water is Frozen at the start (WARM_UP): through a sheet made thin for it, so it breaks
     // whatever ice was chosen (on thick ice the stone above would skid), its hole, cracks, flood and shards let go and
     // drawn above, below and in the mirror; so the first break a person makes builds nothing on the device (a GPU builds
@@ -2851,11 +3028,12 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     throwAt,
     throwRandom,
     /** The stones' size by their radius (m), as the harness sets it (the strip's slider sets it in cm, setSize). */
-    setStoneRadius(radius) { thingSizes[sizeKey(THINGS[DEFAULT_THING])] = 200 * radius; },
-    /** What is thrown (a key of src/things.js THINGS: a kind of stone or a ball), remembered on this device. */
+    setStoneRadius(radius) { thingSizes[sizeKey(THINGS[DEFAULT_THING])] = 200 * radius; buildPreview(); },
+    /** What is thrown (a key of src/things.js THINGS: a kind of stone or a ball), remembered on this device; the preview in the hand follows. */
     setThing(name) {
       if (!offered(name)) return;
       thingName = name;
+      buildPreview();
       try { window.localStorage.setItem(THING_STORAGE_KEY, name); } catch { /* storage refused: the choice lasts this visit */ }
     },
     get thing() { return thingName; },
@@ -2865,7 +3043,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
      */
     setSize(value) {
       const thing = THINGS[thingName];
-      if (thing.slider && Number.isFinite(value)) thingSizes[sizeKey(thing)] = withinSlider(thing, value);
+      if (thing.slider && Number.isFinite(value)) { thingSizes[sizeKey(thing)] = withinSlider(thing, value); buildPreview(); }
     },
     get size() { return thingSizes[sizeKey(THINGS[thingName])] ?? THINGS[thingName].slider?.initial; },
     /**
@@ -3056,8 +3234,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
      * and the weather have come.
      */
     resetSettings() {
-      this.setThing(DEFAULT_THING);
       for (const thing of Object.values(THINGS)) thingSizes[sizeKey(thing)] = thing.slider?.initial ?? null;
+      this.setThing(DEFAULT_THING);   // after the sizes, so its preview is at its first size
       const weather = this.setWeather('clear');
       this.setWind(DEFAULT_WIND_STRENGTH);
       iceThickness = 'thin';
@@ -3156,12 +3334,22 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       next.distance = distance ?? reach ?? orbit.distance;
       if (pivot) [next.pivotX, next.pivotY, next.pivotZ] = pivot;
       placeOrbit(clampOrbit(next, eyeBounds(next)));
+      settleFrame();
       Object.assign(home, orbitFacing(orbit), { fov: frameFov() });
       setView(home);
     },
     /** The orbit the eye stands on: azimuth and elevation in degrees, distance in metres, pivot [x, y, z]. */
     get orbit() { return { azimuth: THREE.MathUtils.radToDeg(orbit.azimuth), elevation: THREE.MathUtils.radToDeg(orbit.elevation), distance: orbit.distance, pivot: [orbit.pivotX, orbit.pivotY, orbit.pivotZ] }; },
-    get zoomed() { return isZoomed(view, home); },
+    /** Whether the view is zoomed: its field of view narrowed inside the frame, or the eye stepped back from it. */
+    get zoomed() { return isZoomed(view, home) || steppedBack() > 1 + 1e-9; },
+    /** The zoom as one number (zoomLevel): over 1 narrowed that many times, under 1 stepped back, 1 the frame. */
+    get zoomLevel() { return zoomLevel(); },
+    /** Where the thrower's hand is, [x, y, z] (handPosition for what is chosen, at its size). */
+    get hand() { return handPosition().toArray(); },
+    /** The preview of the thing in the hand: whether it is on (?preview), shown now, what and how big it is, where, and its opacity. */
+    get preview() {
+      return { on: previewOn, shown: Boolean(preview.mesh?.visible) && (preview.mesh?.material.opacity ?? 0) > 0, thing: preview.thing?.key ?? null, radius: preview.radius, position: preview.mesh ? preview.mesh.position.toArray() : null, opacity: preview.mesh?.material.opacity ?? 0 };
+    },
     /** Whether the view is the shore's, unzoomed (Reset view and Escape go there). */
     get atHome() { return reportedView?.atHome ?? true; },
     get time() { return simulationTime; },

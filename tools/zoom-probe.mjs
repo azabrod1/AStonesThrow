@@ -5,19 +5,27 @@
 // Loads the page headless like tools/shoot.mjs, then: turns the mouse wheel
 // over several points and checks that the water point under the pointer stays
 // there (in pixels) and the field of view follows 0.9 per notch; zooms back
-// out and checks the view returns home; pinches with two synthetic touch
+// out and checks the view returns home, and past it that the eye steps back
+// along its line of sight (1 / 0.9 per notch, the pivot still at the centre,
+// to twice the frame's distance at most) and that zooming in walks back up
+// to the frame first; pinches with two synthetic touch
 // pointers (spreading and moving) and checks the field of view, that the
 // point under the fingers' midpoint follows it and that no stone is thrown;
 // taps while zoomed and checks a stone is thrown at the point under the tap;
-// presses Escape and checks the view is home again. Then the orbit: a
+// presses Escape and checks the view is home again, from a zoom in and from
+// a step back. Then the orbit: a
 // one-finger drag turns the eye about the pivot (the pivot staying at the
 // view's centre, the distance kept, the turn ORBIT_TURN per canvas height)
 // and throws nothing, nor does a mouse drag, while a mouse click does; a drag
 // up stops with the eye just above the water; a drag that starts zoomed
-// keeps what the view's centre shows there; under the water a drag keeps the
+// keeps what the view's centre shows there and turns slower by the zoom;
+// under the water a drag keeps the
 // eye between the surface and the bed; the View setting's choices and Reset
 // view glide to their orbits, and the page's View row and Reset view button
-// follow. Then a press held still dips a finger into the water under it,
+// follow, and from Behind the hand and the preview of the thing in it are
+// in the lower half of the frame; the preview follows the thing chosen, its
+// size and the manner (a skip's hand let down), and a throw by hand takes it
+// out of the hand for a moment. Then a press held still dips a finger into the water under it,
 // a drag then moves the finger and not the view, and letting go lifts it
 // without throwing; a mouse held does the same. Last, the pool
 // (src/pool.js): its views stand where they should (on the deck, over its
@@ -68,7 +76,7 @@ const page = await context.newPage();
 const problems = [];
 page.on('pageerror', (error) => problems.push(String(error)));
 await page.goto(`http://localhost:${server.address().port}/index.html?quality=low`, { waitUntil: 'domcontentloaded' });
-await page.waitForFunction(() => !!window.__pond, { timeout: 60000 });
+await page.waitForFunction(() => !!window.__pond, null, { timeout: 180000 });   // (the function's argument, then the options: SwiftShader takes over a minute to warm up)
 await page.evaluate(() => window.__pond.pause());
 
 // In-page helpers: the water point under a client point, and where a world point is on screen.
@@ -99,6 +107,13 @@ let failures = 0;
 const check = (passed, message) => { if (!passed) failures++; console.log(`${passed ? 'ok  ' : 'FAIL'} ${message}`); };
 const fov = () => page.evaluate(() => window.__pond.camera.fov);
 const homeFov = await fov();
+const homeDistance = (await page.evaluate(() => window.__pond.orbit)).distance;   // the shore frame's, from the pivot
+/** Whether the orbit's pivot is at the canvas's centre (the view faces it, unzoomed or stepped back). */
+const pivotCentred = () => page.evaluate(() => {
+  const rect = document.getElementById('pond').getBoundingClientRect();
+  const [x, y] = window.__probe.onScreen(window.__pond.orbit.pivot);
+  return Math.hypot(x - (rect.left + rect.width / 2), y - (rect.top + rect.height / 2)) < 0.5;
+});
 
 // Wheel in at several points, then back out.
 // Whole pixels (wheel events carry them), above the control strip, which takes the wheel itself.
@@ -112,10 +127,16 @@ for (const [fractionX, fractionY] of [[0.5, 0.6], [0.15, 0.7], [0.85, 0.45], [0.
   const [screenX, screenY] = await page.evaluate((point) => window.__probe.onScreen(point), water);
   const drift = Math.hypot(screenX - clientX, screenY - clientY);
   check(Math.abs(zoomed - homeFov * 0.9 ** 6) < 1e-6 && drift < 0.5, `wheel in 6 notches at (${clientX.toFixed(0)}, ${clientY.toFixed(0)}): fov ${homeFov.toFixed(1)} -> ${zoomed.toFixed(2)}, the water point under the pointer moved ${drift.toFixed(3)} px`);
+  // Eight notches out: six back to the frame, then two stepping the eye back from the pivot along its line of sight.
   for (let notch = 0; notch < 8; notch++) await page.mouse.wheel(0, 100);
   await page.waitForTimeout(50);
-  const back = await page.evaluate(() => ({ fov: window.__pond.camera.fov, zoomed: window.__pond.zoomed }));
-  check(Math.abs(back.fov - homeFov) < 1e-6 && !back.zoomed, `wheel out 8 notches: fov ${back.fov.toFixed(2)}, home again: ${!back.zoomed}`);
+  const back = await page.evaluate(() => ({ fov: window.__pond.camera.fov, zoomed: window.__pond.zoomed, level: window.__pond.zoomLevel, distance: window.__pond.orbit.distance }));
+  check(Math.abs(back.fov - homeFov) < 1e-6 && back.zoomed && Math.abs(back.level - 0.9 ** 2) < 1e-6 && Math.abs(back.distance - homeDistance / 0.9 ** 2) < 1e-6 && (await pivotCentred()),
+    `wheel out 8 notches: fov ${back.fov.toFixed(2)} (the frame's), the eye stepped back to ${back.distance.toFixed(3)} m from the pivot (${(homeDistance / 0.9 ** 2).toFixed(3)} expected), the pivot still at the centre`);
+  for (let notch = 0; notch < 2; notch++) await page.mouse.wheel(0, -100);
+  await page.waitForTimeout(50);
+  const onFrame = await page.evaluate(() => ({ fov: window.__pond.camera.fov, zoomed: window.__pond.zoomed, distance: window.__pond.orbit.distance }));
+  check(Math.abs(onFrame.fov - homeFov) < 1e-6 && !onFrame.zoomed && Math.abs(onFrame.distance - homeDistance) < 1e-9, `wheel in 2 notches: back on the frame, ${onFrame.distance.toFixed(3)} m from the pivot, home again: ${!onFrame.zoomed}`);
 }
 
 // Zoom to the minimum.
@@ -126,6 +147,17 @@ check(Math.abs((await fov()) - 8) < 1e-6, `wheel in 40 notches stops at ${(await
 await page.keyboard.press('Escape');
 await page.evaluate(() => window.__pond.settleView());
 check(!(await page.evaluate(() => window.__pond.zoomed)) && Math.abs((await fov()) - homeFov) < 1e-6, `Escape returns home: fov ${(await fov()).toFixed(2)}`);
+
+// Zoom out to the farthest: the eye steps back to FARTHEST_BACK times the frame's distance, still facing the pivot, and Escape comes home.
+for (let notch = 0; notch < 40; notch++) await page.mouse.wheel(0, 100);
+await page.waitForTimeout(50);
+const farthest = await page.evaluate(() => ({ fov: window.__pond.camera.fov, distance: window.__pond.orbit.distance, level: window.__pond.zoomLevel, atHome: window.__pond.atHome, hidden: document.getElementById('reset-view').hidden }));
+check(Math.abs(farthest.fov - homeFov) < 1e-6 && Math.abs(farthest.distance - 2 * homeDistance) < 1e-6 && Math.abs(farthest.level - 0.5) < 1e-6 && !farthest.atHome && !farthest.hidden && (await pivotCentred()),
+  `wheel out 40 notches stops with the eye stepped back to ${farthest.distance.toFixed(2)} m from the pivot (twice the frame's ${homeDistance.toFixed(2)}), the field of view the frame's ${farthest.fov.toFixed(1)}, facing the pivot, Reset view shown`);
+await page.keyboard.press('Escape');
+await page.evaluate(() => window.__pond.settleView());
+const walkedUp = await page.evaluate(() => ({ zoomed: window.__pond.zoomed, distance: window.__pond.orbit.distance, atHome: window.__pond.atHome }));
+check(!walkedUp.zoomed && walkedUp.atHome && Math.abs(walkedUp.distance - homeDistance) < 1e-6, `Escape walks back up to the shore: ${walkedUp.distance.toFixed(3)} m from the pivot, home again: ${walkedUp.atHome}`);
 
 // Pinch: fingers 120 px apart spread to 300 px while their midpoint moves 40 px right.
 const rocksBefore = await page.evaluate(() => window.__pond.rocks.length);
@@ -227,6 +259,11 @@ await page.evaluate(([x, y]) => { window.__probe.pointer('pointermove', 1, x + 1
 const [afterX, afterY] = await page.evaluate((point) => window.__probe.onScreen(point), centreWater);
 check(Math.hypot(afterX - width / 2, afterY - height / 2) < 0.5 && (await page.evaluate(() => window.__pond.zoomed)),
   `and turns round it, still zoomed: that point ${Math.hypot(afterX - width / 2, afterY - height / 2).toFixed(3)} px from the centre after the turn (${Math.hypot(centreX - width / 2, centreY - height / 2).toFixed(3)} px at its first step)`);
+// Zoomed, the turn is slower by the zoom: the same pixels turn the eye by the field of view's share of the frame's.
+const turnedZoomed = await orbit();
+const zoomedFov = await fov();
+check(Math.abs((repivoted.azimuth - turnedZoomed.azimuth) - 120 * turnPerPixel * zoomedFov / homeFov) < 1e-6,
+  `zoomed to ${zoomedFov.toFixed(2)}°, the drag's last 120 px turned the eye ${(repivoted.azimuth - turnedZoomed.azimuth).toFixed(3)}° (${(120 * turnPerPixel * zoomedFov / homeFov).toFixed(3)}° expected: ${(zoomedFov / homeFov).toFixed(3)} of the unzoomed turn)`);
 
 // Under the water a drag keeps the eye under it: clear of the surface and of the bed.
 await page.evaluate(() => { window.__pond.showView('under'); window.__pond.settleView(); });
@@ -238,14 +275,44 @@ check(Math.abs(underTop + 0.15) < 1e-6 && Math.abs(underBottom.y - (underBottom.
   `under the water a drag down stops the eye ${(-underTop * 100).toFixed(1)} cm under the surface, a drag up ${((underBottom.y - underBottom.bed) * 100).toFixed(1)} cm over the bed (15 cm each)`);
 
 // The View setting's choices glide to their orbits, and the page follows.
-for (const name of ['high', 'level', 'under', 'shore']) {
+for (const name of ['behind', 'high', 'level', 'under', 'shore']) {
   await page.evaluate((view) => { window.__pond.showView(view); window.__pond.settleView(); }, name);
   const state = await page.evaluate(() => ({ name: window.__pond.viewName, zoomed: window.__pond.zoomed, row: document.querySelector('.menu-tier[data-open="view"] .menu-tier-value').textContent, checked: document.querySelector('#view [aria-checked="true"]')?.dataset.value }));
   const eyeHeight = await page.evaluate(() => window.__pond.camera.position.y);
   check(state.name === name && !state.zoomed && state.checked === name && (await pivotOffCentre()) < 0.5 && (name === 'under') === (eyeHeight < 0),
     `View ${name}: the eye at ${eyeHeight.toFixed(2)} m, unzoomed, facing the pivot; the View row reads ${state.row}`);
+  if (name !== 'behind') continue;
+  // From behind the thrower, the hand and the preview of the thing in it are in the lower half of the frame.
+  const framed = await page.evaluate(() => {
+    const rect = document.getElementById('pond').getBoundingClientRect();
+    const inside = ([x, y]) => x > rect.left && x < rect.right && y > rect.top + rect.height / 2 && y < rect.bottom;
+    const { hand, preview } = window.__pond;
+    return { hand: inside(window.__probe.onScreen(hand)), preview: preview.on && preview.shown && inside(window.__probe.onScreen(preview.position)), thing: preview.thing, radius: preview.radius };
+  });
+  check(framed.hand && framed.preview, `from Behind, the hand and the preview of the ${framed.thing} in it (${(framed.radius * 100).toFixed(1)} cm across its radius) are in the lower half of the frame`);
 }
 check(await buttonHidden(), 'back at the shore view: Reset view hidden');
+
+// The preview of the thing in the hand (src/main.js buildPreview) follows the choice, the size and the manner, and a throw.
+const previewNow = () => page.evaluate(() => window.__pond.preview);
+const stonePreview = await previewNow();
+await page.evaluate(() => window.__pond.setThing('bowling'));
+const ballPreview = await previewNow();
+await page.evaluate(() => { window.__pond.setThing('stone'); window.__pond.setSize(20); });
+const bigStone = await previewNow();
+await page.evaluate(() => window.__pond.setManner('skip'));
+const skipPreview = await previewNow();
+await page.evaluate(() => { window.__pond.setManner('toss'); window.__pond.setSize(6); });
+check(stonePreview.on && stonePreview.thing === 'stone' && Math.abs(stonePreview.radius - 0.03) < 1e-9 && ballPreview.thing === 'bowling' && ballPreview.radius > 0.1
+  && bigStone.thing === 'stone' && Math.abs(bigStone.radius - 0.1) < 1e-9 && skipPreview.position[1] < bigStone.position[1] - 0.05,
+  `the preview follows the choice and the size (${stonePreview.thing} ${(stonePreview.radius * 100).toFixed(0)} cm, ${ballPreview.thing} ${(ballPreview.radius * 100).toFixed(1)} cm, ${bigStone.thing} ${(bigStone.radius * 100).toFixed(0)} cm) and a skip lets it down (${skipPreview.position[1].toFixed(2)} m, under ${bigStone.position[1].toFixed(2)})`);
+await page.mouse.click(width * 0.5, height * 0.6);
+await page.evaluate(() => window.__pond.advance(1 / 60));   // a frame drawn: updatePreview runs in render
+const goneNow = await previewNow();
+await page.waitForTimeout(800);
+await page.evaluate(() => window.__pond.advance(1 / 60));
+const backAgain = await previewNow();
+check(!goneNow.shown && backAgain.shown && Math.abs(backAgain.opacity - 0.5) < 1e-6, `a throw by hand takes the preview out of the hand (shown: ${goneNow.shown}), and 0.8 s on it is back at ${backAgain.opacity.toFixed(2)} opacity`);
 
 // Press and hold: a finger in the water (src/touch.js).
 before = await rockCount();
@@ -278,7 +345,7 @@ await page.evaluate(async () => { await window.__pond.setSky('pool'); window.__p
 const square = await page.evaluate(() => window.__pond.water.poolSquare);
 const insideBy = ({ x, z }) => Math.min(x - square.minX, square.minX + square.size - x, z - square.minZ, square.minZ + square.size - z);
 const deck = 0.1;   // POOL.deck (src/pool.js)
-for (const name of ['shore', 'high', 'level', 'under']) {
+for (const name of ['shore', 'behind', 'high', 'level', 'under']) {
   await page.evaluate((view) => { window.__pond.showView(view); window.__pond.settleView(); }, name);
   const eye = await page.evaluate(() => ({ ...window.__pond.camera.position }));
   const state = await page.evaluate(() => ({ name: window.__pond.viewName, zoomed: window.__pond.zoomed }));

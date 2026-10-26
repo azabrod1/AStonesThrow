@@ -36,11 +36,14 @@
 // --wind=x:z sets the direction the wind blows toward in world XZ, and
 // --wind-strength=calm|breeze|windy its strength (the page's own default is
 // calm; breeze is the look the pond had before the Wind control).
-// --view=shore|level|high stands the camera at one of the View setting's
-// choices (VIEWS in src/main.js), and --orbit=azimuth:elevation:distance
+// --view=shore|behind|level|high|under stands the camera at one of the View
+// setting's choices (VIEWS in src/main.js), and --orbit=azimuth:elevation:distance
 // (degrees, degrees, metres; :x:y:z after them moves the pivot) on any orbit
 // (src/viewOrbit.js), before --fov and --look turn it; the rocks are still
-// thrown from the shore.
+// thrown from the shore. --preview=1 shows the preview of the thing in the
+// hand (src/main.js buildPreview), which the harness otherwise leaves out
+// (?preview=off), so frames from any orbit stay as they were; it turns and
+// fades by real time, so it is never the same twice.
 // --touch=x0:z0:x1:z1:seconds dips a finger into the water at (x0, z0) at
 // the start of the frames (__pond.touchWater), draws it to (x1, z1) at an
 // even speed over `seconds`, a step every frame, and lifts it out there; the
@@ -113,6 +116,7 @@ const touchArgument = arg('touch', '');
 const orbitArgument = arg('orbit', '');
 const [thingName, thingValue] = arg('thing', '').split(':');
 const fishArgument = arg('fish', '');
+const showPreview = arg('preview', '0') === '1';
 const readySeconds = Number(arg('wait', '60'));   // how long the pond may take to be ready (a busy machine's software GL may need more)
 
 const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.mjs': 'text/javascript', '.json': 'application/json', '.png': 'image/png', '.css': 'text/css' };
@@ -151,7 +155,7 @@ const problems = [];
 page.on('pageerror', (e) => problems.push(String(e)));
 page.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') problems.push(m.text()); });
 
-const url = `http://localhost:${port}/index.html?quality=${quality}&paused=1${keepUi ? '' : '&ui=0'}${floats ? `&floats=${floats}` : ''}${sky ? `&sky=${sky}` : ''}${skyTime ? `&time=${skyTime}` : ''}${weather ? `&weather=${weather}` : ''}${waterClarity ? `&water=${waterClarity}` : ''}${iceName ? `&ice=${iceName}` : ''}${wind ? `&wind=${wind.replace(':', ',')}` : ''}${windStrength ? `&windStrength=${windStrength}` : ''}${thingName ? `&thing=${thingName}` : ''}${fishArgument ? `&fish=${fishArgument}` : ''}`;
+const url = `http://localhost:${port}/index.html?quality=${quality}&paused=1${keepUi ? '' : '&ui=0'}${floats ? `&floats=${floats}` : ''}${sky ? `&sky=${sky}` : ''}${skyTime ? `&time=${skyTime}` : ''}${weather ? `&weather=${weather}` : ''}${waterClarity ? `&water=${waterClarity}` : ''}${iceName ? `&ice=${iceName}` : ''}${wind ? `&wind=${wind.replace(':', ',')}` : ''}${windStrength ? `&windStrength=${windStrength}` : ''}${thingName ? `&thing=${thingName}` : ''}${fishArgument ? `&fish=${fishArgument}` : ''}${showPreview ? '' : '&preview=off'}`;
 console.log(`[shoot] ${url} -> ${outDir}`);
 await page.goto(url, { waitUntil: 'domcontentloaded' });
 try {
