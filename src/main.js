@@ -66,9 +66,9 @@
 // throw enters the water as the tools reproduce it; the Behind view
 // (VIEWS.behind) stands over the thrower's shoulder, the hand and the whole
 // arc of the throw in frame, and the thing about to be thrown is previewed
-// in the hand (buildPreview, PREVIEW: see-through, at the strip's size, let
-// down for a skip, turning slowly, gone for a moment after each throw;
-// ?preview=off leaves it out). The mirror image of the sky is
+// in the hand (buildPreview, PREVIEW: see-through, at the strip's size,
+// dressed as the next throw by hand will be, let down for a skip, turning
+// slowly, gone for a moment after each throw; ?preview=off leaves it out). The mirror image of the sky is
 // re-rendered at the next frame whenever the view has changed, and while a
 // splash lives it is drawn over where the splash's own mirror image falls,
 // each frame (updateReflection). A tap throws at the water under it, brought
@@ -282,9 +282,10 @@
 // keeps watching it, and reports each change through onQualityChange.
 // ?profile=1 runs the profiling steps of src/profiler.js and reports through
 // onProfile. Each throw a person makes (a tap on the water; throwRandom,
-// which the throw button and Space call) is reported through onThrow, not
-// the warm-up's, the profiler's or a harness's throwAt: the page's
-// first-visit cue goes with the first.
+// which the throw button and Space call: throwFromHand) is the thing its
+// preview in the hand showed, its parts too, and is reported through
+// onThrow, not the warm-up's, the profiler's or a harness's throwAt: the
+// page's first-visit cue goes with the first.
 import * as THREE from 'three';
 import { SpectralWater } from './spectralWater.js';
 import { AmbientWaves, DEFAULT_WIND, WIND_STRENGTHS } from './ambientWaves.js';
@@ -298,7 +299,7 @@ import { DropRings } from './dropRings.js';
 import { createEnvironment, SKY_NAMES, REED_SKIES, skyShore, skyHours, resolveHour, nearestHour } from './sky.js';
 import { createWaterSurface } from './waterSurface.js';
 import { createPondFloor, createShore, floorDepthAt, groundHeightAt, setShoreKind, setShoreLook, KOI_SHORE } from './pondFloor.js';
-import { Rock, setAir, aimSkip, aimThrow, flutterTrial, prepareThing, PREPARATION_WORK, skipLowest, skipSpeed, SKIP_THROW, PHYSICS_STEP, throwFlightTime } from './rock.js';
+import { Rock, setAir, aimSkip, aimThrow, dressThing, flutterTrial, prepareThing, PREPARATION_WORK, skipLowest, skipSpeed, SKIP_THROW, PHYSICS_STEP, throwFlightTime } from './rock.js';
 import { THINGS, THING_NAMES, DEFAULT_THING, defineThing, onThingsChange } from './things.js';
 import { collideThings } from './collide.js';
 import { SplashSystem, MIRROR_LAYER } from './splash.js';
@@ -453,10 +454,8 @@ const WHEEL_STEP = 0.9;       // field of view factor per wheel notch
 const FARTHEST_BACK = 2.0;    // zoomed out past the frame, the eye steps back to at most this many times the frame's distance from the pivot (zoomTo)
 // The thing about to be thrown, previewed in the hand (buildPreview): its opacity; how fast it turns about the
 // vertical (radians a second); how long it is gone after a person's throw (seconds of real time) and then takes to
-// fade back; the seed its stone's lumps are drawn with (previewRandom: never Math.random, so seeded throws stay); and
-// the seed of its parts, a pizza's toppings, a pie's filling or a cake's candles (their first draw picks them, this
-// one's 0.39: pepperoni, cherry under a lattice, three candles, the most like their kinds).
-const PREVIEW = { opacity: 0.5, turn: 0.35, gone: 0.35, fade: 0.3, seed: 11, dressing: 50000 };
+// fade back; and the seed its stone's lumps are drawn with (previewRandom: never Math.random, so seeded throws stay).
+const PREVIEW = { opacity: 0.5, turn: 0.35, gone: 0.35, fade: 0.3, seed: 11 };
 const HOME_TARGET = [0, 0.12, -1.0];
 const TAP_SLOP = 14;          // CSS pixels a press may move and still throw; past them it turns the view
 const HOLD_MS = 300;          // a press held this long within TAP_SLOP dips a finger into the water
@@ -1066,22 +1065,22 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   // (nothing meets it, the grab cannot pick it, the fish ignore it), and never culled (a draw off screen costs next to
   // nothing, and the warm-up's frames compile its programs with the hand out of frame). Its geometry is its thing's
   // prepared one (src/rock.js prepareThing: shared, so never disposed here), or that with its parts (registerMesh
-  // `dress`, as each one thrown is dressed: src/rock.js withParts) in a copy of its own, or built for it with a seeded
-  // stream in place of Math.random (previewRandom), so a seeded throw's stone stays the stone it was; its material a
+  // `dress`: a pizza's toppings, a pie's filling, a cake's candles) in a copy of its own, the next throw's own, drawn
+  // from the seed the throw by hand is given (`dressing`, throwFromHand), so the one in the hand is the one that flies;
+  // or built for it with a seeded stream in place of Math.random (previewRandom), so a seeded throw's stone stays the
+  // stone it was (a stone's lumps, and an apple's, are its own, each one thrown drawn afresh); its material a
   // see-through twin of a rock's (src/rock.js makeMaterial), of which warmUp draws one plain and one textured under the
   // veil and keeps both (programKeepers), so no later choice compiles a program. ?preview=off leaves it out, as the
   // shoot harness does unless asked (tools/shoot.mjs --preview=1), so frames from any orbit stay as they were.
   const previewOn = pageParameters.get('preview') !== 'off';
-  const preview = { mesh: null, thing: null, flat: false, ownsGeometry: false, parts: null, radius: 0, goneUntil: 0, turned: 0, drawnAt: 0 };
-  /** A stream seeded from `seed` (Park–Miller), the preview's own: what it draws is never Math.random's. */
-  function previewStream(seed) {
-    let state = seed;
-    return () => { state = (state * 16807) % 2147483647; return (state - 1) / 2147483646; };
-  }
-  /** `build` run with Math.random a seeded stream from PREVIEW.seed, Math.random itself put back after. */
+  const preview = { mesh: null, thing: null, flat: false, ownsGeometry: false, dressing: nextDressing(), dressedWith: null, parts: null, radius: 0, goneUntil: 0, turned: 0, drawnAt: 0 };
+  /** A seed for the next throw's own parts (src/rock.js dressThing), from the browser's own randomness: never Math.random, so seeded throws stay. */
+  function nextDressing() { return crypto.getRandomValues(new Uint32Array(1))[0]; }
+  /** `build` run with Math.random a seeded stream from PREVIEW.seed (Park–Miller), Math.random itself put back after. */
   function previewRandom(build) {
     const random = Math.random;
-    Math.random = previewStream(PREVIEW.seed);
+    let state = PREVIEW.seed;
+    Math.random = () => { state = (state * 16807) % 2147483647; return (state - 1) / 2147483646; };
     try { return build(); } finally { Math.random = random; }
   }
   function disposePreview() {
@@ -1093,20 +1092,22 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   }
   /**
    * The preview of `name` (what is chosen, as a rule) at its size and in
-   * the manner now: built afresh when the thing or its flatness (a flat
-   * stone for a skip, as throwAt throws one) has changed, else only placed.
+   * the manner now: built afresh when the thing, its flatness (a flat stone
+   * for a skip, as throwAt throws one) or the seed of its parts (a throw by
+   * hand has taken the last: previewThrown) has changed, else only placed.
    */
   function buildPreview(name = thingName) {
     if (!previewOn) return;
     const { thing, radius } = measureThing(name);
     const flat = skipsNow() && thing.skips && Boolean(thing.byDiameter);
-    if (!preview.mesh || preview.thing !== thing || preview.flat !== flat) {
+    const kind = meshKind(thing.look.mesh);
+    const dressing = kind.fixed && kind.dress ? preview.dressing : null;   // the seed of its parts, if it has any
+    if (!preview.mesh || preview.thing !== thing || preview.flat !== flat || preview.dressedWith !== dressing) {
       disposePreview();
-      const kind = meshKind(thing.look.mesh);
       const prepared = prepareThing(thing);
-      // Its parts (a pizza's toppings, a pie's filling, a cake's candles) from a stream of its own, added to a copy of
-      // the shared mesh, as a throw adds its own; their triangles, copied, are let go as a throw lets them go.
-      const parts = prepared && kind.dress ? kind.dress(thing, previewStream(PREVIEW.dressing)) : null;
+      // Its parts (a pizza's toppings, a pie's filling, a cake's candles) from that seed, added to a copy of the shared
+      // mesh as the throw given it adds them (src/rock.js); their triangles, copied, are let go as a throw lets them go.
+      const parts = dressing === null ? null : dressThing(thing, dressing);
       const geometry = parts ? withParts(prepared.geometry, parts.geometry) : prepared ? prepared.geometry : previewRandom(() => kind.build(thing, { flat }));
       if (parts && !parts.shared) parts.geometry.dispose();
       if (!prepared) geometry.computeBoundingSphere();
@@ -1135,7 +1136,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       const mesh = new THREE.Mesh(geometry, material);
       mesh.frustumCulled = false;
       sceneMain.add(mesh);
-      Object.assign(preview, { mesh, thing, flat, ownsGeometry: !prepared || Boolean(parts), parts: parts?.name ?? null });
+      Object.assign(preview, { mesh, thing, flat, ownsGeometry: !prepared || Boolean(parts), dressedWith: dressing, parts: parts?.name ?? null });
     }
     preview.radius = radius;
     const hand = handPosition(radius, thing);
@@ -1143,12 +1144,21 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     preview.mesh.position.copy(hand);
     preview.mesh.scale.setScalar(radius);
   }
-  /** A person's throw has left the hand: the preview is gone for PREVIEW.gone seconds, then fades back (updatePreview). */
-  function previewThrown() { preview.goneUntil = performance.now() + PREVIEW.gone * 1000; }
+  /**
+   * A person's throw has left the hand (throwFromHand): the preview is gone
+   * for PREVIEW.gone seconds, then fades back (updatePreview) as the next
+   * one, its parts drawn from a new seed.
+   */
+  function previewThrown() {
+    preview.goneUntil = performance.now() + PREVIEW.gone * 1000;
+    preview.dressing = nextDressing();
+  }
   /** Once a frame (render), at the real time `now`: the preview turned on by the time since the last frame, gone after a throw and faded back. */
   function updatePreview(now) {
+    if (!preview.mesh) return;
+    // The next one's parts, built as it comes back rather than in the throw's own frame.
+    if (now >= preview.goneUntil && preview.dressedWith !== null && preview.dressedWith !== preview.dressing) buildPreview();
     const mesh = preview.mesh;
-    if (!mesh) return;
     const seconds = THREE.MathUtils.clamp((now - preview.drawnAt) / 1000, 0, 0.1);
     preview.drawnAt = now;
     preview.turned = (preview.turned + PREVIEW.turn * seconds) % (2 * Math.PI);
@@ -1930,7 +1940,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     if (koiPond) keepInPond(target, radius);   // nothing thrown comes down on the Koi pond's ground (src/koiGarden.js)
     // Made first, so a thing that flutters is aimed by its own flight (src/rock.js trialFlight) and a skip by its own
     // mass (a pizza's toppings and all); a skip is let go lower, from the hand let down (skipThrow).
-    const rock = new Rock({ radius, position: handPosition(radius, thing), velocity: new THREE.Vector3(), envTexture: environment.envTexture, waterFog: { extinction: lighting.extinction, color: lighting.waterColor }, thing: name, mass, mirrorLayer: MIRROR_LAYER, skip: skips, water: surface.rideUniforms });
+    const rock = new Rock({ radius, position: handPosition(radius, thing), velocity: new THREE.Vector3(), envTexture: environment.envTexture, waterFog: { extinction: lighting.extinction, color: lighting.waterColor }, thing: name, mass, mirrorLayer: MIRROR_LAYER, skip: skips, water: surface.rideUniforms, dressing: options.dressing ?? null });
     // A broad thing's tilt drawn first, so it is aimed by its own (a stone's is drawn as it is let go, as it always was).
     const tilt = skips && !thing.byDiameter ? rock.skipTilt() : undefined;
     const skipped = skips ? skipThrow(handPosition(radius, thing), target, { thing, radius, mass: rock.mass }, options.power ?? power, tilt) : null;
@@ -2030,12 +2040,21 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     rocks.splice(rocks.indexOf(rock), 1);
   }
 
-  function throwRandom() {
-    const point = keepOnWater({ x: THREE.MathUtils.randFloatSpread(1.8), z: -0.3 - Math.random() * 2.2 }, throwMargin());
-    const rock = throwAt(point.x, point.z);
+  /**
+   * A person's throw (a tap, throwRandom) at (x, z): the thing in the hand,
+   * dressed as its preview is (its parts' seed, `dressing`), reported
+   * through onThrow; the hand then readies the next (previewThrown).
+   */
+  function throwFromHand(x, z) {
+    const rock = throwAt(x, z, { dressing: previewOn ? preview.dressing : null });   // thrown first: onThrow?.(throwAt(…)) would not throw at all without an onThrow
     previewThrown();
     onThrow?.(rock);
     return rock;
+  }
+
+  function throwRandom() {
+    const point = keepOnWater({ x: THREE.MathUtils.randFloatSpread(1.8), z: -0.3 - Math.random() * 2.2 }, throwMargin());
+    return throwFromHand(point.x, point.z);
   }
 
   // Pointer aiming: pick the water plane under the pointer, kept inside the
@@ -2367,9 +2386,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       const moved = Math.hypot(event.clientX - press.x, event.clientY - press.y);
       const hit = throwAim(event.clientX, event.clientY);
       if (hit && moved < TAP_SLOP) {
-        const rock = throwAt(hit.x, hit.z);   // thrown first: onThrow?.(throwAt(…)) would not throw at all without an onThrow
-        previewThrown();
-        onThrow?.(rock);
+        throwFromHand(hit.x, hit.z);
         if (event.pointerType === 'mouse') thrownFrom = { x: event.clientX, y: event.clientY };
       }
     }
@@ -3439,10 +3456,11 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     get hand() { return handPosition().toArray(); },
     /**
      * The preview of the thing in the hand: whether it is on (?preview), shown now, what and how big it is, what it is
-     * dressed with (a recipe's name, a filling's, a cake's candles) and its triangles, where, and its opacity.
+     * dressed with (a recipe's name, a filling's, a cake's candles), the seed the next throw by hand is dressed from
+     * (throwAt's `dressing`) and its triangles, where, and its opacity.
      */
     get preview() {
-      return { on: previewOn, shown: Boolean(preview.mesh?.visible) && (preview.mesh?.material.opacity ?? 0) > 0, thing: preview.thing?.key ?? null, radius: preview.radius, parts: preview.parts, triangles: preview.mesh ? (preview.mesh.geometry.index ?? preview.mesh.geometry.attributes.position).count / 3 : 0, position: preview.mesh ? preview.mesh.position.toArray() : null, opacity: preview.mesh?.material.opacity ?? 0 };
+      return { on: previewOn, shown: Boolean(preview.mesh?.visible) && (preview.mesh?.material.opacity ?? 0) > 0, thing: preview.thing?.key ?? null, radius: preview.radius, parts: preview.parts, dressing: preview.dressing, triangles: preview.mesh ? (preview.mesh.geometry.index ?? preview.mesh.geometry.attributes.position).count / 3 : 0, position: preview.mesh ? preview.mesh.position.toArray() : null, opacity: preview.mesh?.material.opacity ?? 0 };
     },
     /** Whether the view is the shore's, unzoomed (Reset view and Escape go there). */
     get atHome() { return reportedView?.atHome ?? true; },

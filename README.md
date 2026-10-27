@@ -28,10 +28,12 @@ eye straight back along its line of sight, up to twice its distance from
 what it looks at, so from the shore the view backs up the bank behind the
 thrower and the hand comes into the frame; zooming in walks back up to the
 frame before it narrows. The thing about to be thrown is previewed in the
-hand, see-through, at the size the strip sets, dressed as one thrown is
-(a pizza with its toppings, a pie its filling, a cake its candles), let
-down for a skip, turning slowly; it is gone the moment a throw leaves the
-hand and fades back (`?preview=off` leaves it out).
+hand, see-through, at the size the strip sets, let down for a skip,
+turning slowly; a pizza shows its toppings, a pie its filling and a cake
+its candles, and the one shown is the one thrown: each throw by hand takes
+the recipe in the hand, and the hand comes back with the next. It is gone
+the moment a throw leaves the hand and fades back (`?preview=off` leaves
+it out).
 Escape or Reset view (under the menu button while the view is away from
 the shore's) glides back to the shore. The strip at the bottom sets what is
 thrown: its name opens a dropdown of every thing under its group, each with
@@ -1604,9 +1606,10 @@ farther out, so it rises into the view rather than filling its corner.
   slower by the zoom,
   and that the View choices and Reset view glide where they should, the
   hand and the preview of the thing in it in frame from Behind, the
-  preview following the choice, the size and the manner, dressed as a
-  thrown one is (its shared mesh left plain), and gone for a moment after
-  a throw; in the
+  preview following the choice, the size and the manner and gone for a
+  moment after a throw, a dressed thing's parts in a mesh of its own (its
+  shared mesh left plain) and thrown as shown by a tap and `throwRandom`,
+  while a harness's `throwAt` draws its own; in the
   pool, that the views stand where they should, the eye under its water
   keeps inside its walls and comes back out once turned from one, a glide
   into its water and out goes over the water, and a tap on the deck throws
@@ -1637,7 +1640,8 @@ farther out, so it rises into the view rather than filling its corner.
   `shots/controls-probe/`. The
   shoot harness and the other probes emulate a desktop browser, which ignores
   the viewport tag, so only this probe sees the page as a phone does.
-- `window.__pond` exposes the app in the console: `throwAt(x, z, { radius, power, manner, skip, thing, size })`,
+- `window.__pond` exposes the app in the console: `throwAt(x, z, { radius, power, manner, skip, thing, size, dressing })`
+  (`dressing`: the seed of a pizza's, pie's or cake's own parts; `preview.dressing` is the hand's),
   `setPower(name)` (and `power`), `setManner(name)` (and `manner`), `setSkip(on)` (and `skipping`), `setTrace(on)`,
   `setThing(name)` (and `thing`: a key of `THINGS` in `src/things.js`, remembered
   on the device) and `setSize(value)` (and `size`: the slider's value in its unit),

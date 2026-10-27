@@ -25,10 +25,12 @@
 // view glide to their orbits, and the page's View row and Reset view button
 // follow, and from Behind the hand and the preview of the thing in it are
 // in the lower half of the frame; the preview follows the thing chosen, its
-// size and the manner (a skip's hand let down) and is dressed as a thrown
-// one is (a pizza's toppings, a pie's filling, a cake's candles, its shared
-// mesh left plain), and a throw by hand takes it out of the hand for a
-// moment. Then a press held still dips a finger into the water under it,
+// size and the manner (a skip's hand let down), and a throw by hand takes it
+// out of the hand for a moment; a dressed thing's preview has its parts (a
+// pizza's toppings, a pie's filling, a cake's candles; its shared mesh left
+// plain), and a tap and throwRandom throw the one shown, the hand coming
+// back with the next, while a harness's throwAt draws its own. Then a press
+// held still dips a finger into the water under it,
 // a drag then moves the finger and not the view, and letting go lifts it
 // without throwing; a mouse held does the same. Last, the pool
 // (src/pool.js): its views stand where they should (on the deck, over its
@@ -339,23 +341,43 @@ await page.waitForTimeout(800);
 await page.evaluate(() => window.__pond.advance(1 / 60));
 const backAgain = await previewNow();
 check(!goneNow.shown && backAgain.shown && Math.abs(backAgain.opacity - 0.5) < 1e-6, `a throw by hand takes the preview out of the hand (shown: ${goneNow.shown}), and 0.8 s on it is back at ${backAgain.opacity.toFixed(2)} opacity`);
-// A dressed thing's preview has its parts, as each one thrown has its own (registerMesh `dress`; PREVIEW.dressing's
-// pepperoni, cherry and three candles), in a mesh of its own: the shared one stays as plain as one built afresh.
+// A dressed thing's preview has its parts (registerMesh `dress`) in a mesh of its own, the shared one as plain as one
+// built afresh, and they are the next throw by hand's: a tap and throwRandom throw the one shown, and the hand comes
+// back with the next, built from a new seed; a harness's throwAt draws its own and leaves the hand's be.
 const dressed = {};
 for (const name of ['pizza', 'pie', 'cake']) {
   await page.evaluate((key) => window.__pond.setThing(key), name);
   dressed[name] = await previewNow();
 }
-await page.evaluate(() => window.__pond.setThing('stone'));
-const plainStone = await previewNow();
 const plain = await page.evaluate(async () => {
   const [{ prepareThing }, { THINGS }, { meshKind }] = await Promise.all([import('/src/rock.js'), import('/src/things.js'), import('/src/thingMeshes.js')]);
   const triangles = (geometry) => (geometry.index ?? geometry.attributes.position).count / 3;
   return Object.fromEntries(['pizza', 'pie', 'cake'].map((key) => [key, { shared: triangles(prepareThing(THINGS[key]).geometry), built: triangles(meshKind(THINGS[key].look.mesh).build(THINGS[key], {})) }]));
 });
-const wanted = { pizza: 'Pepperoni', pie: 'Cherry', cake: '3 candles' };
-check(Object.entries(wanted).every(([key, parts]) => dressed[key].parts === parts && dressed[key].triangles > plain[key].shared && plain[key].shared === plain[key].built) && plainStone.parts === null,
-  `the preview is dressed as a thrown one is (${Object.keys(wanted).map((key) => `${key}: ${dressed[key].parts}, ${dressed[key].triangles} triangles over the shared ${plain[key].shared}`).join('; ')}), the shared meshes as plain as built afresh, a stone undressed`);
+check(['pizza', 'pie', 'cake'].every((key) => dressed[key].parts !== null && dressed[key].triangles > plain[key].shared && plain[key].shared === plain[key].built),
+  `each dressed preview has its parts (${['pizza', 'pie', 'cake'].map((key) => `${key}: ${dressed[key].parts}, ${dressed[key].triangles} triangles over the shared ${plain[key].shared}`).join('; ')}), the shared meshes as plain as built afresh`);
+await page.evaluate(() => window.__pond.setThing('pizza'));
+const inHand = await previewNow();
+await page.mouse.click(width * 0.5, height * 0.6);
+const tapped = await page.evaluate(() => window.__pond.rocks.at(-1).dressing);
+await page.waitForTimeout(800);
+await page.evaluate(() => window.__pond.advance(1 / 60));   // a frame drawn: the hand's next is built as it comes back
+const cameBack = await previewNow();
+const seedsRecipe = await page.evaluate(async (seed) => {
+  const [{ dressThing }, { THINGS }] = await Promise.all([import('/src/rock.js'), import('/src/things.js')]);
+  return dressThing(THINGS.pizza, seed).name;
+}, cameBack.dressing);
+check(tapped?.seed === inHand.dressing && tapped.name === inHand.parts && cameBack.dressing !== inHand.dressing && cameBack.shown && cameBack.parts === seedsRecipe,
+  `a tap throws the pizza in the hand (${inHand.parts} shown, ${tapped?.name} thrown, from its seed), and the hand comes back with the next (${cameBack.parts}, its new seed's ${seedsRecipe})`);
+const spaced = await page.evaluate(() => window.__pond.throwRandom().dressing);
+const afterSpace = await previewNow();
+const harness = await page.evaluate(() => window.__pond.throwAt(0, -1.4, { thing: 'pizza' }).dressing);
+const afterHarness = await previewNow();
+check(spaced.seed === cameBack.dressing && spaced.name === cameBack.parts && afterSpace.dressing !== cameBack.dressing && harness.seed !== afterSpace.dressing && afterHarness.dressing === afterSpace.dressing,
+  `throwRandom (Space, the throw button) throws the one in the hand too (${spaced.name}), and a harness's throwAt draws its own (${harness.name}), the hand's next left as it was`);
+await page.evaluate(() => { window.__pond.clear(); window.__pond.setThing('stone'); window.__pond.advance(0.1); });
+const plainStone = await previewNow();
+check(plainStone.parts === null && plainStone.thing === 'stone', `a stone's preview has no parts (${plainStone.parts})`);
 
 // Press and hold: a finger in the water (src/touch.js).
 before = await rockCount();

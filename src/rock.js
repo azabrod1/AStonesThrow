@@ -235,7 +235,9 @@
 // for a hundredth of a second when struck, less than a frame.
 //
 // Its own parts (registerMesh `dress`: a pizza's toppings, a pie's filling)
-// are drawn as it is made, from a stream of their own seeded from its own,
+// are drawn as it is made, from a stream of their own seeded from its own
+// (dressThing), or from the seed it is given (`dressing`: a person's throw
+// is the one its preview in the hand showed, src/main.js buildPreview),
 // added to its copy of the shared mesh and their weight to its own
 // (`dressing`); it floats by the shared mesh.
 //
@@ -520,6 +522,16 @@ function gaussian(random = Math.random) {
 function seededStream(seed) {
   let state = seed >>> 0;
   return () => { state = (state + 0x6d2b79f5) >>> 0; let t = Math.imul(state ^ (state >>> 15), 1 | state); t ^= t + Math.imul(t ^ (t >>> 7), 61 | t); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+}
+
+/**
+ * A dressed thing's own parts (registerMesh `dress`: a pizza's toppings, a
+ * pie's filling, a cake's candles) drawn from `seed` (32 bits): the same
+ * seed, the same parts, so a thing thrown with its preview's seed (Rock
+ * `dressing`) is the one the preview showed (src/main.js buildPreview).
+ */
+export function dressThing(thing, seed) {
+  return meshKind(thing.look.mesh).dress(thing, seededStream(seed));
 }
 
 /**
@@ -1185,8 +1197,9 @@ export class Rock {
    * @param mirrorLayer the layer the water's mirror image draws (src/splash.js MIRROR_LAYER): afloat, it is in it
    * @param water the water's uniforms (src/waterSurface.js rideUniforms): a floater given them rides the water's ripples as drawn (rideTheWater)
    * @param piece a shard's own outline (src/ice.js shards: its corners about its middle and its thickness, in radii), which its mesh is built to
+   * @param dressing the seed its own parts are drawn from (dressThing), in place of the one its throw draws: a person's throw is dressed as its preview in the hand (src/main.js)
    */
-  constructor({ radius, position, velocity, envTexture, waterFog = null, thing = DEFAULT_THING, mass = null, mirrorLayer = null, skip = false, water = null, piece = null }) {
+  constructor({ radius, position, velocity, envTexture, waterFog = null, thing = DEFAULT_THING, mass = null, mirrorLayer = null, skip = false, water = null, piece = null, dressing = null }) {
     this.radius = radius;
     this.position = position.clone();
     this.previous = position.clone();   // where it was a step ago
@@ -1233,17 +1246,20 @@ export class Rock {
     // its own copy of them. Anything else (a stone's lumps, drawn at random) is built for each one thrown.
     const prepared = mesh.fixed ? prepareThing(this.thing) : null;
     // Its own parts (registerMesh `dress`: a pizza's toppings), drawn from a stream of their own seeded from its throw's,
-    // added to its own copy of the shared mesh, their mass to its own.
-    this.dressing = prepared && mesh.dress ? mesh.dress(this.thing, seededStream(Math.floor(random() * 4294967296))) : null;
+    // or from the seed it was given (`dressing`, its preview's: the throw's draw is made all the same, so its other draws
+    // are as they were), added to its own copy of the shared mesh, their mass to its own.
+    let dressedWith = null;
+    if (prepared && mesh.dress) { const drawn = Math.floor(random() * 4294967296); dressedWith = dressing ?? drawn; }
+    this.dressing = dressedWith === null ? null : dressThing(this.thing, dressedWith);
     if (this.dressing && this.ownMass !== null) this.ownMass *= 1 + this.dressing.share;
     // (Its own copy, though a pie's parts are its filling's, kept: a mesh shared would stay on the GPU once drawn.)
     this.sharedGeometry = Boolean(prepared) && !this.thing.body.soft && !this.dressing;
     this.piece = piece;   // a shard's outline (src/ice.js), as it was broken
     this.geometry = prepared ? (this.sharedGeometry ? prepared.geometry : this.dressing ? withParts(prepared.geometry, this.dressing.geometry) : prepared.geometry.clone()) : mesh.build(this.thing, { flat: Boolean(skip), ...(piece ? { piece } : {}) });
-    // Only what its parts are and weigh is kept: their triangles are its geometry's now.
+    // Only what its parts are, what they weigh and their seed are kept: their triangles are its geometry's now.
     if (this.dressing) {
       if (!this.dressing.shared) this.dressing.geometry.dispose();
-      this.dressing = { name: this.dressing.name, share: this.dressing.share };
+      this.dressing = { name: this.dressing.name, share: this.dressing.share, seed: dressedWith };
     }
     if (!prepared) this.geometry.computeBoundingSphere();
     // A stone's physics mesh (src/thingMeshes.js createRockGeometry): the faces its shape, its contact, its lowest point
