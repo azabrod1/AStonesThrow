@@ -218,6 +218,10 @@ is remembered on the device (but the view, which opens on the shore):
   with spray off the crests and foam in streaks along the wind; the stones
   and their splashes ride them, and the Low view's eye stands above them.
   The pool is too small for waves: there a gale only ripples hard.
+- Effects: Fish on (the default) or off. Off, every water is empty:
+  nothing swims, nothing is startled and nothing is eaten (`?fish=off` on
+  the page, `--fish=none` for the harness; remembered on the device like
+  the other settings).
 - Quality: Auto, Low, Medium or High.
 Auto starts on High everywhere and steps down by itself if the idle
 pond or the first splash renders too slowly, and later whenever the frame
@@ -548,7 +552,7 @@ crown: the same sheet model with the drop's radius and speed, standing for
 about 20 ms.
 
 No two throws splash alike, as no two stones go in alike. Each stone
-(`src/rock.js`) is its own faceted lump, and it reports at impact its shape
+(`src/rock.js`) is its own lump (faceted for the physics, drawn smooth), and it reports at impact its shape
 (elongation and flatness from the principal axes of its solid, and how lumpy
 it is), what touched the water first (a flat face, an edge or a point, and
 how blunt it was there) and its spin (rate, axis, and ω·R/V); a tilted flat
@@ -936,12 +940,9 @@ the sideways move crowds the water past breaking (its Jacobian under 0.66,
 about 3% of the sea), a foam map on the tile takes a dense boil that pops
 within a second and a raft that drains over five, which the water shades
 as it shades a splash's foam, the raft gathered into thin wavering streaks
-along the wind; and spindrift, the fine spume the wind tears off a crest
-while it breaks (two clocks in the foam map say when each point began and
-stopped breaking), is blown downwind over the waves as soft, wispy puffs of
-mist that thin and dissolve within a second. When the gale rises its
-foam is run over the six seconds before, so the sea opens as one that has
-been blowing. The eye keeps 0.45 m clear of the still water either way.
+along the wind. When the gale rises its foam is run over the six seconds
+before, so the sea opens as one that has been blowing. The eye keeps
+0.45 m clear of the still water either way.
 `tools/gale-probe.mjs` checks the field on the CPU with the GPU's passes.
 
 **Snow** (`src/snow.js`, `src/shaders/snow.js`; the cloud and haze in
@@ -951,19 +952,28 @@ clear day's light for light snow, 0.35 for heavy, 0.22 for a blizzard), and
 its haze is whiter (0.85 to 0.9 of the cloud against rain's 0.6) and
 thicker (1.5 km, 400 m, 150 m to see). A snowflake meets the water at about
 1 m/s, weighing milligrams: it melts and leaves no ring, so the water is
-left as the wind has it. The flakes are one instanced draw in a box about
-the eye (16, 120 and 120 thousand of them: heavy snow's the big soft
-clumps of a snow day, up to 5 cm across, and a blizzard's up to 2.5 cm,
-drawn bigger than its fine snow so that fewer flakes, a flake's cost,
-hide what its haze does), each falling at its terminal
+left as the wind has it. The flakes are one instanced draw in two boxes
+about the eye: a near box (16, 120 and 120 thousand of them: heavy snow's
+the big soft clumps of a snow day, up to 5 cm across, and a blizzard's up
+to 2.5 cm, drawn bigger than its fine snow so that fewer flakes, a flake's
+cost, hide what its haze does) and a far box three times as wide standing
+on the water, with a third more flakes at a tenth of the density: the far
+snow, a pixel or two across and sinking slowly, that makes the fall deep
+(a flake's speed across the eye is its fall over its distance) where the
+near box alone stops at the pond's far edge and reads as a slab in front
+of the scene. Each falls at its terminal
 speed (0.9 to 1.1 m/s, give or take a fifth), carried at the wind's speed,
 swaying on a small ellipse and tossed by gusts of 0.3 of the wind, drawn as
 the capsule it sweeps in 1/120 s: round in still air, a streak in a
 blizzard's, with the same light either way; a flake under 1.2 pixels is
-drawn that wide and fainter, and the haze carries the snow beyond the box
-(Medium draws 0.6 of the flakes, Low 0.4). The box keeps its floor under
+drawn that wide and fainter, and the haze carries the snow beyond the far
+box (Medium draws 0.6 of the flakes, Low 0.4). A flake is a white
+scatterer in the cloud's light, lit from above by the cloud and from below
+by the ground, so it is grey against the sky (about 0.6 of the cloud seen
+level, darker from below) and white against the dark water and the trees.
+The near box keeps its floor under
 the water however high the eye goes, and the shader never multiplies the
-clock: the wind's carry and the fall come wrapped into the box, worked out
+clock: the wind's carry and the fall come wrapped into each box, worked out
 in doubles, and every sway and gust repeats in a minute, so a flake is
 where it should be however long the page has been open.
 Under a gale they are cut at its waves. On the ground the snow lies in
@@ -1189,7 +1199,13 @@ what a sun overhead would give), so a crest draws a thin bright line where
 its focus meets the sand, eased into 0.45 to 2.6 times the sun's own light
 (`src/pondFloor.js`), crisp enough that the ripples' web and a ring's light
 stand out on the shallow sand.
-Stones are procedural geometry, lumpy, worn smooth and speckled, with a
+Stones are procedural geometry, lumpy and worn smooth: the physics walks a
+320-face mesh of the surface (`src/thingMeshes.js` `createRockGeometry`, its
+random draws as they always were, so a seeded throw keeps its splash), the
+eye is given the same surface cut nine times finer, and each kind's grain
+and relief (a river stone's speckle, slate's layers, granite's mica and
+quartz, basalt's vesicles, pumice's pits) are drawn pixel by pixel
+(`src/shaders/stone.js`). They have a
 small rigid-body model: a ballistic arc, quadratic drag under water, and a
 settle into the sand. A rock over 16 cm across leaves the hand lower and
 farther out, so it rises into the view rather than filling its corner.

@@ -23,7 +23,7 @@
 //   6. render the main scene (sky dome, water surface refracting pass 5 and
 //      reflecting the mirror image, the stones' cavities in it
 //      (src/cavity.js), foam specks riding the surface, stones above the
-//      surface, the rain's streaks and flecks, the snow's flakes, the gale's spray) to an HDR
+//      surface, the rain's streaks and flecks, the snow's flakes) to an HDR
 //      texture with depth;
 //   7. draw the splash's water over it and tone-map to the canvas; with no
 //      water in the air, only the tone map (src/splash.js).
@@ -270,7 +270,9 @@
 // ?weather=clear|light-rain|heavy-rain|storm|light-snow|heavy-snow|blizzard|fog
 // the weather (WEATHERS: the sky's cloud and haze, src/sky.js, the rain,
 // src/rain.js, the snow, src/snow.js, a storm's lightning,
-// src/lightning.js, a storm's or a blizzard's gale and a fog's calm; setWeather); each otherwise
+// src/lightning.js, a storm's or a blizzard's gale and a fog's calm; setWeather);
+// ?fish=off (or none, the harness's --fish=none) leaves every water without
+// fish (the Effects setting; setFish); each otherwise
 // the one last chosen on this device, or lakeside's afternoon, lake, calm
 // and clear; ?paused=1
 // starts with the clock stopped
@@ -302,6 +304,7 @@ import { createFloatTarget, FullscreenPass, configureFloatSupport, renderTargetB
 import { UNDER_BACKGROUND_FRAGMENT } from './shaders/scene.js';
 import { directionAt, placeDirection, clampToFrame, isZoomed, viewFacing } from './viewZoom.js';
 import { meshKind } from './thingMeshes.js';
+import { stoneDetail, stoneUniforms } from './shaders/stone.js';
 import { orbitEye, orbitFacing, orbitAbout, clampOrbit, turnOrbit, blendOrbits, orbitsMatch, keepInside, LOWEST_EYE } from './viewOrbit.js';
 import { Profiler } from './profiler.js';
 import { FingerInWater, FINGER } from './touch.js';
@@ -502,6 +505,7 @@ const DEBUG_MODES = { under: 0, height: 1, foam: 2, env: 3, face: 4, ambient: 5 
 const DEFAULT_WIND_STRENGTH = 'calm';
 const WIND_STORAGE_KEY = 'stone-pond-wind';   // the Wind setting's last choice on this device
 const SOUND_STORAGE_KEY = 'stone-pond-sound';   // the Sound setting's last choice on this device ('off', or on)
+const FISH_STORAGE_KEY = 'stone-pond-fish';     // the Effects setting's fish, last chosen on this device ('off', or on)
 const WATER_STORAGE_KEY = 'stone-pond-water'; // the Water setting's: a clarity, or frozen
 const SKY_STORAGE_KEY = 'stone-pond-sky';     // the Location setting's: a place (PLACES)
 const TIME_STORAGE_KEY = 'stone-pond-time';   // the Time setting's: the local time ('hh:mm') of the hour last chosen
@@ -756,7 +760,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   // The gale's waves (src/galeWaves.js): their uniforms join the ripples'
   // before any material spreads those in; they blow only under a gale, and
   // never in the pool (applyGale).
-  const galeWaves = new GaleWaves(renderer, { windDirection, centre: water.centre, sharedWith: ambientWaves, lighting, haze: environment.hazeUniforms });
+  const galeWaves = new GaleWaves(renderer, { windDirection, centre: water.centre, sharedWith: ambientWaves });
   // The water's height at world (x, z) under the gale (its CPU sum), for the stones, the mirror and the eye.
   const galeSample = { height: 0, slopeX: 0, slopeZ: 0 };
   const galeSurfaceAt = (x, z) => galeWaves.sample(x, z, galeSample).height;
@@ -959,7 +963,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   const sceneMain = new THREE.Scene();
   // The haze for the built-in materials in it, the stones' and the things' (src/sky.js): 0 but in haze.
   sceneMain.fog = environment.fog;
-  sceneMain.add(environment.sky, surface.inner, surface.outer, splash.cavityGroup, splash.foamSpecks.points, sun, rain.streaks, rain.flecks, snow.flakes, galeWaves.spray);
+  sceneMain.add(environment.sky, surface.inner, surface.outer, splash.cavityGroup, splash.foamSpecks.points, sun, rain.streaks, rain.flecks, snow.flakes);
   // MIRROR_LAYER holds what the water mirrors: the sky dome, far shore
   // included, and while a splash lives its crowns, columns and drops. The
   // cavities are not on it: a hole lies below the mirror plane, so the water
@@ -992,8 +996,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   }
   showScenery(pooled);
   // The fish (src/fish.js; drawn by src/fishMeshes.js in the under-water pass): the place's, in its water (applyFish);
-  // ?fish=none leaves every water empty.
-  const fishOn = pageParameters.get('fish') !== 'none';
+  // ?fish=off or none, or the Effects setting's Off remembered on this device, leaves every water empty (setFish).
+  let fishOn = !['none', 'off'].includes(pageParameters.get('fish') ?? storedChoice(FISH_STORAGE_KEY));
   const fishes = new FishPopulation({ seed: Number(pageParameters.get('fishSeed') ?? 1) });
   const fishView = createFishView(lighting, { bedDepthAt: (x, z) => bedDepthAt(x, z), seenThrough: () => pooled });
   sceneUnder.add(fishView.group);
@@ -1083,6 +1087,12 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
         opacity: PREVIEW.opacity,
         depthWrite: false,
       });
+      // A stone's grain and relief, as every thrown thing's material draws them (src/shaders/stone.js; no kind, no
+      // grain, for anything else), so the stone in the hand looks like the one that flies; one program for every
+      // preview but a textured one, whatever is chosen.
+      const grain = stoneUniforms(geometry.userData.stone ?? null);
+      material.onBeforeCompile = (shader) => stoneDetail(shader, grain);
+      material.customProgramCacheKey = () => 'preview';
       const mesh = new THREE.Mesh(geometry, material);
       mesh.frustumCulled = false;
       sceneMain.add(mesh);
@@ -2541,7 +2551,6 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     camera.updateMatrixWorld();
     if (!skip.ambient) ambientWaves.update(simulationTime);
     galeWaves.update(simulationTime);   // nothing with no gale
-    galeWaves.updateView(simulationTime, camera, viewFocus());
     updateLightning(simulationTime);
     rain.update(simulationTime, camera, resolution, viewFocus());
     snow.update(simulationTime, camera, resolution);
@@ -2826,6 +2835,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     dropRings.reset();
     simulationTime = 0;
     stepsTime = 0;
+    fishes.resetClock();
     viewChanged = true;   // the mirror image is drawn whole again, without the splash
     mirroredRect.set(0, 0, 0, 0);
     splashRect.set(0, 0, 0, 0);
@@ -3077,6 +3087,15 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       try { window.localStorage.setItem(SOUND_STORAGE_KEY, on ? 'on' : 'off'); } catch { /* storage refused: the choice lasts this visit */ }
     },
     get sound() { return sound.enabled; },
+    /** The fish in or out of every water (the Effects setting): put in or taken out now (applyFish), remembered on this device. */
+    setFish(on) {
+      if (Boolean(on) !== fishOn) {
+        fishOn = Boolean(on);
+        applyFish();
+      }
+      try { window.localStorage.setItem(FISH_STORAGE_KEY, fishOn ? 'on' : 'off'); } catch { /* storage refused: the choice lasts this visit */ }
+    },
+    get fishOn() { return fishOn; },
     /** The floaters' ride read back (src/floaterRide.js): how many reads have come back and whether reading works (tools/quality-probe.mjs). */
     get floaterRide() { return { reads: floaterRide.reads, requests: floaterRide.requests, working: floaterRide.working }; },
     /** How many sounds are playing now (tools/quality-probe.mjs). */
@@ -3241,11 +3260,12 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       iceThickness = 'thin';
       this.setWater(DEFAULT_WATER);
       this.setSound(true);
+      this.setFish(true);
       if (!automaticQuality) this.setQuality('auto');   // already Auto: its calibration keeps what it found
       chosenClock = null;
       const place = requestPlace(...placeAndHour(DEFAULT_PLACE), { remember: false });
       showView('shore');
-      for (const key of [THING_STORAGE_KEY, WEATHER_STORAGE_KEY, WIND_STORAGE_KEY, WATER_STORAGE_KEY, ICE_STORAGE_KEY, SOUND_STORAGE_KEY, SKY_STORAGE_KEY, TIME_STORAGE_KEY]) {
+      for (const key of [THING_STORAGE_KEY, WEATHER_STORAGE_KEY, WIND_STORAGE_KEY, WATER_STORAGE_KEY, ICE_STORAGE_KEY, SOUND_STORAGE_KEY, FISH_STORAGE_KEY, SKY_STORAGE_KEY, TIME_STORAGE_KEY]) {
         try { window.localStorage.removeItem(key); } catch { /* storage refused: nothing was kept */ }
       }
       return Promise.all([place, weather]).then(() => undefined);
