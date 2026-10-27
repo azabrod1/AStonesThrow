@@ -28,9 +28,10 @@ eye straight back along its line of sight, up to twice its distance from
 what it looks at, so from the shore the view backs up the bank behind the
 thrower and the hand comes into the frame; zooming in walks back up to the
 frame before it narrows. The thing about to be thrown is previewed in the
-hand, see-through, at the size the strip sets, let down for a skip,
-turning slowly; it is gone the moment a throw leaves the hand and fades
-back (`?preview=off` leaves it out).
+hand, see-through, at the size the strip sets, dressed as one thrown is
+(a pizza with its toppings, a pie its filling, a cake its candles), let
+down for a skip, turning slowly; it is gone the moment a throw leaves the
+hand and fades back (`?preview=off` leaves it out).
 Escape or Reset view (under the menu button while the view is away from
 the shore's) glides back to the shore. The strip at the bottom sets what is
 thrown: its name opens a dropdown of every thing under its group, each with
@@ -1541,7 +1542,8 @@ farther out, so it rises into the view rather than filling its corner.
   within the pixel budget.
 - `node tools/zoom-probe.mjs [--w=390 --h=844]` drives the wheel, a pinch, a
   tap and Escape through the page's own handlers and checks that what is under
-  the pointer stays there, that zooming out past the frame steps the eye
+  the pointer stays there (at the shore, and at the corners of the steeper
+  High and Behind views), that zooming out past the frame steps the eye
   back along its line of sight (to twice the frame's distance, the pivot
   still at the centre) and that zooming in walks back up to the frame
   first; then drags, by touch and by mouse, and checks that
@@ -1550,8 +1552,9 @@ farther out, so it rises into the view rather than filling its corner.
   slower by the zoom,
   and that the View choices and Reset view glide where they should, the
   hand and the preview of the thing in it in frame from Behind, the
-  preview following the choice, the size and the manner and gone for a
-  moment after a throw; in the
+  preview following the choice, the size and the manner, dressed as a
+  thrown one is (its shared mesh left plain), and gone for a moment after
+  a throw; in the
   pool, that the views stand where they should, the eye under its water
   keeps inside its walls and comes back out once turned from one, a glide
   into its water and out goes over the water, and a tap on the deck throws

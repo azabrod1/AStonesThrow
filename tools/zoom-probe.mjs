@@ -3,8 +3,9 @@
 // frames (a glide is brought to its end with __pond.settleView()).
 //
 // Loads the page headless like tools/shoot.mjs, then: turns the mouse wheel
-// over several points and checks that the water point under the pointer stays
-// there (in pixels) and the field of view follows 0.9 per notch; zooms back
+// over several points (and the corners of the steeper High and Behind views)
+// and checks that the water point under the pointer stays there (in pixels)
+// and the field of view follows 0.9 per notch; zooms back
 // out and checks the view returns home, and past it that the eye steps back
 // along its line of sight (1 / 0.9 per notch, the pivot still at the centre,
 // to twice the frame's distance at most) and that zooming in walks back up
@@ -24,8 +25,10 @@
 // view glide to their orbits, and the page's View row and Reset view button
 // follow, and from Behind the hand and the preview of the thing in it are
 // in the lower half of the frame; the preview follows the thing chosen, its
-// size and the manner (a skip's hand let down), and a throw by hand takes it
-// out of the hand for a moment. Then a press held still dips a finger into the water under it,
+// size and the manner (a skip's hand let down) and is dressed as a thrown
+// one is (a pizza's toppings, a pie's filling, a cake's candles, its shared
+// mesh left plain), and a throw by hand takes it out of the hand for a
+// moment. Then a press held still dips a finger into the water under it,
 // a drag then moves the finger and not the view, and letting go lifts it
 // without throwing; a mouse held does the same. Last, the pool
 // (src/pool.js): its views stand where they should (on the deck, over its
@@ -138,6 +141,29 @@ for (const [fractionX, fractionY] of [[0.5, 0.6], [0.15, 0.7], [0.85, 0.45], [0.
   const onFrame = await page.evaluate(() => ({ fov: window.__pond.camera.fov, zoomed: window.__pond.zoomed, distance: window.__pond.orbit.distance }));
   check(Math.abs(onFrame.fov - homeFov) < 1e-6 && !onFrame.zoomed && Math.abs(onFrame.distance - homeDistance) < 1e-9, `wheel in 2 notches: back on the frame, ${onFrame.distance.toFixed(3)} m from the pivot, home again: ${!onFrame.zoomed}`);
 }
+
+// The steeper views' corners too, where the frame's bounds (a box in yaw and pitch) are furthest from the view's own
+// edges: the wheel closing in keeps what is under the pointer there all the same, and zooming back out comes home.
+for (const name of ['high', 'behind']) {
+  for (const [fractionX, fractionY] of [[0.9, 0.78], [0.1, 0.78], [0.9, 0.25]]) {
+    await page.evaluate((view) => window.__pond.showView(view, { glide: false }), name);
+    const clientX = Math.round(width * fractionX), clientY = Math.round(height * fractionY);
+    const water = await page.evaluate(([x, y]) => window.__probe.waterUnder(x, y), [clientX, clientY]);
+    if (!water) { console.log(`     ${name} (${clientX}, ${clientY}): sky under the pointer, nothing to hold there`); continue; }
+    await page.mouse.move(clientX, clientY);
+    for (let notch = 0; notch < 6; notch++) await page.mouse.wheel(0, -100);
+    await page.waitForTimeout(50);
+    const zoomed = await fov();
+    const [screenX, screenY] = await page.evaluate((point) => window.__probe.onScreen(point), water);
+    const drift = Math.hypot(screenX - clientX, screenY - clientY);
+    for (let notch = 0; notch < 6; notch++) await page.mouse.wheel(0, 100);
+    await page.waitForTimeout(50);
+    const home = await page.evaluate(() => ({ zoomed: window.__pond.zoomed, fov: window.__pond.camera.fov }));
+    check(Math.abs(zoomed - homeFov * 0.9 ** 6) < 1e-6 && drift < 0.5 && !home.zoomed && Math.abs(home.fov - homeFov) < 1e-6,
+      `${name}: wheel in 6 notches at (${clientX}, ${clientY}): fov ${homeFov.toFixed(1)} -> ${zoomed.toFixed(2)}, the water point under the pointer moved ${drift.toFixed(3)} px; 6 out, its frame again: ${!home.zoomed}`);
+  }
+}
+await page.evaluate(() => window.__pond.showView('shore', { glide: false }));
 
 // Zoom to the minimum.
 await page.mouse.move(width / 2, height / 2);
@@ -313,6 +339,23 @@ await page.waitForTimeout(800);
 await page.evaluate(() => window.__pond.advance(1 / 60));
 const backAgain = await previewNow();
 check(!goneNow.shown && backAgain.shown && Math.abs(backAgain.opacity - 0.5) < 1e-6, `a throw by hand takes the preview out of the hand (shown: ${goneNow.shown}), and 0.8 s on it is back at ${backAgain.opacity.toFixed(2)} opacity`);
+// A dressed thing's preview has its parts, as each one thrown has its own (registerMesh `dress`; PREVIEW.dressing's
+// pepperoni, cherry and three candles), in a mesh of its own: the shared one stays as plain as one built afresh.
+const dressed = {};
+for (const name of ['pizza', 'pie', 'cake']) {
+  await page.evaluate((key) => window.__pond.setThing(key), name);
+  dressed[name] = await previewNow();
+}
+await page.evaluate(() => window.__pond.setThing('stone'));
+const plainStone = await previewNow();
+const plain = await page.evaluate(async () => {
+  const [{ prepareThing }, { THINGS }, { meshKind }] = await Promise.all([import('/src/rock.js'), import('/src/things.js'), import('/src/thingMeshes.js')]);
+  const triangles = (geometry) => (geometry.index ?? geometry.attributes.position).count / 3;
+  return Object.fromEntries(['pizza', 'pie', 'cake'].map((key) => [key, { shared: triangles(prepareThing(THINGS[key]).geometry), built: triangles(meshKind(THINGS[key].look.mesh).build(THINGS[key], {})) }]));
+});
+const wanted = { pizza: 'Pepperoni', pie: 'Cherry', cake: '3 candles' };
+check(Object.entries(wanted).every(([key, parts]) => dressed[key].parts === parts && dressed[key].triangles > plain[key].shared && plain[key].shared === plain[key].built) && plainStone.parts === null,
+  `the preview is dressed as a thrown one is (${Object.keys(wanted).map((key) => `${key}: ${dressed[key].parts}, ${dressed[key].triangles} triangles over the shared ${plain[key].shared}`).join('; ')}), the shared meshes as plain as built afresh, a stone undressed`);
 
 // Press and hold: a finger in the water (src/touch.js).
 before = await rockCount();

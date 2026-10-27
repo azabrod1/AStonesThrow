@@ -48,11 +48,12 @@
 // the camera, horizon level, so that what is under the pointer stays there
 // (src/viewZoom.js): the mouse wheel by 0.9 per notch, a two-finger pinch
 // with the inverse of the change in finger spacing, while the fingers'
-// midpoint holds on to what was under it. A zoomed view stays inside the
-// unzoomed frame, so zooming all the way out returns to it, and turns with
-// it; a drag that starts zoomed first moves the pivot to what the view looks
-// at (the water under its centre, or a point as far off as the pivot was),
-// so it turns round that, and turns slower the narrower the field of view,
+// midpoint holds on to what was under it. A zoomed view is held inside the
+// unzoomed frame as it widens and as a pinch moves it (the wheel only
+// closes in on the pointer), so zooming all the way out returns to it, and
+// turns with it; a drag that starts zoomed first moves the pivot to what the
+// view looks at (the water under its centre, or a point as far off as the
+// pivot was), so it turns round that, and turns slower the narrower the field of view,
 // so what is under the finger still follows it. Zoomed out past the frame,
 // the eye steps straight back along its line of sight instead (zoomTo: the
 // same notches and pinches, the field of view the frame's, the pivot still
@@ -303,7 +304,7 @@ import { SplashSystem, MIRROR_LAYER } from './splash.js';
 import { createFloatTarget, FullscreenPass, configureFloatSupport, renderTargetBytes } from './gpu.js';
 import { UNDER_BACKGROUND_FRAGMENT } from './shaders/scene.js';
 import { directionAt, placeDirection, clampToFrame, isZoomed, viewFacing } from './viewZoom.js';
-import { meshKind } from './thingMeshes.js';
+import { meshKind, withParts } from './thingMeshes.js';
 import { stoneDetail, stoneUniforms } from './shaders/stone.js';
 import { orbitEye, orbitFacing, orbitAbout, clampOrbit, turnOrbit, blendOrbits, orbitsMatch, keepInside, LOWEST_EYE } from './viewOrbit.js';
 import { Profiler } from './profiler.js';
@@ -448,8 +449,10 @@ const WHEEL_STEP = 0.9;       // field of view factor per wheel notch
 const FARTHEST_BACK = 2.0;    // zoomed out past the frame, the eye steps back to at most this many times the frame's distance from the pivot (zoomTo)
 // The thing about to be thrown, previewed in the hand (buildPreview): its opacity; how fast it turns about the
 // vertical (radians a second); how long it is gone after a person's throw (seconds of real time) and then takes to
-// fade back; and the seed its stone's lumps are drawn with (previewRandom: never Math.random, so seeded throws stay).
-const PREVIEW = { opacity: 0.5, turn: 0.35, gone: 0.35, fade: 0.3, seed: 11 };
+// fade back; the seed its stone's lumps are drawn with (previewRandom: never Math.random, so seeded throws stay); and
+// the seed of its parts, a pizza's toppings, a pie's filling or a cake's candles (their first draw picks them, this
+// one's 0.39: pepperoni, cherry under a lattice, three candles, the most like their kinds).
+const PREVIEW = { opacity: 0.5, turn: 0.35, gone: 0.35, fade: 0.3, seed: 11, dressing: 50000 };
 const HOME_TARGET = [0, 0.12, -1.0];
 const TAP_SLOP = 14;          // CSS pixels a press may move and still throw; past them it turns the view
 const HOLD_MS = 300;          // a press held this long within TAP_SLOP dips a finger into the water
@@ -1035,18 +1038,23 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   // mirror image (it is on no MIRROR_LAYER), not from under the water (hiddenFromBelow), never among the rocks
   // (nothing meets it, the grab cannot pick it, the fish ignore it), and never culled (a draw off screen costs next to
   // nothing, and the warm-up's frames compile its programs with the hand out of frame). Its geometry is its thing's
-  // prepared one (src/rock.js prepareThing: shared, so never disposed here) or built for it with a seeded stream in
-  // place of Math.random (previewRandom), so a seeded throw's stone stays the stone it was; its material a see-through
-  // twin of a rock's (src/rock.js makeMaterial), of which warmUp draws one plain and one textured under the veil and
-  // keeps both (programKeepers), so no later choice compiles a program. ?preview=off leaves it out, as the shoot
-  // harness does unless asked (tools/shoot.mjs --preview=1), so frames from any orbit stay as they were.
+  // prepared one (src/rock.js prepareThing: shared, so never disposed here), or that with its parts (registerMesh
+  // `dress`, as each one thrown is dressed: src/rock.js withParts) in a copy of its own, or built for it with a seeded
+  // stream in place of Math.random (previewRandom), so a seeded throw's stone stays the stone it was; its material a
+  // see-through twin of a rock's (src/rock.js makeMaterial), of which warmUp draws one plain and one textured under the
+  // veil and keeps both (programKeepers), so no later choice compiles a program. ?preview=off leaves it out, as the
+  // shoot harness does unless asked (tools/shoot.mjs --preview=1), so frames from any orbit stay as they were.
   const previewOn = pageParameters.get('preview') !== 'off';
-  const preview = { mesh: null, thing: null, flat: false, ownsGeometry: false, radius: 0, goneUntil: 0, turned: 0, drawnAt: 0 };
-  /** `build` run with Math.random a seeded stream from PREVIEW.seed (Park–Miller), Math.random itself put back after. */
+  const preview = { mesh: null, thing: null, flat: false, ownsGeometry: false, parts: null, radius: 0, goneUntil: 0, turned: 0, drawnAt: 0 };
+  /** A stream seeded from `seed` (Park–Miller), the preview's own: what it draws is never Math.random's. */
+  function previewStream(seed) {
+    let state = seed;
+    return () => { state = (state * 16807) % 2147483647; return (state - 1) / 2147483646; };
+  }
+  /** `build` run with Math.random a seeded stream from PREVIEW.seed, Math.random itself put back after. */
   function previewRandom(build) {
     const random = Math.random;
-    let state = PREVIEW.seed;
-    Math.random = () => { state = (state * 16807) % 2147483647; return (state - 1) / 2147483646; };
+    Math.random = previewStream(PREVIEW.seed);
     try { return build(); } finally { Math.random = random; }
   }
   function disposePreview() {
@@ -1069,7 +1077,11 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       disposePreview();
       const kind = meshKind(thing.look.mesh);
       const prepared = prepareThing(thing);
-      const geometry = prepared ? prepared.geometry : previewRandom(() => kind.build(thing, { flat }));
+      // Its parts (a pizza's toppings, a pie's filling, a cake's candles) from a stream of its own, added to a copy of
+      // the shared mesh, as a throw adds its own; their triangles, copied, are let go as a throw lets them go.
+      const parts = prepared && kind.dress ? kind.dress(thing, previewStream(PREVIEW.dressing)) : null;
+      const geometry = parts ? withParts(prepared.geometry, parts.geometry) : prepared ? prepared.geometry : previewRandom(() => kind.build(thing, { flat }));
+      if (parts && !parts.shared) parts.geometry.dispose();
       if (!prepared) geometry.computeBoundingSphere();
       const look = thing.look;
       const glow = kind.glow?.(thing) ?? null;
@@ -1096,7 +1108,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       const mesh = new THREE.Mesh(geometry, material);
       mesh.frustumCulled = false;
       sceneMain.add(mesh);
-      Object.assign(preview, { mesh, thing, flat, ownsGeometry: !prepared });
+      Object.assign(preview, { mesh, thing, flat, ownsGeometry: !prepared || Boolean(parts), parts: parts?.name ?? null });
     }
     preview.radius = radius;
     const hand = handPosition(radius, thing);
@@ -1545,10 +1557,19 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
    */
   function zoomLevel() { return view.fov < home.fov - 1e-9 ? home.fov / view.fov : 1 / steppedBack(); }
 
-  /** The field of view `fov` with the world direction `direction` kept under the device point (placeDirection), inside the frame. */
-  function narrowTo(fov, direction, ndcX, ndcY) {
+  /**
+   * The field of view `fov` with the world direction `direction` kept under
+   * the device point (placeDirection). Widening is held inside the frame
+   * (clampToFrame), so zooming out drifts home and arrives there with the
+   * field of view; narrowing only if `held` (a pinch: its midpoint moves as
+   * it zooms, so it pans the view too). The wheel's narrowing only closes
+   * in on the pointer, and is left alone: the frame's bounds are a box in
+   * yaw and pitch, which would pull a steep view's corner off what is under it.
+   */
+  function narrowTo(fov, direction, ndcX, ndcY, held = false) {
     const placed = placeDirection(direction, ndcX, ndcY, fov, camera.aspect);
-    const next = clampToFrame({ yaw: placed.yaw, pitch: placed.pitch, fov }, home, camera.aspect);
+    let next = { yaw: placed.yaw, pitch: placed.pitch, fov };
+    if (held || fov > view.fov) next = clampToFrame(next, home, camera.aspect);
     if (isZoomed(next, view)) setView(next);   // otherwise nothing moved: at a limit
   }
 
@@ -1562,19 +1583,20 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   }
 
   /**
-   * Zoom to `level` (zoomLevel): the world direction `direction` (the one
-   * under the device point, as a rule) is kept under that point while the
-   * field of view narrows or widens (narrowTo); past the frame the eye
-   * steps straight back along its line of sight instead, the pivot still at
-   * the frame's centre (stepBackTo), to FARTHEST_BACK times the frame's
-   * distance, and zooming back in walks up to the frame before the field
-   * of view narrows again.
+   * Zoom to `level` (zoomLevel) at the device point: the world direction
+   * under it (the wheel's) or `held` (a pinch's, held under its moving
+   * midpoint) is kept under that point while the field of view narrows or
+   * widens (narrowTo); past the frame the eye steps straight back along its
+   * line of sight instead, the pivot still at the frame's centre
+   * (stepBackTo), to FARTHEST_BACK times the frame's distance, and zooming
+   * back in walks up to the frame before the field of view narrows again.
    */
-  function zoomTo(level, ndcX, ndcY, direction = directionAt(view, camera.aspect, ndcX, ndcY)) {
+  function zoomTo(level, ndcX, ndcY, held = null) {
+    const direction = held ?? directionAt(view, camera.aspect, ndcX, ndcY);
     const wanted = Math.max(level, 1 / FARTHEST_BACK);
     if (wanted > 1 + 1e-9) {
       if (steppedBack() > 1 + 1e-9) stepBackTo(1);
-      narrowTo(Math.max(home.fov / wanted, MIN_FOV), direction, ndcX, ndcY);
+      narrowTo(Math.max(home.fov / wanted, MIN_FOV), direction, ndcX, ndcY, Boolean(held));
     } else {
       if (view.fov < home.fov - 1e-9) narrowTo(home.fov, direction, ndcX, ndcY);   // the frame again, exactly
       stepBackTo(1 / wanted);
@@ -3366,9 +3388,12 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     get zoomLevel() { return zoomLevel(); },
     /** Where the thrower's hand is, [x, y, z] (handPosition for what is chosen, at its size). */
     get hand() { return handPosition().toArray(); },
-    /** The preview of the thing in the hand: whether it is on (?preview), shown now, what and how big it is, where, and its opacity. */
+    /**
+     * The preview of the thing in the hand: whether it is on (?preview), shown now, what and how big it is, what it is
+     * dressed with (a recipe's name, a filling's, a cake's candles) and its triangles, where, and its opacity.
+     */
     get preview() {
-      return { on: previewOn, shown: Boolean(preview.mesh?.visible) && (preview.mesh?.material.opacity ?? 0) > 0, thing: preview.thing?.key ?? null, radius: preview.radius, position: preview.mesh ? preview.mesh.position.toArray() : null, opacity: preview.mesh?.material.opacity ?? 0 };
+      return { on: previewOn, shown: Boolean(preview.mesh?.visible) && (preview.mesh?.material.opacity ?? 0) > 0, thing: preview.thing?.key ?? null, radius: preview.radius, parts: preview.parts, triangles: preview.mesh ? (preview.mesh.geometry.index ?? preview.mesh.geometry.attributes.position).count / 3 : 0, position: preview.mesh ? preview.mesh.position.toArray() : null, opacity: preview.mesh?.material.opacity ?? 0 };
     },
     /** Whether the view is the shore's, unzoomed (Reset view and Escape go there). */
     get atHome() { return reportedView?.atHome ?? true; },
