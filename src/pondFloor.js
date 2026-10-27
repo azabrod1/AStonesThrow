@@ -111,6 +111,40 @@ export const KOI_SHORE = {
   shelf: 0.35, deep: 1.35, lip: 0.08, beachLip: 0.08, mound: 0.3,
 };
 let shoreKind = 'lake';
+// Each place's shore (its sky's `shore`, src/sky.js; setShoreLook): the
+// ground's dry colour (`sand`, an albedo; Lakeside's is LAND_FRAGMENT's
+// DRY_SAND; `grey` how far the sand tile's own yellow is taken out first,
+// 0 to 1; the bed under the water takes the same, uBedTint in FLOOR_SAND),
+// and how much of the beach's debris and growth it has
+// (LAND_FRAGMENT's uShoreLook and uShoreMore): `pebbles` the share of cells
+// with one near the water, `pebbleSize` times their radii, `tufts` times
+// the bank's tufts, `wrack` the wrack line and its sticks, `grass` times
+// how far inland the grass begins, `cracks` a dried flat's plates. The
+// looks are told apart by what a shore is made of: Lakeside's sand, a
+// reservoir's red earth, a wooded lake's turf to the water, a loch's dark
+// peaty gravel, a sea cove's granite shingle, a desert's bare gravel, a
+// salt flat's pale crust, an alpine lake's grey scree.
+export const SHORE_LOOKS = {
+  sand:    { sand: [0.68, 0.6, 0.5],    grey: 0,    pebbles: 0.3,  pebbleSize: 1,   tufts: 1,    wrack: 1,   grass: 1,    cracks: 0 },
+  earth:   { sand: [0.52, 0.38, 0.27],  grey: 0.2,  pebbles: 0.45, pebbleSize: 1.2, tufts: 1,    wrack: 0.4, grass: 0.8,  cracks: 0 },
+  turf:    { sand: [0.5, 0.45, 0.33],   grey: 0.3,  pebbles: 0.25, pebbleSize: 1,   tufts: 1.2,  wrack: 0.2, grass: 0.35, cracks: 0 },
+  peat:    { sand: [0.36, 0.3, 0.22],   grey: 0.4,  pebbles: 0.8,  pebbleSize: 1.6, tufts: 0.7,  wrack: 0.3, grass: 0.6,  cracks: 0 },
+  shingle: { sand: [0.52, 0.52, 0.5],   grey: 0.9,  pebbles: 0.9,  pebbleSize: 2.2, tufts: 0.3,  wrack: 0.6, grass: 1.2,  cracks: 0 },
+  gravel:  { sand: [0.6, 0.54, 0.44],   grey: 0.45, pebbles: 0.6,  pebbleSize: 1.5, tufts: 0.15, wrack: 0,   grass: 1.5,  cracks: 0 },
+  salt:    { sand: [0.84, 0.83, 0.8],   grey: 0.85, pebbles: 0.05, pebbleSize: 1,   tufts: 0.05, wrack: 0,   grass: 2,    cracks: 1 },
+  scree:   { sand: [0.46, 0.46, 0.46],  grey: 0.95, pebbles: 0.95, pebbleSize: 2.2, tufts: 0.1,  wrack: 0,   grass: 1.5,  cracks: 0 },
+};
+const DRY_SAND = SHORE_LOOKS.sand.sand;   // LAND_FRAGMENT's: the tint is against it
+const bedTintUniform = { value: new THREE.Vector4(1, 1, 1, 0) };   // FLOOR_SAND's uBedTint: the tint, and the grey share in w
+const shoreLookUniform = { value: new THREE.Vector4(0.3, 1, 1, 1) };   // LAND_FRAGMENT's uShoreLook...
+const shoreMoreUniform = { value: new THREE.Vector2(1, 0) };          // ...and uShoreMore
+/** The shore look in force (SHORE_LOOKS by name; 'sand' for one not there): the bed's tint and the beach's uniforms. */
+export function setShoreLook(name) {
+  const look = SHORE_LOOKS[name] ?? SHORE_LOOKS.sand;
+  bedTintUniform.value.set(look.sand[0] / DRY_SAND[0], look.sand[1] / DRY_SAND[1], look.sand[2] / DRY_SAND[2], look.grey);
+  shoreLookUniform.value.set(look.pebbles, look.pebbleSize, look.tufts, look.wrack);
+  shoreMoreUniform.value.set(look.grass, look.cracks);
+}
 const shoreKindUniform = { value: 0 };   // LAKE_BED's uKoiPond: 1 for the Koi pond's shore
 /** The shore in force: 'lake' (the lake's, SHORE) or 'koi' (the Koi pond's, KOI_SHORE); every function here and LAKE_BED follow it. */
 export function setShoreKind(kind) {
@@ -256,6 +290,7 @@ export function createPondFloor(water, lighting, ambientWaves, { renderer, rings
       uExtinction: { value: lighting.extinction },
       uWaterColor: { value: lighting.waterColor },
       uPattern: { value: pattern.texture },
+      uBedTint: bedTintUniform,   // the place's ground against Lakeside's sand (setShoreLook)
       ...ambientWaves.uniforms(),
       ...(rings ? rings.uniforms() : {}),
       ...(ice ? ice.uniforms : {}),   // under the ice the surface focuses nothing (surfaceCurvature)
@@ -340,6 +375,9 @@ export function createShore(floor, lighting, environment, { snow = { value: 0 },
     uniforms: {
       ...shoreUniforms(),
       uPattern: floor.material.uniforms.uPattern,
+      uBedTint: bedTintUniform,       // the place's shore look (setShoreLook)...
+      uShoreLook: shoreLookUniform,
+      uShoreMore: shoreMoreUniform,
       uSunDir: { value: lighting.sunDirection },
       uSunIrradiance: { value: lighting.sunIrradiance },
       uSkyAmbient: { value: lighting.skyAmbient },

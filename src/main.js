@@ -295,9 +295,9 @@ import { Snow } from './snow.js';
 import { lightningAt } from './lightning.js';
 import { Rings } from './rings.js';
 import { DropRings } from './dropRings.js';
-import { createEnvironment, SKY_NAMES, REED_SKIES, skyHours, resolveHour, nearestHour } from './sky.js';
+import { createEnvironment, SKY_NAMES, REED_SKIES, skyShore, skyHours, resolveHour, nearestHour } from './sky.js';
 import { createWaterSurface } from './waterSurface.js';
-import { createPondFloor, createShore, floorDepthAt, groundHeightAt, setShoreKind, KOI_SHORE } from './pondFloor.js';
+import { createPondFloor, createShore, floorDepthAt, groundHeightAt, setShoreKind, setShoreLook, KOI_SHORE } from './pondFloor.js';
 import { Rock, setAir, aimSkip, aimThrow, flutterTrial, prepareThing, PREPARATION_WORK, skipLowest, skipSpeed, SKIP_THROW, PHYSICS_STEP, throwFlightTime } from './rock.js';
 import { THINGS, THING_NAMES, DEFAULT_THING, defineThing, onThingsChange } from './things.js';
 import { collideThings } from './collide.js';
@@ -305,6 +305,7 @@ import { SplashSystem, MIRROR_LAYER } from './splash.js';
 import { createFloatTarget, FullscreenPass, configureFloatSupport, renderTargetBytes } from './gpu.js';
 import { Glare } from './glare.js';
 import { Reeds } from './reeds.js';
+import { Boulders } from './boulders.js';
 import { UNDER_BACKGROUND_FRAGMENT } from './shaders/scene.js';
 import { directionAt, placeDirection, clampToFrame, isZoomed, viewFacing } from './viewZoom.js';
 import { meshKind, withParts } from './thingMeshes.js';
@@ -610,7 +611,9 @@ const LAKE_CLARITIES = WATER_CHOICES.filter((name) => name !== 'frozen');
 // beach, its own water (WATER_CLARITIES.koi) and a garden round it, out of
 // reach behind a hedge (src/koiGarden.js).
 // Each place's fish are
-// src/fish.js's (FISH_BY_PLACE, by the place's name); its reeds (`reeds`,
+// src/fish.js's (FISH_BY_PLACE, by the place's name); its beach's ground is
+// its sky's `shore` (SHORE_LOOKS in src/pondFloor.js, setShoreLook: sand,
+// shingle, scree...); its reeds (`reeds`,
 // src/reeds.js) are the sky's (REED_SKIES): the fresh lakes have them,
 // the sea cove, the bare rock shore, the salt flat and the frozen alpine
 // reservoir none, and the Pool and the Koi pond have their own grounds.
@@ -771,6 +774,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   // never in the pool (applyGale).
   const galeWaves = new GaleWaves(renderer, { windDirection, centre: water.centre, sharedWith: ambientWaves });
   const reeds = new Reeds({ lighting, ambientWaves, mirrorLayer: MIRROR_LAYER });   // the shallows' rushes (src/reeds.js), in the main scene, the mirror and the under-water pass
+  const boulders = new Boulders({ envTexture: environment.envTexture, waterFog: { extinction: lighting.extinction, color: lighting.waterColor }, mirrorLayer: MIRROR_LAYER });   // a rocky shore's stones (src/boulders.js), the same three ways
   // The water's height at world (x, z) under the gale (its CPU sum), for the stones, the mirror and the eye.
   const galeSample = { height: 0, slopeX: 0, slopeZ: 0 };
   const galeSurfaceAt = (x, z) => galeWaves.sample(x, z, galeSample).height;
@@ -881,6 +885,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   koiPond = Boolean(PLACES[placeName].koi);
   reedsHere = Boolean(PLACES[placeName].reeds);
   setShoreKind(koiPond ? 'koi' : 'lake');
+  setShoreLook(skyShore(PLACES[placeName].sky));   // the beach and the bed in the place's own ground (SHORE_LOOKS)
+  boulders.show(!pooled && !koiPond ? PLACES[placeName].sky : null);
   water.setPool(pooled);
   applyGale();
   /** The bed the splash's drops see (src/splash.js setBed): its depth under the patch's middle and its albedo, the pool's tiles, the Koi pond's gravel or the lake's sand. */
@@ -997,6 +1003,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   sceneMain.add(shore);
   sceneMain.add(reeds.above);
   sceneUnder.add(reeds.below);
+  sceneMain.add(boulders.above, boulders.mirror);
+  sceneUnder.add(boulders.below);
   // The pool's basin under the water, its walls and deck in the main scene
   // and the mirror (src/pool.js); shown in place of the lake's while the
   // water is the pool's (showScenery).
@@ -1009,6 +1017,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   function showScenery(asPool) {
     floor.visible = shore.visible = !asPool;
     reeds.visible = !asPool && !koiPond && reedsHere;   // the lake's shallows, where the place has them
+    boulders.show(!asPool && !koiPond ? PLACES[placeName].sky : null);   // and a rocky shore's stones (BOULDERS)
     pool.setVisible(asPool);
     shore.visible = !asPool && !koiPond;
     koiLand.visible = !asPool && koiPond;
@@ -1390,6 +1399,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
         setPooled(PLACES[place].pool);
         setKoiPond(Boolean(PLACES[place].koi));
         setReeds(Boolean(PLACES[place].reeds));
+        setShoreLook(skyShore(PLACES[place].sky));
+        boulders.show(!pooled && !koiPond ? PLACES[place].sky : null);
         if (entering) applyFish();
         if (entering && PLACES[place].defaultWater === 'frozen' && iceName === 'none') {
           clearPond();
@@ -1463,6 +1474,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
 
   function applySky() {
     garden.setEnvironment(environment.envTexture);
+    boulders.setEnvironment(environment.envTexture);
     garden.setLight();
     if (preview.mesh) preview.mesh.material.envMap = environment.envTexture;   // a new sky's map (the rocks take theirs as thrown)
     applyWaterColor();
@@ -2409,9 +2421,9 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       simulationTime += step;
     }
   }
-  /** What holds things in (src/collide.js `contain`): the pool's walls, the Koi pond's hedge, a hole in the ice; null with none. */
+  /** What holds things in (src/collide.js `contain`): the pool's walls, the Koi pond's hedge, a hole in the ice, a shore's boulders (src/boulders.js); null with none. */
   function containThings(rock) {
-    return (pooled ? holdInPool(rock, pool.square) : null) ?? (koiPond ? holdInGarden(rock) : null) ?? (ice.on ? ice.contain(rock) : null);
+    return (pooled ? holdInPool(rock, pool.square) : null) ?? (koiPond ? holdInGarden(rock) : null) ?? (ice.on ? ice.contain(rock) : null) ?? boulders.contain(rock);
   }
   function simulate(dt) {
     const frame = Math.min(dt, CATCH_UP * PHYSICS_STEP);
@@ -2666,7 +2678,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     ...ambientWaves.uniforms(),
     ...ice.uniforms,   // no shafts under the ice (underwaterShafts)
   });
-  const hiddenFromBelow = () => [environment.sky, shore, koiLand, reeds.above, pool.walls, pool.yard, ...garden.meshes, marker, arc, ...(preview.mesh ? [preview.mesh] : []), ...rocks.map((rock) => rock.meshAbove)];
+  const hiddenFromBelow = () => [environment.sky, shore, koiLand, reeds.above, boulders.above, pool.walls, pool.yard, ...garden.meshes, marker, arc, ...(preview.mesh ? [preview.mesh] : []), ...rocks.map((rock) => rock.meshAbove)];
   function renderFromBelow() {
     renderer.setRenderTarget(mainTarget);
     renderer.clear(true, true, false);
@@ -3019,6 +3031,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
         garden.setVisible(true, { building: false });   // the Koi pond's garden's programs too, whatever the place (src/koiGarden.js builds it only when shown)
         koiLand.visible = true;
         reeds.visible = true;   // and the reeds', whatever the place: a change of place compiles nothing
+        boulders.show('all');   // and the boulders' (src/boulders.js)
         render();
         renderFrom(VIEWS.under);
         showScenery(pooled);

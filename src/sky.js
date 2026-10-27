@@ -245,14 +245,17 @@ import { decodeHorizonStrip, HORIZON_DECODE } from './horizonStrip.js';
 // unless named. `defaultHour` may choose a starting view independently of
 // the lighting anchor. `reeds`: cattails stand in its shallows (src/reeds.js,
 // PLACES in src/main.js): the fresh lakes with a soft shore; a sea cove, a
-// bare rock shore, a salt flat and a frozen alpine reservoir have none. New locations face their cove opening, sunset ridge
+// bare rock shore, a salt flat and a frozen alpine reservoir have none.
+// `shore` names what its beach is made of (SHORE_LOOKS in src/pondFloor.js;
+// Lakeside's sand when unnamed), chosen from the land in its photo. New locations face their cove opening, sunset ridge
 // or low desert skyline, chosen in rendered home and water-level views;
 // Harbour faces the flat hills across the water with its golden hour's sun
 // path on it, Wooded lake its wooded hill, the sun 60° to the left, where
 // the eye's own side of the lake and the houses stay out of the frame.
 const SKIES = {
-  cove: { sunAzimuth: 15, hours: { morning: { file: 'secluded_beach', label: 'Morning' } } },
+  cove: { shore: 'shingle', sunAzimuth: 15, hours: { morning: { file: 'secluded_beach', label: 'Morning' } } },
   desert: {
+    shore: 'gravel',
     anchor: 'sunset',
     facing: 'sunset',
     sunAzimuth: 30,
@@ -264,6 +267,7 @@ const SKIES = {
   },
   harbour: {
     reeds: true,
+    shore: 'earth',
     anchor: 'morning',
     facing: 'golden',
     defaultHour: 'golden',
@@ -276,6 +280,7 @@ const SKIES = {
   },
   highlands: {
     reeds: true,
+    shore: 'peat',
     anchor: 'noon',
     facing: 'sunset',
     defaultHour: 'sunset',
@@ -300,6 +305,7 @@ const SKIES = {
     },
   },
   mesas: {
+    shore: 'salt',
     anchor: 'afternoon',
     facing: 'moonrise',
     hours: {
@@ -317,14 +323,16 @@ const SKIES = {
       moonlight: { file: 'qwantani_moon_noon', label: 'Moonlight', clock: '21:06' },
     },
   },
-  swiss: { mirrored: true, sunAzimuth: 45, hours: { midday: { file: 'lago_disola', resolution: '4k', label: 'Midday' } } },
-  wooded: { reeds: true, sunAzimuth: -60, hours: { morning: { file: 'radkow_lake', label: 'Late morning', clock: '11:11' } } },
+  swiss: { shore: 'scree', mirrored: true, sunAzimuth: 45, hours: { midday: { file: 'lago_disola', resolution: '4k', label: 'Midday' } } },
+  wooded: { reeds: true, shore: 'turf', sunAzimuth: -60, hours: { morning: { file: 'radkow_lake', label: 'Late morning', clock: '11:11' } } },
   // The Koi pond's own (src/main.js PLACES `koi`), no place of its own (`ownPlace`): Ninomaru Teien, the garden of
   // Nagoya Castle, in April's afternoon light through its trees (`shadedSun`: its sun behind leaves, the light on
   // level ground the balance's, most of it the sky's).
   garden: { ownPlace: false, shadedSun: true, sunAzimuth: 100, hours: { afternoon: { file: 'ninomaru_teien', label: 'Afternoon', clock: '15:09' } } },
 };
 /** The skies that are each a place of their own (the Location setting's lakes; the Koi pond takes the garden's). */
+/** What a sky's beach is made of (`shore` above): a name of SHORE_LOOKS (src/pondFloor.js), 'sand' when unnamed. */
+export const skyShore = (name) => SKIES[name]?.shore ?? 'sand';
 /** The skies whose shallows have reeds (`reeds` above). */
 export const REED_SKIES = Object.keys(SKIES).filter((name) => SKIES[name].reeds);
 export const SKY_NAMES = Object.keys(SKIES).filter((name) => SKIES[name].ownPlace !== false);

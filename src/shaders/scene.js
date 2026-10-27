@@ -2000,9 +2000,13 @@ float floorDepthAt(vec2 point) {
 // The sand at a world XZ point, over PATTERN_RANGE (the bed's and the
 // beach's): the baked tile (FLOOR_PATTERN) looked up twice, the second time
 // turned and shifted, patches of a few metres taking one lookup or the
-// other, so the tile's repeat does not show; then the silt's broad drifts.
+// other, so the tile's repeat does not show; then the silt's broad drifts;
+// in the place's own colour (uBedTint: the tile's sand greyed by its w and
+// tinted by its rgb, the shore look's ground against Lakeside's sand:
+// SHORE_LOOKS in src/pondFloor.js).
 const FLOOR_SAND = /* glsl */`
 uniform sampler2D uPattern;
+uniform vec4 uBedTint;
 #define PATTERN_TURN mat2(0.8, 0.6, -0.6, 0.8)   // the second lookup's tiles, turned 37° off the first's...
 #define PATTERN_SHIFT vec2(0.37, 0.71)           // ...and shifted, in tiles
 #define PATTERN_PATCHES 0.6                      // per metre: the noise choosing between the two lookups
@@ -2013,7 +2017,9 @@ vec3 floorSand(vec2 point) {
   vec3 turned = texture2D(uPattern, PATTERN_TURN * tilePoint + PATTERN_SHIFT).rgb;
   float lookup = smoothstep(0.42, 0.58, valueNoise(point * PATTERN_PATCHES + 17.0));
   float silt = valueNoise(point * SILT_FREQUENCY + 3.0);
-  return mix(straight, turned, lookup) * (0.75 + 0.45 * silt);
+  vec3 sand = mix(straight, turned, lookup);
+  sand = mix(sand, vec3(dot(sand, vec3(0.2126, 0.7152, 0.0722))), uBedTint.w) * uBedTint.rgb;
+  return sand * (0.75 + 0.45 * silt);
 }
 `;
 
@@ -2598,8 +2604,8 @@ void main() {
 // The land: the beach's sand (FLOOR_SAND, as the bed's) in the sun and the
 // sky's light (as the bed's, without the water, DRY_SAND of it), darker where
 // it is wet, up to WET_HEIGHT above the water; from GRASS_FROM to GRASS_TO
-// inland it turns to the bank's grass: the place's ground (uGroundAlbedo,
-// SKIES' ground in src/skies.js) under the same light, mottled. From
+// inland (times the look's `grass`, below) it turns to the bank's grass: the
+// land the sky photo shows, under the same light, mottled. From
 // LAND_NEAR to LAND_FAR away all of it becomes the colour of the land the
 // sky photo shows at the horizon that way (photoLand: the sky's cube map, a
 // little above the horizon, at LAND_LEVEL of its mip chain and averaged
@@ -2624,7 +2630,12 @@ void main() {
 // 2 mm and a metre, where a real shore keeps most of what the eye reads.
 // Three layers of that scale, each evaluated once a pixel from the world
 // position and faded out where a pixel's footprint on the ground (fwidth)
-// nears its cell (layerWeight), so none shimmers far off or in the mirror:
+// nears its cell (layerWeight), so none shimmers far off or in the mirror.
+// How much of each a place's shore has is its look's (SHORE_LOOKS in
+// src/pondFloor.js, uShoreLook and uShoreMore: the pebbles' share near the
+// water and their size, the tufts' share, the wrack line's strength, how
+// soon the grass comes, and the cracks of a dried flat), so a sea cove is
+// shingle, a desert shore bare gravel, a salt flat cracked and empty:
 // - Relief. Low hummocks (RELIEF_FREQUENCIES, RELIEF_HEIGHTS: 6 cm over
 //   1.8 m, 1.4 cm over half a metre, value noise with its gradient) tilt
 //   the normal the sun lights, so the beach has form, strongest under a low
@@ -2654,6 +2665,8 @@ uniform vec3 uSunIrradiance;
 uniform vec3 uSkyAmbient;
 uniform samplerCube uLandCube;   // the land before the haze, for the grass (src/sky.js landCube)...
 uniform float uLandLevel;        // ...at this level of its mip chain
+uniform vec4 uShoreLook;         // the place's shore (SHORE_LOOKS): the pebbles' share near the water, their size (times PEBBLE_RADII), the tufts' share (times TUFT_SHARE), the wrack's strength
+uniform vec2 uShoreMore;         // ...and how far inland the grass comes (times GRASS_FROM and GRASS_TO), the cracks of a dried flat (0 to 1)
 varying vec3 vWorld;
 varying vec3 vNormal;
 varying float vInland;
@@ -2709,8 +2722,12 @@ vec3 koiCobble(vec2 point) {
 #define WRACK_SHADE 0.82     // ...and how dark
 #define PEBBLE_CELL 0.1      // metres: a cell with one pebble or shell at most
 #define PEBBLE_RADII vec2(0.006, 0.022)   // metres
-#define PEBBLE_SHORE 0.3     // the share of cells with one within PEBBLE_REACH of the waterline...
-#define PEBBLE_INLAND 0.05   // ...and beyond
+#define PEBBLE_SHORE 0.3     // the share of cells with one within PEBBLE_REACH of the waterline (Lakeside's; a look's uShoreLook.x)...
+#define PEBBLE_INLAND 0.05   // ...and beyond (its share of the shore's)
+#define CRACK_CELL 0.22      // metres: a dried flat's plates (koiCobble's cells)...
+#define CRACK_WIDTH 0.035    // ...and their cracks' width, in cells
+#define CRACK_SHADE 0.7      // how dark a crack is
+#define PEBBLE_SHADE 0.5     // a pebble's rim toward the sun is this much brighter than the rim away from it: a dome
 #define PEBBLE_REACH 1.0     // metres
 #define STICK_CELL 0.5       // metres: a cell with one stick or strand of weed at most
 #define STICK_SHARE 0.35     // the share of cells with one at the wrack line...
@@ -2750,15 +2767,20 @@ vec2 cellOf(vec2 point, float cell, out float chance, out float tone, out vec2 f
   return index;
 }
 
-// A pebble in the cell of the point: its cover, 0 to 1, antialiased over 'edge' metres; tone its colour's.
-float pebble(vec2 point, float share, float edge, out float tone) {
+// A pebble in the cell of the point: its cover, 0 to 1, antialiased over 'edge' metres; tone its colour's; dome how
+// its rounded top is lit, 0 at the rim away from the sun to 1 at the rim toward it (the look's larger pebbles are
+// kept inside their cells: a look's size up to half the cell over the largest).
+float pebble(vec2 point, float share, float edge, out float tone, out float dome) {
   float chance; vec2 fromCentre;
   vec2 index = cellOf(point, PEBBLE_CELL, chance, tone, fromCentre);
+  dome = 0.5;
   if (chance >= share) return 0.0;
-  vec2 offset = (vec2(hash21(index + 1.3), hash21(index + 2.7)) - 0.5) * (0.5 * PEBBLE_CELL);
   float size = hash21(index + 9.1);
-  float radius = mix(PEBBLE_RADII.x, PEBBLE_RADII.y, size * size);
-  return 1.0 - smoothstep(radius - edge, radius + edge, length(fromCentre - offset));
+  float radius = mix(PEBBLE_RADII.x, PEBBLE_RADII.y, size * size) * min(uShoreLook.y, 0.5 * PEBBLE_CELL / PEBBLE_RADII.y);
+  vec2 offset = (vec2(hash21(index + 1.3), hash21(index + 2.7)) - 0.5) * max(PEBBLE_CELL - 2.0 * radius, 0.0);
+  vec2 fromPebble = fromCentre - offset;
+  dome = 0.5 + 0.5 * dot(fromPebble, normalize(uSunDir.xz + vec2(1e-4, 0.0))) / max(radius, 1e-4);
+  return 1.0 - smoothstep(radius - edge, radius + edge, length(fromPebble));
 }
 
 // A stick in the cell of the point: a thin ellipse turned by the cell's hash.
@@ -2800,7 +2822,7 @@ void main() {
   vec3 normal = reliefNormal(vWorld.xz, footprint);
   vec3 light = uSunIrradiance * max(dot(normal, uSunDir), 0.0) + uSkyAmbient * SKY_LIGHT;
   vec3 sand = floorSand(vWorld.xz) * PATTERN_RANGE * DRY_SAND * mix(WET_SHADE, 1.0, smoothstep(0.0, WET_HEIGHT, vWorld.y));
-  float grassFrom = GRASS_FROM, grassTo = GRASS_TO;
+  float grassFrom = GRASS_FROM * uShoreMore.x, grassTo = GRASS_TO * uShoreMore.x;
   if (uKoiPond > 0.5) {
     float beach = koiBeach(koiAngle(vWorld.xz));
     vec3 pebbles = floorSand(vWorld.xz * 0.7) * PATTERN_RANGE * KOI_STONE_TINT;
@@ -2826,12 +2848,20 @@ void main() {
   float tone = 0.5;
   if (uKoiPond < 0.5) {
     float wrackLine = WRACK_INLAND + WRACK_WANDER * (2.0 * valueNoise(vec2(vWorld.x * WRACK_WAVELENGTH, 0.5) + 11.0) - 1.0);
-    float wrack = 1.0 - smoothstep(0.0, WRACK_WIDTH, abs(vInland - wrackLine));
+    float wrack = (1.0 - smoothstep(0.0, WRACK_WIDTH, abs(vInland - wrackLine))) * uShoreLook.w;
     albedo = sand * mix(1.0, WRACK_SHADE, wrack * (1.0 - grass));
-    float pebbleShare = mix(PEBBLE_INLAND, PEBBLE_SHORE, 1.0 - smoothstep(0.0, PEBBLE_REACH, vInland)) * (1.0 - grass);
-    float pebbles = pebble(vWorld.xz, pebbleShare, footprint, tone) * layerWeight(PEBBLE_CELL, footprint);
-    albedo = mix(albedo, mix(sand * 0.4, vec3(dot(sand, vec3(0.333))) * 1.15, tone), pebbles);   // dark to pale grey
-    float stickShare = STICK_SHARE * (1.0 - smoothstep(0.0, STICK_SPREAD, abs(vInland - wrackLine))) * (1.0 - grass);
+    // A dried flat's plates (CRACK_CELL), their cracks dark, faded out where a pixel outgrows them.
+    if (uShoreMore.y > 0.0) {
+      float gap = koiCobble(vWorld.xz / CRACK_CELL).z;
+      float crackBlur = footprint / CRACK_CELL;
+      float cracks = (1.0 - smoothstep(CRACK_WIDTH - crackBlur, CRACK_WIDTH + crackBlur, gap)) * layerWeight(CRACK_CELL, footprint) * uShoreMore.y * (1.0 - grass);
+      albedo *= mix(1.0, CRACK_SHADE, cracks);
+    }
+    float pebbleShare = uShoreLook.x * mix(PEBBLE_INLAND / PEBBLE_SHORE, 1.0, 1.0 - smoothstep(0.0, PEBBLE_REACH, vInland)) * (1.0 - grass);
+    float dome;
+    float pebbles = pebble(vWorld.xz, pebbleShare, footprint, tone, dome) * layerWeight(PEBBLE_CELL, footprint);
+    albedo = mix(albedo, mix(sand * 0.4, vec3(dot(sand, vec3(0.333))) * 1.15, tone) * mix(1.0 - 0.5 * PEBBLE_SHADE, 1.0 + 0.5 * PEBBLE_SHADE, dome), pebbles);   // dark to pale grey, domed
+    float stickShare = STICK_SHARE * uShoreLook.w * (1.0 - smoothstep(0.0, STICK_SPREAD, abs(vInland - wrackLine))) * (1.0 - grass);
     float sticks = stick(vWorld.xz, stickShare, footprint, tone) * layerWeight(STICK_CELL, footprint);
     albedo = mix(albedo, sand * vec3(0.5, 0.4, 0.3) * mix(0.6, 1.3, tone), sticks);   // dark brown
   }
@@ -2842,7 +2872,7 @@ void main() {
   // Round the Koi pond the garden's lawn runs on farther before the photo's land takes over (the photo's own lake shore
   // lies where the lake's beach would end).
   float far = uKoiPond > 0.5 ? smoothstep(4.0 * LAND_NEAR, 2.0 * LAND_FAR, length(toLand)) : smoothstep(LAND_NEAR, LAND_FAR, length(toLand));
-  float tuftShare = uKoiPond > 0.5 ? 0.0 : TUFT_SHARE * smoothstep(GRASS_FROM - 0.6, GRASS_TO, vInland);
+  float tuftShare = uKoiPond > 0.5 ? 0.0 : TUFT_SHARE * uShoreLook.z * smoothstep(grassFrom - 0.6, grassTo, vInland);
   if (grass > 0.0 || far > 0.0 || tuftShare > 0.0) {
     vec3 land = photoLand(uSkyCube, LAND_LEVEL, toLand.xz);
     float level = max(uSunDir.y, 0.0) + SKY_LIGHT * 0.25;

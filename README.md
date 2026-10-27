@@ -142,14 +142,23 @@ is remembered on the device (but the view, which opens on the shore):
   and is gone where the rocks land, and with it the light a ring throws on
   it. Behind the waterline, just behind the shore view, a sand beach rises
   into a grassy bank: pebbles and a wrack line of sticks along the water,
-  low hummocks the sun shades, tufts thickening into a sward in the place's
-  own ground colour, and far off the sky photo's own land, so turned round,
-  the view sees a shore rather than water to the horizon. At the fresh lakes
+  low hummocks the sun shades, tufts thickening into a sward in the colour
+  of the photo's land, and far off the sky photo's own land, so turned round,
+  the view sees a shore rather than water to the horizon. What the beach is
+  made of is each place's (`SHORE_LOOKS` in `src/pondFloor.js`, named by its
+  sky's `shore`): Lakeside's sand, Harbour's red earth, Wooded lake's turf to
+  the water, Highlands' peaty gravel, Cove's granite shingle, Desert's bare
+  gravel, Mesas' cracked salt crust, Swiss Alps' grey scree; the bed under
+  the water takes the same ground. At the fresh lakes
   (Lakeside, Harbour, Highlands, Wooded lake: `reeds` in `src/sky.js`) reeds
   stand in the shallows on either side of the throw's line (`src/reeds.js`): rushes
   with cattail heads and leaf blades, rooted on the bed, mirrored in the
   water and bending under it as a straw does, leaning and swaying with the
-  Wind control, the nearest bed at the home view's lower left corner.
+  Wind control, the nearest bed at the home view's lower left corner. The
+  Cove has granite boulders instead (`src/boulders.js`): thrown granite's
+  own mesh and grain at a boulder's scale, half out of the water along the
+  waterline on either side, out of the home frame, mirrored and seen through
+  the water, and a thing thrown into one comes back off it.
 - Frozen (`?water=frozen`, or `?ice=thin|thick`; under the Water cards,
   Thin, 1 cm, the default, or Thick, 4 cm), over the lake's water last
   chosen or the pool's (below). What is thrown lands on it,
