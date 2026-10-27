@@ -7,29 +7,33 @@
 // tools/sky-probe.mjs: the sun's direction in the file's frame, its
 // irradiance, and the sky's mean radiance; for a place's hours (below) also
 // what lights it, the true sun's position and where north is in the file.
-// SKIES (src/skies.js, with the choice of an hour and the panoramas'
-// downloads) lists the places (the Location setting's choices, src/main.js),
-// each with its hours (the Time setting's) and how it is turned; the
-// environment loads one to start and another whenever load() is called
-// (Switching, below).
+// SKIES lists the places (the Location setting's choices, src/main.js), each with
+// its hours (the Time setting's) and how it is turned; the environment loads
+// one to start and another whenever load() is called (Switching, below).
 //
 // The photo. The page loads each panorama as a JPEG gain map,
-// assets/sky/<name>_2k.jpg, a tenth to a thirtieth of the Radiance file
-// (<name>_2k.hdr) it is encoded from: tools/sky-encode.mjs writes it, matched
-// to the arithmetic of Three.js's UltraHDRLoader, which decodes it here to
-// the half floats the Radiance file gave, the sun's disc and all
-// (decodePanorama). The site publishes only the JPEGs; the Radiance files
-// stay the source, which tools/sky-probe.mjs measures. The decode takes a
-// little longer than the Radiance file's parse did (90 ms against 55 on an
+// assets/sky/<name>_2k.jpg (Swiss Alps' _4k.jpg), a tenth to a thirtieth of
+// the Radiance file (<name>_2k.hdr) it is encoded from: tools/sky-encode.mjs
+// writes it, matched to the arithmetic of Three.js's UltraHDRLoader, which
+// decodes it here to the half floats the Radiance file gave, the sun's disc
+// and all (decodePanorama). The site publishes only the JPEGs; the Radiance
+// files stay the source, which tools/sky-probe.mjs measures. The decode takes
+// a little longer than the Radiance file's parse did (90 ms against 55 on an
 // M5 Max, 300 against 215 slowed four times), for seconds of download saved.
 //
-// Places and hours. Most places are one photograph. Lakeside and Mesas were
+// Places and hours. Four places are one photograph. Lakeside and Mesas were
 // each photographed from one spot through the day (Poly Haven's 2024 series
 // by Greg Zaal and Jarod Guest, on the shore of a dammed lake in South Africa
 // and on a hill above it 350 m away; Lakeside's afternoon is their 2019
 // panorama, from the same rock, its sun at 14:41 local time to 0.1°), so each
 // of their hours is a panorama of the same land at another time, and the
 // land keeps still while the sun moves (Orientation).
+// Highlands uses five Kiara photographs (2016); Desert oasis uses Rogland's
+// golden hour and two nights (2023). Their rock ridges are aligned using the
+// probe's --band option: Kiara's lower valley from -15° to -5°, Rogland's
+// skyline from 0° to 18°. Small viewpoint changes in Kiara remain in nearby
+// rocks. Its sunrise/sunset are lit by the measured sun; their camera times
+// are approximate, so they use skyline north rather than solar-position north.
 //
 // Orientation. The dome samples the panorama by direction as Three.js's
 // equirect lookup does (equirectUv: u = atan(z, x)/2π + ½), with the x of the
@@ -45,7 +49,7 @@
 // stands where it stood that day against the land.
 //
 // The sun's colour. The scene's sun keeps the luminance of sunBalance (src/
-// main.js), the irradiance it was balanced with under BALANCE_SKY, and takes
+// main.js), the irradiance it was balanced with under BALANCE_FILE, and takes
 // the colour of the photo's sun relative to that sky's: so under the meadow
 // it is sunBalance, and at sunrise as orange against it as the photo's sun is
 // against the meadow's (lighting.sunIrradiance, filled in place).
@@ -87,25 +91,32 @@
 // sun at the hour's elevation (no moon), to the 1 − ADAPTATION, and below
 // the rods' threshold to the 1 − ROD_ADAPTATION further. The eye adapts
 // most of the way, not all: twilight and night come out darker than the
-// photograph shows them, never black. Where the true sun is down
+// photograph shows them, about 2.7 stops under the day, dark but never
+// black (at 4 to 5 stops under, as they were first set, they were a dark
+// grey photograph on a phone). Where the true sun is down
 // (sky-probe's light 'none') the sky is all the light, and the scene's sun
 // is dark, low where the true one is; where the moon lights the photo
 // ('moon') it is the scene's sun, its light a full moon's, MOON_DIMMING
 // times the sun's at its elevation. Below NIGHT_VISION_LIGHT[0] the eye's
 // rods take over from its cones, alone by NIGHT_VISION_LIGHT[1] (a full
 // moon low in the sky): lighting.night, from 0 to 1 between the two in the
-// logarithm of the light, mixes the picture towards what rods see
-// (NIGHT_VISION in src/shaders/fluid.js). That factor is the environment's
+// logarithm of the light, mixes the picture towards what rods see, drawn
+// as a moonlit blue that keeps some of the cones' colour (NIGHT_VISION in
+// src/shaders/fluid.js). That factor is the environment's
 // `level` (1 for a single photograph and an anchor): the deep water's colour
 // (src/main.js), a radiance lit by what falls on the water, takes it, and so
 // does the cube's ground hemisphere.
 //
 // Weather (setWeather; the Weather setting, src/main.js). Rain comes under
 // cloud: `cover` of it (0 to 1) takes that share of the sun's direct light
-// away and turns the dome toward the cloud's: its luminance evened out about
-// the clear sky's mean (to the power 1 − OVERCAST_FLATTEN, so the sun and
-// its glow sink and the shaded land lifts, as under a cloud deck), greyed to
-// OVERCAST_TINT, and scaled to the cloud's brightness, which is all the
+// away and turns the dome's sky toward the cloud's: its luminance evened out
+// about the clear sky's mean (to the power 1 − OVERCAST_FLATTEN, so the sun
+// and its glow sink), greyed to OVERCAST_TINT, and scaled to the cloud's
+// brightness. The photo's land (darker than its sky) keeps its colour, but
+// for its blue (far water's reflected sky, the far haze), and is dimmed as the light on it is (the cloud's over
+// the clear hour's), or its trees would go as grey and pale as the cloud,
+// and the grass by the pond, which takes their colour (PHOTO_LAND in
+// src/shaders/scene.js), with them. The cloud's brightness is all the
 // light of the clear hour (its sky's and its sun's on level ground) times
 // the weather's `light` (a rain cloud's share of a clear day's light),
 // softened as the hours' light is (adaptedLight: under the rods' threshold,
@@ -115,7 +126,21 @@
 // 1 − exp(−3d/visibility) toward HAZE_BRIGHTNESS of the cloud: the water
 // (HAZE in src/shaders/scene.js) by its distance, the dome by the distance
 // a ray climbs out of the rain (HAZE_LAYER over the sine of its elevation),
-// at most LAND_DISTANCE, where the photo's land stands. A clear sky leaves
+// at most LAND_DISTANCE, where the photo's land stands. Snow's haze is
+// brighter (the weather's `hazeBrightness`, over HAZE_BRIGHTNESS): its
+// flakes scatter the cloud's light back as white as they are, where rain's
+// drops let it through. A fog is the haze with no cloud over it, in a layer
+// of its own depth (`hazeLayer`, for HAZE_LAYER): the dome's sky shows
+// through it overhead and the photo's sun as a pale disc; the haze takes
+// the sun's direct light along its path through the layer (at most
+// LAND_DISTANCE) and gives it back as cloud does, its `light` of the clear
+// hour's (`shade`, in applyWeather: cloud's cover and the haze's share
+// together; under rain's and snow's full cover it is the cover). The haze
+// also reaches Three.js's own materials (the stones, the things) as the
+// main scene's FogExp2 (`fog`), its chunks made HAZE's, and the grass by
+// the pond reads the land as it was before the haze (`landCube`: the
+// cube's LAND_LEVEL, captured once without the haze and copied before the
+// hazed capture; with no haze the cube itself). A clear sky leaves
 // everything as it was.
 //
 // Lightning (setFlash; src/lightning.js says when and how bright): a flash
@@ -129,9 +154,17 @@
 // its land stands in front of the bolt.
 //
 // Asset requests time out after 30 seconds without progress; the current sky
-// stays until all replacement assets arrive. Initial calibration loads in
-// parallel, and the first panorama's download starts from index.html's head,
-// before the modules (startFirstPanorama in src/skies.js).
+// stays until all replacement assets arrive. Initial calibration loads in parallel.
+//
+// Starting. createEnvironment returns at once, its first sky still on its
+// way (firstLoad): the dome, the cube and the prefiltered map exist from the
+// start, captured once from the empty dome (the sun straight up, dark), so
+// every material made while the photo downloads takes the maps it will keep,
+// at their final sizes, and the capture's programs are built meanwhile
+// (src/main.js builds the pond and warms its programs up before it awaits
+// firstLoad). The page may have asked for the photo before any module ran
+// (index.html's early fetch, src/loadAsset.js takes it over); each load
+// lists what it fetched (`assets`), for the page to ask for first next time.
 //
 // Switching. load(place, hour) fetches the photo and its measurements, then
 // in one frame swaps the dome's texture and uniforms, fills lighting's sun
@@ -139,7 +172,14 @@
 // into the same targets (every material holding them keeps them) and frees
 // the old photo. Nothing new is compiled: the dome, the capture's ground and
 // the PMREM generator live as long as the environment. Until the photo has
-// arrived the old sky stays, whole.
+// arrived the old sky stays, whole. The photo (0.2 to 0.8 MB) is most of the
+// wait: prefetch(place, hour) fetches an hour's photo and measurements ahead
+// without showing them (src/main.js prefetchHours: the hours either side of
+// the one asked for, while the Time of day page is open), at most PREFETCHED
+// kept, so its load waits only on the decode (decodePanorama).
+// A caller's AbortSignal cancels an obsolete download, a prefetched one it
+// has taken over too; it is checked again before decoding, after it and
+// before changing any lighting. A prefetch let go (more than PREFETCHED) is aborted.
 //
 // The panorama and a water-coloured hemisphere below the horizon (the photo's
 // own ground there would light drops and stones green from below; GROUND,
@@ -149,7 +189,7 @@
 // Horizon. The 2k photo gives the dome 5.7 pixels a degree, and a desktop
 // at the home view's 48° or a phone's three pixels a CSS pixel sees 20 to
 // 50 a degree, so the land on the skyline is a blur. Over the band about
-// the horizon (HORIZON_STRIP in src/skies.js, 17° up to 3° down, where the
+// the horizon (HORIZON_STRIP, below: 17° up to 3° down, where the
 // land stands) the dome draws the hour's horizon strip instead: the same
 // band of the 8k photo (23 pixels a degree), its own JPEG gain map
 // (tools/sky-encode.mjs), which the page fetches once the panorama is up
@@ -173,25 +213,130 @@
 // estimate (src/main.js).
 import * as THREE from 'three';
 import { UltraHDRLoader } from 'three/addons/loaders/UltraHDRLoader.js';
-import { loadAsset } from './loadAsset.js';
-import { SKIES, DEFAULT_SKY, resolveHour, fetchPanorama, horizonUrl, horizonRows } from './skies.js';
+import { loadAsset, dropEarlyAssets } from './loadAsset.js';
 import { decodeHorizonStrip, HORIZON_DECODE } from './horizonStrip.js';
 
-export { SKY_NAMES, DEFAULT_SKY, skyHours, resolveHour, nearestHour } from './skies.js';
-
-const BALANCE_SKY = 'meadow';    // the sky the scene's sun colour (sunBalance) was chosen under
+// The orientation was chosen from home-view frames (mirrored: the photo
+// flipped left for right; sunAzimuth, degrees right of straight ahead, would
+// put the sun elsewhere than the scene's own place for it). Lakeside as photographed puts
+// its wooded shore on the left, mirrored the view is open water to a low far
+// shore. Swiss Alps uses Lago d'Isola at 4K, mirrored and facing the snowy
+// ridge across the lake, with the sun to the right. The sunrise's sun, 5° up,
+// stands in the
+// home view's top right, a dead branch in the water just left of it, either
+// way round. Of the
+// places with hours, Lakeside keeps its afternoon as it was, its sun ahead
+// to the right, so its sunrise is behind the eye, over the water on the
+// right (turn round to see it), as it was that morning; Mesas faces its
+// moonrise, east, so its dawn, sunrise and moon stand ahead and its
+// afternoon and sunset to the left and behind. Between the two, every hour
+// has its light ahead at one of them. Mesas' Night panorama (18:43, the sun
+// 13° down) is left out: its sky is a haze of the towns' light. Each panorama is 0.2 to 0.8 MB, fetched only
+// when chosen (Swiss Alps is 1.8 MB at 4K, for its detailed ridgeline). An hour's `clock` is its local time (sky-probe's taken).
+// `anchor` and `facing` (Light by the hour, Orientation) are the first hour
+// unless named. `defaultHour` may choose a starting view independently of
+// the lighting anchor. New locations face their cove opening, sunset ridge
+// or low desert skyline, chosen in rendered home and water-level views.
+const SKIES = {
+  cove: { sunAzimuth: 15, hours: { morning: { file: 'secluded_beach', label: 'Morning' } } },
+  desert: {
+    anchor: 'sunset',
+    facing: 'sunset',
+    sunAzimuth: 30,
+    hours: {
+      moonlight: { file: 'rogland_moonlit_night', label: 'Moonlight', clock: '05:33' },
+      sunset: { file: 'rogland_sunset', label: 'Golden hour', clock: '17:31' },
+      night: { file: 'rogland_clear_night', label: 'Starlight', clock: '21:22' },
+    },
+  },
+  highlands: {
+    anchor: 'noon',
+    facing: 'sunset',
+    defaultHour: 'sunset',
+    sunAzimuth: -25,
+    hours: {
+      dawn: { file: 'kiara_1_dawn', label: 'Dawn', clock: '06:20' },
+      sunrise: { file: 'kiara_2_sunrise', label: 'Sunrise', clock: '07:03' },
+      noon: { file: 'kiara_5_noon', label: 'Noon', clock: '12:15' },
+      sunset: { file: 'kiara_8_sunset', label: 'Sunset', clock: '17:34' },
+      dusk: { file: 'kiara_9_dusk', label: 'Dusk', clock: '17:55' },
+    },
+  },
+  lakeside: {
+    anchor: 'afternoon',
+    facing: 'afternoon',
+    hours: {
+      dawn: { file: 'lakeside_dawn', label: 'Dawn', clock: '06:27' },
+      sunrise: { file: 'lakeside_sunrise', label: 'Sunrise', clock: '06:58' },
+      afternoon: { file: 'lakeside', label: 'Afternoon', clock: '14:41' },
+      night: { file: 'lakeside_night', label: 'Night', clock: '19:51' },
+    },
+  },
+  mesas: {
+    anchor: 'afternoon',
+    facing: 'moonrise',
+    hours: {
+      dawn: { file: 'qwantani_dawn', label: 'Dawn', clock: '06:28' },
+      sunrise: { file: 'qwantani_sunrise', label: 'Sunrise', clock: '06:43' },
+      morning: { file: 'qwantani_morning', label: 'Morning', clock: '08:09' },
+      'mid-morning': { file: 'qwantani_mid_morning', label: 'Mid-morning', clock: '10:05' },
+      noon: { file: 'qwantani_noon', label: 'Noon', clock: '12:18' },
+      afternoon: { file: 'qwantani_afternoon', label: 'Afternoon', clock: '14:04' },
+      'late-afternoon': { file: 'qwantani_late_afternoon', label: 'Late afternoon', clock: '16:04' },
+      sunset: { file: 'qwantani_sunset', label: 'Sunset', clock: '17:09' },
+      dusk: { file: 'qwantani_dusk_1', label: 'Dusk', clock: '17:47' },
+      twilight: { file: 'qwantani_dusk_2', label: 'Twilight', clock: '18:06' },
+      moonrise: { file: 'qwantani_moonrise', label: 'Moonrise', clock: '19:41' },
+      moonlight: { file: 'qwantani_moon_noon', label: 'Moonlight', clock: '21:06' },
+    },
+  },
+  swiss: { mirrored: true, sunAzimuth: 45, hours: { midday: { file: 'lago_disola', resolution: '4k', label: 'Midday' } } },
+};
+export const SKY_NAMES = Object.keys(SKIES);
+export const DEFAULT_SKY = 'lakeside';   // an open lake to a far shore, as the Lake water is
+/** A place's hours in the order of the day: their names, labels and local times (clock, 'hh:mm', or undefined for a lone photograph). */
+export const skyHours = (place) => Object.entries(SKIES[place]?.hours ?? {}).map(([name, { label, clock }]) => ({ name, label, clock }));
+/** The hour load() shows: the requested one, else a curated starting hour or the lighting anchor. */
+export function resolveHour(place, hour) {
+  const known = SKIES[Object.hasOwn(SKIES, place ?? '') ? place : DEFAULT_SKY];
+  return Object.hasOwn(known.hours, hour ?? '') ? hour : known.defaultHour ?? known.anchor ?? Object.keys(known.hours)[0];
+}
+const clockMinutes = (clock) => { const [hours, minutes] = clock.split(':').map(Number); return hours * 60 + minutes; };
+/** The place's hour whose local time is nearest `clock` ('hh:mm'; round the day), or undefined if it has no clocks or there is no clock. */
+export function nearestHour(place, clock) {
+  if (!/^\d{2}:\d{2}$/.test(clock ?? '')) return undefined;
+  const wanted = clockMinutes(clock);
+  const apart = (other) => { const difference = Math.abs(clockMinutes(other) - wanted); return Math.min(difference, 1440 - difference); };
+  return skyHours(place).filter((hour) => hour.clock).sort((first, second) => apart(first.clock) - apart(second.clock))[0]?.name;
+}
+const BALANCE_FILE = 'meadow_2';  // retained calibration, even though Meadow is no longer a location
 const SKY_EXPOSURE = Math.PI;   // see Brightness above
 const RADIANCE_CAP = 30;       // times the mean sky radiance
 const DOME_SIZE = 20000;       // metres, edge of the box
 const CUBE_SIZE = 512;         // the droplets' cube, per face
+const PREFETCHED = 2;          // panoramas fetched ahead and kept until loaded (prefetch): an hour's two neighbours, 0.2 to 0.8 MB each
 const PREFILTER_SIZE = 128;    // the capture the stones' prefiltered map is made from, per face
+const LAND_LEVEL = 3;          // the cube's mip level the grass reads the land at (PHOTO_LAND in src/shaders/scene.js)...
+const LAND_CUBE_SIZE = CUBE_SIZE >> LAND_LEVEL;   // ...and that level's size: the land before the haze, copied from it
 const GROUND = [0.10, 0.17, 0.20];   // the cube's ground hemisphere: the pond as the drops see it, under a sunlit sky
-const ADAPTATION = 0.75;       // how far the eye adapts to an hour's light (Light by the hour)...
-const ROD_ADAPTATION = 0.9;    // ...and, below NIGHT_VISION_LIGHT[0], its rods (adaptedLight)
+const ADAPTATION = 0.8;        // how far the eye adapts to an hour's light (Light by the hour)...
+const ROD_ADAPTATION = 0.98;   // ...and, below NIGHT_VISION_LIGHT[0], its rods (adaptedLight)
 const DOWN_SUN_ELEVATION = 1;  // degrees: where the scene's dark sun stands while the true one is down
 const HORIZON_EDGE = 0.5;      // degrees inside the strip's band over which it fades into the panorama
 const OVERCAST_TINT = [0.95, 0.99, 1.07];   // a rain cloud's grey, a little blue, at about unit luminance
-const HAZE_BRIGHTNESS = 0.6;   // the haze against the cloud's mean: an overcast's horizon is under half its zenith (CIE)
+const HAZE_BRIGHTNESS = 0.6;   // rain's haze against the cloud's mean: an overcast's horizon is under half its zenith (CIE)
+const HAZE_LAYER = 1000;       // metres: the rain's and the snow's depth, which a ray climbing out of it crosses (a fog's is its own)
+const LAND_DISTANCE = 400;     // metres: where the photo's land is taken to stand (its near trees and its far shore alike)
+
+// The haze for Three.js's own materials (the stones and the things, src/rock.js; the aim's marker and arc): the
+// main scene's FogExp2 (environment.fog), its chunks made HAZE's (src/shaders/scene.js), 1 − exp(−density·distance)
+// by the distance to the eye rather than the view depth. Its density is 0 but in haze, which leaves the colour as it
+// was; the scene keeps it always, so no weather changes a program.
+THREE.ShaderChunk.fog_vertex = THREE.ShaderChunk.fog_vertex.replace('vFogDepth = - mvPosition.z;', 'vFogDepth = length( mvPosition.xyz );');
+THREE.ShaderChunk.fog_fragment = THREE.ShaderChunk.fog_fragment.replace(
+  'float fogFactor = 1.0 - exp( - fogDensity * fogDensity * vFogDepth * vFogDepth );',
+  'float fogFactor = 1.0 - exp( - fogDensity * vFogDepth );',
+);
 // The light on level ground under a clear sky (illuminance): the sun's, through
 // SUN_DEPTH optical depths per air mass (Kasten and Young's), outside the
 // atmosphere SUN_OUTSIDE; the sky's, SKY_LIGHT[0] + SKY_LIGHT[1]·sin(h)^0.6
@@ -233,9 +378,11 @@ const lightOf = (measurement) => measurement.light ?? 'sun';
  * How bright an hour's light looks to an eye adapted to it, in arbitrary
  * units: the light (lux) to the 1 − ADAPTATION; below NIGHT_VISION_LIGHT[0],
  * where the rods take over and adapt further, to the 1 − ROD_ADAPTATION
- * from there. So the starlit night shows its land and its stars, about 5
- * stops under the day, where the cones' adaptation alone would leave it 7
- * under, black. ROD_ADAPTATION was chosen from frames of the night hours.
+ * from there. So the starlit night shows its land, its reflections and its
+ * stars, 2.8 stops under the day, where the cones' adaptation alone would
+ * leave it 5.2 under, black; moonrise and moonlight come out a little
+ * brighter (2.7), and twilight 5° down brighter again (2.6), so the hours
+ * keep their order. Both constants were chosen from frames of the hours.
  */
 function adaptedLight(lux) {
   const rodsFrom = NIGHT_VISION_LIGHT[0];
@@ -272,6 +419,7 @@ uniform float uRadianceCap;
 uniform float uOvercast;       // the cloud's cover, 0 to 1 (Weather, below)
 uniform float uSkyMean;        // the clear dome's mean radiance (luminance), which cloud evens the sky toward
 uniform float uOvercastScale;  // the overcast dome's brightness against the clear one's
+uniform float uOvercastLand;   // the light on the land under the cloud against the clear hour's
 uniform vec3 uOvercastTint;    // the cloud's colour, at unit luminance
 uniform vec3 uHazeColor;       // the rain's haze (HAZE in src/shaders/scene.js)
 uniform float uHazeDensity;
@@ -281,8 +429,8 @@ uniform float uHorizonEdge;    // radians inside the strip's band over which it 
 varying vec3 vDirection;
 ${HORIZON_DECODE}
 #define OVERCAST_FLATTEN 0.6   // the luminance's power about the mean that cloud takes away: the sun and its glow sink, the shade lifts
-#define HAZE_LAYER 1000.0      // metres: the rain's depth, which a ray climbing out of it crosses
-#define LAND_DISTANCE 400.0    // metres: where the photo's land is taken to stand (its near trees and its far shore alike)
+uniform float uHazeLayer;      // metres: the haze's depth, which a ray climbing out of it crosses (Weather, above)
+#define LAND_DISTANCE ${LAND_DISTANCE.toFixed(1)}
 #define BOLT_WIDTH 0.0012      // radians: a bolt's core
 #define BOLT_GLOW 0.015        // radians: the rain it lights about it
 #define BOLT_GLOW_SHARE 0.04
@@ -328,18 +476,42 @@ void main() {
   float brightest = max(radiance.r, max(radiance.g, radiance.b));
   radiance *= min(1.0, uRadianceCap / max(brightest, 1e-6));
   float photoLevel = max(dot(radiance, vec3(0.2126, 0.7152, 0.0722)), 1e-6);
+  // The photo's land: darker than its sky. Under cloud it keeps its detail, dimmed as the light on it is, and its blue
+  // goes grey: the sky's blue reflected in far water and the far haze are the sky's light, which cloud greys.
+  float land = 1.0 - smoothstep(0.25, 0.9, photoLevel / uSkyMean);
   if (uOvercast > 0.0) {
     vec3 grey = photoLevel * pow(photoLevel / uSkyMean, -OVERCAST_FLATTEN) * uOvercastTint;
-    radiance = mix(radiance, grey, uOvercast) * mix(1.0, uOvercastScale, uOvercast);
+    vec3 sky = mix(radiance, grey, uOvercast) * mix(1.0, uOvercastScale, uOvercast);
+    float blueness = (radiance.b - max(radiance.r, radiance.g)) / photoLevel;
+    vec3 shaded = mix(radiance, photoLevel * uOvercastTint, smoothstep(0.0, 0.25, blueness) * uOvercast) * mix(1.0, uOvercastLand, uOvercast);
+    radiance = mix(sky, shaded, land);
   }
   radiance *= uFlash;
   if (uBolt.z > 0.0) radiance += boltLight(direction, 1.0 - smoothstep(0.4, 0.8, photoLevel / uSkyMean)) * uSkyMean * mix(1.0, uOvercastScale, uOvercast) * vec3(0.85, 0.9, 1.0);
-  if (uHazeDensity > 0.0) radiance = mix(radiance, uHazeColor, 1.0 - exp(-uHazeDensity * min(HAZE_LAYER / max(direction.y, 1e-4), LAND_DISTANCE)));
+  if (uHazeDensity > 0.0) radiance = mix(radiance, uHazeColor, 1.0 - exp(-uHazeDensity * min(uHazeLayer / max(direction.y, 1e-4), LAND_DISTANCE)));
   gl_FragColor = vec4(radiance, 1.0);
 }
 `;
 
-const fetchMeasurement = (file) => loadAsset(new URL(`../assets/sky/${file}.json`, import.meta.url));
+const measurementUrl = (file) => new URL(`../assets/sky/${file}.json`, import.meta.url).href;
+const panoramaFile = ({ file, resolution = '2k' }) => `${file}_${resolution}.jpg`;   // an hour's panorama (The photo)
+const panoramaUrl = (name) => new URL(`../assets/sky/${name}`, import.meta.url).href;
+/** The hour's horizon strip (HORIZON_STRIP), fetched after its panorama is up (Horizon). */
+const horizonUrl = (file) => new URL(`../assets/sky/${file}_horizon.jpg`, import.meta.url).href;
+
+// The strip's band: cut by tools/sky-encode.mjs from Poly Haven's `source`
+// panorama, from `above` degrees over the horizon to `below` under it, its
+// rows (horizonRows, for a source `sourceHeight` rows tall) padded below to
+// a multiple of the JPEG's block; the page reads the band's edges back from
+// the strip's size the same way, so the two never disagree.
+export const HORIZON_STRIP = { source: '8k', above: 17, below: 3 };
+const HORIZON_BLOCK = 8;
+export function horizonRows(sourceHeight) {
+  const above = Math.round((HORIZON_STRIP.above / 180) * sourceHeight);
+  const below = Math.round((HORIZON_STRIP.below / 180) * sourceHeight);
+  return { above, below: below + ((HORIZON_BLOCK - ((above + below) % HORIZON_BLOCK)) % HORIZON_BLOCK) };
+}
+const fetchMeasurement = (file) => loadAsset(measurementUrl(file));
 
 /**
  * A panorama's half floats ({ data, width, height, type }) from its JPEG gain
@@ -361,15 +533,16 @@ function decodePanorama(buffer) {
 }
 
 /**
- * Build the environment and load its first sky.
+ * Build the environment and start loading its first sky (firstLoad, which
+ * resolves once it is shown; until then the maps hold the empty dome).
  * @param renderer the WebGLRenderer
  * @param options.name a key of SKIES (others fall back to DEFAULT_SKY), and options.hour one of its hours (others fall back to its anchor)
  * @param options.sunAzimuth radians from straight ahead (−Z) toward the right (+X), unless the sky sets its own
- * @param options.sunBalance the scene's sun irradiance under BALANCE_SKY (RGB Vector3)
- * @param options.lighting its sunDirection, sunIrradiance, skyAmbient and groundAlbedo (Vector3s) are filled in place by every load
- * @returns {Promise<{ sky, cubeTexture, envTexture, name, hour, level, targets, panoramaBytes, load }>}
+ * @param options.sunBalance the scene's sun irradiance under BALANCE_FILE (RGB Vector3)
+ * @param options.lighting its sunDirection, sunIrradiance and skyAmbient (Vector3s) are filled in place by every load
+ * @returns {{ sky, cubeTexture, envTexture, name, hour, level, targets, panoramaBytes, horizonBytes, horizonReady, assets, firstLoad, load }}
  */
-export async function createEnvironment(renderer, { name, hour, sunAzimuth, sunBalance, lighting }) {
+export function createEnvironment(renderer, { name, hour, sunAzimuth, sunBalance, lighting }) {
   // The haze's colour and density, shared with every material that hazes (HAZE in src/shaders/scene.js).
   const hazeUniforms = { uHazeColor: { value: new THREE.Vector3() }, uHazeDensity: { value: 0 } };
   const sky = new THREE.Mesh(
@@ -386,6 +559,7 @@ export async function createEnvironment(renderer, { name, hour, sunAzimuth, sunB
         uOvercast: { value: 0 },
         uSkyMean: { value: 1 },
         uOvercastScale: { value: 1 },
+        uOvercastLand: { value: 1 },
         uOvercastTint: { value: new THREE.Vector3(...OVERCAST_TINT) },
         uFlash: { value: 1 },
         uBolt: { value: new THREE.Vector4() },
@@ -394,6 +568,7 @@ export async function createEnvironment(renderer, { name, hour, sunAzimuth, sunB
         uHorizonMeta: { value: new THREE.Vector2() },
         uHorizonBand: { value: new THREE.Vector4() },
         uHorizonEdge: { value: THREE.MathUtils.degToRad(HORIZON_EDGE) },
+        uHazeLayer: { value: HAZE_LAYER },
         ...hazeUniforms,
       },
       side: THREE.BackSide,
@@ -429,6 +604,25 @@ export async function createEnvironment(renderer, { name, hour, sunAzimuth, sunB
     cubeCamera.position.set(0, 1.15, 0);
     return cubeCamera;
   });
+  // The land before the haze (the grass's, PHOTO_LAND in src/shaders/scene.js): in haze the cube is captured once
+  // without it and its LAND_LEVEL copied into landTarget, before the hazed capture; with none the grass reads the
+  // cube itself. The copy's program is compiled here, under the loading veil.
+  const landTarget = new THREE.WebGLCubeRenderTarget(LAND_CUBE_SIZE, { type: THREE.HalfFloatType, generateMipmaps: false, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false });
+  const landCamera = new THREE.CubeCamera(0.1, 10, landTarget);
+  const landCopy = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.ShaderMaterial({
+    vertexShader: 'varying vec3 vDirection;\nvoid main() { vDirection = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+    fragmentShader: `uniform samplerCube uCube;\nvarying vec3 vDirection;\nvoid main() { gl_FragColor = vec4(textureCubeLodEXT(uCube, normalize(vDirection), ${LAND_LEVEL.toFixed(1)}).rgb, 1.0); }`,
+    uniforms: { uCube: { value: cubeTarget.texture } },
+    side: THREE.BackSide,
+    depthTest: false,
+    depthWrite: false,
+  }));
+  const landCopyScene = new THREE.Scene();
+  landCopy.frustumCulled = false;
+  landCopyScene.add(landCopy);
+  landCamera.update(renderer, landCopyScene);
+  const landCube = { value: cubeTarget.texture };   // shared uniform objects (src/pondFloor.js createShore)
+  const landLevel = { value: LAND_LEVEL };
   const pmrem = new THREE.PMREMGenerator(renderer);
   let envTarget = null;
   // Each measurement is fetched once: a place's hours all read its anchor's and its facing hour's.
@@ -438,10 +632,24 @@ export async function createEnvironment(renderer, { name, hour, sunAzimuth, sunB
     return measurements.get(file);
   };
   // Start the calibration and panorama together, avoiding a network waterfall.
-  const balancePromise = measurementOf(SKIES[BALANCE_SKY].hours.afternoon.file);
+  const balancePromise = measurementOf(BALANCE_FILE);
   const balanceLuminance = luminance(sunBalance.toArray());
+  // Panoramas fetched ahead (prefetch), by file, each its download and the controller that aborts it, at most
+  // PREFETCHED of them, the oldest let go (aborted) first. A load takes its own out, its signal then aborting that
+  // download too, or fetches it afresh if fetching it ahead failed.
+  const prefetched = new Map();
+  const fetchPanorama = (file, signal) => loadAsset(panoramaUrl(file), 'arrayBuffer', { signal });
+  function takePanorama(file, signal) {
+    const ahead = prefetched.get(file);
+    prefetched.delete(file);
+    if (!ahead) return fetchPanorama(file, signal);
+    if (signal?.aborted) ahead.controller.abort(signal.reason);
+    else signal?.addEventListener('abort', () => ahead.controller.abort(signal.reason), { once: true });
+    return ahead.download.catch(() => fetchPanorama(file, signal));
+  }
 
-  const environment = { sky, cubeTexture: cubeTarget.texture, envTexture: null, name: null, hour: null, level: 1, hazeUniforms, targets: [], panoramaBytes: 0, horizonBytes: 0, horizonReady: Promise.resolve(), load, setWeather, setFlash };
+  const fog = new THREE.FogExp2(0x000000, 0);   // the haze for the main scene's built-in materials (above)
+  const environment = { sky, cubeTexture: cubeTarget.texture, envTexture: null, name: null, hour: null, level: 1, hazeUniforms, fog, landCube, landLevel, targets: [], panoramaBytes: 0, horizonBytes: 0, horizonReady: Promise.resolve(), assets: [], firstLoad: null, load, prefetch, setWeather, setFlash };
 
   // The horizon strip (Horizon): the hour's, fetched once its panorama is up; the last asked for wins.
   let horizonRequest = 0;
@@ -453,11 +661,11 @@ export async function createEnvironment(renderer, { name, hour, sunAzimuth, sunB
     domeUniforms.uHorizonBand.value.set(0, 0, 0, 0);
     environment.horizonBytes = 0;
   }
-  async function loadHorizon(file) {
+  async function loadHorizon(file, signal) {
     const request = ++horizonRequest;
     clearHorizon();
     try {
-      const strip = await decodeHorizonStrip(await loadAsset(horizonUrl(file), 'arrayBuffer'));
+      const strip = await decodeHorizonStrip(await loadAsset(horizonUrl(file), 'arrayBuffer', { signal }));
       if (request !== horizonRequest) { strip.base.close(); strip.gain.close(); return; }
       const texture = (image, format) => {
         const made = new THREE.Texture(image);
@@ -480,38 +688,43 @@ export async function createEnvironment(renderer, { name, hour, sunAzimuth, sunB
       domeUniforms.uHorizonBand.value.set(strip.width, strip.height, rows.above * rowHeight, -rows.below * rowHeight);
       environment.horizonBytes = strip.width * strip.height * 5;
     } catch (error) {
-      if (request === horizonRequest) console.warn(`The horizon strip of ${file} did not load; the panorama stands alone.`, error);
+      if (request === horizonRequest && !signal?.aborted) console.warn(`The horizon strip of ${file} did not load; the panorama stands alone.`, error);
     }
   }
   // The hour's light under a clear sky (load), which the weather covers (applyWeather).
   const clear = { sun: new THREE.Vector3(), sky: new THREE.Vector3(), lux: 1, level: 1 };
-  let weather = { cover: 0, light: 1, visibility: Infinity };
+  let weather = { cover: 0, light: 1, visibility: Infinity, hazeBrightness: HAZE_BRIGHTNESS, hazeLayer: HAZE_LAYER };
 
   /**
    * Load a sky (a key of SKIES; others fall back to DEFAULT_SKY) at one of
    * its hours (others fall back to its anchor) and make it the scene's, all
    * at once when it has arrived.
    */
-  async function load(requestedPlace, requestedHour) {
+  async function load(requestedPlace, requestedHour, { signal } = {}) {
     const skyName = Object.hasOwn(SKIES, requestedPlace ?? '') ? requestedPlace : DEFAULT_SKY;
     const place = SKIES[skyName];
     const firstHour = Object.keys(place.hours)[0];
     const anchorFile = place.hours[place.anchor ?? firstHour].file;
     const facingFile = place.hours[place.facing ?? firstHour].file;
     const hourName = resolveHour(skyName, requestedHour);
-    const { file } = place.hours[hourName];
-    const [measurement, anchor, facing, buffer, balance] = await Promise.all([
+    const entry = place.hours[hourName];
+    const { file } = entry;
+    const arrivals = Promise.all([
       measurementOf(file),
       measurementOf(anchorFile),
       measurementOf(facingFile),
-      fetchPanorama(file),
+      takePanorama(panoramaFile(entry), signal),
       balancePromise,
     ]);
+    dropEarlyAssets();   // the page's early fetches this load has not taken: not this sky's
+    const [measurement, anchor, facing, buffer, balance] = await arrivals;
+    signal?.throwIfAborted();
     // Decode only after every asset succeeded, so a failed measurement cannot
     // orphan a decoded panorama. The texture is set as the sky was drawn from
     // the Radiance files (HDRLoader.load's settings: no mipmaps, linear
     // filtering, rows flipped), not as UltraHDRLoader.load sets its own.
     const decoded = await decodePanorama(buffer);
+    signal?.throwIfAborted();
     const panorama = new THREE.DataTexture(decoded.data, decoded.width, decoded.height, THREE.RGBAFormat, decoded.type);
     panorama.colorSpace = THREE.LinearSRGBColorSpace;
     panorama.minFilter = panorama.magFilter = THREE.LinearFilter;
@@ -558,8 +771,6 @@ export async function createEnvironment(renderer, { name, hour, sunAzimuth, sunB
     clear.lux = hourLight(measurement);
     clear.level = level;
 
-    lighting.groundAlbedo.fromArray(place.ground);   // the land behind the beach (SKIES)
-
     const previous = domeUniforms.uPanorama.value;
     domeUniforms.uPanorama.value = panorama;
     domeUniforms.uMirror.value = mirror;
@@ -568,37 +779,70 @@ export async function createEnvironment(renderer, { name, hour, sunAzimuth, sunB
     domeUniforms.uRadianceCap.value = RADIANCE_CAP * luminance(clear.sky.toArray());
     applyWeather();
     previous?.dispose();
-    environment.horizonReady = loadHorizon(file);
+    environment.horizonReady = loadHorizon(file, signal);   // the strip follows the panorama; a superseded load's is dropped
 
-    Object.assign(environment, { name: skyName, hour: hourName, panoramaBytes });
+    const assets = [panoramaUrl(panoramaFile(entry)), ...new Set([file, anchorFile, facingFile, BALANCE_FILE].map(measurementUrl))];
+    Object.assign(environment, { name: skyName, hour: hourName, panoramaBytes, assets });
     return skyName;
+  }
+
+  /**
+   * Fetch a place's hour ahead of its load (Switching, above): its panorama
+   * and its measurements, so that loading it waits on nothing. Nothing is
+   * decoded or shown; the hour shown, one unknown and one already fetched
+   * ahead are passed over.
+   */
+  function prefetch(requestedPlace, requestedHour) {
+    const entry = Object.hasOwn(SKIES, requestedPlace ?? '') ? SKIES[requestedPlace].hours[requestedHour] : undefined;
+    if (!entry) return;
+    const file = panoramaFile(entry);
+    if (prefetched.has(file) || (environment.name === requestedPlace && environment.hour === requestedHour)) return;
+    measurementOf(entry.file).catch(() => {});
+    const controller = new AbortController();
+    const ahead = { download: fetchPanorama(file, controller.signal), controller };
+    ahead.download.catch(() => { if (prefetched.get(file) === ahead) prefetched.delete(file); });
+    prefetched.set(file, ahead);
+    for (const [oldestFile, oldest] of prefetched) {
+      if (prefetched.size <= PREFETCHED) break;
+      oldest.controller.abort();
+      prefetched.delete(oldestFile);
+    }
   }
 
   /**
    * The weather over the sky: `cover` (0 clear to 1 overcast), the light
    * that reaches the ground under it against a clear sky's (`light`), and
-   * the rain's `visibility` (metres; Infinity for none). Applied at once,
-   * the cube and the prefiltered map captured again (Weather, above).
+   * the rain's, the snow's or the fog's `visibility` (metres; Infinity for
+   * none), its haze's brightness against the cloud's (`hazeBrightness`) and
+   * its depth (`hazeLayer`, metres). Applied at once, the cube and the
+   * prefiltered map captured again (Weather, above); the weather already
+   * over it changes nothing.
    */
-  function setWeather({ cover = 0, light = 1, visibility = Infinity } = {}) {
-    weather = { cover, light, visibility };
+  function setWeather({ cover = 0, light = 1, visibility = Infinity, hazeBrightness = HAZE_BRIGHTNESS, hazeLayer = HAZE_LAYER } = {}) {
+    if (cover === weather.cover && light === weather.light && visibility === weather.visibility && hazeBrightness === weather.hazeBrightness && hazeLayer === weather.hazeLayer) return;
+    weather = { cover, light, visibility, hazeBrightness, hazeLayer };
     applyWeather();
   }
 
   /** The lighting of the hour (clear) under the weather; then the cube and the prefiltered map. */
   function applyWeather() {
-    const { cover, light, visibility } = weather;
+    const { cover, light, visibility, hazeBrightness, hazeLayer } = weather;
     const sunSine = Math.max(lighting.sunDirection.y, 0);
+    const hazeDensity = Number.isFinite(visibility) ? 3 / visibility : 0;
+    // What reaches the ground of the sun's direct light: what the cloud leaves, through the haze along the sun's path
+    // (as the dome's, at most LAND_DISTANCE). The rest, `shade`, the cloud's or the haze's light gives back.
+    const sunThrough = Math.exp(-hazeDensity * Math.min(hazeLayer / Math.max(sunSine, 1e-4), LAND_DISTANCE));
+    const shade = 1 - (1 - cover) * sunThrough;
     // The clear hour's light on level ground, in the sky's units: the sky's
     // (π times its mean radiance) and the sun's (sunIrradiance over π, the
     // SKY_EXPOSURE convention). Under cloud all of it comes from the cloud.
     const clearLight = Math.PI * luminance(clear.sky.toArray()) + luminance(clear.sun.toArray()) * sunSine / SKY_EXPOSURE;
     // The cloud lets `light` of the hour's light through, seen by an eye adapted to it.
-    const lux = clear.lux * (cover > 0 ? 1 - cover + cover * light : 1);
+    const lux = clear.lux * (shade > 0 ? 1 - shade + shade * light : 1);
     const cloudLuminance = clearLight * adaptedLight(clear.lux * light) / adaptedLight(clear.lux) / Math.PI;
-    lighting.sunIrradiance.copy(clear.sun).multiplyScalar(1 - cover);
-    lighting.skyAmbient.copy(clear.sky).lerp(new THREE.Vector3(...OVERCAST_TINT).multiplyScalar(cloudLuminance), cover);
-    const weatherLevel = cover > 0 ? (Math.PI * luminance(lighting.skyAmbient.toArray()) + luminance(lighting.sunIrradiance.toArray()) * sunSine / SKY_EXPOSURE) / clearLight : 1;
+    lighting.sunIrradiance.copy(clear.sun).multiplyScalar(1 - shade);
+    lighting.skyAmbient.copy(clear.sky).lerp(new THREE.Vector3(...OVERCAST_TINT).multiplyScalar(cloudLuminance), shade);
+    const weatherLevel = shade > 0 ? (Math.PI * luminance(lighting.skyAmbient.toArray()) + luminance(lighting.sunIrradiance.toArray()) * sunSine / SKY_EXPOSURE) / clearLight : 1;
     const level = clear.level * weatherLevel;
     const rodsFrom = Math.log10(NIGHT_VISION_LIGHT[0]);
     lighting.night = THREE.MathUtils.smoothstep(rodsFrom - Math.log10(lux), 0, rodsFrom - Math.log10(NIGHT_VISION_LIGHT[1]));
@@ -606,15 +850,26 @@ export async function createEnvironment(renderer, { name, hour, sunAzimuth, sunB
     domeUniforms.uOvercast.value = cover;
     domeUniforms.uSkyMean.value = luminance(clear.sky.toArray());
     domeUniforms.uOvercastScale.value = cloudLuminance / Math.max(luminance(clear.sky.toArray()), 1e-9);
-    hazeUniforms.uHazeDensity.value = Number.isFinite(visibility) ? 3 / visibility : 0;
-    hazeUniforms.uHazeColor.value.copy(lighting.skyAmbient).multiplyScalar(HAZE_BRIGHTNESS);
+    domeUniforms.uOvercastLand.value = Math.PI * cloudLuminance / Math.max(clearLight, 1e-9);
+    hazeUniforms.uHazeDensity.value = hazeDensity;
+    domeUniforms.uHazeLayer.value = hazeLayer;
+    fog.density = hazeDensity;
+    hazeUniforms.uHazeColor.value.copy(lighting.skyAmbient).multiplyScalar(hazeBrightness);
 
     const previousAutoClear = renderer.autoClear;
     renderer.autoClear = true;
+    if (hazeDensity > 0) {
+      hazeUniforms.uHazeDensity.value = 0;
+      cubeCameras[0].update(renderer, captureScene);
+      landCamera.update(renderer, landCopyScene);
+      hazeUniforms.uHazeDensity.value = hazeDensity;
+    }
+    landCube.value = hazeDensity > 0 ? landTarget.texture : cubeTarget.texture;
+    landLevel.value = hazeDensity > 0 ? 0 : LAND_LEVEL;
     for (const cubeCamera of cubeCameras) cubeCamera.update(renderer, captureScene);
     renderer.autoClear = previousAutoClear;
     envTarget = pmrem.fromCubemap(prefilterSource.texture, envTarget);
-    Object.assign(environment, { envTexture: envTarget.texture, level, targets: [cubeTarget, prefilterSource, envTarget] });
+    Object.assign(environment, { envTexture: envTarget.texture, level, targets: [cubeTarget, prefilterSource, envTarget, landTarget] });
     unlit.ambient.copy(lighting.skyAmbient);
     unlit.haze.copy(hazeUniforms.uHazeColor.value);
     setFlash(flash.level, flash.bolt);
@@ -634,10 +889,14 @@ export async function createEnvironment(renderer, { name, hour, sunAzimuth, sunB
     domeUniforms.uFlash.value = level;
     lighting.skyAmbient.copy(unlit.ambient).multiplyScalar(level);
     hazeUniforms.uHazeColor.value.copy(unlit.haze).multiplyScalar(level);
+    fog.color.setRGB(hazeUniforms.uHazeColor.value.x, hazeUniforms.uHazeColor.value.y, hazeUniforms.uHazeColor.value.z);
     if (bolt && bolt.brightness > 0) domeUniforms.uBolt.value.set(bolt.bearing, bolt.top, bolt.brightness, bolt.seed);
     else domeUniforms.uBolt.value.z = 0;
   }
 
-  await load(name, hour);
+  // The empty dome's capture (Starting): the maps, at their sizes, before any photo.
+  lighting.sunDirection.set(0, 1, 0);
+  applyWeather();
+  environment.firstLoad = load(name, hour);
   return environment;
 }

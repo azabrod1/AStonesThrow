@@ -166,7 +166,9 @@ function resolvedShade(cells) {
 function foamLook(worldX, worldZ, across, foam, resolveAll = false, boilFraction = 0) {
   const footprint = Math.sqrt(Math.hypot(across[0], across[1]) * Math.hypot(across[2], across[3]));
   const fadeOf = (cell) => resolveAll ? 0 : smoothstep(defines.FOAM_FADE_START, defines.FOAM_FADE_END, footprint / cell);
-  const fineFade = fadeOf(defines.FOAM_FINE_CELL), coarseFade = fadeOf(defines.FOAM_COARSE_CELL), laceFade = fadeOf(defines.FOAM_LACE_CELL);
+  const fineFade = fadeOf(defines.FOAM_FINE_CELL), coarseFade = fadeOf(defines.FOAM_COARSE_CELL);
+  // A boil takes no lace (the shader's FOAM_LACE_BOIL_FROM/TO): its lace layer is held unresolved, bubbles alone.
+  const laceFade = Math.max(fadeOf(defines.FOAM_LACE_CELL), smoothstep(defines.FOAM_LACE_BOIL_FROM, defines.FOAM_LACE_BOIL_TO, boilFraction));
   let gradientX = 0, gradientY = 0;
   let lace = defines.FOAM_LACE_MEDIAN;
   if (laceFade < 1) {
@@ -249,9 +251,11 @@ const shadeMean = (mean(samples.fineShade) + mean(samples.unionShade)) / 2;
 check(Math.abs(shadeMean - defines.FOAM_FADED_SHADE) < 0.02, `mean resolved shade ${shadeMean.toFixed(3)} (fine ${mean(samples.fineShade).toFixed(3)}, with coarse ${mean(samples.unionShade).toFixed(3)}), FOAM_FADED_SHADE ${defines.FOAM_FADED_SHADE}`);
 check(Math.abs(mean(samples.film) - defines.FOAM_FILM_MEAN) < 0.02, `mean film opacity ${mean(samples.film).toFixed(3)}, FOAM_FILM_MEAN ${defines.FOAM_FILM_MEAN}`);
 
-// A bubble's material may drain, but must not change the simulated footprint
-// or turn a thick, multilayer boil into transparent holes.
-let materialIsBounded = true, freshIsDenser = true, keepsFootprint = true;
+// A bubble's material may drain, but must not turn a thick, multilayer boil
+// into transparent holes; and a boil, drawn from the bubble layers with its
+// lace held at the lace's median, must cover about what a raft of the same
+// map value does (the structure changes, the footprint hardly).
+let materialIsBounded = true, denseKeepsFill = true, raftCover = 0, boilCover = 0, raftOpacity = 0, boilOpacity = 0;
 for (let index = 0; index < 1000; index++) {
   const worldX = seededRandom() * 2, worldZ = seededRandom() * 2;
   const across = [0.0001, 0, 0, 0.0001];
@@ -259,12 +263,15 @@ for (let index = 0; index < 1000; index++) {
   const boilLook = foamLook(worldX, worldZ, across, 0.2, true, 1);
   const denseLook = foamLook(worldX, worldZ, across, 1, true, 1);
   materialIsBounded &&= [raftLook, boilLook, denseLook].every((look) => Number.isFinite(look.opacity) && look.opacity >= 0 && look.opacity <= 1);
-  freshIsDenser &&= boilLook.opacity >= raftLook.opacity && denseLook.opacity >= defines.FOAM_THIN_OPACITY;
-  keepsFootprint &&= raftLook.cover === boilLook.cover;
+  denseKeepsFill &&= denseLook.opacity >= defines.FOAM_THIN_OPACITY;
+  raftCover += raftLook.cover / 1000;
+  boilCover += boilLook.cover / 1000;
+  raftOpacity += raftLook.opacity * raftLook.cover / 1000;   // the foam's opacity where there is foam
+  boilOpacity += boilLook.opacity * boilLook.cover / 1000;
 }
 check(materialIsBounded, 'wet-film opacity stays finite and in [0, 1]');
-check(freshIsDenser, 'fresh froth scatters more than a drained raft; thick foam keeps its opaque fill');
-check(keepsFootprint, 'the foam population changes material, never coverage');
+check(boilOpacity / boilCover >= raftOpacity / raftCover && denseKeepsFill, `fresh froth scatters more than a drained raft (opacity ${(boilOpacity / boilCover).toFixed(3)} against ${(raftOpacity / raftCover).toFixed(3)}); thick foam keeps its opaque fill`);
+check(Math.abs(raftCover - boilCover) < 0.06, `a boil's bubbles cover about what a raft's lace does at the same map value (raft ${raftCover.toFixed(3)}, boil ${boilCover.toFixed(3)})`);
 
 // 2. A raft seen from the home camera: σ 12 cm, a map value of 0.25 at its centre.
 const camera = [0, 1.15, 2.45], impact = [0, 0, -1.4];

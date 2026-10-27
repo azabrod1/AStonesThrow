@@ -97,10 +97,18 @@
 // MERGE.seconds earlier within MERGE.reach of its σ (the pushes down an
 // oblique entry's path), and the source's centre is the strength-weighted
 // centroid of its splats. At most liveLimit sources are live (the quality
-// presets' rings, src/main.js: 10 on High); a new one past that makes the
-// live one closest to retiring, the faintest as a rule, fade out over
-// FADE_SECONDS in its layer, so with MAX_RINGS layers two can fade at once
-// (one more goes at once).
+// presets' rings, src/main.js: 24 on High, 12 on Medium, 10 on Low). A
+// reference stone's ring lives 90 to 120 s, so a stone every four seconds
+// or so fills High's (and a Skip throw starts a source at each touch); a
+// new one past them makes the live one closest to retiring, the faintest
+// as a rule, fade out over the preset's fade (ringFade, src/main.js: 8 s on
+// High, FADE_SECONDS; 4 s on Medium and 3 s on Low, since rings fading out
+// are drawn as live ones are, and a stone every second or two would pile
+// them up on a phone) in its layer. Such a ring is as a rule tens of
+// seconds old and a millimetre or so high, so it loses well under a
+// millimetre a second and nobody sees it go. The MAX_RINGS layers leave
+// MAX_RINGS − liveLimit for rings fading out (8 on High); when none is
+// free, the ring that would stop being drawn soonest goes at once.
 //
 // Each source's sampling is planned (planSource) from a stationary-phase
 // envelope of its ring. At time τ the wavenumber k is found at
@@ -166,7 +174,11 @@
 //      over its groups (each released at its own time; W the window above),
 //      divided by √k and by k^{3/2} for the asymptotic sums below; float32
 //      where the device renders it, else half floats, scaled by
-//      COEFFICIENT_SCALE into their normal range;
+//      COEFFICIENT_SCALE into their normal range. It reads each layer's
+//      grid, its groups' start times, splats and pairs from sourceTable, a
+//      float32 texture of SOURCE_TABLE_WIDTH texels a layer filled each
+//      frame: as uniform arrays they took 10 vectors a layer, 320 for 32
+//      layers, past the 224 a WebGL2 fragment shader is sure of;
 //   2. one partial pass (RING_PARTIAL_FRAGMENT) over PROFILE_TEXELS radii
 //      by PROFILE_SLICES rows for each source drawn: a row sums, at every
 //      radius, the part of its source's profile that one slice of its
@@ -220,34 +232,51 @@
 // ringHeight and ringLaplacian, behind a branch on uRingCount, so with no
 // ring alive a frame costs what it did and no pass runs); each lookup skips
 // a ring outside its annulus, so a ring costs a pixel only where its waves
-// are. uniforms() gives the uniforms those materials spread.
+// are. The floor's caustics take only the youngest rings, those holding the
+// CAUSTIC_RINGS youngest live ones (a ring fading out among them too, as the
+// other lookups take it): a ring's curvature falls fast as its waves
+// lengthen (the reference stone's, its symmetric part's largest, from about
+// 1.9/m at 4 s to 0.46/m at 12 s and 0.15/m at 24 s), and the floor's
+// lookups cost as much as the water's. A ring past them leaves the caustics
+// over CAUSTIC_FADE_SECONDS rather than at once (and comes back as gently
+// if a younger one retires first): each source's share (RingSources
+// updateCaustics) multiplies its Laplacian. uniforms() gives the uniforms
+// those materials spread.
 //
 // The cost. A minute of throwing (tools/ring-probe.mjs: the default stone
-// every 3 to 5 s at random places in view, then quiet) keeps about 9.5
-// rings drawn on High (8 on Medium, 6.4 on Low), whose profile passes fetch
-// 18 M spectrum texels a frame (16 M, 12 M) and whose lookups come to about
-// 10 M of the water's pixels' on a desktop or a phone and 10 M of the floor's
-// (desktop); the weaker rings before this calibration, two to a throw and
-// looked up at every pixel within their reach, kept 12 drawn at 33 M fetches
-// and 22 M lookups a frame. Its last ring retires 96 to 103 s after the last
-// throw (63 s before, for rings a seventh as strong). On the GPU, five
-// reference stones' rings, 3 or 20 s old (6.9 and 11.7 M fetches), take
-// 0.17 ms of a frame on a desktop (Chrome on Metal, an M5 Max: Rings.update
-// timed to the GPU's finish), where a pass a ring summing each radius whole
-// took 1.34 to 1.40 ms; a whole frame of the home view with them 3 s old,
-// timed so, 2.1 ms (1.6 ms at a phone's 390×844 at 3×), where it took 3.4
-// to 3.6 (2.8 to 3.0), and 1.5 (1.2) with no ring drawn. The partial sums'
-// target holds PROFILE_TEXELS × MAX_RINGS × PROFILE_SLICES float32 texels
-// (6.3 MB; bytes counts it). On the CPU a source is planned when it starts,
-// about 0.7 ms on a desktop (a zoom plans the live ones again, one a frame),
-// and update's bookkeeping takes some 40 µs a frame.
+// every 3 to 5 s at random places in view, then quiet) keeps about 11 rings
+// drawn on High and on Medium (9.7 on Low, those fading out among them),
+// whose profile passes fetch 20 M spectrum texels a frame (18.5 M on Low) and
+// whose lookups come to about 10.4 M of the water's pixels' on a desktop,
+// 10.9 M on a phone, and 8.3 M of the floor's (desktop: its caustics take 6.7
+// rings). A stone every 1.5 s fills the live rings: on High it keeps 24 drawn
+// (30 at most) at 47 M fetches and 25 M of a desktop's water lookups (26 M of
+// a phone's, 11 M of the floor's), on Low 12 (its 3 s fade keeps the rings
+// fading out to a couple) at 22 M fetches and 19 M of a phone's. The weaker
+// rings before this calibration, two to a throw and looked up at every pixel
+// within their reach, kept 12 drawn at 33 M fetches and 22 M lookups a frame.
+// Its last ring retires 96 to 103 s after the last throw (63 s before, for
+// rings a seventh as strong). On the GPU, five reference stones' rings, 3 or
+// 20 s old (6.9 and 11.7 M fetches), take 0.17 ms of a frame on a desktop
+// (Chrome on Metal, an M5 Max: Rings.update timed to the GPU's finish), where
+// a pass a ring summing each radius whole took 1.34 to 1.40 ms; a whole frame
+// of the home view with them 3 s old, timed so, 2.1 ms (1.6 ms at a phone's
+// 390×844 at 3×), where it took 3.4 to 3.6 (2.8 to 3.0), and 1.5 (1.2) with
+// no ring drawn. The partial sums' target holds PROFILE_TEXELS × MAX_RINGS ×
+// PROFILE_SLICES float32 texels (16.8 MB for 32 layers; bytes counts it). On
+// the CPU a source is planned when it starts, about 0.7 ms on a desktop (a
+// zoom plans the live ones again, one a frame), and update's bookkeeping
+// takes some 40 µs a frame.
 import * as THREE from 'three';
 import { FullscreenPass, createFloatTarget } from './gpu.js';
 
-export const MAX_RINGS = 12;          // layers of the profile texture: live and fading sources together
-export const DEFAULT_LIVE_LIMIT = 10; // sources that count as live at once (setLiveLimit; the quality presets set it), so a ring leaving has a layer to fade out in
-export const FADE_SECONDS = 1.5;      // a ring pushed out by a newer one fades out over this long
+export const MAX_RINGS = 32;          // layers of the profile texture: live and fading sources together
+export const DEFAULT_LIVE_LIMIT = 24; // sources that count as live at once (setLiveLimit; the quality presets set it), so the rings leaving have MAX_RINGS − this layers to fade out in
+export const FADE_SECONDS = 8;        // a ring pushed out by a newer one fades out over this long unless the preset says otherwise (setLiveLimit): slowly enough that nobody sees it go (the header)
+export const CAUSTIC_RINGS = 6;       // the floor's caustics take the youngest this many live rings (ringLaplacian in src/shaders/scene.js)...
+export const CAUSTIC_FADE_SECONDS = 3;   // ...and an older one leaves them over this long
 export const MAX_GROUPS = 4;          // splat groups a source holds (an oblique entry's cavity uses three)
+export const SOURCE_TABLE_WIDTH = 2 + 2 * MAX_GROUPS;   // texels a layer of the spectrum pass's table: its grid, its groups' start times, then each group's splat and pair
 export const PROFILE_TEXELS = 2048;   // radii per profile
 export const PROFILE_SLICES = 16;     // stretches of a ring's wavenumbers the partial pass sums apart, each in a row of its own (the header)
 export const MAX_WAVENUMBERS = 2048;  // wavenumbers per source at most
@@ -580,10 +609,11 @@ float besselJ1(float x) {
 // distance d along the source's direction gives Ĥ0 = h·Ŝ·J0(kd) and
 // Ĥ1 = 2h·Ŝ·J1(kd) (V̂ the same with v); its pair, plain Gaussians of height
 // at d + δ raised and at d − δ lowered by h_p, gives height only. Times are
-// seconds since the oldest live source began (uTime and uStarts), so they
-// stay small.
+// seconds since the oldest live source began (uTime and the table's start
+// times), so they stay small. The sources are read from uSources
+// (Rings.sourceTable), row `layer`: texel 0 its grid, 1 its groups' start
+// times, 2 + 2g group g's splat and 3 + 2g its pair.
 export const RING_SPECTRUM_FRAGMENT = /* glsl */`
-#define MAX_RINGS ${MAX_RINGS}
 #define MAX_GROUPS ${MAX_GROUPS}
 #define PI 3.141592653589793
 #define WINDOW_START ${WINDOW.start.toFixed(3)}
@@ -593,15 +623,17 @@ uniform float uDepth;
 uniform float uViscosity;
 uniform float uFilm;
 uniform float uScale;
-uniform vec4 uGrids[MAX_RINGS];                  // per layer: Δk (rad/m), wavenumbers in use, reach R (m)
-uniform vec4 uStarts[MAX_RINGS];                 // per layer: the groups' start times (a group not in use: never)
-uniform vec4 uSplats[MAX_RINGS * MAX_GROUPS];    // offset d along the direction (m), σ (m), rim, height h (m)
-uniform vec4 uPairs[MAX_RINGS * MAX_GROUPS];     // velocity v (m/s), the pair's height h_p (m), its σ (m), its half-separation δ (m)
+// Per layer (row): texel 0, Δk (rad/m), wavenumbers in use, reach R (m);
+// texel 1, the groups' start times (a group not in use: never); then per
+// group, its splat: offset d along the direction (m), σ (m), rim, height h
+// (m); and its pair: velocity v (m/s), the pair's height h_p (m), its σ (m),
+// its half-separation δ (m).
+uniform sampler2D uSources;
 ${RING_MATH}
 void main() {
   int layer = int(gl_FragCoord.y);
   int index = int(gl_FragCoord.x);
-  vec4 grid = uGrids[layer];
+  vec4 grid = texelFetch(uSources, ivec2(0, layer), 0);
   if (float(index) >= grid.y) { gl_FragColor = vec4(0.0); return; }
   float wavenumber = (float(index) + 0.5) * grid.x;
   float omega = sqrt((9.81 * wavenumber + 7.2e-5 * wavenumber * wavenumber * wavenumber) * tanh(min(wavenumber * uDepth, 20.0)));
@@ -612,14 +644,14 @@ void main() {
   float force = 9.81 * wavenumber + 7.2e-5 * wavenumber * wavenumber * wavenumber;
   float forceSlope = 9.81 + 3.0 * 7.2e-5 * wavenumber * wavenumber;
   float speed = (forceSlope * tangent + (depthPhase < 20.0 ? force * uDepth * (1.0 - tangent * tangent) : 0.0)) / (2.0 * omega);
-  vec4 starts = uStarts[layer];
+  vec4 starts = texelFetch(uSources, ivec2(1, layer), 0);
   float zeroth = 0.0;
   float first = 0.0;
   for (int group = 0; group < MAX_GROUPS; group++) {
     float age = uTime - starts[group];
     if (age < 0.0) continue;
-    vec4 splat = uSplats[layer * MAX_GROUPS + group];
-    vec4 pair = uPairs[layer * MAX_GROUPS + group];
+    vec4 splat = texelFetch(uSources, ivec2(2 + 2 * group, layer), 0);
+    vec4 pair = texelFetch(uSources, ivec2(3 + 2 * group, layer), 0);
     float sigma = splat.y;
     float shape = exp(-0.5 * sigma * sigma * wavenumber * wavenumber);
     if (splat.z > 1.0) shape -= exp(-0.5 * sigma * sigma * splat.z * splat.z * wavenumber * wavenumber);
@@ -779,24 +811,30 @@ const endOf = (source) => (source.fading ? Math.min(source.fading.end, source.pl
 /**
  * The rings' bookkeeping, without a GPU (the CPU probes use it on its own):
  * the sources drawn, oldest first, each { layer, centreX, centreZ,
- * directionX, directionZ, groups, plan, fading }; how a splat joins one or
- * starts one (the header); which have faded. At most liveLimit are live; a
- * new one past that makes the live one closest to retiring (the faintest,
- * as a rule) fade out over FADE_SECONDS (fading: { start, end }) in its
- * layer, and when no layer is free the one that would stop being drawn
- * soonest goes at once.
+ * directionX, directionZ, groups, plan, fading, caustic }; how a splat
+ * joins one or starts one (the header); which have faded. At most liveLimit
+ * are live; a new one past that makes the live one closest to retiring (the
+ * faintest, as a rule) fade out over fadeSeconds (fading: { start, end })
+ * in its layer, and when no layer is free the one that would stop being
+ * drawn soonest goes at once. caustic is its share of the floor's caustics
+ * (updateCaustics).
  */
 export class RingSources {
-  constructor({ depth = 0.8, liveLimit = DEFAULT_LIVE_LIMIT, camera = null } = {}) {
+  constructor({ depth = 0.8, liveLimit = DEFAULT_LIVE_LIMIT, fadeSeconds = FADE_SECONDS, camera = null } = {}) {
     this.depth = depth;
     this.sources = [];
     this.liveLimit = liveLimit;
+    this.fadeSeconds = fadeSeconds;
     this.camera = camera;
     this.freeLayers = Array.from({ length: MAX_RINGS }, (unused, layer) => MAX_RINGS - 1 - layer);
+    this.causticTime = null;   // the world time updateCaustics last ran at
   }
 
-  /** At most this many live sources (1 to MAX_RINGS), from the next new one on. */
-  setLiveLimit(limit) { this.liveLimit = THREE.MathUtils.clamp(Math.round(limit), 1, MAX_RINGS); }
+  /** At most this many live sources (1 to MAX_RINGS), from the next new one on, a source pushed out fading over fadeSeconds. */
+  setLiveLimit(limit, fadeSeconds = FADE_SECONDS) {
+    this.liveLimit = THREE.MathUtils.clamp(Math.round(limit), 1, MAX_RINGS);
+    this.fadeSeconds = Math.max(fadeSeconds, 0.1);
+  }
 
   /**
    * The camera the rings retire by: { x, z, height, pixelsPerRadian,
@@ -857,7 +895,7 @@ export class RingSources {
       if (live.length >= this.liveLimit) {
         let soonest = live[0];
         for (const candidate of live) if (candidate.plan.end < soonest.plan.end) soonest = candidate;
-        soonest.fading = { start: time, end: time + FADE_SECONDS };
+        soonest.fading = { start: time, end: time + this.fadeSeconds };
       }
       if (this.freeLayers.length === 0) {
         let dropped = this.sources[0];
@@ -865,7 +903,7 @@ export class RingSources {
         this.sources.splice(this.sources.indexOf(dropped), 1);
         this.freeLayers.push(dropped.layer);
       }
-      source = { layer: this.freeLayers.pop(), centreX: x, centreZ: z, directionX: 1, directionZ: 0, hasDirection: false, nearOnly, groups: [], plan: null, plannedFor: null, replan: false, fading: null };
+      source = { layer: this.freeLayers.pop(), centreX: x, centreZ: z, directionX: 1, directionZ: 0, hasDirection: false, nearOnly, groups: [], plan: null, plannedFor: null, replan: false, fading: null, caustic: 1 };
       this.sources.push(source);
     }
     source.groups.push(group);
@@ -910,6 +948,28 @@ export class RingSources {
   shown(source, time) {
     return source.fading ? 1 - THREE.MathUtils.smoothstep(time, source.fading.start, source.fading.end) : 1;
   }
+
+  /**
+   * The floor's caustics at world time `time` (the header): the youngest
+   * sources up to and with the CAUSTIC_RINGS-th youngest live one take part
+   * in full (a source fading out among them too), each older one's share
+   * (source.caustic) falls to 0 over CAUSTIC_FADE_SECONDS, and climbs back
+   * as gently should it be among them again. Returns how many of the
+   * youngest sources have a share: the caustics' loop takes those.
+   */
+  updateCaustics(time) {
+    const change = this.causticTime === null ? 0 : Math.max(time - this.causticTime, 0) / CAUSTIC_FADE_SECONDS;
+    this.causticTime = time;
+    let liveSeen = 0, taking = 0;
+    for (let index = this.sources.length - 1; index >= 0; index--) {
+      const source = this.sources[index];
+      const among = liveSeen < CAUSTIC_RINGS;
+      if (!source.fading) liveSeen++;
+      source.caustic = among ? Math.min(source.caustic + change, 1) : Math.max(source.caustic - change, 0);
+      if (source.caustic > 0) taking = this.sources.length - index;
+    }
+    return taking;
+  }
 }
 
 export class Rings {
@@ -945,6 +1005,13 @@ export class Rings {
       stencilBuffer: false,
     });
     this.passCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+    // The spectrum pass's sources (RING_SPECTRUM_FRAGMENT): a row a layer,
+    // float32 on every device (it is only read, texel by texel), filled each frame.
+    this.sourceTable = new THREE.DataTexture(new Float32Array(SOURCE_TABLE_WIDTH * MAX_RINGS * 4), SOURCE_TABLE_WIDTH, MAX_RINGS, THREE.RGBAFormat, THREE.FloatType);
+    this.sourceTable.minFilter = THREE.NearestFilter;
+    this.sourceTable.magFilter = THREE.NearestFilter;
+    this.sourceTable.generateMipmaps = false;
+    this.sourceTable.needsUpdate = true;
 
     this.spectrumPass = new FullscreenPass(RING_SPECTRUM_FRAGMENT, {
       uTime: { value: 0 },
@@ -952,10 +1019,7 @@ export class Rings {
       uViscosity: { value: RING_DAMPING.viscosity },
       uFilm: { value: RING_DAMPING.film },
       uScale: { value: COEFFICIENT_SCALE },
-      uGrids: { value: Array.from({ length: MAX_RINGS }, () => new THREE.Vector4()) },
-      uStarts: { value: Array.from({ length: MAX_RINGS }, () => new THREE.Vector4()) },
-      uSplats: { value: Array.from({ length: MAX_RINGS * MAX_GROUPS }, () => new THREE.Vector4()) },
-      uPairs: { value: Array.from({ length: MAX_RINGS * MAX_GROUPS }, () => new THREE.Vector4()) },
+      uSources: { value: this.sourceTable },
     });
     this.partialPass = new FullscreenPass(RING_PARTIAL_FRAGMENT, {
       uSpectrum: { value: this.spectrumTarget.texture },
@@ -973,6 +1037,8 @@ export class Rings {
       uRingPlaces: { value: Array.from({ length: MAX_RINGS }, () => new THREE.Vector4()) },
       uRingShapes: { value: Array.from({ length: MAX_RINGS }, () => new THREE.Vector4()) },
       uRingProfiles: { value: this.profileTarget.texture },
+      uCausticRings: { value: 0 },
+      uRingCaustics: { value: Array.from({ length: Math.ceil(MAX_RINGS / 4) }, () => new THREE.Vector4()) },
     };
     this.clearTextures();
   }
@@ -989,19 +1055,19 @@ export class Rings {
   /** Rings fading out, pushed out by newer ones (RingSources). */
   get fading() { return this.book.sources.filter((source) => source.fading).length; }
 
-  /** At most this many live rings (RingSources.setLiveLimit; the quality presets set it). */
-  setLiveLimit(limit) { this.book.setLiveLimit(limit); }
+  /** At most this many live rings, a ring pushed out fading over fadeSeconds (RingSources.setLiveLimit; the quality presets set both). */
+  setLiveLimit(limit, fadeSeconds = FADE_SECONDS) { this.book.setLiveLimit(limit, fadeSeconds); }
   get liveLimit() { return this.book.liveLimit; }
 
   /** The camera the rings retire by (RingSources.setCamera). */
   setCamera(camera) { this.book.setCamera(camera); }
 
-  /** Bytes the rings' render targets hold: the spectrum, the profiles' partial sums, and the profiles with their mip chain. */
+  /** Bytes the rings' textures hold: the spectrum, the profiles' partial sums, the profiles with their mip chain, and the spectrum pass's table of sources. */
   get bytes() {
     const texelBytes = (target) => 4 * (target.texture.type === THREE.FloatType ? 4 : 2);
     const spectrumBytes = MAX_WAVENUMBERS * MAX_RINGS * texelBytes(this.spectrumTarget);
     const partialBytes = PROFILE_TEXELS * MAX_RINGS * this.slices * texelBytes(this.partialTarget);
-    return Math.round(spectrumBytes + partialBytes + PROFILE_TEXELS * MAX_RINGS * 4 * 2 * 2);   // a 1-texel-high layer's mip chain halves its width only: twice its texels
+    return Math.round(spectrumBytes + partialBytes + PROFILE_TEXELS * MAX_RINGS * 4 * 2 * 2 + this.sourceTable.image.data.byteLength);   // a 1-texel-high layer's mip chain halves its width only: twice its texels
   }
 
   /** Every ring gone at once (the app's clearPond). */
@@ -1016,12 +1082,14 @@ export class Rings {
   /**
    * Retire the rings that have faded, then (if any live) run the spectrum
    * pass, the partial pass over every ring drawn and one resolve pass per
-   * ring for world time `time`, and hand the materials the rings' places.
+   * ring for world time `time`, and hand the materials the rings' places
+   * and their shares of the caustics.
    */
   update(time) {
     this.book.retire(time);
     const shared = this.sharedUniforms;
     shared.uRingCount.value = this.sources.length;
+    shared.uCausticRings.value = this.book.updateCaustics(time);
     this.passesRun = 0;
     this.fetchesRun = 0;
     if (this.sources.length === 0) return;
@@ -1035,21 +1103,29 @@ export class Rings {
       return { inner, outer: Math.max(outer, inner), count: usedCount(source, time), near, shown: this.book.shown(source, time) };
     });
     const epoch = Math.min(...this.sources.map((source) => source.groups[0].start));
-    const spectrum = this.spectrumPass.material.uniforms;
-    spectrum.uTime.value = time - epoch;
-    for (const grid of spectrum.uGrids.value) grid.set(0, 0, 0, 0);
+    this.spectrumPass.material.uniforms.uTime.value = time - epoch;
+    // The table of sources (RING_SPECTRUM_FRAGMENT): a layer with no source has no wavenumbers in use.
+    const table = this.sourceTable.image.data;
+    table.fill(0);
+    const put = (layer, texel, first, second, third, fourth) => {
+      const offset = 4 * (layer * SOURCE_TABLE_WIDTH + texel);
+      table[offset] = first;
+      table[offset + 1] = second;
+      table[offset + 2] = third;
+      table[offset + 3] = fourth;
+    };
     this.sources.forEach((source, index) => {
       const layer = source.layer;
-      spectrum.uGrids.value[layer].set(source.plan.step, frames[index].count, source.plan.reach, 0);
-      const starts = spectrum.uStarts.value[layer];
-      starts.set(1e9, 1e9, 1e9, 1e9);
+      put(layer, 0, source.plan.step, frames[index].count, source.plan.reach, 0);
+      const start = (slot) => (slot < source.groups.length ? source.groups[slot].start - epoch : 1e9);   // a group not in use: never
+      put(layer, 1, start(0), start(1), start(2), start(3));
       source.groups.forEach((group, slot) => {
-        starts.setComponent(slot, group.start - epoch);
-        spectrum.uSplats.value[layer * MAX_GROUPS + slot].set(group.offset, group.sigma, group.rim, group.height);
-        if (group.pair) spectrum.uPairs.value[layer * MAX_GROUPS + slot].set(group.velocity, group.pair.height, group.pair.sigma, group.pair.offset);
-        else spectrum.uPairs.value[layer * MAX_GROUPS + slot].set(group.velocity, 0, 1, 0);
+        put(layer, 2 + 2 * slot, group.offset, group.sigma, group.rim, group.height);
+        if (group.pair) put(layer, 3 + 2 * slot, group.velocity, group.pair.height, group.pair.sigma, group.pair.offset);
+        else put(layer, 3 + 2 * slot, group.velocity, 0, 1, 0);
       });
     });
+    this.sourceTable.needsUpdate = true;
     const renderer = this.renderer;
     const previousTarget = renderer.getRenderTarget();
     this.spectrumPass.render(renderer, this.spectrumTarget);
@@ -1077,6 +1153,7 @@ export class Rings {
       renderer.render(this.resolvePass.scene, this.passCamera);
       shared.uRingPlaces.value[index].set(source.centreX, source.centreZ, source.directionX, source.directionZ);
       shared.uRingShapes.value[index].set(source.plan.reach, frame.outer, source.layer, frame.inner);
+      shared.uRingCaustics.value[Math.floor(index / 4)].setComponent(index % 4, source.caustic);
     });
     texture.generateMipmaps = true;
     this.passesRun = 2 + this.sources.length;
@@ -1092,7 +1169,8 @@ export class Rings {
   clearTextures() {
     const renderer = this.renderer;
     const previousTarget = renderer.getRenderTarget();
-    for (const grid of this.spectrumPass.material.uniforms.uGrids.value) grid.set(0, 0, 0, 0);
+    this.sourceTable.image.data.fill(0);
+    this.sourceTable.needsUpdate = true;
     this.spectrumPass.render(renderer, this.spectrumTarget);
     const partial = this.partialPass.material.uniforms;
     for (let index = 0; index < MAX_RINGS; index++) {

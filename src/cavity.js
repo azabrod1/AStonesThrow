@@ -56,9 +56,14 @@
 // start (Duclaux et al.: 2.06; the reference simulation 1.99 after first
 // contact, a substep later), nearly independent of the entry speed, and z0
 // sets where it falls: 7.5·R down for the reference throw, as in the
-// reference, the stone then 13·R down. It is at least SHALLOWEST·R down. A
-// stone come to rest on the floor pushes no water aside, so the speed a slice
-// is pushed with is at least SLOWEST_PUSH of the entry speed.
+// reference, the stone then 13·R down. It is at least SHALLOWEST·R down and
+// at most DEEPEST_SHARE of the stone's depth then (Duclaux et al.; the
+// reference's 0.57), and where the slices' closures tie (within PINCH_TIE)
+// it is in the middle of them: a big stone that has reached the bed within
+// the pinch time leaves a hole closing all but together down its length,
+// and without the bound the pinch would jump about with the throw. A stone
+// come to rest on the floor pushes no water aside, so the speed a slice is
+// pushed with is at least SLOWEST_PUSH of the entry speed.
 //
 // After the pinch-off the hole above the neck is a bowl that stays open and
 // fills from below (the reference: 10 cm deep at 130 ms, 5 cm at 165 ms). Its
@@ -130,6 +135,10 @@
 // throw's stone and seal move these by several per cent
 // (tools/cavity-probe.mjs prints them).
 //
+// A hole in the ice (src/ice.js) is opened as wide as the lip reaches
+// (roundLipReach, then Cavity.lipReach for this cavity's own), so the lip
+// and everything the cavity sends up stand in open water.
+//
 // The mesh: a ring grid (src/fluidMesh.js) of COLUMNS around and, from the
 // axis outward, CAP_ROWS of a flat floor at the bottom (the stone's centre,
 // which sits on it and shows through it, or the closing point once it has
@@ -193,6 +202,8 @@ const PATH_STEP = 1 / 240;         // s: the app's substep at 60 frames a second
 const PATH_SECONDS = 1.5;
 // The walls.
 const SLICE_STEP = 1 / 6;          // slices this many radii apart
+const DEEPEST_SHARE = 0.6;         // the pinch is at most this share of the stone's depth at the pinch time (Duclaux et al. 2007)
+const PINCH_TIE = 0.01;            // slices closing within this share of the earliest closure share the pinch (its middle)
 export const PINCH_TIME = 2.06;    // the deep seal's pinch-off, in sqrt(R/g) on the splash's clock (src/rock.js reads it)...
 export const NECK_CLOSE = 0.4;     // ...and the water has closed over the stone this many sqrt(R/g) later (src/rock.js)
 export const SURFACE_HEAD = 5.25;         // z0, in R: the head in the slices' lifetimes T ∝ V/(z + z0), which sets where the pinch falls
@@ -282,6 +293,24 @@ function growthFor(widest) {
   }
   const blend = (widest - growthWidest[low]) / (growthWidest[high] - growthWidest[low]);
   return GROWTH_LEAST * (GROWTH_MOST / GROWTH_LEAST) ** ((low + blend) / (GROWTH_SAMPLES - 1));
+}
+
+/**
+ * How far a round hole's lip reaches (m) from its mouth's centre at the
+ * widest, for a stone of `radius` going in at `speed` with
+ * `horizontalFraction` of it along the water, at `along` (the cosine to its
+ * direction of travel): its crest at the widest the mouth opens (the surface
+ * slice of buildSlices, a deep seal's), stretched along the throw as
+ * outlineFactor stretches it, and `fall` of the lip's fall outside the
+ * crest. A stone's own hole is lopsided and lobed besides, which
+ * Cavity.lipReach measures. src/ice.js opens a hole in the ice this wide as
+ * the stone breaks through, before the splash has made its cavity, then
+ * fits it to the cavity's own lip.
+ */
+export function roundLipReach(radius, speed, horizontalFraction, along = 0, fall = 0.5) {
+  const froude = Math.max(speed, 1.0) ** 2 / (GRAVITY * radius);
+  const mouthWidest = DEEP_WIDEST + (MOUTH_WIDEST - DEEP_WIDEST) * (froude / WIDTH_FROUDE) ** WIDTH_POWER;
+  return radius * (mouthWidest * (1 + ELONGATION * horizontalFraction * along * along) * (1 + LIP_WIDTH) + fall * LIP_FALL);
 }
 
 /**
@@ -579,13 +608,18 @@ export class Cavity {
     // A stone that has come to rest on the floor pushes no water aside: its slices' speed is floored.
     const slowest = SLOWEST_PUSH * this.sliceSpeed[0];
     for (let slice = 0; slice < count; slice++) lifeShape[slice] = Math.max(this.sliceSpeed[slice], slowest) / (slice * step + head);
+    // The earliest closure, and where: the middle of the slices that close
+    // within PINCH_TIE of it (a stone that has stopped on the bed leaves a
+    // stretch of the hole closing all but together, and the pinch is in the
+    // middle of it, not wherever rounding puts the first).
     const earliest = (scale) => {
-      let best = Infinity, bestSlice = 0;
+      let best = Infinity;
+      for (let slice = 0; slice < count; slice++) best = Math.min(best, this.sliceTime[slice] + scale * lifeShape[slice]);
+      let sum = 0, tied = 0;
       for (let slice = 0; slice < count; slice++) {
-        const closing = this.sliceTime[slice] + scale * lifeShape[slice];
-        if (closing < best) { best = closing; bestSlice = slice; }
+        if (this.sliceTime[slice] + scale * lifeShape[slice] <= best * (1 + PINCH_TIE)) { sum += slice; tied++; }
       }
-      return { time: best, slice: bestSlice };
+      return { time: best, slice: Math.round(sum / Math.max(tied, 1)) };
     };
     let low = 0, high = 1e-3;
     while (earliest(high).time < this.pinchTime && high < 1e3) high *= 2;
@@ -594,8 +628,13 @@ export class Cavity {
       if (earliest(middle).time < this.pinchTime) low = middle; else high = middle;
     }
     const scale = 0.5 * (low + high);
-    // A hole pinches at least SHALLOWEST·R down (a shallow seal's head would put it at the surface).
-    const pinchSlice = Math.min(Math.max(earliest(scale).slice, Math.round(SHALLOWEST / SLICE_STEP)), count - 1);
+    // A hole pinches at least SHALLOWEST·R down (a shallow seal's head would
+    // put it at the surface) and at most DEEPEST_SHARE of the stone's depth
+    // then (Duclaux et al. 2007; the reference's 0.57: a stone that has
+    // stopped on the bed leaves a hole whose closures all but tie down its
+    // length, and the pinch is not at the bed).
+    const deepestPinch = this.stoneAt(this.pinchTime, {}).depth * DEEPEST_SHARE;
+    const pinchSlice = Math.min(Math.max(earliest(scale).slice, Math.round(SHALLOWEST / SLICE_STEP)), Math.max(Math.round(deepestPinch / step), 1), count - 1);
     this.pinchSlice = pinchSlice;
     this.pinchDepth = pinchSlice * step;
 
@@ -830,6 +869,29 @@ export class Cavity {
     // while the hole closes inside it.
     out.widest = time > this.widestTime ? this.mouthAt(this.widestTime) : mouth;
     out.widestWidth = LIP_WIDTH * out.widest;
+    return out;
+  }
+
+  /**
+   * How far the lip reaches from (x, z) along each azimuth of `cosines` and
+   * `sines` (into `out`, metres) at the most over the hole's life, sampled
+   * `samples` times: its crest at the widest the mouth has been, at that
+   * azimuth's outline (shape), and `fall` of its fall outside the crest,
+   * from the mouth's centre as it moves to the closure. src/ice.js opens the
+   * ice's hole this wide (roundLipReach before the cavity is made).
+   */
+  lipReach(x, z, cosines, sines, out, fall = 0.5, samples = 24) {
+    const outside = fall * LIP_FALL * this.radius;
+    const shapes = cosines.map((cosine, index) => this.shape(cosine, sines[index]));
+    out.fill(0);
+    const lip = {};
+    for (let sample = 0; sample <= samples; sample++) {
+      this.lipAt(this.closeTime * sample / samples, lip);
+      for (let index = 0; index < cosines.length; index++) {
+        const reach = (lip.x - x) * cosines[index] + (lip.z - z) * sines[index] + lip.widest * shapes[index] + lip.widestWidth + outside;
+        if (reach > out[index]) out[index] = reach;
+      }
+    }
     return out;
   }
 

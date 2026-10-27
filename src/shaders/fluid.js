@@ -16,7 +16,9 @@
 //           r the water a ray crosses (metres), g coverage (the share of the
 //           pixel and of the exposure that water covers), b the drops' sun
 //           glints (radiance over the sun's irradiance) and a the crown's
-//           aeration (its rim bead and torn edges, src/shaders/sheet.js).
+//           aeration (its rim bead and torn edges, and its froth,
+//           src/shaders/sheet.js), the share of its light scattered white,
+//           times its share of the pixel, as the coverage is.
 //
 // Droplets. Sphere impostors stretched along their motion into capsules, as a
 // camera's shutter would smear them (half a frame, uStreakSeconds). A drop
@@ -29,7 +31,11 @@
 // they are mist, only coverage and glints, and never hide the sheet behind
 // them. Lens drops (the jet's big ones, iLens) keep their round shape: a long
 // streak would read as a pill. uLeastRadius leaves finer drops out (the
-// mirror pass's).
+// mirror pass's). The spray (SPRAY_VERTEX, src/spray.js) goes through the
+// same passes and fragments: each sprite a drop, or a puff of vWeight like
+// drops, drawn as a disc they cover PUFF_COVER of (a fixed size in the
+// world) with their coverage, water and glints summed, and as mist (no
+// depth); a sprite of one drop is a drop like any other.
 //
 // Glints. A water sphere of radius r in sunlight of irradiance E sends the
 // sun's light towards the viewer from two points, each a tiny image of the
@@ -59,8 +65,12 @@
 //   - Sheet: reflects pondView and lets the scene behind through, shifted by
 //     its normal and thickness (a thin film barely bends what is behind it);
 //     sunGlitter with WATER_SLOPE_VARIANCE (its unresolved ripple). Its rim
-//     bead and torn edges, only, are aerated: mixed towards the spray's
-//     scattering colour by AERATION times the optics' aeration.
+//     bead and torn edges, and its froth (src/shaders/sheet.js), are
+//     aerated: mixed towards the spray's scattering colour by the optics'
+//     aeration over their coverage, at most 1. Its holes are the scene's:
+//     the depth pass discards them, and the optics write the sheet's share
+//     of a pixel, in the aeration as in the coverage, which the alpha
+//     applies (so the aeration is divided by it, up to a whole pixel).
 //   - Column and drop beads (a drop from one device pixel of radius up, fading
 //     in from half a pixel): lenses. A ray through a water sphere at incidence
 //     θ leaves turned by 2·(θ − asin(sin θ / 1.33)) towards its centre, in the
@@ -92,13 +102,16 @@
 // The mirror pass (src/main.js) draws the crowns, columns and drops through
 // the reflected camera as MIRROR_* below, over the dome's mirror image: the
 // Fresnel reflection of the sky cube, no refraction (a sheet or a column lets
-// the dome behind it show straight through), the sheet's aerated bead, and a
+// the dome behind it show straight through), the sheet's aerated bead and
+// froth, through the same holes (SHEET_FROTH), and a
 // drop's mean light and glints. Only what stands above the water is drawn.
 // A second draw of the same programs writes how far each is from the mirror
 // camera into the mirror's alpha (MIRROR_COMMON), so that the water can look
 // a near object's reflection up where it is rather than at infinity.
-import { GLSL_COMMON } from './scene.js';
+import { GLSL_COMMON, HAZE } from './scene.js';
 import { GALE_SURFACE } from './gale.js';
+import { SHEET_FROTH } from './sheet.js';
+import { COAST } from '../spray.js';
 
 // A drop's mean light (the header): this much of the sky's mean radiance and
 // of what is behind it.
@@ -112,13 +125,13 @@ const FRESNEL = /* glsl */`
 float waterFresnel(float cosine) { return 0.02 + 0.98 * pow(1.0 - clamp(cosine, 0.0, 1.0), 5.0); }
 `;
 
-export const PARTICLE_VERTEX = /* glsl */`
+// What every drop sprite's vertex shader shares: drawDrop places one drop (or,
+// for spray, a puff of `weight` like drops) at a point over still water,
+// moving at a velocity, and writes the varyings the fragments read.
+const DROP_BODY = /* glsl */`
 #define WATER_INDEX 1.333
 #define MAX_DEVIATION 1.444      // radians (82.8°): no ray leaves a drop deviated more after one passage
-attribute vec3 iPosition;
-attribute float iRadius;
-attribute vec3 iVelocity;
-attribute float iLens;
+#define PUFF_COVER 0.1           // a puff's drops cover this share of the disc it is drawn as
 uniform float uProjScale;        // target pixels per world unit at distance 1
 uniform float uMinPixelRadius;   // a drop is drawn at least this wide (target pixels)
 uniform float uStreakSeconds;
@@ -127,32 +140,35 @@ uniform float uLeastRadius;      // drops smaller than this (metres) are not dra
 varying vec2 vQuad;
 varying vec3 vViewCentre;
 varying float vRadius;           // drawn radius (world)
-varying float vPixelRadius;      // true on-screen radius (target pixels)
+varying float vPixelRadius;      // true on-screen radius (target pixels); 0 for a puff, which writes no depth
 varying float vDrawnPixelRadius;
 varying float vAreaShare;        // the true drop's share of the drawn disc's area
+varying float vWeight;           // the drops the sprite stands for (1 but for spray)
 varying float vStretch;          // half-length of the capsule in drawn radii (1 = sphere)
 varying vec2 vAxis;              // screen-space motion direction (view xy)
 varying vec4 vGlintPoints;       // reflected (xy) and refracted (zw) glint, view xy in drawn radii from the centre
-varying vec2 vGlintPowers;       // their radiance × pixel area over the sun's irradiance (E·P·ρ² / E)
+varying vec2 vGlintPowers;       // their radiance × pixel area over the sun's irradiance (E·P·ρ² / E), all its drops'
 ${FRESNEL}
 ${GALE_SURFACE}
-void main() {
-  if (iRadius < uLeastRadius) { gl_Position = vec4(0.0, 0.0, 2.0, 1.0); return; }
+void cullDrop() { gl_Position = vec4(0.0, 0.0, 2.0, 1.0); }
+void drawDrop(vec3 centreWorld, vec3 velocityWorld, float dropRadius, float lens, float weight) {
   // A drop flies over still water (src/splash.js); the gale lifts it with the surface under it.
-  vec3 centre = iPosition;
-  if (uGaleMetresPerUnit > 0.0) centre.y += galeLift(iPosition);
+  vec3 centre = centreWorld;
+  if (uGaleMetresPerUnit > 0.0) centre.y += galeLift(centreWorld);
   vec4 viewCentre = viewMatrix * vec4(centre, 1.0);
   float dist = max(-viewCentre.z, 0.05);
-  float pixelRadius = iRadius * uProjScale / dist;
+  float pixelRadius = dropRadius * uProjScale / dist;
   float drawnPixelRadius = max(pixelRadius, uMinPixelRadius);
-  float radius = iRadius * drawnPixelRadius / max(pixelRadius, 1e-4);
-  vec3 viewVelocity = (viewMatrix * vec4(iVelocity, 0.0)).xyz;
+  // A puff of spray is drawn as a disc its drops cover PUFF_COVER of (a fixed size in the world).
+  if (weight > 1.0) drawnPixelRadius = max(drawnPixelRadius, pixelRadius * sqrt(weight / PUFF_COVER));
+  float radius = dropRadius * drawnPixelRadius / max(pixelRadius, 1e-4);
+  vec3 viewVelocity = (viewMatrix * vec4(velocityWorld, 0.0)).xyz;
   vec2 motion = viewVelocity.xy * uStreakSeconds;
   float streak = length(motion);
   vec2 axis = streak > 1e-5 ? motion / streak : vec2(1.0, 0.0);
   float stretch = 1.0 + 0.5 * streak / radius;
   // A drop drawn as a lens keeps its shape: a long streak would read as a pill.
-  if (iLens > 0.5) stretch = min(stretch, 1.25);
+  if (lens > 0.5) stretch = min(stretch, 1.25);
   vec2 perpendicular = vec2(-axis.y, axis.x);
   vec2 offset = (axis * position.x * stretch + perpendicular * position.y) * radius;
 
@@ -184,17 +200,72 @@ void main() {
   }
   float pixelArea = pixelRadius * pixelRadius;
   vGlintPoints = vec4(halfVector.xy, exitNormal.xy) * trueShare;
-  vGlintPowers = vec2(reflectedPower, refractedPower) * pixelArea;
+  vGlintPowers = vec2(reflectedPower, refractedPower) * pixelArea * weight;
 
   vQuad = position.xy;
   vViewCentre = viewCentre.xyz;
   vRadius = radius;
-  vPixelRadius = pixelRadius;
+  vPixelRadius = weight > 1.0 ? 0.0 : pixelRadius;
   vDrawnPixelRadius = drawnPixelRadius;
   vAreaShare = trueShare * trueShare;
+  vWeight = weight;
   vStretch = stretch;
   vAxis = axis;
   gl_Position = projectionMatrix * vec4(viewCentre.xyz + vec3(offset, 0.0), 1.0);
+}
+`;
+
+// The splash's drops in flight, stepped on the CPU (src/splash.js).
+export const PARTICLE_VERTEX = /* glsl */`
+attribute vec3 iPosition;
+attribute float iRadius;
+attribute vec3 iVelocity;
+attribute float iLens;
+${DROP_BODY}
+void main() {
+  if (iRadius < uLeastRadius) { cullDrop(); return; }
+  drawDrop(iPosition, iVelocity, iRadius, iLens, 1.0);
+}
+`;
+
+// The spray (src/spray.js): each sprite's flight a closed form of its age,
+// written once at its birth. Two phases of linear drag (src/spray.js says
+// why): for t1 a fast one of response time τ1 towards (wind x, −g·τ1, wind
+// z), then a slow one of τ2 towards (wind x, −g·τ2, wind z) (the wind's
+// drift as it was at the sprite's birth), τ2·COAST
+// across the water; in each v(t) = v∞ + (v₀ − v∞)·e^(−t/τ) and
+// x(t) = x₀ + v∞·t + τ·(v₀ − v∞)·(1 − e^(−t/τ)). It is left out before its
+// birth, past its life and once it is under the still water (the gale lifts
+// it as drawn).
+export const SPRAY_VERTEX = /* glsl */`
+#define SPRAY_GRAVITY 9.81
+#define SPRAY_COAST ${COAST.toFixed(4)}
+attribute vec4 aOrigin;          // x, y, z at birth, and the splash time it was born
+attribute vec4 aLaunch;          // its velocity then, and how long it may fly
+attribute vec4 aDrop;            // radius, the drops it stands for, τ1, t1
+attribute vec3 aSlow;            // τ2, and the drift the wind gave it at its birth (world x, z, m/s)
+uniform float uTime;             // the splash time
+${DROP_BODY}
+void main() {
+  float age = uTime - aOrigin.w;
+  if (age < 0.0 || age >= aLaunch.w || aDrop.x < uLeastRadius) { cullDrop(); return; }
+  float fastTau = aDrop.z;
+  float early = min(age, aDrop.w);
+  vec3 fastTerminal = vec3(aSlow.y, -SPRAY_GRAVITY * fastTau, aSlow.z);
+  float fastDecay = exp(-early / fastTau);
+  vec3 launch = aLaunch.xyz - fastTerminal;
+  vec3 centre = aOrigin.xyz + fastTerminal * early + fastTau * launch * (1.0 - fastDecay);
+  vec3 velocity = fastTerminal + launch * fastDecay;
+  // The slow phase from where the fast one left it (nothing yet while age is under t1).
+  float late = age - early;
+  vec3 slowTau = vec3(SPRAY_COAST, 1.0, SPRAY_COAST) * aSlow.x;
+  vec3 slowTerminal = vec3(aSlow.y, -SPRAY_GRAVITY * aSlow.x, aSlow.z);
+  vec3 slowDecay = exp(-late / slowTau);
+  vec3 rest = velocity - slowTerminal;
+  centre += slowTerminal * late + slowTau * rest * (1.0 - slowDecay);
+  velocity = slowTerminal + rest * slowDecay;
+  if (centre.y < 0.0) { cullDrop(); return; }
+  drawDrop(centre, velocity, aDrop.x, 0.0, aDrop.y);
 }
 `;
 
@@ -270,6 +341,7 @@ varying vec3 vViewCentre;
 varying float vRadius;
 varying float vDrawnPixelRadius;
 varying float vAreaShare;
+varying float vWeight;
 varying float vStretch;
 varying vec2 vAxis;
 varying vec4 vGlintPoints;
@@ -284,9 +356,9 @@ void main() {
   if (gl_FragCoord.z > sceneDepth) discard;
   float travel = vStretch - 1.0;
   vec2 fragment = vec2(vQuad.x * vStretch, vQuad.y);
-  // The true drop's volume, spread over the drawn disc and the streak.
-  float thickness = 2.0 * sqrt(1.0 - c.z) * vRadius * vAreaShare * sqrt(vAreaShare) / vStretch;
-  float coverage = exposureShare(fragment.x, fragment.y, travel) * vAreaShare;
+  // The true drop's volume (its puff's), spread over the drawn disc and the streak.
+  float thickness = 2.0 * sqrt(1.0 - c.z) * vRadius * vAreaShare * sqrt(vAreaShare) * vWeight / vStretch;
+  float coverage = exposureShare(fragment.x, fragment.y, travel) * vAreaShare * vWeight;
   float glint = vGlintPowers.x * glintFootprint(fragment, vGlintPoints.xy, vAxis, travel, vDrawnPixelRadius)
     + vGlintPowers.y * glintFootprint(fragment, vGlintPoints.zw, vAxis, travel, vDrawnPixelRadius);
   gl_FragColor = vec4(thickness, coverage, glint, 0.0);
@@ -296,19 +368,26 @@ void main() {
 // Night vision, just before the tone map (COMPOSITE_FRAGMENT, and the
 // composite's own tone map in src/splash.js). By moonlight the eye's rods
 // see, which take no colour and are most sensitive to blue-green: uNight
-// (lighting.night, src/sky.js: 0 by day, 1 where rods see alone) mixes the
+// (lighting.night, src/sky.js: 0 by day, 1 where rods see most) mixes the
 // colour towards the rods' luminance, the scotopic luminance from CIE XYZ
 // that Jensen et al. use (A Physically-Based Night Sky Model, 2001),
 // V = Y (1.33 (1 + (Y + Z) / X) − 1.68), divided by its value for white
 // (D65, 2.573: brightness is the hour's light, src/sky.js; this changes
 // only the colour, and a blue sky comes out twice as bright against white
-// as it does to cones), tinted a moonlit blue: NIGHT_TINT, chromaticity
-// (0.278, 0.286) at unit luminance, halfway from white to their night blue
-// at (0.25, 0.25), which washed whole skies to one blue. By day the colour
-// passes untouched.
+// as it does to cones). A picture of what rods alone see is a grey
+// photograph, so the night is drawn as a film draws one: the rods' image
+// keeps NIGHT_COLOUR of the cones' colour (the mesopic eye still sees some
+// under a moon), is tinted a moonlit blue, NIGHT_TINT at unit luminance
+// (chromaticity (0.256, 0.257), all but Jensen's night blue at (0.25,
+// 0.25), which as the only colour washed whole skies to one blue), and goes
+// to white where it is bright (NIGHT_WHITE, its exposed luminance), so the
+// moon's glitter and the splash's glints are silver on blue water. By day
+// the colour passes untouched.
 export const NIGHT_VISION = /* glsl */`
 uniform float uNight;
-#define NIGHT_TINT vec3(0.85, 0.99, 1.45)
+#define NIGHT_TINT vec3(0.75, 0.99, 1.85)
+#define NIGHT_COLOUR 0.4
+#define NIGHT_WHITE vec2(0.5, 3.0)
 #define RODS_WHITE 2.573
 vec3 nightVision(vec3 color) {
   if (uNight <= 0.0) return color;
@@ -316,7 +395,9 @@ vec3 nightVision(vec3 color) {
   float y = dot(color, vec3(0.2126, 0.7152, 0.0722));
   float z = dot(color, vec3(0.0193, 0.1192, 0.9505));
   float rods = max(y * (1.33 * (1.0 + (y + z) / max(x, 1e-9)) - 1.68), 0.0) / RODS_WHITE;
-  return mix(color, rods * NIGHT_TINT, uNight);
+  vec3 cones = min(color / max(y, 1e-9), vec3(8.0));   // the colour at unit luminance
+  vec3 tint = mix(NIGHT_TINT, vec3(1.0), smoothstep(NIGHT_WHITE.x, NIGHT_WHITE.y, rods * uExposure / 0.6));
+  return mix(color, rods * tint * mix(vec3(1.0), cones, NIGHT_COLOUR), uNight);
 }
 `;
 
@@ -345,9 +426,9 @@ varying vec2 vUv;
 ${GLSL_COMMON}
 ${FRESNEL}
 ${NIGHT_VISION}
+${HAZE}
 #define WATER_SLOPE_VARIANCE 0.006   // the sheet's and the column's unresolved ripple, for their glitter
 #define GLITTER_CAP 40.0
-#define AERATION 0.55                // how far the rim bead and torn edges whiten
 ${MEAN_LIGHT}
 #define BEAD_FROM 0.5                // device-pixel radius at which a drop starts to be a glass bead...
 #define BEAD_FULL 1.0                // ...and is one (two pixels wide)
@@ -477,16 +558,22 @@ void main() {
       vec3 surface = mix(refracted, reflected, fresnel);
       // The sheet and the column glitter as the pond does; a drop's glints are in the optics.
       if (sheet + column > 0.5) surface += min(sunGlitter(worldNormal, worldToViewer, sunWorld, uSunIrradiance, WATER_SLOPE_VARIANCE), vec3(GLITTER_CAP));
-      // The rim bead and torn edges are aerated: a faint white scattering, brightest towards the sun.
+      // The rim bead, torn edges and froth are aerated: a white scattering, brightest towards the sun.
       float forward = pow(clamp(0.5 - 0.5 * dot(toViewer, uSunDirView), 0.0, 1.0), 6.0);
       vec3 scattering = vec3(0.85, 0.88, 0.90) * (uSkyAmbient * 1.2 + uSunIrradiance * (0.08 + 0.7 * forward));
-      surface = mix(surface, scattering, sheet * AERATION * clamp(optics.a, 0.0, 1.0));
+      // Where holes or the sheet's edge cover part of a pixel, the optics carry that share in the
+      // aeration as in the coverage, and the alpha applies it: divide it out of the aeration.
+      float aeration = optics.a / max(min(coverage, 1.0), 1e-3);
+      surface = mix(surface, scattering, sheet * clamp(aeration, 0.0, 1.0));
       float drop = 1.0 - sheet - column;
       // On-screen radius in device pixels: a drop's from the depth pass, a column's from the water across it.
       float deviceRadius = mix(info.g, 0.5 * thickness / max(normal.z, 0.3) * uProjScale / info.r, column) / uFluidScale;
       float detail = sheet + column * smoothstep(COLUMN_DETAIL_FROM, COLUMN_DETAIL_FULL, deviceRadius)
         + drop * smoothstep(DETAIL_FROM, DETAIL_FULL, deviceRadius) * smoothstep(0.3, 0.9, coverage);
       fluid = mix(meanLight, surface, detail);
+      // In haze (src/sky.js) the water in the air fades by its distance, as the scene behind it does; a fine drop's
+      // mean light is the haze's already, the scene's and the sky's.
+      fluid = withHaze(fluid, length(position));
       float glass = max(sheet + column, drop * smoothstep(BEAD_FROM, BEAD_FULL, deviceRadius));
       alpha = mix(alpha, min(coverage, 1.0), glass);
     }
@@ -525,22 +612,29 @@ vec4 mirrorNearness(float coverage, vec3 viewPoint) {
 }
 `;
 
-// A sheet: the sky's Fresnel reflection, and its aerated bead's scattering.
+// A sheet: the sky's Fresnel reflection, and its aerated bead's and froth's
+// scattering, through its holes (SHEET_FROTH).
 export const MIRROR_SHEET_FRAGMENT = /* glsl */`
 uniform vec3 uSkyAmbient;
 varying vec3 vViewPosition;
 varying vec3 vViewNormal;
 varying vec3 vViewRimTangent;
 varying float vAeration;
+varying float vRod;
+varying vec3 vSheet;
+varying vec2 vFroth;
 ${MIRROR_COMMON}
+${SHEET_FROTH}
 void main() {
-  if ((worldFromView(vViewPosition) + cameraPosition).y < uMirrorLevel) discard;
   vec3 toViewer = normalize(-vViewPosition);
   vec3 normal = normalize(vViewNormal);
   if (dot(normal, toViewer) < 0.0) normal = -normal;
+  SheetFroth froth = sheetFroth(vSheet, vFroth, vAeration, vRod, dot(normal, toViewer));
+  if ((worldFromView(vViewPosition) + cameraPosition).y < uMirrorLevel || froth.hole) discard;
   normal = normalize(normal + vViewRimTangent);
   float fresnel = waterFresnel(dot(normal, toViewer));
-  float aerated = 0.55 * vAeration * (1.0 - fresnel);
+  float aerated = min(RIM_AERATION * vAeration + froth.whiteness, 1.0) * (1.0 - fresnel) * froth.present;
+  fresnel *= froth.present;
   if (uMirrorDistance > 0.5) { gl_FragColor = mirrorNearness(fresnel + aerated, vViewPosition); return; }
   vec3 reflected = textureCubeLodEXT(uEnvCube, worldFromView(reflect(-toViewer, normal)), 1.0).rgb;
   gl_FragColor = vec4(fresnel * reflected + aerated * uSkyAmbient * 1.2, fresnel + aerated);
@@ -581,6 +675,7 @@ varying vec2 vQuad;
 varying vec3 vViewCentre;
 varying float vDrawnPixelRadius;
 varying float vAreaShare;
+varying float vWeight;
 varying float vStretch;
 varying vec2 vAxis;
 varying vec4 vGlintPoints;
@@ -598,7 +693,7 @@ void main() {
   float fresnel = waterFresnel(normal.z);
   float travel = vStretch - 1.0;
   vec2 fragment = vec2(vQuad.x * vStretch, vQuad.y);
-  float coverage = exposureShare(fragment.x, fragment.y, travel) * vAreaShare;
+  float coverage = exposureShare(fragment.x, fragment.y, travel) * vAreaShare * vWeight;
   float body = MEAN_SKY * (1.0 - fresnel);
   if (uMirrorDistance > 0.5) { gl_FragColor = mirrorNearness(coverage * (fresnel + body), vViewCentre); return; }
   vec3 reflected = textureCubeLodEXT(uEnvCube, worldFromView(reflect(vec3(0.0, 0.0, -1.0), normal)), 1.0).rgb;

@@ -15,7 +15,7 @@ import { MAX_RINGS, PROFILE_TEXELS, PROFILE_MAPPING, RING_TEXTURE_UNITS } from '
 import { RAIN_RIPPLES, DROP_RING_SLOPES } from './rain.js';
 import { GALE_SURFACE } from './gale.js';
 
-// The rain's haze (src/sky.js setWeather): what lies d metres off fades
+// The weather's haze (rain's, snow's, a fog's; src/sky.js setWeather): what lies d metres off fades
 // toward uHazeColor, the overcast's horizon, by 1 − exp(−uHazeDensity·d)
 // (uHazeDensity 3/visibility: a dark object at the visibility keeps 5% of its
 // contrast). The dome fades the same way, to the distance its land stands
@@ -25,6 +25,300 @@ uniform vec3 uHazeColor;
 uniform float uHazeDensity;
 vec3 withHaze(vec3 color, float distance) {
   return uHazeDensity > 0.0 ? mix(color, uHazeColor, 1.0 - exp(-uHazeDensity * distance)) : color;
+}
+`;
+
+// Snow lying on the ground (uSnow, the weather's cover, 0 to 1: src/main.js
+// WEATHERS, src/snow.js), for the beach's, the deck's and the ice's shaders
+// (GLSL_COMMON holds it, after ICE_COMMON; on the ice, iceSurface). Thin, it
+// lies in patches, the ground showing between them; whole, it covers all.
+// The patches are value noise, a few metres and a metre across: they mean
+// nothing but that a first snow lies unevenly. Fresh snow is white, a little
+// blue (its ice takes some red), shaded a little by its drifts (snowShade),
+// and lit as the ground under it is.
+export const SNOW_COVER = /* glsl */`
+uniform float uSnow;
+#define SNOW_ALBEDO vec3(0.86, 0.89, 0.93)
+float snowCover(vec2 point) {
+  if (uSnow <= 0.0) return 0.0;
+  float patches = 0.6 * valueNoise(point * 0.7) + 0.4 * valueNoise(point * 2.9 + 3.0);
+  return smoothstep(patches - 0.12, patches + 0.12, 1.25 * uSnow - 0.1);
+}
+// On the ice, smooth, the wind packs it into drifts with crisp edges: the same patches, a finer noise in their edges,
+// as sharp as the pixel's footprint (m) lets them be.
+float snowOnIce(vec2 point, float footprint) {
+  if (uSnow <= 0.0) return 0.0;
+  float patches = 0.6 * valueNoise(point * 0.7) + 0.4 * valueNoise(point * 2.9 + 3.0) + 0.12 * (valueNoise(point * 14.0 + 11.0) - 0.5);
+  float edge = max(0.025, 2.0 * footprint);
+  return smoothstep(patches - edge, patches + edge, 1.25 * uSnow - 0.1);
+}
+vec3 snowShade(vec2 point) {
+  return SNOW_ALBEDO * (0.88 + 0.08 * valueNoise(point * 1.9 + 7.0) + 0.04 * valueNoise(point * 11.0));
+}
+`;
+
+// The ice (src/ice.js) as the water's own shaders draw it: a frozen lake is
+// its water's surface frozen, so the water's shaders draw the ice where its
+// mask (src/ice.js: R the signed distance to the nearest hole's edge, a byte
+// over ±uIceFar; B how wet, and whether ever wet; A the signed distance to a
+// hole's new ice's front) says there is ice, the sheet's or new ice over a
+// hole (iceMaskAt's `solid`), and the water in its holes' open water,
+// blending the two over the pixel at the edge. WATER_VERTEX holds the patch
+// flat under the ice; WATER_FRAGMENT shades it (iceSurface);
+// WATER_UNDER_FRAGMENT draws its underside. With the ice off (uIceOn 0) none
+// of it runs. Its cracks are drawn over it (src/iceCracks.js,
+// ICE_CRACK_VERTEX and ICE_CRACK_FRAGMENT), which take ICE_UNIFORMS too.
+//
+// What it looks like (iceLook). Every part of it is crisp, with detail down
+// to a pixel near the eye (each fades to its mean only where it is finer
+// than a pixel): soft value-noise mottles read as a texture magnified, the
+// picture blurred. A lake's or a pool's ice is mostly clear ("black ice":
+// the water under it shows through and it mirrors the sky as still water
+// does), and these tell it from water:
+//   - its crystals (ICE_GRAIN): a sheet frozen on still water is a mosaic of
+//     crystals a hand across, their boundaries faint lines, some seen more
+//     than others (iceGrain: a jittered grid's cells, the border by the
+//     difference of the nearest two points' distances);
+//   - snow ice (ICE_WHITE: the share of the sheet it covers, growing with
+//     the thickness): white patches with ragged edges (an fbm thresholded,
+//     its octaves down to the pixel), thin at their edges and thick inside,
+//     streaked along the wind that blew the snow (ICE_SNOW_STREAK: puffed
+//     out round, on a mirror they would pass for clouds reflected);
+//     round a frozen pool it drifts against the walls, and the ice frozen to
+//     the tiles is a white rim (ICE_RIM);
+//   - frost specks (ICE_SPECK) and frozen bubbles (ICE_BUBBLE): white dots a
+//     few millimetres across in clusters, the frost's on top and whiter, the
+//     bubbles' half seen through the ice;
+//   - cloudy ice (ICE_CLOUDY): round the snow ice, where it froze from the
+//     slush the snow made, milky through and through, as ragged and as
+//     streaked;
+//   - its veil: even clear ice scatters a little light back along the ray's
+//     path through it (ICE_SCATTER per metre, over the thickness over the
+//     refracted ray's cosine), so it greys looking along it, and more as it
+//     thickens;
+//   - frost roughens the mirror where the snow and the cloudy ice are
+//     (ICE_FROST, the rms slope of its unresolved roughness), and the sun's
+//     sheen on it breaks into the glints of its crystals (ICE_GLINT); the
+//     bare black ice between is a mirror, the sun a small hard glint in it
+//     (a sheen spread evenly over the ice reads as a blur). It is flat:
+//     frozen, it has no ripples.
+//
+// Wet (the flood round a hole and the splash's drops, src/ice.js; the rain's
+// film), the ice is darker, its white ice greyed, and smooth: a mirror. Once
+// wet it stays glazed (its film froze), its frost gone (ICE_GLAZED). New ice
+// over a hole is clear and glazed, none of the sheet's snow ice, crystals,
+// specks or bubbles, and the old hole's edge in it a faint seam (ice frozen
+// to ice shows little of the face between): the edge is a fracture face
+// (fractureFace), wet, only where open water laps it: seen down through
+// clear ice its face shows as a white band on its near side, as wide as the
+// sheet's thickness seen along the refracted ray, fading with depth.
+export const ICE_UNIFORMS = /* glsl */`
+uniform sampler2D uIceMask;
+uniform vec3 uIceArea;         // the mask's corner (x, z) and side (m)
+uniform float uIceOn;          // 1 while there is ice
+uniform float uIceTop;         // its top over the still water (m)
+uniform float uIceThickness;   // m
+uniform float uIceFar;         // the cap of the mask's distances (m)
+uniform float uIceGlaze;       // the mask's B where it was once wet and is dry (src/ice.js FLOOD.glaze)
+uniform float uIceWet;         // how wet the rain has made it (src/main.js WEATHERS)
+uniform vec4 uIcePool;         // a frozen pool's corner (x, z) and side (m), w 1; w 0 over a lake
+#define ICE_INDEX 1.31
+#define ICE_CRACK_JAG 0.0005           // m: a crack's own roughness, finer than its points (ICE_CRACK_FRAGMENT)
+`;
+
+export const ICE_COMMON = /* glsl */`
+${ICE_UNIFORMS}
+#define ICE_WHITE vec2(0.05, 0.3)      // the share of the sheet under snow ice, thin (new, mostly clear) and thick
+#define ICE_WHITE_ALBEDO 0.62
+#define ICE_GLINT 0.003                // m: a frost crystal's facet, glinting in the sun (iceLook)
+#define ICE_SNOW_STREAK 3.0            // snow ice's patches this many times longer along the wind than across it
+#define ICE_CLOUDY 0.18                // the share of light cloudy ice scatters back, where it is (iceLook)...
+#define ICE_CLOUDY_BAND 0.07           // ...round the snow ice, this far under its threshold in the snow's field
+#define ICE_SCATTER 12.0               // per metre of the refracted ray's path: the light clear ice scatters back (its veil; src/ice.js ICE.scatter, its twin, a shard's)
+#define ICE_GRAIN 0.16                 // m: its crystals' size, about (their grid warped, so some are half that, some twice)...
+#define ICE_GRAIN_LINE 0.0005          // ...the half-width of the boundary between two (m)...
+#define ICE_GRAIN_SEEN 0.28            // ...and how white it shows, at most, against white ice (where it shows: iceLook)
+#define ICE_FROST vec2(0.012, 0.1)     // the frost's rms slope, where the ice is bare (black ice, a mirror) and where frosted...
+#define ICE_GLAZED 0.015               // ...and wet, glazed or new ice's
+#define ICE_SPECK 0.007                // m: a cell of frost specks, found where the ice is frosted
+#define ICE_BUBBLE 0.012               // m: a cell of frozen bubbles...
+#define ICE_BUBBLE_CLUSTERS 0.12       // ...found in clusters over this share of the sheet
+#define ICE_RIM 0.03                   // m: the white rim round a frozen pool's walls, about, and its drifts reach ten times that
+#define ICE_WET_EDGE 0.04              // metres round a hole the ice is wet
+#define ICE_SKY_LIGHT 1.4
+#define ICE_FROST_LEVELS 320.0         // the sky cube's texels a radian, about (CUBE_SIZE in src/sky.js, 512, over π/2)...
+#define ICE_FROST_COARSEST 4.5         // ...blurred no further than this level (coarser, its faces' seams show)...
+#define ICE_FROST_SKY 2.5              // ...and no brighter than this times the sky's mean (iceSurface: the sun is the sheen's)
+#define ICE_UNDER_GLOW 0.35            // the light white ice lets through to its underside, against what falls on its top
+#define ICE_SNOW_GLOW 0.4              // and under snow on it, against that
+
+// The mask at a world point (the header). Beyond it, dry ice with no hole.
+struct IceMask {
+  float hole;    // m to the nearest hole's edge, negative in one (its open water or its new ice)
+  float wet;     // how wet the flood and the drops have left it, 0 to 1
+  float glaze;   // whether it was ever wet, 0 to 1: its frost frozen smooth
+  float skin;    // m to a hole's new ice's front, positive where it has skinned over
+  float solid;   // m to open water's edge, ice (the sheet's or new) where positive
+};
+IceMask iceMaskAt(vec2 worldXZ) {
+  vec2 uv = (worldXZ - uIceArea.xy) / uIceArea.z;
+  vec4 texel = any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0))) ? vec4(1.0, 1.0, 0.0, 0.0) : texture2D(uIceMask, uv);
+  IceMask mask;
+  mask.hole = (texel.r * 255.0 - 127.5) / 127.5 * uIceFar;
+  mask.glaze = smoothstep(0.0, uIceGlaze, texel.b);
+  mask.wet = clamp((texel.b - uIceGlaze) / (1.0 - uIceGlaze), 0.0, 1.0);
+  mask.skin = (texel.a * 255.0 - 127.5) / 127.5 * uIceFar;
+  mask.solid = max(mask.hole, mask.skin);
+  return mask;
+}
+
+// How much of a pixel footprint metres across at a point the mask says is
+// holeDistance from open water's edge (its solid) is ice: the edge
+// antialiased. At the mask's cap no edge is near, however wide the pixel (far
+// off, where a hole is finer than a pixel, it is ice).
+float iceCover(float holeDistance, float footprint) {
+  if (holeDistance >= 0.95 * uIceFar) return 1.0;
+  return smoothstep(-0.5 * footprint, 0.5 * footprint, holeDistance);
+}
+
+// A line's share of a pixel footprint metres across, at fromLine metres off
+// its middle, halfWidth metres each side of it (a box filter: a line finer
+// than the pixel is fainter, never gone or doubled).
+float iceLine(float fromLine, float halfWidth, float footprint) {
+  float pixel = max(footprint, 1e-6);
+  return max(min(halfWidth - fromLine, 0.5 * pixel) - max(-halfWidth - fromLine, -0.5 * pixel), 0.0) / pixel;
+}
+
+// An fbm of value noise from frequency (per metre) up, seven octaves, each
+// finer than a few pixels evened to its mean: x its value (about 0.5 ± 0.15),
+// y how fast it changes (per metre, about), to antialias a threshold of it.
+vec2 iceFbm(vec2 worldXZ, float frequency, float footprint) {
+  float sum = 0.0, change = 0.0, amplitude = 0.5;
+  for (int octave = 0; octave < 7; octave++) {
+    float seen = 1.0 - smoothstep(0.12, 0.45, footprint * frequency);
+    if (seen <= 0.0) { sum += amplitude; break; }   // this octave and the finer ones, their mean: amplitude·2·0.5
+    sum += amplitude * mix(0.5, valueNoise(worldXZ * frequency + float(octave) * 17.31), seen);
+    change += amplitude * frequency * seen;
+    frequency *= 2.07;
+    amplitude *= 0.5;
+  }
+  return vec2(sum / 0.9921875, 1.5 * change);
+}
+
+// The crystals' boundaries (the header): how far (m) the point is from the
+// border between the two crystals nearest it, about (half the difference of
+// its distances to their points, on a grid warped so the crystals differ in
+// size and shape), and how plainly that border shows (0 to 1).
+vec2 iceGrain(vec2 worldXZ) {
+  vec2 position = worldXZ / ICE_GRAIN + 0.9 * vec2(valueNoise(worldXZ * 2.3 + 3.0), valueNoise(worldXZ * 2.3 + 19.0));
+  vec2 cell = floor(position), local = fract(position);
+  float first = 9.0, second = 9.0;
+  vec2 firstCell = vec2(0.0), secondCell = vec2(0.0);
+  for (int row = -1; row <= 1; row++) {
+    for (int column = -1; column <= 1; column++) {
+      vec2 offset = vec2(float(column), float(row));
+      vec2 point = offset + 0.12 + 0.76 * vec2(hash21(cell + offset), hash21(cell + offset + 31.7));
+      float distance = length(point - local);
+      if (distance < first) { second = first; secondCell = firstCell; first = distance; firstCell = cell + offset; }
+      else if (distance < second) { second = distance; secondCell = cell + offset; }
+    }
+  }
+  return vec2(0.5 * (second - first) * ICE_GRAIN, hash21(firstCell + secondCell * 1.37 + 7.1));
+}
+
+struct IceLook {
+  float white;           // the share of snow ice and frost specks (the light scattered back)
+  float slopeVariance;   // the frost's unresolved slope, for the mirror's blur and the sun's sheen
+  float glints;          // the sun's sheen on it broken into its crystals' glints: 1 on the mean
+  float bubbles;         // the share of the pixel frozen bubbles whiten
+  float grain;           // a crystal boundary's share of the pixel, times how plainly it shows
+};
+
+IceLook iceLook(vec2 worldXZ, float footprint) {
+  IceLook look;
+  float thickShare = smoothstep(0.01, 0.04, uIceThickness);
+  // Round a frozen pool: how far its nearest wall is (outside its walls, far: a shard's own look, pieceWhite).
+  float fromWall = 1e3;
+  if (uIcePool.w > 0.5) {
+    vec2 inside = min(worldXZ - uIcePool.xy, uIcePool.xy + uIcePool.z - worldXZ);
+    fromWall = min(inside.x, inside.y) < 0.0 ? 1e3 : min(inside.x, inside.y);
+  }
+  // Snow ice: an fbm thresholded at the share, its edge ragged to the pixel, thin there and thick inside, laid out in
+  // streaks along the wind that blew it (ICE_SNOW_STREAK); drifted against a pool's walls.
+  vec2 snow = iceFbm(mat2(0.8, -0.6, 0.6, 0.8) * worldXZ * vec2(1.0, ICE_SNOW_STREAK), 0.7, footprint * ICE_SNOW_STREAK);
+  float drift = 0.07 * (1.0 - smoothstep(0.0, 8.0 * ICE_RIM, fromWall));
+  float threshold = mix(0.69, 0.56, thickShare) - drift;
+  float soft = 0.004 + 0.5 * snow.y * footprint;
+  float covered = smoothstep(threshold - soft, threshold + soft, snow.x);
+  float white = covered * (0.35 + 0.55 * smoothstep(threshold, threshold + 0.1, snow.x));
+  // The rim: ice frozen to the tiles, white with the air it trapped, its inner edge ragged.
+  if (fromWall < 2.0 * ICE_RIM) {
+    float rimWidth = ICE_RIM * (0.5 + 0.9 * valueNoise(worldXZ * 23.0));
+    white = max(white, 0.85 * (1.0 - smoothstep(rimWidth - 0.5 * footprint, rimWidth + 0.5 * footprint, fromWall)));
+  }
+  // Cloudy ice (ICE_CLOUDY): round the snow, where it froze from the slush the snow made, milky through and through,
+  // its edge as ragged as the snow's (the same field, ICE_CLOUDY_BAND under the snow's threshold).
+  float cloudy = smoothstep(threshold - ICE_CLOUDY_BAND - soft, threshold - ICE_CLOUDY_BAND + soft, snow.x) * (1.0 - covered);
+  float streaks = mix(0.5 + 0.5 * valueNoise(vec2(worldXZ.x * 9.0, worldXZ.y * 2.5) + 61.0), 0.75, smoothstep(0.01, 0.05, footprint));
+  white = max(white, ICE_CLOUDY * cloudy * streaks);
+  // Frosted where the snow lies and over the cloudy ice (rough, frost specks in it, the sun's sheen on it glinting),
+  // its edges theirs: the bare black ice between is a mirror.
+  float frosted = max(covered, cloudy);
+  if (frosted > 0.0) {
+    vec2 speckCell = floor(worldXZ / ICE_SPECK);
+    float speckSeed = hash21(speckCell + 3.3);
+    vec2 speckCentre = (speckCell + 0.2 + 0.6 * vec2(hash21(speckCell + 9.1), hash21(speckCell + 57.0))) * ICE_SPECK;
+    float speckRadius = mix(0.0005, 0.0016, hash21(speckCell + 23.0));
+    float speckOdds = 0.25 * frosted * smoothstep(0.35, 0.75, valueNoise(worldXZ * 6.0 + 2.0));
+    float speck = step(1.0 - speckOdds, speckSeed) * (1.0 - smoothstep(speckRadius - 0.5 * footprint, speckRadius + 0.5 * footprint, distance(worldXZ, speckCentre)));
+    float speckMean = speckOdds * PI * 0.0011 * 0.0011 / (ICE_SPECK * ICE_SPECK);
+    white = max(white, 0.7 * mix(speck, speckMean, smoothstep(0.0007, 0.003, footprint)));
+  }
+  look.white = white;
+  float frost = mix(mix(ICE_FROST.x, ICE_FROST.y, frosted), ICE_FROST.x, uIceWet);   // a film of rain glazes it
+  look.slopeVariance = frost * frost;
+  // The sheen on frost is its crystals' facets glinting, a few of them, brightly (ICE_GLINT cells, mean 1; under a
+  // pixel, their mean): a sheen even over a patch reads as a blur.
+  float facet = hash21(floor(worldXZ / ICE_GLINT) + 91.0);
+  look.glints = mix(1.0, mix(1.0, 13.0 * pow(facet, 12.0), frosted), 1.0 - smoothstep(0.5 * ICE_GLINT, 2.0 * ICE_GLINT, footprint));
+  // The crystals' boundaries, in the clear ice, in patches as the light catches them; none where a pixel is coarser.
+  look.grain = 0.0;
+  float grainShows = footprint < 0.02 && covered < 1.0 ? smoothstep(0.4, 0.75, valueNoise(worldXZ * 1.1 + 40.0)) * (1.0 - covered) * (1.0 - smoothstep(0.004, 0.02, footprint)) : 0.0;
+  if (grainShows > 0.0) {
+    vec2 grain = iceGrain(worldXZ);
+    look.grain = iceLine(grain.x, ICE_GRAIN_LINE, footprint) * grain.y * grainShows;
+  }
+  // Frozen bubbles: clusters of them (ICE_BUBBLE_CLUSTERS of the sheet, by
+  // a noise), in each cell of a cluster a dot of 0.7 to 2.5 mm radius at
+  // odds growing to its middle, half seen through the ice; under a pixel,
+  // their mean.
+  vec2 cell = floor(worldXZ / ICE_BUBBLE);
+  float seed = hash21(cell);
+  float cluster = smoothstep(1.0 - ICE_BUBBLE_CLUSTERS, 1.0 - 0.3 * ICE_BUBBLE_CLUSTERS, valueNoise(worldXZ * 3.1 + 5.0) * 0.7 + valueNoise(worldXZ * 9.0 + 2.0) * 0.3);
+  float present = step(1.0 - 0.55 * cluster, seed);
+  vec2 centre = (cell + 0.2 + 0.6 * vec2(hash21(cell + 17.0), hash21(cell + 41.0))) * ICE_BUBBLE;
+  float radius = mix(0.0007, 0.0025, hash21(cell + 73.0));
+  float bubble = present * (1.0 - smoothstep(radius - 0.5 * footprint, radius + 0.5 * footprint, distance(worldXZ, centre)));
+  float mean = 0.55 * cluster * PI * 0.0016 * 0.0016 / (ICE_BUBBLE * ICE_BUBBLE);
+  look.bubbles = 0.55 * mix(bubble, mean, smoothstep(0.0015, 0.006, footprint)) * (1.0 - look.white);
+  return look;
+}
+
+// A fracture face (a hole's broken edge) seen down through clear ice, at a
+// point along metres from its line on the side the view looks across it to
+// (positive where the face lies under the point), for a view whose
+// horizontal share across the line is across and whose zenith's sine is
+// sine: lit as white where the refracted ray meets the face, fading with
+// depth. The face reaches the sheet's thickness down.
+float fractureFace(float along, float across, float sine, float footprint) {
+  float sineInside = clamp(sine / ICE_INDEX, 0.0, 0.99);
+  float tangent = sineInside / sqrt(1.0 - sineInside * sineInside);
+  float width = uIceThickness * tangent * abs(across) + 1e-4;
+  // From its line, where it is brightest, fading out down the face (no hard far edge: the mask's distance there runs
+  // round the edge's turns), and as a band narrower than the pixel.
+  float depthShare = clamp(along / width, 0.0, 1.0);
+  float fade = (1.0 - depthShare) * (1.0 - depthShare);
+  return smoothstep(-0.5 * footprint, 0.5 * footprint, along) * fade * min(width / max(footprint, 1e-5), 1.0);
 }
 `;
 
@@ -171,8 +465,12 @@ vec2 galeSlope(vec2 restXZ, out float jacobian) {
 // passes its derivatives, a vertex shader the spacing it needs. The caller
 // branches on uRingCount, so with no ring alive none of this runs. Per ring
 // and pixel inside its annulus: one fetch (two for the floor's Laplacian)
-// and about 35 operations.
+// and about 35 operations. The rings come oldest first; the floor's
+// Laplacian takes only the youngest uCausticRings of them (CAUSTIC_RINGS
+// live ones, and those leaving the caustics, src/rings.js), each times its
+// share in uRingCaustics.
 #define MAX_RINGS ${MAX_RINGS}
+#define RING_CAUSTIC_VECTORS ${Math.ceil(MAX_RINGS / 4)}
 #define RING_PROFILE_TEXELS ${PROFILE_TEXELS.toFixed(1)}
 #define RING_PROFILE_MAPPING ${PROFILE_MAPPING.toFixed(4)}
 #define RING_METRES_PER_UNIT ${(1 / RING_TEXTURE_UNITS).toFixed(4)}
@@ -181,6 +479,8 @@ uniform int uRingCount;
 uniform vec4 uRingPlaces[MAX_RINGS];   // centre x, z; the direction θ is measured from, x, z
 uniform vec4 uRingShapes[MAX_RINGS];   // reach R (m), outer radius (m, at most R), layer, inner radius (m)
 uniform highp sampler2DArray uRingProfiles;
+uniform int uCausticRings;                          // the floor's caustics take the youngest this many rings...
+uniform vec4 uRingCaustics[RING_CAUSTIC_VECTORS];   // ...each by its share: ring i's is component i % 4 of vector i / 4
 
 // Where radius r lies along a ring's profile as a texture coordinate, and its
 // rate of change with r: u, then (u·(N − 1) + ½)/N.
@@ -237,10 +537,14 @@ vec2 ringSlope(vec2 worldXZ, vec2 acrossX, vec2 acrossY) {
 // The rings' Laplacian (1/m), for the floor's caustics: ∂²η0/∂r² + (∂η0/∂r)/r,
 // and (∂²η1/∂r² + (∂η1/∂r)/r − η1/r²)·cos θ, the second derivative differenced
 // over twice RING_CAUSTIC_STEP. Each lookup is averaged over the footprint.
+// Only the youngest uCausticRings rings, each times its share (src/rings.js).
 float ringLaplacian(vec2 worldXZ, vec2 acrossX, vec2 acrossY) {
   float laplacian = 0.0;
-  for (int index = 0; index < MAX_RINGS; index++) {
-    if (index >= uRingCount) break;
+  for (int rank = 0; rank < MAX_RINGS; rank++) {
+    int index = uRingCount - 1 - rank;   // rank 0 the youngest: the rings come oldest first
+    if (rank >= uCausticRings || index < 0) break;
+    float share = uRingCaustics[index / 4][index % 4];
+    if (share <= 0.0) continue;
     vec4 place = uRingPlaces[index];
     vec4 shape = uRingShapes[index];
     vec2 offset = worldXZ - place.xy;
@@ -260,7 +564,7 @@ float ringLaplacian(vec2 worldXZ, vec2 acrossX, vec2 acrossY) {
     vec2 bend = (outerProfile.xy - innerProfile.xy) / (2.0 * RING_CAUSTIC_STEP);
     float zeroth = bend.x + mean.x / middle;
     float first = bend.y + mean.y / middle - mean.z / (middle * middle);
-    laplacian += zeroth + first * dot(outward, place.zw);
+    laplacian += share * (zeroth + first * dot(outward, place.zw));
   }
   return laplacian * RING_METRES_PER_UNIT;
 }
@@ -292,6 +596,8 @@ vec3 sunGlitter(vec3 normal, vec3 toViewer, vec3 toSun, vec3 sunIrradiance, floa
   float shadowing = beckmannShadowing(nDotV, slopeVariance) * beckmannShadowing(max(nDotL, 1e-3), slopeVariance);
   return sunIrradiance * distribution * shadowing * fresnel / max(4.0 * nDotV * nDotL, 1e-3) * nDotL;
 }
+${ICE_COMMON}
+${SNOW_COVER}
 `;
 
 // The foam's bubble pattern, for WATER_FRAGMENT. The foam map
@@ -305,7 +611,12 @@ vec3 sunGlitter(vec3 normal, vec3 toViewer, vec3 toSun, vec3 sunIrradiance, floa
 //   lace    FOAM_LACE_CELL cells, the edges of a power diagram (cells of
 //           unequal size), each edge its own thickness, warped by value
 //           noise so they curve, sinking smoothly into each cell: the
-//           filaments around the holes that a thinning raft opens;
+//           filaments around the holes that a thinning raft opens. A
+//           raft's only: a boil, bubbles bursting as they surface (all a
+//           splash leaves on fresh water, src/splash.js), takes the lace
+//           as an unresolved layer, its median, as the map's boil share
+//           passes FOAM_LACE_BOIL_FROM to FOAM_LACE_BOIL_TO, so it is
+//           bubbles alone and covers about the same;
 //   coarse  FOAM_COARSE_CELL cells, a bubble 3 to 7 mm across in each;
 //   fine    FOAM_FINE_CELL cells, a bubble 1.7 to 3.3 mm across in each,
 //           packed so they nearly touch.
@@ -391,6 +702,8 @@ export const FOAM_PATTERN = /* glsl */`
 #define FOAM_CLUMP_FREQUENCY 35.0          // into filaments of uneven width, fragments and clumps (per metre)
 #define FOAM_FADE_START 0.18               // footprint over cell size
 #define FOAM_FADE_END 0.45
+#define FOAM_LACE_BOIL_FROM 0.5            // the lace goes as the map's boil share rises from this...
+#define FOAM_LACE_BOIL_TO 0.8              // ...to this: a boil is bubbles, a raft lace
 // Medians and spreads of the layers, measured over a large area: what a
 // fading layer tends to, and the width it hands to the threshold.
 #define FOAM_LACE_MEDIAN -0.61
@@ -505,7 +818,11 @@ FoamLook foamLook(vec2 position, vec2 acrossX, vec2 acrossY, float foam, vec2 fo
   float footprint = sqrt(sqrt(dot(acrossX, acrossX) * dot(acrossY, acrossY)));
   float fineFade = smoothstep(FOAM_FADE_START, FOAM_FADE_END, footprint / FOAM_FINE_CELL);
   float coarseFade = smoothstep(FOAM_FADE_START, FOAM_FADE_END, footprint / FOAM_COARSE_CELL);
-  float laceFade = smoothstep(FOAM_FADE_START, FOAM_FADE_END, footprint / FOAM_LACE_CELL);
+  // A boil is bubbles bursting as they surface, never a lace: where the map is
+  // mostly boil the lace layer is taken as unresolved (its median, and its
+  // spread widening the edge), so the cover stays and the filaments go. Only a
+  // raft, sea foam (the gale's whitecaps), thins into lace.
+  float laceFade = max(smoothstep(FOAM_FADE_START, FOAM_FADE_END, footprint / FOAM_LACE_CELL), smoothstep(FOAM_LACE_BOIL_FROM, FOAM_LACE_BOIL_TO, boilFraction));
   vec2 gradient = vec2(0.0);   // of the pattern, per metre
 
   // The lace: 1 on an edge, falling with the distance from it.
@@ -670,7 +987,11 @@ void main() {
 #endif
   float height = uInner > 0.5 ? texture2D(uHeight, domainUv).r + ambientHeight(world.xz) : 0.0;
   if (uInner > 0.5 && uRingCount > 0) height += ringHeight(world.xz, uMeshCell);
-  world.y += height * mask;
+  // Under the ice (ICE_COMMON) the surface lies still, the sheet's top its freeboard over the water (things rest on it
+  // there, src/ice.js top): the sheet is rigid.
+  float icedHere = uIceOn > 0.5 ? smoothstep(0.0, 0.02, iceMaskAt(world.xz).solid) : 0.0;
+  height *= 1.0 - icedHere;
+  world.y += height * mask + uIceTop * icedHere;
   vRest = world.xz;
 #ifdef CAVITY_MESH
   // The cavity is built on still water (src/cavity.js); the gale lifts it with the column.
@@ -705,12 +1026,89 @@ void main() {
 }
 `;
 
+// The pool (src/pool.js): a tiled basin, its walls rising out of the water to
+// the deck, and the deck round it. POOL_TILES is the tiles' albedo at a point
+// of the basin with its normal: square tiles of POOL_TILE with grout of
+// POOL_GROUT between them, laid from the pool's corner on the floor and from
+// the deck down on the walls, whose top BAND_ROWS rows, at the waterline, are
+// a deep blue; each tile a few percent lighter or darker than the next.
+// Antialiased: the grout's share of each pixel's footprint is the box
+// filter's exact integral over it (a grid's lines, Quilez's
+// "filterable procedurals"), the footprint from the screen derivatives of the
+// world position (smooth across the basin's corners) along the face's tile
+// axes, so far off the grout greys the tiles evenly rather than shimmering,
+// and the tiles' own variation fades out once a tile is under a pixel or so.
+const POOL_TILES = /* glsl */`
+uniform vec4 uPool;     // the pool's corner (x, z), its side and its depth (m)
+uniform float uDeck;    // m: the deck's level above the still water, the walls' top
+#define POOL_TILE 0.125
+#define POOL_GROUT 0.005
+#define BAND_ROWS 2.0
+#define TILE_COLOR vec3(0.74, 0.86, 0.88)
+#define GROUT_COLOR vec3(0.42, 0.45, 0.45)
+#define BAND_COLOR vec3(0.09, 0.27, 0.56)
+#define TILE_VARIATION 0.06
+// The share of a footprint (a box about cell, width wide, in tiles) that no
+// grout line covers: the lines are POOL_GROUT/POOL_TILE of a tile wide, at
+// each tile's low edge.
+float tileCover(vec2 cell, vec2 width) {
+  float lines = POOL_TILE / POOL_GROUT;
+  vec2 high = cell + 0.5 * width;
+  vec2 low = cell - 0.5 * width;
+  vec2 covered = (floor(high) + min(fract(high) * lines, 1.0) - floor(low) - min(fract(low) * lines, 1.0)) / (lines * width);
+  return (1.0 - covered.x) * (1.0 - covered.y);
+}
+// A face's tile axes at a point (in tiles): across the floor from the
+// pool's corner; along a wall from its corner, and down from the deck. And
+// a world step's length along them.
+vec2 tileCell(vec3 point, vec3 normal) {
+  if (abs(normal.y) > 0.5) return (point.xz - uPool.xy) / POOL_TILE;
+  if (abs(normal.x) > 0.5) return vec2(point.z - uPool.y, uDeck - point.y) / POOL_TILE;
+  return vec2(point.x - uPool.x, uDeck - point.y) / POOL_TILE;
+}
+vec2 tileStep(vec3 step, vec3 normal) {
+  if (abs(normal.y) > 0.5) return step.xz / POOL_TILE;
+  if (abs(normal.x) > 0.5) return vec2(step.z, -step.y) / POOL_TILE;
+  return vec2(step.x, -step.y) / POOL_TILE;
+}
+// The tiles' albedo over a footprint width tiles wide (no derivatives: the
+// mirror under the surface, WATER_UNDER_FRAGMENT, marches to it).
+vec3 poolTileColor(vec3 point, vec3 normal, vec2 width) {
+  vec2 cell = tileCell(point, normal);
+  bool wall = abs(normal.y) < 0.5;
+  vec3 tile = wall && cell.y < BAND_ROWS ? BAND_COLOR : TILE_COLOR;
+  float variation = (hash21(floor(cell) + (wall ? normal.xz * 37.0 : vec2(0.0))) - 0.5) * 2.0 * TILE_VARIATION;
+  tile *= 1.0 + variation * (1.0 - smoothstep(0.4, 1.2, max(width.x, width.y)));
+  return mix(GROUT_COLOR, tile, tileCover(cell, width));
+}
+// The tiles' albedo over this pixel's footprint (from the screen derivatives
+// of the true point, smooth across the basin's corners).
+vec3 poolTiles(vec3 point, vec3 normal) {
+  vec2 width = max(abs(tileStep(dFdx(point), normal)), abs(tileStep(dFdy(point), normal))) + 1e-3;
+  return poolTileColor(point, normal, width);
+}
+// The way along a ray from a point in the pool to its basin, and the face
+// it meets there: the floor, or the first wall in its way.
+float toBasin(vec3 origin, vec3 ray, out vec3 normal) {
+  vec2 low = uPool.xy;
+  vec2 high = uPool.xy + uPool.z;
+  float along = (-uPool.w - origin.y) / min(ray.y, -1e-5);
+  normal = vec3(0.0, 1.0, 0.0);
+  float wall = ray.x > 1e-5 ? (high.x - origin.x) / ray.x : ray.x < -1e-5 ? (low.x - origin.x) / ray.x : 1e4;
+  if (wall < along) { along = wall; normal = vec3(-sign(ray.x), 0.0, 0.0); }
+  wall = ray.z > 1e-5 ? (high.y - origin.z) / ray.z : ray.z < -1e-5 ? (low.y - origin.z) / ray.z : 1e4;
+  if (wall < along) { along = wall; normal = vec3(0.0, 0.0, -sign(ray.z)); }
+  return max(along, 0.0);
+}
+`;
+
 export const WATER_FRAGMENT = /* glsl */`
 #include <packing>
 uniform sampler2D uHeight;
 uniform sampler2D uFoam;
 uniform vec2 uFoamDrift;          // how far the wind has carried the foam (m): its pattern drifts with the map
 uniform sampler2D uReflection;    // the sky dome seen through a mirrored camera; alpha: nearness (MIRROR_COMMON, src/shaders/fluid.js)
+uniform samplerCube uSkyCube;     // the sky as the droplets reflect it (src/sky.js), mipmapped: the ice's frosted mirror
 uniform mat4 uReflectionMatrix;   // world -> reflection texture coordinates
 uniform vec4 uMirrorNear;         // the splash's image in the mirror, uv corners (x0, y0, x1, y1); empty (x0 > x1) when none
 uniform vec2 uMirrorSize;         // the mirror image's pixels
@@ -748,6 +1146,7 @@ varying vec3 vNormalWorld;
 varying vec3 vCavity;       // rides the surface, open to the sky, climb to escape (WATER_VERTEX)
 #endif
 ${GLSL_COMMON}
+${POOL_TILES}
 ${FOAM_PATTERN}
 ${RAIN_RIPPLES}
 ${DROP_RING_SLOPES}
@@ -849,6 +1248,138 @@ vec3 nearReflection(vec2 rippleUv, vec3 ray) {
   return texture2D(uReflection, flatTexel).rgb;
 }
 
+// The pool's tiles' fine detail, which the under-water pass, drawn coarser
+// than the screen (src/main.js QUALITY's underScale), smoothed away. The
+// pass draws the basin where the still surface shows it (SEEN_THROUGH_WATER:
+// each point moved along the surface to where the ray it is seen by crosses
+// it), so at a point of the surface it shows the tiles where the eye's ray,
+// bent into the water there, meets the basin (basinSeen), and its depth is
+// that point's height on the straight ray. The detail is the tiles' pattern
+// there over this pixel's footprint (from the bent rays of the points a
+// pixel either way, acrossX and acrossY the surface's), against the same
+// over the pass's texel there (its pixel magnified and bilinearly filtered,
+// about 1.4 of them), as a factor on what the pass shows: the grout keeps
+// the screen's sharpness and the pass its light, caustics and shadows. 1
+// where the pass is at the screen's resolution, in a lake, or where
+// something under the water stands in front of the basin (the pass's depth
+// there is not the basin's).
+vec3 basinSeen(vec3 surfacePoint, out vec3 normal) {
+  vec3 ray = normalize(surfacePoint - cameraPosition);
+  vec3 bent = refract(ray, vec3(0.0, 1.0, 0.0), 1.0 / 1.333);
+  return surfacePoint + bent * toBasin(surfacePoint, bent, normal);
+}
+vec3 poolDetail(vec3 point, vec2 acrossX, vec2 acrossY, float underDistZ, float surfaceDistZ) {
+  if (uPool.w <= 0.0) return vec3(1.0);
+  vec2 underScale = vec2(textureSize(uUnderColor, 0)) / uResolution;
+  float coarse = 1.0 / max(min(underScale.x, underScale.y), 1e-3);
+  if (coarse < 1.05) return vec3(1.0);
+  vec3 normal, besideNormal;
+  vec3 hit = basinSeen(point, normal);
+  vec3 ray = point - cameraPosition;
+  float toSurface = max(length(ray), 1e-5);
+  float straight = (point.y - hit.y) / max(-ray.y / toSurface, 1e-4);
+  float expected = surfaceDistZ * (toSurface + straight) / toSurface;
+  if (abs(underDistZ - expected) > 0.03 * expected) return vec3(1.0);
+  vec2 stepX = tileStep(basinSeen(point + vec3(acrossX.x, 0.0, acrossX.y), besideNormal) - hit, normal);
+  vec2 stepY = tileStep(basinSeen(point + vec3(acrossY.x, 0.0, acrossY.y), besideNormal) - hit, normal);
+  vec2 width = max(abs(stepX), abs(stepY)) + 1e-3;
+  return poolTileColor(hit, normal, width) / max(poolTileColor(hit, normal, width * coarse * 1.4), vec3(0.02));
+}
+
+// The ice's surface at this pixel (ICE_COMMON; mask iceMaskAt's here,
+// footprint the pixel's on the water), before the haze: the mirror (the
+// still mirror's texel, blurred toward the sky's cube by the frost), with
+// ice's Fresnel; under it the clear ice's view of the water as still water
+// shows it (the under-water pass, unbent), veiled by the light the ice
+// scatters back along the ray (ICE_SCATTER), or the light its snow ice,
+// frost specks, bubbles and crystals' boundaries scatter (iceLook); the
+// sun's sheen on the frost; the hole's broken edge, its fracture face seen
+// through the clear ice (fractureFace), and the wet round a hole; new ice
+// over a hole clear and glazed, its old edge a seam (ICE_COMMON's header).
+// Snow lies on it as on the ground (SNOW_COVER), but where it is new or wet.
+// Its cracks are drawn over it (src/iceCracks.js). In the pool the tiles
+// under it keep their detail (poolDetail; acrossX and acrossY the pixel's
+// footprint on the surface, taken where the derivatives are good).
+vec3 iceSurface(IceMask mask, float footprint, vec2 acrossX, vec2 acrossY) {
+  IceLook look = iceLook(vWorld.xz, footprint);
+  vec3 toCamera = cameraPosition - vWorld;
+  float viewDist = length(toCamera);
+  vec3 v = toCamera / viewDist;
+  vec3 n = vec3(0.0, 1.0, 0.0);
+  // New ice over a hole (src/ice.js REFREEZE): clear, none of the sheet's snow ice, crystals, specks or bubbles.
+  float newIce = smoothstep(-0.5 * footprint, 0.5 * footprint, mask.skin) * (1.0 - smoothstep(-0.5 * footprint, 0.5 * footprint, mask.hole));
+  look.white *= 1.0 - newIce;
+  look.bubbles *= 1.0 - newIce;
+  look.grain *= 1.0 - newIce;
+  // The hole's edge (ICE_COMMON): the mask's gradient says which way it runs. Lapped by its open water, it is a fracture
+  // face seen through the ice; skinned over beside it, a seam.
+  float face = 0.0, seam = 0.0, lapped = 1.0;
+  if (mask.hole < 0.95 * uIceFar) {
+    float offset = 0.006;
+    vec2 edgeGradient = vec2(iceMaskAt(vWorld.xz + vec2(offset, 0.0)).hole - mask.hole, iceMaskAt(vWorld.xz + vec2(0.0, offset)).hole - mask.hole) / offset;
+    if (dot(edgeGradient, edgeGradient) > 1e-6) {
+      vec2 travel = normalize(vWorld.xz - cameraPosition.xz + 1e-6);   // the way the eye's ray goes, level
+      vec2 outward = normalize(edgeGradient);
+      // Just inside the hole beside it: skinned over there, the edge is a seam in the ice.
+      float covered = smoothstep(-0.003, 0.003, iceMaskAt(vWorld.xz - outward * (max(mask.hole, 0.0) + 0.008)).skin);
+      lapped = 1.0 - covered;
+      float across = dot(travel, outward);
+      if (across < 0.0) face = fractureFace(mask.hole, across, length(v.xz), footprint) * lapped;
+      seam = covered * iceLine(mask.hole, 0.0007, footprint);
+    }
+  }
+  // Wet: the rain's film, the flood and the drops (the mask's), and where open water laps a hole's edge (its edge
+  // ragged). Wet, glazed (once wet) or new, it is smooth (ICE_GLAZED).
+  float edgeWet = (1.0 - smoothstep(0.0, ICE_WET_EDGE, mask.hole + 0.015 * (valueNoise(vWorld.xz * 40.0) - 0.5))) * 0.8 * lapped;
+  float wet = max(max(uIceWet, mask.wet), edgeWet);
+  float slopeVariance = mix(look.slopeVariance, ICE_GLAZED * ICE_GLAZED, max(max(wet, mask.glaze), newIce));
+  float nDotV = max(dot(n, v), 0.0);
+  float fresnel = 0.018 + 0.982 * pow(1.0 - nDotV, 5.0);
+  vec3 reflectedRay = reflect(-v, n);
+  reflectedRay.y = max(reflectedRay.y, 0.001);
+  vec4 reflectCoord = uReflectionMatrix * vec4(reflectedRay, 0.0);
+  vec4 stillRayCoord = uReflectionMatrix * vec4(-v.x, v.y, -v.z, 0.0);
+  vec4 stillPointCoord = uReflectionMatrix * vec4(vWorld.x, uMirrorLevel, vWorld.z, 1.0);
+  vec2 reflectUv = stillPointCoord.xy / max(stillPointCoord.w, 1e-4) + reflectCoord.xy / max(reflectCoord.w, 1e-4) - stillRayCoord.xy / max(stillRayCoord.w, 1e-4);
+  vec3 reflected = uMirrorNear.x > uMirrorNear.z ? texture2D(uReflection, clamp(reflectUv, vec2(0.002), vec2(0.998))).rgb : nearReflection(reflectUv, reflectedRay);
+  // Frost spreads the reflected ray over about twice its rms slope: past a little frost the mirror is the sky's cube
+  // (the dome, which the mirror image holds but for what is near) blurred by its mip levels that wide (ICE_FROST_LEVELS
+  // a radian).
+  float spread = 2.0 * sqrt(slopeVariance);
+  vec3 frosted = textureCubeLodEXT(uSkyCube, reflectedRay, clamp(log2(max(spread * ICE_FROST_LEVELS, 1.0)), 0.0, ICE_FROST_COARSEST)).rgb;
+  // The cube holds the sun's disc (capped, src/sky.js), which the frost would spread into a broad soft blob: the sun's
+  // light on the frost is its sheen (sunGlitter, below), so the frosted sky is held to ICE_FROST_SKY of its mean.
+  float frostedLuminance = dot(frosted, vec3(0.2126, 0.7152, 0.0722)), skyLuminance = dot(uSkyAmbient, vec3(0.2126, 0.7152, 0.0722));
+  frosted *= min(1.0, ICE_FROST_SKY * skyLuminance / max(frostedLuminance, 1e-6));
+  reflected = mix(reflected, frosted, smoothstep(0.05, 0.15, spread));
+  vec2 screenUv = gl_FragCoord.xy / uResolution;
+  float surfaceDistZ = -vViewZ;
+  float rawDepth = texture2D(uUnderDepth, screenUv).r;
+  float underDistZ = rawDepth >= 1.0 ? uFar : -perspectiveDepthToViewZ(rawDepth, uNear, uFar);
+  float path = max(underDistZ - surfaceDistZ, 0.0) * viewDist / max(surfaceDistZ, 1e-4);
+  vec3 under = mix(uWaterColor, texture2D(uUnderColor, screenUv).rgb * poolDetail(vWorld, acrossX, acrossY, underDistZ, surfaceDistZ), exp(-uExtinction * path));
+  vec3 light = uSunIrradiance * max(dot(n, uSunDir), 0.0) + uSkyAmbient * ICE_SKY_LIGHT;
+  vec3 scattered = ICE_WHITE_ALBEDO * light * mix(1.0, 0.6, wet);
+  // Its veil (ICE_COMMON's header): the share of the light the clear ice scatters back along the refracted ray's path
+  // through it, a new skin's (src/ice.js REFREEZE.skin) a few millimetres.
+  float sineInside = clamp(length(v.xz) / ICE_INDEX, 0.0, 0.99);
+  float through = mix(uIceThickness, min(uIceThickness, 0.004), newIce) / sqrt(1.0 - sineInside * sineInside);
+  float veil = (1.0 - exp(-ICE_SCATTER * through)) * (1.0 - 0.6 * wet);
+  float white = clamp(look.white + look.bubbles + ICE_GRAIN_SEEN * look.grain + veil, 0.0, 1.0);
+  float clear = 1.0 - look.white;
+  vec3 body = mix(under, scattered, white);
+  // A fracture face in clear ice turns the light back as a mirror would: it shows white, as the sky's light it sends up.
+  body = mix(body, scattered * 1.15, face * clear);
+  vec3 color = mix(body, reflected, fresnel * mix(1.0 - 0.6 * look.white, 1.0, wet));
+  color += min(sunGlitter(n, v, uSunDir, uSunIrradiance, slopeVariance + 1e-5) * mix(look.glints, 1.0, max(wet, newIce)), vec3(400.0)) * mix(1.0 - 0.5 * look.white, 1.0, wet);
+  // An old edge in new ice: a faint dark seam.
+  color = mix(color, under * 0.7, 0.5 * seam);
+  // Snow lying on it (SNOW_COVER), as on the ground: none on new ice, none where it is wet (the flood's, a drop's).
+  float snow = snowOnIce(vWorld.xz, footprint) * (1.0 - newIce) * (1.0 - wet);
+  if (snow > 0.0) color = mix(color, snowShade(vWorld.xz) * light, snow);
+  return color;
+}
+
 void main() {
   if (cameraPosition.y > vWorld.y) {
     for (int index = 0; index < DRY_DISCS; index++) {
@@ -857,6 +1388,24 @@ void main() {
       if (dot(fromCentre, fromCentre) < uDryDiscs[index].z) discard;
     }
   }
+  // The ice (ICE_COMMON): where its mask says ice, the surface is the ice's (iceSurface), blended with the water's over
+  // the pixel at a hole's edge. A cavity's lip stands on no ice: what of it reaches over the ice, above the water, is gone.
+  vec2 surfaceAcrossX = dFdx(vWorld.xz), surfaceAcrossY = dFdy(vWorld.xz);
+  float iceFootprint = max(length(surfaceAcrossX), length(surfaceAcrossY));
+  float iced = 0.0;
+  IceMask iceAt;
+#ifdef CAVITY_MESH
+  if (uIceOn > 0.5 && vWorld.y > -0.002 && iceMaskAt(vWorld.xz).solid > 0.0) discard;
+#else
+  if (uIceOn > 0.5) {
+    iceAt = iceMaskAt(vWorld.xz);
+    iced = iceCover(iceAt.solid, iceFootprint);
+    if (iced > 0.999) {
+      gl_FragColor = vec4(min(withHaze(iceSurface(iceAt, iceFootprint, surfaceAcrossX, surfaceAcrossY), length(cameraPosition - vWorld)), vec3(1000.0)), 1.0);
+      return;
+    }
+  }
+#endif
   float texelStep = 1.0 / uN;
   float hl = texture2D(uHeight, vDomainUv - vec2(texelStep, 0.0)).r;
   float hr = texture2D(uHeight, vDomainUv + vec2(texelStep, 0.0)).r;
@@ -961,6 +1510,11 @@ void main() {
   // with the bed's own deepening (src/pondFloor.js) the sand fades out with
   // distance a little sooner than through flat water of that depth.
   vec3 underColor = texture2D(uUnderColor, refractUv).rgb;
+#ifndef CAVITY_MESH
+  // Still pool water keeps its tiles' detail as the ice does (poolDetail), while the lookup moves under a pixel.
+  float shiftPixels = length(refractShift * uResolution);
+  if (uPool.w > 0.0 && shiftPixels < 1.0) underColor *= mix(poolDetail(vWorld, acrossX, acrossY, underDistZ, surfaceDistZ), vec3(1.0), smoothstep(0.3, 1.0, shiftPixels));
+#endif
   vec3 refracted = mix(uWaterColor, underColor, exp(-uExtinction * path2));
 
   // Reflection of the sky and the far shore (the dome's photograph) and the
@@ -1039,6 +1593,7 @@ void main() {
     color = mix(color, foamColor, look.cover * look.opacity);
   }
 
+  if (iced > 0.0) color = mix(color, iceSurface(iceAt, iceFootprint, surfaceAcrossX, surfaceAcrossY), iced);
   color = withHaze(color, viewDist);
   gl_FragColor = vec4(min(color, vec3(1000.0)), 1.0);
 }
@@ -1126,7 +1681,9 @@ vec3 floorSand(vec2 point) {
 // detail; outside the splash's patch, mask 0, there is nothing to sample);
 // the ambient ripples', a web of caustics drifting with them; and the
 // rings' (src/rings.js), each averaged over the pixel's footprint where its
-// sunlight crossed the surface, so a ring throws a ring of light. Called in
+// sunlight crossed the surface, so a ring throws a ring of light; under the
+// ice (ICE_COMMON) none of them, the frozen surface flat, but where the
+// sunlight crossed a hole's water. Called in
 // uniform control flow (it takes the crossing's screen derivatives).
 // causticLight is the irradiance against the sun's own for a focus of
 // 1 + focusing · depth · curvature (src/pondFloor.js): 1/focus for small
@@ -1155,6 +1712,8 @@ float surfaceCurvature(vec2 surfacePoint) {
   vec2 surfaceAcrossY = dFdy(surfacePoint);
   float curvature = laplacian * mask + ambientLaplacian(surfacePoint);
   if (uRingCount > 0) curvature += ringLaplacian(surfacePoint, surfaceAcrossX, surfaceAcrossY);
+  // Under the ice (ICE_COMMON) the surface is flat: it focuses nothing; only a hole's water does.
+  if (uIceOn > 0.5) curvature *= 1.0 - smoothstep(0.0, 0.02, iceMaskAt(surfacePoint).solid);
   return curvature;
 }
 float causticLight(float focus) {
@@ -1165,68 +1724,6 @@ float causticLight(float focus) {
 }
 `;
 
-// The pool (src/pool.js): a tiled basin, its walls rising out of the water to
-// the deck, and the deck round it. POOL_TILES is the tiles' albedo at a point
-// of the basin with its normal: square tiles of POOL_TILE with grout of
-// POOL_GROUT between them, laid from the pool's corner on the floor and from
-// the deck down on the walls, whose top BAND_ROWS rows, at the waterline, are
-// a deep blue; each tile a few percent lighter or darker than the next.
-// Antialiased: the grout's share of each pixel's footprint is the box
-// filter's exact integral over it (a grid's lines, Quilez's
-// "filterable procedurals"), the footprint from the screen derivatives of the
-// world position (smooth across the basin's corners) along the face's tile
-// axes, so far off the grout greys the tiles evenly rather than shimmering,
-// and the tiles' own variation fades out once a tile is under a pixel or so.
-const POOL_TILES = /* glsl */`
-uniform vec4 uPool;     // the pool's corner (x, z), its side and its depth (m)
-uniform float uDeck;    // m: the deck's level above the still water, the walls' top
-#define POOL_TILE 0.125
-#define POOL_GROUT 0.005
-#define BAND_ROWS 2.0
-#define TILE_COLOR vec3(0.74, 0.86, 0.88)
-#define GROUT_COLOR vec3(0.42, 0.45, 0.45)
-#define BAND_COLOR vec3(0.09, 0.27, 0.56)
-#define TILE_VARIATION 0.06
-// The share of a footprint (a box about cell, width wide, in tiles) that no
-// grout line covers: the lines are POOL_GROUT/POOL_TILE of a tile wide, at
-// each tile's low edge.
-float tileCover(vec2 cell, vec2 width) {
-  float lines = POOL_TILE / POOL_GROUT;
-  vec2 high = cell + 0.5 * width;
-  vec2 low = cell - 0.5 * width;
-  vec2 covered = (floor(high) + min(fract(high) * lines, 1.0) - floor(low) - min(fract(low) * lines, 1.0)) / (lines * width);
-  return (1.0 - covered.x) * (1.0 - covered.y);
-}
-// A face's tile axes at a point (in tiles): across the floor from the
-// pool's corner; along a wall from its corner, and down from the deck. And
-// a world step's length along them.
-vec2 tileCell(vec3 point, vec3 normal) {
-  if (abs(normal.y) > 0.5) return (point.xz - uPool.xy) / POOL_TILE;
-  if (abs(normal.x) > 0.5) return vec2(point.z - uPool.y, uDeck - point.y) / POOL_TILE;
-  return vec2(point.x - uPool.x, uDeck - point.y) / POOL_TILE;
-}
-vec2 tileStep(vec3 step, vec3 normal) {
-  if (abs(normal.y) > 0.5) return step.xz / POOL_TILE;
-  if (abs(normal.x) > 0.5) return vec2(step.z, -step.y) / POOL_TILE;
-  return vec2(step.x, -step.y) / POOL_TILE;
-}
-// The tiles' albedo over a footprint width tiles wide (no derivatives: the
-// mirror under the surface, WATER_UNDER_FRAGMENT, marches to it).
-vec3 poolTileColor(vec3 point, vec3 normal, vec2 width) {
-  vec2 cell = tileCell(point, normal);
-  bool wall = abs(normal.y) < 0.5;
-  vec3 tile = wall && cell.y < BAND_ROWS ? BAND_COLOR : TILE_COLOR;
-  float variation = (hash21(floor(cell) + (wall ? normal.xz * 37.0 : vec2(0.0))) - 0.5) * 2.0 * TILE_VARIATION;
-  tile *= 1.0 + variation * (1.0 - smoothstep(0.4, 1.2, max(width.x, width.y)));
-  return mix(GROUT_COLOR, tile, tileCover(cell, width));
-}
-// The tiles' albedo over this pixel's footprint (from the screen derivatives
-// of the true point, smooth across the basin's corners).
-vec3 poolTiles(vec3 point, vec3 normal) {
-  vec2 width = max(abs(tileStep(dFdx(point), normal)), abs(tileStep(dFdy(point), normal))) + 1e-3;
-  return poolTileColor(point, normal, width);
-}
-`;
 
 // Seen from an eye under the water (the Under view, src/main.js): the water
 // between a point and the eye dims its light by the extinction and fills in
@@ -1245,7 +1742,8 @@ vec3 poolTiles(vec3 point, vec3 normal) {
 // mean sunlight dimmed by the water on its way down and on to the eye, and
 // scattered toward the eye by a forward-peaked phase function
 // (Henyey–Greenstein, SHAFT_FORWARD): bright looking toward the sun, faint
-// away from it.
+// away from it. Under the ice (ICE_COMMON) the sunlight is not focused, and
+// there are shafts only under its holes.
 export const UNDER_FOG = /* glsl */`
 uniform vec3 uExtinction;
 uniform vec3 uWaterColor;
@@ -1275,6 +1773,8 @@ vec3 underwaterShafts(vec3 origin, vec3 direction, float distance) {
     float depth = max(-point.y, 0.0);
     vec2 crossing = point.xz + toSun.xz / toSun.y * depth;
     float curvature = texture2DLodEXT(uAmbientHeight, crossing / uAmbientTileSize, SHAFT_LEVEL).a * uAmbientMetresPerUnit * gustEnvelope(crossing, uGustTime);
+    if (uIceOn > 0.5) curvature *= 1.0 - smoothstep(0.0, 0.02, iceMaskAt(crossing).solid);   // under the ice, flat: no shafts
+
     float focus = 1.0 + focusing * depth * curvature;
     float irradiance = sqrt(1.0 + SHAFT_BLUR * SHAFT_BLUR) * inversesqrt(focus * focus + SHAFT_BLUR * SHAFT_BLUR);
     sum += (min(irradiance, 3.0) - 1.0) * exp(-uExtinction * (along + depth / refractedCosine));
@@ -1367,19 +1867,6 @@ ${POOL_TILES}
 #define FOAM_SEEN 0.6        // floating foam's light seen from below, against the sun's and sky's on it
 #define TILE_BLUR 0.004      // the pool's tiles' footprint per metre of the way to them (radians), over...
 #define TILE_BLUR_LEAST 0.01 // ...this much (m)
-// The way along a ray from a point in the pool to its basin, and the face
-// it meets there: the floor, or the first wall in its way.
-float toBasin(vec3 origin, vec3 ray, out vec3 normal) {
-  vec2 low = uPool.xy;
-  vec2 high = uPool.xy + uPool.z;
-  float along = (-uPool.w - origin.y) / min(ray.y, -1e-5);
-  normal = vec3(0.0, 1.0, 0.0);
-  float wall = ray.x > 1e-5 ? (high.x - origin.x) / ray.x : ray.x < -1e-5 ? (low.x - origin.x) / ray.x : 1e4;
-  if (wall < along) { along = wall; normal = vec3(-sign(ray.x), 0.0, 0.0); }
-  wall = ray.z > 1e-5 ? (high.y - origin.z) / ray.z : ray.z < -1e-5 ? (low.y - origin.z) / ray.z : 1e4;
-  if (wall < along) { along = wall; normal = vec3(0.0, 0.0, -sign(ray.z)); }
-  return max(along, 0.0);
-}
 void main() {
   float texelStep = 1.0 / uN;
   float hl = texture2D(uHeight, vDomainUv - vec2(texelStep, 0.0)).r;
@@ -1397,6 +1884,17 @@ void main() {
     float galeJacobian;
     slope += galeSlope(vRest, galeJacobian);
   }
+  // Under the ice (ICE_COMMON) the surface is still: its window shows the sky unrippled (its underside below).
+  float iceFootprint = max(length(acrossX), length(acrossY));
+  float iced = 0.0;
+  IceMask iceAt;
+#ifndef CAVITY_MESH
+  if (uIceOn > 0.5) {
+    iceAt = iceMaskAt(vWorld.xz);
+    iced = iceCover(iceAt.solid, iceFootprint);
+    slope *= 1.0 - iced;
+  }
+#endif
 #ifdef CAVITY_MESH
   vec3 n = normalize(vNormalWorld);
 #else
@@ -1448,9 +1946,126 @@ void main() {
 #endif
     color = mix(sky, color, fresnel);
   }
-  float foam = texture2D(uFoam, vDomainUv).r * vMask;
+  float foam = texture2D(uFoam, vDomainUv).r * vMask * (1.0 - iced);
   color = mix(color, (uSunIrradiance * max(uSunDir.y, 0.0) + uSkyAmbient) * FOAM_SEEN, smoothstep(0.05, 0.6, foam) * 0.8);
+  // The ice's underside: clear ice lets the window's sky through as still water does; snow ice, frost and bubbles glow
+  // with the light they scatter down through the sheet; in a hole's new ice (clear: no snow ice) its old edge shows, a
+  // faint seam. Its cracks are drawn over it, dark (src/iceCracks.js).
+  if (iced > 0.0) {
+    IceLook look = iceLook(vWorld.xz, iceFootprint);
+    float newIce = smoothstep(-0.5 * iceFootprint, 0.5 * iceFootprint, iceAt.skin) * (1.0 - smoothstep(-0.5 * iceFootprint, 0.5 * iceFootprint, iceAt.hole));
+    float white = clamp(look.white + look.bubbles, 0.0, 1.0) * (1.0 - newIce);
+    float seam = smoothstep(0.0, 0.004, iceAt.skin) * iceLine(iceAt.hole, 0.0007, iceFootprint);
+    vec3 glow = (uSunIrradiance * max(uSunDir.y, 0.0) + uSkyAmbient) * ICE_UNDER_GLOW;
+    vec3 ceiling = mix(color, glow, 0.85 * white) * (1.0 - 0.3 * seam);
+    // Snow on it (SNOW_COVER, iceSurface) shuts the window: only the light it lets through glows.
+    float snow = snowOnIce(vWorld.xz, iceFootprint) * (1.0 - newIce) * (1.0 - max(uIceWet, iceAt.wet));
+    ceiling = mix(ceiling, glow * ICE_SNOW_GLOW, snow);
+    color = mix(color, ceiling, iced);
+  }
   gl_FragColor = vec4(min(throughWater(color, vWorld), vec3(1000.0)), 1.0);
+}
+`;
+
+// The ice's cracks (src/iceCracks.js): each a ribbon along its points on the
+// sheet's top (from under the water, just under it), as wide as the crack's
+// line, the fracture face beside it as seen through the ice and a pixel and
+// a half more, so the fragment shader antialiases it. aLine is the point
+// (x, z) and the normal there (the miter of its two segments); aShape the
+// side (−1, +1), the line's half-width there (m), the miter's stretch and
+// the crack's shade. The face (a crack's plane, down through the sheet) is
+// seen on the side the eye is on, as wide as the sheet's thickness along
+// the refracted ray, times the view's share across the crack (as a hole's
+// edge: fractureFace in ICE_COMMON). A pixel's width across the line comes
+// from where the line and a millimetre off it land on the screen.
+export const ICE_CRACK_VERTEX = /* glsl */`
+${ICE_UNIFORMS}
+attribute vec4 aLine;
+attribute vec4 aShape;
+uniform vec2 uResolution;
+varying vec2 vWorldXZ;
+varying float vAcross;      // m off the line, by its side
+varying float vHalfWidth;   // m
+varying float vShade;
+varying float vFace;        // m: the face's width as seen, on the eye's side
+varying float vNearSide;    // the eye's side (−1, +1)
+varying float vBelow;       // 1 seen from under the water
+void main() {
+  vec2 point = aLine.xy, normal = aLine.zw;
+  float below = cameraPosition.y < uIceTop ? 1.0 : 0.0;
+  vec3 centre = vec3(point.x, uIceTop + (below > 0.5 ? -0.0006 : 0.0004), point.y);
+  vec3 toCamera = cameraPosition - centre;
+  float level = length(toCamera.xz);
+  float sineInside = clamp(level / max(length(toCamera), 1e-6) / ICE_INDEX, 0.0, 0.99);
+  float facing = level > 1e-6 ? dot(normal, toCamera.xz / level) : 0.0;
+  vNearSide = facing >= 0.0 ? 1.0 : -1.0;
+  vFace = below > 0.5 ? 0.0 : uIceThickness * sineInside / sqrt(1.0 - sineInside * sineInside) * abs(facing);
+  vec4 clipCentre = projectionMatrix * viewMatrix * vec4(centre, 1.0);
+  vec4 clipOff = projectionMatrix * viewMatrix * vec4(centre + vec3(normal.x, 0.0, normal.y) * 0.001, 1.0);
+  float pixels = length((clipOff.xy / max(clipOff.w, 1e-4) - clipCentre.xy / max(clipCentre.w, 1e-4)) * 0.5 * uResolution);
+  float pixel = min(0.001 / max(pixels, 1e-4), 0.02);
+  float side = aShape.x;
+  float extent = aShape.y + ICE_CRACK_JAG + 1.5 * pixel + (side * vNearSide > 0.0 ? vFace : 0.0);
+  vec3 world = centre + vec3(normal.x, 0.0, normal.y) * side * extent * aShape.z;
+  vAcross = side * extent;
+  vHalfWidth = aShape.y;
+  vShade = aShape.w;
+  vBelow = below;
+  vWorldXZ = world.xz;
+  gl_Position = projectionMatrix * viewMatrix * vec4(world, 1.0);
+}
+`;
+
+// A crack's colour and cover at a pixel (ICE_CRACK_VERTEX): its line, a box
+// filter of its width over the pixel, roughened finer than its points
+// (ICE_CRACK_JAG, near the eye); its face on the eye's side, from the line,
+// fading down it. Over clear ice both show white, the light the broken
+// faces send back; over snow ice the line is dark (water seeps up it) and
+// the face unseen; wet, both fainter. None over a hole's water or its new
+// ice (the mask). From under the water a crack is a dark line across the
+// light the sheet lets down, dimmed by the water between.
+export const ICE_CRACK_FRAGMENT = /* glsl */`
+uniform vec3 uSunDir;
+uniform vec3 uSunIrradiance;
+uniform vec3 uSkyAmbient;
+uniform vec3 uExtinction;
+varying vec2 vWorldXZ;
+varying float vAcross;
+varying float vHalfWidth;
+varying float vShade;
+varying float vFace;
+varying float vNearSide;
+varying float vBelow;
+${GLSL_COMMON}
+${HAZE}
+#define CRACK_SNOWED 0.85   // the share of a crack the snow on the ice hides
+void main() {
+  float footprint = max(fwidth(vAcross), 1e-6);
+  IceMask mask = iceMaskAt(vWorldXZ);
+  if (mask.hole < 0.0) discard;
+  float jag = ICE_CRACK_JAG * (valueNoise(vWorldXZ * 330.0) + 0.6 * valueNoise(vWorldXZ * 910.0 + 5.0) - 0.8) * (1.0 - smoothstep(0.0008, 0.003, footprint));
+  float across = vAcross + jag;
+  float line = iceLine(across, vHalfWidth, footprint);
+  if (vBelow > 0.5) {
+    float seen = exp(-dot(uExtinction, vec3(1.0 / 3.0)) * distance(cameraPosition, vec3(vWorldXZ.x, uIceTop, vWorldXZ.y)));
+    gl_FragColor = vec4(vec3(0.0), 0.5 * line * vShade * seen);
+    return;
+  }
+  float onNear = across * vNearSide - vHalfWidth;
+  float depthShare = clamp(onNear / max(vFace, 1e-6), 0.0, 1.0);
+  float face = vFace > 1e-5 ? smoothstep(-0.5 * footprint, 0.5 * footprint, onNear) * (1.0 - depthShare) * (1.0 - depthShare) * min(vFace / footprint, 1.0) : 0.0;
+  IceLook look = iceLook(vWorldXZ, footprint);
+  float wet = max(uIceWet, mask.wet);
+  vec3 scattered = ICE_WHITE_ALBEDO * (uSunIrradiance * max(uSunDir.y, 0.0) + uSkyAmbient * ICE_SKY_LIGHT) * mix(1.0, 0.6, wet);
+  float along = 0.6 + 0.4 * valueNoise(vWorldXZ * 22.0);   // brighter and dimmer along it, as it opened more or less
+  float lineCover = line * vShade * along * mix(1.0, 0.5, wet);
+  float faceCover = face * vShade * 0.7 * (1.0 - look.white) * mix(1.0, 0.5, wet) * (1.0 - lineCover);
+  vec3 lineColor = mix(scattered * 1.35, scattered * 0.2, look.white);
+  // Snow lying on the ice (SNOW_COVER) hides its cracks but for a faint line where the snow parted.
+  float cover = (lineCover + faceCover) * (1.0 - CRACK_SNOWED * snowOnIce(vWorldXZ, footprint) * (1.0 - wet));
+  if (cover < 1e-4) discard;
+  vec3 crackColor = (lineColor * lineCover + scattered * 1.1 * faceCover) / (lineCover + faceCover);
+  gl_FragColor = vec4(min(withHaze(crackColor, distance(cameraPosition, vec3(vWorldXZ.x, uIceTop, vWorldXZ.y))), vec3(1000.0)), cover);
 }
 `;
 
@@ -1575,7 +2190,9 @@ void main() {
 // one the droplets reflect, src/sky.js), a little above the horizon, at
 // LAND_LEVEL of its mip chain and averaged either side, so the photo's
 // detail does not streak toward the eye. (Under the horizon a photo shows
-// whatever stood at the photographer's feet, often water.)
+// whatever stood at the photographer's feet, often water.) Or from another
+// cube, at another level: the beach's grass reads the land as it is before
+// the haze (src/sky.js landCube), since it stands too near to be lost in it.
 const PHOTO_LAND = /* glsl */`
 uniform samplerCube uSkyCube;   // the sky, as the droplets reflect it (src/sky.js)
 #define LAND_NEAR 8.0        // metres away: the land becomes the photo's from here...
@@ -1583,14 +2200,14 @@ uniform samplerCube uSkyCube;   // the sky, as the droplets reflect it (src/sky.
 #define LAND_HEIGHTS vec2(0.018, 0.04)  // the photo's land is read this high above the horizon (direction's y)...
 #define LAND_SPAN 0.05                  // ...and this far to either side (direction's sideways share)...
 #define LAND_LEVEL 3.0                  // ...at this level of the cube's mip chain (512 a face: 1.4° a texel)
-vec3 photoLand(vec2 toward) {
+vec3 photoLand(samplerCube cube, float level, vec2 toward) {
   vec2 across = normalize(toward);
   vec2 side = vec2(-across.y, across.x) * LAND_SPAN;
   vec3 sum = vec3(0.0);
   for (int tap = -1; tap <= 1; tap++) {
     vec2 turned = normalize(across + side * float(tap));
-    sum += textureCubeLodEXT(uSkyCube, vec3(turned.x, LAND_HEIGHTS.x, turned.y), LAND_LEVEL).rgb;
-    sum += textureCubeLodEXT(uSkyCube, vec3(turned.x, LAND_HEIGHTS.y, turned.y), LAND_LEVEL).rgb;
+    sum += textureCubeLodEXT(cube, vec3(turned.x, LAND_HEIGHTS.x, turned.y), level).rgb;
+    sum += textureCubeLodEXT(cube, vec3(turned.x, LAND_HEIGHTS.y, turned.y), level).rgb;
   }
   return sum / 6.0;
 }
@@ -1627,10 +2244,20 @@ void main() {
 // LAND_NEAR to LAND_FAR away all of it becomes the colour of the land the
 // sky photo shows at the horizon that way (photoLand: the sky's cube map, a
 // little above the horizon, at LAND_LEVEL of its mip chain and averaged
-// either side, so the photo's detail does not streak toward the eye), so
-// the land runs into the photo's own, hazed as its far land is. Seen in the
-// mirror the directions are the mirror camera's, so its reflection does
-// too.
+// either side, so the photo's detail does not streak toward the eye; under
+// the horizon a photo shows whatever stood at the photographer's feet, often
+// water), mottled and shaded by the bank's slope against level ground, and
+// never brighter than ground of GRASS_ALBEDO_MOST (where the photo shows sky
+// at the horizon, under cloud a white one). From LAND_NEAR to
+// LAND_FAR away all of it becomes that colour, so the land runs into the
+// photo's own. Seen in the mirror the directions are the mirror camera's,
+// so its reflection does too. Under snow (SNOW_COVER) the sand and the grass
+// lie under it, but for the wet sand by the water, where it melts (up to
+// SNOW_MELT_HEIGHT), and the far land takes SNOW_FAR of it: the photo's
+// trees and far water stand out of any snow. In haze (HAZE: rain's, snow's,
+// a fog's) the grass takes the land before the haze (photoLand), and the
+// beach fades by its distance, as the water does, but for the far land, the
+// photo's own, hazed as the dome is.
 //
 // What a beach shows between its grains and its slope. The sand's tile is
 // 2 mm a texel, and the silt's drifts a metre across, so from a few metres
@@ -1666,7 +2293,8 @@ export const LAND_FRAGMENT = /* glsl */`
 uniform vec3 uSunDir;
 uniform vec3 uSunIrradiance;
 uniform vec3 uSkyAmbient;
-uniform vec3 uGroundAlbedo;   // the land behind the beach (SKIES' ground)
+uniform samplerCube uLandCube;   // the land before the haze, for the grass (src/sky.js landCube)...
+uniform float uLandLevel;        // ...at this level of its mip chain
 varying vec3 vWorld;
 varying vec3 vNormal;
 varying float vInland;
@@ -1674,12 +2302,17 @@ ${GLSL_COMMON}
 ${FLOOR_PATTERN_TILE}
 ${FLOOR_SAND}
 ${PHOTO_LAND}
+${HAZE}
 #define SKY_LIGHT 1.4        // the sky's light on the sand, as the bed's
 #define DRY_SAND vec3(0.68, 0.6, 0.5)   // the beach's dry sand, against the bed's: darker and warmer, as the photos' banks are
 #define WET_HEIGHT 0.12      // metres above the water the sand is wet to...
 #define WET_SHADE 0.6        // ...and as dark as this at the water
 #define GRASS_FROM 2.5       // metres inland: the sand turns to grass from here...
 #define GRASS_TO 4.5         // ...to here
+#define SNOW_MELT_HEIGHT 0.04  // metres above the water the snow melts on the wet sand to (half a metre up the beach)
+#define SNOW_FAR 0.5         // the far land's share under the snow
+#define GRASS_ALBEDO_MOST 0.3  // the brightest the bank's grass is drawn, as an albedo (fresh grass about 0.25)
+#define LUMINANCE vec3(0.2126, 0.7152, 0.0722)
 #define RELIEF_FREQUENCIES vec2(0.55, 1.9)   // per metre: the hummocks and the bumps on them...
 #define RELIEF_HEIGHTS vec2(0.06, 0.014)     // ...metres high
 #define WRACK_INLAND 0.55    // metres inland: the wrack line...
@@ -1701,9 +2334,9 @@ ${PHOTO_LAND}
 #define TUFT_RADII vec2(0.06, 0.16)    // metres
 #define TUFT_SHARE 0.8       // the share of cells with one at GRASS_TO and beyond, in the thickest patches...
 #define TUFT_PATCHES 0.35    // ...per metre: the noise that gathers them into patches
-#define TUFT_TINT vec3(0.85, 1.0, 0.6)     // a tuft against the ground: greener, yellower
+#define TUFT_TINT vec3(0.92, 1.0, 0.78)    // a tuft against the ground: a little greener
 #define TUFT_SIDE 0.5        // how much darker a tuft's side away from the sun is than the side toward it (TUFT_LIT)
-#define TUFT_LIT 1.2
+#define TUFT_LIT 1.0
 #define SWARD_GRAIN vec2(6.0, 24.0)   // per metre: the sward's blades and clumps, two octaves of noise over the ground's mottle...
 #define SWARD_CONTRAST vec2(0.4, 0.3) // ...each this deep, peak to peak
 #define LAYER_FADE vec2(0.3, 0.9)   // a layer fades out as the pixel's footprint grows from this share of its cell to this
@@ -1793,30 +2426,45 @@ void main() {
   float stickShare = STICK_SHARE * (1.0 - smoothstep(0.0, STICK_SPREAD, abs(vInland - wrackLine))) * (1.0 - grass);
   float sticks = stick(vWorld.xz, stickShare, footprint, tone) * layerWeight(STICK_CELL, footprint);
   albedo = mix(albedo, sand * vec3(0.5, 0.4, 0.3) * mix(0.6, 1.3, tone), sticks);   // dark brown
+  vec3 color = albedo * light;
 
-  // The bank: the ground's colour, mottled, with its tufts.
+  // The bank: the photo's own land for its colour, shaded by the slope, mottled and grained, with its tufts.
   vec3 toLand = vWorld - cameraPosition;
   float far = smoothstep(LAND_NEAR, LAND_FAR, length(toLand));
   float tuftShare = TUFT_SHARE * smoothstep(GRASS_FROM - 0.6, GRASS_TO, vInland);
-  if (grass > 0.0 || tuftShare > 0.0) {
+  if (grass > 0.0 || far > 0.0 || tuftShare > 0.0) {
+    vec3 land = photoLand(uSkyCube, LAND_LEVEL, toLand.xz);
+    float level = max(uSunDir.y, 0.0) + SKY_LIGHT * 0.25;
+    float slopeShade = (max(dot(normal, uSunDir), 0.0) + SKY_LIGHT * 0.25 * normal.y) / level;
+    // Where the photo shows sky at the horizon, the grass would take the sky's light (a cloud's, white): no brighter
+    // than ground of GRASS_ALBEDO_MOST in the light on it.
+    float lightOn = dot(uSunIrradiance * max(uSunDir.y, 0.0) + uSkyAmbient * SKY_LIGHT, LUMINANCE);
+    vec3 nearLand = photoLand(uLandCube, uLandLevel, toLand.xz);
+    float grassLevel = max(dot(nearLand, LUMINANCE), 1e-6);
+    vec3 grassLand = nearLand * min(1.0, GRASS_ALBEDO_MOST * lightOn / grassLevel);
     // The sward: the ground's colour mottled over a metre and grained finer, each grain faded out where the pixel outgrows it.
-    float mottle = 1.0 + 0.6 * valueNoise(vWorld.xz * 2.3 + 5.0) - 0.3;
-    float grain = 1.0 + SWARD_CONTRAST.x * (valueNoise(vWorld.xz * SWARD_GRAIN.x + 41.0) - 0.5) * layerWeight(1.0 / SWARD_GRAIN.x, footprint)
-                      + SWARD_CONTRAST.y * (valueNoise(vWorld.xz * SWARD_GRAIN.y + 83.0) - 0.5) * layerWeight(1.0 / SWARD_GRAIN.y, footprint);
-    vec3 ground = uGroundAlbedo * mottle * grain;
-    albedo = mix(albedo, ground, grass);
+    float near = 1.0 - far;
+    float mottle = 1.0 + (0.6 * valueNoise(vWorld.xz * 2.3 + 5.0) - 0.3) * near;
+    float grain = 1.0 + (SWARD_CONTRAST.x * (valueNoise(vWorld.xz * SWARD_GRAIN.x + 41.0) - 0.5) * layerWeight(1.0 / SWARD_GRAIN.x, footprint)
+                       + SWARD_CONTRAST.y * (valueNoise(vWorld.xz * SWARD_GRAIN.y + 83.0) - 0.5) * layerWeight(1.0 / SWARD_GRAIN.y, footprint)) * near;
+    vec3 ground = grassLand * slopeShade;
+    color = mix(color, ground * mottle * grain, grass);
     vec2 fromTuft;
     float patches = smoothstep(0.3, 0.7, valueNoise(vWorld.xz * TUFT_PATCHES + 23.0));
-    float tufts = tuft(vWorld.xz, tuftShare * mix(0.25, 1.0, patches), footprint, tone, fromTuft) * layerWeight(TUFT_CELL, footprint);
+    float tufts = tuft(vWorld.xz, tuftShare * mix(0.25, 1.0, patches), footprint, tone, fromTuft) * layerWeight(TUFT_CELL, footprint) * near;
     if (tufts > 0.0) {
       vec2 sunward = uSunDir.xz + vec2(1e-4, 0.0);
       float side = 0.5 + 0.5 * dot(normalize(fromTuft + vec2(1e-5)), normalize(sunward));   // 1 on the side the sun lights
-      vec3 tuftColor = uGroundAlbedo * TUFT_TINT * mix(0.8, 1.15, tone) * mix(1.0 - TUFT_SIDE, TUFT_LIT, side);
-      albedo = mix(albedo, tuftColor, tufts);
+      vec3 tuftColor = ground * TUFT_TINT * mix(0.8, 1.15, tone) * mix(1.0 - TUFT_SIDE, TUFT_LIT, side);
+      color = mix(color, tuftColor, tufts);
     }
+    if (uSnow > 0.0) land = mix(land, SNOW_ALBEDO * (uSunIrradiance * max(uSunDir.y, 0.0) + uSkyAmbient * SKY_LIGHT), SNOW_FAR * uSnow);
+    color = mix(color, land, far);
   }
-  vec3 color = albedo * light;
-  if (far > 0.0) color = mix(color, photoLand(toLand.xz), far);   // into the photo's own land
+  float snow = snowCover(vWorld.xz) * smoothstep(0.5 * SNOW_MELT_HEIGHT, SNOW_MELT_HEIGHT, vWorld.y) * (1.0 - far);
+  if (snow > 0.0) color = mix(color, snowShade(vWorld.xz) * (uSunIrradiance * max(dot(normal, uSunDir), 0.0) + uSkyAmbient * SKY_LIGHT), snow);
+  // The haze by its distance (HAZE), but on the far land, which is the photo's, hazed already.
+  if (uHazeDensity > 0.0) color = mix(color, uHazeColor, (1.0 - exp(-uHazeDensity * length(toLand))) * (1.0 - far));
   gl_FragColor = vec4(color, 1.0);
 }
 `;
@@ -1878,6 +2526,80 @@ vec3 seenThroughWater(vec3 world, float level) {
   }
   vec2 seen = cameraPosition.xz + fromEye * (crossing * (height + depth) / (height * reach));
   return vec3(seen.x, world.y, seen.y);
+}
+`;
+
+// What a clear floater (src/rock.js `seenThrough`: a shard of ice) shows
+// through its top, in the main pass from above the water: the under-water
+// pass at its pixel (the pool's tiles or the bed, its own body under the
+// water left out of it), dimmed along the way down through the water as
+// WATER_FRAGMENT dims what its surface shows, times its `clearShare` and
+// the share its face does not mirror (Schlick's Fresnel for its normal),
+// with what its milk scatters back lit as the sheet's (clearScatter);
+// none from under the water, and none once it is a few centimetres clear of
+// the water (`height`, its point's: in the air, on the deck), where that
+// pass shows what is far behind it. viewPosition and normal are the
+// standard material's (view space).
+export const SEEN_UNDER_CLEAR = /* glsl */`
+uniform vec3 uSunDir;
+uniform vec3 uSunIrradiance;
+uniform vec3 uSkyAmbient;
+uniform sampler2D uUnderColor;
+uniform sampler2D uUnderDepth;
+uniform vec2 uResolution;
+uniform float uNear;
+uniform float uFar;
+uniform vec3 uExtinction;
+uniform vec3 uWaterColor;
+vec3 seenUnderClear(vec3 viewPosition, vec3 normal, float clearShare, float height) {
+  if (cameraPosition.y < 0.0 || clearShare <= 0.0) return vec3(0.0);
+  vec2 screenUv = gl_FragCoord.xy / uResolution;
+  float surfaceDistZ = max(viewPosition.z, 1e-4);
+  float rawDepth = texture2D(uUnderDepth, screenUv).r;
+  float underDistZ = rawDepth >= 1.0 ? uFar : -(uNear * uFar) / ((uFar - uNear) * rawDepth - uFar);
+  float path = max(underDistZ - surfaceDistZ, 0.0) * length(viewPosition) / surfaceDistZ;
+  vec3 underneath = mix(uWaterColor, texture2D(uUnderColor, screenUv).rgb, exp(-uExtinction * path));
+  float facing = abs(dot(normalize(viewPosition), normal));
+  float mirrored = 0.02 + 0.98 * pow(1.0 - facing, 5.0);
+  return underneath * clearShare * (1.0 - mirrored) * (1.0 - smoothstep(0.02, 0.08, height));
+}
+// The light its milk and white ice scatter back (albedo, its colour): as the sheet's white ice is lit
+// (WATER_FRAGMENT iceSurface), by the scene's sun and sky, not the material's lights.
+vec3 clearScatter(vec3 albedo) {
+  return albedo * (uSunIrradiance * max(uSunDir.y, 0.0) + uSkyAmbient * 1.4);
+}
+// The sheet's own look on a piece of it (ICE_COMMON iceLook: its snow ice, frost specks, bubbles and crystals' lines),
+// at a point on the piece (onPiece, m from its middle, so it goes where the piece goes), PIECE_LOOK_SCALE times finer
+// (a piece a hand across would lie inside one of the sheet's patches, all one white), over a footprint: the share of
+// white it adds, which hides that much of what shows through.
+#define PIECE_LOOK_SCALE 2.5
+float pieceWhite(vec2 onPiece, float footprint) {
+  IceLook look = iceLook(onPiece * PIECE_LOOK_SCALE + 41.0, footprint * PIECE_LOOK_SCALE);
+  return clamp(look.white + look.bubbles + ICE_GRAIN_SEEN * look.grain, 0.0, 1.0);
+}
+`;
+
+// A clear floater's sides seen from inside, down through its top (src/rock.js
+// `seenThrough`, its part under the water from above): the light in the ice
+// turned back off them (all but totally: past the critical angle, ice to
+// water near enough to it), so as bright as white ice lit by the sun and
+// the sky (CLEAR_SIDE_LIGHT of it), fading down the face (`depth`, the
+// point's height against the water's, negative: CLEAR_SIDE_FADE metres),
+// and over what lies behind by CLEAR_SIDE_COVER; its top under a film of
+// water its own light over what lies under it by CLEAR_FILM_COVER.
+export const CLEAR_SIDES_INSIDE = /* glsl */`
+uniform vec3 uSunDir;
+uniform vec3 uSunIrradiance;
+uniform vec3 uSkyAmbient;
+#define CLEAR_SIDE_LIGHT 0.45
+#define CLEAR_SIDE_FADE 0.08
+#define CLEAR_SIDE_COVER 0.85     // how much of what is behind a side's inner face it hides
+#define CLEAR_FILM_COVER 0.35     // and its top, under a film of water, its own light over what is under it
+vec3 clearSideInside(float depth) {
+  return (uSunIrradiance * max(uSunDir.y, 0.0) + uSkyAmbient * 1.4) * CLEAR_SIDE_LIGHT * exp(depth / CLEAR_SIDE_FADE);
+}
+vec3 clearFilm(vec3 albedo) {
+  return albedo * (uSunIrradiance * max(uSunDir.y, 0.0) + uSkyAmbient * 1.4);
 }
 `;
 
@@ -2159,7 +2881,9 @@ void main() {
 // at the horizon that way (PHOTO_LAND, as the beach's does), so the ground
 // runs into the photo's own. (Near by, that colour is the photo's far,
 // hazy shore, often its water: the beach's bank takes it, a lawn may not.)
-// Lit by the sun and the sky, as the beach is.
+// Lit by the sun and the sky, as the beach is. Under snow (SNOW_COVER) the
+// deck and the lawn lie under it but where the splash's drops came down,
+// which melt it: there the paving shows, wet.
 export const DECK_VERTEX = /* glsl */`
 varying vec3 vWorld;
 void main() {
@@ -2221,10 +2945,13 @@ void main() {
   vec3 albedo = (outside < COPING_WIDTH ? coping : paver) * mix(1.0, WET_STONE, wet);
   float lawn = smoothstep(COPING_WIDTH + DECK_WIDTH, COPING_WIDTH + DECK_WIDTH + 0.08, outside);
   vec3 grass = GRASS_COLOR * (1.0 + 0.6 * valueNoise(point * 2.3 + 5.0) - 0.3) * (0.8 + 0.4 * valueNoise(point * 13.0)) * mix(1.0, WET_GRASS, wet);
-  vec3 color = mix(albedo, grass, lawn) * (uSunIrradiance * max(uSunDir.y, 0.0) + uSkyAmbient * SKY_LIGHT);
+  vec3 ground = mix(albedo, grass, lawn);
+  float snow = snowCover(point) * (1.0 - splashed);
+  if (snow > 0.0) ground = mix(ground, snowShade(point), snow);
+  vec3 color = ground * (uSunIrradiance * max(uSunDir.y, 0.0) + uSkyAmbient * SKY_LIGHT);
   vec3 toGround = vWorld - cameraPosition;
   float far = smoothstep(LAND_NEAR, LAND_FAR, length(toGround));
-  if (far > 0.0) color = mix(color, photoLand(toGround.xz), far);
+  if (far > 0.0) color = mix(color, photoLand(uSkyCube, LAND_LEVEL, toGround.xz), far);
   color = withHaze(color, length(toGround));
 #ifdef MIRROR_NEARNESS
   gl_FragColor = vec4(color, mirrorNearness(vWorld));

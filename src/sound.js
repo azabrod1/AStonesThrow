@@ -16,6 +16,22 @@
 //     low-passed noise and a ring at KNOCK.pitch / R Hz, ringing longer the
 //     livelier the thing (its bounce), so a basketball booms, a tennis ball
 //     pocks and a stone clicks.
+//   - A landing on ice (src/ice.js; the knock's `surface` 'ice'): the knock,
+//     and the chirp floating ice is known for. A blow sets the sheet bending,
+//     and bending waves run faster the higher they are, at a group speed
+//     c(f) = 2·sqrt(2πf)·(D/ρh)^¼ (D = E·h³/(12·(1 − ν²)) its stiffness,
+//     ρh its mass per area), so at `distance` from the blow f arrives at
+//     d/c(f): the high first, falling to the low, a "pew" that lasts the
+//     longer the farther off it struck (CHIRP, f(t) as the arrival law
+//     gives it) and rings the louder the thinner the ice.
+//   - The ice breaking or starred (src/ice.js events): a crack, a sharp
+//     burst of noise high in the band and a low thump, louder for a break.
+//
+// Each is played when it is seen, not when the physics finds it: `after`,
+// the seconds until the frame that shows it reaches the screen (src/main.js
+// simulate), less the audio's own latency (its base and output latency,
+// where the browser says them), so the slap is heard as the stone is seen to
+// strike, a little later than its step, never before.
 //
 // Nothing plays until the page has been touched (browsers start audio only
 // on a gesture: src/main.js calls unlock on the first press or key), and Sound off
@@ -25,7 +41,12 @@
 // dropped), so a storm of knocks costs no more than a few.
 const SPLASH = { bubble: 0.3, pinch: 0.035, slap: 0.12, plunk: 0.5 };
 const KNOCK = { pitch: 35, thud: 0.6, ring: 0.5 };
-const VOICES = { most: 12, quietest: 0.02, longest: 1.5 };   // s: no sound here lasts a second
+// The ice's chirp (the header): from `high` to `low` Hz, its loudness against the knock's `gain` (times thin ice's 1 cm
+// over the sheet's thickness, at most `loudest`), its sheet's constants (src/ice.js ICE: modulus, Poisson's ratio,
+// density), and how long at least (s); the crack's band (Hz), length and loudness, a star's share of a break's.
+const CHIRP = { high: 3500, low: 220, gain: 0.35, loudest: 0.5, modulus: 9e9, poisson: 0.33, density: 917, least: 0.03, points: 24 };
+const CRACK = { band: 3200, seconds: 0.09, thump: 140, gain: 0.5, star: 0.4 };
+const VOICES = { most: 12, quietest: 0.02, longest: 1.5, latest: 0.25 };   // s: no sound here lasts a second, nor waits a quarter of one to be seen
 
 export function createSound() {
   let context = null, master = null, noise = null;
@@ -63,15 +84,17 @@ export function createSound() {
    * latest, whatever the audio says (a stalled audio clock never ends a
    * sound, and the voices would never come free).
    */
-  function voice(loudness) {
+  function voice(loudness, after = 0) {
     if (loudness < VOICES.quietest || playing >= VOICES.most) return null;
     const audio = ready();
     if (!audio) return null;
     playing++;
     let ended = false;
     const done = () => { if (ended) return; ended = true; playing--; };
-    setTimeout(done, VOICES.longest * 1000);
-    return { audio, now: audio.currentTime, done };
+    // When it is seen (the header), less what the audio itself takes to be heard.
+    const wait = Math.max(Math.min(after, VOICES.latest) - (audio.baseLatency ?? 0) - (audio.outputLatency ?? 0), 0);
+    setTimeout(done, (VOICES.longest + wait) * 1000);
+    return { audio, now: audio.currentTime + wait, done };
   }
 
   /** A burst of noise through a band-pass at `frequency`, `seconds` long, at `gain`, from `at`. */
@@ -107,6 +130,34 @@ export function createSound() {
     tone.onended = onEnd;
   }
 
+  /**
+   * The ice's chirp (the header): bending waves from a blow `distance` off on
+   * ice `thickness` thick arriving high first, f(t) = (d/(2·(D/ρh)^¼·(t₀ + t)))²/2π
+   * from CHIRP.high to CHIRP.low, at `gain`, fading as it falls.
+   */
+  function chirp(audio, at, { thickness, distance, gain }, onEnd) {
+    const stiffness = (CHIRP.modulus * thickness ** 3) / (12 * (1 - CHIRP.poisson ** 2));
+    const scale = 2 * (stiffness / (CHIRP.density * thickness)) ** 0.25;   // c(f) = scale·sqrt(2πf)
+    const arrives = (frequency) => distance / (scale * Math.sqrt(2 * Math.PI * frequency));
+    const first = arrives(CHIRP.high), last = arrives(CHIRP.low);
+    const seconds = Math.max(last - first, CHIRP.least);
+    const curve = new Float32Array(CHIRP.points);
+    for (let point = 0; point < CHIRP.points; point++) {
+      const time = first + ((last - first) * point) / (CHIRP.points - 1);
+      curve[point] = (distance / (scale * Math.max(time, 1e-6))) ** 2 / (2 * Math.PI);
+    }
+    const tone = audio.createOscillator();
+    tone.frequency.setValueCurveAtTime(curve, at, seconds);
+    const envelope = audio.createGain();
+    envelope.gain.setValueAtTime(0, at);
+    envelope.gain.linearRampToValueAtTime(gain, at + 0.004);
+    envelope.gain.exponentialRampToValueAtTime(1e-4, at + seconds + 0.02);
+    tone.connect(envelope).connect(master);
+    tone.start(at);
+    tone.stop(at + seconds + 0.03);
+    tone.onended = onEnd;
+  }
+
   const clamp = (value, least, most) => Math.min(Math.max(value, least), most);
 
   return {
@@ -123,10 +174,10 @@ export function createSound() {
     get playing() { return playing; },
     get state() { return context?.state ?? 'none'; },
 
-    /** A thing into the water (src/rock.js goIn's impact: speed, radius). */
-    splash({ speed, radius }) {
+    /** A thing into the water (src/rock.js goIn's impact: speed, radius), seen `after` seconds from now (the header). */
+    splash({ speed, radius }, after = 0) {
       const loudness = clamp(speed * Math.sqrt(radius) * SPLASH.slap, 0, 1);
-      const sound = voice(loudness);
+      const sound = voice(loudness, after);
       if (!sound) return;
       const { audio, now } = sound;
       let ends = 2;
@@ -136,34 +187,48 @@ export function createSound() {
       const pitch = clamp(3.26 / bubble, 120, 3000);
       ring(audio, now + SPLASH.pinch * Math.sqrt(radius / 0.03), { frequency: pitch, to: pitch * 1.3, seconds: 0.05 + 2 * radius, gain: loudness * SPLASH.plunk }, end);
     },
-    /** A skip off the water (src/rock.js skimReport: its speed in). */
-    skip({ velocity, radius }) {
+    /** A skip off the water (src/rock.js skimReport: its speed in), seen `after` seconds from now. */
+    skip({ velocity, radius }, after = 0) {
       const loudness = clamp(Math.abs(velocity.y) * 0.25, 0, 0.6);
-      const sound = voice(loudness);
+      const sound = voice(loudness, after);
       if (!sound) return;
       burst(sound.audio, sound.now, { frequency: clamp(2400 * Math.sqrt(0.03 / radius), 900, 5000), quality: 1.2, seconds: 0.04, gain: loudness }, sound.done);
     },
-    /** A floater coming up through the surface, or back down into it (src/rock.js startFloating's ripple). */
-    ripple({ speed, radius }) {
+    /** A floater coming up through the surface, or back down into it (src/rock.js startFloating's ripple), seen `after` seconds from now. */
+    ripple({ speed, radius }, after = 0) {
       const loudness = clamp(speed * Math.sqrt(radius) * 0.08, 0, 0.3);
-      const sound = voice(loudness);
+      const sound = voice(loudness, after);
       if (!sound) return;
       burst(sound.audio, sound.now, { frequency: 500, seconds: 0.12, gain: loudness, type: 'lowpass' }, sound.done);
     },
     /**
      * Two things knocking, or one on the deck: `speed` (m/s) they met at,
-     * `radius` (m) and `bounce` (its material's, 0 to 1) of what rings.
+     * `radius` (m) and `bounce` (its material's, 0 to 1) of what rings, seen
+     * `after` seconds from now.
      */
-    knock({ speed, radius, bounce }) {
+    knock({ speed, radius, bounce, surface = null, thickness = 0, distance = 5 }, after = 0) {
       const loudness = clamp(speed * 0.12, 0, 0.9);
-      const sound = voice(loudness);
+      const sound = voice(loudness, after);
       if (!sound) return;
       const { audio, now } = sound;
-      let ends = 2;
+      const onIce = surface === 'ice' && thickness > 0;
+      let ends = onIce ? 3 : 2;
       const end = () => { if (--ends === 0) sound.done(); };
       const pitch = clamp(KNOCK.pitch / radius, 90, 4000);
       burst(audio, now, { frequency: pitch * 2, seconds: 0.03, gain: loudness * KNOCK.thud * (1 - 0.5 * bounce), type: 'lowpass' }, end);
       ring(audio, now, { frequency: pitch, to: pitch * 0.97, seconds: 0.02 + 0.2 * bounce * bounce, gain: loudness * KNOCK.ring * bounce }, end);
+      if (onIce) chirp(audio, now, { thickness, distance, gain: loudness * Math.min(CHIRP.gain * 0.01 / thickness, CHIRP.loudest) }, end);
+    },
+    /** The ice breaking, or starred by a blow it held (src/ice.js events: kind 'break' or 'crack', `strength` its blow over what it held), seen `after` seconds from now. */
+    ice({ kind, strength }, after = 0) {
+      const loudness = clamp(CRACK.gain * (kind === 'break' ? 1 : CRACK.star) * Math.sqrt(strength), 0, 0.9);
+      const sound = voice(loudness, after);
+      if (!sound) return;
+      const { audio, now } = sound;
+      let ends = 2;
+      const end = () => { if (--ends === 0) sound.done(); };
+      burst(audio, now, { frequency: CRACK.band, quality: 0.7, seconds: CRACK.seconds, gain: loudness }, end);
+      burst(audio, now, { frequency: CRACK.thump, seconds: 0.12, gain: loudness * 0.6, type: 'lowpass' }, end);
     },
   };
 }

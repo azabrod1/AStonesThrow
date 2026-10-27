@@ -1,0 +1,42 @@
+{
+  "source": "kiara_2_sunrise_2k.hdr",
+  "width": 2048,
+  "height": 1024,
+  "sun": {
+    "elevation": 4.15,
+    "azimuth": 221.9,
+    "direction": [
+      0.74233,
+      0.07242,
+      0.66611
+    ],
+    "pixels": 6
+  },
+  "sunIrradiance": [
+    11.576,
+    10.099,
+    4.6324
+  ],
+  "skyRadiance": [
+    0.43472,
+    0.49667,
+    0.68231
+  ],
+  "horizonRadiance": {
+    "median": 0.50793,
+    "p90": 4.1314
+  },
+  "maxLuminance": 319950,
+  "alignment": {
+    "reference": "kiara_5_noon_2k.hdr",
+    "turn": 285.35,
+    "peak": 5.5,
+    "nextBest": 2.76,
+    "band": [
+      -15,
+      -5
+    ]
+  },
+  "north": 150.05,
+  "northFrom": "skyline"
+}

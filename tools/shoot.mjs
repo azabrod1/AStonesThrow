@@ -23,13 +23,16 @@
 // --report="js expression" is evaluated in the page after each frame and its
 // result printed as JSON (window.__pond is the app). --floats=half renders on
 // the half-float path that devices without EXT_color_buffer_float take.
-// --sky=name picks the sky's place (a key of SKIES in src/skies.js) and
-// --time=hour its hour (the place's anchor otherwise, never the time of day
-// last chosen: the harness's browser keeps no storage), --weather=
-// clear|light-rain|heavy-rain the weather (WEATHERS in src/main.js; the
-// rain waits for its ring's table before the first frame), and
-// --water=pool|clear|lake|pond|murky the water (WATER_CLARITIES in src/main.js;
-// pool puts the rocks in the pool, src/pool.js).
+// --sky=name picks the place (PLACES in src/main.js: a key of SKIES in
+// src/sky.js, or pool, the rocks in the pool under Lakeside's sky, src/
+// pool.js) and --time=hour its sky's hour (its anchor otherwise, never the
+// time of day last chosen: the harness's browser keeps no storage),
+// --weather=clear|light-rain|heavy-rain|storm|light-snow|heavy-snow|blizzard|fog
+// the weather (WEATHERS in src/main.js; the rain waits for its ring's table
+// before the first frame),
+// --water=clear|lake|pond|murky|frozen the water (WATER_CHOICES in src/
+// main.js; the old --water=pool is --sky=pool), and --ice=thin|thick freezes
+// it, that thick (ICE_THICKNESS in src/ice.js; frozen thin otherwise).
 // --wind=x:z sets the direction the wind blows toward in world XZ, and
 // --wind-strength=calm|breeze|windy its strength (the page's own default is
 // calm; breeze is the look the pond had before the Wind control).
@@ -44,7 +47,8 @@
 // times count from the dip.
 // --power=soft|normal|hard throws as the strip's Soft, Medium and Hard do
 // (src/main.js ARC: a soft toss is a higher arc, so a steeper entry, about
-// 33° from vertical against 42°; a hard one flatter).
+// 33° from vertical against 42°; a hard one is fast and flat, twice as fast
+// in at about 73°: src/rock.js throwFlightTime).
 // --manner=toss|lob|skip throws as the strip's Toss, Lob and Skip do: a lob
 // the high way round, higher the harder; --skip is --manner=skip.
 // --skip throws skips, as the strip's Skip does (src/rock.js): the stone
@@ -91,6 +95,7 @@ const sky = arg('sky', '');
 const skyTime = arg('time', '');
 const weather = arg('weather', '');
 const waterClarity = arg('water', '');
+const iceName = arg('ice', '');
 const wind = arg('wind', '');
 const power = arg('power', 'normal');
 const skipThrows = process.argv.includes('--skip');
@@ -139,17 +144,17 @@ const problems = [];
 page.on('pageerror', (e) => problems.push(String(e)));
 page.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') problems.push(m.text()); });
 
-const url = `http://localhost:${port}/index.html?quality=${quality}&paused=1${keepUi ? '' : '&ui=0'}${floats ? `&floats=${floats}` : ''}${sky ? `&sky=${sky}` : ''}${skyTime ? `&time=${skyTime}` : ''}${weather ? `&weather=${weather}` : ''}${waterClarity ? `&water=${waterClarity}` : ''}${wind ? `&wind=${wind.replace(':', ',')}` : ''}${windStrength ? `&windStrength=${windStrength}` : ''}${thingName ? `&thing=${thingName}` : ''}`;
+const url = `http://localhost:${port}/index.html?quality=${quality}&paused=1${keepUi ? '' : '&ui=0'}${floats ? `&floats=${floats}` : ''}${sky ? `&sky=${sky}` : ''}${skyTime ? `&time=${skyTime}` : ''}${weather ? `&weather=${weather}` : ''}${waterClarity ? `&water=${waterClarity}` : ''}${iceName ? `&ice=${iceName}` : ''}${wind ? `&wind=${wind.replace(':', ',')}` : ''}${windStrength ? `&windStrength=${windStrength}` : ''}${thingName ? `&thing=${thingName}` : ''}`;
 console.log(`[shoot] ${url} -> ${outDir}`);
 await page.goto(url, { waitUntil: 'domcontentloaded' });
 try {
-  await page.waitForFunction(() => !!window.__pond, { timeout: 60000 });
+  await page.waitForFunction(() => !!window.__pond, null, { timeout: 60000 });   // (the function's argument, then the options)
 } catch {
   console.error('[shoot] the pond never became ready');
   console.error(problems.join('\n'));
   await browser.close(); server.close(); process.exit(1);
 }
-if (weather && weather !== 'clear') await page.waitForFunction(() => window.__pond.raining, null, { timeout: 60000 });
+if (weather && weather !== 'clear' && weather !== 'fog') await page.waitForFunction(() => window.__pond.raining || window.__pond.snowing, null, { timeout: 60000 });
 // The sky's horizon strip (src/sky.js, Horizon) comes after the panorama: every frame shows it.
 await page.evaluate(() => window.__pond.horizonReady);
 // The drop rings' table (src/dropRings.js), which the page fetches at the first impact: fetched now, so the
