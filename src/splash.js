@@ -425,6 +425,8 @@ const SAND_ALBEDO = 0.33;             // the floor's mean sand colour (FLOOR_FRA
 // none, so such a frame comes out exactly as the composite made it.
 const TONE_MAP_FRAGMENT = /* glsl */`
 uniform sampler2D uScene;
+uniform sampler2D uGlare;       // the scene's glare (src/glare.js), at the frame's uv
+uniform float uGlareShare;      // and the share of the scene it stands in for
 uniform float uExposure;
 varying vec2 vUv;
 ${NIGHT_VISION}
@@ -442,7 +444,7 @@ vec3 linearToSrgb(vec3 c) {
   return mix(lo, hi, step(vec3(0.0031308), c));
 }
 void main() {
-  vec3 color = texture2D(uScene, vUv).rgb;
+  vec3 color = mix(texture2D(uScene, vUv).rgb, texture2D(uGlare, vUv).rgb, uGlareShare);
   color = aces(nightVision(color) * uExposure / 0.6);
   gl_FragColor = vec4(linearToSrgb(color), 1.0);
 }
@@ -941,12 +943,14 @@ export class SplashSystem {
       uPondDepth: { value: floorViewDepth(water) },
       uExposure: { value: lighting.exposure },
       uNight: { value: 0 },
+      uGlare: { value: null },
+      uGlareShare: { value: 0 },
       uRefract: { value: 1.4 },
       uFluidScale: { value: 1.0 },
       uProjScale: { value: 1000 },
       ...(environment.hazeUniforms ?? { uHazeColor: { value: new THREE.Vector3() }, uHazeDensity: { value: 0 } }),   // the weather's haze (src/sky.js)
     });
-    this.toneMapPass = new FullscreenPass(TONE_MAP_FRAGMENT, { uScene: { value: null }, uExposure: { value: lighting.exposure }, uNight: { value: 0 } });
+    this.toneMapPass = new FullscreenPass(TONE_MAP_FRAGMENT, { uScene: { value: null }, uGlare: { value: null }, uGlareShare: { value: 0 }, uExposure: { value: lighting.exposure }, uNight: { value: 0 } });
 
     // Bubbles.
     const bubbleGeometry = new THREE.BufferGeometry();
@@ -1975,6 +1979,14 @@ export class SplashSystem {
     this.spray.mesh.material = sprayMaterial;
     for (const crown of this.crowns) crown.mesh.material = sheetMaterial;
     for (const column of this.columns) column.mesh.material = columnMaterial;
+  }
+
+  /** The scene's glare (src/glare.js) for the final pass to mix in: its texture at the frame's uv and its share of the scene, 0 for none. */
+  setGlare(texture, share) {
+    for (const pass of [this.toneMapPass, this.compositePass]) {
+      pass.material.uniforms.uGlare.value = texture;
+      pass.material.uniforms.uGlareShare.value = texture ? share : 0;
+    }
   }
 
   /** The scene tone-mapped to the canvas (or target), with no water in the air. */

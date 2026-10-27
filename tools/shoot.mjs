@@ -166,6 +166,8 @@ try {
   await browser.close(); server.close(); process.exit(1);
 }
 if (weather && weather !== 'clear' && weather !== 'fog') await page.waitForFunction(() => window.__pond.raining || window.__pond.snowing, null, { timeout: 60000 });
+// The sky's horizon strip (src/sky.js, Horizon) comes after the panorama: every frame shows it.
+await page.evaluate(() => window.__pond.horizonReady);
 // The drop rings' table (src/dropRings.js), which the page fetches at the first impact: fetched now, so the
 // first throw's drops ring in every run, however long the fetch takes.
 if (throws.length > 0) {
