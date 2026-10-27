@@ -31,7 +31,7 @@
 // Exits with status 1 if a check fails.
 import { performance } from 'node:perf_hooks';
 import { readFileSync } from 'node:fs';
-import { GALE, buildGaleSeed, GaleSurface, galeFrequency, seaState, crestSpeed, CPU_DROPPED_VARIANCE, FOAM_TEXELS, BOIL_LIFETIME, RAFT_LIFETIME, WHITECAP_SPEED } from '../src/galeWaves.js';
+import { GALE, buildGaleSeed, GaleSurface, galeFrequency, seaState, crestSpeed, CPU_DROPPED_VARIANCE, FOAM_TEXELS, ACTIVE_LIFETIME, SPENT_LIFETIME, RAFT_LIFETIME, WHITECAP_SPEED } from '../src/galeWaves.js';
 import { DEFAULT_WIND, WIND_STRENGTHS, latticeIndex } from '../src/ambientWaves.js';
 import { FOAM_DRIFT } from '../src/spectralWater.js';
 import { inverse2d } from './stockham.mjs';
@@ -357,13 +357,13 @@ console.log('8. the whitecaps (the foam step, GALE_FOAM_FRAGMENT)');
     const at = (column, row) => grid[wrap(row, texels) * texels + wrap(column, texels)];
     return (at(left, bottom) * (1 - fx) + at(left + 1, bottom) * fx) * (1 - fy) + (at(left, bottom + 1) * (1 - fx) + at(left + 1, bottom + 1) * fx) * fy;
   };
-  /** The map (two channels, interleaved) at uv: the shader's carried(), a clamped quadratic reconstruction. */
+  /** The map (three channels, interleaved: foam, raft, spent) at uv: the shader's carried(), a clamped quadratic reconstruction. */
   const carried = (map, u, v) => {
     const px = u * mapTexels - 0.5, py = v * mapTexels - 0.5;
     const nx = Math.floor(px + 0.5), ny = Math.floor(py + 0.5), wx = px - nx, wy = py - ny;
-    const at = (column, row, channel) => map[2 * (wrap(row, mapTexels) * mapTexels + wrap(column, mapTexels)) + channel];
-    const result = [0, 0];
-    for (const channel of [0, 1]) {
+    const at = (column, row, channel) => map[3 * (wrap(row, mapTexels) * mapTexels + wrap(column, mapTexels)) + channel];
+    const result = [0, 0, 0];
+    for (const channel of [0, 1, 2]) {
       const centre = at(nx, ny, channel), east = at(nx + 1, ny, channel), west = at(nx - 1, ny, channel), north = at(nx, ny + 1, channel), south = at(nx, ny - 1, channel);
       const upstream = centre + 0.5 * wx * (east - west) + 0.5 * wy * (north - south) + 0.5 * wx * wx * (east + west - 2 * centre) + 0.5 * wy * wy * (north + south - 2 * centre);
       result[channel] = Math.min(Math.max(upstream, Math.min(east, west, north, south, centre)), Math.max(east, west, north, south, centre));
@@ -373,10 +373,10 @@ console.log('8. the whitecaps (the foam step, GALE_FOAM_FRAGMENT)');
   const crest = crestSpeed(seed.sea, settings.depth);
   const drift = FOAM_DRIFT * WIND_STRENGTHS.gale;
   const step = 0.05, seconds = 6;
-  /** Run the map from empty for `seconds`, the boil carried at `boilSpeed` (m/s downwind); returns the map and the fields at the end. */
+  /** Run the map from empty for `seconds`, the active whitewater carried at `boilSpeed` (m/s downwind); returns the map and the fields at the end. */
   const run = (boilSpeed) => {
-    let map = new Float64Array(2 * mapTexels * mapTexels);
-    const boilKeep = Math.exp(-step / BOIL_LIFETIME), raftKeep = Math.exp(-step / RAFT_LIFETIME);
+    let map = new Float64Array(3 * mapTexels * mapTexels);
+    const activeKeep = Math.exp(-step / ACTIVE_LIFETIME), spentKeep = Math.exp(-step / SPENT_LIFETIME), raftKeep = Math.exp(-step / RAFT_LIFETIME);
     const travel = [windX * boilSpeed * step / settings.tileSize, windZ * boilSpeed * step / settings.tileSize];
     const waterDrift = [windX * drift * step / settings.tileSize, windZ * drift * step / settings.tileSize];
     let grids = null;
@@ -391,11 +391,14 @@ console.log('8. the whitecaps (the foam step, GALE_FOAM_FRAGMENT)');
           const fieldU = u + 0.5 / texels - 0.5 / mapTexels, fieldV = v + 0.5 / texels - 0.5 / mapTexels;
           const jacobianHere = (1 + bilinearField(grids.stretchX, fieldU, fieldV)) * (1 + bilinearField(grids.stretchZ, fieldU, fieldV)) - bilinearField(grids.moveXZ, fieldU, fieldV) ** 2;
           const breaking = 1 - smoothstep(BREAK_FULL, BREAK_START, jacobianHere);
-          const boil = Math.max(Math.max(withCrest[0] - withCrest[1], 0) * boilKeep, breaking * BOIL);
+          const activeBefore = Math.max(withCrest[0] - withCrest[1] - withCrest[2], 0);
+          const active = Math.max(activeBefore * activeKeep, breaking * BOIL);
+          const spent = Math.min(withWater[2] * spentKeep + activeBefore * (1 - activeKeep), BOIL);
           const raft = Math.min(withWater[1] * raftKeep + breaking * RAFT_RATE * step, RAFT_MOST);
-          const here = 2 * (row * mapTexels + column);
-          next[here] = boil + raft;
+          const here = 3 * (row * mapTexels + column);
+          next[here] = active + spent + raft;
           next[here + 1] = raft;
+          next[here + 2] = spent;
         }
       }
       map = next;
@@ -408,8 +411,8 @@ console.log('8. the whitecaps (the foam step, GALE_FOAM_FRAGMENT)');
     let weighted = 0, weight = 0, covered = 0;
     for (let row = 0; row < mapTexels; row++) {
       for (let column = 0; column < mapTexels; column++) {
-        const here = 2 * (row * mapTexels + column);
-        const amount = channel === 'boil' ? Math.max(map[here] - map[here + 1], 0) : map[here + 1];
+        const here = 3 * (row * mapTexels + column);
+        const amount = channel === 'active' ? Math.max(map[here] - map[here + 1] - map[here + 2], 0) : channel === 'boil' ? Math.max(map[here] - map[here + 1], 0) : map[here + 1];
         const u = (column + 0.5) / mapTexels, v = (row + 0.5) / mapTexels;
         const height = bilinearField(grids.h, u + 0.5 / texels - 0.5 / mapTexels, v + 0.5 / texels - 0.5 / mapTexels);
         weighted += amount * height;
@@ -423,13 +426,15 @@ console.log('8. the whitecaps (the foam step, GALE_FOAM_FRAGMENT)');
   const riding = run(WHITECAP_SPEED * crest);
   const stepMilliseconds = (performance.now() - stepStart) / (seconds / step);
   const left = run(0);
-  const boilRiding = measure(riding, 'boil', 0.1), boilLeft = measure(left, 'boil', 0.1);
+  const activeRiding = measure(riding, 'active', 0.1), activeLeft = measure(left, 'active', 0.1);
+  const boilRiding = measure(riding, 'boil', 0.1), spentRiding = measure(riding, 'spent', 0.1);
   const raftRiding = measure(riding, 'raft', 0.02);
-  console.log(`       the peak's phase speed ${crest.toFixed(2)} m/s; the boil carried at ${WHITECAP_SPEED} of it, over ${seconds} s in steps of ${step} s (${stepMilliseconds.toFixed(0)} ms a step here)`);
-  check(boilRiding.height > 1.0, `the boil rides the crests: its mean height ${boilRiding.height.toFixed(2)} σ of the surface (${boilLeft.height.toFixed(2)} σ left where the crest broke)`);
-  check(boilRiding.height > boilLeft.height + 0.3, `carried, the boil sits ${(boilRiding.height - boilLeft.height).toFixed(2)} σ higher than left behind`);
-  check(raftRiding.height < boilRiding.height - 0.5, `the raft lies in the water behind: its mean height ${raftRiding.height.toFixed(2)} σ`);
-  check(boilRiding.cover > 0.01 && boilRiding.cover < 0.1, `whitecaps (boil over 0.1) cover ${(boilRiding.cover * 100).toFixed(1)}% of the water`);
+  console.log(`       the peak's phase speed ${crest.toFixed(2)} m/s; the whitewater carried at ${WHITECAP_SPEED} of it, over ${seconds} s in steps of ${step} s (${stepMilliseconds.toFixed(0)} ms a step here)`);
+  check(activeRiding.height > 1.0, `the active whitewater rides the crests: its mean height ${activeRiding.height.toFixed(2)} σ of the surface (${activeLeft.height.toFixed(2)} σ left where the crest broke)`);
+  check(activeRiding.height > activeLeft.height + 0.3, `carried, it sits ${(activeRiding.height - activeLeft.height).toFixed(2)} σ higher than left behind`);
+  check(spentRiding.height < activeRiding.height - 0.3, `the spent froth is shed behind the crest: its mean height ${spentRiding.height.toFixed(2)} σ`);
+  check(raftRiding.height < activeRiding.height - 0.5, `the raft lies in the water behind: its mean height ${raftRiding.height.toFixed(2)} σ`);
+  check(boilRiding.cover > 0.01 && boilRiding.cover < 0.12, `whitecaps (froth over 0.1, active and spent) cover ${(boilRiding.cover * 100).toFixed(1)}% of the water`);
   check(raftRiding.cover < 0.35, `the raft (over 0.02, where its lace begins to show) covers ${(raftRiding.cover * 100).toFixed(1)}%`);
 }
 

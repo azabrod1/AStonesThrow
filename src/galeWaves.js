@@ -68,15 +68,19 @@
 // the tile, at rest positions, in the units of the solver's foam map (the
 // whole foam and its raft), which the water shades as it shades a splash's
 // foam. A crest that breaks churns a boil, the whitecap itself: a tumbling
-// mass of whitewater that rides with the crest while it lives, at
-// WHITECAP_SPEED of the peak waves' phase speed (Rapp and Melville 1990
-// measured breaking crests at 0.7 to 0.9 of it), so the map carries the boil
-// downwind by that each step (crestSpeed, uCrestTravel) and it stays on the
-// crest's top and back rather than trailing half a wavelength behind into
-// the trough, as it did when it was left where the crest had been. The raft
-// the whitecap leaves is the water's: it stays with the surface (the map's
-// rest positions ride the orbital motion already) and drifts downwind with
-// the splash's foam (FOAM_DRIFT in src/spectralWater.js, foamVelocity). On
+// mass of whitewater that rides with the crest, at WHITECAP_SPEED of the
+// peak waves' phase speed (Rapp and Melville 1990 measured breaking crests
+// at 0.7 to 0.9 of it), so the map carries it downwind by that each step
+// (crestSpeed, uCrestTravel) and it stays on the crest's top rather than
+// trailing half a wavelength behind into the trough, as it did when it was
+// left where the crest had been; but only for ACTIVE_LIFETIME or so: what
+// it loses each step is shed where it is, spent whitewater that the water
+// keeps and that pops over SPENT_LIFETIME, so a crest leaves a fading smear
+// of froth behind it and does not carry one patch of white along the water
+// (which looked like foam scurrying over the lake). The raft the whitecap
+// leaves is the water's too: it stays with the surface (the map's rest
+// positions ride the orbital motion already) and drifts downwind with the
+// splash's foam (FOAM_DRIFT in src/spectralWater.js, foamVelocity). On
 // the lake's fresh water, with no salt to hold the bubbles apart, a raft
 // lasts RAFT_LIFETIME, seconds, not a sea's tens of seconds: most of the
 // water between the whitecaps is clean, and what lingers is gathered into
@@ -120,7 +124,8 @@ const SURFACE_TENSION_OVER_DENSITY = 7.2e-5;
 const HEIGHT_TEXTURE_UNITS = 1000;     // the textures hold millimetres
 export const CPU_DROPPED_VARIANCE = 0.003;   // the share of the height's variance the CPU's sum leaves out
 export const FOAM_TEXELS = 256;
-export const BOIL_LIFETIME = 0.8;     // seconds: a whitecap's big bubbles
+export const ACTIVE_LIFETIME = 0.4;   // seconds: the whitewater rides the crest this long before it is shed
+export const SPENT_LIFETIME = 0.6;    // the shed whitewater's big bubbles, popping where they lie
 export const RAFT_LIFETIME = 2.0;     // its raft's, on fresh water
 export const WHITECAP_SPEED = 0.8;    // of the peak waves' phase speed: how fast a breaking crest's whitewater travels
 const LONGEST_STEP = 0.1;      // seconds: a longer gap between frames steps the foam this far
@@ -444,7 +449,8 @@ export class GaleWaves {
       uDrift: { value: new THREE.Vector2() },
       uCrestTravel: { value: new THREE.Vector2() },
       uStep: { value: 0 },
-      uBoilKeep: { value: 1 },
+      uActiveKeep: { value: 1 },
+      uSpentKeep: { value: 1 },
       uRaftKeep: { value: 1 },
     });
     this.fftPass = new FullscreenPass(FFT_PASS_FRAGMENT, {
@@ -561,7 +567,8 @@ export class GaleWaves {
     uniforms.uDrift.value.copy(this.foamVelocity).multiplyScalar(step / this.settings.tileSize);
     uniforms.uCrestTravel.value.copy(this.windDirection).multiplyScalar(WHITECAP_SPEED * this.crestSpeed * step / this.settings.tileSize);
     uniforms.uStep.value = step;
-    uniforms.uBoilKeep.value = Math.exp(-step / BOIL_LIFETIME);
+    uniforms.uActiveKeep.value = Math.exp(-step / ACTIVE_LIFETIME);
+    uniforms.uSpentKeep.value = Math.exp(-step / SPENT_LIFETIME);
     uniforms.uRaftKeep.value = Math.exp(-step / RAFT_LIFETIME);
     this.foamPass.render(this.renderer, target);
     this.foamIndex = 1 - this.foamIndex;

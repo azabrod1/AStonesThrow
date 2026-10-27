@@ -23,7 +23,7 @@ uniform float uGaleTexels;             // texels per side
 uniform float uGaleMetresPerUnit;      // the gale's strength over the textures' units; 0 with no gale
 uniform vec2 uGaleCentre;              // the patch's centre, world XZ
 uniform float uGaleBed;                // the bed's depth under the patch's centre (galeLift)
-uniform sampler2D uGaleFoam;           // the whitecaps' foam map: (foam, raft), as the solver's (src/galeWaves.js)
+uniform sampler2D uGaleFoam;           // the whitecaps' foam map: (foam, raft, spent whitewater), as the solver's (src/galeWaves.js)
 uniform float uGaleFoamTexels;
 #define GALE_SIDEWAYS_FROM 4.5
 #define GALE_SIDEWAYS_TO 12.0
@@ -60,7 +60,8 @@ float galeLift(vec3 stillPoint) {
 // cell, the slot and the clock, so the harness renders the same spray every
 // run), if a whitecap is there: the boil of the foam map (uGaleFoam, the
 // foam less its raft), read where the crest that broke at the throw is now
-// (it rides downwind at uCrestSpeed), fades the throw in from
+// (it rides downwind at uCrestSpeed; the active whitewater alone, r less g
+// and b, not the froth it has shed), fades the throw in from
 // SPINDRIFT_BOIL_FROM to SPINDRIFT_BOIL_TO; nearly every point is dropped
 // here. The first SPINDRIFT_SPECK_SLOTS slots of a cell throw specks, the
 // drops themselves, SPINDRIFT_SPECK across and bright, the rest puffs of
@@ -94,10 +95,10 @@ varying float vAlpha;
 #define SPINDRIFT_SPREAD 0.25
 #define SPINDRIFT_RISE 1.5
 #define SPINDRIFT_FALL 6.0
-#define SPINDRIFT_SPECK 0.03
+#define SPINDRIFT_SPECK 0.015
 #define SPINDRIFT_SIZE_FROM 0.12
 #define SPINDRIFT_SIZE_TO 0.35
-#define SPINDRIFT_PUFF_OPACITY 0.3
+#define SPINDRIFT_PUFF_OPACITY 0.35
 #define SPINDRIFT_BOIL_FROM 0.05
 #define SPINDRIFT_BOIL_TO 0.2
 
@@ -118,8 +119,8 @@ void main() {
   vec3 throw = spindriftHash(vec3(cell + 29.0, slot + 0.5 + 7.0 * cycle));
   vec2 rest = (cell + place.xy) * uCellSize;
   vec2 crestNow = rest + uWind * uCrestSpeed * age;   // where the crest that broke here at the throw is now
-  vec2 foam = textureLod(uGaleFoam, crestNow / uGaleTileSize + 0.5 / uGaleFoamTexels, 0.0).rg;
-  float strength = smoothstep(SPINDRIFT_BOIL_FROM, SPINDRIFT_BOIL_TO, max(foam.r - foam.g, 0.0));
+  vec3 foam = textureLod(uGaleFoam, crestNow / uGaleTileSize + 0.5 / uGaleFoamTexels, 0.0).rgb;
+  float strength = smoothstep(SPINDRIFT_BOIL_FROM, SPINDRIFT_BOIL_TO, max(foam.r - foam.g - foam.b, 0.0));   // the active whitewater alone
   if (age >= SPINDRIFT_LIFE || strength <= 0.0 || uGaleMetresPerUnit <= 0.0) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); gl_PointSize = 0.0; vAlpha = 0.0; return; }
   float along = age / SPINDRIFT_LIFE;
   vec2 acrossWind = vec2(-uWind.y, uWind.x);

@@ -22,9 +22,9 @@ import { SPINDRIFT_VERTEX, SPINDRIFT_FRAGMENT } from './shaders/gale.js';
 const CELL = 0.25;       // metres: a lake whitecap is a few tenths of a metre across, so a cell this size gives it a few puffs in flight
 const REACH = 10;        // metres round the focus, each way
 const SLOTS = 8;         // throws a cell can have in flight, at their own phases...
-const SPECK_SLOTS = 6;   // ...of which this many are specks, the rest puffs of mist
+const SPECK_SLOTS = 3;   // ...of which this many are specks, the rest puffs of mist
 const MIN_PIXELS = 2;
-const OPACITY = 0.85;
+const OPACITY = 0.6;
 
 export class Spindrift {
   /**
