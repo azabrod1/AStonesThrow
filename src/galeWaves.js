@@ -84,13 +84,18 @@
 // the lake's fresh water, with no salt to hold the bubbles apart, a raft
 // lasts RAFT_LIFETIME, seconds, not a sea's tens of seconds: most of the
 // water between the whitecaps is clean, and what lingers is gathered into
-// the wind's streaks (galeStreaks in src/shaders/scene.js). One step a
-// rendered frame, of the world time since the last; the map keeps what the
+// the wind's streaks (galeStreaks in src/shaders/scene.js). The map is
+// stepped to each rendered frame's world time in pieces no longer than
+// LONGEST_STEP, the fields evaluated at each (a frame that took longer, or
+// the harness skipping ahead, used to get one short step for the whole gap,
+// and showed the crests of two moments at once); the map keeps what the
 // breaking crests left, so when the gale rises it is first run over
-// SPIN_UP_SECONDS before the moment, in SPIN_UP_STEPS, so the water opens on
-// a sea that has been blowing (a moment's work under the veil, or as the
-// setting changes). tools/gale-probe.mjs runs the step on the CPU and checks
-// the boil rides the crests and the raft lies lower, behind them.
+// SPIN_UP_SECONDS before the moment, in SPIN_UP_STEPS, so the water opens
+// on a sea that has been blowing: under the veil when the gale is chosen at
+// the start (warmUp), else as the setting changes, and again after a gap
+// longer than RESPIN_SECONDS. tools/gale-probe.mjs runs the step on the CPU
+// and checks the whitewater rides the crests and the froth and raft lie
+// behind them.
 //
 // The gale's strength (setStrength): 0 is no gale (nothing runs), 1 the
 // gale; the one uniform its heights and displacements are scaled by, as the
@@ -128,9 +133,10 @@ export const ACTIVE_LIFETIME = 0.4;   // seconds: the whitewater rides the crest
 export const SPENT_LIFETIME = 0.6;    // the shed whitewater's big bubbles, popping where they lie
 export const RAFT_LIFETIME = 2.0;     // its raft's, on fresh water
 export const WHITECAP_SPEED = 0.8;    // of the peak waves' phase speed: how fast a breaking crest's whitewater travels
-const LONGEST_STEP = 0.1;      // seconds: a longer gap between frames steps the foam this far
+const LONGEST_STEP = 0.1;      // seconds: a longer gap between frames is stepped in pieces this long, the fields evaluated at each
+const RESPIN_SECONDS = 4;      // a gap longer than this (a tab put away, the harness skipping ahead) is not stepped through but spun up afresh
 const SPIN_UP_SECONDS = 6;
-const SPIN_UP_STEPS = 40;
+const SPIN_UP_STEPS = 60;      // of LONGEST_STEP each
 
 
 /** The sea's parameters from the wind and the fetch (JONSWAP's fits): ω_p (rad/s), α, the significant height (m) and the peak wavelength in deep water (m). */
@@ -509,7 +515,7 @@ export class GaleWaves {
   update(time) {
     if (!this.on) return;
     const previousTarget = this.renderer.getRenderTarget();
-    if (this.foamTime === null) {
+    if (this.foamTime === null || time - this.foamTime > RESPIN_SECONDS) {
       const clearColour = this.renderer.getClearColor(new THREE.Color()), clearAlpha = this.renderer.getClearAlpha();
       this.renderer.setClearColor(0x000000, 0);
       for (const target of this.foamTargets) { this.renderer.setRenderTarget(target); this.renderer.clear(true, false, false); }
@@ -517,6 +523,14 @@ export class GaleWaves {
       this.foamTime = time - SPIN_UP_SECONDS;
       for (let step = 1; step < SPIN_UP_STEPS; step++) {
         const moment = time - SPIN_UP_SECONDS * (1 - step / SPIN_UP_STEPS);
+        this.evaluate(moment);
+        this.stepFoam(moment);
+      }
+    } else if (time > this.foamTime) {
+      // The gap since the last frame in pieces, the last landing on the frame's moment.
+      const pieces = Math.ceil((time - this.foamTime) / LONGEST_STEP - 1e-6);
+      for (let piece = 1; piece < pieces; piece++) {
+        const moment = this.foamTime + (time - this.foamTime) * piece / pieces;
         this.evaluate(moment);
         this.stepFoam(moment);
       }
@@ -539,13 +553,18 @@ export class GaleWaves {
   }
 
   /**
-   * For the warm-up (src/main.js): blow (strength 1) and run each pass once,
-   * the evaluation's, the FFT's and the foam's, with no spin-up, so their
-   * programs are built; done(), the strength back, and a gale that blows
-   * then spun up at its first frame.
+   * For the warm-up (src/main.js): a gale that blows is spun up now, under
+   * the veil, at world time 0, and keeps its sea; one that does not is
+   * blown (strength 1) for one run of each pass, the evaluation's, the
+   * FFT's and the foam's, so their programs are built, and done() puts the
+   * strength back and leaves it to spin up when it is chosen.
    */
   warmUp() {
     const strength = this.strength;
+    if (strength > 0) {
+      this.update(0);
+      return { done: () => {} };
+    }
     this.setStrength(1);
     const previousTarget = this.renderer.getRenderTarget();
     this.evaluate(0);
@@ -555,9 +574,9 @@ export class GaleWaves {
     return { done: () => { this.setStrength(strength); this.foamTime = null; } };
   }
 
-  /** One step of the foam map from its time to `time` (at most LONGEST_STEP; none backwards). */
+  /** One step of the foam map from its time to `time` (update keeps it within LONGEST_STEP; none backwards: a clock set back only moves the map's time). */
   stepFoam(time) {
-    const step = Math.min(Math.max(time - this.foamTime, 0), LONGEST_STEP);
+    const step = Math.max(time - this.foamTime, 0);
     this.foamTime = time;
     if (step === 0) return;
     const uniforms = this.foamPass.material.uniforms;

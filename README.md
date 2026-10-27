@@ -970,12 +970,15 @@ at the height of the waves under it, which the CPU sums from the same
 spectrum (all but 0.3% of its variance, to 5 mm), and the mirror image is
 taken about the water's height under the latest splash. Whitecaps: where
 the sideways move crowds the water past breaking (its Jacobian under 0.66,
-about 3% of the sea), a foam map on the tile takes a dense boil, the
-whitecap's whitewater, which rides with the crest at 0.8 of the peak waves'
-phase speed while it pops, within a second, and a raft the water keeps and
-that drains over two seconds, as fresh water's bubbles do, which the water
-shades as it shades a splash's foam, part of the boil a milky cloud under
-the surface, the raft gathered into thin wavering streaks along the wind;
+about 3% of the sea), a foam map on the tile takes the whitecap's
+whitewater, which rides with the crest at 0.8 of the peak waves' phase
+speed for a few tenths of a second and is shed behind it as froth that
+pops where it lies within a second, and a raft the water keeps and that
+drains over two seconds, as fresh water's bubbles do; the water shades them
+as it shades a splash's foam, the breaker's whitewater over a milky cloud
+under the surface, the raft gathered into thin wavering streaks along the
+wind. The map is stepped to each frame in pieces of a tenth of a second,
+and spun up under the veil when the gale is chosen at the start;
 the whitecaps blow spindrift, specks and puffs of mist streaming downwind
 off the crests (`src/spindrift.js`). When the gale rises its foam is run
 over the six seconds before, so the sea opens as one that has been blowing.

@@ -312,7 +312,10 @@ void main() {
   float riding = max(activeBefore * uActiveKeep, breaking * GALE_BOIL);   // (active is a reserved word)
   float spent = min(withWater.b * uSpentKeep + activeBefore * (1.0 - uActiveKeep), GALE_BOIL);
   float raft = min(withWater.g * uRaftKeep + breaking * GALE_RAFT_RATE * uStep, GALE_RAFT_MOST);
-  gl_FragColor = vec4(riding + spent + raft, raft, spent, 1.0);
+  // Together at most 1, full foam, as the solver's map holds it: a crest breaking on and on cannot stack the three past it.
+  float total = riding + spent + raft;
+  float keep = total > 1.0 ? 1.0 / total : 1.0;
+  gl_FragColor = vec4(total, raft, spent, 1.0) * keep;
 }
 `;
 

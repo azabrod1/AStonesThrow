@@ -396,9 +396,10 @@ console.log('8. the whitecaps (the foam step, GALE_FOAM_FRAGMENT)');
           const spent = Math.min(withWater[2] * spentKeep + activeBefore * (1 - activeKeep), BOIL);
           const raft = Math.min(withWater[1] * raftKeep + breaking * RAFT_RATE * step, RAFT_MOST);
           const here = 3 * (row * mapTexels + column);
-          next[here] = active + spent + raft;
-          next[here + 1] = raft;
-          next[here + 2] = spent;
+          const total = active + spent + raft, keep = total > 1 ? 1 / total : 1;
+          next[here] = total * keep;
+          next[here + 1] = raft * keep;
+          next[here + 2] = spent * keep;
         }
       }
       map = next;

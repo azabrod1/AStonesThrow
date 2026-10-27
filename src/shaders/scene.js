@@ -834,7 +834,7 @@ ${SURFACE_BUBBLE}
 #define FOAM_FILM_MEAN 0.8                // measured by tools/foam-probe.mjs
 #define FOAM_FILM_PACKED 0.9               // above this map density, multiple layers hide the clear films
 #define FOAM_CLOUD_HALF 0.07               // the cloud's map value that sends back half what a deep cloud does (Kubelka–Munk)
-#define GALE_CLOUD_SHARE 0.5               // the share of a whitecap's boil that is a cloud under the surface (WATER_FRAGMENT)
+#define GALE_CLOUD_SHARE 0.3               // the share of a whitecap's active whitewater that is a cloud under the surface (WATER_FRAGMENT)
 #define FOAM_CLOUD_SCATTER 5.0             // per metre: the cloud's Kubelka–Munk scattering, against the water's absorption
 #define FOAM_CLOUD_LIGHT 0.38              // a deep cloud's light out through the surface, against white foam's under the same light
 #define FOAM_CHURN 0.8                     // the light the cloud sends back varies by up to this share either way (never past a deep cloud's)...
@@ -1454,15 +1454,22 @@ float galeUnresolvedVariance(vec2 restXZ) {
   return mix(uGaleUnresolved[lower], uGaleUnresolved[lower + 1], level - float(lower));
 }
 
-// The whitecaps' map (uGaleFoam, src/galeWaves.js) at a rest position,
-// reconstructed with a cubic B-spline: its texels are 12.5 cm, and the
-// pattern's threshold cut through a bilinear sample is a polygon with a
-// corner at every texel, which showed as a grid of squares in every whitecap
-// from a few metres. The spline is smooth across texels, at a little blur
-// the map's own smoothness hides; four bilinear fetches, the usual pairing
-// of the spline's weights, where one was.
-vec2 galeFoamAt(vec2 restXZ) {
+// The whitecaps' map (uGaleFoam, src/galeWaves.js: foam, raft, spent
+// whitewater) at a rest position, reconstructed with a cubic B-spline: its
+// texels are 12.5 cm, and the pattern's threshold cut through a bilinear
+// sample is a polygon with a corner at every texel, which showed as a grid
+// of squares in every whitecap from a few metres. The spline is smooth
+// across texels, at a little blur the map's own smoothness hides; four
+// bilinear fetches, the usual pairing of the spline's weights, where one
+// was. Read no coarser than mip GALE_FOAM_FAR_LOD: far off, a mip that
+// averages a whitecap over metres of water puts it under the pattern's
+// threshold and the far crests go bare, where they should still show as
+// flecks (the pattern's own fading keeps far foam an even white).
+#define GALE_FOAM_FAR_LOD 1.5
+vec3 galeFoamAt(vec2 restXZ) {
   vec2 texel = restXZ / uGaleTileSize * uGaleFoamTexels;   // integer at a texel's centre
+  vec2 texelAcrossX = dFdx(texel), texelAcrossY = dFdy(texel);
+  float lod = min(0.5 * log2(max(max(dot(texelAcrossX, texelAcrossX), dot(texelAcrossY, texelAcrossY)), 1e-8)), GALE_FOAM_FAR_LOD);
   vec2 base = floor(texel);
   vec2 f = texel - base;
   vec2 f2 = f * f, f3 = f2 * f;
@@ -1475,8 +1482,8 @@ vec2 galeFoamAt(vec2 restXZ) {
   float scale = 1.0 / uGaleFoamTexels;
   vec2 uv00 = (vec2(h0.x, h0.y) + 0.5) * scale, uv10 = (vec2(h1.x, h0.y) + 0.5) * scale;
   vec2 uv01 = (vec2(h0.x, h1.y) + 0.5) * scale, uv11 = (vec2(h1.x, h1.y) + 0.5) * scale;
-  return (texture2D(uGaleFoam, uv00).rg * g0.x + texture2D(uGaleFoam, uv10).rg * g1.x) * g0.y
-    + (texture2D(uGaleFoam, uv01).rg * g0.x + texture2D(uGaleFoam, uv11).rg * g1.x) * g1.y;
+  return (textureLod(uGaleFoam, uv00, lod).rgb * g0.x + textureLod(uGaleFoam, uv10, lod).rgb * g1.x) * g0.y
+    + (textureLod(uGaleFoam, uv01, lod).rgb * g0.x + textureLod(uGaleFoam, uv11, lod).rgb * g1.x) * g1.y;
 }
 
 // The refraction's lookup, landing on what is less than this share of the
@@ -1696,15 +1703,15 @@ void main() {
   float boilSurface = freshBoilSurface(splashBoil);
   float boilCloud = splashBoil - boilSurface;
   // The gale's whitecaps (src/galeWaves.js), over all the water, read at the
-  // point's rest position: the boil is the whitecap's whitewater, part of it
-  // a cloud of bubbles driven under the surface (GALE_CLOUD_SHARE, drawn as
+  // point's rest position: the active whitewater, the breaker itself, drives
+  // a cloud of bubbles under the surface (GALE_CLOUD_SHARE of it, drawn as
   // a splash's boil's cloud is: the milky halo round a whitecap, soft where
-  // the froth's edge is crisp), the rest packed froth on the surface, with
-  // the raft it leaves (foamKinds, below).
-  vec2 whitecaps = vec2(0.0);
+  // the froth's edge is crisp) and is packed froth on it; the froth it has
+  // shed and the raft it leaves are the water's (foamKinds, below).
+  vec3 whitecaps = vec3(0.0);
   if (uGaleMetresPerUnit > 0.0) {
     whitecaps = galeFoamAt(vRest);
-    boilCloud += GALE_CLOUD_SHARE * max(whitecaps.r - whitecaps.g, 0.0);
+    boilCloud += GALE_CLOUD_SHARE * max(whitecaps.r - whitecaps.g - whitecaps.b, 0.0);
   }
   // The pixel's footprint on the water (world XZ per pixel step), for the
   // rings' and the foam's lookups; taken here, in uniform control flow.
@@ -1883,9 +1890,12 @@ void main() {
   // The gale's whitecaps and the foam they leave, over all the water, the
   // raft gathered into the wind's streaks: sea foam's, churned by breaking,
   // packed and white whatever the water.
+  // The active whitewater is a boil, packed bubbles; the froth it has shed
+  // and the raft are the water's, and thin into lace as they pop.
   if (uGaleMetresPerUnit > 0.0) {
-    float raft = whitecaps.g * galeStreaks(vRest, acrossX, acrossY);
-    foamKinds += vec2(max(whitecaps.r - whitecaps.g, 0.0) + raft, raft);
+    float activeWhitewater = max(whitecaps.r - whitecaps.g - whitecaps.b, 0.0);
+    float left = whitecaps.b + whitecaps.g * galeStreaks(vRest, acrossX, acrossY);
+    foamKinds += vec2(activeWhitewater + left, left);
   }
   float foam = foamKinds.r;
 #ifdef CAVITY_MESH

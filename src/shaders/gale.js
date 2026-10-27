@@ -71,8 +71,9 @@ float galeLift(vec3 stillPoint) {
 // surface and is blown downwind at SPINDRIFT_SPEED (the wind near the crest
 // takes a fine drop's speed within a few tenths of a second), spread up to
 // SPINDRIFT_SPREAD of that across the wind, rising at up to SPINDRIFT_RISE
-// and coming down at SPINDRIFT_FALL, less than free fall, as the air holds
-// its drops near their terminal speed; it thins as it flies. Size and
+// and coming down at SPINDRIFT_FALL, less than free fall, as the air's drag
+// takes most of a fine drop's weight; it lives until it comes down to the
+// water, or SPINDRIFT_LIFE, and thins as it flies. Size and
 // brightness are as the rain's flecks' (FLECK_VERTEX in src/shaders/rain.js):
 // at least uMinPixels across, the opacity cut by the area really covered.
 export const SPINDRIFT_VERTEX = /* glsl */`
@@ -93,8 +94,8 @@ varying float vAlpha;
 #define SPINDRIFT_LIFE 0.6
 #define SPINDRIFT_SPEED 3.5
 #define SPINDRIFT_SPREAD 0.25
-#define SPINDRIFT_RISE 1.5
-#define SPINDRIFT_FALL 6.0
+#define SPINDRIFT_RISE 2.0
+#define SPINDRIFT_FALL 4.0
 #define SPINDRIFT_SPECK 0.015
 #define SPINDRIFT_SIZE_FROM 0.12
 #define SPINDRIFT_SIZE_TO 0.35
@@ -121,11 +122,14 @@ void main() {
   vec2 crestNow = rest + uWind * uCrestSpeed * age;   // where the crest that broke here at the throw is now
   vec3 foam = textureLod(uGaleFoam, crestNow / uGaleTileSize + 0.5 / uGaleFoamTexels, 0.0).rgb;
   float strength = smoothstep(SPINDRIFT_BOIL_FROM, SPINDRIFT_BOIL_TO, max(foam.r - foam.g - foam.b, 0.0));   // the active whitewater alone
-  if (age >= SPINDRIFT_LIFE || strength <= 0.0 || uGaleMetresPerUnit <= 0.0) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); gl_PointSize = 0.0; vAlpha = 0.0; return; }
-  float along = age / SPINDRIFT_LIFE;
+  // Its flight lasts until it comes down to the water (2·rise/fall), or SPINDRIFT_LIFE if that is sooner.
+  float rise = SPINDRIFT_RISE * (0.4 + 0.6 * throw.y);
+  float life = min(SPINDRIFT_LIFE, 2.0 * rise / SPINDRIFT_FALL);
+  if (age >= life || strength <= 0.0 || uGaleMetresPerUnit <= 0.0) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); gl_PointSize = 0.0; vAlpha = 0.0; return; }
+  float along = age / life;
   vec2 acrossWind = vec2(-uWind.y, uWind.x);
   vec2 blown = rest + (uWind + acrossWind * SPINDRIFT_SPREAD * (throw.x - 0.5) * 2.0) * SPINDRIFT_SPEED * age;
-  float height = galeHeight(crestNow) + SPINDRIFT_RISE * (0.4 + 0.6 * throw.y) * age - 0.5 * SPINDRIFT_FALL * age * age;
+  float height = galeHeight(blown) + rise * age - 0.5 * SPINDRIFT_FALL * age * age;   // over the water under it, so it is never drawn through a crest ahead
   vec4 viewPosition = viewMatrix * vec4(blown.x, height, blown.y, 1.0);
   bool speck = slot < uSpeckSlots;
   float size = speck ? SPINDRIFT_SPECK : mix(SPINDRIFT_SIZE_FROM, SPINDRIFT_SIZE_TO, along) * (0.7 + 0.6 * throw.z);
