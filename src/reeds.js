@@ -47,7 +47,10 @@
 //
 // Two meshes draw one stem, as a stone's do (src/rock.js): `above`, in the
 // main scene and on the water's mirror layer, clipped to y ≥ 0; `below`, in
-// the under-water pass, clipped to y ≤ 0, its vertices moved to where the
+// the under-water pass, clipped to y ≤ 0 (the shaders carry three.js's
+// clipping chunks, which a ShaderMaterial's planes need: without them the
+// under-water pass holds the whole stem, and the water's refraction shows
+// its upper half as a dark column), its vertices moved to where the
 // flat surface shows them (SEEN_THROUGH_WATER, so the stem bends at the
 // waterline as a straw in a glass does and meets its upper half there), lit
 // through the water above it (the sun and sky down to its depth, the
@@ -94,6 +97,7 @@ uniform float uTime;
 uniform float uSeenThroughWater;    // 1 for the half under the water: drawn where the surface shows it
 ${GLSL_COMMON}
 ${SEEN_THROUGH_WATER}
+#include <clipping_planes_pars_vertex>
 attribute vec3 instanceRoot;        // where the stem is rooted, on the bed
 attribute vec4 instanceShape;       // height above the water (m), its own lean's direction (radians), its own lean (radians at the tip), its sway's phase
 attribute float instanceTint;       // 0 to 1: the greenest stem to the brownest
@@ -149,8 +153,10 @@ void main() {
   vAlong = along;
   vTint = instanceTint;
   vKind = instanceKind;
-  vec3 shown = mix(world, seenThroughWater(world, 0.0), uSeenThroughWater);
-  gl_Position = projectionMatrix * viewMatrix * vec4(shown, 1.0);
+  vec3 shown = mix(world, seenThroughWater(world, 0.0), uSeenThroughWater);   // at the same height: the clip keeps its half
+  vec4 mvPosition = viewMatrix * vec4(shown, 1.0);
+  gl_Position = projectionMatrix * mvPosition;
+  #include <clipping_planes_vertex>
 }
 `;
 
@@ -168,6 +174,7 @@ varying float vAlong;
 varying float vTint;
 varying float vKind;
 varying float vPixels;
+#include <clipping_planes_pars_fragment>
 #define SKY_LIGHT 1.4               // the sky's light, as on the beach
 #define REED_THROUGH 0.35           // light through the stem from behind, as a share of the sun's on its face
 #define REED_GREEN vec3(0.09, 0.19, 0.06)
@@ -177,6 +184,7 @@ varying float vPixels;
 #define HEAD_FROM 0.78
 #define HEAD_TO 0.9
 void main() {
+  #include <clipping_planes_fragment>
   vec3 toEye = normalize(cameraPosition - vWorld);
   // The cylinder's normal at this point of its face: across the ribbon the circle's, toward the eye in the middle;
   // a blade's is its flat face's, toward the eye, tilted a little across.
