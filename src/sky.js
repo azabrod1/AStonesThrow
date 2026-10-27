@@ -243,7 +243,9 @@ import { decodeHorizonStrip, HORIZON_DECODE } from './horizonStrip.js';
 // when chosen (Swiss Alps is 1.8 MB at 4K, for its detailed ridgeline). An hour's `clock` is its local time (sky-probe's taken).
 // `anchor` and `facing` (Light by the hour, Orientation) are the first hour
 // unless named. `defaultHour` may choose a starting view independently of
-// the lighting anchor. New locations face their cove opening, sunset ridge
+// the lighting anchor. `reeds`: cattails stand in its shallows (src/reeds.js,
+// PLACES in src/main.js): the fresh lakes with a soft shore; a sea cove, a
+// bare rock shore, a salt flat and a frozen alpine reservoir have none. New locations face their cove opening, sunset ridge
 // or low desert skyline, chosen in rendered home and water-level views;
 // Harbour faces the flat hills across the water with its golden hour's sun
 // path on it, Wooded lake its wooded hill, the sun 60° to the left, where
@@ -261,6 +263,7 @@ const SKIES = {
     },
   },
   harbour: {
+    reeds: true,
     anchor: 'morning',
     facing: 'golden',
     defaultHour: 'golden',
@@ -272,6 +275,7 @@ const SKIES = {
     },
   },
   highlands: {
+    reeds: true,
     anchor: 'noon',
     facing: 'sunset',
     defaultHour: 'sunset',
@@ -285,6 +289,7 @@ const SKIES = {
     },
   },
   lakeside: {
+    reeds: true,
     anchor: 'afternoon',
     facing: 'afternoon',
     hours: {
@@ -313,13 +318,15 @@ const SKIES = {
     },
   },
   swiss: { mirrored: true, sunAzimuth: 45, hours: { midday: { file: 'lago_disola', resolution: '4k', label: 'Midday' } } },
-  wooded: { sunAzimuth: -60, hours: { morning: { file: 'radkow_lake', label: 'Late morning', clock: '11:11' } } },
+  wooded: { reeds: true, sunAzimuth: -60, hours: { morning: { file: 'radkow_lake', label: 'Late morning', clock: '11:11' } } },
   // The Koi pond's own (src/main.js PLACES `koi`), no place of its own (`ownPlace`): Ninomaru Teien, the garden of
   // Nagoya Castle, in April's afternoon light through its trees (`shadedSun`: its sun behind leaves, the light on
   // level ground the balance's, most of it the sky's).
   garden: { ownPlace: false, shadedSun: true, sunAzimuth: 100, hours: { afternoon: { file: 'ninomaru_teien', label: 'Afternoon', clock: '15:09' } } },
 };
 /** The skies that are each a place of their own (the Location setting's lakes; the Koi pond takes the garden's). */
+/** The skies whose shallows have reeds (`reeds` above). */
+export const REED_SKIES = Object.keys(SKIES).filter((name) => SKIES[name].reeds);
 export const SKY_NAMES = Object.keys(SKIES).filter((name) => SKIES[name].ownPlace !== false);
 export const DEFAULT_SKY = 'lakeside';   // an open lake to a far shore, as the Lake water is
 /** A place's hours in the order of the day: their names, labels and local times (clock, 'hh:mm', or undefined for a lone photograph). */

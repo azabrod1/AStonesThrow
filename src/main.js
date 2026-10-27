@@ -295,7 +295,7 @@ import { Snow } from './snow.js';
 import { lightningAt } from './lightning.js';
 import { Rings } from './rings.js';
 import { DropRings } from './dropRings.js';
-import { createEnvironment, SKY_NAMES, skyHours, resolveHour, nearestHour } from './sky.js';
+import { createEnvironment, SKY_NAMES, REED_SKIES, skyHours, resolveHour, nearestHour } from './sky.js';
 import { createWaterSurface } from './waterSurface.js';
 import { createPondFloor, createShore, floorDepthAt, groundHeightAt, setShoreKind, KOI_SHORE } from './pondFloor.js';
 import { Rock, setAir, aimSkip, aimThrow, flutterTrial, prepareThing, PREPARATION_WORK, skipLowest, skipSpeed, SKIP_THROW, PHYSICS_STEP, throwFlightTime } from './rock.js';
@@ -610,9 +610,12 @@ const LAKE_CLARITIES = WATER_CHOICES.filter((name) => name !== 'frozen');
 // beach, its own water (WATER_CLARITIES.koi) and a garden round it, out of
 // reach behind a hedge (src/koiGarden.js).
 // Each place's fish are
-// src/fish.js's (FISH_BY_PLACE, by the place's name).
+// src/fish.js's (FISH_BY_PLACE, by the place's name); its reeds (`reeds`,
+// src/reeds.js) are the sky's (REED_SKIES): the fresh lakes have them,
+// the sea cove, the bare rock shore, the salt flat and the frozen alpine
+// reservoir none, and the Pool and the Koi pond have their own grounds.
 const PLACES = {
-  ...Object.fromEntries(SKY_NAMES.map((name) => [name, { sky: name, pool: false }])),
+  ...Object.fromEntries(SKY_NAMES.map((name) => [name, { sky: name, pool: false, reeds: REED_SKIES.includes(name) }])),
   swiss: { sky: 'swiss', pool: false, defaultWater: 'frozen', defaultView: 'level' },
   pool: { sky: 'lakeside', pool: true },
   koi: { sky: 'garden', pool: false, koi: true },
@@ -810,6 +813,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   const pool = createPool(water, lighting, ambientWaves, environment, { rings, haze: environment.hazeUniforms, wet: wetDeck, snow: snowCover, air, ice });
   let pooled = false;
   let koiPond = false;   // the lake's shore is the Koi pond's (PLACES `koi`; setKoiPond)
+  let reedsHere = false;   // the place's shallows have reeds (PLACES `reeds`; setReeds)
   const bedDepthAt = (x, z) => (pooled ? POOL.depth : floorDepthAt(x, z));
   water.floorDepthAt = bedDepthAt;
   const surface = createWaterSurface(water, lighting, ambientWaves, { meshSegments: settings.meshSegments, rings, dropRings, skyCube: environment.cubeTexture, rain, haze: environment.hazeUniforms, gale: galeWaves, ice });
@@ -875,6 +879,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   let waterName = DEFAULT_WATER;
   pooled = PLACES[placeName].pool;
   koiPond = Boolean(PLACES[placeName].koi);
+  reedsHere = Boolean(PLACES[placeName].reeds);
   setShoreKind(koiPond ? 'koi' : 'lake');
   water.setPool(pooled);
   applyGale();
@@ -1003,7 +1008,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   /** The lake's bed, beach and open water, or the pool's basin and deck: the meshes only (setPooled changes the water). */
   function showScenery(asPool) {
     floor.visible = shore.visible = !asPool;
-    reeds.visible = !asPool && !koiPond;   // the lake's shallows only
+    reeds.visible = !asPool && !koiPond && reedsHere;   // the lake's shallows, where the place has them
     pool.setVisible(asPool);
     shore.visible = !asPool && !koiPond;
     koiLand.visible = !asPool && koiPond;
@@ -1384,6 +1389,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
         placeName = place;
         setPooled(PLACES[place].pool);
         setKoiPond(Boolean(PLACES[place].koi));
+        setReeds(Boolean(PLACES[place].reeds));
         if (entering) applyFish();
         if (entering && PLACES[place].defaultWater === 'frozen' && iceName === 'none') {
           clearPond();
@@ -2913,6 +2919,13 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
    * GLSL twin's uniform with it), their meshes, the water's own, no gale, and
    * a still pond; the eye kept where it may stand.
    */
+  /** Whether this place's shallows have reeds (PLACES `reeds`): shown at the lake when they do. */
+  function setReeds(here) {
+    if (here === reedsHere) return;
+    reedsHere = here;
+    reeds.visible = !pooled && !koiPond && here;
+  }
+
   function setKoiPond(asKoi) {
     if (asKoi === koiPond) return;
     koiPond = asKoi;
@@ -3005,7 +3018,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
         showScenery(!pooled);
         garden.setVisible(true, { building: false });   // the Koi pond's garden's programs too, whatever the place (src/koiGarden.js builds it only when shown)
         koiLand.visible = true;
-        reeds.visible = true;   // and the reeds', shown at the lake whatever the place
+        reeds.visible = true;   // and the reeds', whatever the place: a change of place compiles nothing
         render();
         renderFrom(VIEWS.under);
         showScenery(pooled);

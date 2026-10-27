@@ -15,7 +15,9 @@
 // (floorDepthAt, src/pondFloor.js), so it stands where the drawn bed is,
 // and never in the throw's line in portrait: the phone's home frame is a
 // slot 0.8 m wide at its bottom, and the nearest stems stand just outside
-// it on the right.
+// it on the right. Which places have them is the sky's `reeds` (SKIES in
+// src/sky.js; src/main.js setReeds): the fresh lakes, not a sea cove, a
+// bare rock shore, a salt flat or a frozen alpine reservoir.
 //
 // Each stem is one instance of a ribbon (REED_SEGMENTS rows, two verts a
 // row) the vertex shader bends and turns to face the eye about its own

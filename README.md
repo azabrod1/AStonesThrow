@@ -144,8 +144,9 @@ is remembered on the device (but the view, which opens on the shore):
   into a grassy bank: pebbles and a wrack line of sticks along the water,
   low hummocks the sun shades, tufts thickening into a sward in the place's
   own ground colour, and far off the sky photo's own land, so turned round,
-  the view sees a shore rather than water to the horizon. Reeds stand in
-  the shallows on either side of the throw's line (`src/reeds.js`): rushes
+  the view sees a shore rather than water to the horizon. At the fresh lakes
+  (Lakeside, Harbour, Highlands, Wooded lake: `reeds` in `src/sky.js`) reeds
+  stand in the shallows on either side of the throw's line (`src/reeds.js`): rushes
   with cattail heads and leaf blades, rooted on the bed, mirrored in the
   water and bending under it as a straw does, leaning and swaying with the
   Wind control, the nearest bed at the home view's lower left corner.
