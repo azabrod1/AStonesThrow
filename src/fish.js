@@ -12,6 +12,9 @@
 //   - Highlands, a mountain loch: brown trout alone, minnows schooling.
 //   - Mesas, a dam on the veld: a largemouth bass alone and a shoal of
 //     bluegill.
+//   - Harbour, a cold dam under the Drakensberg, stocked with trout: two
+//     alone, and minnows schooling.
+//   - Wooded lake, a lowland lake in Poland: a shoal of perch and a pike.
 //   - Desert oasis, a spring pool: a school of pupfish, the blue males and
 //     the brown females together, and a shoal of tilapia.
 //   - Rocky cove, the sea: a shoal of grey mullet and a wrasse on its own.
@@ -123,6 +126,8 @@ export const FISH_BY_PLACE = {
   swiss: [{ species: 'trout', count: 2 }, { species: 'char', count: 3 }],
   highlands: [{ species: 'trout', count: 2 }, { species: 'minnow', count: 8 }],
   mesas: [{ species: 'bass', count: 1 }, { species: 'bluegill', count: 4 }],
+  harbour: [{ species: 'trout', count: 2 }, { species: 'minnow', count: 8 }],
+  wooded: [{ species: 'perch', count: 5 }, { species: 'pike', count: 1 }],
   desert: [{ species: 'pupfish', count: 8 }, { species: 'tilapia', count: 3 }],
   cove: [{ species: 'mullet', count: 4 }, { species: 'wrasse', count: 1 }],
   koi: [{ species: 'koi', count: 7 }, { species: 'goldfish', count: 1 }],

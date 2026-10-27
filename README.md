@@ -834,6 +834,12 @@ The curated locations include:
 - **Desert oasis** (`?sky=desert`): Rogland's golden hour, starry night and
   moonlit early morning, framed toward the lower rock skyline. The water is
   the simulation's, surrounded by the photographed desert.
+- **Harbour** (`?sky=harbour`): Small Harbour on Sterkfontein Dam, four
+  panoramas from one spot at water level: a 2024 morning and golden hour,
+  a 2019 sunset and dusk. Faces the flat-topped hills across the water, the
+  sun's path on it. Starts at the golden hour.
+- **Wooded lake** (`?sky=wooded`): Radków Lake under the Table Mountains, one
+  late morning, facing the wooded far shore with the sun to the left.
 
 The Time of day page has named buttons as well as the slider. Selecting a
 new location or hour cancels an obsolete download immediately; it never
@@ -870,6 +876,13 @@ node tools/sky-probe.mjs assets/sky/kiara_9_dusk_2k.hdr --taken=2016-08-25T17:55
 node tools/sky-probe.mjs assets/sky/rogland_sunset_2k.hdr --taken=2023-09-05T17:31:00+02:00 --at=-29.68232655273397,17.949190420193943
 node tools/sky-probe.mjs assets/sky/rogland_clear_night_2k.hdr --taken=2023-09-05T21:22:00+02:00 --at=-29.68232655273397,17.949190420193943 --align=assets/sky/rogland_sunset_2k.hdr --band=0,18
 node tools/sky-probe.mjs assets/sky/rogland_moonlit_night_2k.hdr --taken=2023-09-07T05:33:00+02:00 --at=-29.68232655273397,17.949190420193943 --align=assets/sky/rogland_sunset_2k.hdr --band=0,18
+H=--at=-28.492172680262783,29.002510265244542
+node tools/sky-probe.mjs assets/sky/small_harbour_morning_2k.hdr --taken=2024-08-19T09:33:00+02:00 $H
+node tools/sky-probe.mjs assets/sky/small_harbour_sunset_2k.hdr --taken=2024-08-19T16:51:00+02:00 $H --align=assets/sky/small_harbour_morning_2k.hdr --band=0,4
+# the 2019 pair's time stamps are wrong: the sunset's time is read from its sun's height, the dusk's estimated from its glow
+node tools/sky-probe.mjs assets/sky/small_harbor_01_2k.hdr --taken=2019-05-02T17:04:00+02:00 --at=-28.492189,29.002458 --align=assets/sky/small_harbour_morning_2k.hdr --band=0,4
+node tools/sky-probe.mjs assets/sky/small_harbor_02_2k.hdr --taken=2019-05-01T17:50:00+02:00 --at=-28.492613,29.002165 --align=assets/sky/small_harbour_morning_2k.hdr --band=1,5
+node tools/sky-probe.mjs assets/sky/radkow_lake_2k.hdr
 ```
 
 **Rain** (`src/rain.js`, `src/shaders/rain.js`; the cloud and haze in

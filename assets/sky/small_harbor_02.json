@@ -1,0 +1,52 @@
+{
+  "source": "small_harbor_02_2k.hdr",
+  "width": 2048,
+  "height": 1024,
+  "sun": {
+    "elevation": 5.93,
+    "azimuth": 216.11,
+    "direction": [
+      0.80362,
+      0.10325,
+      0.58612
+    ],
+    "pixels": 1464
+  },
+  "sunIrradiance": [
+    0.054694,
+    0.046996,
+    0.035322
+  ],
+  "skyRadiance": [
+    0.3795,
+    0.45799,
+    0.68506
+  ],
+  "horizonRadiance": {
+    "median": 0.092584,
+    "p90": 2.425
+  },
+  "maxLuminance": 7.1649,
+  "taken": "2019-05-01T17:50:00+02:00",
+  "at": [
+    -28.492613,
+    29.002165
+  ],
+  "solar": {
+    "elevation": -4.78,
+    "azimuth": 284.62
+  },
+  "light": "none",
+  "alignment": {
+    "reference": "small_harbour_morning_2k.hdr",
+    "turn": 118.43,
+    "peak": 3.33,
+    "nextBest": 2.39,
+    "band": [
+      1,
+      5
+    ]
+  },
+  "north": 286.87,
+  "northFrom": "skyline"
+}

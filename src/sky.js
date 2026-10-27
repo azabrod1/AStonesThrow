@@ -29,7 +29,15 @@
 // of their hours is a panorama of the same land at another time, and the
 // land keeps still while the sun moves (Orientation).
 // Highlands uses five Kiara photographs (2016); Desert oasis uses Rogland's
-// golden hour and two nights (2023). Their rock ridges are aligned using the
+// golden hour and two nights (2023). Harbour is four of Zaal and Guest's
+// from a small harbour on Sterkfontein Dam: a morning and a golden hour of
+// one day in 2024 from one spot, and a 2019 sunset and dusk from within
+// 60 m of it, aligned on the flat-topped hills across the water (--band 0°
+// to 4°, the dusk's in 1° to 5°, and the least sure: 3.3σ). The 2019 time
+// stamps are wrong; the sunset's clock is read from its sun's height (a
+// glow through haze, so the probe calls its light 'none' and the scene's
+// sun is dark), the dusk's estimated from its glow. Wooded lake is one
+// photograph, Radków's lake under the Table Mountains (2025). Their rock ridges are aligned using the
 // probe's --band option: Kiara's lower valley from -15° to -5°, Rogland's
 // skyline from 0° to 18°. Small viewpoint changes in Kiara remain in nearby
 // rocks. Its sunrise/sunset are lit by the measured sun; their camera times
@@ -236,7 +244,10 @@ import { decodeHorizonStrip, HORIZON_DECODE } from './horizonStrip.js';
 // `anchor` and `facing` (Light by the hour, Orientation) are the first hour
 // unless named. `defaultHour` may choose a starting view independently of
 // the lighting anchor. New locations face their cove opening, sunset ridge
-// or low desert skyline, chosen in rendered home and water-level views.
+// or low desert skyline, chosen in rendered home and water-level views;
+// Harbour faces the flat hills across the water with its golden hour's sun
+// path on it, Wooded lake its wooded hill, the sun 60° to the left, where
+// the eye's own side of the lake and the houses stay out of the frame.
 const SKIES = {
   cove: { sunAzimuth: 15, hours: { morning: { file: 'secluded_beach', label: 'Morning' } } },
   desert: {
@@ -247,6 +258,17 @@ const SKIES = {
       moonlight: { file: 'rogland_moonlit_night', label: 'Moonlight', clock: '05:33' },
       sunset: { file: 'rogland_sunset', label: 'Golden hour', clock: '17:31' },
       night: { file: 'rogland_clear_night', label: 'Starlight', clock: '21:22' },
+    },
+  },
+  harbour: {
+    anchor: 'morning',
+    facing: 'golden',
+    defaultHour: 'golden',
+    hours: {
+      morning: { file: 'small_harbour_morning', label: 'Morning', clock: '09:33' },
+      golden: { file: 'small_harbour_sunset', label: 'Golden hour', clock: '16:51' },
+      sunset: { file: 'small_harbor_01', label: 'Sunset', clock: '17:04' },
+      dusk: { file: 'small_harbor_02', label: 'Dusk', clock: '17:50' },
     },
   },
   highlands: {
@@ -291,6 +313,7 @@ const SKIES = {
     },
   },
   swiss: { mirrored: true, sunAzimuth: 45, hours: { midday: { file: 'lago_disola', resolution: '4k', label: 'Midday' } } },
+  wooded: { sunAzimuth: -60, hours: { morning: { file: 'radkow_lake', label: 'Late morning', clock: '11:11' } } },
   // The Koi pond's own (src/main.js PLACES `koi`), no place of its own (`ownPlace`): Ninomaru Teien, the garden of
   // Nagoya Castle, in April's afternoon light through its trees (`shadedSun`: its sun behind leaves, the light on
   // level ground the balance's, most of it the sky's).
