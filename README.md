@@ -143,8 +143,14 @@ is remembered on the device (but the view, which opens on the shore):
   where the rocks land and 3.5 m far out, so the sand shows in the shallows
   and is gone where the rocks land, and with it the light a ring throws on
   it. Behind the waterline, just behind the shore view, a sand beach rises
-  into a grassy bank that takes its colour from the sky photo's own land, so
-  turned round, the view sees a shore rather than water to the horizon.
+  into a grassy bank: pebbles and a wrack line of sticks along the water,
+  low hummocks the sun shades, tufts thickening into a sward in the place's
+  own ground colour, and far off the sky photo's own land, so turned round,
+  the view sees a shore rather than water to the horizon. Reeds stand in
+  the shallows on either side of the throw's line (`src/reeds.js`): rushes
+  with cattail heads and leaf blades, rooted on the bed, mirrored in the
+  water and bending under it as a straw does, leaning and swaying with the
+  Wind control, the nearest bed at the home view's lower left corner.
 - Frozen (`?water=frozen`, or `?ice=thin|thick`; under the Water cards,
   Thin, 1 cm, the default, or Thick, 4 cm), over the lake's water last
   chosen or the pool's (below). What is thrown lands on it,
@@ -185,7 +191,10 @@ is remembered on the device (but the view, which opens on the shore):
   Lakeside, and `?sky=alpine` opens Swiss Alps. Pool is a tiled pool on a
   deck by Lakeside's lake, through its hours. A photo (0.2 to 0.8 MB, or 1.8 MB
   for Swiss Alps) loads while the old sky stays; then the sky, sun and
-  everything they light change together. Older Pool-water and Ice settings
+  everything they light change together. A strip of the same photo at four
+  times the resolution, the band about the horizon where the land stands
+  (0.2 to 1.4 MB), follows once the sky is up and sharpens the skyline when
+  it comes. Older Pool-water and Ice settings
   carry over to the Pool location and Frozen water.
 - Time of day: named buttons and a slider select each photographed hour:
   Lakeside's dawn, sunrise, afternoon and night; Mesas' twelve hours from
@@ -1183,7 +1192,12 @@ the sun's glitter: a Beckmann highlight on the rippled normal, widened by the
 ripple finer than the pixel. Where there is foam it replaces the surface, a
 diffuse white under the sun and the sky; the foam specks ride on it. The
 splash's passes then draw its water over the scene and tone-map it; with no
-water in the air the frame is only tone-mapped. The inner patch's mesh only
+water in the air the frame is only tone-mapped. Before the tone map a few
+percent of the scene's light is spread as a lens spreads it (`src/glare.js`:
+a chain of halved copies of the frame, weighted by the CIE's disability glare
+equation so the veil falls off as the eye's does), which gives the sun's
+image in the water and every glint its halo in place of a clipped white
+disc. The inner patch's mesh only
 carries the displacement (the normals come from the height textures per
 pixel), so it is coarser than the solver's grid.
 Caustics on the sand come from the Laplacian of the surface height above,
@@ -1421,9 +1435,14 @@ farther out, so it rises into the view rather than filling its corner.
   The rocks are thrown from the shore whatever the view. The harness leaves
   the preview of the thing in the hand out (`?preview=off`) unless
   `--preview=1`, so frames from any orbit stay as they were.
-- `node tools/sky-encode.mjs [assets/sky/name_2k.hdr ...] [--verify]` encodes
+- `node tools/sky-encode.mjs [assets/sky/name_2k.hdr ...] [--verify] [--no-horizon]` encodes
   each sky's Radiance file (every one, by default) as the JPEG gain map the
-  page loads, `assets/sky/name_2k.jpg`: a base image and a gain map, matched
+  page loads, `assets/sky/name_2k.jpg`, and its horizon strip,
+  `assets/sky/name_horizon.jpg`, the band from 17° above the horizon to 3°
+  below cut from Poly Haven's 8k file (downloaded beside it when missing,
+  never committed; `--no-horizon` skips it), which the page fetches after
+  the sky and decodes on the GPU (`src/horizonStrip.js`; `--verify` checks
+  that decode too): a base image and a gain map, matched
   to the arithmetic of Three.js's UltraHDRLoader so that it decodes to the
   half floats the Radiance file gave, the sun's disc and all, in 0.2 to
   0.6 MB against 5 to 7. The gain map is constant over each 8×8 block (so

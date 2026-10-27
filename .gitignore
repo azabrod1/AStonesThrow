@@ -2,3 +2,4 @@ node_modules/
 shots/
 _site/
 __pycache__/
+assets/sky/*_8k.hdr

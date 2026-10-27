@@ -20,10 +20,12 @@
 // Behind the waterline the bed rises out of the water as a beach
 // (createShore): a mesh of its own in the main scene and in the water's
 // mirror image, the same sand lit by the sun and the sky, darker where it
-// is wet just above the water. Farther off it gives way to the sky photo's
-// own ground in its direction (LAND_FRAGMENT), so where the beach ends the
-// photo carries on, and the camera, which turns about the pond (src/
-// main.js), sees a shore behind it rather than water to the horizon.
+// is wet just above the water, with the relief, debris and tufts a shore
+// shows between its grains and its slope (LAND_FRAGMENT). Farther off it
+// gives way to the sky photo's own ground in its direction, so where the
+// beach ends the photo carries on, and the camera, which turns about the
+// pond (src/main.js), sees a shore behind it rather than water to the
+// horizon.
 //
 // The caustics (FLOOR_FRAGMENT and CAUSTICS, which the pool's basin shares,
 // in src/shaders/scene.js). A floor point is lit

@@ -303,6 +303,8 @@ import { THINGS, THING_NAMES, DEFAULT_THING, defineThing, onThingsChange } from 
 import { collideThings } from './collide.js';
 import { SplashSystem, MIRROR_LAYER } from './splash.js';
 import { createFloatTarget, FullscreenPass, configureFloatSupport, renderTargetBytes } from './gpu.js';
+import { Glare } from './glare.js';
+import { Reeds } from './reeds.js';
 import { UNDER_BACKGROUND_FRAGMENT } from './shaders/scene.js';
 import { directionAt, placeDirection, clampToFrame, isZoomed, viewFacing } from './viewZoom.js';
 import { meshKind, withParts } from './thingMeshes.js';
@@ -753,7 +755,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   let qualityName = automaticQuality ? 'high' : QUALITY[quality] ? quality : 'medium';
   let settings = QUALITY[qualityName];
   // Parts of the frame the profiler switches off (src/profiler.js); all on otherwise.
-  const skip = { floor: false, surface: false, solver: false, ambient: false, fluid: false, spray: false, mirror: false, cavity: false, halfDensity: false, sleep: false };
+  const skip = { floor: false, surface: false, solver: false, ambient: false, fluid: false, spray: false, mirror: false, cavity: false, glare: false, halfDensity: false, sleep: false };
 
   const water = new SpectralWater(renderer, { size: settings.grid, domainSize: 6, centre: [0, -1.0], depth: POND_DEPTH });
   const windParameter = pageParameters.get('wind')?.split(',').map(Number);
@@ -763,6 +765,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   // before any material spreads those in; they blow only under a gale, and
   // never in the pool (applyGale).
   const galeWaves = new GaleWaves(renderer, { windDirection, centre: water.centre, sharedWith: ambientWaves });
+  const reeds = new Reeds({ lighting, ambientWaves, mirrorLayer: MIRROR_LAYER });   // the shallows' rushes (src/reeds.js), in the main scene, the mirror and the under-water pass
   // The water's height at world (x, z) under the gale (its CPU sum), for the stones, the mirror and the eye.
   const galeSample = { height: 0, slopeX: 0, slopeZ: 0 };
   const galeSurfaceAt = (x, z) => galeWaves.sample(x, z, galeSample).height;
@@ -808,6 +811,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   const surface = createWaterSurface(water, lighting, ambientWaves, { meshSegments: settings.meshSegments, rings, dropRings, skyCube: environment.cubeTexture, rain, haze: environment.hazeUniforms, gale: galeWaves, ice });
   const floaterRide = createFloaterRide(surface.rideUniforms);   // the water under each floater, for the physics
   const splash = new SplashSystem({ environment, lighting, water, ambientWaves, surface });
+  const glare = new Glare();   // the sun's image and every glint spread over the frame (src/glare.js), mixed in by the splash's final pass
   splash.setCrownDropletCap(settings.crownDrops);
   splash.spray.setBudget(settings.spray);
   // The wind's strength: the page's ?windStrength, else the last choice here, else calm.
@@ -828,6 +832,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     snow.setWind(windDirection, DRIFT_WIND * WIND_STRENGTHS[name]);
     const windLength = Math.hypot(windDirection[0], windDirection[1]);
     splash.spray.setWind(windDirection[0] / windLength, windDirection[1] / windLength, WIND_STRENGTHS[name]);
+    reeds.setWind(WIND_STRENGTHS[name]);
     galeWaves.setFoamVelocity(water.foamUniforms.uFoamVelocity.value);
     applyGale();
   }
@@ -979,6 +984,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   sceneMain.add(koiLand);
   shore.layers.enable(MIRROR_LAYER);
   sceneMain.add(shore);
+  sceneMain.add(reeds.above);
+  sceneUnder.add(reeds.below);
   // The pool's basin under the water, its walls and deck in the main scene
   // and the mirror (src/pool.js); shown in place of the lake's while the
   // water is the pool's (showScenery).
@@ -990,6 +997,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   /** The lake's bed, beach and open water, or the pool's basin and deck: the meshes only (setPooled changes the water). */
   function showScenery(asPool) {
     floor.visible = shore.visible = !asPool;
+    reeds.visible = !asPool && !koiPond;   // the lake's shallows only
     pool.setVisible(asPool);
     shore.visible = !asPool && !koiPond;
     koiLand.visible = !asPool && koiPond;
@@ -1697,6 +1705,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     mainTarget = createFloatTarget(resolution.x, resolution.y, { type: THREE.HalfFloatType, filter: THREE.LinearFilter, depth: true, depthTexture: true });
     reflectionTarget = createFloatTarget(underWidth, underHeight, { type: THREE.HalfFloatType, filter: THREE.LinearFilter, depth: true });
     splash.resize(resolution.x, resolution.y, settings.fluidScale);
+    glare.resize(resolution.x, resolution.y);
+    reeds.resize(resolution.y);
     applyView();
   }
   resize();
@@ -2585,6 +2595,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     pool.setTime(simulationTime);            // its deck's splashed patches dry by it
     ice.update();                            // what broke or opened since, into its mask (src/ice.js)
     iceCracks.update();                      // and the cracks made since, onto it (src/iceCracks.js)
+    reeds.update(simulationTime);
     renderer.info.reset();
     framesRendered++;
     camera.updateMatrixWorld();
@@ -2631,8 +2642,11 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       debugPass.render(renderer, null);
       return;
     }
-    // The profiler's plain tone map in place of the droplet passes, or the
-    // splash over the scene; from below, what flies in the air is not drawn.
+    // The glare of the finished scene, then the profiler's plain tone map in
+    // place of the droplet passes, or the splash over the scene; from below,
+    // what flies in the air is not drawn.
+    if (!skip.glare) glare.render(renderer, mainTarget, camera.fov / resolution.y);
+    splash.setGlare(glare.texture, skip.glare ? 0 : glare.share);
     if (skip.fluid || fromBelow) splash.toneMap(renderer, mainTarget, null);
     else splash.render(renderer, camera, mainTarget, null);
   }
@@ -2657,7 +2671,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     ...ambientWaves.uniforms(),
     ...ice.uniforms,   // no shafts under the ice (underwaterShafts)
   });
-  const hiddenFromBelow = () => [environment.sky, shore, koiLand, pool.walls, pool.yard, ...garden.meshes, marker, arc, ...(preview.mesh ? [preview.mesh] : []), ...rocks.map((rock) => rock.meshAbove)];
+  const hiddenFromBelow = () => [environment.sky, shore, koiLand, reeds.above, pool.walls, pool.yard, ...garden.meshes, marker, arc, ...(preview.mesh ? [preview.mesh] : []), ...rocks.map((rock) => rock.meshAbove)];
   function renderFromBelow() {
     renderer.setRenderTarget(mainTarget);
     renderer.clear(true, true, false);
@@ -2693,9 +2707,9 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       gale: sum([galeWaves.spectrumTarget, galeWaves.fftA, galeWaves.fftB, galeWaves.displacementTarget, galeWaves.derivativeTarget]),
       rain: renderTargetBytes(rain.tileTarget),
       rings: rings.bytes,
-      scene: sum([underTarget, mainTarget, reflectionTarget]),
+      scene: sum([underTarget, mainTarget, reflectionTarget, ...glare.targets]),
       splash: sum(Object.values(splash.targets)),
-      sky: sum(environment.targets) + environment.panoramaBytes,
+      sky: sum(environment.targets) + environment.panoramaBytes + environment.horizonBytes,
       floor: floorPatternBytes,
       ice: ice.budget.maskBytes + iceCracks.bytes,
     };
@@ -3002,6 +3016,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
         showScenery(!pooled);
         garden.setVisible(true, { building: false });   // the Koi pond's garden's programs too, whatever the place (src/koiGarden.js builds it only when shown)
         koiLand.visible = true;
+        reeds.visible = true;   // and the reeds', shown at the lake whatever the place
         render();
         renderFrom(VIEWS.under);
         showScenery(pooled);
@@ -3219,6 +3234,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       return requestPlace(place, hour);
     },
     get sky() { return placeName; },
+    /** Resolves when the sky's horizon strip is drawn, or has failed (src/sky.js, Horizon): the tools wait for it, the page never. */
+    get horizonReady() { return environment.horizonReady; },
     /**
      * The hour of the place last asked for (a name from `hours`), its local
      * time remembered on this device as the time of day other places follow.
