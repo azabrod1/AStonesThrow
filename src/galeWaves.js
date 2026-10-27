@@ -67,12 +67,26 @@
 // Whitecaps (GALE_FOAM_FRAGMENT says how): a foam map of FOAM_TEXELS² on
 // the tile, at rest positions, in the units of the solver's foam map (the
 // whole foam and its raft), which the water shades as it shades a splash's
-// foam. One step a rendered frame, of the world time since the last; the
-// map keeps what the breaking crests left, so when the gale rises it is
-// first run over SPIN_UP_SECONDS before the moment, in SPIN_UP_STEPS, so
-// the water opens on a sea that has been blowing (a moment's work under the
-// veil, or as the setting changes). The foam drifts downwind with the
-// splash's (FOAM_DRIFT in src/spectralWater.js, foamVelocity).
+// foam. A crest that breaks churns a boil, the whitecap itself: a tumbling
+// mass of whitewater that rides with the crest while it lives, at
+// WHITECAP_SPEED of the peak waves' phase speed (Rapp and Melville 1990
+// measured breaking crests at 0.7 to 0.9 of it), so the map carries the boil
+// downwind by that each step (crestSpeed, uCrestTravel) and it stays on the
+// crest's top and back rather than trailing half a wavelength behind into
+// the trough, as it did when it was left where the crest had been. The raft
+// the whitecap leaves is the water's: it stays with the surface (the map's
+// rest positions ride the orbital motion already) and drifts downwind with
+// the splash's foam (FOAM_DRIFT in src/spectralWater.js, foamVelocity). On
+// the lake's fresh water, with no salt to hold the bubbles apart, a raft
+// lasts RAFT_LIFETIME, seconds, not a sea's tens of seconds: most of the
+// water between the whitecaps is clean, and what lingers is gathered into
+// the wind's streaks (galeStreaks in src/shaders/scene.js). One step a
+// rendered frame, of the world time since the last; the map keeps what the
+// breaking crests left, so when the gale rises it is first run over
+// SPIN_UP_SECONDS before the moment, in SPIN_UP_STEPS, so the water opens on
+// a sea that has been blowing (a moment's work under the veil, or as the
+// setting changes). tools/gale-probe.mjs runs the step on the CPU and checks
+// the boil rides the crests and the raft lies lower, behind them.
 //
 // The gale's strength (setStrength): 0 is no gale (nothing runs), 1 the
 // gale; the one uniform its heights and displacements are scaled by, as the
@@ -105,9 +119,10 @@ const GRAVITY = 9.81;
 const SURFACE_TENSION_OVER_DENSITY = 7.2e-5;
 const HEIGHT_TEXTURE_UNITS = 1000;     // the textures hold millimetres
 export const CPU_DROPPED_VARIANCE = 0.003;   // the share of the height's variance the CPU's sum leaves out
-const FOAM_TEXELS = 256;
-const BOIL_LIFETIME = 0.8;     // seconds: a whitecap's big bubbles
-const RAFT_LIFETIME = 5.0;     // its raft's
+export const FOAM_TEXELS = 256;
+export const BOIL_LIFETIME = 0.8;     // seconds: a whitecap's big bubbles
+export const RAFT_LIFETIME = 2.0;     // its raft's, on fresh water
+export const WHITECAP_SPEED = 0.8;    // of the peak waves' phase speed: how fast a breaking crest's whitewater travels
 const LONGEST_STEP = 0.1;      // seconds: a longer gap between frames steps the foam this far
 const SPIN_UP_SECONDS = 6;
 const SPIN_UP_STEPS = 40;
@@ -124,6 +139,16 @@ export function seaState({ windSpeed, fetch }) {
     significantHeight: 0.0016 * Math.sqrt(dimensionlessFetch) * windSpeed ** 2 / GRAVITY,
     peakWavelength: 2 * Math.PI * GRAVITY / peakFrequency ** 2,
   };
+}
+
+/** The peak waves' phase speed (m/s) on water `depth` deep: ω_p over the wavenumber the dispersion gives it (a few steps of Newton's method from deep water's). */
+export function crestSpeed({ peakFrequency }, depth) {
+  let wavenumber = peakFrequency ** 2 / GRAVITY;
+  for (let step = 0; step < 6; step++) {
+    const frequency = galeFrequency(wavenumber, depth);
+    wavenumber -= (frequency - peakFrequency) / groupSpeed(wavenumber, depth);   // dω/dk is the group speed
+  }
+  return peakFrequency / wavenumber;
 }
 
 /** ω for a wavenumber on water `depth` deep (the ripples' dispersion, src/ambientWaves.js). */
@@ -379,6 +404,7 @@ export class GaleWaves {
 
     const { amplitudes, unresolvedVariance, heightVariance, sea } = buildGaleSeed({ ...settings, windDirection: this.windDirection.toArray() });
     this.sea = sea;
+    this.crestSpeed = crestSpeed(sea, settings.depth);
     this.heightVariance = heightVariance;
     this.unresolvedVariance = unresolvedVariance.slice();   // the water shader's uniform holds this array: setStrength rewrites it in place
     this.fullVariance = unresolvedVariance;
@@ -416,6 +442,7 @@ export class GaleWaves {
       uFieldTexels: { value: size },
       uTexels: { value: FOAM_TEXELS },
       uDrift: { value: new THREE.Vector2() },
+      uCrestTravel: { value: new THREE.Vector2() },
       uStep: { value: 0 },
       uBoilKeep: { value: 1 },
       uRaftKeep: { value: 1 },
@@ -532,6 +559,7 @@ export class GaleWaves {
     uniforms.uPrevious.value = source.texture;
     uniforms.uMetresPerUnit.value = this.sharedUniforms.uGaleMetresPerUnit.value;
     uniforms.uDrift.value.copy(this.foamVelocity).multiplyScalar(step / this.settings.tileSize);
+    uniforms.uCrestTravel.value.copy(this.windDirection).multiplyScalar(WHITECAP_SPEED * this.crestSpeed * step / this.settings.tileSize);
     uniforms.uStep.value = step;
     uniforms.uBoilKeep.value = Math.exp(-step / BOIL_LIFETIME);
     uniforms.uRaftKeep.value = Math.exp(-step / RAFT_LIFETIME);

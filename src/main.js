@@ -288,7 +288,8 @@
 import * as THREE from 'three';
 import { SpectralWater } from './spectralWater.js';
 import { AmbientWaves, DEFAULT_WIND, WIND_STRENGTHS } from './ambientWaves.js';
-import { GaleWaves, GALE_STRENGTHS } from './galeWaves.js';
+import { GaleWaves, GALE_STRENGTHS, WHITECAP_SPEED } from './galeWaves.js';
+import { Spindrift } from './spindrift.js';
 import { Rain, loadRainData } from './rain.js';
 import { Snow } from './snow.js';
 import { lightningAt } from './lightning.js';
@@ -773,6 +774,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   // The rain (src/rain.js): its rings on the water, its streaks and flecks;
   // none until the Weather brings it (applyWeather). The pool's deck wets.
   const rain = new Rain(renderer, lighting, { texels: settings.rainTexels, gale: galeWaves.uniforms(), download: rainDownload });
+  // The spray a gale blows off its breaking crests (src/spindrift.js): drawn only under a gale (applyGale).
+  const spindrift = new Spindrift(lighting, { gale: galeWaves.uniforms(), crestSpeed: WHITECAP_SPEED * galeWaves.crestSpeed });
   const wetDeck = { value: 0 };
   // The snow (src/snow.js): its flakes, none until the Weather brings it; the
   // snow lying on the ground (the beach's, the deck's and the ice's uSnow) and the air
@@ -831,6 +834,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     water.setWindStrength(WIND_STRENGTHS[name]);
     rain.setWind(windDirection, DRIFT_WIND * WIND_STRENGTHS[name]);
     snow.setWind(windDirection, DRIFT_WIND * WIND_STRENGTHS[name]);
+    spindrift.setWind(windDirection);
     const windLength = Math.hypot(windDirection[0], windDirection[1]);
     splash.spray.setWind(windDirection[0] / windLength, windDirection[1] / windLength, WIND_STRENGTHS[name]);
     reeds.setWind(WIND_STRENGTHS[name]);
@@ -847,6 +851,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     const strength = pooled || koiPond || ice.on ? 0 : GALE_STRENGTHS[windName] ?? 0;   // a pond is too small for a gale's waves
     galeWaves.setStrength(strength);
     surface.setGale(strength > 0);
+    spindrift.setOn(strength > 0);
   }
   applyWind(windName);
   // The Wind setting's own choice (setWind), which a storm's or a blizzard's gale, or a fog's calm, overrides only while it lasts.
@@ -971,7 +976,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   const sceneMain = new THREE.Scene();
   // The haze for the built-in materials in it, the stones' and the things' (src/sky.js): 0 but in haze.
   sceneMain.fog = environment.fog;
-  sceneMain.add(environment.sky, surface.inner, surface.outer, splash.cavityGroup, splash.foamSpecks.points, sun, rain.streaks, rain.flecks, snow.flakes);
+  sceneMain.add(environment.sky, surface.inner, surface.outer, splash.cavityGroup, splash.foamSpecks.points, sun, rain.streaks, rain.flecks, spindrift.points, snow.flakes);
   // MIRROR_LAYER holds what the water mirrors: the sky dome, far shore
   // included, and while a splash lives its crowns, columns and drops. The
   // cavities are not on it: a hole lies below the mirror plane, so the water
@@ -2586,6 +2591,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     galeWaves.update(simulationTime);   // nothing with no gale
     updateLightning(simulationTime);
     rain.update(simulationTime, camera, resolution, viewFocus());
+    spindrift.update(simulationTime, camera, resolution, viewFocus());
     snow.update(simulationTime, camera, resolution);
     rings.update(simulationTime);
     dropRings.update(simulationTime);

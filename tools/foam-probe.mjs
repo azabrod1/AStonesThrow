@@ -94,6 +94,15 @@ function valueNoise(positionX, positionY) {
   return mix(mix(hash21(cornerX, cornerY), hash21(cornerX + 1, cornerY), easeX), mix(hash21(cornerX, cornerY + 1), hash21(cornerX + 1, cornerY + 1), easeX), easeY);
 }
 // Two value noises and their Jacobian [∂x/∂u, ∂y/∂u, ∂x/∂v, ∂y/∂v].
+// The ragged outline's noise (raggedNoise in the shader, with no gale: no stretch).
+function raggedNoise(worldX, worldZ, coarseFade, fineFade) {
+  const coarse = valueNoise(worldX * defines.FOAM_RAGGED_FREQUENCY + 31.7, worldZ * defines.FOAM_RAGGED_FREQUENCY + 31.7) - 0.5;
+  const fineFrequency = defines.FOAM_RAGGED_FINE * defines.FOAM_RAGGED_FREQUENCY;
+  const turnedX = 0.8 * worldX - 0.6 * worldZ, turnedZ = 0.6 * worldX + 0.8 * worldZ;   // mat2(0.8, 0.6, -0.6, 0.8) times position, column-major
+  const fine = valueNoise(turnedX * fineFrequency + 11.9, turnedZ * fineFrequency + 11.9) - 0.5;
+  return (1 - defines.FOAM_RAGGED_FINE_WEIGHT) * coarse * (1 - coarseFade) + defines.FOAM_RAGGED_FINE_WEIGHT * fine * (1 - fineFade);
+}
+
 function valueNoisePair(positionX, positionY) {
   const cornerX = Math.floor(positionX), cornerY = Math.floor(positionY);
   const withinX = positionX - cornerX, withinY = positionY - cornerY;
@@ -116,7 +125,7 @@ let cellVisits = 0;
 function foamCells(positionX, positionY, radii, jitter, seed) {
   const cellX = Math.floor(positionX), cellY = Math.floor(positionY);
   const withinX = positionX - cellX, withinY = positionY - cellY;
-  const result = { best: -10, runnerUp: -10, bestX: 1, bestY: 0, runnerUpX: 1, runnerUpY: 0, bestRadius: 1, edgeKey: 0 };
+  const result = { best: -10, runnerUp: -10, bestX: 1, bestY: 0, runnerUpX: 1, runnerUpY: 0, bestRadius: 1, edgeKey: 0, bestKey: 0 };
   let bestKey = 0, runnerUpKey = 0;
   for (let row = -1; row <= 1; row++) {
     for (let column = -1; column <= 1; column++) {
@@ -127,7 +136,7 @@ function foamCells(positionX, positionY, radii, jitter, seed) {
       const radius = mix(radii[0], radii[1], random[2]);
       const inside = radius - Math.hypot(offsetX, offsetY);
       if (inside > result.best) {
-        Object.assign(result, { runnerUp: result.best, runnerUpX: result.bestX, runnerUpY: result.bestY, best: inside, bestX: offsetX, bestY: offsetY, bestRadius: radius });
+        Object.assign(result, { runnerUp: result.best, runnerUpX: result.bestX, runnerUpY: result.bestY, best: inside, bestX: offsetX, bestY: offsetY, bestRadius: radius, bestKey: fract((random[0] + random[1]) * 7.31) });
         runnerUpKey = bestKey; bestKey = random[2];
       } else if (inside > result.runnerUp) {
         Object.assign(result, { runnerUp: inside, runnerUpX: offsetX, runnerUpY: offsetY });
@@ -150,10 +159,11 @@ function laceRaw(worldX, worldZ) {
   const warpScale = defines.FOAM_LACE_WARP * defines.FOAM_LACE_WARP_FREQUENCY;
   const gradientX = cellGradientX / defines.FOAM_LACE_CELL + warpScale * (cellGradientX * warp.jacobian[0] + cellGradientY * warp.jacobian[1]);
   const gradientY = cellGradientY / defines.FOAM_LACE_CELL + warpScale * (cellGradientX * warp.jacobian[2] + cellGradientY * warp.jacobian[3]);
-  return { raw, gradientX, gradientY };
+  const ready = mix(1 - defines.FOAM_LACE_READY, 1 + defines.FOAM_LACE_READY, cells.bestKey);
+  return { raw, ready, gradientX, gradientY };
 }
-// Below 0 the lace sinks smoothly toward -FOAM_LACE_DEPTH.
-const sinkLace = (raw) => raw > 0 ? raw : defines.FOAM_LACE_DEPTH * (Math.exp(raw / defines.FOAM_LACE_DEPTH) - 1);
+// Below 0 the lace sinks smoothly toward -FOAM_LACE_DEPTH, as fast as the cell is ready.
+const sinkLace = (raw, ready) => raw > 0 ? raw : defines.FOAM_LACE_DEPTH * (Math.exp(raw * ready / defines.FOAM_LACE_DEPTH) - 1);
 const fineCells = (worldX, worldZ) => foamCells(worldX / defines.FOAM_FINE_CELL, worldZ / defines.FOAM_FINE_CELL, defines.FOAM_FINE_RADII, 0.7, [11.0, 18.7]);
 const coarseCells = (worldX, worldZ) => foamCells(worldX / defines.FOAM_COARSE_CELL, worldZ / defines.FOAM_COARSE_CELL, defines.FOAM_COARSE_RADII, 0.7, [23.0, 39.1]);
 function filmOpacity(cells, footprint, cellSize) {
@@ -181,9 +191,9 @@ function foamLook(worldX, worldZ, across, foam, resolveAll = false, boilFraction
   let lace = defines.FOAM_LACE_MEDIAN;
   if (laceFade < 1) {
     const sample = laceRaw(worldX, worldZ);
-    const sink = Math.exp(Math.min(sample.raw, 0) / defines.FOAM_LACE_DEPTH);
-    lace = mix(sinkLace(sample.raw), defines.FOAM_LACE_MEDIAN, laceFade);
-    const weight = defines.FOAM_LACE_WEIGHT * (1 - laceFade) * sink;
+    const sink = Math.exp(Math.min(sample.raw, 0) * sample.ready / defines.FOAM_LACE_DEPTH);
+    lace = mix(sinkLace(sample.raw, sample.ready), defines.FOAM_LACE_MEDIAN, laceFade);
+    const weight = defines.FOAM_LACE_WEIGHT * (1 - laceFade) * sink * (sample.raw > 0 ? 1 : sample.ready);
     gradientX += weight * sample.gradientX; gradientY += weight * sample.gradientY;
   }
   let fine = null, fineBubble = defines.FOAM_FINE_MEDIAN, fineGradient = [0, 0];
@@ -207,20 +217,33 @@ function foamLook(worldX, worldZ, across, foam, resolveAll = false, boilFraction
   gradientX += defines.FOAM_BUBBLE_WEIGHT * (1 - coarseFade) * inRange * bubbleGradient[0]; gradientY += defines.FOAM_BUBBLE_WEIGHT * (1 - coarseFade) * inRange * bubbleGradient[1];
   bubble = mix(bubble, defines.FOAM_UNION_MEDIAN, coarseFade);
   const clumpFade = resolveAll ? 0 : smoothstep(defines.FOAM_FADE_START, defines.FOAM_FADE_END, footprint * defines.FOAM_CLUMP_FREQUENCY);
+  const clumpFineFade = resolveAll ? 0 : smoothstep(defines.FOAM_FADE_START, defines.FOAM_FADE_END, footprint * defines.FOAM_CLUMP_FREQUENCY * defines.FOAM_CLUMP_FINE);
   let clump = 0;
   if (clumpFade < 1) {
+    const coarseWeight = 1 - defines.FOAM_CLUMP_FINE_WEIGHT;
     const noise = valueNoiseWithGradient(worldX * defines.FOAM_CLUMP_FREQUENCY + 57.3, worldZ * defines.FOAM_CLUMP_FREQUENCY + 57.3);
-    clump = (noise.value - 0.5) * (1 - clumpFade);
-    gradientX += defines.FOAM_CLUMP * defines.FOAM_CLUMP_FREQUENCY * (1 - clumpFade) * noise.gradientX;
-    gradientY += defines.FOAM_CLUMP * defines.FOAM_CLUMP_FREQUENCY * (1 - clumpFade) * noise.gradientY;
+    clump = (noise.value - 0.5) * (1 - clumpFade) * coarseWeight;
+    gradientX += defines.FOAM_CLUMP * defines.FOAM_CLUMP_FREQUENCY * (1 - clumpFade) * coarseWeight * noise.gradientX;
+    gradientY += defines.FOAM_CLUMP * defines.FOAM_CLUMP_FREQUENCY * (1 - clumpFade) * coarseWeight * noise.gradientY;
+    if (clumpFineFade < 1) {
+      // The finer octave, turned by mat2(0.8, 0.6, -0.6, 0.8): position' = (0.8x − 0.6z, 0.6x + 0.8z); its gradient turned back.
+      const fineFrequency = defines.FOAM_CLUMP_FINE * defines.FOAM_CLUMP_FREQUENCY;
+      const fine = valueNoiseWithGradient((0.8 * worldX - 0.6 * worldZ) * fineFrequency + 23.7, (0.6 * worldX + 0.8 * worldZ) * fineFrequency + 23.7);
+      const fineWeight = defines.FOAM_CLUMP * fineFrequency * (1 - clumpFineFade) * defines.FOAM_CLUMP_FINE_WEIGHT;
+      clump += (fine.value - 0.5) * (1 - clumpFineFade) * defines.FOAM_CLUMP_FINE_WEIGHT;
+      gradientX += fineWeight * (0.8 * fine.gradientX + 0.6 * fine.gradientY);
+      gradientY += fineWeight * (-0.6 * fine.gradientX + 0.8 * fine.gradientY);
+    }
   }
   const raggedFade = resolveAll ? 0 : smoothstep(defines.FOAM_FADE_START, defines.FOAM_FADE_END, footprint * defines.FOAM_RAGGED_FREQUENCY);
-  const ragged = raggedFade < 1 ? (valueNoise(worldX * defines.FOAM_RAGGED_FREQUENCY + 31.7, worldZ * defines.FOAM_RAGGED_FREQUENCY + 31.7) - 0.5) * (1 - raggedFade) : 0;
+  const raggedFineFade = resolveAll ? 0 : smoothstep(defines.FOAM_FADE_START, defines.FOAM_FADE_END, footprint * defines.FOAM_RAGGED_FREQUENCY * defines.FOAM_RAGGED_FINE);
+  const ragged = raggedFade < 1 ? raggedNoise(worldX, worldZ, raggedFade, raggedFineFade) : 0;
   const density = defines.FOAM_LOG_SCALE * Math.log(foam / defines.FOAM_MID) + defines.FOAM_RAGGED * ragged + defines.FOAM_CLUMP * clump;
   const value = defines.FOAM_LACE_WEIGHT * lace + defines.FOAM_BUBBLE_WEIGHT * bubble + density;
   const change = Math.abs(gradientX * across[0] + gradientY * across[1]) + Math.abs(gradientX * across[2] + gradientY * across[3]);
   const spreadOfFaded = defines.FOAM_LACE_WEIGHT * defines.FOAM_LACE_SPREAD * laceFade + defines.FOAM_BUBBLE_WEIGHT * (defines.FOAM_FINE_SPREAD * fineFade * (1 - coarseFade) + defines.FOAM_UNION_SPREAD * coarseFade)
-    + defines.FOAM_CLUMP * defines.FOAM_CLUMP_SPREAD * clumpFade + defines.FOAM_RAGGED * defines.FOAM_CLUMP_SPREAD * raggedFade;
+    + defines.FOAM_CLUMP * defines.FOAM_CLUMP_SPREAD * ((1 - defines.FOAM_CLUMP_FINE_WEIGHT) * clumpFade + defines.FOAM_CLUMP_FINE_WEIGHT * clumpFineFade)
+    + defines.FOAM_RAGGED * defines.FOAM_CLUMP_SPREAD * ((1 - defines.FOAM_RAGGED_FINE_WEIGHT) * raggedFade + defines.FOAM_RAGGED_FINE_WEIGHT * raggedFineFade);
   const width = 0.5 * change + defines.FOAM_FADED_EDGE * spreadOfFaded + 1e-3;
   const winner = coarseWins ? coarse : fine, winnerFade = coarseWins ? coarseFade : fineFade;
   const shade = winner ? mix(resolvedShade(winner), defines.FOAM_FADED_SHADE, winnerFade) : defines.FOAM_FADED_SHADE;
@@ -237,7 +260,7 @@ const seededRandom = (() => { let state = 12345; return () => { state = (state *
 const samples = { lace: [], fine: [], union: [], clump: [], fineShade: [], unionShade: [], film: [] };
 for (let index = 0; index < 30000; index++) {
   const worldX = seededRandom() * 2, worldZ = seededRandom() * 2;
-  samples.lace.push(sinkLace(laceRaw(worldX, worldZ).raw));
+  { const lace = laceRaw(worldX, worldZ); samples.lace.push(sinkLace(lace.raw, lace.ready)); }
   samples.clump.push(valueNoise(worldX * defines.FOAM_CLUMP_FREQUENCY + 57.3, worldZ * defines.FOAM_CLUMP_FREQUENCY + 57.3) - 0.5);
   const fine = fineCells(worldX, worldZ), coarse = coarseCells(worldX, worldZ);
   const fineBubble = fine.best * defines.FOAM_FINE_CELL / defines.FOAM_BUBBLE_SCALE, coarseBubble = coarse.best * defines.FOAM_COARSE_CELL / defines.FOAM_BUBBLE_SCALE;

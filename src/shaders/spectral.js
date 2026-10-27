@@ -247,12 +247,18 @@ void main() {
 // lies on the gale's tile at rest positions, as the solver's foam map's
 // kinds do (r the whole foam, g its raft). Where the crests crowd the water
 // past breaking (the Jacobian J of the sideways move, from GALE_BREAK_START
-// down to GALE_BREAK_FULL) they churn a boil of GALE_BOIL, the big bubbles,
-// which pops within a second (uBoilKeep a step), and lay a raft at
-// GALE_RAFT_RATE a second of breaking, the small bubbles, which drains over
-// seconds (uRaftKeep); the water shows the raft gathered into the wind's
-// streaks (galeStreaks in src/shaders/scene.js). The whole map drifts
-// downwind with the surface (uDrift), taken from upstream, semi-Lagrangian.
+// down to GALE_BREAK_FULL) they churn a boil of GALE_BOIL, the whitecap's
+// whitewater, which pops within a second (uBoilKeep a step) and meanwhile
+// rides with the crest: it is taken from uCrestTravel upwind, where it was a
+// step ago; and lay a raft at GALE_RAFT_RATE a second of breaking, up to
+// GALE_RAFT_MOST, the small bubbles, which the water keeps: it is taken from
+// uDrift upwind, the surface's drift, and drains over seconds (uRaftKeep);
+// the water shows it gathered into the wind's streaks (galeStreaks in
+// src/shaders/scene.js). Both lookups are the solver's foam step's
+// (FOAM_FRAGMENT, carried): a quadratic reconstruction from the nearest
+// texel and its four neighbours, clamped to their range, so a whitecap
+// carried texel by texel over its life keeps its edges where a bilinear
+// sample would blur them away.
 export const GALE_FOAM_FRAGMENT = /* glsl */`
 uniform sampler2D uPrevious;      // the map a step ago: (foam, raft)
 uniform sampler2D uDisplacement;  // the gale's fields (GALE_EVALUATE_FRAGMENT), in texture units
@@ -260,28 +266,47 @@ uniform sampler2D uDerivatives;
 uniform float uMetresPerUnit;     // the gale's strength over the units
 uniform float uFieldTexels;       // the fields' texels per side
 uniform float uTexels;            // the map's
-uniform vec2 uDrift;              // the surface's drift this step, in the tile's uv
+uniform vec2 uDrift;              // the surface's drift this step, in the tile's uv: the raft's travel
+uniform vec2 uCrestTravel;        // the breaking crests' travel this step, in the tile's uv: the boil's
 uniform float uStep;              // seconds
 uniform float uBoilKeep;          // exp(−step/τ) of the boil
 uniform float uRaftKeep;          // and of the raft
 #define GALE_BREAK_START 0.66
 #define GALE_BREAK_FULL 0.5
 #define GALE_BOIL 0.6
-#define GALE_RAFT_RATE 1.0
-#define GALE_RAFT_MOST 0.5
+#define GALE_RAFT_RATE 0.5
+#define GALE_RAFT_MOST 0.25
+
+// The map at a point (uv), reconstructed as the solver's foam step does (FOAM_FRAGMENT, carried).
+vec2 carried(vec2 uv) {
+  vec2 position = uv * uTexels - 0.5;   // texels
+  vec2 nearest = floor(position + 0.5);
+  vec2 within = position - nearest;
+  vec2 texelSize = vec2(1.0 / uTexels);
+  vec2 centreUv = (nearest + 0.5) * texelSize;
+  vec2 centre = texture2D(uPrevious, centreUv).rg;
+  vec2 east = texture2D(uPrevious, centreUv + vec2(texelSize.x, 0.0)).rg;
+  vec2 west = texture2D(uPrevious, centreUv - vec2(texelSize.x, 0.0)).rg;
+  vec2 north = texture2D(uPrevious, centreUv + vec2(0.0, texelSize.y)).rg;
+  vec2 south = texture2D(uPrevious, centreUv - vec2(0.0, texelSize.y)).rg;
+  vec2 upstream = centre + 0.5 * within.x * (east - west) + 0.5 * within.y * (north - south)
+    + 0.5 * within.x * within.x * (east + west - 2.0 * centre) + 0.5 * within.y * within.y * (north + south - 2.0 * centre);
+  return clamp(upstream, min(min(min(east, west), min(north, south)), centre), max(max(max(east, west), max(north, south)), centre));
+}
 
 void main() {
   vec2 uv = gl_FragCoord.xy / uTexels;
-  vec2 before = texture2D(uPrevious, uv - uDrift).rg;
+  vec2 withCrest = carried(uv - uCrestTravel);
+  vec2 withWater = carried(uv - uDrift);
   // The fields' texel n holds the field at n·cell; the map's texel centre is at uv·tile.
   vec2 fieldUv = uv + 0.5 / uFieldTexels - 0.5 / uTexels;
   vec4 derivatives = texture2D(uDerivatives, fieldUv) * uMetresPerUnit;
   float crossTerm = texture2D(uDisplacement, fieldUv).a * uMetresPerUnit;
   float jacobian = (1.0 + derivatives.z) * (1.0 + derivatives.w) - crossTerm * crossTerm;
   float breaking = 1.0 - smoothstep(GALE_BREAK_FULL, GALE_BREAK_START, jacobian);
-  float boil = max(before.r - before.g, 0.0) * uBoilKeep;
+  float boil = max(withCrest.r - withCrest.g, 0.0) * uBoilKeep;
   boil = max(boil, breaking * GALE_BOIL);
-  float raft = min(before.g * uRaftKeep + breaking * GALE_RAFT_RATE * uStep, GALE_RAFT_MOST);
+  float raft = min(withWater.g * uRaftKeep + breaking * GALE_RAFT_RATE * uStep, GALE_RAFT_MOST);
   gl_FragColor = vec4(boil + raft, raft, 0.0, 1.0);
 }
 `;

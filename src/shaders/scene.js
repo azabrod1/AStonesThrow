@@ -790,23 +790,30 @@ ${SURFACE_BUBBLE}
 #define FOAM_BUBBLE_WEIGHT 0.6
 #define FOAM_MID 0.1                       // map value where the density is 0
 #define FOAM_LOG_SCALE 0.857               // about 87% cover at 0.4, half at 0.1, nothing below about 0.01
-#define FOAM_RAGGED 1.8                    // value noise lumps about 14 cm across: a raft's outline
+#define FOAM_RAGGED 2.2                    // value noise lumps about 14 cm across, and a finer octave turned off its lattice (raggedNoise): a raft's outline
 #define FOAM_RAGGED_FREQUENCY 7.0          // per metre
-#define FOAM_CLUMP 2.8                     // value noise lumps about 3 cm across, which break the lace
+#define FOAM_RAGGED_FINE 2.3               // the finer octave's frequency over the coarser's...
+#define FOAM_RAGGED_FINE_WEIGHT 0.35       // ...and its weight (the coarser's is the rest)
+#define FOAM_STREAK_STRETCH 3.0            // under a gale a raft's lumps are drawn out along the wind this much...
+#define FOAM_CREST_STRETCH 2.0             // ...and a whitecap's along its crest, across the wind, this much
+#define FOAM_CLUMP 3.6                     // value noise lumps about 3 cm across, which break the lace
 #define FOAM_CLUMP_FREQUENCY 35.0          // into filaments of uneven width, fragments and clumps (per metre)
+#define FOAM_CLUMP_FINE 2.1                // the finer octave's frequency over the coarser's...
+#define FOAM_CLUMP_FINE_WEIGHT 0.4         // ...and its weight
+#define FOAM_LACE_READY 0.7                // a cell's hole sinks from its edge 1 ± this times as fast as the mean, by the cell's key
 #define FOAM_FADE_START 0.18               // footprint over cell size
 #define FOAM_FADE_END 0.45
 #define FOAM_LACE_BOIL_FROM 0.5            // the lace goes as the map's boil share rises from this...
 #define FOAM_LACE_BOIL_TO 0.8              // ...to this: a boil is bubbles, a raft lace
 // Medians and spreads of the layers, measured over a large area: what a
 // fading layer tends to, and the width it hands to the threshold.
-#define FOAM_LACE_MEDIAN -0.61
+#define FOAM_LACE_MEDIAN -0.52
 #define FOAM_LACE_SPREAD 1.49
 #define FOAM_FINE_MEDIAN 0.03
 #define FOAM_FINE_SPREAD 0.6
 #define FOAM_UNION_MEDIAN 0.26
 #define FOAM_UNION_SPREAD 0.74
-#define FOAM_CLUMP_SPREAD 0.29             // of the clump noise less 0.5, whose median is 0 (the ragged noise's too)
+#define FOAM_CLUMP_SPREAD 0.29             // of one octave of value noise less 0.5, whose median is 0 (the clumps' and the ragged outline's)
 #define FOAM_FADED_EDGE 0.5                // the share of a faded layer's spread that widens the edge
 // Below this map value no pattern can reach the threshold.
 #define FOAM_PRESENT (FOAM_MID * exp(-(FOAM_LACE_WEIGHT + FOAM_BUBBLE_WEIGHT * FOAM_BUBBLE_CLAMP + 0.5 * (FOAM_RAGGED + FOAM_CLUMP)) / FOAM_LOG_SCALE))
@@ -827,6 +834,7 @@ ${SURFACE_BUBBLE}
 #define FOAM_FILM_MEAN 0.8                // measured by tools/foam-probe.mjs
 #define FOAM_FILM_PACKED 0.9               // above this map density, multiple layers hide the clear films
 #define FOAM_CLOUD_HALF 0.07               // the cloud's map value that sends back half what a deep cloud does (Kubelka–Munk)
+#define GALE_CLOUD_SHARE 0.5               // the share of a whitecap's boil that is a cloud under the surface (WATER_FRAGMENT)
 #define FOAM_CLOUD_SCATTER 5.0             // per metre: the cloud's Kubelka–Munk scattering, against the water's absorption
 #define FOAM_CLOUD_LIGHT 0.38              // a deep cloud's light out through the surface, against white foam's under the same light
 #define FOAM_CHURN 0.8                     // the light the cloud sends back varies by up to this share either way (never past a deep cloud's)...
@@ -892,12 +900,13 @@ struct FoamCells {
   vec2 runnerUpOffset;
   float bestRadius;
   float edgeKey;
+  float bestKey;      // the winning feature's own random key, 0 to 1 (the lace's readiness to open)
 };
 
 FoamCells foamCells(vec2 position, vec2 radii, float jitter, vec2 seed) {
   vec2 cell = floor(position);
   vec2 within = position - cell;
-  FoamCells result = FoamCells(-10.0, -10.0, vec2(1.0, 0.0), vec2(1.0, 0.0), 1.0, 0.0);
+  FoamCells result = FoamCells(-10.0, -10.0, vec2(1.0, 0.0), vec2(1.0, 0.0), 1.0, 0.0, 0.0);
   float bestKey = 0.0;
   float runnerUpKey = 0.0;
   for (int row = -1; row <= 1; row++) {
@@ -914,6 +923,7 @@ FoamCells foamCells(vec2 position, vec2 radii, float jitter, vec2 seed) {
         result.best = inside;
         result.bestOffset = offset;
         result.bestRadius = radius;
+        result.bestKey = fract((random.x + random.y) * 7.31);
         bestKey = random.z;
       } else if (inside > result.runnerUp) {
         result.runnerUp = inside;
@@ -939,6 +949,28 @@ struct FoamLook {
 // the map's value, above FOAM_PRESENT; foamChange: its change across a pixel;
 // surfaceNormal: the water's, which tilts the bubbles with it; boilFraction:
 // the short-lived population's share of the map (0 for a settled raft).
+// The ragged outline's noise, about 0 ± FOAM_CLUMP_SPREAD: two octaves of
+// value noise, the finer FOAM_RAGGED_FINE times the coarser's frequency and
+// turned 37° off its lattice, so a raft's lumps are not the squares, aligned
+// with the world, that one lattice makes; each octave fades to its mean where
+// its lumps are finer than a pixel (fades.x the coarser's, fades.y the
+// finer's). Under a gale the outline is drawn out: a whitecap's along its
+// crest, across the wind (FOAM_CREST_STRETCH), and the raft it leaves along
+// the wind (FOAM_STREAK_STRETCH), as the wind's shear draws foam into
+// streaks; the two blend by the map's boil share. tools/foam-probe.mjs
+// twins it with no gale: change both.
+float raggedNoise(vec2 position, float boilFraction, vec2 fades) {
+  if (uGaleMetresPerUnit > 0.0) {
+    vec2 acrossWind = vec2(-uWindDirection.y, uWindDirection.x);
+    float along = dot(position, uWindDirection) / mix(FOAM_STREAK_STRETCH, 1.0, boilFraction);
+    float across = dot(position, acrossWind) / mix(1.0, FOAM_CREST_STRETCH, boilFraction);
+    position = uWindDirection * along + acrossWind * across;
+  }
+  float coarse = valueNoise(position * FOAM_RAGGED_FREQUENCY + 31.7) - 0.5;
+  float fine = valueNoise(mat2(0.8, 0.6, -0.6, 0.8) * position * (FOAM_RAGGED_FINE * FOAM_RAGGED_FREQUENCY) + 11.9) - 0.5;
+  return (1.0 - FOAM_RAGGED_FINE_WEIGHT) * coarse * (1.0 - fades.x) + FOAM_RAGGED_FINE_WEIGHT * fine * (1.0 - fades.y);
+}
+
 FoamLook foamLook(vec2 position, vec2 acrossX, vec2 acrossY, float foam, vec2 foamChange, vec3 surfaceNormal, float boilFraction) {
   float footprint = sqrt(sqrt(dot(acrossX, acrossX) * dot(acrossY, acrossY)));
   float fineFade = smoothstep(FOAM_FADE_START, FOAM_FADE_END, footprint / FOAM_FINE_CELL);
@@ -962,14 +994,19 @@ FoamLook foamLook(vec2 position, vec2 acrossX, vec2 acrossY, float foam, vec2 fo
     vec2 cellGradient = -2.0 / thickness * (cells.runnerUpOffset / max(length(cells.runnerUpOffset), 1e-4) - cells.bestOffset / max(length(cells.bestOffset), 1e-4));
     vec2 laceGradient = cellGradient / FOAM_LACE_CELL + FOAM_LACE_WARP * FOAM_LACE_WARP_FREQUENCY * (cellGradient * warpJacobian);
     // Below 0 it sinks toward -FOAM_LACE_DEPTH, never flat, so a hole opens
-    // from its deepest point outward with a crisp edge.
-    float sink = exp(min(raw, 0.0) / FOAM_LACE_DEPTH);
+    // from its deepest point outward with a crisp edge; how fast it sinks
+    // from the edge is each cell's own (ready, 1 ± FOAM_LACE_READY by the
+    // cell's key): bubbles pop at random, so one cell's hole opens early and
+    // grows wide while its neighbours stay shut, and the holes come in many
+    // sizes rather than one to a cell, a lattice of them.
+    float ready = mix(1.0 - FOAM_LACE_READY, 1.0 + FOAM_LACE_READY, cells.bestKey);
+    float sink = exp(min(raw, 0.0) * ready / FOAM_LACE_DEPTH);
     lace = mix(raw > 0.0 ? raw : FOAM_LACE_DEPTH * (sink - 1.0), FOAM_LACE_MEDIAN, laceFade);
-    gradient += FOAM_LACE_WEIGHT * (1.0 - laceFade) * sink * laceGradient;
+    gradient += FOAM_LACE_WEIGHT * (1.0 - laceFade) * sink * (raw > 0.0 ? 1.0 : ready) * laceGradient;
   }
 
   // The bubbles: the union of the two layers' discs.
-  FoamCells fine = FoamCells(-10.0, -10.0, vec2(1.0, 0.0), vec2(1.0, 0.0), 1.0, 0.0);
+  FoamCells fine = FoamCells(-10.0, -10.0, vec2(1.0, 0.0), vec2(1.0, 0.0), 1.0, 0.0, 0.0);
   float fineBubble = FOAM_FINE_MEDIAN;
   vec2 fineGradient = vec2(0.0);
   if (fineFade < 1.0) {
@@ -991,24 +1028,34 @@ FoamLook foamLook(vec2 position, vec2 acrossX, vec2 acrossY, float foam, vec2 fo
   // Once the coarse bubbles fade too, the union tends to its own median.
   bubble = mix(bubble, FOAM_UNION_MEDIAN, coarseFade);
 
-  // The density: the map's, lumped at two scales. The clumps fade like a layer.
-  float clumpFade = smoothstep(FOAM_FADE_START, FOAM_FADE_END, footprint * FOAM_CLUMP_FREQUENCY);
+  // The density: the map's, lumped at two scales. The clumps are two octaves
+  // of value noise, the finer FOAM_CLUMP_FINE times the frequency and turned
+  // 37° off the coarser's lattice (as the ragged outline's are), so they are
+  // not that lattice's squares; each fades like a layer, at its own size.
+  vec2 clumpFades = smoothstep(FOAM_FADE_START, FOAM_FADE_END, footprint * FOAM_CLUMP_FREQUENCY * vec2(1.0, FOAM_CLUMP_FINE));
   float clump = 0.0;
-  if (clumpFade < 1.0) {
+  if (clumpFades.x < 1.0) {
     vec2 clumpSlope;
-    clump = (valueNoiseWithGradient(position * FOAM_CLUMP_FREQUENCY + 57.3, clumpSlope) - 0.5) * (1.0 - clumpFade);
-    gradient += FOAM_CLUMP * FOAM_CLUMP_FREQUENCY * (1.0 - clumpFade) * clumpSlope;
+    clump = (valueNoiseWithGradient(position * FOAM_CLUMP_FREQUENCY + 57.3, clumpSlope) - 0.5) * (1.0 - clumpFades.x) * (1.0 - FOAM_CLUMP_FINE_WEIGHT);
+    gradient += FOAM_CLUMP * FOAM_CLUMP_FREQUENCY * (1.0 - clumpFades.x) * (1.0 - FOAM_CLUMP_FINE_WEIGHT) * clumpSlope;
+    if (clumpFades.y < 1.0) {
+      mat2 turn = mat2(0.8, 0.6, -0.6, 0.8);
+      vec2 fineSlope;
+      clump += (valueNoiseWithGradient(turn * position * (FOAM_CLUMP_FINE * FOAM_CLUMP_FREQUENCY) + 23.7, fineSlope) - 0.5) * (1.0 - clumpFades.y) * FOAM_CLUMP_FINE_WEIGHT;
+      gradient += FOAM_CLUMP * FOAM_CLUMP_FREQUENCY * FOAM_CLUMP_FINE * (1.0 - clumpFades.y) * FOAM_CLUMP_FINE_WEIGHT * (fineSlope * turn);
+    }
   }
   // The ragged outline fades too, where its lumps are finer than a pixel
   // (far whitecaps, src/galeWaves.js; a splash's foam is never that far).
-  float raggedFade = smoothstep(FOAM_FADE_START, FOAM_FADE_END, footprint * FOAM_RAGGED_FREQUENCY);
-  float ragged = raggedFade < 1.0 ? (valueNoise(position * FOAM_RAGGED_FREQUENCY + 31.7) - 0.5) * (1.0 - raggedFade) : 0.0;
+  vec2 raggedFades = smoothstep(FOAM_FADE_START, FOAM_FADE_END, footprint * FOAM_RAGGED_FREQUENCY * vec2(1.0, FOAM_RAGGED_FINE));
+  float ragged = raggedFades.x < 1.0 ? raggedNoise(position, boilFraction, raggedFades) : 0.0;
   float density = FOAM_LOG_SCALE * log(foam / FOAM_MID) + FOAM_RAGGED * ragged + FOAM_CLUMP * clump;
   float value = FOAM_LACE_WEIGHT * lace + FOAM_BUBBLE_WEIGHT * bubble + density;
   float changeAcrossPixel = abs(dot(gradient, acrossX)) + abs(dot(gradient, acrossY)) + FOAM_LOG_SCALE * (abs(foamChange.x) + abs(foamChange.y)) / foam;
   float spreadOfFaded = FOAM_LACE_WEIGHT * FOAM_LACE_SPREAD * laceFade
     + FOAM_BUBBLE_WEIGHT * (FOAM_FINE_SPREAD * fineFade * (1.0 - coarseFade) + FOAM_UNION_SPREAD * coarseFade)
-    + FOAM_CLUMP * FOAM_CLUMP_SPREAD * clumpFade + FOAM_RAGGED * FOAM_CLUMP_SPREAD * raggedFade;
+    + FOAM_CLUMP * FOAM_CLUMP_SPREAD * ((1.0 - FOAM_CLUMP_FINE_WEIGHT) * clumpFades.x + FOAM_CLUMP_FINE_WEIGHT * clumpFades.y)
+    + FOAM_RAGGED * FOAM_CLUMP_SPREAD * ((1.0 - FOAM_RAGGED_FINE_WEIGHT) * raggedFades.x + FOAM_RAGGED_FINE_WEIGHT * raggedFades.y);
   float width = 0.5 * changeAcrossPixel + FOAM_FADED_EDGE * spreadOfFaded + 1e-3;
 
   FoamLook look;
@@ -1407,6 +1454,31 @@ float galeUnresolvedVariance(vec2 restXZ) {
   return mix(uGaleUnresolved[lower], uGaleUnresolved[lower + 1], level - float(lower));
 }
 
+// The whitecaps' map (uGaleFoam, src/galeWaves.js) at a rest position,
+// reconstructed with a cubic B-spline: its texels are 12.5 cm, and the
+// pattern's threshold cut through a bilinear sample is a polygon with a
+// corner at every texel, which showed as a grid of squares in every whitecap
+// from a few metres. The spline is smooth across texels, at a little blur
+// the map's own smoothness hides; four bilinear fetches, the usual pairing
+// of the spline's weights, where one was.
+vec2 galeFoamAt(vec2 restXZ) {
+  vec2 texel = restXZ / uGaleTileSize * uGaleFoamTexels;   // integer at a texel's centre
+  vec2 base = floor(texel);
+  vec2 f = texel - base;
+  vec2 f2 = f * f, f3 = f2 * f;
+  vec2 w0 = (1.0 - 3.0 * f + 3.0 * f2 - f3) / 6.0;
+  vec2 w1 = (4.0 - 6.0 * f2 + 3.0 * f3) / 6.0;
+  vec2 w2 = (1.0 + 3.0 * f + 3.0 * f2 - 3.0 * f3) / 6.0;
+  vec2 w3 = f3 / 6.0;
+  vec2 g0 = w0 + w1, g1 = w2 + w3;
+  vec2 h0 = base - 1.0 + w1 / g0, h1 = base + 1.0 + w3 / g1;
+  float scale = 1.0 / uGaleFoamTexels;
+  vec2 uv00 = (vec2(h0.x, h0.y) + 0.5) * scale, uv10 = (vec2(h1.x, h0.y) + 0.5) * scale;
+  vec2 uv01 = (vec2(h0.x, h1.y) + 0.5) * scale, uv11 = (vec2(h1.x, h1.y) + 0.5) * scale;
+  return (texture2D(uGaleFoam, uv00).rg * g0.x + texture2D(uGaleFoam, uv10).rg * g1.x) * g0.y
+    + (texture2D(uGaleFoam, uv01).rg * g0.x + texture2D(uGaleFoam, uv11).rg * g1.x) * g1.y;
+}
+
 // The refraction's lookup, landing on what is less than this share of the
 // pixel's own water deep (a stone over the floor), is moved back (main).
 #define STONE_OVERSHOOT 0.75
@@ -1623,6 +1695,17 @@ void main() {
   float splashBoil = max(splashFoam.r - splashFoam.g, 0.0);
   float boilSurface = freshBoilSurface(splashBoil);
   float boilCloud = splashBoil - boilSurface;
+  // The gale's whitecaps (src/galeWaves.js), over all the water, read at the
+  // point's rest position: the boil is the whitecap's whitewater, part of it
+  // a cloud of bubbles driven under the surface (GALE_CLOUD_SHARE, drawn as
+  // a splash's boil's cloud is: the milky halo round a whitecap, soft where
+  // the froth's edge is crisp), the rest packed froth on the surface, with
+  // the raft it leaves (foamKinds, below).
+  vec2 whitecaps = vec2(0.0);
+  if (uGaleMetresPerUnit > 0.0) {
+    whitecaps = galeFoamAt(vRest);
+    boilCloud += GALE_CLOUD_SHARE * max(whitecaps.r - whitecaps.g, 0.0);
+  }
   // The pixel's footprint on the water (world XZ per pixel step), for the
   // rings' and the foam's lookups; taken here, in uniform control flow.
   vec2 acrossX = dFdx(vWorld.xz);
@@ -1801,9 +1884,8 @@ void main() {
   // raft gathered into the wind's streaks: sea foam's, churned by breaking,
   // packed and white whatever the water.
   if (uGaleMetresPerUnit > 0.0) {
-    vec2 whitecaps = texture2D(uGaleFoam, vRest / uGaleTileSize + 0.5 / uGaleFoamTexels).rg;
     float raft = whitecaps.g * galeStreaks(vRest, acrossX, acrossY);
-    foamKinds += vec2(whitecaps.r - whitecaps.g + raft, raft);
+    foamKinds += vec2(max(whitecaps.r - whitecaps.g, 0.0) + raft, raft);
   }
   float foam = foamKinds.r;
 #ifdef CAVITY_MESH
