@@ -146,8 +146,24 @@
 // times the level) are rendered once into a cube map that the droplets
 // reflect, and a prefiltered copy lights the stones.
 //
+// Horizon. The 2k photo gives the dome 5.7 pixels a degree, and a desktop
+// at the home view's 48° or a phone's three pixels a CSS pixel sees 20 to
+// 50 a degree, so the land on the skyline is a blur. Over the band about
+// the horizon (HORIZON_STRIP in src/skies.js, 17° up to 3° down, where the
+// land stands) the dome draws the hour's horizon strip instead: the same
+// band of the 8k photo (23 pixels a degree), its own JPEG gain map
+// (tools/sky-encode.mjs), which the page fetches once the panorama is up
+// and decodes on the GPU (src/horizonStrip.js: no JavaScript over its
+// pixels, so no hitch in play), fading into the panorama HORIZON_EDGE
+// inside the band's edges. The strip is the photo's own pixels at the
+// panorama's radiance, so the dome's scale, cap, cloud and haze apply to it
+// as to the rest; the cube captures take it too. A strip that fails to
+// come, or comes after another hour was asked for, leaves the panorama
+// whole; the page waits for none of it (horizonReady is for the tools).
+//
 // Memory. The panorama's pixels are dropped from the CPU once they are on the
-// GPU (nothing uploads it again). The captures need no depth buffer: the
+// GPU (nothing uploads it again), and the strip's ImageBitmaps are closed
+// once its textures are. The captures need no depth buffer: the
 // ground hemisphere is drawn after the dome, over it. The droplets sample the
 // cube at its first and second mip levels (src/shaders/fluid.js), so it stays
 // CUBE_SIZE; the stones (roughness 0.92) read only the prefiltered map's
@@ -158,7 +174,8 @@
 import * as THREE from 'three';
 import { UltraHDRLoader } from 'three/addons/loaders/UltraHDRLoader.js';
 import { loadAsset } from './loadAsset.js';
-import { SKIES, DEFAULT_SKY, resolveHour, fetchPanorama } from './skies.js';
+import { SKIES, DEFAULT_SKY, resolveHour, fetchPanorama, horizonUrl, horizonRows } from './skies.js';
+import { decodeHorizonStrip, HORIZON_DECODE } from './horizonStrip.js';
 
 export { SKY_NAMES, DEFAULT_SKY, skyHours, resolveHour, nearestHour } from './skies.js';
 
@@ -172,6 +189,7 @@ const GROUND = [0.10, 0.17, 0.20];   // the cube's ground hemisphere: the pond a
 const ADAPTATION = 0.75;       // how far the eye adapts to an hour's light (Light by the hour)...
 const ROD_ADAPTATION = 0.9;    // ...and, below NIGHT_VISION_LIGHT[0], its rods (adaptedLight)
 const DOWN_SUN_ELEVATION = 1;  // degrees: where the scene's dark sun stands while the true one is down
+const HORIZON_EDGE = 0.5;      // degrees inside the strip's band over which it fades into the panorama
 const OVERCAST_TINT = [0.95, 0.99, 1.07];   // a rain cloud's grey, a little blue, at about unit luminance
 const HAZE_BRIGHTNESS = 0.6;   // the haze against the cloud's mean: an overcast's horizon is under half its zenith (CIE)
 // The light on level ground under a clear sky (illuminance): the sun's, through
@@ -259,7 +277,9 @@ uniform vec3 uHazeColor;       // the rain's haze (HAZE in src/shaders/scene.js)
 uniform float uHazeDensity;
 uniform float uFlash;          // the sky's light under lightning, against its own (1 with none)
 uniform vec4 uBolt;            // a bolt: its bearing (radians from −Z toward +X), its top's elevation, its brightness against the cloud (0: none), a seed
+uniform float uHorizonEdge;    // radians inside the strip's band over which it fades into the panorama (Horizon)
 varying vec3 vDirection;
+${HORIZON_DECODE}
 #define OVERCAST_FLATTEN 0.6   // the luminance's power about the mean that cloud takes away: the sun and its glow sink, the shade lifts
 #define HAZE_LAYER 1000.0      // metres: the rain's depth, which a ray climbing out of it crosses
 #define LAND_DISTANCE 400.0    // metres: where the photo's land is taken to stand (its near trees and its far shore alike)
@@ -293,8 +313,18 @@ float boltLight(vec3 direction, float land) {
 void main() {
   vec3 direction = normalize(vDirection);
   float azimuth = atan(direction.z, direction.x * uMirror) + uRotation;
-  vec2 panoramaUv = vec2(azimuth / (2.0 * PI) + 0.5, asin(clamp(direction.y, -1.0, 1.0)) / PI + 0.5);
-  vec3 radiance = texture2D(uPanorama, panoramaUv).rgb * uScale;
+  float elevation = asin(clamp(direction.y, -1.0, 1.0));
+  vec2 panoramaUv = vec2(azimuth / (2.0 * PI) + 0.5, elevation / PI + 0.5);
+  vec3 radiance = texture2D(uPanorama, panoramaUv).rgb;
+  if (uHorizonBand.x > 0.0) {
+    // Inside the strip's band, the strip (Horizon), faded in from the band's edges.
+    float inside = min(uHorizonBand.z - elevation, elevation - uHorizonBand.w);
+    if (inside > 0.0) {
+      vec2 stripUv = vec2(panoramaUv.x, (uHorizonBand.z - elevation) / (uHorizonBand.z - uHorizonBand.w));
+      radiance = mix(radiance, horizonRadiance(stripUv), smoothstep(0.0, uHorizonEdge, inside));
+    }
+  }
+  radiance *= uScale;
   float brightest = max(radiance.r, max(radiance.g, radiance.b));
   radiance *= min(1.0, uRadianceCap / max(brightest, 1e-6));
   float photoLevel = max(dot(radiance, vec3(0.2126, 0.7152, 0.0722)), 1e-6);
@@ -336,7 +366,7 @@ function decodePanorama(buffer) {
  * @param options.name a key of SKIES (others fall back to DEFAULT_SKY), and options.hour one of its hours (others fall back to its anchor)
  * @param options.sunAzimuth radians from straight ahead (−Z) toward the right (+X), unless the sky sets its own
  * @param options.sunBalance the scene's sun irradiance under BALANCE_SKY (RGB Vector3)
- * @param options.lighting its sunDirection, sunIrradiance and skyAmbient (Vector3s) are filled in place by every load
+ * @param options.lighting its sunDirection, sunIrradiance, skyAmbient and groundAlbedo (Vector3s) are filled in place by every load
  * @returns {Promise<{ sky, cubeTexture, envTexture, name, hour, level, targets, panoramaBytes, load }>}
  */
 export async function createEnvironment(renderer, { name, hour, sunAzimuth, sunBalance, lighting }) {
@@ -359,6 +389,11 @@ export async function createEnvironment(renderer, { name, hour, sunAzimuth, sunB
         uOvercastTint: { value: new THREE.Vector3(...OVERCAST_TINT) },
         uFlash: { value: 1 },
         uBolt: { value: new THREE.Vector4() },
+        uHorizon: { value: null },
+        uHorizonGain: { value: null },
+        uHorizonMeta: { value: new THREE.Vector2() },
+        uHorizonBand: { value: new THREE.Vector4() },
+        uHorizonEdge: { value: THREE.MathUtils.degToRad(HORIZON_EDGE) },
         ...hazeUniforms,
       },
       side: THREE.BackSide,
@@ -406,7 +441,48 @@ export async function createEnvironment(renderer, { name, hour, sunAzimuth, sunB
   const balancePromise = measurementOf(SKIES[BALANCE_SKY].hours.afternoon.file);
   const balanceLuminance = luminance(sunBalance.toArray());
 
-  const environment = { sky, cubeTexture: cubeTarget.texture, envTexture: null, name: null, hour: null, level: 1, hazeUniforms, targets: [], panoramaBytes: 0, load, setWeather, setFlash };
+  const environment = { sky, cubeTexture: cubeTarget.texture, envTexture: null, name: null, hour: null, level: 1, hazeUniforms, targets: [], panoramaBytes: 0, horizonBytes: 0, horizonReady: Promise.resolve(), load, setWeather, setFlash };
+
+  // The horizon strip (Horizon): the hour's, fetched once its panorama is up; the last asked for wins.
+  let horizonRequest = 0;
+  function clearHorizon() {
+    for (const name of ['uHorizon', 'uHorizonGain']) {
+      domeUniforms[name].value?.dispose();
+      domeUniforms[name].value = null;
+    }
+    domeUniforms.uHorizonBand.value.set(0, 0, 0, 0);
+    environment.horizonBytes = 0;
+  }
+  async function loadHorizon(file) {
+    const request = ++horizonRequest;
+    clearHorizon();
+    try {
+      const strip = await decodeHorizonStrip(await loadAsset(horizonUrl(file), 'arrayBuffer'));
+      if (request !== horizonRequest) { strip.base.close(); strip.gain.close(); return; }
+      const texture = (image, format) => {
+        const made = new THREE.Texture(image);
+        made.format = format;
+        made.colorSpace = THREE.NoColorSpace;   // the bytes as coded: the shader decodes them
+        made.minFilter = made.magFilter = THREE.NearestFilter;   // each texel with its own gain (horizonRadiance)
+        made.generateMipmaps = false;
+        made.flipY = false;   // row 0 is the band's top
+        made.wrapS = THREE.RepeatWrapping;   // the azimuth wraps
+        made.needsUpdate = true;
+        made.onUpdate = () => { image.close(); };   // on the GPU now: free the bitmap
+        return made;
+      };
+      domeUniforms.uHorizon.value = texture(strip.base, THREE.RGBAFormat);
+      domeUniforms.uHorizonGain.value = texture(strip.gain, THREE.RedFormat);
+      domeUniforms.uHorizonMeta.value.set(strip.metadata.weight * strip.metadata.gainMapMin, strip.metadata.weight * (strip.metadata.gainMapMax - strip.metadata.gainMapMin));
+      // The band's elevations from the strip's size (horizonRows: the encoder's rows), a row's height at the source's resolution.
+      const rows = horizonRows(strip.width / 2);
+      const rowHeight = Math.PI / (strip.width / 2);
+      domeUniforms.uHorizonBand.value.set(strip.width, strip.height, rows.above * rowHeight, -rows.below * rowHeight);
+      environment.horizonBytes = strip.width * strip.height * 5;
+    } catch (error) {
+      if (request === horizonRequest) console.warn(`The horizon strip of ${file} did not load; the panorama stands alone.`, error);
+    }
+  }
   // The hour's light under a clear sky (load), which the weather covers (applyWeather).
   const clear = { sun: new THREE.Vector3(), sky: new THREE.Vector3(), lux: 1, level: 1 };
   let weather = { cover: 0, light: 1, visibility: Infinity };
@@ -482,6 +558,8 @@ export async function createEnvironment(renderer, { name, hour, sunAzimuth, sunB
     clear.lux = hourLight(measurement);
     clear.level = level;
 
+    lighting.groundAlbedo.fromArray(place.ground);   // the land behind the beach (SKIES)
+
     const previous = domeUniforms.uPanorama.value;
     domeUniforms.uPanorama.value = panorama;
     domeUniforms.uMirror.value = mirror;
@@ -490,6 +568,7 @@ export async function createEnvironment(renderer, { name, hour, sunAzimuth, sunB
     domeUniforms.uRadianceCap.value = RADIANCE_CAP * luminance(clear.sky.toArray());
     applyWeather();
     previous?.dispose();
+    environment.horizonReady = loadHorizon(file);
 
     Object.assign(environment, { name: skyName, hour: hourName, panoramaBytes });
     return skyName;

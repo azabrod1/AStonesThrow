@@ -336,6 +336,8 @@ uniform vec3 uFloorLight;       // the sunlit sand floor's radiance, under the w
 uniform vec3 uWaterColor;       // the radiance of water too deep to see through (lighting.waterColor)
 uniform float uPondDepth;
 uniform float uExposure;
+uniform sampler2D uGlare;       // the scene's glare (src/glare.js), at the frame's uv
+uniform float uGlareShare;      // and the share of the scene it stands in for
 uniform float uRefract;
 uniform float uFluidScale;      // fluid-buffer pixels per device pixel (the buffer's resolution scale)
 uniform float uProjScale;       // fluid-buffer pixels per world unit at distance 1
@@ -405,7 +407,7 @@ vec3 linearToSrgb(vec3 c) {
 }
 
 void main() {
-  vec3 scene = texture2D(uScene, vUv).rgb;
+  vec3 scene = mix(texture2D(uScene, vUv).rgb, texture2D(uGlare, vUv).rgb, uGlareShare);
   vec4 info = texture2D(uFluidInfo, vUv);
   vec4 optics = texture2D(uOptics, vUv);
   vec3 color = scene;

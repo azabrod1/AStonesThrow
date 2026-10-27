@@ -2,15 +2,24 @@
 // (Poly Haven's Radiance file, the source that tools/sky-probe.mjs measures,
 // kept in the repository but not published, tools/build-site.mjs) becomes
 // assets/sky/<name>_2k.jpg, the file src/sky.js loads: a JPEG gain map that
-// Three.js's UltraHDRLoader decodes to half floats.
+// Three.js's UltraHDRLoader decodes to half floats; and its horizon strip,
+// assets/sky/<name>_horizon.jpg, the same coding of the band about the
+// horizon (HORIZON_STRIP in src/skies.js: 17° up to 3° down) cut from the
+// 8k panorama, assets/sky/<name>_8k.hdr, which this tool downloads from Poly
+// Haven when it is missing (never kept in the repository: 100 MB each). The
+// 2k photo gives the dome 5.7 pixels a degree, the strip 23, so the land on
+// the skyline is sharp at a desktop's or a phone's pixels (src/sky.js,
+// Horizon, which decodes the strip on the GPU).
 //
-//   node tools/sky-encode.mjs [assets/sky/name_2k.hdr ...] [--verify] [--quality=n]
+//   node tools/sky-encode.mjs [assets/sky/name_2k.hdr ...] [--verify] [--quality=n] [--no-horizon]
 //
-// With no files, every assets/sky/*_2k.hdr. Never edit a .jpg: rerun this.
+// With no files, every assets/sky/*_2k.hdr (never a strip's 8k source). Never edit a .jpg: rerun this.
 // --verify also decodes each file with the pinned UltraHDRLoader in the
 // headless browser (tools/browser.mjs) and checks that it gives exactly the
-// half floats this tool's model of it gives; rerun it after a Three.js
-// upgrade. --quality=n tries another quality for the base image.
+// half floats this tool's model of it gives, and each strip with the page's
+// own decoder (src/horizonStrip.js) within the GPU's arithmetic; rerun it
+// after a Three.js upgrade. --quality=n tries another quality for the base
+// image. --no-horizon leaves the strips alone (no 8k download).
 //
 // The format ("Ultra HDR"): a JPEG of 8-bit values, the base image, and after
 // it a second JPEG, the gain map, that says how far to raise each pixel; a
@@ -62,7 +71,13 @@
 // reaches 9 km (src/waterSurface.js; the cube's ground hemisphere covers it
 // for the reflections, src/sky.js): from GROUND_FROM below the horizon it is
 // blurred, fully by GROUND_FULL, which takes away two thirds of the bytes.
-// Should the scene ever show the photo's ground, encode it sharp again.
+// Should the scene ever show the photo's ground, encode it sharp again. The
+// strip's last degree, under its blur, is the same.
+//
+// The strip is 8192 × 456, nearly twice the sky's pixels, of land, not
+// smooth sky, so its base image takes HORIZON_QUALITY, under the sky's:
+// nothing there is near the sun or smooth enough to band. Measured on the
+// nineteen: 0.24 to 1.4 MB a strip (the hazy mesas to the alpine firs).
 //
 // Each file's line: its bytes against the .hdr's, how many blocks follow
 // each pixel, the boost's range, the brightest pixel decoded against the
@@ -80,16 +95,21 @@
 // of foliage, and look alike side by side enlarged. A SDR_QUALITY of 97
 // would add half again to the bytes for a 99th percentile two thirds as
 // large; 93 takes a tenth off and adds a third to it.
-import { readFile, writeFile, readdir } from 'node:fs/promises';
+import { readFile, writeFile, readdir, access } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as THREE from 'three';
 import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
+import { HORIZON_STRIP, horizonRows } from '../src/skies.js';
 import encodeJpeg, { init as initEncoder } from '@jsquash/jpeg/encode.js';
 import decodeJpeg, { init as initDecoder } from '@jsquash/jpeg/decode.js';
 
 const SDR_QUALITY = 95;        // mozjpeg's quality for the base image (chosen from sizes and frames: below)
+const HORIZON_QUALITY = 85;    // the horizon strip's (the header)
+const STRIP_LEVELS = 2;        // coded levels the page's GPU decode of a strip may differ from the loader's by (verify: the table's level and the half floats' rounding; 1.88 at worst, in a sunrise's disc)...
+const STRIP_RELATIVE = 5e-4;   // ...plus this share of the coded value (the GPU's pow against the loader's, in the sun's disc: up to 3 levels of 30 000, varying run to run)
+const HORIZON_URL = (name) => `https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/${HORIZON_STRIP.source}/${name}_${HORIZON_STRIP.source}.hdr`;
 const SDR_TOP = 250;           // the byte each block's brightest channel is raised to, under 255 for the JPEG's ringing
 const BLOCK = 8;               // the JPEG's block: the gain map's cell
 const GROUND_FROM = 2;         // degrees below the horizon where the blur starts...
@@ -176,10 +196,11 @@ function blurRows(pixels, width, height, firstRow, radius) {
   }
 }
 
-/** The photo's ground below the horizon blurred, from GROUND_FROM to whole at GROUND_FULL (the header). */
-function blurGround({ width, height, pixels }) {
-  const rowAt = (degreesBelow) => Math.floor(height / 2 + (degreesBelow / 180) * height);
+/** The photo's ground below the horizon (row `horizonRow`) blurred, from GROUND_FROM to whole at GROUND_FULL (the header). */
+function blurGround({ width, height, pixels }, horizonRow) {
+  const rowAt = (degreesBelow) => Math.min(height, Math.floor(horizonRow + (degreesBelow / 360) * width));
   const fromRow = rowAt(GROUND_FROM), fullRow = rowAt(GROUND_FULL);
+  if (fromRow >= height) return;
   const sharp = pixels.slice(3 * fromRow * width);
   blurRows(pixels, width, height, fromRow, GROUND_BLUR);
   for (let row = fromRow; row < Math.min(fullRow, height); row++) {
@@ -239,19 +260,24 @@ function container(baseJpeg, gainJpeg, metadata) {
   return Buffer.concat([baseJpeg.subarray(0, 2 + app0Length), directory, baseJpeg.subarray(2 + app0Length), gainFile]);
 }
 
-/** Encode one panorama; returns the file and its report. */
-async function encodePanorama(hdrPath, quality) {
-  const name = path.basename(hdrPath, '.hdr');
-  const panorama = await readPanorama(hdrPath);
+/** The band about the horizon of a panorama, as the page's strip shows it (horizonRows). */
+function cropHorizon({ width, height, pixels, fileBytes }) {
+  const rows = horizonRows(height);
+  const firstRow = height / 2 - rows.above;
+  const stripHeight = rows.above + rows.below;
+  return { width, height: stripHeight, pixels: pixels.slice(3 * firstRow * width, 3 * (firstRow + stripHeight) * width), fileBytes, horizonRow: rows.above };
+}
+
+/** Encode one image (a panorama, its horizon at row `horizonRow`, `height / 2` for a whole one); returns the file and its report. */
+async function encodeImage(name, panorama, measurement, quality, horizonRow = panorama.height / 2) {
   const { width, height } = panorama;
   const reference = panorama.pixels.slice();
-  blurGround(panorama);
+  blurGround(panorama, horizonRow);
   const target = panorama.pixels;
 
   // What each pixel needs: log2 of the boost that brings its brightest
   // channel's byte to SDR_TOP. A block takes its brightest pixel's, unless it
   // holds a pixel over the dome's cap: then each pixel keeps its own.
-  const measurement = JSON.parse(await readFile(hdrPath.replace(/_\d+k\.hdr$/, '.json'), 'utf8'));
   const cap = DOME_CAP * luminanceOf(measurement.skyRadiance, 0);
   const columns = width / BLOCK;
   const blockOf = (index) => Math.floor(index / width / BLOCK) * columns + Math.floor((index % width) / BLOCK);
@@ -319,9 +345,9 @@ async function encodePanorama(hdrPath, quality) {
   const decoded = new Float32Array(width * height * 3);
   for (let index = 0; index < width * height; index++) for (let channel = 0; channel < 3; channel++) decoded[3 * index + channel] = THREE.DataUtils.fromHalfFloat(THREE.DataUtils.toHalfFloat(decodeChannel(baseBack.data[4 * index + channel], boost[index])));
   const capped = (pixels, index) => luminanceOf(pixels, index) * Math.min(1, cap / Math.max(pixels[3 * index], pixels[3 * index + 1], pixels[3 * index + 2], 1e-9));
-  const errors = new Float64Array(width * height / 2);
+  const errors = new Float64Array(width * horizonRow);
   let brightest = 0, brightestDecoded = 0;
-  for (let index = 0; index < width * height / 2; index++) {
+  for (let index = 0; index < width * horizonRow; index++) {
     errors[index] = Math.abs(capped(decoded, index) / Math.max(capped(reference, index), 1e-4) - 1);
     if (Math.max(reference[3 * index], reference[3 * index + 1], reference[3 * index + 2]) > Math.max(reference[3 * brightest], reference[3 * brightest + 1], reference[3 * brightest + 2])) brightest = index;
     brightestDecoded = Math.max(brightestDecoded, decoded[3 * index], decoded[3 * index + 1], decoded[3 * index + 2]);
@@ -330,10 +356,34 @@ async function encodePanorama(hdrPath, quality) {
   const percent = (value) => `${(100 * value).toFixed(1)}%`;
   const kilobytes = (bytes) => `${Math.round(bytes / 1024)} KB`;
   const report = `${name}: ${kilobytes(file.length)} (base ${kilobytes(baseJpeg.length)}, gain map ${kilobytes(gainJpeg.length)}, ${overCap.reduce((sum, over) => sum + over, 0)} blocks over the cap, ${perPixel.reduce((sum, each) => sum + each, 0)} per pixel${clipped ? `, ${clipped} pixels clipped` : ''}; the .hdr ${kilobytes(panorama.fileBytes)}); boost 2^${(gainMapMin * weight).toFixed(2)} to 2^${(gainMapMax * weight).toFixed(2)} on the coded value; brightest ${Math.round(brightestDecoded)} (the .hdr's ${Math.round(Math.max(...reference.subarray(3 * brightest, 3 * brightest + 3)))}); the sky's luminance off by ${percent(errors[errors.length >> 1])} at the median, ${percent(errors[Math.floor(errors.length * 0.99)])} at the 99th percentile`;
-  return { name, file, report, decoded };
+  return { name, file, report, decoded, width, height };
 }
 
-/** Decode each file with the pinned UltraHDRLoader in the headless browser; compare with this tool's model. */
+/** The panorama's horizon strip (the header): its 8k source, downloaded if missing, cut to the band and encoded. */
+async function encodeHorizon(hdrPath, measurement) {
+  const name = path.basename(hdrPath, '.hdr').replace(/_\d+k$/, '');
+  const sourcePath = path.join(path.dirname(hdrPath), `${name}_${HORIZON_STRIP.source}.hdr`);
+  try {
+    await access(sourcePath);
+  } catch {
+    console.log(`${name}: downloading ${HORIZON_URL(name)}`);
+    const response = await fetch(HORIZON_URL(name));
+    if (!response.ok) throw new Error(`${name}: ${HORIZON_URL(name)} answered ${response.status}`);
+    await writeFile(sourcePath, Buffer.from(await response.arrayBuffer()));
+  }
+  const strip = cropHorizon(await readPanorama(sourcePath));
+  return encodeImage(`${name}_horizon`, strip, measurement, HORIZON_QUALITY, strip.horizonRow);
+}
+
+/**
+ * Decode each file with the pinned UltraHDRLoader in the headless browser;
+ * compare with this tool's model. A strip is also decoded as the page
+ * decodes it, on the GPU (src/horizonStrip.js's HORIZON_DECODE over the two
+ * JPEGs as ImageBitmaps), and compared with the loader's half floats in
+ * coded values (codeOf): the GPU takes the sRGB curve itself where the loader
+ * reads a table at the integer part, so they may differ by a coded level
+ * (STRIP_LEVELS), and by STRIP_RELATIVE of the value where it is large.
+ */
 async function verify(results) {
   const { launchBrowser } = await import('./browser.mjs');
   const browser = await launchBrowser();
@@ -341,29 +391,76 @@ async function verify(results) {
   const origin = 'https://three.invalid';
   await page.route(`${origin}/**`, async (route) => {
     const relative = new URL(route.request().url()).pathname.slice(1);
-    await route.fulfill({ status: 200, contentType: 'text/javascript', body: await readFile(path.join(root, 'node_modules/three', relative)) });
+    const file = relative.startsWith('src/') ? path.join(root, relative) : path.join(root, 'node_modules/three', relative);
+    await route.fulfill({ status: 200, contentType: 'text/javascript', body: await readFile(file) });
   });
   await page.setContent(`<script type="importmap">{"imports":{"three":"${origin}/build/three.module.js"}}</script>`);
   for (const { name, file, decoded } of results) {
-    const fromBrowser = Buffer.from(await page.evaluate(async ([base64, loaderUrl]) => {
+    const strip = name.endsWith('_horizon');
+    const { halves: fromBrowser, gpu } = await page.evaluate(async ([base64, loaderUrl, stripUrl, strip, stripLevels, stripRelative]) => {
       const { UltraHDRLoader } = await import(loaderUrl);
-      const { HalfFloatType } = await import('three');
+      const THREE = await import('three');
       const bytes = Uint8Array.from(atob(base64), (character) => character.charCodeAt(0));
       const texture = await new Promise((resolve, reject) => {
-        try { new UltraHDRLoader().setDataType(HalfFloatType).parse(bytes.buffer, resolve); } catch (error) { reject(error); }
+        try { new UltraHDRLoader().setDataType(THREE.HalfFloatType).parse(bytes.buffer, resolve); } catch (error) { reject(error); }
       });
       const halves = new Uint8Array(texture.data.buffer);
       let binary = '';
       for (let start = 0; start < halves.length; start += 32768) binary += String.fromCharCode(...halves.subarray(start, start + 32768));
-      return btoa(binary);
-    }, [file.toString('base64'), `${origin}/examples/jsm/loaders/UltraHDRLoader.js`]), 'base64');
-    const halves = new Uint16Array(fromBrowser.buffer, fromBrowser.byteOffset, fromBrowser.length / 2);
+      let gpu = null;
+      if (strip) {
+        // The page's decode: the two JPEGs as textures, HORIZON_DECODE over them into a float target, read back.
+        const { decodeHorizonStrip, HORIZON_DECODE } = await import(stripUrl);
+        const parsed = await decodeHorizonStrip(bytes.buffer);
+        const renderer = new THREE.WebGLRenderer();
+        const asTexture = (image, format) => {
+          const made = new THREE.Texture(image);
+          Object.assign(made, { format, colorSpace: THREE.NoColorSpace, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, generateMipmaps: false, flipY: false, needsUpdate: true });
+          return made;
+        };
+        const { width, height } = parsed;
+        const target = new THREE.WebGLRenderTarget(width, height, { type: THREE.FloatType, depthBuffer: false });
+        const material = new THREE.ShaderMaterial({
+          uniforms: {
+            uHorizon: { value: asTexture(parsed.base, THREE.RGBAFormat) },
+            uHorizonGain: { value: asTexture(parsed.gain, THREE.RedFormat) },
+            uHorizonMeta: { value: new THREE.Vector2(parsed.metadata.weight * parsed.metadata.gainMapMin, parsed.metadata.weight * (parsed.metadata.gainMapMax - parsed.metadata.gainMapMin)) },
+            uHorizonBand: { value: new THREE.Vector4(width, height, 0, 0) },
+          },
+          vertexShader: 'void main() { gl_Position = vec4(position.xy, 0.0, 1.0); }',
+          fragmentShader: `${HORIZON_DECODE}\nvoid main() { gl_FragColor = vec4(horizonTexel(floor(gl_FragCoord.xy)), 1.0); }`,
+        });
+        const scene = new THREE.Scene();
+        scene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material));
+        renderer.setRenderTarget(target);
+        renderer.render(scene, new THREE.Camera());
+        const pixels = new Float32Array(width * height * 4);
+        renderer.readRenderTargetPixels(target, 0, 0, width, height, pixels);
+        // Against the loader, in coded values: the inverse of the sRGB curve.
+        const codeOf = (linear) => (linear < 0.0031308 ? linear / 0.000303527 : (Math.pow(linear, 1 / 2.4) - 0.0521327014) / 0.003717127);
+        let over = 0, worst = 0;
+        for (let index = 0; index < width * height; index++) {
+          for (let channel = 0; channel < 3; channel++) {
+            const loaderCoded = codeOf(THREE.DataUtils.fromHalfFloat(texture.data[4 * index + channel]));
+            const levels = Math.abs(codeOf(pixels[4 * index + channel]) - loaderCoded) / (1 + stripRelative * loaderCoded / stripLevels);
+            worst = Math.max(worst, levels);
+            if (levels > stripLevels) over++;
+          }
+        }
+        gpu = { over, worst, values: width * height * 3 };
+        renderer.dispose();
+      }
+      return { halves: btoa(binary), gpu };
+    }, [file.toString('base64'), `${origin}/examples/jsm/loaders/UltraHDRLoader.js`, `${origin}/src/horizonStrip.js`, strip, STRIP_LEVELS, STRIP_RELATIVE]);
+    const buffer = Buffer.from(fromBrowser, 'base64');
+    const halves = new Uint16Array(buffer.buffer, buffer.byteOffset, buffer.length / 2);
     let differing = 0;
     for (let index = 0; index < decoded.length / 3; index++) for (let channel = 0; channel < 3; channel++) {
       if (halves[4 * index + channel] !== THREE.DataUtils.toHalfFloat(decoded[3 * index + channel])) differing++;
     }
-    console.log(`${name}: UltraHDRLoader ${differing === 0 ? 'decodes exactly as modelled' : `differs from the model in ${differing} values`}`);
-    if (differing) process.exitCode = 1;
+    const gpuReport = gpu ? `; the page's GPU decode ${gpu.over === 0 ? `within ${STRIP_LEVELS} coded levels of it everywhere` : `over ${STRIP_LEVELS} coded levels off in ${gpu.over} of ${gpu.values} values`} (at worst ${gpu.worst.toFixed(2)})` : '';
+    console.log(`${name}: UltraHDRLoader ${differing === 0 ? 'decodes exactly as modelled' : `differs from the model in ${differing} values`}${gpuReport}`);
+    if (differing || gpu?.over) process.exitCode = 1;
   }
   await browser.close();
 }
@@ -372,12 +469,18 @@ const argumentsGiven = process.argv.slice(2);
 const quality = Number(argumentsGiven.find((argument) => argument.startsWith('--quality='))?.slice(10) ?? SDR_QUALITY);
 const named = argumentsGiven.filter((argument) => !argument.startsWith('--'));
 const skyFolder = path.join(root, 'assets/sky');
-const inputs = named.length ? named.map((file) => path.resolve(file)) : (await readdir(skyFolder)).filter((file) => /_\d+k\.hdr$/.test(file)).sort().map((file) => path.join(skyFolder, file));
+const inputs = named.length ? named.map((file) => path.resolve(file)) : (await readdir(skyFolder)).filter((file) => /_2k\.hdr$/.test(file)).sort().map((file) => path.join(skyFolder, file));
 const results = [];
 for (const input of inputs) {
-  const result = await encodePanorama(input, quality);
+  const measurement = JSON.parse(await readFile(input.replace(/_\d+k\.hdr$/, '.json'), 'utf8'));
+  const result = await encodeImage(path.basename(input, '.hdr'), await readPanorama(input), measurement, quality);
   await writeFile(input.replace(/\.hdr$/, '.jpg'), result.file);
   console.log(result.report);
   results.push(result);
+  if (argumentsGiven.includes('--no-horizon')) continue;
+  const horizon = await encodeHorizon(input, measurement);
+  await writeFile(path.join(path.dirname(input), `${horizon.name}.jpg`), horizon.file);
+  console.log(horizon.report);
+  results.push(horizon);
 }
 if (argumentsGiven.includes('--verify')) await verify(results);

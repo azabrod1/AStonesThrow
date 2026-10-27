@@ -48,6 +48,20 @@ float valueNoise(vec2 p) {
   return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
 }
 
+// Value noise and its gradient (the foam's clumps, the beach's relief).
+float valueNoiseWithGradient(vec2 position, out vec2 gradient) {
+  vec2 corner = floor(position);
+  vec2 within = position - corner;
+  vec2 ease = within * within * (3.0 - 2.0 * within);
+  float lowerLeft = hash21(corner);
+  float lowerRight = hash21(corner + vec2(1.0, 0.0));
+  float upperLeft = hash21(corner + vec2(0.0, 1.0));
+  float upperRight = hash21(corner + vec2(1.0, 1.0));
+  float twist = lowerLeft - lowerRight - upperLeft + upperRight;
+  gradient = 6.0 * within * (1.0 - within) * vec2(lowerRight - lowerLeft + twist * ease.y, upperLeft - lowerLeft + twist * ease.x);
+  return lowerLeft + (lowerRight - lowerLeft) * ease.x + (upperLeft - lowerLeft) * ease.y + twist * ease.x * ease.y;
+}
+
 // Soft mask that is 1 over the simulated patch and fades to 0 at its rim, so the
 // periodic patch meets the flat water outside it without a seam.
 float patchMask(vec2 domainUv) {
@@ -410,20 +424,6 @@ vec3 foamHash(vec2 cell) {
   vec3 mixed = fract(vec3(cell.xyx) * vec3(0.1031, 0.1030, 0.0973));
   mixed += dot(mixed, mixed.yxz + 33.33);
   return fract((mixed.xxy + mixed.yzz) * mixed.zyx);
-}
-
-// Value noise (GLSL_COMMON's) and its gradient.
-float valueNoiseWithGradient(vec2 position, out vec2 gradient) {
-  vec2 corner = floor(position);
-  vec2 within = position - corner;
-  vec2 ease = within * within * (3.0 - 2.0 * within);
-  float lowerLeft = hash21(corner);
-  float lowerRight = hash21(corner + vec2(1.0, 0.0));
-  float upperLeft = hash21(corner + vec2(0.0, 1.0));
-  float upperRight = hash21(corner + vec2(1.0, 1.0));
-  float twist = lowerLeft - lowerRight - upperLeft + upperRight;
-  gradient = 6.0 * within * (1.0 - within) * vec2(lowerRight - lowerLeft + twist * ease.y, upperLeft - lowerLeft + twist * ease.x);
-  return lowerLeft + (lowerRight - lowerLeft) * ease.x + (upperLeft - lowerLeft) * ease.y + twist * ease.x * ease.y;
 }
 
 // Two independent value noises, x and y, and their Jacobian: column j
@@ -1622,19 +1622,51 @@ void main() {
 // The land: the beach's sand (FLOOR_SAND, as the bed's) in the sun and the
 // sky's light (as the bed's, without the water, DRY_SAND of it), darker where
 // it is wet, up to WET_HEIGHT above the water; from GRASS_FROM to GRASS_TO
-// inland it turns to the bank's grass, which takes the colour of the land the
+// inland it turns to the bank's grass: the place's ground (uGroundAlbedo,
+// SKIES' ground in src/skies.js) under the same light, mottled. From
+// LAND_NEAR to LAND_FAR away all of it becomes the colour of the land the
 // sky photo shows at the horizon that way (photoLand: the sky's cube map, a
 // little above the horizon, at LAND_LEVEL of its mip chain and averaged
-// either side, so the photo's detail does not streak toward the eye; under
-// the horizon a photo shows whatever stood at the photographer's feet, often
-// water), mottled and shaded by the bank's slope against level ground. From LAND_NEAR to
-// LAND_FAR away all of it becomes that colour, so the land runs into the
-// photo's own. Seen in the mirror the directions are the mirror camera's,
-// so its reflection does too.
+// either side, so the photo's detail does not streak toward the eye), so
+// the land runs into the photo's own, hazed as its far land is. Seen in the
+// mirror the directions are the mirror camera's, so its reflection does
+// too.
+//
+// What a beach shows between its grains and its slope. The sand's tile is
+// 2 mm a texel, and the silt's drifts a metre across, so from a few metres
+// off the beach was a smooth wash with soft blots on it: nothing between
+// 2 mm and a metre, where a real shore keeps most of what the eye reads.
+// Three layers of that scale, each evaluated once a pixel from the world
+// position and faded out where a pixel's footprint on the ground (fwidth)
+// nears its cell (layerWeight), so none shimmers far off or in the mirror:
+// - Relief. Low hummocks (RELIEF_FREQUENCIES, RELIEF_HEIGHTS: 6 cm over
+//   1.8 m, 1.4 cm over half a metre, value noise with its gradient) tilt
+//   the normal the sun lights, so the beach has form, strongest under a low
+//   sun. The relief shades only: the mesh's height is the bed's (LAKE_BED),
+//   where the rocks come to rest.
+// - Debris. The last high water's wrack line (WRACK_INLAND, wandering along
+//   the shore by WRACK_WANDER), a darker band with sticks and weed along it
+//   (STICK_CELL cells, each holding one with STICK_SHARE's chance at the
+//   line, less either side), and pebbles and shells (PEBBLE_CELL cells,
+//   PEBBLE_SHORE of them within PEBBLE_REACH of the waterline, where the
+//   water sorts them out, PEBBLE_INLAND beyond), in the sand's colour,
+//   darker or greyer. Each is one thing in its cell, placed, sized and
+//   coloured by the cell's hashes, kept inside the cell so one lookup finds
+//   it, antialiased over the pixel's footprint.
+// - Tufts. The grass comes in as clumps before it is a sward: TUFT_CELL
+//   cells hold one each, anywhere in the cell (the four cells about a point
+//   are looked up, so no grid shows), with a chance rising from GRASS_FROM
+//   to TUFT_SHARE at GRASS_TO and gathered into patches by TUFT_PATCHES,
+//   ragged-edged, the ground's colour tinted TUFT_TINT, TUFT_LIT on the
+//   side toward the sun and TUFT_SIDE darker away from it, so they stand up
+//   from the ground rather than lie on it. The sward between them is the
+//   ground's colour mottled over a metre and grained at SWARD_GRAIN, blades
+//   and clumps, each octave faded where the pixel outgrows it.
 export const LAND_FRAGMENT = /* glsl */`
 uniform vec3 uSunDir;
 uniform vec3 uSunIrradiance;
 uniform vec3 uSkyAmbient;
+uniform vec3 uGroundAlbedo;   // the land behind the beach (SKIES' ground)
 varying vec3 vWorld;
 varying vec3 vNormal;
 varying float vInland;
@@ -1648,20 +1680,143 @@ ${PHOTO_LAND}
 #define WET_SHADE 0.6        // ...and as dark as this at the water
 #define GRASS_FROM 2.5       // metres inland: the sand turns to grass from here...
 #define GRASS_TO 4.5         // ...to here
-void main() {
-  vec3 normal = normalize(vNormal);
-  vec3 sand = floorSand(vWorld.xz) * PATTERN_RANGE * DRY_SAND * mix(WET_SHADE, 1.0, smoothstep(0.0, WET_HEIGHT, vWorld.y));
-  vec3 color = sand * (uSunIrradiance * max(dot(normal, uSunDir), 0.0) + uSkyAmbient * SKY_LIGHT);
-  vec3 toLand = vWorld - cameraPosition;
-  float grass = smoothstep(GRASS_FROM, GRASS_TO, vInland);
-  float far = smoothstep(LAND_NEAR, LAND_FAR, length(toLand));
-  if (grass > 0.0 || far > 0.0) {
-    vec3 land = photoLand(toLand.xz);
-    float level = max(uSunDir.y, 0.0) + SKY_LIGHT * 0.25;
-    float slopeShade = (max(dot(normal, uSunDir), 0.0) + SKY_LIGHT * 0.25 * normal.y) / level;
-    vec3 grassColor = land * slopeShade * (1.0 + (0.6 * valueNoise(vWorld.xz * 2.3 + 5.0) - 0.3) * (1.0 - far));
-    color = mix(mix(color, grassColor, grass), land, far);
+#define RELIEF_FREQUENCIES vec2(0.55, 1.9)   // per metre: the hummocks and the bumps on them...
+#define RELIEF_HEIGHTS vec2(0.06, 0.014)     // ...metres high
+#define WRACK_INLAND 0.55    // metres inland: the wrack line...
+#define WRACK_WANDER 0.3     // ...wandering this far either way...
+#define WRACK_WAVELENGTH 0.3 // ...per metre along the shore
+#define WRACK_WIDTH 0.12     // metres: its dark band's half width...
+#define WRACK_SHADE 0.82     // ...and how dark
+#define PEBBLE_CELL 0.1      // metres: a cell with one pebble or shell at most
+#define PEBBLE_RADII vec2(0.006, 0.022)   // metres
+#define PEBBLE_SHORE 0.3     // the share of cells with one within PEBBLE_REACH of the waterline...
+#define PEBBLE_INLAND 0.05   // ...and beyond
+#define PEBBLE_REACH 1.0     // metres
+#define STICK_CELL 0.5       // metres: a cell with one stick or strand of weed at most
+#define STICK_SHARE 0.35     // the share of cells with one at the wrack line...
+#define STICK_SPREAD 0.6     // ...falling off over this many metres either side
+#define STICK_LENGTH vec2(0.08, 0.2)   // metres, whole
+#define STICK_WIDTH 0.012    // metres, whole
+#define TUFT_CELL 0.45       // metres: a cell with one tuft at most
+#define TUFT_RADII vec2(0.06, 0.16)    // metres
+#define TUFT_SHARE 0.8       // the share of cells with one at GRASS_TO and beyond, in the thickest patches...
+#define TUFT_PATCHES 0.35    // ...per metre: the noise that gathers them into patches
+#define TUFT_TINT vec3(0.85, 1.0, 0.6)     // a tuft against the ground: greener, yellower
+#define TUFT_SIDE 0.5        // how much darker a tuft's side away from the sun is than the side toward it (TUFT_LIT)
+#define TUFT_LIT 1.2
+#define SWARD_GRAIN vec2(6.0, 24.0)   // per metre: the sward's blades and clumps, two octaves of noise over the ground's mottle...
+#define SWARD_CONTRAST vec2(0.4, 0.3) // ...each this deep, peak to peak
+#define LAYER_FADE vec2(0.3, 0.9)   // a layer fades out as the pixel's footprint grows from this share of its cell to this
+
+// How much of a layer of cells of 'cell' metres shows at a pixel whose footprint on the ground is 'footprint' metres.
+float layerWeight(float cell, float footprint) { return 1.0 - smoothstep(LAYER_FADE.x, LAYER_FADE.y, footprint / cell); }
+
+// The bed's normal tilted by the relief's slope.
+vec3 reliefNormal(vec2 point, float footprint) {
+  vec2 gradient, slope = vec2(0.0);
+  valueNoiseWithGradient(point * RELIEF_FREQUENCIES.x + 31.0, gradient);
+  slope += gradient * (2.0 * RELIEF_HEIGHTS.x * RELIEF_FREQUENCIES.x) * (1.0 - smoothstep(0.15, 0.4, footprint * RELIEF_FREQUENCIES.x));
+  valueNoiseWithGradient(point * RELIEF_FREQUENCIES.y + 67.0, gradient);
+  slope += gradient * (2.0 * RELIEF_HEIGHTS.y * RELIEF_FREQUENCIES.y) * (1.0 - smoothstep(0.15, 0.4, footprint * RELIEF_FREQUENCIES.y));
+  return normalize(vec3(vNormal.x - slope.x, vNormal.y, vNormal.z - slope.y));
+}
+
+// The cell of a point in cells of 'cell' metres, its chance (one hash) and tone (another); the point's offset from the cell's centre.
+vec2 cellOf(vec2 point, float cell, out float chance, out float tone, out vec2 fromCentre) {
+  vec2 index = floor(point / cell);
+  chance = hash21(index + 0.37);
+  tone = hash21(index + 5.11);
+  fromCentre = point - (index + 0.5) * cell;
+  return index;
+}
+
+// A pebble in the cell of the point: its cover, 0 to 1, antialiased over 'edge' metres; tone its colour's.
+float pebble(vec2 point, float share, float edge, out float tone) {
+  float chance; vec2 fromCentre;
+  vec2 index = cellOf(point, PEBBLE_CELL, chance, tone, fromCentre);
+  if (chance >= share) return 0.0;
+  vec2 offset = (vec2(hash21(index + 1.3), hash21(index + 2.7)) - 0.5) * (0.5 * PEBBLE_CELL);
+  float size = hash21(index + 9.1);
+  float radius = mix(PEBBLE_RADII.x, PEBBLE_RADII.y, size * size);
+  return 1.0 - smoothstep(radius - edge, radius + edge, length(fromCentre - offset));
+}
+
+// A stick in the cell of the point: a thin ellipse turned by the cell's hash.
+float stick(vec2 point, float share, float edge, out float tone) {
+  float chance; vec2 fromCentre;
+  vec2 index = cellOf(point, STICK_CELL, chance, tone, fromCentre);
+  if (chance >= share) return 0.0;
+  vec2 offset = (vec2(hash21(index + 1.3), hash21(index + 2.7)) - 0.5) * (0.4 * STICK_CELL);
+  float turn = hash21(index + 3.9) * PI;
+  vec2 local = mat2(cos(turn), -sin(turn), sin(turn), cos(turn)) * (fromCentre - offset);
+  float halfLength = 0.5 * mix(STICK_LENGTH.x, STICK_LENGTH.y, hash21(index + 6.2));
+  float halfWidth = 0.5 * STICK_WIDTH;
+  float reach = length(vec2(local.x / halfLength, local.y / halfWidth));
+  return 1.0 - smoothstep(1.0 - edge / halfWidth, 1.0 + edge / halfWidth, reach);
+}
+
+// The tuft nearest the point among the four cells about it: its cover, its tone, and the point's offset from its centre.
+float tuft(vec2 point, float share, float edge, out float tone, out vec2 fromTuft) {
+  vec2 base = floor(point / TUFT_CELL - 0.5);
+  float ragged = 0.75 + 0.5 * valueNoise(point * 16.0 + 3.0);   // the clumps' uneven edges
+  float cover = 0.0;
+  tone = 0.5;
+  fromTuft = vec2(0.0);
+  for (int column = 0; column <= 1; column++) {
+    for (int row = 0; row <= 1; row++) {
+      vec2 index = base + vec2(float(column), float(row));
+      if (hash21(index + 0.37) >= share) continue;
+      vec2 offset = point - (index + vec2(hash21(index + 1.3), hash21(index + 2.7))) * TUFT_CELL;
+      float radius = mix(TUFT_RADII.x, TUFT_RADII.y, hash21(index + 7.7)) * ragged;
+      float here = 1.0 - smoothstep(radius - edge, radius + edge, length(offset));
+      if (here > cover) { cover = here; tone = hash21(index + 5.11); fromTuft = offset; }
+    }
   }
+  return cover;
+}
+
+void main() {
+  float footprint = max(fwidth(vWorld.x), fwidth(vWorld.z)) + 1e-4;   // metres the pixel covers on the ground
+  vec3 normal = reliefNormal(vWorld.xz, footprint);
+  vec3 light = uSunIrradiance * max(dot(normal, uSunDir), 0.0) + uSkyAmbient * SKY_LIGHT;
+  vec3 sand = floorSand(vWorld.xz) * PATTERN_RANGE * DRY_SAND * mix(WET_SHADE, 1.0, smoothstep(0.0, WET_HEIGHT, vWorld.y));
+  float grass = smoothstep(GRASS_FROM, GRASS_TO, vInland);
+
+  // Debris: the wrack line, its sticks, the pebbles.
+  float wrackLine = WRACK_INLAND + WRACK_WANDER * (2.0 * valueNoise(vec2(vWorld.x * WRACK_WAVELENGTH, 0.5) + 11.0) - 1.0);
+  float wrack = 1.0 - smoothstep(0.0, WRACK_WIDTH, abs(vInland - wrackLine));
+  vec3 albedo = sand * mix(1.0, WRACK_SHADE, wrack * (1.0 - grass));
+  float tone;
+  float pebbleShare = mix(PEBBLE_INLAND, PEBBLE_SHORE, 1.0 - smoothstep(0.0, PEBBLE_REACH, vInland)) * (1.0 - grass);
+  float pebbles = pebble(vWorld.xz, pebbleShare, footprint, tone) * layerWeight(PEBBLE_CELL, footprint);
+  albedo = mix(albedo, mix(sand * 0.4, vec3(dot(sand, vec3(0.333))) * 1.15, tone), pebbles);   // dark to pale grey
+  float stickShare = STICK_SHARE * (1.0 - smoothstep(0.0, STICK_SPREAD, abs(vInland - wrackLine))) * (1.0 - grass);
+  float sticks = stick(vWorld.xz, stickShare, footprint, tone) * layerWeight(STICK_CELL, footprint);
+  albedo = mix(albedo, sand * vec3(0.5, 0.4, 0.3) * mix(0.6, 1.3, tone), sticks);   // dark brown
+
+  // The bank: the ground's colour, mottled, with its tufts.
+  vec3 toLand = vWorld - cameraPosition;
+  float far = smoothstep(LAND_NEAR, LAND_FAR, length(toLand));
+  float tuftShare = TUFT_SHARE * smoothstep(GRASS_FROM - 0.6, GRASS_TO, vInland);
+  if (grass > 0.0 || tuftShare > 0.0) {
+    // The sward: the ground's colour mottled over a metre and grained finer, each grain faded out where the pixel outgrows it.
+    float mottle = 1.0 + 0.6 * valueNoise(vWorld.xz * 2.3 + 5.0) - 0.3;
+    float grain = 1.0 + SWARD_CONTRAST.x * (valueNoise(vWorld.xz * SWARD_GRAIN.x + 41.0) - 0.5) * layerWeight(1.0 / SWARD_GRAIN.x, footprint)
+                      + SWARD_CONTRAST.y * (valueNoise(vWorld.xz * SWARD_GRAIN.y + 83.0) - 0.5) * layerWeight(1.0 / SWARD_GRAIN.y, footprint);
+    vec3 ground = uGroundAlbedo * mottle * grain;
+    albedo = mix(albedo, ground, grass);
+    vec2 fromTuft;
+    float patches = smoothstep(0.3, 0.7, valueNoise(vWorld.xz * TUFT_PATCHES + 23.0));
+    float tufts = tuft(vWorld.xz, tuftShare * mix(0.25, 1.0, patches), footprint, tone, fromTuft) * layerWeight(TUFT_CELL, footprint);
+    if (tufts > 0.0) {
+      vec2 sunward = uSunDir.xz + vec2(1e-4, 0.0);
+      float side = 0.5 + 0.5 * dot(normalize(fromTuft + vec2(1e-5)), normalize(sunward));   // 1 on the side the sun lights
+      vec3 tuftColor = uGroundAlbedo * TUFT_TINT * mix(0.8, 1.15, tone) * mix(1.0 - TUFT_SIDE, TUFT_LIT, side);
+      albedo = mix(albedo, tuftColor, tufts);
+    }
+  }
+  vec3 color = albedo * light;
+  if (far > 0.0) color = mix(color, photoLand(toLand.xz), far);   // into the photo's own land
   gl_FragColor = vec4(color, 1.0);
 }
 `;

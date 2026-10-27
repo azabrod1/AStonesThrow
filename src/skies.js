@@ -38,13 +38,15 @@ import { loadAsset } from './loadAsset.js';
 // afternoon and sunset to the left and behind. Between the two, every hour
 // has its light ahead at one of them. Mesas' Night panorama (18:43, the sun
 // 13° down) is left out: its sky is a haze of the towns' light. Each
-// panorama is 0.2 to 0.6 MB, fetched only when chosen. An hour's `clock` is
+// panorama is 0.2 to 0.6 MB, fetched only when chosen, its horizon strip
+// (HORIZON_STRIP, below) 0.2 to 1.4 MB, fetched after it. An hour's `clock` is
 // its local time (sky-probe's taken). `anchor` and `facing` (src/sky.js's
 // Light by the hour and Orientation) are the first hour unless named.
 export const SKIES = {
   lakeside: {
     anchor: 'afternoon',
     facing: 'afternoon',
+    ground: [0.11, 0.1, 0.05],
     hours: {
       dawn: { file: 'lakeside_dawn', label: 'Dawn', clock: '06:27' },
       sunrise: { file: 'lakeside_sunrise', label: 'Sunrise', clock: '06:58' },
@@ -55,6 +57,7 @@ export const SKIES = {
   mesas: {
     anchor: 'afternoon',
     facing: 'moonrise',
+    ground: [0.16, 0.14, 0.09],
     hours: {
       dawn: { file: 'qwantani_dawn', label: 'Dawn', clock: '06:28' },
       sunrise: { file: 'qwantani_sunrise', label: 'Sunrise', clock: '06:43' },
@@ -70,9 +73,9 @@ export const SKIES = {
       moonlight: { file: 'qwantani_moon_noon', label: 'Moonlight', clock: '21:06' },
     },
   },
-  meadow: { mirrored: true, hours: { afternoon: { file: 'meadow_2', label: 'Afternoon' } } },
-  alpine: { mirrored: true, hours: { midday: { file: 'lago_disola', label: 'Midday' } } },
-  open: { hours: { midday: { file: 'kloofendal_48d_partly_cloudy_puresky', label: 'Midday' } } },
+  meadow: { mirrored: true, ground: [0.075, 0.1, 0.045], hours: { afternoon: { file: 'meadow_2', label: 'Afternoon' } } },
+  alpine: { mirrored: true, ground: [0.07, 0.095, 0.045], hours: { midday: { file: 'lago_disola', label: 'Midday' } } },
+  open: { ground: [0.14, 0.12, 0.07], hours: { midday: { file: 'kloofendal_48d_partly_cloudy_puresky', label: 'Midday' } } },
 };
 export const SKY_NAMES = Object.keys(SKIES);
 export const DEFAULT_SKY = 'lakeside';   // an open lake to a far shore, as the Lake water is
@@ -96,6 +99,22 @@ const SKY_STORAGE_KEY = 'stone-pond-sky';     // src/main.js's: the Location set
 const TIME_STORAGE_KEY = 'stone-pond-time';   // src/main.js's: the local time ('hh:mm') of the hour last chosen
 
 const panoramaUrl = (file) => new URL(`../assets/sky/${file}_2k.jpg`, import.meta.url);
+/** The hour's horizon strip (HORIZON_STRIP), fetched after its panorama is up (src/sky.js, Horizon). */
+export const horizonUrl = (file) => new URL(`../assets/sky/${file}_horizon.jpg`, import.meta.url);
+
+// The horizon strip: the band of the 8k panorama from `above` degrees over
+// the horizon to `below` under it, encoded by tools/sky-encode.mjs beside
+// the 2k panorama and drawn over it by the dome (src/sky.js, Horizon), so
+// the land on the skyline is sharp. The rows the strip takes from a source
+// `sourceHeight` rows tall (horizonRows) are the encoder's and the page's
+// alike: the page reads the band back from the strip's size.
+export const HORIZON_STRIP = { source: '8k', above: 17, below: 3 };
+const HORIZON_BLOCK = 8;   // the strip's height is a multiple of the JPEG's block
+export function horizonRows(sourceHeight) {
+  const above = Math.round((HORIZON_STRIP.above / 180) * sourceHeight);
+  const below = Math.round((HORIZON_STRIP.below / 180) * sourceHeight);
+  return { above, below: below + ((HORIZON_BLOCK - ((above + below) % HORIZON_BLOCK)) % HORIZON_BLOCK) };
+}
 let early = null;   // { file, download }: the first sky's, until the first load
 
 /** The place and hour the page opens on, read as src/main.js reads them (the header: a twin). */
