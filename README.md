@@ -262,9 +262,10 @@ one), and a pond where nothing happens at 30 frames a second; High keeps
 splash's drops leave (16 and 12), a ring of 65 536 spray sprites,
 Medium 16 384 drawing two fifths of High's and Low 8192 a fifth (each
 sprite standing for that many more drops), and 80 things at rest (a stone on
-the bottom is one draw call) and 16 afloat (a floater costs more: its
-physics, its ride and its mirror image), Medium 30 and 14, Low 20 and 12;
-up to 20 things may be on the move at once, on every preset. Past a count
+the bottom is one draw call), 32 afloat (a floater costs more: its
+physics, its ride and its mirror image) and 24 shards of broken ice,
+Medium 45, 21 and 15, Low 20, 12 and 6; up to 40 things may be on the move
+at once on High, 30 on Medium and 20 on Low. Past a count
 the oldest of that kind shrinks away over 0.6 s, never vanishing at once.
 The canvas never holds more than 2.6 million pixels.
 Core stone/splash programs are compiled while the page loads, under its
