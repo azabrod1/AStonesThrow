@@ -917,19 +917,40 @@ function minuteOfThrowing(liveLimit, views, throws, camera = null, fadeSeconds =
       return { x: source.centreX, z: source.centreZ, inner, outer, caustic: source.caustic };
     });
     const causticAnnuli = annuli.slice(annuli.length - causticRings).filter((annulus) => annulus.caustic > 0);
+    // A point is in an annulus where inner − margin ≤ its radius < outer + margin, compared squared (no square root):
+    // the inner bound holds everywhere when it is not above zero. Every point of a view has its view's weight and
+    // margin (viewPoints, patchVertices), so the hits are counted and weighted once.
     const lookups = views.map((view) => {
-      let total = 0;
-      for (const point of view.points) {
-        for (const annulus of view.caustics ? causticAnnuli : annuli) {
-          const radius = Math.hypot(point.x - annulus.x, point.z - annulus.z);
-          if (radius >= annulus.inner - point.margin && radius < annulus.outer + point.margin) total += point.weight;
+      const { xs, zs, weight, margin } = packedPoints(view);
+      let hits = 0;
+      for (const annulus of view.caustics ? causticAnnuli : annuli) {
+        const low = annulus.inner - margin, high = annulus.outer + margin;
+        if (high <= 0) continue;
+        const lowSquared = low > 0 ? low * low : -1, highSquared = high * high;
+        const centreX = annulus.x, centreZ = annulus.z;
+        for (let index = 0; index < xs.length; index++) {
+          const offsetX = xs[index] - centreX, offsetZ = zs[index] - centreZ;
+          const distanceSquared = offsetX * offsetX + offsetZ * offsetZ;
+          if (distanceSquared >= lowSquared && distanceSquared < highSquared) hits++;
         }
       }
-      return total;
+      return hits * weight;
     });
     samples.push({ time, live: book.sources.filter((source) => !source.fading).length, fading: book.sources.filter((source) => source.fading).length, caustics: causticAnnuli.length, fetches, lookups });
   }
   return samples;
+}
+/**
+ * A view's points as flat arrays, made once per view and kept on it, with the
+ * one weight and margin all its points share (minuteOfThrowing's lookups).
+ */
+function packedPoints(view) {
+  if (view.packed) return view.packed;
+  const { points } = view;
+  const weight = points[0]?.weight ?? 0, margin = points[0]?.margin ?? 0;
+  if (points.some((point) => point.weight !== weight || point.margin !== margin)) throw new Error('packedPoints: a view whose points differ in weight or margin');
+  view.packed = { xs: Float64Array.from(points, (point) => point.x), zs: Float64Array.from(points, (point) => point.z), weight, margin };
+  return view.packed;
 }
 /** The water points a view's pixels see (on a grid of samples, each standing for its pixels) and, with `floor`, the surface points the floor's pixels take their caustics from. */
 function viewPoints({ width, height, fov, floor = false, columns = 96, rows = 96 }) {

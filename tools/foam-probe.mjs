@@ -124,31 +124,39 @@ function valueNoisePair(positionX, positionY) {
 }
 
 let cellVisits = 0;
-// foamCells in the shader: the best two features by radius minus distance.
+// foamCells in the shader: the best two features by radius minus distance. The hottest function of the probe (the
+// supersampled renders call it 25 times a pixel), so foamHash is computed inline, into locals, and the result is
+// kept in locals until the end: the same arithmetic as foamHash and the shader, without an array or an object a visit.
 function foamCells(positionX, positionY, radii, jitter, seed) {
   const cellX = Math.floor(positionX), cellY = Math.floor(positionY);
   const withinX = positionX - cellX, withinY = positionY - cellY;
-  const result = { best: -10, runnerUp: -10, bestX: 1, bestY: 0, runnerUpX: 1, runnerUpY: 0, bestRadius: 1, edgeKey: 0, bestKey: 0 };
+  const smallest = radii[0], radiusSpan = radii[1] - radii[0];
+  let best = -10, runnerUp = -10, bestX = 1, bestY = 0, runnerUpX = 1, runnerUpY = 0, bestRadius = 1, bestKeyOut = 0;
   let bestKey = 0, runnerUpKey = 0;
   for (let row = -1; row <= 1; row++) {
     for (let column = -1; column <= 1; column++) {
       cellVisits++;
-      const random = foamHash(cellX + column + seed[0], cellY + row + seed[1]);
-      const offsetX = withinX - column - 0.5 - jitter * (random[0] - 0.5);
-      const offsetY = withinY - row - 0.5 - jitter * (random[1] - 0.5);
-      const radius = mix(radii[0], radii[1], random[2]);
-      const inside = radius - Math.hypot(offsetX, offsetY);
-      if (inside > result.best) {
-        Object.assign(result, { runnerUp: result.best, runnerUpX: result.bestX, runnerUpY: result.bestY, best: inside, bestX: offsetX, bestY: offsetY, bestRadius: radius, bestKey: fract((random[0] + random[1]) * 7.31) });
-        runnerUpKey = bestKey; bestKey = random[2];
-      } else if (inside > result.runnerUp) {
-        Object.assign(result, { runnerUp: inside, runnerUpX: offsetX, runnerUpY: offsetY });
-        runnerUpKey = random[2];
+      // foamHash(cellX + column + seed[0], cellY + row + seed[1]), inline.
+      const hashX = cellX + column + seed[0], hashY = cellY + row + seed[1];
+      let first = fract(hashX * 0.1031), second = fract(hashY * 0.1030), third = fract(hashX * 0.0973);
+      const mixed = first * (second + 33.33) + second * (first + 33.33) + third * (third + 33.33);
+      first += mixed; second += mixed; third += mixed;
+      const randomX = fract((first + second) * third), randomY = fract((first + third) * second), randomZ = fract((second + third) * first);
+      const offsetX = withinX - column - 0.5 - jitter * (randomX - 0.5);
+      const offsetY = withinY - row - 0.5 - jitter * (randomY - 0.5);
+      const radius = smallest + radiusSpan * randomZ;
+      const inside = radius - Math.sqrt(offsetX * offsetX + offsetY * offsetY);
+      if (inside > best) {
+        runnerUp = best; runnerUpX = bestX; runnerUpY = bestY;
+        best = inside; bestX = offsetX; bestY = offsetY; bestRadius = radius; bestKeyOut = fract((randomX + randomY) * 7.31);
+        runnerUpKey = bestKey; bestKey = randomZ;
+      } else if (inside > runnerUp) {
+        runnerUp = inside; runnerUpX = offsetX; runnerUpY = offsetY;
+        runnerUpKey = randomZ;
       }
     }
   }
-  result.edgeKey = bestKey + runnerUpKey;
-  return result;
+  return { best, runnerUp, bestX, bestY, runnerUpX, runnerUpY, bestRadius, edgeKey: bestKey + runnerUpKey, bestKey: bestKeyOut };
 }
 
 function laceRaw(worldX, worldZ) {

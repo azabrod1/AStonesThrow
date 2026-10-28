@@ -463,6 +463,51 @@ const scratch = {
   bed: new THREE.Vector3(),
 };
 const UP = new THREE.Vector3(0, 1, 0);
+
+// The distinct points of a physics mesh (Rock.physicsPositions: separate triangles, each point repeated in every
+// triangle it touches, about six times), in first-seen order, made once per array and kept beside it. The walks for
+// the lowest point (lowestAlong, contact) take the least of one dot product per point, which is the same number over
+// the distinct points as over the repeats, to the bit, at a sixth of the cost: the slide's walk was 45 000 corners a
+// step. Every array physicsPositions gives is fixed once made (a soft thing's give bends what is drawn, never its
+// restShape), so the copy never goes stale. Two points are the same when the bits of all three coordinates are (so
+// minus zero stays apart from zero, and not even a zero's sign changes), found by an open-addressed hash over the
+// array's own memory: no string or object a point, so the slide's 45 000 corners take well under a millisecond the
+// first time (string keys took 30 ms, a hitch on a thing's first throw), and a stone's, built each throw, a few µs.
+const UNIQUE_POINTS = new WeakMap();
+function uniquePoints(positions) {
+  let unique = UNIQUE_POINTS.get(positions);
+  if (unique) return unique;
+  const wordsPerValue = positions.BYTES_PER_ELEMENT / 4;   // 1 for a Float32Array, 2 for a Float64Array
+  const words = new Uint32Array(positions.buffer, positions.byteOffset, positions.length * wordsPerValue);
+  const wordsPerPoint = 3 * wordsPerValue, pointCount = positions.length / 3;
+  let tableSize = 1;
+  while (tableSize < 2 * pointCount) tableSize *= 2;
+  const slots = new Int32Array(tableSize).fill(-1);   // each the first point (its index) of a distinct position
+  const kept = new Int32Array(pointCount);
+  let keptCount = 0;
+  for (let point = 0; point < pointCount; point++) {
+    const start = point * wordsPerPoint;
+    let hash = 0x811c9dc5;
+    for (let word = 0; word < wordsPerPoint; word++) hash = Math.imul(hash ^ words[start + word], 0x01000193);
+    let slot = (hash >>> 0) & (tableSize - 1);
+    for (;;) {
+      const held = slots[slot];
+      if (held < 0) { slots[slot] = point; kept[keptCount++] = point; break; }
+      const heldStart = held * wordsPerPoint;
+      let same = true;
+      for (let word = 0; word < wordsPerPoint && same; word++) same = words[heldStart + word] === words[start + word];
+      if (same) break;
+      slot = (slot + 1) & (tableSize - 1);
+    }
+  }
+  unique = new positions.constructor(keptCount * 3);
+  for (let index = 0; index < keptCount; index++) {
+    const from = kept[index] * 3;
+    unique[index * 3] = positions[from]; unique[index * 3 + 1] = positions[from + 1]; unique[index * 3 + 2] = positions[from + 2];
+  }
+  UNIQUE_POINTS.set(positions, unique);
+  return unique;
+}
 // A floater's columns (buoyancyColumns): this many across its widest, cut again on a grid turned by each of `turns`
 // (radians) if they hold its mesh's volume worse than `held` of it.
 const BUOYANCY = { columns: 20, held: 0.02, turns: [0.5, 0.7, 0.3] };
@@ -1665,7 +1710,7 @@ export class Rock {
   /** How far its lowest point lies below its centre along `up` (a unit vector: the level's, or a sloping bed's normal; negative, metres), as it is turned now (or by `quaternion`). */
   lowestAlong(up, quaternion = this.quaternion) {
     if (this.sphere) return -this.radius;
-    const positions = this.physicsPositions;
+    const positions = uniquePoints(this.physicsPositions);
     // A mesh point's height along `up` is the rotation's rows, weighted by `up`, dotted with it (along the level, the
     // second row: exactly the arithmetic it always was, so a seeded throw goes as it went).
     const rotation = rockRotation.makeRotationFromQuaternion(quaternion).elements;
@@ -1708,8 +1753,10 @@ export class Rock {
     const down = new THREE.Vector3(-rowX, -rowY, -rowZ);
     const alignment = this.shape.axes.map((axis) => Math.abs(axis.dot(down)));
     const nearest = alignment.indexOf(Math.max(...alignment));
+    // The lowest point over the distinct points (uniquePoints); the faces below walk the triangles themselves.
+    const distinct = uniquePoints(positions);
     let lowest = Infinity;
-    for (let index = 0; index < positions.length; index += 3) lowest = Math.min(lowest, rowX * positions[index] + rowY * positions[index + 1] + rowZ * positions[index + 2]);
+    for (let index = 0; index < distinct.length; index += 3) lowest = Math.min(lowest, rowX * distinct[index] + rowY * distinct[index + 1] + rowZ * distinct[index + 2]);
     // The faces within BLUNT_BAND of the lowest point, by the share of their
     // corners inside it, projected on the water: the footprint of the part
     // that goes in first.
