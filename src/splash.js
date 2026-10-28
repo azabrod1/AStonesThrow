@@ -113,7 +113,7 @@
 // glinting; the rest of the boil is the cloud of bubbles under it, a milky
 // tint of the water seen through the surface; and over the cloud lies its
 // froth, the packed foam pattern (bubbles alone, never lace) at
-// FOAM_FROTH_GAIN times the cloud, holed and ragged-edged, thinning at the
+// up to FOAM_FROTH_GAIN times the cloud, rising with its depth, holed and ragged-edged, thinning at the
 // boil's edge into the bursting bubbles, which give way under it. A smooth
 // milk with bubbles over it read as fog with marbles on it, from the bank
 // and close to; froth with structure, holes and ragged edges reads as foam.
@@ -353,7 +353,7 @@ const BUBBLE_SWARM_SPREAD = 0.01;     // m
 // lets the surface hold a boil up to a map value of 0.035, one layer of
 // bubbles bursting, and draws the rest as the cloud of bubbles under it, a
 // milky tint of the water seen through the surface, topped with froth, the
-// foam pattern at FOAM_FROTH_GAIN times the cloud's value (the pattern
+// foam pattern at up to FOAM_FROTH_GAIN times the cloud's value, rising with its depth (the pattern
 // whitens about half the water at 0.1): so the amounts say how much air is
 // in the top of the water, a pebble's boil mostly fizz and a rock's mostly
 // cloud, froth over milk. The hole's air does not come up at once: pinched

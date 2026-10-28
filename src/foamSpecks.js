@@ -33,7 +33,7 @@
 // gathers; and its rafts surface over a span the caller gives, each raft's
 // specks over BIRTH_JITTER after it, so the specks come up as the air does
 // rather than all in one frame. Where the foam map is dense, a raft or the
-// froth over a splash's boil (FOAM_FROTH_GAIN times its cloud), a speck
+// froth over a splash's boil (up to FOAM_FROTH_GAIN times its cloud), a speck
 // fades out (SPECK_VERTEX), so specks never double the foam's own bubbles.
 //
 // A speck's whole life is a closed form of the splash time (SPECK_VERTEX in

@@ -678,7 +678,7 @@ ${SNOW_COVER}
 // little), and by FOAM_CHURN_EDGE more where it thins, so a big boil heaves
 // in lumps and its edge breaks up rather than glowing as a blurred ring.
 // Over the cloud lies the boil's froth: this pattern, its map value
-// FOAM_FROTH_GAIN times the cloud's, taken as a boil (bubbles alone, no
+// up to FOAM_FROTH_GAIN times the cloud's (frothFoam, rising with its depth), taken as a boil (bubbles alone, no
 // lace), so a stone's boil is dense white froth while it lasts, holed and
 // ragged-edged as a raft is, the milk showing through its holes, and thins
 // where the cloud does, at its edge, into the domes, which fade out under
@@ -699,13 +699,19 @@ ${SNOW_COVER}
 // A splash's boil on fresh water (FOAM_PATTERN's last paragraph): the share
 // the surface holds, a soft minimum of the boil and FOAM_BOIL_HOLD,
 // boil·(1 + (boil/hold)⁴)^(−1/4): all of a faint boil, at most the hold;
-// the rest is the cloud, topped with froth at FOAM_FROTH_GAIN times its
+// the rest is the cloud, topped with froth at up to FOAM_FROTH_GAIN times its
 // value. The water (WATER_FRAGMENT) and the specks (SPECK_VERTEX) both take
 // them.
 // tools/foam-probe.mjs twins it (surfaceShare): change both.
 export const FRESH_BOIL = /* glsl */`
 #define FOAM_BOIL_HOLD 0.035               // the most of a splash's boil the surface holds, one layer of bubbles bursting
-#define FOAM_FROTH_GAIN 2.0                // the boil's cloud, beyond the hold, is topped with froth: FOAM_PATTERN, as a boil, at this many times the cloud's map value (a pebble's cloud too thin for much)
+#define FOAM_FROTH_GAIN 4.0                // the boil's cloud, beyond the hold, is topped with froth: FOAM_PATTERN, as a boil, at up to this many times the cloud's map value...
+#define FOAM_FROTH_FULL_CLOUD 2.0          // ...reached as the cloud deepens to this many holds (frothFoam: a pebble's thin cloud froths hardly at all, a rock's deep one goes solid)
+// The froth over a boil's cloud, as the foam map's value for FOAM_PATTERN: FOAM_FROTH_GAIN times the cloud, scaled by
+// how deep the cloud is (0 to 1 over FOAM_FROTH_FULL_CLOUD holds), so a thin cloud gives little and a deep one much.
+float frothFoam(float cloud) {
+  return FOAM_FROTH_GAIN * cloud * smoothstep(0.0, FOAM_FROTH_FULL_CLOUD * FOAM_BOIL_HOLD, cloud);
+}
 float freshBoilSurface(float boil) {
   float squared = boil * boil / (FOAM_BOIL_HOLD * FOAM_BOIL_HOLD);
   return boil * inversesqrt(sqrt(1.0 + squared * squared));
@@ -2118,11 +2124,11 @@ void main() {
   // (the footprint, acrossX and acrossY, at the top); the pattern only where
   // there is foam.
   // A splash's boil: the surface's share is drawn as bursting domes (freshBubbles, below) and the cloud under it is in
-  // refracted, the milk; over the cloud, the boil's own froth, the packed pattern at FOAM_FROTH_GAIN times the cloud
+  // refracted, the milk; over the cloud, the boil's own froth, the packed pattern at up to FOAM_FROTH_GAIN times the cloud (frothFoam, rising with its depth)
   // (a boil, so bubbles alone, no lace): a stone's boil is dense white froth while it lasts, thinning at its edge
   // into the domes, where a smooth milk with domes over it read as fog with marbles on it. A pebble's cloud is too
   // thin for any.
-  vec2 foamKinds = splashFoam - vec2(splashBoil, 0.0) + vec2(FOAM_FROTH_GAIN * splashCloud, 0.0);
+  vec2 foamKinds = splashFoam - vec2(splashBoil, 0.0) + vec2(frothFoam(splashCloud), 0.0);
   // The gale's whitecaps and the foam they leave, over all the water, the
   // raft gathered into the wind's streaks: sea foam's, churned by breaking,
   // packed and white whatever the water.
@@ -3373,7 +3379,7 @@ void main() {
 // fades out where the foam the surface shows is between SPECK_RAFT_LOW and
 // SPECK_RAFT_HIGH: specks are the bits that drift out of the raft. Of a
 // splash's boil the surface shows what it holds (FRESH_BOIL), under
-// SPECK_RAFT_LOW, and the froth over its cloud, FOAM_FROTH_GAIN times the
+// SPECK_RAFT_LOW, and the froth over its cloud, up to FOAM_FROTH_GAIN times the
 // cloud: a speck rides over a fizz and a boil's thin edge, and fades under
 // its froth, whose bubbles are the grain there as a raft's are. Each speck
 // has a shine of its own (aShine, src/foamSpecks.js: most faint, a few
@@ -3429,7 +3435,7 @@ void main() {
   vec2 foamKinds = texture2D(uFoam, domainUv).rg * mask;
   float boil = max(foamKinds.r - foamKinds.g, 0.0);
   float boilSurface = freshBoilSurface(boil);
-  float outsideRaft = 1.0 - smoothstep(SPECK_RAFT_LOW, SPECK_RAFT_HIGH, foamKinds.g + boilSurface + FOAM_FROTH_GAIN * (boil - boilSurface));
+  float outsideRaft = 1.0 - smoothstep(SPECK_RAFT_LOW, SPECK_RAFT_HIGH, foamKinds.g + boilSurface + frothFoam(boil - boilSurface));
   vec4 viewPosition = viewMatrix * vec4(place.x, height, place.y, 1.0);
   float fadeOut = 1.0 - smoothstep(life - SPECK_FADE, life, age);
   float fade = smoothstep(0.0, 0.1, age) * fadeOut * outsideRaft;

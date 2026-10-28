@@ -666,7 +666,7 @@ seen through the surface (its colour the water's own absorption against the
 bubbles' scattering, the lake's blue-green paled), churned in lumps that
 break up its edge, under the sky's reflection. Over the cloud lies the
 boil's froth: the packed pattern below at twice the cloud's map value
-(`FOAM_FROTH_GAIN`), its bubbles alone with no lace, holed and ragged, so a
+(up to `FOAM_FROTH_GAIN` times it, rising with its depth), its bubbles alone with no lace, holed and ragged, so a
 stone's boil is dense white froth while it lasts, thinning at its edge into
 the bursting domes, which give way under it. A smooth milk with domes over
 it read as fog with marbles on it, from the bank and close to; froth with
