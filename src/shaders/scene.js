@@ -162,6 +162,7 @@ ${ICE_UNIFORMS}
 // box round them all (src/ice.js shade): the rest of the ice pays nothing.
 // iceThingsShade gives what of the sun and of the sky reaches here.
 #define ICE_THINGS 8
+#define ICE_LOWEST_SUN 0.05            // the sun's rise over its level reach no lower than this (src/ice.js ICE_SHADE.lowestSun, its twin): a sun on the horizon casts shadows without end
 #define ICE_SUN_SPREAD 0.0093
 #define ICE_SHADOW_SOFT 0.15
 uniform vec4 uIceThings[ICE_THINGS];            // each its middle (x, height over the ice's top, z) and half-height (m)
@@ -172,6 +173,8 @@ uniform float uIceThingCount;
 vec2 iceThingsShade(vec2 point, vec3 toSun) {
   float sun = 1.0, sky = 1.0;
   if (uIceThingCount < 0.5 || any(lessThan(point, uIceShadeBox.xy)) || any(greaterThan(point, uIceShadeBox.zw))) return vec2(1.0);
+  // The sun no lower than src/ice.js reckons it, so a shadow ends inside the circle given for it.
+  toSun = normalize(vec3(toSun.x, max(toSun.y, ICE_LOWEST_SUN * length(toSun.xz)), toSun.z));
   for (int index = 0; index < ICE_THINGS; index++) {
     if (float(index) >= uIceThingCount) break;
     vec4 bound = uIceThingBounds[index];
@@ -190,7 +193,7 @@ vec2 iceThingsShade(vec2 point, vec3 toSun) {
     // The sun: in the frame it is a ball of radius 1 in.
     vec3 centre = vec3(across.x, thing.y / thing.w, across.y), ray = normalize(vec3(sunAcross.x, toSun.y / thing.w, sunAcross.y));
     float along = dot(centre, ray);
-    if (along > 0.0 && toSun.y > 0.0) {
+    if (along > 0.0) {
       float soft = ICE_SHADOW_SOFT + ICE_SUN_SPREAD * along;
       sun *= smoothstep(1.0 - soft, 1.0 + soft, length(centre - along * ray));
     }
@@ -1517,7 +1520,7 @@ uniform samplerCube uSkyCube;     // the sky as the droplets reflect it (src/sky
 uniform mat4 uReflectionMatrix;   // world -> reflection texture coordinates
 uniform vec4 uMirrorNear;         // the splash's image in the mirror, uv corners (x0, y0, x1, y1); empty (x0 > x1) when none
 uniform vec2 uMirrorSize;         // the mirror image's pixels
-uniform float uMirrorLevel;       // the height it mirrors about: the water's under the splash (0 but under a gale, src/main.js)
+uniform float uMirrorLevel;       // the height it mirrors about: the water's under the splash under a gale, the ice's top frozen, else 0 (src/main.js)
 uniform sampler2D uUnderColor;
 uniform sampler2D uUnderDepth;
 uniform float uStonesUnder;       // 1 while a stone is under the water (src/main.js), else 0

@@ -74,7 +74,8 @@
 // towards its middle (a stone half over a new hole, its weight a centimetre
 // inside the edge, does not stay balanced there). The edge of a hole that
 // has flooded is whole: what comes to rest on it later stays while its
-// weight is over the ice.
+// weight is over the ice, and tips in once its weight is over the water
+// (its middle over the ice: a long thing, or a ballasted one).
 //
 // Pieces (pieceUnder, landOnPiece, bearPiece). A piece afloat in a hole is
 // ice too: what comes down on it meets its top (the ground's `at` there:
@@ -253,7 +254,8 @@ export const ICE_MATERIAL = Object.freeze({ kind: 'ice', friction: 0.1, rolling:
 // than `above` m over its top (a stone's shadow from there is a faint blur); the sky a thing hides is let go to nothing
 // where its view factor falls to `least` (ICE_THINGS' fade), its shadow reckoned out to its ellipsoid cast `soft` of
 // its size wider (ICE_SHADOW_SOFT's twin, with room for the sun's own width), and the sun no lower than `lowestSun`
-// (the tangent of its elevation: a sun on the horizon casts shadows without end).
+// (its rise over its level reach, about 2.9°: a sun on the horizon casts shadows without end; ICE_LOWEST_SUN, its twin,
+// holds the shader's sun as low).
 const ICE_SHADE = { most: 8, above: 2, least: 0.01, soft: 0.25, lowestSun: 0.05 };
 // A hole (the header): corners round it; the lip's fall it takes in (Cavity.lipReach's `fall`); each corner out beyond
 // the lip by `margin` and a jag from 0 to `jag` of the lip's reach, besides the slow waves `waves` (amplitude, each of
@@ -530,7 +532,8 @@ export class IceSheet {
       uIceShadeBox: { value: new THREE.Vector4() },
       uIceThingCount: { value: 0 },
     };
-    this.shading = { near: [], ellipsoid: { x: 0, y: 0, z: 0, along: 0, across: 0, heading: 0, height: 0 } };   // shade's, kept between frames
+    // shade's, kept between frames: its entries (a thing and its distance from the eye), reused, and how many are in use.
+    this.shading = { near: [], count: 0, ellipsoid: { x: 0, y: 0, z: 0, along: 0, across: 0, heading: 0, height: 0 } };
     this.dirty = false;
     // The ground (src/rock.js `ground`): the ice, over the deck round a frozen pool.
     this.groundObject = {
@@ -973,22 +976,29 @@ export class IceSheet {
   }
 
   /**
-   * A thing at rest on the crushed rim of a hole still opening (the header:
-   * its weight outside the hole, within ICE.crushed of the ice's thickness of
-   * its edge; a hole it fits through, as meet has it): it tips off, sliding
-   * towards the hole's middle as fast as takes its weight a step past the
-   * edge against the ice's friction (src/rock.js loseGround: over the hole
-   * it falls in). Whether it tipped.
+   * A thing at rest by a hole it fits through (as meet has it), its middle
+   * over the ice, that the ice does not hold up (the header): its weight over
+   * the hole's open water, or, while the hole is still opening, on its
+   * crushed rim (within ICE.crushed of the ice's thickness of its edge). It
+   * tips off, sliding towards the hole's middle as fast as takes its weight a
+   * step past the edge against the ice's friction (src/rock.js loseGround:
+   * over the hole it falls in). Its weight is worked out only by a hole.
+   * Whether it tipped.
    */
   tipAtEdge(rock) {
-    if (rock.state !== 'rest') return false;
-    const weight = rock.weightAt(edgeWeight), crushed = ICE.crushed * this.thickness;
+    if (rock.state !== 'rest' || this.holes.length === 0) return false;
+    const crushed = ICE.crushed * this.thickness, x = rock.position.x, z = rock.position.z;
+    let weight = null;
     for (const hole of this.holes) {
-      if (hole.flooded || hole.skin || hole.inner < rock.collisionRadius) continue;
+      if (hole.skin || hole.inner < rock.collisionRadius) continue;
+      // Its weight is within its reach of its middle: no nearer the hole than that, it is nowhere near.
+      if (Math.hypot(hole.x - x, hole.z - z) > hole.outer + crushed + rock.reach * rock.radius) continue;
+      weight ??= rock.weightAt(edgeWeight);
       const towardX = hole.x - weight.x, towardZ = hole.z - weight.z, toMiddle = Math.hypot(towardX, towardZ);
-      if (toMiddle > hole.outer + crushed || toMiddle < 1e-6 || insidePolygon(hole.corners, weight.x, weight.z)) continue;
-      const edge = polygonEdgeDistance(hole.corners, weight.x, weight.z);
-      if (edge > crushed) continue;
+      if (toMiddle < 1e-6) continue;
+      const over = insidePolygon(hole.corners, weight.x, weight.z);
+      const edge = over ? 0 : polygonEdgeDistance(hole.corners, weight.x, weight.z);
+      if (!over && (hole.flooded || edge > crushed)) continue;
       const speed = Math.sqrt(2 * ICE_MATERIAL.tumbling * GRAVITY * (edge + rock.collisionRadius * EDGE_PAST));
       rock.loseGround();
       rock.velocity.set((towardX / toMiddle) * speed, 0, (towardZ / toMiddle) * speed);
@@ -1970,16 +1980,25 @@ export class IceSheet {
    */
   shade(things, eye, toSun) {
     const near = this.shading.near, ellipsoid = this.shading.ellipsoid;
-    near.length = 0;
+    let found = 0;
     if (this.on) {
       for (const thing of things) {
         const { x, y, z } = thing.meshAbove.position;
         if (y < this.top || y > this.top + ICE_SHADE.above || this.at(x, z) === null) continue;
-        near.push({ thing, distance: (x - eye.x) ** 2 + (y - eye.y) ** 2 + (z - eye.z) ** 2 });
+        const entry = near[found] ??= { thing: null, distance: 0 };
+        entry.thing = thing;
+        entry.distance = (x - eye.x) ** 2 + (y - eye.y) ** 2 + (z - eye.z) ** 2;
+        found++;
       }
-      if (near.length > ICE_SHADE.most) near.sort((first, second) => first.distance - second.distance);
+      // The nearest first, only when there are more than it draws (its entries past `found` are last frame's, kept).
+      if (found > ICE_SHADE.most) {
+        const used = near.splice(0, found);
+        used.sort((first, second) => first.distance - second.distance);
+        near.unshift(...used);
+      }
     }
-    const count = Math.min(near.length, ICE_SHADE.most);
+    for (let index = found; index < near.length; index++) near[index].thing = null;   // let go of things no longer near
+    const count = Math.min(found, ICE_SHADE.most);
     const uniforms = this.uniforms, box = uniforms.uIceShadeBox.value.set(Infinity, Infinity, -Infinity, -Infinity);
     // The sun's shift across the ice per metre of height (its direction's level part over its rise).
     const rise = Math.max(toSun.y, ICE_SHADE.lowestSun * Math.hypot(toSun.x, toSun.z), 1e-6);

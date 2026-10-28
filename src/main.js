@@ -1307,7 +1307,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     if (objects.length > 0) splash.mirrorBounds(mirrorBox);
     else mirrorBox.makeEmpty();
     // The splash is reckoned on still water and drawn lifted with the waves (galeLift): its image is about as much higher.
-    if (!mirrorBox.isEmpty() && mirrorLevel.value !== 0) { mirrorBox.translate(mirrorShift.set(0, mirrorLevel.value, 0)); mirrorBox.expandByScalar(GALE_MIRROR_MARGIN); }
+    if (!mirrorBox.isEmpty() && galeWaves.on && mirrorLevel.value !== 0) { mirrorBox.translate(mirrorShift.set(0, mirrorLevel.value, 0)); mirrorBox.expandByScalar(GALE_MIRROR_MARGIN); }
     // A floater's image, where it is drawn (lifted already), a little wider than it for its last frame's place.
     for (const rock of floaters) mirrorBox.union(floaterBox.setFromCenterAndSize(rock.meshMirror.position, floaterSize.setScalar(3 * rock.radius + 2 * RIDE_MIRROR_MARGIN)));
     if (mirrorBox.isEmpty() || mirrorBox.max.y <= mirrorLevel.value) return;   // only what stands above the water is mirrored
@@ -3042,8 +3042,9 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     // materials (a pizza's: above, below and in the mirror): their programs too.
     const floaters = WARM_UP.floaters.map((name) => throwAt(WARM_UP.x, WARM_UP.z, { thing: name }));
     for (const floater of floaters) floater.meshMirror.visible = true;
-    // And a stone's, as anything but a floater is given on the ice (src/rock.js prepareMirror): its program too.
-    stone.prepareMirror().visible = true;
+    // And a stone's, as anything but a floater is given on the ice (src/rock.js prepareMirror): its program too, drawn
+    // wherever the mirror's camera looks (it is culled by it, and this stone is in the hand).
+    Object.assign(stone.prepareMirror(), { visible: true, frustumCulled: false });
     iceCracks.warmUp(WARM_UP.x + 0.4, WARM_UP.z);   // the cracks' program, over ice or none
     const fishWarmUp = fishView.warmUp();   // the fish's one program, whatever lives here (none in the Pool)
     // The preview's programs (buildPreview: a see-through material, textured and plain): a pizza's preview drawn in

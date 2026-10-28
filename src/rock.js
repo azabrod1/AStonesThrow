@@ -1336,6 +1336,9 @@ export function prepareThing(thing) {
     // How far its farthest point is from its middle, in radii, however it is turned (the hand holds it clear of the
     // water: src/main.js handPosition); `reach`, its bounding sphere's, is looser.
     const positions = geometry.attributes.position.array;
+    // The faces it can lie on (restFaces, rolled onto its hull's), worked out now (under the loading veil, src/main.js
+    // warmUp) rather than as the first one thrown comes to rest: a banana's 24 000 corners take tens of milliseconds.
+    if (thing.body.shape !== 'sphere' && !thing.body.upright) restFaces(shape, positions, thing.body.ballast);
     let farthest = 0;
     for (let index = 0; index < positions.length; index += 3) farthest = Math.max(farthest, positions[index] ** 2 + positions[index + 1] ** 2 + positions[index + 2] ** 2);
     PREPARED.set(thing, { geometry, shape, reach: geometry.boundingSphere.center.length() + geometry.boundingSphere.radius, farthest: Math.sqrt(farthest), buoyancy });
@@ -1700,7 +1703,9 @@ export class Rock {
     try { this.meshMirror = this.makeMirror(); } finally { Math.random = random; }
     const above = this.meshAbove, mirror = this.meshMirror;
     mirror.scale.copy(above.scale);
-    mirror.frustumCulled = false;
+    // Culled by the mirror's camera, unlike its other meshes: it does not ride the water (a floater's, made with it, does),
+    // so its geometry's bounds hold it, and what lies on the ice out of the mirror's view costs no draw.
+    mirror.frustumCulled = true;
     mirror.position.copy(above.position);
     mirror.quaternion.copy(above.quaternion);
     mirror.material.color.copy(above.material.color);
@@ -3231,6 +3236,8 @@ export class Rock {
     this.velocity.y = 0;
     const along = Math.hypot(this.velocity.x, this.velocity.z);
     const material = this.thing.material, surface = this.groundSurface;
+    // Come onto the ice along the ground (off a frozen pool's deck, or knocked): mirrored in it from now, as one come down on it.
+    if (!this.metIce && surface?.kind === 'ice') { this.metIce = true; this.prepareMirror(); }
     // A ball's rolling resistance is the lesser of its own and the ground's (ice is smoother than the deck), but one
     // that rolls about its own axis (an apple) is slowed by its own lumps and give whatever it rolls on; a lawn holds
     // either back by at least its `rollingLeast`.
