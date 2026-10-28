@@ -9,7 +9,7 @@
 // status 1 if the report is missing a line or a number.
 //
 //   node tools/profile-probe.mjs [--quality=low]
-import { launchBrowser } from './browser.mjs';
+import { launchBrowser, patience } from './browser.mjs';
 import { mkdir, readFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import path from 'node:path';
@@ -40,7 +40,7 @@ const problems = [];
 page.on('pageerror', (error) => problems.push(String(error)));
 page.on('console', (message) => { if (message.type() === 'error') problems.push(message.text()); });
 await page.goto(`http://localhost:${server.address().port}/index.html?profile=1&quality=${quality}`, { waitUntil: 'domcontentloaded' });
-await page.waitForFunction(() => !!window.__pond, undefined, { timeout: 120000 });
+await page.waitForFunction(() => !!window.__pond, undefined, { timeout: patience(120000) });
 console.log('quality', await page.evaluate(() => window.__pond.quality));
 await page.waitForFunction(() => /^textures /m.test(document.getElementById('stats').textContent), undefined, { timeout: 3600000 });
 const readout = await page.evaluate(() => document.getElementById('stats').textContent);

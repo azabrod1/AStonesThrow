@@ -31,9 +31,10 @@
 // patience(milliseconds) is a wait fitted to the renderer launched: as given
 // on a GPU, SOFTWARE_PATIENCE times longer on SwiftShader, where a page takes
 // that much longer to compile its programs and warm up (a stormy start's,
-// rain and gale together, took over 120 s in the container). The browser
-// probes' waits for the page take it, so a slow renderer is waited for and a
-// GPU's runs keep their limits.
+// rain and gale together, took over 120 s in the container). Every browser
+// tool's wait for the page takes it (the shoot harness's for its rain, drop
+// rings and frames too), so a slow renderer is waited for and a GPU's runs
+// keep their limits.
 // PW_HARDWARE=1 (the startup probe's old switch) means PW_GPU=hardware.
 import { existsSync } from 'node:fs';
 import { chromium } from 'playwright';
