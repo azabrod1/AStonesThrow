@@ -47,18 +47,24 @@
 // are 3 to 5 m apart (streakLayout). A slot's streak is
 // its next drop, so it starts as high as the drop falls in the slot's period
 // (about 7.5 m in light rain, 9.6 m in heavy) and there are as many streaks
-// to a cubic metre as the rain's streakDensity. The flecks (FLECK_VERTEX): a
-// point at each drop near where the eye looks, rising and falling once over
-// FLECK_LIFE seconds, the crown and jet a drop throws up, too small to be
-// more than a fleck of white at a few metres. Both stand on a gale's waves
-// (src/galeWaves.js).
+// to a cubic metre as the rain's streakDensity. The flecks (FLECK_VERTEX,
+// SPLASH in src/shaders/rain.js says how one goes): a point at each drop
+// near where the eye looks, drawn over the drop's life as the splash it
+// throws up, a crown's flash, then a jet standing for a tenth of a second,
+// tallest halfway, and a droplet off its tip for half of them; or, for the
+// rain's bubbleShare of the drops, a bubble the crown closes into, floating
+// up to a second or two, drawn as the foam specks' are. Every splash has
+// its own height, width and brightness, hashed from the schedule, so no
+// two are alike and a seeded run's are the same every time. Both stand on a
+// gale's waves (src/galeWaves.js).
 //
 // RAIN: per intensity, the rate of the drops that leave a ring one can see
 // (per m² per second), the cell (metres, dividing TILE_SIZE) and its slots
 // (enough that a slot's ring has gone before it lands its next drop), the
 // drops' sizes against the probe's reference drop (2 mm across), the rings'
 // life, the fall (m/s), the streaks per cubic metre of air and their
-// opacity, and the flecks' opacity.
+// opacity, the flecks' opacity and the share of the drops whose splash
+// leaves a bubble (bigger drops' crowns close over more often).
 // Light rain's drops are smaller and slower and its rings live longer
 // (fewer drops cross them); heavy rain's land every few centimetres, each
 // ring broken up within half a second.
@@ -76,8 +82,8 @@ import { mipAxisFactor } from './ambientWaves.js';
 import { RAIN_TILE_FRAGMENT, RAIN_MAX_SLOTS, STREAK_VERTEX, STREAK_FRAGMENT, FLECK_VERTEX, FLECK_FRAGMENT } from './shaders/rain.js';
 
 export const RAIN = {
-  light: { rate: 60, cell: 0.2, sizes: [0.6, 1.2], life: 0.8, fall: 4.5, dropDiameter: 0.0015, streakDensity: 1.25, streakOpacity: 0.45, fleckOpacity: 0.5 },
-  heavy: { rate: 600, cell: 0.125, sizes: [1.0, 1.8], life: 0.45, fall: 7.5, dropDiameter: 0.003, streakDensity: 3, streakOpacity: 0.45, fleckOpacity: 0.7 },
+  light: { rate: 60, cell: 0.2, sizes: [0.6, 1.2], life: 0.8, fall: 4.5, dropDiameter: 0.0015, streakDensity: 1.25, streakOpacity: 0.45, fleckOpacity: 0.5, bubbleShare: 0.05 },
+  heavy: { rate: 600, cell: 0.125, sizes: [1.0, 1.8], life: 0.45, fall: 7.5, dropDiameter: 0.003, streakDensity: 3, streakOpacity: 0.45, fleckOpacity: 0.7, bubbleShare: 0.2 },
 };
 const TILE_SIZE = 1;                 // metres
 const READINGS = 2;                  // the water reads the tile twice (RAIN_RIPPLES)
@@ -87,9 +93,6 @@ const STREAK_SPEEDS = [0.85, 1.15];  // the smallest drop's fall and the biggest
 const STREAK_SECONDS = 1 / 30;       // real seconds: the eye's persistence
 const STREAK_MIN_PIXELS = 1.2;
 const FLECK_REPEATS = 4;             // tiles each way from the one the eye looks at
-const FLECK_LIFE = 0.12;             // seconds, for the reference drop
-const FLECK_SIZE = 0.004;            // metres across, for the reference drop
-const FLECK_HEIGHT = 0.012;          // metres the jet rises, for the reference drop
 const FLECK_MIN_PIXELS = 1.5;
 
 /**
@@ -330,10 +333,8 @@ export class Rain {
         uTileSize: { value: TILE_SIZE },
         uProjScale: { value: 1000 },
         uMinPixels: { value: FLECK_MIN_PIXELS },
-        uFleckLife: { value: FLECK_LIFE },
-        uFleckSize: { value: FLECK_SIZE },
-        uFleckHeight: { value: FLECK_HEIGHT },
         uOpacity: { value: RAIN.light.fleckOpacity },
+        uBubbleShare: { value: RAIN.light.bubbleShare },
         ...this.lightUniforms,
         ...gale,   // the gale's uniforms (src/galeWaves.js): the flecks stand on its waves
       },
@@ -438,6 +439,7 @@ export class Rain {
     streakUniforms.uOpacity.value = rain.streakOpacity;
     this.layOutStreaks(rain, schedule);
     this.flecks.material.uniforms.uOpacity.value = rain.fleckOpacity;
+    this.flecks.material.uniforms.uBubbleShare.value = rain.bubbleShare;
     this.layOutFlecks(schedule);
     this.updateFall();
     this.measureRoughness();

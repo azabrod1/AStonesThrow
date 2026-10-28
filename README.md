@@ -219,9 +219,13 @@ is remembered on the device (but the view, which opens on the shore):
 - Weather: Clear (the default), Light rain, Heavy rain, Storm, Light snow,
   Heavy snow or Blizzard. Rain comes under
   an overcast that hides the sun and greys the sky, with a haze that fades
-  the far shore; its drops ring the water, streak past the eye and throw up
-  flecks where they land, and the pool's deck goes dark with wet. A light
-  rain's rings are fine and far apart; a downpour hammers the whole surface.
+  the far shore; its drops ring the water, streak past the eye and splash
+  where they land, and the pool's deck goes dark with wet. Where a drop
+  lands it throws up a crown's flash, then a thin jet standing for a tenth
+  of a second, some with a droplet off its tip, or, for a share of the
+  drops, a floating bubble that pops within a second or two; each splash
+  has its own height and brightness, so no two are alike. A light rain's
+  rings are fine and far apart; a downpour hammers the whole surface.
   Rain at night is dark: the cloud hides the moon. A storm is a downpour
   under a darker sky, with lightning, and brings a gale. Snow falls from a
   brighter overcast, its flakes drifting with the wind, swaying and melting
@@ -946,13 +950,18 @@ rings are finer than a pixel, what the mip levels average away comes back as
 roughness, from the rings' slope spectrum by Campbell's theorem (as the
 wind's ripples do). The falling drops are streaks, each the path it cuts in
 the eye's 1/30 s, slanted by the wind: drops of the same schedule, so each
-falls to the very place its ring opens and its fleck of white rises and
-falls. A few of each tile's drops near the eye fall as streaks, about as many
-to a cubic metre as before, fading out 11 m away. Since every tile drops the
-same drops at the same moments, the tiles take turns, so a drop's twin a
-metre away does not fall beside it in step (its twins are 3 to 5 m apart);
-what is left of the repeat is a gentle swell in how many streaks are in view
-(about 8% over a second, against 2% for drops wholly at random).
+falls to the very place its ring opens and its splash is thrown up: a
+crown's flash, then a thin jet standing for a tenth of a second, a droplet
+off the tip of some, or, for a share of the drops (more in a downpour, whose
+bigger drops' crowns close over the crater more often), a bubble floating on
+the water that pops within a second or two, each splash its own height and
+brightness, so no two are alike. A few of each tile's drops near the eye
+fall as streaks, about as many to a cubic metre as before, fading out 11 m
+away. Since every tile drops the same drops at the same moments, the tiles
+take turns, so a drop's twin a metre away does not fall beside it in step
+(its twins are 3 to 5 m apart); what is left of the repeat is a gentle swell
+in how many streaks are in view (about 8% over a second, against 2% for
+drops wholly at random).
 
 **Drop rings** (`src/dropRings.js`; its shader `DROP_RING_SLOPES` in
 `src/shaders/rain.js`). Each of a splash's drops 1.5 mm in radius or more
@@ -1325,7 +1334,9 @@ farther out, so it rises into the view rather than filling its corner.
 - `node tools/rain-probe.mjs [--write]` works out a raindrop's ring on the
   CPU and prints its timeline and slope spectrum, checking the sum starts
   as the crater, the slowest waves go 0.23 m/s, the steepest crest runs at
-  about their group speed and the table's edge cuts nothing; `--write`
+  about their group speed and the table's edge cuts nothing, and prints
+  each rain's biggest splash, checking its phases come in order, it is over
+  before its slot's next drop and its bubbles fit their cap; `--write`
   writes `assets/rain/ring.json` and `ring_profile.bin`, which the page
   loads the first time it rains.
 - `node tools/skip-probe.mjs [throws=60] [--seed=1] [--aim=x:z] [--list]`

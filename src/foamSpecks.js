@@ -16,7 +16,7 @@
 // translucent white of its own shine, MIN_SHINE to 1 of OPACITY (most faint,
 // a few bright), dimmer than the raft: a lone one is faint, a cluster of them
 // reads as foam. A resolved bubble is a dome standing on the water
-// (SURFACE_BUBBLE in src/shaders/scene.js, as the water draws its own
+// (SURFACE_BUBBLE in src/shaders/bubble.js, as the water draws its own
 // bursting bubbles): its film nearly clear, with a window of sky mirrored on
 // its top and the dark water on its limb and lower part, a faint shadow
 // along its foot and the sun's glint on it, a soft spot on a small one and a

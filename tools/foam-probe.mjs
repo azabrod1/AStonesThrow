@@ -51,13 +51,14 @@ import { FOAM_FRAGMENT } from '../src/shaders/spectral.js';
 import { FOAM_DRIFT, FOAM_DIFFUSIVITY, FOAM_FLOW } from '../src/spectralWater.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const shaderSource = readFileSync(path.join(root, 'src/shaders/scene.js'), 'utf8');
+// The foam's defines are in src/shaders/scene.js, the bubble's (FOAM_BUBBLE_*, SURFACE_BUBBLE) in src/shaders/bubble.js.
+const shaderSource = ['src/shaders/scene.js', 'src/shaders/bubble.js'].map((file) => readFileSync(path.join(root, file), 'utf8')).join('\n');
 const defines = {};
 for (const match of shaderSource.matchAll(/^#define (FOAM_\w+) (vec[234]\([^)]*\)|[-\d.e]+)/gm)) {
   defines[match[1]] = match[2].startsWith('vec') ? match[2].slice(5, -1).split(',').map(Number) : Number(match[2]);
 }
 const required = ['FOAM_BOIL_HOLD', 'FOAM_BUBBLE_CELL', 'FOAM_CLOUD_SCATTER', 'FOAM_CHURN_FREQUENCY', 'FOAM_FINE_CELL', 'FOAM_COARSE_CELL', 'FOAM_LACE_CELL', 'FOAM_LACE_WARP', 'FOAM_BUBBLE_SCALE', 'FOAM_MID', 'FOAM_FADED_SHADE'];
-for (const name of required) if (!(name in defines)) throw new Error(`${name} not found in src/shaders/scene.js`);
+for (const name of required) if (!(name in defines)) throw new Error(`${name} not found in src/shaders/scene.js or bubble.js`);
 const presentThreshold = defines.FOAM_MID * Math.exp(-(defines.FOAM_LACE_WEIGHT + defines.FOAM_BUBBLE_WEIGHT * defines.FOAM_BUBBLE_CLAMP + 0.5 * (defines.FOAM_RAGGED + defines.FOAM_CLUMP)) / defines.FOAM_LOG_SCALE);
 
 const fract = (value) => value - Math.floor(value);
@@ -324,7 +325,7 @@ check(Math.abs(raftCover - boilCover) < 0.06, `a boil's bubbles cover about what
 // both). The surface's share rises with the boil to FOAM_BOIL_HOLD and no
 // further, all of a faint boil, a pebble's fizz. Its bubbles: alive in
 // filled²·FOAM_BUBBLE_MOST of the cells; each a dome on the water
-// (SURFACE_BUBBLE), whose mean white per unit of water under it, seen from
+// (SURFACE_BUBBLE, src/shaders/bubble.js), whose mean white per unit of water under it, seen from
 // any elevation, the shader's fit (FOAM_BUBBLE_MEAN_FIT) matches within 2%
 // of the integral; their mean white over many cells and moments, seen from
 // straight above, is the white they fade to when unresolved, and drawn
