@@ -36,7 +36,8 @@ the moment a throw leaves the hand and fades back (`?preview=off` leaves
 it out).
 Escape or Reset view (under the menu button while the view is away from
 the shore's) glides back to the shore. The strip at the bottom sets what is
-thrown: its name opens a dropdown of every thing under its group, each with
+thrown: its name opens a dropdown of every thing under its group (the
+gems last, seldom thrown), each with
 its picture (`src/thingMenu.js`; on a phone each group is one row a finger
 scrolls sideways, so the dropdown stays as tall as its groups however many
 things there are), and its slider sets the size (a stone 1.5
@@ -260,7 +261,7 @@ one), and a pond where nothing happens at 30 frames a second; High keeps
 24 stones' rings, Medium 12 and Low 10, 24 of the little rings the
 splash's drops leave (16 and 12), a ring of 65 536 spray sprites,
 Medium 16 384 drawing two fifths of High's and Low 8192 a fifth (each
-sprite standing for that many more drops), and 40 things at rest (a stone on
+sprite standing for that many more drops), and 80 things at rest (a stone on
 the bottom is one draw call) and 16 afloat (a floater costs more: its
 physics, its ride and its mirror image), Medium 30 and 14, Low 20 and 12;
 up to 20 things may be on the move at once, on every preset. Past a count
