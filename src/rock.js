@@ -308,7 +308,9 @@
 // than GROUND.settle; then it slides along (`ground`, alongGround,
 // slideStep), slowing at GROUND.tumbling·g: it tips onto the face nearest
 // down that it can lie on (lyingAttitude: restFaces, from its mesh, a brick
-// flat or on its side but never on its end, a stone on a flat face; a thing
+// flat or on its side but never on its end, a stone on a flat face, rolled
+// onto the face of its hull its weight is over, rollToRest: three of its
+// lumps, never one beside its weight; a thing
 // kept upright, a pizza, a pie, a duck, onto its top or bottom, a ballasted
 // one onto its base), its mesh's lowest point on the ground, and turns
 // slowly about the vertical as it slides (GROUND.turning), never tumbling,
@@ -407,6 +409,9 @@ const GROUND = {
   turning: 0.1,                // it turns about the vertical as it slides at up to this times its speed over its face's radius, either way...
   aligning: 8,                 // rad/s: a ball that rolls about its own axis (`material.rollsAbout`: an apple) turns onto its side at up to this
 };
+// A thing rolled onto the face of its hull it rests on (rollToRest): corners this near the lowest (radii) touch the
+// ground together; it tips at most `passes` times (a stone needs a few, a banana a hundred or so).
+const ROLL = { tie: 1e-7, passes: 400 };
 // A flat thing's flight (`air.model` 'flutter', src/things.js: a pizza; the header): a plate in the air, its attitude its
 // own, turned by the air's push and its spin (R here its face's disc, Rock.plateRadius). The push on its face is ½ρv²·πR² times C_N(α) = `slope`·sin α·cos² α +
 // C_90·sin³ α (α the angle the air meets the face at; C_90 its `air.drag`, broadside), along its face's normal, and its
@@ -532,7 +537,10 @@ const RIDE_TILT = 0.36;   // the most a floater is tilted as it rides the water 
  * points within GROUND.faceBand of their lowest that way, by GROUND.faceMargin
  * and by GROUND.leastTip seen from its weight (a brick: flat or on its side,
  * not on its end; a stone: its flat faces, never its rim or its end; at least
- * its short axis's).
+ * its short axis's); each then rolled onto the face of its hull it would
+ * come to rest on from there (rollToRest): a lumpy stone set down with an
+ * axis straight down stands on one lump, as often as not beside its weight,
+ * and falls onto three.
  * Its own frame's directions, each the one that points down as it lies on it.
  * Worked out once for each mesh (its `positions`, which belong to one kind of
  * thing, so to one `ballast`; a shape may be shared by things of other meshes).
@@ -542,7 +550,7 @@ function restFaces(shape, positions, ballast) {
   if (restFacesOf.has(positions)) return restFacesOf.get(positions);
   const weight = shape.centroid.clone().add(new THREE.Vector3().fromArray(ballast ?? [0, 0, 0]));
   const across = new THREE.Vector3(), other = new THREE.Vector3(), point = new THREE.Vector3();
-  const faces = [];
+  const axes = [];
   for (const axis of shape.axes) for (const sign of [1, -1]) {
     const down = axis.clone().multiplyScalar(sign);
     across.set(Math.abs(down.x) < 0.9 ? 1 : 0, Math.abs(down.x) < 0.9 ? 0 : 1, 0).cross(down).normalize();
@@ -556,11 +564,96 @@ function restFaces(shape, positions, ballast) {
     }
     const height = lowest - weight.dot(down);
     const margin = Math.max(GROUND.faceMargin, height * Math.tan(THREE.MathUtils.degToRad(GROUND.leastTip)));
-    if (insideOutline(outline, weight.dot(across), weight.dot(other), margin)) faces.push(down);
+    if (insideOutline(outline, weight.dot(across), weight.dot(other), margin)) axes.push(down);
   }
-  if (faces.length === 0) faces.push(shape.axes[2].clone(), shape.axes[2].clone().negate());
+  if (axes.length === 0) axes.push(shape.axes[2].clone(), shape.axes[2].clone().negate());
+  const corners = cornersFrom(positions, weight);
+  const faces = axes.map((down) => rollToRest(corners, down));
   restFacesOf.set(positions, faces);
   return faces;
+}
+
+/**
+ * Where a thing set down with `down` (its own frame) pointing down comes to
+ * rest, quasi-statically, its mesh's corners (`corners`, flat, from its
+ * weight: cornersFrom) its hull's: while its weight is not over what it
+ * stands on (its corners lowest that way, seen from above: one, an edge, or
+ * a face whose outline misses the weight's foot), it tips towards its
+ * weight, about the point of what it stands on nearest the weight's foot,
+ * until another corner comes down onto the ground (each tip lowers its
+ * weight, so it ends), and rests on a face of its hull with its weight over
+ * it. A new direction of its own frame.
+ */
+function rollToRest(corners, down) {
+  const direction = down.clone();
+  const across = new THREE.Vector3(), other = new THREE.Vector3(), foot = new THREE.Vector3(), tip = new THREE.Vector3();
+  const count = corners.length / 3, heights = new Float64Array(count);
+  const along = (index, vector) => corners[3 * index] * vector.x + corners[3 * index + 1] * vector.y + corners[3 * index + 2] * vector.z;
+  for (let pass = 0; pass < ROLL.passes; pass++) {
+    let lowest = -Infinity;
+    for (let index = 0; index < count; index++) lowest = Math.max(lowest, heights[index] = along(index, direction));
+    across.set(Math.abs(direction.x) < 0.9 ? 1 : 0, Math.abs(direction.x) < 0.9 ? 0 : 1, 0).cross(direction).normalize();
+    other.crossVectors(direction, across);
+    // What it stands on, seen from above, and its point nearest the weight's foot (the origin).
+    const standing = [], seenFromAbove = [];
+    for (let index = 0; index < count; index++) {
+      if (heights[index] <= lowest - ROLL.tie) continue;
+      standing.push(index);
+      seenFromAbove.push(along(index, across), along(index, other));
+    }
+    const outline = standing.length === 1 ? seenFromAbove : convexHull(seenFromAbove);
+    if (outline.length >= 6 && insidePolygon(outline, 0, 0)) break;
+    nearestOnOutline(outline, foot);
+    const offset = Math.hypot(foot.x, foot.y);
+    if (offset < ROLL.tie) break;   // its weight over an edge: balanced, as nearly as a mesh can say
+    // It tips its down towards the side away from what it stands on (its weight falls past it).
+    tip.copy(across).multiplyScalar(-foot.x / offset).addScaledVector(other, -foot.y / offset);
+    // About the corner it stays on (the standing one furthest along the tip), until the first other comes down.
+    let pivot = standing[0];
+    for (const index of standing) if (along(index, tip) > along(pivot, tip)) pivot = index;
+    const pivotHeight = heights[pivot], pivotAhead = along(pivot, tip);
+    let angle = Infinity;
+    for (let index = 0; index < count; index++) {
+      const below = heights[index] - pivotHeight, ahead = along(index, tip) - pivotAhead;
+      if (below > -ROLL.tie || ahead <= 1e-12) continue;
+      angle = Math.min(angle, Math.atan2(-below, ahead));
+    }
+    if (!Number.isFinite(angle)) break;
+    direction.multiplyScalar(Math.cos(angle)).addScaledVector(tip, Math.sin(angle)).normalize();
+  }
+  return direction;
+}
+
+/** A mesh's corners (`positions`: its triangles', each corner as often as they share it) once each, from `weight`, flat. */
+function cornersFrom(positions, weight) {
+  const seen = new Map(), corners = [];
+  for (let index = 0; index < positions.length; index += 3) {
+    const x = positions[index], y = positions[index + 1], z = positions[index + 2];
+    let alongX = seen.get(x);
+    if (!alongX) seen.set(x, alongX = new Map());
+    let alongY = alongX.get(y);
+    if (!alongY) alongX.set(y, alongY = new Set());
+    if (alongY.has(z)) continue;
+    alongY.add(z);
+    corners.push(x - weight.x, y - weight.y, z - weight.z);
+  }
+  return corners;
+}
+
+/** The point of a convex outline (corners [x0, y0, …]: one, an edge's two, or a polygon's) nearest the origin, into `into` (x, y). */
+function nearestOnOutline(outline, into) {
+  const count = outline.length / 2;
+  if (count === 1) return into.set(outline[0], outline[1], 0);
+  let least = Infinity;
+  for (let index = 0; index < count; index++) {
+    const ax = outline[2 * index], ay = outline[2 * index + 1];
+    const bx = outline[(2 * index + 2) % outline.length], by = outline[(2 * index + 3) % outline.length];
+    const edgeX = bx - ax, edgeY = by - ay;
+    const share = THREE.MathUtils.clamp(-(ax * edgeX + ay * edgeY) / Math.max(edgeX * edgeX + edgeY * edgeY, 1e-24), 0, 1);
+    const x = ax + share * edgeX, y = ay + share * edgeY;
+    if (x * x + y * y < least) { least = x * x + y * y; into.set(x, y, 0); }
+  }
+  return into;
 }
 
 /** Whether (x, y) is inside the convex outline of `points` ([x, y] pairs) by at least `margin` (src/ice.js's polygons). */
@@ -2901,7 +2994,8 @@ export class Rock {
    * upright (`body.upright`) onto its base if ballasted low (GROUND.rightsFrom:
    * a duck), else onto whichever of its top or bottom is nearer down (a pie);
    * anything else onto its face nearest down that it can lie on (restFaces: a
-   * brick flat or on its side, never on its end, a stone on a flat face),
+   * brick flat or on its side, never on its end, a stone on a flat face, the
+   * face of its hull its weight is over),
    * down being against `normal`, the plane it lies on's (level ground; a
    * sloping bed's, restOn). A new quaternion.
    */
