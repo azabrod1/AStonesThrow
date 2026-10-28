@@ -15,13 +15,14 @@
 // clear with a bright rim, and no two catch the light alike, so a speck is a
 // translucent white of its own shine, MIN_SHINE to 1 of OPACITY (most faint,
 // a few bright), dimmer than the raft: a lone one is faint, a cluster of them
-// reads as foam. Their discs project onto the mean water plane, so a low view
-// sees ellipses, and their opacity follows projected area with no minimum
-// brightness at a distance. A resolved bubble is a nearly clear cap with a
-// thin bright rim, where its film turns edge on and mirrors the sky, a faint
-// shadow just inside it and the sun's glint on it, a soft spot on a small
-// one and a white point on a large one (SPECK_FRAGMENT); an unresolved one a
-// soft grain. The splash makes them where the crown's base
+// reads as foam. A resolved bubble is a dome standing on the water
+// (SURFACE_BUBBLE in src/shaders/scene.js, as the water draws its own
+// bursting bubbles): its film nearly clear, with a window of sky mirrored on
+// its top and the dark water on its limb and lower part, a faint shadow
+// along its foot and the sun's glint on it, a soft spot on a small one and a
+// white point on a large one (SPECK_FRAGMENT); an unresolved one a soft
+// grain, its opacity following the area it really covers, with no minimum
+// brightness at a distance. The splash makes them where the crown's base
 // was, where the jet falls
 // back, where drops land and where bubbles surface. A patch of them
 // (spawnPatch) is never an even scatter: its specks gather in rafts of about
@@ -31,8 +32,9 @@
 // (STRAYS) alone between them, so a patch is lumps with gaps, as foam
 // gathers; and its rafts surface over a span the caller gives, each raft's
 // specks over BIRTH_JITTER after it, so the specks come up as the air does
-// rather than all in one frame. Where the foam map is dense a speck fades
-// out (SPECK_VERTEX), so specks never double the raft's own bubbles.
+// rather than all in one frame. Where the foam map is dense, a raft or the
+// froth over a splash's boil (up to FOAM_FROTH_GAIN times its cloud), a speck
+// fades out (SPECK_VERTEX), so specks never double the foam's own bubbles.
 //
 // A speck's whole life is a closed form of the splash time (SPECK_VERTEX in
 // src/shaders/scene.js), so the CPU writes each one once, when it is born
@@ -66,9 +68,9 @@ const SHINE_SKEW = 2;             // ...as MIN_SHINE + (1 − MIN_SHINE)·u^SHIN
 const CLUSTER_SPREAD = 0.003;     // specks of one cluster lie within this of its centre (m)
 const MIN_CLUSTER = 2;
 const MAX_CLUSTER = 6;
-const RAFT_SPECKS = 14;           // a patch's specks gather in rafts of half to one and a half times this many...
-const RAFT_SPREAD = 0.3;          // ...each spread (σ) half to one and a half times this share of the ring's width about its centre
-const STRAYS = 0.2;               // ...but this share of a patch lie alone, anywhere on the ring
+const RAFT_SPECKS = 20;           // a patch's specks gather in rafts of half to one and a half times this many (clumps with gaps between: rafts of 14 filled a ring)...
+const RAFT_SPREAD = 0.18;         // ...each spread (σ) half to one and a half times this share of the ring's width about its centre: a clump, not a sprinkle
+const STRAYS = 0.1;               // ...but this share of a patch lie alone, anywhere on the ring (a lone bubble on open water is rare; 0.2 sprinkled the ring)
 const LOPSIDE = 0.7;              // the rafts favour one side of the ring, chosen at random: density 1 + LOPSIDE·cos(angle from it)
 const BIRTH_JITTER = 0.15;        // a raft's clusters surface over this long (s) after the raft
 const OPACITY = 0.6;              // a speck of full shine

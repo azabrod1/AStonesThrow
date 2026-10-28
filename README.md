@@ -658,15 +658,31 @@ wider and longer. The surface holds only so much of it: on fresh water one
 layer of bubbles bursts at a time, and the rest is the cloud of bubbles
 just under the surface, which most of a real boil's white is. So the water
 shader draws a boil up to that hold (a map value of 0.035) as bubbles
-bursting on the surface, a random few at a time and most of them small,
-each a clear cap with a thin bright rim (as a foam speck is drawn) that
+bursting on the surface, a random few at a time and most of them small
+(the big ones only where a cloud lies under the boil, its middle; a fizz
+with none, drops' landings and bubbles surfacing, makes small ones, which
+from the bank are a grain rather than a sprinkle of beads),
+each a dome standing on the water (as a foam speck is drawn: a clear film
+with a window of sky on its top, bright low down where it mirrors the
+horizon and dimmer above, a lower part mirroring the water that shades
+what lies behind it, and a thin bright limb, round on top, cut by the
+water at its foot, cast against the pixel's own view ray so it is
+a dome from the bank and a disc from above, and set anywhere in its cell
+on a lattice whose rows are staggered, so the domes fall in no rows), that
 swells, glints and bursts within half a second, and the rest as the cloud, a milky tint of the water
 seen through the surface (its colour the water's own absorption against the
 bubbles' scattering, the lake's blue-green paled), churned in lumps that
-break up its edge, under the sky's reflection; the gale's whitecaps, a
-breaking wave's packed froth, stay white. Foam specks ride over a boil's
-cloud as over clear water. A pebble's boil is nearly all fizz; a big stone's mostly
-cloud. Each is stamped as
+break up its edge, under the sky's reflection. Over the cloud lies the
+boil's froth: the packed pattern below at twice the cloud's map value
+(up to `FOAM_FROTH_GAIN` times it, rising with its depth), its bubbles alone with no lace, holed and ragged, so a
+stone's boil is dense white froth while it lasts, thinning at its edge into
+the bursting domes, which give way under it. A smooth milk with domes over
+it read as fog with marbles on it, from the bank and close to; froth with
+structure, holes and ragged edges reads as foam. The gale's whitecaps, a
+breaking wave's packed froth, stay white. Foam specks ride over a fizz and
+a boil's thin edge as over clear water and fade under its froth. A pebble's
+boil is nearly all fizz, its cloud too thin for much froth; a big stone's
+mostly cloud, froth over milk. Each is stamped as
 a patch of three to five sub-stamps of unequal sizes at random offsets,
 never one round Gaussian, so no two boils share a shape. Surface flows carry
 the foam: where the hole closed the jet's base wells up, and where the jet
@@ -698,12 +714,13 @@ Those films use the existing bubble cells and fade to their measured mean
 opacity at a distance, adding no texture or noise layer. Close up (the
 shoot harness, `--seed=1`, `--view=high --fov=16`), a 6 cm stone thrown
 normally leaves a faint milky ring and a see-through fizz over about its
-hole's mouth at 0.3 to 0.8 s and a few foam specks after; a 20 cm rock a
-milky, soft-edged churn about 30 cm across from 0.4 to 1.4 s, thinning to
-patches at 1.7 s and clear water by 2.2, with hardly any solid white
-(about 5 cm² of it, against 180 cm² when the boil was drawn as surface
-froth). From the bank, where the surface mostly mirrors the sky, either is
-a faint pale patch.
+hole's mouth at 0.3 to 0.8 s and a few foam specks after; a 20 cm rock
+dense white froth over a milky churn about 30 cm across from 0.4 to 1.4 s,
+fizzing at its edge, thinning to patches at 1.7 s and clear water by 2.2.
+From the bank the rock's froth, on the surface, shows over the sky's
+reflection; the milk under it alone was a faint pale patch there (when the
+boil was milk with domes over it, the rock left about 5 cm² of solid
+white).
 The threshold's edge is one pixel wide at any distance (from the pattern's
 exact gradient and the pixel's footprint on the water), and each layer fades
 into an even white of the right strength before its cells shrink to a couple
@@ -714,13 +731,16 @@ bubble among them, each with a shine of its own, most faint and a few
 bright) riding the waves where the crown stood, where the jet fell back,
 where drops landed and where bubbles surfaced, drifting outward and popping
 over 0.8 to 3 seconds (fresh water's bubbles; the big ones first), faded out
-where the foam is dense. A patch of them is lumps with gaps, never an even
-scatter: its specks gather in rafts of a dozen or so (clumps of clusters a
-few millimetres across, spread over centimetres), favouring one side, with
-strays alone between them, and the rafts surface over a few tenths of a
-second rather than in one frame. The specks flatten into ellipses at a grazing view and
-fade with their projected area, so distant bubbles do not remain bright,
-camera-facing flecks.
+where the foam is dense, a raft or a boil's froth. A patch of them is lumps with gaps, never an even
+scatter: its specks gather in rafts of a score or so (clumps of clusters a
+few millimetres across, spread over a centimetre or two), favouring one
+side, with a few strays alone between them, and the rafts surface over a
+few tenths of a second rather than in one frame. A speck resolved over a
+few pixels is drawn as a dome standing on the water, as the water draws its
+own bursting bubbles (below): a clear film with a faint window of sky on
+its top, a lower part shading the foam behind it, a thin bright limb, round on top, cut by the water at its foot;
+an unresolved one is a soft grain fading with the area it covers, so
+distant bubbles do not remain bright, camera-facing flecks.
 
 The splash scales with the stone (the slider's 1.5 to 16 cm is its
 diameter; the constants were tuned at 3 cm radius). Wherever the physics
@@ -1355,7 +1375,9 @@ farther out, so it rises into the view rather than filling its corner.
   then) and no request fails.
 - `node tools/foam-probe.mjs` runs the foam's bubble pattern on the CPU, with
   the constants read from the shader: each layer's median and spread and the
-  bubbles' mean shade match what the shader fades them to, and at the home,
+  bubbles' mean shade match what the shader fades them to, a boil's domes
+  average the white the shader's fit gives them at every elevation and lie
+  on no lattice, and at the home,
   phone and close-up framings the antialiased pattern covers what a
   supersampled one does and changes no more than it when the water moves
   under the pixels; it prints the cell visits per foam pixel. Then it runs
