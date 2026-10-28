@@ -286,7 +286,9 @@ remembered weather, is rendered before the veil lifts, even when paused.
 The published site serves Three.js alongside its own files (`npm run site`
 creates `_site/vendor/three`). Dependency failures offer Retry. Modules have a
 30-second deadline; sky and rain transfers time out only after 30 seconds
-without progress, so slow downloads can finish. Sky calibration and the panorama
+without progress, so slow downloads can finish, and a deadline that passes
+while the page itself is frozen (a slow GPU compiling the scene) gives the
+transfer a fresh 30 seconds rather than aborting it. Sky calibration and the panorama
 load together, and a failed replacement leaves the current sky visible.
 The published page preloads every module it imports (the site build lists the
 whole import graph), so they download at once as the page is parsed, and it asks
@@ -1292,9 +1294,16 @@ farther out, so it rises into the view rather than filling its corner.
   `tools/wave-probe.mjs`, `tools/foam-probe.mjs`, `tools/cavity-probe.mjs`,
   `tools/ring-probe.mjs`, `tools/rain-probe.mjs`, `tools/snow-probe.mjs`,
   `tools/gale-probe.mjs`, `tools/skip-probe.mjs`, `tools/thing-probe.mjs`,
-  `tools/ice-probe.mjs`, `tools/spray-probe.mjs`, `tools/jet-probe.mjs` and
-  `tools/drop-ring-probe.mjs`;
-  each exits with 1 if a check fails.
+  `tools/ice-probe.mjs`, `tools/spray-probe.mjs`, `tools/jet-probe.mjs`,
+  `tools/drop-ring-probe.mjs`, `tools/fish-probe.mjs` and
+  `tools/garden-probe.mjs`;
+  each exits with 1 if a check fails. `tools/run-probes.mjs` runs them side
+  by side, as many at once as the machine has cores (`PROBE_JOBS=1` runs
+  them one after another), each one's output printed whole when it ends,
+  and runs any that failed beside the others again alone: the computed
+  checks are seeded and fail again, while a budget of wall-clock time that
+  another probe crowded passes alone, as it was written to. The summary
+  names every probe run again. On four cores the suite takes about 80 s.
 - `node tools/ice-probe.mjs [--list]` throws every thing at thin and thick
   ice as the app throws it, each way, with the splash on the CPU, and
   prints what breaks what: each throw's blow against what the ice holds and

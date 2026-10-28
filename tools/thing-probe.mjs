@@ -1334,8 +1334,10 @@ console.log('\nThings meeting things (src/collide.js):');
 
 // ---- what a throw costs the main thread (src/rock.js prepareThing) ----
 {
-  // Each thing made as the app throws it, after it is prepared (src/main.js warmUp): the median of 15. A thing of a
-  // fixed mesh shares its prepared one; a stone's lumps are its own, built each throw.
+  // Each thing made as the app throws it, after it is prepared (src/main.js warmUp): the least of 15. A thing of a
+  // fixed mesh shares its prepared one; a stone's lumps are its own, built each throw. The least, not the median: what
+  // else the machine does (a collection, another process: npm test runs the probes side by side) can only lengthen a
+  // trial, never shorten it, and on a busy machine the median of 15 still drifted to twice a thing's cost.
   const rows = [], over = [];
   let preparing = 0;
   for (const name of THING_NAMES) {
@@ -1352,16 +1354,14 @@ console.log('\nThings meeting things (src/collide.js):');
       times.push(performance.now() - before);
       rock.dispose();
     }
-    times.sort((first, second) => first - second);
-    const median = times[7];
-    rows.push({ name, median, fixed: meshKind(thing.look.mesh).fixed });
+    rows.push({ name, least: Math.min(...times), fixed: meshKind(thing.look.mesh).fixed });
   }
   // A fixed mesh's thing costs under FIXED_THROW_MS, or, on a machine busy enough that a river stone (built afresh each
   // throw, as it always was) costs more than STONE_LOAD_MS, under STONE_SHARE of a stone's throw on this same run.
-  const stone = rows.find((row) => row.name === 'stone').median;
+  const stone = rows.find((row) => row.name === 'stone').least;
   const most = stone > STONE_LOAD_MS ? STONE_SHARE * stone : FIXED_THROW_MS;
-  for (const row of rows) if (row.fixed && row.median > most) over.push(`${row.name} ${row.median.toFixed(2)} ms`);
-  console.log(`\nWhat making a thing costs as it is thrown (ms, median of 15, once prepared; preparing them all took ${preparing.toFixed(0)} ms): ${rows.map((row) => `${row.name} ${row.median.toFixed(2)}`).join(', ')}`);
+  for (const row of rows) if (row.fixed && row.least > most) over.push(`${row.name} ${row.least.toFixed(2)} ms`);
+  console.log(`\nWhat making a thing costs as it is thrown (ms, least of 15, once prepared; preparing them all took ${preparing.toFixed(0)} ms): ${rows.map((row) => `${row.name} ${row.least.toFixed(2)}`).join(', ')}`);
   check(over.length === 0, `a prepared thing costs more than ${most.toFixed(2)} ms to throw (${over.join(', ')})`);
 }
 

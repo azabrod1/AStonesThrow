@@ -7,7 +7,7 @@ Keep this file short. Every future session reads all of it, so most notes belong
 ```bash
 npm install                # three (served to the headless harness) and playwright
 npm start                  # static server; open http://localhost:8123/
-npm test                   # the CPU probes (package.json lists them)
+npm test                   # the CPU probes (package.json lists them, longest first), side by side (tools/run-probes.mjs)
 npm run shoot -- --label=name --throws=0:-1.4:0.03 --times=0.1,0.5   # frames into shots/name/; every flag is in tools/shoot.mjs's opening comment; --throws=none for idle water
 npm run site && node tools/startup-probe.mjs   # startup-probe and site-check load _site/, so build it first
 ```
@@ -46,5 +46,5 @@ Local development loads Three.js from jsDelivr through the import map. `npm run 
 ## The cloud container
 
 - WebGL renders headless through SwiftShader. It is correct but slow, so frame rates measured there mean nothing.
-- Every tool that opens a browser launches it through `tools/browser.mjs`: the GPU when there is one (a Mac's Metal), SwiftShader otherwise. CI's browser probes run on a macOS runner's GPU (`PW_GPU=hardware` in `.github/workflows/check.yml`). Frames differ slightly between the two, so compare frames from one renderer; `PW_GPU=software` forces SwiftShader.
+- Every tool that opens a browser launches it through `tools/browser.mjs`: the GPU when there is one (a Mac's Metal), SwiftShader otherwise. CI's browser probes run on a macOS runner's GPU (`PW_GPU=hardware` in `.github/workflows/check.yml`). Frames differ slightly between the two, so compare frames from one renderer; `PW_GPU=software` forces SwiftShader. A browser probe's waits for the page take `patience()`, which stretches them on SwiftShader.
 - WebGPU compute and offscreen render-to-texture with readback work headless, on a localhost page only. Presenting a WebGPU canvas fails, so capture WebGPU frames by reading back an offscreen texture.
