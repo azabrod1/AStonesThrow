@@ -1399,6 +1399,7 @@ export class Rock {
     // anything without coarser ones.
     const detail = this.geometry.userData.detail ?? null;
     this.detail = detail ? [...detail.coarser, { geometry: this.geometry, spacing: detail.spacing }] : null;
+    if (detail) detail.users = (detail.users ?? 0) + 1;   // the coarser meshes leave the GPU with the last that draws them (disposeGeometry)
     this.detailShown = detail ? { above: this.detail.length - 1, below: this.detail.length - 1, mirror: this.detail.length - 1 } : null;
     this.syncMeshes();
   }
@@ -3257,8 +3258,20 @@ export class Rock {
     return impact;
   }
 
+  /**
+   * Free its geometry (a shared one stays with its definition: prepareThing) and, with the last thing thrown that draws
+   * them, its coarser meshes' copies on the GPU (showDetail; kept with their kind, each is sent again when next drawn).
+   */
+  disposeGeometry() {
+    if (!this.sharedGeometry) this.geometry.dispose();
+    if (!this.detail) return;
+    const detail = this.geometry.userData.detail;
+    if (--detail.users === 0) for (const { geometry } of detail.coarser) geometry.dispose();
+    this.detail = null;
+  }
+
   dispose() {
-    if (!this.sharedGeometry) this.geometry.dispose();   // a shared one stays with its definition (prepareThing)
+    this.disposeGeometry();
     this.meshAbove.material.dispose();
     this.meshBelow.material.dispose();
     this.meshMirror?.material.dispose();

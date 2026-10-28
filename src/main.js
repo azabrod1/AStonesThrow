@@ -2028,7 +2028,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   /** Start a thing shrinking away where it is (simulate: over FADE_SECONDS, then retireRock), frozen: no more steps or knocks. */
   function fadeOut(rock) { rock.fading = 0; }
 
-  /** Take a stone out of the scenes; keepMaterials frees only its geometry (warmUp keeps a stone's materials, so their program stays compiled). */
+  /** Take a stone out of the scenes; keepMaterials frees only its geometries (warmUp keeps a stone's materials, so their program stays compiled). */
   function retireRock(rock, { keepMaterials = false } = {}) {
     if (grab.rock === rock) endGrab();
     ice.forget(rock);
@@ -2039,7 +2039,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       if (rock.meshMirror.visible) viewChanged = true;   // the mirror image is drawn again without it
       sceneMain.remove(rock.meshMirror);
     }
-    if (keepMaterials) rock.geometry.dispose();
+    if (keepMaterials) rock.disposeGeometry();
     else rock.dispose();
     rocks.splice(rocks.indexOf(rock), 1);
   }

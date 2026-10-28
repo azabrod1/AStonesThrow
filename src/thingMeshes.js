@@ -465,8 +465,19 @@ function longestEdge(positions, faces) {
  * finer's paint about it, as a mipmap does a texture's: its own and its neighbours' in the finer mesh (the midpoints of
  * its edges) at half its weight each, the paint over the patch it stands for rather than at a point of it, so a seam
  * narrower than the coarser mesh's faces fades rather than flickering in and out as the ball turns. Coarsest first.
+ * A geometry draws its id from Math.random as it is made: theirs come from a stream of their own (ballIds), so a
+ * ball's first throw draws from Math.random no more than it did, and what a seeded run throws after it (a stone's
+ * lumps) is as it was.
  */
 function ballDetail(unit, levels, pressed, colors) {
+  ballIds ??= seeded(1);
+  const native = Math.random;
+  Math.random = ballIds;
+  try { return ballDetailOf(unit, levels, pressed, colors); } finally { Math.random = native; }
+}
+
+/** ballDetail's meshes, their ids drawn from whatever Math.random is. */
+function ballDetailOf(unit, levels, pressed, colors) {
   // How far apart each cut's corners lie: the sphere's, whatever its paint, so worked out once.
   ballSpacings ??= levels.map((faces) => longestEdge(unit, faces));
   const coarser = [];
@@ -534,6 +545,7 @@ let tennisSeam = null;   // the seam's points, once
 let golfDimples = null;  // the dimples' centres, once
 let ballSphere = null;   // a ball's icosphere, unpainted, once: its corners only read, each paint pressing a copy of them
 let ballSpacings = null; // how far apart the corners of each cut of a ball's icosphere lie, once (ballDetail)
+let ballIds = null;      // the stream the coarser meshes' ids are drawn from (ballDetail), one for them all so no two share one
 
 /** Paint one vertex of a ball (unit direction x, y, z): how far in (in R) it is pressed, and its colour into `color`. */
 function paintBall(paint, x, y, z, color, shells) {
