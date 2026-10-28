@@ -267,6 +267,12 @@ physics, its ride and its mirror image) and 24 shards of broken ice,
 Medium 45, 21 and 15, Low 20, 12 and 6; up to 40 things may be on the move
 at once on High, 30 on Medium and 20 on Low. Past a count
 the oldest of that kind shrinks away over 0.6 s, never vanishing at once.
+A ball (20 480 triangles, its seams and dimples pressed into its sphere)
+small on the screen is drawn from a coarser mesh of it, 5120, 1280 or 320
+triangles, its paint averaged as a mipmap's is: the coarsest whose corners
+lie at most 1.5 pixels apart in the pass it is drawn in (its mirror image's
+and under-water part's at those passes' resolution), so a ball near the eye
+or under the zoom is as it always was.
 The canvas never holds more than 2.6 million pixels.
 Core stone/splash programs are compiled while the page loads, under its
 veil: a stone is thrown and drawn there, then cleared away (with the water

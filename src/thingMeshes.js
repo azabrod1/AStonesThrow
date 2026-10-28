@@ -12,7 +12,8 @@
 //     (createBallGeometry, `look.paint`: a basketball's seams, a tennis
 //     ball's, a golf ball's dimples, a bowling ball's swirl and finger holes,
 //     or plain in `look.color`), pressed in where it is grooved, dimpled or
-//     drilled;
+//     drilled, with coarser meshes of it (its `userData.detail`) to draw
+//     when it is small on the screen;
 //   - apple: its sphere drawn in at the stalk and the calyx, red streaked
 //     over yellow-green, and its stalk (createAppleGeometry);
 //   - pizza: a disc turned from a profile, made by hand (its outline
@@ -67,6 +68,7 @@ import * as THREE from 'three';
 export function linear(red, green, blue) { return new THREE.Color().setRGB(red / 255, green / 255, blue / 255, THREE.SRGBColorSpace); }
 
 const SUBDIVISIONS = 5;              // a ball's icosphere: 10242 vertices, 4 mm apart on a basketball
+const COARSEST_BALL = 2;             // a ball's coarsest mesh (createBallGeometry `detail`): 162 vertices, 320 triangles
 // A flat stone, picked for skipping (src/rock.js): its short axis 0.26 to 0.38 of its long one (a river stone's 0.62 to 0.82); its surface noise, of a river stone's.
 export const SKIP_STONE = { squash: [0.26, 0.12], surfaceNoise: 0.6 };
 
@@ -79,7 +81,11 @@ const MESHES = new Map();
  * thing's shape over them, walks them for its lowest point and cuts them
  * into its buoyancy's columns, while the geometry itself is only drawn, as a
  * stone's finer mesh is; `userData.stone`, a stone's grain's kind and seed,
- * src/shaders/stone.js; `flat`, a stone picked for skipping; `piece`, a
+ * src/shaders/stone.js; `userData.detail`, coarser meshes of it, which
+ * src/rock.js showDetail draws when it is small on the screen, kept with the
+ * kind and never disposed: { coarser: [{ geometry, spacing }], coarsest
+ * first, spacing } (`spacing`, the most its corners lie apart, in radii);
+ * `flat`, a stone picked for skipping; `piece`, a
  * shard's own outline, which src/rock.js is given and passes on), `color(definition)` the
  * material's colour (drawn when the thing is made, after its geometry),
  * `glow(definition)`, if it has one, the material's emissive colour (null
@@ -405,10 +411,15 @@ export function createRockGeometry(seed = Math.random() * 1000, { flat = false, 
 
 // ---- the balls ------------------------------------------------------------
 
-/** An icosphere of unit radius, indexed: each of the icosahedron's faces cut into four `subdivisions` times, the midpoints shared. */
+/**
+ * An icosphere of unit radius, indexed: each of the icosahedron's faces cut into four `subdivisions` times, the
+ * midpoints shared. Each cut keeps the corners it was given, in their places, and adds its midpoints after them, so the
+ * first 10·4^k + 2 vertices are the sphere cut k times, whose faces are `levels[k]`.
+ */
 function icosphere(subdivisions) {
   const positions = ICOSAHEDRON.corners.flat();
   let faces = ICOSAHEDRON.faces.slice();
+  const levels = [faces];
   for (let level = 0; level < subdivisions; level++) {
     const midpoints = new Map();
     const midpoint = (first, second) => {
@@ -430,8 +441,76 @@ function icosphere(subdivisions) {
       next.push(first, one, three, second, two, one, third, three, two, one, two, three);
     }
     faces = next;
+    levels.push(faces);
   }
-  return { positions: new Float32Array(positions), indices: faces };
+  return { positions: new Float32Array(positions), indices: faces, levels };
+}
+
+/** The most any two corners of `faces` lie apart (`positions` on the unit sphere), in radii. */
+function longestEdge(positions, faces) {
+  let longest = 0;
+  for (let face = 0; face < faces.length; face += 3) {
+    for (let side = 0; side < 3; side++) {
+      const from = faces[face + side] * 3, to = faces[face + (side + 1) % 3] * 3;
+      longest = Math.max(longest, Math.hypot(positions[from] - positions[to], positions[from + 1] - positions[to + 1], positions[from + 2] - positions[to + 2]));
+    }
+  }
+  return longest;
+}
+
+/**
+ * A ball's coarser meshes (createBallGeometry's `detail`), from its icosphere cut `levels` times (`unit`, its corners
+ * on the unit sphere, and `levels`, each cut's faces) and how far in it is pressed and its colour at each corner of the
+ * finest (`pressed`, `colors`). A coarser mesh's corners are the finer one's that the cut kept, so each takes the
+ * finer's paint about it, as a mipmap does a texture's: its own and its neighbours' in the finer mesh (the midpoints of
+ * its edges) at half its weight each, the paint over the patch it stands for rather than at a point of it, so a seam
+ * narrower than the coarser mesh's faces fades rather than flickering in and out as the ball turns. Coarsest first.
+ */
+function ballDetail(unit, levels, pressed, colors) {
+  // How far apart each cut's corners lie: the sphere's, whatever its paint, so worked out once.
+  ballSpacings ??= levels.map((faces) => longestEdge(unit, faces));
+  const coarser = [];
+  for (let level = levels.length - 2; level >= COARSEST_BALL; level--) {
+    const count = 10 * 4 ** level + 2;
+    const sums = new Float64Array(count * 4), weights = new Float64Array(count);
+    for (let corner = 0; corner < count; corner++) {
+      sums[corner * 4] = pressed[corner];
+      for (let channel = 0; channel < 3; channel++) sums[corner * 4 + 1 + channel] = colors[corner * 3 + channel];
+      weights[corner] = 1;
+    }
+    // Each edge of the finer mesh lies in two of its faces: each neighbour is met twice, a quarter each time.
+    const faces = levels[level + 1];
+    const takeFrom = (corner, neighbour) => {
+      sums[corner * 4] += 0.25 * pressed[neighbour];
+      for (let channel = 0; channel < 3; channel++) sums[corner * 4 + 1 + channel] += 0.25 * colors[neighbour * 3 + channel];
+      weights[corner] += 0.25;
+    };
+    for (let face = 0; face < faces.length; face += 3) {
+      for (let side = 0; side < 3; side++) {
+        const from = faces[face + side], to = faces[face + (side + 1) % 3];
+        if (from < count) takeFrom(from, to);
+        if (to < count) takeFrom(to, from);
+      }
+    }
+    pressed = new Float32Array(count);
+    colors = new Float32Array(count * 3);
+    const positions = new Float32Array(count * 3);
+    for (let corner = 0; corner < count; corner++) {
+      pressed[corner] = sums[corner * 4] / weights[corner];
+      for (let axis = 0; axis < 3; axis++) {
+        colors[corner * 3 + axis] = sums[corner * 4 + 1 + axis] / weights[corner];
+        positions[corner * 3 + axis] = unit[corner * 3 + axis] * (1 - pressed[corner]);
+      }
+    }
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    geometry.setIndex(levels[level]);
+    geometry.computeVertexNormals();
+    geometry.computeBoundingSphere();
+    coarser.unshift({ geometry, spacing: ballSpacings[level] });
+  }
+  return { coarser, spacing: ballSpacings[levels.length - 1] };
 }
 
 const smoothstep = (edge0, edge1, value) => { const t = Math.min(Math.max((value - edge0) / (edge1 - edge0), 0), 1); return t * t * (3 - 2 * t); };
@@ -453,6 +532,8 @@ const BOWLING = {
 
 let tennisSeam = null;   // the seam's points, once
 let golfDimples = null;  // the dimples' centres, once
+let ballSphere = null;   // a ball's icosphere, unpainted, once: its corners only read, each paint pressing a copy of them
+let ballSpacings = null; // how far apart the corners of each cut of a ball's icosphere lie, once (ballDetail)
 
 /** Paint one vertex of a ball (unit direction x, y, z): how far in (in R) it is pressed, and its colour into `color`. */
 function paintBall(paint, x, y, z, color, shells) {
@@ -546,13 +627,16 @@ export function createBallGeometry(definition, random = Math.random) {
       }
       golfDimples = new Float32Array([...points.values()].flat());
     }
-    const { positions, indices } = icosphere(SUBDIVISIONS);
+    ballSphere ??= icosphere(SUBDIVISIONS);
+    const { positions: unit, indices, levels } = ballSphere;
+    const positions = unit.slice();
     const colors = new Float32Array(positions.length);
+    const pressedAt = new Float32Array(positions.length / 3);
     const color = new THREE.Color();
     const shells = paint === 'bowling' ? BOWLING.shells[shellIndex] : paint === 'plain' ? [linear(...plain)] : null;
     for (let vertex = 0; vertex < positions.length; vertex += 3) {
       const x = positions[vertex], y = positions[vertex + 1], z = positions[vertex + 2];
-      const pressed = paintBall(paint, x, y, z, color, shells);
+      const pressed = pressedAt[vertex / 3] = paintBall(paint, x, y, z, color, shells);
       positions[vertex] = x * (1 - pressed); positions[vertex + 1] = y * (1 - pressed); positions[vertex + 2] = z * (1 - pressed);
       colors[vertex] = color.r; colors[vertex + 1] = color.g; colors[vertex + 2] = color.b;
     }
@@ -561,6 +645,8 @@ export function createBallGeometry(definition, random = Math.random) {
     geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
     geometry.setIndex(indices);
     geometry.computeVertexNormals();
+    // Its coarser meshes, shared by every one thrown (a clone shares its userData): only its own is disposed with it.
+    geometry.userData.detail = ballDetail(unit, levels, pressedAt, colors);
     ballCache.set(key, geometry);
   }
   return ballCache.get(key).clone();

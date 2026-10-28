@@ -450,6 +450,7 @@ const POOL_MARGIN = 0.25;     // metres inside the pool's walls a throw keeps to
 const EYE_EDGE = 0.3;         // metres inside the pool's edge over which the deck's height eases in for the eye
 const FADE_SECONDS = 0.6;      // a thing past a cap shrinks away over this long (fadeOut)
 const FARTHEST_AWAY = 30;      // m: a floater a gale has drifted, or a thing slid over the ice, this far from the pond is out of sight, and goes
+const UNDER_MAGNIFIED = 1.333;   // a thing under the water, seen from above, looks at most the water's index nearer (SEEN_THROUGH_WATER): showDetail
 const CATCH_UP = 12;           // a frame moves the world at most this many of its steps (simulate: 50 ms; the old frame's 12 substeps)
 const TRACE = { points: 4000, step: 0.01, marks: 100, cross: 0.06 };   // a stone's traced path (setTracing): at most this many points, one per this many metres it moves; at most this many touches and arc tops marked; a touch's cross this many metres each way
 const MIN_FOV = 8;            // degrees: the narrowest zoom
@@ -2637,6 +2638,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     if (skip.spray) splash.spray.mesh.visible = false;
     if (!skip.fluid) splash.prepareFrame();
     const fromBelow = camera.position.y < (galeWaves.on ? galeSurfaceAt(camera.position.x, camera.position.z) : 0);
+    showDetail(fromBelow);   // each ball's meshes as fine as each pass shows (src/rock.js)
     if (!fromBelow) updateReflection();   // from below no mirror is needed; a change of view keeps it marked stale until the eye surfaces
     // A floater whose rim keeps the water off its top (a pizza afloat, toppings up): the water is not drawn inside its rim.
     surface.setDryDiscs(rocks.filter((rock) => rock.dryDisc > 0).map((rock) => ({ x: rock.meshAbove.position.x, z: rock.meshAbove.position.z, radius: rock.dryDisc })));
@@ -2676,6 +2678,23 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     splash.setGlare(glare.texture, skip.glare ? 0 : glare.share);
     if (skip.fluid || fromBelow) splash.toneMap(renderer, mainTarget, null);
     else splash.render(renderer, camera, mainTarget, null);
+  }
+
+  /**
+   * Each ball drawn from as fine a mesh as it shows (src/rock.js showDetail): its radius in each pass's pixels, from
+   * the eye's distance to it, the canvas's for its part above the water, the under-water pass's and the mirror image's
+   * (underScale of the canvas's) for its part under the water and its mirror image, the part under the water as much
+   * nearer as the water's surface makes it look (UNDER_MAGNIFIED; from below, where nothing bends it, the canvas's).
+   */
+  function showDetail(fromBelow) {
+    const focalPixels = resolution.y / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2));
+    const belowScale = fromBelow ? 1 : (underTarget.height / resolution.y) * UNDER_MAGNIFIED;
+    const mirrorScale = reflectionTarget.height / resolution.y;
+    for (const rock of rocks) {
+      if (!rock.detail) continue;
+      const pixelRadius = (rock.radius * focalPixels) / Math.max(camera.position.distanceTo(rock.meshAbove.position), rock.radius);
+      rock.showDetail({ above: pixelRadius, below: pixelRadius * belowScale, mirror: pixelRadius * mirrorScale });
+    }
   }
 
   // The view from under the water (VIEWS.under). What the under-water pass
