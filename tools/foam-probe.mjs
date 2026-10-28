@@ -343,10 +343,13 @@ check(Math.abs(raftCover - boilCover) < 0.06, `a boil's bubbles cover about what
   const [smallest, largest] = defines.FOAM_BUBBLE_RADII;
   const aliveShare = (filled) => defines.FOAM_BUBBLE_MOST * clamp(filled * filled, 0, 1);
   // The film (SURFACE_BUBBLE): the cap's white times what it mirrors (bubbleSky: the sky where the reflected ray
-  // rises, the water's share where it falls), and the Fresnel's rise (1 − cosθ)⁴ to the edge's white, mirroring the
+  // rises, bright at the horizon and falling to FOAM_BUBBLE_ZENITH at the zenith, the water's share where it falls), and the Fresnel's rise (1 − cosθ)⁴ to the edge's white, mirroring the
   // water except its edge-on glow, which rises as the Fresnel does (bubbleRise).
   const capWhite = defines.FOAM_BUBBLE_CAP_WHITE, edgeWhite = defines.FOAM_BUBBLE_EDGE_WHITE, mirror = defines.FOAM_BUBBLE_WATER_MIRROR;
-  const bubbleSky = (reflectedUp) => mix(mirror, 1, smoothstep(defines.FOAM_BUBBLE_SKY_FROM, defines.FOAM_BUBBLE_SKY_TO, reflectedUp));
+  const bubbleSky = (reflectedUp) => {
+    const skyRadiance = mix(1, defines.FOAM_BUBBLE_ZENITH, smoothstep(defines.FOAM_BUBBLE_ZENITH_FROM, defines.FOAM_BUBBLE_ZENITH_TO, reflectedUp));
+    return mix(mirror, skyRadiance, smoothstep(defines.FOAM_BUBBLE_SKY_FROM, defines.FOAM_BUBBLE_SKY_TO, reflectedUp));
+  };
   const bubbleRise = (cosTheta) => (edgeWhite - capWhite) * (1 - cosTheta) ** 4 * (mirror + (1 - mirror) * (1 - cosTheta) ** 4);
   // The dome's mean white per unit of the water under it, seen from an elevation of that sine (SURFACE_BUBBLE's header):
   // the sphere's screen disc less what lies under the water, integrated by screen area (screen y up, the view tilted by

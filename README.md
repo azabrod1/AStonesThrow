@@ -655,8 +655,10 @@ bursting on the surface, a random few at a time and most of them small
 with none, drops' landings and bubbles surfacing, makes small ones, which
 from the bank are a grain rather than a sprinkle of beads),
 each a dome standing on the water (as a foam speck is drawn: a clear film
-with a window of sky on its top and a thin bright limb, round on top, cut
-by the water at its foot, cast against the pixel's own view ray so it is
+with a window of sky on its top, bright low down where it mirrors the
+horizon and dimmer above, a lower part mirroring the water that shades
+what lies behind it, and a thin bright limb, round on top, cut by the
+water at its foot, cast against the pixel's own view ray so it is
 a dome from the bank and a disc from above, and set anywhere in its cell
 on a lattice whose rows are staggered, so the domes fall in no rows), that
 swells, glints and bursts within half a second, and the rest as the cloud, a milky tint of the water
@@ -720,7 +722,7 @@ side, with a few strays alone between them, and the rafts surface over a
 few tenths of a second rather than in one frame. A speck resolved over a
 few pixels is drawn as a dome standing on the water, as the water draws its
 own bursting bubbles (below): a clear film with a faint window of sky on
-its top, a thin bright limb, round on top, cut by the water at its foot;
+its top, a lower part shading the foam behind it, a thin bright limb, round on top, cut by the water at its foot;
 an unresolved one is a soft grain fading with the area it covers, so
 distant bubbles do not remain bright, camera-facing flecks.
 

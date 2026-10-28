@@ -716,7 +716,10 @@ float freshBoilSurface(float boil) {
 // frames; the square was tuned by them. What the film mirrors (bubbleSky)
 // is the environment along the reflected ray, reflect(−v, m): the sky,
 // whole, where that ray rises (FOAM_BUBBLE_SKY_FROM to FOAM_BUBBLE_SKY_TO
-// of its upward component, a soft horizon), and the water behind the
+// of its upward component, a soft horizon), brightest at the horizon and
+// falling to FOAM_BUBBLE_ZENITH of that at the zenith
+// (FOAM_BUBBLE_ZENITH_FROM to FOAM_BUBBLE_ZENITH_TO of the upward
+// component), as a clear sky's radiance does, and the water behind the
 // bubble where it falls, which sends back FOAM_BUBBLE_WATER_MIRROR of what
 // the sky does (its own mirror of the sky, and the boil's milk); and the
 // film seen edge on glows with the sky whatever lies behind it (a film's
@@ -761,7 +764,7 @@ float freshBoilSurface(float boil) {
 // view's elevation: the dome's screen image is the sphere's disc less what
 // lies under the water, which covers (1/sinβ) times as much of the water
 // as the screen shows, so a boil's domes whiten the water more the lower
-// the view (0.07 of the edge white from straight above, 0.14 at 20°; the
+// the view (0.06 of the edge white from straight above, 0.12 at 20°; the
 // flat disc this replaced averaged 0.2 at any view). The mean is a
 // numerical integral, fitted as (FOAM_BUBBLE_MEAN_FIT·(1, s, s², s³) +
 // FOAM_BUBBLE_MEAN_FIT_QUARTIC·s⁴)/s over s = sinβ from 0.15 to 1 within
@@ -779,6 +782,20 @@ float freshBoilSurface(float boil) {
 // radius above the water, or a pixel if wider), where the meniscus at the
 // bubble's base bends the light away: the dark line under the dome is what
 // seats it in the water, though over dark water it hardly shows.
+// The sky's fall toward the zenith and the underside's shade are what make
+// a small dome read as a sphere: seen from the bank (some 30° up), the
+// reflected ray rises over nearly the whole of a dome's visible face, so
+// with the sky mirrored even a dome 10 to 15 pixels across read as a flat,
+// evenly grey disc with a highlight. With the fall, the band of it that
+// mirrors the sky low down is brightest and its top, mirroring the
+// zenith, dimmer; and its lower part, where the reflected ray falls and
+// the film mirrors the dark water ahead (one less bubbleSkyWindow), takes
+// FOAM_BUBBLE_UNDERSIDE of the light behind it (bubbleUnderside, as cover
+// without light, like the meniscus's shadow, by the share of the pixel on
+// the dome), so over the milky boil each dome's lower part is darker than
+// the foam behind it; over dark water it hardly shows. The shade is cover,
+// not white, so the mean white (bubbleDomeMean) leaves it out; the zenith's
+// fall is in it.
 // The sun's glint is its mirror image on the dome: sunGlitter's lobe on the
 // hit's normal, with FOAM_BUBBLE_GLINT_VARIANCE (a smooth film's slopes,
 // spread by a couple of degrees as it wobbles; the raft's packed froth,
@@ -795,18 +812,34 @@ export const SURFACE_BUBBLE = /* glsl */`
 #define FOAM_BUBBLE_EDGE_WHITE 1.0         // a bubble's edge, its film seen edge on, mirroring whole what lies behind it...
 #define FOAM_BUBBLE_CAP_WHITE 0.05         // ...from this where its normal faces the viewer, as (1 − cosθ)⁴: a film's two faces at normal incidence, the water showing through
 #define FOAM_BUBBLE_WATER_MIRROR 0.35      // what the water behind a bubble sends back, against the sky's 1: its own mirror of the sky, and the boil's milk
-#define FOAM_BUBBLE_SKY_FROM -0.05         // the mirrored ray's upward component over which the film goes from mirroring the water...
-#define FOAM_BUBBLE_SKY_TO 0.2             // ...to mirroring the sky: a soft horizon
-#define FOAM_BUBBLE_MEAN_FIT vec4(0.0499, -0.0826, 0.3561, -0.5323)   // the dome's mean white per unit of water under it, (fit · (1, s, s², s³) + QUARTIC·s⁴) / s over s = sinβ (the header)
+#define FOAM_BUBBLE_SKY_FROM -0.15         // the mirrored ray's upward component over which the film goes from mirroring the water...
+#define FOAM_BUBBLE_SKY_TO 0.35            // ...to mirroring the sky: a soft horizon (a sharp one drew a hard line across every dome from the bank, a cup)
+#define FOAM_BUBBLE_ZENITH 0.45            // the sky's radiance mirrored from the zenith, against the horizon's 1...
+#define FOAM_BUBBLE_ZENITH_FROM 0.15       // ...falling from the horizon's over this upward component of the mirrored ray...
+#define FOAM_BUBBLE_ZENITH_TO 0.9          // ...to the zenith's over this
+#define FOAM_BUBBLE_UNDERSIDE 0.3          // the shade of a dome's lower part, mirroring the water, as a share of the light behind it
+#define FOAM_BUBBLE_MEAN_FIT vec4(0.0430, -0.0826, 0.3562, -0.5324)   // the dome's mean white per unit of water under it, (fit · (1, s, s², s³) + QUARTIC·s⁴) / s over s = sinβ (the header)
 #define FOAM_BUBBLE_MEAN_FIT_QUARTIC 0.2770
 #define FOAM_BUBBLE_LOWEST_VIEW 0.15       // sinβ under which the mean and a dome's reach over the water are held (the fit's range; the water there is far)
 #define FOAM_BUBBLE_MENISCUS 0.15          // the meniscus's shadow along the dome's foot, as a share of the light behind...
 #define FOAM_BUBBLE_MENISCUS_WIDTH 0.08    // ...over about this (radii) above the water, or a pixel if wider
 #define FOAM_BUBBLE_GLINT 6.2831853        // 2π: the film's two faces, times π against the white beside it
 #define FOAM_BUBBLE_GLINT_VARIANCE 0.002   // a smooth film's slope variance (2.6° rms)
-// What the cap's white mirrors, against the sky's 1, where the reflected ray's upward component is reflectedUp.
+// The share of the sky, against the water, in what the film mirrors where the reflected ray's upward component is
+// reflectedUp: a soft horizon.
+float bubbleSkyWindow(float reflectedUp) {
+  return smoothstep(FOAM_BUBBLE_SKY_FROM, FOAM_BUBBLE_SKY_TO, reflectedUp);
+}
+// What the cap's white mirrors there, against the horizon sky's 1: the water, or the sky, bright at the horizon and
+// falling to FOAM_BUBBLE_ZENITH at the zenith.
 float bubbleSky(float reflectedUp) {
-  return mix(FOAM_BUBBLE_WATER_MIRROR, 1.0, smoothstep(FOAM_BUBBLE_SKY_FROM, FOAM_BUBBLE_SKY_TO, reflectedUp));
+  float skyRadiance = mix(1.0, FOAM_BUBBLE_ZENITH, smoothstep(FOAM_BUBBLE_ZENITH_FROM, FOAM_BUBBLE_ZENITH_TO, reflectedUp));
+  return mix(FOAM_BUBBLE_WATER_MIRROR, skyRadiance, bubbleSkyWindow(reflectedUp));
+}
+// The shade of the dome's lower part, where it mirrors the water ahead: the share of the light behind it taken, as
+// cover without light (the header).
+float bubbleUnderside(float reflectedUp) {
+  return FOAM_BUBBLE_UNDERSIDE * (1.0 - bubbleSkyWindow(reflectedUp));
 }
 // The dome's mean white per unit of the water's area under it, seen from an elevation whose sine is sinElevation (the header).
 float bubbleDomeMean(float sinElevation) {
@@ -1175,7 +1208,7 @@ FoamLook foamLook(vec2 position, vec2 acrossX, vec2 acrossY, float foam, vec2 fo
 
 struct FreshBubbles {
   float white;          // the share of the pixel the bubbles whiten
-  float shadow;         // the share of the light behind it the meniscus takes
+  float shadow;         // the share of the light behind it the meniscus and the domes' undersides take
   float glint;          // how much of a cap's glint to show (0 once they are unresolved)
   vec3 domeNormal;      // the cap's normal under the pixel, for its glint
   float glintVariance;
@@ -1183,7 +1216,8 @@ struct FreshBubbles {
 
 // One cell's bubble (freshBubbles) against the pixel's view ray: the share
 // of the pixel's span on the dome, the film's white over it, the meniscus's
-// shadow, the hit's normal and the dome's turn across the pixel (radii).
+// shadow and the underside's shade, the hit's normal and the dome's turn
+// across the pixel (radii).
 // The cell is named in the shifted lattice (its row's shift given), the
 // pixel's point on the water in cells, unshifted. The dome stands on the
 // water's plane at the pixel, the one with the surface's normal through the
@@ -1243,7 +1277,8 @@ DomeHit bubbleDome(vec2 cell, float rowShift, vec2 inCells, vec3 toViewer, float
     normal = hit / radius;
     reflectedUp = 2.0 * (sqrt(discriminant) / radius) * normal.y - toViewer.y;
   }
-  return DomeHit(film.x * cover, bubbleWhite(film, reflectedUp) * cover, bubbleMeniscus(height, pixel) * cover * step(0.0, discriminant), normal, pixel);
+  float shadow = (bubbleMeniscus(height, pixel) + bubbleUnderside(reflectedUp) * film.x) * cover * step(0.0, discriminant);
+  return DomeHit(film.x * cover, bubbleWhite(film, reflectedUp) * cover, shadow, normal, pixel);
 }
 
 // The bubbles bursting on the surface over a boil (the header's last
@@ -1263,7 +1298,7 @@ DomeHit bubbleDome(vec2 cell, float rowShift, vec2 inCells, vec3 toViewer, float
 // bank; small, they are a grain); each a dome standing on the water, drawn as SURFACE_BUBBLE says
 // (bubbleDome: the pixel's view ray cast at it, the film where the ray
 // meets it above the water, a window of sky on its top, the sun's glint,
-// and a meniscus's shadow along its foot). A bubble's centre lies anywhere
+// a meniscus's shadow along its foot and its lower part's shade). A bubble's centre lies anywhere
 // in its cell that keeps its own base inside (its radius from the edges:
 // the small ones, most of them, roam the whole cell, the rare big ones
 // less), and alternate rows of cells are shifted half a cell, so the
@@ -3402,7 +3437,9 @@ void main() {
 // on its top and the water on its limb and lower part, each pixel the
 // Fresnel's mean over the radii from its centre out by a pixel, the span's
 // share on the sphere rounding off the limb a pixel soft; a meniscus's
-// faint shadow along the dome's foot, as cover without light; and the
+// faint shadow along the dome's foot and the shade of its lower part,
+// mirroring the water (bubbleUnderside), both as cover without light, so
+// over a milky boil the dome stands out as a sphere; and the
 // sun's glint, where the dome's normal is the half vector between the
 // viewer and the sun, never smaller than a pixel. The glint is added as
 // light, not as cover, and scaled by the speck's fade and its shine: a
@@ -3449,7 +3486,7 @@ void main() {
   vec3 light = uSunIrradiance * max(uSunDir.y, 0.0) + uSkyAmbient * 1.5;
   vec3 color = vec3(0.94, 0.96, 0.97) * light * uBrightness;
   float alpha = vAlpha * shape * uOpacity;
-  float shadow = vAlpha * bubbleMeniscus(height, pixel) * cover * dome;
+  float shadow = vAlpha * (bubbleMeniscus(height, pixel) * cover + bubbleUnderside(reflectedUp) * limb) * dome;
   // The sun's glint on the dome.
   float nDotH = max(dot(normal, vHalfVector), 1e-3);
   float nDotV = max(dot(normal, vToViewer), 1e-3);
