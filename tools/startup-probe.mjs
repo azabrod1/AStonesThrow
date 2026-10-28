@@ -240,7 +240,8 @@ try {
   console.log('PASS: the old Pool water and Ice settings open the Pool place, frozen thick, and stay so');
   // Frozen at the start, the warm-up breaks the ice under the veil (src/main.js warmUp), so the first break a person
   // makes (a big rock through thick ice: on thick ice the warm-up's stone would skid) builds no program, nor does a
-  // throw into open water after (the warm-up threw into open water first).
+  // stone that skids to rest on the ice (its mirror image there, src/rock.js prepareMirror), nor a throw into open
+  // water after (the warm-up threw into open water first).
   const firstBreak = await older.evaluate(() => {
     const pond = window.__pond, programs = () => pond.renderer.info.programs.length;
     const before = programs();
@@ -250,14 +251,18 @@ try {
     pond.advance(1.6);
     const broken = { programs: programs(), holes: pond.iceSheet.holes.length };
     pond.setThing('stone');
+    const onIce = pond.throwAt(-0.9, -1.0, { radius: 0.03, power: 'normal' });
+    pond.advance(8);
+    const rested = { programs: programs(), state: onIce.state, mirrored: Boolean(onIce.meshMirror?.visible) };
     pond.setWater('lake');
     pond.throwAt(0.3, -1.6, { radius: 0.03, power: 'normal' });
     pond.advance(0.5);
-    return { before, broken, openWater: programs() };
+    return { before, broken, rested, openWater: programs() };
   });
   assert.ok(firstBreak.broken.holes > 0, 'the big rock did not break the thick ice');
-  assert.deepEqual([firstBreak.broken.programs, firstBreak.openWater], [firstBreak.before, firstBreak.before], `programs built after the start: ${JSON.stringify(firstBreak)}`);
-  console.log(`PASS: started frozen thick, the first break and a throw into open water after build no program (${firstBreak.before})`);
+  assert.ok(firstBreak.rested.state === 'rest' && firstBreak.rested.mirrored, `the stone did not come to rest on the ice, mirrored in it: ${JSON.stringify(firstBreak.rested)}`);
+  assert.deepEqual([firstBreak.broken.programs, firstBreak.rested.programs, firstBreak.openWater], [firstBreak.before, firstBreak.before, firstBreak.before], `programs built after the start: ${JSON.stringify(firstBreak)}`);
+  console.log(`PASS: started frozen thick, the first break, a stone come to rest on the ice and a throw into open water after build no program (${firstBreak.before})`);
   await older.context().close();
 
   const retriedRain = await pageFor();

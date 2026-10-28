@@ -146,6 +146,58 @@ ${ICE_UNIFORMS}
 #define ICE_UNDER_GLOW 0.35            // the light white ice lets through to its underside, against what falls on its top
 #define ICE_SNOW_GLOW 0.4              // and under snow on it, against that
 
+// What lies on the ice, or is over it, shades it (src/ice.js shade: the
+// things nearest the eye, ICE_THINGS of them), each as an upright ellipsoid
+// over its footprint (src/rock.js drawnEllipsoid): in the frame its
+// footprint's axes and its height scale to 1 it is a ball. Its shadow is
+// where the ray to the sun from the ice passes through it, soft by the
+// sun's own width (ICE_SUN_SPREAD, its angle) and by ICE_SHADOW_SOFT of its
+// size (a lumpy stone is no ellipsoid). It hides the sky as a thing its
+// height high and its footprint's mean width across does, its view factor
+// seen from a point on the plane (width·height·h / D³, h its middle's
+// height, D the distance to it, its footprint made round): all of it under
+// where it touches, little past a flat thing's rim, let go to nothing at the
+// reach where it falls to a hundredth (src/ice.js ICE_SHADE.least). Each is
+// reckoned only inside the circle its shade lies in, and none outside the
+// box round them all (src/ice.js shade): the rest of the ice pays nothing.
+// iceThingsShade gives what of the sun and of the sky reaches here.
+#define ICE_THINGS 8
+#define ICE_SUN_SPREAD 0.0093
+#define ICE_SHADOW_SOFT 0.15
+uniform vec4 uIceThings[ICE_THINGS];            // each its middle (x, height over the ice's top, z) and half-height (m)
+uniform vec4 uIceThingFootprints[ICE_THINGS];   // and its footprint's half-widths (m) and its longer's heading (cos, sin)
+uniform vec4 uIceThingBounds[ICE_THINGS];       // and the circle its shade lies in (x, z, radius², the sky's reach: m)
+uniform vec4 uIceShadeBox;                      // the box round them all (least x, z; most x, z)
+uniform float uIceThingCount;
+vec2 iceThingsShade(vec2 point, vec3 toSun) {
+  float sun = 1.0, sky = 1.0;
+  if (uIceThingCount < 0.5 || any(lessThan(point, uIceShadeBox.xy)) || any(greaterThan(point, uIceShadeBox.zw))) return vec2(1.0);
+  for (int index = 0; index < ICE_THINGS; index++) {
+    if (float(index) >= uIceThingCount) break;
+    vec4 bound = uIceThingBounds[index];
+    vec2 fromBound = point - bound.xy;
+    if (dot(fromBound, fromBound) > bound.z) continue;
+    vec4 thing = uIceThings[index], footprint = uIceThingFootprints[index];
+    vec2 offset = thing.xz - point;
+    // Along its footprint's axes, over their half-widths.
+    vec2 across = vec2(dot(offset, footprint.zw), dot(offset, vec2(-footprint.w, footprint.z))) / footprint.xy;
+    vec2 sunAcross = vec2(dot(toSun.xz, footprint.zw), dot(toSun.xz, vec2(-footprint.w, footprint.z))) / footprint.xy;
+    // The sky: its footprint made round, of its mean width.
+    float width = sqrt(footprint.x * footprint.y);
+    vec3 rounded = vec3(across * width, thing.y).xzy;
+    float distance = length(rounded);
+    sky *= 1.0 - min(width * thing.w * thing.y / max(distance * distance * distance, 1e-12), 1.0) * (1.0 - smoothstep(0.5 * bound.w, bound.w, distance));
+    // The sun: in the frame it is a ball of radius 1 in.
+    vec3 centre = vec3(across.x, thing.y / thing.w, across.y), ray = normalize(vec3(sunAcross.x, toSun.y / thing.w, sunAcross.y));
+    float along = dot(centre, ray);
+    if (along > 0.0 && toSun.y > 0.0) {
+      float soft = ICE_SHADOW_SOFT + ICE_SUN_SPREAD * along;
+      sun *= smoothstep(1.0 - soft, 1.0 + soft, length(centre - along * ray));
+    }
+  }
+  return vec2(sun, sky);
+}
+
 // The mask at a world point (the header). Beyond it, dry ice with no hole.
 struct IceMask {
   float hole;    // m to the nearest hole's edge, negative in one (its open water or its new ice)
@@ -1744,7 +1796,13 @@ vec3 iceSurface(IceMask mask, float footprint, vec2 acrossX, vec2 acrossY) {
   float underDistZ = rawDepth >= 1.0 ? uFar : -perspectiveDepthToViewZ(rawDepth, uNear, uFar);
   float path = max(underDistZ - surfaceDistZ, 0.0) * viewDist / max(surfaceDistZ, 1e-4);
   vec3 under = mix(uWaterColor, texture2D(uUnderColor, screenUv).rgb * poolDetail(vWorld, acrossX, acrossY, underDistZ, surfaceDistZ), exp(-uExtinction * path));
-  vec3 light = uSunIrradiance * max(dot(n, uSunDir), 0.0) + uSkyAmbient * ICE_SKY_LIGHT;
+  // What lies on it shades it (ICE_COMMON iceThingsShade): the light it scatters, the water seen through it and the
+  // sun's sheen; not its mirror, which shows the thing itself.
+  vec2 shade = iceThingsShade(vWorld.xz, uSunDir);
+  vec3 sunLight = uSunIrradiance * max(dot(n, uSunDir), 0.0), skyLight = uSkyAmbient * ICE_SKY_LIGHT;
+  vec3 light = sunLight * shade.x + skyLight * shade.y;
+  float shaded = dot(light, vec3(0.2126, 0.7152, 0.0722)) / max(dot(sunLight + skyLight, vec3(0.2126, 0.7152, 0.0722)), 1e-6);
+  under *= shaded;
   vec3 scattered = ICE_WHITE_ALBEDO * light * mix(1.0, 0.6, wet);
   // Its veil (ICE_COMMON's header): the share of the light the clear ice scatters back along the refracted ray's path
   // through it, a new skin's (src/ice.js REFREEZE.skin) a few millimetres.
@@ -1757,7 +1815,7 @@ vec3 iceSurface(IceMask mask, float footprint, vec2 acrossX, vec2 acrossY) {
   // A fracture face in clear ice turns the light back as a mirror would: it shows white, as the sky's light it sends up.
   body = mix(body, scattered * 1.15, face * clear);
   vec3 color = mix(body, reflected, fresnel * mix(1.0 - 0.6 * look.white, 1.0, wet));
-  color += min(sunGlitter(n, v, uSunDir, uSunIrradiance, slopeVariance + 1e-5) * mix(look.glints, 1.0, max(wet, newIce)), vec3(400.0)) * mix(1.0 - 0.5 * look.white, 1.0, wet);
+  color += min(sunGlitter(n, v, uSunDir, uSunIrradiance, slopeVariance + 1e-5) * mix(look.glints, 1.0, max(wet, newIce)), vec3(400.0)) * mix(1.0 - 0.5 * look.white, 1.0, wet) * shade.x;
   // An old edge in new ice: a faint dark seam.
   color = mix(color, under * 0.7, 0.5 * seam);
   // Snow lying on it (SNOW_COVER), as on the ground: none on new ice, none where it is wet (the flood's, a drop's).

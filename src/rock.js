@@ -251,7 +251,10 @@
 // drifts downwind at FLOAT.drift (src/main.js sets `drift`), never resting.
 // Afloat it is also in the water's mirror image (meshMirror: its part above
 // the water, on the mirror's layer, its distance in alpha as the pool's
-// walls write it, MIRROR_NEARNESS in src/shaders/scene.js).
+// walls write it, MIRROR_NEARNESS in src/shaders/scene.js), and so is
+// anything on the ice or hopping over it, once it has come down on it
+// (prepareMirror: glazed ice is a mirror, and a stone on it without its
+// image looks laid over the picture).
 //
 // Its detail (showDetail): a ball is drawn from the coarsest of its meshes
 // (src/thingMeshes.js createBallGeometry `detail`) whose corners lie at most
@@ -412,6 +415,9 @@ const GROUND = {
 // A thing rolled onto the face of its hull it rests on (rollToRest): corners this near the lowest (radii) touch the
 // ground together; it tips at most `passes` times (a stone needs a few, a banana a hundred or so).
 const ROLL = { tie: 1e-7, passes: 400 };
+// The random ids (THREE's uuids) of a mirror image made as a thing comes down on the ice (Rock.prepareMirror): a stream
+// of their own, so making one never moves Math.random, which a seeded stone in the air meanwhile draws its splash from.
+const MIRROR_IDS = seededStream(0x51ce);
 // A flat thing's flight (`air.model` 'flutter', src/things.js: a pizza; the header): a plate in the air, its attitude its
 // own, turned by the air's push and its spin (R here its face's disc, Rock.plateRadius). The push on its face is ½ρv²·πR² times C_N(α) = `slope`·sin α·cos² α +
 // C_90·sin³ α (α the angle the air meets the face at; C_90 its `air.drag`, broadside), along its face's normal, and its
@@ -1486,20 +1492,24 @@ export class Rock {
     this.meshBelow.material.envMapIntensity = 0.35;
     this.meshAbove.material.onBeforeCompile = (shader) => stoneDetail(shader, stone);
     this.meshAbove.material.customProgramCacheKey = () => 'above';
-    // The part above the water in the water's mirror image, afloat (the header): its distance in alpha.
-    // Only a floater has one (a mesh and a material draw random ids, which would move a seeded stone's splash).
-    this.meshMirror = null;
-    if (this.floats) {
-      this.meshMirror = new THREE.Mesh(this.geometry, makeMaterial(1));
-      this.meshMirror.material.onBeforeCompile = (shader) => {
+    // The part above the water in the water's mirror image, afloat or on the ice (the header): its distance in alpha.
+    // A floater has one from the start; anything else is given one the first time it comes down on the ice
+    // (prepareMirror), its ids drawn then from MIRROR_IDS (a mesh and a material draw random ids, which drawn from
+    // Math.random would move a seeded stone's splash).
+    this.makeMirror = () => {
+      const mirror = new THREE.Mesh(this.geometry, makeMaterial(1));
+      mirror.material.onBeforeCompile = (shader) => {
         stoneDetail(shader, stone);
         shader.fragmentShader = shader.fragmentShader.replace('#include <dithering_fragment>', `#include <dithering_fragment>
   gl_FragColor.a = 1.0 - ${MIRROR_NEARNESS_SCALE.toFixed(1)} / max(length(vViewPosition), 0.05);`);
       };
-      this.meshMirror.material.customProgramCacheKey = () => 'mirror-nearness';
-      if (mirrorLayer !== null) this.meshMirror.layers.set(mirrorLayer);
-      this.meshMirror.visible = false;
-    }
+      mirror.material.customProgramCacheKey = () => 'mirror-nearness';
+      if (mirrorLayer !== null) mirror.layers.set(mirrorLayer);
+      mirror.visible = false;
+      return mirror;
+    };
+    this.meshMirror = this.floats ? this.makeMirror() : null;
+    this.metIce = false;   // has come down on the ice: mirrored in it as long as it is on it or over it (syncMeshes)
     // Under the water: where the surface shows it (the header), by this much.
     const seenThroughWater = this.seenThroughWater = { value: 0 };
     const waterLevel = this.waterLevel = { value: 0 };   // the surface's height above the stone, under a gale
@@ -1677,7 +1687,68 @@ export class Rock {
    */
   get physicsPositions() { return this.physicsShape ?? this.restShape ?? this.geometry.attributes.position.array; }
 
-  /** Its meshes: above the water, below it, and afloat in the mirror image. */
+  /**
+   * Its mirror image made, if it has none (the header: anything but a floater
+   * is given one the first time it comes down on the ice), as its part above
+   * the water is now (its size, its colour wet or dry), and put beside it in
+   * its scene; its ids drawn from MIRROR_IDS, never Math.random.
+   */
+  prepareMirror() {
+    if (this.meshMirror) return this.meshMirror;
+    const random = Math.random;
+    Math.random = MIRROR_IDS;
+    try { this.meshMirror = this.makeMirror(); } finally { Math.random = random; }
+    const above = this.meshAbove, mirror = this.meshMirror;
+    mirror.scale.copy(above.scale);
+    mirror.frustumCulled = false;
+    mirror.position.copy(above.position);
+    mirror.quaternion.copy(above.quaternion);
+    mirror.material.color.copy(above.material.color);
+    mirror.material.roughness = above.material.roughness;
+    mirror.material.emissive.copy(above.material.emissive);
+    above.parent?.add(mirror);
+    return mirror;
+  }
+
+  /** Where its weight acts (its volume's middle, moved by its `body.ballast`), as it is now, into `into` (m). */
+  weightAt(into) {
+    return into.copy(this.shape.centroid).add(scratch.along.fromArray(this.thing.body.ballast ?? [0, 0, 0])).applyQuaternion(this.quaternion).multiplyScalar(this.radius).add(this.position);
+  }
+
+  /**
+   * It as drawn, as an upright ellipsoid (src/ice.js shade: what lies on the
+   * ice shades it): its volume's middle; its footprint, the outline its
+   * shape's ellipsoid, turned as it is, casts straight down (its two
+   * half-widths, and the heading of the longer from +x toward +z); and its
+   * half-height. A ball's its own. Into `into` ({ x, y, z, along, across,
+   * heading, height }, m and radians).
+   */
+  drawnEllipsoid(into) {
+    const mesh = this.meshAbove, size = mesh.scale.x;   // its radius, less as it fades out
+    if (this.sphere) {
+      into.x = mesh.position.x; into.y = mesh.position.y; into.z = mesh.position.z;
+      into.along = into.across = into.height = size;
+      into.heading = 0;
+      return into;
+    }
+    // Its ellipsoid's matrix, Σ s²·a·aᵀ over its axes a (turned as it is) and semi-axes s: the outline straight down
+    // is its xz block's ellipse, its height the yy element's root.
+    let xx = 0, xz = 0, zz = 0, yy = 0;
+    this.shape.axes.forEach((axis, index) => {
+      const turned = scratch.face.copy(axis).applyQuaternion(mesh.quaternion), squared = (this.shape.semiAxes[index] * size) ** 2;
+      xx += squared * turned.x * turned.x; xz += squared * turned.x * turned.z; zz += squared * turned.z * turned.z; yy += squared * turned.y * turned.y;
+    });
+    const mean = (xx + zz) / 2, spread = Math.hypot((xx - zz) / 2, xz);
+    const centre = scratch.middle.copy(this.shape.centroid).applyQuaternion(mesh.quaternion).multiplyScalar(size).add(mesh.position);
+    into.x = centre.x; into.y = centre.y; into.z = centre.z;
+    into.along = Math.sqrt(mean + spread);
+    into.across = Math.sqrt(Math.max(mean - spread, 0));
+    into.heading = 0.5 * Math.atan2(2 * xz, xx - zz);
+    into.height = Math.sqrt(yy);
+    return into;
+  }
+
+  /** Its meshes: above the water, below it, and in the mirror image (afloat, or on the ice). */
   get meshes() { return this.meshMirror ? [this.meshAbove, this.meshBelow, this.meshMirror] : [this.meshAbove, this.meshBelow]; }
 
   /**
@@ -1992,7 +2063,9 @@ export class Rock {
       // Only what stands out of the water enough to show in it: a flat thing's image (a pizza's) would be a sliver, which
       // the mirror's ripples break into stray lines (FLOAT.mirrorLeast).
       const afloat = this.state === 'float' || this.afloat || this.state === 'held';
-      this.meshMirror.visible = afloat && this.position.y + (this.buoyancy && this.extent ? this.extent.high : this.waterline(this.position.y).high) > FLOAT.mirrorLeast;
+      // On the ice, or hopping over it, the ice mirrors it (its mirror image is taken about the ice's top, src/main.js).
+      const onIce = this.metIce && (this.grounded || this.state === 'air');
+      this.meshMirror.visible = onIce || (afloat && this.position.y + (this.buoyancy && this.extent ? this.extent.high : this.waterline(this.position.y).high) > FLOAT.mirrorLeast);
     }
     this.waterLevel.value = surface;
     // How far it rides the water as drawn (rideTheWater): wholly afloat; less as it stands clear of the still surface, out
@@ -3116,6 +3189,7 @@ export class Rock {
 
   /** Down on the ground at `height` (the header): out of it, then a bounce off it, or it settles to tumble or roll along it. */
   meetGround(height, dt) {
+    if (!this.metIce && this.groundSurface?.kind === 'ice') { this.metIce = true; this.prepareMirror(); }
     this.position.y = height + this.ellipsoidDepth();
     this.groundHeight = height;
     this.sliding = null;

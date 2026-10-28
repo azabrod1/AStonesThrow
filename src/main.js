@@ -1236,9 +1236,11 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   // Under a gale the mirror is about the water's height under the latest
   // splash (mirrorLevel, which the water's and the splash's mirror shaders
   // share), so the splash's image stands on the waves where it stands; the
-  // sky's and the far shore's hardly move. On still water, 0.
+  // sky's and the far shore's hardly move. On still water, 0; frozen, the
+  // ice's top (src/ice.js `top`), so what lies on it meets its image there.
   const mirrorLevel = surface.uniforms.uMirrorLevel;
   let mirrorPlacedAt = 0;      // the level the mirror camera was placed at
+  let mirroredIceTop = 0;      // the ice's top the mirror image was last drawn whole about
   let lastImpact = null;       // { x, z } of the latest stone's entry
 
   function placeMirrorCamera() {
@@ -1333,8 +1335,11 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     // A floater whose image is not where it now is (moving, or come to rest since it was last drawn), or one riding water
     // that moves under it (src/rock.js rideTheWater: the wind's waves, the solver's ripples, the rings, the rain's).
     const waterMoves = !skip.ambient || !water.asleep || rings.live > 0 || rain.on;
-    const floaters = skip.mirror ? nothingMirrored : rocks.filter((rock) => rock.meshMirror?.visible && (rock.fading !== undefined || (rock.ridesWater && waterMoves) || !rock.meshMirror.position.equals(rock.mirroredAt ?? unmirrored)));
-    mirrorLevel.value = galeWaves.on && lastImpact && objects.length > 0 ? galeSurfaceAt(lastImpact.x, lastImpact.z) : 0;
+    // Or one whose image was drawn and is now gone from it (a thing slid off the ice into a hole).
+    const floaters = skip.mirror ? nothingMirrored : rocks.filter((rock) => rock.meshMirror && (rock.meshMirror.visible ? rock.fading !== undefined || (rock.ridesWater && waterMoves) || !rock.meshMirror.position.equals(rock.mirroredAt ?? unmirrored) : rock.mirroredAt));
+    const iceTop = ice.on ? ice.top : 0;
+    mirrorLevel.value = galeWaves.on && lastImpact && objects.length > 0 ? galeSurfaceAt(lastImpact.x, lastImpact.z) : iceTop;
+    if (iceTop !== mirroredIceTop) { mirroredIceTop = iceTop; viewChanged = true; }   // frozen, thawed or thickened: all of it about the new level
     if (Math.abs(mirrorLevel.value - mirrorPlacedAt) > 1e-4 && !viewChanged) placeMirrorCamera();   // the splash's region is drawn again below
     if (viewChanged) {
       placeMirrorCamera();
@@ -1355,7 +1360,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       mirrorRegion.set(x0, y0, Math.max(splashRect.x + splashRect.z, mirroredRect.x + mirroredRect.z) - x0, Math.max(splashRect.y + splashRect.w, mirroredRect.y + mirroredRect.w) - y0);
     }
     if (mirrorRegion.z > 0) drawMirror(mirrorRegion, objects);
-    for (const rock of floaters) rock.mirroredAt = rock.meshMirror.position.clone();
+    for (const rock of floaters) rock.mirroredAt = rock.meshMirror.visible ? rock.meshMirror.position.clone() : null;
     mirroredRect.copy(splashRect);
   }
   const resolution = new THREE.Vector2();
@@ -2621,6 +2626,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     fishView.update();                       // each fish where it swims now
     pool.setTime(simulationTime);            // its deck's splashed patches dry by it
     ice.update();                            // what broke or opened since, into its mask (src/ice.js)
+    ice.shade(rocks, camera.position, sunDirection);   // what lies on it shades it, as drawn now
     iceCracks.update();                      // and the cracks made since, onto it (src/iceCracks.js)
     reeds.update(simulationTime);
     renderer.info.reset();
@@ -3036,6 +3042,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     // materials (a pizza's: above, below and in the mirror): their programs too.
     const floaters = WARM_UP.floaters.map((name) => throwAt(WARM_UP.x, WARM_UP.z, { thing: name }));
     for (const floater of floaters) floater.meshMirror.visible = true;
+    // And a stone's, as anything but a floater is given on the ice (src/rock.js prepareMirror): its program too.
+    stone.prepareMirror().visible = true;
     iceCracks.warmUp(WARM_UP.x + 0.4, WARM_UP.z);   // the cracks' program, over ice or none
     const fishWarmUp = fishView.warmUp();   // the fish's one program, whatever lives here (none in the Pool)
     // The preview's programs (buildPreview: a see-through material, textured and plain): a pizza's preview drawn in
@@ -3076,7 +3084,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
         showScenery(pooled);
       }
     }
-    programKeepers.push(stone.meshAbove.material, stone.meshBelow.material);
+    programKeepers.push(stone.meshAbove.material, stone.meshBelow.material, stone.meshMirror.material);
     retireRock(stone, { keepMaterials: true });
     clearPond();
     buildPreview();   // the chosen thing's, in the hand from the first frame shown

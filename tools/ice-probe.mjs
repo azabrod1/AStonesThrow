@@ -1036,6 +1036,32 @@ console.log('\nNew ice: a hole left alone skins over; a thing afloat in one keep
   under.step(4);
   console.log(`  a 4 cm stone at rest (${restedOn}) where a 30 cm rock broke thin ice: ${resting.state}, ${(100 * resting.position.y).toFixed(1)} cm`);
   check(restedOn === 'rest' && resting.position.y < -0.05, `a stone at rest where a hole opened did not fall in (${resting.state} at ${(100 * resting.position.y).toFixed(1)} cm)`);
+  // Stones at rest round where a 16 cm stone breaks thick ice: those on the new hole's crushed rim tip in (src/ice.js
+  // tipAtEdge); none is left on the ice within the rim, nor hanging over the hole.
+  const rim = iceWorld({ diameter: 16, thickness: 'thick', seed: 2 });
+  const ringed = [];
+  for (let index = 0; index < 32; index++) {
+    const reach = 0.1 + 0.012 * index, angle = 2.4 * index;
+    ringed.push(rim.add(new Rock({ radius: 0.03, position: new THREE.Vector3(reach * Math.cos(angle), rim.ice.top + 0.03, -1.4 + reach * Math.sin(angle)), velocity: new THREE.Vector3(0, -0.05, 0), envTexture: null })));
+  }
+  rim.step(1.5);
+  const restedFirst = ringed.every((stone) => stone.state === 'rest');
+  rim.throwStone(16);
+  rim.step(6);
+  const fromEdge = (point) => Math.min(...rim.ice.holes.map((hole) => (insidePolygon(hole.corners, point.x, point.z) ? -1 : 1) * polygonEdgeDistance(hole.corners, point.x, point.z)));
+  const onIce = ringed.filter((stone) => stone.position.y > 0), wentIn = ringed.length - onIce.length;
+  const nearest = Math.min(...onIce.map((stone) => fromEdge(stone.weightAt(new THREE.Vector3()))));
+  const overhanging = onIce.filter((stone) => {
+    const rotation = new THREE.Matrix4().makeRotationFromQuaternion(stone.quaternion), corners = stone.physicsPositions;
+    for (let index = 0; index < corners.length; index += 3) {
+      const corner = new THREE.Vector3().fromArray(corners, index).applyMatrix4(rotation).multiplyScalar(stone.radius).add(stone.position);
+      if (fromEdge(corner) < 0) return true;
+    }
+    return false;
+  }).length;
+  console.log(`  6 cm stones at rest round where a 16 cm stone broke thick ice: ${wentIn} of ${ringed.length} went in; the nearest left on the ice has its weight ${centimetres(nearest)} cm from the edge, ${overhanging} hanging over it`);
+  check(restedFirst && rim.ice.holes.length > 0, 'the stones round a 16 cm stone\'s break did not rest first, or it did not break the thick ice');
+  check(wentIn > 0 && nearest >= ICE.crushed * ICE_THICKNESS.thick && overhanging === 0, `stones round a new hole: ${wentIn} went in, one left with its weight ${centimetres(nearest)} cm from its edge, ${overhanging} hanging over it`);
 }
 
 if (failures.length > 0) {
