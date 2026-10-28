@@ -9,7 +9,13 @@
 //      area match the FOAM_*_MEDIAN and FOAM_*_SPREAD that a fading layer
 //      tends to, and the mean shade of resolved bubbles matches
 //      FOAM_FADED_SHADE, so foam keeps its strength and brightness as its
-//      layers fade with distance; the wet films retain their mean opacity;
+//      layers fade with distance; the coarse bubbles' clear windows darken
+//      FOAM_FILM_WINDOWS on average were every shown bubble windowed, and a
+//      raft's share or a boil's that share of it, which their fade takes;
+//      the 3×3 cell search finds every coarse bubble a point lies in (a
+//      5×5 changes almost nothing), and the coarse bubbles lie on no
+//      lattice (their structure factor at the grid's step, against the
+//      0.135 of the 0.7 jitter they once had);
 //   2. at the framings the foam is judged at (the home view at 1280×720, the
 //      phone at 390×844 and twice the density, a 12° close-up), for a
 //      Gaussian raft at the reference impact point, the share of the pixels
@@ -18,7 +24,8 @@
 //      water 3 mm under the pixels, as a passing ripple does, changes the
 //      shader's image no more than 1.6 times as much as it changes the
 //      supersampled one (shimmer would change it far more);
-//      also checks mean brightness within 10%, including the wet films;
+//      also checks mean brightness within 6%, including the wet films
+//      (faded foam's opacity lifted to its covered pixels' mean);
 //      a breaking wave's churned boil scatters more than a drained raft; a
 //      splash's boil on fresh water (FRESH_BOIL, freshBubbles,
 //      freshBoilCloud): the surface holds at most FOAM_BOIL_HOLD of it, a
@@ -127,14 +134,16 @@ let cellVisits = 0;
 // foamCells in the shader: the best two features by radius minus distance. The hottest function of the probe (the
 // supersampled renders call it 25 times a pixel), so foamHash is computed inline, into locals, and the result is
 // kept in locals until the end: the same arithmetic as foamHash and the shader, without an array or an object a visit.
-function foamCells(positionX, positionY, radii, jitter, seed) {
+// radii are drawn as mix(radii, u^skew) (the shader's); reach is the search's, 1 for the shader's 3×3 (a wider one
+// checks it).
+function foamCells(positionX, positionY, radii, jitter, seed, skew = 1, reach = 1) {
   const cellX = Math.floor(positionX), cellY = Math.floor(positionY);
   const withinX = positionX - cellX, withinY = positionY - cellY;
   const smallest = radii[0], radiusSpan = radii[1] - radii[0];
   let best = -10, runnerUp = -10, bestX = 1, bestY = 0, runnerUpX = 1, runnerUpY = 0, bestRadius = 1, bestKeyOut = 0;
   let bestKey = 0, runnerUpKey = 0;
-  for (let row = -1; row <= 1; row++) {
-    for (let column = -1; column <= 1; column++) {
+  for (let row = -reach; row <= reach; row++) {
+    for (let column = -reach; column <= reach; column++) {
       cellVisits++;
       // foamHash(cellX + column + seed[0], cellY + row + seed[1]), inline.
       const hashX = cellX + column + seed[0], hashY = cellY + row + seed[1];
@@ -144,7 +153,7 @@ function foamCells(positionX, positionY, radii, jitter, seed) {
       const randomX = fract((first + second) * third), randomY = fract((first + third) * second), randomZ = fract((second + third) * first);
       const offsetX = withinX - column - 0.5 - jitter * (randomX - 0.5);
       const offsetY = withinY - row - 0.5 - jitter * (randomY - 0.5);
-      const radius = smallest + radiusSpan * randomZ;
+      const radius = smallest + radiusSpan * (skew === 1 ? randomZ : randomZ ** skew);
       const inside = radius - Math.sqrt(offsetX * offsetX + offsetY * offsetY);
       if (inside > best) {
         runnerUp = best; runnerUpX = bestX; runnerUpY = bestY;
@@ -175,13 +184,22 @@ function laceRaw(worldX, worldZ) {
 }
 // Below 0 the lace sinks smoothly toward -FOAM_LACE_DEPTH, as fast as the cell is ready.
 const sinkLace = (raw, ready) => raw > 0 ? raw : defines.FOAM_LACE_DEPTH * (Math.exp(raw * ready / defines.FOAM_LACE_DEPTH) - 1);
-const fineCells = (worldX, worldZ) => foamCells(worldX / defines.FOAM_FINE_CELL, worldZ / defines.FOAM_FINE_CELL, defines.FOAM_FINE_RADII, 0.7, [11.0, 18.7]);
-const coarseCells = (worldX, worldZ) => foamCells(worldX / defines.FOAM_COARSE_CELL, worldZ / defines.FOAM_COARSE_CELL, defines.FOAM_COARSE_RADII, 0.7, [23.0, 39.1]);
-function filmOpacity(cells, footprint, cellSize) {
-  const radial = Math.hypot(cells.bestX, cells.bestY) / cells.bestRadius;
-  const width = Math.max(footprint / (cellSize * cells.bestRadius), 0.04);
-  const centre = 1 - smoothstep(0.65 - width, 0.98 + width, radial);
-  return 1 - (1 - defines.FOAM_FILM_CENTRE) * centre;
+const fineCells = (worldX, worldZ) => foamCells(worldX / defines.FOAM_FINE_CELL, worldZ / defines.FOAM_FINE_CELL, defines.FOAM_FINE_RADII, defines.FOAM_BUBBLE_JITTER, [11.0, 18.7]);
+const coarseCells = (worldX, worldZ, { jitter = defines.FOAM_BUBBLE_JITTER, reach = 1 } = {}) => foamCells(worldX / defines.FOAM_COARSE_CELL, worldZ / defines.FOAM_COARSE_CELL, defines.FOAM_COARSE_RADII, jitter, [23.0, 39.1], defines.FOAM_COARSE_SKEW, reach);
+// The bubbles' value in the pattern's units (FOAM_BUBBLE_SCALE), a layer's best over its cell size, unclamped.
+const bubbleValue = (cells, cellSize) => cells.best * cellSize / defines.FOAM_BUBBLE_SCALE;
+// A coarse bubble's window, as foamLook draws it (the shader's end of foamLook): its film's opacity at the point, a
+// share of the coarse bubbles windowed, where the coarse bubble shows over the fine (coarseBubble, fineBubble: the
+// layers' values there), a pixel of `footprint` metres.
+function windowFilm(coarse, coarseBubble, fineBubble, footprint, share) {
+  const chosen = share >= coarse.bestKey ? 1 : 0;   // step(bestKey, share)
+  const windowRadius = mix(defines.FOAM_WINDOW_SIZE[0], defines.FOAM_WINDOW_SIZE[1], fract(coarse.bestKey * 47.3));
+  const filmWidth = Math.max(footprint / (defines.FOAM_COARSE_CELL * coarse.bestRadius), 0.04);
+  const filmRadius = Math.hypot(coarse.bestX, coarse.bestY) / coarse.bestRadius;
+  const centre = 1 - smoothstep(windowRadius - defines.FOAM_WINDOW_SOFT - filmWidth, windowRadius + defines.FOAM_WINDOW_SOFT + filmWidth, filmRadius);
+  const pixelInBubbles = Math.max(footprint / defines.FOAM_BUBBLE_SCALE, 1e-3);
+  const shows = smoothstep(-pixelInBubbles, pixelInBubbles, coarseBubble - fineBubble);
+  return 1 - (1 - defines.FOAM_FILM_CENTRE) * centre * chosen * shows;
 }
 
 function resolvedShade(cells) {
@@ -258,9 +276,16 @@ function foamLook(worldX, worldZ, across, foam, resolveAll = false, boilFraction
   const width = 0.5 * change + defines.FOAM_FADED_EDGE * spreadOfFaded + 1e-3;
   const winner = coarseWins ? coarse : fine, winnerFade = coarseWins ? coarseFade : fineFade;
   const shade = winner ? mix(resolvedShade(winner), defines.FOAM_FADED_SHADE, winnerFade) : defines.FOAM_FADED_SHADE;
-  const wetness = (1 - smoothstep(0.25, defines.FOAM_FILM_PACKED, foam)) * mix(1, 0.75, boilFraction);
-  const film = coarse ? mix(filmOpacity(coarse, footprint, defines.FOAM_COARSE_CELL), defines.FOAM_FILM_MEAN, coarseFade) : defines.FOAM_FILM_MEAN;
-  return { cover: smoothstep(-width, width, value), opacity: mix(defines.FOAM_THIN_OPACITY, 1, smoothstep(0, defines.FOAM_OPAQUE, value)) * mix(1, film, wetness), shade };
+  const wetness = 1 - smoothstep(0.25, defines.FOAM_FILM_PACKED, foam);
+  const windowShare = mix(defines.FOAM_WINDOW_SHARE[0], defines.FOAM_WINDOW_SHARE[1], boilFraction);
+  const fadedFilm = 1 - windowShare * defines.FOAM_FILM_WINDOWS;
+  // Each window fades by its own size (the shader's windowFade).
+  const windowFade = coarse && !resolveAll ? smoothstep(defines.FOAM_FADE_START, defines.FOAM_FADE_END, footprint / (2 * mix(defines.FOAM_WINDOW_SIZE[0], defines.FOAM_WINDOW_SIZE[1], fract(coarse.bestKey * 47.3)) * coarse.bestRadius * defines.FOAM_COARSE_CELL)) : 0;
+  const film = coarse ? mix(windowFilm(coarse, coarseBubble, fineBubble, footprint, windowShare), fadedFilm, Math.max(coarseFade, windowFade)) : fadedFilm;
+  // The faded value lifted for the opacity (the shader's FOAM_OPACITY_LIFT).
+  const cover = smoothstep(-width, width, value);
+  const lift = defines.FOAM_OPACITY_LIFT * spreadOfFaded * (1 - cover);
+  return { cover, opacity: mix(defines.FOAM_THIN_OPACITY, 1, smoothstep(0, defines.FOAM_OPAQUE, value + lift)) * mix(1, film, wetness), shade };
 }
 
 const failures = [];
@@ -268,7 +293,7 @@ function check(condition, message) { console.log(`${condition ? 'ok  ' : 'FAIL'}
 
 // 1. Layer statistics, sampled at random over 4 m².
 const seededRandom = (() => { let state = 12345; return () => { state = (state * 1664525 + 1013904223) >>> 0; return state / 4294967296; }; })();
-const samples = { lace: [], fine: [], union: [], clump: [], fineShade: [], unionShade: [], film: [] };
+const samples = { lace: [], fine: [], union: [], clump: [], fineShade: [], unionShade: [], windows: [], raftWindows: [], boilWindows: [] };
 for (let index = 0; index < 30000; index++) {
   const worldX = seededRandom() * 2, worldZ = seededRandom() * 2;
   { const lace = laceRaw(worldX, worldZ); samples.lace.push(sinkLace(lace.raw, lace.ready)); }
@@ -279,7 +304,11 @@ for (let index = 0; index < 30000; index++) {
   samples.union.push(clamp(Math.max(fineBubble, coarseBubble), -defines.FOAM_BUBBLE_CLAMP, defines.FOAM_BUBBLE_CLAMP));
   samples.fineShade.push(resolvedShade(fine));
   samples.unionShade.push(resolvedShade(coarseBubble > fineBubble ? coarse : fine));
-  samples.film.push(filmOpacity(coarse, 0, defines.FOAM_COARSE_CELL));
+  // Resolved (no fade): every shown coarse bubble windowed, then a raft's share and a boil's.
+  const coarseValue = bubbleValue(coarse, defines.FOAM_COARSE_CELL), fineValue = bubbleValue(fine, defines.FOAM_FINE_CELL);
+  samples.windows.push(1 - windowFilm(coarse, coarseValue, fineValue, 0, 1));
+  samples.raftWindows.push(1 - windowFilm(coarse, coarseValue, fineValue, 0, defines.FOAM_WINDOW_SHARE[0]));
+  samples.boilWindows.push(1 - windowFilm(coarse, coarseValue, fineValue, 0, defines.FOAM_WINDOW_SHARE[1]));
 }
 const quantile = (values, share) => { const sorted = [...values].sort((first, second) => first - second); return sorted[Math.floor(share * (sorted.length - 1))]; };
 const mean = (values) => values.reduce((sum, value) => sum + value, 0) / values.length;
@@ -291,7 +320,48 @@ for (const [name, medianName, spreadName] of [['lace', 'FOAM_LACE_MEDIAN', 'FOAM
 }
 const shadeMean = (mean(samples.fineShade) + mean(samples.unionShade)) / 2;
 check(Math.abs(shadeMean - defines.FOAM_FADED_SHADE) < 0.02, `mean resolved shade ${shadeMean.toFixed(3)} (fine ${mean(samples.fineShade).toFixed(3)}, with coarse ${mean(samples.unionShade).toFixed(3)}), FOAM_FADED_SHADE ${defines.FOAM_FADED_SHADE}`);
-check(Math.abs(mean(samples.film) - defines.FOAM_FILM_MEAN) < 0.02, `mean film opacity ${mean(samples.film).toFixed(3)}, FOAM_FILM_MEAN ${defines.FOAM_FILM_MEAN}`);
+// The windows' darkening, every shown coarse bubble windowed, is the fade's FOAM_FILM_WINDOWS; a share of them darkens
+// as that share of it (a bubble's key chooses it independently of its window's size), so the fade, 1 − share·it,
+// holds for a raft's share and a boil's alike.
+const windowsMean = mean(samples.windows);
+check(Math.abs(windowsMean - defines.FOAM_FILM_WINDOWS) < 0.01, `the windows darken ${windowsMean.toFixed(3)} on average were every shown coarse bubble windowed, FOAM_FILM_WINDOWS ${defines.FOAM_FILM_WINDOWS}`);
+for (const [name, share, values] of [['a raft', defines.FOAM_WINDOW_SHARE[0], samples.raftWindows], ['a boil', defines.FOAM_WINDOW_SHARE[1], samples.boilWindows]]) {
+  check(Math.abs(mean(values) - share * windowsMean) < 0.1 * share * windowsMean + 0.003, `${name}'s windows (a share of ${share}) darken ${mean(values).toFixed(4)} on average, ${share} of every bubble's ${(share * windowsMean).toFixed(4)}: its fade holds`);
+}
+// The 3×3 search finds every disc over a point (the shader's header): what a 5×5 search finds that it misses, by the
+// coarse layer's value as the pattern takes it (clamped), and by its best at all.
+{
+  let changedValue = 0, changedBest = 0;
+  const trials = 40000;
+  for (let index = 0; index < trials; index++) {
+    const worldX = seededRandom() * 2, worldZ = seededRandom() * 2;
+    const narrow = coarseCells(worldX, worldZ), wide = coarseCells(worldX, worldZ, { reach: 2 });
+    if (wide.best !== narrow.best) changedBest++;
+    const clampValue = (cells) => clamp(bubbleValue(cells, defines.FOAM_COARSE_CELL), -defines.FOAM_BUBBLE_CLAMP, defines.FOAM_BUBBLE_CLAMP);
+    if (Math.abs(clampValue(wide) - clampValue(narrow)) > 1e-9) changedValue++;
+  }
+  check(changedValue / trials < 1e-3, `the 3×3 search finds every coarse bubble a point lies in: a 5×5 changes the clamped value at ${(100 * changedValue / trials).toFixed(3)}% of points (its best at ${(100 * changedBest / trials).toFixed(3)}%, deep in the gaps)`);
+}
+// No lattice (the shader's header): the coarse bubbles' centres, a grid jittered over j of a cell, keep sinc²(πj) of
+// the grid's peaks, measured as the structure factor |mean e^(2πi·x)|² of their places within their cells at the
+// grid's first harmonic, along each axis: about 0.135 at the 0.7 they once had (rows of them, close up), and only the
+// sampling's 1/N with centres anywhere in their cells.
+{
+  const cells = 20000;
+  const structure = (jitter) => {
+    let realX = 0, imaginaryX = 0, realY = 0, imaginaryY = 0;
+    for (let index = 0; index < cells; index++) {
+      const cellX = Math.floor(seededRandom() * 4000) - 2000, cellY = Math.floor(seededRandom() * 4000) - 2000;
+      const random = foamHash(cellX + 23.0, cellY + 39.1);   // coarseCells's seed
+      const placeX = 0.5 + jitter * (random[0] - 0.5), placeY = 0.5 + jitter * (random[1] - 0.5);
+      realX += Math.cos(2 * Math.PI * placeX); imaginaryX += Math.sin(2 * Math.PI * placeX);
+      realY += Math.cos(2 * Math.PI * placeY); imaginaryY += Math.sin(2 * Math.PI * placeY);
+    }
+    return Math.max((realX ** 2 + imaginaryX ** 2) / cells ** 2, (realY ** 2 + imaginaryY ** 2) / cells ** 2);
+  };
+  const now = structure(defines.FOAM_BUBBLE_JITTER), lattice = structure(0.7);
+  check(now < 0.002 && lattice > 0.1, `the coarse bubbles lie on no lattice: their structure factor at the grid's step ${now.toFixed(4)} (sampling alone gives about ${(1 / cells).toFixed(4)}; jittered over 0.7 of a cell, as they were, ${lattice.toFixed(3)})`);
+}
 
 // A bubble's material may drain, but must not turn a thick, multilayer boil
 // into transparent holes; and a boil, drawn from the bubble layers with its
@@ -599,7 +669,9 @@ for (const [name, framing] of Object.entries(FRAMINGS)) {
   const truthMoved = render(framing, { supersample: 5, shift: 0.003 });
   const shimmer = meanDifference(shader.image, shaderMoved.image), truthShimmer = meanDifference(truth.image, truthMoved.image);
   check(Math.abs(shader.cover / truth.cover - 1) < 0.1, `${name}: cover ${shader.cover.toFixed(4)}, supersampled ${truth.cover.toFixed(4)}`);
-  check(Math.abs(mean(shader.image) / mean(truth.image) - 1) < 0.1, `${name}: brightness ${mean(shader.image).toFixed(4)}, supersampled ${mean(truth.image).toFixed(4)}`);
+  // Within 6%: faded foam's opacity is lifted to its covered pixels' mean (the shader's FOAM_OPACITY_LIFT), without
+  // which it drew some 10% darker than this, a bias the windows on every coarse cell once hid by chance.
+  check(Math.abs(mean(shader.image) / mean(truth.image) - 1) < 0.06, `${name}: brightness ${mean(shader.image).toFixed(4)}, supersampled ${mean(truth.image).toFixed(4)}`);
   check(shimmer < 1.6 * truthShimmer + 1e-3, `${name}: change when the water moves 3 mm ${shimmer.toFixed(4)}, supersampled ${truthShimmer.toFixed(4)}`);
   console.log(`     ${name}: ${visitsPerFoamPixel.toFixed(1)} cell visits per foam pixel`);
 }

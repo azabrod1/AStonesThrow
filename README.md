@@ -695,8 +695,10 @@ clears. The whole of it drifts downwind at 3 cm/s in a breeze (with the
 wind's strength), and its pattern and specks with it. The foam map says
 where and how much, but its cells are over a centimetre wide, so the water
 shader draws the raft from three layers of cellular noise: bubbles 2 to 3 mm
-across packed together, larger ones of 3 to 7 mm among them, and a lace of
-curved filaments around holes a few centimetres wide. A boil, the bubbles a
+across packed together, larger ones of 2 to 10 mm among them (most small,
+one in ten over 8 mm, as real foam's sizes spread), and a lace of curved
+filaments around holes a few centimetres wide. Each bubble lies anywhere in
+its cell, so none of them, nor their clear windows, fall into rows. A boil, the bubbles a
 splash leaves bursting on fresh water, takes no lace: it is drawn from the
 bubble layers alone, and only a raft (the gale's sea foam) thins into
 filaments. The map's strength,
@@ -707,13 +709,15 @@ nearly solid white, its bubbles shaded darker at their rims and catching the
 sun; as it weakens the holes open, the filaments thin to strings of bubbles
 and clumps, then only the biggest bubbles are left, so a raft thins from its
 edge inward the way foam pops, and foam just over the threshold, a single
-layer of bubbles, lets the water show through. The larger bubbles have clear
-centres and bright rims, with milky fine bubbles between them. The map's
-separate boil and raft amounts control this material: a breaking wave's
-dense froth scatters more light; as it drains, the water shows through the
-bubble films.
-Those films use the existing bubble cells and fade to their measured mean
-opacity at a distance, adding no texture or noise layer. Close up (the
+layer of bubbles, lets the water show through. Some of the larger bubbles
+that show have a clear window, a drained film, each its own size, with milky
+fine bubbles between them: half of a raft's, fewer of a boil's, whose films
+burst rather than drain. The map's separate boil and raft amounts control
+this material: a breaking wave's dense froth scatters more light; as it
+drains, the water shows through the windows. They use the existing bubble
+cells and fade to their measured mean at a distance, each by its own size,
+adding no texture or noise layer; faded foam's opacity is lifted to what its
+covered pixels average, so it keeps its brightness as it recedes. Close up (the
 shoot harness, `--seed=1`, `--view=high --fov=16`), a 6 cm stone thrown
 normally leaves a faint milky ring and a see-through fizz over about its
 hole's mouth at 0.3 to 0.8 s and a few foam specks after; a 20 cm rock
@@ -1384,12 +1388,15 @@ farther out, so it rises into the view rather than filling its corner.
   then) and no request fails.
 - `node tools/foam-probe.mjs` runs the foam's bubble pattern on the CPU, with
   the constants read from the shader: each layer's median and spread and the
-  bubbles' mean shade match what the shader fades them to, a boil's domes
-  average the white the shader's fit gives them at every elevation and lie
-  on no lattice, and at the home,
+  bubbles' mean shade match what the shader fades them to, the clear
+  windows' mean is what they fade to for a raft's share and a boil's, the
+  cell search misses no bubble and the bubbles lie on no lattice, a boil's
+  domes average the white the shader's fit gives them at every elevation,
+  and at the home,
   phone and close-up framings the antialiased pattern covers what a
-  supersampled one does and changes no more than it when the water moves
-  under the pixels; it prints the cell visits per foam pixel. Then it runs
+  supersampled one does, with its brightness within 6%, and changes no more
+  than it when the water moves under the pixels; it prints the cell visits
+  per foam pixel. Then it runs
   the foam map's step with the shader's arithmetic: a surface flow keeps the
   amount to a few per cent and brightens nothing, clears its core, carries a
   raft out to where a source of its area would and leaves a clean hole; the
