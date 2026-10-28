@@ -108,18 +108,25 @@
 // boils share a shape and the foam shifts no other draw. Surfacing bubbles
 // fizz, a faint boil each, and a landing drop leaves a speck of boil of its
 // own. The water shader draws a boil as fresh water's (FOAM_PATTERN in
-// src/shaders/scene.js, its last paragraph): the surface holds only one layer
-// of bursting bubbles, drawn a few at a time, clear and glinting, and the rest of the boil
-// is the cloud of bubbles under it, a milky tint of the water seen through
-// the surface, never lace and never packed white froth. So a thrown stone
-// leaves little solid white and none for long: a 6 cm stone (R = 3 cm) a
-// faint milky ring and a see-through fizz over about its hole's mouth at 0.3
-// to 0.8 s, then a few foam specks; a 20 cm rock a milky, soft-edged churn
-// about 30 cm across from 0.4 to 1.4 s, patches at 1.7 s and clear water by
-// 2.2 (close up from above, --view=high --fov=16; from the bank, where the
-// surface mostly mirrors the sky, a faint pale patch). Two surface flows per stone carry it
-// (addFoamFlow): the jet's base welling up where the hole closed
-// (CLOSURE_FLOW) and the mound spreading where the jet falls back
+// src/shaders/scene.js, its last paragraph), in three parts: the surface
+// holds one layer of bursting bubbles, drawn a few at a time, clear and
+// glinting; the rest of the boil is the cloud of bubbles under it, a milky
+// tint of the water seen through the surface; and over the cloud lies its
+// froth, the packed foam pattern (bubbles alone, never lace) at
+// FOAM_FROTH_GAIN times the cloud, holed and ragged-edged, thinning at the
+// boil's edge into the bursting bubbles, which give way under it. A smooth
+// milk with bubbles over it read as fog with marbles on it, from the bank
+// and close to; froth with structure, holes and ragged edges reads as foam.
+// So a thrown stone leaves white only while its air comes up, and none for
+// long: a 6 cm stone (R = 3 cm) a faint milky ring and a see-through fizz
+// over about its hole's mouth at 0.3 to 0.8 s, its cloud too thin for much
+// froth, then a few foam specks; a 20 cm rock dense white froth over a milky
+// churn about 30 cm across from 0.4 to 1.4 s, fizzing at its edge, patches
+// at 1.7 s and clear water by 2.2 (close up from above, --view=high
+// --fov=16; from the bank the froth, on the surface, shows over the sky's
+// reflection, where the milk under it was a faint pale patch). Two surface
+// flows per stone carry it (addFoamFlow): the jet's base welling up where
+// the hole closed (CLOSURE_FLOW) and the mound spreading where the jet falls back
 // (FALLBACK_FLOW), each sweeping the foam out of a disc into a ring and arcs
 // over FLOW_DECAY·sqrt(R/g), so a big stone's churn spreads outward as it
 // pops; and the wind drifts it all (setWind).
@@ -196,12 +203,12 @@
 //     the bubbles over it thicken as R) for the whole of its rise, times the
 //     cavity splat's strength, at most FOAM_AMOUNT_CAP, and the jet base's
 //     boil as sqrt(s): a pebble's boil is mostly the surface's fizz, a 20 cm
-//     rock's (s = 3.4) mostly the milky cloud under it (the water shader's
-//     division, the foam note); every boil pops over BOIL_LIFETIME whatever
-//     the stone, as fresh water's bubbles do; the flows clear discs of
-//     CLOSURE_FLOW·R and FALLBACK_FLOW·R; the crown's specks go as s² (the
-//     area its base covered); the bubbles as s², in a cloud as wide as the
-//     stone.
+//     rock's (s = 3.4) mostly the milky cloud under it, froth over it (the
+//     water shader's division, the foam note); every boil pops over
+//     BOIL_LIFETIME whatever the stone, as fresh water's bubbles do; the
+//     flows clear discs of CLOSURE_FLOW·R and FALLBACK_FLOW·R; the crown's
+//     specks go as s² (the area its base covered); the bubbles as s², in a
+//     cloud as wide as the stone.
 // The counts are set for a believable splash, hundreds to a few thousand
 // drops a stone and most of them millimetres across, none over DROP_CEILING
 // (the spray's finer drops, src/spray.js, are sprites of their own): the
@@ -344,18 +351,20 @@ const BUBBLE_SWARM_SPREAD = 0.01;     // m
 // is sea foam, and a stone stamps none), as a patch of sub-stamps
 // (stampFoamPatch). The water shader (FOAM_PATTERN in src/shaders/scene.js)
 // lets the surface hold a boil up to a map value of 0.035, one layer of
-// bubbles bursting, drawn as foam (the pattern whitens about half the water
-// at 0.1), and draws the rest as the cloud of bubbles under it, a milky tint
-// of the water seen through the surface: so the amounts say how much air is
+// bubbles bursting, and draws the rest as the cloud of bubbles under it, a
+// milky tint of the water seen through the surface, topped with froth, the
+// foam pattern at FOAM_FROTH_GAIN times the cloud's value (the pattern
+// whitens about half the water at 0.1): so the amounts say how much air is
 // in the top of the water, a pebble's boil mostly fizz and a rock's mostly
-// cloud. The hole's air does not come up at once: pinched off at the pinch
-// depth it rises as bubbles at BUBBLE_RISE_SPEED, so its boil arrives over
-// that rise (0.7 s for a 3 cm stone, FOAM_RISE_CAP for a rock), a sub-stamp
+// cloud, froth over milk. The hole's air does not come up at once: pinched
+// off at the pinch depth it rises as bubbles at BUBBLE_RISE_SPEED, so its
+// boil arrives over that rise (0.7 s for a 3 cm stone, FOAM_RISE_CAP for a rock), a sub-stamp
 // every FOAM_STAMP_SPACING, each with the whole peak (sustained: the air
 // comes up at that rate the whole time, the bubbles over the mouth as thick
 // as R), and at any moment only the bubbles just arrived show, each bursting
 // over BOIL_LIFETIME: a 3 cm stone's boil is a faint milky ring and fizz
-// over about its mouth, a 20 cm rock's a milky churn for about a second.
+// over about its mouth, a 20 cm rock's white froth over a milky churn for
+// about a second.
 const BOIL_AMOUNT = 0.046;            // a 3 cm stone's boil: each sub-stamp's peak (0.07 shared over its span until the boil was sustained, the same on average), scaling as R / 3 cm and the cavity splat's strength...
 const FOAM_AMOUNT_CAP = 0.8;          // ...at most
 const BOIL_LIFETIME = 0.45;           // τ of a boil (s): fresh water's bubbles burst as they come up

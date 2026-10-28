@@ -664,10 +664,17 @@ on a lattice whose rows are staggered, so the domes fall in no rows), that
 swells, glints and bursts within half a second, and the rest as the cloud, a milky tint of the water
 seen through the surface (its colour the water's own absorption against the
 bubbles' scattering, the lake's blue-green paled), churned in lumps that
-break up its edge, under the sky's reflection; the gale's whitecaps, a
-breaking wave's packed froth, stay white. Foam specks ride over a boil's
-cloud as over clear water. A pebble's boil is nearly all fizz; a big stone's mostly
-cloud. Each is stamped as
+break up its edge, under the sky's reflection. Over the cloud lies the
+boil's froth: the packed pattern below at twice the cloud's map value
+(`FOAM_FROTH_GAIN`), its bubbles alone with no lace, holed and ragged, so a
+stone's boil is dense white froth while it lasts, thinning at its edge into
+the bursting domes, which give way under it. A smooth milk with domes over
+it read as fog with marbles on it, from the bank and close to; froth with
+structure, holes and ragged edges reads as foam. The gale's whitecaps, a
+breaking wave's packed froth, stay white. Foam specks ride over a fizz and
+a boil's thin edge as over clear water and fade under its froth. A pebble's
+boil is nearly all fizz, its cloud too thin for much froth; a big stone's
+mostly cloud, froth over milk. Each is stamped as
 a patch of three to five sub-stamps of unequal sizes at random offsets,
 never one round Gaussian, so no two boils share a shape. Surface flows carry
 the foam: where the hole closed the jet's base wells up, and where the jet
@@ -699,12 +706,13 @@ Those films use the existing bubble cells and fade to their measured mean
 opacity at a distance, adding no texture or noise layer. Close up (the
 shoot harness, `--seed=1`, `--view=high --fov=16`), a 6 cm stone thrown
 normally leaves a faint milky ring and a see-through fizz over about its
-hole's mouth at 0.3 to 0.8 s and a few foam specks after; a 20 cm rock a
-milky, soft-edged churn about 30 cm across from 0.4 to 1.4 s, thinning to
-patches at 1.7 s and clear water by 2.2, with hardly any solid white
-(about 5 cm² of it, against 180 cm² when the boil was drawn as surface
-froth). From the bank, where the surface mostly mirrors the sky, either is
-a faint pale patch.
+hole's mouth at 0.3 to 0.8 s and a few foam specks after; a 20 cm rock
+dense white froth over a milky churn about 30 cm across from 0.4 to 1.4 s,
+fizzing at its edge, thinning to patches at 1.7 s and clear water by 2.2.
+From the bank the rock's froth, on the surface, shows over the sky's
+reflection; the milk under it alone was a faint pale patch there (when the
+boil was milk with domes over it, the rock left about 5 cm² of solid
+white).
 The threshold's edge is one pixel wide at any distance (from the pattern's
 exact gradient and the pixel's footprint on the water), and each layer fades
 into an even white of the right strength before its cells shrink to a couple
@@ -715,7 +723,7 @@ bubble among them, each with a shine of its own, most faint and a few
 bright) riding the waves where the crown stood, where the jet fell back,
 where drops landed and where bubbles surfaced, drifting outward and popping
 over 0.8 to 3 seconds (fresh water's bubbles; the big ones first), faded out
-where the foam is dense. A patch of them is lumps with gaps, never an even
+where the foam is dense, a raft or a boil's froth. A patch of them is lumps with gaps, never an even
 scatter: its specks gather in rafts of a score or so (clumps of clusters a
 few millimetres across, spread over a centimetre or two), favouring one
 side, with a few strays alone between them, and the rafts surface over a

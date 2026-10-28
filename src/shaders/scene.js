@@ -642,15 +642,19 @@ ${SNOW_COVER}
 // about 1350; a throw a metre or two from the camera resolves all three,
 // about 1800. The wet films add about 25 scalar operations and no cell
 // visits or texture fetches (the raft amount is in the same RGBA sample).
+// A splash's boil pays it too, for its froth (the last paragraph), over its
+// cloud's own area only.
 //
 // A splash's boil on fresh water. A stone leaves only a boil (src/splash.js):
 // big bubbles which, with no salt to hold them apart, merge and burst as they
 // reach the surface and never raft. Most of a real boil's white is not on
 // the surface but in the cloud of bubbles just under it, which makes the
-// water milky, pale and translucent; on the surface only one layer of
-// bubbles bursts at a time. So WATER_FRAGMENT draws the splash's own boil
-// (uFoam's; the gale's whitecaps, a breaking wave's packed froth, are this
-// pattern's, white on any water) in two layers, never as this pattern.
+// water milky, pale and translucent; on the surface one layer of bubbles
+// bursts at a time, packed into a froth while the cloud under it is thick.
+// So WATER_FRAGMENT draws the splash's own boil (uFoam's; the gale's
+// whitecaps, a breaking wave's packed froth, are this pattern's, white on
+// any water) in three parts: the milk under the surface, this pattern's
+// froth over the cloud, and bursting domes where the froth thins.
 // The surface holds a soft minimum of it and FOAM_BOIL_HOLD (FRESH_BOIL):
 // bubbles bursting (freshBubbles), in FOAM_BUBBLE_CELL cells, one in each at
 // most, at a random place and size within it, alive in a random share of the
@@ -672,23 +676,36 @@ ${SNOW_COVER}
 // vary the light it sends back by up to FOAM_CHURN either way (a dense
 // cloud's brightest lumps held at a deep cloud's, so its mean dims a
 // little), and by FOAM_CHURN_EDGE more where it thins, so a big boil heaves
-// in lumps and its edge breaks up rather than glowing as a blurred ring. A
-// pebble's boil, under the hold, is nearly all surface, a fizz; a big
-// stone's is mostly cloud, fizzing over it. tools/foam-probe.mjs checks the
-// hold, the bubbles' cover and fade, the deep cloud's colour on every Water
-// setting and the churn's spread. Cost: the map is read once, as before, only
-// earlier; the hold is a square root and an inverse square root a pixel;
-// where the surface holds a boil, the bubbles visit one cell, about 100
-// operations (the film's mean over a pixel three square roots of them, its
-// meniscus two smoothsteps); where there is a cloud, three value noises and its colour,
-// about 80.
+// in lumps and its edge breaks up rather than glowing as a blurred ring.
+// Over the cloud lies the boil's froth: this pattern, its map value
+// FOAM_FROTH_GAIN times the cloud's, taken as a boil (bubbles alone, no
+// lace), so a stone's boil is dense white froth while it lasts, holed and
+// ragged-edged as a raft is, the milk showing through its holes, and thins
+// where the cloud does, at its edge, into the domes, which fade out under
+// the froth's cover (frothCover). A smooth milk with domes over it read as
+// fog with marbles on it, from the bank and close to; froth with structure,
+// holes and ragged edges reads as foam. A pebble's boil, under the hold, is
+// nearly all surface, a fizz, its cloud too thin for much froth; a big
+// stone's is mostly cloud, froth over milk, fizzing at its edge.
+// tools/foam-probe.mjs checks the hold, the bubbles' cover and fade, the
+// deep cloud's colour on every Water setting and the churn's spread. Cost:
+// the map is read once, as before, only earlier; the hold is a square root
+// and an inverse square root a pixel; where the surface holds a boil, the
+// bubbles visit one cell, about 100 operations (the film's mean over a
+// pixel three square roots of them, its meniscus two smoothsteps), none
+// where the froth covers wholly; where there is a cloud, three value noises
+// and its colour, about 80, and where its froth passes FOAM_PRESENT, the
+// pattern's own (the Cost paragraph above).
 // A splash's boil on fresh water (FOAM_PATTERN's last paragraph): the share
 // the surface holds, a soft minimum of the boil and FOAM_BOIL_HOLD,
-// boil·(1 + (boil/hold)⁴)^(−1/4): all of a faint boil, at most the hold. The
-// water (WATER_FRAGMENT) and the specks (SPECK_VERTEX) both take it.
+// boil·(1 + (boil/hold)⁴)^(−1/4): all of a faint boil, at most the hold;
+// the rest is the cloud, topped with froth at FOAM_FROTH_GAIN times its
+// value. The water (WATER_FRAGMENT) and the specks (SPECK_VERTEX) both take
+// them.
 // tools/foam-probe.mjs twins it (surfaceShare): change both.
 export const FRESH_BOIL = /* glsl */`
 #define FOAM_BOIL_HOLD 0.035               // the most of a splash's boil the surface holds, one layer of bubbles bursting
+#define FOAM_FROTH_GAIN 2.0                // the boil's cloud, beyond the hold, is topped with froth: FOAM_PATTERN, as a boil, at this many times the cloud's map value (a pebble's cloud too thin for much)
 float freshBoilSurface(float boil) {
   float squared = boil * boil / (FOAM_BOIL_HOLD * FOAM_BOIL_HOLD);
   return boil * inversesqrt(sqrt(1.0 + squared * squared));
@@ -1282,12 +1299,15 @@ DomeHit bubbleDome(vec2 cell, float rowShift, vec2 inCells, vec3 toViewer, float
 }
 
 // The bubbles bursting on the surface over a boil (the header's last
-// paragraph): in each FOAM_BUBBLE_CELL cell, at random, one bubble alive
-// over each FOAM_BUBBLE_LIFE in the share filled²·FOAM_BUBBLE_MOST (a thin
-// boil's few, a full one's many), swelling as it surfaces and gone at once
-// when it bursts, the next at a new place and size, most of them small,
-// the biggest rising with the cloud under the boil (FOAM_BUBBLE_FAINT_RADIUS
-// where there is none, a fizz of drops' landings or bubbles surfacing, to
+// paragraph), seen where its froth thins, at its edge, and over a fizz:
+// WATER_FRAGMENT fades them out under the froth's cover (frothCover), where
+// they give way to its own bubbles. In each FOAM_BUBBLE_CELL cell, at
+// random, one bubble alive over each FOAM_BUBBLE_LIFE in the share
+// filled²·FOAM_BUBBLE_MOST (a thin boil's few, a full one's many),
+// swelling as it surfaces and gone at once when it bursts, the next at a
+// new place and size, most of them small, the biggest rising with the
+// cloud under the boil (FOAM_BUBBLE_FAINT_RADIUS where there is none, a
+// fizz of drops' landings or bubbles surfacing, to
 // the full FOAM_BUBBLE_RADII where the cloud is FOAM_BUBBLE_FULL_CLOUD holds
 // deep, a stone's boil's middle, where the air comes up in a mass; the
 // surface holds the hold's worth of boil over a stone's whole disc of
@@ -1907,11 +1927,13 @@ void main() {
   vec3 toCamera = cameraPosition - vWorld;
   float viewDist = length(toCamera);
   // The splash's foam, and its boil divided (FOAM_PATTERN): what the surface
-  // holds, drawn by the pattern below, and the cloud under it.
+  // holds, drawn as bursting domes, and the cloud under it, the milk, which
+  // the pattern below tops with froth.
   vec2 splashFoam = texture2D(uFoam, vDomainUv).rg * vMask;
   float splashBoil = max(splashFoam.r - splashFoam.g, 0.0);
   float boilSurface = freshBoilSurface(splashBoil);
   float boilCloud = splashBoil - boilSurface;
+  float splashCloud = boilCloud;   // the splash's own, before the gale adds its whitecaps' cloud: the froth is the splash's
   // The gale's whitecaps (src/galeWaves.js), over all the water, read at the
   // point's rest position: the active whitewater, the breaker itself, drives
   // a cloud of bubbles under the surface (GALE_CLOUD_SHARE of it, drawn as
@@ -2095,8 +2117,12 @@ void main() {
   // (uFoamDrift). The map's change is taken here, in uniform control flow
   // (the footprint, acrossX and acrossY, at the top); the pattern only where
   // there is foam.
-  // A splash's boil is not drawn as foam: its cloud is in refracted, its surface's bubbles below.
-  vec2 foamKinds = splashFoam - vec2(splashBoil, 0.0);
+  // A splash's boil: the surface's share is drawn as bursting domes (freshBubbles, below) and the cloud under it is in
+  // refracted, the milk; over the cloud, the boil's own froth, the packed pattern at FOAM_FROTH_GAIN times the cloud
+  // (a boil, so bubbles alone, no lace): a stone's boil is dense white froth while it lasts, thinning at its edge
+  // into the domes, where a smooth milk with domes over it read as fog with marbles on it. A pebble's cloud is too
+  // thin for any.
+  vec2 foamKinds = splashFoam - vec2(splashBoil, 0.0) + vec2(FOAM_FROTH_GAIN * splashCloud, 0.0);
   // The gale's whitecaps and the foam they leave, over all the water, the
   // raft gathered into the wind's streaks: sea foam's, churned by breaking,
   // packed and white whatever the water.
@@ -2112,16 +2138,22 @@ void main() {
   foam *= level;   // the pattern lies on the water's plane: none down the walls
 #endif
   vec2 foamChange = vec2(dFdx(foam), dFdy(foam));
+  float frothCover = 0.0;
   if (foam > FOAM_PRESENT) {
     float boilFraction = clamp(1.0 - foamKinds.g / max(foamKinds.r, 1e-5), 0.0, 1.0);
     FoamLook look = foamLook(vWorld.xz - uFoamDrift, acrossX, acrossY, foam, foamChange, n, boilFraction);
     vec3 foamColor = FOAM_ALBEDO * look.shade * foamLight;
     if (look.glint > 0.0) foamColor += look.glint * FOAM_GLINT * min(sunGlitter(look.domeNormal, v, uSunDir, uSunIrradiance, look.glintVariance), vec3(40.0));
-    color = mix(color, foamColor, look.cover * look.opacity);
+    frothCover = look.cover * look.opacity;
+    color = mix(color, foamColor, frothCover);
   }
-  // The bubbles bursting on the surface over a splash's boil (freshBubbles), lit as the foam is, their caps glinting.
-  if (boilSurface > FOAM_PRESENT) {
+  // The bubbles bursting on the surface over a splash's boil (freshBubbles), lit as the foam is, their caps glinting;
+  // under the froth they give way to its own bubbles.
+  if (boilSurface > FOAM_PRESENT && frothCover < 1.0) {
     FreshBubbles bubbles = freshBubbles(vWorld.xz - uFoamDrift, acrossX, acrossY, boilSurface / FOAM_BOIL_HOLD, boilSlope / FOAM_BOIL_HOLD, boilCloud / FOAM_BOIL_HOLD, n, v, uGustTime);
+    bubbles.white *= 1.0 - frothCover;
+    bubbles.shadow *= 1.0 - frothCover;
+    bubbles.glint *= 1.0 - frothCover;
     color = mix(color * (1.0 - bubbles.shadow), FOAM_ALBEDO * foamLight, bubbles.white);
     if (bubbles.glint > 0.0) color += bubbles.glint * FOAM_BUBBLE_GLINT * min(sunGlitter(bubbles.domeNormal, v, uSunDir, uSunIrradiance, bubbles.glintVariance), vec3(40.0));
   }
@@ -3340,10 +3372,12 @@ void main() {
 // Inside a raft the water shader's bubble pattern is the grain, so a speck
 // fades out where the foam the surface shows is between SPECK_RAFT_LOW and
 // SPECK_RAFT_HIGH: specks are the bits that drift out of the raft. Of a
-// splash's boil the surface shows only what it holds (FRESH_BOIL), under
-// SPECK_RAFT_LOW: a speck rides over a boil's cloud. Each speck has a shine
-// of its own (aShine, src/foamSpecks.js: most faint, a few bright), a share
-// of uOpacity, so no two in a patch are alike.
+// splash's boil the surface shows what it holds (FRESH_BOIL), under
+// SPECK_RAFT_LOW, and the froth over its cloud, FOAM_FROTH_GAIN times the
+// cloud: a speck rides over a fizz and a boil's thin edge, and fades under
+// its froth, whose bubbles are the grain there as a raft's are. Each speck
+// has a shine of its own (aShine, src/foamSpecks.js: most faint, a few
+// bright), a share of uOpacity, so no two in a patch are alike.
 export const SPECK_VERTEX = /* glsl */`
 #define SPECK_DRIFT_SECONDS 1.6
 #define SPECK_WANDER 0.0012
@@ -3390,9 +3424,12 @@ void main() {
   if (uRingCount > 0) surface += ringHeight(place, SPECK_RING_SPACING);
   float height = surface * mask;
   if (uGaleMetresPerUnit > 0.0) height += galeHeight(place);
-  // The foam the surface shows: the raft, and of a splash's boil only what the surface holds (FRESH_BOIL).
+  // The foam the surface shows: the raft, and of a splash's boil what the surface holds (FRESH_BOIL) and the froth
+  // over its cloud.
   vec2 foamKinds = texture2D(uFoam, domainUv).rg * mask;
-  float outsideRaft = 1.0 - smoothstep(SPECK_RAFT_LOW, SPECK_RAFT_HIGH, foamKinds.g + freshBoilSurface(max(foamKinds.r - foamKinds.g, 0.0)));
+  float boil = max(foamKinds.r - foamKinds.g, 0.0);
+  float boilSurface = freshBoilSurface(boil);
+  float outsideRaft = 1.0 - smoothstep(SPECK_RAFT_LOW, SPECK_RAFT_HIGH, foamKinds.g + boilSurface + FOAM_FROTH_GAIN * (boil - boilSurface));
   vec4 viewPosition = viewMatrix * vec4(place.x, height, place.y, 1.0);
   float fadeOut = 1.0 - smoothstep(life - SPECK_FADE, life, age);
   float fade = smoothstep(0.0, 0.1, age) * fadeOut * outsideRaft;
