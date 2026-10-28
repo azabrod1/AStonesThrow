@@ -650,8 +650,15 @@ wider and longer. The surface holds only so much of it: on fresh water one
 layer of bubbles bursts at a time, and the rest is the cloud of bubbles
 just under the surface, which most of a real boil's white is. So the water
 shader draws a boil up to that hold (a map value of 0.035) as bubbles
-bursting on the surface, a random few at a time and most of them small,
-each a clear cap with a thin bright rim (as a foam speck is drawn) that
+bursting on the surface, a random few at a time and most of them small
+(the big ones only where a cloud lies under the boil, its middle; a fizz
+with none, drops' landings and bubbles surfacing, makes small ones, which
+from the bank are a grain rather than a sprinkle of beads),
+each a dome standing on the water (as a foam speck is drawn: a clear film
+with a window of sky on its top and a thin bright limb, round on top, cut
+by the water at its foot, cast against the pixel's own view ray so it is
+a dome from the bank and a disc from above, and set anywhere in its cell
+on a lattice whose rows are staggered, so the domes fall in no rows), that
 swells, glints and bursts within half a second, and the rest as the cloud, a milky tint of the water
 seen through the surface (its colour the water's own absorption against the
 bubbles' scattering, the lake's blue-green paled), churned in lumps that
@@ -707,12 +714,15 @@ bright) riding the waves where the crown stood, where the jet fell back,
 where drops landed and where bubbles surfaced, drifting outward and popping
 over 0.8 to 3 seconds (fresh water's bubbles; the big ones first), faded out
 where the foam is dense. A patch of them is lumps with gaps, never an even
-scatter: its specks gather in rafts of a dozen or so (clumps of clusters a
-few millimetres across, spread over centimetres), favouring one side, with
-strays alone between them, and the rafts surface over a few tenths of a
-second rather than in one frame. The specks flatten into ellipses at a grazing view and
-fade with their projected area, so distant bubbles do not remain bright,
-camera-facing flecks.
+scatter: its specks gather in rafts of a score or so (clumps of clusters a
+few millimetres across, spread over a centimetre or two), favouring one
+side, with a few strays alone between them, and the rafts surface over a
+few tenths of a second rather than in one frame. A speck resolved over a
+few pixels is drawn as a dome standing on the water, as the water draws its
+own bursting bubbles (below): a clear film with a faint window of sky on
+its top, a thin bright limb, round on top, cut by the water at its foot;
+an unresolved one is a soft grain fading with the area it covers, so
+distant bubbles do not remain bright, camera-facing flecks.
 
 The splash scales with the stone (the slider's 1.5 to 16 cm is its
 diameter; the constants were tuned at 3 cm radius). Wherever the physics
@@ -1347,7 +1357,9 @@ farther out, so it rises into the view rather than filling its corner.
   then) and no request fails.
 - `node tools/foam-probe.mjs` runs the foam's bubble pattern on the CPU, with
   the constants read from the shader: each layer's median and spread and the
-  bubbles' mean shade match what the shader fades them to, and at the home,
+  bubbles' mean shade match what the shader fades them to, a boil's domes
+  average the white the shader's fit gives them at every elevation and lie
+  on no lattice, and at the home,
   phone and close-up framings the antialiased pattern covers what a
   supersampled one does and changes no more than it when the water moves
   under the pixels; it prints the cell visits per foam pixel. Then it runs

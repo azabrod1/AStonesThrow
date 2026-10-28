@@ -215,7 +215,9 @@
 // 445 ml of its sheet's 500), 315 from the fan, 65 contact spray, 90 from
 // the jet, 160 from the crowns of the 63 drops that throw one where they
 // land and 480 kicked up by the rest; at most about 2800 are alive at once,
-// and it leaves about 1350 foam specks (a 30 cm rock about 1450), each gone
+// and it leaves about 1150 foam specks (a 30 cm rock about 1250; the crown's
+// share was halved, 450 to 250, when a 10 cm stone's ring of them read as
+// an even sprinkle of dots rather than a few clumps of foam), each gone
 // within a second or three. On Medium and Low
 // (crownDrops 2000) its crown is held to 1960 drops carrying about 290 ml,
 // and at most 1760 to 1900 are alive. Its CPU work on a desktop is under a millisecond a frame on average
@@ -310,8 +312,8 @@ const WEBER_CRITICAL = 12;
 const LUMP_BREAK = { largest: 0.72, pieces: 8 };
 const LANDING_REFERENCE = 0.0086;     // the drop size the landing crown was tuned at (bigger than any drop now: DROP_CEILING)
 const LANDING_BREAKUP = 12;           // its crown's breakup droplets (scaling with the drop's area)
-const CROWN_SPECKS = 70;              // foam specks where a 3 cm stone's crown stood (scaling with its area)
-const CROWN_SPECK_CAP = 450;          // at most (a 16 cm stone's crown wants 500)
+const CROWN_SPECKS = 35;              // foam specks where a 3 cm stone's crown stood (scaling with its area; 70 sprinkled a 10 cm stone's ring evenly with dots, where a few clumps of foam should lie)
+const CROWN_SPECK_CAP = 250;          // at most (a 16 cm stone's crown wants 1000)
 const CROWN_SPECK_SPAN = 7;           // they surface over this many sqrt(R/g) after the crown has gone (0.4 s for a 3 cm stone), as its foot's air comes up
 const LANDING_KICK_CHANCE = 0.4;      // a big drop landing without a crown kicks up droplets this often...
 const LANDING_KICK_MOST = 2;          // ...one to this many
