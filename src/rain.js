@@ -55,8 +55,10 @@
 // rain's bubbleShare of the drops, a bubble the crown closes into, floating
 // up to a second or two, drawn as the foam specks' are. Every splash has
 // its own height, width and brightness, hashed from the schedule, so no
-// two are alike and a seeded run's are the same every time. Both stand on a
-// gale's waves (src/galeWaves.js).
+// two are alike and a seeded run's are the same every time. A jet is a
+// clear column, pale as the streaks are, and is drawn as the eye keeps it
+// over STREAK_SECONDS, so one rising or falling is a smear and one at its
+// peak stands crisp. Both stand on a gale's waves (src/galeWaves.js).
 //
 // RAIN: per intensity, the rate of the drops that leave a ring one can see
 // (per m² per second), the cell (metres, dividing TILE_SIZE) and its slots
@@ -82,8 +84,8 @@ import { mipAxisFactor } from './ambientWaves.js';
 import { RAIN_TILE_FRAGMENT, RAIN_MAX_SLOTS, STREAK_VERTEX, STREAK_FRAGMENT, FLECK_VERTEX, FLECK_FRAGMENT } from './shaders/rain.js';
 
 export const RAIN = {
-  light: { rate: 60, cell: 0.2, sizes: [0.6, 1.2], life: 0.8, fall: 4.5, dropDiameter: 0.0015, streakDensity: 1.25, streakOpacity: 0.45, fleckOpacity: 0.5, bubbleShare: 0.05 },
-  heavy: { rate: 600, cell: 0.125, sizes: [1.0, 1.8], life: 0.45, fall: 7.5, dropDiameter: 0.003, streakDensity: 3, streakOpacity: 0.45, fleckOpacity: 0.7, bubbleShare: 0.2 },
+  light: { rate: 60, cell: 0.2, sizes: [0.6, 1.2], life: 0.8, fall: 4.5, dropDiameter: 0.0015, streakDensity: 1.25, streakOpacity: 0.45, fleckOpacity: 0.5, bubbleShare: 0.02 },
+  heavy: { rate: 600, cell: 0.125, sizes: [1.0, 1.8], life: 0.45, fall: 7.5, dropDiameter: 0.003, streakDensity: 3, streakOpacity: 0.45, fleckOpacity: 0.7, bubbleShare: 0.08 },
 };
 const TILE_SIZE = 1;                 // metres
 const READINGS = 2;                  // the water reads the tile twice (RAIN_RIPPLES)
@@ -335,6 +337,7 @@ export class Rain {
         uMinPixels: { value: FLECK_MIN_PIXELS },
         uOpacity: { value: RAIN.light.fleckOpacity },
         uBubbleShare: { value: RAIN.light.bubbleShare },
+        uStreakSeconds: { value: STREAK_SECONDS },
         ...this.lightUniforms,
         ...gale,   // the gale's uniforms (src/galeWaves.js): the flecks stand on its waves
       },
@@ -374,7 +377,7 @@ export class Rain {
   }
 
   /** The slow motion's scale (world seconds a real one): the streaks are cut over the world time the eye's persistence spans. */
-  setTimeScale(scale) { this.streaks.material.uniforms.uStreakSeconds.value = STREAK_SECONDS * scale; }
+  setTimeScale(scale) { this.streaks.material.uniforms.uStreakSeconds.value = this.flecks.material.uniforms.uStreakSeconds.value = STREAK_SECONDS * scale; }
 
   updateFall() {
     const fall = this.intensity ? RAIN[this.intensity].fall : RAIN.light.fall;
