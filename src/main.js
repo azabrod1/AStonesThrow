@@ -1306,8 +1306,10 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     else mirrorBox.makeEmpty();
     // The splash is reckoned on still water and drawn lifted with the waves (galeLift): its image is about as much higher.
     if (!mirrorBox.isEmpty() && mirrorLevel.value !== 0) { mirrorBox.translate(mirrorShift.set(0, mirrorLevel.value, 0)); mirrorBox.expandByScalar(GALE_MIRROR_MARGIN); }
-    // A floater's image, where it is drawn (lifted already), a little wider than it for its last frame's place.
-    for (const rock of floaters) mirrorBox.union(floaterBox.setFromCenterAndSize(rock.meshMirror.position, floaterSize.setScalar(3 * rock.radius + 2 * RIDE_MIRROR_MARGIN)));
+    // A floater's image, where it is drawn (lifted already), a little wider than it for its last frame's place: out to
+    // its mesh's farthest point (src/rock.js `reach`; a toy slide's corners are 3.5 of its nominal radii out, a box of
+    // 1.5 cut its image short and left pieces of its last ones in the cached mirror), never less than 1.5 radii.
+    for (const rock of floaters) mirrorBox.union(floaterBox.setFromCenterAndSize(rock.meshMirror.position, floaterSize.setScalar(2 * (Math.max(1.5, rock.reach) * rock.radius + RIDE_MIRROR_MARGIN))));
     if (mirrorBox.isEmpty() || mirrorBox.max.y <= mirrorLevel.value) return;   // only what stands above the water is mirrored
     mirrorBox.min.y = Math.max(mirrorBox.min.y, mirrorLevel.value);
     let left = Infinity, right = -Infinity, bottom = Infinity, top = -Infinity;
