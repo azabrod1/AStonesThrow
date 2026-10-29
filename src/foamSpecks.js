@@ -19,11 +19,12 @@
 // src/shaders/bubble.js, as the water draws its own bursting bubbles): its
 // film letting the water through and mirroring the sky cube along the
 // reflected ray, so its top holds a bright arc of the low sky and its sides
-// melt into the water, a faint shadow along its foot and the sun's glint
-// on it, a soft spot on a small one and a white point on a large one
-// (SPECK_FRAGMENT); an unresolved one a soft grain mirroring the sky ahead,
-// its opacity following the area it really covers, with no minimum
-// brightness at a distance. The splash makes them where the crown's base
+// melt into the water, with a little haze of its own lit on top (a pale
+// bead against dark water), a faint shadow along its foot and the sun's
+// glint on it, a soft spot on a small one and a white point on a large one
+// (SPECK_FRAGMENT); an unresolved one a soft grain mirroring the sky ahead
+// and carrying its haze, its opacity following the area it really covers,
+// with no minimum brightness at a distance. The splash makes them where the crown's base
 // was, where the jet falls
 // back, where drops land and where bubbles surface. A patch of them
 // (spawnPatch) is never an even scatter: its specks gather in rafts of about
@@ -125,6 +126,7 @@ export class FoamSpecks {
         uMinPixelSize: { value: MIN_PIXEL_SIZE },
         uSunDir: { value: lighting.sunDirection },
         uSunIrradiance: { value: lighting.sunIrradiance },
+        uSkyAmbient: { value: lighting.skyAmbient },
         uSkyCube: { value: skyCube },   // the sky the bubbles' films mirror (src/sky.js)
         uOpacity: { value: OPACITY },
         ...ambientWaves.uniforms(),

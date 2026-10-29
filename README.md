@@ -669,13 +669,18 @@ bursting on the surface, a random few at a time and most of them small
 with none, drops' landings and bubbles surfacing, makes fewer and small
 ones, which from the bank are a grain rather than a sprinkle of beads),
 gathered in clumps a few centimetres across with open water between, as
-floating bubbles draw together, each a dome standing on the water (as a
-foam speck is drawn: a clear film that lets the water through and
+floating bubbles draw together, and over the cloud a few big ones, two
+or three centimetres across, on a lattice of their own, which are what
+the eye picks out as bubbles from the bank; each a dome standing on the
+water (as a foam speck is drawn: a film that lets the water through and
 mirrors the sky itself, the sky cube along the reflected ray, so its top
 holds a bright arc of the low sky, its sides, mirroring the water near
 by, melt into the water, and a lower part shades what lies behind it;
-under an overcast sky a silvery bead, under a clear one a clear dome with
-a bright arc, never brighter than the sky it mirrors; cut by the water
+with a little haze of its own, the film's scattering and the scum and
+drops it carries, more over the boil's milk, lit on top, so against dark
+water it is a pale bead rather than lost; under an overcast sky a
+silvery bead, under a clear one a clearer dome with a bright arc, never
+brighter than the sky it mirrors; cut by the water
 at its foot, cast against the pixel's own view ray so it is a dome from
 the bank and a disc from above, and set anywhere in its cell on a
 lattice whose rows are staggered, so the domes fall in no rows; drawn
@@ -686,12 +691,13 @@ seen through the surface (its colour the water's own absorption against the
 bubbles' scattering, the lake's blue-green paled), churned in lumps that
 break up its edge, under the sky's reflection. Over the cloud lies the
 boil's froth: the packed pattern below at twice the cloud's map value
-(up to `FOAM_FROTH_GAIN` times it, rising with its depth), its bubbles alone with no lace while it is dense, holed and ragged, so a
-stone's boil is dense white froth while it lasts; as it thins its bubbles
-pop and it breaks into lace as a raft does, holes opening and the rest
-gathering along filaments, its big bubbles windowed (held packed to the
-end, its faded bubbles drew a soft grey mottle); and it thins at its edge into
-the bursting domes, which give way under it. A smooth milk with domes over
+(up to `FOAM_FROTH_GAIN` times it, rising with its depth), its bubbles alone with no lace, holed and ragged, its
+bubbles up to two and a half times the pattern's size over a deep cloud
+(a rock throws up bubbles of centimetres; a pebble's stay small) and a
+third of the big ones clear domes, dark in the middle and bright at the
+rim, so a stone's boil is dense white froth while it lasts, thinning at
+its edge into the bursting domes, which give way under it (thinned into
+lace instead, flat white lace with holes on the milk, it read as mould). A smooth milk with domes over
 it read as fog with marbles on it, from the bank and close to; froth with
 structure, holes and ragged edges reads as foam. The gale's whitecaps, a
 breaking wave's packed froth, stay white. Foam specks ride over a fizz and
@@ -711,10 +717,14 @@ shader draws the raft from three layers of cellular noise: bubbles 2 to 3 mm
 across packed together, larger ones of 2 to 10 mm among them (most small,
 one in ten over 8 mm, as real foam's sizes spread), and a lace of curved
 filaments around holes a few centimetres wide. Each bubble lies anywhere in
-its cell, so none of them, nor their clear windows, fall into rows. A
-packed boil, a breaking wave's churned froth, takes no lace: it is drawn
-from the bubble layers alone, and a raft (the gale's sea foam) thins into
-filaments, as a splash's froth does once it thins. The map's strength,
+its cell, so none of them, nor their clear windows, fall into rows. A boil, the bubbles a
+splash leaves bursting on fresh water, takes no lace: it is drawn from the
+bubble layers alone, and only a raft (the gale's sea foam) thins into
+filaments. Each resolved bubble is lit as a sphere: its film mirrors the
+sky where the reflected ray rises, a bright arc toward its top, and its
+body is brighter there and darker where the ray falls into the water and
+the bubbles beside it, so packed foam close up is beads with dark creases
+between, not flat white discs. The map's strength,
 lumped at 3 and 14 cm strongly enough to show from a phone 4 m away, so
 that a boil is mottled and a raft's edge broken rather than a round, even
 white, sets the threshold they must pass. Where it is strong the raft is
@@ -756,12 +766,12 @@ few millimetres across, spread over a centimetre or two), favouring one
 side, with a few strays alone between them, and the rafts surface over a
 few tenths of a second rather than in one frame. A speck resolved over a
 few pixels is drawn as a dome standing on the water, as the water draws its
-own bursting bubbles (above): a clear film mirroring the sky cube, a
-bright arc of the low sky on its top, a lower part shading the foam behind
-it, cut by the water at its foot; an unresolved one is a soft grain
-mirroring the sky ahead, fading with the area it covers, so distant
-bubbles do not remain bright, camera-facing flecks. The rain's bubbles are
-drawn the same way.
+own bursting bubbles (above): a film mirroring the sky cube, a bright
+arc of the low sky on its top, a little haze of its own lit on top, a
+lower part shading the foam behind it, cut by the water at its foot; an
+unresolved one is a soft grain mirroring the sky ahead, fading with the
+area it covers, so distant bubbles do not remain bright, camera-facing
+flecks. The rain's bubbles are drawn the same way.
 
 The splash scales with the stone (the slider's 1.5 to 16 cm is its
 diameter; the constants were tuned at 3 cm radius). Wherever the physics

@@ -531,9 +531,10 @@ void main() {
   if (vKind > 2.5) {
     if (dot(offset, offset) > 1.0) discard;
     vec3 light, glint;
-    float loss, shadow;
-    bubbleSprite(offset, vPixelSize, vDrawn, vPlaneNormal, vToViewer, vToSun, vHalfVector, uSunIrradiance, vAlpha, uSkyCube, light, loss, shadow, glint);
-    gl_FragColor = vec4(light + min(glint, vec3(40.0)), loss + shadow);
+    float loss, haze, shadow;
+    bubbleSprite(offset, vPixelSize, vDrawn, vPlaneNormal, vToViewer, vToSun, vHalfVector, uSunIrradiance, vAlpha, uSkyCube, light, loss, haze, shadow, glint);
+    vec3 white = vec3(0.94, 0.96, 0.97) * (uSunIrradiance * max(uSunDir.y, 0.0) + uSkyAmbient * FLECK_SKY);
+    gl_FragColor = vec4(light + haze * white + min(glint, vec3(40.0)), loss + haze + shadow);
     return;
   }
   vec2 pixelOffset = offset * 0.5 * vSize;   // from the sprite's centre, y down

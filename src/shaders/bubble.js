@@ -78,6 +78,19 @@
 // lies behind by that share, where the near ones only add the water's
 // grazing share (a few per cent of the far field's light, over dark water
 // less).
+// Haze. A pond's bubble is no soap film: its film scatters a little light
+// of its own, and carries the scum, the dust and the drops that landed on
+// it, so against dark water it shows as a pale bead where a clear film
+// would be lost (drawn as a clear film alone, mirroring a rainy sky's dark
+// treeline, the domes vanished). So over the dome FOAM_BUBBLE_HAZE of the
+// foam's white is scattered toward the viewer (bubbleHaze), all of it where
+// the film mirrors the sky and FOAM_BUBBLE_HAZE_LIT of it where it mirrors
+// the water, so the bead is lit on top and darker below, as the lone
+// bubbles on a puddle are; a boil's bubbles, over its milk and carrying its
+// scum, take up to FOAM_BUBBLE_HAZE_CLOUD more (freshBubbles). It is cover
+// with white: the share of what lies behind it that the foam's white
+// replaces, so it never outshines the foam. Its mean per unit of water
+// under a dome is bubbleHazeMean, in closed form.
 // Along the dome's foot a faint shadow (bubbleMeniscus: FOAM_BUBBLE_MENISCUS
 // of the light behind, at most, over FOAM_BUBBLE_MENISCUS_WIDTH of the
 // radius above the water, or a pixel if wider), where the meniscus at the
@@ -112,6 +125,8 @@ export const SURFACE_BUBBLE = /* glsl */`
 #define FOAM_BUBBLE_AHEAD_UP 0.25          // the sky ahead (bubbleSkyAhead) is the cube's this far above the horizon (the sine)...
 #define FOAM_BUBBLE_AHEAD_SIDE 0.6         // ...straight ahead and this far either side (the tangent)
 #define FOAM_BUBBLE_UNDERSIDE 0.3          // the shade of a dome's lower part, mirroring the water near by, as a share of the light behind it
+#define FOAM_BUBBLE_HAZE 0.12              // the film's own scattering, with the scum and the drops it carries: this share of the foam's white over the dome where the film mirrors the sky...
+#define FOAM_BUBBLE_HAZE_LIT 0.5           // ...and this much of that where it mirrors the water: a pale bead, lit on top (the header's Haze)
 #define FOAM_BUBBLE_MEAN_FIT vec4(0.0478, -0.0020, -0.0423, 0.0152)   // the dome's mean light per unit of water under it, a sky of 1, (fit · (1, s, s², s³) + QUARTIC·s⁴) / s over s = sinβ (the header)
 #define FOAM_BUBBLE_MEAN_FIT_QUARTIC 0.0065
 #define FOAM_BUBBLE_LOWEST_VIEW 0.15       // sinβ under which the mean and a dome's reach over the water are held (the fit's range; the water there is far)
@@ -151,6 +166,17 @@ vec3 bubbleSkyAhead(samplerCube skyCube, vec3 toViewer) {
   return (textureCubeLodEXT(skyCube, vec3(ahead.x, FOAM_BUBBLE_AHEAD_UP, ahead.y), level).rgb
     + textureCubeLodEXT(skyCube, vec3(ahead.x + side.x, FOAM_BUBBLE_AHEAD_UP, ahead.y + side.y), level).rgb
     + textureCubeLodEXT(skyCube, vec3(ahead.x - side.x, FOAM_BUBBLE_AHEAD_UP, ahead.y - side.y), level).rgb) / 3.0;
+}
+// The haze's share of the foam's white at a point of the film whose reflected ray rises reflectedUp (the header's Haze).
+float bubbleHaze(float reflectedUp) {
+  return FOAM_BUBBLE_HAZE * mix(FOAM_BUBBLE_HAZE_LIT, 1.0, smoothstep(-FOAM_BUBBLE_SKY_SOFT, FOAM_BUBBLE_SKY_SOFT, reflectedUp));
+}
+// The haze's mean per unit of the water's area under a dome, seen from an elevation whose sine is sinElevation: the
+// dome's screen image is (1 + s)/2 of the sphere's disc, over 1/s as much water, and the reflected ray rises over half
+// the disc at any elevation (tools/foam-probe.mjs checks it against the integral).
+float bubbleHazeMean(float sinElevation) {
+  float s = max(sinElevation, FOAM_BUBBLE_LOWEST_VIEW);
+  return FOAM_BUBBLE_HAZE * (1.0 + FOAM_BUBBLE_HAZE_LIT * s) / (2.0 * s);
 }
 // The shade of the dome's lower part, where it mirrors the water near by: the share of the light behind it taken, as
 // cover without light (the header).
@@ -252,7 +278,9 @@ float bubbleMeniscus(float height, float pixel) {
 // and shine, cut by the area it really covers). Out: the light it adds
 // (the mirrored sky, by alpha) and the share of what lies behind it that
 // light stands in for, which the caller scales by its own opacity; the
-// shadow, cover without light; and the glint, light to add. The caller
+// haze, the share of what lies behind it the foam's white replaces (the
+// caller supplies the white); the shadow, cover without light; and the
+// glint, light to add. The caller
 // declares the view matrix (three.js gives every ShaderMaterial's fragment
 // shader viewMatrix) and passes the sky cube.
 export const BUBBLE_SPRITE = /* glsl */`
@@ -265,14 +293,15 @@ vec3 bubbleSpriteToWorld(vec3 spriteVector) {
   vec3 view = vec3(spriteVector.x, -spriteVector.y, spriteVector.z);
   return vec3(dot(viewMatrix[0].xyz, view), dot(viewMatrix[1].xyz, view), dot(viewMatrix[2].xyz, view));
 }
-void bubbleSprite(vec2 offset, float pixelSize, float drawn, vec3 planeNormal, vec3 toViewer, vec3 toSun, vec3 halfVector, vec3 sunIrradiance, float alpha, samplerCube skyCube, out vec3 light, out float loss, out float shadow, out vec3 glint) {
+void bubbleSprite(vec2 offset, float pixelSize, float drawn, vec3 planeNormal, vec3 toViewer, vec3 toSun, vec3 halfVector, vec3 sunIrradiance, float alpha, samplerCube skyCube, out vec3 light, out float loss, out float haze, out float shadow, out vec3 glint) {
   float radiusSquared = dot(offset, offset);
   float radius = sqrt(radiusSquared);
   float pixel = 2.0 / max(drawn, 1.0);   // a pixel, in radii
   float dome = smoothstep(BUBBLE_SPRITE_DOME_FROM, BUBBLE_SPRITE_DOME_TO, pixelSize);
   // The unresolved grain mirrors the sky ahead by the dome's mean share over its disc (bubbleDomeMean at the view's
-  // elevation, planeNormal.z; exp(−3r²) averages (1 − e⁻³)/3 over the unit disc).
-  float grain = exp(-3.0 * radiusSquared) * bubbleDomeMean(planeNormal.z) * 3.0 / (1.0 - exp(-3.0));
+  // elevation, planeNormal.z; exp(−3r²) averages (1 − e⁻³)/3 over the unit disc), and carries the haze's mean.
+  float grainShape = exp(-3.0 * radiusSquared) * 3.0 / (1.0 - exp(-3.0));
+  float grain = grainShape * bubbleDomeMean(planeNormal.z);
   vec3 skyAhead = bubbleSkyAhead(skyCube, bubbleSpriteToWorld(vec3(0.0, 0.0, 1.0)));
   // The pixel's ray, along the sprite's z, meets the sphere at its front, whose normal is the point itself; its height
   // above the water (radii) cuts the sphere to the dome, a pixel soft. The film over the radii from here out by a
@@ -287,6 +316,7 @@ void bubbleSprite(vec2 offset, float pixelSize, float drawn, vec3 planeNormal, v
   vec3 sky = bubbleSkyAlong(skyCube, bubbleSpriteToWorld(bubbleMirrored(film.reflected, planeNormal)), 2.0 * pixel);
   light = alpha * mix(grain * skyAhead, film.shares.z * sky, dome);
   loss = alpha * mix(grain, film.shares.y, dome);
+  haze = alpha * mix(grainShape * bubbleHazeMean(planeNormal.z), bubbleHaze(reflectedUp) * limb * (1.0 - film.shares.y), dome);
   shadow = alpha * (bubbleMeniscus(height, pixel) * cover + bubbleUnderside(reflectedUp) * limb) * dome;
   // The sun's glint on the dome.
   float nDotH = max(dot(normal, halfVector), 1e-3);
