@@ -254,7 +254,10 @@
 // walls write it, MIRROR_NEARNESS in src/shaders/scene.js), and so is
 // anything on the ice or hopping over it, once it has come down on it
 // (prepareMirror: glazed ice is a mirror, and a stone on it without its
-// image looks laid over the picture).
+// image looks laid over the picture). On the ice its shadow is cast on the
+// ice and on the things near it (src/iceShadow.js: its drawn mesh, a tile of
+// the shadows' atlas), and its own part above the water takes theirs
+// (receiveIceShadows: its sunlight past them, never past its own).
 //
 // Its detail (showDetail): a ball is drawn from the coarsest of its meshes
 // (src/thingMeshes.js createBallGeometry `detail`) whose corners lie at most
@@ -334,6 +337,7 @@ import { THINGS, DEFAULT_THING, WATER_DENSITY, STONE_DENSITY } from './things.js
 import { cornersOf, meshKind, meshVolume, withParts } from './thingMeshes.js';
 import { stoneDetail, stoneUniforms } from './shaders/stone.js';
 import { convexHull, insidePolygon, polygonEdgeDistance } from './ice.js';
+import { receiveIceShadows } from './iceShadow.js';
 
 // The stone's geometry is src/thingMeshes.js's now; the probes take it from here as they always did.
 export { createRockGeometry } from './thingMeshes.js';
@@ -1493,7 +1497,10 @@ export class Rock {
     this.meshAbove = new THREE.Mesh(this.geometry, makeMaterial(1));
     this.meshBelow = new THREE.Mesh(this.geometry, makeMaterial(-1));
     this.meshBelow.material.envMapIntensity = 0.35;
-    this.meshAbove.material.onBeforeCompile = (shader) => stoneDetail(shader, stone);
+    // Its slot in the ice's shadows (src/ice.js shade), or −1: what is drawn above the water takes the others' shadows
+    // on the ice, never its own (src/iceShadow.js receiveIceShadows).
+    const iceShadowSelf = this.iceShadowSelf = { value: -1 };
+    this.meshAbove.material.onBeforeCompile = (shader) => { stoneDetail(shader, stone); receiveIceShadows(shader, iceShadowSelf); };
     this.meshAbove.material.customProgramCacheKey = () => 'above';
     // The part above the water in the water's mirror image, afloat or on the ice (the header): its distance in alpha.
     // A floater has one from the start; anything else is given one the first time it comes down on the ice
@@ -1602,6 +1609,7 @@ export class Rock {
     this.ridesWater = true;   // src/main.js redraws its mirror image as the water moves under it
     const ride = (side) => (shader) => {
       stoneDetail(shader, this.stone);
+      if (side === 'above') receiveIceShadows(shader, this.iceShadowSelf);   // on the ice, the others' shadows (src/iceShadow.js)
       Object.assign(shader.uniforms, water);
       shader.uniforms.uRide = rideShare;
       shader.uniforms.uWaterLevel = waterLevel;
@@ -1713,6 +1721,16 @@ export class Rock {
     mirror.material.emissive.copy(above.material.emissive);
     above.parent?.add(mirror);
     return mirror;
+  }
+
+  /** Its drawn mesh's bounding sphere where it is drawn (src/ice.js shade: its shadow's reach), into `into` ({ x, y, z, radius }, m). */
+  drawnSphere(into) {
+    const mesh = this.meshAbove, geometry = mesh.geometry;
+    if (!geometry.boundingSphere) geometry.computeBoundingSphere();
+    const centre = scratch.middle.copy(geometry.boundingSphere.center).applyQuaternion(mesh.quaternion).multiplyScalar(mesh.scale.x).add(mesh.position);
+    into.x = centre.x; into.y = centre.y; into.z = centre.z;
+    into.radius = geometry.boundingSphere.radius * mesh.scale.x;
+    return into;
   }
 
   /** Where its weight acts (its volume's middle, moved by its `body.ballast`), as it is now, into `into` (m). */

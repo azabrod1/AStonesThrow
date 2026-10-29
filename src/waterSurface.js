@@ -63,6 +63,7 @@
 // shader needs of the solver's grid are the solver's shared gridUniforms, so
 // they follow its resize.
 import * as THREE from 'three';
+import { ICE_SHADOW_UNIFORMS } from './iceShadow.js';
 import { WATER_VERTEX, WATER_FRAGMENT, WATER_UNDER_FRAGMENT } from './shaders/scene.js';
 
 // The floor's uniforms the surface seen from below shares (setBed): its march to the bed (LAKE_BED, every uniform it
@@ -152,7 +153,7 @@ function poolPatchGeometry(water, segments, square) {
 const NO_ICE = () => ({
   uIceMask: { value: null }, uIceArea: { value: new THREE.Vector3(0, 0, 1) }, uIceOn: { value: 0 }, uIceTop: { value: 0 },
   uIceThickness: { value: 0 }, uIceFar: { value: 1 }, uIceGlaze: { value: 0.2 }, uIceWet: { value: 0 }, uIcePool: { value: new THREE.Vector4() }, uSnow: { value: 0 },
-  uIceThingCount: { value: 0 },
+  ...ICE_SHADOW_UNIFORMS,   // the shadows' shared set (src/iceShadow.js): none in use without ice
 });
 
 export function createWaterSurface(water, lighting, ambientWaves, { meshSegments = Math.min(water.size, 512), rings = null, dropRings = null, skyCube = null, rain = null, haze = null, gale = null, ice = null } = {}) {

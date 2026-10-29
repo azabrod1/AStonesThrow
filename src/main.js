@@ -319,6 +319,7 @@ import { createPool, holdInPool, poolGround, poolInside, POOL } from './pool.js'
 import { createSound } from './sound.js';
 import { createFloaterRide } from './floaterRide.js';
 import { IceSheet, ICE_THICKNESS } from './ice.js';
+import { IceShadow } from './iceShadow.js';
 import { IceCracks } from './iceCracks.js';
 import { FishPopulation, edibleBites, fishSee, FISH_STILL, FISH_STEP } from './fish.js';
 import { createFishView } from './fishMeshes.js';
@@ -1367,6 +1368,9 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   let dpr = 1;
   // The ice's cracks (src/iceCracks.js), drawn over the sheet as ribbons: one draw call, one program (warmUp draws it).
   const iceCracks = new IceCracks(ice, lighting, resolution, environment.hazeUniforms);
+  // The shadows what lies on the ice casts (src/iceShadow.js): a tile of its atlas for each thing the ice shades, drawn
+  // again only when its thing or the sun moves.
+  const iceShadow = new IceShadow();
   sceneMain.add(iceCracks.mesh);
 
   // ---- the view ----------------------------------------------------------
@@ -2627,6 +2631,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     pool.setTime(simulationTime);            // its deck's splashed patches dry by it
     ice.update();                            // what broke or opened since, into its mask (src/ice.js)
     ice.shade(rocks, camera.position, sunDirection);   // what lies on it shades it, as drawn now
+    iceShadow.update(renderer, ice.shading.slots, ice.shading.sun);   // and their shadows' tiles, those that moved
     iceCracks.update();                      // and the cracks made since, onto it (src/iceCracks.js)
     reeds.update(simulationTime);
     renderer.info.reset();
@@ -2763,7 +2768,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       splash: sum(Object.values(splash.targets)),
       sky: sum(environment.targets) + environment.panoramaBytes + environment.horizonBytes,
       floor: floorPatternBytes,
-      ice: ice.budget.maskBytes + iceCracks.bytes,
+      ice: ice.budget.maskBytes + iceCracks.bytes + iceShadow.bytes,
     };
     return { ...parts, total: Object.values(parts).reduce((total, bytes) => total + bytes, 0) };
   }
@@ -2788,7 +2793,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       rain: { weather: weatherName, falling: rain.on, texels: rain.texels },
       snow: { falling: snow.on, flakes: snow.count, cover: snowCover.value },
       draws: { calls: renderer.info.render.calls, triangles: renderer.info.render.triangles },   // the last frame's
-      ice: { name: iceName, ...ice.budget, shards: rocks.filter((rock) => rock.piece).length, cracks: ice.crackLines.length, crackVertices: iceCracks.vertices },
+      ice: { name: iceName, ...ice.budget, shards: rocks.filter((rock) => rock.piece).length, cracks: ice.crackLines.length, crackVertices: iceCracks.vertices, shadowTiles: iceShadow.draws },
       spray: { ring: splash.spray.budgetRing, share: splash.spray.share, drawn: splash.spray.geometry.instanceCount, flying: splash.spray.alive },
       clarity: waterName,
       sky: placeName,
@@ -3046,6 +3051,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     // wherever the mirror's camera looks (it is culled by it, and this stone is in the hand).
     Object.assign(stone.prepareMirror(), { visible: true, frustumCulled: false });
     iceCracks.warmUp(WARM_UP.x + 0.4, WARM_UP.z);   // the cracks' program, over ice or none
+    iceShadow.warmUp(renderer, stone.meshAbove);    // the shadows' atlas's program (src/iceShadow.js), a tile drawn for the stone
     const fishWarmUp = fishView.warmUp();   // the fish's one program, whatever lives here (none in the Pool)
     // The preview's programs (buildPreview: a see-through material, textured and plain): a pizza's preview drawn in
     // this frame and a stone's in the next, their materials kept (programKeepers); then the chosen thing's, below.
@@ -3513,6 +3519,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     get framesRendered() { return framesRendered; },
     /** Where the splash was drawn into the mirror image at the last frame, in its target's pixels (0 wide: nowhere), and the target's size. */
     get mirrorRegion() { return { x: splashRect.x, y: splashRect.y, width: splashRect.z, height: splashRect.w, targetWidth: reflectionTarget.width, targetHeight: reflectionTarget.height }; },
+    /** The shadows' atlas (src/iceShadow.js), for the probes: its target, and how many tiles it has drawn. */
+    iceShadow,
     renderer,
     camera,
     lighting,

@@ -186,12 +186,14 @@
 //
 // What lies on it shades it (shade, once a frame: ICE_THINGS in src/shaders/
 // scene.js): the things over the sheet, within ICE_SHADE.above of its top,
-// the nearest the eye of them, each its drawn ellipsoid (src/rock.js
-// drawnEllipsoid), their shadows and the sky they hide drawn by the water's
-// shader as it draws the ice.
+// the nearest the eye of them, each in a slot, its shadow its slot's tile in
+// the shadow atlas (src/iceShadow.js) and the sky it hides its drawn
+// ellipsoid's (src/rock.js drawnEllipsoid), drawn by the water's shader as
+// it draws the ice.
 import * as THREE from 'three';
 import { groundHeightAt, shoreDistance } from './pondFloor.js';
 import { roundLipReach } from './cavity.js';
+import { ICE_SHADOW, ICE_SHADOW_UNIFORMS } from './iceShadow.js';
 
 const GRAVITY = 9.81;
 const WATER_DENSITY = 1000;
@@ -250,13 +252,12 @@ export const ICE_THICKNESS = { none: 0, thin: 0.01, thick: 0.04 };
 // The ice's own surface (src/rock.js `ground` material): slick. A stone on it slides, slowing at `tumbling`·g; between
 // its hops it turns end over end at `tumble` (of its speed over its radius).
 export const ICE_MATERIAL = Object.freeze({ kind: 'ice', friction: 0.1, rolling: 0.01, tumbling: 0.12, tumble: 0.15 });
-// What shades the ice (shade): at most `most` things (ICE_THINGS in src/shaders/scene.js), none whose middle is more
-// than `above` m over its top (a stone's shadow from there is a faint blur); the sky a thing hides is let go to nothing
-// where its view factor falls to `least` (ICE_THINGS' fade), its shadow reckoned out to its ellipsoid cast `soft` of
-// its size wider (ICE_SHADOW_SOFT's twin, with room for the sun's own width), and the sun no lower than `lowestSun`
-// (its rise over its level reach, about 2.9°: a sun on the horizon casts shadows without end; ICE_LOWEST_SUN, its twin,
-// holds the shader's sun as low).
-const ICE_SHADE = { most: 8, above: 2, least: 0.01, soft: 0.25, lowestSun: 0.05 };
+// What shades the ice (shade): at most ICE_SHADOW.slots things (src/iceShadow.js), none whose middle is more than
+// `above` m over its top (a stone's shadow from there is a faint blur); the sky a thing hides is let go to nothing
+// where its view factor falls to `least` (ICE_THINGS' fade), its shadow reckoned out to its bounding sphere cast
+// `soft` of its reach wider (room for the penumbra), and the sun no lower than `lowestSun` (its rise over its level
+// reach, about 2.9°: a sun on the horizon casts shadows without end; the tiles are drawn for the sun held so).
+const ICE_SHADE = { above: 2, least: 0.01, soft: 0.25, lowestSun: 0.05 };
 // A hole (the header): corners round it; the lip's fall it takes in (Cavity.lipReach's `fall`); each corner out beyond
 // the lip by `margin` and a jag from 0 to `jag` of the lip's reach, besides the slow waves `waves` (amplitude, each of
 // modes 2 to 5); `bites` (least, most) where a piece broke away, each `bite` (least, most) deeper over `biteSpan`
@@ -523,17 +524,19 @@ export class IceSheet {
       uIceGlaze: { value: FLOOD.glaze },   // B's least once wet (fillMask)
       uIceWet: { value: 0 },   // how wet the rain has made it: src/main.js shares the weather's object
       uSnow: { value: 0 },     // the snow lying on it (SNOW_COVER in src/shaders/scene.js): src/main.js shares the weather's object
-      // What shades it (shade; ICE_THINGS in src/shaders/scene.js): each thing's middle (x, over its top, z) and
-      // half-height, its footprint's half-widths and heading (cosine, sine), and the circle its shade lies in (its
-      // middle, x and z, its radius squared, and the reach of the sky it hides); and the box round them all.
-      uIceThings: { value: Array.from({ length: ICE_SHADE.most }, () => new THREE.Vector4()) },
-      uIceThingFootprints: { value: Array.from({ length: ICE_SHADE.most }, () => new THREE.Vector4()) },
-      uIceThingBounds: { value: Array.from({ length: ICE_SHADE.most }, () => new THREE.Vector4()) },
-      uIceShadeBox: { value: new THREE.Vector4() },
-      uIceThingCount: { value: 0 },
+      // What shades it (shade; ICE_THINGS in src/shaders/scene.js), slot by slot: each thing's middle (x, over its
+      // top, z) and half-height, its footprint's half-widths and heading (cosine, sine); and the shadows' shared set
+      // (src/iceShadow.js: each slot's tile and bound, the box round them all, how many slots are in use).
+      uIceThings: { value: Array.from({ length: ICE_SHADOW.slots }, () => new THREE.Vector4()) },
+      uIceThingFootprints: { value: Array.from({ length: ICE_SHADOW.slots }, () => new THREE.Vector4()) },
+      ...ICE_SHADOW_UNIFORMS,
     };
-    // shade's, kept between frames: its entries (a thing and its distance from the eye), reused, and how many are in use.
-    this.shading = { near: [], count: 0, ellipsoid: { x: 0, y: 0, z: 0, along: 0, across: 0, heading: 0, height: 0 } };
+    // shade's, kept between frames: its entries (a thing and its distance from the eye), reused; what each slot holds
+    // (src/iceShadow.js draws their tiles); the sun as the shadows take it; and its scratch.
+    this.shading = {
+      near: [], slots: new Array(ICE_SHADOW.slots).fill(null), sun: new THREE.Vector3(0, 1, 0),
+      ellipsoid: { x: 0, y: 0, z: 0, along: 0, across: 0, heading: 0, height: 0 }, sphere: { x: 0, y: 0, z: 0, radius: 0 },
+    };
     this.dirty = false;
     // The ground (src/rock.js `ground`): the ice, over the deck round a frozen pool.
     this.groundObject = {
@@ -1973,13 +1976,16 @@ export class IceSheet {
   /**
    * What shades it this frame (the header): of `things` (src/rock.js), those
    * over the sheet with their middle above its top by no more than
-   * ICE_SHADE.above, the ICE_SHADE.most nearest `eye`, each as drawn, with
-   * `toSun` the sun's direction: each with the circle its shadow and the sky
-   * it hides lie in, and a box round them all, so the ice's shader reckons
-   * them only there.
+   * ICE_SHADE.above, the ICE_SHADOW.slots nearest `eye`, each as drawn, `toSun`
+   * the sun's direction. Each keeps its slot while it stays among them (its
+   * shadow's tile, src/iceShadow.js, is drawn again only when it moves); a
+   * new one takes a free slot. Each slot's circle holds its shadow (its
+   * bounding sphere cast along the sun, held no lower than ICE_SHADE.lowestSun,
+   * as the tiles take it: `shading.sun`) and the sky it hides; a box holds
+   * them all; so the ice's shader reckons them only there.
    */
   shade(things, eye, toSun) {
-    const near = this.shading.near, ellipsoid = this.shading.ellipsoid;
+    const near = this.shading.near, slots = this.shading.slots, ellipsoid = this.shading.ellipsoid;
     let found = 0;
     if (this.on) {
       for (const thing of things) {
@@ -1990,36 +1996,59 @@ export class IceSheet {
         entry.distance = (x - eye.x) ** 2 + (y - eye.y) ** 2 + (z - eye.z) ** 2;
         found++;
       }
-      // The nearest first, only when there are more than it draws (its entries past `found` are last frame's, kept).
-      if (found > ICE_SHADE.most) {
+      // The nearest first, only when there are more than it shades (its entries past `found` are last frame's, kept).
+      if (found > ICE_SHADOW.slots) {
         const used = near.splice(0, found);
         used.sort((first, second) => first.distance - second.distance);
         near.unshift(...used);
       }
     }
     for (let index = found; index < near.length; index++) near[index].thing = null;   // let go of things no longer near
-    const count = Math.min(found, ICE_SHADE.most);
-    const uniforms = this.uniforms, box = uniforms.uIceShadeBox.value.set(Infinity, Infinity, -Infinity, -Infinity);
-    // The sun's shift across the ice per metre of height (its direction's level part over its rise).
-    const rise = Math.max(toSun.y, ICE_SHADE.lowestSun * Math.hypot(toSun.x, toSun.z), 1e-6);
-    const shiftX = -toSun.x / rise, shiftZ = -toSun.z / rise;
-    for (let index = 0; index < count; index++) {
-      near[index].thing.drawnEllipsoid(ellipsoid);
+    const chosen = Math.min(found, ICE_SHADOW.slots);
+    // A slot whose thing is no longer chosen is freed; each chosen thing keeps its slot, or takes the first free one.
+    for (let slot = 0; slot < slots.length; slot++) {
+      const thing = slots[slot];
+      if (!thing) continue;
+      let kept = false;
+      for (let index = 0; index < chosen && !kept; index++) kept = near[index].thing === thing;
+      if (!kept) { thing.iceShadowSelf.value = -1; slots[slot] = null; }
+    }
+    for (let index = 0; index < chosen; index++) {
+      const thing = near[index].thing;
+      if (slots.includes(thing)) continue;
+      const slot = slots.indexOf(null);
+      slots[slot] = thing;
+      thing.iceShadowSelf.value = slot;
+    }
+    const uniforms = this.uniforms, bounds = uniforms.uIceThingBounds.value;
+    const box = uniforms.uIceShadeBox.value.set(Infinity, Infinity, -Infinity, -Infinity);
+    // The sun as the shadows take it: no lower than ICE_SHADE.lowestSun (its rise over its level reach); its shift
+    // across the ice per metre of height, and how much longer than it is wide a ball's shadow is (1 over its sine).
+    const level = Math.hypot(toSun.x, toSun.z), rise = Math.max(toSun.y, ICE_SHADE.lowestSun * level, 1e-6);
+    const sun = this.shading.sun.set(toSun.x, rise, toSun.z).normalize();
+    const shiftX = -sun.x / sun.y, shiftZ = -sun.z / sun.y, stretch = 1 / sun.y;
+    let used = 0;
+    for (let slot = 0; slot < slots.length; slot++) {
+      const thing = slots[slot];
+      if (!thing) { bounds[slot].z = -1; continue; }
+      used = slot + 1;
+      thing.drawnEllipsoid(ellipsoid);
       // Its middle over the ice's top, never lower than its half-height (a lumpy stone's ellipsoid dips into the ice).
       const height = Math.max(ellipsoid.y - this.top, ellipsoid.height), across = Math.max(ellipsoid.across, 1e-4);
-      uniforms.uIceThings.value[index].set(ellipsoid.x, height, ellipsoid.z, ellipsoid.height);
-      uniforms.uIceThingFootprints.value[index].set(ellipsoid.along, across, Math.cos(ellipsoid.heading), Math.sin(ellipsoid.heading));
+      uniforms.uIceThings.value[slot].set(ellipsoid.x, height, ellipsoid.z, ellipsoid.height);
+      uniforms.uIceThingFootprints.value[slot].set(ellipsoid.along, across, Math.cos(ellipsoid.heading), Math.sin(ellipsoid.heading));
       // The sky it hides reaches to where its view factor (ICE_THINGS) falls to ICE_SHADE.least; its shadow lies round
-      // where its middle's is cast, stretched along the sun by its half-height's cast, its ellipsoid's reach round both.
+      // where its bounding sphere's middle is cast, as long as the sphere's cast is (its reach over the sun's sine).
       const skyReach = Math.cbrt((Math.sqrt(ellipsoid.along * across) * ellipsoid.height * height) / ICE_SHADE.least);
-      const castX = ellipsoid.x + shiftX * height, castZ = ellipsoid.z + shiftZ * height;
-      const shadowReach = (1 + ICE_SHADE.soft) * (ellipsoid.along + Math.hypot(shiftX, shiftZ) * ellipsoid.height);
+      const sphere = thing.drawnSphere(this.shading.sphere);
+      const sphereHeight = Math.max(sphere.y - this.top, 0);
+      const castX = sphere.x + shiftX * sphereHeight, castZ = sphere.z + shiftZ * sphereHeight;
       const middleX = (ellipsoid.x + castX) / 2, middleZ = (ellipsoid.z + castZ) / 2;
-      const radius = Math.max(skyReach, Math.hypot(castX - middleX, castZ - middleZ) + shadowReach);
-      uniforms.uIceThingBounds.value[index].set(middleX, middleZ, radius * radius, skyReach);
+      const radius = Math.max(skyReach + Math.hypot(ellipsoid.x - middleX, ellipsoid.z - middleZ), Math.hypot(castX - middleX, castZ - middleZ) + sphere.radius * stretch * (1 + ICE_SHADE.soft));
+      bounds[slot].set(middleX, middleZ, radius * radius, skyReach);
       box.set(Math.min(box.x, middleX - radius), Math.min(box.y, middleZ - radius), Math.max(box.z, middleX + radius), Math.max(box.w, middleZ + radius));
     }
-    uniforms.uIceThingCount.value = count;
+    uniforms.uIceThingCount.value = used;
   }
 
   // ---- the mask (the header) -----------------------------------------------
