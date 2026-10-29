@@ -36,11 +36,13 @@ the moment a throw leaves the hand and fades back (`?preview=off` leaves
 it out).
 Escape or Reset view (under the menu button while the view is away from
 the shore's) glides back to the shore. The strip at the bottom sets what is
-thrown: its name opens a dropdown of every thing under its group (the
-gems last, seldom thrown), each with
-its picture (`src/thingMenu.js`; on a phone each group is one row a finger
-scrolls sideways, so the dropdown stays as tall as its groups however many
-things there are), and its slider sets the size (a stone 1.5
+thrown: its name opens a dropdown of things in tabs (`src/thingMenu.js`):
+Favourites, All (every thing under its group, the gems last, seldom thrown;
+on a phone each group is one row a finger scrolls sideways, so it stays as
+tall as its groups however many things there are), then a tab for each
+group (Stones, Balls, Food, Toys, Electronics, Other, Gems). Each thing is a
+pill with its picture and a star: the star keeps it in Favourites (which,
+empty, says so), and the tab last shown opens again. Its slider sets the size (a stone 1.5
 to 30 cm across, a bowling ball 6 to 16 lb, a basketball size 5 to 7, a gem
 5 to 1000 carats; a golf or a tennis ball has one size). Then how it is
 thrown, in two parts: the manner, Toss (the low way round), Lob (the high
@@ -65,9 +67,10 @@ its choices (Location and Water as pictures) with a line on each. Each choice
 is remembered on the device (but the view, which opens on the shore):
 - What to throw (`?thing=`): stones (a river stone, the default; slate,
   granite, basalt, pumice), balls (golf, tennis, bowling, basketball), gems
-  (diamond, emerald, ruby, sapphire) and others (an apple, a watermelon, a
-  pizza, a frozen pizza, a pie, a rubber duck, a brick, a TV, an iPhone, a
-  banana, a slice of bread, a birthday cake, a snowball, a toy slide), each
+  (diamond, emerald, ruby, sapphire), food (an apple, a watermelon, a
+  pizza, a frozen pizza, a pie, a banana, a slice of bread, a birthday cake),
+  toys (a rubber duck, a toy slide), electronics (a TV, an iPhone) and
+  others (a brick, a snowball), each
   the size, weight and density of the real thing (`src/things.js`). The foot of the strip's
   dropdown opens this page. What is lighter than water floats; the rest sink.
   What comes to rest stays, on the bed or the pool's floor as on the deck, up
@@ -95,7 +98,7 @@ is remembered on the device (but the view, which opens on the shore):
   on their own faces' area: they slap the water, flutter down as thin plates
   do, and come to rest lying along the lake bed's slope. In the pool they
   land wherever they fit, their slap standing no crown, and its walls meet
-  their corners. Choose them under Other or use `?thing=tv` and
+  their corners. Choose them under Electronics or use `?thing=tv` and
   `?thing=iphone`; both support Toss and Lob. A banana (about 920 kg/m³
   whole) tumbles end over end and floats with only a sliver out. A slice
   of bread (30 g, about 175 kg/m³) flutters down floppier than a pizza,
@@ -1683,9 +1686,11 @@ farther out, so it rises into the view rather than filling its corner.
   portrait and goes with the first throw; that Toss, Lob and Skip set the
   manner, Soft, Medium and Hard the strength, and the clock goes round 1×, ¼×
   and ⅒×; that the name's dropdown fits over the
-  strip (a phone in portrait without scrolling, each group one row there that
-  scrolls sideways to every pill), its pills tall enough for a
-  finger, a pill tapped is thrown next, a press on the pond closes it without
+  strip (its All tab on a phone in portrait without scrolling, each group one
+  row there that scrolls sideways to every pill), its pills tall enough for a
+  finger, that its tabs keep their place, Favourites says how to fill it, a
+  group's tab holds its things and a star makes a favourite and unmakes it,
+  a pill tapped is thrown next, a press on the pond closes it without
   throwing and the keyboard works it; that the settings open with their rows, each
   row's value whole beside its name, the Water page's pictured choices each
   reachable by scrolling, its Frozen freezing the water, Thin and Thick
