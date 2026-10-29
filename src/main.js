@@ -149,7 +149,7 @@
 // up to its `resting` things at rest, its `afloat` floaters and its `shards`
 // of broken ice (QUALITY: a
 // thing at rest is one draw call, src/rock.js syncMeshes, a floater costs
-// more, its physics, its ride and its mirror image), and up to MOVING_MOST
+// more, its physics, its ride and its mirror image), and up to its `moving`
 // on the move (flying, skimming, sinking, tumbling); past a cap the oldest
 // of that kind shrinks away over FADE_SECONDS where it is, frozen
 // (keepWithinCaps, fadeOut), never vanishing at once. A floater a gale has
@@ -362,9 +362,13 @@ import { createKoiGarden, koiGround, holdInGarden, keepInPond, keepOutOfGarden }
 //                 runs its motion and, under a gale, a lookup of its waves in
 //                 the vertex shader, so a phone draws fewer; the haze carries
 //                 the snow either way.
-//   resting, afloat, shards  the things kept at rest, afloat and the ice's
-//                 shards (the header); past them the oldest of that kind
-//                 shrinks away.
+//   resting, afloat, shards, moving  the things kept at rest, afloat, the
+//                 ice's shards and on the move (the header); past them the
+//                 oldest of that kind shrinks away. A floater costs most: its
+//                 physics meets every other floater's each step, and while the
+//                 water moves its mirror image is drawn again each frame.
+//                 afloat + shards is at most src/floaterRide.js MAX_FLOATERS,
+//                 the floaters whose ride is read back.
 //   spray         the splash's spray (src/spray.js): `ring` the slots of its
 //                 ring in use (sprites in flight at once, the oldest
 //                 overwritten past them) and `share` the share of its sprites
@@ -376,9 +380,9 @@ import { createKoiGarden, koiGround, holdInGarden, keepInPond, keepOutOfGarden }
 // and every mesh takes 16-bit indices (at most 254 segments: Three.js keeps
 // the index 65535 for primitive restart).
 export const QUALITY = {
-  high: { grid: 512, meshSegments: 254, underScale: 1.0, fluidScale: 1.0, idleFrameRate: 30, maxDpr: 2.0, rings: 24, ringFade: 8, rainTexels: 512, dropRings: 24, crownDrops: 3500, snowShare: 1, resting: 40, afloat: 16, shards: 16, spray: { ring: 65536, share: 1 } },
-  medium: { grid: 256, meshSegments: 160, underScale: 0.5, fluidScale: 0.5, idleFrameRate: 30, maxDpr: 2.0, rings: 12, ringFade: 4, rainTexels: 256, dropRings: 16, crownDrops: 2000, snowShare: 0.6, resting: 30, afloat: 14, shards: 10, spray: { ring: 16384, share: 0.4 } },
-  low: { grid: 256, meshSegments: 128, underScale: 0.5, fluidScale: 0.5, idleFrameRate: 30, maxDpr: 1.5, rings: 10, ringFade: 3, rainTexels: 256, dropRings: 12, crownDrops: 2000, snowShare: 0.4, resting: 20, afloat: 12, shards: 6, spray: { ring: 8192, share: 0.2 } },
+  high: { grid: 512, meshSegments: 254, underScale: 1.0, fluidScale: 1.0, idleFrameRate: 30, maxDpr: 2.0, rings: 24, ringFade: 8, rainTexels: 512, dropRings: 24, crownDrops: 3500, snowShare: 1, resting: 80, afloat: 32, shards: 24, moving: 40, spray: { ring: 65536, share: 1 } },
+  medium: { grid: 256, meshSegments: 160, underScale: 0.5, fluidScale: 0.5, idleFrameRate: 30, maxDpr: 2.0, rings: 12, ringFade: 4, rainTexels: 256, dropRings: 16, crownDrops: 2000, snowShare: 0.6, resting: 45, afloat: 21, shards: 15, moving: 30, spray: { ring: 16384, share: 0.4 } },
+  low: { grid: 256, meshSegments: 128, underScale: 0.5, fluidScale: 0.5, idleFrameRate: 30, maxDpr: 1.5, rings: 10, ringFade: 3, rainTexels: 256, dropRings: 12, crownDrops: 2000, snowShare: 0.4, resting: 20, afloat: 12, shards: 6, moving: 20, spray: { ring: 8192, share: 0.2 } },
 };
 export const PIXEL_BUDGET = 2.6e6;   // device pixels in the canvas, on every preset
 const QUALITY_ORDER = ['high', 'medium', 'low'];
@@ -444,9 +448,9 @@ const MARGIN_RADII = 4;       // ...or this many of the rock's radius, if more: 
 const HAND_CLEARANCE = 0.01;  // m: the least a held thing's farthest point is over the water (handPosition)
 const POOL_MARGIN = 0.25;     // metres inside the pool's walls a throw keeps to (or MARGIN_RADII of the rock's radius; a plate, its reach: throwMargin)
 const EYE_EDGE = 0.3;         // metres inside the pool's edge over which the deck's height eases in for the eye
-const MOVING_MOST = 20;        // things on the move (flying, skimming, sinking, tumbling) at once: past this the oldest fades out (keepWithinCaps)
 const FADE_SECONDS = 0.6;      // a thing past a cap shrinks away over this long (fadeOut)
 const FARTHEST_AWAY = 30;      // m: a floater a gale has drifted, or a thing slid over the ice, this far from the pond is out of sight, and goes
+const UNDER_MAGNIFIED = 1.333;   // a thing under the water, seen from above, looks at most the water's index nearer (SEEN_THROUGH_WATER): showDetail
 const CATCH_UP = 12;           // a frame moves the world at most this many of its steps (simulate: 50 ms; the old frame's 12 substeps)
 const TRACE = { points: 4000, step: 0.01, marks: 100, cross: 0.06 };   // a stone's traced path (setTracing): at most this many points, one per this many metres it moves; at most this many touches and arc tops marked; a touch's cross this many metres each way
 const MIN_FOV = 8;            // degrees: the narrowest zoom
@@ -2009,9 +2013,9 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     return rock.state === 'rest' ? 'resting' : 'moving';
   }
 
-  /** Past a cap (the header: the preset's `resting`, `afloat` and `shards`, MOVING_MOST), the oldest of that kind fades out. */
+  /** Past a cap (the header: the preset's `resting`, `afloat`, `shards` and `moving`), the oldest of that kind fades out. */
   function keepWithinCaps() {
-    const most = { resting: settings.resting, afloat: settings.afloat, shards: settings.shards, moving: MOVING_MOST };
+    const most = { resting: settings.resting, afloat: settings.afloat, shards: settings.shards, moving: settings.moving };
     const count = { resting: 0, afloat: 0, shards: 0, moving: 0 };
     for (const rock of rocks) if (rock.fading === undefined && rock.state !== 'held') count[kindOf(rock)]++;
     for (const rock of rocks) {   // the oldest first
@@ -2024,7 +2028,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   /** Start a thing shrinking away where it is (simulate: over FADE_SECONDS, then retireRock), frozen: no more steps or knocks. */
   function fadeOut(rock) { rock.fading = 0; }
 
-  /** Take a stone out of the scenes; keepMaterials frees only its geometry (warmUp keeps a stone's materials, so their program stays compiled). */
+  /** Take a stone out of the scenes; keepMaterials frees only its geometries (warmUp keeps a stone's materials, so their program stays compiled). */
   function retireRock(rock, { keepMaterials = false } = {}) {
     if (grab.rock === rock) endGrab();
     ice.forget(rock);
@@ -2035,7 +2039,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       if (rock.meshMirror.visible) viewChanged = true;   // the mirror image is drawn again without it
       sceneMain.remove(rock.meshMirror);
     }
-    if (keepMaterials) rock.geometry.dispose();
+    if (keepMaterials) rock.disposeGeometry();
     else rock.dispose();
     rocks.splice(rocks.indexOf(rock), 1);
   }
@@ -2634,6 +2638,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     if (skip.spray) splash.spray.mesh.visible = false;
     if (!skip.fluid) splash.prepareFrame();
     const fromBelow = camera.position.y < (galeWaves.on ? galeSurfaceAt(camera.position.x, camera.position.z) : 0);
+    showDetail(fromBelow);   // each ball's meshes as fine as each pass shows (src/rock.js)
     if (!fromBelow) updateReflection();   // from below no mirror is needed; a change of view keeps it marked stale until the eye surfaces
     // A floater whose rim keeps the water off its top (a pizza afloat, toppings up): the water is not drawn inside its rim.
     surface.setDryDiscs(rocks.filter((rock) => rock.dryDisc > 0).map((rock) => ({ x: rock.meshAbove.position.x, z: rock.meshAbove.position.z, radius: rock.dryDisc })));
@@ -2673,6 +2678,23 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     splash.setGlare(glare.texture, skip.glare ? 0 : glare.share);
     if (skip.fluid || fromBelow) splash.toneMap(renderer, mainTarget, null);
     else splash.render(renderer, camera, mainTarget, null);
+  }
+
+  /**
+   * Each ball drawn from as fine a mesh as it shows (src/rock.js showDetail): its radius in each pass's pixels, from
+   * the eye's distance to it, the canvas's for its part above the water, the under-water pass's and the mirror image's
+   * (underScale of the canvas's) for its part under the water and its mirror image, the part under the water as much
+   * nearer as the water's surface makes it look (UNDER_MAGNIFIED; from below, where nothing bends it, the canvas's).
+   */
+  function showDetail(fromBelow) {
+    const focalPixels = resolution.y / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2));
+    const belowScale = fromBelow ? 1 : (underTarget.height / resolution.y) * UNDER_MAGNIFIED;
+    const mirrorScale = reflectionTarget.height / resolution.y;
+    for (const rock of rocks) {
+      if (!rock.detail) continue;
+      const pixelRadius = (rock.radius * focalPixels) / Math.max(camera.position.distanceTo(rock.meshAbove.position), rock.radius);
+      rock.showDetail({ above: pixelRadius, below: pixelRadius * belowScale, mirror: pixelRadius * mirrorScale });
+    }
   }
 
   // The view from under the water (VIEWS.under). What the under-water pass
@@ -2754,7 +2776,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       solverAsleep: water.asleep,
       rings: { live: rings.live, fading: rings.fading, limit: rings.liveLimit, passes: rings.passesRun, fetches: rings.fetchesRun },
       dropRings: { live: dropRings.live, limit: dropRings.liveLimit, ready: dropRings.ready },
-      things: { kept: rocks.length, fading: rocks.filter((rock) => rock.fading !== undefined).length, resting: settings.resting, afloat: settings.afloat, shards: settings.shards, moving: MOVING_MOST },
+      things: { kept: rocks.length, fading: rocks.filter((rock) => rock.fading !== undefined).length, resting: settings.resting, afloat: settings.afloat, shards: settings.shards, moving: settings.moving },
       wind: windName,
       gale: { blowing: galeWaves.on, sheetTriangles: surface.sheetTriangles },
       rain: { weather: weatherName, falling: rain.on, texels: rain.texels },

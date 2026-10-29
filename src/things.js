@@ -181,6 +181,7 @@ const ROLLS = { solid: 5 / 7, shell: 3 / 5 };   // the share of its speed along 
 const BODY_SHAPES = ['sphere', 'mesh'];         // the bodies src/rock.js knows
 const AIR_MODELS = ['ballistic', 'flutter'];    // the flights src/rock.js knows (Rock.fly)
 const CALLED = { Stones: 'a rock', Balls: 'a ball', Gems: 'a gem' };
+const LAST_GROUPS = ['Gems'];                    // listed after every other group (thingGroups), whenever defined: a gem is seldom thrown
 const DEFAULTS = { air: { drag: 0.47, model: 'ballistic' }, look: { roughness: 0.92, reflection: 0.9, wet: { darker: 0.15, glossier: 0.4 } }, abilities: { skips: false, held: true } };
 
 export const THINGS = {};
@@ -471,7 +472,10 @@ export function onThingsChange(listener) {
   return () => listeners.delete(listener);
 }
 
-/** The groups, in the order their first things were defined, each with its things' keys: what is offered, the hidden left out. */
+/**
+ * The groups, in the order their first things were defined but LAST_GROUPS's at the end, each with its things' keys:
+ * what is offered, the hidden left out.
+ */
 export function thingGroups() {
   const groups = new Map();
   for (const key of THING_NAMES) {
@@ -480,7 +484,8 @@ export function thingGroups() {
     if (!groups.has(group)) groups.set(group, []);
     groups.get(group).push(key);
   }
-  return [...groups].map(([name, keys]) => ({ name, keys }));
+  const lastRank = (name) => LAST_GROUPS.indexOf(name);   // -1, before any of them, for every other group
+  return [...groups].sort(([first], [second]) => lastRank(first) - lastRank(second)).map(([name, keys]) => ({ name, keys }));
 }
 
 // ---- the things ------------------------------------------------------------
@@ -666,7 +671,7 @@ defineBuiltIn('ice-shard', {
 });
 
 // The things below are defined after the shard so that every thing before keeps its place in THING_NAMES (the probes
-// seed each thing's throws by it); the menu lists each group's in the order defined.
+// seed each thing's throws by it); the menu lists each group's in the order defined (and the groups so, but LAST_GROUPS).
 
 // A banana (the header): about 920 kg/m³ whole, ripe (Ambon bananas, measured by what they displace, 932 falling to
 // 890 kg/m³ as they ripened), so it floats with all but a sliver of it under. Long and thin, its nominal radius is its

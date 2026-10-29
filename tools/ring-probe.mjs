@@ -1071,7 +1071,7 @@ process.exit(failures === 0 ? 0 : 1);
  * sources' own splats and plans.
  */
 async function gpuCheck() {
-  const { launchBrowser } = await import('./browser.mjs');
+  const { launchBrowser, patience } = await import('./browser.mjs');
   const { readFile } = await import('node:fs/promises');
   const { createServer } = await import('node:http');
   const path = await import('node:path');
@@ -1100,7 +1100,7 @@ async function gpuCheck() {
   const problems = [];
   page.on('pageerror', (error) => problems.push(String(error)));
   await page.goto(`http://localhost:${server.address().port}/index.html?paused=1&ui=0&quality=low`);
-  await page.waitForFunction(() => !!window.__pond, { timeout: 120000 });
+  await page.waitForFunction(() => !!window.__pond, null, { timeout: patience(120000) });   // (the function's argument, then the options)
   await page.evaluate(() => {
     let state = 12345;
     Math.random = () => { state = (state * 16807) % 2147483647; return (state - 1) / 2147483646; };

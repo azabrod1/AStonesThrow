@@ -84,7 +84,7 @@
 //
 // --root serves another checkout (a git archive of an earlier commit, say);
 // the screenshots and the checks then describe that version.
-import { launchBrowser } from './browser.mjs';
+import { launchBrowser, patience } from './browser.mjs';
 import { mkdir, readFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import path from 'node:path';
@@ -163,7 +163,7 @@ for (const framing of FRAMINGS) {
   for (let load = 0; load < 3 && !pointerTook; load++) {
     if (load === 0) await page.goto(`http://localhost:${server.address().port}/index.html?quality=low&paused=1`, { waitUntil: 'domcontentloaded' });
     else await page.reload({ waitUntil: 'domcontentloaded' });
-    await page.waitForFunction(() => !!window.__pond, undefined, { timeout: 180000 });
+    await page.waitForFunction(() => !!window.__pond, undefined, { timeout: patience(180000) });
     pointerTook = await page.waitForFunction((touch) => matchMedia('(pointer: coarse)').matches === touch, framing.touch, { timeout: 5000 }).then(() => true, () => false);
   }
   check(pointerTook, `the page reports the framing's pointer (${framing.touch ? 'a finger: pointer coarse' : 'a mouse: pointer fine'})`);

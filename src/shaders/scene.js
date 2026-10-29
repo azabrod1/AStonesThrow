@@ -582,9 +582,24 @@ ${SNOW_COVER}
 //           as an unresolved layer, its median, as the map's boil share
 //           passes FOAM_LACE_BOIL_FROM to FOAM_LACE_BOIL_TO, so it is
 //           bubbles alone and covers about the same;
-//   coarse  FOAM_COARSE_CELL cells, a bubble 3 to 7 mm across in each;
+//   coarse  FOAM_COARSE_CELL cells, a bubble 2 to 10 mm across in each,
+//           most small (FOAM_COARSE_SKEW): real foam is polydisperse, most
+//           of its bubbles small and a few big ones setting what shows (half
+//           here under 3 mm, one in ten over 8 mm), where a uniform draw
+//           over a narrow range was a second population of one size; a
+//           longer tail (to 13 mm) drew the foam 12% darker from the bank
+//           than it is, the faded layer's median standing for bubbles whose
+//           big ones are opaque (tools/foam-probe.mjs's brightness);
 //   fine    FOAM_FINE_CELL cells, a bubble 1.7 to 3.3 mm across in each,
 //           packed so they nearly touch.
+// In both bubble layers a bubble's centre lies anywhere in its cell
+// (FOAM_BUBBLE_JITTER, 1): a grid jittered over j of a cell keeps sinc²(πj)
+// of its lattice's peaks, 0.135 at the 0.7 these once had, which showed
+// close up as rows of bubbles and of their clear films, and none at all at
+// a whole cell. A centre roaming its cell is still within a radius (at most
+// 0.65 of a cell) of every point its disc covers, so the 3×3 search finds
+// every disc over the pixel (tools/foam-probe.mjs counts what a 5×5 search
+// finds that it misses, and checks for a lattice).
 // The bubbles of the two finer layers make one field, the signed distance
 // to the nearest bubble's edge (positive inside, their union), in units of
 // FOAM_BUBBLE_SCALE. The pattern is FOAM_LACE_WEIGHT·lace +
@@ -603,11 +618,24 @@ ${SNOW_COVER}
 // them are left. The map decays at the same rate everywhere, so a raft thins
 // from its weak edge inward, which is how foam pops; ln makes that steady in
 // time.
-// The coarse bubbles also carry clear film centres and scattering rims;
-// the fine bubbles between them stay milky. Dense, freshly churned foam
-// hides the films, then the map's separate boil/raft mixture exposes them
-// as it drains. This reuses the coarse cell search, with no new texture,
-// clock or noise layer. Unresolved films tend to their measured mean opacity.
+// Some coarse bubbles also carry a clear window, a drained film the water
+// shows through; the fine bubbles stay milky. Drainage thins the top film of
+// a big bubble first, while a small one is all Plateau border and stays
+// white, and in a fresh boil films burst rather than drain: so a window is
+// drawn only where a coarse bubble shows (it wins the union over the fine
+// layer, softened over a pixel; a small coarse bubble mostly loses there),
+// on a random share of them by the bubble's own key (FOAM_WINDOW_SHARE: half
+// of a raft's, fewer of a boil's), each window its own size within its
+// bubble (FOAM_WINDOW_SIZE). One window to every coarse cell, of one size,
+// was a grid of dark dots. Dense, freshly churned foam hides the windows,
+// then thins (wetness) to expose them as it drains. This reuses the coarse
+// cell search, with no new texture, clock or noise layer. Unresolved films
+// tend to their mean, each window by its own size (it is smaller than its
+// cell, and blurred its soft edge darkens more than it covers), as
+// 1 − share·FOAM_FILM_WINDOWS: FOAM_FILM_WINDOWS is the
+// mean darkening were every shown coarse bubble windowed, measured by
+// tools/foam-probe.mjs, and the share scales it (a bubble's key chooses it
+// independently of its window's size).
 //
 // Antialiasing. The threshold's edge is one pixel wide at any distance: its
 // width is the change of the pattern across the pixel, from the pattern's
@@ -724,7 +752,9 @@ ${SURFACE_BUBBLE}
 #define FOAM_FINE_CELL 0.003               // metres
 #define FOAM_FINE_RADII vec2(0.28, 0.55)   // bubble radius range, cells
 #define FOAM_COARSE_CELL 0.008
-#define FOAM_COARSE_RADII vec2(0.2, 0.45)
+#define FOAM_COARSE_RADII vec2(0.12, 0.65) // bubble radius range, cells, drawn as mix(radii, u^FOAM_COARSE_SKEW)...
+#define FOAM_COARSE_SKEW 3.0               // ...most small, a few big
+#define FOAM_BUBBLE_JITTER 1.0             // the bubble layers' centres lie anywhere in their cells (no lattice: the header)
 #define FOAM_LACE_CELL 0.03
 #define FOAM_LACE_RADII vec2(0.0, 0.35)    // the power diagram's weights: cells of unequal size
 #define FOAM_LACE_THICKNESS 0.45           // the lace is +1 on an edge and -1 this many cells from it...
@@ -757,10 +787,10 @@ ${SURFACE_BUBBLE}
 // fading layer tends to, and the width it hands to the threshold.
 #define FOAM_LACE_MEDIAN -0.52
 #define FOAM_LACE_SPREAD 1.49
-#define FOAM_FINE_MEDIAN 0.03
-#define FOAM_FINE_SPREAD 0.6
-#define FOAM_UNION_MEDIAN 0.26
-#define FOAM_UNION_SPREAD 0.74
+#define FOAM_FINE_MEDIAN -0.01
+#define FOAM_FINE_SPREAD 0.65
+#define FOAM_UNION_MEDIAN 0.17
+#define FOAM_UNION_SPREAD 0.8
 #define FOAM_CLUMP_SPREAD 0.29             // of one octave of value noise less 0.5, whose median is 0 (the clumps' and the ragged outline's)
 #define FOAM_FADED_EDGE 0.5                // the share of a faded layer's spread that widens the edge
 // Below this map value no pattern can reach the threshold.
@@ -771,15 +801,19 @@ ${SURFACE_BUBBLE}
 #define FOAM_RIM_SHADE 0.74
 #define FOAM_CREASE_SHADE 0.82
 #define FOAM_GAP_SHADE 0.86
-#define FOAM_FADED_SHADE 0.93
+#define FOAM_FADED_SHADE 0.92
 #define FOAM_ALBEDO vec3(0.9, 0.92, 0.93)
 #define FOAM_SKY_LIGHT 1.5                 // the sky lights foam from inside too, not only its top
 #define FOAM_GLINT 2.0                     // a bubble's film has two faces
 #define FOAM_GLINT_VARIANCE 0.02           // slope variance of the film's sheen
 #define FOAM_THIN_OPACITY 0.65             // foam just over the threshold is a single layer of bubbles,
 #define FOAM_OPAQUE 1.5                    // translucent; this far over it, opaque
-#define FOAM_FILM_CENTRE 0.12              // a single wet bubble transmits most of the water beneath it
-#define FOAM_FILM_MEAN 0.8                // measured by tools/foam-probe.mjs
+#define FOAM_OPACITY_LIFT 1.25             // the faded value's lift for the opacity, of the faded spread (foamLook; measured by tools/foam-probe.mjs)
+#define FOAM_FILM_CENTRE 0.12              // a single wet bubble's window transmits most of the water beneath it
+#define FOAM_WINDOW_SHARE vec2(0.5, 0.15)  // the share of shown coarse bubbles with a window: a raft's, a boil's (by its share of the map)
+#define FOAM_WINDOW_SIZE vec2(0.5, 0.8)    // a window's radius over its bubble's, each bubble's own, within this
+#define FOAM_WINDOW_SOFT 0.15              // its edge, either side of that radius (bubble radii)
+#define FOAM_FILM_WINDOWS 0.099             // measured by tools/foam-probe.mjs: the mean darkening, 1 − film, were every shown coarse bubble windowed
 #define FOAM_FILM_PACKED 0.9               // above this map density, multiple layers hide the clear films
 #define FOAM_CLOUD_HALF 0.07               // the cloud's map value that sends back half what a deep cloud does (Kubelka–Munk)
 #define GALE_CLOUD_SHARE 0.3               // the share of a whitecap's active whitewater that is a cloud under the surface (WATER_FRAGMENT)
@@ -839,7 +873,8 @@ vec2 valueNoisePair(vec2 position, out mat2 jacobian) {
 }
 
 // One feature per cell, jittered by up to jitter/2 of a cell from its centre,
-// with a radius drawn from radii. For the best two features, by radius minus
+// with a radius drawn from radii as mix(radii, u^skew), u uniform (skew 1:
+// uniform). For the best two features, by radius minus
 // distance (cell units; positive inside that feature's disc): the value and
 // the offset of the point from the feature; the winner's radius; and the sum
 // of the two features' random keys, which names the edge between them.
@@ -853,7 +888,7 @@ struct FoamCells {
   float bestKey;      // the winning feature's own random key, 0 to 1 (the lace's readiness to open)
 };
 
-FoamCells foamCells(vec2 position, vec2 radii, float jitter, vec2 seed) {
+FoamCells foamCells(vec2 position, vec2 radii, float skew, float jitter, vec2 seed) {
   vec2 cell = floor(position);
   vec2 within = position - cell;
   FoamCells result = FoamCells(-10.0, -10.0, vec2(1.0, 0.0), vec2(1.0, 0.0), 1.0, 0.0, 0.0);
@@ -864,7 +899,7 @@ FoamCells foamCells(vec2 position, vec2 radii, float jitter, vec2 seed) {
       vec2 neighbour = vec2(float(column), float(row));
       vec3 random = foamHash(cell + neighbour + seed);
       vec2 offset = within - neighbour - 0.5 - jitter * (random.xy - 0.5);
-      float radius = mix(radii.x, radii.y, random.z);
+      float radius = mix(radii.x, radii.y, skew == 1.0 ? random.z : pow(random.z, skew));
       float inside = radius - length(offset);
       if (inside > result.best) {
         result.runnerUp = result.best;
@@ -937,7 +972,7 @@ FoamLook foamLook(vec2 position, vec2 acrossX, vec2 acrossY, float foam, vec2 fo
   if (laceFade < 1.0) {
     mat2 warpJacobian;
     vec2 warp = FOAM_LACE_WARP * (valueNoisePair(position * FOAM_LACE_WARP_FREQUENCY, warpJacobian) - 0.5);
-    FoamCells cells = foamCells(position / FOAM_LACE_CELL + warp, FOAM_LACE_RADII, 0.9, vec2(3.0, 5.1));
+    FoamCells cells = foamCells(position / FOAM_LACE_CELL + warp, FOAM_LACE_RADII, 1.0, 0.9, vec2(3.0, 5.1));
     float thickness = FOAM_LACE_THICKNESS * (1.0 - FOAM_LACE_THINNING * fract(cells.edgeKey * 7.13));
     float raw = 1.0 - 2.0 * (cells.best - cells.runnerUp) / thickness;
     // Its gradient in the warped cell coordinates, then in metres through the warp.
@@ -960,7 +995,7 @@ FoamLook foamLook(vec2 position, vec2 acrossX, vec2 acrossY, float foam, vec2 fo
   float fineBubble = FOAM_FINE_MEDIAN;
   vec2 fineGradient = vec2(0.0);
   if (fineFade < 1.0) {
-    fine = foamCells(position / FOAM_FINE_CELL, FOAM_FINE_RADII, 0.7, vec2(11.0, 18.7));
+    fine = foamCells(position / FOAM_FINE_CELL, FOAM_FINE_RADII, 1.0, FOAM_BUBBLE_JITTER, vec2(11.0, 18.7));
     fineBubble = mix(fine.best * FOAM_FINE_CELL / FOAM_BUBBLE_SCALE, FOAM_FINE_MEDIAN, fineFade);
     fineGradient = -fine.bestOffset / max(length(fine.bestOffset), 1e-4) * (1.0 - fineFade) / FOAM_BUBBLE_SCALE;
   }
@@ -968,7 +1003,7 @@ FoamLook foamLook(vec2 position, vec2 acrossX, vec2 acrossY, float foam, vec2 fo
   float coarseBubble = -FOAM_BUBBLE_CLAMP;
   vec2 coarseGradient = vec2(0.0);
   if (coarseFade < 1.0) {
-    coarse = foamCells(position / FOAM_COARSE_CELL, FOAM_COARSE_RADII, 0.7, vec2(23.0, 39.1));
+    coarse = foamCells(position / FOAM_COARSE_CELL, FOAM_COARSE_RADII, FOAM_COARSE_SKEW, FOAM_BUBBLE_JITTER, vec2(23.0, 39.1));
     coarseBubble = coarse.best * FOAM_COARSE_CELL / FOAM_BUBBLE_SCALE;
     coarseGradient = -coarse.bestOffset / max(length(coarse.bestOffset), 1e-4) / FOAM_BUBBLE_SCALE;
   }
@@ -1010,7 +1045,13 @@ FoamLook foamLook(vec2 position, vec2 acrossX, vec2 acrossY, float foam, vec2 fo
 
   FoamLook look;
   look.cover = smoothstep(-width, width, value);
-  look.opacity = mix(FOAM_THIN_OPACITY, 1.0, smoothstep(0.0, FOAM_OPAQUE, value));
+  // A faded layer stands at its median, but the pixels it covers are those whose true value is above the threshold,
+  // on average about 0.8σ above the faded one where the cover is partial (E[v | v > 0] of a Gaussian of the faded
+  // spread), and the opacity rises with the value: taken at the faded value, faded foam drew some 10% darker than its
+  // own supersampled self (tools/foam-probe.mjs). So the opacity takes the value lifted by FOAM_OPACITY_LIFT of the
+  // faded spread, as much as the cover is partial: nothing resolved, nothing where the cover is whole.
+  float lift = FOAM_OPACITY_LIFT * spreadOfFaded * (1.0 - look.cover);
+  look.opacity = mix(FOAM_THIN_OPACITY, 1.0, smoothstep(0.0, FOAM_OPAQUE, value + lift));
   // Shading from the bubble that won the union, as resolved as its layer is.
   FoamCells winner = fine;
   float winnerFade = fineFade;
@@ -1029,17 +1070,28 @@ FoamLook foamLook(vec2 position, vec2 acrossX, vec2 acrossY, float foam, vec2 fo
   float turnAcrossPixel = footprint / (winner.bestRadius * (coarseWins ? FOAM_COARSE_CELL : FOAM_FINE_CELL));
   look.glintVariance = FOAM_GLINT_VARIANCE + turnAcrossPixel * turnAcrossPixel;
 
-  // The coarse bubbles that define the raft also define its wet films. A
-  // single layer transmits water through their centres and scatters at their
-  // rims; a dense boil hides those centres with multiple layers. The map's
-  // two populations already decay independently, so this material drains
-  // naturally without a new clock, moving noise or another cell search.
-  float wetness = (1.0 - smoothstep(0.25, FOAM_FILM_PACKED, foam)) * mix(1.0, 0.75, boilFraction);
+  // The windows (the header): a share of the coarse bubbles that show, each
+  // chosen and sized by its own key, the water through its middle. Thin
+  // foam exposes them (wetness); a dense boil hides them under its layers.
+  // The map's two populations already decay independently, so this material
+  // drains naturally without a new clock, moving noise or another cell search.
+  float wetness = 1.0 - smoothstep(0.25, FOAM_FILM_PACKED, foam);
+  float windowShare = mix(FOAM_WINDOW_SHARE.x, FOAM_WINDOW_SHARE.y, boilFraction);
+  float chosen = step(coarse.bestKey, windowShare);
+  float windowRadius = mix(FOAM_WINDOW_SIZE.x, FOAM_WINDOW_SIZE.y, fract(coarse.bestKey * 47.3));
   float filmWidth = max(footprint / (FOAM_COARSE_CELL * coarse.bestRadius), 0.04);
   float filmRadius = length(coarse.bestOffset) / coarse.bestRadius;
-  float centre = 1.0 - smoothstep(0.65 - filmWidth, 0.98 + filmWidth, filmRadius);
-  float film = 1.0 - (1.0 - FOAM_FILM_CENTRE) * centre;
-  film = mix(film, FOAM_FILM_MEAN, coarseFade);
+  float centre = 1.0 - smoothstep(windowRadius - FOAM_WINDOW_SOFT - filmWidth, windowRadius + FOAM_WINDOW_SOFT + filmWidth, filmRadius);
+  // Where the coarse bubble shows: it wins the union, over a pixel (in the bubbles' units, a pixel is footprint / FOAM_BUBBLE_SCALE).
+  float pixelInBubbles = max(footprint / FOAM_BUBBLE_SCALE, 1e-3);
+  float shows = smoothstep(-pixelInBubbles, pixelInBubbles, coarseBubble - fineBubble);
+  float film = 1.0 - (1.0 - FOAM_FILM_CENTRE) * centre * chosen * shows;
+  // A window fades to the windows' mean by its own size, not its cell's: blurred over a pixel its soft edge spreads
+  // further out than in, so a window a few pixels across darkened more of the water than it covers (the far foam
+  // drew 8% darker than it is, tools/foam-probe.mjs); faded before then, the mean holds at any distance.
+  float windowAcross = 2.0 * windowRadius * coarse.bestRadius * FOAM_COARSE_CELL;
+  float windowFade = smoothstep(FOAM_FADE_START, FOAM_FADE_END, footprint / windowAcross);
+  film = mix(film, 1.0 - windowShare * FOAM_FILM_WINDOWS, max(coarseFade, windowFade));
   look.opacity *= mix(1.0, film, wetness);
   return look;
 }

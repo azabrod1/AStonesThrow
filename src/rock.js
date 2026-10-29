@@ -253,6 +253,14 @@
 // the water, on the mirror's layer, its distance in alpha as the pool's
 // walls write it, MIRROR_NEARNESS in src/shaders/scene.js).
 //
+// Its detail (showDetail): a ball is drawn from the coarsest of its meshes
+// (src/thingMeshes.js createBallGeometry `detail`) whose corners lie at most
+// DETAIL.pixels apart on the screen, each of its meshes by its own pass's
+// pixels (src/main.js showDetail), and goes coarser again only once a
+// coarser one would do with DETAIL.hold to spare, so a ball bobbing at the
+// edge does not flick between them. Its physics never sees them: a ball's
+// body is a sphere.
+//
 // Meeting other things (src/collide.js): each is a sphere of
 // collisionRadius, where it is drawn (`centre`: a floater riding the
 // water, src/floaterRide.js), its mass its own and the water it carries
@@ -338,6 +346,10 @@ const IRREGULAR_LIFT = 0.8;        // ...of its lumps, times its irregularity, i
 const SPIN_LIFT = 0.6;             // ...and of its spin, times ω·R/V along ω × v
 const LIFT_CAP = 0.35;             // at most this C_L in all
 const CREST_REACH = 0.6;           // m: under a gale, no crest reaches higher than this above the still water
+// px: a ball's mesh is the coarsest whose corners lie at most `pixels` apart on the screen, finer than which nothing more
+// shows (the paint between them is the finer mesh's, averaged); it goes coarser only once that coarser mesh's would lie
+// `hold` of that apart (showDetail).
+const DETAIL = { pixels: 1.5, hold: 0.85 };
 // Skipping (the header).
 export const SKIM = {
   pressure: 2.0,      // C: the push along the face's normal, ½·ρ·C·|v|²·(wetted area) (the header)...
@@ -1428,6 +1440,12 @@ export class Rock {
       mesh.scale.setScalar(radius);
       mesh.frustumCulled = false;
     }
+    // Its meshes, coarsest first, its own last (the header: showDetail), and which each of its meshes draws; null for
+    // anything without coarser ones.
+    const detail = this.geometry.userData.detail ?? null;
+    this.detail = detail ? [...detail.coarser, { geometry: this.geometry, spacing: detail.spacing }] : null;
+    if (detail) detail.users = (detail.users ?? 0) + 1;   // the coarser meshes leave the GPU with the last that draws them (disposeGeometry)
+    this.detailShown = detail ? { above: this.detail.length - 1, below: this.detail.length - 1, mirror: this.detail.length - 1 } : null;
     this.syncMeshes();
   }
 
@@ -1568,6 +1586,30 @@ export class Rock {
 
   /** Its meshes: above the water, below it, and afloat in the mirror image. */
   get meshes() { return this.meshMirror ? [this.meshAbove, this.meshBelow, this.meshMirror] : [this.meshAbove, this.meshBelow]; }
+
+  /**
+   * Draw each of its meshes from the coarsest that shows all it can (the header), given its radius in the pixels of
+   * the pass each is drawn in: `above` (meshAbove), `below` (meshBelow) and `mirror` (meshMirror).
+   */
+  showDetail(pixelRadii) {
+    if (!this.detail) return;
+    const meshes = { above: this.meshAbove, below: this.meshBelow, mirror: this.meshMirror };
+    for (const [part, mesh] of Object.entries(meshes)) {
+      if (!mesh) continue;
+      const radius = pixelRadii[part];
+      const coarsestWithin = (pixels) => {
+        const index = this.detail.findIndex((level) => level.spacing * radius <= pixels);
+        return index === -1 ? this.detail.length - 1 : index;
+      };
+      const needed = coarsestWithin(DETAIL.pixels);
+      const shown = this.detailShown[part];
+      // Finer at once; coarser only with DETAIL.hold to spare.
+      const chosen = needed > shown ? needed : Math.min(shown, coarsestWithin(DETAIL.hold * DETAIL.pixels));
+      if (chosen === shown) continue;
+      this.detailShown[part] = chosen;
+      mesh.geometry = this.detail[chosen].geometry;
+    }
+  }
 
   /** Its mass (kg): a ball's or a gem's own; a stone's the nominal ball's of its density (the air's drag's, as it always was). */
   get mass() { return this.thing.byDiameter ? this.density * (4 / 3) * Math.PI * this.radius ** 3 : this.ownMass; }
@@ -3263,8 +3305,20 @@ export class Rock {
     return impact;
   }
 
+  /**
+   * Free its geometry (a shared one stays with its definition: prepareThing) and, with the last thing thrown that draws
+   * them, its coarser meshes' copies on the GPU (showDetail; kept with their kind, each is sent again when next drawn).
+   */
+  disposeGeometry() {
+    if (!this.sharedGeometry) this.geometry.dispose();
+    if (!this.detail) return;
+    const detail = this.geometry.userData.detail;
+    if (--detail.users === 0) for (const { geometry } of detail.coarser) geometry.dispose();
+    this.detail = null;
+  }
+
   dispose() {
-    if (!this.sharedGeometry) this.geometry.dispose();   // a shared one stays with its definition (prepareThing)
+    this.disposeGeometry();
     this.meshAbove.material.dispose();
     this.meshBelow.material.dispose();
     this.meshMirror?.material.dispose();

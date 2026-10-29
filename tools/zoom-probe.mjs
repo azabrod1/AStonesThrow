@@ -46,7 +46,7 @@
 // of its ice hole can be set down on the ice.
 //
 //   node tools/zoom-probe.mjs [--w=1280 --h=720]
-import { launchBrowser } from './browser.mjs';
+import { launchBrowser, patience } from './browser.mjs';
 import { readFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import path from 'node:path';
@@ -81,7 +81,7 @@ const page = await context.newPage();
 const problems = [];
 page.on('pageerror', (error) => problems.push(String(error)));
 await page.goto(`http://localhost:${server.address().port}/index.html?quality=low`, { waitUntil: 'domcontentloaded' });
-await page.waitForFunction(() => !!window.__pond, null, { timeout: 180000 });   // (the function's argument, then the options: SwiftShader takes over a minute to warm up)
+await page.waitForFunction(() => !!window.__pond, null, { timeout: patience(180000) });   // (the function's argument, then the options: SwiftShader takes over a minute to warm up)
 await page.evaluate(() => window.__pond.pause());
 
 // In-page helpers: the water point under a client point, and where a world point is on screen.

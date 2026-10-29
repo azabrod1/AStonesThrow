@@ -36,7 +36,8 @@ the moment a throw leaves the hand and fades back (`?preview=off` leaves
 it out).
 Escape or Reset view (under the menu button while the view is away from
 the shore's) glides back to the shore. The strip at the bottom sets what is
-thrown: its name opens a dropdown of every thing under its group, each with
+thrown: its name opens a dropdown of every thing under its group (the
+gems last, seldom thrown), each with
 its picture (`src/thingMenu.js`; on a phone each group is one row a finger
 scrolls sideways, so the dropdown stays as tall as its groups however many
 things there are), and its slider sets the size (a stone 1.5
@@ -264,11 +265,18 @@ one), and a pond where nothing happens at 30 frames a second; High keeps
 24 stones' rings, Medium 12 and Low 10, 24 of the little rings the
 splash's drops leave (16 and 12), a ring of 65 536 spray sprites,
 Medium 16 384 drawing two fifths of High's and Low 8192 a fifth (each
-sprite standing for that many more drops), and 40 things at rest (a stone on
-the bottom is one draw call) and 16 afloat (a floater costs more: its
-physics, its ride and its mirror image), Medium 30 and 14, Low 20 and 12;
-up to 20 things may be on the move at once, on every preset. Past a count
+sprite standing for that many more drops), and 80 things at rest (a stone on
+the bottom is one draw call), 32 afloat (a floater costs more: its
+physics, its ride and its mirror image) and 24 shards of broken ice,
+Medium 45, 21 and 15, Low 20, 12 and 6; up to 40 things may be on the move
+at once on High, 30 on Medium and 20 on Low. Past a count
 the oldest of that kind shrinks away over 0.6 s, never vanishing at once.
+A ball (20 480 triangles, its seams and dimples pressed into its sphere)
+small on the screen is drawn from a coarser mesh of it, 5120, 1280 or 320
+triangles, its paint averaged as a mipmap's is: the coarsest whose corners
+lie at most 1.5 pixels apart in the pass it is drawn in (its mirror image's
+and under-water part's at those passes' resolution), so a ball near the eye
+or under the zoom is as it always was.
 The canvas never holds more than 2.6 million pixels.
 Core stone/splash programs are compiled while the page loads, under its
 veil: a stone is thrown and drawn there, then cleared away (with the water
@@ -691,8 +699,10 @@ clears. The whole of it drifts downwind at 3 cm/s in a breeze (with the
 wind's strength), and its pattern and specks with it. The foam map says
 where and how much, but its cells are over a centimetre wide, so the water
 shader draws the raft from three layers of cellular noise: bubbles 2 to 3 mm
-across packed together, larger ones of 3 to 7 mm among them, and a lace of
-curved filaments around holes a few centimetres wide. A boil, the bubbles a
+across packed together, larger ones of 2 to 10 mm among them (most small,
+one in ten over 8 mm, as real foam's sizes spread), and a lace of curved
+filaments around holes a few centimetres wide. Each bubble lies anywhere in
+its cell, so none of them, nor their clear windows, fall into rows. A boil, the bubbles a
 splash leaves bursting on fresh water, takes no lace: it is drawn from the
 bubble layers alone, and only a raft (the gale's sea foam) thins into
 filaments. The map's strength,
@@ -703,13 +713,15 @@ nearly solid white, its bubbles shaded darker at their rims and catching the
 sun; as it weakens the holes open, the filaments thin to strings of bubbles
 and clumps, then only the biggest bubbles are left, so a raft thins from its
 edge inward the way foam pops, and foam just over the threshold, a single
-layer of bubbles, lets the water show through. The larger bubbles have clear
-centres and bright rims, with milky fine bubbles between them. The map's
-separate boil and raft amounts control this material: a breaking wave's
-dense froth scatters more light; as it drains, the water shows through the
-bubble films.
-Those films use the existing bubble cells and fade to their measured mean
-opacity at a distance, adding no texture or noise layer. Close up (the
+layer of bubbles, lets the water show through. Some of the larger bubbles
+that show have a clear window, a drained film, each its own size, with milky
+fine bubbles between them: half of a raft's, fewer of a boil's, whose films
+burst rather than drain. The map's separate boil and raft amounts control
+this material: a breaking wave's dense froth scatters more light; as it
+drains, the water shows through the windows. They use the existing bubble
+cells and fade to their measured mean at a distance, each by its own size,
+adding no texture or noise layer; faded foam's opacity is lifted to what its
+covered pixels average, so it keeps its brightness as it recedes. Close up (the
 shoot harness, `--seed=1`, `--view=high --fov=16`), a 6 cm stone thrown
 normally leaves a faint milky ring and a see-through fizz over about its
 hole's mouth at 0.3 to 0.8 s and a few foam specks after; a 20 cm rock
@@ -1387,12 +1399,15 @@ farther out, so it rises into the view rather than filling its corner.
   then) and no request fails.
 - `node tools/foam-probe.mjs` runs the foam's bubble pattern on the CPU, with
   the constants read from the shader: each layer's median and spread and the
-  bubbles' mean shade match what the shader fades them to, a boil's domes
-  average the white the shader's fit gives them at every elevation and lie
-  on no lattice, and at the home,
+  bubbles' mean shade match what the shader fades them to, the clear
+  windows' mean is what they fade to for a raft's share and a boil's, the
+  cell search misses no bubble and the bubbles lie on no lattice, a boil's
+  domes average the white the shader's fit gives them at every elevation,
+  and at the home,
   phone and close-up framings the antialiased pattern covers what a
-  supersampled one does and changes no more than it when the water moves
-  under the pixels; it prints the cell visits per foam pixel. Then it runs
+  supersampled one does, with its brightness within 6%, and changes no more
+  than it when the water moves under the pixels; it prints the cell visits
+  per foam pixel. Then it runs
   the foam map's step with the shader's arithmetic: a surface flow keeps the
   amount to a few per cent and brightens nothing, clears its core, carries a
   raft out to where a source of its area would and leaves a clean hole; the
