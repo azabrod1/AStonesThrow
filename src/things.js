@@ -35,7 +35,12 @@
 //     `curve`, its path's curvature on its side times its radius (a cone
 //     rolls round towards its narrow end, that axis's −: src/rock.js rollStep;
 //     a mesh drawn each its own scales it by its geometry's
-//     `userData.curveScale`).
+//     `userData.curveScale`). `scrapes`: it stands on a few moulded
+//     corners (a toy slide's feet and its chute's end), which catch and
+//     scrape across ice, as a skate turned across its path does, rather than
+//     glide on a face of it: on ice it lands and slides at its own
+//     `friction`, not the ice's lesser (src/rock.js groundFriction,
+//     groundSlowing).
 //   - air: `drag`, its drag coefficient in flight (on the disc of its nominal
 //     radius: 0.47 a ball's; a pizza, flat on, more), and its `model`:
 //     `ballistic` (it tumbles as it flies) or `flutter` (a flat thing: a plate
@@ -88,9 +93,12 @@
 //     `seenThrough`, clear (a shard of ice): afloat, what lies under it shows
 //     through its top by its mesh's `clearShare`, and under the water it is
 //     not drawn from above (src/rock.js).
-//   - abilities: `skips` (Skip skips it: a stone, a pizza), `held` (a throw puts at
-//     most THROW_WORK into it, so a heavy thing leaves slower; a stone keeps
-//     its throw as it always was).
+//   - abilities: `skips` (Skip skips it: a stone, a pizza, an iPhone, each flat,
+//     rigid enough and heavy enough for its face to skim; not a TV, too broad
+//     to throw low and level, a slice of bread, too light to keep its speed,
+//     nor a pie, its filling slopping, nor anything round or tall), `held` (a
+//     throw puts at most THROW_WORK into it, so a heavy thing leaves slower; a
+//     stone keeps its throw as it always was).
 //   - body.meetsAtRim: two such things meet rim to rim (src/collide.js), as
 //     discs in the level of their whole radii: flat pieces of ice afloat
 //     side by side, which must not slide into each other; anything else
@@ -156,7 +164,8 @@
 //     its mesh's volume; it sinks, and lands on the deck with a thud), a
 //     flat-screen TV (54 × 32 × 1.8 cm, 3.6 kg) and an iPhone (15 × 7.2 ×
 //     0.8 cm, 180 g), rigid rectangular plates with their screens on +y
-//     (they slap the water, sink and settle on a broad face), a snowball (5
+//     (they slap the water, sink and settle on a broad face; Skip skims the
+//     iPhone, about twice water's density, as it does a slate), a snowball (5
 //     to 15 cm, packed snow at 450 kg/m³: it floats half out, then soaks to
 //     slush in under half a minute and floats on, nine tenths under) and a
 //     toddler's toy slide (99 × 46 × 70 cm, 4.1 kg, hollow plastic: about
@@ -272,6 +281,7 @@ function definitionProblems(key, definition) {
   need(!material.roll || within(material.rolling, LIMITS.rolling), 'a thing that rolls needs material.rolling, 0 to 1');
   need(material.rollsAbout === undefined || (material.roll && body.shape === 'sphere' && Array.isArray(material.rollsAbout) && material.rollsAbout.length === 3 && material.rollsAbout.every(isNumber) && Math.abs(Math.hypot(...material.rollsAbout) - 1) < 1e-6), 'material.rollsAbout must be a unit [x, y, z] of a sphere that rolls');
   need(material.curve === undefined || (material.rollsAbout && within(material.curve, [0, 0.5])), 'material.curve needs material.rollsAbout, and is 0 to 0.5');
+  need(material.scrapes === undefined || (typeof material.scrapes === 'boolean' && !material.roll), 'material.scrapes must be true or false, of a thing that does not roll');
   need(air.drag === undefined || within(air.drag, LIMITS.drag), `air.drag must be ${LIMITS.drag.join(' to ')}`);
   need(air.model === undefined || AIR_MODELS.includes(air.model), `air.model must be one of ${AIR_MODELS.join(', ')}`);
   need(air.spin === undefined || (Array.isArray(air.spin) && air.spin.length === 2 && air.spin.every(isNumber) && air.spin[0] >= 0 && air.spin[0] <= air.spin[1] && air.spin[1] <= LIMITS.spin), `air.spin must be [least, most] within 0 to ${LIMITS.spin} rad/s`);
@@ -655,6 +665,9 @@ defineBuiltIn('iphone', {
   air: { drag: 1.1, model: 'flutter' },
   water: { restingHeight: 0.8 / 15 },
   look: { mesh: 'iphone', roughness: 0.18, reflection: 1.1, wet: { darker: 0.03, glossier: 0.2 } },
+  // Flat, rigid and about 2100 kg/m³ (a slate's 2750), it skims (src/rock.js skim) as a flat stone does: three or four
+  // times thrown normally (tools/thing-probe.mjs).
+  abilities: { skips: true },
 });
 
 // A shard of ice (the header): each one the ice breaks has its own outline, and the mass of ice its slab holds (src/ice.js
@@ -733,11 +746,13 @@ defineBuiltIn('snowball', {
 // shown as its length. A throw puts no more than THROW_WORK into it, and it tumbles slowly (`air.spin`), dragged by
 // the air on more than its ball's disc. Kept upright, it settles on the deck on its feet or upside down, not balanced
 // on a corner; afloat the water leaves it as it lands (on its feet, its side or upside down: it is no heavier low
-// down), its buoyancy cut slantwise to all its faces (`columnsAlong`).
+// down), its buoyancy cut slantwise to all its faces (`columnsAlong`). It stands on the moulded corners of its feet and
+// its chute's end (upside down, of its rails' tops and its chute's lip), which catch and scrape across ice rather than
+// glide on it (`scrapes`): on ice it comes to a stop near where it lands, where a stone skates on.
 defineBuiltIn('slide', {
   name: 'Toy slide', short: 'Slide', group: 'Other', note: 'Hollow plastic, 4 kg: it floats high', called: 'a toy slide',
   body: { shape: 'mesh', upright: true, size: { by: 'fixed', diameter: 0.422, mass: 4.1 } },
-  material: { bounce: [0.15, 0.25], friction: 0.5 },
+  material: { bounce: [0.15, 0.25], friction: 0.5, scrapes: true },
   air: { drag: 2.2, spin: [1, 4] },
   water: { restingHeight: 0.8, columnsAlong: [1, 1, 1] },
   look: { mesh: 'slide', roughness: 0.45, reflection: 0.9, wet: { darker: 0.02, glossier: 0.3 } },

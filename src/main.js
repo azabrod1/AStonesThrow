@@ -1937,7 +1937,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   function throwAt(x, z, options = {}) {
     const name = Object.hasOwn(THINGS, options.thing ?? '') ? options.thing : thingName;
     const { thing, radius, mass, size } = measureThing(name, options.size, options.radius);
-    // Skip skips what skips (src/things.js abilities: a stone of any kind, a pizza); anything else is thrown as ever.
+    // Skip skips what skips (src/things.js abilities: a stone of any kind, a pizza, an iPhone); anything else is thrown as ever.
     const thrownAs = MANNERS.includes(options.manner) ? options.manner : options.skip === undefined ? manner : options.skip ? 'skip' : 'toss';
     const skips = thrownAs === 'skip' && thing.skips;
     const target = new THREE.Vector3(x, 0, z);

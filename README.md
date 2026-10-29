@@ -51,7 +51,7 @@ about twice as fast, with a far bigger splash: below; the medium toss is
 the throw the splash is tuned to). Then the slow-motion clock, each press
 the next rate round (1×, ¼×, ⅒× real time), lit while slow; then the throw
 button, the strip's one lit control. With Skip, a flat stone (or a pizza,
-spun like a frisbee) is thrown low and level, spinning, at the strength's
+spun like a frisbee, or an iPhone) is thrown low and level, spinning, at the strength's
 speed, and skips across the water (below), in the direction of the tap
 (even on the sky); its first touch lands where a level throw puts it. Skip
 is greyed out for what cannot skip, and choosing such a thing goes back to
@@ -96,8 +96,10 @@ is remembered on the device (but the view, which opens on the shore):
   do, and come to rest lying along the lake bed's slope. In the pool they
   land wherever they fit, their slap standing no crown, and its walls meet
   their corners. Choose them under Other or use `?thing=tv` and
-  `?thing=iphone`; both support Toss and Lob. A banana (about 920 kg/m³
-  whole) tumbles end over end and floats with only a sliver out. A slice
+  `?thing=iphone`; both support Toss and Lob, and the iPhone, flat and
+  about twice as dense as water, Skip too: it skims three or four times. A
+  banana (about 920 kg/m³ whole) tumbles end over end and floats with only
+  a sliver out. A slice
   of bread (30 g, about 175 kg/m³) flutters down floppier than a pizza,
   floats nearly all out, then soaks and sinks in about two minutes. A
   birthday cake (sponge under buttercream, about 460 kg/m³) comes with one
@@ -106,8 +108,9 @@ is remembered on the device (but the view, which opens on the shore):
   to slush in under half a minute and floats on, nine tenths under: slush
   is still lighter than water. A toddler's toy slide (99 × 46 × 70 cm,
   4.1 kg, hollow walls holding 39 litres) floats nine tenths out of the
-  water; it is held high enough to clear the water, and tumbles slowly. A
-  long thin thing's nominal radius (a banana's, the slide's) is its ball's
+  water; it is held high enough to clear the water, and tumbles slowly. On
+  ice it scrapes to a stop near where it lands, its moulded corners
+  catching where a stone's face skates on. A long thin thing's nominal radius (a banana's, the slide's) is its ball's
   of like volume, so its splash is sized by what it displaces; the strip
   shows its length. Fish eat what is edible (an apple, a banana, a
   watermelon, a pizza, a frozen one once thawed, a pie, bread, a cake):
@@ -1327,7 +1330,9 @@ farther out, so it rises into the view rather than filling its corner.
   its blow and its draw say, that whatever held rests on the ice and was
   never under it, that every hole holds its cavity's lip and the jet's foot
   at every moment and its cracks lie on the ice, that a stone slides four
-  times as far on ice as on the deck, that a skip skitters, that a stone
+  times as far on ice as on the deck while a toy slide, whose moulded
+  corners scrape, stops within a metre of where it lands, that a skip
+  skitters, that a stone
   slid into a hole falls in and a floater that broke through floats in its
   hole, that a stone slid into one at rest knocks it on with the momentum
   kept, that a frozen pool keeps everything on its ice or its deck and turns
