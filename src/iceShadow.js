@@ -19,7 +19,11 @@
 // The uniforms (ICE_SHADOW_UNIFORMS) are one set, shared: src/ice.js shade
 // fills which slot holds what (its bound, the box round them all, how many),
 // IceShadow the tiles, and every material that looks them up holds the same
-// objects (the water's, through the ice's uniforms; each thing's).
+// objects (the water's, through the ice's uniforms; each thing's). They are
+// in the water's fragment shader, whose uniform vectors WebGL 2 promises only
+// 224 of: a tile is its matrix's three rows alone (an orthographic view's
+// matrix is affine), its corner in the atlas its slot's and its half-width
+// and depth taken from the rows' lengths (iceShadowLit).
 import * as THREE from 'three';
 
 // The atlas: `slots` tiles of `tile` texels square, `columns` across; each tile reaches `margin` of its thing's bounding
@@ -29,10 +33,9 @@ const ROWS = ICE_SHADOW.slots / ICE_SHADOW.columns;
 
 export const ICE_SHADOW_UNIFORMS = {
   uIceShadowAtlas: { value: null },
-  // World to each tile's own [0, 1]² and its depth, 0 to 1 over twice its thing's reach.
-  uIceShadowMatrices: { value: Array.from({ length: ICE_SHADOW.slots }, () => new THREE.Matrix4()) },
-  // Each tile's corner in the atlas (u, v), its half-width (m; 0: it holds nothing) and its depth's span (m).
-  uIceShadowTiles: { value: Array.from({ length: ICE_SHADOW.slots }, () => new THREE.Vector4()) },
+  // World to each tile's own [0, 1]² and its depth, 0 to 1 over twice its thing's reach: its matrix's rows, three a
+  // slot (the fourth is always 0, 0, 0, 1); all 0 when it holds nothing.
+  uIceShadowRows: { value: Array.from({ length: 3 * ICE_SHADOW.slots }, () => new THREE.Vector4()) },
   // src/ice.js shade's: each slot's circle its shade lies in (x, z, radius² or −1 for none, the sky's reach: m), the box
   // round them all (least x, z; most x, z), and how many slots are in use.
   uIceThingBounds: { value: Array.from({ length: ICE_SHADOW.slots }, () => new THREE.Vector4(0, 0, -1, 0)) },
@@ -62,8 +65,7 @@ export const ICE_SHADOW_LOOKUP = /* glsl */`
 #define ICE_SHADOW_BIAS ${ICE_SHADOW.bias}
 #define ICE_SHADOW_SUN_SPREAD 0.0093   // the sun's width (rad): its shadow's penumbra over the distance past what casts it
 uniform sampler2D uIceShadowAtlas;
-uniform mat4 uIceShadowMatrices[ICE_SHADOW_SLOTS];
-uniform vec4 uIceShadowTiles[ICE_SHADOW_SLOTS];
+uniform vec4 uIceShadowRows[3 * ICE_SHADOW_SLOTS];
 uniform vec4 uIceThingBounds[ICE_SHADOW_SLOTS];
 uniform vec4 uIceShadeBox;
 uniform float uIceThingCount;
@@ -73,17 +75,21 @@ const vec2 ICE_SHADOW_TAPS[8] = vec2[8](vec2(-0.613, 0.354), vec2(0.171, 0.798),
   vec2(-0.239, -0.664), vec2(-0.902, -0.247), vec2(-0.077, 0.112), vec2(0.396, 0.003));
 // Of the sun at \`point\` past slot's thing: 1 lit, 0 in its shadow; \`least\` (m) the least width its edge is filtered over.
 float iceShadowLit(int slot, vec3 point, float least) {
-  vec4 tile = uIceShadowTiles[slot];
-  if (tile.z <= 0.0) return 1.0;
-  vec3 at = (uIceShadowMatrices[slot] * vec4(point, 1.0)).xyz;
+  vec4 across = uIceShadowRows[3 * slot], up = uIceShadowRows[3 * slot + 1], deep = uIceShadowRows[3 * slot + 2];
+  // Its half-width (m) and its depth's span (m): the rows' lengths are 1/2 and 1 over them (IceShadow drawTile).
+  float halfWidth = 0.5 / max(length(across.xyz), 1e-6), span = 1.0 / max(length(deep.xyz), 1e-6);
+  if (dot(across.xyz, across.xyz) <= 0.0) return 1.0;
+  vec4 world = vec4(point, 1.0);
+  vec3 at = vec3(dot(across, world), dot(up, world), dot(deep, world));
   if (any(lessThan(at.xy, vec2(0.0))) || any(greaterThan(at.xy, vec2(1.0)))) return 1.0;
   // Its penumbra: the sun's width over the distance past the thing's middle (at half the tile's depth).
-  float spread = max(ICE_SHADOW_SUN_SPREAD * max(at.z - 0.5, 0.0) * tile.w, least);
-  float radius = clamp(spread / (2.0 * tile.z), 1.5 * ICE_SHADOW_TEXEL, 0.25);
-  float bias = ICE_SHADOW_BIAS / tile.w, lit = 0.0;
+  float spread = max(ICE_SHADOW_SUN_SPREAD * max(at.z - 0.5, 0.0) * span, least);
+  float radius = clamp(spread / (2.0 * halfWidth), 1.5 * ICE_SHADOW_TEXEL, 0.25);
+  float bias = ICE_SHADOW_BIAS / span, lit = 0.0;
+  vec2 corner = vec2(mod(float(slot), ${ICE_SHADOW.columns}.0), floor(float(slot) / ${ICE_SHADOW.columns}.0)) * ICE_SHADOW_TILE;
   for (int tap = 0; tap < 8; tap++) {
     vec2 uv = clamp(at.xy + radius * ICE_SHADOW_TAPS[tap], vec2(0.5 * ICE_SHADOW_TEXEL), vec2(1.0 - 0.5 * ICE_SHADOW_TEXEL));
-    float depth = iceShadowUnpack(texture2D(uIceShadowAtlas, tile.xy + uv * ICE_SHADOW_TILE));
+    float depth = iceShadowUnpack(texture2D(uIceShadowAtlas, corner + uv * ICE_SHADOW_TILE));
     lit += depth >= 0.9999 || at.z <= depth + bias ? 1.0 : 0.0;
   }
   return lit / 8.0;
@@ -161,21 +167,25 @@ export class IceShadow {
     this.drawn = Array.from({ length: ICE_SHADOW.slots }, () => ({ thing: null, matrix: new THREE.Matrix4(), version: -1, sun: new THREE.Vector3() }));
     this.draws = 0;   // tiles drawn, all told (tools and the probes)
     this.centre = new THREE.Vector3();
+    this.matrix = new THREE.Matrix4();
+    this.warmRows = Array.from({ length: 3 * ICE_SHADOW.slots }, () => new THREE.Vector4());
     this.clearColor = new THREE.Color();
   }
 
   /**
    * The tiles to this frame (src/main.js render, after src/ice.js shade):
-   * `slots` its things (or null), `toSun` the sun's direction. A tile is drawn
-   * again only for a new thing, or one moved, turned or bent, or a sun moved.
+   * `slots` its things (or null), `toSun` the sun's direction, or null when
+   * it casts no shadow (down, or behind cloud: src/ice.js shade `sunLit`),
+   * every tile then empty. A tile is drawn again only for a new thing, or one
+   * moved, turned or bent, or a sun moved.
    */
   update(renderer, slots, toSun) {
-    const tiles = ICE_SHADOW_UNIFORMS.uIceShadowTiles.value, matrices = ICE_SHADOW_UNIFORMS.uIceShadowMatrices.value;
+    const rows = ICE_SHADOW_UNIFORMS.uIceShadowRows.value;
     let restore = null;
     for (let slot = 0; slot < ICE_SHADOW.slots; slot++) {
       const thing = slots[slot], drawn = this.drawn[slot];
-      if (!thing || toSun.y <= 0) {
-        tiles[slot].z = 0;
+      if (!thing || !toSun) {
+        for (let row = 3 * slot; row < 3 * slot + 3; row++) rows[row].set(0, 0, 0, 0);
         drawn.thing = null;
         continue;
       }
@@ -184,7 +194,7 @@ export class IceShadow {
       const version = mesh.geometry.attributes.position.version;
       if (drawn.thing === thing && drawn.version === version && drawn.sun.equals(toSun) && drawn.matrix.equals(mesh.matrixWorld)) continue;
       restore ??= this.saveState(renderer);
-      this.drawTile(renderer, slot, mesh, toSun, tiles[slot], matrices[slot]);
+      this.drawTile(renderer, slot, mesh, toSun, rows);
       drawn.thing = thing;
       drawn.version = version;
       drawn.sun.copy(toSun);
@@ -197,13 +207,13 @@ export class IceShadow {
   warmUp(renderer, mesh) {
     const restore = this.saveState(renderer);
     mesh.updateMatrixWorld();
-    this.drawTile(renderer, 0, mesh, new THREE.Vector3(0.3, 0.8, 0.2).normalize(), new THREE.Vector4(), new THREE.Matrix4());
+    this.drawTile(renderer, 0, mesh, new THREE.Vector3(0.3, 0.8, 0.2).normalize(), this.warmRows);
     this.restoreState(renderer, restore);
     this.drawn[0].thing = null;
   }
 
-  /** Slot's tile drawn for `mesh` with the sun along `toSun`: its camera fitted to the mesh's bounding sphere, its matrix and tile into `tile` and `matrix`. */
-  drawTile(renderer, slot, mesh, toSun, tile, matrix) {
+  /** Slot's tile drawn for `mesh` with the sun along `toSun`: its camera fitted to the mesh's bounding sphere, its matrix's rows into `rows`' slot's. */
+  drawTile(renderer, slot, mesh, toSun, rows) {
     const geometry = mesh.geometry;
     if (!geometry.boundingSphere) geometry.computeBoundingSphere();
     const centre = this.centre.copy(geometry.boundingSphere.center).applyMatrix4(mesh.matrixWorld);
@@ -219,9 +229,9 @@ export class IceShadow {
     camera.lookAt(centre);
     camera.updateProjectionMatrix();
     camera.updateMatrixWorld();
-    matrix.multiplyMatrices(NDC_TO_TILE, camera.projectionMatrix).multiply(camera.matrixWorldInverse);
+    const matrix = this.matrix.multiplyMatrices(NDC_TO_TILE, camera.projectionMatrix).multiply(camera.matrixWorldInverse), elements = matrix.elements;
+    for (let row = 0; row < 3; row++) rows[3 * slot + row].set(elements[row], elements[4 + row], elements[8 + row], elements[12 + row]);
     const column = slot % ICE_SHADOW.columns, row = Math.floor(slot / ICE_SHADOW.columns);
-    tile.set(column / ICE_SHADOW.columns, row / ROWS, reach, camera.far);
     // Only this slot's stand-in, its tile alone cleared to 1 (nothing there) and drawn.
     this.proxies.forEach((proxy, index) => { proxy.visible = index === slot; });
     const proxy = this.proxies[slot];
@@ -235,6 +245,7 @@ export class IceShadow {
     renderer.setRenderTarget(this.target);
     renderer.setClearColor(0xffffff, 1);
     renderer.clear(true, true, false);
+    renderer.autoClear = false;   // cleared once, above (restoreState puts it back)
     renderer.render(this.scene, camera);
     proxy.visible = false;
     this.draws++;

@@ -1238,10 +1238,11 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   // splash (mirrorLevel, which the water's and the splash's mirror shaders
   // share), so the splash's image stands on the waves where it stands; the
   // sky's and the far shore's hardly move. On still water, 0; frozen, the
-  // ice's top (src/ice.js `top`), so what lies on it meets its image there.
+  // ice's top (src/ice.js `top`), so what lies on it meets its image there,
+  // but while a splash rises from a hole's open water, 0.
   const mirrorLevel = surface.uniforms.uMirrorLevel;
   let mirrorPlacedAt = 0;      // the level the mirror camera was placed at
-  let mirroredIceTop = 0;      // the ice's top the mirror image was last drawn whole about
+  let mirroredWholeLevel = 0;  // frozen, the level the mirror image was last drawn whole about
   let lastImpact = null;       // { x, z } of the latest stone's entry
 
   function placeMirrorCamera() {
@@ -1338,9 +1339,13 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     const waterMoves = !skip.ambient || !water.asleep || rings.live > 0 || rain.on;
     // Or one whose image was drawn and is now gone from it (a thing slid off the ice into a hole).
     const floaters = skip.mirror ? nothingMirrored : rocks.filter((rock) => rock.meshMirror && (rock.meshMirror.visible ? rock.fading !== undefined || (rock.ridesWater && waterMoves) || !rock.meshMirror.position.equals(rock.mirroredAt ?? unmirrored) : rock.mirroredAt));
+    // A splash rises out of the water (a hole's open water, frozen: at 0); otherwise what lies on the ice meets its image.
     const iceTop = ice.on ? ice.top : 0;
-    mirrorLevel.value = galeWaves.on && lastImpact && objects.length > 0 ? galeSurfaceAt(lastImpact.x, lastImpact.z) : iceTop;
-    if (iceTop !== mirroredIceTop) { mirroredIceTop = iceTop; viewChanged = true; }   // frozen, thawed or thickened: all of it about the new level
+    mirrorLevel.value = objects.length > 0 ? (galeWaves.on && lastImpact ? galeSurfaceAt(lastImpact.x, lastImpact.z) : 0) : iceTop;
+    // Frozen, thawed or thickened, or a splash come up through the ice or gone: all of it about the new level, so what
+    // lies on the ice is never left in the cached image about the hole's water.
+    const wholeLevel = ice.on ? mirrorLevel.value : 0;
+    if (wholeLevel !== mirroredWholeLevel) { mirroredWholeLevel = wholeLevel; viewChanged = true; }
     if (Math.abs(mirrorLevel.value - mirrorPlacedAt) > 1e-4 && !viewChanged) placeMirrorCamera();   // the splash's region is drawn again below
     if (viewChanged) {
       placeMirrorCamera();
@@ -2630,11 +2635,11 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     fishView.update();                       // each fish where it swims now
     pool.setTime(simulationTime);            // its deck's splashed patches dry by it
     ice.update();                            // what broke or opened since, into its mask (src/ice.js)
-    ice.shade(rocks, camera.position, sunDirection);   // what lies on it shades it, as drawn now
-    iceShadow.update(renderer, ice.shading.slots, ice.shading.sun);   // and their shadows' tiles, those that moved
+    ice.shade(rocks, camera.position, sunDirection, lighting);   // what lies on it shades it, as drawn now
     iceCracks.update();                      // and the cracks made since, onto it (src/iceCracks.js)
     reeds.update(simulationTime);
     renderer.info.reset();
+    iceShadow.update(renderer, ice.shading.slots, ice.shading.sunLit ? ice.shading.sun : null);   // their shadows' tiles, those that moved (counted in the frame's draws)
     framesRendered++;
     camera.updateMatrixWorld();
     if (!skip.ambient) ambientWaves.update(simulationTime);

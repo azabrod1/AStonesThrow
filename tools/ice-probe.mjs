@@ -32,7 +32,11 @@
 //     and rests on it;
 //   - a stone sliding into a hole falls in (it is not held on the edge), and
 //     a floater that broke through (an 11 lb bowling ball) comes up and
-//     floats inside its hole;
+//     floats inside its hole; a stone at rest where a 30 cm rock breaks thin
+//     ice falls in; of 6 cm stones at rest round where a 16 cm stone breaks
+//     thick ice, some tip in (src/ice.js tipAtEdge: those on the new hole's
+//     crushed rim) and some stay, none left with its weight within
+//     ICE.crushed of the thickness of the edge, nor hanging over the hole;
 //   - things on the ice meet (src/collide.js): a stone slid into one at rest
 //     knocks it on, their momentum along the slide kept to MOMENTUM_KEPT;
 //   - in a frozen pool (its walls and deck, src/pool.js) everything rests on
@@ -1061,7 +1065,8 @@ console.log('\nNew ice: a hole left alone skins over; a thing afloat in one keep
   }).length;
   console.log(`  6 cm stones at rest round where a 16 cm stone broke thick ice: ${wentIn} of ${ringed.length} went in; the nearest left on the ice has its weight ${centimetres(nearest)} cm from the edge, ${overhanging} hanging over it`);
   check(restedFirst && rim.ice.holes.length > 0, 'the stones round a 16 cm stone\'s break did not rest first, or it did not break the thick ice');
-  check(wentIn > 0 && nearest >= ICE.crushed * ICE_THICKNESS.thick && overhanging === 0, `stones round a new hole: ${wentIn} went in, one left with its weight ${centimetres(nearest)} cm from its edge, ${overhanging} hanging over it`);
+  // Some go in and some stay (none left would make the nearest's distance no test at all).
+  check(wentIn > 0 && onIce.length > 0 && nearest >= ICE.crushed * ICE_THICKNESS.thick && overhanging === 0, `stones round a new hole: ${wentIn} went in, ${onIce.length} left, the nearest with its weight ${centimetres(nearest)} cm from its edge, ${overhanging} hanging over it`);
 }
 
 if (failures.length > 0) {

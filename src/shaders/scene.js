@@ -1504,7 +1504,7 @@ uniform samplerCube uSkyCube;     // the sky as the droplets reflect it (src/sky
 uniform mat4 uReflectionMatrix;   // world -> reflection texture coordinates
 uniform vec4 uMirrorNear;         // the splash's image in the mirror, uv corners (x0, y0, x1, y1); empty (x0 > x1) when none
 uniform vec2 uMirrorSize;         // the mirror image's pixels
-uniform float uMirrorLevel;       // the height it mirrors about: the water's under the splash under a gale, the ice's top frozen, else 0 (src/main.js)
+uniform float uMirrorLevel;       // the height it mirrors about: the water's under the splash under a gale, the ice's top frozen but while a splash rises from a hole, else 0 (src/main.js)
 uniform sampler2D uUnderColor;
 uniform sampler2D uUnderDepth;
 uniform float uStonesUnder;       // 1 while a stone is under the water (src/main.js), else 0

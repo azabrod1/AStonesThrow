@@ -1519,7 +1519,7 @@ export class Rock {
       return mirror;
     };
     this.meshMirror = this.floats ? this.makeMirror() : null;
-    this.metIce = false;   // has come down on the ice: mirrored in it as long as it is on it or over it (syncMeshes)
+    this.metIce = false;   // has come down on the ice (its mirror made, prepareMirror): mirrored in it while on it or over it (syncMeshes)
     // Under the water: where the surface shows it (the header), by this much.
     const seenThroughWater = this.seenThroughWater = { value: 0 };
     const waterLevel = this.waterLevel = { value: 0 };   // the surface's height above the stone, under a gale
@@ -2086,8 +2086,9 @@ export class Rock {
       // Only what stands out of the water enough to show in it: a flat thing's image (a pizza's) would be a sliver, which
       // the mirror's ripples break into stray lines (FLOAT.mirrorLeast).
       const afloat = this.state === 'float' || this.afloat || this.state === 'held';
-      // On the ice, or hopping over it, the ice mirrors it (its mirror image is taken about the ice's top, src/main.js).
-      const onIce = this.metIce && (this.grounded || this.state === 'air');
+      // On the ice, or hopping over it, the ice mirrors it (its mirror image is taken about the ice's top, src/main.js):
+      // over the ice now, not the deck or the shore it has slid onto since, nor water thawed.
+      const onIce = this.metIce && (this.grounded || this.state === 'air') && this.groundSurface?.kind === 'ice';
       this.meshMirror.visible = onIce || (afloat && this.position.y + (this.buoyancy && this.extent ? this.extent.high : this.waterline(this.position.y).high) > FLOAT.mirrorLeast);
     }
     this.waterLevel.value = surface;

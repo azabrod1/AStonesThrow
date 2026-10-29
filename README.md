@@ -1325,11 +1325,13 @@ farther out, so it rises into the view rather than filling its corner.
   the pizza hold on thin ice, that the default stone breaks thin ice and
   holds on thick and a 30 cm rock breaks thick, that each outcome is the one
   its blow and its draw say, that whatever held rests on the ice and was
-  never under it, that every hole holds its cavity's lip and the jet's foot
+  never under it, lying on a face with its weight over what it rests on,
+  that every hole holds its cavity's lip and the jet's foot
   at every moment and its cracks lie on the ice, that a stone slides four
   times as far on ice as on the deck, that a skip skitters, that a stone
   slid into a hole falls in and a floater that broke through floats in its
-  hole, that a stone slid into one at rest knocks it on with the momentum
+  hole, that stones at rest where a hole opens fall in and those round it on
+  its crushed rim tip in while the rest stay clear of its edge, that a stone slid into one at rest knocks it on with the momentum
   kept, that a frozen pool keeps everything on its ice or its deck and turns
   a slide back off its walls, that a seeded throw breaks the same hole and
   halving the substep changes little, and what a break costs.
