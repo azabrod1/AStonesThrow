@@ -11,17 +11,18 @@
 // on the foam; a bubble over BIG_DIAMETER shorter still, since the big ones
 // burst first), drifting slowly outward from where it was born and downwind
 // with the raft (the foam map's drift, src/spectralWater.js), wandering a
-// millimetre or so, and fading quickly at the end. Surface bubbles are mostly
-// clear with a bright rim, and no two catch the light alike, so a speck is a
-// translucent white of its own shine, MIN_SHINE to 1 of OPACITY (most faint,
-// a few bright), dimmer than the raft: a lone one is faint, a cluster of them
-// reads as foam. A resolved bubble is a dome standing on the water
-// (SURFACE_BUBBLE in src/shaders/bubble.js, as the water draws its own
-// bursting bubbles): its film nearly clear, with a window of sky mirrored on
-// its top and the dark water on its limb and lower part, a faint shadow
-// along its foot and the sun's glint on it, a soft spot on a small one and a
-// white point on a large one (SPECK_FRAGMENT); an unresolved one a soft
-// grain, its opacity following the area it really covers, with no minimum
+// millimetre or so, and fading quickly at the end. Surface bubbles are clear
+// films that mirror the sky, and no two catch the light alike, so a speck is
+// drawn at its own shine, MIN_SHINE to 1 of OPACITY (most faint, a few
+// bright): a lone one is faint, a cluster of them reads as foam. A resolved
+// bubble is a dome standing on the water (SURFACE_BUBBLE in
+// src/shaders/bubble.js, as the water draws its own bursting bubbles): its
+// film letting the water through and mirroring the sky cube along the
+// reflected ray, so its top holds a bright arc of the low sky and its sides
+// melt into the water, a faint shadow along its foot and the sun's glint
+// on it, a soft spot on a small one and a white point on a large one
+// (SPECK_FRAGMENT); an unresolved one a soft grain mirroring the sky ahead,
+// its opacity following the area it really covers, with no minimum
 // brightness at a distance. The splash makes them where the crown's base
 // was, where the jet falls
 // back, where drops land and where bubbles surface. A patch of them
@@ -74,7 +75,6 @@ const STRAYS = 0.1;               // ...but this share of a patch lie alone, any
 const LOPSIDE = 0.7;              // the rafts favour one side of the ring, chosen at random: density 1 + LOPSIDE·cos(angle from it)
 const BIRTH_JITTER = 0.15;        // a raft's clusters surface over this long (s) after the raft
 const OPACITY = 0.6;              // a speck of full shine
-const BRIGHTNESS = 0.75;          // against the raft's white
 const MIN_PIXEL_SIZE = 3;         // smaller specks are drawn about this wide (CSS pixels), soft and faint
 
 const randomRange = (random, low, high) => low + random() * (high - low);
@@ -84,7 +84,7 @@ const randomNormal = (random) => Math.sqrt(-2 * Math.log(Math.max(random(), 1e-1
 const speckDiameter = (random) => MIN_DIAMETER + (MAX_DIAMETER - MIN_DIAMETER) * random() ** DIAMETER_SKEW;
 
 export class FoamSpecks {
-  constructor({ water, lighting, ambientWaves, capacity = CAPACITY }) {
+  constructor({ water, lighting, ambientWaves, skyCube = null, capacity = CAPACITY }) {
     this.water = water;
     this.capacity = capacity;
     this.next = 0;               // the ring slot the next speck takes
@@ -125,9 +125,8 @@ export class FoamSpecks {
         uMinPixelSize: { value: MIN_PIXEL_SIZE },
         uSunDir: { value: lighting.sunDirection },
         uSunIrradiance: { value: lighting.sunIrradiance },
-        uSkyAmbient: { value: lighting.skyAmbient },
+        uSkyCube: { value: skyCube },   // the sky the bubbles' films mirror (src/sky.js)
         uOpacity: { value: OPACITY },
-        uBrightness: { value: BRIGHTNESS },
         ...ambientWaves.uniforms(),
         ...(water.rings ? water.rings.uniforms() : {}),
       },

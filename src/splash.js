@@ -109,12 +109,14 @@
 // fizz, a faint boil each, and a landing drop leaves a speck of boil of its
 // own. The water shader draws a boil as fresh water's (FOAM_PATTERN in
 // src/shaders/scene.js, its last paragraph), in three parts: the surface
-// holds one layer of bursting bubbles, drawn a few at a time, clear and
-// glinting; the rest of the boil is the cloud of bubbles under it, a milky
-// tint of the water seen through the surface; and over the cloud lies its
-// froth, the packed foam pattern (bubbles alone, never lace) at
-// up to FOAM_FROTH_GAIN times the cloud, rising with its depth, holed and ragged-edged, thinning at the
-// boil's edge into the bursting bubbles, which give way under it. A smooth
+// holds one layer of bursting bubbles, drawn a few at a time in clumps,
+// clear films mirroring the sky and glinting; the rest of the boil is the
+// cloud of bubbles under it, a milky tint of the water seen through the
+// surface; and over the cloud lies its froth, the packed foam pattern
+// (bubbles alone, no lace, while it is dense; breaking into lace as it
+// thins) at up to FOAM_FROTH_GAIN times the cloud, rising with its depth,
+// holed and ragged-edged, thinning at the boil's edge into the bursting
+// bubbles, which give way under it. A smooth
 // milk with bubbles over it read as fog with marbles on it, from the bank
 // and close to; froth with structure, holes and ragged edges reads as foam.
 // So a thrown stone leaves white only while its air comes up, and none for
@@ -824,7 +826,7 @@ export class SplashSystem {
     this.stoneStep = null;        // the step the stones are stepped with, when it is not the splash's own (setStoneStep)
     this.lighting = lighting;
     this.bedAlbedo = SAND_ALBEDO;   // the bed's (setBed)
-    this.foamSpecks = new FoamSpecks({ water, lighting, ambientWaves });
+    this.foamSpecks = new FoamSpecks({ water, lighting, ambientWaves, skyCube: environment?.cubeTexture ?? null });
     // The foam drifts down the wind the ripples blow with (the CPU probes' stand-ins have neither).
     if (ambientWaves.windDirection) water.setWind?.(ambientWaves.windDirection);
 

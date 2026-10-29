@@ -783,7 +783,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   const galeSurfaceAt = (x, z) => galeWaves.sample(x, z, galeSample).height;
   // The rain (src/rain.js): its rings on the water, its streaks and flecks;
   // none until the Weather brings it (applyWeather). The pool's deck wets.
-  const rain = new Rain(renderer, lighting, { texels: settings.rainTexels, gale: galeWaves.uniforms(), download: rainDownload });
+  const rain = new Rain(renderer, lighting, { texels: settings.rainTexels, gale: galeWaves.uniforms(), download: rainDownload, skyCube: environment.cubeTexture });
   // The spray a gale blows off its breaking crests (src/spindrift.js): drawn only under a gale (applyGale).
   const spindrift = new Spindrift(lighting, { gale: galeWaves.uniforms(), crestSpeed: WHITECAP_SPEED * galeWaves.crestSpeed });
   const wetDeck = { value: 0 };

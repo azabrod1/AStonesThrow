@@ -230,8 +230,9 @@ export class Rain {
    * @param lighting the scene's lighting (src/main.js): the streaks and flecks take the sky's light and the sun's
    * @param options.download optional early download, settled as { data } or { error }
    * @param options.texels the tile's texels per side (a power of two up to 2^(RAIN_LEVELS − 1))
+   * @param options.skyCube the sky cube (src/sky.js), which a bubble's film mirrors
    */
-  constructor(renderer, lighting, { texels = 512, gale = {}, download = null } = {}) {
+  constructor(renderer, lighting, { texels = 512, gale = {}, download = null, skyCube = null } = {}) {
     this.renderer = renderer;
     this.intensity = null;
     this.falling = null;          // the rain whose streaks are laid out, and its schedule (layOutStreaks)
@@ -337,6 +338,7 @@ export class Rain {
         uMinPixels: { value: FLECK_MIN_PIXELS },
         uOpacity: { value: RAIN.light.fleckOpacity },
         uBubbleShare: { value: RAIN.light.bubbleShare },
+        uSkyCube: { value: skyCube },   // the sky a bubble's film mirrors (src/sky.js)
         uStreakSeconds: { value: STREAK_SECONDS },
         ...this.lightUniforms,
         ...gale,   // the gale's uniforms (src/galeWaves.js): the flecks stand on its waves

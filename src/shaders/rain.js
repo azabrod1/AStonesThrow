@@ -501,11 +501,13 @@ void main() {
 // A crown, a jet or a droplet is a capsule of white, lit by the sky and a
 // little by the sun, soft to its edge; a jet thins and dims from its foot
 // to its tip (FLECK_TIP_WIDTH, FLECK_TIP_LIGHT of the foot's), as a
-// Worthington jet does; a bubble is a dome (BUBBLE_SPRITE).
+// Worthington jet does; a bubble is a dome (BUBBLE_SPRITE), its film
+// letting the water through and mirroring the sky cube.
 export const FLECK_FRAGMENT = /* glsl */`
 uniform vec3 uSkyAmbient;
 uniform vec3 uSunIrradiance;
 uniform vec3 uSunDir;
+uniform samplerCube uSkyCube;   // the sky a bubble's film mirrors (src/sky.js)
 varying float vAlpha;
 varying float vKind;
 varying vec2 vAxis;
@@ -528,12 +530,10 @@ void main() {
   vec2 offset = gl_PointCoord * 2.0 - 1.0;
   if (vKind > 2.5) {
     if (dot(offset, offset) > 1.0) discard;
-    float shape, shadow;
-    vec3 glint;
-    bubbleSprite(offset, vPixelSize, vDrawn, vPlaneNormal, vToViewer, vToSun, vHalfVector, uSunIrradiance, vAlpha, shape, shadow, glint);
-    vec3 color = vec3(0.94, 0.96, 0.97) * (uSunIrradiance * max(uSunDir.y, 0.0) + uSkyAmbient * 1.5);
-    float alpha = vAlpha * shape;
-    gl_FragColor = vec4(color * alpha + min(glint, vec3(40.0)), alpha + shadow);
+    vec3 light, glint;
+    float loss, shadow;
+    bubbleSprite(offset, vPixelSize, vDrawn, vPlaneNormal, vToViewer, vToSun, vHalfVector, uSunIrradiance, vAlpha, uSkyCube, light, loss, shadow, glint);
+    gl_FragColor = vec4(light + min(glint, vec3(40.0)), loss + shadow);
     return;
   }
   vec2 pixelOffset = offset * 0.5 * vSize;   // from the sprite's centre, y down

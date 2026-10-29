@@ -29,12 +29,13 @@
 //      a breaking wave's churned boil scatters more than a drained raft; a
 //      splash's boil on fresh water (FRESH_BOIL, freshBubbles,
 //      freshBoilCloud): the surface holds at most FOAM_BOIL_HOLD of it, a
-//      faint one whole; its bubbles fill the share of cells they should,
-//      their mean white matches the one they fade to (the dome's mean,
-//      whose fit over the view's elevation it integrates), and drawn where
-//      they start to fade is within 5% of it, and they show no grid: their
-//      centres spread over their cells and the white one cell over is no
-//      more alike than far apart;
+//      faint one whole; its bubbles fill the share of cells they should
+//      (a fizz's fewer, clumped), the mean light their films mirror
+//      matches the one they fade to (the dome's mean, whose fit over the
+//      view's elevation it integrates), and drawn where they start to fade
+//      is within 8% of it, and they show no grid: their centres spread over
+//      their cells and the light one cell over is no more alike than far
+//      apart;
 //      the cloud under them is tinted by each Water setting's absorption and
 //      its churn spreads wide enough to show;
 //   3. prints the cell visits per foam pixel at each framing, the cost;
@@ -211,12 +212,15 @@ function resolvedShade(cells) {
 }
 
 // foamLook in the shader: cover, opacity and shade. across = [dx/dpixelX, dz/dpixelX, dx/dpixelY, dz/dpixelY].
-function foamLook(worldX, worldZ, across, foam, resolveAll = false, boilFraction = 0) {
+function foamLook(worldX, worldZ, across, foam, resolveAll = false, boilFraction = 0, frothShare = 0) {
   const footprint = Math.sqrt(Math.hypot(across[0], across[1]) * Math.hypot(across[2], across[3]));
   const fadeOf = (cell) => resolveAll ? 0 : smoothstep(defines.FOAM_FADE_START, defines.FOAM_FADE_END, footprint / cell);
   const fineFade = fadeOf(defines.FOAM_FINE_CELL), coarseFade = fadeOf(defines.FOAM_COARSE_CELL);
-  // A boil takes no lace (the shader's FOAM_LACE_BOIL_FROM/TO): its lace layer is held unresolved, bubbles alone.
-  const laceFade = Math.max(fadeOf(defines.FOAM_LACE_CELL), smoothstep(defines.FOAM_LACE_BOIL_FROM, defines.FOAM_LACE_BOIL_TO, boilFraction));
+  // A packed boil takes no lace (the shader's FOAM_LACE_BOIL_FROM/TO): its lace layer is held unresolved, bubbles alone;
+  // a splash's froth thins into it (FOAM_FROTH_DENSE to FOAM_FROTH_THIN).
+  // The boil that stays packed: less a splash's froth as it thins (frothShare).
+  const packedBoil = boilFraction * (1 - frothShare * (1 - smoothstep(defines.FOAM_FROTH_THIN, defines.FOAM_FROTH_DENSE, foam)));
+  const laceFade = Math.max(fadeOf(defines.FOAM_LACE_CELL), smoothstep(defines.FOAM_LACE_BOIL_FROM, defines.FOAM_LACE_BOIL_TO, packedBoil));
   let gradientX = 0, gradientY = 0;
   let lace = defines.FOAM_LACE_MEDIAN;
   if (laceFade < 1) {
@@ -278,7 +282,7 @@ function foamLook(worldX, worldZ, across, foam, resolveAll = false, boilFraction
   const winner = coarseWins ? coarse : fine, winnerFade = coarseWins ? coarseFade : fineFade;
   const shade = winner ? mix(resolvedShade(winner), defines.FOAM_FADED_SHADE, winnerFade) : defines.FOAM_FADED_SHADE;
   const wetness = 1 - smoothstep(0.25, defines.FOAM_FILM_PACKED, foam);
-  const windowShare = mix(defines.FOAM_WINDOW_SHARE[0], defines.FOAM_WINDOW_SHARE[1], boilFraction);
+  const windowShare = mix(defines.FOAM_WINDOW_SHARE[0], defines.FOAM_WINDOW_SHARE[1], packedBoil);
   const fadedFilm = 1 - windowShare * defines.FOAM_FILM_WINDOWS;
   // Each window fades by its own size (the shader's windowFade).
   const windowFade = coarse && !resolveAll ? smoothstep(defines.FOAM_FADE_START, defines.FOAM_FADE_END, footprint / (2 * mix(defines.FOAM_WINDOW_SIZE[0], defines.FOAM_WINDOW_SIZE[1], fract(coarse.bestKey * 47.3)) * coarse.bestRadius * defines.FOAM_COARSE_CELL)) : 0;
@@ -394,17 +398,20 @@ check(Math.abs(raftCover - boilCover) < 0.06, `a boil's bubbles cover about what
 // freshBoilCloud in src/shaders/scene.js, whose twins these are: change
 // both). The surface's share rises with the boil to FOAM_BOIL_HOLD and no
 // further, all of a faint boil, a pebble's fizz. Its bubbles: alive in
-// filled²·FOAM_BUBBLE_MOST of the cells; each a dome on the water
-// (SURFACE_BUBBLE, src/shaders/bubble.js), whose mean white per unit of water under it, seen from
-// any elevation, the shader's fit (FOAM_BUBBLE_MEAN_FIT) matches within 2%
-// of the integral; their mean white over many cells and moments, seen from
-// straight above, is the white they fade to when unresolved, and drawn
-// (each pixel the film's mean over the radii within half a pixel of it, a
-// square pixel's, SURFACE_BUBBLE's bubbleFilm) at the footprint where they
-// start to fade it is within 5% of the same places point-sampled (the
-// bubbles under a pixel lose some), so a boil keeps its strength with
-// distance; their centres spread over their cells (no lattice), and one
-// cell over, the white is no more alike than anywhere else (no grid). The
+// filled²·FOAM_BUBBLE_MOST of the cells (a fizz's FOAM_BUBBLE_FIZZ of
+// that), times the clumps at each centre (1 on average); each a dome on
+// the water (SURFACE_BUBBLE, src/shaders/bubble.js), a clear film
+// mirroring the sky, whose mean light per unit of water under it, a sky of
+// 1, seen from any elevation, the shader's fit (FOAM_BUBBLE_MEAN_FIT)
+// matches within 2% of the integral; their mean light over many cells and
+// moments, seen from straight above, is the light they fade to when
+// unresolved, and drawn (each pixel the film's mirror over the radii within
+// half a pixel of it, a square pixel's, in SURFACE_BUBBLE's bubbleSpan's
+// parts) at the footprint where they start to fade it is within 8% of the
+// same places point-sampled (the bubbles under a pixel lose some), so a
+// boil keeps its strength with distance; their centres spread over their
+// cells (no lattice), and one cell over, the light is no more alike than
+// anywhere else (no grid). The
 // deep cloud's colour, per Water
 // setting (WATER_CLARITIES in src/main.js), is the Kubelka–Munk R∞ of the
 // water's absorption against the cloud's scattering: pale, never brighter
@@ -420,17 +427,23 @@ check(Math.abs(raftCover - boilCover) < 0.06, `a boil's bubbles cover about what
   check(faint > 0.98, `a boil of half that is ${(100 * faint).toFixed(1)}% surface: a faint fizz has no cloud to speak of`);
 
   const [smallest, largest] = defines.FOAM_BUBBLE_RADII;
-  const aliveShare = (filled) => defines.FOAM_BUBBLE_MOST * clamp(filled * filled, 0, 1);
-  // The film (SURFACE_BUBBLE): the cap's white times what it mirrors (bubbleSky: the sky where the reflected ray
-  // rises, bright at the horizon and falling to FOAM_BUBBLE_ZENITH at the zenith, the water's share where it falls), and the Fresnel's rise (1 − cosθ)⁴ to the edge's white, mirroring the
-  // water except its edge-on glow, which rises as the Fresnel does (bubbleRise).
-  const capWhite = defines.FOAM_BUBBLE_CAP_WHITE, edgeWhite = defines.FOAM_BUBBLE_EDGE_WHITE, mirror = defines.FOAM_BUBBLE_WATER_MIRROR;
-  const bubbleSky = (reflectedUp) => {
-    const skyRadiance = mix(1, defines.FOAM_BUBBLE_ZENITH, smoothstep(defines.FOAM_BUBBLE_ZENITH_FROM, defines.FOAM_BUBBLE_ZENITH_TO, reflectedUp));
-    return mix(mirror, skyRadiance, smoothstep(defines.FOAM_BUBBLE_SKY_FROM, defines.FOAM_BUBBLE_SKY_TO, reflectedUp));
+  // The share of cells alive: filled²·FOAM_BUBBLE_MOST, a fizz's (no cloud) FOAM_BUBBLE_FIZZ of that, rising with the
+  // cloud as the biggest bubbles do; each cell's share is that times the clumps at its bubble's centre (bubbleClump: 0 to
+  // 2, 1 on average).
+  const cloudShareAt = (cloud) => smoothstep(0, defines.FOAM_BUBBLE_FULL_CLOUD, cloud);
+  const aliveShare = (filled, cloud = 0) => defines.FOAM_BUBBLE_MOST * mix(defines.FOAM_BUBBLE_FIZZ, 1, cloudShareAt(cloud)) * clamp(filled * filled, 0, 1);
+  const bubbleClump = (worldX, worldZ) => 2 * smoothstep(0.25, 0.75, valueNoise(worldX * defines.FOAM_BUBBLE_CLUMP + 31.7, worldZ * defines.FOAM_BUBBLE_CLUMP + 12.9));
+  // The film (SURFACE_BUBBLE): its reflectance F = CAP + (1 − CAP)(1 − cosθ)⁴ times what it mirrors, a sky of 1 where
+  // the reflected ray rises over the water's plane, and where it falls the water a little way off, which mirrors the
+  // sky by its Fresnel at the ray's angle less the view's (bubbleMirror's y): the light it adds.
+  const cap = defines.FOAM_BUBBLE_CAP;
+  const filmReflectance = (cosTheta) => cap + (1 - cap) * (1 - cosTheta) ** 4;
+  const waterFresnel = (cosine) => defines.FOAM_BUBBLE_WATER_F0 + (1 - defines.FOAM_BUBBLE_WATER_F0) * (1 - clamp(cosine, 0, 1)) ** 5;
+  const mirrored = (reflectedUp, viewUp) => {
+    const sky = smoothstep(-defines.FOAM_BUBBLE_SKY_SOFT, defines.FOAM_BUBBLE_SKY_SOFT, reflectedUp);
+    return mix(Math.max(waterFresnel(-reflectedUp) - waterFresnel(viewUp), 0), 1, sky);
   };
-  const bubbleRise = (cosTheta) => (edgeWhite - capWhite) * (1 - cosTheta) ** 4 * (mirror + (1 - mirror) * (1 - cosTheta) ** 4);
-  // The dome's mean white per unit of the water under it, seen from an elevation of that sine (SURFACE_BUBBLE's header):
+  // The dome's mean light per unit of the water under it, seen from an elevation of that sine (SURFACE_BUBBLE's header):
   // the sphere's screen disc less what lies under the water, integrated by screen area (screen y up, the view tilted by
   // the elevation, so a hit's normal rises by cosθ·sinβ + y·cosβ), spread over 1/sinβ as much water.
   const domeMean = (sinElevation) => {
@@ -445,7 +458,7 @@ check(Math.abs(raftCover - boilCover) < 0.06, `a boil's bubbles cover about what
         const cosTheta = Math.sqrt(1 - radiusSquared);
         const height = cosTheta * sinElevation + screenY * cosElevation;
         if (height < 0) continue;
-        sum += capWhite * bubbleSky(2 * cosTheta * height - sinElevation) + bubbleRise(cosTheta);
+        sum += filmReflectance(cosTheta) * mirrored(2 * cosTheta * height - sinElevation, sinElevation);
       }
     }
     return (sum / (steps * steps)) * 4 / Math.PI / sinElevation;
@@ -458,34 +471,39 @@ check(Math.abs(raftCover - boilCover) < 0.06, `a boil's bubbles cover about what
   {
     const sines = [0.15, 0.2, 0.3, 0.5, 0.7, 1];
     const worst = Math.max(...sines.map((sine) => Math.abs(fittedMean(sine) / domeMean(sine) - 1)));
-    check(worst < 0.02, `the dome's mean white, FOAM_BUBBLE_MEAN_FIT, fits its integral within ${(100 * worst).toFixed(1)}% over sinβ ${sines[0]} to 1 (${domeMean(1).toFixed(3)} of the edge white from straight above, ${domeMean(Math.sin(20 * Math.PI / 180)).toFixed(3)} at 20°)`);
+    check(worst < 0.02, `the dome's mean light, FOAM_BUBBLE_MEAN_FIT, fits its integral within ${(100 * worst).toFixed(1)}% over sinβ ${sines[0]} to 1 (${domeMean(1).toFixed(3)} of the sky from straight above, ${domeMean(Math.sin(20 * Math.PI / 180)).toFixed(3)} at 20°)`);
   }
   // The biggest bubbles rise with the cloud under the boil (in holds; FOAM_BUBBLE_FAINT_RADIUS with none), so the
   // mean base does too, and the bubbles fade where their cells, taken as small as they are, shrink toward a pixel.
-  const largestAt = (cloud) => mix(defines.FOAM_BUBBLE_FAINT_RADIUS, largest, smoothstep(0, defines.FOAM_BUBBLE_FULL_CLOUD, cloud));
+  const largestAt = (cloud) => mix(defines.FOAM_BUBBLE_FAINT_RADIUS, largest, cloudShareAt(cloud));
   const fadeStartAt = (cloud) => defines.FOAM_FADE_START * defines.FOAM_BUBBLE_CELL * largestAt(cloud) / largest;
-  const meanWhite = (filled, cloud = 0) => {
+  const meanLight = (filled, cloud = 0) => {
     const spanAt = largestAt(cloud) - smallest;
-    return aliveShare(filled) * Math.PI * (smallest * smallest + 2 * smallest * spanAt / 3 + spanAt * spanAt / 5) * domeMean(1) * (1 - 0.5 * defines.FOAM_BUBBLE_RISE);
+    return aliveShare(filled, cloud) * Math.PI * (smallest * smallest + 2 * smallest * spanAt / 3 + spanAt * spanAt / 5) * domeMean(1) * (1 - 0.5 * defines.FOAM_BUBBLE_RISE);
   };
-  // ∫(1 − cosθ)⁴ and ∫(1 − cosθ)⁸ over the area u = r² from the centre (bubbleFilmArea): over w = 1 − sqrt(1 − u),
-  // 2(w⁵/5 − w⁶/6) and 2(w⁹/9 − w¹⁰/10).
-  const filmArea = (area) => { const edgeOn = 1 - Math.sqrt(1 - Math.min(area, 1)); return [2 * (edgeOn ** 5 / 5 - edgeOn ** 6 / 6), 2 * (edgeOn ** 9 / 9 - edgeOn ** 10 / 10)]; };
-  // bubbleFilm's white over the radii from inner to outer, seen from straight above (bubbleWhite): the cap's white
-  // mirrors the window of sky at the pixel's own radius, the Fresnel's rise the water and its edge-on glow, both in
-  // closed form over the span.
-  const filmBetween = (inner, outer, radial) => {
-    const innerArea = inner * inner, outerArea = outer * outer, spanArea = outerArea - innerArea;
-    const [fourthOuter, eighthOuter] = filmArea(outerArea), [fourthInner, eighthInner] = filmArea(innerArea);
-    const rise = mirror * (fourthOuter - fourthInner) + (1 - mirror) * (eighthOuter - eighthInner);
-    const cosTheta = Math.sqrt(1 - Math.min(radial, 1) ** 2);
-    return (capWhite * (Math.min(outerArea, 1) - Math.min(innerArea, 1)) * bubbleSky(2 * cosTheta * cosTheta - 1) + (edgeWhite - capWhite) * rise) / spanArea;
+  // ∫(1 − cosθ)⁴ over the area u = r² from the centre (bubbleFilmArea): over w = 1 − sqrt(1 − u), 2(w⁵/5 − w⁶/6).
+  const filmArea = (area) => { const edgeOn = 1 - Math.sqrt(1 - Math.min(area, 1)); return 2 * (edgeOn ** 5 / 5 - edgeOn ** 6 / 6); };
+  // A pixel's span of radii, inner to outer, from straight above (bubbleSpan): in FOAM_BUBBLE_SPAN_PARTS parts of the span
+  // on the sphere, each its mean reflectance over its radii by area (bubbleFilmArea's closed form) times what it
+  // mirrors at its middle by area, cut at the water a pixel (edge, radii) soft as bubbleDome cuts it. From straight
+  // above, a point at radius r has its normal up by cosθ = sqrt(1 − r²), so the reflected ray rises 2cos²θ − 1: the sky
+  // over the middle of the cap, the water near by past 45° out, mirroring the low sky where it grazes.
+  const filmBetween = (inner, outer, edge) => {
+    const spanArea = outer * outer - inner * inner, top = Math.min(outer, 1);
+    let light = 0;
+    for (let part = 0; part < defines.FOAM_BUBBLE_SPAN_PARTS && inner < 1; part++) {
+      const from = mix(inner, top, part / defines.FOAM_BUBBLE_SPAN_PARTS), to = mix(inner, top, (part + 1) / defines.FOAM_BUBBLE_SPAN_PARTS);
+      const fromArea = from * from, toArea = to * to;
+      const reflectance = (cap * (toArea - fromArea) + (1 - cap) * (filmArea(toArea) - filmArea(fromArea))) / spanArea;
+      const cosTheta = Math.sqrt(Math.max(1 - 0.5 * (fromArea + toArea), 0));
+      light += reflectance * smoothstep(-0.5 * edge, 0.5 * edge, cosTheta) * mirrored(2 * cosTheta * cosTheta - 1, 1);
+    }
+    return light;
   };
-  // Point-sampled from straight above at a radius (radii) on the sphere, whose normal is up by cosθ = sqrt(1 − r²), so
-  // the reflected ray rises 2cos²θ − 1: the sky over the middle of the cap, the water past 45° out, the edge's glow at the limb.
-  const whiteFromAbove = (radial) => {
+  // Point-sampled from straight above at a radius (radii) on the sphere.
+  const lightFromAbove = (radial) => {
     const cosTheta = Math.sqrt(1 - Math.min(radial, 1) ** 2);
-    return capWhite * bubbleSky(2 * cosTheta * cosTheta - 1) + bubbleRise(cosTheta);
+    return filmReflectance(cosTheta) * mirrored(2 * cosTheta * cosTheta - 1, 1);
   };
   // freshBubbles resolved, seen from straight above (where the ray cast at the dome, bubbleDome, meets the sphere at
   // the disc's own radius and the water cuts nothing away), at a point (metres) and time (s), point-sampled or, given
@@ -506,13 +524,13 @@ check(Math.abs(raftCover - boilCover) < 0.06, `a boil's bubbles cover about what
     const within = { x: mix(grown, 1 - grown, place[0]), z: mix(grown, 1 - grown, place[1]) };
     const centreX = cellX + within.x - rowShift, centreZ = cellZ + within.z;
     const radial = Math.hypot(inCellsX - centreX, inCellsZ - centreZ) / Math.max(radius, 1e-4);
-    const alive = shape[2] <= aliveShare(filled);
-    if (!alive) return { alive, white: 0, within };
+    const alive = shape[2] <= aliveShare(filled, cloud) * bubbleClump(centreX * defines.FOAM_BUBBLE_CELL, centreZ * defines.FOAM_BUBBLE_CELL);
+    if (!alive) return { alive, light: 0, within };
     if (footprint > 0) {
       const edge = footprint / defines.FOAM_BUBBLE_CELL / Math.max(radius, 1e-3);
-      return { alive, white: filmBetween(Math.max(radial - 0.5 * edge, 0), radial + 0.5 * edge, radial), within };
+      return { alive, light: filmBetween(Math.max(radial - 0.5 * edge, 0), radial + 0.5 * edge, edge), within };
     }
-    return { alive, white: radial < 1 ? whiteFromAbove(radial) : 0, within };
+    return { alive, light: radial < 1 ? lightFromAbove(radial) : 0, within };
   };
   {
     // The centres' spread over their cells: an even spread over a whole cell is 1/sqrt(12) = 0.289 of it rms from the
@@ -531,17 +549,17 @@ check(Math.abs(raftCover - boilCover) < 0.06, `a boil's bubbles cover about what
   }
   // Over a deep cloud (the boil's middle, bubbles of every size) and a fizz with none (small ones).
   for (const [filled, cloud] of [[1, 3], [0.5, 3], [1, 0]]) {
-    let aliveCells = 0, whiteSum = 0;
+    let aliveCells = 0, lightSum = 0;
     const samples = 400000;   // the white of a faint boil is in a few small rims: enough samples to hold its noise under a few per cent
     for (let index = 0; index < samples; index++) {
       const cellX = Math.floor(seededRandom() * 400), cellZ = Math.floor(seededRandom() * 400), time = seededRandom() * 30;
       aliveCells += bubbleAt((cellX + 0.5) * defines.FOAM_BUBBLE_CELL, (cellZ + 0.5) * defines.FOAM_BUBBLE_CELL, filled, time, 0, cloud).alive ? 1 : 0;
-      whiteSum += bubbleAt(seededRandom() * 4.8, seededRandom() * 4.8, filled, time, 0, cloud).white;
+      lightSum += bubbleAt(seededRandom() * 4.8, seededRandom() * 4.8, filled, time, 0, cloud).light;
     }
-    const aliveMeasured = aliveCells / samples, whiteMeasured = whiteSum / samples;
+    const aliveMeasured = aliveCells / samples, lightMeasured = lightSum / samples;
     const where = `at ${filled} of the hold over a cloud of ${cloud} holds`;
-    check(Math.abs(aliveMeasured / aliveShare(filled) - 1) < 0.05, `${where}, bubbles in ${(100 * aliveMeasured).toFixed(1)}% of the cells (${(100 * aliveShare(filled)).toFixed(1)}%: filled²·FOAM_BUBBLE_MOST)`);
-    check(Math.abs(whiteMeasured / meanWhite(filled, cloud) - 1) < 0.1, `${where}, the bubbles' mean white ${whiteMeasured.toFixed(5)}, the white they fade to ${meanWhite(filled, cloud).toFixed(5)}`);
+    check(Math.abs(aliveMeasured / aliveShare(filled, cloud) - 1) < 0.05, `${where}, bubbles in ${(100 * aliveMeasured).toFixed(1)}% of the cells (${(100 * aliveShare(filled, cloud)).toFixed(1)}%: filled²·FOAM_BUBBLE_MOST, a fizz's FOAM_BUBBLE_FIZZ of it, clumped)`);
+    check(Math.abs(lightMeasured / meanLight(filled, cloud) - 1) < 0.1, `${where}, the bubbles' mean light ${lightMeasured.toFixed(5)} of the sky, the light they fade to ${meanLight(filled, cloud).toFixed(5)}`);
   }
   {
     // Drawn where the fade starts (FOAM_FADE_START cells a pixel), against point samples of the same places: a bubble
@@ -551,24 +569,24 @@ check(Math.abs(raftCover - boilCover) < 0.06, `a boil's bubbles cover about what
       let pointSum = 0, drawnSum = 0;
       for (let index = 0; index < 200000; index++) {
         const worldX = seededRandom() * 4.8, worldZ = seededRandom() * 4.8, time = seededRandom() * 30;
-        pointSum += bubbleAt(worldX, worldZ, 1, time, 0, cloud).white;
-        drawnSum += bubbleAt(worldX, worldZ, 1, time, fadeStart, cloud).white;
+        pointSum += bubbleAt(worldX, worldZ, 1, time, 0, cloud).light;
+        drawnSum += bubbleAt(worldX, worldZ, 1, time, fadeStart, cloud).light;
       }
       const loss = 1 - drawnSum / pointSum;
-      // The Fresnel's fourth power keeps most of a bubble's white in its outer tenth, so the small bubbles under a
-      // pixel here lose more of it than the square's did (6% against 3%).
-      check(Math.abs(loss) < 0.08, `over a cloud of ${cloud} holds, drawn at ${(1000 * fadeStart).toFixed(2)} mm a pixel, where they start to fade, the bubbles whiten ${(100 * loss).toFixed(1)}% less than point-sampled`);
+      // The Fresnel's fourth power keeps most of a bubble's reflectance in its outer tenth, so the small bubbles under a
+      // pixel here lose some of it (about 8% over a cloud, where the bubbles are big, 5% over a fizz).
+      check(Math.abs(loss) < 0.08, `over a cloud of ${cloud} holds, drawn at ${(1000 * fadeStart).toFixed(2)} mm a pixel, where they start to fade, the bubbles mirror ${(100 * loss).toFixed(1)}% less light than point-sampled`);
     }
   }
   {
-    // One cell over against a random distance away: the white's correlation at the lattice's own step (bubbles at
+    // One cell over against a random distance away: the light's correlation at the lattice's own step (bubbles at
     // their cells' centres would give 1; foamHash's neighbours are a little alike, a few hundredths).
     const pairs = 40000, near = [], far = [];
     for (let index = 0; index < pairs; index++) {
       const worldX = seededRandom() * 4.8, worldZ = seededRandom() * 4.8, time = seededRandom() * 30;
-      const here = bubbleAt(worldX, worldZ, 1, time).white;
-      near.push([here, bubbleAt(worldX + defines.FOAM_BUBBLE_CELL, worldZ, 1, time).white]);
-      far.push([here, bubbleAt(worldX + 0.37 + seededRandom(), worldZ + seededRandom(), 1, time).white]);
+      const here = bubbleAt(worldX, worldZ, 1, time).light;
+      near.push([here, bubbleAt(worldX + defines.FOAM_BUBBLE_CELL, worldZ, 1, time).light]);
+      far.push([here, bubbleAt(worldX + 0.37 + seededRandom(), worldZ + seededRandom(), 1, time).light]);
     }
     const correlation = (list) => {
       const meanFirst = mean(list.map((pair) => pair[0])), meanSecond = mean(list.map((pair) => pair[1]));
@@ -576,7 +594,7 @@ check(Math.abs(raftCover - boilCover) < 0.06, `a boil's bubbles cover about what
       return covariance / Math.sqrt(mean(list.map((pair) => (pair[0] - meanFirst) ** 2)) * mean(list.map((pair) => (pair[1] - meanSecond) ** 2)));
     };
     const atStep = correlation(near), apart = correlation(far);
-    check(Math.abs(atStep) < 0.05 && Math.abs(atStep - apart) < 0.05, `the bubbles show no grid: the white one cell over correlates ${atStep.toFixed(3)}, far apart ${apart.toFixed(3)}`);
+    check(Math.abs(atStep) < 0.05 && Math.abs(atStep - apart) < 0.05, `the bubbles show no grid: the light one cell over correlates ${atStep.toFixed(3)}, far apart ${apart.toFixed(3)}`);
   }
 
   const mainSource = readFileSync(path.join(root, 'src/main.js'), 'utf8');

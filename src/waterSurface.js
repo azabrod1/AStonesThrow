@@ -160,7 +160,7 @@ export function createWaterSurface(water, lighting, ambientWaves, { meshSegments
     uFoam: { value: water.foamTexture },
     uFoamDrift: water.foamUniforms.uFoamDrift,
     uReflection: { value: null },
-    uSkyCube: { value: skyCube },   // the ice's frosted mirror (WATER_FRAGMENT iceSurface); from below, the window's sky
+    uSkyCube: { value: skyCube },   // the ice's frosted mirror (WATER_FRAGMENT iceSurface) and the bubbles' films (freshBubbles); from below, the window's sky
     uReflectionMatrix: { value: new THREE.Matrix4() },
     uMirrorNear: { value: new THREE.Vector4(1, 1, 0, 0) },   // the splash's image in the mirror (uv), empty when none
     uMirrorSize: { value: new THREE.Vector2(1, 1) },
