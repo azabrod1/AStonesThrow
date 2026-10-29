@@ -71,7 +71,9 @@ is remembered on the device (but the view, which opens on the shore):
   pizza, a frozen pizza, a pie, a banana, a slice of bread, a birthday cake),
   toys (a rubber duck, a toy slide), electronics (a TV, an iPhone) and
   others (a brick, a snowball), each
-  the size, weight and density of the real thing (`src/things.js`). The foot of the strip's
+  the size, weight and density of the real thing (`src/things.js`). The page
+  shows one group at a time under a row of tabs, one for each group, so it
+  fits a phone however many groups there are. The foot of the strip's
   dropdown opens this page. What is lighter than water floats; the rest sink.
   What comes to rest stays, on the bed or the pool's floor as on the deck, up
   to the quality preset's count (below); past it the oldest shrinks away.
