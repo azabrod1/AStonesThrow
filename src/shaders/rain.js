@@ -292,32 +292,42 @@ void main() {
 // drop whose ring the tile draws, and over the drop's life the one point is
 // drawn as each thing the splash is in turn, so a splash costs one vertex
 // whatever it does. SPLASH holds the reference drop's splash (2 mm across
-// at 6.5 m/s, tools/rain-probe.mjs's), every length and time of which
-// scales with the drop's size (the crown and the jet, a few drop diameters
-// across and tall, in a few drop-times): a drop at its terminal speed
-// opens a crater and throws up a crown, a thin sheet with a rim of droplets,
-// which rises and falls back within SPLASH.crown.life, a bright flash, wide
-// and low (drawn as a capsule lying along the water, as wide as the crown
-// and as high as it looks from the view's elevation); the crater closes and
-// from SPLASH.jet.from a Worthington jet rises, a thin column that stands
-// tallest halfway and has fallen back by SPLASH.jet.to, its height drawn
-// afresh for every drop between SPLASH.jet.heights, most of them short
-// (the cube of a random number: the odd tall spike among many small
-// ones), drawn as a capsule from its foot on the water to its tip, as the
-// eye sees it (both ends projected, so from the bank a jet is a spike and
-// from above a dot), and as the eye keeps it: a jet rises and falls at
-// about a metre a second, so the capsule reaches the higher of the tip now
-// and the tip uStreakSeconds ago (the eye's persistence, the streaks' and
-// the snow's: setTimeScale), with the jet's light spread over it, so a
-// moving jet is a smear and only one at its peak stands crisp; it is a
-// clear column, not foam, so it shows SPLASH.jet.light of the crown's
-// white, pale against dark water as the streaks are; and, for
-// SPLASH.droplet.share of the jets, a droplet
-// pinched off the tip at the jet's peak, which flies on up (by a further
-// share of the jet's height, SPLASH.droplet.rise) and falls back to the
-// water under gravity, a speck. Or, for uBubbleShare of the drops (the
-// rain's, src/rain.js: the crown closes over the crater, which big drops'
-// do, and the jet is lost in it), the splash leaves a bubble from
+// at 6.5 m/s, tools/rain-probe.mjs's), every length of which scales with
+// the drop's size (the crown and the jet, a few drop diameters across and
+// tall) and every time with its square root (SPLASH.timePower: a crater's
+// collapse and a jet's flight go as the square root of their size over
+// gravity, so a big drop's splash is taller more than it is slower).
+// Something is on the water from
+// the impact to the jet's end, so the eye follows one motion rather than a
+// flash, a gap and a spike: a drop at its terminal speed opens a crater
+// and throws up a crown, a thin sheet with a rim of droplets, a bright
+// flash that rises and falls back within SPLASH.crown.life (a capsule
+// lying along the water, as wide as the crown and as high as it looks from
+// the view's elevation), whose rim stays as a faint widening ring on the
+// water (SPLASH.crown.rim of the flash's white, fading) over the crater
+// until, from SPLASH.jet.from, the Worthington jet rises: a thin column
+// that shoots up to its height in SPLASH.jet.rise (slowing as it goes, as
+// a thrown thing does), then falls back over SPLASH.jet.fall, faster as it
+// falls (the tip in free fall), thinning and dimming, its first frames
+// fading in over SPLASH.jet.fadeIn rather than popping. A jet's height is
+// drawn afresh for every drop between SPLASH.jet.heights, most of them
+// short (the cube of a random number: the odd tall spike among many small
+// ones), and the column is drawn as a capsule from its foot on the water
+// to its tip, as the eye sees it (both ends projected, so from the bank a
+// jet is a spike and from above a dot), and as the eye keeps it: the
+// capsule reaches the higher of the tip now and the tip uStreakSeconds ago
+// (the eye's persistence, the streaks' and the snow's: setTimeScale), with
+// the jet's light spread over it, so a moving jet is a smear and only one
+// at its peak stands crisp. It is a clear column, not foam, so it shows
+// SPLASH.jet.light of the crown's white, pale against dark water as the
+// streaks are. For SPLASH.droplet.share of the jets a droplet is pinched
+// off the tip at the peak and flies on up (by a further share of the jet's
+// height, SPLASH.droplet.rise) and back to the water under gravity: the
+// point is drawn as the droplet, a speck, from when the column has fallen
+// to SPLASH.droplet.from of its height, so the eye follows the mass up as
+// the column drops away. Or, for uBubbleShare of the drops (the rain's,
+// src/rain.js: the crown closes over the crater, which big drops' do, and
+// the jet is lost in it), the splash leaves a bubble from
 // SPLASH.bubble.from: a dome between SPLASH.bubble.sizes across standing on
 // the water, drawn as the foam specks' bubbles are (BUBBLE_SPRITE,
 // src/shaders/bubble.js), for SPLASH.bubble.lives seconds, most short (fresh
@@ -325,17 +335,22 @@ void main() {
 // next drop; it pops without a trace. Each splash has its own brightness
 // (SPLASH.shine, most faint, a few bright) and its own jet width, so no two
 // are alike. A capsule is at least uMinPixels wide and its opacity is cut
-// by the area it really covers, as the foam specks are, so far splashes
-// thin into grain rather than a field of equal dots. All stand on a gale's
-// waves. Nothing is stepped or written: a splash is a closed form of its
-// drop's age, hashed from the schedule, so the harness renders the same
-// splashes every run.
+// by the area it really covers, as the foam specks are; and a splash too
+// far off to resolve fades out as its true width falls through SPLASH.fade
+// pixels (a bubble as its diameter falls through SPLASH.bubble.fade),
+// since far rain is a fizz on the water, not a field of equal dots: there
+// the rain's rings and haze carry it. All stand on a gale's waves. Nothing
+// is stepped or written: a splash is a closed form of its drop's age,
+// hashed from the schedule, so the harness renders the same splashes
+// every run.
 export const SPLASH = {
-  crown: { life: 0.012, width: 0.010, height: 0.004, opacity: 0.5 },    // s; m across the rim; m high; of the splash's opacity
-  jet: { from: 0.03, to: 0.13, heights: [0.005, 0.03], width: 0.002, light: 0.5 },   // s, s; m, the shortest to the tallest; m across; its brightness against the crown's white (a clear column)
-  droplet: { share: 0.5, size: 0.0015, rise: [0.3, 1.0] },               // of the jets; m across; of the jet's height, further up
-  bubble: { from: 0.015, sizes: [0.003, 0.006], lives: [0.3, 1.5] },     // s; m across; s, real seconds (the film's drainage, not the drop's)
-  shine: [0.35, 1.0],                                                     // a splash's own brightness, of the rain's opacity
+  crown: { life: 0.012, width: 0.010, height: 0.004, opacity: 0.5, rim: 0.2 },   // s; m across the rim; m high; of the splash's opacity; the rim's share of that after the flash
+  jet: { from: 0.03, rise: 0.06, fall: 0.14, heights: [0.005, 0.03], width: 0.002, light: 0.5, fadeIn: 0.02 },   // s; s up; s down; m, the shortest to the tallest; m across; its brightness against the crown's white (a clear column); s fading in
+  droplet: { share: 0.5, size: 0.0015, rise: [0.3, 1.0], from: 0.5 },   // of the jets; m across; of the jet's height, further up; shown from when the column has fallen to this share of its height
+  bubble: { from: 0.015, sizes: [0.003, 0.006], lives: [0.3, 1.5], fade: [1.5, 3.0] },   // s; m across; s, real seconds (the film's drainage, not the drop's); px of diameter it fades out under
+  shine: [0.35, 1.0],   // a splash's own brightness, of the rain's opacity
+  fade: [0.4, 1.0],     // px: a capsule fades out as its true width falls through these
+  timePower: 0.5,       // a splash's times scale with the drop's size to this power (its lengths with the size itself)
   gravity: 9.81,
 };
 const splashDefines = `
@@ -343,19 +358,26 @@ const splashDefines = `
 #define SPLASH_CROWN_WIDTH ${SPLASH.crown.width}
 #define SPLASH_CROWN_HEIGHT ${SPLASH.crown.height}
 #define SPLASH_CROWN_OPACITY ${SPLASH.crown.opacity}
+#define SPLASH_CROWN_RIM ${SPLASH.crown.rim}
 #define SPLASH_JET_FROM ${SPLASH.jet.from}
-#define SPLASH_JET_TO ${SPLASH.jet.to}
+#define SPLASH_JET_RISE ${SPLASH.jet.rise}
+#define SPLASH_JET_FALL ${SPLASH.jet.fall}
 #define SPLASH_JET_HEIGHTS vec2(${SPLASH.jet.heights.join(', ')})
 #define SPLASH_JET_WIDTH ${SPLASH.jet.width}
 #define SPLASH_JET_LIGHT ${SPLASH.jet.light}
+#define SPLASH_JET_FADE_IN ${SPLASH.jet.fadeIn}
 #define SPLASH_DROPLET_SHARE ${SPLASH.droplet.share}
 #define SPLASH_DROPLET_SIZE ${SPLASH.droplet.size}
 #define SPLASH_DROPLET_RISE vec2(${SPLASH.droplet.rise.join(', ')})
+#define SPLASH_DROPLET_FROM ${SPLASH.droplet.from}
 #define SPLASH_BUBBLE_FROM ${SPLASH.bubble.from}
 #define SPLASH_BUBBLE_SIZES vec2(${SPLASH.bubble.sizes.join(', ')})
 #define SPLASH_BUBBLE_LIVES vec2(${SPLASH.bubble.lives.join(', ')})
+#define SPLASH_BUBBLE_FADE vec2(${SPLASH.bubble.fade.join(', ')})
 #define SPLASH_SHINE vec2(${SPLASH.shine.join(', ')})
+#define SPLASH_FADE vec2(${SPLASH.fade.join(', ')})
 #define SPLASH_GRAVITY ${SPLASH.gravity}
+#define SPLASH_TIME_POWER ${SPLASH.timePower}
 `;
 export const FLECK_VERTEX = /* glsl */`
 ${RAIN_DROPS}
@@ -405,22 +427,32 @@ void capsule(vec3 from, vec3 to, float width, float brightness, float kind) {
   float widthPixels = width * uProjScale / -viewMiddle.z;
   float drawnWidth = max(widthPixels, uMinPixels);
   float covered = min(widthPixels * (sweptLength + widthPixels) / (drawnWidth * (sweptLength + drawnWidth)), 1.0);
+  float resolved = smoothstep(SPLASH_FADE.x, SPLASH_FADE.y, widthPixels);   // too far to resolve: a fizz the rings and haze carry, not a dot
   vKind = kind;
   vAxis = vec2(axis.x, -axis.y);   // the sprite's y is down
   vHalfLength = 0.5 * sweptLength;
   vHalfWidth = 0.5 * drawnWidth;
   vSize = sweptLength + drawnWidth;
   gl_PointSize = vSize;
-  vAlpha = uOpacity * brightness * covered;
+  vAlpha = uOpacity * brightness * covered * resolved;
   vPixelSize = widthPixels; vDrawn = drawnWidth;
   vToViewer = vec3(0.0, 0.0, 1.0); vToSun = vToViewer; vHalfVector = vToViewer; vPlaneNormal = vToViewer;
   gl_Position = projectionMatrix * viewMiddle;
+}
+// The jet's height as a share of its full height, since reference seconds after it starts: up in SPLASH_JET_RISE,
+// slowing to the peak as a thrown thing does, then down in SPLASH_JET_FALL, faster as it falls, as a thing falls.
+float jetHeightShare(float since) {
+  if (since <= 0.0) return 0.0;
+  if (since < SPLASH_JET_RISE) { float left = 1.0 - since / SPLASH_JET_RISE; return 1.0 - left * left; }
+  float down = (since - SPLASH_JET_RISE) / SPLASH_JET_FALL;
+  return max(1.0 - down * down, 0.0);
 }
 void main() {
   RainDrop drop = rainDrop(aSchedule.xy, aSchedule.z);
   if (drop.age < 0.0) { hide(); return; }
   float size = drop.size;
-  float age = drop.age / size;   // in the reference drop's seconds
+  float timeScale = pow(size, SPLASH_TIME_POWER);
+  float age = drop.age / timeScale;   // in the reference drop's seconds
   vec3 draw = rainSplashHash(aSchedule.xy, aSchedule.z, drop.cycle, 0.0);   // the jet's height or the bubble's life, the shine, what the splash does
   vec3 more = rainSplashHash(aSchedule.xy, aSchedule.z, drop.cycle, 1.0);   // the bubble's size, the droplet's rise, the jet's width
   float shine = mix(SPLASH_SHINE.x, SPLASH_SHINE.y, draw.y * draw.y);
@@ -432,22 +464,9 @@ void main() {
   vec2 world = rainWorld(inTile, reading, uTileSize);
   float surface = uGaleMetresPerUnit > 0.0 ? galeHeight(world) : 0.0;   // on the gale's waves
   vec3 foot = vec3(world.x, surface, world.y);
-  if (age < SPLASH_CROWN_LIFE) {
-    // The crown: a ring widening as it rises and falls back, lying along the water, as high as the view shows it.
-    float along = age / SPLASH_CROWN_LIFE;
-    float width = SPLASH_CROWN_WIDTH * size * (0.5 + 0.5 * along);
-    float height = SPLASH_CROWN_HEIGHT * size * 4.0 * along * (1.0 - along);
-    vec3 toEye = normalize(cameraPosition - foot);
-    float thickness = width * abs(toEye.y) + height * length(toEye.xz);
-    vec3 across = cross(vec3(0.0, 1.0, 0.0), toEye);   // along the water, across the view (any way when seen from straight above)
-    vec3 sideways = (length(across) > 1e-4 ? normalize(across) : vec3(1.0, 0.0, 0.0)) * 0.5 * max(width - thickness, 0.0);
-    capsule(foot - sideways, foot + sideways, thickness, shine * SPLASH_CROWN_OPACITY * (1.0 - along), 0.0);
-    return;
-  }
-  if (bubble) {
-    if (age < SPLASH_BUBBLE_FROM) { hide(); return; }
-    float since = drop.age - SPLASH_BUBBLE_FROM * size;   // real seconds
-    float life = min(mix(SPLASH_BUBBLE_LIVES.x, SPLASH_BUBBLE_LIVES.y, draw.x * draw.x), uRainPeriod - SPLASH_BUBBLE_FROM * size - 0.02);
+  if (bubble && age >= SPLASH_BUBBLE_FROM) {
+    float since = drop.age - SPLASH_BUBBLE_FROM * timeScale;   // real seconds
+    float life = min(mix(SPLASH_BUBBLE_LIVES.x, SPLASH_BUBBLE_LIVES.y, draw.x * draw.x), uRainPeriod - SPLASH_BUBBLE_FROM * timeScale - 0.02);
     if (since >= life) { hide(); return; }
     float diameter = mix(SPLASH_BUBBLE_SIZES.x, SPLASH_BUBBLE_SIZES.y, more.x) * size;
     vec4 viewPosition = viewMatrix * vec4(foot, 1.0);
@@ -468,33 +487,54 @@ void main() {
     vAxis = vec2(0.0, 1.0); vHalfLength = 0.0; vHalfWidth = 0.5 * drawn; vSize = drawn;
     vPixelSize = pixelSize; vDrawn = drawn;
     gl_PointSize = drawn;
-    vAlpha = uOpacity * smoothstep(0.0, 0.02, since) * (pixelSize * pixelSize) / (drawn * drawn);
+    float resolved = smoothstep(SPLASH_BUBBLE_FADE.x, SPLASH_BUBBLE_FADE.y, pixelSize);
+    vAlpha = uOpacity * smoothstep(0.0, 0.02, since) * (pixelSize * pixelSize) / (drawn * drawn) * resolved;
     gl_Position = projectionMatrix * viewPosition;
     return;
   }
-  if (age < SPLASH_JET_FROM) { hide(); return; }
-  float jetHeight = mix(SPLASH_JET_HEIGHTS.x, SPLASH_JET_HEIGHTS.y, draw.x * draw.x * draw.x) * size;
-  float jetWidth = SPLASH_JET_WIDTH * size * mix(0.7, 1.3, more.z);
-  if (age < SPLASH_JET_TO) {
-    // The jet: a column rising from the water, tallest halfway, thinner and fainter as it falls back; drawn to the
-    // higher of its tip now and its tip uStreakSeconds ago, its light spread over that (the header).
-    float along = (age - SPLASH_JET_FROM) / (SPLASH_JET_TO - SPLASH_JET_FROM);
-    float before = max(age - uStreakSeconds / size - SPLASH_JET_FROM, 0.0) / (SPLASH_JET_TO - SPLASH_JET_FROM);
-    float height = jetHeight * 4.0 * along * (1.0 - along);
-    float kept = max(height, jetHeight * 4.0 * before * (1.0 - before));
-    float width = jetWidth * (1.0 - 0.4 * along);
-    float spread = (height + width) / (kept + width);
-    capsule(foot, foot + vec3(0.0, kept, 0.0), width, shine * SPLASH_JET_LIGHT * (1.0 - 0.5 * along) * spread, 1.0);
+  if (age < SPLASH_JET_FROM) {
+    // The crown: a ring widening as it rises and falls back, lying along the water, as high as the view shows it;
+    // then its rim, a faint ring widening on over the crater until the jet rises.
+    float flash = min(age / SPLASH_CROWN_LIFE, 1.0);
+    float along = age / SPLASH_JET_FROM;
+    float width = SPLASH_CROWN_WIDTH * size * (0.5 + 0.5 * flash + 0.6 * along);
+    float height = SPLASH_CROWN_HEIGHT * size * 4.0 * flash * (1.0 - flash);
+    float brightness = SPLASH_CROWN_OPACITY * (max(1.0 - flash, 0.0) + SPLASH_CROWN_RIM * (1.0 - along));
+    vec3 toEye = normalize(cameraPosition - foot);
+    float thickness = width * abs(toEye.y) + height * length(toEye.xz);
+    vec3 across = cross(vec3(0.0, 1.0, 0.0), toEye);   // along the water, across the view (any way when seen from straight above)
+    vec3 sideways = (length(across) > 1e-4 ? normalize(across) : vec3(1.0, 0.0, 0.0)) * 0.5 * max(width - thickness, 0.0);
+    capsule(foot - sideways, foot + sideways, thickness, shine * brightness, 0.0);
     return;
   }
-  if (!droplet) { hide(); return; }
-  // The droplet pinched off the jet's tip at its peak: up from there and back to the water under gravity, in real seconds.
-  float flight = drop.age - 0.5 * (SPLASH_JET_FROM + SPLASH_JET_TO) * size;
-  float launch = sqrt(2.0 * SPLASH_GRAVITY * jetHeight * mix(SPLASH_DROPLET_RISE.x, SPLASH_DROPLET_RISE.y, more.y));
-  float height = jetHeight + launch * flight - 0.5 * SPLASH_GRAVITY * flight * flight;
-  if (height <= 0.0) { hide(); return; }
-  vec3 place = foot + vec3(0.0, height, 0.0);
-  capsule(place, place, SPLASH_DROPLET_SIZE * size, shine * 0.8, 2.0);
+  float jetHeight = mix(SPLASH_JET_HEIGHTS.x, SPLASH_JET_HEIGHTS.y, draw.x * draw.x * draw.x) * size;
+  float jetWidth = SPLASH_JET_WIDTH * size * mix(0.7, 1.3, more.z);
+  float jetLife = SPLASH_JET_RISE + SPLASH_JET_FALL;
+  float sinceJet = age - SPLASH_JET_FROM;   // reference seconds
+  if (droplet && sinceJet >= SPLASH_JET_RISE + SPLASH_JET_FALL * sqrt(1.0 - SPLASH_DROPLET_FROM)) {
+    // The droplet pinched off the jet's tip at its peak: up from there and back to the water under gravity, in real
+    // seconds, drawn once the column has fallen to SPLASH_DROPLET_FROM of its height.
+    float flight = (sinceJet - SPLASH_JET_RISE) * timeScale;
+    float launch = sqrt(2.0 * SPLASH_GRAVITY * jetHeight * mix(SPLASH_DROPLET_RISE.x, SPLASH_DROPLET_RISE.y, more.y));
+    float height = jetHeight + launch * flight - 0.5 * SPLASH_GRAVITY * flight * flight;
+    if (height <= 0.0) { hide(); return; }
+    vec3 place = foot + vec3(0.0, height, 0.0);
+    capsule(place, place, SPLASH_DROPLET_SIZE * size, shine * 0.8, 2.0);
+    return;
+  }
+  if (sinceJet < jetLife) {
+    // The jet: a column shooting up, slowing to its peak, then falling back faster and faster, thinner and fainter;
+    // drawn to the higher of its tip now and its tip uStreakSeconds ago, its light spread over that (the header).
+    float height = jetHeight * jetHeightShare(sinceJet);
+    float kept = max(height, jetHeight * jetHeightShare(sinceJet - uStreakSeconds / timeScale));
+    float along = sinceJet / jetLife;
+    float width = jetWidth * (1.0 - 0.5 * along);
+    float spread = (height + width) / (kept + width);
+    float brightness = shine * SPLASH_JET_LIGHT * smoothstep(0.0, SPLASH_JET_FADE_IN, sinceJet) * (1.0 - 0.4 * along) * spread;
+    capsule(foot, foot + vec3(0.0, kept, 0.0), width, brightness, 1.0);
+    return;
+  }
+  hide();
 }
 `;
 

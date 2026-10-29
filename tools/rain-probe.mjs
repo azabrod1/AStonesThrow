@@ -43,14 +43,16 @@
 // spreads it over its tile's lattice to find what each mip level loses, as
 // src/ambientWaves.js does for the wind's ripples.
 //
-// The splashes (SPLASH in src/shaders/rain.js, every length and time of it
-// the reference drop's, scaled by a drop's size): for each intensity of
+// The splashes (SPLASH in src/shaders/rain.js, every length of it the
+// reference drop's scaled by a drop's size, every time by its size to
+// SPLASH.timePower): for each intensity of
 // RAIN, the timeline of its biggest drop's splash and its slot's period
 // (rainSchedule, src/rain.js), and checks that the splash's phases come in
 // order (the crown, then a bubble or the jet); that the longest splash with
 // no bubble (the jet, and a droplet pinched off at its peak from the tallest
 // jet, flying on up and back to the water) is over before the slot's next
-// drop, so a slot's point never has two splashes to show; that the shortest
+// drop, so a slot's point never has two splashes to show; that a jet's fall
+// spans six frames or more at 60 fps, a motion rather than a flash; that the shortest
 // bubble fits under the cap the shader puts on a bubble's life (the period,
 // less when the bubble starts, less 0.02 s), with what share of the bubble
 // lives the cap cuts; and that the drops that leave a bubble and the jets
@@ -205,20 +207,25 @@ if (isMain) {
   for (const [intensity, rain] of Object.entries(RAIN)) {
     const { period } = rainSchedule(rain);
     const biggest = Math.max(...rain.sizes);
+    const slowest = biggest ** SPLASH.timePower, quickest = Math.min(...rain.sizes) ** SPLASH.timePower;   // the times' scales (lengths scale with the size itself)
     // A droplet pinched off the tallest jet at its peak, flying on up by its
     // highest rise and back to the water: H + v·t − g·t²/2 = 0.
     const tallest = jet.heights[1] * biggest;
     const launchSpeed = Math.sqrt(2 * gravity * tallest * droplet.rise[1]);
-    const pinchedAt = 0.5 * (jet.from + jet.to) * biggest;
+    const jetTo = jet.from + jet.rise + jet.fall;
+    const pinchedAt = (jet.from + jet.rise) * slowest;
     const flight = (launchSpeed + Math.sqrt(launchSpeed * launchSpeed + 2 * gravity * tallest)) / gravity;
     const dropletLands = pinchedAt + flight;
-    const bubbleFrom = bubble.from * biggest;
-    console.log(`  ${intensity.padEnd(7)} ${biggest.toFixed(1).padStart(4)}   ${(crown.life * biggest).toFixed(4)} s   ${bubbleFrom.toFixed(4)} s      ${(jet.from * biggest).toFixed(3)}–${(jet.to * biggest).toFixed(3)} s     ${(tallest * 1000).toFixed(1).padStart(5)} mm      ${dropletLands.toFixed(3)} s         ${period.toFixed(3)} s`);
-    check(crown.life < bubble.from && bubble.from < jet.from && jet.from < jet.to,
-      `${intensity}: the splash's phases are in order: the crown (to ${crown.life} s), a bubble (from ${bubble.from} s), the jet (${jet.from} to ${jet.to} s), of the reference drop`);
-    const longestUncut = Math.max(jet.to * biggest, dropletLands);
+    const bubbleFrom = bubble.from * slowest;
+    console.log(`  ${intensity.padEnd(7)} ${biggest.toFixed(1).padStart(4)}   ${(crown.life * slowest).toFixed(4)} s   ${bubbleFrom.toFixed(4)} s      ${(jet.from * slowest).toFixed(3)}–${(jetTo * slowest).toFixed(3)} s     ${(tallest * 1000).toFixed(1).padStart(5)} mm      ${dropletLands.toFixed(3)} s         ${period.toFixed(3)} s`);
+    check(crown.life < bubble.from && bubble.from < jet.from && jet.rise > 0 && jet.fall > 0,
+      `${intensity}: the splash's phases are in order: the crown (to ${crown.life} s), a bubble (from ${bubble.from} s), the jet (${jet.from} s, up in ${jet.rise}, down in ${jet.fall}), of the reference drop`);
+    const longestUncut = Math.max(jetTo * slowest, dropletLands);
     check(longestUncut < period,
-      `${intensity}: the longest splash with no bubble (a droplet off the tallest jet, landing at ${dropletLands.toFixed(3)} s; the jet down by ${(jet.to * biggest).toFixed(3)} s) is over before the slot's next drop, ${period.toFixed(3)} s on`);
+      `${intensity}: the longest splash with no bubble (a droplet off the tallest jet, landing at ${dropletLands.toFixed(3)} s; the jet down by ${(jetTo * slowest).toFixed(3)} s) is over before the slot's next drop, ${period.toFixed(3)} s on`);
+    // At 60 frames a second the jet's fall alone spans frames enough to be seen as a motion, not a flash.
+    check(jet.fall * quickest * 60 >= 6,
+      `${intensity}: the smallest drop's jet falls over ${(jet.fall * quickest * 60).toFixed(1)} frames at 60 fps, 6 or more`);
     const cap = period - bubbleFrom - 0.02;
     const cut = Math.min(Math.max((bubble.lives[1] - cap) / (bubble.lives[1] - bubble.lives[0]), 0), 1);
     const bubblesCut = 1 - Math.sqrt(1 - cut);   // a bubble's life is drawn as the square of a hash, most short

@@ -222,10 +222,12 @@ is remembered on the device (but the view, which opens on the shore):
   an overcast that hides the sun and greys the sky, with a haze that fades
   the far shore; its drops ring the water, streak past the eye and splash
   where they land, and the pool's deck goes dark with wet. Where a drop
-  lands it throws up a crown's flash, then a thin jet standing for a tenth
-  of a second, some with a droplet off its tip, or, for a share of the
-  drops, a floating bubble that pops within a second or two; each splash
-  has its own height and brightness, so no two are alike. A light rain's
+  lands it throws up a crown's flash, then a thin jet that shoots up and
+  falls back over a quarter of a second, some with a droplet off its tip,
+  or, for a share of the drops, a floating bubble that pops within a second
+  or two; each splash has its own height and brightness, so no two are
+  alike, and those too far off to make out fade into the fizz the rings
+  and the haze give the far water. A light rain's
   rings are fine and far apart; a downpour hammers the whole surface.
   Rain at night is dark: the cloud hides the moon. A storm is a downpour
   under a darker sky, with lightning, and brings a gale. Snow falls from a
@@ -963,8 +965,9 @@ roughness, from the rings' slope spectrum by Campbell's theorem (as the
 wind's ripples do). The falling drops are streaks, each the path it cuts in
 the eye's 1/30 s, slanted by the wind: drops of the same schedule, so each
 falls to the very place its ring opens and its splash is thrown up: a
-crown's flash, then a thin jet standing for a tenth of a second, a droplet
-off the tip of some, or, for a share of the drops (more in a downpour, whose
+crown's flash whose rim lingers over the crater, then a thin jet that shoots
+up and falls back more slowly over a quarter of a second, a droplet off the
+tip of some, or, for a share of the drops (more in a downpour, whose
 bigger drops' crowns close over the crater more often), a bubble floating on
 the water that pops within a second or two, each splash its own height and
 brightness, so no two are alike. A few of each tile's drops near the eye
