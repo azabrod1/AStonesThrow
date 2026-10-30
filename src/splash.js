@@ -1607,11 +1607,12 @@ export class SplashSystem {
    * rate for the whole span, the later ones landing further out, the last
    * FOAM_REACH_GROWTH further (the plume widening as it rises). Past the
    * span, to `tail` seconds after `time`,
-   * one more every FOAM_STAMP_SPACING, falling as
-   * (span / age)^FOAM_TAIL_POWER, anywhere within the grown reach, each 1.33 to 2
-   * times as wide as the bulk's mean and fainter by as much (less air, spread
-   * wider, but small bubbles whiten more for their air; source 'tail'): the
-   * plume's fines, ever fewer (the constants' note).
+   * one more every half FOAM_STAMP_SPACING with half the amount (the same
+   * rate, pulsing less as it thins), falling as (span / age)^FOAM_TAIL_POWER,
+   * anywhere within the grown reach, each 1.33 to 2 times as wide as the
+   * bulk's mean and fainter by that to the power 1.5 (less air spread wider,
+   * but small bubbles whiten more for their air; source 'tail'): the plume's
+   * fines, ever fewer (the constants' note).
    */
   stampFoamPatch(water, random, { x, z, radius, amount, reach, radii, lifetime, boil = false, time = this.time, span = 0, sustained = false, tail = 0, source }) {
     const pieces = 3 + Math.floor(random() * 3);
@@ -1630,14 +1631,15 @@ export class SplashSystem {
       if (at > this.time) this.foamStamps.push({ time: at, foam }); else water.addFoam(foam);
     }
     if (!(tail > span && span > 0)) return;
-    for (let at = time + span + FOAM_STAMP_SPACING; at <= time + tail; at += FOAM_STAMP_SPACING) {
+    const tailSpacing = 0.5 * FOAM_STAMP_SPACING;
+    for (let at = time + span + tailSpacing; at <= time + tail; at += tailSpacing) {
       const angle = random() * Math.PI * 2;
       const distance = reach * (1 + growth) * radius * Math.sqrt(random());
-      const fall = (span / (at - time)) ** FOAM_TAIL_POWER;
+      const fall = 0.5 * (span / (at - time)) ** FOAM_TAIL_POWER;
       const spread = radii[1] * (1 + 0.5 * random()) / (0.5 * (radii[0] + radii[1]));   // its width over the bulk's mean
       const foam = {
         x: x + Math.cos(angle) * distance, z: z + Math.sin(angle) * distance,
-        radius: radius * 0.5 * (radii[0] + radii[1]) * spread, amount: amount * share * fall * (0.4 + 0.6 * random()) / spread, lifetime, boil, source: 'tail',
+        radius: radius * 0.5 * (radii[0] + radii[1]) * spread, amount: amount * share * fall * (0.4 + 0.6 * random()) / spread ** 1.5, lifetime, boil, source: 'tail',
       };
       if (at > this.time) this.foamStamps.push({ time: at, foam }); else water.addFoam(foam);
     }
