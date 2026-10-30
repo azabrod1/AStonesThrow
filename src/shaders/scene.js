@@ -735,11 +735,14 @@ ${SNOW_COVER}
 export const FRESH_BOIL = /* glsl */`
 #define FOAM_BOIL_HOLD 0.035               // the most of a splash's boil the surface holds, one layer of bubbles bursting
 #define FOAM_FROTH_GAIN 4.0                // the boil's cloud, beyond the hold, is topped with froth: FOAM_PATTERN, as a boil, at up to this many times the cloud's map value...
-#define FOAM_FROTH_FULL_CLOUD 2.0          // ...reached as the cloud deepens to this many holds (frothFoam: a pebble's thin cloud froths hardly at all, a rock's deep one goes solid)
+#define FOAM_FROTH_HALF_CLOUD 1.0          // ...half of it as the cloud deepens to this many holds, the rest ever more slowly (frothFoam: a pebble's thin cloud froths a little, a rock's deep one goes solid)
 // The froth over a boil's cloud, as the foam map's value for FOAM_PATTERN: FOAM_FROTH_GAIN times the cloud, scaled by
-// how deep the cloud is (0 to 1 over FOAM_FROTH_FULL_CLOUD holds), so a thin cloud gives little and a deep one much.
+// how deep the cloud is, cloud / (cloud + FOAM_FROTH_HALF_CLOUD holds), so a thin cloud gives little (as its square)
+// and a deep one much. A smooth law, not a step: a boil's tail, its cloud thinning over seconds as ever fewer
+// bubbles come up (src/splash.js, the constants' note), thins its froth with it instead of losing it in three
+// frames at a knee, the fizz under it carrying on alone.
 float frothFoam(float cloud) {
-  return FOAM_FROTH_GAIN * cloud * smoothstep(0.0, FOAM_FROTH_FULL_CLOUD * FOAM_BOIL_HOLD, cloud);
+  return FOAM_FROTH_GAIN * cloud * cloud / (cloud + FOAM_FROTH_HALF_CLOUD * FOAM_BOIL_HOLD);
 }
 float freshBoilSurface(float boil) {
   float squared = boil * boil / (FOAM_BOIL_HOLD * FOAM_BOIL_HOLD);

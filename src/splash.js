@@ -1602,9 +1602,9 @@ export class SplashSystem {
    * rate for the whole span. Past the span, to `tail` seconds after `time`,
    * one more every FOAM_STAMP_SPACING, falling as
    * (span / age)^FOAM_TAIL_POWER, anywhere within `radius`, each 1.33 to 2
-   * times as wide as the bulk's mean and fainter by the square of that, the
-   * same air spread wider (source 'tail'): the plume's fines, ever fewer
-   * (the constants' note).
+   * times as wide as the bulk's mean and fainter by as much (less air, spread
+   * wider, but small bubbles whiten more for their air; source 'tail'): the
+   * plume's fines, ever fewer (the constants' note).
    */
   stampFoamPatch(water, random, { x, z, radius, amount, reach, radii, lifetime, boil = false, time = this.time, span = 0, sustained = false, tail = 0, source }) {
     const pieces = 3 + Math.floor(random() * 3);
@@ -1629,7 +1629,7 @@ export class SplashSystem {
       const spread = radii[1] * (1 + 0.5 * random()) / (0.5 * (radii[0] + radii[1]));   // its width over the bulk's mean
       const foam = {
         x: x + Math.cos(angle) * distance, z: z + Math.sin(angle) * distance,
-        radius: radius * 0.5 * (radii[0] + radii[1]) * spread, amount: amount * share * fall * (0.4 + 0.6 * random()) / (spread * spread), lifetime, boil, source: 'tail',
+        radius: radius * 0.5 * (radii[0] + radii[1]) * spread, amount: amount * share * fall * (0.4 + 0.6 * random()) / spread, lifetime, boil, source: 'tail',
       };
       if (at > this.time) this.foamStamps.push({ time: at, foam }); else water.addFoam(foam);
     }
