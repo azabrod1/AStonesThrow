@@ -374,8 +374,12 @@ const BUBBLE_SWARM_SPREAD = 0.01;     // m
 // their spacing but fall as (bulk span / age)^FOAM_TAIL_POWER (sizes spread
 // log-uniformly, rising as Stokes says, arrive in number as 1/age and in
 // the air they bring up faster), wider and softer, as a plume's fines are
-// spread by its turbulence. At any moment only the bubbles just arrived
-// show, each bursting over BOIL_LIFETIME: a 3 cm stone's boil is a faint
+// spread by its turbulence. The air arrives over a widening patch
+// (FOAM_REACH_GROWTH): a plume widens as it rises, and the surface's
+// outflow carries what is just under it outward, so a rock's boil grows
+// from its mouth to about half again as far as its bulk comes up. At any
+// moment only the bubbles just arrived show, each bursting over
+// BOIL_LIFETIME: a 3 cm stone's boil is a faint
 // milky ring and fizz over about its mouth, a 20 cm rock's white froth over
 // a milky churn for a second and a half, thinning into a fizz over the next
 // few. The plume's upwelling spreads the surface under it for as long as
@@ -390,6 +394,7 @@ const FOAM_RISE_CAP = 2.5;            // ...so the hole's boil arrives over its 
 const BUBBLE_SLOW_RISE = 0.05;        // m/s: the plume's smallest bubbles, under a millimetre, rise this slowly...
 const FOAM_TAIL_CAP = 6;              // ...so the last of the hole's air arrives over its pinch depth at that speed, at most this long after the close (s): the boil's tail
 const FOAM_TAIL_POWER = 1.5;          // past the bulk's rise the air arrives at a rate falling as (bulk span / age)^this: ever smaller bubbles, ever fewer of them
+const FOAM_REACH_GROWTH = 0.6;        // a sustained boil's sub-stamps land ever wider, this much further by the bulk's end (and its tail there): the plume widens as it rises, and its slow fines are spread by its eddies and the outflow
 const FOAM_STAMP_SPACING = 0.25;      // a patch spread over a span gets a sub-stamp every this many seconds, the amount shared among them (or each with all of it, sustained)
 const FOAM_SPREAD = 0.6;              // a ripple's or a knock's boil comes up over this many sqrt(R/g)
 const JET_BASE_BOIL = 0.03;           // the boil where the jet rises, its sub-stamps' peak, scaling as sqrt(R / 3 cm): a grey churn at the centre, never a white disc...
@@ -1599,9 +1604,11 @@ export class SplashSystem {
    * a long span gets one more sub-stamp per FOAM_STAMP_SPACING, the amount
    * shared among them all, so the foam arrives as the air does; or, if
    * `sustained`, each with the whole of it, as air that comes up at that
-   * rate for the whole span. Past the span, to `tail` seconds after `time`,
+   * rate for the whole span, the later ones landing further out, the last
+   * FOAM_REACH_GROWTH further (the plume widening as it rises). Past the
+   * span, to `tail` seconds after `time`,
    * one more every FOAM_STAMP_SPACING, falling as
-   * (span / age)^FOAM_TAIL_POWER, anywhere within `radius`, each 1.33 to 2
+   * (span / age)^FOAM_TAIL_POWER, anywhere within the grown reach, each 1.33 to 2
    * times as wide as the bulk's mean and fainter by as much (less air, spread
    * wider, but small bubbles whiten more for their air; source 'tail'): the
    * plume's fines, ever fewer (the constants' note).
@@ -1610,9 +1617,10 @@ export class SplashSystem {
     const pieces = 3 + Math.floor(random() * 3);
     const count = pieces + Math.floor(span / FOAM_STAMP_SPACING);
     const share = sustained ? 1 : pieces / count;
+    const growth = sustained ? FOAM_REACH_GROWTH : 0;
     for (let piece = 0; piece < count; piece++) {
       const angle = random() * Math.PI * 2;
-      const distance = reach * radius * Math.sqrt(random());
+      const distance = reach * (1 + growth * piece / (count - 1)) * radius * Math.sqrt(random());
       // `source` names the stamper for the probes' accounting (tools/splash-probe.mjs); the water ignores it.
       const foam = {
         x: x + Math.cos(angle) * distance, z: z + Math.sin(angle) * distance,
@@ -1624,7 +1632,7 @@ export class SplashSystem {
     if (!(tail > span && span > 0)) return;
     for (let at = time + span + FOAM_STAMP_SPACING; at <= time + tail; at += FOAM_STAMP_SPACING) {
       const angle = random() * Math.PI * 2;
-      const distance = radius * Math.sqrt(random());
+      const distance = reach * (1 + growth) * radius * Math.sqrt(random());
       const fall = (span / (at - time)) ** FOAM_TAIL_POWER;
       const spread = radii[1] * (1 + 0.5 * random()) / (0.5 * (radii[0] + radii[1]));   // its width over the bulk's mean
       const foam = {
