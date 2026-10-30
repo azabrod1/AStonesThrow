@@ -634,18 +634,13 @@ function rollToRest(corners, down) {
   return direction;
 }
 
-/** A mesh's corners (`positions`: its triangles', each corner as often as they share it) once each, from `weight`, flat. */
+/** A mesh's corners (`positions`: its triangles', each corner as often as they share it) once each (uniquePoints), from `weight`, flat. */
 function cornersFrom(positions, weight) {
-  const seen = new Map(), corners = [];
-  for (let index = 0; index < positions.length; index += 3) {
-    const x = positions[index], y = positions[index + 1], z = positions[index + 2];
-    let alongX = seen.get(x);
-    if (!alongX) seen.set(x, alongX = new Map());
-    let alongY = alongX.get(y);
-    if (!alongY) alongX.set(y, alongY = new Set());
-    if (alongY.has(z)) continue;
-    alongY.add(z);
-    corners.push(x - weight.x, y - weight.y, z - weight.z);
+  const distinct = uniquePoints(positions), corners = new Float64Array(distinct.length);
+  for (let index = 0; index < distinct.length; index += 3) {
+    corners[index] = distinct[index] - weight.x;
+    corners[index + 1] = distinct[index + 1] - weight.y;
+    corners[index + 2] = distinct[index + 2] - weight.z;
   }
   return corners;
 }

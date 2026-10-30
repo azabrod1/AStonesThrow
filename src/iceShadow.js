@@ -154,9 +154,11 @@ export class IceShadow {
     this.material = new THREE.ShaderMaterial({ vertexShader: DEPTH_VERTEX, fragmentShader: DEPTH_FRAGMENT, side: THREE.DoubleSide });
     this.scene = new THREE.Scene();
     this.camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
-    // One stand-in per slot, drawn with the thing's own geometry where the thing is drawn.
+    // One stand-in per slot, drawn with the thing's own geometry where the thing is drawn, and holding none between
+    // draws (drawTile): a thing gone keeps no geometry of its own alive through its old slot.
+    this.noGeometry = new THREE.BufferGeometry();
     this.proxies = Array.from({ length: ICE_SHADOW.slots }, () => {
-      const proxy = new THREE.Mesh(new THREE.BufferGeometry(), this.material);
+      const proxy = new THREE.Mesh(this.noGeometry, this.material);
       proxy.matrixAutoUpdate = false;
       proxy.frustumCulled = false;
       proxy.visible = false;
@@ -248,6 +250,7 @@ export class IceShadow {
     renderer.autoClear = false;   // cleared once, above (restoreState puts it back)
     renderer.render(this.scene, camera);
     proxy.visible = false;
+    proxy.geometry = this.noGeometry;
     this.draws++;
   }
 
@@ -269,5 +272,6 @@ export class IceShadow {
   dispose() {
     this.target.dispose();
     this.material.dispose();
+    this.noGeometry.dispose();
   }
 }
