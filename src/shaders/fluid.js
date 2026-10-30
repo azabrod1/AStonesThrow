@@ -605,7 +605,7 @@ const MIRROR_COMMON = /* glsl */`
 #define MIRROR_NEARNESS_SCALE 4.0
 uniform samplerCube uEnvCube;
 uniform float uMirrorDistance;
-uniform float uMirrorLevel;    // the mirror's plane: the water's height under the splash (0 but under a gale, src/main.js)
+uniform float uMirrorLevel;    // the mirror's plane: the water's height under the splash under a gale, the ice's top frozen, else 0 (src/main.js)
 ${FRESNEL}
 vec3 worldFromView(vec3 viewVector) { return viewVector * mat3(viewMatrix); }
 vec4 mirrorNearness(float coverage, vec3 viewPoint) {
