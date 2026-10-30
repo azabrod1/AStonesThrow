@@ -257,7 +257,13 @@
 // drifts downwind at FLOAT.drift (src/main.js sets `drift`), never resting.
 // Afloat it is also in the water's mirror image (meshMirror: its part above
 // the water, on the mirror's layer, its distance in alpha as the pool's
-// walls write it, MIRROR_NEARNESS in src/shaders/scene.js).
+// walls write it, MIRROR_NEARNESS in src/shaders/scene.js), and so is
+// anything on the ice or hopping over it, once it has come down on it
+// (prepareMirror: glazed ice is a mirror, and a stone on it without its
+// image looks laid over the picture). On the ice its shadow is cast on the
+// ice and on the things near it (src/iceShadow.js: its drawn mesh, a tile of
+// the shadows' atlas), and its own part above the water takes theirs
+// (receiveIceShadows: its sunlight past them, never past its own).
 //
 // Its detail (showDetail): a ball is drawn from the coarsest of its meshes
 // (src/thingMeshes.js createBallGeometry `detail`) whose corners lie at most
@@ -314,7 +320,9 @@
 // than GROUND.settle; then it slides along (`ground`, alongGround,
 // slideStep), slowing at GROUND.tumbling·g: it tips onto the face nearest
 // down that it can lie on (lyingAttitude: restFaces, from its mesh, a brick
-// flat or on its side but never on its end, a stone on a flat face; a thing
+// flat or on its side but never on its end, a stone on a flat face, rolled
+// onto the face of its hull its weight is over, rollToRest: three of its
+// lumps, never one beside its weight; a thing
 // kept upright, a pizza, a pie, a duck, onto its top or bottom, a ballasted
 // one onto its base), its mesh's lowest point on the ground, and turns
 // slowly about the vertical as it slides (GROUND.turning), never tumbling,
@@ -335,6 +343,7 @@ import { THINGS, DEFAULT_THING, WATER_DENSITY, STONE_DENSITY } from './things.js
 import { cornersOf, meshKind, meshVolume, withParts } from './thingMeshes.js';
 import { stoneDetail, stoneUniforms } from './shaders/stone.js';
 import { convexHull, insidePolygon, polygonEdgeDistance } from './ice.js';
+import { receiveIceShadows } from './iceShadow.js';
 import { passBy, forgetPasses } from './collide.js';
 
 // The stone's geometry is src/thingMeshes.js's now; the probes take it from here as they always did.
@@ -421,6 +430,12 @@ const GROUND = {
   turning: 0.1,                // it turns about the vertical as it slides at up to this times its speed over its face's radius, either way...
   aligning: 8,                 // rad/s: a ball that rolls about its own axis (`material.rollsAbout`: an apple) turns onto its side at up to this
 };
+// A thing rolled onto the face of its hull it rests on (rollToRest): corners this near the lowest (radii) touch the
+// ground together; it tips at most `passes` times (a stone needs a few, a banana a hundred or so).
+const ROLL = { tie: 1e-7, passes: 400 };
+// The random ids (THREE's uuids) of a mirror image made as a thing comes down on the ice (Rock.prepareMirror): a stream
+// of their own, so making one never moves Math.random, which a seeded stone in the air meanwhile draws its splash from.
+const MIRROR_IDS = seededStream(0x51ce);
 // A flat thing's flight (`air.model` 'flutter', src/things.js: a pizza; the header): a plate in the air, its attitude its
 // own, turned by the air's push and its spin (R here its face's disc, Rock.plateRadius). The push on its face is ½ρv²·πR² times C_N(α) = `slope`·sin α·cos² α +
 // C_90·sin³ α (α the angle the air meets the face at; C_90 its `air.drag`, broadside), along its face's normal, and its
@@ -546,7 +561,10 @@ const RIDE_TILT = 0.36;   // the most a floater is tilted as it rides the water 
  * points within GROUND.faceBand of their lowest that way, by GROUND.faceMargin
  * and by GROUND.leastTip seen from its weight (a brick: flat or on its side,
  * not on its end; a stone: its flat faces, never its rim or its end; at least
- * its short axis's).
+ * its short axis's); each then rolled onto the face of its hull it would
+ * come to rest on from there (rollToRest): a lumpy stone set down with an
+ * axis straight down stands on one lump, as often as not beside its weight,
+ * and falls onto three.
  * Its own frame's directions, each the one that points down as it lies on it.
  * Worked out once for each mesh (its `positions`, which belong to one kind of
  * thing, so to one `ballast`; a shape may be shared by things of other meshes).
@@ -556,7 +574,7 @@ function restFaces(shape, positions, ballast) {
   if (restFacesOf.has(positions)) return restFacesOf.get(positions);
   const weight = shape.centroid.clone().add(new THREE.Vector3().fromArray(ballast ?? [0, 0, 0]));
   const across = new THREE.Vector3(), other = new THREE.Vector3(), point = new THREE.Vector3();
-  const faces = [];
+  const axes = [];
   for (const axis of shape.axes) for (const sign of [1, -1]) {
     const down = axis.clone().multiplyScalar(sign);
     across.set(Math.abs(down.x) < 0.9 ? 1 : 0, Math.abs(down.x) < 0.9 ? 0 : 1, 0).cross(down).normalize();
@@ -570,11 +588,91 @@ function restFaces(shape, positions, ballast) {
     }
     const height = lowest - weight.dot(down);
     const margin = Math.max(GROUND.faceMargin, height * Math.tan(THREE.MathUtils.degToRad(GROUND.leastTip)));
-    if (insideOutline(outline, weight.dot(across), weight.dot(other), margin)) faces.push(down);
+    if (insideOutline(outline, weight.dot(across), weight.dot(other), margin)) axes.push(down);
   }
-  if (faces.length === 0) faces.push(shape.axes[2].clone(), shape.axes[2].clone().negate());
+  if (axes.length === 0) axes.push(shape.axes[2].clone(), shape.axes[2].clone().negate());
+  const corners = cornersFrom(positions, weight);
+  const faces = axes.map((down) => rollToRest(corners, down));
   restFacesOf.set(positions, faces);
   return faces;
+}
+
+/**
+ * Where a thing set down with `down` (its own frame) pointing down comes to
+ * rest, quasi-statically, its mesh's corners (`corners`, flat, from its
+ * weight: cornersFrom) its hull's: while its weight is not over what it
+ * stands on (its corners lowest that way, seen from above: one, an edge, or
+ * a face whose outline misses the weight's foot), it tips towards its
+ * weight, about the point of what it stands on nearest the weight's foot,
+ * until another corner comes down onto the ground (each tip lowers its
+ * weight, so it ends), and rests on a face of its hull with its weight over
+ * it. A new direction of its own frame.
+ */
+function rollToRest(corners, down) {
+  const direction = down.clone();
+  const across = new THREE.Vector3(), other = new THREE.Vector3(), foot = new THREE.Vector3(), tip = new THREE.Vector3();
+  const count = corners.length / 3, heights = new Float64Array(count);
+  const along = (index, vector) => corners[3 * index] * vector.x + corners[3 * index + 1] * vector.y + corners[3 * index + 2] * vector.z;
+  for (let pass = 0; pass < ROLL.passes; pass++) {
+    let lowest = -Infinity;
+    for (let index = 0; index < count; index++) lowest = Math.max(lowest, heights[index] = along(index, direction));
+    across.set(Math.abs(direction.x) < 0.9 ? 1 : 0, Math.abs(direction.x) < 0.9 ? 0 : 1, 0).cross(direction).normalize();
+    other.crossVectors(direction, across);
+    // What it stands on, seen from above, and its point nearest the weight's foot (the origin).
+    const standing = [], seenFromAbove = [];
+    for (let index = 0; index < count; index++) {
+      if (heights[index] <= lowest - ROLL.tie) continue;
+      standing.push(index);
+      seenFromAbove.push(along(index, across), along(index, other));
+    }
+    const outline = standing.length === 1 ? seenFromAbove : convexHull(seenFromAbove);
+    if (outline.length >= 6 && insidePolygon(outline, 0, 0)) break;
+    nearestOnOutline(outline, foot);
+    const offset = Math.hypot(foot.x, foot.y);
+    if (offset < ROLL.tie) break;   // its weight over an edge: balanced, as nearly as a mesh can say
+    // It tips its down towards the side away from what it stands on (its weight falls past it).
+    tip.copy(across).multiplyScalar(-foot.x / offset).addScaledVector(other, -foot.y / offset);
+    // About the corner it stays on (the standing one furthest along the tip), until the first other comes down.
+    let pivot = standing[0];
+    for (const index of standing) if (along(index, tip) > along(pivot, tip)) pivot = index;
+    const pivotHeight = heights[pivot], pivotAhead = along(pivot, tip);
+    let angle = Infinity;
+    for (let index = 0; index < count; index++) {
+      const below = heights[index] - pivotHeight, ahead = along(index, tip) - pivotAhead;
+      if (below > -ROLL.tie || ahead <= 1e-12) continue;
+      angle = Math.min(angle, Math.atan2(-below, ahead));
+    }
+    if (!Number.isFinite(angle)) break;
+    direction.multiplyScalar(Math.cos(angle)).addScaledVector(tip, Math.sin(angle)).normalize();
+  }
+  return direction;
+}
+
+/** A mesh's corners (`positions`: its triangles', each corner as often as they share it) once each (uniquePoints), from `weight`, flat. */
+function cornersFrom(positions, weight) {
+  const distinct = uniquePoints(positions), corners = new Float64Array(distinct.length);
+  for (let index = 0; index < distinct.length; index += 3) {
+    corners[index] = distinct[index] - weight.x;
+    corners[index + 1] = distinct[index + 1] - weight.y;
+    corners[index + 2] = distinct[index + 2] - weight.z;
+  }
+  return corners;
+}
+
+/** The point of a convex outline (corners [x0, y0, …]: one, an edge's two, or a polygon's) nearest the origin, into `into` (x, y). */
+function nearestOnOutline(outline, into) {
+  const count = outline.length / 2;
+  if (count === 1) return into.set(outline[0], outline[1], 0);
+  let least = Infinity;
+  for (let index = 0; index < count; index++) {
+    const ax = outline[2 * index], ay = outline[2 * index + 1];
+    const bx = outline[(2 * index + 2) % outline.length], by = outline[(2 * index + 3) % outline.length];
+    const edgeX = bx - ax, edgeY = by - ay;
+    const share = THREE.MathUtils.clamp(-(ax * edgeX + ay * edgeY) / Math.max(edgeX * edgeX + edgeY * edgeY, 1e-24), 0, 1);
+    const x = ax + share * edgeX, y = ay + share * edgeY;
+    if (x * x + y * y < least) { least = x * x + y * y; into.set(x, y, 0); }
+  }
+  return into;
 }
 
 /** Whether (x, y) is inside the convex outline of `points` ([x, y] pairs) by at least `margin` (src/ice.js's polygons). */
@@ -1251,6 +1349,9 @@ export function prepareThing(thing) {
     // How far its farthest point is from its middle, in radii, however it is turned (the hand holds it clear of the
     // water: src/main.js handPosition); `reach`, its bounding sphere's, is looser.
     const positions = geometry.attributes.position.array;
+    // The faces it can lie on (restFaces, rolled onto its hull's), worked out now (under the loading veil, src/main.js
+    // warmUp) rather than as the first one thrown comes to rest: a banana's 24 000 corners take tens of milliseconds.
+    if (thing.body.shape !== 'sphere' && !thing.body.upright) restFaces(shape, positions, thing.body.ballast);
     let farthest = 0;
     for (let index = 0; index < positions.length; index += 3) farthest = Math.max(farthest, positions[index] ** 2 + positions[index + 1] ** 2 + positions[index + 2] ** 2);
     PREPARED.set(thing, { geometry, shape, reach: geometry.boundingSphere.center.length() + geometry.boundingSphere.radius, farthest: Math.sqrt(farthest), buoyancy });
@@ -1405,22 +1506,29 @@ export class Rock {
     this.meshAbove = new THREE.Mesh(this.geometry, makeMaterial(1));
     this.meshBelow = new THREE.Mesh(this.geometry, makeMaterial(-1));
     this.meshBelow.material.envMapIntensity = 0.35;
-    this.meshAbove.material.onBeforeCompile = (shader) => stoneDetail(shader, stone);
+    // Its slot in the ice's shadows (src/ice.js shade), or −1: what is drawn above the water takes the others' shadows
+    // on the ice, never its own (src/iceShadow.js receiveIceShadows).
+    const iceShadowSelf = this.iceShadowSelf = { value: -1 };
+    this.meshAbove.material.onBeforeCompile = (shader) => { stoneDetail(shader, stone); receiveIceShadows(shader, iceShadowSelf); };
     this.meshAbove.material.customProgramCacheKey = () => 'above';
-    // The part above the water in the water's mirror image, afloat (the header): its distance in alpha.
-    // Only a floater has one (a mesh and a material draw random ids, which would move a seeded stone's splash).
-    this.meshMirror = null;
-    if (this.floats) {
-      this.meshMirror = new THREE.Mesh(this.geometry, makeMaterial(1));
-      this.meshMirror.material.onBeforeCompile = (shader) => {
+    // The part above the water in the water's mirror image, afloat or on the ice (the header): its distance in alpha.
+    // A floater has one from the start; anything else is given one the first time it comes down on the ice
+    // (prepareMirror), its ids drawn then from MIRROR_IDS (a mesh and a material draw random ids, which drawn from
+    // Math.random would move a seeded stone's splash).
+    this.makeMirror = () => {
+      const mirror = new THREE.Mesh(this.geometry, makeMaterial(1));
+      mirror.material.onBeforeCompile = (shader) => {
         stoneDetail(shader, stone);
         shader.fragmentShader = shader.fragmentShader.replace('#include <dithering_fragment>', `#include <dithering_fragment>
   gl_FragColor.a = 1.0 - ${MIRROR_NEARNESS_SCALE.toFixed(1)} / max(length(vViewPosition), 0.05);`);
       };
-      this.meshMirror.material.customProgramCacheKey = () => 'mirror-nearness';
-      if (mirrorLayer !== null) this.meshMirror.layers.set(mirrorLayer);
-      this.meshMirror.visible = false;
-    }
+      mirror.material.customProgramCacheKey = () => 'mirror-nearness';
+      if (mirrorLayer !== null) mirror.layers.set(mirrorLayer);
+      mirror.visible = false;
+      return mirror;
+    };
+    this.meshMirror = this.floats ? this.makeMirror() : null;
+    this.metIce = false;   // has come down on the ice (its mirror made, prepareMirror): mirrored in it while on it or over it (syncMeshes)
     // Under the water: where the surface shows it (the header), by this much.
     const seenThroughWater = this.seenThroughWater = { value: 0 };
     const waterLevel = this.waterLevel = { value: 0 };   // the surface's height above the stone, under a gale
@@ -1510,6 +1618,7 @@ export class Rock {
     this.ridesWater = true;   // src/main.js redraws its mirror image as the water moves under it
     const ride = (side) => (shader) => {
       stoneDetail(shader, this.stone);
+      if (side === 'above') receiveIceShadows(shader, this.iceShadowSelf);   // on the ice, the others' shadows (src/iceShadow.js)
       Object.assign(shader.uniforms, water);
       shader.uniforms.uRide = rideShare;
       shader.uniforms.uWaterLevel = waterLevel;
@@ -1598,7 +1707,80 @@ export class Rock {
    */
   get physicsPositions() { return this.physicsShape ?? this.restShape ?? this.geometry.attributes.position.array; }
 
-  /** Its meshes: above the water, below it, and afloat in the mirror image. */
+  /**
+   * Its mirror image made, if it has none (the header: anything but a floater
+   * is given one the first time it comes down on the ice), as its part above
+   * the water is now (its size, its colour wet or dry), and put beside it in
+   * its scene; its ids drawn from MIRROR_IDS, never Math.random.
+   */
+  prepareMirror() {
+    if (this.meshMirror) return this.meshMirror;
+    const random = Math.random;
+    Math.random = MIRROR_IDS;
+    try { this.meshMirror = this.makeMirror(); } finally { Math.random = random; }
+    const above = this.meshAbove, mirror = this.meshMirror;
+    mirror.scale.copy(above.scale);
+    // Culled by the mirror's camera, unlike its other meshes: it does not ride the water (a floater's, made with it, does),
+    // so its geometry's bounds hold it, and what lies on the ice out of the mirror's view costs no draw.
+    mirror.frustumCulled = true;
+    mirror.position.copy(above.position);
+    mirror.quaternion.copy(above.quaternion);
+    mirror.material.color.copy(above.material.color);
+    mirror.material.roughness = above.material.roughness;
+    mirror.material.emissive.copy(above.material.emissive);
+    above.parent?.add(mirror);
+    return mirror;
+  }
+
+  /** Its drawn mesh's bounding sphere where it is drawn (src/ice.js shade: its shadow's reach), into `into` ({ x, y, z, radius }, m). */
+  drawnSphere(into) {
+    const mesh = this.meshAbove, geometry = mesh.geometry;
+    if (!geometry.boundingSphere) geometry.computeBoundingSphere();
+    const centre = scratch.middle.copy(geometry.boundingSphere.center).applyQuaternion(mesh.quaternion).multiplyScalar(mesh.scale.x).add(mesh.position);
+    into.x = centre.x; into.y = centre.y; into.z = centre.z;
+    into.radius = geometry.boundingSphere.radius * mesh.scale.x;
+    return into;
+  }
+
+  /** Where its weight acts (its volume's middle, moved by its `body.ballast`), as it is now, into `into` (m). */
+  weightAt(into) {
+    return into.copy(this.shape.centroid).add(scratch.along.fromArray(this.thing.body.ballast ?? [0, 0, 0])).applyQuaternion(this.quaternion).multiplyScalar(this.radius).add(this.position);
+  }
+
+  /**
+   * It as drawn, as an upright ellipsoid (src/ice.js shade: what lies on the
+   * ice shades it): its volume's middle; its footprint, the outline its
+   * shape's ellipsoid, turned as it is, casts straight down (its two
+   * half-widths, and the heading of the longer from +x toward +z); and its
+   * half-height. A ball's its own. Into `into` ({ x, y, z, along, across,
+   * heading, height }, m and radians).
+   */
+  drawnEllipsoid(into) {
+    const mesh = this.meshAbove, size = mesh.scale.x;   // its radius, less as it fades out
+    if (this.sphere) {
+      into.x = mesh.position.x; into.y = mesh.position.y; into.z = mesh.position.z;
+      into.along = into.across = into.height = size;
+      into.heading = 0;
+      return into;
+    }
+    // Its ellipsoid's matrix, Σ s²·a·aᵀ over its axes a (turned as it is) and semi-axes s: the outline straight down
+    // is its xz block's ellipse, its height the yy element's root.
+    let xx = 0, xz = 0, zz = 0, yy = 0;
+    this.shape.axes.forEach((axis, index) => {
+      const turned = scratch.face.copy(axis).applyQuaternion(mesh.quaternion), squared = (this.shape.semiAxes[index] * size) ** 2;
+      xx += squared * turned.x * turned.x; xz += squared * turned.x * turned.z; zz += squared * turned.z * turned.z; yy += squared * turned.y * turned.y;
+    });
+    const mean = (xx + zz) / 2, spread = Math.hypot((xx - zz) / 2, xz);
+    const centre = scratch.middle.copy(this.shape.centroid).applyQuaternion(mesh.quaternion).multiplyScalar(size).add(mesh.position);
+    into.x = centre.x; into.y = centre.y; into.z = centre.z;
+    into.along = Math.sqrt(mean + spread);
+    into.across = Math.sqrt(Math.max(mean - spread, 0));
+    into.heading = 0.5 * Math.atan2(2 * xz, xx - zz);
+    into.height = Math.sqrt(yy);
+    return into;
+  }
+
+  /** Its meshes: above the water, below it, and in the mirror image (afloat, or on the ice). */
   get meshes() { return this.meshMirror ? [this.meshAbove, this.meshBelow, this.meshMirror] : [this.meshAbove, this.meshBelow]; }
 
   /**
@@ -1913,7 +2095,10 @@ export class Rock {
       // Only what stands out of the water enough to show in it: a flat thing's image (a pizza's) would be a sliver, which
       // the mirror's ripples break into stray lines (FLOAT.mirrorLeast).
       const afloat = this.state === 'float' || this.afloat || this.state === 'held';
-      this.meshMirror.visible = afloat && this.position.y + (this.buoyancy && this.extent ? this.extent.high : this.waterline(this.position.y).high) > FLOAT.mirrorLeast;
+      // On the ice, or hopping over it, the ice mirrors it (its mirror image is taken about the ice's top, src/main.js):
+      // over the ice now, not the deck or the shore it has slid onto since, nor water thawed.
+      const onIce = this.metIce && (this.grounded || this.state === 'air') && this.groundSurface?.kind === 'ice';
+      this.meshMirror.visible = onIce || (afloat && this.position.y + (this.buoyancy && this.extent ? this.extent.high : this.waterline(this.position.y).high) > FLOAT.mirrorLeast);
     }
     this.waterLevel.value = surface;
     // How far it rides the water as drawn (rideTheWater): wholly afloat; less as it stands clear of the still surface, out
@@ -2910,7 +3095,8 @@ export class Rock {
    * upright (`body.upright`) onto its base if ballasted low (GROUND.rightsFrom:
    * a duck), else onto whichever of its top or bottom is nearer down (a pie);
    * anything else onto its face nearest down that it can lie on (restFaces: a
-   * brick flat or on its side, never on its end, a stone on a flat face),
+   * brick flat or on its side, never on its end, a stone on a flat face, the
+   * face of its hull its weight is over),
    * down being against `normal`, the plane it lies on's (level ground; a
    * sloping bed's, restOn). A new quaternion.
    */
@@ -3028,6 +3214,7 @@ export class Rock {
 
   /** Down on the ground at `height` (the header): out of it, then a bounce off it, or it settles to tumble or roll along it. */
   meetGround(height, dt) {
+    if (!this.metIce && this.groundSurface?.kind === 'ice') { this.metIce = true; this.prepareMirror(); }
     this.position.y = height + this.ellipsoidDepth();
     this.groundHeight = height;
     this.sliding = null;
@@ -3069,6 +3256,8 @@ export class Rock {
     this.velocity.y = 0;
     const along = Math.hypot(this.velocity.x, this.velocity.z);
     const material = this.thing.material, surface = this.groundSurface;
+    // Come onto the ice along the ground (off a frozen pool's deck, or knocked): mirrored in it from now, as one come down on it.
+    if (!this.metIce && surface?.kind === 'ice') { this.metIce = true; this.prepareMirror(); }
     // A ball's rolling resistance is the lesser of its own and the ground's (ice is smoother than the deck), but one
     // that rolls about its own axis (an apple) is slowed by its own lumps and give whatever it rolls on; a lawn holds
     // either back by at least its `rollingLeast`.
