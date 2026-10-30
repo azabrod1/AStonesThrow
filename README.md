@@ -1675,6 +1675,15 @@ farther out, so it rises into the view rather than filling its corner.
   that it is taken clean of every other state (src/rock.js setState), stays
   held and never fades while carried, and once let go is kept and lies no
   deeper in the bed than a stone settles into the sand.
+- `node tools/uniform-probe.mjs [--all]` starts the page on High and takes it
+  through what builds programs of its own (a throw, the storm, the blizzard,
+  thick ice, the Pool, the Koi pond, Low), packs each program's uniforms as
+  ANGLE does (GLSL ES 1.00's Appendix A) and checks that every one fits what
+  WebGL 2 promises each stage on any device: 224 uniform vectors and 16
+  textures to a fragment shader, 256 and 16 to a vertex shader. SwiftShader
+  and desktop GPUs give far more, so nothing else notices a program going
+  over; it prints each stage's largest and its headroom (`--all`: every
+  program's).
 - `node tools/zoom-probe.mjs [--w=390 --h=844]` drives the wheel, a pinch, a
   tap and Escape through the page's own handlers and checks that what is under
   the pointer stays there (at the shore, and at the corners of the steeper
