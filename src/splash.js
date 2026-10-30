@@ -1061,7 +1061,9 @@ export class SplashSystem {
     // tools/basilisk/app-numbers.mjs: the reference simulation's deep seal and a clean jet).
     const seed = info.seed ?? Math.floor(Math.random() * 4294967296);   // drawn in a physics step: the same at any frame rate
     const choice = chooseSplash(info, foamRandom(seed, radius), info.fixed);
-    reseedSplashRandom(seed, radius);   // what it draws as it plays, frame by frame (src/splashRandom.js)
+    // What it draws as it plays, frame by frame (src/splashRandom.js): a stream of its own, not chooseSplash's (seed,
+    // radius) nor the jet's (seed, radius, 1), whose draws it would repeat.
+    reseedSplashRandom(seed, radius, 2);
 
     // The hole the stone opens: the crown and the fan launch from its rim and
     // the jet rises where it closes, leaning back along an oblique path,

@@ -32,7 +32,7 @@
 // Prints each scene's comparison and exits with status 1 if any differs.
 //
 //   node tools/frame-rate-probe.mjs [--scene=koi,pool]   (only these scenes, in this order)
-import { launchBrowser } from './browser.mjs';
+import { launchBrowser, patience } from './browser.mjs';
 import { readFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import path from 'node:path';
@@ -106,7 +106,8 @@ const page = await context.newPage();
 const problems = [];
 page.on('pageerror', (error) => problems.push(String(error)));
 await page.goto(`http://localhost:${server.address().port}/index.html?quality=low`, { waitUntil: 'domcontentloaded' });
-await page.waitForFunction(() => !!window.__pond, { timeout: 120000 });
+// Playwright's second argument goes to the page; the options are the third. Stretched on SwiftShader (tools/browser.mjs).
+await page.waitForFunction(() => !!window.__pond, undefined, { timeout: patience(120000) });
 await page.evaluate(() => window.__pond.pause());
 
 const failures = [];
