@@ -533,12 +533,14 @@ export class SpectralWater {
    * A surface flow from (x, z): water welling up there and spreading, its
    * strength decaying as exp(−t/decay) from the next step on. Over its life it
    * sweeps the foam out of a disc of `radius` (m), area π·radius² in all,
-   * carrying what was there outward into a ring (FOAM_FRAGMENT). It only
-   * moves foam, so it neither wakes the solver nor counts as a stamp.
+   * carrying what was there outward into a ring (FOAM_FRAGMENT), through a
+   * core of `core` times that radius (FOAM_FLOW.core unless given: a plume's
+   * broad upwelling keeps more of the foam at its centre). It only moves
+   * foam, so it neither wakes the solver nor counts as a stamp.
    */
-  addFoamFlow({ x, z, radius, decay }) {
+  addFoamFlow({ x, z, radius, decay, core = FOAM_FLOW.core }) {
     if (!(radius > 0 && decay > 0)) return false;
-    this.flows.push({ x, z, area: Math.PI * radius * radius, core: FOAM_FLOW.core * radius, decay, age: 0, step: 0 });
+    this.flows.push({ x, z, area: Math.PI * radius * radius, core: core * radius, decay, age: 0, step: 0 });
     return true;
   }
 

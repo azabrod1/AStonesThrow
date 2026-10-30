@@ -95,11 +95,17 @@
 // seconds, which is sea foam and the gale's whitecaps' (src/galeWaves.js);
 // a stone stamps only boils. Where the hole closes its air comes up as a
 // boil over about the mouth, not at once but over the time the pinched-off
-// air takes to rise from the pinch depth (BUBBLE_RISE_SPEED, at most
-// FOAM_RISE_CAP: about 0.7 s for a 6 cm stone, 2.5 s for a rock), a
-// sub-stamp every FOAM_STAMP_SPACING, each with the boil's whole peak (the
-// air comes up at that rate the whole time), so at any moment only the
-// bubbles just arrived show; the jet rises from
+// air takes to rise from the pinch depth: its bulk, the big bubbles, at
+// BUBBLE_RISE_SPEED (at most FOAM_RISE_CAP: about 0.7 s for a 6 cm stone,
+// 2.5 s for a rock), a sub-stamp every FOAM_STAMP_SPACING, each with the
+// boil's whole peak (the air comes up at that rate the whole time), and
+// after them a tail of ever smaller, ever fewer bubbles, the last at
+// BUBBLE_SLOW_RISE (at most FOAM_TAIL_CAP after the close), its stamps
+// falling as (bulk span / age)^FOAM_TAIL_POWER, so a rock's boil thins over
+// seconds rather than stopping; at any moment only the bubbles just arrived
+// show. The plume's upwelling spreads the surface for as long as its bulk
+// comes up (PLUME_FLOW), so the foam streams outward from the centre toward
+// a ring; the jet rises from
 // a boil of its own, and where it falls back it stamps a fainter one
 // (fallBackFoam: src/jet.js meets the water through columnWater, which
 // hands its foam to the splash). Each is a patch of three to five sub-stamps
@@ -357,19 +363,33 @@ const BUBBLE_SWARM_SPREAD = 0.01;     // m
 // whitens about half the water at 0.1): so the amounts say how much air is
 // in the top of the water, a pebble's boil mostly fizz and a rock's mostly
 // cloud, froth over milk. The hole's air does not come up at once: pinched
-// off at the pinch depth it rises as bubbles at BUBBLE_RISE_SPEED, so its
-// boil arrives over that rise (0.7 s for a 3 cm stone, FOAM_RISE_CAP for a rock), a sub-stamp
-// every FOAM_STAMP_SPACING, each with the whole peak (sustained: the air
-// comes up at that rate the whole time, the bubbles over the mouth as thick
-// as R), and at any moment only the bubbles just arrived show, each bursting
-// over BOIL_LIFETIME: a 3 cm stone's boil is a faint milky ring and fizz
-// over about its mouth, a 20 cm rock's white froth over a milky churn for
-// about a second.
+// off at the pinch depth it rises as bubbles of every size. The big ones,
+// most of the air, rise at BUBBLE_RISE_SPEED, so the boil's bulk arrives
+// over that rise (0.7 s for a 3 cm stone, FOAM_RISE_CAP for a rock), a
+// sub-stamp every FOAM_STAMP_SPACING, each with the whole peak (sustained:
+// the air comes up at that rate the whole time, the bubbles over the mouth
+// as thick as R). The small ones come slower, the smallest, under a
+// millimetre, at BUBBLE_SLOW_RISE (the tail, at most FOAM_TAIL_CAP after
+// the close), ever fewer as they shrink: past the bulk the stamps keep
+// their spacing but fall as (bulk span / age)^FOAM_TAIL_POWER (sizes spread
+// log-uniformly, rising as Stokes says, arrive in number as 1/age and in
+// the air they bring up faster), wider and softer, as a plume's fines are
+// spread by its turbulence. At any moment only the bubbles just arrived
+// show, each bursting over BOIL_LIFETIME: a 3 cm stone's boil is a faint
+// milky ring and fizz over about its mouth, a 20 cm rock's white froth over
+// a milky churn for a second and a half, thinning into a fizz over the next
+// few. The plume's upwelling spreads the surface under it for as long as
+// its bulk comes up (PLUME_FLOW, a flow of its own beside the jet base's
+// brief one, broad-cored so the centre keeps its foam), and the foam
+// streams outward from the centre and gathers toward a ring.
 const BOIL_AMOUNT = 0.046;            // a 3 cm stone's boil: each sub-stamp's peak (0.07 shared over its span until the boil was sustained, the same on average), scaling as R / 3 cm and the cavity splat's strength...
 const FOAM_AMOUNT_CAP = 0.8;          // ...at most
 const BOIL_LIFETIME = 0.45;           // τ of a boil (s): fresh water's bubbles burst as they come up
 const BUBBLE_RISE_SPEED = 0.25;       // m/s: the pinched-off air rises as bubbles of millimetres to centimetres, this fast...
 const FOAM_RISE_CAP = 2.5;            // ...so the hole's boil arrives over its pinch depth at that speed, at most this long (s): a big stone's bubbles are bigger and faster
+const BUBBLE_SLOW_RISE = 0.05;        // m/s: the plume's smallest bubbles, under a millimetre, rise this slowly...
+const FOAM_TAIL_CAP = 6;              // ...so the last of the hole's air arrives over its pinch depth at that speed, at most this long after the close (s): the boil's tail
+const FOAM_TAIL_POWER = 1.5;          // past the bulk's rise the air arrives at a rate falling as (bulk span / age)^this: ever smaller bubbles, ever fewer of them
 const FOAM_STAMP_SPACING = 0.25;      // a patch spread over a span gets a sub-stamp every this many seconds, the amount shared among them (or each with all of it, sustained)
 const FOAM_SPREAD = 0.6;              // a ripple's or a knock's boil comes up over this many sqrt(R/g)
 const JET_BASE_BOIL = 0.03;           // the boil where the jet rises, its sub-stamps' peak, scaling as sqrt(R / 3 cm): a grey churn at the centre, never a white disc...
@@ -386,6 +406,8 @@ const FALLBACK_REACH = 0.5;           // its sub-stamps lie within this many of 
 const CLOSURE_FLOW = 1.4;
 const FALLBACK_FLOW = 2.0;
 const FLOW_DECAY = 2;
+const PLUME_FLOW = 1.0;               // the plume's upwelling spreads the surface as its bulk comes up: a flow clearing a disc of this many stone radii, decaying over the bulk's rise...
+const PLUME_CORE = 0.7;               // ...through a core this share of that disc, broad, so the centre, where the air arrives, keeps most of its foam
 const JET_LEAN = 0.4;                                // the jet leans back by this fraction of the entry angle,
 const JET_LEAN_CAP = THREE.MathUtils.degToRad(18);   // at most this
 const OBLIQUE_IMPULSE = 1.3;          // an oblique entry's cavity splats together carry at most this times a vertical one's
@@ -1160,16 +1182,17 @@ export class SplashSystem {
     // time the pinched-off air takes to rise from the pinch depth (the constants' note).
     const foamTime = this.time + cavity.closeTime;
     const foamSpan = Math.min(cavity.pinchDepth / BUBBLE_RISE_SPEED, FOAM_RISE_CAP);
+    const foamTail = Math.min(cavity.pinchDepth / BUBBLE_SLOW_RISE, FOAM_TAIL_CAP);
     // The ring's source, once made, is handed to the jet: the pond's heave under the jet is the ring's less the
     // share the jet holds aloft (src/rings.js NEAR_FIELD.jet, src/jet.js aloftShare), published each step (update).
     const ring = { source: null, heave: Math.min(Math.sqrt(Math.max(1 - horizontalFraction * horizontalFraction, 0)) / HEAVE_VERTICAL, 1) };
-    this.stampCavity({ x, z, radius, speed: entrySpeed, strength: impulseScale, travelX, travelZ, foamTime, foamSpan, ring }, water);
+    this.stampCavity({ x, z, radius, speed: entrySpeed, strength: impulseScale, travelX, travelZ, foamTime, foamSpan, foamTail, ring }, water);
     wakeStrengths.forEach((strength, index) => {
       const step = index + 1;
       if (strength > 0) {
         this.wakes.push({
           x: x + horizontal.x * wakeStep * step, z: z + horizontal.y * wakeStep * step, start: this.time + (step * radius) / sinkSpeed,
-          radius, speed: entrySpeed, strength: strength * impulseScale, travelX, travelZ, foamTime, foamSpan,
+          radius, speed: entrySpeed, strength: strength * impulseScale, travelX, travelZ, foamTime, foamSpan, foamTail,
         });
       }
     });
@@ -1180,7 +1203,7 @@ export class SplashSystem {
     // dragged cavity, rises slower.
     const closure = cavity.closurePoint({});
     // When the bowl has flattened the jet's base meets the water there (startBase).
-    this.bases.push({ time: this.time + cavity.closeTime, x: closure.x, z: closure.z, radius, speed: entrySpeed, boil: choice.trapped ? TRAPPED_BOIL : 1 });
+    this.bases.push({ time: this.time + cavity.closeTime, x: closure.x, z: closure.z, radius, speed: entrySpeed, boil: choice.trapped ? TRAPPED_BOIL : 1, plumeSpan: foamSpan });
     const leanAngle = Math.atan(Math.hypot(lean.x, lean.z));
     const leanLength = Math.hypot(lean.x, lean.z) || 1;
     // A throw with no jet ('none') only heaves a mound, once the bowl has nearly filled.
@@ -1328,18 +1351,18 @@ export class SplashSystem {
    * probes' stand-in), at once, which cannot hold a splat back. The foam
    * comes from foamTime (the cavity's closure), or now.
    */
-  stampCavity({ x, z, radius, speed, strength, travelX = 0, travelZ = 0, foamTime = this.time, foamSpan, ring = null }, water) {
+  stampCavity({ x, z, radius, speed, strength, travelX = 0, travelZ = 0, foamTime = this.time, foamSpan, foamTail = 0, ring = null }, water) {
     this.launchRing({ x, z, sigma: RING.sigma * radius, velocity: -RING.speed * speed * strength, travelX, travelZ, time: this.time + RING.delay * Math.sqrt(radius / GRAVITY), ring }, water);
     // The foam comes up where the hole closed, from foamTime over foamSpan
     // (the bubbles' rise from the pinch depth; a wake's is its cavity's): a
     // boil over about the mouth, within about one and a half stone radii of
     // the centre (the flows then carry it outward), each sub-stamp with the
-    // whole peak for as long as the air comes up (sustained), and nothing
-    // after it (fresh water: the constants' note).
+    // whole peak for as long as the air's bulk comes up (sustained), then
+    // the tail of its fines, ever fewer, to foamTail (the constants' note).
     const sizeFactor = radius / REFERENCE_RADIUS;
     const random = foamRandom(x, z, foamTime);
     const span = foamSpan ?? FOAM_SPREAD * Math.sqrt(radius / GRAVITY);
-    this.stampFoamPatch(water, random, { x, z, radius: 1.1 * radius, amount: Math.min(BOIL_AMOUNT * sizeFactor * strength, FOAM_AMOUNT_CAP), reach: 0.8, radii: [0.3, 0.6], lifetime: BOIL_LIFETIME, boil: true, time: foamTime, span, sustained: true, source: 'closure' });
+    this.stampFoamPatch(water, random, { x, z, radius: 1.1 * radius, amount: Math.min(BOIL_AMOUNT * sizeFactor * strength, FOAM_AMOUNT_CAP), reach: 0.8, radii: [0.3, 0.6], lifetime: BOIL_LIFETIME, boil: true, time: foamTime, span, sustained: true, tail: foamTail, source: 'closure' });
   }
 
   /**
@@ -1530,6 +1553,9 @@ export class SplashSystem {
     const froth = Math.min((base.speed / FROTH_SPEED) ** (2 * FROTH_POWER), BASE_FROTH_MOST);
     this.stampFoamPatch(water, foamRandom(base.x, base.z, base.time), { x: base.x, z: base.z, radius: base.radius, amount: Math.min(JET_BASE_BOIL * (base.boil ?? 1) * froth * Math.sqrt(base.radius / REFERENCE_RADIUS), FOAM_AMOUNT_CAP), reach: 1.0, radii: [0.3, 0.6], lifetime: BOIL_LIFETIME, boil: true, source: 'base' });
     water.addFoamFlow?.({ x: base.x, z: base.z, radius: CLOSURE_FLOW * base.radius, decay: FLOW_DECAY * Math.sqrt(base.radius / GRAVITY) });
+    // The plume's upwelling, for as long as the hole's air comes up in bulk: broad-cored, so the foam arriving at the
+    // centre is carried outward rather than cleared (PLUME_FLOW, PLUME_CORE).
+    if (base.plumeSpan > 0) water.addFoamFlow?.({ x: base.x, z: base.z, radius: PLUME_FLOW * base.radius, decay: base.plumeSpan, core: PLUME_CORE });
   }
 
   retireColumn(column) {
@@ -1573,9 +1599,14 @@ export class SplashSystem {
    * a long span gets one more sub-stamp per FOAM_STAMP_SPACING, the amount
    * shared among them all, so the foam arrives as the air does; or, if
    * `sustained`, each with the whole of it, as air that comes up at that
-   * rate for the whole span.
+   * rate for the whole span. Past the span, to `tail` seconds after `time`,
+   * one more every FOAM_STAMP_SPACING, falling as
+   * (span / age)^FOAM_TAIL_POWER, anywhere within `radius`, each 1.33 to 2
+   * times as wide as the bulk's mean and fainter by the square of that, the
+   * same air spread wider (source 'tail'): the plume's fines, ever fewer
+   * (the constants' note).
    */
-  stampFoamPatch(water, random, { x, z, radius, amount, reach, radii, lifetime, boil = false, time = this.time, span = 0, sustained = false, source }) {
+  stampFoamPatch(water, random, { x, z, radius, amount, reach, radii, lifetime, boil = false, time = this.time, span = 0, sustained = false, tail = 0, source }) {
     const pieces = 3 + Math.floor(random() * 3);
     const count = pieces + Math.floor(span / FOAM_STAMP_SPACING);
     const share = sustained ? 1 : pieces / count;
@@ -1588,6 +1619,18 @@ export class SplashSystem {
         radius: radius * (radii[0] + (radii[1] - radii[0]) * random()), amount: amount * share * (0.4 + 0.6 * random()), lifetime, boil, source,
       };
       const at = time + span * piece / (count - 1);
+      if (at > this.time) this.foamStamps.push({ time: at, foam }); else water.addFoam(foam);
+    }
+    if (!(tail > span && span > 0)) return;
+    for (let at = time + span + FOAM_STAMP_SPACING; at <= time + tail; at += FOAM_STAMP_SPACING) {
+      const angle = random() * Math.PI * 2;
+      const distance = radius * Math.sqrt(random());
+      const fall = (span / (at - time)) ** FOAM_TAIL_POWER;
+      const spread = radii[1] * (1 + 0.5 * random()) / (0.5 * (radii[0] + radii[1]));   // its width over the bulk's mean
+      const foam = {
+        x: x + Math.cos(angle) * distance, z: z + Math.sin(angle) * distance,
+        radius: radius * 0.5 * (radii[0] + radii[1]) * spread, amount: amount * share * fall * (0.4 + 0.6 * random()) / (spread * spread), lifetime, boil, source: 'tail',
+      };
       if (at > this.time) this.foamStamps.push({ time: at, foam }); else water.addFoam(foam);
     }
   }
