@@ -15,6 +15,7 @@ import { MAX_RINGS, PROFILE_TEXELS, PROFILE_MAPPING, RING_TEXTURE_UNITS } from '
 import { RAIN_RIPPLES, DROP_RING_SLOPES } from './rain.js';
 import { GALE_SURFACE } from './gale.js';
 import { SURFACE_BUBBLE, BUBBLE_SPRITE } from './bubble.js';
+import { ICE_SHADOW_LOOKUP } from '../iceShadow.js';
 
 // The weather's haze (rain's, snow's, a fog's; src/sky.js setWeather): what lies d metres off fades
 // toward uHazeColor, the overcast's horizon, by 1 − exp(−uHazeDensity·d)
@@ -145,6 +146,44 @@ ${ICE_UNIFORMS}
 #define ICE_FROST_SKY 2.5              // ...and no brighter than this times the sky's mean (iceSurface: the sun is the sheen's)
 #define ICE_UNDER_GLOW 0.35            // the light white ice lets through to its underside, against what falls on its top
 #define ICE_SNOW_GLOW 0.4              // and under snow on it, against that
+
+// What lies on the ice, or is over it, shades it (src/ice.js shade: the
+// things nearest the eye, in its slots, ICE_SHADOW_SLOTS of them). Its shadow
+// is its tile's in the shadow atlas (src/iceShadow.js: its drawn mesh seen
+// down the sun's rays), the edge filtered over the sun's width at the
+// distance or this pixel's footprint. It hides the sky as an upright
+// ellipsoid over its footprint does (src/rock.js drawnEllipsoid), its
+// height high and its footprint's mean width across, its view factor seen
+// from a point on the plane (width·height·h / D³, h its middle's height, D
+// the distance to it, its footprint made round): all of it under where it
+// touches, little past a flat thing's rim, let go to nothing at the reach
+// where it falls to a hundredth (src/ice.js ICE_SHADE.least). Each is
+// reckoned only inside the circle its shade lies in, and none outside the
+// box round them all (src/ice.js shade): the rest of the ice pays nothing.
+// iceThingsShade gives what of the sun and of the sky reaches here.
+${ICE_SHADOW_LOOKUP}
+uniform vec4 uIceThings[ICE_SHADOW_SLOTS];            // each its middle (x, height over the ice's top, z) and half-height (m)
+uniform vec4 uIceThingFootprints[ICE_SHADOW_SLOTS];   // and its footprint's half-widths (m) and its longer's heading (cos, sin)
+vec2 iceThingsShade(vec2 point, float footprint) {
+  float sun = 1.0, sky = 1.0;
+  if (uIceThingCount < 0.5 || any(lessThan(point, uIceShadeBox.xy)) || any(greaterThan(point, uIceShadeBox.zw))) return vec2(1.0);
+  for (int index = 0; index < ICE_SHADOW_SLOTS; index++) {
+    if (float(index) >= uIceThingCount) break;
+    vec4 bound = uIceThingBounds[index];
+    vec2 fromBound = point - bound.xy;
+    if (bound.z < 0.0 || dot(fromBound, fromBound) > bound.z) continue;
+    vec4 thing = uIceThings[index], outline = uIceThingFootprints[index];
+    vec2 offset = thing.xz - point;
+    // The sky: its footprint made round, of its mean width (along its footprint's axes, over their half-widths).
+    vec2 across = vec2(dot(offset, outline.zw), dot(offset, vec2(-outline.w, outline.z))) / outline.xy;
+    float width = sqrt(outline.x * outline.y);
+    float distance = length(vec3(across.x * width, thing.y, across.y * width));
+    sky *= 1.0 - min(width * thing.w * thing.y / max(distance * distance * distance, 1e-12), 1.0) * (1.0 - smoothstep(0.5 * bound.w, bound.w, distance));
+    // The sun: its tile.
+    sun *= iceShadowLit(index, vec3(point.x, uIceTop, point.y), 1.5 * footprint);
+  }
+  return vec2(sun, sky);
+}
 
 // The mask at a world point (the header). Beyond it, dry ice with no hole.
 struct IceMask {
@@ -1465,7 +1504,7 @@ uniform samplerCube uSkyCube;     // the sky as the droplets reflect it (src/sky
 uniform mat4 uReflectionMatrix;   // world -> reflection texture coordinates
 uniform vec4 uMirrorNear;         // the splash's image in the mirror, uv corners (x0, y0, x1, y1); empty (x0 > x1) when none
 uniform vec2 uMirrorSize;         // the mirror image's pixels
-uniform float uMirrorLevel;       // the height it mirrors about: the water's under the splash (0 but under a gale, src/main.js)
+uniform float uMirrorLevel;       // the height it mirrors about: the water's under the splash under a gale, the ice's top frozen but while a splash rises from a hole, else 0 (src/main.js)
 uniform sampler2D uUnderColor;
 uniform sampler2D uUnderDepth;
 uniform float uStonesUnder;       // 1 while a stone is under the water (src/main.js), else 0
@@ -1744,7 +1783,13 @@ vec3 iceSurface(IceMask mask, float footprint, vec2 acrossX, vec2 acrossY) {
   float underDistZ = rawDepth >= 1.0 ? uFar : -perspectiveDepthToViewZ(rawDepth, uNear, uFar);
   float path = max(underDistZ - surfaceDistZ, 0.0) * viewDist / max(surfaceDistZ, 1e-4);
   vec3 under = mix(uWaterColor, texture2D(uUnderColor, screenUv).rgb * poolDetail(vWorld, acrossX, acrossY, underDistZ, surfaceDistZ), exp(-uExtinction * path));
-  vec3 light = uSunIrradiance * max(dot(n, uSunDir), 0.0) + uSkyAmbient * ICE_SKY_LIGHT;
+  // What lies on it shades it (ICE_COMMON iceThingsShade): the light it scatters, the water seen through it and the
+  // sun's sheen; not its mirror, which shows the thing itself.
+  vec2 shade = iceThingsShade(vWorld.xz, footprint);
+  vec3 sunLight = uSunIrradiance * max(dot(n, uSunDir), 0.0), skyLight = uSkyAmbient * ICE_SKY_LIGHT;
+  vec3 light = sunLight * shade.x + skyLight * shade.y;
+  float shaded = dot(light, vec3(0.2126, 0.7152, 0.0722)) / max(dot(sunLight + skyLight, vec3(0.2126, 0.7152, 0.0722)), 1e-6);
+  under *= shaded;
   vec3 scattered = ICE_WHITE_ALBEDO * light * mix(1.0, 0.6, wet);
   // Its veil (ICE_COMMON's header): the share of the light the clear ice scatters back along the refracted ray's path
   // through it, a new skin's (src/ice.js REFREEZE.skin) a few millimetres.
@@ -1757,7 +1802,7 @@ vec3 iceSurface(IceMask mask, float footprint, vec2 acrossX, vec2 acrossY) {
   // A fracture face in clear ice turns the light back as a mirror would: it shows white, as the sky's light it sends up.
   body = mix(body, scattered * 1.15, face * clear);
   vec3 color = mix(body, reflected, fresnel * mix(1.0 - 0.6 * look.white, 1.0, wet));
-  color += min(sunGlitter(n, v, uSunDir, uSunIrradiance, slopeVariance + 1e-5) * mix(look.glints, 1.0, max(wet, newIce)), vec3(400.0)) * mix(1.0 - 0.5 * look.white, 1.0, wet);
+  color += min(sunGlitter(n, v, uSunDir, uSunIrradiance, slopeVariance + 1e-5) * mix(look.glints, 1.0, max(wet, newIce)), vec3(400.0)) * mix(1.0 - 0.5 * look.white, 1.0, wet) * shade.x;
   // An old edge in new ice: a faint dark seam.
   color = mix(color, under * 0.7, 0.5 * seam);
   // Snow lying on it (SNOW_COVER), as on the ground: none on new ice, none where it is wet (the flood's, a drop's).
