@@ -21,7 +21,8 @@
 // IceShadow the tiles, and every material that looks them up holds the same
 // objects (the water's, through the ice's uniforms; each thing's). They are
 // in the water's fragment shader, whose uniform vectors WebGL 2 promises only
-// 224 of: a tile is its matrix's three rows alone (an orthographic view's
+// 224 of (tools/uniform-probe.mjs counts them, and its 16 textures, of which
+// it samples 15): a tile is its matrix's three rows alone (an orthographic view's
 // matrix is affine), its corner in the atlas its slot's and its half-width
 // and depth taken from the rows' lengths (iceShadowLit).
 import * as THREE from 'three';
