@@ -396,6 +396,8 @@ const FOAM_TAIL_CAP = 6;              // ...so the last of the hole's air arrive
 const FOAM_TAIL_POWER = 1.5;          // past the bulk's rise the air arrives at a rate falling as (bulk span / age)^this: ever smaller bubbles, ever fewer of them
 const FOAM_REACH_GROWTH = 0.6;        // a sustained boil's sub-stamps land ever wider, this much further by the bulk's end (and its tail there): the plume widens as it rises, and its slow fines are spread by its eddies and the outflow
 const FOAM_STAMP_SPACING = 0.25;      // a patch spread over a span gets a sub-stamp every this many seconds, the amount shared among them (or each with all of it, sustained)
+const FOAM_STAMP_RISE = 0.2;          // a sub-stamp comes up over this long (s), in FOAM_STAMP_RISE_STEPS equal parts: a cloud of bubbles breaks the surface over frames, never in one (queueFoam)
+const FOAM_STAMP_RISE_STEPS = 6;
 const FOAM_SPREAD = 0.6;              // a ripple's or a knock's boil comes up over this many sqrt(R/g)
 const JET_BASE_BOIL = 0.03;           // the boil where the jet rises, its sub-stamps' peak, scaling as sqrt(R / 3 cm): a grey churn at the centre, never a white disc...
 const BASE_FROTH_MOST = 4;            // ...times (V / FROTH_SPEED)^(2·FROTH_POWER), the crown's froth law in the entry speed (src/crown.js), at most this: a hard throw's heave churns white, a pebble's is glass
@@ -1615,6 +1617,15 @@ export class SplashSystem {
    * fines, ever fewer (the constants' note).
    */
   stampFoamPatch(water, random, { x, z, radius, amount, reach, radii, lifetime, boil = false, time = this.time, span = 0, sustained = false, tail = 0, source }) {
+    // A sub-stamp at `at`, coming up over FOAM_STAMP_RISE in equal parts (the last spread, the water loses a little
+    // of the first to decay: the air is still the air): stamped at once if its time has passed, else queued.
+    const queueFoam = (foam, at) => {
+      for (let step = 0; step < FOAM_STAMP_RISE_STEPS; step++) {
+        const part = { ...foam, amount: foam.amount / FOAM_STAMP_RISE_STEPS };
+        const partTime = at + FOAM_STAMP_RISE * step / (FOAM_STAMP_RISE_STEPS - 1);
+        if (partTime > this.time) this.foamStamps.push({ time: partTime, foam: part }); else water.addFoam(part);
+      }
+    };
     const pieces = 3 + Math.floor(random() * 3);
     const count = pieces + Math.floor(span / FOAM_STAMP_SPACING);
     const share = sustained ? 1 : pieces / count;
@@ -1627,8 +1638,7 @@ export class SplashSystem {
         x: x + Math.cos(angle) * distance, z: z + Math.sin(angle) * distance,
         radius: radius * (radii[0] + (radii[1] - radii[0]) * random()), amount: amount * share * (0.4 + 0.6 * random()), lifetime, boil, source,
       };
-      const at = time + span * piece / (count - 1);
-      if (at > this.time) this.foamStamps.push({ time: at, foam }); else water.addFoam(foam);
+      queueFoam(foam, time + span * piece / (count - 1));
     }
     if (!(tail > span && span > 0)) return;
     const tailSpacing = 0.5 * FOAM_STAMP_SPACING;
@@ -1641,7 +1651,7 @@ export class SplashSystem {
         x: x + Math.cos(angle) * distance, z: z + Math.sin(angle) * distance,
         radius: radius * 0.5 * (radii[0] + radii[1]) * spread, amount: amount * share * fall * (0.4 + 0.6 * random()) / spread ** 1.5, lifetime, boil, source: 'tail',
       };
-      if (at > this.time) this.foamStamps.push({ time: at, foam }); else water.addFoam(foam);
+      queueFoam(foam, at);
     }
   }
 

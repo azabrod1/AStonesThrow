@@ -466,7 +466,7 @@ check(Math.abs(raftCover - boilCover) < 0.06, `a boil's bubbles cover about what
   const fadeStartAt = (cloud) => defines.FOAM_FADE_START * defines.FOAM_BUBBLE_CELL * largestAt(cloud) / largest;
   const meanWhite = (filled, cloud = 0) => {
     const spanAt = largestAt(cloud) - smallest;
-    return aliveShare(filled) * Math.PI * (smallest * smallest + 2 * smallest * spanAt / 3 + spanAt * spanAt / 5) * domeMean(1) * (1 - 0.5 * defines.FOAM_BUBBLE_RISE);
+    return aliveShare(filled) * Math.PI * (smallest * smallest + 2 * smallest * spanAt / 3 + spanAt * spanAt / 5) * domeMean(1) * (1 - 0.5 * defines.FOAM_BUBBLE_RISE) * (1 - 0.5 * defines.FOAM_BUBBLE_FALL);
   };
   // ∫(1 − cosθ)⁴ and ∫(1 − cosθ)⁸ over the area u = r² from the centre (bubbleFilmArea): over w = 1 − sqrt(1 − u),
   // 2(w⁵/5 − w⁶/6) and 2(w⁹/9 − w¹⁰/10).
@@ -502,6 +502,7 @@ check(Math.abs(raftCover - boilCover) < 0.06, `a boil's bubbles cover about what
     const place = foamHash(cellX + generation * 29 + 5, cellZ + generation * 13 + 61);
     const grown = mix(smallest, largestAt(cloud), shape[1] * shape[1]);
     const radius = grown * smoothstep(0, defines.FOAM_BUBBLE_RISE, age);
+    const fading = 1 - smoothstep(1 - defines.FOAM_BUBBLE_FALL, 1, age);   // its film thinning away at the end
     // Its centre: anywhere in its cell that keeps its grown base inside.
     const within = { x: mix(grown, 1 - grown, place[0]), z: mix(grown, 1 - grown, place[1]) };
     const centreX = cellX + within.x - rowShift, centreZ = cellZ + within.z;
@@ -510,9 +511,9 @@ check(Math.abs(raftCover - boilCover) < 0.06, `a boil's bubbles cover about what
     if (!alive) return { alive, white: 0, within };
     if (footprint > 0) {
       const edge = footprint / defines.FOAM_BUBBLE_CELL / Math.max(radius, 1e-3);
-      return { alive, white: filmBetween(Math.max(radial - 0.5 * edge, 0), radial + 0.5 * edge, radial), within };
+      return { alive, white: fading * filmBetween(Math.max(radial - 0.5 * edge, 0), radial + 0.5 * edge, radial), within };
     }
-    return { alive, white: radial < 1 ? whiteFromAbove(radial) : 0, within };
+    return { alive, white: radial < 1 ? fading * whiteFromAbove(radial) : 0, within };
   };
   {
     // The centres' spread over their cells: an even spread over a whole cell is 1/sqrt(12) = 0.289 of it rms from the

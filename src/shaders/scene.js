@@ -832,7 +832,8 @@ ${SURFACE_BUBBLE}
 #define FOAM_BUBBLE_FULL_CLOUD 2.0         // ...with the cloud, to the full size where the cloud is this many holds deep (a stone's boil's middle)
 #define FOAM_BUBBLE_MOST 0.48              // ...in this share of the cells where the surface holds all it can, as its square...
 #define FOAM_BUBBLE_LIFE 0.45              // ...each surfacing and bursting within this (s), the next somewhere else in its cell
-#define FOAM_BUBBLE_RISE 0.12              // the share of its life a bubble takes to swell to its size
+#define FOAM_BUBBLE_RISE 0.12              // the share of its life a bubble takes to swell to its size...
+#define FOAM_BUBBLE_FALL 0.3               // ...and the share over which its film thins to nothing at the end: it goes over frames, never in one, so a boil's surface seethes rather than flickers
 
 // tools/foam-probe.mjs twins the cloud's colour and churn and the surface's
 // bubbles (cloudColour, churnAt, freshBubbles): change both.
@@ -1143,6 +1144,7 @@ DomeHit bubbleDome(vec2 cell, float rowShift, vec2 inCells, vec3 toViewer, float
   // Its size: radii.x to the biggest the boil here grows (freshBubbles's largest), most small.
   float grown = mix(radii.x, largest, shape.y * shape.y);
   float radius = grown * smoothstep(0.0, FOAM_BUBBLE_RISE, age);
+  float fading = 1.0 - smoothstep(1.0 - FOAM_BUBBLE_FALL, 1.0, age);   // its film thinning away at the end
   // Its centre: anywhere in its cell that keeps its grown base inside, in the unshifted lattice.
   vec2 centreInCells = cell + mix(vec2(grown), vec2(1.0 - grown), place.xy) - vec2(rowShift, 0.0);
   float filledThere = max(filled + dot(filledSlope, (centreInCells - inCells) * FOAM_BUBBLE_CELL), 0.0);
@@ -1171,7 +1173,7 @@ DomeHit bubbleDome(vec2 cell, float rowShift, vec2 inCells, vec3 toViewer, float
     reflectedUp = 2.0 * (sqrt(discriminant) / radius) * normal.y - toViewer.y;
   }
   float shadow = (bubbleMeniscus(height, pixel) + bubbleUnderside(reflectedUp) * film.x) * cover * step(0.0, discriminant);
-  return DomeHit(film.x * cover, bubbleWhite(film, reflectedUp) * cover, shadow, normal, pixel);
+  return DomeHit(film.x * cover * fading, bubbleWhite(film, reflectedUp) * cover * fading, shadow * fading, normal, pixel);
 }
 
 // The bubbles bursting on the surface over a boil (the header's last
@@ -1242,7 +1244,7 @@ FreshBubbles freshBubbles(vec2 position, vec2 acrossX, vec2 acrossY, float fille
   // mix(radii.x, largest, u²), u uniform, so its mean square is a² + 2a(b − a)/3 + (b − a)²/5.
   float span = largest - radii.x;
   float meanWhite = alive * PI * (radii.x * radii.x + 2.0 * radii.x * span / 3.0 + span * span / 5.0)
-    * bubbleDomeMean(sinElevation) * (1.0 - 0.5 * FOAM_BUBBLE_RISE);
+    * bubbleDomeMean(sinElevation) * (1.0 - 0.5 * FOAM_BUBBLE_RISE) * (1.0 - 0.5 * FOAM_BUBBLE_FALL);
   if (fade < 1.0) {
     vec2 inCells = position / FOAM_BUBBLE_CELL;
     float pixelOnDome = footprint * sqrt(sinElevation) / FOAM_BUBBLE_CELL;
