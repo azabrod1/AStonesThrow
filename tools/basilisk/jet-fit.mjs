@@ -8,7 +8,7 @@
 // on the simulation (its opening comment), in stone radii and sqrt(R/g):
 //   - the body: the column's radius two radii above the still surface, the
 //     median from one to three units after it emerges (here the drawn
-//     rings', the sleeve's included);
+//     rings', the base's widening included);
 //   - the middle and the thread: its radius five and ten radii up, the
 //     medians from two to six units;
 //   - the joined column's highest (here the top of the solver's piece still

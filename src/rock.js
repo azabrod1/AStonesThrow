@@ -241,7 +241,9 @@
 // for a hundredth of a second when struck, less than a frame.
 //
 // Its own parts (registerMesh `dress`: a pizza's toppings, a pie's filling)
-// are drawn as it is made, from a stream of their own seeded from its own,
+// are drawn as it is made, from a stream of their own seeded from its own
+// (dressThing), or from the seed it is given (`dressing`: a person's throw
+// is the one its preview in the hand showed, src/main.js buildPreview),
 // added to its copy of the shared mesh and their weight to its own
 // (`dressing`); it floats by the shared mesh.
 //
@@ -256,6 +258,14 @@
 // Afloat it is also in the water's mirror image (meshMirror: its part above
 // the water, on the mirror's layer, its distance in alpha as the pool's
 // walls write it, MIRROR_NEARNESS in src/shaders/scene.js).
+//
+// Its detail (showDetail): a ball is drawn from the coarsest of its meshes
+// (src/thingMeshes.js createBallGeometry `detail`) whose corners lie at most
+// DETAIL.pixels apart on the screen, each of its meshes by its own pass's
+// pixels (src/main.js showDetail), and goes coarser again only once a
+// coarser one would do with DETAIL.hold to spare, so a ball bobbing at the
+// edge does not flick between them. Its physics never sees them: a ball's
+// body is a sphere.
 //
 // Meeting other things (src/collide.js): each is a sphere of
 // collisionRadius, where it is drawn (`centre`: a floater riding the
@@ -322,7 +332,8 @@ import * as THREE from 'three';
 import { SEEN_THROUGH_WATER, SEEN_UNDER_CLEAR, CLEAR_SIDES_INSIDE, FLOATER_WATER } from './shaders/scene.js';
 import { PINCH_TIME, NECK_CLOSE, SPIN_DECAY, sinkStep, underWater } from './cavity.js';
 import { THINGS, DEFAULT_THING, WATER_DENSITY, STONE_DENSITY } from './things.js';
-import { meshKind, meshVolume, withParts } from './thingMeshes.js';
+import { cornersOf, meshKind, meshVolume, withParts } from './thingMeshes.js';
+import { stoneDetail, stoneUniforms } from './shaders/stone.js';
 import { convexHull, insidePolygon, polygonEdgeDistance } from './ice.js';
 import { passBy, forgetPasses } from './collide.js';
 
@@ -349,6 +360,10 @@ const IRREGULAR_LIFT = 0.8;        // ...of its lumps, times its irregularity, i
 const SPIN_LIFT = 0.6;             // ...and of its spin, times ω·R/V along ω × v
 const LIFT_CAP = 0.35;             // at most this C_L in all
 const CREST_REACH = 0.6;           // m: under a gale, no crest reaches higher than this above the still water
+// px: a ball's mesh is the coarsest whose corners lie at most `pixels` apart on the screen, finer than which nothing more
+// shows (the paint between them is the finer mesh's, averaged); it goes coarser only once that coarser mesh's would lie
+// `hold` of that apart (showDetail).
+const DETAIL = { pixels: 1.5, hold: 0.85 };
 // Skipping (the header).
 export const SKIM = {
   pressure: 2.0,      // C: the push along the face's normal, ½·ρ·C·|v|²·(wetted area) (the header)...
@@ -474,46 +489,55 @@ const scratch = {
   bed: new THREE.Vector3(),
 };
 const UP = new THREE.Vector3(0, 1, 0);
+
+// The distinct points of a physics mesh (Rock.physicsPositions: separate triangles, each point repeated in every
+// triangle it touches, about six times), in first-seen order, made once per array and kept beside it. The walks for
+// the lowest point (lowestAlong, contact) take the least of one dot product per point, which is the same number over
+// the distinct points as over the repeats, to the bit, at a sixth of the cost: the slide's walk was 45 000 corners a
+// step. Every array physicsPositions gives is fixed once made (a soft thing's give bends what is drawn, never its
+// restShape), so the copy never goes stale. Two points are the same when the bits of all three coordinates are (so
+// minus zero stays apart from zero, and not even a zero's sign changes), found by an open-addressed hash over the
+// array's own memory: no string or object a point, so the slide's 45 000 corners take well under a millisecond the
+// first time (string keys took 30 ms, a hitch on a thing's first throw), and a stone's, built each throw, a few µs.
+const UNIQUE_POINTS = new WeakMap();
+function uniquePoints(positions) {
+  let unique = UNIQUE_POINTS.get(positions);
+  if (unique) return unique;
+  const wordsPerValue = positions.BYTES_PER_ELEMENT / 4;   // 1 for a Float32Array, 2 for a Float64Array
+  const words = new Uint32Array(positions.buffer, positions.byteOffset, positions.length * wordsPerValue);
+  const wordsPerPoint = 3 * wordsPerValue, pointCount = positions.length / 3;
+  let tableSize = 1;
+  while (tableSize < 2 * pointCount) tableSize *= 2;
+  const slots = new Int32Array(tableSize).fill(-1);   // each the first point (its index) of a distinct position
+  const kept = new Int32Array(pointCount);
+  let keptCount = 0;
+  for (let point = 0; point < pointCount; point++) {
+    const start = point * wordsPerPoint;
+    let hash = 0x811c9dc5;
+    for (let word = 0; word < wordsPerPoint; word++) hash = Math.imul(hash ^ words[start + word], 0x01000193);
+    let slot = (hash >>> 0) & (tableSize - 1);
+    for (;;) {
+      const held = slots[slot];
+      if (held < 0) { slots[slot] = point; kept[keptCount++] = point; break; }
+      const heldStart = held * wordsPerPoint;
+      let same = true;
+      for (let word = 0; word < wordsPerPoint && same; word++) same = words[heldStart + word] === words[start + word];
+      if (same) break;
+      slot = (slot + 1) & (tableSize - 1);
+    }
+  }
+  unique = new positions.constructor(keptCount * 3);
+  for (let index = 0; index < keptCount; index++) {
+    const from = kept[index] * 3;
+    unique[index * 3] = positions[from]; unique[index * 3 + 1] = positions[from + 1]; unique[index * 3 + 2] = positions[from + 2];
+  }
+  UNIQUE_POINTS.set(positions, unique);
+  return unique;
+}
 // A floater's columns (buoyancyColumns): this many across its widest, cut again on a grid turned by each of `turns`
 // (radians) if they hold its mesh's volume worse than `held` of it.
 const BUOYANCY = { columns: 20, held: 0.02, turns: [0.5, 0.7, 0.3] };
 const RIDE_TILT = 0.36;   // the most a floater is tilted as it rides the water as drawn (rideTheWater): the slope's tangent, 20°
-
-/**
- * A mesh's points (`positions`, x y z after x y z), each once: a mesh is
- * drawn as triangles, so most of its points are there six times over (a
- * pizza's 21,888 are 3,688). Its lowest point along any direction is among
- * them, worked out with the same arithmetic, so Rock.lowestAlong finds the
- * same value, to the last bit, in a sixth of the work. Worked out once for
- * each mesh's array (the first time it is asked; src/rock.js prepareThing
- * asks for each fixed mesh under the loading veil): the points' bits hashed
- * into a table twice their number.
- */
-const distinctPointsOf = new WeakMap();
-function distinctPoints(positions) {
-  let points = distinctPointsOf.get(positions);
-  if (points) return points;
-  const count = positions.length / 3;
-  const floats = positions instanceof Float32Array ? positions : Float32Array.from(positions);
-  const bits = new Uint32Array(floats.buffer, floats.byteOffset, floats.length);
-  const size = 2 ** Math.ceil(Math.log2(2 * count + 1));
-  const table = new Int32Array(size).fill(-1);
-  const kept = [];
-  for (let index = 0; index < count; index++) {
-    const xBits = bits[3 * index], yBits = bits[3 * index + 1], zBits = bits[3 * index + 2];
-    let slot = (Math.imul(xBits, 73856093) ^ Math.imul(yBits, 19349663) ^ Math.imul(zBits, 83492791)) & (size - 1);
-    for (;;) {
-      const at = table[slot];
-      if (at === -1) { table[slot] = index; kept.push(index); break; }
-      if (bits[3 * at] === xBits && bits[3 * at + 1] === yBits && bits[3 * at + 2] === zBits) break;
-      slot = (slot + 1) & (size - 1);
-    }
-  }
-  points = new Float32Array(3 * kept.length);
-  kept.forEach((index, at) => { points[3 * at] = positions[3 * index]; points[3 * at + 1] = positions[3 * index + 1]; points[3 * at + 2] = positions[3 * index + 2]; });
-  distinctPointsOf.set(positions, points);
-  return points;
-}
 
 /**
  * The faces a thing can lie on (Rock.lyingAttitude): of its six principal
@@ -569,6 +593,16 @@ function gaussian(random = Math.random) {
 function seededStream(seed) {
   let state = seed >>> 0;
   return () => { state = (state + 0x6d2b79f5) >>> 0; let t = Math.imul(state ^ (state >>> 15), 1 | state); t ^= t + Math.imul(t ^ (t >>> 7), 61 | t); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+}
+
+/**
+ * A dressed thing's own parts (registerMesh `dress`: a pizza's toppings, a
+ * pie's filling, a cake's candles) drawn from `seed` (32 bits): the same
+ * seed, the same parts, so a thing thrown with its preview's seed (Rock
+ * `dressing`) is the one the preview showed (src/main.js buildPreview).
+ */
+export function dressThing(thing, seed) {
+  return meshKind(thing.look.mesh).dress(thing, seededStream(seed));
 }
 
 /**
@@ -926,7 +960,7 @@ export function buoyancyColumns(geometry, axis, columns = BUOYANCY.columns) {
 
 /** A mesh's columns (buoyancyColumns) along `axis`, `columns` across its widest, on a grid turned `turn` radians about it. */
 function columnsOf(geometry, axis, turn, columns) {
-  const positions = geometry.attributes.position.array;
+  const positions = cornersOf(geometry);
   const along = axis.clone().normalize();
   const acrossU = new THREE.Vector3(1, 0, 0);
   if (Math.abs(acrossU.dot(along)) > 0.9) acrossU.set(0, 0, 1);
@@ -1029,6 +1063,21 @@ function faceArea(geometry, axis) {
   return doubled / 4;
 }
 
+/**
+ * The furthest any corner of `mesh` (a geometry, or a stone's physics mesh, its position attribute) gets from the
+ * origin, in radii: its bounding sphere's centre and radius, found as THREE.BufferGeometry.computeBoundingSphere finds
+ * them (the centre its box's middle, the radius the furthest corner from there), so a stone's reach is the arithmetic
+ * it always was.
+ */
+export function reachOf(mesh) {
+  const attribute = mesh.isBufferAttribute ? mesh : mesh.attributes.position;
+  const centre = reachBox.setFromBufferAttribute(attribute).getCenter(reachCentre);
+  let furthestSquared = 0;
+  for (let corner = 0; corner < attribute.count; corner++) furthestSquared = Math.max(furthestSquared, centre.distanceToSquared(reachCorner.fromBufferAttribute(attribute, corner)));
+  return centre.length() + Math.sqrt(furthestSquared);
+}
+const reachBox = new THREE.Box3(), reachCentre = new THREE.Vector3(), reachCorner = new THREE.Vector3();
+
 /** A plate's shape (stoneShape's, of its `geometry`) given its face as the disc of its area, in radii (`faceDisc`: Rock.plateRadius). */
 function plateFace(shape, geometry) {
   shape.faceDisc = Math.sqrt(faceArea(geometry, shape.axes[2]) / Math.PI);
@@ -1091,7 +1140,7 @@ function symmetricEigen(matrix) {
  * ellipsoid.
  */
 export function stoneShape(geometry) {
-  const positions = geometry.attributes.position.array;
+  const positions = cornersOf(geometry);
   let volume = 0;
   let centroidX = 0, centroidY = 0, centroidZ = 0;
   const moments = new Float64Array(9);   // ∫ x·xᵀ dV about the origin
@@ -1204,7 +1253,6 @@ export function prepareThing(thing) {
     const positions = geometry.attributes.position.array;
     let farthest = 0;
     for (let index = 0; index < positions.length; index += 3) farthest = Math.max(farthest, positions[index] ** 2 + positions[index + 1] ** 2 + positions[index + 2] ** 2);
-    if (thing.body.shape !== 'sphere') distinctPoints(positions);   // its lowest point's walk (Rock.lowestAlong), now rather than at a throw
     PREPARED.set(thing, { geometry, shape, reach: geometry.boundingSphere.center.length() + geometry.boundingSphere.radius, farthest: Math.sqrt(farthest), buoyancy });
   }
   return PREPARED.get(thing);
@@ -1220,8 +1268,9 @@ export class Rock {
    * @param mirrorLayer the layer the water's mirror image draws (src/splash.js MIRROR_LAYER): afloat, it is in it
    * @param water the water's uniforms (src/waterSurface.js rideUniforms): a floater given them rides the water's ripples as drawn (rideTheWater)
    * @param piece a shard's own outline (src/ice.js shards: its corners about its middle and its thickness, in radii), which its mesh is built to
+   * @param dressing the seed its own parts are drawn from (dressThing), in place of the one its throw draws: a person's throw is dressed as its preview in the hand (src/main.js)
    */
-  constructor({ radius, position, velocity, envTexture, waterFog = null, thing = DEFAULT_THING, mass = null, mirrorLayer = null, skip = false, water = null, piece = null }) {
+  constructor({ radius, position, velocity, envTexture, waterFog = null, thing = DEFAULT_THING, mass = null, mirrorLayer = null, skip = false, water = null, piece = null, dressing = null }) {
     this.radius = radius;
     this.position = position.clone();
     this.previous = position.clone();   // where it was a step ago
@@ -1268,21 +1317,27 @@ export class Rock {
     // its own copy of them. Anything else (a stone's lumps, drawn at random) is built for each one thrown.
     const prepared = mesh.fixed ? prepareThing(this.thing) : null;
     // Its own parts (registerMesh `dress`: a pizza's toppings), drawn from a stream of their own seeded from its throw's,
-    // added to its own copy of the shared mesh, their mass to its own.
-    this.dressing = prepared && mesh.dress ? mesh.dress(this.thing, seededStream(Math.floor(random() * 4294967296))) : null;
+    // or from the seed it was given (`dressing`, its preview's: the throw's draw is made all the same, so its other draws
+    // are as they were), added to its own copy of the shared mesh, their mass to its own.
+    let dressedWith = null;
+    if (prepared && mesh.dress) { const drawn = Math.floor(random() * 4294967296); dressedWith = dressing ?? drawn; }
+    this.dressing = dressedWith === null ? null : dressThing(this.thing, dressedWith);
     if (this.dressing && this.ownMass !== null) this.ownMass *= 1 + this.dressing.share;
     // (Its own copy, though a pie's parts are its filling's, kept: a mesh shared would stay on the GPU once drawn.)
     this.sharedGeometry = Boolean(prepared) && !this.thing.body.soft && !this.dressing;
     this.piece = piece;   // a shard's outline (src/ice.js), as it was broken
     this.geometry = prepared ? (this.sharedGeometry ? prepared.geometry : this.dressing ? withParts(prepared.geometry, this.dressing.geometry) : prepared.geometry.clone()) : mesh.build(this.thing, { flat: Boolean(skip), ...(piece ? { piece } : {}) });
-    // Only what its parts are and weigh is kept: their triangles are its geometry's now.
+    // Only what its parts are, what they weigh and their seed are kept: their triangles are its geometry's now.
     if (this.dressing) {
       if (!this.dressing.shared) this.dressing.geometry.dispose();
-      this.dressing = { name: this.dressing.name, share: this.dressing.share };
+      this.dressing = { name: this.dressing.name, share: this.dressing.share, seed: dressedWith };
     }
     if (!prepared) this.geometry.computeBoundingSphere();
-    this.reach = prepared?.reach ?? this.geometry.boundingSphere.center.length() + this.geometry.boundingSphere.radius;   // furthest any point gets from the centre, in radii
-    this.shape = this.sphere ? BALL_SHAPE : prepared?.shape ?? stoneShape(this.geometry);
+    // A stone's physics mesh (src/thingMeshes.js createRockGeometry): the faces its shape, its contact, its lowest point
+    // and its buoyancy are worked out over, while its geometry, a finer mesh of the same surface, is only drawn.
+    const physics = this.geometry.userData.physics ?? null;
+    this.reach = prepared?.reach ?? reachOf(physics ?? this.geometry);   // furthest any point gets from the centre, in radii
+    this.shape = this.sphere ? BALL_SHAPE : prepared?.shape ?? stoneShape(physics ?? this.geometry);
     // Its density: its definition's, or its mass over its volume (a sphere's; a mesh's own, as a pizza's disc).
     const volume = this.sphere ? (4 / 3) * Math.PI * radius ** 3 : this.shape.volume * radius ** 3;
     this.density = this.thing.body.density ?? this.ownMass / volume;
@@ -1290,7 +1345,7 @@ export class Rock {
     // Which way is up for it: its own +y if it is kept upright (a pizza's toppings), else its short axis, either way.
     this.uprightAxis = this.thing.body.upright ? UP.clone() : this.shape.axes[2].clone();
     // A floater that is not a sphere floats by its mesh's own volume, at any angle (buoyancyColumns).
-    this.buoyancy = (this.floats || this.thing.air.model === 'flutter') && !this.sphere ? (prepared ? prepared.buoyancy() : buoyancyColumns(this.geometry, columnAxis(this.thing, this.shape), this.thing.water.columns)) : null;
+    this.buoyancy = (this.floats || this.thing.air.model === 'flutter') && !this.sphere ? (prepared ? prepared.buoyancy() : buoyancyColumns(physics ?? this.geometry, columnAxis(this.thing, this.shape), this.thing.water.columns)) : null;
     // Where its weight acts afloat (turnAfloat, stableAfloat): its volume's middle, moved by its `body.ballast` (a duck's
     // heavy base), in its own frame and radii.
     this.massCentre = this.buoyancy ? this.buoyancy.centroid.clone().add(new THREE.Vector3().fromArray(this.thing.body.ballast ?? [0, 0, 0])) : null;
@@ -1321,7 +1376,7 @@ export class Rock {
     // A soft thing's rest shape, which flex bends what is drawn from; the physics reads the shared mesh's, without its
     // parts (physicsPositions).
     this.restShape = this.thing.body.soft ? this.geometry.attributes.position.array.slice() : null;
-    this.physicsShape = prepared && this.geometry !== prepared.geometry ? prepared.geometry.attributes.position.array : null;
+    this.physicsShape = physics ? physics.array : prepared && this.geometry !== prepared.geometry ? prepared.geometry.attributes.position.array : null;
     // What the water has done to it (soak, showWet): how wet it is (1 out of the water, drying to 0) and how far soaked through.
     this.wet = 0;
     this.soaked = 0;
@@ -1333,6 +1388,9 @@ export class Rock {
     this.dry = { mass: this.mass, density: this.density };   // as thrown, before any soaking (the `mass` getter: a stone's is its density's)
     const glow = mesh.glow?.(this.thing) ?? null;      // a look's own light (a frozen pizza's frost)
     const map = mesh.texture?.(this.thing) ?? null;   // a textured look's (a pizza's top); its own program (src/main.js warmUp)
+    // A stone's grain and relief, drawn pixel by pixel (src/shaders/stone.js): every thing's program has it, a stone's
+    // kind and seed in its uniforms, and no kind for anything else, so the program stays the one they all share.
+    const stone = this.stone = stoneUniforms(this.geometry.userData.stone ?? null);
     const makeMaterial = (clipNormalY) => new THREE.MeshStandardMaterial({
       color: baseColor,
       ...(glow ? { emissive: glow } : {}),
@@ -1347,12 +1405,15 @@ export class Rock {
     this.meshAbove = new THREE.Mesh(this.geometry, makeMaterial(1));
     this.meshBelow = new THREE.Mesh(this.geometry, makeMaterial(-1));
     this.meshBelow.material.envMapIntensity = 0.35;
+    this.meshAbove.material.onBeforeCompile = (shader) => stoneDetail(shader, stone);
+    this.meshAbove.material.customProgramCacheKey = () => 'above';
     // The part above the water in the water's mirror image, afloat (the header): its distance in alpha.
     // Only a floater has one (a mesh and a material draw random ids, which would move a seeded stone's splash).
     this.meshMirror = null;
     if (this.floats) {
       this.meshMirror = new THREE.Mesh(this.geometry, makeMaterial(1));
       this.meshMirror.material.onBeforeCompile = (shader) => {
+        stoneDetail(shader, stone);
         shader.fragmentShader = shader.fragmentShader.replace('#include <dithering_fragment>', `#include <dithering_fragment>
   gl_FragColor.a = 1.0 - ${MIRROR_NEARNESS_SCALE.toFixed(1)} / max(length(vViewPosition), 0.05);`);
       };
@@ -1371,6 +1432,7 @@ export class Rock {
     const fogExtinction = { value: waterFog?.extinction ?? new THREE.Vector3() };
     const fogColor = { value: waterFog?.color ?? new THREE.Vector3() };
     this.meshBelow.material.onBeforeCompile = (shader) => {
+      stoneDetail(shader, stone);
       shader.uniforms.uSeenThroughWater = seenThroughWater;
       shader.uniforms.uWaterLevel = waterLevel;
       shader.uniforms.uFogExtinction = fogExtinction;
@@ -1392,6 +1454,12 @@ export class Rock {
       mesh.scale.setScalar(radius);
       mesh.frustumCulled = false;
     }
+    // Its meshes, coarsest first, its own last (the header: showDetail), and which each of its meshes draws; null for
+    // anything without coarser ones.
+    const detail = this.geometry.userData.detail ?? null;
+    this.detail = detail ? [...detail.coarser, { geometry: this.geometry, spacing: detail.spacing }] : null;
+    if (detail) detail.users = (detail.users ?? 0) + 1;   // the coarser meshes leave the GPU with the last that draws them (disposeGeometry)
+    this.detailShown = detail ? { above: this.detail.length - 1, below: this.detail.length - 1, mirror: this.detail.length - 1 } : null;
     this.syncMeshes();
   }
 
@@ -1441,6 +1509,7 @@ export class Rock {
     if (seenThrough) Object.assign(this.meshBelow.material, { side: THREE.DoubleSide, transparent: true, depthWrite: false });
     this.ridesWater = true;   // src/main.js redraws its mirror image as the water moves under it
     const ride = (side) => (shader) => {
+      stoneDetail(shader, this.stone);
       Object.assign(shader.uniforms, water);
       shader.uniforms.uRide = rideShare;
       shader.uniforms.uWaterLevel = waterLevel;
@@ -1531,6 +1600,30 @@ export class Rock {
 
   /** Its meshes: above the water, below it, and afloat in the mirror image. */
   get meshes() { return this.meshMirror ? [this.meshAbove, this.meshBelow, this.meshMirror] : [this.meshAbove, this.meshBelow]; }
+
+  /**
+   * Draw each of its meshes from the coarsest that shows all it can (the header), given its radius in the pixels of
+   * the pass each is drawn in: `above` (meshAbove), `below` (meshBelow) and `mirror` (meshMirror).
+   */
+  showDetail(pixelRadii) {
+    if (!this.detail) return;
+    const meshes = { above: this.meshAbove, below: this.meshBelow, mirror: this.meshMirror };
+    for (const [part, mesh] of Object.entries(meshes)) {
+      if (!mesh) continue;
+      const radius = pixelRadii[part];
+      const coarsestWithin = (pixels) => {
+        const index = this.detail.findIndex((level) => level.spacing * radius <= pixels);
+        return index === -1 ? this.detail.length - 1 : index;
+      };
+      const needed = coarsestWithin(DETAIL.pixels);
+      const shown = this.detailShown[part];
+      // Finer at once; coarser only with DETAIL.hold to spare.
+      const chosen = needed > shown ? needed : Math.min(shown, coarsestWithin(DETAIL.hold * DETAIL.pixels));
+      if (chosen === shown) continue;
+      this.detailShown[part] = chosen;
+      mesh.geometry = this.detail[chosen].geometry;
+    }
+  }
 
   /** Its mass (kg): a ball's or a gem's own; a stone's the nominal ball's of its density (the air's drag's, as it always was). */
   get mass() { return this.thing.byDiameter ? this.density * (4 / 3) * Math.PI * this.radius ** 3 : this.ownMass; }
@@ -1673,7 +1766,7 @@ export class Rock {
   /** How far its lowest point lies below its centre along `up` (a unit vector: the level's, or a sloping bed's normal; negative, metres), as it is turned now (or by `quaternion`). */
   lowestAlong(up, quaternion = this.quaternion) {
     if (this.sphere) return -this.radius;
-    const positions = distinctPoints(this.physicsPositions);
+    const positions = uniquePoints(this.physicsPositions);
     // A mesh point's height along `up` is the rotation's rows, weighted by `up`, dotted with it (along the level, the
     // second row: exactly the arithmetic it always was, so a seeded throw goes as it went).
     const rotation = rockRotation.makeRotationFromQuaternion(quaternion).elements;
@@ -1716,8 +1809,10 @@ export class Rock {
     const down = new THREE.Vector3(-rowX, -rowY, -rowZ);
     const alignment = this.shape.axes.map((axis) => Math.abs(axis.dot(down)));
     const nearest = alignment.indexOf(Math.max(...alignment));
+    // The lowest point over the distinct points (uniquePoints); the faces below walk the triangles themselves.
+    const distinct = uniquePoints(positions);
     let lowest = Infinity;
-    for (let index = 0; index < positions.length; index += 3) lowest = Math.min(lowest, rowX * positions[index] + rowY * positions[index + 1] + rowZ * positions[index + 2]);
+    for (let index = 0; index < distinct.length; index += 3) lowest = Math.min(lowest, rowX * distinct[index] + rowY * distinct[index + 1] + rowZ * distinct[index + 2]);
     // The faces within BLUNT_BAND of the lowest point, by the share of their
     // corners inside it, projected on the water: the footprint of the part
     // that goes in first.
@@ -3209,8 +3304,20 @@ export class Rock {
     return impact;
   }
 
+  /**
+   * Free its geometry (a shared one stays with its definition: prepareThing) and, with the last thing thrown that draws
+   * them, its coarser meshes' copies on the GPU (showDetail; kept with their kind, each is sent again when next drawn).
+   */
+  disposeGeometry() {
+    if (!this.sharedGeometry) this.geometry.dispose();
+    if (!this.detail) return;
+    const detail = this.geometry.userData.detail;
+    if (--detail.users === 0) for (const { geometry } of detail.coarser) geometry.dispose();
+    this.detail = null;
+  }
+
   dispose() {
-    if (!this.sharedGeometry) this.geometry.dispose();   // a shared one stays with its definition (prepareThing)
+    this.disposeGeometry();
     this.meshAbove.material.dispose();
     this.meshBelow.material.dispose();
     this.meshMirror?.material.dispose();

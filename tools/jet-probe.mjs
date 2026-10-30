@@ -35,6 +35,10 @@
 //   - its cost: the solver's and the drawing's milliseconds per frame (mean
 //     and worst), warm (after a few silent jets), printed; the mean under
 //     COST_MOST;
+//   - its aloft share (src/jet.js aloftShare: the share of its launched
+//     water up, by which the pond's heave under it is reduced, src/rings.js
+//     NEAR_FIELD): at least 0.9 as its launch ends, under 0.05 a second
+//     later, and never rising after the launch;
 //   - the surface seal (src/splash.js chooseSplash) against what was seen
 //     (SEALS): Truscott & Techet's (2009) 5.7 cm billiard ball at 5.95 m/s
 //     domes over, 1.1 to 1.3 sqrt(R/g) after impact, and its jet bursts
@@ -251,7 +255,17 @@ console.log(`\nstone ${millimetres(stoneRadius)} mm at ${entrySpeed} m/s${horizo
 console.log(`  clears the surface ${steady.emerged === null ? 'never' : `${(steady.emerged * 1000).toFixed(0)} ms after entry, rising ${steady.emergeSpeed.toFixed(1)} m/s`}; its water reaches ${(highest * 100).toFixed(1)} cm; gone ${((jet.age + pinch) * 1000).toFixed(0)} ms after entry`);
 console.log(`  drops: ${drops.length}, ${big.length} of 2 mm and more, the largest ${millimetres(largest)} mm; the first thrown up ${firstDrop ? `${((firstDrop.time + pinch) * 1000).toFixed(0)} ms after entry, ${millimetres(firstDrop.radius)} mm, ${Math.hypot(firstDrop.vx, firstDrop.vy, firstDrop.vz).toFixed(1)} m/s, ${(firstDrop.y * 100).toFixed(1)} cm up` : 'none'}`);
 console.log(`  the first ten thrown up (ms after entry / radius mm / height cm / speed m/s): ${thrown.slice(0, 10).map((drop) => `${((drop.time + pinch) * 1000).toFixed(0)}/${millimetres(drop.radius)}/${(drop.y * 100).toFixed(0)}/${Math.hypot(drop.vx, drop.vy, drop.vz).toFixed(1)}`).join('  ')}`);
-console.log(`  water: launched ${((jet.volume(0, jet.launchEnd) + jet.baseWater) * 1e6).toFixed(0)} ml (the sleeve's ${(jet.baseWater * 1e6).toFixed(0)}), fell back ${(jet.solver.fallen * 1e6).toFixed(0)} ml, in drops ${(drops.reduce((sum, drop) => sum + (4 / 3) * Math.PI * drop.radius ** 3, 0) * 1e6).toFixed(0)} ml`);
+console.log(`  water: launched ${((jet.volume(0, jet.launchEnd) + jet.baseWater) * 1e6).toFixed(0)} ml (the base's ${(jet.baseWater * 1e6).toFixed(0)}), fell back ${(jet.solver.fallen * 1e6).toFixed(0)} ml, in drops ${(drops.reduce((sum, drop) => sum + (4 / 3) * Math.PI * drop.radius ** 3, 0) * 1e6).toFixed(0)} ml`);
+{
+  const launchEnd = jet.launchEnd;
+  const ages = [0.5 * launchEnd, launchEnd, launchEnd + 0.1, launchEnd + 0.2, launchEnd + 0.5, launchEnd + 1];
+  console.log(`  aloft, the share of its water up (src/jet.js aloftShare): ${ages.map((age) => `${jet.aloftShare(age).toFixed(2)} at ${(age * 1000).toFixed(0)} ms`).join(', ')} after the pinch (the launch ends at ${(launchEnd * 1000).toFixed(0)})`);
+  check(jet.aloftShare(launchEnd) >= 0.9, `the jet's aloft share is ${jet.aloftShare(launchEnd).toFixed(2)} as its launch ends, under 0.9`);
+  check(jet.aloftShare(launchEnd + 1) <= 0.05, `the jet's aloft share is ${jet.aloftShare(launchEnd + 1).toFixed(2)} a second after its launch ends, over 0.05`);
+  let rose = false;
+  for (let age = launchEnd, last = 1; age <= launchEnd + 1.5; age += 0.005) { const share = jet.aloftShare(age); if (share > last + 1e-9) rose = true; last = share; }
+  check(!rose, 'the jet\'s aloft share rises after its launch ends');
+}
 const mean = (values) => values.reduce((sum, value) => sum + value, 0) / Math.max(values.length, 1);
 const updateMean = mean(steady.update), geometryMean = mean(steady.geometry);
 const worst = Math.max(...steady.update.map((value, index) => value + steady.geometry[index]));

@@ -20,7 +20,7 @@ import * as THREE from 'three';
 import { FullscreenPass } from './gpu.js';
 import { FLOATER_WATER } from './shaders/scene.js';
 
-export const MAX_FLOATERS = 32;   // the most floaters any preset keeps (src/main.js QUALITY: afloat and the ice's shards)
+export const MAX_FLOATERS = 56;   // the most floaters any preset keeps (src/main.js QUALITY: afloat and the ice's shards, High's 32 + 24)
 const HEIGHT_RANGE = 0.5;   // m: heights from −this to +this
 
 const RIDE_FRAGMENT = /* glsl */`

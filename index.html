@@ -593,6 +593,8 @@
     text-overflow: ellipsis;
   }
   .menu-tier-chevron { flex: none; font-size: 16px; line-height: 1; color: rgba(238, 243, 244, 0.5); }
+  /* Reset all, asking again after a first press. */
+  .menu-reset.armed, .menu-reset.armed .menu-tier-icon { color: var(--accent); }
   /* A page's head stays at the top while the page scrolls under it, clear of the panel's edge. */
   .menu-head {
     display: flex; align-items: center; gap: 4px; padding: 10px 10px 10px; margin: -8px -8px 0;
@@ -902,7 +904,7 @@
 
 <div class="title">
   <h1>A Stone’s Throw</h1>
-  <p>Tap to throw. Hold an object to pick it up; release to drop. Hold the water to touch it, drag to look around. Scroll or pinch to look closer.<span class="keys"> Space throws one for you.</span></p>
+  <p>Tap to throw. Hold an object to pick it up; release to drop. Hold the water to touch it, drag to look around. Scroll or pinch to look closer, or to step back.<span class="keys"> Space throws one for you.</span></p>
 </div>
 <div class="stats" id="stats" aria-live="off"></div>
 
@@ -992,6 +994,11 @@
       <span class="menu-tier-name"><b>Sound</b><small>Splashes, knocks and bounces</small></span>
       <span class="menu-tier-value"></span><span class="menu-tier-chevron" aria-hidden="true">&rsaquo;</span>
     </button>
+    <button type="button" class="menu-tier" data-open="effects">
+      <svg class="menu-tier-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M2.5 10c2.2-3.3 4.9-5 8-5 2.3 0 4.3 1.1 6 3.2L18 6.6v6.8l-1.5-1.6c-1.7 2.1-3.7 3.2-6 3.2-3.1 0-5.8-1.7-8-5z"></path><circle cx="6.4" cy="9.2" r="0.7"></circle></svg>
+      <span class="menu-tier-name"><b>Effects</b><small>Fish in the water</small></span>
+      <span class="menu-tier-value"></span><span class="menu-tier-chevron" aria-hidden="true">&rsaquo;</span>
+    </button>
     <hr class="menu-rule">
     <button type="button" class="menu-tier" data-open="view">
       <svg class="menu-tier-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M1.8 10S4.8 4.8 10 4.8 18.2 10 18.2 10 15.2 15.2 10 15.2 1.8 10 1.8 10z"></path><circle cx="10" cy="10" r="2.4"></circle></svg>
@@ -1002,6 +1009,11 @@
       <svg class="menu-tier-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M3.6 14.6a6.6 6.6 0 1 1 12.8 0"></path><path d="M10 12.9l3.2-4.1"></path></svg>
       <span class="menu-tier-name"><b>Quality</b><small>Detail and smoothness</small></span>
       <span class="menu-tier-value"></span><span class="menu-tier-chevron" aria-hidden="true">&rsaquo;</span>
+    </button>
+    <hr class="menu-rule">
+    <button type="button" class="menu-tier menu-reset" id="reset-settings">
+      <svg class="menu-tier-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M1.75 4v4.5h4.5"></path><path d="M3.63 12.25a6.75 6.75 0 1 0 1.6-7.02L1.75 8.5"></path></svg>
+      <span class="menu-tier-name"><b>Reset all</b><small>Every setting as on a first visit</small></span>
     </button>
   </div>
   <div class="menu-page" data-page="thing" hidden>
@@ -1031,6 +1043,7 @@
       <div class="menu-field-label" id="view-label">From</div>
       <div class="menu-seg" id="view" role="radiogroup" aria-labelledby="view-label" aria-describedby="view-note">
         <button type="button" role="radio" data-value="shore">Shore</button>
+        <button type="button" role="radio" data-value="behind">Behind</button>
         <button type="button" role="radio" data-value="level">Low</button>
         <button type="button" role="radio" data-value="high">High</button>
         <button type="button" role="radio" data-value="under">Under</button>
@@ -1071,6 +1084,8 @@
         <button type="button" class="menu-card" role="radio" data-value="desert"><img src="assets/sky/thumbs/desert.jpg" alt="" width="80" height="45"><span><b>Desert oasis</b><small>Golden rocks · moonlight and stars</small></span></button>
         <button type="button" class="menu-card" role="radio" data-value="lakeside"><img src="assets/sky/thumbs/lakeside.jpg" alt="" width="80" height="45"><span><b>Lakeside</b><small>A wooded shore, a far bank</small></span></button>
         <button type="button" class="menu-card" role="radio" data-value="mesas"><img src="assets/sky/thumbs/mesas.jpg" alt="" width="80" height="45"><span><b>Mesas</b><small>Wide water to flat-topped hills</small></span></button>
+        <button type="button" class="menu-card" role="radio" data-value="harbour"><img src="assets/sky/thumbs/harbour.jpg" alt="" width="80" height="45"><span><b>Harbour</b><small>A small harbour on a wide dam · morning to dusk</small></span></button>
+        <button type="button" class="menu-card" role="radio" data-value="wooded"><img src="assets/sky/thumbs/wooded.jpg" alt="" width="80" height="45"><span><b>Wooded lake</b><small>Still water under wooded hills</small></span></button>
         <button type="button" class="menu-card" role="radio" data-value="pool"><img src="assets/sky/thumbs/pool.jpg" alt="" width="80" height="45"><span><b>Pool</b><small>A tiled pool by the lake; ripples bounce off its walls</small></span></button>
         <button type="button" class="menu-card" role="radio" data-value="koi"><img src="assets/sky/thumbs/koi.jpg" alt="" width="80" height="45"><span><b>Koi pond</b><small>A pond in a Japanese garden, clipped shrubs, a stone lantern and koi</small></span></button>
       </div>
@@ -1125,6 +1140,17 @@
         <button type="button" role="radio" data-value="off">Off</button>
       </div>
       <div class="menu-note" id="sound-note">Each thing sounds as it meets the water, the deck and other things: a stone plunks, a basketball booms, a pizza slaps. Made as it happens, from how fast, how big and how lively it is.</div>
+    </div>
+  </div>
+  <div class="menu-page" data-page="effects" hidden>
+    <div class="menu-head"><button type="button" class="menu-back" aria-label="Back"><span aria-hidden="true">&lsaquo;</span></button><h3>Effects</h3></div>
+    <div class="menu-field">
+      <div class="menu-field-label" id="fish-label">Fish</div>
+      <div class="menu-seg" id="fish" role="radiogroup" aria-labelledby="fish-label" aria-describedby="fish-note">
+        <button type="button" role="radio" data-value="on">On</button>
+        <button type="button" role="radio" data-value="off">Off</button>
+      </div>
+      <div class="menu-note" id="fish-note"></div>
     </div>
   </div>
   <div class="menu-page" data-page="quality" hidden>
@@ -1364,6 +1390,7 @@
     const NOTES = {
       view: {
         shore: 'Standing on the bank, as the pond opens.',
+        behind: 'Over the thrower’s shoulder: the thing in the hand, the arc of the throw and where it lands.',
         level: 'Down at the water, the splash against the far shore.',
         high: 'From high above, the rings spreading over the pond.',
         under: 'Under the water, the sky in a bright window overhead and the rocks coming down through it.',
@@ -1371,6 +1398,7 @@
       },
       poolView: {
         shore: 'Standing on the deck at the pool\u2019s corner, looking down into it.',
+        behind: 'Over the thrower\u2019s shoulder on the deck: the thing in the hand and the arc of the throw into the pool.',
         level: 'Down at the water, just inside the pool\u2019s wall.',
         high: 'From high above, the rings running back and forth off the walls.',
         under: 'Under the water, the sky in a bright window overhead and the tiles mirrored in the surface past it.',
@@ -1384,7 +1412,7 @@
         calm: 'Still water: the shore stands in it as in a mirror.',
         breeze: 'Light ripples that blur the reflections.',
         windy: 'Ripples over the whole pond that break the reflections up.',
-        gale: 'A gale over the lake: waves a third of a metre high, whitecaps, spray off the crests, foam in streaks along the wind. The pool is too small for waves; there it only ripples hard.',
+        gale: 'A gale over the lake: waves a third of a metre high, whitecaps, foam in streaks along the wind. The pool is too small for waves; there it only ripples hard.',
       },
       quality: {
         auto: 'Starts on High and steps down while the frame rate is too low, and keeps watching.',
@@ -1394,7 +1422,7 @@
       },
       weather: {
         clear: 'The sky as it was photographed.',
-        'light-rain': 'A bright overcast and a light rain: rings spreading on the water, a fleck where each drop lands, faint streaks falling.',
+        'light-rain': 'A bright overcast and a light rain: rings spreading on the water, a splash where each drop lands, faint streaks falling.',
         'heavy-rain': 'A dark sky and a downpour: the water hammered with rings and splashes, the far bank lost in the rain.',
         storm: 'A storm: a darker sky, a downpour, lightning, and the wind up to a gale.',
         'light-snow': 'A bright overcast and a light snow: flakes drifting down and melting on the water, a dusting on the shore.',
@@ -1609,6 +1637,20 @@
       settings.setValue('sound', pond.sound ? 'On' : 'Off');
     }
     updateSound();
+    // The Effects page: the fish, in or out of every water (the pond remembers the choice).
+    const FISH_NOTES = {
+      on: 'Each water has the fish such water holds: minnows, perch and a pike in the lake, trout in the mountains, koi in the Koi pond. A thing thrown frightens them, and what is edible is eaten.',
+      off: 'The water is empty: nothing swims, and nothing is eaten.',
+    };
+    const fishNote = document.getElementById('fish-note');
+    const showFish = radioGroup(document.getElementById('fish'), (value) => { pond.setFish(value === 'on'); updateEffects(); });
+    function updateEffects() {
+      const on = pond.fishOn;
+      showFish(on ? 'on' : 'off');
+      fishNote.textContent = FISH_NOTES[on ? 'on' : 'off'];
+      settings.setValue('effects', on ? 'Fish on' : 'Fish off');
+    }
+    updateEffects();
     // The Water page as the place has it: the lake's clarities, or the pool's own water; Frozen's ice under the cards.
     const showIce = radioGroup(document.getElementById('ice'), (value) => { pond.setIce(value); updateWater(); });
     const OPEN_WATER = {
@@ -1775,6 +1817,46 @@
     // An hour is a 6 MB photo: opening the page fetches the hours either side of the shown one ahead
     // (pond.prefetchHours), and each hour shown while it is open fetches its own, so the next is there when picked.
     document.querySelector('.menu-tier[data-open="time"]').addEventListener('click', () => pond.prefetchHours());
+    // Reset all: a first press asks again in the row's own words, and a second within a few seconds sets every
+    // setting as a first visit has it (pond.resetSettings). Favourites and the latest choices stay.
+    const resetButton = document.getElementById('reset-settings');
+    const resetName = resetButton.querySelector('b'), resetLine = resetButton.querySelector('small');
+    let resetTimer = 0;
+    const disarmReset = () => {
+      clearTimeout(resetTimer);
+      resetTimer = 0;
+      resetButton.classList.remove('armed');
+      resetName.textContent = 'Reset all';
+      resetLine.textContent = 'Every setting as on a first visit';
+    };
+    resetButton.addEventListener('click', () => {
+      if (!resetTimer) {
+        resetButton.classList.add('armed');
+        resetName.textContent = 'Press again to reset';
+        resetLine.textContent = 'Favourites stay';
+        resetTimer = setTimeout(disarmReset, 3000);
+        return;
+      }
+      disarmReset();
+      const choice = ++sceneChoice;   // a place or an hour still coming for an earlier pick reports nothing
+      timeChoice = null;
+      weatherRequest += 1;
+      for (const key of Object.keys(sliderValues)) delete sliderValues[key];
+      resetLine.textContent = 'Resetting\u2026';
+      const reset = pond.resetSettings();
+      updateThing();
+      updateWater();
+      updateWeather();
+      updateWind();
+      updateSound();
+      updateEffects();
+      showQuality();
+      reset.then(() => {
+        if (sceneChoice === choice) updateSky();
+        updateWeather();
+        if (!resetTimer) disarmReset();
+      });
+    });
     showView();
     updateThing();
     updateWater();

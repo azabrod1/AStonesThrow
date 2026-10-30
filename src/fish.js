@@ -12,6 +12,9 @@
 //   - Highlands, a mountain loch: brown trout alone, minnows schooling.
 //   - Mesas, a dam on the veld: a largemouth bass alone and a shoal of
 //     bluegill.
+//   - Harbour, a cold dam under the Drakensberg, stocked with trout: two
+//     alone, and minnows schooling.
+//   - Wooded lake, a lowland lake in Poland: a shoal of perch and a pike.
 //   - Desert oasis, a spring pool: a school of pupfish, the blue males and
 //     the brown females together, and a shoal of tilapia.
 //   - Rocky cove, the sea: a shoal of grey mullet and a wrasse on its own.
@@ -81,7 +84,10 @@
 // (seededRandom), never Math.random, and they step on the world's clock in
 // whole steps of FISH_STEP (advance), each seeing the things as they are at
 // that step, drawn between their last two (showAt): so a seeded throw is the
-// same with fish, at any frame rate.
+// same with fish, at any frame rate. When the world's clock goes back to
+// zero (src/main.js clearPond: Frozen water, a new place) theirs goes with
+// it (resetClock), each fish kept where it is with its own timers, or they
+// would hang until the world caught up with the old clock.
 // tools/fish-probe.mjs swims them on the CPU and checks all of the above.
 import { seededRandom } from './spray.js';
 
@@ -120,6 +126,8 @@ export const FISH_BY_PLACE = {
   swiss: [{ species: 'trout', count: 2 }, { species: 'char', count: 3 }],
   highlands: [{ species: 'trout', count: 2 }, { species: 'minnow', count: 8 }],
   mesas: [{ species: 'bass', count: 1 }, { species: 'bluegill', count: 4 }],
+  harbour: [{ species: 'trout', count: 2 }, { species: 'minnow', count: 8 }],
+  wooded: [{ species: 'perch', count: 5 }, { species: 'pike', count: 1 }],
   desert: [{ species: 'pupfish', count: 8 }, { species: 'tilapia', count: 3 }],
   cove: [{ species: 'mullet', count: 4 }, { species: 'wrasse', count: 1 }],
   koi: [{ species: 'koi', count: 7 }, { species: 'goldfish', count: 1 }],
@@ -607,6 +615,16 @@ export class FishPopulation {
     return this.bites;
   }
 
+  /** Rebase on a reset world clock, keeping the swimmers and their own timers. */
+  resetClock(time = 0) {
+    this.clock = time;
+    for (const fish of this.fish) {
+      const before = (fish.before ??= {});
+      for (const key of DRAWN) before[key] = fish[key];
+    }
+    this.showAt(time);
+  }
+
   /**
    * The fish on their own clock, in whole FISH_STEP steps up to `time` (s,
    * the world's: src/main.js asks at each of its physics steps), `look()`
@@ -623,16 +641,6 @@ export class FishPopulation {
       const bites = this.step(FISH_STEP, look());
       if (bites.length > 0) bitten(bites);
     }
-  }
-
-  /**
-   * The world's clock started again from 0 (src/main.js clearPond): the fish
-   * stay as they are and count their steps from the next `advance`, or they
-   * would wait out every second they had swum before stepping again.
-   */
-  rewind() {
-    this.clock = null;
-    for (const fish of this.fish) fish.before = null;
   }
 
   /**

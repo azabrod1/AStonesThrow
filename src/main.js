@@ -23,7 +23,7 @@
 //   6. render the main scene (sky dome, water surface refracting pass 5 and
 //      reflecting the mirror image, the stones' cavities in it
 //      (src/cavity.js), foam specks riding the surface, stones above the
-//      surface, the rain's streaks and flecks, the snow's flakes, the gale's spray) to an HDR
+//      surface, the rain's streaks and flecks, the snow's flakes) to an HDR
 //      texture with depth;
 //   7. draw the splash's water over it and tone-map to the canvas; with no
 //      water in the air, only the tone map (src/splash.js).
@@ -43,18 +43,32 @@
 // wider, and the frame is drawn from below (renderFromBelow): no mirror, no
 // under-water pass, the bed, stones and bubbles faded by the water to the
 // eye, the surface and the cavities with their from-below shading (Snell's
-// window, the mirror past it, the sun's shafts), and nothing in the air. Wherever it stands, the view zooms by narrowing the field of view
+// window, the mirror past it, the sun's shafts), and nothing in the air. Wherever it stands, the view zooms in by narrowing the field of view
 // (from the frame's 48° landscape or 62° portrait down to 8°) and turning
 // the camera, horizon level, so that what is under the pointer stays there
 // (src/viewZoom.js): the mouse wheel by 0.9 per notch, a two-finger pinch
 // with the inverse of the change in finger spacing, while the fingers'
-// midpoint holds on to what was under it. A zoomed view stays inside the
-// unzoomed frame, so zooming all the way out returns to it, and turns with
-// it; a drag that starts zoomed first moves the pivot to what the view looks
-// at (the water under its centre, or a point as far off as the pivot was),
-// so it turns round that. The rocks are always thrown from the shore, by a
-// hand beside and below the shore view's eye, so every throw enters the
-// water as the tools reproduce it. The mirror image of the sky is
+// midpoint holds on to what was under it. A zoomed view is held inside the
+// unzoomed frame as it widens and as a pinch moves it (the wheel only
+// closes in on the pointer), so zooming all the way out returns to it, and
+// turns with it; a drag that starts zoomed first moves the pivot to what the
+// view looks at (the water under its centre, or a point as far off as the
+// pivot was), so it turns round that, and turns slower the narrower the field of view,
+// so what is under the finger still follows it. Zoomed out past the frame,
+// the eye steps straight back along its line of sight instead (zoomTo: the
+// same notches and pinches, the field of view the frame's, the pivot still
+// at its centre), to FARTHEST_BACK times the frame's distance from the pivot:
+// from the shore that is up the bank behind the thrower, the hand in the
+// lower middle of the frame, and zooming back in walks up to the frame
+// again before the field of view narrows; Escape and Reset view come home
+// from there too. The rocks are always thrown from the shore, by a hand
+// beside and below the shore view's eye, just outside its frame, so every
+// throw enters the water as the tools reproduce it; the Behind view
+// (VIEWS.behind) stands over the thrower's shoulder, the hand and the whole
+// arc of the throw in frame, and the thing about to be thrown is previewed
+// in the hand (buildPreview, PREVIEW: see-through, at the strip's size,
+// dressed as the next throw by hand will be, let down for a skip, turning
+// slowly, gone for a moment after each throw; ?preview=off leaves it out). The mirror image of the sky is
 // re-rendered at the next frame whenever the view has changed, and while a
 // splash lives it is drawn over where the splash's own mirror image falls,
 // each frame (updateReflection). A tap throws at the water under it, brought
@@ -135,7 +149,7 @@
 // up to its `resting` things at rest, its `afloat` floaters and its `shards`
 // of broken ice (QUALITY: a
 // thing at rest is one draw call, src/rock.js syncMeshes, a floater costs
-// more, its physics, its ride and its mirror image), and up to MOVING_MOST
+// more, its physics, its ride and its mirror image), and up to its `moving`
 // on the move (flying, skimming, sinking, tumbling); past a cap the oldest
 // of that kind shrinks away over FADE_SECONDS where it is, frozen
 // (keepWithinCaps, fadeOut), never vanishing at once. A floater a gale has
@@ -257,7 +271,9 @@
 // ?weather=clear|light-rain|heavy-rain|storm|light-snow|heavy-snow|blizzard|fog
 // the weather (WEATHERS: the sky's cloud and haze, src/sky.js, the rain,
 // src/rain.js, the snow, src/snow.js, a storm's lightning,
-// src/lightning.js, a storm's or a blizzard's gale and a fog's calm; setWeather); each otherwise
+// src/lightning.js, a storm's or a blizzard's gale and a fog's calm; setWeather);
+// ?fish=off (or none, the harness's --fish=none) leaves every water without
+// fish (the Effects setting; setFish); each otherwise
 // the one last chosen on this device, or lakeside's afternoon, lake, calm
 // and clear; ?paused=1
 // starts with the clock stopped
@@ -266,28 +282,35 @@
 // keeps watching it, and reports each change through onQualityChange.
 // ?profile=1 runs the profiling steps of src/profiler.js and reports through
 // onProfile. Each throw a person makes (a tap on the water; throwRandom,
-// which the throw button and Space call) is reported through onThrow, not
-// the warm-up's, the profiler's or a harness's throwAt: the page's
-// first-visit cue goes with the first.
+// which the throw button and Space call: throwFromHand) is the thing its
+// preview in the hand showed, its parts too, and is reported through
+// onThrow, not the warm-up's, the profiler's or a harness's throwAt: the
+// page's first-visit cue goes with the first.
 import * as THREE from 'three';
 import { SpectralWater } from './spectralWater.js';
 import { AmbientWaves, DEFAULT_WIND, WIND_STRENGTHS } from './ambientWaves.js';
-import { GaleWaves, GALE_STRENGTHS } from './galeWaves.js';
+import { GaleWaves, GALE_STRENGTHS, WHITECAP_SPEED } from './galeWaves.js';
+import { Spindrift } from './spindrift.js';
 import { Rain, loadRainData } from './rain.js';
 import { Snow } from './snow.js';
 import { lightningAt } from './lightning.js';
 import { Rings } from './rings.js';
 import { DropRings } from './dropRings.js';
-import { createEnvironment, SKY_NAMES, skyHours, resolveHour, nearestHour } from './sky.js';
+import { createEnvironment, SKY_NAMES, REED_SKIES, skyShore, skyHours, resolveHour, nearestHour } from './sky.js';
 import { createWaterSurface } from './waterSurface.js';
-import { createPondFloor, createShore, floorDepthAt, groundHeightAt, setShoreKind, KOI_SHORE } from './pondFloor.js';
-import { Rock, setAir, aimSkip, aimThrow, flutterTrial, prepareThing, PREPARATION_WORK, skipLowest, skipSpeed, SKIP_THROW, PHYSICS_STEP, throwFlightTime } from './rock.js';
+import { createPondFloor, createShore, floorDepthAt, groundHeightAt, setShoreKind, setShoreLook, KOI_SHORE } from './pondFloor.js';
+import { Rock, setAir, aimSkip, aimThrow, dressThing, flutterTrial, prepareThing, PREPARATION_WORK, skipLowest, skipSpeed, SKIP_THROW, PHYSICS_STEP, throwFlightTime } from './rock.js';
 import { THINGS, THING_NAMES, DEFAULT_THING, defineThing, onThingsChange } from './things.js';
 import { collideThings, forgetPasses } from './collide.js';
 import { SplashSystem, MIRROR_LAYER } from './splash.js';
 import { createFloatTarget, FullscreenPass, configureFloatSupport, renderTargetBytes } from './gpu.js';
+import { Glare } from './glare.js';
+import { Reeds } from './reeds.js';
+import { Boulders } from './boulders.js';
 import { UNDER_BACKGROUND_FRAGMENT } from './shaders/scene.js';
-import { directionAt, placeDirection, clampToFrame, zoomToward, isZoomed, viewFacing } from './viewZoom.js';
+import { directionAt, placeDirection, clampToFrame, isZoomed, viewFacing } from './viewZoom.js';
+import { meshKind, withParts } from './thingMeshes.js';
+import { stoneDetail, stoneUniforms } from './shaders/stone.js';
 import { orbitEye, orbitFacing, orbitAbout, clampOrbit, turnOrbit, blendOrbits, orbitsMatch, keepInside, LOWEST_EYE } from './viewOrbit.js';
 import { Profiler } from './profiler.js';
 import { FingerInWater, FINGER } from './touch.js';
@@ -339,9 +362,13 @@ import { createKoiGarden, koiGround, holdInGarden, keepInPond, keepOutOfGarden }
 //                 runs its motion and, under a gale, a lookup of its waves in
 //                 the vertex shader, so a phone draws fewer; the haze carries
 //                 the snow either way.
-//   resting, afloat, shards  the things kept at rest, afloat and the ice's
-//                 shards (the header); past them the oldest of that kind
-//                 shrinks away.
+//   resting, afloat, shards, moving  the things kept at rest, afloat, the
+//                 ice's shards and on the move (the header); past them the
+//                 oldest of that kind shrinks away. A floater costs most: its
+//                 physics meets every other floater's each step, and while the
+//                 water moves its mirror image is drawn again each frame.
+//                 afloat + shards is at most src/floaterRide.js MAX_FLOATERS,
+//                 the floaters whose ride is read back.
 //   gardenCoarse  the Koi pond's garden drawn as coarsely as the mirror draws
 //                 it (src/koiGarden.js setCoarse: a third of its triangles);
 //                 it catches things alike either way.
@@ -356,9 +383,9 @@ import { createKoiGarden, koiGround, holdInGarden, keepInPond, keepOutOfGarden }
 // and every mesh takes 16-bit indices (at most 254 segments: Three.js keeps
 // the index 65535 for primitive restart).
 export const QUALITY = {
-  high: { grid: 512, meshSegments: 254, underScale: 1.0, fluidScale: 1.0, idleFrameRate: 30, maxDpr: 2.0, rings: 24, ringFade: 8, rainTexels: 512, dropRings: 24, crownDrops: 3500, snowShare: 1, resting: 40, afloat: 16, shards: 16, gardenCoarse: false, spray: { ring: 65536, share: 1 } },
-  medium: { grid: 256, meshSegments: 160, underScale: 0.5, fluidScale: 0.5, idleFrameRate: 30, maxDpr: 2.0, rings: 12, ringFade: 4, rainTexels: 256, dropRings: 16, crownDrops: 2000, snowShare: 0.6, resting: 30, afloat: 14, shards: 10, gardenCoarse: false, spray: { ring: 16384, share: 0.4 } },
-  low: { grid: 256, meshSegments: 128, underScale: 0.5, fluidScale: 0.5, idleFrameRate: 30, maxDpr: 1.5, rings: 10, ringFade: 3, rainTexels: 256, dropRings: 12, crownDrops: 2000, snowShare: 0.4, resting: 20, afloat: 12, shards: 6, gardenCoarse: true, spray: { ring: 8192, share: 0.2 } },
+  high: { grid: 512, meshSegments: 254, underScale: 1.0, fluidScale: 1.0, idleFrameRate: 30, maxDpr: 2.0, rings: 24, ringFade: 8, rainTexels: 512, dropRings: 24, crownDrops: 3500, snowShare: 1, resting: 80, afloat: 32, shards: 24, moving: 40, gardenCoarse: false, spray: { ring: 65536, share: 1 } },
+  medium: { grid: 256, meshSegments: 160, underScale: 0.5, fluidScale: 0.5, idleFrameRate: 30, maxDpr: 2.0, rings: 12, ringFade: 4, rainTexels: 256, dropRings: 16, crownDrops: 2000, snowShare: 0.6, resting: 45, afloat: 21, shards: 15, moving: 30, gardenCoarse: false, spray: { ring: 16384, share: 0.4 } },
+  low: { grid: 256, meshSegments: 128, underScale: 0.5, fluidScale: 0.5, idleFrameRate: 30, maxDpr: 1.5, rings: 10, ringFade: 3, rainTexels: 256, dropRings: 12, crownDrops: 2000, snowShare: 0.4, resting: 20, afloat: 12, shards: 6, moving: 20, gardenCoarse: true, spray: { ring: 8192, share: 0.2 } },
 };
 export const PIXEL_BUDGET = 2.6e6;   // device pixels in the canvas, on every preset
 const QUALITY_ORDER = ['high', 'medium', 'low'];
@@ -424,13 +451,18 @@ const MARGIN_RADII = 4;       // ...or this many of the rock's radius, if more: 
 const HAND_CLEARANCE = 0.01;  // m: the least a held thing's farthest point is over the water (handPosition)
 const POOL_MARGIN = 0.25;     // metres inside the pool's walls a throw keeps to (or MARGIN_RADII of the rock's radius; a plate, its reach: throwMargin)
 const EYE_EDGE = 0.3;         // metres inside the pool's edge over which the deck's height eases in for the eye
-const MOVING_MOST = 20;        // things on the move (flying, skimming, sinking, tumbling) at once: past this the oldest fades out (keepWithinCaps)
 const FADE_SECONDS = 0.6;      // a thing past a cap shrinks away over this long (fadeOut)
 const FARTHEST_AWAY = 30;      // m: a floater a gale has drifted, or a thing slid over the ice, this far from the pond is out of sight, and goes
+const UNDER_MAGNIFIED = 1.333;   // a thing under the water, seen from above, looks at most the water's index nearer (SEEN_THROUGH_WATER): showDetail
 const CATCH_UP = 12;           // a frame moves the world at most this many of its steps (simulate: 50 ms; the old frame's 12 substeps)
 const TRACE = { points: 4000, step: 0.01, marks: 100, cross: 0.06 };   // a stone's traced path (setTracing): at most this many points, one per this many metres it moves; at most this many touches and arc tops marked; a touch's cross this many metres each way
 const MIN_FOV = 8;            // degrees: the narrowest zoom
 const WHEEL_STEP = 0.9;       // field of view factor per wheel notch
+const FARTHEST_BACK = 2.0;    // zoomed out past the frame, the eye steps back to at most this many times the frame's distance from the pivot (zoomTo)
+// The thing about to be thrown, previewed in the hand (buildPreview): its opacity; how fast it turns about the
+// vertical (radians a second); how long it is gone after a person's throw (seconds of real time) and then takes to
+// fade back; and the seed its stone's lumps are drawn with (previewRandom: never Math.random, so seeded throws stay).
+const PREVIEW = { opacity: 0.5, turn: 0.35, gone: 0.35, fade: 0.3, seed: 11 };
 const HOME_TARGET = [0, 0.12, -1.0];
 const TAP_SLOP = 14;          // CSS pixels a press may move and still throw; past them it turns the view
 const HOLD_MS = 300;          // a press held this long within TAP_SLOP dips a finger into the water
@@ -446,13 +478,19 @@ const KOI_BED_ALBEDO = 0.3;   // the Koi pond's gravel and silt, for what the sp
 const ORBIT_TURN = Math.PI;   // radians the view turns for a drag across the canvas's height
 const GLIDE_SECONDS = 1.0;    // a glide to another view
 // The View setting's choices (src/viewOrbit.js): the shore view the page
-// opens with, 1.15 m above the water's edge; down at the water, its eye 16 cm
+// opens with, 1.15 m above the water's edge; behind the thrower, over the
+// shoulder, 1.6 m up and a metre back from the shore eye, a little to its
+// left of the hand, looking at where the rocks land, so the hand (with the
+// preview of the thing in it, buildPreview) and the whole arc of a throw are
+// in frame, the hand in the lower middle of it on a desktop and on a phone;
+// down at the water, its eye 16 cm
 // up, 1.9 m from where the rocks land; high above, 2.4 m up and a little to
 // the side, looking down on where they land; under the water, 0.85 m down
 // over the shallows, 1.5 m short of where they land, looking up and out
 // toward it and the sun, its shafts coming down through Snell's window.
 const VIEWS = {
   shore: orbitAbout({ x: 0, y: 1.15, z: 2.45 }, { x: HOME_TARGET[0], y: HOME_TARGET[1], z: HOME_TARGET[2] }),
+  behind: orbitAbout({ x: 0.1, y: 1.6, z: 3.5 }, { x: HOME_TARGET[0], y: HOME_TARGET[1], z: HOME_TARGET[2] }),
   level: orbitAbout({ x: 0, y: 0.16, z: 0.5 }, { x: 0, y: 0.1, z: -1.4 }),
   high: orbitAbout({ x: 1.0, y: 2.4, z: 0.6 }, { x: 0, y: 0, z: -1.3 }),
   under: orbitAbout({ x: -0.7, y: -0.85, z: -0.1 }, { x: 0, y: -0.3, z: -1.4 }),
@@ -480,6 +518,7 @@ const DEBUG_MODES = { under: 0, height: 1, foam: 2, env: 3, face: 4, ambient: 5 
 const DEFAULT_WIND_STRENGTH = 'calm';
 const WIND_STORAGE_KEY = 'stone-pond-wind';   // the Wind setting's last choice on this device
 const SOUND_STORAGE_KEY = 'stone-pond-sound';   // the Sound setting's last choice on this device ('off', or on)
+const FISH_STORAGE_KEY = 'stone-pond-fish';     // the Effects setting's fish, last chosen on this device ('off', or on)
 const WATER_STORAGE_KEY = 'stone-pond-water'; // the Water setting's: a clarity, or frozen
 const SKY_STORAGE_KEY = 'stone-pond-sky';     // the Location setting's: a place (PLACES)
 const TIME_STORAGE_KEY = 'stone-pond-time';   // the Time setting's: the local time ('hh:mm') of the hour last chosen
@@ -578,9 +617,14 @@ const LAKE_CLARITIES = WATER_CHOICES.filter((name) => name !== 'frozen');
 // beach, its own water (WATER_CLARITIES.koi) and a garden round it, out of
 // reach behind a hedge (src/koiGarden.js).
 // Each place's fish are
-// src/fish.js's (FISH_BY_PLACE, by the place's name).
+// src/fish.js's (FISH_BY_PLACE, by the place's name); its beach's ground is
+// its sky's `shore` (SHORE_LOOKS in src/pondFloor.js, setShoreLook: sand,
+// shingle, scree...); its reeds (`reeds`,
+// src/reeds.js) are the sky's (REED_SKIES): the fresh lakes have them,
+// the sea cove, the bare rock shore, the salt flat and the frozen alpine
+// reservoir none, and the Pool and the Koi pond have their own grounds.
 const PLACES = {
-  ...Object.fromEntries(SKY_NAMES.map((name) => [name, { sky: name, pool: false }])),
+  ...Object.fromEntries(SKY_NAMES.map((name) => [name, { sky: name, pool: false, reeds: REED_SKIES.includes(name) }])),
   swiss: { sky: 'swiss', pool: false, defaultWater: 'frozen', defaultView: 'level' },
   pool: { sky: 'lakeside', pool: true },
   koi: { sky: 'garden', pool: false, koi: true },
@@ -725,7 +769,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   let qualityName = automaticQuality ? 'high' : QUALITY[quality] ? quality : 'medium';
   let settings = QUALITY[qualityName];
   // Parts of the frame the profiler switches off (src/profiler.js); all on otherwise.
-  const skip = { floor: false, surface: false, solver: false, ambient: false, fluid: false, spray: false, mirror: false, cavity: false, halfDensity: false, sleep: false };
+  const skip = { floor: false, surface: false, solver: false, ambient: false, fluid: false, spray: false, mirror: false, cavity: false, glare: false, halfDensity: false, sleep: false };
 
   const water = new SpectralWater(renderer, { size: settings.grid, domainSize: 6, centre: [0, -1.0], depth: POND_DEPTH });
   const windParameter = pageParameters.get('wind')?.split(',').map(Number);
@@ -734,13 +778,17 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   // The gale's waves (src/galeWaves.js): their uniforms join the ripples'
   // before any material spreads those in; they blow only under a gale, and
   // never in the pool (applyGale).
-  const galeWaves = new GaleWaves(renderer, { windDirection, centre: water.centre, sharedWith: ambientWaves, lighting });
+  const galeWaves = new GaleWaves(renderer, { windDirection, centre: water.centre, sharedWith: ambientWaves });
+  const reeds = new Reeds({ lighting, ambientWaves, mirrorLayer: MIRROR_LAYER });   // the shallows' rushes (src/reeds.js), in the main scene, the mirror and the under-water pass
+  const boulders = new Boulders({ envTexture: environment.envTexture, waterFog: { extinction: lighting.extinction, color: lighting.waterColor }, mirrorLayer: MIRROR_LAYER });   // a rocky shore's stones (src/boulders.js), the same three ways
   // The water's height at world (x, z) under the gale (its CPU sum), for the stones, the mirror and the eye.
   const galeSample = { height: 0, slopeX: 0, slopeZ: 0 };
   const galeSurfaceAt = (x, z) => galeWaves.sample(x, z, galeSample).height;
   // The rain (src/rain.js): its rings on the water, its streaks and flecks;
   // none until the Weather brings it (applyWeather). The pool's deck wets.
   const rain = new Rain(renderer, lighting, { texels: settings.rainTexels, gale: galeWaves.uniforms(), download: rainDownload });
+  // The spray a gale blows off its breaking crests (src/spindrift.js): drawn only under a gale (applyGale).
+  const spindrift = new Spindrift(lighting, { gale: galeWaves.uniforms(), crestSpeed: WHITECAP_SPEED * galeWaves.crestSpeed });
   const wetDeck = { value: 0 };
   // The snow (src/snow.js): its flakes, none until the Weather brings it; the
   // snow lying on the ground (the beach's, the deck's and the ice's uSnow) and the air
@@ -775,11 +823,13 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   const pool = createPool(water, lighting, ambientWaves, environment, { rings, haze: environment.hazeUniforms, wet: wetDeck, snow: snowCover, air, ice });
   let pooled = false;
   let koiPond = false;   // the lake's shore is the Koi pond's (PLACES `koi`; setKoiPond)
+  let reedsHere = false;   // the place's shallows have reeds (PLACES `reeds`; setReeds)
   const bedDepthAt = (x, z) => (pooled ? POOL.depth : floorDepthAt(x, z));
   water.floorDepthAt = bedDepthAt;
   const surface = createWaterSurface(water, lighting, ambientWaves, { meshSegments: settings.meshSegments, rings, dropRings, skyCube: environment.cubeTexture, rain, haze: environment.hazeUniforms, gale: galeWaves, ice });
   const floaterRide = createFloaterRide(surface.rideUniforms);   // the water under each floater, for the physics
   const splash = new SplashSystem({ environment, lighting, water, ambientWaves, surface });
+  const glare = new Glare();   // the sun's image and every glint spread over the frame (src/glare.js), mixed in by the splash's final pass
   splash.setCrownDropletCap(settings.crownDrops);
   splash.spray.setBudget(settings.spray);
   // The wind's strength: the page's ?windStrength, else the last choice here, else calm.
@@ -798,8 +848,10 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     water.setWindStrength(WIND_STRENGTHS[name]);
     rain.setWind(windDirection, DRIFT_WIND * WIND_STRENGTHS[name]);
     snow.setWind(windDirection, DRIFT_WIND * WIND_STRENGTHS[name]);
+    spindrift.setWind(windDirection);
     const windLength = Math.hypot(windDirection[0], windDirection[1]);
     splash.spray.setWind(windDirection[0] / windLength, windDirection[1] / windLength, WIND_STRENGTHS[name]);
+    reeds.setWind(WIND_STRENGTHS[name]);
     galeWaves.setFoamVelocity(water.foamUniforms.uFoamVelocity.value);
     applyGale();
   }
@@ -813,6 +865,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     const strength = pooled || koiPond || ice.on ? 0 : GALE_STRENGTHS[windName] ?? 0;   // a pond is too small for a gale's waves
     galeWaves.setStrength(strength);
     surface.setGale(strength > 0);
+    spindrift.setOn(strength > 0);
   }
   applyWind(windName);
   // The Wind setting's own choice (setWind), which a storm's or a blizzard's gale, or a fog's calm, overrides only while it lasts.
@@ -836,7 +889,10 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   let waterName = DEFAULT_WATER;
   pooled = PLACES[placeName].pool;
   koiPond = Boolean(PLACES[placeName].koi);
+  reedsHere = Boolean(PLACES[placeName].reeds);
   setShoreKind(koiPond ? 'koi' : 'lake');
+  setShoreLook(skyShore(PLACES[placeName].sky));   // the beach and the bed in the place's own ground (SHORE_LOOKS)
+  boulders.show(!pooled && !koiPond ? PLACES[placeName].sky : null);
   water.setPool(pooled);
   applyGale();
   /** The bed the splash's drops see (src/splash.js setBed): its depth under the patch's middle and its albedo, the pool's tiles, the Koi pond's gravel or the lake's sand. */
@@ -906,6 +962,9 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   Object.assign(orbit, clampOrbit(orbit, eyeBounds(orbit)));   // the views stand within them, but under a gale
   const home = { ...orbitFacing(orbit), fov: 48 };
   const view = { ...home };
+  // The frame's distance from the pivot: zoomed out past the frame the eye steps back from it (zoomTo), and a View
+  // choice, a glide's end, a new pivot or the API's orbit makes the orbit's distance the frame's again (settleFrame).
+  let frameDistance = orbit.distance;
   // The thrower's hand stands beside and below the shore view's eye, wherever the camera is (handPosition).
   const shoreEye = orbitEye(VIEWS.shore);
   const shoreFacing = orbitFacing(VIEWS.shore);
@@ -934,7 +993,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   const sceneMain = new THREE.Scene();
   // The haze for the built-in materials in it, the stones' and the things' (src/sky.js): 0 but in haze.
   sceneMain.fog = environment.fog;
-  sceneMain.add(environment.sky, surface.inner, surface.outer, splash.cavityGroup, splash.foamSpecks.points, sun, rain.streaks, rain.flecks, snow.flakes, galeWaves.spray);
+  sceneMain.add(environment.sky, surface.inner, surface.outer, splash.cavityGroup, splash.foamSpecks.points, sun, rain.streaks, rain.flecks, spindrift.points, snow.flakes);
   // MIRROR_LAYER holds what the water mirrors: the sky dome, far shore
   // included, and while a splash lives its crowns, columns and drops. The
   // cavities are not on it: a hole lies below the mirror plane, so the water
@@ -948,6 +1007,10 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   sceneMain.add(koiLand);
   shore.layers.enable(MIRROR_LAYER);
   sceneMain.add(shore);
+  sceneMain.add(reeds.above);
+  sceneUnder.add(reeds.below);
+  sceneMain.add(boulders.above, boulders.mirror);
+  sceneUnder.add(boulders.below);
   // The pool's basin under the water, its walls and deck in the main scene
   // and the mirror (src/pool.js); shown in place of the lake's while the
   // water is the pool's (showScenery).
@@ -960,6 +1023,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   /** The lake's bed, beach and open water, or the pool's basin and deck: the meshes only (setPooled changes the water). */
   function showScenery(asPool) {
     floor.visible = shore.visible = !asPool;
+    reeds.visible = !asPool && !koiPond && reedsHere;   // the lake's shallows, where the place has them
+    boulders.show(!asPool && !koiPond ? PLACES[placeName].sky : null);   // and a rocky shore's stones (BOULDERS)
     pool.setVisible(asPool);
     shore.visible = !asPool && !koiPond;
     koiLand.visible = !asPool && koiPond;
@@ -968,8 +1033,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   }
   showScenery(pooled);
   // The fish (src/fish.js; drawn by src/fishMeshes.js in the under-water pass): the place's, in its water (applyFish);
-  // ?fish=none leaves every water empty.
-  const fishOn = pageParameters.get('fish') !== 'none';
+  // ?fish=off or none, or the Effects setting's Off remembered on this device, leaves every water empty (setFish).
+  let fishOn = !['none', 'off'].includes(pageParameters.get('fish') ?? storedChoice(FISH_STORAGE_KEY));
   const fishes = new FishPopulation({ seed: Number(pageParameters.get('fishSeed') ?? 1) });
   const fishView = createFishView(lighting, { bedDepthAt: (x, z) => bedDepthAt(x, z), seenThrough: () => pooled });
   sceneUnder.add(fishView.group);
@@ -1000,6 +1065,117 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   arc.visible = false;
   arc.frustumCulled = false;
   sceneMain.add(marker, arc);
+
+  // The thing about to be thrown, previewed in the hand (PREVIEW; the header): the chosen thing at the strip's size,
+  // see-through, where handPosition holds it (let down for a skip, as skipThrow lets the hand down), turning slowly
+  // about the vertical so that it reads as a preview and not a thing hanging in the air, gone the moment a person's
+  // throw leaves the hand (previewThrown) and faded back in. It is in the main scene alone, above the water: in no
+  // mirror image (it is on no MIRROR_LAYER), not from under the water (hiddenFromBelow), never among the rocks
+  // (nothing meets it, the grab cannot pick it, the fish ignore it), and never culled (a draw off screen costs next to
+  // nothing, and the warm-up's frames compile its programs with the hand out of frame). Its geometry is its thing's
+  // prepared one (src/rock.js prepareThing: shared, so never disposed here), or that with its parts (registerMesh
+  // `dress`: a pizza's toppings, a pie's filling, a cake's candles) in a copy of its own, the next throw's own, drawn
+  // from the seed the throw by hand is given (`dressing`, throwFromHand), so the one in the hand is the one that flies;
+  // or built for it with a seeded stream in place of Math.random (previewRandom), so a seeded throw's stone stays the
+  // stone it was (a stone's lumps, and an apple's, are its own, each one thrown drawn afresh); its material a
+  // see-through twin of a rock's (src/rock.js makeMaterial), of which warmUp draws one plain and one textured under the
+  // veil and keeps both (programKeepers), so no later choice compiles a program. ?preview=off leaves it out, as the
+  // shoot harness does unless asked (tools/shoot.mjs --preview=1), so frames from any orbit stay as they were.
+  const previewOn = pageParameters.get('preview') !== 'off';
+  const preview = { mesh: null, thing: null, flat: false, ownsGeometry: false, dressing: nextDressing(), dressedWith: null, parts: null, radius: 0, goneUntil: 0, turned: 0, drawnAt: 0 };
+  /** A seed for the next throw's own parts (src/rock.js dressThing), from the browser's own randomness: never Math.random, so seeded throws stay. */
+  function nextDressing() { return crypto.getRandomValues(new Uint32Array(1))[0]; }
+  /** `build` run with Math.random a seeded stream from PREVIEW.seed (Park–Miller), Math.random itself put back after. */
+  function previewRandom(build) {
+    const random = Math.random;
+    let state = PREVIEW.seed;
+    Math.random = () => { state = (state * 16807) % 2147483647; return (state - 1) / 2147483646; };
+    try { return build(); } finally { Math.random = random; }
+  }
+  function disposePreview() {
+    if (!preview.mesh) return;
+    sceneMain.remove(preview.mesh);
+    if (preview.ownsGeometry) preview.mesh.geometry.dispose();
+    if (!programKeepers.includes(preview.mesh.material)) preview.mesh.material.dispose();
+    preview.mesh = null;
+  }
+  /**
+   * The preview of `name` (what is chosen, as a rule) at its size and in
+   * the manner now: built afresh when the thing, its flatness (a flat stone
+   * for a skip, as throwAt throws one) or the seed of its parts (a throw by
+   * hand has taken the last: previewThrown) has changed, else only placed.
+   */
+  function buildPreview(name = thingName) {
+    if (!previewOn) return;
+    const { thing, radius } = measureThing(name);
+    const flat = skipsNow() && thing.skips && Boolean(thing.byDiameter);
+    const kind = meshKind(thing.look.mesh);
+    const dressing = kind.fixed && kind.dress ? preview.dressing : null;   // the seed of its parts, if it has any
+    if (!preview.mesh || preview.thing !== thing || preview.flat !== flat || preview.dressedWith !== dressing) {
+      disposePreview();
+      const prepared = prepareThing(thing);
+      // Its parts (a pizza's toppings, a pie's filling, a cake's candles) from that seed, added to a copy of the shared
+      // mesh as the throw given it adds them (src/rock.js); their triangles, copied, are let go as a throw lets them go.
+      const parts = dressing === null ? null : dressThing(thing, dressing);
+      const geometry = parts ? withParts(prepared.geometry, parts.geometry) : prepared ? prepared.geometry : previewRandom(() => kind.build(thing, { flat }));
+      if (parts && !parts.shared) parts.geometry.dispose();
+      if (!prepared) geometry.computeBoundingSphere();
+      const look = thing.look;
+      const glow = kind.glow?.(thing) ?? null;
+      const map = kind.texture?.(thing) ?? null;
+      const material = new THREE.MeshStandardMaterial({
+        color: previewRandom(() => kind.color(thing)),
+        ...(glow ? { emissive: glow } : {}),
+        vertexColors: true,
+        ...(map ? { map } : {}),
+        roughness: look.roughness,
+        metalness: 0,
+        envMap: environment.envTexture,
+        envMapIntensity: look.reflection,
+        transparent: true,
+        opacity: PREVIEW.opacity,
+        depthWrite: false,
+      });
+      // A stone's grain and relief, as every thrown thing's material draws them (src/shaders/stone.js; no kind, no
+      // grain, for anything else), so the stone in the hand looks like the one that flies; one program for every
+      // preview but a textured one, whatever is chosen.
+      const grain = stoneUniforms(geometry.userData.stone ?? null);
+      material.onBeforeCompile = (shader) => stoneDetail(shader, grain);
+      material.customProgramCacheKey = () => 'preview';
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.frustumCulled = false;
+      sceneMain.add(mesh);
+      Object.assign(preview, { mesh, thing, flat, ownsGeometry: !prepared || Boolean(parts), dressedWith: dressing, parts: parts?.name ?? null });
+    }
+    preview.radius = radius;
+    const hand = handPosition(radius, thing);
+    if (skipsNow() && thing.skips) hand.y = Math.min(hand.y, SKIP_THROW.handHeight);
+    preview.mesh.position.copy(hand);
+    preview.mesh.scale.setScalar(radius);
+  }
+  /**
+   * A person's throw has left the hand (throwFromHand): the preview is gone
+   * for PREVIEW.gone seconds, then fades back (updatePreview) as the next
+   * one, its parts drawn from a new seed.
+   */
+  function previewThrown() {
+    preview.goneUntil = performance.now() + PREVIEW.gone * 1000;
+    preview.dressing = nextDressing();
+  }
+  /** Once a frame (render), at the real time `now`: the preview turned on by the time since the last frame, gone after a throw and faded back. */
+  function updatePreview(now) {
+    if (!preview.mesh) return;
+    // The next one's parts, built as it comes back rather than in the throw's own frame.
+    if (now >= preview.goneUntil && preview.dressedWith !== null && preview.dressedWith !== preview.dressing) buildPreview();
+    const mesh = preview.mesh;
+    const seconds = THREE.MathUtils.clamp((now - preview.drawnAt) / 1000, 0, 0.1);
+    preview.drawnAt = now;
+    preview.turned = (preview.turned + PREVIEW.turn * seconds) % (2 * Math.PI);
+    mesh.rotation.y = preview.turned;
+    const back = (now - preview.goneUntil) / 1000;
+    mesh.visible = back > 0;
+    mesh.material.opacity = PREVIEW.opacity * THREE.MathUtils.clamp(back / PREVIEW.fade, 0, 1);
+  }
 
   // Debug views for development: show the under-water pass, the height
   // field, the foam, the environment cube or the ambient waves' height tile.
@@ -1231,7 +1407,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     }).then(() => environment.name);
   }
   /** Commit the place, its geometry and entry preset only after its latest sky and hour arrive. */
-  function requestPlace(place, hour) {
+  function requestPlace(place, hour, { remember = true } = {}) {
     const sky = PLACES[place].sky;
     const request = { place, hour: resolveHour(sky, hour) };
     placeRequest = request;
@@ -1241,6 +1417,9 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
         placeName = place;
         setPooled(PLACES[place].pool);
         setKoiPond(Boolean(PLACES[place].koi));
+        setReeds(Boolean(PLACES[place].reeds));
+        setShoreLook(skyShore(PLACES[place].sky));
+        boulders.show(!pooled && !koiPond ? PLACES[place].sky : null);
         if (entering) applyFish();
         if (entering && PLACES[place].defaultWater === 'frozen' && iceName === 'none') {
           clearPond();
@@ -1248,10 +1427,12 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
         }
         // From the untouched shore view, show the peaks above the ice. Keep a view the user has moved.
         if (entering && PLACES[place].defaultView && reportedView?.atHome) showView(PLACES[place].defaultView, { glide: false });
-        try {
-          window.localStorage.setItem(SKY_STORAGE_KEY, place);
-          window.localStorage.setItem(WATER_STORAGE_KEY, iceName === 'none' ? lakeClarity : 'frozen');
-        } catch { /* storage refused: the choices last this visit */ }
+        if (remember) {   // not after Reset all (resetSettings), which forgets them
+          try {
+            window.localStorage.setItem(SKY_STORAGE_KEY, place);
+            window.localStorage.setItem(WATER_STORAGE_KEY, iceName === 'none' ? lakeClarity : 'frozen');
+          } catch { /* storage refused: the choices last this visit */ }
+        }
       }
       return placeName;
     });
@@ -1312,7 +1493,9 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
 
   function applySky() {
     garden.setEnvironment(environment.envTexture);
+    boulders.setEnvironment(environment.envTexture);
     garden.setLight();
+    if (preview.mesh) preview.mesh.material.envMap = environment.envTexture;   // a new sky's map (the rocks take theirs as thrown)
     applyWaterColor();
     applySunLights();
     splash.updateLighting();
@@ -1396,10 +1579,78 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     const reach = toWater <= 3 * orbit.distance ? toWater : orbit.distance;
     const pivot = { x: camera.position.x + centre.x * reach, y: camera.position.y + centre.y * reach, z: camera.position.z + centre.z * reach };
     placeOrbit(orbitAbout(camera.position, pivot));
+    settleFrame();
     Object.assign(home, orbitFacing(orbit));
     view.yaw = home.yaw;
     view.pitch = home.pitch;
     viewFromApi = false;
+  }
+
+  /** The orbit's distance is the frame's now: the eye stands on its frame (showView, a glide's end, pivotOnView, setOrbit). */
+  function settleFrame() { frameDistance = orbit.reach ?? orbit.distance; }
+
+  /** How many times the frame's distance the eye stands from the pivot, stepped back by zooming out past the frame (zoomTo); 1 on it. */
+  function steppedBack() { return (orbit.reach ?? orbit.distance) / frameDistance; }
+
+  /** A glide under way ends where it is (a hand or the wheel takes the view from it): that is the frame now. */
+  function abandonGlide() {
+    if (!glide) return;
+    glide = null;
+    settleFrame();
+  }
+
+  /**
+   * The zoom as one number, how many times nearer than the frame the view
+   * looks: over 1 the field of view is narrowed, the frame's over it
+   * (src/viewZoom.js); under 1 the eye has stepped back from the pivot, the
+   * frame's distance over its own, its field of view the frame's; 1 is the frame.
+   */
+  function zoomLevel() { return view.fov < home.fov - 1e-9 ? home.fov / view.fov : 1 / steppedBack(); }
+
+  /**
+   * The field of view `fov` with the world direction `direction` kept under
+   * the device point (placeDirection). Widening is held inside the frame
+   * (clampToFrame), so zooming out drifts home and arrives there with the
+   * field of view; narrowing only if `held` (a pinch: its midpoint moves as
+   * it zooms, so it pans the view too). The wheel's narrowing only closes
+   * in on the pointer, and is left alone: the frame's bounds are a box in
+   * yaw and pitch, which would pull a steep view's corner off what is under it.
+   */
+  function narrowTo(fov, direction, ndcX, ndcY, held = false) {
+    const placed = placeDirection(direction, ndcX, ndcY, fov, camera.aspect);
+    let next = { yaw: placed.yaw, pitch: placed.pitch, fov };
+    if (held || fov > view.fov) next = clampToFrame(next, home, camera.aspect);
+    if (isZoomed(next, view)) setView(next);   // otherwise nothing moved: at a limit
+  }
+
+  /** The eye `times` the frame's distance from the pivot along its line of sight, as far as its bounds allow; the view the frame's. */
+  function stepBackTo(times) {
+    const distance = frameDistance * times;
+    if (Math.abs(distance - (orbit.reach ?? orbit.distance)) < 1e-9) return;
+    const { reach, ...next } = orbit;
+    next.distance = distance;
+    moveEye(next);
+  }
+
+  /**
+   * Zoom to `level` (zoomLevel) at the device point: the world direction
+   * under it (the wheel's) or `held` (a pinch's, held under its moving
+   * midpoint) is kept under that point while the field of view narrows or
+   * widens (narrowTo); past the frame the eye steps straight back along its
+   * line of sight instead, the pivot still at the frame's centre
+   * (stepBackTo), to FARTHEST_BACK times the frame's distance, and zooming
+   * back in walks up to the frame before the field of view narrows again.
+   */
+  function zoomTo(level, ndcX, ndcY, held = null) {
+    const direction = held ?? directionAt(view, camera.aspect, ndcX, ndcY);
+    const wanted = Math.max(level, 1 / FARTHEST_BACK);
+    if (wanted > 1 + 1e-9) {
+      if (steppedBack() > 1 + 1e-9) stepBackTo(1);
+      narrowTo(Math.max(home.fov / wanted, MIN_FOV), direction, ndcX, ndcY, Boolean(held));
+    } else {
+      if (view.fov < home.fov - 1e-9) narrowTo(home.fov, direction, ndcX, ndcY);   // the frame again, exactly
+      stepBackTo(1 / wanted);
+    }
   }
 
   /** The widest field of view (degrees) of the frame from an orbit: 48° landscape, 62° portrait, wider under the water. */
@@ -1439,7 +1690,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     view.fov = glide.fromFov + (home.fov - glide.fromFov) * eased;
     Object.assign(view, clampToFrame(view, home, camera.aspect));
     viewFromApi = false;
-    if (progress >= 1) glide = null;
+    if (progress >= 1) { glide = null; settleFrame(); }
     applyView();
   }
 
@@ -1449,6 +1700,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     if (gliding) { glideTo(viewsNow()[name], name); return; }
     glide = null;
     placeOrbit(clampOrbit(viewsNow()[name], eyeBounds(viewsNow()[name])));
+    settleFrame();
     Object.assign(home, orbitFacing(orbit), { fov: frameFov() });
     setView(home);
   }
@@ -1458,15 +1710,6 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   function toDeviceCoordinates(clientX, clientY) {
     const rect = canvas.getBoundingClientRect();
     return { x: ((clientX - rect.left) / rect.width) * 2 - 1, y: -((clientY - rect.top) / rect.height) * 2 + 1 };
-  }
-
-  /** Zoom to a field of view, keeping what is under the client point there (zooming out also heads home). */
-  function zoomAt(clientX, clientY, fov) {
-    const point = toDeviceCoordinates(clientX, clientY);
-    const target = THREE.MathUtils.clamp(fov, MIN_FOV, home.fov);
-    let next = zoomToward(view, home, camera.aspect, point.x, point.y, target);
-    if (fov > view.fov) next = clampToFrame(next, home, camera.aspect);
-    if (isZoomed(next, view)) setView(next);   // otherwise nothing moved: at a limit
   }
 
   /** Width and height of `fraction` of the canvas's resolution, at least one pixel. */
@@ -1494,6 +1737,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     mainTarget = createFloatTarget(resolution.x, resolution.y, { type: THREE.HalfFloatType, filter: THREE.LinearFilter, depth: true, depthTexture: true });
     reflectionTarget = createFloatTarget(underWidth, underHeight, { type: THREE.HalfFloatType, filter: THREE.LinearFilter, depth: true });
     splash.resize(resolution.x, resolution.y, settings.fluidScale);
+    glare.resize(resolution.x, resolution.y);
+    reeds.resize(resolution.y);
     applyView();
   }
   resize();
@@ -1586,6 +1831,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     if (!MANNERS.includes(name)) return;
     manner = name;
     skipping = name === 'skip';
+    buildPreview();   // a skip's stone is flat, and let go lower
   }
   // What is thrown (the Object setting, src/things.js): the page's ?thing, else the last choice here, else a river stone;
   // and each kind's slider value (thingSizes: its own, or its family's, src/things.js `size.share`: the stones share one).
@@ -1613,6 +1859,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     const thing = THINGS[name];
     if (!thing.sizeShare || thingSizes[thing.sizeShare] === undefined) thingSizes[sizeKey(thing)] = thing.slider?.initial ?? null;
     prepareNamed(name);
+    if (name === thingName) buildPreview();   // the chosen thing, defined again: its preview is the new definition's
   });
   let timeScale = 1;
   let simulationTime = 0;
@@ -1702,7 +1949,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     if (koiPond) keepInPond(target, radius);   // nothing thrown comes down on the Koi pond's ground (src/koiGarden.js)
     // Made first, so a thing that flutters is aimed by its own flight (src/rock.js trialFlight) and a skip by its own
     // mass (a pizza's toppings and all); a skip is let go lower, from the hand let down (skipThrow).
-    const rock = new Rock({ radius, position: handPosition(radius, thing), velocity: new THREE.Vector3(), envTexture: environment.envTexture, waterFog: { extinction: lighting.extinction, color: lighting.waterColor }, thing: name, mass, mirrorLayer: MIRROR_LAYER, skip: skips, water: surface.rideUniforms });
+    const rock = new Rock({ radius, position: handPosition(radius, thing), velocity: new THREE.Vector3(), envTexture: environment.envTexture, waterFog: { extinction: lighting.extinction, color: lighting.waterColor }, thing: name, mass, mirrorLayer: MIRROR_LAYER, skip: skips, water: surface.rideUniforms, dressing: options.dressing ?? null });
     // A broad thing's tilt drawn first, so it is aimed by its own (a stone's is drawn as it is let go, as it always was).
     const tilt = skips && !thing.byDiameter ? rock.skipTilt() : undefined;
     const skipped = skips ? skipThrow(handPosition(radius, thing), target, { thing, radius, mass: rock.mass }, options.power ?? power, tilt) : null;
@@ -1771,9 +2018,9 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     return rock.state === 'rest' ? 'resting' : 'moving';
   }
 
-  /** Past a cap (the header: the preset's `resting`, `afloat` and `shards`, MOVING_MOST), the oldest of that kind fades out. */
+  /** Past a cap (the header: the preset's `resting`, `afloat`, `shards` and `moving`), the oldest of that kind fades out. */
   function keepWithinCaps() {
-    const most = { resting: settings.resting, afloat: settings.afloat, shards: settings.shards, moving: MOVING_MOST };
+    const most = { resting: settings.resting, afloat: settings.afloat, shards: settings.shards, moving: settings.moving };
     const count = { resting: 0, afloat: 0, shards: 0, moving: 0 };
     for (const rock of rocks) if (rock.fading === undefined && rock.state !== 'held') count[kindOf(rock)]++;
     for (const rock of rocks) {   // the oldest first
@@ -1786,7 +2033,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   /** Start a thing shrinking away where it is (endStep: over FADE_SECONDS, then retireRock), frozen: no more steps or knocks; `fadedAt`, the world's time it began (tools/frame-rate-probe.mjs). */
   function fadeOut(rock) { rock.fading = 0; rock.fadedAt = stepsTime; }
 
-  /** Take a stone out of the scenes; keepMaterials frees only its geometry (warmUp keeps a stone's materials, so their program stays compiled). */
+  /** Take a stone out of the scenes; keepMaterials frees only its geometries (warmUp keeps a stone's materials, so their program stays compiled). */
   function retireRock(rock, { keepMaterials = false } = {}) {
     if (grab.rock === rock) endGrab();
     ice.forget(rock);
@@ -1798,16 +2045,26 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       if (rock.meshMirror.visible) viewChanged = true;   // the mirror image is drawn again without it
       sceneMain.remove(rock.meshMirror);
     }
-    if (keepMaterials) rock.geometry.dispose();
+    if (keepMaterials) rock.disposeGeometry();
     else rock.dispose();
     rocks.splice(rocks.indexOf(rock), 1);
   }
 
-  function throwRandom() {
-    const point = keepOnWater({ x: THREE.MathUtils.randFloatSpread(1.8), z: -0.3 - Math.random() * 2.2 }, throwMargin());
-    const rock = throwAt(point.x, point.z);
+  /**
+   * A person's throw (a tap, throwRandom) at (x, z): the thing in the hand,
+   * dressed as its preview is (its parts' seed, `dressing`), reported
+   * through onThrow; the hand then readies the next (previewThrown).
+   */
+  function throwFromHand(x, z) {
+    const rock = throwAt(x, z, { dressing: previewOn ? preview.dressing : null });   // thrown first: onThrow?.(throwAt(…)) would not throw at all without an onThrow
+    previewThrown();
     onThrow?.(rock);
     return rock;
+  }
+
+  function throwRandom() {
+    const point = keepOnWater({ x: THREE.MathUtils.randFloatSpread(1.8), z: -0.3 - Math.random() * 2.2 }, throwMargin());
+    return throwFromHand(point.x, point.z);
   }
 
   // Pointer aiming: pick the water plane under the pointer, kept inside the
@@ -2031,18 +2288,17 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     return { x: 0.5 * (first.x + second.x), y: 0.5 * (first.y + second.y), distance: Math.max(Math.hypot(first.x - second.x, first.y - second.y), 1) };
   }
 
+  /** A pinch begins: the zoom and the world direction under the fingers' midpoint, which the pinch keeps under it (zoomTo). */
   function startPinch() {
     const span = pinchSpan();
     const point = toDeviceCoordinates(span.x, span.y);
-    pinch = { distance: span.distance, fov: view.fov, direction: directionAt(view, camera.aspect, point.x, point.y) };
+    pinch = { distance: span.distance, level: zoomLevel(), direction: directionAt(view, camera.aspect, point.x, point.y) };
   }
 
   function movePinch() {
     const span = pinchSpan();
     const point = toDeviceCoordinates(span.x, span.y);
-    const fov = THREE.MathUtils.clamp((pinch.fov * pinch.distance) / span.distance, MIN_FOV, home.fov);
-    const placed = placeDirection(pinch.direction, point.x, point.y, fov, camera.aspect);
-    setView(clampToFrame({ yaw: placed.yaw, pitch: placed.pitch, fov }, home, camera.aspect));
+    zoomTo((pinch.level * span.distance) / pinch.distance, point.x, point.y, pinch.direction);
   }
 
   function stopTurning() {
@@ -2072,7 +2328,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   canvas.addEventListener('pointerdown', (event) => {
     if (!readyForInput || event.button !== 0) return;
     lastActivity = performance.now();
-    glide = null;   // the hand takes the view from a glide where it stands
+    abandonGlide();   // the hand takes the view from a glide where it stands
     activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
     try { canvas.setPointerCapture(event.pointerId); } catch { /* a synthetic or already released pointer */ }
     if (activePointers.size === 1) {
@@ -2127,7 +2383,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
         showAim(null);
       }
       if (turning) {
-        moveEye(turnOrbit(orbit, event.clientX - turning.x, event.clientY - turning.y, ORBIT_TURN / Math.max(canvas.clientHeight, 1), eyeBounds(orbit)));
+        // Slower the narrower the field of view (the header), so what is under the finger follows it at any zoom.
+        moveEye(turnOrbit(orbit, event.clientX - turning.x, event.clientY - turning.y, (ORBIT_TURN * view.fov / home.fov) / Math.max(canvas.clientHeight, 1), eyeBounds(orbit)));
         turning.x = event.clientX;
         turning.y = event.clientY;
         return;
@@ -2149,8 +2406,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       const moved = Math.hypot(event.clientX - press.x, event.clientY - press.y);
       const hit = throwAim(event.clientX, event.clientY);
       if (hit && moved < TAP_SLOP) {
-        const rock = throwAt(hit.x, hit.z);   // thrown first: onThrow?.(throwAt(…)) would not throw at all without an onThrow
-        onThrow?.(rock);
+        throwFromHand(hit.x, hit.z);
         if (event.pointerType === 'mouse') thrownFrom = { x: event.clientX, y: event.clientY };
       }
     }
@@ -2168,13 +2424,14 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     if (!readyForInput) return;
     event.preventDefault();
     if (grab.rock) return;
-    glide = null;
+    abandonGlide();
     // Notches: a mouse wheel sends about 100 pixels or 3 lines each. A trackpad
     // pinch arrives as ctrl + wheel in small steps, scaled to feel like the page zoom.
     let notches = event.deltaMode === 1 ? event.deltaY / 3 : event.deltaMode === 2 ? event.deltaY : event.deltaY / 100;
     if (event.ctrlKey) notches *= 10;
     notches = THREE.MathUtils.clamp(notches, -4, 4);
-    zoomAt(event.clientX, event.clientY, view.fov * WHEEL_STEP ** -notches);
+    const point = toDeviceCoordinates(event.clientX, event.clientY);
+    zoomTo(zoomLevel() * WHEEL_STEP ** notches, point.x, point.y);   // a notch up (deltaY under 0) zooms in by 1 / WHEEL_STEP
   }, { passive: false });
   window.addEventListener('keydown', (event) => {
     if (!readyForInput) return;
@@ -2201,9 +2458,9 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       simulationTime += step;
     }
   }
-  /** What holds things in (src/collide.js `contain`): the pool's walls, the Koi pond's hedge, a hole in the ice; null with none. */
+  /** What holds things in (src/collide.js `contain`): the pool's walls, the Koi pond's hedge, a hole in the ice, a shore's boulders (src/boulders.js); null with none. */
   function containThings(rock) {
-    return (pooled ? holdInPool(rock, pool.square) : null) ?? (koiPond ? holdInGarden(rock) : null) ?? (ice.on ? ice.contain(rock) : null);
+    return (pooled ? holdInPool(rock, pool.square) : null) ?? (koiPond ? holdInGarden(rock) : null) ?? (ice.on ? ice.contain(rock) : null) ?? boulders.contain(rock);
   }
   function simulate(dt) {
     const frame = Math.min(dt, CATCH_UP * PHYSICS_STEP);
@@ -2403,18 +2660,20 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   let framesRendered = 0;
   function render() {
     for (const rock of rocks) { rock.flex(); rock.showWet(); }   // a soft thing's shape, and how wet each looks, as drawn now (src/rock.js)
+    updatePreview(performance.now());        // the thing in the hand, turned on, gone after a throw and back
     fishView.update();                       // each fish where it swims now
     pool.setTime(simulationTime);            // its deck's splashed patches dry by it
     ice.update();                            // what broke or opened since, into its mask (src/ice.js)
     iceCracks.update();                      // and the cracks made since, onto it (src/iceCracks.js)
+    reeds.update(simulationTime);
     renderer.info.reset();
     framesRendered++;
     camera.updateMatrixWorld();
     if (!skip.ambient) ambientWaves.update(simulationTime);
     galeWaves.update(simulationTime);   // nothing with no gale
-    galeWaves.updateView(simulationTime, camera, resolution, viewFocus());
     updateLightning(simulationTime);
     rain.update(simulationTime, camera, resolution, viewFocus());
+    spindrift.update(simulationTime, camera, resolution, viewFocus());
     snow.update(simulationTime, camera, resolution);
     rings.update(simulationTime);
     dropRings.update(simulationTime);
@@ -2422,6 +2681,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     if (skip.spray) splash.spray.mesh.visible = false;
     if (!skip.fluid) splash.prepareFrame();
     const fromBelow = camera.position.y < (galeWaves.on ? galeSurfaceAt(camera.position.x, camera.position.z) : 0);
+    showDetail(fromBelow);   // each ball's meshes as fine as each pass shows (src/rock.js)
     if (!fromBelow) updateReflection();   // from below no mirror is needed; a change of view keeps it marked stale until the eye surfaces
     // A floater whose rim keeps the water off its top (a pizza afloat, toppings up): the water is not drawn inside its rim.
     surface.setDryDiscs(rocks.filter((rock) => rock.dryDisc > 0).map((rock) => ({ x: rock.meshAbove.position.x, z: rock.meshAbove.position.z, radius: rock.dryDisc })));
@@ -2454,10 +2714,30 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       debugPass.render(renderer, null);
       return;
     }
-    // The profiler's plain tone map in place of the droplet passes, or the
-    // splash over the scene; from below, what flies in the air is not drawn.
+    // The glare of the finished scene, then the profiler's plain tone map in
+    // place of the droplet passes, or the splash over the scene; from below,
+    // what flies in the air is not drawn.
+    if (!skip.glare) glare.render(renderer, mainTarget, camera.fov / resolution.y);
+    splash.setGlare(glare.texture, skip.glare ? 0 : glare.share);
     if (skip.fluid || fromBelow) splash.toneMap(renderer, mainTarget, null);
     else splash.render(renderer, camera, mainTarget, null);
+  }
+
+  /**
+   * Each ball drawn from as fine a mesh as it shows (src/rock.js showDetail): its radius in each pass's pixels, from
+   * the eye's distance to it, the canvas's for its part above the water, the under-water pass's and the mirror image's
+   * (underScale of the canvas's) for its part under the water and its mirror image, the part under the water as much
+   * nearer as the water's surface makes it look (UNDER_MAGNIFIED; from below, where nothing bends it, the canvas's).
+   */
+  function showDetail(fromBelow) {
+    const focalPixels = resolution.y / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2));
+    const belowScale = fromBelow ? 1 : (underTarget.height / resolution.y) * UNDER_MAGNIFIED;
+    const mirrorScale = reflectionTarget.height / resolution.y;
+    for (const rock of rocks) {
+      if (!rock.detail) continue;
+      const pixelRadius = (rock.radius * focalPixels) / Math.max(camera.position.distanceTo(rock.meshAbove.position), rock.radius);
+      rock.showDetail({ above: pixelRadius, below: pixelRadius * belowScale, mirror: pixelRadius * mirrorScale });
+    }
   }
 
   // The view from under the water (VIEWS.under). What the under-water pass
@@ -2480,7 +2760,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     ...ambientWaves.uniforms(),
     ...ice.uniforms,   // no shafts under the ice (underwaterShafts)
   });
-  const hiddenFromBelow = () => [environment.sky, shore, koiLand, pool.walls, pool.yard, ...garden.meshes, marker, arc, ...rocks.map((rock) => rock.meshAbove)];
+  const hiddenFromBelow = () => [environment.sky, shore, koiLand, reeds.above, boulders.above, pool.walls, pool.yard, ...garden.meshes, marker, arc, ...(preview.mesh ? [preview.mesh] : []), ...rocks.map((rock) => rock.meshAbove)];
   function renderFromBelow() {
     renderer.setRenderTarget(mainTarget);
     renderer.clear(true, true, false);
@@ -2516,9 +2796,9 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       gale: sum([galeWaves.spectrumTarget, galeWaves.fftA, galeWaves.fftB, galeWaves.displacementTarget, galeWaves.derivativeTarget]),
       rain: renderTargetBytes(rain.tileTarget),
       rings: rings.bytes,
-      scene: sum([underTarget, mainTarget, reflectionTarget]),
+      scene: sum([underTarget, mainTarget, reflectionTarget, ...glare.targets]),
       splash: sum(Object.values(splash.targets)),
-      sky: sum(environment.targets) + environment.panoramaBytes,
+      sky: sum(environment.targets) + environment.panoramaBytes + environment.horizonBytes,
       floor: floorPatternBytes,
       ice: ice.budget.maskBytes + iceCracks.bytes,
     };
@@ -2539,7 +2819,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       solverAsleep: water.asleep,
       rings: { live: rings.live, fading: rings.fading, limit: rings.liveLimit, passes: rings.passesRun, fetches: rings.fetchesRun },
       dropRings: { live: dropRings.live, limit: dropRings.liveLimit, ready: dropRings.ready },
-      things: { kept: rocks.length, fading: rocks.filter((rock) => rock.fading !== undefined).length, resting: settings.resting, afloat: settings.afloat, shards: settings.shards, moving: MOVING_MOST },
+      things: { kept: rocks.length, fading: rocks.filter((rock) => rock.fading !== undefined).length, resting: settings.resting, afloat: settings.afloat, shards: settings.shards, moving: settings.moving },
       wind: windName,
       gale: { blowing: galeWaves.on, sheetTriangles: surface.sheetTriangles },
       rain: { weather: weatherName, falling: rain.on, texels: rain.texels },
@@ -2698,7 +2978,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     dropRings.reset();
     simulationTime = 0;
     stepsTime = 0;
-    fishes.rewind();   // their clock is the world's (src/fish.js advance)
+    fishes.resetClock();
     viewChanged = true;   // the mirror image is drawn whole again, without the splash
     mirroredRect.set(0, 0, 0, 0);
     splashRect.set(0, 0, 0, 0);
@@ -2734,6 +3014,13 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
    * GLSL twin's uniform with it), their meshes, the water's own, no gale, and
    * a still pond; the eye kept where it may stand.
    */
+  /** Whether this place's shallows have reeds (PLACES `reeds`): shown at the lake when they do. */
+  function setReeds(here) {
+    if (here === reedsHere) return;
+    reedsHere = here;
+    reeds.visible = !pooled && !koiPond && here;
+  }
+
   function setKoiPond(asKoi) {
     if (asKoi === koiPond) return;
     koiPond = asKoi;
@@ -2795,9 +3082,15 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     for (const floater of floaters) floater.meshMirror.visible = true;
     iceCracks.warmUp(WARM_UP.x + 0.4, WARM_UP.z);   // the cracks' program, over ice or none
     const fishWarmUp = fishView.warmUp();   // the fish's one program, whatever lives here (none in the Pool)
+    // The preview's programs (buildPreview: a see-through material, textured and plain): a pizza's preview drawn in
+    // this frame and a stone's in the next, their materials kept (programKeepers); then the chosen thing's, below.
+    buildPreview('pizza');
+    if (preview.mesh) programKeepers.push(preview.mesh.material);
     viewChanged = true;
     render();
     fishWarmUp.done();
+    buildPreview(DEFAULT_THING);
+    if (preview.mesh) programKeepers.push(preview.mesh.material);
     for (const floater of floaters) {
       programKeepers.push(floater.meshAbove.material, floater.meshBelow.material, floater.meshMirror.material);
       retireRock(floater, { keepMaterials: true });
@@ -2820,6 +3113,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
         showScenery(!pooled);
         garden.setVisible(true, { building: false });   // the Koi pond's garden's programs too, whatever the place (src/koiGarden.js builds it only when shown)
         koiLand.visible = true;
+        reeds.visible = true;   // and the reeds', whatever the place: a change of place compiles nothing
+        boulders.show('all');   // and the boulders' (src/boulders.js)
         render();
         renderFrom(VIEWS.under);
         showScenery(pooled);
@@ -2828,6 +3123,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     programKeepers.push(stone.meshAbove.material, stone.meshBelow.material);
     retireRock(stone, { keepMaterials: true });
     clearPond();
+    buildPreview();   // the chosen thing's, in the hand from the first frame shown
     // The ice's break, when the water is Frozen at the start (WARM_UP): through a sheet made thin for it, so it breaks
     // whatever ice was chosen (on thick ice the stone above would skid), its hole, cracks, flood and shards let go and
     // drawn above, below and in the mirror; so the first break a person makes builds nothing on the device (a GPU builds
@@ -2894,11 +3190,12 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     throwAt,
     throwRandom,
     /** The stones' size by their radius (m), as the harness sets it (the strip's slider sets it in cm, setSize). */
-    setStoneRadius(radius) { thingSizes[sizeKey(THINGS[DEFAULT_THING])] = 200 * radius; },
-    /** What is thrown (a key of src/things.js THINGS: a kind of stone or a ball), remembered on this device. */
+    setStoneRadius(radius) { thingSizes[sizeKey(THINGS[DEFAULT_THING])] = 200 * radius; buildPreview(); },
+    /** What is thrown (a key of src/things.js THINGS: a kind of stone or a ball), remembered on this device; the preview in the hand follows. */
     setThing(name) {
       if (!offered(name)) return;
       thingName = name;
+      buildPreview();
       try { window.localStorage.setItem(THING_STORAGE_KEY, name); } catch { /* storage refused: the choice lasts this visit */ }
     },
     get thing() { return thingName; },
@@ -2908,7 +3205,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
      */
     setSize(value) {
       const thing = THINGS[thingName];
-      if (thing.slider && Number.isFinite(value)) thingSizes[sizeKey(thing)] = withinSlider(thing, value);
+      if (thing.slider && Number.isFinite(value)) { thingSizes[sizeKey(thing)] = withinSlider(thing, value); buildPreview(); }
     },
     get size() { return thingSizes[sizeKey(THINGS[thingName])] ?? THINGS[thingName].slider?.initial; },
     /**
@@ -2942,6 +3239,15 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       try { window.localStorage.setItem(SOUND_STORAGE_KEY, on ? 'on' : 'off'); } catch { /* storage refused: the choice lasts this visit */ }
     },
     get sound() { return sound.enabled; },
+    /** The fish in or out of every water (the Effects setting): put in or taken out now (applyFish), remembered on this device. */
+    setFish(on) {
+      if (Boolean(on) !== fishOn) {
+        fishOn = Boolean(on);
+        applyFish();
+      }
+      try { window.localStorage.setItem(FISH_STORAGE_KEY, fishOn ? 'on' : 'off'); } catch { /* storage refused: the choice lasts this visit */ }
+    },
+    get fishOn() { return fishOn; },
     /** The floaters' ride read back (src/floaterRide.js): how many reads have come back and whether reading works (tools/quality-probe.mjs). */
     get floaterRide() { return { reads: floaterRide.reads, requests: floaterRide.requests, working: floaterRide.working }; },
     /** How many sounds are playing now (tools/quality-probe.mjs). */
@@ -3026,6 +3332,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       return requestPlace(place, hour);
     },
     get sky() { return placeName; },
+    /** Resolves when the sky's horizon strip is drawn, or has failed (src/sky.js, Horizon): the tools wait for it, the page never. */
+    get horizonReady() { return environment.horizonReady; },
     /**
      * The hour of the place last asked for (a name from `hours`), its local
      * time remembered on this device as the time of day other places follow.
@@ -3078,13 +3386,43 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     get snowing() { return snow.on; },
     /** The shown place's hours, in the order of the day: { name, label, clock } (clock 'hh:mm', or undefined for a lone photograph). */
     get hours() { return skyHours(environment.name); },
-    setTimeScale(scale) { timeScale = scale; },
+    setTimeScale(scale) {
+      timeScale = scale;
+      // The eye's persistence is real time: in slow motion the streaks span less of the world's (the splash's follow its frame, setFrameSeconds).
+      for (const streaked of [rain, snow]) streaked.setTimeScale(scale);
+    },
     /** A preset by name, which ends the automatic calibration; 'auto' starts it again from high. */
     setQuality(name) {
       automaticQuality = name === 'auto';
       if (automaticQuality) Object.assign(calibration, { phase: 'idle', frames: 0, seconds: 0, idleFps: null });
       else if (!QUALITY[name]) return;
       applyQuality(automaticQuality ? 'high' : name);
+    },
+    /**
+     * Every setting as a first visit has it (the settings' Reset all): the
+     * river stone at each thing's first size, Lakeside at its own hour, the
+     * Lake water thawed (its ice thin when frozen again), clear, calm, sound
+     * on, Auto quality, the shore view; and the choices remembered on this
+     * device forgotten, the time of day among them. Resolves once the place
+     * and the weather have come.
+     */
+    resetSettings() {
+      for (const thing of Object.values(THINGS)) thingSizes[sizeKey(thing)] = thing.slider?.initial ?? null;
+      this.setThing(DEFAULT_THING);   // after the sizes, so its preview is at its first size
+      const weather = this.setWeather('clear');
+      this.setWind(DEFAULT_WIND_STRENGTH);
+      iceThickness = 'thin';
+      this.setWater(DEFAULT_WATER);
+      this.setSound(true);
+      this.setFish(true);
+      if (!automaticQuality) this.setQuality('auto');   // already Auto: its calibration keeps what it found
+      chosenClock = null;
+      const place = requestPlace(...placeAndHour(DEFAULT_PLACE), { remember: false });
+      showView('shore');
+      for (const key of [THING_STORAGE_KEY, WEATHER_STORAGE_KEY, WIND_STORAGE_KEY, WATER_STORAGE_KEY, ICE_STORAGE_KEY, SOUND_STORAGE_KEY, FISH_STORAGE_KEY, SKY_STORAGE_KEY, TIME_STORAGE_KEY]) {
+        try { window.localStorage.removeItem(key); } catch { /* storage refused: nothing was kept */ }
+      }
+      return Promise.all([place, weather]).then(() => undefined);
     },
     pause() {
       running = false;
@@ -3205,12 +3543,26 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       next.distance = distance ?? reach ?? orbit.distance;
       if (pivot) [next.pivotX, next.pivotY, next.pivotZ] = pivot;
       placeOrbit(clampOrbit(next, eyeBounds(next)));
+      settleFrame();
       Object.assign(home, orbitFacing(orbit), { fov: frameFov() });
       setView(home);
     },
     /** The orbit the eye stands on: azimuth and elevation in degrees, distance in metres, pivot [x, y, z]. */
     get orbit() { return { azimuth: THREE.MathUtils.radToDeg(orbit.azimuth), elevation: THREE.MathUtils.radToDeg(orbit.elevation), distance: orbit.distance, pivot: [orbit.pivotX, orbit.pivotY, orbit.pivotZ] }; },
-    get zoomed() { return isZoomed(view, home); },
+    /** Whether the view is zoomed: its field of view narrowed inside the frame, or the eye stepped back from it. */
+    get zoomed() { return isZoomed(view, home) || steppedBack() > 1 + 1e-9; },
+    /** The zoom as one number (zoomLevel): over 1 narrowed that many times, under 1 stepped back, 1 the frame. */
+    get zoomLevel() { return zoomLevel(); },
+    /** Where the thrower's hand is, [x, y, z] (handPosition for what is chosen, at its size). */
+    get hand() { return handPosition().toArray(); },
+    /**
+     * The preview of the thing in the hand: whether it is on (?preview), shown now, what and how big it is, what it is
+     * dressed with (a recipe's name, a filling's, a cake's candles), the seed the next throw by hand is dressed from
+     * (throwAt's `dressing`) and its triangles, where, and its opacity.
+     */
+    get preview() {
+      return { on: previewOn, shown: Boolean(preview.mesh?.visible) && (preview.mesh?.material.opacity ?? 0) > 0, thing: preview.thing?.key ?? null, radius: preview.radius, parts: preview.parts, dressing: preview.dressing, triangles: preview.mesh ? (preview.mesh.geometry.index ?? preview.mesh.geometry.attributes.position).count / 3 : 0, position: preview.mesh ? preview.mesh.position.toArray() : null, opacity: preview.mesh?.material.opacity ?? 0 };
+    },
     /** Whether the view is the shore's, unzoomed (Reset view and Escape go there). */
     get atHome() { return reportedView?.atHome ?? true; },
     get time() { return simulationTime; },

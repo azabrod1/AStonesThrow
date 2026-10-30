@@ -1,0 +1,42 @@
+{
+  "source": "small_harbour_morning_2k.hdr",
+  "width": 2048,
+  "height": 1024,
+  "sun": {
+    "elevation": 34.28,
+    "azimuth": 216.12,
+    "direction": [
+      0.66751,
+      0.56323,
+      0.48703
+    ],
+    "pixels": 8
+  },
+  "sunIrradiance": [
+    7.9014,
+    7.3437,
+    6.6301
+  ],
+  "skyRadiance": [
+    0.50981,
+    0.52206,
+    0.61988
+  ],
+  "horizonRadiance": {
+    "median": 0.20395,
+    "p90": 0.57747
+  },
+  "maxLuminance": 160640,
+  "taken": "2024-08-19T09:33:00+02:00",
+  "at": [
+    -28.492172680262783,
+    29.002510265244542
+  ],
+  "solar": {
+    "elevation": 34.48,
+    "azimuth": 47.68
+  },
+  "light": "sun",
+  "north": 168.44,
+  "northFrom": "sun"
+}

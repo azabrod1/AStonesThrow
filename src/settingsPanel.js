@@ -2,7 +2,8 @@
 // under it, laid out as the Moon app's ☰ menu is (azabrod1/moon,
 // PlanetariumMenuPanel). The root page lists the settings in groups, each
 // row an icon, its name over a line on what it sets, where it stands and a
-// chevron; a row opens that setting's page, whose ‹ button comes back. A page
+// chevron; a row opens that setting's page, whose ‹ button comes back (a row
+// with no page, the list's last, Reset all, is the page script's). A page
 // holds the choices (a row of buttons, a slider, or pictured cards) and a line
 // on what the chosen one means. The markup is in index.html; the page script
 // (there too) wires each choice to the pond and calls setValue with what it
@@ -40,7 +41,7 @@ export class SettingsPanel {
 
     button.addEventListener('click', () => (this.isOpen() ? this.hide() : this.show()));
     panel.addEventListener('click', (event) => {
-      const tier = event.target.closest('.menu-tier');
+      const tier = event.target.closest('.menu-tier[data-open]');
       if (tier) {
         this.opener = tier;
         this.navigate(tier.dataset.open, true);

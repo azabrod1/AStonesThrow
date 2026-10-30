@@ -22,10 +22,22 @@ into the water there instead: drag to trail it through, leaving a wake, and
 let go to lift it out (`src/touch.js`). Drag the water to walk the view round the pond and
 up or down (from just above the water to nearly straight down), and scroll
 or pinch to zoom toward what is under the pointer (down to an 8° field of
-view); a drag that starts zoomed turns round what the view is looking at.
+view); a drag that starts zoomed turns round what the view is looking at,
+slower the closer the zoom. Zooming out past the opening frame steps the
+eye straight back along its line of sight, up to twice its distance from
+what it looks at, so from the shore the view backs up the bank behind the
+thrower and the hand comes into the frame; zooming in walks back up to the
+frame before it narrows. The thing about to be thrown is previewed in the
+hand, see-through, at the size the strip sets, let down for a skip,
+turning slowly; a pizza shows its toppings, a pie its filling and a cake
+its candles, and the one shown is the one thrown: each throw by hand takes
+the recipe in the hand, and the hand comes back with the next. It is gone
+the moment a throw leaves the hand and fades back (`?preview=off` leaves
+it out).
 Escape or Reset view (under the menu button while the view is away from
 the shore's) glides back to the shore. The strip at the bottom sets what is
-thrown: its name opens a dropdown of every thing under its group, each with
+thrown: its name opens a dropdown of every thing under its group (the
+gems last, seldom thrown), each with
 its picture (`src/thingMenu.js`; on a phone each group is one row a finger
 scrolls sideways, so the dropdown stays as tall as its groups however many
 things there are), and its slider sets the size (a stone 1.5
@@ -106,13 +118,17 @@ is remembered on the device (but the view, which opens on the shore):
   where it rests (`--report` says) with `--look=x:y:z` and a `--fov` that
   frames it (a duck 4°, a pie 8°, a pizza 9°, a toy slide 24°; the cake's
   with `--seed=3`, on which it lands right way up).
-- View: Shore, standing on the bank as the page opens; Low, down at the
+- View: Shore, standing on the bank as the page opens; Behind, over the
+  thrower's shoulder, a metre back and a little above the shore's eye, so
+  the hand with the preview of the thing in it, the arc of the throw and
+  where it lands are all in frame; Low, down at the
   water, the splash against the far shore; High, from above, the rings
   spreading over the pond; Under, under the water, looking up at the rocks
   coming down through the sky's bright window, their air cavities silver
   mirrors, the sun's shafts slanting down. A choice glides there; a drag
   turns from it (under the water it stays under). In the pool, Shore stands
-  on the deck at the pool's near corner looking down into it, Low just
+  on the deck at the pool's near corner looking down into it, Behind on the
+  deck behind the hand, Low just
   inside its near wall, and under the water the eye keeps inside its walls.
 - Water (`?water=`): Clear, a spring's, bluer and clearer; Lake, the
   default, a clear Alpine lake's (bright sand in the shallows,
@@ -128,8 +144,24 @@ is remembered on the device (but the view, which opens on the shore):
   where the rocks land and 3.5 m far out, so the sand shows in the shallows
   and is gone where the rocks land, and with it the light a ring throws on
   it. Behind the waterline, just behind the shore view, a sand beach rises
-  into a grassy bank that takes its colour from the sky photo's own land, so
-  turned round, the view sees a shore rather than water to the horizon.
+  into a grassy bank: pebbles and a wrack line of sticks along the water,
+  low hummocks the sun shades, tufts thickening into a sward in the colour
+  of the photo's land, and far off the sky photo's own land, so turned round,
+  the view sees a shore rather than water to the horizon. What the beach is
+  made of is each place's (`SHORE_LOOKS` in `src/pondFloor.js`, named by its
+  sky's `shore`): Lakeside's sand, Harbour's red earth, Wooded lake's turf to
+  the water, Highlands' peaty gravel, Cove's granite shingle, Desert's bare
+  gravel, Mesas' cracked salt crust, Swiss Alps' grey scree; the bed under
+  the water takes the same ground. At the fresh lakes
+  (Lakeside, Harbour, Highlands, Wooded lake: `reeds` in `src/sky.js`) reeds
+  stand in the shallows on either side of the throw's line (`src/reeds.js`): rushes
+  with cattail heads and leaf blades, rooted on the bed, mirrored in the
+  water and bending under it as a straw does, leaning and swaying with the
+  Wind control, the nearest bed at the home view's lower left corner. The
+  Cove has granite boulders instead (`src/boulders.js`): thrown granite's
+  own mesh and grain at a boulder's scale, half out of the water along the
+  waterline on either side, out of the home frame, mirrored and seen through
+  the water, and a thing thrown into one comes back off it.
 - Frozen (`?water=frozen`, or `?ice=thin|thick`; under the Water cards,
   Thin, 1 cm, the default, or Thick, 4 cm), over the lake's water last
   chosen or the pool's (below). What is thrown lands on it,
@@ -170,7 +202,10 @@ is remembered on the device (but the view, which opens on the shore):
   Lakeside, and `?sky=alpine` opens Swiss Alps. Pool is a tiled pool on a
   deck by Lakeside's lake, through its hours. A photo (0.2 to 0.8 MB, or 1.8 MB
   for Swiss Alps) loads while the old sky stays; then the sky, sun and
-  everything they light change together. Older Pool-water and Ice settings
+  everything they light change together. A strip of the same photo at four
+  times the resolution, the band about the horizon where the land stands
+  (0.2 to 1.4 MB), follows once the sky is up and sharpens the skyline when
+  it comes. Older Pool-water and Ice settings
   carry over to the Pool location and Frozen water.
 - Time of day: named buttons and a slider select each photographed hour:
   Lakeside's dawn, sunrise, afternoon and night; Mesas' twelve hours from
@@ -185,9 +220,15 @@ is remembered on the device (but the view, which opens on the shore):
 - Weather: Clear (the default), Light rain, Heavy rain, Storm, Light snow,
   Heavy snow or Blizzard. Rain comes under
   an overcast that hides the sun and greys the sky, with a haze that fades
-  the far shore; its drops ring the water, streak past the eye and throw up
-  flecks where they land, and the pool's deck goes dark with wet. A light
-  rain's rings are fine and far apart; a downpour hammers the whole surface.
+  the far shore; its drops ring the water, streak past the eye and splash
+  where they land, and the pool's deck goes dark with wet. Where a drop
+  lands it throws up a crown's flash, then a thin jet that shoots up and
+  falls back over a quarter of a second, some with a droplet off its tip,
+  or, for a share of the drops, a floating bubble that pops within a second
+  or two; each splash has its own height and brightness, so no two are
+  alike, and those too far off to make out fade into the fizz the rings
+  and the haze give the far water. A light rain's
+  rings are fine and far apart; a downpour hammers the whole surface.
   Rain at night is dark: the cloud hides the moon. A storm is a downpour
   under a darker sky, with lightning, and brings a gale. Snow falls from a
   brighter overcast, its flakes drifting with the wind, swaying and melting
@@ -206,6 +247,10 @@ is remembered on the device (but the view, which opens on the shore):
   with spray off the crests and foam in streaks along the wind; the stones
   and their splashes ride them, and the Low view's eye stands above them.
   The pool is too small for waves: there a gale only ripples hard.
+- Effects: Fish on (the default) or off. Off, every water is empty:
+  nothing swims, nothing is startled and nothing is eaten (`?fish=off` on
+  the page, `--fish=none` for the harness; remembered on the device like
+  the other settings).
 - Quality: Auto, Low, Medium or High.
 Auto starts on High everywhere and steps down by itself if the idle
 pond or the first splash renders too slowly, and later whenever the frame
@@ -222,11 +267,18 @@ one), and a pond where nothing happens at 30 frames a second; High keeps
 24 stones' rings, Medium 12 and Low 10, 24 of the little rings the
 splash's drops leave (16 and 12), a ring of 65 536 spray sprites,
 Medium 16 384 drawing two fifths of High's and Low 8192 a fifth (each
-sprite standing for that many more drops), and 40 things at rest (a stone on
-the bottom is one draw call) and 16 afloat (a floater costs more: its
-physics, its ride and its mirror image), Medium 30 and 14, Low 20 and 12;
-up to 20 things may be on the move at once, on every preset. Past a count
+sprite standing for that many more drops), and 80 things at rest (a stone on
+the bottom is one draw call), 32 afloat (a floater costs more: its
+physics, its ride and its mirror image) and 24 shards of broken ice,
+Medium 45, 21 and 15, Low 20, 12 and 6; up to 40 things may be on the move
+at once on High, 30 on Medium and 20 on Low. Past a count
 the oldest of that kind shrinks away over 0.6 s, never vanishing at once.
+A ball (20 480 triangles, its seams and dimples pressed into its sphere)
+small on the screen is drawn from a coarser mesh of it, 5120, 1280 or 320
+triangles, its paint averaged as a mipmap's is: the coarsest whose corners
+lie at most 1.5 pixels apart in the pass it is drawn in (its mirror image's
+and under-water part's at those passes' resolution), so a ball near the eye
+or under the zoom is as it always was.
 The canvas never holds more than 2.6 million pixels.
 Core stone/splash programs are compiled while the page loads, under its
 veil: a stone is thrown and drawn there, then cleared away (with the water
@@ -240,7 +292,9 @@ remembered weather, is rendered before the veil lifts, even when paused.
 The published site serves Three.js alongside its own files (`npm run site`
 creates `_site/vendor/three`). Dependency failures offer Retry. Modules have a
 30-second deadline; sky and rain transfers time out only after 30 seconds
-without progress, so slow downloads can finish. Sky calibration and the panorama
+without progress, so slow downloads can finish, and a deadline that passes
+while the page itself is frozen (a slow GPU compiling the scene) gives the
+transfer a fresh 30 seconds rather than aborting it. Sky calibration and the panorama
 load together, and a failed replacement leaves the current sky visible.
 The published page preloads every module it imports (the site build lists the
 whole import graph), so they download at once as the page is parsed, and it asks
@@ -307,12 +361,21 @@ k·√(νω/8) per second (Lamb; van Dorn), 0.03/s for 30 cm waves where the
 solver damps 0.3/s (the ring comes out 3 to 9% under the clean
 simulation's at 0.5 to 2 m). An oblique entry's ring is a symmetric part
 and a cos θ part, so it runs stronger ahead (1.3 to 1.5 times). Near the
-stone, while the splash stands, linear theory would dig the hole's bowl
-under the drawn cavity and jet, so there the ring fades in over about its
-first second. While any ring lives, a GPU pass evaluates each ring's
-spectrum at the frame's time, a second sums it into radial profiles of
-height and slope out to each ring's reach (2 to 40 m), every radius's sum
-split into 16 slices of the wavenumbers that the GPU runs side by side,
+stone, while the hole is deep, linear theory would dig the hole's bowl
+under the drawn cavity, so there the ring is hidden; as the bowl fills into
+a dish (0.15 to 0.23 s after the reference throw's entry) the ring is let
+through from the mouth outward, and the dish, which by then rides the water
+whole as its lip always does, sinks with it into the ring's first trough,
+2.5 cm deep at the mouth at 0.25 s as in the simulation; the centre, the
+jet's foot, shows the pond's heave less the share of the collapse's water
+the jet holds aloft (the jet reports it every step from its launch), so the
+mound under the jet is the simulation's 2.5 cm rather than linear theory's
+4, and a flat, hard entry's heave is lower still, by the vertical share of
+its speed, since the ring's push goes with the whole speed. While any ring lives, a GPU
+pass evaluates each ring's spectrum at the frame's time, a second sums it
+into radial profiles of height and slope out to each ring's reach (2 to
+40 m), every radius's sum split into 16 slices of the wavenumbers that the
+GPU runs side by side,
 and one pass per ring adds its slices into its profile, mipmapped: five
 rings take about 0.17 ms of a frame on a desktop's GPU, where summing each
 radius whole took 1.4 ms. The water adds every ring's slope to its normal everywhere and its height to
@@ -345,7 +408,8 @@ checks the field is the four Gaussians, stays even about every wall as it
 evolves and is the open patch's field read at the point and its mirror
 images). A ring's source therefore goes into the solver too, and the rings
 draw only what its near field hides under the drawn splash, turned over and
-for its first second or so, so the splash looks as it does on the lake. A
+for about a second (a rock's three), until the jet's water is back, so the
+splash looks as it does on the lake. A
 basin's waves cannot spread away, so the pool damps them less than the
 lake's solver does but never less than 0.05/s, its walls and floor damping
 even the longest: a 6 cm stone's rings run back and forth off the walls for
@@ -480,10 +544,11 @@ known timing, and the droplets are choreographed from them:
    wobbles with depth, and closes off-centre, towards its bulge. For a 3 cm
    stone thrown at 6.3 m/s the mouth widens to 3.6 R, and sealing deep the
    hole pinches about 6 R down at about 115 ms and its bowl has flattened by
-   about 240 ms. The ring (Rings, above) is a push released just after entry,
-   fitted to the reference simulation's; an oblique entry drags it forward,
-   so the ring runs stronger ahead than behind; its foam comes when the bowl
-   has flattened;
+   about 240 ms, riding the water down into the ring's first trough rather
+   than into still water. The ring (Rings, above) is a push released just
+   after entry, fitted to the reference simulation's; an oblique entry drags
+   it forward, so the ring runs stronger ahead than behind; its foam comes
+   when the bowl has flattened;
 3. Worthington jet (`src/jet.js`): a glassy column fired up the axis from
    the bowl's floor at the pinch-off, after an oblique entry leaning back
    along the stone's path (by 0.4 of the entry angle, at most 18°) and a
@@ -500,8 +565,8 @@ known timing, and the droplets are choreographed from them:
    back into a bulb (Taylor–Culick), where it pinches, and every drop it
    throws and that drop's size come out of the equations: a needle a
    millimetre or two thick beads within milliseconds, a column centimetres
-   thick rises and falls back whole. Its base flies as a ballistic sleeve
-   and falls back into a mound (its ring is part of the stone's). For a 3 cm
+   thick rises and falls back whole. Its base widens the column's foot into
+   a trumpet and falls back into a mound (its ring is part of the stone's). For a 3 cm
    stone dropped straight in at 6.3 m/s the needle clears the surface 131 ms
    after entry at 13 m/s, its water reaches 70 cm and its largest drop is
    6 mm (the reference simulation: 118 ms, 13 to 16 m/s, 75 to 81 cm, 6 mm;
@@ -525,7 +590,7 @@ crown: the same sheet model with the drop's radius and speed, standing for
 about 20 ms.
 
 No two throws splash alike, as no two stones go in alike. Each stone
-(`src/rock.js`) is its own faceted lump, and it reports at impact its shape
+(`src/rock.js`) is its own lump (faceted for the physics, drawn smooth), and it reports at impact its shape
 (elongation and flatness from the principal axes of its solid, and how lumpy
 it is), what touched the water first (a flat face, an edge or a point, and
 how blunt it was there) and its spin (rate, axis, and ω·R/V); a tilted flat
@@ -601,15 +666,31 @@ wider and longer. The surface holds only so much of it: on fresh water one
 layer of bubbles bursts at a time, and the rest is the cloud of bubbles
 just under the surface, which most of a real boil's white is. So the water
 shader draws a boil up to that hold (a map value of 0.035) as bubbles
-bursting on the surface, a random few at a time and most of them small,
-each a clear cap with a thin bright rim (as a foam speck is drawn) that
+bursting on the surface, a random few at a time and most of them small
+(the big ones only where a cloud lies under the boil, its middle; a fizz
+with none, drops' landings and bubbles surfacing, makes small ones, which
+from the bank are a grain rather than a sprinkle of beads),
+each a dome standing on the water (as a foam speck is drawn: a clear film
+with a window of sky on its top, bright low down where it mirrors the
+horizon and dimmer above, a lower part mirroring the water that shades
+what lies behind it, and a thin bright limb, round on top, cut by the
+water at its foot, cast against the pixel's own view ray so it is
+a dome from the bank and a disc from above, and set anywhere in its cell
+on a lattice whose rows are staggered, so the domes fall in no rows), that
 swells, glints and bursts within half a second, and the rest as the cloud, a milky tint of the water
 seen through the surface (its colour the water's own absorption against the
 bubbles' scattering, the lake's blue-green paled), churned in lumps that
-break up its edge, under the sky's reflection; the gale's whitecaps, a
-breaking wave's packed froth, stay white. Foam specks ride over a boil's
-cloud as over clear water. A pebble's boil is nearly all fizz; a big stone's mostly
-cloud. Each is stamped as
+break up its edge, under the sky's reflection. Over the cloud lies the
+boil's froth: the packed pattern below at twice the cloud's map value
+(up to `FOAM_FROTH_GAIN` times it, rising with its depth), its bubbles alone with no lace, holed and ragged, so a
+stone's boil is dense white froth while it lasts, thinning at its edge into
+the bursting domes, which give way under it. A smooth milk with domes over
+it read as fog with marbles on it, from the bank and close to; froth with
+structure, holes and ragged edges reads as foam. The gale's whitecaps, a
+breaking wave's packed froth, stay white. Foam specks ride over a fizz and
+a boil's thin edge as over clear water and fade under its froth. A pebble's
+boil is nearly all fizz, its cloud too thin for much froth; a big stone's
+mostly cloud, froth over milk. Each is stamped as
 a patch of three to five sub-stamps of unequal sizes at random offsets,
 never one round Gaussian, so no two boils share a shape. Surface flows carry
 the foam: where the hole closed the jet's base wells up, and where the jet
@@ -620,8 +701,10 @@ clears. The whole of it drifts downwind at 3 cm/s in a breeze (with the
 wind's strength), and its pattern and specks with it. The foam map says
 where and how much, but its cells are over a centimetre wide, so the water
 shader draws the raft from three layers of cellular noise: bubbles 2 to 3 mm
-across packed together, larger ones of 3 to 7 mm among them, and a lace of
-curved filaments around holes a few centimetres wide. A boil, the bubbles a
+across packed together, larger ones of 2 to 10 mm among them (most small,
+one in ten over 8 mm, as real foam's sizes spread), and a lace of curved
+filaments around holes a few centimetres wide. Each bubble lies anywhere in
+its cell, so none of them, nor their clear windows, fall into rows. A boil, the bubbles a
 splash leaves bursting on fresh water, takes no lace: it is drawn from the
 bubble layers alone, and only a raft (the gale's sea foam) thins into
 filaments. The map's strength,
@@ -632,21 +715,24 @@ nearly solid white, its bubbles shaded darker at their rims and catching the
 sun; as it weakens the holes open, the filaments thin to strings of bubbles
 and clumps, then only the biggest bubbles are left, so a raft thins from its
 edge inward the way foam pops, and foam just over the threshold, a single
-layer of bubbles, lets the water show through. The larger bubbles have clear
-centres and bright rims, with milky fine bubbles between them. The map's
-separate boil and raft amounts control this material: a breaking wave's
-dense froth scatters more light; as it drains, the water shows through the
-bubble films.
-Those films use the existing bubble cells and fade to their measured mean
-opacity at a distance, adding no texture or noise layer. Close up (the
+layer of bubbles, lets the water show through. Some of the larger bubbles
+that show have a clear window, a drained film, each its own size, with milky
+fine bubbles between them: half of a raft's, fewer of a boil's, whose films
+burst rather than drain. The map's separate boil and raft amounts control
+this material: a breaking wave's dense froth scatters more light; as it
+drains, the water shows through the windows. They use the existing bubble
+cells and fade to their measured mean at a distance, each by its own size,
+adding no texture or noise layer; faded foam's opacity is lifted to what its
+covered pixels average, so it keeps its brightness as it recedes. Close up (the
 shoot harness, `--seed=1`, `--view=high --fov=16`), a 6 cm stone thrown
 normally leaves a faint milky ring and a see-through fizz over about its
-hole's mouth at 0.3 to 0.8 s and a few foam specks after; a 20 cm rock a
-milky, soft-edged churn about 30 cm across from 0.4 to 1.4 s, thinning to
-patches at 1.7 s and clear water by 2.2, with hardly any solid white
-(about 5 cm² of it, against 180 cm² when the boil was drawn as surface
-froth). From the bank, where the surface mostly mirrors the sky, either is
-a faint pale patch.
+hole's mouth at 0.3 to 0.8 s and a few foam specks after; a 20 cm rock
+dense white froth over a milky churn about 30 cm across from 0.4 to 1.4 s,
+fizzing at its edge, thinning to patches at 1.7 s and clear water by 2.2.
+From the bank the rock's froth, on the surface, shows over the sky's
+reflection; the milk under it alone was a faint pale patch there (when the
+boil was milk with domes over it, the rock left about 5 cm² of solid
+white).
 The threshold's edge is one pixel wide at any distance (from the pattern's
 exact gradient and the pixel's footprint on the water), and each layer fades
 into an even white of the right strength before its cells shrink to a couple
@@ -657,13 +743,16 @@ bubble among them, each with a shine of its own, most faint and a few
 bright) riding the waves where the crown stood, where the jet fell back,
 where drops landed and where bubbles surfaced, drifting outward and popping
 over 0.8 to 3 seconds (fresh water's bubbles; the big ones first), faded out
-where the foam is dense. A patch of them is lumps with gaps, never an even
-scatter: its specks gather in rafts of a dozen or so (clumps of clusters a
-few millimetres across, spread over centimetres), favouring one side, with
-strays alone between them, and the rafts surface over a few tenths of a
-second rather than in one frame. The specks flatten into ellipses at a grazing view and
-fade with their projected area, so distant bubbles do not remain bright,
-camera-facing flecks.
+where the foam is dense, a raft or a boil's froth. A patch of them is lumps with gaps, never an even
+scatter: its specks gather in rafts of a score or so (clumps of clusters a
+few millimetres across, spread over a centimetre or two), favouring one
+side, with a few strays alone between them, and the rafts surface over a
+few tenths of a second rather than in one frame. A speck resolved over a
+few pixels is drawn as a dome standing on the water, as the water draws its
+own bursting bubbles (below): a clear film with a faint window of sky on
+its top, a lower part shading the foam behind it, a thin bright limb, round on top, cut by the water at its foot;
+an unresolved one is a soft grain fading with the area it covers, so
+distant bubbles do not remain bright, camera-facing flecks.
 
 The splash scales with the stone (the slider's 1.5 to 16 cm is its
 diameter; the constants were tuned at 3 cm radius). Wherever the physics
@@ -797,6 +886,12 @@ The curated locations include:
 - **Desert oasis** (`?sky=desert`): Rogland's golden hour, starry night and
   moonlit early morning, framed toward the lower rock skyline. The water is
   the simulation's, surrounded by the photographed desert.
+- **Harbour** (`?sky=harbour`): Small Harbour on Sterkfontein Dam, four
+  panoramas from one spot at water level: a 2024 morning and golden hour,
+  a 2019 sunset and dusk. Faces the flat-topped hills across the water, the
+  sun's path on it. Starts at the golden hour.
+- **Wooded lake** (`?sky=wooded`): Radków Lake under the Table Mountains, one
+  late morning, facing the wooded far shore with the sun to the left.
 
 The Time of day page has named buttons as well as the slider. Selecting a
 new location or hour cancels an obsolete download immediately; it never
@@ -833,6 +928,13 @@ node tools/sky-probe.mjs assets/sky/kiara_9_dusk_2k.hdr --taken=2016-08-25T17:55
 node tools/sky-probe.mjs assets/sky/rogland_sunset_2k.hdr --taken=2023-09-05T17:31:00+02:00 --at=-29.68232655273397,17.949190420193943
 node tools/sky-probe.mjs assets/sky/rogland_clear_night_2k.hdr --taken=2023-09-05T21:22:00+02:00 --at=-29.68232655273397,17.949190420193943 --align=assets/sky/rogland_sunset_2k.hdr --band=0,18
 node tools/sky-probe.mjs assets/sky/rogland_moonlit_night_2k.hdr --taken=2023-09-07T05:33:00+02:00 --at=-29.68232655273397,17.949190420193943 --align=assets/sky/rogland_sunset_2k.hdr --band=0,18
+H=--at=-28.492172680262783,29.002510265244542
+node tools/sky-probe.mjs assets/sky/small_harbour_morning_2k.hdr --taken=2024-08-19T09:33:00+02:00 $H
+node tools/sky-probe.mjs assets/sky/small_harbour_sunset_2k.hdr --taken=2024-08-19T16:51:00+02:00 $H --align=assets/sky/small_harbour_morning_2k.hdr --band=0,4
+# the 2019 pair's time stamps are wrong: the sunset's time is read from its sun's height, the dusk's estimated from its glow
+node tools/sky-probe.mjs assets/sky/small_harbor_01_2k.hdr --taken=2019-05-02T17:04:00+02:00 --at=-28.492189,29.002458 --align=assets/sky/small_harbour_morning_2k.hdr --band=0,4
+node tools/sky-probe.mjs assets/sky/small_harbor_02_2k.hdr --taken=2019-05-01T17:50:00+02:00 --at=-28.492613,29.002165 --align=assets/sky/small_harbour_morning_2k.hdr --band=1,5
+node tools/sky-probe.mjs assets/sky/radkow_lake_2k.hdr
 ```
 
 **Rain** (`src/rain.js`, `src/shaders/rain.js`; the cloud and haze in
@@ -862,13 +964,19 @@ rings are finer than a pixel, what the mip levels average away comes back as
 roughness, from the rings' slope spectrum by Campbell's theorem (as the
 wind's ripples do). The falling drops are streaks, each the path it cuts in
 the eye's 1/30 s, slanted by the wind: drops of the same schedule, so each
-falls to the very place its ring opens and its fleck of white rises and
-falls. A few of each tile's drops near the eye fall as streaks, about as many
-to a cubic metre as before, fading out 11 m away. Since every tile drops the
-same drops at the same moments, the tiles take turns, so a drop's twin a
-metre away does not fall beside it in step (its twins are 3 to 5 m apart);
-what is left of the repeat is a gentle swell in how many streaks are in view
-(about 8% over a second, against 2% for drops wholly at random).
+falls to the very place its ring opens and its splash is thrown up: a
+crown's flash whose rim lingers over the crater, then a thin jet that shoots
+up and falls back more slowly over a quarter of a second, a droplet off the
+tip of some, or, for a share of the drops (more in a downpour, whose
+bigger drops' crowns close over the crater more often), a bubble floating on
+the water that pops within a second or two, each splash its own height and
+brightness, so no two are alike. A few of each tile's drops near the eye
+fall as streaks, about as many to a cubic metre as before, fading out 11 m
+away. Since every tile drops the same drops at the same moments, the tiles
+take turns, so a drop's twin a metre away does not fall beside it in step
+(its twins are 3 to 5 m apart); what is left of the repeat is a gentle swell
+in how many streaks are in view (about 8% over a second, against 2% for
+drops wholly at random).
 
 **Drop rings** (`src/dropRings.js`; its shader `DROP_RING_SLOPES` in
 `src/shaders/rain.js`). Each of a splash's drops 1.5 mm in radius or more
@@ -910,14 +1018,21 @@ at the height of the waves under it, which the CPU sums from the same
 spectrum (all but 0.3% of its variance, to 5 mm), and the mirror image is
 taken about the water's height under the latest splash. Whitecaps: where
 the sideways move crowds the water past breaking (its Jacobian under 0.66,
-about 3% of the sea), a foam map on the tile takes a dense boil that pops
-within a second and a raft that drains over five, which the water shades
-as it shades a splash's foam, the raft gathered into thin wavering streaks
-along the wind; and spray is torn off where the boil says a crest has just
-broken, wisps of drops blown downwind as streaks. When the gale rises its
-foam is run over the six seconds before, so the sea opens as one that has
-been blowing. The eye keeps 0.45 m clear of the still water either way.
-`tools/gale-probe.mjs` checks the field on the CPU with the GPU's passes.
+about 3% of the sea), a foam map on the tile takes the whitecap's
+whitewater, which rides with the crest at 0.8 of the peak waves' phase
+speed for a few tenths of a second and is shed behind it as froth that
+pops where it lies within a second, and a raft the water keeps and that
+drains over two seconds, as fresh water's bubbles do; the water shades them
+as it shades a splash's foam, the breaker's whitewater over a milky cloud
+under the surface, the raft gathered into thin wavering streaks along the
+wind. The map is stepped to each frame in pieces of a tenth of a second,
+and spun up under the veil when the gale is chosen at the start;
+the whitecaps blow spindrift, specks and puffs of mist streaming downwind
+off the crests (`src/spindrift.js`). When the gale rises its foam is run
+over the six seconds before, so the sea opens as one that has been blowing.
+The eye keeps 0.45 m clear of the still water either way.
+`tools/gale-probe.mjs` checks the field on the CPU with the GPU's passes,
+and that the boil rides the crests.
 
 **Snow** (`src/snow.js`, `src/shaders/snow.js`; the cloud and haze in
 `src/sky.js`, the snow on the ground `SNOW_COVER` in `src/shaders/scene.js`).
@@ -926,19 +1041,28 @@ clear day's light for light snow, 0.35 for heavy, 0.22 for a blizzard), and
 its haze is whiter (0.85 to 0.9 of the cloud against rain's 0.6) and
 thicker (1.5 km, 400 m, 150 m to see). A snowflake meets the water at about
 1 m/s, weighing milligrams: it melts and leaves no ring, so the water is
-left as the wind has it. The flakes are one instanced draw in a box about
-the eye (16, 120 and 120 thousand of them: heavy snow's the big soft
-clumps of a snow day, up to 5 cm across, and a blizzard's up to 2.5 cm,
-drawn bigger than its fine snow so that fewer flakes, a flake's cost,
-hide what its haze does), each falling at its terminal
+left as the wind has it. The flakes are one instanced draw in two boxes
+about the eye: a near box (16, 120 and 120 thousand of them: heavy snow's
+the big soft clumps of a snow day, up to 5 cm across, and a blizzard's up
+to 2.5 cm, drawn bigger than its fine snow so that fewer flakes, a flake's
+cost, hide what its haze does) and a far box three times as wide standing
+on the water, with a third more flakes at a tenth of the density: the far
+snow, a pixel or two across and sinking slowly, that makes the fall deep
+(a flake's speed across the eye is its fall over its distance) where the
+near box alone stops at the pond's far edge and reads as a slab in front
+of the scene. Each falls at its terminal
 speed (0.9 to 1.1 m/s, give or take a fifth), carried at the wind's speed,
 swaying on a small ellipse and tossed by gusts of 0.3 of the wind, drawn as
 the capsule it sweeps in 1/120 s: round in still air, a streak in a
 blizzard's, with the same light either way; a flake under 1.2 pixels is
-drawn that wide and fainter, and the haze carries the snow beyond the box
-(Medium draws 0.6 of the flakes, Low 0.4). The box keeps its floor under
+drawn that wide and fainter, and the haze carries the snow beyond the far
+box (Medium draws 0.6 of the flakes, Low 0.4). A flake is a white
+scatterer in the cloud's light, lit from above by the cloud and from below
+by the ground, so it is grey against the sky (about 0.6 of the cloud seen
+level, darker from below) and white against the dark water and the trees.
+The near box keeps its floor under
 the water however high the eye goes, and the shader never multiplies the
-clock: the wind's carry and the fall come wrapped into the box, worked out
+clock: the wind's carry and the fall come wrapped into each box, worked out
 in doubles, and every sway and gust repeats in a minute, so a flake is
 where it should be however long the page has been open.
 Under a gale they are cut at its waves. On the ground the snow lies in
@@ -1145,7 +1269,12 @@ the sun's glitter: a Beckmann highlight on the rippled normal, widened by the
 ripple finer than the pixel. Where there is foam it replaces the surface, a
 diffuse white under the sun and the sky; the foam specks ride on it. The
 splash's passes then draw its water over the scene and tone-map it; with no
-water in the air the frame is only tone-mapped. The inner patch's mesh only
+water in the air the frame is only tone-mapped. Before the tone map a few
+percent of the scene's light is spread as a lens spreads it (`src/glare.js`:
+a chain of halved copies of the frame, weighted by the CIE's disability glare
+equation so the veil falls off as the eye's does), which gives the sun's
+image in the water and every glint its halo in place of a clipped white
+disc. The inner patch's mesh only
 carries the displacement (the normals come from the height textures per
 pixel), so it is coarser than the solver's grid.
 Caustics on the sand come from the Laplacian of the surface height above,
@@ -1164,7 +1293,13 @@ what a sun overhead would give), so a crest draws a thin bright line where
 its focus meets the sand, eased into 0.45 to 2.6 times the sun's own light
 (`src/pondFloor.js`), crisp enough that the ripples' web and a ring's light
 stand out on the shallow sand.
-Stones are procedural geometry, lumpy, worn smooth and speckled, with a
+Stones are procedural geometry, lumpy and worn smooth: the physics walks a
+320-face mesh of the surface (`src/thingMeshes.js` `createRockGeometry`, its
+random draws as they always were, so a seeded throw keeps its splash), the
+eye is given the same surface cut nine times finer, and each kind's grain
+and relief (a river stone's speckle, slate's layers, granite's mica and
+quartz, basalt's vesicles, pumice's pits) are drawn pixel by pixel
+(`src/shaders/stone.js`). They have a
 small rigid-body model: a ballistic arc, quadratic drag under water, and a
 settle into the sand. A rock over 16 cm across leaves the hand lower and
 farther out, so it rises into the view rather than filling its corner.
@@ -1175,9 +1310,16 @@ farther out, so it rises into the view rather than filling its corner.
   `tools/wave-probe.mjs`, `tools/foam-probe.mjs`, `tools/cavity-probe.mjs`,
   `tools/ring-probe.mjs`, `tools/rain-probe.mjs`, `tools/snow-probe.mjs`,
   `tools/gale-probe.mjs`, `tools/skip-probe.mjs`, `tools/thing-probe.mjs`,
-  `tools/ice-probe.mjs`, `tools/spray-probe.mjs`, `tools/jet-probe.mjs` and
-  `tools/drop-ring-probe.mjs`;
-  each exits with 1 if a check fails.
+  `tools/ice-probe.mjs`, `tools/spray-probe.mjs`, `tools/jet-probe.mjs`,
+  `tools/drop-ring-probe.mjs`, `tools/fish-probe.mjs` and
+  `tools/garden-probe.mjs`;
+  each exits with 1 if a check fails. `tools/run-probes.mjs` runs them side
+  by side, as many at once as the machine has cores (`PROBE_JOBS=1` runs
+  them one after another), each one's output printed whole when it ends,
+  and runs any that failed beside the others again alone: the computed
+  checks are seeded and fail again, while a budget of wall-clock time that
+  another probe crowded passes alone, as it was written to. The summary
+  names every probe run again. On four cores the suite takes about 80 s.
 - `node tools/ice-probe.mjs [--list]` throws every thing at thin and thick
   ice as the app throws it, each way, with the splash on the CPU, and
   prints what breaks what: each throw's blow against what the ice holds and
@@ -1200,12 +1342,16 @@ farther out, so it rises into the view rather than filling its corner.
   the crests and stretches the troughs; the significant height and the peak
   are JONSWAP's; the waves travel downwind; the field repeats after its
   period; the CPU's surface (for the stones and the splash) is the field;
-  the mips lose the slope variance the shader's model says; and it prints
-  how much of the sea breaks, and the cost.
+  the mips lose the slope variance the shader's model says; it prints how
+  much of the sea breaks; runs the whitecaps' foam step over a few seconds
+  and checks the boil rides the crests, the raft lies in the water behind
+  them and the whitecaps cover a few per cent; and prints the cost.
 - `node tools/rain-probe.mjs [--write]` works out a raindrop's ring on the
   CPU and prints its timeline and slope spectrum, checking the sum starts
   as the crater, the slowest waves go 0.23 m/s, the steepest crest runs at
-  about their group speed and the table's edge cuts nothing; `--write`
+  about their group speed and the table's edge cuts nothing, and prints
+  each rain's biggest splash, checking its phases come in order, it is over
+  before its slot's next drop and its bubbles fit their cap; `--write`
   writes `assets/rain/ring.json` and `ring_profile.bin`, which the page
   loads the first time it rains.
 - `node tools/skip-probe.mjs [throws=60] [--seed=1] [--aim=x:z] [--list]`
@@ -1256,10 +1402,15 @@ farther out, so it rises into the view rather than filling its corner.
   then) and no request fails.
 - `node tools/foam-probe.mjs` runs the foam's bubble pattern on the CPU, with
   the constants read from the shader: each layer's median and spread and the
-  bubbles' mean shade match what the shader fades them to, and at the home,
+  bubbles' mean shade match what the shader fades them to, the clear
+  windows' mean is what they fade to for a raft's share and a boil's, the
+  cell search misses no bubble and the bubbles lie on no lattice, a boil's
+  domes average the white the shader's fit gives them at every elevation,
+  and at the home,
   phone and close-up framings the antialiased pattern covers what a
-  supersampled one does and changes no more than it when the water moves
-  under the pixels; it prints the cell visits per foam pixel. Then it runs
+  supersampled one does, with its brightness within 6%, and changes no more
+  than it when the water moves under the pixels; it prints the cell visits
+  per foam pixel. Then it runs
   the foam map's step with the shader's arithmetic: a surface flow keeps the
   amount to a few per cent and brightens nothing, clears its core, carries a
   raft out to where a source of its area would and leaves a clean hole; the
@@ -1370,14 +1521,21 @@ farther out, so it rises into the view rather than filling its corner.
   (`--weather=` for the harness) the weather, `WEATHERS` in `src/main.js`,
   over the one last chosen on the device (a storm or a blizzard brings a
   gale while it lasts, unless `?windStrength` says otherwise).
-- `?view=shore|level|high|under` on the page (`--view=` for the harness) opens on
+- `?view=shore|behind|level|high|under` on the page (`--view=` for the harness) opens on
   one of the View setting's choices (`VIEWS` in `src/main.js`);
   `--orbit=azimuth:elevation:distance[:x:y:z]` stands the harness's camera on
   any orbit (degrees, degrees, metres, and the pivot; `src/viewOrbit.js`).
-  The rocks are thrown from the shore whatever the view.
-- `node tools/sky-encode.mjs [assets/sky/name_2k.hdr ...] [--verify]` encodes
+  The rocks are thrown from the shore whatever the view. The harness leaves
+  the preview of the thing in the hand out (`?preview=off`) unless
+  `--preview=1`, so frames from any orbit stay as they were.
+- `node tools/sky-encode.mjs [assets/sky/name_2k.hdr ...] [--verify] [--no-horizon]` encodes
   each sky's Radiance file (every one, by default) as the JPEG gain map the
-  page loads, `assets/sky/name_2k.jpg`: a base image and a gain map, matched
+  page loads, `assets/sky/name_2k.jpg`, and its horizon strip,
+  `assets/sky/name_horizon.jpg`, the band from 17° above the horizon to 3°
+  below cut from Poly Haven's 8k file (downloaded beside it when missing,
+  never committed; `--no-horizon` skips it), which the page fetches after
+  the sky and decodes on the GPU (`src/horizonStrip.js`; `--verify` checks
+  that decode too): a base image and a gain map, matched
   to the arithmetic of Three.js's UltraHDRLoader so that it decodes to the
   half floats the Radiance file gave, the sun's disc and all, in 0.2 to
   0.6 MB against 5 to 7. The gain map is constant over each 8×8 block (so
@@ -1517,10 +1675,20 @@ farther out, so it rises into the view rather than filling its corner.
   deeper in the bed than a stone settles into the sand.
 - `node tools/zoom-probe.mjs [--w=390 --h=844]` drives the wheel, a pinch, a
   tap and Escape through the page's own handlers and checks that what is under
-  the pointer stays there; then drags, by touch and by mouse, and checks that
+  the pointer stays there (at the shore, and at the corners of the steeper
+  High and Behind views), that zooming out past the frame steps the eye
+  back along its line of sight (to twice the frame's distance, the pivot
+  still at the centre) and that zooming in walks back up to the frame
+  first; then drags, by touch and by mouse, and checks that
   they turn the view about its pivot, keep the eye above the water and throw
   nothing, that a drag that starts zoomed turns round what the view shows,
-  and that the View choices and Reset view glide where they should; in the
+  slower by the zoom,
+  and that the View choices and Reset view glide where they should, the
+  hand and the preview of the thing in it in frame from Behind, the
+  preview following the choice, the size and the manner and gone for a
+  moment after a throw, a dressed thing's parts in a mesh of its own (its
+  shared mesh left plain) and thrown as shown by a tap and `throwRandom`,
+  while a harness's `throwAt` draws its own; in the
   pool, that the views stand where they should, the eye under its water
   keeps inside its walls and comes back out once turned from one, a glide
   into its water and out goes over the water, and a tap on the deck throws
@@ -1551,7 +1719,8 @@ farther out, so it rises into the view rather than filling its corner.
   `shots/controls-probe/`. The
   shoot harness and the other probes emulate a desktop browser, which ignores
   the viewport tag, so only this probe sees the page as a phone does.
-- `window.__pond` exposes the app in the console: `throwAt(x, z, { radius, power, manner, skip, thing, size })`,
+- `window.__pond` exposes the app in the console: `throwAt(x, z, { radius, power, manner, skip, thing, size, dressing })`
+  (`dressing`: the seed of a pizza's, pie's or cake's own parts; `preview.dressing` is the hand's),
   `setPower(name)` (and `power`), `setManner(name)` (and `manner`), `setSkip(on)` (and `skipping`), `setTrace(on)`,
   `setThing(name)` (and `thing`: a key of `THINGS` in `src/things.js`, remembered
   on the device) and `setSize(value)` (and `size`: the slider's value in its unit),

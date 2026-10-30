@@ -56,7 +56,7 @@
 //    flakes, its draw adds one call; clear
 //    again, nothing of it is drawn or lies. Fog compiles and draws nothing
 //    more, a throw into it neither, and stills the wind while it lasts. The gale (src/galeWaves.js)
-//    and the storm: the first gale compiles its passes and spray once, draws the finer
+//    and the storm: the first gale compiles its passes once, draws the finer
 //    sheet that carries its waves, and a throw into it compiles none; the
 //    storm compiles none through a lightning strike; in the pool the gale
 //    raises no waves; calm again, the still sheet. In a 2560×1440 window on
@@ -85,7 +85,7 @@
 // seconds are printed.
 //
 //   node tools/quality-probe.mjs
-import { launchBrowser } from './browser.mjs';
+import { launchBrowser, patience } from './browser.mjs';
 import { readFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import path from 'node:path';
@@ -125,7 +125,7 @@ async function openPage({ width = 390, height = 844, query, initScript = null })
   page.on('pageerror', (error) => problems.push(String(error)));
   page.on('console', (message) => { if (message.type() === 'error') problems.push(message.text()); });
   await page.goto(`http://localhost:${server.address().port}/index.html?${query}`, { waitUntil: 'domcontentloaded' });
-  await page.waitForFunction(() => !!window.__pond, undefined, { timeout: 300000 });
+  await page.waitForFunction(() => !!window.__pond, undefined, { timeout: patience(300000) });
   return { page, context, width, height };
 }
 

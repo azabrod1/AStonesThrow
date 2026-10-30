@@ -29,7 +29,15 @@
 // of their hours is a panorama of the same land at another time, and the
 // land keeps still while the sun moves (Orientation).
 // Highlands uses five Kiara photographs (2016); Desert oasis uses Rogland's
-// golden hour and two nights (2023). Their rock ridges are aligned using the
+// golden hour and two nights (2023). Harbour is four of Zaal and Guest's
+// from a small harbour on Sterkfontein Dam: a morning and a golden hour of
+// one day in 2024 from one spot, and a 2019 sunset and dusk from within
+// 60 m of it, aligned on the flat-topped hills across the water (--band 0°
+// to 4°, the dusk's in 1° to 5°, and the least sure: 3.3σ). The 2019 time
+// stamps are wrong; the sunset's clock is read from its sun's height (a
+// glow through haze, so the probe calls its light 'none' and the scene's
+// sun is dark), the dusk's estimated from its glow. Wooded lake is one
+// photograph, Radków's lake under the Table Mountains (2025). Their rock ridges are aligned using the
 // probe's --band option: Kiara's lower valley from -15° to -5°, Rogland's
 // skyline from 0° to 18°. Small viewpoint changes in Kiara remain in nearby
 // rocks. Its sunrise/sunset are lit by the measured sun; their camera times
@@ -186,8 +194,24 @@
 // times the level) are rendered once into a cube map that the droplets
 // reflect, and a prefiltered copy lights the stones.
 //
+// Horizon. The 2k photo gives the dome 5.7 pixels a degree, and a desktop
+// at the home view's 48° or a phone's three pixels a CSS pixel sees 20 to
+// 50 a degree, so the land on the skyline is a blur. Over the band about
+// the horizon (HORIZON_STRIP, below: 17° up to 3° down, where the
+// land stands) the dome draws the hour's horizon strip instead: the same
+// band of the 8k photo (23 pixels a degree), its own JPEG gain map
+// (tools/sky-encode.mjs), which the page fetches once the panorama is up
+// and decodes on the GPU (src/horizonStrip.js: no JavaScript over its
+// pixels, so no hitch in play), fading into the panorama HORIZON_EDGE
+// inside the band's edges. The strip is the photo's own pixels at the
+// panorama's radiance, so the dome's scale, cap, cloud and haze apply to it
+// as to the rest; the cube captures take it too. A strip that fails to
+// come, or comes after another hour was asked for, leaves the panorama
+// whole; the page waits for none of it (horizonReady is for the tools).
+//
 // Memory. The panorama's pixels are dropped from the CPU once they are on the
-// GPU (nothing uploads it again). The captures need no depth buffer: the
+// GPU (nothing uploads it again), and the strip's ImageBitmaps are closed
+// once its textures are. The captures need no depth buffer: the
 // ground hemisphere is drawn after the dome, over it. The droplets sample the
 // cube at its first and second mip levels (src/shaders/fluid.js), so it stays
 // CUBE_SIZE; the stones (roughness 0.92) read only the prefiltered map's
@@ -198,6 +222,7 @@
 import * as THREE from 'three';
 import { UltraHDRLoader } from 'three/addons/loaders/UltraHDRLoader.js';
 import { loadAsset, dropEarlyAssets } from './loadAsset.js';
+import { decodeHorizonStrip, HORIZON_DECODE } from './horizonStrip.js';
 
 // The orientation was chosen from home-view frames (mirrored: the photo
 // flipped left for right; sunAzimuth, degrees right of straight ahead, would
@@ -218,11 +243,19 @@ import { loadAsset, dropEarlyAssets } from './loadAsset.js';
 // when chosen (Swiss Alps is 1.8 MB at 4K, for its detailed ridgeline). An hour's `clock` is its local time (sky-probe's taken).
 // `anchor` and `facing` (Light by the hour, Orientation) are the first hour
 // unless named. `defaultHour` may choose a starting view independently of
-// the lighting anchor. New locations face their cove opening, sunset ridge
-// or low desert skyline, chosen in rendered home and water-level views.
+// the lighting anchor. `reeds`: cattails stand in its shallows (src/reeds.js,
+// PLACES in src/main.js): the fresh lakes with a soft shore; a sea cove, a
+// bare rock shore, a salt flat and a frozen alpine reservoir have none.
+// `shore` names what its beach is made of (SHORE_LOOKS in src/pondFloor.js;
+// Lakeside's sand when unnamed), chosen from the land in its photo. New locations face their cove opening, sunset ridge
+// or low desert skyline, chosen in rendered home and water-level views;
+// Harbour faces the flat hills across the water with its golden hour's sun
+// path on it, Wooded lake its wooded hill, the sun 60° to the left, where
+// the eye's own side of the lake and the houses stay out of the frame.
 const SKIES = {
-  cove: { sunAzimuth: 15, hours: { morning: { file: 'secluded_beach', label: 'Morning' } } },
+  cove: { shore: 'shingle', sunAzimuth: 15, hours: { morning: { file: 'secluded_beach', label: 'Morning' } } },
   desert: {
+    shore: 'gravel',
     anchor: 'sunset',
     facing: 'sunset',
     sunAzimuth: 30,
@@ -232,7 +265,22 @@ const SKIES = {
       night: { file: 'rogland_clear_night', label: 'Starlight', clock: '21:22' },
     },
   },
+  harbour: {
+    reeds: true,
+    shore: 'earth',
+    anchor: 'morning',
+    facing: 'golden',
+    defaultHour: 'golden',
+    hours: {
+      morning: { file: 'small_harbour_morning', label: 'Morning', clock: '09:33' },
+      golden: { file: 'small_harbour_sunset', label: 'Golden hour', clock: '16:51' },
+      sunset: { file: 'small_harbor_01', label: 'Sunset', clock: '17:04' },
+      dusk: { file: 'small_harbor_02', label: 'Dusk', clock: '17:50' },
+    },
+  },
   highlands: {
+    reeds: true,
+    shore: 'peat',
     anchor: 'noon',
     facing: 'sunset',
     defaultHour: 'sunset',
@@ -246,6 +294,7 @@ const SKIES = {
     },
   },
   lakeside: {
+    reeds: true,
     anchor: 'afternoon',
     facing: 'afternoon',
     hours: {
@@ -256,6 +305,7 @@ const SKIES = {
     },
   },
   mesas: {
+    shore: 'salt',
     anchor: 'afternoon',
     facing: 'moonrise',
     hours: {
@@ -273,13 +323,18 @@ const SKIES = {
       moonlight: { file: 'qwantani_moon_noon', label: 'Moonlight', clock: '21:06' },
     },
   },
-  swiss: { mirrored: true, sunAzimuth: 45, hours: { midday: { file: 'lago_disola', resolution: '4k', label: 'Midday' } } },
+  swiss: { shore: 'scree', mirrored: true, sunAzimuth: 45, hours: { midday: { file: 'lago_disola', resolution: '4k', label: 'Midday' } } },
+  wooded: { reeds: true, shore: 'turf', sunAzimuth: -60, hours: { morning: { file: 'radkow_lake', label: 'Late morning', clock: '11:11' } } },
   // The Koi pond's own (src/main.js PLACES `koi`), no place of its own (`ownPlace`): Ninomaru Teien, the garden of
   // Nagoya Castle, in April's afternoon light through its trees (`shadedSun`: its sun behind leaves, the light on
   // level ground the balance's, most of it the sky's).
   garden: { ownPlace: false, shadedSun: true, sunAzimuth: 100, hours: { afternoon: { file: 'ninomaru_teien', label: 'Afternoon', clock: '15:09' } } },
 };
 /** The skies that are each a place of their own (the Location setting's lakes; the Koi pond takes the garden's). */
+/** What a sky's beach is made of (`shore` above): a name of SHORE_LOOKS (src/pondFloor.js), 'sand' when unnamed. */
+export const skyShore = (name) => SKIES[name]?.shore ?? 'sand';
+/** The skies whose shallows have reeds (`reeds` above). */
+export const REED_SKIES = Object.keys(SKIES).filter((name) => SKIES[name].reeds);
 export const SKY_NAMES = Object.keys(SKIES).filter((name) => SKIES[name].ownPlace !== false);
 export const DEFAULT_SKY = 'lakeside';   // an open lake to a far shore, as the Lake water is
 /** A place's hours in the order of the day: their names, labels and local times (clock, 'hh:mm', or undefined for a lone photograph). */
@@ -310,6 +365,7 @@ const GROUND = [0.10, 0.17, 0.20];   // the cube's ground hemisphere: the pond a
 const ADAPTATION = 0.8;        // how far the eye adapts to an hour's light (Light by the hour)...
 const ROD_ADAPTATION = 0.98;   // ...and, below NIGHT_VISION_LIGHT[0], its rods (adaptedLight)
 const DOWN_SUN_ELEVATION = 1;  // degrees: where the scene's dark sun stands while the true one is down
+const HORIZON_EDGE = 0.5;      // degrees inside the strip's band over which it fades into the panorama
 const OVERCAST_TINT = [0.95, 0.99, 1.07];   // a rain cloud's grey, a little blue, at about unit luminance
 const HAZE_BRIGHTNESS = 0.6;   // rain's haze against the cloud's mean: an overcast's horizon is under half its zenith (CIE)
 const HAZE_LAYER = 1000;       // metres: the rain's and the snow's depth, which a ray climbing out of it crosses (a fog's is its own)
@@ -412,7 +468,9 @@ uniform vec3 uHazeColor;       // the rain's haze (HAZE in src/shaders/scene.js)
 uniform float uHazeDensity;
 uniform float uFlash;          // the sky's light under lightning, against its own (1 with none)
 uniform vec4 uBolt;            // a bolt: its bearing (radians from −Z toward +X), its top's elevation, its brightness against the cloud (0: none), a seed
+uniform float uHorizonEdge;    // radians inside the strip's band over which it fades into the panorama (Horizon)
 varying vec3 vDirection;
+${HORIZON_DECODE}
 #define OVERCAST_FLATTEN 0.6   // the luminance's power about the mean that cloud takes away: the sun and its glow sink, the shade lifts
 uniform float uHazeLayer;      // metres: the haze's depth, which a ray climbing out of it crosses (Weather, above)
 #define LAND_DISTANCE ${LAND_DISTANCE.toFixed(1)}
@@ -446,8 +504,18 @@ float boltLight(vec3 direction, float land) {
 void main() {
   vec3 direction = normalize(vDirection);
   float azimuth = atan(direction.z, direction.x * uMirror) + uRotation;
-  vec2 panoramaUv = vec2(azimuth / (2.0 * PI) + 0.5, asin(clamp(direction.y, -1.0, 1.0)) / PI + 0.5);
-  vec3 radiance = texture2D(uPanorama, panoramaUv).rgb * uScale;
+  float elevation = asin(clamp(direction.y, -1.0, 1.0));
+  vec2 panoramaUv = vec2(azimuth / (2.0 * PI) + 0.5, elevation / PI + 0.5);
+  vec3 radiance = texture2D(uPanorama, panoramaUv).rgb;
+  if (uHorizonBand.x > 0.0) {
+    // Inside the strip's band, the strip (Horizon), faded in from the band's edges.
+    float inside = min(uHorizonBand.z - elevation, elevation - uHorizonBand.w);
+    if (inside > 0.0) {
+      vec2 stripUv = vec2(panoramaUv.x, (uHorizonBand.z - elevation) / (uHorizonBand.z - uHorizonBand.w));
+      radiance = mix(radiance, horizonRadiance(stripUv), smoothstep(0.0, uHorizonEdge, inside));
+    }
+  }
+  radiance *= uScale;
   float brightest = max(radiance.r, max(radiance.g, radiance.b));
   radiance *= min(1.0, uRadianceCap / max(brightest, 1e-6));
   float photoLevel = max(dot(radiance, vec3(0.2126, 0.7152, 0.0722)), 1e-6);
@@ -471,6 +539,21 @@ void main() {
 const measurementUrl = (file) => new URL(`../assets/sky/${file}.json`, import.meta.url).href;
 const panoramaFile = ({ file, resolution = '2k' }) => `${file}_${resolution}.jpg`;   // an hour's panorama (The photo)
 const panoramaUrl = (name) => new URL(`../assets/sky/${name}`, import.meta.url).href;
+/** The hour's horizon strip (HORIZON_STRIP), fetched after its panorama is up (Horizon). */
+const horizonUrl = (file) => new URL(`../assets/sky/${file}_horizon.jpg`, import.meta.url).href;
+
+// The strip's band: cut by tools/sky-encode.mjs from Poly Haven's `source`
+// panorama, from `above` degrees over the horizon to `below` under it, its
+// rows (horizonRows, for a source `sourceHeight` rows tall) padded below to
+// a multiple of the JPEG's block; the page reads the band's edges back from
+// the strip's size the same way, so the two never disagree.
+export const HORIZON_STRIP = { source: '8k', above: 17, below: 3 };
+const HORIZON_BLOCK = 8;
+export function horizonRows(sourceHeight) {
+  const above = Math.round((HORIZON_STRIP.above / 180) * sourceHeight);
+  const below = Math.round((HORIZON_STRIP.below / 180) * sourceHeight);
+  return { above, below: below + ((HORIZON_BLOCK - ((above + below) % HORIZON_BLOCK)) % HORIZON_BLOCK) };
+}
 const fetchMeasurement = (file) => loadAsset(measurementUrl(file));
 
 /**
@@ -500,7 +583,7 @@ function decodePanorama(buffer) {
  * @param options.sunAzimuth radians from straight ahead (−Z) toward the right (+X), unless the sky sets its own
  * @param options.sunBalance the scene's sun irradiance under BALANCE_FILE (RGB Vector3)
  * @param options.lighting its sunDirection, sunIrradiance and skyAmbient (Vector3s) are filled in place by every load
- * @returns {{ sky, cubeTexture, envTexture, name, hour, level, targets, panoramaBytes, assets, firstLoad, load }}
+ * @returns {{ sky, cubeTexture, envTexture, name, hour, level, targets, panoramaBytes, horizonBytes, horizonReady, assets, firstLoad, load }}
  */
 export function createEnvironment(renderer, { name, hour, sunAzimuth, sunBalance, lighting }) {
   // The haze's colour and density, shared with every material that hazes (HAZE in src/shaders/scene.js).
@@ -523,6 +606,11 @@ export function createEnvironment(renderer, { name, hour, sunAzimuth, sunBalance
         uOvercastTint: { value: new THREE.Vector3(...OVERCAST_TINT) },
         uFlash: { value: 1 },
         uBolt: { value: new THREE.Vector4() },
+        uHorizon: { value: null },
+        uHorizonGain: { value: null },
+        uHorizonMeta: { value: new THREE.Vector2() },
+        uHorizonBand: { value: new THREE.Vector4() },
+        uHorizonEdge: { value: THREE.MathUtils.degToRad(HORIZON_EDGE) },
         uHazeLayer: { value: HAZE_LAYER },
         ...hazeUniforms,
       },
@@ -604,7 +692,48 @@ export function createEnvironment(renderer, { name, hour, sunAzimuth, sunBalance
   }
 
   const fog = new THREE.FogExp2(0x000000, 0);   // the haze for the main scene's built-in materials (above)
-  const environment = { sky, cubeTexture: cubeTarget.texture, envTexture: null, name: null, hour: null, level: 1, hazeUniforms, fog, landCube, landLevel, targets: [], panoramaBytes: 0, assets: [], firstLoad: null, load, prefetch, setWeather, setFlash };
+  const environment = { sky, cubeTexture: cubeTarget.texture, envTexture: null, name: null, hour: null, level: 1, hazeUniforms, fog, landCube, landLevel, targets: [], panoramaBytes: 0, horizonBytes: 0, horizonReady: Promise.resolve(), assets: [], firstLoad: null, load, prefetch, setWeather, setFlash };
+
+  // The horizon strip (Horizon): the hour's, fetched once its panorama is up; the last asked for wins.
+  let horizonRequest = 0;
+  function clearHorizon() {
+    for (const name of ['uHorizon', 'uHorizonGain']) {
+      domeUniforms[name].value?.dispose();
+      domeUniforms[name].value = null;
+    }
+    domeUniforms.uHorizonBand.value.set(0, 0, 0, 0);
+    environment.horizonBytes = 0;
+  }
+  async function loadHorizon(file, signal) {
+    const request = ++horizonRequest;
+    clearHorizon();
+    try {
+      const strip = await decodeHorizonStrip(await loadAsset(horizonUrl(file), 'arrayBuffer', { signal }));
+      if (request !== horizonRequest) { strip.base.close(); strip.gain.close(); return; }
+      const texture = (image, format) => {
+        const made = new THREE.Texture(image);
+        made.format = format;
+        made.colorSpace = THREE.NoColorSpace;   // the bytes as coded: the shader decodes them
+        made.minFilter = made.magFilter = THREE.NearestFilter;   // each texel with its own gain (horizonRadiance)
+        made.generateMipmaps = false;
+        made.flipY = false;   // row 0 is the band's top
+        made.wrapS = THREE.RepeatWrapping;   // the azimuth wraps
+        made.needsUpdate = true;
+        made.onUpdate = () => { image.close(); };   // on the GPU now: free the bitmap
+        return made;
+      };
+      domeUniforms.uHorizon.value = texture(strip.base, THREE.RGBAFormat);
+      domeUniforms.uHorizonGain.value = texture(strip.gain, THREE.RedFormat);
+      domeUniforms.uHorizonMeta.value.set(strip.metadata.weight * strip.metadata.gainMapMin, strip.metadata.weight * (strip.metadata.gainMapMax - strip.metadata.gainMapMin));
+      // The band's elevations from the strip's size (horizonRows: the encoder's rows), a row's height at the source's resolution.
+      const rows = horizonRows(strip.width / 2);
+      const rowHeight = Math.PI / (strip.width / 2);
+      domeUniforms.uHorizonBand.value.set(strip.width, strip.height, rows.above * rowHeight, -rows.below * rowHeight);
+      environment.horizonBytes = strip.width * strip.height * 5;
+    } catch (error) {
+      if (request === horizonRequest && !signal?.aborted) console.warn(`The horizon strip of ${file} did not load; the panorama stands alone.`, error);
+    }
+  }
   // The hour's light under a clear sky (load), which the weather covers (applyWeather).
   const clear = { sun: new THREE.Vector3(), sky: new THREE.Vector3(), lux: 1, level: 1 };
   let weather = { cover: 0, light: 1, visibility: Infinity, hazeBrightness: HAZE_BRIGHTNESS, hazeLayer: HAZE_LAYER };
@@ -700,6 +829,7 @@ export function createEnvironment(renderer, { name, hour, sunAzimuth, sunBalance
     domeUniforms.uRadianceCap.value = RADIANCE_CAP * luminance(clear.sky.toArray());
     applyWeather();
     previous?.dispose();
+    environment.horizonReady = loadHorizon(file, signal);   // the strip follows the panorama; a superseded load's is dropped
 
     const assets = [panoramaUrl(panoramaFile(entry)), ...new Set([file, anchorFile, facingFile, BALANCE_FILE].map(measurementUrl))];
     Object.assign(environment, { name: skyName, hour: hourName, panoramaBytes, assets });

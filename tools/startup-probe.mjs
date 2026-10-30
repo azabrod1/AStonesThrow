@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
-import { launchBrowser } from './browser.mjs';
+import { launchBrowser, patience } from './browser.mjs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -30,18 +30,20 @@ async function pageFor(viewport = { width: 390, height: 844 }) {
   const context = await browser.newContext({ viewport });
   await context.route('https://cdn.jsdelivr.net/**', (route) => route.abort());
   await context.route('https://fonts.googleapis.com/**', (route) => route.fulfill({ body: '', contentType: 'text/css' }));
+  // Every wait given no timeout of its own: Playwright's 30 s on a GPU, stretched on SwiftShader (tools/browser.mjs).
+  context.setDefaultTimeout(patience(30000));
   return context.newPage();
 }
 async function open(page, query = '') {
   await page.goto(`${origin}${prefix}?quality=low&paused=1${query}`, { waitUntil: 'domcontentloaded' });
 }
 async function ready(page) {
-  await page.waitForFunction(() => window.__pond && document.querySelector('#veil').classList.contains('gone'), null, { timeout: 120000 });
+  await page.waitForFunction(() => window.__pond && document.querySelector('#veil').classList.contains('gone'), null, { timeout: patience(120000) });
 }
 function hold(page, pattern) {
   let release;
   const gate = new Promise((resolve) => { release = resolve; });
-  const arrived = page.waitForRequest(pattern, { timeout: 120000 });
+  const arrived = page.waitForRequest(pattern, { timeout: patience(120000) });
   const installed = page.route(pattern, async (route) => { await gate; await route.continue().catch(() => {}); });
   return { release, arrived, installed };
 }
@@ -83,7 +85,7 @@ try {
   assert.equal(await page.evaluate(() => window.__pond.sky), 'lakeside');
   await page.evaluate(() => { window.latestSky = window.__pond.setSky('cove'); });
   // A slow obsolete location must not hold the latest one in a queue.
-  await page.waitForFunction(() => window.__pond.sky === 'cove', null, { timeout: 60000 });
+  await page.waitForFunction(() => window.__pond.sky === 'cove', null, { timeout: patience(60000) });
   sky.release();
   await page.evaluate(() => Promise.all([window.pendingSky, window.latestSky]));
   assert.equal(await page.evaluate(() => window.__pond.sky), 'cove');
@@ -314,11 +316,11 @@ try {
   });
   await failedStartupRain.route('**/assets/rain/*.bin', (route) => route.abort());
   await open(failedStartupRain);
-  await failedStartupRain.locator('#veil .error').waitFor({ timeout: 120000 });
+  await failedStartupRain.locator('#veil .error').waitFor({ timeout: patience(120000) });
   assert.match(await failedStartupRain.locator('#veil .error').textContent(), /rain could not be loaded/);
   assert.equal(await failedStartupRain.evaluate(() => Boolean(window.__pond)), false);
   await failedStartupRain.getByRole('button', { name: 'Retry', exact: true }).click();
-  await failedStartupRain.locator('#veil .error').waitFor({ timeout: 120000 });
+  await failedStartupRain.locator('#veil .error').waitFor({ timeout: patience(120000) });
   await failedStartupRain.keyboard.press('Space');
   assert.equal(await failedStartupRain.evaluate(() => Boolean(window.__pond)), false);
   if (process.env.RAIN_STARTUP_ERROR_SCREENSHOT) await failedStartupRain.screenshot({ path: process.env.RAIN_STARTUP_ERROR_SCREENSHOT });
@@ -382,7 +384,7 @@ try {
     await pending.installed;
     await open(delayed, asset.includes('/rain/') ? '&weather=storm' : '');
     await pending.arrived;
-    await delayed.locator('#veil .error').waitFor({ timeout: 120000 });
+    await delayed.locator('#veil .error').waitFor({ timeout: patience(120000) });
     const expectedError = moduleCase ? /download its files/ : asset.includes('/rain/') ? /rain could not be loaded/ : /sky could not be loaded/;
     assert.match(await delayed.locator('#veil .error').textContent(), expectedError);
     pending.release();

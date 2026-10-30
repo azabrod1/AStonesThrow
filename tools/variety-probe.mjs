@@ -48,15 +48,19 @@
 //     same jet: its top spread by under 0.01, one tip bead, the lean the
 //     aim sets (17°, back along the throw: spread 0°).
 //
-//   node tools/variety-probe.mjs [throws=200] [--seed=1] [--aim=x:z] [--sets=default|all|grid] [--list]
+//   node tools/variety-probe.mjs [throws=200] [--seed=1] [--aim=x:z] [--sets=default|all|grid] [--thing=key] [--list]
 //
 // --sets=default runs only the default stone's three sets (normal, soft and
 // hard), leaving out the 16 cm stone and the pebble; --sets=grid runs every
 // size of the slider (1.5, 4, 6, 8, 16 and 30 cm) at every power.
+// --thing=key throws that thing instead (a key of THINGS in src/things.js, at
+// its slider's initial size) normally, softly and hard, with no checks: the
+// checks are the default stone's.
 import * as THREE from 'three';
 import { SplashSystem } from '../src/splash.js';
 import { JetColumn } from '../src/jet.js';
 import { Rock, throwFlightTime } from '../src/rock.js';
+import { THINGS, DEFAULT_THING } from '../src/things.js';
 
 const option = (name, fallback) => { const hit = process.argv.find((argument) => argument.startsWith(`--${name}=`)); return hit ? hit.slice(name.length + 3) : fallback; };
 const throwCount = Number(process.argv.slice(2).find((argument) => !argument.startsWith('--')) ?? 200);
@@ -65,6 +69,8 @@ const [aimX, aimZ] = option('aim', '0:-1.4').split(':').map(Number);
 const setChoice = option('sets', 'all');
 const allSets = setChoice === 'all';
 const listing = process.argv.includes('--list');
+const thingChoice = option('thing', DEFAULT_THING);
+if (!THINGS[thingChoice]) { console.error(`variety-probe: no thing called ${thingChoice}`); process.exit(2); }
 
 const GRAVITY = 9.81;
 const FRAME = 1 / 60;
@@ -100,7 +106,7 @@ function standIns() {
 }
 
 /** The splash system first (the page has one before the seed is set), then the seeded throw, flown to the water. */
-function throwStone(radius, power, seed) {
+function throwStone(radius, power, seed, thing = DEFAULT_THING) {
   Math.random = originalRandom;
   const { water, splash } = standIns();
   seedRandom(seed);
@@ -108,7 +114,7 @@ function throwStone(radius, power, seed) {
   const flightTime = throwFlightTime(hand, target, power, radius);
   const velocity = target.clone().sub(hand).divideScalar(flightTime);
   velocity.y += 0.5 * GRAVITY * flightTime;
-  const rock = new Rock({ radius, position: hand, velocity, envTexture: null });
+  const rock = new Rock({ radius, position: hand, velocity, envTexture: null, thing });
   for (let step = 0; step < 4 * 240; step++) {
     const impact = rock.update(FRAME / SUBSTEPS, POND_DEPTH);
     if (impact) return { impact, rock, water, splash };
@@ -148,8 +154,8 @@ JetColumn.prototype.handOver = function (splash) {
   handOver.call(this, splash);
 };
 
-function runThrow(radius, power, seed) {
-  const { impact, rock, water, splash } = throwStone(radius, power, seed);
+function runThrow(radius, power, seed, thing = DEFAULT_THING) {
+  const { impact, rock, water, splash } = throwStone(radius, power, seed, thing);
   tipRecord = [];
   tipApex = 0;
   splash.impact(impact, water);
@@ -206,7 +212,9 @@ for (let warmUp = 0; warmUp < 4; warmUp++) runThrow(0.03, 'normal', 1000000 + wa
 // --sets=grid: the slider's sizes, each thrown softly, normally and hard (the
 // seal and the forms' odds across them), with the default stone's checks.
 const GRID_SIZES = [1.5, 4, 6, 8, 16, 30];
-const sets = setChoice === 'grid'
+const sets = thingChoice !== DEFAULT_THING
+  ? ['normal', 'soft', 'hard'].map((power) => ({ label: `${THINGS[thingChoice].name}, ${power} power`, radius: THINGS[thingChoice].measure(THINGS[thingChoice].slider?.initial).radius, power, thing: thingChoice }))
+  : setChoice === 'grid'
   ? GRID_SIZES.flatMap((diameter) => ['soft', 'normal', 'hard'].map((power) => ({ label: `${diameter} cm stone, ${power} power`, radius: diameter / 200, power, checked: diameter === 6 && power === 'normal' })))
   : [
     { label: '6 cm stone, normal power', radius: 0.03, power: 'normal', checked: true },
@@ -220,7 +228,7 @@ const sets = setChoice === 'grid'
 console.log(`${throwCount} throws a set at (${aimX}, ${aimZ}), seeds ${firstSeed} to ${firstSeed + throwCount - 1} (Park–Miller); frames of 1/60 s in ${SUBSTEPS} substeps`);
 for (const [setIndex, set] of sets.entries()) {
   const results = [];
-  for (let index = 0; index < throwCount; index++) results.push(runThrow(set.radius, set.power, firstSeed + index));
+  for (let index = 0; index < throwCount; index++) results.push(runThrow(set.radius, set.power, firstSeed + index, set.thing));
   const scale = set.radius / 0.03;
   const speeds = results.map((result) => result.impact.speed);
   const angles = results.map((result) => THREE.MathUtils.radToDeg(Math.asin(Math.min(Math.hypot(result.impact.velocity.x, result.impact.velocity.z) / result.impact.speed, 1))));

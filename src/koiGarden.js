@@ -153,16 +153,25 @@ export function holdInGarden(rock) {
  * sphere of `radius` at `point` brought back toward the pond, along its
  * direction from the pond's centre, to where the drawn planting begins
  * (plantingFront), so it is never carried into the shrubs, nor let go
- * there to be lost (holdInGarden). `point` changed in place.
+ * there to be lost (holdInGarden). `point` changed in place. Brought back,
+ * its sphere spans more of the catch table's directions (the nearer the
+ * pond's centre, the wider its angle), whose front may be nearer still: it
+ * is brought back again until it is clear. Its direction never changes, so
+ * the directions it spans only grow and the front only comes nearer: each
+ * pass ends clear or spanning more, and they are few.
  */
 export function keepOutOfGarden(point, radius) {
   const apartX = point.x - KOI_SHORE.centre[0], apartZ = point.z - KOI_SHORE.centre[1];
-  const out = Math.hypot(apartX, apartZ), angle = Math.atan2(apartZ, apartX);
+  let out = Math.hypot(apartX, apartZ);
+  const angle = Math.atan2(apartZ, apartX);
   if (out < 1e-9 || sectorDepth(angle) * out < -radius - 0.5) return point;   // nowhere near the banks
-  const into = out - koiShoreRadius(angle) + radius - plantingFront(point.x, point.y, point.z, radius);
-  if (into > 0) {
-    point.x -= (apartX / out) * into;
-    point.z -= (apartZ / out) * into;
+  const awayX = apartX / out, awayZ = apartZ / out, shore = koiShoreRadius(angle);
+  for (let pass = 0; pass < CATCH.bins; pass++) {
+    const into = out - shore + radius - plantingFront(point.x, point.y, point.z, radius);
+    if (!(into > 0)) break;
+    out -= into;
+    point.x -= awayX * into;
+    point.z -= awayZ * into;
   }
   return point;
 }

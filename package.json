@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node tools/serve.mjs",
     "shoot": "node tools/shoot.mjs",
-    "test": "node tools/load-asset-test.mjs && node tools/fft-test.mjs && node tools/wave-probe.mjs && node tools/foam-probe.mjs && node tools/cavity-probe.mjs && node tools/ring-probe.mjs && node tools/rain-probe.mjs && node tools/snow-probe.mjs && node tools/gale-probe.mjs && node tools/skip-probe.mjs 30 && node tools/thing-probe.mjs && node tools/ice-probe.mjs && node tools/spray-probe.mjs && node tools/jet-probe.mjs && node tools/drop-ring-probe.mjs && node tools/fish-probe.mjs && node tools/garden-probe.mjs",
+    "test": "node tools/run-probes.mjs fish-probe.mjs ice-probe.mjs ring-probe.mjs gale-probe.mjs thing-probe.mjs foam-probe.mjs \"skip-probe.mjs 30\" garden-probe.mjs cavity-probe.mjs spray-probe.mjs fft-test.mjs drop-ring-probe.mjs wave-probe.mjs load-asset-test.mjs jet-probe.mjs rain-probe.mjs snow-probe.mjs",
     "site": "node tools/build-site.mjs"
   },
   "keywords": [],

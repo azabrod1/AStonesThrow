@@ -40,7 +40,9 @@
 //     each outcome and moves where a thing rests by under STEP_TOLERANCE of
 //     its slide;
 //   - a break (the step, the fit, the cracks and the mask's painting) costs
-//     under BREAK_MS;
+//     under BREAK_MS, each break's cost its least over the same seeded throw
+//     run again when it comes near the budget (a collection or another
+//     process can only lengthen a measurement), the worst over the breaks;
 //   - weakened and weight (src/ice.js weakness, weigh): golf balls lobbed
 //     again and again at one spot on thin ice (each blow cracking it) break
 //     it within REPEATS.cracks throws, though not at once; 100 ct diamonds
@@ -275,7 +277,7 @@ for (const [thickness, metres] of Object.entries(ICE_THICKNESS).filter(([, metre
       const ratio = strike.blow / (ICE.strength * metres ** 2);
       const slid = record.touched && !record.enteredWater ? Math.hypot(rock.position.x - record.touched.x, rock.position.z - record.touched.z) : 0;
       const outcome = record.broke ? '●' : ice.holes.length === 0 && ice.crackLines.length > 0 ? '✳' : '·';
-      table.set(`${thickness} ${label} ${manner} ${power}`, { ratio, record, rock, ice, slid, outcome, strike });
+      table.set(`${thickness} ${label} ${manner} ${power}`, { ratio, record, rock, ice, slid, outcome, strike, thrown: { metres, name, value, manner, power } });
       cells.push(`${outcome} ${ratio.toFixed(2).padStart(6)}${record.broke ? '' : record.gone ? ` gone past ${FARTHEST} m` : ` ${slid.toFixed(1)} m`}`.padEnd(30));
       // Every outcome is the one its own blow and draw say: through if its first blow was harder than the ice held then.
       check(record.broke === (strike.blow >= strike.holds), `${label} ${manner} ${power} on ${thickness} ice: ${record.broke ? 'went through' : 'held'} with a first blow of ${strike.blow.toFixed(0)} N against ${strike.holds.toFixed(0)} N held`);
@@ -346,12 +348,33 @@ for (const [key, entry] of table) {
   }
   worstMs = { break: Math.max(worstMs.break, record.breakMs), fit: Math.max(worstMs.fit, record.fitMs), paint: Math.max(worstMs.paint, paintMs) };
   // The first break runs code not yet compiled (the app's warm-up breaks the ice once, under the veil, src/main.js).
-  if (holes > 1) totals.push(record.breakMs + record.fitMs + paintMs);
+  if (holes > 1) totals.push({ total: record.breakMs + record.fitMs + paintMs, thrown: entry.thrown });
   if (listing) console.log(`  ${key}: hole ${centimetres(hole.inner)} to ${centimetres(hole.outer)} cm, ${hole.cracks.length} cracks, a step ${record.breakMs.toFixed(2)} ms, fitted in ${record.fitMs.toFixed(2)} ms, painted in ${paintMs.toFixed(1)} ms`);
 }
-totals.sort((first, second) => first - second);
-const medianTotal = totals[Math.floor(totals.length / 2)] ?? 0, worstTotal = totals.at(-1) ?? 0;
-console.log(`  ${holes} holes: the worst step ${worstMs.break.toFixed(2)} ms, fit ${worstMs.fit.toFixed(2)} ms, painting ${worstMs.paint.toFixed(1)} ms; a whole break ${medianTotal.toFixed(1)} ms (median), at most ${worstTotal.toFixed(1)} ms after the first`);
+// A break's cost is measured once, in the middle of its throw, where a collection or another process's slice can
+// land on it: a worst over 60-odd breaks catches any. So a break whose cost comes near the budget (RECHECK_SHARE of
+// it) is thrown again, the same throw (seeded), up to RECHECK_RUNS times, and keeps its least: the time can only be
+// lengthened by what else happens, never shortened, so the least is what the break itself costs. The worst over the
+// breaks is then still the check: one break that is slow every time fails it.
+const RECHECK_SHARE = 0.6, RECHECK_RUNS = 2;
+let rechecked = 0;
+for (const entry of totals) {
+  if (entry.total < RECHECK_SHARE * BREAK_MS) continue;
+  rechecked++;
+  for (let run = 0; run < RECHECK_RUNS; run++) {
+    const { metres, name, value, manner, power } = entry.thrown;
+    const ice = new IceSheet(PATCH);
+    ice.setThickness(metres);
+    const record = follow(throwOnto(ice, name, { manner, power, value }), ice);
+    if (!record.broke) break;   // (never: the same throw breaks the same ice)
+    const painted = performance.now();
+    ice.update();
+    entry.total = Math.min(entry.total, record.breakMs + record.fitMs + (performance.now() - painted));
+  }
+}
+const sortedTotals = totals.map((entry) => entry.total).sort((first, second) => first - second);
+const medianTotal = sortedTotals[Math.floor(sortedTotals.length / 2)] ?? 0, worstTotal = sortedTotals.at(-1) ?? 0;
+console.log(`  ${holes} holes: the worst step ${worstMs.break.toFixed(2)} ms, fit ${worstMs.fit.toFixed(2)} ms, painting ${worstMs.paint.toFixed(1)} ms; a whole break ${medianTotal.toFixed(1)} ms (median), at most ${worstTotal.toFixed(1)} ms after the first (${rechecked} near the budget thrown again, each its least of ${1 + RECHECK_RUNS})`);
 check(worstTotal < BREAK_MS, `a break costs up to ${worstTotal.toFixed(1)} ms (the step, the fit and the painting), over ${BREAK_MS}`);
 
 // ---- sliding ----

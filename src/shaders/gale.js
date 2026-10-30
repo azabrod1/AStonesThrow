@@ -23,7 +23,7 @@ uniform float uGaleTexels;             // texels per side
 uniform float uGaleMetresPerUnit;      // the gale's strength over the textures' units; 0 with no gale
 uniform vec2 uGaleCentre;              // the patch's centre, world XZ
 uniform float uGaleBed;                // the bed's depth under the patch's centre (galeLift)
-uniform sampler2D uGaleFoam;           // the whitecaps' foam map: (foam, raft), as the solver's (src/galeWaves.js)
+uniform sampler2D uGaleFoam;           // the whitecaps' foam map: (foam, raft, spent whitewater), as the solver's (src/galeWaves.js)
 uniform float uGaleFoamTexels;
 #define GALE_SIDEWAYS_FROM 4.5
 #define GALE_SIDEWAYS_TO 12.0
@@ -51,96 +51,111 @@ float galeLift(vec3 stillPoint) {
 }
 `;
 
-// The spray the gale tears off its breaking crests (src/galeWaves.js,
-// GaleSpray): drops on a jittered grid of the gale's tile, uSprayCell apart,
-// GALE_SPRAY_SLOTS to a cell, each leaving the water on a cycle of its own
-// (its life, SPRAY_LIFE times 0.7 to 1.3) from its place on it as a wisp
-// of drops (the ribbon's third coordinate: which of them), each blown
-// downwind at its own speed and falling as it goes, drawn as the streak it
-// cuts in
-// SPRAY_STREAK_SECONDS (the eye's persistence, as the rain's streaks are: a
-// ribbon facing the eye, at least uMinPixels wide, its opacity cut by the
-// width it really covers). Nothing is stored: a drop shows only where a
-// crest broke within its age, which the whitecaps' boil remembers (it is
-// laid where a crest breaks, GALE_BOIL deep, and pops over uBoilLifetime):
-// the boil now, put back by its decay over the drop's age, is how hard the
-// crest was breaking when the drop left it. The block of cells is laid about
-// the eye's focus in whole cells (uSprayOrigin, the cell index of its
-// corner), and each cell's draw is its index wrapped to the tile, so the
-// spray repeats with the gale's tile and a drop is the same wherever the
-// block stands.
-export const GALE_SPRAY_VERTEX = /* glsl */`
+// Spindrift (src/spindrift.js): the spray a gale blows off its breaking
+// crests, points flown in this shader. Each point is one slot of one cell
+// of a lattice of SPINDRIFT_CELL metres round the focus (aCell: the cell's
+// offset from the focus's, and the slot); the slot throws every
+// SPINDRIFT_PERIOD seconds at its own phase, from the cell's source, a
+// place in it drawn afresh every SPINDRIFT_SOURCE_SECONDS (hashed from the
+// cell, the slot and the clock, so the harness renders the same spray every
+// run), if a whitecap is there: the boil of the foam map (uGaleFoam, the
+// foam less its raft), read where the crest that broke at the throw is now
+// (it rides downwind at uCrestSpeed; the active whitewater alone, r less g
+// and b, not the froth it has shed), fades the throw in from
+// SPINDRIFT_BOIL_FROM to SPINDRIFT_BOIL_TO; nearly every point is dropped
+// here. The first SPINDRIFT_SPECK_SLOTS slots of a cell throw specks, the
+// drops themselves, SPINDRIFT_SPECK across and bright, the rest puffs of
+// mist, faint, growing from SPINDRIFT_SIZE_FROM to SPINDRIFT_SIZE_TO across
+// as their drops spread; a cell's throws share a source, so they string out
+// along the wind into the streaks spindrift blows in. A throw starts on the
+// surface and is blown downwind at SPINDRIFT_SPEED (the wind near the crest
+// takes a fine drop's speed within a few tenths of a second), spread up to
+// SPINDRIFT_SPREAD of that across the wind, rising at up to SPINDRIFT_RISE
+// and coming down at SPINDRIFT_FALL, less than free fall, as the air's drag
+// takes most of a fine drop's weight; it lives until it comes down to the
+// water, or SPINDRIFT_LIFE, and thins as it flies. Size and
+// brightness are as the rain's flecks' (FLECK_VERTEX in src/shaders/rain.js):
+// at least uMinPixels across, the opacity cut by the area really covered.
+export const SPINDRIFT_VERTEX = /* glsl */`
 ${GALE_SURFACE}
-#define GALE_BOIL 0.6               // GALE_FOAM_FRAGMENT's
-#define SPRAY_LIFE 0.45             // seconds
-#define SPRAY_RISE 0.9              // m/s up
-#define SPRAY_SPEED 3.5             // m/s downwind
-#define SPRAY_DIAMETER 0.004        // metres: a drop
-#define SPRAY_STREAK_SECONDS 0.03   // the eye's persistence
-#define SPRAY_FROM 0.04             // of a crest breaking in full, where spray starts...
-#define SPRAY_FULL 0.3              // ...and is at its thickest
-attribute vec3 aSpray;          // per drop: its cell (x, z) in the block, its slot
-uniform vec2 uSprayOrigin;      // the cell index of the block's corner
-uniform float uSprayCell;       // metres
-uniform float uSprayCellsPerTile;
-uniform float uTime;            // world seconds
-uniform vec2 uWind;             // world XZ the wind blows toward, unit length
-uniform float uBoilLifetime;    // seconds
-uniform float uFocalPx;         // render-target pixels per unit tan
+attribute vec3 aCell;        // the cell's offset from the focus's (x, z), the slot
+uniform vec2 uFocusCell;     // the cell the focus lies in (whole numbers)
+uniform float uCellSize;     // metres
+uniform float uTime;         // world seconds
+uniform vec2 uWind;          // the direction the wind blows toward, unit length
+uniform float uCrestSpeed;   // m/s a breaking crest's whitewater travels downwind
+uniform float uProjScale;    // render-target pixels per world unit at distance 1
 uniform float uMinPixels;
 uniform float uOpacity;
+uniform float uSpeckSlots;   // the slots of a cell that throw specks; the rest throw puffs
 varying float vAlpha;
-varying float vAcross;
-vec3 sprayHash(vec3 point) {
-  vec3 mixed = fract(point * vec3(0.1031, 0.1030, 0.0973));
+#define SPINDRIFT_PERIOD 0.7
+#define SPINDRIFT_SOURCE_SECONDS 1.5
+#define SPINDRIFT_LIFE 0.6
+#define SPINDRIFT_SPEED 3.5
+#define SPINDRIFT_SPREAD 0.25
+#define SPINDRIFT_RISE 2.0
+#define SPINDRIFT_FALL 4.0
+#define SPINDRIFT_SPECK 0.015
+#define SPINDRIFT_SIZE_FROM 0.12
+#define SPINDRIFT_SIZE_TO 0.35
+#define SPINDRIFT_PUFF_OPACITY 0.35
+#define SPINDRIFT_BOIL_FROM 0.05
+#define SPINDRIFT_BOIL_TO 0.2
+
+vec3 spindriftHash(vec3 seed) {
+  vec3 mixed = fract(seed * vec3(0.1031, 0.1030, 0.0973));
   mixed += dot(mixed, mixed.yxz + 33.33);
   return fract((mixed.xxy + mixed.yzz) * mixed.zyx);
 }
+
 void main() {
-  vec2 cell = uSprayOrigin + aSpray.xy;
-  vec3 random = sprayHash(vec3(mod(cell, uSprayCellsPerTile), aSpray.z + 1.0));
-  vec3 another = sprayHash(random * 91.7 + 3.1 + position.z * 17.3);   // this drop of the wisp's own
-  vec2 rest = (cell + random.xy) * uSprayCell;
-  float life = SPRAY_LIFE * (0.7 + 0.6 * random.y);
-  float age = mod(uTime + random.z * 37.0, life);
-  vec2 foam = textureLod(uGaleFoam, rest / uGaleTileSize + 0.5 / uGaleFoamTexels, 0.0).rg;
-  float breaking = max(foam.r - foam.g, 0.0) * exp(age / uBoilLifetime) / GALE_BOIL;
-  float strength = smoothstep(SPRAY_FROM, SPRAY_FULL, breaking);
-  vAcross = position.x;
-  if (uGaleMetresPerUnit <= 0.0 || strength <= 0.0) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); vAlpha = 0.0; return; }
-  vec2 drift = uWind * SPRAY_SPEED * (0.6 + 0.8 * another.y) + (another.zx - 0.5) * 1.5;
-  float rise = SPRAY_RISE * (0.4 + another.z);
-  vec3 head = vec3(rest.x + drift.x * age, galeHeight(rest) + rise * age - 4.9 * age * age, rest.y + drift.y * age);
-  vec3 velocity = vec3(drift.x, rise - 9.81 * age, drift.y);
-  vec3 tail = head - velocity * min(SPRAY_STREAK_SECONDS, age);
-  vec3 viewHead = (viewMatrix * vec4(head, 1.0)).xyz;
-  vec3 viewTail = (viewMatrix * vec4(tail, 1.0)).xyz;
-  vec3 point = mix(viewHead, viewTail, position.y);
-  float depth = max(-point.z, 1e-3);
-  vec3 across = cross(viewTail - viewHead, point);
-  float acrossLength = length(across);
-  across = acrossLength > 1e-9 ? across / acrossLength : vec3(1.0, 0.0, 0.0);
-  float diameter = SPRAY_DIAMETER * (0.5 + another.x);
-  float width = max(diameter, uMinPixels * depth / uFocalPx);
-  point += across * position.x * 0.5 * width;
-  vAlpha = -point.z > 0.05 ? uOpacity * strength * (1.0 - age / life) * (diameter / width) : 0.0;
-  gl_Position = projectionMatrix * vec4(point, 1.0);
+  vec2 cell = uFocusCell + aCell.xy;
+  float slot = aCell.z;
+  vec3 phase = spindriftHash(vec3(cell, slot + 0.5));
+  float cycle = floor((uTime - SPINDRIFT_PERIOD * phase.x) / SPINDRIFT_PERIOD);
+  float age = uTime - SPINDRIFT_PERIOD * (cycle + phase.x);
+  float sourceCycle = floor((uTime - age) / SPINDRIFT_SOURCE_SECONDS);
+  vec3 place = spindriftHash(vec3(cell + 17.0, sourceCycle + 0.5));
+  vec3 throw = spindriftHash(vec3(cell + 29.0, slot + 0.5 + 7.0 * cycle));
+  vec2 rest = (cell + place.xy) * uCellSize;
+  vec2 crestNow = rest + uWind * uCrestSpeed * age;   // where the crest that broke here at the throw is now
+  vec3 foam = textureLod(uGaleFoam, crestNow / uGaleTileSize + 0.5 / uGaleFoamTexels, 0.0).rgb;
+  float strength = smoothstep(SPINDRIFT_BOIL_FROM, SPINDRIFT_BOIL_TO, max(foam.r - foam.g - foam.b, 0.0));   // the active whitewater alone
+  // Its flight lasts until it comes down to the water (2·rise/fall), or SPINDRIFT_LIFE if that is sooner.
+  float rise = SPINDRIFT_RISE * (0.4 + 0.6 * throw.y);
+  float life = min(SPINDRIFT_LIFE, 2.0 * rise / SPINDRIFT_FALL);
+  if (age >= life || strength <= 0.0 || uGaleMetresPerUnit <= 0.0) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); gl_PointSize = 0.0; vAlpha = 0.0; return; }
+  float along = age / life;
+  vec2 acrossWind = vec2(-uWind.y, uWind.x);
+  vec2 blown = rest + (uWind + acrossWind * SPINDRIFT_SPREAD * (throw.x - 0.5) * 2.0) * SPINDRIFT_SPEED * age;
+  float height = galeHeight(blown) + rise * age - 0.5 * SPINDRIFT_FALL * age * age;   // over the water under it, so it is never drawn through a crest ahead
+  vec4 viewPosition = viewMatrix * vec4(blown.x, height, blown.y, 1.0);
+  bool speck = slot < uSpeckSlots;
+  float size = speck ? SPINDRIFT_SPECK : mix(SPINDRIFT_SIZE_FROM, SPINDRIFT_SIZE_TO, along) * (0.7 + 0.6 * throw.z);
+  float pixels = size * uProjScale / max(-viewPosition.z, 1e-3);
+  float drawn = max(pixels, uMinPixels);
+  gl_PointSize = drawn;
+  float fade = speck ? 1.0 - along : SPINDRIFT_PUFF_OPACITY * (1.0 - along) * (1.0 - along);
+  vAlpha = uOpacity * strength * fade * min(pixels * pixels / (drawn * drawn), 1.0);
+  gl_Position = projectionMatrix * viewPosition;
 }
 `;
 
-// The spray's streaks: white, lit as the rain's are by the light round them.
-export const GALE_SPRAY_FRAGMENT = /* glsl */`
+// A puff: a soft disc of mist, lit by the sky and a little by the sun, as the rain's flecks are.
+export const SPINDRIFT_FRAGMENT = /* glsl */`
 uniform vec3 uSkyAmbient;
 uniform vec3 uSunIrradiance;
 uniform vec3 uSunDir;
 varying float vAlpha;
-varying float vAcross;
-#define SPRAY_SKY 1.5
-#define SPRAY_SUN 0.12
+#define SPINDRIFT_SKY 1.6
+#define SPINDRIFT_SUN 0.15
 void main() {
-  if (vAlpha <= 0.0) discard;
-  float alpha = vAlpha * (1.0 - smoothstep(0.2, 1.0, abs(vAcross)));
-  vec3 light = uSkyAmbient * SPRAY_SKY + uSunIrradiance * max(uSunDir.y, 0.0) * SPRAY_SUN;
+  vec2 offset = gl_PointCoord * 2.0 - 1.0;
+  float shape = exp(-2.5 * dot(offset, offset)) - exp(-2.5);
+  float alpha = vAlpha * max(shape, 0.0);
+  if (alpha < 0.002) discard;
+  vec3 light = uSkyAmbient * SPINDRIFT_SKY + uSunIrradiance * max(uSunDir.y, 0.0) * SPINDRIFT_SUN;
   gl_FragColor = vec4(light * alpha, alpha);
 }
 `;

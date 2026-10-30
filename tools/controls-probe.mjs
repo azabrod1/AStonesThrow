@@ -69,7 +69,9 @@
 //     View note follows) and the Water page shows the pool's own water in
 //     place of the lake's; its Weather row opens the Weather page, whose seven
 //     choices (one list of cards) fit, whose Heavy rain brings the rain
-//     and whose Heavy snow the snow, at once; a press on the water
+//     and whose Heavy snow the snow, at once; its Reset all, pressed once,
+//     asks again and, pressed again, sets every setting as a first visit
+//     has it, the rows following, and forgets them; a press on the water
 //     closes it without throwing a stone, and Escape closes it too;
 //   - on a touch screen a finger dragged across the water turns the view and
 //     throws nothing, and the Reset view button then shows on the screen,
@@ -82,7 +84,7 @@
 //
 // --root serves another checkout (a git archive of an earlier commit, say);
 // the screenshots and the checks then describe that version.
-import { launchBrowser } from './browser.mjs';
+import { launchBrowser, patience } from './browser.mjs';
 import { mkdir, readFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import path from 'node:path';
@@ -161,7 +163,7 @@ for (const framing of FRAMINGS) {
   for (let load = 0; load < 3 && !pointerTook; load++) {
     if (load === 0) await page.goto(`http://localhost:${server.address().port}/index.html?quality=low&paused=1`, { waitUntil: 'domcontentloaded' });
     else await page.reload({ waitUntil: 'domcontentloaded' });
-    await page.waitForFunction(() => !!window.__pond, undefined, { timeout: 180000 });
+    await page.waitForFunction(() => !!window.__pond, undefined, { timeout: patience(180000) });
     pointerTook = await page.waitForFunction((touch) => matchMedia('(pointer: coarse)').matches === touch, framing.touch, { timeout: 5000 }).then(() => true, () => false);
   }
   check(pointerTook, `the page reports the framing's pointer (${framing.touch ? 'a finger: pointer coarse' : 'a mouse: pointer fine'})`);
@@ -395,7 +397,7 @@ for (const framing of FRAMINGS) {
   await page.waitForTimeout(400);
   const [panel] = await boxes('#settings');
   const rows = await boxes('#settings .menu-tier');
-  check(!!panel && onScreen(panel) && rows.length === 9, `the settings open on the screen with their nine rows (${rows.length})`);
+  check(!!panel && onScreen(panel) && rows.length === 11, `the settings open on the screen with their ten rows and Reset all (${rows.length})`);
   if (framing.touch) check(rows.every((row) => row.height >= SMALLEST_BUTTON_HEIGHT - 0.5), `every settings row is at least ${SMALLEST_BUTTON_HEIGHT} points tall (smallest ${Math.min(...rows.map((row) => row.height)).toFixed(1)})`);
   const cutValues = await page.evaluate(() => [...document.querySelectorAll('#settings .menu-tier-value')].filter((value) => value.scrollWidth > value.clientWidth + 0.5).map((value) => value.textContent));
   const hinted = await page.evaluate(() => [...document.querySelectorAll('#settings .menu-tier-name small')].filter((hint) => hint.getClientRects().length > 0).length);
@@ -421,6 +423,7 @@ for (const framing of FRAMINGS) {
   check(clipped.length === 0, `every Water choice's name fits its card${clipped.length ? ` (not: ${clipped.join(', ')})` : ''}`);
   // Frozen (src/ice.js): thin ice, its two choices under the cards, fitting; Thick makes it thick; the row and the note follow.
   const waterRow = () => page.evaluate(() => ({ water: window.__pond.waterChoice, ice: window.__pond.ice, clarity: window.__pond.clarity, row: document.querySelector('.menu-tier[data-open="water"] .menu-tier-value').textContent, note: document.getElementById('ice-note').textContent, iceShown: !document.getElementById('ice-field').hidden }));
+  await page.evaluate(() => window.__pond.advance(12));   // the fish have an old clock when Frozen clears the pond
   await press('#water [data-value="frozen"]');
   await page.waitForTimeout(200);
   const frozen = await waterRow();
@@ -443,6 +446,12 @@ for (const framing of FRAMINGS) {
   await press('#water [data-value="murky"]');
   const chosen = await waterRow();
   check(chosen.clarity === 'murky' && chosen.ice === 'none' && chosen.row === 'Murky' && !chosen.iceShown, `Murky thaws the ice (${chosen.ice}), sets the clarity (${chosen.clarity}) and the row's value ("${chosen.row}")`);
+  const swimming = await page.evaluate(() => {
+    const pond = window.__pond, before = pond.fish.fish;
+    pond.advance(1);
+    return { count: before.length, moved: pond.fish.fish.filter((fish, index) => Math.hypot(fish.x - before[index].x, fish.y - before[index].y, fish.z - before[index].z) > 1e-6).length };
+  });
+  check(swimming.count > 0 && swimming.moved === swimming.count, `all ${swimming.count} fish swim immediately after Frozen is thawed (${swimming.moved} moved)`);
   await page.screenshot({ path: path.join(outputFolder, `${framing.name}-water.png`) });
   await page.evaluate(() => window.__pond.setWater('lake'));
   await press('.menu-page[data-page="water"] .menu-back');
@@ -726,11 +735,34 @@ for (const framing of FRAMINGS) {
   await press('#weather [data-value="clear"]');
   await press('.menu-page[data-page="weather"] .menu-back');
   await page.waitForTimeout(400);
+  // Reset all: one press asks again, a second sets every setting as a first visit has it and forgets them all.
+  await page.evaluate(async () => {
+    const pond = window.__pond;
+    pond.setThing('basketball'); pond.setWind('windy'); pond.setSound(false); pond.setWater('murky');
+    await pond.setSky('pool');
+  });
+  await press('#reset-settings');
+  const asked = await page.evaluate(() => ({ text: document.querySelector('#reset-settings b').textContent, sky: window.__pond.sky }));
+  check(asked.text === 'Press again to reset' && asked.sky === 'pool', `Reset all pressed once asks again ("${asked.text}") and changes nothing (${asked.sky})`);
+  await press('#reset-settings');
+  await page.waitForFunction(() => window.__pond.sky === 'lakeside' && document.querySelector('#reset-settings b').textContent === 'Reset all' && !document.querySelector('#reset-settings small').textContent.endsWith('\u2026'), null, { timeout: 60000 }).catch(() => {});
+  const reset = await page.evaluate(() => {
+    const pond = window.__pond;
+    const row = (name) => document.querySelector(`.menu-tier[data-open="${name}"] .menu-tier-value`).textContent;
+    const kept = ['thing', 'weather', 'wind', 'water', 'frozen', 'sound', 'sky', 'time'].filter((name) => localStorage.getItem(`stone-pond-${name}`) !== null);
+    return { thing: pond.thing, sky: pond.sky, pooled: pond.pooled, water: pond.waterChoice, weather: pond.weather, wind: pond.wind, sound: pond.sound, rows: ['thing', 'sky', 'water', 'weather', 'wind', 'sound'].map(row).join(', '), kept };
+  });
+  check(reset.thing === 'stone' && reset.sky === 'lakeside' && !reset.pooled && reset.water === 'lake' && reset.weather === 'clear' && reset.wind === 'calm' && reset.sound && reset.kept.length === 0,
+    `pressed again it resets: ${reset.thing}, ${reset.sky}${reset.pooled ? ' (pooled)' : ''}, ${reset.water}, ${reset.weather}, ${reset.wind}, sound ${reset.sound ? 'on' : 'off'}; the rows read "${reset.rows}"; ${reset.kept.length ? `still stored: ${reset.kept.join(', ')}` : 'nothing stored'}`);
   const stonesBefore = await page.evaluate(() => window.__pond.rocks.length);
-  // Water clear of the open list: beside it, or (on a narrow screen, where it spans the width) under it, above the strip.
+  // Water clear of the open list: beside it, or (on a narrow screen, where it spans the width) under it, above the strip,
+  // unless the gap there is narrower than the margin beside it (a small phone): a tap that near the list is the list's.
   const [openList] = await boxes('#settings');
   const waterX = layout.screenWidth * 0.3;
-  const waterPoint = { x: waterX / layout.scale, y: (waterX < openList.left ? layout.screenHeight * 0.55 : (openList.bottom + layout.strip.top) / 2) / layout.scale };
+  const beside = waterX < openList.left || openList.left > layout.strip.top - openList.bottom;
+  const waterPoint = beside
+    ? { x: Math.min(waterX, openList.left / 2) / layout.scale, y: layout.screenHeight * 0.55 / layout.scale }
+    : { x: waterX / layout.scale, y: (openList.bottom + layout.strip.top) / 2 / layout.scale };
   if (framing.touch) await page.touchscreen.tap(waterPoint.x, waterPoint.y);
   else await page.mouse.click(waterPoint.x, waterPoint.y);
   const afterOutside = await page.evaluate(() => ({ open: !document.getElementById('settings').hidden, stones: window.__pond.rocks.length }));

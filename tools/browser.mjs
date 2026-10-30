@@ -23,11 +23,30 @@
 //                     asks for hardware)
 //   PW_GPU=hardware   the GPU, failing rather than falling back
 //   PW_CHROMIUM       a browser to launch instead of Playwright's own
+//
+// The cloud container's own Chromium is found by its stable link
+// (/opt/pw-browsers/chromium, which follows the container's version), or the
+// older containers' path; anywhere else Playwright's own is launched.
+//
+// patience(milliseconds) is a wait fitted to the renderer launched: as given
+// on a GPU, SOFTWARE_PATIENCE times longer on SwiftShader, where a page takes
+// that much longer to compile its programs and warm up (a stormy start's,
+// rain and gale together, took over 120 s in the container). Every browser
+// tool's wait for the page takes it (the shoot harness's for its rain, drop
+// rings and frames too), so a slow renderer is waited for and a GPU's runs
+// keep their limits.
 // PW_HARDWARE=1 (the startup probe's old switch) means PW_GPU=hardware.
 import { existsSync } from 'node:fs';
 import { chromium } from 'playwright';
 
-const CONTAINER_CHROMIUM = '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
+const CONTAINER_CHROMIUMS = ['/opt/pw-browsers/chromium', '/opt/pw-browsers/chromium-1194/chrome-linux/chrome'];
+const SOFTWARE_PATIENCE = 5;
+let launchedSoftware = false;   // whether the last launch fell back to SwiftShader (patience)
+
+/** A wait (ms) fitted to the renderer launched: as given on a GPU, SOFTWARE_PATIENCE times longer on SwiftShader (the header). */
+export function patience(milliseconds) {
+  return launchedSoftware ? milliseconds * SOFTWARE_PATIENCE : milliseconds;
+}
 const SOFTWARE_ARGS = ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--enable-webgl', '--disable-gpu-sandbox'];
 const HARDWARE_ARGS = {
   darwin: ['--use-angle=metal', '--ignore-gpu-blocklist', '--enable-webgl'],
@@ -65,7 +84,7 @@ function whichMode() {
  * SwiftShader (the header). `extraArgs` are added to either set of flags.
  */
 export async function launchBrowser(extraArgs = []) {
-  const executablePath = process.env.PW_CHROMIUM || (existsSync(CONTAINER_CHROMIUM) ? CONTAINER_CHROMIUM : undefined);
+  const executablePath = process.env.PW_CHROMIUM || CONTAINER_CHROMIUMS.find((candidate) => existsSync(candidate));
   const launch = (args) => chromium.launch({ headless: true, executablePath, args: [...args, ...extraArgs] });
   const mode = whichMode();
   if (mode !== 'software') {
@@ -73,6 +92,7 @@ export async function launchBrowser(extraArgs = []) {
     const renderer = await rendererOf(browser).catch(() => null);
     if (renderer && !SOFTWARE_RENDERER.test(renderer)) {
       console.error(`browser: GPU, ${renderer}`);
+      launchedSoftware = false;
       return browser;
     }
     await browser.close();
@@ -80,5 +100,6 @@ export async function launchBrowser(extraArgs = []) {
   }
   const browser = await launch(SOFTWARE_ARGS);
   console.error(`browser: SwiftShader${mode === 'auto' ? ' (no GPU found)' : ''}`);
+  launchedSoftware = true;
   return browser;
 }

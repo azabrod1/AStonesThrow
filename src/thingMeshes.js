@@ -3,14 +3,17 @@
 // (registerMesh) that makes a unit-sized geometry for a definition and the
 // material's colour for it. The kinds:
 //   - stone: the procedural stone (createRockGeometry), lumpy, worn smooth,
-//     speckled, in its kind's squash, lumps and colouring (`look.pattern`:
-//     the river stone's, which is the stone there always was, slate,
-//     granite, basalt, pumice; stoneColor), flat for a skip (SKIP_STONE);
+//     in its kind's squash, lumps and colouring (`look.pattern`: the river
+//     stone's, which is the stone there always was, slate, granite, basalt,
+//     pumice; stoneBase), flat for a skip (SKIP_STONE); its grain and relief
+//     are drawn pixel by pixel (src/shaders/stone.js), and the physics walks
+//     a coarser mesh of the same surface (its geometry's `userData.physics`);
 //   - ball: an icosphere of SUBDIVISIONS painted per vertex
 //     (createBallGeometry, `look.paint`: a basketball's seams, a tennis
 //     ball's, a golf ball's dimples, a bowling ball's swirl and finger holes,
 //     or plain in `look.color`), pressed in where it is grooved, dimpled or
-//     drilled;
+//     drilled, with coarser meshes of it (its `userData.detail`) to draw
+//     when it is small on the screen;
 //   - apple: its sphere drawn in at the stalk and the calyx, red streaked
 //     over yellow-green, and its stalk (createAppleGeometry);
 //   - pizza: a disc turned from a profile, made by hand (its outline
@@ -65,6 +68,7 @@ import * as THREE from 'three';
 export function linear(red, green, blue) { return new THREE.Color().setRGB(red / 255, green / 255, blue / 255, THREE.SRGBColorSpace); }
 
 const SUBDIVISIONS = 5;              // a ball's icosphere: 10242 vertices, 4 mm apart on a basketball
+const COARSEST_BALL = 2;             // a ball's coarsest mesh (createBallGeometry `detail`): 162 vertices, 320 triangles
 // A flat stone, picked for skipping (src/rock.js): its short axis 0.26 to 0.38 of its long one (a river stone's 0.62 to 0.82); its surface noise, of a river stone's.
 export const SKIP_STONE = { squash: [0.26, 0.12], surfaceNoise: 0.6 };
 
@@ -72,10 +76,17 @@ const MESHES = new Map();
 
 /**
  * Register a mesh's kind: `build(definition, { flat, piece })` returns its
- * unit-sized geometry (a colour per vertex; for a stone, a list of separate
- * triangles, src/rock.js integrates its shape over them; `flat`, a stone
- * picked for skipping; `piece`, a shard's own outline, which src/rock.js is
- * given and passes on), `color(definition)` the
+ * unit-sized geometry (a colour per vertex, a list of separate triangles
+ * unless its `userData.physics` holds one: src/rock.js integrates the
+ * thing's shape over them, walks them for its lowest point and cuts them
+ * into its buoyancy's columns, while the geometry itself is only drawn, as a
+ * stone's finer mesh is; `userData.stone`, a stone's grain's kind and seed,
+ * src/shaders/stone.js; `userData.detail`, coarser meshes of it, which
+ * src/rock.js showDetail draws when it is small on the screen, kept with the
+ * kind and never disposed: { coarser: [{ geometry, spacing }], coarsest
+ * first, spacing } (`spacing`, the most its corners lie apart, in radii);
+ * `flat`, a stone picked for skipping; `piece`, a
+ * shard's own outline, which src/rock.js is given and passes on), `color(definition)` the
  * material's colour (drawn when the thing is made, after its geometry),
  * `glow(definition)`, if it has one, the material's emissive colour (null
  * for none), and `texture(definition)`, if it has one, the material's map (its colours
@@ -141,7 +152,7 @@ export function unitLength(definition) {
 
 /** The volume a closed geometry of separate triangles (no index) encloses: the sum of the tetrahedra its faces make with the origin. */
 export function meshVolume(geometry) {
-  const positions = geometry.attributes.position.array;
+  const positions = cornersOf(geometry);
   let volume = 0;
   for (let index = 0; index < positions.length; index += 9) {
     const ax = positions[index], ay = positions[index + 1], az = positions[index + 2];
@@ -151,6 +162,9 @@ export function meshVolume(geometry) {
   }
   return volume;
 }
+
+/** The corners of `mesh`'s separate triangles: a geometry's position attribute's array, or a position attribute's own (a stone's physics mesh, its geometry's `userData.physics`). */
+export function cornersOf(mesh) { return (mesh.isBufferAttribute ? mesh : mesh.attributes.position).array; }
 
 /** The registered builder of a kind of mesh, or undefined. */
 export function meshKind(kind) { return MESHES.get(kind); }
@@ -174,30 +188,148 @@ function valueNoise3(x, y, z) {
   return result;
 }
 
+/** valueNoise3 with its gradient, into `gradient` (a Vector3): the same sum, each lattice value weighted by the slope of its weights too. */
+function valueNoise3WithGradient(x, y, z, gradient) {
+  const ix = Math.floor(x), iy = Math.floor(y), iz = Math.floor(z);
+  const fx = x - ix, fy = y - iy, fz = z - iz;
+  const sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy), sz = fz * fz * (3 - 2 * fz);
+  const slopeX = 6 * fx * (1 - fx), slopeY = 6 * fy * (1 - fy), slopeZ = 6 * fz * (1 - fz);
+  let result = 0, gradientX = 0, gradientY = 0, gradientZ = 0;
+  for (let dz = 0; dz <= 1; dz++) for (let dy = 0; dy <= 1; dy++) for (let dx = 0; dx <= 1; dx++) {
+    const weightX = dx ? sx : 1 - sx, weightY = dy ? sy : 1 - sy, weightZ = dz ? sz : 1 - sz;
+    const value = hash3(ix + dx, iy + dy, iz + dz);
+    result += weightX * weightY * weightZ * value;
+    gradientX += (dx ? slopeX : -slopeX) * weightY * weightZ * value;
+    gradientY += weightX * (dy ? slopeY : -slopeY) * weightZ * value;
+    gradientZ += weightX * weightY * (dz ? slopeZ : -slopeZ) * value;
+  }
+  gradient.set(gradientX, gradientY, gradientZ);
+  return result;
+}
+
+// The icosahedron: twelve corners on the unit sphere and twenty faces, facing out (icosphere, stoneLattice).
+const GOLDEN = (1 + Math.sqrt(5)) / 2;
+const ICOSAHEDRON = {
+  corners: [
+    [-1, GOLDEN, 0], [1, GOLDEN, 0], [-1, -GOLDEN, 0], [1, -GOLDEN, 0],
+    [0, -1, GOLDEN], [0, 1, GOLDEN], [0, -1, -GOLDEN], [0, 1, -GOLDEN],
+    [GOLDEN, 0, -1], [GOLDEN, 0, 1], [-GOLDEN, 0, -1], [-GOLDEN, 0, 1],
+  ].map(([x, y, z]) => { const length = Math.hypot(x, y, z); return [x / length, y / length, z / length]; }),
+  faces: [
+    0, 11, 5, 0, 5, 1, 0, 1, 7, 0, 7, 10, 0, 10, 11, 1, 5, 9, 5, 11, 4, 11, 10, 2, 10, 7, 6, 7, 1, 8,
+    3, 9, 4, 3, 4, 2, 3, 2, 6, 3, 6, 8, 3, 8, 9, 4, 9, 5, 2, 4, 11, 6, 2, 10, 8, 6, 7, 9, 8, 1,
+  ],
+};
+
+// A stone's meshes, as segments to an icosahedron edge: the physics' (THREE.IcosahedronGeometry's detail 3: 320
+// separate triangles, as the stone always had) and the drawn one's (STONE_LATTICE.fine: 2880 triangles on 1442 shared
+// corners, each of the physics' faces cut into (fine/coarse)², so the physics' corners are among them).
+const STONE_LATTICE = { coarse: 4, fine: 12 };
+let stoneLatticeMade = null;
+
+/**
+ * The drawn stone's lattice, made once: every icosahedron face cut STONE_LATTICE.fine to an edge, each point projected
+ * on the unit sphere (`directions`, one for each corner, shared along the edges and at the icosahedron's corners),
+ * its `triangles` (corner indices, facing out), and for each corner the faint tint it takes from the physics' faces
+ * round it (`blends`: three of the physics mesh's corners, `tintCorners`, with their weights, the corner's place in
+ * the coarse face it lies in; each of those corners averages the tints of the coarse faces round it, `faces`, the
+ * faces numbered in the order their tints are drawn), so the tints the faceted stone drew for its faces become one
+ * smooth mottle over the finer mesh.
+ */
+function stoneLattice() {
+  if (stoneLatticeMade) return stoneLatticeMade;
+  const { coarse, fine } = STONE_LATTICE;
+  const ratio = fine / coarse;
+  const keyOf = (pairs) => pairs.filter(([, weight]) => weight > 0).sort((first, second) => first[0] - second[0]).map(([corner, weight]) => `${corner}:${weight}`).join(',');
+  const cornerIndex = new Map(), directions = [], blends = [];
+  const tintCornerIndex = new Map(), tintCorners = [];
+  const triangles = [];
+  let coarseFace = 0;
+  const direction = new THREE.Vector3();
+  for (let face = 0; face < ICOSAHEDRON.faces.length; face += 3) {
+    const ids = ICOSAHEDRON.faces.slice(face, face + 3);
+    const tintCornerAt = (coarseI, coarseJ) => {
+      const key = keyOf([[ids[0], coarseI * ratio], [ids[1], coarseJ * ratio], [ids[2], fine - (coarseI + coarseJ) * ratio]]);
+      if (!tintCornerIndex.has(key)) { tintCornerIndex.set(key, tintCorners.length); tintCorners.push({ faces: [] }); }
+      return tintCornerIndex.get(key);
+    };
+    // The coarse faces of this one, numbered as the physics mesh's tints are drawn (up, then down, column by column).
+    for (let coarseI = 0; coarseI < coarse; coarseI++) for (let coarseJ = 0; coarseJ < coarse - coarseI; coarseJ++) {
+      tintCorners[tintCornerAt(coarseI, coarseJ)].faces.push(coarseFace); tintCorners[tintCornerAt(coarseI + 1, coarseJ)].faces.push(coarseFace); tintCorners[tintCornerAt(coarseI, coarseJ + 1)].faces.push(coarseFace);
+      coarseFace++;
+      if (coarseI + coarseJ <= coarse - 2) {
+        tintCorners[tintCornerAt(coarseI + 1, coarseJ)].faces.push(coarseFace); tintCorners[tintCornerAt(coarseI + 1, coarseJ + 1)].faces.push(coarseFace); tintCorners[tintCornerAt(coarseI, coarseJ + 1)].faces.push(coarseFace);
+        coarseFace++;
+      }
+    }
+    const cornerAt = (fineI, fineJ) => {
+      const fineK = fine - fineI - fineJ;
+      const key = keyOf([[ids[0], fineI], [ids[1], fineJ], [ids[2], fineK]]);
+      if (cornerIndex.has(key)) return cornerIndex.get(key);
+      direction.set(0, 0, 0);
+      for (const [id, weight] of [[ids[0], fineI], [ids[1], fineJ], [ids[2], fineK]]) {
+        const [x, y, z] = ICOSAHEDRON.corners[id];
+        direction.x += weight * x; direction.y += weight * y; direction.z += weight * z;
+      }
+      direction.normalize();
+      // The coarse face it lies in and its place there: the coarse lattice's (u, v), the face's corner at or under
+      // it, and whether it lies in that corner's upward face (its near half) or the downward one beyond.
+      const u = fineI / ratio, v = fineJ / ratio;
+      const coarseI = Math.min(Math.floor(u), coarse - 1), coarseJ = Math.min(Math.floor(v), coarse - 1 - coarseI);
+      const alongU = u - coarseI, alongV = v - coarseJ;
+      const blend = alongU + alongV <= 1 + 1e-9
+        ? [[tintCornerAt(coarseI, coarseJ), 1 - alongU - alongV], [tintCornerAt(coarseI + 1, coarseJ), alongU], [tintCornerAt(coarseI, coarseJ + 1), alongV]]
+        : [[tintCornerAt(coarseI + 1, coarseJ), 1 - alongV], [tintCornerAt(coarseI + 1, coarseJ + 1), alongU + alongV - 1], [tintCornerAt(coarseI, coarseJ + 1), 1 - alongU]];
+      const index = directions.length / 3;
+      cornerIndex.set(key, index);
+      directions.push(direction.x, direction.y, direction.z);
+      blends.push(blend);
+      return index;
+    };
+    for (let fineI = 0; fineI < fine; fineI++) for (let fineJ = 0; fineJ < fine - fineI; fineJ++) {
+      triangles.push(cornerAt(fineI, fineJ), cornerAt(fineI + 1, fineJ), cornerAt(fineI, fineJ + 1));
+      if (fineI + fineJ <= fine - 2) triangles.push(cornerAt(fineI + 1, fineJ), cornerAt(fineI + 1, fineJ + 1), cornerAt(fineI, fineJ + 1));
+    }
+  }
+  stoneLatticeMade = { directions: new Float64Array(directions), triangles, blends, tintCorners };
+  return stoneLatticeMade;
+}
+
 /**
  * Stone of unit nominal radius, flattened like a river stone: a sphere
  * pushed out and in by two noises (its lumps), squashed. Scale by the real
- * radius. The mesh is a list of separate triangles (the stone's shape and
- * contact are integrated over them) with its normals the smooth surface's,
- * found from the same function a little to either side of each vertex, so
- * it reads as worn stone rather than facets even at 30 cm; its colour is a
- * fine speckle over a faint tint for each face. The random draws (the squash,
- * then two for each face's tint) are the ones the faceted stone made, so a
- * seeded throw keeps its stone and its splash (tools/variety-probe.mjs).
- * A `flat` stone, picked for skipping (the header), takes the same draws,
- * squashed to SKIP_STONE.squash and its surface noise SKIP_STONE.surfaceNoise
- * as high. Another kind of stone (its definition's `look`, src/things.js) takes the same
- * draws, its squash from its own ranges ([y least, y spread, z least, z
- * spread], unless flat), its lumps `lumps` as high, and its colour
- * stoneColor's.
+ * radius. Two meshes of that one surface: the physics' (the geometry's
+ * `userData.physics`, a position attribute: src/rock.js physicsPositions),
+ * the 320 separate triangles the stone always had, its shape and contact
+ * integrated over them and its lowest point walked over them, so a seeded
+ * throw goes as it went;
+ * and the geometry itself, which is only drawn, the same surface cut nine
+ * times finer (stoneLattice), with its normals the smooth surface's own (its
+ * slope from the noises' gradients: surfacePointAndNormal), so it reads as
+ * worn stone rather than facets however close it is seen. Its
+ * colour is a faint mottle for each face of the physics mesh, blended smooth
+ * (stoneLattice's blends) over a base for its kind (stoneBase); its speckle
+ * or pattern and its relief are the fragment shader's (src/shaders/stone.js,
+ * the kind and `seed` in `userData.stone`). The random draws (the squash,
+ * then two for each face of the physics mesh, its faint tint) are the ones
+ * the faceted stone made, so a seeded throw keeps its stone and its splash
+ * (tools/variety-probe.mjs). A `flat` stone, picked for skipping (the
+ * header), takes the same draws, squashed to SKIP_STONE.squash and its
+ * surface noise SKIP_STONE.surfaceNoise as high. Another kind of stone (its
+ * definition's `look`, src/things.js) takes the same draws, its squash from
+ * its own ranges ([y least, y spread, z least, z spread], unless flat) and
+ * its lumps `lumps` as high.
  */
 export function createRockGeometry(seed = Math.random() * 1000, { flat = false, look = null } = {}) {
+  // The one geometry made (its id is drawn from Math.random, as the faceted stone's was): its faces the physics mesh's
+  // until the drawn mesh takes its place in it.
   const geometry = new THREE.IcosahedronGeometry(1, 3);
-  const positions = geometry.attributes.position;
+  const coarseCorners = geometry.attributes.position;
   const river = !look || look.pattern === 'river';
   const [flatLeast, flatSpread] = SKIP_STONE.squash;
   const squash = flat || river ? new THREE.Vector3(1.0, flat ? flatLeast + flatSpread * Math.random() : 0.62 + 0.2 * Math.random(), 0.8 + 0.2 * Math.random())
     : new THREE.Vector3(1.0, look.squash[0] + look.squash[1] * Math.random(), look.squash[2] + look.squash[3] * Math.random());
+  const lumps = flat ? SKIP_STONE.surfaceNoise : river ? 1 : look.lumps;
   const surfacePoint = (direction, out) => {
     const coarse = valueNoise3(direction.x * 1.6 + seed, direction.y * 1.6, direction.z * 1.6) - 0.5;
     const fine = valueNoise3(direction.x * 4.5 + seed, direction.y * 4.5 + 3.1, direction.z * 4.5) - 0.5;
@@ -205,63 +337,89 @@ export function createRockGeometry(seed = Math.random() * 1000, { flat = false, 
       : river ? 1 + 0.42 * coarse + 0.14 * fine : 1 + look.lumps * (0.42 * coarse + 0.14 * fine);
     return out.copy(direction).multiplyScalar(radialScale).multiply(squash);
   };
-  const tinted = new THREE.Color();
-  const normals = new Float32Array(positions.count * 3);
-  const colors = new Float32Array(positions.count * 3);
-  const direction = new THREE.Vector3(), tangent = new THREE.Vector3(), bitangent = new THREE.Vector3();
-  const point = new THREE.Vector3(), aside = new THREE.Vector3(), alongTangent = new THREE.Vector3(), alongBitangent = new THREE.Vector3();
-  const step = 0.01;
-  for (let face = 0; face < positions.count / 3; face++) {
-    const faceTint = 0.82 + 0.36 * Math.random();
-    const faceWarm = 0.96 + 0.08 * Math.random();
-    for (let corner = 0; corner < 3; corner++) {
-      const vertex = face * 3 + corner;
-      direction.fromBufferAttribute(positions, vertex).normalize();
-      surfacePoint(direction, point);
-      tangent.set(-direction.z, 0, direction.x);
-      if (tangent.lengthSq() < 1e-6) tangent.set(1, 0, 0);
-      tangent.normalize();
-      bitangent.crossVectors(direction, tangent);
-      surfacePoint(aside.copy(direction).addScaledVector(tangent, step).normalize(), alongTangent).sub(point);
-      surfacePoint(aside.copy(direction).addScaledVector(bitangent, step).normalize(), alongBitangent).sub(point);
-      const normal = aside.crossVectors(alongBitangent, alongTangent).normalize();
-      if (normal.dot(direction) < 0) normal.negate();
-      positions.setXYZ(vertex, point.x, point.y, point.z);
-      normals[vertex * 3] = normal.x; normals[vertex * 3 + 1] = normal.y; normals[vertex * 3 + 2] = normal.z;
-      if (!river) {
-        stoneColor(look.pattern, direction, point, seed, faceTint, tinted);
-        colors[vertex * 3] = tinted.r; colors[vertex * 3 + 1] = tinted.g; colors[vertex * 3 + 2] = tinted.b;
-        continue;
-      }
-      // A fine speckle of darker and lighter grains over the face's faint tint.
-      const speckle = 0.78 + 0.42 * valueNoise3(direction.x * 22 + seed, direction.y * 22, direction.z * 22 + 5.3);
-      const tint = 0.75 * speckle + 0.25 * faceTint;
+  // The surface and its normal at `direction` (the drawn mesh): the same point, and the slope of its radial scale over
+  // the sphere (the noises' gradients, the lumps' share of each), from which the surface's tangents along two
+  // directions across the sphere are t·scale + d·(slope·t), squashed, and the normal is across them, facing out.
+  const coarseSlope = new THREE.Vector3(), fineSlope = new THREE.Vector3(), slope = new THREE.Vector3();
+  const tangent = new THREE.Vector3(), bitangent = new THREE.Vector3(), alongTangent = new THREE.Vector3(), alongBitangent = new THREE.Vector3();
+  const surfacePointAndNormal = (direction, outPoint, outNormal) => {
+    const coarse = valueNoise3WithGradient(direction.x * 1.6 + seed, direction.y * 1.6, direction.z * 1.6, coarseSlope) - 0.5;
+    const fine = valueNoise3WithGradient(direction.x * 4.5 + seed, direction.y * 4.5 + 3.1, direction.z * 4.5, fineSlope) - 0.5;
+    const radialScale = 1 + lumps * (0.42 * coarse + 0.14 * fine);
+    slope.copy(coarseSlope).multiplyScalar(lumps * 0.42 * 1.6).addScaledVector(fineSlope, lumps * 0.14 * 4.5);
+    outPoint.copy(direction).multiplyScalar(radialScale).multiply(squash);
+    tangent.set(-direction.z, 0, direction.x);
+    if (tangent.lengthSq() < 1e-6) tangent.set(1, 0, 0);
+    tangent.normalize();
+    bitangent.crossVectors(direction, tangent);
+    alongTangent.copy(tangent).multiplyScalar(radialScale).addScaledVector(direction, slope.dot(tangent)).multiply(squash);
+    alongBitangent.copy(bitangent).multiplyScalar(radialScale).addScaledVector(direction, slope.dot(bitangent)).multiply(squash);
+    outNormal.crossVectors(alongBitangent, alongTangent).normalize();
+    if (outNormal.dot(direction) < 0) outNormal.negate();
+  };
+  // The faces' faint tints, drawn as they always were (two for each of the physics mesh's faces, in its order).
+  const faceCount = coarseCorners.count / 3;
+  const faceTints = new Float64Array(faceCount), faceWarmths = new Float64Array(faceCount);
+  for (let face = 0; face < faceCount; face++) {
+    faceTints[face] = 0.82 + 0.36 * Math.random();
+    faceWarmths[face] = 0.96 + 0.08 * Math.random();
+  }
+  const direction = new THREE.Vector3(), point = new THREE.Vector3();
+  // The physics mesh: the surface at its corners, exactly the arithmetic it always was.
+  const physics = new THREE.BufferAttribute(new Float32Array(coarseCorners.count * 3), 3);
+  for (let corner = 0; corner < coarseCorners.count; corner++) {
+    direction.fromBufferAttribute(coarseCorners, corner).normalize();
+    surfacePoint(direction, point);
+    physics.setXYZ(corner, point.x, point.y, point.z);
+  }
+  // The drawn mesh: the surface at the lattice's corners, its normals, and the tints blended over it.
+  const lattice = stoneLattice();
+  const cornerCount = lattice.directions.length / 3;
+  const tintAtCorner = new Float64Array(lattice.tintCorners.length), warmthAtCorner = new Float64Array(lattice.tintCorners.length);
+  lattice.tintCorners.forEach(({ faces }, index) => {
+    for (const face of faces) { tintAtCorner[index] += faceTints[face] / faces.length; warmthAtCorner[index] += faceWarmths[face] / faces.length; }
+  });
+  const positions = new Float32Array(cornerCount * 3), normals = new Float32Array(cornerCount * 3), colors = new Float32Array(cornerCount * 3);
+  const tinted = new THREE.Color(), normal = new THREE.Vector3();
+  for (let corner = 0; corner < cornerCount; corner++) {
+    direction.fromArray(lattice.directions, corner * 3);
+    surfacePointAndNormal(direction, point, normal);
+    positions[corner * 3] = point.x; positions[corner * 3 + 1] = point.y; positions[corner * 3 + 2] = point.z;
+    normals[corner * 3] = normal.x; normals[corner * 3 + 1] = normal.y; normals[corner * 3 + 2] = normal.z;
+    let faceTint = 0, faceWarm = 0;
+    for (const [tintCorner, weight] of lattice.blends[corner]) { faceTint += weight * tintAtCorner[tintCorner]; faceWarm += weight * warmthAtCorner[tintCorner]; }
+    if (river) {
+      // The faint tint over the speckle's mean (the speckle itself is the shader's), warmed a little.
+      const tint = 0.75 + 0.25 * faceTint;
       const warm = 0.75 + 0.25 * faceWarm;
-      colors[vertex * 3] = tint * (0.25 + warm); colors[vertex * 3 + 1] = tint; colors[vertex * 3 + 2] = tint * (1.75 - warm);
+      colors[corner * 3] = tint * (0.25 + warm); colors[corner * 3 + 1] = tint; colors[corner * 3 + 2] = tint * (1.75 - warm);
+    } else {
+      stoneBase(look.pattern, faceTint, tinted);
+      colors[corner * 3] = tinted.r; colors[corner * 3 + 1] = tinted.g; colors[corner * 3 + 2] = tinted.b;
     }
   }
+  geometry.deleteAttribute('uv');
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
   geometry.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
   geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  geometry.setIndex(lattice.triangles);
+  geometry.userData.physics = physics;
+  geometry.userData.stone = { pattern: river ? 'river' : look.pattern, seed };
   return geometry;
 }
 
 
 // ---- the balls ------------------------------------------------------------
 
-/** An icosphere of unit radius, indexed: each of the icosahedron's faces cut into four `subdivisions` times, the midpoints shared. */
+/**
+ * An icosphere of unit radius, indexed: each of the icosahedron's faces cut into four `subdivisions` times, the
+ * midpoints shared. Each cut keeps the corners it was given, in their places, and adds its midpoints after them, so the
+ * first 10·4^k + 2 vertices are the sphere cut k times, whose faces are `levels[k]`.
+ */
 function icosphere(subdivisions) {
-  const golden = (1 + Math.sqrt(5)) / 2;
-  const corners = [
-    [-1, golden, 0], [1, golden, 0], [-1, -golden, 0], [1, -golden, 0],
-    [0, -1, golden], [0, 1, golden], [0, -1, -golden], [0, 1, -golden],
-    [golden, 0, -1], [golden, 0, 1], [-golden, 0, -1], [-golden, 0, 1],
-  ];
-  const positions = [];
-  for (const [x, y, z] of corners) { const length = Math.hypot(x, y, z); positions.push(x / length, y / length, z / length); }
-  let faces = [
-    0, 11, 5, 0, 5, 1, 0, 1, 7, 0, 7, 10, 0, 10, 11, 1, 5, 9, 5, 11, 4, 11, 10, 2, 10, 7, 6, 7, 1, 8,
-    3, 9, 4, 3, 4, 2, 3, 2, 6, 3, 6, 8, 3, 8, 9, 4, 9, 5, 2, 4, 11, 6, 2, 10, 8, 6, 7, 9, 8, 1,
-  ];
+  const positions = ICOSAHEDRON.corners.flat();
+  let faces = ICOSAHEDRON.faces.slice();
+  const levels = [faces];
   for (let level = 0; level < subdivisions; level++) {
     const midpoints = new Map();
     const midpoint = (first, second) => {
@@ -283,8 +441,87 @@ function icosphere(subdivisions) {
       next.push(first, one, three, second, two, one, third, three, two, one, two, three);
     }
     faces = next;
+    levels.push(faces);
   }
-  return { positions: new Float32Array(positions), indices: faces };
+  return { positions: new Float32Array(positions), indices: faces, levels };
+}
+
+/** The most any two corners of `faces` lie apart (`positions` on the unit sphere), in radii. */
+function longestEdge(positions, faces) {
+  let longest = 0;
+  for (let face = 0; face < faces.length; face += 3) {
+    for (let side = 0; side < 3; side++) {
+      const from = faces[face + side] * 3, to = faces[face + (side + 1) % 3] * 3;
+      longest = Math.max(longest, Math.hypot(positions[from] - positions[to], positions[from + 1] - positions[to + 1], positions[from + 2] - positions[to + 2]));
+    }
+  }
+  return longest;
+}
+
+/**
+ * A ball's coarser meshes (createBallGeometry's `detail`), from its icosphere cut `levels` times (`unit`, its corners
+ * on the unit sphere, and `levels`, each cut's faces) and how far in it is pressed and its colour at each corner of the
+ * finest (`pressed`, `colors`). A coarser mesh's corners are the finer one's that the cut kept, so each takes the
+ * finer's paint about it, as a mipmap does a texture's: its own and its neighbours' in the finer mesh (the midpoints of
+ * its edges) at half its weight each, the paint over the patch it stands for rather than at a point of it, so a seam
+ * narrower than the coarser mesh's faces fades rather than flickering in and out as the ball turns. Coarsest first.
+ * A geometry draws its id from Math.random as it is made: theirs come from a stream of their own (ballIds), so a
+ * ball's first throw draws from Math.random no more than it did, and what a seeded run throws after it (a stone's
+ * lumps) is as it was.
+ */
+function ballDetail(unit, levels, pressed, colors) {
+  ballIds ??= seeded(1);
+  const native = Math.random;
+  Math.random = ballIds;
+  try { return ballDetailOf(unit, levels, pressed, colors); } finally { Math.random = native; }
+}
+
+/** ballDetail's meshes, their ids drawn from whatever Math.random is. */
+function ballDetailOf(unit, levels, pressed, colors) {
+  // How far apart each cut's corners lie: the sphere's, whatever its paint, so worked out once.
+  ballSpacings ??= levels.map((faces) => longestEdge(unit, faces));
+  const coarser = [];
+  for (let level = levels.length - 2; level >= COARSEST_BALL; level--) {
+    const count = 10 * 4 ** level + 2;
+    const sums = new Float64Array(count * 4), weights = new Float64Array(count);
+    for (let corner = 0; corner < count; corner++) {
+      sums[corner * 4] = pressed[corner];
+      for (let channel = 0; channel < 3; channel++) sums[corner * 4 + 1 + channel] = colors[corner * 3 + channel];
+      weights[corner] = 1;
+    }
+    // Each edge of the finer mesh lies in two of its faces: each neighbour is met twice, a quarter each time.
+    const faces = levels[level + 1];
+    const takeFrom = (corner, neighbour) => {
+      sums[corner * 4] += 0.25 * pressed[neighbour];
+      for (let channel = 0; channel < 3; channel++) sums[corner * 4 + 1 + channel] += 0.25 * colors[neighbour * 3 + channel];
+      weights[corner] += 0.25;
+    };
+    for (let face = 0; face < faces.length; face += 3) {
+      for (let side = 0; side < 3; side++) {
+        const from = faces[face + side], to = faces[face + (side + 1) % 3];
+        if (from < count) takeFrom(from, to);
+        if (to < count) takeFrom(to, from);
+      }
+    }
+    pressed = new Float32Array(count);
+    colors = new Float32Array(count * 3);
+    const positions = new Float32Array(count * 3);
+    for (let corner = 0; corner < count; corner++) {
+      pressed[corner] = sums[corner * 4] / weights[corner];
+      for (let axis = 0; axis < 3; axis++) {
+        colors[corner * 3 + axis] = sums[corner * 4 + 1 + axis] / weights[corner];
+        positions[corner * 3 + axis] = unit[corner * 3 + axis] * (1 - pressed[corner]);
+      }
+    }
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    geometry.setIndex(levels[level]);
+    geometry.computeVertexNormals();
+    geometry.computeBoundingSphere();
+    coarser.unshift({ geometry, spacing: ballSpacings[level] });
+  }
+  return { coarser, spacing: ballSpacings[levels.length - 1] };
 }
 
 const smoothstep = (edge0, edge1, value) => { const t = Math.min(Math.max((value - edge0) / (edge1 - edge0), 0), 1); return t * t * (3 - 2 * t); };
@@ -306,6 +543,9 @@ const BOWLING = {
 
 let tennisSeam = null;   // the seam's points, once
 let golfDimples = null;  // the dimples' centres, once
+let ballSphere = null;   // a ball's icosphere, unpainted, once: its corners only read, each paint pressing a copy of them
+let ballSpacings = null; // how far apart the corners of each cut of a ball's icosphere lie, once (ballDetail)
+let ballIds = null;      // the stream the coarser meshes' ids are drawn from (ballDetail), one for them all so no two share one
 
 /** Paint one vertex of a ball (unit direction x, y, z): how far in (in R) it is pressed, and its colour into `color`. */
 function paintBall(paint, x, y, z, color, shells) {
@@ -399,13 +639,16 @@ export function createBallGeometry(definition, random = Math.random) {
       }
       golfDimples = new Float32Array([...points.values()].flat());
     }
-    const { positions, indices } = icosphere(SUBDIVISIONS);
+    ballSphere ??= icosphere(SUBDIVISIONS);
+    const { positions: unit, indices, levels } = ballSphere;
+    const positions = unit.slice();
     const colors = new Float32Array(positions.length);
+    const pressedAt = new Float32Array(positions.length / 3);
     const color = new THREE.Color();
     const shells = paint === 'bowling' ? BOWLING.shells[shellIndex] : paint === 'plain' ? [linear(...plain)] : null;
     for (let vertex = 0; vertex < positions.length; vertex += 3) {
       const x = positions[vertex], y = positions[vertex + 1], z = positions[vertex + 2];
-      const pressed = paintBall(paint, x, y, z, color, shells);
+      const pressed = pressedAt[vertex / 3] = paintBall(paint, x, y, z, color, shells);
       positions[vertex] = x * (1 - pressed); positions[vertex + 1] = y * (1 - pressed); positions[vertex + 2] = z * (1 - pressed);
       colors[vertex] = color.r; colors[vertex + 1] = color.g; colors[vertex + 2] = color.b;
     }
@@ -414,6 +657,8 @@ export function createBallGeometry(definition, random = Math.random) {
     geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
     geometry.setIndex(indices);
     geometry.computeVertexNormals();
+    // Its coarser meshes, shared by every one thrown (a clone shares its userData): only its own is disposed with it.
+    geometry.userData.detail = ballDetail(unit, levels, pressedAt, colors);
     ballCache.set(key, geometry);
   }
   return ballCache.get(key).clone();
@@ -422,43 +667,20 @@ export function createBallGeometry(definition, random = Math.random) {
 // ---- the stones' looks ----------------------------------------------------
 
 /**
- * A stone's colour at a vertex (createRockGeometry, src/rock.js) for a kind
- * other than the river stone's: `direction` the unit direction from its
- * centre, `point` the vertex (squashed), `seed` its noise's, `tint` the face's
- * faint tint (about 1), into `out` as linear values about 1 (the material's
- * colour multiplies them).
+ * A stone's base colour at a corner (createRockGeometry) for a kind other
+ * than the river stone's: `tint` the corner's faint tint (about 1), into
+ * `out` as linear values about 1 (the material's colour multiplies them, and
+ * the kind's pattern, src/shaders/stone.js, pixel by pixel). Warmed as a
+ * river stone's speckle is, or the sky's light leaves it blue.
  */
-export function stoneColor(kind, direction, point, seed, tint, out) {
-  stonePattern(kind, direction, point, seed, tint, out);
-  // Warmed as a river stone's speckle is (src/rock.js), or the sky's light leaves it blue.
+function stoneBase(kind, tint, out) {
+  if (kind === 'granite') out.setRGB(1.0, 0.96, 0.94).multiplyScalar(0.85 + 0.15 * tint);   // a pinkish feldspar: the shader lays its mica and quartz in it
+  else if (kind === 'pumice') out.setScalar(0.92 + 0.1 * tint);
+  else out.setScalar(0.9 + 0.1 * tint);   // slate, basalt
   return out.multiply(STONE_WARMTH[kind]);
 }
 // Each kind's warmth: its vertex colours' red, green and blue against grey (a river stone's is about 1.25, 1, 0.75).
 const STONE_WARMTH = { slate: new THREE.Color(1.05, 1, 0.92), granite: new THREE.Color(1.25, 1, 0.8), basalt: new THREE.Color(1.1, 1, 0.9), pumice: new THREE.Color(1.25, 1.05, 0.72) };
-
-function stonePattern(kind, direction, point, seed, tint, out) {
-  const grain = (scale, offset) => valueNoise3(direction.x * scale + seed + offset, direction.y * scale + offset, direction.z * scale + 2 * offset);
-  if (kind === 'slate') {
-    // Layers across its thickness (the short axis, y), a little wavy, and a faint grain.
-    const layers = 0.88 + 0.2 * Math.sin(point.y * 45 + 4 * grain(3, 1)) + 0.1 * (grain(25, 2) - 0.5);
-    return out.setScalar(layers * (0.9 + 0.1 * tint));
-  }
-  if (kind === 'granite') {
-    // Black mica and white quartz in a pinkish feldspar.
-    const mica = smoothstep(0.66, 0.72, grain(18, 3));
-    const quartz = smoothstep(0.68, 0.74, grain(15, 7));
-    out.setRGB(1.0, 0.96, 0.94).multiplyScalar(0.85 + 0.15 * tint);
-    out.lerp(new THREE.Color(1.12, 1.1, 1.08), 0.7 * quartz);
-    return out.lerp(new THREE.Color(0.22, 0.2, 0.2), 0.85 * mica);
-  }
-  if (kind === 'basalt') {
-    const speckle = 0.85 + 0.3 * grain(30, 4);
-    return out.setScalar(speckle * (0.9 + 0.1 * tint));
-  }
-  // Pumice: pale, its pits (the bubbles) dark.
-  const pit = smoothstep(0.6, 0.7, grain(14, 5)) + 0.6 * smoothstep(0.62, 0.72, grain(32, 6));
-  return out.setScalar((0.92 + 0.1 * tint) * (1 - 0.45 * Math.min(pit, 1)));
-}
 
 // ---- the gems --------------------------------------------------------------
 

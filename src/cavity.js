@@ -83,8 +83,18 @@
 // which the splash starts at the pinch, at closurePoint()), and bowlVolume the
 // water that fills the bowl, a share of which the jet carries. After the pinch
 // the funnel also turns onto the jet's axis and its centre moves to the
-// closure over RECENTRE·sqrt(R/g); below the pinch the bubble that rides down
-// with the stone is no longer drawn.
+// closure over RECENTRE·sqrt(R/g), a few frames, not one (the jet's needle
+// clears the water in the first fifth of the turn, from the foot of the
+// still-sheared wall, deep in the dark; its body follows once the funnel
+// has mostly turned); below the pinch the bubble that rides down with the
+// stone is no longer drawn. Over the same turn the bowl comes to ride the
+// water's surface whole, as its lip always does (aCavity, below), and the
+// pond's ring (src/rings.js NEAR_FIELD), hidden under the hole while it is
+// deep, is let through at the mouth as the bowl fills: so the dish, its lip
+// and the water around it sink together into the ring's first trough, 2.5
+// cm deep at the mouth 0.25 s after the reference throw's entry, as the
+// reference simulation's rim does, and the hole's end is that trough, not
+// still water that the trough is then dug out of.
 //
 // Seals (`seal`, chosen per throw by the splash). The deep seal above is the
 // default (pinch PINCH_TIME, head SURFACE_HEAD, `bowl` and `mouth` 1); the
@@ -159,8 +169,13 @@
 // floor of a bowl flattening into the surface shades as the flat water it
 // is becoming, and the hole fades out rather than vanishing in the frame it
 // is gone. aCavity carries per vertex how far it rides the surface (1 on
-// the lip, which sits on the splash's height field and the wind's waves
-// like the surface it joins; 0 down the wall below RIDE_DEPTH·R), how open
+// the lip, which sits on the splash's height field, the wind's waves and
+// the rings like the surface it joins; 0 down the wall below RIDE_DEPTH·R
+// while the stone is in the hole, and 1 everywhere once the funnel has
+// turned onto the jet's axis, so the bowl is a dish in the surface, riding
+// its waves whole: a dish deeper than RIDE_DEPTH·R, left to ride by depth,
+// would fold where the ring's trough under it is deeper than its rows are
+// apart), how open
 // to the sky it is (1 / (1 + (depth / (OCCLUSION_DEPTH·mouth))²): the
 // occlusion that darkens the hole towards its bottom) and how steeply a ray
 // must climb to leave through the mouth (half the depth over the mouth's
@@ -177,7 +192,12 @@
 // widest azimuth, plus PUSH_MARGIN of the water's cells, more than the
 // diagonal of one) that the
 // well holds the whole cavity, so it hides behind the walls; the lip's apron
-// reaches COVER_MARGIN cells past the circle to cover where it dips. The hole
+// reaches COVER_MARGIN cells past the circle to cover where it dips. The
+// well's vertices keep riding the surface's height where they came from
+// (src/shaders/scene.js CAVITY_PUSH), as the mesh over them rides it, so a
+// ring's trough under the hole lowers the well with the dish, and the
+// clearance is only for what the two read apart, a few millimetres over
+// the shift. The hole
 // is drawn no deeper than DRAWN_DEPTH·R: the camera looks in at 15 to 25°
 // from the horizon and sees no more than one or two radii down, and the
 // floor drawn there shows what is below it (the stone) through it, as the
@@ -228,7 +248,7 @@ const BOWL_DECAY = 0.284;          //   S this, τb BOWL_DECAY and τn NECK_DECA
 const NECK_DECAY = 0.01;           //   zips up at once, the bowl above it fills more slowly...
 const BOWL_LAST = 1.5;             // ...a slice above the floor's reach closes at this τ at the latest...
 const FLATTEN = [0.5, 1.0];        // ...and from the first τ to the second the bowl flattens into the surface, and is gone
-const RECENTRE = 0.3;              // in sqrt(R/g): after the pinch the funnel turns onto the jet's axis over this long
+const RECENTRE = 1.0;              // in sqrt(R/g): after the pinch the funnel turns onto the jet's axis, and comes to ride the surface whole, over this long (0.3 was one frame: the hole snapped from a sheared tunnel to a dish)
 const BOWL_STEP = 1 / 12;          // in R: the bowl's volume is summed over slabs this thick
 const ELONGATION = 0.35;           // an oblique hole is this much longer along the throw, times the horizontal fraction
 const MODULATION_LEAST = 0.55;     // the wall's radius around the axis, against the round hole's, at least...
@@ -238,7 +258,7 @@ const LIP_HEIGHT = 0.12;           // in mouth radii...
 const LIP_SETTLE = 0.6;            // ...settling by this fraction from when the mouth is widest (1·sqrt(R/g)) to the pinch
 const LIP_WIDTH = 0.1;             // in mouth radii: from the mouth to the crest
 const LIP_FALL = 1.0;              // in R: from the crest down to the surface
-const RIDE_DEPTH = 0.4;            // in R: the wall stops riding the surface's waves this far down
+const RIDE_DEPTH = 0.4;            // in R: the wall stops riding the surface's waves this far down, until the funnel has turned (then the whole bowl rides)
 // The mesh.
 const COLUMNS = 64;
 const CAP_ROWS = 3;
@@ -1040,7 +1060,8 @@ export class Cavity {
     for (let rowIndex = 0; rowIndex < ROWS; rowIndex++) {
       const rowY = this.rowY[rowIndex];
       const depth = Math.max(-rowY, 0);
-      const ride = 1 - smoothstep(0, rideDepth, depth);
+      // The lip and the top of the wall ride the surface; once the funnel has turned (collapse) the whole bowl does.
+      const ride = Math.max(1 - smoothstep(0, rideDepth, depth), collapse);
       const relativeDepth = depth / darkestMouth;
       const occluded = relativeDepth / OCCLUSION_DEPTH;
       const openness = 1 / (1 + occluded * occluded);

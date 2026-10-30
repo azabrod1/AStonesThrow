@@ -67,7 +67,7 @@ import { WATER_VERTEX, WATER_FRAGMENT, WATER_UNDER_FRAGMENT } from './shaders/sc
 
 // The floor's uniforms the surface seen from below shares (setBed): its march to the bed (LAKE_BED, every uniform it
 // declares; tools/garden-probe.mjs checks) and the bed's pattern.
-export const BED_UNIFORMS = ['uShore', 'uLand', 'uBank', 'uKoiPond', 'uPattern'];
+export const BED_UNIFORMS = ['uShore', 'uLand', 'uBank', 'uKoiPond', 'uPattern', 'uBedTint'];
 
 export const OUTER_HALF_SIZE = 9000;
 const OUTER_GROWTH = 1.25;   // each of the outer sheet's square rings this many times the last's half size...

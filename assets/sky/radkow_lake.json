@@ -1,0 +1,30 @@
+{
+  "source": "radkow_lake_2k.hdr",
+  "width": 2048,
+  "height": 1024,
+  "sun": {
+    "elevation": 38.13,
+    "azimuth": 216.04,
+    "direction": [
+      0.63599,
+      0.61751,
+      0.46283
+    ],
+    "pixels": 12
+  },
+  "sunIrradiance": [
+    6.0996,
+    6.8423,
+    7.8313
+  ],
+  "skyRadiance": [
+    0.25789,
+    0.35148,
+    0.54032
+  ],
+  "horizonRadiance": {
+    "median": 0.07833,
+    "p90": 0.44215
+  },
+  "maxLuminance": 108670
+}
