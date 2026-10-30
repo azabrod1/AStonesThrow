@@ -63,6 +63,7 @@
 // with a texture (the pizza's) has its own program, which src/main.js warmUp
 // draws, and every other kind shares the stone's.
 import * as THREE from 'three';
+import { withRandom } from './withRandom.js';
 
 /** An sRGB colour (0 to 255) in the linear values vertex colours take. */
 export function linear(red, green, blue) { return new THREE.Color().setRGB(red / 255, green / 255, blue / 255, THREE.SRGBColorSpace); }
@@ -471,9 +472,7 @@ function longestEdge(positions, faces) {
  */
 function ballDetail(unit, levels, pressed, colors) {
   ballIds ??= seeded(1);
-  const native = Math.random;
-  Math.random = ballIds;
-  try { return ballDetailOf(unit, levels, pressed, colors); } finally { Math.random = native; }
+  return withRandom(ballIds, () => ballDetailOf(unit, levels, pressed, colors));
 }
 
 /** ballDetail's meshes, their ids drawn from whatever Math.random is. */

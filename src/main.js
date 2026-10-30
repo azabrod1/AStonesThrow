@@ -324,6 +324,7 @@ import { IceCracks } from './iceCracks.js';
 import { FishPopulation, edibleBites, fishSee, FISH_STILL, FISH_STEP } from './fish.js';
 import { createFishView } from './fishMeshes.js';
 import { createKoiGarden, koiGround, holdInGarden, keepInPond, keepOutOfGarden } from './koiGarden.js';
+import { withRandom, parkMiller } from './withRandom.js';
 
 // Quality presets. The splash lives in a few dozen pixels, so the fluid
 // buffer's resolution is what it is made of: a drop narrower than a buffer
@@ -1088,10 +1089,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   function nextDressing() { return crypto.getRandomValues(new Uint32Array(1))[0]; }
   /** `build` run with Math.random a seeded stream from PREVIEW.seed (Park–Miller), Math.random itself put back after. */
   function previewRandom(build) {
-    const random = Math.random;
-    let state = PREVIEW.seed;
-    Math.random = () => { state = (state * 16807) % 2147483647; return (state - 1) / 2147483646; };
-    try { return build(); } finally { Math.random = random; }
+    return withRandom(parkMiller(PREVIEW.seed), build);
   }
   function disposePreview() {
     if (!preview.mesh) return;
@@ -3068,13 +3066,17 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   function warmUp() {
     const started = performance.now();
     const programsBefore = renderer.info.programs?.length ?? 0;
-    // Frozen at the start (WARM_UP): the throws below go into open water first, so the crown's programs are built too;
-    // the ice comes back after its own break.
+    // Frozen at the start (WARM_UP): its throws (warmUpScene) go into open water first, so the crown's programs are built
+    // too; the ice comes back after its own break.
     const chosenIce = iceName;
     if (chosenIce !== 'none') iceForWarmUp('none');
-    const random = Math.random;
-    let state = WARM_UP.seed;
-    Math.random = () => { state = (state * 16807) % 2147483647; return (state - 1) / 2147483646; };
+    // Its throws seeded (Park–Miller, WARM_UP.seed), Math.random put back after (src/withRandom.js).
+    withRandom(parkMiller(WARM_UP.seed), () => warmUpScene(chosenIce));
+    warmUpReport.programs = (renderer.info.programs?.length ?? 0) - programsBefore;
+    warmUpReport.milliseconds = performance.now() - started;
+  }
+  /** What warmUp throws and draws to build the programs, ending on the ice `chosenIce` the page was asked for. */
+  function warmUpScene(chosenIce) {
     marker.visible = arc.visible = true;   // the aim marker's programs too
     rain.show(Boolean(WEATHERS[weatherName].rain));   // only selected rain needs these programs now
     const galeWarmUp = galeWaves.on ? galeWaves.warmUp() : null;   // only a selected gale needs these passes now
@@ -3160,9 +3162,6 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       clearPond();
       applyIce(chosenIce);
     }
-    Math.random = random;
-    warmUpReport.programs = (renderer.info.programs?.length ?? 0) - programsBefore;
-    warmUpReport.milliseconds = performance.now() - started;
   }
   if (skyOutcome?.error) await awaitSky();   // a sky failed already: no warm-up for nothing
   onProgress?.('Preparing the water…');

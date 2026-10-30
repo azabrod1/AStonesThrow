@@ -35,6 +35,7 @@ import { floorDepthAt } from './pondFloor.js';
 import { stoneDetail, stoneUniforms } from './shaders/stone.js';
 import { SEEN_THROUGH_WATER } from './shaders/scene.js';
 import { seededRandom } from './spray.js';
+import { withRandom } from './withRandom.js';
 
 /** Each sky's boulders: where (x, z), the stone's radius (m) and its own seed. */
 export const BOULDERS = {
@@ -98,10 +99,7 @@ export class Boulders {
 
   /** A granite's mesh from its own stream: createRockGeometry's draws come from it while it builds, never Math.random. */
   build(seed, look) {
-    const stream = seededRandom(seed, 1);
-    const native = Math.random;
-    Math.random = stream;
-    try { return createRockGeometry(seed, { look }); } finally { Math.random = native; }
+    return withRandom(seededRandom(seed, 1), () => createRockGeometry(seed, { look }));
   }
 
   material(side, { color, look, envTexture, waterFog, stone, grain }) {

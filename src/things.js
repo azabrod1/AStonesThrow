@@ -172,6 +172,7 @@
 // its kind and seed, uniforms too, no kind for anything else), so no thing
 // compiles a program of its own (src/main.js warmUp).
 import { meshKind, unitVolume, unitLength } from './thingMeshes.js';
+import { withRandom } from './withRandom.js';
 
 export const WATER_DENSITY = 1000;
 export const STONE_DENSITY = 2600;   // a river stone's: the splash and the cavity were fitted to it (tools/basilisk)
@@ -448,17 +449,14 @@ function tryThing(thing, build) {
     if (build) {
       // Built once, its random draws (a stone's lumps) from a still stream, so that a seeded throw after it is unchanged.
       const mesh = meshKind(thing.look.mesh);
-      const random = Math.random;
-      Math.random = () => 0.5;
-      try {
+      const count = withRandom(() => 0.5, () => {
         const geometry = mesh.build(thing, {});
         mesh.color(thing);
-        const count = geometry?.attributes?.position?.count ?? 0;
+        const corners = geometry?.attributes?.position?.count ?? 0;
         geometry?.dispose?.();
-        if (count === 0) return 'its mesh is empty';
-      } finally {
-        Math.random = random;
-      }
+        return corners;
+      });
+      if (count === 0) return 'its mesh is empty';
     }
     return null;
   } catch (error) {

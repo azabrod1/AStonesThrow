@@ -345,6 +345,7 @@ import { stoneDetail, stoneUniforms } from './shaders/stone.js';
 import { convexHull, insidePolygon, polygonEdgeDistance } from './ice.js';
 import { receiveIceShadows } from './iceShadow.js';
 import { passBy, forgetPasses } from './collide.js';
+import { withRandom } from './withRandom.js';
 
 // The stone's geometry is src/thingMeshes.js's now; the probes take it from here as they always did.
 export { createRockGeometry } from './thingMeshes.js';
@@ -1715,9 +1716,7 @@ export class Rock {
    */
   prepareMirror() {
     if (this.meshMirror) return this.meshMirror;
-    const random = Math.random;
-    Math.random = MIRROR_IDS;
-    try { this.meshMirror = this.makeMirror(); } finally { Math.random = random; }
+    this.meshMirror = withRandom(MIRROR_IDS, () => this.makeMirror());
     const above = this.meshAbove, mirror = this.meshMirror;
     mirror.scale.copy(above.scale);
     // Culled by the mirror's camera, unlike its other meshes: it does not ride the water (a floater's, made with it, does),

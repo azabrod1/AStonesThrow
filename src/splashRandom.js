@@ -8,6 +8,7 @@
 // Each impact reseeds it from its throw's own seed (Splash.impact), so a
 // seeded throw's splash plays as it did, frame for frame.
 import { seededRandom } from './spray.js';
+import { withRandom } from './withRandom.js';
 
 const FIRST_SEED = 0x5b1a5;
 let stream = seededRandom(FIRST_SEED);
@@ -28,11 +29,5 @@ export function reseedSplashRandom(...values) {
  * landing drop's crown, its sheet and mesh) is made when a frame reaches it.
  */
 export function asSplash(work) {
-  const random = Math.random;
-  Math.random = splashRandom;
-  try {
-    return work();
-  } finally {
-    Math.random = random;
-  }
+  return withRandom(splashRandom, work);
 }
