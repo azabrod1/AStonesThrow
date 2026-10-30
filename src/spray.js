@@ -38,11 +38,25 @@
 // nothing read back, and slow motion, pause and a seeded throw need nothing
 // of their own. Nothing is drawn once every sprite has landed.
 //
-// A sprite stands for `weight` like drops (1 to tens: a rock's mist is
+// A sprite stands for `weight` like drops (1 to hundreds: a rock's mist is
 // millions of drops, which no phone draws one by one). The fragments carry
 // a sprite's coverage, water and glints times its weight; a puff of more
-// than one is drawn as a disc its drops cover PUFF_COVER of (fluid.js), a
-// fixed size in the world, and as mist: it writes no depth. How many sprites
+// than one is drawn as mist (it writes no depth) over a soft disc, its
+// drops' cover and water falling off as (1 − ρ²)² from its centre and
+// summing to theirs (puffKernel, fluid.js), so no puff has an edge. At its
+// birth the disc is one its drops cover PUFF_COVER of; then it grows as its
+// drops spread about it, kicked apart at its burst's `kick` and slowed by
+// the same drag as their flight (the closed form again: PUFF_SPREAD of the
+// kick times τ·(1 − e^(−t/τ)) in each phase, at most PUFF_MOST_SPREAD, a
+// bound on the fill a puff costs), so a puff thins into the veil its
+// neighbours make and its light stays. A sprite of a few drops is one of
+// them, a sample, and spreads hardly at all (the share
+// 1 − e^(−(weight − 1) / PUFF_BLUR_DROPS)): High's mist keeps its sparkle,
+// Low's heavy sprites blur. Its glints go the same way: that share of them
+// spread over the disc, the rest a point, one drop's sparkle as any drop's,
+// at a place of the puff's own (hashed from its birth), never its centre:
+// every puff's glints at its centre made each a disc with a dot in it, a
+// field of bubbles, in a zoomed view. How many sprites
 // a burst writes is its drops times the density, DENSITY·(R / 3 cm)^−1.4 of
 // the preset's share (setBudget) times (r / DENSITY_RADIUS)² for its drops'
 // mean radius r, at most 1, so a bigger stone and a lower preset draw fewer,
@@ -79,7 +93,7 @@
 import * as THREE from 'three';
 
 export const SPRAY_CAPACITY = 65536;
-export const SPRAY_STRIDE = 15;          // floats a slot: origin and birth, launch and life, radius, weight, τ1, t1, τ2 and the wind's drift at birth (x, z)
+export const SPRAY_STRIDE = 16;          // floats a slot: origin and birth, launch and life, radius, weight, τ1, t1, τ2, the wind's drift at birth (x, z) and the burst's kick
 const STRIDE = SPRAY_STRIDE;
 const GRAVITY = 9.81;
 export const SPRAY_LEAST_RADIUS = 0.00005;
@@ -339,6 +353,7 @@ export class SpraySystem {
     this.dirtyCount = 0;
     this.windX = 0;               // the drift a drop born now is blown to (m/s; setWind), which it keeps
     this.windZ = 0;
+    this.kick = 0;                // the kick of the burst being written (m/s): how fast a puff's drops spread about it
     this.box = new THREE.Box3();  // round every flight since the ring started over
     this.direction = [0, 0, 0];   // burst's scratch
     this.flight = { fastTau: 0, fastTime: 0, slowTau: 0 };   // write's
@@ -355,7 +370,7 @@ export class SpraySystem {
     geometry.setAttribute('aOrigin', new THREE.InterleavedBufferAttribute(this.buffer, 4, 0));
     geometry.setAttribute('aLaunch', new THREE.InterleavedBufferAttribute(this.buffer, 4, 4));
     geometry.setAttribute('aDrop', new THREE.InterleavedBufferAttribute(this.buffer, 4, 8));
-    geometry.setAttribute('aSlow', new THREE.InterleavedBufferAttribute(this.buffer, 3, 12));
+    geometry.setAttribute('aSlow', new THREE.InterleavedBufferAttribute(this.buffer, 4, 12));
     geometry.instanceCount = 0;
     this.geometry = geometry;
     this.uniforms = { uTime: { value: 0 } };
@@ -433,6 +448,7 @@ export class SpraySystem {
     const sprites = Math.floor(wanted) + (random() < wanted - Math.floor(wanted) ? 1 : 0);
     const weight = 1 / density;
     const direction = this.direction;
+    this.kick = kick;
     for (let sprite = 0; sprite < sprites; sprite++) {
       // Gamma of order 4 about the mean, from its quantiles.
       const place = random() * (GAMMA_TABLE_SIZE - 1), index = place | 0;
@@ -452,7 +468,7 @@ export class SpraySystem {
     return sprites;
   }
 
-  /** One sprite: a drop (or `weight` like drops) of `radius` at (x, y, z) moving at (vx, vy, vz), born at `time`. */
+  /** One sprite: a drop (or `weight` like drops, spreading at this.kick) of `radius` at (x, y, z) moving at (vx, vy, vz), born at `time`. */
   write(x, y, z, vx, vy, vz, radius, weight, time) {
     const flight = sprayFlight(radius, Math.sqrt(vx * vx + vy * vy + vz * vz), this.flight);
     const life = landingBound(y, vy, flight);
@@ -468,7 +484,7 @@ export class SpraySystem {
     data[base] = x; data[base + 1] = y; data[base + 2] = z; data[base + 3] = time;
     data[base + 4] = vx; data[base + 5] = vy; data[base + 6] = vz; data[base + 7] = life;
     data[base + 8] = radius; data[base + 9] = weight; data[base + 10] = flight.fastTau; data[base + 11] = flight.fastTime; data[base + 12] = flight.slowTau;
-    data[base + 13] = this.windX; data[base + 14] = this.windZ;
+    data[base + 13] = this.windX; data[base + 14] = this.windZ; data[base + 15] = this.kick;
     this.lastDeath = Math.max(this.lastDeath, time + life);
     if (radius >= MIRROR_SPRAY_RADIUS) this.mirrorDeath = Math.max(this.mirrorDeath, time + life);
     // Its flight's box: no further out than the wind's drift for its life and its launch's reach against it in each phase, no higher than its apex.

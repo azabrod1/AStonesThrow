@@ -811,9 +811,11 @@ spray sprite is written once and flies a closed form of its age in the
 vertex shader (two phases of linear drag, fitted to Schiller and Naumann's
 drag on a sphere within 4% at the median), through the same passes as the
 drops, so it costs a uniform and a draw a pass and nothing stepped; a
-sprite stands for one to several hundred like drops, drawn as a soft puff,
-so Medium and Low draw fewer, heavier sprites and the same mist, and a
-throttle keeps any throw within the ring's sprites. Seen from the shore it is
+sprite stands for one to several hundred like drops, drawn as a soft puff
+with no edge and no glint of its own, their light spread over it, which
+grows as its drops spread apart in flight and thins into the veil its
+neighbours make, so Medium and Low draw fewer, heavier sprites and the same
+mist, and a throttle keeps any throw within the ring's sprites. Seen from the shore it is
 the white veil round a big stone's crown and jet, and a sparkle against the
 sun. The water mirrors the splash:
 while it lives, its sheets, columns, drops and spray are drawn as cheap water into
