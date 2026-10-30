@@ -71,6 +71,9 @@
     --line: rgba(238, 243, 244, 0.16);
     --accent: #f1c77a;
     --accent-ink: #2a1d05;
+    --ink: #0d1c22;                       /* the dark on light: the dropdown's bar of the chosen thing, its tips */
+    --ink-muted: rgba(13, 28, 34, 0.68);
+    --accent-deep: #a8730f;               /* the accent on light (3.4:1 on --fg) */
     --font-display: 'Fraunces', 'Iowan Old Style', Georgia, serif;
     --font-ui: 'Instrument Sans', 'Helvetica Neue', Arial, system-ui, sans-serif;
     color-scheme: dark;
@@ -367,8 +370,8 @@
   .reset-view:hover { background: var(--panel-strong); }
   /* The dropdown of things (src/thingMenu.js): a box from under the settings
      button down to the strip's top (--strip-height), its card at the box's
-     foot in the settings' glass: a row of tabs ending in an ⓘ into What to
-     throw, over the shown tab's pills. */
+     foot in the settings' glass: a row of tabs over the shown tab's pills,
+     and at its foot the chosen thing in a light bar. */
   .thing-menu {
     position: fixed;
     top: calc(env(safe-area-inset-top, 0px) + 62px);
@@ -401,7 +404,7 @@
     -webkit-tap-highlight-color: transparent;
   }
   /* The tabs: a row under the card's top edge, the shown one lit and underlined in the accent; one row that
-     scrolls sideways where they do not fit, the ⓘ held at its end. */
+     scrolls sideways where they do not fit. */
   .thing-menu-top {
     flex: none;
     display: flex;
@@ -477,42 +480,63 @@
   .thing-pill img { width: 32px; height: 24px; flex: none; border-radius: 999px; object-fit: cover; }
   /* Favourites with none yet: where to make one, in the middle of the room the largest group leaves. */
   .thing-menu-panels > [data-tab="favourites"] { display: flex; flex-direction: column; }
-  .thing-menu-empty { margin: auto; display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 6px 8px; max-width: 300px; color: var(--muted); font-size: 13px; line-height: 1.4; text-align: center; }
+  .thing-menu-empty { margin: auto; display: flex; flex-direction: column; align-items: center; padding: 6px 8px; max-width: 300px; color: var(--muted); font-size: 13px; line-height: 1.4; text-align: center; }
   .thing-menu-empty p { margin: 0; }
   .thing-menu-empty b { color: var(--fg); font-weight: 600; }
-  .thing-menu-empty svg { fill: none; stroke: var(--accent); stroke-width: 1.6; stroke-linejoin: round; }
-  .thing-menu-empty p svg { width: 12px; height: 12px; vertical-align: -1px; }
-  .thing-menu-empty button {
-    appearance: none;
-    min-height: 32px;
-    padding: 0 14px;
-    border: 1px solid var(--line);
-    border-radius: 999px;
-    background: none;
-    color: var(--fg);
-    font: inherit;
-    font-size: 13px;
-    cursor: pointer;
+  /* The chosen thing at the card's foot, inverted (dark on light, so it stands apart from the pills): its picture,
+     name and size, a star (its gold deepened to read on the light) and the ⓘ into What to throw. Held at the foot
+     where the panels scroll. */
+  .thing-menu-now {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 6px 6px;
+    padding: 2px 2px 2px 4px;
+    border-radius: 12px;
+    background: var(--fg);
+    color: var(--ink);
   }
-  .thing-menu-empty button:hover { background: rgba(238, 243, 244, 0.08); }
-  /* The ⓘ at the tab row's end: What to throw, on the chosen thing. */
-  .thing-menu-more {
+  .thing-menu-now img { width: 36px; height: 27px; flex: none; border-radius: 8px; object-fit: cover; }
+  .thing-menu-now-words { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; line-height: 1.25; }
+  .thing-menu-now-words b, .thing-menu-now-words small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .thing-menu-now-words b { font-size: 13px; font-weight: 600; }
+  .thing-menu-now-words small { font-size: 12px; color: var(--ink-muted); font-variant-numeric: tabular-nums; }
+  .thing-menu-now button {
     appearance: none;
     flex: none;
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 40px;
+    width: 36px;
+    height: 36px;
     padding: 0;
     border: 0;
-    border-left: 1px solid var(--line);
+    border-radius: 999px;
     background: none;
-    color: var(--muted);
+    color: var(--ink-muted);
     cursor: pointer;
   }
-  .thing-menu-more:hover { color: var(--fg); }
-  .thing-menu-more svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; }
-  .thing-menu-more span:last-child { font-size: 18px; line-height: 1; }
+  @media (hover: hover) { .thing-menu-now button:hover { background: rgba(13, 28, 34, 0.08); color: var(--ink); } }   /* a tap's hover would stay */
+  .thing-menu-now svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+  .thing-menu-now .thing-menu-star[aria-pressed="true"] { color: var(--accent-deep); }
+  .thing-menu-now .thing-menu-star[aria-pressed="true"] svg { fill: currentColor; }
+  .thing-menu-card .thing-menu-now button:focus-visible { outline-color: var(--ink); }
+  /* A tip (src/thingMenu.js), beside the card so its edges do not cut it, in the bar's colours. */
+  .thing-tip {
+    position: fixed;
+    left: 0;
+    top: 0;
+    max-width: min(260px, calc(100vw - 24px));
+    padding: 5px 9px;
+    border-radius: 8px;
+    background: var(--fg);
+    color: var(--ink);
+    font-size: 12px;
+    line-height: 1.35;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+    pointer-events: none;
+  }
   /* The first visit's cue, on a phone in portrait, where the title's line is
      hidden: a ripple and "Tap the water to throw" over the water. It goes
      with the first throw, for good on this device; its ripple runs a few
@@ -868,7 +892,7 @@
     .keys { display: none; }   /* no keyboard, no Space */
     input[type="range"] { --thumb: 28px; --track: 6px; height: 44px; }
     .segmented button, .slow, .reset-view, .thing-chip, .thing-pill, .thing-menu-tabs [role="tab"] { min-height: 36px; }
-    .thing-menu-more { width: 44px; }
+    .thing-menu-now button { width: 44px; height: 44px; }
     .throw { min-height: 40px; }
     /* A finger's targets on What to throw: 44 px (Apple's smallest comfortable). */
     .thing-page-tabs [role="tab"], .thing-use, .thing-quick button { min-height: 44px; }
@@ -884,6 +908,7 @@
     .thing-menu-pills { row-gap: 3px; }
     .thing-menu-panels { padding-bottom: 3px; }
     .thing-menu-panels > [role="tabpanel"] { padding-top: 4px; }
+    .thing-menu-now button { width: 40px; height: 40px; }
   }
   /* Screens too narrow for one row (a phone on its side, a tablet upright):
      two rows, what is thrown and the throw button, then how to throw and
@@ -976,14 +1001,19 @@
 </div>
 
 <!-- The dropdown of things (src/thingMenu.js): the page script builds its tabs (Favourites, then one for each of
-     src/things.js's groups) and each tab's panel of pills. -->
+     src/things.js's groups) and each tab's panel of pills, and fills its foot's bar with the chosen thing. -->
 <div class="thing-menu" id="thing-menu" hidden>
   <div class="thing-menu-card" id="thing-menu-card" role="dialog" aria-label="What to throw">
     <div class="thing-menu-top">
       <div class="thing-menu-tabs" id="thing-menu-tabs" role="tablist" aria-label="Kinds of things"></div>
-      <button type="button" class="thing-menu-more" id="thing-more" data-more aria-label="More about the river stone" title="More about the river stone"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7.5"></circle><path d="M10 9v5M10 6.2v.1"></path></svg></button>
     </div>
     <div class="thing-menu-panels" id="thing-menu-panels"></div>
+    <div class="thing-menu-now" id="thing-now" role="group" aria-label="Chosen">
+      <img id="thing-now-picture" alt="" width="36" height="27">
+      <span class="thing-menu-now-words"><b id="thing-now-name">River stone</b><small id="thing-now-size">6 cm</small></span>
+      <button type="button" class="thing-menu-star" id="thing-now-favourite" data-favourite aria-pressed="false" aria-label="River stone: favourite"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.6l2.3 4.7 5.1.7-3.7 3.6.9 5.1-4.6-2.4-4.6 2.4.9-5.1L2.6 8l5.1-.7z"></path></svg></button>
+      <button type="button" class="thing-menu-more" id="thing-more" data-more aria-label="More about the river stone"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7.5"></circle><path d="M10 9v5M10 6.2v.1"></path></svg></button>
+    </div>
   </div>
 </div>
 
@@ -1335,6 +1365,7 @@
       sliderValues[sliderKey()] = value;
       pond.setSize(value);
       showInspected?.();
+      showMenuThing?.();
     };
     function showSlider() {
       const thing = THINGS[pond.thing];
@@ -1351,6 +1382,9 @@
       applySize();
     }
     let showInspected = null;   // What to throw's look at the chosen thing, once it exists
+    let showMenuThing = null;   // and the dropdown's bar
+    /** A thing's name in a sentence: "river stone", but "iPhone" and "TV" as they are. */
+    const lowerName = (name) => (/^[A-Z][a-z]/.test(name) ? name.charAt(0).toLowerCase() + name.slice(1) : name);
     sizeInput.addEventListener('input', applySize);
     showSlider();
     // iOS moves a range input only by its thumb. Here a touch anywhere along
@@ -1612,19 +1646,20 @@
       inspectSize.style.setProperty('--fraction', sizeInput.style.getPropertyValue('--fraction'));
       favouriteButton.setAttribute('aria-pressed', String(favourites.includes(pond.thing)));
       favouriteButton.setAttribute('aria-label', `${thing.name}: favourite`);
-      useButton.textContent = `Use ${thing.name.toLowerCase()}`;
+      useButton.textContent = `Use ${lowerName(thing.name)}`;
     };
     document.getElementById('inspect-picture').addEventListener('error', (event) => { event.target.style.visibility = 'hidden'; });
     inspectSize.addEventListener('input', () => { sizeInput.value = inspectSize.value; applySize(); });
     followTouch(inspectSize, () => { sizeInput.value = inspectSize.value; applySize(); });
-    // A favourite made, or unmade, by the star here: the dropdown's Favourites tab follows.
-    favouriteButton.addEventListener('click', () => {
-      favourites = favourites.includes(pond.thing) ? favourites.filter((name) => name !== pond.thing) : [...favourites, pond.thing];
+    // A favourite made, or unmade, by a star (here, or the dropdown's bar): the other star and the dropdown's Favourites tab follow.
+    function toggleFavourite(name) {
+      favourites = favourites.includes(name) ? favourites.filter((kept) => kept !== name) : [...favourites, name];
       storeList(FAVOURITES_KEY, favourites);
       showQuick();
       showInspected();
       showMenuFavourites();
-    });
+    }
+    favouriteButton.addEventListener('click', () => toggleFavourite(pond.thing));
     const useChosen = () => {
       recent = [pond.thing, ...recent.filter((name) => name !== pond.thing)].slice(0, RECENT_MOST);
       storeList(RECENT_KEY, recent);
@@ -1652,6 +1687,7 @@
       const picture = Object.assign(document.createElement('img'), { src: thing.look.thumbnail, alt: '', width: 32, height: 24 });
       picture.addEventListener('error', () => { picture.style.visibility = 'hidden'; });
       pill.append(picture, thing.name);
+      pill.dataset.tip = thing.note;
       return pill;
     }
     function pillRow(keys) {
@@ -1682,7 +1718,7 @@
       showMenuFavourites();
       thingMenu.selectTab(thingMenu.openingTab());
     }
-    // The Favourites tab's pills, or, with none, where to make one (What to throw's star).
+    // The Favourites tab's pills, or, with none, where to make one (the bar's star).
     function showMenuFavourites() {
       const panel = menuPanels.querySelector('[data-tab="favourites"]');
       if (!panel) return;
@@ -1691,32 +1727,50 @@
       else {
         const empty = Object.assign(document.createElement('div'), { className: 'thing-menu-empty' });
         const words = document.createElement('p');
-        words.innerHTML = `<b>No favourites yet.</b> Star a thing on What to throw to keep it here.`;
-        const open = Object.assign(document.createElement('button'), { type: 'button', textContent: 'What to throw' });
-        open.dataset.more = '';
-        empty.append(words, open);
+        words.innerHTML = `<b>No favourites yet.</b> Star the thing below to keep it here.`;
+        empty.append(words);
         panel.replaceChildren(empty);
       }
       showMenuChosen();
     }
-    // The chosen thing's pills ringed, wherever they are, and the ⓘ naming it.
+    // The chosen thing's pills ringed, wherever they are, and the bar at the foot showing it.
     function showMenuChosen() {
       for (const pill of menuPanels.querySelectorAll('[data-value]')) {
         if (pill.dataset.value === pond.thing) pill.setAttribute('aria-current', 'true');
         else pill.removeAttribute('aria-current');
       }
-      const more = document.getElementById('thing-more');
-      more.title = `More about the ${THINGS[pond.thing].name.toLowerCase()}`;
-      more.setAttribute('aria-label', more.title);
+      showMenuThing();
     }
-    // The strip's chip opens the dropdown; a pill tapped there is thrown next, and its ⓘ opens What to throw from
-    // the chip. Pressed while What to throw is open from it, the chip closes that. A pick in the dropdown is not one
+    // The bar: the chosen thing's picture, name and size (the strip's line), its star and its ⓘ, each with its tip.
+    const nowPicture = document.getElementById('thing-now-picture');
+    nowPicture.addEventListener('error', () => { nowPicture.style.visibility = 'hidden'; });
+    showMenuThing = () => {
+      const thing = THINGS[pond.thing];
+      const called = lowerName(thing.name);
+      if (!nowPicture.src.endsWith(thing.look.thumbnail.replace(/^\.\//, ''))) {
+        nowPicture.style.visibility = '';
+        nowPicture.src = thing.look.thumbnail;
+      }
+      document.getElementById('thing-now-name').textContent = thing.name;
+      document.getElementById('thing-now-size').textContent = thing.properties(thing.slider ? Number(sizeInput.value) : undefined).text;
+      const star = document.getElementById('thing-now-favourite');
+      const favourite = favourites.includes(pond.thing);
+      star.setAttribute('aria-pressed', String(favourite));
+      star.setAttribute('aria-label', `${thing.name}: favourite`);
+      star.dataset.tip = favourite ? `Remove the ${called} from Favourites` : `Add the ${called} to Favourites`;
+      const more = document.getElementById('thing-more');
+      more.setAttribute('aria-label', `More about the ${called}`);
+      more.dataset.tip = `More about the ${called}`;
+    };
+    // The strip's chip opens the dropdown; a pill tapped there is thrown next, its bar's star makes the chosen thing
+    // a favourite, and its ⓘ opens What to throw from the chip. Pressed while What to throw is open from it, the chip closes that. A pick in the dropdown is not one
     // of What to throw's latest choices: those are for switching quickly there, which the dropdown does itself.
     const thingMenu = new ThingMenu({
       chip,
       root: document.getElementById('thing-menu'),
       card: document.getElementById('thing-menu-card'),
       onChoose: (value) => { pond.setThing(value); updateThing(); },
+      onFavourite: () => toggleFavourite(pond.thing),
       onMore: () => {
         settings.openOn('thing', chip);
         thingsRoot.querySelector('[aria-checked="true"]')?.focus({ preventScroll: true });
