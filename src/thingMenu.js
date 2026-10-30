@@ -1,24 +1,23 @@
 // The dropdown of things to throw: the strip's chip opens it above the strip,
 // a card in the settings panel's glass (src/settingsPanel.js) with a row of
-// tabs over its things: Favourites, All (every thing under its group's name),
-// then one tab for each group (src/things.js thingGroups). Each thing is a
-// pill with its picture and name and a star at its end, the chosen thing's
-// pill ringed. A tap on a pill chooses that thing and closes the dropdown; a
-// tap on its star makes it a favourite, or no longer one, and the dropdown
-// stays open. The Favourites tab, empty, says how to fill it. The tab last
-// shown is shown again (a per-viewer convenience, in localStorage; the first
-// time, Favourites if there are any, else All). On a touch screen the tabs,
-// and in All each group's pills, are one row a finger scrolls sideways
-// (index.html). Its foot opens the settings' What to throw page, to look the
-// chosen thing over. The page script (index.html) builds the tabs and the
-// pills and says what a choice, a star and the foot do (onChoose,
-// onFavourite, onMore); this holds the opening, closing, the tabs and moving
+// tabs over its things: Favourites, then one tab for each group (src/things.js
+// thingGroups), and at the row's end an ⓘ that opens the settings' What to
+// throw page, to look the chosen thing over. Each thing is a pill with its
+// picture and name, the chosen thing's pill ringed; a tap on a pill chooses
+// that thing and closes the dropdown. Favourites are made on What to throw
+// (its star); the Favourites tab, empty, says so. It opens on Favourites if
+// that was the tab last shown and it holds something (a per-viewer
+// convenience, in localStorage; the first time, Favourites if there are
+// any), else on the chosen thing's group. On a touch screen the tabs are one
+// row a finger scrolls sideways (index.html). The page script (index.html)
+// builds the tabs and the pills and says what a choice and the ⓘ do
+// (onChoose, onMore); this holds the opening, closing, the tabs and moving
 // about.
 //
 // Every tab's panel stands in the same place (a grid of one cell, the hidden
 // ones invisible but still taking room), so the card is as tall as its
-// tallest panel (All) whichever is shown, and the tabs do not jump as one
-// goes from tab to tab.
+// tallest panel (the largest group) whichever is shown, and the tabs do not
+// jump as one goes from tab to tab.
 //
 // It stands in a box from under the settings button down to the strip's top
 // (--strip-height, which the page keeps), its card at the box's foot: on a
@@ -32,39 +31,34 @@
 // only closes it and throws nothing, as the settings do) and when the focus
 // leaves it. Opened, the focus goes to the chosen pill if the tab shows it,
 // else to the tab. The arrow keys go from the tab to the pills, pill to pill
-// and to the foot (Left and Right, on a tab, go from tab to tab, showing
-// each); Home and End go to the first and last pill; Enter or Space chooses;
-// Tab reaches a pill's star. Closed by Escape or a choice, the focus goes
-// back to the chip.
+// and to the ⓘ (Left and Right, on a tab, go from tab to tab, showing each);
+// Home and End go to the first and last pill; Enter or Space chooses. Closed
+// by Escape or a choice, the focus goes back to the chip.
 const OPEN_MS = 140;
 const TAB_KEY = 'stone-pond-thing-tab';
 
 export class ThingMenu {
-  constructor({ chip, root, card, onChoose, onFavourite, onMore }) {
+  constructor({ chip, root, card, onChoose, onMore }) {
     this.chip = chip;
     this.root = root;
     this.card = card;
     this.onChoose = onChoose;
-    this.onFavourite = onFavourite;
     this.onMore = onMore;
     this.reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
     try { this.tab = localStorage.getItem(TAB_KEY); } catch { this.tab = null; }
 
     card.addEventListener('click', (event) => {
       const tab = event.target.closest('[role="tab"]');
-      const star = event.target.closest('[data-favourite]');
       const pill = event.target.closest('[data-value]');
       const more = event.target.closest('[data-more]');
-      const goTo = event.target.closest('[data-go-to]');
       if (tab) this.selectTab(tab.dataset.tab, { remember: true });
-      else if (star) this.toggleFavourite(star);
       else if (pill) {
         this.hide();
         this.onChoose(pill.dataset.value);
       } else if (more) {
         this.hide({ returnFocus: false });
         this.onMore();
-      } else if (goTo) this.selectTab(goTo.dataset.goTo, { remember: true, focus: true });
+      }
     });
     card.addEventListener('keydown', (event) => this.key(event));
     // The focus gone somewhere else on the page (Tab, a click on another control) closes it.
@@ -95,10 +89,10 @@ export class ThingMenu {
   selectedTab() { return this.card.querySelector('[role="tab"][aria-selected="true"]') ?? this.tabs()[0]; }
   panel() { return this.card.querySelector('[role="tabpanel"]:not(.thing-menu-off)'); }
 
-  /** The selected tab, the shown panel's pills and the foot, in the order the arrow keys go. */
+  /** The selected tab, the shown panel's pills (or empty Favourites' button) and the ⓘ, in the order the arrow keys go. */
   items() {
     const panel = this.panel();
-    return [this.selectedTab(), ...(panel ? panel.querySelectorAll('[data-value], [data-go-to]') : []), this.card.querySelector('[data-more]')].filter(Boolean);
+    return [this.selectedTab(), ...(panel ? panel.querySelectorAll('[data-value], [data-more]') : []), this.card.querySelector('.thing-menu-more')].filter(Boolean);
   }
 
   /**
@@ -122,20 +116,14 @@ export class ThingMenu {
     this.card.querySelector('.thing-menu-panels')?.scrollTo?.({ top: 0 });
   }
 
-  /** Shows again the tab shown last (the page calls it once it has built them, and after it builds them again). */
-  restoreTab(fallback) {
-    this.selectTab(this.tabs().some((tab) => tab.dataset.tab === this.tab) ? this.tab : fallback);
-  }
-
-  /** A star pressed: the page makes it a favourite or not; if its pill went (unstarred in Favourites), the focus goes on to the next. */
-  toggleFavourite(star) {
-    const items = this.items();
-    const at = items.indexOf(star.parentElement.querySelector('[data-value]'));
-    const hadFocus = this.card.contains(document.activeElement);
-    this.onFavourite(star.dataset.favourite);
-    if (star.isConnected || !hadFocus) return;
-    const left = this.items();
-    left[Math.min(Math.max(at, 0), left.length - 1)]?.focus({ preventScroll: true });
+  /**
+   * The tab it opens on (the header): Favourites if that was the tab last shown (the first time, unless none was)
+   * and it holds a pill, else the group of the chosen thing (the pill the page marks aria-current).
+   */
+  openingTab() {
+    const favourites = this.card.querySelector('[role="tabpanel"][data-tab="favourites"]');
+    if ((this.tab ?? 'favourites') === 'favourites' && favourites?.querySelector('[data-value]')) return 'favourites';
+    return this.card.querySelector('[role="tabpanel"]:not([data-tab="favourites"]) [data-value][aria-current="true"]')?.closest('[role="tabpanel"]').dataset.tab;
   }
 
   key(event) {
@@ -148,11 +136,9 @@ export class ThingMenu {
       return;
     }
     const items = this.items();
-    // A star moves as its pill does.
-    const from = document.activeElement?.closest('[data-favourite]') ? document.activeElement.parentElement.querySelector('[data-value]') : document.activeElement;
-    const at = items.indexOf(from);
+    const at = items.indexOf(document.activeElement);
     if (at < 0) return;
-    const pills = items.length - 2;   // the tab first, the foot last
+    const pills = items.length - 2;   // the tab first, the ⓘ last
     const next = { ArrowRight: at + 1, ArrowDown: at + 1, ArrowLeft: at - 1, ArrowUp: at - 1, Home: Math.min(1, items.length - 1), End: Math.max(pills, 1) }[event.key];
     if (next === undefined) return;
     event.preventDefault();
@@ -164,7 +150,7 @@ export class ThingMenu {
     this.root.hidden = false;
     this.chip.setAttribute('aria-expanded', 'true');
     this.place();
-    this.selectedTab()?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    this.selectTab(this.openingTab());
     const chosen = this.panel()?.querySelector('[data-value][aria-current="true"]') ?? this.selectedTab();
     if (chosen) {
       chosen.scrollIntoView({ block: 'nearest', inline: 'nearest' });

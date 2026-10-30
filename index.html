@@ -367,8 +367,8 @@
   .reset-view:hover { background: var(--panel-strong); }
   /* The dropdown of things (src/thingMenu.js): a box from under the settings
      button down to the strip's top (--strip-height), its card at the box's
-     foot in the settings' glass: a row of tabs, the shown tab's pills (in
-     All under their groups' names), and a foot into What to throw. */
+     foot in the settings' glass: a row of tabs ending in an ⓘ into What to
+     throw, over the shown tab's pills. */
   .thing-menu {
     position: fixed;
     top: calc(env(safe-area-inset-top, 0px) + 62px);
@@ -401,16 +401,22 @@
     -webkit-tap-highlight-color: transparent;
   }
   /* The tabs: a row under the card's top edge, the shown one lit and underlined in the accent; one row that
-     scrolls sideways where they do not fit. */
-  .thing-menu-tabs {
+     scrolls sideways where they do not fit, the ⓘ held at its end. */
+  .thing-menu-top {
     flex: none;
+    display: flex;
+    align-items: stretch;
+    border-bottom: 1px solid var(--line);
+  }
+  .thing-menu-tabs {
+    flex: 1 1 auto;
+    min-width: 0;
     display: flex;
     gap: 2px;
     padding: 4px 8px 0;
     overflow-x: auto;
     overscroll-behavior-x: contain;
     scrollbar-width: none;
-    border-bottom: 1px solid var(--line);
   }
   .thing-menu-tabs::-webkit-scrollbar { display: none; }
   .thing-menu-tabs { -webkit-tap-highlight-color: transparent; }
@@ -435,7 +441,7 @@
   .thing-menu-tabs [role="tab"]:hover { color: var(--fg); }
   .thing-menu-tabs [role="tab"][aria-selected="true"] { color: var(--fg); border-bottom-color: var(--accent); }
   .thing-menu-tabs svg { width: 13px; height: 13px; fill: var(--accent); stroke: none; }
-  /* Every panel in one cell, the hidden ones invisible but taking room: the card as tall as All whichever is shown. */
+  /* Every panel in one cell, the hidden ones invisible but taking room: the card as tall as its largest group whichever is shown. */
   .thing-menu-panels {
     flex: 0 1 auto;
     min-height: 0;
@@ -448,33 +454,17 @@
   }
   .thing-menu-panels > [role="tabpanel"] { grid-area: 1 / 1; min-width: 0; padding-top: 6px; }
   .thing-menu-panels > .thing-menu-off { visibility: hidden; }
-  .thing-menu-head {
-    margin: 4px 2px 4px;
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--muted);
-  }
-  .thing-menu-head:first-child { margin-top: 0; }
   .thing-menu-pills { display: flex; flex-wrap: wrap; gap: 4px 5px; }
-  /* A pill: the thing (its picture and name), which chooses it, and its star, which keeps it in Favourites. */
+  /* A pill: the thing's picture and name, which chooses it. */
   .thing-pill {
-    display: inline-flex;
-    align-items: stretch;
-    border: 1px solid var(--line);
-    border-radius: 999px;
-  }
-  .thing-pill:hover { background: rgba(238, 243, 244, 0.08); }
-  .thing-pill.chosen { border-color: var(--accent); background: rgba(241, 199, 122, 0.12); }
-  .thing-pill [data-value] {
     appearance: none;
     display: inline-flex;
     align-items: center;
     gap: 6px;
     min-height: 34px;
-    padding: 3px 2px 3px 3px;
-    border: 0;
-    border-radius: 999px 0 0 999px;
+    padding: 3px 10px 3px 3px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
     background: none;
     color: var(--fg);
     font: inherit;
@@ -482,28 +472,12 @@
     white-space: nowrap;
     cursor: pointer;
   }
-  .thing-pill.chosen [data-value] { font-weight: 600; }
+  .thing-pill:hover { background: rgba(238, 243, 244, 0.08); }
+  .thing-pill[aria-current="true"] { border-color: var(--accent); background: rgba(241, 199, 122, 0.12); font-weight: 600; }
   .thing-pill img { width: 32px; height: 24px; flex: none; border-radius: 999px; object-fit: cover; }
-  .thing-star {
-    appearance: none;
-    flex: none;
-    width: 30px;
-    padding: 0 9px 0 5px;
-    border: 0;
-    border-radius: 0 999px 999px 0;
-    background: none;
-    color: var(--muted);
-    opacity: 0.55;
-    cursor: pointer;
-  }
-  .thing-star:hover { opacity: 1; }
-  .thing-star svg { display: block; width: 100%; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linejoin: round; }
-  .thing-star[aria-pressed="true"] { color: var(--accent); opacity: 1; }
-  .thing-star[aria-pressed="true"] svg { fill: currentColor; }
-  /* Favourites with none yet: how to keep one there, in the middle of the room All leaves. */
+  /* Favourites with none yet: where to make one, in the middle of the room the largest group leaves. */
   .thing-menu-panels > [data-tab="favourites"] { display: flex; flex-direction: column; }
-  .thing-menu-empty { margin: auto; display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 12px 8px; max-width: 300px; color: var(--muted); font-size: 13px; line-height: 1.4; text-align: center; }
-  .thing-menu-empty > svg { width: 26px; height: 26px; }
+  .thing-menu-empty { margin: auto; display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 6px 8px; max-width: 300px; color: var(--muted); font-size: 13px; line-height: 1.4; text-align: center; }
   .thing-menu-empty p { margin: 0; }
   .thing-menu-empty b { color: var(--fg); font-weight: 600; }
   .thing-menu-empty svg { fill: none; stroke: var(--accent); stroke-width: 1.6; stroke-linejoin: round; }
@@ -521,28 +495,23 @@
     cursor: pointer;
   }
   .thing-menu-empty button:hover { background: rgba(238, 243, 244, 0.08); }
+  /* The ⓘ at the tab row's end: What to throw, on the chosen thing. */
   .thing-menu-more {
     appearance: none;
+    flex: none;
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    box-sizing: border-box;
-    flex: none;
-    width: 100%;
-    min-height: 36px;
-    margin: 0;
-    padding: 0 14px;
+    justify-content: center;
+    width: 40px;
+    padding: 0;
     border: 0;
-    border-top: 1px solid var(--line);
+    border-left: 1px solid var(--line);
     background: none;
     color: var(--muted);
-    font: inherit;
-    font-size: 13px;
-    text-align: left;
     cursor: pointer;
   }
   .thing-menu-more:hover { color: var(--fg); }
+  .thing-menu-more svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; }
   .thing-menu-more span:last-child { font-size: 18px; line-height: 1; }
   /* The first visit's cue, on a phone in portrait, where the title's line is
      hidden: a ripple and "Tap the water to throw" over the water. It goes
@@ -898,45 +867,21 @@
   @media (pointer: coarse) {
     .keys { display: none; }   /* no keyboard, no Space */
     input[type="range"] { --thumb: 28px; --track: 6px; height: 44px; }
-    .segmented button, .slow, .reset-view, .thing-chip, .thing-pill [data-value], .thing-menu-tabs [role="tab"] { min-height: 36px; }
-    .thing-star { width: 36px; padding: 0 11px 0 7px; }
+    .segmented button, .slow, .reset-view, .thing-chip, .thing-pill, .thing-menu-tabs [role="tab"] { min-height: 36px; }
+    .thing-menu-more { width: 44px; }
     .throw { min-height: 40px; }
     /* A finger's targets on What to throw: 44 px (Apple's smallest comfortable). */
     .thing-page-tabs [role="tab"], .thing-use, .thing-quick button { min-height: 44px; }
     .menu-group .menu-card { min-height: 44px; }
     .thing-favourite { width: 44px; height: 44px; padding: 11px; }
   }
-  /* A touch screen: in All each group's pills in one row that scrolls
-     sideways under a finger, the card's edge cutting off the last in view
-     (there is more), so All is as tall as its groups however many things
-     each holds; a group's own tab, and a wider screen with a pointer, wrap
-     them. */
-  @media (pointer: coarse) {
-    .thing-menu-all .thing-menu-pills {
-      flex-wrap: nowrap;
-      overflow-x: auto;
-      margin: 0 -10px;
-      padding: 0 10px;
-      scroll-padding-inline: 10px;
-      overscroll-behavior-x: contain;
-      touch-action: pan-x pan-y;
-      scrollbar-width: none;
-    }
-    .thing-menu-all .thing-menu-pills::-webkit-scrollbar { display: none; }
-    .thing-menu-all .thing-pill { flex: none; }
-  }
   /* A short touch screen (an iPhone SE upright, a phone on its side): the
      dropdown's pills at the controls probe's least height (34 points), their
-     pictures and ends narrower, its tabs lower and its rows and heads closer,
-     so All's rows fit over the strip without scrolling. */
+     pictures and ends narrower and its rows closer. */
   @media (pointer: coarse) and (max-height: 700px) {
-    .thing-pill [data-value] { min-height: 34px; }
-    .thing-pill [data-value] { gap: 5px; }
+    .thing-pill { min-height: 34px; gap: 5px; padding-right: 8px; }
     .thing-pill img { width: 28px; height: 21px; }
     .thing-menu-pills { row-gap: 3px; }
-    .thing-menu-head { margin: 3px 2px 1px; line-height: 14px; }
-    .thing-menu-card .thing-menu-tabs { padding-top: 2px; }
-    .thing-menu-card .thing-menu-tabs [role="tab"] { min-height: 30px; }
     .thing-menu-panels { padding-bottom: 3px; }
     .thing-menu-panels > [role="tabpanel"] { padding-top: 4px; }
   }
@@ -1030,13 +975,15 @@
   <button type="button" class="throw" id="throw" aria-label="Throw a rock">Throw<span class="more"> a rock</span></button>
 </div>
 
-<!-- The dropdown of things (src/thingMenu.js): the page script builds its tabs (Favourites, All, then one for each of
+<!-- The dropdown of things (src/thingMenu.js): the page script builds its tabs (Favourites, then one for each of
      src/things.js's groups) and each tab's panel of pills. -->
 <div class="thing-menu" id="thing-menu" hidden>
   <div class="thing-menu-card" id="thing-menu-card" role="dialog" aria-label="What to throw">
-    <div class="thing-menu-tabs" id="thing-menu-tabs" role="tablist" aria-label="Kinds of things"></div>
+    <div class="thing-menu-top">
+      <div class="thing-menu-tabs" id="thing-menu-tabs" role="tablist" aria-label="Kinds of things"></div>
+      <button type="button" class="thing-menu-more" id="thing-more" data-more aria-label="More about the river stone" title="More about the river stone"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7.5"></circle><path d="M10 9v5M10 6.2v.1"></path></svg></button>
+    </div>
     <div class="thing-menu-panels" id="thing-menu-panels"></div>
-    <button type="button" class="thing-menu-more" id="thing-more" data-more><span id="thing-more-text">More about the river stone</span><span aria-hidden="true">&rsaquo;</span></button>
   </div>
 </div>
 
@@ -1670,15 +1617,14 @@
     document.getElementById('inspect-picture').addEventListener('error', (event) => { event.target.style.visibility = 'hidden'; });
     inspectSize.addEventListener('input', () => { sizeInput.value = inspectSize.value; applySize(); });
     followTouch(inspectSize, () => { sizeInput.value = inspectSize.value; applySize(); });
-    // A favourite made, or unmade, here or by a star in the dropdown: both show it.
-    function toggleFavourite(name) {
-      favourites = favourites.includes(name) ? favourites.filter((other) => other !== name) : [...favourites, name];
+    // A favourite made, or unmade, by the star here: the dropdown's Favourites tab follows.
+    favouriteButton.addEventListener('click', () => {
+      favourites = favourites.includes(pond.thing) ? favourites.filter((name) => name !== pond.thing) : [...favourites, pond.thing];
       storeList(FAVOURITES_KEY, favourites);
       showQuick();
       showInspected();
       showMenuFavourites();
-    }
-    favouriteButton.addEventListener('click', () => toggleFavourite(pond.thing));
+    });
     const useChosen = () => {
       recent = [pond.thing, ...recent.filter((name) => name !== pond.thing)].slice(0, RECENT_MOST);
       storeList(RECENT_KEY, recent);
@@ -1694,25 +1640,18 @@
       useChosen();
     });
     thingsRoot.addEventListener('keydown', (event) => { if (event.key === 'Enter' && event.target.closest('[role="radio"]')) { event.preventDefault(); useChosen(); } });
-    // The dropdown of things (src/thingMenu.js), built from the registry too: a tab for Favourites, one for All (every
-    // group's pills under its name) and one for each group, each tab's panel of pills, each pill the thing's picture
-    // and name and its star, the chosen one ringed (updateThing).
+    // The dropdown of things (src/thingMenu.js), built from the registry too: a tab for Favourites and one for each
+    // group, each tab's panel of pills, each pill the thing's picture and name, the chosen one ringed (updateThing).
     const menuTabs = document.getElementById('thing-menu-tabs');
     const menuPanels = document.getElementById('thing-menu-panels');
     const STAR = '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.6l2.3 4.7 5.1.7-3.7 3.6.9 5.1-4.6-2.4-4.6 2.4.9-5.1L2.6 8l5.1-.7z"></path></svg>';
     function menuPill(key) {
       const thing = THINGS[key];
-      const pill = Object.assign(document.createElement('span'), { className: 'thing-pill' });
-      const pick = Object.assign(document.createElement('button'), { type: 'button' });
-      pick.dataset.value = key;
+      const pill = Object.assign(document.createElement('button'), { type: 'button', className: 'thing-pill' });
+      pill.dataset.value = key;
       const picture = Object.assign(document.createElement('img'), { src: thing.look.thumbnail, alt: '', width: 32, height: 24 });
       picture.addEventListener('error', () => { picture.style.visibility = 'hidden'; });
-      pick.append(picture, thing.name);
-      const star = Object.assign(document.createElement('button'), { type: 'button', className: 'thing-star', innerHTML: STAR, title: 'Favourite' });
-      star.dataset.favourite = key;
-      star.setAttribute('aria-label', `${thing.name}: favourite`);
-      star.setAttribute('aria-pressed', String(favourites.includes(key)));
-      pill.append(pick, star);
+      pill.append(picture, thing.name);
       return pill;
     }
     function pillRow(keys) {
@@ -1721,7 +1660,7 @@
       return row;
     }
     function buildMenu() {
-      const tabs = [{ name: 'favourites', label: 'Favourites' }, { name: 'all', label: 'All' }, ...thingGroups().map(({ name }) => ({ name, label: name }))];
+      const tabs = [{ name: 'favourites', label: 'Favourites' }, ...thingGroups().map(({ name }) => ({ name, label: name }))];
       menuTabs.replaceChildren(...tabs.map(({ name, label }, index) => {
         const tab = Object.assign(document.createElement('button'), { type: 'button', id: `thing-tab-${index}`, tabIndex: -1 });
         tab.setAttribute('role', 'tab');
@@ -1737,50 +1676,40 @@
         panel.setAttribute('role', 'tabpanel');
         panel.setAttribute('aria-labelledby', `thing-tab-${index}`);
         panel.dataset.tab = name;
-        if (name === 'all') {
-          panel.classList.add('thing-menu-all');
-          panel.append(...thingGroups().flatMap(({ name: group, keys }, groupIndex) => {
-            const head = Object.assign(document.createElement('div'), { className: 'thing-menu-head', id: `thing-menu-head-${groupIndex}`, textContent: group });
-            const row = pillRow(keys);
-            row.setAttribute('role', 'group');
-            row.setAttribute('aria-labelledby', head.id);
-            return [head, row];
-          }));
-        } else if (name !== 'favourites') panel.append(pillRow(thingGroups().find((group) => group.name === name).keys));
+        if (name !== 'favourites') panel.append(pillRow(thingGroups().find((group) => group.name === name).keys));
         return panel;
       }));
       showMenuFavourites();
-      thingMenu.restoreTab(favourites.some((name) => THINGS[name]) ? 'favourites' : 'all');
+      thingMenu.selectTab(thingMenu.openingTab());
     }
-    // The Favourites tab's pills (or, with none, how to keep one there), and every star lit for a favourite.
+    // The Favourites tab's pills, or, with none, where to make one (What to throw's star).
     function showMenuFavourites() {
       const panel = menuPanels.querySelector('[data-tab="favourites"]');
       if (!panel) return;
       const kept = favourites.filter((name) => THINGS[name] && !THINGS[name].hidden);
       if (kept.length > 0) panel.replaceChildren(pillRow(kept));
       else {
-        const empty = Object.assign(document.createElement('div'), { className: 'thing-menu-empty', innerHTML: STAR });
+        const empty = Object.assign(document.createElement('div'), { className: 'thing-menu-empty' });
         const words = document.createElement('p');
-        words.innerHTML = `<b>No favourites yet.</b><br>Tap the ${STAR} on any thing to keep it here.`;
-        const browse = Object.assign(document.createElement('button'), { type: 'button', textContent: 'Browse all' });
-        browse.dataset.goTo = 'all';
-        empty.append(words, browse);
+        words.innerHTML = `<b>No favourites yet.</b> Star a thing on What to throw to keep it here.`;
+        const open = Object.assign(document.createElement('button'), { type: 'button', textContent: 'What to throw' });
+        open.dataset.more = '';
+        empty.append(words, open);
         panel.replaceChildren(empty);
       }
-      for (const star of menuPanels.querySelectorAll('[data-favourite]')) star.setAttribute('aria-pressed', String(favourites.includes(star.dataset.favourite)));
       showMenuChosen();
     }
-    // The chosen thing's pills ringed, wherever they are, and the foot naming it.
+    // The chosen thing's pills ringed, wherever they are, and the ⓘ naming it.
     function showMenuChosen() {
-      for (const pick of menuPanels.querySelectorAll('[data-value]')) {
-        const chosen = pick.dataset.value === pond.thing;
-        if (chosen) pick.setAttribute('aria-current', 'true');
-        else pick.removeAttribute('aria-current');
-        pick.parentElement.classList.toggle('chosen', chosen);
+      for (const pill of menuPanels.querySelectorAll('[data-value]')) {
+        if (pill.dataset.value === pond.thing) pill.setAttribute('aria-current', 'true');
+        else pill.removeAttribute('aria-current');
       }
-      document.getElementById('thing-more-text').textContent = `More about the ${THINGS[pond.thing].name.toLowerCase()}`;
+      const more = document.getElementById('thing-more');
+      more.title = `More about the ${THINGS[pond.thing].name.toLowerCase()}`;
+      more.setAttribute('aria-label', more.title);
     }
-    // The strip's chip opens the dropdown; a pill tapped there is thrown next, and its foot opens What to throw from
+    // The strip's chip opens the dropdown; a pill tapped there is thrown next, and its ⓘ opens What to throw from
     // the chip. Pressed while What to throw is open from it, the chip closes that. A pick in the dropdown is not one
     // of What to throw's latest choices: those are for switching quickly there, which the dropdown does itself.
     const thingMenu = new ThingMenu({
@@ -1788,7 +1717,6 @@
       root: document.getElementById('thing-menu'),
       card: document.getElementById('thing-menu-card'),
       onChoose: (value) => { pond.setThing(value); updateThing(); },
-      onFavourite: toggleFavourite,
       onMore: () => {
         settings.openOn('thing', chip);
         thingsRoot.querySelector('[aria-checked="true"]')?.focus({ preventScroll: true });

@@ -184,7 +184,7 @@ const ROLLS = { solid: 5 / 7, shell: 3 / 5 };   // the share of its speed along 
 const BODY_SHAPES = ['sphere', 'mesh'];         // the bodies src/rock.js knows
 const AIR_MODELS = ['ballistic', 'flutter'];    // the flights src/rock.js knows (Rock.fly)
 const CALLED = { Stones: 'a rock', Balls: 'a ball', Gems: 'a gem' };
-const LAST_GROUPS = ['Other', 'Gems'];           // listed after every other group (thingGroups), whenever defined: what fits no group, and a gem, seldom thrown
+const LAST_GROUPS = ['Gems', 'Other'];           // listed after every other group (thingGroups), whenever defined: a gem, seldom thrown, and last what fits no group
 const DEFAULTS = { air: { drag: 0.47, model: 'ballistic' }, look: { roughness: 0.92, reflection: 0.9, wet: { darker: 0.15, glossier: 0.4 } }, abilities: { skips: false, held: true } };
 
 export const THINGS = {};
