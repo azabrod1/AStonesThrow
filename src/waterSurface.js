@@ -163,7 +163,8 @@ const NO_VISITOR = () => ({
   uVisitorEnvelope: { value: new THREE.Vector4() },
   uVisitorContacts: { value: Array.from({ length: VISITOR_CONTACTS }, () => new THREE.Vector4()) },
   uVisitorRings: { value: Array.from({ length: VISITOR_RINGS }, () => new THREE.Vector4()) },
-  uVisitorReach: { value: new THREE.Vector3() },
+  uVisitorSpans: { value: new THREE.Vector4() },
+  uVisitorReach: { value: new THREE.Vector4() },
 });
 
 export function createWaterSurface(water, lighting, ambientWaves, { meshSegments = Math.min(water.size, 512), rings = null, dropRings = null, skyCube = null, rain = null, haze = null, gale = null, ice = null, visitor = null } = {}) {

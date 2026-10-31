@@ -36,9 +36,14 @@
 //   carries it r in t), the impulse's size cutting the short ones (e^(−(ka)²)).
 //   Where the phase is under a radian or two (the front, the far reach) the
 //   asymptotic form does not hold and the ring fades in.
-// - Where the body breaks the surface, the water heaped in front of each
-//   place it does and drawn down behind (uVisitorContacts): a dipole along
-//   the course, as wide as the body there and as high as it pushes.
+// - Where the body breaks the surface (uVisitorContacts, each a capsule
+//   along the course as long as the piece out of the water, uVisitorSpans):
+//   the water heaped before its front and drawn down behind its back, a
+//   dipole as wide as the body there and as high as it pushes; and the
+//   short ripples its waterline sheds as it goes and bobs, rings running
+//   out from the capsule's outline at their own speed (capillary-gravity,
+//   ω² = g k + σ k³ / ρ, a wavelength of CONTACT_RIPPLE), dying out over a
+//   metre or two, on the visitor's clock (uVisitorReach.w).
 //
 // Each wave is filtered by the pixel's footprint on the water (acrossX,
 // acrossY), as the rings' and the ripples' are: what is finer than a pixel
@@ -62,17 +67,26 @@ export const VISITOR_WATER = /* glsl */`
 #define VISITOR_RINGS ${VISITOR_RINGS}
 #define VISITOR_GRAVITY 9.81
 #define VISITOR_RING_SIZE 0.4      // m: a breach's or a dive's impulse, about a body's girth
+#define CONTACT_RIPPLE 0.32        // m: the ripples' wavelength where the body breaks the surface
+#define CONTACT_RIPPLE_REACH 1.4   // m: how far out they die by e
+
+/** The offset from a contact's capsule (its middle \`offset\` away, its half-length \`span\` along \`heading\`): along the course past its ends, and across. */
+vec2 visitorCapsule(vec2 offset, vec2 heading, float span) {
+  float along = dot(offset, heading);
+  return vec2(sign(along) * max(abs(along) - span, 0.0), dot(offset, vec2(-heading.y, heading.x)));
+}
 uniform float uVisitorOn;                          // 1 while anything of it is on the water, else 0
 uniform vec4 uVisitorSource;                       // the moving source: x, z; its heading x, z (unit)
 uniform vec4 uVisitorWake;                         // its speed U (m/s), the wake's height scale (m at 1 m behind), its depth (m), its size (m)
 uniform vec4 uVisitorEnvelope;                     // how strongly it made waves, by seconds ago: 0 before .x, 1 from .y, 1 until .z, 0 by .w
 uniform vec4 uVisitorContacts[VISITOR_CONTACTS];   // where it breaks the surface: x, z, half-width (m), height pushed up (m; 0 none)
 uniform vec4 uVisitorRings[VISITOR_RINGS];         // a breach's or a dive's rings: x, z, age (s), strength (m³; 0 none)
-uniform vec3 uVisitorReach;                        // a circle round everything above, x, z and radius (m): none of it beyond
+uniform vec4 uVisitorSpans;                        // each contact's half-length along the course (m), one a component
+uniform vec4 uVisitorReach;                        // a circle round everything above, x, z and radius (m): none of it beyond; w its clock (s)
 
 /** Whether \`point\` is where any of it reaches (uVisitorReach): the water shader pays for it only there. */
 bool visitorNear(vec2 point) {
-  vec2 offset = point - uVisitorReach.xy;
+  vec2 offset = point - uVisitorReach.xy;   // uVisitorReach.w is its clock, not a reach
   return uVisitorOn > 0.5 && dot(offset, offset) < uVisitorReach.z * uVisitorReach.z;
 }
 
@@ -145,24 +159,37 @@ vec3 visitorRings(vec2 point, vec2 acrossX, vec2 acrossY) {
   return result;
 }
 
-/** Where the body breaks the surface (uVisitorContacts): the water heaped before each place and drawn down behind it. */
+/** Where the body breaks the surface (uVisitorContacts): the water heaped before each piece and drawn down behind it, and the ripples it sheds. */
 vec3 visitorContacts(vec2 point, vec2 acrossX, vec2 acrossY) {
   vec2 heading = uVisitorSource.zw;
   vec2 sideways = vec2(-heading.y, heading.x);
   float footprint = max(length(acrossX), length(acrossY));
+  float rippleNumber = 6.2831853 / CONTACT_RIPPLE;
+  float rippleRate = sqrt(VISITOR_GRAVITY * rippleNumber + 7.3e-5 * rippleNumber * rippleNumber * rippleNumber);
   vec3 result = vec3(0.0);
   for (int index = 0; index < VISITOR_CONTACTS; index++) {
     vec4 contact = uVisitorContacts[index];
     if (contact.w <= 0.0) continue;
-    vec2 offset = point - contact.xy;
+    float span = uVisitorSpans[index];
+    vec2 capsule = visitorCapsule(point - contact.xy, heading, span);
     float width = contact.z;
-    float along = dot(offset, heading) / width, side = dot(offset, sideways) / width;
+    float fromCapsule = length(capsule);
+    if (fromCapsule > width * 4.0 + CONTACT_RIPPLE_REACH * 4.0) continue;
+    // The heap and the trough: a dipole about the capsule.
+    float along = capsule.x / width, side = capsule.y / width;
     float bell = exp(-0.5 * (along * along + 0.6 * side * side));
-    if (bell < 1e-3) continue;
     float kept = exp(-0.5 * (footprint / width) * (footprint / width));
     vec2 slope = contact.w / width * bell * ((1.0 - along * along) * heading - 0.6 * along * side * sideways);
     float steepness = length(slope);
     result += vec3(slope * kept, 0.5 * steepness * steepness * (1.0 - kept * kept));
+    // The ripples, out from the waterline (the capsule's outline, \`width\` from its line).
+    float beyond = fromCapsule - width * 0.9;
+    if (beyond > 0.0) {
+      vec2 outward = capsule.x * heading + capsule.y * sideways;
+      outward /= max(fromCapsule, 1e-4);
+      float height = (0.12 * contact.w + 0.0015) * exp(-beyond / CONTACT_RIPPLE_REACH) * smoothstep(0.0, 0.06, beyond);
+      result += visitorWave(height, rippleNumber * beyond - rippleRate * uVisitorReach.w, rippleNumber * outward, acrossX, acrossY);
+    }
   }
   return result;
 }
@@ -172,7 +199,7 @@ vec3 visitorSlope(vec2 point, vec2 acrossX, vec2 acrossY) {
   return visitorKelvin(point, acrossX, acrossY) + visitorRings(point, acrossX, acrossY) + visitorContacts(point, acrossX, acrossY);
 }
 
-/** The foam it churns at \`point\`: round each contact and trailing behind it, and over a breach's first seconds. */
+/** The foam it churns at \`point\`: hugging each contact's waterline and trailing behind it, and over a breach's first seconds. */
 float visitorFoam(vec2 point) {
   vec2 heading = uVisitorSource.zw;
   vec2 sideways = vec2(-heading.y, heading.x);
@@ -180,14 +207,17 @@ float visitorFoam(vec2 point) {
   for (int index = 0; index < VISITOR_CONTACTS; index++) {
     vec4 contact = uVisitorContacts[index];
     if (contact.w <= 0.0) continue;
-    vec2 offset = point - contact.xy;
+    vec2 offset = visitorCapsule(point - contact.xy, heading, uVisitorSpans[index]);
     float width = contact.z;
-    float behind = -dot(offset, heading), side = dot(offset, sideways);
+    float behind = -offset.x, side = offset.y;
     float churn = min(contact.w * 1.5, 0.5);   // the foam map is logarithmic (FOAM_PATTERN): half cover at 0.1, none under 0.01
-    float collar = exp(-0.5 * dot(offset, offset) / (1.2 * 1.2 * width * width));
+    // A collar along the waterline (the outline, \`width\` out), thickest at the bow; and a wash over the body's own patch.
+    float fromLine = abs(length(offset) - width);
+    float collar = exp(-0.5 * fromLine * fromLine / (0.18 * 0.18 * width * width)) * (0.6 + 0.4 * smoothstep(-width, width, -behind))
+      + 0.4 * exp(-0.5 * dot(offset, offset) / (1.2 * 1.2 * width * width));
     float trailWidth = width * (0.7 + 0.1 * max(behind, 0.0));
     float trail = behind > 0.0 ? exp(-behind / (1.5 + 3.0 * width)) * exp(-0.5 * side * side / (trailWidth * trailWidth)) : 0.0;
-    foam += churn * (0.08 * collar + 0.04 * trail);
+    foam += churn * (0.4 * collar + 0.05 * trail);
   }
   for (int index = 0; index < VISITOR_RINGS; index++) {
     vec4 ring = uVisitorRings[index];

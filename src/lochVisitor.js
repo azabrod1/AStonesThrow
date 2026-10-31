@@ -48,12 +48,16 @@
 //
 // The body is a tube along a spine of SPINE_POINTS (its radius by form,
 // head to tail, an ellipse across, wider than deep, lumpy by a few
-// per cent from the sighting's seed), its points moved and its normals
-// computed once a frame on the CPU while any of it is within reach of the
+// per cent from the sighting's seed, a row of low knobbles along its back),
+// its frame keeping its back up, its points moved and its normals taken
+// from the grid once a frame on the CPU while any of it is within reach of the
 // surface: SPINE_POINTS × AROUND vertices (its colours once a sighting).
 // Three meshes draw it, as a boulder's do (src/boulders.js sceneryShader):
-// `above`, clipped to y ≥ 0, in the main scene, its skin glossy and dark, a
-// pale band of foam and wet just over the waterline; `below`, clipped to
+// `above`, clipped to y ≥ 0, in the main scene, its skin dark and wet, a
+// hide (hideTexture: folds, warts and pores in its relief, wet and dry
+// patches in its gloss, blotches in its colour) laid in metres on the
+// body, wetter just over the waterline and washed with broken foam at it;
+// `below`, clipped to
 // y ≤ 0, in the under-water pass, drawn where the still surface shows it
 // and fading into the water; and its mirror image on the mirror layer, its
 // distance in alpha, which src/main.js draws again each frame it shows
@@ -82,10 +86,14 @@ export const SCHEDULE = {
 const SINK = 2.2;             // m: how far under its back waits before it rises, and goes back to (unseen in peat water)
 const RISE_LAG = 0.12;        // s per metre of body: it rises and goes down front first
 const STARTLED_DIVE = 2.4;    // s: how fast it goes down when something comes near
-const SPINE_POINTS = 112;
-const AROUND = 16;
+const SPINE_POINTS = 192;
+const AROUND = 24;            // vertices round the tube, and one more at the seam (under the belly) for the hide's texture
+const RING = AROUND + 1;
+const HIDE = { size: 256, tile: 0.8 };   // the hide's texture (hideTexture): texels a side, and metres a tile covers on the body
 const EYE = { x: 0, z: 2.45 };   // the shore's eye (src/main.js VIEWS.shore), which the distance is measured from
-const SKIN = { color: [0.045, 0.040, 0.032], spread: 0.25, roughness: 0.16, reflection: 1.0, below: 0.3 };   // wet: the sky's glint along its back
+const SKIN = { color: [0.05, 0.044, 0.034], spread: 0.25, roughness: 0.22, bump: 0.04, reflection: 0.75, below: 0.3 };   // wet: the sky's glint along its back, broken by the hide (its roughness times the texture's)
+// (bump: the hide's relief in metres, three.js's bumpScale being in world units: a few centimetres of folds and warts)
+const KNOBBLES = { height: 0.07, spacing: 0.42, top: 8 };   // a row of low knobbles along the back: share of the girth, metres apart, how tightly to the top
 
 // The forms (the header): how often each comes (weight); the body's length
 // and girth (its widest radius, m); how high its highest point stands over
@@ -95,7 +103,7 @@ const SKIN = { color: [0.045, 0.040, 0.032], spread: 0.25, roughness: 0.16, refl
 // head's and the neck's length and radius (m); whether it rolls as a log.
 // [least, most] pairs are drawn evenly between.
 const FORMS = {
-  humps: { weight: 3, length: [7.5, 10], girth: [0.4, 0.55], crest: [0.3, 0.5], wave: [0.42, 0.55], waveLength: [2.3, 3.0], waveSpeed: 0.6, speed: [0.8, 1.3], rise: [3, 4.5], hold: [9, 15], sink: [3.5, 5], head: [0.55, 0.2], neck: [0, 0] },
+  humps: { weight: 3, length: [8, 10.5], girth: [0.28, 0.36], crest: [0.36, 0.55], wave: [0.55, 0.72], waveLength: [2.2, 2.8], waveSpeed: 0.6, speed: [0.8, 1.3], rise: [3, 4.5], hold: [9, 15], sink: [3.5, 5], head: [0.55, 0.2], neck: [0, 0] },
   neck: { weight: 2, length: [5.5, 7.5], girth: [0.4, 0.52], crest: [-0.06, 0.1], wave: [0.06, 0.1], waveLength: [4, 5], waveSpeed: 0.5, speed: [0.25, 0.45], rise: [3.5, 5], hold: [7, 11], sink: [3.5, 5], head: [0.34, 0.11], neck: [1.9, 2.5] },
   back: { weight: 2, length: [3.6, 5], girth: [0.3, 0.38], crest: [0.14, 0.24], wave: [0, 0], waveLength: [3, 3], waveSpeed: 0, speed: [0.35, 0.7], rise: [4, 6], hold: [8, 13], sink: [5, 7], head: [0, 0], neck: [0, 0], log: true },
   wake: { weight: 2, length: [6, 8], girth: [0.4, 0.5], crest: [-0.16, -0.07], wave: [0.12, 0.18], waveLength: [3.5, 4.5], waveSpeed: 0.7, speed: [1.3, 1.9], rise: [3, 4], hold: [9, 14], sink: [3, 4], head: [0.55, 0.2], neck: [0, 0] },
@@ -162,6 +170,71 @@ function drawSighting(stream, form, start, { near, eye = EYE }) {
   };
 }
 
+/** The angle round the tube of column `around`: from under the belly (−π/2) round the right side, over the back and back down. */
+const aroundAngle = (around) => -Math.PI / 2 + (2 * Math.PI * around) / AROUND;
+
+/**
+ * The hide (HIDE): a tile that wraps both ways, in its red the height the
+ * bump map reads (folds running round the body, close along it; a scatter
+ * of warts; pores), in its green the roughness's share (wet patches glossier,
+ * the folds' crests drier), in its blue the colour's blotches. Value noise
+ * on lattices that wrap with the tile, and warts in a jittered grid, from
+ * its own seeded stream: the same hide every time.
+ */
+function hideTexture() {
+  const size = HIDE.size;
+  const stream = seededRandom(SCHEDULE.seed, 4);
+  const lattice = Array.from({ length: 64 * 64 }, () => stream());
+  // Smooth value noise at (x, y) in [0, 1)², `cellsX` × `cellsY` cells that wrap.
+  const noise = (x, y, cellsX, cellsY, salt) => {
+    const gridX = x * cellsX, gridY = y * cellsY;
+    const cornerX = Math.floor(gridX), cornerY = Math.floor(gridY);
+    const fractionX = gridX - cornerX, fractionY = gridY - cornerY;
+    const value = (offsetX, offsetY) => lattice[(((cornerX + offsetX) % cellsX + salt * 7) % 64) * 64 + (((cornerY + offsetY) % cellsY + salt * 13) % 64)];
+    const smoothX = fractionX * fractionX * (3 - 2 * fractionX), smoothY = fractionY * fractionY * (3 - 2 * fractionY);
+    const bottom = value(0, 0) + (value(1, 0) - value(0, 0)) * smoothX, top = value(0, 1) + (value(1, 1) - value(0, 1)) * smoothX;
+    return bottom + (top - bottom) * smoothY;
+  };
+  const warts = Array.from({ length: 12 * 12 }, () => ({ x: stream(), y: stream(), size: 0.25 + 0.3 * stream(), height: 0.4 + 0.6 * stream() }));
+  const data = new Uint8Array(size * size * 4);
+  for (let row = 0; row < size; row++) {
+    for (let column = 0; column < size; column++) {
+      const x = column / size, y = row / size;   // x along the body, y round it
+      const folds = 1 - Math.abs(2 * noise(x, y, 24, 5, 1) - 1) * 0.7 - Math.abs(2 * noise(x, y, 48, 9, 2) - 1) * 0.3;
+      let wart = 0;
+      const cellX = Math.floor(x * 12), cellY = Math.floor(y * 12);
+      for (let nearX = -1; nearX <= 1; nearX++) {
+        for (let nearY = -1; nearY <= 1; nearY++) {
+          const wrappedX = (cellX + nearX + 12) % 12, wrappedY = (cellY + nearY + 12) % 12;
+          const one = warts[wrappedX * 12 + wrappedY];
+          let apartX = (cellX + nearX + one.x) / 12 - x, apartY = (cellY + nearY + one.y) / 12 - y;
+          apartX -= Math.round(apartX); apartY -= Math.round(apartY);
+          const distance = Math.hypot(apartX, apartY) * 12 / one.size;
+          if (distance < 1) wart = Math.max(wart, one.height * (1 - distance * distance) ** 2);
+        }
+      }
+      const pores = noise(x, y, 64, 64, 3);
+      const height = 0.45 * folds + 0.4 * wart + 0.15 * pores;
+      const wetness = noise(x, y, 4, 3, 4);
+      const roughness = 0.2 + 0.7 * wetness ** 2 + 0.6 * Math.max(folds - 0.55, 0) + 0.35 * wart;
+      const blotch = 0.55 * noise(x, y, 6, 4, 5) + 0.3 * noise(x, y, 13, 7, 6) + 0.15 * pores;
+      const offset = (row * size + column) * 4;
+      data[offset] = Math.round(255 * Math.min(Math.max(height, 0), 1));
+      data[offset + 1] = Math.round(255 * Math.min(Math.max(roughness, 0), 1));
+      data[offset + 2] = Math.round(255 * Math.min(Math.max(blotch, 0), 1));
+      data[offset + 3] = 255;
+    }
+  }
+  const texture = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
+  texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+  texture.magFilter = THREE.LinearFilter;
+  texture.minFilter = THREE.LinearMipmapLinearFilter;
+  texture.generateMipmaps = true;
+  texture.anisotropy = 4;
+  texture.needsUpdate = true;
+  return texture;
+}
+
 /** When a sighting is over, its wake and rings too (s). */
 const sightingEnd = (sighting) => sighting.sinkStart + sighting.sinkSeconds + SCHEDULE.linger;
 /** Where its head is at `time` along its course (x, z). */
@@ -202,9 +275,11 @@ export class LochVisitor {
       uVisitorEnvelope: { value: new THREE.Vector4() },
       uVisitorContacts: { value: Array.from({ length: VISITOR_CONTACTS }, () => new THREE.Vector4()) },
       uVisitorRings: { value: Array.from({ length: VISITOR_RINGS }, () => new THREE.Vector4()) },
-      uVisitorReach: { value: new THREE.Vector3() },
+      uVisitorSpans: { value: new THREE.Vector4() },
+      uVisitorReach: { value: new THREE.Vector4() },
     };
     this.geometry = this.buildGeometry();
+    this.hideMap = hideTexture();
     this.skin = { churn: { value: 0 } };   // the waterline's foam band (above)
     this.above = new THREE.Mesh(this.geometry, this.material('above', { envTexture, waterFog }));
     this.below = new THREE.Mesh(this.geometry, this.material('below', { envTexture, waterFog }));
@@ -225,18 +300,22 @@ export class LochVisitor {
     this.reset(0);
   }
 
-  /** The tube's indices and its own colours (its positions and normals are posed each frame). */
+  /**
+   * The tube's indices; its texture coordinates and colours are a
+   * sighting's (colour), its positions and normals posed each frame.
+   */
   buildGeometry() {
     const geometry = new THREE.BufferGeometry();
-    const count = SPINE_POINTS * AROUND;
+    const count = SPINE_POINTS * RING;
     geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(count * 3), 3).setUsage(THREE.DynamicDrawUsage));
     geometry.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(count * 3), 3).setUsage(THREE.DynamicDrawUsage));
     geometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(count * 3), 3));   // once a sighting (colour)
+    geometry.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(count * 2), 2));   // once a sighting (colour)
     const indices = [];
     for (let along = 0; along < SPINE_POINTS - 1; along++) {
       for (let around = 0; around < AROUND; around++) {
-        const here = along * AROUND + around, next = along * AROUND + (around + 1) % AROUND;
-        indices.push(here, here + AROUND, next, next, here + AROUND, next + AROUND);
+        const here = along * RING + around, next = here + 1;   // wound outward: round the tube toward the back, then along toward the tail
+        indices.push(here, next, here + RING, next, next + RING, here + RING);
       }
     }
     geometry.setIndex(indices);
@@ -249,6 +328,9 @@ export class LochVisitor {
       color: 0xffffff,
       vertexColors: true,
       roughness: SKIN.roughness,
+      roughnessMap: this.hideMap,
+      bumpMap: this.hideMap,
+      bumpScale: SKIN.bump,
       metalness: 0,
       envMap: envTexture,
       envMapIntensity: side === 'below' ? SKIN.below : SKIN.reflection,
@@ -263,13 +345,18 @@ export class LochVisitor {
         // Just over the waterline: wet, and a band of churned foam as it goes (uVisitorChurn); higher, the skin dries
         // a little rougher.
         shader.uniforms.uVisitorChurn = this.skin.churn;
+        // The hide's blotches (the texture's blue) in its colour; at the waterline a wash of foam, broken by them.
         shader.fragmentShader = shader.fragmentShader
           .replace('#include <common>', '#include <common>\nuniform float uVisitorChurn;')
           .replace('#include <color_fragment>', `#include <color_fragment>
-  float visitorBand = 1.0 - smoothstep(0.0, 0.035 + 0.04 * uVisitorChurn, vVisitorHeight);
-  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.62, 0.64, 0.62), visitorBand * uVisitorChurn * 0.85);`)
+  vec4 visitorHide = texture2D(bumpMap, vBumpMapUv);
+  diffuseColor.rgb *= 0.6 + 0.8 * visitorHide.b;
+  float visitorWet = 1.0 - smoothstep(0.0, 0.2, vVisitorHeight);
+  diffuseColor.rgb *= 1.0 - 0.3 * visitorWet;
+  float visitorWash = (1.0 - smoothstep(0.0, 0.012 + 0.03 * uVisitorChurn, vVisitorHeight)) * smoothstep(0.35, 0.65, texture2D(bumpMap, vBumpMapUv * 3.0 + 0.37).b);
+  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.6, 0.62, 0.6), visitorWash * (0.2 + 0.5 * uVisitorChurn));`)
           .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
-  roughnessFactor = mix(roughnessFactor, 0.08, 1.0 - smoothstep(0.0, 0.25, vVisitorHeight));`);
+  roughnessFactor = mix(roughnessFactor, 0.06, visitorWet * (1.0 - visitorWash));`);
       }
       sceneryShader(shader, side, waterFog);   // below: seen through the water; mirror: its distance in alpha (src/boulders.js)
     };
@@ -412,7 +499,8 @@ export class LochVisitor {
     const sighting = this.sighting;
     if (!sighting) return { up: false, sightings: this.sightings, nextAt: this.nextAt };
     const [x, z] = headAt(sighting, time);
-    return { up: true, form: sighting.form, x, z, distance: Math.hypot(x - EYE.x, z - EYE.z), emerged: emergence(sighting, time, 0), startled: sighting.startled, sightings: this.sightings, endsAt: sightingEnd(sighting) };
+    const body = this.bounds.isEmpty() ? null : this.bounds.getCenter(new THREE.Vector3()).toArray();   // as last posed
+    return { up: true, form: sighting.form, x, z, body, distance: Math.hypot(x - EYE.x, z - EYE.z), emerged: emergence(sighting, time, 0), startled: sighting.startled, sightings: this.sightings, endsAt: sightingEnd(sighting) };
   }
 
   hide() {
@@ -469,7 +557,10 @@ export class LochVisitor {
       const along = (index / (SPINE_POINTS - 1)) * length;
       const share = along / length;
       const humps = ease(0.05, 0.2, share) * (1 - ease(0.8, 1, share));
-      let height = base + sighting.wave * humps * Math.sin((2 * Math.PI * (along - waveSpeed * elapsed)) / sighting.waveLength + sighting.wavePhase);
+      // A crest steeper in front than behind and peaked over flatter troughs (a skewed phase, a second harmonic).
+      const phase = (2 * Math.PI * (along - waveSpeed * elapsed)) / sighting.waveLength + sighting.wavePhase;
+      const skewed = phase + 0.45 * Math.sin(phase);
+      let height = base + sighting.wave * humps * ((Math.sin(skewed) - 0.22 * Math.cos(2 * skewed)) / 1.22 + 0.18 * (1 - humps));
       height += sighting.bob * Math.sin(1.1 * elapsed + 2.1 * share);
       height -= SINK * (1 - emergence(sighting, time, along));
       const sway = sighting.sway * share * Math.sin((2 * Math.PI * along) / 2.8 - 1.7 * elapsed);
@@ -518,7 +609,13 @@ export class LochVisitor {
     }
   }
 
-  /** Tangents along the spine and a frame carried along it without twist (parallel transport), turned by each point's roll. */
+  /**
+   * Tangents along the spine and a frame across them: its normal the
+   * world's up, square to the spine, wherever the spine lies anywhere near
+   * level (so the body's back is on top, its belly under); up a lifted
+   * neck, where up runs along it, carried from below without twist
+   * (parallel transport), blended between. Then each point's roll.
+   */
   frames() {
     const spine = this.spine;
     for (let index = 0; index < SPINE_POINTS; index++) {
@@ -528,9 +625,15 @@ export class LochVisitor {
     const up = new THREE.Vector3(0, 1, 0);
     const tail = spine[SPINE_POINTS - 1];
     tail.normal.copy(up).addScaledVector(tail.tangent, -up.dot(tail.tangent)).normalize();
+    const level = new THREE.Vector3();
     for (let index = SPINE_POINTS - 2; index >= 0; index--) {
       const knot = spine[index];
       knot.normal.copy(spine[index + 1].normal).addScaledVector(knot.tangent, -spine[index + 1].normal.dot(knot.tangent)).normalize();
+      const steep = Math.abs(knot.tangent.y);
+      if (steep < 0.9) {
+        level.copy(up).addScaledVector(knot.tangent, -knot.tangent.y).normalize();
+        knot.normal.lerp(level, 1 - ease(0.5, 0.9, steep)).addScaledVector(knot.tangent, -knot.normal.dot(knot.tangent)).normalize();
+      }
     }
     for (const knot of spine) {
       knot.binormal.crossVectors(knot.tangent, knot.normal);
@@ -543,48 +646,95 @@ export class LochVisitor {
     }
   }
 
-  /** The skin's colours, once a sighting: darker under, a little olive and mottled over the back, by its seed. */
+  /** The skin's colours and the hide's tiling, once a sighting: darker under, a little olive and mottled over the back, by its seed. */
   colour(sighting) {
     const colors = this.geometry.attributes.color.array;
     const lumps = sighting.lumpPhases;
     const tone = 0.85 + 0.3 * sighting.tone;
     for (let along = 0; along < SPINE_POINTS; along++) {
       const share = along / (SPINE_POINTS - 1);
-      for (let around = 0; around < AROUND; around++) {
-        const angle = (around / AROUND) * Math.PI * 2;
+      for (let around = 0; around < RING; around++) {
+        const angle = aroundAngle(around);
         const mottle = 0.8 + 0.35 * (0.5 + 0.5 * Math.sin(23 * share + 1.7 * Math.sin(3 * angle + lumps[4]) + lumps[5]));
         const shade = tone * mottle * (0.55 + 0.45 * (0.5 + 0.5 * Math.sin(angle)));
-        const offset = (along * AROUND + around) * 3;
+        const offset = (along * RING + around) * 3;
         colors[offset] = SKIN.color[0] * shade * (1 + SKIN.spread * 0.2);
         colors[offset + 1] = SKIN.color[1] * shade;
         colors[offset + 2] = SKIN.color[2] * shade * (1 - SKIN.spread * 0.3);
       }
     }
     this.geometry.attributes.color.needsUpdate = true;
+    // The hide in tiles of HIDE.tile metres on the body as this sighting's radii make it: along it, and round it from
+    // the belly round the right side, over the back and down (its two seam columns together under the belly, where
+    // the tiles need not meet: the water hides it), so the neck's hide is the body's, not crowded.
+    const uvs = this.geometry.attributes.uv.array;
+    for (let along = 0; along < SPINE_POINTS; along++) {
+      const metres = (along / (SPINE_POINTS - 1)) * sighting.length;
+      const round = 2 * Math.PI * Math.max(radiusAt(sighting, metres), 0.04);
+      for (let around = 0; around < RING; around++) {
+        uvs[(along * RING + around) * 2] = metres / HIDE.tile;
+        uvs[(along * RING + around) * 2 + 1] = (around / AROUND) * round / HIDE.tile;
+      }
+    }
+    this.geometry.attributes.uv.needsUpdate = true;
     this.coloured = sighting;
   }
 
-  /** The tube round the spine: an ellipse across, wider than deep, lumpy by the sighting's seed. */
+  /**
+   * The tube round the spine: an ellipse across, wider than deep, lumpy by
+   * the sighting's seed, a row of low knobbles along the top of the back
+   * (KNOBBLES); its normals from its faces, the seam's two columns given
+   * one.
+   */
   buildSkin(sighting) {
     const positions = this.geometry.attributes.position.array;
     const lumps = sighting.lumpPhases;
+    const knobbled = sighting.neckLength > 0 ? sighting.neckLength + 0.4 : sighting.headLength + 0.3;   // from the shoulders back
     for (let along = 0; along < SPINE_POINTS; along++) {
       const knot = this.spine[along];
       const share = along / (SPINE_POINTS - 1);
-      for (let around = 0; around < AROUND; around++) {
-        const angle = (around / AROUND) * Math.PI * 2;
+      const metres = share * sighting.length;
+      const knobbleRow = KNOBBLES.height * sighting.girth * ease(knobbled, knobbled + 0.6, metres) * (1 - ease(0.7, 0.95, share))
+        * Math.max(Math.sin((2 * Math.PI * metres) / KNOBBLES.spacing + lumps[2]), 0) ** 2;
+      for (let around = 0; around < RING; around++) {
+        const angle = aroundAngle(around);
         const cos = Math.cos(angle), sin = Math.sin(angle);
         const lump = 1 + 0.05 * Math.sin(17 * share * Math.PI + 2 * angle + lumps[0]) * Math.sin(29 * share + lumps[1])
           + 0.03 * Math.sin(41 * share + 3 * angle + lumps[2]) + 0.02 * Math.sin(7 * angle + 53 * share + lumps[3]);
-        const across = knot.radius * lump / Math.sqrt(knot.flat), up = knot.radius * lump * knot.flat;
-        const offset = (along * AROUND + around) * 3;
+        const knobble = knobbleRow * Math.max(sin, 0) ** KNOBBLES.top;
+        const across = knot.radius * lump / Math.sqrt(knot.flat), up = knot.radius * lump * knot.flat + knobble;
+        const offset = (along * RING + around) * 3;
         positions[offset] = knot.point.x + knot.binormal.x * cos * across + knot.normal.x * sin * up;
         positions[offset + 1] = knot.point.y + knot.binormal.y * cos * across + knot.normal.y * sin * up;
         positions[offset + 2] = knot.point.z + knot.binormal.z * cos * across + knot.normal.z * sin * up;
       }
     }
     this.geometry.attributes.position.needsUpdate = true;
-    this.geometry.computeVertexNormals();
+    // Normals from the grid: the cross of its change round the tube and its change along it, both central differences
+    // (round the seam, its columns' neighbours either side, so the seam has one normal); at the closed ends, where the
+    // ring is a point, along the spine.
+    const normals = this.geometry.attributes.normal.array;
+    for (let along = 0; along < SPINE_POINTS; along++) {
+      const before = Math.max(along - 1, 0), after = Math.min(along + 1, SPINE_POINTS - 1);
+      for (let around = 0; around < RING; around++) {
+        const left = around === 0 ? AROUND - 1 : around - 1, right = around === AROUND ? 1 : around + 1;
+        const rightAt = (along * RING + right) * 3, leftAt = (along * RING + left) * 3;
+        const afterAt = (after * RING + around) * 3, beforeAt = (before * RING + around) * 3;
+        const roundX = positions[rightAt] - positions[leftAt], roundY = positions[rightAt + 1] - positions[leftAt + 1], roundZ = positions[rightAt + 2] - positions[leftAt + 2];
+        const alongX = positions[afterAt] - positions[beforeAt], alongY = positions[afterAt + 1] - positions[beforeAt + 1], alongZ = positions[afterAt + 2] - positions[beforeAt + 2];
+        let normalX = roundY * alongZ - roundZ * alongY, normalY = roundZ * alongX - roundX * alongZ, normalZ = roundX * alongY - roundY * alongX;
+        let length = Math.hypot(normalX, normalY, normalZ);
+        if (length < 1e-9) {
+          const end = this.spine[along].tangent, outward = along === 0 ? 1 : -1;
+          normalX = end.x * outward; normalY = end.y * outward; normalZ = end.z * outward; length = 1;
+        }
+        const offset = (along * RING + around) * 3;
+        normals[offset] = normalX / length;
+        normals[offset + 1] = normalY / length;
+        normals[offset + 2] = normalZ / length;
+      }
+    }
+    this.geometry.attributes.normal.needsUpdate = true;
   }
 
   /**
@@ -618,17 +768,26 @@ export class LochVisitor {
       } else piece = null;
     }
     pieces.sort((one, other) => other.top - one.top);
+    // Each piece a capsule along the course: its middle, its half-length, and its half-width at the waterline (the
+    // widest cut of its knots' ellipses by the water), pushing up the bow's height, U² / 2g, as much as it is out.
     const contacts = uniforms.uVisitorContacts.value;
+    const spans = uniforms.uVisitorSpans.value;
     const bow = (sighting.speed * sighting.speed) / (2 * GRAVITY);
-    const placed = [];
-    for (const { front, top } of pieces) placed.push({ index: front, height: (bow + 0.02) * Math.min(top / 0.15 + 0.3, 1) });
-    for (const { back, front, top } of pieces) if (back > front + 2) placed.push({ index: back, height: 0.5 * (bow + 0.01) * Math.min(top / 0.15 + 0.3, 1) });
     for (let slot = 0; slot < VISITOR_CONTACTS; slot++) {
-      const contact = placed[slot];
-      if (!contact) { contacts[slot].set(0, 0, 1, 0); continue; }
-      const knot = this.spine[contact.index];
-      const width = Math.max(knot.radius / Math.sqrt(knot.flat), 0.08);
-      contacts[slot].set(knot.point.x, knot.point.z, width, contact.height);
+      const piece = pieces[slot];
+      if (!piece) { contacts[slot].set(0, 0, 1, 0); spans.setComponent(slot, 0); continue; }
+      const front = this.spine[piece.front].point, back = this.spine[piece.back].point;
+      let width = 0.06;
+      for (let index = piece.front; index <= piece.back; index++) {
+        const knot = this.spine[index];
+        const deep = knot.radius * knot.flat, wide = knot.radius / Math.sqrt(knot.flat);
+        const cut = Math.min(Math.max(knot.point.y / Math.max(deep, 1e-3), -1), 1);
+        width = Math.max(width, wide * Math.sqrt(1 - cut * cut));
+      }
+      const middleX = (front.x + back.x) / 2, middleZ = (front.z + back.z) / 2;
+      const span = Math.abs((front.x - back.x) * sighting.headingX + (front.z - back.z) * sighting.headingZ) / 2;
+      contacts[slot].set(middleX, middleZ, width, (bow + 0.02) * Math.min(piece.top / 0.15 + 0.3, 1));
+      spans.setComponent(slot, span);
     }
     // Rings: a breach's where the front first comes up, a dive's where it goes down (a startled dive's heavier).
     const rings = uniforms.uVisitorRings.value;
@@ -657,7 +816,7 @@ export class LochVisitor {
       const ringReach = Math.min(Math.cbrt((ring.w * GRAVITY * age * age) / (4 * RING_LEAST)), (GRAVITY * age * age) / (4 * 0.8));
       radius = Math.max(radius, Math.hypot(ring.x - head.point.x, ring.y - head.point.z) + ringReach);
     }
-    reach.set(head.point.x, head.point.z, radius);
+    reach.set(head.point.x, head.point.z, radius, time - sighting.start);   // w: its clock, which its ripples run on
   }
 }
 

@@ -1247,9 +1247,11 @@ low humps, a wave running back along a body that stays under; a slender
 neck and a small head lifted out of the water, turning slowly; one long
 low back that rolls as a log does but goes steadily on; or nothing above
 the water at all, only a wake. It is one dark, wet body (a tube along a
-spine, posed in closed form from the world's time, its skin glossy, a band
-of wet and foam at the waterline), drawn above the water, below it (where
-the peat-dark water hides it within a metre) and in the mirror. It is out
+spine, posed in closed form from the world's time, knobbled along its
+back, in a hide of folds, warts and pores, wet and dry patches and
+blotches, laid in metres on it; wetter at the waterline and washed there
+with broken foam), drawn above the water, below it (where the peat-dark
+water hides it within a metre) and in the mirror. It is out
 of reach: nothing of it ever comes within 36 m of the shore's eye (a
 floater past 30 m from the pond goes), it has no collider, no sighting
 starts with a thing thrown near its course, and one under way goes down
@@ -1262,8 +1264,10 @@ under the surface as e^(−kd), its energy arriving where its group velocity
 carries it, so the wake grows out behind and lingers after the body has
 gone); the Cauchy–Poisson rings of each breach and dive (long waves first,
 wavenumber g t² / 4r², the impulse's size cutting the short ones); the
-water heaped before each place it breaks the surface and drawn down
-behind; and a little foam. Each is filtered by the pixel's footprint and
+water heaped before each piece of it out of the water and drawn down
+behind (a capsule as long as the piece), the short capillary-gravity
+ripples its waterline sheds, running out from the capsule's outline; and
+foam hugging the waterline and trailing behind. Each is filtered by the pixel's footprint and
 what it averages away goes to the glitter's roughness, so from the shore,
 where a wave a metre long out there is less than a pixel deep, the wake
 shows as a line of rougher water, and zoomed in, as waves.

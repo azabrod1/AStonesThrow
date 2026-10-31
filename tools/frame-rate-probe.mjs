@@ -159,7 +159,8 @@ async function play(scene, pattern) {
       // shows), then what else is kept (the ice's shards).
       const things = [...new Set([...thrown, ...pond.rocks])].map((rock) => [rock.thing.name, rock.state, pond.rocks.includes(rock) ? (rock.fading !== undefined ? 'fading' : 'kept') : 'gone', rock.fadedAt ?? -1, ...rock.position.toArray(), ...rock.quaternion.toArray()]);
       const fish = pond.fish.fish.map((one) => [one.x, one.y, one.z, one.heading]);
-      return { things, fish, holes: pond.iceSheet.holes.length, visitor: JSON.stringify(pond.visitor), next: Math.random(), frames: frame };
+      // The loch's visitor as the world has it: not `body`, where the last frame drew it.
+      return { things, fish, holes: pond.iceSheet.holes.length, visitor: JSON.stringify({ ...pond.visitor, body: undefined }), next: Math.random(), frames: frame };
     } finally {
       Math.random = random;
     }
