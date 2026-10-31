@@ -28,7 +28,10 @@
 //   - koi: a pizza, a slice of bread and a stone among the koi, who eat;
 //   - pool: a basketball, a skipped stone and twenty-two stones in the
 //     pool's walls, more than Low keeps at rest, so the oldest fades as one
-//     comes to rest past the cap, between throws.
+//     comes to rest past the cap, between throws;
+//   - loch: a stone and a skipped stone at Loch Ness, then left past its
+//     first sighting (src/lochVisitor.js), whose state must match too: what
+//     it is, where, how far up, and when it comes and goes.
 // Prints each scene's comparison and exits with status 1 if any differs.
 //
 //   node tools/frame-rate-probe.mjs [--scene=koi,pool]   (only these scenes, in this order)
@@ -78,6 +81,13 @@ const SCENES = [
       { at: 0.5, x: 0.2, z: -1.3, thing: 'stone', manner: 'skip' },
       // More than Low keeps at rest (20): the one that comes to rest past it, between throws, fades the oldest.
       ...Array.from({ length: 22 }, (unused, index) => ({ at: 1 + 0.25 * index, x: -0.5 + 0.045 * index, z: -0.9 - 0.035 * index, thing: 'stone' })),
+    ],
+  },
+  {
+    name: 'loch', place: 'loch', ice: 'none', until: 52,
+    throws: [
+      { at: 0, x: 0, z: -1.4, thing: 'stone' },
+      { at: 1, x: 0.4, z: -2.2, thing: 'stone', manner: 'skip' },
     ],
   },
 ];
@@ -149,7 +159,7 @@ async function play(scene, pattern) {
       // shows), then what else is kept (the ice's shards).
       const things = [...new Set([...thrown, ...pond.rocks])].map((rock) => [rock.thing.name, rock.state, pond.rocks.includes(rock) ? (rock.fading !== undefined ? 'fading' : 'kept') : 'gone', rock.fadedAt ?? -1, ...rock.position.toArray(), ...rock.quaternion.toArray()]);
       const fish = pond.fish.fish.map((one) => [one.x, one.y, one.z, one.heading]);
-      return { things, fish, holes: pond.iceSheet.holes.length, next: Math.random(), frames: frame };
+      return { things, fish, holes: pond.iceSheet.holes.length, visitor: JSON.stringify(pond.visitor), next: Math.random(), frames: frame };
     } finally {
       Math.random = random;
     }
@@ -171,6 +181,7 @@ function compare(steady, uneven) {
   numbers(steady.things, uneven.things, 'things');
   numbers(steady.fish, uneven.fish, 'fish');
   if (steady.holes !== uneven.holes) unlike.push(`holes: ${steady.holes} against ${uneven.holes}`);
+  if (steady.visitor !== uneven.visitor) unlike.push(`the loch's visitor: ${steady.visitor} against ${uneven.visitor}`);
   if (steady.next !== uneven.next) unlike.push(`the next Math.random: ${steady.next} against ${uneven.next}`);
   return { most, where, unlike };
 }

@@ -131,6 +131,7 @@ export const FISH_BY_PLACE = {
   desert: [{ species: 'pupfish', count: 8 }, { species: 'tilapia', count: 3 }],
   cove: [{ species: 'mullet', count: 4 }, { species: 'wrasse', count: 1 }],
   koi: [{ species: 'koi', count: 7 }, { species: 'goldfish', count: 1 }],
+  loch: [{ species: 'trout', count: 2 }, { species: 'char', count: 2 }, { species: 'minnow', count: 6 }],   // Loch Ness's brown trout, Arctic char and minnows, shadows in its peat-dark water
   pool: [],
 };
 

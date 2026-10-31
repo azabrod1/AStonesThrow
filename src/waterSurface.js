@@ -65,6 +65,7 @@
 import * as THREE from 'three';
 import { ICE_SHADOW_UNIFORMS } from './iceShadow.js';
 import { WATER_VERTEX, WATER_FRAGMENT, WATER_UNDER_FRAGMENT } from './shaders/scene.js';
+import { VISITOR_CONTACTS, VISITOR_RINGS } from './shaders/visitor.js';
 
 // The floor's uniforms the surface seen from below shares (setBed): its march to the bed (LAKE_BED, every uniform it
 // declares; tools/garden-probe.mjs checks) and the bed's pattern.
@@ -156,7 +157,15 @@ const NO_ICE = () => ({
   ...ICE_SHADOW_UNIFORMS,   // the shadows' shared set (src/iceShadow.js): none in use without ice
 });
 
-export function createWaterSurface(water, lighting, ambientWaves, { meshSegments = Math.min(water.size, 512), rings = null, dropRings = null, skyCube = null, rain = null, haze = null, gale = null, ice = null } = {}) {
+// The loch's visitor's uniforms when there is none (src/shaders/visitor.js): off.
+const NO_VISITOR = () => ({
+  uVisitorOn: { value: 0 }, uVisitorSource: { value: new THREE.Vector4(0, 0, 1, 0) }, uVisitorWake: { value: new THREE.Vector4(1, 0, 0, 0.4) },
+  uVisitorEnvelope: { value: new THREE.Vector4() },
+  uVisitorContacts: { value: Array.from({ length: VISITOR_CONTACTS }, () => new THREE.Vector4()) },
+  uVisitorRings: { value: Array.from({ length: VISITOR_RINGS }, () => new THREE.Vector4()) },
+});
+
+export function createWaterSurface(water, lighting, ambientWaves, { meshSegments = Math.min(water.size, 512), rings = null, dropRings = null, skyCube = null, rain = null, haze = null, gale = null, ice = null, visitor = null } = {}) {
   const uniforms = {
     uHeight: { value: water.heightTexture },
     uFoam: { value: water.foamTexture },
@@ -199,6 +208,7 @@ export function createWaterSurface(water, lighting, ambientWaves, { meshSegments
     ...(dropRings ? dropRings.uniforms() : { uDropRingCount: { value: 0 } }),
     ...(haze ?? { uHazeColor: { value: new THREE.Vector3() }, uHazeDensity: { value: 0 } }),
     ...(ice ? ice.uniforms : NO_ICE()),
+    ...(visitor ? visitor.uniforms : NO_VISITOR()),   // the thing in the loch's wake (src/lochVisitor.js); off without it
     uPool: { value: new THREE.Vector4() },   // the pool's corner (x, z), side and depth; depth 0 in a lake (setPool)
     uDeck: { value: 0 },
   };
