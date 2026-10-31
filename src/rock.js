@@ -1179,7 +1179,9 @@ const reachBox = new THREE.Box3(), reachCentre = new THREE.Vector3(), reachCorne
 
 /** A plate's shape (stoneShape's, of its `geometry`) given its face as the disc of its area, in radii (`faceDisc`: Rock.plateRadius). */
 function plateFace(shape, geometry) {
-  shape.faceDisc = Math.sqrt(faceArea(geometry, shape.axes[2]) / Math.PI);
+  // Its mesh's own word where parts stand out of a face (an iPhone's camera: their undersides, on the face, would be
+  // counted as more of it), else its projection's.
+  shape.faceDisc = Math.sqrt((geometry.userData?.faceArea ?? faceArea(geometry, shape.axes[2])) / Math.PI);
 }
 
 /** The depth (in radii up from its bottom) a ball of `share` of water's density floats at: capShare's inverse, by bisection. */

@@ -164,8 +164,9 @@
 //     brick (215 × 102.5 × 65 mm, 2.7 kg: about 1900 kg/m³, its density from
 //     its mesh's volume; it sinks, and lands on the deck with a thud), a
 //     flat-screen TV (54 × 32 × 1.8 cm, 3.6 kg) and an iPhone (15 × 7.2 ×
-//     0.8 cm, 180 g), rigid rectangular plates with their screens on +y
-//     (they slap the water, sink and settle on a broad face), a snowball (5
+//     0.8 cm, 180 g, its home screen painted on its glass and its camera
+//     standing out of its back), rigid rectangular plates with their screens
+//     on +y (they slap the water, sink and settle on a broad face), a snowball (5
 //     to 15 cm, packed snow at 450 kg/m³: it floats half out, then soaks to
 //     slush in under half a minute and floats on, nine tenths under) and a
 //     toddler's toy slide (99 × 46 × 70 cm, 4.1 kg, hollow plastic: about

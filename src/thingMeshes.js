@@ -26,16 +26,15 @@
 //     its stalk's nub (createWatermelonGeometry);
 //   - brick: a box of a brick's proportions, its edges rounded, mottled clay
 //     (createBrickGeometry);
-//   - tv and iphone: closed rectangular slabs with rounded corners, their
-//     screens on +y; vertex colours draw the bezel, glass, phone wallpaper,
-//     camera lenses and TV vents (createDeviceGeometry). Both share the
-//     stone's material program and cache their geometry between throws;
-//   - tablet: an iPad's steps, each `look.model` its own device (TABLETS:
-//     the iPhone's own slab, createDeviceGeometry, then an iPad mini, an
-//     iPad and an iPad Pro, createTabletGeometry), each its maker's size,
-//     its glass showing a painted picture of its home screen (tabletTexture:
-//     its wallpaper, widgets, app icons and dock), its camera standing out of
-//     its back by its logo, its port, speakers and buttons on its edges;
+//   - tv: a closed rectangular slab with rounded corners, its screen on +y;
+//     vertex colours draw its bezel, glass and vents (createDeviceGeometry),
+//     in the stone's material program;
+//   - iphone and tablet (an iPad's steps, each `look.model` its own device,
+//     the first the iPhone itself): the same slab at each one's maker's
+//     size (TABLETS, createTabletGeometry), its glass showing a painted
+//     picture of its home screen (tabletTexture: its wallpaper, widgets, app
+//     icons and dock, iOS's or iPadOS's), its camera standing out of its
+//     back by its logo, its port, speakers and buttons on its edges;
 //   - pie: a fruit pie in its tin, its rim crimped, each one thrown filled
 //     at random (pieFilling: apple under a closed crust, cherry or blueberry
 //     under a lattice, open pumpkin; createPieGeometry);
@@ -99,7 +98,9 @@ const MESHES = new Map();
  * thing's shape over them, walks them for its lowest point and cuts them
  * into its buoyancy's columns, while the geometry itself is only drawn, as a
  * stone's finer mesh is, and as a rose's petals, drawn open, are (a fixed
- * kind's too: src/rock.js prepareThing); `userData.stone`, a stone's grain's kind and seed,
+ * kind's too: src/rock.js prepareThing); `userData.faceArea`, a plate's
+ * face's area where parts stand out of its face (src/rock.js plateFace: an
+ * iPhone's camera); `userData.stone`, a stone's grain's kind and seed,
  * src/shaders/stone.js; `userData.detail`, coarser meshes of it, which
  * src/rock.js showDetail draws when it is small on the screen, kept with the
  * kind and never disposed: { coarser: [{ geometry, spacing }], coarsest
@@ -1581,55 +1582,63 @@ export function createBrickGeometry() {
   return geometry;
 }
 
-// A TV and an iPhone: each a slab of its own half-sizes (`half`, its length
-// two unit radii), its outline's corners rounded by `corner` and its thin
-// edge square (onRoundedBox), its screen on +y. It is one closed hull, so
-// what is drawn is what the water displaces, and its details are vertex
-// colours, so it shares the stone's program. Its screen side and its back
-// are each a grid of their own whose lines fall on their details' edges
-// (deviceLines): a cell inside a detail with edges (the bezel, a TV's vents,
-// a phone's camera island and home indicator) is painted whole, so the
-// edges are sharp however few the cells; one that shades (a phone's
-// wallpaper, a TV's sheen, a lens) is painted corner by corner, on lines
-// DEVICE_SPACING apart (LENS_SPACING about the lenses). The rim joins the
-// screen side's edge to the back's however each is cut, so the hull has no
-// gaps.
+// A TV: a slab of its own half-sizes (`half`, its length two unit radii),
+// its outline's corners rounded by `corner` and its thin edge square
+// (onRoundedBox), its screen on +y. It is one closed hull, so what is drawn
+// is what the water displaces, and its details are vertex colours, so it
+// shares the stone's program. Its screen side and its back are each a grid
+// of their own whose lines fall on their details' edges (deviceLines): a
+// cell inside a detail with edges (the bezel, its vents) is painted whole,
+// so the edges are sharp however few the cells; one that shades (its
+// sheen) is painted corner by corner, on lines DEVICE_SPACING apart. The rim
+// joins the screen side's edge to the back's however each is cut, so the
+// hull has no gaps.
 //
-// An iPad (the `tablet` kind, `look.model`: the iPad's steps, src/things.js,
-// an iPhone, the phone's own, then an iPad mini, an iPad and an iPad Pro;
-// createTabletGeometry) is the same slab, its half-sizes and corner its
-// maker's (TABLETS, in millimetres), with its rear camera standing out of
-// it, its port, speakers and buttons on its edges, and its glass showing a
-// picture of its home screen (tabletTexture), so it shares the pizza's
-// textured program rather than one of its own.
+// An iPhone and an iPad (the `iphone` kind, and the `tablet` kind's
+// `look.model`s: the iPad's steps, src/things.js, the iPhone, then an iPad
+// mini, an iPad and an iPad Pro; createTabletGeometry) are the same slab,
+// each its half-sizes and corner its maker's (TABLETS, in millimetres),
+// with its rear camera standing out of it, its port, speakers and buttons
+// on its edges, and its glass showing a picture of its home screen
+// (tabletTexture: iOS's or iPadOS's), so it shares the pizza's textured
+// program rather than one of its own.
 const DEVICES = {
   tv: { half: [1, 1.8 / 54, 32 / 54], corner: 0.035 },
-  iphone: { half: [7.2 / 15, 0.8 / 15, 1], corner: 0.12 },
 };
-// Each iPad: its width, thickness and length, its outline's corner radius, its bezel and how tall its logo stands, in
-// millimetres (an iPad mini with A17 Pro, an iPad with A16, a 13-inch iPad Pro with M4); its front camera's edge and its
-// home screen's columns; its colours (sRGB: its back, rim and logo; its wallpaper's top and foot and its soft blobs of
+// Each phone and iPad: its width, thickness and length, its outline's corner radius, its bezel and how tall its logo
+// stands, in millimetres (the iPhone, 15 × 7.2 × 0.8 cm as it always was; an iPad mini with A17 Pro, an iPad with A16, a
+// 13-inch iPad Pro with M4); its front camera (a dot in its bezel's top or side, or the phone's Dynamic Island), its
+// home screen's columns and system (iOS's or iPadOS's layout: paintTabletScreen) and the edges its speakers sound
+// from; its colours (sRGB: its back, rim and logo; its wallpaper's top and foot and its soft blobs of
 // light, each [colour, across, down, radius] in shares of the screen); its rear camera, each lens `at` its middle's
 // millimetres from its long edge and its top seen from behind, its `radius` and how far it stands `raised` (a LiDAR's
 // dark, a flash's pale), an iPad Pro's island about them; its buttons on its edges, each from and to millimetres along
 // it from its middle (rightward seen from the front along its top, footward along its right side).
 const TABLETS = {
+  iphone: {
+    millimetres: [72, 8, 150], corner: 9, bezel: 2.2, logo: 13, front: 'island', columns: 4, system: 'ios', speakers: ['foot'],
+    back: [62, 76, 100], rim: [130, 142, 160], mark: [80, 96, 124],
+    wallpaper: { top: [40, 84, 206], foot: [128, 66, 190], blobs: [[[245, 143, 126], 0.74, 0.86, 0.55], [[150, 80, 210], 0.18, 0.55, 0.5], [[52, 120, 230], 0.82, 0.14, 0.45]] },
+    island: { at: [19.5, 19.5], half: 17, corner: 8.5, thickness: 1.1, colour: [72, 86, 110] },
+    lenses: [{ at: [11.5, 11.5], radius: 6.6, raised: 1.4 }, { at: [11.5, 27.5], radius: 6.6, raised: 1.4 }, { at: [26.5, 19.5], radius: 6.6, raised: 1.4 }, { at: [28, 8.5], radius: 2.1, raised: 0.2, kind: 'flash' }, { at: [28, 30.5], radius: 2.4, raised: 0.3, kind: 'lidar' }],
+    buttons: [{ edge: 'left', from: -50, to: -43 }, { edge: 'left', from: -37, to: -26 }, { edge: 'left', from: -22, to: -11 }, { edge: 'right', from: -38, to: -20 }],
+  },
   'ipad-mini': {
-    millimetres: [134.8, 6.3, 195.4], corner: 12, bezel: 9.4, logo: 20, front: 'top', columns: 4,
+    millimetres: [134.8, 6.3, 195.4], corner: 12, bezel: 9.4, logo: 20, front: 'top', columns: 4, system: 'ipados', speakers: ['top', 'foot'],
     back: [178, 166, 208], rim: [194, 184, 222], mark: [204, 196, 232],
     wallpaper: { top: [74, 46, 168], foot: [196, 84, 164], blobs: [[[255, 122, 172], 0.82, 0.72, 0.62], [[255, 176, 112], 0.18, 0.98, 0.5], [[132, 96, 255], 0.12, 0.22, 0.55]] },
     lenses: [{ at: [11, 11], radius: 4.4, raised: 0.8 }, { at: [11, 20.5], radius: 1.6, raised: 0.2, kind: 'flash' }],
     buttons: [{ edge: 'top', from: 42, to: 54 }, { edge: 'top', from: 20, to: 29 }, { edge: 'top', from: 30.5, to: 39.5 }],
   },
   ipad: {
-    millimetres: [179.5, 7.0, 248.6], corner: 14, bezel: 10.8, logo: 26, front: 'side', columns: 5,
+    millimetres: [179.5, 7.0, 248.6], corner: 14, bezel: 10.8, logo: 26, front: 'side', columns: 5, system: 'ipados', speakers: ['top', 'foot'],
     back: [150, 184, 218], rim: [168, 200, 230], mark: [180, 208, 234],
     wallpaper: { top: [18, 70, 190], foot: [22, 148, 200], blobs: [[[64, 222, 200], 0.76, 0.66, 0.6], [[255, 212, 96], 0.22, 0.92, 0.48], [[44, 64, 226], 0.82, 0.14, 0.5]] },
     lenses: [{ at: [12, 12], radius: 4.6, raised: 0.7 }],
     buttons: [{ edge: 'top', from: 62, to: 82 }, { edge: 'top', from: 36, to: 47 }, { edge: 'top', from: 48.5, to: 59.5 }],
   },
   'ipad-pro': {
-    millimetres: [215.5, 5.1, 281.6], corner: 16, bezel: 8.4, logo: 30, front: 'side', columns: 5,
+    millimetres: [215.5, 5.1, 281.6], corner: 16, bezel: 8.4, logo: 30, front: 'side', columns: 5, system: 'ipados', speakers: ['top', 'foot'],
     back: [44, 44, 48], rim: [78, 78, 84], mark: [22, 22, 25],
     wallpaper: { top: [8, 8, 20], foot: [26, 12, 44], blobs: [[[255, 112, 52], 0.7, 0.76, 0.46], [[214, 52, 164], 0.34, 0.6, 0.42], [[44, 84, 255], 0.2, 0.28, 0.42]] },
     island: { at: [20, 20.5], half: 12.5, corner: 5.5, thickness: 1.0, colour: [34, 34, 38] },
@@ -1637,13 +1646,13 @@ const TABLETS = {
     buttons: [{ edge: 'top', from: 60, to: 74 }, { edge: 'right', from: -118, to: -104 }, { edge: 'right', from: -102, to: -88 }],
   },
 };
-export const TABLET_MODELS = ['iphone', ...Object.keys(TABLETS)];   // the `tablet` kind's `look.model`s
+export const TABLET_MODELS = Object.keys(TABLETS);   // the `tablet` kind's `look.model`s
 for (const [kind, { millimetres: [width, thickness, length], corner }] of Object.entries(TABLETS)) {
   DEVICES[kind] = { half: [width / length, thickness / length, 1], corner: corner / (length / 2) };
 }
 // Its edges' details (millimetres; createTabletGeometry): the USB-C port in its foot's middle, its speakers' holes along
-// its top and foot, between these shares of its half-width either side of the middle, and the band of its rim they
-// are cut in, of its half-thickness either side of its middle.
+// the edges it sounds from (its foot, or its top and foot), between these shares of its half-width either side of the
+// middle, and the band of its rim they are cut in, of its half-thickness either side of its middle.
 const TABLET_EDGE = { port: 4.3, holes: { from: 0.32, to: 0.78, size: 1.1, pitch: 2.2 }, band: 0.45, slot: [14, 14, 16] };
 // Its screen's picture (tabletTexture): this many pixels across its front, and a white margin beside it that what is
 // not its glass (its back, its rim, its camera) samples, wide enough that the picture's coarsest sizes never reach it.
@@ -1652,18 +1661,9 @@ const TABLET_SPACING = { logo: 0.02 };   // unit radii between the lines about i
 const SCREEN_FONT = '-apple-system, "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif';
 const DEVICE_CUTS = 4;          // segments across each rounded corner's part of a side: its quarter circle in twice this
 const DEVICE_SPACING = 0.1;     // unit radii between the lines where a side shades
-const LENS_SPACING = 0.015;     // ...and about a phone's lenses
-// A phone's lenses on its back (unit radii; its top is −z, so seen from behind with its top up, +x is on the left: the
-// lenses top left, as an iPhone's are), each a ring, its dark surround and its glass, out to these radii.
-const LENSES = { at: [[0.27, -0.75], [0.27, -0.48], [-0.01, -0.615]], rings: [0.115, 0.088, 0.055] };
 // A TV's vents: slots across its back every `every` unit radii, `width` wide, within `reach` of its half-sizes.
 const VENTS = { every: Math.PI / 100, width: 2 * Math.asin(0.45) / 100, reach: [0.7, 0.6] };
-const DEVICE_COLORS = {
-  bezel: linear(18, 21, 27), edge: linear(143, 157, 178), back: linear(65, 85, 115),
-  glass: linear(23, 43, 64), reflection: linear(92, 128, 150),
-  blue: linear(40, 111, 219), violet: linear(128, 66, 190), coral: linear(245, 143, 126),
-  lens: linear(27, 66, 99), silver: linear(220, 229, 238),
-};
+const DEVICE_COLORS = { bezel: linear(18, 21, 27), glass: linear(23, 43, 64), reflection: linear(92, 128, 150) };
 
 /**
  * A device side's lines across one axis (the header), in −1..1 of its
@@ -1681,72 +1681,30 @@ function deviceLines(half, corner, spacing, edges = []) {
   return lines.filter((line, index) => index === 0 || line - lines[index - 1] > 1e-9);
 }
 
-/** A TV or iPhone (the header), separate triangles with the screen facing +y. */
+/** A TV (the header), separate triangles with the screen facing +y. */
 export function createDeviceGeometry(kind) {
   const { half, corner } = DEVICES[kind];
   const round = [corner, 0, corner];
   const color = new THREE.Color();
   const paint = (shade) => [shade.r, shade.g, shade.b];
-  let sides;
-  if (kind === 'iphone') {
-    // Its lenses' square, painted corner by corner, a line beyond their rings all round (so no corner of the long cells
-    // past it takes a ring's colour).
-    const lensLines = (axis) => {
-      const reach = LENSES.at.map((lens) => lens[axis === 0 ? 0 : 1]), margin = LENSES.rings[0] + LENS_SPACING;
-      const from = Math.min(...reach) - margin, to = Math.max(...reach) + margin;
-      const count = Math.ceil((to - from) / LENS_SPACING);
-      return Array.from({ length: count + 1 }, (_, step) => (from + ((to - from) * step) / count) / half[axis]);
-    };
-    sides = [{
-      // The glass to 0.88 and 0.93 of its half-sizes; the camera island at its top, the home indicator at its foot.
-      across: deviceLines(half[0], corner, DEVICE_SPACING, [-0.88, 0.88, -0.32, 0.32, -0.35, 0.35]),
-      along: deviceLines(half[2], corner, DEVICE_SPACING, [-0.93, 0.93, -0.855, -0.765, 0.836, 0.864]),
-      cell: (across, along) => {
-        if (Math.abs(across) > 0.88 || Math.abs(along) > 0.93) return DEVICE_COLORS.bezel;
-        if (Math.abs(across) < 0.32 && Math.abs(along + 0.81) < 0.045) return DEVICE_COLORS.bezel;
-        if (Math.abs(across) < 0.35 && Math.abs(along - 0.85) < 0.014) return DEVICE_COLORS.silver;
-        return null;
-      },
-      // Its wallpaper: blue to violet down it, a wave of coral over its foot.
-      shade: (across, along) => {
-        color.copy(DEVICE_COLORS.blue).lerp(DEVICE_COLORS.violet, (along + 1) / 2);
-        return color.lerp(DEVICE_COLORS.coral, smoothstep(-0.35, 0.9, along - 0.45 * Math.sin(across * 3)));
-      },
-    }, {
-      across: deviceLines(half[0], corner, Infinity, lensLines(0)),
-      along: deviceLines(half[2], corner, Infinity, lensLines(2)),
-      cell: () => null,
-      shade: (across, along) => {
-        color.copy(DEVICE_COLORS.back);
-        for (const [lensX, lensZ] of LENSES.at) {
-          const distance = Math.hypot(across * half[0] - lensX, along * half[2] - lensZ);
-          if (distance < LENSES.rings[0]) color.copy(DEVICE_COLORS.edge);
-          if (distance < LENSES.rings[1]) color.copy(DEVICE_COLORS.bezel);
-          if (distance < LENSES.rings[2]) color.copy(DEVICE_COLORS.lens);
-        }
-        return color;
-      },
-    }];
-  } else {
-    // The vents' slots, each one's two edges.
-    const slots = [];
-    for (let middle = 0; middle + VENTS.width / 2 < VENTS.reach[0]; middle += VENTS.every) {
-      for (const at of middle === 0 ? [0] : [middle, -middle]) slots.push(at - VENTS.width / 2, at + VENTS.width / 2);
-    }
-    const vent = (across) => Math.abs(across) < VENTS.reach[0] && Math.abs(across - VENTS.every * Math.round(across / VENTS.every)) < VENTS.width / 2;
-    sides = [{
-      // The glass to 0.95 and 0.88 of its half-sizes, a sheen across it.
-      across: deviceLines(half[0], corner, DEVICE_SPACING, [-0.95, 0.95]),
-      along: deviceLines(half[2], corner, DEVICE_SPACING, [-0.88, 0.88]),
-      cell: (across, along) => (Math.abs(across) > 0.95 || Math.abs(along) > 0.88 ? DEVICE_COLORS.bezel : null),
-      shade: (across, along) => color.copy(DEVICE_COLORS.glass).lerp(DEVICE_COLORS.reflection, 0.32 * smoothstep(-1, 1, across - along)),
-    }, {
-      across: deviceLines(half[0], corner, Infinity, slots.map((edge) => edge / half[0])),
-      along: deviceLines(half[2], corner, Infinity, [-VENTS.reach[1], VENTS.reach[1]]),
-      cell: (across, along) => (vent(across * half[0]) && Math.abs(along) < VENTS.reach[1] ? DEVICE_COLORS.glass : DEVICE_COLORS.bezel),
-      shade: () => DEVICE_COLORS.bezel,
-    }];
+  // The vents' slots, each one's two edges.
+  const slots = [];
+  for (let middle = 0; middle + VENTS.width / 2 < VENTS.reach[0]; middle += VENTS.every) {
+    for (const at of middle === 0 ? [0] : [middle, -middle]) slots.push(at - VENTS.width / 2, at + VENTS.width / 2);
   }
+  const vent = (across) => Math.abs(across) < VENTS.reach[0] && Math.abs(across - VENTS.every * Math.round(across / VENTS.every)) < VENTS.width / 2;
+  const sides = [{
+    // The glass to 0.95 and 0.88 of its half-sizes, a sheen across it.
+    across: deviceLines(half[0], corner, DEVICE_SPACING, [-0.95, 0.95]),
+    along: deviceLines(half[2], corner, DEVICE_SPACING, [-0.88, 0.88]),
+    cell: (across, along) => (Math.abs(across) > 0.95 || Math.abs(along) > 0.88 ? DEVICE_COLORS.bezel : null),
+    shade: (across, along) => color.copy(DEVICE_COLORS.glass).lerp(DEVICE_COLORS.reflection, 0.32 * smoothstep(-1, 1, across - along)),
+  }, {
+    across: deviceLines(half[0], corner, Infinity, slots.map((edge) => edge / half[0])),
+    along: deviceLines(half[2], corner, Infinity, [-VENTS.reach[1], VENTS.reach[1]]),
+    cell: (across, along) => (vent(across * half[0]) && Math.abs(along) < VENTS.reach[1] ? DEVICE_COLORS.glass : DEVICE_COLORS.bezel),
+    shade: () => DEVICE_COLORS.bezel,
+  }];
   const positions = [], normals = [], colors = [];
   const first = new THREE.Vector3(), second = new THREE.Vector3(), facing = new THREE.Vector3();
   // A triangle of three points ({ position, normal, color }), wound to face the way their normals do.
@@ -1777,7 +1735,7 @@ export function createDeviceGeometry(kind) {
   });
   // The rim, each of its four sides from the screen side's edge to the back's, through their own points: each next
   // triangle takes the nearer next point of either edge, so the two need not be cut alike.
-  const rim = paint(kind === 'iphone' ? DEVICE_COLORS.edge : DEVICE_COLORS.bezel);
+  const rim = paint(DEVICE_COLORS.bezel);
   for (const [axis, sign] of [[0, 1], [0, -1], [2, 1], [2, -1]]) {
     const edge = (lines, height) => lines.map((line) => {
       const point = [0, height, 0];
@@ -1975,18 +1933,20 @@ function tabletUv(kind) {
 }
 
 /**
- * An iPad's home screen (the header), as iPadOS shows one in portrait: its
- * bezel black round its display; on its display, its rounded corners
- * clipped, its wallpaper (its top's colour to its foot's under soft blobs of
- * light), the status bar (the time and date, Wi-Fi and the battery), a
- * calendar and a weather widget, rows of app icons, each a rounded square of
- * its colours with its glyph and its name under it, the page's dots, the dock
- * of six (five on a mini) frosted over the wallpaper, and the home
- * indicator; its front camera a dot in its bezel. In millimetres of the
- * device, as its own are.
+ * A phone's or an iPad's home screen (the header), as iOS or iPadOS shows
+ * one in portrait: its bezel black round its display; on its display, its
+ * rounded corners clipped, its wallpaper (its top's colour to its foot's
+ * under soft blobs of light), the status bar (the time and date, Wi-Fi and
+ * the battery; on the phone the time and its signal either side of its
+ * Dynamic Island), a calendar and a weather widget, rows of app icons, each
+ * a rounded square of its colours with its glyph and its name under it, the
+ * page's dots (the phone's Search pill), the dock frosted over the
+ * wallpaper (four apps on the phone, five on a mini, six on an iPad) and the
+ * home indicator; an iPad's front camera a dot in its bezel. In millimetres
+ * of the device, as its own are.
  */
 function paintTabletScreen(kind) {
-  const tablet = TABLETS[kind];
+  const tablet = TABLETS[kind], phone = tablet.system === 'ios';
   const [widthMm] = tablet.millimetres;
   const { pixels: [frontWidth, frontHeight] } = tabletUv(kind);
   const canvas = document.createElement('canvas');
@@ -1998,10 +1958,12 @@ function paintTabletScreen(kind) {
   paint.fillRect(0, 0, canvas.width, canvas.height);
   paint.fillStyle = 'rgb(7,7,9)';
   paint.fillRect(0, 0, frontWidth, frontHeight);
-  // Its front camera: a dark lens in a faint ring, in the middle of its bezel.
-  const cameraX = tablet.front === 'top' ? frontWidth / 2 : frontWidth - (tablet.bezel / 2) * mm, cameraY = tablet.front === 'top' ? (tablet.bezel / 2) * mm : frontHeight / 2;
-  paint.fillStyle = 'rgb(28,30,36)'; paint.beginPath(); paint.arc(cameraX, cameraY, 1.3 * mm, 0, Math.PI * 2); paint.fill();
-  paint.fillStyle = 'rgb(12,18,30)'; paint.beginPath(); paint.arc(cameraX, cameraY, 0.8 * mm, 0, Math.PI * 2); paint.fill();
+  // An iPad's front camera: a dark lens in a faint ring, in the middle of its bezel.
+  if (!phone) {
+    const cameraX = tablet.front === 'top' ? frontWidth / 2 : frontWidth - (tablet.bezel / 2) * mm, cameraY = tablet.front === 'top' ? (tablet.bezel / 2) * mm : frontHeight / 2;
+    paint.fillStyle = 'rgb(28,30,36)'; paint.beginPath(); paint.arc(cameraX, cameraY, 1.3 * mm, 0, Math.PI * 2); paint.fill();
+    paint.fillStyle = 'rgb(12,18,30)'; paint.beginPath(); paint.arc(cameraX, cameraY, 0.8 * mm, 0, Math.PI * 2); paint.fill();
+  }
   // The display, clipped to its rounded corners.
   const left = tablet.bezel * mm, top = tablet.bezel * mm, width = frontWidth - 2 * left, height = frontHeight - 2 * top;
   roundedPath(paint, left, top, width, height, Math.max(tablet.corner - 0.6 * tablet.bezel, 4) * mm);
@@ -2027,22 +1989,41 @@ function paintTabletScreen(kind) {
     paint.fillStyle = colour;
     paint.fillText(string, x, y);
   };
-  // The status bar: the time and the date at its left, Wi-Fi, the charge and the battery at its right.
-  text('9:41', left + 5 * mm, top + 5.4 * mm, 3.3, 600);
-  text('Mon Jun 10', left + 14.2 * mm, top + 5.4 * mm, 3.0, 500);
-  const batteryX = left + width - 11.5 * mm, batteryY = top + 3 * mm;
-  paint.strokeStyle = 'rgba(255,255,255,0.6)'; paint.lineWidth = 0.3 * mm;
-  roundedPath(paint, batteryX, batteryY, 6.4 * mm, 3 * mm, 0.9 * mm); paint.stroke();
-  paint.fillStyle = '#fff'; roundedPath(paint, batteryX + 0.6 * mm, batteryY + 0.6 * mm, 5.2 * mm, 1.8 * mm, 0.5 * mm); paint.fill();
-  paint.fillStyle = 'rgba(255,255,255,0.6)'; paint.fillRect(batteryX + 6.6 * mm, batteryY + 0.9 * mm, 0.5 * mm, 1.2 * mm);
-  text('100%', batteryX - 1.2 * mm, top + 5.4 * mm, 2.9, 500, 'right');
-  paint.strokeStyle = '#fff'; paint.lineWidth = 0.45 * mm;
-  for (const radius of [1, 2, 3]) { paint.beginPath(); paint.arc(batteryX - 12.4 * mm, top + 5.3 * mm, radius * mm, -Math.PI * 0.75, -Math.PI * 0.25); paint.stroke(); }
-  // The grid: its columns across most of the display, its rows from under the status bar, the widgets' two rows first.
-  const columns = tablet.columns, pitch = (width * 0.86) / columns, icon = pitch * 0.52, rowPitch = pitch * 1.08;
-  const columnX = (column) => left + width * 0.07 + pitch * (column + 0.5);
-  const rowY = (row) => top + 13 * mm + icon / 2 + row * rowPitch;
-  const dockHeight = icon * 1.5, dockTop = top + height - 4.5 * mm - dockHeight;
+  const battery = (x, y) => {
+    paint.strokeStyle = 'rgba(255,255,255,0.6)'; paint.lineWidth = 0.3 * mm;
+    roundedPath(paint, x, y, 6.4 * mm, 3 * mm, 0.9 * mm); paint.stroke();
+    paint.fillStyle = '#fff'; roundedPath(paint, x + 0.6 * mm, y + 0.6 * mm, 5.2 * mm, 1.8 * mm, 0.5 * mm); paint.fill();
+    paint.fillStyle = 'rgba(255,255,255,0.6)'; paint.fillRect(x + 6.6 * mm, y + 0.9 * mm, 0.5 * mm, 1.2 * mm);
+  };
+  const wifi = (x, y) => {
+    paint.strokeStyle = '#fff'; paint.lineWidth = 0.45 * mm;
+    for (const radius of [1, 2, 3]) { paint.beginPath(); paint.arc(x, y, radius * mm, -Math.PI * 0.75, -Math.PI * 0.25); paint.stroke(); }
+  };
+  if (phone) {
+    // Its Dynamic Island, the time on its left, the signal, Wi-Fi and the battery on its right.
+    paint.fillStyle = '#000';
+    roundedPath(paint, left + width / 2 - 10 * mm, top + 2.4 * mm, 20 * mm, 6.4 * mm, 3.2 * mm); paint.fill();
+    text('9:41', left + width * 0.19, top + 7 * mm, 3.3, 600, 'center');
+    const right = left + width * 0.81;
+    paint.fillStyle = '#fff';
+    for (let bar = 0; bar < 4; bar++) paint.fillRect(right - 10.5 * mm + bar * 1.1 * mm, top + (6.6 - 0.7 * (bar + 1)) * mm, 0.75 * mm, 0.7 * (bar + 1) * mm);
+    wifi(right - 2.4 * mm, top + 6.8 * mm);
+    battery(right + 1.6 * mm, top + 4.2 * mm);
+  } else {
+    // The time and the date at its left, Wi-Fi, the charge and the battery at its right.
+    text('9:41', left + 5 * mm, top + 5.4 * mm, 3.3, 600);
+    text('Mon Jun 10', left + 14.2 * mm, top + 5.4 * mm, 3.0, 500);
+    const batteryX = left + width - 11.5 * mm;
+    battery(batteryX, top + 3 * mm);
+    text('100%', batteryX - 1.2 * mm, top + 5.4 * mm, 2.9, 500, 'right');
+    wifi(batteryX - 12.4 * mm, top + 5.3 * mm);
+  }
+  // The grid: its columns across most of the display, its rows from under the status bar, the widgets' two rows first;
+  // the phone's icons bigger for its width, as iOS's are.
+  const columns = tablet.columns, pitch = (width * (phone ? 0.9 : 0.86)) / columns, icon = pitch * (phone ? 0.64 : 0.52), rowPitch = pitch * (phone ? 1.2 : 1.08);
+  const columnX = (column) => left + (width - pitch * columns) / 2 + pitch * (column + 0.5);
+  const rowY = (row) => top + (phone ? 16 : 13) * mm + icon / 2 + row * rowPitch;
+  const dockHeight = icon * (phone ? 1.62 : 1.5), dockTop = top + height - (phone ? 5 : 4.5) * mm - dockHeight;
   const drawIcon = (appName, x, y, size, label) => {
     const app = APPS.find((candidate) => candidate.name === appName);
     const gradient = paint.createLinearGradient(0, y - size / 2, 0, y + size / 2);
@@ -2064,53 +2045,69 @@ function paintTabletScreen(kind) {
       paint.restore();
     }
   };
-  // The widgets, each two columns and two rows: a calendar's, white, and the weather's, a sky.
+  // The widgets, each two columns and two rows: a calendar's, white, and the weather's, a sky; what is in them in
+  // millimetres of an iPad's (41.5 mm across), scaled to this one's.
+  const widgetWidth = pitch + icon, widgetHeight = rowPitch + icon, scale = widgetWidth / (41.5 * mm);
+  const inWidget = (string, x, y, along, down, size, weight, colour) => text(string, x + along * scale * mm, y + down * scale * mm, size * scale, weight, 'left', colour);
   const widget = (fromColumn, draw) => {
-    const x = columnX(fromColumn) - icon / 2, y = rowY(0) - icon / 2, widgetWidth = pitch + icon, widgetHeight = rowPitch + icon;
+    const x = columnX(fromColumn) - icon / 2, y = rowY(0) - icon / 2;
     paint.save();
     paint.shadowColor = 'rgba(0,0,0,0.22)'; paint.shadowBlur = 1.6 * mm;
-    roundedPath(paint, x, y, widgetWidth, widgetHeight, icon * 0.4);
-    draw(x, y, widgetWidth, widgetHeight);
+    roundedPath(paint, x, y, widgetWidth, widgetHeight, icon * (phone ? 0.36 : 0.4));
+    draw(x, y);
     paint.restore();
   };
-  widget(0, (x, y, widgetWidth) => {
+  widget(0, (x, y) => {
     paint.fillStyle = '#fff'; paint.fill();
     paint.shadowColor = 'transparent';
-    text('MONDAY', x + 3.6 * mm, y + 6.2 * mm, 2.4, 700, 'left', '#ff3b30');
-    text('10', x + 3.2 * mm, y + 17 * mm, 10, 300, 'left', '#1c1c1e');
-    text('No events today', x + 3.6 * mm, y + 24 * mm, 2.2, 500, 'left', '#8e8e93');
-    paint.fillStyle = '#e5e5ea'; paint.fillRect(x + 3.6 * mm, y + 26.5 * mm, widgetWidth - 7.2 * mm, 0.25 * mm);
+    inWidget('MONDAY', x, y, 3.6, 6.2, 2.4, 700, '#ff3b30');
+    inWidget('10', x, y, 3.2, 17, 10, 300, '#1c1c1e');
+    inWidget('No events today', x, y, 3.6, 24, 2.2, 500, '#8e8e93');
+    paint.fillStyle = '#e5e5ea'; paint.fillRect(x + 3.6 * scale * mm, y + 26.5 * scale * mm, widgetWidth - 7.2 * scale * mm, 0.25 * mm);
   });
   widget(2, (x, y) => {
-    const weather = paint.createLinearGradient(0, y, 0, y + rowPitch + icon);
+    const weather = paint.createLinearGradient(0, y, 0, y + widgetHeight);
     weather.addColorStop(0, '#3d93ff'); weather.addColorStop(1, '#1b58c9');
     paint.fillStyle = weather; paint.fill();
     paint.shadowColor = 'transparent';
-    text('Cupertino', x + 3.6 * mm, y + 6.2 * mm, 2.6, 600);
-    text('72°', x + 3.2 * mm, y + 17 * mm, 9, 300);
-    paint.fillStyle = '#ffd60a'; paint.beginPath(); paint.arc(x + 5 * mm, y + 21.5 * mm, 1.4 * mm, 0, Math.PI * 2); paint.fill();
-    text('Sunny', x + 3.6 * mm, y + 25.5 * mm, 2.2, 600);
-    text('H:78°  L:61°', x + 3.6 * mm, y + 28.6 * mm, 2.1, 500);
+    inWidget('Cupertino', x, y, 3.6, 6.2, 2.6, 600);
+    inWidget('72°', x, y, 3.2, 17, 9, 300);
+    paint.fillStyle = '#ffd60a'; paint.beginPath(); paint.arc(x + 5 * scale * mm, y + 21.5 * scale * mm, 1.4 * scale * mm, 0, Math.PI * 2); paint.fill();
+    inWidget('Sunny', x, y, 3.6, 25.5, 2.2, 600);
+    inWidget('H:78°  L:61°', x, y, 3.6, 28.6, 2.1, 500);
   });
-  // The icons: beside the widgets (a fifth column's), then whole rows as far as stand clear of the dock.
-  const gridApps = APPS.map((app) => app.name).filter((name) => !DOCK_APPS.includes(name));
+  // The dock's apps, and the icons: beside the widgets (an iPad's fifth column's), then whole rows as far as stand
+  // clear of the dock.
+  const dockApps = DOCK_APPS.slice(0, phone ? 4 : columns + 1);
+  const gridApps = APPS.map((app) => app.name).filter((name) => !dockApps.includes(name));
   let next = 0;
-  for (let row = 0; rowY(row) + icon / 2 + 4 * mm < dockTop - 6 * mm && next < gridApps.length; row++) {
+  for (let row = 0; rowY(row) + icon / 2 + 4 * mm < dockTop - (phone ? 8 : 6) * mm && next < gridApps.length; row++) {
     for (let column = row < 2 ? 4 : 0; column < columns && next < gridApps.length; column++) drawIcon(gridApps[next++], columnX(column), rowY(row), icon, true);
   }
-  // The page's dots over the dock, the dock frosted over the wallpaper with its apps, and the home indicator.
-  const dotsY = dockTop - 3 * mm;
-  for (const [offset, alpha] of [[-1.1, 1], [1.1, 0.45]]) { paint.fillStyle = `rgba(255,255,255,${alpha})`; paint.beginPath(); paint.arc(left + width / 2 + offset * mm, dotsY, 0.6 * mm, 0, Math.PI * 2); paint.fill(); }
-  const dockApps = DOCK_APPS.slice(0, columns + 1), dockPitch = icon * 1.32, dockWidth = dockApps.length * dockPitch + icon * 0.4;
+  if (phone) {
+    // The Search pill over the dock.
+    const pillY = dockTop - 6 * mm;
+    paint.fillStyle = 'rgba(255,255,255,0.26)';
+    roundedPath(paint, left + width / 2 - 8.5 * mm, pillY, 17 * mm, 5 * mm, 2.5 * mm); paint.fill();
+    paint.strokeStyle = '#fff'; paint.lineWidth = 0.35 * mm;
+    paint.beginPath(); paint.arc(left + width / 2 - 5 * mm, pillY + 2.3 * mm, 0.9 * mm, 0, Math.PI * 2); paint.stroke();
+    paint.beginPath(); paint.moveTo(left + width / 2 - 4.3 * mm, pillY + 3 * mm); paint.lineTo(left + width / 2 - 3.6 * mm, pillY + 3.7 * mm); paint.stroke();
+    text('Search', left + width / 2 - 2.8 * mm, pillY + 3.4 * mm, 2.3, 600);
+  } else {
+    const dotsY = dockTop - 3 * mm;
+    for (const [offset, alpha] of [[-1.1, 1], [1.1, 0.45]]) { paint.fillStyle = `rgba(255,255,255,${alpha})`; paint.beginPath(); paint.arc(left + width / 2 + offset * mm, dotsY, 0.6 * mm, 0, Math.PI * 2); paint.fill(); }
+  }
+  // The dock, frosted over the wallpaper, with its apps (the phone's across nearly its width), and the home indicator.
+  const dockPitch = phone ? (width - 6 * mm) / dockApps.length : icon * 1.32, dockWidth = phone ? width - 6 * mm : dockApps.length * dockPitch + icon * 0.4;
   const dockLeft = left + (width - dockWidth) / 2;
-  roundedPath(paint, dockLeft, dockTop, dockWidth, dockHeight, dockHeight * 0.32);
+  roundedPath(paint, dockLeft, dockTop, dockWidth, dockHeight, dockHeight * (phone ? 0.38 : 0.32));
   const frost = paint.createLinearGradient(0, dockTop, 0, dockTop + dockHeight);
   frost.addColorStop(0, 'rgba(255,255,255,0.34)'); frost.addColorStop(1, 'rgba(255,255,255,0.2)');
   paint.fillStyle = frost; paint.fill();
   paint.strokeStyle = 'rgba(255,255,255,0.3)'; paint.lineWidth = 0.25 * mm; paint.stroke();
-  dockApps.forEach((name, index) => drawIcon(name, dockLeft + icon * 0.2 + dockPitch * (index + 0.5), dockTop + dockHeight / 2, icon, false));
+  dockApps.forEach((name, index) => drawIcon(name, dockLeft + (phone ? 0 : icon * 0.2) + dockPitch * (index + 0.5), dockTop + dockHeight / 2, icon, false));
   paint.fillStyle = 'rgba(255,255,255,0.85)';
-  roundedPath(paint, left + width * 0.35, top + height - 2.2 * mm, width * 0.3, 1.1 * mm, 0.55 * mm); paint.fill();
+  roundedPath(paint, left + width * (phone ? 0.32 : 0.35), top + height - (phone ? 1.8 : 2.2) * mm, width * (phone ? 0.36 : 0.3), 1.1 * mm, 0.55 * mm); paint.fill();
   paint.restore();
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
@@ -2151,7 +2148,7 @@ function appleLogo(right, up) {
  * of its back (an iPad Pro's island, a slab, and on it its lenses), each lens
  * turned from a profile (its metal ring, its dark surround, its glass; a
  * LiDAR's dark, a flash's pale), each part closed and meeting the back
- * without overlapping it.
+ * without overlapping it; set about its volume's middle.
  */
 export function createTabletGeometry(kind) {
   const tablet = TABLETS[kind], { half, corner } = DEVICES[kind];
@@ -2208,13 +2205,13 @@ export function createTabletGeometry(kind) {
   }
   const detailEdges = (name) => [
     ...(name === 'foot' ? [-port, port] : []),
-    ...(name === 'top' || name === 'foot' ? holeEdges : []),
+    ...(tablet.speakers.includes(name) ? holeEdges : []),
     ...tablet.buttons.filter((one) => one.edge === name).flatMap((one) => [one.from, one.to]),
   ];
   const detailAt = (name, at) => {
     if (name === 'foot' && Math.abs(at) < port) return slot;
     const hole = (Math.abs(at) - holes.from * widthMm) / holes.pitch;
-    if ((name === 'top' || name === 'foot') && hole > 0 && hole < holeCount && hole % 1 < holes.size / holes.pitch) return slot;
+    if (tablet.speakers.includes(name) && hole > 0 && hole < holeCount && hole % 1 < holes.size / holes.pitch) return slot;
     return tablet.buttons.some((one) => one.edge === name && at > one.from && at < one.to) ? button : rim;
   };
   const rimColour = rim.toArray();
@@ -2290,9 +2287,14 @@ export function createTabletGeometry(kind) {
     }
     parts.push(plainUv(facingOut(turnedMesh({ position: lensPositions, color: lensColors }, profile.map(([out]) => out), segments))));
   }
+  // About its volume's middle (its camera's weight moves it off its slab's), as the physics turns it. Its face's area
+  // its outline's, a rounded rectangle (src/rock.js plateFace: its camera's parts, closed on its back, would add their
+  // undersides to a projection's).
   const geometry = joined(parts);
   for (const part of parts) part.dispose();
-  return geometry;
+  const { centroid } = volumeCentroid(geometry);
+  geometry.userData.faceArea = 4 * half[0] * half[2] - (4 - Math.PI) * corner * corner;
+  return geometry.translate(-centroid[0], -centroid[1], -centroid[2]);
 }
 
 // A shard of ice (src/ice.js: a piece of the sheet a thing broke through,
@@ -3580,15 +3582,14 @@ registerMesh('ball', {
 registerMesh('apple', { build: () => createAppleGeometry(), color: () => new THREE.Color(1, 1, 1), volume: () => meshVolume(createAppleGeometry(() => 0.5).toNonIndexed()) });
 registerMesh('watermelon', { build: () => createWatermelonGeometry(), color: () => new THREE.Color(1, 1, 1), fixed: true });
 registerMesh('brick', { build: () => createBrickGeometry(), color: () => new THREE.Color(1, 1, 1), fixed: true });
-for (const kind of ['tv', 'iphone']) {
-  registerMesh(kind, { build: () => createDeviceGeometry(kind), color: () => new THREE.Color(1, 1, 1), fixed: true });
-}
-// An iPad's steps (src/things.js 'ipad'): each preset's `look.model` its own device, the phone's the iPhone's own.
-// Its screen's picture painted as it is built (prepareThing, under the veil or as the slider comes to it), not as it is
-// first thrown.
+registerMesh('tv', { build: () => createDeviceGeometry('tv'), color: () => new THREE.Color(1, 1, 1), fixed: true });
+// The iPhone, and an iPad's steps (src/things.js 'ipad': each preset's `look.model` its own device, the first the
+// iPhone itself), each its screen's picture painted as it is built (prepareThing, under the veil or as the slider comes
+// to it), not as it is first thrown.
+registerMesh('iphone', { build: () => (tabletTexture('iphone'), createTabletGeometry('iphone')), texture: () => tabletTexture('iphone'), color: () => new THREE.Color(1, 1, 1), fixed: true });
 registerMesh('tablet', {
-  build: (definition) => (definition.look.model === 'iphone' ? createDeviceGeometry('iphone') : (tabletTexture(definition.look.model), createTabletGeometry(definition.look.model))),
-  texture: (definition) => (definition.look.model === 'iphone' ? null : tabletTexture(definition.look.model)),
+  build: (definition) => (tabletTexture(definition.look.model), createTabletGeometry(definition.look.model)),
+  texture: (definition) => tabletTexture(definition.look.model),
   color: () => new THREE.Color(1, 1, 1), fixed: true,
   check: (look) => (TABLET_MODELS.includes(look.model) ? [] : [`look.model must be one of ${TABLET_MODELS.join(', ')}`]),
 });

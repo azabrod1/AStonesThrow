@@ -97,7 +97,12 @@ is remembered on the device (but the view, which opens on the shore):
   on their own faces' area: they slap the water, flutter down as thin plates
   do, and come to rest lying along the lake bed's slope. In the pool they
   land wherever they fit, their slap standing no crown, and its walls meet
-  their corners. Choose them under Other or use `?thing=tv` and
+  their corners. The iPhone's glass is a painted picture of an iOS home
+  screen (its Dynamic Island with the time and signal either side, a
+  calendar and a weather widget, app icons with their names, the Search
+  pill and the dock), its camera plateau stands out of its back with its
+  three lenses, flash and LiDAR, and its USB-C port, speaker holes and
+  buttons are on its edges. Choose them under Other or use `?thing=tv` and
   `?thing=iphone`; both support Toss and Lob. A banana (about 920 kg/m³
   whole) tumbles end over end and floats with only a sliver out. A slice
   of bread (30 g, about 175 kg/m³) flutters down floppier than a pizza,
@@ -118,8 +123,9 @@ is remembered on the device (but the view, which opens on the shore):
   with their names and the dock; drawn by the pizza's program, so no
   program of its own), its camera standing out of its back by its logo
   (the Pro's island with its lens, LiDAR and flash), its USB-C port,
-  speaker holes and buttons on its edges; each is a plate that slaps the
-  water and sinks, the thinnest gliding between its swings. A cast-iron frying pan comes in 20, 25 and 30 cm (1.5, 2.4 and
+  speaker holes and buttons on its edges (the iPhone is the iPhone, as
+  above); each is a plate that slaps the water and sinks, the thinnest
+  gliding between its swings. A cast-iron frying pan comes in 20, 25 and 30 cm (1.5, 2.4 and
   3.4 kg, a Lodge's sizes, the largest with a helper handle), its walls as
   thick as iron of its weight makes them (about 7150 kg/m³): thrown flat
   and spinning, it slaps the water, flutters down broadside at about
@@ -142,7 +148,7 @@ is remembered on the device (but the view, which opens on the shore):
   deck, shrunk to 160×90: `--sky=pool --thing=name
   --throws=-1.75:0.75:0.05 --times=3 --seed=1 --w=320 --h=180`, looked at
   where it rests (`--report` says) with `--look=x:y:z` and a `--fov` that
-  frames it (a duck 4°, an iPad 6°, a frying pan 7°, a pie 8°, a pizza
+  frames it (a duck 4°, an iPhone 4°, an iPad 6°, a frying pan 7°, a pie 8°, a pizza
   9°, a toy slide 24°; the cake's with `--seed=3`, on which it lands right
   way up, and the roses' with `--seed=5` at 11°, on which they stand).
 - View: Shore, standing on the bank as the page opens; Behind, over the

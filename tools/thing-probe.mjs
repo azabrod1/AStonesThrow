@@ -79,9 +79,10 @@
 //     can be made and stepped;
 //   - mass, density and volume agree for every thing not sized by its
 //     diameter, the volume measured here from its mesh;
-//   - the TV and iPhone have their specified rectangular dimensions and
-//     sink, and so does each step of the iPad (an iPhone, the iPhone's own
-//     mesh, an iPad mini, an iPad, an iPad Pro); each frying pan is its
+//   - the TV and iPhone have their specified rectangular dimensions (a
+//     phone's camera standing out of its back) and sink, and so does each
+//     step of the iPad (an iPhone, the iPhone's own mesh, an iPad mini, an
+//     iPad, an iPad Pro); each frying pan is its
 //     preset's length and cast iron's density; each count of roses weighs
 //     what its parts do, its ballast where their weight is, and floats; each
 //     step of these three is thrown into the lake as below; a toy slide is built 99 × 70 × 46 cm and a slice of bread
@@ -304,12 +305,13 @@ for (const [name, dimensions] of [['slide', [0.99, 0.70, 0.46]], ['bread', [0.12
 for (const [name, text] of [['slide', '99 cm · 4.1 kg'], ['bread', '12.4 cm · 30 g'], ['banana', '160 g · 20.6 cm']]) {
   check(THINGS[name].properties(THINGS[name].slider?.initial).text === text, `${name}: the strip reads "${THINGS[name].properties(THINGS[name].slider?.initial).text}", not "${text}"`);
 }
-for (const [name, dimensions, mass] of [['tv', [0.54, 0.018, 0.32], 3.6], ['iphone', [0.072, 0.008, 0.15], 0.18]]) {
+// (A phone's thickness its body's, its camera standing out of its back by under 3 mm besides.)
+for (const [name, dimensions, mass, camera] of [['tv', [0.54, 0.018, 0.32], 3.6, 0], ['iphone', [0.072, 0.008, 0.15], 0.18, 0.003]]) {
   const thing = THINGS[name], measured = measure(name);
   const geometry = meshKind(thing.look.mesh).build(thing, {});
   geometry.computeBoundingBox();
   const bounds = geometry.boundingBox.getSize(new THREE.Vector3()).multiplyScalar(measured.radius).toArray();
-  check(bounds.every((length, axis) => near(length, dimensions[axis], 1e-6)) && near(measured.mass, mass, 1e-6), `${name}: wrong dimensions or mass (${bounds.join(' × ')} m, ${measured.mass} kg)`);
+  check(bounds.every((length, axis) => (axis === 1 ? length >= dimensions[1] - 1e-6 && length <= dimensions[1] + camera + 1e-6 : near(length, dimensions[axis], 1e-6))) && near(measured.mass, mass, 1e-6), `${name}: wrong dimensions or mass (${bounds.join(' × ')} m, ${measured.mass} kg)`);
   check(!thing.properties().floats && !thing.skips, `${name}: should sink and offer Toss/Lob, not Skip`);
   geometry.dispose();
 }
@@ -323,8 +325,8 @@ for (const [value, model, dimensions, mass] of [[1, 'iphone', [0.072, 0.008, 0.1
   const geometry = meshKind(thing.look.mesh).build(thing, {});
   geometry.computeBoundingBox();
   const bounds = geometry.boundingBox.getSize(new THREE.Vector3()).multiplyScalar(measured.radius).toArray();
-  // Its thickness its body's, and an iPad's camera standing out of its back by under 2.5 mm besides.
-  const thick = (length) => length >= dimensions[1] - 1e-6 && length <= dimensions[1] + (model === 'iphone' ? 1e-6 : 0.0025);
+  // Its thickness its body's, and its camera standing out of its back by under 3 mm besides.
+  const thick = (length) => length >= dimensions[1] - 1e-6 && length <= dimensions[1] + 0.003;
   check(thing.look.model === model && bounds.every((length, axis) => (axis === 1 ? thick(length) : near(length, dimensions[axis], 1e-6))) && near(measured.mass, mass, 1e-6) && !THINGS.ipad.properties(value).floats, `iPad ${value} (${model}): ${bounds.map((length) => centimetres(length)).join(' × ')} cm and ${measured.mass} kg, not ${dimensions.map((length) => centimetres(length)).join(' × ')} cm and ${mass} kg, or it floats`);
   if (model === 'iphone') {
     const phone = meshKind('iphone').build(THINGS.iphone, {}).attributes.position.array, step = geometry.attributes.position.array;
