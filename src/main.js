@@ -3114,7 +3114,9 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     // materials (a pizza's: above, below and in the mirror): their programs too.
     const floaters = WARM_UP.floaters.map((name) => throwAt(WARM_UP.x, WARM_UP.z, { thing: name }));
     for (const floater of floaters) floater.meshMirror.visible = true;
+    // A textured sinker's three: above, below and, as anything but a floater is given on the ice, its mirror image.
     const sinkers = WARM_UP.sinkers.map((name) => throwAt(WARM_UP.x, WARM_UP.z, { thing: name }));
+    for (const sinker of sinkers) Object.assign(sinker.prepareMirror(), { visible: true, frustumCulled: false });
     // And a stone's, as anything but a floater is given on the ice (src/rock.js prepareMirror): its program too, drawn
     // wherever the mirror's camera looks (it is culled by it, and this stone is in the hand).
     Object.assign(stone.prepareMirror(), { visible: true, frustumCulled: false });
@@ -3135,7 +3137,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       retireRock(floater, { keepMaterials: true });
     }
     for (const sinker of sinkers) {
-      programKeepers.push(sinker.meshAbove.material, sinker.meshBelow.material);
+      programKeepers.push(sinker.meshAbove.material, sinker.meshBelow.material, sinker.meshMirror.material);
       retireRock(sinker, { keepMaterials: true });
     }
     floaterRide.warmUp(renderer);   // the floaters' ride's pass
