@@ -30,6 +30,10 @@
 //     screens on +y; vertex colours draw the bezel, glass, phone wallpaper,
 //     camera lenses and TV vents (createDeviceGeometry). Both share the
 //     stone's material program and cache their geometry between throws;
+//   - tablet: an iPad's steps, each `look.model` its own device
+//     (createDeviceGeometry, TABLETS: the iPhone's own slab, then an iPad
+//     mini, an iPad and an iPad Pro, each its maker's size, its home screen
+//     of app icons and a dock on its glass, its camera and logo on its back);
 //   - pie: a fruit pie in its tin, its rim crimped, each one thrown filled
 //     at random (pieFilling: apple under a closed crust, cherry or blueberry
 //     under a lattice, open pumpkin; createPieGeometry);
@@ -47,7 +51,16 @@
 //   - snowball: a lumpy ball pressed flat where the palms packed it, white,
 //     bluish in its hollows (createSnowballGeometry);
 //   - slide: a toddler's moulded slide, its side panels, steps, platform,
-//     chute and rails each a slab of their own (createSlideGeometry).
+//     chute and rails each a slab of their own (createSlideGeometry);
+//   - pan: a cast-iron skillet, each `look.size` its own (20, 25 or 30 cm):
+//     its body turned from a profile, a pour spout either side, its long
+//     handle (and the largest's helper handle) a tapering slab, seasoned
+//     black (createPanGeometry);
+//   - roses: one long-stemmed rose or a bouquet, each `look.count` its own
+//     (1, 3, 6, 12 or 24): turned blooms, tube stems, serrated leaves, a
+//     bouquet tied in a spiral under a satin ribbon and bow, scaled to a
+//     unit ball's volume (createRosesGeometry; with `metres`, what it weighs
+//     and where its weight is, of its parts' densities).
 //   - gem: a brilliant cut (createGemGeometry: a table, a crown of facets,
 //     the girdle, a pavilion to the culet), stretched by its `look.stretch`,
 //     each facet's colour `look.color` at its own brightness, a diamond's
@@ -1576,10 +1589,59 @@ export function createBrickGeometry() {
 // DEVICE_SPACING apart (LENS_SPACING about the lenses). The rim joins the
 // screen side's edge to the back's however each is cut, so the hull has no
 // gaps.
+//
+// An iPad (the `tablet` kind, `look.model`: the iPad's steps, src/things.js,
+// an iPhone, the phone's own, then an iPad mini, an iPad and an iPad Pro) is
+// the same slab, its half-sizes and corner its maker's (TABLETS, in
+// millimetres), its bezel the same all round, its front camera a dot in it
+// (on its short edge, or, as on an iPad or iPad Pro, its long edge); on its
+// glass its home screen, a wallpaper of its own under rows of app icons and a
+// dock (TABLET_SCREEN), each icon and the dock a cell painted whole, so
+// sharp-edged; on its back, in its own colour, its camera top left seen from
+// behind (a lens, or an iPad Pro's island with its lens, LiDAR and flash) and
+// the logo in its middle (appleLogo), each painted corner by corner on lines
+// TABLET_SPACING apart about it; its rim its back's metal.
 const DEVICES = {
   tv: { half: [1, 1.8 / 54, 32 / 54], corner: 0.035 },
   iphone: { half: [7.2 / 15, 0.8 / 15, 1], corner: 0.12 },
 };
+// Each iPad: its width, thickness and length, its outline's corner radius, its bezel and how far its logo stands, in
+// millimetres (an iPad mini with A17 Pro, an iPad with A16, a 13-inch iPad Pro with M4); its front camera's edge; its
+// colours (sRGB: its back, rim and logo; its wallpaper's top, foot and glow; its dock's); its lenses, each `at` its
+// middle's millimetres from its long edge and its top seen from behind, out to its `rings` (its metal ring, its dark
+// surround, its glass; a LiDAR's dark, a flash's pale), and an iPad Pro's island about them.
+const TABLETS = {
+  'ipad-mini': {
+    millimetres: [134.8, 6.3, 195.4], corner: 12, bezel: 9.4, logo: 20, front: 'top',
+    back: [178, 166, 208], rim: [194, 184, 222], mark: [204, 196, 232],
+    wallpaper: [[92, 64, 196], [238, 118, 170], [255, 200, 130]], dock: [214, 190, 236],
+    lenses: [{ at: [11, 11], rings: [4.5, 3.5, 2.4] }],
+  },
+  ipad: {
+    millimetres: [179.5, 7.0, 248.6], corner: 14, bezel: 10.8, logo: 26, front: 'side',
+    back: [150, 184, 218], rim: [168, 200, 230], mark: [180, 208, 234],
+    wallpaper: [[24, 84, 196], [36, 196, 186], [255, 228, 120]], dock: [176, 214, 236],
+    lenses: [{ at: [12, 12], rings: [5, 3.8, 2.6] }],
+  },
+  'ipad-pro': {
+    millimetres: [215.5, 5.1, 281.6], corner: 16, bezel: 8.4, logo: 30, front: 'side',
+    back: [44, 44, 48], rim: [78, 78, 84], mark: [22, 22, 25],
+    wallpaper: [[16, 12, 40], [44, 20, 76], [255, 118, 64]], dock: [70, 56, 96],
+    island: { at: [20, 20.5], half: 12, corner: 5, colour: [30, 30, 33] },
+    lenses: [{ at: [14.5, 15], rings: [5.4, 4.2, 2.9] }, { at: [14.5, 26], rings: [3.2, 3.2, 2.2], kind: 'lidar' }, { at: [25.5, 15], rings: [2, 2, 2], kind: 'flash' }],
+  },
+};
+export const TABLET_MODELS = ['iphone', ...Object.keys(TABLETS)];   // the `tablet` kind's `look.model`s
+for (const [kind, { millimetres: [width, thickness, length], corner }] of Object.entries(TABLETS)) {
+  DEVICES[kind] = { half: [width / length, thickness / length, 1], corner: corner / (length / 2) };
+}
+// The home screen, of the glass's half-width: an icon's half-size, the columns' pitch (four across), the first row's
+// middle from the glass's top in pitches; the dock's five icons' pitch, its middle from the glass's foot and its
+// half-height and half-width, in icons' half-sizes. As many rows (up to `rows`) as stand clear of the dock.
+const TABLET_SCREEN = { icon: 0.13, pitch: 0.46, first: 0.75, rows: 5, dockPitch: 2.6, dockFromFoot: 1.9, dockHalf: [6.6, 1.4] };
+const TABLET_SPACING = { logo: 0.02, lens: 0.01 };   // unit radii between the lines about its logo and its lenses
+// The app icons' colours (sRGB), drawn in turn.
+const APP_COLOURS = [[76, 217, 100], [0, 122, 255], [255, 149, 0], [255, 59, 48], [255, 204, 0], [88, 86, 214], [250, 250, 250], [90, 200, 250], [255, 45, 85], [142, 142, 147], [52, 199, 89], [175, 82, 222]].map((rgb) => linear(...rgb));
 const DEVICE_CUTS = 4;          // segments across each rounded corner's part of a side: its quarter circle in twice this
 const DEVICE_SPACING = 0.1;     // unit radii between the lines where a side shades
 const LENS_SPACING = 0.015;     // ...and about a phone's lenses
@@ -1611,14 +1673,125 @@ function deviceLines(half, corner, spacing, edges = []) {
   return lines.filter((line, index) => index === 0 || line - lines[index - 1] > 1e-9);
 }
 
-/** A TV or iPhone (the header), separate triangles with the screen facing +y. */
+/** Lines `spacing` apart (about) from `from` to `to`, in −1..1 of a half-size `half` given in unit radii. */
+function fineLines(from, to, spacing, half) {
+  const count = Math.max(1, Math.ceil((to - from) / spacing));
+  return Array.from({ length: count + 1 }, (_, step) => (from + ((to - from) * step) / count) / half);
+}
+
+/**
+ * The logo's signed distance (negative inside) at (`right`, `up`), in its
+ * height, its middle at 0, as it is seen: an apple, two lobes dimpled top
+ * and bottom, a bite out of its right and its leaf over it.
+ */
+function appleLogo(right, up) {
+  const circle = (centreRight, centreUp, radius) => Math.hypot(right - centreRight, up - centreUp) - radius;
+  let body = Math.min(circle(-0.17, -0.05, 0.33), circle(0.17, -0.05, 0.33));
+  body = Math.max(body, -circle(0, 0.36, 0.09), -circle(0, -0.45, 0.08));   // its dimples
+  body = Math.max(body, -circle(0.47, 0.04, 0.17));                         // its bite
+  // Its leaf: an ellipse tipped up to the right, over the top dimple.
+  const leafRight = right - 0.07, leafUp = up - 0.47, cos = Math.cos(0.8), sin = Math.sin(0.8);
+  const along = (cos * leafRight + sin * leafUp) / 0.15, across = (-sin * leafRight + cos * leafUp) / 0.07;
+  return Math.min(body, (Math.hypot(along, across) - 1) * 0.07);
+}
+
+/**
+ * An iPad's two sides (createDeviceGeometry `sides`; the header): its glass,
+ * the home screen in its bezel, and its back. `color` a scratch colour.
+ */
+function tabletSides(kind, color) {
+  const tablet = TABLETS[kind], { half, corner } = DEVICES[kind];
+  const unit = tablet.millimetres[2] / 2;   // millimetres in a unit radius
+  const bezel = tablet.bezel / unit;
+  const glassHalf = [half[0] - bezel, half[2] - bezel];   // the glass's half-sizes, unit radii
+  const glass = [glassHalf[0] / half[0], glassHalf[1] / half[2]];
+  const [top, foot, glow] = tablet.wallpaper.map((rgb) => linear(...rgb));
+  const dockColour = linear(...tablet.dock), lens = DEVICE_COLORS.lens;
+  // Its icons and its dock, each { x, z, half: [across, along], colour } in unit radii.
+  const icon = TABLET_SCREEN.icon * glassHalf[0], pitch = TABLET_SCREEN.pitch * glassHalf[0];
+  const dockZ = glassHalf[1] - TABLET_SCREEN.dockFromFoot * icon;
+  const dock = { x: 0, z: dockZ, half: TABLET_SCREEN.dockHalf.map((size) => size * icon), colour: dockColour };
+  const firstRow = -glassHalf[1] + TABLET_SCREEN.first * pitch;
+  const rows = Math.min(TABLET_SCREEN.rows, 1 + Math.floor((dock.z - dock.half[1] - 0.5 * pitch - icon - firstRow) / pitch));
+  const icons = [];
+  for (let row = 0; row < rows; row++) {
+    for (let column = 0; column < 4; column++) icons.push({ x: (column - 1.5) * pitch, z: firstRow + row * pitch, half: [icon, icon], colour: APP_COLOURS[(row * 5 + column * 3) % APP_COLOURS.length] });
+  }
+  for (let slot = -2; slot <= 2; slot++) icons.push({ x: slot * TABLET_SCREEN.dockPitch * icon, z: dockZ, half: [icon, icon], colour: APP_COLOURS[(slot + 9) % APP_COLOURS.length] });
+  // Its front camera, a dot in the middle of its bezel.
+  const dot = 1.4 / unit;
+  const camera = tablet.front === 'top' ? { x: 0, z: -(half[2] - bezel / 2), half: [dot, dot] } : { x: half[0] - bezel / 2, z: 0, half: [dot, dot] };
+  const inside = (box, x, z) => Math.abs(x - box.x) < box.half[0] && Math.abs(z - box.z) < box.half[1];
+  const edges = (boxes, axis) => boxes.flatMap((box) => [((axis === 0 ? box.x : box.z) - box.half[axis]) / half[axis === 0 ? 0 : 2], ((axis === 0 ? box.x : box.z) + box.half[axis]) / half[axis === 0 ? 0 : 2]]);
+  const screenBoxes = [...icons, dock, camera];
+  const screen = {
+    across: deviceLines(half[0], corner, DEVICE_SPACING, [-glass[0], glass[0], ...edges(screenBoxes, 0)]),
+    along: deviceLines(half[2], corner, DEVICE_SPACING, [-glass[1], glass[1], ...edges(screenBoxes, 1)]),
+    cell: (across, along) => {
+      const x = across * half[0], z = along * half[2];
+      if (inside(camera, x, z)) return lens;
+      if (Math.abs(across) > glass[0] || Math.abs(along) > glass[1]) return DEVICE_COLORS.bezel;
+      for (const app of icons) if (inside(app, x, z)) return app.colour;
+      return inside(dock, x, z) ? dock.colour : null;
+    },
+    // Its wallpaper: its top's colour to its foot's down it, waved, a glow low on its right.
+    shade: (across, along) => {
+      const x = across * half[0], z = along * half[2];
+      color.copy(top).lerp(foot, smoothstep(-1.1, 1.1, along + 0.25 * Math.sin(3 * across + 1.3 * along)));
+      return color.lerp(glow, 0.7 * Math.exp(-((x - 0.35 * glassHalf[0]) ** 2 + (z - 0.4 * glassHalf[1]) ** 2) / 0.12));
+    },
+  };
+  // Its back: its lenses (and an iPad Pro's island) from its long edge and top in millimetres, +x seen from behind on
+  // the left; its logo in its middle.
+  const place = ([fromEdge, fromTop]) => [half[0] - fromEdge / unit, -half[2] + fromTop / unit];
+  const lenses = tablet.lenses.map(({ at, rings, kind: lensKind }) => ({ at: place(at), rings: rings.map((ring) => ring / unit), kind: lensKind ?? 'lens' }));
+  const island = tablet.island ? { at: place(tablet.island.at), half: tablet.island.half / unit, corner: tablet.island.corner / unit, colour: linear(...tablet.island.colour) } : null;
+  const reach = island ? [island.at, island.half + TABLET_SPACING.lens] : null;
+  const lensBox = (axis) => {
+    const index = axis === 0 ? 0 : 1, size = half[axis === 0 ? 0 : 2];
+    const spans = lenses.map(({ at, rings }) => [at[index] - rings[0], at[index] + rings[0]]);
+    if (reach) spans.push([reach[0][index] - reach[1], reach[0][index] + reach[1]]);
+    const from = Math.min(...spans.map(([low]) => low)) - TABLET_SPACING.lens, to = Math.max(...spans.map(([, high]) => high)) + TABLET_SPACING.lens;
+    return fineLines(from, to, TABLET_SPACING.lens, size);
+  };
+  const logo = tablet.logo / unit;   // its height, unit radii
+  const logoLines = (axis) => fineLines(-0.6 * logo, 0.6 * logo, TABLET_SPACING.logo, half[axis === 0 ? 0 : 2]);
+  const backColour = linear(...tablet.back), mark = linear(...tablet.mark), rim = linear(...tablet.rim);
+  const back = {
+    across: deviceLines(half[0], corner, Infinity, [...lensBox(0), ...logoLines(0)]),
+    along: deviceLines(half[2], corner, Infinity, [...lensBox(2), ...logoLines(2)]),
+    cell: () => null,
+    shade: (across, along) => {
+      const x = across * half[0], z = along * half[2];
+      color.copy(backColour);
+      // Its logo: seen from behind, top up, its right is −x.
+      if (appleLogo(-x / logo, -z / logo) < 0) color.copy(mark);
+      if (island) {
+        const outX = Math.max(Math.abs(x - island.at[0]) - island.half + island.corner, 0), outZ = Math.max(Math.abs(z - island.at[1]) - island.half + island.corner, 0);
+        if (Math.hypot(outX, outZ) < island.corner) color.copy(island.colour);
+      }
+      for (const { at, rings, kind: lensKind } of lenses) {
+        const distance = Math.hypot(x - at[0], z - at[1]);
+        if (lensKind === 'flash') { if (distance < rings[0]) color.copy(DEVICE_COLORS.silver); continue; }
+        if (distance < rings[0]) color.copy(lensKind === 'lidar' ? DEVICE_COLORS.bezel : rim);
+        if (distance < rings[1]) color.copy(DEVICE_COLORS.bezel);
+        if (distance < rings[2] && lensKind === 'lens') color.copy(lens);
+      }
+      return color;
+    },
+  };
+  return { sides: [screen, back], rim };
+}
+
+/** A TV, an iPhone or an iPad (the header: `kind`, a DEVICES key), separate triangles with the screen facing +y. */
 export function createDeviceGeometry(kind) {
   const { half, corner } = DEVICES[kind];
   const round = [corner, 0, corner];
   const color = new THREE.Color();
   const paint = (shade) => [shade.r, shade.g, shade.b];
-  let sides;
-  if (kind === 'iphone') {
+  let sides, tabletRim = null;
+  if (TABLETS[kind]) ({ sides, rim: tabletRim } = tabletSides(kind, color));
+  else if (kind === 'iphone') {
     // Its lenses' square, painted corner by corner, a line beyond their rings all round (so no corner of the long cells
     // past it takes a ring's colour).
     const lensLines = (axis) => {
@@ -1707,7 +1880,7 @@ export function createDeviceGeometry(kind) {
   });
   // The rim, each of its four sides from the screen side's edge to the back's, through their own points: each next
   // triangle takes the nearer next point of either edge, so the two need not be cut alike.
-  const rim = paint(kind === 'iphone' ? DEVICE_COLORS.edge : DEVICE_COLORS.bezel);
+  const rim = paint(tabletRim ?? (kind === 'iphone' ? DEVICE_COLORS.edge : DEVICE_COLORS.bezel));
   for (const [axis, sign] of [[0, 1], [0, -1], [2, 1], [2, -1]]) {
     const edge = (lines, height) => lines.map((line) => {
       const point = [0, height, 0];
@@ -2389,6 +2562,397 @@ function slideLength(definition) {
   return (SLIDE.chute.to[0] - SLIDE.foot[0]) / (definition.body.size.diameter / 2);
 }
 
+// ---- the kitchen -------------------------------------------------------------
+
+// A cast-iron skillet (src/things.js 'pan'), each size its own (`look.size`,
+// its rim's diameter in centimetres: PAN.sizes, a Lodge's, in metres): its
+// body a solid turned about its axis from a profile (its flat underside, its
+// wall flaring out to a rolled rim, down its inside and across its floor),
+// PAN.segments round, its rim dipped and pushed out into a pour spout on
+// either side; its long handle a slab tapering from the wall to its rounded
+// end, rising a little, its top level with the rim where it leaves it; the
+// largest with a helper handle, a lug opposite. Each part closed, meeting the
+// wall without overlapping it by more than a millimetre, so what is drawn is
+// what the water displaces and its density is iron's (src/things.js: its
+// mass over its mesh's volume). Seasoned black, worn grey-brown where the
+// rim and the handle's edges are rubbed, a little warmer on its cooking
+// floor. Built standing (+y its open side), set about its volume's middle
+// and scaled so that it is 2 long, its handle and all: its nominal radius is
+// half its length.
+const PAN = {
+  segments: 96,
+  // rim: its outer radius at the top; foot: its underside's; depth: its height outside; wall, floor: their thickness;
+  // handle: its length out from the wall, its width at the wall and at its end, its thickness there, its rise (°);
+  // helper: a lug's reach out from the wall, its width at the wall and at its end, its thickness.
+  sizes: {
+    20: { rim: 0.101, foot: 0.08, depth: 0.044, wall: 0.00373, floor: 0.00393, handle: { length: 0.132, width: [0.03, 0.022], thickness: [0.015, 0.0106], rise: 10 } },
+    25: { rim: 0.1285, foot: 0.103, depth: 0.051, wall: 0.00387, floor: 0.00427, handle: { length: 0.146, width: [0.032, 0.024], thickness: [0.016, 0.0115], rise: 10 } },
+    30: { rim: 0.152, foot: 0.125, depth: 0.057, wall: 0.00391, floor: 0.00422, handle: { length: 0.16, width: [0.034, 0.025], thickness: [0.0162, 0.0119], rise: 10 }, helper: { reach: 0.038, width: [0.07, 0.045], thickness: 0.0094 } },
+  },
+  spout: { width: 0.24, dip: 0.004, out: 0.005 },   // radians either side of ±z it spreads over; metres it dips the rim and pushes it out
+  rootBlend: 0.012,                                 // m: how far along a handle its root is sheared to the wall's flare
+  iron: linear(30, 29, 28), worn: linear(86, 80, 72), cooking: linear(44, 41, 38),
+};
+export const PAN_SIZES = Object.keys(PAN.sizes).map(Number);   // the `look.size`s there are
+
+/** A cast-iron skillet's geometry (the header) for its definition (`look.size`); with `metres`, as built, in metres, about its volume's middle. */
+export function createPanGeometry(definition, { metres = false } = {}) {
+  const { rim, foot, depth, wall, floor, handle, helper } = PAN.sizes[definition.look.size];
+  const { segments, spout } = PAN;
+  const color = new THREE.Color();
+  // The outer wall's radius at height y, and the inner's (the wall's own thickness across its slope).
+  const flare = (rim - foot) / depth, across = wall * Math.hypot(1, flare);
+  const outer = (y) => foot + flare * y, inner = (y) => outer(y) - across;
+  // (radius, height, part) from the underside's middle out, up the outside, over the rim, down the inside and across the floor.
+  const profile = [[0, 0, 'under'], [0.5 * foot, 0, 'under'], [foot - 0.008, 0, 'under'], [foot - 0.0025, 0.0007, 'under'], [outer(0.004), 0.004, 'side']];
+  for (const share of [0.3, 0.6, 0.85]) profile.push([outer(depth * share), depth * share, 'side']);
+  profile.push([outer(depth - 0.004) + 0.0006, depth - 0.003, 'rim'], [rim - 0.35 * wall, depth, 'rim'], [rim - 0.85 * across, depth - 0.0016, 'rim']);
+  for (const share of [0.88, 0.6, 0.3]) profile.push([inner(depth * share), depth * share, 'inside']);
+  const cornerY = floor + 0.006;
+  profile.push([inner(cornerY), cornerY, 'inside'], [inner(cornerY) - 0.0035, floor + 0.0015, 'floor'], [inner(cornerY) - 0.009, floor, 'floor'], [0.5 * inner(floor), floor, 'floor'], [0, floor, 'floor']);
+  const rows = profile.length, columns = segments + 1;
+  const positions = new Float32Array(columns * rows * 3), colors = new Float32Array(columns * rows * 3);
+  for (let column = 0; column < columns; column++) {
+    const angle = (column / segments) * Math.PI * 2;
+    // The spouts, at ±z: how far this column is in one (1 at its middle).
+    const off = Math.abs(Math.abs(Math.atan2(Math.sin(angle), Math.cos(angle))) - Math.PI / 2);
+    const inSpout = Math.exp(-((off / spout.width) ** 2));
+    profile.forEach(([radius, height, part], row) => {
+      const reach = inSpout * smoothstep(0.55, 1, height / depth);   // the rim's and the wall's top, where it bends out
+      const out = radius + spout.out * reach, y = height - spout.dip * reach;
+      const x = out * Math.cos(angle), z = out * Math.sin(angle);
+      positions.set([x, y, z], (column * rows + row) * 3);
+      const speckle = 0.85 + 0.3 * valueNoise3(x * 90, y * 90, z * 90);
+      if (part === 'rim') color.copy(PAN.iron).lerp(PAN.worn, 0.55 + 0.25 * valueNoise3(x * 40, 3, z * 40));
+      else if (part === 'floor') color.copy(PAN.cooking).lerp(PAN.iron, 0.4 * smoothstep(0.3, 0.7, valueNoise3(x * 14, 5, z * 14)));
+      else color.copy(PAN.iron);
+      color.multiplyScalar(speckle);
+      colors.set([color.r, color.g, color.b], (column * rows + row) * 3);
+    });
+  }
+  const parts = [facingOut(turnedMesh({ position: positions, color: colors }, profile.map(([radius]) => radius), segments))];
+  // A tapered slab out from the wall along `heading` (+1 the handle's +x, −1 the helper's −x): `length` out, `width` at
+  // the wall and at its end, `thickness` likewise, rising `rise` degrees, its top at the rim's height where it leaves.
+  const lug = ({ length, width: [rootWidth, endWidth], thickness: [rootThick, endThick], rise, heading }) => {
+    const rootY = depth - rootThick / 2, rootX = outer(rootY) - 0.001;   // into the wall by a millimetre
+    const tilt = THREE.MathUtils.degToRad(rise);
+    // Its outline from the wall out round its end, counter-clockwise: straight sides narrowing, a half-round end.
+    const points = [];
+    const endRadius = endWidth / 2, straight = length - endRadius;
+    for (let step = 0; step <= 8; step++) points.push([straight * step / 8, -(rootWidth / 2 + (endRadius - rootWidth / 2) * step / 8)]);
+    for (let step = 1; step < 12; step++) { const angle = -Math.PI / 2 + Math.PI * step / 12; points.push([straight + endRadius * Math.cos(angle), endRadius * Math.sin(angle)]); }
+    for (let step = 8; step >= 0; step--) points.push([straight * step / 8, rootWidth / 2 + (endRadius - rootWidth / 2) * step / 8]);
+    const even = evenly(points, 72), centred = aboutItsMiddle(even);
+    const offset = [even[0][0] - centred[0][0], even[0][1] - centred[0][1]];
+    const meanThick = (rootThick + endThick) / 2;
+    return slabMesh({
+      outline: centred, thickness: meanThick, round: 0.7, rings: 6,
+      // Thinner to its end (its thickness scaled along it), rising, its root's top at the rim; its root sheared to lie
+      // along the wall's flare (out at its top, in at its foot), so it meets the wall with neither a gap nor more than a
+      // millimetre in it.
+      place: (lengthwise, crosswise, through) => {
+        const along = lengthwise + offset[0], share = Math.min(Math.max(along / length, 0), 1);
+        const up = through * (rootThick + (endThick - rootThick) * share) / meanThick;
+        const onWall = flare * up * Math.max(0, 1 - along / PAN.rootBlend);
+        return [heading * (rootX + onWall + along * Math.cos(tilt) - up * Math.sin(tilt)), rootY + along * Math.sin(tilt) + up * Math.cos(tilt), crosswise + offset[1]];
+      },
+      // Rubbed grey-brown along its edges and its end, where a hand and a hook wear it.
+      paint: (lengthwise, crosswise, through, inset) => color.copy(PAN.iron).lerp(PAN.worn, 0.6 * smoothstep(0.004, 0, inset)).multiplyScalar(0.85 + 0.3 * valueNoise3(lengthwise * 90, crosswise * 90, through * 90)),
+    });
+  };
+  parts.push(lug({ ...handle, heading: 1 }));
+  if (helper) parts.push(lug({ length: helper.reach, width: helper.width, thickness: [helper.thickness, helper.thickness], rise: 0, heading: -1 }));
+  const geometry = joined(parts);
+  for (const part of parts) part.dispose();
+  // About its volume's middle, 2 long.
+  const { centroid } = volumeCentroid(geometry);
+  geometry.translate(-centroid[0], -centroid[1], -centroid[2]);
+  return metres ? geometry : geometry.scale(...Array(3).fill(2 / longestSide(geometry)));
+}
+
+// ---- the flowers -------------------------------------------------------------
+
+// A bouquet of red roses (src/things.js 'roses'), each count its own
+// (`look.count`: one long-stemmed rose, or 3, 6, 12 or 24 tied), built in
+// metres, its blooms up (+y), and seeded (each count's from its own stream,
+// so it is built alike every time). A bloom (roseBloom) is a cup turned
+// about its stem from a profile (ROSES.bloom: its green hip, its outer petals
+// bulging out to their rims and in across its heart), its outer petals'
+// rims scalloped and their tips turned out, its heart in a spiral of petals,
+// dark in its creases, its sepals green tongues between the outer petals; a
+// stem a closed tube; a leaf a serrated slab (slabMesh) curled along its
+// midrib. One rose is a bloom on a long stem with its leaves. A bouquet is
+// tied as a florist ties one, in a spiral: its blooms spread over a dome
+// (ROSES.dome: a sunflower's spiral over a cap of a sphere about the tie,
+// as wide as keeps them apart), each stem slanting from its bloom down to
+// its own place in the bunch at the tie, a little round from under its
+// bloom; below the tie the stems are one bunch (a cone, striped with them,
+// their cut ends pale) under a cream satin ribbon and its bow, and the outer
+// stems' leaves show under the blooms. Its parts meet without overlapping
+// (a stem ends at its bloom's hip and at the bunch's top), so what is drawn
+// is what the water displaces. Set about its volume's middle and scaled to
+// a unit ball's volume (asUnitBall): its nominal radius is its ball's of
+// like volume, its length roseLength().
+const ROSES = {
+  counts: [1, 3, 6, 12, 24],
+  bloom: {
+    segments: 20,             // round it: four to each outer petal
+    // (radius, height, part) in centimetres, from its hip at the stem up its outer petals, over their rims and in across its heart.
+    profile: [
+      [0, -2.5, 'hip'], [0.45, -2.45, 'hip'], [0.9, -2.15, 'hip'], [1.5, -1.75, 'base'], [2.5, -1.0, 'petal'], [3.05, 0, 'petal'], [3.3, 0.9, 'petal'],
+      [3.2, 1.55, 'edge'], [2.8, 1.85, 'edge'], [2.3, 1.7, 'heart'], [1.8, 1.95, 'heart'], [1.3, 1.8, 'heart'], [0.85, 2.0, 'heart'], [0.45, 1.85, 'heart'], [0, 1.95, 'heart'],
+    ],
+    reach: 3.3,               // cm: its widest, for spacing blooms
+    lobes: 5, lobe: 0.06,     // its outer petals, and how far their middles bulge out (of the radius)
+    tip: 0.28,                // cm: how far their rims rise and fall from petal to petal
+    spiral: [3, 2.2], crease: 0.13,   // its heart's spiral: its arms and its turn per centimetre out, and how deep its creases dip (cm)
+    size: [0.92, 1.08],       // each bloom's scale, drawn
+  },
+  stem: { radius: 0.0032, sides: 8, length: 0.42, below: 0.14 },   // m: its radius, a single rose's length under its hip, a bunch's under the tie
+  leaf: { length: 0.055, width: 0.017, thickness: 0.0012, points: 14, serrations: 9 },
+  dome: { radius: 0.15, spacing: 2.2, packing: 1.15 },   // m from the tie to its blooms; blooms this many reaches apart; a sunflower's cap this much roomier than its blooms
+  bunch: { spacing: 2.15, flare: 1.25, band: 0.035, ribbonOut: 0.003, twist: 0.6 },   // stems this many radii apart at the tie, the bunch's widening to its foot, the ribbon's height and stand, the spiral's turn (rad)
+  red: linear(178, 14, 34), dark: linear(92, 4, 18), light: linear(222, 54, 72),
+  green: linear(64, 116, 44), hip: linear(78, 112, 42), leafGreen: linear(38, 86, 34), midrib: linear(104, 146, 72), cut: linear(168, 196, 120),
+  ribbon: linear(246, 238, 222), ribbonShade: linear(214, 202, 182),
+  // kg/m³: a bloom's air between its petals makes it light; a fresh stem and its leaves float, a little lighter than
+  // water (the bunch below the tie is its stems and the water between them); the ribbon's slab is thicker than satin
+  // is. What a bouquet weighs and where its weight is come of them (createRosesGeometry with `metres`: src/things.js's
+  // masses and ballasts).
+  densities: { bloom: 200, stem: 900, leaf: 800, ribbon: 500 },
+};
+export const ROSE_COUNTS = ROSES.counts;
+const WATER_KG_M3 = 1000;   // the water between a bunch's stems
+const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
+
+/** One bloom (the header), in metres about its middle, its stem down (−y), scaled by `scale`, its petals turned by `phase`. */
+function roseBloom(scale, phase) {
+  const { segments, profile, lobes, lobe, tip, spiral, crease } = ROSES.bloom;
+  const rows = profile.length, columns = segments + 1;
+  const positions = new Float32Array(columns * rows * 3), colors = new Float32Array(columns * rows * 3);
+  const color = new THREE.Color();
+  for (let column = 0; column < columns; column++) {
+    const angle = (column / segments) * Math.PI * 2;
+    const petal = Math.cos(lobes * angle + phase);                 // 1 at an outer petal's middle
+    const sepal = Math.cos(lobes * angle + phase + Math.PI / lobes); // 1 between two petals, where a sepal is
+    profile.forEach(([radius, height, part], row) => {
+      let out = radius, up = height;
+      if (part === 'petal' || part === 'edge') out *= 1 + lobe * petal;
+      if (part === 'edge') up += tip * petal;
+      // Its heart's spiral: ridges winding in, each arm a petal's edge.
+      const turn = Math.sin(spiral[0] * angle + spiral[1] * radius + 2 * phase);
+      if (part === 'heart' && radius > 0) up += crease * turn;
+      positions.set([out * Math.cos(angle) * scale / 100, up * scale / 100, out * Math.sin(angle) * scale / 100], (column * rows + row) * 3);
+      if (part === 'hip') color.copy(ROSES.hip);
+      else if (part === 'base') color.copy(ROSES.dark).lerp(ROSES.hip, smoothstep(0.2, 0.7, sepal));
+      else if (part === 'petal') color.copy(ROSES.red).lerp(ROSES.dark, 0.45 * smoothstep(0.5, -1, height)).lerp(ROSES.hip, height < -0.5 ? smoothstep(0.55, 0.85, sepal) : 0);
+      else if (part === 'edge') color.copy(ROSES.red).lerp(ROSES.light, 0.5 + 0.3 * petal);
+      else color.copy(ROSES.red).lerp(ROSES.dark, Math.max(smoothstep(-0.2, -0.8, turn), 0.6 * smoothstep(1.2, 0, radius))).lerp(ROSES.light, 0.35 * smoothstep(0.5, 0.9, turn));
+      colors.set([color.r, color.g, color.b], (column * rows + row) * 3);
+    });
+  }
+  return facingOut(turnedMesh({ position: positions, color: colors }, profile.map(([radius]) => radius), segments));
+}
+
+/** A closed tube of radius `radius` (ROSES.stem) from `from` to `to` (Vector3s, metres), green, a little mottled by `random`. */
+function roseStem(from, to, radius, random) {
+  const { sides } = ROSES.stem;
+  const length = from.distanceTo(to);
+  const profile = [[0, 0], [radius, 0], [radius, length / 3], [radius, (2 * length) / 3], [radius, length], [0, length]];
+  const rows = profile.length, columns = sides + 1;
+  const positions = new Float32Array(columns * rows * 3), colors = new Float32Array(columns * rows * 3);
+  const color = new THREE.Color(), shade = 0.85 + 0.25 * random();
+  for (let column = 0; column < columns; column++) {
+    const angle = (column / sides) * Math.PI * 2;
+    profile.forEach(([out, along], row) => {
+      positions.set([out * Math.cos(angle), along, out * Math.sin(angle)], (column * rows + row) * 3);
+      color.copy(ROSES.green).multiplyScalar(shade * (0.9 + 0.2 * Math.cos(angle - 0.8)));
+      colors.set([color.r, color.g, color.b], (column * rows + row) * 3);
+    });
+  }
+  const tube = turnedMesh({ position: positions, color: colors }, profile.map(([out]) => out), sides);
+  const direction = to.clone().sub(from).normalize();
+  tube.applyMatrix4(new THREE.Matrix4().compose(from, new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction), new THREE.Vector3(1, 1, 1)));
+  return facingOut(tube);
+}
+
+/** A leaf (the header) from `base` (metres) out along `along`, its face toward `facing` (unit Vector3s), curled `curl` (of its length) at its tip. */
+function roseLeaf(base, along, facing, curl) {
+  const { length, width, thickness, points, serrations } = ROSES.leaf;
+  const across = new THREE.Vector3().crossVectors(along, facing).normalize();
+  const normal = new THREE.Vector3().crossVectors(across, along).normalize();
+  // Its outline, ovate, serrated, from its stalk round its tip and back.
+  const outline = [];
+  for (let step = 0; step < points; step++) {
+    const turn = (step / points) * Math.PI * 2;
+    const share = (1 - Math.cos(turn)) / 2, side = Math.sign(Math.sin(turn)) || 1;
+    const half = width * Math.sin(Math.PI * share) ** 0.8 * (1 - 0.25 * share) * (1 + 0.06 * Math.abs(Math.sin(serrations * Math.PI * share)));
+    outline.push([length * share, side * half]);
+  }
+  const even = evenly(outline, points), centred = aboutItsMiddle(even);
+  const offset = [even[0][0] - centred[0][0], even[0][1] - centred[0][1]];
+  const color = new THREE.Color();
+  return slabMesh({
+    outline: centred, thickness, round: 0.6, rings: 1, edge: 2,
+    place: (lengthwise, crosswise, through) => {
+      const out = lengthwise + offset[0], share = Math.max(out / length, 0);
+      const lift = through - curl * length * share * share;   // its tip curls down, away from its face
+      return [0, 1, 2].map((axis) => base.getComponent(axis) + along.getComponent(axis) * out + across.getComponent(axis) * (crosswise + offset[1]) + normal.getComponent(axis) * lift);
+    },
+    paint: (lengthwise, crosswise) => color.copy(ROSES.leafGreen).lerp(ROSES.midrib, smoothstep(0.0015, 0.0004, Math.abs(crosswise + offset[1]))),
+  });
+}
+
+/** A bouquet's bloom positions (the header's dome): `count` points on the cap of a sphere of ROSES.dome.radius about the tie, kept apart. */
+function domePoints(count) {
+  const { radius, spacing, packing } = ROSES.dome;
+  const apart = (spacing * ROSES.bloom.reach) / 100;
+  // A sunflower's spiral over a cap as roomy as `packing` times the blooms' share, widened until no two are nearer than `apart`.
+  let cosine = 1 - (packing * count * apart * apart * 0.87) / (2 * Math.PI * radius * radius);
+  for (let attempt = 0; attempt < 40; attempt++) {
+    const points = Array.from({ length: count }, (_, index) => {
+      const polar = Math.acos(1 - (1 - cosine) * (count === 1 ? 0 : (index + 0.5) / count)), azimuth = index * GOLDEN_ANGLE;
+      return { polar, azimuth, at: new THREE.Vector3(Math.sin(polar) * Math.cos(azimuth), Math.cos(polar), Math.sin(polar) * Math.sin(azimuth)).multiplyScalar(radius) };
+    });
+    let nearest = Infinity;
+    for (let first = 0; first < count; first++) for (let second = first + 1; second < count; second++) nearest = Math.min(nearest, points[first].at.distanceTo(points[second].at));
+    if (nearest >= apart) return points;
+    cosine -= 0.01;
+  }
+  throw new Error(`no room on the dome for ${count} roses`);
+}
+
+/** A bouquet's (or one rose's) geometry (the header) for its definition (`look.count`); with `metres`, as built. */
+export function createRosesGeometry(definition, { metres = false } = {}) {
+  const count = definition.look.count;
+  const random = seeded(4242 + count);
+  const { radius: stemRadius, length: stemLength, below } = ROSES.stem;
+  const up = new THREE.Vector3(0, 1, 0);
+  const parts = [], densities = [];
+  const add = (part, density) => { parts.push(part); densities.push(density); };
+  const hipDepth = (scale) => (-ROSES.bloom.profile[0][1] * scale) / 100;   // its hip under its middle, m
+  // A bloom set at `centre`, facing along `axis`, its scale and turn drawn; returns where its stem meets its hip.
+  const placeBloom = (centre, axis) => {
+    const [least, most] = ROSES.bloom.size;
+    const scale = least + (most - least) * random(), phase = random() * Math.PI * 2;
+    const bloom = roseBloom(scale, phase);
+    bloom.applyMatrix4(new THREE.Matrix4().compose(centre, new THREE.Quaternion().setFromUnitVectors(up, axis), new THREE.Vector3(1, 1, 1)));
+    add(bloom, ROSES.densities.bloom);
+    return centre.clone().addScaledVector(axis, -hipDepth(scale) - 0.0003);
+  };
+  if (count === 1) {
+    // One long-stemmed rose, standing: its bloom, its stem, three leaves up it, each round from the last.
+    const hip = placeBloom(new THREE.Vector3(0, 0, 0), up);
+    const foot = hip.clone().addScaledVector(up, -stemLength);
+    add(roseStem(foot, hip, stemRadius, random), ROSES.densities.stem);
+    [0.18, 0.34, 0.5].forEach((share, index) => {
+      const turn = index * 2.4 + 0.3, out = new THREE.Vector3(Math.cos(turn), 0, Math.sin(turn));
+      const base = hip.clone().addScaledVector(up, -stemLength * share).addScaledVector(out, stemRadius * 0.9);
+      const along = out.clone().multiplyScalar(0.75).addScaledVector(up, 0.66).normalize();
+      add(roseLeaf(base, along, up, 0.18), ROSES.densities.leaf);
+    });
+  } else {
+    // The bunch at the tie (y 0): its stems' places, a sunflower's spiral over a disc, each turned round from under its
+    // bloom by the spiral's twist; the blooms over the dome.
+    const { spacing, flare, band, ribbonOut, twist } = ROSES.bunch;
+    const bunchRadius = Math.sqrt((count * (spacing * stemRadius) ** 2 * 0.87) / Math.PI) + stemRadius;
+    const blooms = domePoints(count);
+    const tie = new THREE.Vector3(0, 0, 0);
+    const outerPolar = Math.max(...blooms.map((bloom) => bloom.polar));
+    blooms.forEach(({ polar, azimuth, at }, index) => {
+      const reach = (bunchRadius - stemRadius) * Math.sqrt((index + 0.5) / count);
+      const spot = new THREE.Vector3(reach * Math.cos(azimuth + twist), 0, reach * Math.sin(azimuth + twist));
+      const axis = at.clone().sub(spot).normalize();
+      const centre = tie.clone().add(at);
+      const hip = placeBloom(centre, axis);
+      add(roseStem(spot, hip, stemRadius, random), ROSES.densities.stem);
+      // The outer blooms' leaves (every one's in a small bunch), out from under them either side, hiding the stems.
+      if (count <= 6 || polar > 0.6 * outerPolar) {
+        for (const [turn, down] of [[-0.5, 0.03], [0.5, 0.055]]) {
+          const out = new THREE.Vector3(Math.cos(azimuth + turn), 0, Math.sin(azimuth + turn));
+          const base = hip.clone().addScaledVector(axis, -down).addScaledVector(out, stemRadius * 0.9);
+          const along = out.clone().multiplyScalar(0.85).addScaledVector(axis, 0.35).normalize();
+          add(roseLeaf(base, along, axis, 0.2), ROSES.densities.leaf);
+        }
+      }
+    });
+    // The bunch below the tie: a cone of stems, striped, its foot their pale cut ends, a ribbon round its top.
+    const footRadius = bunchRadius * flare;
+    const profile = [[0, -below, 'cut'], [footRadius * 0.7, -below, 'cut'], [footRadius, -below, 'side'], [bunchRadius + (footRadius - bunchRadius) * (band / below), -band, 'side'],
+      [bunchRadius + ribbonOut, -band + 0.002, 'ribbon'], [bunchRadius + ribbonOut, -band / 2, 'ribbon'], [bunchRadius + ribbonOut, -0.002, 'ribbon'], [bunchRadius, 0, 'top'], [0, 0, 'top']];
+    const segments = 36, rows = profile.length, columns = segments + 1;
+    const positions = new Float32Array(columns * rows * 3), colors = new Float32Array(columns * rows * 3);
+    const color = new THREE.Color();
+    for (let column = 0; column < columns; column++) {
+      const angle = (column / segments) * Math.PI * 2;
+      profile.forEach(([out, y, part], row) => {
+        positions.set([out * Math.cos(angle), y, out * Math.sin(angle)], (column * rows + row) * 3);
+        if (part === 'ribbon') color.copy(ROSES.ribbon).lerp(ROSES.ribbonShade, 0.5 + 0.5 * Math.sin(3 * angle + y * 200));
+        else if (part === 'cut') color.copy(ROSES.cut).lerp(ROSES.green, 0.5 * smoothstep(0.3, 1, out / footRadius));
+        else color.copy(ROSES.green).multiplyScalar(0.8 + 0.3 * (0.5 + 0.5 * Math.cos(angle * Math.min(count, 12))));
+        colors.set([color.r, color.g, color.b], (column * rows + row) * 3);
+      });
+    }
+    // As heavy as the stems in it (their share of its girth, top to foot) and the water between them.
+    const stems = (count * stemRadius ** 2) / (bunchRadius * footRadius);
+    add(facingOut(turnedMesh({ position: positions, color: colors }, profile.map(([out]) => out), segments)), stems * ROSES.densities.stem + (1 - stems) * WATER_KG_M3);
+    // Its bow, on its front (+z): two loops up either side and two tails down, each a satin slab.
+    const knot = new THREE.Vector3(0, -band / 2, bunchRadius + ribbonOut + 0.0012);
+    const front = new THREE.Vector3(0, 0, 1);
+    for (const side of [-1, 1]) {
+      add(ribbonPiece(knot, new THREE.Vector3(0.8 * side, 0.6, 0.18).normalize(), front, 0.032, 0.011, 0.0025), ROSES.densities.ribbon);
+      add(ribbonPiece(knot, new THREE.Vector3(0.28 * side, -1, 0.1).normalize(), front, 0.075, 0.0065, 0.002), ROSES.densities.ribbon);
+    }
+  }
+  // What it weighs and where its weight is, of its parts' densities (`metres`: src/things.js's masses and ballasts).
+  let mass = 0;
+  const weighted = [0, 0, 0];
+  parts.forEach((part, index) => {
+    const { volume, centroid } = volumeCentroid(part);
+    mass += volume * densities[index];
+    for (let axis = 0; axis < 3; axis++) weighted[axis] += volume * densities[index] * centroid[axis];
+  });
+  const geometry = joined(parts);
+  for (const part of parts) part.dispose();
+  if (metres) {
+    const { centroid } = volumeCentroid(geometry);
+    geometry.userData.mass = mass;
+    geometry.userData.massCentre = weighted.map((sum, axis) => sum / mass - centroid[axis]);   // from its volume's middle, m
+    return geometry.translate(-centroid[0], -centroid[1], -centroid[2]);
+  }
+  return asUnitBall(geometry);
+}
+
+/** A piece of satin ribbon (the bow's): a slab from `base` out along `along`, `length` long and `width` across either side, `thickness` thick, its face toward `facing`. */
+function ribbonPiece(base, along, facing, length, width, thickness) {
+  const across = new THREE.Vector3().crossVectors(along, facing).normalize();
+  const normal = new THREE.Vector3().crossVectors(across, along).normalize();
+  const outline = [];
+  for (let step = 0; step < 24; step++) {
+    const turn = (step / 24) * Math.PI * 2;
+    outline.push([length * (1 - Math.cos(turn)) / 2, width * Math.sin(turn) * (0.75 + 0.25 * Math.abs(Math.sin(turn)))]);
+  }
+  const even = evenly(outline, 24), centred = aboutItsMiddle(even);
+  const offset = [even[0][0] - centred[0][0], even[0][1] - centred[0][1]];
+  const color = new THREE.Color();
+  return slabMesh({
+    outline: centred, thickness, round: 0.6, rings: 2, edge: 2,
+    place: (lengthwise, crosswise, through) => {
+      const out = lengthwise + offset[0], billow = 0.25 * width * Math.sin(Math.PI * Math.min(Math.max(out / length, 0), 1));   // it billows out from the bunch
+      return [0, 1, 2].map((axis) => base.getComponent(axis) + along.getComponent(axis) * out + across.getComponent(axis) * (crosswise + offset[1]) + normal.getComponent(axis) * (through + billow));
+    },
+    paint: (lengthwise, crosswise) => color.copy(ROSES.ribbon).lerp(ROSES.ribbonShade, 0.6 * smoothstep(0.3 * width, width, Math.abs(crosswise + offset[1]))),
+  });
+}
+
+/** A bouquet's length (registerMesh `length`), in its nominal radii: its unit mesh's longest side. */
+function roseLength(definition) {
+  const geometry = createRosesGeometry(definition);
+  const length = longestSide(geometry);
+  geometry.dispose();
+  return length;
+}
+
 // ---- the kinds -------------------------------------------------------------
 
 registerMesh('stone', {
@@ -2431,6 +2995,11 @@ registerMesh('brick', { build: () => createBrickGeometry(), color: () => new THR
 for (const kind of ['tv', 'iphone']) {
   registerMesh(kind, { build: () => createDeviceGeometry(kind), color: () => new THREE.Color(1, 1, 1), fixed: true });
 }
+// An iPad's steps (src/things.js 'ipad'): each preset's `look.model` its own device, the phone's the iPhone's own.
+registerMesh('tablet', {
+  build: (definition) => createDeviceGeometry(definition.look.model), color: () => new THREE.Color(1, 1, 1), fixed: true,
+  check: (look) => (TABLET_MODELS.includes(look.model) ? [] : [`look.model must be one of ${TABLET_MODELS.join(', ')}`]),
+});
 registerMesh('pie', {
   build: () => createPieGeometry(), color: () => new THREE.Color(1, 1, 1), fixed: true,
   dress: (definition, random) => pieFilling(random), heaviest: Math.max(...PIE.fillings.map((filling) => filling.share)),
@@ -2443,6 +3012,16 @@ registerMesh('cake', {
   dress: (definition, random) => cakeCandles(random),
 });
 registerMesh('snowball', { build: () => createSnowballGeometry(), color: () => new THREE.Color(1, 1, 1), fixed: true });
+// Each count its own (src/things.js 'roses': each preset's `look.count`).
+registerMesh('roses', {
+  build: (definition) => createRosesGeometry(definition), color: () => new THREE.Color(1, 1, 1), fixed: true, length: (definition) => roseLength(definition),
+  check: (look) => (ROSE_COUNTS.includes(look.count) ? [] : [`look.count must be one of ${ROSE_COUNTS.join(', ')}`]),
+});
+// Each size its own (src/things.js 'pan': each preset's `look.size`).
+registerMesh('pan', {
+  build: (definition) => createPanGeometry(definition), color: () => new THREE.Color(1, 1, 1), fixed: true,
+  check: (look) => (PAN_SIZES.includes(look.size) ? [] : [`look.size must be one of ${PAN_SIZES.join(', ')} (cm)`]),
+});
 registerMesh('slide', { build: (definition) => createSlideGeometry(definition), color: () => new THREE.Color(1, 1, 1), fixed: true, length: (definition) => slideLength(definition) });
 // Each shard its own piece's (src/ice.js), so none is fixed; it draws no random numbers. Its volume is the plain one's.
 registerMesh('shard', {

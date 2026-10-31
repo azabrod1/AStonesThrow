@@ -22,7 +22,15 @@
 //     by it, as by what it displaces, and its mesh says how long it is
 //     (src/thingMeshes.js unitLength), which the strip shows.
 //     `size.share`, a family's name, makes things share one slider value (the
-//     stones' 'stones'); otherwise each thing keeps its own.
+//     stones' 'stones'); otherwise each thing keeps its own. A preset may
+//     have a `look`, `water` and `air` of its own, and a `body` with only a
+//     `ballast` (below), each laid over its definition's (its mesh's kind
+//     stays its definition's): at that preset it is a thing of its own
+//     (variantAt; defineThing), checked as one of that one size, made ready
+//     and drawn as itself (src/rock.js prepareThing), so one slider can run
+//     through things of different shapes (an iPad's steps, each device its
+//     own proportions, from an iPhone to an iPad Pro; a bouquet's, each its
+//     own count of roses).
 //   - material: how it meets the pool's deck and other things (src/rock.js
 //     meetGround, src/collide.js): `bounce`, the share of the speed it came
 //     down at it leaves at (a range: a stone's lumps strike unevenly),
@@ -48,7 +56,8 @@
 //     turns it as it will: upside down it stays so), the axis its buoyancy is
 //     cut along, and the faces it settles onto on the deck (src/rock.js
 //     restOn). body.ballast, its centre of mass off its volume's middle, in
-//     radii of its own frame (a rubber duck's heavy base, [0, -0.2, 0]): the
+//     radii of its own frame, at most LIMITS.ballast (a rubber duck's heavy
+//     base, [0, -0.2, 0]; a rose's, far down its stem): the
 //     water turns it about that, so a duck rights itself (a pie, [0, -0.06,
 //     0], under the water); on the deck only one weighted as low as a duck
 //     rolls onto its base (src/rock.js GROUND.rightsFrom).
@@ -160,7 +169,13 @@
 //     to 15 cm, packed snow at 450 kg/m³: it floats half out, then soaks to
 //     slush in under half a minute and floats on, nine tenths under) and a
 //     toddler's toy slide (99 × 46 × 70 cm, 4.1 kg, hollow plastic: about
-//     104 kg/m³, it floats nine tenths out);
+//     104 kg/m³, it floats nine tenths out), an iPad (its slider's steps
+//     each a device of its own: an iPhone, an iPad mini, an iPad and a
+//     13-inch iPad Pro, each its maker's size and weight, 1500 to
+//     2100 kg/m³: plates that sink), a cast-iron frying pan (20, 25 or
+//     30 cm, 1.5 to 3.4 kg, iron's 7150 kg/m³: a plate that sinks broadside)
+//     and red roses (one, or 3, 6, 12 or 24 tied: about 30 g a rose, 250 to
+//     350 kg/m³, floating as a raft, blooms up);
 //   - a shard of ice (hidden: src/ice.js breaks each one, its own outline,
 //     src/thingMeshes.js createShardGeometry): 917 kg/m³, a plate in the
 //     water as a pizza is, so it comes up and floats flat, its top a little
@@ -183,6 +198,7 @@ const BODY_SHAPES = ['sphere', 'mesh'];         // the bodies src/rock.js knows
 const AIR_MODELS = ['ballistic', 'flutter'];    // the flights src/rock.js knows (Rock.fly)
 const CALLED = { Stones: 'a rock', Balls: 'a ball', Gems: 'a gem' };
 const LAST_GROUPS = ['Gems'];                    // listed after every other group (thingGroups), whenever defined: a gem is seldom thrown
+const PRESET_OWN = ['look', 'water', 'air', 'body'];   // what a size preset may have of its own (the header's `size.presets`; of its body only its ballast)
 const DEFAULTS = { air: { drag: 0.47, model: 'ballistic' }, look: { roughness: 0.92, reflection: 0.9, wet: { darker: 0.15, glossier: 0.4 } }, abilities: { skips: false, held: true } };
 
 export const THINGS = {};
@@ -203,6 +219,7 @@ const LIMITS = {
   spin: 100,                   // rad/s: the most a thing's own tumble (air.spin) may be
   columns: [8, 60],            // its buoyancy's columns across its widest (water.columns)
   restingHeight: [0.001, 2],   // its centre over the bed at rest, in radii
+  ballast: 4,                  // radii: the farthest its weight may be from its volume's middle (body.ballast; a long-stemmed rose's is far down its stem in its small radii)
   text: 120,                   // characters in a name, group or note
 };
 
@@ -236,7 +253,7 @@ function definitionProblems(key, definition) {
   need(body.density === undefined || within(body.density, LIMITS.density), `body.density must be ${LIMITS.density.join(' to ')} kg/m³`);
   need(body.diameter === undefined || within(body.diameter, LIMITS.diameter), `body.diameter must be ${LIMITS.diameter.join(' to ')} m`);
   need(body.upright === undefined || typeof body.upright === 'boolean', 'body.upright must be true or false');
-  need(body.ballast === undefined || (Array.isArray(body.ballast) && body.ballast.length === 3 && body.ballast.every((value) => within(value, [-1, 1]))), 'body.ballast must be three numbers from -1 to 1 (radii)');
+  need(body.ballast === undefined || (Array.isArray(body.ballast) && body.ballast.length === 3 && body.ballast.every((value) => within(value, [-LIMITS.ballast, LIMITS.ballast]))), `body.ballast must be three numbers from -${LIMITS.ballast} to ${LIMITS.ballast} (radii)`);
   const soft = body.soft;
   need(soft === undefined || (isObject(soft) && ['cup', 'most', 'flap', 'rate'].every((field) => within(soft[field], [0, 10])) && (soft.drape === undefined || within(soft.drape, [0, 1]))), 'body.soft needs cup, most, flap and rate, each 0 to 10 (and a drape, if any, 0 to 1)');
   const size = body.size;
@@ -262,6 +279,10 @@ function definitionProblems(key, definition) {
       need(Array.isArray(presets) && presets.length > 0 && presets.length <= 20 && presets.every((preset, index) => isObject(preset) && isNumber(preset.value) && within(preset.diameter, LIMITS.diameter) && within(preset.mass, LIMITS.mass) && typeof preset.label === 'string' && preset.label.length <= 40 && (preset.name === undefined || (typeof preset.name === 'string' && preset.name.length <= 40)) && (index === 0 || preset.value === presets[index - 1].value + 1)),
         'body.size.presets must be a list of 1 to 20 { value, label, diameter, mass, name? }, their values counting up by 1');
       need(Array.isArray(presets) && presets.some((preset) => isObject(preset) && preset.value === size.initial), 'body.size.initial must be one of its presets\' values');
+      // A preset's own look, water, air and ballast (PRESET_OWN), each over its definition's: its mesh's kind stays its definition's.
+      need(!Array.isArray(presets) || presets.every((preset) => !isObject(preset) || PRESET_OWN.every((part) => preset[part] === undefined || isObject(preset[part]))), `a preset's ${PRESET_OWN.join(', ')} must each be an object`);
+      need(!Array.isArray(presets) || presets.every((preset) => !isObject(preset?.look) || preset.look.mesh === undefined || preset.look.mesh === definition.look?.mesh), 'a preset\'s look keeps its definition\'s look.mesh');
+      need(!Array.isArray(presets) || presets.every((preset) => !isObject(preset?.body) || Object.keys(preset.body).every((field) => field === 'ballast')), 'a preset\'s body may have only its own ballast');
     }
     if (size.by === 'fixed') need(within(size.diameter, LIMITS.diameter) && within(size.mass, LIMITS.mass), `a thing of one size needs body.size.diameter (${LIMITS.diameter.join(' to ')} m) and body.size.mass (${LIMITS.mass.join(' to ')} kg)`);
   }
@@ -294,7 +315,26 @@ function definitionProblems(key, definition) {
   need(look.seenThrough === undefined || typeof look.seenThrough === 'boolean', 'look.seenThrough must be true or false');
   // The mesh's own fields (src/thingMeshes.js registerMesh `check`).
   if (mesh?.check) problems.push(...mesh.check(look));
+  // Each preset with parts of its own is checked as the thing it makes (presetDefinition), of its one size.
+  if (problems.length === 0 && size.by === 'preset') {
+    for (const preset of size.presets.filter(hasOwnParts)) {
+      for (const problem of definitionProblems(key, presetDefinition(definition, preset))) problems.push(`its preset ${preset.value} (${preset.name ?? preset.label}): ${problem}`);
+    }
+  }
   return problems;
+}
+
+/** Whether a preset has parts of its own (PRESET_OWN: its look, water, air or ballast), so it is a thing of its own (presetDefinition). */
+const hasOwnParts = (preset) => PRESET_OWN.some((part) => preset[part] !== undefined);
+
+/**
+ * The definition a preset with parts of its own makes (the header's
+ * `size.presets`): its definition with the preset's look, water, air and
+ * ballast laid over its own, of the preset's one size.
+ */
+function presetDefinition(definition, preset) {
+  const own = Object.fromEntries(PRESET_OWN.map((part) => [part, { ...definition[part], ...preset[part] }]));
+  return { ...definition, ...own, body: { ...own.body, size: { by: 'fixed', diameter: preset.diameter, mass: preset.mass } } };
 }
 
 /** The radius (m), mass (kg) and density (kg/m³, a sphere's of its radius; a mesh's own is src/rock.js's) of a definition at its slider's `value`. */
@@ -380,15 +420,18 @@ function propertiesFor(definition, measure, readout) {
  * `readout(value)`, `properties(value)` (propertiesFor: the picker's and
  * the strip's), `fastest(value)` (m/s; `fastestFor(mass)`, for one of
  * that mass: a pie with its filling), `called`, the material's `roll`
- * as a share, and `sphere`, `byDiameter`, `sizeShare`, `skips`. A key
- * already defined is replaced. Returns the thing.
+ * as a share, and `sphere`, `byDiameter`, `sizeShare`, `skips`;
+ * `variantAt(value)`, what is thrown at a slider value (a preset with a look
+ * of its own makes a thing of its own; else the thing itself), and
+ * `variants`, the thing and each of those (each made ready: src/rock.js
+ * prepareThing). A key already defined is replaced. Returns the thing.
  *
  * It is all or nothing: the definition is copied as plain data (so it is
  * the registry's, whatever its maker does with theirs after), checked, then
  * tried before it is registered: measured at its slider's least, first and
  * most (each within LIMITS) and, unless `trial` is false (the things below,
- * which tools/thing-probe.mjs throws), its mesh built once. One that fails
- * any of it is not registered, and the error says why.
+ * which tools/thing-probe.mjs throws), its mesh built once (each variant's
+ * too). One that fails any of it is not registered, and the error says why.
  */
 export function defineThing(key, definition, { trial = true } = {}) {
   let plain;
@@ -416,11 +459,26 @@ export function defineThing(key, definition, { trial = true } = {}) {
     measure: measureFor(definition),
     readout: readoutFor(definition),
   };
-  thing.properties = propertiesFor(definition, thing.measure, thing.readout);
   thing.skips = thing.abilities.skips;
   // The fastest a throw sends it: a held thing no faster than THROW_WORK lets it go; a stone as it always was.
   thing.fastestFor = (mass) => (thing.abilities.held ? Math.sqrt((2 * THROW_WORK) / mass) : Infinity);
   thing.fastest = (value) => thing.fastestFor(thing.measure(value ?? thing.slider?.initial).mass);
+  // A preset with parts of its own (the header's `size.presets`) is a thing of its own, the same in all but its look,
+  // water, air and ballast: what is thrown at that preset (variantAt), made ready and drawn as itself (src/rock.js
+  // prepareThing). Every variant answers variantAt and properties alike, as its thing does.
+  const variants = new Map();
+  if (size.by === 'preset') {
+    for (const preset of size.presets.filter(hasOwnParts)) {
+      variants.set(preset.value, { ...thing, look: { ...thing.look, ...preset.look }, water: { ...thing.water, ...preset.water }, air: { ...thing.air, ...preset.air }, body: { ...thing.body, ...preset.body }, preset: preset.value });
+    }
+  }
+  thing.variantAt = (value) => variants.get(Math.round(value ?? thing.slider?.initial)) ?? thing;
+  thing.variants = [thing, ...variants.values()];
+  // Each one's strip line its own (a variant's length and volume its own mesh's); the thing's from its plain definition,
+  // whose mesh's volume its measure has measured already (unitVolume).
+  const ownProperties = new Map(thing.variants.map((variant) => [variant, propertiesFor(variant === thing ? definition : variant, thing.measure, thing.readout)]));
+  thing.properties = (value) => ownProperties.get(thing.variantAt(value))(value);
+  for (const variant of variants.values()) Object.assign(variant, { variantAt: thing.variantAt, variants: thing.variants, properties: thing.properties });
   const failed = tryThing(thing, trial);
   if (failed) throw new Error(`The thing "${key}" cannot be defined: ${failed}.`);
   THINGS[key] = thing;
@@ -447,16 +505,19 @@ function tryThing(thing, build) {
       }
     }
     if (build) {
-      // Built once, its random draws (a stone's lumps) from a still stream, so that a seeded throw after it is unchanged.
+      // Built once (each preset with a look of its own too: variantAt), its random draws (a stone's lumps) from a still
+      // stream, so that a seeded throw after it is unchanged.
       const mesh = meshKind(thing.look.mesh);
-      const count = withRandom(() => 0.5, () => {
-        const geometry = mesh.build(thing, {});
-        mesh.color(thing);
-        const corners = geometry?.attributes?.position?.count ?? 0;
-        geometry?.dispose?.();
-        return corners;
-      });
-      if (count === 0) return 'its mesh is empty';
+      for (const variant of thing.variants) {
+        const count = withRandom(() => 0.5, () => {
+          const geometry = mesh.build(variant, {});
+          mesh.color(variant);
+          const corners = geometry?.attributes?.position?.count ?? 0;
+          geometry?.dispose?.();
+          return corners;
+        });
+        if (count === 0) return `its mesh${variant === thing ? '' : ` at its preset ${variant.preset}`} is empty`;
+      }
     }
     return null;
   } catch (error) {
@@ -739,4 +800,78 @@ defineBuiltIn('slide', {
   air: { drag: 2.2, spin: [1, 4] },
   water: { restingHeight: 0.8, columnsAlong: [1, 1, 1] },
   look: { mesh: 'slide', roughness: 0.45, reflection: 0.9, wet: { darker: 0.02, glossier: 0.3 } },
+});
+// An iPad (the header): each step of its slider a device of its own (a preset's `look.model`, src/thingMeshes.js
+// TABLETS), from an iPhone, the phone's own, through an iPad mini and an iPad to a 13-inch iPad Pro, each its maker's
+// size and weight (glass over aluminium, 1500 to 2100 kg/m³), so each sinks, a plate as the iPhone and the TV are: it
+// slaps the water flat and flutters down, its screen on +y. Each rests on the bed as thick as it is (`restingHeight`).
+defineBuiltIn('ipad', {
+  name: 'iPad', group: 'Other', note: 'From an iPhone to an iPad Pro: it sinks', called: 'an iPad',
+  body: {
+    shape: 'mesh',
+    upright: true,
+    size: {
+      by: 'preset', unit: 'model', initial: 3, presets: [
+        { value: 1, name: 'iPhone', label: '180 g', diameter: 0.15, mass: 0.18, look: { model: 'iphone' }, water: { restingHeight: 0.8 / 15 } },
+        { value: 2, name: 'iPad mini', label: '293 g', diameter: 0.1954, mass: 0.293, look: { model: 'ipad-mini' }, water: { restingHeight: 6.3 / 195.4 } },
+        { value: 3, name: 'iPad 11″', label: '477 g', diameter: 0.2486, mass: 0.477 },
+        { value: 4, name: 'iPad Pro 13″', label: '579 g', diameter: 0.2816, mass: 0.579, look: { model: 'ipad-pro' }, water: { restingHeight: 5.1 / 281.6 } },
+      ],
+    },
+  },
+  material: { bounce: [0.12, 0.22], friction: 0.4 },
+  air: { drag: 1.1, model: 'flutter' },
+  water: { restingHeight: 7.0 / 248.6 },
+  look: { mesh: 'tablet', model: 'ipad', roughness: 0.18, reflection: 1.1, wet: { darker: 0.03, glossier: 0.2 } },
+});
+// A cast-iron skillet (the header), each step its own size (a preset's `look.size`, src/thingMeshes.js PAN), a
+// Lodge's: 20, 25 and 30 cm across its rim, 1.5, 2.4 and 3.4 kg, its walls as thick as iron of that weight makes them
+// (7150 kg/m³); its nominal radius half its length, its handle and all. Thrown flat and spinning on its face, as a
+// plate is, it slaps the water and flutters down broadside, as a dish does, to lie on the bed on its base or its rim;
+// on the deck it lands with a thud, hardly bouncing.
+defineBuiltIn('pan', {
+  name: 'Frying pan', short: 'Pan', group: 'Other', note: 'Cast iron, 1.5 to 3.4 kg: it sinks', called: 'a frying pan',
+  body: {
+    shape: 'mesh',
+    upright: true,
+    size: {
+      by: 'preset', unit: 'size', initial: 2, presets: [
+        { value: 1, name: '20 cm', label: '1.5 kg', diameter: 0.3261, mass: 1.5, look: { size: 20 }, water: { restingHeight: 0.1216 } },
+        { value: 2, name: '25 cm', label: '2.4 kg', diameter: 0.3945, mass: 2.4 },
+        { value: 3, name: '30 cm', label: '3.4 kg', diameter: 0.4916, mass: 3.4, look: { size: 30 }, water: { restingHeight: 0.0919 } },
+      ],
+    },
+  },
+  material: { bounce: [0.08, 0.16], friction: 0.45 },
+  air: { drag: 1.1, model: 'flutter' },
+  water: { restingHeight: 0.1049 },
+  look: { mesh: 'pan', size: 25, roughness: 0.55, reflection: 0.9, wet: { darker: 0.05, glossier: 0.35 } },
+});
+// Red roses (the header), each step its own count (a preset's `look.count`, src/thingMeshes.js ROSES): one
+// long-stemmed rose, or 3, 6, 12 or 24 tied in a spiral under a satin ribbon. Each weighs what its parts do (ROSES'
+// densities: a bloom some 12 g, its stem and leaves about as heavy as the water they displace, its ribbon a few grams):
+// about 30 g a rose. Its petals hold air between them, so the whole is 250 to 350 kg/m³ and floats, a third or less
+// under; its weight is lower than its volume's middle (`ballast`, each its own: a rose's far down its stem), so it
+// floats lying on the water, its stems under and its blooms up, not on its blooms with its stems in the air. Its
+// nominal radius is its ball's of like volume (its splash a thing's that displaces as much). One rose's buoyancy is
+// cut finer (`columns`), so its stem floats as well as its bloom. Thrown, it tumbles slowly, end over end.
+defineBuiltIn('roses', {
+  name: 'Roses', group: 'Other', note: 'One, or a bouquet of up to 24: it floats', called: 'roses',
+  body: {
+    shape: 'mesh',
+    ballast: [0, -0.647, 0],
+    size: {
+      by: 'preset', unit: 'roses', initial: 4, presets: [
+        { value: 1, name: '1 rose', label: '29 g', diameter: 0.0555, mass: 0.0287, look: { count: 1 }, water: { columns: 60, columnsAlong: [1, 0, 0] }, body: { ballast: [0.3, -2.444, 0] } },
+        { value: 2, name: '3 roses', label: '137 g', diameter: 0.0914, mass: 0.137, look: { count: 3 }, body: { ballast: [0, -1.331, 0] } },
+        { value: 3, name: '6 roses', label: '233 g', diameter: 0.11, mass: 0.2331, look: { count: 6 }, body: { ballast: [0, -0.986, 0] } },
+        { value: 4, name: '12 roses', label: '428 g', diameter: 0.1376, mass: 0.428 },
+        { value: 5, name: '24 roses', label: '796 g', diameter: 0.1709, mass: 0.7956, look: { count: 24 }, body: { ballast: [0, -0.383, 0] } },
+      ],
+    },
+  },
+  material: { bounce: [0.05, 0.12], friction: 0.8 },
+  air: { drag: 1.0, spin: [1.5, 6] },
+  water: { restingHeight: 0.5, columnsAlong: [0, 1, 0] },
+  look: { mesh: 'roses', count: 12, roughness: 0.75, reflection: 0.7, wet: { darker: 0.1, glossier: 0.4 } },
 });

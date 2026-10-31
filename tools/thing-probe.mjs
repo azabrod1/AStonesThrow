@@ -18,8 +18,9 @@
 //     allows for the air's drag), and no ball is thrown faster than its
 //     `fastest`: a bowling ball thrown hard at the far water comes down
 //     short along the tap's direction;
-//   - a floater comes up, sends out a ring (unless its middle never went
-//     under: a toy slide), and rests within REST_SECONDS
+//   - a floater comes up, sends out a ring (unless it never went further
+//     under where it floats than its own reach: a toy slide, a raft of
+//     roses), and rests within REST_SECONDS
 //     at the depth Archimedes says (a ball's cap of its share of water's
 //     density; a basketball 4.3 cm under, a tennis ball 2.8 cm) within
 //     FLOAT_DEPTH_TOLERANCE, and a gale drifts it downwind at FLOAT.drift;
@@ -28,7 +29,8 @@
 //   - a sinker rests on the bed; let go under deep water it sinks at its
 //     terminal speed, sqrt((8/3)·(ρs/ρw − 1)·g·R/C_d) (a 16 lb bowling ball
 //     1.5 m/s, a golf ball 0.4 m/s), within SINK_TOLERANCE; a plate (a TV,
-//     a phone, a pie) let go level sinks, while it still falls broadside
+//     a phone, a pie, a frying pan) let go level (its face, its short axis,
+//     up) sinks, while it still falls broadside
 //     (within BROADSIDE_TILT of level: a thin one soon flutters), at
 //     sqrt(2·(ρs/ρw − 1)·g·V/(C·A)), A its face's area measured here from
 //     its mesh's silhouette (silhouetteArea, not the model's own), within
@@ -76,7 +78,11 @@
 //   - mass, density and volume agree for every thing not sized by its
 //     diameter, the volume measured here from its mesh;
 //   - the TV and iPhone have their specified rectangular dimensions and
-//     sink; a toy slide is built 99 × 70 × 46 cm and a slice of bread
+//     sink, and so does each step of the iPad (an iPhone, the iPhone's own
+//     mesh, an iPad mini, an iPad, an iPad Pro); each frying pan is its
+//     preset's length and cast iron's density; each count of roses weighs
+//     what its parts do, its ballast where their weight is, and floats; each
+//     step of these three is thrown into the lake as below; a toy slide is built 99 × 70 × 46 cm and a slice of bread
 //     12 × 1.3 × 12 cm, and the strip gives the slide's, the slice's and a
 //     banana's length (their meshes', src/thingMeshes.js unitLength);
 //   - making each thing as it is thrown, once prepared (src/rock.js
@@ -121,7 +127,7 @@ import { floorDepthAt } from '../src/pondFloor.js';
 import { holdInPool, poolGround, POOL } from '../src/pool.js';
 import { collideThings } from '../src/collide.js';
 import { SplashSystem } from '../src/splash.js';
-import { meshKind } from '../src/thingMeshes.js';
+import { meshKind, meshVolume, createRosesGeometry } from '../src/thingMeshes.js';
 import { apparentPoint, physicalPoint } from '../src/objectGrab.js';
 
 const GRAVITY = 9.81;
@@ -132,7 +138,7 @@ const FLOAT_DEPTH_TOLERANCE = 0.003;   // m
 const SINK_TOLERANCE = 0.02;           // of the terminal speed
 const PLATE_SINK_SECONDS = 10;         // s: a plate let go under deep water sinks this long...
 const PLATE_SINK_LATE = 4;             // s: ...let go as thrown, its speed the mean descent over its last this long (a few flutters)...
-const FLUTTER_BAND = 1 / 3;            // ...within this share of its broadside speed
+const FLUTTER_BAND = 1 / 2;            // ...within this share of its broadside speed (a thin dense plate glides between its swings: an iPad Pro, 5 mm over 28 cm, sinks half again as fast; a TV or a phone within a fifth)
 const BROADSIDE_TILT = THREE.MathUtils.degToRad(2);   // let go level, it falls broadside while within this of level
 const BED_TOLERANCE = 0.003;           // m: a plate at rest on the bed lies this near it
 const STEP_TOLERANCE = 0.1;            // of the highest bob
@@ -169,12 +175,12 @@ const handFor = (radius, thing = null) => {
   return hand;
 };
 
-/** What `name` is at slider `value` (src/main.js measureThing): a stone's radius from its size in cm. */
+/** What `name` is at slider `value` (src/main.js measureThing): a stone's radius from its size in cm; at a preset with a look of its own, that preset's own thing (src/things.js variantAt). */
 function measure(name, value) {
   const thing = THINGS[name];
   const size = value ?? thing.slider?.initial;
   const measured = thing.measure(size);
-  return { thing, ...measured, size };
+  return { thing: thing.variantAt(size), ...measured, size };
 }
 
 /** A thing thrown as the app throws it at (x, z), with `power`; `pooled` gives it the deck as ground. */
@@ -187,7 +193,7 @@ function throwThing(name, { x = 0, z = -1.4, power = 'normal', value, pooled = f
   velocity.y += 0.5 * GRAVITY * flightTime;
   let landing = target;
   // Made first, as src/main.js makes it, so a fluttering thing is aimed by its own flight.
-  const rock = new Rock({ radius: measured.radius, position: hand, velocity: new THREE.Vector3(), envTexture: null, thing: name, mass: measured.mass });
+  const rock = new Rock({ radius: measured.radius, position: hand, velocity: new THREE.Vector3(), envTexture: null, thing: name, mass: measured.mass, size: measured.size });
   // Aimed as heavy as it is thrown (a pizza's toppings, a pie's filling: src/main.js throwAt).
   if (name !== 'stone') ({ velocity, landing } = aimThrow(hand, target, flightTime, { ...measured, mass: rock.mass }, rock.trialFlight()));
   rock.velocity.copy(velocity);
@@ -306,15 +312,53 @@ for (const [name, dimensions, mass] of [['tv', [0.54, 0.018, 0.32], 3.6], ['ipho
   geometry.dispose();
 }
 
+// Each step of the iPad its device's own size and weight (src/thingMeshes.js TABLETS), its iPhone built as the iPhone
+// itself is, each sinking; each frying pan as long as its preset says and as dense as cast iron (7000 to 7300 kg/m³);
+// each count of roses weighing what its parts do, its weight where theirs is (src/thingMeshes.js createRosesGeometry's
+// densities: src/things.js's masses and ballasts), floating.
+for (const [value, model, dimensions, mass] of [[1, 'iphone', [0.072, 0.008, 0.15], 0.18], [2, 'ipad-mini', [0.1348, 0.0063, 0.1954], 0.293], [3, 'ipad', [0.1795, 0.007, 0.2486], 0.477], [4, 'ipad-pro', [0.2155, 0.0051, 0.2816], 0.579]]) {
+  const measured = measure('ipad', value), thing = measured.thing;
+  const geometry = meshKind(thing.look.mesh).build(thing, {});
+  geometry.computeBoundingBox();
+  const bounds = geometry.boundingBox.getSize(new THREE.Vector3()).multiplyScalar(measured.radius).toArray();
+  check(thing.look.model === model && bounds.every((length, axis) => near(length, dimensions[axis], 1e-6)) && near(measured.mass, mass, 1e-6) && !THINGS.ipad.properties(value).floats, `iPad ${value} (${model}): ${bounds.map((length) => centimetres(length)).join(' × ')} cm and ${measured.mass} kg, not ${dimensions.map((length) => centimetres(length)).join(' × ')} cm and ${mass} kg, or it floats`);
+  if (model === 'iphone') {
+    const phone = meshKind('iphone').build(THINGS.iphone, {}).attributes.position.array, step = geometry.attributes.position.array;
+    check(phone.length === step.length && phone.every((corner, at) => corner === step[at]), 'the iPad\'s iPhone is not built as the iPhone is');
+  }
+  geometry.dispose();
+}
+for (const preset of THINGS.pan.body.size.presets) {
+  const measured = measure('pan', preset.value);
+  const geometry = meshKind('pan').build(measured.thing, {});
+  geometry.computeBoundingBox();
+  const length = geometry.boundingBox.getSize(new THREE.Vector3()).x * measured.radius, { density } = THINGS.pan.properties(preset.value);
+  check(measured.thing.look.size === Number.parseInt(preset.name, 10) && near(length, preset.diameter, 1e-4) && density > 7000 && density < 7300, `frying pan ${preset.name}: ${centimetres(length)} cm long (${centimetres(preset.diameter)}), ${density.toFixed(0)} kg/m³`);
+  geometry.dispose();
+}
+for (const preset of THINGS.roses.body.size.presets) {
+  const thing = THINGS.roses.variantAt(preset.value);
+  const built = createRosesGeometry(thing, { metres: true });
+  const radius = Math.cbrt((3 * meshVolume(built)) / (4 * Math.PI));
+  const weight = built.userData.massCentre.map((offset) => offset / radius), ballast = thing.body.ballast;
+  const { floats, text } = THINGS.roses.properties(preset.value);
+  check(thing.look.count === Number.parseInt(preset.name, 10) && near(built.userData.mass, preset.mass, 0.0005) && near(radius, preset.diameter / 2, 0.0002) && near(weight[1], ballast[1], 0.002) && floats && text === `${preset.name} · ${preset.label}`,
+    `${preset.name}: ${(1000 * built.userData.mass).toFixed(1)} g (${1000 * preset.mass}), its ball ${centimetres(2 * radius)} cm (${centimetres(preset.diameter)}), its weight ${weight[1].toFixed(3)} radii up (${ballast[1]}), ${floats ? 'floats' : 'sinks'}, "${text}"`);
+  built.dispose();
+}
+
 // ---- each thing in the lake ----
 const lake = [];
 for (const [index, name] of THING_NAMES.entries()) {
-  for (const value of name === 'bowling' ? [8, 16] : [undefined]) {
+  // A bowling ball light and heavy; each step of a thing whose presets are things of their own (src/things.js variantAt:
+  // an iPad's, a frying pan's, the roses').
+  const stepped = THINGS[name].variants.length > 1 ? THINGS[name].body.size.presets : null;
+  for (const value of name === 'bowling' ? [8, 16] : stepped ? stepped.map((preset) => preset.value) : [undefined]) {
     // Each from a random state of its own, so what it draws (a stone's lumps) is the same whatever drew before it.
     randomState = 1 + 7919 * (index + 1) + (value ?? 0);
     const { rock, measured, target } = throwThing(name, { value });
     const record = follow(rock);
-    const label = `${THINGS[name].name}${value ? ` ${value} lb` : ''}`;
+    const label = stepped ? `${THINGS[name].short} ${stepped.find((preset) => preset.value === value).name}` : `${THINGS[name].name}${value ? ` ${value} lb` : ''}`;
     const miss = record.crossing ? Math.hypot(record.crossing.x - target.x, record.crossing.z - target.z) : Infinity;
     lake.push({ name, label, rock, measured, record });
     let line = `${label.padEnd(20)} ${centimetres(2 * measured.radius).padStart(5)} cm ${(measured.mass ?? rock.mass).toFixed(3).padStart(6)} kg ${rock.density.toFixed(0).padStart(5)} kg/m³; down ${centimetres(miss)} cm from the tap, ${centimetres(record.deepest)} cm deep`;
@@ -324,9 +368,11 @@ for (const [index, name] of THING_NAMES.entries()) {
       const under = rock.waterline(rock.position.y).share, wanted = rock.density / WATER_DENSITY;
       line += `; up after ${record.surfaced?.toFixed(2)} s, its centre ${centimetres(record.highestBob - rock.floatingHeight())} cm over where it floats at the highest, ${record.ripples} ring${record.ripples === 1 ? '' : 's'}; rests after ${record.restAt?.toFixed(1)} s, ${(100 * under).toFixed(1)}% of it under (${(100 * wanted).toFixed(1)}%)`;
       check(record.restAt !== null && record.restAt < REST_SECONDS && rock.afloat, `${label}: has not come to rest afloat within ${REST_SECONDS} s (${rock.state})`);
-      // A plate reports its entry as a slap, with no cavity or separate surfacing ring; one whose middle never went under
-      // (a toy slide, a tenth of it in the water) never came up through the surface.
-      check(rock.plate || record.ripples >= 1 || record.deepest <= 0, `${label}: came up without a ring`);
+      // A plate reports its entry as a slap, with no cavity or separate surfacing ring; one that never went further under
+      // where it floats than its own reach (its farthest point from its middle: a toy slide, a tenth of it in the water;
+      // a raft of roses, wide for its nominal radius) never dived, so it never came up through the surface fast enough
+      // to send one.
+      check(rock.plate || record.ripples >= 1 || record.deepest + rock.floatingHeight() < rock.reach * rock.radius, `${label}: came up without a ring`);
       check(Math.abs(under - wanted) < 0.01, `${label}: ${(100 * under).toFixed(1)}% of it under the water, Archimedes ${(100 * wanted).toFixed(1)}%`);
       if (rock.sphere) {
         // A ball's draft against the cap's (a basketball 4.3 cm, a tennis ball 2.8 cm).
@@ -359,8 +405,10 @@ for (const [index, name] of THING_NAMES.entries()) {
       // as thrown. Each against the terminal speed of its own density (a pie's filling is drawn for each one made): its
       // own on the drag's nominal ball, a plate's on its broad face, its silhouette's area.
       const sinkFrom = (level) => {
-        const settling = new Rock({ radius: measured.radius, position: new THREE.Vector3(0, -2 * measured.radius, 0), velocity: new THREE.Vector3(), envTexture: null, thing: name, mass: measured.mass });
-        if (level) { settling.quaternion.identity(); settling.spinRate = 0; }
+        const settling = new Rock({ radius: measured.radius, position: new THREE.Vector3(0, -2 * measured.radius, 0), velocity: new THREE.Vector3(), envTexture: null, thing: name, mass: measured.mass, size: measured.size });
+        // Level: its face (its short axis, which the plate model meets the water by) up; a TV's, a phone's, a pizza's its
+        // own ±y, so as it is made; a frying pan's tipped a few degrees by its handle.
+        if (level) { settling.quaternion.setFromUnitVectors(settling.shape.axes[2].clone().multiplyScalar(Math.sign(settling.shape.axes[2].y) || 1), new THREE.Vector3(0, 1, 0)); settling.spinRate = 0; }
         settling.goIn(STEP);
         settling.body.openUntil = -1;
         const face = new THREE.Vector3();
@@ -1271,7 +1319,7 @@ console.log('\nThings meeting things (src/collide.js):');
   let fuzzRandom = 12345;
   const pick = (count) => { fuzzRandom = (fuzzRandom * 16807) % 2147483647; return fuzzRandom % count; };
   const sources = [good, ...['stone', 'slate', 'basketball', 'bowling', 'diamond', 'pizza', 'watermelon', 'brick'].map((key) => {
-    const { key: unused, short, called, sphere, byDiameter, sizeShare, slider, measure: measuring, readout, properties, fastest, fastestFor, skips, ...rest } = THINGS[key];
+    const { key: unused, short, called, sphere, byDiameter, sizeShare, slider, measure: measuring, readout, properties, fastest, fastestFor, skips, variantAt, variants, ...rest } = THINGS[key];
     return structuredClone({ ...rest, material: { ...rest.material, roll: rest.material.roll === null ? undefined : rest.material.roll === 5 / 7 ? 'solid' : 'shell' } });
   })];
   let tried = 0, threw = 0, taken = 0, broken = 0;
@@ -1314,9 +1362,9 @@ console.log('\nThings meeting things (src/collide.js):');
     if (thing.byDiameter) continue;
     for (const value of thing.slider ? [thing.slider.min, thing.slider.max] : [undefined]) {
       const measured = thing.measure(value);
-      const rock = new Rock({ radius: measured.radius, position: new THREE.Vector3(), velocity: new THREE.Vector3(), envTexture: null, thing: name, mass: measured.mass });
+      const rock = new Rock({ radius: measured.radius, position: new THREE.Vector3(), velocity: new THREE.Vector3(), envTexture: null, thing: name, mass: measured.mass, size: value });
       // A dressed thing's (a pizza's toppings, a pie's filling) is its shared mesh's: its parts are millimetres thin, and it floats by that mesh.
-      const positions = (rock.dressing ? prepareThing(THINGS[name]).geometry : rock.geometry).attributes.position.array;
+      const positions = (rock.dressing ? prepareThing(THINGS[name].variantAt(value)).geometry : rock.geometry).attributes.position.array;
       let unit = 0;
       for (let index = 0; index < positions.length; index += 9) {
         const [ax, ay, az, bx, by, bz, cx, cy, cz] = positions.subarray(index, index + 9);

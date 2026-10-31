@@ -1308,7 +1308,7 @@ export function stoneShape(geometry) {
  */
 function columnAxis(thing, shape) { return thing.water.columnsAlong ? new THREE.Vector3(...thing.water.columnsAlong).normalize() : thing.body.upright ? UP : shape.axes[2]; }
 
-/** What prepareThing has made, for each definition (a thing defined again is a new definition). */
+/** What prepareThing has made, for each definition (a thing defined again is a new definition) and each preset's own thing (src/things.js variantAt: an iPad's steps). */
 const PREPARED = new WeakMap();
 /** How often prepareThing has built a fixed mesh and sliced a waterline (its buoyancy's columns): src/main.js's `budget`, which tools/quality-probe.mjs checks a throw leaves alone. */
 export const PREPARATION_WORK = { meshes: 0, waterlines: 0 };
@@ -1371,8 +1371,9 @@ export class Rock {
    * @param water the water's uniforms (src/waterSurface.js rideUniforms): a floater given them rides the water's ripples as drawn (rideTheWater)
    * @param piece a shard's own outline (src/ice.js shards: its corners about its middle and its thickness, in radii), which its mesh is built to
    * @param dressing the seed its own parts are drawn from (dressThing), in place of the one its throw draws: a person's throw is dressed as its preview in the hand (src/main.js)
+   * @param size its slider's value (src/things.js): at a preset with a look of its own it is that preset's own thing (variantAt: an iPad's step, a bouquet's count), else its slider's first
    */
-  constructor({ radius, position, velocity, envTexture, waterFog = null, thing = DEFAULT_THING, mass = null, mirrorLayer = null, skip = false, water = null, piece = null, dressing = null }) {
+  constructor({ radius, position, velocity, envTexture, waterFog = null, thing = DEFAULT_THING, mass = null, mirrorLayer = null, skip = false, water = null, piece = null, dressing = null, size = null }) {
     this.radius = radius;
     this.position = position.clone();
     this.previous = position.clone();   // where it was a step ago
@@ -1380,7 +1381,7 @@ export class Rock {
     this.state = 'air';
     // A skip stone's state; `inside(x, z)`, given in a pool (src/main.js), says where its walls let it touch and skim.
     this.skip = skip ? { normal: new THREE.Vector3(0, 1, 0), skips: 0, contact: null, inside: null } : null;
-    this.thing = THINGS[thing] ?? THINGS[DEFAULT_THING];
+    this.thing = (THINGS[thing] ?? THINGS[DEFAULT_THING]).variantAt(size);
     this.sphere = this.thing.sphere;   // its body a sphere (the header), not its mesh's own shape
     // Its own mass, unless sized by its diameter: then its density's (`mass`, as a stone's always was).
     this.ownMass = this.thing.byDiameter ? null : mass ?? this.thing.measure(this.thing.slider?.initial).mass;
