@@ -225,10 +225,12 @@ is remembered on the device (but the view, which opens on the shore):
   an overcast that hides the sun and greys the sky, with a haze that fades
   the far shore; its drops ring the water, streak past the eye and splash
   where they land, and the pool's deck goes dark with wet. Where a drop
-  lands it throws up a crown's flash, then a thin jet standing for a tenth
-  of a second, some with a droplet off its tip, or, for a share of the
-  drops, a floating bubble that pops within a second or two; each splash
-  has its own height and brightness, so no two are alike. A light rain's
+  lands it throws up a crown's flash, then a thin jet that shoots up and
+  falls back over a quarter of a second, some with a droplet off its tip,
+  or, for a share of the drops, a floating bubble that pops within a second
+  or two; each splash has its own height and brightness, so no two are
+  alike, and those too far off to make out fade into the fizz the rings
+  and the haze give the far water. A light rain's
   rings are fine and far apart; a downpour hammers the whole surface.
   Rain at night is dark: the cloud hides the moon. A storm is a downpour
   under a darker sky, with lightning, and brings a gale. Snow falls from a
@@ -966,8 +968,9 @@ roughness, from the rings' slope spectrum by Campbell's theorem (as the
 wind's ripples do). The falling drops are streaks, each the path it cuts in
 the eye's 1/30 s, slanted by the wind: drops of the same schedule, so each
 falls to the very place its ring opens and its splash is thrown up: a
-crown's flash, then a thin jet standing for a tenth of a second, a droplet
-off the tip of some, or, for a share of the drops (more in a downpour, whose
+crown's flash whose rim lingers over the crater, then a thin jet that shoots
+up and falls back more slowly over a quarter of a second, a droplet off the
+tip of some, or, for a share of the drops (more in a downpour, whose
 bigger drops' crowns close over the crater more often), a bubble floating on
 the water that pops within a second or two, each splash its own height and
 brightness, so no two are alike. A few of each tile's drops near the eye
@@ -1328,13 +1331,15 @@ farther out, so it rises into the view rather than filling its corner.
   the pizza hold on thin ice, that the default stone breaks thin ice and
   holds on thick and a 30 cm rock breaks thick, that each outcome is the one
   its blow and its draw say, that whatever held rests on the ice and was
-  never under it, that every hole holds its cavity's lip and the jet's foot
+  never under it, lying on a face with its weight over what it rests on,
+  that every hole holds its cavity's lip and the jet's foot
   at every moment and its cracks lie on the ice, that a stone slides four
   times as far on ice as on the deck while a toy slide, whose moulded
   corners scrape, stops within a metre of where it lands, that a skip
   skitters, that a stone
   slid into a hole falls in and a floater that broke through floats in its
-  hole, that a stone slid into one at rest knocks it on with the momentum
+  hole, that stones at rest where a hole opens fall in and those round it on
+  its crushed rim tip in while the rest stay clear of its edge, that a stone slid into one at rest knocks it on with the momentum
   kept, that a frozen pool keeps everything on its ice or its deck and turns
   a slide back off its walls, that a seeded throw breaks the same hole and
   halving the substep changes little, and what a break costs.
@@ -1656,6 +1661,34 @@ farther out, so it rises into the view rather than filling its corner.
   120 Hz one, and a throw every other frame of a 120 Hz clock (held to 60 a
   second) and every frame of a 60 Hz one; and that a large window keeps
   within the pixel budget.
+- `node tools/frame-rate-probe.mjs [--scene=koi,pool]` plays seeded games
+  twice, in frames of 1/60 s and in frames of 1/60, 1/45, 1/120 and 1/50 s,
+  and checks they end the same, exactly: every thing thrown (its place, turn,
+  state, and when it began to fade), every fish, the ice's holes and the next
+  draw of `Math.random`. The scenes: throws among the lake's fish and more
+  floaters than Low keeps; a break through thin ice, a stone into its hole, a
+  brick slid and a pebble onto a shard; the koi and their food; the pool with
+  more stones than Low keeps at rest. Nothing is drawn
+  (`__pond.stepFrames`), so the floaters' ride, read back from the drawn
+  water, is left out.
+- `node tools/grab-probe.mjs` takes seeded throws in hand in each state they
+  pass through (in the air, skimming, going in, at rest on the bed, afloat
+  and at rest afloat, sliding and settling on thick ice, a piece of thin ice
+  set in its sheet and afloat, on the pool's floor, in the Koi pond),
+  carries each and lets it go over a surface of its own (the water, the
+  ice, a hole in it, the pool's deck, the garden's planting), and checks
+  that it is taken clean of every other state (src/rock.js setState), stays
+  held and never fades while carried, and once let go is kept and lies no
+  deeper in the bed than a stone settles into the sand.
+- `node tools/uniform-probe.mjs [--all]` starts the page on High and takes it
+  through what builds programs of its own (a throw, the storm, the blizzard,
+  thick ice, the Pool, the Koi pond, Low), packs each program's uniforms as
+  ANGLE does (GLSL ES 1.00's Appendix A) and checks that every one fits what
+  WebGL 2 promises each stage on any device: 224 uniform vectors and 16
+  textures to a fragment shader, 256 and 16 to a vertex shader. SwiftShader
+  and desktop GPUs give far more, so nothing else notices a program going
+  over; it prints each stage's largest and its headroom (`--all`: every
+  program's).
 - `node tools/zoom-probe.mjs [--w=390 --h=844]` drives the wheel, a pinch, a
   tap and Escape through the page's own handlers and checks that what is under
   the pointer stays there (at the shore, and at the corners of the steeper
@@ -1708,7 +1741,9 @@ farther out, so it rises into the view rather than filling its corner.
   `setThing(name)` (and `thing`: a key of `THINGS` in `src/things.js`, remembered
   on the device) and `setSize(value)` (and `size`: the slider's value in its unit),
   `setTimeScale` (and `timeScale`), `pause()`, `advance(seconds)` (in the frames the app would
-  draw at the current time scale), `setDebugView(name)`, `setFov(degrees)`,
+  draw at the current time scale), `stepFrames(frames)` (each a frame of that many seconds, nothing
+  drawn), `restartFish()` (the place's fish as they start), `holdThing(rock)`, `carryHeld(x, y, z)` and
+  `letGo()` (the hand's hold, drag and release, as a press does them), `bedDepthAt(x, z)`, `poolSquare`, `setDebugView(name)`, `setFov(degrees)`,
   `lookAt(x, y, z)`, `resetView()`, `setWind(name)` (and `wind`: calm,
   breeze or windy, remembered on the device), `setSky(place)` and
   `setHour(name)` (and `sky`, `pooled`, `hour`, and `hours`, the shown

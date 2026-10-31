@@ -289,6 +289,7 @@ import { Cavity, PINCH_TIME, SURFACE_HEAD } from './cavity.js';
 import { MAX_CAVITIES } from './waterSurface.js';
 import { FoamSpecks } from './foamSpecks.js';
 import { SpraySystem, seededRandom, sprayDrops, MIRROR_SPRAY_RADIUS } from './spray.js';
+import { splashRandom, reseedSplashRandom, asSplash } from './splashRandom.js';
 import { RING_SOURCE } from './rings.js';
 import { DROP_RING } from './dropRings.js';
 import { STONE_DENSITY } from './things.js';
@@ -505,7 +506,7 @@ export function mirrorWith(object, materials, bounds = null) {
   return object;
 }
 
-const randomRange = (lo, hi) => lo + Math.random() * (hi - lo);
+const randomRange = (lo, hi) => lo + splashRandom() * (hi - lo);
 
 /**
  * A random sequence of the foam's own, seeded by `values` (a place and a
@@ -785,6 +786,7 @@ function jetForm(regime, choice) {
 
 export class SplashSystem {
   constructor({ capacity = 16000, bubbleCapacity = 3000, environment, lighting, water, ambientWaves, surface = null }) {
+    reseedSplashRandom();   // its own stream as it first starts (src/splashRandom.js)
     this.capacity = capacity;
     this.crownDropletCap = CROWN_DROPLET_CAP;   // the preset's (setCrownDropletCap)
     this.count = 0;
@@ -1002,6 +1004,7 @@ export class SplashSystem {
    * targets cleared (with `renderer`), and the splash clock back to zero.
    */
   reset(renderer = null) {
+    reseedSplashRandom();   // its own stream as it first started (src/splashRandom.js)
     this.count = 0;
     this.bubbleCount = 0;
     for (const crown of this.crowns) { this.particleScene.remove(crown.mesh); crown.dispose(); }
@@ -1056,8 +1059,11 @@ export class SplashSystem {
     // random stream, seeded by the stone (a stone the impact does not name draws a seed).
     // A probe may fix the seal and the jet's form (info.fixed: {seal, regime},
     // tools/basilisk/app-numbers.mjs: the reference simulation's deep seal and a clean jet).
-    const seed = info.seed ?? Math.floor(Math.random() * 4294967296);
+    const seed = info.seed ?? Math.floor(Math.random() * 4294967296);   // drawn in a physics step: the same at any frame rate
     const choice = chooseSplash(info, foamRandom(seed, radius), info.fixed);
+    // What it draws as it plays, frame by frame (src/splashRandom.js): a stream of its own, not chooseSplash's (seed,
+    // radius) nor the jet's (seed, radius, 1), whose draws it would repeat.
+    reseedSplashRandom(seed, radius, 2);
 
     // The hole the stone opens: the crown and the fan launch from its rim and
     // the jet rises where it closes, leaning back along an oblique path,
@@ -1083,10 +1089,10 @@ export class SplashSystem {
     const sprayCount = Math.round(0.1 * crownCount);
     const rimCount = Math.round(0.1 * crownCount);
     for (let drop = 0; drop < sprayCount; drop++) {
-      const angle = Math.random() * Math.PI * 2;
+      const angle = splashRandom() * Math.PI * 2;
       const dirX = Math.cos(angle), dirZ = Math.sin(angle);
       const forward = (dirX * horizontal.x + dirZ * horizontal.y) * horizontalFraction;
-      if (Math.random() < 0.45 * Math.max(-forward, 0)) continue;
+      if (splashRandom() < 0.45 * Math.max(-forward, 0)) continue;
       const ringRadius = radius * randomRange(0.9, 1.1);
       const tilt = THREE.MathUtils.degToRad(randomRange(50, 75));
       const dropSpeed = entrySpeed * randomRange(0.4, 0.9) * (1 + 0.45 * forward);
@@ -1095,7 +1101,7 @@ export class SplashSystem {
       this.spawnDroplet(
         x + dirX * ringRadius, 0.003, z + dirZ * ringRadius,
         dirX * out + velocity.x * 0.22, up, dirZ * out + velocity.z * 0.22,
-        (SPRAY_DROP_RADIUS + SPRAY_DROP_SPREAD * Math.random()) * sizeFactor ** 0.4,
+        (SPRAY_DROP_RADIUS + SPRAY_DROP_SPREAD * splashRandom()) * sizeFactor ** 0.4,
       );
     }
     this.contactSpray(x, z, radius, entrySpeed, velocity, horizontal, horizontalFraction, sizeFactor);
@@ -1239,6 +1245,9 @@ export class SplashSystem {
    */
   skim(info, water) {
     const { x, z, exitX, exitZ, velocity, radius, pushSpeed, duration } = info;
+    // What it draws, on the splash's stream started afresh from the stone's seed and which touch this is (src/splashRandom.js);
+    // a touch no stone names draws a seed, in a physics step.
+    reseedSplashRandom(info.seed ?? Math.floor(Math.random() * 4294967296), info.skips ?? 0, 0x5c1d);
     const sizeFactor = radius / REFERENCE_RADIUS;
     const along = Math.hypot(velocity.x, velocity.z);
     const headingX = velocity.x / Math.max(along, 1e-9), headingZ = velocity.z / Math.max(along, 1e-9);
@@ -1284,7 +1293,7 @@ export class SplashSystem {
       this.spawnDroplet(
         startX - headingZ * aside, 0.003, startZ + headingX * aside,
         directionX * Math.cos(rise) * dropSpeed, Math.sin(rise) * dropSpeed, directionZ * Math.cos(rise) * dropSpeed,
-        (SPRAY_DROP_RADIUS + SPRAY_DROP_SPREAD * Math.random()) * sizeFactor ** 0.4,
+        (SPRAY_DROP_RADIUS + SPRAY_DROP_SPREAD * splashRandom()) * sizeFactor ** 0.4,
       );
     }
     // The water the face churned: a small boil, white for a moment (on the solver's patch only, where the foam is).
@@ -1400,9 +1409,9 @@ export class SplashSystem {
   knock({ x, y, z, normalX, normalY, normalZ, speed, radius }) {
     const count = Math.round(Math.min(KNOCK.drops * speed * Math.sqrt(radius / REFERENCE_RADIUS), KNOCK.most));
     for (let drop = 0; drop < count; drop++) {
-      let directionX = normalX + KNOCK.spread * (2 * Math.random() - 1);
-      let directionY = normalY + KNOCK.spread * (2 * Math.random() - 1) + KNOCK.lift;
-      let directionZ = normalZ + KNOCK.spread * (2 * Math.random() - 1);
+      let directionX = normalX + KNOCK.spread * (2 * splashRandom() - 1);
+      let directionY = normalY + KNOCK.spread * (2 * splashRandom() - 1) + KNOCK.lift;
+      let directionZ = normalZ + KNOCK.spread * (2 * splashRandom() - 1);
       const length = Math.hypot(directionX, directionY, directionZ) || 1;
       const dropSpeed = speed * randomRange(0.3, 1);
       directionX *= dropSpeed / length; directionY *= dropSpeed / length; directionZ *= dropSpeed / length;
@@ -1638,7 +1647,7 @@ export class SplashSystem {
     this.bubblePositions[i * 3] = x; this.bubblePositions[i * 3 + 1] = y; this.bubblePositions[i * 3 + 2] = z;
     this.bubbleVelocities[i * 3] = vx; this.bubbleVelocities[i * 3 + 1] = vy; this.bubbleVelocities[i * 3 + 2] = vz;
     this.bubbleSizes[i] = size;
-    this.bubblePhases[i] = Math.random() * Math.PI * 2;
+    this.bubblePhases[i] = splashRandom() * Math.PI * 2;
   }
 
   removeBubble(i) {
@@ -1660,8 +1669,12 @@ export class SplashSystem {
    */
   setStoneStep(seconds) { this.stoneStep = seconds; }
 
-  /** Advance droplets and bubbles by dt seconds, feeding the water surface. */
+  /** Advance droplets and bubbles by dt seconds, feeding the water surface, drawing only from the splash's own stream (src/splashRandom.js asSplash). */
   update(dt, water) {
+    asSplash(() => this.play(dt, water));
+  }
+
+  play(dt, water) {
     this.time += dt;
     this.substep = this.stoneStep ?? dt;
 
@@ -1686,17 +1699,17 @@ export class SplashSystem {
       const phase = Math.min((this.time - plume.start) / plume.duration, 1);
       const shouldHave = Math.round(plume.total * phase);
       while (plume.spawned < shouldHave) {
-        const depth = plume.depth * (0.1 + 0.9 * Math.random()) * phase;
-        const angle = Math.random() * Math.PI * 2;
-        const offset = Math.random() * 0.05 * (0.3 + depth) * plume.spread;
+        const depth = plume.depth * (0.1 + 0.9 * splashRandom()) * phase;
+        const angle = splashRandom() * Math.PI * 2;
+        const offset = splashRandom() * 0.05 * (0.3 + depth) * plume.spread;
         const swarmX = plume.x + Math.cos(angle) * offset + plume.driftX * depth, swarmZ = plume.z + Math.sin(angle) * offset + plume.driftZ * depth;
-        const swarmSize = 0.0006 + 0.0022 * Math.random() ** 2;
+        const swarmSize = 0.0006 + 0.0022 * splashRandom() ** 2;
         const driftX = randomRange(-0.05, 0.05), driftZ = randomRange(-0.05, 0.05);
-        const swarm = Math.min(shouldHave - plume.spawned, 1 + Math.floor(Math.random() * BUBBLE_SWARM));
+        const swarm = Math.min(shouldHave - plume.spawned, 1 + Math.floor(splashRandom() * BUBBLE_SWARM));
         for (let member = 0; member < swarm; member++) {
-          const scatterAngle = Math.random() * Math.PI * 2, scatter = BUBBLE_SWARM_SPREAD * Math.sqrt(Math.random());
+          const scatterAngle = splashRandom() * Math.PI * 2, scatter = BUBBLE_SWARM_SPREAD * Math.sqrt(splashRandom());
           this.spawnBubble(
-            swarmX + Math.cos(scatterAngle) * scatter, -depth - BUBBLE_SWARM_SPREAD * (Math.random() - 0.5), swarmZ + Math.sin(scatterAngle) * scatter,
+            swarmX + Math.cos(scatterAngle) * scatter, -depth - BUBBLE_SWARM_SPREAD * (splashRandom() - 0.5), swarmZ + Math.sin(scatterAngle) * scatter,
             driftX + randomRange(-0.01, 0.01), randomRange(0.10, 0.32), driftZ + randomRange(-0.01, 0.01),
             swarmSize * randomRange(0.75, 1.25),
           );
@@ -1795,14 +1808,14 @@ export class SplashSystem {
       }
       if (hit.radius >= LANDING_CROWN_RADIUS) {
         water.addFoam({ x: hit.x, z: hit.z, radius: hit.radius * 3, amount: LANDING_FOAM * strength, lifetime: LANDING_FOAM_LIFETIME, boil: true, source: 'landing' });
-        const sprayCount = crowned ? 0 : Math.random() < LANDING_KICK_CHANCE ? 1 + Math.floor(Math.random() * LANDING_KICK_MOST) : 0;
+        const sprayCount = crowned ? 0 : splashRandom() < LANDING_KICK_CHANCE ? 1 + Math.floor(splashRandom() * LANDING_KICK_MOST) : 0;
         for (let s = 0; s < sprayCount; s++) {
-          const angle = Math.random() * Math.PI * 2;
+          const angle = splashRandom() * Math.PI * 2;
           const out = randomRange(0.2, 0.9) * Math.min(hit.fallSpeed / 3, 1.5);
           this.spawnDroplet(hit.x, 0.003, hit.z, Math.cos(angle) * out, randomRange(0.5, 1.8) * Math.min(hit.fallSpeed / 3, 1.5), Math.sin(angle) * out, Math.min(hit.radius * randomRange(0.3, 0.5), DROP_CEILING));
         }
       }
-      const specks = Math.min(Math.floor((hit.radius - LANDING_SPECK_FREE) / LANDING_SPECK_STEP + Math.random()), LANDING_SPECK_MOST);
+      const specks = Math.min(Math.floor((hit.radius - LANDING_SPECK_FREE) / LANDING_SPECK_STEP + splashRandom()), LANDING_SPECK_MOST);
       if (specks > 0) this.spawnFoamSpecks(hit.x, hit.z, 0, 2 * hit.radius, specks, 0.02);
     }
 
@@ -1830,9 +1843,9 @@ export class SplashSystem {
       const y = this.bubblePositions[p + 1] + this.bubbleVelocities[p + 1] * dt;
       const z = this.bubblePositions[p + 2] + (this.bubbleVelocities[p + 2] - wobble) * dt;
       if (y >= -0.002) {
-        if (Math.random() < 0.3) water.addFoam({ x, z, radius: 0.012, amount: BUBBLE_FOAM, lifetime: BOIL_LIFETIME, boil: true, source: 'bubble' });
+        if (splashRandom() < 0.3) water.addFoam({ x, z, radius: 0.012, amount: BUBBLE_FOAM, lifetime: BOIL_LIFETIME, boil: true, source: 'bubble' });
         // A surfacing bubble floats for a while as a speck its own size (1.2 to 5.6 mm across).
-        this.foamSpecks.spawn(x, z, randomRange(-0.004, 0.004), randomRange(-0.004, 0.004), this.time, 2 * size);
+        this.foamSpecks.spawn(x, z, randomRange(-0.004, 0.004), randomRange(-0.004, 0.004), this.time, 2 * size, splashRandom);
         this.removeBubble(i);
         continue;
       }
@@ -2080,10 +2093,10 @@ export class SplashSystem {
   landOn(height, onWet, x, z, radius, vx, vy, vz) {
     onWet?.(x, z, Math.max(radius * DECK_DROPS.wetSpread, DECK_DROPS.wetLeast));
     if (radius < DECK_DROPS.splatterFrom) return;
-    const count = 1 + Math.floor(Math.random() * DECK_DROPS.splatter);
+    const count = 1 + Math.floor(splashRandom() * DECK_DROPS.splatter);
     const fall = -vy;
     for (let drop = 0; drop < count; drop++) {
-      const angle = Math.random() * Math.PI * 2, out = randomRange(0.15, 0.5) * fall;
+      const angle = splashRandom() * Math.PI * 2, out = randomRange(0.15, 0.5) * fall;
       this.spawnDroplet(x, height + 0.002, z, 0.3 * vx + Math.cos(angle) * out, randomRange(0.15, 0.4) * fall, 0.3 * vz + Math.sin(angle) * out, Math.min(radius * randomRange(0.25, 0.45), DROP_CEILING));
     }
   }
