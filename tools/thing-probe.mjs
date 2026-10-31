@@ -68,9 +68,10 @@
 //     over a wall lands on the deck and wets it, as does one crossing the
 //     wall's line above the deck's top and ending the step below it, while
 //     one rising past the deck's top at the wall comes back off its side;
-//   - definitions as anyone might write them: the review's bad ones (a stone
+//   - definitions as anyone might write them: the reviews' bad ones (a stone
 //     look without its fields, body.soft null, presets an object, an
-//     infinite diameter) are refused plainly, and good ones damaged at
+//     infinite diameter, a group called Favourites, which is the dropdown
+//     of things' own tab) are refused plainly, and good ones damaged at
 //     random never make the check throw, and whatever defineThing takes
 //     can be made and stepped;
 //   - mass, density and volume agree for every thing not sized by its
@@ -1255,6 +1256,7 @@ console.log('\nThings meeting things (src/collide.js):');
     'body.soft null': { ...good, body: { ...good.body, soft: null } },
     'presets an object': { ...good, body: { shape: 'sphere', size: { by: 'preset', presets: {}, initial: 1 } } },
     'an infinite diameter': { ...good, body: { shape: 'sphere', size: { by: 'preset', unit: 'size', initial: 1, presets: [{ value: 1, label: 'x', diameter: Infinity, mass: 1 }] } } },
+    'a group called Favourites': { ...good, group: 'favourites' },   // the dropdown's own tab (src/thingMenu.js)
   };
   const refusals = Object.entries(reviewCases).map(([label, definition]) => {
     let problems = null, error = null;
@@ -1262,7 +1264,7 @@ console.log('\nThings meeting things (src/collide.js):');
     try { defineThing('probe-case', definition); } catch (thrown) { error = thrown.message; }
     return { label, refused: Array.isArray(problems) && problems.length > 0 && error !== null && !Object.hasOwn(THINGS, 'probe-case') };
   });
-  console.log(`\nDefinitions as anyone might write them: the review's four refused plainly: ${refusals.map((entry) => `${entry.label} ${entry.refused ? 'yes' : 'NO'}`).join('; ')}`);
+  console.log(`\nDefinitions as anyone might write them: the reviews' ${refusals.length} refused plainly: ${refusals.map((entry) => `${entry.label} ${entry.refused ? 'yes' : 'NO'}`).join('; ')}`);
   check(refusals.every((entry) => entry.refused), `a bad definition was not refused plainly (${refusals.filter((entry) => !entry.refused).map((entry) => entry.label).join(', ')})`);
   // Random damage to good definitions (one field at a time put to something else JSON can hold): the check never throws,
   // and what defineThing takes can be made, measured and stepped.

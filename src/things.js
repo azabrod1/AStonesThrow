@@ -129,7 +129,10 @@
 //     basketball (sizes 5 to 7: 87 kg/m³, it floats 4.3 cm under);
 //   - gems, cut as brilliants, 5 to 1000 carats (1 ct = 0.2 g), all sinking:
 //     diamond (3510), emerald (2760), ruby and sapphire (corundum, 4000);
-//   - other things: an apple (100 to 300 g at 815 kg/m³: a quarter of it is
+//   - the rest, under Food (the apple, the pizzas, the pie, the watermelon,
+//     the banana, the bread, the cake), Toys (the duck, the slide),
+//     Electronics (the TV, the iPhone) and Other (the brick, the snowball):
+//     an apple (100 to 300 g at 815 kg/m³: a quarter of it is
 //     air, so it floats, low), a pizza (20, 30 or 40 cm across, a disc with
 //     its crust and cheese, each one thrown dressed with a recipe's toppings
 //     drawn at random, 5 to 14% more weight; about 450 kg/m³, mostly airy
@@ -182,7 +185,7 @@ const ROLLS = { solid: 5 / 7, shell: 3 / 5 };   // the share of its speed along 
 const BODY_SHAPES = ['sphere', 'mesh'];         // the bodies src/rock.js knows
 const AIR_MODELS = ['ballistic', 'flutter'];    // the flights src/rock.js knows (Rock.fly)
 const CALLED = { Stones: 'a rock', Balls: 'a ball', Gems: 'a gem' };
-const LAST_GROUPS = ['Gems'];                    // listed after every other group (thingGroups), whenever defined: a gem is seldom thrown
+const LAST_GROUPS = ['Gems', 'Other'];           // listed after every other group (thingGroups), whenever defined: a gem, seldom thrown, and last what fits no group
 const DEFAULTS = { air: { drag: 0.47, model: 'ballistic' }, look: { roughness: 0.92, reflection: 0.9, wet: { darker: 0.15, glossier: 0.4 } }, abilities: { skips: false, held: true } };
 
 export const THINGS = {};
@@ -225,6 +228,8 @@ function definitionProblems(key, definition) {
   need(typeof key === 'string' && /^[a-z][a-z0-9-]*$/.test(key) && key.length <= 40, `its key "${String(key).slice(0, 40)}" must be lower case letters, digits and dashes`);
   if (!isObject(definition)) return [...problems, 'it is not an object'];
   for (const field of ['name', 'group', 'note']) need(typeof definition[field] === 'string' && definition[field].length > 0 && definition[field].length <= LIMITS.text, `it needs a ${field} of 1 to ${LIMITS.text} characters`);
+  // A group is a tab of the dropdown of things (src/thingMenu.js), beside its own Favourites.
+  need(typeof definition.group !== 'string' || definition.group.toLowerCase() !== 'favourites', 'its group cannot be called Favourites: the dropdown of things has its own tab of that name');
   for (const field of ['short', 'called']) need(definition[field] === undefined || (typeof definition[field] === 'string' && definition[field].length > 0 && definition[field].length <= LIMITS.text), `${field} must be text of 1 to ${LIMITS.text} characters`);
   for (const part of ['body', 'material', 'water', 'look']) need(isObject(definition[part]), `it needs a ${part}, an object`);
   for (const part of ['air', 'abilities']) need(definition[part] === undefined || isObject(definition[part]), `${part} must be an object`);
@@ -543,7 +548,7 @@ defineBuiltIn('ruby', gem('Ruby', 'Red corundum, an oval', 4000, { color: [190, 
 defineBuiltIn('sapphire', gem('Sapphire', 'Blue corundum, an oval', 4000, { color: [25, 55, 185], stretch: 1.25, contrast: [0.5, 1.0], roughness: 0.06, reflection: 1.5 }));
 
 defineBuiltIn('apple', {
-  name: 'Apple', group: 'Other', note: 'A quarter of it is air: it floats, low', called: 'an apple', edible: true,
+  name: 'Apple', group: 'Food', note: 'A quarter of it is air: it floats, low', called: 'an apple', edible: true,
   body: { shape: 'sphere', density: 815, size: { by: 'mass', unit: 'g', min: 100, max: 300, step: 10, initial: 180 } },
   // Lumpy and soft, it rolls on its side about its core, wider at its shoulder than its calyx (src/thingMeshes.js
   // createAppleGeometry: each apple's own shoulder, 0.02 to 0.08): a cone, its path veering towards its calyx, though by a
@@ -557,7 +562,7 @@ defineBuiltIn('apple', {
 // A pizza's give (body.soft): the air cups it and flaps it; afloat it drapes over the waves, wholly once soaked.
 const PIZZA_GIVE = { cup: 0.0025, most: 0.12, flap: 0.05, rate: 3, drape: 0.7 };
 defineBuiltIn('pizza', {
-  name: 'Pizza', group: 'Other', note: 'Random toppings: it sails, skims, soaks', called: 'a pizza', edible: true,
+  name: 'Pizza', group: 'Food', note: 'Random toppings: it sails, skims, soaks', called: 'a pizza', edible: true,
   body: {
     shape: 'mesh',
     upright: true,
@@ -572,7 +577,7 @@ defineBuiltIn('pizza', {
   abilities: { skips: true },   // flat and spinning, it skims (src/rock.js skim), as a stone does
 });
 defineBuiltIn('frozen-pizza', {
-  name: 'Frozen pizza', short: 'Frozen', group: 'Other', note: 'Rigid and frosted: it thaws, then soaks', called: 'a frozen pizza', edible: true,
+  name: 'Frozen pizza', short: 'Frozen', group: 'Food', note: 'Rigid and frosted: it thaws, then soaks', called: 'a frozen pizza', edible: true,
   body: {
     shape: 'mesh',
     upright: true,
@@ -594,7 +599,7 @@ defineBuiltIn('frozen-pizza', {
 // it, the air under its crust high (what floats an apple pie): its weight is a little under its volume's middle
 // (`ballast`), so under the water it turns back right way up, where the flow had turned it on its edge.
 defineBuiltIn('pie', {
-  name: 'Pie', group: 'Other', note: 'Filled at random: it floats or sinks', called: 'a pie', edible: true,
+  name: 'Pie', group: 'Food', note: 'Filled at random: it floats or sinks', called: 'a pie', edible: true,
   body: {
     shape: 'mesh',
     upright: true,
@@ -607,7 +612,7 @@ defineBuiltIn('pie', {
   look: { mesh: 'pie', roughness: 0.7, reflection: 0.8, wet: { darker: 0.2, glossier: 0.4 } },
 });
 defineBuiltIn('watermelon', {
-  name: 'Watermelon', group: 'Other', note: 'Nearly as heavy as water: it floats low', called: 'a watermelon', edible: true,
+  name: 'Watermelon', group: 'Food', note: 'Nearly as heavy as water: it floats low', called: 'a watermelon', edible: true,
   body: { shape: 'mesh', density: 960, size: { by: 'mass', unit: 'kg', min: 2, max: 10, step: 0.5, initial: 5 } },
   material: { bounce: [0.08, 0.15], friction: 0.6 },
   water: { restingHeight: 0.9 },
@@ -615,7 +620,7 @@ defineBuiltIn('watermelon', {
 });
 
 defineBuiltIn('duck', {
-  name: 'Rubber duck', short: 'Duck', group: 'Other', note: 'Hollow vinyl: it rights itself afloat', called: 'a rubber duck',
+  name: 'Rubber duck', short: 'Duck', group: 'Toys', note: 'Hollow vinyl: it rights itself afloat', called: 'a rubber duck',
   body: {
     shape: 'mesh',
     upright: true,
@@ -638,7 +643,7 @@ defineBuiltIn('brick', {
 });
 
 defineBuiltIn('tv', {
-  name: 'TV', group: 'Other', note: 'A flat screen, 3.6 kg: it sinks', called: 'a TV',
+  name: 'TV', group: 'Electronics', note: 'A flat screen, 3.6 kg: it sinks', called: 'a TV',
   body: { shape: 'mesh', upright: true, size: { by: 'fixed', diameter: 0.54, mass: 3.6 } },
   material: { bounce: [0.06, 0.12], friction: 0.65 },
   air: { drag: 1.15, model: 'flutter' },
@@ -647,7 +652,7 @@ defineBuiltIn('tv', {
 });
 
 defineBuiltIn('iphone', {
-  name: 'iPhone', group: 'Other', note: 'Glass and metal, 180 g: it sinks', called: 'an iPhone',
+  name: 'iPhone', group: 'Electronics', note: 'Glass and metal, 180 g: it sinks', called: 'an iPhone',
   body: { shape: 'mesh', upright: true, size: { by: 'fixed', diameter: 0.15, mass: 0.18 } },
   material: { bounce: [0.12, 0.22], friction: 0.4 },
   air: { drag: 1.1, model: 'flutter' },
@@ -676,7 +681,7 @@ defineBuiltIn('ice-shard', {
 // ball's of like volume (src/thingMeshes.js asUnitBall), which its splash is sized by: a stone of its radius displaces
 // what it does. Thrown, it tumbles end over end. Its buoyancy is cut finer (`columns`), for enough across its girth.
 defineBuiltIn('banana', {
-  name: 'Banana', group: 'Other', note: 'For scale: it floats, just', called: 'a banana', edible: true,
+  name: 'Banana', group: 'Food', note: 'For scale: it floats, just', called: 'a banana', edible: true,
   body: { shape: 'mesh', density: 920, size: { by: 'mass', unit: 'g', min: 100, max: 250, step: 10, initial: 160 } },
   material: { bounce: [0.12, 0.22], friction: 0.7 },
   air: { drag: 1.1 },
@@ -689,7 +694,7 @@ defineBuiltIn('banana', {
 // sinks, in two or three minutes afloat.
 const BREAD_GIVE = { cup: 0.004, most: 0.15, flap: 0.07, rate: 4, drape: 0.8 };
 defineBuiltIn('bread', {
-  name: 'Slice of bread', short: 'Bread', group: 'Other', note: 'For the ducks: it floats, soaks, sinks', called: 'a slice of bread', edible: true,
+  name: 'Slice of bread', short: 'Bread', group: 'Food', note: 'For the ducks: it floats, soaks, sinks', called: 'a slice of bread', edible: true,
   body: { shape: 'mesh', soft: BREAD_GIVE, size: { by: 'fixed', diameter: 0.13, mass: 0.03 } },
   material: { bounce: [0.03, 0.08], friction: 0.9 },
   air: { drag: 1.1, model: 'flutter' },
@@ -703,7 +708,7 @@ defineBuiltIn('bread', {
 // sponge soaks through its bare underside and sides, slowed by its frosting: waterlogged (0.62 of its volume), it
 // sinks, in three or four minutes afloat. Thrown, it tumbles.
 defineBuiltIn('cake', {
-  name: 'Birthday cake', short: 'Cake', group: 'Other', note: 'Sponge and frosting: floats, then soaks', called: 'a cake', edible: true,
+  name: 'Birthday cake', short: 'Cake', group: 'Food', note: 'Sponge and frosting: floats, then soaks', called: 'a cake', edible: true,
   body: {
     shape: 'mesh',
     upright: true,
@@ -733,7 +738,7 @@ defineBuiltIn('snowball', {
 // on a corner; afloat the water leaves it as it lands (on its feet, its side or upside down: it is no heavier low
 // down), its buoyancy cut slantwise to all its faces (`columnsAlong`).
 defineBuiltIn('slide', {
-  name: 'Toy slide', short: 'Slide', group: 'Other', note: 'Hollow plastic, 4 kg: it floats high', called: 'a toy slide',
+  name: 'Toy slide', short: 'Slide', group: 'Toys', note: 'Hollow plastic, 4 kg: it floats high', called: 'a toy slide',
   body: { shape: 'mesh', upright: true, size: { by: 'fixed', diameter: 0.422, mass: 4.1 } },
   material: { bounce: [0.15, 0.25], friction: 0.5 },
   air: { drag: 2.2, spin: [1, 4] },
