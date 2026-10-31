@@ -40,9 +40,9 @@ thrown: its name opens a dropdown of things in tabs (`src/thingMenu.js`):
 Favourites, then a tab for each group (Stones, Balls, Food, Toys,
 Electronics, Gems, seldom thrown, and Other last), each thing a pill with
 its picture (on a desktop its note in a tip), the card as tall as the
-largest group. At its head, above the tabs and ruled off from them, the
-chosen thing stands under "Selected", with its size, a star that makes it a
-favourite and an ⓘ that opens What to throw on it. It opens on the chosen thing's group, or on Favourites if that was
+largest group. Over it the chosen thing has a card of its own, outlined in
+gold, under "Selected", with its size, a star that makes it a favourite and
+an ⓘ that opens What to throw on it. It opens on the chosen thing's group, or on Favourites if that was
 shown last. Its slider sets the size (a stone 1.5
 to 30 cm across, a bowling ball 6 to 16 lb, a basketball size 5 to 7, a gem
 5 to 1000 carats; a golf or a tennis ball has one size). Then how it is
@@ -1691,9 +1691,9 @@ farther out, so it rises into the view rather than filling its corner.
   and ⅒×; that the name's dropdown fits over the
   strip (on a phone in portrait without scrolling), its pills, tabs, star
   and ⓘ tall enough for a finger, that it opens on the chosen thing's group,
-  its head shows the chosen thing above the tabs, its tabs keep their place, Favourites says
+  the chosen thing's own card stands above the tabs, its tabs keep their place, Favourites says
   where to make one, a group's tab holds its things, a favourite made with
-  the head's star or on What to throw shows there, a pill's tip is its note,
+  its star or on What to throw shows there, a pill's tip is its note,
   a pill tapped is thrown next, a press on the pond closes it without
   throwing and the keyboard works it; that the settings open with their rows, each
   row's value whole beside its name, the Water page's pictured choices each

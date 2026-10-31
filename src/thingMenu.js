@@ -3,22 +3,22 @@
 // tabs over its things: Favourites, then one tab for each group (src/things.js
 // thingGroups). Each thing is a pill with its picture and name, the chosen
 // thing's pill ringed; a tap on a pill chooses that thing and closes the
-// dropdown. At the card's head, above the tabs and ruled off from them so it
-// reads as no tab's, the chosen thing stands under "Selected", in the card's
-// own glass: its picture (ringed as its pill is), name and size, a star that
-// makes it a favourite or unmakes it (the dropdown stays open) and an ⓘ that
-// opens the settings' What to throw page, to look it over. The Favourites
-// tab, empty, says to star one there. It opens on Favourites if that was the
-// tab last shown and it holds something (a per-viewer convenience, in
-// localStorage; the first time, Favourites if there are any), else on the
-// chosen thing's group. On a touch screen the tabs are one row a finger
-// scrolls sideways (index.html). The page script (index.html) builds the
-// tabs, the pills and the head and says what a choice, the star and the ⓘ do
-// (onChoose, onFavourite, onMore); this holds the opening, closing, the tabs,
-// the tips and moving about.
+// dropdown. Over the tabs' card the chosen thing has a card of its own,
+// outlined and lit in the accent so it stands out and reads as no tab's:
+// "Selected", its picture, name and size, a star that makes it a favourite
+// or unmakes it (the dropdown stays open) and an ⓘ that opens the settings'
+// What to throw page, to look it over. The Favourites tab, empty, says to
+// star one there. It opens on Favourites if that was the tab last shown and
+// it holds something (a per-viewer convenience, in localStorage; the first
+// time, Favourites if there are any), else on the chosen thing's group. On a
+// touch screen the tabs are one row a finger scrolls sideways (index.html).
+// The page script (index.html) builds the tabs, the pills and the chosen
+// thing's card and says what a choice, the star and the ⓘ do (onChoose,
+// onFavourite, onMore); this holds the opening, closing, the tabs, the tips
+// and moving about.
 //
 // Every tab's panel stands in the same place (a grid of one cell, the hidden
-// ones invisible but still taking room), so the card is as tall as its
+// ones invisible but still taking room), so the tabs' card is as tall as its
 // tallest panel (the largest group) whichever is shown, and the tabs do not
 // jump as one goes from tab to tab.
 //
@@ -32,14 +32,14 @@
 // (--strip-height, which the page keeps), its card at the box's foot: on a
 // phone across the screen, on a wider one under the chip, never past the
 // box's edge. Where the box is too short (a phone on its side) the panels
-// scroll under the tabs, the head and the tabs held. It opens with a short
+// scroll under the tabs, the chosen thing's card and the tabs held. It opens with a short
 // rise, or at once for a reader who prefers reduced motion.
 //
 // It closes on the chip, on Escape (before Escape's glide back to the shore
 // view, src/main.js), on a choice, on a press anywhere else (one on the water
 // only closes it and throws nothing, as the settings do) and when the focus
 // leaves it. Opened, the focus goes to the chosen pill if the tab shows it,
-// else to the tab. The arrow keys go as they stand, from the head's star
+// else to the tab. The arrow keys go as they stand, from the chosen card's star
 // and ⓘ to the tab, then pill to pill (Left and Right, on a tab, go from
 // tab to tab, showing each); Home and End go to the first and last pill;
 // Enter or Space chooses. Closed by Escape or a choice, the focus goes back to the
@@ -138,7 +138,7 @@ export class ThingMenu {
   /** The shown panel's pills. */
   pills() { return [...(this.panel()?.querySelectorAll('[data-value]') ?? [])]; }
 
-  /** The head's star and ⓘ, the selected tab, then the shown panel's pills: the order they stand in, the arrow keys' order. */
+  /** The chosen thing's star and ⓘ, the selected tab, then the shown panel's pills: the order they stand in, the arrow keys' order. */
   items() {
     return [...this.card.querySelectorAll('.thing-menu-now button'), this.selectedTab(), ...this.pills()].filter(Boolean);
   }
