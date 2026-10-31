@@ -16,6 +16,7 @@ import { RAIN_RIPPLES, DROP_RING_SLOPES } from './rain.js';
 import { GALE_SURFACE } from './gale.js';
 import { SURFACE_BUBBLE, BUBBLE_SPRITE } from './bubble.js';
 import { ICE_SHADOW_LOOKUP } from '../iceShadow.js';
+import { VISITOR_WATER } from './visitor.js';
 
 // The weather's haze (rain's, snow's, a fog's; src/sky.js setWeather): what lies d metres off fades
 // toward uHazeColor, the overcast's horizon, by 1 − exp(−uHazeDensity·d)
@@ -1544,6 +1545,7 @@ ${FRESH_BOIL}
 ${FOAM_PATTERN}
 ${RAIN_RIPPLES}
 ${DROP_RING_SLOPES}
+${VISITOR_WATER}
 ${HAZE}
 
 // The slope variance of the ambient ripples that this pixel's lookup no
@@ -1892,6 +1894,11 @@ void main() {
     slopeVariance += rainUnresolvedVariance(vWorld.xz) * ride;
   }
   if (uDropRingCount > 0) surfaceSlope += dropRingSlope(vWorld.xz, acrossX, acrossY) * ride;
+  if (visitorNear(vWorld.xz)) {   // the thing in the loch's wake (src/shaders/visitor.js)
+    vec3 visitor = visitorSlope(vWorld.xz, acrossX, acrossY);
+    surfaceSlope += visitor.xy * ride;
+    slopeVariance += visitor.z * ride;
+  }
   float galeJacobian = 1.0;
   if (uGaleMetresPerUnit > 0.0) {
     surfaceSlope += galeSlope(vRest, galeJacobian) * ride;
@@ -1910,6 +1917,11 @@ void main() {
     slopeVariance += rainUnresolvedVariance(vWorld.xz);
   }
   if (uDropRingCount > 0) slope += dropRingSlope(vWorld.xz, acrossX, acrossY);
+  if (visitorNear(vWorld.xz)) {   // the thing in the loch's wake (src/shaders/visitor.js)
+    vec3 visitor = visitorSlope(vWorld.xz, acrossX, acrossY);
+    slope += visitor.xy;
+    slopeVariance += visitor.z;
+  }
   float galeJacobian = 1.0;
   if (uGaleMetresPerUnit > 0.0) {
     slope += galeSlope(vRest, galeJacobian);
@@ -2051,6 +2063,8 @@ void main() {
     float left = whitecaps.b + whitecaps.g * galeStreaks(vRest, acrossX, acrossY);
     foamKinds += vec2(activeWhitewater + left, left);
   }
+  // The foam the thing in the loch churns (src/shaders/visitor.js): lace, as the gale's left foam is.
+  if (visitorNear(vWorld.xz)) foamKinds += vec2(visitorFoam(vWorld.xz));
   float foam = foamKinds.r;
 #ifdef CAVITY_MESH
   foam *= level;   // the pattern lies on the water's plane: none down the walls
