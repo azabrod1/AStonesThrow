@@ -27,7 +27,10 @@
 //     lyingAttitude: never on an edge or its end), its weight over the
 //     corners it rests on (rollToRest: never balanced on one lump beside
 //     it, which would tip it over); a stone slid on the ice
-//     goes SLIDE_RATIO times as far as on the deck;
+//     goes SLIDE_RATIO times as far as on the deck; a toy slide (its moulded
+//     corners scrape: src/things.js `scrapes`) held by the ice from a toss or
+//     a lob slides at most SCRAPED_MOST from where it struck it, where a
+//     stone skates metres on;
 //   - a Skip throw onto the ice skitters (it strikes the ice at least twice)
 //     and rests on it;
 //   - a stone sliding into a hole falls in (it is not held on the edge), and
@@ -109,6 +112,7 @@ const WAYS = [['toss', 'soft'], ['toss', 'normal'], ['toss', 'hard'], ['lob', 'n
 const BREAKS = 1.5;          // a throw that must break strikes at least this times what the ice holds...
 const HOLDS = 0.6;           // ...and one that must not at most this (the blow's spread, e^(±2·0.2), is 0.67 to 1.5)
 const SLIDE_RATIO = 4;
+const SCRAPED_MOST = 1;      // m: a toy slide that held slides no farther (it went 4 to 12 m skating as a stone does)
 const MOMENTUM_KEPT = 0.05;  // of the striker's momentum
 const STEP_TOLERANCE = 0.15; // of a slide
 const BOB_TOLERANCE = 0.0005; // m: a thing sliding flat on its face keeps its height to this
@@ -334,6 +338,13 @@ check(ratioOf('thick', 'stone 6 cm') <= HOLDS, `the default stone tossed normall
 check(ratioOf('thin', 'Brick') >= BREAKS, `a brick strikes thin ice at only ${ratioOf('thin', 'Brick').toFixed(2)} of what it holds`);
 check(ratioOf('thin', 'bowling 16 lb') >= BREAKS, `a 16 lb bowling ball strikes thin ice at only ${ratioOf('thin', 'bowling 16 lb').toFixed(2)} of what it holds`);
 check(ratioOf('thick', 'stone 30 cm') >= BREAKS, `a 30 cm rock strikes thick ice at only ${ratioOf('thick', 'stone 30 cm').toFixed(2)} of what it holds`);
+// A toy slide scrapes to a stop near where it struck the ice (but hard, it is let go fast and flat).
+for (const thickness of ['thin', 'thick']) {
+  for (const [manner, power] of WAYS.filter(([, power]) => power !== 'hard')) {
+    const { record, slid } = table.get(`${thickness} Toy slide ${manner} ${power}`);
+    if (!record.broke) check(slid <= SCRAPED_MOST, `a toy slide ${manner} ${power} on ${thickness} ice slid ${slid.toFixed(2)} m, over ${SCRAPED_MOST} m`);
+  }
+}
 
 // ---- the holes ----
 console.log('\nEach hole against its cavity (src/cavity.js lipReach): the lip\'s crest and half its fall, and the jet\'s foot, inside it at every moment');

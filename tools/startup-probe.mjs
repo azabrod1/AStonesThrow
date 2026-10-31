@@ -161,6 +161,40 @@ try {
     await window.__pond.setHour('midday');
   });
   assert.equal((await swissState()).water, 'clear'); // changing the hour must not reapply the place preset
+  // What floats is drawn again in the cached mirror only round where it is (src/main.js measureSplashImage): a toy
+  // slide afloat, its corners 3.5 of its nominal radii out, drifting on its splash's water, leaves no piece of an
+  // earlier image of itself there (a box of 1.5 radii cut it short and left stair-steps of its chute): the frame drawn
+  // from the cached mirror is the frame drawn from it drawn whole.
+  const staleMirror = await swiss.evaluate(() => {
+    const pond = window.__pond, gl = pond.renderer.getContext();
+    pond.pause();
+    let state = 1;   // seeded as the shoot harness seeds its first throw (--seed=1)
+    const random = Math.random;
+    Math.random = () => { state = (state * 16807) % 2147483647; return (state - 1) / 2147483646; };
+    pond.setThing('slide');
+    const slide = pond.throwAt(0, -1.4, { power: 'hard' });
+    Math.random = random;
+    pond.advance(1);
+    const whole = () => { pond.setFov(pond.camera.fov); pond.advance(0); };   // the view set again: the mirror drawn whole
+    whole();
+    // A second of frames as it drifts off (each draws only round it; one long step would draw the mirror only once).
+    for (let step = 0; step < 30; step++) pond.advance(1 / 30);
+    const frame = () => { const pixels = new Uint8Array(gl.drawingBufferWidth * gl.drawingBufferHeight * 4); gl.readPixels(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight, gl.RGBA, gl.UNSIGNED_BYTE, pixels); return pixels; };
+    const cached = frame();
+    whole();
+    const drawn = frame();
+    let differ = 0;
+    for (let index = 0; index < drawn.length; index += 4) {
+      if (Math.max(Math.abs(drawn[index] - cached[index]), Math.abs(drawn[index + 1] - cached[index + 1]), Math.abs(drawn[index + 2] - cached[index + 2])) > 24) differ++;
+    }
+    const result = { state: slide.state, differ };
+    pond.clear();
+    pond.resume();
+    return result;
+  });
+  assert.equal(staleMirror.state, 'float', `the toy slide is not afloat: ${JSON.stringify(staleMirror)}`);
+  assert.ok(staleMirror.differ < 50, `the cached mirror left pieces of the toy slide's earlier images: ${staleMirror.differ} pixels differ from the mirror drawn whole`);
+  console.log(`PASS: a toy slide afloat leaves no stale image of itself in the cached mirror (${staleMirror.differ} pixels differ)`);
   await swiss.reload();
   await ready(swiss);
   assert.equal((await swissState()).water, 'clear'); // a deliberate thaw survives reload

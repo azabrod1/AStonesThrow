@@ -146,7 +146,7 @@
 //     stone's impact, as for any throw (`water`, the splash built from it),
 //     but for its lift under water, whose push across the throw's plane is
 //     left out (its fast spin would curve it off to one side).
-// A broad thing skipped (a pizza: `abilities.skips`) is thrown by its mass,
+// A broad thing skipped (a pizza, an iPhone: `abilities.skips`) is thrown by its mass,
 // as a stone heavier than SKIP_THROW.fullRadius's is (skipSpeed), spun no
 // faster at its rim than such a stone, aimed by its trailing edge, which
 // touches first (skipLowest), and flies the skip's arc held level by its
@@ -294,7 +294,9 @@
 //     where it changes how a thing goes along it ({ kind, friction, rolling,
 //     tumbling, tumble, give, rollingLeast }, each optional): ice is slick, so a thing on it takes the lesser of its
 //     own friction and rolling resistance and the ice's, a stone slows at the
-//     ice's `tumbling`·g and turns end over end at its `tumble`, and its
+//     ice's `tumbling`·g and turns end over end at its `tumble` (but a thing
+//     that scrapes, a toy slide, keeps its own friction on it: groundFriction,
+//     groundSlowing), and its
 //     knock is heard as on ice (src/sound.js); a lawn is soft (src/koiGarden.js):
 //     a thing bounces off it at `give` of its own bounce, and a ball rolls on
 //     it against at least `rollingLeast`;
@@ -3231,7 +3233,7 @@ export class Rock {
     this.velocity.y = bounce * fall;
     const along = Math.hypot(this.velocity.x, this.velocity.z);
     // The friction slows it along the ground, a ball no lower than rolling.
-    const friction = Math.min(material.friction, surface?.friction ?? Infinity);
+    const friction = this.groundFriction(surface);
     const least = material.roll ? material.roll * along : 0;
     const kept = along > 1e-9 ? Math.max(along - friction * (1 + bounce) * fall, least) / along : 0;
     const turn = material.roll ? 0 : GROUND.scatter * (2 * this.random() - 1);
@@ -3261,7 +3263,7 @@ export class Rock {
     // that rolls about its own axis (an apple) is slowed by its own lumps and give whatever it rolls on; a lawn holds
     // either back by at least its `rollingLeast`.
     const rolling = material.rollsAbout ? material.rolling : Math.min(material.rolling, surface?.rolling ?? Infinity);
-    const slowing = material.roll ? Math.max(rolling, surface?.rollingLeast ?? 0) : surface?.tumbling ?? GROUND.tumbling;
+    const slowing = material.roll ? Math.max(rolling, surface?.rollingLeast ?? 0) : this.groundSlowing(surface);
     const slowed = Math.max(along - slowing * GRAVITY * dt, 0);
     if (!material.roll) this.sliding ??= this.startSliding(along);
     if (slowed < GROUND.stopped) { this.restOn(height); return; }
@@ -3274,6 +3276,27 @@ export class Rock {
     } else {
       this.slideStep(height, slowed, dt);
     }
+  }
+
+  /**
+   * Its friction on the ground's own `surface` as it comes down on it
+   * (meetGround): the lesser of its own and the ground's (ice is slick), but
+   * its own where it scrapes (`material.scrapes`, src/things.js: a toy
+   * slide's moulded corners catch on ice rather than glide on it).
+   */
+  groundFriction(surface) {
+    const own = this.thing.material.friction;
+    return this.thing.material.scrapes ? own : Math.min(own, surface?.friction ?? Infinity);
+  }
+
+  /**
+   * What it slows at, times g, sliding along the ground without rolling
+   * (alongGround): the ground's own `tumbling` (ice's: it skates on), else
+   * GROUND.tumbling; one that scrapes no less than at its own friction.
+   */
+  groundSlowing(surface) {
+    const slowing = surface?.tumbling ?? GROUND.tumbling;
+    return this.thing.material.scrapes ? Math.max(slowing, this.thing.material.friction) : slowing;
   }
 
   /** The ground's own surface where it is (the header: its `materialAt`, else its `material`), or null. */
