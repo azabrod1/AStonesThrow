@@ -31,11 +31,12 @@
 //     thingGroups, which the page is asked) on the screen (on a phone in
 //     portrait without scrolling), each fitting its name and on a touch
 //     screen at least 34 points tall, the chosen one checked and focused,
-//     the bar at the card's foot showing it (its name and the strip's line)
+//     the card's head, above the tabs, showing it under Selected (its name
+//     and the strip's line)
 //     with a star and an ⓘ naming it, on a touch screen at least 34 points
 //     tall; Favourites, empty, says where to make one, a group's tab holds
 //     its things, the card keeping its height and its tabs their place from
-//     tab to tab; a favourite made with the bar's star (the dropdown staying
+//     tab to tab; a favourite made with the head's star (the dropdown staying
 //     open) is in Favourites, which the dropdown then opens on, as it is one
 //     made on What to throw (its star, reached by the ⓘ), and unmade leaves
 //     it empty; on a desktop a pill's tip is its note, shown by a mouse
@@ -329,7 +330,8 @@ for (const framing of FRAMINGS) {
       groups: groups.map((panel) => panel.dataset.tab),
       more: { ...toBox(more.getBoundingClientRect()), label: more.getAttribute('aria-label') },
       star: { ...toBox(star.getBoundingClientRect()), pressed: star.getAttribute('aria-pressed') },
-      now: { ...toBox(document.getElementById('thing-now').getBoundingClientRect()), name: document.getElementById('thing-now-name').textContent, size: document.getElementById('thing-now-size').textContent },
+      now: { ...toBox(document.getElementById('thing-now').getBoundingClientRect()), name: document.getElementById('thing-now-name').textContent, size: document.getElementById('thing-now-size').textContent, label: document.getElementById('thing-now-label').textContent },
+      tabsTop: card.querySelector('.thing-menu-tabs').getBoundingClientRect().top * scale,
       readout: document.getElementById('stone-readout').textContent,
     };
   });
@@ -345,8 +347,8 @@ for (const framing of FRAMINGS) {
     `its group tabs hold a pill for each of the ${offeredCount} things offered (${menu.pills.length}), each on the screen and fitting its name${framing.touch ? `, at least ${SMALLEST_BUTTON_HEIGHT} points tall (smallest ${Math.min(...menu.pills.map((pill) => pill.height)).toFixed(1)})` : ''}${menu.pills.some((pill) => pill.clipped) ? ` (cut: ${menu.pills.filter((pill) => pill.clipped).map((pill) => pill.name).join(', ')})` : ''}`);
   check(checkedPill === 'stone' && menu.focused === 'stone', `the chosen thing's pill is checked (${checkedPill}) and focused (${menu.focused})`);
   const barTall = Math.min(menu.more.height, menu.star.height);
-  check(onScreen(menu.now) && menu.now.bottom <= menu.card.bottom + 0.5 && menu.now.name === 'River stone' && menu.now.size === menu.readout && onScreen(menu.more) && onScreen(menu.star) && menu.star.pressed === 'false' && menu.more.label === 'More about the river stone' && (!framing.touch || (barTall >= SMALLEST_BUTTON_HEIGHT - 0.5 && menu.tabHeight >= SMALLEST_BUTTON_HEIGHT - 0.5)),
-    `the bar at the card's foot shows the chosen thing (${menu.now.name}, "${menu.now.size}" as the strip's "${menu.readout}"), its star not pressed and its ⓘ naming it ("${menu.more.label}")${framing.touch ? `, they and the tabs at least ${SMALLEST_BUTTON_HEIGHT} points tall (${barTall.toFixed(1)}, ${menu.tabHeight.toFixed(1)})` : ''}`);
+  check(onScreen(menu.now) && menu.now.top >= menu.card.top - 0.5 && menu.now.bottom <= menu.tabsTop + 0.5 && menu.now.label === 'Selected' && menu.now.name === 'River stone' && menu.now.size === menu.readout && onScreen(menu.more) && onScreen(menu.star) && menu.star.pressed === 'false' && menu.more.label === 'More about the river stone' && (!framing.touch || (barTall >= SMALLEST_BUTTON_HEIGHT - 0.5 && menu.tabHeight >= SMALLEST_BUTTON_HEIGHT - 0.5)),
+    `the card's head, above the tabs, shows the chosen thing under "${menu.now.label}" (${menu.now.name}, "${menu.now.size}" as the strip's "${menu.readout}"), its star not pressed and its ⓘ naming it ("${menu.more.label}")${framing.touch ? `, they and the tabs at least ${SMALLEST_BUTTON_HEIGHT} points tall (${barTall.toFixed(1)}, ${menu.tabHeight.toFixed(1)})` : ''}`);
   if (!framing.touch) {
     const tipOf = () => page.evaluate(() => { const tip = document.getElementById('thing-tip'); const rect = tip.getBoundingClientRect(); return { shown: !tip.hidden, text: tip.textContent, inside: rect.left >= 0 && rect.right <= window.innerWidth && rect.top >= 0 }; });
     const pillBox = (await boxes('#thing-menu [data-tab="Stones"] [data-value="stone"]'))[0];
@@ -459,8 +461,8 @@ for (const framing of FRAMINGS) {
   await press('#thing-menu [data-tab="Stones"] [data-value="stone"]');
   await page.waitForTimeout(150);
   check(await page.evaluate(() => window.__pond.thing === 'stone' && document.getElementById('thing-menu').hidden), `the river stone chosen again through the dropdown`);
-  // A favourite made with the bar's star is in Favourites at once, the dropdown staying open; unmade, it goes. One
-  // made on What to throw (its star; the bar's ⓘ opens it on the chosen thing) is in the dropdown's Favourites too,
+  // A favourite made with the head's star is in Favourites at once, the dropdown staying open; unmade, it goes. One
+  // made on What to throw (its star; the head's ⓘ opens it on the chosen thing) is in the dropdown's Favourites too,
   // which it opens on from then; unmade there, Favourites is empty again.
   await press('#thing-chip');
   await page.waitForTimeout(300);
@@ -477,7 +479,7 @@ for (const framing of FRAMINGS) {
   await page.keyboard.press('Escape');
   await page.waitForTimeout(150);
   check(barStarred.open && barStarred.pressed === 'true' && barStarred.things.join() === 'stone' && barStarred.stored === '["stone"]' && barStarred.height === firstTab.height && barUnstarred.open && barUnstarred.pressed === 'false' && barUnstarred.stored === '[]',
-    `the bar's star makes the chosen thing a favourite, in Favourites at once (${barStarred.things.join(', ') || 'none'}, star ${barStarred.pressed}), the dropdown open and as tall (${barStarred.height}), and pressed again unmakes it (${barUnstarred.stored})`);
+    `the head's star makes the chosen thing a favourite, in Favourites at once (${barStarred.things.join(', ') || 'none'}, star ${barStarred.pressed}), the dropdown open and as tall (${barStarred.height}), and pressed again unmakes it (${barUnstarred.stored})`);
   const favouriteState = () => page.evaluate(() => ({
     tab: document.querySelector('#thing-menu [role="tab"][aria-selected="true"]')?.dataset.tab,
     things: [...document.querySelectorAll('#thing-menu [role="tabpanel"][data-tab="favourites"] [data-value]')].map((pill) => pill.dataset.value),
