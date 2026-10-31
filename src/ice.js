@@ -1005,8 +1005,9 @@ export class IceSheet {
    * the hole's open water, or, while the hole is still opening, on its
    * crushed rim (within ICE.crushed of the ice's thickness of its edge). It
    * tips off, sliding towards the hole's middle as fast as takes its weight a
-   * step past the edge against the ice's friction (src/rock.js loseGround:
-   * over the hole it falls in). Its weight is worked out only by a hole.
+   * step past the edge against its slowing on the ice (src/rock.js
+   * groundSlowing: the ice's, or a toy slide's own scrape, so it tips in
+   * rather than stopping on the rim; loseGround: over the hole it falls in). Its weight is worked out only by a hole.
    * Whether it tipped.
    */
   tipAtEdge(rock) {
@@ -1023,7 +1024,7 @@ export class IceSheet {
       const over = insidePolygon(hole.corners, weight.x, weight.z);
       const edge = over ? 0 : polygonEdgeDistance(hole.corners, weight.x, weight.z);
       if (!over && (hole.flooded || edge > crushed)) continue;
-      const speed = Math.sqrt(2 * ICE_MATERIAL.tumbling * GRAVITY * (edge + rock.collisionRadius * EDGE_PAST));
+      const speed = Math.sqrt(2 * rock.groundSlowing(ICE_MATERIAL) * GRAVITY * (edge + rock.collisionRadius * EDGE_PAST));
       rock.loseGround();
       rock.velocity.set((towardX / toMiddle) * speed, 0, (towardZ / toMiddle) * speed);
       return true;
