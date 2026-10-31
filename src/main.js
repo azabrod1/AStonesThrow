@@ -1452,7 +1452,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
         setShoreLook(placeShore(place));
         boulders.show(!pooled && !koiPond ? PLACES[place].sky : null);
         if (entering) {
-          applyWater();   // a place's own water (PLACES `water`), or the lake's clarity again
+          applyWater();   // a place's own water (PLACES `water`), or the lake's clarity again...
+          applySky();     // ...and what its absorption lights: the sun under the water, the splash's view of the bed
           visitor.setPlace(Boolean(PLACES[place].visitor));
           visitor.reset(stepsTime);
           applyFish();

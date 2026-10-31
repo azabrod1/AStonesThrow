@@ -50,6 +50,10 @@
 // Foam: churned round each contact and trailing behind it, and over a
 // breach's first seconds, added to the water's own foam as lace that thins
 // as it pops (FOAM_PATTERN draws it).
+//
+// Cost: nothing while uVisitorOn is 0 (away from the loch, and between
+// sightings), and while it is 1 nothing outside uVisitorReach, a circle the
+// visitor sets each frame round all its waves can have reached (visitorNear).
 export const VISITOR_CONTACTS = 4;
 export const VISITOR_RINGS = 4;
 
@@ -64,6 +68,13 @@ uniform vec4 uVisitorWake;                         // its speed U (m/s), the wak
 uniform vec4 uVisitorEnvelope;                     // how strongly it made waves, by seconds ago: 0 before .x, 1 from .y, 1 until .z, 0 by .w
 uniform vec4 uVisitorContacts[VISITOR_CONTACTS];   // where it breaks the surface: x, z, half-width (m), height pushed up (m; 0 none)
 uniform vec4 uVisitorRings[VISITOR_RINGS];         // a breach's or a dive's rings: x, z, age (s), strength (m³; 0 none)
+uniform vec3 uVisitorReach;                        // a circle round everything above, x, z and radius (m): none of it beyond
+
+/** Whether \`point\` is where any of it reaches (uVisitorReach): the water shader pays for it only there. */
+bool visitorNear(vec2 point) {
+  vec2 offset = point - uVisitorReach.xy;
+  return uVisitorOn > 0.5 && dot(offset, offset) < uVisitorReach.z * uVisitorReach.z;
+}
 
 /** How strongly the source made waves \`ago\` seconds ago (uVisitorEnvelope). */
 float visitorStrengthAgo(float ago) {

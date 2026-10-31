@@ -59,7 +59,7 @@ function run(seconds, { frame = 1 / 60, things = () => [], open = () => true, on
   const { sightings } = run(2 * 3600, {
     frame: 1 / 30,
     onFrame(visitor) {
-      if (!visitor.above.visible) return;
+      if (!visitor.above.visible && !visitor.below.visible) return;
       shownFrames++;
       for (const knot of visitor.spine) nearest = Math.min(nearest, Math.hypot(knot.point.x - EYE.x, knot.point.z - EYE.z) - knot.radius);
     },
@@ -80,11 +80,13 @@ function run(seconds, { frame = 1 / 60, things = () => [], open = () => true, on
   check(nearest >= SCHEDULE.nearest && nearest > FARTHEST_AWAY, `out of reach: its body never nearer the eye than ${nearest.toFixed(1)} m (in ${shownFrames} frames shown)`);
   // A frame's work, timed over a sighting.
   const visitor = makeVisitor();
+  visitor.step(0, [], { open: true, near: false });
   visitor.summon(0, 'neck', { elapsed: 8 });
+  let posed = 0;
   const started = performance.now();
-  for (let index = 0; index < 600; index++) visitor.showAt(index / 60);
+  for (let index = 0; index < 600; index++) { visitor.showAt(index / 60); if (visitor.above.visible) posed++; }
   worstFrame = (performance.now() - started) / 600;
-  check(worstFrame < FRAME_BUDGET, `a frame's pose takes ${worstFrame.toFixed(3)} ms`);
+  check(posed > 300 && worstFrame < FRAME_BUDGET, `a frame's pose takes ${worstFrame.toFixed(3)} ms (out of the water in ${posed} of 600 frames)`);
 }
 
 // Something thrown near its course.
@@ -99,6 +101,7 @@ function run(seconds, { frame = 1 / 60, things = () => [], open = () => true, on
   check(clear, `a thing out on the water: none of ${sightings.length} sightings came within ${SCHEDULE.clear} m of it`);
   // A thing that turns up beside one under way: it goes down at once.
   const visitor = makeVisitor();
+  visitor.step(0, [], { open: true, near: false });
   visitor.summon(0, 'humps', { elapsed: 6 });
   const head = visitor.report(0);
   const startledAt = 0.5;

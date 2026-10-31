@@ -50,16 +50,18 @@
 // head to tail, an ellipse across, wider than deep, lumpy by a few
 // per cent from the sighting's seed), its points moved and its normals
 // computed once a frame on the CPU while any of it is within reach of the
-// surface: SPINE_POINTS × AROUND vertices. Three meshes draw it, as a
-// boulder's do (src/boulders.js): `above`, clipped to y ≥ 0, in the main
-// scene, its skin glossy and dark, a pale band of foam and wet just over the
-// waterline; `below`, clipped to y ≤ 0, in the under-water pass, drawn where
-// the still surface shows it (SEEN_THROUGH_WATER) and fading into the water;
-// and its mirror image on the mirror layer, its distance in alpha. All three
+// surface: SPINE_POINTS × AROUND vertices (its colours once a sighting).
+// Three meshes draw it, as a boulder's do (src/boulders.js sceneryShader):
+// `above`, clipped to y ≥ 0, in the main scene, its skin glossy and dark, a
+// pale band of foam and wet just over the waterline; `below`, clipped to
+// y ≤ 0, in the under-water pass, drawn where the still surface shows it
+// and fading into the water; and its mirror image on the mirror layer, its
+// distance in alpha, which src/main.js draws again each frame it shows
+// (so `above` and `mirror` show only while some of it is out). All three
 // are built under the loading veil (warmUp), whatever the place.
 import * as THREE from 'three';
 import { seededRandom } from './spray.js';
-import { SEEN_THROUGH_WATER } from './shaders/scene.js';
+import { sceneryShader } from './boulders.js';
 import { VISITOR_CONTACTS, VISITOR_RINGS } from './shaders/visitor.js';
 
 const GRAVITY = 9.81;
@@ -84,7 +86,6 @@ const SPINE_POINTS = 112;
 const AROUND = 16;
 const EYE = { x: 0, z: 2.45 };   // the shore's eye (src/main.js VIEWS.shore), which the distance is measured from
 const SKIN = { color: [0.045, 0.040, 0.032], spread: 0.25, roughness: 0.16, reflection: 1.0, below: 0.3 };   // wet: the sky's glint along its back
-const MIRROR_NEARNESS_SCALE = 4;   // the mirror image's alpha is 1 − this / distance (MIRROR_COMMON in src/shaders/scene.js)
 
 // The forms (the header): how often each comes (weight); the body's length
 // and girth (its widest radius, m); how high its highest point stands over
@@ -100,14 +101,12 @@ const FORMS = {
   wake: { weight: 2, length: [6, 8], girth: [0.4, 0.5], crest: [-0.16, -0.07], wave: [0.12, 0.18], waveLength: [3.5, 4.5], waveSpeed: 0.7, speed: [1.3, 1.9], rise: [3, 4], hold: [9, 14], sink: [3, 4], head: [0.55, 0.2], neck: [0, 0] },
 };
 const FORM_NAMES = Object.keys(FORMS);
-const NECK = { up: 1.32, dip: 0.2, lift: 2.4, lower: 1.8, yaw: [0.35, 0.8], yawRate: [0.25, 0.45] };   // its curve (rad), how long it takes to lift and lower (s), how far and fast the head turns
+const NECK = { up: 1.32, dip: 0.2, lift: 2.4, lower: 1.8, startled: 0.9, yaw: [0.35, 0.8], yawRate: [0.25, 0.45] };   // its curve (rad), how long it takes to lift and lower (s; startled, faster), how far and fast the head turns
 const RING_STRENGTH = { breach: 0.3, dive: 0.35, startled: 0.7 };   // m³: the rings' sizes (src/shaders/visitor.js)
+const RING_LEAST = 2e-4;      // m: a ring's height (src/shaders/visitor.js) past which the water shader leaves it out (uVisitorReach)
 const WAKE_HEIGHT = 0.16;    // m at a metre behind, for a girth of 0.45 m at 1.2 m/s (some 4 m³ moved, a rowing boat's several times): the Kelvin wake's height scale
 
-const ease = (edge0, edge1, value) => {
-  const share = Math.min(Math.max((value - edge0) / Math.max(edge1 - edge0, 1e-6), 0), 1);
-  return share * share * share * (share * (share * 6 - 15) + 10);
-};
+const ease = (edge0, edge1, value) => THREE.MathUtils.smootherstep(value, edge0, edge1);
 
 /** A drawn sighting: its form and every number it is posed from (draw), and its timeline. */
 function drawSighting(stream, form, start, { near, eye = EYE }) {
@@ -131,7 +130,12 @@ function drawSighting(stream, form, start, { near, eye = EYE }) {
     rise,
     sinkStart: start + rise + hold,
     sinkSeconds: sink,
+    lowerFrom: start + rise + hold - NECK.lower,   // the neck starts down (startle brings it forward)...
+    lowerSeconds: NECK.lower + 0.2,                // ...and is down after this
     startled: false,
+    heavyDive: false,   // startled before its dive's ring went out: that ring is heavier (waterAt)
+    middleX,
+    middleZ,
     startX: middleX - headingX * travelled / 2,
     startZ: middleZ - headingZ * travelled / 2,
     headingX,
@@ -198,6 +202,7 @@ export class LochVisitor {
       uVisitorEnvelope: { value: new THREE.Vector4() },
       uVisitorContacts: { value: Array.from({ length: VISITOR_CONTACTS }, () => new THREE.Vector4()) },
       uVisitorRings: { value: Array.from({ length: VISITOR_RINGS }, () => new THREE.Vector4()) },
+      uVisitorReach: { value: new THREE.Vector3() },
     };
     this.geometry = this.buildGeometry();
     this.skin = { churn: { value: 0 } };   // the waterline's foam band (above)
@@ -216,6 +221,7 @@ export class LochVisitor {
     this.sighting = null;
     this.lastForm = null;
     this.sightings = 0;      // how many so far since arriving (the probe's and the API's)
+    this.coloured = null;    // the sighting its skin's colours are (colour)
     this.reset(0);
   }
 
@@ -225,7 +231,7 @@ export class LochVisitor {
     const count = SPINE_POINTS * AROUND;
     geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(count * 3), 3).setUsage(THREE.DynamicDrawUsage));
     geometry.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(count * 3), 3).setUsage(THREE.DynamicDrawUsage));
-    geometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(count * 3), 3).setUsage(THREE.DynamicDrawUsage));
+    geometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(count * 3), 3));   // once a sighting (colour)
     const indices = [];
     for (let along = 0; along < SPINE_POINTS - 1; along++) {
       for (let around = 0; around < AROUND; around++) {
@@ -265,23 +271,7 @@ export class LochVisitor {
           .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
   roughnessFactor = mix(roughnessFactor, 0.08, 1.0 - smoothstep(0.0, 0.25, vVisitorHeight));`);
       }
-      if (side === 'below') {
-        shader.uniforms.uFogExtinction = { value: waterFog.extinction };
-        shader.uniforms.uFogColor = { value: waterFog.color };
-        shader.vertexShader = shader.vertexShader
-          .replace('#include <common>', `#include <common>\n${SEEN_THROUGH_WATER}`)
-          .replace('#include <project_vertex>', `vec4 visitorWorld = modelMatrix * vec4(transformed, 1.0);
-  vec4 mvPosition = viewMatrix * vec4(seenThroughWater(visitorWorld.xyz, 0.0), 1.0);
-  gl_Position = projectionMatrix * mvPosition;`);
-        shader.fragmentShader = shader.fragmentShader
-          .replace('#include <common>', '#include <common>\nuniform vec3 uFogExtinction;\nuniform vec3 uFogColor;')
-          .replace('#include <fog_fragment>', `#include <fog_fragment>
-  if (cameraPosition.y < 0.0) gl_FragColor.rgb = mix(uFogColor, gl_FragColor.rgb, exp(-uFogExtinction * length(vViewPosition)));`);
-      }
-      if (side === 'mirror') {
-        shader.fragmentShader = shader.fragmentShader.replace('#include <dithering_fragment>', `#include <dithering_fragment>
-  gl_FragColor.a = 1.0 - ${MIRROR_NEARNESS_SCALE.toFixed(1)} / max(length(vViewPosition), 0.05);`);
-      }
+      sceneryShader(shader, side, waterFog);   // below: seen through the water; mirror: its distance in alpha (src/boulders.js)
     };
     made.customProgramCacheKey = () => `loch-visitor-${side}`;
     return made;
@@ -359,13 +349,22 @@ export class LochVisitor {
     this.sightings++;
   }
 
-  /** It goes down now, fast (STARTLED_DIVE), front first, with a heavier swirl. */
+  /**
+   * It goes down now, fast (STARTLED_DIVE), front first: a neck comes down
+   * over NECK.startled from where it stands, never at once; and if its
+   * dive's ring has not gone out yet, that ring is heavier (a swirl). One
+   * already going down goes on as it was.
+   */
   startle(sighting, time) {
     sighting.startled = true;
-    if (time < sighting.sinkStart) {
-      sighting.sinkStart = time;
-      sighting.sinkSeconds = Math.min(sighting.sinkSeconds, STARTLED_DIVE);
+    if (time >= sighting.sinkStart) return;
+    sighting.sinkStart = time;
+    sighting.sinkSeconds = Math.min(sighting.sinkSeconds, STARTLED_DIVE);
+    if (time < sighting.lowerFrom + sighting.lowerSeconds) {
+      sighting.lowerSeconds = Math.min(sighting.lowerFrom + sighting.lowerSeconds, time + NECK.startled) - Math.min(sighting.lowerFrom, time);
+      sighting.lowerFrom = Math.min(sighting.lowerFrom, time);
     }
+    sighting.heavyDive = true;
   }
 
   /** Whether any of `things` (x, z) is within `reach` of its course (time null: the whole course), or of its body at `time`. */
@@ -381,17 +380,29 @@ export class LochVisitor {
     return false;
   }
 
-  /** Summon a sighting of `form` (the API's, src/main.js `sightVisitor`), begun `elapsed` seconds before world `time`, `distance` m out at `bearing` degrees. */
-  summon(time, form = this.drawForm(), { elapsed = 0, distance, bearing, course } = {}) {
+  /**
+   * Summon a sighting (the API's, src/main.js `sightVisitor`), begun
+   * `elapsed` seconds before world `time`: of `form` (drawn, by weight, if
+   * none), the middle of its run `distance` m out at `bearing` degrees, its
+   * `course` (degrees from +x toward +z); what is not given is drawn as a
+   * sighting's would be. Its draws are its own stream's, so the schedule's
+   * sightings after it are as they would have been.
+   */
+  summon(time, form, { elapsed = 0, distance, bearing, course } = {}) {
     const stream = seededRandom(SCHEDULE.seed, 2, this.sightings);
-    const drawn = drawSighting(stream, form, time - elapsed, { near: this.near });
-    if (distance !== undefined || bearing !== undefined || course !== undefined) {
-      const along = drawn.speed * (drawn.sinkStart + drawn.sinkSeconds - drawn.start) / 2;
-      if (course !== undefined) { const turn = THREE.MathUtils.degToRad(course); drawn.headingX = Math.cos(turn); drawn.headingZ = Math.sin(turn); }
-      const angle = THREE.MathUtils.degToRad(bearing ?? 0), out = distance ?? 60;
-      drawn.startX = EYE.x + Math.sin(angle) * out - drawn.headingX * along;
-      drawn.startZ = EYE.z - Math.cos(angle) * out - drawn.headingZ * along;
+    const chosen = Object.hasOwn(FORMS, form ?? '') ? form : FORM_NAMES[Math.floor(stream() * FORM_NAMES.length)];
+    const drawn = drawSighting(stream, chosen, time - elapsed, { near: this.near });
+    if (course !== undefined) { const turn = THREE.MathUtils.degToRad(course); drawn.headingX = Math.cos(turn); drawn.headingZ = Math.sin(turn); }
+    if (distance !== undefined || bearing !== undefined) {
+      const drawnDistance = Math.hypot(drawn.middleX - EYE.x, drawn.middleZ - EYE.z);
+      const drawnBearing = Math.atan2(drawn.middleX - EYE.x, EYE.z - drawn.middleZ);
+      const angle = bearing === undefined ? drawnBearing : THREE.MathUtils.degToRad(bearing), out = distance ?? drawnDistance;
+      drawn.middleX = EYE.x + Math.sin(angle) * out;
+      drawn.middleZ = EYE.z - Math.cos(angle) * out;
     }
+    const along = drawn.speed * (drawn.sinkStart + drawn.sinkSeconds - drawn.start) / 2;
+    drawn.startX = drawn.middleX - drawn.headingX * along;
+    drawn.startZ = drawn.middleZ - drawn.headingZ * along;
     this.begin(drawn);
     return this.report(time);
   }
@@ -417,18 +428,28 @@ export class LochVisitor {
     for (const mesh of this.meshes) mesh.visible = true;
   }
 
-  /** Posed at the frame's world `time` (src/main.js simulate, after the steps): the meshes and the water's uniforms. */
+  /**
+   * Posed at the frame's world `time` (src/main.js simulate, after the
+   * steps): the meshes and the water's uniforms. The part under the water
+   * is drawn while any of it is near the surface, the part above and the
+   * mirror image only while some of it is out (the mirror is redrawn each
+   * frame it shows). Under ice or a gale (the steps' `open` false) nothing
+   * shows: it is going down, and the gale's waves would wash through a body
+   * drawn on still water.
+   */
   showAt(time) {
-    if (!this.here || !this.sighting) { this.hide(); return; }
+    if (!this.here || !this.sighting || !this.open) { this.hide(); return; }
     const sighting = this.sighting;
-    const up = this.pose(sighting, time);
-    for (const mesh of this.meshes) mesh.visible = up;
+    const highest = this.pose(sighting, time);
+    this.below.visible = highest > -0.6;   // deeper, nothing of it shows through the peat
+    this.above.visible = this.mirror.visible = highest > 0;
     this.waterAt(sighting, time);
   }
 
   /**
-   * The spine and the tube at `time`: whether any of it is near enough the
-   * surface to draw (deeper, in peat water, it is not seen).
+   * The spine and the tube at `time`; returns the height of its highest
+   * point over the water (the tube is built only within 0.6 m of the
+   * surface: deeper, in peat water, it is not seen).
    */
   pose(sighting, time) {
     const { length, headingX, headingZ, neckLength } = sighting;
@@ -440,7 +461,7 @@ export class LochVisitor {
     const base = sighting.crest - sighting.wave - sighting.girth * flat;
     const waveSpeed = FORMS[sighting.form].waveSpeed * sighting.speed;
     const neckLift = neckLength > 0
-      ? ease(sighting.start + sighting.rise * 0.6, sighting.start + sighting.rise * 0.6 + NECK.lift, time) * (1 - ease(sighting.sinkStart - NECK.lower, sighting.sinkStart + 0.2, time))
+      ? ease(sighting.start + sighting.rise * 0.6, sighting.start + sighting.rise * 0.6 + NECK.lift, time) * (1 - ease(sighting.lowerFrom, sighting.lowerFrom + sighting.lowerSeconds, time))
       : 0;
     let highest = -Infinity;
     for (let index = 0; index < SPINE_POINTS; index++) {
@@ -448,11 +469,11 @@ export class LochVisitor {
       const along = (index / (SPINE_POINTS - 1)) * length;
       const share = along / length;
       const humps = ease(0.05, 0.2, share) * (1 - ease(0.8, 1, share));
-      let y = base + sighting.wave * humps * Math.sin((2 * Math.PI * (along - waveSpeed * elapsed)) / sighting.waveLength + sighting.wavePhase);
-      y += sighting.bob * Math.sin(1.1 * elapsed + 2.1 * share) ;
-      y -= SINK * (1 - emergence(sighting, time, along));
+      let height = base + sighting.wave * humps * Math.sin((2 * Math.PI * (along - waveSpeed * elapsed)) / sighting.waveLength + sighting.wavePhase);
+      height += sighting.bob * Math.sin(1.1 * elapsed + 2.1 * share);
+      height -= SINK * (1 - emergence(sighting, time, along));
       const sway = sighting.sway * share * Math.sin((2 * Math.PI * along) / 2.8 - 1.7 * elapsed);
-      knot.point.set(headX - headingX * along + sideX * sway, y, headZ - headingZ * along + sideZ * sway);
+      knot.point.set(headX - headingX * along + sideX * sway, height, headZ - headingZ * along + sideZ * sway);
       knot.radius = radiusAt(sighting, along);
       knot.flat = neckLength > 0 ? THREE.MathUtils.lerp(1, flat, ease(neckLength - 0.3, neckLength + 0.8, along)) : along < sighting.headLength ? 0.9 : flat;
       knot.roll = sighting.roll * Math.sin(sighting.rollRate * elapsed * Math.PI * 2 * 0.25 + share);
@@ -466,10 +487,11 @@ export class LochVisitor {
       this.bounds.expandByPoint(knot.point);
     }
     this.bounds.expandByScalar(sighting.girth * 1.3);
-    if (highest < -0.6) return false;
+    if (highest < -0.6) return highest;
     this.skin.churn.value = Math.min(sighting.speed / 1.2, 1) * emergence(sighting, time, 0);
+    if (this.coloured !== sighting) this.colour(sighting);
     this.buildSkin(sighting);
-    return true;
+    return highest;
   }
 
   /**
@@ -521,12 +543,31 @@ export class LochVisitor {
     }
   }
 
-  /** The tube round the spine: an ellipse across, wider than deep, lumpy by the sighting's seed; its colours darker below, mottled. */
-  buildSkin(sighting) {
-    const positions = this.geometry.attributes.position.array;
+  /** The skin's colours, once a sighting: darker under, a little olive and mottled over the back, by its seed. */
+  colour(sighting) {
     const colors = this.geometry.attributes.color.array;
     const lumps = sighting.lumpPhases;
     const tone = 0.85 + 0.3 * sighting.tone;
+    for (let along = 0; along < SPINE_POINTS; along++) {
+      const share = along / (SPINE_POINTS - 1);
+      for (let around = 0; around < AROUND; around++) {
+        const angle = (around / AROUND) * Math.PI * 2;
+        const mottle = 0.8 + 0.35 * (0.5 + 0.5 * Math.sin(23 * share + 1.7 * Math.sin(3 * angle + lumps[4]) + lumps[5]));
+        const shade = tone * mottle * (0.55 + 0.45 * (0.5 + 0.5 * Math.sin(angle)));
+        const offset = (along * AROUND + around) * 3;
+        colors[offset] = SKIN.color[0] * shade * (1 + SKIN.spread * 0.2);
+        colors[offset + 1] = SKIN.color[1] * shade;
+        colors[offset + 2] = SKIN.color[2] * shade * (1 - SKIN.spread * 0.3);
+      }
+    }
+    this.geometry.attributes.color.needsUpdate = true;
+    this.coloured = sighting;
+  }
+
+  /** The tube round the spine: an ellipse across, wider than deep, lumpy by the sighting's seed. */
+  buildSkin(sighting) {
+    const positions = this.geometry.attributes.position.array;
+    const lumps = sighting.lumpPhases;
     for (let along = 0; along < SPINE_POINTS; along++) {
       const knot = this.spine[along];
       const share = along / (SPINE_POINTS - 1);
@@ -540,16 +581,9 @@ export class LochVisitor {
         positions[offset] = knot.point.x + knot.binormal.x * cos * across + knot.normal.x * sin * up;
         positions[offset + 1] = knot.point.y + knot.binormal.y * cos * across + knot.normal.y * sin * up;
         positions[offset + 2] = knot.point.z + knot.binormal.z * cos * across + knot.normal.z * sin * up;
-        // Darker under, a little olive and mottled over the back.
-        const mottle = 0.8 + 0.35 * (0.5 + 0.5 * Math.sin(23 * share + 1.7 * Math.sin(3 * angle + lumps[4]) + lumps[5]));
-        const shade = tone * mottle * (0.55 + 0.45 * (0.5 + 0.5 * sin));
-        colors[offset] = SKIN.color[0] * shade * (1 + SKIN.spread * 0.2);
-        colors[offset + 1] = SKIN.color[1] * shade;
-        colors[offset + 2] = SKIN.color[2] * shade * (1 - SKIN.spread * 0.3);
       }
     }
     this.geometry.attributes.position.needsUpdate = true;
-    this.geometry.attributes.color.needsUpdate = true;
     this.geometry.computeVertexNormals();
   }
 
@@ -603,7 +637,7 @@ export class LochVisitor {
     const diveAt = sighting.sinkStart + sighting.sinkSeconds * 0.35;
     const events = [
       { at: breachAt, strength: shows ? RING_STRENGTH.breach : RING_STRENGTH.breach * 0.4 },
-      { at: diveAt, strength: sighting.startled ? RING_STRENGTH.startled : shows ? RING_STRENGTH.dive : RING_STRENGTH.dive * 0.4 },
+      { at: diveAt, strength: sighting.heavyDive ? RING_STRENGTH.startled : shows ? RING_STRENGTH.dive : RING_STRENGTH.dive * 0.4 },
     ];
     for (let slot = 0; slot < VISITOR_RINGS; slot++) {
       const event = events[slot];
@@ -612,6 +646,18 @@ export class LochVisitor {
       const middle = Math.min(1.2, sighting.length * 0.15);   // a little behind the head: where most of it moves the water
       rings[slot].set(x - sighting.headingX * middle, z - sighting.headingZ * middle, time - event.at, event.strength * (sighting.girth / 0.45) ** 2);
     }
+    // The circle all of it is inside (uVisitorReach): the wake out behind as far as the source has come (its energy
+    // goes no faster than the source); each ring out to where its height, S g t² / 4r³, falls under RING_LEAST, and
+    // no farther than its front; the body and what it heaps up round it.
+    const reach = uniforms.uVisitorReach.value;
+    let radius = sighting.speed * Math.max(time - sighting.start, 0) * 1.07 + sighting.length + 3;
+    for (const ring of rings) {
+      if (ring.w <= 0) continue;
+      const age = ring.z;
+      const ringReach = Math.min(Math.cbrt((ring.w * GRAVITY * age * age) / (4 * RING_LEAST)), (GRAVITY * age * age) / (4 * 0.8));
+      radius = Math.max(radius, Math.hypot(ring.x - head.point.x, ring.y - head.point.z) + ringReach);
+    }
+    reach.set(head.point.x, head.point.z, radius);
   }
 }
 

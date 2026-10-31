@@ -1894,7 +1894,7 @@ void main() {
     slopeVariance += rainUnresolvedVariance(vWorld.xz) * ride;
   }
   if (uDropRingCount > 0) surfaceSlope += dropRingSlope(vWorld.xz, acrossX, acrossY) * ride;
-  if (uVisitorOn > 0.5) {   // the thing in the loch's wake (src/shaders/visitor.js)
+  if (visitorNear(vWorld.xz)) {   // the thing in the loch's wake (src/shaders/visitor.js)
     vec3 visitor = visitorSlope(vWorld.xz, acrossX, acrossY);
     surfaceSlope += visitor.xy * ride;
     slopeVariance += visitor.z * ride;
@@ -1917,7 +1917,7 @@ void main() {
     slopeVariance += rainUnresolvedVariance(vWorld.xz);
   }
   if (uDropRingCount > 0) slope += dropRingSlope(vWorld.xz, acrossX, acrossY);
-  if (uVisitorOn > 0.5) {   // the thing in the loch's wake (src/shaders/visitor.js)
+  if (visitorNear(vWorld.xz)) {   // the thing in the loch's wake (src/shaders/visitor.js)
     vec3 visitor = visitorSlope(vWorld.xz, acrossX, acrossY);
     slope += visitor.xy;
     slopeVariance += visitor.z;
@@ -2064,7 +2064,7 @@ void main() {
     foamKinds += vec2(activeWhitewater + left, left);
   }
   // The foam the thing in the loch churns (src/shaders/visitor.js): lace, as the gale's left foam is.
-  if (uVisitorOn > 0.5) foamKinds += vec2(visitorFoam(vWorld.xz));
+  if (visitorNear(vWorld.xz)) foamKinds += vec2(visitorFoam(vWorld.xz));
   float foam = foamKinds.r;
 #ifdef CAVITY_MESH
   foam *= level;   // the pattern lies on the water's plane: none down the walls
