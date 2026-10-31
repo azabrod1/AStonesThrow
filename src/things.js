@@ -227,6 +227,8 @@ function definitionProblems(key, definition) {
   need(typeof key === 'string' && /^[a-z][a-z0-9-]*$/.test(key) && key.length <= 40, `its key "${String(key).slice(0, 40)}" must be lower case letters, digits and dashes`);
   if (!isObject(definition)) return [...problems, 'it is not an object'];
   for (const field of ['name', 'group', 'note']) need(typeof definition[field] === 'string' && definition[field].length > 0 && definition[field].length <= LIMITS.text, `it needs a ${field} of 1 to ${LIMITS.text} characters`);
+  // A group is a tab of the dropdown of things (src/thingMenu.js), beside its own Favourites.
+  need(typeof definition.group !== 'string' || definition.group.toLowerCase() !== 'favourites', 'its group cannot be called Favourites: the dropdown of things has its own tab of that name');
   for (const field of ['short', 'called']) need(definition[field] === undefined || (typeof definition[field] === 'string' && definition[field].length > 0 && definition[field].length <= LIMITS.text), `${field} must be text of 1 to ${LIMITS.text} characters`);
   for (const part of ['body', 'material', 'water', 'look']) need(isObject(definition[part]), `it needs a ${part}, an object`);
   for (const part of ['air', 'abilities']) need(definition[part] === undefined || isObject(definition[part]), `${part} must be an object`);
