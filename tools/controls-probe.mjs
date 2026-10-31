@@ -51,8 +51,10 @@
 //     name; its What to throw row opens that page, a tab for each group in
 //     one row (the chosen thing's group shown alone: on a phone in portrait
 //     the page with the Stones shown, the first, needs no scrolling; a tab
-//     pressed shows its group and chooses nothing; a group of more cards
-//     scrolls, its head staying put), whose pictured
+//     pressed shows its group and chooses nothing, the Tab key reaching its
+//     first card, and the dropdown's ⓘ then opens on the chosen thing's
+//     group, its card focused; a group of more cards scrolls, its head
+//     staying put), whose pictured
 //     choices, one for each thing offered, can each be opened and scrolled
 //     onto the screen and fit their names,
 //     every card one height, its name and note each one line, whole,
@@ -602,6 +604,20 @@ for (const framing of FRAMINGS) {
   const browsed = await shownGroups();
   const browsedThing = await page.evaluate(() => window.__pond.thing);
   check(browsed.selected.join() === 'Balls' && browsed.shown.join() === 'Balls' && browsedThing === 'stone', `a tab pressed shows its group (${browsed.shown.join(', ')}) and chooses nothing (${browsedThing})`);
+  // The Tab key reaches a browsed group's cards (its first, the chosen thing being elsewhere), and the dropdown's ⓘ, about
+  // the chosen thing, shows the chosen thing's group again, its card focused (review: it opened on the group browsed, the
+  // chosen card hidden and the focus lost).
+  const browsedTabStop = await page.evaluate(() => [...document.querySelectorAll('#thing .menu-group:not([hidden]) [role="radio"]')].filter((card) => card.tabIndex === 0).map((card) => card.dataset.value));
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(150);
+  await press('#thing-chip');
+  await page.waitForTimeout(300);
+  await press('#thing-more');
+  await page.waitForTimeout(400);
+  const backToChosen = await shownGroups();
+  const chosenFocus = await page.evaluate(() => document.activeElement?.dataset?.value);
+  check(browsedTabStop.join() === 'golf' && backToChosen.selected.join() === 'Stones' && backToChosen.shown.join() === 'Stones' && chosenFocus === 'stone',
+    `the Tab key reaches a browsed group's first card (${browsedTabStop.join(', ') || 'none'}), and the ⓘ opens on the chosen thing's group (${backToChosen.shown.join(', ')}), its card focused (${chosenFocus})`);
   // Each group shown in turn (the others hidden), each of its cards scrolled to.
   const things = await page.evaluate(async () => {
     const scale = window.visualViewport ? window.visualViewport.scale : 1;

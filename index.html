@@ -420,9 +420,9 @@
     overflow-x: auto;
     overscroll-behavior-x: contain;
     scrollbar-width: none;
+    -webkit-tap-highlight-color: transparent;   /* the dropdown's card has it already; What to throw's tabs need it */
   }
   .thing-menu-tabs::-webkit-scrollbar { display: none; }
-  .thing-menu-tabs { -webkit-tap-highlight-color: transparent; }
   .thing-menu-tabs [role="tab"] {
     appearance: none;
     flex: none;
@@ -1542,6 +1542,14 @@
         }
       }
       for (const panel of thingsRoot.querySelectorAll('.menu-group')) panel.hidden = panel.dataset.group !== name;
+      // The Tab key reaches the shown group's cards: its chosen card, as radioGroup has it, or, in a group browsed
+      // that does not hold the chosen thing, its first.
+      for (const card of thingsRoot.querySelectorAll('[role="radio"]')) card.tabIndex = card.getAttribute('aria-checked') === 'true' ? 0 : -1;
+      const shownCards = thingsRoot.querySelector('.menu-group:not([hidden])');
+      if (shownCards && !shownCards.querySelector('[aria-checked="true"]')) {
+        const first = shownCards.querySelector('[role="radio"]');
+        if (first) first.tabIndex = 0;
+      }
     }
     function buildThings() {
       const groups = thingGroups();
@@ -1773,6 +1781,8 @@
       onFavourite: () => toggleFavourite(pond.thing),
       onMore: () => {
         settings.openOn('thing', chip);
+        // The ⓘ is about the chosen thing: its group shown, whichever was browsed there last.
+        showThingGroup(THINGS[pond.thing].group);
         thingsRoot.querySelector('[aria-checked="true"]')?.focus({ preventScroll: true });
       },
     });
