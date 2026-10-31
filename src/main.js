@@ -668,7 +668,10 @@ function migrateStoredSettings() {
 // lifted for it, and a second breaks a sheet made thin for it, followed
 // iceSeconds past its impact, its shards let go by then; the ice as chosen
 // comes back after.
-const WARM_UP = { x: 0, z: -1.4, radius: 0.03, moments: [0.02, 0.16, 0.4], seed: 4, floaters: ['pumice', 'pizza', 'ice-shard'], iceSeconds: 0.6 };   // a floater of each program: pumice the stones', a pizza its textured one, a shard of ice its clear one (src/rock.js seenThrough)
+// A floater of each program (pumice the stones', a pizza its textured one, a shard of ice its clear one: src/rock.js
+// seenThrough), and a sinker of each besides the stone's (an iPad its textured one: a floater's rides the water, so a
+// textured sinker's is a program of its own).
+const WARM_UP = { x: 0, z: -1.4, radius: 0.03, moments: [0.02, 0.16, 0.4], seed: 4, floaters: ['pumice', 'pizza', 'ice-shard'], sinkers: ['ipad'], iceSeconds: 0.6 };
 
 export async function startPond({ canvas, quality = 'auto', onReady, onProgress, onError, onRainError, onStats, onViewChange, onQualityChange, onProfile, onThrow }) {
   let readyForInput = false;
@@ -3111,6 +3114,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     // materials (a pizza's: above, below and in the mirror): their programs too.
     const floaters = WARM_UP.floaters.map((name) => throwAt(WARM_UP.x, WARM_UP.z, { thing: name }));
     for (const floater of floaters) floater.meshMirror.visible = true;
+    const sinkers = WARM_UP.sinkers.map((name) => throwAt(WARM_UP.x, WARM_UP.z, { thing: name }));
     // And a stone's, as anything but a floater is given on the ice (src/rock.js prepareMirror): its program too, drawn
     // wherever the mirror's camera looks (it is culled by it, and this stone is in the hand).
     Object.assign(stone.prepareMirror(), { visible: true, frustumCulled: false });
@@ -3129,6 +3133,10 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     for (const floater of floaters) {
       programKeepers.push(floater.meshAbove.material, floater.meshBelow.material, floater.meshMirror.material);
       retireRock(floater, { keepMaterials: true });
+    }
+    for (const sinker of sinkers) {
+      programKeepers.push(sinker.meshAbove.material, sinker.meshBelow.material);
+      retireRock(sinker, { keepMaterials: true });
     }
     floaterRide.warmUp(renderer);   // the floaters' ride's pass
     galeWarmUp?.done();

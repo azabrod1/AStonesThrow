@@ -172,10 +172,12 @@
 //     104 kg/m³, it floats nine tenths out), an iPad (its slider's steps
 //     each a device of its own: an iPhone, an iPad mini, an iPad and a
 //     13-inch iPad Pro, each its maker's size and weight, 1500 to
-//     2100 kg/m³: plates that sink), a cast-iron frying pan (20, 25 or
-//     30 cm, 1.5 to 3.4 kg, iron's 7150 kg/m³: a plate that sinks broadside)
-//     and red roses (one, or 3, 6, 12 or 24 tied: about 30 g a rose, 250 to
-//     350 kg/m³, floating as a raft, blooms up);
+//     2100 kg/m³: plates that sink, each but the iPhone its home screen
+//     painted on its glass), a cast-iron frying pan (20, 25 or 30 cm, 1.5 to
+//     3.4 kg, iron's 7150 kg/m³: a plate that sinks broadside) and red roses
+//     (one, or 3, 6, 12 or 24 tied, blooms of layered petals: about 30 g a
+//     rose, 300 to 350 kg/m³, floating by their blooms' hulls as a raft,
+//     blooms up);
 //   - a shard of ice (hidden: src/ice.js breaks each one, its own outline,
 //     src/thingMeshes.js createShardGeometry): 917 kg/m³, a plate in the
 //     water as a pizza is, so it comes up and floats flat, its top a little
@@ -854,19 +856,21 @@ defineBuiltIn('pan', {
 // under; its weight is lower than its volume's middle (`ballast`, each its own: a rose's far down its stem), so it
 // floats lying on the water, its stems under and its blooms up, not on its blooms with its stems in the air. Its
 // nominal radius is its ball's of like volume (its splash a thing's that displaces as much). One rose's buoyancy is
-// cut finer (`columns`), so its stem floats as well as its bloom. Thrown, it tumbles slowly, end over end.
+// cut finer (`columns`), so its stem floats as well as its bloom, and two dozen's, so its columns hold its body. It
+// floats by its blooms' hulls, its petals drawn open (src/thingMeshes.js createRosesGeometry). Thrown, it tumbles
+// slowly, end over end.
 defineBuiltIn('roses', {
   name: 'Roses', group: 'Other', note: 'One, or a bouquet of up to 24: it floats', called: 'roses',
   body: {
     shape: 'mesh',
-    ballast: [0, -0.647, 0],
+    ballast: [0, -0.606, 0],
     size: {
       by: 'preset', unit: 'roses', initial: 4, presets: [
-        { value: 1, name: '1 rose', label: '29 g', diameter: 0.0555, mass: 0.0287, look: { count: 1 }, water: { columns: 60, columnsAlong: [1, 0, 0] }, body: { ballast: [0.3, -2.444, 0] } },
-        { value: 2, name: '3 roses', label: '137 g', diameter: 0.0914, mass: 0.137, look: { count: 3 }, body: { ballast: [0, -1.331, 0] } },
-        { value: 3, name: '6 roses', label: '233 g', diameter: 0.11, mass: 0.2331, look: { count: 6 }, body: { ballast: [0, -0.986, 0] } },
-        { value: 4, name: '12 roses', label: '428 g', diameter: 0.1376, mass: 0.428 },
-        { value: 5, name: '24 roses', label: '796 g', diameter: 0.1709, mass: 0.7956, look: { count: 24 }, body: { ballast: [0, -0.383, 0] } },
+        { value: 1, name: '1 rose', label: '29 g', diameter: 0.0561, mass: 0.0292, look: { count: 1 }, water: { columns: 60, columnsAlong: [1, 0, 0] }, body: { ballast: [0.3, -2.352, 0] } },
+        { value: 2, name: '3 roses', label: '127 g', diameter: 0.0885, mass: 0.1272, look: { count: 3 }, body: { ballast: [0, -1.429, 0] } },
+        { value: 3, name: '6 roses', label: '239 g', diameter: 0.1129, mass: 0.2393, look: { count: 6 }, body: { ballast: [0, -0.926, 0] } },
+        { value: 4, name: '12 roses', label: '433 g', diameter: 0.1396, mass: 0.4332 },
+        { value: 5, name: '24 roses', label: '802 g', diameter: 0.1729, mass: 0.8022, look: { count: 24 }, water: { columns: 24 }, body: { ballast: [0, -0.327, 0] } },
       ],
     },
   },

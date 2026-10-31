@@ -1315,7 +1315,8 @@ export const PREPARATION_WORK = { meshes: 0, waterlines: 0 };
 
 /**
  * A fixed mesh's thing (src/thingMeshes.js registerMesh `fixed`) made ready
- * to throw, once: its geometry, its shape (stoneShape), how far it reaches
+ * to throw, once: its geometry, its shape (stoneShape, of its geometry's
+ * own closed body, `userData.physics`, where it has one), how far it reaches
  * (`reach`, its bounding sphere's; `farthest`, its farthest point's) and its
  * buoyancy's columns (buoyancyColumns, made the first time a size
  * of it floats, and kept), which every one thrown shares. Slicing a pizza's
@@ -1333,10 +1334,13 @@ export function prepareThing(thing) {
     const geometry = mesh.build(thing, {});
     PREPARATION_WORK.meshes++;
     geometry.computeBoundingSphere();
-    const shape = thing.body.shape === 'sphere' ? BALL_SHAPE : stoneShape(geometry);
+    // What the physics walks: its own closed body where its mesh gives one (`userData.physics`: a rose's blooms, whose
+    // petals are drawn open, are hulls to it, as a stone's lumps are cut coarser), else what is drawn.
+    const body = geometry.userData.physics ?? geometry;
+    const shape = thing.body.shape === 'sphere' ? BALL_SHAPE : stoneShape(body);
     let columns = null;
     const buoyancy = () => {
-      if (!columns) { columns = buoyancyColumns(geometry, columnAxis(thing, shape), thing.water.columns); PREPARATION_WORK.waterlines++; }
+      if (!columns) { columns = buoyancyColumns(body, columnAxis(thing, shape), thing.water.columns); PREPARATION_WORK.waterlines++; }
       return columns;
     };
     // A floater's columns now, at its first size (another size may float where this one sinks: its columns are made as
@@ -1348,11 +1352,11 @@ export function prepareThing(thing) {
     if (mesh.dress) { const parts = mesh.dress(thing, seededStream(1)); if (parts && !parts.shared) parts.geometry.dispose(); }
     if (thing.air.model === 'flutter' && thing.body.shape !== 'sphere') plateFace(shape, geometry);
     // How far its farthest point is from its middle, in radii, however it is turned (the hand holds it clear of the
-    // water: src/main.js handPosition); `reach`, its bounding sphere's, is looser.
+    // water: src/main.js handPosition), as drawn; `reach`, its bounding sphere's, is looser.
     const positions = geometry.attributes.position.array;
     // The faces it can lie on (restFaces, rolled onto its hull's), worked out now (under the loading veil, src/main.js
     // warmUp) rather than as the first one thrown comes to rest: a banana's 24 000 corners take tens of milliseconds.
-    if (thing.body.shape !== 'sphere' && !thing.body.upright) restFaces(shape, positions, thing.body.ballast);
+    if (thing.body.shape !== 'sphere' && !thing.body.upright) restFaces(shape, cornersOf(body), thing.body.ballast);
     let farthest = 0;
     for (let index = 0; index < positions.length; index += 3) farthest = Math.max(farthest, positions[index] ** 2 + positions[index + 1] ** 2 + positions[index + 2] ** 2);
     PREPARED.set(thing, { geometry, shape, reach: geometry.boundingSphere.center.length() + geometry.boundingSphere.radius, farthest: Math.sqrt(farthest), buoyancy });

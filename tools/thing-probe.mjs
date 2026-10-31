@@ -15,7 +15,9 @@
 //     tennis 6.7 cm and 58 g, bowling 21.59 cm and its pounds, basketball
 //     sizes 5 to 7), and a bowling ball floats at 11 lb and sinks at 12;
 //   - every throw's centre comes down within AIM_MISS of the tap (the aim
-//     allows for the air's drag), and no ball is thrown faster than its
+//     allows for the air's drag; each thing's throws from a random state of
+//     its own, so a plate's tilt is the same whatever was thrown before it),
+//     and no ball is thrown faster than its
 //     `fastest`: a bowling ball thrown hard at the far water comes down
 //     short along the tap's direction;
 //   - a floater comes up, sends out a ring (unless it never went further
@@ -321,7 +323,9 @@ for (const [value, model, dimensions, mass] of [[1, 'iphone', [0.072, 0.008, 0.1
   const geometry = meshKind(thing.look.mesh).build(thing, {});
   geometry.computeBoundingBox();
   const bounds = geometry.boundingBox.getSize(new THREE.Vector3()).multiplyScalar(measured.radius).toArray();
-  check(thing.look.model === model && bounds.every((length, axis) => near(length, dimensions[axis], 1e-6)) && near(measured.mass, mass, 1e-6) && !THINGS.ipad.properties(value).floats, `iPad ${value} (${model}): ${bounds.map((length) => centimetres(length)).join(' × ')} cm and ${measured.mass} kg, not ${dimensions.map((length) => centimetres(length)).join(' × ')} cm and ${mass} kg, or it floats`);
+  // Its thickness its body's, and an iPad's camera standing out of its back by under 2.5 mm besides.
+  const thick = (length) => length >= dimensions[1] - 1e-6 && length <= dimensions[1] + (model === 'iphone' ? 1e-6 : 0.0025);
+  check(thing.look.model === model && bounds.every((length, axis) => (axis === 1 ? thick(length) : near(length, dimensions[axis], 1e-6))) && near(measured.mass, mass, 1e-6) && !THINGS.ipad.properties(value).floats, `iPad ${value} (${model}): ${bounds.map((length) => centimetres(length)).join(' × ')} cm and ${measured.mass} kg, not ${dimensions.map((length) => centimetres(length)).join(' × ')} cm and ${mass} kg, or it floats`);
   if (model === 'iphone') {
     const phone = meshKind('iphone').build(THINGS.iphone, {}).attributes.position.array, step = geometry.attributes.position.array;
     check(phone.length === step.length && phone.every((corner, at) => corner === step[at]), 'the iPad\'s iPhone is not built as the iPhone is');
@@ -339,7 +343,7 @@ for (const preset of THINGS.pan.body.size.presets) {
 for (const preset of THINGS.roses.body.size.presets) {
   const thing = THINGS.roses.variantAt(preset.value);
   const built = createRosesGeometry(thing, { metres: true });
-  const radius = Math.cbrt((3 * meshVolume(built)) / (4 * Math.PI));
+  const radius = Math.cbrt((3 * meshVolume(built.userData.physics)) / (4 * Math.PI));
   const weight = built.userData.massCentre.map((offset) => offset / radius), ballast = thing.body.ballast;
   const { floats, text } = THINGS.roses.properties(preset.value);
   check(thing.look.count === Number.parseInt(preset.name, 10) && near(built.userData.mass, preset.mass, 0.0005) && near(radius, preset.diameter / 2, 0.0002) && near(weight[1], ballast[1], 0.002) && floats && text === `${preset.name} · ${preset.label}`,
@@ -457,6 +461,9 @@ for (const [index, name] of THING_NAMES.entries()) {
 // ---- the aim, for each ball at each strength and a few taps ----
 console.log('\nThe balls\' aim (the centre\'s path at the still water against the tap), at three strengths and three taps:');
 for (const name of THING_NAMES.filter((key) => THINGS[key].abilities.held)) {
+  // Each from a random state of its own (as in the lake), so what it draws (a plate's tilt) is the same whatever was
+  // thrown before it.
+  randomState = 1 + 104729 * (THING_NAMES.indexOf(name) + 1);
   let worst = 0;
   for (const power of POWERS) {
     for (const [x, z] of [[0, -0.6], [0.8, -1.8], [-1.2, -3.2]]) {
@@ -1363,8 +1370,9 @@ console.log('\nThings meeting things (src/collide.js):');
     for (const value of thing.slider ? [thing.slider.min, thing.slider.max] : [undefined]) {
       const measured = thing.measure(value);
       const rock = new Rock({ radius: measured.radius, position: new THREE.Vector3(), velocity: new THREE.Vector3(), envTexture: null, thing: name, mass: measured.mass, size: value });
-      // A dressed thing's (a pizza's toppings, a pie's filling) is its shared mesh's: its parts are millimetres thin, and it floats by that mesh.
-      const positions = (rock.dressing ? prepareThing(THINGS[name].variantAt(value)).geometry : rock.geometry).attributes.position.array;
+      // Its body's, as the physics has it (Rock.physicsPositions): a dressed thing's shared mesh's (a pizza's toppings, a
+      // pie's filling, millimetres thin, are not floated), a rose's hulls (its petals are drawn open).
+      const positions = rock.physicsPositions;
       let unit = 0;
       for (let index = 0; index < positions.length; index += 9) {
         const [ax, ay, az, bx, by, bz, cx, cy, cz] = positions.subarray(index, index + 9);
