@@ -1318,6 +1318,8 @@ console.log('\nThings meeting things (src/collide.js):');
     'body.soft null': { ...good, body: { ...good.body, soft: null } },
     'presets an object': { ...good, body: { shape: 'sphere', size: { by: 'preset', presets: {}, initial: 1 } } },
     'an infinite diameter': { ...good, body: { shape: 'sphere', size: { by: 'preset', unit: 'size', initial: 1, presets: [{ value: 1, label: 'x', diameter: Infinity, mass: 1 }] } } },
+    'material.on naming no surface': { ...good, material: { ...good.material, on: { lava: { friction: 0.5 } } } },
+    'material.on with a field it has not': { ...good, material: { ...good.material, on: { ice: { grip: 0.5 } } } },
   };
   const refusals = Object.entries(reviewCases).map(([label, definition]) => {
     let problems = null, error = null;
@@ -1325,7 +1327,7 @@ console.log('\nThings meeting things (src/collide.js):');
     try { defineThing('probe-case', definition); } catch (thrown) { error = thrown.message; }
     return { label, refused: Array.isArray(problems) && problems.length > 0 && error !== null && !Object.hasOwn(THINGS, 'probe-case') };
   });
-  console.log(`\nDefinitions as anyone might write them: the review's four refused plainly: ${refusals.map((entry) => `${entry.label} ${entry.refused ? 'yes' : 'NO'}`).join('; ')}`);
+  console.log(`\nDefinitions as anyone might write them: the review's, and material.on's, refused plainly: ${refusals.map((entry) => `${entry.label} ${entry.refused ? 'yes' : 'NO'}`).join('; ')}`);
   check(refusals.every((entry) => entry.refused), `a bad definition was not refused plainly (${refusals.filter((entry) => !entry.refused).map((entry) => entry.label).join(', ')})`);
   // Random damage to good definitions (one field at a time put to something else JSON can hold): the check never throws,
   // and what defineThing takes can be made, measured and stepped.

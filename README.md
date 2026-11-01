@@ -118,8 +118,9 @@ full screen, which only a press or a key may ask for):
   is still lighter than water. A toddler's toy slide (99 × 46 × 70 cm,
   4.1 kg, hollow walls holding 39 litres) floats nine tenths out of the
   water; it is held high enough to clear the water, and tumbles slowly. On
-  ice it scrapes to a stop near where it lands, its moulded corners
-  catching where a stone's face skates on. An
+  ice it comes to a stop near where it lands, where a stone skates on: a
+  gameplay choice standing in for its tumbling landings, since hollow
+  plastic would really glide (`material.on`, `src/things.js`). An
   iPad's slider runs through four devices, each its maker's size and
   weight and drawn as itself: an iPhone (the iPhone's own), an iPad mini
   (19.5 × 13.5 cm, 293 g, lavender), an iPad (24.9 × 18 cm, 477 g, sky

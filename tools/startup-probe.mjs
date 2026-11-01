@@ -167,38 +167,38 @@ try {
   // from the cached mirror is the frame drawn from it drawn whole.
   const staleMirror = await swiss.evaluate(() => {
     const pond = window.__pond, gl = pond.renderer.getContext();
-    pond.pause();
-    // The thing chosen is remembered on the device (src/main.js setThing): put back after, so the reload below opens
-    // as it would have.
+    // The thing chosen is remembered on the device (src/main.js setThing), so it, the pond's clock and Math.random are
+    // put back whatever happens: a failure here leaves the reload below opening as it would have, and failing on its
+    // own error, not on the slide.
     const chosen = pond.thing;
-    let state = 1;   // seeded as the shoot harness seeds its first throw (--seed=1), Math.random put back whatever happens
     const random = Math.random;
-    Math.random = () => { state = (state * 16807) % 2147483647; return (state - 1) / 2147483646; };
-    let slide;
+    pond.pause();
     try {
+      let state = 1;   // seeded as the shoot harness seeds its first throw (--seed=1)
+      Math.random = () => { state = (state * 16807) % 2147483647; return (state - 1) / 2147483646; };
       pond.setThing('slide');
-      slide = pond.throwAt(0, -1.4, { power: 'hard' });
+      const slide = pond.throwAt(0, -1.4, { power: 'hard' });
+      Math.random = random;
+      pond.advance(1);
+      const whole = () => { pond.setFov(pond.camera.fov); pond.advance(0); };   // the view set again: the mirror drawn whole
+      whole();
+      // A second of frames as it drifts off (each draws only round it; one long step would draw the mirror only once).
+      for (let step = 0; step < 30; step++) pond.advance(1 / 30);
+      const frame = () => { const pixels = new Uint8Array(gl.drawingBufferWidth * gl.drawingBufferHeight * 4); gl.readPixels(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight, gl.RGBA, gl.UNSIGNED_BYTE, pixels); return pixels; };
+      const cached = frame();
+      whole();
+      const drawn = frame();
+      let differ = 0;
+      for (let index = 0; index < drawn.length; index += 4) {
+        if (Math.max(Math.abs(drawn[index] - cached[index]), Math.abs(drawn[index + 1] - cached[index + 1]), Math.abs(drawn[index + 2] - cached[index + 2])) > 24) differ++;
+      }
+      return { state: slide.state, differ };
     } finally {
       Math.random = random;
+      pond.clear();
+      pond.setThing(chosen);
+      pond.resume();
     }
-    pond.advance(1);
-    const whole = () => { pond.setFov(pond.camera.fov); pond.advance(0); };   // the view set again: the mirror drawn whole
-    whole();
-    // A second of frames as it drifts off (each draws only round it; one long step would draw the mirror only once).
-    for (let step = 0; step < 30; step++) pond.advance(1 / 30);
-    const frame = () => { const pixels = new Uint8Array(gl.drawingBufferWidth * gl.drawingBufferHeight * 4); gl.readPixels(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight, gl.RGBA, gl.UNSIGNED_BYTE, pixels); return pixels; };
-    const cached = frame();
-    whole();
-    const drawn = frame();
-    let differ = 0;
-    for (let index = 0; index < drawn.length; index += 4) {
-      if (Math.max(Math.abs(drawn[index] - cached[index]), Math.abs(drawn[index + 1] - cached[index + 1]), Math.abs(drawn[index + 2] - cached[index + 2])) > 24) differ++;
-    }
-    const result = { state: slide.state, differ };
-    pond.clear();
-    pond.setThing(chosen);
-    pond.resume();
-    return result;
   });
   assert.equal(staleMirror.state, 'float', `the toy slide is not afloat: ${JSON.stringify(staleMirror)}`);
   assert.ok(staleMirror.differ < 50, `the cached mirror left pieces of the toy slide's earlier images: ${staleMirror.differ} pixels differ from the mirror drawn whole`);

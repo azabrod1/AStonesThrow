@@ -251,8 +251,9 @@ export const WEAK = { merge: 0.5, most: 64 };
 // The Ice setting's choices (src/main.js): the sheet's thickness, metres. Everything here takes metres.
 export const ICE_THICKNESS = { none: 0, thin: 0.01, thick: 0.04 };
 // The ice's own surface (src/rock.js `ground` material): slick. A stone on it slides, slowing at `tumbling`·g; between
-// its hops it turns end over end at `tumble` (of its speed over its radius). A thing that scrapes (a toy slide) keeps
-// its own friction on it (src/rock.js groundFriction, groundSlowing).
+// its hops it turns end over end at `tumble` (of its speed over its radius). A thing whose material says otherwise for
+// ice (`material.on.ice`, src/things.js: a toy slide's, made to stop) goes by that (src/rock.js groundFriction,
+// groundSlowing).
 export const ICE_MATERIAL = Object.freeze({ kind: 'ice', friction: 0.1, rolling: 0.01, tumbling: 0.12, tumble: 0.15 });
 // What shades the ice (shade): at most ICE_SHADOW.slots things (src/iceShadow.js), none whose middle is more than
 // `above` m over its top (a stone's shadow from there is a faint blur); the sky a thing hides is let go to nothing
@@ -1006,7 +1007,7 @@ export class IceSheet {
    * crushed rim (within ICE.crushed of the ice's thickness of its edge). It
    * tips off, sliding towards the hole's middle as fast as takes its weight a
    * step past the edge against its slowing on the ice (src/rock.js
-   * groundSlowing: the ice's, or a toy slide's own scrape, so it tips in
+   * groundSlowing: the ice's, or a thing's own on ice, a toy slide's, so it tips in
    * rather than stopping on the rim; loseGround: over the hole it falls
    * in). Its weight is worked out only by a hole.
    * Whether it tipped.

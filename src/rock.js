@@ -294,9 +294,9 @@
 //     where it changes how a thing goes along it ({ kind, friction, rolling,
 //     tumbling, tumble, give, rollingLeast }, each optional): ice is slick, so a thing on it takes the lesser of its
 //     own friction and rolling resistance and the ice's, a stone slows at the
-//     ice's `tumbling`·g and turns end over end at its `tumble` (but a thing
-//     that scrapes, a toy slide, keeps its own friction on it: groundFriction,
-//     groundSlowing), and its
+//     ice's `tumbling`·g and turns end over end at its `tumble` (unless the
+//     thing's own `material.on` says otherwise for that `kind`, src/things.js:
+//     a toy slide's, made to stop on ice; groundFriction, groundSlowing), and its
 //     knock is heard as on ice (src/sound.js); a lawn is soft (src/koiGarden.js):
 //     a thing bounces off it at `give` of its own bounce, and a ball rolls on
 //     it against at least `rollingLeast`;
@@ -3287,23 +3287,23 @@ export class Rock {
 
   /**
    * Its friction on the ground's own `surface` as it comes down on it
-   * (meetGround): the lesser of its own and the ground's (ice is slick), but
-   * its own where it scrapes (`material.scrapes`, src/things.js: a toy
-   * slide's moulded corners catch on ice rather than glide on it).
+   * (meetGround): what its material says for that surface's `kind`
+   * (`material.on`, src/things.js), else the lesser of its own and the
+   * ground's (ice is slick).
    */
   groundFriction(surface) {
-    const own = this.thing.material.friction;
-    return this.thing.material.scrapes ? own : Math.min(own, surface?.friction ?? Infinity);
+    const material = this.thing.material;
+    return material.on?.[surface?.kind]?.friction ?? Math.min(material.friction, surface?.friction ?? Infinity);
   }
 
   /**
    * What it slows at, times g, sliding along the ground without rolling
-   * (alongGround): the ground's own `tumbling` (ice's: it skates on), else
-   * GROUND.tumbling; one that scrapes no less than at its own friction.
+   * (alongGround): what its material says for that surface's `kind`
+   * (`material.on`, src/things.js), else the ground's own `tumbling` (ice's:
+   * it skates on), else GROUND.tumbling.
    */
   groundSlowing(surface) {
-    const slowing = surface?.tumbling ?? GROUND.tumbling;
-    return this.thing.material.scrapes ? Math.max(slowing, this.thing.material.friction) : slowing;
+    return this.thing.material.on?.[surface?.kind]?.slowing ?? surface?.tumbling ?? GROUND.tumbling;
   }
 
   /** The ground's own surface where it is (the header: its `materialAt`, else its `material`), or null. */

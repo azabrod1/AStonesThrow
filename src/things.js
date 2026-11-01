@@ -43,12 +43,14 @@
 //     `curve`, its path's curvature on its side times its radius (a cone
 //     rolls round towards its narrow end, that axis's −: src/rock.js rollStep;
 //     a mesh drawn each its own scales it by its geometry's
-//     `userData.curveScale`). `scrapes`: it stands on a few moulded
-//     corners (a toy slide's feet and its chute's end), which catch and
-//     scrape across ice, as a skate turned across its path does, rather than
-//     glide on a face of it: on ice it lands and slides at its own
-//     `friction`, not the ice's lesser (src/rock.js groundFriction,
-//     groundSlowing).
+//     `userData.curveScale`). `on`: what it does on one kind of ground's
+//     surface (SURFACE_KINDS, each a surface's `kind`: 'ice', a frozen
+//     lake's, src/ice.js; 'grass', the Koi pond's lawn, src/koiGarden.js),
+//     where that differs from the general rule: `{ ice: { friction, slowing
+//     } }`, its friction as it comes down on that surface (else the lesser of
+//     its own and the surface's) and what it slows at, times g, sliding along
+//     it (else the surface's `tumbling`): src/rock.js groundFriction,
+//     groundSlowing. A tuning knob, not a physical model: see the toy slide.
 //   - air: `drag`, its drag coefficient in flight (on the disc of its nominal
 //     radius: 0.47 a ball's; a pizza, flat on, more), and its `model`:
 //     `ballistic` (it tumbles as it flies) or `flutter` (a flat thing: a plate
@@ -209,6 +211,7 @@ const MASS_UNITS = { g: 0.001, kg: 1, lb: 0.45359237, ct: 0.0002 };   // kg per 
 const ROLLS = { solid: 5 / 7, shell: 3 / 5 };   // the share of its speed along the ground a ball keeps once it rolls
 const BODY_SHAPES = ['sphere', 'mesh'];         // the bodies src/rock.js knows
 const AIR_MODELS = ['ballistic', 'flutter'];    // the flights src/rock.js knows (Rock.fly)
+const SURFACE_KINDS = ['ice', 'grass'];         // the ground surfaces' kinds (src/ice.js ICE_MATERIAL, src/koiGarden.js LAWN) a thing's material.on may name
 const CALLED = { Stones: 'a rock', Balls: 'a ball', Gems: 'a gem' };
 const LAST_GROUPS = ['Gems'];                    // listed after every other group (thingGroups), whenever defined: a gem is seldom thrown
 const PRESET_OWN = ['look', 'water', 'air', 'body'];   // what a size preset may have of its own (the header's `size.presets`; of its body only its ballast)
@@ -307,7 +310,10 @@ function definitionProblems(key, definition) {
   need(!material.roll || within(material.rolling, LIMITS.rolling), 'a thing that rolls needs material.rolling, 0 to 1');
   need(material.rollsAbout === undefined || (material.roll && body.shape === 'sphere' && Array.isArray(material.rollsAbout) && material.rollsAbout.length === 3 && material.rollsAbout.every(isNumber) && Math.abs(Math.hypot(...material.rollsAbout) - 1) < 1e-6), 'material.rollsAbout must be a unit [x, y, z] of a sphere that rolls');
   need(material.curve === undefined || (material.rollsAbout && within(material.curve, [0, 0.5])), 'material.curve needs material.rollsAbout, and is 0 to 0.5');
-  need(material.scrapes === undefined || (typeof material.scrapes === 'boolean' && !material.roll), 'material.scrapes must be true or false, of a thing that does not roll');
+  const on = material.on;
+  need(on === undefined || (on !== null && typeof on === 'object' && Object.entries(on).every(([kind, own]) => SURFACE_KINDS.includes(kind) && own !== null && typeof own === 'object'
+    && Object.keys(own).every((key) => key === 'friction' || key === 'slowing') && (own.friction === undefined || within(own.friction, LIMITS.friction)) && (own.slowing === undefined || within(own.slowing, [0, 2])))),
+    `material.on must name surfaces (${SURFACE_KINDS.join(', ')}), each { friction (${LIMITS.friction.join(' to ')}), slowing (0 to 2) }, both optional`);
   need(air.drag === undefined || within(air.drag, LIMITS.drag), `air.drag must be ${LIMITS.drag.join(' to ')}`);
   need(air.model === undefined || AIR_MODELS.includes(air.model), `air.model must be one of ${AIR_MODELS.join(', ')}`);
   need(air.spin === undefined || (Array.isArray(air.spin) && air.spin.length === 2 && air.spin.every(isNumber) && air.spin[0] >= 0 && air.spin[0] <= air.spin[1] && air.spin[1] <= LIMITS.spin), `air.spin must be [least, most] within 0 to ${LIMITS.spin} rad/s`);
@@ -810,12 +816,17 @@ defineBuiltIn('snowball', {
 // the air on more than its ball's disc. Kept upright, it settles on the deck on its feet or upside down, not balanced
 // on a corner; afloat the water leaves it as it lands (on its feet, its side or upside down: it is no heavier low
 // down), its buoyancy cut slantwise to all its faces (`columnsAlong`). It stands on the moulded corners of its feet and
-// its chute's end (upside down, of its rails' tops and its chute's lip), which catch and scrape across ice rather than
-// glide on it (`scrapes`): on ice it comes to a stop near where it lands, where a stone skates on.
+// its chute's end (upside down, of its rails' tops and its chute's lip). On ice it is made to come to a stop near where
+// it lands (`on.ice`: its own friction, and slowing at it), where a stone skates on. That is a gameplay choice, not
+// physics: hollow plastic on ice glides (a sled's μ is 0.03 to 0.1), and its corners' ~0.1 MPa is far too little to
+// plough ice. What really stops a light, irregular thing is its landings: it comes down on a corner, pitches, bounces
+// and spins, spending its speed along the ice. The ground model has nothing for that, and a slide skating 5 to 12 m,
+// often upside down, looked wrong, so this stands in for it. Give another thing `on.ice` for the same look, not on the
+// belief that plastic grips ice.
 defineBuiltIn('slide', {
   name: 'Toy slide', short: 'Slide', group: 'Other', note: 'Hollow plastic, 4 kg: it floats high', called: 'a toy slide',
   body: { shape: 'mesh', upright: true, size: { by: 'fixed', diameter: 0.422, mass: 4.1 } },
-  material: { bounce: [0.15, 0.25], friction: 0.5, scrapes: true },
+  material: { bounce: [0.15, 0.25], friction: 0.5, on: { ice: { friction: 0.5, slowing: 0.5 } } },
   air: { drag: 2.2, spin: [1, 4] },
   water: { restingHeight: 0.8, columnsAlong: [1, 1, 1] },
   look: { mesh: 'slide', roughness: 0.45, reflection: 0.9, wet: { darker: 0.02, glossier: 0.3 } },

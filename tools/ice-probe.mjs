@@ -27,10 +27,11 @@
 //     lyingAttitude: never on an edge or its end), its weight over the
 //     corners it rests on (rollToRest: never balanced on one lump beside
 //     it, which would tip it over); a stone slid on the ice
-//     goes SLIDE_RATIO times as far as on the deck; a toy slide (its moulded
-//     corners scrape: src/things.js `scrapes`) held by the ice from a toss or
-//     a lob slides at most SCRAPED_MOST from where it struck it, where a
-//     stone skates metres on;
+//     goes SLIDE_RATIO times as far as on the deck; a toy slide (made to
+//     stop on ice: src/things.js `material.on.ice`) held by the ice from a
+//     toss or a lob slides at most SCRAPED_MOST from where it struck it,
+//     where a stone skates metres on, and at least one such throw on each
+//     thickness is held, so the check checks something;
 //   - a Skip throw onto the ice skitters (it strikes the ice at least twice)
 //     and rests on it;
 //   - a stone sliding into a hole falls in (it is not held on the edge), and
@@ -40,6 +41,8 @@
 //     thick ice, some tip in (src/ice.js tipAtEdge: those on the new hole's
 //     crushed rim) and some stay, none left with its weight within
 //     ICE.crushed of the thickness of the edge, nor hanging over the hole;
+//     a toy slide at rest on a 30 cm rock's new hole's crushed rim tips in,
+//     pushed against its own slowing on ice, as a stone there does;
 //   - things on the ice meet (src/collide.js): a stone slid into one at rest
 //     knocks it on, their momentum along the slide kept to MOMENTUM_KEPT;
 //   - in a frozen pool (its walls and deck, src/pool.js) everything rests on
@@ -338,12 +341,17 @@ check(ratioOf('thick', 'stone 6 cm') <= HOLDS, `the default stone tossed normall
 check(ratioOf('thin', 'Brick') >= BREAKS, `a brick strikes thin ice at only ${ratioOf('thin', 'Brick').toFixed(2)} of what it holds`);
 check(ratioOf('thin', 'bowling 16 lb') >= BREAKS, `a 16 lb bowling ball strikes thin ice at only ${ratioOf('thin', 'bowling 16 lb').toFixed(2)} of what it holds`);
 check(ratioOf('thick', 'stone 30 cm') >= BREAKS, `a 30 cm rock strikes thick ice at only ${ratioOf('thick', 'stone 30 cm').toFixed(2)} of what it holds`);
-// A toy slide scrapes to a stop near where it struck the ice (but hard, it is let go fast and flat).
+// A toy slide comes to a stop near where it struck the ice (but hard, it is let go fast and flat). Only a throw the
+// ice held can be measured, so at least one on each thickness must be held, or this would pass checking nothing.
 for (const thickness of ['thin', 'thick']) {
+  let held = 0;
   for (const [manner, power] of WAYS.filter(([, power]) => power !== 'hard')) {
     const { record, slid } = table.get(`${thickness} Toy slide ${manner} ${power}`);
-    if (!record.broke) check(slid <= SCRAPED_MOST, `a toy slide ${manner} ${power} on ${thickness} ice slid ${slid.toFixed(2)} m, over ${SCRAPED_MOST} m`);
+    if (record.broke) continue;
+    held++;
+    check(slid <= SCRAPED_MOST, `a toy slide ${manner} ${power} on ${thickness} ice slid ${slid.toFixed(2)} m, over ${SCRAPED_MOST} m`);
   }
+  check(held >= 1, `no toy slide tossed or lobbed onto ${thickness} ice was held, so none could be measured sliding`);
 }
 
 // ---- the holes ----
@@ -1139,6 +1147,59 @@ console.log('\nNew ice: a hole left alone skins over; a thing afloat in one keep
   check(restedFirst && rim.ice.holes.length > 0, 'the stones round a 16 cm stone\'s break did not rest first, or it did not break the thick ice');
   // Some go in and some stay (none left would make the nearest's distance no test at all).
   check(wentIn > 0 && onIce.length > 0 && nearest >= ICE.crushed * ICE_THICKNESS.thick && overhanging === 0, `stones round a new hole: ${wentIn} went in, ${onIce.length} left, the nearest with its weight ${centimetres(nearest)} cm from its edge, ${overhanging} hanging over it`);
+  // A toy slide at rest on a new hole's crushed rim tips in (src/ice.js tipAtEdge), pushed against its own slowing on
+  // ice (material.on.ice), and a stone with its weight on the same spot does too, each at one push; pushed against the
+  // ice's slowing a slide went a quarter as far, and stayed on the rim but for being tipped again while it was opening. A slide bridges a hole narrower than it (tipAtEdge), so the
+  // hole is a 30 cm rock's through thick ice. Where to put it: on the far side from the hand, its weight half the
+  // crushed rim outside the edge of the hole that ice breaks into with nothing on it; what lies on the ice bears on
+  // how it breaks, so the spot is moved by what it missed by and tried again.
+  const rimBreak = { diameter: 30, thickness: 'thick', seed: 1 };
+  const crushedRim = ICE.crushed * ICE_THICKNESS.thick;
+  const bare = iceWorld(rimBreak);
+  bare.throwStone(rimBreak.diameter);
+  bare.step(1.4);
+  const bareHole = bare.ice.holes[0];
+  let bareReach = bareHole.inner;
+  while (insidePolygon(bareHole.corners, bareHole.x, bareHole.z - bareReach) || polygonEdgeDistance(bareHole.corners, bareHole.x, bareHole.z - bareReach) < 0.5 * crushedRim) bareReach += 0.001;
+  const onRim = (thing, radius) => {
+    // Where its weight lies from its middle once at rest, so it can be put down with its weight on the spot.
+    const settled = iceWorld(rimBreak);
+    const trial = settled.add(new Rock({ radius, position: new THREE.Vector3(0, settled.ice.top + radius + 0.01, -3), velocity: new THREE.Vector3(0, -0.05, 0), envTexture: null, thing }));
+    settled.step(1.5);
+    const offset = trial.weightAt(new THREE.Vector3()).sub(trial.position);
+    let reach = bareReach, result = null;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const world = iceWorld(rimBreak);
+      const rock = world.add(new Rock({ radius, position: new THREE.Vector3(bareHole.x - offset.x, world.ice.top + radius + 0.01, bareHole.z - reach - offset.z), velocity: new THREE.Vector3(0, -0.05, 0), envTexture: null, thing }));
+      world.step(1.5);
+      const rested = rock.state;
+      // How many times the rim tips it: once, if the push carries it in against its own slowing.
+      let tips = 0;
+      const tipAtEdge = world.ice.tipAtEdge.bind(world.ice);
+      world.ice.tipAtEdge = (thing) => { const tipped = tipAtEdge(thing); if (tipped && thing === rock) tips++; return tipped; };
+      world.throwStone(rimBreak.diameter);
+      let atBreak = null;
+      for (let waited = 0; waited < 4 && atBreak === null; waited += STEP) {
+        world.step(STEP);
+        const hole = world.ice.holes[0];
+        if (!hole) continue;
+        const weight = rock.weightAt(new THREE.Vector3());
+        atBreak = insidePolygon(hole.corners, weight.x, weight.z) ? -polygonEdgeDistance(hole.corners, weight.x, weight.z) : polygonEdgeDistance(hole.corners, weight.x, weight.z);
+      }
+      world.step(3);
+      // In: under the ice (a stone sinks), or afloat in the hole (a slide floats high).
+      result = { rested, atBreak, tips, wentIn: rock.position.y < 0 || !!world.ice.holeAt(rock.position.x, rock.position.z), state: rock.state };
+      if (atBreak === null || (atBreak >= 0 && atBreak <= crushedRim)) break;
+      reach -= atBreak - 0.5 * crushedRim;
+    }
+    return result;
+  };
+  const slideOnRim = onRim('slide', 0.211), stoneOnRim = onRim('stone', 0.03);
+  const rimCm = (result) => (result.atBreak === null ? 'no hole' : `${centimetres(result.atBreak)} cm`);
+  const rimSaid = (result) => (result.wentIn ? `tipped in (${result.tips} push${result.tips === 1 ? '' : 'es'})` : `stayed (${result.state}, ${result.tips} pushes)`);
+  console.log(`  on a 30 cm rock's new hole's crushed rim (thick ice): a toy slide, its weight ${rimCm(slideOnRim)} from the edge as it opened, ${rimSaid(slideOnRim)}; a 6 cm stone, ${rimCm(stoneOnRim)} from it, ${rimSaid(stoneOnRim)}`);
+  check([slideOnRim, stoneOnRim].every((result) => result.rested === 'rest' && result.atBreak !== null && result.atBreak >= 0 && result.atBreak <= crushedRim), `a toy slide and a stone were not at rest on the new hole's crushed rim as it opened (${[slideOnRim, stoneOnRim].map((result) => `${result.rested}, ${rimCm(result)}`).join('; ')}), so tipping off it went unchecked`);
+  check(slideOnRim.wentIn && stoneOnRim.wentIn && slideOnRim.tips === 1 && stoneOnRim.tips === 1, `on a new hole's crushed rim a toy slide ${rimSaid(slideOnRim)} and a stone ${rimSaid(stoneOnRim)}: each should tip in at one push`);
 }
 
 if (failures.length > 0) {
