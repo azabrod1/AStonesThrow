@@ -1,0 +1,30 @@
+{
+  "source": "kloofendal_48d_partly_cloudy_puresky_2k.hdr",
+  "width": 2048,
+  "height": 1024,
+  "sun": {
+    "elevation": 47.89,
+    "azimuth": 214.26,
+    "direction": [
+      0.55424,
+      0.74186,
+      0.37744
+    ],
+    "pixels": 13
+  },
+  "sunIrradiance": [
+    3.8652,
+    3.9465,
+    3.6017
+  ],
+  "skyRadiance": [
+    0.55122,
+    0.60489,
+    0.8059
+  ],
+  "horizonRadiance": {
+    "median": 0.40353,
+    "p90": 0.85162
+  },
+  "maxLuminance": 72843
+}

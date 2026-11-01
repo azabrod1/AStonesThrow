@@ -1,4 +1,4 @@
-# Handover: Loch Ness and Tropical beach
+# Handover: Loch Ness and the Polynesian lagoon
 
 A cloud session's notes for the local session that picks this up. Delete this
 file before `tropical-beach` merges.
@@ -8,7 +8,7 @@ file before `tropical-beach` merges.
 | Branch | State | PR |
 |---|---|---|
 | `loch-ness` | Done, reviewed, pushed | Draft #41 |
-| `tropical-beach` | First pass, pushed; **the user found it not good enough** (below) | None yet |
+| `tropical-beach` | Reworked locally (below), not yet committed | None yet |
 
 Both branch from `main` and edit the same places (`PLACES` and
 `WATER_CLARITIES` in `src/main.js`, the Location and Water cards in
@@ -35,83 +35,53 @@ copy of each.
 - Not rerun since its last commit: the full `npm test` and `site-check`.
   Run both before marking it ready.
 
-### Tropical beach (`tropical-beach`, commit 14aaf8d)
+### Tropical be### Polynesian lagoon (`tropical-beach`; the place's key stays `tropical`)
 
-- `PLACES.tropical` reuses the **cove** sky. It has its own shore
-  (`SHORE_LOOKS.coral`) and water (`WATER_CLARITIES.lagoon`), plus
-  `src/tropics.js`:
-  - procedural coconut palms on the beach;
-  - a sand motu 105 m out with palms and shrubs;
-  - reef fish (`sergeant`, `yellowTang`, `blueTang` in `src/fish.js` and
-    `src/fishMeshes.js`).
-- Passing: all CPU probes, `uniform-probe`, `startup-probe` (15/15),
-  `site-check`. `controls-probe` fails 3 checks ("River stone" cut off), and
-  fails the same 3 on `main`.
+The first pass (the cove's sky and granite, a 105 m motu) was judged "It looks
+terrible" and has been reworked from photographs of Aitutaki's Tapuaetai and
+Bora Bora:
 
-## What the user asked for next (the actual task)
+- **Sky.** `SKIES.lagoon`: Poly Haven's released *Kloofendal 48d Partly
+  Cloudy (Pure Sky)*, its land taken out. Poly Haven's beach HDRIs with palms
+  (the "Beach Vault": Alkantstrand, Thompson's Bay, Ingwe, Zula) are still
+  locked, and are South African anyway. The sky is very bright against its
+  sun, so it is exposed half-way adapted (`adapt: 0.5` in `src/sky.js`).
+  Its 8k file is gitignored; never commit it.
+- **Land.** `LAGOON_SHORE` in `src/pondFloor.js` and its GLSL twin in
+  `LAKE_BED` (`uShoreKind`, which replaced `uKoiPond`, with
+  `SHORE_LAKE`/`SHORE_KOI`/`SHORE_LAGOON`): the lake's beach under the eye
+  runs on into a motu's along the right of the frame, 430 m to a point. It has
+  its own ring mesh (`lagoonLandGeometry`, `lagoonLand` in `src/main.js`).
+- **Scenery** (`src/tropics.js`, its opening comment has the detail):
+  - coconut palms from a GPU-baked frond atlas, six variants at three levels
+    of detail;
+  - a beach row and a palm forest;
+  - naupaka scrub and fallen coconuts;
+  - four motus;
+  - a high island at 7 km;
+  - aerial haze;
+  - the canopy's shade;
+  - mip-scaled alpha test;
+  - per-instance culling when the camera moves.
+  It is built the first time the place is shown (a stand-in palm compiles
+  its two programs in the warm-up).
+- **Cost.**
+  - Home view: 79 draws, 583k triangles (Lakeside 46 and 224k; Koi pond 43
+    and 489k).
+  - Warm-up: 77 programs, unchanged.
+  - Building `Tropics` at page start: about 5 ms. The scenery's build, the
+    first time the lagoon is shown: about 115 ms cold on an M1.
+  - The first, unculled version drew 2.1M triangles.
+- **Passing:** `npm test` (`garden-probe` now names `uShoreKind`),
+  `uniform-probe` (water 191 of 224, unchanged), `startup-probe`,
+  `site-check`, `controls-probe`, `fish-probe`, `frame-rate-probe`. Changing
+  place to the lagoon compiles nothing.
+- **Open:**
+  - no shadows of the palms on the sand or the water;
+  - the reef fish not re-checked in close-ups;
+  - no Low-quality reduction of the scenery.
 
-The user's verdict on the tropical beach: "It looks terrible". They want:
-
-- a **real photo of a tropical beach** to build on;
-- **rich green vegetation** and a **wonderful sand beach**;
-- **not many large rocks** in the background (the cove sky's granite
-  boulders are the problem);
-- **palm trees that look real**, not simple geometric shapes;
-- AAA-game quality.
-
-Why the cloud session couldn't do it: its network policy blocked every image
-host. Poly Haven, Wikimedia, Unsplash, jsDelivr and Hugging Face were all
-refused; only npm, PyPI and GitHub clones got through. **A local session
-has no such limit**, so this is now possible.
-
-### Suggested plan
-
-1. **The sky: a real beach HDRI.** Poly Haven (CC0) candidates, checked
-   2026-11-01:
-   - **Released:** [Spiaggia di Mondello](https://polyhaven.com/a/spiaggia_di_mondello)
-     is a sunny sand beach with turquoise water and no big boulders. Its
-     trees are coastal ones, not palms.
-   - **Locked in the "Beach Vault"** (check whether they're out now):
-     [Alkantstrand Radio Station](https://polyhaven.com/a/alkantstrand_radio_station),
-     a sunny beach with palms and the best match;
-     [Thompson's Bay Dawn](https://polyhaven.com/a/thompsons_bay_dawn), with
-     palms and greenery; Ingwe Beach Sunny; Zula Beach.
-   - Add the chosen sky as a new `SKIES` entry. The pipeline is in
-     `CLAUDE.md` (the rule on `assets/sky/*.json`) and the runs are in
-     `README.md`. In short:
-     1. Download the `_2k.hdr`, and the 8k file for the horizon strip
-        (gitignored, never committed).
-     2. Run `tools/sky-probe.mjs` to write the `.json`.
-     3. Run `tools/sky-encode.mjs` to write the `_2k.jpg` and
-        `_horizon.jpg`.
-     4. Choose its orientation (`sunAzimuth`, `mirrored`) from home-view
-        frames.
-   - Point `PLACES.tropical.sky` at the new sky and drop the cove boulders
-     there: `boulders.show` keys them by sky name.
-2. **The palms and vegetation: real models.** Replace the procedural palms in
-   `src/tropics.js` with scanned or authored glTF models (CC0: Poly Haven's
-   plant models, the tropical "Smuggler's Cove" collection). Load them with
-   GLTFLoader. GLTFLoader and its dependencies must be added to the build's
-   vendor file list in `tools/build-site.mjs`.
-   - Mirror them in the water: enable `MIRROR_LAYER`.
-   - Sway them in the vertex shader. `PALM_MOVE` in `src/tropics.js` has the
-     wind model and its uniforms.
-   - Build their programs under the loading veil: `tropics.setVisible(true)`
-     in `warmUp` already does this.
-   - Watch the triangle budget on phones; use LODs, or the motu at a lower
-     detail.
-   - Keep or drop the motu depending on the photo. If the photo has its
-     own land, the motu may fight it.
-3. **The sand.** `SHORE_LOOKS.coral` in `src/pondFloor.js` drives the
-   beach and the bed. A real PBR sand texture (Poly Haven's
-   "Textures > Ground > Sand") would need `LAND_FRAGMENT` and `FLOOR_SAND`
-   in `src/shaders/scene.js` to sample it. Mind the 16-texture limit, and
-   check with `tools/uniform-probe.mjs`.
-4. Re-shoot the thumbnail (`assets/sky/thumbs/tropical.jpg`, 320×180, from a
-   640×360 home-view frame). Update `README.md`'s Location and "The
-   tropics" sections, and the `CLAUDE.md` line on the Tropical beach.
-
-## Lessons from this work (gotchas)
+ this work (gotchas)
 
 - **Check triangle winding on any procedural mesh.** The Loch Ness
   creature's tube was wound inward: from outside it drew the far inner

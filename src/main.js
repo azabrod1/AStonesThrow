@@ -636,11 +636,11 @@ const PLACES = {
   swiss: { sky: 'swiss', pool: false, defaultWater: 'frozen', defaultView: 'level' },
   pool: { sky: 'lakeside', pool: true },
   koi: { sky: 'garden', pool: false, koi: true },
-  // The tropical beach: the cove's granite boulders and calm sea (as the Seychelles' granite beaches are) over white
-  // coral sand (`shore`, in place of its sky's), its own lagoon water (`water`: WATER_CLARITIES.lagoon, whatever
-  // clarity is chosen), reef fish, and coconut palms along the beach and on a motu out on the lagoon (`tropics`:
-  // src/tropics.js).
-  tropical: { sky: 'cove', pool: false, reeds: false, shore: 'coral', water: 'lagoon', tropics: true },
+  // The Polynesian lagoon: a motu's white coral sand (`shore`, in place of its sky's) running out along the lagoon
+  // (src/pondFloor.js LAGOON_SHORE, setLagoon), its own lagoon water (`water`: WATER_CLARITIES.lagoon, whatever
+  // clarity is chosen), reef fish, and its scenery (`tropics`, src/tropics.js): coconut palms, naupaka scrub, motus
+  // across the lagoon and a high island beyond, under its own pure sky (src/sky.js `lagoon`).
+  tropical: { sky: 'lagoon', pool: false, reeds: false, shore: 'coral', water: 'lagoon', tropics: true },
 };
 /** What a place's beach is made of (SHORE_LOOKS in src/pondFloor.js): its own `shore`, else its sky's. */
 const placeShore = (place) => PLACES[place].shore ?? skyShore(PLACES[place].sky);
@@ -799,7 +799,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   const galeWaves = new GaleWaves(renderer, { windDirection, centre: water.centre, sharedWith: ambientWaves });
   const reeds = new Reeds({ lighting, ambientWaves, mirrorLayer: MIRROR_LAYER });   // the shallows' rushes (src/reeds.js), in the main scene, the mirror and the under-water pass
   const boulders = new Boulders({ envTexture: environment.envTexture, waterFog: { extinction: lighting.extinction, color: lighting.waterColor }, mirrorLayer: MIRROR_LAYER });   // a rocky shore's stones (src/boulders.js), the same three ways
-  const tropics = new Tropics({ envTexture: environment.envTexture, waterFog: { extinction: lighting.extinction, color: lighting.waterColor }, mirrorLayer: MIRROR_LAYER });   // the tropical beach's palms and motu (src/tropics.js)
+  const tropics = new Tropics({ renderer, envTexture: environment.envTexture, mirrorLayer: MIRROR_LAYER, lighting });   // the Polynesian lagoon's palms (src/tropics.js)
   // The water's height at world (x, z) under the gale (its CPU sum), for the stones, the mirror and the eye.
   const galeSample = { height: 0, slopeX: 0, slopeZ: 0 };
   const galeSurfaceAt = (x, z) => galeWaves.sample(x, z, galeSample).height;
@@ -842,6 +842,9 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   const pool = createPool(water, lighting, ambientWaves, environment, { rings, haze: environment.hazeUniforms, wet: wetDeck, snow: snowCover, air, ice });
   let pooled = false;
   let koiPond = false;   // the lake's shore is the Koi pond's (PLACES `koi`; setKoiPond)
+  let lagoon = false;    // the lake's shore runs out into the Polynesian lagoon's (PLACES `tropics`; setLagoon)
+  /** The shore in force (src/pondFloor.js setShoreKind): the Koi pond's, the lagoon's or the lake's. */
+  const placeShoreKind = () => (koiPond ? 'koi' : lagoon ? 'lagoon' : 'lake');
   let reedsHere = false;   // the place's shallows have reeds (PLACES `reeds`; setReeds)
   const bedDepthAt = (x, z) => (pooled ? POOL.depth : floorDepthAt(x, z));
   water.floorDepthAt = bedDepthAt;
@@ -909,8 +912,9 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   let waterName = DEFAULT_WATER;
   pooled = PLACES[placeName].pool;
   koiPond = Boolean(PLACES[placeName].koi);
+  lagoon = Boolean(PLACES[placeName].tropics);
   reedsHere = Boolean(PLACES[placeName].reeds);
-  setShoreKind(koiPond ? 'koi' : 'lake');
+  setShoreKind(placeShoreKind());
   setShoreLook(placeShore(placeName));   // the beach and the bed in the place's own ground (SHORE_LOOKS)
   boulders.show(!pooled && !koiPond ? PLACES[placeName].sky : null);
   water.setPool(pooled);
@@ -1025,14 +1029,17 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   const koiLand = createShore(floor, lighting, environment, { snow: snowCover, koi: true });
   koiLand.layers.enable(MIRROR_LAYER);
   sceneMain.add(koiLand);
+  // The Polynesian lagoon's ground, its beach running out along the lagoon (src/pondFloor.js LAGOON_SHORE), the same way.
+  const lagoonLand = createShore(floor, lighting, environment, { snow: snowCover, lagoon: true });
+  lagoonLand.layers.enable(MIRROR_LAYER);
+  sceneMain.add(lagoonLand);
   shore.layers.enable(MIRROR_LAYER);
   sceneMain.add(shore);
   sceneMain.add(reeds.above);
   sceneUnder.add(reeds.below);
   sceneMain.add(boulders.above, boulders.mirror);
   sceneUnder.add(boulders.below);
-  sceneMain.add(tropics.palms, tropics.motuAbove);
-  sceneUnder.add(tropics.motuBelow);
+  sceneMain.add(tropics.group);
   // The pool's basin under the water, its walls and deck in the main scene
   // and the mirror (src/pool.js); shown in place of the lake's while the
   // water is the pool's (showScenery).
@@ -1048,10 +1055,11 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     reeds.visible = !asPool && !koiPond && reedsHere;   // the lake's shallows, where the place has them
     boulders.show(!asPool && !koiPond ? PLACES[placeName].sky : null);   // and a rocky shore's stones (BOULDERS)
     pool.setVisible(asPool);
-    shore.visible = !asPool && !koiPond;
+    shore.visible = !asPool && !koiPond && !lagoon;
     koiLand.visible = !asPool && koiPond;
+    lagoonLand.visible = !asPool && lagoon;
     garden.setVisible(!asPool && koiPond);
-    tropics.setVisible(!asPool && Boolean(PLACES[placeName].tropics));   // the tropical beach's palms and motu
+    tropics.setVisible(!asPool && Boolean(PLACES[placeName].tropics));   // the Polynesian lagoon's palms and motu
     surface.setPool(asPool ? { ...pool.square, depth: POOL.depth, deck: POOL.deck } : null);
   }
   showScenery(pooled);
@@ -1450,13 +1458,14 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
         placeName = place;
         setPooled(PLACES[place].pool);
         setKoiPond(Boolean(PLACES[place].koi));
+        setLagoon(Boolean(PLACES[place].tropics));
         setReeds(Boolean(PLACES[place].reeds));
         setShoreLook(placeShore(place));
         boulders.show(!pooled && !koiPond ? PLACES[place].sky : null);
         if (entering) {
           applyWater();   // a place's own water (PLACES `water`), or the lake's clarity again...
           applySky();     // ...and what its absorption lights: the sun under the water, the splash's view of the bed
-          showScenery(pooled);   // the place's own scenery (the tropical beach's palms)
+          showScenery(pooled);   // the place's own scenery (the Polynesian lagoon's palms)
           applyFish();
         }
         if (entering && PLACES[place].defaultWater === 'frozen' && iceName === 'none') {
@@ -2722,6 +2731,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     iceShadow.update(renderer, ice.shading.slots, ice.shading.sunLit ? ice.shading.sun : null);   // their shadows' tiles, those that moved (counted in the frame's draws)
     framesRendered++;
     camera.updateMatrixWorld();
+    tropics.cull(camera);   // the palms in view, or in its mirror image
     if (!skip.ambient) ambientWaves.update(simulationTime);
     galeWaves.update(simulationTime);   // nothing with no gale
     updateLightning(simulationTime);
@@ -2813,7 +2823,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     ...ambientWaves.uniforms(),
     ...ice.uniforms,   // no shafts under the ice (underwaterShafts)
   });
-  const hiddenFromBelow = () => [environment.sky, shore, koiLand, reeds.above, boulders.above, ...tropics.above, pool.walls, pool.yard, ...garden.meshes, marker, arc, ...(preview.mesh ? [preview.mesh] : []), ...rocks.map((rock) => rock.meshAbove)];
+  const hiddenFromBelow = () => [environment.sky, shore, koiLand, lagoonLand, reeds.above, boulders.above, tropics.group, pool.walls, pool.yard, ...garden.meshes, marker, arc, ...(preview.mesh ? [preview.mesh] : []), ...rocks.map((rock) => rock.meshAbove)];
   function renderFromBelow() {
     renderer.setRenderTarget(mainTarget);
     renderer.clear(true, true, false);
@@ -3074,10 +3084,22 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     reeds.visible = !pooled && !koiPond && here;
   }
 
+  /** The lagoon's shore (true; src/pondFloor.js LAGOON_SHORE) or the lake's: the bed, the ground and their meshes. */
+  function setLagoon(asLagoon) {
+    if (asLagoon === lagoon) return;
+    lagoon = asLagoon;
+    setShoreKind(placeShoreKind());
+    clearPond();
+    showScenery(pooled);
+    galeWaves.setBed(floorDepthAt(water.centre[0], water.centre[1]));
+    splash.setBed(bedOfPlace());
+    moveEye({ ...orbit });
+  }
+
   function setKoiPond(asKoi) {
     if (asKoi === koiPond) return;
     koiPond = asKoi;
-    setShoreKind(asKoi ? 'koi' : 'lake');
+    setShoreKind(placeShoreKind());
     clearPond();
     applyWater();
     applySky();
@@ -3183,7 +3205,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
         koiLand.visible = true;
         reeds.visible = true;   // and the reeds', whatever the place: a change of place compiles nothing
         boulders.show('all');   // and the boulders' (src/boulders.js)
-        tropics.setVisible(true);   // and the tropical beach's palms and motu (src/tropics.js); showScenery puts them back
+        tropics.setVisible(true, { building: false });   // and the Polynesian lagoon's programs, whatever the place (src/tropics.js builds it only when shown); showScenery puts them back
         render();
         renderFrom(VIEWS.under);
         showScenery(pooled);
@@ -3656,6 +3678,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     get mirrorRegion() { return { x: splashRect.x, y: splashRect.y, width: splashRect.z, height: splashRect.w, targetWidth: reflectionTarget.width, targetHeight: reflectionTarget.height }; },
     /** The shadows' atlas (src/iceShadow.js), for the probes: its target, and how many tiles it has drawn. */
     iceShadow,
+    /** The Polynesian lagoon's scenery (src/tropics.js), for the probes. */
+    tropics,
     renderer,
     camera,
     lighting,

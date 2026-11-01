@@ -213,12 +213,13 @@ is remembered on the device (but the view, which opens on the shore):
   freezes over again in half a minute, its shards frozen in, its new ice
   thin enough for the next throw to break.
 - Location (`?sky=`): Swiss Alps, Rocky cove, Highlands, Desert oasis,
-  Lakeside (the default), Mesas, Pool, Tropical beach (`?sky=tropical`):
-  the cove's granite boulders and calm sea, as the Seychelles' granite
-  beaches are, over white coral sand, its own clear lagoon water (Water's
-  lake clarities give way to it, as to the pool's), reef fish, coconut
-  palms along the beach leaning out over the water, and out on the lagoon
-  a motu, a low sand islet with palms and shrubs (below, the tropics); or
+  Lakeside (the default), Mesas, Pool, Polynesian lagoon (`?sky=tropical`):
+  a motu's white coral sand running out along the lagoon under its own
+  pure sky, its own clear lagoon water (Water's lake clarities give way to
+  it, as to the pool's), reef fish, coconut palms along the beach leaning
+  out over the water and a palm forest behind it with naupaka scrub at its
+  edge, motus across the lagoon and a high island beyond them in the haze
+  (below, the tropics); or
   Koi pond (`?sky=koi`): a pond in
   a Japanese garden under its own panorama (Poly Haven's Ninomaru Teien,
   the garden of Nagoya Castle, its sun behind leaves, so its brightness is
@@ -501,7 +502,7 @@ Alps brown trout and Arctic char; Highlands trout and minnows; Mesas a
 largemouth bass and bluegill; Desert oasis pupfish (blue males, brown
 females) and tilapia; Rocky cove grey mullet and a wrasse; the Koi pond
 seven koi of the classic varieties (Kohaku, Sanke, Showa, Ogon, Chagoi,
-Asagi, Yamabuki, Tancho) and a goldfish; the Tropical beach reef fish in
+Asagi, Yamabuki, Tancho) and a goldfish; the Polynesian lagoon reef fish in
 their own colours, unmuted (a school of sergeant majors, silver-yellow with
 five black bars; a shoal of yellow tangs, with the white spine by the tail;
 a blue tang, its black palette mark and yellow tail); the Pool none. A school keeps
@@ -1280,21 +1281,29 @@ show a bolt on the dome, a jagged line from the cloud's base, 600 m up,
 to the horizon, hidden where the photo's land stands in front of it; the
 mirror image is drawn again while it flashes, so the water shows it.
 
-**The tropics** (`src/tropics.js`). The Tropical beach's coconut palms
-stand on the beach either side of the shore view's eye and lean out over
-the lagoon: from the shore their crowns are over the frame and the water
-shows their reflections; turned, stepped back or from behind the thrower
-they are in view. Out on the lagoon, 105 m off, beyond anything thrown, a
-motu, a low islet of coral sand on a wobbling outline, carries eight palms
-and clumps of shrubs, far enough out that their crowns stand inside the
-home frame; its slope goes on under the water, where the under-water pass
-draws it, its pale sand the turquoise shallows round it. A palm is built
-once from its own seeded stream: a trunk leaning at its foot and curving
-up toward the light, flared at its foot and ringed with frond scars; a
-crown of eighteen pinnate fronds, the young ones up and the old arching
-down under their weight, their leaflets folded up into a V along the
-rachis and drooping toward their tips; a dead frond or two hanging brown;
-coconuts. The Wind control bends each trunk along the wind as a
+**The tropics** (`src/tropics.js`, `LAGOON_SHORE` in `src/pondFloor.js`).
+The Polynesian lagoon is drawn from photographs of the Cook Islands' and
+French Polynesia's lagoons (Aitutaki's Tapuaetai, Bora Bora). The lake's
+beach under the eye runs on into a motu's: its white sand bends away along
+the right of the frame for 430 m to a point, and its land is a ring mesh of
+its own. Coconut palms stand in a row a few metres in from the waterline,
+leaning out over the water (two far out, their crowns low over it), and
+behind them a palm forest, its trunks in the canopy's shade, with beach
+naupaka scrub along its edge. Fallen coconuts lie on the sand under the
+beach's palms. Across the lagoon are motus 0.5 to 2.3 km off, dark lines of
+palm forest on low sand, and 7 km off a high island of volcanic peaks under
+forest, both through the air's haze (the sky's horizon colour, by
+distance). A palm is built once from its own seeded stream: a trunk leaning
+at its foot and curving up toward the light, ringed with frond scars; a
+crown of about thirty fronds, the young ones up and the old arching down
+and yellowing, a dead frond or two hanging brown; coconuts. Its leaflets
+are alpha-tested cards textured with an atlas baked on the GPU at start-up
+(each leaflet a tapered blade, its alpha scaled by the mip it is drawn from
+so far crowns keep their leaves); the light passes through a leaf where the
+sun is behind it. Every palm is an instance of one of six variants at three
+levels of detail, chosen by distance from the eye; when the camera moves,
+only the instances it sees (or sees in the water's mirror) are kept, one
+draw a mesh. The Wind control bends each trunk along the wind as a
 cantilever, with a slow sway of its own and slow gusts, and flutters its
 fronds. Nothing of it has a body for the physics.
 
@@ -1842,4 +1851,6 @@ Moonrise, Moon Noon) by Greg Zaal, processed by Jarod Guest, and
 *Rogland Moonlit Night* are by Greg Zaal. Source pages:
 [Secluded Beach](https://polyhaven.com/a/secluded_beach),
 [Kiara](https://polyhaven.com/a/kiara_8_sunset),
-[Rogland](https://polyhaven.com/a/rogland_clear_night).
+[Rogland](https://polyhaven.com/a/rogland_clear_night),
+[Kloofendal 48d Partly Cloudy (Pure Sky)](https://polyhaven.com/a/kloofendal_48d_partly_cloudy_puresky)
+(the Polynesian lagoon's sky) by Greg Zaal, its sky edited by Jarod Guest.
