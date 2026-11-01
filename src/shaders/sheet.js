@@ -37,12 +37,17 @@
 // grows as a circle, its rim running back through the film, until the holes
 // meet and the film is a web of ligaments between them. So the holes are
 // drawn from a field of seeds, one at a hashed place in each cell of
-// aSheet (holeDistance: the distance to the nearest of the 27 cells'
-// seeds), and a vertex's openness asks for the radius every hole has
-// reached: the share of the sheet within r of a seed, measured on the CPU
-// over 300 000 points, is 1 − exp(−(r / (0.6422 − 0.0582·u))³) within 0.8%
-// for u = cbrt(−ln(1 − open share)), so holeRadius inverts that; where the
-// distance is under it the sheet has a hole. As the openness grows the
+// aSheet times FROTH_HOLE_SCALE (fewer, bigger holes than its cells), each
+// seed with a size of its own, FROTH_HOLE_SIZES by the square of a hash (a
+// few big holes among many small: holes nucleate at flaws and the first
+// grow longest), and holeDistance is the distance to the nearest of the 27
+// cells' seeds over that seed's size; a vertex's openness asks for the
+// radius the holes have reached: the share of the sheet within r of a seed
+// so measured, over 300 000 points on the CPU, is
+// 1 − exp(−(r / (0.6715 − 0.0386·u))³) within 0.2% for
+// u = cbrt(−ln(1 − open share)), so holeRadius inverts that; where the
+// distance is under it, give or take FROTH_RAGGED of the grain (a torn
+// edge is ragged), the sheet has a hole. As the openness grows the
 // holes widen from the same seeds, so a hole never flickers in and out, and
 // what is left between them is the ligaments' web. Each pass takes the
 // same holes: the depth pass discards a pixel more hole than sheet, the
@@ -105,13 +110,16 @@ import { GALE_SURFACE } from './gale.js';
 // any discard).
 export const SHEET_FROTH = /* glsl */`
 #define RIM_AERATION 0.55          // how far the rim bead and torn edges whiten
-#define FROTH_RADIUS vec2(0.6422, -0.0582)   // the holes' radius for an open share: u·(x + y·u), u = cbrt(−ln(1 − share)) (the header)
+#define FROTH_HOLE_SCALE 0.7       // the holes' seeds' cells per cell of the sheet: fewer, bigger holes
+#define FROTH_HOLE_SIZES vec2(0.45, 1.1)   // a seed's size: x + y times the square of its hash
+#define FROTH_RADIUS vec2(0.6715, -0.0386)   // the holes' radius for an open share: u·(x + y·u), u = cbrt(−ln(1 − share)) (the header)
+#define FROTH_RAGGED 0.2           // a hole's edge wanders by this much of a seed's cell with the grain
 #define FROTH_FADE vec2(0.35, 0.9)  // the field's footprint (cells a pixel) over which holes and grain fade to their means
-#define FROTH_RIM 0.12             // a hole's rim: the sheet within this many cells of its edge...
-#define FROTH_RIM_MEAN vec2(0.08, 0.8)   // ...which holds this much of the sheet left (x + y·open share, measured: the header), half of it under the rim's profile
-#define FROTH_BASE 0.3             // the froth's density: this much everywhere...
-#define FROTH_STREAK 1.2           // ...this much more in its streaks (half the sheet on average)...
-#define FROTH_EDGE_GAIN 0.8        // ...and this much more along the holes' rims...
+#define FROTH_RIM 0.12             // a hole's rim: the sheet within this many cells (of its seed's size) of its edge...
+#define FROTH_RIM_MEAN vec2(0.09, 0.72)  // ...which holds this much of the sheet left (x + y·open share, measured: the header), half of it under the rim's profile
+#define FROTH_BASE 0.08            // the froth's density: this much everywhere (a film between its streaks is nearly clear)...
+#define FROTH_STREAK 1.8           // ...this much more in its streaks (a quarter of the sheet on average: white water is streaks and lumps, not a frosted pane)...
+#define FROTH_EDGE_GAIN 1.2        // ...and this much more along the holes' rims...
 #define FROTH_STREAK_SCALE 0.45    // ...the streaks' cells per hole cell around the sheet...
 #define FROTH_STREAK_ALONG 0.25    // ...and this share of that along it: drawn out the way the sheet is
 #define FROTH_PATCH_SCALE 0.15     // the patches' cells per hole cell...
@@ -119,7 +127,7 @@ export const SHEET_FROTH = /* glsl */`
 #define FROTH_GRAZE 0.25           // the cosine of the view's angle to the sheet below which the path through it stops growing
 #define FROTH_GRAIN_SCALE 3.7      // the grain's cells per hole cell
 #define WRINKLE_SCALE 0.6          // the wrinkles' cells per hole cell
-#define WRINKLE_SLOPE 0.08         // their slope on a glassy sheet...
+#define WRINKLE_SLOPE 0.12         // their slope on a glassy sheet (its folds catch the sky)...
 #define WRINKLE_FROTH 0.35         // ...and more by this times the froth's density there (at most 1)
 float frothHash(vec3 point) {
   point = fract(point * 0.1031);
@@ -132,7 +140,7 @@ vec3 frothSeed(vec3 cell) {
   point += dot(point, point.yxz + 33.33);
   return fract((point.xxy + point.yxx) * point.zyx);
 }
-// The holes' field: how far the point is (cells) from the nearest seed of the 27 cells about it.
+// The holes' field: how far the point is (cells) from the nearest seed of the 27 cells about it, over that seed's size.
 float holeDistance(vec3 point) {
   vec3 cell = floor(point);
   vec3 local = point - cell;
@@ -141,12 +149,14 @@ float holeDistance(vec3 point) {
     for (int dy = -1; dy <= 1; dy++) {
       for (int dx = -1; dx <= 1; dx++) {
         vec3 offset = vec3(float(dx), float(dy), float(dz));
-        vec3 toSeed = offset + frothSeed(cell + offset) - local;
-        nearest = min(nearest, dot(toSeed, toSeed));
+        vec3 seedCell = cell + offset;
+        float size = frothHash(seedCell + 7.3);
+        size = FROTH_HOLE_SIZES.x + FROTH_HOLE_SIZES.y * size * size;
+        nearest = min(nearest, length(offset + frothSeed(seedCell) - local) / size);
       }
     }
   }
-  return sqrt(nearest);
+  return nearest;
 }
 // The radius every hole has reached when the sheet is this open (the header's fit).
 float holeRadius(float openShare) {
@@ -184,20 +194,20 @@ struct SheetFroth {
 SheetFroth sheetFroth(vec3 sheet, vec2 froth, float rimAeration, float rod, float facing) {
   SheetFroth result;
   float footprint = frothFootprint(sheet);
-  float resolved = 1.0 - smoothstep(FROTH_FADE.x, FROTH_FADE.y, footprint);
+  float resolved = 1.0 - smoothstep(FROTH_FADE.x, FROTH_FADE.y, footprint * FROTH_HOLE_SCALE);
+  // The grain, a finer noise, and the patches, a coarser one; each averages out as it shrinks below a pixel.
+  float grainResolved = 1.0 - smoothstep(FROTH_FADE.x, FROTH_FADE.y, footprint * FROTH_GRAIN_SCALE);
+  float grainNoise = frothNoise(sheet * FROTH_GRAIN_SCALE + vec3(3.1, 7.7, 1.3));
+  float grain = mix(1.0, 0.6 + 0.8 * grainNoise, grainResolved);
   // No holes open in a finger or the bead.
   float openShare = rod > 0.5 ? 0.0 : froth.y * (1.0 - clamp(rimAeration, 0.0, 1.0));
   float radius = holeRadius(openShare);
-  float field = holeDistance(sheet);
+  float field = holeDistance(sheet * FROTH_HOLE_SCALE) + FROTH_RAGGED * (grainNoise - 0.5) * grainResolved;
   float past = field - radius;   // cells outside the nearest hole's edge (inside it, negative)
   float edgeWidth = max(fwidth(field), 1e-4);
   float drawn = smoothstep(-edgeWidth, edgeWidth, past);
   result.present = openShare <= 0.0 ? 1.0 : mix(1.0 - openShare, drawn, resolved);
   result.hole = openShare > 0.0 && resolved > 0.5 && drawn < 0.5;
-  // The grain, a finer noise, and the patches, a coarser one; each averages out as it shrinks below a pixel.
-  float grainResolved = 1.0 - smoothstep(FROTH_FADE.x, FROTH_FADE.y, footprint * FROTH_GRAIN_SCALE);
-  float grainNoise = frothNoise(sheet * FROTH_GRAIN_SCALE + vec3(3.1, 7.7, 1.3));
-  float grain = mix(1.0, 0.6 + 0.8 * grainNoise, grainResolved);
   float patchResolved = 1.0 - smoothstep(FROTH_FADE.x, FROTH_FADE.y, footprint * FROTH_PATCH_SCALE);
   float patchy = mix(1.0, mix(FROTH_PATCH.x, FROTH_PATCH.y, smoothstep(0.3, 0.7, frothNoise(sheet * FROTH_PATCH_SCALE + vec3(23.7, 4.9, 15.2)))), patchResolved);
   // The holes' rims: the band outside each edge, lumpy (the grain sets its width), where the hole's water is gathered.
@@ -208,7 +218,7 @@ SheetFroth sheetFroth(vec3 sheet, vec2 froth, float rimAeration, float rod, floa
   // Densest in streaks and along the rims.
   float streakResolved = 1.0 - smoothstep(FROTH_FADE.x, FROTH_FADE.y, footprint * FROTH_STREAK_SCALE);
   vec3 streakPlace = sheet * vec3(FROTH_STREAK_SCALE, FROTH_STREAK_SCALE, FROTH_STREAK_SCALE * FROTH_STREAK_ALONG);
-  float streak = mix(0.5, smoothstep(0.3, 0.7, frothNoise(streakPlace + vec3(9.4, 2.2, 6.8))), streakResolved);
+  float streak = mix(0.25, smoothstep(0.45, 0.75, frothNoise(streakPlace + vec3(9.4, 2.2, 6.8))), streakResolved);
   float density = froth.x * (FROTH_BASE + FROTH_STREAK * streak + FROTH_EDGE_GAIN * rimShare) * grain * patchy * (rod > 0.5 ? 0.5 : 1.0);
   result.whiteness = 1.0 - exp(-density / max(facing, FROTH_GRAZE));
   return result;
