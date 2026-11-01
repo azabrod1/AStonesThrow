@@ -120,9 +120,11 @@
 // ?thing=) picks a kind of stone or a ball (src/things.js THINGS), and the
 // strip's slider sets its size in its own unit (setSize: a stone's
 // diameter, a bowling ball's pounds, a basketball's size; a golf or tennis
-// ball has one size). measureThing gives what a throw is: its radius, mass
-// and density. A river stone is thrown as stones always were
-// (throwVelocity, at the manner's and the strength's flight time: ARC over
+// ball has one size; an iPad's device, a frying pan's size and a bouquet's
+// count are each a thing of their own, src/things.js variantAt, made ready
+// as the slider comes to them: readyToThrow). measureThing gives what a
+// throw is: its kind at that size, its radius, mass and density. A river
+// stone is thrown as stones always were (throwVelocity, at the manner's and the strength's flight time: ARC over
 // src/rock.js throwFlightTime, a hard toss let go at 12 m/s, fast and flat,
 // going in twice as fast as a medium one); anything else is aimed by src/rock.js aimThrow, which
 // flies it against the air's drag (a tennis ball or a piece of pumice
@@ -677,7 +679,10 @@ function migrateStoredSettings() {
 // lifted for it, and a second breaks a sheet made thin for it, followed
 // iceSeconds past its impact, its shards let go by then; the ice as chosen
 // comes back after.
-const WARM_UP = { x: 0, z: -1.4, radius: 0.03, moments: [0.02, 0.16, 0.4], seed: 4, floaters: ['pumice', 'pizza', 'ice-shard'], iceSeconds: 0.6 };   // a floater of each program: pumice the stones', a pizza its textured one, a shard of ice its clear one (src/rock.js seenThrough)
+// A floater of each program (pumice the stones', a pizza its textured one, a shard of ice its clear one: src/rock.js
+// seenThrough), and a sinker of each besides the stone's (an iPad its textured one: a floater's rides the water, so a
+// textured sinker's is a program of its own).
+const WARM_UP = { x: 0, z: -1.4, radius: 0.03, moments: [0.02, 0.16, 0.4], seed: 4, floaters: ['pumice', 'pizza', 'ice-shard'], sinkers: ['ipad'], iceSeconds: 0.6 };
 
 export async function startPond({ canvas, quality = 'auto', onReady, onProgress, onError, onRainError, onStats, onViewChange, onQualityChange, onProfile, onThrow }) {
   let readyForInput = false;
@@ -1878,19 +1883,28 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   // (A hidden thing, src/things.js, is never the setting's: the ice's shards.)
   const offered = (name) => Object.hasOwn(THINGS, name ?? '') && !THINGS[name].hidden;
   let thingName = offered(requestedThing) ? requestedThing : offered(storedThing) ? storedThing : DEFAULT_THING;
-  const thingShapes = new Map();   // each kind's shape, from one made (a fluttering thing's aim flies it)
+  const thingShapes = new WeakMap();   // each kind's shape (each preset's own thing's: src/things.js variantAt), from one made (a fluttering thing's aim flies it)
   const sizeKey = (thing) => thing.sizeShare ?? thing.key;
   const thingSizes = {};
   for (const thing of Object.values(THINGS)) thingSizes[sizeKey(thing)] ??= thing.slider?.initial ?? null;
   /** A slider value kept within what `thing`'s slider allows. */
   const withinSlider = (thing, value) => (thing.slider ? THREE.MathUtils.clamp(value, thing.slider.min, thing.slider.max) : value);
-  /** `name` made ready to throw (src/rock.js prepareThing), its shape kept for the aim, its size measured once (a gem's volume). */
+  /**
+   * `name` made ready to throw as it would be thrown now (src/rock.js prepareThing: at a preset with a look of its own,
+   * that preset's own thing, src/things.js variantAt), its shape kept for the aim, its size measured once (a gem's
+   * volume). Another preset's own thing is made ready as the slider comes to it (setSize), so a throw never pays for
+   * it, nor the loading veil for every iPad.
+   */
   function prepareNamed(name) {
     const thing = THINGS[name];
-    thingShapes.delete(name);
-    const prepared = prepareThing(thing);
-    if (prepared) thingShapes.set(name, prepared.shape);
+    readyToThrow(measureThing(name).thing);
     thing.measure(thing.slider?.initial);
+  }
+  /** A thing (a preset's own: src/things.js variantAt) made ready to throw (src/rock.js prepareThing) and its shape kept for the aim, once. */
+  function readyToThrow(thing) {
+    if (thingShapes.has(thing)) return;
+    const prepared = prepareThing(thing);
+    if (prepared) thingShapes.set(thing, prepared.shape);
   }
   // A thing defined (or defined again) from now on: ready to throw now, at its own first size.
   onThingsChange((name) => {
@@ -1906,7 +1920,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   // the camera stands. A rock over 16 cm across leaves it lower and farther
   // out, by its size beyond that, so that from the shore it rises into the
   // view from below its edge rather than filling the corner of it.
-  function handPosition(radius = measureThing(thingName).radius, thing = THINGS[thingName]) {
+  function handPosition(radius = measureThing(thingName).radius, thing = measureThing(thingName).thing) {
     const beyond = Math.max(radius - 0.08, 0);
     const hand = new THREE.Vector3(0.30, -0.32 - 1.6 * beyond, -0.55 - 1.2 * beyond).applyMatrix4(shoreFrame);
     // Held clear of the water however it is turned, its farthest point HAND_CLEARANCE over it (a toy slide's chute's foot
@@ -1962,10 +1976,12 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   }
 
   /**
-   * What is thrown (`name`, else the Object setting's): its kind, its radius
-   * and mass at its slider's value `size` (kept within its slider), else at
-   * the one it has now (its own, or its family's); a thing sized by its
-   * diameter may be given its radius `radius` instead.
+   * What is thrown (`name`, else the Object setting's): its kind (at a
+   * preset with a look of its own, that preset's own thing: src/things.js
+   * variantAt), its radius and mass at its slider's value `size` (kept
+   * within its slider), else at the one it has now (its own, or its
+   * family's); a thing sized by its diameter may be given its radius
+   * `radius` instead.
    */
   function measureThing(name, size, radius) {
     const thing = THINGS[name];
@@ -1974,7 +1990,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       const nominal = radius ?? value / 200;
       return { thing, radius: nominal, mass: thing.measure(200 * nominal).mass, size: null };
     }
-    return { thing, ...thing.measure(value), size: value };
+    return { thing: thing.variantAt(value), ...thing.measure(value), size: value };
   }
 
   function throwAt(x, z, options = {}) {
@@ -1987,13 +2003,13 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     if (koiPond) keepInPond(target, radius);   // nothing thrown comes down on the Koi pond's ground (src/koiGarden.js)
     // Made first, so a thing that flutters is aimed by its own flight (src/rock.js trialFlight) and a skip by its own
     // mass (a pizza's toppings and all); a skip is let go lower, from the hand let down (skipThrow).
-    const rock = new Rock({ radius, position: handPosition(radius, thing), velocity: new THREE.Vector3(), envTexture: environment.envTexture, waterFog: { extinction: lighting.extinction, color: lighting.waterColor }, thing: name, mass, mirrorLayer: MIRROR_LAYER, skip: skips, water: surface.rideUniforms, dressing: options.dressing ?? null });
+    const rock = new Rock({ radius, position: handPosition(radius, thing), velocity: new THREE.Vector3(), envTexture: environment.envTexture, waterFog: { extinction: lighting.extinction, color: lighting.waterColor }, thing: name, mass, mirrorLayer: MIRROR_LAYER, skip: skips, water: surface.rideUniforms, dressing: options.dressing ?? null, size });
     // A broad thing's tilt drawn first, so it is aimed by its own (a stone's is drawn as it is let go, as it always was).
     const tilt = skips && !thing.byDiameter ? rock.skipTilt() : undefined;
     const skipped = skips ? skipThrow(handPosition(radius, thing), target, { thing, radius, mass: rock.mass }, options.power ?? power, tilt) : null;
     const hand = skipped?.hand ?? handPosition(radius, thing);
     if (skipped) { rock.position.copy(hand); rock.previous.copy(hand); rock.syncMeshes(); }
-    thingShapes.set(name, rock.shape);
+    thingShapes.set(rock.thing, rock.shape);
     // Aimed as heavy as it is (a pie's filling, a pizza's toppings and all: its fastest its own).
     const { velocity } = skipped ?? thingVelocity(hand, target, options.power ?? power, { thing, radius, mass: rock.mass, size }, rock.trialFlight(), thrownAs);
     rock.velocity.copy(velocity);
@@ -2160,7 +2176,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     const skipped = skipsNow() ? skipThrow(handPosition(measured.radius, measured.thing), hit, measured) : null;
     const hand = skipped?.hand ?? handPosition(measured.radius, measured.thing);
     // A fluttering thing's arc is its flight's (src/rock.js flutterTrial), its shape its prepared one's (or the last thrown's).
-    const shape = thingShapes.get(thingName) ?? prepareThing(measured.thing)?.shape;
+    const shape = thingShapes.get(measured.thing) ?? prepareThing(measured.thing)?.shape;
     const flight = measured.thing.air.model === 'flutter' && shape ? flutterTrial({ thing: measured.thing, shape, radius: measured.radius, density: measured.mass / (shape.volume * measured.radius ** 3), ownMass: measured.mass }) : null;
     const thrown = skipped ?? thingVelocity(hand, hit, power, measured, flight);
     const { velocity, flightTime } = thrown;
@@ -3129,6 +3145,9 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     // materials (a pizza's: above, below and in the mirror): their programs too.
     const floaters = WARM_UP.floaters.map((name) => throwAt(WARM_UP.x, WARM_UP.z, { thing: name }));
     for (const floater of floaters) floater.meshMirror.visible = true;
+    // A textured sinker's three: above, below and, as anything but a floater is given on the ice, its mirror image.
+    const sinkers = WARM_UP.sinkers.map((name) => throwAt(WARM_UP.x, WARM_UP.z, { thing: name }));
+    for (const sinker of sinkers) Object.assign(sinker.prepareMirror(), { visible: true, frustumCulled: false });
     // And a stone's, as anything but a floater is given on the ice (src/rock.js prepareMirror): its program too, drawn
     // wherever the mirror's camera looks (it is culled by it, and this stone is in the hand).
     Object.assign(stone.prepareMirror(), { visible: true, frustumCulled: false });
@@ -3147,6 +3166,10 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     for (const floater of floaters) {
       programKeepers.push(floater.meshAbove.material, floater.meshBelow.material, floater.meshMirror.material);
       retireRock(floater, { keepMaterials: true });
+    }
+    for (const sinker of sinkers) {
+      programKeepers.push(sinker.meshAbove.material, sinker.meshBelow.material, sinker.meshMirror.material);
+      retireRock(sinker, { keepMaterials: true });
     }
     floaterRide.warmUp(renderer);   // the floaters' ride's pass
     galeWarmUp?.done();
@@ -3257,7 +3280,10 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
      */
     setSize(value) {
       const thing = THINGS[thingName];
-      if (thing.slider && Number.isFinite(value)) { thingSizes[sizeKey(thing)] = withinSlider(thing, value); buildPreview(); }
+      if (!thing.slider || !Number.isFinite(value)) return;
+      thingSizes[sizeKey(thing)] = withinSlider(thing, value);
+      readyToThrow(measureThing(thingName).thing);   // a preset with a look of its own made ready now, not as it is thrown
+      buildPreview();
     },
     get size() { return thingSizes[sizeKey(THINGS[thingName])] ?? THINGS[thingName].slider?.initial; },
     /**

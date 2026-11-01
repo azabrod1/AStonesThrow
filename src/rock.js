@@ -1179,7 +1179,9 @@ const reachBox = new THREE.Box3(), reachCentre = new THREE.Vector3(), reachCorne
 
 /** A plate's shape (stoneShape's, of its `geometry`) given its face as the disc of its area, in radii (`faceDisc`: Rock.plateRadius). */
 function plateFace(shape, geometry) {
-  shape.faceDisc = Math.sqrt(faceArea(geometry, shape.axes[2]) / Math.PI);
+  // Its mesh's own word where parts stand out of a face (an iPhone's camera: their undersides, on the face, would be
+  // counted as more of it), else its projection's.
+  shape.faceDisc = Math.sqrt((geometry.userData?.faceArea ?? faceArea(geometry, shape.axes[2])) / Math.PI);
 }
 
 /** The depth (in radii up from its bottom) a ball of `share` of water's density floats at: capShare's inverse, by bisection. */
@@ -1308,14 +1310,15 @@ export function stoneShape(geometry) {
  */
 function columnAxis(thing, shape) { return thing.water.columnsAlong ? new THREE.Vector3(...thing.water.columnsAlong).normalize() : thing.body.upright ? UP : shape.axes[2]; }
 
-/** What prepareThing has made, for each definition (a thing defined again is a new definition). */
+/** What prepareThing has made, for each definition (a thing defined again is a new definition) and each preset's own thing (src/things.js variantAt: an iPad's steps). */
 const PREPARED = new WeakMap();
 /** How often prepareThing has built a fixed mesh and sliced a waterline (its buoyancy's columns): src/main.js's `budget`, which tools/quality-probe.mjs checks a throw leaves alone. */
 export const PREPARATION_WORK = { meshes: 0, waterlines: 0 };
 
 /**
  * A fixed mesh's thing (src/thingMeshes.js registerMesh `fixed`) made ready
- * to throw, once: its geometry, its shape (stoneShape), how far it reaches
+ * to throw, once: its geometry, its shape (stoneShape, of its geometry's
+ * own closed body, `userData.physics`, where it has one), how far it reaches
  * (`reach`, its bounding sphere's; `farthest`, its farthest point's) and its
  * buoyancy's columns (buoyancyColumns, made the first time a size
  * of it floats, and kept), which every one thrown shares. Slicing a pizza's
@@ -1333,10 +1336,13 @@ export function prepareThing(thing) {
     const geometry = mesh.build(thing, {});
     PREPARATION_WORK.meshes++;
     geometry.computeBoundingSphere();
-    const shape = thing.body.shape === 'sphere' ? BALL_SHAPE : stoneShape(geometry);
+    // What the physics walks: its own closed body where its mesh gives one (`userData.physics`: a rose's blooms, whose
+    // petals are drawn open, are hulls to it, as a stone's lumps are cut coarser), else what is drawn.
+    const body = geometry.userData.physics ?? geometry;
+    const shape = thing.body.shape === 'sphere' ? BALL_SHAPE : stoneShape(body);
     let columns = null;
     const buoyancy = () => {
-      if (!columns) { columns = buoyancyColumns(geometry, columnAxis(thing, shape), thing.water.columns); PREPARATION_WORK.waterlines++; }
+      if (!columns) { columns = buoyancyColumns(body, columnAxis(thing, shape), thing.water.columns); PREPARATION_WORK.waterlines++; }
       return columns;
     };
     // A floater's columns now, at its first size (another size may float where this one sinks: its columns are made as
@@ -1348,11 +1354,11 @@ export function prepareThing(thing) {
     if (mesh.dress) { const parts = mesh.dress(thing, seededStream(1)); if (parts && !parts.shared) parts.geometry.dispose(); }
     if (thing.air.model === 'flutter' && thing.body.shape !== 'sphere') plateFace(shape, geometry);
     // How far its farthest point is from its middle, in radii, however it is turned (the hand holds it clear of the
-    // water: src/main.js handPosition); `reach`, its bounding sphere's, is looser.
+    // water: src/main.js handPosition), as drawn; `reach`, its bounding sphere's, is looser.
     const positions = geometry.attributes.position.array;
     // The faces it can lie on (restFaces, rolled onto its hull's), worked out now (under the loading veil, src/main.js
     // warmUp) rather than as the first one thrown comes to rest: a banana's 24 000 corners take tens of milliseconds.
-    if (thing.body.shape !== 'sphere' && !thing.body.upright) restFaces(shape, positions, thing.body.ballast);
+    if (thing.body.shape !== 'sphere' && !thing.body.upright) restFaces(shape, cornersOf(body), thing.body.ballast);
     let farthest = 0;
     for (let index = 0; index < positions.length; index += 3) farthest = Math.max(farthest, positions[index] ** 2 + positions[index + 1] ** 2 + positions[index + 2] ** 2);
     PREPARED.set(thing, { geometry, shape, reach: geometry.boundingSphere.center.length() + geometry.boundingSphere.radius, farthest: Math.sqrt(farthest), buoyancy });
@@ -1371,8 +1377,9 @@ export class Rock {
    * @param water the water's uniforms (src/waterSurface.js rideUniforms): a floater given them rides the water's ripples as drawn (rideTheWater)
    * @param piece a shard's own outline (src/ice.js shards: its corners about its middle and its thickness, in radii), which its mesh is built to
    * @param dressing the seed its own parts are drawn from (dressThing), in place of the one its throw draws: a person's throw is dressed as its preview in the hand (src/main.js)
+   * @param size its slider's value (src/things.js): at a preset with a look of its own it is that preset's own thing (variantAt: an iPad's step, a bouquet's count), else its slider's first
    */
-  constructor({ radius, position, velocity, envTexture, waterFog = null, thing = DEFAULT_THING, mass = null, mirrorLayer = null, skip = false, water = null, piece = null, dressing = null }) {
+  constructor({ radius, position, velocity, envTexture, waterFog = null, thing = DEFAULT_THING, mass = null, mirrorLayer = null, skip = false, water = null, piece = null, dressing = null, size = null }) {
     this.radius = radius;
     this.position = position.clone();
     this.previous = position.clone();   // where it was a step ago
@@ -1380,7 +1387,7 @@ export class Rock {
     this.state = 'air';
     // A skip stone's state; `inside(x, z)`, given in a pool (src/main.js), says where its walls let it touch and skim.
     this.skip = skip ? { normal: new THREE.Vector3(0, 1, 0), skips: 0, contact: null, inside: null } : null;
-    this.thing = THINGS[thing] ?? THINGS[DEFAULT_THING];
+    this.thing = (THINGS[thing] ?? THINGS[DEFAULT_THING]).variantAt(size);
     this.sphere = this.thing.sphere;   // its body a sphere (the header), not its mesh's own shape
     // Its own mass, unless sized by its diameter: then its density's (`mass`, as a stone's always was).
     this.ownMass = this.thing.byDiameter ? null : mass ?? this.thing.measure(this.thing.slider?.initial).mass;
