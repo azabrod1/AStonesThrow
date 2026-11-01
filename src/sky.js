@@ -110,8 +110,16 @@
 // moon low in the sky): lighting.night, from 0 to 1 between the two in the
 // logarithm of the light, mixes the picture towards what rods see, drawn
 // as a moonlit blue that keeps some of the cones' colour (NIGHT_VISION in
-// src/shaders/fluid.js). That factor is the environment's
-// `level` (1 for a single photograph and an anchor): the deep water's colour
+// src/shaders/fluid.js). Not every series shares one exposure: an hour's
+// `exposure` (stops) brings up one whose light reads too dim for its hour,
+// chosen from home-view frames, as a camera's exposure compensation would
+// (sun, sky and land together). Highlands' noon has it: against its sky the
+// photo's sun measures twice Mesas' noon's (15.5 to 7.3, its disc integrated,
+// no halo), its hills and low sky two to three times darker, and its sunset's
+// sun 1.5 times its noon's, so its hours were exposed one by one; as a
+// single photograph it came out a dusk, darker than its own sunset. That
+// factor and the hour's are the environment's `level` (1 for a single
+// photograph and an anchor, but for an `exposure`): the deep water's colour
 // (src/main.js), a radiance lit by what falls on the water, takes it, and so
 // does the cube's ground hemisphere.
 //
@@ -288,7 +296,7 @@ const SKIES = {
     hours: {
       dawn: { file: 'kiara_1_dawn', label: 'Dawn', clock: '06:20' },
       sunrise: { file: 'kiara_2_sunrise', label: 'Sunrise', clock: '07:03' },
-      noon: { file: 'kiara_5_noon', label: 'Noon', clock: '12:15' },
+      noon: { file: 'kiara_5_noon', label: 'Noon', clock: '12:15', exposure: 1.5 },
       sunset: { file: 'kiara_8_sunset', label: 'Sunset', clock: '17:34' },
       dusk: { file: 'kiara_9_dusk', label: 'Dusk', clock: '17:55' },
     },
@@ -806,7 +814,7 @@ export function createEnvironment(renderer, { name, hour, sunAzimuth, sunBalance
     const levelLight = (measured) => luminance(measured.sunIrradiance) * Math.max(Math.sin(THREE.MathUtils.degToRad(measured.sun.elevation)), 0) + Math.PI * luminance(measured.skyRadiance);
     const balanceScale = (balanceLuminance / luminance(balance.sunIrradiance)) * SKY_EXPOSURE;
     const anchorScale = place.shadedSun ? balanceScale * levelLight(balance) / levelLight(anchor) : (balanceLuminance / luminance(anchor.sunIrradiance)) * SKY_EXPOSURE;
-    const level = file === anchorFile ? 1 : adaptedLight(hourLight(measurement)) / adaptedLight(hourLight(anchor));
+    const level = (file === anchorFile ? 1 : adaptedLight(hourLight(measurement)) / adaptedLight(hourLight(anchor))) * 2 ** (entry.exposure ?? 0);
     const scale = anchorScale * level;
     if (sunlit) {
       const sunColour = new THREE.Vector3().fromArray(measurement.sunIrradiance).divide(new THREE.Vector3().fromArray(balance.sunIrradiance)).multiply(sunBalance);

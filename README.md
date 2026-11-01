@@ -214,7 +214,12 @@ full screen, which only a press or a key may ask for):
   freezes over again in half a minute, its shards frozen in, its new ice
   thin enough for the next throw to break.
 - Location (`?sky=`): Swiss Alps, Rocky cove, Highlands, Desert oasis,
-  Lakeside (the default), Mesas, Pool, or Koi pond (`?sky=koi`): a pond in
+  Lakeside (the default), Mesas, Pool, Loch Ness (`?sky=loch`): the
+  Highlands' ridges and hours over a shingle shore with no reeds, its own
+  peat-dark water (Water's lake clarities give way to it, as to the pool's)
+  with brown trout, Arctic char and minnows in it, and far out on it, now
+  and then, something that comes up and goes down again (below, the
+  loch's visitor); or Koi pond (`?sky=koi`): a pond in
   a Japanese garden under its own panorama (Poly Haven's Ninomaru Teien,
   the garden of Nagoya Castle, its sun behind leaves, so its brightness is
   taken from its sky: `shadedSun` in `src/sky.js`), about 9 m across, its
@@ -934,7 +939,9 @@ The curated locations include:
   between the boulders. One photographed morning.
 - **Highlands** (`?sky=highlands`): five Kiara panoramas, from dawn and sunrise
   to noon, sunset and dusk. Starts at sunset unless a remembered clock is
-  nearer another hour; noon remains the lighting calibration anchor.
+  nearer another hour; noon remains the lighting calibration anchor, brought
+  up 1.5 stops (its `exposure`): the series was exposed photo by photo, and
+  as a single photograph its noon came out a dusk, darker than its sunset.
 - **Desert oasis** (`?sky=desert`): Rogland's golden hour, starry night and
   moonlit early morning, framed toward the lower rock skyline. The water is
   the simulation's, surrounded by the photographed desert.
@@ -1284,6 +1291,46 @@ show a bolt on the dome, a jagged line from the cloud's base, 600 m up,
 to the horizon, hidden where the photo's land stands in front of it; the
 mirror image is drawn again while it flashes, so the water shows it.
 
+**Something in the loch** (`src/lochVisitor.js`; its water in
+`src/shaders/visitor.js`). At Loch Ness, every one to two and a half
+minutes (the first within a minute of arriving), something comes up 48 to
+80 m out, goes along across the view for fifteen to thirty seconds and goes
+down again, front first both ways. The scene never says what it is: each
+sighting is one of four forms, never the same twice running: two or three
+low humps, a wave running back along a body that stays under; a slender
+neck and a small head lifted out of the water, turning slowly; one long
+low back that rolls as a log does but goes steadily on; or nothing above
+the water at all, only a wake. It is one dark, wet body (a tube along a
+spine, posed in closed form from the world's time, knobbled along its
+back, its seeded cross sections cached once per sighting and transformed
+by the moving spine each frame, in a hide of folds, warts and pores, wet and dry patches and
+blotches, laid in metres on it; wetter at the waterline and washed there
+with broken foam), drawn above the water, below it (where the peat-dark
+water hides it within a metre) and in the mirror. It is out
+of reach: nothing of it ever comes within 36 m of the shore's eye (a
+floater past 30 m from the pond goes), it has no collider, no sighting
+starts with a thing thrown near its course, and one under way goes down
+at once, fast, if one comes within 16 m; under ice or a gale it stays
+down. Its waves are the water shader's, deep water's linear theory in
+closed form: the Kelvin wake of a source moving at its speed, by
+stationary phase (inside the 19.47° cusp lines, a transverse and a
+diverging wave of wavenumber g / (U² cos² θ), each raised by a source d
+under the surface as e^(−kd), its energy arriving where its group velocity
+carries it, so the wake grows out behind and lingers after the body has
+gone); the Cauchy–Poisson rings of each breach and dive (long waves first,
+wavenumber g t² / 4r², the impulse's size cutting the short ones); the
+water heaped before each piece of it out of the water and drawn down
+behind (a capsule as long as the piece), the short capillary-gravity
+ripples its waterline sheds, running out from the capsule's outline; and
+foam hugging the waterline and trailing behind. Each is filtered by the pixel's footprint and
+what it averages away goes to the glitter's roughness and spreads the
+mirror as the wind's ripples do (`spreadMirror`), so from the shore, where a wave a metre long out there is less than a
+pixel deep, the wake shows as a pale line of rougher water across the far
+shore's image, and zoomed in, as waves. A frame's pose transforms cross
+sections cached once a sighting (about 0.3 ms, from 1 ms).
+`tools/visitor-probe.mjs` checks its schedule, its reach and that it goes
+alike at any frame rate.
+
 **From under the water** (the Under view; `renderFromBelow` in `src/main.js`,
 `UNDER_FOG` and `WATER_UNDER_FRAGMENT` in `src/shaders/scene.js`). The water's
 own light, darker looking down and brighter looking up toward the surface,
@@ -1318,7 +1365,14 @@ drawn into it each frame, over the rectangle it covers) in the direction each ri
 turns the view ray, so reflections wobble into vertical streaks (near
 things, the splash's, by their distance, so they move far less), and adds
 the sun's glitter: a Beckmann highlight on the rippled normal, widened by the
-ripple finer than the pixel. Where there is foam it replaces the surface, a
+ripple finer than the pixel. That ripple spreads the mirror image too, down
+it and not across (`spreadMirror`: the image's mip levels read through 4×
+anisotropic filtering, one lookup where no ray is turned below the horizon,
+three where some are and those are left out, hidden by the next crest), so
+past where the ripples resolve the far shore's image softens down the water
+and pales toward it, rather than standing as a sharp copy of the shore that
+reads as more land; near things spread by their distance, as they move. It
+costs about 1.5 ms a frame on an M1 at 2149×1209 (16× filtering cost 6). Where there is foam it replaces the surface, a
 diffuse white under the sun and the sky; the foam specks ride on it. The
 splash's passes then draw its water over the scene and tone-map it; with no
 water in the air the frame is only tone-mapped. Before the tone map a few
@@ -1363,8 +1417,8 @@ farther out, so it rises into the view rather than filling its corner.
   `tools/ring-probe.mjs`, `tools/rain-probe.mjs`, `tools/snow-probe.mjs`,
   `tools/gale-probe.mjs`, `tools/skip-probe.mjs`, `tools/thing-probe.mjs`,
   `tools/ice-probe.mjs`, `tools/spray-probe.mjs`, `tools/jet-probe.mjs`,
-  `tools/drop-ring-probe.mjs`, `tools/fish-probe.mjs` and
-  `tools/garden-probe.mjs`;
+  `tools/drop-ring-probe.mjs`, `tools/fish-probe.mjs`,
+  `tools/garden-probe.mjs` and `tools/visitor-probe.mjs`;
   each exits with 1 if a check fails. `tools/run-probes.mjs` runs them side
   by side, as many at once as the machine has cores (`PROBE_JOBS=1` runs
   them one after another), each one's output printed whole when it ends,
@@ -1713,6 +1767,21 @@ farther out, so it rises into the view rather than filling its corner.
   120 Hz one, and a throw every other frame of a 120 Hz clock (held to 60 a
   second) and every frame of a 60 Hz one; and that a large window keeps
   within the pixel budget.
+- `node tools/visitor-probe.mjs` checks whatever is out on Loch Ness
+  (`src/lochVisitor.js`) on the CPU: over two hours it comes up within its
+  first minute and every one to two and a half minutes after, every form
+  and never one twice running; no point of its body, posed every frame,
+  comes within 36 m of the shore's eye; a thing out on the water holds a
+  sighting back from its course and one that comes near sends it down at
+  once; under ice or a gale nothing comes up; the same sightings and poses
+  at 30, 60 and 144 frames a second (including the rendered skin and normals);
+  and a frame's pose takes under 1.5 ms.
+- `node tools/visitor-wave-probe.mjs` checks the actual shader's Kelvin and
+  breach-ring wave vectors against numerical derivatives of their phase:
+  both Kelvin branches, both sides of the track, multiple headings and speeds.
+  `window.__pond.sightVisitor(form, { elapsed, distance, bearing, course })`
+  brings one up at Loch Ness for the harness (`--eval`), and
+  `__pond.visitor` says what it is doing.
 - `node tools/frame-rate-probe.mjs [--scene=koi,pool]` plays seeded games
   twice, in frames of 1/60 s and in frames of 1/60, 1/45, 1/120 and 1/50 s,
   and checks they end the same, exactly: every thing thrown (its place, turn,
@@ -1720,7 +1789,8 @@ farther out, so it rises into the view rather than filling its corner.
   draw of `Math.random`. The scenes: throws among the lake's fish and more
   floaters than Low keeps; a break through thin ice, a stone into its hole, a
   brick slid and a pebble onto a shard; the koi and their food; the pool with
-  more stones than Low keeps at rest. Nothing is drawn
+  more stones than Low keeps at rest; Loch Ness past its first sighting
+  (whatever is out there must be where it was, as far up). Nothing is drawn
   (`__pond.stepFrames`), so the floaters' ride, read back from the drawn
   water, is left out.
 - `node tools/grab-probe.mjs` takes seeded throws in hand in each state they
