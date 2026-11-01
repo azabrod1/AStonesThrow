@@ -1007,7 +1007,8 @@ export class IceSheet {
    * tips off, sliding towards the hole's middle as fast as takes its weight a
    * step past the edge against its slowing on the ice (src/rock.js
    * groundSlowing: the ice's, or a toy slide's own scrape, so it tips in
-   * rather than stopping on the rim; loseGround: over the hole it falls in). Its weight is worked out only by a hole.
+   * rather than stopping on the rim; loseGround: over the hole it falls
+   * in). Its weight is worked out only by a hole.
    * Whether it tipped.
    */
   tipAtEdge(rock) {

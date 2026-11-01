@@ -168,12 +168,19 @@ try {
   const staleMirror = await swiss.evaluate(() => {
     const pond = window.__pond, gl = pond.renderer.getContext();
     pond.pause();
-    let state = 1;   // seeded as the shoot harness seeds its first throw (--seed=1)
+    // The thing chosen is remembered on the device (src/main.js setThing): put back after, so the reload below opens
+    // as it would have.
+    const chosen = pond.thing;
+    let state = 1;   // seeded as the shoot harness seeds its first throw (--seed=1), Math.random put back whatever happens
     const random = Math.random;
     Math.random = () => { state = (state * 16807) % 2147483647; return (state - 1) / 2147483646; };
-    pond.setThing('slide');
-    const slide = pond.throwAt(0, -1.4, { power: 'hard' });
-    Math.random = random;
+    let slide;
+    try {
+      pond.setThing('slide');
+      slide = pond.throwAt(0, -1.4, { power: 'hard' });
+    } finally {
+      Math.random = random;
+    }
     pond.advance(1);
     const whole = () => { pond.setFov(pond.camera.fov); pond.advance(0); };   // the view set again: the mirror drawn whole
     whole();
@@ -189,6 +196,7 @@ try {
     }
     const result = { state: slide.state, differ };
     pond.clear();
+    pond.setThing(chosen);
     pond.resume();
     return result;
   });
