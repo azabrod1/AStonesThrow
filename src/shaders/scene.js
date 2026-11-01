@@ -1879,6 +1879,7 @@ void main() {
   // dropRings.js: the little rings a splash's drops leave where they land).
   float gust = gustEnvelope(vWorld.xz, uGustTime);
   float subGridSpread = uRoughness * uRoughness;
+  float visitorVariance = 0.0;   // the thing in the loch's unresolved slope, for the mirror's spread (below)
 #ifdef CAVITY_MESH
   // The mesh's normal, tilted by the surface's slopes where the mesh rides
   // the surface (its own normal is the lip's shape on still water). The
@@ -1921,6 +1922,7 @@ void main() {
     vec3 visitor = visitorSlope(vWorld.xz, acrossX, acrossY);
     slope += visitor.xy;
     slopeVariance += visitor.z;
+    visitorVariance = visitor.z;
   }
   float galeJacobian = 1.0;
   if (uGaleMetresPerUnit > 0.0) {
@@ -2023,6 +2025,18 @@ void main() {
   vec3 reflected;
   if (uMirrorNear.x > uMirrorNear.z) reflected = texture2D(uReflection, clamp(reflectUv, vec2(0.002), vec2(0.998))).rgb;
   else reflected = nearReflection(reflectUv, reflectedRay);
+  // The thing in the loch's waves too fine for the pixel (src/shaders/visitor.js) spread the reflected ray over about
+  // twice their rms slope, as the ice's frost does; at a grazing angle the rays turned down meet the next crest, so the
+  // spread climbs (by its width): far out, a wake shows as a V of paler, duller water across the far shore's image.
+  // The sun's share is the glitter's (held to ICE_FROST_SKY of the sky's mean, as the frost's is).
+  if (visitorVariance > 1e-4) {
+    float visitorSpread = 2.0 * sqrt(visitorVariance);
+    vec3 spreadRay = normalize(vec3(reflectedRay.x, reflectedRay.y + visitorSpread * length(reflectedRay.xz), reflectedRay.z));
+    vec3 spreadSky = textureCubeLodEXT(uSkyCube, spreadRay, clamp(log2(max(visitorSpread * ICE_FROST_LEVELS, 1.0)), 0.0, ICE_FROST_COARSEST)).rgb;
+    float spreadLuminance = dot(spreadSky, vec3(0.2126, 0.7152, 0.0722)), skyMean = dot(uSkyAmbient, vec3(0.2126, 0.7152, 0.0722));
+    spreadSky *= min(1.0, ICE_FROST_SKY * skyMean / max(spreadLuminance, 1e-6));
+    reflected = mix(reflected, spreadSky, smoothstep(0.03, 0.2, visitorSpread));
+  }
 
 #ifdef CAVITY_MESH
   reflected = mix(refracted, reflected, escapes);

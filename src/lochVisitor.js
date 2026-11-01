@@ -49,7 +49,9 @@
 // The body is a tube along a spine of SPINE_POINTS (its radius by form,
 // head to tail, an ellipse across, wider than deep, lumpy by a few
 // per cent from the sighting's seed, a row of low knobbles along its back),
-// its frame keeping its back up, its points moved and its normals taken
+// its frame keeping its back up. Its seeded cross sections are cached once
+// per sighting (prepareSkin); only their transforms and normals are rebuilt
+// per frame (buildSkin). Its points are moved and its normals taken
 // from the grid once a frame on the CPU while any of it is within reach of the
 // surface: SPINE_POINTS × AROUND vertices (its colours once a sighting).
 // Three meshes draw it, as a boulder's do (src/boulders.js sceneryShader):
@@ -279,6 +281,7 @@ export class LochVisitor {
       uVisitorReach: { value: new THREE.Vector4() },
     };
     this.geometry = this.buildGeometry();
+    this.skinOffsets = new Float64Array(SPINE_POINTS * RING * 2);
     this.hideMap = hideTexture();
     this.skin = { churn: { value: 0 } };   // the waterline's foam band (above)
     this.above = new THREE.Mesh(this.geometry, this.material('above', { envTexture, waterFog }));
@@ -570,7 +573,6 @@ export class LochVisitor {
       knot.roll = sighting.roll * Math.sin(sighting.rollRate * elapsed * Math.PI * 2 * 0.25 + share);
     }
     if (neckLength > 0) this.liftNeck(sighting, time, neckLift);
-    this.frames();
     // Deeper than half a metre all over, nothing of it shows through the peat.
     this.bounds.makeEmpty();
     for (const knot of this.spine) {
@@ -579,9 +581,10 @@ export class LochVisitor {
     }
     this.bounds.expandByScalar(sighting.girth * 1.3);
     if (highest < -0.6) return highest;
+    this.frames();
     this.skin.churn.value = Math.min(sighting.speed / 1.2, 1) * emergence(sighting, time, 0);
     if (this.coloured !== sighting) this.colour(sighting);
-    this.buildSkin(sighting);
+    this.buildSkin();
     return highest;
   }
 
@@ -677,17 +680,18 @@ export class LochVisitor {
       }
     }
     this.geometry.attributes.uv.needsUpdate = true;
+    this.prepareSkin(sighting);
     this.coloured = sighting;
   }
 
   /**
-   * The tube round the spine: an ellipse across, wider than deep, lumpy by
-   * the sighting's seed, a row of low knobbles along the top of the back
-   * (KNOBBLES); its normals from its faces, the seam's two columns given
-   * one.
+   * Cache the tube's cross sections once per sighting: radius, flattening,
+   * seeded lumps and knobbles do not change with time. The spine's frame
+   * carries their roll and motion. Float64 retains the original arithmetic
+   * until buildSkin writes the GPU's Float32 positions.
    */
-  buildSkin(sighting) {
-    const positions = this.geometry.attributes.position.array;
+  prepareSkin(sighting) {
+    const offsets = this.skinOffsets;
     const lumps = sighting.lumpPhases;
     const knobbled = sighting.neckLength > 0 ? sighting.neckLength + 0.4 : sighting.headLength + 0.3;   // from the shoulders back
     for (let along = 0; along < SPINE_POINTS; along++) {
@@ -703,10 +707,25 @@ export class LochVisitor {
           + 0.03 * Math.sin(41 * share + 3 * angle + lumps[2]) + 0.02 * Math.sin(7 * angle + 53 * share + lumps[3]);
         const knobble = knobbleRow * Math.max(sin, 0) ** KNOBBLES.top;
         const across = knot.radius * lump / Math.sqrt(knot.flat), up = knot.radius * lump * knot.flat + knobble;
-        const offset = (along * RING + around) * 3;
-        positions[offset] = knot.point.x + knot.binormal.x * cos * across + knot.normal.x * sin * up;
-        positions[offset + 1] = knot.point.y + knot.binormal.y * cos * across + knot.normal.y * sin * up;
-        positions[offset + 2] = knot.point.z + knot.binormal.z * cos * across + knot.normal.z * sin * up;
+        const offset = (along * RING + around) * 2;
+        offsets[offset] = cos * across;
+        offsets[offset + 1] = sin * up;
+      }
+    }
+  }
+
+  /** Transform the sighting's cached cross sections by this frame's spine, then rebuild normals. */
+  buildSkin() {
+    const positions = this.geometry.attributes.position.array;
+    const offsets = this.skinOffsets;
+    for (let along = 0; along < SPINE_POINTS; along++) {
+      const knot = this.spine[along];
+      for (let around = 0; around < RING; around++) {
+        const vertex = along * RING + around, offset = vertex * 3;
+        const across = offsets[vertex * 2], up = offsets[vertex * 2 + 1];
+        positions[offset] = knot.point.x + knot.binormal.x * across + knot.normal.x * up;
+        positions[offset + 1] = knot.point.y + knot.binormal.y * across + knot.normal.y * up;
+        positions[offset + 2] = knot.point.z + knot.binormal.z * across + knot.normal.z * up;
       }
     }
     this.geometry.attributes.position.needsUpdate = true;

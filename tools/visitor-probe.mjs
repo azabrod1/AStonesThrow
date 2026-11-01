@@ -18,6 +18,7 @@
 //   FRAME_BUDGET milliseconds on this machine.
 //
 //   node tools/visitor-probe.mjs
+import { createHash } from 'node:crypto';
 import { LochVisitor, SCHEDULE } from '../src/lochVisitor.js';
 
 const STEP = 1 / 240;          // src/rock.js PHYSICS_STEP
@@ -134,7 +135,7 @@ function run(seconds, { frame = 1 / 60, things = () => [], open = () => true, on
         for (const moment of moments) {
           if (Math.abs(time - moment) < 0.5 / fps && !record.some((entry) => entry.moment === moment)) {
             visitor.showAt(moment);
-            record.push({ moment, pose: visitor.spine.map((knot) => [knot.point.x, knot.point.y, knot.point.z].map((value) => value.toFixed(6)).join()).join(';'), report: JSON.stringify(visitor.report(moment)) });
+            record.push({ moment, pose: visitor.spine.map((knot) => [knot.point.x, knot.point.y, knot.point.z].map((value) => value.toFixed(6)).join()).join(';'), skin: visitor.above.visible || visitor.below.visible ? createHash('sha256').update(Buffer.from(visitor.geometry.attributes.position.array.buffer)).update(Buffer.from(visitor.geometry.attributes.normal.array.buffer)).digest('hex') : null, report: JSON.stringify(visitor.report(moment)) });
           }
         }
       },
@@ -142,7 +143,7 @@ function run(seconds, { frame = 1 / 60, things = () => [], open = () => true, on
     poses[fps] = { record: JSON.stringify(record), sightings: JSON.stringify(sightings.map((sighting) => [sighting.form, sighting.at, sighting.startX, sighting.startZ])) };
   }
   check(poses[30].sightings === poses[60].sightings && poses[60].sightings === poses[144].sightings, 'the same sightings at 30, 60 and 144 frames a second');
-  check(poses[30].record === poses[60].record && poses[60].record === poses[144].record, 'and the same pose at the same moments');
+  check(poses[30].record === poses[60].record && poses[60].record === poses[144].record, 'and the same spine, skin and normals at the same moments');
 }
 
 console.log(failures === 0 ? 'visitor-probe: all passed' : `visitor-probe: ${failures} failed`);

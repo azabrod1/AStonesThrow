@@ -18,7 +18,7 @@
 //   wave (θ < 35.26°) and the diverging one, none outside. With t = tan θ,
 //   2 tan(α) t² − t + tan(α) = 0, so t = (1 ± √(1 − 8 tan² α)) / (4 tan α),
 //   whose two roots multiply to ½. Each has wavenumber k = g / (U² cos² θ)
-//   and phase k (b cos θ + |y| sin θ), whose gradient is the wave vector.
+//   and phase k (b cos θ − |y| sin θ), whose gradient is the wave vector.
 //   Its height falls as 1 / √b and rises toward the cusp, where the two
 //   merge (as (1 − 8 tan² α)^(−¼), capped: an Airy front), and a source at
 //   depth d under the surface raises a wave of wavenumber k only as e^(−kd)
@@ -47,10 +47,12 @@
 //
 // Each wave is filtered by the pixel's footprint on the water (acrossX,
 // acrossY), as the rings' and the ripples' are: what is finer than a pixel
-// is averaged away, and its slope variance goes to the glitter's roughness,
-// so a wake too fine to resolve (from the shore, far out, a wavelength of a
-// metre is less than a pixel deep) still shows as a V of brighter, rougher
-// water.
+// is averaged away, and its slope variance goes to the glitter's roughness
+// and spreads the mirror (WATER_FRAGMENT: the sky cube blurred over twice
+// its rms slope and climbing by as much, as the ice's frost is), so a wake
+// too fine to resolve (from the shore, far out, a wavelength of a metre is
+// less than a pixel deep) still shows as a V of paler, duller water across
+// the far shore's image, as a wake far out on a lake does.
 //
 // Foam: churned round each contact and trailing behind it, and over a
 // breach's first seconds, added to the water's own foam as lace that thins
@@ -133,8 +135,8 @@ vec3 visitorKelvin(vec2 point, vec2 acrossX, vec2 acrossY) {
     float ago = behind / (speed * (1.0 - 0.5 * cosSquared));
     float strength = visitorStrengthAgo(ago) * exp(-waveNumber * sinkDepth);
     if (strength < 1e-4) continue;
-    float phase = waveNumber * (behind * cosTheta + across * sinTheta);
-    vec2 waveVector = waveNumber * (cosTheta * -heading + sinTheta * sign(side) * sideways);
+    float phase = waveNumber * (behind * cosTheta - across * sinTheta);
+    vec2 waveVector = waveNumber * (cosTheta * -heading - sinTheta * sign(side) * sideways);
     result += visitorWave(height * strength, phase, waveVector, acrossX, acrossY);
   }
   return result;
@@ -154,7 +156,7 @@ vec3 visitorRings(vec2 point, vec2 acrossX, vec2 acrossY) {
     float cut = waveNumber * VISITOR_RING_SIZE;
     float height = ring.w * VISITOR_GRAVITY * timeSquared / (4.0 * radius * radius * radius) * exp(-cut * cut) * smoothstep(0.8, 3.0, phase);
     if (height < 1e-5) continue;
-    result += visitorWave(height, phase + 1.5707963, waveNumber * offset / radius, acrossX, acrossY);
+    result += visitorWave(height, phase + 1.5707963, -waveNumber * offset / radius, acrossX, acrossY);
   }
   return result;
 }

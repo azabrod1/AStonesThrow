@@ -1248,7 +1248,8 @@ neck and a small head lifted out of the water, turning slowly; one long
 low back that rolls as a log does but goes steadily on; or nothing above
 the water at all, only a wake. It is one dark, wet body (a tube along a
 spine, posed in closed form from the world's time, knobbled along its
-back, in a hide of folds, warts and pores, wet and dry patches and
+back, its seeded cross sections cached once per sighting and transformed
+by the moving spine each frame, in a hide of folds, warts and pores, wet and dry patches and
 blotches, laid in metres on it; wetter at the waterline and washed there
 with broken foam), drawn above the water, below it (where the peat-dark
 water hides it within a metre) and in the mirror. It is out
@@ -1268,9 +1269,12 @@ water heaped before each piece of it out of the water and drawn down
 behind (a capsule as long as the piece), the short capillary-gravity
 ripples its waterline sheds, running out from the capsule's outline; and
 foam hugging the waterline and trailing behind. Each is filtered by the pixel's footprint and
-what it averages away goes to the glitter's roughness, so from the shore,
-where a wave a metre long out there is less than a pixel deep, the wake
-shows as a line of rougher water, and zoomed in, as waves.
+what it averages away goes to the glitter's roughness and spreads the
+mirror (the sky cube blurred over twice its rms slope, as the ice's frost
+is), so from the shore, where a wave a metre long out there is less than a
+pixel deep, the wake shows as a pale line of rougher water across the far
+shore's image, and zoomed in, as waves. A frame's pose transforms cross
+sections cached once a sighting (about 0.3 ms, from 1 ms).
 `tools/visitor-probe.mjs` checks its schedule, its reach and that it goes
 alike at any frame rate.
 
@@ -1705,7 +1709,11 @@ farther out, so it rises into the view rather than filling its corner.
   comes within 36 m of the shore's eye; a thing out on the water holds a
   sighting back from its course and one that comes near sends it down at
   once; under ice or a gale nothing comes up; the same sightings and poses
-  at 30, 60 and 144 frames a second; and a frame's pose takes under 1.5 ms.
+  at 30, 60 and 144 frames a second (including the rendered skin and normals);
+  and a frame's pose takes under 1.5 ms.
+- `node tools/visitor-wave-probe.mjs` checks the actual shader's Kelvin and
+  breach-ring wave vectors against numerical derivatives of their phase:
+  both Kelvin branches, both sides of the track, multiple headings and speeds.
   `window.__pond.sightVisitor(form, { elapsed, distance, bearing, course })`
   brings one up at Loch Ness for the harness (`--eval`), and
   `__pond.visitor` says what it is doing.
