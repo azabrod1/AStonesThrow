@@ -39,14 +39,23 @@
 // Cost. The levels hold a twelfth of the frame's pixels between them, in
 // half floats (a 1170 × 2532 phone frame: 2 MB), and each pass reads a few
 // taps per pixel. The enlarging passes add into their level by blending, so
-// no level is held twice.
+// no level is held twice. What costs is not the pixels but the passes: the
+// chain stops at SMALLEST, four levels of a 2293 × 1133 frame (the last
+// 72 × 36, its texel about 5° of the view), because the three levels under
+// that, 36 × 18 to 9 × 5, six passes with a few hundred pixels between them,
+// took 2.1 ms of a 5.4 ms idle frame on an M5 Max in Chrome (the GPU timer
+// round the frame, each level skipped in turn: the passes' fixed cost, not
+// their work), and the frame with and without them is the same to the eye
+// (the sun's image in the water, 2× crops: the widest octaves' veil is
+// spread too thin to show, and their light goes to the levels built, the
+// weights normalised over those).
 import * as THREE from 'three';
 import { createFloatTarget, FullscreenPass } from './gpu.js';
 
 /** The share of the scene's light that is spread: a camera lens's stray light, a few percent. */
 export const GLARE_SHARE = 0.05;
-/** The last level is the first whose shorter side would fall under this many pixels if halved again. */
-const SMALLEST = 4;
+/** The last level is the first whose shorter side would fall under this many pixels if halved again (the header's Cost: the levels under this are passes for nothing). */
+const SMALLEST = 20;
 const FIRST_SCALE = 0.25;
 /** The CIE veil's terms for an eye of thirty with p = 1, in the order 1/θ³, 1/θ², 1/θ, 1 (θ in degrees). */
 const AGE_FACTOR = 1 + (30 / 62.5) ** 4;
