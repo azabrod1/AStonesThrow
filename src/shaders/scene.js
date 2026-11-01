@@ -1497,6 +1497,7 @@ varying vec2 vRest;            // where the point lies on still water (WATER_VER
 #ifdef CAVITY_MESH
 #define CAVITY_RIPPLE_CELL vec2(0.02, 0.005)   // m: the wall's ripples' cells around it and down it (WATER_FRAGMENT)...
 #define CAVITY_RIPPLE_SLOPE 0.12               // ...and their slope
+#define CAVITY_BOUNCE 0.6                      // the share of the sky a wall keeps of a ray it passes to the wall across and out (WATER_FRAGMENT)
 varying vec3 vNormalWorld;
 varying vec3 vCavity;       // rides the surface, open to the sky (the under-water view's), climb to escape (WATER_VERTEX)
 #endif
@@ -1976,6 +1977,11 @@ void main() {
   // on the lip (vCavity.z = 0) it is the open surface's.
   float climb = reflectedRay.y / max(length(reflectedRay.xz), 1e-3);
   float escapes = vCavity.z > 1e-4 ? smoothstep(0.7, 1.3, climb / vCavity.z) : 1.0;
+  // A ray that does not climb out meets the wall across at a grazing angle, where water reflects most of it, and
+  // climbs out from there (a hole is a hall of mirrors at grazing angles): it is looked up lifted to the climb that
+  // escapes, the sky it finds there kept by CAVITY_BOUNCE. Taken as the water seen through the wall across, the
+  // walls were a black lacquer; a real hole's walls are pale with the sky they pass round.
+  if (vCavity.z > 1e-4) reflectedRay.y = max(reflectedRay.y, 1.3 * vCavity.z * length(reflectedRay.xz));
 #endif
   reflectedRay.y = max(reflectedRay.y, 0.001);
   vec4 reflectCoord = uReflectionMatrix * vec4(reflectedRay, 0.0);
@@ -1988,14 +1994,14 @@ void main() {
 
 #ifdef CAVITY_MESH
   // Inside the hole the water is shaded as water is: what a wall reflects is
-  // the sky where its mirror ray climbs out of the mouth, and the wall across
-  // where it does not (which looks like the water seen through this one);
+  // the sky where its mirror ray climbs out of the mouth, and the sky its
+  // bounce off the wall across reaches where it does not (above, CAVITY_BOUNCE);
   // what it lets through is the pond's body behind it, lit through the open
   // surface all around as it always is, so it is dark where the water is deep
   // and shows the sand where it is shallow. Nothing darkens the hole further:
   // a hole shaded darker by its depth was a flat black pit, no water in it.
   // The sun reaches only the part of the wall it shines into.
-  reflected = mix(refracted, reflected, escapes);
+  reflected *= mix(CAVITY_BOUNCE, 1.0, escapes);
   vec3 color = mix(refracted, reflected, fresnel);
   float sunClimb = uSunDir.y / max(length(uSunDir.xz), 1e-3);
   float sunlit = vCavity.z > 1e-4 ? smoothstep(0.7, 1.3, sunClimb / vCavity.z) : 1.0;

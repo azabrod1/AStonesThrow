@@ -547,9 +547,10 @@ ${HAZE}
 #define WATER_SLOPE_VARIANCE 0.006   // the sheet's and the column's unresolved ripple, for their glitter...
 #define SHEET_ROUGH_VARIANCE 0.05    // ...plus this times their aeration (white water is rough water)
 #define COLUMN_INNER 0.35            // the share of a column's refracted light that is its mean light, carried round inside it (the header)
-#define DROP_INNER 0.2               // and a drop's
+#define DROP_INNER 0.1               // and a drop's (less: a drop's dark top is what makes it a glass bead)
 #define COLUMN_LENS 0.45             // a column's lens image: the scene behind, shifted by the ray's turn through it by this share of a far scene's shift...
-#define COLUMN_LENS_SCENE 0.7        // ...making this share of its refracted light (the rest the pond's model light)
+#define COLUMN_LENS_SCENE 0.7        // ...making this share of its refracted light (the rest the pond's model light)...
+#define COLUMN_LENS_WIDTH vec2(40.0, 120.0)   // ...on a column up to this many device pixels in radius, none from the second
 #define GLITTER_CAP 40.0
 ${MEAN_LIGHT}
 #define BEAD_FROM 0.5                // device-pixel radius at which a drop starts to be a glass bead...
@@ -691,11 +692,18 @@ void main() {
         refracted = max(exitLight + under * bodyExit * carry, 0.0) * absorbed;
         reflected = max(reflected + under * bodyReflected * carry, 0.0);
         if (column > 0.5) {
-          // The column's lens image (the header): the scene where the turned ray points, as far as the frame holds it.
+          // The column's lens image (the header): the scene where the turned ray points, as far as the frame holds
+          // it; not where the surface flares from the axis (the foot's trumpet, whose turn the tube's law does not
+          // give) nor on a column wider on screen than COLUMN_LENS_WIDTH (whose background is the lip and the foam
+          // close behind it, which a far scene's shift smears into panels).
           vec2 lensUv = vUv + (exitView.xy / max(-exitView.z, 0.05) - eye.xy / max(-eye.z, 0.05)) * uProjScale * uFluidTexel * COLUMN_LENS;
           float held = step(0.0, lensUv.x) * step(lensUv.x, 1.0) * step(0.0, lensUv.y) * step(lensUv.y, 1.0);
+          vec3 axisView = vec3(uCameraWorld[0].y, uCameraWorld[1].y, uCameraWorld[2].y);
+          float tube = 1.0 - smoothstep(0.3, 0.7, abs(dot(normal, axisView)));
+          float widthPixels = 0.5 * thickness / max(normal.z, 0.3) * uProjScale / info.r / uFluidScale;
+          float narrow = 1.0 - smoothstep(COLUMN_LENS_WIDTH.x, COLUMN_LENS_WIDTH.y, widthPixels);
           vec3 lensScene = texture2D(uScene, clamp(lensUv, vec2(0.001), vec2(0.999))).rgb;
-          refracted = mix(refracted, lensScene * absorbed, COLUMN_LENS_SCENE * held);
+          refracted = mix(refracted, lensScene * absorbed, COLUMN_LENS_SCENE * held * tube * narrow);
         }
         // The light carried round inside the lens (the header).
         refracted = mix(refracted, meanLight, mix(DROP_INNER, COLUMN_INNER, column));

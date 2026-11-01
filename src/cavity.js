@@ -158,7 +158,11 @@
 // axis outward, CAP_ROWS of a flat floor at the bottom (the stone's centre,
 // which sits on it and shows through it, or the closing point once it has
 // pinched), WALL_ROWS up the wall (TOP_SHARE of them in the top TOP_SPAN·R,
-// the part the camera sees), then the lip's inner face, its outer fall and a
+// the part the camera sees; once the hole has pinched the wall curves into
+// its bottom as a quarter ellipse over FLOOR_ROUND of the bowl's depth, a
+// cup, since the slices just over the rising floor, still near their widest
+// in the model above, drew a flat floor with a step round it, a tabletop
+// sunk in the water), then the lip's inner face, its outer fall and a
 // flat apron out to where the surface takes over. It is built in world
 // coordinates once per rendered frame (updateGeometry) and drawn in the main
 // scene with the water shader's CAVITY_MESH variant (src/shaders/scene.js,
@@ -273,6 +277,7 @@ const ROWS = CAP_ROWS + WALL_ROWS + LIP_INNER_ROWS + LIP_FALL_ROWS + LIP_APRON_R
 const TOP_SPAN = 2.5;              // in R: the top of the wall, which the camera sees...
 const TOP_SHARE = 0.6;             // ...gets this share of the wall's rows
 const TOP_POWER = 1.3;             // crowded towards the surface
+const FLOOR_ROUND = 0.6;           // once pinched, the bowl's bottom is rounded (a quarter ellipse) over this share of its depth: a cup, not a flat-floored dish
 const DARKEST_MOUTH = 0.15;        // in R: the narrowest mouth the occlusion and escape take
 const FACING_HOLE = 0.002;         // the least climb to escape the wall and the lip's inner face hand the shader (any ray going up)
 const OCCLUSION_DEPTH = 0.5;       // in mouth radii: the depth at which the hole sees half the sky it sees at its mouth
@@ -991,6 +996,13 @@ export class Cavity {
       if (bottom <= 0) rowRadius = mouth;
       else if (wallRow === 0) rowRadius = bottomRadius;
       else rowRadius = depth <= 0 ? mouth : this.radiusAt(depth, age);
+      if (pinched && bottom > 0 && rowRadius > 0) {
+        // The bowl's bottom is rounded (the header): the slices just over its floor, still near their widest in the
+        // model, drew a flat floor with a step at its edge, a tabletop sunk in the water; a cup's walls curve into
+        // its bottom.
+        const up = (bottom - depth) / (FLOOR_ROUND * bottom);
+        if (up < 1) rowRadius *= Math.sqrt(Math.max(1 - (1 - up) * (1 - up), 0));
+      }
       this.sliceCentre(depth, centre);
       if (bottom <= 0 || depth <= 0) { centre.x = mouthX; centre.z = mouthZ; }
       if (!pinched && !truncated && wallRow === 0) { centre.x = this.stone.x; centre.z = this.stone.z; }

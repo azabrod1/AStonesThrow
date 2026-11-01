@@ -58,7 +58,7 @@
 // crowd where its sides turn, FINGER_SPOTS). L is FINGER_LENGTH times a
 // reach of the finger's own, FINGER_REACH times a gamma draw of order 4
 // (gammaFactor) to the power FINGER_REACH_POWER: a broad spread, most
-// fingers near the mean, a few twice it and more, and about a quarter,
+// fingers under the mean, a few twice it and more, and about a quarter,
 // whose reach falls under FINGER_STUNTED, stubs of FINGER_STUB of it that
 // never grew (a real rim's spikes are of wildly uneven length). A finger
 // is a ligament, a round rod of water, not a tongue of film: besides the
@@ -196,9 +196,10 @@
 // crown's at LANDING_BREAK·T. It tears from the rim down to the water along a
 // ragged front, over 0.6·t_break, the raggedness varying smoothly around the
 // ring (three lobes and TEAR_MODES at random phases), so the torn edge is a
-// curve; on a stone's crown the arcs between the fingers tear first and the
-// fingers last, at the slowest pace, as a rim's webs open between its
-// ligaments.
+// curve, and fading as the front nears the foot (TEAR_EVEN), so the columns
+// finish together and none is left as a sliver on the lip; on a stone's
+// crown the arcs between the fingers tear first and the fingers last, at
+// the slowest pace, as a rim's webs open between its ligaments.
 // The torn part becomes droplets that carry the local (decayed) sheet
 // velocity, each holding the volume of the patch of sheet it came from, so the
 // drops come out about the size the sheet's thickness implies, between
@@ -352,7 +353,8 @@ const LANDING_DROP_CAP = 0.25;     // ...into drops of at most this many landing
 const ROW_POWER = 1.8;             // crowds main-launch rows towards the rim bead
 const MAIN_SHARE = 0.7;            // fraction of the tear front's travel spent on the main launch
 const TAIL_DECAY = 0.45;           // tail launch speed decays over this many T
-const TEAR_MODES = [7, 11, 17];    // the tear front's raggedness around the ring, besides its three lobes
+const TEAR_MODES = [7, 11, 17];    // the tear front's raggedness around the ring, besides its three lobes...
+const TEAR_EVEN = 1.5;             // ...fading as (1 − progress) to this power as the tear nears the foot, so the columns finish together
 const CARRY = [0, 1.2];            // a stone crown's material rides the lip out as the mouth widens, by smoothstep over these many T of its launch (the rim not at all)...
 const TAIL_FEED = 2.5;             // ...and its tail is fed for this many T after the main launch (later it would leave at nothing)
 const CROWN_SPEED = [0.36, 0.26];  // a stone's crown leaves at these shares of V, first to last of the main launch...
@@ -397,7 +399,7 @@ const FINGER_WIDTH = 0.035;        // ...each this many mean spacings wide eithe
 const FINGER_BREADTH = [0.6, 1.4]; // ...times a share in this range, finger by finger...
 const FINGER_LENGTH = 0.15;        // ...its rim's material faster by up to this share...
 const FINGER_REACH = 0.85;         // ...times this times a gamma draw of order 4 (gammaFactor)...
-const FINGER_REACH_POWER = 1.5;    // ...to this power, finger by finger: a broad spread, a few fingers twice the mean and more...
+const FINGER_REACH_POWER = 2;      // ...to this power, finger by finger: a broad spread, a few fingers twice the mean and more...
 const FINGER_STUNTED = 0.45;       // ...and a finger whose reach falls under this (about a quarter) is a stub...
 const FINGER_STUB = 0.3;           // ...this much of it: a bump on the rim that never grew
 const FINGER_SQUARENESS = 4;       // ...by (1 − |x|^this)^FINGER_POWER across it: a flat, round end on steep sides...
@@ -1361,7 +1363,11 @@ export class CrownSheet {
     let sweptArea = 0;
     let untornArea = 0;
     for (let column = 0; column < this.columns; column++) {
-      const fraction = Math.min(progress * this.columnTearPace[column], 1);
+      // The front's raggedness (the column's pace) fades as the tear nears the foot (TEAR_EVEN), so every column
+      // finishes with the last: a column slower than its neighbours was left standing as a sliver of sheet, a pane
+      // of glass on the lip, after they were gone.
+      const pace = 1 + (this.columnTearPace[column] - 1) * (1 - progress) ** TEAR_EVEN;
+      const fraction = Math.min(progress * pace, 1);
       const target = Math.max(Math.min(this.sheetTau(fraction, end), end), this.tearFront[column]);
       this.tearTarget[column] = target;
       const swept = this.columnArea(column, this.tearFront[column], target);
