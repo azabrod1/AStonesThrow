@@ -439,6 +439,7 @@ const DECK_DROPS = { wallInset: 0.004, wall: 0.3, splatterFrom: 0.0015, splatter
 // A knocked floater's spray (knock): drops per m/s, at most, their spread about the knock's direction, its lift, their radii (m).
 const KNOCK = { drops: 14, most: 70, spread: 0.7, lift: 0.4, radius: [0.0006, 0.0018] };
 const HAZE_RADIUS = 0.5;             // device pixels: finer drops are mist (src/shaders/fluid.js)
+const STREAK_CAP = 1 / 400;          // s: the longest a drop's motion streak is exposed for (setFrameSeconds)
 const MIRROR_PAD = 0.05;              // metres around what is mirrored: drawn radii, streaks, a landing crown's ride
 const MIRROR_DROP_RADIUS = 0.002;     // finer drops are left out of the mirror: their images there are under a pixel
 
@@ -977,6 +978,7 @@ export class SplashSystem {
       uRefract: { value: 1.4 },
       uFluidScale: { value: 1.0 },
       uProjScale: { value: 1000 },
+      uFluidTexel: { value: new THREE.Vector2(1 / 512, 1 / 512) },
       ...(environment.hazeUniforms ?? { uHazeColor: { value: new THREE.Vector3() }, uHazeDensity: { value: 0 } }),   // the weather's haze (src/sky.js)
     });
     this.toneMapPass = new FullscreenPass(TONE_MAP_FRAGMENT, { uScene: { value: null }, uGlare: { value: null }, uGlareShare: { value: 0 }, uExposure: { value: lighting.exposure }, uNight: { value: 0 } });
@@ -2086,18 +2088,22 @@ export class SplashSystem {
     composite.uNight.value = this.lighting.night ?? 0;
     composite.uFluidScale.value = this.fluidScale;
     composite.uProjScale.value = projScale;
+    composite.uFluidTexel.value.set(1 / this.fluidSize.x, 1 / this.fluidSize.y);
     this.compositePass.render(renderer, output);
   }
 
   /**
    * The simulated length of the frame about to be stepped, given before its
    * substeps: the crown's tear and the jet's breakup advance once per frame,
-   * and the motion streaks follow it (shutter ≈ half a frame).
+   * and the motion streaks follow it (shutter ≈ half a frame, at most
+   * STREAK_CAP: a camera in daylight exposes for a few thousandths of a
+   * second and freezes a splash's drops, where half a 60 Hz frame drew every
+   * sunlit drop as a white dash, a scratch across the picture).
    */
   setFrameSeconds(seconds) {
     this.frameSeconds = seconds;
     this.frameEnd = this.time + seconds;
-    this.streakSeconds = seconds * 0.5;
+    this.streakSeconds = Math.min(seconds * 0.5, STREAK_CAP);
   }
 
   /** After the sky changes the sun (src/sky.js): the sand's light that the splash's water sees the pond's floor by. */

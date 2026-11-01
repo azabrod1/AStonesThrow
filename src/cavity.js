@@ -177,7 +177,10 @@
 // would fold where the ring's trough under it is deeper than its rows are
 // apart), how open
 // to the sky it is (1 / (1 + (depth / (OCCLUSION_DEPTH·mouth))²): the
-// occlusion that darkens the hole towards its bottom) and how steeply a ray
+// occlusion that dims the sky the under-water view sees up through the hole
+// towards its bottom; seen from above the hole is shaded as water, its
+// walls reflecting the sky where their mirror rays climb out, and nothing
+// darkens it further, src/shaders/scene.js) and how steeply a ray
 // must climb to leave through the mouth (half the depth over the mouth's
 // radius; on the lip's inner face, any upward ray, while a downward one
 // meets the hole).

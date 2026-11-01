@@ -53,16 +53,27 @@
 // spacing, times FINGER_BREADTH finger by finger, wide either side of its
 // axis at its root: the rim's material there (launched within FINGER_ROOT·T
 // of the rim) flies faster by L·(1 − |x|^FINGER_SQUARENESS)^FINGER_POWER (x
-// across the finger, −1 to 1 root to root; L from 0.3 to 1.3 times
-// FINGER_LENGTH, finger by finger, and a finger whose share falls under
-// FINGER_STUNTED, about one in seven, a stub of FINGER_STUB of it that never
-// grew), so a finger grows out of the rim as the sheet flies, a tongue with
-// steep sides and a round end whose root merges into the sheet below (its
-// columns crowd where its sides turn, FINGER_SPOTS); across an arc between
-// two, the rim's material is slower by its own sag times sin(π·s) (s from
-// one root to the next; ARC_SAG times ARC_SAG_RANGE, arc by arc), a shallow
-// scallop. A real crown's fingers are no comb: an evenly spaced row of equal
-// fingers read as made. The fingers' spacing is the Rayleigh–Taylor
+// across the finger, −1 to 1 root to root), so a finger grows out of the rim
+// as the sheet flies, its root merging into the sheet below (its columns
+// crowd where its sides turn, FINGER_SPOTS). L is FINGER_LENGTH times a
+// reach of the finger's own, FINGER_REACH times a gamma draw of order 4
+// (gammaFactor) to the power FINGER_REACH_POWER: a broad spread, most
+// fingers near the mean, a few twice it and more, and about a quarter,
+// whose reach falls under FINGER_STUNTED, stubs of FINGER_STUB of it that
+// never grew (a real rim's spikes are of wildly uneven length). A finger
+// is a ligament, not a tongue of film (shapeFinger): from its root, where
+// it is as wide as its columns, it tapers to FINGER_TIP of that width at its
+// tip, and along it run varicose bulges, FINGER_WAVES[0] to FINGER_WAVES[1]
+// waves finger by finger in its material (they ride out with it as it
+// stretches), swelling to ±FINGER_BULGE over FINGER_BULGE_TIME (the
+// Rayleigh–Plateau beading of a ligament, which a real finger shows as a
+// chain of unequal beads behind the drop on its tip); its water thins with
+// its width. Across an arc between two, the rim's material is slower by its
+// own sag times sin²(π·s) (s from one root to the next; ARC_SAG times
+// ARC_SAG_RANGE, arc by arc), a scallop that leaves each root level and dips
+// between: with sin(π·s) the rim left every root at a slope and the arcs
+// read as a zigzag of straight edges. A real crown's fingers are no comb:
+// an evenly spaced row of equal fingers read as made. The fingers' spacing is the Rayleigh–Taylor
 // wavelength of the decelerating rim, ∝ sqrt(σ/(ρ·a)), and the deceleration a
 // ∝ u/τd goes as 1/R, so the spacing grows as sqrt(R) while the rim's length
 // grows as R: a stone s = R / 3 cm times the size has sqrt(s) times as many
@@ -155,7 +166,9 @@
 // FROTH_OPEN_FLOOR rising to 1 with the violence, times FROTH_OPEN_EARLY
 // rising to 1 as the tear nears (from half its time); none on a dome until
 // it bursts. Its place on the sheet (aSheet) is its material's: its azimuth
-// as cos θ and sin θ times the launch ring (1.2·R) in cells of FROTH_CELL,
+// as cos θ and sin θ times the launch ring (1.2·R) in cells of
+// FROTH_CELL·sqrt(s) (a thick sheet's holes are bigger: a rock's sheet
+// pierced by hundreds of a pebble's holes read as a sieve),
 // and its launch time in FROTH_ALONG·sqrt(s) cells a launch window, from a
 // start drawn from the tear's phase (so the froth spends no draw of
 // Math.random), so the holes and the froth ride and stretch with the water,
@@ -367,19 +380,24 @@ const MAIN_AMPLITUDE = 0.05;       // deeper turns the scallops into petals
 const FINE_AMPLITUDE = 0.05;
 const FINGERS = 15;                // a 3 cm stone's crown's fingers, times sqrt(R / 3 cm)...
 const FINGER_JITTER = 0.5;         // ...each spacing off the mean by up to this share of it...
-const FINGER_WIDTH = 0.035;        // ...each this many mean spacings wide either side of its axis at its root...
+const FINGER_WIDTH = 0.1;          // ...each this many mean spacings wide either side of its axis at its root (about the rim bead's width: a ligament is as thick as the rim it grew from)...
 const FINGER_BREADTH = [0.6, 1.4]; // ...times a share in this range, finger by finger...
 const FINGER_LENGTH = 0.15;        // ...its rim's material faster by up to this share...
-const FINGER_REACH = [0.3, 1.3];   // ...times a share in this range, finger by finger...
-const FINGER_STUNTED = 0.45;       // ...and a finger whose share falls under this is a stub...
+const FINGER_REACH = 0.85;         // ...times this times a gamma draw of order 4 (gammaFactor)...
+const FINGER_REACH_POWER = 1.5;    // ...to this power, finger by finger: a broad spread, a few fingers twice the mean and more...
+const FINGER_STUNTED = 0.45;       // ...and a finger whose reach falls under this (about a quarter) is a stub...
 const FINGER_STUB = 0.3;           // ...this much of it: a bump on the rim that never grew
 const FINGER_SQUARENESS = 4;       // ...by (1 − |x|^this)^FINGER_POWER across it: a flat, round end on steep sides...
 const FINGER_POWER = 0.75;
 const FINGER_ROOT = 0.12;          // ...for the material launched within this many T of the rim
+const FINGER_TIP = 0.55;           // a finger tapers to this share of its root's width at its tip (shapeFinger)...
+const FINGER_WAVES = [1, 3];       // ...with this many varicose waves along it, finger by finger...
+const FINGER_BULGE = 0.45;         // ...swelling its width by up to this share either way...
+const FINGER_BULGE_TIME = 0.03;    // ...over this many seconds of the sheet's age (the beading grows)
 const ARC_SAG = 0.03;              // the rim between two fingers sags by this share of its speed at the arc's middle...
 const ARC_SAG_RANGE = [0.3, 1.7];  // ...times a share in this range, arc by arc
 const FINGER_SPOTS = [-1, -0.88, -0.55, 0, 0.55, 0.88, 1];   // grid columns across a finger (x, root to root), denser where its sides turn...
-const ARC_COLUMNS = 3;             // ...and inside an arc
+const ARC_COLUMNS = 7;             // ...and inside an arc (enough that a scallop is a curve, not a zigzag)
 const FINGER_LEAN = 1.2;           // a finger's normal leans across it by this much at its sides (a rod's)
 const BEAD_RIM = 0.95;             // a finger's bead grows to a drop this many times the rim's thickness in radius...
 const BEAD_JITTER = 0.35;          // ...give or take this share, drop by drop
@@ -389,7 +407,7 @@ export const FROTH_SPEED = 6.3;    // m/s: the entry speed a sheet's violence is
 const FROTH_GAIN = 0.12;           // a 3 cm stone's sheet at that speed: its violence...
 export const FROTH_POWER = 1.3;    // ...going as (s·(V / FROTH_SPEED)²)^this...
 const FROTH_MOST = 1.5;            // ...at most this
-const FROTH_CELL = 0.006;          // m: the holes' cells around the ring as it is launched (1.2·R)...
+const FROTH_CELL = 0.006;          // m: the holes' cells around the ring as it is launched (1.2·R), times sqrt(s)...
 const FROTH_ALONG = 8;             // ...and along the sheet, this many over the main launch, times sqrt(s)
 const FROTH_FLOOR = 0.35;          // a sheet's whiteness: its violence times this as it leaves, rising to its violence as it thins
 const FROTH_OPEN = 0.55;           // the share of a sheet holes open as it thins away: at most this...
@@ -498,13 +516,16 @@ function layFingers(fingerScale) {
   let angle = randomRange(0, Math.PI * 2);
   return spacings.map((spacing, index) => {
     const breadth = randomRange(FINGER_BREADTH[0], FINGER_BREADTH[1]);
-    const reach = randomRange(FINGER_REACH[0], FINGER_REACH[1]);
+    const reach = FINGER_REACH * gammaFactor(Math.random) ** FINGER_REACH_POWER;
     const finger = {
       angle,
       halfWidth: FINGER_WIDTH * meanSpacing * breadth,
       length: FINGER_LENGTH * (reach < FINGER_STUNTED ? FINGER_STUB * reach : reach),
-      // The arc after it sags its own way: a share drawn from its axis, which spends no draw of Math.random.
+      // The arc after it sags its own way, and its beading has waves and a phase of its own: shares drawn
+      // from its axis, which spend no draw of Math.random.
       sag: ARC_SAG * (ARC_SAG_RANGE[0] + (ARC_SAG_RANGE[1] - ARC_SAG_RANGE[0]) * angleHash(angle)),
+      waves: FINGER_WAVES[0] + (FINGER_WAVES[1] - FINGER_WAVES[0]) * angleHash(angle + 1.7),
+      wavePhase: Math.PI * 2 * angleHash(angle + 3.9),
       column: index * (FINGER_SPOTS.length + ARC_COLUMNS) + (FINGER_SPOTS.length - 1) / 2,
     };
     angle += (spacing / total) * Math.PI * 2;
@@ -678,7 +699,7 @@ export class CrownSheet {
     // placed by the tear's phase so it costs no draw of its own.
     this.violence = Math.min(FROTH_GAIN * (this.sizeFactor * (speed / FROTH_SPEED) ** 2) ** FROTH_POWER, FROTH_MOST);
     if (this.seal) this.violence = Math.max(this.violence, DOME_FROTH);
-    this.frothRing = (1.2 * radius) / FROTH_CELL;
+    this.frothRing = (1.2 * radius) / (FROTH_CELL * Math.sqrt(Math.max(this.sizeFactor, 0.25)));
     this.frothAlongRate = (FROTH_ALONG * Math.sqrt(Math.max(this.sizeFactor, 0.25))) / this.launchDuration;
     this.frothOffset = tearPhase * 13.7;
     // The spray's share of a torn patch's water, and its stream (the header).
@@ -823,7 +844,8 @@ export class CrownSheet {
         out.fingerness = Math.max(1 - across * across, 0);
       } else {
         const arcStart = finger.angle + finger.halfWidth;
-        out.factor = -finger.sag * Math.sin((Math.PI * (unwrapped - arcStart)) / Math.max(nextAngle - next.halfWidth - arcStart, 1e-9));
+        const scallop = Math.sin((Math.PI * (unwrapped - arcStart)) / Math.max(nextAngle - next.halfWidth - arcStart, 1e-9));
+        out.factor = -finger.sag * scallop * scallop;
       }
       return out;
     }
@@ -1401,6 +1423,35 @@ export class CrownSheet {
 
   // ---- per rendered frame -------------------------------------------------
 
+  /**
+   * A finger is a ligament (the header): draw the row's columns across it in
+   * towards its axis, by its taper from root to tip and its varicose bulges,
+   * and thin their water with them. `along` is how far up the finger the
+   * row's material is, 0 at the root (where the columns stay where the grid
+   * put them, so the root merges into the sheet) to 1 at the tip.
+   */
+  shapeFinger(finger, row, end) {
+    const axisColumn = finger.column;
+    const axisVertex = row * this.columns + axisColumn;
+    const front = Math.min(this.tearFront[axisColumn], end);
+    const tau = this.rowTau(row, front, end);
+    const along = 1 - smoothstep(0, FINGER_ROOT, tau / this.launchDuration);
+    if (along <= 0) return;
+    const bulge = FINGER_BULGE * Math.min(this.age / FINGER_BULGE_TIME, 1) * Math.sin(Math.PI * 2 * finger.waves * along + finger.wavePhase);
+    const factor = Math.max((1 - (1 - FINGER_TIP) * along) * (1 + bulge), 0.1);
+    const axisX = this.positions[axisVertex * 3], axisY = this.positions[axisVertex * 3 + 1], axisZ = this.positions[axisVertex * 3 + 2];
+    const half = (FINGER_SPOTS.length - 1) / 2;
+    for (let spot = -half; spot <= half; spot++) {
+      const vertex = axisVertex + spot;
+      if (spot !== 0) {
+        this.positions[vertex * 3] = axisX + (this.positions[vertex * 3] - axisX) * factor;
+        this.positions[vertex * 3 + 1] = axisY + (this.positions[vertex * 3 + 1] - axisY) * factor;
+        this.positions[vertex * 3 + 2] = axisZ + (this.positions[vertex * 3 + 2] - axisZ) * factor;
+      }
+      this.thicknesses[vertex] *= factor;
+    }
+  }
+
   /** Evaluate the grid at the given splash time and upload it; place the fingers' beads. */
   updateGeometry(time) {
     this.age = time - this.startTime;
@@ -1442,6 +1493,7 @@ export class CrownSheet {
         this.froths[vertex * 2] = whiteness;
         this.froths[vertex * 2 + 1] = holes;
       }
+      if (this.fingered) for (const finger of this.fingers) this.shapeFinger(finger, row, end);
     }
     holdWithinWalls(this.positions, this.walls);
     if (!this.beadsGone) for (const finger of this.fingers) this.placeBead(finger, this.beadShare(finger));

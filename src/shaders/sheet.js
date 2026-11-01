@@ -67,7 +67,10 @@
 // densest (FROTH_EDGE_GAIN), so a hole's edge is a bright, dark-cored bead
 // and the web between holes a string of them; its mean over the sheet
 // (rimMean, the share of the sheet left that lies in the band, measured
-// with the radius) is what an unresolved sheet takes. The froth is also
+// with the radius) is what an unresolved sheet takes. Between the streaks
+// the film is nearly clear (FROTH_BASE) on a pebble's sheet and white
+// through on a rock's (FROTH_BASE_GAIN times the whiteness cubed: the air
+// a sheet takes rises steeply with its Weber number). The froth is also
 // patchy at a scale of a few cells (FROTH_PATCH_SCALE, from 0.4 to 1.6
 // times its density: the sheet thinner and clearer in places, thicker and
 // whiter in others) and grained by a finer noise, each fading
@@ -86,8 +89,18 @@
 //
 // Column. A closed tube, so the depth pass writes view depth, 998 plus half
 // how round the surface is there (aRound: 1 on the end cap and bulb, a lens
-// like a sphere; 0 on the tube, a lens only across its axis) and its smooth
-// normal. A ray through a cylinder of radius r at offset s crosses
+// like a sphere; 0 on the tube, a lens only across its axis) and its normal,
+// rippled (wrinkledNormal, the sheet's wrinkles' function) by the capillary
+// waves a real column always carries, which its mesh does not resolve: a
+// value noise over aRipple, the water's own place on the column (its azimuth
+// around it and the launch's phase along it, src/jet.js, so the ripples ride
+// and stretch with the water; its cells are long around the column and
+// short along it, as a column's waves are mostly rings), at a slope of
+// COLUMN_RIPPLE_SLOPE, fading out as its cells shrink below a few pixels
+// (COLUMN_RIPPLE_FADE: the fluid buffer's pixels are coarse, and a finer
+// pattern in its nearest-read normal is stripes). A smooth cylinder shows
+// the sky and the pond behind it as hard vertical bands, chrome; rippled,
+// the bands waver and break as they do on a real jet. A ray through a cylinder of radius r at offset s crosses
 // 2·sqrt(r² − s²) = 2·r·|n·v| of water, as it does through a sphere, so the
 // optics pass writes r·|n·v| for each of the two faces it meets, full
 // coverage, and half the water's aeration (aAir: the share of the light its
@@ -118,6 +131,7 @@ export const SHEET_FROTH = /* glsl */`
 #define FROTH_RIM 0.12             // a hole's rim: the sheet within this many cells (of its seed's size) of its edge...
 #define FROTH_RIM_MEAN vec2(0.09, 0.72)  // ...which holds this much of the sheet left (x + y·open share, measured: the header), half of it under the rim's profile
 #define FROTH_BASE 0.08            // the froth's density: this much everywhere (a film between its streaks is nearly clear)...
+#define FROTH_BASE_GAIN 2.0        // ...plus this times the whiteness cubed (a rock's sheet goes white through, a pebble's stays glass)...
 #define FROTH_STREAK 1.8           // ...this much more in its streaks (a quarter of the sheet on average: white water is streaks and lumps, not a frosted pane)...
 #define FROTH_EDGE_GAIN 1.2        // ...and this much more along the holes' rims...
 #define FROTH_STREAK_SCALE 0.45    // ...the streaks' cells per hole cell around the sheet...
@@ -219,24 +233,28 @@ SheetFroth sheetFroth(vec3 sheet, vec2 froth, float rimAeration, float rod, floa
   float streakResolved = 1.0 - smoothstep(FROTH_FADE.x, FROTH_FADE.y, footprint * FROTH_STREAK_SCALE);
   vec3 streakPlace = sheet * vec3(FROTH_STREAK_SCALE, FROTH_STREAK_SCALE, FROTH_STREAK_SCALE * FROTH_STREAK_ALONG);
   float streak = mix(0.25, smoothstep(0.45, 0.75, frothNoise(streakPlace + vec3(9.4, 2.2, 6.8))), streakResolved);
-  float density = froth.x * (FROTH_BASE + FROTH_STREAK * streak + FROTH_EDGE_GAIN * rimShare) * grain * patchy * (rod > 0.5 ? 0.5 : 1.0);
+  float density = froth.x * (FROTH_BASE + FROTH_BASE_GAIN * froth.x * froth.x * froth.x + FROTH_STREAK * streak + FROTH_EDGE_GAIN * rimShare) * grain * patchy * (rod > 0.5 ? 0.5 : 1.0);
   result.whiteness = 1.0 - exp(-density / max(facing, FROTH_GRAZE));
   return result;
 }
-// The normal (view space, facing the viewer) wrinkled by the sheet's capillary ripples.
-vec3 wrinkledNormal(vec3 normal, vec3 viewPosition, vec3 sheet, float violence, float rod) {
+// The normal (view space, facing the viewer) wrinkled by capillary ripples: a
+// value noise over place (a coordinate carried by the water, in the
+// ripples' cells) of the given slope (height over the cell's length), fading
+// out over fade (cells a pixel, start to end) as the cells shrink towards
+// a pixel. The sheet's wrinkles and the column's ripples
+// (COLUMN_DEPTH_FRAGMENT) both take it.
+vec3 wrinkledNormal(vec3 normal, vec3 viewPosition, vec3 place, float slope, vec2 fade) {
   vec3 sigmaX = dFdx(viewPosition);
   vec3 sigmaY = dFdy(viewPosition);
-  vec3 wrinkleSheet = sheet * WRINKLE_SCALE;
-  float cellsX = length(dFdx(wrinkleSheet)), cellsY = length(dFdy(wrinkleSheet));
+  float cellsX = length(dFdx(place)), cellsY = length(dFdy(place));
   float footprint = max(cellsX, cellsY);
   // Metres a wrinkle's cell spans, from the same screen steps.
   float cellLength = 0.5 * (length(sigmaX) / max(cellsX, 1e-6) + length(sigmaY) / max(cellsY, 1e-6));
-  float fade = (1.0 - smoothstep(FROTH_FADE.x, FROTH_FADE.y, footprint)) * (rod > 0.5 ? 0.0 : 1.0);
+  float faded = 1.0 - smoothstep(fade.x, fade.y, footprint);
   // The amplitude is made of derivatives, so it is held constant over the pixel and only the noise
   // is differentiated: a derivative of a derivative is undefined in GLSL.
-  float amplitude = (WRINKLE_SLOPE + WRINKLE_FROTH * min(violence, 1.0)) * cellLength * fade;
-  float wrinkle = frothNoise(wrinkleSheet + vec3(41.0, 13.0, 29.0));
+  float amplitude = slope * cellLength * faded;
+  float wrinkle = frothNoise(place + vec3(41.0, 13.0, 29.0));
   vec3 across = cross(sigmaY, normal);
   vec3 up = cross(normal, sigmaX);
   float determinant = dot(sigmaX, across);
@@ -308,7 +326,7 @@ void main() {
   vec3 normal = normalize(vViewNormal);
   if (dot(normal, toViewer) < 0.0) normal = -normal;
   SheetFroth froth = sheetFroth(vSheet, vFroth, vAeration, vRod, dot(normal, toViewer));
-  normal = wrinkledNormal(normal, vViewPosition, vSheet, vFroth.x, vRod);
+  normal = wrinkledNormal(normal, vViewPosition, vSheet * WRINKLE_SCALE, vRod > 0.5 ? 0.0 : WRINKLE_SLOPE + WRINKLE_FROTH * min(vFroth.x, 1.0), FROTH_FADE);
   float sceneDepth = texture2D(uSceneDepth, gl_FragCoord.xy / uResolution).r;
   if (gl_FragCoord.z > sceneDepth || froth.hole) discard;
   normal = normalize(normal + vViewRimTangent);
@@ -341,6 +359,7 @@ export const COLUMN_VERTEX = /* glsl */`
 attribute float aRadius;
 attribute float aRound;
 attribute float aAir;
+attribute vec3 aRipple;          // the water's place on the column, in the ripples' cells (src/jet.js)
 uniform float uProjScale;        // pixels per world unit at distance 1
 uniform float uMinPixelRadius;
 varying vec3 vViewPosition;
@@ -348,6 +367,7 @@ varying vec3 vViewNormal;
 varying float vRadius;
 varying float vRound;
 varying float vAir;
+varying vec3 vRipple;
 ${GALE_SURFACE}
 void main() {
   vec4 viewPosition = modelViewMatrix * vec4(position, 1.0);
@@ -365,22 +385,29 @@ void main() {
   vRadius = aRadius;
   vRound = aRound;
   vAir = aAir;
+  vRipple = aRipple;
   gl_Position = projectionMatrix * viewPosition;
 }
 `;
 
 export const COLUMN_DEPTH_FRAGMENT = /* glsl */`
+#define COLUMN_RIPPLE_SLOPE 0.1    // the column's capillary ripples' slope (the header)...
+#define COLUMN_RIPPLE_FADE vec2(0.1, 0.25)   // ...fading out as their cells shrink from ten pixels to four (the buffer's pixels are coarse)
 uniform sampler2D uSceneDepth;
 uniform vec2 uResolution;
 varying vec3 vViewPosition;
 varying vec3 vViewNormal;
 varying float vRound;
+varying vec3 vRipple;
+${SHEET_FROTH}
 void main() {
-  float sceneDepth = texture2D(uSceneDepth, gl_FragCoord.xy / uResolution).r;
-  if (gl_FragCoord.z > sceneDepth) discard;
+  // The ripples' derivatives first, while every pixel of the quad still runs.
   vec3 toViewer = normalize(-vViewPosition);
   vec3 normal = normalize(vViewNormal);
   if (dot(normal, toViewer) < 0.0) normal = -normal;
+  normal = wrinkledNormal(normal, vViewPosition, vRipple, COLUMN_RIPPLE_SLOPE, COLUMN_RIPPLE_FADE);
+  float sceneDepth = texture2D(uSceneDepth, gl_FragCoord.xy / uResolution).r;
+  if (gl_FragCoord.z > sceneDepth) discard;
   gl_FragColor = vec4(-vViewPosition.z, 998.0 + 0.5 * clamp(vRound, 0.0, 1.0), normal.xy);
 }
 `;

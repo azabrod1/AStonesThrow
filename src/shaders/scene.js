@@ -1495,9 +1495,8 @@ varying float vMask;
 varying float vViewZ;
 varying vec2 vRest;            // where the point lies on still water (WATER_VERTEX)
 #ifdef CAVITY_MESH
-#define CAVITY_DARKEST 0.1          // the hole's light where it sees no sky, against the open water's
 varying vec3 vNormalWorld;
-varying vec3 vCavity;       // rides the surface, open to the sky, climb to escape (WATER_VERTEX)
+varying vec3 vCavity;       // rides the surface, open to the sky (the under-water view's), climb to escape (WATER_VERTEX)
 #endif
 ${GLSL_COMMON}
 ${POOL_TILES}
@@ -1968,12 +1967,16 @@ void main() {
   else reflected = nearReflection(reflectUv, reflectedRay);
 
 #ifdef CAVITY_MESH
+  // Inside the hole the water is shaded as water is: what a wall reflects is
+  // the sky where its mirror ray climbs out of the mouth, and the wall across
+  // where it does not (which looks like the water seen through this one);
+  // what it lets through is the pond's body behind it, lit through the open
+  // surface all around as it always is, so it is dark where the water is deep
+  // and shows the sand where it is shallow. Nothing darkens the hole further:
+  // a hole shaded darker by its depth was a flat black pit, no water in it.
+  // The sun reaches only the part of the wall it shines into.
   reflected = mix(refracted, reflected, escapes);
   vec3 color = mix(refracted, reflected, fresnel);
-  // The hole shades itself: the sky it sees narrows with depth (vCavity.y),
-  // a wall sees half of it at most ((1 + n.y) / 2 of the sky, cosine
-  // weighted), and the sun reaches only the part of the wall it shines into.
-  color *= mix(CAVITY_DARKEST, 1.0, vCavity.y * (0.5 + 0.5 * meshNormal.y));
   float sunClimb = uSunDir.y / max(length(uSunDir.xz), 1e-3);
   float sunlit = vCavity.z > 1e-4 ? smoothstep(0.7, 1.3, sunClimb / vCavity.z) : 1.0;
   color += sunlit * min(sunGlitter(n, v, uSunDir, uSunIrradiance, slopeVariance), vec3(400.0));

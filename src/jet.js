@@ -179,7 +179,11 @@
 // its sphere, each free end a hemisphere of CAP_RINGS rings and a pole, the
 // pieces joined by rings of no radius (which draw nothing); normals from the
 // shapes (a ring's slope, a sphere's latitude); aRound 1 on spheres and caps
-// (the composite's lens). A long column with more nodes than rows is drawn
+// (the composite's lens); aRipple each vertex's place on the water, its
+// azimuth (RIPPLE_RING) and the launch's phase along the column
+// (RIPPLE_ALONG), which the column's shader ripples its normal over (the
+// capillary waves the mesh does not resolve), so they ride and stretch with
+// the water. A long column with more nodes than rows is drawn
 // through every few of them. SplashSystem draws the mesh with the column
 // materials in src/shaders/sheet.js through the droplets' screen-space fluid
 // passes, where the composite shades it as a glass lens. Below the bowl's
@@ -252,6 +256,8 @@ const BUMPS = 0.1;                 // the radius varies by this share, times sqr
 const BUMP_RADII = [0.003, 0.015]; // ...on a column this thick and more (m), none thinner than the first
 const BUMP_AROUND = [2, 3, 4, 5];  // the waves' lobes around the column...
 const BUMP_ALONG = [0.5, 0.9, 1.4, 2.3];   // ...and their cycles per unstable wavelength along it (the launch's phase)
+const RIPPLE_RING = 0.64;          // the shader's ripples (src/shaders/sheet.js): their cells around the column, over 2π (four: a column's waves are mostly rings)...
+const RIPPLE_ALONG = 3.0;          // ...and per radian of the launch's phase along it (about 4 mm each on the reference's column, whose launch spans 39 rad)
 
 /**
  * A jet's form (the header): how the collapse launches its water. The splash
@@ -401,12 +407,14 @@ export class JetColumn {
     this.radii = new Float32Array(ROWS * COLUMNS);
     this.roundness = new Float32Array(ROWS * COLUMNS);
     this.air = new Float32Array(ROWS * COLUMNS);
+    this.ripples = new Float32Array(ROWS * COLUMNS * 3);
     this.mesh = createRingGrid(ROWS, COLUMNS, {
       position: [this.positions, 3],
       aAir: [this.air, 1],
       normal: [this.normals, 3],
       aRadius: [this.radii, 1],
       aRound: [this.roundness, 1],
+      aRipple: [this.ripples, 3],
     }, material);
     this.geometry = this.mesh.geometry;
     this.columnCos = new Float64Array(COLUMNS);
@@ -824,7 +832,7 @@ export class JetColumn {
     }
     this.mesh.visible = ring.count > 0;
     holdWithinWalls(this.positions, this.walls);
-    markChanged(this.geometry, ['position', 'normal', 'aRadius', 'aRound', 'aAir']);
+    markChanged(this.geometry, ['position', 'normal', 'aRadius', 'aRound', 'aAir', 'aRipple']);
   }
 
   /** The column's radius at a node: the mean of its segments' either side (the drawing). */
@@ -1046,6 +1054,10 @@ export class JetColumn {
       this.radii[vertex] = ring.water[row] * bumped;
       this.roundness[vertex] = ring.round[row];
       this.air[vertex] = bumps > 0 ? Math.min(air * (1 + AIR_BLOTCH * (bumped - 1) / bumps), 1) : air;
+      // The water's place on the column for the shader's ripples (the header): around the ring and along the launch's phase.
+      this.ripples[vertex * 3] = cosAngle * RIPPLE_RING;
+      this.ripples[vertex * 3 + 1] = sinAngle * RIPPLE_RING;
+      this.ripples[vertex * 3 + 2] = phase * RIPPLE_ALONG;
     }
   }
 
@@ -1058,6 +1070,7 @@ export class JetColumn {
       this.radii[vertex] = 0;
       this.roundness[vertex] = 0;
       this.air[vertex] = 0;
+      this.ripples[vertex * 3] = 0; this.ripples[vertex * 3 + 1] = 0; this.ripples[vertex * 3 + 2] = 0;
     }
   }
 

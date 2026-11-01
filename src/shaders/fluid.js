@@ -21,7 +21,8 @@
 //           scattered white, times its share of the pixel, as the coverage is.
 //
 // Droplets. Sphere impostors stretched along their motion into capsules, as a
-// camera's shutter would smear them (half a frame, uStreakSeconds). A drop
+// camera's shutter would smear them (half a frame, at most a few
+// thousandths of a second: uStreakSeconds, src/splash.js STREAK_CAP). A drop
 // narrower than uMinPixelRadius buffer pixels is drawn that wide and covers
 // the pixels it is drawn over by its true area's share (and its volume's in
 // the thickness), so a fine drop leaves as much light as it should, never a
@@ -76,7 +77,10 @@
 // floor seen through the water (uFloorLight), as the water shader shows it.
 //   - Sheet: reflects pondView and lets the scene behind through, shifted by
 //     its normal and thickness (a thin film barely bends what is behind it);
-//     sunGlitter with WATER_SLOPE_VARIANCE (its unresolved ripple). Its rim
+//     sunGlitter with WATER_SLOPE_VARIANCE (its unresolved ripple) plus
+//     SHEET_ROUGH_VARIANCE times its aeration (a white sheet is a torn,
+//     turbulent one: its glitter spreads where a glassy sheet's is a hard
+//     patch). Its rim
 //     bead and torn edges, and its froth (src/shaders/sheet.js), are
 //     aerated: mixed towards the spray's scattering colour by the optics'
 //     aeration over their coverage, at most 1. Its holes are the scene's:
@@ -93,7 +97,14 @@
 //     (the sun's glitter on it) and a drop the sky upside down below the pond,
 //     a light lower half under a dark top and a dark edge, rather than what is
 //     just behind it. The light is pondView, offset so that the
-//     straight-through direction gives exactly the scene behind. The column
+//     straight-through direction gives exactly the scene behind. A lens
+//     also carries light round inside it (a ray that enters near a drop's or
+//     a column's edge meets the far side at a grazing angle and is largely
+//     reflected on round the inside before it leaves, the sky and the pond
+//     mixed): the refracted light is mixed by COLUMN_INNER (a drop's by
+//     DROP_INNER) towards the drop's mean light, so a column's far side is
+//     never black (a smooth cylinder shading to pure black read as chrome)
+//     and a drop's top is dark, not void. The column
 //     adds sunGlitter; a drop's glints come from the optics.
 //   - A lens image needs room and stillness: a drop's shows from DETAIL_FROM
 //     to DETAIL_FULL device pixels of radius, and only where the drop covers
@@ -108,6 +119,11 @@
 //     glints.
 // Coverage is the alpha: a sheet or column covers its pixels (its edge
 // softened by the buffer's filtering), a drop the share it really covers.
+// The filtered optics reach a buffer pixel past the depth pass's edge; a
+// pixel there is shaded as the nearest water beside it (nearestInfo: the
+// eight buffer pixels around it), not as mist, so an edge is its own water
+// softened by its coverage, with no pale outline stepping along the buffer's
+// grid where the buffer is coarser than the canvas (Medium's and Low's).
 // The composite also tone-maps the frame; a pixel with no water in it does
 // nothing else.
 //
@@ -161,6 +177,7 @@ varying vec2 vAxis;              // screen-space motion direction (view xy)
 varying vec4 vGlintPoints;       // reflected (xy) and refracted (zw) glint, view xy in drawn radii from the centre
 varying vec2 vGlintPowers;       // their radiance × pixel area over the sun's irradiance (E·P·ρ² / E), all its drops'
 varying float vGlintShare;       // the share of a puff's glints drawn as a point (1 for a drop), the rest spread over its kernel
+varying vec2 vPuffSeed;          // a puff's own place for its lumps (puffLumps), 0 for a drop
 ${FRESNEL}
 ${GALE_SURFACE}
 void cullDrop() { gl_Position = vec4(0.0, 0.0, 2.0, 1.0); }
@@ -217,6 +234,7 @@ void drawDrop(vec3 centreWorld, vec3 velocityWorld, float dropRadius, float lens
   vGlintPowers = vec2(reflectedPower, refractedPower) * pixelArea * weight;
 
   vGlintShare = 1.0;
+  vPuffSeed = vec2(0.0);
   vQuad = position.xy;
   vViewCentre = viewCentre.xyz;
   vRadius = radius;
@@ -310,6 +328,7 @@ void main() {
     vec2 place = reach * vec2(cos(angle), sin(angle));
     vGlintPoints += vec4(place, place);
     vGlintShare = 1.0 - blur;
+    vPuffSeed = draws;
   }
 }
 `;
@@ -338,11 +357,33 @@ float exposureShare(float along, float across, float travel) {
 // distance from its centre in drawn radii, over the capsule of its streak,
 // normalised to one over it (π/3 over the disc, 16/15 per unit of travel
 // over the streak), so that the puff's coverage, water and glints, each the
-// kernel times the drops' sum, add up to the drops'.
+// kernel times the drops' sum, add up to the drops'. A puff of many drops
+// is no even disc but lumps: its drops came off a torn patch of sheet in
+// clumps, so the kernel is modulated by a value noise of PUFF_LUMPS cells
+// across its radius (puffLumps, at a place of the sprite's own, vPuffSeed),
+// from 1 − PUFF_LUMP to 1 + PUFF_LUMP times, by the share the puff has
+// spread (a sprite of a few drops is one bead and takes none); the noise
+// averages one, so a puff keeps its drops' sum over its lumps.
 const PUFF = /* glsl */`
+#define PUFF_LUMPS 1.6           // the lumps' cells across a puff's drawn radius
+#define PUFF_LUMP 0.85           // and how far the kernel swings between them
 float puffKernel(float squaredDistance, float travel) {
   float fall = 1.0 - squaredDistance;
   return fall * fall / (PI / 3.0 + (16.0 / 15.0) * travel);
+}
+float puffLumpHash(vec2 point) {
+  vec3 mixed = fract(vec3(point.xyx) * 0.1031);
+  mixed += dot(mixed, mixed.yzx + 33.33);
+  return fract((mixed.x + mixed.y) * mixed.z);
+}
+float puffLumps(vec2 fragmentRadii, vec2 seed, float share) {
+  vec2 point = fragmentRadii * PUFF_LUMPS + seed * 64.0;
+  vec2 cell = floor(point);
+  vec2 local = point - cell;
+  vec2 ease = local * local * (3.0 - 2.0 * local);
+  float noise = mix(mix(puffLumpHash(cell), puffLumpHash(cell + vec2(1.0, 0.0)), ease.x),
+                    mix(puffLumpHash(cell + vec2(0.0, 1.0)), puffLumpHash(cell + vec2(1.0, 1.0)), ease.x), ease.y);
+  return 1.0 + PUFF_LUMP * share * (2.0 * noise - 1.0);
 }
 `;
 
@@ -404,6 +445,7 @@ varying vec2 vAxis;
 varying vec4 vGlintPoints;
 varying vec2 vGlintPowers;
 varying float vGlintShare;
+varying vec2 vPuffSeed;
 ${CAPSULE}
 ${EXPOSURE}
 ${PUFF}
@@ -419,8 +461,8 @@ void main() {
   float glint = vGlintShare * (vGlintPowers.x * glintFootprint(fragment, vGlintPoints.xy, vAxis, travel, vDrawnPixelRadius)
     + vGlintPowers.y * glintFootprint(fragment, vGlintPoints.zw, vAxis, travel, vDrawnPixelRadius));
   if (vWeight > 1.0) {
-    // A puff: its drops' area and water over its disc by the kernel, and the rest of their glints (the header).
-    float kernel = puffKernel(c.z, travel);
+    // A puff: its drops' area and water over its disc by the kernel, in lumps, and the rest of their glints (the header).
+    float kernel = puffKernel(c.z, travel) * puffLumps(fragment, vPuffSeed, 1.0 - vGlintShare);
     coverage = PI * vAreaShare * vWeight * kernel;
     thickness = (4.0 / 3.0) * PI * vAreaShare * sqrt(vAreaShare) * vWeight * vRadius * kernel;
     glint += (1.0 - vGlintShare) * (vGlintPowers.x + vGlintPowers.y) * kernel / (vDrawnPixelRadius * vDrawnPixelRadius);
@@ -490,12 +532,16 @@ uniform float uGlareShare;      // and the share of the scene it stands in for
 uniform float uRefract;
 uniform float uFluidScale;      // fluid-buffer pixels per device pixel (the buffer's resolution scale)
 uniform float uProjScale;       // fluid-buffer pixels per world unit at distance 1
+uniform vec2 uFluidTexel;       // one fluid-buffer pixel, in uv
 varying vec2 vUv;
 ${GLSL_COMMON}
 ${FRESNEL}
 ${NIGHT_VISION}
 ${HAZE}
-#define WATER_SLOPE_VARIANCE 0.006   // the sheet's and the column's unresolved ripple, for their glitter
+#define WATER_SLOPE_VARIANCE 0.006   // the sheet's and the column's unresolved ripple, for their glitter...
+#define SHEET_ROUGH_VARIANCE 0.05    // ...plus this times their aeration (white water is rough water)
+#define COLUMN_INNER 0.35            // the share of a column's refracted light that is its mean light, carried round inside it (the header)
+#define DROP_INNER 0.2               // and a drop's
 #define GLITTER_CAP 40.0
 ${MEAN_LIGHT}
 #define BEAD_FROM 0.5                // device-pixel radius at which a drop starts to be a glass bead...
@@ -555,12 +601,26 @@ vec3 linearToSrgb(vec3 c) {
   return mix(lo, hi, step(vec3(0.0031308), c));
 }
 
+// The nearest water the depth pass wrote in the eight buffer pixels around a pixel it wrote none in (the header).
+vec4 nearestInfo(vec2 uv) {
+  vec4 nearest = vec4(0.0);
+  for (int dy = -1; dy <= 1; dy++) {
+    for (int dx = -1; dx <= 1; dx++) {
+      if (dx == 0 && dy == 0) continue;
+      vec4 candidate = texture2D(uFluidInfo, uv + vec2(float(dx), float(dy)) * uFluidTexel);
+      if (candidate.r > 0.0 && (nearest.r <= 0.0 || candidate.r < nearest.r)) nearest = candidate;
+    }
+  }
+  return nearest;
+}
+
 void main() {
   vec3 scene = mix(texture2D(uScene, vUv).rgb, texture2D(uGlare, vUv).rgb, uGlareShare);
   vec4 info = texture2D(uFluidInfo, vUv);
   vec4 optics = texture2D(uOptics, vUv);
   vec3 color = scene;
   if (optics.g > 0.0 || optics.b > 0.0) {
+    if (info.r <= 0.0) info = nearestInfo(vUv);
     float thickness = optics.r;
     float coverage = optics.g;
     vec3 sunWorld = normalize((uCameraWorld * vec4(uSunDirView, 0.0)).xyz);
@@ -622,16 +682,18 @@ void main() {
         float carry = bodyEye > 0.01 ? 1.0 / bodyEye : 0.0;
         refracted = max(exitLight + under * bodyExit * carry, 0.0) * absorbed;
         reflected = max(reflected + under * bodyReflected * carry, 0.0);
+        // The light carried round inside the lens (the header).
+        refracted = mix(refracted, meanLight, mix(DROP_INNER, COLUMN_INNER, column));
       }
       vec3 surface = mix(refracted, reflected, fresnel);
-      // The sheet and the column glitter as the pond does; a drop's glints are in the optics.
-      if (sheet + column > 0.5) surface += min(sunGlitter(worldNormal, worldToViewer, sunWorld, uSunIrradiance, WATER_SLOPE_VARIANCE), vec3(GLITTER_CAP));
       // The rim bead, torn edges and froth, and a column's bubbly water, are aerated: a white scattering, brightest towards the sun.
       float forward = pow(clamp(0.5 - 0.5 * dot(toViewer, uSunDirView), 0.0, 1.0), 6.0);
       vec3 scattering = vec3(0.85, 0.88, 0.90) * (uSkyAmbient * 1.2 + uSunIrradiance * (0.08 + 0.7 * forward));
       // Where holes or the sheet's edge cover part of a pixel, the optics carry that share in the
       // aeration as in the coverage, and the alpha applies it: divide it out of the aeration.
       float aeration = optics.a / max(min(coverage, 1.0), 1e-3);
+      // The sheet and the column glitter as the pond does, rougher where they are white; a drop's glints are in the optics.
+      if (sheet + column > 0.5) surface += min(sunGlitter(worldNormal, worldToViewer, sunWorld, uSunIrradiance, WATER_SLOPE_VARIANCE + SHEET_ROUGH_VARIANCE * clamp(aeration, 0.0, 1.0)), vec3(GLITTER_CAP));
       // A column's white water is a body, not a film: lit by the sky and shaded by the sun on its side.
       vec3 columnScattering = scattering * (0.55 + 0.45 * clamp(dot(worldNormal, sunWorld), 0.0, 1.0));
       surface = mix(surface, mix(scattering, columnScattering, column), (sheet + column) * clamp(aeration, 0.0, 1.0));
@@ -751,6 +813,7 @@ varying vec2 vAxis;
 varying vec4 vGlintPoints;
 varying vec2 vGlintPowers;
 varying float vGlintShare;
+varying vec2 vPuffSeed;
 ${MIRROR_COMMON}
 ${CAPSULE}
 ${EXPOSURE}
@@ -769,8 +832,8 @@ void main() {
   float glint = vGlintShare * (vGlintPowers.x * glintFootprint(fragment, vGlintPoints.xy, vAxis, travel, vDrawnPixelRadius)
     + vGlintPowers.y * glintFootprint(fragment, vGlintPoints.zw, vAxis, travel, vDrawnPixelRadius));
   if (vWeight > 1.0) {
-    // A puff: its drops' coverage over its disc by the kernel, and the rest of their glints (the header).
-    float kernel = puffKernel(c.z, travel);
+    // A puff: its drops' coverage over its disc by the kernel, in lumps, and the rest of their glints (the header).
+    float kernel = puffKernel(c.z, travel) * puffLumps(fragment, vPuffSeed, 1.0 - vGlintShare);
     coverage = PI * vAreaShare * vWeight * kernel;
     glint += (1.0 - vGlintShare) * (vGlintPowers.x + vGlintPowers.y) * kernel / (vDrawnPixelRadius * vDrawnPixelRadius);
   } else {
