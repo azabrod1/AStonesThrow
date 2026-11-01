@@ -26,7 +26,21 @@
 // The looks are per pixel on the standard material (as the things thrown
 // are lit): granite (STONE_LOOK) with its grains, crevices, lichen and moss;
 // clipped foliage (FOLIAGE_LOOK) of small leaves, deeper in its hollows, new
-// growth paler (pieris's red) on top. Each look is one merged mesh drawn
+// growth paler (pieris's red) on top, catching the sky along its outline
+// and, backlit, letting the sun through there (FOLIAGE_LIGHT).
+//
+// Its light and shade (bakeShade; GARDEN_SHADE in src/shaders/scene.js):
+// the garden is static, so its shadows are baked, as a game bakes a static
+// set's, not drawn into a shadow map each frame: a map over its ground,
+// from the coarse garden's own triangles on the CPU, once it is first shown
+// and again for a new sun (setLight; 100 ms the first time, under 20 a new
+// sun, tools/garden-probe.mjs). It holds, for each point of the ground
+// plane, the height at which the sun's ray up through it last leaves the
+// planting, so the shrubs shade the lawn, one another and the lantern from
+// the one lookup; and the ground's occlusion under and beside them, which
+// darkens the lawn there and the shrubs' own feet. Under this garden's sun,
+// seen through leaves (src/sky.js `shadedSun`), its shadows are soft and
+// faint, as the photo's are. Each look is one merged mesh drawn
 // twice: in the main scene, and on the mirror's layer, its distance in the
 // mirror image's alpha, so the water reflects it. The mirror's is the same
 // garden more coarsely made (COARSE: its shrubs' spheres, from the same
@@ -37,12 +51,14 @@
 // met (builtGarden), seeded (seededRandom), never Math.random.
 import * as THREE from 'three';
 import { seededRandom } from './spray.js';
-import { KOI_SHORE, koiShoreRadius, koiShoreDistance, koiFloorDepthAt } from './pondFloor.js';
+import { KOI_SHORE, koiShoreRadius, koiShoreDistance, koiFloorDepthAt, gardenShadeUniforms } from './pondFloor.js';
+import { GARDEN_SHADE } from './shaders/scene.js';
 
 const MIRROR_NEARNESS_SCALE = 4;   // as src/rock.js's: the mirror image's alpha is 1 − this / distance
 const COARSE = 0.5;   // the coarse garden's shrubs (the header) as finely made as this of the fine's: about a third of its triangles
 const UP = new THREE.Vector3(0, 1, 0);
 const GROUND_ALBEDO = new THREE.Vector3(0.1, 0.13, 0.06);   // the lawn's, for the light it throws back up
+const GROUND_UNDER = 0.15;   // m: about how high the ground under the planting stands (the lip and the mound's start), for its shade on the shrubs' feet
 // The planted banks (the header): the sector of θ about the pond's centre they take, from `from` round through π (the
 // left bank, the far one) to `to` (the right). A thing caught there keeps `kept` of its speed into the planting and
 // `along` of its speed along it; one `lost` (m) behind where the planting begins is lost in the garden.
@@ -440,8 +456,8 @@ const plantingFrom = (angle) => 0.04 + 0.03 * Math.sin(3.1 * angle + 1);
 const ROWS = [
   { fineness: 1, behind: [0, 0], spacing: 0.8, along: [0.36, 0.62], up: [0.3, 0.6], deep: [0.3, 0.42], skip: 0 },
   { fineness: 0.85, behind: [0.5, 0.8], spacing: 1.2, along: [0.5, 0.9], up: [0.6, 1.0], deep: [0.45, 0.6], skip: 0.12 },
-  { fineness: 0.6, behind: [1.4, 1.8], spacing: 1.15, along: [0.75, 1.2], up: [1.2, 1.7], deep: [0.6, 0.8], skip: 0 },
-  { fineness: 0.4, behind: [2.6, 3.2], spacing: 1.3, along: [1.2, 1.7], up: [2.4, 3.1], deep: [0.8, 1.1], skip: 0 },
+  { fineness: 0.6, behind: [1.4, 1.8], spacing: 1.15, along: [0.75, 1.2], up: [1.1, 1.55], deep: [0.6, 0.8], skip: 0 },
+  { fineness: 0.4, behind: [2.6, 3.2], spacing: 1.3, along: [1.2, 1.7], up: [1.8, 2.3], deep: [0.8, 1.1], skip: 0 },
 ];
 // Each shrub's own shape, besides its row's: a share of them clipped low and broad (`broad`: its height times
 // `flatter`, its length times `longer`), as karikomi are, among the rounded ones.
@@ -526,6 +542,112 @@ function gardenGeometry(random, detail = 1) {
   // The lantern, its windows toward the pond.
   addLantern(stone, { x: lantern.x, z: lantern.z, turn: facingPond(lantern.x, lantern.z), tint: 0.75 });
   return { stone: stone.geometry(), foliage: foliage.geometry() };
+}
+
+// ---- its light and shade ---------------------------------------------------
+
+// The garden's shade (GARDEN_SHADE in src/shaders/scene.js; bakeShade): a map `texels` a side over a square `half`
+// (m) either way of the pond's centre, which holds the planting and its longest shadows (a 2 m shrub's under a sun
+// 19° up: 6 m), its shadows' edges softened over `penumbra` (m); the ground's occlusion from the planting's height over
+// it (full at `fullAt`, m) within `reach` (m), at most `most`.
+const SHADE = { texels: 512, half: 20, top: 4, penumbra: 0.25, reach: 0.7, most: 0.75, fullAt: 0.3 };
+
+/**
+ * Each triangle of `geometries` laid on the map, each texel keeping the
+ * greatest value of any triangle over its middle, and each corner's texel
+ * its own (the coarse garden's triangles are about a texel: none slips
+ * between texels' middles). A corner (x, y, z) lies at column (x − slopeX·y
+ * − minX) / texel and row (z − slopeZ·y − minZ) / texel, its value y −
+ * `under`: seen along a direction whose x and z per unit of height are the
+ * slopes (the sun's; 0 and 0 from straight above).
+ */
+function rasterGreatest(geometries, into, { slopeX, slopeZ, under }) {
+  const texel = (2 * SHADE.half) / SHADE.texels;
+  const minX = KOI_SHORE.centre[0] - SHADE.half, minZ = KOI_SHORE.centre[1] - SHADE.half;
+  const size = SHADE.texels;
+  const keep = (column, row, value) => {
+    if (column < 0 || row < 0 || column >= size || row >= size) return;
+    const at = row * size + column;
+    if (value > into[at]) into[at] = value;
+  };
+  for (const geometry of geometries) {
+    const positions = geometry.attributes.position.array, index = geometry.index.array;
+    const mapped = new Float32Array(positions.length);
+    for (let at = 0; at < positions.length; at += 3) {
+      const x = positions[at], y = positions[at + 1], z = positions[at + 2];
+      mapped[at] = (x - slopeX * y - minX) / texel;
+      mapped[at + 1] = (z - slopeZ * y - minZ) / texel;
+      mapped[at + 2] = y - under;
+      keep(Math.floor(mapped[at]), Math.floor(mapped[at + 1]), mapped[at + 2]);
+    }
+    for (let face = 0; face < index.length; face += 3) {
+      const first = 3 * index[face], second = 3 * index[face + 1], third = 3 * index[face + 2];
+      const ax = mapped[first], ay = mapped[first + 1], bx = mapped[second], by = mapped[second + 1], cx = mapped[third], cy = mapped[third + 1];
+      const area = (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
+      // Only a face toward the direction seen along (its corners clockwise on the map) is where a ray last leaves.
+      if (!(area < -1e-9)) continue;
+      const fromColumn = Math.max(Math.ceil(Math.min(ax, bx, cx) - 0.5), 0), toColumn = Math.min(Math.floor(Math.max(ax, bx, cx) - 0.5), size - 1);
+      const fromRow = Math.max(Math.ceil(Math.min(ay, by, cy) - 0.5), 0), toRow = Math.min(Math.floor(Math.max(ay, by, cy) - 0.5), size - 1);
+      for (let row = fromRow; row <= toRow; row++) {
+        for (let column = fromColumn; column <= toColumn; column++) {
+          const px = column + 0.5, py = row + 0.5;
+          const towardA = ((bx - px) * (cy - py) - (by - py) * (cx - px)) / area;
+          const towardB = ((cx - px) * (ay - py) - (cy - py) * (ax - px)) / area;
+          const towardC = 1 - towardA - towardB;
+          if (towardA < 0 || towardB < 0 || towardC < 0) continue;
+          keep(column, row, towardA * mapped[first + 2] + towardB * mapped[second + 2] + towardC * mapped[third + 2]);
+        }
+      }
+    }
+  }
+}
+
+/** A box blur of `radius` texels along rows then columns of a square map, in place (`scratch` its size). */
+function boxBlur(values, scratch, radius) {
+  const size = SHADE.texels, width = 2 * radius + 1;
+  for (const [stride, step] of [[size, 1], [1, size]]) {
+    for (let line = 0; line < size; line++) {
+      let sum = 0;
+      const start = line * stride, at = (offset) => values[start + Math.min(Math.max(offset, 0), size - 1) * step];
+      for (let offset = -radius; offset <= radius; offset++) sum += at(offset);
+      for (let offset = 0; offset < size; offset++) {
+        scratch[start + offset * step] = sum / width;
+        sum += at(offset + radius + 1) - at(offset - radius);
+      }
+    }
+    values.set(scratch);
+  }
+}
+
+/**
+ * The garden's shade (GARDEN_SHADE in src/shaders/scene.js), from the coarse
+ * garden's triangles (laid out as the fine one's, the header), into
+ * `pixels` (RG, a byte each). Green, once (`occluded` false): the ground's
+ * occlusion, from how far the planting covers it (seen from straight above,
+ * over the ground about GROUND_UNDER high) spread over SHADE.reach. Red, for
+ * the sun: each point of the ground plane's sun's ray's greatest height over
+ * the planting, the triangles laid on the ground along the sun (a shadow map
+ * whose texels lie on the ground), its edges softened. False for a sun too
+ * low to shade by (the red 0: lit throughout).
+ */
+function bakeShade(geometries, sunDirection, pixels, occluded) {
+  const size = SHADE.texels, texel = (2 * SHADE.half) / size;
+  const values = new Float32Array(size * size), scratch = new Float32Array(size * size);
+  if (!occluded) {
+    rasterGreatest(geometries, values, { slopeX: 0, slopeZ: 0, under: GROUND_UNDER });
+    for (let at = 0; at < values.length; at++) values[at] = Math.min(Math.max(values[at] / SHADE.fullAt, 0), 1);
+    boxBlur(values, scratch, Math.max(Math.round(SHADE.reach / texel), 1));
+    for (let at = 0; at < values.length; at++) pixels[2 * at + 1] = Math.round((1 - SHADE.most * values[at]) * 255);
+    values.fill(0);
+  }
+  const sunUp = sunDirection.y >= 0.02;
+  if (sunUp) {
+    rasterGreatest(geometries, values, { slopeX: sunDirection.x / sunDirection.y, slopeZ: sunDirection.z / sunDirection.y, under: 0 });
+    // The shadow's edge softened over about SHADE.penumbra (m), as under a sun through leaves (and no texel's step shows).
+    boxBlur(values, scratch, Math.max(Math.round(SHADE.penumbra / texel), 1));
+  }
+  for (let at = 0; at < values.length; at++) pixels[2 * at] = Math.round(Math.min(Math.max(values[at] / SHADE.top, 0), 1) * 255);
+  return sunUp;
 }
 
 const built = {};
@@ -652,9 +774,23 @@ const FOLIAGE_NORMAL = /* glsl */`
     normal = normalize(normal + (shake - normal * dot(shake, normal)));
   }
 `;
+// Leaves at a shrub's outline, after the rest of its light (the garden's shade on it included): the sky caught by the
+// leaves seen edge on, a sheen (uRim: the sky's light, FOLIAGE_RIM of it), and the sun through the thin foliage there
+// where it stands behind the shrub (FOLIAGE_THROUGH of its light at most), so a backlit shrub's edge glows.
+const FOLIAGE_RIM = 0.35, FOLIAGE_THROUGH = 0.5;
+const FOLIAGE_LIGHT = /* glsl */`
+  {
+    float edgeOn = 1.0 - saturate(dot(normal, geometryViewDir));
+    reflectedLight.indirectDiffuse += diffuseColor.rgb * uRim * edgeOn * edgeOn * edgeOn * gardenSky;
+#if NUM_DIR_LIGHTS > 0
+    float behind = saturate(dot(-geometryViewDir, directionalLights[0].direction));
+    reflectedLight.directDiffuse += diffuseColor.rgb * directionalLights[0].color * ${FOLIAGE_THROUGH.toFixed(2)} * behind * behind * behind * behind * edgeOn * edgeOn;
+#endif
+  }
+`;
 const LOOKS = {
-  stone: { look: STONE_LOOK, normal: STONE_NORMAL, roughness: 0.92, reflection: 0.6 },
-  foliage: { look: FOLIAGE_LOOK, normal: FOLIAGE_NORMAL, roughness: 0.75, reflection: 0.45 },
+  stone: { look: STONE_LOOK, normal: STONE_NORMAL, roughness: 0.92, reflection: 0.6, lit: '' },
+  foliage: { look: FOLIAGE_LOOK, normal: FOLIAGE_NORMAL, roughness: 0.75, reflection: 0.45, lit: FOLIAGE_LIGHT },
 };
 
 /**
@@ -674,13 +810,38 @@ export function createKoiGarden({ envTexture, mirrorLayer, lighting }) {
     return geometry;
   };
   let shown = false, coarse = false;
+  // The shade (bakeShade), baked for the sun it holds: once the garden is shown, and again for a new sun.
+  const shadePixels = new Uint8Array(SHADE.texels * SHADE.texels * 2);
+  let shadeTexture = null;
+  const shadedFor = new THREE.Vector3(NaN, NaN, NaN);
+  const shade = () => {
+    if (!shown || shadedFor.equals(lighting.sunDirection)) return;
+    const started = performance.now();
+    shadedFor.copy(lighting.sunDirection);
+    const sunUp = bakeShade(Object.values(builtGarden(COARSE)), lighting.sunDirection, shadePixels, shadeTexture !== null);
+    if (!shadeTexture) {
+      shadeTexture = new THREE.DataTexture(shadePixels, SHADE.texels, SHADE.texels, THREE.RGFormat, THREE.UnsignedByteType);
+      shadeTexture.magFilter = THREE.LinearFilter;
+      shadeTexture.minFilter = THREE.LinearMipmapLinearFilter;
+      shadeTexture.generateMipmaps = true;
+    }
+    shadeTexture.needsUpdate = true;
+    gardenShadeUniforms.uGardenShade.value = shadeTexture;
+    gardenShadeUniforms.uGardenShadeArea.value.set(KOI_SHORE.centre[0] - SHADE.half, KOI_SHORE.centre[1] - SHADE.half, 2 * SHADE.half, 1);
+    gardenShadeUniforms.uGardenShadeSun.value.copy(sunUp ? lighting.sunDirection : UP);
+    shadeMilliseconds = performance.now() - started;
+  };
+  let shadeMilliseconds = 0;
   // The lawn's light thrown back up: the sun's and the sky's (setLight).
   const bounce = { value: new THREE.Vector3() };
+  const rim = { value: new THREE.Vector3() };   // the sky's light the leaves catch edge on (FOLIAGE_LIGHT, setLight)
   const material = (lookName, mirrored) => {
-    const { look, normal, roughness, reflection } = LOOKS[lookName];
+    const { look, normal, roughness, reflection, lit } = LOOKS[lookName];
     const made = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness, metalness: 0, envMap: envTexture, envMapIntensity: reflection });
     made.onBeforeCompile = (shader) => {
       shader.uniforms.uBounce = bounce;
+      shader.uniforms.uRim = rim;
+      Object.assign(shader.uniforms, gardenShadeUniforms);
       shader.vertexShader = shader.vertexShader
         .replace('#include <common>', `#include <common>\nattribute float hollow;\nattribute float tint;\nvarying vec3 vGardenWorld;\nvarying vec3 vNormalWorld;\nvarying float vHollow;\nvarying float vTint;`)
         .replace('#include <project_vertex>', `#include <project_vertex>
@@ -689,11 +850,19 @@ export function createKoiGarden({ envTexture, mirrorLayer, lighting }) {
   vHollow = hollow;
   vTint = tint;`);
       shader.fragmentShader = shader.fragmentShader
-        .replace('#include <common>', `#include <common>\n${LOOK_COMMON}\nuniform vec3 uBounce;`)
+        .replace('#include <common>', `#include <common>\n${LOOK_COMMON}\n${GARDEN_SHADE}\nuniform vec3 uBounce;\nuniform vec3 uRim;`)
         .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>\n${look}`)
         // The light the lawn throws back up onto its lower faces (the sky alone would leave them blue).
+        // Then the garden's own shade (GARDEN_SHADE: bakeShade): its shadows on the sun's light, the sky it hides from
+        // its own feet on the rest; the ground there is about GROUND_UNDER high.
         .replace('#include <lights_fragment_end>', `#include <lights_fragment_end>
-  reflectedLight.indirectDiffuse += diffuseColor.rgb * uBounce * (0.6 - 0.4 * vNormalWorld.y) * (1.0 - 0.6 * vHollow);`)
+  reflectedLight.indirectDiffuse += diffuseColor.rgb * uBounce * (0.6 - 0.4 * vNormalWorld.y) * (1.0 - 0.6 * vHollow);
+  float gardenSun = gardenSunSeen(vGardenWorld), gardenSky = gardenSkySeen(vGardenWorld, vGardenWorld.y - ${GROUND_UNDER.toFixed(2)});
+  reflectedLight.directDiffuse *= gardenSun;
+  reflectedLight.directSpecular *= gardenSun;
+  reflectedLight.indirectDiffuse *= gardenSky;
+  reflectedLight.indirectSpecular *= gardenSky;
+  ${lit}`)
         .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>\n${normal}`)
         .replace('#include <dithering_fragment>', `#include <dithering_fragment>
   ${mirrored ? `gl_FragColor.a = 1.0 - ${MIRROR_NEARNESS_SCALE.toFixed(1)} / max(length(vViewPosition), 0.05);` : ''}`);
@@ -713,6 +882,10 @@ export function createKoiGarden({ envTexture, mirrorLayer, lighting }) {
   }
   return {
     meshes,
+    /** The bytes its shade's texture holds, its mip chain with it (src/main.js memoryEstimate). */
+    get shadeBytes() { return shadeTexture ? Math.round((SHADE.texels * SHADE.texels * 2 * 4) / 3) : 0; },
+    /** How long the last bake of its shade took (ms; tools/garden-probe.mjs). */
+    get shadeMilliseconds() { return shadeMilliseconds; },
     /** The sky's light for the garden (src/sky.js fills its map in place once a sky has loaded). */
     setEnvironment(texture) {
       for (const mesh of meshes) {
@@ -721,10 +894,12 @@ export function createKoiGarden({ envTexture, mirrorLayer, lighting }) {
         mesh.material.needsUpdate = true;
       }
     },
-    /** The lawn's bounce from the light now (the sky's sun and ambient, src/main.js lighting). */
+    /** The lawn's bounce from the light now (the sky's sun and ambient, src/main.js lighting), and the garden's shade for its sun. */
     setLight() {
       const sunUp = Math.max(lighting.sunDirection.y, 0);
       bounce.value.copy(lighting.sunIrradiance).multiplyScalar(sunUp).addScaledVector(lighting.skyAmbient, 1.4).multiply(GROUND_ALBEDO);
+      rim.value.copy(lighting.skyAmbient).multiplyScalar(1.4 * FOLIAGE_RIM);
+      shade();   // its shade, should the sun have moved
     },
     /** Show the garden, or hide it; `building` false shows the specks alone (the warm-up). */
     setVisible(visible, { building = true } = {}) {
@@ -737,6 +912,7 @@ export function createKoiGarden({ envTexture, mirrorLayer, lighting }) {
         }
         catchTable();
         this.setCoarse(coarse);
+        shade();
       }
       for (const mesh of meshes) mesh.visible = visible;
     },
