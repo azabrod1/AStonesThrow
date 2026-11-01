@@ -439,7 +439,7 @@ const DECK_DROPS = { wallInset: 0.004, wall: 0.3, splatterFrom: 0.0015, splatter
 // A knocked floater's spray (knock): drops per m/s, at most, their spread about the knock's direction, its lift, their radii (m).
 const KNOCK = { drops: 14, most: 70, spread: 0.7, lift: 0.4, radius: [0.0006, 0.0018] };
 const HAZE_RADIUS = 0.5;             // device pixels: finer drops are mist (src/shaders/fluid.js)
-const STREAK_CAP = 1 / 400;          // s: the longest a drop's motion streak is exposed for (setFrameSeconds)
+const STREAK_CAP = 1 / 1000;         // s: the longest a drop's motion streak is exposed for (setFrameSeconds)
 const MIRROR_PAD = 0.05;              // metres around what is mirrored: drawn radii, streaks, a landing crown's ride
 const MIRROR_DROP_RADIUS = 0.002;     // finer drops are left out of the mirror: their images there are under a pixel
 
@@ -1024,7 +1024,7 @@ export class SplashSystem {
   reset(renderer = null) {
     this.count = 0;
     this.bubbleCount = 0;
-    for (const crown of this.crowns) { this.particleScene.remove(crown.mesh); crown.dispose(); }
+    for (const crown of this.crowns) { this.particleScene.remove(crown.mesh); if (crown.ligaments) this.particleScene.remove(crown.ligaments); crown.dispose(); }
     this.crowns = [];
     for (const column of [...this.columns]) this.retireColumn(column);
     for (const cavity of [...this.cavities]) this.retireCavity(cavity);
@@ -1141,11 +1141,12 @@ export class SplashSystem {
       const crown = new CrownSheet({
         impact: info, startTime: this.time, rimDroplets: sealed && choice.trapped ? 0 : rimShed,
         breakupDroplets: sealed && choice.trapped ? 0 : crownCount - sprayCount - rimShed, spareDroplets: sealed && choice.trapped ? 0 : this.crownDropletCap - crownCount,
-        material: this.sheetDepthMaterial, rim: cavity, lopsided: choice.crown,
+        material: this.sheetDepthMaterial, columnMaterial: this.columnDepthMaterial, rim: cavity, lopsided: choice.crown,
         seal: sealed ? { time: choice.seal.dome * timeUnit, tear: choice.trapped ? cavity.pinchTime : burstTime, sink: choice.trapped, burstSpeed: DOME_BURST_SHARE * needleSpeed } : null,
       });
       this.crowns.push(crown);
       this.particleScene.add(crown.mesh);
+      if (crown.ligaments) this.particleScene.add(crown.ligaments);
     }
 
     // The forward fan of an oblique entry: a thin, fast, low sheet ahead of
@@ -1512,6 +1513,7 @@ export class SplashSystem {
       this.spawnFoamSpecks(crown.centreX, crown.centreZ, 0.9 * radius, 2.2 * radius, count, 0.03, CROWN_SPECK_SPAN * Math.sqrt(radius / GRAVITY));
     }
     this.particleScene.remove(crown.mesh);
+    if (crown.ligaments) this.particleScene.remove(crown.ligaments);
     crown.dispose();
     this.crowns.splice(this.crowns.indexOf(crown), 1);
   }
@@ -1976,7 +1978,7 @@ export class SplashSystem {
     } else {
       this.spray.mesh.layers.disable(MIRROR_LAYER);
     }
-    for (const crown of this.crowns) list.push(mirrorWith(crown.mesh, this.sheetMirror));
+    for (const crown of this.crowns) { list.push(mirrorWith(crown.mesh, this.sheetMirror)); if (crown.ligaments) list.push(mirrorWith(crown.ligaments, this.columnMirror)); }
     for (const column of this.columns) list.push(mirrorWith(column.mesh, this.columnMirror));
   }
 
@@ -2024,7 +2026,7 @@ export class SplashSystem {
   setPassMaterials(particleMaterial, sheetMaterial, columnMaterial, sprayMaterial) {
     this.particleMesh.material = particleMaterial;
     this.spray.mesh.material = sprayMaterial;
-    for (const crown of this.crowns) crown.mesh.material = sheetMaterial;
+    for (const crown of this.crowns) { crown.mesh.material = sheetMaterial; if (crown.ligaments) crown.ligaments.material = columnMaterial; }
     for (const column of this.columns) column.mesh.material = columnMaterial;
   }
 
@@ -2096,9 +2098,10 @@ export class SplashSystem {
    * The simulated length of the frame about to be stepped, given before its
    * substeps: the crown's tear and the jet's breakup advance once per frame,
    * and the motion streaks follow it (shutter ≈ half a frame, at most
-   * STREAK_CAP: a camera in daylight exposes for a few thousandths of a
-   * second and freezes a splash's drops, where half a 60 Hz frame drew every
-   * sunlit drop as a white dash, a scratch across the picture).
+   * STREAK_CAP: a camera in daylight exposes for a thousandth of a second
+   * and freezes a splash's drops, where half a 60 Hz frame drew every
+   * sunlit drop as a white dash, a scratch across the picture, and a
+   * longer cap drew the jet's fast first drops as a burst of bullets).
    */
   setFrameSeconds(seconds) {
     this.frameSeconds = seconds;

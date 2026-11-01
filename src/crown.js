@@ -61,14 +61,27 @@
 // fingers near the mean, a few twice it and more, and about a quarter,
 // whose reach falls under FINGER_STUNTED, stubs of FINGER_STUB of it that
 // never grew (a real rim's spikes are of wildly uneven length). A finger
-// is a ligament, not a tongue of film (shapeFinger): from its root, where
-// it is as wide as its columns, it tapers to FINGER_TIP of that width at its
-// tip, and along it run varicose bulges, FINGER_WAVES[0] to FINGER_WAVES[1]
-// waves finger by finger in its material (they ride out with it as it
-// stretches), swelling to ±FINGER_BULGE over FINGER_BULGE_TIME (the
-// Rayleigh–Plateau beading of a ligament, which a real finger shows as a
-// chain of unequal beads behind the drop on its tip); its water thins with
-// its width. Across an arc between two, the rim's material is slower by its
+// is a ligament, a round rod of water, not a tongue of film: besides the
+// grid's narrow strip (its columns, FINGER_SPOTS, a cusp in the rim) each
+// is drawn as a tube of its own (`ligaments`, one ring grid for all of
+// them, LIGAMENT_RINGS rings of LIGAMENT_COLUMNS along each, pieces joined
+// by rings of no radius as the jet's are, shaded as the jet's column is by
+// src/shaders/sheet.js's column materials) along the finger's axis, the
+// same closed form as the strip's, from its root (the material launched
+// FINGER_ROOT·T behind the tip, where it rises out of the sheet from
+// LIGAMENT_ROOT of its width over LIGAMENT_RISE of its length) to its tip,
+// as wide as the rim bead there (the bead's thickness: a ligament is as
+// thick as the rim it grew from), tapering to LIGAMENT_TIP of that at the
+// tip, where its bead sits, with LIGAMENT_WAVES[0] to LIGAMENT_WAVES[1]
+// varicose waves along it, finger by finger, in its material (they ride
+// out with it as it stretches), swelling to ±LIGAMENT_BULGE over
+// LIGAMENT_BULGE_TIME (the Rayleigh–Plateau beading of a ligament, which a
+// real finger shows as a chain of unequal beads behind the drop on its
+// tip), and carrying the rim's froth (LIGAMENT_AIR by the sheet's
+// violence: a gentle toss's ligaments are clear glass, a rock's white
+// rods; a clear rod against the sky's reflection all but vanished). A
+// strip of sheet alone drew a finger as a flat tooth, however
+// wide. Across an arc between two, the rim's material is slower by its
 // own sag times sin²(π·s) (s from one root to the next; ARC_SAG times
 // ARC_SAG_RANGE, arc by arc), a scallop that leaves each root level and dips
 // between: with sin(π·s) the rim left every root at a slope and the arcs
@@ -380,7 +393,7 @@ const MAIN_AMPLITUDE = 0.05;       // deeper turns the scallops into petals
 const FINE_AMPLITUDE = 0.05;
 const FINGERS = 15;                // a 3 cm stone's crown's fingers, times sqrt(R / 3 cm)...
 const FINGER_JITTER = 0.5;         // ...each spacing off the mean by up to this share of it...
-const FINGER_WIDTH = 0.1;          // ...each this many mean spacings wide either side of its axis at its root (about the rim bead's width: a ligament is as thick as the rim it grew from)...
+const FINGER_WIDTH = 0.035;        // ...each this many mean spacings wide either side of its axis at its root (the strip, a cusp in the rim; the ligament drawn over it is as wide as the bead)...
 const FINGER_BREADTH = [0.6, 1.4]; // ...times a share in this range, finger by finger...
 const FINGER_LENGTH = 0.15;        // ...its rim's material faster by up to this share...
 const FINGER_REACH = 0.85;         // ...times this times a gamma draw of order 4 (gammaFactor)...
@@ -390,10 +403,16 @@ const FINGER_STUB = 0.3;           // ...this much of it: a bump on the rim that
 const FINGER_SQUARENESS = 4;       // ...by (1 − |x|^this)^FINGER_POWER across it: a flat, round end on steep sides...
 const FINGER_POWER = 0.75;
 const FINGER_ROOT = 0.12;          // ...for the material launched within this many T of the rim
-const FINGER_TIP = 0.55;           // a finger tapers to this share of its root's width at its tip (shapeFinger)...
-const FINGER_WAVES = [1, 3];       // ...with this many varicose waves along it, finger by finger...
-const FINGER_BULGE = 0.45;         // ...swelling its width by up to this share either way...
-const FINGER_BULGE_TIME = 0.03;    // ...over this many seconds of the sheet's age (the beading grows)
+const LIGAMENT_RINGS = 8;          // a finger's ligament (the header): rings along it...
+const LIGAMENT_COLUMNS = 8;        // ...and vertices around each
+const LIGAMENT_ROOT = 0.2;         // it rises out of the sheet from this share of its width at its root...
+const LIGAMENT_RISE = 0.35;        // ...over this share of its length...
+const LIGAMENT_TIP = 0.55;         // ...and tapers to this share of the bead's width at its tip...
+const LIGAMENT_WAVES = [1, 3];     // ...with this many varicose waves along it, finger by finger...
+const LIGAMENT_BULGE = 0.45;       // ...swelling its width by up to this share either way...
+const LIGAMENT_BULGE_TIME = 0.03;  // ...over this many seconds of the sheet's age (the beading grows)
+const LIGAMENT_RIPPLE = [0.64, 6]; // its place for the column shader's ripples: cells around (over 2π) and along it (src/jet.js RIPPLE_RING and RIPPLE_ALONG)
+const LIGAMENT_AIR = [0.15, 0.6];  // the share of its light a ligament's bubbles scatter: this plus this times the sheet's violence (at most 0.85)
 const ARC_SAG = 0.03;              // the rim between two fingers sags by this share of its speed at the arc's middle...
 const ARC_SAG_RANGE = [0.3, 1.7];  // ...times a share in this range, arc by arc
 const FINGER_SPOTS = [-1, -0.88, -0.55, 0, 0.55, 0.88, 1];   // grid columns across a finger (x, root to root), denser where its sides turn...
@@ -524,7 +543,7 @@ function layFingers(fingerScale) {
       // The arc after it sags its own way, and its beading has waves and a phase of its own: shares drawn
       // from its axis, which spend no draw of Math.random.
       sag: ARC_SAG * (ARC_SAG_RANGE[0] + (ARC_SAG_RANGE[1] - ARC_SAG_RANGE[0]) * angleHash(angle)),
-      waves: FINGER_WAVES[0] + (FINGER_WAVES[1] - FINGER_WAVES[0]) * angleHash(angle + 1.7),
+      waves: LIGAMENT_WAVES[0] + (LIGAMENT_WAVES[1] - LIGAMENT_WAVES[0]) * angleHash(angle + 1.7),
       wavePhase: Math.PI * 2 * angleHash(angle + 3.9),
       column: index * (FINGER_SPOTS.length + ARC_COLUMNS) + (FINGER_SPOTS.length - 1) / 2,
     };
@@ -577,7 +596,7 @@ export class CrownSheet {
    *   closes over the hole and when the dome bursts (or, `sink`, has been drawn down into the hole), and the speed (m/s)
    *   its apex's water is flung at
    */
-  constructor({ impact, startTime, rimDroplets, breakupDroplets, spareDroplets = 0, material, landing = false, fan = false, strength = 1, rim = null, lopsided = null, seal = null }) {
+  constructor({ impact, startTime, rimDroplets, breakupDroplets, spareDroplets = 0, material, columnMaterial = null, landing = false, fan = false, strength = 1, rim = null, lopsided = null, seal = null }) {
     const { velocity, radius } = impact;
     const speed = Math.max(impact.speed, 1.0);
     this.centreX = impact.x;
@@ -794,6 +813,29 @@ export class CrownSheet {
     this.maxDropRadius = landing ? LANDING_DROP_CAP * radius : (fan ? FAN_DROP_CAP : CROWN_DROP_CAP) * this.dropScale;
     this.minDropRadius = fan ? FAN_DROP_FLOOR * this.dropScale : Math.min(CROWN_DROP_FLOOR * this.dropScale, 0.5 * this.maxDropRadius);
     this.geometry = this.mesh.geometry;
+    // The fingers' ligaments (the header): a ring grid of tubes, one piece a finger, drawn with the column materials.
+    this.ligaments = null;
+    if (this.fingered && columnMaterial) {
+      const ligamentRows = this.fingers.length * (LIGAMENT_RINGS + 2);
+      const ligamentVertices = ligamentRows * LIGAMENT_COLUMNS;
+      this.ligamentPositions = new Float32Array(ligamentVertices * 3);
+      this.ligamentNormals = new Float32Array(ligamentVertices * 3);
+      this.ligamentRadii = new Float32Array(ligamentVertices);
+      this.ligamentRound = new Float32Array(ligamentVertices);
+      // A ligament torn off a frothy rim carries its bubbles: a share of its light scattered white, by the sheet's
+      // violence (a gentle toss's are clear glass, a rock's white rods); the column shader shades it as the jet's air.
+      this.ligamentAir = new Float32Array(ligamentVertices).fill(Math.min(LIGAMENT_AIR[0] + LIGAMENT_AIR[1] * Math.min(this.violence, 1), 0.85));
+      this.ligamentRipples = new Float32Array(ligamentVertices * 3);
+      this.ligaments = createRingGrid(ligamentRows, LIGAMENT_COLUMNS, {
+        position: [this.ligamentPositions, 3],
+        normal: [this.ligamentNormals, 3],
+        aRadius: [this.ligamentRadii, 1],
+        aRound: [this.ligamentRound, 1],
+        aAir: [this.ligamentAir, 1],
+        aRipple: [this.ligamentRipples, 3],
+      }, columnMaterial);
+      this.ligamentFrame = { x: 1, y: 0, z: 0 };
+    }
     this.state = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, thickness: 0, radialDistance: 0, remaining: 1, carry: 0 };
     this.stateOther = { ...this.state };
     // A sealing crown's dome: its folds (DOME_FOLDS, at a random phase) and whether the closure has thrown its spike.
@@ -1424,32 +1466,94 @@ export class CrownSheet {
   // ---- per rendered frame -------------------------------------------------
 
   /**
-   * A finger is a ligament (the header): draw the row's columns across it in
-   * towards its axis, by its taper from root to tip and its varicose bulges,
-   * and thin their water with them. `along` is how far up the finger the
-   * row's material is, 0 at the root (where the columns stay where the grid
-   * put them, so the root merges into the sheet) to 1 at the tip.
+   * The fingers' ligaments (the header), drawn afresh each frame: for each
+   * finger, LIGAMENT_RINGS rings along its axis from its root (the material
+   * FINGER_ROOT·T behind its tip) to its tip, each ring at the closed form's
+   * point for its material, as wide as the finger is there, round the axis
+   * through its neighbours in a frame carried along the finger (as the
+   * jet's rings are, so the tube does not twist); a ring of no radius
+   * before and after each finger joins the pieces without drawing anything.
+   * A finger whose column has torn to the base is drawn as nothing.
    */
-  shapeFinger(finger, row, end) {
-    const axisColumn = finger.column;
-    const axisVertex = row * this.columns + axisColumn;
-    const front = Math.min(this.tearFront[axisColumn], end);
-    const tau = this.rowTau(row, front, end);
-    const along = 1 - smoothstep(0, FINGER_ROOT, tau / this.launchDuration);
-    if (along <= 0) return;
-    const bulge = FINGER_BULGE * Math.min(this.age / FINGER_BULGE_TIME, 1) * Math.sin(Math.PI * 2 * finger.waves * along + finger.wavePhase);
-    const factor = Math.max((1 - (1 - FINGER_TIP) * along) * (1 + bulge), 0.1);
-    const axisX = this.positions[axisVertex * 3], axisY = this.positions[axisVertex * 3 + 1], axisZ = this.positions[axisVertex * 3 + 2];
-    const half = (FINGER_SPOTS.length - 1) / 2;
-    for (let spot = -half; spot <= half; spot++) {
-      const vertex = axisVertex + spot;
-      if (spot !== 0) {
-        this.positions[vertex * 3] = axisX + (this.positions[vertex * 3] - axisX) * factor;
-        this.positions[vertex * 3 + 1] = axisY + (this.positions[vertex * 3 + 1] - axisY) * factor;
-        this.positions[vertex * 3 + 2] = axisZ + (this.positions[vertex * 3 + 2] - axisZ) * factor;
+  updateLigaments(end) {
+    const positions = this.ligamentPositions, normals = this.ligamentNormals, radii = this.ligamentRadii, round = this.ligamentRound, ripples = this.ligamentRipples;
+    const columns = LIGAMENT_COLUMNS;
+    const state = this.state;
+    const bulgeNow = LIGAMENT_BULGE * Math.min(this.age / LIGAMENT_BULGE_TIME, 1);
+    const centreX = new Float64Array(LIGAMENT_RINGS), centreY = new Float64Array(LIGAMENT_RINGS), centreZ = new Float64Array(LIGAMENT_RINGS), widths = new Float64Array(LIGAMENT_RINGS);
+    const frame = this.ligamentFrame;
+    const writeRing = (row, x, y, z, axisX, axisY, axisZ, radius, roundness, along) => {
+      // The carried frame, turned onto this ring's plane (src/jet.js writeRing).
+      let firstX = frame.x, firstY = frame.y, firstZ = frame.z;
+      const dot = firstX * axisX + firstY * axisY + firstZ * axisZ;
+      firstX -= dot * axisX; firstY -= dot * axisY; firstZ -= dot * axisZ;
+      let firstLength = Math.sqrt(firstX * firstX + firstY * firstY + firstZ * firstZ);
+      if (firstLength < 1e-6) {
+        firstX = Math.abs(axisX) < 0.9 ? 1 - axisX * axisX : -axisY * axisX;
+        firstY = Math.abs(axisX) < 0.9 ? -axisX * axisY : 1 - axisY * axisY;
+        firstZ = Math.abs(axisX) < 0.9 ? -axisX * axisZ : -axisY * axisZ;
+        firstLength = Math.sqrt(firstX * firstX + firstY * firstY + firstZ * firstZ) || 1;
       }
-      this.thicknesses[vertex] *= factor;
+      firstX /= firstLength; firstY /= firstLength; firstZ /= firstLength;
+      frame.x = firstX; frame.y = firstY; frame.z = firstZ;
+      const secondX = firstY * axisZ - firstZ * axisY, secondY = firstZ * axisX - firstX * axisZ, secondZ = firstX * axisY - firstY * axisX;
+      for (let column = 0; column < columns; column++) {
+        const vertex = row * columns + column;
+        const angle = (column / columns) * Math.PI * 2;
+        const cosAngle = Math.cos(angle), sinAngle = Math.sin(angle);
+        const outX = firstX * cosAngle + secondX * sinAngle, outY = firstY * cosAngle + secondY * sinAngle, outZ = firstZ * cosAngle + secondZ * sinAngle;
+        positions[vertex * 3] = x + outX * radius; positions[vertex * 3 + 1] = y + outY * radius; positions[vertex * 3 + 2] = z + outZ * radius;
+        // The tip's cap faces along the axis; the tube out of it.
+        normals[vertex * 3] = roundness > 0.5 ? axisX : outX; normals[vertex * 3 + 1] = roundness > 0.5 ? axisY : outY; normals[vertex * 3 + 2] = roundness > 0.5 ? axisZ : outZ;
+        radii[vertex] = radius;
+        round[vertex] = roundness;
+        ripples[vertex * 3] = cosAngle * LIGAMENT_RIPPLE[0]; ripples[vertex * 3 + 1] = sinAngle * LIGAMENT_RIPPLE[0]; ripples[vertex * 3 + 2] = along * LIGAMENT_RIPPLE[1];
+      }
+    };
+    let row = 0;
+    for (const finger of this.fingers) {
+      const column = finger.column;
+      const front = Math.min(this.tearFront[column], end);
+      const span = Math.min(FINGER_ROOT * this.launchDuration, Math.max(end - front, 0));
+      const gone = span <= 1e-9;
+      const cosAngle = this.columnCos[column], sinAngle = this.columnSin[column];
+      const speedFactor = this.columnSpeedFactor[column], thicknessFactor = this.columnThicknessFactor[column];
+      const fingerFactor = this.columnFingerFactor[column], rimShape = this.columnRimShape?.[column];
+      // The rim bead as launched sets the width: a ligament is as thick as the rim it grew from (the rim gathers what the sheet drains).
+      let bead = 0;
+      for (let ring = 0; ring < LIGAMENT_RINGS; ring++) {
+        const along = ring / (LIGAMENT_RINGS - 1);   // 0 at the root, 1 at the tip
+        const tau = front + span * (1 - along);
+        this.evaluate(tau, cosAngle, sinAngle, speedFactor, thicknessFactor, state, front, fingerFactor, false, rimShape);
+        centreX[ring] = state.x; centreY[ring] = state.y; centreZ[ring] = state.z;
+        if (ring === LIGAMENT_RINGS - 1) bead = 3 * this.baseThickness * thicknessFactor;   // the rim bead as launched: the rim gathers what the sheet drains
+        widths[ring] = along;
+      }
+      for (let ring = 0; ring < LIGAMENT_RINGS; ring++) {
+        const along = widths[ring];
+        const rise = LIGAMENT_ROOT + (1 - LIGAMENT_ROOT) * smoothstep(0, LIGAMENT_RISE, along);
+        const bulge = 1 + bulgeNow * Math.sin(Math.PI * 2 * finger.waves * along + finger.wavePhase);
+        widths[ring] = gone ? 0 : Math.max(0.5 * bead * rise * (1 - (1 - LIGAMENT_TIP) * along) * bulge, 0);
+      }
+      // A joiner before the root, the rings, a cap at the tip, a joiner after. A joiner's normals all point along
+      // the axis (as its cap's do): the column shader widens a ring narrower than a pixel along its normals, and a
+      // joiner with a tube's normals opened into a circle a pixel wide, a hairline drawn from one finger's tip to
+      // the next one's root.
+      const rootX = centreX[0], rootY = centreY[0], rootZ = centreZ[0];
+      const last = LIGAMENT_RINGS - 1;
+      let axisX = 0, axisY = 1, axisZ = 0;
+      writeRing(row++, rootX, rootY, rootZ, axisX, axisY, axisZ, 0, 1, 0);
+      for (let ring = 0; ring < LIGAMENT_RINGS; ring++) {
+        const before = Math.max(ring - 1, 0), after = Math.min(ring + 1, last);
+        let dx = centreX[after] - centreX[before], dy = centreY[after] - centreY[before], dz = centreZ[after] - centreZ[before];
+        const length = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        if (length > 1e-9) { axisX = dx / length; axisY = dy / length; axisZ = dz / length; }
+        writeRing(row++, centreX[ring], centreY[ring], centreZ[ring], axisX, axisY, axisZ, widths[ring], ring === last ? 1 : 0, widths[ring] > 0 ? ring / (LIGAMENT_RINGS - 1) : 0);
+      }
+      writeRing(row++, centreX[last], centreY[last], centreZ[last], axisX, axisY, axisZ, 0, 1, 1);
     }
+    holdWithinWalls(positions, this.walls);
+    markChanged(this.ligaments.geometry, ['position', 'normal', 'aRadius', 'aRound', 'aRipple']);
   }
 
   /** Evaluate the grid at the given splash time and upload it; place the fingers' beads. */
@@ -1493,7 +1597,6 @@ export class CrownSheet {
         this.froths[vertex * 2] = whiteness;
         this.froths[vertex * 2 + 1] = holes;
       }
-      if (this.fingered) for (const finger of this.fingers) this.shapeFinger(finger, row, end);
     }
     holdWithinWalls(this.positions, this.walls);
     if (!this.beadsGone) for (const finger of this.fingers) this.placeBead(finger, this.beadShare(finger));
@@ -1536,9 +1639,11 @@ export class CrownSheet {
       }
     }
     markChanged(this.geometry, ['position', 'normal', 'aRimTangent', 'aThickness', 'aRod', 'aSheet', 'aFroth']);
+    if (this.ligaments) this.updateLigaments(end);
   }
 
   dispose() {
     this.geometry.dispose();
+    this.ligaments?.geometry.dispose();
   }
 }

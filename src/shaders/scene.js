@@ -1495,6 +1495,8 @@ varying float vMask;
 varying float vViewZ;
 varying vec2 vRest;            // where the point lies on still water (WATER_VERTEX)
 #ifdef CAVITY_MESH
+#define CAVITY_RIPPLE_CELL vec2(0.02, 0.005)   // m: the wall's ripples' cells around it and down it (WATER_FRAGMENT)...
+#define CAVITY_RIPPLE_SLOPE 0.12               // ...and their slope
 varying vec3 vNormalWorld;
 varying vec3 vCavity;       // rides the surface, open to the sky (the under-water view's), climb to escape (WATER_VERTEX)
 #endif
@@ -1852,8 +1854,26 @@ void main() {
     slopeVariance += galeUnresolvedVariance(vRest) * ride;
   }
   vec3 meshNormal = normalize(vNormalWorld);
-  vec3 n = normalize(meshNormal + vec3(-surfaceSlope.x, 0.0, -surfaceSlope.y) * max(meshNormal.y, 0.0));
   float level = smoothstep(0.6, 0.9, meshNormal.y);   // 1 where the mesh lies as the surface does
+  // The wall is rippled (CAVITY_RIPPLE): the hoop ripples the stone's passage left and its capillary waves, a value
+  // noise over the wall's place, long around it and short down it, bumped into the normal by its screen derivatives
+  // (the sheet's wrinkles' way, src/shaders/sheet.js), fading as its cells shrink below a pixel; the lip keeps the
+  // surface's own. A mirror-smooth wall reflected the sky in one clean band and read as black lacquer.
+  vec3 wallNormal = meshNormal;
+  {
+    vec2 ripplePlace = vec2(vWorld.y / CAVITY_RIPPLE_CELL.y, (vWorld.x + 0.7 * vWorld.z) / CAVITY_RIPPLE_CELL.x);
+    float ripple = valueNoise(ripplePlace) + 0.5 * valueNoise(ripplePlace * 2.3 + 7.0);
+    vec3 sigmaX = dFdx(vWorld), sigmaY = dFdy(vWorld);
+    float cellsX = length(dFdx(ripplePlace)), cellsY = length(dFdy(ripplePlace));
+    float cellLength = 0.5 * (length(sigmaX) / max(cellsX, 1e-6) + length(sigmaY) / max(cellsY, 1e-6));
+    float amplitude = CAVITY_RIPPLE_SLOPE * cellLength * (1.0 - smoothstep(0.2, 0.6, max(cellsX, cellsY))) * (1.0 - level);
+    vec3 acrossWall = cross(sigmaY, meshNormal), upWall = cross(meshNormal, sigmaX);
+    float determinant = dot(sigmaX, acrossWall);
+    vec3 gradient = sign(determinant) * amplitude * (dFdx(ripple) * acrossWall + dFdy(ripple) * upWall);
+    vec3 rippled = abs(determinant) * meshNormal - gradient;
+    if (dot(rippled, rippled) > 0.0) wallNormal = normalize(rippled);
+  }
+  vec3 n = normalize(wallNormal + vec3(-surfaceSlope.x, 0.0, -surfaceSlope.y) * max(meshNormal.y, 0.0));
   vec2 slope = surfaceSlope;
 #else
   vec2 slope = vec2(hr - hl, hu - hd) / (2.0 * uCell) * vMask + ambientSlopeAtFullGust(vWorld.xz) * gust;

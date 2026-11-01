@@ -507,10 +507,13 @@ known timing, and the droplets are choreographed from them:
    azimuth and time: a tall, nearly upright wall that stands on the lip and
    leans in, 11 cm high at 90 ms for a 3 cm stone dropped straight in at
    6.3 m/s (the reference simulation's: 11 to 12 cm at 0.1 s, below). Its rim
-   thickens into a bead and grows fingers: rods of water, unevenly spaced and
-   of uneven length (some only stubs), between arcs of rim that sag each
-   their own way, each ending in a bead that swells, pinches off as a drop
-   as big as the rim is thick, give or take a third, and starts again. The
+   thickens into a bead and grows fingers: round ligaments of water, drawn
+   as tubes of their own, as thick as the rim bead at their roots and
+   tapering to their tips, beaded along their length as a stretched
+   ligament is, unevenly spaced and of wildly uneven length (a few twice
+   the mean, a quarter only stubs), between scalloped arcs of rim that sag
+   each their own way, each ending in a bead that swells, pinches off as a
+   drop as big as the rim is thick, give or take a third, and starts again. The
    sheet is no clean film: it wrinkles, holes open high in it as it thins
    and the tear nears (each a circle widening from its own seed, as a film
    ruptures, until the holes meet and what is left is a web of ligaments,
@@ -518,8 +521,9 @@ known timing, and the droplets are choreographed from them:
    froth, white streaks drawn out up the wall, patchy, and densest along
    the holes' rims, the more the bigger and faster the
    throw (as the stone's Weber number), so a pebble's crown is glass, the
-   default stone's a clear sheet frosted at its edges, and a 30 cm rock's
-   streaked white; the foot the lip carries stays clear water. Once its rim stalls
+   default stone's a clear sheet frosted at its edges, and a 16 cm stone's
+   or a rock's white through, its holes bigger as its sheet is thicker; the
+   foot the lip carries stays clear water. Once its rim stalls
    (about 90 ms for a 3 cm stone) the sheet tears, the arcs first and the
    fingers last, from the rim down into drops that carry its velocity. A
    thrown stone enters obliquely (about 30° from vertical thrown softly, 40
@@ -800,7 +804,10 @@ widening from seeds until only a web of ligaments is left, their rims
 thicker with the water they gathered, are cut
 in each pass, antialiased, and those under a pixel or two only thin it to
 the right transparency, so a far sheet never sparkles; the column is a lens that shows the pond and its glitter from well to
-the side and, through its bulb, the sky upside down. A drop two device
+the side and, through its bulb, the sky upside down, and bends the scene
+behind it as a glass rod does, its surface rippled by the capillary waves
+its mesh does not hold, and never black on its far side (a lens carries
+light round inside it). A drop two device
 pixels or wider is a glass bead, the pond in its top, the sky upside down
 in its lower half, with two glints, the sun reflected off it and the sun
 refracted through it (which makes a splash sparkle against the light),

@@ -97,7 +97,13 @@
 //     (the sun's glitter on it) and a drop the sky upside down below the pond,
 //     a light lower half under a dark top and a dark edge, rather than what is
 //     just behind it. The light is pondView, offset so that the
-//     straight-through direction gives exactly the scene behind. A lens
+//     straight-through direction gives exactly the scene behind; a column
+//     also takes the scene itself where its turned ray points (COLUMN_LENS
+//     of a far scene's shift, since the pond behind it is near; for
+//     COLUMN_LENS_SCENE of its refracted light, where the frame holds it),
+//     so the rings and the shore behind a jet bend and stretch through it
+//     as through a glass rod, where the model's light alone left them
+//     straight and the column read as frosted. A lens
 //     also carries light round inside it (a ray that enters near a drop's or
 //     a column's edge meets the far side at a grazing angle and is largely
 //     reflected on round the inside before it leaves, the sky and the pond
@@ -542,6 +548,8 @@ ${HAZE}
 #define SHEET_ROUGH_VARIANCE 0.05    // ...plus this times their aeration (white water is rough water)
 #define COLUMN_INNER 0.35            // the share of a column's refracted light that is its mean light, carried round inside it (the header)
 #define DROP_INNER 0.2               // and a drop's
+#define COLUMN_LENS 0.45             // a column's lens image: the scene behind, shifted by the ray's turn through it by this share of a far scene's shift...
+#define COLUMN_LENS_SCENE 0.7        // ...making this share of its refracted light (the rest the pond's model light)
 #define GLITTER_CAP 40.0
 ${MEAN_LIGHT}
 #define BEAD_FROM 0.5                // device-pixel radius at which a drop starts to be a glass bead...
@@ -682,6 +690,13 @@ void main() {
         float carry = bodyEye > 0.01 ? 1.0 / bodyEye : 0.0;
         refracted = max(exitLight + under * bodyExit * carry, 0.0) * absorbed;
         reflected = max(reflected + under * bodyReflected * carry, 0.0);
+        if (column > 0.5) {
+          // The column's lens image (the header): the scene where the turned ray points, as far as the frame holds it.
+          vec2 lensUv = vUv + (exitView.xy / max(-exitView.z, 0.05) - eye.xy / max(-eye.z, 0.05)) * uProjScale * uFluidTexel * COLUMN_LENS;
+          float held = step(0.0, lensUv.x) * step(lensUv.x, 1.0) * step(0.0, lensUv.y) * step(lensUv.y, 1.0);
+          vec3 lensScene = texture2D(uScene, clamp(lensUv, vec2(0.001), vec2(0.999))).rgb;
+          refracted = mix(refracted, lensScene * absorbed, COLUMN_LENS_SCENE * held);
+        }
         // The light carried round inside the lens (the header).
         refracted = mix(refracted, meanLight, mix(DROP_INNER, COLUMN_INNER, column));
       }
@@ -694,9 +709,9 @@ void main() {
       float aeration = optics.a / max(min(coverage, 1.0), 1e-3);
       // The sheet and the column glitter as the pond does, rougher where they are white; a drop's glints are in the optics.
       if (sheet + column > 0.5) surface += min(sunGlitter(worldNormal, worldToViewer, sunWorld, uSunIrradiance, WATER_SLOPE_VARIANCE + SHEET_ROUGH_VARIANCE * clamp(aeration, 0.0, 1.0)), vec3(GLITTER_CAP));
-      // A column's white water is a body, not a film: lit by the sky and shaded by the sun on its side.
+      // A column's white water is a body, not a film, and so is a sheet gone white: lit by the sky and shaded by the sun on its side.
       vec3 columnScattering = scattering * (0.55 + 0.45 * clamp(dot(worldNormal, sunWorld), 0.0, 1.0));
-      surface = mix(surface, mix(scattering, columnScattering, column), (sheet + column) * clamp(aeration, 0.0, 1.0));
+      surface = mix(surface, mix(scattering, columnScattering, clamp(column + sheet * aeration, 0.0, 1.0)), (sheet + column) * clamp(aeration, 0.0, 1.0));
       float drop = 1.0 - sheet - column;
       // On-screen radius in device pixels: a drop's from the depth pass, a column's from the water across it.
       float deviceRadius = mix(info.g, 0.5 * thickness / max(normal.z, 0.3) * uProjScale / info.r, column) / uFluidScale;
