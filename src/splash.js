@@ -315,6 +315,20 @@ const LANDING_CROWN_SPEED = 1.0;      // ...and fall this fast (m/s): not the dr
 const AIR_DENSITY = 1.2;
 const WATER_SURFACE_TENSION = 0.072;
 const WATER_DENSITY_LUMPS = 1000;
+// A drop's wobble. A drop just pinched off a ligament or a column is no
+// sphere: it is left prolate along the way it was pulled, and rings between
+// prolate and oblate at the frequency of its second mode (Rayleigh 1879),
+// ω² = 8σ / (ρ r³): 66 Hz for a 1.5 mm drop, 15 Hz for a 4 mm one, dying away
+// over r² / (5ν) (Lamb's viscous damping of that mode: 0.45 s for 1.5 mm,
+// longer than its flight). Its shape, its length along its motion over its
+// width, is 1 + a·e^(−age/τ)·cos(ω·age), a drawn between WOBBLE for each
+// drop of WOBBLE_LEAST_RADIUS and up (a finer one is a pixel and shows no
+// shape), stepped with the drop (shapes) and drawn by the vertex shader
+// (iShape in src/shaders/fluid.js); at 60 Hz a small drop's ringing is
+// faster than the frames, a jitter of shape, as it is in a camera's.
+const WOBBLE = [0.15, 0.45];
+const WOBBLE_LEAST_RADIUS = 0.001;
+const WATER_VISCOSITY = 1e-6;         // m²/s (kinematic)
 const WEBER_CRITICAL = 12;
 const LUMP_BREAK = { largest: 0.72, pieces: 8 };
 const LANDING_REFERENCE = 0.0086;     // the drop size the landing crown was tuned at (bigger than any drop now: DROP_CEILING)
@@ -793,6 +807,8 @@ export class SplashSystem {
     this.radii = new Float32Array(capacity);
     this.ages = new Float32Array(capacity);
     this.lenses = new Float32Array(capacity);   // 1 for drops drawn as glass lenses like the jet column
+    this.wobbles = new Float32Array(capacity);  // the wobble's amplitude at birth (0 for a fine drop)...
+    this.shapes = new Float32Array(capacity);   // ...and its shape now, length along its motion over width (the header's wobble)
 
     this.bubbleCapacity = bubbleCapacity;
     this.bubbleCount = 0;
@@ -837,10 +853,12 @@ export class SplashSystem {
     this.instanceRadii = new THREE.InstancedBufferAttribute(this.radii, 1).setUsage(THREE.DynamicDrawUsage);
     this.instanceVelocities = new THREE.InstancedBufferAttribute(this.velocities, 3).setUsage(THREE.DynamicDrawUsage);
     this.instanceLenses = new THREE.InstancedBufferAttribute(this.lenses, 1).setUsage(THREE.DynamicDrawUsage);
+    this.instanceShapes = new THREE.InstancedBufferAttribute(this.shapes, 1).setUsage(THREE.DynamicDrawUsage);
     geometry.setAttribute('iPosition', this.instancePositions);
     geometry.setAttribute('iRadius', this.instanceRadii);
     geometry.setAttribute('iVelocity', this.instanceVelocities);
     geometry.setAttribute('iLens', this.instanceLenses);
+    geometry.setAttribute('iShape', this.instanceShapes);
     geometry.instanceCount = 0;
     this.particleGeometry = geometry;
 
@@ -1617,6 +1635,10 @@ export class SplashSystem {
     this.radii[i] = radius;
     this.ages[i] = 0;
     this.lenses[i] = lens ? 1 : 0;
+    // Pinched off prolate, it rings from there (the header's wobble).
+    const wobble = radius >= WOBBLE_LEAST_RADIUS ? randomRange(WOBBLE[0], WOBBLE[1]) : 0;
+    this.wobbles[i] = wobble;
+    this.shapes[i] = 1 + wobble;
   }
 
   removeDroplet(i) {
@@ -1629,6 +1651,8 @@ export class SplashSystem {
       this.radii[i] = this.radii[last];
       this.ages[i] = this.ages[last];
       this.lenses[i] = this.lenses[last];
+      this.wobbles[i] = this.wobbles[last];
+      this.shapes[i] = this.shapes[last];
     }
   }
 
@@ -1772,6 +1796,14 @@ export class SplashSystem {
       }
       this.positions[p] = x; this.positions[p + 1] = y; this.positions[p + 2] = z;
       this.velocities[p] = vx; this.velocities[p + 1] = vy; this.velocities[p + 2] = vz;
+      // Its wobble (the header): the second mode's ringing, dying away.
+      const wobble = this.wobbles[i];
+      if (wobble > 0) {
+        const age = this.ages[i];
+        const ringing = Math.sqrt((8 * WATER_SURFACE_TENSION) / (WATER_DENSITY_LUMPS * radius * radius * radius));
+        const damping = (radius * radius) / (5 * WATER_VISCOSITY);
+        this.shapes[i] = 1 + wobble * Math.exp(-age / damping) * Math.cos(ringing * age);
+      }
     }
 
     // Falling drops ring the surface again: the biggest first, each its
@@ -1843,6 +1875,7 @@ export class SplashSystem {
     this.instanceRadii.needsUpdate = true;
     this.instanceVelocities.needsUpdate = true;
     this.instanceLenses.needsUpdate = true;
+    this.instanceShapes.needsUpdate = true;
     this.particleGeometry.instanceCount = this.count;
     this.bubblePositionAttribute.needsUpdate = true;
     this.bubbleSizeAttribute.needsUpdate = true;
@@ -1918,6 +1951,7 @@ export class SplashSystem {
       this.instanceRadii.needsUpdate = true;
       this.instanceVelocities.needsUpdate = true;
       this.instanceLenses.needsUpdate = true;
+      this.instanceShapes.needsUpdate = true;
     }
     const drawn = this.count + beads;
     this.particleGeometry.instanceCount = drawn;

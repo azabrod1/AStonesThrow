@@ -170,6 +170,12 @@ function gammaQuantiles() {
 }
 const GAMMA_QUANTILES = gammaQuantiles();
 
+/** A draw from a gamma of order 4 with mean 1 (the table's quantiles), from `random`'s next number: a ligament's drop sizes (src/crown.js too). */
+export function gammaFactor(random) {
+  const place = random() * (GAMMA_TABLE_SIZE - 1), index = place | 0;
+  return GAMMA_QUANTILES[index] + (GAMMA_QUANTILES[Math.min(index + 1, GAMMA_TABLE_SIZE - 1)] - GAMMA_QUANTILES[index]) * (place - index);
+}
+
 /**
  * A water drop's deceleration by the air (m/s²) at `speed` for its radius:
  * (3/8)·(ρ_air / ρ_water)·C_d·v² / r, with Schiller and Naumann's drag
@@ -451,9 +457,7 @@ export class SpraySystem {
     this.kick = kick;
     for (let sprite = 0; sprite < sprites; sprite++) {
       // Gamma of order 4 about the mean, from its quantiles.
-      const place = random() * (GAMMA_TABLE_SIZE - 1), index = place | 0;
-      const gamma = GAMMA_QUANTILES[index] + (GAMMA_QUANTILES[Math.min(index + 1, GAMMA_TABLE_SIZE - 1)] - GAMMA_QUANTILES[index]) * (place - index);
-      const dropRadius = Math.min(Math.max(radius * gamma, SPRAY_LEAST_RADIUS), most);
+      const dropRadius = Math.min(Math.max(radius * gammaFactor(random), SPRAY_LEAST_RADIUS), most);
       randomDirection(random, direction);
       const speed = (kick * (1 + 2 * random())) / 3;
       const kickX = direction[0] * speed, kickY = direction[1] * speed, kickZ = direction[2] * speed;

@@ -512,8 +512,11 @@ known timing, and the droplets are choreographed from them:
    their own way, each ending in a bead that swells, pinches off as a drop
    as big as the rim is thick, give or take a third, and starts again. The
    sheet is no clean film: it wrinkles, holes open high in it as it thins
-   and the tear nears, and it carries froth, white streaks drawn out up the
-   wall and along the holes' edges, the more the bigger and faster the
+   and the tear nears (each a circle widening from its own seed, as a film
+   ruptures, until the holes meet and what is left is a web of ligaments,
+   each hole's rim a lumpy bead of the water it gathered), and it carries
+   froth, white streaks drawn out up the wall, patchy, and densest along
+   the holes' rims, the more the bigger and faster the
    throw (as the stone's Weber number), so a pebble's crown is glass, the
    default stone's a clear sheet frosted at its edges, and a 30 cm rock's
    streaked white; the foot the lip carries stays clear water. Once its rim stalls
@@ -784,13 +787,17 @@ or the pond below the horizon, with the sand under it and the sun's glitter)
 and the light it lets through, absorbed by the pond's own coefficients over
 the water crossed, and the sun's glitter with the pond's own model. The
 crown sheet and the jet column are meshes and the droplets sphere impostors,
-stretched along their motion as a camera's shutter would smear them, all
+stretched along their motion as a camera's shutter would smear them (and,
+just pinched off, wobbling: longer then flatter along their flight, ringing
+at a drop's own note and dying away as a real one does), all
 drawn into one buffer of depth, kind and exact normal and one of summed
 thickness, coverage, sun glints and aeration; the composite pass shades
 them and tone-maps the frame. The sheet is a clear film that barely bends
 what is behind it, aerated (whitened) along its rim bead and torn edges and
 by its froth, which scatters along the path through it, so a sheet seen
-face-on stays clear where one seen edge-on goes white; its holes are cut
+face-on stays clear where one seen edge-on goes white; its holes, circles
+widening from seeds until only a web of ligaments is left, their rims
+thicker with the water they gathered, are cut
 in each pass, antialiased, and those under a pixel or two only thin it to
 the right transparency, so a far sheet never sparkles; the column is a lens that shows the pond and its glitter from well to
 the side and, through its bulb, the sky upside down. A drop two device

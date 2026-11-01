@@ -33,22 +33,40 @@
 // stretches with the water, so whatever is drawn in those coordinates is
 // carried by the sheet; and aFroth: the share of the light its froth
 // scatters (whiteness) and the share of it holes have opened (openness).
-// A two-octave value noise in aSheet, n, has its open share P(n < q)
-// within 1.6% of smoothstep(FROTH_OPEN_LOW, FROTH_OPEN_HIGH, q) (measured on
-// the CPU), so the shader inverts that to find the threshold q a vertex's
-// openness asks for: where n < q the sheet has a hole. Each pass takes the
+// A film ruptures as a real one does: holes nucleate at points and each
+// grows as a circle, its rim running back through the film, until the holes
+// meet and the film is a web of ligaments between them. So the holes are
+// drawn from a field of seeds, one at a hashed place in each cell of
+// aSheet (holeDistance: the distance to the nearest of the 27 cells'
+// seeds), and a vertex's openness asks for the radius every hole has
+// reached: the share of the sheet within r of a seed, measured on the CPU
+// over 300 000 points, is 1 − exp(−(r / (0.6422 − 0.0582·u))³) within 0.8%
+// for u = cbrt(−ln(1 − open share)), so holeRadius inverts that; where the
+// distance is under it the sheet has a hole. As the openness grows the
+// holes widen from the same seeds, so a hole never flickers in and out, and
+// what is left between them is the ligaments' web. Each pass takes the
 // same holes: the depth pass discards a pixel more hole than sheet, the
 // optics pass writes the sheet's share of each pixel (its thickness,
 // coverage and aeration times it; the composite divides the aeration by the
 // coverage, so the share drawn keeps its whiteness), so a hole's edge is
 // antialiased; a hole
-// narrower than a pixel or two (the noise's footprint in cells, from its
+// narrower than a pixel or two (the field's footprint in cells, from its
 // screen derivatives, over FROTH_FADE) is not drawn but averaged: no pixel
 // is discarded and the optics write the open share's mean, so a far sheet
-// thins to the right transparency instead of sparkling. The whiteness is
-// brightest along the holes' edges (where a Taylor–Culick rim gathers the
-// sheet's water and its bubbles) and grained by a finer noise, both fading
-// to their means as they shrink below a pixel. The optics pass adds it to
+// thins to the right transparency instead of sparkling. Along each hole's
+// edge runs its rim, FROTH_RIM cells wide, lumpy (its width times a fine
+// noise's 0.5 to 1.5: a rim's own varicose beads), where the Taylor–Culick
+// rim has gathered the hole's water and its bubbles: the sheet there is
+// thicker by the hole's area over the rim's, r / (2·FROTH_RIM) times
+// (gathered, which the optics pass adds to the thickness), and the froth
+// densest (FROTH_EDGE_GAIN), so a hole's edge is a bright, dark-cored bead
+// and the web between holes a string of them; its mean over the sheet
+// (rimMean, the share of the sheet left that lies in the band, measured
+// with the radius) is what an unresolved sheet takes. The froth is also
+// patchy at a scale of a few cells (FROTH_PATCH_SCALE, from 0.4 to 1.6
+// times its density: the sheet thinner and clearer in places, thicker and
+// whiter in others) and grained by a finer noise, each fading
+// to its mean as it shrinks below a pixel. The optics pass adds it to
 // the bead's aeration; the composite mixes the sheet towards the spray's
 // scattering colour by the sum (at most 1). The depth pass also wrinkles the
 // normal (the sheet's capillary ripples): a height of WRINKLE_SLOPE (plus
@@ -87,16 +105,17 @@ import { GALE_SURFACE } from './gale.js';
 // any discard).
 export const SHEET_FROTH = /* glsl */`
 #define RIM_AERATION 0.55          // how far the rim bead and torn edges whiten
-#define FROTH_OPEN_LOW 0.205       // the holes' noise: P(n < q) ≈ smoothstep(low, high, q)
-#define FROTH_OPEN_HIGH 0.795
-#define FROTH_FADE vec2(0.35, 0.9)  // the noise's footprint (cells a pixel) over which holes and grain fade to their means
-#define FROTH_EDGE 0.08            // the holes' edges whiten over this much of the noise past the threshold
-#define FROTH_EDGE_MEAN 0.62       // the edge's whitening, averaged over the sheet
+#define FROTH_RADIUS vec2(0.6422, -0.0582)   // the holes' radius for an open share: u·(x + y·u), u = cbrt(−ln(1 − share)) (the header)
+#define FROTH_FADE vec2(0.35, 0.9)  // the field's footprint (cells a pixel) over which holes and grain fade to their means
+#define FROTH_RIM 0.12             // a hole's rim: the sheet within this many cells of its edge...
+#define FROTH_RIM_MEAN vec2(0.08, 0.8)   // ...which holds this much of the sheet left (x + y·open share, measured: the header), half of it under the rim's profile
 #define FROTH_BASE 0.3             // the froth's density: this much everywhere...
 #define FROTH_STREAK 1.2           // ...this much more in its streaks (half the sheet on average)...
-#define FROTH_EDGE_GAIN 0.8        // ...and this much more along the holes' edges...
+#define FROTH_EDGE_GAIN 0.8        // ...and this much more along the holes' rims...
 #define FROTH_STREAK_SCALE 0.45    // ...the streaks' cells per hole cell around the sheet...
 #define FROTH_STREAK_ALONG 0.25    // ...and this share of that along it: drawn out the way the sheet is
+#define FROTH_PATCH_SCALE 0.15     // the patches' cells per hole cell...
+#define FROTH_PATCH vec2(0.4, 1.6) // ...and the density's range across them
 #define FROTH_GRAZE 0.25           // the cosine of the view's angle to the sheet below which the path through it stops growing
 #define FROTH_GRAIN_SCALE 3.7      // the grain's cells per hole cell
 #define WRINKLE_SCALE 0.6          // the wrinkles' cells per hole cell
@@ -106,6 +125,37 @@ float frothHash(vec3 point) {
   point = fract(point * 0.1031);
   point += dot(point, point.zyx + 31.32);
   return fract((point.x + point.y) * point.z);
+}
+// A cell's seed: where in it (0 to 1 each way) the hole that opens there is centred.
+vec3 frothSeed(vec3 cell) {
+  vec3 point = fract(cell * vec3(0.1031, 0.1030, 0.0973));
+  point += dot(point, point.yxz + 33.33);
+  return fract((point.xxy + point.yxx) * point.zyx);
+}
+// The holes' field: how far the point is (cells) from the nearest seed of the 27 cells about it.
+float holeDistance(vec3 point) {
+  vec3 cell = floor(point);
+  vec3 local = point - cell;
+  float nearest = 16.0;
+  for (int dz = -1; dz <= 1; dz++) {
+    for (int dy = -1; dy <= 1; dy++) {
+      for (int dx = -1; dx <= 1; dx++) {
+        vec3 offset = vec3(float(dx), float(dy), float(dz));
+        vec3 toSeed = offset + frothSeed(cell + offset) - local;
+        nearest = min(nearest, dot(toSeed, toSeed));
+      }
+    }
+  }
+  return sqrt(nearest);
+}
+// The radius every hole has reached when the sheet is this open (the header's fit).
+float holeRadius(float openShare) {
+  float u = pow(-log(1.0 - clamp(openShare, 0.0, 0.98)), 1.0 / 3.0);
+  return u * (FROTH_RADIUS.x + FROTH_RADIUS.y * u);
+}
+// The rims' share of the sheet left, under their profile, when the sheet is this open: an unresolved sheet's.
+float rimMean(float openShare) {
+  return 0.5 * (FROTH_RIM_MEAN.x + FROTH_RIM_MEAN.y * openShare);
 }
 float frothNoise(vec3 point) {
   vec3 cell = floor(point);
@@ -117,22 +167,15 @@ float frothNoise(vec3 point) {
                     mix(frothHash(cell + vec3(0.0, 1.0, 1.0)), frothHash(cell + vec3(1.0, 1.0, 1.0)), ease.x), ease.y);
   return mix(lower, upper, ease.z);
 }
-float frothField(vec3 point) {
-  return 0.65 * frothNoise(point) + 0.35 * frothNoise(2.13 * point + vec3(17.1, 5.3, 11.7));
-}
-// The noise's footprint: cells across a pixel, the larger of the two screen directions.
+// The field's footprint: cells across a pixel, the larger of the two screen directions.
 float frothFootprint(vec3 sheet) {
   return max(length(dFdx(sheet)), length(dFdy(sheet)));
-}
-// The threshold the open share asks for (the inverse of smoothstep(low, high, q)).
-float frothThreshold(float openShare) {
-  float share = clamp(openShare, 0.0, 0.999);
-  return FROTH_OPEN_LOW + (FROTH_OPEN_HIGH - FROTH_OPEN_LOW) * (0.5 - sin(asin(1.0 - 2.0 * share) / 3.0));
 }
 struct SheetFroth {
   float present;     // the sheet's share of the pixel, 0 to 1
   bool hole;         // more hole than sheet, and resolved: the depth pass discards it
   float whiteness;   // the share of the light the froth there scatters, 0 to 1
+  float gathered;    // how much thicker the sheet is here with the water its holes' rims gathered (0 off a rim)
 };
 // facing: the cosine of the view's angle to the sheet. The froth scatters
 // along the path through it, so the light it scatters is 1 − exp(−density
@@ -144,22 +187,29 @@ SheetFroth sheetFroth(vec3 sheet, vec2 froth, float rimAeration, float rod, floa
   float resolved = 1.0 - smoothstep(FROTH_FADE.x, FROTH_FADE.y, footprint);
   // No holes open in a finger or the bead.
   float openShare = rod > 0.5 ? 0.0 : froth.y * (1.0 - clamp(rimAeration, 0.0, 1.0));
-  float field = frothField(sheet);
-  float past = field - frothThreshold(openShare);
+  float radius = holeRadius(openShare);
+  float field = holeDistance(sheet);
+  float past = field - radius;   // cells outside the nearest hole's edge (inside it, negative)
   float edgeWidth = max(fwidth(field), 1e-4);
   float drawn = smoothstep(-edgeWidth, edgeWidth, past);
   result.present = openShare <= 0.0 ? 1.0 : mix(1.0 - openShare, drawn, resolved);
   result.hole = openShare > 0.0 && resolved > 0.5 && drawn < 0.5;
-  // Densest in streaks and along the holes' edges, grained by a finer noise;
-  // each averages out as it shrinks below a pixel.
-  float edge = openShare > 0.0 ? 1.0 - smoothstep(0.0, FROTH_EDGE, past) : 0.0;
-  float edgeShare = mix(FROTH_EDGE_MEAN * openShare, edge, resolved);
+  // The grain, a finer noise, and the patches, a coarser one; each averages out as it shrinks below a pixel.
+  float grainResolved = 1.0 - smoothstep(FROTH_FADE.x, FROTH_FADE.y, footprint * FROTH_GRAIN_SCALE);
+  float grainNoise = frothNoise(sheet * FROTH_GRAIN_SCALE + vec3(3.1, 7.7, 1.3));
+  float grain = mix(1.0, 0.6 + 0.8 * grainNoise, grainResolved);
+  float patchResolved = 1.0 - smoothstep(FROTH_FADE.x, FROTH_FADE.y, footprint * FROTH_PATCH_SCALE);
+  float patchy = mix(1.0, mix(FROTH_PATCH.x, FROTH_PATCH.y, smoothstep(0.3, 0.7, frothNoise(sheet * FROTH_PATCH_SCALE + vec3(23.7, 4.9, 15.2)))), patchResolved);
+  // The holes' rims: the band outside each edge, lumpy (the grain sets its width), where the hole's water is gathered.
+  float rimWidth = FROTH_RIM * mix(1.0, 0.5 + grainNoise, grainResolved);
+  float rim = openShare > 0.0 ? 1.0 - smoothstep(0.0, rimWidth, past) : 0.0;
+  float rimShare = mix(rimMean(openShare), rim, resolved);
+  result.gathered = rimShare * radius / (2.0 * FROTH_RIM);
+  // Densest in streaks and along the rims.
   float streakResolved = 1.0 - smoothstep(FROTH_FADE.x, FROTH_FADE.y, footprint * FROTH_STREAK_SCALE);
   vec3 streakPlace = sheet * vec3(FROTH_STREAK_SCALE, FROTH_STREAK_SCALE, FROTH_STREAK_SCALE * FROTH_STREAK_ALONG);
   float streak = mix(0.5, smoothstep(0.3, 0.7, frothNoise(streakPlace + vec3(9.4, 2.2, 6.8))), streakResolved);
-  float grainResolved = 1.0 - smoothstep(FROTH_FADE.x, FROTH_FADE.y, footprint * FROTH_GRAIN_SCALE);
-  float grain = mix(1.0, 0.6 + 0.8 * frothNoise(sheet * FROTH_GRAIN_SCALE + vec3(3.1, 7.7, 1.3)), grainResolved);
-  float density = froth.x * (FROTH_BASE + FROTH_STREAK * streak + FROTH_EDGE_GAIN * edgeShare) * grain * (rod > 0.5 ? 0.5 : 1.0);
+  float density = froth.x * (FROTH_BASE + FROTH_STREAK * streak + FROTH_EDGE_GAIN * rimShare) * grain * patchy * (rod > 0.5 ? 0.5 : 1.0);
   result.whiteness = 1.0 - exp(-density / max(facing, FROTH_GRAZE));
   return result;
 }
@@ -273,7 +323,7 @@ void main() {
   float sceneDepth = texture2D(uSceneDepth, gl_FragCoord.xy / uResolution).r;
   if (gl_FragCoord.z > sceneDepth || froth.hole) discard;
   float aeration = RIM_AERATION * vAeration + froth.whiteness;
-  gl_FragColor = froth.present * vec4(vThickness / max(facing, 0.33), 1.0, 0.0, aeration);
+  gl_FragColor = froth.present * vec4(vThickness * (1.0 + froth.gathered) / max(facing, 0.33), 1.0, 0.0, aeration);
 }
 `;
 

@@ -176,7 +176,12 @@
 // The torn part becomes droplets that carry the local (decayed) sheet
 // velocity, each holding the volume of the patch of sheet it came from, so the
 // drops come out about the size the sheet's thickness implies, between
-// CROWN_DROP_FLOOR and CROWN_DROP_CAP (1 and 5.5 mm) for a 3 cm stone, a
+// CROWN_DROP_FLOOR and CROWN_DROP_CAP (1 and 5.5 mm) for a 3 cm stone, but
+// no two alike: a ligament breaks into drops of a broad spread of sizes
+// (Villermaux's gamma of order 4, as the spray's are: a tenth under half the
+// mean, a tenth over one and a half times it), so each patch's drop is its
+// mean size times that draw, the mean brought down by TEAR_GAMMA_VOLUME so
+// the water comes out the same; a
 // patch holding more than a drop of DROP_CEILING breaking into several
 // (Drop sizes, below); its fingers shed their beads, the fan's and a landing
 // crown's crests drops of RIM_DROP_RADIUS and up. Besides its drop each torn
@@ -230,8 +235,12 @@
 // tens of milliseconds (the biggest raindrops are about 3 mm; a splash's
 // lumps fly slower and not as long, so they may be a little bigger). So a
 // torn patch, a finger's bead or a crest's drop that would be bigger breaks
-// into drops of LUMP_PIECE_LEAST to 1 times DROP_CEILING that hold its water
-// (breakLump), spread over where it came from: a big stone's sheet tears into
+// into drops that hold its water (breakLump), each LUMP_PIECE_MEAN of
+// DROP_CEILING times a gamma draw of order 4 (a ligament's spread of sizes,
+// as the tear's drops and the spray are) within LUMP_PIECE_LEAST and 1 of
+// it, so a lump's drops are a few big beads among smaller ones, no string
+// of equal beads (which a rock's rim shed before: every piece 2.4 to 4 mm),
+// spread over where it came from: a big stone's sheet tears into
 // more drops, not bigger ones. The extra drops come out of the splash's cap
 // (spareDroplets: CROWN_DROPLET_CAP or FAN_DROPLET_CAP in src/splash.js less
 // the drops the sheet was given), earned by the rim's and the tear's drops
@@ -300,7 +309,7 @@
 // a wall runs up it instead of passing through onto the deck.
 import * as THREE from 'three';
 import { createRingGrid, computeGridNormals, holdWithinWalls, markChanged } from './fluidMesh.js';
-import { seededRandom, sprayDrops } from './spray.js';
+import { seededRandom, sprayDrops, gammaFactor } from './spray.js';
 
 const GRAVITY = 9.81;
 const REFERENCE_RADIUS = 0.03;     // the stone size the tuning constants were set for
@@ -333,6 +342,7 @@ const BREAK_FLOOR = 0.06;          // a stone's sheet tears when its rim stalls,
 const BREAK_CEILING = 0.15;        // ...and at most this, both times R / 3 cm for stones of 3 cm and up
 const STALL_SHARE = 1.15;          // it tears this many times the rim's stall after the launch
 const DROP_SIZE_POWER = 0.5;       // a stone's sheet sheds and tears into drops scaling as (R / 3 cm)^this
+const TEAR_GAMMA_VOLUME = 1.875 ** (-1 / 3);   // a gamma of order 4 has E[r³] = 1.875·mean³: its mean is scaled by this so a patch's drops hold its water (the header)
 const CROWN_DROP_CAP = 0.0055;     // it tears into drops of at most this...
 const CROWN_DROP_FLOOR = 0.001;    // ...and at least this (both times (R / 3 cm)^DROP_SIZE_POWER)
 const RIM_DROP_RADIUS = 0.0015;    // the fan's and a landing crown's crests shed drops of this...
@@ -343,7 +353,8 @@ const RIM_DROP_SPREAD = 0.0025;    // ...to this much more (the same scaling; a 
 // 3 mm in radius, and a splash's lumps, flying slower than a raindrop falls
 // and for a few tenths of a second, can be a little bigger before they break.
 export const DROP_CEILING = 0.004;
-const LUMP_PIECE_LEAST = 0.6;      // a lump too big to fly whole breaks into drops of this to 1 times the largest allowed, in radius
+const LUMP_PIECE_LEAST = 0.35;     // a lump too big to fly whole breaks into drops of this to 1 times the largest allowed, in radius...
+const LUMP_PIECE_MEAN = 0.7;       // ...about this times it on average, by a gamma draw (the header's Drop sizes)
 const TAIL_THICKNESS = 0.6;        // tail material leaves the ring at this fraction of h0
 const MIN_THICKNESS = 0.0002;
 const BEAD_END = 0.08;             // the bead is the material of the first 8% of T
@@ -440,7 +451,8 @@ const smoothstep = (edgeLow, edgeHigh, value) => {
 /**
  * A lump of water too big to fly as one drop (bigger than `largest`, which is
  * at most DROP_CEILING; the header's Drop sizes) breaks into drops that hold
- * its volume: each LUMP_PIECE_LEAST to 1 times `largest` in radius at random,
+ * its volume: each LUMP_PIECE_MEAN times `largest` times a gamma draw, within
+ * LUMP_PIECE_LEAST and 1 times `largest` in radius,
  * the last two sharing what is left, so none is a speck. At most `allowed`
  * drops (at least one; the callers' drop budgets, kept for cost): the last of
  * them is as random as the rest, and whatever is left is lost. They start
@@ -450,14 +462,15 @@ const smoothstep = (edgeLow, edgeHigh, value) => {
  */
 export function breakLump(from, radius, largest, allowed, spread, scatter, random, spawn) {
   const least = LUMP_PIECE_LEAST * largest;
+  const draw = () => Math.min(Math.max(LUMP_PIECE_MEAN * largest * gammaFactor(random), least), largest);
   let left = radius ** 3;
   let count = 0;
   while (left > 0 && count < allowed) {
     let piece;
     if (left <= largest ** 3) piece = Math.cbrt(left);
-    else if (count === allowed - 1) piece = least + (largest - least) * random();
+    else if (count === allowed - 1) piece = draw();
     else {
-      piece = least + (largest - least) * random();
+      piece = draw();
       // Never leave less than the least drop: share the last two equally.
       if (left - piece ** 3 < least ** 3) piece = Math.cbrt(0.5 * left);
     }
@@ -1227,6 +1240,7 @@ export class CrownSheet {
       splash.radii[slot] = bead.radius;
       splash.ages[slot] = 0;
       splash.lenses[slot] = 1;
+      splash.shapes[slot] = 1;
       written++;
     }
     return written;
@@ -1351,7 +1365,7 @@ export class CrownSheet {
         // patch holding more than a drop of DROP_CEILING breaks into
         // several, spread over it (1/density is its area).
         const volumeRadius = Math.cbrt((3 * state.thickness) / (4 * Math.PI * density));
-        const radius = THREE.MathUtils.clamp(volumeRadius * randomRange(0.7, 1.25), this.minDropRadius, this.maxDropRadius);
+        const radius = THREE.MathUtils.clamp(volumeRadius * TEAR_GAMMA_VOLUME * gammaFactor(Math.random), this.minDropRadius, this.maxDropRadius);
         const scatter = 0.04 * Math.sqrt(state.vx * state.vx + state.vy * state.vy + state.vz * state.vz) + 0.05;
         this.spareCarry += this.spareRate;
         this.sprayFromPatch(splash, state, density);

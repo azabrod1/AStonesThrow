@@ -30,8 +30,11 @@
 // device pixels (src/splash.js: 0.5, under a pixel wide) write no depth:
 // they are mist, only coverage and glints, and never hide the sheet behind
 // them. Lens drops (the jet's big ones, iLens) keep their round shape: a long
-// streak would read as a pill. uLeastRadius leaves finer drops out (the
-// mirror pass's). The spray (SPRAY_VERTEX, src/spray.js) goes through the
+// streak would read as a pill. A drop just pinched off wobbles (iShape,
+// src/splash.js: its length along its motion over its width, volume kept),
+// so the quad is drawn that much longer along the axis and narrower across
+// it, and the sphere's shading is stretched with it: an ellipsoid near
+// enough. uLeastRadius leaves finer drops out (the mirror pass's). The spray (SPRAY_VERTEX, src/spray.js) goes through the
 // same passes and fragments: each sprite a drop, or a puff of vWeight like
 // drops, drawn as mist (no depth) over a soft disc, puffKernel: their
 // coverage and water summed over it, falling off as (1 − ρ²)² from its
@@ -161,7 +164,7 @@ varying float vGlintShare;       // the share of a puff's glints drawn as a poin
 ${FRESNEL}
 ${GALE_SURFACE}
 void cullDrop() { gl_Position = vec4(0.0, 0.0, 2.0, 1.0); }
-void drawDrop(vec3 centreWorld, vec3 velocityWorld, float dropRadius, float lens, float weight, float spread) {
+void drawDrop(vec3 centreWorld, vec3 velocityWorld, float dropRadius, float lens, float weight, float spread, float shape) {
   // A drop flies over still water (src/splash.js); the gale lifts it with the surface under it.
   vec3 centre = centreWorld;
   if (uGaleMetresPerUnit > 0.0) centre.y += galeLift(centreWorld);
@@ -180,7 +183,8 @@ void drawDrop(vec3 centreWorld, vec3 velocityWorld, float dropRadius, float lens
   // A drop drawn as a lens keeps its shape: a long streak would read as a pill.
   if (lens > 0.5) stretch = min(stretch, 1.25);
   vec2 perpendicular = vec2(-axis.y, axis.x);
-  vec2 offset = (axis * position.x * stretch + perpendicular * position.y) * radius;
+  // The wobble: longer along the motion by shape, narrower across by its square root (the volume kept).
+  vec2 offset = (axis * position.x * stretch * shape + perpendicular * position.y * inversesqrt(shape)) * radius;
 
   // The two glints (see the header), on the true sphere inside the drawn disc.
   vec3 toViewer = normalize(-viewCentre.xyz);
@@ -232,10 +236,11 @@ attribute vec3 iPosition;
 attribute float iRadius;
 attribute vec3 iVelocity;
 attribute float iLens;
+attribute float iShape;          // its length along its motion over its width (1 a sphere): the wobble, src/splash.js
 ${DROP_BODY}
 void main() {
   if (iRadius < uLeastRadius) { cullDrop(); return; }
-  drawDrop(iPosition, iVelocity, iRadius, iLens, 1.0, 0.0);
+  drawDrop(iPosition, iVelocity, iRadius, iLens, 1.0, 0.0, max(iShape, 0.25));
 }
 `;
 
@@ -297,7 +302,7 @@ void main() {
   float blur = 1.0 - exp(-(aDrop.y - 1.0) / PUFF_BLUR_DROPS);
   float spreadTime = fastTau * (1.0 - fastDecay) + fastDecay * slowTau.x * (1.0 - slowDecay.x);
   float spread = min(PUFF_SPREAD * aSlow.w * blur * spreadTime, PUFF_MOST_SPREAD);
-  drawDrop(centre, velocity, aDrop.x, 0.0, aDrop.y, spread);
+  drawDrop(centre, velocity, aDrop.x, 0.0, aDrop.y, spread, 1.0);
   if (aDrop.y > 1.0) {
     // The puff's point glint, one of its drops' somewhere in it; the rest of its glints go with the spread.
     vec2 draws = puffHash(aOrigin);
