@@ -33,6 +33,11 @@
 // deck, near the water, so the water looks every reflection up by its
 // distance (WATER_FRAGMENT's nearReflection), not only the splash's.
 //
+// In a pond whose land runs all round it (src/main.js: the Koi pond's, under
+// its sky's backdrop, src/sky.js Backdrop) the sheet reaches only past its
+// shore (setSheetReach): beyond the land's edge the dome stands on the
+// ground, and water there would show past it, mirroring the photo.
+//
 // A frozen lake (src/ice.js, `ice`: its uniforms) is the same surface frozen:
 // the shaders draw the ice where its mask says there is ice and the water in
 // its holes (ICE_COMMON in src/shaders/scene.js), the patch held flat under
@@ -262,6 +267,8 @@ export function createWaterSurface(water, lighting, ambientWaves, { meshSegments
 
   const stillSheet = squareRingsGeometry(water.domainSize / 2 - OUTER_OVERLAP, OUTER_HALF_SIZE, water.centre);
   let galeSheet = null;   // made when the gale first blows
+  let shortSheet = null, sheetReach = null, blowing = false;   // the sheet only past a pond's shore (setSheetReach), made when first asked for
+  const sheetNow = () => (blowing ? galeSheet : sheetReach ? shortSheet : stillSheet);
   const outer = new THREE.Mesh(stillSheet, outerMaterial);
   outer.frustumCulled = false;
 
@@ -317,9 +324,19 @@ export function createWaterSurface(water, lighting, ambientWaves, { meshSegments
     /** Whether the surface is a pool's (setPool). */
     get pooled() { return pool !== null; },
     /** Whether the gale blows: the sheet that carries its waves, or the still one. */
-    setGale(blowing) {
+    setGale(asBlowing) {
+      blowing = asBlowing;
       if (blowing && !galeSheet) galeSheet = squareRingsGeometry(water.domainSize / 2 - OUTER_OVERLAP, OUTER_HALF_SIZE, water.centre, 0, { growth: 1 + 2 / GALE_SHEET_CUTS, cuts: GALE_SHEET_CUTS });
-      outer.geometry = blowing ? galeSheet : stillSheet;
+      outer.geometry = sheetNow();
+    },
+    /** The sheet out to `reach` metres from the patch's centre (a square's half side: a pond's land all round it, the header), or to the horizon (null). */
+    setSheetReach(reach) {
+      if (reach && reach !== sheetReach) {
+        shortSheet?.dispose();
+        shortSheet = squareRingsGeometry(water.domainSize / 2 - OUTER_OVERLAP, reach, water.centre);
+      }
+      sheetReach = reach;
+      outer.geometry = sheetNow();
     },
     /** The sheet's triangles, as drawn. */
     get sheetTriangles() { return outer.geometry.attributes.position.count / 3; },

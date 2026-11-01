@@ -209,6 +209,26 @@
 // come, or comes after another hour was asked for, leaves the panorama
 // whole; the page waits for none of it (horizonReady is for the tools).
 //
+// Backdrop. A photo taken among near trees (the garden's: its hedges, its
+// hill and its stairs a few dozen metres off) is no horizon: drawn
+// infinitely far, it meets the ground the scene draws in a hard line under a
+// band of whatever the photo shows below its horizon, and from a raised eye
+// that ground runs on flat to the horizon. Such a sky names a `backdrop`, a
+// sphere (centre, radius) the photo is projected onto from its centre, as
+// an HDRI backdrop is (Unreal's HDRI Backdrop, Three.js's GroundedSkybox):
+// the dome finds where the eye's ray leaves the sphere and looks the photo
+// up along the direction from the centre to there (uBackdrop), so its land
+// shifts with the eye as land that far off would. The centre stands on the
+// ground under the shore view's eye, so the photo's horizon lies where the
+// sphere meets the ground: its land stands on the place's own ground, which
+// ends there (src/pondFloor.js koiLandGeometry), and nothing under its
+// horizon (blurred by the encoder, and often the photographer's own hedge)
+// is ever shown; the home view sees it as before, 2° lower. Ground projection
+// (the GroundedSkybox's floor) was tried and left: the garden's photographer
+// stood among hedges, whose feet it smeared across the lawn. An eye outside
+// the sphere sees the photo as ever. The cube's captures, from inside, take
+// it too; the mirror's eye, under the water, sees the sphere's reflection.
+//
 // Memory. The panorama's pixels are dropped from the CPU once they are on the
 // GPU (nothing uploads it again), and the strip's ImageBitmaps are closed
 // once its textures are. The captures need no depth buffer: the
@@ -327,9 +347,11 @@ const SKIES = {
   wooded: { reeds: true, shore: 'turf', sunAzimuth: -60, hours: { morning: { file: 'radkow_lake', label: 'Late morning', clock: '11:11' } } },
   // The Koi pond's own (src/main.js PLACES `koi`), no place of its own (`ownPlace`): Ninomaru Teien, the garden of
   // Nagoya Castle, in April's afternoon light through its trees (`shadedSun`: its sun behind leaves, the light on
-  // level ground the balance's, most of it the sky's).
-  garden: { ownPlace: false, shadedSun: true, sunAzimuth: 100, hours: { afternoon: { file: 'ninomaru_teien', label: 'Afternoon', clock: '15:09' } } },
+  // level ground the balance's, most of it the sky's). Its trees, hedges and hill stand near: a backdrop (Backdrop).
+  garden: { ownPlace: false, shadedSun: true, sunAzimuth: 100, backdrop: { centre: [0, 0, 2.45], radius: 35 }, hours: { afternoon: { file: 'ninomaru_teien', label: 'Afternoon', clock: '15:09' } } },
 };
+/** A sky's backdrop (Backdrop, above): { centre: [x, y, z], radius } (m), or null where its land stands far off. */
+export const skyBackdrop = (name) => SKIES[name]?.backdrop ?? null;
 /** The skies that are each a place of their own (the Location setting's lakes; the Koi pond takes the garden's). */
 /** What a sky's beach is made of (`shore` above): a name of SHORE_LOOKS (src/pondFloor.js), 'sand' when unnamed. */
 export const skyShore = (name) => SKIES[name]?.shore ?? 'sand';
@@ -469,6 +491,7 @@ uniform float uHazeDensity;
 uniform float uFlash;          // the sky's light under lightning, against its own (1 with none)
 uniform vec4 uBolt;            // a bolt: its bearing (radians from −Z toward +X), its top's elevation, its brightness against the cloud (0: none), a seed
 uniform float uHorizonEdge;    // radians inside the strip's band over which it fades into the panorama (Horizon)
+uniform vec4 uBackdrop;        // the backdrop's centre (xyz) and radius (w; 0: none), metres (Backdrop)
 varying vec3 vDirection;
 ${HORIZON_DECODE}
 #define OVERCAST_FLATTEN 0.6   // the luminance's power about the mean that cloud takes away: the sun and its glow sink, the shade lifts
@@ -503,6 +526,12 @@ float boltLight(vec3 direction, float land) {
 }
 void main() {
   vec3 direction = normalize(vDirection);
+  if (uBackdrop.w > 0.0) {
+    // Where the ray leaves the backdrop's sphere, seen from its centre (Backdrop); from outside it, as ever.
+    vec3 fromCentre = cameraPosition - uBackdrop.xyz;
+    float along = dot(fromCentre, direction), inside = uBackdrop.w * uBackdrop.w - dot(fromCentre, fromCentre);
+    if (inside > 0.0) direction = normalize(fromCentre + (sqrt(along * along + inside) - along) * direction);
+  }
   float azimuth = atan(direction.z, direction.x * uMirror) + uRotation;
   float elevation = asin(clamp(direction.y, -1.0, 1.0));
   vec2 panoramaUv = vec2(azimuth / (2.0 * PI) + 0.5, elevation / PI + 0.5);
@@ -611,6 +640,7 @@ export function createEnvironment(renderer, { name, hour, sunAzimuth, sunBalance
         uHorizonMeta: { value: new THREE.Vector2() },
         uHorizonBand: { value: new THREE.Vector4() },
         uHorizonEdge: { value: THREE.MathUtils.degToRad(HORIZON_EDGE) },
+        uBackdrop: { value: new THREE.Vector4() },
         uHazeLayer: { value: HAZE_LAYER },
         ...hazeUniforms,
       },
@@ -825,6 +855,8 @@ export function createEnvironment(renderer, { name, hour, sunAzimuth, sunBalance
     domeUniforms.uPanorama.value = panorama;
     domeUniforms.uMirror.value = mirror;
     domeUniforms.uRotation.value = rotation;
+    const backdrop = skyBackdrop(skyName);
+    domeUniforms.uBackdrop.value.set(...(backdrop?.centre ?? [0, 0, 0]), backdrop?.radius ?? 0);
     domeUniforms.uScale.value = scale;
     domeUniforms.uRadianceCap.value = RADIANCE_CAP * luminance(clear.sky.toArray());
     applyWeather();

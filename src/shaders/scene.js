@@ -2719,6 +2719,40 @@ void main() {
 }
 `;
 
+// The Koi pond's garden's light and shade (src/koiGarden.js bakeShade, for
+// the sun of its sky): a map over the garden's ground, baked once a sun on
+// the CPU from the garden's own triangles. Its red is a shadow map laid on
+// the ground: for each point of the ground plane, the height (over
+// GARDEN_SHADE_TOP) at which the sun's ray up through it last leaves the
+// planting, so a point anywhere, ground or leaf, is in shadow where it lies
+// below that height on its ray (gardenSunSeen): the shrubs shade the lawn,
+// one another and their own lower lobes from the one map. Its green is the
+// ground's occlusion: how little of the sky a point of the ground sees for
+// the shrubs over and beside it (1 open), which the shrubs' own feet share
+// (gardenSkySeen). Before it is baked, and away from the garden, all is lit.
+export const GARDEN_SHADE = /* glsl */`
+uniform sampler2D uGardenShade;   // red: the height its sun's ray leaves the planting (over GARDEN_SHADE_TOP); green: the ground's occlusion
+uniform vec4 uGardenShadeArea;    // the map's least x and z and its side (m); w 1 once baked
+uniform vec3 uGardenShadeSun;     // the sun it was baked for
+#define GARDEN_SHADE_TOP 4.0      // m: the red's full scale
+#define GARDEN_SHADE_BIAS 0.08    // m: a point this little below the height is still lit (the map's texels, the leaves' sprigs)...
+#define GARDEN_SHADE_SOFT 0.15    // ...and in full shadow this much lower
+#define GARDEN_FEET 0.9           // m: a shrub's faces this high over the ground see the sky as the ground beside them does, fading to open
+// How much of the sun reaches a point (1: all of it).
+float gardenSunSeen(vec3 point) {
+  if (uGardenShadeArea.w < 0.5 || uGardenShadeSun.y < 0.02) return 1.0;
+  vec2 ground = point.xz - uGardenShadeSun.xz * (point.y / uGardenShadeSun.y);
+  float leaves = texture2D(uGardenShade, (ground - uGardenShadeArea.xy) / uGardenShadeArea.z).r * GARDEN_SHADE_TOP;
+  return 1.0 - smoothstep(GARDEN_SHADE_BIAS, GARDEN_SHADE_BIAS + GARDEN_SHADE_SOFT, leaves - point.y);
+}
+// How much of the sky a point sees for the planting about it: the ground's, and the shrubs' faces up to GARDEN_FEET over it.
+float gardenSkySeen(vec3 point, float aboveGround) {
+  if (uGardenShadeArea.w < 0.5) return 1.0;
+  float ground = texture2D(uGardenShade, (point.xz - uGardenShadeArea.xy) / uGardenShadeArea.z).g;
+  return mix(ground, 1.0, smoothstep(0.0, GARDEN_FEET, aboveGround));
+}
+`;
+
 // The land the sky photo shows at the horizon toward a horizontal direction
 // (photoLand), for the ground near the pond, which takes its colour, and
 // beyond LAND_NEAR, where the ground runs into it: the sky's cube map (the
@@ -2792,7 +2826,11 @@ void main() {
 // trees and far water stand out of any snow. In haze (HAZE: rain's, snow's,
 // a fog's) the grass takes the land before the haze (photoLand), and the
 // beach fades by its distance, as the water does, but for the far land, the
-// photo's own, hazed as the dome is.
+// photo's own, hazed as the dome is. Round the Koi pond the ground is the
+// garden's own all the way to its sky's backdrop, where the photo's land
+// stands on it (src/sky.js Backdrop): none of it is the photo's, and its
+// mottle fades where a pixel outgrows it, as the grain does; its garden's
+// shadows and the sky its shrubs hide from it are GARDEN_SHADE's.
 //
 // What a beach shows between its grains and its slope. The sand's tile is
 // 2 mm a texel, and the silt's drifts a metre across, so from a few metres
@@ -2837,6 +2875,7 @@ uniform samplerCube uLandCube;   // the land before the haze, for the grass (src
 uniform float uLandLevel;        // ...at this level of its mip chain
 uniform vec4 uShoreLook;         // the place's shore (SHORE_LOOKS): the pebbles' share near the water, their size (times PEBBLE_RADII), the tufts' share (times TUFT_SHARE), the wrack's strength
 uniform vec2 uShoreMore;         // ...and how far inland the grass comes (times GRASS_FROM and GRASS_TO), the cracks of a dried flat (0 to 1)
+${GARDEN_SHADE}
 varying vec3 vWorld;
 varying vec3 vNormal;
 varying float vInland;
@@ -2855,7 +2894,9 @@ ${LAKE_BED}
 #define KOI_MOSS vec3(0.075, 0.105, 0.04)
 #define KOI_EARTH vec3(0.12, 0.1, 0.075)
 #define KOI_MOSS_TO vec2(3.0, 5.0)
-#define KOI_LAWN vec3(0.07, 0.115, 0.04)  // the garden's lawn beyond the moss
+#define KOI_LAWN vec3(0.07, 0.115, 0.04)  // the garden's lawn beyond the moss...
+#define KOI_LAWN_DRY vec3(0.085, 0.1, 0.04)  // ...and its drier, yellower patches, a few metres across (KOI_LAWN_PATCHES)
+#define KOI_LAWN_PATCHES 0.13             // per metre
 #define KOI_SHADE 0.3                    // the garden's ground behind its planting, under its trees, against its lawn
 #define KOI_COBBLE 0.16                   // m: a cobble's cell at the stone edge
 // The cobbles set along the edge: the nearest jittered point and the next (as the pool's, in cells of KOI_COBBLE), so
@@ -2990,7 +3031,10 @@ float tuft(vec2 point, float share, float edge, out float tone, out vec2 fromTuf
 void main() {
   float footprint = max(fwidth(vWorld.x), fwidth(vWorld.z)) + 1e-4;   // metres the pixel covers on the ground
   vec3 normal = reliefNormal(vWorld.xz, footprint);
-  vec3 light = uSunIrradiance * max(dot(normal, uSunDir), 0.0) + uSkyAmbient * SKY_LIGHT;
+  // Round the Koi pond, its garden's shadows and the sky its shrubs hide (GARDEN_SHADE).
+  float sunSeen = 1.0, skySeen = 1.0;
+  if (uKoiPond > 0.5) { sunSeen = gardenSunSeen(vWorld); skySeen = gardenSkySeen(vWorld, 0.0); }
+  vec3 light = uSunIrradiance * max(dot(normal, uSunDir), 0.0) * sunSeen + uSkyAmbient * SKY_LIGHT * skySeen;
   vec3 sand = floorSand(vWorld.xz) * PATTERN_RANGE * DRY_SAND * mix(WET_SHADE, 1.0, smoothstep(0.0, WET_HEIGHT, vWorld.y));
   float grassFrom = GRASS_FROM * uShoreMore.x, grassTo = GRASS_TO * uShoreMore.x;
   if (uKoiPond > 0.5) {
@@ -3039,9 +3083,9 @@ void main() {
 
   // The bank: the photo's own land for its colour, shaded by the slope, mottled and grained, with its tufts.
   vec3 toLand = vWorld - cameraPosition;
-  // Round the Koi pond the garden's lawn runs on farther before the photo's land takes over (the photo's own lake shore
-  // lies where the lake's beach would end).
-  float far = uKoiPond > 0.5 ? smoothstep(4.0 * LAND_NEAR, 2.0 * LAND_FAR, length(toLand)) : smoothstep(LAND_NEAR, LAND_FAR, length(toLand));
+  // Round the Koi pond the garden's lawn runs on to where its sky's backdrop stands on it (src/sky.js Backdrop), the
+  // photo's land beyond it the dome's own: none of it is the photo's.
+  float far = uKoiPond > 0.5 ? 0.0 : smoothstep(LAND_NEAR, LAND_FAR, length(toLand));
   float tuftShare = uKoiPond > 0.5 ? 0.0 : TUFT_SHARE * uShoreLook.z * smoothstep(grassFrom - 0.6, grassTo, vInland);
   if (grass > 0.0 || far > 0.0 || tuftShare > 0.0) {
     vec3 land = photoLand(uSkyCube, LAND_LEVEL, toLand.xz);
@@ -3055,9 +3099,11 @@ void main() {
     vec3 grassLand = nearLand * min(1.0, GRASS_ALBEDO_MOST * lightOn / grassLevel);
     // Round the Koi pond, a garden's lawn of its own (the photo's land there is the lake's far shore).
     // Behind its planting the ground lies in its trees' shade (src/koiGarden.js): dark, as the photo's is.
-    if (uKoiPond > 0.5) grassLand = KOI_LAWN * (uSunIrradiance * max(uSunDir.y, 0.0) + uSkyAmbient * SKY_LIGHT) * (0.85 + 0.3 * valueNoise(vWorld.xz * 0.6 + 2.0)) * mix(1.0, KOI_SHADE, smoothstep(1.5, 3.5, vInland));
+    // Its tone wanders gently, lusher and drier in patches a few metres across, darker and lighter over a metre or two.
+    if (uKoiPond > 0.5) grassLand = mix(KOI_LAWN, KOI_LAWN_DRY, smoothstep(0.35, 0.75, valueNoise(vWorld.xz * KOI_LAWN_PATCHES + 7.0))) * (uSunIrradiance * max(uSunDir.y, 0.0) * sunSeen + uSkyAmbient * SKY_LIGHT * skySeen) * (0.9 + 0.2 * valueNoise(vWorld.xz * 0.6 + 2.0)) * mix(1.0, KOI_SHADE, smoothstep(1.5, 3.5, vInland));
     // The sward: the ground's colour mottled over a metre and grained finer, each grain faded out where the pixel outgrows it.
-    float near = 1.0 - far;
+    // Round the Koi pond, whose lawn is its own to its far edge, the mottle too, or far off it streaks.
+    float near = uKoiPond > 0.5 ? layerWeight(1.0 / 2.3, footprint) : 1.0 - far;
     float mottle = 1.0 + (0.6 * valueNoise(vWorld.xz * 2.3 + 5.0) - 0.3) * near;
     float grain = 1.0 + (SWARD_CONTRAST.x * (valueNoise(vWorld.xz * SWARD_GRAIN.x + 41.0) - 0.5) * layerWeight(1.0 / SWARD_GRAIN.x, footprint)
                        + SWARD_CONTRAST.y * (valueNoise(vWorld.xz * SWARD_GRAIN.y + 83.0) - 0.5) * layerWeight(1.0 / SWARD_GRAIN.y, footprint)) * near;

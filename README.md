@@ -222,6 +222,11 @@ full screen, which only a press or a key may ask for):
   planted to the water with clipped shrubs (karikomi) in rows rising above
   the eye, a Kasuga stone lantern among them, the garden's trees behind; a
   lawn on the near bank, its own clear green water over gravel, and koi.
+  The photo is a backdrop 35 m off (`backdrop` in `src/sky.js`, as an HDRI
+  backdrop is projected): the lawn runs out to it and its trees and hill
+  stand on it, seen from any height. The shrubs cast their shadows on the
+  lawn and on one another, and shade the ground under them, from a map
+  baked once a sun from their own triangles (`bakeShade`).
   Nothing thrown comes down on the ground there: every aim is kept 0.6 m
   inside the water, and a thing skipped or slid on to a bank is caught by
   the shrubs where they are drawn (`src/koiGarden.js`,

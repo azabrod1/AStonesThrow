@@ -18,7 +18,9 @@
 //   lake's: every uniform the shore's GLSL twin (LAKE_BED) declares is one
 //   the water shares from the floor (BED_UNIFORMS, src/waterSurface.js setBed);
 // - the cost: the garden's build and its triangles, the scene's (fine) under
-//   300k and the mirror's (coarse, Low's scene's too) under 40% of them; the
+//   300k and the mirror's (coarse, Low's scene's too) under 40% of them, and
+//   its shade's bake (bakeShade) under 150 ms the first time and 50 for a
+//   new sun; the
 //   coarse garden laid out as the fine one (the same shrubs in the same
 //   order and tints, each where the fine one's is), so what is drawn on Low
 //   and in the mirror stands where the fine garden, which catches, does.
@@ -54,14 +56,20 @@ console.log('aims:');
 console.log('\nthe planting catches:');
 {
   const started = performance.now();
-  const garden = createKoiGarden({ envTexture: null, mirrorLayer: 2, lighting: {} });
+  // Under a sun like the garden's (19° up), so its shade is baked as the page bakes it.
+  const lighting = { sunDirection: new THREE.Vector3(-0.6, 0.333, -0.73).normalize(), sunIrradiance: new THREE.Vector3(1, 1, 1), skyAmbient: new THREE.Vector3(1, 1, 1) };
+  const garden = createKoiGarden({ envTexture: null, mirrorLayer: 2, lighting });
   garden.setVisible(true);
   const built = performance.now() - started;
   // The scene's garden (fine) and the mirror's (coarse: src/koiGarden.js COARSE), the meshes by look, main then mirror.
   const fine = garden.meshes.filter((mesh, index) => index % 2 === 0), coarse = garden.meshes.filter((mesh, index) => index % 2 === 1);
   const trianglesOf = (meshes) => meshes.reduce((sum, mesh) => sum + mesh.geometry.index.count / 3, 0);
   const fineTriangles = trianglesOf(fine), coarseTriangles = trianglesOf(coarse);
-  console.log(`  built in ${built.toFixed(0)} ms: the scene's ${(fineTriangles / 1000).toFixed(0)}k triangles, the mirror's (and Low's scene) ${(coarseTriangles / 1000).toFixed(0)}k`);
+  console.log(`  built in ${built.toFixed(0)} ms (its shade baked in ${garden.shadeMilliseconds.toFixed(0)} of them): the scene's ${(fineTriangles / 1000).toFixed(0)}k triangles, the mirror's (and Low's scene) ${(coarseTriangles / 1000).toFixed(0)}k`);
+  const firstShade = garden.shadeMilliseconds;
+  lighting.sunDirection.set(-0.5, 0.4, -0.77).normalize();
+  garden.setLight();   // a new sun: its shadows baked again, its occlusion kept
+  check(firstShade < 150 && garden.shadeMilliseconds < 50, `its shade baked in under 150 ms the first time (${firstShade.toFixed(0)} ms), a new sun's in under 50 (${garden.shadeMilliseconds.toFixed(0)} ms)`);
   check(fineTriangles < 300000, `the scene's under 300k triangles (${(fineTriangles / 1000).toFixed(0)}k)`);
   check(coarseTriangles < 0.4 * fineTriangles, `the coarse garden under 40% of the fine's triangles (${(100 * coarseTriangles / fineTriangles).toFixed(0)}%)`);
   // The coarse garden is the fine one's shrubs more coarsely made, from the same draws (src/koiGarden.js COARSE): the same
