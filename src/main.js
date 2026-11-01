@@ -1237,7 +1237,9 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   // distance inside the rectangle the splash's image covers (splashRect,
   // handed to the surface each frame). With nothing alive the cached mirror
   // stays untouched: no pass at all. The mirror image has underScale of the
-  // canvas's resolution; the rectangle is in its own pixels.
+  // canvas's resolution; the rectangle is in its own pixels. Each draw ends
+  // by making its mip levels, which spread the image where the ripples are
+  // finer than a pixel (spreadMirror in src/shaders/scene.js).
   const mirrorCamera = new THREE.PerspectiveCamera();
   mirrorCamera.layers.set(MIRROR_LAYER);
   const reflectionMatrix = new THREE.Matrix4();
@@ -1306,10 +1308,13 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     renderer.setRenderTarget(reflectionTarget);
     renderer.setClearColor(0x000000, 1);
     renderer.clear(true, true, false);
+    // three.js makes a target's mip levels after each render() into it: only after the last of them here.
+    reflectionTarget.texture.generateMipmaps = objects.length === 0;
     renderer.render(sceneMain, mirrorCamera);
     if (objects.length > 0) {
       renderer.render(splash.particleScene, mirrorCamera);
       for (const object of objects) object.material = object.userData.mirrorDistanceMaterial;
+      reflectionTarget.texture.generateMipmaps = true;
       renderer.render(splash.particleScene, mirrorCamera);
     }
     renderer.clippingPlanes = [];
@@ -1778,7 +1783,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     const [underWidth, underHeight] = scaledSize(settings.underScale);
     underTarget = createFloatTarget(underWidth, underHeight, { type: THREE.HalfFloatType, filter: THREE.LinearFilter, depth: true, depthTexture: true });
     mainTarget = createFloatTarget(resolution.x, resolution.y, { type: THREE.HalfFloatType, filter: THREE.LinearFilter, depth: true, depthTexture: true });
-    reflectionTarget = createFloatTarget(underWidth, underHeight, { type: THREE.HalfFloatType, filter: THREE.LinearFilter, depth: true });
+    reflectionTarget = createFloatTarget(underWidth, underHeight, { type: THREE.HalfFloatType, filter: THREE.LinearFilter, depth: true, mipmaps: true });   // its mip levels: the water's spread mirror (spreadMirror in src/shaders/scene.js), made once a draw (drawMirror)
+    reflectionTarget.texture.anisotropy = Math.min(4, renderer.capabilities.getMaxAnisotropy());   // the spread is down the image alone
     splash.resize(resolution.x, resolution.y, settings.fluidScale);
     glare.resize(resolution.x, resolution.y);
     reeds.resize(resolution.y);

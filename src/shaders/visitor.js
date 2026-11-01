@@ -48,11 +48,12 @@
 // Each wave is filtered by the pixel's footprint on the water (acrossX,
 // acrossY), as the rings' and the ripples' are: what is finer than a pixel
 // is averaged away, and its slope variance goes to the glitter's roughness
-// and spreads the mirror (WATER_FRAGMENT: the sky cube blurred over twice
-// its rms slope and climbing by as much, as the ice's frost is), so a wake
-// too fine to resolve (from the shore, far out, a wavelength of a metre is
-// less than a pixel deep) still shows as a V of paler, duller water across
-// the far shore's image, as a wake far out on a lake does.
+// and spreads the mirror as the wind's unresolved ripples do (spreadMirror
+// in src/shaders/scene.js: down the image's mip levels, lifted where its rays
+// graze), so a wake too fine to resolve (from the shore, far out, a
+// wavelength of a metre is less than a pixel deep) still shows as a V of
+// paler, duller water across the far shore's image, as a wake far out on a
+// lake does.
 //
 // Foam: churned round each contact and trailing behind it, and over a
 // breach's first seconds, added to the water's own foam as lace that thins
