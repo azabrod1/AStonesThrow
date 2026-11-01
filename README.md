@@ -36,7 +36,8 @@ the moment a throw leaves the hand and fades back (`?preview=off` leaves
 it out).
 Escape or Reset view (under the menu button while the view is away from
 the shore's) glides back to the shore. The strip at the bottom sets what is
-thrown: its name opens a dropdown of things in tabs (`src/thingMenu.js`):
+thrown: its name opens a dropdown of things in tabs (`src/thingMenu.js`, its
+tab row `src/tabs.js`, as What to throw's is):
 Favourites, then a tab for each group (Stones, Balls, Food, Toys,
 Electronics, Gems, seldom thrown, and Other last), each thing a pill with
 its picture (on a desktop its note in a tip), the card as tall as the
@@ -1781,10 +1782,11 @@ farther out, so it rises into the view rather than filling its corner.
   strip (on a phone in portrait without scrolling), its pills, tabs, star
   and ⓘ tall enough for a finger, that it opens on the chosen thing's group,
   the chosen thing's own card stands above the tabs, its tabs keep their place, Favourites says
-  where to make one, a group's tab holds its things, a favourite made with
+  where to make one and, fuller than the largest group, scrolls without
+  moving the star, a group's tab holds its things, a favourite made with
   its star or on What to throw shows there, a pill's tip is its note,
   a pill tapped is thrown next, a press on the pond closes it without
-  throwing and the keyboard works it; that a thing whose steps are things of
+  throwing and the keyboard works it, its tabs included; that a thing whose steps are things of
   their own (an iPad, a frying pan, roses) reads each step on the strip
   without overflowing it; that the settings open with their rows, each
   row's value whole beside its name, the Water page's pictured choices each

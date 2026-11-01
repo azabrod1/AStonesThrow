@@ -36,7 +36,9 @@
 //     with a star and an ⓘ naming it, on a touch screen at least 34 points
 //     tall; Favourites, empty, says where to make one, a group's tab holds
 //     its things, the card keeping its height and its tabs their place from
-//     tab to tab; a favourite made with that card's star (the dropdown staying
+//     tab to tab, and Favourites holding more than the largest group
+//     scrolls, the card no taller and the star not moved; a favourite made
+//     with that card's star (the dropdown staying
 //     open) is in Favourites, which the dropdown then opens on, as it is one
 //     made on What to throw (its star, reached by the ⓘ), and unmade leaves
 //     it empty; on a desktop a pill's tip is its note, shown by a mouse
@@ -45,7 +47,9 @@
 //     dropdown closed, the focus back on the chip, the strip following, a
 //     skip asked for gone back to Toss for a ball), a press on the pond
 //     closes it without throwing, the chip pressed again closes it, and on a
-//     desktop the arrow keys and Enter choose in it and Escape closes it;
+//     desktop the arrow keys and Enter choose in it, Escape closes it, and on
+//     a tab Left, Right, Home and End go from tab to tab, each shown with its
+//     panel, focused and remembered;
 //   - the settings button is on the screen, clear of the title, and (on a
 //     touch screen) at least 34 points tall; pressed, the panel opens on the
 //     screen, its rows that tall too, each row's value whole beside its
@@ -393,6 +397,23 @@ for (const framing of FRAMINGS) {
   await page.screenshot({ path: path.join(outputFolder, `${framing.name}-menu-favourites.png`) });
   check(noFavourites.open && noFavourites.panel === 'favourites' && noFavourites.empty && noFavourites.things.length === 0 && noFavourites.tabsTop === firstTab.tabsTop && noFavourites.height === firstTab.height,
     `Favourites with none yet says where to make one (${noFavourites.empty ? 'shown' : 'not shown'}), the card ${noFavourites.height} points tall as the Stones' ${firstTab.height}, its tabs where they were (${noFavourites.tabsTop}, ${firstTab.tabsTop})`);
+  // More favourites than the largest group holds: Favourites scrolls, the card no taller and the star where it was,
+  // so a second press on the star still finds it. Every group's pills, copied in for the measure, then taken out.
+  const crowded = await page.evaluate(() => {
+    const card = document.getElementById('thing-menu-card');
+    const panel = card.querySelector('[role="tabpanel"][data-tab="favourites"]');
+    const star = document.getElementById('thing-now-favourite');
+    const before = { height: card.getBoundingClientRect().height, starTop: star.getBoundingClientRect().top };
+    const kept = [...panel.childNodes];
+    const row = Object.assign(document.createElement('div'), { className: 'thing-menu-pills' });
+    row.append(...[...card.querySelectorAll('[role="tabpanel"]:not([data-tab="favourites"]) [data-value]')].map((pill) => pill.cloneNode(true)));
+    panel.replaceChildren(row);
+    const after = { height: card.getBoundingClientRect().height, starTop: star.getBoundingClientRect().top, pills: row.children.length, scrolls: panel.scrollHeight > panel.clientHeight + 1 };
+    panel.replaceChildren(...kept);
+    return { moved: Math.abs(after.starTop - before.starTop), grew: after.height - before.height, pills: after.pills, scrolls: after.scrolls };
+  });
+  check(crowded.moved < 0.5 && crowded.grew < 0.5 && crowded.scrolls,
+    `Favourites holding ${crowded.pills} things, more than the largest group, scrolls (${crowded.scrolls ? 'scrolls' : 'does not scroll'}) and leaves the card as tall (${crowded.grew.toFixed(1)} points taller) and the star where it was (moved ${crowded.moved.toFixed(1)})`);
   const lastGroup = offered.at(-1), foodGroup = offered.find((group) => group.name === 'Food') ?? offered[0];
   await press(`#thing-menu [role="tab"][data-tab="${foodGroup.name}"]`);
   const groupTab = await tabState();
@@ -456,6 +477,30 @@ for (const framing of FRAMINGS) {
     const escaped = await page.evaluate(() => ({ open: !document.getElementById('thing-menu').hidden, focused: document.activeElement?.id }));
     check(keyedTo === expectedNext && keyedPick.thing === expectedNext && !keyedPick.open && keyedPick.focused === 'thing-chip' && reopened && !escaped.open && escaped.focused === 'thing-chip',
       `from the keyboard: Enter on the chip opens it, ArrowRight moves from tennis to ${keyedTo} (expected ${expectedNext}), Enter throws that next (${keyedPick.thing}, ${keyedPick.open ? 'open' : 'closed'}, focus on ${keyedPick.focused}); Escape closes it (${escaped.open ? 'open' : 'closed'}, focus on ${escaped.focused})`);
+    // On a tab (src/tabs.js): Right and Right go two tabs on, Home to the first, End to the last, each shown with its
+    // panel, the focus on it and remembered for the next visit.
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(300);
+    await page.evaluate(() => document.querySelector('#thing-menu [role="tab"][aria-selected="true"]').focus());
+    const tabKeyState = () => page.evaluate(() => {
+      const card = document.getElementById('thing-menu-card');
+      const selected = card.querySelector('[role="tab"][aria-selected="true"]');
+      const panel = card.querySelector('[role="tabpanel"]:not(.thing-menu-off)');
+      return { tab: selected?.dataset.tab, panel: panel?.dataset.tab, controls: selected?.getAttribute('aria-controls') === panel?.id, focused: document.activeElement === selected, stored: localStorage.getItem('stone-pond-thing-tab'), open: !document.getElementById('thing-menu').hidden };
+    });
+    const tabNames = ['favourites', ...offered.map((group) => group.name)];
+    const startTab = (await tabKeyState()).tab;
+    const tabWalk = [];
+    for (const key of ['ArrowRight', 'ArrowRight', 'Home', 'End']) {
+      await page.keyboard.press(key);
+      tabWalk.push({ key, ...(await tabKeyState()) });
+    }
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(150);
+    const startAt = tabNames.indexOf(startTab);
+    const expectedWalk = [tabNames[startAt + 1], tabNames[startAt + 2], tabNames[0], tabNames.at(-1)];
+    check(tabWalk.every((step, index) => step.tab === expectedWalk[index] && step.panel === step.tab && step.controls && step.focused && step.stored === step.tab && step.open),
+      `from the keyboard on the dropdown's tabs: from ${startTab}, ${tabWalk.map((step) => `${step.key} to ${step.tab} (panel ${step.panel}${step.focused ? ', focused' : ', focus lost'}, remembered ${step.stored})`).join(', ')} (expected ${expectedWalk.join(', ')})`);
   }
   // The river stone again, through the dropdown, for the settings' checks.
   await press('#thing-chip');

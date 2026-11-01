@@ -14,13 +14,16 @@
 // touch screen the tabs are one row a finger scrolls sideways (index.html).
 // The page script (index.html) builds the tabs, the pills and the chosen
 // thing's card and says what a choice, the star and the ⓘ do (onChoose,
-// onFavourite, onMore); this holds the opening, closing, the tabs, the tips
-// and moving about.
+// onFavourite, onMore); this holds the opening, closing, the tabs (a TabRow,
+// src/tabs.js, as What to throw's are), the tips and moving about.
 //
 // Every tab's panel stands in the same place (a grid of one cell, the hidden
 // ones invisible but still taking room), so the tabs' card is as tall as its
 // tallest panel (the largest group) whichever is shown, and the tabs do not
-// jump as one goes from tab to tab.
+// jump as one goes from tab to tab. Favourites alone adds nothing to that
+// height (index.html's CSS: it scrolls once it holds more than the largest
+// group), so a star pressed never moves the chosen thing's card, and the star
+// with it, out from under the pointer.
 //
 // A tip (data-tip: a pill's note, what the star and the ⓘ do) shows over what
 // a mouse rests on, after a moment (at once while another tip has just been
@@ -44,6 +47,8 @@
 // tab to tab, showing each); Home and End go to the first and last pill;
 // Enter or Space chooses. Closed by Escape or a choice, the focus goes back to the
 // chip.
+import { TabRow } from './tabs.js';
+
 const OPEN_MS = 140;
 const TIP_MS = 450;          // a mouse's rest before a tip shows
 const TIP_WARM_MS = 600;     // and how long after one goes the next shows at once
@@ -59,7 +64,12 @@ export class ThingMenu {
     this.onFavourite = onFavourite;
     this.onMore = onMore;
     this.reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
-    try { this.tab = localStorage.getItem(TAB_KEY); } catch { this.tab = null; }
+    const panels = card.querySelector('.thing-menu-panels');
+    this.tabRow = new TabRow(card.querySelector('[role="tablist"]'), {
+      storageKey: TAB_KEY,
+      hidePanel: (panel, hidden) => panel.classList.toggle('thing-menu-off', hidden),
+      onSelect: () => panels?.scrollTo?.({ top: 0 }),
+    });
     this.tip = Object.assign(document.createElement('div'), { className: 'thing-tip', id: 'thing-tip', hidden: true });
     this.tip.setAttribute('role', 'tooltip');
     root.append(this.tip);
@@ -68,12 +78,10 @@ export class ThingMenu {
     this.tipGone = -Infinity;
 
     card.addEventListener('click', (event) => {
-      const tab = event.target.closest('[role="tab"]');
       const favourite = event.target.closest('[data-favourite]');
       const pill = event.target.closest('[data-value]');
       const more = event.target.closest('[data-more]');
-      if (tab) this.selectTab(tab.dataset.tab, { remember: true });
-      else if (favourite) {
+      if (favourite) {
         this.onFavourite();
         if (this.tipFor === favourite) this.showTip(favourite);   // its tip says the other way now
       } else if (pill) {
@@ -124,15 +132,14 @@ export class ThingMenu {
       if (event.target instanceof HTMLCanvasElement) { event.stopPropagation(); event.preventDefault(); }
     }, true);
     window.addEventListener('resize', () => { if (this.isOpen()) { this.place(); this.hideTip(); } });
-    card.querySelector('.thing-menu-panels')?.addEventListener('scroll', () => this.hideTip(), { passive: true });
+    // Captured, so Favourites' own scroll (past the largest group's height) hides it too.
+    panels?.addEventListener('scroll', () => this.hideTip(), { passive: true, capture: true });
   }
 
   isOpen() { return !this.root.hidden; }
 
-  tabs() { return [...this.card.querySelectorAll('[role="tab"]')]; }
-
   /** The tab shown, and its panel. */
-  selectedTab() { return this.card.querySelector('[role="tab"][aria-selected="true"]') ?? this.tabs()[0]; }
+  selectedTab() { return this.tabRow.selected(); }
   panel() { return this.card.querySelector('[role="tabpanel"]:not(.thing-menu-off)'); }
 
   /** The shown panel's pills. */
@@ -143,26 +150,8 @@ export class ThingMenu {
     return [...this.card.querySelectorAll('.thing-menu-now button'), this.selectedTab(), ...this.pills()].filter(Boolean);
   }
 
-  /**
-   * Shows the tab of this name (the first, if there is none such now: a group gone), its panel shown and the
-   * others hidden; remembered for the next visit if `remember`, the focus moved to it if `focus`.
-   */
-  selectTab(name, { remember = false, focus = false } = {}) {
-    const tabs = this.tabs();
-    const chosen = tabs.find((tab) => tab.dataset.tab === name) ?? tabs[0];
-    if (!chosen) return;
-    for (const tab of tabs) {
-      const selected = tab === chosen;
-      tab.setAttribute('aria-selected', String(selected));
-      tab.tabIndex = selected ? 0 : -1;
-      document.getElementById(tab.getAttribute('aria-controls'))?.classList.toggle('thing-menu-off', !selected);
-    }
-    this.tab = chosen.dataset.tab;
-    if (remember) try { localStorage.setItem(TAB_KEY, this.tab); } catch { /* storage refused: the tab lasts this visit */ }
-    chosen.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-    if (focus) chosen.focus({ preventScroll: true });
-    this.card.querySelector('.thing-menu-panels')?.scrollTo?.({ top: 0 });
-  }
+  /** Shows the tab of this name (the first, if there is none such now), its panel shown: TabRow.select. */
+  selectTab(name, options) { this.tabRow.select(name, options); }
 
   /**
    * The tab it opens on (the header): Favourites if that was the tab last shown (the first time, unless none was)
@@ -170,19 +159,12 @@ export class ThingMenu {
    */
   openingTab() {
     const favourites = this.card.querySelector('[role="tabpanel"][data-tab="favourites"]');
-    if ((this.tab ?? 'favourites') === 'favourites' && favourites?.querySelector('[data-value]')) return 'favourites';
+    if ((this.tabRow.last ?? 'favourites') === 'favourites' && favourites?.querySelector('[data-value]')) return 'favourites';
     return this.card.querySelector('[role="tabpanel"]:not([data-tab="favourites"]) [data-value][aria-current="true"]')?.closest('[role="tabpanel"]').dataset.tab;
   }
 
   key(event) {
-    const tabs = this.tabs();
-    const onTab = tabs.indexOf(document.activeElement);
-    if (onTab >= 0 && (event.key === 'ArrowLeft' || event.key === 'ArrowRight' || event.key === 'Home' || event.key === 'End')) {
-      event.preventDefault();
-      const next = { ArrowRight: onTab + 1, ArrowLeft: onTab - 1, Home: 0, End: tabs.length - 1 }[event.key];
-      this.selectTab(tabs[(next + tabs.length) % tabs.length].dataset.tab, { remember: true, focus: true });
-      return;
-    }
+    if (event.defaultPrevented) return;   // a key the tab row took (src/tabs.js), on a tab
     const items = this.items();
     const at = items.indexOf(document.activeElement);
     if (at < 0) return;

@@ -31,6 +31,7 @@
 <link rel="modulepreload" href="./src/settingsPanel.js">
 <link rel="modulepreload" href="./src/screen.js">
 <link rel="modulepreload" href="./src/thingMenu.js">
+<link rel="modulepreload" href="./src/tabs.js">
 <link rel="modulepreload" href="./src/things.js">
 <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.183.2/build/three.module.js">
 <!-- The first sky's photo (0.2 to 0.8 MB) and measurements, asked for now, while
@@ -503,6 +504,10 @@
   .thing-pill img { width: 32px; height: 24px; flex: none; border-radius: 999px; object-fit: cover; }
   /* Favourites with none yet: where to make one, in the middle of the room the largest group leaves. */
   .thing-menu-panels > [data-tab="favourites"] { display: flex; flex-direction: column; }
+  /* Favourites adds nothing to the cell's height (size containment), stretched to what the groups make it and
+     scrolling past that: more favourites than the largest group holds never grow the card upward, moving the
+     chosen thing's card, its star with it, from under a pointer that has just pressed it. */
+  .thing-menu-panels > [data-tab="favourites"] { contain: size; overflow-y: auto; overscroll-behavior: contain; }
   .thing-menu-empty { margin: auto; display: flex; flex-direction: column; align-items: center; padding: 6px 8px; max-width: 300px; color: var(--muted); font-size: 13px; line-height: 1.4; text-align: center; }
   .thing-menu-empty p { margin: 0; }
   .thing-menu-empty b { color: var(--fg); font-weight: 600; }
@@ -1298,7 +1303,7 @@
 <script type="module">
   // Dynamic imports are caught below: a failed dependency must not leave
   // the loading veil up forever. Timed-out imports never start a late pond.
-  let startPond, SettingsPanel, radioGroup, ThingMenu, THINGS, thingGroups, onThingsChange, reachUnderStatusBar, fullScreen, openedAsApp;
+  let startPond, SettingsPanel, radioGroup, ThingMenu, TabRow, THINGS, thingGroups, onThingsChange, reachUnderStatusBar, fullScreen, openedAsApp;
   let screenEdges = null;   // src/screen.js's hold on the canvas under an iPhone's status bar, once its module is here
 
   const veil = document.getElementById('veil');
@@ -1360,7 +1365,7 @@
     let importTimer;
     try {
       const modules = await Promise.race([
-        Promise.all([import('./src/main.js'), import('./src/settingsPanel.js'), import('./src/things.js'), import('./src/thingMenu.js'), import('./src/screen.js')]),
+        Promise.all([import('./src/main.js'), import('./src/settingsPanel.js'), import('./src/things.js'), import('./src/thingMenu.js'), import('./src/screen.js'), import('./src/tabs.js')]),
         new Promise((_, reject) => { importTimer = setTimeout(() => reject(new Error('Module load timed out')), 30000); }),
       ]);
       ({ startPond } = modules[0]);
@@ -1368,6 +1373,7 @@
       ({ THINGS, thingGroups, onThingsChange } = modules[2]);
       ({ ThingMenu } = modules[3]);
       ({ reachUnderStatusBar, fullScreen, openedAsApp } = modules[4]);
+      ({ TabRow } = modules[5]);
     } finally {
       clearTimeout(importTimer);
     }
@@ -1585,26 +1591,21 @@
     // tab following.
     const thingsRoot = document.getElementById('thing');
     const thingTabs = document.getElementById('thing-tabs');
-    function showThingGroup(name, { focus = false } = {}) {
-      for (const tab of thingTabs.querySelectorAll('[role="tab"]')) {
-        const shown = tab.dataset.group === name;
-        tab.setAttribute('aria-selected', String(shown));
-        tab.tabIndex = shown ? 0 : -1;
-        if (shown) {
-          tab.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-          if (focus) tab.focus({ preventScroll: true });
+    // The tabs (a TabRow, src/tabs.js, as the dropdown's are): the shown group's cards the ones the Tab key reaches, its
+    // chosen card, as radioGroup has it, or, in a group browsed that does not hold the chosen thing, its first.
+    const pageTabs = new TabRow(thingTabs, {
+      key: 'group',
+      hidePanel: (panel, hidden) => { panel.hidden = hidden; },
+      onSelect: () => {
+        for (const card of thingsRoot.querySelectorAll('[role="radio"]')) card.tabIndex = card.getAttribute('aria-checked') === 'true' ? 0 : -1;
+        const shownCards = thingsRoot.querySelector('.menu-group:not([hidden])');
+        if (shownCards && !shownCards.querySelector('[aria-checked="true"]')) {
+          const first = shownCards.querySelector('[role="radio"]');
+          if (first) first.tabIndex = 0;
         }
-      }
-      for (const panel of thingsRoot.querySelectorAll('.menu-group')) panel.hidden = panel.dataset.group !== name;
-      // The Tab key reaches the shown group's cards: its chosen card, as radioGroup has it, or, in a group browsed
-      // that does not hold the chosen thing, its first.
-      for (const card of thingsRoot.querySelectorAll('[role="radio"]')) card.tabIndex = card.getAttribute('aria-checked') === 'true' ? 0 : -1;
-      const shownCards = thingsRoot.querySelector('.menu-group:not([hidden])');
-      if (shownCards && !shownCards.querySelector('[aria-checked="true"]')) {
-        const first = shownCards.querySelector('[role="radio"]');
-        if (first) first.tabIndex = 0;
-      }
-    }
+      },
+    });
+    const showThingGroup = (name) => pageTabs.select(name);
     function buildThings() {
       const groups = thingGroups();
       thingTabs.replaceChildren(...groups.map(({ name }, index) => {
@@ -1637,24 +1638,12 @@
         return panel;
       }));
     }
-    thingTabs.addEventListener('click', (event) => {
-      const tab = event.target.closest('[role="tab"]');
-      if (tab) showThingGroup(tab.dataset.group);
-    });
+    // ArrowDown on a tab goes into the shown group's cards: the chosen one if it is there, else the first.
     thingTabs.addEventListener('keydown', (event) => {
-      const tabs = [...thingTabs.querySelectorAll('[role="tab"]')];
-      const at = tabs.indexOf(document.activeElement);
-      if (at >= 0 && event.key === 'ArrowDown') {
-        // Into the shown group's cards: the chosen one if it is there, else the first.
-        event.preventDefault();
-        const panel = thingsRoot.querySelector('.menu-group:not([hidden])');
-        (panel?.querySelector('[aria-checked="true"]') ?? panel?.querySelector('[role="radio"]'))?.focus();
-        return;
-      }
-      const next = { ArrowRight: at + 1, ArrowLeft: at - 1, Home: 0, End: tabs.length - 1 }[event.key];
-      if (at < 0 || next === undefined) return;
+      if (event.key !== 'ArrowDown' || !event.target.matches('[role="tab"]')) return;
       event.preventDefault();
-      showThingGroup(tabs[(next + tabs.length) % tabs.length].dataset.group, { focus: true });
+      const panel = thingsRoot.querySelector('.menu-group:not([hidden])');
+      (panel?.querySelector('[aria-checked="true"]') ?? panel?.querySelector('[role="radio"]'))?.focus();
     });
     buildThings();
     /** Whether a thing floats: "Floats", "Sinks", or, one that floats plain but may sink as it is dressed (a pie's filling), "Floats or sinks". */
@@ -1758,7 +1747,8 @@
       return row;
     }
     function buildMenu() {
-      const tabs = [{ name: 'favourites', label: 'Favourites' }, ...thingGroups().map(({ name }) => ({ name, label: name }))];
+      const groups = thingGroups();
+      const tabs = [{ name: 'favourites', label: 'Favourites' }, ...groups.map(({ name, keys }) => ({ name, label: name, keys }))];
       menuTabs.replaceChildren(...tabs.map(({ name, label }, index) => {
         const tab = Object.assign(document.createElement('button'), { type: 'button', id: `thing-tab-${index}`, tabIndex: -1 });
         tab.setAttribute('role', 'tab');
@@ -1769,12 +1759,12 @@
         tab.append(label);
         return tab;
       }));
-      menuPanels.replaceChildren(...tabs.map(({ name }, index) => {
+      menuPanels.replaceChildren(...tabs.map(({ name, keys }, index) => {
         const panel = Object.assign(document.createElement('div'), { id: `thing-panel-${index}`, className: 'thing-menu-off' });
         panel.setAttribute('role', 'tabpanel');
         panel.setAttribute('aria-labelledby', `thing-tab-${index}`);
         panel.dataset.tab = name;
-        if (name !== 'favourites') panel.append(pillRow(thingGroups().find((group) => group.name === name).keys));
+        if (keys) panel.append(pillRow(keys));
         return panel;
       }));
       showMenuFavourites();
