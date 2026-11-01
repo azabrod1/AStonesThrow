@@ -151,12 +151,14 @@ function passesBy(piece, thing) {
 }
 
 /** One pass over the pairs (collideThings), its knocks added to `knocks`; whether any pair met. */
-function collidePass(things, knocks) {
+function collidePass(all, knocks) {
   let met = false;
+  // Only what can meet anything (Rock.collides): the stones lying on the bed, most of a pond's things, are not paired.
+  const things = all.filter((thing) => thing.collides);
   for (let first = 0; first < things.length; first++) {
     for (let second = first + 1; second < things.length; second++) {
       const one = things[first], other = things[second];
-      if (!one.collides || !other.collides || !(one.floater || other.floater || one.grounded || other.grounded)) continue;
+      if (!(one.floater || other.floater || one.grounded || other.grounded)) continue;
       // What broke a hole went down between its pieces (src/ice.js SHARD.clear), what broke a piece afloat between its
       // parts (splitPiece), and what pushed a piece under went down past it (landOnPiece, dunkPieces): they do not meet
       // until the hole floods (src/ice.js setTime), or, a part or a piece pushed under, until they are apart.

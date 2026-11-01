@@ -13,14 +13,22 @@
 // a fence, polled), a frame or two later; while one read is out no other is
 // asked for. So nothing stalls the frame, and the height a knock sees is at
 // most a few frames old, the slow part of the water's motion, which is all a
-// floater's centre follows. A browser that cannot read back keeps every
-// floater on the still water (rideHeight 0), as the physics always had it.
+// floater's centre follows. While nothing can meet a floater (`quiet`:
+// everything at rest, nothing held or touched, src/main.js render) the
+// height is only wanted for a tap picking one up where it is drawn
+// (src/objectGrab.js), so a read is asked for every QUIET_EVERY frames
+// instead of every frame: a pass, a fence and its polling a frame is what a
+// dozen resting floaters would otherwise cost a phone for as long as they
+// float. The first frame something moves reads at once.
+// A browser that cannot read back keeps every floater on the still water
+// (rideHeight 0), as the physics always had it.
 // The pass's program is compiled under the loading veil (src/main.js warmUp).
 import * as THREE from 'three';
 import { FullscreenPass } from './gpu.js';
 import { FLOATER_WATER } from './shaders/scene.js';
 
 export const MAX_FLOATERS = 32;   // the most floaters any preset keeps (src/main.js QUALITY: afloat and the ice's shards)
+const QUIET_EVERY = 6;            // frames between reads while nothing can meet a floater (the header): 10 a second at 60
 const HEIGHT_RANGE = 0.5;   // m: heights from −this to +this
 
 const RIDE_FRAGMENT = /* glsl */`
@@ -45,11 +53,17 @@ export function createFloaterRide(water) {
   let reading = null;     // the floaters of the read that is out
   let working = true;     // false once a read has failed: every floater stays on the still water
   let reads = 0, requests = 0;
+  let quietFrames = 0;    // frames since the last read was asked for, while quiet
 
   return {
-    /** Each floater riding the water gets its rideHeight from the last read; a new read is asked for if none is out. */
-    update(renderer, floaters) {
+    /**
+     * Each floater riding the water gets its rideHeight from the last read; a new read is asked for if none is out,
+     * and, `quiet` (the header: nothing can meet a floater this frame), only every QUIET_EVERY frames.
+     */
+    update(renderer, floaters, quiet = false) {
       if (!working || reading) return;
+      if (quiet && ++quietFrames < QUIET_EVERY) return;
+      quietFrames = 0;
       const riding = floaters.slice(0, MAX_FLOATERS);
       for (const floater of floaters) if (!riding.includes(floater)) floater.rideHeight = 0;
       if (riding.length === 0) return;

@@ -139,7 +139,8 @@
 // things back (src/pool.js holdInPool, run in collideThings' passes, so a
 // knock passes along a row and off a wall within the step); things meet a
 // floater where it is drawn, riding the water (src/floaterRide.js reads the
-// water's height under each back from the GPU, without waiting). Each impact,
+// water's height under each back from the GPU, without waiting, and seldom
+// while nothing is on the move to meet one). Each impact,
 // skip, floater's ring and knock sounds (src/sound.js; the Sound setting,
 // its own localStorage key, ?sound=off), when it is seen (simulate's
 // seenAfter: a step's end past the moment its frame draws, at the world's
@@ -2637,8 +2638,10 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     if (!fromBelow) updateReflection();   // from below no mirror is needed; a change of view keeps it marked stale until the eye surfaces
     // A floater whose rim keeps the water off its top (a pizza afloat, toppings up): the water is not drawn inside its rim.
     surface.setDryDiscs(rocks.filter((rock) => rock.dryDisc > 0).map((rock) => ({ x: rock.meshAbove.position.x, z: rock.meshAbove.position.z, radius: rock.dryDisc })));
-    // The water's height under each floater riding it, read back for the physics (src/floaterRide.js: things meet it where it is drawn).
-    floaterRide.update(renderer, rocks.filter((rock) => rock.rideShare && rock.rideShare.value > 0));
+    // The water's height under each floater riding it, read back for the physics (src/floaterRide.js: things meet it where
+    // it is drawn); seldom while nothing can meet one (`quiet`: everything at rest, nothing held, the finger out).
+    const quiet = !grab.rock && !finger.inWater && !rocks.some((rock) => rock.state !== 'rest' || rock.fading !== undefined);
+    floaterRide.update(renderer, rocks.filter((rock) => rock.rideShare && rock.rideShare.value > 0), quiet);
     surface.update({ underTarget, reflectionTarget, reflectionMatrix, mirrorRect: splashRect, stonesUnder: rocks.some((rock) => rock.state === 'held' || rock.state === 'skim' || rock.state === 'water' || rock.state === 'float' || rock.afloat || (rock.state === 'rest' && rock.position.y < 0)), resolution, camera, time: simulationTime });
     splash.prepareScene();   // the stones' cavities, and the patch dipping under them
     if (skip.cavity) surface.setCavities([]);
