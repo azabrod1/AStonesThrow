@@ -586,7 +586,9 @@ defineBuiltIn('frozen-pizza', {
 });
 // A fruit pie in its tin, thrown flat (a plate in the air, as a pizza is), its filling drawn at random as it is thrown
 // (src/thingMeshes.js pieFilling): an apple pie (its sizes' masses) about 860 kg/m³ floats low, a pumpkin one lower,
-// and cherry and blueberry, a fifth heavier, sink. Its crimped rim keeps the water off its top; its pastry soaks a little,
+// and cherry and blueberry, a fifth heavier, sink. Its crimped rim keeps the water off its top, out to the rim's crest
+// (`dry`, PIE's profile in src/thingMeshes.js: the crust dips inside the rim, and any less would draw a ring of water in
+// the dip when it floats low); its pastry soaks a little,
 // where its tin does not hold the water off (never enough to sink a pie that floats). Its tin and filling are low in
 // it, the air under its crust high (what floats an apple pie): its weight is a little under its volume's middle
 // (`ballast`), so under the water it turns back right way up, where the flow had turned it on its edge.
@@ -600,7 +602,7 @@ defineBuiltIn('pie', {
   },
   material: { bounce: [0.04, 0.1], friction: 0.8 },
   air: { drag: 1.0, model: 'flutter' },
-  water: { restingHeight: 0.22, dry: 0.82, soaks: { seconds: 300, takes: 0.04 } },
+  water: { restingHeight: 0.22, dry: 0.92, soaks: { seconds: 300, takes: 0.04 } },
   look: { mesh: 'pie', roughness: 0.7, reflection: 0.8, wet: { darker: 0.2, glossier: 0.4 } },
 });
 defineBuiltIn('watermelon', {
