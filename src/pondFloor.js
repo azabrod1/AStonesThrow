@@ -71,6 +71,9 @@
 //
 // Coral sand uses less grain and silt contrast (SHORE_LOOKS.coral.detail),
 // shared by the beach, the bed and the view from below through uBedDetail.
+// Above the wet sand the lagoon's beach takes a photoscan's creases and
+// grain too (SAND_SCAN; LAND_FRAGMENT's sandScan), loaded with the lagoon's
+// scenery (src/tropics.js).
 //
 // The bake is one pass over the tile. Its program is freed after it; the
 // texture lives as long as the floor's material (disposing the material
@@ -312,6 +315,20 @@ function bakePattern(renderer) {
 // tropics.js bakes the beach and foreground detail masks and turns them on at the Polynesian lagoon.
 export const PALM_SHADOW = { uPalmShadowNear: { value: null }, uPalmShadowNearBox: { value: new THREE.Vector4(0, 0, 1, 1) }, uPalmShadow: { value: null }, uPalmShadowBox: { value: new THREE.Vector4(0, 0, 1, 1) }, uPalmShadowOn: { value: 0 } };
 
+// The lagoon's dry sand, a photoscan (LAND_FRAGMENT's sandScan), shared by every land's material: src/tropics.js loads
+// it when the lagoon is first shown and turns it on; till then a texel that is no scan's.
+export const SAND_SCAN = { uSandScan: { value: new THREE.DataTexture(new Uint8Array([128, 128, 128, 255]), 1, 1) }, uSandScanOn: { value: 0 } };
+SAND_SCAN.uSandScan.value.needsUpdate = true;
+// The lagoon's palms' feet (LAND_FRAGMENT's palmFoot): a grid of cells over the planting, each the foot standing in it
+// (src/tropics.js placeFeet), which the land draws the sand banked against, the roots and the sky a trunk hides
+// round.
+export const PALM_FEET = {
+  uPalmFeet: { value: new THREE.DataTexture(new Uint8Array(4), 1, 1) },   // no foot till the scenery is built
+  uPalmFeetBox: { value: new THREE.Vector4(0, 0, 1, 0) },   // the grid's least x and z (m), 1 / its cell (m)
+  uPalmFeetCells: { value: new THREE.Vector2(1, 1) },
+};
+PALM_FEET.uPalmFeet.value.needsUpdate = true;
+
 export function createPondFloor(water, lighting, ambientWaves, { renderer, rings = null, ice = null }) {
   const pattern = bakePattern(renderer);
   const material = new THREE.ShaderMaterial({
@@ -473,6 +490,9 @@ export function createShore(floor, lighting, environment, { snow = { value: 0 },
       ...environment.hazeUniforms,
       uSnow: snow,   // the snow lying on it, 0 to 1 (src/main.js WEATHERS)
       ...PALM_SHADOW,
+      ...SAND_SCAN,
+      ...PALM_FEET,
+      uPalmBank: { value: 0 },   // 1 on the lagoon's banks' mesh (src/tropics.js banks), which rises by them
     },
   });
   // The lagoon's land is built the first time it is shown (src/main.js showScenery: lagoonLandGeometry); its program is

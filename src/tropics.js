@@ -29,10 +29,23 @@
 // skirt of old frond bases at its top; a crown of FRONDS fronds round it by
 // the golden angle, the youngest up, the oldest hanging and yellowing, a dead
 // one or two hanging brown along the trunk; and a bunch of coconuts in the
-// crown. Near trunks have a finely sampled root flare; bark and husks use
-// surface coordinates with filtered normal relief (WOOD_SURFACE), and coconut
-// triangles face outwards. Fallen husks, mostly dried brown, are individually
-// culled instances, coarser past LODS[1].from.
+// crown. Near trunks have a finely sampled root flare, finer round (a
+// level's `trunk`); the bark is a photoscan (SURFACES: Poly Haven's Palm Tree
+// Bark, its relief and grain, as many widths round as the girth holds, each
+// palm's shifted), the husks analytic (WOOD_SURFACE), and coconut triangles
+// face outwards. Fallen husks, mostly dried brown, are individually culled
+// instances, coarser past LODS[1].from.
+//
+// Where a trunk meets the sand (PALM_FOOT in src/shaders/scene.js): the
+// land's shader finds the nearest foot to each point in a grid of the feet
+// (placeFeet, FEET) and draws round it the sand banked against it, sloping
+// away, and the sky the trunk hides from the ground beside it (an upright
+// cylinder's share, half at its wall); round the feet near the eye the bank
+// is a mesh of its own (BANKS, setBanks), drawn by the land's own program
+// over the land, so it hides the trunk below its rim, gives the foot its
+// outline and meets both with no seam. The beach's dry sand is a photoscan
+// too (SURFACES, Sand 03: the land's sandScan); both scans are fetched when
+// the lagoon is first built (loadSurfaces).
 // Every number comes from its own seeded stream (seededRandom), never
 // Math.random. A few variants (PALMS) are built, each at three levels of
 // detail (LODS), and every palm is an instance of one of them, turned to
@@ -83,7 +96,9 @@
 // place).
 import * as THREE from 'three';
 import { FullscreenPass } from './gpu.js';
-import { LAGOON_SHORE, PALM_SHADOW, SHORE, lagoonBend, lagoonShoreDistance, landHeight } from './pondFloor.js';
+import { LAGOON_SHORE, PALM_FEET, PALM_SHADOW, SAND_SCAN, SHORE, lagoonBend, lagoonShoreDistance, landHeight } from './pondFloor.js';
+import { PALM_FOOT } from './shaders/scene.js';
+import { loadAsset } from './loadAsset.js';
 import { seededRandom } from './spray.js';
 
 const SEED = 7173;
@@ -249,14 +264,17 @@ export const PALMS = [
   { height: 17.5, lean: 4, curve: 0.25, fronds: 34 },
 ];
 // The levels of detail: the share of a variant's fronds drawn, segments along a frond, columns across a sheet (2: a
-// plane; 3: folded), the rachis's sides (0: none), the trunk's sides and rows, coconuts and their facets; and from how
+// plane; 3: folded), the rachis's sides (0: none), the sides of the frond bases' skirt and of the trunk (`trunk` where finer:
+// a near foot's buttresses), the trunk's rows, coconuts and their facets; and from how
 // far from the shore view's eye (m) a palm is drawn at it.
 export const LODS = [
-  { from: 0, fronds: 1, segments: 14, columns: 3, rachis: 3, around: 24, rows: 42, nuts: 8, nutFacets: [10, 16] },
+  { from: 0, fronds: 1, segments: 14, columns: 3, rachis: 3, around: 24, trunk: 32, rows: 42, nuts: 8, nutFacets: [10, 16] },
   { from: 35, fronds: 0.75, segments: 7, columns: 2, rachis: 0, around: 10, rows: 16, nuts: 3, nutFacets: [6, 10] },
   { from: 110, fronds: 0.45, segments: 2, columns: 2, rachis: 0, around: 4, rows: 4, nuts: 0, nutFacets: [0, 0] },
 ];
-const TRUNK = { foot: 0.22, flare: 0.22, flareHeight: 0.07, top: 0.15, ring: 0.085 };   // radius (m) at the foot above the flare, the flare's, its height (share), at the top; rings' spacing (m)
+const TRUNK = { foot: 0.22, flare: 0.22, flareHeight: 0.07, top: 0.15, ring: 0.085, sunk: 0.15 };   // radius (m) at the foot above the flare, the flare's, its height (share), at the top; rings' spacing (m); how deep its foot is sunk into the sand (m)
+/** A trunk's radius (m, unscaled) a share of the way up it. */
+const trunkRadius = (share) => TRUNK.foot + (TRUNK.top - TRUNK.foot) * share ** 0.7 + TRUNK.flare * Math.max(1 - share / TRUNK.flareHeight, 0) ** 2;
 const FROND = { length: [4.4, 6.0], longest: 1.15, bare: 0.1, fold: [18, -62], droop: [25, 115], leafletDroop: 0.45 };   // m; m; share; degrees at base and tip; degrees young to old; share of a leaflet's length its tip hangs
 const COLORS = {
   trunk: [0.32, 0.28, 0.22], trunkTop: [0.27, 0.22, 0.16], fibre: [0.20, 0.13, 0.07], rachis: [0.30, 0.30, 0.10], rachisOld: [0.36, 0.30, 0.12], dead: [0.32, 0.22, 0.11],
@@ -336,16 +354,17 @@ function palmGeometry(variant, lod, stream) {
   const swayAt = (y) => [Math.min(Math.max(y / top.y, 0), 1) ** 2, 0];
   // The trunk: a tube, flared at its foot, its colour paler and greyer below (weathered), browner under the crown.
   const firstTrunk = wood.positions.length / 3;
+  const trunkAround = lod.trunk ?? lod.around;   // the swollen foot of a near trunk round, finer than the rest of it (no draw of the stream's)
   for (let row = 0; row <= rows; row++) {
     const share = shares[row];
     const flareShare = Math.max(1 - share / TRUNK.flareHeight, 0);
-    const radius = TRUNK.foot + (TRUNK.top - TRUNK.foot) * share ** 0.7 + TRUNK.flare * flareShare ** 2;
+    const radius = trunkRadius(share);
     const tangent = tangents[row];
     const across = new THREE.Vector3(0, 0, 1).addScaledVector(tangent, -tangent.z).normalize();
     const over = new THREE.Vector3().crossVectors(tangent, across).normalize();
     const color = mixColor(COLORS.trunk, COLORS.trunkTop, share ** 3);
-    for (let around = 0; around <= lod.around; around++) {
-      const turn = (around / lod.around) * Math.PI * 2;
+    for (let around = 0; around <= trunkAround; around++) {
+      const turn = (around / trunkAround) * Math.PI * 2;
       const normal = across.clone().multiplyScalar(Math.cos(turn)).addScaledVector(over, Math.sin(turn));
       const rootRibs = 1 + 0.08 * flareShare * Math.cos(turn * 7 + wander);
       const at = axis[row].clone().addScaledVector(normal, radius * rootRibs);
@@ -353,11 +372,11 @@ function palmGeometry(variant, lod, stream) {
       const radiusSlope = -(TRUNK.foot - TRUNK.top) * 0.7 * Math.max(share, 0.001) ** -0.3 / height
         - 2 * TRUNK.flare * flareShare / (TRUNK.flareHeight * height);
       normal.addScaledVector(tangent, -radiusSlope).normalize();
-      if (row === 0) at.y -= 0.15;   // sunk into the sand
-      wood.vertex(at, normal, shade(color, 0.94 + 0.06 * Math.sin(share * 19 + wander)), [around / lod.around, share * height], swayAt(at.y), share * height);
+      if (row === 0) at.y -= TRUNK.sunk;   // sunk into the sand
+      wood.vertex(at, normal, shade(color, 0.94 + 0.06 * Math.sin(share * 19 + wander)), [around / trunkAround, share * height], swayAt(at.y), share * height);
     }
   }
-  wood.grid(firstTrunk, rows + 1, lod.around + 1);
+  wood.grid(firstTrunk, rows + 1, trunkAround + 1);
   // The skirt of old frond bases at the top: a short flared sleeve of fibre.
   if (lod.around >= 6) {
     const firstSkirt = wood.positions.length / 3;
@@ -532,9 +551,29 @@ const LEAF_LIGHT = { crown: 0.35, through: 0.35, tint: [1.25, 1.35, 0.55] };
 const GROUND_BOUNCE = 0.7;
 const SKY_LIGHT = 1.4;   // the sky's light on level ground per unit of its mean radiance, as LAND_FRAGMENT's
 
-// Analytic bark and husk detail: no extra texture fetches, faded below a pixel.
+// The bark and the beach's dry sand, photoscans (Poly Haven's Palm Tree Bark and Sand 03, CC0), each packed into one
+// JPEG by tools/tropics-textures.mjs (its header: the normal's x and y, the luminance's detail): fetched when the
+// lagoon is first built (loadSurfaces), decoded off the main thread, and turned on when they come; till then the
+// bark is WOOD_SURFACE's own and the sand the land's. The bark (`around` by `up` metres) goes once round a trunk, each
+// palm's turned and lifted by its phase so no two show the same scratches; the sand's square is the land's own
+// (SAND_SCAN in src/shaders/scene.js). Filtered anisotropically, as the bed's tile is.
+const SURFACES = {
+  bark: { url: new URL('../assets/tropics/bark.jpg', import.meta.url), around: 1.3, up: 2.6 },
+  sand: { url: new URL('../assets/tropics/sand.jpg', import.meta.url) },
+  anisotropy: 8,
+};
+
+// Bark and husk detail, faded below a pixel: the bark's scan (SURFACES) once it has come, else analytic.
 // Coordinates follow the surface; all circumferential frequencies wrap at its seam.
 const WOOD_SURFACE = /* glsl */`
+uniform sampler2D uBarkScan;
+uniform float uBarkScanOn;
+varying float vPalmPhase;
+varying vec4 vPalmFoot;
+// A trunk's radius (m, unscaled) a share of the way up it (trunkRadius).
+float trunkRadius(float share) {
+  return ${TRUNK.foot.toFixed(3)} + ${(TRUNK.top - TRUNK.foot).toFixed(3)} * pow(share, 0.7) + ${TRUNK.flare.toFixed(3)} * pow(max(1.0 - share / ${TRUNK.flareHeight.toFixed(3)}, 0.0), 2.0);
+}
 float woodNoise(vec2 point) {
   vec2 cell = floor(point), fraction = fract(point);
   fraction = fraction * fraction * (3.0 - 2.0 * fraction);
@@ -543,13 +582,39 @@ float woodNoise(vec2 point) {
   vec4 values = fract(sin(seeds) * 43758.5453);
   return mix(mix(values.x, values.y, fraction.x), mix(values.z, values.w, fraction.x), fraction.y);
 }
-// Brightness, height in metres and roughness offset.
-vec3 woodSurface(vec2 surfaceUv, float kind) {
+// Brightness, height in metres and roughness offset; a scan's relief as the height's change across the pixel, x and y.
+vec3 woodSurface(vec2 surfaceUv, float kind, out vec2 heightChange) {
   float angle = surfaceUv.x * 6.2831853;
   // Evaluate derivatives outside material branches; distant surfaces keep only the average tone.
   vec2 footprint = fwidth(surfaceUv);
+  vec2 surfaceDx = dFdx(surfaceUv), surfaceDy = dFdy(surfaceUv);
   float height = 0.0, tone = 1.0, roughness = 0.0;
-  if (kind >= 0.0) {
+  heightChange = vec2(0.0);
+  if (kind >= 0.0 && uBarkScanOn > 0.0) {
+    // The scan: its luminance's detail over a slow mottle of the trunk's own, its slopes (metres a metre along its
+    // width and height) times the pixel's step across them.
+    float along = surfaceUv.y;
+    // As many widths of the scan round it as its girth holds, so the swollen foot's bark is not drawn out: a whole
+    // number each way, the two either side of its girth blended (each wraps at the seam).
+    float girth = 6.2831853 * trunkRadius(along / vPalmFoot.w) / ${SURFACES.bark.around.toFixed(2)};
+    float fewer = max(floor(girth), 1.0), more = clamp(girth - fewer, 0.0, 1.0);
+    vec2 shift = vec2(fract(vPalmPhase * 0.618), fract(vPalmPhase * 0.371));
+    vec2 scale = vec2(fewer, 1.0 / ${SURFACES.bark.up.toFixed(2)});
+    vec3 texel = textureGrad(uBarkScan, surfaceUv * scale + shift, surfaceDx * scale, surfaceDy * scale).rgb;
+    if (more > 0.0) {
+      vec2 moreScale = vec2(fewer + 1.0, scale.y);
+      texel = mix(texel, textureGrad(uBarkScan, surfaceUv * moreScale + shift, surfaceDx * moreScale, surfaceDy * moreScale).rgb, more);
+      scale.x += more;
+    }
+    vec2 tilt = texel.rg * 2.0 - 1.0;
+    vec2 slope = -tilt / max(sqrt(max(1.0 - dot(tilt, tilt), 0.0)), 0.3);
+    vec2 metres = vec2(${SURFACES.bark.around.toFixed(2)} * scale.x, 1.0);
+    heightChange = vec2(dot(slope, surfaceDx * metres), dot(slope, surfaceDy * metres));
+    vec2 around = vec2(cos(angle), sin(angle));
+    float mottle = woodNoise(around * 1.5 + vec2(along * 0.7, 3.0));
+    tone = 2.0 * texel.b * (0.85 + 0.3 * mottle) * mix(0.72, 1.0, smoothstep(0.0, 0.65, along));   // the root collar darker, as below
+    roughness = 0.1 * (1.0 - 2.0 * texel.b);
+  } else if (kind >= 0.0) {
     float along = surfaceUv.y;
     vec2 grainPoint = vec2(cos(angle) * 3.0 + sin(angle * 3.0), along * 6.0 + sin(angle) * 2.0);
     float mottle = woodNoise(grainPoint);
@@ -594,6 +659,8 @@ attribute vec4 palmInstance;   // its palm's height (m, along the trunk, as buil
 varying float vPalmRing;
 varying float vPalmShade;
 varying vec2 vPalmUv;
+varying float vPalmPhase;
+varying vec4 vPalmFoot;        // its foot's world position (where its trunk meets the sand) and its height as built (m)
 `;
 const PALM_MOVE = /* glsl */`
   {
@@ -608,6 +675,8 @@ const PALM_MOVE = /* glsl */`
     transformed += lean + vec3(0.4 * flutter * windLocal.x, flutter, 0.4 * flutter * windLocal.z);
     vPalmRing = palmRing;
     vPalmUv = uv;
+    vPalmPhase = palmPhase;
+    vPalmFoot = vec4((modelMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz, palmInstance.x);
     // In the forest's shade (CANOPY): a palm's wood below its crown (its trunk by its rings, the rest by its height
     // under the crown's), all of a mound of scrub (a palm's leaves are given none).
     #ifdef PALM_LEAVES
@@ -932,6 +1001,69 @@ function placeScenery(stream) {
   return { palms, scrub, fallen };
 }
 
+// The palms' feet (PALM_FEET, src/pondFloor.js): a grid of `cell`-metre cells over the planting, each holding the foot
+// that stands in it (its place in the cell, its radius where it meets the sand), which the land's shader looks up
+// about each point (LAND_FRAGMENT's palmFoot). A foot shows on the sand no farther out than PALM_FOOT.reach, under
+// half a cell, so the four cells about a point hold any foot near it; palms stand 7 m and more apart, so a cell holds
+// one (a second in one, placeFeet counts them, is left out: a forest palm deep in its litter).
+const FEET = { cell: 2.5 };
+/** The grid of the palms' feet (FEET), as a texture and its box; and how many feet shared a cell. */
+function placeFeet(palms) {
+  const [minX, maxX, minZ, maxZ] = PLANTING.extent;
+  const across = Math.ceil((maxX - minX) / FEET.cell), deep = Math.ceil((maxZ - minZ) / FEET.cell);
+  const data = new Uint8Array(across * deep * 4);
+  let crowded = 0;
+  const kept = [];
+  for (const placed of palms) {
+    const column = Math.floor((placed.x - minX) / FEET.cell), row = Math.floor((placed.z - minZ) / FEET.cell);
+    if (column < 0 || row < 0 || column >= across || row >= deep) continue;
+    const at = 4 * (row * across + column);
+    if (data[at + 3] > 0) { crowded++; continue; }
+    const radius = trunkRadius(TRUNK.sunk / PALMS[placed.variant].height) * placed.scale;
+    data[at] = Math.round(((placed.x - minX) / FEET.cell - column) * 255);
+    data[at + 1] = Math.round(((placed.z - minZ) / FEET.cell - row) * 255);
+    data[at + 2] = Math.round(Math.min(radius / PALM_FOOT.widest, 1) * 255);
+    data[at + 3] = 255;
+    kept.push({ x: placed.x, z: placed.z, radius });
+  }
+  const texture = new THREE.DataTexture(data, across, deep);
+  texture.needsUpdate = true;
+  return { texture, box: [minX, minZ, 1 / FEET.cell, 0], cells: [across, deep], crowded, feet: kept };
+}
+
+// The sand banked against the feet near the eye (PALM_FOOT; LAND_FRAGMENT's own material with uPalmBank 1, src/
+// main.js): a mesh of rings round each foot within `near` metres of the shore view's eye (a bank a few centimetres
+// high is lost in a pixel farther off, where the land's shading alone draws it), `around` corners round, out to the
+// radii `out` (m past the foot's radius; the first inside the trunk), its heights the land's shader's (LAND_VERTEX:
+// the ground's, the bank's and a few millimetres over the land's own, so it hides the trunk below its rim and gives
+// the foot its outline, and meets the land with no seam). Drawn by the land's program: nothing new to build.
+const BANKS = { near: 35, around: 32, out: [-0.04, 0, 0.025, 0.06, 0.11, 0.18, 0.27, 0.4, 0.58, 0.85] };
+/** The banks' mesh (BANKS) round these feet. */
+function bankGeometry(feet) {
+  const positions = [], indices = [];
+  const rings = BANKS.out.length;
+  for (const foot of feet) {
+    if (Math.hypot(foot.x - EYE.x, foot.z - EYE.z) > BANKS.near) continue;
+    const first = positions.length / 3;
+    for (const out of BANKS.out) {
+      for (let corner = 0; corner < BANKS.around; corner++) {
+        const angle = (corner / BANKS.around) * Math.PI * 2;
+        positions.push(foot.x + Math.cos(angle) * (foot.radius + out), 0, foot.z + Math.sin(angle) * (foot.radius + out));
+      }
+    }
+    for (let ring = 0; ring < rings - 1; ring++) {
+      for (let corner = 0; corner < BANKS.around; corner++) {
+        const here = first + ring * BANKS.around + corner, next = first + ring * BANKS.around + (corner + 1) % BANKS.around;
+        indices.push(here, next, here + BANKS.around, next, next + BANKS.around, here + BANKS.around);   // facing up
+      }
+    }
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setIndex(indices);
+  return geometry;
+}
+
 export class Tropics {
   constructor({ renderer, envTexture, mirrorLayer, lighting, coarse = false }) {
     // The frond atlas: a texel till the scenery is built (build), its bake's program built now, under the loading veil.
@@ -941,6 +1073,7 @@ export class Tropics {
     this.uniforms = {
       uPalmTime: { value: 0 }, uPalmWind: { value: 0.3 }, uPalmWindDirection: { value: new THREE.Vector2(0.45, -0.9).normalize() },
       uSunDir: { value: lighting.sunDirection }, uSunIrradiance: { value: lighting.sunIrradiance }, uSkyAmbient: { value: lighting.skyAmbient },
+      uBarkScan: { value: SAND_SCAN.uSandScan.value }, uBarkScanOn: { value: 0 },   // a texel that is no scan's till it comes (loadSurfaces)
     };
     this.leafMaterial = this.material('leaves', envTexture);
     this.woodMaterial = this.material('wood', envTexture);
@@ -949,6 +1082,7 @@ export class Tropics {
     this.group.visible = false;
     this.above = [];
     this.built = false;
+    this.surfacesReady = Promise.resolve();   // resolves when the scans have come or failed (loadSurfaces): the tools wait for it, the page never
     this.coarse = coarse;
     this.shown = false;
     this.culledFor = new THREE.Matrix4().makeScale(0, 0, 0);
@@ -976,6 +1110,37 @@ export class Tropics {
     this.shadowMaterials = { leaves: this.shadowMaterial(true), wood: this.shadowMaterial(false) };
     this.bakedSun = new THREE.Vector3();
     this.bakeShadows();
+  }
+
+  /**
+   * Fetches the bark's and the sand's scans (SURFACES) and turns each on as
+   * it comes, its texture uploaded then (no program changes: both are built
+   * with a texel standing in). One that fails leaves the analytic surface.
+   */
+  async loadSurfaces() {
+    const maxAnisotropy = this.renderer.capabilities.getMaxAnisotropy();
+    const load = async (url) => {
+      // As the image lies, its bytes its own (not colour-managed, not flipped: the packing's header says why).
+      const bitmap = await createImageBitmap(await loadAsset(url, 'blob'), { imageOrientation: 'none', colorSpaceConversion: 'none', premultiplyAlpha: 'none' });
+      const texture = new THREE.Texture(bitmap);
+      texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+      texture.flipY = false;
+      texture.anisotropy = Math.min(SURFACES.anisotropy, maxAnisotropy);
+      texture.needsUpdate = true;
+      return texture;
+    };
+    const turnOn = async (url, uniforms) => {
+      try {
+        uniforms[0].value = await load(url);
+        uniforms[1].value = 1;
+      } catch (error) {
+        console.warn('A lagoon surface scan did not load; its analytic surface stays.', error);
+      }
+    };
+    await Promise.all([
+      turnOn(SURFACES.bark.url, [this.uniforms.uBarkScan, this.uniforms.uBarkScanOn]),
+      turnOn(SURFACES.sand.url, [SAND_SCAN.uSandScan, SAND_SCAN.uSandScanOn]),
+    ]);
   }
 
   /** A program that draws its mesh's shadow into the mask (SHADOW_VERTEX): the light it lets through, multiplied in. */
@@ -1039,11 +1204,21 @@ export class Tropics {
       this.group.remove(mesh);
     }
     this.above = [];
-    if (!this.built) bakeAtlas(this.renderer, this.atlas, this.atlasPass, true);
+    if (!this.built) {
+      bakeAtlas(this.renderer, this.atlas, this.atlasPass, true);
+      this.surfacesReady = this.loadSurfaces();
+    }
     this.built = true;
     this.stale = false;
     const { palms, scrub, fallen } = placeScenery(seededRandom(SEED, 1));
     this.placed = { palms, scrub, fallen };   // for the probes
+    if (!this.feet) {
+      this.feet = placeFeet(palms);   // where they stand does not change with the quality
+      PALM_FEET.uPalmFeet.value = this.feet.texture;
+      PALM_FEET.uPalmFeetBox.value.fromArray(this.feet.box);
+      PALM_FEET.uPalmFeetCells.value.fromArray(this.feet.cells);
+      if (this.banks) this.banks.geometry = bankGeometry(this.feet.feet);
+    }
     // The palms: every variant at each level, its instances those placed at that level.
     for (const [variantIndex, variant] of PALMS.entries()) {
       for (const [level, lod] of LODS.entries()) {
@@ -1215,7 +1390,8 @@ uniform vec3 uSkyAmbient;`)
         shader.fragmentShader = shader.fragmentShader
           .replace('#include <common>', `#include <common>\n${WOOD_SURFACE}`)
           .replace('#include <color_fragment>', `#include <color_fragment>
-  vec3 palmSurface = woodSurface(vPalmUv, vPalmRing);
+  vec2 palmHeightChange;
+  vec3 palmSurface = woodSurface(vPalmUv, vPalmRing, palmHeightChange);
   diffuseColor.rgb *= palmSurface.x;`)
           .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
   roughnessFactor = clamp(roughnessFactor + palmSurface.z, 0.45, 1.0);`)
@@ -1223,7 +1399,7 @@ uniform vec3 uSkyAmbient;`)
   vec3 surfaceDx = dFdx(-vViewPosition), surfaceDy = dFdy(-vViewPosition);
   vec3 crossDy = cross(surfaceDy, normal), crossDx = cross(normal, surfaceDx);
   float determinant = dot(surfaceDx, crossDy);
-  vec3 surfaceGradient = sign(determinant) * (dFdx(palmSurface.y) * crossDy + dFdy(palmSurface.y) * crossDx);
+  vec3 surfaceGradient = sign(determinant) * ((dFdx(palmSurface.y) + palmHeightChange.x) * crossDy + (dFdy(palmSurface.y) + palmHeightChange.y) * crossDx);
   normal = normalize(max(abs(determinant), 1e-10) * normal - surfaceGradient);`);
       }
     };
@@ -1240,12 +1416,20 @@ uniform vec3 uSkyAmbient;`)
     if (visible && building && (!this.built || this.stale)) this.build();
     this.shown = visible;
     this.group.visible = visible;
+    if (this.banks) this.banks.visible = visible && this.built;
     PALM_SHADOW.uPalmShadowOn.value = visible && this.built ? 1 : 0;
     for (const mesh of this.above) {
       mesh.visible = visible;
       mesh.count = mesh.userData.whole.numbers.length / 4;   // every instance, till the next cull
     }
     if (visible) this.culledFor.makeScale(0, 0, 0);   // culled again at the next frame
+  }
+
+  /** The mesh the sand banked against the feet near the eye is drawn on (BANKS: the land's material, src/main.js), shown with the palms. */
+  setBanks(mesh) {
+    this.banks = mesh;
+    mesh.visible = false;
+    if (this.feet) mesh.geometry = bankGeometry(this.feet.feet);
   }
 
   /** The Wind control's strength (WIND_STRENGTHS in src/ambientWaves.js) and the direction it blows toward (x, z). */

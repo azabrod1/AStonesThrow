@@ -1325,9 +1325,20 @@ of detail coarser. The Wind control bends each trunk along the wind as a
 cantilever, with a slow sway of its own and slow gusts, and flutters its
 fronds. Nothing of it has a body for the physics.
 
-Close trunks have cylindrical bark coordinates, filtered surface relief (leaf
-scars wandering by noise round the trunk, a darker root collar) and extra
-samples in the root flare. Coconut husks have outward-facing triangles, smooth
+The bark is a photoscan (Poly Haven's Palm Tree Bark: its relief and grain
+over the trunk's own colour, laid round the trunk as many times as its girth
+holds, so the swollen foot is not drawn out, and shifted on each palm), with
+a darker root collar and extra samples, finer round, in the root flare; the
+beach's dry sand takes a photoscan's creases and grain too (Sand 03) in place
+of the bed's tile's blotches, all but the wet strip by the water. Both come
+after the scenery is built; till then the analytic bark and the bed's sand
+stand in. Where a trunk meets the sand, the sand is banked a few centimetres
+up it, wandering round it, and the trunk hides some of the sky from the
+ground beside it: the land's shader finds the nearest foot to each point in a
+grid of them (one 2.5 m cell a foot) and shades the bank's slope and that
+shade; round the 24 feet nearest the eye the bank is a mesh of its own on the
+land's program, so it hides the trunk below its rim and the foot keeps its
+outline, with no seam on either side. Coconut husks have outward-facing triangles, smooth
 ridged normals and fibrous shading. Fallen husks are mostly dried brown and
 weathered grey, a few fresh green; each is an instance culled on its own, with
 a coarse husk past 35 m. A 1024² foreground shadow mask covers 64 m beside the
@@ -1338,8 +1349,9 @@ restores instances from the original placement data. `node
 tools/tropics-probe.mjs` checks winding, finite geometry, camera round trips and
 the scenery budget. Distant crowns use fewer segments; the central beach mesh
 starts at 25 cm instead of densely subdividing the first 5 cm. At 1280 × 720 on
-High, the idle home view draws 83 calls and about 515k triangles (79 and 569k
-before these changes), with the same 77 warm-up programs.
+High, the idle home view draws 84 calls and about 531k triangles (83 and 515k
+before the scanned surfaces and the feet's banks, 79 and 569k before the
+review's changes), with the same 77 warm-up programs.
 
 **From under the water** (the Under view; `renderFromBelow` in `src/main.js`,
 `UNDER_FOG` and `WATER_UNDER_FRAGMENT` in `src/shaders/scene.js`). The water's
@@ -1512,7 +1524,8 @@ farther out, so it rises into the view rather than filling its corner.
   must be added to its list. `node tools/site-check.mjs`, after
   `npm run site`, serves `_site/` under `/AStonesThrow/` as Pages does and
   checks that the pond starts, rain falls once asked for (its files load only
-  then) and no request fails.
+  then), the Polynesian lagoon's scanned bark and sand come once it is shown,
+  and no request fails.
 - `node tools/foam-probe.mjs` runs the foam's bubble pattern on the CPU, with
   the constants read from the shader: each layer's median and spread and the
   bubbles' mean shade match what the shader fades them to, the clear
@@ -1646,6 +1659,12 @@ farther out, so it rises into the view rather than filling its corner.
   The rocks are thrown from the shore whatever the view. The harness leaves
   the preview of the thing in the hand out (`?preview=off`) unless
   `--preview=1`, so frames from any orbit stay as they were.
+- `node tools/tropics-textures.mjs` writes the Polynesian lagoon's two
+  scanned surfaces, `assets/tropics/bark.jpg` and `assets/tropics/sand.jpg`,
+  from Poly Haven's Palm Tree Bark and Sand 03 (CC0; downloaded at each run,
+  never kept): each photoscan's normal and the detail of its colour packed
+  into one JPEG (its header says how), 251 KB and 427 KB, fetched only when
+  the lagoon is first shown.
 - `node tools/sky-encode.mjs [assets/sky/name_2k.hdr ...] [--verify] [--no-horizon]` encodes
   each sky's Radiance file (every one, by default) as the JPEG gain map the
   page loads, `assets/sky/name_2k.jpg`, and its horizon strip,

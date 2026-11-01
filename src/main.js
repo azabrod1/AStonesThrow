@@ -1035,6 +1035,11 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   const lagoonLand = createShore(floor, lighting, environment, { snow: snowCover, lagoon: true });
   lagoonLand.layers.enable(MIRROR_LAYER);
   sceneMain.add(lagoonLand);
+  // And the sand banked against its palms' feet near the eye, on the land's program (src/tropics.js setBanks).
+  const lagoonBanks = createShore(floor, lighting, environment, { snow: snowCover, lagoon: true });
+  lagoonBanks.material.uniforms.uPalmBank.value = 1;
+  sceneMain.add(lagoonBanks);
+  tropics.setBanks(lagoonBanks);
   shore.layers.enable(MIRROR_LAYER);
   sceneMain.add(shore);
   sceneMain.add(reeds.above);
@@ -2826,7 +2831,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     ...ambientWaves.uniforms(),
     ...ice.uniforms,   // no shafts under the ice (underwaterShafts)
   });
-  const hiddenFromBelow = () => [environment.sky, shore, koiLand, lagoonLand, reeds.above, boulders.above, tropics.group, pool.walls, pool.yard, ...garden.meshes, marker, arc, ...(preview.mesh ? [preview.mesh] : []), ...rocks.map((rock) => rock.meshAbove)];
+  const hiddenFromBelow = () => [environment.sky, shore, koiLand, lagoonLand, lagoonBanks, reeds.above, boulders.above, tropics.group, pool.walls, pool.yard, ...garden.meshes, marker, arc, ...(preview.mesh ? [preview.mesh] : []), ...rocks.map((rock) => rock.meshAbove)];
   function renderFromBelow() {
     renderer.setRenderTarget(mainTarget);
     renderer.clear(true, true, false);

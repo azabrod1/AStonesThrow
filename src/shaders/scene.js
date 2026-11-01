@@ -326,6 +326,13 @@ float fractureFace(float along, float across, float sine, float footprint) {
 }
 `;
 
+// A palm's foot on the lagoon's sand (src/tropics.js plants them, the land's shaders draw round them:
+// PALM_FEET_LOOKUP): `widest` the most a foot's radius at the ground may be (m), as the feet's grid codes it; `reach`
+// how far out from a foot (m) it shows on the sand (under half the grid's cell, src/tropics.js FEET); the sand banked
+// against it `mound` metres high at the trunk, falling away over `bank` metres; the banks' mesh `lift` metres over the
+// land besides, where it meets it (src/tropics.js banks).
+export const PALM_FOOT = { widest: 0.8, reach: 1.1, mound: 0.06, bank: 0.2, lift: 0.004 };
+
 export const GLSL_COMMON = /* glsl */`
 #define PI 3.141592653589793
 
@@ -2213,16 +2220,18 @@ uniform vec2 uBedDetail;   // grain and silt contrast, shared by dry land and th
 #define PATTERN_SHIFT vec2(0.37, 0.71)           // ...and shifted, in tiles
 #define PATTERN_PATCHES 0.6                      // per metre: the noise choosing between the two lookups
 #define SILT_FREQUENCY 0.9                       // per metre: the silt's drifts
-vec3 floorSand(vec2 point) {
+// The tile's share of the grain (its mean the rest) times grain: the lagoon's dry sand takes a photoscan's instead.
+vec3 floorSand(vec2 point, float grain) {
   vec2 tilePoint = point / PATTERN_TILE;
   vec3 straight = texture2D(uPattern, tilePoint).rgb;
   vec3 turned = texture2D(uPattern, PATTERN_TURN * tilePoint + PATTERN_SHIFT).rgb;
   float lookup = smoothstep(0.42, 0.58, valueNoise(point * PATTERN_PATCHES + 17.0));
   float silt = valueNoise(point * SILT_FREQUENCY + 3.0);
-  vec3 sand = mix(vec3(0.35, 0.30, 0.22) / PATTERN_RANGE, mix(straight, turned, lookup), uBedDetail.x);
+  vec3 sand = mix(vec3(0.35, 0.30, 0.22) / PATTERN_RANGE, mix(straight, turned, lookup), uBedDetail.x * grain);
   sand = mix(sand, vec3(dot(sand, vec3(0.2126, 0.7152, 0.0722))), uBedTint.w) * uBedTint.rgb;
   return sand * (0.975 + 0.45 * (silt - 0.5) * uBedDetail.y);
 }
+vec3 floorSand(vec2 point) { return floorSand(point, 1.0); }
 `;
 
 // The sunlight the rippled surface focuses onto a point under the water (the
@@ -2810,8 +2819,63 @@ vec3 photoLand(samplerCube cube, float level, vec2 toward) {
 // lake bed's surface where it stands out of the water (LAKE_BED), and a
 // strip of it under the water's edge, which the water covers. Its normal
 // comes from the height a little to either side.
+// A palm's foot on the lagoon's sand (PALM_FOOT; src/tropics.js plants the palms and codes their feet, placeFeet),
+// for the land's two stages: the nearest foot to a point among the four cells about it (a foot reaches no farther than
+// half a cell), as its offset from the point (m), its radius at the ground (m) and its own number (0 to 1); found 0
+// where none is near. The sand banked against it (palmBankRise): PALM_FOOT.mound high at the trunk, more or less round
+// it as the wind left it, falling away over PALM_FOOT.bank metres; the bank's mesh (uPalmBank 1: src/tropics.js
+// banks) rises by it, the rest of the land is only shaded so (LAND_FRAGMENT).
+const PALM_FEET_LOOKUP = /* glsl */`
+uniform sampler2D uPalmFeet;     // the feet, one a cell...
+uniform vec4 uPalmFeetBox;       // ...the grid's least x and z (m), 1 / its cell (m)...
+uniform vec2 uPalmFeetCells;     // ...and its cells across x and z
+uniform float uPalmBank;         // 1 on the banks' mesh, 0 on the land's
+float palmFoot(vec2 point, out vec2 fromFoot, out float radius, out float seed) {
+  vec2 cellPoint = (point - uPalmFeetBox.xy) * uPalmFeetBox.z;
+  ivec2 base = ivec2(floor(cellPoint - 0.5));
+  float nearest = 1e3;
+  fromFoot = vec2(1e3);
+  radius = 0.0;
+  seed = 0.0;
+  for (int column = 0; column <= 1; column++) {
+    for (int row = 0; row <= 1; row++) {
+      ivec2 cell = base + ivec2(column, row);
+      if (cell.x < 0 || cell.y < 0 || cell.x >= int(uPalmFeetCells.x) || cell.y >= int(uPalmFeetCells.y)) continue;
+      vec4 texel = texelFetch(uPalmFeet, cell, 0);
+      if (texel.a < 0.5) continue;
+      vec2 offset = point - (uPalmFeetBox.xy + (vec2(cell) + texel.rg) / uPalmFeetBox.z);
+      float footRadius = texel.b * ${PALM_FOOT.widest.toFixed(2)};
+      if (length(offset) - footRadius < nearest) {
+        nearest = length(offset) - footRadius;
+        fromFoot = offset;
+        radius = footRadius;
+        seed = fract(sin(dot(vec2(cell), vec2(12.9898, 78.233))) * 43758.5453);
+      }
+    }
+  }
+  return nearest < ${PALM_FOOT.reach.toFixed(2)} ? 1.0 : 0.0;
+}
+float palmBankRise(vec2 fromFoot, float radius, float seed) {
+  float angle = atan(fromFoot.y, fromFoot.x);
+  float drift = 0.75 + 0.15 * sin(2.0 * angle + 6.2831853 * seed) + 0.1 * sin(5.0 * angle + 12.566371 * seed);
+  return ${PALM_FOOT.mound.toFixed(3)} * drift * exp(-max(length(fromFoot) - radius, 0.0) / ${PALM_FOOT.bank.toFixed(3)});
+}
+// The ground's height at a point: the bed's (floorDepthAt), and on the banks' mesh the bank's over it, PALM_FOOT.lift
+// besides, so it lies over the land's own where the two meet.
+float landSurface(vec2 point) {
+  float height = -floorDepthAt(point);
+  if (uPalmBank > 0.5) {
+    vec2 fromFoot; float radius, seed;
+    if (palmFoot(point, fromFoot, radius, seed) > 0.0) height += palmBankRise(fromFoot, radius, seed);
+    height += ${PALM_FOOT.lift.toFixed(3)};
+  }
+  return height;
+}
+`;
+
 export const LAND_VERTEX = /* glsl */`
 ${LAKE_BED}
+${PALM_FEET_LOOKUP}
 varying vec3 vWorld;
 varying vec3 vNormal;
 varying float vInland;     // metres behind the waterline
@@ -2819,9 +2883,9 @@ varying float vInland;     // metres behind the waterline
 void main() {
   vec3 world = (modelMatrix * vec4(position, 1.0)).xyz;
   vInland = -shoreDistance(world.xz);
-  float height = -floorDepthAt(world.xz);
-  float aheadX = -floorDepthAt(world.xz + vec2(NORMAL_STEP, 0.0));
-  float aheadZ = -floorDepthAt(world.xz + vec2(0.0, NORMAL_STEP));
+  float height = landSurface(world.xz);
+  float aheadX = landSurface(world.xz + vec2(NORMAL_STEP, 0.0));
+  float aheadZ = landSurface(world.xz + vec2(0.0, NORMAL_STEP));
   vNormal = normalize(vec3(height - aheadX, NORMAL_STEP, height - aheadZ));
   world.y = height;
   vWorld = world;
@@ -2895,6 +2959,8 @@ uniform samplerCube uLandCube;   // the land before the haze, for the grass (src
 uniform float uLandLevel;        // ...at this level of its mip chain
 uniform vec4 uShoreLook;         // the place's shore (SHORE_LOOKS): the pebbles' share near the water, their size (times PEBBLE_RADII), the tufts' share (times TUFT_SHARE), the wrack's strength
 uniform vec2 uShoreMore;         // ...and how far inland the grass comes (times GRASS_FROM and GRASS_TO), the cracks of a dried flat (0 to 1)
+uniform sampler2D uSandScan;     // the lagoon's dry sand, a photoscan (src/tropics.js SURFACES, tools/tropics-textures.mjs)...
+uniform float uSandScanOn;       // ...once it has come (0 till then)
 varying vec3 vWorld;
 varying vec3 vNormal;
 varying float vInland;
@@ -2904,6 +2970,7 @@ ${FLOOR_SAND}
 ${PHOTO_LAND}
 ${HAZE}
 ${LAKE_BED}
+${PALM_FEET_LOOKUP}
 ${PALM_SHADOW}
 #define SKY_LIGHT 1.4        // the sky's light on the sand, as the bed's
 // The Koi pond's ground (uShoreKind SHORE_KOI): at the water a band of river stones, wide along its pebble beach (koiBeach) and
@@ -2937,7 +3004,9 @@ vec3 koiCobble(vec2 point) {
 // vegetation line, LAGOON_GREEN.x metres inland give or take LAGOON_GREEN.y over the beach's length and LAGOON_GREEN.z
 // over a few metres; behind it the ground under the palms and the beach scrub, leaf litter and fallen fronds
 // (LAGOON_LITTER) with the creepers (LAGOON_CREEPER, beach morning glory) running out over the sand in front of it, all
-// in the canopy's shade (LAGOON_SHADE). No photo's land: the sky over it is a pure sky.
+// in the canopy's shade (LAGOON_SHADE). Its dry sand takes a photoscan's creases and grain (sandScan), and round each
+// palm's foot the sand banked against it and the sky the trunk hides (palmFoot, PALM_FEET_LOOKUP). No photo's land:
+// the sky over it is a pure sky.
 #define LAGOON_GREEN vec3(15.0, 6.0, 2.0)
 #define LAGOON_LITTER vec3(0.15, 0.115, 0.07)
 #define LAGOON_CREEPER vec3(0.07, 0.15, 0.035)
@@ -2982,6 +3051,29 @@ vec3 koiCobble(vec2 point) {
 #define SWARD_GRAIN vec2(6.0, 24.0)   // per metre: the sward's blades and clumps, two octaves of noise over the ground's mottle...
 #define SWARD_CONTRAST vec2(0.4, 0.3) // ...each this deep, peak to peak
 #define LAYER_FADE vec2(0.3, 0.9)   // a layer fades out as the pixel's footprint grows from this share of its cell to this
+
+// The lagoon's dry sand (SAND_SCAN): a photoscan's creases and grain, trodden and blown, SAND_SCAN.x metres square,
+// in place of most of the bed's tile's grain (SAND_TILE_TAKEN, whose blotches read as stucco this close),
+// looked up twice as the bed's tile is (FLOOR_SAND: the second turned and shifted, patches taking one or the other) so
+// its repeat does not show; the wet sand by the water, from SAND_SCAN.y to SAND_SCAN.z metres above it, smooth, as
+// the swash leaves it. Its normal's slopes, turned back with their lookup, tilt the ground's; its grain multiplies the
+// sand's colour, which stays the place's.
+#define SAND_SCAN vec3(2.0, 0.04, 0.1)
+#define SAND_RELIEF 1.5        // its creases deepened this many times: trodden by more feet than the one scanned
+#define SAND_TILE_TAKEN 0.8    // the share of the bed's tile's grain (FLOOR_SAND) the scan takes over on the dry sand
+// The scan's slopes (metres a metre, along x and z) and grain (1 its mean) at a point, from one lookup.
+vec3 sandScanAt(vec2 tilePoint) {
+  vec3 texel = texture2D(uSandScan, tilePoint).rgb;
+  vec2 tilt = texel.rg * 2.0 - 1.0;
+  return vec3(-tilt / max(sqrt(max(1.0 - dot(tilt, tilt), 0.0)), 0.3), 2.0 * texel.b);
+}
+vec3 sandScan(vec2 point) {
+  vec2 tilePoint = point / SAND_SCAN.x;
+  vec3 straight = sandScanAt(tilePoint);
+  vec3 turned = sandScanAt(PATTERN_TURN * tilePoint + PATTERN_SHIFT);
+  turned.xy = turned.xy * PATTERN_TURN;   // its slopes back in the world's axes (the turn's transpose)
+  return mix(straight, turned, smoothstep(0.42, 0.58, valueNoise(point * PATTERN_PATCHES + 29.0)));
+}
 
 // How much of a layer of cells of 'cell' metres shows at a pixel whose footprint on the ground is 'footprint' metres.
 float layerWeight(float cell, float footprint) { return 1.0 - smoothstep(LAYER_FADE.x, LAYER_FADE.y, footprint / cell); }
@@ -3055,12 +3147,33 @@ float tuft(vec2 point, float share, float edge, out float tone, out vec2 fromTuf
   return cover;
 }
 
+
 void main() {
   float footprint = max(fwidth(vWorld.x), fwidth(vWorld.z)) + 1e-4;   // metres the pixel covers on the ground
   vec3 normal = reliefNormal(vWorld.xz, footprint);
+  float scanGrain = 1.0, tileGrain = 1.0;
+  if (isShore(SHORE_LAGOON) && uSandScanOn > 0.0) {
+    vec3 scan = sandScan(vWorld.xz);
+    float dry = smoothstep(SAND_SCAN.y, SAND_SCAN.z, vWorld.y) * uSandScanOn;
+    normal = normalize(normal - vec3(scan.x, 0.0, scan.y) * SAND_RELIEF * dry);
+    scanGrain = mix(1.0, scan.z, dry);
+    tileGrain = 1.0 - SAND_TILE_TAKEN * dry;
+  }
+  // A palm's foot (palmFoot): the sand banked against it (palmBankRise), its mesh's own slope where the banks' mesh is
+  // drawn (uPalmBank), else tilting the ground's normal; and the sky its trunk hides (an upright cylinder of the foot's
+  // radius hides asin(radius / distance) / π of the sky's light from the ground, half at its wall), faded out by its
+  // reach.
+  vec2 fromFoot;
+  float footRadius, footSeed, skyHidden = 0.0;
+  if (isShore(SHORE_LAGOON) && palmFoot(vWorld.xz, fromFoot, footRadius, footSeed) > 0.0) {
+    float apart = max(length(fromFoot), 1e-3);
+    float outward = max(apart - footRadius, 0.0);
+    if (uPalmBank < 0.5) normal = normalize(normal + vec3(fromFoot.x, 0.0, fromFoot.y) / apart * (palmBankRise(fromFoot, footRadius, footSeed) / ${PALM_FOOT.bank.toFixed(3)}));
+    skyHidden = asin(min(footRadius / apart, 1.0)) / PI * (1.0 - smoothstep(0.5 * ${PALM_FOOT.reach.toFixed(2)}, ${PALM_FOOT.reach.toFixed(2)}, outward));
+  }
   vec3 sunlit = uSunIrradiance * max(dot(normal, uSunDir), 0.0) * (1.0 - palmShadow(vWorld.xz - uSunDir.xz * (vWorld.y / max(uSunDir.y, 0.05))));   // less the palms' shadows (PALM_SHADOW)
-  vec3 light = sunlit + uSkyAmbient * SKY_LIGHT;
-  vec3 sand = floorSand(vWorld.xz) * PATTERN_RANGE * DRY_SAND * mix(WET_SHADE, 1.0, smoothstep(0.0, WET_HEIGHT, vWorld.y));
+  vec3 light = sunlit + uSkyAmbient * SKY_LIGHT * (1.0 - skyHidden);
+  vec3 sand = floorSand(vWorld.xz, tileGrain) * PATTERN_RANGE * DRY_SAND * mix(WET_SHADE, 1.0, smoothstep(0.0, WET_HEIGHT, vWorld.y)) * scanGrain;
   float grassFrom = GRASS_FROM * uShoreMore.x, grassTo = GRASS_TO * uShoreMore.x;
   if (isShore(SHORE_KOI)) {
     float beach = koiBeach(koiAngle(vWorld.xz));
