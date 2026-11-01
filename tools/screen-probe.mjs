@@ -84,6 +84,10 @@ async function openPond(options, query = '', before = null) {
   await page.waitForFunction(() => !!window.__pond, undefined, { timeout: patience(180000) });
   await page.evaluate(() => window.__pond.advance(0.05));
   await page.waitForFunction(() => document.getElementById('veil').hidden, undefined, { timeout: patience(10000) }).catch(() => {});
+  // The veil's going moves the page a pixel up (src/screen.js refresh, for Safari's bar colour) and a frame or two
+  // later back to its foot: what is measured is where it settles.
+  await page.waitForFunction(() => Math.abs(window.scrollY - Math.max(0, document.documentElement.scrollHeight - window.innerHeight)) <= 0.5,
+    undefined, { timeout: patience(5000) }).catch(() => {});
   return { context, page, problems };
 }
 
