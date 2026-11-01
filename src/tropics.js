@@ -13,8 +13,8 @@
 // side of it a sheet of leaflets: a strip folded up into a V at the rachis
 // and drooping toward its outer edge, textured with the frond atlas and
 // alpha-tested, so a hundred leaflets a side cost a few quads. The atlas
-// (bakeAtlas, FROND_BAKE: one GPU pass at start-up, as the floor's sand is
-// baked) is drawn analytically, each leaflet a tapered blade swept toward
+// (bakeAtlas, FROND_BAKE: one GPU pass when the scenery is first built, as
+// the floor's sand is baked) is drawn analytically, each leaflet a tapered blade swept toward
 // the frond's tip at its own angle and length, longest a third of the way
 // out, a few torn short or browning at the tip, a paler midrib, each its
 // own shade of green; a row of older fronds, yellowing; a row of dead ones,
@@ -77,7 +77,7 @@
 // place).
 import * as THREE from 'three';
 import { FullscreenPass } from './gpu.js';
-import { LAGOON_SHORE, PALM_SHADOW, lagoonShoreDistance, landHeight } from './pondFloor.js';
+import { LAGOON_SHORE, PALM_SHADOW, SHORE, lagoonBend, lagoonShoreDistance, landHeight } from './pondFloor.js';
 import { seededRandom } from './spray.js';
 
 const SEED = 7173;
@@ -205,9 +205,9 @@ void main() {
 }
 `;
 
-/** The frond atlas, baked once (the header): an RGBA8 texture with its mipmaps, colours as their square roots. */
-function bakeAtlas(renderer) {
-  const target = new THREE.WebGLRenderTarget(ATLAS.width, ATLAS.height, {
+/** The frond atlas's target (the header): RGBA8 with its mipmaps, colours as their square roots; 1 texel till built (bakeAtlas). */
+function atlasTarget(renderer) {
+  const target = new THREE.WebGLRenderTarget(1, 1, {
     type: THREE.UnsignedByteType,
     format: THREE.RGBAFormat,
     minFilter: THREE.LinearMipmapLinearFilter,
@@ -217,12 +217,14 @@ function bakeAtlas(renderer) {
     generateMipmaps: true,
   });
   target.texture.anisotropy = Math.min(4, renderer.capabilities.getMaxAnisotropy());
-  const pass = new FullscreenPass(FROND_BAKE, {});
+  return target;
+}
+/** Bakes the frond atlas into `target` at its full size (FROND_BAKE), or at 1 texel (its program built, nothing drawn worth keeping). */
+function bakeAtlas(renderer, target, pass, full) {
+  if (full) target.setSize(ATLAS.width, ATLAS.height);
   const previousTarget = renderer.getRenderTarget();
   pass.render(renderer, target);
   renderer.setRenderTarget(previousTarget);
-  pass.material.dispose();
-  return target;
 }
 
 // ---- A palm ---------------------------------------------------------------
@@ -597,12 +599,20 @@ const motuMiddle = (motu) => {
 const motuReach = (angle, seed) => 1 + 0.1 * Math.sin(3 * angle + seed) + 0.06 * Math.sin(5 * angle + 2 * seed) + 0.04 * Math.sin(9 * angle + 3 * seed);
 /** Whether (x, z) lies on a motu, `inset` metres inside its sand. */
 function onMotu(motu, x, z, inset, seed) {
+  const { reach, outline } = motuReachAt(motu, x, z, seed);
+  return reach < outline - inset / Math.min(...motu.half);   // the inset as a share of its narrower half, so it holds all round
+}
+/** How far out (x, z) lies on a motu, as a share of its half-lengths, and its outline's there. */
+function motuReachAt(motu, x, z, seed) {
   const middle = motuMiddle(motu);
   const dx = x - middle.x, dz = z - middle.z;
   const localX = dx * Math.cos(middle.turn) + dz * Math.sin(middle.turn), localZ = -dx * Math.sin(middle.turn) + dz * Math.cos(middle.turn);
-  const angle = Math.atan2(localZ / motu.half[1], localX / motu.half[0]);
-  const reach = Math.hypot(localX / motu.half[0], localZ / motu.half[1]);
-  return reach * Math.max(motu.half[0], motu.half[1]) < motuReach(angle, seed) * Math.max(motu.half[0], motu.half[1]) - inset;
+  return { reach: Math.hypot(localX / motu.half[0], localZ / motu.half[1]), outline: motuReach(Math.atan2(localZ / motu.half[1], localX / motu.half[0]), seed) };
+}
+/** The motu's sand's height (m) at (x, z), as motuSandGeometry builds its mound. */
+function motuSandHeight(motu, x, z, seed) {
+  const { reach, outline } = motuReachAt(motu, x, z, seed);
+  return MOTU_SAND.height * (1 - Math.min(reach / outline, 1) ** 6);
 }
 /** The motus' sand: a low mound on each one's wobbling outline, as wood (vertex colours), one geometry. */
 function motuSandGeometry() {
@@ -697,10 +707,11 @@ const AERIAL = 15000;
 const CANOPY = { sun: 0.8, sky: 0.55, from: 12, deep: 30 };
 // How much a leaf's alpha grows per mip level (the atlas's own: 0.25 a level, as Golus's article finds for foliage).
 const ALPHA_MIP = 0.25;
-// The palms' shadows (bakeShadows): the mask's square of the water's level (x and z, m), about the beach round the eye,
-// and its texels a side (16 to 20 cm, finer than the sun's own penumbra under a palm's crown); how much of the sun a
-// leaf keeps off (it passes on some, LEAF_LIGHT).
-const SHADOW = { box: [-70, -150, 160, 210], texels: 1024, leaf: 0.9 };
+// The palms' shadows (bakeShadows): the mask's stretch of the water's level (least x and z, size in x and z, m), the
+// whole of the beach's planting (PLANTING.extent; the motus' are too far off for theirs to show), and its texels a
+// side (one channel; 20 to 27 cm, about the sun's own penumbra under a palm's crown); how much of the sun a leaf
+// keeps off (it passes on some, LEAF_LIGHT).
+const SHADOW = { box: [-160, -430, 440, 550], texels: 2048, leaf: 0.9 };
 // What draws them: each palm (and mound of scrub) as it stands, its points carried along the sun down to the water's
 // level and drawn there, top-down, into the mask (the light let through: 1 open, multiplied down by each leaf over it).
 const SHADOW_VERTEX = /* glsl */`
@@ -741,8 +752,7 @@ function beachFrame(along) {
   const heading = THREE.MathUtils.degToRad(LAGOON_SHORE.bearing);
   const outX = Math.sin(heading), outZ = -Math.cos(heading);    // along the beach
   const towardX = -Math.cos(heading), towardZ = -Math.sin(heading);   // toward the lagoon
-  const [wander, wavelength] = LAGOON_SHORE.wander;
-  const bend = Math.max(along, 0) ** 2 / (2 * LAGOON_SHORE.bow) + wander * Math.sin(along / wavelength + 1.0) * Math.min(Math.max(along / 40, 0), 1);
+  const bend = lagoonBend(along);
   return { x: LAGOON_SHORE.origin[0] + outX * along + towardX * bend, z: LAGOON_SHORE.origin[1] + outZ * along + towardZ * bend, inlandX: -towardX, inlandZ: -towardZ };
 }
 
@@ -779,7 +789,7 @@ function placeScenery(stream) {
   }
   // Behind the eye, along the lake's beach: a few, leaning out toward the water.
   for (let x = -60; x < 4; x += 7 + 8 * stream()) {
-    const z = SHORE_Z + x * x / 120 + PLANTING.row[0] + PLANTING.row[1] * stream();
+    const z = SHORE.z + x * x / (2 * SHORE.bend) + PLANTING.row[0] + PLANTING.row[1] * stream();
     if (nearEye(x, z)) continue;
     palm(x, z, Math.floor(stream() * PALMS.length), [(stream() - 0.5) * 0.8, -1], 0.85 + 0.35 * stream());
   }
@@ -824,18 +834,23 @@ function placeScenery(stream) {
         const localX = along + cell * stream(), localZ = across + cell * stream();
         const x = middle.x + localX * Math.cos(middle.turn) - localZ * Math.sin(middle.turn), z = middle.z + localX * Math.sin(middle.turn) + localZ * Math.cos(middle.turn);
         if (!onMotu(motu, x, z, 6, index * 1.7)) continue;
-        palms.push({ x, z, y: MOTU_SAND.height - 0.1, variant: [0, 1, 3, 4, 5][Math.floor(stream() * 5)], yaw: stream() * Math.PI * 2, scale: 0.9 + 0.5 * stream(), phase: stream() * 100, shade: 0.6 });
-        if (stream() < 0.8) scrub.push({ x: x + 3 * (stream() - 0.5), z: z + 3 * (stream() - 0.5), y: MOTU_SAND.height - 0.3, yaw: stream() * Math.PI * 2, scale: 2.2 + 1.6 * stream(), phase: stream() * 100, shade: 0.3 });
+        palms.push({ x, z, y: motuSandHeight(motu, x, z, index * 1.7) - 0.1, variant: [0, 1, 3, 4, 5][Math.floor(stream() * 5)], yaw: stream() * Math.PI * 2, scale: 0.9 + 0.5 * stream(), phase: stream() * 100, shade: 0.6 });
+        if (stream() < 0.8) {
+          const atX = x + 3 * (stream() - 0.5), atZ = z + 3 * (stream() - 0.5);
+          scrub.push({ x: atX, z: atZ, y: motuSandHeight(motu, atX, atZ, index * 1.7) - 0.3, yaw: stream() * Math.PI * 2, scale: 2.2 + 1.6 * stream(), phase: stream() * 100, shade: 0.3 });
+        }
       }
     }
   }
   return { palms, scrub, fallen };
 }
-const SHORE_Z = 2.72;   // the lake's waterline under the eye (src/pondFloor.js SHORE.z)
 
 export class Tropics {
   constructor({ renderer, envTexture, mirrorLayer, lighting, coarse = false }) {
-    this.atlas = bakeAtlas(renderer);
+    // The frond atlas: a texel till the scenery is built (build), its bake's program built now, under the loading veil.
+    this.atlas = atlasTarget(renderer);
+    this.atlasPass = new FullscreenPass(FROND_BAKE, {});
+    bakeAtlas(renderer, this.atlas, this.atlasPass, false);
     this.uniforms = {
       uPalmTime: { value: 0 }, uPalmWind: { value: 0.3 }, uPalmWindDirection: { value: new THREE.Vector2(0.45, -0.9).normalize() },
       uSunDir: { value: lighting.sunDirection }, uSunIrradiance: { value: lighting.sunIrradiance }, uSkyAmbient: { value: lighting.skyAmbient },
@@ -864,7 +879,7 @@ export class Tropics {
     this.renderer = renderer;
     const [minX, minZ, sizeX, sizeZ] = SHADOW.box;
     PALM_SHADOW.uPalmShadowBox.value.set(minX, minZ, 1 / sizeX, 1 / sizeZ);
-    this.shadowTarget = new THREE.WebGLRenderTarget(SHADOW.texels, SHADOW.texels, { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false });
+    this.shadowTarget = new THREE.WebGLRenderTarget(1, 1, { format: THREE.RedFormat, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false });   // a texel till built
     PALM_SHADOW.uPalmShadow.value = this.shadowTarget.texture;
     this.shadowCamera = new THREE.OrthographicCamera();   // unused by its programs, which place the mask's points themselves
     this.shadowMaterials = { leaves: this.shadowMaterial(true), wood: this.shadowMaterial(false) };
@@ -926,7 +941,9 @@ export class Tropics {
       this.group.remove(mesh);
     }
     this.above = [];
+    if (!this.built) bakeAtlas(this.renderer, this.atlas, this.atlasPass, true);
     this.built = true;
+    this.stale = false;
     const { palms, scrub, fallen } = placeScenery(seededRandom(SEED, 1));
     this.placed = { palms, scrub, fallen };   // for the probes
     // The palms: every variant at each level, its instances those placed at that level.
@@ -949,6 +966,7 @@ export class Tropics {
     if (fallen.length > 0) this.instances(fallenGeometry(fallen, seededRandom(SEED, 40)), this.woodMaterial, still, () => [1, 0, 0, 0], { casts: false });
     this.instances(motuSandGeometry(), this.woodMaterial, still, () => [1, 0, 0, 0], { casts: false });
     this.instances(islandGeometry(), this.woodMaterial, still, () => [1, 0, 0, 0], { casts: false });
+    this.shadowTarget.setSize(SHADOW.texels, SHADOW.texels);
     this.bakeShadows();
   }
 
@@ -1055,7 +1073,7 @@ uniform vec3 uSkyAmbient;`)
   {
     vec3 sandLight = ${GROUND_BOUNCE.toFixed(2)} * (uSunIrradiance * max(uSunDir.y, 0.0) + uSkyAmbient * ${SKY_LIGHT.toFixed(2)});
     float below = 0.5 - 0.5 * inverseTransformDirection(normal, viewMatrix).y;
-    reflectedLight.indirectDiffuse += BRDF_Lambert(diffuseColor.rgb) * sandLight * below * smoothstep(400.0, 150.0, length(vPalmWorld - cameraPosition));   // three.js's Lambert carries the 1/π the land's light leaves out; the far land stands over water
+    reflectedLight.indirectDiffuse += BRDF_Lambert(diffuseColor.rgb) * sandLight * below * (1.0 - smoothstep(150.0, 400.0, length(vPalmWorld - cameraPosition)));   // three.js's Lambert carries the 1/π the land's light leaves out; the far land stands over water
   }`)
         // The forest's shade (CANOPY): the sun kept off by the crowns over it, and most of the sky.
         .replace('#include <aomap_fragment>', `#include <aomap_fragment>
@@ -1116,7 +1134,7 @@ uniform vec3 uSkyAmbient;`)
    * (`building` false), which shows the stand-in.
    */
   setVisible(visible, { building = true } = {}) {
-    if (visible && building && !this.built) this.build();
+    if (visible && building && (!this.built || this.stale)) this.build();
     this.shown = visible;
     this.group.visible = visible;
     PALM_SHADOW.uPalmShadowOn.value = visible && this.built ? 1 : 0;
@@ -1135,14 +1153,16 @@ uniform vec3 uSkyAmbient;`)
 
   /**
    * Every palm and mound a level of detail coarser (a preset's
-   * `sceneryCoarse`: Low), or as placed; built again if it is built.
+   * `sceneryCoarse`: Low), or as placed; built again if it is built (now
+   * if shown, else when next shown).
    */
   setCoarse(coarse) {
     if (coarse === this.coarse) return;
     this.coarse = coarse;
     if (!this.built) return;
+    if (!this.shown) { this.stale = true; return; }   // built again when next shown, not on a frame already too slow elsewhere
     this.build();
-    this.setVisible(this.shown);
+    this.setVisible(true);
   }
 
   /** A palm's or a mound's level of detail: by its distance from the shore view's eye, a level coarser when coarse. */

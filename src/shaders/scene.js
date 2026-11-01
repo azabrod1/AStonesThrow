@@ -2144,9 +2144,9 @@ float koiAngle(vec2 point);
 #define LAGOON_POINT 25.0
 #define LAGOON_WIDTH 160.0
 #define LAGOON_JOIN 1.0
-float smoothMin(float a, float b, float width) {
-  float ease = max(width - abs(a - b), 0.0) / width;
-  return min(a, b) - ease * ease * width * 0.25;
+float smoothMin(float first, float second, float width) {
+  float ease = max(width - abs(first - second), 0.0) / width;
+  return min(first, second) - ease * ease * width * 0.25;
 }
 float lagoonBeachDistance(vec2 point) {
   vec2 from = point - LAGOON_ORIGIN;
@@ -2707,8 +2707,8 @@ uniform float uPalmShadowOn;
 float palmShadow(vec2 atLevel) {
   if (uPalmShadowOn < 0.5) return 0.0;
   vec2 maskPoint = (atLevel - uPalmShadowBox.xy) * uPalmShadowBox.zw;
-  if (any(lessThan(maskPoint, vec2(0.0))) || any(greaterThan(maskPoint, vec2(1.0)))) return 0.0;
-  return 1.0 - texture2D(uPalmShadow, maskPoint).r;
+  vec2 fromEdge = min(maskPoint, 1.0 - maskPoint);   // faded out over its last 2%, so its edge draws no line
+  return (1.0 - texture2D(uPalmShadow, clamp(maskPoint, 0.0, 1.0)).r) * smoothstep(0.0, 0.02, min(fromEdge.x, fromEdge.y));
 }
 `;
 
@@ -3080,7 +3080,7 @@ void main() {
     vec3 litter = LAGOON_LITTER * (0.7 + 0.6 * valueNoise(vWorld.xz * 1.7 + 2.0)) * mix(vec3(1.0), vec3(0.8, 1.1, 0.7), valueNoise(vWorld.xz * 0.4 + 9.0));
     vec3 creeper = LAGOON_CREEPER * (0.75 + 0.5 * valueNoise(vWorld.xz * 6.0 + 1.0)) * layerWeight(0.3, footprint) + LAGOON_CREEPER * (1.0 - layerWeight(0.3, footprint));
     sand = mix(mix(sand, creeper, creepers), litter, underTrees);
-    grassFrom = grassTo = 1e5;
+    grassFrom = 1e5; grassTo = 1e5 + 1.0;   // no grass (smoothstep's edges kept apart: equal ones are undefined)
   }
   float grass = smoothstep(grassFrom, grassTo, vInland);
 

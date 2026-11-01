@@ -300,7 +300,7 @@ import { Rings } from './rings.js';
 import { DropRings } from './dropRings.js';
 import { createEnvironment, SKY_NAMES, REED_SKIES, skyShore, skyHours, resolveHour, nearestHour } from './sky.js';
 import { createWaterSurface } from './waterSurface.js';
-import { createPondFloor, createShore, floorDepthAt, groundHeightAt, setShoreKind, setShoreLook, KOI_SHORE } from './pondFloor.js';
+import { createPondFloor, createShore, floorDepthAt, groundHeightAt, lagoonLandGeometry, setShoreKind, setShoreLook, KOI_SHORE } from './pondFloor.js';
 import { Rock, setAir, aimSkip, aimThrow, dressThing, flutterTrial, prepareThing, PREPARATION_WORK, skipLowest, skipSpeed, SKIP_THROW, PHYSICS_STEP, throwFlightTime } from './rock.js';
 import { THINGS, THING_NAMES, DEFAULT_THING, defineThing, onThingsChange } from './things.js';
 import { collideThings, forgetPasses } from './collide.js';
@@ -1060,6 +1060,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     shore.visible = !asPool && !koiPond && !lagoon;
     koiLand.visible = !asPool && koiPond;
     lagoonLand.visible = !asPool && lagoon;
+    if (lagoonLand.visible && !lagoonLand.geometry.attributes.position) lagoonLand.geometry = lagoonLandGeometry();   // built when first shown
     garden.setVisible(!asPool && koiPond);
     tropics.setVisible(!asPool && Boolean(PLACES[placeName].tropics));   // the Polynesian lagoon's palms and motu
     surface.setPool(asPool ? { ...pool.square, depth: POOL.depth, deck: POOL.deck } : null);

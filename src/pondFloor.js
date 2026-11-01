@@ -180,17 +180,20 @@ export function koiShoreDistance(x, z) {
   return koiShoreRadius(Math.atan2(dz, dx)) - Math.hypot(dx, dz);
 }
 const smoothstep = (low, high, value) => { const share = Math.min(Math.max((value - low) / (high - low), 0), 1); return share * share * (3 - 2 * share); };
-/** The smooth minimum of a and b over `width` (polynomial: within width of each other it eases below both). */
-const smoothMin = (a, b, width) => { const ease = Math.max(width - Math.abs(a - b), 0) / width; return Math.min(a, b) - ease * ease * width * 0.25; };
+/** The smooth minimum of two values over `width` (polynomial: within width of each other it eases below both). */
+const smoothMin = (first, second, width) => { const ease = Math.max(width - Math.abs(first - second), 0) / width; return Math.min(first, second) - ease * ease * width * 0.25; };
 const LAGOON_HEADING = THREE.MathUtils.degToRad(LAGOON_SHORE.bearing);
+/** How far (m) the lagoon's waterline bends toward the lagoon `along` metres out along its beach (LAGOON_SHORE's bow and wander). */
+export function lagoonBend(along) {
+  const [wander, wavelength] = LAGOON_SHORE.wander;
+  return Math.max(along, 0) ** 2 / (2 * LAGOON_SHORE.bow) + wander * Math.sin(along / wavelength + 1.0) * smoothstep(0, 40, along);
+}
 /** How far out into the lagoon a world XZ point lies from the Polynesian lagoon's own beach (LAGOON_SHORE; m, negative on it). */
 export function lagoonBeachDistance(x, z) {
   const fromX = x - LAGOON_SHORE.origin[0], fromZ = z - LAGOON_SHORE.origin[1];
   const along = fromX * Math.sin(LAGOON_HEADING) - fromZ * Math.cos(LAGOON_HEADING);   // out along the beach
   const across = -fromX * Math.cos(LAGOON_HEADING) - fromZ * Math.sin(LAGOON_HEADING);    // toward the lagoon, across it
-  const [wander, wavelength] = LAGOON_SHORE.wander;
-  const bend = Math.max(along, 0) ** 2 / (2 * LAGOON_SHORE.bow) + wander * Math.sin(along / wavelength + 1.0) * smoothstep(0, 40, along);
-  const lagoonSide = -smoothMin(-(across - bend), -(along - LAGOON_SHORE.end), LAGOON_SHORE.point);
+  const lagoonSide = -smoothMin(-(across - lagoonBend(along)), -(along - LAGOON_SHORE.end), LAGOON_SHORE.point);
   return -smoothMin(-lagoonSide, across + LAGOON_SHORE.width, LAGOON_SHORE.point);
 }
 /** How far out into the lagoon a world XZ point lies from the Polynesian lagoon's waterline (m; negative on its land), whatever shore is in force. */
@@ -409,7 +412,7 @@ function koiLandGeometry() {
 // water covers): the lake's beach behind the eye and the lagoon's own beach out to its point, one mesh, so no two meet
 // in a seam. Laid out by the lagoon's shore (lagoonShoreDistance), whatever is in force.
 const LAGOON_LAND = { spokes: 480, first: 0.05, growth: 1.06, far: 6000, wet: 1.0 };
-function lagoonLandGeometry() {
+export function lagoonLandGeometry() {
   const radii = [0];
   for (let radius = LAGOON_LAND.first; radii.at(-1) < LAGOON_LAND.far; radius *= LAGOON_LAND.growth) radii.push(Math.min(radius, LAGOON_LAND.far));
   const positions = [], kept = [];
@@ -465,7 +468,9 @@ export function createShore(floor, lighting, environment, { snow = { value: 0 },
       ...PALM_SHADOW,
     },
   });
-  const mesh = new THREE.Mesh(koi ? koiLandGeometry() : lagoon ? lagoonLandGeometry() : landGeometry(), material);
+  // The lagoon's land is built the first time it is shown (src/main.js showScenery: lagoonLandGeometry); its program is
+  // the lake's shore's, so nothing is left to build on the device then.
+  const mesh = new THREE.Mesh(koi ? koiLandGeometry() : lagoon ? new THREE.BufferGeometry() : landGeometry(), material);
   mesh.frustumCulled = false;
   return mesh;
 }

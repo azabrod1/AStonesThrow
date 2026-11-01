@@ -20,14 +20,18 @@
 //   - Rocky cove, the sea: a shoal of grey mullet and a wrasse on its own.
 //   - The Koi pond (a pond in a Japanese garden, src/pondFloor.js KOI_SHORE):
 //     koi of the classic varieties in one loose group, and a goldfish.
-// A few of each, not many: each is drawn and moves with care.
+//   - The Polynesian lagoon, a reef lagoon's sand shallows: a school of
+//     sergeant majors, a shoal of yellow tang and a blue tang on its own,
+//     bright, unmuted (fishMarkings mutes only the wild fish of cool water).
 //   - The Pool: none, chlorinated.
+// A few of each, not many: each is drawn and moves with care.
 //
 // The company a kind keeps (`company`): 'school', a tight school that turns
-// together (minnows, pupfish: Partridge's schooling fish keep about a body
+// together (minnows, pupfish, sergeant majors: Partridge's schooling fish keep about a body
 // length apart and line up with their neighbours); 'shoal', a looser group
 // that keeps together but each fish its own heading (perch, char, bluegill,
-// tilapia, mullet, koi); 'alone' (pike, trout, bass, wrasse), each fish on
+// tilapia, mullet, koi, yellow tang); 'alone' (pike, trout, bass, wrasse,
+// blue tang), each fish on
 // its own. A group follows a goal, a point in its water it wanders to, and
 // now and then rests, hanging nearly still; its fish steer by the boids'
 // three rules (Reynolds 1987: keep apart, line up, keep together), weighted

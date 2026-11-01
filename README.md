@@ -1297,7 +1297,8 @@ distance). A palm is built once from its own seeded stream: a trunk leaning
 at its foot and curving up toward the light, ringed with frond scars; a
 crown of about thirty fronds, the young ones up and the old arching down
 and yellowing, a dead frond or two hanging brown; coconuts. Its leaflets
-are alpha-tested cards textured with an atlas baked on the GPU at start-up
+are alpha-tested cards textured with an atlas baked on the GPU when the
+lagoon is first shown
 (each leaflet a tapered blade, its alpha scaled by the mip it is drawn from
 so far crowns keep their leaves); the light passes through a leaf where the
 sun is behind it. Every palm is an instance of one of six variants at three
