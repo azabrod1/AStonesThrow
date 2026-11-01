@@ -68,7 +68,7 @@ import * as THREE from 'three';
 import { SEEN_THROUGH_WATER } from './shaders/scene.js';
 import { FISH_SPECIES } from './fish.js';
 
-export const FISH_PATTERNS = ['minnow', 'perch', 'pike', 'trout', 'char', 'bass', 'bluegill', 'tilapia', 'pupfish', 'mullet', 'wrasse', 'koi', 'goldfish'];
+export const FISH_PATTERNS = ['minnow', 'perch', 'pike', 'trout', 'char', 'bass', 'bluegill', 'tilapia', 'pupfish', 'mullet', 'wrasse', 'koi', 'goldfish', 'sergeant', 'yellowTang', 'blueTang'];
 const RINGS = 30;        // the body's cross-sections, snout to tail root
 const AROUND = 20;       // and the points round each
 const BODY_END = 0.8;    // the tail's root, as a share of the length from the nose
@@ -436,11 +436,32 @@ vec3 fishMarkings(float along, float height, float around, out float sheen) {
     else if (variety < 6.0) color = mix(vec3(0.40, 0.50, 0.60), vec3(0.72, 0.28, 0.10), smoothstep(1.4, 2.0, around) * smoothstep(0.16, 0.3, along));   // Asagi (its net is its scales')
     else if (variety < 7.0) { color = vec3(0.88, 0.74, 0.22); sheen = 0.7; }                // Yamabuki
     else color = mix(white, red, 1.0 - smoothstep(0.045, 0.06, length(vec2(along - 0.12, around * 0.07))));   // Tancho
-  } else {                  // goldfish: orange-gold, some with white
+  } else if (kind == 12) {  // goldfish: orange-gold, some with white
     color = mix(vec3(0.92, 0.42, 0.06), vec3(0.88, 0.86, 0.80), step(0.7, vSeed) * smoothstep(0.45, 0.6, fishNoise(vec2(along * 4.0, around * 1.3) + vSeed * 20.0)));
     sheen = 0.45;
+  } else if (kind == 13) {  // sergeant major: silver-white, a yellow wash over the back, five black bars from the back down the flank
+    color = mix(vec3(0.84, 0.86, 0.84), vec3(0.86, 0.80, 0.30), smoothstep(-0.1, 0.6, height));
+    float barPhase = (along - 0.16) / 0.13;
+    float barBlur = fwidth(barPhase) + 0.04;
+    float bar = (1.0 - smoothstep(0.22 - barBlur, 0.22 + barBlur, abs(fract(barPhase) - 0.5))) * step(0.0, barPhase) * step(barPhase, 5.0);
+    color = mix(color, vec3(0.03, 0.035, 0.04), bar * smoothstep(-0.75, -0.45, height));
+    sheen = 0.35;
+  } else if (kind == 14) {  // yellow tang: bright yellow all over, the white scalpel spine by its tail
+    color = vec3(0.98, 0.80, 0.06) * (0.92 + 0.08 * smoothstep(-0.5, 0.5, height));
+    color = mix(color, vec3(0.95, 0.95, 0.9), 1.0 - smoothstep(0.02, 0.035, length(vec2((along - 0.9) * 0.5, height * uBodyDepth * 0.22))));
+    sheen = 0.12;
+  } else {                  // blue tang: royal blue, the black "palette" from the eye back along the upper flank round an oval of blue, a yellow tail
+    color = vec3(0.10, 0.30, 0.86);
+    float stripe = 1.0 - smoothstep(0.1, 0.16, abs(height - (0.45 - 0.55 * (along - 0.3))));
+    float upper = smoothstep(0.42, 0.5, height) * smoothstep(0.3, 0.4, along);
+    float oval = 1.0 - smoothstep(0.1, 0.14, length(vec2((along - 0.55) * 1.2, (height - 0.62) * 0.9)));
+    float palette = max(stripe * smoothstep(0.18, 0.28, along) * (1.0 - smoothstep(0.86, 0.95, along)), upper * (1.0 - smoothstep(0.85, 0.95, along))) * (1.0 - oval);
+    color = mix(color, vec3(0.02, 0.025, 0.05), palette);
+    color = mix(color, vec3(0.96, 0.82, 0.10), smoothstep(0.9, 0.97, along) * (1.0 - smoothstep(0.35, 0.6, abs(height))));
+    sheen = 0.2;
   }
-  // Countershaded: a wild fish's back darker still, so from above it melts into the deep (bred koi and goldfish not);
+  // Countershaded: a wild fish's back darker still, so from above it melts into the deep (bred koi and goldfish not, nor
+  // the reef fish, whose colours are their own);
   // and a wild fish's colours are muted, each fish a little its own.
   if (kind < 11) {
     color *= mix(1.0, 0.55, smoothstep(0.2, 0.9, height));
@@ -472,6 +493,9 @@ vec3 finColor(float part, float edge) {
     if (variety > 1.5 && variety < 2.5 && part > 2.5 && part < 3.5) base = mix(vec3(0.02), base, smoothstep(0.2, 0.5, edge));
     return base;
   }
+  if (kind == 13) return part < 1.5 ? vec3(0.55, 0.55, 0.45) : vec3(0.70, 0.66, 0.40);   // sergeant major: pale, a yellowish dorsal
+  if (kind == 14) return vec3(0.98, 0.78, 0.05);                                          // yellow tang: yellow
+  if (kind == 15) return part < 1.5 ? vec3(0.96, 0.82, 0.10) : part > 2.5 && part < 3.5 ? mix(vec3(0.96, 0.82, 0.10), vec3(0.1, 0.3, 0.86), smoothstep(0.3, 0.6, edge)) : mix(vec3(0.1, 0.3, 0.86), vec3(0.02), smoothstep(0.6, 0.9, edge));   // blue tang: a yellow tail, black-edged blue fins
   return vec3(0.95, 0.55, 0.20);
 }
 void main() {

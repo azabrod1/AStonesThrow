@@ -69,6 +69,12 @@
 // over it are the floor shader's own (FLOOR_FRAGMENT). The texture holds 4
 // MiB, with its mip chain 5.3.
 //
+// Coral sand uses less grain and silt contrast (SHORE_LOOKS.coral.detail),
+// shared by the beach, the bed and the view from below through uBedDetail.
+// Above the wet sand the lagoon's beach takes a photoscan's creases and
+// grain too (SAND_SCAN; LAND_FRAGMENT's sandScan), loaded with the lagoon's
+// scenery (src/tropics.js).
+//
 // The bake is one pass over the tile. Its program is freed after it; the
 // texture lives as long as the floor's material (disposing the material
 // frees it).
@@ -110,6 +116,17 @@ export const KOI_SHORE = {
   beach: [0.15, 1.05],   // rad: the pebble beach's span of θ, on the right of the far half
   shelf: 0.35, deep: 1.35, lip: 0.08, beachLip: 0.08, mound: 0.3,
 };
+// The Polynesian lagoon's shore (setShoreKind('lagoon'); src/main.js PLACES `tropical`): the lake's waterline behind the
+// eye joined to a beach of white sand that runs out along the right of the home view toward the horizon, as a motu's
+// lagoon beach does in the photographs it is drawn from (Aitutaki's Tapuaetai, Bora Bora's motus). The beach's
+// waterline leaves LAGOON_SHORE.origin (5 m to the right of the throw's line, so the solver's patch is open water and a
+// stone lands as deep as in the lake) heading `bearing` degrees right of straight ahead, bowing gently left over
+// `bow` (m: its radius of curve), wandering `wander` (m, its wavelength in m) along its length, and ends in a point
+// `end` metres out, rounded over `point` (m); it is a motu, `width` metres across to its ocean side, which no eye
+// on the lagoon sees past its palms. The two are joined by a smooth minimum over `join` (m), so the bed under
+// the throw is the lake's to a millimetre. Out from either waterline the bed and the land are the lake's (SHORE's
+// slope and depth, landHeight). LAKE_BED in src/shaders/scene.js is its GLSL twin (LAGOON_*): change both.
+export const LAGOON_SHORE = { origin: [5.2, 0], bearing: 22, bow: 900, wander: [1.4, 37], end: 430, point: 25, width: 160, join: 1.0 };
 let shoreKind = 'lake';
 // Each place's shore (its sky's `shore`, src/sky.js; setShoreLook): the
 // ground's dry colour (`sand`, an albedo; Lakeside's is LAND_FRAGMENT's
@@ -133,23 +150,27 @@ export const SHORE_LOOKS = {
   gravel:  { sand: [0.6, 0.54, 0.44],   grey: 0.45, pebbles: 0.6,  pebbleSize: 1.5, tufts: 0.15, wrack: 0,   grass: 1.5,  cracks: 0 },
   salt:    { sand: [0.84, 0.83, 0.8],   grey: 0.85, pebbles: 0.05, pebbleSize: 1,   tufts: 0.05, wrack: 0,   grass: 2,    cracks: 1 },
   scree:   { sand: [0.46, 0.46, 0.46],  grey: 0.95, pebbles: 0.95, pebbleSize: 2.2, tufts: 0.1,  wrack: 0,   grass: 1.5,  cracks: 0 },
+  coral:   { detail: [0.5, 0.22], sand: [0.92, 0.89, 0.80],  grey: 0.15, pebbles: 0.12, pebbleSize: 0.8, tufts: 0.35, wrack: 0.35, grass: 0.9,  cracks: 0 },   // the Polynesian lagoon's: white coral sand, bits of shell, a wrack line of seaweed
 };
 const DRY_SAND = SHORE_LOOKS.sand.sand;   // LAND_FRAGMENT's: the tint is against it
+const bedDetailUniform = { value: new THREE.Vector2(1, 1) };   // grain and silt contrast; cleaner coral sand at the lagoon
 const bedTintUniform = { value: new THREE.Vector4(1, 1, 1, 0) };   // FLOOR_SAND's uBedTint: the tint, and the grey share in w
 const shoreLookUniform = { value: new THREE.Vector4(0.3, 1, 1, 1) };   // LAND_FRAGMENT's uShoreLook...
 const shoreMoreUniform = { value: new THREE.Vector2(1, 0) };          // ...and uShoreMore
 /** The shore look in force (SHORE_LOOKS by name; 'sand' for one not there): the bed's tint and the beach's uniforms. */
 export function setShoreLook(name) {
   const look = SHORE_LOOKS[name] ?? SHORE_LOOKS.sand;
+  bedDetailUniform.value.fromArray(look.detail ?? [1, 1]);
   bedTintUniform.value.set(look.sand[0] / DRY_SAND[0], look.sand[1] / DRY_SAND[1], look.sand[2] / DRY_SAND[2], look.grey);
   shoreLookUniform.value.set(look.pebbles, look.pebbleSize, look.tufts, look.wrack);
   shoreMoreUniform.value.set(look.grass, look.cracks);
 }
-const shoreKindUniform = { value: 0 };   // LAKE_BED's uKoiPond: 1 for the Koi pond's shore
-/** The shore in force: 'lake' (the lake's, SHORE) or 'koi' (the Koi pond's, KOI_SHORE); every function here and LAKE_BED follow it. */
+const SHORE_KINDS = { lake: 0, koi: 1, lagoon: 2 };   // LAKE_BED's uShoreKind (SHORE_LAKE, SHORE_KOI, SHORE_LAGOON)
+const shoreKindUniform = { value: 0 };
+/** The shore in force: 'lake' (the lake's, SHORE), 'koi' (the Koi pond's, KOI_SHORE) or 'lagoon' (the Polynesian lagoon's, LAGOON_SHORE); every function here and LAKE_BED follow it. */
 export function setShoreKind(kind) {
-  shoreKind = kind === 'koi' ? 'koi' : 'lake';
-  shoreKindUniform.value = shoreKind === 'koi' ? 1 : 0;
+  shoreKind = Object.hasOwn(SHORE_KINDS, kind) ? kind : 'lake';
+  shoreKindUniform.value = SHORE_KINDS[shoreKind];
 }
 export const getShoreKind = () => shoreKind;
 /** The Koi pond's outline's radius (m) at the angle θ about its centre. */
@@ -166,12 +187,32 @@ export function koiShoreDistance(x, z) {
   const dx = x - KOI_SHORE.centre[0], dz = z - KOI_SHORE.centre[1];
   return koiShoreRadius(Math.atan2(dz, dx)) - Math.hypot(dx, dz);
 }
-/** How far out into the lake a world XZ point lies from the waterline (m; negative on the beach); the Koi pond's in its place. */
+const smoothstep = (low, high, value) => { const share = Math.min(Math.max((value - low) / (high - low), 0), 1); return share * share * (3 - 2 * share); };
+/** The smooth minimum of two values over `width` (polynomial: within width of each other it eases below both). */
+const smoothMin = (first, second, width) => { const ease = Math.max(width - Math.abs(first - second), 0) / width; return Math.min(first, second) - ease * ease * width * 0.25; };
+const LAGOON_HEADING = THREE.MathUtils.degToRad(LAGOON_SHORE.bearing);
+/** How far (m) the lagoon's waterline bends toward the lagoon `along` metres out along its beach (LAGOON_SHORE's bow and wander). */
+export function lagoonBend(along) {
+  const [wander, wavelength] = LAGOON_SHORE.wander;
+  return Math.max(along, 0) ** 2 / (2 * LAGOON_SHORE.bow) + wander * Math.sin(along / wavelength + 1.0) * smoothstep(0, 40, along);
+}
+/** How far out into the lagoon a world XZ point lies from the Polynesian lagoon's own beach (LAGOON_SHORE; m, negative on it). */
+export function lagoonBeachDistance(x, z) {
+  const fromX = x - LAGOON_SHORE.origin[0], fromZ = z - LAGOON_SHORE.origin[1];
+  const along = fromX * Math.sin(LAGOON_HEADING) - fromZ * Math.cos(LAGOON_HEADING);   // out along the beach
+  const across = -fromX * Math.cos(LAGOON_HEADING) - fromZ * Math.sin(LAGOON_HEADING);    // toward the lagoon, across it
+  const lagoonSide = -smoothMin(-(across - lagoonBend(along)), -(along - LAGOON_SHORE.end), LAGOON_SHORE.point);
+  return -smoothMin(-lagoonSide, across + LAGOON_SHORE.width, LAGOON_SHORE.point);
+}
+/** How far out into the lagoon a world XZ point lies from the Polynesian lagoon's waterline (m; negative on its land), whatever shore is in force. */
+export function lagoonShoreDistance(x, z) {
+  return smoothMin(SHORE.z + (x * x) / (2 * SHORE.bend) - z, lagoonBeachDistance(x, z), LAGOON_SHORE.join);
+}
+/** How far out into the lake a world XZ point lies from the waterline (m; negative on the beach); the Koi pond's or the lagoon's in its place. */
 export function shoreDistance(x, z) {
   if (shoreKind === 'koi') return koiShoreDistance(x, z);
-  return SHORE.z + (x * x) / (2 * SHORE.bend) - z;
+  return shoreKind === 'lagoon' ? lagoonShoreDistance(x, z) : SHORE.z + (x * x) / (2 * SHORE.bend) - z;
 }
-const smoothstep = (low, high, value) => { const share = Math.min(Math.max((value - low) / (high - low), 0), 1); return share * share * (3 - 2 * share); };
 /** The land's height (m) d metres inland of the waterline. */
 export function landHeight(inland) {
   return SHORE.beachTop * Math.tanh(SHORE.beach * inland / SHORE.beachTop) + SHORE.bank * smoothstep(SHORE.bankFrom, SHORE.bankTo, inland);
@@ -206,7 +247,7 @@ function shoreUniforms() {
     uShore: { value: new THREE.Vector4(SHORE.z, SHORE.bend, SHORE.slope, SHORE.deep) },
     uLand: { value: new THREE.Vector4(SHORE.beach, SHORE.beachTop, SHORE.bank, 0) },
     uBank: { value: new THREE.Vector2(SHORE.bankFrom, SHORE.bankTo) },
-    uKoiPond: shoreKindUniform,
+    uShoreKind: shoreKindUniform,
   };
 }
 const BANK = [0, 2.45];                                         // under the shore view's eye: the bed's mesh centres here
@@ -270,6 +311,24 @@ function bakePattern(renderer) {
   return target;
 }
 
+// The palms' shadows (PALM_SHADOW in src/shaders/scene.js), shared by the floor's and every land's material: src/
+// tropics.js bakes the beach and foreground detail masks and turns them on at the Polynesian lagoon.
+export const PALM_SHADOW = { uPalmShadowNear: { value: null }, uPalmShadowNearBox: { value: new THREE.Vector4(0, 0, 1, 1) }, uPalmShadow: { value: null }, uPalmShadowBox: { value: new THREE.Vector4(0, 0, 1, 1) }, uPalmShadowOn: { value: 0 } };
+
+// The lagoon's dry sand, a photoscan (LAND_FRAGMENT's sandScan), shared by every land's material: src/tropics.js loads
+// it when the lagoon is first shown and turns it on; till then a texel that is no scan's.
+export const SAND_SCAN = { uSandScan: { value: new THREE.DataTexture(new Uint8Array([128, 128, 128, 255]), 1, 1) }, uSandScanOn: { value: 0 } };
+SAND_SCAN.uSandScan.value.needsUpdate = true;
+// The lagoon's palms' feet (LAND_FRAGMENT's palmFoot): a grid of cells over the planting, each the foot standing in it
+// (src/tropics.js placeFeet), which the land draws the sand banked against, the roots and the sky a trunk hides
+// round.
+export const PALM_FEET = {
+  uPalmFeet: { value: new THREE.DataTexture(new Uint8Array(4), 1, 1) },   // no foot till the scenery is built
+  uPalmFeetBox: { value: new THREE.Vector4(0, 0, 1, 0) },   // the grid's least x and z (m), 1 / its cell (m)
+  uPalmFeetCells: { value: new THREE.Vector2(1, 1) },
+};
+PALM_FEET.uPalmFeet.value.needsUpdate = true;
+
 export function createPondFloor(water, lighting, ambientWaves, { renderer, rings = null, ice = null }) {
   const pattern = bakePattern(renderer);
   const material = new THREE.ShaderMaterial({
@@ -290,7 +349,9 @@ export function createPondFloor(water, lighting, ambientWaves, { renderer, rings
       uExtinction: { value: lighting.extinction },
       uWaterColor: { value: lighting.waterColor },
       uPattern: { value: pattern.texture },
+      uBedDetail: bedDetailUniform,
       uBedTint: bedTintUniform,   // the place's ground against Lakeside's sand (setShoreLook)
+      ...PALM_SHADOW,
       ...ambientWaves.uniforms(),
       ...(rings ? rings.uniforms() : {}),
       ...(ice ? ice.uniforms : {}),   // under the ice the surface focuses nothing (surfaceCurvature)
@@ -368,13 +429,55 @@ function koiLandGeometry() {
   return geometry;
 }
 
-export function createShore(floor, lighting, environment, { snow = { value: 0 }, koi = false } = {}) {
+// The Polynesian lagoon's ground (createShore's `lagoon`): rings about the bank under the shore view's eye, as the bed's
+// are, LAGOON_LAND.spokes round, each LAGOON_LAND.growth times farther out than the last to LAGOON_LAND.far, kept where
+// a corner stands on the land or within LAGOON_LAND.wet of it in the water (the strip under the water's edge, which the
+// water covers): the lake's beach behind the eye and the lagoon's own beach out to its point, one mesh, so no two meet
+// in a seam. Laid out by the lagoon's shore (lagoonShoreDistance), whatever is in force.
+const LAGOON_LAND = { spokes: 480, first: 0.25, growth: 1.06, far: 6000, wet: 1.0 };
+export function lagoonLandGeometry() {
+  const radii = [0];
+  for (let radius = LAGOON_LAND.first; radii.at(-1) < LAGOON_LAND.far; radius *= LAGOON_LAND.growth) radii.push(Math.min(radius, LAGOON_LAND.far));
+  const positions = [], kept = [];
+  for (const radius of radii) {
+    for (let spoke = 0; spoke < LAGOON_LAND.spokes; spoke++) {
+      const angle = (spoke / LAGOON_LAND.spokes) * Math.PI * 2;
+      const x = BANK[0] + radius * Math.cos(angle), z = BANK[1] + radius * Math.sin(angle);
+      positions.push(x, 0, z);
+      kept.push(lagoonShoreDistance(x, z) < LAGOON_LAND.wet);
+    }
+  }
+  const indices = [];
+  for (let ring = 0; ring < radii.length - 1; ring++) {
+    for (let spoke = 0; spoke < LAGOON_LAND.spokes; spoke++) {
+      const next = (spoke + 1) % LAGOON_LAND.spokes;
+      const inner = ring * LAGOON_LAND.spokes, outer = inner + LAGOON_LAND.spokes;
+      const corners = [inner + spoke, inner + next, outer + spoke, outer + next];
+      if (!corners.some((corner) => kept[corner])) continue;
+      indices.push(inner + spoke, inner + next, outer + spoke, inner + next, outer + next, outer + spoke);   // facing up
+    }
+  }
+  // Only the corners used, renumbered.
+  const used = new Int32Array(kept.length).fill(-1);
+  const compact = [];
+  const remapped = indices.map((corner) => {
+    if (used[corner] < 0) { used[corner] = compact.length / 3; compact.push(positions[corner * 3], 0, positions[corner * 3 + 2]); }
+    return used[corner];
+  });
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(compact, 3));
+  geometry.setIndex(remapped);
+  return geometry;
+}
+
+export function createShore(floor, lighting, environment, { snow = { value: 0 }, koi = false, lagoon = false } = {}) {
   const material = new THREE.ShaderMaterial({
     vertexShader: LAND_VERTEX,
     fragmentShader: LAND_FRAGMENT,
     uniforms: {
       ...shoreUniforms(),
       uPattern: floor.material.uniforms.uPattern,
+      uBedDetail: bedDetailUniform,
       uBedTint: bedTintUniform,       // the place's shore look (setShoreLook)...
       uShoreLook: shoreLookUniform,
       uShoreMore: shoreMoreUniform,
@@ -386,9 +489,15 @@ export function createShore(floor, lighting, environment, { snow = { value: 0 },
       uLandLevel: environment.landLevel,
       ...environment.hazeUniforms,
       uSnow: snow,   // the snow lying on it, 0 to 1 (src/main.js WEATHERS)
+      ...PALM_SHADOW,
+      ...SAND_SCAN,
+      ...PALM_FEET,
+      uPalmBank: { value: 0 },   // 1 on the lagoon's banks' mesh (src/tropics.js banks), which rises by them
     },
   });
-  const mesh = new THREE.Mesh(koi ? koiLandGeometry() : landGeometry(), material);
+  // The lagoon's land is built the first time it is shown (src/main.js showScenery: lagoonLandGeometry); its program is
+  // the lake's shore's, so nothing is left to build on the device then.
+  const mesh = new THREE.Mesh(koi ? koiLandGeometry() : lagoon ? new THREE.BufferGeometry() : landGeometry(), material);
   mesh.frustumCulled = false;
   return mesh;
 }

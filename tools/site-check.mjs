@@ -1,7 +1,8 @@
 // Loads the published site (_site/, from npm run site) the way GitHub Pages
 // serves it, under the project path /AStonesThrow/, and checks that the pond
-// starts, that rain falls once asked for (its files load only then) and that
-// every request the page makes succeeds. Catches a file
+// starts, that rain falls once asked for (its files load only then), that the
+// Polynesian lagoon's scanned bark and sand come once it is shown (src/
+// tropics.js loadSurfaces) and that every request the page makes succeeds. Catches a file
 // missing from SITE_FILES (tools/build-site.mjs) and a root-absolute path,
 // which works on localhost and 404s on Pages.
 //
@@ -62,10 +63,16 @@ page.on('pageerror', (error) => failures.push(`page error: ${error}`));
 await page.goto(`http://localhost:${port}${PAGES_PATH}`, { waitUntil: 'domcontentloaded' });
 let started = true;
 try { await page.waitForFunction(() => !!window.__pond, null, { timeout: patience(120000) }); } catch { started = false; }   // (the function's argument, then the options)
-let rained = false;
+let rained = false, scanned = false;
 if (started) {
   await page.evaluate(() => window.__pond.setWeather('heavy-rain'));
   try { await page.waitForFunction(() => window.__pond.raining, null, { timeout: patience(60000) }); rained = true; } catch { rained = false; }
+  await page.evaluate(() => window.__pond.setSky('tropical'));
+  try {
+    await page.waitForFunction(() => window.__pond.sky === 'tropical', null, { timeout: patience(60000) });
+    await page.evaluate(() => window.__pond.tropics.surfacesReady);
+    scanned = await page.evaluate(() => window.__pond.tropics.uniforms.uBarkScanOn.value === 1);
+  } catch { scanned = false; }
 }
 const veilMessage = await page.evaluate(() => document.querySelector('.veil .error')?.textContent ?? null);
 await browser.close();
@@ -75,5 +82,6 @@ console.log(`[site-check] ${loaded.length} requests under ${PAGES_PATH}: ${[...n
 if (veilMessage) failures.push(`the veil shows: ${veilMessage}`);
 if (!started) failures.push('the pond never started');
 else if (!rained) failures.push('the rain never fell');
+else if (!scanned) failures.push('the lagoon\'s scanned surfaces never came');
 if (failures.length) { console.error('[site-check] FAIL'); for (const failure of failures) console.error(`  ${failure}`); process.exit(1); }
-console.log('[site-check] ok: the pond starts, the rain falls and every request succeeds');
+console.log('[site-check] ok: the pond starts, the rain falls, the lagoon\'s scans come and every request succeeds');
