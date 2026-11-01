@@ -24,13 +24,19 @@
 //     having slid farther than on the pool's deck; one that does not roll
 //     slides flat once it has tipped onto a face (its height steady to
 //     BOB_TOLERANCE, never tumbling) and rests lying on that face (src/rock.js
-//     lyingAttitude: never on an edge or its end); a stone slid on the ice
+//     lyingAttitude: never on an edge or its end), its weight over the
+//     corners it rests on (rollToRest: never balanced on one lump beside
+//     it, which would tip it over); a stone slid on the ice
 //     goes SLIDE_RATIO times as far as on the deck;
 //   - a Skip throw onto the ice skitters (it strikes the ice at least twice)
 //     and rests on it;
 //   - a stone sliding into a hole falls in (it is not held on the edge), and
 //     a floater that broke through (an 11 lb bowling ball) comes up and
-//     floats inside its hole;
+//     floats inside its hole; a stone at rest where a 30 cm rock breaks thin
+//     ice falls in; of 6 cm stones at rest round where a 16 cm stone breaks
+//     thick ice, some tip in (src/ice.js tipAtEdge: those on the new hole's
+//     crushed rim) and some stay, none left with its weight within
+//     ICE.crushed of the thickness of the edge, nor hanging over the hole;
 //   - things on the ice meet (src/collide.js): a stone slid into one at rest
 //     knocks it on, their momentum along the slide kept to MOMENTUM_KEPT;
 //   - in a frozen pool (its walls and deck, src/pool.js) everything rests on
@@ -90,9 +96,9 @@ import { Rock, aimThrow, aimSkip, skipSpeed, SKIP_THROW, throwFlightTime } from 
 import { THINGS, THING_NAMES } from '../src/things.js';
 import { floorDepthAt } from '../src/pondFloor.js';
 import { holdInPool, poolGround, POOL } from '../src/pool.js';
-import { collideThings, outlineOverlap, slabOverlap } from '../src/collide.js';
+import { collideThings, outlineOverlap, slabOverlap, passingBy, passBy, passesBy } from '../src/collide.js';
 import { SplashSystem } from '../src/splash.js';
-import { IceSheet, ICE, ICE_THICKNESS, WEAK } from '../src/ice.js';
+import { IceSheet, ICE, ICE_THICKNESS, WEAK, convexHull, insidePolygon, polygonEdgeDistance } from '../src/ice.js';
 
 const GRAVITY = 9.81;
 const STEP = 1 / 240;
@@ -106,6 +112,7 @@ const SLIDE_RATIO = 4;
 const MOMENTUM_KEPT = 0.05;  // of the striker's momentum
 const STEP_TOLERANCE = 0.15; // of a slide
 const BOB_TOLERANCE = 0.0005; // m: a thing sliding flat on its face keeps its height to this
+const WEIGHT_OVER = 1e-3;    // radii: a thing at rest has its weight over what it touches the ground by, or this near it
 const BREAK_MS = 25;
 const SHARDS = [3, 12];      // pieces a break lets go (least, most)
 const REPEATS = { cracks: 8, never: 30 };   // throws again and again at one spot: one that cracks breaks it within `cracks`; one that does not, never in `never`
@@ -122,6 +129,22 @@ const listing = process.argv.includes('--list');
 const failures = [];
 const check = (condition, message) => { if (!condition) failures.push(message); return condition; };
 const centimetres = (metres) => (100 * metres).toFixed(1);
+
+/**
+ * Whether a thing at rest has its weight (its volume's middle, moved by its ballast) over the outline of the corners it
+ * touches the ground by, or within WEIGHT_OVER of it (radii): a watermelon on its side rests on the ridge under it.
+ */
+function weightOverContacts(rock) {
+  const rotation = new THREE.Matrix4().makeRotationFromQuaternion(rock.quaternion);
+  const positions = rock.physicsPositions, corners = [];
+  for (let index = 0; index < positions.length; index += 3) corners.push(new THREE.Vector3().fromArray(positions, index).applyMatrix4(rotation));
+  const lowest = Math.min(...corners.map((corner) => corner.y));
+  const weight = rock.shape.centroid.clone().add(new THREE.Vector3().fromArray(rock.thing.body.ballast ?? [0, 0, 0])).applyMatrix4(rotation);
+  const touching = corners.filter((corner) => corner.y < lowest + 1e-4);
+  const outline = convexHull(touching.flatMap((corner) => [corner.x - weight.x, corner.z - weight.z]));
+  if (outline.length < 4) return Math.hypot(touching[0].x - weight.x, touching[0].z - weight.z) < WEIGHT_OVER;
+  return (outline.length >= 6 && insidePolygon(outline, 0, 0)) || polygonEdgeDistance(outline, 0, 0) < WEIGHT_OVER;
+}
 
 /** Math.random as the shoot harness seeds it (Park–Miller). */
 function seedRandom(seed) {
@@ -289,6 +312,7 @@ for (const [thickness, metres] of Object.entries(ICE_THICKNESS).filter(([, metre
         if (!record.gone && !rock.sphere) {
           for (let step = 0; step < 240 && rock.settling; step++) rock.update(STEP, floorDepthAt);
           check(Math.abs(rock.quaternion.dot(rock.lyingAttitude())) > 0.9999, `${label} ${manner} ${power} on ${thickness} ice: rests not lying on a face (on an edge or an end)`);
+          check(rock.thing.body.upright || weightOverContacts(rock), `${label} ${manner} ${power} on ${thickness} ice: rests with its weight beside what it stands on`);
         }
       } else {
         check(record.impact && record.throughIce, `${label} ${manner} ${power} on ${thickness} ice: went through without its impact saying so`);
@@ -629,12 +653,16 @@ function iceWorld({ diameter = 6, thickness = 'thin', seed = 1, x = 0, z = -1.4,
         world.broken.push(broken);
       }
       splash.update(STEP, water);
-      // Once a frame (src/main.js): the mask painted, shards frozen in, holes with a floater in them stirred.
+      // Once a frame (src/main.js render): the mask painted.
       if (Math.round(world.time / STEP) % 4 === 0) {
         started = performance.now();
         const painting = ice.holes.some((hole) => !hole.painted);
         ice.update();
         if (!painting) world.costs.paint = Math.max(world.costs.paint, performance.now() - started);
+      }
+      // At each step's end (src/main.js endStep): shards frozen in, holes with a floater in them stirred, what rests where
+      // a hole has opened let fall.
+      {
         for (const thing of [...world.things]) {
           if (!thing.iceHole || !(thing.state === 'float' || thing.afloat)) continue;
           if (!thing.piece) ice.disturb(thing.iceHole);
@@ -846,10 +874,67 @@ for (const [thickness, diameter, carries] of [['thick', 16, true], ['thin', 6, f
     piece.update(STEP, floorDepthAt);
     collideThings(world.things, (thing) => world.ice.contain(thing));
   }
-  const onItself = piece.dunked === piece;
+  const onItself = passingBy(piece, piece);   // a piece pushed under by itself (src/collide.js passBy)
   const afloat = (piece.afloat || piece.state === 'float' || piece.state === 'rest') && Math.abs(piece.position.y - piece.floatingHeight()) < 0.01;
   console.log(`  a ${centimetres(2 * piece.radius)} cm piece of thick ice lifted to 15 cm and let go: its own top ${heldGround === null ? 'no ground under it' : `ground at ${centimetres(heldGround)} cm`}; ${onItself ? 'landed on itself' : afloat ? 'dropped into its hole and floats' : `ended ${piece.state} at ${centimetres(piece.position.y)} cm`}`);
   check(!onItself && afloat && (heldGround === null || heldGround < liftedTo.y - piece.radius * piece.piece.thickness), `a piece afloat lifted and let go ${onItself ? 'landed on itself' : `ended ${piece.state} at ${centimetres(piece.position.y)} cm`} (the ground under it held: ${heldGround})`);
+}
+
+// The pairs that pass each other by (src/collide.js passBy): a pair passing for two reasons (what broke a hole and split
+// one of its pieces: until the hole floods, and until they are apart) passes until both have ended; a piece of a hole
+// not yet flooded, taken in hand and put back in it, passes the hole's breaker again (src/ice.js adopt, as src/main.js
+// endGrab calls it).
+{
+  const sphere = (x) => ({ centre: new THREE.Vector3(x, 0, 0), radius: 0.05, collisionRadius: 0.05 });
+  const piece = sphere(0), thing = sphere(0.02);
+  let flooded = false;
+  passBy(piece, thing);
+  passBy(piece, thing, () => flooded);
+  const overlapping = passesBy(piece, thing);
+  thing.centre.x = 0.5;
+  const apartNotFlooded = passesBy(thing, piece);
+  flooded = true;
+  thing.centre.x = 0.02;
+  const floodedOverlapping = passesBy(piece, thing);
+  const piece2 = sphere(0), thing2 = sphere(0.02);
+  let flooded2 = false;
+  passBy(piece2, thing2, () => flooded2);
+  passBy(piece2, thing2);
+  flooded2 = true;
+  const floodedStillOverlapping = passesBy(piece2, thing2);
+  thing2.centre.x = 0.5;
+  const ended = !passesBy(piece2, thing2) && !passingBy(piece2, thing2) && !passingBy(thing2, piece2);
+  // (Once apart, that reason has ended for good: the first pair, apart before the flood, meets once the hole floods.)
+  console.log(`  a pair passing until a flood and until apart: overlapping ${overlapping}, apart before the flood ${apartNotFlooded}, then flooded ${floodedOverlapping}; one flooded while overlapping ${floodedStillOverlapping}, then apart ${!ended}`);
+  check(overlapping && apartNotFlooded && !floodedOverlapping && floodedStillOverlapping && ended, `a pair passing for two reasons passes until both have ended (overlapping ${overlapping}, apart before the flood ${apartNotFlooded}, then flooded ${floodedOverlapping}; flooded while overlapping ${floodedStillOverlapping}, then apart ${!ended})`);
+
+  const world = iceWorld({ diameter: 16, thickness: 'thin', seed: 1 });
+  const stone = world.throwStone(16);
+  for (let time = 0; time < 2 && world.shards.length === 0; time += STEP) world.step(STEP);
+  const shard = world.shards.find((candidate) => candidate.iceHole && !candidate.iceHole.flooded && passingBy(candidate, stone));
+  let taken = false, forgotten = false, again = false;
+  if (shard) {
+    taken = true;
+    shard.hold();
+    forgotten = !passingBy(shard, stone);
+    shard.release();
+    world.ice.adopt(shard);
+    again = passingBy(shard, stone);
+  }
+  console.log(`  a piece of a hole not yet flooded taken in hand: ${taken ? `its pass with the breaker forgotten ${forgotten}, put back and passing it again ${again}` : 'none found'}`);
+  check(taken && forgotten && again, `a piece of a hole not yet flooded, taken and put back, passes the hole's breaker again (${taken ? `forgotten ${forgotten}, again ${again}` : 'no piece found'})`);
+  // The breaker gone before its hole floods (faded past a cap: src/main.js retireRock, ice.forget): the hole no longer
+  // names it, so a piece put back then passes nothing gone.
+  let goneLetGo = false;
+  if (shard) {
+    world.ice.forget(stone);
+    shard.hold();
+    shard.release();
+    world.ice.adopt(shard);
+    goneLetGo = world.ice.holes.every((hole) => hole.by !== stone) && !passingBy(shard, stone);
+  }
+  console.log(`  the breaker gone before its hole floods: ${shard ? `no hole names it and a piece put back passes it ${!goneLetGo}` : 'no piece found'}`);
+  check(goneLetGo, `a hole's breaker gone before the flood is let go: a piece put back does not pass it (${shard ? `passes ${!goneLetGo}` : 'no piece found'})`);
 }
 
 // A floater that broke thin ice (a watermelon, a pie) floats back up in its own hole: it passes its pieces by only until
@@ -1016,6 +1101,33 @@ console.log('\nNew ice: a hole left alone skins over; a thing afloat in one keep
   under.step(4);
   console.log(`  a 4 cm stone at rest (${restedOn}) where a 30 cm rock broke thin ice: ${resting.state}, ${(100 * resting.position.y).toFixed(1)} cm`);
   check(restedOn === 'rest' && resting.position.y < -0.05, `a stone at rest where a hole opened did not fall in (${resting.state} at ${(100 * resting.position.y).toFixed(1)} cm)`);
+  // Stones at rest round where a 16 cm stone breaks thick ice: those on the new hole's crushed rim tip in (src/ice.js
+  // tipAtEdge); none is left on the ice within the rim, nor hanging over the hole.
+  const rim = iceWorld({ diameter: 16, thickness: 'thick', seed: 2 });
+  const ringed = [];
+  for (let index = 0; index < 32; index++) {
+    const reach = 0.1 + 0.012 * index, angle = 2.4 * index;
+    ringed.push(rim.add(new Rock({ radius: 0.03, position: new THREE.Vector3(reach * Math.cos(angle), rim.ice.top + 0.03, -1.4 + reach * Math.sin(angle)), velocity: new THREE.Vector3(0, -0.05, 0), envTexture: null })));
+  }
+  rim.step(1.5);
+  const restedFirst = ringed.every((stone) => stone.state === 'rest');
+  rim.throwStone(16);
+  rim.step(6);
+  const fromEdge = (point) => Math.min(...rim.ice.holes.map((hole) => (insidePolygon(hole.corners, point.x, point.z) ? -1 : 1) * polygonEdgeDistance(hole.corners, point.x, point.z)));
+  const onIce = ringed.filter((stone) => stone.position.y > 0), wentIn = ringed.length - onIce.length;
+  const nearest = Math.min(...onIce.map((stone) => fromEdge(stone.weightAt(new THREE.Vector3()))));
+  const overhanging = onIce.filter((stone) => {
+    const rotation = new THREE.Matrix4().makeRotationFromQuaternion(stone.quaternion), corners = stone.physicsPositions;
+    for (let index = 0; index < corners.length; index += 3) {
+      const corner = new THREE.Vector3().fromArray(corners, index).applyMatrix4(rotation).multiplyScalar(stone.radius).add(stone.position);
+      if (fromEdge(corner) < 0) return true;
+    }
+    return false;
+  }).length;
+  console.log(`  6 cm stones at rest round where a 16 cm stone broke thick ice: ${wentIn} of ${ringed.length} went in; the nearest left on the ice has its weight ${centimetres(nearest)} cm from the edge, ${overhanging} hanging over it`);
+  check(restedFirst && rim.ice.holes.length > 0, 'the stones round a 16 cm stone\'s break did not rest first, or it did not break the thick ice');
+  // Some go in and some stay (none left would make the nearest's distance no test at all).
+  check(wentIn > 0 && onIce.length > 0 && nearest >= ICE.crushed * ICE_THICKNESS.thick && overhanging === 0, `stones round a new hole: ${wentIn} went in, ${onIce.length} left, the nearest with its weight ${centimetres(nearest)} cm from its edge, ${overhanging} hanging over it`);
 }
 
 if (failures.length > 0) {

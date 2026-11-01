@@ -50,15 +50,20 @@
 // to a cubic metre as the rain's streakDensity. The flecks (FLECK_VERTEX,
 // SPLASH in src/shaders/rain.js says how one goes): a point at each drop
 // near where the eye looks, drawn over the drop's life as the splash it
-// throws up, a crown's flash, then a jet standing for a tenth of a second,
-// tallest halfway, and a droplet off its tip for half of them; or, for the
-// rain's bubbleShare of the drops, a bubble the crown closes into, floating
-// up to a second or two, drawn as the foam specks' are. Every splash has
-// its own height, width and brightness, hashed from the schedule, so no
-// two are alike and a seeded run's are the same every time. A jet is a
-// clear column, pale as the streaks are, and is drawn as the eye keeps it
-// over STREAK_SECONDS, so one rising or falling is a smear and one at its
-// peak stands crisp. Both stand on a gale's waves (src/galeWaves.js).
+// throws up, with something on the water from the impact to the end so
+// the eye follows one motion: a crown's flash whose rim lingers over the
+// crater, then a jet that shoots up and falls back more slowly over a
+// quarter of a second, a droplet off its tip for half of them taking over
+// as the column collapses; or, for the rain's bubbleShare of the drops, a
+// bubble the crown closes into, floating up to a second or two, drawn as
+// the foam specks' are. Every splash has its own height, width and
+// brightness, hashed from the schedule, so no two are alike and a seeded
+// run's are the same every time. A jet is a clear column, pale as the
+// streaks are, and is drawn as the eye keeps it over STREAK_SECONDS, so
+// one rising or falling is a smear and one at its peak stands crisp. A
+// splash too far off to be wider than a pixel fades out rather than
+// standing as a dot: far rain is a fizz the rings and the haze carry.
+// Both stand on a gale's waves (src/galeWaves.js).
 //
 // RAIN: per intensity, the rate of the drops that leave a ring one can see
 // (per m² per second), the cell (metres, dividing TILE_SIZE) and its slots

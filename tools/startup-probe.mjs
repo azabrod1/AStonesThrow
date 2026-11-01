@@ -26,13 +26,17 @@ await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
 const origin = `http://127.0.0.1:${server.address().port}`;
 // The GPU if there is one, else SwiftShader (tools/browser.mjs).
 const browser = await launchBrowser();
+// Every program that fails to compile, on any page (three logs it and draws nothing with it): the run fails at its end.
+const shaderErrors = [];
 async function pageFor(viewport = { width: 390, height: 844 }) {
   const context = await browser.newContext({ viewport });
   await context.route('https://cdn.jsdelivr.net/**', (route) => route.abort());
   await context.route('https://fonts.googleapis.com/**', (route) => route.fulfill({ body: '', contentType: 'text/css' }));
   // Every wait given no timeout of its own: Playwright's 30 s on a GPU, stretched on SwiftShader (tools/browser.mjs).
   context.setDefaultTimeout(patience(30000));
-  return context.newPage();
+  const page = await context.newPage();
+  page.on('console', (message) => { if (message.text().includes('Shader Error')) shaderErrors.push(message.text().split('\n').slice(0, 12).join('\n')); });
+  return page;
 }
 async function open(page, query = '') {
   await page.goto(`${origin}${prefix}?quality=low&paused=1${query}`, { waitUntil: 'domcontentloaded' });
@@ -240,7 +244,8 @@ try {
   console.log('PASS: the old Pool water and Ice settings open the Pool place, frozen thick, and stay so');
   // Frozen at the start, the warm-up breaks the ice under the veil (src/main.js warmUp), so the first break a person
   // makes (a big rock through thick ice: on thick ice the warm-up's stone would skid) builds no program, nor does a
-  // throw into open water after (the warm-up threw into open water first).
+  // stone that skids to rest on the ice (its mirror image there, src/rock.js prepareMirror; its shadow's tile, drawn
+  // no more once it lies still), nor a throw into open water after (the warm-up threw into open water first).
   const firstBreak = await older.evaluate(() => {
     const pond = window.__pond, programs = () => pond.renderer.info.programs.length;
     const before = programs();
@@ -250,14 +255,22 @@ try {
     pond.advance(1.6);
     const broken = { programs: programs(), holes: pond.iceSheet.holes.length };
     pond.setThing('stone');
+    const onIce = pond.throwAt(-0.9, -1.0, { radius: 0.03, power: 'normal' });
+    pond.advance(8);
+    // Its shadow's tile (src/iceShadow.js) is drawn while it moves, then never again while it lies still.
+    const tilesAtRest = pond.budget.ice.shadowTiles;
+    pond.advance(1);
+    const rested = { programs: programs(), state: onIce.state, mirrored: Boolean(onIce.meshMirror?.visible), shaded: onIce.iceShadowSelf.value >= 0, tilesWhileStill: pond.budget.ice.shadowTiles - tilesAtRest };
     pond.setWater('lake');
     pond.throwAt(0.3, -1.6, { radius: 0.03, power: 'normal' });
     pond.advance(0.5);
-    return { before, broken, openWater: programs() };
+    return { before, broken, rested, openWater: programs() };
   });
   assert.ok(firstBreak.broken.holes > 0, 'the big rock did not break the thick ice');
-  assert.deepEqual([firstBreak.broken.programs, firstBreak.openWater], [firstBreak.before, firstBreak.before], `programs built after the start: ${JSON.stringify(firstBreak)}`);
-  console.log(`PASS: started frozen thick, the first break and a throw into open water after build no program (${firstBreak.before})`);
+  assert.ok(firstBreak.rested.state === 'rest' && firstBreak.rested.mirrored, `the stone did not come to rest on the ice, mirrored in it: ${JSON.stringify(firstBreak.rested)}`);
+  assert.ok(firstBreak.rested.shaded && firstBreak.rested.tilesWhileStill === 0, `the stone at rest on the ice has no shadow, or its tile was drawn again while it lay still: ${JSON.stringify(firstBreak.rested)}`);
+  assert.deepEqual([firstBreak.broken.programs, firstBreak.rested.programs, firstBreak.openWater], [firstBreak.before, firstBreak.before, firstBreak.before], `programs built after the start: ${JSON.stringify(firstBreak)}`);
+  console.log(`PASS: started frozen thick, the first break, a stone come to rest on the ice and a throw into open water after build no program (${firstBreak.before})`);
   await older.context().close();
 
   const retriedRain = await pageFor();
@@ -399,6 +412,8 @@ try {
     console.log(`PASS: late ${asset} cannot start or reveal a timed-out pond`);
     await delayed.context().close();
   }
+  assert.deepEqual(shaderErrors, [], `programs failed to compile:\n${shaderErrors.join('\n\n')}`);
+  console.log('PASS: every program compiled, on every page');
 } finally {
   await browser.close();
   server.close();
