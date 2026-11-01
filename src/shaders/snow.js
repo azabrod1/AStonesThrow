@@ -89,13 +89,19 @@ uniform float uFocalPx;         // render-target pixels per unit tan
 uniform float uMinPixels;
 uniform float uOpacity;
 uniform float uHazeDensity;     // the haze (src/sky.js): a flake far off fades into it
-varying float vAlpha;
+varying float vOpacity;         // the flake's opacity at its thickest, for where it is: fades, haze and the capsule's share
 varying vec2 vShape;            // across (−1 to 1) and along the capsule, in half its widths
 varying float vReach;           // half the swept segment's length, in half widths
 varying float vHeight;          // the point's height over the still water...
 varying float vSurface;         // ...and the water's there
 varying float vUp;              // how far up the flake's side facing the eye looks (−1 to 1): what it is lit by
+varying float vHalfPixels;      // half the capsule's width in render-target pixels: the rim is drawn a pixel wide
+varying vec3 vForm;             // the flake's form (FLAKE_FRAGMENT): its plate's squash now (0 to 1), its axis across the quad (radians), its lumps' phase
+varying float vDensity;         // how much of what is behind its middle it hides (DENSITY_MIN to 1)
 #define FAR_FLOOR 0.5           // m: the far box's floor under the still water
+#define DENSITY_MIN 0.3         // the most translucent flake's opacity against the most opaque: a lacy dendrite against a rimed clump
+#define SQUASH_MIN 0.5          // how narrow the most plate-like flake turns, seen edge-on, against its width
+#define TUMBLE_PERIODS vec2(0.6, 1.6)   // s: a flake turns over in one of these (a tumbling plate's)
 ${FLAKE_MOTION}
 // How far into a box's faces a point is: 0.5 at a face.
 float boxReach(vec3 local, vec3 box) { return max(max(abs(local.x) / box.x, abs(local.z) / box.z), abs(local.y) / box.y); }
@@ -129,12 +135,22 @@ void main() {
   float end = position.y * 2.0 - 1.0;
   vec3 point = middle + along * end * reach + across * position.x * halfWidth;
   float covered = diameter * diameter / (width * (sweptLength + width));
+  // Its form, from its own numbers (the attributes' sums, wrapped: as random as they, the same every run):
+  // how opaque it is, how much of a plate (how narrow it turns edge-on), how fast it tumbles, where its lumps lie.
+  float density = mix(DENSITY_MIN, 1.0, fract(17.0 * aFlake.x + 31.0 * aSway.y + 7.0 * aFlake.z));
+  float plate = mix(SQUASH_MIN, 0.9, fract(23.0 * aFlake.y + 13.0 * aSway.x + 29.0 * aSway.z));
+  float tumbleRate = cycleRate(mix(TUMBLE_PERIODS.x, TUMBLE_PERIODS.y, fract(11.0 * aSway.w + 37.0 * aFlake.x)));
+  float tilt = tumbleRate * uCycleTime + SNOW_TAU * fract(19.0 * aFlake.y + 43.0 * aSway.z);
+  float squash = mix(plate, 1.0, abs(cos(tilt)));
+  vForm = vec3(squash, SNOW_TAU * fract(41.0 * aSway.x + 5.0 * aFlake.w), SNOW_TAU * fract(47.0 * aFlake.z + 3.0 * aSway.y));
+  vHalfPixels = halfWidth * uFocalPx / depth;
   float near = smoothstep(0.25, 1.0, depth);
   // A near flake fades toward its box's faces; a far one fades in across them (where the near box hands over) and out toward its own.
   float handover = smoothstep(0.35, 0.5, boxReach(head - nearCentre, uBox));
   float edge = (far ? handover : 1.0 - handover) * (far ? 1.0 - smoothstep(0.35, 0.5, boxReach(local, uFarBox)) : 1.0);
   float haze = exp(-uHazeDensity * depth);
-  vAlpha = -point.z > 0.05 ? uOpacity * covered * near * edge * haze : 0.0;
+  vDensity = density;
+  vOpacity = -point.z > 0.05 ? uOpacity * covered * near * edge * haze : 0.0;
   vShape = vec2(position.x, end * reach / halfWidth);
   vReach = 0.5 * sweptLength / halfWidth;
   vHeight = mix(head.y, tail.y, position.y);
@@ -154,23 +170,56 @@ void main() {
 // the eye looks down on the near water, brighter; from below, against the
 // cloud, darker still (its underside). The sun's light, if any comes through
 // the cloud, on its one side.
+//
+// Its form. To the eye a flake a metre off is sharp (a 4 mm pupil focused
+// on the far bank blurs it by a few millimetres; the soft bokeh discs of a
+// photograph are a camera's wide aperture), so its silhouette is drawn
+// sharp, softened only by RIM_MIN of its radius (or a pixel, for the
+// anti-aliasing: a flake under a few pixels across is all rim, a soft dot).
+// Its body is a ball of crystals, thick in the middle and thin at the rim,
+// hiding 1 − (1 − density)^thickness of what is behind it: an opaque clump
+// is flat white to near its edge, a lacy one a soft veil that lets the
+// water through. No two are alike: each has its own density (vDensity,
+// DENSITY_MIN to 1), its rim lumped (LUMPS of its radius, three lumps and
+// five about it, at its own phase: a clump, not a disc or a triangle), and
+// it is a plate turning over as it falls (vForm.x: squashed across its own
+// axis toward its edge-on width and back once or twice a second), so the
+// fall glitters as a real one does, each flake brightening and dimming as
+// it turns. A streak (a blizzard's flake, swept many widths) keeps its
+// capsule: the form fades out with the sweep.
 export const FLAKE_FRAGMENT = /* glsl */`
 uniform vec3 uSkyAmbient;
 uniform vec3 uSunIrradiance;
 uniform vec3 uSunDir;
-varying float vAlpha;
+varying float vOpacity;
 varying vec2 vShape;
 varying float vReach;
 varying float vHeight;
 varying float vSurface;
 varying float vUp;
+varying float vHalfPixels;
+varying vec3 vForm;
+varying float vDensity;
 #define FLAKE_ALBEDO 0.9     // a wet aggregate's; fresh snow's is 0.8 to 0.9
 #define GROUND_LIGHT 0.4     // the ground's radiance in the cloud's: the dark pond (a tenth) among its snowy banks (0.8)
 #define FLAKE_SUN 0.3        // the sun's light, on its one side
+#define RIM_MIN 0.5          // the silhouette's softness, as a share of the radius, at least (a pixel otherwise): a clump's fluffy edge
+#define LUMPS vec2(0.09, 0.05)   // the rim's lumps, as a share of the radius: three about it and five
 void main() {
-  if (vHeight < vSurface || vAlpha <= 0.0) discard;
-  float distance = length(vec2(vShape.x, max(abs(vShape.y) - vReach, 0.0)));
-  float alpha = vAlpha * (1.0 - smoothstep(0.0, 1.0, distance));   // soft: a flake's lace thins to its edge
+  if (vHeight < vSurface || vOpacity <= 0.0) discard;
+  // The capsule's round cap, in half widths, turned to the flake's axis and squashed across it as its plate turns.
+  float roundness = 1.0 / (1.0 + vReach);   // a still flake keeps its form; a streak its capsule
+  vec2 cap = vec2(vShape.x, sign(vShape.y) * max(abs(vShape.y) - vReach, 0.0));
+  vec2 axis = vec2(cos(vForm.y), sin(vForm.y));
+  vec2 turned = vec2(dot(cap, axis), cap.y * axis.x - cap.x * axis.y);
+  turned.y /= mix(1.0, vForm.x, roundness);
+  float angle = atan(turned.y, turned.x);
+  float distance = length(turned) * (1.0 + roundness * (LUMPS.x * cos(3.0 * angle + vForm.z) + LUMPS.y * cos(5.0 * angle - 2.0 * vForm.z)));
+  float rim = clamp(1.0 / max(vHalfPixels, 1e-3), RIM_MIN, 1.0);
+  // A ball of crystals: thick in the middle, thin at its rim, hiding 1 − (1 − density)^thickness of what is behind it.
+  float thickness = sqrt(max(1.0 - distance * distance, 0.0));
+  float body = 1.0 - pow(1.0 - vDensity, thickness);
+  float alpha = vOpacity * body * (1.0 - smoothstep(1.0 - rim, 1.0, distance));
   if (alpha < 0.002) discard;
   float lit = mix(GROUND_LIGHT, 1.0, 0.5 * (1.0 + vUp));
   vec3 light = FLAKE_ALBEDO * uSkyAmbient * lit + uSunIrradiance * max(uSunDir.y, 0.0) * FLAKE_SUN;
