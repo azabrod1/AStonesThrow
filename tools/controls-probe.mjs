@@ -25,30 +25,47 @@
 //     Soft, Medium and Hard its strength, and the slow-motion clock goes
 //     round the time's rates (1×, ¼×, ⅒×) and lights while slow;
 //   - the strip's chip opens the dropdown of things (src/thingMenu.js) over
-//     the strip and under the settings button, its groups and a pill for
-//     each thing offered (src/things.js thingGroups, which the page is asked)
-//     on the screen once scrolled to (on a touch screen each group's row
-//     sideways; on a phone in portrait the card itself without scrolling,
-//     and as tall as its groups' rows, whatever the number of things), each
-//     fitting its name and on a touch screen at least 34 points tall, the
-//     chosen one checked and focused; a pill tapped is thrown next (the
+//     the strip and under the settings button, its tabs Favourites and one
+//     for each group (Other last), opened on the chosen thing's group while
+//     there are no favourites, a pill for each thing offered (src/things.js
+//     thingGroups, which the page is asked) on the screen (on a phone in
+//     portrait without scrolling), each fitting its name and on a touch
+//     screen at least 34 points tall, the chosen one checked and focused,
+//     a card of its own above the tabs' showing it under Selected (its
+//     name and the strip's line)
+//     with a star and an ⓘ naming it, on a touch screen at least 34 points
+//     tall; Favourites, empty, says where to make one, a group's tab holds
+//     its things, the card keeping its height and its tabs their place from
+//     tab to tab, and Favourites holding more than the largest group
+//     scrolls, the card no taller and the star not moved; a favourite made
+//     with that card's star (the dropdown staying
+//     open) is in Favourites, which the dropdown then opens on, as it is one
+//     made on What to throw (its star, reached by the ⓘ), and unmade leaves
+//     it empty; on a desktop a pill's tip is its note, shown by a mouse
+//     resting on it, and the star's says what it does; a pill tapped is
+//     thrown next (the
 //     dropdown closed, the focus back on the chip, the strip following, a
 //     skip asked for gone back to Toss for a ball), a press on the pond
 //     closes it without throwing, the chip pressed again closes it, and on a
-//     desktop the arrow keys and Enter choose in it and Escape closes it;
+//     desktop the arrow keys and Enter choose in it, Escape closes it, and on
+//     a tab Left, Right, Home and End go from tab to tab, each shown with its
+//     panel, focused and remembered;
 //   - the settings button is on the screen, clear of the title, and (on a
 //     touch screen) at least 34 points tall; pressed, the panel opens on the
 //     screen, its rows that tall too, each row's value whole beside its
-//     name; its What to throw row opens that page, its things in a fold for
-//     each group (the chosen thing's open, one at a time: on a phone in
-//     portrait the page with the Stones open, the first, needs no scrolling;
-//     a fold of more cards scrolls, its head staying put), whose pictured
+//     name; its What to throw row opens that page, a tab for each group in
+//     one row (the chosen thing's group shown alone: on a phone in portrait
+//     the page with the Stones shown, the first, needs no scrolling; a tab
+//     pressed shows its group and chooses nothing, the Tab key reaching its
+//     first card, and the dropdown's ⓘ then opens on the chosen thing's
+//     group, its card focused; a group of more cards scrolls, its head
+//     staying put), whose pictured
 //     choices, one for each thing offered, can each be opened and scrolled
 //     onto the screen and fit their names,
 //     every card one height, its name and note each one line, whole,
-//     its head staying at the panel's top as it scrolls; the dropdown's foot
+//     its head staying at the panel's top as it scrolls; the dropdown's ⓘ
 //     opens the page at once, and each choice, tapped, is shown over the
-//     folds to look over (its name, size, mass, Floats or Sinks; the
+//     groups to look over (its name, size, mass, Floats or Sinks; the
 //     settings stay open) and its Use button closes the settings, the next
 //     tap on the water throwing it, and sets what is thrown, the throw
 //     button's name (a rock, a ball, a gem), the row's value and the strip's
@@ -305,39 +322,110 @@ for (const framing of FRAMINGS) {
     const scale = window.visualViewport ? window.visualViewport.scale : 1;
     const toBox = (rect) => ({ left: rect.left * scale, right: rect.right * scale, top: rect.top * scale, bottom: rect.bottom * scale, height: rect.height * scale });
     const card = document.getElementById('thing-menu-card');
+    const scroller = card.querySelector('.thing-menu-panels');
     const focused = document.activeElement?.dataset?.value;
-    // Each pill as the card scrolls it into view (a short screen's card scrolls), and its row (a touch screen's
-    // rows scroll sideways); then each row and the card back to their starts.
-    const rows = [...card.querySelectorAll('.thing-menu-pills')];
-    // The rows' pills as they stand before any is scrolled to: one row of pills each on a touch screen.
-    const rowTops = rows.map((row) => new Set([...row.children].map((pill) => Math.round(pill.getBoundingClientRect().top))).size);
-    const pills = [...card.querySelectorAll('[role="menuitemradio"]')].map((pill) => {
-      pill.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-      return { name: pill.dataset.value, checked: pill.getAttribute('aria-checked') === 'true', clipped: pill.scrollWidth > pill.clientWidth + 0.5, ...toBox(pill.getBoundingClientRect()) };
-    });
-    for (const row of rows) row.scrollLeft = 0;
-    card.scrollTop = 0;
+    // Every group's pills where they stand: the panels share one cell, the hidden ones laid out as the shown one is.
+    const groups = [...card.querySelectorAll('[role="tabpanel"]:not([data-tab="favourites"])')];
+    const pills = groups.flatMap((panel) => [...panel.querySelectorAll('[data-value]')].map((pill) => ({ group: panel.dataset.tab, name: pill.dataset.value, checked: pill.getAttribute('aria-current') === 'true', clipped: pill.scrollWidth > pill.clientWidth + 0.5, ...toBox(pill.getBoundingClientRect()) })));
+    const more = card.querySelector('.thing-menu-more'), star = card.querySelector('.thing-menu-star');
     return {
-      rowTops,
       open: !document.getElementById('thing-menu').hidden, expanded: document.getElementById('thing-chip').getAttribute('aria-expanded'),
-      card: toBox(card.getBoundingClientRect()), scrolls: card.scrollHeight > card.clientHeight + 1, pills, focused,
-      groups: [...card.querySelectorAll('.thing-menu-head')].map((head) => head.textContent),
+      card: toBox(card.getBoundingClientRect()), scrolls: scroller.scrollHeight > scroller.clientHeight + 1, overflow: scroller.scrollHeight - scroller.clientHeight, pills, focused,
+      tab: card.querySelector('[role="tab"][aria-selected="true"]')?.dataset.tab,
+      tabs: [...card.querySelectorAll('[role="tab"]')].map((tab) => tab.textContent),
+      tabHeight: Math.min(...[...card.querySelectorAll('[role="tab"]')].map((tab) => tab.getBoundingClientRect().height * scale)),
+      groups: groups.map((panel) => panel.dataset.tab),
+      more: { ...toBox(more.getBoundingClientRect()), label: more.getAttribute('aria-label') },
+      star: { ...toBox(star.getBoundingClientRect()), pressed: star.getAttribute('aria-pressed') },
+      now: { ...toBox(document.getElementById('thing-now').getBoundingClientRect()), name: document.getElementById('thing-now-name').textContent, size: document.getElementById('thing-now-size').textContent, label: document.getElementById('thing-now-label').textContent },
+      tabsTop: card.querySelector('.thing-menu-tabs').getBoundingClientRect().top * scale,
+      readout: document.getElementById('stone-readout').textContent,
     };
   });
-  // What the page offers (src/things.js, as the page has it): its groups and how many things each holds.
-  const offered = await page.evaluate(async () => (await import('./src/things.js')).thingGroups().map(({ name, keys }) => ({ name, count: keys.length })));
+  // What the page offers (src/things.js, as the page has it): its groups and their things.
+  const offered = await page.evaluate(async () => (await import('./src/things.js')).thingGroups().map(({ name, keys }) => ({ name, keys, count: keys.length })));
   const offeredCount = offered.reduce((sum, group) => sum + group.count, 0);
   check(menu.open && menu.expanded === 'true' && onScreen(menu.card) && menu.card.bottom <= layout.strip.top + 0.5 && menu.card.top >= menuButton.bottom - 0.5,
     `the strip's chip opens the dropdown of things over the strip and under the settings button (${menu.open ? `${Math.round(menu.card.right - menu.card.left)}×${Math.round(menu.card.height)} points` : 'not open'})`);
   const checkedPill = menu.pills.find((pill) => pill.checked)?.name;
+  check(menu.tab === 'Stones' && menu.tabs.join(', ') === ['Favourites', ...offered.map((group) => group.name)].join(', ') && offered.at(-1).name === 'Other',
+    `its tabs are ${menu.tabs.join(', ')} (Other last), with no favourites opened on the chosen thing's group (${menu.tab})`);
   check(menu.groups.join(', ') === offered.map((group) => group.name).join(', ') && menu.pills.length === offeredCount && menu.pills.every(onScreen) && !menu.pills.some((pill) => pill.clipped) && (!framing.touch || menu.pills.every((pill) => pill.height >= SMALLEST_BUTTON_HEIGHT - 0.5)),
-    `its ${menu.groups.join(', ')} hold a pill for each of the ${offeredCount} things offered (${menu.pills.length}), each on the screen once scrolled to and fitting its name${framing.touch ? `, at least ${SMALLEST_BUTTON_HEIGHT} points tall (smallest ${Math.min(...menu.pills.map((pill) => pill.height)).toFixed(1)})` : ''}${menu.pills.some((pill) => pill.clipped) ? ` (cut: ${menu.pills.filter((pill) => pill.clipped).map((pill) => pill.name).join(', ')})` : ''}`);
+    `its group tabs hold a pill for each of the ${offeredCount} things offered (${menu.pills.length}), each on the screen and fitting its name${framing.touch ? `, at least ${SMALLEST_BUTTON_HEIGHT} points tall (smallest ${Math.min(...menu.pills.map((pill) => pill.height)).toFixed(1)})` : ''}${menu.pills.some((pill) => pill.clipped) ? ` (cut: ${menu.pills.filter((pill) => pill.clipped).map((pill) => pill.name).join(', ')})` : ''}`);
   check(checkedPill === 'stone' && menu.focused === 'stone', `the chosen thing's pill is checked (${checkedPill}) and focused (${menu.focused})`);
-  if (framing.portrait) check(!menu.scrolls, 'on a phone in portrait the dropdown holds every row without scrolling');
-  if (framing.touch) check(menu.rowTops.every((count) => count === 1), `on a touch screen each group's pills are one row, scrolled sideways (rows of ${menu.rowTops.join(', ')} lines)`);
+  const barTall = Math.min(menu.more.height, menu.star.height);
+  check(onScreen(menu.now) && menu.now.top >= menu.card.top - 0.5 && menu.now.bottom <= menu.tabsTop + 0.5 && menu.now.label === 'Selected' && menu.now.name === 'River stone' && menu.now.size === menu.readout && onScreen(menu.more) && onScreen(menu.star) && menu.star.pressed === 'false' && menu.more.label === 'More about the river stone' && (!framing.touch || (barTall >= SMALLEST_BUTTON_HEIGHT - 0.5 && menu.tabHeight >= SMALLEST_BUTTON_HEIGHT - 0.5)),
+    `the chosen thing's own card, above the tabs, shows it under "${menu.now.label}" (${menu.now.name}, "${menu.now.size}" as the strip's "${menu.readout}"), its star not pressed and its ⓘ naming it ("${menu.more.label}")${framing.touch ? `, they and the tabs at least ${SMALLEST_BUTTON_HEIGHT} points tall (${barTall.toFixed(1)}, ${menu.tabHeight.toFixed(1)})` : ''}`);
+  if (!framing.touch) {
+    const tipOf = () => page.evaluate(() => { const tip = document.getElementById('thing-tip'); const rect = tip.getBoundingClientRect(); return { shown: !tip.hidden, text: tip.textContent, inside: rect.left >= 0 && rect.right <= window.innerWidth && rect.top >= 0 }; });
+    const pillBox = (await boxes('#thing-menu [data-tab="Stones"] [data-value="stone"]'))[0];
+    await page.mouse.move((pillBox.left + pillBox.right) / 2 / layout.scale, (pillBox.top + pillBox.bottom) / 2 / layout.scale);
+    await page.waitForTimeout(700);
+    const pillTip = await tipOf();
+    const note = await page.evaluate(async () => (await import('./src/things.js')).THINGS.stone.note);
+    const starBox = (await boxes('#thing-now-favourite'))[0];
+    await page.mouse.move((starBox.left + starBox.right) / 2 / layout.scale, (starBox.top + starBox.bottom) / 2 / layout.scale);
+    await page.waitForTimeout(100);
+    const starTip = await tipOf();
+    await page.mouse.move(2, 2);
+    await page.waitForTimeout(100);
+    const gone = await tipOf();
+    check(pillTip.shown && pillTip.text === note && pillTip.inside && starTip.shown && starTip.text === 'Add the river stone to Favourites' && !gone.shown,
+      `a mouse resting on a pill shows its note ("${pillTip.text}"), on the star at once what it does ("${starTip.text}"), and the tip goes with the mouse (${gone.shown ? 'still shown' : 'gone'})`);
+  }
+  if (framing.portrait) check(!menu.scrolls, `on a phone in portrait the dropdown holds its largest group without scrolling${menu.scrolls ? ` (${menu.overflow} points over)` : ''}`);
   await page.screenshot({ path: path.join(outputFolder, `${framing.name}-menu.png`) });
+  // The tabs: Favourites, empty on a first visit, says where to make one; a group's tab holds that group's things; the
+  // card keeps its height and its tabs their place from tab to tab.
+  const tabState = () => page.evaluate(() => {
+    const scale = window.visualViewport ? window.visualViewport.scale : 1;
+    const card = document.getElementById('thing-menu-card');
+    const panel = card.querySelector('[role="tabpanel"]:not(.thing-menu-off)');
+    const onScreen = (element) => { const rect = element.getBoundingClientRect(); return rect.width > 0 && rect.top >= 0 && rect.bottom <= window.innerHeight + 0.5 && rect.left >= 0 && rect.right <= window.innerWidth + 0.5; };
+    return {
+      open: !document.getElementById('thing-menu').hidden,
+      tab: card.querySelector('[role="tab"][aria-selected="true"]')?.dataset.tab, panel: panel?.dataset.tab,
+      tabsTop: Math.round(card.querySelector('.thing-menu-tabs').getBoundingClientRect().top * scale), height: Math.round(card.getBoundingClientRect().height * scale),
+      things: [...(panel?.querySelectorAll('[data-value]') ?? [])].map((pill) => pill.dataset.value),
+      allShown: [...(panel?.querySelectorAll('.thing-pill') ?? [])].every(onScreen),
+      empty: !!panel?.querySelector('.thing-menu-empty') && onScreen(panel.querySelector('.thing-menu-empty')),
+    };
+  });
+  const firstTab = await tabState();
+  await press('#thing-menu [role="tab"][data-tab="favourites"]');
+  const noFavourites = await tabState();
+  await page.screenshot({ path: path.join(outputFolder, `${framing.name}-menu-favourites.png`) });
+  check(noFavourites.open && noFavourites.panel === 'favourites' && noFavourites.empty && noFavourites.things.length === 0 && noFavourites.tabsTop === firstTab.tabsTop && noFavourites.height === firstTab.height,
+    `Favourites with none yet says where to make one (${noFavourites.empty ? 'shown' : 'not shown'}), the card ${noFavourites.height} points tall as the Stones' ${firstTab.height}, its tabs where they were (${noFavourites.tabsTop}, ${firstTab.tabsTop})`);
+  // More favourites than the largest group holds: Favourites scrolls, the card no taller and the star where it was,
+  // so a second press on the star still finds it. Every group's pills, copied in for the measure, then taken out.
+  const crowded = await page.evaluate(() => {
+    const card = document.getElementById('thing-menu-card');
+    const panel = card.querySelector('[role="tabpanel"][data-tab="favourites"]');
+    const star = document.getElementById('thing-now-favourite');
+    const before = { height: card.getBoundingClientRect().height, starTop: star.getBoundingClientRect().top };
+    const kept = [...panel.childNodes];
+    const row = Object.assign(document.createElement('div'), { className: 'thing-menu-pills' });
+    row.append(...[...card.querySelectorAll('[role="tabpanel"]:not([data-tab="favourites"]) [data-value]')].map((pill) => pill.cloneNode(true)));
+    panel.replaceChildren(row);
+    const after = { height: card.getBoundingClientRect().height, starTop: star.getBoundingClientRect().top, pills: row.children.length, scrolls: panel.scrollHeight > panel.clientHeight + 1 };
+    panel.replaceChildren(...kept);
+    return { moved: Math.abs(after.starTop - before.starTop), grew: after.height - before.height, pills: after.pills, scrolls: after.scrolls };
+  });
+  check(crowded.moved < 0.5 && crowded.grew < 0.5 && crowded.scrolls,
+    `Favourites holding ${crowded.pills} things, more than the largest group, scrolls (${crowded.scrolls ? 'scrolls' : 'does not scroll'}) and leaves the card as tall (${crowded.grew.toFixed(1)} points taller) and the star where it was (moved ${crowded.moved.toFixed(1)})`);
+  const lastGroup = offered.at(-1), foodGroup = offered.find((group) => group.name === 'Food') ?? offered[0];
+  await press(`#thing-menu [role="tab"][data-tab="${foodGroup.name}"]`);
+  const groupTab = await tabState();
+  await page.screenshot({ path: path.join(outputFolder, `${framing.name}-menu-group.png`) });
+  check(groupTab.panel === foodGroup.name && groupTab.things.join(', ') === foodGroup.keys.join(', ') && groupTab.allShown && groupTab.tabsTop === firstTab.tabsTop && groupTab.height === firstTab.height,
+    `the ${foodGroup.name} tab holds its ${foodGroup.count} things (${groupTab.things.length}), each on the screen, the card as tall and its tabs where they were`);
+  await press(`#thing-menu [role="tab"][data-tab="${lastGroup.name}"]`);
+  const lastTab = await tabState();
+  check(lastTab.panel === lastGroup.name && lastTab.things.length === lastGroup.count && lastTab.allShown, `the last tab, ${lastGroup.name}, can be reached and holds its ${lastGroup.count} things`);
+  await press('#thing-menu [role="tab"][data-tab="Balls"]');
   const rocksBeforePick = await page.evaluate(() => window.__pond.rocks.length);
-  await press('#thing-menu [data-value="tennis"]');
+  await press('#thing-menu [data-tab="Balls"] [data-value="tennis"]');
   await page.waitForTimeout(150);
   const picked = await page.evaluate(() => ({
     thing: window.__pond.thing, open: !document.getElementById('thing-menu').hidden, expanded: document.getElementById('thing-chip').getAttribute('aria-expanded'),
@@ -369,8 +457,9 @@ for (const framing of FRAMINGS) {
   const toggledShut = await page.evaluate(() => ({ open: !document.getElementById('thing-menu').hidden, expanded: document.getElementById('thing-chip').getAttribute('aria-expanded') }));
   check(toggledOpen && !toggledShut.open && toggledShut.expanded === 'false', `the chip pressed again closes the dropdown (${toggledOpen ? 'opened' : 'did not open'}, then ${toggledShut.open ? 'still open' : 'closed'}, aria-expanded ${toggledShut.expanded})`);
   if (!framing.touch) {
-    // The keyboard: the arrow keys move from pill to pill, Enter chooses, Escape closes; the focus comes back to the chip.
-    const pillOrder = menu.pills.map((pill) => pill.name);
+    // The keyboard: opened again on the tennis ball's group, the arrow keys move from pill to pill, Enter chooses,
+    // Escape closes; the focus comes back to the chip.
+    const pillOrder = offered.find((group) => group.name === 'Balls').keys;
     await page.focus('#thing-chip');
     await page.keyboard.press('Enter');
     await page.waitForTimeout(300);
@@ -388,13 +477,89 @@ for (const framing of FRAMINGS) {
     const escaped = await page.evaluate(() => ({ open: !document.getElementById('thing-menu').hidden, focused: document.activeElement?.id }));
     check(keyedTo === expectedNext && keyedPick.thing === expectedNext && !keyedPick.open && keyedPick.focused === 'thing-chip' && reopened && !escaped.open && escaped.focused === 'thing-chip',
       `from the keyboard: Enter on the chip opens it, ArrowRight moves from tennis to ${keyedTo} (expected ${expectedNext}), Enter throws that next (${keyedPick.thing}, ${keyedPick.open ? 'open' : 'closed'}, focus on ${keyedPick.focused}); Escape closes it (${escaped.open ? 'open' : 'closed'}, focus on ${escaped.focused})`);
+    // On a tab (src/tabs.js): Right and Right go two tabs on, Home to the first, End to the last, each shown with its
+    // panel, the focus on it and remembered for the next visit.
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(300);
+    await page.evaluate(() => document.querySelector('#thing-menu [role="tab"][aria-selected="true"]').focus());
+    const tabKeyState = () => page.evaluate(() => {
+      const card = document.getElementById('thing-menu-card');
+      const selected = card.querySelector('[role="tab"][aria-selected="true"]');
+      const panel = card.querySelector('[role="tabpanel"]:not(.thing-menu-off)');
+      return { tab: selected?.dataset.tab, panel: panel?.dataset.tab, controls: selected?.getAttribute('aria-controls') === panel?.id, focused: document.activeElement === selected, stored: localStorage.getItem('stone-pond-thing-tab'), open: !document.getElementById('thing-menu').hidden };
+    });
+    const tabNames = ['favourites', ...offered.map((group) => group.name)];
+    const startTab = (await tabKeyState()).tab;
+    const tabWalk = [];
+    for (const key of ['ArrowRight', 'ArrowRight', 'Home', 'End']) {
+      await page.keyboard.press(key);
+      tabWalk.push({ key, ...(await tabKeyState()) });
+    }
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(150);
+    const startAt = tabNames.indexOf(startTab);
+    const expectedWalk = [tabNames[startAt + 1], tabNames[startAt + 2], tabNames[0], tabNames.at(-1)];
+    check(tabWalk.every((step, index) => step.tab === expectedWalk[index] && step.panel === step.tab && step.controls && step.focused && step.stored === step.tab && step.open),
+      `from the keyboard on the dropdown's tabs: from ${startTab}, ${tabWalk.map((step) => `${step.key} to ${step.tab} (panel ${step.panel}${step.focused ? ', focused' : ', focus lost'}, remembered ${step.stored})`).join(', ')} (expected ${expectedWalk.join(', ')})`);
   }
   // The river stone again, through the dropdown, for the settings' checks.
   await press('#thing-chip');
   await page.waitForTimeout(300);
-  await press('#thing-menu [data-value="stone"]');
+  await press('#thing-menu [role="tab"][data-tab="Stones"]');
+  await press('#thing-menu [data-tab="Stones"] [data-value="stone"]');
   await page.waitForTimeout(150);
   check(await page.evaluate(() => window.__pond.thing === 'stone' && document.getElementById('thing-menu').hidden), `the river stone chosen again through the dropdown`);
+  // A favourite made with the chosen thing's star is in Favourites at once, the dropdown staying open; unmade, it goes. One
+  // made on What to throw (its star; the chosen thing's ⓘ opens it on it) is in the dropdown's Favourites too,
+  // which it opens on from then; unmade there, Favourites is empty again.
+  await press('#thing-chip');
+  await page.waitForTimeout(300);
+  await press('#thing-menu [role="tab"][data-tab="favourites"]');
+  await press('#thing-now-favourite');
+  const barStarred = await page.evaluate(() => ({
+    open: !document.getElementById('thing-menu').hidden, pressed: document.getElementById('thing-now-favourite').getAttribute('aria-pressed'),
+    things: [...document.querySelectorAll('#thing-menu [role="tabpanel"][data-tab="favourites"] [data-value]')].map((pill) => pill.dataset.value),
+    stored: localStorage.getItem('stone-pond-favourites'), height: Math.round(document.getElementById('thing-menu-card').getBoundingClientRect().height),
+  }));
+  await page.screenshot({ path: path.join(outputFolder, `${framing.name}-menu-starred.png`) });
+  await press('#thing-now-favourite');
+  const barUnstarred = await page.evaluate(() => ({ open: !document.getElementById('thing-menu').hidden, pressed: document.getElementById('thing-now-favourite').getAttribute('aria-pressed'), stored: localStorage.getItem('stone-pond-favourites') }));
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(150);
+  check(barStarred.open && barStarred.pressed === 'true' && barStarred.things.join() === 'stone' && barStarred.stored === '["stone"]' && barStarred.height === firstTab.height && barUnstarred.open && barUnstarred.pressed === 'false' && barUnstarred.stored === '[]',
+    `the chosen thing's star makes it a favourite, in Favourites at once (${barStarred.things.join(', ') || 'none'}, star ${barStarred.pressed}), the dropdown open and as tall (${barStarred.height}), and pressed again unmakes it (${barUnstarred.stored})`);
+  const favouriteState = () => page.evaluate(() => ({
+    tab: document.querySelector('#thing-menu [role="tab"][aria-selected="true"]')?.dataset.tab,
+    things: [...document.querySelectorAll('#thing-menu [role="tabpanel"][data-tab="favourites"] [data-value]')].map((pill) => pill.dataset.value),
+    stored: localStorage.getItem('stone-pond-favourites'),
+  }));
+  const starOnPage = async () => {
+    await press('#thing-chip');
+    await page.waitForTimeout(300);
+    await press('#thing-more');
+    await page.waitForTimeout(400);
+    await press('#thing-favourite');
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(150);
+    await press('#thing-chip');
+    await page.waitForTimeout(300);
+  };
+  await starOnPage();
+  await press('#thing-menu [role="tab"][data-tab="favourites"]');
+  const favourited = await favouriteState();
+  await page.screenshot({ path: path.join(outputFolder, `${framing.name}-menu-favourite.png`) });
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(150);
+  await press('#thing-chip');
+  await page.waitForTimeout(300);
+  const reopened = await favouriteState();
+  await page.keyboard.press('Escape');
+  await starOnPage();
+  const unfavourited = await favouriteState();
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(150);
+  check(favourited.things.join() === 'stone' && favourited.stored === '["stone"]' && reopened.tab === 'favourites' && unfavourited.things.length === 0 && unfavourited.stored === '[]' && unfavourited.tab === 'Stones',
+    `a favourite made on What to throw is in the dropdown's Favourites (${favourited.things.join(', ') || 'none'}), which, shown last, it opens on again (${reopened.tab}); unmade, it opens on the chosen thing's group (${unfavourited.tab})`);
 
   await press('#menu-button');
   await page.waitForTimeout(400);
@@ -461,29 +626,58 @@ for (const framing of FRAMINGS) {
   await page.waitForTimeout(400);
   await press('#settings .menu-tier[data-open="water"]');
   await page.waitForTimeout(400);
-  // The Object page (src/things.js): its folds and a pictured choice for each thing offered; each sets what is thrown, and the strip's slider follows it.
+  // The Object page (src/things.js): its tabs and a pictured choice for each thing offered; each sets what is thrown, and the strip's slider follows it.
   await press('.menu-page[data-page="water"] .menu-back');
   await page.waitForTimeout(400);
   await press('#settings .menu-tier[data-open="thing"]');
   await page.waitForTimeout(400);
-  // Its folds (src/things.js groups): the chosen thing's open alone; with the Stones open (the first, the river stone's), a
-  // phone in portrait sees the whole page without scrolling. A fold of more cards (Other's) scrolls under the page's head:
-  // with Apple's 44-point cards it cannot fit an iPhone SE.
-  const folds = await page.evaluate(() => {
+  // Its tabs (src/things.js groups), the chosen thing's group shown alone: with the Stones shown (the first, the river
+  // stone's) a phone in portrait sees the whole page without scrolling, however many groups there are (the tabs are one
+  // row). A group of more cards (Food's) scrolls under the page's head: with Apple's 44-point cards it cannot fit an
+  // iPhone SE.
+  const shownGroups = () => page.evaluate(() => {
     const panel = document.getElementById('settings');
-    return { names: [...document.querySelectorAll('#thing .menu-group')].map((fold) => fold.dataset.group), open: [...document.querySelectorAll('#thing .menu-group[open]')].map((fold) => fold.dataset.group), scrolls: panel.scrollHeight > panel.clientHeight + 1 };
+    return {
+      names: [...document.querySelectorAll('#thing-tabs [role="tab"]')].map((tab) => tab.textContent),
+      selected: [...document.querySelectorAll('#thing-tabs [role="tab"][aria-selected="true"]')].map((tab) => tab.dataset.group),
+      shown: [...document.querySelectorAll('#thing .menu-group:not([hidden])')].map((group) => group.dataset.group),
+      tabRows: new Set([...document.querySelectorAll('#thing-tabs [role="tab"]')].map((tab) => Math.round(tab.offsetTop))).size,
+      scrolls: panel.scrollHeight > panel.clientHeight + 1, overflow: panel.scrollHeight - panel.clientHeight,
+    };
   });
-  check(folds.names.join(', ') === offered.map((group) => group.name).join(', ') && folds.open.length === 1 && folds.open[0] === 'Stones', `the Object page folds its things into ${folds.names.join(', ')}, the chosen one's open (${folds.open.join(', ')})`);
-  if (framing.portrait) check(!folds.scrolls, 'with the Stones open the Object page fits a phone in portrait without scrolling');
-  // Each fold opened in turn (the others shut), each of its cards scrolled to.
+  const groupsShown = await shownGroups();
+  check(groupsShown.names.join(', ') === offered.map((group) => group.name).join(', ') && groupsShown.tabRows === 1 && groupsShown.selected.join() === 'Stones' && groupsShown.shown.join() === 'Stones',
+    `the Object page's tabs are ${groupsShown.names.join(', ')} in one row, the chosen thing's group shown alone (${groupsShown.selected.join(', ')}; ${groupsShown.shown.join(', ')})`);
+  if (framing.portrait) check(!groupsShown.scrolls, `with the Stones shown the Object page fits a phone in portrait without scrolling${groupsShown.scrolls ? ` (${groupsShown.overflow} points over)` : ''}`);
+  // A tab pressed shows its group without choosing in it.
+  await press('#thing-tabs [role="tab"][data-group="Balls"]');
+  const browsed = await shownGroups();
+  const browsedThing = await page.evaluate(() => window.__pond.thing);
+  check(browsed.selected.join() === 'Balls' && browsed.shown.join() === 'Balls' && browsedThing === 'stone', `a tab pressed shows its group (${browsed.shown.join(', ')}) and chooses nothing (${browsedThing})`);
+  // The Tab key reaches a browsed group's cards (its first, the chosen thing being elsewhere), and the dropdown's ⓘ, about
+  // the chosen thing, shows the chosen thing's group again, its card focused (review: it opened on the group browsed, the
+  // chosen card hidden and the focus lost).
+  const browsedTabStop = await page.evaluate(() => [...document.querySelectorAll('#thing .menu-group:not([hidden]) [role="radio"]')].filter((card) => card.tabIndex === 0).map((card) => card.dataset.value));
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(150);
+  await press('#thing-chip');
+  await page.waitForTimeout(300);
+  await press('#thing-more');
+  await page.waitForTimeout(400);
+  const backToChosen = await shownGroups();
+  const chosenFocus = await page.evaluate(() => document.activeElement?.dataset?.value);
+  check(browsedTabStop.join() === 'golf' && backToChosen.selected.join() === 'Stones' && backToChosen.shown.join() === 'Stones' && chosenFocus === 'stone',
+    `the Tab key reaches a browsed group's first card (${browsedTabStop.join(', ') || 'none'}), and the ⓘ opens on the chosen thing's group (${backToChosen.shown.join(', ')}), its card focused (${chosenFocus})`);
+  // Each group shown in turn (the others hidden), each of its cards scrolled to.
   const things = await page.evaluate(async () => {
     const scale = window.visualViewport ? window.visualViewport.scale : 1;
     const placed = [];
-    for (const fold of document.querySelectorAll('#thing .menu-group')) {
-      fold.open = true;
+    for (const tab of document.querySelectorAll('#thing-tabs [role="tab"]')) {
+      tab.click();
       await new Promise((resolve) => setTimeout(resolve, 50));
-      const others = [...document.querySelectorAll('#thing .menu-group[open]')].filter((other) => other !== fold).length;
-      for (const choice of fold.querySelectorAll('[role="radio"]')) {
+      const group = document.querySelector(`#thing .menu-group[data-group="${tab.dataset.group}"]`);
+      const others = [...document.querySelectorAll('#thing .menu-group:not([hidden])')].filter((other) => other !== group).length;
+      for (const choice of group.querySelectorAll('[role="radio"]')) {
         choice.scrollIntoView({ block: 'nearest' });
         const box = choice.getBoundingClientRect();
         // Its name and note each on one line, whole (not cut short: scrollWidth beyond its box).
@@ -491,11 +685,12 @@ for (const framing of FRAMINGS) {
         placed.push({ name: choice.dataset.value, others, cut, left: box.left * scale, right: box.right * scale, top: box.top * scale, bottom: box.bottom * scale, height: box.height * scale });
       }
     }
+    document.querySelector('#thing-tabs [data-group="Stones"]').click();
     document.getElementById('settings').scrollTop = 0;
     return placed;
   });
   const [thingPanel] = await boxes('#settings');
-  check(onScreen(thingPanel) && things.length === offeredCount && things.every(onScreen) && things.every((choice) => choice.others === 0) && (!framing.touch || things.every((choice) => choice.height >= SMALLEST_BUTTON_HEIGHT - 0.5)), `the Object page is on the screen, each of its ${offeredCount} choices (${things.length}) once its fold is open (the others shut) and it is scrolled to${framing.touch ? `, at least ${SMALLEST_BUTTON_HEIGHT} points tall` : ''}`);
+  check(onScreen(thingPanel) && things.length === offeredCount && things.every(onScreen) && things.every((choice) => choice.others === 0) && (!framing.touch || things.every((choice) => choice.height >= SMALLEST_BUTTON_HEIGHT - 0.5)), `the Object page is on the screen, each of its ${offeredCount} choices (${things.length}) once its group is shown (the others hidden) and it is scrolled to${framing.touch ? `, at least ${SMALLEST_BUTTON_HEIGHT} points tall` : ''}`);
   // Every card one height (review: a note on two lines made its card taller than the rest), each line whole.
   const heights = things.map((choice) => choice.height), cut = things.filter((choice) => choice.cut).map((choice) => choice.name);
   check(Math.max(...heights) - Math.min(...heights) < 0.5 && cut.length === 0, `What to throw's cards are one height (${Math.min(...heights).toFixed(1)} to ${Math.max(...heights).toFixed(1)} points), their names and notes whole${cut.length ? `; cut short: ${cut.join(', ')}` : ''}`);
@@ -538,8 +733,8 @@ for (const framing of FRAMINGS) {
     ['stone', { row: 'River stone', label: 'Rock', disabled: false, minimum: 1.5, maximum: 30 }],
   ]) {
     const { steps, ...wanted } = expected;
-    // The strip's chip opens What to throw at once, the choice's fold open; a tap on its card chooses it and shows it
-    // over the folds (the settings stay open), Use closes them, and the next tap on the water throws it.
+    // The strip's chip opens What to throw at once, the choice's group shown; a tap on its card chooses it and shows it
+    // over the groups (the settings stay open), Use closes them, and the next tap on the water throws it.
     if (await page.evaluate(() => document.getElementById('settings').hidden)) {
       await press('#thing-chip');
       await page.waitForTimeout(300);
@@ -547,8 +742,9 @@ for (const framing of FRAMINGS) {
       await page.waitForTimeout(400);
     }
     const onPage = await page.evaluate(() => !document.querySelector('.menu-page[data-page="thing"]').hidden && document.getElementById('thing-menu').hidden);
-    check(onPage, `the dropdown's foot opens What to throw at once (${onPage ? 'its page' : 'not it'})`);
-    await page.evaluate((value) => { document.querySelector(`#thing [data-value="${value}"]`).closest('details').open = true; }, choice);
+    check(onPage, `the dropdown's ⓘ opens What to throw at once (${onPage ? 'its page' : 'not it'})`);
+    const group = await page.evaluate((value) => document.querySelector(`#thing [data-value="${value}"]`).closest('.menu-group').dataset.group, choice);
+    await press(`#thing-tabs [role="tab"][data-group="${group}"]`);
     await page.waitForTimeout(80);
     if (choice === 'bowling') await page.screenshot({ path: path.join(outputFolder, `${framing.name}-throw.png`) });
     await press(`#thing [data-value="${choice}"]`);
@@ -595,7 +791,7 @@ for (const framing of FRAMINGS) {
   await page.waitForTimeout(150);
   const quickPicked = await page.evaluate(() => ({ thing: window.__pond.thing, closed: document.getElementById('settings').hidden }));
   check(quick.length >= 4 && quick.includes('pizza') && quickPicked.thing === 'pizza' && quickPicked.closed, `the latest choices sit at the top (${quick.join(', ')}), and one tapped is thrown at once (${quickPicked.thing}, ${quickPicked.closed ? 'closed' : 'open'})`);
-  // What to throw opened from the chip (the dropdown's foot): the chip pressed again closes it (its press is not one outside
+  // What to throw opened from the chip (the dropdown's ⓘ): the chip pressed again closes it (its press is not one outside
   // the panel, src/settingsPanel.js), where the open panel leaves it uncovered; where the panel covers it, its ‹ closes it.
   await press('#thing-chip');
   await page.waitForTimeout(300);
@@ -625,7 +821,7 @@ for (const framing of FRAMINGS) {
   // it cannot skip, so the manner goes back to Toss, and Skip, pressed, stays off and says why.
   await page.evaluate(() => {
     const card = document.querySelector('#thing [data-value="pie"]');
-    card.closest('details').open = true;
+    document.querySelector(`#thing-tabs [data-group="${card.closest('.menu-group').dataset.group}"]`).click();
     card.click();
     document.getElementById('thing-use').click();
   });
@@ -636,8 +832,8 @@ for (const framing of FRAMINGS) {
   const skipHint = await page.evaluate(() => ({ skipping: window.__pond.skipping, pressed: document.querySelector('#manner [aria-pressed="true"]')?.dataset.value, shown: !document.getElementById('hint').hidden, text: document.getElementById('hint').textContent }));
   check(!pieKind.skipping && pieKind.pressed === 'toss' && !skipHint.skipping && skipHint.pressed === 'toss' && skipHint.shown && skipHint.text.startsWith('A pie does not skip'),
     `a pie chosen while skipping goes back to Toss (${pieKind.pressed}), and Skip pressed with it stays off and says why ("${skipHint.text}")`);
-  // Arrow keys cross from one fold into the next (src/settingsPanel.js radioGroup): the next fold opens, the focus moves into
-  // it and the next press carries on from there.
+  // Arrow keys cross from one group into the next (src/settingsPanel.js radioGroup): the next group's tab is shown, the focus
+  // moves into it and the next press carries on from there.
   await press('#menu-button');
   await page.waitForTimeout(400);
   await press('#settings .menu-tier[data-open="thing"]');
@@ -656,10 +852,10 @@ for (const framing of FRAMINGS) {
   for (let pressCount = 0; pressCount < 2; pressCount++) {
     await page.keyboard.press('ArrowDown');
     await page.waitForTimeout(80);
-    keyed.push(await page.evaluate(() => ({ thing: window.__pond.thing, focused: document.activeElement?.dataset?.value, open: [...document.querySelectorAll('#thing .menu-group[open]')].map((fold) => fold.dataset.group) })));
+    keyed.push(await page.evaluate(() => ({ thing: window.__pond.thing, focused: document.activeElement?.dataset?.value, open: [...document.querySelectorAll('#thing .menu-group:not([hidden])')].map((group) => group.dataset.group), tab: document.querySelector('#thing-tabs [aria-selected="true"]')?.dataset.group })));
   }
-  const keyedRight = keyed.every((step, stepIndex) => step.thing === order[start + 1 + stepIndex] && step.focused === step.thing && step.open.length === 1 && step.open[0] === 'Balls');
-  check(keyedRight, `ArrowDown from the last stone opens Balls and moves the focus into it, and the next press carries on (${keyed.map((step) => `${step.thing}, focus ${step.focused}, open ${step.open.join('+')}`).join('; ')})`);
+  const keyedRight = keyed.every((step, stepIndex) => step.thing === order[start + 1 + stepIndex] && step.focused === step.thing && step.open.length === 1 && step.open[0] === 'Balls' && step.tab === 'Balls');
+  check(keyedRight, `ArrowDown from the last stone shows Balls (its tab too) and moves the focus into it, and the next press carries on (${keyed.map((step) => `${step.thing}, focus ${step.focused}, open ${step.open.join('+')}`).join('; ')})`);
   await page.evaluate(() => document.querySelector('#thing [data-value="stone"]').click());   // the river stone again; the click closes the settings
   if (!(await page.evaluate(() => document.getElementById('settings').hidden))) await press('#menu-button');
   await page.waitForTimeout(400);
