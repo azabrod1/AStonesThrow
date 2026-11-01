@@ -2208,6 +2208,7 @@ float floorDepthAt(vec2 point) {
 const FLOOR_SAND = /* glsl */`
 uniform sampler2D uPattern;
 uniform vec4 uBedTint;
+uniform vec2 uBedDetail;   // grain and silt contrast, shared by dry land and the submerged bed
 #define PATTERN_TURN mat2(0.8, 0.6, -0.6, 0.8)   // the second lookup's tiles, turned 37° off the first's...
 #define PATTERN_SHIFT vec2(0.37, 0.71)           // ...and shifted, in tiles
 #define PATTERN_PATCHES 0.6                      // per metre: the noise choosing between the two lookups
@@ -2218,9 +2219,9 @@ vec3 floorSand(vec2 point) {
   vec3 turned = texture2D(uPattern, PATTERN_TURN * tilePoint + PATTERN_SHIFT).rgb;
   float lookup = smoothstep(0.42, 0.58, valueNoise(point * PATTERN_PATCHES + 17.0));
   float silt = valueNoise(point * SILT_FREQUENCY + 3.0);
-  vec3 sand = mix(straight, turned, lookup);
+  vec3 sand = mix(vec3(0.35, 0.30, 0.22) / PATTERN_RANGE, mix(straight, turned, lookup), uBedDetail.x);
   sand = mix(sand, vec3(dot(sand, vec3(0.2126, 0.7152, 0.0722))), uBedTint.w) * uBedTint.rgb;
-  return sand * (0.75 + 0.45 * silt);
+  return sand * (0.975 + 0.45 * (silt - 0.5) * uBedDetail.y);
 }
 `;
 
@@ -2701,6 +2702,8 @@ void main() {
 // sunlight crossed the surface. Off (uPalmShadowOn 0) at every other place.
 const PALM_SHADOW = /* glsl */`
 uniform sampler2D uPalmShadow;
+uniform sampler2D uPalmShadowNear;
+uniform vec4 uPalmShadowNearBox;
 uniform vec4 uPalmShadowBox;   // the mask's least x and z, and 1 / its size in x and z (m)
 uniform float uPalmShadowOn;
 /** The share of the sun the palms keep off a point whose sun ray crosses the water's level at atLevel (world XZ). */
@@ -2708,7 +2711,13 @@ float palmShadow(vec2 atLevel) {
   if (uPalmShadowOn < 0.5) return 0.0;
   vec2 maskPoint = (atLevel - uPalmShadowBox.xy) * uPalmShadowBox.zw;
   vec2 fromEdge = min(maskPoint, 1.0 - maskPoint);   // faded out over its last 2%, so its edge draws no line
-  return (1.0 - texture2D(uPalmShadow, clamp(maskPoint, 0.0, 1.0)).r) * smoothstep(0.0, 0.02, min(fromEdge.x, fromEdge.y));
+  float farShadow = (1.0 - texture2D(uPalmShadow, clamp(maskPoint, 0.0, 1.0)).r) * smoothstep(0.0, 0.02, min(fromEdge.x, fromEdge.y));
+  vec2 nearPoint = (atLevel - uPalmShadowNearBox.xy) * uPalmShadowNearBox.zw;
+  vec2 nearEdge = min(nearPoint, 1.0 - nearPoint);
+  float nearWeight = smoothstep(0.0, 0.06, min(nearEdge.x, nearEdge.y));
+  if (nearWeight <= 0.0) return farShadow;
+  float nearShadow = 1.0 - texture2D(uPalmShadowNear, clamp(nearPoint, 0.0, 1.0)).r;
+  return mix(farShadow, nearShadow, nearWeight);
 }
 `;
 

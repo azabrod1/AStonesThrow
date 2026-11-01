@@ -1312,6 +1312,22 @@ of detail coarser. The Wind control bends each trunk along the wind as a
 cantilever, with a slow sway of its own and slow gusts, and flutters its
 fronds. Nothing of it has a body for the physics.
 
+Close trunks have cylindrical bark coordinates, filtered surface relief (leaf
+scars wandering by noise round the trunk, a darker root collar) and extra
+samples in the root flare. Coconut husks have outward-facing triangles, smooth
+ridged normals and fibrous shading. Fallen husks are mostly dried brown and
+weathered grey, a few fresh green; each is an instance culled on its own, with
+a coarse husk past 35 m. A 1024² foreground shadow mask covers 64 m beside the
+full-beach mask, resolving roots and coconuts without increasing the full
+mask's size. Coral sand reduces the lake bed's grain and silt contrast, on land
+and under water alike. The beach faces upward, and camera culling always
+restores instances from the original placement data. `node
+tools/tropics-probe.mjs` checks winding, finite geometry, camera round trips and
+the scenery budget. Distant crowns use fewer segments; the central beach mesh
+starts at 25 cm instead of densely subdividing the first 5 cm. At 1280 × 720 on
+High, the idle home view draws 83 calls and about 515k triangles (79 and 569k
+before these changes), with the same 77 warm-up programs.
+
 **From under the water** (the Under view; `renderFromBelow` in `src/main.js`,
 `UNDER_FOG` and `WATER_UNDER_FRAGMENT` in `src/shaders/scene.js`). The water's
 own light, darker looking down and brighter looking up toward the surface,
@@ -1391,8 +1407,10 @@ farther out, so it rises into the view rather than filling its corner.
   `tools/ring-probe.mjs`, `tools/rain-probe.mjs`, `tools/snow-probe.mjs`,
   `tools/gale-probe.mjs`, `tools/skip-probe.mjs`, `tools/thing-probe.mjs`,
   `tools/ice-probe.mjs`, `tools/spray-probe.mjs`, `tools/jet-probe.mjs`,
-  `tools/drop-ring-probe.mjs`, `tools/fish-probe.mjs` and
-  `tools/garden-probe.mjs`;
+  `tools/drop-ring-probe.mjs`, `tools/fish-probe.mjs`,
+  `tools/garden-probe.mjs` and `tools/tropics-probe.mjs` (the lagoon's land
+  and husks face out, every instance comes back as the camera turns, the
+  home view's scenery stays in its triangle budget);
   each exits with 1 if a check fails. `tools/run-probes.mjs` runs them side
   by side, as many at once as the machine has cores (`PROBE_JOBS=1` runs
   them one after another), each one's output printed whole when it ends,

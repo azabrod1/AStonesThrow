@@ -29,7 +29,11 @@
 // skirt of old frond bases at its top; a crown of FRONDS fronds round it by
 // the golden angle, the youngest up, the oldest hanging and yellowing, a dead
 // one or two hanging brown along the trunk; and a bunch of coconuts in the
-// crown. Every number comes from its own seeded stream (seededRandom), never
+// crown. Near trunks have a finely sampled root flare; bark and husks use
+// surface coordinates with filtered normal relief (WOOD_SURFACE), and coconut
+// triangles face outwards. Fallen husks, mostly dried brown, are individually
+// culled instances, coarser past LODS[1].from.
+// Every number comes from its own seeded stream (seededRandom), never
 // Math.random. A few variants (PALMS) are built, each at three levels of
 // detail (LODS), and every palm is an instance of one of them, turned to
 // lean where it stands toward the water and scaled; its level is chosen by
@@ -60,7 +64,8 @@
 // the water's level, the light it lets through multiplied in. The land's and
 // the floor's shaders look a point up where the sun's ray through it meets
 // that level (PALM_SHADOW in src/shaders/scene.js and src/pondFloor.js); the
-// water's own shader is untouched.
+// water's own shader is untouched. A 64 m foreground mask resolves root and
+// coconut contact shadows at 6.25 cm without enlarging the full beach mask.
 //
 // Low quality (setCoarse, a preset's `sceneryCoarse`): every palm and mound
 // a level of detail coarser.
@@ -68,8 +73,9 @@
 // Meshes (`above`), on two programs (the leaves; the wood, the coconuts, the
 // motus' sand and the high island, whose colours are their vertices'):
 // every palm variant at each level, two instanced meshes each, the scrub at
-// each level, and one instance each of the fallen coconuts, the motus' sand
-// and the high island, laid out in the world; in the main scene and on the
+// each level, the fallen coconuts (a mesh a colour, near and far: FALLEN),
+// and one instance each of the motus' sand and the high island, laid out in
+// the world; in the main scene and on the
 // mirror layer. When the camera moves (cull, each frame from src/main.js
 // render), each mesh keeps only the instances the camera sees, or sees in
 // the water's mirror, packed at the front of its instances: one draw a mesh.
@@ -246,15 +252,16 @@ export const PALMS = [
 // plane; 3: folded), the rachis's sides (0: none), the trunk's sides and rows, coconuts and their facets; and from how
 // far from the shore view's eye (m) a palm is drawn at it.
 export const LODS = [
-  { from: 0, fronds: 1, segments: 14, columns: 3, rachis: 3, around: 10, rows: 34, nuts: 12, nutFacets: [5, 8] },
-  { from: 35, fronds: 0.75, segments: 7, columns: 2, rachis: 0, around: 6, rows: 12, nuts: 3, nutFacets: [3, 4] },
-  { from: 110, fronds: 0.5, segments: 3, columns: 2, rachis: 0, around: 4, rows: 4, nuts: 0, nutFacets: [0, 0] },
+  { from: 0, fronds: 1, segments: 14, columns: 3, rachis: 3, around: 24, rows: 42, nuts: 8, nutFacets: [10, 16] },
+  { from: 35, fronds: 0.75, segments: 7, columns: 2, rachis: 0, around: 10, rows: 16, nuts: 3, nutFacets: [6, 10] },
+  { from: 110, fronds: 0.45, segments: 2, columns: 2, rachis: 0, around: 4, rows: 4, nuts: 0, nutFacets: [0, 0] },
 ];
 const TRUNK = { foot: 0.22, flare: 0.22, flareHeight: 0.07, top: 0.15, ring: 0.085 };   // radius (m) at the foot above the flare, the flare's, its height (share), at the top; rings' spacing (m)
 const FROND = { length: [4.4, 6.0], longest: 1.15, bare: 0.1, fold: [18, -62], droop: [25, 115], leafletDroop: 0.45 };   // m; m; share; degrees at base and tip; degrees young to old; share of a leaflet's length its tip hangs
 const COLORS = {
   trunk: [0.32, 0.28, 0.22], trunkTop: [0.27, 0.22, 0.16], fibre: [0.20, 0.13, 0.07], rachis: [0.30, 0.30, 0.10], rachisOld: [0.36, 0.30, 0.12], dead: [0.32, 0.22, 0.11],
   nut: [[0.20, 0.26, 0.06], [0.34, 0.30, 0.07], [0.42, 0.24, 0.07], [0.24, 0.16, 0.08]],   // green, yellow-green, orange, brown
+  fallen: [[0.27, 0.18, 0.10], [0.36, 0.30, 0.22], [0.25, 0.27, 0.08]],   // on the sand: dried brown husks, weathered grey ones, a few fresh green
 };
 
 /** Accumulates a mesh's vertices: position, normal, colour, uv (leaves) and the wind's weights. */
@@ -312,15 +319,17 @@ function palmGeometry(variant, lod, stream) {
   // The trunk's axis: marched up, its angle from upright easing from `lean` at the foot by `curve` toward the top,
   // with a little wander of its own.
   const rows = lod.rows, axis = [], tangents = [];
+  // More of the longitudinal samples near the foot resolve the root flare.
+  const shares = Array.from({ length: rows + 1 }, (_, row) => (row / rows) ** 1.4);
   const wander = stream() * 10;
   const point = new THREE.Vector3();
   for (let row = 0; row <= rows; row++) {
-    const share = row / rows;
+    const share = shares[row];
     const angle = THREE.MathUtils.degToRad(lean) * (1 - curve * share * share) + 0.035 * Math.sin(share * 7 + wander);
     const tangent = new THREE.Vector3(Math.sin(angle), Math.cos(angle), 0.04 * Math.sin(share * 5 + wander * 1.3)).normalize();
     axis.push(point.clone());
     tangents.push(tangent);
-    point.addScaledVector(tangent, height / rows);
+    if (row < rows) point.addScaledVector(tangent, height * (shares[row + 1] - share));
   }
   const top = axis[rows].clone();
   const topTangent = tangents[rows];
@@ -328,22 +337,27 @@ function palmGeometry(variant, lod, stream) {
   // The trunk: a tube, flared at its foot, its colour paler and greyer below (weathered), browner under the crown.
   const firstTrunk = wood.positions.length / 3;
   for (let row = 0; row <= rows; row++) {
-    const share = row / rows;
+    const share = shares[row];
     const flareShare = Math.max(1 - share / TRUNK.flareHeight, 0);
     const radius = TRUNK.foot + (TRUNK.top - TRUNK.foot) * share ** 0.7 + TRUNK.flare * flareShare ** 2;
     const tangent = tangents[row];
     const across = new THREE.Vector3(0, 0, 1).addScaledVector(tangent, -tangent.z).normalize();
     const over = new THREE.Vector3().crossVectors(tangent, across).normalize();
     const color = mixColor(COLORS.trunk, COLORS.trunkTop, share ** 3);
-    for (let around = 0; around < lod.around; around++) {
+    for (let around = 0; around <= lod.around; around++) {
       const turn = (around / lod.around) * Math.PI * 2;
       const normal = across.clone().multiplyScalar(Math.cos(turn)).addScaledVector(over, Math.sin(turn));
-      const at = axis[row].clone().addScaledVector(normal, radius);
+      const rootRibs = 1 + 0.08 * flareShare * Math.cos(turn * 7 + wander);
+      const at = axis[row].clone().addScaledVector(normal, radius * rootRibs);
+      // The flare slopes out: its normal includes that slope, not just a cylinder's radial normal.
+      const radiusSlope = -(TRUNK.foot - TRUNK.top) * 0.7 * Math.max(share, 0.001) ** -0.3 / height
+        - 2 * TRUNK.flare * flareShare / (TRUNK.flareHeight * height);
+      normal.addScaledVector(tangent, -radiusSlope).normalize();
       if (row === 0) at.y -= 0.15;   // sunk into the sand
-      wood.vertex(at, normal, shade(color, 0.92 + 0.16 * stream()), [0, 0], swayAt(at.y), share * height);
+      wood.vertex(at, normal, shade(color, 0.94 + 0.06 * Math.sin(share * 19 + wander)), [around / lod.around, share * height], swayAt(at.y), share * height);
     }
   }
-  wood.grid(firstTrunk, rows + 1, lod.around, true);
+  wood.grid(firstTrunk, rows + 1, lod.around + 1);
   // The skirt of old frond bases at the top: a short flared sleeve of fibre.
   if (lod.around >= 6) {
     const firstSkirt = wood.positions.length / 3;
@@ -383,7 +397,7 @@ function palmGeometry(variant, lod, stream) {
     const angle = stream() * Math.PI * 2, out = 0.2 + 0.18 * stream();
     const centre = top.clone().addScaledVector(topTangent, -0.25 - 0.35 * stream()).add(new THREE.Vector3(Math.cos(angle) * out, 0, Math.sin(angle) * out));
     const color = COLORS.nut[Math.floor(stream() * (stream() < 0.7 ? 2 : 4))];
-    coconut(wood, centre, 0.13 + 0.03 * stream(), new THREE.Vector3(Math.cos(angle), -1.2, Math.sin(angle)).normalize(), shade(color, 0.85 + 0.3 * stream()), lod.nutFacets, swayAt(centre.y), stream);
+    coconut(wood, centre, 0.13 + 0.03 * stream(), new THREE.Vector3(Math.cos(angle), -1.2, Math.sin(angle)).normalize(), shade(color, 0.85 + 0.3 * stream()), lod.nutFacets, swayAt(centre.y));
   }
   return { leaves: leaves.geometry(), wood: wood.geometry(), top };
 }
@@ -458,7 +472,7 @@ function frond(leaves, wood, lod, { top, topTangent, azimuth, rise, length, droo
 }
 
 /** A coconut: an egg of `radius` pointing along `axis`, its husk's three ridges, in `facets` (rings, around). */
-function coconut(parts, centre, radius, axis, color, [rings, around], sway, stream) {
+function coconut(parts, centre, radius, axis, color, [rings, around], sway) {
   if (rings === 0) return;
   const side = new THREE.Vector3().crossVectors(axis, UP).normalize();
   if (side.lengthSq() < 0.5) side.set(1, 0, 0);
@@ -466,16 +480,38 @@ function coconut(parts, centre, radius, axis, color, [rings, around], sway, stre
   const first = parts.positions.length / 3;
   for (let ring = 0; ring <= rings; ring++) {
     const polar = (ring / rings) * Math.PI;
-    for (let column = 0; column < around; column++) {
+    for (let column = 0; column <= around; column++) {
       const turn = (column / around) * Math.PI * 2;
       const ridge = 1 + 0.06 * Math.cos(3 * turn);
       const along = Math.cos(polar) * 1.25 * (polar < Math.PI / 2 ? 1 : 0.85);
       const normal = axis.clone().multiplyScalar(Math.cos(polar)).addScaledVector(side, Math.sin(polar) * Math.cos(turn)).addScaledVector(over, Math.sin(polar) * Math.sin(turn)).normalize();
       const at = centre.clone().addScaledVector(axis, along * radius).addScaledVector(side, Math.sin(polar) * Math.cos(turn) * radius * ridge).addScaledVector(over, Math.sin(polar) * Math.sin(turn) * radius * ridge);
-      parts.vertex(at, normal, shade(color, 0.9 + 0.2 * stream()), [0, 0], sway);
+      parts.vertex(at, normal, color, [column / around, ring / rings], sway, -2);
     }
   }
-  parts.grid(first, rings + 1, around, true);
+  const firstIndex = parts.indices.length;
+  parts.grid(first, rings + 1, around + 1);
+  // Polar rows run from the tip down: the usual tube grid faces inward here.
+  for (let index = firstIndex; index < parts.indices.length; index += 3) {
+    [parts.indices[index + 1], parts.indices[index + 2]] = [parts.indices[index + 2], parts.indices[index + 1]];
+  }
+  // Area-weighted surface normals follow the egg's elongation and three ridges.
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(parts.positions.slice(first * 3), 3));
+  geometry.setIndex(parts.indices.slice(firstIndex).map((index) => index - first));
+  geometry.computeVertexNormals();
+  const normals = geometry.attributes.normal;
+  for (let row = 0; row <= rings; row++) {
+    const start = first + row * (around + 1), end = start + around;
+    const normal = new THREE.Vector3().fromBufferAttribute(normals, start - first).add(new THREE.Vector3().fromBufferAttribute(normals, end - first)).normalize();
+    if (row === 0 || row === rings) normal.copy(axis).multiplyScalar(row === 0 ? 1 : -1);
+    for (let column = 0; column <= around; column++) {
+      const vertex = start + column;
+      const value = row === 0 || row === rings || column === 0 || column === around ? normal : new THREE.Vector3().fromBufferAttribute(normals, vertex - first);
+      parts.normals.splice(vertex * 3, 3, value.x, value.y, value.z);
+    }
+  }
+  geometry.dispose();
 }
 
 // ---- The light and the wind ----------------------------------------------
@@ -496,6 +532,58 @@ const LEAF_LIGHT = { crown: 0.35, through: 0.35, tint: [1.25, 1.35, 0.55] };
 const GROUND_BOUNCE = 0.7;
 const SKY_LIGHT = 1.4;   // the sky's light on level ground per unit of its mean radiance, as LAND_FRAGMENT's
 
+// Analytic bark and husk detail: no extra texture fetches, faded below a pixel.
+// Coordinates follow the surface; all circumferential frequencies wrap at its seam.
+const WOOD_SURFACE = /* glsl */`
+float woodNoise(vec2 point) {
+  vec2 cell = floor(point), fraction = fract(point);
+  fraction = fraction * fraction * (3.0 - 2.0 * fraction);
+  vec4 seeds = vec4(dot(cell, vec2(127.1, 311.7)), dot(cell + vec2(1.0, 0.0), vec2(127.1, 311.7)),
+    dot(cell + vec2(0.0, 1.0), vec2(127.1, 311.7)), dot(cell + 1.0, vec2(127.1, 311.7)));
+  vec4 values = fract(sin(seeds) * 43758.5453);
+  return mix(mix(values.x, values.y, fraction.x), mix(values.z, values.w, fraction.x), fraction.y);
+}
+// Brightness, height in metres and roughness offset.
+vec3 woodSurface(vec2 surfaceUv, float kind) {
+  float angle = surfaceUv.x * 6.2831853;
+  // Evaluate derivatives outside material branches; distant surfaces keep only the average tone.
+  vec2 footprint = fwidth(surfaceUv);
+  float height = 0.0, tone = 1.0, roughness = 0.0;
+  if (kind >= 0.0) {
+    float along = surfaceUv.y;
+    vec2 grainPoint = vec2(cos(angle) * 3.0 + sin(angle * 3.0), along * 6.0 + sin(angle) * 2.0);
+    float mottle = woodNoise(grainPoint);
+    // The scars' wander up and round the trunk: noise on the circle (seamless), not harmonics, which read as a zigzag.
+    vec2 around = vec2(cos(angle), sin(angle));
+    float phase = along / ${TRUNK.ring.toFixed(3)} + 0.28 * sin(along * 1.7) + 0.45 * woodNoise(around * 1.2 + vec2(along * 0.9, 7.0))
+      + 0.12 * woodNoise(around * 3.0 + vec2(13.0, along * 3.0));
+    float ringWidth = footprint.y / ${TRUNK.ring.toFixed(3)} + footprint.x * 4.0;
+    float resolved = 1.0 - smoothstep(0.15, 0.85, ringWidth);
+    float distanceToScar = abs(fract(phase + 0.5) - 0.5);
+    float scar = (1.0 - smoothstep(0.025, 0.10 + ringWidth * 0.3, distanceToScar)) * resolved;
+    float lip = exp(-pow((distanceToScar - 0.13) / 0.07, 2.0)) * resolved;
+    float fibrePhase = angle * 67.0 + 2.0 * sin(along * 8.0 + angle * 3.0);
+    float fibres = sin(fibrePhase) * (1.0 - smoothstep(0.15, 0.7, footprint.x * 67.0 + footprint.y * 3.0));
+    tone = (0.68 + 0.52 * mottle) * (1.0 - (0.16 + 0.15 * mottle) * scar + 0.05 * lip + 0.025 * fibres);
+    // A darker fibrous root collar, fading smoothly to weathered grey bark.
+    tone *= mix(0.72, 1.0, smoothstep(0.0, 0.65, along));
+    height = -0.003 * scar + 0.0018 * lip + 0.0003 * fibres;
+  } else if (kind < -1.5) {
+    float polar = surfaceUv.y;
+    float fibrePhase = angle * 83.0 + 1.2 * sin(polar * 32.0 + angle * 3.0);
+    float resolved = (1.0 - smoothstep(0.15, 0.8, footprint.x * 83.0 + footprint.y * 6.0)) * sin(polar * 3.14159265);
+    float fibres = sin(fibrePhase) * resolved;
+    float mottle = woodNoise(vec2(cos(angle) * 5.0 + sin(angle * 2.0), polar * 11.0 + sin(angle)));
+    float stem = 1.0 - smoothstep(0.025, 0.10, polar);
+    float ridges = pow(0.5 + 0.5 * cos(angle * 3.0), 8.0) * sin(polar * 3.14159265);
+    tone = (0.78 + 0.35 * mottle + 0.06 * fibres + 0.06 * ridges) * (1.0 - 0.5 * stem);
+    height = 0.0006 * fibres - 0.0015 * stem;
+    roughness = 0.08 * mottle;
+  }
+  return vec3(tone, height, roughness);
+}
+`;
+
 const PALM_VERTEX = /* glsl */`
 uniform float uPalmTime;
 uniform float uPalmWind;
@@ -505,7 +593,7 @@ attribute float palmRing;      // m up the trunk (its rings), −1 off it
 attribute vec4 palmInstance;   // its palm's height (m, along the trunk, as built), phase, crown's height (m), and how deep in the forest's shade it stands (0 to 1)
 varying float vPalmRing;
 varying float vPalmShade;
-varying vec3 vPalmLocal;
+varying vec2 vPalmUv;
 `;
 const PALM_MOVE = /* glsl */`
   {
@@ -519,7 +607,7 @@ const PALM_MOVE = /* glsl */`
     float flutter = palmSway.y * uPalmWind * gust * ${FLUTTER.toFixed(3)} * sin(6.2831853 * ${FLUTTER_HERTZ.toFixed(2)} * uPalmTime + dot(position, vec3(2.3, 1.1, 1.7)) + palmPhase);
     transformed += lean + vec3(0.4 * flutter * windLocal.x, flutter, 0.4 * flutter * windLocal.z);
     vPalmRing = palmRing;
-    vPalmLocal = position;
+    vPalmUv = uv;
     // In the forest's shade (CANOPY): a palm's wood below its crown (its trunk by its rings, the rest by its height
     // under the crown's), all of a mound of scrub (a palm's leaves are given none).
     #ifdef PALM_LEAVES
@@ -568,15 +656,13 @@ function scrubGeometry(level, stream) {
   return leaves.geometry();
 }
 
-// Fallen coconuts on the sand under the beach's palms: how many, and how far from a palm's foot (m).
-const FALLEN = { count: 46, reach: [0.6, 3.5] };
-/** The fallen coconuts, lying on their sides, as wood: one geometry laid out in the world (each nut its own colour). */
-function fallenGeometry(fallen, stream) {
+// Fallen coconuts on the sand under the beach's palms: how many, and how far from a palm's foot (m); their husks' facets
+// (rings, around) within LODS[1].from of the eye and past it (a husk 35 m off is some 5 px across).
+const FALLEN = { count: 46, reach: [0.6, 3.5], facets: [[12, 18], [5, 8]] };
+/** One fallen husk in its local frame (`far`: past LODS[1].from, or Low), instanced and culled separately. */
+function fallenGeometry(color, far) {
   const wood = new Parts();
-  for (const nut of fallen) {
-    const axis = new THREE.Vector3(Math.cos(nut.yaw), 0.15 * (stream() - 0.5), Math.sin(nut.yaw)).normalize();
-    coconut(wood, new THREE.Vector3(nut.x, nut.y + 0.11 * nut.scale, nut.z), 0.13 * nut.scale, axis, nut.color, [6, 10], [0, 0], stream);
-  }
+  coconut(wood, new THREE.Vector3(0, 0.115, 0), 0.13, new THREE.Vector3(1, 0.04, 0).normalize(), color, FALLEN.facets[far ? 1 : 0], [0, 0]);
   return wood.geometry();
 }
 
@@ -711,6 +797,7 @@ const ALPHA_MIP = 0.25;
 // whole of the beach's planting (PLANTING.extent; the motus' are too far off for theirs to show), and its texels a
 // side (one channel; 20 to 27 cm, about the sun's own penumbra under a palm's crown); how much of the sun a leaf
 // keeps off (it passes on some, LEAF_LIGHT).
+const NEAR_SHADOW = { box: [-24, -32, 64, 64], texels: 1024 };
 const SHADOW = { box: [-160, -430, 440, 550], texels: 2048, leaf: 0.9 };
 // What draws them: each palm (and mound of scrub) as it stands, its points carried along the sun down to the water's
 // level and drawn there, top-down, into the mask (the light let through: 1 open, multiplied down by each leaf over it).
@@ -822,7 +909,7 @@ function placeScenery(stream) {
     const angle = stream() * Math.PI * 2, reach = FALLEN.reach[0] + (FALLEN.reach[1] - FALLEN.reach[0]) * stream();
     const x = under.x + Math.cos(angle) * reach, z = under.z + Math.sin(angle) * reach;
     if (inlandAt(x, z) < 1.5) continue;
-    fallen.push({ x, z, y: groundAt(x, z) - 0.03, yaw: stream() * Math.PI * 2, scale: 0.9 + 0.25 * stream(), phase: 0, color: COLORS.nut[Math.floor(stream() * 4)] });
+    fallen.push({ x, z, y: groundAt(x, z) - 0.03, yaw: stream() * Math.PI * 2, scale: 0.9 + 0.25 * stream(), phase: 0, color: COLORS.fallen[[0, 0, 1, 2][Math.floor(stream() * 4)]] });
   }
   // The motus' forests: palms over each, a few metres in from its sand's edge, and scrub along its shore.
   for (const [index, motu] of MOTUS.entries()) {
@@ -881,6 +968,10 @@ export class Tropics {
     PALM_SHADOW.uPalmShadowBox.value.set(minX, minZ, 1 / sizeX, 1 / sizeZ);
     this.shadowTarget = new THREE.WebGLRenderTarget(1, 1, { format: THREE.RedFormat, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false });   // a texel till built
     PALM_SHADOW.uPalmShadow.value = this.shadowTarget.texture;
+    this.nearShadowTarget = new THREE.WebGLRenderTarget(1, 1, { format: THREE.RedFormat, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false });
+    PALM_SHADOW.uPalmShadowNear.value = this.nearShadowTarget.texture;
+    const [nearX, nearZ, nearWidth, nearDepth] = NEAR_SHADOW.box;
+    PALM_SHADOW.uPalmShadowNearBox.value.set(nearX, nearZ, 1 / nearWidth, 1 / nearDepth);
     this.shadowCamera = new THREE.OrthographicCamera();   // unused by its programs, which place the mask's points themselves
     this.shadowMaterials = { leaves: this.shadowMaterial(true), wood: this.shadowMaterial(false) };
     this.bakedSun = new THREE.Vector3();
@@ -918,10 +1009,17 @@ export class Tropics {
       if (whole.casts) mesh.material = this.shadowMaterials[mesh.material === this.leafMaterial ? 'leaves' : 'wood'];
     }
     this.group.visible = true;
-    renderer.setRenderTarget(this.shadowTarget);
     renderer.setClearColor(0xffffff, 1);
+    renderer.setRenderTarget(this.shadowTarget);
     renderer.clear(true, false, false);
     renderer.render(this.group, this.shadowCamera);
+    // Same projection and programs, a small local mask for roots and fallen husks.
+    const shadowBox = PALM_SHADOW.uPalmShadowBox.value.clone();
+    PALM_SHADOW.uPalmShadowBox.value.copy(PALM_SHADOW.uPalmShadowNearBox.value);
+    renderer.setRenderTarget(this.nearShadowTarget);
+    renderer.clear(true, false, false);
+    renderer.render(this.group, this.shadowCamera);
+    PALM_SHADOW.uPalmShadowBox.value.copy(shadowBox);
     renderer.setRenderTarget(target);
     renderer.setClearColor(clearColor, clearAlpha);
     for (const [mesh, material] of materials) {
@@ -958,15 +1056,21 @@ export class Tropics {
     }
     // The scrub, at its levels, as the palms are.
     for (const level of [0, 1, 2]) {
-      const here = scrub.filter((placed) => this.levelOf(placed) === level);
+      const here = scrub.filter((placed) => Math.min(this.levelOf(placed), SCRUB.cards.length - 1) === level);
       if (here.length > 0) this.instances(scrubGeometry(level, seededRandom(SEED, 30 + level)), this.leafMaterial, here, (placed) => [SCRUB.height, placed.phase, SCRUB.height * 0.4, placed.shade]);
     }
-    // The fallen coconuts, the motus' sand and the high island: one instance each of geometry laid out in the world.
+    // The fallen coconuts, a mesh a colour and level; the motus' sand and the high island, one instance each of geometry laid out in the world.
     const still = [{ x: 0, y: 0, z: 0, yaw: 0, scale: 1, phase: 0 }];
-    if (fallen.length > 0) this.instances(fallenGeometry(fallen, seededRandom(SEED, 40)), this.woodMaterial, still, () => [1, 0, 0, 0], { casts: false });
+    for (const color of COLORS.fallen) {
+      for (const far of [false, true]) {
+        const here = fallen.filter((nut) => nut.color === color && (this.levelOf(nut) > 0) === far);
+        if (here.length) this.instances(fallenGeometry(color, far), this.woodMaterial, here, () => [1, 0, 0, 0]);
+      }
+    }
     this.instances(motuSandGeometry(), this.woodMaterial, still, () => [1, 0, 0, 0], { casts: false });
     this.instances(islandGeometry(), this.woodMaterial, still, () => [1, 0, 0, 0], { casts: false });
     this.shadowTarget.setSize(SHADOW.texels, SHADOW.texels);
+    this.nearShadowTarget.setSize(NEAR_SHADOW.texels, NEAR_SHADOW.texels);
     this.bakeShadows();
   }
 
@@ -1023,10 +1127,9 @@ export class Tropics {
         let seen = frustum.intersectsSphere(sphere);
         if (!seen) { sphere.center.y = -sphere.center.y; seen = frustum.intersectsSphere(sphere); }
         if (!seen) continue;
-        if (kept !== index) {
-          packedMatrices.set(matrices.subarray(index * 16, index * 16 + 16), kept * 16);
-          packedNumbers.set(numbers.subarray(index * 4, index * 4 + 4), kept * 4);
-        }
+        // A previous view may have packed another instance into even an equal-index slot.
+        packedMatrices.set(matrices.subarray(index * 16, index * 16 + 16), kept * 16);
+        packedNumbers.set(numbers.subarray(index * 4, index * 4 + 4), kept * 4);
         kept++;
       }
       mesh.count = kept;
@@ -1063,7 +1166,7 @@ export class Tropics {
         .replace('#include <common>', `#include <common>
 varying float vPalmRing;
 varying float vPalmShade;
-varying vec3 vPalmLocal;
+varying vec2 vPalmUv;
 varying vec3 vPalmWorld;
 uniform vec3 uSunDir;
 uniform vec3 uSunIrradiance;
@@ -1108,20 +1211,20 @@ uniform vec3 uSkyAmbient;`)
     reflectedLight.directDiffuse += palmThrough * ${LEAF_LIGHT.through.toFixed(2)} * directionalLights[0].color * diffuseColor.rgb * vec3(${LEAF_LIGHT.tint.map((value) => value.toFixed(2)).join(', ')});
   #endif`);
       } else {
-        // The trunk's rings, the scars of fallen fronds about every TRUNK.ring up it: a narrow dark groove between
-        // broad paler bands, unevenly spaced and a little tilted, as a year's growth leaves them; and its bark's fine
-        // vertical fissures.
-        shader.fragmentShader = shader.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
-  if (vPalmRing >= 0.0) {
-    float trunkAngle = atan(vPalmLocal.z, vPalmLocal.x);
-    float ringPhase = vPalmRing / ${TRUNK.ring.toFixed(3)} + 0.35 * sin(vPalmRing * 0.9) + 0.12 * sin(trunkAngle + vPalmRing * 0.7);
-    float ringBlur = fwidth(ringPhase) + 0.05;
-    float fromGroove = min(fract(ringPhase), 1.0 - fract(ringPhase));
-    float groove = 1.0 - smoothstep(0.05, 0.14 + ringBlur, fromGroove);
-    diffuseColor.rgb *= mix(1.0, 0.58, groove * (1.0 - smoothstep(0.4, 1.2, ringBlur)));
-    float fissure = sin(trunkAngle * 23.0 + sin(vPalmRing * 3.1) * 1.5);
-    diffuseColor.rgb *= 1.0 - 0.12 * smoothstep(0.6, 1.0, fissure) * (1.0 - smoothstep(0.3, 1.0, fwidth(fissure)));
-  }`);
+        // Filtered surface relief in each object's own UVs, including the curved trunk's circumference.
+        shader.fragmentShader = shader.fragmentShader
+          .replace('#include <common>', `#include <common>\n${WOOD_SURFACE}`)
+          .replace('#include <color_fragment>', `#include <color_fragment>
+  vec3 palmSurface = woodSurface(vPalmUv, vPalmRing);
+  diffuseColor.rgb *= palmSurface.x;`)
+          .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
+  roughnessFactor = clamp(roughnessFactor + palmSurface.z, 0.45, 1.0);`)
+          .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+  vec3 surfaceDx = dFdx(-vViewPosition), surfaceDy = dFdy(-vViewPosition);
+  vec3 crossDy = cross(surfaceDy, normal), crossDx = cross(normal, surfaceDx);
+  float determinant = dot(surfaceDx, crossDy);
+  vec3 surfaceGradient = sign(determinant) * (dFdx(palmSurface.y) * crossDy + dFdy(palmSurface.y) * crossDx);
+  normal = normalize(max(abs(determinant), 1e-10) * normal - surfaceGradient);`);
       }
     };
     made.customProgramCacheKey = () => `tropics-${kind}`;

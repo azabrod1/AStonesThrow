@@ -69,6 +69,9 @@
 // over it are the floor shader's own (FLOOR_FRAGMENT). The texture holds 4
 // MiB, with its mip chain 5.3.
 //
+// Coral sand uses less grain and silt contrast (SHORE_LOOKS.coral.detail),
+// shared by the beach, the bed and the view from below through uBedDetail.
+//
 // The bake is one pass over the tile. Its program is freed after it; the
 // texture lives as long as the floor's material (disposing the material
 // frees it).
@@ -144,15 +147,17 @@ export const SHORE_LOOKS = {
   gravel:  { sand: [0.6, 0.54, 0.44],   grey: 0.45, pebbles: 0.6,  pebbleSize: 1.5, tufts: 0.15, wrack: 0,   grass: 1.5,  cracks: 0 },
   salt:    { sand: [0.84, 0.83, 0.8],   grey: 0.85, pebbles: 0.05, pebbleSize: 1,   tufts: 0.05, wrack: 0,   grass: 2,    cracks: 1 },
   scree:   { sand: [0.46, 0.46, 0.46],  grey: 0.95, pebbles: 0.95, pebbleSize: 2.2, tufts: 0.1,  wrack: 0,   grass: 1.5,  cracks: 0 },
-  coral:   { sand: [0.92, 0.89, 0.80],  grey: 0.15, pebbles: 0.12, pebbleSize: 0.8, tufts: 0.35, wrack: 0.35, grass: 0.9,  cracks: 0 },   // the Polynesian lagoon's: white coral sand, bits of shell, a wrack line of seaweed
+  coral:   { detail: [0.5, 0.22], sand: [0.92, 0.89, 0.80],  grey: 0.15, pebbles: 0.12, pebbleSize: 0.8, tufts: 0.35, wrack: 0.35, grass: 0.9,  cracks: 0 },   // the Polynesian lagoon's: white coral sand, bits of shell, a wrack line of seaweed
 };
 const DRY_SAND = SHORE_LOOKS.sand.sand;   // LAND_FRAGMENT's: the tint is against it
+const bedDetailUniform = { value: new THREE.Vector2(1, 1) };   // grain and silt contrast; cleaner coral sand at the lagoon
 const bedTintUniform = { value: new THREE.Vector4(1, 1, 1, 0) };   // FLOOR_SAND's uBedTint: the tint, and the grey share in w
 const shoreLookUniform = { value: new THREE.Vector4(0.3, 1, 1, 1) };   // LAND_FRAGMENT's uShoreLook...
 const shoreMoreUniform = { value: new THREE.Vector2(1, 0) };          // ...and uShoreMore
 /** The shore look in force (SHORE_LOOKS by name; 'sand' for one not there): the bed's tint and the beach's uniforms. */
 export function setShoreLook(name) {
   const look = SHORE_LOOKS[name] ?? SHORE_LOOKS.sand;
+  bedDetailUniform.value.fromArray(look.detail ?? [1, 1]);
   bedTintUniform.value.set(look.sand[0] / DRY_SAND[0], look.sand[1] / DRY_SAND[1], look.sand[2] / DRY_SAND[2], look.grey);
   shoreLookUniform.value.set(look.pebbles, look.pebbleSize, look.tufts, look.wrack);
   shoreMoreUniform.value.set(look.grass, look.cracks);
@@ -304,8 +309,8 @@ function bakePattern(renderer) {
 }
 
 // The palms' shadows (PALM_SHADOW in src/shaders/scene.js), shared by the floor's and every land's material: src/
-// tropics.js bakes the mask and turns it on at the Polynesian lagoon.
-export const PALM_SHADOW = { uPalmShadow: { value: null }, uPalmShadowBox: { value: new THREE.Vector4(0, 0, 1, 1) }, uPalmShadowOn: { value: 0 } };
+// tropics.js bakes the beach and foreground detail masks and turns them on at the Polynesian lagoon.
+export const PALM_SHADOW = { uPalmShadowNear: { value: null }, uPalmShadowNearBox: { value: new THREE.Vector4(0, 0, 1, 1) }, uPalmShadow: { value: null }, uPalmShadowBox: { value: new THREE.Vector4(0, 0, 1, 1) }, uPalmShadowOn: { value: 0 } };
 
 export function createPondFloor(water, lighting, ambientWaves, { renderer, rings = null, ice = null }) {
   const pattern = bakePattern(renderer);
@@ -327,6 +332,7 @@ export function createPondFloor(water, lighting, ambientWaves, { renderer, rings
       uExtinction: { value: lighting.extinction },
       uWaterColor: { value: lighting.waterColor },
       uPattern: { value: pattern.texture },
+      uBedDetail: bedDetailUniform,
       uBedTint: bedTintUniform,   // the place's ground against Lakeside's sand (setShoreLook)
       ...PALM_SHADOW,
       ...ambientWaves.uniforms(),
@@ -411,7 +417,7 @@ function koiLandGeometry() {
 // a corner stands on the land or within LAGOON_LAND.wet of it in the water (the strip under the water's edge, which the
 // water covers): the lake's beach behind the eye and the lagoon's own beach out to its point, one mesh, so no two meet
 // in a seam. Laid out by the lagoon's shore (lagoonShoreDistance), whatever is in force.
-const LAGOON_LAND = { spokes: 480, first: 0.05, growth: 1.06, far: 6000, wet: 1.0 };
+const LAGOON_LAND = { spokes: 480, first: 0.25, growth: 1.06, far: 6000, wet: 1.0 };
 export function lagoonLandGeometry() {
   const radii = [0];
   for (let radius = LAGOON_LAND.first; radii.at(-1) < LAGOON_LAND.far; radius *= LAGOON_LAND.growth) radii.push(Math.min(radius, LAGOON_LAND.far));
@@ -431,7 +437,7 @@ export function lagoonLandGeometry() {
       const inner = ring * LAGOON_LAND.spokes, outer = inner + LAGOON_LAND.spokes;
       const corners = [inner + spoke, inner + next, outer + spoke, outer + next];
       if (!corners.some((corner) => kept[corner])) continue;
-      indices.push(inner + spoke, outer + spoke, inner + next, inner + next, outer + spoke, outer + next);   // facing up
+      indices.push(inner + spoke, inner + next, outer + spoke, inner + next, outer + next, outer + spoke);   // facing up
     }
   }
   // Only the corners used, renumbered.
@@ -454,6 +460,7 @@ export function createShore(floor, lighting, environment, { snow = { value: 0 },
     uniforms: {
       ...shoreUniforms(),
       uPattern: floor.material.uniforms.uPattern,
+      uBedDetail: bedDetailUniform,
       uBedTint: bedTintUniform,       // the place's shore look (setShoreLook)...
       uShoreLook: shoreLookUniform,
       uShoreMore: shoreMoreUniform,
