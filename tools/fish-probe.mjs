@@ -317,7 +317,7 @@ console.log('\nfood:');
   const bottom = Math.min(...sunk.fish.filter((fish) => fish.food?.id === 'pie').map((fish) => fish.y));
   check(sunkBites.length > 10 && sunkBites.every((bite) => !bite.floating) && bottom < pie.y + 0.15, `a sunk pie: ${sunkBites.length} bites in a minute, on the floor (its feeders down to ${bottom.toFixed(2)} m, the pie at ${pie.y.toFixed(2)})`);
   // In each lake, something thrown in draws fish to it: their groupmates follow the first.
-  for (const place of ['lakeside', 'swiss', 'highlands', 'mesas', 'desert', 'cove']) {
+  for (const place of ['lakeside', 'swiss', 'highlands', 'mesas', 'desert', 'cove', 'tropical']) {
     const population = new FishPopulation({ seed: 1 });
     population.setWaters({ place, ...LAKE });
     for (let frame = 0; frame < 10 / FRAME; frame++) population.step(FRAME);

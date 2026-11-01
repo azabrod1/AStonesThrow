@@ -309,6 +309,7 @@ import { createFloatTarget, FullscreenPass, configureFloatSupport, renderTargetB
 import { Glare } from './glare.js';
 import { Reeds } from './reeds.js';
 import { Boulders } from './boulders.js';
+import { Tropics } from './tropics.js';
 import { UNDER_BACKGROUND_FRAGMENT } from './shaders/scene.js';
 import { directionAt, placeDirection, clampToFrame, isZoomed, viewFacing } from './viewZoom.js';
 import { meshKind, withParts } from './thingMeshes.js';
@@ -599,6 +600,9 @@ const SUN_BALANCE = [3.0, 2.85, 2.55];        // the sun's irradiance under the 
 const WATER_CLARITIES = {
   pool: { absorb: [0.35, 0.06, 0.015], extinction: [0.42, 0.11, 0.06], color: [0.010, 0.090, 0.130] },
   koi: { absorb: [0.4, 0.09, 0.14], extinction: [0.6, 0.3, 0.42], color: [0.010, 0.066, 0.060] },   // a koi pond's, filtered but green: the fish show to the bottom
+  // A coral lagoon's: sea water nearly as clear as pure water, scattering a little, over pale coral sand, so the
+  // shallows are turquoise (the sand's light, its red taken by the water) and the deep a clear blue.
+  lagoon: { absorb: [0.36, 0.065, 0.025], extinction: [0.48, 0.13, 0.085], color: [0.008, 0.075, 0.120] },
   clear: { absorb: [0.40, 0.07, 0.05], extinction: [0.9, 0.35, 0.32], color: [0.012, 0.085, 0.115] },
   lake: { absorb: [0.45, 0.10, 0.07], extinction: [1.3, 0.85, 0.8], color: [0.014, 0.075, 0.100] },
   pond: { absorb: [0.95, 0.36, 0.34], extinction: [2.0, 1.45, 1.65], color: [0.015, 0.074, 0.041] },
@@ -632,7 +636,14 @@ const PLACES = {
   swiss: { sky: 'swiss', pool: false, defaultWater: 'frozen', defaultView: 'level' },
   pool: { sky: 'lakeside', pool: true },
   koi: { sky: 'garden', pool: false, koi: true },
+  // The tropical beach: the cove's granite boulders and calm sea (as the Seychelles' granite beaches are) over white
+  // coral sand (`shore`, in place of its sky's), its own lagoon water (`water`: WATER_CLARITIES.lagoon, whatever
+  // clarity is chosen), reef fish, and coconut palms along the beach and on a motu out on the lagoon (`tropics`:
+  // src/tropics.js).
+  tropical: { sky: 'cove', pool: false, reeds: false, shore: 'coral', water: 'lagoon', tropics: true },
 };
+/** What a place's beach is made of (SHORE_LOOKS in src/pondFloor.js): its own `shore`, else its sky's. */
+const placeShore = (place) => PLACES[place].shore ?? skyShore(PLACES[place].sky);
 const PLACE_ALIASES = { alpine: 'swiss', meadow: 'lakeside', open: 'lakeside' };
 const DEFAULT_PLACE = 'lakeside';
 /**
@@ -788,6 +799,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   const galeWaves = new GaleWaves(renderer, { windDirection, centre: water.centre, sharedWith: ambientWaves });
   const reeds = new Reeds({ lighting, ambientWaves, mirrorLayer: MIRROR_LAYER });   // the shallows' rushes (src/reeds.js), in the main scene, the mirror and the under-water pass
   const boulders = new Boulders({ envTexture: environment.envTexture, waterFog: { extinction: lighting.extinction, color: lighting.waterColor }, mirrorLayer: MIRROR_LAYER });   // a rocky shore's stones (src/boulders.js), the same three ways
+  const tropics = new Tropics({ envTexture: environment.envTexture, waterFog: { extinction: lighting.extinction, color: lighting.waterColor }, mirrorLayer: MIRROR_LAYER });   // the tropical beach's palms and motu (src/tropics.js)
   // The water's height at world (x, z) under the gale (its CPU sum), for the stones, the mirror and the eye.
   const galeSample = { height: 0, slopeX: 0, slopeZ: 0 };
   const galeSurfaceAt = (x, z) => galeWaves.sample(x, z, galeSample).height;
@@ -859,6 +871,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     const windLength = Math.hypot(windDirection[0], windDirection[1]);
     splash.spray.setWind(windDirection[0] / windLength, windDirection[1] / windLength, WIND_STRENGTHS[name]);
     reeds.setWind(WIND_STRENGTHS[name]);
+    tropics.setWind(WIND_STRENGTHS[name], windDirection);
     galeWaves.setFoamVelocity(water.foamUniforms.uFoamVelocity.value);
     applyGale();
   }
@@ -898,7 +911,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   koiPond = Boolean(PLACES[placeName].koi);
   reedsHere = Boolean(PLACES[placeName].reeds);
   setShoreKind(koiPond ? 'koi' : 'lake');
-  setShoreLook(skyShore(PLACES[placeName].sky));   // the beach and the bed in the place's own ground (SHORE_LOOKS)
+  setShoreLook(placeShore(placeName));   // the beach and the bed in the place's own ground (SHORE_LOOKS)
   boulders.show(!pooled && !koiPond ? PLACES[placeName].sky : null);
   water.setPool(pooled);
   applyGale();
@@ -908,7 +921,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   }
   /** The water drawn: the lake's clarity, or the pool's own in the pool. */
   function applyWater() {
-    waterName = pooled ? 'pool' : koiPond ? 'koi' : lakeClarity;
+    waterName = pooled ? 'pool' : koiPond ? 'koi' : PLACES[placeName].water ?? lakeClarity;
     lighting.absorb.fromArray(WATER_CLARITIES[waterName].absorb);
     lighting.extinction.fromArray(WATER_CLARITIES[waterName].extinction);
     applyWaterColor();
@@ -1018,6 +1031,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   sceneUnder.add(reeds.below);
   sceneMain.add(boulders.above, boulders.mirror);
   sceneUnder.add(boulders.below);
+  sceneMain.add(tropics.palms, tropics.motuAbove);
+  sceneUnder.add(tropics.motuBelow);
   // The pool's basin under the water, its walls and deck in the main scene
   // and the mirror (src/pool.js); shown in place of the lake's while the
   // water is the pool's (showScenery).
@@ -1036,6 +1051,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     shore.visible = !asPool && !koiPond;
     koiLand.visible = !asPool && koiPond;
     garden.setVisible(!asPool && koiPond);
+    tropics.setVisible(!asPool && Boolean(PLACES[placeName].tropics));   // the tropical beach's palms and motu
     surface.setPool(asPool ? { ...pool.square, depth: POOL.depth, deck: POOL.deck } : null);
   }
   showScenery(pooled);
@@ -1435,9 +1451,14 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
         setPooled(PLACES[place].pool);
         setKoiPond(Boolean(PLACES[place].koi));
         setReeds(Boolean(PLACES[place].reeds));
-        setShoreLook(skyShore(PLACES[place].sky));
+        setShoreLook(placeShore(place));
         boulders.show(!pooled && !koiPond ? PLACES[place].sky : null);
-        if (entering) applyFish();
+        if (entering) {
+          applyWater();   // a place's own water (PLACES `water`), or the lake's clarity again...
+          applySky();     // ...and what its absorption lights: the sun under the water, the splash's view of the bed
+          showScenery(pooled);   // the place's own scenery (the tropical beach's palms)
+          applyFish();
+        }
         if (entering && PLACES[place].defaultWater === 'frozen' && iceName === 'none') {
           clearPond();
           applyIce(iceThickness);
@@ -1511,6 +1532,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   function applySky() {
     garden.setEnvironment(environment.envTexture);
     boulders.setEnvironment(environment.envTexture);
+    tropics.setEnvironment(environment.envTexture);
     garden.setLight();
     if (preview.mesh) preview.mesh.material.envMap = environment.envTexture;   // a new sky's map (the rocks take theirs as thrown)
     applyWaterColor();
@@ -2695,6 +2717,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     ice.shade(rocks, camera.position, sunDirection, lighting);   // what lies on it shades it, as drawn now
     iceCracks.update();                      // and the cracks made since, onto it (src/iceCracks.js)
     reeds.update(simulationTime);
+    tropics.setTime(simulationTime);
     renderer.info.reset();
     iceShadow.update(renderer, ice.shading.slots, ice.shading.sunLit ? ice.shading.sun : null);   // their shadows' tiles, those that moved (counted in the frame's draws)
     framesRendered++;
@@ -2790,7 +2813,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     ...ambientWaves.uniforms(),
     ...ice.uniforms,   // no shafts under the ice (underwaterShafts)
   });
-  const hiddenFromBelow = () => [environment.sky, shore, koiLand, reeds.above, boulders.above, pool.walls, pool.yard, ...garden.meshes, marker, arc, ...(preview.mesh ? [preview.mesh] : []), ...rocks.map((rock) => rock.meshAbove)];
+  const hiddenFromBelow = () => [environment.sky, shore, koiLand, reeds.above, boulders.above, ...tropics.above, pool.walls, pool.yard, ...garden.meshes, marker, arc, ...(preview.mesh ? [preview.mesh] : []), ...rocks.map((rock) => rock.meshAbove)];
   function renderFromBelow() {
     renderer.setRenderTarget(mainTarget);
     renderer.clear(true, true, false);
@@ -3160,6 +3183,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
         koiLand.visible = true;
         reeds.visible = true;   // and the reeds', whatever the place: a change of place compiles nothing
         boulders.show('all');   // and the boulders' (src/boulders.js)
+        tropics.setVisible(true);   // and the tropical beach's palms and motu (src/tropics.js); showScenery puts them back
         render();
         renderFrom(VIEWS.under);
         showScenery(pooled);
@@ -3323,7 +3347,9 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     /** Whether the place is the Pool (its tiled pool in place of the lake). */
     get pooled() { return pooled; },
     /** Whether the place has its own water in place of the lake's clarities (the Pool's, the Koi pond's). */
-    get ownWater() { return pooled || koiPond; },
+    get ownWater() { return pooled || koiPond || Boolean(PLACES[placeName].water); },
+    /** Which place's own water it is (index.html's Water page): 'pool', 'koi', the place's name for its own (`water`), or null for the lake's clarities. */
+    get ownWaterName() { return pooled ? 'pool' : koiPond ? 'koi' : PLACES[placeName].water ? placeName : null; },
     /** Whether the place is the Koi pond (the lake's water in the pond's own shore, src/pondFloor.js KOI_SHORE). */
     get koi() { return koiPond; },
     /**

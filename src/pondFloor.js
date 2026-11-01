@@ -133,6 +133,7 @@ export const SHORE_LOOKS = {
   gravel:  { sand: [0.6, 0.54, 0.44],   grey: 0.45, pebbles: 0.6,  pebbleSize: 1.5, tufts: 0.15, wrack: 0,   grass: 1.5,  cracks: 0 },
   salt:    { sand: [0.84, 0.83, 0.8],   grey: 0.85, pebbles: 0.05, pebbleSize: 1,   tufts: 0.05, wrack: 0,   grass: 2,    cracks: 1 },
   scree:   { sand: [0.46, 0.46, 0.46],  grey: 0.95, pebbles: 0.95, pebbleSize: 2.2, tufts: 0.1,  wrack: 0,   grass: 1.5,  cracks: 0 },
+  coral:   { sand: [0.92, 0.89, 0.80],  grey: 0.15, pebbles: 0.12, pebbleSize: 0.8, tufts: 0.35, wrack: 0.35, grass: 0.9,  cracks: 0 },   // the tropical beach's: white coral sand, bits of shell, a wrack line of seaweed
 };
 const DRY_SAND = SHORE_LOOKS.sand.sand;   // LAND_FRAGMENT's: the tint is against it
 const bedTintUniform = { value: new THREE.Vector4(1, 1, 1, 0) };   // FLOOR_SAND's uBedTint: the tint, and the grey share in w

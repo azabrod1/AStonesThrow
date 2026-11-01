@@ -213,7 +213,13 @@ is remembered on the device (but the view, which opens on the shore):
   freezes over again in half a minute, its shards frozen in, its new ice
   thin enough for the next throw to break.
 - Location (`?sky=`): Swiss Alps, Rocky cove, Highlands, Desert oasis,
-  Lakeside (the default), Mesas, Pool, or Koi pond (`?sky=koi`): a pond in
+  Lakeside (the default), Mesas, Pool, Tropical beach (`?sky=tropical`):
+  the cove's granite boulders and calm sea, as the Seychelles' granite
+  beaches are, over white coral sand, its own clear lagoon water (Water's
+  lake clarities give way to it, as to the pool's), reef fish, coconut
+  palms along the beach leaning out over the water, and out on the lagoon
+  a motu, a low sand islet with palms and shrubs (below, the tropics); or
+  Koi pond (`?sky=koi`): a pond in
   a Japanese garden under its own panorama (Poly Haven's Ninomaru Teien,
   the garden of Nagoya Castle, its sun behind leaves, so its brightness is
   taken from its sky: `shadedSun` in `src/sky.js`), about 9 m across, its
@@ -495,7 +501,10 @@ Alps brown trout and Arctic char; Highlands trout and minnows; Mesas a
 largemouth bass and bluegill; Desert oasis pupfish (blue males, brown
 females) and tilapia; Rocky cove grey mullet and a wrasse; the Koi pond
 seven koi of the classic varieties (Kohaku, Sanke, Showa, Ogon, Chagoi,
-Asagi, Yamabuki, Tancho) and a goldfish; the Pool none. A school keeps
+Asagi, Yamabuki, Tancho) and a goldfish; the Tropical beach reef fish in
+their own colours, unmuted (a school of sergeant majors, silver-yellow with
+five black bars; a shoal of yellow tangs, with the white spine by the tail;
+a blue tang, its black palette mark and yellow tail); the Pool none. A school keeps
 about a body length apart and turns together, a shoal keeps loosely
 together, a pike or a trout keeps alone (boids: apart, aligned, together,
 toward a goal the group wanders to). Each fish ranges through the whole
@@ -1270,6 +1279,24 @@ with the distance squared, softened as the eye adapts), and most strikes
 show a bolt on the dome, a jagged line from the cloud's base, 600 m up,
 to the horizon, hidden where the photo's land stands in front of it; the
 mirror image is drawn again while it flashes, so the water shows it.
+
+**The tropics** (`src/tropics.js`). The Tropical beach's coconut palms
+stand on the beach either side of the shore view's eye and lean out over
+the lagoon: from the shore their crowns are over the frame and the water
+shows their reflections; turned, stepped back or from behind the thrower
+they are in view. Out on the lagoon, 105 m off, beyond anything thrown, a
+motu, a low islet of coral sand on a wobbling outline, carries eight palms
+and clumps of shrubs, far enough out that their crowns stand inside the
+home frame; its slope goes on under the water, where the under-water pass
+draws it, its pale sand the turquoise shallows round it. A palm is built
+once from its own seeded stream: a trunk leaning at its foot and curving
+up toward the light, flared at its foot and ringed with frond scars; a
+crown of eighteen pinnate fronds, the young ones up and the old arching
+down under their weight, their leaflets folded up into a V along the
+rachis and drooping toward their tips; a dead frond or two hanging brown;
+coconuts. The Wind control bends each trunk along the wind as a
+cantilever, with a slow sway of its own and slow gusts, and flutters its
+fronds. Nothing of it has a body for the physics.
 
 **From under the water** (the Under view; `renderFromBelow` in `src/main.js`,
 `UNDER_FOG` and `WATER_UNDER_FRAGMENT` in `src/shaders/scene.js`). The water's
