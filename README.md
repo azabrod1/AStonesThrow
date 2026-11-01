@@ -52,9 +52,10 @@ about twice as fast, with a far bigger splash: below; the medium toss is
 the throw the splash is tuned to). Then the slow-motion clock, each press
 the next rate round (1×, ¼×, ⅒× real time), lit while slow; then the throw
 button, the strip's one lit control. With Skip, a flat stone (or a pizza,
-spun like a frisbee) is thrown low and level, spinning, at the strength's
-speed, and skips across the water (below), in the direction of the tap
-(even on the sky); its first touch lands where a level throw puts it. Skip
+spun like a frisbee, or an iPhone) is thrown low and level, spinning, at
+the strength's speed, and skips across the water (below), in the
+direction of the tap (even on the sky); its first touch lands where a
+level throw puts it. Skip
 is greyed out for what cannot skip, and choosing such a thing goes back to
 Toss. On a phone in portrait, where the title's line is hidden, a cue over
 the water says to tap it, until the first throw. The menu button at the
@@ -104,8 +105,10 @@ full screen, which only a press or a key may ask for):
   pill and the dock), its camera plateau stands out of its back with its
   three lenses, flash and LiDAR, and its USB-C port, speaker holes and
   buttons are on its edges. Choose them under Other or use `?thing=tv` and
-  `?thing=iphone`; both support Toss and Lob. A banana (about 920 kg/m³
-  whole) tumbles end over end and floats with only a sliver out. A slice
+  `?thing=iphone`; both support Toss and Lob, and the iPhone, flat and
+  about twice as dense as water, Skip too: it skims three or four times. A
+  banana (about 920 kg/m³ whole) tumbles end over end and floats with only
+  a sliver out. A slice
   of bread (30 g, about 175 kg/m³) flutters down floppier than a pizza,
   floats nearly all out, then soaks and sinks in about two minutes. A
   birthday cake (sponge under buttercream, about 460 kg/m³) comes with one
@@ -114,7 +117,10 @@ full screen, which only a press or a key may ask for):
   to slush in under half a minute and floats on, nine tenths under: slush
   is still lighter than water. A toddler's toy slide (99 × 46 × 70 cm,
   4.1 kg, hollow walls holding 39 litres) floats nine tenths out of the
-  water; it is held high enough to clear the water, and tumbles slowly. An
+  water; it is held high enough to clear the water, and tumbles slowly. On
+  ice it comes to a stop near where it lands, where a stone skates on: a
+  gameplay choice standing in for its tumbling landings, since hollow
+  plastic would really glide (`material.on`, `src/things.js`). An
   iPad's slider runs through four devices, each its maker's size and
   weight and drawn as itself: an iPhone (the iPhone's own), an iPad mini
   (19.5 × 13.5 cm, 293 g, lavender), an iPad (24.9 × 18 cm, 477 g, sky
@@ -126,7 +132,8 @@ full screen, which only a press or a key may ask for):
   (the Pro's island with its lens, LiDAR and flash), its USB-C port,
   speaker holes and buttons on its edges (the iPhone is the iPhone, as
   above); each is a plate that slaps the water and sinks, the thinnest
-  gliding between its swings. A cast-iron frying pan comes in 20, 25 and 30 cm (1.5, 2.4 and
+  gliding between its swings (not one skips, even at its iPhone step: Skip
+  is the thing's, not a step's). A cast-iron frying pan comes in 20, 25 and 30 cm (1.5, 2.4 and
   3.4 kg, a Lodge's sizes, the largest with a helper handle), its walls as
   thick as iron of its weight makes them (about 7150 kg/m³): thrown flat
   and spinning, it slaps the water, flutters down broadside at about
@@ -1383,7 +1390,9 @@ farther out, so it rises into the view rather than filling its corner.
   never under it, lying on a face with its weight over what it rests on,
   that every hole holds its cavity's lip and the jet's foot
   at every moment and its cracks lie on the ice, that a stone slides four
-  times as far on ice as on the deck, that a skip skitters, that a stone
+  times as far on ice as on the deck while a toy slide, whose moulded
+  corners scrape, stops within a metre of where it lands, that a skip
+  skitters, that a stone
   slid into a hole falls in and a floater that broke through floats in its
   hole, that stones at rest where a hole opens fall in and those round it on
   its crushed rim tip in while the rest stay clear of its edge, that a stone slid into one at rest knocks it on with the momentum
