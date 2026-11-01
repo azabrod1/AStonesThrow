@@ -27,7 +27,10 @@
 // What broke a hole in the ice does not meet that hole's pieces until the
 // hole floods (its cavity closed): it went down between them, their inner
 // edges clear of it (src/ice.js SHARD.clear); what broke a piece afloat, or
-// pushed one under, passes it by until they are apart (passesBy).
+// pushed one under, passes it by until they are apart. All of these are
+// one list of pairs, each with how it ends (passBy: src/ice.js adopt and
+// landOnPiece, src/rock.js breakAway); src/main.js forgets a thing's as it
+// goes, and the hand's taking it does too (forgetPasses).
 // A pair meets when one of them is a floater
 // (afloat, bobbing, or on its way up), or on the ground (going along it or
 // at rest on it: Rock.grounded, which a knock sets going again and the
@@ -134,19 +137,43 @@ function containPass(things, contain, knocks) {
 }
 
 /**
- * Whether `piece` and `thing` pass each other by (collidePass): what broke
- * the piece's hole, or broke it off a piece afloat, or pushed it under. A
- * part's breaker and what pushed a piece under are let meet it again once
- * they are apart (their spheres clear of each other).
+ * `piece` (of ice) and `thing` pass each other by until `until()` is true,
+ * or, `until` 'apart', until they are apart: the thing's sphere clear of the
+ * piece's radius. A pair passing for more than one reason (what broke a
+ * hole and split one of its pieces) passes until every one of them has
+ * ended. Each thing keeps its own pairs (`passing`: by the other thing, the
+ * reasons still holding), so a pair of things that keep none costs
+ * collidePass a property's look and no more.
  */
-function passesBy(piece, thing) {
-  if (!piece.piece) return false;
-  if (piece.iceHole?.by === thing) return true;
-  const broke = piece.brokenBy === thing, pushed = thing.dunked === piece;
-  if (!broke && !pushed) return false;
-  if (thing.centre.distanceTo(piece.centre) < piece.radius + thing.collisionRadius) return true;
-  if (broke) piece.brokenBy = null;
-  if (pushed) thing.dunked = null;
+export function passBy(piece, thing, until = 'apart') {
+  const ended = until === 'apart' ? () => thing.centre.distanceTo(piece.centre) >= piece.radius + thing.collisionRadius : until;
+  piece.passing ??= new Map();
+  thing.passing ??= new Map();
+  const reasons = piece.passing.get(thing) ?? [];
+  reasons.push(ended);
+  piece.passing.set(thing, reasons);
+  thing.passing.set(piece, reasons);
+}
+
+/** Whether `one` and `other` pass each other by now (tools/ice-probe.mjs). */
+export function passingBy(one, other) {
+  return one.passing?.has(other) ?? false;
+}
+
+/** A thing's pairs ended: it is gone, or the hand has taken it. */
+export function forgetPasses(thing) {
+  for (const other of thing.passing?.keys() ?? []) other.passing?.delete(thing);
+  thing.passing = null;
+}
+
+/** Whether `one` and `other` pass each other by (collidePass): while any of their reasons holds; one that has ended is let go. */
+export function passesBy(one, other) {
+  const reasons = one.passing?.get(other);
+  if (!reasons) return false;
+  for (let index = reasons.length - 1; index >= 0; index--) if (reasons[index]()) reasons.splice(index, 1);
+  if (reasons.length > 0) return true;
+  one.passing.delete(other);
+  other.passing.delete(one);
   return false;
 }
 
@@ -162,7 +189,7 @@ function collidePass(all, knocks) {
       // What broke a hole went down between its pieces (src/ice.js SHARD.clear), what broke a piece afloat between its
       // parts (splitPiece), and what pushed a piece under went down past it (landOnPiece, dunkPieces): they do not meet
       // until the hole floods (src/ice.js setTime), or, a part or a piece pushed under, until they are apart.
-      if (passesBy(one, other) || passesBy(other, one)) continue;
+      if (passesBy(one, other)) continue;
       // Two flat pieces of ice (the header) meet rim to rim: the line between them level, their whole radii.
       const rims = Boolean(one.thing.body.meetsAtRim && other.thing.body.meetsAtRim);
       between.copy(other.centre).sub(one.centre);

@@ -53,7 +53,10 @@
 //     tap on the water throwing it, and sets what is thrown, the throw
 //     button's name (a rock, a ball, a gem), the row's value and the strip's
 //     name, slider (its range, or off for a ball of one size) and line
-//     ("Size 7 · 620 g") following, the strip still fitting; the latest
+//     ("Size 7 · 620 g") following, the strip still fitting, and for a
+//     thing whose steps are things of their own (an iPad, a frying pan,
+//     roses) the slider through each step, its line each step's ("iPad Pro
+//     13″ · 579 g"), the strip never overflowing; the latest
 //     choices sit at the page's top and one tapped is thrown at once; Skip
 //     pressed for a pie stays off and says why, and for a pizza turns on
 //     (a pizza skips); its Water row opens the Water page, whose five pictured choices
@@ -84,7 +87,7 @@
 //
 // --root serves another checkout (a git archive of an earlier commit, say);
 // the screenshots and the checks then describe that version.
-import { launchBrowser } from './browser.mjs';
+import { launchBrowser, patience } from './browser.mjs';
 import { mkdir, readFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import path from 'node:path';
@@ -163,7 +166,7 @@ for (const framing of FRAMINGS) {
   for (let load = 0; load < 3 && !pointerTook; load++) {
     if (load === 0) await page.goto(`http://localhost:${server.address().port}/index.html?quality=low&paused=1`, { waitUntil: 'domcontentloaded' });
     else await page.reload({ waitUntil: 'domcontentloaded' });
-    await page.waitForFunction(() => !!window.__pond, undefined, { timeout: 180000 });
+    await page.waitForFunction(() => !!window.__pond, undefined, { timeout: patience(180000) });
     pointerTook = await page.waitForFunction((touch) => matchMedia('(pointer: coarse)').matches === touch, framing.touch, { timeout: 5000 }).then(() => true, () => false);
   }
   check(pointerTook, `the page reports the framing's pointer (${framing.touch ? 'a finger: pointer coarse' : 'a mouse: pointer fine'})`);
@@ -397,7 +400,7 @@ for (const framing of FRAMINGS) {
   await page.waitForTimeout(400);
   const [panel] = await boxes('#settings');
   const rows = await boxes('#settings .menu-tier');
-  check(!!panel && onScreen(panel) && rows.length === 11, `the settings open on the screen with their ten rows and Reset all (${rows.length})`);
+  check(!!panel && onScreen(panel) && rows.length === 12, `the settings open on the screen with their eleven rows and Reset all (${rows.length})`);
   if (framing.touch) check(rows.every((row) => row.height >= SMALLEST_BUTTON_HEIGHT - 0.5), `every settings row is at least ${SMALLEST_BUTTON_HEIGHT} points tall (smallest ${Math.min(...rows.map((row) => row.height)).toFixed(1)})`);
   const cutValues = await page.evaluate(() => [...document.querySelectorAll('#settings .menu-tier-value')].filter((value) => value.scrollWidth > value.clientWidth + 0.5).map((value) => value.textContent));
   const hinted = await page.evaluate(() => [...document.querySelectorAll('#settings .menu-tier-name small')].filter((hint) => hint.getClientRects().length > 0).length);
@@ -526,9 +529,15 @@ for (const framing of FRAMINGS) {
     ['diamond', { button: 'Throw a gem', row: 'Diamond', label: 'Diamond', readout: '100 ct · 3 cm', minimum: 5, maximum: 1000, disabled: false }],
     ['tv', { button: 'Throw a TV', row: 'TV', label: 'TV', readout: '54 cm · 3.6 kg', disabled: true }],
     ['iphone', { button: 'Throw an iPhone', row: 'iPhone', label: 'iPhone', readout: '15 cm · 180 g', disabled: true }],
+    // Each step of these its own thing (src/things.js variantAt): the strip reads each, and none overflows it. (Before
+    // the pizza, which must stay among the latest four choices, below.)
+    ['ipad', { button: 'Throw an iPad', row: 'iPad', label: 'iPad', readout: 'iPad 11″ · 477 g', minimum: 1, maximum: 4, disabled: false, steps: ['iPhone · 180 g', 'iPad mini · 293 g', 'iPad 11″ · 477 g', 'iPad Pro 13″ · 579 g'] }],
+    ['pan', { button: 'Throw a frying pan', row: 'Frying pan', label: 'Pan', readout: '25 cm · 2.4 kg', minimum: 1, maximum: 3, disabled: false, steps: ['20 cm · 1.5 kg', '25 cm · 2.4 kg', '30 cm · 3.4 kg'] }],
+    ['roses', { button: 'Throw roses', row: 'Roses', label: 'Roses', readout: '12 roses · 433 g', minimum: 1, maximum: 5, disabled: false, steps: ['1 rose · 29 g', '3 roses · 127 g', '6 roses · 239 g', '12 roses · 433 g', '24 roses · 802 g'] }],
     ['pizza', { button: 'Throw a pizza', row: 'Pizza', label: 'Pizza', readout: '30 cm · 380 g', minimum: 1, maximum: 3, disabled: false }],
     ['stone', { row: 'River stone', label: 'Rock', disabled: false, minimum: 1.5, maximum: 30 }],
   ]) {
+    const { steps, ...wanted } = expected;
     // The strip's chip opens What to throw at once, the choice's fold open; a tap on its card chooses it and shows it
     // over the folds (the settings stay open), Use closes them, and the next tap on the water throws it.
     if (await page.evaluate(() => document.getElementById('settings').hidden)) {
@@ -551,8 +560,25 @@ for (const framing of FRAMINGS) {
     await press('#thing-use');
     await page.waitForTimeout(100);
     const shown = await strip();
-    const wrong = Object.entries(expected).filter(([key, value]) => shown[key] !== value).map(([key]) => `${key} ${JSON.stringify(shown[key])}`);
+    const wrong = Object.entries(wanted).filter(([key, value]) => shown[key] !== value).map(([key]) => `${key} ${JSON.stringify(shown[key])}`);
     check(shown.thing === choice && wrong.length === 0 && !shown.overflows, `${choice} is thrown, its row, the strip's name, slider and readout follow (${shown.label}, ${shown.readout}${shown.disabled ? ', slider off' : `, ${shown.minimum} to ${shown.maximum}`})${wrong.length ? `; wrong: ${wrong.join(', ')}` : ''}${shown.overflows ? '; the strip overflows' : ''}`);
+    if (steps) {
+      // The slider through each step and back to the first size: the readout each step's, the strip never overflowing.
+      const read = await page.evaluate((count) => {
+        const slider = document.getElementById('stone-size'), strip = document.querySelector('.controls');
+        const first = slider.value, seen = [];
+        for (let value = 1; value <= count; value++) {
+          slider.value = String(value);
+          slider.dispatchEvent(new Event('input'));
+          seen.push({ readout: document.getElementById('stone-readout').textContent, overflows: strip.scrollWidth > strip.clientWidth + 0.5, size: window.__pond.size });
+        }
+        slider.value = first;
+        slider.dispatchEvent(new Event('input'));
+        return seen;
+      }, steps.length);
+      const off = read.filter((step, index) => step.readout !== steps[index] || step.overflows || step.size !== index + 1);
+      check(off.length === 0, `${choice}'s slider reads each step (${read.map((step) => step.readout).join('; ')})${off.length ? `; wrong or overflowing: ${off.map((step) => step.readout).join(', ')}` : ''}`);
+    }
     const thrown = await page.evaluate(() => ({ closed: document.getElementById('settings').hidden, before: window.__pond.rocks.length }));
     await press('#pond');
     await page.waitForTimeout(150);

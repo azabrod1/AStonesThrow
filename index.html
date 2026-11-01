@@ -3,10 +3,19 @@
 <meta charset="utf-8">
 <!-- Laid out at the device's width: without this a phone's browser lays the
      page out 980 pixels wide and shrinks it, every control with it, to fit.
-     viewport-fit=cover lets the pond run under the notch in landscape; the
-     controls and the title keep inside the safe area (env(safe-area-inset-…)). -->
+     viewport-fit=cover lets the pond run under the notch in landscape, and
+     under the status bar in full screen and from the Home Screen; the
+     controls and the title keep inside the safe area (env(safe-area-inset-…)).
+     In an iPhone's Safari the canvas reaches under the status bar another
+     way (src/screen.js). -->
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0b1b22">
+<!-- Opened from the Home Screen (src/screen.js: an iPhone's full screen), the
+     pond runs under the status bar, its clock drawn light over the water.
+     The manifest asks for the whole screen there (Android hides its bars
+     too); its PNG icons are favicon.svg drawn square, as the touch icon is. -->
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="manifest.webmanifest">
 <title>A Stone’s Throw</title>
 <script type="importmap">
 {
@@ -20,6 +29,7 @@
 <!-- Discover the application and its dependencies while the page is parsed. -->
 <link rel="modulepreload" href="./src/main.js">
 <link rel="modulepreload" href="./src/settingsPanel.js">
+<link rel="modulepreload" href="./src/screen.js">
 <link rel="modulepreload" href="./src/thingMenu.js">
 <link rel="modulepreload" href="./src/things.js">
 <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.183.2/build/three.module.js">
@@ -97,6 +107,15 @@
     -webkit-user-select: none;     /* a held press is a finger in the water: no selection or callout */
     user-select: none;
     -webkit-touch-callout: none;
+  }
+  /* An iPhone's Safari draws only the page's scrolled content under its
+     status bar (src/screen.js): there the canvas lies in the page, --bleed
+     taller than the viewport, and the page is scrolled to its foot. */
+  html.bleed #pond {
+    position: absolute;
+    top: 0;
+    bottom: auto;
+    height: calc(100dvh + var(--bleed));
   }
   .title {
     position: fixed;
@@ -904,7 +923,7 @@
 
 <div class="title">
   <h1>A Stone’s Throw</h1>
-  <p>Tap to throw. Hold an object to pick it up; release to drop. Hold the water to touch it, drag to look around. Scroll or pinch to look closer, or to step back.<span class="keys"> Space throws one for you.</span></p>
+  <p>Tap to throw. Hold an object to pick it up; release to drop. Hold the water to touch it, drag to look around. Scroll or pinch to look closer, or to step back.<span class="keys"> Space throws one for you; F fills the screen.</span></p>
 </div>
 <div class="stats" id="stats" aria-live="off"></div>
 
@@ -1005,6 +1024,11 @@
       <span class="menu-tier-name"><b>View</b><small>Where you watch from</small></span>
       <span class="menu-tier-value"></span><span class="menu-tier-chevron" aria-hidden="true">&rsaquo;</span>
     </button>
+    <button type="button" class="menu-tier" data-open="screen">
+      <svg class="menu-tier-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M3 7.5V3h4.5M12.5 3H17v4.5M17 12.5V17h-4.5M7.5 17H3v-4.5"></path></svg>
+      <span class="menu-tier-name"><b>Full screen</b><small>The pond to every edge</small></span>
+      <span class="menu-tier-value"></span><span class="menu-tier-chevron" aria-hidden="true">&rsaquo;</span>
+    </button>
     <button type="button" class="menu-tier" data-open="quality">
       <svg class="menu-tier-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M3.6 14.6a6.6 6.6 0 1 1 12.8 0"></path><path d="M10 12.9l3.2-4.1"></path></svg>
       <span class="menu-tier-name"><b>Quality</b><small>Detail and smoothness</small></span>
@@ -1049,6 +1073,17 @@
         <button type="button" role="radio" data-value="under">Under</button>
       </div>
       <div class="menu-note" id="view-note"></div>
+    </div>
+  </div>
+  <!-- Full screen (src/screen.js): On and Off where the browser lets a page have the screen; a line on the Home Screen's way where not (an iPhone). -->
+  <div class="menu-page" data-page="screen" hidden>
+    <div class="menu-head"><button type="button" class="menu-back" aria-label="Back"><span aria-hidden="true">&lsaquo;</span></button><h3>Full screen</h3></div>
+    <div class="menu-field">
+      <div class="menu-seg" id="screen" role="radiogroup" aria-label="Full screen" aria-describedby="screen-note">
+        <button type="button" role="radio" data-value="on">On</button>
+        <button type="button" role="radio" data-value="off">Off</button>
+      </div>
+      <div class="menu-note" id="screen-note" aria-live="polite"></div>
     </div>
   </div>
   <div class="menu-page" data-page="water" hidden>
@@ -1173,7 +1208,8 @@
 <script type="module">
   // Dynamic imports are caught below: a failed dependency must not leave
   // the loading veil up forever. Timed-out imports never start a late pond.
-  let startPond, SettingsPanel, radioGroup, ThingMenu, THINGS, thingGroups, onThingsChange;
+  let startPond, SettingsPanel, radioGroup, ThingMenu, THINGS, thingGroups, onThingsChange, reachUnderStatusBar, fullScreen, openedAsApp;
+  let screenEdges = null;   // src/screen.js's hold on the canvas under an iPhone's status bar, once its module is here
 
   const veil = document.getElementById('veil');
   const veilText = document.getElementById('veil-text');
@@ -1234,17 +1270,20 @@
     let importTimer;
     try {
       const modules = await Promise.race([
-        Promise.all([import('./src/main.js'), import('./src/settingsPanel.js'), import('./src/things.js'), import('./src/thingMenu.js')]),
+        Promise.all([import('./src/main.js'), import('./src/settingsPanel.js'), import('./src/things.js'), import('./src/thingMenu.js'), import('./src/screen.js')]),
         new Promise((_, reject) => { importTimer = setTimeout(() => reject(new Error('Module load timed out')), 30000); }),
       ]);
       ({ startPond } = modules[0]);
       ({ SettingsPanel, radioGroup } = modules[1]);
       ({ THINGS, thingGroups, onThingsChange } = modules[2]);
       ({ ThingMenu } = modules[3]);
+      ({ reachUnderStatusBar, fullScreen, openedAsApp } = modules[4]);
     } finally {
       clearTimeout(importTimer);
     }
     loadingModules = false;
+    // Before the pond measures the canvas, so it is built once at the size it keeps.
+    screenEdges = reachUnderStatusBar(params.get('bleed'));
     pond = await startPond({
       canvas: document.getElementById('pond'),
       quality: params.get('quality') || 'auto',
@@ -1422,7 +1461,7 @@
       },
       weather: {
         clear: 'The sky as it was photographed.',
-        'light-rain': 'A bright overcast and a light rain: rings spreading on the water, a fleck where each drop lands, faint streaks falling.',
+        'light-rain': 'A bright overcast and a light rain: rings spreading on the water, a splash where each drop lands, faint streaks falling.',
         'heavy-rain': 'A dark sky and a downpour: the water hammered with rings and splashes, the far bank lost in the rain.',
         storm: 'A storm: a darker sky, a downpour, lightning, and the wind up to a gale.',
         'light-snow': 'A bright overcast and a light snow: flakes drifting down and melting on the water, a dusting on the shore.',
@@ -1651,6 +1690,31 @@
       settings.setValue('effects', on ? 'Fish on' : 'Fish off');
     }
     updateEffects();
+    // The Full screen page (src/screen.js): On and Off where the browser lets a page have the whole screen, and the F
+    // key; opened from the Home Screen it has it already; Safari on an iPhone has no way for a page, so the page says
+    // the Home Screen's. Not remembered: only a press or a key may ask for full screen.
+    const SCREEN_NOTES = {
+      available: 'The browser’s bars and the status bar put away, the pond to every edge. Escape, or Back on a phone, comes out of it; on a keyboard F goes in and out.',
+      app: 'Opened from the Home Screen, the pond has the whole screen already.',
+      homeScreen: 'Safari on an iPhone keeps its own bars round every page. For the whole screen, add the pond to the Home Screen (Share, then Add to Home Screen) and open it from there.',
+    };
+    const screenNote = document.getElementById('screen-note');
+    const screenChoices = document.getElementById('screen');
+    const showScreen = radioGroup(screenChoices, (value) => { fullScreen.set(value === 'on').then(updateScreen); });
+    function updateScreen() {
+      const app = openedAsApp(), on = fullScreen.active, available = fullScreen.available;
+      screenChoices.hidden = app || !available;
+      showScreen(on ? 'on' : 'off');
+      screenNote.textContent = SCREEN_NOTES[app ? 'app' : available ? 'available' : 'homeScreen'];
+      settings.setValue('screen', app || on ? 'On' : available ? 'Off' : 'Home Screen');
+    }
+    fullScreen.onChange(updateScreen);
+    updateScreen();
+    window.addEventListener('keydown', (event) => {
+      if ((event.key !== 'f' && event.key !== 'F') || event.repeat || event.metaKey || event.ctrlKey || event.altKey) return;
+      if (event.target !== document.body || !fullScreen.available || openedAsApp()) return;
+      fullScreen.set(!fullScreen.active).then(updateScreen);
+    });
     // The Water page as the place has it: the lake's clarities, or the pool's own water; Frozen's ice under the cards.
     const showIce = radioGroup(document.getElementById('ice'), (value) => { pond.setIce(value); updateWater(); });
     const OPEN_WATER = {
@@ -1870,6 +1934,10 @@
 
     window.__pond = pond;
     requestAnimationFrame(() => requestAnimationFrame(() => veil.classList.add('gone')));
+    // Once faded, out of the page altogether: a fixed box over the screen, even an invisible one, is what Safari on an
+    // iPhone takes its bars' colour from, and it takes it afresh as the page moves (src/screen.js refresh).
+    veil.addEventListener('transitionend', () => { veil.hidden = true; screenEdges?.refresh(); }, { once: true });
+    setTimeout(() => { if (!veil.hidden) { veil.hidden = true; screenEdges?.refresh(); } }, 1200);   // no transition (reduced motion) ends nothing
     if (uiHidden) for (const el of document.querySelectorAll('.title, .controls, .stats, .menu-button, .reset-view, .cue')) el.hidden = true;
   }
 </script>

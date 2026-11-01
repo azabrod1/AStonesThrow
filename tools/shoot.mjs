@@ -59,7 +59,9 @@
 // release puts it, src/main.js skipThrow) and skips on from there, and the
 // times count from that first touch.
 // --trace draws each stone's path as a line (__pond.setTrace).
-// --wait=seconds waits that long for the pond to be ready (60 by default).
+// --wait=seconds waits that long for the pond to be ready (by default 60 on a
+// GPU, longer on SwiftShader: tools/browser.mjs patience, as the harness's
+// other waits are).
 // --fish=none leaves the water without fish (src/fish.js; ?fish=none), and
 // --look=fish:n turns the view, after the pre-roll, to fish n
 // (__pond.fish's order); fish:n:side looks at it from beside it, under the
@@ -71,7 +73,7 @@
 // --seed=n seeds Math.random (Park–Miller, from n + i) just before throw i,
 // so its stone and its splash are the same every run, and the same as
 // tools/variety-probe.mjs's seed n + i at the same aim and power.
-import { launchBrowser } from './browser.mjs';
+import { launchBrowser, patience } from './browser.mjs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import path from 'node:path';
@@ -117,7 +119,7 @@ const orbitArgument = arg('orbit', '');
 const [thingName, thingValue] = arg('thing', '').split(':');
 const fishArgument = arg('fish', '');
 const showPreview = arg('preview', '0') === '1';
-const readySeconds = Number(arg('wait', '60'));   // how long the pond may take to be ready (a busy machine's software GL may need more)
+const readyGiven = arg('wait', null);   // how long the pond may take to be ready (s), if given: else patience's
 
 const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.mjs': 'text/javascript', '.json': 'application/json', '.png': 'image/png', '.css': 'text/css' };
 const server = createServer(async (request, response) => {
@@ -159,20 +161,20 @@ const url = `http://localhost:${port}/index.html?quality=${quality}&paused=1${ke
 console.log(`[shoot] ${url} -> ${outDir}`);
 await page.goto(url, { waitUntil: 'domcontentloaded' });
 try {
-  await page.waitForFunction(() => !!window.__pond, null, { timeout: 1000 * readySeconds });   // (the function's argument, then the options)
+  await page.waitForFunction(() => !!window.__pond, null, { timeout: readyGiven ? 1000 * Number(readyGiven) : patience(60000) });   // (the function's argument, then the options)
 } catch {
   console.error('[shoot] the pond never became ready');
   console.error(problems.join('\n'));
   await browser.close(); server.close(); process.exit(1);
 }
-if (weather && weather !== 'clear' && weather !== 'fog') await page.waitForFunction(() => window.__pond.raining || window.__pond.snowing, null, { timeout: 60000 });
+if (weather && weather !== 'clear' && weather !== 'fog') await page.waitForFunction(() => window.__pond.raining || window.__pond.snowing, null, { timeout: patience(60000) });
 // The sky's horizon strip (src/sky.js, Horizon) comes after the panorama: every frame shows it.
 await page.evaluate(() => window.__pond.horizonReady);
 // The drop rings' table (src/dropRings.js), which the page fetches at the first impact: fetched now, so the
 // first throw's drops ring in every run, however long the fetch takes.
 if (throws.length > 0) {
   await page.evaluate(() => window.__pond.dropRings?.load());
-  await page.waitForFunction(() => !window.__pond.dropRings || window.__pond.dropRings.ready, null, { timeout: 60000 });
+  await page.waitForFunction(() => !window.__pond.dropRings || window.__pond.dropRings.ready, null, { timeout: patience(60000) });
 }
 // The loading veil fades out over a moment once the pond is ready; a frame taken meanwhile would catch it.
 await page.evaluate(() => document.getElementById('veil')?.remove());
@@ -206,7 +208,7 @@ if (look.startsWith('fish:')) {
   await page.evaluate(() => { window.__pond.setTimeScale(1); window.__pond.advance(0.001); });
   console.log('[shoot] fish', JSON.stringify(where));
 }
-await page.screenshot({ path: path.join(outDir, 'idle.png'), timeout: 180000 });
+await page.screenshot({ path: path.join(outDir, 'idle.png'), timeout: patience(180000) });
 console.log('[shoot] idle.png');
 
 if (tracePaths) await page.evaluate(() => window.__pond.setTrace(true));
@@ -224,7 +226,7 @@ let flight = 0;
 if (throws.length > 0 && preImpact > 0) {
   await page.evaluate((seconds) => window.__pond.advance(seconds), preImpact);
   flight += preImpact;
-  await page.screenshot({ path: path.join(outDir, 'flight.png'), timeout: 180000 });
+  await page.screenshot({ path: path.join(outDir, 'flight.png'), timeout: patience(180000) });
   console.log('[shoot] flight.png');
 }
 // One app frame per step, at the page's time scale, so that in slow motion the
@@ -269,13 +271,13 @@ for (const t of times) {
   elapsed = Math.max(t, elapsed);
   const decimals = Math.abs(Number(t.toFixed(2)) - t) < 1e-9 ? 2 : 4;
   const name = `t${t.toFixed(decimals).replace('.', '_')}.png`;
-  await page.screenshot({ path: path.join(outDir, name), timeout: 180000 });
+  await page.screenshot({ path: path.join(outDir, name), timeout: patience(180000) });
   console.log(`[shoot] ${name}`);
   if (report) console.log(`[shoot] report: ${JSON.stringify(await page.evaluate(report))}`);
   if (crop) {
     const [x, y, cropWidth, cropHeight] = crop.split(':').map(Number);
     const cropName = name.replace('.png', '_crop.png');
-    const pixels = await page.screenshot({ clip: { x, y, width: cropWidth, height: cropHeight }, timeout: 180000 });
+    const pixels = await page.screenshot({ clip: { x, y, width: cropWidth, height: cropHeight }, timeout: patience(180000) });
     const enlarged = cropScale === 1 ? pixels : Buffer.from((await page.evaluate(async ([base64, scale]) => {
       const image = new Image();
       image.src = `data:image/png;base64,${base64}`;

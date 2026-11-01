@@ -9,7 +9,7 @@
 //
 // The Three.js CDN is blocked to require the published local runtime; fonts
 // are stubbed so the check runs offline.
-import { launchBrowser } from './browser.mjs';
+import { launchBrowser, patience } from './browser.mjs';
 import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
@@ -61,11 +61,11 @@ page.on('pageerror', (error) => failures.push(`page error: ${error}`));
 
 await page.goto(`http://localhost:${port}${PAGES_PATH}`, { waitUntil: 'domcontentloaded' });
 let started = true;
-try { await page.waitForFunction(() => !!window.__pond, null, { timeout: 120000 }); } catch { started = false; }   // (the function's argument, then the options)
+try { await page.waitForFunction(() => !!window.__pond, null, { timeout: patience(120000) }); } catch { started = false; }   // (the function's argument, then the options)
 let rained = false;
 if (started) {
   await page.evaluate(() => window.__pond.setWeather('heavy-rain'));
-  try { await page.waitForFunction(() => window.__pond.raining, null, { timeout: 60000 }); rained = true; } catch { rained = false; }
+  try { await page.waitForFunction(() => window.__pond.raining, null, { timeout: patience(60000) }); rained = true; } catch { rained = false; }
 }
 const veilMessage = await page.evaluate(() => document.querySelector('.veil .error')?.textContent ?? null);
 await browser.close();

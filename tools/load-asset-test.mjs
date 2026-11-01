@@ -11,6 +11,7 @@ const server = createServer((request, response) => {
   const route = request.url.split('?')[0];
   if (route === '/headers-stall') return;
   if (route === '/missing') { response.writeHead(404); response.end(); return; }
+  if (route === '/after-freeze') { setTimeout(() => response.end(JSON.stringify(json)), 500); return; }
   if (route === '/invalid') { response.end('{broken'); return; }
   if (route === '/compressed') {
     const compressed = gzipSync(JSON.stringify(json));
@@ -48,6 +49,17 @@ try {
     await assert.rejects(loadAsset(`${origin}/${endpoint}`, 'arrayBuffer', { timeout: 100 }), { name: 'AbortError' });
   }
   console.log('PASS: stalled headers and a body stalled after partial data both abort');
+  // A page frozen past the deadline (the main thread held: a slow GPU compiling its programs) could not take the
+  // progress the network made, so its timer, firing late, gives the request a fresh timeout; one truly stalled is
+  // still aborted a timeout later. The freeze holds this process's server too: it answers, 500 ms in, once it ends.
+  const freeze = (milliseconds) => { const until = performance.now() + milliseconds; while (performance.now() < until); };
+  const afterFreeze = loadAsset(`${origin}/after-freeze`, 'json', { timeout: 200 });
+  const stalledThroughFreeze = loadAsset(`${origin}/headers-stall?freeze`, 'json', { timeout: 200 });
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  freeze(700);
+  assert.deepEqual(await afterFreeze, json);
+  await assert.rejects(stalledThroughFreeze, { name: 'AbortError' });
+  console.log('PASS: a page frozen past the deadline gives the request a fresh one; a request stalled through it still aborts');
   for (const endpoint of ['headers-stall', 'body-stall', 'slow']) {
     const controller = new AbortController();
     const pending = loadAsset(`${origin}/${endpoint}`, 'arrayBuffer', { signal: controller.signal });

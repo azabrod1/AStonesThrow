@@ -36,12 +36,14 @@ the moment a throw leaves the hand and fades back (`?preview=off` leaves
 it out).
 Escape or Reset view (under the menu button while the view is away from
 the shore's) glides back to the shore. The strip at the bottom sets what is
-thrown: its name opens a dropdown of every thing under its group, each with
+thrown: its name opens a dropdown of every thing under its group (the
+gems last, seldom thrown), each with
 its picture (`src/thingMenu.js`; on a phone each group is one row a finger
 scrolls sideways, so the dropdown stays as tall as its groups however many
 things there are), and its slider sets the size (a stone 1.5
 to 30 cm across, a bowling ball 6 to 16 lb, a basketball size 5 to 7, a gem
-5 to 1000 carats; a golf or a tennis ball has one size). Then how it is
+5 to 1000 carats, an iPad from an iPhone to an iPad Pro, a frying pan 20
+to 30 cm, roses one to 24; a golf or a tennis ball has one size). Then how it is
 thrown, in two parts: the manner, Toss (the low way round), Lob (the high
 way) or Skip, and the strength, Soft, Medium or Hard, which is the pace
 either way (`ARC` in `src/main.js`: a toss flies flatter the harder it is
@@ -58,15 +60,17 @@ Toss. On a phone in portrait, where the title's line is hidden, a cue over
 the water says to tap it, until the first throw. The menu button at the
 top right opens the settings, laid out as the Moon app's menu is: a list in
 four groups (what is thrown: What to throw; the place: Location, Water and Time of
-day; the conditions: Weather, Wind and Sound; the viewing: View and Quality), each row an icon, its name
+day; the conditions: Weather, Wind and Sound; the viewing: View, Full screen and Quality), each row an icon, its name
 over a line on what it sets and where it stands, and each setting a page of
 its choices (Location and Water as pictures) with a line on each. Each choice
-is remembered on the device (but the view, which opens on the shore):
+is remembered on the device (but the view, which opens on the shore, and
+full screen, which only a press or a key may ask for):
 - What to throw (`?thing=`): stones (a river stone, the default; slate,
   granite, basalt, pumice), balls (golf, tennis, bowling, basketball), gems
   (diamond, emerald, ruby, sapphire) and others (an apple, a watermelon, a
   pizza, a frozen pizza, a pie, a rubber duck, a brick, a TV, an iPhone, a
-  banana, a slice of bread, a birthday cake, a snowball, a toy slide), each
+  banana, a slice of bread, a birthday cake, a snowball, a toy slide, an
+  iPad, a frying pan, roses), each
   the size, weight and density of the real thing (`src/things.js`). The foot of the strip's
   dropdown opens this page. What is lighter than water floats; the rest sink.
   What comes to rest stays, on the bed or the pool's floor as on the deck, up
@@ -94,7 +98,12 @@ is remembered on the device (but the view, which opens on the shore):
   on their own faces' area: they slap the water, flutter down as thin plates
   do, and come to rest lying along the lake bed's slope. In the pool they
   land wherever they fit, their slap standing no crown, and its walls meet
-  their corners. Choose them under Other or use `?thing=tv` and
+  their corners. The iPhone's glass is a painted picture of an iOS home
+  screen (its Dynamic Island with the time and signal either side, a
+  calendar and a weather widget, app icons with their names, the Search
+  pill and the dock), its camera plateau stands out of its back with its
+  three lenses, flash and LiDAR, and its USB-C port, speaker holes and
+  buttons are on its edges. Choose them under Other or use `?thing=tv` and
   `?thing=iphone`; both support Toss and Lob. A banana (about 920 kg/m³
   whole) tumbles end over end and floats with only a sliver out. A slice
   of bread (30 g, about 175 kg/m³) flutters down floppier than a pizza,
@@ -105,18 +114,44 @@ is remembered on the device (but the view, which opens on the shore):
   to slush in under half a minute and floats on, nine tenths under: slush
   is still lighter than water. A toddler's toy slide (99 × 46 × 70 cm,
   4.1 kg, hollow walls holding 39 litres) floats nine tenths out of the
-  water; it is held high enough to clear the water, and tumbles slowly. A
-  long thin thing's nominal radius (a banana's, the slide's) is its ball's
-  of like volume, so its splash is sized by what it displaces; the strip
-  shows its length. Fish eat what is edible (an apple, a banana, a
+  water; it is held high enough to clear the water, and tumbles slowly. An
+  iPad's slider runs through four devices, each its maker's size and
+  weight and drawn as itself: an iPhone (the iPhone's own), an iPad mini
+  (19.5 × 13.5 cm, 293 g, lavender), an iPad (24.9 × 18 cm, 477 g, sky
+  blue) and a 13-inch iPad Pro (28.2 × 21.6 × 0.51 cm, 579 g, space
+  black), each iPad's glass a painted picture of its home screen (its own
+  wallpaper, the status bar, a calendar and a weather widget, app icons
+  with their names and the dock; drawn by the pizza's program, so no
+  program of its own), its camera standing out of its back by its logo
+  (the Pro's island with its lens, LiDAR and flash), its USB-C port,
+  speaker holes and buttons on its edges (the iPhone is the iPhone, as
+  above); each is a plate that slaps the water and sinks, the thinnest
+  gliding between its swings. A cast-iron frying pan comes in 20, 25 and 30 cm (1.5, 2.4 and
+  3.4 kg, a Lodge's sizes, the largest with a helper handle), its walls as
+  thick as iron of its weight makes them (about 7150 kg/m³): thrown flat
+  and spinning, it slaps the water, flutters down broadside at about
+  0.8 m/s and lies on the bed on its base or its rim. Roses come one
+  long-stemmed rose or 3, 6, 12 or 24 tied in a spiral under a satin ribbon
+  (about 30 g a rose: 29 g to 0.8 kg), each bloom of layered petals (five
+  outer ones cupped and curled back at their tips, five inside them, four
+  round a spiralled heart, its sepals turned down under it), thorns up
+  their stems and leaves of three serrated leaflets; their petals hold
+  air, so they float, a third under, by each bloom's hull, the rose lying
+  on the water and a bouquet as a raft, its blooms up and its stems under,
+  its weight where its stems and blooms put it (a bouquet that lands on its
+  blooms may stay so). A
+  long thin thing's nominal radius (a banana's, the slide's, the roses')
+  is its ball's of like volume, so its splash is sized by what it
+  displaces; the strip shows its length. Fish eat what is edible (an apple, a banana, a
   watermelon, a pizza, a frozen one once thawed, a pie, bread, a cake):
   below. Each choice's picture
   (`assets/things/thumbs/`) is a harness frame of it at rest on the pool's
   deck, shrunk to 160×90: `--sky=pool --thing=name
   --throws=-1.75:0.75:0.05 --times=3 --seed=1 --w=320 --h=180`, looked at
   where it rests (`--report` says) with `--look=x:y:z` and a `--fov` that
-  frames it (a duck 4°, a pie 8°, a pizza 9°, a toy slide 24°; the cake's
-  with `--seed=3`, on which it lands right way up).
+  frames it (a duck 4°, an iPhone 4°, an iPad 6°, a frying pan 7°, a pie 8°, a pizza
+  9°, a toy slide 24°; the cake's with `--seed=3`, on which it lands right
+  way up, and the roses' with `--seed=5` at 11°, on which they stand).
 - View: Shore, standing on the bank as the page opens; Behind, over the
   thrower's shoulder, a metre back and a little above the shore's eye, so
   the hand with the preview of the thing in it, the arc of the throw and
@@ -219,9 +254,15 @@ is remembered on the device (but the view, which opens on the shore):
 - Weather: Clear (the default), Light rain, Heavy rain, Storm, Light snow,
   Heavy snow or Blizzard. Rain comes under
   an overcast that hides the sun and greys the sky, with a haze that fades
-  the far shore; its drops ring the water, streak past the eye and throw up
-  flecks where they land, and the pool's deck goes dark with wet. A light
-  rain's rings are fine and far apart; a downpour hammers the whole surface.
+  the far shore; its drops ring the water, streak past the eye and splash
+  where they land, and the pool's deck goes dark with wet. Where a drop
+  lands it throws up a crown's flash, then a thin jet that shoots up and
+  falls back over a quarter of a second, some with a droplet off its tip,
+  or, for a share of the drops, a floating bubble that pops within a second
+  or two; each splash has its own height and brightness, so no two are
+  alike, and those too far off to make out fade into the fizz the rings
+  and the haze give the far water. A light rain's
+  rings are fine and far apart; a downpour hammers the whole surface.
   Rain at night is dark: the cloud hides the moon. A storm is a downpour
   under a darker sky, with lightning, and brings a gale. Snow falls from a
   brighter overcast, its flakes drifting with the wind, swaying and melting
@@ -244,6 +285,18 @@ is remembered on the device (but the view, which opens on the shore):
   nothing swims, nothing is startled and nothing is eaten (`?fish=off` on
   the page, `--fish=none` for the harness; remembered on the device like
   the other settings).
+- Full screen: On or Off, and the F key, where the browser lets a page take
+  the whole screen (Android, an iPad, a desktop browser: the Fullscreen
+  API, `src/screen.js`). Safari on an iPhone lets no page do that, so there
+  the page says the way: add the pond to the Home Screen (Share, then Add
+  to Home Screen) and open it from there, where it runs as an app with no
+  browser bars, the water under a see-through status bar
+  (`apple-mobile-web-app-status-bar-style` and `manifest.webmanifest`,
+  which asks Android for the whole screen too). Even in a Safari tab the
+  pond reaches up behind the iPhone's clock: Safari 26 draws only the page's
+  scrolled content there, never a fixed element, so on an upright iPhone
+  the canvas lies in the page a little taller than the window, scrolled up
+  under the status bar (`src/screen.js` says how and why; `?bleed=` below).
 - Quality: Auto, Low, Medium or High.
 Auto starts on High everywhere and steps down by itself if the idle
 pond or the first splash renders too slowly, and later whenever the frame
@@ -260,11 +313,18 @@ one), and a pond where nothing happens at 30 frames a second; High keeps
 24 stones' rings, Medium 12 and Low 10, 24 of the little rings the
 splash's drops leave (16 and 12), a ring of 65 536 spray sprites,
 Medium 16 384 drawing two fifths of High's and Low 8192 a fifth (each
-sprite standing for that many more drops), and 40 things at rest (a stone on
-the bottom is one draw call) and 16 afloat (a floater costs more: its
-physics, its ride and its mirror image), Medium 30 and 14, Low 20 and 12;
-up to 20 things may be on the move at once, on every preset. Past a count
+sprite standing for that many more drops), and 80 things at rest (a stone on
+the bottom is one draw call), 32 afloat (a floater costs more: its
+physics, its ride and its mirror image) and 24 shards of broken ice,
+Medium 45, 21 and 15, Low 20, 12 and 6; up to 40 things may be on the move
+at once on High, 30 on Medium and 20 on Low. Past a count
 the oldest of that kind shrinks away over 0.6 s, never vanishing at once.
+A ball (20 480 triangles, its seams and dimples pressed into its sphere)
+small on the screen is drawn from a coarser mesh of it, 5120, 1280 or 320
+triangles, its paint averaged as a mipmap's is: the coarsest whose corners
+lie at most 1.5 pixels apart in the pass it is drawn in (its mirror image's
+and under-water part's at those passes' resolution), so a ball near the eye
+or under the zoom is as it always was.
 The canvas never holds more than 2.6 million pixels.
 Core stone/splash programs are compiled while the page loads, under its
 veil: a stone is thrown and drawn there, then cleared away (with the water
@@ -278,7 +338,9 @@ remembered weather, is rendered before the veil lifts, even when paused.
 The published site serves Three.js alongside its own files (`npm run site`
 creates `_site/vendor/three`). Dependency failures offer Retry. Modules have a
 30-second deadline; sky and rain transfers time out only after 30 seconds
-without progress, so slow downloads can finish. Sky calibration and the panorama
+without progress, so slow downloads can finish, and a deadline that passes
+while the page itself is frozen (a slow GPU compiling the scene) gives the
+transfer a fresh 30 seconds rather than aborting it. Sky calibration and the panorama
 load together, and a failed replacement leaves the current sky visible.
 The published page preloads every module it imports (the site build lists the
 whole import graph), so they download at once as the page is parsed, and it asks
@@ -431,6 +493,12 @@ had before the control; Windy 1.8.
 **Things** (`src/things.js`, `src/thingMeshes.js`, `src/rock.js`,
 `src/collide.js`). What can be thrown is a registry of plain, validated
 definitions (`defineThing`); `__pond.defineThing(key, definition)` adds one.
+A size preset may have a look of its own (and water, air and ballast), so
+one slider can run through things of different shapes: each step is then a
+thing of its own (`variantAt`), made ready as the slider comes to it (the
+iPad's devices, the frying pan's sizes, the roses' counts). A mesh may give
+the physics a closed body of its own (`userData.physics`: a rose's blooms,
+whose petals are drawn open, float by their hulls).
 `tools/thing-probe.mjs` checks them.
 
 **Fish** (`src/fish.js`, drawn by `src/fishMeshes.js`). Each place's water
@@ -650,15 +718,31 @@ wider and longer. The surface holds only so much of it: on fresh water one
 layer of bubbles bursts at a time, and the rest is the cloud of bubbles
 just under the surface, which most of a real boil's white is. So the water
 shader draws a boil up to that hold (a map value of 0.035) as bubbles
-bursting on the surface, a random few at a time and most of them small,
-each a clear cap with a thin bright rim (as a foam speck is drawn) that
+bursting on the surface, a random few at a time and most of them small
+(the big ones only where a cloud lies under the boil, its middle; a fizz
+with none, drops' landings and bubbles surfacing, makes small ones, which
+from the bank are a grain rather than a sprinkle of beads),
+each a dome standing on the water (as a foam speck is drawn: a clear film
+with a window of sky on its top, bright low down where it mirrors the
+horizon and dimmer above, a lower part mirroring the water that shades
+what lies behind it, and a thin bright limb, round on top, cut by the
+water at its foot, cast against the pixel's own view ray so it is
+a dome from the bank and a disc from above, and set anywhere in its cell
+on a lattice whose rows are staggered, so the domes fall in no rows), that
 swells, glints and bursts within half a second, and the rest as the cloud, a milky tint of the water
 seen through the surface (its colour the water's own absorption against the
 bubbles' scattering, the lake's blue-green paled), churned in lumps that
-break up its edge, under the sky's reflection; the gale's whitecaps, a
-breaking wave's packed froth, stay white. Foam specks ride over a boil's
-cloud as over clear water. A pebble's boil is nearly all fizz; a big stone's mostly
-cloud. Each is stamped as
+break up its edge, under the sky's reflection. Over the cloud lies the
+boil's froth: the packed pattern below at twice the cloud's map value
+(up to `FOAM_FROTH_GAIN` times it, rising with its depth), its bubbles alone with no lace, holed and ragged, so a
+stone's boil is dense white froth while it lasts, thinning at its edge into
+the bursting domes, which give way under it. A smooth milk with domes over
+it read as fog with marbles on it, from the bank and close to; froth with
+structure, holes and ragged edges reads as foam. The gale's whitecaps, a
+breaking wave's packed froth, stay white. Foam specks ride over a fizz and
+a boil's thin edge as over clear water and fade under its froth. A pebble's
+boil is nearly all fizz, its cloud too thin for much froth; a big stone's
+mostly cloud, froth over milk. Each is stamped as
 a patch of three to five sub-stamps of unequal sizes at random offsets,
 never one round Gaussian, so no two boils share a shape. Surface flows carry
 the foam: where the hole closed the jet's base wells up, and where the jet
@@ -669,8 +753,10 @@ clears. The whole of it drifts downwind at 3 cm/s in a breeze (with the
 wind's strength), and its pattern and specks with it. The foam map says
 where and how much, but its cells are over a centimetre wide, so the water
 shader draws the raft from three layers of cellular noise: bubbles 2 to 3 mm
-across packed together, larger ones of 3 to 7 mm among them, and a lace of
-curved filaments around holes a few centimetres wide. A boil, the bubbles a
+across packed together, larger ones of 2 to 10 mm among them (most small,
+one in ten over 8 mm, as real foam's sizes spread), and a lace of curved
+filaments around holes a few centimetres wide. Each bubble lies anywhere in
+its cell, so none of them, nor their clear windows, fall into rows. A boil, the bubbles a
 splash leaves bursting on fresh water, takes no lace: it is drawn from the
 bubble layers alone, and only a raft (the gale's sea foam) thins into
 filaments. The map's strength,
@@ -681,21 +767,24 @@ nearly solid white, its bubbles shaded darker at their rims and catching the
 sun; as it weakens the holes open, the filaments thin to strings of bubbles
 and clumps, then only the biggest bubbles are left, so a raft thins from its
 edge inward the way foam pops, and foam just over the threshold, a single
-layer of bubbles, lets the water show through. The larger bubbles have clear
-centres and bright rims, with milky fine bubbles between them. The map's
-separate boil and raft amounts control this material: a breaking wave's
-dense froth scatters more light; as it drains, the water shows through the
-bubble films.
-Those films use the existing bubble cells and fade to their measured mean
-opacity at a distance, adding no texture or noise layer. Close up (the
+layer of bubbles, lets the water show through. Some of the larger bubbles
+that show have a clear window, a drained film, each its own size, with milky
+fine bubbles between them: half of a raft's, fewer of a boil's, whose films
+burst rather than drain. The map's separate boil and raft amounts control
+this material: a breaking wave's dense froth scatters more light; as it
+drains, the water shows through the windows. They use the existing bubble
+cells and fade to their measured mean at a distance, each by its own size,
+adding no texture or noise layer; faded foam's opacity is lifted to what its
+covered pixels average, so it keeps its brightness as it recedes. Close up (the
 shoot harness, `--seed=1`, `--view=high --fov=16`), a 6 cm stone thrown
 normally leaves a faint milky ring and a see-through fizz over about its
-hole's mouth at 0.3 to 0.8 s and a few foam specks after; a 20 cm rock a
-milky, soft-edged churn about 30 cm across from 0.4 to 1.4 s, thinning to
-patches at 1.7 s and clear water by 2.2, with hardly any solid white
-(about 5 cm² of it, against 180 cm² when the boil was drawn as surface
-froth). From the bank, where the surface mostly mirrors the sky, either is
-a faint pale patch.
+hole's mouth at 0.3 to 0.8 s and a few foam specks after; a 20 cm rock
+dense white froth over a milky churn about 30 cm across from 0.4 to 1.4 s,
+fizzing at its edge, thinning to patches at 1.7 s and clear water by 2.2.
+From the bank the rock's froth, on the surface, shows over the sky's
+reflection; the milk under it alone was a faint pale patch there (when the
+boil was milk with domes over it, the rock left about 5 cm² of solid
+white).
 The threshold's edge is one pixel wide at any distance (from the pattern's
 exact gradient and the pixel's footprint on the water), and each layer fades
 into an even white of the right strength before its cells shrink to a couple
@@ -706,13 +795,16 @@ bubble among them, each with a shine of its own, most faint and a few
 bright) riding the waves where the crown stood, where the jet fell back,
 where drops landed and where bubbles surfaced, drifting outward and popping
 over 0.8 to 3 seconds (fresh water's bubbles; the big ones first), faded out
-where the foam is dense. A patch of them is lumps with gaps, never an even
-scatter: its specks gather in rafts of a dozen or so (clumps of clusters a
-few millimetres across, spread over centimetres), favouring one side, with
-strays alone between them, and the rafts surface over a few tenths of a
-second rather than in one frame. The specks flatten into ellipses at a grazing view and
-fade with their projected area, so distant bubbles do not remain bright,
-camera-facing flecks.
+where the foam is dense, a raft or a boil's froth. A patch of them is lumps with gaps, never an even
+scatter: its specks gather in rafts of a score or so (clumps of clusters a
+few millimetres across, spread over a centimetre or two), favouring one
+side, with a few strays alone between them, and the rafts surface over a
+few tenths of a second rather than in one frame. A speck resolved over a
+few pixels is drawn as a dome standing on the water, as the water draws its
+own bursting bubbles (below): a clear film with a faint window of sky on
+its top, a lower part shading the foam behind it, a thin bright limb, round on top, cut by the water at its foot;
+an unresolved one is a soft grain fading with the area it covers, so
+distant bubbles do not remain bright, camera-facing flecks.
 
 The splash scales with the stone (the slider's 1.5 to 16 cm is its
 diameter; the constants were tuned at 3 cm radius). Wherever the physics
@@ -924,13 +1016,19 @@ rings are finer than a pixel, what the mip levels average away comes back as
 roughness, from the rings' slope spectrum by Campbell's theorem (as the
 wind's ripples do). The falling drops are streaks, each the path it cuts in
 the eye's 1/30 s, slanted by the wind: drops of the same schedule, so each
-falls to the very place its ring opens and its fleck of white rises and
-falls. A few of each tile's drops near the eye fall as streaks, about as many
-to a cubic metre as before, fading out 11 m away. Since every tile drops the
-same drops at the same moments, the tiles take turns, so a drop's twin a
-metre away does not fall beside it in step (its twins are 3 to 5 m apart);
-what is left of the repeat is a gentle swell in how many streaks are in view
-(about 8% over a second, against 2% for drops wholly at random).
+falls to the very place its ring opens and its splash is thrown up: a
+crown's flash whose rim lingers over the crater, then a thin jet that shoots
+up and falls back more slowly over a quarter of a second, a droplet off the
+tip of some, or, for a share of the drops (more in a downpour, whose
+bigger drops' crowns close over the crater more often), a bubble floating on
+the water that pops within a second or two, each splash its own height and
+brightness, so no two are alike. A few of each tile's drops near the eye
+fall as streaks, about as many to a cubic metre as before, fading out 11 m
+away. Since every tile drops the same drops at the same moments, the tiles
+take turns, so a drop's twin a metre away does not fall beside it in step
+(its twins are 3 to 5 m apart); what is left of the repeat is a gentle swell
+in how many streaks are in view (about 8% over a second, against 2% for
+drops wholly at random).
 
 **Drop rings** (`src/dropRings.js`; its shader `DROP_RING_SLOPES` in
 `src/shaders/rain.js`). Each of a splash's drops 1.5 mm in radius or more
@@ -1264,9 +1362,16 @@ farther out, so it rises into the view rather than filling its corner.
   `tools/wave-probe.mjs`, `tools/foam-probe.mjs`, `tools/cavity-probe.mjs`,
   `tools/ring-probe.mjs`, `tools/rain-probe.mjs`, `tools/snow-probe.mjs`,
   `tools/gale-probe.mjs`, `tools/skip-probe.mjs`, `tools/thing-probe.mjs`,
-  `tools/ice-probe.mjs`, `tools/spray-probe.mjs`, `tools/jet-probe.mjs` and
-  `tools/drop-ring-probe.mjs`;
-  each exits with 1 if a check fails.
+  `tools/ice-probe.mjs`, `tools/spray-probe.mjs`, `tools/jet-probe.mjs`,
+  `tools/drop-ring-probe.mjs`, `tools/fish-probe.mjs` and
+  `tools/garden-probe.mjs`;
+  each exits with 1 if a check fails. `tools/run-probes.mjs` runs them side
+  by side, as many at once as the machine has cores (`PROBE_JOBS=1` runs
+  them one after another), each one's output printed whole when it ends,
+  and runs any that failed beside the others again alone: the computed
+  checks are seeded and fail again, while a budget of wall-clock time that
+  another probe crowded passes alone, as it was written to. The summary
+  names every probe run again. On four cores the suite takes about 80 s.
 - `node tools/ice-probe.mjs [--list]` throws every thing at thin and thick
   ice as the app throws it, each way, with the splash on the CPU, and
   prints what breaks what: each throw's blow against what the ice holds and
@@ -1275,11 +1380,13 @@ farther out, so it rises into the view rather than filling its corner.
   the pizza hold on thin ice, that the default stone breaks thin ice and
   holds on thick and a 30 cm rock breaks thick, that each outcome is the one
   its blow and its draw say, that whatever held rests on the ice and was
-  never under it, that every hole holds its cavity's lip and the jet's foot
+  never under it, lying on a face with its weight over what it rests on,
+  that every hole holds its cavity's lip and the jet's foot
   at every moment and its cracks lie on the ice, that a stone slides four
   times as far on ice as on the deck, that a skip skitters, that a stone
   slid into a hole falls in and a floater that broke through floats in its
-  hole, that a stone slid into one at rest knocks it on with the momentum
+  hole, that stones at rest where a hole opens fall in and those round it on
+  its crushed rim tip in while the rest stay clear of its edge, that a stone slid into one at rest knocks it on with the momentum
   kept, that a frozen pool keeps everything on its ice or its deck and turns
   a slide back off its walls, that a seeded throw breaks the same hole and
   halving the substep changes little, and what a break costs.
@@ -1296,7 +1403,9 @@ farther out, so it rises into the view rather than filling its corner.
 - `node tools/rain-probe.mjs [--write]` works out a raindrop's ring on the
   CPU and prints its timeline and slope spectrum, checking the sum starts
   as the crater, the slowest waves go 0.23 m/s, the steepest crest runs at
-  about their group speed and the table's edge cuts nothing; `--write`
+  about their group speed and the table's edge cuts nothing, and prints
+  each rain's biggest splash, checking its phases come in order, it is over
+  before its slot's next drop and its bubbles fit their cap; `--write`
   writes `assets/rain/ring.json` and `ring_profile.bin`, which the page
   loads the first time it rains.
 - `node tools/skip-probe.mjs [throws=60] [--seed=1] [--aim=x:z] [--list]`
@@ -1347,10 +1456,15 @@ farther out, so it rises into the view rather than filling its corner.
   then) and no request fails.
 - `node tools/foam-probe.mjs` runs the foam's bubble pattern on the CPU, with
   the constants read from the shader: each layer's median and spread and the
-  bubbles' mean shade match what the shader fades them to, and at the home,
+  bubbles' mean shade match what the shader fades them to, the clear
+  windows' mean is what they fade to for a raft's share and a boil's, the
+  cell search misses no bubble and the bubbles lie on no lattice, a boil's
+  domes average the white the shader's fit gives them at every elevation,
+  and at the home,
   phone and close-up framings the antialiased pattern covers what a
-  supersampled one does and changes no more than it when the water moves
-  under the pixels; it prints the cell visits per foam pixel. Then it runs
+  supersampled one does, with its brightness within 6%, and changes no more
+  than it when the water moves under the pixels; it prints the cell visits
+  per foam pixel. Then it runs
   the foam map's step with the shader's arithmetic: a surface flow keeps the
   amount to a few per cent and brightens nothing, clears its core, carries a
   raft out to where a source of its area would and leaves a clean hole; the
@@ -1441,6 +1555,11 @@ farther out, so it rises into the view rather than filling its corner.
   runs it headless and checks the report's shape.
 - `?paused=1` starts the page with its clock stopped (the harness does, so
   its frames start from world time zero and every run renders the same water).
+- `?bleed=N` lays the canvas N CSS pixels under the window's top, the page
+  scrolled up by as much, in any browser (`src/screen.js`); Safari 26 on an
+  upright iPhone does this by itself with 64 (24 on an iPhone with a home
+  button), a little over its status bar. `?bleed=0` turns it off there, to
+  compare; another N tries another height.
 - `?wind=x,z` on the page (`--wind=x:z` for the harness) sets the direction
   the wind blows toward, in world XZ (the camera looks toward −Z); the
   default is (0.45, −0.9), away from the camera and a little to the right.
@@ -1594,6 +1713,34 @@ farther out, so it rises into the view rather than filling its corner.
   120 Hz one, and a throw every other frame of a 120 Hz clock (held to 60 a
   second) and every frame of a 60 Hz one; and that a large window keeps
   within the pixel budget.
+- `node tools/frame-rate-probe.mjs [--scene=koi,pool]` plays seeded games
+  twice, in frames of 1/60 s and in frames of 1/60, 1/45, 1/120 and 1/50 s,
+  and checks they end the same, exactly: every thing thrown (its place, turn,
+  state, and when it began to fade), every fish, the ice's holes and the next
+  draw of `Math.random`. The scenes: throws among the lake's fish and more
+  floaters than Low keeps; a break through thin ice, a stone into its hole, a
+  brick slid and a pebble onto a shard; the koi and their food; the pool with
+  more stones than Low keeps at rest. Nothing is drawn
+  (`__pond.stepFrames`), so the floaters' ride, read back from the drawn
+  water, is left out.
+- `node tools/grab-probe.mjs` takes seeded throws in hand in each state they
+  pass through (in the air, skimming, going in, at rest on the bed, afloat
+  and at rest afloat, sliding and settling on thick ice, a piece of thin ice
+  set in its sheet and afloat, on the pool's floor, in the Koi pond),
+  carries each and lets it go over a surface of its own (the water, the
+  ice, a hole in it, the pool's deck, the garden's planting), and checks
+  that it is taken clean of every other state (src/rock.js setState), stays
+  held and never fades while carried, and once let go is kept and lies no
+  deeper in the bed than a stone settles into the sand.
+- `node tools/uniform-probe.mjs [--all]` starts the page on High and takes it
+  through what builds programs of its own (a throw, the storm, the blizzard,
+  thick ice, the Pool, the Koi pond, Low), packs each program's uniforms as
+  ANGLE does (GLSL ES 1.00's Appendix A) and checks that every one fits what
+  WebGL 2 promises each stage on any device: 224 uniform vectors and 16
+  textures to a fragment shader, 256 and 16 to a vertex shader. SwiftShader
+  and desktop GPUs give far more, so nothing else notices a program going
+  over; it prints each stage's largest and its headroom (`--all`: every
+  program's).
 - `node tools/zoom-probe.mjs [--w=390 --h=844]` drives the wheel, a pinch, a
   tap and Escape through the page's own handlers and checks that what is under
   the pointer stays there (at the shore, and at the corners of the steeper
@@ -1629,7 +1776,9 @@ farther out, so it rises into the view rather than filling its corner.
   strip (a phone in portrait without scrolling, each group one row there that
   scrolls sideways to every pill), its pills tall enough for a
   finger, a pill tapped is thrown next, a press on the pond closes it without
-  throwing and the keyboard works it; that the settings open with their rows, each
+  throwing and the keyboard works it; that a thing whose steps are things of
+  their own (an iPad, a frying pan, roses) reads each step on the strip
+  without overflowing it; that the settings open with their rows, each
   row's value whole beside its name, the Water page's pictured choices each
   reachable by scrolling, its Frozen freezing the water, Thin and Thick
   under the cards fitting and taking, and Murky thawing it, the Location
@@ -1640,13 +1789,28 @@ farther out, so it rises into the view rather than filling its corner.
   `shots/controls-probe/`. The
   shoot harness and the other probes emulate a desktop browser, which ignores
   the viewport tag, so only this probe sees the page as a phone does.
+- `node tools/screen-probe.mjs` loads the page as Safari 26 on an iPhone
+  lays it out (its user agent and screen, touch, 3× pixels) and checks that
+  the canvas lies 64 pixels under the window's top, the page scrolled to
+  its foot, the pond framing the canvas as it lies and a tap throwing
+  under the finger; that the strip stays put, the page goes back to its
+  foot when something else scrolls it, and on its side the canvas is fixed
+  again; that Full screen's On and Off work and the canvas is fixed in full
+  screen; that without the Fullscreen API (an iPhone's Safari) the page
+  names the Home Screen's way, and that opened from the Home Screen, in
+  Chrome on an iPhone and in a desktop window there is no bleed, an iPhone
+  with a home button gets 24, F goes in and out of full screen on a desktop
+  and `?bleed=40` works there. No desktop browser has an iPhone's status
+  bar, so what shows under the clock can only be seen on a phone.
 - `window.__pond` exposes the app in the console: `throwAt(x, z, { radius, power, manner, skip, thing, size, dressing })`
   (`dressing`: the seed of a pizza's, pie's or cake's own parts; `preview.dressing` is the hand's),
   `setPower(name)` (and `power`), `setManner(name)` (and `manner`), `setSkip(on)` (and `skipping`), `setTrace(on)`,
   `setThing(name)` (and `thing`: a key of `THINGS` in `src/things.js`, remembered
   on the device) and `setSize(value)` (and `size`: the slider's value in its unit),
   `setTimeScale` (and `timeScale`), `pause()`, `advance(seconds)` (in the frames the app would
-  draw at the current time scale), `setDebugView(name)`, `setFov(degrees)`,
+  draw at the current time scale), `stepFrames(frames)` (each a frame of that many seconds, nothing
+  drawn), `restartFish()` (the place's fish as they start), `holdThing(rock)`, `carryHeld(x, y, z)` and
+  `letGo()` (the hand's hold, drag and release, as a press does them), `bedDepthAt(x, z)`, `poolSquare`, `setDebugView(name)`, `setFov(degrees)`,
   `lookAt(x, y, z)`, `resetView()`, `setWind(name)` (and `wind`: calm,
   breeze or windy, remembered on the device), `setSky(place)` and
   `setHour(name)` (and `sky`, `pooled`, `hour`, and `hours`, the shown

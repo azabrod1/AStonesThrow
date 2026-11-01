@@ -14,6 +14,8 @@
 import { MAX_RINGS, PROFILE_TEXELS, PROFILE_MAPPING, RING_TEXTURE_UNITS } from '../rings.js';
 import { RAIN_RIPPLES, DROP_RING_SLOPES } from './rain.js';
 import { GALE_SURFACE } from './gale.js';
+import { SURFACE_BUBBLE, BUBBLE_SPRITE } from './bubble.js';
+import { ICE_SHADOW_LOOKUP } from '../iceShadow.js';
 
 // The weather's haze (rain's, snow's, a fog's; src/sky.js setWeather): what lies d metres off fades
 // toward uHazeColor, the overcast's horizon, by 1 − exp(−uHazeDensity·d)
@@ -144,6 +146,44 @@ ${ICE_UNIFORMS}
 #define ICE_FROST_SKY 2.5              // ...and no brighter than this times the sky's mean (iceSurface: the sun is the sheen's)
 #define ICE_UNDER_GLOW 0.35            // the light white ice lets through to its underside, against what falls on its top
 #define ICE_SNOW_GLOW 0.4              // and under snow on it, against that
+
+// What lies on the ice, or is over it, shades it (src/ice.js shade: the
+// things nearest the eye, in its slots, ICE_SHADOW_SLOTS of them). Its shadow
+// is its tile's in the shadow atlas (src/iceShadow.js: its drawn mesh seen
+// down the sun's rays), the edge filtered over the sun's width at the
+// distance or this pixel's footprint. It hides the sky as an upright
+// ellipsoid over its footprint does (src/rock.js drawnEllipsoid), its
+// height high and its footprint's mean width across, its view factor seen
+// from a point on the plane (width·height·h / D³, h its middle's height, D
+// the distance to it, its footprint made round): all of it under where it
+// touches, little past a flat thing's rim, let go to nothing at the reach
+// where it falls to a hundredth (src/ice.js ICE_SHADE.least). Each is
+// reckoned only inside the circle its shade lies in, and none outside the
+// box round them all (src/ice.js shade): the rest of the ice pays nothing.
+// iceThingsShade gives what of the sun and of the sky reaches here.
+${ICE_SHADOW_LOOKUP}
+uniform vec4 uIceThings[ICE_SHADOW_SLOTS];            // each its middle (x, height over the ice's top, z) and half-height (m)
+uniform vec4 uIceThingFootprints[ICE_SHADOW_SLOTS];   // and its footprint's half-widths (m) and its longer's heading (cos, sin)
+vec2 iceThingsShade(vec2 point, float footprint) {
+  float sun = 1.0, sky = 1.0;
+  if (uIceThingCount < 0.5 || any(lessThan(point, uIceShadeBox.xy)) || any(greaterThan(point, uIceShadeBox.zw))) return vec2(1.0);
+  for (int index = 0; index < ICE_SHADOW_SLOTS; index++) {
+    if (float(index) >= uIceThingCount) break;
+    vec4 bound = uIceThingBounds[index];
+    vec2 fromBound = point - bound.xy;
+    if (bound.z < 0.0 || dot(fromBound, fromBound) > bound.z) continue;
+    vec4 thing = uIceThings[index], outline = uIceThingFootprints[index];
+    vec2 offset = thing.xz - point;
+    // The sky: its footprint made round, of its mean width (along its footprint's axes, over their half-widths).
+    vec2 across = vec2(dot(offset, outline.zw), dot(offset, vec2(-outline.w, outline.z))) / outline.xy;
+    float width = sqrt(outline.x * outline.y);
+    float distance = length(vec3(across.x * width, thing.y, across.y * width));
+    sky *= 1.0 - min(width * thing.w * thing.y / max(distance * distance * distance, 1e-12), 1.0) * (1.0 - smoothstep(0.5 * bound.w, bound.w, distance));
+    // The sun: its tile.
+    sun *= iceShadowLit(index, vec3(point.x, uIceTop, point.y), 1.5 * footprint);
+  }
+  return vec2(sun, sky);
+}
 
 // The mask at a world point (the header). Beyond it, dry ice with no hole.
 struct IceMask {
@@ -581,9 +621,24 @@ ${SNOW_COVER}
 //           as an unresolved layer, its median, as the map's boil share
 //           passes FOAM_LACE_BOIL_FROM to FOAM_LACE_BOIL_TO, so it is
 //           bubbles alone and covers about the same;
-//   coarse  FOAM_COARSE_CELL cells, a bubble 3 to 7 mm across in each;
+//   coarse  FOAM_COARSE_CELL cells, a bubble 2 to 10 mm across in each,
+//           most small (FOAM_COARSE_SKEW): real foam is polydisperse, most
+//           of its bubbles small and a few big ones setting what shows (half
+//           here under 3 mm, one in ten over 8 mm), where a uniform draw
+//           over a narrow range was a second population of one size; a
+//           longer tail (to 13 mm) drew the foam 12% darker from the bank
+//           than it is, the faded layer's median standing for bubbles whose
+//           big ones are opaque (tools/foam-probe.mjs's brightness);
 //   fine    FOAM_FINE_CELL cells, a bubble 1.7 to 3.3 mm across in each,
 //           packed so they nearly touch.
+// In both bubble layers a bubble's centre lies anywhere in its cell
+// (FOAM_BUBBLE_JITTER, 1): a grid jittered over j of a cell keeps sinc²(πj)
+// of its lattice's peaks, 0.135 at the 0.7 these once had, which showed
+// close up as rows of bubbles and of their clear films, and none at all at
+// a whole cell. A centre roaming its cell is still within a radius (at most
+// 0.65 of a cell) of every point its disc covers, so the 3×3 search finds
+// every disc over the pixel (tools/foam-probe.mjs counts what a 5×5 search
+// finds that it misses, and checks for a lattice).
 // The bubbles of the two finer layers make one field, the signed distance
 // to the nearest bubble's edge (positive inside, their union), in units of
 // FOAM_BUBBLE_SCALE. The pattern is FOAM_LACE_WEIGHT·lace +
@@ -602,11 +657,24 @@ ${SNOW_COVER}
 // them are left. The map decays at the same rate everywhere, so a raft thins
 // from its weak edge inward, which is how foam pops; ln makes that steady in
 // time.
-// The coarse bubbles also carry clear film centres and scattering rims;
-// the fine bubbles between them stay milky. Dense, freshly churned foam
-// hides the films, then the map's separate boil/raft mixture exposes them
-// as it drains. This reuses the coarse cell search, with no new texture,
-// clock or noise layer. Unresolved films tend to their measured mean opacity.
+// Some coarse bubbles also carry a clear window, a drained film the water
+// shows through; the fine bubbles stay milky. Drainage thins the top film of
+// a big bubble first, while a small one is all Plateau border and stays
+// white, and in a fresh boil films burst rather than drain: so a window is
+// drawn only where a coarse bubble shows (it wins the union over the fine
+// layer, softened over a pixel; a small coarse bubble mostly loses there),
+// on a random share of them by the bubble's own key (FOAM_WINDOW_SHARE: half
+// of a raft's, fewer of a boil's), each window its own size within its
+// bubble (FOAM_WINDOW_SIZE). One window to every coarse cell, of one size,
+// was a grid of dark dots. Dense, freshly churned foam hides the windows,
+// then thins (wetness) to expose them as it drains. This reuses the coarse
+// cell search, with no new texture, clock or noise layer. Unresolved films
+// tend to their mean, each window by its own size (it is smaller than its
+// cell, and blurred its soft edge darkens more than it covers), as
+// 1 − share·FOAM_FILM_WINDOWS: FOAM_FILM_WINDOWS is the
+// mean darkening were every shown coarse bubble windowed, measured by
+// tools/foam-probe.mjs, and the share scales it (a bubble's key chooses it
+// independently of its window's size).
 //
 // Antialiasing. The threshold's edge is one pixel wide at any distance: its
 // width is the change of the pattern across the pixel, from the pattern's
@@ -642,15 +710,19 @@ ${SNOW_COVER}
 // about 1350; a throw a metre or two from the camera resolves all three,
 // about 1800. The wet films add about 25 scalar operations and no cell
 // visits or texture fetches (the raft amount is in the same RGBA sample).
+// A splash's boil pays it too, for its froth (the last paragraph), over its
+// cloud's own area only.
 //
 // A splash's boil on fresh water. A stone leaves only a boil (src/splash.js):
 // big bubbles which, with no salt to hold them apart, merge and burst as they
 // reach the surface and never raft. Most of a real boil's white is not on
 // the surface but in the cloud of bubbles just under it, which makes the
-// water milky, pale and translucent; on the surface only one layer of
-// bubbles bursts at a time. So WATER_FRAGMENT draws the splash's own boil
-// (uFoam's; the gale's whitecaps, a breaking wave's packed froth, are this
-// pattern's, white on any water) in two layers, never as this pattern.
+// water milky, pale and translucent; on the surface one layer of bubbles
+// bursts at a time, packed into a froth while the cloud under it is thick.
+// So WATER_FRAGMENT draws the splash's own boil (uFoam's; the gale's
+// whitecaps, a breaking wave's packed froth, are this pattern's, white on
+// any water) in three parts: the milk under the surface, this pattern's
+// froth over the cloud, and bursting domes where the froth thins.
 // The surface holds a soft minimum of it and FOAM_BOIL_HOLD (FRESH_BOIL):
 // bubbles bursting (freshBubbles), in FOAM_BUBBLE_CELL cells, one in each at
 // most, at a random place and size within it, alive in a random share of the
@@ -672,102 +744,45 @@ ${SNOW_COVER}
 // vary the light it sends back by up to FOAM_CHURN either way (a dense
 // cloud's brightest lumps held at a deep cloud's, so its mean dims a
 // little), and by FOAM_CHURN_EDGE more where it thins, so a big boil heaves
-// in lumps and its edge breaks up rather than glowing as a blurred ring. A
-// pebble's boil, under the hold, is nearly all surface, a fizz; a big
-// stone's is mostly cloud, fizzing over it. tools/foam-probe.mjs checks the
-// hold, the bubbles' cover and fade, the deep cloud's colour on every Water
-// setting and the churn's spread. Cost: the map is read once, as before, only
-// earlier; the hold is a square root and an inverse square root a pixel;
-// where the surface holds a boil, the bubbles visit one cell, about 100
-// operations (the film's mean over a pixel three square roots of them, its
-// meniscus two smoothsteps); where there is a cloud, three value noises and its colour,
-// about 80.
+// in lumps and its edge breaks up rather than glowing as a blurred ring.
+// Over the cloud lies the boil's froth: this pattern, its map value
+// up to FOAM_FROTH_GAIN times the cloud's (frothFoam, rising with its depth), taken as a boil (bubbles alone, no
+// lace), so a stone's boil is dense white froth while it lasts, holed and
+// ragged-edged as a raft is, the milk showing through its holes, and thins
+// where the cloud does, at its edge, into the domes, which fade out under
+// the froth's cover (frothCover). A smooth milk with domes over it read as
+// fog with marbles on it, from the bank and close to; froth with structure,
+// holes and ragged edges reads as foam. A pebble's boil, under the hold, is
+// nearly all surface, a fizz, its cloud too thin for much froth; a big
+// stone's is mostly cloud, froth over milk, fizzing at its edge.
+// tools/foam-probe.mjs checks the hold, the bubbles' cover and fade, the
+// deep cloud's colour on every Water setting and the churn's spread. Cost:
+// the map is read once, as before, only earlier; the hold is a square root
+// and an inverse square root a pixel; where the surface holds a boil, the
+// bubbles visit one cell, about 100 operations (the film's mean over a
+// pixel three square roots of them, its meniscus two smoothsteps), none
+// where the froth covers wholly; where there is a cloud, three value noises
+// and its colour, about 80, and where its froth passes FOAM_PRESENT, the
+// pattern's own (the Cost paragraph above).
 // A splash's boil on fresh water (FOAM_PATTERN's last paragraph): the share
 // the surface holds, a soft minimum of the boil and FOAM_BOIL_HOLD,
-// boil·(1 + (boil/hold)⁴)^(−1/4): all of a faint boil, at most the hold. The
-// water (WATER_FRAGMENT) and the specks (SPECK_VERTEX) both take it.
+// boil·(1 + (boil/hold)⁴)^(−1/4): all of a faint boil, at most the hold;
+// the rest is the cloud, topped with froth at up to FOAM_FROTH_GAIN times its
+// value. The water (WATER_FRAGMENT) and the specks (SPECK_VERTEX) both take
+// them.
 // tools/foam-probe.mjs twins it (surfaceShare): change both.
 export const FRESH_BOIL = /* glsl */`
 #define FOAM_BOIL_HOLD 0.035               // the most of a splash's boil the surface holds, one layer of bubbles bursting
+#define FOAM_FROTH_GAIN 4.0                // the boil's cloud, beyond the hold, is topped with froth: FOAM_PATTERN, as a boil, at up to this many times the cloud's map value...
+#define FOAM_FROTH_FULL_CLOUD 2.0          // ...reached as the cloud deepens to this many holds (frothFoam: a pebble's thin cloud froths hardly at all, a rock's deep one goes solid)
+// The froth over a boil's cloud, as the foam map's value for FOAM_PATTERN: FOAM_FROTH_GAIN times the cloud, scaled by
+// how deep the cloud is (0 to 1 over FOAM_FROTH_FULL_CLOUD holds), so a thin cloud gives little and a deep one much.
+float frothFoam(float cloud) {
+  return FOAM_FROTH_GAIN * cloud * smoothstep(0.0, FOAM_FROTH_FULL_CLOUD * FOAM_BOIL_HOLD, cloud);
+}
 float freshBoilSurface(float boil) {
   float squared = boil * boil / (FOAM_BOIL_HOLD * FOAM_BOIL_HOLD);
   return boil * inversesqrt(sqrt(1.0 + squared * squared));
-}
-`;
-
-// A bubble floating on the surface, seen from above, as the water's bubbles
-// bursting over a boil (freshBubbles, FOAM_PATTERN) and the foam specks
-// (SPECK_FRAGMENT) both draw it, so the two kinds match side by side: a
-// nearly clear cap, the water showing through it (FOAM_BUBBLE_CAP_WHITE),
-// with a thin bright rim where its film turns edge on. The film's white is
-// the sky's Fresnel reflection off it, which climbs toward grazing
-// incidence: it rises as g(r) = (1 − cosθ)², cosθ = sqrt(1 − r²) the cap's
-// normal toward the viewer (r in radii), from the cap's to
-// FOAM_BUBBLE_EDGE_WHITE at the limb, where the film mirrors the sky whole.
-// A film's own two-face Fresnel falls faster, nearer (1 − cosθ)⁴ (0.11 at
-// 60° where the square gives 0.28), but at that power the rim of a bubble
-// 10 to 20 pixels across came out too faint to read in frames; the square
-// was tuned by them. Three quarters of its white lies in the outer 15% of
-// the radius, under a pixel until a bubble is some 13 pixels across, so a
-// pixel takes the profile's mean over the span of radii it covers
-// (bubbleFilm), by area, in closed form: over u = r²,
-// ∫(1 − sqrt(1 − u))² du = 2u − u²/2 + (4/3)(1 − u)^1.5 (bubbleFilmArea).
-// The rim never thins below a pixel and keeps its light, spread over it,
-// and the span's share on the disc rounds off the limb. Over the whole cap
-// the white averages FOAM_BUBBLE_FILM_MEAN: g's mean is ∫₀¹ g(r)·2r dr,
-// which with c = cosθ (r dr = −c dc) is ∫₀¹ (1 − c)²·2c dc = 1/6 (for
-// (1 − c)^p, 2/((p + 1)(p + 2)); the radius⁴ this replaced averaged 1/3).
-// Pixels whose spans are centred on them, each a mean by area, keep that
-// mean: summed over a bubble, every bit of its film is counted once
-// whatever the pixel's size, so a field of them drawn at a footprint
-// whitens on average as one point-sampled does, while the bubbles are
-// wider than a pixel; one smaller loses some (the pixels by its centre
-// average it over a span wider than it): where freshBubbles starts to fade
-// them, 2% of the field's white (tools/foam-probe.mjs).
-// Just inside the rim a faint shadow (bubbleMeniscus: FOAM_BUBBLE_MENISCUS
-// of the light behind, at most), where the meniscus at the bubble's base
-// bends the light away: the dark line beside the bright one is what makes
-// an edge look like glass, though over dark water it hardly shows.
-// The sun's glint is its mirror image on the cap: sunGlitter's lobe on the
-// cap's normal, with FOAM_BUBBLE_GLINT_VARIANCE (a smooth film's slopes,
-// spread by a couple of degrees as it wobbles; the raft's packed froth,
-// FOAM_GLINT_VARIANCE, is ten times rougher) widened by the cap's turn
-// across a pixel, so the glint is never smaller than a pixel and does not
-// flicker as the bubble moves. FOAM_BUBBLE_GLINT is the film's two faces
-// times π: the white beside the glint is drawn as the sun's irradiance with
-// no Lambertian 1/π (src/sky.js), against which a mirror's highlight under
-// the same sun is π times sunGlitter's lobe. So the glint is a soft spot on
-// a bubble under some 8 pixels across, a distinct bright point from about
-// 12, and on a bright one nearly white from about 25 (tuned by frames at
-// the high view, the sun to the side).
-export const SURFACE_BUBBLE = /* glsl */`
-#define FOAM_BUBBLE_EDGE_WHITE 1.0         // a bubble's edge, its film seen edge on, mirroring the sky whole...
-#define FOAM_BUBBLE_CAP_WHITE 0.04         // ...whitening as (1 − cosθ)² from this at its top: the water shows through its cap
-#define FOAM_BUBBLE_FILM_MEAN (FOAM_BUBBLE_CAP_WHITE + (FOAM_BUBBLE_EDGE_WHITE - FOAM_BUBBLE_CAP_WHITE) / 6.0)   // its white's mean over the cap
-#define FOAM_BUBBLE_MENISCUS 0.15          // the meniscus's shadow just inside the rim, as a share of the light behind...
-#define FOAM_BUBBLE_MENISCUS_WIDTH 0.08    // ...over about this (radii), or a pixel if wider
-#define FOAM_BUBBLE_GLINT 6.2831853        // 2π: the film's two faces, times π against the white beside it
-#define FOAM_BUBBLE_GLINT_VARIANCE 0.002   // a smooth film's slope variance (2.6° rms)
-// ∫(1 − cosθ)² du over the area u = r² from the centre, cosθ = sqrt(1 − u); nothing past the limb.
-float bubbleFilmArea(float area) {
-  area = min(area, 1.0);
-  float rest = 1.0 - area;
-  return 2.0 * area - 0.5 * area * area + (4.0 / 3.0) * rest * sqrt(rest);
-}
-// Over the radii from inner to outer (in radii, inner < outer), by area: x
-// the share of them on the cap, y the film's mean white there.
-vec2 bubbleFilm(float inner, float outer) {
-  float innerArea = inner * inner, outerArea = outer * outer;
-  float span = outerArea - innerArea;
-  float onCap = (min(outerArea, 1.0) - min(innerArea, 1.0)) / span;
-  float rim = (bubbleFilmArea(outerArea) - bubbleFilmArea(innerArea)) / span;
-  return vec2(onCap, FOAM_BUBBLE_CAP_WHITE * onCap + (FOAM_BUBBLE_EDGE_WHITE - FOAM_BUBBLE_CAP_WHITE) * rim);
-}
-// The meniscus's shadow at a radius (radii), a pixel being so many radii: a
-// band just inside the rim, the share of the light behind it takes.
-float bubbleMeniscus(float radius, float pixel) {
-  float band = max(FOAM_BUBBLE_MENISCUS_WIDTH, pixel);
-  return FOAM_BUBBLE_MENISCUS * smoothstep(1.0 - 3.0 * band, 1.0 - 1.8 * band, radius) * (1.0 - smoothstep(1.0 - 1.8 * band, 1.0 - band, radius));
 }
 `;
 
@@ -776,7 +791,9 @@ ${SURFACE_BUBBLE}
 #define FOAM_FINE_CELL 0.003               // metres
 #define FOAM_FINE_RADII vec2(0.28, 0.55)   // bubble radius range, cells
 #define FOAM_COARSE_CELL 0.008
-#define FOAM_COARSE_RADII vec2(0.2, 0.45)
+#define FOAM_COARSE_RADII vec2(0.12, 0.65) // bubble radius range, cells, drawn as mix(radii, u^FOAM_COARSE_SKEW)...
+#define FOAM_COARSE_SKEW 3.0               // ...most small, a few big
+#define FOAM_BUBBLE_JITTER 1.0             // the bubble layers' centres lie anywhere in their cells (no lattice: the header)
 #define FOAM_LACE_CELL 0.03
 #define FOAM_LACE_RADII vec2(0.0, 0.35)    // the power diagram's weights: cells of unequal size
 #define FOAM_LACE_THICKNESS 0.45           // the lace is +1 on an edge and -1 this many cells from it...
@@ -809,10 +826,10 @@ ${SURFACE_BUBBLE}
 // fading layer tends to, and the width it hands to the threshold.
 #define FOAM_LACE_MEDIAN -0.52
 #define FOAM_LACE_SPREAD 1.49
-#define FOAM_FINE_MEDIAN 0.03
-#define FOAM_FINE_SPREAD 0.6
-#define FOAM_UNION_MEDIAN 0.26
-#define FOAM_UNION_SPREAD 0.74
+#define FOAM_FINE_MEDIAN -0.01
+#define FOAM_FINE_SPREAD 0.65
+#define FOAM_UNION_MEDIAN 0.17
+#define FOAM_UNION_SPREAD 0.8
 #define FOAM_CLUMP_SPREAD 0.29             // of one octave of value noise less 0.5, whose median is 0 (the clumps' and the ragged outline's)
 #define FOAM_FADED_EDGE 0.5                // the share of a faded layer's spread that widens the edge
 // Below this map value no pattern can reach the threshold.
@@ -823,15 +840,19 @@ ${SURFACE_BUBBLE}
 #define FOAM_RIM_SHADE 0.74
 #define FOAM_CREASE_SHADE 0.82
 #define FOAM_GAP_SHADE 0.86
-#define FOAM_FADED_SHADE 0.93
+#define FOAM_FADED_SHADE 0.92
 #define FOAM_ALBEDO vec3(0.9, 0.92, 0.93)
 #define FOAM_SKY_LIGHT 1.5                 // the sky lights foam from inside too, not only its top
 #define FOAM_GLINT 2.0                     // a bubble's film has two faces
 #define FOAM_GLINT_VARIANCE 0.02           // slope variance of the film's sheen
 #define FOAM_THIN_OPACITY 0.65             // foam just over the threshold is a single layer of bubbles,
 #define FOAM_OPAQUE 1.5                    // translucent; this far over it, opaque
-#define FOAM_FILM_CENTRE 0.12              // a single wet bubble transmits most of the water beneath it
-#define FOAM_FILM_MEAN 0.8                // measured by tools/foam-probe.mjs
+#define FOAM_OPACITY_LIFT 1.25             // the faded value's lift for the opacity, of the faded spread (foamLook; measured by tools/foam-probe.mjs)
+#define FOAM_FILM_CENTRE 0.12              // a single wet bubble's window transmits most of the water beneath it
+#define FOAM_WINDOW_SHARE vec2(0.5, 0.15)  // the share of shown coarse bubbles with a window: a raft's, a boil's (by its share of the map)
+#define FOAM_WINDOW_SIZE vec2(0.5, 0.8)    // a window's radius over its bubble's, each bubble's own, within this
+#define FOAM_WINDOW_SOFT 0.15              // its edge, either side of that radius (bubble radii)
+#define FOAM_FILM_WINDOWS 0.099             // measured by tools/foam-probe.mjs: the mean darkening, 1 − film, were every shown coarse bubble windowed
 #define FOAM_FILM_PACKED 0.9               // above this map density, multiple layers hide the clear films
 #define FOAM_CLOUD_HALF 0.07               // the cloud's map value that sends back half what a deep cloud does (Kubelka–Munk)
 #define GALE_CLOUD_SHARE 0.3               // the share of a whitecap's active whitewater that is a cloud under the surface (WATER_FRAGMENT)
@@ -842,7 +863,9 @@ ${SURFACE_BUBBLE}
 #define FOAM_CHURN_FREQUENCY 10.0          // ...of this (per metre, about 10 cm across), 2.7 and 7 times it...
 #define FOAM_CHURN_SPEED 0.05              // ...each sliding this fast (m/s) its own way, so the lumps change as they cross
 #define FOAM_BUBBLE_CELL 0.012             // metres: the surface's bubbles over a boil, one in a cell at most...
-#define FOAM_BUBBLE_RADII vec2(0.06, 0.4)  // ...of this radius (cells, 1.4 to 10 mm across; most small), wholly inside it...
+#define FOAM_BUBBLE_RADII vec2(0.06, 0.4)  // ...of this radius (cells, 1.4 to 10 mm across; most small), wholly inside it, over a boil the surface holds all of...
+#define FOAM_BUBBLE_FAINT_RADIUS 0.12      // ...and up to this where the boil has no cloud under it (a fizz: drops' landings, bubbles surfacing: 3 mm across), the biggest rising...
+#define FOAM_BUBBLE_FULL_CLOUD 2.0         // ...with the cloud, to the full size where the cloud is this many holds deep (a stone's boil's middle)
 #define FOAM_BUBBLE_MOST 0.48              // ...in this share of the cells where the surface holds all it can, as its square...
 #define FOAM_BUBBLE_LIFE 0.45              // ...each surfacing and bursting within this (s), the next somewhere else in its cell
 #define FOAM_BUBBLE_RISE 0.12              // the share of its life a bubble takes to swell to its size
@@ -889,7 +912,8 @@ vec2 valueNoisePair(vec2 position, out mat2 jacobian) {
 }
 
 // One feature per cell, jittered by up to jitter/2 of a cell from its centre,
-// with a radius drawn from radii. For the best two features, by radius minus
+// with a radius drawn from radii as mix(radii, u^skew), u uniform (skew 1:
+// uniform). For the best two features, by radius minus
 // distance (cell units; positive inside that feature's disc): the value and
 // the offset of the point from the feature; the winner's radius; and the sum
 // of the two features' random keys, which names the edge between them.
@@ -903,7 +927,7 @@ struct FoamCells {
   float bestKey;      // the winning feature's own random key, 0 to 1 (the lace's readiness to open)
 };
 
-FoamCells foamCells(vec2 position, vec2 radii, float jitter, vec2 seed) {
+FoamCells foamCells(vec2 position, vec2 radii, float skew, float jitter, vec2 seed) {
   vec2 cell = floor(position);
   vec2 within = position - cell;
   FoamCells result = FoamCells(-10.0, -10.0, vec2(1.0, 0.0), vec2(1.0, 0.0), 1.0, 0.0, 0.0);
@@ -914,7 +938,7 @@ FoamCells foamCells(vec2 position, vec2 radii, float jitter, vec2 seed) {
       vec2 neighbour = vec2(float(column), float(row));
       vec3 random = foamHash(cell + neighbour + seed);
       vec2 offset = within - neighbour - 0.5 - jitter * (random.xy - 0.5);
-      float radius = mix(radii.x, radii.y, random.z);
+      float radius = mix(radii.x, radii.y, skew == 1.0 ? random.z : pow(random.z, skew));
       float inside = radius - length(offset);
       if (inside > result.best) {
         result.runnerUp = result.best;
@@ -987,7 +1011,7 @@ FoamLook foamLook(vec2 position, vec2 acrossX, vec2 acrossY, float foam, vec2 fo
   if (laceFade < 1.0) {
     mat2 warpJacobian;
     vec2 warp = FOAM_LACE_WARP * (valueNoisePair(position * FOAM_LACE_WARP_FREQUENCY, warpJacobian) - 0.5);
-    FoamCells cells = foamCells(position / FOAM_LACE_CELL + warp, FOAM_LACE_RADII, 0.9, vec2(3.0, 5.1));
+    FoamCells cells = foamCells(position / FOAM_LACE_CELL + warp, FOAM_LACE_RADII, 1.0, 0.9, vec2(3.0, 5.1));
     float thickness = FOAM_LACE_THICKNESS * (1.0 - FOAM_LACE_THINNING * fract(cells.edgeKey * 7.13));
     float raw = 1.0 - 2.0 * (cells.best - cells.runnerUp) / thickness;
     // Its gradient in the warped cell coordinates, then in metres through the warp.
@@ -1010,7 +1034,7 @@ FoamLook foamLook(vec2 position, vec2 acrossX, vec2 acrossY, float foam, vec2 fo
   float fineBubble = FOAM_FINE_MEDIAN;
   vec2 fineGradient = vec2(0.0);
   if (fineFade < 1.0) {
-    fine = foamCells(position / FOAM_FINE_CELL, FOAM_FINE_RADII, 0.7, vec2(11.0, 18.7));
+    fine = foamCells(position / FOAM_FINE_CELL, FOAM_FINE_RADII, 1.0, FOAM_BUBBLE_JITTER, vec2(11.0, 18.7));
     fineBubble = mix(fine.best * FOAM_FINE_CELL / FOAM_BUBBLE_SCALE, FOAM_FINE_MEDIAN, fineFade);
     fineGradient = -fine.bestOffset / max(length(fine.bestOffset), 1e-4) * (1.0 - fineFade) / FOAM_BUBBLE_SCALE;
   }
@@ -1018,7 +1042,7 @@ FoamLook foamLook(vec2 position, vec2 acrossX, vec2 acrossY, float foam, vec2 fo
   float coarseBubble = -FOAM_BUBBLE_CLAMP;
   vec2 coarseGradient = vec2(0.0);
   if (coarseFade < 1.0) {
-    coarse = foamCells(position / FOAM_COARSE_CELL, FOAM_COARSE_RADII, 0.7, vec2(23.0, 39.1));
+    coarse = foamCells(position / FOAM_COARSE_CELL, FOAM_COARSE_RADII, FOAM_COARSE_SKEW, FOAM_BUBBLE_JITTER, vec2(23.0, 39.1));
     coarseBubble = coarse.best * FOAM_COARSE_CELL / FOAM_BUBBLE_SCALE;
     coarseGradient = -coarse.bestOffset / max(length(coarse.bestOffset), 1e-4) / FOAM_BUBBLE_SCALE;
   }
@@ -1060,7 +1084,13 @@ FoamLook foamLook(vec2 position, vec2 acrossX, vec2 acrossY, float foam, vec2 fo
 
   FoamLook look;
   look.cover = smoothstep(-width, width, value);
-  look.opacity = mix(FOAM_THIN_OPACITY, 1.0, smoothstep(0.0, FOAM_OPAQUE, value));
+  // A faded layer stands at its median, but the pixels it covers are those whose true value is above the threshold,
+  // on average about 0.8σ above the faded one where the cover is partial (E[v | v > 0] of a Gaussian of the faded
+  // spread), and the opacity rises with the value: taken at the faded value, faded foam drew some 10% darker than its
+  // own supersampled self (tools/foam-probe.mjs). So the opacity takes the value lifted by FOAM_OPACITY_LIFT of the
+  // faded spread, as much as the cover is partial: nothing resolved, nothing where the cover is whole.
+  float lift = FOAM_OPACITY_LIFT * spreadOfFaded * (1.0 - look.cover);
+  look.opacity = mix(FOAM_THIN_OPACITY, 1.0, smoothstep(0.0, FOAM_OPAQUE, value + lift));
   // Shading from the bubble that won the union, as resolved as its layer is.
   FoamCells winner = fine;
   float winnerFade = fineFade;
@@ -1079,88 +1109,200 @@ FoamLook foamLook(vec2 position, vec2 acrossX, vec2 acrossY, float foam, vec2 fo
   float turnAcrossPixel = footprint / (winner.bestRadius * (coarseWins ? FOAM_COARSE_CELL : FOAM_FINE_CELL));
   look.glintVariance = FOAM_GLINT_VARIANCE + turnAcrossPixel * turnAcrossPixel;
 
-  // The coarse bubbles that define the raft also define its wet films. A
-  // single layer transmits water through their centres and scatters at their
-  // rims; a dense boil hides those centres with multiple layers. The map's
-  // two populations already decay independently, so this material drains
-  // naturally without a new clock, moving noise or another cell search.
-  float wetness = (1.0 - smoothstep(0.25, FOAM_FILM_PACKED, foam)) * mix(1.0, 0.75, boilFraction);
+  // The windows (the header): a share of the coarse bubbles that show, each
+  // chosen and sized by its own key, the water through its middle. Thin
+  // foam exposes them (wetness); a dense boil hides them under its layers.
+  // The map's two populations already decay independently, so this material
+  // drains naturally without a new clock, moving noise or another cell search.
+  float wetness = 1.0 - smoothstep(0.25, FOAM_FILM_PACKED, foam);
+  float windowShare = mix(FOAM_WINDOW_SHARE.x, FOAM_WINDOW_SHARE.y, boilFraction);
+  float chosen = step(coarse.bestKey, windowShare);
+  float windowRadius = mix(FOAM_WINDOW_SIZE.x, FOAM_WINDOW_SIZE.y, fract(coarse.bestKey * 47.3));
   float filmWidth = max(footprint / (FOAM_COARSE_CELL * coarse.bestRadius), 0.04);
   float filmRadius = length(coarse.bestOffset) / coarse.bestRadius;
-  float centre = 1.0 - smoothstep(0.65 - filmWidth, 0.98 + filmWidth, filmRadius);
-  float film = 1.0 - (1.0 - FOAM_FILM_CENTRE) * centre;
-  film = mix(film, FOAM_FILM_MEAN, coarseFade);
+  float centre = 1.0 - smoothstep(windowRadius - FOAM_WINDOW_SOFT - filmWidth, windowRadius + FOAM_WINDOW_SOFT + filmWidth, filmRadius);
+  // Where the coarse bubble shows: it wins the union, over a pixel (in the bubbles' units, a pixel is footprint / FOAM_BUBBLE_SCALE).
+  float pixelInBubbles = max(footprint / FOAM_BUBBLE_SCALE, 1e-3);
+  float shows = smoothstep(-pixelInBubbles, pixelInBubbles, coarseBubble - fineBubble);
+  float film = 1.0 - (1.0 - FOAM_FILM_CENTRE) * centre * chosen * shows;
+  // A window fades to the windows' mean by its own size, not its cell's: blurred over a pixel its soft edge spreads
+  // further out than in, so a window a few pixels across darkened more of the water than it covers (the far foam
+  // drew 8% darker than it is, tools/foam-probe.mjs); faded before then, the mean holds at any distance.
+  float windowAcross = 2.0 * windowRadius * coarse.bestRadius * FOAM_COARSE_CELL;
+  float windowFade = smoothstep(FOAM_FADE_START, FOAM_FADE_END, footprint / windowAcross);
+  film = mix(film, 1.0 - windowShare * FOAM_FILM_WINDOWS, max(coarseFade, windowFade));
   look.opacity *= mix(1.0, film, wetness);
   return look;
 }
 
 struct FreshBubbles {
   float white;          // the share of the pixel the bubbles whiten
-  float shadow;         // the share of the light behind it the meniscus takes
+  float shadow;         // the share of the light behind it the meniscus and the domes' undersides take
   float glint;          // how much of a cap's glint to show (0 once they are unresolved)
   vec3 domeNormal;      // the cap's normal under the pixel, for its glint
   float glintVariance;
 };
 
+// One cell's bubble (freshBubbles) against the pixel's view ray: the share
+// of the pixel's span on the dome, the film's white over it, the meniscus's
+// shadow and the underside's shade, the hit's normal and the dome's turn
+// across the pixel (radii).
+// The cell is named in the shifted lattice (its row's shift given), the
+// pixel's point on the water in cells, unshifted. The dome stands on the
+// water's plane at the pixel, the one with the surface's normal through the
+// bubble's centre (a dome cast on a level plane at each pixel's own height
+// was stretched tall on a boil's mound, each pixel's plane its own): the
+// point lies on it, above the centre by the plane's rise between them. The
+// ray is the point plus t·toViewer, t in cells, and the sphere of the
+// bubble's radius about its centre meets it where t² + 2t(D·toViewer) +
+// |D|² − R² = 0, D from the centre to the point: the front hit is the
+// larger root, its height the hit's distance along the normal, and the
+// ray's closest approach to the centre, sqrt(|D|² − (D·toViewer)²), is the
+// radius on the sphere's disc the pixel sees, a miss being one past R. A
+// hit under the water is the water's, cut a pixel soft; a miss mirrors
+// what lies behind the limb, the water.
+struct DomeHit {
+  float onCap;
+  float white;
+  float shadow;
+  vec3 normal;
+  float turn;
+};
+DomeHit bubbleDome(vec2 cell, float rowShift, vec2 inCells, vec3 toViewer, float filled, vec2 filledSlope, float largest, float pixelOnDome, vec3 surfaceNormal, float time) {
+  DomeHit none = DomeHit(0.0, 0.0, 0.0, surfaceNormal, pixelOnDome);
+  vec2 radii = FOAM_BUBBLE_RADII;
+  float clock = time / FOAM_BUBBLE_LIFE + foamHash(cell + vec2(41.0, 7.0)).x;
+  float generation = floor(clock);
+  float age = clock - generation;
+  vec3 shape = foamHash(cell + generation * vec2(17.0, 31.0));
+  vec3 place = foamHash(cell + generation * vec2(29.0, 13.0) + vec2(5.0, 61.0));
+  // Its size: radii.x to the biggest the boil here grows (freshBubbles's largest), most small.
+  float grown = mix(radii.x, largest, shape.y * shape.y);
+  float radius = grown * smoothstep(0.0, FOAM_BUBBLE_RISE, age);
+  // Its centre: anywhere in its cell that keeps its grown base inside, in the unshifted lattice.
+  vec2 centreInCells = cell + mix(vec2(grown), vec2(1.0 - grown), place.xy) - vec2(rowShift, 0.0);
+  float filledThere = max(filled + dot(filledSlope, (centreInCells - inCells) * FOAM_BUBBLE_CELL), 0.0);
+  float lives = step(shape.z, FOAM_BUBBLE_MOST * min(filledThere * filledThere, 1.0));
+  if (lives < 0.5 || radius < 1e-4) return none;
+  // The dome stands on the water's own plane at the pixel, the surface's normal's: the centre lies on it, so the point
+  // is above the centre by the plane's rise between them (cells), and the sphere is cast in that frame.
+  vec2 fromCentre = inCells - centreInCells;
+  float rise = -(surfaceNormal.x * fromCentre.x + surfaceNormal.z * fromCentre.y) / max(surfaceNormal.y, 0.2);
+  vec3 fromCentreInSpace = vec3(fromCentre.x, rise, fromCentre.y);
+  float along = dot(fromCentreInSpace, toViewer);
+  float closest = sqrt(max(dot(fromCentreInSpace, fromCentreInSpace) - along * along, 0.0));
+  float radial = closest / radius;
+  float pixel = pixelOnDome / radius;   // a pixel on the dome, in radii
+  vec3 film = bubbleFilm(max(radial - 0.5 * pixel, 0.0), radial + 0.5 * pixel);   // x: the share on the sphere; y, z: its white's parts
+  if (film.x <= 0.0) return none;
+  float discriminant = radius * radius - closest * closest;
+  float cover = 1.0, reflectedUp = -toViewer.y, height = 0.0;
+  vec3 normal = surfaceNormal;
+  if (discriminant > 0.0) {
+    float t = -along + sqrt(discriminant);
+    vec3 hit = fromCentreInSpace + t * toViewer;
+    height = dot(hit, surfaceNormal) / radius;
+    cover = smoothstep(-0.5 * pixel, 0.5 * pixel, height);
+    normal = hit / radius;
+    reflectedUp = 2.0 * (sqrt(discriminant) / radius) * normal.y - toViewer.y;
+  }
+  float shadow = (bubbleMeniscus(height, pixel) + bubbleUnderside(reflectedUp) * film.x) * cover * step(0.0, discriminant);
+  return DomeHit(film.x * cover, bubbleWhite(film, reflectedUp) * cover, shadow, normal, pixel);
+}
+
 // The bubbles bursting on the surface over a boil (the header's last
-// paragraph): in each FOAM_BUBBLE_CELL cell, at random, one bubble alive
-// over each FOAM_BUBBLE_LIFE in the share filled²·FOAM_BUBBLE_MOST (a thin
-// boil's few, a full one's many), swelling as it surfaces and gone at once
-// when it bursts, the next at a new place and size, most of them small;
-// drawn as SURFACE_BUBBLE says, a clear cap with a thin bright rim, each
-// pixel the film's mean over the radii within half a pixel of it (its own
-// footprint along the radius), a meniscus's faint shadow and the sun's
-// glint. Only the cell under the pixel is visited, as no bubble leaves its
-// cell. Whether its bubble lives is decided by the boil at the bubble's
-// centre, filled carried there along filledSlope, its change per metre:
-// decided under each pixel, a bubble across a boil's changing edge was cut
-// along the line where the boil crossed its draw, a half moon or a chipped
-// disc (tools/foam-probe.mjs samples an even boil, where the two agree).
-// Where cells shrink toward a pixel (FOAM_FADE_START to FOAM_FADE_END
-// cells per pixel) the bubbles fade into their mean white, which the spans
-// keep (SURFACE_BUBBLE); the shadow, under 0.2% of the light in the mean,
-// fades out with them. FOAM_BUBBLE_MOST is as many more bubbles as the
-// thinner rim leaves the cap clearer (a cap's mean white fell from
-// cap + (edge − cap)/3 = 0.277 to cap + (edge − cap)/6 = 0.2, the edge
-// already as white as a film gets), so the boil whitens as it did from afar
-// and fizzes with more, clearer bubbles close to. filled: the surface's
-// share of the boil over FOAM_BOIL_HOLD; time: world seconds.
-FreshBubbles freshBubbles(vec2 position, vec2 acrossX, vec2 acrossY, float filled, vec2 filledSlope, vec3 surfaceNormal, float time) {
+// paragraph), seen where its froth thins, at its edge, and over a fizz:
+// WATER_FRAGMENT fades them out under the froth's cover (frothCover), where
+// they give way to its own bubbles. In each FOAM_BUBBLE_CELL cell, at
+// random, one bubble alive over each FOAM_BUBBLE_LIFE in the share
+// filled²·FOAM_BUBBLE_MOST (a thin boil's few, a full one's many),
+// swelling as it surfaces and gone at once when it bursts, the next at a
+// new place and size, most of them small, the biggest rising with the
+// cloud under the boil (FOAM_BUBBLE_FAINT_RADIUS where there is none, a
+// fizz of drops' landings or bubbles surfacing, to
+// the full FOAM_BUBBLE_RADII where the cloud is FOAM_BUBBLE_FULL_CLOUD holds
+// deep, a stone's boil's middle, where the air comes up in a mass; the
+// surface holds the hold's worth of boil over a stone's whole disc of
+// surfacing air, so the hold itself tells a fizz from the boil's middle
+// no better than filled does: the thousands of
+// faint patches a big stone's drops leave were each a scatter of bubbles
+// as big as the boil's own, a sprinkle of beads over the water from the
+// bank; small, they are a grain); each a dome standing on the water, drawn as SURFACE_BUBBLE says
+// (bubbleDome: the pixel's view ray cast at it, the film where the ray
+// meets it above the water, a window of sky on its top, the sun's glint,
+// a meniscus's shadow along its foot and its lower part's shade). A bubble's centre lies anywhere
+// in its cell that keeps its own base inside (its radius from the edges:
+// the small ones, most of them, roam the whole cell, the rare big ones
+// less), and alternate rows of cells are shifted half a cell, so the
+// bubbles fall in no rows or columns (held to the middle fifth of its
+// cell, as every centre once was so that the biggest fitted, they lay on a
+// 12 mm lattice, plain in a close-up; tools/foam-probe.mjs checks the
+// centres' spread). The pixel's ray meets the water at its own point, and
+// a dome covers the water behind it, away from the viewer, out to its
+// radius/sinβ from its centre, β the view's elevation (its top's silhouette
+// stands R·cosβ high, R·sinβ behind the centre), so the point may lie
+// under the dome of the cell toward the viewer: that cell is visited too
+// (one cell over along the view's ground direction), and its dome, the
+// nearer, is drawn over its own cell's. A dome reaching past that cell
+// (the biggest, from under 24°) is cut at its edge; the water there is far
+// and its bubbles near fading. Whether a cell's bubble lives is decided by
+// the boil at the bubble's centre, filled carried there along filledSlope,
+// its change per metre: decided under each pixel, a bubble across a boil's
+// changing edge was cut along the line where the boil crossed its draw, a
+// half moon or a chipped disc (tools/foam-probe.mjs samples an even boil,
+// where the two agree). The film's span over a pixel (bubbleFilm) is the
+// pixel's size on the dome: the water's footprint under it times
+// sqrt(sinβ), since a screen pixel's footprint on the water is stretched
+// 1/sinβ along the view and not across it. Where cells shrink toward a
+// pixel (FOAM_FADE_START to FOAM_FADE_END cells per pixel, the cell taken
+// as small as the biggest bubble here against the biggest there is, so a
+// fizz's small bubbles fade nearer, while still a few pixels across) the
+// bubbles fade into their mean white, bubbleDomeMean's at the view's
+// elevation (SURFACE_BUBBLE); the shadow fades out with them. filled: the
+// surface's share of the boil over FOAM_BOIL_HOLD; cloud: the cloud under
+// it, in holds; toViewer: from the point to the camera, unit; time: world
+// seconds.
+FreshBubbles freshBubbles(vec2 position, vec2 acrossX, vec2 acrossY, float filled, vec2 filledSlope, float cloud, vec3 surfaceNormal, vec3 toViewer, float time) {
   FreshBubbles bubbles = FreshBubbles(0.0, 0.0, 0.0, surfaceNormal, FOAM_BUBBLE_GLINT_VARIANCE);
   float footprint = sqrt(sqrt(dot(acrossX, acrossX) * dot(acrossY, acrossY)));
-  float fade = smoothstep(FOAM_FADE_START, FOAM_FADE_END, footprint / FOAM_BUBBLE_CELL);
-  float alive = FOAM_BUBBLE_MOST * clamp(filled * filled, 0.0, 1.0);
-  // The mean: alive · the mean bubble's area in its cell · its mean white. Its radius is mix(radii, u²), u uniform,
-  // so its mean square is a² + 2a(b − a)/3 + (b − a)²/5; the white averages FOAM_BUBBLE_FILM_MEAN over the cap (SURFACE_BUBBLE).
+  // The biggest bubble here: rising with the cloud under the boil (a fizz with none, drops' landings or bubbles
+  // surfacing, makes small bubbles; the cloud changes over centimetres, so the pixel's own serves a whole bubble).
+  // The bubbles fade into their mean where their cells shrink toward a pixel, the cells taken as small as the
+  // bubbles are: a fizz's, a third the size, fade three times nearer.
   vec2 radii = FOAM_BUBBLE_RADII;
-  float span = radii.y - radii.x;
+  float largest = mix(FOAM_BUBBLE_FAINT_RADIUS, radii.y, smoothstep(0.0, FOAM_BUBBLE_FULL_CLOUD, cloud));
+  float fade = smoothstep(FOAM_FADE_START, FOAM_FADE_END, footprint * radii.y / (FOAM_BUBBLE_CELL * largest));
+  float alive = FOAM_BUBBLE_MOST * clamp(filled * filled, 0.0, 1.0);
+  float sinElevation = max(toViewer.y, FOAM_BUBBLE_LOWEST_VIEW);
+  // The mean: alive · the mean bubble's base in its cell · the dome's mean white per unit of water under it. Its radius is
+  // mix(radii.x, largest, u²), u uniform, so its mean square is a² + 2a(b − a)/3 + (b − a)²/5.
+  float span = largest - radii.x;
   float meanWhite = alive * PI * (radii.x * radii.x + 2.0 * radii.x * span / 3.0 + span * span / 5.0)
-    * FOAM_BUBBLE_FILM_MEAN * (1.0 - 0.5 * FOAM_BUBBLE_RISE);
+    * bubbleDomeMean(sinElevation) * (1.0 - 0.5 * FOAM_BUBBLE_RISE);
   if (fade < 1.0) {
     vec2 inCells = position / FOAM_BUBBLE_CELL;
-    vec2 cell = floor(inCells);
-    float clock = time / FOAM_BUBBLE_LIFE + foamHash(cell + vec2(41.0, 7.0)).x;
-    float generation = floor(clock);
-    float age = clock - generation;
-    vec3 shape = foamHash(cell + generation * vec2(17.0, 31.0));
-    vec3 place = foamHash(cell + generation * vec2(29.0, 13.0) + vec2(5.0, 61.0));
-    float radius = mix(radii.x, radii.y, shape.y * shape.y) * smoothstep(0.0, FOAM_BUBBLE_RISE, age);
-    vec2 centre = mix(vec2(radii.y), vec2(1.0 - radii.y), place.xy);
-    vec2 offset = inCells - cell - centre;
-    float radial = length(offset) / max(radius, 1e-4);
-    float edge = footprint / FOAM_BUBBLE_CELL / max(radius, 1e-3);   // a pixel, in radii
-    // A pixel along the radius here, in radii: the pixel's own footprint that way, longer where the view foreshortens the water.
-    vec2 outward = offset / max(length(offset), 1e-6);
-    float radialPixel = max(length(vec2(dot(outward, acrossX), dot(outward, acrossY))) / (FOAM_BUBBLE_CELL * max(radius, 1e-3)), 1e-3);
-    float filledThere = max(filled + dot(filledSlope, (cell + centre - inCells) * FOAM_BUBBLE_CELL), 0.0);
-    float lives = step(shape.z, FOAM_BUBBLE_MOST * min(filledThere * filledThere, 1.0));
-    vec2 film = bubbleFilm(max(radial - 0.5 * radialPixel, 0.0), radial + 0.5 * radialPixel) * lives;   // x: the share on the cap; y: its white
-    bubbles.white = mix(film.y, meanWhite, fade);
-    bubbles.shadow = bubbleMeniscus(radial, radialPixel) * lives * (1.0 - fade);
-    float domeHeight = sqrt(max(1.0 - radial * radial, 0.0));
-    bubbles.domeNormal = normalize(vec3(offset.x, 0.0, offset.y) / max(radius, 1e-4) + surfaceNormal * (domeHeight + 0.05));
-    bubbles.glint = film.x * (1.0 - fade);
-    float turnAcrossPixel = edge;
+    float pixelOnDome = footprint * sqrt(sinElevation) / FOAM_BUBBLE_CELL;
+    // The cell under the point, in the lattice whose alternate rows are shifted half a cell.
+    float ownShift = 0.5 * mod(floor(inCells.y), 2.0);
+    vec2 ownCell = floor(vec2(inCells.x + ownShift, inCells.y));
+    DomeHit own = bubbleDome(ownCell, ownShift, inCells, toViewer, filled, filledSlope, largest, pixelOnDome, surfaceNormal, time);
+    // And the cell one over toward the viewer, along the view's ground direction, whose dome may stand over the point.
+    DomeHit next = DomeHit(0.0, 0.0, 0.0, surfaceNormal, pixelOnDome);
+    float groundLength = length(toViewer.xz);
+    if (groundLength > 0.01) {
+      vec2 ground = toViewer.xz / groundLength;
+      vec2 towardViewer = inCells + ground / max(abs(ground.x), abs(ground.y));
+      float nextShift = 0.5 * mod(floor(towardViewer.y), 2.0);
+      vec2 nextCell = floor(vec2(towardViewer.x + nextShift, towardViewer.y));
+      if (any(notEqual(nextCell, ownCell))) next = bubbleDome(nextCell, nextShift, inCells, toViewer, filled, filledSlope, largest, pixelOnDome, surfaceNormal, time);
+    }
+    float onCap = own.onCap * (1.0 - next.onCap) + next.onCap;
+    bubbles.white = mix(own.white * (1.0 - next.onCap) + next.white, meanWhite, fade);
+    bubbles.shadow = (own.shadow * (1.0 - next.onCap) + next.shadow) * (1.0 - fade);
+    bool nextWins = next.onCap > own.onCap;
+    bubbles.domeNormal = nextWins ? next.normal : own.normal;
+    bubbles.glint = onCap * (1.0 - fade);
+    float turnAcrossPixel = nextWins ? next.turn : own.turn;
     bubbles.glintVariance = FOAM_BUBBLE_GLINT_VARIANCE + turnAcrossPixel * turnAcrossPixel;
   } else {
     bubbles.white = meanWhite;
@@ -1362,7 +1504,7 @@ uniform samplerCube uSkyCube;     // the sky as the droplets reflect it (src/sky
 uniform mat4 uReflectionMatrix;   // world -> reflection texture coordinates
 uniform vec4 uMirrorNear;         // the splash's image in the mirror, uv corners (x0, y0, x1, y1); empty (x0 > x1) when none
 uniform vec2 uMirrorSize;         // the mirror image's pixels
-uniform float uMirrorLevel;       // the height it mirrors about: the water's under the splash (0 but under a gale, src/main.js)
+uniform float uMirrorLevel;       // the height it mirrors about: the water's under the splash under a gale, the ice's top frozen but while a splash rises from a hole, else 0 (src/main.js)
 uniform sampler2D uUnderColor;
 uniform sampler2D uUnderDepth;
 uniform float uStonesUnder;       // 1 while a stone is under the water (src/main.js), else 0
@@ -1641,7 +1783,13 @@ vec3 iceSurface(IceMask mask, float footprint, vec2 acrossX, vec2 acrossY) {
   float underDistZ = rawDepth >= 1.0 ? uFar : -perspectiveDepthToViewZ(rawDepth, uNear, uFar);
   float path = max(underDistZ - surfaceDistZ, 0.0) * viewDist / max(surfaceDistZ, 1e-4);
   vec3 under = mix(uWaterColor, texture2D(uUnderColor, screenUv).rgb * poolDetail(vWorld, acrossX, acrossY, underDistZ, surfaceDistZ), exp(-uExtinction * path));
-  vec3 light = uSunIrradiance * max(dot(n, uSunDir), 0.0) + uSkyAmbient * ICE_SKY_LIGHT;
+  // What lies on it shades it (ICE_COMMON iceThingsShade): the light it scatters, the water seen through it and the
+  // sun's sheen; not its mirror, which shows the thing itself.
+  vec2 shade = iceThingsShade(vWorld.xz, footprint);
+  vec3 sunLight = uSunIrradiance * max(dot(n, uSunDir), 0.0), skyLight = uSkyAmbient * ICE_SKY_LIGHT;
+  vec3 light = sunLight * shade.x + skyLight * shade.y;
+  float shaded = dot(light, vec3(0.2126, 0.7152, 0.0722)) / max(dot(sunLight + skyLight, vec3(0.2126, 0.7152, 0.0722)), 1e-6);
+  under *= shaded;
   vec3 scattered = ICE_WHITE_ALBEDO * light * mix(1.0, 0.6, wet);
   // Its veil (ICE_COMMON's header): the share of the light the clear ice scatters back along the refracted ray's path
   // through it, a new skin's (src/ice.js REFREEZE.skin) a few millimetres.
@@ -1654,7 +1802,7 @@ vec3 iceSurface(IceMask mask, float footprint, vec2 acrossX, vec2 acrossY) {
   // A fracture face in clear ice turns the light back as a mirror would: it shows white, as the sky's light it sends up.
   body = mix(body, scattered * 1.15, face * clear);
   vec3 color = mix(body, reflected, fresnel * mix(1.0 - 0.6 * look.white, 1.0, wet));
-  color += min(sunGlitter(n, v, uSunDir, uSunIrradiance, slopeVariance + 1e-5) * mix(look.glints, 1.0, max(wet, newIce)), vec3(400.0)) * mix(1.0 - 0.5 * look.white, 1.0, wet);
+  color += min(sunGlitter(n, v, uSunDir, uSunIrradiance, slopeVariance + 1e-5) * mix(look.glints, 1.0, max(wet, newIce)), vec3(400.0)) * mix(1.0 - 0.5 * look.white, 1.0, wet) * shade.x;
   // An old edge in new ice: a faint dark seam.
   color = mix(color, under * 0.7, 0.5 * seam);
   // Snow lying on it (SNOW_COVER), as on the ground: none on new ice, none where it is wet (the flood's, a drop's).
@@ -1697,11 +1845,13 @@ void main() {
   vec3 toCamera = cameraPosition - vWorld;
   float viewDist = length(toCamera);
   // The splash's foam, and its boil divided (FOAM_PATTERN): what the surface
-  // holds, drawn by the pattern below, and the cloud under it.
+  // holds, drawn as bursting domes, and the cloud under it, the milk, which
+  // the pattern below tops with froth.
   vec2 splashFoam = texture2D(uFoam, vDomainUv).rg * vMask;
   float splashBoil = max(splashFoam.r - splashFoam.g, 0.0);
   float boilSurface = freshBoilSurface(splashBoil);
   float boilCloud = splashBoil - boilSurface;
+  float splashCloud = boilCloud;   // the splash's own, before the gale adds its whitecaps' cloud: the froth is the splash's
   // The gale's whitecaps (src/galeWaves.js), over all the water, read at the
   // point's rest position: the active whitewater, the breaker itself, drives
   // a cloud of bubbles under the surface (GALE_CLOUD_SHARE of it, drawn as
@@ -1885,8 +2035,12 @@ void main() {
   // (uFoamDrift). The map's change is taken here, in uniform control flow
   // (the footprint, acrossX and acrossY, at the top); the pattern only where
   // there is foam.
-  // A splash's boil is not drawn as foam: its cloud is in refracted, its surface's bubbles below.
-  vec2 foamKinds = splashFoam - vec2(splashBoil, 0.0);
+  // A splash's boil: the surface's share is drawn as bursting domes (freshBubbles, below) and the cloud under it is in
+  // refracted, the milk; over the cloud, the boil's own froth, the packed pattern at up to FOAM_FROTH_GAIN times the cloud (frothFoam, rising with its depth)
+  // (a boil, so bubbles alone, no lace): a stone's boil is dense white froth while it lasts, thinning at its edge
+  // into the domes, where a smooth milk with domes over it read as fog with marbles on it. A pebble's cloud is too
+  // thin for any.
+  vec2 foamKinds = splashFoam - vec2(splashBoil, 0.0) + vec2(frothFoam(splashCloud), 0.0);
   // The gale's whitecaps and the foam they leave, over all the water, the
   // raft gathered into the wind's streaks: sea foam's, churned by breaking,
   // packed and white whatever the water.
@@ -1902,16 +2056,22 @@ void main() {
   foam *= level;   // the pattern lies on the water's plane: none down the walls
 #endif
   vec2 foamChange = vec2(dFdx(foam), dFdy(foam));
+  float frothCover = 0.0;
   if (foam > FOAM_PRESENT) {
     float boilFraction = clamp(1.0 - foamKinds.g / max(foamKinds.r, 1e-5), 0.0, 1.0);
     FoamLook look = foamLook(vWorld.xz - uFoamDrift, acrossX, acrossY, foam, foamChange, n, boilFraction);
     vec3 foamColor = FOAM_ALBEDO * look.shade * foamLight;
     if (look.glint > 0.0) foamColor += look.glint * FOAM_GLINT * min(sunGlitter(look.domeNormal, v, uSunDir, uSunIrradiance, look.glintVariance), vec3(40.0));
-    color = mix(color, foamColor, look.cover * look.opacity);
+    frothCover = look.cover * look.opacity;
+    color = mix(color, foamColor, frothCover);
   }
-  // The bubbles bursting on the surface over a splash's boil (freshBubbles), lit as the foam is, their caps glinting.
-  if (boilSurface > FOAM_PRESENT) {
-    FreshBubbles bubbles = freshBubbles(vWorld.xz - uFoamDrift, acrossX, acrossY, boilSurface / FOAM_BOIL_HOLD, boilSlope / FOAM_BOIL_HOLD, n, uGustTime);
+  // The bubbles bursting on the surface over a splash's boil (freshBubbles), lit as the foam is, their caps glinting;
+  // under the froth they give way to its own bubbles.
+  if (boilSurface > FOAM_PRESENT && frothCover < 1.0) {
+    FreshBubbles bubbles = freshBubbles(vWorld.xz - uFoamDrift, acrossX, acrossY, boilSurface / FOAM_BOIL_HOLD, boilSlope / FOAM_BOIL_HOLD, boilCloud / FOAM_BOIL_HOLD, n, v, uGustTime);
+    bubbles.white *= 1.0 - frothCover;
+    bubbles.shadow *= 1.0 - frothCover;
+    bubbles.glint *= 1.0 - frothCover;
     color = mix(color * (1.0 - bubbles.shadow), FOAM_ALBEDO * foamLight, bubbles.white);
     if (bubbles.glint > 0.0) color += bubbles.glint * FOAM_BUBBLE_GLINT * min(sunGlitter(bubbles.domeNormal, v, uSunDir, uSunIrradiance, bubbles.glintVariance), vec3(40.0));
   }
@@ -3110,32 +3270,35 @@ void main() {
 // SPECK_DRIFT_SECONDS, drifts downwind with the surface water as the raft does
 // (uFoamVelocity, src/spectralWater.js), wanders a little, and sits on the
 // waves at the height the water surface's own vertex shader gives that point,
-// splash, ambient waves and rings together (plus SPECK_LIFT, so the
-// triangulated surface never covers it). It fades in over a tenth of a second and out
-// over its last SPECK_FADE seconds, shrinking as it goes.
+// splash, ambient waves and rings together. It fades in over a tenth of a
+// second and out over its last SPECK_FADE seconds, shrinking as it goes.
 // A speck smaller than uMinPixelSize is drawn at about that size (three
 // quarters to one and a quarter of it, by its phase, so a field of
 // unresolved specks is not a field of identical dots), soft, with its
 // opacity cut by the projected area it really covers: a
 // hard dot of a pixel or two would flicker as it moves across pixels, and far
 // specks should read as a faint grain where they gather, not as bright dots.
-// Only a speck resolved over a few pixels is drawn as a bubble, with a clear
-// centre and a bright rim (SPECK_FRAGMENT); one widened to the minimum is a
+// Only a speck resolved over a few pixels is drawn as a bubble, a dome
+// standing on the water (SPECK_FRAGMENT); one widened to the minimum is a
 // soft blob, whatever it is drawn at.
-// Each disc projects onto the mean water plane, becoming an ellipse at a
-// grazing angle; an unresolved short axis widens to 1.5 pixels with the
-// matching loss of opacity. Wave displacement still supplies its height.
+// The sprite is the dome's sphere, its centre on the water at the bubble's
+// foot, brought toward the viewer by its radius along its own ray so the
+// water in front of the foot, nearer in depth, does not cut the dome's
+// front; the fragment shader cuts the sphere to the dome with the water's
+// plane, passed in the sprite's frame (vPlaneNormal). Wave displacement
+// still supplies its height.
 // Inside a raft the water shader's bubble pattern is the grain, so a speck
 // fades out where the foam the surface shows is between SPECK_RAFT_LOW and
 // SPECK_RAFT_HIGH: specks are the bits that drift out of the raft. Of a
-// splash's boil the surface shows only what it holds (FRESH_BOIL), under
-// SPECK_RAFT_LOW: a speck rides over a boil's cloud. Each speck has a shine
-// of its own (aShine, src/foamSpecks.js: most faint, a few bright), a share
-// of uOpacity, so no two in a patch are alike.
+// splash's boil the surface shows what it holds (FRESH_BOIL), under
+// SPECK_RAFT_LOW, and the froth over its cloud, up to FOAM_FROTH_GAIN times the
+// cloud: a speck rides over a fizz and a boil's thin edge, and fades under
+// its froth, whose bubbles are the grain there as a raft's are. Each speck
+// has a shine of its own (aShine, src/foamSpecks.js: most faint, a few
+// bright), a share of uOpacity, so no two in a patch are alike.
 export const SPECK_VERTEX = /* glsl */`
 #define SPECK_DRIFT_SECONDS 1.6
 #define SPECK_WANDER 0.0012
-#define SPECK_LIFT 0.0015
 #define SPECK_FADE 0.35
 #define SPECK_RAFT_LOW 0.05
 #define SPECK_RAFT_HIGH 0.2
@@ -3156,9 +3319,8 @@ uniform vec3 uSunDir;
 varying float vAlpha;
 varying float vPixelSize;    // the speck's true size on screen (pixels), whatever it is drawn at
 varying float vDrawn;        // and the size it is drawn at
-varying vec2 vSurfaceAxis;
-varying float vSurfaceAspect;
-varying vec3 vToViewer;      // in the sprite's frame (x right, y down, z toward the viewer): to the viewer...
+varying vec3 vPlaneNormal;   // in the sprite's frame (x right, y down, z toward the viewer): the water's normal...
+varying vec3 vToViewer;      // ...to the viewer...
 varying vec3 vToSun;         // ...to the sun...
 varying vec3 vHalfVector;    // ...and between them, where the dome's normal glints
 ${GLSL_COMMON}
@@ -3167,8 +3329,8 @@ void main() {
   float age = uTime - aTiming.x;
   float life = aTiming.y;
   if (age < 0.0 || age >= life) {
-    gl_Position = vec4(2.0, 2.0, 2.0, 1.0); gl_PointSize = 0.0; vAlpha = 0.0; vPixelSize = 0.0; vDrawn = 1.0; vSurfaceAxis = vec2(0.0, 1.0); vSurfaceAspect = 1.0;
-    vToViewer = vec3(0.0, 0.0, 1.0); vToSun = vToViewer; vHalfVector = vToViewer;
+    gl_Position = vec4(2.0, 2.0, 2.0, 1.0); gl_PointSize = 0.0; vAlpha = 0.0; vPixelSize = 0.0; vDrawn = 1.0;
+    vToViewer = vec3(0.0, 0.0, 1.0); vToSun = vToViewer; vHalfVector = vToViewer; vPlaneNormal = vToViewer;
     return;
   }
   float phase = aTiming.w;
@@ -3180,13 +3342,20 @@ void main() {
   if (uRingCount > 0) surface += ringHeight(place, SPECK_RING_SPACING);
   float height = surface * mask;
   if (uGaleMetresPerUnit > 0.0) height += galeHeight(place);
-  // The foam the surface shows: the raft, and of a splash's boil only what the surface holds (FRESH_BOIL).
+  // The foam the surface shows: the raft, and of a splash's boil what the surface holds (FRESH_BOIL) and the froth
+  // over its cloud.
   vec2 foamKinds = texture2D(uFoam, domainUv).rg * mask;
-  float outsideRaft = 1.0 - smoothstep(SPECK_RAFT_LOW, SPECK_RAFT_HIGH, foamKinds.g + freshBoilSurface(max(foamKinds.r - foamKinds.g, 0.0)));
-  vec4 viewPosition = viewMatrix * vec4(place.x, height + SPECK_LIFT, place.y, 1.0);
+  float boil = max(foamKinds.r - foamKinds.g, 0.0);
+  float boilSurface = freshBoilSurface(boil);
+  float outsideRaft = 1.0 - smoothstep(SPECK_RAFT_LOW, SPECK_RAFT_HIGH, foamKinds.g + boilSurface + frothFoam(boil - boilSurface));
+  vec4 viewPosition = viewMatrix * vec4(place.x, height, place.y, 1.0);
   float fadeOut = 1.0 - smoothstep(life - SPECK_FADE, life, age);
   float fade = smoothstep(0.0, 0.1, age) * fadeOut * outsideRaft;
-  float pixelSize = aTiming.z * (0.6 + 0.4 * fadeOut) * uProjScale / max(-viewPosition.z, 0.05);
+  float diameter = aTiming.z * (0.6 + 0.4 * fadeOut);
+  // The sprite is the dome's sphere, centred on the water at the bubble's foot; it is brought toward the viewer by the
+  // radius, along its own ray, so the water in front of the foot does not cut the dome's front with its depth.
+  viewPosition.xyz *= max(1.0 - 0.5 * diameter / max(length(viewPosition.xyz), 1e-3), 0.0);
+  float pixelSize = diameter * uProjScale / max(-viewPosition.z, 0.05);
   float least = uMinPixelSize * (0.75 + 0.5 * fract(phase * 2.3183));
   float drawn = max(pixelSize, least);
   gl_PointSize = drawn;
@@ -3199,40 +3368,24 @@ void main() {
   vToViewer = vec3(toViewer.x, -toViewer.y, toViewer.z);
   vToSun = vec3(toSun.x, -toSun.y, toSun.z);
   vHalfVector = vec3(halfVector.x, -halfVector.y, halfVector.z);
-  // A floating bubble sits in the water plane, not in the screen plane.
-  // Keep its projected short axis at least 1.5 pixels and conserve its area
-  // in alpha. This also removes the constant-bright snow at a distance.
+  // The water's plane, which cuts the sphere to the dome standing on it.
   vec3 viewNormal = mat3(viewMatrix) * vec3(0.0, 1.0, 0.0);
-  vSurfaceAxis = vec2(viewNormal.x, -viewNormal.y);
-  vSurfaceAxis /= max(length(vSurfaceAxis), 1e-5);
-  float surfaceAspect = abs(dot(normalize(-viewPosition.xyz), viewNormal));
-  vSurfaceAspect = max(surfaceAspect, min(1.0, 1.5 / drawn));
-  vAlpha = aShine * fade * (pixelSize * pixelSize) / (drawn * drawn) * surfaceAspect / vSurfaceAspect;
+  vPlaneNormal = vec3(viewNormal.x, -viewNormal.y, viewNormal.z);
+  vAlpha = aShine * fade * (pixelSize * pixelSize) / (drawn * drawn);
   gl_Position = projectionMatrix * viewPosition;
 }
 `;
 
 // A speck is lit like the foam map in WATER_FRAGMENT (white under the sun and
-// sky, on a level surface), dimmed by uBrightness. Unresolved (its true size,
-// vPixelSize, under SPECK_DOME_FROM pixels, whatever minimum it is widened
-// to) it is a soft grain. Resolved (from SPECK_DOME_TO) it is a floating
-// bubble's cap seen from above, drawn as SURFACE_BUBBLE says, as the water
-// draws its bursting bubbles (freshBubbles), so the two match side by side:
-// nearly clear, with a thin bright rim where its film turns edge on, each
-// pixel the film's mean over the radii from its centre out by a pixel
-// (wider across the squash, where the disc is foreshortened), the span's
-// share on the disc rounding off the limb a pixel soft; a meniscus's faint
-// shadow just inside the rim, as cover without light; and the sun's glint,
-// where the dome's normal is the half vector between the viewer and the
-// sun, never smaller than a pixel. The glint is added as light, not as
-// cover, and scaled by the speck's fade and its shine: a film's reflectance
-// follows its thickness (thin-film interference), from nearly nothing to
-// four times a single face's, which FOAM_BUBBLE_GLINT's two faces average.
-// Never a flat ring with a hole.
+// sky, on a level surface), dimmed by uBrightness, and drawn as a bubble
+// sprite (BUBBLE_SPRITE in src/shaders/bubble.js, as the rain's bubbles
+// are): unresolved, a soft grain carrying the white a dome averages over
+// its disc (a grain of full white made every distant speck a bright fleck,
+// eight times a bubble's light); resolved, a floating bubble, a dome
+// standing on the water, as the water draws its bursting bubbles
+// (freshBubbles), so the two match side by side, its shade cover without
+// light and its glint light added, scaled by the speck's fade and shine.
 export const SPECK_FRAGMENT = /* glsl */`
-#define SPECK_PI 3.141592653589793
-#define SPECK_DOME_FROM 3.5           // pixels of true size from which a speck starts to be drawn as a dome...
-#define SPECK_DOME_TO 5.0             // ...and is one
 uniform vec3 uSunDir;
 uniform vec3 uSunIrradiance;
 uniform vec3 uSkyAmbient;
@@ -3241,41 +3394,20 @@ uniform float uBrightness;
 varying float vAlpha;
 varying float vPixelSize;
 varying float vDrawn;
-varying vec2 vSurfaceAxis;
-varying float vSurfaceAspect;
+varying vec3 vPlaneNormal;
 varying vec3 vToViewer;
 varying vec3 vToSun;
 varying vec3 vHalfVector;
-${SURFACE_BUBBLE}
+${BUBBLE_SPRITE}
 void main() {
   vec2 offset = gl_PointCoord * 2.0 - 1.0;
-  offset += vSurfaceAxis * dot(offset, vSurfaceAxis) * (1.0 / vSurfaceAspect - 1.0);
-  float radiusSquared = dot(offset, offset);
-  if (radiusSquared > 1.0) discard;
-  float radius = sqrt(radiusSquared);
-  float pixel = 2.0 / max(vDrawn, 1.0);   // a pixel, in radii
-  // A pixel along the radius here: 1/vSurfaceAspect wider along the squash.
-  float acrossSquash = radius > 1e-4 ? dot(offset, vSurfaceAxis) / radius : 0.0;
-  float radialPixel = pixel * sqrt(1.0 + (1.0 / (vSurfaceAspect * vSurfaceAspect) - 1.0) * acrossSquash * acrossSquash);
-  float dome = smoothstep(SPECK_DOME_FROM, SPECK_DOME_TO, vPixelSize * vSurfaceAspect);
-  float grain = exp(-3.0 * radiusSquared);
-  // The film over the radii from here out by a pixel: x its share on the disc (the limb), y its white.
-  vec2 film = bubbleFilm(radius, radius + radialPixel);
-  float limb = film.x;
-  float shape = mix(grain, film.y, dome);
+  if (dot(offset, offset) > 1.0) discard;
+  float shape, shadow;
+  vec3 glint;
+  bubbleSprite(offset, vPixelSize, vDrawn, vPlaneNormal, vToViewer, vToSun, vHalfVector, uSunIrradiance, vAlpha, shape, shadow, glint);
   vec3 light = uSunIrradiance * max(uSunDir.y, 0.0) + uSkyAmbient * 1.5;
   vec3 color = vec3(0.94, 0.96, 0.97) * light * uBrightness;
   float alpha = vAlpha * shape * uOpacity;
-  float shadow = vAlpha * bubbleMeniscus(radius, radialPixel) * dome;
-  // The sun's glint on the dome.
-  vec3 normal = vec3(offset, sqrt(max(1.0 - radiusSquared, 0.0)));
-  float nDotH = max(dot(normal, vHalfVector), 1e-3);
-  float nDotV = max(dot(normal, vToViewer), 1e-3);
-  float variance = FOAM_BUBBLE_GLINT_VARIANCE + pixel * pixel;
-  float cosineSquared = nDotH * nDotH;
-  float distribution = exp(-(1.0 - cosineSquared) / (cosineSquared * variance)) / (SPECK_PI * variance * cosineSquared * cosineSquared);
-  float fresnel = 0.02 + 0.98 * pow(1.0 - max(dot(vToViewer, vHalfVector), 0.0), 5.0);
-  vec3 glint = uSunIrradiance * distribution * fresnel / (4.0 * nDotV) * FOAM_BUBBLE_GLINT * step(0.0, dot(normal, vToSun)) * limb * dome * vAlpha;
   gl_FragColor = vec4(color * alpha + min(glint, vec3(40.0)), alpha + shadow);
 }
 `;

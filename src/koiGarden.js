@@ -28,14 +28,19 @@
 // clipped foliage (FOLIAGE_LOOK) of small leaves, deeper in its hollows, new
 // growth paler (pieris's red) on top. Each look is one merged mesh drawn
 // twice: in the main scene, and on the mirror's layer, its distance in the
-// mirror image's alpha, so the water reflects it. Built once, the first
-// time it is shown or met (builtGarden), seeded (seededRandom), never
-// Math.random.
+// mirror image's alpha, so the water reflects it. The mirror's is the same
+// garden more coarsely made (COARSE: its shrubs' spheres, from the same
+// draws), the water's ripples breaking its image anyway, and so is the
+// scene's on a preset that asks (setCoarse: Low); what catches is the fine
+// garden's, whatever is drawn (on Low it is let go once its catch table is
+// made). Built once, the first time it is shown or
+// met (builtGarden), seeded (seededRandom), never Math.random.
 import * as THREE from 'three';
 import { seededRandom } from './spray.js';
 import { KOI_SHORE, koiShoreRadius, koiShoreDistance, koiFloorDepthAt } from './pondFloor.js';
 
 const MIRROR_NEARNESS_SCALE = 4;   // as src/rock.js's: the mirror image's alpha is 1 − this / distance
+const COARSE = 0.5;   // the coarse garden's shrubs (the header) as finely made as this of the fine's: about a third of its triangles
 const UP = new THREE.Vector3(0, 1, 0);
 const GROUND_ALBEDO = new THREE.Vector3(0.1, 0.13, 0.06);   // the lawn's, for the light it throws back up
 // The planted banks (the header): the sector of θ about the pond's centre they take, from `from` round through π (the
@@ -148,16 +153,25 @@ export function holdInGarden(rock) {
  * sphere of `radius` at `point` brought back toward the pond, along its
  * direction from the pond's centre, to where the drawn planting begins
  * (plantingFront), so it is never carried into the shrubs, nor let go
- * there to be lost (holdInGarden). `point` changed in place.
+ * there to be lost (holdInGarden). `point` changed in place. Brought back,
+ * its sphere spans more of the catch table's directions (the nearer the
+ * pond's centre, the wider its angle), whose front may be nearer still: it
+ * is brought back again until it is clear. Its direction never changes, so
+ * the directions it spans only grow and the front only comes nearer: each
+ * pass ends clear or spanning more, and they are few.
  */
 export function keepOutOfGarden(point, radius) {
   const apartX = point.x - KOI_SHORE.centre[0], apartZ = point.z - KOI_SHORE.centre[1];
-  const out = Math.hypot(apartX, apartZ), angle = Math.atan2(apartZ, apartX);
+  let out = Math.hypot(apartX, apartZ);
+  const angle = Math.atan2(apartZ, apartX);
   if (out < 1e-9 || sectorDepth(angle) * out < -radius - 0.5) return point;   // nowhere near the banks
-  const into = out - koiShoreRadius(angle) + radius - plantingFront(point.x, point.y, point.z, radius);
-  if (into > 0) {
-    point.x -= (apartX / out) * into;
-    point.z -= (apartZ / out) * into;
+  const awayX = apartX / out, awayZ = apartZ / out, shore = koiShoreRadius(angle);
+  for (let pass = 0; pass < CATCH.bins; pass++) {
+    const into = out - shore + radius - plantingFront(point.x, point.y, point.z, radius);
+    if (!(into > 0)) break;
+    out -= into;
+    point.x -= awayX * into;
+    point.z -= awayZ * into;
   }
   return point;
 }
@@ -252,7 +266,7 @@ function displacedSphere(detail, surface, hollow) {
  * hollows its hollow.
  */
 function shrub({ along, up, deep, seed, fineness = 1 }) {
-  const detail = Math.round(Math.min(5 + 8 * Math.max(along, deep, up * 0.7), 13) * fineness);
+  const detail = Math.max(Math.round(Math.min(5 + 8 * Math.max(along, deep, up * 0.7), 13) * fineness), 1);
   const wave = (direction) => noise3(direction.x * 1.7 + 5, direction.y * 1.7, direction.z * 1.7, seed) - 0.5;
   // Its leaf masses: lumps a hand or two across, by its size (a big shrub's no bigger than a small one's).
   const lumpsAcross = 5 * Math.max(along, up, deep);
@@ -440,7 +454,7 @@ const BACK_FORMS = [{ name: 'round', weight: 3 }, { name: 'tiered', weight: 2 }]
 const ENDS = { back: 3.2, spacing: 0.75 };
 // The lantern: θ, how far behind the planting's beginning, and how low the shrubs before it keep (m, their `up`).
 const LANTERN_AT = { angle: -1.2, behind: 0.62, clear: 0.75, below: 0.3 };
-function gardenGeometry(random) {
+function gardenGeometry(random, detail = 1) {
   const stone = new Parts(), foliage = new Parts();
   const between = ([least, most]) => least + (most - least) * random();
   const lantern = behindShore(LANTERN_AT.angle, plantingFrom(LANTERN_AT.angle) + LANTERN_AT.behind);
@@ -455,7 +469,7 @@ function gardenGeometry(random) {
       const offset = new THREE.Vector3(offsetX, 0, offsetZ).applyMatrix4(turn);
       const atX = x + offset.x, atZ = z + offset.z;
       const sizeShare = Math.max(lobeAlong / along, lobeUp / up, 0.5);
-      foliage.add(shrub({ along: lobeAlong, up: lobeUp, deep: lobeDeep, seed: 10 + random() * 90, fineness: fineness * (0.45 + 0.55 * sizeShare) }),
+      foliage.add(shrub({ along: lobeAlong, up: lobeUp, deep: lobeDeep, seed: 10 + random() * 90, fineness: detail * fineness * (0.45 + 0.55 * sizeShare) }),
         new THREE.Matrix4().makeRotationY(facing + (random() - 0.5) * 0.6).setPosition(atX, groundAt(atX, atZ) - lobeUp * 0.22 + lift, atZ), { tint });
     };
     let draw = random() * forms.reduce((sum, form) => sum + form.weight, 0);
@@ -514,11 +528,17 @@ function gardenGeometry(random) {
   return { stone: stone.geometry(), foliage: foliage.geometry() };
 }
 
-let built = null;
-/** The garden's geometries, by look, built once (the header). */
-function builtGarden() {
-  built ??= gardenGeometry(seededRandom(7, 3));
-  return built;
+const built = {};
+/** The garden's geometries, by look, fine or coarse (COARSE), each built once from the same draws (the header). */
+function builtGarden(detail = 1) {
+  built[detail] ??= gardenGeometry(seededRandom(7, 3), detail);
+  return built[detail];
+}
+/** The fine garden let go once the catch table is made from it, where nothing draws it (Low: setCoarse); built again if asked for. */
+function letGoOfFine() {
+  if (!table || !built[1]) return;
+  for (const geometry of Object.values(built[1])) geometry.dispose();
+  delete built[1];
 }
 let table = null;
 /**
@@ -653,7 +673,7 @@ export function createKoiGarden({ envTexture, mirrorLayer, lighting }) {
     geometry.setAttribute('tint', new THREE.Float32BufferAttribute([0, 0, 0], 1));
     return geometry;
   };
-  let shown = false;
+  let shown = false, coarse = false;
   // The lawn's light thrown back up: the sun's and the sky's (setLight).
   const bounce = { value: new THREE.Vector3() };
   const material = (lookName, mirrored) => {
@@ -710,13 +730,28 @@ export function createKoiGarden({ envTexture, mirrorLayer, lighting }) {
     setVisible(visible, { building = true } = {}) {
       if (visible && building && !shown) {
         shown = true;
-        const geometries = builtGarden();
-        for (const [lookName, pair] of Object.entries(byLook)) {
-          for (const mesh of pair) { mesh.geometry.dispose(); mesh.geometry = geometries[lookName]; }
+        for (const [lookName, [main, mirrored]] of Object.entries(byLook)) {
+          main.geometry.dispose();   // the specks
+          mirrored.geometry.dispose();
+          mirrored.geometry = builtGarden(COARSE)[lookName];
         }
         catchTable();
+        this.setCoarse(coarse);
       }
       for (const mesh of meshes) mesh.visible = visible;
+    },
+    /**
+     * The scene's garden coarse as the mirror's (a preset's `gardenCoarse`:
+     * Low), or fine; built when it is first shown. Coarse, the fine garden is
+     * let go once its catch table is made (letGoOfFine); fine again, it is
+     * built again (a change from Low the person makes; the automatic quality
+     * only steps down).
+     */
+    setCoarse(asCoarse) {
+      coarse = asCoarse;
+      if (!shown) return;
+      for (const [lookName, [main]] of Object.entries(byLook)) main.geometry = builtGarden(coarse ? COARSE : 1)[lookName];
+      if (coarse) letGoOfFine();
     },
   };
 }
