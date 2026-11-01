@@ -2695,6 +2695,23 @@ void main() {
 }
 `;
 
+// The palms' shadows (src/tropics.js bakeShadows, PALM_SHADOW in src/pondFloor.js): a top-down mask of the light the
+// Polynesian lagoon's palms let through, each drawn projected along the sun onto the water's level (y = 0). A point is
+// looked up where the sun's ray through it crosses that level: on the land along the sun, on the bed where its
+// sunlight crossed the surface. Off (uPalmShadowOn 0) at every other place.
+const PALM_SHADOW = /* glsl */`
+uniform sampler2D uPalmShadow;
+uniform vec4 uPalmShadowBox;   // the mask's least x and z, and 1 / its size in x and z (m)
+uniform float uPalmShadowOn;
+/** The share of the sun the palms keep off a point whose sun ray crosses the water's level at atLevel (world XZ). */
+float palmShadow(vec2 atLevel) {
+  if (uPalmShadowOn < 0.5) return 0.0;
+  vec2 maskPoint = (atLevel - uPalmShadowBox.xy) * uPalmShadowBox.zw;
+  if (any(lessThan(maskPoint, vec2(0.0))) || any(greaterThan(maskPoint, vec2(1.0)))) return 0.0;
+  return 1.0 - texture2D(uPalmShadow, maskPoint).r;
+}
+`;
+
 export const FLOOR_FRAGMENT = /* glsl */`
 uniform sampler2D uHeight;
 uniform vec3 uSunDir;
@@ -2717,6 +2734,7 @@ ${UNDER_FOG}
 ${CAUSTICS}
 ${FLOOR_SAND}
 ${SHORE_KIND}
+${PALM_SHADOW}
 #define KOI_BED vec3(0.46, 0.45, 0.38)   // the Koi pond's bed against the lake's sand: grey gravel, silt and a film of algae
 void main() {
   // Sand with pebbles and silt (FLOOR_SAND); the Koi pond's, darker gravel under silt and algae, in drifts.
@@ -2743,7 +2761,8 @@ void main() {
   vec2 surfacePoint = seenPoint + vUpSun * vDepth;
   float caustic = causticLight(1.0 + vFocusing * vDepth * surfaceCurvature(surfacePoint));
 
-  vec3 color = sand * (vSunlight * caustic + vSkylight);
+  // The palms' shadows (PALM_SHADOW), where this point's sunlight crossed the surface.
+  vec3 color = sand * (vSunlight * caustic * (1.0 - palmShadow(surfacePoint)) + vSkylight);
   if (cameraPosition.y < 0.0) color = throughWater(color, vec3(vFloorPoint.x, -vDepth, vFloorPoint.y));
   gl_FragColor = vec4(color, 1.0);
 }
@@ -2876,6 +2895,7 @@ ${FLOOR_SAND}
 ${PHOTO_LAND}
 ${HAZE}
 ${LAKE_BED}
+${PALM_SHADOW}
 #define SKY_LIGHT 1.4        // the sky's light on the sand, as the bed's
 // The Koi pond's ground (uShoreKind SHORE_KOI): at the water a band of river stones, wide along its pebble beach (koiBeach) and
 // narrow under its stone edge, dark where wet; then a garden's moss, mottled, with the bare earth showing through;
@@ -3029,7 +3049,8 @@ float tuft(vec2 point, float share, float edge, out float tone, out vec2 fromTuf
 void main() {
   float footprint = max(fwidth(vWorld.x), fwidth(vWorld.z)) + 1e-4;   // metres the pixel covers on the ground
   vec3 normal = reliefNormal(vWorld.xz, footprint);
-  vec3 light = uSunIrradiance * max(dot(normal, uSunDir), 0.0) + uSkyAmbient * SKY_LIGHT;
+  vec3 sunlit = uSunIrradiance * max(dot(normal, uSunDir), 0.0) * (1.0 - palmShadow(vWorld.xz - uSunDir.xz * (vWorld.y / max(uSunDir.y, 0.05))));   // less the palms' shadows (PALM_SHADOW)
+  vec3 light = sunlit + uSkyAmbient * SKY_LIGHT;
   vec3 sand = floorSand(vWorld.xz) * PATTERN_RANGE * DRY_SAND * mix(WET_SHADE, 1.0, smoothstep(0.0, WET_HEIGHT, vWorld.y));
   float grassFrom = GRASS_FROM * uShoreMore.x, grassTo = GRASS_TO * uShoreMore.x;
   if (isShore(SHORE_KOI)) {
@@ -3087,7 +3108,7 @@ void main() {
   }
   vec3 color = albedo * light;
   // Under the palms and the scrub most of the sun is the canopy's (src/tropics.js).
-  if (underTrees > 0.0) color = albedo * (uSunIrradiance * max(dot(normal, uSunDir), 0.0) * mix(1.0, LAGOON_SHADE * 0.5, underTrees) + uSkyAmbient * SKY_LIGHT * mix(1.0, LAGOON_SHADE, underTrees));
+  if (underTrees > 0.0) color = albedo * (sunlit * mix(1.0, LAGOON_SHADE * 0.5, underTrees) + uSkyAmbient * SKY_LIGHT * mix(1.0, LAGOON_SHADE, underTrees));
 
   // The bank: the photo's own land for its colour, shaded by the slope, mottled and grained, with its tufts.
   vec3 toLand = vWorld - cameraPosition;

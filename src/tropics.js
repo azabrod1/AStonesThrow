@@ -53,6 +53,18 @@
 // canopy, so a palm's wood below its crown and the scrub under the trees
 // lose most of the sun and some of the sky by how far in they stand.
 //
+// The palms' shadows on the sand and the lagoon's bed (bakeShadows, SHADOW):
+// the scenery stands still but for its sway, so in place of a shadow map
+// drawn every frame, a mask is baked once (and again if the sun moves): each
+// palm and mound drawn top-down, its points carried along the sun down to
+// the water's level, the light it lets through multiplied in. The land's and
+// the floor's shaders look a point up where the sun's ray through it meets
+// that level (PALM_SHADOW in src/shaders/scene.js and src/pondFloor.js); the
+// water's own shader is untouched.
+//
+// Low quality (setCoarse, a preset's `sceneryCoarse`): every palm and mound
+// a level of detail coarser.
+//
 // Meshes (`above`), on two programs (the leaves; the wood, the coconuts, the
 // motus' sand and the high island, whose colours are their vertices'):
 // every palm variant at each level, two instanced meshes each, the scrub at
@@ -65,7 +77,7 @@
 // place).
 import * as THREE from 'three';
 import { FullscreenPass } from './gpu.js';
-import { LAGOON_SHORE, lagoonShoreDistance, landHeight } from './pondFloor.js';
+import { LAGOON_SHORE, PALM_SHADOW, lagoonShoreDistance, landHeight } from './pondFloor.js';
 import { seededRandom } from './spray.js';
 
 const SEED = 7173;
@@ -685,6 +697,40 @@ const AERIAL = 15000;
 const CANOPY = { sun: 0.8, sky: 0.55, from: 12, deep: 30 };
 // How much a leaf's alpha grows per mip level (the atlas's own: 0.25 a level, as Golus's article finds for foliage).
 const ALPHA_MIP = 0.25;
+// The palms' shadows (bakeShadows): the mask's square of the water's level (x and z, m), about the beach round the eye,
+// and its texels a side (16 to 20 cm, finer than the sun's own penumbra under a palm's crown); how much of the sun a
+// leaf keeps off (it passes on some, LEAF_LIGHT).
+const SHADOW = { box: [-70, -150, 160, 210], texels: 1024, leaf: 0.9 };
+// What draws them: each palm (and mound of scrub) as it stands, its points carried along the sun down to the water's
+// level and drawn there, top-down, into the mask (the light let through: 1 open, multiplied down by each leaf over it).
+const SHADOW_VERTEX = /* glsl */`
+#include <common>
+uniform vec3 uSunDir;
+uniform vec4 uPalmShadowBox;
+${PALM_VERTEX}
+varying vec2 vMapUv;
+void main() {
+  vec3 transformed = position;
+${PALM_MOVE}
+  vec4 world = modelMatrix * instanceMatrix * vec4(transformed, 1.0);
+  vec2 atLevel = world.xz - uSunDir.xz * (world.y / max(uSunDir.y, 0.05));
+  gl_Position = vec4((atLevel - uPalmShadowBox.xy) * uPalmShadowBox.zw * 2.0 - 1.0, 0.0, 1.0);
+  vMapUv = uv;
+}
+`;
+const SHADOW_FRAGMENT = /* glsl */`
+uniform sampler2D uAtlas;
+varying vec2 vMapUv;
+void main() {
+  #ifdef PALM_LEAVES
+    float kept = texture2D(uAtlas, vMapUv).a * ${SHADOW.leaf.toFixed(2)};   // the leaflets' cover at the mask's texel (its mip)
+  #else
+    float kept = 1.0;
+  #endif
+  gl_FragColor = vec4(0.0, 0.0, 0.0, kept);
+}
+`;
+
 // How far (m, as built) the wind may lean a palm out of its bounding sphere (cull).
 const CULL_MARGIN = 2;
 
@@ -788,7 +834,7 @@ function placeScenery(stream) {
 const SHORE_Z = 2.72;   // the lake's waterline under the eye (src/pondFloor.js SHORE.z)
 
 export class Tropics {
-  constructor({ renderer, envTexture, mirrorLayer, lighting }) {
+  constructor({ renderer, envTexture, mirrorLayer, lighting, coarse = false }) {
     this.atlas = bakeAtlas(renderer);
     this.uniforms = {
       uPalmTime: { value: 0 }, uPalmWind: { value: 0.3 }, uPalmWindDirection: { value: new THREE.Vector2(0.45, -0.9).normalize() },
@@ -801,6 +847,7 @@ export class Tropics {
     this.group.visible = false;
     this.above = [];
     this.built = false;
+    this.coarse = coarse;
     this.shown = false;
     this.culledFor = new THREE.Matrix4().makeScale(0, 0, 0);
     this.culledProjection = new THREE.Matrix4();
@@ -813,6 +860,62 @@ export class Tropics {
     const standIn = [{ x: middle.x, y: MOTU_SAND.height - 0.1, z: middle.z, yaw: 0, scale: 1, phase: 0 }];
     this.instances(leaves, this.leafMaterial, standIn, () => [PALMS[0].height, 0, top.y, 0]);
     this.instances(wood, this.woodMaterial, standIn, () => [PALMS[0].height, 0, top.y, 0]);
+    // The palms' shadows' mask (bakeShadows), its two programs built now (under the loading veil), on the stand-in.
+    this.renderer = renderer;
+    const [minX, minZ, sizeX, sizeZ] = SHADOW.box;
+    PALM_SHADOW.uPalmShadowBox.value.set(minX, minZ, 1 / sizeX, 1 / sizeZ);
+    this.shadowTarget = new THREE.WebGLRenderTarget(SHADOW.texels, SHADOW.texels, { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false });
+    PALM_SHADOW.uPalmShadow.value = this.shadowTarget.texture;
+    this.shadowCamera = new THREE.OrthographicCamera();   // unused by its programs, which place the mask's points themselves
+    this.shadowMaterials = { leaves: this.shadowMaterial(true), wood: this.shadowMaterial(false) };
+    this.bakedSun = new THREE.Vector3();
+    this.bakeShadows();
+  }
+
+  /** A program that draws its mesh's shadow into the mask (SHADOW_VERTEX): the light it lets through, multiplied in. */
+  shadowMaterial(leaves) {
+    const { uPalmTime, uPalmWind, uPalmWindDirection, uSunDir } = this.uniforms;
+    return new THREE.ShaderMaterial({
+      vertexShader: SHADOW_VERTEX, fragmentShader: SHADOW_FRAGMENT, defines: leaves ? { PALM_LEAVES: '' } : {},
+      uniforms: { uPalmTime, uPalmWind, uPalmWindDirection, uSunDir, uPalmShadowBox: PALM_SHADOW.uPalmShadowBox, uAtlas: { value: this.atlas.texture } },
+      side: THREE.DoubleSide, depthTest: false, depthWrite: false,
+      blending: THREE.CustomBlending, blendSrc: THREE.ZeroFactor, blendDst: THREE.OneMinusSrcAlphaFactor, blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
+    });
+  }
+
+  /**
+   * Draws the palms' and the scrub's shadows into the mask under the sun now
+   * (every instance, as it stands, swaying as it is now): when built, and
+   * again when the sun has moved (cull). The light let through starts at 1.
+   */
+  bakeShadows() {
+    const renderer = this.renderer;
+    const target = renderer.getRenderTarget(), clearColor = renderer.getClearColor(new THREE.Color()), clearAlpha = renderer.getClearAlpha();
+    const wasVisible = this.group.visible, materials = new Map();
+    for (const mesh of this.above) {
+      const { whole } = mesh.userData;
+      mesh.instanceMatrix.array.set(whole.matrices);
+      mesh.geometry.attributes.palmInstance.array.set(whole.numbers);
+      mesh.instanceMatrix.needsUpdate = mesh.geometry.attributes.palmInstance.needsUpdate = true;
+      mesh.count = whole.numbers.length / 4;
+      materials.set(mesh, mesh.material);
+      mesh.visible = whole.casts;
+      if (whole.casts) mesh.material = this.shadowMaterials[mesh.material === this.leafMaterial ? 'leaves' : 'wood'];
+    }
+    this.group.visible = true;
+    renderer.setRenderTarget(this.shadowTarget);
+    renderer.setClearColor(0xffffff, 1);
+    renderer.clear(true, false, false);
+    renderer.render(this.group, this.shadowCamera);
+    renderer.setRenderTarget(target);
+    renderer.setClearColor(clearColor, clearAlpha);
+    for (const [mesh, material] of materials) {
+      mesh.material = material;
+      mesh.visible = true;
+    }
+    this.group.visible = wasVisible;
+    this.bakedSun.copy(this.uniforms.uSunDir.value);
+    this.culledFor.makeScale(0, 0, 0);   // culled again at the next frame
   }
 
   /** Builds the whole of it (src/main.js shows it): what stands where, every mesh, the stand-in let go. */
@@ -829,7 +932,7 @@ export class Tropics {
     // The palms: every variant at each level, its instances those placed at that level.
     for (const [variantIndex, variant] of PALMS.entries()) {
       for (const [level, lod] of LODS.entries()) {
-        const here = palms.filter((placed) => placed.variant === variantIndex && levelOf(placed) === level);
+        const here = palms.filter((placed) => placed.variant === variantIndex && this.levelOf(placed) === level);
         if (here.length === 0) continue;
         const { leaves, wood, top } = palmGeometry(variant, lod, seededRandom(SEED, 10 + variantIndex));
         this.instances(leaves, this.leafMaterial, here, (placed) => [variant.height, placed.phase, top.y, 0]);
@@ -838,25 +941,27 @@ export class Tropics {
     }
     // The scrub, at its levels, as the palms are.
     for (const level of [0, 1, 2]) {
-      const here = scrub.filter((placed) => levelOf(placed) === level);
+      const here = scrub.filter((placed) => this.levelOf(placed) === level);
       if (here.length > 0) this.instances(scrubGeometry(level, seededRandom(SEED, 30 + level)), this.leafMaterial, here, (placed) => [SCRUB.height, placed.phase, SCRUB.height * 0.4, placed.shade]);
     }
     // The fallen coconuts, the motus' sand and the high island: one instance each of geometry laid out in the world.
     const still = [{ x: 0, y: 0, z: 0, yaw: 0, scale: 1, phase: 0 }];
-    if (fallen.length > 0) this.instances(fallenGeometry(fallen, seededRandom(SEED, 40)), this.woodMaterial, still, () => [1, 0, 0, 0]);
-    this.instances(motuSandGeometry(), this.woodMaterial, still, () => [1, 0, 0, 0]);
-    this.instances(islandGeometry(), this.woodMaterial, still, () => [1, 0, 0, 0]);
+    if (fallen.length > 0) this.instances(fallenGeometry(fallen, seededRandom(SEED, 40)), this.woodMaterial, still, () => [1, 0, 0, 0], { casts: false });
+    this.instances(motuSandGeometry(), this.woodMaterial, still, () => [1, 0, 0, 0], { casts: false });
+    this.instances(islandGeometry(), this.woodMaterial, still, () => [1, 0, 0, 0], { casts: false });
+    this.bakeShadows();
   }
 
   /**
    * An instanced mesh of `geometry` for each of `placed` (x, y, z, yaw,
    * scale), its palm's numbers from `numbers`. All of them are kept
-   * (`whole`: each one's matrix, numbers and bounding sphere), and those in
-   * view are packed at the front of its instances by `cull`.
+   * (`whole`: each one's matrix, numbers and bounding sphere, and whether
+   * they cast shadows into the mask), and those in view are packed at the
+   * front of its instances by `cull`.
    */
-  instances(geometry, material, placed, numbers) {
+  instances(geometry, material, placed, numbers, { casts = true } = {}) {
     const mesh = new THREE.InstancedMesh(geometry, material, placed.length);
-    const whole = { matrices: new Float32Array(placed.length * 16), numbers: new Float32Array(placed.length * 4), spheres: new Float32Array(placed.length * 4) };
+    const whole = { matrices: new Float32Array(placed.length * 16), numbers: new Float32Array(placed.length * 4), spheres: new Float32Array(placed.length * 4), casts };
     const matrix = new THREE.Matrix4(), turn = new THREE.Quaternion(), scale = new THREE.Vector3(), at = new THREE.Vector3(), sphere = new THREE.Sphere();
     for (const [index, one] of placed.entries()) {
       turn.setFromAxisAngle(UP, -one.yaw);
@@ -884,6 +989,7 @@ export class Tropics {
    */
   cull(camera) {
     if (!this.shown) return;
+    if (this.built && !this.bakedSun.equals(this.uniforms.uSunDir.value)) this.bakeShadows();   // the place's own sun come in
     if (this.culledFor.equals(camera.matrixWorld) && this.culledProjection.equals(camera.projectionMatrix)) return;
     this.culledFor.copy(camera.matrixWorld);
     this.culledProjection.copy(camera.projectionMatrix);
@@ -1013,6 +1119,7 @@ uniform vec3 uSkyAmbient;`)
     if (visible && building && !this.built) this.build();
     this.shown = visible;
     this.group.visible = visible;
+    PALM_SHADOW.uPalmShadowOn.value = visible && this.built ? 1 : 0;
     for (const mesh of this.above) {
       mesh.visible = visible;
       mesh.count = mesh.userData.whole.numbers.length / 4;   // every instance, till the next cull
@@ -1026,6 +1133,24 @@ uniform vec3 uSkyAmbient;`)
     if (direction) this.uniforms.uPalmWindDirection.value.set(direction[0], direction[1]).normalize();
   }
 
+  /**
+   * Every palm and mound a level of detail coarser (a preset's
+   * `sceneryCoarse`: Low), or as placed; built again if it is built.
+   */
+  setCoarse(coarse) {
+    if (coarse === this.coarse) return;
+    this.coarse = coarse;
+    if (!this.built) return;
+    this.build();
+    this.setVisible(this.shown);
+  }
+
+  /** A palm's or a mound's level of detail: by its distance from the shore view's eye, a level coarser when coarse. */
+  levelOf(placed) {
+    const distance = Math.hypot(placed.x - EYE.x, placed.z - EYE.z);
+    return Math.min(LODS.findLastIndex((lod) => distance >= lod.from) + (this.coarse ? 1 : 0), LODS.length - 1);
+  }
+
   /** The world time (s), for the sway. */
   setTime(time) { this.uniforms.uPalmTime.value = time; }
 
@@ -1037,10 +1162,4 @@ uniform vec3 uSkyAmbient;`)
       material.needsUpdate = true;
     }
   }
-}
-
-/** A palm's or a mound's level of detail: by its distance from the shore view's eye. */
-function levelOf(placed) {
-  const distance = Math.hypot(placed.x - EYE.x, placed.z - EYE.z);
-  return LODS.findLastIndex((lod) => distance >= lod.from);
 }

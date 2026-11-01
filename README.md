@@ -1303,7 +1303,11 @@ so far crowns keep their leaves); the light passes through a leaf where the
 sun is behind it. Every palm is an instance of one of six variants at three
 levels of detail, chosen by distance from the eye; when the camera moves,
 only the instances it sees (or sees in the water's mirror) are kept, one
-draw a mesh. The Wind control bends each trunk along the wind as a
+draw a mesh. Their shadows dapple the sand and the shallows' bed: a mask
+baked once, each palm drawn into it projected along the sun onto the
+water's level, which the land and the floor look up along the sun (the
+water's own shader is untouched). On Low every palm and mound is a level
+of detail coarser. The Wind control bends each trunk along the wind as a
 cantilever, with a slow sway of its own and slow gusts, and flutters its
 fronds. Nothing of it has a body for the physics.
 

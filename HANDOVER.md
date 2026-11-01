@@ -76,10 +76,11 @@ Bora Bora:
   `uniform-probe` (water 191 of 224, unchanged), `startup-probe`,
   `site-check`, `controls-probe`, `fish-probe`, `frame-rate-probe`. Changing
   place to the lagoon compiles nothing.
-- **Open:**
-  - no shadows of the palms on the sand or the water;
-  - the reef fish not re-checked in close-ups;
-  - no Low-quality reduction of the scenery.
+- **Since:**
+  - The palms' shadows on the sand and the bed: a baked mask (`PALM_SHADOW`), about 0.6 ms a bake.
+  - Low quality: every palm a level coarser, 64 draws and 435k triangles (`sceneryCoarse` replaces
+    `gardenCoarse`).
+  - The reef fish checked in close-ups (`__pond.fishes` is exposed for that).
 
  this work (gotchas)
 

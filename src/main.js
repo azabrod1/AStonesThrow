@@ -374,9 +374,11 @@ import { withRandom, parkMiller } from './withRandom.js';
 //                 water moves its mirror image is drawn again each frame.
 //                 afloat + shards is at most src/floaterRide.js MAX_FLOATERS,
 //                 the floaters whose ride is read back.
-//   gardenCoarse  the Koi pond's garden drawn as coarsely as the mirror draws
-//                 it (src/koiGarden.js setCoarse: a third of its triangles);
-//                 it catches things alike either way.
+//   sceneryCoarse the Koi pond's garden drawn as coarsely as the mirror draws
+//                 it (src/koiGarden.js setCoarse: a third of its triangles;
+//                 it catches things alike either way), and the Polynesian
+//                 lagoon's palms and scrub a level of detail coarser
+//                 (src/tropics.js setCoarse).
 //   spray         the splash's spray (src/spray.js): `ring` the slots of its
 //                 ring in use (sprites in flight at once, the oldest
 //                 overwritten past them) and `share` the share of its sprites
@@ -388,9 +390,9 @@ import { withRandom, parkMiller } from './withRandom.js';
 // and every mesh takes 16-bit indices (at most 254 segments: Three.js keeps
 // the index 65535 for primitive restart).
 export const QUALITY = {
-  high: { grid: 512, meshSegments: 254, underScale: 1.0, fluidScale: 1.0, idleFrameRate: 30, maxDpr: 2.0, rings: 24, ringFade: 8, rainTexels: 512, dropRings: 24, crownDrops: 3500, snowShare: 1, resting: 80, afloat: 32, shards: 24, moving: 40, gardenCoarse: false, spray: { ring: 65536, share: 1 } },
-  medium: { grid: 256, meshSegments: 160, underScale: 0.5, fluidScale: 0.5, idleFrameRate: 30, maxDpr: 2.0, rings: 12, ringFade: 4, rainTexels: 256, dropRings: 16, crownDrops: 2000, snowShare: 0.6, resting: 45, afloat: 21, shards: 15, moving: 30, gardenCoarse: false, spray: { ring: 16384, share: 0.4 } },
-  low: { grid: 256, meshSegments: 128, underScale: 0.5, fluidScale: 0.5, idleFrameRate: 30, maxDpr: 1.5, rings: 10, ringFade: 3, rainTexels: 256, dropRings: 12, crownDrops: 2000, snowShare: 0.4, resting: 20, afloat: 12, shards: 6, moving: 20, gardenCoarse: true, spray: { ring: 8192, share: 0.2 } },
+  high: { grid: 512, meshSegments: 254, underScale: 1.0, fluidScale: 1.0, idleFrameRate: 30, maxDpr: 2.0, rings: 24, ringFade: 8, rainTexels: 512, dropRings: 24, crownDrops: 3500, snowShare: 1, resting: 80, afloat: 32, shards: 24, moving: 40, sceneryCoarse: false, spray: { ring: 65536, share: 1 } },
+  medium: { grid: 256, meshSegments: 160, underScale: 0.5, fluidScale: 0.5, idleFrameRate: 30, maxDpr: 2.0, rings: 12, ringFade: 4, rainTexels: 256, dropRings: 16, crownDrops: 2000, snowShare: 0.6, resting: 45, afloat: 21, shards: 15, moving: 30, sceneryCoarse: false, spray: { ring: 16384, share: 0.4 } },
+  low: { grid: 256, meshSegments: 128, underScale: 0.5, fluidScale: 0.5, idleFrameRate: 30, maxDpr: 1.5, rings: 10, ringFade: 3, rainTexels: 256, dropRings: 12, crownDrops: 2000, snowShare: 0.4, resting: 20, afloat: 12, shards: 6, moving: 20, sceneryCoarse: true, spray: { ring: 8192, share: 0.2 } },
 };
 export const PIXEL_BUDGET = 2.6e6;   // device pixels in the canvas, on every preset
 const QUALITY_ORDER = ['high', 'medium', 'low'];
@@ -799,7 +801,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   const galeWaves = new GaleWaves(renderer, { windDirection, centre: water.centre, sharedWith: ambientWaves });
   const reeds = new Reeds({ lighting, ambientWaves, mirrorLayer: MIRROR_LAYER });   // the shallows' rushes (src/reeds.js), in the main scene, the mirror and the under-water pass
   const boulders = new Boulders({ envTexture: environment.envTexture, waterFog: { extinction: lighting.extinction, color: lighting.waterColor }, mirrorLayer: MIRROR_LAYER });   // a rocky shore's stones (src/boulders.js), the same three ways
-  const tropics = new Tropics({ renderer, envTexture: environment.envTexture, mirrorLayer: MIRROR_LAYER, lighting });   // the Polynesian lagoon's palms (src/tropics.js)
+  const tropics = new Tropics({ renderer, envTexture: environment.envTexture, mirrorLayer: MIRROR_LAYER, lighting, coarse: settings.sceneryCoarse });   // the Polynesian lagoon's palms (src/tropics.js)
   // The water's height at world (x, z) under the gale (its CPU sum), for the stones, the mirror and the eye.
   const galeSample = { height: 0, slopeX: 0, slopeZ: 0 };
   const galeSurfaceAt = (x, z) => galeWaves.sample(x, z, galeSample).height;
@@ -1047,7 +1049,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   sceneMain.add(pool.walls, pool.mirrorWalls, pool.yard, pool.mirrorYard);
   // The Koi pond's garden (src/koiGarden.js): in the main scene and the mirror; shown in the Koi pond.
   const garden = createKoiGarden({ envTexture: environment.envTexture, mirrorLayer: MIRROR_LAYER, lighting });
-  garden.setCoarse(settings.gardenCoarse);
+  garden.setCoarse(settings.sceneryCoarse);
   sceneMain.add(...garden.meshes);
   /** The lake's bed, beach and open water, or the pool's basin and deck: the meshes only (setPooled changes the water). */
   function showScenery(asPool) {
@@ -2911,7 +2913,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     splash.spray.setBudget(settings.spray);
     water.resize(settings.grid);
     surface.setMeshSegments(settings.meshSegments);
-    garden.setCoarse(settings.gardenCoarse);   // the Koi pond's garden as the mirror draws it (src/koiGarden.js)
+    garden.setCoarse(settings.sceneryCoarse);   // the Koi pond's garden as the mirror draws it (src/koiGarden.js)
+    tropics.setCoarse(settings.sceneryCoarse);   // and the lagoon's palms a level coarser (src/tropics.js)
     resize();
     monitor.settle = CALIBRATION.settleSeconds;
     onQualityChange?.(name);
@@ -3680,6 +3683,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     iceShadow,
     /** The Polynesian lagoon's scenery (src/tropics.js), for the probes. */
     tropics,
+    /** The fish (src/fish.js), for the probes. */
+    fishes,
     renderer,
     camera,
     lighting,

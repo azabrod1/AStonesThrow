@@ -300,6 +300,10 @@ function bakePattern(renderer) {
   return target;
 }
 
+// The palms' shadows (PALM_SHADOW in src/shaders/scene.js), shared by the floor's and every land's material: src/
+// tropics.js bakes the mask and turns it on at the Polynesian lagoon.
+export const PALM_SHADOW = { uPalmShadow: { value: null }, uPalmShadowBox: { value: new THREE.Vector4(0, 0, 1, 1) }, uPalmShadowOn: { value: 0 } };
+
 export function createPondFloor(water, lighting, ambientWaves, { renderer, rings = null, ice = null }) {
   const pattern = bakePattern(renderer);
   const material = new THREE.ShaderMaterial({
@@ -321,6 +325,7 @@ export function createPondFloor(water, lighting, ambientWaves, { renderer, rings
       uWaterColor: { value: lighting.waterColor },
       uPattern: { value: pattern.texture },
       uBedTint: bedTintUniform,   // the place's ground against Lakeside's sand (setShoreLook)
+      ...PALM_SHADOW,
       ...ambientWaves.uniforms(),
       ...(rings ? rings.uniforms() : {}),
       ...(ice ? ice.uniforms : {}),   // under the ice the surface focuses nothing (surfaceCurvature)
@@ -457,6 +462,7 @@ export function createShore(floor, lighting, environment, { snow = { value: 0 },
       uLandLevel: environment.landLevel,
       ...environment.hazeUniforms,
       uSnow: snow,   // the snow lying on it, 0 to 1 (src/main.js WEATHERS)
+      ...PALM_SHADOW,
     },
   });
   const mesh = new THREE.Mesh(koi ? koiLandGeometry() : lagoon ? lagoonLandGeometry() : landGeometry(), material);
