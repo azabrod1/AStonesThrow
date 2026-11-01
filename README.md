@@ -60,10 +60,11 @@ Toss. On a phone in portrait, where the title's line is hidden, a cue over
 the water says to tap it, until the first throw. The menu button at the
 top right opens the settings, laid out as the Moon app's menu is: a list in
 four groups (what is thrown: What to throw; the place: Location, Water and Time of
-day; the conditions: Weather, Wind and Sound; the viewing: View and Quality), each row an icon, its name
+day; the conditions: Weather, Wind and Sound; the viewing: View, Full screen and Quality), each row an icon, its name
 over a line on what it sets and where it stands, and each setting a page of
 its choices (Location and Water as pictures) with a line on each. Each choice
-is remembered on the device (but the view, which opens on the shore):
+is remembered on the device (but the view, which opens on the shore, and
+full screen, which only a press or a key may ask for):
 - What to throw (`?thing=`): stones (a river stone, the default; slate,
   granite, basalt, pumice), balls (golf, tennis, bowling, basketball), gems
   (diamond, emerald, ruby, sapphire) and others (an apple, a watermelon, a
@@ -284,6 +285,18 @@ is remembered on the device (but the view, which opens on the shore):
   nothing swims, nothing is startled and nothing is eaten (`?fish=off` on
   the page, `--fish=none` for the harness; remembered on the device like
   the other settings).
+- Full screen: On or Off, and the F key, where the browser lets a page take
+  the whole screen (Android, an iPad, a desktop browser: the Fullscreen
+  API, `src/screen.js`). Safari on an iPhone lets no page do that, so there
+  the page says the way: add the pond to the Home Screen (Share, then Add
+  to Home Screen) and open it from there, where it runs as an app with no
+  browser bars, the water under a see-through status bar
+  (`apple-mobile-web-app-status-bar-style` and `manifest.webmanifest`,
+  which asks Android for the whole screen too). Even in a Safari tab the
+  pond reaches up behind the iPhone's clock: Safari 26 draws only the page's
+  scrolled content there, never a fixed element, so on an upright iPhone
+  the canvas lies in the page a little taller than the window, scrolled up
+  under the status bar (`src/screen.js` says how and why; `?bleed=` below).
 - Quality: Auto, Low, Medium or High.
 Auto starts on High everywhere and steps down by itself if the idle
 pond or the first splash renders too slowly, and later whenever the frame
@@ -1542,6 +1555,11 @@ farther out, so it rises into the view rather than filling its corner.
   runs it headless and checks the report's shape.
 - `?paused=1` starts the page with its clock stopped (the harness does, so
   its frames start from world time zero and every run renders the same water).
+- `?bleed=N` lays the canvas N CSS pixels under the window's top, the page
+  scrolled up by as much, in any browser (`src/screen.js`); Safari 26 on an
+  upright iPhone does this by itself with 64 (24 on an iPhone with a home
+  button), a little over its status bar. `?bleed=0` turns it off there, to
+  compare; another N tries another height.
 - `?wind=x,z` on the page (`--wind=x:z` for the harness) sets the direction
   the wind blows toward, in world XZ (the camera looks toward −Z); the
   default is (0.45, −0.9), away from the camera and a little to the right.
@@ -1771,6 +1789,19 @@ farther out, so it rises into the view rather than filling its corner.
   `shots/controls-probe/`. The
   shoot harness and the other probes emulate a desktop browser, which ignores
   the viewport tag, so only this probe sees the page as a phone does.
+- `node tools/screen-probe.mjs` loads the page as Safari 26 on an iPhone
+  lays it out (its user agent and screen, touch, 3× pixels) and checks that
+  the canvas lies 64 pixels under the window's top, the page scrolled to
+  its foot, the pond framing the canvas as it lies and a tap throwing
+  under the finger; that the strip stays put, the page goes back to its
+  foot when something else scrolls it, and on its side the canvas is fixed
+  again; that Full screen's On and Off work and the canvas is fixed in full
+  screen; that without the Fullscreen API (an iPhone's Safari) the page
+  names the Home Screen's way, and that opened from the Home Screen, in
+  Chrome on an iPhone and in a desktop window there is no bleed, an iPhone
+  with a home button gets 24, F goes in and out of full screen on a desktop
+  and `?bleed=40` works there. No desktop browser has an iPhone's status
+  bar, so what shows under the clock can only be seen on a phone.
 - `window.__pond` exposes the app in the console: `throwAt(x, z, { radius, power, manner, skip, thing, size, dressing })`
   (`dressing`: the seed of a pizza's, pie's or cake's own parts; `preview.dressing` is the hand's),
   `setPower(name)` (and `power`), `setManner(name)` (and `manner`), `setSkip(on)` (and `skipping`), `setTrace(on)`,
