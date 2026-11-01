@@ -2209,10 +2209,15 @@ export class Rock {
     return Math.min(soft.drape + (1 - soft.drape) * this.soaked, 1) * this.thawed;
   }
 
-  /** The radius (m) inside its rim the water does not reach as it floats (`water.dry`): less as it soaks, none upside down or not afloat. */
+  /**
+   * The radius (m) inside its rim the water does not reach as it floats (`water.dry`): less as it soaks, none upside
+   * down or not afloat, and none unless it floats (rideTheWater keeps a floater's top inside that radius drawn under the
+   * water line; a plate too heavy to float, a cherry pie, has its top clipped at the water, so hiding the water over it
+   * would show the sky through the hole: it is seen through the water instead).
+   */
   get dryDisc() {
     const dry = this.thing.water.dry;
-    if (!dry || !(this.state === 'float' || this.afloat)) return 0;
+    if (!dry || !this.floats || !(this.state === 'float' || this.afloat)) return 0;
     const up = scratch.face.copy(this.uprightAxis).applyQuaternion(this.quaternion).y;
     return up > 0.9 ? dry * this.radius * (1 - this.soaked) : 0;
   }
