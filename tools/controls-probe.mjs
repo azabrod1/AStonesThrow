@@ -520,7 +520,7 @@ for (const framing of FRAMINGS) {
   await page.waitForTimeout(400);
   const [panel] = await boxes('#settings');
   const rows = await boxes('#settings .menu-tier');
-  check(!!panel && onScreen(panel) && rows.length === 11, `the settings open on the screen with their ten rows and Reset all (${rows.length})`);
+  check(!!panel && onScreen(panel) && rows.length === 12, `the settings open on the screen with their eleven rows and Reset all (${rows.length})`);
   if (framing.touch) check(rows.every((row) => row.height >= SMALLEST_BUTTON_HEIGHT - 0.5), `every settings row is at least ${SMALLEST_BUTTON_HEIGHT} points tall (smallest ${Math.min(...rows.map((row) => row.height)).toFixed(1)})`);
   const cutValues = await page.evaluate(() => [...document.querySelectorAll('#settings .menu-tier-value')].filter((value) => value.scrollWidth > value.clientWidth + 0.5).map((value) => value.textContent));
   const hinted = await page.evaluate(() => [...document.querySelectorAll('#settings .menu-tier-name small')].filter((hint) => hint.getClientRects().length > 0).length);
