@@ -524,7 +524,8 @@ known timing, and the droplets are choreographed from them:
    ligament is, unevenly spaced and of wildly uneven length (a few twice
    the mean, a quarter only stubs), between scalloped arcs of rim that sag
    each their own way, each ending in a bead that swells, pinches off as a
-   drop as big as the rim is thick, give or take a third, and starts again. The
+   drop about as wide as the ligament, give or take a half, and starts again;
+   the ligaments lean and bend, each drifting along the rim its own way. The
    sheet is no clean film: it wrinkles, the rim's capillary waves run down
    it in bands parallel to the edge, holes open high in it as it thins
    and the tear nears (each a circle widening from its own seed, as a film

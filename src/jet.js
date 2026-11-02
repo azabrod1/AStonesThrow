@@ -49,12 +49,14 @@
 // glass lens the foot was a block of glass on the water, its foot cut flat
 // along the surface and the pond's far side showing through it; the base's
 // share of the water alone, which widens most of the column, made the whole
-// column a dark bottle). Where the trumpet meets the water it flares out
-// into a skirt (FOOT_SKIRT_RINGS rings from the last ring above the water,
-// widening to FOOT_SKIRT of its radius as the surface turns, eased, from
-// the wall's slope to FOOT_SKIRT_FLAT from level at the water, the pond's
-// water through): a mound's foot lies along the surface, and a wall cut off at
-// the water stood on it with a bright outline, its grazing reflection. Rj is the
+// column a dark bottle). Towards the water the trumpet flares as a horn:
+// a ring within HORN_HEIGHT times its own radius of the water is drawn
+// wider by HORN_GAIN times the square of how near it is, so the base's
+// water lies in a low mound curving into the column (Worthington's "cake"
+// of liquid round the foot), its lowest ring, held under the surface, out
+// of sight. Drawn without the horn the base was a flat-topped block with
+// vertical walls on the water, and a flat skirt laid on the water in its
+// place a plate with a hard edge. Rj is the
 // stone's radius R times the sweep's `column` gain (Sizes, below; times
 // form.radiusScale), never under JET_RADIUS_LEAST, since a small stone's jet
 // is no thinner than the capillary length lets it be: Li & Li (2025) measure
@@ -150,9 +152,9 @@
 // Drops. A piece the solver lets go as a drop (one bead) becomes a droplet of
 // its water's radius and momentum (drops of LENS_DROP_RADIUS and more drawn
 // as glass, like the column); drops under LEAST_DROP are not worth one and
-// their water falls back. A drop bigger than DROP_CEILING (src/crown.js: 4
-// mm in radius, the most surface tension holds together at a raindrop's
-// speed) flies whole as a lump until the air tears it (src/splash.js's
+// their water falls back. A drop bigger than DROP_CEILING (src/crown.js: 2.5
+// mm in radius, the biggest a sheet's tearing throws; the lake photographs'
+// drops are millimetres across) flies whole as a lump until the air tears it (src/splash.js's
 // Lumps: by its Weber number, so a lump lobbed slowly reaches its apex whole
 // and comes apart as it falls, as a big stone's centimetre lumps do). A
 // piece that reaches the water leaves as droplets
@@ -248,9 +250,8 @@ const BASE_DEPTH = 0.004;          // the water the column drains into is this f
 const BASE_START = 0.3;            // the base widens the column from where its launch radius is this share of the core's...
 const BASE_TAPER = 0.25;           // ...over this share of the launch left after that
 const FOOT_POND = [0.35, 1.0];     // a ring whose surface flares towards the foot at this slope starts to be the pond's own water, and is wholly at this (the header)
-const FOOT_SKIRT = 1.35;           // the foot's skirt (the header) widens to this many times the last ring's radius above the water (a wide one was a plate under the jet)...
-const FOOT_SKIRT_RINGS = 3;        // ...over this many rings...
-const FOOT_SKIRT_FLAT = 0.12;      // ...the surface this many radians from level at its edge (eased to it, so the edge has no crease)
+const HORN_HEIGHT = 2.0;           // the foot's horn (the header): a ring within this many of its own radii of the water flares...
+const HORN_GAIN = 1.2;             // ...by this times the square of how near it is (to this plus one times its radius at the water)
 const BUNCH_CAP = 1.4;             // where the base's water bunches, its width is at most this many launch radii
 const EMIT_LENGTH = 1.2;           // a node leaves the launch point once its segment is this many launch radii long...
 const EMIT_LEAST = 0.0004;         // ...and at least this (m)...
@@ -913,8 +914,11 @@ export class JetColumn {
       }
     }
     let surfaceBase = 0;   // the base's width at the lowest ring above the level so far (the rings run top to foot)
-    // The last tube ring above the level that the base widens (the skirt's root, below): its place, radius, slope, air and phase.
-    let skirtRoot = false, skirtX = 0, skirtY = 0, skirtZ = 0, skirtRadius = 0, skirtSlope = 0, skirtAir = 0, skirtPhase = 0;
+    // The foot's horn (the header): how much wider a ring of the given radius at the given height is drawn.
+    const horn = (radius, height) => {
+      const near = 1 - (height - level) / Math.max(HORN_HEIGHT * radius, 1e-6);
+      return near > 0 && near < 1 ? 1 + HORN_GAIN * near * near : near >= 1 ? 1 + HORN_GAIN : 1;
+    };
     const closedBelow = (node, base) => this.drawY[node] < level ? Math.max(surfaceBase - (level - this.drawY[node]), 0) : base;
     /** The ring at a node: its centre and axis into the scratches, and the base's width there (the header of the method). */
     const placeRing = (node, core, base) => {
@@ -973,31 +977,20 @@ export class JetColumn {
         }
         continue;
       }
-      const radius = core + base;
-      // The slope of the surface along the axis, from the segments either side (the base's width at their nodes).
-      const before = node > first ? solver.segmentRadius[node - 1] + 0.5 * (base + closedBelow(node - 1, baseAt(node - 1))) : radius;
-      const after = node < last ? solver.segmentRadius[node] + 0.5 * (base + closedBelow(node + 1, baseAt(node + 1))) : radius;
+      // The horn (the header) widens the rings the base widens, on the piece standing in the water.
+      const horned = base > 0 && this.drawY[last] <= level + 1e-4;
+      const radius = (core + base) * (horned ? horn(core + base, centreY) : 1);
+      // The slope of the surface along the axis, from the segments either side (the base's width at their nodes, horned as this one is).
+      const beforeRadius = node > first ? solver.segmentRadius[node - 1] + 0.5 * (base + closedBelow(node - 1, baseAt(node - 1))) : radius;
+      const afterRadius = node < last ? solver.segmentRadius[node] + 0.5 * (base + closedBelow(node + 1, baseAt(node + 1))) : radius;
+      const before = node > first && horned ? beforeRadius * horn(beforeRadius, this.drawY[node - 1]) : beforeRadius;
+      const after = node < last && horned ? afterRadius * horn(afterRadius, this.drawY[node + 1]) : afterRadius;
       const spanLength = (node > first ? solver.segmentLength[node - 1] : 0) + (node < last ? solver.segmentLength[node] : 0);
       const slope = spanLength > 1e-9 ? (2 * (after - before)) / spanLength : 0;
       const tilt = 1 / Math.sqrt(1 + slope * slope);
       // Where the foot flares it is the pond's water (the header): its share, by the slope, as a negative roundness.
       const pond = base > 0 ? smoothstep(FOOT_POND[0], FOOT_POND[1], slope) : 0;
       this.addRing(centreX, centreY, centreZ, axis.x, axis.y, axis.z, radius, radius, -pond, -slope * tilt, tilt, air, phase);
-      if (base > 0 && centreY >= level) { skirtRoot = true; skirtX = centreX; skirtY = centreY; skirtZ = centreZ; skirtRadius = radius; skirtSlope = Math.max(slope, 0); skirtAir = air; skirtPhase = phase; }
-    }
-    // The foot's skirt (the header): from the last widened ring above the water, out and down to the water, the
-    // surface turning from the wall's slope to nearly level, all of it the pond's water. Only on the piece that
-    // stands in the water (its foot held under the surface): a piece broken off above it carries base water too,
-    // and a skirt on it was a hoop of water hanging in the air.
-    if (skirtRoot && this.drawY[last] <= level + 1e-4) {
-      const wallAngle = Math.atan(skirtSlope);   // the wall's angle from the axis
-      for (let ring = 1; ring <= FOOT_SKIRT_RINGS; ring++) {
-        const share = ring / FOOT_SKIRT_RINGS;
-        const angle = wallAngle + (Math.PI * 0.5 - FOOT_SKIRT_FLAT - wallAngle) * Math.sin(0.5 * Math.PI * share);   // from the axis: level is π/2; eased flat
-        const radius = skirtRadius * (1 + (FOOT_SKIRT - 1) * share);
-        const height = skirtY - (skirtY - level) * share;
-        this.addRing(skirtX, height, skirtZ, 0, -1, 0, radius, radius, -1, -Math.sin(angle), Math.cos(angle), skirtAir, skirtPhase);   // the normal leans up, against the axis, as the wall's does
-      }
     }
     // Its foot: a hemisphere under the last node (or its bead's lower pole).
     const footCore = this.tubeRadius(last, first, last);

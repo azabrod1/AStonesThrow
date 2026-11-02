@@ -93,7 +93,10 @@
 // two kinds (src/spectralWater.js), a boil, big bubbles, dense and popping
 // within a second (BOIL_LIFETIME), and a raft, small bubbles lasting
 // seconds, which is sea foam and the gale's whitecaps' (src/galeWaves.js);
-// a stone stamps only boils, but on the sea (setSalt: the places whose sky
+// a stone stamps only boils, a big one's foot frothing at impact
+// (contactFroth, by the entry's size-weighted Weber number: the lake
+// photographs show a clear foot under a pebble's sheet and a white one under
+// a rock's); but on the sea (setSalt: the places whose sky
 // is the sea's, src/sky.js SALT_SKIES) each boil also leaves a raft of
 // SALT_RAFT_SHARE of its amount lasting SALT_RAFT_LIFETIME, the bubble
 // patch a stone leaves on salt water for seconds. Where the hole closes its air comes up as a
@@ -140,7 +143,7 @@
 // capillary rings the solver's cells are too coarse to hold, drawn instead
 // (src/dropRings.js, which the water carries as water.dropRings). A
 // large one (LANDING_CROWN_RADIUS
-// to DROP_CEILING, 3.5 to 4 mm: the biggest of the jet's and the crown's)
+// to DROP_CEILING, 2.5 mm: the biggest of the crown's)
 // that has flown at least LANDING_CROWN_FLIGHT and falls at
 // LANDING_CROWN_SPEED or more throws a small crown of its own, a CrownSheet
 // with the drop's radius and speed (at most MAX_LANDING_CROWNS alive; the
@@ -172,8 +175,10 @@
 // src/crown.js, the jet's in src/jet.js.
 //   - The crown's and the fan's droplet counts go as s^DROPLET_COUNT_POWER ·
 //     sqrt(V / 6 m/s) and the lumps their sheets tear into as s^0.5
-//     (src/crown.js); but no drop is bigger than DROP_CEILING (4 mm in
-//     radius, the most surface tension holds together in flight), so from
+//     (src/crown.js); but no drop is bigger than DROP_CEILING (2.5 mm in
+//     radius, the biggest a sheet's tearing throws: the lake photographs'
+//     drops are millimetres across; a lump bigger than that flies whole
+//     until the air tears it, Lumps below), so from
 //     the 3 cm stone up a bigger lump, the jet's too, breaks into several
 //     drops (breakLump), out of the spares under the caps: a big stone's
 //     crown is denser, not coarser. Past the caps the lumps lose water (a
@@ -353,7 +358,8 @@ const DROPLET_COUNT_POWER = 1.6;      // the crown's and the fan's drop counts s
 const CROWN_DROPLET_CAP = 3500;       // at most, unless the preset sets fewer (QUALITY's crownDrops, setCrownDropletCap): a 16 cm stone is given about 870, and its lumps over DROP_CEILING want the rest (src/crown.js)
 const FAN_DROPLET_CAP = 600;          // at most (the same stone's fan, about 400)
 const SPRAY_DROP_RADIUS = 0.0008;     // the contact line's spray: drops of this radius...
-const SPRAY_DROP_SPREAD = 0.001;      // ...to this much more, times (R / 3 cm)^0.4
+const SPRAY_DROP_SPREAD = 0.001;      // ...to this much more, times (R / 3 cm)^0.4, at most DROP_CEILING (the contact's first ejecta are fine)
+const CONTACT_FROTH = { onset: [3, 14], amount: 0.05, radius: 1.6 };   // the froth at a big stone's foot at impact (contactFroth): rising from none to all over this range of the entry's size-weighted Weber number, each sub-stamp's peak this times (R / 3 cm), over this many R
 const CONTACT_SPRAY = { water: 0.002, radius: 0.00012, bursts: 24, onset: [2, 12] };   // the contact's first ejecta as spray (src/spray.js): this share of the stone's volume, drops of this mean radius (times (R / 3 cm)^0.3), from this many places round the ring, rising from none to all over this range of the entry's size-weighted Weber number (src/crown.js frothWeber: a pebble's contact throws drops, no mist, in the lake photographs)
 const BUBBLES = 110;                  // bubbles a 3 cm stone drags down, scaling with R²...
 const BUBBLE_CAP = 800;               // ...at most (a 16 cm stone wants 780)...
@@ -1121,10 +1127,11 @@ export class SplashSystem {
       this.spawnDroplet(
         x + dirX * ringRadius, 0.003, z + dirZ * ringRadius,
         dirX * out + velocity.x * 0.22, up, dirZ * out + velocity.z * 0.22,
-        (SPRAY_DROP_RADIUS + SPRAY_DROP_SPREAD * Math.random()) * sizeFactor ** 0.4,
+        Math.min((SPRAY_DROP_RADIUS + SPRAY_DROP_SPREAD * Math.random()) * sizeFactor ** 0.4, DROP_CEILING),
       );
     }
     this.contactSpray(x, z, radius, entrySpeed, velocity, horizontal, horizontalFraction, sizeFactor);
+    this.contactFroth(x, z, radius, entrySpeed, sizeFactor, water);
     const stoneCrowns = this.crowns.filter((candidate) => !candidate.landing && !candidate.fan);
     if (stoneCrowns.length >= MAX_CROWNS) {
       const oldest = stoneCrowns[0];
@@ -1262,6 +1269,19 @@ export class SplashSystem {
   }
 
   /**
+   * The froth at the foot of a big stone's crown (the header's Foam): the
+   * air the contact line and the sheet's foot entrain as the stone goes in,
+   * a boil on the lip at impact, by the entry's size-weighted Weber number
+   * over CONTACT_FROTH.onset (none for a pebble, whose foot the lake
+   * photographs show clear; a rock's foot is white).
+   */
+  contactFroth(x, z, radius, entrySpeed, sizeFactor, water) {
+    const share = smoothstep(CONTACT_FROTH.onset[0], CONTACT_FROTH.onset[1], frothWeber(sizeFactor, entrySpeed));
+    if (share <= 0 || !water) return;
+    this.stampFoamPatch(water, foamRandom(x, z, this.time, radius), { x, z, radius: CONTACT_FROTH.radius * radius, amount: Math.min(CONTACT_FROTH.amount * share * sizeFactor, FOAM_AMOUNT_CAP), reach: 1.0, radii: [0.4, 0.8], lifetime: BOIL_LIFETIME, boil: true, source: 'contact' });
+  }
+
+  /**
    * A skip stone's touch (src/rock.js skim; the header): the ring its push
    * sends out, the spray thrown ahead of it and the water it churned, white
    * for a moment.
@@ -1313,7 +1333,7 @@ export class SplashSystem {
       this.spawnDroplet(
         startX - headingZ * aside, 0.003, startZ + headingX * aside,
         directionX * Math.cos(rise) * dropSpeed, Math.sin(rise) * dropSpeed, directionZ * Math.cos(rise) * dropSpeed,
-        (SPRAY_DROP_RADIUS + SPRAY_DROP_SPREAD * Math.random()) * sizeFactor ** 0.4,
+        Math.min((SPRAY_DROP_RADIUS + SPRAY_DROP_SPREAD * Math.random()) * sizeFactor ** 0.4, DROP_CEILING),
       );
     }
     // The water the face churned: a small boil, white for a moment (on the solver's patch only, where the foam is).

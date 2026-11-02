@@ -74,7 +74,13 @@
 // never grew (a real rim's spikes are of wildly uneven length). A finger
 // is a ligament, a round rod of water, not a tongue of film: besides the
 // grid's narrow strip (its columns, FINGER_SPOTS, a cusp in the rim) each
-// is drawn as a tube of its own (`ligaments`, one ring grid for all of
+// is drawn as a tube of its own, and the rim's material drifts along the
+// rim by up to FINGER_SIDE of its launch speed, a smooth field of
+// SIDE_MODES waves round the ring (sideAt) fading down the sheet as the
+// square of the launch left, so each ligament leans and bends its own way
+// and the sheet shears smoothly below it (straight radial needles read as
+// a comb)
+// (`ligaments`, one ring grid for all of
 // them, LIGAMENT_RINGS rings of LIGAMENT_COLUMNS along each, pieces joined
 // by rings of no radius as the jet's are, shaded as the jet's column is by
 // src/shaders/sheet.js's column materials) along the finger's axis, the
@@ -115,8 +121,8 @@
 // it, from BEAD_SEED of the drop it will shed (the rim's own thickening) to
 // all of it. The drop is BEAD_RIM times the rim's thickness there then (a
 // ligament pinches into drops about that big; within the sheet's drops' range,
-// each off by up to BEAD_JITTER): on a 3 cm stone's 1 to 2.5 mm, a few shed;
-// on a 16 cm stone's crown the rim gathers 2.5 to 7 mm's worth a bead,
+// each off by up to BEAD_JITTER): on a 3 cm stone's 0.4 to 2.5 mm, a few shed;
+// on a 16 cm stone's crown the rim gathers 1 to 6 mm's worth a bead,
 // sixty-odd before it tears, drawn at most DROP_CEILING and each leaving as
 // several drops (up to about ten; Drop sizes, below). It is drawn as a droplet at the tip
 // (SplashSystem.prepareFrame takes them through beadsInto), so it is the round
@@ -241,7 +247,7 @@
 // The torn part becomes droplets that carry the local (decayed) sheet
 // velocity, each holding the volume of the patch of sheet it came from, so the
 // drops come out about the size the sheet's thickness implies, between
-// CROWN_DROP_FLOOR and CROWN_DROP_CAP (1 and 5.5 mm) for a 3 cm stone, but
+// CROWN_DROP_FLOOR and CROWN_DROP_CAP (0.4 and 2.5 mm) for a 3 cm stone, but
 // no two alike: a ligament breaks into drops of a broad spread of sizes
 // (Villermaux's gamma of order 4, as the spray's are: a tenth under half the
 // mean, a tenth over one and a half times it), so each patch's drop is its
@@ -412,8 +418,8 @@ const BREAK_CEILING = 0.15;        // ...and at most this, both times R / 3 cm f
 const STALL_SHARE = 1.15;          // it tears this many times the rim's stall after the launch
 const DROP_SIZE_POWER = 0.5;       // a stone's sheet sheds and tears into drops scaling as (R / 3 cm)^this
 const TEAR_GAMMA_VOLUME = 1.875 ** (-1 / 3);   // a gamma of order 4 has E[r³] = 1.875·mean³: its mean is scaled by this so a patch's drops hold its water (the header)
-const CROWN_DROP_CAP = 0.0055;     // it tears into drops of at most this...
-const CROWN_DROP_FLOOR = 0.001;    // ...and at least this (both times (R / 3 cm)^DROP_SIZE_POWER)
+const CROWN_DROP_CAP = 0.0025;     // it tears into drops of at most this (a 3 cm stone's sheet, 1.5 mm thick, breaks into drops a few millimetres across; at 5.5 mm its drops were marbles twice the photographs')...
+const CROWN_DROP_FLOOR = 0.0004;   // ...and at least this (both times (R / 3 cm)^DROP_SIZE_POWER)
 const RIM_DROP_RADIUS = 0.0015;    // the fan's and a landing crown's crests shed drops of this...
 const RIM_DROP_SPREAD = 0.0025;    // ...to this much more (the same scaling; a landing crown's as (R / 3 cm)^0.4)
 // No drop flies bigger than this (radius, m), whatever threw it (the header's
@@ -421,7 +427,7 @@ const RIM_DROP_SPREAD = 0.0025;    // ...to this much more (the same scaling; a 
 // capillary lengths (sqrt(σ/ρg) = 2.7 mm); the biggest raindrops are about
 // 3 mm in radius, and a splash's lumps, flying slower than a raindrop falls
 // and for a few tenths of a second, can be a little bigger before they break.
-export const DROP_CEILING = 0.004;
+export const DROP_CEILING = 0.0025;
 const LUMP_PIECE_LEAST = 0.35;     // a lump too big to fly whole breaks into drops of this to 1 times the largest allowed, in radius...
 const LUMP_PIECE_MEAN = 0.7;       // ...about this times it on average, by a gamma draw (the header's Drop sizes)
 const TAIL_THICKNESS = 0.6;        // tail material leaves the ring at this fraction of h0
@@ -466,7 +472,9 @@ const ARC_SAG_RANGE = [0.3, 1.7];  // ...times a share in this range, arc by arc
 const FINGER_SPOTS = [-1, -0.88, -0.55, 0, 0.55, 0.88, 1];   // grid columns across a finger (x, root to root), denser where its sides turn...
 const ARC_COLUMNS = 7;             // ...and inside an arc (enough that a scallop is a curve, not a zigzag)
 const FINGER_LEAN = 1.2;           // a finger's normal leans across it by this much at its sides (a rod's)
-const BEAD_RIM = 0.95;             // a finger's bead grows to a drop this many times the rim's thickness in radius...
+const FINGER_SIDE = 0.35;          // the rim's material drifts along the rim by up to this share of its launch speed (sideAt: a smooth field of SIDE_MODES round the ring), so the ligaments lean and bend each its own way (straight radial needles read as a comb; a drift finger by finger folded the sheet at every finger's sides, and the folds drew white)
+const SIDE_MODES = [2, 3, 4, 5];   // the drift's waves round the ring, at phases of the crown's own (its froth offset)
+const BEAD_RIM = 0.5;              // a finger's bead grows to a drop this many times the rim's thickness in radius (a ligament pinches into drops about its own width across, Rayleigh–Plateau; at 0.95 the rim shed marbles)...
 const BEAD_JITTER = 0.55;          // ...give or take this share, drop by drop (a string of equal pearls read as beads)
 const BEAD_SEED = 0.3;             // a bead starts with this share of its drop's volume: the rim's own thickening
 // The sheet's froth (the header; drawn by SHEET_FROTH in src/shaders/sheet.js).
@@ -517,11 +525,11 @@ const FAN_DROP_CAP = 0.0008;       // it tears into fine drops of at most this..
 const FAN_DROP_FLOOR = 0.0003;     // ...and at least this (both times (R / 3 cm)^DROP_SIZE_POWER)...
 const FAN_RIM_DROPS = 0.2;         // ...and its rim sheds drops this fraction of the size a crown's does
 // The spray (the header, src/spray.js).
-const SPRAY_SHARE_FLOOR = 0;       // a torn patch throws this share of its water as spray for a sheet of no violence (a pebble's torn sheet is drops and no mist at all: the lake photographs)...
+const SPRAY_SHARE_FLOOR = 0.3;     // a torn patch throws this share of its water as spray for a sheet of no violence (its small drops, src/spray.js: a sprite of one drop is a drop like any other, and under a millimetre they are many)...
 const SPRAY_SHARE_GAIN = 0.55;     // ...rising by this times its violence (at most 1)...
 const SPRAY_SHARE_POWER = 0.7;     // ...to this power
-const SPRAY_SIZE = 1.2;            // its drops' mean radius, times the sheet's thickness there...
-const SPRAY_SIZE_RANGE = [0.0001, 0.0006];   // ...within this (m)
+const SPRAY_SIZE = 0.6;            // its drops' mean radius, times the sheet's thickness there...
+const SPRAY_SIZE_RANGE = [0.0003, 0.0012];   // ...within this (m): the torn film's small drops, beads of a millimetre or two across, no mist (the lake photographs)
 const SPRAY_LEAST_FILM = 0.00005;  // m: the film the Taylor–Culick kick is reckoned for is at least this thick
 const SATELLITES = [1, 3];         // a bead pinching off leaves this many satellites...
 const SATELLITE_SIZE = 0.25;       // ...of this share of its radius on average (Rayleigh–Plateau)
@@ -765,6 +773,7 @@ export class CrownSheet {
     this.columnSpeedFactor = new Float64Array(this.columns);
     this.columnThicknessFactor = new Float64Array(this.columns);
     this.columnFingerFactor = new Float64Array(this.columns);
+    this.columnFingerSide = new Float64Array(this.columns);   // the rim's sideways drift there (sideAt)
     this.columnAcross = new Float64Array(this.columns);   // x across a finger (FINGER_SPOTS), 0 on an arc
     this.columnTearPace = new Float64Array(this.columns);
     this.tearFront = new Float64Array(this.columns);
@@ -805,6 +814,7 @@ export class CrownSheet {
       if (this.fingered) {
         this.fingerAt(angle, place);
         this.columnFingerFactor[column] = place.factor;
+        this.columnFingerSide[column] = this.sideAt(angle);
         this.columnTearPace[column] = 1 + ragged * (1 - place.fingerness);
       } else {
         this.columnTearPace[column] = 1 + ragged;
@@ -937,6 +947,13 @@ export class CrownSheet {
    * times its length, or an arc's sag, negative), and `fingerness`, 1 − x²
    * on a finger and 0 on an arc.
    */
+  /** The rim's sideways drift at an azimuth (the header: FINGER_SIDE, SIDE_MODES), as a share of the launch speed. */
+  sideAt(angle) {
+    let sum = 0;
+    for (let index = 0; index < SIDE_MODES.length; index++) sum += Math.sin(SIDE_MODES[index] * angle + this.frothOffset * (1.3 + index));
+    return (FINGER_SIDE * sum) / Math.sqrt(SIDE_MODES.length);
+  }
+
   fingerAt(angle, out) {
     out.factor = 0;
     out.fingerness = 0;
@@ -1036,6 +1053,10 @@ export class CrownSheet {
     launch.drainDivisor = 1 + age / this.drainSeconds;
     // A finger is its rim's material (the header).
     launch.fingerShare = this.fingered ? 1 - smoothstep(0, FINGER_ROOT, progress) : 0;
+    // The rim's sideways drift (FINGER_SIDE) fades down the sheet over the main launch, so no row shears from the
+    // next: a drift that stopped at the fingers' roots twisted the quads there out of the sheet's plane, and each
+    // twisted quad turned edge-on to the eye as a bright flap.
+    launch.sideShare = this.fingered ? (1 - main) * (1 - main) : 0;
     // A stone crown's foot, the late material still low by the lip, rides the lip out as the mouth widens (evaluate).
     launch.carry = this.rim && !this.fan && !this.landing ? smoothstep(CARRY[0], CARRY[1], progress) : 0;
     return launch;
@@ -1072,7 +1093,7 @@ export class CrownSheet {
    * `free`: as the sheet would be with no seal pulling it in. rimShape is the
    * cavity's mouth outline at this azimuth (columnRimShape), or worked out.
    */
-  evaluate(tau, cosAngle, sinAngle, speedFactor, thicknessFactor, out, edgeTau = 0, fingerFactor = 0, free = false, rimShape = undefined) {
+  evaluate(tau, cosAngle, sinAngle, speedFactor, thicknessFactor, out, edgeTau = 0, fingerFactor = 0, free = false, rimShape = undefined, fingerSide = 0) {
     const launch = this.launchAt(tau);
     let ringRadius = launch.ringRadius;
     // The stone's launch field here and now (the header): faster or slower, thicker or thinner, lower or higher.
@@ -1123,12 +1144,16 @@ export class CrownSheet {
     // Carried material goes where the lip goes, not where it was flung or dragged.
     const flown = flight * (1 - launch.carry);
     const radialDistance = ringRadius + radialSpeed * flown;
-    out.x = centreX + cosAngle * radialDistance + this.driftX * flown;
+    // The rim's material also drifts along the rim (FINGER_SIDE, sideAt), so the ligaments lean and bend: by the
+    // launch speed without the finger's own extra, so a finger and the arcs beside it drift alike (a finger drifting
+    // faster than its neighbours stretched its strip's columns sideways into a wide flap, drawn white by its lean).
+    const sideSpeed = fingerSide * launch.launchSpeed * speedFactor * fieldSpeed * launch.sideShare;
+    out.x = centreX + cosAngle * radialDistance + (this.driftX - sinAngle * sideSpeed) * flown;
     out.y = baseHeight + upSpeed * flight - launch.fall;
-    out.z = centreZ + sinAngle * radialDistance + this.driftZ * flown;
-    out.vx = (cosAngle * radialSpeed + this.driftX) * decay;
+    out.z = centreZ + sinAngle * radialDistance + (this.driftZ + cosAngle * sideSpeed) * flown;
+    out.vx = (cosAngle * radialSpeed + this.driftX - sinAngle * sideSpeed) * decay;
     out.vy = upSpeed * decay - launch.fallSpeed;
-    out.vz = (sinAngle * radialSpeed + this.driftZ) * decay;
+    out.vz = (sinAngle * radialSpeed + this.driftZ + cosAngle * sideSpeed) * decay;
     out.radialDistance = radialDistance;
     // The foot never sinks below the lip it stands on: the water there holds it up.
     if (launch.carry > 0 && out.y < baseHeight) { out.y = baseHeight; out.vy = Math.max(out.vy, 0); }
@@ -1191,7 +1216,7 @@ export class CrownSheet {
 
   evaluateAt(tau, angle, out) {
     const fingerFactor = this.fingered ? this.fingerAt(angle, this.place).factor : 0;
-    return this.evaluate(tau, Math.cos(angle), Math.sin(angle), this.speedFactor(angle), this.thicknessFactor(angle), out, 0, fingerFactor);
+    return this.evaluate(tau, Math.cos(angle), Math.sin(angle), this.speedFactor(angle), this.thicknessFactor(angle), out, 0, fingerFactor, false, undefined, this.fingered ? this.sideAt(angle) : 0);
   }
 
   /** Launch time of a row: rows crowd towards the rim, and the tail gets its own few. */
@@ -1480,11 +1505,11 @@ export class CrownSheet {
     const sinAngle = this.columnSin[column];
     const speedFactor = this.columnSpeedFactor[column];
     const thicknessFactor = this.columnThicknessFactor[column];
-    const fingerFactor = this.columnFingerFactor[column];
+    const fingerFactor = this.columnFingerFactor[column], fingerSide = this.columnFingerSide[column];
     const rimShape = this.columnRimShape?.[column];
-    const from = this.evaluate(tauFrom, cosAngle, sinAngle, speedFactor, thicknessFactor, this.state, 0, fingerFactor, false, rimShape);
+    const from = this.evaluate(tauFrom, cosAngle, sinAngle, speedFactor, thicknessFactor, this.state, 0, fingerFactor, false, rimShape, fingerSide);
     const fromX = from.x, fromY = from.y, fromZ = from.z, fromRadius = from.radialDistance;
-    const to = this.evaluate(tauTo, cosAngle, sinAngle, speedFactor, thicknessFactor, this.stateOther, 0, fingerFactor, false, rimShape);
+    const to = this.evaluate(tauTo, cosAngle, sinAngle, speedFactor, thicknessFactor, this.stateOther, 0, fingerFactor, false, rimShape, fingerSide);
     const length = Math.sqrt((to.x - fromX) ** 2 + (to.y - fromY) ** 2 + (to.z - fromZ) ** 2);
     return length * 0.5 * (fromRadius + to.radialDistance) * this.columnWidths[column];
   }
@@ -1614,13 +1639,13 @@ export class CrownSheet {
       const gone = span <= 1e-9;
       const cosAngle = this.columnCos[column], sinAngle = this.columnSin[column];
       const speedFactor = this.columnSpeedFactor[column], thicknessFactor = this.columnThicknessFactor[column];
-      const fingerFactor = this.columnFingerFactor[column], rimShape = this.columnRimShape?.[column];
+      const fingerFactor = this.columnFingerFactor[column], fingerSide = this.columnFingerSide[column], rimShape = this.columnRimShape?.[column];
       // The rim bead as launched sets the width: a ligament is as thick as the rim it grew from (the rim gathers what the sheet drains).
       let bead = 0;
       for (let ring = 0; ring < LIGAMENT_RINGS; ring++) {
         const along = ring / (LIGAMENT_RINGS - 1);   // 0 at the root, 1 at the tip
         const tau = front + span * (1 - along);
-        this.evaluate(tau, cosAngle, sinAngle, speedFactor, thicknessFactor, state, front, fingerFactor, false, rimShape);
+        this.evaluate(tau, cosAngle, sinAngle, speedFactor, thicknessFactor, state, front, fingerFactor, false, rimShape, fingerSide);
         centreX[ring] = state.x; centreY[ring] = state.y; centreZ[ring] = state.z;
         if (ring === LIGAMENT_RINGS - 1) bead = 3 * this.baseThickness * thicknessFactor;   // the rim bead as launched: the rim gathers what the sheet drains
         widths[ring] = along;
@@ -1720,7 +1745,7 @@ export class CrownSheet {
         const vertex = row * this.columns + column;
         const front = Math.min(this.tearFront[column], end);
         const tau = this.rowTau(row, front, end);
-        this.evaluate(tau, this.columnCos[column], this.columnSin[column], this.columnSpeedFactor[column], this.columnThicknessFactor[column], state, front, this.columnFingerFactor[column], false, this.columnRimShape?.[column]);
+        this.evaluate(tau, this.columnCos[column], this.columnSin[column], this.columnSpeedFactor[column], this.columnThicknessFactor[column], state, front, this.columnFingerFactor[column], false, this.columnRimShape?.[column], this.columnFingerSide[column]);
         this.positions[vertex * 3] = state.x;
         this.positions[vertex * 3 + 1] = state.y;
         this.positions[vertex * 3 + 2] = state.z;

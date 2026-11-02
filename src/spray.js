@@ -52,7 +52,10 @@
 // neighbours make and its light stays. A sprite of a few drops is one of
 // them, a sample, and spreads hardly at all (the share
 // 1 − e^(−(weight − 1) / PUFF_BLUR_DROPS)): High's mist keeps its sparkle,
-// Low's heavy sprites blur. Its glints go the same way: that share of them
+// Low's heavy sprites blur; but a sprite of fewer than PUFF_LEAST drops
+// (fluid.js) is drawn as the one drop that holds their water, since a
+// soft disc of a few drops read as a blurred white blob where the
+// photographs show drops. Its glints go the same way: that share of them
 // spread over the disc, the rest a point, one drop's sparkle as any drop's,
 // at a place of the puff's own (hashed from its birth), never its centre:
 // every puff's glints at its centre made each a disc with a dot in it, a
@@ -111,7 +114,7 @@ export const MIRROR_SPRAY_RADIUS = 0.0004;   // finer sprites are left out of th
 export const SPRAY_WIND = 1.5;           // m/s of drift per unit of the wind's strength (WIND_STRENGTHS, src/ambientWaves.js)
 const DENSITY = 0.2;                     // sprites per drop for the 3 cm stone's drops of DENSITY_RADIUS, at a share of 1...
 const DENSITY_POWER = 2.2;               // ...times (R / 3 cm)^−DENSITY_POWER...
-const DENSITY_RADIUS = 0.0003;           // ...and times (r / DENSITY_RADIUS)²: a sprite stands for as much light, whatever its drops' size
+const DENSITY_RADIUS = 0.0002;           // ...and times (r / DENSITY_RADIUS)²: a sprite stands for as much light, whatever its drops' size (a drop of 0.45 mm and up is a sprite of its own at the full share)
 const CROWD_RATE = 1.5;                  // sprites a second, per slot of the ring in use, past which a burst writes fewer, heavier ones...
 const CROWD_SECONDS = 1 / 30;            // ...the writing reckoned over about this long (an exponential memory): two frames
 const GAMMA_ORDER = 4;

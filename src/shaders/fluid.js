@@ -51,7 +51,9 @@
 // it) swept along its streak, the rest spread over the kernel as the drops
 // are; a sprite of a few drops keeps nearly all of it as the point, so the
 // mist sparkles, a heavy one spreads nearly all (src/spray.js's share). A
-// sprite of one drop is a drop like any other.
+// sprite of one drop is a drop like any other. A
+// sprite of fewer than PUFF_LEAST drops is drawn as the one drop that holds
+// their water.
 //
 // Glints. A water sphere of radius r in sunlight of irradiance E sends the
 // sun's light towards the viewer from two points, each a tiny image of the
@@ -88,7 +90,11 @@
 //     up where the ray leaving points, by SHEET_LENS of a far scene's shift
 //     (a flat film barely bent what was behind it and read as paint; a real
 //     sheet is millimetres of curved glass through which the pond's ripples
-//     fold, the lake photographs). It reflects pondView by both faces'
+//     fold, the lake photographs). Its own normal is read bilinearly from
+//     the four buffer pixels about the device pixel that hold the same
+//     sheet (sheetNormal), since the buffer is coarser than the canvas on
+//     the lower presets and its nearest-read normals wove a dither of
+//     lens shifts across the sheet. It reflects pondView by both faces'
 //     Fresnel, 2F/(1 + F) (by one face's, a fold turning edge-on was dim,
 //     where a real one is a bright line). The water's own particles scatter
 //     light along the path through it, TURBID_SKY of the sky's mean and
@@ -317,6 +323,7 @@ export const SPRAY_VERTEX = /* glsl */`
 #define PUFF_SPREAD 0.8          // a puff's drops spread at this share of their burst's kick (two of its spread along an axis)
 #define PUFF_MOST_SPREAD 0.02    // m: and no further than this, a bound on the fill a puff costs
 #define PUFF_BLUR_DROPS 20.0     // a puff of this many drops spreads with them in full, one of a few hardly at all
+#define PUFF_LEAST 40.0          // a puff of fewer drops than this is drawn as the one drop that holds their water (src/spray.js: Low's sprites stand for ten or twenty drops each)
 #define PUFF_GLINT_REACH 0.8     // a puff's point glint lies within this of its drawn radius from its centre
 attribute vec4 aOrigin;          // x, y, z at birth, and the splash time it was born
 attribute vec4 aLaunch;          // its velocity then, and how long it may fly
@@ -349,12 +356,15 @@ void main() {
   centre += slowTerminal * late + slowTau * rest * (1.0 - slowDecay);
   velocity = slowTerminal + rest * slowDecay;
   if (centre.y < 0.0) { cullDrop(); return; }
+  // A puff of fewer than PUFF_LEAST drops is the one drop that holds their water (src/spray.js).
+  float dropRadius = aDrop.x, weight = aDrop.y;
+  if (weight > 1.0 && weight < PUFF_LEAST) { dropRadius *= pow(weight, 1.0 / 3.0); weight = 1.0; }
   // How far the puff's drops have spread about it (the header).
-  float blur = 1.0 - exp(-(aDrop.y - 1.0) / PUFF_BLUR_DROPS);
+  float blur = 1.0 - exp(-(weight - 1.0) / PUFF_BLUR_DROPS);
   float spreadTime = fastTau * (1.0 - fastDecay) + fastDecay * slowTau.x * (1.0 - slowDecay.x);
   float spread = min(PUFF_SPREAD * aSlow.w * blur * spreadTime, PUFF_MOST_SPREAD);
-  drawDrop(centre, velocity, aDrop.x, 0.0, aDrop.y, spread, 1.0);
-  if (aDrop.y > 1.0) {
+  drawDrop(centre, velocity, dropRadius, 0.0, weight, spread, 1.0);
+  if (weight > 1.0) {
     // The puff's point glint, one of its drops' somewhere in it; the rest of its glints go with the spread.
     vec2 draws = puffHash(aOrigin);
     float reach = PUFF_GLINT_REACH * sqrt(draws.x), angle = 6.2831853 * draws.y;
@@ -645,6 +655,26 @@ vec3 linearToSrgb(vec3 c) {
 
 vec3 infoNormal(vec4 info) { return vec3(info.b, info.a, sqrt(max(1.0 - info.b * info.b - info.a * info.a, 0.0))); }
 
+// A sheet's normal read bilinearly (the header): the four buffer pixels about the device pixel, those holding the
+// same sheet (its class, within SHEET_LENS_DEPTH of this depth) weighted by their nearness, this pixel's otherwise.
+vec3 sheetNormal(vec2 uv, vec4 here) {
+  vec2 texel = uv / uFluidTexel - 0.5;
+  vec2 corner = floor(texel);
+  vec2 share = texel - corner;
+  vec3 sum = vec3(0.0);
+  float weight = 0.0;
+  for (int dy = 0; dy < 2; dy++) {
+    for (int dx = 0; dx < 2; dx++) {
+      vec4 there = texture2D(uFluidInfo, (corner + vec2(float(dx), float(dy)) + 0.5) * uFluidTexel);
+      float same = step(998.75, there.g) * step(abs(there.r - here.r), SHEET_LENS_DEPTH * here.r);
+      float w = same * (dx == 0 ? 1.0 - share.x : share.x) * (dy == 0 ? 1.0 - share.y : share.y);
+      sum += infoNormal(there) * w;
+      weight += w;
+    }
+  }
+  return weight > 1e-4 ? normalize(sum / weight) : infoNormal(here);
+}
+
 // How a sheet's normal changes over a step of travelPixels (buffer pixels) across the screen (the header): from the
 // normals the depth pass wrote in the neighbouring pixels that hold the same sheet, one step each way along the travel.
 vec3 sheetNormalChange(vec2 uv, vec4 here, vec2 travelPixels) {
@@ -690,7 +720,7 @@ void main() {
       float pond = step(996.75, info.g) - step(997.75, info.g);   // a column's foot that is the pond's water (the header)...
       float pondShare = pond * clamp((info.g - 997.0) * 2.0, 0.0, 1.0);   // ...and how much of it is
       float roundness = column > 0.5 ? (pond > 0.5 ? 0.0 : clamp((info.g - 998.0) * 2.0, 0.0, 1.0)) : 1.0;
-      vec3 normal = infoNormal(info);
+      vec3 normal = sheet > 0.5 ? sheetNormal(vUv, info) : infoNormal(info);
       vec3 position = viewPosition(vUv, info.r);
       vec3 toViewer = normalize(-position);
       float fresnel = waterFresnel(dot(normal, toViewer));
