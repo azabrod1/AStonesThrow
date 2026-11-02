@@ -52,11 +52,12 @@
 // neighbours make and its light stays. A sprite of a few drops is one of
 // them, a sample, and spreads hardly at all (the share
 // 1 − e^(−(weight − 1) / PUFF_BLUR_DROPS)): High's mist keeps its sparkle,
-// (A burst given a unit vector `along` strings its sprites along that
-// line, their spread and their kick mostly along it and STRUNG_ACROSS of
-// them across: a torn sheet's drops come off the ligaments its web
-// stretched along its flight, in chains, where an even spread made each
-// patch a round puff of drops.)
+// (A burst given the unit vectors `along` and `across` of the patch of
+// sheet it comes from spreads its sprites evenly over that patch, a disc in
+// the sheet's plane, with the kick every way as before: a torn sheet's
+// drops lie where the sheet was, a cloud, where a ball about each patch's
+// centre read as a puff of drops and a string along the flight, tried, as
+// a bead curtain.)
 // Low's heavy sprites blur; but a sprite of fewer than PUFF_LEAST drops
 // (fluid.js) is drawn as the one drop that holds their water, since a
 // soft disc of a few drops read as a blurred white blob where the
@@ -117,8 +118,6 @@ const SPEED_STEPS = 161;                 // ...to 16 m/s
 const LANDING_STEPS = 2;                 // Newton's steps to a sprite's landing (linearLanding)
 export const MIRROR_SPRAY_RADIUS = 0.0004;   // finer sprites are left out of the mirror
 export const SPRAY_WIND = 1.5;           // m/s of drift per unit of the wind's strength (WIND_STRENGTHS, src/ambientWaves.js)
-const STRUNG_ACROSS = 0.25;              // a burst strung along a line (`along`) spreads and kicks its drops across the line by this share of what it does along it...
-const STRUNG_KICK = 0.35;                // ...and along it by this share of the kick (the rim's retraction speed is in the film's plane, every way; all of it along the flight drew strings a sheet's height long)
 const DENSITY = 0.2;                     // sprites per drop for the 3 cm stone's drops of DENSITY_RADIUS, at a share of 1...
 const DENSITY_POWER = 2.2;               // ...times (R / 3 cm)^−DENSITY_POWER...
 const DENSITY_RADIUS = 0.0002;           // ...and times (r / DENSITY_RADIUS)²: a sprite stands for as much light, whatever its drops' size (a drop of 0.45 mm and up is a sprite of its own at the full share)
@@ -451,7 +450,7 @@ export class SpraySystem {
    * `sizeFactor`'s sprites; `random` the emitter's stream (seededRandom).
    * Returns the sprites written.
    */
-  burst({ x, y, z, vx, vy, vz, drops, radius, kick = 0, spread = 0, time, random, sizeFactor = 1, most = SPRAY_MOST_RADIUS, along = null }) {
+  burst({ x, y, z, vx, vy, vz, drops, radius, kick = 0, spread = 0, time, random, sizeFactor = 1, most = SPRAY_MOST_RADIUS, along = null, across = null }) {
     if (!(drops > 0) || radius <= 0) return 0;
     if (time > this.recentTime) {
       this.recent *= Math.exp((this.recentTime - time) / CROWD_SECONDS);
@@ -470,15 +469,19 @@ export class SpraySystem {
       const dropRadius = Math.min(Math.max(radius * gammaFactor(random), SPRAY_LEAST_RADIUS), most);
       randomDirection(random, direction);
       const speed = (kick * (1 + 2 * random())) / 3;
-      let kickX = direction[0] * speed, kickY = direction[1] * speed, kickZ = direction[2] * speed;
-      randomDirection(random, direction);
-      const out = spread * random();
-      let outX = direction[0] * out, outY = direction[1] * out, outZ = direction[2] * out;
-      if (along) {
-        // Strung along a line (the header): the spread and the kick mostly along it, STRUNG_ACROSS of them across.
-        const line = spread * (2 * random() - 1), lineKick = STRUNG_KICK * speed * (2 * random() - 1);
-        outX = along.x * line + outX * STRUNG_ACROSS; outY = along.y * line + outY * STRUNG_ACROSS; outZ = along.z * line + outZ * STRUNG_ACROSS;
-        kickX = along.x * lineKick + kickX * STRUNG_ACROSS; kickY = along.y * lineKick + kickY * STRUNG_ACROSS; kickZ = along.z * lineKick + kickZ * STRUNG_ACROSS;
+      const kickX = direction[0] * speed, kickY = direction[1] * speed, kickZ = direction[2] * speed;
+      let outX, outY, outZ;
+      if (along && across) {
+        // Over the patch of sheet it came from (the header): evenly over a disc in the sheet's plane.
+        const reach = spread * Math.sqrt(random()), turn = 2 * Math.PI * random();
+        const alongReach = reach * Math.cos(turn), acrossReach = reach * Math.sin(turn);
+        outX = along.x * alongReach + across.x * acrossReach;
+        outY = along.y * alongReach + across.y * acrossReach;
+        outZ = along.z * alongReach + across.z * acrossReach;
+      } else {
+        randomDirection(random, direction);
+        const out = spread * random();
+        outX = direction[0] * out; outY = direction[1] * out; outZ = direction[2] * out;
       }
       this.write(
         x + outX, Math.max(y + outY, 0), z + outZ,

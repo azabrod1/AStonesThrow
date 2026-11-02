@@ -1570,15 +1570,19 @@ export class CrownSheet {
     if (!spray || this.landing) return;
     const film = Math.max(state.thickness, SPRAY_LEAST_FILM);
     const meanRadius = THREE.MathUtils.clamp(SPRAY_SIZE * state.thickness, SPRAY_SIZE_RANGE[0], SPRAY_SIZE_RANGE[1]);
-    // Strung along the sheet's flight (src/spray.js `along`): the web's ligaments lie along the stretch.
+    // Spread over the patch of sheet (src/spray.js `along`, `across`): the sheet's plane there is its flight and the
+    // ring's tangent.
     const speed = Math.hypot(state.vx, state.vy, state.vz) || 1;
     const along = this.sprayAlong ??= { x: 0, y: 1, z: 0 };
+    const across = this.sprayAcross ??= { x: 1, y: 0, z: 0 };
     along.x = state.vx / speed; along.y = state.vy / speed; along.z = state.vz / speed;
+    const reach = Math.hypot(state.x - this.centreX, state.z - this.centreZ) || 1;
+    across.x = -(state.z - this.centreZ) / reach; across.y = 0; across.z = (state.x - this.centreX) / reach;
     spray.burst({
       x: state.x, y: state.y, z: state.z, vx: state.vx, vy: state.vy, vz: state.vz,
       drops: sprayDrops((this.sprayShare * state.thickness) / density, meanRadius), radius: meanRadius,
       kick: Math.sqrt((2 * SURFACE_TENSION) / (WATER_DENSITY * film)), spread: 0.5 / Math.sqrt(density),
-      time: splash.time, random: this.sprayRandom, sizeFactor: this.sizeFactor, along,
+      time: splash.time, random: this.sprayRandom, sizeFactor: this.sizeFactor, along, across,
     });
   }
 
