@@ -93,7 +93,10 @@
 // two kinds (src/spectralWater.js), a boil, big bubbles, dense and popping
 // within a second (BOIL_LIFETIME), and a raft, small bubbles lasting
 // seconds, which is sea foam and the gale's whitecaps' (src/galeWaves.js);
-// a stone stamps only boils. Where the hole closes its air comes up as a
+// a stone stamps only boils, but on the sea (setSalt: the places whose sky
+// is the sea's, src/sky.js SALT_SKIES) each boil also leaves a raft of
+// SALT_RAFT_SHARE of its amount lasting SALT_RAFT_LIFETIME, the bubble
+// patch a stone leaves on salt water for seconds. Where the hole closes its air comes up as a
 // boil over about the mouth, not at once but over the time the pinched-off
 // air takes to rise from the pinch depth (BUBBLE_RISE_SPEED, at most
 // FOAM_RISE_CAP: about 0.7 s for a 6 cm stone, 2.5 s for a rock), a
@@ -283,7 +286,7 @@
 // lower its frame rate and when its solver may sleep.
 import * as THREE from 'three';
 import { FullscreenPass, createFloatTarget } from './gpu.js';
-import { CrownSheet, DOME_HEIGHT, DROP_CEILING, FROTH_SPEED, FROTH_POWER, breakLump } from './crown.js';
+import { CrownSheet, DOME_HEIGHT, DROP_CEILING, FROTH_SPEED, FROTH_POWER, breakLump, frothWeber } from './crown.js';
 import { JetColumn, CLEAN_FORM } from './jet.js';
 import { Cavity, PINCH_TIME, SURFACE_HEAD } from './cavity.js';
 import { MAX_CAVITIES } from './waterSurface.js';
@@ -351,7 +354,7 @@ const CROWN_DROPLET_CAP = 3500;       // at most, unless the preset sets fewer (
 const FAN_DROPLET_CAP = 600;          // at most (the same stone's fan, about 400)
 const SPRAY_DROP_RADIUS = 0.0008;     // the contact line's spray: drops of this radius...
 const SPRAY_DROP_SPREAD = 0.001;      // ...to this much more, times (R / 3 cm)^0.4
-const CONTACT_SPRAY = { water: 0.002, radius: 0.00012, bursts: 24 };   // the contact's first ejecta as spray (src/spray.js): this share of the stone's volume, drops of this mean radius (times (R / 3 cm)^0.3), from this many places round the ring
+const CONTACT_SPRAY = { water: 0.002, radius: 0.00012, bursts: 24, onset: [2, 12] };   // the contact's first ejecta as spray (src/spray.js): this share of the stone's volume, drops of this mean radius (times (R / 3 cm)^0.3), from this many places round the ring, rising from none to all over this range of the entry's size-weighted Weber number (src/crown.js frothWeber: a pebble's contact throws drops, no mist, in the lake photographs)
 const BUBBLES = 110;                  // bubbles a 3 cm stone drags down, scaling with R²...
 const BUBBLE_CAP = 800;               // ...at most (a 16 cm stone wants 780)...
 const BUBBLE_SWARM = 5;               // ...in swarms of one to this many of like size, within BUBBLE_SWARM_SPREAD, drifting as one: they surface as clumps, not an even sprinkle
@@ -382,6 +385,8 @@ const BUBBLE_SWARM_SPREAD = 0.01;     // m
 const BOIL_AMOUNT = 0.046;            // a 3 cm stone's boil: each sub-stamp's peak (0.07 shared over its span until the boil was sustained, the same on average), scaling as R / 3 cm and the cavity splat's strength...
 const FOAM_AMOUNT_CAP = 0.8;          // ...at most
 const BOIL_LIFETIME = 0.45;           // τ of a boil (s): fresh water's bubbles burst as they come up
+const SALT_RAFT_SHARE = 0.35;         // on the sea (setSalt) a boil also leaves a raft of this share of its amount...
+const SALT_RAFT_LIFETIME = 5;         // ...with this τ (s): salt holds bubbles apart (the header's Foam)
 const BUBBLE_RISE_SPEED = 0.25;       // m/s: the pinched-off air rises as bubbles of millimetres to centimetres, this fast...
 const FOAM_RISE_CAP = 2.5;            // ...so the hole's boil arrives over its pinch depth at that speed, at most this long (s): a big stone's bubbles are bigger and faster
 const FOAM_STAMP_SPACING = 0.25;      // a patch spread over a span gets a sub-stamp every this many seconds, the amount shared among them (or each with all of it, sustained)
@@ -825,6 +830,7 @@ export class SplashSystem {
     this.wakes = [];     // scheduled cavity splats of an oblique entry
     this.poolRings = []; // a pool's ring sources, held until their release (stampCavity)
     this.foamStamps = [];   // scheduled foam: a cavity's, when it closes
+    this.salt = false;   // the sea's water (setSalt)
     this.bases = [];        // scheduled: a jet's base meeting the water, when the hole's bowl has flattened
     this.cavities = [];  // open cavities (src/cavity.js), drawn in the main scene from cavityGroup
     this.ground = null;  // the pool's walls and deck (setGround), or none
@@ -1236,7 +1242,9 @@ export class SplashSystem {
   contactSpray(x, z, radius, entrySpeed, velocity, horizontal, horizontalFraction, sizeFactor) {
     const random = seededRandom(x, z, this.time, radius);
     const range = (low, high) => low + random() * (high - low);
-    const water = (CONTACT_SPRAY.water * (4 / 3) * Math.PI * radius ** 3) / CONTACT_SPRAY.bursts;
+    const mist = smoothstep(CONTACT_SPRAY.onset[0], CONTACT_SPRAY.onset[1], frothWeber(sizeFactor, entrySpeed));
+    if (mist <= 0) return;
+    const water = (mist * CONTACT_SPRAY.water * (4 / 3) * Math.PI * radius ** 3) / CONTACT_SPRAY.bursts;
     const meanRadius = CONTACT_SPRAY.radius * sizeFactor ** 0.3;
     for (let burst = 0; burst < CONTACT_SPRAY.bursts; burst++) {
       const angle = ((burst + random()) / CONTACT_SPRAY.bursts) * Math.PI * 2;
@@ -1610,8 +1618,20 @@ export class SplashSystem {
         radius: radius * (radii[0] + (radii[1] - radii[0]) * random()), amount: amount * share * (0.4 + 0.6 * random()), lifetime, boil, source,
       };
       const at = time + span * piece / (count - 1);
-      if (at > this.time) this.foamStamps.push({ time: at, foam }); else water.addFoam(foam);
+      this.stampFoam(water, at, foam);
+      // Salt water holds a bubble patch (the header): a boil also leaves a raft, lasting.
+      if (this.salt && boil) this.stampFoam(water, at, { ...foam, boil: false, amount: foam.amount * SALT_RAFT_SHARE, lifetime: SALT_RAFT_LIFETIME });
     }
+  }
+
+  /** One foam stamp, now or when its time comes. */
+  stampFoam(water, at, foam) {
+    if (at > this.time) this.foamStamps.push({ time: at, foam }); else water.addFoam(foam);
+  }
+
+  /** Whether the water is the sea's (the header's Foam): a stone's boils then leave rafts. */
+  setSalt(salt) {
+    this.salt = Boolean(salt);
   }
 
   /**

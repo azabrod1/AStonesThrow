@@ -253,7 +253,7 @@ import { decodeHorizonStrip, HORIZON_DECODE } from './horizonStrip.js';
 // path on it, Wooded lake its wooded hill, the sun 60° to the left, where
 // the eye's own side of the lake and the houses stay out of the frame.
 const SKIES = {
-  cove: { shore: 'shingle', sunAzimuth: 15, hours: { morning: { file: 'secluded_beach', label: 'Morning' } } },
+  cove: { shore: 'shingle', salt: true, sunAzimuth: 15, hours: { morning: { file: 'secluded_beach', label: 'Morning' } } },
   desert: {
     shore: 'gravel',
     anchor: 'sunset',
@@ -267,6 +267,7 @@ const SKIES = {
   },
   harbour: {
     reeds: true,
+    salt: true,
     shore: 'earth',
     anchor: 'morning',
     facing: 'golden',
@@ -335,6 +336,8 @@ const SKIES = {
 export const skyShore = (name) => SKIES[name]?.shore ?? 'sand';
 /** The skies whose shallows have reeds (`reeds` above). */
 export const REED_SKIES = Object.keys(SKIES).filter((name) => SKIES[name].reeds);
+/** The skies whose water is the sea (`salt`): a stone's foam lasts on it (src/splash.js setSalt). */
+export const SALT_SKIES = Object.keys(SKIES).filter((name) => SKIES[name].salt);
 export const SKY_NAMES = Object.keys(SKIES).filter((name) => SKIES[name].ownPlace !== false);
 export const DEFAULT_SKY = 'lakeside';   // an open lake to a far shore, as the Lake water is
 /** A place's hours in the order of the day: their names, labels and local times (clock, 'hh:mm', or undefined for a lone photograph). */

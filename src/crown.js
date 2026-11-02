@@ -41,6 +41,17 @@
 // A sheet with no cavity (a landing drop's crown) launches from a ring
 // widening from 0.9·R to 1.4·R over T and by 0.2·R per T after it (up to 2·R).
 //
+// A stone's own shape sets where its sheet is fast and where slow: its
+// launch field (src/launchField.js, built once at impact from the stone's
+// physics mesh, its orientation and its velocity: Wagner's spray root at
+// each facet crossing the waterline, the stone's against the sphere's the
+// launch below was fitted to, so a sphere keeps the fitted crown). At each
+// azimuth and launch time the field multiplies the launch speed and the
+// thickness and shifts the launch angle, so a flat face thrown face-on
+// throws a fast, low, thick sheet there and a steep face a slow, high,
+// thin one, and the sheet is the lopsided, folded sail the photographs of
+// thrown stones show, not a ring. A landing drop's crown and the fan have
+// none.
 // Around the ring the launch speed u varies in two ways. Slowly, by 1 + Σ
 // a_k·cos(k·theta + phase_k) over modes k = 5…9 for a 3 cm stone, random a_k
 // in [0.025, 0.05] (some crowns lean into three or four petals). And at the
@@ -184,15 +195,20 @@
 // as sheet it lay in the lip's surface and fought it for every pixel along
 // the crest, a dotted line.
 //
-// Froth. A sheet thrown up this fast is no clean film: it wrinkles, holes
-// open in it as it thins, and it carries air, the more the faster and the
-// bigger the throw, so a pebble's crown is glass and a rock's goes white.
-// Each sheet gets a violence, FROTH_GAIN·(s·(V / FROTH_SPEED)²)^FROTH_POWER,
-// at most 1 (0.3 for the reference throw, 1 for a 30 cm rock at the same
-// speed, nearly nothing for a landing drop's crown): s·V² is the Weber
-// number of the stone against the reference's, the sheet's inertia against
-// its surface tension, which sets how finely it breaks and how much air it
-// takes; the power and the gain are tuned by eye. Each vertex then carries
+// Froth. A sheet thrown up fast enough is no clean film: it wrinkles, holes
+// open in it as it thins, and past a size it carries air and goes white.
+// Each sheet gets a violence from w = s·(V / FROTH_SPEED)², the Weber
+// number of the stone against the reference throw's (frothWeber: the
+// sheet's inertia against its surface tension, which sets how finely it
+// breaks and how much air it takes): FROTH_GAIN·(w − FROTH_ONSET)^FROTH_POWER
+// (violenceOf), none below the onset and at most FROTH_MOST. The onset is
+// what photographs of stones thrown into lakes and ponds show: a stone a
+// hand throws, up to 10 cm or so thrown hard (w of 7), makes a sheet of
+// clear glass, white only where its top tears into spray, while a rock the
+// size of a head goes white through (a 16 cm stone thrown hard, w of 19,
+// is a third of the way there; a 30 cm rock two thirds). A violence that
+// rose with the speed alone made the default stone's hard throw milk.
+// Each vertex then carries
 // how much of its launch thickness the stretching and draining have left it
 // (evaluate's `remaining`, so the share it has thinned, 1 − that), and from
 // it its whiteness, the violence times FROTH_FLOOR as it leaves rising to
@@ -236,9 +252,11 @@
 // crown's crests drops of RIM_DROP_RADIUS and up. Besides its drop each torn
 // patch throws spray (src/spray.js), the film between the ligaments that a
 // real sheet's holes tear into drops under a millimetre: SPRAY_SHARE_FLOOR of
-// the patch's water for the gentlest sheet, rising with its violence (the
-// froth's, below) by SPRAY_SHARE_GAIN·violence^SPRAY_SHARE_POWER (a third for
-// the reference throw, half for a 16 cm stone, three quarters for a rock), in
+// the patch's water for a sheet of no violence (none: a pebble's and a
+// stone's torn sheets are drops and no mist, the lake photographs), rising
+// with its violence (the froth's, below) by
+// SPRAY_SHARE_GAIN·violence^SPRAY_SHARE_POWER (a fifth for a 16 cm stone
+// thrown hard, two fifths for a rock), in
 // drops of SPRAY_SIZE times the sheet's thickness there on average, spread
 // over the patch and kicked by the Taylor–Culick speed sqrt(2σ / ρh) at which
 // a hole's rim runs back through a film h thick (a landing drop's crown throws
@@ -358,6 +376,7 @@
 // a wall runs up it instead of passing through onto the deck.
 import * as THREE from 'three';
 import { createRingGrid, computeGridNormals, holdWithinWalls, markChanged } from './fluidMesh.js';
+import { buildLaunchField, sampleLaunchField } from './launchField.js';
 import { seededRandom, sprayDrops, gammaFactor } from './spray.js';
 
 const GRAVITY = 9.81;
@@ -452,9 +471,10 @@ const BEAD_JITTER = 0.55;          // ...give or take this share, drop by drop (
 const BEAD_SEED = 0.3;             // a bead starts with this share of its drop's volume: the rim's own thickening
 // The sheet's froth (the header; drawn by SHEET_FROTH in src/shaders/sheet.js).
 export const FROTH_SPEED = 6.3;    // m/s: the entry speed a sheet's violence is reckoned against (the reference throw's; src/splash.js froths the jet's base by the same law)
-const FROTH_GAIN = 0.12;           // a 3 cm stone's sheet at that speed: its violence...
-export const FROTH_POWER = 1.3;    // ...going as (s·(V / FROTH_SPEED)²)^this...
-const FROTH_MOST = 1.5;            // ...at most this
+const FROTH_ONSET = 8;             // the size-weighted Weber number s·(V / FROTH_SPEED)² below which a sheet carries no air (the header: a 6 cm stone thrown hard is 7, and its sheet is glass)...
+const FROTH_GAIN = 0.045;          // ...its violence this times (w − FROTH_ONSET)...
+export const FROTH_POWER = 0.8;    // ...to this power...
+const FROTH_MOST = 1.0;            // ...at most this
 const FROTH_CELL = 0.006;          // m: the holes' cells around the ring as it is launched (1.2·R), times sqrt(s)...
 const FROTH_ALONG = 8;             // ...and along the sheet, this many over the main launch, times sqrt(s)
 const FROTH_FLOOR = 0.35;          // a sheet's whiteness: its violence times this as it leaves, rising to its violence as it thins
@@ -468,7 +488,7 @@ export const DOME_HEIGHT = 1.4;    // ...and draws the sheet onto a dome whose a
 const DOME_ROUND = 0.8;            // ...its radius r_foot·cos(πs/2)^this at height y_foot + h·sin(πs/2) (s from its foot to its apex)...
 const DOME_FOLDS = [6, 10];        // ...buckled by this many folds around (Marston et al. 2016)...
 const DOME_FOLD = 0.08;            // ...of up to this share of its radius, at mid height
-const DOME_FROTH = 0.7;            // a sealing sheet's violence and, as it closes, its whiteness are at least this: sucked in, it whips, buckles and carries air (the header)
+const DOME_FROTH = 0.3;            // a sealing sheet's violence and, as it closes, its whiteness are at least this: sucked in, it whips, buckles and carries some air (the header; a closing dome in Speirs et al.'s and Worthington's photographs is clear glass with spray bursting through its top, not a white bell)
 const DOME_OPEN = 0.5;             // ...and holes open all over the closing dome at this share of FROTH_OPEN
 const DOME_BURST = 0.25;           // a dome given no jet's push bursts with its sheet flying off at this times sqrt(g·R)·s, out and up
 const DOME_SINK = 1.5;             // a trapped jet's dome is drawn down to this many R below the water by the tear
@@ -497,7 +517,7 @@ const FAN_DROP_CAP = 0.0008;       // it tears into fine drops of at most this..
 const FAN_DROP_FLOOR = 0.0003;     // ...and at least this (both times (R / 3 cm)^DROP_SIZE_POWER)...
 const FAN_RIM_DROPS = 0.2;         // ...and its rim sheds drops this fraction of the size a crown's does
 // The spray (the header, src/spray.js).
-const SPRAY_SHARE_FLOOR = 0.2;     // a torn patch throws this share of its water as spray for the gentlest sheet...
+const SPRAY_SHARE_FLOOR = 0;       // a torn patch throws this share of its water as spray for a sheet of no violence (a pebble's torn sheet is drops and no mist at all: the lake photographs)...
 const SPRAY_SHARE_GAIN = 0.55;     // ...rising by this times its violence (at most 1)...
 const SPRAY_SHARE_POWER = 0.7;     // ...to this power
 const SPRAY_SIZE = 1.2;            // its drops' mean radius, times the sheet's thickness there...
@@ -580,6 +600,16 @@ function layFingers(fingerScale) {
     angle += (spacing / total) * Math.PI * 2;
     return finger;
   });
+}
+
+/** The size-weighted Weber number of a stone's entry against the reference throw's (the header's Froth): s·(V / FROTH_SPEED)². */
+export function frothWeber(sizeFactor, speed) {
+  return sizeFactor * (speed / FROTH_SPEED) ** 2;
+}
+
+/** A sheet's violence (the header's Froth): none below FROTH_ONSET, at most FROTH_MOST. */
+export function violenceOf(sizeFactor, speed) {
+  return Math.min(FROTH_GAIN * Math.max(frothWeber(sizeFactor, speed) - FROTH_ONSET, 0) ** FROTH_POWER, FROTH_MOST);
 }
 
 /** A number in [0, 1) that an angle stands for, the same each time. */
@@ -703,6 +733,9 @@ export class CrownSheet {
     }
     this.tearDuration = TEAR_SHARE * this.breakTime;
     this.endTime = this.breakTime + this.tearDuration;
+    // The stone's launch field (the header): none for a landing drop's crown or the fan.
+    this.field = !fan && !landing ? buildLaunchField(impact, this.launchDuration) : null;
+    this.fieldSample = { speed: 1, thickness: 1, tilt: 0 };
     const thickness = SHEET_THICKNESS * (landing ? Math.sqrt(this.sizeFactor) : this.sizeFactor);
     this.baseThickness = Math.max(thickness, MIN_THICKNESS) * (fan ? FAN_THICKNESS * (0.5 + 0.5 * strength) : 1);
 
@@ -746,7 +779,7 @@ export class CrownSheet {
     const tearPhase = randomRange(0, Math.PI * 2);
     // The froth (the header): how violent the throw is, and its noise's cells,
     // placed by the tear's phase so it costs no draw of its own.
-    this.violence = Math.min(FROTH_GAIN * (this.sizeFactor * (speed / FROTH_SPEED) ** 2) ** FROTH_POWER, FROTH_MOST);
+    this.violence = violenceOf(this.sizeFactor, speed);
     if (this.seal) this.violence = Math.max(this.violence, DOME_FROTH);
     this.frothRing = (1.2 * radius) / (FROTH_CELL * Math.sqrt(Math.max(this.sizeFactor, 0.25)));
     this.frothAlongRate = (FROTH_ALONG * Math.sqrt(Math.max(this.sizeFactor, 0.25))) / this.launchDuration;
@@ -1042,7 +1075,20 @@ export class CrownSheet {
   evaluate(tau, cosAngle, sinAngle, speedFactor, thicknessFactor, out, edgeTau = 0, fingerFactor = 0, free = false, rimShape = undefined) {
     const launch = this.launchAt(tau);
     let ringRadius = launch.ringRadius;
-    const launchSpeed = launch.launchSpeed * speedFactor * (1 + fingerFactor * launch.fingerShare);
+    // The stone's launch field here and now (the header): faster or slower, thicker or thinner, lower or higher.
+    let fieldSpeed = 1, fieldThickness = 1, sinTilt = launch.sinTilt, cosTilt = launch.cosTilt;
+    if (this.field) {
+      const field = sampleLaunchField(this.field, Math.atan2(sinAngle, cosAngle), tau, this.fieldSample);
+      fieldSpeed = field.speed;
+      fieldThickness = field.thickness;
+      if (field.tilt !== 0) {
+        const cosShift = Math.cos(field.tilt), sinShift = Math.sin(field.tilt);
+        const sinShifted = sinTilt * cosShift + cosTilt * sinShift;
+        cosTilt = cosTilt * cosShift - sinTilt * sinShift;
+        sinTilt = sinShifted;
+      }
+    }
+    const launchSpeed = launch.launchSpeed * speedFactor * fieldSpeed * (1 + fingerFactor * launch.fingerShare);
     // On a cavity the material leaves from its lip's crest, where the lip was
     // then (centre, radius at this azimuth, height), once the crest is wider
     // than the ring above starts; once the hole closes it stays where the
@@ -1070,8 +1116,8 @@ export class CrownSheet {
         baseHeight += (heightNow - baseHeight) * carry;
       }
     }
-    const radialSpeed = launchSpeed * launch.sinTilt;
-    const upSpeed = launchSpeed * launch.cosTilt;
+    const radialSpeed = launchSpeed * sinTilt;
+    const upSpeed = launchSpeed * cosTilt;
     const decay = launch.decay;
     const flight = launch.flight;
     // Carried material goes where the lip goes, not where it was flung or dragged.
@@ -1089,7 +1135,7 @@ export class CrownSheet {
     if (this.seal && !free && this.age > this.seal.start) this.pullIn(out, tau, cosAngle, sinAngle, rimShape);
     // The bead gathers what stretching takes from the sheet, so it keeps three
     // times the unstretched thickness while the sheet behind it thins.
-    const drained = this.baseThickness * thicknessFactor * launch.launchThickness / launch.drainDivisor;
+    const drained = this.baseThickness * thicknessFactor * fieldThickness * launch.launchThickness / launch.drainDivisor;
     // The fan thins to nothing at its edges.
     const sheetThickness = Math.max(drained * ringRadius / radialDistance, this.fan ? MIN_THICKNESS * thicknessFactor : MIN_THICKNESS);
     // The share of its launch thickness the stretching and draining have left it (the froth's).

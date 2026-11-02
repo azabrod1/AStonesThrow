@@ -506,7 +506,16 @@ known timing, and the droplets are choreographed from them:
    tension and air, so the whole sheet is a closed form in launch time,
    azimuth and time: a tall, nearly upright wall that stands on the lip and
    leans in, 11 cm high at 90 ms for a 3 cm stone dropped straight in at
-   6.3 m/s (the reference simulation's: 11 to 12 cm at 0.1 s, below). Its rim
+   6.3 m/s (the reference simulation's: 11 to 12 cm at 0.1 s, below). A
+   thrown stone is no sphere, and its own shape sets where its sheet is
+   fast and where slow (`src/launchField.js`): at impact the stone's mesh,
+   as it lies and moves, is cut by the water at launch times over the
+   launch, and each facet crossing the waterline throws its water as
+   Wagner's spray root says, faster, lower and thicker the flatter the face
+   meets the water, the stone's against the sphere's the launch was fitted
+   to; so the sheet is the lopsided, folded sail the photographs of thrown
+   stones show, a sphere keeps the fitted crown, and a seeded throw's field
+   is its own. Its rim
    thickens into a bead, a round rod of water drawn as a tube along the
    whole untorn rim, swelling into each finger, and grows fingers out of
    it: round ligaments of water, drawn
@@ -520,13 +529,16 @@ known timing, and the droplets are choreographed from them:
    it in bands parallel to the edge, holes open high in it as it thins
    and the tear nears (each a circle widening from its own seed, as a film
    ruptures, until the holes meet and what is left is a web of ligaments,
-   each hole's rim a lumpy bead of the water it gathered), and it carries
-   froth, white streaks drawn out up the wall, patchy, and densest along
-   the holes' rims, the more the bigger and faster the
-   throw (as the stone's Weber number), so a pebble's crown is glass, the
-   default stone's a clear sheet frosted at its edges, and a 16 cm stone's
-   or a rock's white through, its holes bigger as its sheet is thicker; the
-   foot the lip carries stays clear water. Once its rim stalls
+   each hole's rim a lumpy bead of the water it gathered), and past a size
+   it carries froth, white streaks drawn out up the wall, patchy, and
+   densest along the holes' rims: by the stone's size-weighted Weber
+   number against the reference throw's, with an onset, so every stone a
+   hand throws, up to 10 cm or so thrown hard, keeps a sheet of clear glass,
+   white only where its top tears into drops (what photographs of stones
+   thrown into lakes and ponds show), a 16 cm stone's thrown hard is a
+   third of the way to white and a rock's goes white through, its holes
+   bigger as its sheet is thicker; the foot the lip carries stays clear
+   water. Once its rim stalls
    (about 90 ms for a 3 cm stone) the sheet tears, the arcs first and the
    fingers last, from the rim down into drops that carry its velocity. A
    thrown stone enters obliquely (about 30° from vertical thrown softly, 40
@@ -661,7 +673,8 @@ to skip.
 `src/spectralWater.js`). A pond is fresh water, and a bubble on fresh water
 bursts within a second (0.01 to 3 s, against 0.3 to 30 s on sea water, where
 salt keeps bubbles from merging: Anguelova & Huq 2017), so a stone leaves no
-raft. Where its hole closes, its air comes up as a boil: big bubbles,
+raft on a lake; on the sea (the cove and the harbour) each of its boils also
+leaves a raft that lasts seconds. Where its hole closes, its air comes up as a boil: big bubbles,
 popping as they surface (the boil's lifetime τ is 0.45 s), arriving over
 the time the pinched-off air takes to rise from the pinch depth (about
 0.7 s for a 6 cm stone, up to 2.5 s for a rock), so at any moment only
@@ -802,7 +815,14 @@ at a drop's own note and dying away as a real one does), all
 drawn into one buffer of depth, kind and exact normal and one of summed
 thickness, coverage, sun glints and aeration; the composite pass shades
 them and tone-maps the frame. The sheet is a clear film that barely bends
-what is behind it, aerated (whitened) along its rim bead and torn edges and
+what is behind it as a thin curved shell of glass does: the ray refracts in
+through the face it meets, crosses the sheet and leaves through the back
+face, whose normal differs by the sheet's curvature and wrinkles over the
+travel inside (read from the neighbouring pixels' normals), so the pond's
+ripples fold through it, by both faces' Fresnel, bright where a fold turns
+edge-on, and tinted by the water's own particles along the path, so a
+muddy pond's sheet glows brown against the sun where a lake's is clear;
+aerated (whitened) along its rim bead and torn edges and
 by its froth, which scatters along the path through it, so a sheet seen
 face-on stays clear where one seen edge-on goes white; its holes, circles
 widening from seeds until only a web of ligaments is left, their rims

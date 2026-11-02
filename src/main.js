@@ -296,7 +296,7 @@ import { Snow } from './snow.js';
 import { lightningAt } from './lightning.js';
 import { Rings } from './rings.js';
 import { DropRings } from './dropRings.js';
-import { createEnvironment, SKY_NAMES, REED_SKIES, skyShore, skyHours, resolveHour, nearestHour } from './sky.js';
+import { createEnvironment, SKY_NAMES, REED_SKIES, SALT_SKIES, skyShore, skyHours, resolveHour, nearestHour } from './sky.js';
 import { createWaterSurface } from './waterSurface.js';
 import { createPondFloor, createShore, floorDepthAt, groundHeightAt, setShoreKind, setShoreLook, KOI_SHORE } from './pondFloor.js';
 import { Rock, setAir, aimSkip, aimThrow, dressThing, flutterTrial, prepareThing, PREPARATION_WORK, skipLowest, skipSpeed, SKIP_THROW, PHYSICS_STEP, throwFlightTime } from './rock.js';
@@ -899,6 +899,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   /** The water drawn: the lake's clarity, or the pool's own in the pool. */
   function applyWater() {
     waterName = pooled ? 'pool' : koiPond ? 'koi' : lakeClarity;
+    // The sea's water holds a stone's foam (src/splash.js setSalt); the pool's, the koi pond's and the lakes' do not.
+    splash.setSalt(!pooled && !koiPond && SALT_SKIES.includes(PLACES[placeName]?.sky));
     lighting.absorb.fromArray(WATER_CLARITIES[waterName].absorb);
     lighting.extinction.fromArray(WATER_CLARITIES[waterName].extinction);
     applyWaterColor();

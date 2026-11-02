@@ -173,8 +173,8 @@
 // floor of a bowl flattening into the surface shades as the flat water it
 // is becoming, and the hole fades out rather than vanishing in the frame it
 // is gone. Once the hole has pinched its bowl froths from the floor up
-// (aCavity's fourth, BOWL_FROTH by the entry speed as the crown's froth law
-// goes, src/crown.js, at most BOWL_FROTH_MOST, rising over BOWL_FROTH_RAMP
+// (aCavity's fourth, BOWL_FROTH by the entry's size-weighted Weber number
+// over BOWL_FROTH_ONSET, src/crown.js frothWeber, rising over BOWL_FROTH_RAMP
 // of the bowl's unit, fading up the wall over BOWL_FROTH_RISE·R from the
 // floor): the air the pinch entrained boils up where the jet leaves, and
 // the water shader whitens the bowl's bottom by it; a bowl of clear glass
@@ -219,7 +219,7 @@
 // hole is held inside its walls (holdWithinWalls in src/fluidMesh.js), so it
 // never shows through the tiles.
 import { createRingGrid, computeGridNormals, holdWithinWalls, markChanged } from './fluidMesh.js';
-import { FROTH_SPEED, FROTH_POWER } from './crown.js';
+import { frothWeber } from './crown.js';
 
 const GRAVITY = 9.81;
 // The stone under water, as src/rock.js moves it (tools/cavity-probe.mjs checks the two agree).
@@ -286,8 +286,8 @@ const TOP_SPAN = 2.5;              // in R: the top of the wall, which the camer
 const TOP_SHARE = 0.6;             // ...gets this share of the wall's rows
 const TOP_POWER = 1.3;             // crowded towards the surface
 const FLOOR_ROUND = 0.6;           // once pinched, the bowl's bottom is rounded (a quarter ellipse) over this share of its depth: a cup, not a flat-floored dish
-const BOWL_FROTH = 0.45;           // the pinched bowl's froth at its floor (the header): the share of its light scattered white at the reference's entry speed...
-const BOWL_FROTH_MOST = 0.85;      // ...times (V / FROTH_SPEED)^(2·FROTH_POWER), at most this...
+const BOWL_FROTH = 0.85;           // the pinched bowl's froth at its floor (the header): the share of its light scattered white for a big stone's entry...
+const BOWL_FROTH_ONSET = [2, 14];  // ...rising from none to all of it over this range of the entry's size-weighted Weber number (src/crown.js frothWeber: a pebble's pinch entrains little air, the lake photographs show a clear bowl)...
 const BOWL_FROTH_RAMP = 0.25;      // ...reached this many bowl units after the pinch...
 const BOWL_FROTH_RISE = 1.2;       // ...and fading up the wall over this many R above the floor
 const DARKEST_MOUTH = 0.15;        // in R: the narrowest mouth the occlusion and escape take
@@ -480,7 +480,7 @@ export class Cavity {
     this.seal = { kind: 'deep', pinch: PINCH_TIME, bowl: 1, head: SURFACE_HEAD, mouth: 1, ...seal };
     this.pinchTime = this.seal.pinch * this.timeUnit;
     const speed = Math.max(impact.speed, 1.0);
-    this.frothPeak = Math.min(BOWL_FROTH * (speed / FROTH_SPEED) ** (2 * FROTH_POWER), BOWL_FROTH_MOST);
+    this.frothPeak = BOWL_FROTH * smoothstep(BOWL_FROTH_ONSET[0], BOWL_FROTH_ONSET[1], frothWeber(radius / 0.03, speed));
     this.froude = (speed * speed) / (GRAVITY * radius);
     const horizontalSpeed = Math.hypot(velocity.x, velocity.z);
     const horizontalFraction = Math.min(horizontalSpeed / speed, 1);

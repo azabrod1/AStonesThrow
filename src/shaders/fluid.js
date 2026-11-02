@@ -78,8 +78,23 @@
 // picks up is pondView: the sky cube above the horizon and, below it, the
 // pond as a rough mirror of the sky plus the sun's glitter, over the sand
 // floor seen through the water (uFloorLight), as the water shader shows it.
-//   - Sheet: reflects pondView and lets the scene behind through, shifted by
-//     its normal and thickness (a thin film barely bends what is behind it);
+//   - Sheet: a thin curved shell of water. The ray refracts in through the
+//     face it meets, crosses the sheet, and leaves through the back face,
+//     whose normal differs from the front's by the sheet's curvature and
+//     wrinkles over the ray's travel inside (the normals the depth pass
+//     wrote in the neighbouring buffer pixels, read along the travel, at
+//     most SHEET_LENS_REACH pixels of it; a neighbour of another class or
+//     another depth says nothing about this face), so the scene is looked
+//     up where the ray leaving points, by SHEET_LENS of a far scene's shift
+//     (a flat film barely bent what was behind it and read as paint; a real
+//     sheet is millimetres of curved glass through which the pond's ripples
+//     fold, the lake photographs). It reflects pondView by both faces'
+//     Fresnel, 2F/(1 + F) (by one face's, a fold turning edge-on was dim,
+//     where a real one is a bright line). The water's own particles scatter
+//     light along the path through it, TURBID_SKY of the sky's mean and
+//     TURBID_SUN of the sun's in a forward lobe, by the water's scattering
+//     (extinction less absorption) over the path, so a muddy pond's sheet is
+//     tinted and glows against the sun where a clear lake's is glass;
 //     sunGlitter with WATER_SLOPE_VARIANCE (its unresolved ripple) plus
 //     SHEET_ROUGH_VARIANCE times its aeration (a white sheet is a torn,
 //     turbulent one: its glitter spreads where a glassy sheet's is a hard
@@ -564,6 +579,11 @@ ${HAZE}
 #define COLUMN_LENS_SCENE 0.7        // ...making this share of its refracted light (the rest the pond's model light)...
 #define COLUMN_LENS_WIDTH vec2(40.0, 120.0)   // ...on a column up to this many device pixels in radius, none from the second
 #define POND_FILM 0.02               // a column's foot that is the pond's water shifts the pond behind it as a film this thick would (metres; the header)
+#define SHEET_LENS 0.5               // a sheet's lens image: the scene behind, shifted by the ray's turn through the sheet by this share of a far scene's shift (the pond behind a sheet is near)...
+#define SHEET_LENS_REACH 2.5         // ...the back face's normal read along the ray's travel inside the sheet for at most this many buffer pixels...
+#define SHEET_LENS_DEPTH 0.05        // ...from neighbours within this share of the depth (the same face, not a wall behind)
+#define TURBID_SKY 0.8               // the light the water's particles in a sheet scatter towards the viewer: this of the sky's mean radiance...
+#define TURBID_SUN 0.05              // ...plus this times the sun's irradiance, times (0.2 + 2·forward⁸): a muddy sheet glows against the sun
 #define GLITTER_CAP 40.0
 ${MEAN_LIGHT}
 #define BEAD_FROM 0.5                // device-pixel radius at which a drop starts to be a glass bead...
@@ -623,6 +643,20 @@ vec3 linearToSrgb(vec3 c) {
   return mix(lo, hi, step(vec3(0.0031308), c));
 }
 
+vec3 infoNormal(vec4 info) { return vec3(info.b, info.a, sqrt(max(1.0 - info.b * info.b - info.a * info.a, 0.0))); }
+
+// How a sheet's normal changes over a step of travelPixels (buffer pixels) across the screen (the header): from the
+// normals the depth pass wrote in the neighbouring pixels that hold the same sheet, one step each way along the travel.
+vec3 sheetNormalChange(vec2 uv, vec4 here, vec2 travelPixels) {
+  vec3 normal = infoNormal(here);
+  vec2 towards = sign(travelPixels) * uFluidTexel;
+  vec4 acrossX = texture2D(uFluidInfo, uv + vec2(towards.x, 0.0));
+  vec4 acrossY = texture2D(uFluidInfo, uv + vec2(0.0, towards.y));
+  float sameX = step(998.75, acrossX.g) * step(abs(acrossX.r - here.r), SHEET_LENS_DEPTH * here.r);
+  float sameY = step(998.75, acrossY.g) * step(abs(acrossY.r - here.r), SHEET_LENS_DEPTH * here.r);
+  return (infoNormal(acrossX) - normal) * sameX * abs(travelPixels.x) + (infoNormal(acrossY) - normal) * sameY * abs(travelPixels.y);
+}
+
 // The nearest water the depth pass wrote in the eight buffer pixels around a pixel it wrote none in (the header).
 vec4 nearestInfo(vec2 uv) {
   vec4 nearest = vec4(0.0);
@@ -656,10 +690,12 @@ void main() {
       float pond = step(996.75, info.g) - step(997.75, info.g);   // a column's foot that is the pond's water (the header)...
       float pondShare = pond * clamp((info.g - 997.0) * 2.0, 0.0, 1.0);   // ...and how much of it is
       float roundness = column > 0.5 ? (pond > 0.5 ? 0.0 : clamp((info.g - 998.0) * 2.0, 0.0, 1.0)) : 1.0;
-      vec3 normal = vec3(info.b, info.a, sqrt(max(1.0 - info.b * info.b - info.a * info.a, 0.0)));
+      vec3 normal = infoNormal(info);
       vec3 position = viewPosition(vUv, info.r);
       vec3 toViewer = normalize(-position);
       float fresnel = waterFresnel(dot(normal, toViewer));
+      // A sheet has two faces (the header): what the first lets through, the second reflects again.
+      if (sheet > 0.5) fresnel = 2.0 * fresnel / (1.0 + fresnel);
       vec3 worldNormal = normalize((uCameraWorld * vec4(normal, 0.0)).xyz);
       vec3 worldToViewer = normalize((uCameraWorld * vec4(toViewer, 0.0)).xyz);
       vec3 absorbed = exp(-uAbsorb * thickness);
@@ -667,9 +703,21 @@ void main() {
       vec3 reflected = pondView(reflect(-worldToViewer, worldNormal), sunWorld, bodyReflected);
       vec3 refracted;
       if (sheet > 0.5) {
-        // A thin film: what is behind, barely shifted.
-        vec2 refractUv = clamp(vUv + normal.xy * uRefract * min(thickness, 0.06), vec2(0.001), vec2(0.999));
-        refracted = texture2D(uScene, refractUv).rgb * absorbed;
+        // A thin curved shell (the header): in through the front face, across the sheet, out through the back face.
+        vec3 eye = -toViewer;
+        vec3 inside = refract(eye, normal, 1.0 / 1.333);
+        vec2 travelPixels = inside.xy * thickness * uProjScale / info.r;
+        float reach = length(travelPixels);
+        if (reach > SHEET_LENS_REACH) travelPixels *= SHEET_LENS_REACH / reach;
+        vec3 exitNormal = normalize(normal + sheetNormalChange(vUv, info, travelPixels));
+        vec3 leaving = refract(inside, exitNormal, 1.333);
+        vec2 refractUv = vUv;
+        if (dot(leaving, leaving) > 0.0) refractUv += (leaving.xy / max(-leaving.z, 0.05) - eye.xy / max(-eye.z, 0.05)) * uProjScale * uFluidTexel * SHEET_LENS;
+        refracted = texture2D(uScene, clamp(refractUv, vec2(0.001), vec2(0.999))).rgb;
+        // The water's particles scatter light along the path (the header): a muddy pond's sheet is tinted, not clear.
+        vec3 scattered = 1.0 - exp(-max(uExtinction - uAbsorb, vec3(0.0)) * thickness);
+        float sunForward = clamp(0.5 - 0.5 * dot(toViewer, uSunDirView), 0.0, 1.0);
+        refracted = refracted * exp(-uExtinction * thickness) + scattered * (uSkyAmbient * TURBID_SKY + uSunIrradiance * TURBID_SUN * (0.2 + 2.0 * pow(sunForward, 8.0)));
       } else {
         // A lens, a tube or a sphere: see the header.
         vec3 eye = -toViewer;
