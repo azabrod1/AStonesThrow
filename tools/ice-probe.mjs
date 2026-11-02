@@ -1148,8 +1148,9 @@ console.log('\nNew ice: a hole left alone skins over; a thing afloat in one keep
   // Some go in and some stay (none left would make the nearest's distance no test at all).
   check(wentIn > 0 && onIce.length > 0 && nearest >= ICE.crushed * ICE_THICKNESS.thick && overhanging === 0, `stones round a new hole: ${wentIn} went in, ${onIce.length} left, the nearest with its weight ${centimetres(nearest)} cm from its edge, ${overhanging} hanging over it`);
   // A toy slide at rest on a new hole's crushed rim tips in (src/ice.js tipAtEdge), pushed against its own slowing on
-  // ice (material.on.ice), and a stone with its weight on the same spot does too, each at one push; pushed against the
-  // ice's slowing a slide went a quarter as far, and stayed on the rim but for being tipped again while it was opening. A slide bridges a hole narrower than it (tipAtEdge), so the
+  // ice (material.on.ice), and a stone with its weight on the same spot does too, each at one push. This guards the
+  // outcome, not the slowing formula: the old, weaker push also carries the slide off this rim.
+  // A slide bridges a hole narrower than it (tipAtEdge), so the
   // hole is a 30 cm rock's through thick ice. Where to put it: on the far side from the hand, its weight half the
   // crushed rim outside the edge of the hole that ice breaks into with nothing on it; what lies on the ice bears on
   // how it breaks, so the spot is moved by what it missed by and tried again.
