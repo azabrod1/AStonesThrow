@@ -43,7 +43,14 @@
 //     `curve`, its path's curvature on its side times its radius (a cone
 //     rolls round towards its narrow end, that axis's −: src/rock.js rollStep;
 //     a mesh drawn each its own scales it by its geometry's
-//     `userData.curveScale`).
+//     `userData.curveScale`). `on`: what it does on one kind of ground's
+//     surface (SURFACE_KINDS, each a surface's `kind`: 'ice', a frozen
+//     lake's, src/ice.js; 'grass', the Koi pond's lawn, src/koiGarden.js),
+//     where that differs from the general rule: `{ ice: { friction, slowing
+//     } }`, its friction as it comes down on that surface (else the lesser of
+//     its own and the surface's) and what it slows at, times g, sliding along
+//     it (else the surface's `tumbling`): src/rock.js groundFriction,
+//     groundSlowing. A tuning knob, not a physical model: see the toy slide.
 //   - air: `drag`, its drag coefficient in flight (on the disc of its nominal
 //     radius: 0.47 a ball's; a pizza, flat on, more), and its `model`:
 //     `ballistic` (it tumbles as it flies) or `flutter` (a flat thing: a plate
@@ -97,9 +104,13 @@
 //     `seenThrough`, clear (a shard of ice): afloat, what lies under it shows
 //     through its top by its mesh's `clearShare`, and under the water it is
 //     not drawn from above (src/rock.js).
-//   - abilities: `skips` (Skip skips it: a stone, a pizza), `held` (a throw puts at
-//     most THROW_WORK into it, so a heavy thing leaves slower; a stone keeps
-//     its throw as it always was).
+//   - abilities: `skips` (Skip skips it: a stone, a pizza, an iPhone, each flat,
+//     rigid enough and heavy enough for its face to skim; not a TV, too broad
+//     to throw low and level, a slice of bread, too light to keep its speed,
+//     nor a pie, its filling slopping, nor anything round or tall; not an
+//     iPad, even at its iPhone step: it is the thing's, not a step's), `held` (a
+//     throw puts at most THROW_WORK into it, so a heavy thing leaves slower; a
+//     stone keeps its throw as it always was).
 //   - body.meetsAtRim: two such things meet rim to rim (src/collide.js), as
 //     discs in the level of their whole radii: flat pieces of ice afloat
 //     side by side, which must not slide into each other; anything else
@@ -166,7 +177,8 @@
 //     flat-screen TV (54 × 32 × 1.8 cm, 3.6 kg) and an iPhone (15 × 7.2 ×
 //     0.8 cm, 180 g, its home screen painted on its glass and its camera
 //     standing out of its back), rigid rectangular plates with their screens
-//     on +y (they slap the water, sink and settle on a broad face), a snowball (5
+//     on +y (they slap the water, sink and settle on a broad face; Skip skims
+//     the iPhone, about twice water's density, as it does a slate), a snowball (5
 //     to 15 cm, packed snow at 450 kg/m³: it floats half out, then soaks to
 //     slush in under half a minute and floats on, nine tenths under) and a
 //     toddler's toy slide (99 × 46 × 70 cm, 4.1 kg, hollow plastic: about
@@ -199,6 +211,7 @@ const MASS_UNITS = { g: 0.001, kg: 1, lb: 0.45359237, ct: 0.0002 };   // kg per 
 const ROLLS = { solid: 5 / 7, shell: 3 / 5 };   // the share of its speed along the ground a ball keeps once it rolls
 const BODY_SHAPES = ['sphere', 'mesh'];         // the bodies src/rock.js knows
 const AIR_MODELS = ['ballistic', 'flutter'];    // the flights src/rock.js knows (Rock.fly)
+const SURFACE_KINDS = ['ice', 'grass'];         // the ground surfaces' kinds (src/ice.js ICE_MATERIAL, src/koiGarden.js LAWN) a thing's material.on may name
 const CALLED = { Stones: 'a rock', Balls: 'a ball', Gems: 'a gem' };
 const LAST_GROUPS = ['Gems'];                    // listed after every other group (thingGroups), whenever defined: a gem is seldom thrown
 const PRESET_OWN = ['look', 'water', 'air', 'body'];   // what a size preset may have of its own (the header's `size.presets`; of its body only its ballast)
@@ -297,6 +310,10 @@ function definitionProblems(key, definition) {
   need(!material.roll || within(material.rolling, LIMITS.rolling), 'a thing that rolls needs material.rolling, 0 to 1');
   need(material.rollsAbout === undefined || (material.roll && body.shape === 'sphere' && Array.isArray(material.rollsAbout) && material.rollsAbout.length === 3 && material.rollsAbout.every(isNumber) && Math.abs(Math.hypot(...material.rollsAbout) - 1) < 1e-6), 'material.rollsAbout must be a unit [x, y, z] of a sphere that rolls');
   need(material.curve === undefined || (material.rollsAbout && within(material.curve, [0, 0.5])), 'material.curve needs material.rollsAbout, and is 0 to 0.5');
+  const on = material.on;
+  need(on === undefined || (on !== null && typeof on === 'object' && Object.entries(on).every(([kind, own]) => SURFACE_KINDS.includes(kind) && own !== null && typeof own === 'object'
+    && Object.keys(own).every((key) => key === 'friction' || key === 'slowing') && (own.friction === undefined || within(own.friction, LIMITS.friction)) && (own.slowing === undefined || within(own.slowing, [0, 2])))),
+    `material.on must name surfaces (${SURFACE_KINDS.join(', ')}), each { friction (${LIMITS.friction.join(' to ')}), slowing (0 to 2) }, both optional`);
   need(air.drag === undefined || within(air.drag, LIMITS.drag), `air.drag must be ${LIMITS.drag.join(' to ')}`);
   need(air.model === undefined || AIR_MODELS.includes(air.model), `air.model must be one of ${AIR_MODELS.join(', ')}`);
   need(air.spin === undefined || (Array.isArray(air.spin) && air.spin.length === 2 && air.spin.every(isNumber) && air.spin[0] >= 0 && air.spin[0] <= air.spin[1] && air.spin[1] <= LIMITS.spin), `air.spin must be [least, most] within 0 to ${LIMITS.spin} rad/s`);
@@ -719,6 +736,9 @@ defineBuiltIn('iphone', {
   air: { drag: 1.1, model: 'flutter' },
   water: { restingHeight: 0.8 / 15 },
   look: { mesh: 'iphone', roughness: 0.18, reflection: 1.1, wet: { darker: 0.03, glossier: 0.2 } },
+  // Flat, rigid and about 2100 kg/m³ (a slate's 2750), it skims (src/rock.js skim) as a flat stone does: three or four
+  // times thrown normally (tools/thing-probe.mjs).
+  abilities: { skips: true },
 });
 
 // A shard of ice (the header): each one the ice breaks has its own outline, and the mass of ice its slab holds (src/ice.js
@@ -797,11 +817,18 @@ defineBuiltIn('snowball', {
 // shown as its length. A throw puts no more than THROW_WORK into it, and it tumbles slowly (`air.spin`), dragged by
 // the air on more than its ball's disc. Kept upright, it settles on the deck on its feet or upside down, not balanced
 // on a corner; afloat the water leaves it as it lands (on its feet, its side or upside down: it is no heavier low
-// down), its buoyancy cut slantwise to all its faces (`columnsAlong`).
+// down), its buoyancy cut slantwise to all its faces (`columnsAlong`). It stands on the moulded corners of its feet and
+// its chute's end (upside down, of its rails' tops and its chute's lip). On ice it is made to come to a stop near where
+// it lands (`on.ice`: its own friction, and slowing at it), where a stone skates on. That is a gameplay choice, not
+// physics: hollow plastic on ice glides (a sled's μ is 0.03 to 0.1), and its corners' ~0.1 MPa is far too little to
+// plough ice. What really stops a light, irregular thing is its landings: it comes down on a corner, pitches, bounces
+// and spins, spending its speed along the ice. The ground model has nothing for that, and a slide skating 5 to 12 m,
+// often upside down, looked wrong, so this stands in for it. Give another thing `on.ice` for the same look, not on the
+// belief that plastic grips ice.
 defineBuiltIn('slide', {
   name: 'Toy slide', short: 'Slide', group: 'Other', note: 'Hollow plastic, 4 kg: it floats high', called: 'a toy slide',
   body: { shape: 'mesh', upright: true, size: { by: 'fixed', diameter: 0.422, mass: 4.1 } },
-  material: { bounce: [0.15, 0.25], friction: 0.5 },
+  material: { bounce: [0.15, 0.25], friction: 0.5, on: { ice: { friction: 0.5, slowing: 0.5 } } },
   air: { drag: 2.2, spin: [1, 4] },
   water: { restingHeight: 0.8, columnsAlong: [1, 1, 1] },
   look: { mesh: 'slide', roughness: 0.45, reflection: 0.9, wet: { darker: 0.02, glossier: 0.3 } },
@@ -810,6 +837,8 @@ defineBuiltIn('slide', {
 // TABLETS), from an iPhone, the phone's own, through an iPad mini and an iPad to a 13-inch iPad Pro, each its maker's
 // size and weight (glass over aluminium, 1500 to 2100 kg/m³), so each sinks, a plate as the iPhone and the TV are: it
 // slaps the water flat and flutters down, its screen on +y. Each rests on the bed as thick as it is (`restingHeight`).
+// Not one skips, even at its iPhone step, which the iPhone does: Skip is the thing's (the strip's), not a step's, and an
+// iPad is a broad slab, as the TV is, too broad to throw low and level.
 defineBuiltIn('ipad', {
   name: 'iPad', group: 'Other', note: 'From an iPhone to an iPad Pro: it sinks', called: 'an iPad',
   body: {
