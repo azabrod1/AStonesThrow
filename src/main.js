@@ -795,7 +795,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   let qualityName = automaticQuality ? 'high' : QUALITY[quality] ? quality : 'medium';
   let settings = QUALITY[qualityName];
   // Parts of the frame the profiler switches off (src/profiler.js); all on otherwise.
-  const skip = { floor: false, surface: false, solver: false, ambient: false, fluid: false, spray: false, mirror: false, cavity: false, glare: false, halfDensity: false, sleep: false };
+  const skip = { floor: false, surface: false, solver: false, ambient: false, fluid: false, spray: false, mirror: false, cavity: false, glare: false, halfDensity: false, sleep: false, rings: false };
 
   const water = new SpectralWater(renderer, { size: settings.grid, domainSize: 6, centre: [0, -1.0], depth: POND_DEPTH });
   const windParameter = pageParameters.get('wind')?.split(',').map(Number);
@@ -2742,7 +2742,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     rain.update(simulationTime, camera, resolution, viewFocus());
     spindrift.update(simulationTime, camera, resolution, viewFocus());
     snow.update(simulationTime, camera, resolution);
-    rings.update(simulationTime);
+    if (skip.rings) rings.hide();   // the profiler's: the stones' rings neither summed nor read this frame
+    else rings.update(simulationTime);
     dropRings.update(simulationTime);
     // The splash's sheets and columns to this frame, for the mirror and the droplet passes.
     if (skip.spray) splash.spray.mesh.visible = false;
@@ -3255,6 +3256,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       if (skip.halfDensity !== wasHalfDensity) resize();
     },
     throwStone: () => throwAt(0, -1.4, { radius: 0.03, power: 'normal' }),
+    throwAt: (x, z) => throwAt(x, z, { radius: 0.03, power: 'normal' }),
+    fastForward(seconds) { for (let left = seconds; left > 1e-6; left -= 1 / 60) simulate(Math.min(1 / 60, left)); },
     hasImpacted: () => rocks.some((rock) => rock.state !== 'air' || rock.skip?.skips > 0),
     clearPond,
     describe: () => `${qualityName}, ${resolution.x}×${resolution.y} at ${dpr.toFixed(2)}×, grid ${water.size}, mesh ${surface.meshSegments}`,
