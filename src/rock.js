@@ -3406,6 +3406,10 @@ export class Rock {
     // step left them (a frame drawn between that step and the one before it is drawn at its end, drawAt).
     if (!surfaceAt && this.still) {
       if (!this.stillSince) {
+        // A gale may have ended on the step that settled it: clear its last
+        // wave lift and picking surface before keeping this draw state.
+        const bedDepth = typeof pondDepth === 'function' ? pondDepth(this.position.x, this.position.z) : pondDepth;
+        this.syncMeshes(0, bedDepth);
         this.stillSince = true;
         this.drawnBefore?.position.copy(this.stepEnd.position);
         this.drawnBefore?.quaternion.copy(this.stepEnd.quaternion);

@@ -72,9 +72,10 @@
 //     over a wall lands on the deck and wets it, as does one crossing the
 //     wall's line above the deck's top and ending the step below it, while
 //     one rising past the deck's top at the wall comes back off its side;
-//   - definitions as anyone might write them: the review's bad ones (a stone
+//   - definitions as anyone might write them: the reviews' bad ones (a stone
 //     look without its fields, body.soft null, presets an object, an
-//     infinite diameter) are refused plainly, and good ones damaged at
+//     infinite diameter, a group called Favourites, which is the dropdown
+//     of things' own tab) are refused plainly, and good ones damaged at
 //     random never make the check throw, and whatever defineThing takes
 //     can be made and stepped;
 //   - mass, density and volume agree for every thing not sized by its
@@ -506,6 +507,25 @@ for (const name of THING_NAMES.filter((key) => THINGS[key].abilities.held)) {
   for (let time = 0; time < 12; time += STEP) rock.update(STEP, floorDepthAt);
   console.log(`\nUnder a gale a basketball afloat drifts at ${rock.velocity.x.toFixed(3)} m/s downwind (${rock.state})`);
   check(Math.abs(rock.velocity.x - 0.15) < 0.01 && rock.state === 'float', `basketball: a gale drifts it at ${rock.velocity.x.toFixed(3)} m/s (${rock.state})`);
+}
+
+// A sinker settling just before a gale ends must be drawn back on the calm
+// bed, including frames drawn between steps and the surface used for picking.
+for (const waveHeight of [-0.3, 0.3]) {
+  const rock = new Rock({ radius: 0.1, position: new THREE.Vector3(0, 1, 0), velocity: new THREE.Vector3(0, -1, 0), envTexture: null });
+  let steps = 0;
+  while (rock.state !== 'rest' && steps++ < 2400) rock.update(STEP, () => 1, () => waveHeight);
+  const lifted = Math.abs(rock.meshAbove.position.y - rock.position.y);
+  let displaced = 0;
+  for (let step = 0; step < 3; step++) {
+    rock.update(STEP, () => 1);
+    for (const share of [0, 0.5, 1]) {
+      rock.drawAt(share);
+      displaced = Math.max(displaced, rock.meshAbove.position.distanceTo(rock.position), rock.meshBelow.position.distanceTo(rock.position));
+    }
+  }
+  check(rock.state === 'rest' && lifted > 0.001 && displaced < 1e-9 && rock.drawn.surface === 0 && rock.waterLevel.value === 0,
+    `a sinker settled under a ${waveHeight} m wave stays displaced ${centimetres(displaced)} cm after the gale stops (picking surface ${rock.drawn.surface})`);
 }
 
 // ---- the shore: a gale blowing floaters onto it ----
@@ -1320,6 +1340,7 @@ console.log('\nThings meeting things (src/collide.js):');
     'material.on naming no surface': { ...good, material: { ...good.material, on: { lava: { friction: 0.5 } } } },
     'material.on with a field it has not': { ...good, material: { ...good.material, on: { ice: { grip: 0.5 } } } },
     'an infinite diameter': { ...good, body: { shape: 'sphere', size: { by: 'preset', unit: 'size', initial: 1, presets: [{ value: 1, label: 'x', diameter: Infinity, mass: 1 }] } } },
+    'a group called Favourites': { ...good, group: 'favourites' },   // the dropdown's own tab (src/thingMenu.js)
   };
   const refusals = Object.entries(reviewCases).map(([label, definition]) => {
     let problems = null, error = null;
