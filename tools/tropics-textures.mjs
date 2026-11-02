@@ -16,8 +16,9 @@
 //          ½ is the material's own colour, which the shader keeps (the
 //          trunk's vertex colour, the place's sand), so only the scan's
 //          detail is taken from it.
-// Encoded at QUALITY, its chroma kept whole (4:4:4), so the channels keep
-// apart. Never edit the files: rerun this.
+// Encoded at QUALITY with 4:4:4 to avoid chroma blur. YCbCr quantization
+// still introduces some cross-talk between the packed channels. Never edit
+// the files: rerun this.
 //
 //   node tools/tropics-textures.mjs
 import { writeFile, mkdir, readFile } from 'node:fs/promises';

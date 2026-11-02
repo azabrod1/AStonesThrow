@@ -116,7 +116,7 @@ export const KOI_SHORE = {
   beach: [0.15, 1.05],   // rad: the pebble beach's span of θ, on the right of the far half
   shelf: 0.35, deep: 1.35, lip: 0.08, beachLip: 0.08, mound: 0.3,
 };
-// The Polynesian lagoon's shore (setShoreKind('lagoon'); src/main.js PLACES `tropical`): the lake's waterline behind the
+// The Polynesian lagoon's shore (setShoreKind('lagoon'); src/main.js PLACES `lagoon`): the lake's waterline behind the
 // eye joined to a beach of white sand that runs out along the right of the home view toward the horizon, as a motu's
 // lagoon beach does in the photographs it is drawn from (Aitutaki's Tapuaetai, Bora Bora's motus). The beach's
 // waterline leaves LAGOON_SHORE.origin (5 m to the right of the throw's line, so the solver's patch is open water and a

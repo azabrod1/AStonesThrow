@@ -329,7 +329,7 @@ const SKIES = {
   // Nagoya Castle, in April's afternoon light through its trees (`shadedSun`: its sun behind leaves, the light on
   // level ground the balance's, most of it the sky's).
   garden: { ownPlace: false, shadedSun: true, sunAzimuth: 100, hours: { afternoon: { file: 'ninomaru_teien', label: 'Afternoon', clock: '15:09' } } },
-  // The Polynesian lagoon's own (src/main.js PLACES `tropical`), no place of its own: a pure sky (Poly Haven's Kloofendal
+  // The Polynesian lagoon's own (src/main.js PLACES `lagoon`), no place of its own: a pure sky (Poly Haven's Kloofendal
   // 48d Partly Cloudy, its land taken out), deep blue with trade-wind cumulus along the horizon and the sun 48° up, as
   // a South Pacific midday is; the land under it is the beach's own (src/tropics.js: the palms, the motus, the high
   // island). The sun behind the eye's right, as the lagoon photographs best: the shallows lit through, no glare. Its

@@ -1,4 +1,4 @@
-// The Polynesian lagoon's scenery (src/main.js PLACES `tropical`, under its
+// The Polynesian lagoon's scenery (src/main.js PLACES `lagoon`, under its
 // own pure sky, src/sky.js `lagoon`), drawn from photographs of Polynesian
 // and Cook Islands motus (Aitutaki's Tapuaetai, Bora Bora's lagoon): coconut
 // palms in a row along the lagoon's beach (src/pondFloor.js LAGOON_SHORE)
@@ -50,7 +50,8 @@
 // Math.random. A few variants (PALMS) are built, each at three levels of
 // detail (LODS), and every palm is an instance of one of them, turned to
 // lean where it stands toward the water and scaled; its level is chosen by
-// its distance from the shore view's eye once, when it is placed.
+// projected size in the current camera (including zoom and the mirror).
+// Per-frond streams and fixed curve endpoints keep the same palm across levels.
 //
 // The light on a leaf (LEAF_LIGHT): three.js's standard lighting, its normal
 // bent part of the way out from the crown's middle so the crown shades as a
@@ -80,8 +81,8 @@
 // water's own shader is untouched. A 64 m foreground mask resolves root and
 // coconut contact shadows at 6.25 cm without enlarging the full beach mask.
 //
-// Low quality (setCoarse, a preset's `sceneryCoarse`): every palm and mound
-// a level of detail coarser.
+// Medium and Low (setCoarse): every palm and mound a level coarser. A quality
+// change only reroutes instances; all geometry and shadow masks are reused.
 //
 // Meshes (`above`), on two programs (the leaves; the wood, the coconuts, the
 // motus' sand and the high island, whose colours are their vertices'):
@@ -99,6 +100,7 @@ import { FullscreenPass } from './gpu.js';
 import { LAGOON_SHORE, PALM_FEET, PALM_SHADOW, SAND_SCAN, SHORE, lagoonBend, lagoonShoreDistance, landHeight } from './pondFloor.js';
 import { PALM_FOOT } from './shaders/scene.js';
 import { loadAsset } from './loadAsset.js';
+import { WIND_STRENGTHS } from './ambientWaves.js';
 import { seededRandom } from './spray.js';
 
 const SEED = 7173;
@@ -326,29 +328,37 @@ const mixColor = (one, other, share) => one.map((value, index) => value + (other
 const shade = (color, factor) => color.map((value) => value * factor);
 const UP = new THREE.Vector3(0, 1, 0);
 
+/** Sample one fixed-resolution curve at any LOD's knots, so its ends never change with tessellation. */
+function curvePoints(tangentAt, length, shares) {
+  const knots = [new THREE.Vector3()];
+  const steps = 128;
+  for (let index = 0; index < steps; index++) knots.push(knots[index].clone().addScaledVector(tangentAt((index + 0.5) / steps), length / steps));
+  return shares.map((share) => {
+    const at = share * steps, index = Math.min(Math.floor(at), steps - 1);
+    return knots[index].clone().lerp(knots[index + 1], at - index);
+  });
+}
+
 /**
  * A palm variant at a level of detail (the header): its leaves and its wood
  * (trunk, frond bases, rachises, coconuts) as two geometries, in its own
  * frame (foot at the origin, leaning toward +x), drawn from `stream`.
  */
-function palmGeometry(variant, lod, stream) {
+export function palmGeometry(variant, lod, variantIndex = PALMS.indexOf(variant)) {
+  const stream = seededRandom(SEED, 10 + variantIndex);
   const leaves = new Parts(), wood = new Parts();
   const { height, lean, curve } = variant;
   // The trunk's axis: marched up, its angle from upright easing from `lean` at the foot by `curve` toward the top,
   // with a little wander of its own.
-  const rows = lod.rows, axis = [], tangents = [];
+  const rows = lod.rows;
   // More of the longitudinal samples near the foot resolve the root flare.
   const shares = Array.from({ length: rows + 1 }, (_, row) => (row / rows) ** 1.4);
   const wander = stream() * 10;
-  const point = new THREE.Vector3();
-  for (let row = 0; row <= rows; row++) {
-    const share = shares[row];
+  const tangentAt = (share) => {
     const angle = THREE.MathUtils.degToRad(lean) * (1 - curve * share * share) + 0.035 * Math.sin(share * 7 + wander);
-    const tangent = new THREE.Vector3(Math.sin(angle), Math.cos(angle), 0.04 * Math.sin(share * 5 + wander * 1.3)).normalize();
-    axis.push(point.clone());
-    tangents.push(tangent);
-    if (row < rows) point.addScaledVector(tangent, height * (shares[row + 1] - share));
-  }
+    return new THREE.Vector3(Math.sin(angle), Math.cos(angle), 0.04 * Math.sin(share * 5 + wander * 1.3)).normalize();
+  };
+  const axis = curvePoints(tangentAt, height, shares), tangents = shares.map(tangentAt);
   const top = axis[rows].clone();
   const topTangent = tangents[rows];
   const swayAt = (y) => [Math.min(Math.max(y / top.y, 0), 1) ** 2, 0];
@@ -378,6 +388,7 @@ function palmGeometry(variant, lod, stream) {
   }
   wood.grid(firstTrunk, rows + 1, trunkAround + 1);
   // The skirt of old frond bases at the top: a short flared sleeve of fibre.
+  const skirtStream = seededRandom(SEED, 20, variantIndex);
   if (lod.around >= 6) {
     const firstSkirt = wood.positions.length / 3;
     for (let ring = 0; ring <= 3; ring++) {
@@ -387,38 +398,49 @@ function palmGeometry(variant, lod, stream) {
       for (let around = 0; around < lod.around; around++) {
         const turn = (around / lod.around) * Math.PI * 2;
         const normal = new THREE.Vector3(Math.cos(turn), 0.25 * share, Math.sin(turn)).normalize();
-        wood.vertex(centre.clone().add(new THREE.Vector3(Math.cos(turn) * radius, 0, Math.sin(turn) * radius)), normal, shade(COLORS.fibre, 0.7 + 0.5 * stream()), [0, 0], swayAt(centre.y));
+        wood.vertex(centre.clone().add(new THREE.Vector3(Math.cos(turn) * radius, 0, Math.sin(turn) * radius)), normal, shade(COLORS.fibre, 0.7 + 0.5 * skirtStream()), [0, 0], swayAt(centre.y));
       }
     }
     wood.grid(firstSkirt, 4, lod.around, true);
   }
   // The crown: fronds round the top by the golden angle, the youngest up, the oldest hanging.
-  const fronds = Math.max(Math.round(variant.fronds * lod.fronds), 6);
+  const fronds = variant.fronds;
+  const frondSpecs = [];
   const golden = Math.PI * (3 - Math.sqrt(5));
-  const phase = stream() * Math.PI * 2;
+  const phase = seededRandom(SEED, 30, variantIndex)() * Math.PI * 2;
   for (let index = 0; index < fronds; index++) {
+    // Lower LODs are nested subsets, retaining both the youngest and oldest silhouette.
+    if (index !== fronds - 1 && (lod.fronds < 1 && index % 4 === 1 || lod.fronds < 0.5 && index % 2 !== 0)) continue;
+    const stream = seededRandom(SEED, 100, variantIndex, index);
     const age = index / (fronds - 1);   // 0 the youngest
     const azimuth = index * golden + phase + (stream() - 0.5) * 0.3;
     const rise = THREE.MathUtils.degToRad(68 - 100 * age ** 0.85 + (stream() - 0.5) * 14);
     const length = (FROND.length[0] + (FROND.length[1] - FROND.length[0]) * Math.sin(Math.PI * Math.min(0.25 + 0.9 * age, 1)) ** 0.7) * (0.9 + 0.2 * stream());
     const droop = THREE.MathUtils.degToRad(FROND.droop[0] + (FROND.droop[1] - FROND.droop[0]) * age ** 1.2) * (0.85 + 0.3 * stream());
     const row = age > 0.82 && stream() < 0.6 ? ROW.old : ROW.green;
+    frondSpecs.push({ index, age, azimuth, rise, length, droop, row });
     frond(leaves, wood, lod, { top, topTangent, azimuth, rise, length, droop, row, age }, stream, swayAt);
   }
   // A dead frond or two, hanging brown along the trunk.
+  const deadStream = seededRandom(SEED, 200, variantIndex);
+  const deadFronds = 1 + Math.floor(deadStream() * 2);
   if (lod.fronds === 1) {
-    for (let index = 0; index < 1 + Math.floor(stream() * 2); index++) {
+    for (let index = 0; index < deadFronds; index++) {
+      const stream = seededRandom(SEED, 201, variantIndex, index);
       frond(leaves, wood, lod, { top: top.clone().addScaledVector(topTangent, -0.35), topTangent, azimuth: stream() * Math.PI * 2, rise: THREE.MathUtils.degToRad(-62 - 12 * stream()), length: 3.0 + 0.8 * stream(), droop: 0.35, row: ROW.dead, age: 1 }, stream, swayAt);
     }
   }
   // The coconuts: a bunch under the crown, each an egg with the husk's three faint ridges.
+  const coconuts = [];
   for (let index = 0; index < lod.nuts; index++) {
+    const stream = seededRandom(SEED, 300, variantIndex, index);
     const angle = stream() * Math.PI * 2, out = 0.2 + 0.18 * stream();
     const centre = top.clone().addScaledVector(topTangent, -0.25 - 0.35 * stream()).add(new THREE.Vector3(Math.cos(angle) * out, 0, Math.sin(angle) * out));
     const color = COLORS.nut[Math.floor(stream() * (stream() < 0.7 ? 2 : 4))];
+    coconuts.push(centre.toArray());
     coconut(wood, centre, 0.13 + 0.03 * stream(), new THREE.Vector3(Math.cos(angle), -1.2, Math.sin(angle)).normalize(), shade(color, 0.85 + 0.3 * stream()), lod.nutFacets, swayAt(centre.y));
   }
-  return { leaves: leaves.geometry(), wood: wood.geometry(), top };
+  return { leaves: leaves.geometry(), wood: wood.geometry(), top, fronds: frondSpecs, coconuts, deadFronds };
 }
 
 /**
@@ -431,16 +453,10 @@ function frond(leaves, wood, lod, { top, topTangent, azimuth, rise, length, droo
   const steps = lod.segments;
   const outward = new THREE.Vector3(Math.cos(azimuth), 0, Math.sin(azimuth));
   const base = top.clone().addScaledVector(outward, 0.12).addScaledVector(topTangent, -0.15 * age);
-  const rachis = [], tangents = [];
-  const point = base.clone();
-  for (let step = 0; step <= steps; step++) {
-    const share = step / steps;
-    const angle = rise - droop * share ** 1.5;
-    const tangent = outward.clone().multiplyScalar(Math.cos(angle)).addScaledVector(UP, Math.sin(angle));
-    rachis.push(point.clone());
-    tangents.push(tangent);
-    point.addScaledVector(tangent, length / steps);
-  }
+  const shares = Array.from({ length: steps + 1 }, (_, index) => index / steps);
+  const tangentAt = (share) => outward.clone().multiplyScalar(Math.cos(rise - droop * share ** 1.5)).addScaledVector(UP, Math.sin(rise - droop * share ** 1.5));
+  const tangents = shares.map(tangentAt);
+  const rachis = curvePoints(tangentAt, length, shares).map((point) => point.add(base));
   const sideways = new THREE.Vector3(-outward.z, 0, outward.x);
   const twist = (stream() - 0.5) * 0.5;   // the frond rolls a little about its rachis toward its tip
   const shadeInside = 0.55 + 0.45 * (1 - age * 0.5);
@@ -899,7 +915,7 @@ void main() {
 `;
 
 // How far (m, as built) the wind may lean a palm out of its bounding sphere (cull).
-const CULL_MARGIN = 2;
+export const palmCullMargin = (height) => WIND_STRENGTHS.gale * ((LEAN + SWAY) * height + FLUTTER) + 0.5;
 
 // ---- The scenery -----------------------------------------------------------
 
@@ -1003,8 +1019,8 @@ function placeScenery(stream) {
 
 // The palms' feet (PALM_FEET, src/pondFloor.js): a grid of `cell`-metre cells over the planting, each holding the foot
 // that stands in it (its place in the cell, its radius where it meets the sand), which the land's shader looks up
-// about each point (LAND_FRAGMENT's palmFoot). A foot shows on the sand no farther out than PALM_FOOT.reach, under
-// half a cell, so the four cells about a point hold any foot near it; palms stand 7 m and more apart, so a cell holds
+// about each point (LAND_FRAGMENT's palmFoot). Its surface reach plus PALM_FOOT.widest is less than one cell,
+// so the 3×3 neighbouring cells hold every foot that can influence the point; palms stand 7 m and more apart, so a cell holds
 // one (a second in one, placeFeet counts them, is left out: a forest palm deep in its litter).
 const FEET = { cell: 2.5 };
 /** The grid of the palms' feet (FEET), as a texture and its box; and how many feet shared a cell. */
@@ -1091,7 +1107,7 @@ export class Tropics {
     this.viewProjection = new THREE.Matrix4();
     this.sphere = new THREE.Sphere();
     // Until it is built, one far palm on the near motu stands for all of it: the warm-up compiles both programs on it.
-    const { leaves, wood, top } = palmGeometry(PALMS[0], LODS[2], seededRandom(SEED, 10));
+    const { leaves, wood, top } = palmGeometry(PALMS[0], LODS[2], 0);
     const middle = motuMiddle(MOTUS[0]);
     const standIn = [{ x: middle.x, y: MOTU_SAND.height - 0.1, z: middle.z, yaw: 0, scale: 1, phase: 0 }];
     this.instances(leaves, this.leafMaterial, standIn, () => [PALMS[0].height, 0, top.y, 0]);
@@ -1121,7 +1137,7 @@ export class Tropics {
     const maxAnisotropy = this.renderer.capabilities.getMaxAnisotropy();
     const load = async (url) => {
       // As the image lies, its bytes its own (not colour-managed, not flipped: the packing's header says why).
-      const bitmap = await createImageBitmap(await loadAsset(url, 'blob'), { imageOrientation: 'none', colorSpaceConversion: 'none', premultiplyAlpha: 'none' });
+      const bitmap = await createImageBitmap(new Blob([await loadAsset(url, 'arrayBuffer')], { type: 'image/jpeg' }), { imageOrientation: 'none', colorSpaceConversion: 'none', premultiplyAlpha: 'none' });
       const texture = new THREE.Texture(bitmap);
       texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
       texture.flipY = false;
@@ -1169,6 +1185,7 @@ export class Tropics {
       mesh.geometry.attributes.palmInstance.array.set(whole.numbers);
       mesh.instanceMatrix.needsUpdate = mesh.geometry.attributes.palmInstance.needsUpdate = true;
       mesh.count = whole.numbers.length / 4;
+      whole.kept = null;
       materials.set(mesh, mesh.material);
       mesh.visible = whole.casts;
       if (whole.casts) mesh.material = this.shadowMaterials[mesh.material === this.leafMaterial ? 'leaves' : 'wood'];
@@ -1198,6 +1215,7 @@ export class Tropics {
 
   /** Builds the whole of it (src/main.js shows it): what stands where, every mesh, the stand-in let go. */
   build() {
+    if (this.placed) return;   // geometry and placements live for the scene's lifetime
     for (const mesh of this.above) {
       mesh.geometry.dispose();
       mesh.dispose();
@@ -1209,7 +1227,6 @@ export class Tropics {
       this.surfacesReady = this.loadSurfaces();
     }
     this.built = true;
-    this.stale = false;
     const { palms, scrub, fallen } = placeScenery(seededRandom(SEED, 1));
     this.placed = { palms, scrub, fallen };   // for the probes
     if (!this.feet) {
@@ -1219,28 +1236,32 @@ export class Tropics {
       PALM_FEET.uPalmFeetCells.value.fromArray(this.feet.cells);
       if (this.banks) this.banks.geometry = bankGeometry(this.feet.feet);
     }
-    // The palms: every variant at each level, its instances those placed at that level.
+    // All resolutions are prepared once. Every level has capacity for the
+    // variant's placements; cull routes each visible instance to one level.
+    this.palmGeometry = PALMS.map((variant, variantIndex) => LODS.map((lod) => palmGeometry(variant, lod, variantIndex)));
     for (const [variantIndex, variant] of PALMS.entries()) {
-      for (const [level, lod] of LODS.entries()) {
-        const here = palms.filter((placed) => placed.variant === variantIndex && this.levelOf(placed) === level);
-        if (here.length === 0) continue;
-        const { leaves, wood, top } = palmGeometry(variant, lod, seededRandom(SEED, 10 + variantIndex));
-        this.instances(leaves, this.leafMaterial, here, (placed) => [variant.height, placed.phase, top.y, 0]);
-        this.instances(wood, this.woodMaterial, here, (placed) => [variant.height, placed.phase, top.y, placed.shade]);
+      const here = palms.filter((placed) => placed.variant === variantIndex);
+      const shapes = this.palmGeometry[variantIndex];
+      const bounds = shapes[0].leaves.boundingSphere.clone();
+      for (const shape of shapes) { bounds.union(shape.leaves.boundingSphere); bounds.union(shape.wood.boundingSphere); }
+      for (const [level, { leaves, wood, top }] of shapes.entries()) {
+        const options = { level, bounds, referenceRadius: 18, casts: level === 1 };
+        this.instances(leaves, this.leafMaterial, here, (placed) => [variant.height, placed.phase, top.y, 0], options);
+        this.instances(wood, this.woodMaterial, here, (placed) => [variant.height, placed.phase, top.y, placed.shade], options);
       }
     }
-    // The scrub, at its levels, as the palms are.
-    for (const level of [0, 1, 2]) {
-      const here = scrub.filter((placed) => Math.min(this.levelOf(placed), SCRUB.cards.length - 1) === level);
-      if (here.length > 0) this.instances(scrubGeometry(level, seededRandom(SEED, 30 + level)), this.leafMaterial, here, (placed) => [SCRUB.height, placed.phase, SCRUB.height * 0.4, placed.shade]);
+    this.scrubGeometry = [0, 1, 2].map((level) => scrubGeometry(level, seededRandom(SEED, 30 + level)));
+    const scrubBounds = this.scrubGeometry[0].boundingSphere.clone();
+    for (const shape of this.scrubGeometry) scrubBounds.union(shape.boundingSphere);
+    for (const [level, shape] of this.scrubGeometry.entries()) {
+      this.instances(shape, this.leafMaterial, scrub, (placed) => [SCRUB.height, placed.phase, SCRUB.height * 0.4, placed.shade], { level, bounds: scrubBounds, casts: level === 1 });
     }
-    // The fallen coconuts, a mesh a colour and level; the motus' sand and the high island, one instance each of geometry laid out in the world.
     const still = [{ x: 0, y: 0, z: 0, yaw: 0, scale: 1, phase: 0 }];
     for (const color of COLORS.fallen) {
-      for (const far of [false, true]) {
-        const here = fallen.filter((nut) => nut.color === color && (this.levelOf(nut) > 0) === far);
-        if (here.length) this.instances(fallenGeometry(color, far), this.woodMaterial, here, () => [1, 0, 0, 0]);
-      }
+      const here = fallen.filter((nut) => nut.color === color);
+      const shapes = [false, true].map((far) => fallenGeometry(color, far));
+      const bounds = shapes[0].boundingSphere.clone().union(shapes[1].boundingSphere);
+      for (const [level, shape] of shapes.entries()) this.instances(shape, this.woodMaterial, here, () => [1, 0, 0, 0], { level, levels: 2, bounds, casts: level === 0 });
     }
     this.instances(motuSandGeometry(), this.woodMaterial, still, () => [1, 0, 0, 0], { casts: false });
     this.instances(islandGeometry(), this.woodMaterial, still, () => [1, 0, 0, 0], { casts: false });
@@ -1256,9 +1277,9 @@ export class Tropics {
    * they cast shadows into the mask), and those in view are packed at the
    * front of its instances by `cull`.
    */
-  instances(geometry, material, placed, numbers, { casts = true } = {}) {
+  instances(geometry, material, placed, numbers, { casts = true, level = null, levels = 3, bounds = geometry.boundingSphere, referenceRadius = bounds.radius } = {}) {
     const mesh = new THREE.InstancedMesh(geometry, material, placed.length);
-    const whole = { matrices: new Float32Array(placed.length * 16), numbers: new Float32Array(placed.length * 4), spheres: new Float32Array(placed.length * 4), casts };
+    const whole = { matrices: new Float32Array(placed.length * 16), numbers: new Float32Array(placed.length * 4), spheres: new Float32Array(placed.length * 4), casts, level, levels, radius: bounds.radius, referenceRadius, kept: null };
     const matrix = new THREE.Matrix4(), turn = new THREE.Quaternion(), scale = new THREE.Vector3(), at = new THREE.Vector3(), sphere = new THREE.Sphere();
     for (const [index, one] of placed.entries()) {
       turn.setFromAxisAngle(UP, -one.yaw);
@@ -1266,8 +1287,8 @@ export class Tropics {
       at.set(one.x, one.y, one.z);
       matrix.compose(at, turn, scale).toArray(whole.matrices, index * 16);
       whole.numbers.set(numbers(one), index * 4);
-      sphere.copy(geometry.boundingSphere).applyMatrix4(matrix);
-      whole.spheres.set([sphere.center.x, sphere.center.y, sphere.center.z, sphere.radius + CULL_MARGIN * one.scale], index * 4);
+      sphere.copy(bounds).applyMatrix4(matrix);
+      whole.spheres.set([sphere.center.x, sphere.center.y, sphere.center.z, sphere.radius + palmCullMargin(whole.numbers[index * 4]) * one.scale], index * 4);
     }
     mesh.instanceMatrix.array.set(whole.matrices);
     geometry.setAttribute('palmInstance', new THREE.InstancedBufferAttribute(whole.numbers.slice(), 4));
@@ -1295,20 +1316,33 @@ export class Tropics {
     for (const mesh of this.above) {
       const { matrices, numbers, spheres } = mesh.userData.whole;
       const packedMatrices = mesh.instanceMatrix.array, numbersAttribute = mesh.geometry.attributes.palmInstance, packedNumbers = numbersAttribute.array;
-      let kept = 0;
+      const kept = [];
+      const distance = (index) => Math.hypot(spheres[index * 4] - camera.position.x, spheres[index * 4 + 1] - camera.position.y, spheres[index * 4 + 2] - camera.position.z);
       for (let index = 0; index < spheres.length / 4; index++) {
         sphere.center.set(spheres[index * 4], spheres[index * 4 + 1], spheres[index * 4 + 2]);
         sphere.radius = spheres[index * 4 + 3];
         let seen = frustum.intersectsSphere(sphere);
         if (!seen) { sphere.center.y = -sphere.center.y; seen = frustum.intersectsSphere(sphere); }
         if (!seen) continue;
-        // A previous view may have packed another instance into even an equal-index slot.
-        packedMatrices.set(matrices.subarray(index * 16, index * 16 + 16), kept * 16);
-        packedNumbers.set(numbers.subarray(index * 4, index * 4 + 4), kept * 4);
-        kept++;
+        if (mesh.userData.whole.level !== null) {
+          const scale = Math.hypot(matrices[index * 16], matrices[index * 16 + 1], matrices[index * 16 + 2]);
+          const level = Math.min(this.levelOf({ x: spheres[index * 4], y: spheres[index * 4 + 1], z: spheres[index * 4 + 2], scale,
+            radius: mesh.userData.whole.radius, referenceRadius: mesh.userData.whole.referenceRadius }, camera), mesh.userData.whole.levels - 1);
+          if (level !== mesh.userData.whole.level) continue;
+        }
+        kept.push(index);
       }
-      mesh.count = kept;
-      mesh.visible = kept > 0;
+      // Front-to-back gives alpha-tested foliage early depth rejection.
+      kept.sort((one, other) => distance(one) - distance(other) || one - other);
+      mesh.count = kept.length;
+      mesh.visible = kept.length > 0;
+      const whole = mesh.userData.whole;
+      if (whole.kept?.length === kept.length && kept.every((index, slot) => index === whole.kept[slot])) continue;
+      for (const [slot, index] of kept.entries()) {
+        packedMatrices.set(matrices.subarray(index * 16, index * 16 + 16), slot * 16);
+        packedNumbers.set(numbers.subarray(index * 4, index * 4 + 4), slot * 4);
+      }
+      whole.kept = kept;
       mesh.instanceMatrix.needsUpdate = true;
       numbersAttribute.needsUpdate = true;
     }
@@ -1413,7 +1447,7 @@ uniform vec3 uSkyAmbient;`)
    * (`building` false), which shows the stand-in.
    */
   setVisible(visible, { building = true } = {}) {
-    if (visible && building && (!this.built || this.stale)) this.build();
+    if (visible && building && !this.built) this.build();
     this.shown = visible;
     this.group.visible = visible;
     if (this.banks) this.banks.visible = visible && this.built;
@@ -1421,6 +1455,7 @@ uniform vec3 uSkyAmbient;`)
     for (const mesh of this.above) {
       mesh.visible = visible;
       mesh.count = mesh.userData.whole.numbers.length / 4;   // every instance, till the next cull
+      mesh.userData.whole.kept = null;
     }
     if (visible) this.culledFor.makeScale(0, 0, 0);   // culled again at the next frame
   }
@@ -1438,24 +1473,21 @@ uniform vec3 uSkyAmbient;`)
     if (direction) this.uniforms.uPalmWindDirection.value.set(direction[0], direction[1]).normalize();
   }
 
-  /**
-   * Every palm and mound a level of detail coarser (a preset's
-   * `sceneryCoarse`: Low), or as placed; built again if it is built (now
-   * if shown, else when next shown).
-   */
+  /** Coarser projected detail: only invalidate routing; no construction, fetch or shadow bake. */
   setCoarse(coarse) {
     if (coarse === this.coarse) return;
     this.coarse = coarse;
-    if (!this.built) return;
-    if (!this.shown) { this.stale = true; return; }   // built again when next shown, not on a frame already too slow elsewhere
-    this.build();
-    this.setVisible(true);
+    this.culledFor.makeScale(0, 0, 0);
   }
 
-  /** A palm's or a mound's level of detail: by its distance from the shore view's eye, a level coarser when coarse. */
-  levelOf(placed) {
-    const distance = Math.hypot(placed.x - EYE.x, placed.z - EYE.z);
-    return Math.min(LODS.findLastIndex((lod) => distance >= lod.from) + (this.coarse ? 1 : 0), LODS.length - 1);
+  /** LOD follows projected size in the current view, including the mirror, scale and zoom. */
+  levelOf(placed, camera) {
+    const eye = camera?.position ?? { x: EYE.x, y: 1.8, z: EYE.z };
+    const distance = Math.min(Math.hypot(placed.x - eye.x, (placed.y ?? 0) - eye.y, placed.z - eye.z),
+      Math.hypot(placed.x - eye.x, -(placed.y ?? 0) - eye.y, placed.z - eye.z));
+    const zoom = Math.tan(THREE.MathUtils.degToRad((camera?.fov ?? 55) / 2)) / Math.tan(THREE.MathUtils.degToRad(55 / 2));
+    const equivalent = distance * zoom / (placed.scale ?? 1) * (placed.referenceRadius ?? 1) / (placed.radius ?? 1);
+    return Math.min(LODS.findLastIndex((lod) => equivalent >= lod.from) + (this.coarse ? 1 : 0), LODS.length - 1);
   }
 
   /** The world time (s), for the sway. */

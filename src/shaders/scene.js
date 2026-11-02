@@ -16,6 +16,7 @@ import { RAIN_RIPPLES, DROP_RING_SLOPES } from './rain.js';
 import { GALE_SURFACE } from './gale.js';
 import { SURFACE_BUBBLE, BUBBLE_SPRITE } from './bubble.js';
 import { ICE_SHADOW_LOOKUP } from '../iceShadow.js';
+import { VISITOR_WATER } from './visitor.js';
 
 // The weather's haze (rain's, snow's, a fog's; src/sky.js setWeather): what lies d metres off fades
 // toward uHazeColor, the overcast's horizon, by 1 − exp(−uHazeDensity·d)
@@ -328,7 +329,7 @@ float fractureFace(float along, float across, float sine, float footprint) {
 
 // A palm's foot on the lagoon's sand (src/tropics.js plants them, the land's shaders draw round them:
 // PALM_FEET_LOOKUP): `widest` the most a foot's radius at the ground may be (m), as the feet's grid codes it; `reach`
-// how far out from a foot (m) it shows on the sand (under half the grid's cell, src/tropics.js FEET); the sand banked
+// how far out from a foot's surface (m) it shows on the sand (reach + widest is under a grid cell, src/tropics.js FEET); the sand banked
 // against it `mound` metres high at the trunk, falling away over `bank` metres; the banks' mesh `lift` metres over the
 // land besides, where it meets it (src/tropics.js banks).
 export const PALM_FOOT = { widest: 0.8, reach: 1.1, mound: 0.06, bank: 0.2, lift: 0.004 };
@@ -1551,6 +1552,7 @@ ${FRESH_BOIL}
 ${FOAM_PATTERN}
 ${RAIN_RIPPLES}
 ${DROP_RING_SLOPES}
+${VISITOR_WATER}
 ${HAZE}
 
 // The slope variance of the ambient ripples that this pixel's lookup no
@@ -1884,6 +1886,7 @@ void main() {
   // dropRings.js: the little rings a splash's drops leave where they land).
   float gust = gustEnvelope(vWorld.xz, uGustTime);
   float subGridSpread = uRoughness * uRoughness;
+  float visitorVariance = 0.0;   // the thing in the loch's unresolved slope, for the mirror's spread (below)
 #ifdef CAVITY_MESH
   // The mesh's normal, tilted by the surface's slopes where the mesh rides
   // the surface (its own normal is the lip's shape on still water). The
@@ -1899,6 +1902,11 @@ void main() {
     slopeVariance += rainUnresolvedVariance(vWorld.xz) * ride;
   }
   if (uDropRingCount > 0) surfaceSlope += dropRingSlope(vWorld.xz, acrossX, acrossY) * ride;
+  if (visitorNear(vWorld.xz)) {   // the thing in the loch's wake (src/shaders/visitor.js)
+    vec3 visitor = visitorSlope(vWorld.xz, acrossX, acrossY);
+    surfaceSlope += visitor.xy * ride;
+    slopeVariance += visitor.z * ride;
+  }
   float galeJacobian = 1.0;
   if (uGaleMetresPerUnit > 0.0) {
     surfaceSlope += galeSlope(vRest, galeJacobian) * ride;
@@ -1917,6 +1925,12 @@ void main() {
     slopeVariance += rainUnresolvedVariance(vWorld.xz);
   }
   if (uDropRingCount > 0) slope += dropRingSlope(vWorld.xz, acrossX, acrossY);
+  if (visitorNear(vWorld.xz)) {   // the thing in the loch's wake (src/shaders/visitor.js)
+    vec3 visitor = visitorSlope(vWorld.xz, acrossX, acrossY);
+    slope += visitor.xy;
+    slopeVariance += visitor.z;
+    visitorVariance = visitor.z;
+  }
   float galeJacobian = 1.0;
   if (uGaleMetresPerUnit > 0.0) {
     slope += galeSlope(vRest, galeJacobian);
@@ -2018,6 +2032,18 @@ void main() {
   vec3 reflected;
   if (uMirrorNear.x > uMirrorNear.z) reflected = texture2D(uReflection, clamp(reflectUv, vec2(0.002), vec2(0.998))).rgb;
   else reflected = nearReflection(reflectUv, reflectedRay);
+  // The thing in the loch's waves too fine for the pixel (src/shaders/visitor.js) spread the reflected ray over about
+  // twice their rms slope, as the ice's frost does; at a grazing angle the rays turned down meet the next crest, so the
+  // spread climbs (by its width): far out, a wake shows as a V of paler, duller water across the far shore's image.
+  // The sun's share is the glitter's (held to ICE_FROST_SKY of the sky's mean, as the frost's is).
+  if (visitorVariance > 1e-4) {
+    float visitorSpread = 2.0 * sqrt(visitorVariance);
+    vec3 spreadRay = normalize(vec3(reflectedRay.x, reflectedRay.y + visitorSpread * length(reflectedRay.xz), reflectedRay.z));
+    vec3 spreadSky = textureCubeLodEXT(uSkyCube, spreadRay, clamp(log2(max(visitorSpread * ICE_FROST_LEVELS, 1.0)), 0.0, ICE_FROST_COARSEST)).rgb;
+    float spreadLuminance = dot(spreadSky, vec3(0.2126, 0.7152, 0.0722)), skyMean = dot(uSkyAmbient, vec3(0.2126, 0.7152, 0.0722));
+    spreadSky *= min(1.0, ICE_FROST_SKY * skyMean / max(spreadLuminance, 1e-6));
+    reflected = mix(reflected, spreadSky, smoothstep(0.03, 0.2, visitorSpread));
+  }
 
 #ifdef CAVITY_MESH
   reflected = mix(refracted, reflected, escapes);
@@ -2058,6 +2084,8 @@ void main() {
     float left = whitecaps.b + whitecaps.g * galeStreaks(vRest, acrossX, acrossY);
     foamKinds += vec2(activeWhitewater + left, left);
   }
+  // The foam the thing in the loch churns (src/shaders/visitor.js): lace, as the gale's left foam is.
+  if (visitorNear(vWorld.xz)) foamKinds += vec2(visitorFoam(vWorld.xz));
   float foam = foamKinds.r;
 #ifdef CAVITY_MESH
   foam *= level;   // the pattern lies on the water's plane: none down the walls
@@ -2832,13 +2860,13 @@ uniform vec2 uPalmFeetCells;     // ...and its cells across x and z
 uniform float uPalmBank;         // 1 on the banks' mesh, 0 on the land's
 float palmFoot(vec2 point, out vec2 fromFoot, out float radius, out float seed) {
   vec2 cellPoint = (point - uPalmFeetBox.xy) * uPalmFeetBox.z;
-  ivec2 base = ivec2(floor(cellPoint - 0.5));
+  ivec2 base = ivec2(floor(cellPoint));
   float nearest = 1e3;
   fromFoot = vec2(1e3);
   radius = 0.0;
   seed = 0.0;
-  for (int column = 0; column <= 1; column++) {
-    for (int row = 0; row <= 1; row++) {
+  for (int column = -1; column <= 1; column++) {
+    for (int row = -1; row <= 1; row++) {
       ivec2 cell = base + ivec2(column, row);
       if (cell.x < 0 || cell.y < 0 || cell.x >= int(uPalmFeetCells.x) || cell.y >= int(uPalmFeetCells.y)) continue;
       vec4 texel = texelFetch(uPalmFeet, cell, 0);
@@ -3134,8 +3162,8 @@ float tuft(vec2 point, float share, float edge, out float tone, out vec2 fromTuf
   float cover = 0.0;
   tone = 0.5;
   fromTuft = vec2(0.0);
-  for (int column = 0; column <= 1; column++) {
-    for (int row = 0; row <= 1; row++) {
+  for (int column = -1; column <= 1; column++) {
+    for (int row = -1; row <= 1; row++) {
       vec2 index = base + vec2(float(column), float(row));
       if (hash21(index + 0.37) >= share) continue;
       vec2 offset = point - (index + vec2(hash21(index + 1.3), hash21(index + 2.7))) * TUFT_CELL;

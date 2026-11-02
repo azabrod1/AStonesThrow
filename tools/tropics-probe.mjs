@@ -4,7 +4,8 @@
 // with shoot.mjs and uniform-probe.mjs on the browser's GPU.
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { Tropics } from '../src/tropics.js';
+import { Tropics, PALMS, LODS, palmCullMargin } from '../src/tropics.js';
+import { LAND_VERTEX, PALM_FOOT } from '../src/shaders/scene.js';
 import { lagoonLandGeometry, setShoreKind } from '../src/pondFloor.js';
 
 setShoreKind('lagoon');
@@ -67,18 +68,29 @@ for (const [index, direction] of [[0, -1], [1, 0], [0, 1], [-1, 0], [0, -1]].ent
   let triangles = 0;
   for (const mesh of tropics.above) {
     const { matrices, numbers, spheres } = mesh.userData.whole;
-    let kept = 0;
+    const kept = [];
+    const whole = mesh.userData.whole;
     for (let instance = 0; instance < spheres.length / 4; instance++) {
       const sphere = new THREE.Sphere(new THREE.Vector3(...spheres.slice(instance * 4, instance * 4 + 3)), spheres[instance * 4 + 3]);
       let seen = frustum.intersectsSphere(sphere);
       sphere.center.y *= -1;
       seen ||= frustum.intersectsSphere(sphere);
       if (!seen) continue;
-      assert.deepEqual(mesh.instanceMatrix.array.slice(kept * 16, kept * 16 + 16), matrices.slice(instance * 16, instance * 16 + 16), `view ${index}: instance matrix restored`);
-      assert.deepEqual(mesh.geometry.attributes.palmInstance.array.slice(kept * 4, kept * 4 + 4), numbers.slice(instance * 4, instance * 4 + 4), `view ${index}: instance attributes restored`);
-      kept++;
+      const scale = Math.hypot(...matrices.slice(instance * 16, instance * 16 + 3));
+      const centre = new THREE.Vector3(...spheres.slice(instance * 4, instance * 4 + 3));
+      const mirrored = centre.clone(); mirrored.y *= -1;
+      const equivalent = Math.min(centre.distanceTo(camera.position), mirrored.distanceTo(camera.position)) / scale * whole.referenceRadius / whole.radius;
+      const level = Math.min(LODS.findLastIndex((lod) => equivalent >= lod.from), whole.levels - 1);
+      if (whole.level !== null && level !== whole.level) continue;
+      kept.push(instance);
     }
-    assert.equal(mesh.count, kept);
+    const distance = (instance) => new THREE.Vector3(...spheres.slice(instance * 4, instance * 4 + 3)).distanceTo(camera.position);
+    kept.sort((one, other) => distance(one) - distance(other) || one - other);
+    for (const [slot, instance] of kept.entries()) {
+      assert.deepEqual(mesh.instanceMatrix.array.slice(slot * 16, slot * 16 + 16), matrices.slice(instance * 16, instance * 16 + 16), `view ${index}: instance matrix restored`);
+      assert.deepEqual(mesh.geometry.attributes.palmInstance.array.slice(slot * 4, slot * 4 + 4), numbers.slice(instance * 4, instance * 4 + 4), `view ${index}: instance attributes restored`);
+    }
+    assert.equal(mesh.count, kept.length);
     triangles += mesh.count * mesh.geometry.index.count / 3;
   }
   if (index === 0) homeTriangles = triangles;
@@ -86,6 +98,123 @@ for (const [index, direction] of [[0, -1], [1, 0], [0, 1], [-1, 0], [0, -1]].ent
 }
 assert(homeTriangles < 350000, `visible scenery budget: ${homeTriangles}`);
 console.log(`ok: five camera views restore every instance; home scenery ${homeTriangles} triangles`);
+// Small camera moves that keep the same packed set upload no buffers.
+const versions = tropics.above.map((mesh) => [mesh.instanceMatrix.version, mesh.geometry.attributes.palmInstance.version]);
+camera.position.x += 1e-5;
+camera.updateMatrixWorld();
+tropics.cull(camera);
+assert.deepEqual(tropics.above.map((mesh) => [mesh.instanceMatrix.version, mesh.geometry.attributes.palmInstance.version]), versions);
+console.log('ok: unchanged visible sets do not upload instance buffers');
+
+// Quality changes route instances into existing meshes and leave masks alone.
+const meshes = tropics.above.slice(), placements = tropics.placed;
+const geometry = meshes.map((mesh) => mesh.geometry);
+let bakes = 0;
+tropics.bakeShadows = () => { bakes++; };
 tropics.setCoarse(true);
+tropics.cull(camera);
+assert.deepEqual(tropics.above, meshes);
+assert.deepEqual(tropics.above.map((mesh) => mesh.geometry), geometry);
+assert.equal(tropics.placed, placements);
+assert.equal(bakes, 0);
+const coarseTriangles = meshes.reduce((sum, mesh) => sum + mesh.count * mesh.geometry.index.count / 3, 0);
+assert(coarseTriangles < homeTriangles, 'coarse quality must reduce visible geometry');
 assert(tropics.above.every((mesh) => mesh.geometry.attributes.position.array.every(Number.isFinite)));
-console.log('ok: Low builds finite geometry');
+tropics.shown = false;
+tropics.setCoarse(false);
+assert.equal(tropics.placed, placements);
+tropics.shown = true;
+console.log(`ok: quality changes reuse geometry, placements and masks; coarse scenery ${coarseTriangles} triangles`);
+
+// Zoom increases detail; all LODs retain the same form and matching curve endpoints.
+const distant = { x: 0, y: 8, z: -150, scale: 1, radius: 9, referenceRadius: 9 };
+assert.equal(tropics.levelOf(distant, camera), 2);
+camera.fov = 12;
+assert.equal(tropics.levelOf(distant, camera), 0);
+for (const shapes of tropics.palmGeometry) {
+  for (const shape of shapes.slice(1)) {
+    assert(shape.top.distanceTo(shapes[0].top) < 1e-12);
+    for (const frond of shape.fronds) assert.deepEqual(frond, shapes[0].fronds.find((one) => one.index === frond.index));
+    assert.deepEqual(shape.coconuts, shapes[0].coconuts.slice(0, shape.coconuts.length));
+    assert.equal(shape.deadFronds, shapes[0].deadFronds);
+  }
+  assert(shapes[2].fronds.every((frond) => shapes[1].fronds.some((one) => one.index === frond.index)));
+}
+console.log('ok: zoom selects finer LODs; nested fronds, crown endpoints and coconuts keep their form');
+
+// Real crown vertices remain within the culling sphere at peak gale lean
+// and flutter, in 32 wind directions and both flutter extremes.
+let windVertices = 0;
+for (const [variantIndex, shapes] of tropics.palmGeometry.entries()) {
+  const height = PALMS[variantIndex].height;
+  const sway = 4 * (0.025 + 0.012), margin = palmCullMargin(height);
+  for (const { leaves } of shapes) {
+    const p = leaves.attributes.position, weights = leaves.attributes.palmSway, bound = leaves.boundingSphere;
+    for (let index = 0; index < p.count; index++) {
+      for (let direction = 0; direction < 32; direction++) {
+        const angle = direction * Math.PI / 16;
+        for (const sign of [-1, 1]) {
+          const flutter = sign * weights.getY(index) * 4 * 0.06;
+          const along = sway * height * weights.getX(index) + 0.4 * flutter;
+          const x = p.getX(index) + Math.cos(angle) * along - bound.center.x;
+          const y = p.getY(index) - 0.5 * sway * sway * height * weights.getX(index) + flutter - bound.center.y;
+          const z = p.getZ(index) + Math.sin(angle) * along - bound.center.z;
+          assert(Math.hypot(x, y, z) <= bound.radius + margin + 1e-5, 'peak gale vertex must stay in cull bound');
+        }
+      }
+      windVertices++;
+    }
+  }
+}
+console.log(`ok: ${windVertices} crown vertices stay within gale cull margins`);
+
+// Execute the shader's declared cell range on the real encoded foot grid,
+// comparing against a brute-force nearest-foot search across cell boundaries.
+{
+  const lookup = LAND_VERTEX.split('float palmFoot(')[1].split('float palmBankRise(')[0];
+  const low = Number(lookup.match(/for \(int column = (-?\d+)/)[1]);
+  const high = Number(lookup.match(/column <= (-?\d+)/)[1]);
+  const shift = lookup.includes('floor(cellPoint - 0.5)') ? -0.5 : 0;
+  const { texture, box, cells } = tropics.feet, data = texture.image.data;
+  const feet = [];
+  for (let row = 0; row < cells[1]; row++) for (let column = 0; column < cells[0]; column++) {
+    const at = (row * cells[0] + column) * 4;
+    if (data[at + 3] < 128) continue;
+    feet.push({ x: box[0] + (column + data[at] / 255) / box[2], z: box[1] + (row + data[at + 1] / 255) / box[2], radius: data[at + 2] / 255 * PALM_FOOT.widest });
+  }
+  let samples = 0;
+  for (const foot of feet.slice(0, 80)) for (const offset of [-1.4, -1.26, -1.1, 0, 1.1, 1.26, 1.4]) {
+    const x = foot.x + offset, z = foot.z + 0.17;
+    const reference = Math.min(...feet.map((one) => Math.hypot(x - one.x, z - one.z) - one.radius));
+    if (reference >= PALM_FOOT.reach) continue;
+    const baseX = Math.floor((x - box[0]) * box[2] + shift), baseZ = Math.floor((z - box[1]) * box[2] + shift);
+    let nearest = Infinity;
+    for (let dx = low; dx <= high; dx++) for (let dz = low; dz <= high; dz++) {
+      const column = baseX + dx, row = baseZ + dz;
+      if (column < 0 || row < 0 || column >= cells[0] || row >= cells[1]) continue;
+      const at = (row * cells[0] + column) * 4;
+      if (data[at + 3] < 128) continue;
+      const px = box[0] + (column + data[at] / 255) / box[2], pz = box[1] + (row + data[at + 1] / 255) / box[2];
+      nearest = Math.min(nearest, Math.hypot(x - px, z - pz) - data[at + 2] / 255 * PALM_FOOT.widest);
+    }
+    assert(Math.abs(nearest - reference) < 1e-9, 'foot influence must remain continuous across grid cells');
+    samples++;
+  }
+  assert(samples > 100);
+  console.log(`ok: ${samples} foot-grid boundary samples match a full nearest-foot search`);
+}
+
+// Image decoding receives typed JPEG bytes, even when fetch has no MIME type.
+{
+  const fetch = globalThis.fetch, decode = globalThis.createImageBitmap;
+  const types = [];
+  globalThis.fetch = async () => new Response(new Uint8Array([255, 216, 255, 217]));
+  globalThis.createImageBitmap = async (blob) => { types.push(blob.type); assert.equal(blob.size, 4); return { width: 1, height: 1 }; };
+  try {
+    const receiver = { renderer: { capabilities: { getMaxAnisotropy: () => 4 } }, uniforms: { uBarkScan: { value: null }, uBarkScanOn: { value: 0 } } };
+    await Tropics.prototype.loadSurfaces.call(receiver);
+    assert.deepEqual(types, ['image/jpeg', 'image/jpeg']);
+    assert.equal(receiver.uniforms.uBarkScanOn.value, 1);
+  } finally { globalThis.fetch = fetch; globalThis.createImageBitmap = decode; }
+  console.log('ok: both scans pass explicit JPEG MIME types to image decoding');
+}

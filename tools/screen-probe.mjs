@@ -130,6 +130,14 @@ function checkFixed(where, framing) {
 const fullScreenIs = (page, on) => page.waitForFunction((wanted) => (document.fullscreenElement !== null) === wanted
   && document.querySelector('.menu-tier[data-open="screen"] .menu-tier-value').textContent === (wanted ? 'On' : 'Off'), on, { timeout: patience(5000) }).catch(() => {});
 
+/**
+ * Wait until the page has laid itself out with no status bar to reach under (full screen, or on its side): src/screen.js
+ * does so on the change's event or the resize that may come after it (CI's browser has measured between them, the
+ * bleed not yet given up).
+ */
+const fixedAgain = (page) => page.waitForFunction(() => !document.documentElement.classList.contains('bleed') && window.scrollY === 0,
+  undefined, { timeout: patience(5000) }).catch(() => {});
+
 /** Open the settings onto the Full screen page; returns what it shows. */
 async function screenPage(page) {
   if (await page.evaluate(() => document.getElementById('settings').hidden)) await page.click('#menu-button');
@@ -200,6 +208,7 @@ console.log(`Safari 26 on an iPhone: a ${IPHONE.viewport.width} × ${IPHONE.view
   // On its side: no status bar, so the canvas is fixed; upright again, under the clock again.
   await page.setViewportSize(IPHONE_ON_ITS_SIDE);
   await page.waitForTimeout(300);
+  await fixedAgain(page);
   checkFixed('on its side', await layout(page));
   await page.screenshot({ path: path.join(outputFolder, 'iphone-on-its-side.png') });
   await page.setViewportSize(IPHONE.viewport);
@@ -217,6 +226,7 @@ console.log(`Safari 26 on an iPhone: a ${IPHONE.viewport.width} × ${IPHONE.view
     checked: document.querySelector('#screen [aria-checked="true"]')?.dataset.value ?? null,
   }));
   check(inFullScreen.element && inFullScreen.value === 'On' && inFullScreen.checked === 'on', `On puts the page in full screen (${inFullScreen.element}), the row saying ${inFullScreen.value}`);
+  await fixedAgain(page);
   checkFixed('in full screen', await layout(page));
   await page.click('#screen [data-value="off"]');
   await fullScreenIs(page, false);

@@ -67,12 +67,43 @@ let rained = false, scanned = false;
 if (started) {
   await page.evaluate(() => window.__pond.setWeather('heavy-rain'));
   try { await page.waitForFunction(() => window.__pond.raining, null, { timeout: patience(60000) }); rained = true; } catch { rained = false; }
-  await page.evaluate(() => window.__pond.setSky('tropical'));
+  await page.evaluate(() => window.__pond.setSky('tropical'));   // old bookmarks resolve to the canonical lagoon
   try {
-    await page.waitForFunction(() => window.__pond.sky === 'tropical', null, { timeout: patience(60000) });
+    await page.waitForFunction(() => window.__pond.sky === 'lagoon', null, { timeout: patience(60000) });
     await page.evaluate(() => window.__pond.tropics.surfacesReady);
-    scanned = await page.evaluate(() => window.__pond.tropics.uniforms.uBarkScanOn.value === 1);
-  } catch { scanned = false; }
+    scanned = await page.evaluate(async () => {
+      const pond = window.__pond, scenery = pond.tropics;
+      const meshes = scenery.above.slice(), geometry = meshes.map((mesh) => mesh.geometry), placed = scenery.placed;
+      pond.setQuality('low');
+      pond.setQuality('high');
+      const cached = scenery.placed === placed && scenery.above.every((mesh, index) => mesh === meshes[index] && mesh.geometry === geometry[index]);
+      const expected = { koi: 'koi', lagoon: 'lagoon', pool: 'pool', loch: 'peat', lakeside: 'lake' };
+      let switched = true;
+      await pond.horizonReady;
+      for (const [place, water] of Object.entries(expected)) {
+        await pond.setSky(place);
+        await pond.horizonReady;
+        switched &&= pond.sky === place && pond.clarity === water;
+      }
+      pond.setIce('thin');
+      pond.throwAt(0, -1.4, { radius: 0.15 });
+      pond.advance(3);
+      const hole = pond.iceSheet.holes[0], shards = pond.rocks.filter((rock) => rock.piece);
+      const pieces = pond.iceSheet.pieces.size;
+      await pond.setSky('highlands');
+      await pond.horizonReady;
+      const keptIce = !!hole && shards.length > 0 && pieces > 0 && pond.iceSheet.holes.includes(hole)
+        && pond.iceSheet.pieces.size === pieces && shards.every((rock) => pond.rocks.includes(rock));
+      if (!cached) throw new Error('quality changes rebuilt lagoon geometry or placements');
+      if (!switched) throw new Error('place tour selected the wrong water');
+      if (!keptIce) throw new Error('lake location switch lost ice holes or registered shards');
+      pond.setIce('none');
+      await pond.setSky('swiss');
+      await pond.horizonReady;
+      if (pond.ice === 'none' || pond.rocks.length > 0) throw new Error('Swiss entry failed to apply its frozen-water preset cleanly');
+      return scenery.uniforms.uBarkScanOn.value === 1;
+    });
+  } catch (error) { scanned = false; failures.push(`lagoon/place regression: ${error.message}`); }
 }
 const veilMessage = await page.evaluate(() => document.querySelector('.veil .error')?.textContent ?? null);
 await browser.close();
