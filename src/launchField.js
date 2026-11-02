@@ -273,8 +273,10 @@ export function describeLaunchField(field) {
 function vertexNormals(positions) {
   const pointCount = positions.length / 3;
   const normals = new Float64Array(pointCount * 3);
+  // A corner's key: its coordinates to a ten-thousandth (of the unit mesh), packed into one number (a string key a
+  // corner took ten times as long over a thousand corners).
   const sums = new Map();
-  const keyOf = (point) => `${positions[point * 3]},${positions[point * 3 + 1]},${positions[point * 3 + 2]}`;
+  const keyOf = (point) => (Math.round(positions[point * 3] * 1e4 + 2e4) * 4e4 + Math.round(positions[point * 3 + 1] * 1e4 + 2e4)) * 4e4 + Math.round(positions[point * 3 + 2] * 1e4 + 2e4);
   for (let triangle = 0; triangle < pointCount / 3; triangle++) {
     const first = triangle * 3;
     const ax = positions[first * 3], ay = positions[first * 3 + 1], az = positions[first * 3 + 2];
