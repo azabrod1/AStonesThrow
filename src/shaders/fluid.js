@@ -8,10 +8,13 @@
 //           r view depth, g what it is, b and a its view normal's x and y
 //           (turned to face the viewer; z follows). g is 999 for a crown
 //           sheet, 998 + roundness / 2 for a jet column (1 on its cap and
-//           bulb, a lens like a sphere, 0 on the tube; a half-float target
-//           keeps only 998 or 998.5) and, for a drop, its true on-screen
-//           radius in buffer pixels. Every class writes its exact normal:
-//           nothing is rebuilt from depth and nothing is blurred.
+//           bulb, a lens like a sphere, 0 on the tube), 997 + share / 2 for
+//           a column's foot that is the pond's own water (src/jet.js: the
+//           share of it that is) and, for a drop, its true on-screen
+//           radius in buffer pixels (a float target where the device has
+//           them; on half floats a class keeps only its halves). Every
+//           class writes its exact normal: nothing is rebuilt from depth and
+//           nothing is blurred.
 //   optics  (optics pass, summed: additive in all four channels)
 //           r the water a ray crosses (metres), g coverage (the share of the
 //           pixel and of the exposure that water covers), b the drops' sun
@@ -111,7 +114,16 @@
 //     DROP_INNER) towards the drop's mean light, so a column's far side is
 //     never black (a smooth cylinder shading to pure black read as chrome)
 //     and a drop's top is dark, not void. The column
-//     adds sunGlitter; a drop's glints come from the optics.
+//     adds sunGlitter; a drop's glints come from the optics. A column's
+//     foot that is the pond's water (its class's share) is a mound of the
+//     pond: a ray into it goes down into the pond's water there, the boil
+//     the jet rises from and all, so it shows the scene straight behind it
+//     (the pond's surface as the water shader draws it, shifted a little by
+//     the mound's normal as a thin film shifts it) under the mound's own
+//     Fresnel reflection, and the jet stands in a bump of the pond, its
+//     shape in the reflection on its curved top, not on a block of glass
+//     (the pond's deep light from under a surface, pondView's, made it a
+//     dark slab against the sky the flat water round it reflects).
 //   - A lens image needs room and stillness: a drop's shows from DETAIL_FROM
 //     to DETAIL_FULL device pixels of radius, and only where the drop covers
 //     the pixel for most of the exposure, a column's from COLUMN_DETAIL_FROM
@@ -551,6 +563,7 @@ ${HAZE}
 #define COLUMN_LENS 0.45             // a column's lens image: the scene behind, shifted by the ray's turn through it by this share of a far scene's shift...
 #define COLUMN_LENS_SCENE 0.7        // ...making this share of its refracted light (the rest the pond's model light)...
 #define COLUMN_LENS_WIDTH vec2(40.0, 120.0)   // ...on a column up to this many device pixels in radius, none from the second
+#define POND_FILM 0.02               // a column's foot that is the pond's water shifts the pond behind it as a film this thick would (metres; the header)
 #define GLITTER_CAP 40.0
 ${MEAN_LIGHT}
 #define BEAD_FROM 0.5                // device-pixel radius at which a drop starts to be a glass bead...
@@ -639,8 +652,10 @@ void main() {
     float alpha = 1.0 - exp(-coverage);
     if (info.r > 0.0) {
       float sheet = step(998.75, info.g);
-      float column = step(997.75, info.g) - sheet;
-      float roundness = column > 0.5 ? clamp((info.g - 998.0) * 2.0, 0.0, 1.0) : 1.0;
+      float column = step(996.75, info.g) - sheet;
+      float pond = step(996.75, info.g) - step(997.75, info.g);   // a column's foot that is the pond's water (the header)...
+      float pondShare = pond * clamp((info.g - 997.0) * 2.0, 0.0, 1.0);   // ...and how much of it is
+      float roundness = column > 0.5 ? (pond > 0.5 ? 0.0 : clamp((info.g - 998.0) * 2.0, 0.0, 1.0)) : 1.0;
       vec3 normal = vec3(info.b, info.a, sqrt(max(1.0 - info.b * info.b - info.a * info.a, 0.0)));
       vec3 position = viewPosition(vUv, info.r);
       vec3 toViewer = normalize(-position);
@@ -707,6 +722,11 @@ void main() {
         }
         // The light carried round inside the lens (the header).
         refracted = mix(refracted, meanLight, mix(DROP_INNER, COLUMN_INNER, column));
+        if (pond > 0.5) {
+          // The pond's own water (the header): what goes in goes down into the pond behind the mound, boil and all.
+          vec2 pondUv = clamp(vUv + normal.xy * uRefract * POND_FILM, vec2(0.001), vec2(0.999));
+          refracted = mix(refracted, texture2D(uScene, pondUv).rgb * absorbed, pondShare);
+        }
       }
       vec3 surface = mix(refracted, reflected, fresnel);
       // The rim bead, torn edges and froth, and a column's bubbly water, are aerated: a white scattering, brightest towards the sun.
@@ -767,8 +787,9 @@ vec4 mirrorNearness(float coverage, vec3 viewPoint) {
 }
 `;
 
-// A sheet: the sky's Fresnel reflection, and its aerated bead's and froth's
-// scattering, through its holes (SHEET_FROTH).
+// A sheet: the sky's Fresnel reflection off its wrinkled, banded face
+// (sheetNormal: a flat face reflected as a flat grey shape), and its aerated
+// bead's and froth's scattering, through its holes (SHEET_FROTH).
 export const MIRROR_SHEET_FRAGMENT = /* glsl */`
 uniform vec3 uSkyAmbient;
 varying vec3 vViewPosition;
@@ -778,6 +799,7 @@ varying float vAeration;
 varying float vRod;
 varying vec3 vSheet;
 varying vec2 vFroth;
+varying float vRimDistance;
 ${MIRROR_COMMON}
 ${SHEET_FROTH}
 void main() {
@@ -785,6 +807,7 @@ void main() {
   vec3 normal = normalize(vViewNormal);
   if (dot(normal, toViewer) < 0.0) normal = -normal;
   SheetFroth froth = sheetFroth(vSheet, vFroth, vAeration, vRod, dot(normal, toViewer));
+  normal = sheetNormal(normal, vViewPosition, vSheet, vFroth, vRod, vRimDistance);
   if ((worldFromView(vViewPosition) + cameraPosition).y < uMirrorLevel || froth.hole) discard;
   normal = normalize(normal + vViewRimTangent);
   float fresnel = waterFresnel(dot(normal, toViewer));

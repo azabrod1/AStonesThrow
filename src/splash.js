@@ -1912,7 +1912,7 @@ export class SplashSystem {
     const h = Math.max(2, Math.round(height * fluidScale));
     if (this.targets) Object.values(this.targets).forEach((t) => t.dispose());
     this.targets = {
-      info: createFloatTarget(w, h, { type: THREE.HalfFloatType, depth: true }),
+      info: createFloatTarget(w, h, { depth: true }),   // full floats where the device has them: a class's fraction (src/shaders/fluid.js) survives
       optics: createFloatTarget(w, h, { type: THREE.HalfFloatType, filter: THREE.LinearFilter }),
     };
     this.fluidSize = new THREE.Vector2(w, h);

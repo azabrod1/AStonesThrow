@@ -38,7 +38,23 @@
 // plus the base's launch radius for its water, stretched as the launch
 // stretches it, from where the base is BASE_START of the core over
 // BASE_TAPER of the launch left), a trumpet 6 cm across at the water for the
-// reference throw. Rj is the
+// reference throw. Where the trumpet flares it is the pond's water welling
+// up, not a column standing in the air, and is shaded so: a ring whose
+// surface widens towards the foot at a slope of FOOT_POND[0] to FOOT_POND[1]
+// (radius per length along the axis) carries that share (0 to 1) as a
+// negative aRound, and src/shaders/sheet.js and the composite shade it as
+// the pond's surface, the sky's reflection over the water's own light from
+// under it: a ray into a flaring foot is bent down into the base and the
+// pond, where one into a standing tube crosses it and leaves (drawn as a
+// glass lens the foot was a block of glass on the water, its foot cut flat
+// along the surface and the pond's far side showing through it; the base's
+// share of the water alone, which widens most of the column, made the whole
+// column a dark bottle). Where the trumpet meets the water it flares out
+// into a skirt (FOOT_SKIRT_RINGS rings from the last ring above the water,
+// widening to FOOT_SKIRT of its radius as the surface turns, eased, from
+// the wall's slope to FOOT_SKIRT_FLAT from level at the water, the pond's
+// water through): a mound's foot lies along the surface, and a wall cut off at
+// the water stood on it with a bright outline, its grazing reflection. Rj is the
 // stone's radius R times the sweep's `column` gain (Sizes, below; times
 // form.radiusScale), never under JET_RADIUS_LEAST, since a small stone's jet
 // is no thinner than the capillary length lets it be: Li & Li (2025) measure
@@ -231,6 +247,10 @@ const UNSTABLE_WAVELENGTH = 9.02;  // Rayleigh–Plateau's most unstable wavelen
 const BASE_DEPTH = 0.004;          // the water the column drains into is this far under the bowl's floor (or the surface)
 const BASE_START = 0.3;            // the base widens the column from where its launch radius is this share of the core's...
 const BASE_TAPER = 0.25;           // ...over this share of the launch left after that
+const FOOT_POND = [0.35, 1.0];     // a ring whose surface flares towards the foot at this slope starts to be the pond's own water, and is wholly at this (the header)
+const FOOT_SKIRT = 2.2;            // the foot's skirt (the header) widens to this many times the last ring's radius above the water...
+const FOOT_SKIRT_RINGS = 4;        // ...over this many rings...
+const FOOT_SKIRT_FLAT = 0.04;      // ...the surface this many radians from level at its edge (eased to it, so the edge has no crease)
 const BUNCH_CAP = 1.4;             // where the base's water bunches, its width is at most this many launch radii
 const EMIT_LENGTH = 1.2;           // a node leaves the launch point once its segment is this many launch radii long...
 const EMIT_LEAST = 0.0004;         // ...and at least this (m)...
@@ -893,6 +913,8 @@ export class JetColumn {
       }
     }
     let surfaceBase = 0;   // the base's width at the lowest ring above the level so far (the rings run top to foot)
+    // The last tube ring above the level that the base widens (the skirt's root, below): its place, radius, slope, air and phase.
+    let skirtRoot = false, skirtX = 0, skirtY = 0, skirtZ = 0, skirtRadius = 0, skirtSlope = 0, skirtAir = 0, skirtPhase = 0;
     const closedBelow = (node, base) => this.drawY[node] < level ? Math.max(surfaceBase - (level - this.drawY[node]), 0) : base;
     /** The ring at a node: its centre and axis into the scratches, and the base's width there (the header of the method). */
     const placeRing = (node, core, base) => {
@@ -958,7 +980,22 @@ export class JetColumn {
       const spanLength = (node > first ? solver.segmentLength[node - 1] : 0) + (node < last ? solver.segmentLength[node] : 0);
       const slope = spanLength > 1e-9 ? (2 * (after - before)) / spanLength : 0;
       const tilt = 1 / Math.sqrt(1 + slope * slope);
-      this.addRing(centreX, centreY, centreZ, axis.x, axis.y, axis.z, radius, radius, 0, -slope * tilt, tilt, air, phase);
+      // Where the foot flares it is the pond's water (the header): its share, by the slope, as a negative roundness.
+      const pond = base > 0 ? smoothstep(FOOT_POND[0], FOOT_POND[1], slope) : 0;
+      this.addRing(centreX, centreY, centreZ, axis.x, axis.y, axis.z, radius, radius, -pond, -slope * tilt, tilt, air, phase);
+      if (base > 0 && centreY >= level) { skirtRoot = true; skirtX = centreX; skirtY = centreY; skirtZ = centreZ; skirtRadius = radius; skirtSlope = Math.max(slope, 0); skirtAir = air; skirtPhase = phase; }
+    }
+    // The foot's skirt (the header): from the last widened ring above the water, out and down to the water, the
+    // surface turning from the wall's slope to nearly level, all of it the pond's water.
+    if (skirtRoot) {
+      const wallAngle = Math.atan(skirtSlope);   // the wall's angle from the axis
+      for (let ring = 1; ring <= FOOT_SKIRT_RINGS; ring++) {
+        const share = ring / FOOT_SKIRT_RINGS;
+        const angle = wallAngle + (Math.PI * 0.5 - FOOT_SKIRT_FLAT - wallAngle) * Math.sin(0.5 * Math.PI * share);   // from the axis: level is π/2; eased flat
+        const radius = skirtRadius * (1 + (FOOT_SKIRT - 1) * share);
+        const height = skirtY - (skirtY - level) * share;
+        this.addRing(skirtX, height, skirtZ, 0, -1, 0, radius, radius, -1, -Math.sin(angle), Math.cos(angle), skirtAir, skirtPhase);   // the normal leans up, against the axis, as the wall's does
+      }
     }
     // Its foot: a hemisphere under the last node (or its bead's lower pole).
     const footCore = this.tubeRadius(last, first, last);

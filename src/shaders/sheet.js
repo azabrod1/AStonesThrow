@@ -82,14 +82,31 @@
 // noise at WRINKLE_SCALE of the holes' cells, bumped by the noise's screen
 // derivatives (Mikkelsen's surface gradient; the amplitude, itself made of
 // derivatives, held constant over the pixel), fading out as the cells shrink
-// below a pixel. Fingers (aRod) keep their glass: no holes, no wrinkles,
-// half the whiteness; nor does the bead open (its aeration closes the
-// holes there). It costs a sheet pixel two to three value noises (eight
-// hashes each) per pass.
+// below a pixel; plus the rim's capillary bands (BAND_*): a decelerating
+// rim sends capillary waves back down the sheet, rings parallel to the free
+// edge that a photograph shows as bands of light and dark in the sheet's
+// reflection, drawn as a wave in the material's launch coordinate
+// (aSheet's third, BAND_WAVES waves a cell), its phase wandering around
+// the sheet by a coarse noise (BAND_WANDER, so the rings are not drawn with
+// compasses) and its strength patchy by another (BAND_PATCH cells), at a
+// slope of BAND_SLOPE at the rim falling as exp(−distance / BAND_REACH),
+// the distance behind the rim as launched in launch durations
+// (aRimDistance, src/crown.js: a torn edge sends none; at the rim's slope
+// along a torn edge, where the sheet is white, the sun ran along their
+// crests in a comb of bars), and fading out as the waves shrink towards a
+// pixel (BAND_FADE, waves a pixel: finer than the wrinkles, they alias
+// first). Fingers (aRod) keep their glass: no holes, no wrinkles, no
+// bands, half the whiteness; nor does the bead open (its aeration closes
+// the holes there). It costs a sheet pixel two to three value noises (eight
+// hashes each) per pass, and the bands two more in the depth pass.
 //
 // Column. A closed tube, so the depth pass writes view depth, 998 plus half
 // how round the surface is there (aRound: 1 on the end cap and bulb, a lens
-// like a sphere; 0 on the tube, a lens only across its axis) and its normal,
+// like a sphere; 0 on the tube, a lens only across its axis; negative where
+// the surface is the pond's own water rather than a column standing in the
+// air, the jet's foot where the bowl's water wells up under it, src/jet.js:
+// then 997 plus half that share, and the composite shades it as the pond's
+// surface, the water's own light from under it, not a lens's) and its normal,
 // rippled (wrinkledNormal, the sheet's wrinkles' function) by the capillary
 // waves a real column always carries, which its mesh does not resolve: a
 // value noise over aRipple, the water's own place on the column (its azimuth
@@ -144,6 +161,12 @@ export const SHEET_FROTH = /* glsl */`
 #define WRINKLE_SCALE 0.6          // the wrinkles' cells per hole cell
 #define WRINKLE_SLOPE 0.12         // their slope on a glassy sheet (its folds catch the sky)...
 #define WRINKLE_FROTH 0.35         // ...and more by this times the froth's density there (at most 1)
+#define BAND_WAVES 1.3             // the rim's capillary bands (the header): waves a froth cell along the sheet...
+#define BAND_SLOPE 0.12            // ...of this slope at the rim...
+#define BAND_REACH 0.6             // ...falling as exp(−distance behind it / this), in launch durations...
+#define BAND_WANDER 0.6            // ...their phase wandering by up to this many waves around the sheet...
+#define BAND_PATCH 0.35            // ...their strength patchy, by a noise at this many cells per froth cell...
+#define BAND_FADE vec2(0.08, 0.2)  // ...and fading out as they shrink from twelve pixels a wave to five (the buffer's pixels are coarse)
 float frothHash(vec3 point) {
   point = fract(point * 0.1031);
   point += dot(point, point.zyx + 31.32);
@@ -244,8 +267,10 @@ SheetFroth sheetFroth(vec3 sheet, vec2 froth, float rimAeration, float rod, floa
 // ripples' cells) of the given slope (height over the cell's length), fading
 // out over fade (cells a pixel, start to end) as the cells shrink towards
 // a pixel. The sheet's wrinkles and the column's ripples
-// (COLUMN_DEPTH_FRAGMENT) both take it.
-vec3 wrinkledNormal(vec3 normal, vec3 viewPosition, vec3 place, float slope, vec2 fade) {
+// (COLUMN_DEPTH_FRAGMENT) both take it. extra is a height added to the
+// noise's (in units of its amplitude: the slope times the cell's length), the
+// sheet's bands, differentiated with it.
+vec3 wrinkledNormal(vec3 normal, vec3 viewPosition, vec3 place, float slope, vec2 fade, float extra) {
   vec3 sigmaX = dFdx(viewPosition);
   vec3 sigmaY = dFdy(viewPosition);
   float cellsX = length(dFdx(place)), cellsY = length(dFdy(place));
@@ -256,13 +281,28 @@ vec3 wrinkledNormal(vec3 normal, vec3 viewPosition, vec3 place, float slope, vec
   // The amplitude is made of derivatives, so it is held constant over the pixel and only the noise
   // is differentiated: a derivative of a derivative is undefined in GLSL.
   float amplitude = slope * cellLength * faded;
-  float wrinkle = frothNoise(place + vec3(41.0, 13.0, 29.0));
+  float wrinkle = frothNoise(place + vec3(41.0, 13.0, 29.0)) + extra;
   vec3 across = cross(sigmaY, normal);
   vec3 up = cross(normal, sigmaX);
   float determinant = dot(sigmaX, across);
   vec3 gradient = sign(determinant) * amplitude * (dFdx(wrinkle) * across + dFdy(wrinkle) * up);
   vec3 wrinkled = abs(determinant) * normal - gradient;
   return dot(wrinkled, wrinkled) > 0.0 ? normalize(wrinkled) : normal;
+}
+vec3 wrinkledNormal(vec3 normal, vec3 viewPosition, vec3 place, float slope, vec2 fade) {
+  return wrinkledNormal(normal, viewPosition, place, slope, fade, 0.0);
+}
+// The sheet's normal wrinkled and banded (the header), for the depth pass and the mirror's: the bands as a height
+// in the wrinkles' amplitude, their slope over the wrinkles' for their wavelength. In uniform control flow, as the
+// froth is: it differentiates.
+vec3 sheetNormal(vec3 normal, vec3 viewPosition, vec3 sheet, vec2 froth, float rod, float rimDistance) {
+  float wrinkleSlope = rod > 0.5 ? 0.0 : WRINKLE_SLOPE + WRINKLE_FROTH * min(froth.x, 1.0);
+  float bandResolved = 1.0 - smoothstep(BAND_FADE.x, BAND_FADE.y, frothFootprint(sheet) * BAND_WAVES);
+  vec3 bandPlace = vec3(sheet.xy * BAND_PATCH, 3.3);
+  float bandPhase = sheet.z * BAND_WAVES + BAND_WANDER * frothNoise(bandPlace);
+  float bandStrength = exp(-rimDistance / BAND_REACH) * (0.4 + 0.6 * frothNoise(bandPlace + vec3(0.0, 0.0, 5.8))) * bandResolved;
+  float bands = (BAND_SLOPE * WRINKLE_SCALE / (6.2831853 * BAND_WAVES * max(wrinkleSlope, 1e-3))) * bandStrength * sin(6.2831853 * bandPhase);
+  return wrinkledNormal(normal, viewPosition, sheet * WRINKLE_SCALE, wrinkleSlope, FROTH_FADE, bands);
 }
 `;
 
@@ -275,6 +315,7 @@ attribute float aRide;
 attribute float aRod;
 attribute vec3 aSheet;
 attribute vec2 aFroth;
+attribute float aRimDistance;
 uniform sampler2D uHeight;
 uniform vec2 uDomainMin;
 uniform float uDomainSize;
@@ -287,6 +328,7 @@ varying float vAeration;
 varying float vRod;
 varying vec3 vSheet;
 varying vec2 vFroth;
+varying float vRimDistance;
 ${GLSL_COMMON}
 void main() {
   vec4 world = modelMatrix * vec4(position, 1.0);
@@ -307,6 +349,7 @@ void main() {
   vRod = aRod;
   vSheet = aSheet;
   vFroth = aFroth;
+  vRimDistance = aRimDistance;
   gl_Position = projectionMatrix * viewPosition;
 }
 `;
@@ -321,6 +364,7 @@ varying float vAeration;
 varying float vRod;
 varying vec3 vSheet;
 varying vec2 vFroth;
+varying float vRimDistance;
 ${SHEET_FROTH}
 void main() {
   // The froth's derivatives first, while every pixel of the quad still runs.
@@ -328,7 +372,7 @@ void main() {
   vec3 normal = normalize(vViewNormal);
   if (dot(normal, toViewer) < 0.0) normal = -normal;
   SheetFroth froth = sheetFroth(vSheet, vFroth, vAeration, vRod, dot(normal, toViewer));
-  normal = wrinkledNormal(normal, vViewPosition, vSheet * WRINKLE_SCALE, vRod > 0.5 ? 0.0 : WRINKLE_SLOPE + WRINKLE_FROTH * min(vFroth.x, 1.0), FROTH_FADE);
+  normal = sheetNormal(normal, vViewPosition, vSheet, vFroth, vRod, vRimDistance);
   float sceneDepth = texture2D(uSceneDepth, gl_FragCoord.xy / uResolution).r;
   if (gl_FragCoord.z > sceneDepth || froth.hole) discard;
   normal = normalize(normal + vViewRimTangent);
@@ -411,7 +455,9 @@ void main() {
   normal = wrinkledNormal(normal, vViewPosition, vRipple, COLUMN_RIPPLE_SLOPE * smoothstep(0.1, 0.5, dot(normal, toViewer)), COLUMN_RIPPLE_FADE);
   float sceneDepth = texture2D(uSceneDepth, gl_FragCoord.xy / uResolution).r;
   if (gl_FragCoord.z > sceneDepth) discard;
-  gl_FragColor = vec4(-vViewPosition.z, 998.0 + 0.5 * clamp(vRound, 0.0, 1.0), normal.xy);
+  // A negative roundness is the pond's share of the surface (the header): class 997 plus half of it.
+  float pondShare = clamp(-vRound, 0.0, 1.0);
+  gl_FragColor = vec4(-vViewPosition.z, pondShare > 0.0 ? 997.0 + 0.5 * pondShare : 998.0 + 0.5 * clamp(vRound, 0.0, 1.0), normal.xy);
 }
 `;
 

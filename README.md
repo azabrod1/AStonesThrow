@@ -507,14 +507,17 @@ known timing, and the droplets are choreographed from them:
    azimuth and time: a tall, nearly upright wall that stands on the lip and
    leans in, 11 cm high at 90 ms for a 3 cm stone dropped straight in at
    6.3 m/s (the reference simulation's: 11 to 12 cm at 0.1 s, below). Its rim
-   thickens into a bead and grows fingers: round ligaments of water, drawn
+   thickens into a bead, a round rod of water drawn as a tube along the
+   whole untorn rim, swelling into each finger, and grows fingers out of
+   it: round ligaments of water, drawn
    as tubes of their own, as thick as the rim bead at their roots and
    tapering to their tips, beaded along their length as a stretched
    ligament is, unevenly spaced and of wildly uneven length (a few twice
    the mean, a quarter only stubs), between scalloped arcs of rim that sag
    each their own way, each ending in a bead that swells, pinches off as a
    drop as big as the rim is thick, give or take a third, and starts again. The
-   sheet is no clean film: it wrinkles, holes open high in it as it thins
+   sheet is no clean film: it wrinkles, the rim's capillary waves run down
+   it in bands parallel to the edge, holes open high in it as it thins
    and the tear nears (each a circle widening from its own seed, as a film
    ruptures, until the holes meet and what is left is a web of ligaments,
    each hole's rim a lumpy bead of the water it gathered), and it carries
@@ -807,7 +810,9 @@ the right transparency, so a far sheet never sparkles; the column is a lens that
 the side and, through its bulb, the sky upside down, and bends the scene
 behind it as a glass rod does, its surface rippled by the capillary waves
 its mesh does not hold, and never black on its far side (a lens carries
-light round inside it). A drop two device
+light round inside it); where its foot flares into the water it is the
+pond's own water welling up, shaded as the pond's surface is, the sky's
+reflection over the water's light from under it. A drop two device
 pixels or wider is a glass bead, the pond in its top, the sky upside down
 in its lower half, with two glints, the sun reflected off it and the sun
 refracted through it (which makes a splash sparkle against the light),
@@ -835,8 +840,11 @@ sun. The water mirrors the splash:
 while it lives, its sheets, columns, drops and spray are drawn as cheap water into
 the mirror image the pond reflects, over just the rectangle they cover, with
 how far each is from the mirror's camera, so that the water looks a near
-thing's reflection up where it is: the jet's reflection hangs under the jet
-and only trembles with the ripples, where the sky's streaks with them.
+thing's reflection up where it is, refining the place the rippled ray
+points at by what it finds there: the jet's reflection hangs under the jet
+and only trembles with the ripples, where the sky's streaks with them, and
+the crown's, its wrinkles and bands in it, breaks along the rings rather
+than into shards.
 
 **Sky** (`src/sky.js`). The sky is a photograph: an equirectangular HDRI
 (a lakeside with a far shore by default, or one of seven others) on a dome at the far

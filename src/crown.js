@@ -160,7 +160,24 @@
 // within ~8% of T of the rim, or of the tear front once it tears) is a bead
 // three times the unstretched thickness h0/(1 + age/td), since an edge gathers
 // what the stretching takes from the sheet; its normals are bent outward like
-// a tube's so it catches the sun all along the edge.
+// a tube's so it catches the sun all along the edge. On a stone's crown the
+// bead is also drawn as what it is, a round rod of water running along the
+// untorn rim (`ligaments`' last piece: a closed loop of rings, one a column,
+// shaded as the ligaments are, RIM_BEAD times the bead's thickness as
+// launched in radius, under the fingers (at a finger's columns the loop
+// takes the arc's sag and none of the finger's reach, so it runs level
+// through the finger's root while the ligament rises out of it) and
+// swelling into each finger by RIM_BEAD_SWELL of the finger's share of its
+// reach (the fingers are the rim's own beading, where its water has
+// gathered); gone over RIM_BEAD_TEAR·T of the tear front's travel at that
+// column (the torn edge keeps the sheet's own bead), and as a sealing
+// crown's rim merges. A rim drawn as film alone, however it leaned, was a
+// line; a real crown's edge is its brightest, thickest part, a glass hoop
+// the sun runs along, and the ligaments grow out of it, not out of the air.
+// Every vertex also carries its distance behind the rim as launched
+// (aRimDistance, its launch time in launch durations), for the sheet
+// shader's capillary bands (src/shaders/sheet.js); a torn edge is no rim,
+// and sends no bands down the sheet.
 //
 // Froth. A sheet thrown up this fast is no clean film: it wrinkles, holes
 // open in it as it thins, and it carries air, the more the faster and the
@@ -415,6 +432,10 @@ const LIGAMENT_BULGE = 0.45;       // ...swelling its width by up to this share 
 const LIGAMENT_BULGE_TIME = 0.03;  // ...over this many seconds of the sheet's age (the beading grows)
 const LIGAMENT_RIPPLE = [0.64, 6]; // its place for the column shader's ripples: cells around (over 2π) and along it (src/jet.js RIPPLE_RING and RIPPLE_ALONG)
 const LIGAMENT_AIR = [0.15, 0.6];  // the share of its light a ligament's bubbles scatter: this plus this times the sheet's violence (at most 0.85)
+const RIM_BEAD = 0.4;              // the rim's bead (the header): a tube of this times the bead's thickness as launched (3·h0, a ligament's root) in radius...
+const RIM_BEAD_SWELL = [0.75, 0.6];   // ...times this, plus this times a finger's share of its reach (FINGER_LENGTH) where the rim swells into one...
+const RIM_BEAD_TEAR = 0.05;        // ...gone over this many T of the tear front's travel down the column
+const RIM_BEAD_CELLS = 1.0;        // its ripples' cells around the crown, per froth cell (the column shader's ripples, LIGAMENT_RIPPLE around the tube)
 const ARC_SAG = 0.03;              // the rim between two fingers sags by this share of its speed at the arc's middle...
 const ARC_SAG_RANGE = [0.3, 1.7];  // ...times a share in this range, arc by arc
 const FINGER_SPOTS = [-1, -0.88, -0.55, 0, 0.55, 0.88, 1];   // grid columns across a finger (x, root to root), denser where its sides turn...
@@ -802,6 +823,7 @@ export class CrownSheet {
     this.sheetPlaces = new Float32Array(vertexCount * 3);   // the material's place on the sheet, in the froth's cells (aSheet)
     this.froths = new Float32Array(vertexCount * 2);        // its whiteness and open share (aFroth)
     this.rowTaus = new Float64Array(vertexCount);   // launch time behind the free edge
+    this.rimDistances = new Float32Array(vertexCount);   // launch time in launch durations, for the shader's bands (aRimDistance)
     this.mesh = createRingGrid(this.rows, this.columns, {
       position: [this.positions, 3],
       normal: [this.normals, 3],
@@ -810,15 +832,17 @@ export class CrownSheet {
       aRod: [this.rods, 1],
       aSheet: [this.sheetPlaces, 3],
       aFroth: [this.froths, 2],
+      aRimDistance: [this.rimDistances, 1],
       aRide: [this.rideFlags(vertexCount, landing), 1],   // 1: lifted by the wave height under it
     }, material, { wrap: this.wrap });
     this.maxDropRadius = landing ? LANDING_DROP_CAP * radius : (fan ? FAN_DROP_CAP : CROWN_DROP_CAP) * this.dropScale;
     this.minDropRadius = fan ? FAN_DROP_FLOOR * this.dropScale : Math.min(CROWN_DROP_FLOOR * this.dropScale, 0.5 * this.maxDropRadius);
     this.geometry = this.mesh.geometry;
-    // The fingers' ligaments (the header): a ring grid of tubes, one piece a finger, drawn with the column materials.
+    // The fingers' ligaments (the header): a ring grid of tubes, one piece a finger, and the rim's bead, a closed
+    // loop of a ring a column (a joiner, the columns, the first again, a joiner), drawn with the column materials.
     this.ligaments = null;
     if (this.fingered && columnMaterial) {
-      const ligamentRows = this.fingers.length * (LIGAMENT_RINGS + 2);
+      const ligamentRows = this.fingers.length * (LIGAMENT_RINGS + 2) + this.columns + 3;
       const ligamentVertices = ligamentRows * LIGAMENT_COLUMNS;
       this.ligamentPositions = new Float32Array(ligamentVertices * 3);
       this.ligamentNormals = new Float32Array(ligamentVertices * 3);
@@ -837,6 +861,8 @@ export class CrownSheet {
         aRipple: [this.ligamentRipples, 3],
       }, columnMaterial);
       this.ligamentFrame = { x: 1, y: 0, z: 0 };
+      this.rimCentres = new Float64Array(this.columns * 3);
+      this.rimRadii = new Float64Array(this.columns);
     }
     this.state = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, thickness: 0, radialDistance: 0, remaining: 1, carry: 0 };
     this.stateOther = { ...this.state };
@@ -1488,7 +1514,10 @@ export class CrownSheet {
     const bulgeNow = LIGAMENT_BULGE * Math.min(this.age / LIGAMENT_BULGE_TIME, 1);
     const centreX = new Float64Array(LIGAMENT_RINGS), centreY = new Float64Array(LIGAMENT_RINGS), centreZ = new Float64Array(LIGAMENT_RINGS), widths = new Float64Array(LIGAMENT_RINGS);
     const frame = this.ligamentFrame;
-    const writeRing = (row, x, y, z, axisX, axisY, axisZ, radius, roundness, along) => {
+    const rimCells = this.frothRing * RIM_BEAD_CELLS;
+    // outward: the normals point out of the tube (a cap's and a joiner's along its axis); rimAngle: the ring's azimuth
+    // on the crown for the rim's ripple cells (NaN on a ligament, whose cells run along it).
+    const writeRing = (row, x, y, z, axisX, axisY, axisZ, radius, roundness, along, outward = roundness <= 0.5, rimAngle = NaN) => {
       // The carried frame, turned onto this ring's plane (src/jet.js writeRing).
       let firstX = frame.x, firstY = frame.y, firstZ = frame.z;
       const dot = firstX * axisX + firstY * axisY + firstZ * axisZ;
@@ -1510,10 +1539,14 @@ export class CrownSheet {
         const outX = firstX * cosAngle + secondX * sinAngle, outY = firstY * cosAngle + secondY * sinAngle, outZ = firstZ * cosAngle + secondZ * sinAngle;
         positions[vertex * 3] = x + outX * radius; positions[vertex * 3 + 1] = y + outY * radius; positions[vertex * 3 + 2] = z + outZ * radius;
         // The tip's cap faces along the axis; the tube out of it.
-        normals[vertex * 3] = roundness > 0.5 ? axisX : outX; normals[vertex * 3 + 1] = roundness > 0.5 ? axisY : outY; normals[vertex * 3 + 2] = roundness > 0.5 ? axisZ : outZ;
+        normals[vertex * 3] = outward ? outX : axisX; normals[vertex * 3 + 1] = outward ? outY : axisY; normals[vertex * 3 + 2] = outward ? outZ : axisZ;
         radii[vertex] = radius;
         round[vertex] = roundness;
-        ripples[vertex * 3] = cosAngle * LIGAMENT_RIPPLE[0]; ripples[vertex * 3 + 1] = sinAngle * LIGAMENT_RIPPLE[0]; ripples[vertex * 3 + 2] = along * LIGAMENT_RIPPLE[1];
+        if (Number.isNaN(rimAngle)) {
+          ripples[vertex * 3] = cosAngle * LIGAMENT_RIPPLE[0]; ripples[vertex * 3 + 1] = sinAngle * LIGAMENT_RIPPLE[0]; ripples[vertex * 3 + 2] = along * LIGAMENT_RIPPLE[1];
+        } else {
+          ripples[vertex * 3] = Math.cos(rimAngle) * rimCells; ripples[vertex * 3 + 1] = Math.sin(rimAngle) * rimCells; ripples[vertex * 3 + 2] = cosAngle * LIGAMENT_RIPPLE[0];
+        }
       }
     };
     let row = 0;
@@ -1558,8 +1591,59 @@ export class CrownSheet {
       }
       writeRing(row++, centreX[last], centreY[last], centreZ[last], axisX, axisY, axisZ, 0, 1, 1);
     }
+    row = this.writeRimBead(row, writeRing, end);
     holdWithinWalls(positions, this.walls);
     markChanged(this.ligaments.geometry, ['position', 'normal', 'aRadius', 'aRound', 'aRipple']);
+  }
+
+  /**
+   * The rim's bead (the header) into the ligaments' grid from `row` on: the
+   * rim's place at every column (the tear front's material, with the arc's
+   * sag and none of a finger's reach), the tube's radius there, then a
+   * joiner, a ring a column along the loop, the first ring again (copied, so
+   * the loop closes without a twist of the carried frame) and a joiner.
+   * Returns the next free row. Its rings are round (the composite's sphere
+   * law: a tube lying across the view turns light across itself, as a
+   * sphere does, where the column's law takes every tube as standing).
+   */
+  writeRimBead(row, writeRing, end) {
+    const columns = this.columns;
+    const centres = this.rimCentres, radii = this.rimRadii;
+    const state = this.state;
+    const merged = this.seal ? this.sealedShare() : 0;
+    const tearSpan = RIM_BEAD_TEAR * this.launchDuration;
+    for (let column = 0; column < columns; column++) {
+      const front = Math.min(this.tearFront[column], end);
+      const factor = this.columnFingerFactor[column];
+      const thicknessFactor = this.columnThicknessFactor[column];
+      this.evaluate(front, this.columnCos[column], this.columnSin[column], this.columnSpeedFactor[column], thicknessFactor, state, front, Math.min(factor, 0), false, this.columnRimShape?.[column]);
+      centres[column * 3] = state.x; centres[column * 3 + 1] = state.y; centres[column * 3 + 2] = state.z;
+      const swell = RIM_BEAD_SWELL[0] + RIM_BEAD_SWELL[1] * Math.min(Math.max(factor, 0) / FINGER_LENGTH, 1.5);
+      radii[column] = RIM_BEAD * 3 * this.baseThickness * thicknessFactor * swell * (1 - smoothstep(0, tearSpan, front)) * (1 - merged);
+    }
+    const grid = LIGAMENT_COLUMNS;
+    const positions = this.ligamentPositions, normals = this.ligamentNormals, tubeRadii = this.ligamentRadii, round = this.ligamentRound, ripples = this.ligamentRipples;
+    let axisX = 0, axisY = 0, axisZ = 1;
+    writeRing(row++, centres[0], centres[1], centres[2], axisX, axisY, axisZ, 0, 1, 0);
+    const firstRow = row;
+    for (let column = 0; column < columns; column++) {
+      const previous = (column + columns - 1) % columns, next = (column + 1) % columns;
+      const dx = centres[next * 3] - centres[previous * 3], dy = centres[next * 3 + 1] - centres[previous * 3 + 1], dz = centres[next * 3 + 2] - centres[previous * 3 + 2];
+      const length = Math.sqrt(dx * dx + dy * dy + dz * dz);
+      if (length > 1e-9) { axisX = dx / length; axisY = dy / length; axisZ = dz / length; }
+      writeRing(row++, centres[column * 3], centres[column * 3 + 1], centres[column * 3 + 2], axisX, axisY, axisZ, radii[column], 1, 0, true, this.columnAngle[column]);
+    }
+    for (let vertex = 0; vertex < grid; vertex++) {
+      const from = firstRow * grid + vertex, to = row * grid + vertex;
+      positions[to * 3] = positions[from * 3]; positions[to * 3 + 1] = positions[from * 3 + 1]; positions[to * 3 + 2] = positions[from * 3 + 2];
+      normals[to * 3] = normals[from * 3]; normals[to * 3 + 1] = normals[from * 3 + 1]; normals[to * 3 + 2] = normals[from * 3 + 2];
+      tubeRadii[to] = tubeRadii[from];
+      round[to] = round[from];
+      ripples[to * 3] = ripples[from * 3]; ripples[to * 3 + 1] = ripples[from * 3 + 1]; ripples[to * 3 + 2] = ripples[from * 3 + 2];
+    }
+    row++;
+    writeRing(row++, centres[0], centres[1], centres[2], axisX, axisY, axisZ, 0, 1, 0);
+    return row;
   }
 
   /** Evaluate the grid at the given splash time and upload it; place the fingers' beads. */
@@ -1585,6 +1669,7 @@ export class CrownSheet {
         this.positions[vertex * 3 + 2] = state.z;
         this.thicknesses[vertex] = state.thickness;
         this.rowTaus[vertex] = tau - front;
+        this.rimDistances[vertex] = tau / this.launchDuration;
         this.sheetPlaces[vertex * 3] = this.columnCos[column] * this.frothRing;
         this.sheetPlaces[vertex * 3 + 1] = this.columnSin[column] * this.frothRing;
         this.sheetPlaces[vertex * 3 + 2] = tau * this.frothAlongRate + this.frothOffset;
@@ -1644,7 +1729,7 @@ export class CrownSheet {
         this.rods[vertex] = share > 0.5 && Math.abs(across) < 1 ? 1 : 0;
       }
     }
-    markChanged(this.geometry, ['position', 'normal', 'aRimTangent', 'aThickness', 'aRod', 'aSheet', 'aFroth']);
+    markChanged(this.geometry, ['position', 'normal', 'aRimTangent', 'aThickness', 'aRod', 'aSheet', 'aFroth', 'aRimDistance']);
     if (this.ligaments) this.updateLigaments(end);
   }
 

@@ -1600,41 +1600,39 @@ vec3 galeFoamAt(vec2 restXZ) {
 // 1 for the sky). A near object's reflection must move with the ripples by
 // d/(L + d) of what the sky's does (d its distance from the surface, L the
 // mirror camera's): its point at d along the rippled ray is looked up, not
-// the ray's direction. The object comes from the flat mirror's texel there
-// (its centre, nearest, so the distance is one object's and not a blend
-// with the sky's): the sky the ray reaches past it, or what the flat mirror
-// shows there, if nothing is near. Where the flat mirror shows sky but the
-// rippled direction lands on a near object, the ray cannot have hit it from
-// here (it would have been found nearer the flat texel) and the sky behind
-// it is not in the image: the flat texel's sky stands in. Only pixels whose
-// flat or rippled lookup falls in the splash's rectangle take this; two
-// fetches each.
+// the ray's direction. So the lookup starts where the rippled direction
+// points (the sky's place) and is refined by what it finds there: the point
+// that far along the rippled ray, projected into the mirror, twice over (a
+// near object found at the first refinement is placed right by the second;
+// a near object the direction lands on that the ray cannot reach from here
+// refines onto the sky behind it, and stays there). At a near object's
+// silhouette the nearness is a blend of its and the sky's and the
+// refinement lands between, a soft fringe a pixel wide; a choice between
+// the flat mirror's texel and the rippled one, made pixel by pixel, cut the
+// image into shards along every edge. Only pixels whose flat or rippled
+// lookup falls in the splash's rectangle take this; up to three fetches
+// each.
 #define MIRROR_NEARNESS_SCALE 4.0     // MIRROR_COMMON's
 #define MIRROR_FARTHEST 1e-3          // nearness under this (beyond a kilometre): the sky
 vec3 nearReflection(vec2 rippleUv, vec3 ray) {
-  vec2 rippleLookup = clamp(rippleUv, vec2(0.002), vec2(0.998));
+  vec2 lookup = clamp(rippleUv, vec2(0.002), vec2(0.998));
   vec4 flatCoord = uReflectionMatrix * vec4(vWorld, 1.0);
   vec2 flatUv = flatCoord.xy / max(flatCoord.w, 1e-4);
   bool flatNear = all(greaterThanEqual(flatUv, uMirrorNear.xy)) && all(lessThanEqual(flatUv, uMirrorNear.zw));
   bool rippleNear = all(greaterThanEqual(rippleUv, uMirrorNear.xy)) && all(lessThanEqual(rippleUv, uMirrorNear.zw));
-  if (!flatNear && !rippleNear) return texture2D(uReflection, rippleLookup).rgb;
-  vec2 flatTexel = clamp((floor(flatUv * uMirrorSize) + 0.5) / uMirrorSize, vec2(0.002), vec2(0.998));
+  vec4 found = texture2D(uReflection, lookup);
+  if (!flatNear && !rippleNear) return found.rgb;
   vec3 mirrorEye = vec3(cameraPosition.x, 2.0 * uMirrorLevel - cameraPosition.y, cameraPosition.z);
   float surfaceDistance = distance(vWorld, mirrorEye);
-  if (flatNear) {
-    vec4 atFlat = texture2D(uReflection, flatTexel);
-    float nearness = (1.0 - atFlat.a) / MIRROR_NEARNESS_SCALE;
-    if (nearness > MIRROR_FARTHEST) {
-      float along = max(1.0 / nearness - surfaceDistance, 0.0);
-      vec4 nearCoord = uReflectionMatrix * vec4(vWorld + ray * along, 1.0);
-      return texture2D(uReflection, clamp(nearCoord.xy / max(nearCoord.w, 1e-4), vec2(0.002), vec2(0.998))).rgb;
-    }
-    vec4 atRipple = texture2D(uReflection, rippleLookup);
-    return (1.0 - atRipple.a) * surfaceDistance > 0.5 * MIRROR_NEARNESS_SCALE ? atFlat.rgb : atRipple.rgb;
+  for (int refinement = 0; refinement < 2; refinement++) {
+    float nearness = (1.0 - found.a) / MIRROR_NEARNESS_SCALE;
+    if (nearness <= MIRROR_FARTHEST) break;
+    float along = max(1.0 / nearness - surfaceDistance, 0.0);
+    vec4 nearCoord = uReflectionMatrix * vec4(vWorld + ray * along, 1.0);
+    lookup = clamp(nearCoord.xy / max(nearCoord.w, 1e-4), vec2(0.002), vec2(0.998));
+    found = texture2D(uReflection, lookup);
   }
-  vec4 atRipple = texture2D(uReflection, rippleLookup);
-  if ((1.0 - atRipple.a) * surfaceDistance <= 0.5 * MIRROR_NEARNESS_SCALE) return atRipple.rgb;
-  return texture2D(uReflection, flatTexel).rgb;
+  return found.rgb;
 }
 
 // The pool's tiles' fine detail, which the under-water pass, drawn coarser
