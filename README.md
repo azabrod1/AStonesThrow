@@ -517,15 +517,16 @@ known timing, and the droplets are choreographed from them:
    stones show, a sphere keeps the fitted crown, and a seeded throw's field
    is its own. Its rim
    thickens into a bead, a round rod of water drawn as a tube along the
-   whole untorn rim, swelling into each finger, and grows fingers out of
-   it: round ligaments of water, drawn
+   whole untorn rim, lumpy with its own beading, swelling into each finger,
+   and grows fingers out of it: round ligaments of water, drawn
    as tubes of their own, as thick as the rim bead at their roots and
    tapering to their tips, beaded along their length as a stretched
    ligament is, unevenly spaced and of wildly uneven length (a few twice
    the mean, a quarter only stubs), between scalloped arcs of rim that sag
    each their own way, each ending in a bead that swells, pinches off as a
-   drop about as wide as the ligament, give or take a half, and starts again;
-   the ligaments lean and bend, each drifting along the rim its own way. The
+   drop about as wide as the ligament, give or take a half, and starts again,
+   so each ligament trails a chain of drops; the ligaments lean and bend,
+   each drifting along the rim its own way. The
    sheet is no clean film: it wrinkles, the rim's capillary waves run down
    it in bands parallel to the edge, holes open high in it as it thins
    and the tear nears (each a circle widening from its own seed, as a film

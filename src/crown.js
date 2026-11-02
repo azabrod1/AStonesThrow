@@ -181,7 +181,8 @@
 // bead is also drawn as what it is, a round rod of water running along the
 // untorn rim (`ligaments`' last piece: a closed loop of rings, one a column,
 // shaded as the ligaments are, RIM_BEAD times the bead's thickness as
-// launched in radius, under the fingers (at a finger's columns the loop
+// launched in radius, lumpy along the rim by RIM_BEAD_LUMPS (its own
+// beading between the fingers), under the fingers (at a finger's columns the loop
 // takes the arc's sag and none of the finger's reach, so it runs level
 // through the finger's root while the ligament rises out of it) and
 // swelling into each finger by RIM_BEAD_SWELL of the finger's share of its
@@ -440,7 +441,7 @@ const MAIN_MODES = [5, 6, 7, 8, 9];
 const FINE_MODES = [12, 13, 14, 15, 16, 17, 18];   // a landing crown's scallops (a stone's crown has fingers)
 const MAIN_AMPLITUDE = 0.05;       // deeper turns the scallops into petals
 const FINE_AMPLITUDE = 0.05;
-const FINGERS = 15;                // a 3 cm stone's crown's fingers, times sqrt(R / 3 cm)...
+const FINGERS = 17;                // a 3 cm stone's crown's fingers, times sqrt(R / 3 cm) (the Rayleigh–Taylor spacing of its rim, 18 mm, round a rim of 31 cm)...
 const FINGER_JITTER = 0.5;         // ...each spacing off the mean by up to this share of it...
 const FINGER_WIDTH = 0.035;        // ...each this many mean spacings wide either side of its axis at its root (the strip, a cusp in the rim; the ligament drawn over it is as wide as the bead)...
 const FINGER_BREADTH = [0.6, 1.4]; // ...times a share in this range, finger by finger...
@@ -467,6 +468,8 @@ const RIM_BEAD = 0.4;              // the rim's bead (the header): a tube of thi
 const RIM_BEAD_SWELL = [0.75, 0.6];   // ...times this, plus this times a finger's share of its reach (FINGER_LENGTH) where the rim swells into one...
 const RIM_BEAD_TEAR = 0.05;        // ...gone over this many T of the tear front's travel down the column
 const RIM_BEAD_CELLS = 1.0;        // its ripples' cells around the crown, per froth cell (the column shader's ripples, LIGAMENT_RIPPLE around the tube)
+const RIM_BEAD_LUMPS = 0.35;       // the bead is lumpy along the rim by this share of its radius either way (its own Rayleigh–Plateau beading between the fingers: a smooth hoop read as a wire)...
+const RIM_BEAD_LUMP_WAVES = [2.1, 3.4];   // ...in two waves of these many times the fingers' count round the ring, at phases of the crown's own
 const ARC_SAG = 0.03;              // the rim between two fingers sags by this share of its speed at the arc's middle...
 const ARC_SAG_RANGE = [0.3, 1.7];  // ...times a share in this range, arc by arc
 const FINGER_SPOTS = [-1, -0.88, -0.55, 0, 0.55, 0.88, 1];   // grid columns across a finger (x, root to root), denser where its sides turn...
@@ -496,7 +499,7 @@ export const DOME_HEIGHT = 1.4;    // ...and draws the sheet onto a dome whose a
 const DOME_ROUND = 0.8;            // ...its radius r_foot·cos(πs/2)^this at height y_foot + h·sin(πs/2) (s from its foot to its apex)...
 const DOME_FOLDS = [6, 10];        // ...buckled by this many folds around (Marston et al. 2016)...
 const DOME_FOLD = 0.08;            // ...of up to this share of its radius, at mid height
-const DOME_FROTH = 0.3;            // a sealing sheet's violence and, as it closes, its whiteness are at least this: sucked in, it whips, buckles and carries some air (the header; a closing dome in Speirs et al.'s and Worthington's photographs is clear glass with spray bursting through its top, not a white bell)
+const DOME_FROTH = 0.12;           // a sealing sheet's violence and, as it closes, its whiteness are at least this: sucked in, it whips, buckles and carries a little air (the header; a closing dome in Speirs et al.'s and Worthington's photographs is clear glass, buckled, with spray bursting through its top, not a white bag)
 const DOME_OPEN = 0.5;             // ...and holes open all over the closing dome at this share of FROTH_OPEN
 const DOME_BURST = 0.25;           // a dome given no jet's push bursts with its sheet flying off at this times sqrt(g·R)·s, out and up
 const DOME_SINK = 1.5;             // a trapped jet's dome is drawn down to this many R below the water by the tear
@@ -1567,11 +1570,15 @@ export class CrownSheet {
     if (!spray || this.landing) return;
     const film = Math.max(state.thickness, SPRAY_LEAST_FILM);
     const meanRadius = THREE.MathUtils.clamp(SPRAY_SIZE * state.thickness, SPRAY_SIZE_RANGE[0], SPRAY_SIZE_RANGE[1]);
+    // Strung along the sheet's flight (src/spray.js `along`): the web's ligaments lie along the stretch.
+    const speed = Math.hypot(state.vx, state.vy, state.vz) || 1;
+    const along = this.sprayAlong ??= { x: 0, y: 1, z: 0 };
+    along.x = state.vx / speed; along.y = state.vy / speed; along.z = state.vz / speed;
     spray.burst({
       x: state.x, y: state.y, z: state.z, vx: state.vx, vy: state.vy, vz: state.vz,
       drops: sprayDrops((this.sprayShare * state.thickness) / density, meanRadius), radius: meanRadius,
       kick: Math.sqrt((2 * SURFACE_TENSION) / (WATER_DENSITY * film)), spread: 0.5 / Math.sqrt(density),
-      time: splash.time, random: this.sprayRandom, sizeFactor: this.sizeFactor,
+      time: splash.time, random: this.sprayRandom, sizeFactor: this.sizeFactor, along,
     });
   }
 
@@ -1701,7 +1708,10 @@ export class CrownSheet {
       this.evaluate(front, this.columnCos[column], this.columnSin[column], this.columnSpeedFactor[column], thicknessFactor, state, front, Math.min(factor, 0), false, this.columnRimShape?.[column]);
       centres[column * 3] = state.x; centres[column * 3 + 1] = state.y; centres[column * 3 + 2] = state.z;
       const swell = RIM_BEAD_SWELL[0] + RIM_BEAD_SWELL[1] * Math.min(Math.max(factor, 0) / FINGER_LENGTH, 1.5);
-      radii[column] = RIM_BEAD * 3 * this.baseThickness * thicknessFactor * swell * (1 - smoothstep(0, tearSpan, front)) * (1 - merged);
+      // Lumpy between the fingers (RIM_BEAD_LUMPS): two waves round the ring at phases of the crown's own.
+      const angle = this.columnAngle[column];
+      const lumps = 1 + RIM_BEAD_LUMPS * 0.5 * (Math.sin(RIM_BEAD_LUMP_WAVES[0] * this.fingers.length * angle + this.frothOffset) + Math.sin(RIM_BEAD_LUMP_WAVES[1] * this.fingers.length * angle + 2.7 * this.frothOffset));
+      radii[column] = RIM_BEAD * 3 * this.baseThickness * thicknessFactor * swell * lumps * (1 - smoothstep(0, tearSpan, front)) * (1 - merged);
     }
     const grid = LIGAMENT_COLUMNS;
     const positions = this.ligamentPositions, normals = this.ligamentNormals, tubeRadii = this.ligamentRadii, round = this.ligamentRound, ripples = this.ligamentRipples;

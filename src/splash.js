@@ -359,7 +359,7 @@ const CROWN_DROPLET_CAP = 3500;       // at most, unless the preset sets fewer (
 const FAN_DROPLET_CAP = 600;          // at most (the same stone's fan, about 400)
 const SPRAY_DROP_RADIUS = 0.0008;     // the contact line's spray: drops of this radius...
 const SPRAY_DROP_SPREAD = 0.001;      // ...to this much more, times (R / 3 cm)^0.4, at most DROP_CEILING (the contact's first ejecta are fine)
-const CONTACT_FROTH = { onset: [3, 14], amount: 0.05, radius: 1.6 };   // the froth at a big stone's foot at impact (contactFroth): rising from none to all over this range of the entry's size-weighted Weber number, each sub-stamp's peak this times (R / 3 cm), over this many R
+const CONTACT_FROTH = { onset: [3, 14], amount: 0.12, radius: 1.4, span: 3 };   // the froth at a big stone's foot (contactFroth): rising from none to all over this range of the entry's size-weighted Weber number, each sub-stamp's peak this times (R / 3 cm), over this many R, kept up for this many sqrt(R/g) while the sheet stands
 const CONTACT_SPRAY = { water: 0.002, radius: 0.00012, bursts: 24, onset: [2, 12] };   // the contact's first ejecta as spray (src/spray.js): this share of the stone's volume, drops of this mean radius (times (R / 3 cm)^0.3), from this many places round the ring, rising from none to all over this range of the entry's size-weighted Weber number (src/crown.js frothWeber: a pebble's contact throws drops, no mist, in the lake photographs)
 const BUBBLES = 110;                  // bubbles a 3 cm stone drags down, scaling with R²...
 const BUBBLE_CAP = 800;               // ...at most (a 16 cm stone wants 780)...
@@ -1113,7 +1113,7 @@ export class SplashSystem {
     // line now, drops shed by the sheet's rim, and the sheet's breakup.
     const crownCount = Math.round(THREE.MathUtils.clamp(CROWN_DROPLETS * sizeFactor ** DROPLET_COUNT_POWER * Math.sqrt(entrySpeed / 6), 50, this.crownDropletCap));
     const sprayCount = Math.round(0.1 * crownCount);
-    const rimCount = Math.round(0.1 * crownCount);
+    const rimCount = Math.round(0.3 * crownCount);   // the rim's share: its fingers shed chains of drops (the lake photographs' ligaments each trail several)
     for (let drop = 0; drop < sprayCount; drop++) {
       const angle = Math.random() * Math.PI * 2;
       const dirX = Math.cos(angle), dirZ = Math.sin(angle);
@@ -1278,7 +1278,7 @@ export class SplashSystem {
   contactFroth(x, z, radius, entrySpeed, sizeFactor, water) {
     const share = smoothstep(CONTACT_FROTH.onset[0], CONTACT_FROTH.onset[1], frothWeber(sizeFactor, entrySpeed));
     if (share <= 0 || !water) return;
-    this.stampFoamPatch(water, foamRandom(x, z, this.time, radius), { x, z, radius: CONTACT_FROTH.radius * radius, amount: Math.min(CONTACT_FROTH.amount * share * sizeFactor, FOAM_AMOUNT_CAP), reach: 1.0, radii: [0.4, 0.8], lifetime: BOIL_LIFETIME, boil: true, source: 'contact' });
+    this.stampFoamPatch(water, foamRandom(x, z, this.time, radius), { x, z, radius: CONTACT_FROTH.radius * radius, amount: Math.min(CONTACT_FROTH.amount * share * sizeFactor, FOAM_AMOUNT_CAP), reach: 1.0, radii: [0.4, 0.8], lifetime: BOIL_LIFETIME, boil: true, time: this.time, span: CONTACT_FROTH.span * Math.sqrt(radius / GRAVITY), sustained: true, source: 'contact' });
   }
 
   /**
