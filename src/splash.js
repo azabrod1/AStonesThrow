@@ -1953,7 +1953,7 @@ export class SplashSystem {
     } else {
       this.spray.mesh.layers.disable(MIRROR_LAYER);
     }
-    for (const crown of this.crowns) list.push(mirrorWith(crown.mesh, this.sheetMirror));
+    for (const crown of this.crowns) list.push(mirrorWith(crown.mesh, this.sheetMirror, crown.boundsInto));
     for (const column of this.columns) list.push(mirrorWith(column.mesh, this.columnMirror));
   }
 

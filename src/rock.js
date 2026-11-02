@@ -2594,7 +2594,12 @@ export class Rock {
    * pizza; src/main.js calls this once a frame): its give as bendStep has
    * it, its mesh bent along its face's normal by r² of each point's distance
    * from its middle, the cup and, in a saddle, the flap (turning at
-   * `soft.rate` a second).
+   * `soft.rate` a second). What of that is each point's own, the same every
+   * frame (its distance² from the short axis, twice its angle round it as a
+   * cosine and a sine, the bend's slope on its normal), is worked out once
+   * (flexBasis), so a frame costs a few multiplications a point, where an
+   * arctangent, a sine and a hypotenuse a point took a pizza a millisecond
+   * of a desktop's frame.
    */
   flex() {
     const soft = this.thing.body.soft;
@@ -2604,25 +2609,51 @@ export class Rock {
     const { cup, flap } = this.bend;
     if (Math.abs(cup) < 1e-4 && Math.abs(flap) < 1e-4 && this.flexedDrawn === false) return;
     const rest = this.restShape, restNormals = this.restNormals, array = positions.array, normals = this.geometry.attributes.normal.array;
+    const basis = this.flexBasis ??= this.makeFlexBasis();
     const phase = 2 * Math.PI * soft.rate * this.age;
-    const [axisX, axisY, axisZ] = this.shape.axes;   // its long, middle and short axes, in its own frame
-    for (let index = 0; index < array.length; index += 3) {
-      const x = rest[index], y = rest[index + 1], z = rest[index + 2];
-      const u = x * axisX.x + y * axisX.y + z * axisX.z, v = x * axisY.x + y * axisY.y + z * axisY.z;
-      const amount = cup + flap * Math.sin(phase + 2 * Math.atan2(v, u));
-      const bend = amount * (u * u + v * v);
-      array[index] = x + axisZ.x * bend; array[index + 1] = y + axisZ.y * bend; array[index + 2] = z + axisZ.z * bend;
+    // sin(phase + 2θ), θ a point's angle round the short axis: sin(phase)·cos 2θ + cos(phase)·sin 2θ.
+    const sinePhase = Math.sin(phase), cosinePhase = Math.cos(phase);
+    const axisZ = this.shape.axes[2];   // its short axis, in its own frame
+    for (let index = 0, at = 0; index < array.length; index += 3, at += 6) {
+      const amount = cup + flap * (sinePhase * basis[at + 1] + cosinePhase * basis[at + 2]);
+      const bend = amount * basis[at];
+      array[index] = rest[index] + axisZ.x * bend; array[index + 1] = rest[index + 1] + axisZ.y * bend; array[index + 2] = rest[index + 2] + axisZ.z * bend;
       // Its smooth normal tilted by the bend's slope, 2·amount·(u, v), on whichever face it is.
-      const nx = restNormals[index], ny = restNormals[index + 1], nz = restNormals[index + 2];
-      const facing = nx * axisZ.x + ny * axisZ.y + nz * axisZ.z;
-      const slopeU = 2 * amount * u * facing, slopeV = 2 * amount * v * facing;
-      const tx = nx - slopeU * axisX.x - slopeV * axisY.x, ty = ny - slopeU * axisX.y - slopeV * axisY.y, tz = nz - slopeU * axisX.z - slopeV * axisY.z;
-      const length = Math.hypot(tx, ty, tz) || 1;
+      const twice = 2 * amount;
+      const tx = restNormals[index] - twice * basis[at + 3], ty = restNormals[index + 1] - twice * basis[at + 4], tz = restNormals[index + 2] - twice * basis[at + 5];
+      const length = Math.sqrt(tx * tx + ty * ty + tz * tz) || 1;
       normals[index] = tx / length; normals[index + 1] = ty / length; normals[index + 2] = tz / length;
     }
     positions.needsUpdate = true;
     this.geometry.attributes.normal.needsUpdate = true;
     this.flexedDrawn = Math.abs(cup) >= 1e-4 || Math.abs(flap) >= 1e-4;
+  }
+
+  /**
+   * What of flex's bend is each point's own (flex): six numbers a point, its
+   * distance² from the short axis (u² + v², u and v along its long and
+   * middle axes), cos 2θ and sin 2θ of its angle round it (θ = atan2(v, u),
+   * 0 on the axis), and the bend's slope on its rest normal per unit of the
+   * bend (its facing, the normal along the short axis, times u along the long
+   * axis plus v along the middle one).
+   */
+  makeFlexBasis() {
+    const rest = this.restShape, restNormals = this.restNormals;
+    const [axisX, axisY, axisZ] = this.shape.axes;
+    const basis = new Float64Array(rest.length * 2);
+    for (let index = 0, at = 0; index < rest.length; index += 3, at += 6) {
+      const x = rest[index], y = rest[index + 1], z = rest[index + 2];
+      const u = x * axisX.x + y * axisX.y + z * axisX.z, v = x * axisY.x + y * axisY.y + z * axisY.z;
+      const squared = u * u + v * v;
+      const facing = restNormals[index] * axisZ.x + restNormals[index + 1] * axisZ.y + restNormals[index + 2] * axisZ.z;
+      basis[at] = squared;
+      basis[at + 1] = squared > 0 ? (u * u - v * v) / squared : 1;
+      basis[at + 2] = squared > 0 ? 2 * u * v / squared : 0;
+      basis[at + 3] = facing * (u * axisX.x + v * axisY.x);
+      basis[at + 4] = facing * (u * axisX.y + v * axisY.y);
+      basis[at + 5] = facing * (u * axisX.z + v * axisY.z);
+    }
+    return basis;
   }
 
   /**

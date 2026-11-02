@@ -415,6 +415,19 @@ export class JetColumn {
       this.columnCos[column] = Math.cos((column / COLUMNS) * Math.PI * 2);
       this.columnSin[column] = Math.sin((column / COLUMNS) * Math.PI * 2);
     }
+    // The bumps' waves around the ring (writeRing): each wave's angle there, as a sine and a cosine a column, so a ring
+    // turns them by its phase along the launch (sin(a + b) = sin a cos b + cos a sin b) in place of two of each a vertex.
+    this.bumpSines = new Float64Array(this.bumpWaves.length * COLUMNS);
+    this.bumpCosines = new Float64Array(this.bumpWaves.length * COLUMNS);
+    this.bumpWaves.forEach((mode, wave) => {
+      for (let column = 0; column < COLUMNS; column++) {
+        const angle = (mode.around * column * Math.PI * 2) / COLUMNS;
+        this.bumpSines[wave * COLUMNS + column] = Math.sin(angle);
+        this.bumpCosines[wave * COLUMNS + column] = Math.cos(angle);
+      }
+    });
+    this.rowSines = new Float64Array(this.bumpWaves.length);
+    this.rowCosines = new Float64Array(this.bumpWaves.length);
     // The drawn nodes, carried on to the frame's time, and the rings they make.
     this.drawX = new Float64Array(NODES); this.drawY = new Float64Array(NODES); this.drawZ = new Float64Array(NODES);
     this.ring = { count: 0, centre: new Float64Array(ROWS * 3), axis: new Float64Array(ROWS * 3), radius: new Float64Array(ROWS), water: new Float64Array(ROWS), round: new Float64Array(ROWS), along: new Float64Array(ROWS * 2), air: new Float64Array(ROWS), phase: new Float64Array(ROWS) };
@@ -1017,6 +1030,14 @@ export class JetColumn {
     // The bumps (the header): the radius's share of unevenness here, its waves around the ring and along the launch's phase.
     const bumps = this.bumps * smoothstep(BUMP_RADII[0], BUMP_RADII[1], ring.water[row]);
     const phase = ring.phase[row], air = ring.air[row];
+    const waves = this.bumpWaves, rowSines = this.rowSines, rowCosines = this.rowCosines, bumpSines = this.bumpSines, bumpCosines = this.bumpCosines;
+    if (bumps > 0) {
+      for (let wave = 0; wave < waves.length; wave++) {
+        const turn = waves[wave].along * phase + waves[wave].phase;
+        rowSines[wave] = Math.sin(turn);
+        rowCosines[wave] = Math.cos(turn);
+      }
+    }
     for (let column = 0; column < COLUMNS; column++) {
       const vertex = row * COLUMNS + column;
       const cosAngle = this.columnCos[column], sinAngle = this.columnSin[column];
@@ -1024,10 +1045,13 @@ export class JetColumn {
       let bumped = 1, outward = normalOut, around = 0;
       if (bumps > 0) {
         let wave = 0, slope = 0;
-        for (const mode of this.bumpWaves) {
-          const angle = (mode.around * column * Math.PI * 2) / COLUMNS + mode.along * phase + mode.phase;
-          wave += mode.weight * Math.sin(angle);
-          slope += mode.weight * mode.around * Math.cos(angle);
+        for (let index = 0; index < waves.length; index++) {
+          const mode = waves[index], at = index * COLUMNS + column;
+          // The wave's angle round the ring plus its turn along the launch.
+          const sine = bumpSines[at] * rowCosines[index] + bumpCosines[at] * rowSines[index];
+          const cosine = bumpCosines[at] * rowCosines[index] - bumpSines[at] * rowSines[index];
+          wave += mode.weight * sine;
+          slope += mode.weight * mode.around * cosine;
         }
         bumped = 1 + bumps * wave;
         // The normal turns around the ring against the bump's slope (dr/dθ over r), within the ring's plane.
