@@ -66,6 +66,7 @@
 // the trunk's top, and flutters the fronds (FLUTTER, growing out along each
 // frond and its leaflets). The water's mirror image is drawn when the view
 // changes (src/main.js), so a palm's image sways only then, as a reed's does.
+// Loading a scanned surface also refreshes it through onSurfacesChanged.
 //
 // The forest's shade (CANOPY): the renderer has no shadow map for the
 // canopy, so a palm's wood below its crown and the scrub under the trees
@@ -300,12 +301,13 @@ class Parts {
   }
 
   /** Quads over a grid of `rows` × `columns` vertices numbered from `first`, row by row. */
-  grid(first, rows, columns, wrap = false) {
+  grid(first, rows, columns, wrap = false, reverse = false) {
     const across = wrap ? columns : columns - 1;
     for (let row = 0; row < rows - 1; row++) {
       for (let column = 0; column < across; column++) {
         const here = first + row * columns + column, next = first + row * columns + (column + 1) % columns;
-        this.indices.push(here, next, here + columns, next, next + columns, here + columns);
+        if (reverse) this.indices.push(here, here + columns, next, next, here + columns, next + columns);
+        else this.indices.push(here, next, here + columns, next, next + columns, here + columns);
       }
     }
   }
@@ -401,7 +403,7 @@ export function palmGeometry(variant, lod, variantIndex = PALMS.indexOf(variant)
         wood.vertex(centre.clone().add(new THREE.Vector3(Math.cos(turn) * radius, 0, Math.sin(turn) * radius)), normal, shade(COLORS.fibre, 0.7 + 0.5 * skirtStream()), [0, 0], swayAt(centre.y));
       }
     }
-    wood.grid(firstSkirt, 4, lod.around, true);
+    wood.grid(firstSkirt, 4, lod.around, true, true);
   }
   // The crown: fronds round the top by the golden angle, the youngest up, the oldest hanging.
   const fronds = variant.fronds;
@@ -476,7 +478,7 @@ function frond(leaves, wood, lod, { top, topTangent, azimuth, rise, length, droo
         wood.vertex(rachis[step].clone().addScaledVector(normal, radius), normal, shade(rachisColor, 0.75 + 0.35 * share), [0, 0], [swayAt(rachis[step].y)[0], share * 0.6]);
       }
     }
-    wood.grid(first, steps + 1, sides, true);
+    wood.grid(first, steps + 1, sides, true, true);
   }
   // The two sheets of leaflets.
   const columns = lod.columns === 3 ? [0, 0.42, 1] : [0, 1];
@@ -497,12 +499,11 @@ function frond(leaves, wood, lod, { top, topTangent, azimuth, rise, length, droo
         const reach = leafletLength * column;
         const at = rachis[step].clone().addScaledVector(outwardAcross, reach).addScaledVector(frondUp, -FROND.leafletDroop * leafletLength * column * column * (0.6 + share));
         const normal = new THREE.Vector3().crossVectors(tangent, outwardAcross).multiplyScalar(side).normalize();
-        if (normal.y < 0) normal.negate();
         const tint = shadeInside * (0.7 + 0.3 * column) * (0.75 + 0.25 * share);
         leaves.vertex(at, normal, [tint, tint, tint], [share, (row + column * ATLAS.fill) / ATLAS.rows], [swayAt(at.y)[0], share * 0.6 + column * 0.4]);
       }
     }
-    leaves.grid(first, steps + 1, columns.length);
+    leaves.grid(first, steps + 1, columns.length, false, side > 0);
   }
 }
 
@@ -736,7 +737,7 @@ function scrubGeometry(level, stream) {
       const at = centre.clone().addScaledVector(right, across).addScaledVector(up, along);
       leaves.vertex(at, normal, [tint, tint, tint], [(tile + 0.5 + 0.5 * across) / 8, (ROW.scrub + (0.5 + 0.5 * along) * ATLAS.fill) / ATLAS.rows], [0, 0.25 * Math.max(at.y, 0) / SCRUB.height]);
     }
-    leaves.indices.push(first, first + 1, first + 2, first + 1, first + 3, first + 2);
+    leaves.indices.push(first, first + 2, first + 1, first + 1, first + 2, first + 3);
   }
   return leaves.geometry();
 }
@@ -1081,7 +1082,7 @@ function bankGeometry(feet) {
 }
 
 export class Tropics {
-  constructor({ renderer, envTexture, mirrorLayer, lighting, coarse = false }) {
+  constructor({ renderer, envTexture, mirrorLayer, lighting, coarse = false, onSurfacesChanged = () => {} }) {
     // The frond atlas: a texel till the scenery is built (build), its bake's program built now, under the loading veil.
     this.atlas = atlasTarget(renderer);
     this.atlasPass = new FullscreenPass(FROND_BAKE, {});
@@ -1099,6 +1100,7 @@ export class Tropics {
     this.above = [];
     this.built = false;
     this.surfacesReady = Promise.resolve();   // resolves when the scans have come or failed (loadSurfaces): the tools wait for it, the page never
+    this.onSurfacesChanged = onSurfacesChanged;
     this.coarse = coarse;
     this.shown = false;
     this.culledFor = new THREE.Matrix4().makeScale(0, 0, 0);
@@ -1131,7 +1133,8 @@ export class Tropics {
   /**
    * Fetches the bark's and the sand's scans (SURFACES) and turns each on as
    * it comes, its texture uploaded then (no program changes: both are built
-   * with a texel standing in). One that fails leaves the analytic surface.
+   * with a texel standing in). Each successful load invalidates the cached
+   * reflection through onSurfacesChanged. A failure leaves the analytic surface.
    */
   async loadSurfaces() {
     const maxAnisotropy = this.renderer.capabilities.getMaxAnisotropy();
@@ -1149,6 +1152,7 @@ export class Tropics {
       try {
         uniforms[0].value = await load(url);
         uniforms[1].value = 1;
+        this.onSurfacesChanged();
       } catch (error) {
         console.warn('A lagoon surface scan did not load; its analytic surface stays.', error);
       }

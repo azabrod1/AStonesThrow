@@ -1560,8 +1560,10 @@ farther out, so it rises into the view rather than filling its corner.
   must be added to its list. `node tools/site-check.mjs`, after
   `npm run site`, serves `_site/` under `/AStonesThrow/` as Pages does and
   checks that the pond starts, rain falls once asked for (its files load only
-  then), the Polynesian lagoon's scanned bark and sand come once it is shown,
-  and no request fails.
+  then), the Polynesian lagoon's scanned bark and sand come once it is shown
+  and refresh the cached reflection, and no request fails. Add `--webkit` to run the same checks in WebKit
+  with an emulated iPhone layout. CI runs both engines; physical-phone
+  decoding and performance checks still need a real device.
 - `node tools/foam-probe.mjs` runs the foam's bubble pattern on the CPU, with
   the constants read from the shader: each layer's median and spread and the
   bubbles' mean shade match what the shader fades them to, the clear

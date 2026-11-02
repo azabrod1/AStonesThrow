@@ -53,6 +53,7 @@ jobs:
             run: |
               node tools/quality-probe.mjs
               npm run site && node tools/site-check.mjs
+              node tools/site-check.mjs --webkit
               node tools/startup-probe.mjs
     steps:
       - uses: actions/checkout@v6
@@ -62,4 +63,6 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx playwright install chromium
+      - if: matrix.part == 'quality, site, startup'
+        run: npx playwright install webkit
       - run: ${{ matrix.run }}

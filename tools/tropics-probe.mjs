@@ -1,4 +1,4 @@
-// Lagoon regression checks: front-facing land/husks, finite surface normals,
+// Lagoon regression checks: front-facing land, foliage and husks, finite normals,
 // camera round-trip instance restoration, and the distant scenery budget.
 // The mesh construction and culling are CPU-only; shader appearance is checked
 // with shoot.mjs and uniform-probe.mjs on the browser's GPU.
@@ -38,9 +38,25 @@ tropics.build();
 console.log(`scenery built in ${(performance.now() - start).toFixed(1)} ms`);
 let huskFaces = 0;
 const supplied = new THREE.Vector3();
+let foliageFaces = 0;
 for (const mesh of tropics.above) {
   const geometry = mesh.geometry, { position, normal, palmRing } = geometry.attributes;
   assert([...position.array, ...normal.array].every(Number.isFinite), 'geometry must be finite');
+  const foliage = tropics.scrubGeometry.includes(geometry)
+    || tropics.palmGeometry.some((levels) => levels.some((shape) => shape.leaves === geometry || shape.wood === geometry));
+  for (let index = 0; index < geometry.index.count; index += 3) {
+    const vertices = [0, 1, 2].map((offset) => geometry.index.getX(index + offset));
+    if (!foliage || vertices.some((vertex) => palmRing.getX(vertex) !== -1)) continue;
+    corner.fromBufferAttribute(position, vertices[0]);
+    next.fromBufferAttribute(position, vertices[1]).sub(corner);
+    last.fromBufferAttribute(position, vertices[2]).sub(corner);
+    const face = next.cross(last);
+    if (face.lengthSq() < 1e-16) continue;
+    supplied.set(0, 0, 0);
+    for (const vertex of vertices) supplied.add(new THREE.Vector3().fromBufferAttribute(normal, vertex));
+    assert(face.dot(supplied) > 0, `foliage mesh ${tropics.above.indexOf(mesh)} triangle ${index / 3} must face its shading normals`);
+    foliageFaces++;
+  }
   for (let index = 0; index < geometry.index.count; index += 3) {
     const vertices = [0, 1, 2].map((offset) => geometry.index.getX(index + offset));
     if (!vertices.every((vertex) => palmRing.getX(vertex) === -2)) continue;
@@ -56,6 +72,8 @@ for (const mesh of tropics.above) {
 }
 assert(huskFaces > 1000);
 console.log(`ok: ${huskFaces} coconut faces have outward, smooth normals`);
+assert(foliageFaces > 1000);
+console.log(`ok: ${foliageFaces} foliage faces agree with their shading normals`);
 
 const camera = new THREE.PerspectiveCamera(55, 16 / 9, 0.1, 20000);
 camera.position.set(0, 1.8, 2.45);
@@ -211,10 +229,12 @@ console.log(`ok: ${windVertices} crown vertices stay within gale cull margins`);
   globalThis.fetch = async () => new Response(new Uint8Array([255, 216, 255, 217]));
   globalThis.createImageBitmap = async (blob) => { types.push(blob.type); assert.equal(blob.size, 4); return { width: 1, height: 1 }; };
   try {
-    const receiver = { renderer: { capabilities: { getMaxAnisotropy: () => 4 } }, uniforms: { uBarkScan: { value: null }, uBarkScanOn: { value: 0 } } };
+    let invalidations = 0;
+    const receiver = { renderer: { capabilities: { getMaxAnisotropy: () => 4 } }, uniforms: { uBarkScan: { value: null }, uBarkScanOn: { value: 0 } }, onSurfacesChanged: () => { invalidations++; } };
     await Tropics.prototype.loadSurfaces.call(receiver);
     assert.deepEqual(types, ['image/jpeg', 'image/jpeg']);
     assert.equal(receiver.uniforms.uBarkScanOn.value, 1);
+    assert.equal(invalidations, 2, 'each loaded scan must invalidate the cached reflection');
   } finally { globalThis.fetch = fetch; globalThis.createImageBitmap = decode; }
   console.log('ok: both scans pass explicit JPEG MIME types to image decoding');
 }

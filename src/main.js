@@ -779,7 +779,9 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   const galeWaves = new GaleWaves(renderer, { windDirection, centre: water.centre, sharedWith: ambientWaves });
   const reeds = new Reeds({ lighting, ambientWaves, mirrorLayer: MIRROR_LAYER });   // the shallows' rushes (src/reeds.js), in the main scene, the mirror and the under-water pass
   const boulders = new Boulders({ envTexture: environment.envTexture, waterFog: { extinction: lighting.extinction, color: lighting.waterColor }, mirrorLayer: MIRROR_LAYER });   // a rocky shore's stones (src/boulders.js), the same three ways
-  const tropics = new Tropics({ renderer, envTexture: environment.envTexture, mirrorLayer: MIRROR_LAYER, lighting, coarse: qualityName !== 'high' });   // the Polynesian lagoon's palms (src/tropics.js)
+  const tropics = new Tropics({ renderer, envTexture: environment.envTexture, mirrorLayer: MIRROR_LAYER, lighting, coarse: qualityName !== 'high',
+    onSurfacesChanged: () => { if (PLACES[placeName].tropics) viewChanged = true; },
+  });   // the Polynesian lagoon's palms (src/tropics.js)
   const visitor = new LochVisitor({ envTexture: environment.envTexture, waterFog: { extinction: lighting.extinction, color: lighting.waterColor }, mirrorLayer: MIRROR_LAYER });   // something in the loch (src/lochVisitor.js), the same three ways, and its wake in the water's shader
   // The water's height at world (x, z) under the gale (its CPU sum), for the stones, the mirror and the eye.
   const galeSample = { height: 0, slopeX: 0, slopeZ: 0 };
