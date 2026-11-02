@@ -809,13 +809,13 @@ export function createKoiGarden({ envTexture, mirrorLayer, lighting }) {
     geometry.setAttribute('tint', new THREE.Float32BufferAttribute([0, 0, 0], 1));
     return geometry;
   };
-  let shown = false, coarse = false;
+  let shown = false, visibleNow = false, coarse = false;
   // The shade (bakeShade), baked for the sun it holds: once the garden is shown, and again for a new sun.
   const shadePixels = new Uint8Array(SHADE.texels * SHADE.texels * 2);
   let shadeTexture = null;
   const shadedFor = new THREE.Vector3(NaN, NaN, NaN);
   const shade = () => {
-    if (!shown || shadedFor.equals(lighting.sunDirection)) return;
+    if (!shown || !visibleNow || shadedFor.equals(lighting.sunDirection)) return;
     const started = performance.now();
     shadedFor.copy(lighting.sunDirection);
     const sunUp = bakeShade(Object.values(builtGarden(COARSE)), lighting.sunDirection, shadePixels, shadeTexture !== null);
@@ -903,6 +903,7 @@ export function createKoiGarden({ envTexture, mirrorLayer, lighting }) {
     },
     /** Show the garden, or hide it; `building` false shows the specks alone (the warm-up). */
     setVisible(visible, { building = true } = {}) {
+      visibleNow = visible && building;
       if (visible && building && !shown) {
         shown = true;
         for (const [lookName, [main, mirrored]] of Object.entries(byLook)) {
@@ -912,8 +913,8 @@ export function createKoiGarden({ envTexture, mirrorLayer, lighting }) {
         }
         catchTable();
         this.setCoarse(coarse);
-        shade();
       }
+      shade();   // catch up with a sun changed while this garden was hidden
       for (const mesh of meshes) mesh.visible = visible;
     },
     /**

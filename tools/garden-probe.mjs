@@ -27,7 +27,7 @@
 import * as THREE from 'three';
 import { Rock } from '../src/rock.js';
 import { THINGS, THING_NAMES } from '../src/things.js';
-import { setShoreKind, koiFloorDepthAt, koiShoreDistance, koiShoreRadius, KOI_SHORE } from '../src/pondFloor.js';
+import { setShoreKind, koiFloorDepthAt, koiShoreDistance, koiShoreRadius, KOI_SHORE, gardenShadeUniforms } from '../src/pondFloor.js';
 import { koiGround, holdInGarden, keepInPond, keepOutOfGarden, plantingFront, createKoiGarden, KOI_AIM, GARDEN } from '../src/koiGarden.js';
 import { collideThings } from '../src/collide.js';
 import { BED_UNIFORMS } from '../src/waterSurface.js';
@@ -70,6 +70,18 @@ console.log('\nthe planting catches:');
   lighting.sunDirection.set(-0.5, 0.4, -0.77).normalize();
   garden.setLight();   // a new sun: its shadows baked again, its occlusion kept
   check(firstShade < 150 && garden.shadeMilliseconds < 50, `its shade baked in under 150 ms the first time (${firstShade.toFixed(0)} ms), a new sun's in under 50 (${garden.shadeMilliseconds.toFixed(0)} ms)`);
+  const shadeTexture = gardenShadeUniforms.uGardenShade.value;
+  const bakedVersion = shadeTexture.version;
+  garden.setVisible(false);
+  lighting.sunDirection.set(-0.3, 0.5, -0.8).normalize();
+  garden.setLight();
+  check(shadeTexture.version === bakedVersion, 'a hidden garden does not rebake or upload shade for another sun');
+  garden.setVisible(true);
+  check(shadeTexture.version === bakedVersion + 1 && gardenShadeUniforms.uGardenShadeSun.value.equals(lighting.sunDirection),
+    'showing the garden refreshes shade for the current sun');
+  garden.setVisible(true);
+  garden.setLight();
+  check(shadeTexture.version === bakedVersion + 1, 'an unchanged visible sun reuses the shade bake');
   check(fineTriangles < 300000, `the scene's under 300k triangles (${(fineTriangles / 1000).toFixed(0)}k)`);
   check(coarseTriangles < 0.4 * fineTriangles, `the coarse garden under 40% of the fine's triangles (${(100 * coarseTriangles / fineTriangles).toFixed(0)}%)`);
   // The coarse garden is the fine one's shrubs more coarsely made, from the same draws (src/koiGarden.js COARSE): the same

@@ -3088,19 +3088,20 @@ void main() {
   float far = uKoiPond > 0.5 ? 0.0 : smoothstep(LAND_NEAR, LAND_FAR, length(toLand));
   float tuftShare = uKoiPond > 0.5 ? 0.0 : TUFT_SHARE * uShoreLook.z * smoothstep(grassFrom - 0.6, grassTo, vInland);
   if (grass > 0.0 || far > 0.0 || tuftShare > 0.0) {
-    vec3 land = photoLand(uSkyCube, LAND_LEVEL, toLand.xz);
+    vec3 land = vec3(0.0), grassLand;
     float level = max(uSunDir.y, 0.0) + SKY_LIGHT * 0.25;
     float slopeShade = (max(dot(normal, uSunDir), 0.0) + SKY_LIGHT * 0.25 * normal.y) / level;
-    // Where the photo shows sky at the horizon, the grass would take the sky's light (a cloud's, white): no brighter
-    // than ground of GRASS_ALBEDO_MOST in the light on it.
-    float lightOn = dot(uSunIrradiance * max(uSunDir.y, 0.0) + uSkyAmbient * SKY_LIGHT, LUMINANCE);
-    vec3 nearLand = photoLand(uLandCube, uLandLevel, toLand.xz);
-    float grassLevel = max(dot(nearLand, LUMINANCE), 1e-6);
-    vec3 grassLand = nearLand * min(1.0, GRASS_ALBEDO_MOST * lightOn / grassLevel);
-    // Round the Koi pond, a garden's lawn of its own (the photo's land there is the lake's far shore).
-    // Behind its planting the ground lies in its trees' shade (src/koiGarden.js): dark, as the photo's is.
-    // Its tone wanders gently, lusher and drier in patches a few metres across, darker and lighter over a metre or two.
-    if (uKoiPond > 0.5) grassLand = mix(KOI_LAWN, KOI_LAWN_DRY, smoothstep(0.35, 0.75, valueNoise(vWorld.xz * KOI_LAWN_PATCHES + 7.0))) * (uSunIrradiance * max(uSunDir.y, 0.0) * sunSeen + uSkyAmbient * SKY_LIGHT * skySeen) * (0.9 + 0.2 * valueNoise(vWorld.xz * 0.6 + 2.0)) * mix(1.0, KOI_SHADE, smoothstep(1.5, 3.5, vInland));
+    // The Koi lawn has its own albedo all the way to the backdrop; photo samples only serve the lakes.
+    if (uKoiPond > 0.5) {
+      grassLand = mix(KOI_LAWN, KOI_LAWN_DRY, smoothstep(0.35, 0.75, valueNoise(vWorld.xz * KOI_LAWN_PATCHES + 7.0))) * (uSunIrradiance * max(uSunDir.y, 0.0) * sunSeen + uSkyAmbient * SKY_LIGHT * skySeen) * (0.9 + 0.2 * valueNoise(vWorld.xz * 0.6 + 2.0)) * mix(1.0, KOI_SHADE, smoothstep(1.5, 3.5, vInland));
+    } else {
+      land = photoLand(uSkyCube, LAND_LEVEL, toLand.xz);
+      // Cap grass where the photo shows bright sky at the horizon.
+      float lightOn = dot(uSunIrradiance * max(uSunDir.y, 0.0) + uSkyAmbient * SKY_LIGHT, LUMINANCE);
+      vec3 nearLand = photoLand(uLandCube, uLandLevel, toLand.xz);
+      float grassLevel = max(dot(nearLand, LUMINANCE), 1e-6);
+      grassLand = nearLand * min(1.0, GRASS_ALBEDO_MOST * lightOn / grassLevel);
+    }
     // The sward: the ground's colour mottled over a metre and grained finer, each grain faded out where the pixel outgrows it.
     // Round the Koi pond, whose lawn is its own to its far edge, the mottle too, or far off it streaks.
     float near = uKoiPond > 0.5 ? layerWeight(1.0 / 2.3, footprint) : 1.0 - far;
