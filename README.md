@@ -939,9 +939,7 @@ The curated locations include:
   between the boulders. One photographed morning.
 - **Highlands** (`?sky=highlands`): five Kiara panoramas, from dawn and sunrise
   to noon, sunset and dusk. Starts at sunset unless a remembered clock is
-  nearer another hour; noon remains the lighting calibration anchor, brought
-  up 1.5 stops (its `exposure`): the series was exposed photo by photo, and
-  as a single photograph its noon came out a dusk, darker than its sunset.
+  nearer another hour; noon remains the lighting calibration anchor.
 - **Desert oasis** (`?sky=desert`): Rogland's golden hour, starry night and
   moonlit early morning, framed toward the lower rock skyline. The water is
   the simulation's, surrounded by the photographed desert.
@@ -1324,10 +1322,13 @@ behind (a capsule as long as the piece), the short capillary-gravity
 ripples its waterline sheds, running out from the capsule's outline; and
 foam hugging the waterline and trailing behind. Each is filtered by the pixel's footprint and
 what it averages away goes to the glitter's roughness and spreads the
-mirror as the wind's ripples do (`spreadMirror`), so from the shore, where a wave a metre long out there is less than a
+mirror (the sky cube blurred over twice its rms slope, as the ice's frost
+is), so from the shore, where a wave a metre long out there is less than a
 pixel deep, the wake shows as a pale line of rougher water across the far
 shore's image, and zoomed in, as waves. A frame's pose transforms cross
-sections cached once a sighting (about 0.3 ms, from 1 ms).
+sections cached once a sighting (about 0.3 ms). Its hide texture is baked
+on the first loch visit and reused. The water shader keeps two ring slots;
+their shading bound ends where the slope falls below 0.001.
 `tools/visitor-probe.mjs` checks its schedule, its reach and that it goes
 alike at any frame rate.
 
@@ -1365,14 +1366,7 @@ drawn into it each frame, over the rectangle it covers) in the direction each ri
 turns the view ray, so reflections wobble into vertical streaks (near
 things, the splash's, by their distance, so they move far less), and adds
 the sun's glitter: a Beckmann highlight on the rippled normal, widened by the
-ripple finer than the pixel. That ripple spreads the mirror image too, down
-it and not across (`spreadMirror`: the image's mip levels read through 4×
-anisotropic filtering, one lookup where no ray is turned below the horizon,
-three where some are and those are left out, hidden by the next crest), so
-past where the ripples resolve the far shore's image softens down the water
-and pales toward it, rather than standing as a sharp copy of the shore that
-reads as more land; near things spread by their distance, as they move. It
-costs about 1.5 ms a frame on an M1 at 2149×1209 (16× filtering cost 6). Where there is foam it replaces the surface, a
+ripple finer than the pixel. Where there is foam it replaces the surface, a
 diffuse white under the sun and the sky; the foam specks ride on it. The
 splash's passes then draw its water over the scene and tone-map it; with no
 water in the air the frame is only tone-mapped. Before the tone map a few

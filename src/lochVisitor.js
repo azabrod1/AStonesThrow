@@ -68,7 +68,7 @@
 import * as THREE from 'three';
 import { seededRandom } from './spray.js';
 import { sceneryShader } from './boulders.js';
-import { VISITOR_CONTACTS, VISITOR_RINGS } from './shaders/visitor.js';
+import { VISITOR_CONTACTS, VISITOR_RINGS, VISITOR_RING_SLOPE_LEAST } from './shaders/visitor.js';
 
 const GRAVITY = 9.81;
 export const SCHEDULE = {
@@ -113,7 +113,6 @@ const FORMS = {
 const FORM_NAMES = Object.keys(FORMS);
 const NECK = { up: 1.32, dip: 0.2, lift: 2.4, lower: 1.8, startled: 0.9, yaw: [0.35, 0.8], yawRate: [0.25, 0.45] };   // its curve (rad), how long it takes to lift and lower (s; startled, faster), how far and fast the head turns
 const RING_STRENGTH = { breach: 0.3, dive: 0.35, startled: 0.7 };   // m³: the rings' sizes (src/shaders/visitor.js)
-const RING_LEAST = 2e-4;      // m: a ring's height (src/shaders/visitor.js) past which the water shader leaves it out (uVisitorReach)
 const WAKE_HEIGHT = 0.16;    // m at a metre behind, for a girth of 0.45 m at 1.2 m/s (some 4 m³ moved, a rowing boat's several times): the Kelvin wake's height scale
 
 const ease = (edge0, edge1, value) => THREE.MathUtils.smootherstep(value, edge0, edge1);
@@ -282,7 +281,11 @@ export class LochVisitor {
     };
     this.geometry = this.buildGeometry();
     this.skinOffsets = new Float64Array(SPINE_POINTS * RING * 2);
-    this.hideMap = hideTexture();
+    // Keep the same map features during warm-up without baking a hide for
+    // someone who may never visit the loch.
+    this.hideMap = new THREE.DataTexture(new Uint8Array([128, 128, 128, 255]), 1, 1, THREE.RGBAFormat);
+    this.hideMap.needsUpdate = true;
+    this.hideReady = false;
     this.skin = { churn: { value: 0 } };   // the waterline's foam band (above)
     this.above = new THREE.Mesh(this.geometry, this.material('above', { envTexture, waterFog }));
     this.below = new THREE.Mesh(this.geometry, this.material('below', { envTexture, waterFog }));
@@ -379,6 +382,15 @@ export class LochVisitor {
   /** Whether the place is the loch: elsewhere nothing comes up. */
   setPlace(here) {
     this.here = here;
+    if (here && !this.hideReady) {
+      const placeholder = this.hideMap;
+      this.hideMap = hideTexture();
+      this.hideReady = true;
+      for (const mesh of this.meshes) {
+        mesh.material.bumpMap = mesh.material.roughnessMap = this.hideMap;
+      }
+      placeholder.dispose();
+    }
     if (!here) this.hide();
   }
 
@@ -475,8 +487,9 @@ export class LochVisitor {
    * `elapsed` seconds before world `time`: of `form` (drawn, by weight, if
    * none), the middle of its run `distance` m out at `bearing` degrees, its
    * `course` (degrees from +x toward +z); what is not given is drawn as a
-   * sighting's would be. Its draws are its own stream's, so the schedule's
-   * sightings after it are as they would have been.
+   * sighting's would be. Its parameters use a separate stream, but summoning
+   * replaces the schedule from here: it changes the previous form and
+   * sighting count, and the next natural sighting is scheduled after it.
    */
   summon(time, form, { elapsed = 0, distance, bearing, course } = {}) {
     const stream = seededRandom(SCHEDULE.seed, 2, this.sightings);
@@ -825,14 +838,15 @@ export class LochVisitor {
       rings[slot].set(x - sighting.headingX * middle, z - sighting.headingZ * middle, time - event.at, event.strength * (sighting.girth / 0.45) ** 2);
     }
     // The circle all of it is inside (uVisitorReach): the wake out behind as far as the source has come (its energy
-    // goes no faster than the source); each ring out to where its height, S g t² / 4r³, falls under RING_LEAST, and
+    // goes no faster than the source); each ring out to where its slope, S g² t⁴ / 16r⁵, falls under the shader's
+    // VISITOR_RING_SLOPE_LEAST (ignoring attenuation gives a conservative bound), and
     // no farther than its front; the body and what it heaps up round it.
     const reach = uniforms.uVisitorReach.value;
     let radius = sighting.speed * Math.max(time - sighting.start, 0) * 1.07 + sighting.length + 3;
     for (const ring of rings) {
       if (ring.w <= 0) continue;
       const age = ring.z;
-      const ringReach = Math.min(Math.cbrt((ring.w * GRAVITY * age * age) / (4 * RING_LEAST)), (GRAVITY * age * age) / (4 * 0.8));
+      const ringReach = Math.min(((ring.w * GRAVITY ** 2 * age ** 4) / (16 * VISITOR_RING_SLOPE_LEAST)) ** 0.2, (GRAVITY * age * age) / (4 * 0.8));
       radius = Math.max(radius, Math.hypot(ring.x - head.point.x, ring.y - head.point.z) + ringReach);
     }
     reach.set(head.point.x, head.point.z, radius, time - sighting.start);   // w: its clock, which its ripples run on

@@ -48,12 +48,11 @@
 // Each wave is filtered by the pixel's footprint on the water (acrossX,
 // acrossY), as the rings' and the ripples' are: what is finer than a pixel
 // is averaged away, and its slope variance goes to the glitter's roughness
-// and spreads the mirror as the wind's unresolved ripples do (spreadMirror
-// in src/shaders/scene.js: down the image's mip levels, lifted where its rays
-// graze), so a wake too fine to resolve (from the shore, far out, a
-// wavelength of a metre is less than a pixel deep) still shows as a V of
-// paler, duller water across the far shore's image, as a wake far out on a
-// lake does.
+// and spreads the mirror (WATER_FRAGMENT: the sky cube blurred over twice
+// its rms slope and climbing by as much, as the ice's frost is), so a wake
+// too fine to resolve (from the shore, far out, a wavelength of a metre is
+// less than a pixel deep) still shows as a V of paler, duller water across
+// the far shore's image, as a wake far out on a lake does.
 //
 // Foam: churned round each contact and trailing behind it, and over a
 // breach's first seconds, added to the water's own foam as lace that thins
@@ -63,11 +62,13 @@
 // sightings), and while it is 1 nothing outside uVisitorReach, a circle the
 // visitor sets each frame round all its waves can have reached (visitorNear).
 export const VISITOR_CONTACTS = 4;
-export const VISITOR_RINGS = 4;
+export const VISITOR_RINGS = 2;
+export const VISITOR_RING_SLOPE_LEAST = 1e-3;  // invisible beyond this slope; shared with the CPU reach bound
 
 export const VISITOR_WATER = /* glsl */`
 #define VISITOR_CONTACTS ${VISITOR_CONTACTS}
 #define VISITOR_RINGS ${VISITOR_RINGS}
+#define VISITOR_RING_SLOPE_LEAST ${VISITOR_RING_SLOPE_LEAST}
 #define VISITOR_GRAVITY 9.81
 #define VISITOR_RING_SIZE 0.4      // m: a breach's or a dive's impulse, about a body's girth
 #define CONTACT_RIPPLE 0.32        // m: the ripples' wavelength where the body breaks the surface
@@ -156,7 +157,7 @@ vec3 visitorRings(vec2 point, vec2 acrossX, vec2 acrossY) {
     float waveNumber = phase / radius;
     float cut = waveNumber * VISITOR_RING_SIZE;
     float height = ring.w * VISITOR_GRAVITY * timeSquared / (4.0 * radius * radius * radius) * exp(-cut * cut) * smoothstep(0.8, 3.0, phase);
-    if (height < 1e-5) continue;
+    if (height * waveNumber < VISITOR_RING_SLOPE_LEAST) continue;
     result += visitorWave(height, phase + 1.5707963, -waveNumber * offset / radius, acrossX, acrossY);
   }
   return result;

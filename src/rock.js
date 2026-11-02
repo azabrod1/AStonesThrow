@@ -35,6 +35,16 @@
 // go of as it is left: no state finds another's left over, and the hand
 // takes a thing in any of them clean (tools/grab-probe.mjs).
 //
+// Lying on the bed with nothing left to change (`still`: at rest under the
+// water, not afloat, on no ground, settled, rigid, soaked and thawed as far
+// as it will be, its hole long closed, no gale lifting it) a thing takes no
+// step and is not drawn anew: update returns at once, its meshes as its last
+// step left them (drawAt), and src/collide.js leaves it out of its pairs
+// (nothing meets a thing on the bed). Anything that could move it again
+// (hold, a fish's bite shrinking it away) acts on its state, so the next
+// step is a full one. A pond's worth of stones on the bottom costs its
+// frames nothing but their draw calls.
+//
 // Under a gale (src/galeWaves.js) the water moves up and down. The stone
 // meets it at the height of the waves under it (update's surfaceAt, the
 // CPU's sum of the gale's waves), and from then on it moves as the splash
@@ -1410,6 +1420,8 @@ export class Rock {
     this.drawn = { surface: 0, bedDepth: 1 };   // the water it was last drawn on (syncMeshes), for a knock's redraw
     this.age = 0;
     this.restTime = 0;
+    this.stillSince = false;       // its last step found it still (the header): drawAt need not move its meshes
+    this.drawnStill = false;       // and they have been drawn where that step left them
     const mesh = meshKind(this.thing.look.mesh);
     // What its throw draws at random (its turn, its spin, its splash's seed, its bounces): a stream of its own, seeded
     // from Math.random once, so what is drawn for its looks (Three.js's ids, a ball's paint) never moves its physics.
@@ -2209,10 +2221,15 @@ export class Rock {
     return Math.min(soft.drape + (1 - soft.drape) * this.soaked, 1) * this.thawed;
   }
 
-  /** The radius (m) inside its rim the water does not reach as it floats (`water.dry`): less as it soaks, none upside down or not afloat. */
+  /**
+   * The radius (m) inside its rim the water does not reach as it floats (`water.dry`): less as it soaks, none upside
+   * down or not afloat, and none unless it floats (rideTheWater keeps a floater's top inside that radius drawn under the
+   * water line; a plate too heavy to float, a cherry pie, has its top clipped at the water, so hiding the water over it
+   * would show the sky through the hole: it is seen through the water instead).
+   */
   get dryDisc() {
     const dry = this.thing.water.dry;
-    if (!dry || !(this.state === 'float' || this.afloat)) return 0;
+    if (!dry || !this.floats || !(this.state === 'float' || this.afloat)) return 0;
     const up = scratch.face.copy(this.uprightAxis).applyQuaternion(this.quaternion).y;
     return up > 0.9 ? dry * this.radius * (1 - this.soaked) : 0;
   }
@@ -2223,11 +2240,24 @@ export class Rock {
    * each frame between its steps): its meshes, as syncMeshes put them then.
    */
   drawAt(share) {
+    if (this.stillSince && this.drawnStill) return;   // still (the header), and drawn where it lies
     const before = this.drawnBefore ?? this.stepEnd, after = this.stepEnd;
     for (const mesh of this.meshes) {
       mesh.position.lerpVectors(before.position, after.position, share);
       mesh.quaternion.slerpQuaternions(before.quaternion, after.quaternion, share);
     }
+    this.drawnStill = this.stillSince;   // a still thing's before and after are one: drawn there, once
+  }
+
+  /**
+   * Whether it lies on the bed with nothing left to change (the header): at rest under the water, not afloat and on
+   * no ground, not settling, rigid (a soft thing bends by its age, flex), wet, thawed and soaked as far as it will be
+   * (soak), its hole closed (seenThroughWater at 1, or none opened), and no piece of ice.
+   */
+  get still() {
+    if (this.state !== 'rest' || this.afloat || this.onGround || this.settling || this.piece || this.thing.body.soft) return false;
+    if (this.wet < 1 || (this.thing.water.thaws && this.thawed < 1) || (this.thing.water.soaks && this.soaked < 1)) return false;
+    return this.sinceImpact < 0 ? !this.skip || this.seenThroughWater.value === 0 : this.seenThroughWater.value >= 1;
   }
 
   /** Into `state` (the header): what the state it leaves kept only while it lasted is let go of (STATE_OWN). */
@@ -3349,6 +3379,17 @@ export class Rock {
       this.moveHeld(this.position, surface, bedDepth);
       return null;
     }
+    // On the bed with nothing left to change, and no gale to lift it (the header): no step, its meshes where its last
+    // step left them (a frame drawn between that step and the one before it is drawn at its end, drawAt).
+    if (!surfaceAt && this.still) {
+      if (!this.stillSince) {
+        this.stillSince = true;
+        this.drawnBefore?.position.copy(this.stepEnd.position);
+        this.drawnBefore?.quaternion.copy(this.stepEnd.quaternion);
+      }
+      return null;
+    }
+    this.stillSince = false;
     let surface = 0;
     this.age += dt;
     this.turned = false;   // a floater not round turns itself afloat (turnAfloat); anything else turns by its spin below

@@ -14,16 +14,16 @@
 // - It goes alike at any frame rate: the pose at a moment is the same
 //   whether the frames before it came at 30, 60 or 144 a second, and the
 //   schedule, which the physics steps keep, is the same too.
-// - Its frame's work (the pose, the skin and its normals) stays under
-//   FRAME_BUDGET milliseconds on this machine.
+// - Frame work reuses the geometry, cross-section offsets and typed arrays;
+//   its hide is built only on first entering the loch and reused thereafter.
 //
 //   node tools/visitor-probe.mjs
 import { createHash } from 'node:crypto';
 import { LochVisitor, SCHEDULE } from '../src/lochVisitor.js';
+import { VISITOR_RINGS, VISITOR_RING_SLOPE_LEAST } from '../src/shaders/visitor.js';
 
 const STEP = 1 / 240;          // src/rock.js PHYSICS_STEP
 const FARTHEST_AWAY = 30;      // src/main.js: a floater past this from the pond goes
-const FRAME_BUDGET = 1.5;      // ms for a frame's pose
 const EYE = { x: 0, z: 2.45 };
 let failures = 0;
 const check = (ok, message) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${message}`); if (!ok) failures++; };
@@ -54,9 +54,52 @@ function run(seconds, { frame = 1 / 60, things = () => [], open = () => true, on
   return { visitor, sightings };
 }
 
+// Other places pay only for a 1-texel placeholder; all three materials keep
+// their compiled map features when the real hide is assigned, once.
+{
+  const visitor = new LochVisitor({ envTexture: null, waterFog: { extinction: null, color: null }, mirrorLayer: 1 });
+  const placeholder = visitor.hideMap;
+  const versions = visitor.meshes.map((mesh) => mesh.material.version);
+  visitor.setPlace(false);
+  check(placeholder.image.width === 1 && visitor.hideMap === placeholder && !visitor.hideReady, 'no hide bake outside the loch');
+  visitor.setPlace(true);
+  const hide = visitor.hideMap;
+  check(hide.image.width === 256 && visitor.meshes.every((mesh, index) => mesh.material.bumpMap === hide && mesh.material.roughnessMap === hide && mesh.material.version === versions[index]), 'first loch visit assigns the hide without changing material programs');
+  visitor.setPlace(false);
+  visitor.setPlace(true);
+  check(visitor.hideMap === hide, 'later loch visits reuse the hide');
+}
+
+// Late rings shade a compact circle while keeping every slope that can
+// survive the shader cutoff. Sample the unattenuated analytical envelope,
+// which bounds the shader's impulse and front filters from above.
+for (const form of ['neck', 'back']) {
+  const visitor = makeVisitor();
+  visitor.step(0, [], { open: true, near: false });
+  visitor.summon(0, form);
+  const sighting = visitor.sighting;
+  visitor.showAt(sighting.sinkStart + sighting.sinkSeconds + SCHEDULE.linger - 0.1);
+  const reach = visitor.uniforms.uVisitorReach.value;
+  const rings = visitor.uniforms.uVisitorRings.value;
+  let covered = 0, clipped = 0, oldRadius = 0;
+  for (const ring of rings) {
+    const centre = Math.hypot(ring.x - reach.x, ring.y - reach.y);
+    oldRadius = Math.max(oldRadius, centre + Math.cbrt(ring.w * 9.81 * ring.z ** 2 / (4 * 2e-4)));
+    for (let radius = 0.5; radius <= 300; radius += 0.5) {
+      const phase = 9.81 * ring.z ** 2 / (4 * radius);
+      const slope = ring.w * 9.81 ** 2 * ring.z ** 4 / (16 * radius ** 5);
+      if (phase <= 0.8 || slope < VISITOR_RING_SLOPE_LEAST) continue;
+      covered++;
+      if (centre + radius > reach.z + 1e-6) clipped++;
+    }
+  }
+  check(VISITOR_RINGS === 2 && rings.length === 2 && covered > 0 && clipped === 0 && reach.z < 0.65 * oldRadius,
+    `${form} linger: ${reach.z.toFixed(1)} m shade radius (old height bound ${oldRadius.toFixed(1)} m), ${covered} ring samples covered, ${clipped} clipped; two ring slots`);
+}
+
 // The schedule, with nothing thrown.
 {
-  let nearest = Infinity, shownFrames = 0, worstFrame = 0;
+  let nearest = Infinity, shownFrames = 0;
   const { sightings } = run(2 * 3600, {
     frame: 1 / 30,
     onFrame(visitor) {
@@ -79,27 +122,33 @@ function run(seconds, { frame = 1 / 60, things = () => [], open = () => true, on
   const forms = new Set(sightings.map((sighting) => sighting.form));
   check(forms.size === 4, `every form comes: ${[...forms].join(', ')}`);
   check(nearest >= SCHEDULE.nearest && nearest > FARTHEST_AWAY, `out of reach: its body never nearer the eye than ${nearest.toFixed(1)} m (in ${shownFrames} frames shown)`);
-  // A frame's work, timed over a sighting.
+  // Frame work is bounded by a fixed mesh and reuses its buffers; no wall-clock assertion in the parallel suite.
   const visitor = makeVisitor();
   visitor.step(0, [], { open: true, near: false });
   visitor.summon(0, 'neck', { elapsed: 8 });
   let posed = 0;
-  const started = performance.now();
+  visitor.showAt(0);   // prepare this sighting's cached cross sections
+  const geometry = visitor.geometry;
+  const positions = geometry.attributes.position.array, normals = geometry.attributes.normal.array;
+  const offsets = visitor.skinOffsets;
+  const originalOffsets = offsets.slice();
   for (let index = 0; index < 600; index++) { visitor.showAt(index / 60); if (visitor.above.visible) posed++; }
-  worstFrame = (performance.now() - started) / 600;
-  check(posed > 300 && worstFrame < FRAME_BUDGET, `a frame's pose takes ${worstFrame.toFixed(3)} ms (out of the water in ${posed} of 600 frames)`);
+  check(posed > 300 && positions.length / 3 <= 5000 && geometry === visitor.geometry
+    && positions === geometry.attributes.position.array && normals === geometry.attributes.normal.array
+    && offsets === visitor.skinOffsets && offsets.every((value, index) => value === originalOffsets[index]),
+    `600 frames reuse a fixed ${positions.length / 3}-vertex mesh, normal buffers and cached cross sections (${posed} frames above water)`);
 }
 
 // Something thrown near its course.
 {
-  // A thing parked 20 m out on the home line: a sighting may still come, but never with it within SCHEDULE.clear of its course.
+  // A thing parked about 42 m from the eye on the home line (near the sightings' band): a sighting may still come, but never with it within SCHEDULE.clear of its course.
   const parked = [{ position: { x: 0, z: -40 } }];
   const { sightings } = run(1800, { frame: 1 / 30, things: () => parked });
   const clear = sightings.every((sighting) => {
     const visitor = makeVisitor();
     return !visitor.thingNear(sighting, null, parked, SCHEDULE.clear);
   });
-  check(clear, `a thing out on the water: none of ${sightings.length} sightings came within ${SCHEDULE.clear} m of it`);
+  check(sightings.length > 0 && clear, `a thing out on the water: none of ${sightings.length} sightings came within ${SCHEDULE.clear} m of it`);
   // A thing that turns up beside one under way: it goes down at once.
   const visitor = makeVisitor();
   visitor.step(0, [], { open: true, near: false });

@@ -1718,16 +1718,11 @@
     });
     // The Water page as the place has it: the lake's clarities, or the pool's own water; Frozen's ice under the cards.
     const showIce = radioGroup(document.getElementById('ice'), (value) => { pond.setIce(value); updateWater(); });
-    const OPEN_WATER = {
-      pool: { image: 'assets/sky/thumbs/pool.jpg', name: 'Pool water', note: 'Filtered: the tiles clear to the bottom' },
-      koi: { image: 'assets/sky/thumbs/koi.jpg', name: 'Pond water', note: 'Clear and green: the koi show to the gravel' },
-      loch: { image: 'assets/sky/thumbs/loch.jpg', name: 'Loch water', note: 'Peat-dark: nothing a metre down can be seen' },
-    };
     function updateWater() {
       for (const card of document.querySelectorAll('#water [data-value]')) {
         if (card.dataset.value !== 'frozen') card.hidden = (card.dataset.value === 'open') !== pond.ownWater;
       }
-      const open = OPEN_WATER[pond.ownWaterName ?? 'pool'];
+      const open = pond.ownWaterCard;
       const openCard = document.querySelector('#water [data-value="open"]');
       openCard.querySelector('img').src = open.image;
       openCard.querySelector('b').textContent = open.name;
