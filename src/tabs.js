@@ -8,7 +8,7 @@
 //
 // With a `storageKey` the tab a viewer last picked (a click or a key, not one shown for them) is remembered in
 // localStorage for the next visit, a per-viewer convenience; `last` is the tab shown last, from storage at first.
-// Both the dropdown of things (src/thingMenu.js) and What to throw's groups (index.html) are one of these, so the
+// Both the dropdown of things (src/thingMenu.js) and What to throw's groups (src/thingPage.js) are one of these, so the
 // two rows go alike.
 export class TabRow {
   constructor(tablist, { hidePanel, onSelect = () => {}, storageKey = null, key = 'tab' }) {

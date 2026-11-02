@@ -30,7 +30,12 @@
 // so a light snow's flakes in calm air are round and a blizzard's streak
 // sideways, each keeping its light (its opacity the share of its capsule
 // it covers); a flake under STREAK_MIN_PIXELS across is drawn that wide and
-// fainter, so far flakes thin into the haze rather than flicker. `sizes` is
+// fainter, so far flakes thin into the haze rather than flicker. No two
+// flakes are alike (FLAKE_FRAGMENT): each has its own opacity (a lacy
+// crystal a veil, a rimed clump near solid), a lumpy outline and a body
+// thick in the middle and thin at a fluffy rim, and turns over as it
+// falls, so the fall glitters; its numbers are sums of its attributes,
+// wrapped, so they are as seeded as its place. `sizes` is
 // the smallest and largest flake across (m): light snow's single crystals
 // and small clumps, heavy snow's aggregates up to 5 cm (the big soft flakes
 // of a snow day near freezing, crystals stuck together as they fall; one in
@@ -76,9 +81,10 @@
 //
 // Cost while it snows: one draw of `flakes` near and FAR.flakes times as
 // many far (times the preset's share) instanced quads, their vertex shader a
-// few dozen operations and, under a gale, one lookup of its waves; the far
-// flakes a pixel or two each; no pass, no target, nothing on the CPU but a
-// few uniforms. With no snow nothing is drawn.
+// few dozen operations and, under a gale, one lookup of its waves, their
+// fragment shader a dozen for the flake's form (only the few nearest cover
+// many pixels); the far flakes a pixel or two each; no pass, no target,
+// nothing on the CPU but a few uniforms. With no snow nothing is drawn.
 import * as THREE from 'three';
 import { FLAKE_VERTEX, FLAKE_FRAGMENT, SPEED_STEPS, SPEED_SHARE, CYCLE } from './shaders/snow.js';
 

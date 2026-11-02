@@ -37,7 +37,8 @@ it out).
 Escape or Reset view (under the menu button while the view is away from
 the shore's) glides back to the shore. The strip at the bottom sets what is
 thrown: its name opens a dropdown of things in tabs (`src/thingMenu.js`, its
-tab row `src/tabs.js`, as What to throw's is):
+tab row `src/tabs.js`, as What to throw's is; `src/thingPage.js` builds
+both views and keeps their favourites and recent choices):
 Favourites, then a tab for each group (Stones, Balls, Food, Toys,
 Electronics, Gems, seldom thrown, and Other last), each thing a pill with
 its picture (on a desktop its note in a tip), the card as tall as the

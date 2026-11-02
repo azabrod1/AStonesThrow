@@ -12,7 +12,7 @@
 // it holds something (a per-viewer convenience, in localStorage; the first
 // time, Favourites if there are any), else on the chosen thing's group. On a
 // touch screen the tabs are one row a finger scrolls sideways (index.html).
-// The page script (index.html) builds the tabs, the pills and the chosen
+// The page builders (src/thingPage.js) build the tabs, the pills and the chosen
 // thing's card and says what a choice, the star and the ⓘ do (onChoose,
 // onFavourite, onMore); this holds the opening, closing, the tabs (a TabRow,
 // src/tabs.js, as What to throw's are), the tips and moving about.
