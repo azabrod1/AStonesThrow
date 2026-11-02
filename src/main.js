@@ -340,6 +340,20 @@ import { withRandom, parkMiller } from './withRandom.js';
 //   underScale    the under-water pass's and the mirror image's resolution, of
 //                 the canvas's (both are seen through ripples);
 //   fluidScale    the splash's fluid buffers', of the canvas's;
+//   frameScale    'css' holds those two at one buffer pixel per CSS pixel
+//                 (FRAME_SCALE: 1/dpr, between its least and 1) while the view
+//                 is at its frame or zoomed in by less than CLOSE_UP, and lets
+//                 them go to the preset's scales once zoomed in closer: at the
+//                 frame the splash is a few dozen pixels and a fleck of spray
+//                 a CSS pixel whatever the buffer, so the pixels above that
+//                 cost (on an M5 Max at 2293 × 1133, 1 ms of an idle frame's
+//                 3.3 and 2 of a splash frame's 7.5) show nothing, while a
+//                 close-up shows the fish seen through the water blocky and
+//                 the droplets soft at half (frames compared, home and
+//                 --fov=12). The targets are built again as the zoom crosses
+//                 CLOSE_UP (applyView: rebuildScaledTargets). ?targets=full
+//                 holds the preset's scales everywhere (the shoot harness's
+//                 --targets=full, for reference frames of the home view);
 //   idleFrameRate the frame rate of a pond where nothing happens (Low power in
 //                 the header; 0 would hold it only to MAX_FRAME_RATE);
 //   maxDpr        the cap on device pixels per CSS pixel;
@@ -388,12 +402,14 @@ import { withRandom, parkMiller } from './withRandom.js';
 // and every mesh takes 16-bit indices (at most 254 segments: Three.js keeps
 // the index 65535 for primitive restart).
 export const QUALITY = {
-  high: { grid: 512, meshSegments: 254, underScale: 1.0, fluidScale: 1.0, idleFrameRate: 30, maxDpr: 2.0, rings: 24, ringFade: 8, rainTexels: 512, dropRings: 24, crownDrops: 3500, snowShare: 1, resting: 80, afloat: 32, shards: 24, moving: 40, gardenCoarse: false, spray: { ring: 65536, share: 1 } },
+  high: { grid: 512, meshSegments: 254, underScale: 1.0, fluidScale: 1.0, frameScale: 'css', idleFrameRate: 30, maxDpr: 2.0, rings: 24, ringFade: 8, rainTexels: 512, dropRings: 24, crownDrops: 3500, snowShare: 1, resting: 80, afloat: 32, shards: 24, moving: 40, gardenCoarse: false, spray: { ring: 65536, share: 1 } },
   medium: { grid: 256, meshSegments: 160, underScale: 0.5, fluidScale: 0.5, idleFrameRate: 30, maxDpr: 2.0, rings: 12, ringFade: 4, rainTexels: 256, dropRings: 16, crownDrops: 2000, snowShare: 0.6, resting: 45, afloat: 21, shards: 15, moving: 30, gardenCoarse: false, spray: { ring: 16384, share: 0.4 } },
   low: { grid: 256, meshSegments: 128, underScale: 0.5, fluidScale: 0.5, idleFrameRate: 30, maxDpr: 1.5, rings: 10, ringFade: 3, rainTexels: 256, dropRings: 12, crownDrops: 2000, snowShare: 0.4, resting: 20, afloat: 12, shards: 6, moving: 20, gardenCoarse: true, spray: { ring: 8192, share: 0.2 } },
 };
 export const PIXEL_BUDGET = 2.6e6;   // device pixels in the canvas, on every preset
 const QUALITY_ORDER = ['high', 'medium', 'low'];
+const CLOSE_UP = { zoom: 1.5 };     // zoomed in by this much (zoomLevel) the targets take the preset's scales (QUALITY: frameScale)
+const FRAME_SCALE = { least: 0.5 };   // the frame's scale (one buffer pixel per CSS pixel) never under this of the canvas
 // Automatic quality starts every device on high and steps down from what it
 // measures, never from what the device looks like: the frame rate of the idle
 // pond after warm-up, then of the first splash (the fluid passes run only
@@ -1549,6 +1565,9 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     } else {
       rings.setCamera(null);
     }
+    // Zoomed in past CLOSE_UP, or back out of it: the targets at the scales for this view (QUALITY: frameScale).
+    const scales = targetScales();
+    if (!builtScales || scales.under !== builtScales.under || scales.fluid !== builtScales.fluid) rebuildScaledTargets();
     splash.updateViewUniforms(camera, resolution.y, dpr, underTarget.height);
     viewChanged = true;
     lastActivity = performance.now();
@@ -1732,6 +1751,24 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
 
   /** Width and height of `fraction` of the canvas's resolution, at least one pixel. */
   const scaledSize = (fraction) => [Math.max(1, Math.round(resolution.x * fraction)), Math.max(1, Math.round(resolution.y * fraction))];
+  const fullTargets = pageParameters.get('targets') === 'full';   // the preset's scales at any zoom (QUALITY: frameScale)
+  /** The under-water, mirror and fluid targets' scales for the view now (QUALITY: frameScale): the preset's, or at the frame one buffer pixel per CSS pixel. */
+  function targetScales() {
+    const atFrame = settings.frameScale === 'css' && !fullTargets && zoomLevel() < CLOSE_UP.zoom;
+    const frame = atFrame ? THREE.MathUtils.clamp(1 / dpr, FRAME_SCALE.least, 1) : null;
+    return { under: atFrame ? Math.min(frame, settings.underScale) : settings.underScale, fluid: atFrame ? Math.min(frame, settings.fluidScale) : settings.fluidScale };
+  }
+  let builtScales = null;   // the scales the under-water, mirror and fluid targets were last built at
+  /** The under-water, mirror and fluid targets at the scales for the view now; `splash.updateViewUniforms` needs calling after (applyView does). */
+  function rebuildScaledTargets() {
+    builtScales = targetScales();
+    underTarget?.dispose();
+    reflectionTarget?.dispose();
+    const [underWidth, underHeight] = scaledSize(builtScales.under);
+    underTarget = createFloatTarget(underWidth, underHeight, { type: THREE.HalfFloatType, filter: THREE.LinearFilter, depth: true, depthTexture: true });
+    reflectionTarget = createFloatTarget(underWidth, underHeight, { type: THREE.HalfFloatType, filter: THREE.LinearFilter, depth: true });
+    splash.resize(resolution.x, resolution.y, builtScales.fluid);
+  }
 
   function resize() {
     const width = Math.max(1, canvas.clientWidth);
@@ -1747,14 +1784,9 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     // A view set through the API stays as it is; the user's zoom stays inside the new home frame.
     if (!zoomed) Object.assign(view, home);
     else if (!viewFromApi) Object.assign(view, clampToFrame({ ...view, fov: Math.min(view.fov, home.fov) }, home, camera.aspect));
-    underTarget?.dispose();
     mainTarget?.dispose();
-    reflectionTarget?.dispose();
-    const [underWidth, underHeight] = scaledSize(settings.underScale);
-    underTarget = createFloatTarget(underWidth, underHeight, { type: THREE.HalfFloatType, filter: THREE.LinearFilter, depth: true, depthTexture: true });
     mainTarget = createFloatTarget(resolution.x, resolution.y, { type: THREE.HalfFloatType, filter: THREE.LinearFilter, depth: true, depthTexture: true });
-    reflectionTarget = createFloatTarget(underWidth, underHeight, { type: THREE.HalfFloatType, filter: THREE.LinearFilter, depth: true });
-    splash.resize(resolution.x, resolution.y, settings.fluidScale);
+    rebuildScaledTargets();
     glare.resize(resolution.x, resolution.y);
     reeds.resize(resolution.y);
     applyView();

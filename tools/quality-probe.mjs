@@ -149,7 +149,9 @@ function expected(name, width, height, devicePixelRatio = 1) {
   const ratio = Math.min(devicePixelRatio, preset.maxDpr, Math.sqrt(PIXEL_BUDGET / (width * height)));
   const canvas = { width: Math.floor(width * ratio), height: Math.floor(height * ratio) };
   const scaled = (fraction, least) => ({ width: Math.max(least, Math.round(canvas.width * fraction)), height: Math.max(least, Math.round(canvas.height * fraction)) });
-  return { grid: preset.grid, meshSegments: preset.meshSegments, canvas, under: scaled(preset.underScale, 1), fluid: scaled(preset.fluidScale, 2), spray: preset.spray };
+  // At the frame a 'css' preset holds the under-water, mirror and fluid targets at one buffer pixel per CSS pixel (src/main.js QUALITY frameScale).
+  const frame = preset.frameScale === 'css' ? Math.min(1, Math.max(0.5, 1 / ratio)) : 1;
+  return { grid: preset.grid, meshSegments: preset.meshSegments, canvas, under: scaled(Math.min(frame, preset.underScale), 1), fluid: scaled(Math.min(frame, preset.fluidScale), 2), spray: preset.spray };
 }
 const size = ({ width, height }) => `${width}×${height}`;
 /** The quads across the water mesh: the patch's segments, or in the pool those over its square and one round it (src/waterSurface.js). */
