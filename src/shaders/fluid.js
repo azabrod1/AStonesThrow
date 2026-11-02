@@ -765,9 +765,8 @@ void main() {
 // included). The mirror pass draws each kind twice: its colour, then
 // (uMirrorDistance 1, the same program with another blend) its distance.
 // The distance draw writes nothing where the fragment covers less than
-// MIRROR_NEAR_COVERAGE of its pixel (a thin sheet's face: the reflected ray
-// goes on through it to the sky, so the water reflects that sky there, by
-// direction), and elsewhere its nearness to the mirror camera,
+// MIRROR_NEAR_COVERAGE of its pixel (a drop's or a puff's edge), and
+// elsewhere its nearness to the mirror camera,
 // 1 − MIRROR_NEARNESS_SCALE / distance, into alpha, leaving the colour as it
 // is; the blend keeps the least, the nearest. The dome and the clear leave
 // alpha at 1, as far as it gets. The water shader reads it back
@@ -789,7 +788,10 @@ vec4 mirrorNearness(float coverage, vec3 viewPoint) {
 
 // A sheet: the sky's Fresnel reflection off its wrinkled, banded face
 // (sheetNormal: a flat face reflected as a flat grey shape), and its aerated
-// bead's and froth's scattering, through its holes (SHEET_FROTH).
+// bead's and froth's scattering, through its holes (SHEET_FROTH). All of it
+// is near for the distance draw, as the column is: where only its bright
+// faces were, the sheet's reflection was a patchwork of pieces that moved
+// with the sheet and pieces that moved with the sky, a mosaic.
 export const MIRROR_SHEET_FRAGMENT = /* glsl */`
 uniform vec3 uSkyAmbient;
 varying vec3 vViewPosition;
@@ -800,6 +802,7 @@ varying float vRod;
 varying vec3 vSheet;
 varying vec2 vFroth;
 varying float vRimDistance;
+varying float vFoot;
 ${MIRROR_COMMON}
 ${SHEET_FROTH}
 void main() {
@@ -808,12 +811,12 @@ void main() {
   if (dot(normal, toViewer) < 0.0) normal = -normal;
   SheetFroth froth = sheetFroth(vSheet, vFroth, vAeration, vRod, dot(normal, toViewer));
   normal = sheetNormal(normal, vViewPosition, vSheet, vFroth, vRod, vRimDistance);
-  if ((worldFromView(vViewPosition) + cameraPosition).y < uMirrorLevel || froth.hole) discard;
+  if ((worldFromView(vViewPosition) + cameraPosition).y < uMirrorLevel || froth.hole || vFoot < 0.01) discard;
   normal = normalize(normal + vViewRimTangent);
   float fresnel = waterFresnel(dot(normal, toViewer));
-  float aerated = min(RIM_AERATION * vAeration + froth.whiteness, 1.0) * (1.0 - fresnel) * froth.present;
-  fresnel *= froth.present;
-  if (uMirrorDistance > 0.5) { gl_FragColor = mirrorNearness(fresnel + aerated, vViewPosition); return; }
+  float aerated = min(RIM_AERATION * vAeration + froth.whiteness, 1.0) * (1.0 - fresnel) * froth.present * vFoot;
+  fresnel *= froth.present * vFoot;
+  if (uMirrorDistance > 0.5) { gl_FragColor = mirrorNearness(froth.present, vViewPosition); return; }
   vec3 reflected = textureCubeLodEXT(uEnvCube, worldFromView(reflect(-toViewer, normal)), 1.0).rgb;
   gl_FragColor = vec4(fresnel * reflected + aerated * uSkyAmbient * 1.2, fresnel + aerated);
 }

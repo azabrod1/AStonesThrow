@@ -6,7 +6,12 @@
 // faces. Each writes its exact view normal, turned to face the viewer: a
 // normal rebuilt from depth would stripe the faceted mesh.
 //
-// Sheet. A landing drop's crown (aRide = 1) is lifted by the water's height
+// Sheet. The foot a stone's crown stands on, the material the lip carries
+// (aCarry, src/crown.js), is the lip's own water, drawn by the hole's mesh:
+// the passes fade the sheet out over FOOT_FADE of the carry (its coverage,
+// so the composite's alpha, and its depth past the end), where drawn as
+// sheet it lay in the lip's surface and fought it pixel by pixel along the
+// crest, a dotted line. A landing drop's crown (aRide = 1) is lifted by the water's height
 // under each vertex, splash, ambient waves and rings (src/rings.js)
 // together, sampled as the water surface's vertex shader does, so it stands
 // on the waves it lands on; a stone's crown rides them along its base row,
@@ -156,7 +161,7 @@ export const SHEET_FROTH = /* glsl */`
 #define FROTH_STREAK_FINE 2.7      // ...ragged by a second noise at this many times the scale, half as strong
 #define FROTH_PATCH_SCALE 0.15     // the patches' cells per hole cell...
 #define FROTH_PATCH vec2(0.4, 1.6) // ...and the density's range across them
-#define FROTH_GRAZE 0.25           // the cosine of the view's angle to the sheet below which the path through it stops growing
+#define FROTH_GRAZE 0.5            // the cosine of the view's angle to the sheet below which the path through it stops growing (its bubbles sit on a film, no deep cloud: at a quarter the sheet's sides went milk)
 #define FROTH_GRAIN_SCALE 3.7      // the grain's cells per hole cell
 #define WRINKLE_SCALE 0.6          // the wrinkles' cells per hole cell
 #define WRINKLE_SLOPE 0.12         // their slope on a glassy sheet (its folds catch the sky)...
@@ -308,6 +313,7 @@ vec3 sheetNormal(vec3 normal, vec3 viewPosition, vec3 sheet, vec2 froth, float r
 
 export const SHEET_VERTEX = /* glsl */`
 #define RIM_LEAN 1.4             // the rim tangent's length at the free edge (src/crown.js's bend)
+#define FOOT_FADE vec2(0.6, 0.95)   // the sheet fades out as the lip's carry of its material rises over this range: its foot is the lip's water (the header)
 #define SHEET_RING_SPACING 0.01  // metres: the rings' height under a riding vertex, read this smooth (the water surface's own)
 attribute float aThickness;
 attribute vec3 aRimTangent;
@@ -316,6 +322,7 @@ attribute float aRod;
 attribute vec3 aSheet;
 attribute vec2 aFroth;
 attribute float aRimDistance;
+attribute float aCarry;
 uniform sampler2D uHeight;
 uniform vec2 uDomainMin;
 uniform float uDomainSize;
@@ -329,6 +336,7 @@ varying float vRod;
 varying vec3 vSheet;
 varying vec2 vFroth;
 varying float vRimDistance;
+varying float vFoot;             // the sheet's share here: 1, fading to 0 over the foot the lip carries (the header)
 ${GLSL_COMMON}
 void main() {
   vec4 world = modelMatrix * vec4(position, 1.0);
@@ -350,6 +358,7 @@ void main() {
   vSheet = aSheet;
   vFroth = aFroth;
   vRimDistance = aRimDistance;
+  vFoot = 1.0 - smoothstep(FOOT_FADE.x, FOOT_FADE.y, aCarry);
   gl_Position = projectionMatrix * viewPosition;
 }
 `;
@@ -365,6 +374,7 @@ varying float vRod;
 varying vec3 vSheet;
 varying vec2 vFroth;
 varying float vRimDistance;
+varying float vFoot;
 ${SHEET_FROTH}
 void main() {
   // The froth's derivatives first, while every pixel of the quad still runs.
@@ -374,7 +384,7 @@ void main() {
   SheetFroth froth = sheetFroth(vSheet, vFroth, vAeration, vRod, dot(normal, toViewer));
   normal = sheetNormal(normal, vViewPosition, vSheet, vFroth, vRod, vRimDistance);
   float sceneDepth = texture2D(uSceneDepth, gl_FragCoord.xy / uResolution).r;
-  if (gl_FragCoord.z > sceneDepth || froth.hole) discard;
+  if (gl_FragCoord.z > sceneDepth || froth.hole || vFoot < 0.01) discard;
   normal = normalize(normal + vViewRimTangent);
   gl_FragColor = vec4(-vViewPosition.z, vRod > 0.5 ? 998.0 : 999.0, normal.xy);
 }
@@ -390,14 +400,15 @@ varying float vAeration;
 varying float vRod;
 varying vec3 vSheet;
 varying vec2 vFroth;
+varying float vFoot;
 ${SHEET_FROTH}
 void main() {
   float facing = abs(dot(normalize(vViewNormal), normalize(-vViewPosition)));
   SheetFroth froth = sheetFroth(vSheet, vFroth, vAeration, vRod, facing);
   float sceneDepth = texture2D(uSceneDepth, gl_FragCoord.xy / uResolution).r;
-  if (gl_FragCoord.z > sceneDepth || froth.hole) discard;
+  if (gl_FragCoord.z > sceneDepth || froth.hole || vFoot < 0.01) discard;
   float aeration = RIM_AERATION * vAeration + froth.whiteness;
-  gl_FragColor = froth.present * vec4(vThickness * (1.0 + froth.gathered) / max(facing, 0.33), 1.0, 0.0, aeration);
+  gl_FragColor = froth.present * vFoot * vec4(vThickness * (1.0 + froth.gathered) / max(facing, 0.33), 1.0, 0.0, aeration);
 }
 `;
 

@@ -177,7 +177,12 @@
 // Every vertex also carries its distance behind the rim as launched
 // (aRimDistance, its launch time in launch durations), for the sheet
 // shader's capillary bands (src/shaders/sheet.js); a torn edge is no rim,
-// and sends no bands down the sheet.
+// and sends no bands down the sheet. And how far it is carried by the lip
+// (aCarry, the launch's carry): the foot that rides the lip is the lip's
+// own water, which the hole's mesh draws, so the sheet's passes fade it
+// out over the last of the carry (src/shaders/sheet.js FOOT_FADE); drawn
+// as sheet it lay in the lip's surface and fought it for every pixel along
+// the crest, a dotted line.
 //
 // Froth. A sheet thrown up this fast is no clean film: it wrinkles, holes
 // open in it as it thins, and it carries air, the more the faster and the
@@ -427,6 +432,7 @@ const LIGAMENT_COLUMNS = 8;        // ...and vertices around each
 const LIGAMENT_ROOT = 0.2;         // it rises out of the sheet from this share of its width at its root...
 const LIGAMENT_RISE = 0.35;        // ...over this share of its length...
 const LIGAMENT_TIP = 0.55;         // ...and tapers to this share of the bead's width at its tip...
+const LIGAMENT_BREADTH = [0.6, 1.4];   // ...as thick as the rim bead times its finger's breadth share (FINGER_BREADTH, 0 to 1) over this range: a broad finger is a thick ligament, a narrow one a thread (equal cones read as a picket fence)
 const LIGAMENT_WAVES = [1, 3];     // ...with this many varicose waves along it, finger by finger...
 const LIGAMENT_BULGE = 0.45;       // ...swelling its width by up to this share either way...
 const LIGAMENT_BULGE_TIME = 0.03;  // ...over this many seconds of the sheet's age (the beading grows)
@@ -442,7 +448,7 @@ const FINGER_SPOTS = [-1, -0.88, -0.55, 0, 0.55, 0.88, 1];   // grid columns acr
 const ARC_COLUMNS = 7;             // ...and inside an arc (enough that a scallop is a curve, not a zigzag)
 const FINGER_LEAN = 1.2;           // a finger's normal leans across it by this much at its sides (a rod's)
 const BEAD_RIM = 0.95;             // a finger's bead grows to a drop this many times the rim's thickness in radius...
-const BEAD_JITTER = 0.35;          // ...give or take this share, drop by drop
+const BEAD_JITTER = 0.55;          // ...give or take this share, drop by drop (a string of equal pearls read as beads)
 const BEAD_SEED = 0.3;             // a bead starts with this share of its drop's volume: the rim's own thickening
 // The sheet's froth (the header; drawn by SHEET_FROTH in src/shaders/sheet.js).
 export const FROTH_SPEED = 6.3;    // m/s: the entry speed a sheet's violence is reckoned against (the reference throw's; src/splash.js froths the jet's base by the same law)
@@ -562,6 +568,7 @@ function layFingers(fingerScale) {
     const finger = {
       angle,
       halfWidth: FINGER_WIDTH * meanSpacing * breadth,
+      thickness: LIGAMENT_BREADTH[0] + (LIGAMENT_BREADTH[1] - LIGAMENT_BREADTH[0]) * (breadth - FINGER_BREADTH[0]) / (FINGER_BREADTH[1] - FINGER_BREADTH[0]),
       length: FINGER_LENGTH * (reach < FINGER_STUNTED ? FINGER_STUB * reach : reach),
       // The arc after it sags its own way, and its beading has waves and a phase of its own: shares drawn
       // from its axis, which spend no draw of Math.random.
@@ -824,6 +831,7 @@ export class CrownSheet {
     this.froths = new Float32Array(vertexCount * 2);        // its whiteness and open share (aFroth)
     this.rowTaus = new Float64Array(vertexCount);   // launch time behind the free edge
     this.rimDistances = new Float32Array(vertexCount);   // launch time in launch durations, for the shader's bands (aRimDistance)
+    this.carries = new Float32Array(vertexCount);        // how far the material rides the lip (evaluate's carry), for the shader's foot (aCarry)
     this.mesh = createRingGrid(this.rows, this.columns, {
       position: [this.positions, 3],
       normal: [this.normals, 3],
@@ -833,6 +841,7 @@ export class CrownSheet {
       aSheet: [this.sheetPlaces, 3],
       aFroth: [this.froths, 2],
       aRimDistance: [this.rimDistances, 1],
+      aCarry: [this.carries, 1],
       aRide: [this.rideFlags(vertexCount, landing), 1],   // 1: lifted by the wave height under it
     }, material, { wrap: this.wrap });
     this.maxDropRadius = landing ? LANDING_DROP_CAP * radius : (fan ? FAN_DROP_CAP : CROWN_DROP_CAP) * this.dropScale;
@@ -1515,9 +1524,11 @@ export class CrownSheet {
     const centreX = new Float64Array(LIGAMENT_RINGS), centreY = new Float64Array(LIGAMENT_RINGS), centreZ = new Float64Array(LIGAMENT_RINGS), widths = new Float64Array(LIGAMENT_RINGS);
     const frame = this.ligamentFrame;
     const rimCells = this.frothRing * RIM_BEAD_CELLS;
-    // outward: the normals point out of the tube (a cap's and a joiner's along its axis); rimAngle: the ring's azimuth
-    // on the crown for the rim's ripple cells (NaN on a ligament, whose cells run along it).
-    const writeRing = (row, x, y, z, axisX, axisY, axisZ, radius, roundness, along, outward = roundness <= 0.5, rimAngle = NaN) => {
+    // outward: the normals point out of the tube (a cap's, a joiner's and any ring's of no radius along its axis: the
+    // column shader widens a ring narrower than a pixel along its normals, and a vanished ring with a tube's normals
+    // opened into a hairline circle); rimAngle: the ring's azimuth on the crown for the rim's ripple cells (NaN on a
+    // ligament, whose cells run along it).
+    const writeRing = (row, x, y, z, axisX, axisY, axisZ, radius, roundness, along, outward = radius > 0 && roundness <= 0.5, rimAngle = NaN) => {
       // The carried frame, turned onto this ring's plane (src/jet.js writeRing).
       let firstX = frame.x, firstY = frame.y, firstZ = frame.z;
       const dot = firstX * axisX + firstY * axisY + firstZ * axisZ;
@@ -1572,7 +1583,7 @@ export class CrownSheet {
         const along = widths[ring];
         const rise = LIGAMENT_ROOT + (1 - LIGAMENT_ROOT) * smoothstep(0, LIGAMENT_RISE, along);
         const bulge = 1 + bulgeNow * Math.sin(Math.PI * 2 * finger.waves * along + finger.wavePhase);
-        widths[ring] = gone ? 0 : Math.max(0.5 * bead * rise * (1 - (1 - LIGAMENT_TIP) * along) * bulge, 0);
+        widths[ring] = gone ? 0 : Math.max(0.5 * bead * finger.thickness * rise * (1 - (1 - LIGAMENT_TIP) * along) * bulge, 0);
       }
       // A joiner before the root, the rings, a cap at the tip, a joiner after. A joiner's normals all point along
       // the axis (as its cap's do): the column shader widens a ring narrower than a pixel along its normals, and a
@@ -1631,7 +1642,7 @@ export class CrownSheet {
       const dx = centres[next * 3] - centres[previous * 3], dy = centres[next * 3 + 1] - centres[previous * 3 + 1], dz = centres[next * 3 + 2] - centres[previous * 3 + 2];
       const length = Math.sqrt(dx * dx + dy * dy + dz * dz);
       if (length > 1e-9) { axisX = dx / length; axisY = dy / length; axisZ = dz / length; }
-      writeRing(row++, centres[column * 3], centres[column * 3 + 1], centres[column * 3 + 2], axisX, axisY, axisZ, radii[column], 1, 0, true, this.columnAngle[column]);
+      writeRing(row++, centres[column * 3], centres[column * 3 + 1], centres[column * 3 + 2], axisX, axisY, axisZ, radii[column], 1, 0, radii[column] > 0, this.columnAngle[column]);
     }
     for (let vertex = 0; vertex < grid; vertex++) {
       const from = firstRow * grid + vertex, to = row * grid + vertex;
@@ -1670,6 +1681,7 @@ export class CrownSheet {
         this.thicknesses[vertex] = state.thickness;
         this.rowTaus[vertex] = tau - front;
         this.rimDistances[vertex] = tau / this.launchDuration;
+        this.carries[vertex] = state.carry;
         this.sheetPlaces[vertex * 3] = this.columnCos[column] * this.frothRing;
         this.sheetPlaces[vertex * 3 + 1] = this.columnSin[column] * this.frothRing;
         this.sheetPlaces[vertex * 3 + 2] = tau * this.frothAlongRate + this.frothOffset;
@@ -1729,7 +1741,7 @@ export class CrownSheet {
         this.rods[vertex] = share > 0.5 && Math.abs(across) < 1 ? 1 : 0;
       }
     }
-    markChanged(this.geometry, ['position', 'normal', 'aRimTangent', 'aThickness', 'aRod', 'aSheet', 'aFroth', 'aRimDistance']);
+    markChanged(this.geometry, ['position', 'normal', 'aRimTangent', 'aThickness', 'aRod', 'aSheet', 'aFroth', 'aRimDistance', 'aCarry']);
     if (this.ligaments) this.updateLigaments(end);
   }
 

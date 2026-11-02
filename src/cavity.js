@@ -172,7 +172,14 @@
 // cap's rings with it) they face as the first open ring around does, so the
 // floor of a bowl flattening into the surface shades as the flat water it
 // is becoming, and the hole fades out rather than vanishing in the frame it
-// is gone. aCavity carries per vertex how far it rides the surface (1 on
+// is gone. Once the hole has pinched its bowl froths from the floor up
+// (aCavity's fourth, BOWL_FROTH by the entry speed as the crown's froth law
+// goes, src/crown.js, at most BOWL_FROTH_MOST, rising over BOWL_FROTH_RAMP
+// of the bowl's unit, fading up the wall over BOWL_FROTH_RISE·R from the
+// floor): the air the pinch entrained boils up where the jet leaves, and
+// the water shader whitens the bowl's bottom by it; a bowl of clear glass
+// with a jet rising out of it read as a dome, where a photograph shows a
+// rough, foamy mound. aCavity carries per vertex how far it rides the surface (1 on
 // the lip, which sits on the splash's height field, the wind's waves and
 // the rings like the surface it joins; 0 down the wall below RIDE_DEPTH·R
 // while the stone is in the hole, and 1 everywhere once the funnel has
@@ -212,6 +219,7 @@
 // hole is held inside its walls (holdWithinWalls in src/fluidMesh.js), so it
 // never shows through the tiles.
 import { createRingGrid, computeGridNormals, holdWithinWalls, markChanged } from './fluidMesh.js';
+import { FROTH_SPEED, FROTH_POWER } from './crown.js';
 
 const GRAVITY = 9.81;
 // The stone under water, as src/rock.js moves it (tools/cavity-probe.mjs checks the two agree).
@@ -278,6 +286,10 @@ const TOP_SPAN = 2.5;              // in R: the top of the wall, which the camer
 const TOP_SHARE = 0.6;             // ...gets this share of the wall's rows
 const TOP_POWER = 1.3;             // crowded towards the surface
 const FLOOR_ROUND = 0.6;           // once pinched, the bowl's bottom is rounded (a quarter ellipse) over this share of its depth: a cup, not a flat-floored dish
+const BOWL_FROTH = 0.45;           // the pinched bowl's froth at its floor (the header): the share of its light scattered white at the reference's entry speed...
+const BOWL_FROTH_MOST = 0.85;      // ...times (V / FROTH_SPEED)^(2·FROTH_POWER), at most this...
+const BOWL_FROTH_RAMP = 0.25;      // ...reached this many bowl units after the pinch...
+const BOWL_FROTH_RISE = 1.2;       // ...and fading up the wall over this many R above the floor
 const DARKEST_MOUTH = 0.15;        // in R: the narrowest mouth the occlusion and escape take
 const FACING_HOLE = 0.002;         // the least climb to escape the wall and the lip's inner face hand the shader (any ray going up)
 const OCCLUSION_DEPTH = 0.5;       // in mouth radii: the depth at which the hole sees half the sky it sees at its mouth
@@ -468,6 +480,7 @@ export class Cavity {
     this.seal = { kind: 'deep', pinch: PINCH_TIME, bowl: 1, head: SURFACE_HEAD, mouth: 1, ...seal };
     this.pinchTime = this.seal.pinch * this.timeUnit;
     const speed = Math.max(impact.speed, 1.0);
+    this.frothPeak = Math.min(BOWL_FROTH * (speed / FROTH_SPEED) ** (2 * FROTH_POWER), BOWL_FROTH_MOST);
     this.froude = (speed * speed) / (GRAVITY * radius);
     const horizontalSpeed = Math.hypot(velocity.x, velocity.z);
     const horizontalFraction = Math.min(horizontalSpeed / speed, 1);
@@ -517,7 +530,7 @@ export class Cavity {
     const vertexCount = ROWS * COLUMNS;
     this.positions = new Float32Array(vertexCount * 3);
     this.normals = new Float32Array(vertexCount * 3);
-    this.shading = new Float32Array(vertexCount * 3);   // ride, openness, escape (aCavity)
+    this.shading = new Float32Array(vertexCount * 4);   // ride, openness, escape, the bowl's froth (aCavity)
     this.rowX = new Float64Array(ROWS);
     this.rowZ = new Float64Array(ROWS);
     this.rowY = new Float64Array(ROWS);
@@ -525,7 +538,7 @@ export class Cavity {
     this.mesh = drawn ? createRingGrid(ROWS, COLUMNS, {
       position: [this.positions, 3],
       normal: [this.normals, 3],
-      aCavity: [this.shading, 3],
+      aCavity: [this.shading, 4],
     }, material ?? undefined) : null;
     this.geometry = this.mesh?.geometry ?? null;
     this.push = { x: impact.x, z: impact.z, radius: 0, shiftX: 0, shiftY: -1, shiftZ: 0 };
@@ -1072,9 +1085,13 @@ export class Cavity {
     const rideDepth = RIDE_DEPTH * radius;
     const apronStart = CAP_ROWS + WALL_ROWS + LIP_INNER_ROWS + LIP_FALL_ROWS;
     const fallStart = CAP_ROWS + WALL_ROWS + LIP_INNER_ROWS;
+    // The bowl's froth (the header): up from the floor, once the hole has pinched.
+    const frothNow = pinched ? this.frothPeak * smoothstep(0, BOWL_FROTH_RAMP, (age - this.pinchTime) / this.bowlUnit) : 0;
+    const frothRise = BOWL_FROTH_RISE * radius;
     for (let rowIndex = 0; rowIndex < ROWS; rowIndex++) {
       const rowY = this.rowY[rowIndex];
       const depth = Math.max(-rowY, 0);
+      const froth = frothNow > 0 && rowIndex < fallStart ? frothNow * (1 - smoothstep(0, frothRise, Math.max(bottom - depth, 0))) : 0;
       // The lip and the top of the wall ride the surface; once the funnel has turned (collapse) the whole bowl does.
       const ride = Math.max(1 - smoothstep(0, rideDepth, depth), collapse);
       const relativeDepth = depth / darkestMouth;
@@ -1098,9 +1115,10 @@ export class Cavity {
         this.positions[vertex * 3] = this.rowX[rowIndex] + cosAngle * distance;
         this.positions[vertex * 3 + 1] = rowY;
         this.positions[vertex * 3 + 2] = this.rowZ[rowIndex] + sinAngle * distance;
-        this.shading[vertex * 3] = ride;
-        this.shading[vertex * 3 + 1] = openness;
-        this.shading[vertex * 3 + 2] = escape;
+        this.shading[vertex * 4] = ride;
+        this.shading[vertex * 4 + 1] = openness;
+        this.shading[vertex * 4 + 2] = escape;
+        this.shading[vertex * 4 + 3] = froth;
       }
     }
 

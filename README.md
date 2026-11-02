@@ -543,6 +543,8 @@ known timing, and the droplets are choreographed from them:
    lifetime), so the hole is a wide funnel that necks and pinches off about
    2.06·√(R/g) after entry, about 7.5 R down for a 3 cm stone dropped straight
    in at 6.3 m/s; the bowl above the neck stays open and fills from below,
+   frothing from its floor up as the air the pinch entrained boils out where
+   the jet leaves (a bowl of clear glass under a jet read as a dome),
    and has flattened into the surface about √(z/g) after the pinch, z its
    depth (a deep seal; some throws seal shallower or at the surface, below).
    While the hole is open the water's head presses on the stone's front, as
