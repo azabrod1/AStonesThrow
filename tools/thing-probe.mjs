@@ -72,17 +72,19 @@
 //     over a wall lands on the deck and wets it, as does one crossing the
 //     wall's line above the deck's top and ending the step below it, while
 //     one rising past the deck's top at the wall comes back off its side;
-//   - definitions as anyone might write them: the review's bad ones (a stone
+//   - definitions as anyone might write them: the reviews' bad ones (a stone
 //     look without its fields, body.soft null, presets an object, an
-//     infinite diameter) are refused plainly, and good ones damaged at
+//     infinite diameter, a group called Favourites, which is the dropdown
+//     of things' own tab) are refused plainly, and good ones damaged at
 //     random never make the check throw, and whatever defineThing takes
 //     can be made and stepped;
 //   - mass, density and volume agree for every thing not sized by its
 //     diameter, the volume measured here from its mesh;
 //   - the TV and iPhone have their specified rectangular dimensions (a
-//     phone's camera standing out of its back) and sink, and so does each
-//     step of the iPad (an iPhone, the iPhone's own mesh, an iPad mini, an
-//     iPad, an iPad Pro); each frying pan is its
+//     phone's camera standing out of its back) and sink (the iPhone
+//     offering Skip, the TV not), as does each step of the iPad (an
+//     iPhone, the iPhone's own mesh, an iPad mini, an iPad, an iPad Pro),
+//     which offers no Skip at any step; each frying pan is its
 //     preset's length and cast iron's density; each count of roses weighs
 //     what its parts do, its ballast where their weight is, and floats; each
 //     step of these three is thrown into the lake as below; a toy slide is built 99 × 70 × 46 cm and a slice of bread
@@ -114,7 +116,8 @@
 //     ballast) and rests within 5 s; dropped upside down on the deck, it,
 //     and a pizza dropped tilted, settles onto its base; a pie dropped
 //     upside down stays so;
-//   - a pizza thrown with Skip skips, twice on average at normal strength;
+//   - a pizza thrown with Skip skips, twice on average at normal strength,
+//     and an iPhone three times;
 //   - halving the substep moves a floater's highest bob by under
 //     STEP_TOLERANCE and its rest not at all;
 //   - a floater's middle step costs under STEP_COST_MS.
@@ -312,7 +315,7 @@ for (const [name, dimensions, mass, camera] of [['tv', [0.54, 0.018, 0.32], 3.6,
   geometry.computeBoundingBox();
   const bounds = geometry.boundingBox.getSize(new THREE.Vector3()).multiplyScalar(measured.radius).toArray();
   check(bounds.every((length, axis) => (axis === 1 ? length >= dimensions[1] - 1e-6 && length <= dimensions[1] + camera + 1e-6 : near(length, dimensions[axis], 1e-6))) && near(measured.mass, mass, 1e-6), `${name}: wrong dimensions or mass (${bounds.join(' × ')} m, ${measured.mass} kg)`);
-  check(!thing.properties().floats && !thing.skips, `${name}: should sink and offer Toss/Lob, not Skip`);
+  check(!thing.properties().floats && thing.skips === (name === 'iphone'), `${name}: should sink and offer Toss/Lob${name === 'iphone' ? ' and Skip' : ', not Skip'}`);
   geometry.dispose();
 }
 
@@ -334,6 +337,8 @@ for (const [value, model, dimensions, mass] of [[1, 'iphone', [0.072, 0.008, 0.1
   }
   geometry.dispose();
 }
+// Skip is the thing's, not a step's: the iPad offers none, even at its iPhone (src/things.js abilities).
+check(!THINGS.ipad.skips, 'the iPad should offer Toss/Lob, not Skip');
 for (const preset of THINGS.pan.body.size.presets) {
   const measured = measure('pan', preset.value);
   const geometry = meshKind('pan').build(measured.thing, {});
@@ -502,6 +507,25 @@ for (const name of THING_NAMES.filter((key) => THINGS[key].abilities.held)) {
   for (let time = 0; time < 12; time += STEP) rock.update(STEP, floorDepthAt);
   console.log(`\nUnder a gale a basketball afloat drifts at ${rock.velocity.x.toFixed(3)} m/s downwind (${rock.state})`);
   check(Math.abs(rock.velocity.x - 0.15) < 0.01 && rock.state === 'float', `basketball: a gale drifts it at ${rock.velocity.x.toFixed(3)} m/s (${rock.state})`);
+}
+
+// A sinker settling just before a gale ends must be drawn back on the calm
+// bed, including frames drawn between steps and the surface used for picking.
+for (const waveHeight of [-0.3, 0.3]) {
+  const rock = new Rock({ radius: 0.1, position: new THREE.Vector3(0, 1, 0), velocity: new THREE.Vector3(0, -1, 0), envTexture: null });
+  let steps = 0;
+  while (rock.state !== 'rest' && steps++ < 2400) rock.update(STEP, () => 1, () => waveHeight);
+  const lifted = Math.abs(rock.meshAbove.position.y - rock.position.y);
+  let displaced = 0;
+  for (let step = 0; step < 3; step++) {
+    rock.update(STEP, () => 1);
+    for (const share of [0, 0.5, 1]) {
+      rock.drawAt(share);
+      displaced = Math.max(displaced, rock.meshAbove.position.distanceTo(rock.position), rock.meshBelow.position.distanceTo(rock.position));
+    }
+  }
+  check(rock.state === 'rest' && lifted > 0.001 && displaced < 1e-9 && rock.drawn.surface === 0 && rock.waterLevel.value === 0,
+    `a sinker settled under a ${waveHeight} m wave stays displaced ${centimetres(displaced)} cm after the gale stops (picking surface ${rock.drawn.surface})`);
 }
 
 // ---- the shore: a gale blowing floaters onto it ----
@@ -873,24 +897,26 @@ console.log('\nThe rubber duck (body.ballast): let go on the water at any angle,
   }
 }
 
-console.log('\nA pizza skipped (src/main.js skipThrow: by its mass, aimed by its lowest point): 12 throws at each strength');
-{
+// A broad thing skipped, and the least it must skip on average thrown normally (an iPhone, denser and stiffer, skims as a slate does).
+for (const [name, fewest] of [['pizza', 1.5], ['iphone', 2.5]]) {
+  const called = THINGS[name].called;   // 'a pizza', 'an iPhone'
+  console.log(`\n${called[0].toUpperCase()}${called.slice(1)} skipped (src/main.js skipThrow: by its mass, aimed by its lowest point): 12 throws at each strength`);
   const skipsBy = {};
   for (const power of ['soft', 'normal', 'hard']) {
     const counts = [];
     for (let trial = 0; trial < 12; trial++) {
       randomState = 900 + trial;
-      const measured = measure('pizza');
+      const measured = measure(name);
       const from = new THREE.Vector3(0.3, SKIP_THROW.handHeight, 2.0), target = new THREE.Vector3(0, 0, -0.5);
       // As src/main.js throws it: made first, its tilt drawn, aimed by its own mass and tilt.
-      const pizza = new Rock({ radius: measured.radius, position: from, velocity: new THREE.Vector3(), envTexture: null, thing: 'pizza', mass: measured.mass, skip: true });
-      const tilt = pizza.skipTilt();
-      const aimed = aimSkip(from.clone().setY(from.y - skipLowest(measured.radius, tilt)), target, skipSpeed(power, measured.radius, false, pizza.mass), (x, z) => floorDepthAt(x, z) >= SKIP_THROW.shallowest, target);
-      pizza.launchSkip(aimed.velocity, tilt);
+      const thrown = new Rock({ radius: measured.radius, position: from, velocity: new THREE.Vector3(), envTexture: null, thing: name, mass: measured.mass, skip: true });
+      const tilt = thrown.skipTilt();
+      const aimed = aimSkip(from.clone().setY(from.y - skipLowest(measured.radius, tilt)), target, skipSpeed(power, measured.radius, false, thrown.mass), (x, z) => floorDepthAt(x, z) >= SKIP_THROW.shallowest, target);
+      thrown.launchSkip(aimed.velocity, tilt);
       let skips = 0;
       // Its skips, until it goes in: a slap (src/rock.js goIn) is where it does.
-      for (let step = 0; step < 240 * 4 && pizza.state !== 'water' && pizza.state !== 'rest' && pizza.state !== 'float'; step++) {
-        const touch = pizza.update(STEP, floorDepthAt);
+      for (let step = 0; step < 240 * 4 && thrown.state !== 'water' && thrown.state !== 'rest' && thrown.state !== 'float'; step++) {
+        const touch = thrown.update(STEP, floorDepthAt);
         if (touch?.skim && !touch.slap) skips++;
       }
       counts.push(skips);
@@ -899,7 +925,7 @@ console.log('\nA pizza skipped (src/main.js skipThrow: by its mass, aimed by its
   }
   const mean = (counts) => counts.reduce((sum, count) => sum + count, 0) / counts.length;
   console.log(`  skips: ${Object.entries(skipsBy).map(([power, counts]) => `${power} ${mean(counts).toFixed(1)} (${Math.min(...counts)} to ${Math.max(...counts)})`).join(', ')}; a river stone's are tools/skip-probe.mjs's`);
-  check(mean(skipsBy.normal) >= 1.5 && Math.min(...skipsBy.normal) >= 1, `a pizza thrown with Skip skipped ${mean(skipsBy.normal).toFixed(1)} times on average, at least ${Math.min(...skipsBy.normal)}`);
+  check(mean(skipsBy.normal) >= fewest && Math.min(...skipsBy.normal) >= 1, `${called} thrown with Skip skipped ${mean(skipsBy.normal).toFixed(1)} times on average (at least ${fewest}), at least ${Math.min(...skipsBy.normal)}`);
 }
 
 console.log('\nA throw\'s own random stream (src/rock.js `random`): a basketball bounced on the deck, Math.random drawn from or not between its steps');
@@ -1311,7 +1337,10 @@ console.log('\nThings meeting things (src/collide.js):');
     'a stone look without its fields': { ...good, body: { shape: 'mesh', density: 2600, size: { by: 'diameter', unit: 'cm', min: 2, max: 10, step: 1, initial: 5 } }, look: { mesh: 'stone' } },
     'body.soft null': { ...good, body: { ...good.body, soft: null } },
     'presets an object': { ...good, body: { shape: 'sphere', size: { by: 'preset', presets: {}, initial: 1 } } },
+    'material.on naming no surface': { ...good, material: { ...good.material, on: { lava: { friction: 0.5 } } } },
+    'material.on with a field it has not': { ...good, material: { ...good.material, on: { ice: { grip: 0.5 } } } },
     'an infinite diameter': { ...good, body: { shape: 'sphere', size: { by: 'preset', unit: 'size', initial: 1, presets: [{ value: 1, label: 'x', diameter: Infinity, mass: 1 }] } } },
+    'a group called Favourites': { ...good, group: 'favourites' },   // the dropdown's own tab (src/thingMenu.js)
   };
   const refusals = Object.entries(reviewCases).map(([label, definition]) => {
     let problems = null, error = null;
@@ -1319,7 +1348,7 @@ console.log('\nThings meeting things (src/collide.js):');
     try { defineThing('probe-case', definition); } catch (thrown) { error = thrown.message; }
     return { label, refused: Array.isArray(problems) && problems.length > 0 && error !== null && !Object.hasOwn(THINGS, 'probe-case') };
   });
-  console.log(`\nDefinitions as anyone might write them: the review's four refused plainly: ${refusals.map((entry) => `${entry.label} ${entry.refused ? 'yes' : 'NO'}`).join('; ')}`);
+  console.log(`\nDefinitions as anyone might write them: the reviews' ${refusals.length} refused plainly: ${refusals.map((entry) => `${entry.label} ${entry.refused ? 'yes' : 'NO'}`).join('; ')}`);
   check(refusals.every((entry) => entry.refused), `a bad definition was not refused plainly (${refusals.filter((entry) => !entry.refused).map((entry) => entry.label).join(', ')})`);
   // Random damage to good definitions (one field at a time put to something else JSON can hold): the check never throws,
   // and what defineThing takes can be made, measured and stepped.
