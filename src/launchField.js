@@ -12,8 +12,9 @@
 // facets at 20° and 70° within a centimetre of each other, and corners
 // sweeping through the waterline, so its ejecta varies by factors around
 // the ring and over the launch; the material then flies ballistically,
-// separating by speed: the lopsided, folded sheet every photograph of a
-// thrown stone shows, crumpled where a sphere's is a clean cylinder.
+// separating by speed: the lopsided sheet every photograph of a thrown
+// stone shows, taller on one side and leaning, where a sphere's is a clean
+// cylinder (lopsided smoothly, over half a turn: one film, not crumpled).
 //
 // The field is computed once per throw at impact, from the stone's physics
 // mesh (src/thingMeshes.js createRockGeometry: 320 faces in the stone's
@@ -45,10 +46,20 @@
 // difference), then less their mean around the ring, so the field only
 // redistributes what the fitted launch gives: a sphere gets 1, 1 and 0
 // everywhere, and the reference throw keeps its calibrated sheet on
-// average. They are clamped (SPEED_RANGE, THICKNESS_RANGE, TILT_RANGE:
-// surface tension and the air smooth what a facet's edge would make a
-// step) and smoothed over SMOOTH bins around and the neighbouring samples
-// along the launch. A sample whose cut fills under LEAST_FILLED bins (the
+// average. They are clamped (SPEED_RANGE, THICKNESS_RANGE, TILT_RANGE) and
+// smoothed around the ring by a Gaussian of SMOOTH_SIGMA bins (SMOOTH) and
+// along the launch by the neighbouring samples. The clamp and the
+// smoothing stand for what the launch itself evens out: the rim is one
+// bead under tension, the sheet one film, and a facet's edge, which the
+// law alone makes a step in speed, launches a sheet that stretches
+// between its fast and slow neighbours over about the stone's radius
+// around the ring. The photographs' sheets stand at most a few times
+// taller on one side than the other, and a sheet's height goes as its
+// speed squared, so the speed ratio is held within SPEED_RANGE; at 0.35 to
+// 2.2 over five bins of smoothing the sheet was sectors of six times each
+// other's height meeting in near-vertical walls, flat panels with straight
+// creases, which seen edge-on were bright wires.
+// A sample whose cut fills under LEAST_FILLED bins (the
 // first contact, a point) is a sphere's; bins a sample misses take their
 // nearest filled neighbour's. sampleLaunchField interpolates the field at
 // an azimuth and a launch time (the tail, after T, takes the last sample's).
@@ -60,10 +71,11 @@ const SAMPLES = 7;                 // launch times over the main launch
 const DEADRISE_LEAST = (20 * Math.PI) / 180;   // the deadrise angle is at least this (the header)
 const COT_FLOOR = 0.35;            // a wall's root runs at this times its push (the header's speed law)
 const SOFTENING = 0.05;            // added to both sides of a ratio, so a face the sphere does not push stays finite
-const SPEED_RANGE = [0.35, 2.2];   // the speed ratio's bounds...
-const THICKNESS_RANGE = [0.4, 2.0];   // ...the thickness ratio's...
-const TILT_RANGE = [(-15 * Math.PI) / 180, (40 * Math.PI) / 180];   // ...and the tilt difference's (radians; positive is lower, further out)
-const SMOOTH = [1, 2, 3, 2, 1];    // the smoothing kernel around the ring (bins)
+const SPEED_RANGE = [0.6, 1.5];    // the speed ratio's bounds (the header: a sheet's height goes as its speed squared, and the photographs' sheets stand at most a few times taller on one side than the other)...
+const THICKNESS_RANGE = [0.5, 1.8];   // ...the thickness ratio's...
+const TILT_RANGE = [(-12 * Math.PI) / 180, (25 * Math.PI) / 180];   // ...and the tilt difference's (radians; positive is lower, further out)
+const SMOOTH_SIGMA = 3;            // the smoothing around the ring: a Gaussian of this many bins (15°; the header)...
+const SMOOTH = Array.from({ length: 4 * SMOOTH_SIGMA + 1 }, (_, tap) => Math.exp(-((tap - 2 * SMOOTH_SIGMA) ** 2) / (2 * SMOOTH_SIGMA * SMOOTH_SIGMA)));   // ...over two sigma each way
 const LEAST_FILLED = 8;            // a cut filling fewer bins than this is a point: the sphere's field
 
 /**

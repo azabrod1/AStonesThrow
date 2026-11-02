@@ -259,8 +259,10 @@
 // crown's crests drops of RIM_DROP_RADIUS and up. Besides its drop each torn
 // patch throws spray (src/spray.js), the film between the ligaments that a
 // real sheet's holes tear into drops under a millimetre: SPRAY_SHARE_FLOOR of
-// the patch's water for a sheet of no violence (none: a pebble's and a
-// stone's torn sheets are drops and no mist, the lake photographs), rising
+// the patch's water for a sheet of no violence (a twentieth: a pebble's and
+// a stone's torn sheets are a few score drops and no mist in the lake
+// photographs, most of a sheet's water falling back as sheet and rim; at
+// three tenths a 3 cm stone's drew a carpet of beads), rising
 // with its violence (the froth's, below) by
 // SPRAY_SHARE_GAIN·violence^SPRAY_SHARE_POWER (a fifth for a 16 cm stone
 // thrown hard, two fifths for a rock), in
@@ -533,7 +535,7 @@ const FAN_DROP_CAP = 0.0008;       // it tears into fine drops of at most this..
 const FAN_DROP_FLOOR = 0.0003;     // ...and at least this (both times (R / 3 cm)^DROP_SIZE_POWER)...
 const FAN_RIM_DROPS = 0.2;         // ...and its rim sheds drops this fraction of the size a crown's does
 // The spray (the header, src/spray.js).
-const SPRAY_SHARE_FLOOR = 0.3;     // a torn patch throws this share of its water as spray for a sheet of no violence (its small drops, src/spray.js: a sprite of one drop is a drop like any other, and under a millimetre they are many)...
+const SPRAY_SHARE_FLOOR = 0.05;    // a torn patch throws this share of its water as spray for a sheet of no violence (its small drops, src/spray.js; at 0.3 a 3 cm stone's torn sheet was a carpet of thousands of sub-millimetre beads across the frame at 0.3 s, where the lake photographs show a few score drops, most of a sheet's water falling back as sheet and rim)...
 const SPRAY_SHARE_GAIN = 0.55;     // ...rising by this times its violence (at most 1)...
 const SPRAY_SHARE_POWER = 0.7;     // ...to this power
 const SPRAY_SIZE = 0.6;            // its drops' mean radius, times the sheet's thickness there...
