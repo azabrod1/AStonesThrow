@@ -1390,8 +1390,8 @@ farther out, so it rises into the view rather than filling its corner.
   never under it, lying on a face with its weight over what it rests on,
   that every hole holds its cavity's lip and the jet's foot
   at every moment and its cracks lie on the ice, that a stone slides four
-  times as far on ice as on the deck while a toy slide, whose moulded
-  corners scrape, stops within a metre of where it lands, that a skip
+  times as far on ice as on the deck while a toy slide, made to stop there
+  (`material.on`), stops within a metre of where it lands, that a skip
   skitters, that a stone
   slid into a hole falls in and a floater that broke through floats in its
   hole, that stones at rest where a hole opens fall in and those round it on

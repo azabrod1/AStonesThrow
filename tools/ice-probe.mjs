@@ -29,7 +29,7 @@
 //     it, which would tip it over); a stone slid on the ice
 //     goes SLIDE_RATIO times as far as on the deck; a toy slide (made to
 //     stop on ice: src/things.js `material.on.ice`) held by the ice from a
-//     toss or a lob slides at most SCRAPED_MOST from where it struck it,
+//     toss or a lob slides at most SLIDE_STOPS_WITHIN from where it struck it,
 //     where a stone skates metres on, and at least one such throw on each
 //     thickness is held, so the check checks something;
 //   - a Skip throw onto the ice skitters (it strikes the ice at least twice)
@@ -42,7 +42,9 @@
 //     crushed rim) and some stay, none left with its weight within
 //     ICE.crushed of the thickness of the edge, nor hanging over the hole;
 //     a toy slide at rest on a 30 cm rock's new hole's crushed rim tips in,
-//     pushed against its own slowing on ice, as a stone there does;
+//     pushed against its own slowing on ice, as a stone there does, each
+//     push carrying its weight at least PUSHED_PAST_LEAST of its collision
+//     radius past the edge;
 //   - things on the ice meet (src/collide.js): a stone slid into one at rest
 //     knocks it on, their momentum along the slide kept to MOMENTUM_KEPT;
 //   - in a frozen pool (its walls and deck, src/pool.js) everything rests on
@@ -104,7 +106,7 @@ import { floorDepthAt } from '../src/pondFloor.js';
 import { holdInPool, poolGround, POOL } from '../src/pool.js';
 import { collideThings, outlineOverlap, slabOverlap, passingBy, passBy, passesBy } from '../src/collide.js';
 import { SplashSystem } from '../src/splash.js';
-import { IceSheet, ICE, ICE_THICKNESS, WEAK, convexHull, insidePolygon, polygonEdgeDistance } from '../src/ice.js';
+import { IceSheet, ICE, ICE_MATERIAL, ICE_THICKNESS, WEAK, convexHull, insidePolygon, polygonEdgeDistance } from '../src/ice.js';
 
 const GRAVITY = 9.81;
 const STEP = 1 / 240;
@@ -115,7 +117,8 @@ const WAYS = [['toss', 'soft'], ['toss', 'normal'], ['toss', 'hard'], ['lob', 'n
 const BREAKS = 1.5;          // a throw that must break strikes at least this times what the ice holds...
 const HOLDS = 0.6;           // ...and one that must not at most this (the blow's spread, e^(±2·0.2), is 0.67 to 1.5)
 const SLIDE_RATIO = 4;
-const SCRAPED_MOST = 1;      // m: a toy slide that held slides no farther (it went 4 to 12 m skating as a stone does)
+const SLIDE_STOPS_WITHIN = 1; // m: a toy slide that held slides no farther (it went 4 to 12 m skating as a stone does)
+const PUSHED_PAST_LEAST = 0.4; // collision radii: tipped off a crushed rim, a thing's weight is carried at least this far past the edge (src/ice.js EDGE_PAST, 0.5)
 const MOMENTUM_KEPT = 0.05;  // of the striker's momentum
 const STEP_TOLERANCE = 0.15; // of a slide
 const BOB_TOLERANCE = 0.0005; // m: a thing sliding flat on its face keeps its height to this
@@ -349,7 +352,7 @@ for (const thickness of ['thin', 'thick']) {
     const { record, slid } = table.get(`${thickness} Toy slide ${manner} ${power}`);
     if (record.broke) continue;
     held++;
-    check(slid <= SCRAPED_MOST, `a toy slide ${manner} ${power} on ${thickness} ice slid ${slid.toFixed(2)} m, over ${SCRAPED_MOST} m`);
+    check(slid <= SLIDE_STOPS_WITHIN, `a toy slide ${manner} ${power} on ${thickness} ice slid ${slid.toFixed(2)} m, over ${SLIDE_STOPS_WITHIN} m`);
   }
   check(held >= 1, `no toy slide tossed or lobbed onto ${thickness} ice was held, so none could be measured sliding`);
 }
@@ -1147,13 +1150,15 @@ console.log('\nNew ice: a hole left alone skins over; a thing afloat in one keep
   check(restedFirst && rim.ice.holes.length > 0, 'the stones round a 16 cm stone\'s break did not rest first, or it did not break the thick ice');
   // Some go in and some stay (none left would make the nearest's distance no test at all).
   check(wentIn > 0 && onIce.length > 0 && nearest >= ICE.crushed * ICE_THICKNESS.thick && overhanging === 0, `stones round a new hole: ${wentIn} went in, ${onIce.length} left, the nearest with its weight ${centimetres(nearest)} cm from its edge, ${overhanging} hanging over it`);
-  // A toy slide at rest on a new hole's crushed rim tips in (src/ice.js tipAtEdge), pushed against its own slowing on
-  // ice (material.on.ice), and a stone with its weight on the same spot does too, each at one push. This guards the
-  // outcome, not the slowing formula: the old, weaker push also carries the slide off this rim.
-  // A slide bridges a hole narrower than it (tipAtEdge), so the
-  // hole is a 30 cm rock's through thick ice. Where to put it: on the far side from the hand, its weight half the
-  // crushed rim outside the edge of the hole that ice breaks into with nothing on it; what lies on the ice bears on
-  // how it breaks, so the spot is moved by what it missed by and tried again.
+  // A toy slide at rest on a new hole's crushed rim tips in (src/ice.js tipAtEdge), and a stone with its weight on the
+  // same spot does too, each at one push. The push is sized against the thing's own slowing on ice (material.on.ice:
+  // a slide's 0.5 g, a stone's the ice's 0.12 g), to carry its weight EDGE_PAST of its collision radius past the edge;
+  // so each first push must carry it at least PUSHED_PAST_LEAST there. Sized against the ice's slowing for every
+  // thing, as it once was, the slide's push carries it a quarter as far: that still tips it off this rim, so only the
+  // distance tells the two apart. A slide bridges a hole narrower than it (tipAtEdge), so the hole is a 30 cm rock's
+  // through thick ice. Where to put it: on the far side from the hand, its weight half the crushed rim outside the edge
+  // of the hole that ice breaks into with nothing on it; what lies on the ice bears on how it breaks, so the spot is
+  // moved by what it missed by and tried again.
   const rimBreak = { diameter: 30, thickness: 'thick', seed: 1 };
   const crushedRim = ICE.crushed * ICE_THICKNESS.thick;
   const bare = iceWorld(rimBreak);
@@ -1174,10 +1179,22 @@ console.log('\nNew ice: a hole left alone skins over; a thing afloat in one keep
       const rock = world.add(new Rock({ radius, position: new THREE.Vector3(bareHole.x - offset.x, world.ice.top + radius + 0.01, bareHole.z - reach - offset.z), velocity: new THREE.Vector3(0, -0.05, 0), envTexture: null, thing }));
       world.step(1.5);
       const rested = rock.state;
-      // How many times the rim tips it: once, if the push carries it in against its own slowing.
-      let tips = 0;
+      // How many times the rim tips it (once, if the push carries it in), and how far past the edge its first push
+      // carries its weight against its own slowing on the ice, in collision radii.
+      let tips = 0, pushedPast = null;
       const tipAtEdge = world.ice.tipAtEdge.bind(world.ice);
-      world.ice.tipAtEdge = (thing) => { const tipped = tipAtEdge(thing); if (tipped && thing === rock) tips++; return tipped; };
+      world.ice.tipAtEdge = (thing) => {
+        const hole = thing === rock ? world.ice.holes[0] : null;
+        const weight = hole ? thing.weightAt(new THREE.Vector3()) : null;
+        const edge = weight && !insidePolygon(hole.corners, weight.x, weight.z) ? polygonEdgeDistance(hole.corners, weight.x, weight.z) : 0;
+        const tipped = tipAtEdge(thing);
+        if (tipped && thing === rock) {
+          tips++;
+          const carried = thing.velocity.lengthSq() / (2 * thing.groundSlowing(ICE_MATERIAL) * GRAVITY);
+          pushedPast ??= (carried - edge) / thing.collisionRadius;
+        }
+        return tipped;
+      };
       world.throwStone(rimBreak.diameter);
       let atBreak = null;
       for (let waited = 0; waited < 4 && atBreak === null; waited += STEP) {
@@ -1189,7 +1206,7 @@ console.log('\nNew ice: a hole left alone skins over; a thing afloat in one keep
       }
       world.step(3);
       // In: under the ice (a stone sinks), or afloat in the hole (a slide floats high).
-      result = { rested, atBreak, tips, wentIn: rock.position.y < 0 || !!world.ice.holeAt(rock.position.x, rock.position.z), state: rock.state };
+      result = { rested, atBreak, tips, pushedPast, wentIn: rock.position.y < 0 || !!world.ice.holeAt(rock.position.x, rock.position.z), state: rock.state };
       if (atBreak === null || (atBreak >= 0 && atBreak <= crushedRim)) break;
       reach -= atBreak - 0.5 * crushedRim;
     }
@@ -1197,10 +1214,12 @@ console.log('\nNew ice: a hole left alone skins over; a thing afloat in one keep
   };
   const slideOnRim = onRim('slide', 0.211), stoneOnRim = onRim('stone', 0.03);
   const rimCm = (result) => (result.atBreak === null ? 'no hole' : `${centimetres(result.atBreak)} cm`);
-  const rimSaid = (result) => (result.wentIn ? `tipped in (${result.tips} push${result.tips === 1 ? '' : 'es'})` : `stayed (${result.state}, ${result.tips} pushes)`);
+  const pushSaid = (result) => (result.pushedPast === null ? 'never pushed' : `its first push carrying its weight ${result.pushedPast.toFixed(2)} of its collision radius past the edge`);
+  const rimSaid = (result) => `${result.wentIn ? `tipped in (${result.tips} push${result.tips === 1 ? '' : 'es'})` : `stayed (${result.state}, ${result.tips} pushes)`}, ${pushSaid(result)}`;
   console.log(`  on a 30 cm rock's new hole's crushed rim (thick ice): a toy slide, its weight ${rimCm(slideOnRim)} from the edge as it opened, ${rimSaid(slideOnRim)}; a 6 cm stone, ${rimCm(stoneOnRim)} from it, ${rimSaid(stoneOnRim)}`);
   check([slideOnRim, stoneOnRim].every((result) => result.rested === 'rest' && result.atBreak !== null && result.atBreak >= 0 && result.atBreak <= crushedRim), `a toy slide and a stone were not at rest on the new hole's crushed rim as it opened (${[slideOnRim, stoneOnRim].map((result) => `${result.rested}, ${rimCm(result)}`).join('; ')}), so tipping off it went unchecked`);
   check(slideOnRim.wentIn && stoneOnRim.wentIn && slideOnRim.tips === 1 && stoneOnRim.tips === 1, `on a new hole's crushed rim a toy slide ${rimSaid(slideOnRim)} and a stone ${rimSaid(stoneOnRim)}: each should tip in at one push`);
+  check([slideOnRim, stoneOnRim].every((result) => result.pushedPast !== null && result.pushedPast >= PUSHED_PAST_LEAST), `tipped off a new hole's crushed rim, a toy slide (${pushSaid(slideOnRim)}) and a stone (${pushSaid(stoneOnRim)}) should each be carried at least ${PUSHED_PAST_LEAST} of its collision radius past the edge against its own slowing on the ice`);
 }
 
 if (failures.length > 0) {
