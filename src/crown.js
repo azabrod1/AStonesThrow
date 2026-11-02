@@ -264,10 +264,15 @@
 // with its violence (the froth's, below) by
 // SPRAY_SHARE_GAIN·violence^SPRAY_SHARE_POWER (a fifth for a 16 cm stone
 // thrown hard, two fifths for a rock), in
-// drops of SPRAY_SIZE times the sheet's thickness there on average, spread
-// over the patch and kicked by the Taylor–Culick speed sqrt(2σ / ρh) at which
-// a hole's rim runs back through a film h thick (a landing drop's crown throws
-// none: too small and slow to be worth its sprites). A bead that pinches off
+// drops of SPRAY_SIZE times the sheet's thickness there on average, laid
+// over the patch as a torn web (lines of drops between the holes' knots,
+// src/spray.js) and kicked by the Taylor–Culick speed sqrt(2σ / ρh) at which
+// a hole's rim runs back through a film h thick, and parted at the sheet's
+// strain, since drops apart on a stretching sheet keep its speeds: along
+// its flight 1 / (time flown + the launch window), the rate at which later,
+// slower material falls behind earlier, and across it the ring's own
+// widening (a landing drop's crown throws none: too small and slow to be
+// worth its sprites). A bead that pinches off
 // leaves SATELLITES satellites of about SATELLITE_SIZE of its radius, kicked
 // at its capillary speed, and a seal's spike throws SEAL_FINE finer drops.
 // The spray draws from a stream of the crown's own, seeded by the tear's
@@ -919,7 +924,7 @@ export class CrownSheet {
       this.rimCentres = new Float64Array(this.columns * 3);
       this.rimRadii = new Float64Array(this.columns);
     }
-    this.state = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, thickness: 0, radialDistance: 0, remaining: 1, carry: 0 };
+    this.state = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, thickness: 0, radialDistance: 0, radialSpeed: 0, flown: 0, remaining: 1, carry: 0 };
     this.stateOther = { ...this.state };
     // A sealing crown's dome: its folds (DOME_FOLDS, at a random phase) and whether the closure has thrown its spike.
     this.domeFolds = Math.round(randomRange(DOME_FOLDS[0], DOME_FOLDS[1]));
@@ -1158,6 +1163,8 @@ export class CrownSheet {
     out.vy = upSpeed * decay - launch.fallSpeed;
     out.vz = (sinAngle * radialSpeed + this.driftZ + cosAngle * sideSpeed) * decay;
     out.radialDistance = radialDistance;
+    out.radialSpeed = radialSpeed * decay;
+    out.flown = flown;
     // The foot never sinks below the lip it stands on: the water there holds it up.
     if (launch.carry > 0 && out.y < baseHeight) { out.y = baseHeight; out.vy = Math.max(out.vy, 0); }
     if (this.seal && !free && this.age > this.seal.start) this.pullIn(out, tau, cosAngle, sinAngle, rimShape);
@@ -1570,8 +1577,9 @@ export class CrownSheet {
     if (!spray || this.landing) return;
     const film = Math.max(state.thickness, SPRAY_LEAST_FILM);
     const meanRadius = THREE.MathUtils.clamp(SPRAY_SIZE * state.thickness, SPRAY_SIZE_RANGE[0], SPRAY_SIZE_RANGE[1]);
-    // Spread over the patch of sheet (src/spray.js `along`, `across`): the sheet's plane there is its flight and the
-    // ring's tangent.
+    // Laid over the patch of sheet as a torn web (src/spray.js `along`, `across`): the sheet's plane there is its
+    // flight and the ring's tangent. And parted as the sheet stretches: along its flight the material launched
+    // later lags, at about 1 / (time flown + the launch window) (the header); across, as the ring widens.
     const speed = Math.hypot(state.vx, state.vy, state.vz) || 1;
     const along = this.sprayAlong ??= { x: 0, y: 1, z: 0 };
     const across = this.sprayAcross ??= { x: 1, y: 0, z: 0 };
@@ -1583,6 +1591,7 @@ export class CrownSheet {
       drops: sprayDrops((this.sprayShare * state.thickness) / density, meanRadius), radius: meanRadius,
       kick: Math.sqrt((2 * SURFACE_TENSION) / (WATER_DENSITY * film)), spread: 0.5 / Math.sqrt(density),
       time: splash.time, random: this.sprayRandom, sizeFactor: this.sizeFactor, along, across,
+      strainAlong: 1 / (state.flown + this.launchDuration), strainAcross: Math.max(state.radialSpeed, 0) / Math.max(state.radialDistance, 1e-6),
     });
   }
 
