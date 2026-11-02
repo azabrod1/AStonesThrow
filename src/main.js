@@ -2014,7 +2014,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     if (koiPond) keepInPond(target, radius);   // nothing thrown comes down on the Koi pond's ground (src/koiGarden.js)
     // Made first, so a thing that flutters is aimed by its own flight (src/rock.js trialFlight) and a skip by its own
     // mass (a pizza's toppings and all); a skip is let go lower, from the hand let down (skipThrow).
-    const rock = new Rock({ radius, position: handPosition(radius, thing), velocity: new THREE.Vector3(), envTexture: environment.envTexture, waterFog: { extinction: lighting.extinction, color: lighting.waterColor }, thing: name, mass, mirrorLayer: MIRROR_LAYER, skip: skips, water: surface.rideUniforms, dressing: options.dressing ?? null, size });
+    const rock = new Rock({ radius, position: handPosition(radius, thing), velocity: new THREE.Vector3(), envTexture: environment.envTexture, waterFog: { extinction: lighting.extinction, color: lighting.waterColor }, thing: name, mass, mirrorLayer: MIRROR_LAYER, skip: skips, water: surface.rideUniforms, rideValues: floaterRide.values, dressing: options.dressing ?? null, size });
     // A broad thing's tilt drawn first, so it is aimed by its own (a stone's is drawn as it is let go, as it always was).
     const tilt = skips && !thing.byDiameter ? rock.skipTilt() : undefined;
     const skipped = skips ? skipThrow(handPosition(radius, thing), target, { thing, radius, mass: rock.mass }, options.power ?? power, tilt) : null;
@@ -2050,7 +2050,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
    */
   function addShard(piece) {
     const { position, velocity } = piece.start;
-    const rock = new Rock({ radius: piece.radius, position, velocity, envTexture: environment.envTexture, waterFog: { extinction: lighting.extinction, color: lighting.waterColor }, thing: 'ice-shard', mass: piece.mass, mirrorLayer: MIRROR_LAYER, water: surface.rideUniforms, piece: piece.shape });
+    const rock = new Rock({ radius: piece.radius, position, velocity, envTexture: environment.envTexture, waterFog: { extinction: lighting.extinction, color: lighting.waterColor }, thing: 'ice-shard', mass: piece.mass, mirrorLayer: MIRROR_LAYER, water: surface.rideUniforms, rideValues: floaterRide.values, piece: piece.shape });
     rock.breakAway(piece.start);
     rock.iceHole = piece.hole;
     rock.ground = ice.ground;
@@ -2749,6 +2749,9 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     if (!skip.fluid) splash.prepareFrame();
     const fromBelow = camera.position.y < (galeWaves.on ? galeSurfaceAt(camera.position.x, camera.position.z) : 0);
     showDetail(fromBelow);   // each ball's meshes as fine as each pass shows (src/rock.js)
+    // Each floater's ride as drawn (the water's height under its middle, its slope), once for all its corners and
+    // passes, before the first pass draws one (src/floaterRide.js place).
+    floaterRide.place(renderer, rocks);
     if (!fromBelow) updateReflection();   // from below no mirror is needed; a change of view keeps it marked stale until the eye surfaces
     // A floater whose rim keeps the water off its top (a pizza afloat, toppings up): the water is not drawn inside its rim.
     surface.setDryDiscs(rocks.filter((rock) => rock.dryDisc > 0).map((rock) => ({ x: rock.meshAbove.position.x, z: rock.meshAbove.position.z, radius: rock.dryDisc })));

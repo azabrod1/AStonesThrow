@@ -1391,7 +1391,7 @@ export class Rock {
    * @param dressing the seed its own parts are drawn from (dressThing), in place of the one its throw draws: a person's throw is dressed as its preview in the hand (src/main.js)
    * @param size its slider's value (src/things.js): at a preset with a look of its own it is that preset's own thing (variantAt: an iPad's step, a bouquet's count), else its slider's first
    */
-  constructor({ radius, position, velocity, envTexture, waterFog = null, thing = DEFAULT_THING, mass = null, mirrorLayer = null, skip = false, water = null, piece = null, dressing = null, size = null }) {
+  constructor({ radius, position, velocity, envTexture, waterFog = null, thing = DEFAULT_THING, mass = null, mirrorLayer = null, skip = false, water = null, rideValues = null, piece = null, dressing = null, size = null }) {
     this.radius = radius;
     this.position = position.clone();
     this.previous = position.clone();   // where it was a step ago
@@ -1579,7 +1579,7 @@ export class Rock {
   if (cameraPosition.y < 0.0) gl_FragColor.rgb = mix(uFogColor, gl_FragColor.rgb, exp(-uFogExtinction * length(vViewPosition)));`);
     };
     this.meshBelow.material.customProgramCacheKey = () => 'seen-through-water';
-    if (this.floats && water) this.rideTheWater(water, { seenThroughWater, waterLevel, fogExtinction, fogColor });
+    if (this.floats && water) this.rideTheWater(water, { seenThroughWater, waterLevel, fogExtinction, fogColor, rideValues });
     for (const mesh of this.meshes) {
       mesh.scale.setScalar(radius);
       mesh.frustumCulled = false;
@@ -1599,7 +1599,9 @@ export class Rock {
    * floats it on still water), so it rises and falls with the water's
    * height at its middle and is turned, rigidly, to the water's slope across
    * its width, at most RIDE_TILT (src/shaders/scene.js FLOATER_WATER, read
-   * with the water's own uniforms),
+   * with the water's own uniforms; worked out once a frame for each floater,
+   * not at each of its corners: src/floaterRide.js `place`, read from its
+   * `rideValues` at its `rideIndex`, or worked out here where it has none),
    * as far as it is at the water (`ride`, syncMeshes: wholly afloat; none in
    * the air clear of it, under it or on the ground, where it is drawn where
    * the physics has it, on its path and where it strikes),
@@ -1629,7 +1631,10 @@ export class Rock {
    * its own) are every floater's alike, drawn under the loading veil
    * (src/main.js warmUp).
    */
-  rideTheWater(water, { seenThroughWater, waterLevel, fogExtinction, fogColor }) {
+  rideTheWater(water, { seenThroughWater, waterLevel, fogExtinction, fogColor, rideValues = null }) {
+    // Its texel in src/floaterRide.js `values` (the water's height under its middle and its slope), −1 for none.
+    const rideIndex = this.rideIndex = { value: -1 };
+    const rideValuesUniform = rideValues ?? { value: null };
     // Inside its rim, its share `water.dry` of its radius (src/things.js), the water never covers its top.
     const dryRadius = this.dryRadius = { value: (this.thing.water.dry ?? 0) * this.radius };
     const rideShare = this.rideShare = { value: 0 };
@@ -1649,19 +1654,34 @@ export class Rock {
       shader.uniforms.uFogColor = fogColor;
       shader.uniforms.uDryRadius = dryRadius;
       shader.uniforms.uDrape = drapeShare;
+      shader.uniforms.uRideValues = rideValuesUniform;
+      shader.uniforms.uRideIndex = rideIndex;
       const clear = seenThrough && side === 'above', clearBelow = seenThrough && side === 'below';
       const declarations = `${FLOATER_WATER}\nuniform float uWaterLevel;\nuniform float uDryRadius;\nuniform float uRide;\nuniform float uDrape;\nvarying vec3 vRideWorld;\nvarying vec2 vRideMiddle;\n${clear ? 'varying float vClearShare;\n' : ''}${clearBelow ? 'varying float vRideUp;\n' : ''}`;
       shader.vertexShader = shader.vertexShader
-        .replace('#include <common>', `#include <common>\n${declarations}uniform float uSeenThroughWater;\n${side === 'below' ? SEEN_THROUGH_WATER : ''}${clear ? 'attribute float clearShare;\n' : ''}`)
+        .replace('#include <common>', `#include <common>\n${declarations}uniform float uSeenThroughWater;\nuniform sampler2D uRideValues;\nuniform int uRideIndex;\n${side === 'below' ? SEEN_THROUGH_WATER : ''}${clear ? 'attribute float clearShare;\n' : ''}`)
         .replace('#include <project_vertex>', `
   vec4 ridden = modelMatrix * vec4(transformed, 1.0);
   vec3 middle = (modelMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
   // The water's slope across its whole width, its tilt at most RIDE_TILT: it is turned, as a body is, to lie on it
   // (shearing it by the slope, as this once did, made a ball an egg on a splash's steep ring).
-  float across = length(modelMatrix[0].xyz);
-  vec2 slope = vec2(
-    floaterWaterHeight(middle.xz + vec2(across, 0.0)) - floaterWaterHeight(middle.xz - vec2(across, 0.0)),
-    floaterWaterHeight(middle.xz + vec2(0.0, across)) - floaterWaterHeight(middle.xz - vec2(0.0, across))) / (2.0 * across) * uRide;
+  // The water's height under its middle and its slope across it: its texel, worked out once for all its corners
+  // (src/floaterRide.js place), or here where it has none; none at all off the water.
+  vec2 slope = vec2(0.0);
+  float rideHeight = 0.0;
+  if (uRide > 0.0) {
+    if (uRideIndex >= 0) {
+      vec4 rideValue = texelFetch(uRideValues, ivec2(uRideIndex, 0), 0);
+      rideHeight = rideValue.x;
+      slope = rideValue.yz * uRide;
+    } else {
+      float across = length(modelMatrix[0].xyz);
+      slope = vec2(
+        floaterWaterHeight(middle.xz + vec2(across, 0.0)) - floaterWaterHeight(middle.xz - vec2(across, 0.0)),
+        floaterWaterHeight(middle.xz + vec2(0.0, across)) - floaterWaterHeight(middle.xz - vec2(0.0, across))) / (2.0 * across) * uRide;
+      rideHeight = floaterWaterHeight(middle.xz);
+    }
+  }
   slope *= min(1.0, ${RIDE_TILT.toFixed(4)} / max(length(slope), 1e-6));
   vec3 up = normalize(vec3(-slope.x, 1.0, -slope.y));
   vec3 turnAxis = vec3(up.z, 0.0, -up.x);
@@ -1678,7 +1698,7 @@ export class Rock {
     #endif
   }
   ridden.xyz = middle + offset;
-  ridden.y += uRide * floaterWaterHeight(middle.xz);
+  ridden.y += uRide * rideHeight;
   // A soft thing draped over the waves (the header): each point on the water's height under it, by its drape's share
   // (one more of the water's heights for each point; its normals keep the tilt over its whole width).
   if (uDrape * uRide > 0.0) ridden.xyz = mix(ridden.xyz, laid + vec3(0.0, uRide * floaterWaterHeight(laid.xz), 0.0), uDrape);
