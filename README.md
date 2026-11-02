@@ -105,10 +105,8 @@ full screen, which only a press or a key may ask for):
   pill and the dock), its camera plateau stands out of its back with its
   three lenses, flash and LiDAR, and its USB-C port, speaker holes and
   buttons are on its edges. Choose them under Other or use `?thing=tv` and
-  `?thing=iphone`; both support Toss and Lob, and the iPhone, flat and
-  about twice as dense as water, Skip too: it skims three or four times. A
-  banana (about 920 kg/m³ whole) tumbles end over end and floats with only
-  a sliver out. A slice
+  `?thing=iphone`; both support Toss and Lob. A banana (about 920 kg/m³
+  whole) tumbles end over end and floats with only a sliver out. A slice
   of bread (30 g, about 175 kg/m³) flutters down floppier than a pizza,
   floats nearly all out, then soaks and sinks in about two minutes. A
   birthday cake (sponge under buttercream, about 460 kg/m³) comes with one
@@ -132,8 +130,10 @@ full screen, which only a press or a key may ask for):
   (the Pro's island with its lens, LiDAR and flash), its USB-C port,
   speaker holes and buttons on its edges (the iPhone is the iPhone, as
   above); each is a plate that slaps the water and sinks, the thinnest
-  gliding between its swings (not one skips, even at its iPhone step: Skip
-  is the thing's, not a step's). A cast-iron frying pan comes in 20, 25 and 30 cm (1.5, 2.4 and
+  gliding between its swings. The iPhone on its own, flat and about twice
+  as dense as water, takes Skip too and skims three or four times; not one
+  iPad does, even at its iPhone step: Skip is the thing's, not a step's. A
+  cast-iron frying pan comes in 20, 25 and 30 cm (1.5, 2.4 and
   3.4 kg, a Lodge's sizes, the largest with a helper handle), its walls as
   thick as iron of its weight makes them (about 7150 kg/m³): thrown flat
   and spinning, it slaps the water, flutters down broadside at about
