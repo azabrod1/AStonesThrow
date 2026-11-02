@@ -788,10 +788,14 @@ vec4 mirrorNearness(float coverage, vec3 viewPoint) {
 
 // A sheet: the sky's Fresnel reflection off its wrinkled, banded face
 // (sheetNormal: a flat face reflected as a flat grey shape), and its aerated
-// bead's and froth's scattering, through its holes (SHEET_FROTH). All of it
-// is near for the distance draw, as the column is: where only its bright
-// faces were, the sheet's reflection was a patchwork of pieces that moved
-// with the sheet and pieces that moved with the sky, a mosaic.
+// bead's and froth's scattering, through its holes (SHEET_FROTH). A stone's
+// crown is near for the distance draw wherever it is, as the column is:
+// where only its bright faces were, its reflection was a patchwork of
+// pieces that moved with the sheet and pieces that moved with the sky, a
+// mosaic. A landing drop's crown (aRide) stays near only where it is bright:
+// the water is strewn with them, thin rings at the surface, and near all
+// over, the parallax drew each one's reflection as a 1-pixel curve across
+// the water.
 export const MIRROR_SHEET_FRAGMENT = /* glsl */`
 uniform vec3 uSkyAmbient;
 varying vec3 vViewPosition;
@@ -803,6 +807,7 @@ varying vec3 vSheet;
 varying vec2 vFroth;
 varying float vRimDistance;
 varying float vFoot;
+varying float vRide;
 ${MIRROR_COMMON}
 ${SHEET_FROTH}
 void main() {
@@ -816,13 +821,14 @@ void main() {
   float fresnel = waterFresnel(dot(normal, toViewer));
   float aerated = min(RIM_AERATION * vAeration + froth.whiteness, 1.0) * (1.0 - fresnel) * froth.present * vFoot;
   fresnel *= froth.present * vFoot;
-  if (uMirrorDistance > 0.5) { gl_FragColor = mirrorNearness(froth.present, vViewPosition); return; }
+  if (uMirrorDistance > 0.5) { gl_FragColor = mirrorNearness(max(froth.present * vFoot * (1.0 - vRide), fresnel + aerated), vViewPosition); return; }
   vec3 reflected = textureCubeLodEXT(uEnvCube, worldFromView(reflect(-toViewer, normal)), 1.0).rgb;
   gl_FragColor = vec4(fresnel * reflected + aerated * uSkyAmbient * 1.2, fresnel + aerated);
 }
 `;
 
-// A column: the sky's Fresnel reflection. A tube bends light only across its
+// A column: the sky's Fresnel reflection, but for its foot that is the
+// pond's water, which has none of its own. A tube bends light only across its
 // axis, so from below it shows the sky behind it, which the dome already is.
 // All of it is near for the distance draw, faces included: what a reflected
 // ray sees through a glass rod is the rod's image of the sky, which moves
@@ -830,9 +836,13 @@ void main() {
 export const MIRROR_COLUMN_FRAGMENT = /* glsl */`
 varying vec3 vViewPosition;
 varying vec3 vViewNormal;
+varying float vRound;
 ${MIRROR_COMMON}
 void main() {
-  if ((worldFromView(vViewPosition) + cameraPosition).y < uMirrorLevel) discard;
+  // A column's foot that is the pond's water (a negative roundness, src/jet.js) is the pond's own surface, not a
+  // thing standing on it: it has no reflection of its own (drawn near, its flat rim lay in the mirror as a thin line
+  // the parallax drew across the water as curves).
+  if ((worldFromView(vViewPosition) + cameraPosition).y < uMirrorLevel || vRound < -0.01) discard;
   vec3 toViewer = normalize(-vViewPosition);
   vec3 normal = normalize(vViewNormal);
   if (dot(normal, toViewer) < 0.0) normal = -normal;

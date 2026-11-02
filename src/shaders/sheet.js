@@ -337,6 +337,7 @@ varying vec3 vSheet;
 varying vec2 vFroth;
 varying float vRimDistance;
 varying float vFoot;             // the sheet's share here: 1, fading to 0 over the foot the lip carries (the header)
+varying float vRide;             // aRide: 1 on a landing drop's crown (and a stone crown's base row), for the mirror
 ${GLSL_COMMON}
 void main() {
   vec4 world = modelMatrix * vec4(position, 1.0);
@@ -359,6 +360,7 @@ void main() {
   vFroth = aFroth;
   vRimDistance = aRimDistance;
   vFoot = 1.0 - smoothstep(FOOT_FADE.x, FOOT_FADE.y, aCarry);
+  vRide = aRide;
   gl_Position = projectionMatrix * viewPosition;
 }
 `;

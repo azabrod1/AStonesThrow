@@ -986,8 +986,10 @@ export class JetColumn {
       if (base > 0 && centreY >= level) { skirtRoot = true; skirtX = centreX; skirtY = centreY; skirtZ = centreZ; skirtRadius = radius; skirtSlope = Math.max(slope, 0); skirtAir = air; skirtPhase = phase; }
     }
     // The foot's skirt (the header): from the last widened ring above the water, out and down to the water, the
-    // surface turning from the wall's slope to nearly level, all of it the pond's water.
-    if (skirtRoot) {
+    // surface turning from the wall's slope to nearly level, all of it the pond's water. Only on the piece that
+    // stands in the water (its foot held under the surface): a piece broken off above it carries base water too,
+    // and a skirt on it was a hoop of water hanging in the air.
+    if (skirtRoot && this.drawY[last] <= level + 1e-4) {
       const wallAngle = Math.atan(skirtSlope);   // the wall's angle from the axis
       for (let ring = 1; ring <= FOOT_SKIRT_RINGS; ring++) {
         const share = ring / FOOT_SKIRT_RINGS;
