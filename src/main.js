@@ -346,8 +346,10 @@ import { withRandom, parkMiller } from './withRandom.js';
 //                 them go to the preset's scales once zoomed in closer: at the
 //                 frame the splash is a few dozen pixels and a fleck of spray
 //                 a CSS pixel whatever the buffer, so the pixels above that
-//                 cost (on an M5 Max at 2293 × 1133, 1 ms of an idle frame's
-//                 3.3 and 2 of a splash frame's 7.5) show nothing, while a
+//                 cost (on an M5 Max at 2293 × 1133, a 3/4 scale: 0.05 ms of
+//                 an idle frame's 0.68 of GPU time and 0.1 of a splash
+//                 frame's 1.25, by throughput; more on a 2× display and a
+//                 phone's GPU) and show nothing, while a
 //                 close-up shows the fish seen through the water blocky and
 //                 the droplets soft at half (frames compared, home and
 //                 --fov=12). The targets are built again as the zoom crosses
