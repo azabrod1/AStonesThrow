@@ -2,6 +2,10 @@
 
 Keep this file short. Every future session reads all of it, so most notes belong in a comment beside their code.
 
+## Pull request writing
+
+Write plain, natural summaries: what changes, why it matters, relevant validation and any real limitations. Keep paragraphs short. Avoid inflated claims, AI-sounding phrases, revision diaries and exhaustive test logs. Preserve useful evidence links and merge dependencies, and state incomplete checks plainly. Do not append AI bylines or session links unless requested or required.
+
 ## Commands
 
 ```bash
