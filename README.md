@@ -1386,6 +1386,12 @@ farther out, so it rises into the view rather than filling its corner.
   checks are seeded and fail again, while a budget of wall-clock time that
   another probe crowded passes alone, as it was written to. The summary
   names every probe run again. On four cores the suite takes about 80 s.
+- `npm run check` runs what CI checks a pull request with, the same lists
+  CI's jobs run: `check:cpu` (`npm test`, the variety and pool probes),
+  `check:controls` and `check:site` (the browser probes, on the machine's
+  GPU). `npm install` points git at `.githooks/`, whose `pre-push` runs it
+  before every push and stops one that would fail; it checks the working
+  tree, so it pushes only the checked-out commit, with nothing uncommitted.
 - `node tools/ice-probe.mjs [--list]` throws every thing at thin and thick
   ice as the app throws it, each way, with the splash on the CPU, and
   prints what breaks what: each throw's blow against what the ice holds and

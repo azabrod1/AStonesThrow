@@ -5,7 +5,9 @@ name: Check
 # (Metal; free for a public repository). GitHub's Linux runners have none, and
 # SwiftShader took some 27 minutes over the browser probes where Metal takes
 # about 5, in two jobs side by side. PW_GPU=hardware fails rather than fall
-# back to SwiftShader (tools/browser.mjs).
+# back to SwiftShader (tools/browser.mjs). Each job runs one of package.json's
+# check scripts, the lists `npm run check` and the pre-push hook run locally,
+# so CI and a local run can never check different things.
 on:
   pull_request:
   workflow_dispatch:
@@ -20,6 +22,7 @@ concurrency:
 jobs:
   cpu:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     env:
       PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
     steps:
@@ -29,13 +32,12 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
-      - run: npm test
-      - run: node tools/variety-probe.mjs
-      - run: node tools/pool-probe.mjs
+      - run: npm run check:cpu
 
   browser:
     name: browser (${{ matrix.part }})
     runs-on: macos-latest
+    timeout-minutes: 30
     env:
       PW_GPU: hardware
     strategy:
@@ -43,17 +45,9 @@ jobs:
       matrix:
         include:
           - part: controls, screen, frame rate, grab, uniforms
-            run: |
-              node tools/controls-probe.mjs
-              node tools/screen-probe.mjs
-              node tools/frame-rate-probe.mjs
-              node tools/grab-probe.mjs
-              node tools/uniform-probe.mjs
+            run: npm run check:controls
           - part: quality, site, startup
-            run: |
-              node tools/quality-probe.mjs
-              npm run site && node tools/site-check.mjs
-              node tools/startup-probe.mjs
+            run: npm run check:site
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
