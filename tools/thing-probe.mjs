@@ -505,6 +505,25 @@ for (const name of THING_NAMES.filter((key) => THINGS[key].abilities.held)) {
   check(Math.abs(rock.velocity.x - 0.15) < 0.01 && rock.state === 'float', `basketball: a gale drifts it at ${rock.velocity.x.toFixed(3)} m/s (${rock.state})`);
 }
 
+// A sinker settling just before a gale ends must be drawn back on the calm
+// bed, including frames drawn between steps and the surface used for picking.
+for (const waveHeight of [-0.3, 0.3]) {
+  const rock = new Rock({ radius: 0.1, position: new THREE.Vector3(0, 1, 0), velocity: new THREE.Vector3(0, -1, 0), envTexture: null });
+  let steps = 0;
+  while (rock.state !== 'rest' && steps++ < 2400) rock.update(STEP, () => 1, () => waveHeight);
+  const lifted = Math.abs(rock.meshAbove.position.y - rock.position.y);
+  let displaced = 0;
+  for (let step = 0; step < 3; step++) {
+    rock.update(STEP, () => 1);
+    for (const share of [0, 0.5, 1]) {
+      rock.drawAt(share);
+      displaced = Math.max(displaced, rock.meshAbove.position.distanceTo(rock.position), rock.meshBelow.position.distanceTo(rock.position));
+    }
+  }
+  check(rock.state === 'rest' && lifted > 0.001 && displaced < 1e-9 && rock.drawn.surface === 0 && rock.waterLevel.value === 0,
+    `a sinker settled under a ${waveHeight} m wave stays displaced ${centimetres(displaced)} cm after the gale stops (picking surface ${rock.drawn.surface})`);
+}
+
 // ---- the shore: a gale blowing floaters onto it ----
 console.log('\nBlown onto the shore by a gale for a minute, then out again for a minute: where each grounds, how far into the bed it goes, where it is after');
 for (const name of THING_NAMES) {
