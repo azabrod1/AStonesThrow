@@ -66,7 +66,9 @@
 //     its head staying at the panel's top as it scrolls; the dropdown's ⓘ
 //     opens the page at once, and each choice, tapped, is shown over the
 //     groups to look over (its name, size, mass, Floats or Sinks; the
-//     settings stay open) and its Use button closes the settings, the next
+//     settings stay open; the largest group's last card, chosen with the
+//     page at its foot, does not scroll it back up to its tabs, so the card
+//     stays under the finger) and its Use button closes the settings, the next
 //     tap on the water throwing it, and sets what is thrown, the throw
 //     button's name (a rock, a ball, a gem), the row's value and the strip's
 //     name, slider (its range, or off for a ball of one size) and line
@@ -781,6 +783,38 @@ for (const framing of FRAMINGS) {
     const after = await page.evaluate(() => ({ count: window.__pond.rocks.length, thing: window.__pond.rocks.at(-1)?.thing.key }));
     check(thrown.closed && after.count === thrown.before + 1 && after.thing === choice, `Use ${choice} closes the settings, and the next tap on the water throws it (${thrown.closed ? 'closed' : 'still open'}; ${after.count - thrown.before} thrown, ${after.thing})`);
   }
+  // Choosing a card low in a long group does not scroll What to throw back up to its tabs. The choice selects its
+  // group's tab again (src/tabs.js), which scrolls the tab row alone; it once scrolled the page up to the tabs, the card
+  // just pressed jumping away under the finger (on a phone on its side, a long group's last cards). With the page at
+  // its foot, the largest group's last card is chosen: the chosen thing's card above the groups changes height as it
+  // shows it, so the page may scroll by as much (the browser keeping what is in view in place), never up by more.
+  await press('#thing-chip');
+  await page.waitForTimeout(300);
+  await press('#thing-more');
+  await page.waitForTimeout(400);
+  const largest = offered.reduce((most, group) => (group.count > most.count ? group : most));
+  const lowest = largest.keys.at(-1);
+  await press(`#thing-tabs [role="tab"][data-group="${largest.name}"]`);
+  await page.waitForTimeout(80);
+  await page.evaluate(() => { const panel = document.getElementById('settings'); panel.scrollTop = panel.scrollHeight; });
+  const placing = () => page.evaluate((value) => {
+    const panel = document.getElementById('settings'), card = document.querySelector(`#thing [data-value="${value}"]`);
+    return { scrolled: panel.scrollTop, offset: card.getBoundingClientRect().top - panel.getBoundingClientRect().top + panel.scrollTop, scrolls: panel.scrollHeight > panel.clientHeight + 1 };
+  }, lowest);
+  const placedBefore = await placing();
+  await press(`#thing [data-value="${lowest}"]`);
+  await page.waitForTimeout(150);
+  const placedAfter = await placing();
+  const scrolledUp = Math.min(0, placedAfter.offset - placedBefore.offset) - (placedAfter.scrolled - placedBefore.scrolled);
+  check(scrolledUp <= 1 && (await page.evaluate(() => window.__pond.thing)) === lowest,
+    `choosing ${lowest}, ${largest.name}'s last, with What to throw at its foot does not scroll the page back up to its tabs (${placedBefore.scrolls ? `it scrolled ${(placedAfter.scrolled - placedBefore.scrolled).toFixed(0)} px, the card moving ${(placedAfter.offset - placedBefore.offset).toFixed(0)} px down the page` : 'the page does not scroll here'})`);
+  // The river stone again, used, as the loop above left it.
+  await press('#thing-tabs [role="tab"][data-group="Stones"]');
+  await page.waitForTimeout(80);
+  await press('#thing [data-value="stone"]');
+  await page.waitForTimeout(100);
+  await press('#thing-use');
+  await page.waitForTimeout(100);
   // What was used lately sits at the top of What to throw, a tap each: it throws at once (the settings close).
   await press('#thing-chip');
   await page.waitForTimeout(300);

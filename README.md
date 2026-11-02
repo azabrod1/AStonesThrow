@@ -1787,7 +1787,9 @@ farther out, so it rises into the view rather than filling its corner.
   moving the star, a group's tab holds its things, a favourite made with
   its star or on What to throw shows there, a pill's tip is its note,
   a pill tapped is thrown next, a press on the pond closes it without
-  throwing and the keyboard works it, its tabs included; that a thing whose steps are things of
+  throwing and the keyboard works it, its tabs included; that choosing a
+  long group's last card on What to throw never scrolls that page back up
+  to its tabs; that a thing whose steps are things of
   their own (an iPad, a frying pan, roses) reads each step on the strip
   without overflowing it; that the settings open with their rows, each
   row's value whole beside its name, the Water page's pictured choices each
