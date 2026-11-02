@@ -117,7 +117,8 @@ const SPEED_STEPS = 161;                 // ...to 16 m/s
 const LANDING_STEPS = 2;                 // Newton's steps to a sprite's landing (linearLanding)
 export const MIRROR_SPRAY_RADIUS = 0.0004;   // finer sprites are left out of the mirror
 export const SPRAY_WIND = 1.5;           // m/s of drift per unit of the wind's strength (WIND_STRENGTHS, src/ambientWaves.js)
-const STRUNG_ACROSS = 0.25;              // a burst strung along a line (`along`) spreads and kicks its drops across the line by this share of what it does along it
+const STRUNG_ACROSS = 0.25;              // a burst strung along a line (`along`) spreads and kicks its drops across the line by this share of what it does along it...
+const STRUNG_KICK = 0.35;                // ...and along it by this share of the kick (the rim's retraction speed is in the film's plane, every way; all of it along the flight drew strings a sheet's height long)
 const DENSITY = 0.2;                     // sprites per drop for the 3 cm stone's drops of DENSITY_RADIUS, at a share of 1...
 const DENSITY_POWER = 2.2;               // ...times (R / 3 cm)^−DENSITY_POWER...
 const DENSITY_RADIUS = 0.0002;           // ...and times (r / DENSITY_RADIUS)²: a sprite stands for as much light, whatever its drops' size (a drop of 0.45 mm and up is a sprite of its own at the full share)
@@ -475,7 +476,7 @@ export class SpraySystem {
       let outX = direction[0] * out, outY = direction[1] * out, outZ = direction[2] * out;
       if (along) {
         // Strung along a line (the header): the spread and the kick mostly along it, STRUNG_ACROSS of them across.
-        const line = spread * (2 * random() - 1), lineKick = speed * (2 * random() - 1);
+        const line = spread * (2 * random() - 1), lineKick = STRUNG_KICK * speed * (2 * random() - 1);
         outX = along.x * line + outX * STRUNG_ACROSS; outY = along.y * line + outY * STRUNG_ACROSS; outZ = along.z * line + outZ * STRUNG_ACROSS;
         kickX = along.x * lineKick + kickX * STRUNG_ACROSS; kickY = along.y * lineKick + kickY * STRUNG_ACROSS; kickZ = along.z * lineKick + kickZ * STRUNG_ACROSS;
       }
