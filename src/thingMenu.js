@@ -12,10 +12,10 @@
 // it holds something (a per-viewer convenience, in localStorage; the first
 // time, Favourites if there are any), else on the chosen thing's group. On a
 // touch screen the tabs are one row a finger scrolls sideways (index.html).
-// The page builders (src/thingPage.js) build the tabs, the pills and the chosen
-// thing's card and says what a choice, the star and the ⓘ do (onChoose,
-// onFavourite, onMore); this holds the opening, closing, the tabs (a TabRow,
-// src/tabs.js, as What to throw's are), the tips and moving about.
+// The page's builders (src/thingPage.js) build the tabs, the pills and the
+// chosen thing's card, and say what a choice, the star and the ⓘ do
+// (onChoose, onFavourite, onMore); this holds the opening, closing, the tabs
+// (a TabRow, src/tabs.js, as What to throw's are), the tips and moving about.
 //
 // Every tab's panel stands in the same place (a grid of one cell, the hidden
 // ones invisible but still taking room), so the tabs' card is as tall as its
@@ -35,8 +35,8 @@
 // (--strip-height, which the page keeps), its card at the box's foot: on a
 // phone across the screen, on a wider one under the chip, never past the
 // box's edge. Where the box is too short (a phone on its side) the panels
-// scroll under the tabs, the chosen thing's card and the tabs held. It opens with a short
-// rise, or at once for a reader who prefers reduced motion.
+// scroll under the tabs, the chosen thing's card and the tabs held. It opens
+// with a short rise, or at once for a reader who prefers reduced motion.
 //
 // It closes on the chip, on Escape (before Escape's glide back to the shore
 // view, src/main.js), on a choice, on a press anywhere else (one on the water

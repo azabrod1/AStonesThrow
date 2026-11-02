@@ -1,7 +1,28 @@
-// What to throw and the strip's dropdown: registry-built cards, group tabs,
-// favourites, recent choices and the selected thing's details. The page supplies
-// its DOM, pond and settings, and keeps the strip's sizing and throw controls.
-// Importing this module does not access the DOM or start the pond.
+// What to throw (a page of the settings, src/settingsPanel.js) and the strip's
+// dropdown of things (src/thingMenu.js), both built from the registry
+// (src/things.js thingGroups) and built again whenever a thing is defined
+// (onThingsChange).
+//   - The page: a row of tabs, one a group (a TabRow, src/tabs.js, as the
+//     dropdown's is), over the shown group's cards. A tab only browses; a card
+//     chooses, and the cards are one radio group (src/settingsPanel.js
+//     radioGroup) whose arrow keys cross from group to group, the tab
+//     following. Over them the chosen thing to look over (its picture, size
+//     and mass, what it does, its own size slider) and Use; at the top the
+//     Favourites and the latest choices, a tap each.
+//   - The dropdown: a tab for Favourites and one a group, each tab's panel of
+//     pills, and the chosen thing's own card (its star, its ⓘ into the page).
+//     ThingMenu opens it, closes it and moves about it.
+// The Favourites and the latest choices are the viewer's own, in localStorage
+// (stone-pond-favourites, stone-pond-recent). A star on either view makes or
+// unmakes a favourite, and both views follow.
+//
+// The page script (index.html) gives createThingPage its document, the pond,
+// the settings, the strip's chip and size slider (sizeInput, with applySize
+// and followTouch) and onChange, which this calls after a choice is made here
+// or a thing defined, to bring the rest of the strip up to date. It gets back
+// update(), to call after anything chooses a thing (both views show it), and
+// showSize(), after the size changes. Importing the module touches no DOM and
+// starts nothing.
 import { THINGS, thingGroups, onThingsChange } from './things.js';
 import { radioGroup } from './settingsPanel.js';
 import { ThingMenu } from './thingMenu.js';
@@ -153,7 +174,7 @@ export function createThingPage({ root, pond, settings, chip, sizeInput, applySi
   });
   thingsRoot.addEventListener('keydown', (event) => { if (event.key === 'Enter' && event.target.closest('[role="radio"]')) { event.preventDefault(); useChosen(); } });
   // The dropdown of things (src/thingMenu.js), built from the registry too: a tab for Favourites and one for each
-  // group, each tab's panel of pills, each pill the thing's picture and name, the chosen one ringed (updateThing).
+  // group, each tab's panel of pills, each pill the thing's picture and name, the chosen one ringed (showMenuChosen).
   const menuTabs = root.getElementById('thing-menu-tabs');
   const menuPanels = root.getElementById('thing-menu-panels');
   const STAR = '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.6l2.3 4.7 5.1.7-3.7 3.6.9 5.1-4.6-2.4-4.6 2.4.9-5.1L2.6 8l5.1-.7z"></path></svg>';
@@ -240,9 +261,10 @@ export function createThingPage({ root, pond, settings, chip, sizeInput, applySi
     more.setAttribute('aria-label', `More about the ${called}`);
     more.dataset.tip = `More about the ${called}`;
   };
-  // The strip's chip opens the dropdown; a pill tapped there is thrown next, the star on its chosen thing's card makes it
-  // a favourite, and its ⓘ opens What to throw from the chip. Pressed while What to throw is open from it, the chip closes that. A pick in the dropdown is not one
-  // of What to throw's latest choices: those are for switching quickly there, which the dropdown does itself.
+  // The strip's chip opens the dropdown (pressed while What to throw is open from it, it closes that); a pill tapped
+  // there is thrown next, the star on its chosen thing's card makes it a favourite, and its ⓘ opens What to throw from
+  // the chip. A pick in the dropdown is not one of What to throw's latest choices: those are for switching quickly
+  // there, which the dropdown does itself.
   const thingMenu = new ThingMenu({
     chip,
     root: root.getElementById('thing-menu'),
