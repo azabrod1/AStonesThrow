@@ -1606,11 +1606,6 @@ farther out, so it rises into the view rather than filling its corner.
   none of them is on (`src/waterSurface.js`): the same water, about 7% less
   of the GPU on a Mac, and the first ice, gale or rain compiles the full
   programs mid-game. `?profile=1`'s report says "lean water" or "full water".
-- `?ringlayer=1` (a trial) has those lean programs read the stones' rings'
-  slope from a pass of its own drawn just before them (`src/waterSurface.js`
-  drawRingLayer): the same picture, for phones whose GPU runs the rings
-  slowly inside the water's large program. `?profile=1`'s report adds
-  "ring layer".
 - `?trace=1` on the page, or the T key, traces each stone over everything
   (`__pond.setTrace`): its path from the hand until it goes in (yellow), its
   track on the water under it (white), a red cross at each touch and a white

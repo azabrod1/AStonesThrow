@@ -39,25 +39,6 @@
 // them on draws the full programs alone (holdFull, round the app's
 // warm-up), so it builds what it built before the twins.
 //
-// With `ringLayer` too (?ringlayer=1, a trial: off unless the page asks)
-// the twins leave the rings' slope out of their own program (RING_LAYER,
-// src/shaders/scene.js): drawRingLayer, before the main pass, draws the patch
-// and the sheet once more with RING_LAYER_FRAGMENT alone, which writes the
-// rings' slope at each pixel they cover into the layer (two floats a pixel,
-// the drawing buffer's size, with its own depth so the nearest water wins
-// there as it does in the main pass), and the twins read it back at their
-// pixel. The same sum at the same points (seeded frames match the twins'
-// own to a pixel off by one level; in half floats, a device without float
-// targets, a glint may differ by a few), made by a program that does
-// nothing else, which a GPU can run on many more pixels at once than the
-// water's: a phone's ?profile=1 showed the rings costing the water's
-// program far more than their arithmetic, and a quarter less with only the
-// twins' dead code gone. On a Mac it gains nothing (1.79 ms a frame by
-// throughput either way, 24 rings at 2039×1274). The pass of the patch's
-// cavity variant builds with the first ring (drawRingLayer), so the warm-up
-// builds both passes. The full programs (ice, gale, rain), the cavity's mesh
-// and the view from below sum the rings themselves.
-//
 // In the pool (setPool, src/pool.js) the inner patch draws only the pool's
 // quads and a ring of them under its walls (the patch beyond is the
 // solver's mirror images, src/spectralWater.js, and the deck covers it), the
@@ -98,8 +79,7 @@
 import * as THREE from 'three';
 import { ICE_SHADOW_UNIFORMS } from './iceShadow.js';
 import { withRandom, parkMiller } from './withRandom.js';
-import { createFloatTarget } from './gpu.js';
-import { WATER_VERTEX, WATER_FRAGMENT, WATER_UNDER_FRAGMENT, RING_LAYER_FRAGMENT } from './shaders/scene.js';
+import { WATER_VERTEX, WATER_FRAGMENT, WATER_UNDER_FRAGMENT } from './shaders/scene.js';
 
 // The floor's uniforms the surface seen from below shares (setBed): its march to the bed (LAKE_BED, every uniform it
 // declares; tools/garden-probe.mjs checks) and the bed's pattern.
@@ -107,7 +87,6 @@ export const BED_UNIFORMS = ['uShore', 'uLand', 'uBank', 'uKoiPond', 'uPattern',
 
 export const OUTER_HALF_SIZE = 9000;
 const LEAN_SEED = 53;   // the lean twins' ids' stream (createWaterSurface)
-const RING_LAYER_SEED = 59;   // the ring layer's passes' and target's (createWaterSurface)
 const OUTER_GROWTH = 1.25;   // each of the outer sheet's square rings this many times the last's half size...
 const OUTER_CUTS = 8;        // ...and each of its sides cut into this many quads
 // The sheet starts this far inside the patch's edge, under it: the patch's
@@ -193,8 +172,7 @@ const NO_ICE = () => ({
   ...ICE_SHADOW_UNIFORMS,   // the shadows' shared set (src/iceShadow.js): none in use without ice
 });
 
-export function createWaterSurface(water, lighting, ambientWaves, { meshSegments = Math.min(water.size, 512), rings = null, dropRings = null, skyCube = null, rain = null, haze = null, gale = null, ice = null, lean: leanAllowed = false, ringLayer: ringLayerWanted = false } = {}) {
-  const ringLayerAllowed = leanAllowed && ringLayerWanted && rings !== null;   // the header
+export function createWaterSurface(water, lighting, ambientWaves, { meshSegments = Math.min(water.size, 512), rings = null, dropRings = null, skyCube = null, rain = null, haze = null, gale = null, ice = null, lean: leanAllowed = false } = {}) {
   const uniforms = {
     uHeight: { value: water.heightTexture },
     uFoam: { value: water.foamTexture },
@@ -239,7 +217,6 @@ export function createWaterSurface(water, lighting, ambientWaves, { meshSegments
     ...(ice ? ice.uniforms : NO_ICE()),
     uPool: { value: new THREE.Vector4() },   // the pool's corner (x, z), side and depth; depth 0 in a lake (setPool)
     uDeck: { value: 0 },
-    ...(ringLayerAllowed ? { uRingLayer: { value: null } } : {}),
   };
   // Two materials sharing every uniform object but uInner.
   const material = (inner) => new THREE.ShaderMaterial({
@@ -293,24 +270,11 @@ export function createWaterSurface(water, lighting, ambientWaves, { meshSegments
   // (src/withRandom.js), so a seeded throw draws the same with them or without.
   const leanOf = (base) => new THREE.ShaderMaterial({
     vertexShader: base.vertexShader, fragmentShader: base.fragmentShader, uniforms: base.uniforms,
-    defines: { ...base.defines, WATER_LEAN: '', ...(ringLayerAllowed ? { RING_LAYER: '' } : {}) }, side: base.side,
+    defines: { ...base.defines, WATER_LEAN: '' }, side: base.side,
   });
   const [leanInnerMaterial, leanOuterMaterial, leanInnerCavityMaterial] = leanAllowed
     ? withRandom(parkMiller(LEAN_SEED), () => [leanOf(innerMaterial), leanOf(outerMaterial), leanOf(innerCavityMaterial)])
     : [null, null, null];
-  // The ring layer (the header): each twin's pass (its vertex shader, RING_LAYER_FRAGMENT) and the layer, made only
-  // when asked for, their ids from a stream of their own.
-  const layerPasses = new Map();
-  let layerTarget = null;
-  if (ringLayerAllowed) {
-    withRandom(parkMiller(RING_LAYER_SEED), () => {
-      for (const twin of [leanInnerMaterial, leanOuterMaterial, leanInnerCavityMaterial]) {
-        layerPasses.set(twin, new THREE.ShaderMaterial({ vertexShader: WATER_VERTEX, fragmentShader: RING_LAYER_FRAGMENT, uniforms: twin.uniforms, defines: twin.defines, side: twin.side }));
-      }
-      layerTarget = createFloatTarget(1, 1, { format: THREE.RGFormat, type: THREE.FloatType, depth: true });
-    });
-    uniforms.uRingLayer.value = layerTarget.texture;
-  }
   let lean = false;   // drawing the lean twins (chooseLean)
   let fullOnly = false;   // holdFull
   let buildingCavity = false;   // the patch drawn with the full cavity variant to build it (chooseLean)
@@ -382,44 +346,6 @@ export function createWaterSurface(water, lighting, ambientWaves, { meshSegments
     holdFull(on) { fullOnly = on; },
     /** Whether the twins are made (all but ?lean=0), and whether they are drawn now. */
     get leanAllowed() { return leanAllowed; },
-    /** Whether the twins read the ring layer (the header). */
-    get ringLayer() { return ringLayerAllowed; },
-    /** The ring layer's target (the header), null without it. */
-    get ringLayerTarget() { return layerTarget; },
-    /**
-     * The ring layer (the header), once a frame before the main pass, from
-     * `camera` at the drawing buffer's size (`resolution`): only while the
-     * twins draw from above with a ring alive (otherwise none reads it).
-     */
-    drawRingLayer(renderer, camera, resolution) {
-      const patchPass = layerPasses.get(inner.material);
-      if (!patchPass || !inner.visible || uniforms.uRingCount.value === 0) return;
-      if (layerTarget.width !== resolution.x || layerTarget.height !== resolution.y) layerTarget.setSize(resolution.x, resolution.y);
-      const previousTarget = renderer.getRenderTarget();
-      const previousAutoClear = renderer.autoClear;
-      const patchTwin = inner.material, sheetTwin = outer.material;
-      renderer.setRenderTarget(layerTarget);
-      renderer.clear(true, true, false);
-      renderer.autoClear = false;
-      // Until the cavity variant's pass is built, the patch draws with it too while no cavity is open (it lies where
-      // the plain patch does, and the plain pass then writes the same values over it): it builds with the first
-      // ring, not mid-throw when a later stone opens a cavity over a ring.
-      const cavityPass = layerPasses.get(leanInnerCavityMaterial);
-      if (!cavitiesOpen && patchPass !== cavityPass && !renderer.properties.get(cavityPass).currentProgram) {
-        inner.material = cavityPass;
-        renderer.render(inner, camera);
-      }
-      inner.material = patchPass;
-      renderer.render(inner, camera);
-      if (outer.visible) {
-        outer.material = layerPasses.get(sheetTwin);
-        renderer.render(outer, camera);
-      }
-      inner.material = patchTwin;
-      outer.material = sheetTwin;
-      renderer.autoClear = previousAutoClear;
-      renderer.setRenderTarget(previousTarget);
-    },
     get lean() { return lean; },
     /** The inner patch's quads per side. */
     get meshSegments() { return segments; },
