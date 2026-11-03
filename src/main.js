@@ -852,8 +852,9 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   let reedsHere = false;   // the place's shallows have reeds (PLACES `reeds`; setReeds)
   const bedDepthAt = (x, z) => (pooled ? POOL.depth : floorDepthAt(x, z));
   water.floorDepthAt = bedDepthAt;
-  // The water's lean programs while there is no ice, gale or rain (src/waterSurface.js); ?lean=0 draws the full ones only.
-  const surface = createWaterSurface(water, lighting, ambientWaves, { meshSegments: settings.meshSegments, rings, dropRings, skyCube: environment.cubeTexture, rain, haze: environment.hazeUniforms, gale: galeWaves, ice, lean: pageParameters.get('lean') !== '0' });
+  // The water's lean programs while there is no ice, gale or rain (src/waterSurface.js); ?lean=0 draws the full ones only,
+  // ?ringlayer=1 has the twins read the rings' slope from a pass of its own (a trial).
+  const surface = createWaterSurface(water, lighting, ambientWaves, { meshSegments: settings.meshSegments, rings, dropRings, skyCube: environment.cubeTexture, rain, haze: environment.hazeUniforms, gale: galeWaves, ice, lean: pageParameters.get('lean') !== '0', ringLayer: pageParameters.get('ringlayer') === '1' });
   const floaterRide = createFloaterRide(surface.rideUniforms);   // the water under each floater, for the physics
   const splash = new SplashSystem({ environment, lighting, water, ambientWaves, surface });
   const glare = new Glare();   // the sun's image and every glint spread over the frame (src/glare.js), mixed in by the splash's final pass
@@ -2779,6 +2780,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       renderer.clear(true, true, false);
       if (!skip.floor) renderer.render(sceneUnder, camera);
 
+      surface.drawRingLayer(renderer, camera, resolution);   // ?ringlayer=1: the rings' slope at each pixel of the water, for the water to read
       renderer.setRenderTarget(mainTarget);
       renderer.clear(true, true, false);
       renderer.render(sceneMain, camera);
@@ -2873,7 +2875,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       gale: sum([galeWaves.spectrumTarget, galeWaves.fftA, galeWaves.fftB, galeWaves.displacementTarget, galeWaves.derivativeTarget]),
       rain: renderTargetBytes(rain.tileTarget),
       rings: rings.bytes,
-      scene: sum([underTarget, mainTarget, reflectionTarget, ...glare.targets]),
+      scene: sum([underTarget, mainTarget, reflectionTarget, ...glare.targets, ...(surface.ringLayerTarget ? [surface.ringLayerTarget] : [])]),
       splash: sum(Object.values(splash.targets)),
       sky: sum(environment.targets) + environment.panoramaBytes + environment.horizonBytes,
       floor: floorPatternBytes,
@@ -3268,7 +3270,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     fastForward(seconds) { for (let left = seconds; left > 1e-6; left -= 1 / 60) simulate(Math.min(1 / 60, left)); },
     hasImpacted: () => rocks.some((rock) => rock.state !== 'air' || rock.skip?.skips > 0),
     clearPond,
-    describe: () => `${qualityName}, ${resolution.x}×${resolution.y} at ${dpr.toFixed(2)}×, grid ${water.size}, mesh ${surface.meshSegments}, ${surface.leanAllowed ? 'lean' : 'full'} water`,
+    describe: () => `${qualityName}, ${resolution.x}×${resolution.y} at ${dpr.toFixed(2)}×, grid ${water.size}, mesh ${surface.meshSegments}, ${surface.leanAllowed ? 'lean' : 'full'} water${surface.ringLayer ? ', ring layer' : ''}`,
     memory: () => ({ ...memoryEstimate(), textures: renderer.info.memory.textures, geometries: renderer.info.memory.geometries }),
     onReport: (lines) => onProfile?.(lines),
   }) : null;

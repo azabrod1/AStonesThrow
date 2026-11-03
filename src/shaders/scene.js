@@ -1533,6 +1533,9 @@ uniform float uGaleUnresolved[GALE_LEVELS];         // and of the gale's (src/ga
 // not drawn inside it, and the floater's own top shows.
 uniform vec3 uDryDiscs[DRY_DISCS];
 uniform int uDryCount;
+#ifdef RING_LAYER
+uniform sampler2D uRingLayer;     // the rings' slope at each pixel (RING_LAYER_FRAGMENT, src/waterSurface.js drawRingLayer)
+#endif
 varying vec3 vWorld;
 varying vec2 vDomainUv;
 varying float vMask;
@@ -1930,7 +1933,11 @@ void main() {
   vec2 slope = surfaceSlope;
 #else
   vec2 slope = vec2(hr - hl, hu - hd) / (2.0 * uCell) * vMask + ambientSlopeAtFullGust(vWorld.xz) * gust;
+#ifdef RING_LAYER
+  if (uRingCount > 0) slope += texelFetch(uRingLayer, ivec2(gl_FragCoord.xy), 0).xy;   // the same sum, made at this pixel by RING_LAYER_FRAGMENT
+#else
   if (uRingCount > 0) slope += ringSlope(vWorld.xz, acrossX, acrossY);
+#endif
   float slopeVariance = subGridSpread * subGridSpread + ambientUnresolvedVariance(vWorld.xz) * gust * gust;
   if (uRainOn > 0.5) {
     slope += rainSlope(vWorld.xz);
@@ -2141,6 +2148,22 @@ const FLOOR_PATTERN_TILE = /* glsl */`
 #define PATTERN_TILE 2.0       // metres: the side of the baked tile
 #define PATTERN_RANGE 0.43     // the tile holds albedo over this, above the pattern's largest (0.42), so its 8 bits span the pattern
 `;
+// The ring layer (src/waterSurface.js drawRingLayer, ?ringlayer=1): the
+// water's lean programs drawn with this fragment in their place, before the
+// main pass, write the rings' slope at each pixel the water covers, as
+// WATER_FRAGMENT would sum it there (ringSlope at the fragment's own point,
+// over its own footprint); their RING_LAYER twins read it back at that
+// pixel. The sum is the same; it is only made in a program that does
+// nothing else, so the GPU can run many more of its pixels at once than it
+// can of the water's, the largest program in the app.
+export const RING_LAYER_FRAGMENT = /* glsl */`
+varying vec3 vWorld;
+${GLSL_COMMON}
+void main() {
+  gl_FragColor = vec4(ringSlope(vWorld.xz, dFdx(vWorld.xz), dFdy(vWorld.xz)), 0.0, 1.0);
+}
+`;
+
 export const FLOOR_PATTERN = /* glsl */`
 float tiledNoise(vec2 p, float period) {
   vec2 i = floor(p);
