@@ -2459,7 +2459,7 @@ vec3 mallBed(vec2 point, float footprint) {
   bed = mix(bed, vec3(0.085, 0.09, 0.055) * (0.8 + 0.4 * valueNoise(point * 2.4)), 0.65 * silt);
   // Sodden leaves, one now and then in its cell.
   vec2 cell = floor(point / 0.45);
-  float chance = fract(sin(dot(cell, vec2(127.1, 311.7))) * 43758.5453);
+  float chance = hash21(cell);
   vec2 within = fract(point / 0.45) - 0.5 - (vec2(fract(chance * 7.13), fract(chance * 3.71)) - 0.5) * 0.6;
   float leaf = (1.0 - smoothstep(0.05, 0.05 + max(footprint / 0.45, 0.02), length(within * vec2(1.0, 1.8)))) * step(0.93, chance);
   bed = mix(bed, vec3(0.16, 0.1, 0.045) * (0.7 + 0.6 * fract(chance * 17.0)), 0.8 * leaf * (1.0 - smoothstep(0.01, 0.04, footprint)));
@@ -2570,7 +2570,9 @@ void main() {
       vec3 bed = vWorld + mirrored * along;
       float depth = max(-bed.y, 0.0);
       vec3 light = uSunIrradiance * exp(-uAbsorb * depth / max(uSunDir.y, 0.2)) * max(uSunDir.y, 0.0) + uSkyAmbient * exp(-uAbsorb * depth) * 1.4;
-      vec3 ground = isShore(SHORE_MALL) ? mallBed(bed.xz, TILE_BLUR * (along + length(vWorld - cameraPosition))) : floorSand(bed.xz);
+      vec3 ground;
+      if (isShore(SHORE_MALL)) ground = mallBed(bed.xz, TILE_BLUR * (along + length(vWorld - cameraPosition)));
+      else ground = floorSand(bed.xz);
       color = mix(color, ground * PATTERN_RANGE * light, exp(-uExtinction * along));
     }
   }
@@ -2808,7 +2810,10 @@ ${MALL_BED}
 void main() {
   // Sand with pebbles and silt (FLOOR_SAND); the Koi pond's, darker gravel under silt and algae, in drifts; the
   // Reflecting Pool's tinted concrete (mallBed).
-  vec3 sand = isShore(SHORE_MALL) ? mallBed(vFloorPoint, length(fwidth(vFloorPoint))) : floorSand(vFloorPoint);
+  float bedFootprint = length(fwidth(vFloorPoint));   // taken in uniform control flow, for the Reflecting Pool's bed
+  vec3 sand;
+  if (isShore(SHORE_MALL)) sand = mallBed(vFloorPoint, bedFootprint);
+  else sand = floorSand(vFloorPoint);
   if (isShore(SHORE_KOI)) sand *= KOI_BED * (0.7 + 0.5 * valueNoise(vFloorPoint * 0.7 + 11.0));
 
   // Caustics: where the surfaces above focus the sun, on the floor point this

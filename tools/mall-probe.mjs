@@ -8,7 +8,8 @@
 //   below shares every uniform it declares (BED_UNIFORMS);
 // - the walls hold: each kind of thing, sent at the west wall, a side wall
 //   and their corner from 5 cm inside (its own reach toward the wall,
-//   lowestAlong; slow or fast, low or bouncing), with the coping as its
+//   lowestAlong; slow or fast, low or bouncing) or lobbed over it from a
+//   metre inside, with the coping as its
 //   ground (src/pool.js poolGround) and the walls holding it as src/main.js
 //   does (holdInPool on MALL_BASIN), never reaches into the granite (past a
 //   wall's face by more than INTO_STONE while its lowest point is under the
@@ -71,18 +72,23 @@ console.log('\nthe walls hold:');
     if (thing.hidden) continue;
     const measured = thing.byDiameter ? { radius: 0.03, mass: thing.measure(6).mass } : thing.measure(thing.slider?.initial);
     for (const wall of walls) {
-      for (const [speed, rise] of [[1, 0], [4, 0], [8, 1.5], [12, 3]]) {
+      // From 5 cm inside, along the water or up at it; and from a metre inside, lobbed over it onto the coping.
+      for (const [speed, rise, inside] of [[1, 0, 0.05], [4, 0, 0.05], [8, 1.5, 0.05], [12, 3, 0.05], [3, 4, 1], [5, 5, 1]]) {
         const rock = new Rock({ radius: measured.radius, position: new THREE.Vector3(0, 0, -1.5), velocity: new THREE.Vector3(wall.toward[0] * speed, rise, wall.toward[1] * speed), envTexture: null, thing: name, mass: measured.mass });
-        const [x, z] = [wall.toward[0] ? MALL_POOL.halfWidth + rock.lowestAlong(south) - 0.05 : 0, wall.toward[1] ? MALL_POOL.west + rock.lowestAlong(west) - 0.05 : -1.5];
+        const [x, z] = [wall.toward[0] ? MALL_POOL.halfWidth + rock.lowestAlong(south) - inside : 0, wall.toward[1] ? MALL_POOL.west + rock.lowestAlong(west) - inside : -1.5];
         rock.position.set(x, 0.02 - rock.lowestOffset(), z);
         rock.previous.copy(rock.position);
         rock.ground = ground;
         sent++;
+        let cleared = false;   // it has been past a wall's face with its lowest point over the coping's top: over the wall, on the ground
         for (let time = 0; time < 10; time += STEP) {
           rock.update(STEP, floorDepthAt);
           collideThings([rock], contain);
-          // How far it reaches into the stone: past a wall's face, while its lowest point is under the coping's top.
-          const into = rock.position.y + rock.lowestOffset() < top - 0.005 ? reachInto(rock) : -Infinity;
+          // How far it reaches into the stone: past a wall's face, while its lowest point is under the coping's top,
+          // not having come over it (coming down on the coping or the walk, it is the ground's: src/rock.js).
+          const lowest = rock.position.y + rock.lowestOffset(), past = reachInto(rock);
+          if (past > 0 && lowest >= top - 0.005) cleared = true;
+          const into = lowest < top - 0.005 && !cleared ? past : -Infinity;
           if (into > deepest) { deepest = into; worst = `${name} at ${speed} m/s at ${wall.name}`; }
           if (rock.state === 'rest') break;
         }
@@ -94,7 +100,7 @@ console.log('\nthe walls hold:');
     }
   }
   check(deepest <= INTO_STONE, `${sent} things sent at the walls: none goes into the granite by more than ${INTO_STONE * 100} cm (the deepest ${(Math.max(deepest, 0) * 100).toFixed(2)} cm, ${worst})`);
-  check(restingUnder === 0, `none ends outside the water under the coping's top (${restingUnder} of the ${over} sent over the wall)`);
+  check(over > 0 && restingUnder === 0, `of the ${over} that went over a wall, none ends under the coping's top (${restingUnder})`);
 }
 
 console.log('\nthe cost:');

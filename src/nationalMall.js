@@ -201,8 +201,8 @@ class Parts {
       this.normals.push(normal.x, normal.y, normal.z);
       this.surfaces.push(surface);
       this.hollows.push(typeof hollow === 'function' ? hollow(point, normal) : hollow);
-      const [first2, second] = detail ? detail(local) : [0, 0];
-      this.details.push(first2, second);
+      const [detailFirst, detailSecond] = detail ? detail(local) : [0, 0];
+      this.details.push(detailFirst, detailSecond);
     }
     if (geometry.index) for (let index = 0; index < geometry.index.count; index++) this.indices.push(first + geometry.index.getX(index));
     else for (let corner = 0; corner < positions.count; corner++) this.indices.push(first + corner);
@@ -484,6 +484,7 @@ function leafAtlas(random) {
 
 /** The reference elm's crown's radius (m) at `share` of its height up the crown (0 its bottom, 1 its top): a vase, widest high, rounded over. */
 const crownRadius = (share) => ELM.radius * (0.2 + 0.8 * Math.sin(Math.PI * Math.min(Math.max(share, 0), 1) ** 0.8) ** 0.6);
+const SHADE_HEIGHTS = [8.5, 13.5];   // m: the two heights the allées' shade takes the crowns at (GROUND_FRAGMENT alleeShade)
 
 // The crown's levels of detail (crownGeometry): how many cards, and each card's side (m) on the reference elm.
 const CROWN_LEVELS = [{ cards: 420, size: 2.4 }, { cards: 140, size: 3.9 }, { cards: 40, size: 6.8 }];
@@ -635,6 +636,7 @@ function tubeGeometry(target) {
 // the parks either side of the allées (GROVES.parks: Constitution Gardens north, West Potomac Park south); the
 // groves by the pool's east end and round the Monument (clear of its knoll's top); and a ring of woods out to the
 // horizon (GROVES.ring), clear of the Mall's axis to the Capitol. Each grove's trees are `apart` (m) at least.
+// East of the Monument's grounds the Mall itself is open lawn MALL_LAWN.half (m) either side of the axis.
 const GROVES = {
   lincoln: [{ x: [62, 190], z: [-6, 250], apart: 16 }, { x: [-190, -62], z: [-6, 250], apart: 16 }, { x: [-200, 200], z: [215, 330], apart: 18 }],
   parks: [{ x: [64, 430], z: [-660, -4], apart: 21 }, { x: [-430, -64], z: [-660, -4], apart: 21 }],
@@ -642,6 +644,7 @@ const GROVES = {
   ring: { from: 850, to: 3200, count: 520, axis: 140 },
 };
 const MONUMENT_CLEAR = 95;   // m: no tree on the Monument's knoll this near its base
+const MALL_LAWN = { from: MONUMENT.z - 180, half: 110 };
 function treeSpots(random) {
   const spots = [];
   const between = (least, most) => least + (most - least) * random();
@@ -656,6 +659,7 @@ function treeSpots(random) {
     }
   }
   const clearOf = (x, z) => Math.hypot(x - MONUMENT.x, z - MONUMENT.z) > MONUMENT_CLEAR
+    && !(z < MALL_LAWN.from && Math.abs(x) < MALL_LAWN.half)
     && !(Math.abs(x) < LINCOLN.terrace.halfX + 4 && z > LINCOLN.lowerStair.from - 30 && z < LINCOLN.terrace.to + 4);
   const grove = ({ x: [x0, x1], z: [z0, z1], apart }, kind) => {
     const placed = [];
@@ -705,7 +709,12 @@ varying vec3 vWorld;
 #define GROUND_ALBEDO 0.16
 #define AIR_DISTANCE 5800.0
 #define SNOW_ALBEDO vec3(0.86, 0.89, 0.93)
-float mallHash(vec2 point) { return fract(sin(dot(point, vec2(127.1, 311.7))) * 43758.5453); }
+// GLSL_COMMON's hash21 (src/shaders/scene.js), not a sine's: it keeps its spread at the Mall's kilometres on any GPU.
+float mallHash(vec2 point) {
+  vec3 mixed = fract(vec3(point.xyx) * 0.1031);
+  mixed += dot(mixed, mixed.yzx + 33.33);
+  return fract((mixed.x + mixed.y) * mixed.z);
+}
 float mallNoise(vec2 point) {
   vec2 cell = floor(point), within = fract(point);
   vec2 eased = within * within * (3.0 - 2.0 * within);
@@ -876,9 +885,9 @@ varying vec3 vNormal;
 #define MONUMENT_AT vec2(${MONUMENT.x.toFixed(2)}, ${MONUMENT.z.toFixed(2)})
 #define MONUMENT_PLAZA ${KNOLL.plaza.toFixed(2)}
 #define LAWN vec3(0.068, 0.098, 0.036)
-// The elms' crowns at two heights over the ground (m) and their radii there, for their shade.
-#define CROWN_HEIGHTS vec2(8.5, 13.5)
-#define CROWN_RADII vec2(7.4, 7.6)
+// The elms' crowns at two heights over the ground (m, SHADE_HEIGHTS) and their radii there (crownRadius), for their shade.
+#define CROWN_HEIGHTS vec2(${SHADE_HEIGHTS[0].toFixed(2)}, ${SHADE_HEIGHTS[1].toFixed(2)})
+#define CROWN_RADII vec2(${SHADE_HEIGHTS.map((height) => crownRadius((height - ELM.height * ELM.crownFrom) / (ELM.height * (1 - ELM.crownFrom))).toFixed(2)).join(', ')})
 /** The allées' shade at a ground point: where the sun's ray from it meets each crown height, the nearest elm's crown there, dappled. */
 float alleeShade(vec3 point) {
   if (uSunDir.y < 0.03) return 1.0;
