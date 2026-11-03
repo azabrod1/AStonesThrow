@@ -20,7 +20,11 @@ uniform sampler2D uGaleDisplacement;   // h, Dx, Dz, ∂Dx/∂z
 uniform sampler2D uGaleDerivatives;    // ∂h/∂x, ∂h/∂z, ∂Dx/∂x, ∂Dz/∂z
 uniform float uGaleTileSize;           // metres per side of the tile
 uniform float uGaleTexels;             // texels per side
+#ifdef WATER_LEAN
+const float uGaleMetresPerUnit = 0.0;  // the water's lean programs (src/waterSurface.js): no gale
+#else
 uniform float uGaleMetresPerUnit;      // the gale's strength over the textures' units; 0 with no gale
+#endif
 uniform vec2 uGaleCentre;              // the patch's centre, world XZ
 uniform float uGaleBed;                // the bed's depth under the patch's centre (galeLift)
 uniform sampler2D uGaleFoam;           // the whitecaps' foam map: (foam, raft, spent whitewater), as the solver's (src/galeWaves.js)
