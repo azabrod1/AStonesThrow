@@ -25,14 +25,19 @@
 // (src/main.js) draws both variants before the first throw, so their programs
 // are built by then.
 //
-// With `lean` (the page's ?lean=1, a trial: off, none of this exists) the
+// With `lean` (unless the page asks ?lean=0: then none of this exists) the
 // patch, its cavity variant and the sheet each have a lean twin, WATER_LEAN:
 // the ice, the gale and the rain fixed off, their code compiled out where the
 // full programs branch past it: the same water by a smaller program (about
 // 7% less of a Mac's GPU, measured by throughput). chooseLean, once a
 // frame, draws the twins while none of the three is on; the first ice, gale
 // or rain then builds the full programs mid-game, which the full ones alone
-// never need (they turn the three on and off by their uniforms).
+// never need (they turn the three on and off by their uniforms): in the
+// frame they are first drawn the patch draws with its full cavity variant
+// (no cavity open, the same water), so both build then, at the switch, and
+// not in the first frames of a throw. A session that starts with one of
+// them on draws the full programs alone (holdFull, round the app's
+// warm-up), so it builds what it built before the twins.
 //
 // In the pool (setPool, src/pool.js) the inner patch draws only the pool's
 // quads and a ring of them under its walls (the patch beyond is the
@@ -271,8 +276,10 @@ export function createWaterSurface(water, lighting, ambientWaves, { meshSegments
     ? withRandom(parkMiller(LEAN_SEED), () => [leanOf(innerMaterial), leanOf(outerMaterial), leanOf(innerCavityMaterial)])
     : [null, null, null];
   let lean = false;   // drawing the lean twins (chooseLean)
+  let fullOnly = false;   // holdFull
+  let buildingCavity = false;   // the patch drawn with the full cavity variant to build it (chooseLean)
   let cavitiesOpen = false;
-  const patchMaterial = () => (cavitiesOpen ? (lean ? leanInnerCavityMaterial : innerCavityMaterial) : (lean ? leanInnerMaterial : innerMaterial));
+  const patchMaterial = () => (cavitiesOpen || buildingCavity ? (lean ? leanInnerCavityMaterial : innerCavityMaterial) : (lean ? leanInnerMaterial : innerMaterial));
   const sheetMaterial = () => (lean ? leanOuterMaterial : outerMaterial);
 
   let segments = meshSegments;
@@ -314,20 +321,30 @@ export function createWaterSurface(water, lighting, ambientWaves, { meshSegments
      * gale and no rain (so the full programs would skip that code), as long
      * as the twins are built or the full ones are not yet; a session that
      * has built only the full ones keeps them (the same water), so turning
-     * the three off builds nothing.
+     * the three off builds nothing. Drawing the full programs before the
+     * full cavity variant is built, the patch draws with that variant until
+     * it is (no cavity open: the same water), so it builds at the switch.
      */
     chooseLean(renderer) {
       if (!leanAllowed) return;
       const off = uniforms.uIceOn.value === 0 && !(uniforms.uGaleMetresPerUnit?.value > 0) && uniforms.uRainOn.value === 0;
       const built = (material) => Boolean(renderer.properties.get(material).currentProgram);
-      const wanted = off && (built(leanInnerMaterial) || !built(innerMaterial));
-      if (wanted === lean) return;
+      const wanted = !fullOnly && off && (built(leanInnerMaterial) || !built(innerMaterial));
+      const buildCavity = !wanted && !built(innerCavityMaterial);
+      if (wanted === lean && buildCavity === buildingCavity) return;
       lean = wanted;
+      buildingCavity = buildCavity;
       if (inner.material === innerUnderMaterial) return;   // from below: fromBelow(false) draws the choice
       inner.material = patchMaterial();
       outer.material = sheetMaterial();
     },
-    /** Whether the page asked for the lean twins (?lean=1), and whether they are drawn now. */
+    /**
+     * The full programs alone while `on` (the header): round the warm-up of a
+     * session that starts with ice, a gale or rain, so it builds no twin, and
+     * then, having built only the full programs, keeps them.
+     */
+    holdFull(on) { fullOnly = on; },
+    /** Whether the twins are made (all but ?lean=0), and whether they are drawn now. */
     get leanAllowed() { return leanAllowed; },
     get lean() { return lean; },
     /** The inner patch's quads per side. */

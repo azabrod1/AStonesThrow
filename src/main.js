@@ -852,8 +852,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   let reedsHere = false;   // the place's shallows have reeds (PLACES `reeds`; setReeds)
   const bedDepthAt = (x, z) => (pooled ? POOL.depth : floorDepthAt(x, z));
   water.floorDepthAt = bedDepthAt;
-  // ?lean=1, a trial: the water's lean programs while there is no ice, gale or rain (src/waterSurface.js).
-  const surface = createWaterSurface(water, lighting, ambientWaves, { meshSegments: settings.meshSegments, rings, dropRings, skyCube: environment.cubeTexture, rain, haze: environment.hazeUniforms, gale: galeWaves, ice, lean: pageParameters.get('lean') === '1' });
+  // The water's lean programs while there is no ice, gale or rain (src/waterSurface.js); ?lean=0 draws the full ones only.
+  const surface = createWaterSurface(water, lighting, ambientWaves, { meshSegments: settings.meshSegments, rings, dropRings, skyCube: environment.cubeTexture, rain, haze: environment.hazeUniforms, gale: galeWaves, ice, lean: pageParameters.get('lean') !== '0' });
   const floaterRide = createFloaterRide(surface.rideUniforms);   // the water under each floater, for the physics
   const splash = new SplashSystem({ environment, lighting, water, ambientWaves, surface });
   const glare = new Glare();   // the sun's image and every glint spread over the frame (src/glare.js), mixed in by the splash's final pass
@@ -3133,8 +3133,12 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     // too; the ice comes back after its own break.
     const chosenIce = iceName;
     if (chosenIce !== 'none') iceForWarmUp('none');
+    // Started with ice, a gale or rain, the water's full programs alone (src/waterSurface.js holdFull), as the session
+    // keeps them: its open-water throws build no lean twin, nor does its first break after.
+    surface.holdFull(chosenIce !== 'none' || galeWaves.on || Boolean(WEATHERS[weatherName].rain));
     // Its throws seeded (Park–Miller, WARM_UP.seed), Math.random put back after (src/withRandom.js).
     withRandom(parkMiller(WARM_UP.seed), () => warmUpScene(chosenIce));
+    surface.holdFull(false);
     warmUpReport.programs = (renderer.info.programs?.length ?? 0) - programsBefore;
     warmUpReport.milliseconds = performance.now() - started;
   }
@@ -3264,7 +3268,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     fastForward(seconds) { for (let left = seconds; left > 1e-6; left -= 1 / 60) simulate(Math.min(1 / 60, left)); },
     hasImpacted: () => rocks.some((rock) => rock.state !== 'air' || rock.skip?.skips > 0),
     clearPond,
-    describe: () => `${qualityName}, ${resolution.x}×${resolution.y} at ${dpr.toFixed(2)}×, grid ${water.size}, mesh ${surface.meshSegments}${surface.leanAllowed ? ', lean water' : ''}`,
+    describe: () => `${qualityName}, ${resolution.x}×${resolution.y} at ${dpr.toFixed(2)}×, grid ${water.size}, mesh ${surface.meshSegments}, ${surface.leanAllowed ? 'lean' : 'full'} water`,
     memory: () => ({ ...memoryEstimate(), textures: renderer.info.memory.textures, geometries: renderer.info.memory.geometries }),
     onReport: (lines) => onProfile?.(lines),
   }) : null;

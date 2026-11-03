@@ -1601,11 +1601,11 @@ farther out, so it rises into the view rather than filling its corner.
   (which follows `--preroll=seconds`), for a run of idle frames.
 - `?floats=half` on the page forces half-float render targets everywhere, the
   path devices without `EXT_color_buffer_float` take.
-- `?lean=1` on the page, a trial, draws the water with programs that have the
-  ice, the gale and the rain compiled out while none of them is on
-  (`src/waterSurface.js`): the same water, about 7% less of the GPU on a
-  Mac, but the first ice, gale or rain then compiles the full programs
-  mid-game. With `?profile=1` its report says "lean water".
+- `?lean=0` on the page draws the water with its full programs only. Otherwise
+  it draws programs with the ice, the gale and the rain compiled out while
+  none of them is on (`src/waterSurface.js`): the same water, about 7% less
+  of the GPU on a Mac, and the first ice, gale or rain compiles the full
+  programs mid-game. `?profile=1`'s report says "lean water" or "full water".
 - `?trace=1` on the page, or the T key, traces each stone over everything
   (`__pond.setTrace`): its path from the hand until it goes in (yellow), its
   track on the water under it (white), a red cross at each touch and a white
