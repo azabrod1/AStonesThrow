@@ -74,12 +74,16 @@
 // never grew (a real rim's spikes are of wildly uneven length). A finger
 // is a ligament, a round rod of water, not a tongue of film: besides the
 // grid's narrow strip (its columns, FINGER_SPOTS, a cusp in the rim) each
-// is drawn as a tube of its own, and the rim's material drifts along the
-// rim by up to FINGER_SIDE of its launch speed, a smooth field of
-// SIDE_MODES waves round the ring (sideAt) fading down the sheet as the
-// square of the launch left, so each ligament leans and bends its own way
-// and the sheet shears smoothly below it (straight radial needles read as
-// a comb)
+// is drawn as a tube of its own, and its material drifts along the rim
+// by up to FINGER_SIDE of its launch speed, a smooth field of SIDE_MODES
+// waves round the ring (sideAt), the drift the finger's share of its
+// material's (fingerShare: all of it at the tip, none at the root), so
+// each ligament leans and bends its own way out of the rim it grew from
+// (straight radial needles read as a comb). The drift is the tube's alone:
+// the sheet's grid, its rim bead and its tear take none, since a sheet
+// whose top drifted along the rim sheared into a flat flap at a grazing
+// angle, drawn pale (a smooth drift fading down the sheet, tried, still
+// did, and bisected to it)
 // (`ligaments`, one ring grid for all of
 // them, LIGAMENT_RINGS rings of LIGAMENT_COLUMNS along each, pieces joined
 // by rings of no radius as the jet's are, shaded as the jet's column is by
@@ -482,7 +486,7 @@ const ARC_SAG_RANGE = [0.3, 1.7];  // ...times a share in this range, arc by arc
 const FINGER_SPOTS = [-1, -0.88, -0.55, 0, 0.55, 0.88, 1];   // grid columns across a finger (x, root to root), denser where its sides turn...
 const ARC_COLUMNS = 7;             // ...and inside an arc (enough that a scallop is a curve, not a zigzag)
 const FINGER_LEAN = 1.2;           // a finger's normal leans across it by this much at its sides (a rod's)
-const FINGER_SIDE = 0.35;          // the rim's material drifts along the rim by up to this share of its launch speed (sideAt: a smooth field of SIDE_MODES round the ring), so the ligaments lean and bend each its own way (straight radial needles read as a comb; a drift finger by finger folded the sheet at every finger's sides, and the folds drew white)
+const FINGER_SIDE = 0.35;          // a ligament's material drifts along the rim by up to this share of its launch speed (sideAt: a smooth field of SIDE_MODES round the ring), the tube's alone (the header), so the ligaments lean and bend each its own way (straight radial needles read as a comb; the sheet given the drift sheared into pale flaps)
 const SIDE_MODES = [2, 3, 4, 5];   // the drift's waves round the ring, at phases of the crown's own (its froth offset)
 const BEAD_RIM = 0.5;              // a finger's bead grows to a drop this many times the rim's thickness in radius (a ligament pinches into drops about its own width across, Rayleigh–Plateau; at 0.95 the rim shed marbles)...
 const BEAD_JITTER = 0.55;          // ...give or take this share, drop by drop (a string of equal pearls read as beads)
@@ -1063,10 +1067,6 @@ export class CrownSheet {
     launch.drainDivisor = 1 + age / this.drainSeconds;
     // A finger is its rim's material (the header).
     launch.fingerShare = this.fingered ? 1 - smoothstep(0, FINGER_ROOT, progress) : 0;
-    // The rim's sideways drift (FINGER_SIDE) fades down the sheet over the main launch, so no row shears from the
-    // next: a drift that stopped at the fingers' roots twisted the quads there out of the sheet's plane, and each
-    // twisted quad turned edge-on to the eye as a bright flap.
-    launch.sideShare = this.fingered ? (1 - main) * (1 - main) : 0;
     // A stone crown's foot, the late material still low by the lip, rides the lip out as the mouth widens (evaluate).
     launch.carry = this.rim && !this.fan && !this.landing ? smoothstep(CARRY[0], CARRY[1], progress) : 0;
     return launch;
@@ -1154,10 +1154,9 @@ export class CrownSheet {
     // Carried material goes where the lip goes, not where it was flung or dragged.
     const flown = flight * (1 - launch.carry);
     const radialDistance = ringRadius + radialSpeed * flown;
-    // The rim's material also drifts along the rim (FINGER_SIDE, sideAt), so the ligaments lean and bend: by the
-    // launch speed without the finger's own extra, so a finger and the arcs beside it drift alike (a finger drifting
-    // faster than its neighbours stretched its strip's columns sideways into a wide flap, drawn white by its lean).
-    const sideSpeed = fingerSide * launch.launchSpeed * speedFactor * fieldSpeed * launch.sideShare;
+    // A ligament's material also drifts along the rim (FINGER_SIDE, sideAt; the header: the tube's alone, given by
+    // updateLigaments and placeBead, 0 for the sheet), by the finger's share of it, so it leans out of its root.
+    const sideSpeed = fingerSide * launch.launchSpeed * speedFactor * fieldSpeed * launch.fingerShare;
     out.x = centreX + cosAngle * radialDistance + (this.driftX - sinAngle * sideSpeed) * flown;
     out.y = baseHeight + upSpeed * flight - launch.fall;
     out.z = centreZ + sinAngle * radialDistance + (this.driftZ + cosAngle * sideSpeed) * flown;
@@ -1228,7 +1227,7 @@ export class CrownSheet {
 
   evaluateAt(tau, angle, out) {
     const fingerFactor = this.fingered ? this.fingerAt(angle, this.place).factor : 0;
-    return this.evaluate(tau, Math.cos(angle), Math.sin(angle), this.speedFactor(angle), this.thicknessFactor(angle), out, 0, fingerFactor, false, undefined, this.fingered ? this.sideAt(angle) : 0);
+    return this.evaluate(tau, Math.cos(angle), Math.sin(angle), this.speedFactor(angle), this.thicknessFactor(angle), out, 0, fingerFactor);
   }
 
   /** Launch time of a row: rows crowd towards the rim, and the tail gets its own few. */
@@ -1317,14 +1316,15 @@ export class CrownSheet {
    */
   placeBead(finger, share) {
     const column = finger.column;
-    const state = this.evaluate(0, this.columnCos[column], this.columnSin[column], this.columnSpeedFactor[column], this.columnThicknessFactor[column], this.state, 0, this.columnFingerFactor[column], false, this.columnRimShape?.[column]);
+    const fingerSide = this.columnFingerSide[column];
+    const state = this.evaluate(0, this.columnCos[column], this.columnSin[column], this.columnSpeedFactor[column], this.columnThicknessFactor[column], this.state, 0, this.columnFingerFactor[column], false, this.columnRimShape?.[column], fingerSide);
     const tipX = state.x, tipY = state.y, tipZ = state.z;
     const lump = share * THREE.MathUtils.clamp(BEAD_RIM * state.thickness * finger.jitter, this.minDropRadius, this.maxDropRadius);
     const radius = Math.min(lump, share * DROP_CEILING);
     const bead = finger.bead;
     bead.lump = lump;
     bead.vx = state.vx; bead.vy = state.vy; bead.vz = state.vz;
-    const below = this.evaluate(BEAD_END * this.launchDuration, this.columnCos[column], this.columnSin[column], this.columnSpeedFactor[column], this.columnThicknessFactor[column], this.stateOther, 0, this.columnFingerFactor[column], false, this.columnRimShape?.[column]);
+    const below = this.evaluate(BEAD_END * this.launchDuration, this.columnCos[column], this.columnSin[column], this.columnSpeedFactor[column], this.columnThicknessFactor[column], this.stateOther, 0, this.columnFingerFactor[column], false, this.columnRimShape?.[column], fingerSide);
     const alongX = tipX - below.x, alongY = tipY - below.y, alongZ = tipZ - below.z;
     const along = Math.sqrt(alongX * alongX + alongY * alongY + alongZ * alongZ);
     const reach = along > 1e-9 ? (0.6 * radius) / along : 0;
@@ -1517,11 +1517,11 @@ export class CrownSheet {
     const sinAngle = this.columnSin[column];
     const speedFactor = this.columnSpeedFactor[column];
     const thicknessFactor = this.columnThicknessFactor[column];
-    const fingerFactor = this.columnFingerFactor[column], fingerSide = this.columnFingerSide[column];
+    const fingerFactor = this.columnFingerFactor[column];
     const rimShape = this.columnRimShape?.[column];
-    const from = this.evaluate(tauFrom, cosAngle, sinAngle, speedFactor, thicknessFactor, this.state, 0, fingerFactor, false, rimShape, fingerSide);
+    const from = this.evaluate(tauFrom, cosAngle, sinAngle, speedFactor, thicknessFactor, this.state, 0, fingerFactor, false, rimShape);
     const fromX = from.x, fromY = from.y, fromZ = from.z, fromRadius = from.radialDistance;
-    const to = this.evaluate(tauTo, cosAngle, sinAngle, speedFactor, thicknessFactor, this.stateOther, 0, fingerFactor, false, rimShape, fingerSide);
+    const to = this.evaluate(tauTo, cosAngle, sinAngle, speedFactor, thicknessFactor, this.stateOther, 0, fingerFactor, false, rimShape);
     const length = Math.sqrt((to.x - fromX) ** 2 + (to.y - fromY) ** 2 + (to.z - fromZ) ** 2);
     return length * 0.5 * (fromRadius + to.radialDistance) * this.columnWidths[column];
   }
@@ -1770,7 +1770,7 @@ export class CrownSheet {
         const vertex = row * this.columns + column;
         const front = Math.min(this.tearFront[column], end);
         const tau = this.rowTau(row, front, end);
-        this.evaluate(tau, this.columnCos[column], this.columnSin[column], this.columnSpeedFactor[column], this.columnThicknessFactor[column], state, front, this.columnFingerFactor[column], false, this.columnRimShape?.[column], this.columnFingerSide[column]);
+        this.evaluate(tau, this.columnCos[column], this.columnSin[column], this.columnSpeedFactor[column], this.columnThicknessFactor[column], state, front, this.columnFingerFactor[column], false, this.columnRimShape?.[column]);
         this.positions[vertex * 3] = state.x;
         this.positions[vertex * 3 + 1] = state.y;
         this.positions[vertex * 3 + 2] = state.z;
