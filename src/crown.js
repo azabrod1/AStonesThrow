@@ -71,7 +71,13 @@
 // (gammaFactor) to the power FINGER_REACH_POWER: a broad spread, most
 // fingers under the mean, a few twice it and more, and about a quarter,
 // whose reach falls under FINGER_STUNTED, stubs of FINGER_STUB of it that
-// never grew (a real rim's spikes are of wildly uneven length). A finger
+// never grew (a real rim's spikes are of wildly uneven length). Its rod is
+// drawn no further than LIGAMENT_LONGEST·sqrt(s) from its root: a ligament
+// a millimetre across beads off within milliseconds (Rayleigh–Plateau), so
+// the material beyond that length is already the trail of drops it shed,
+// flying on ahead of the rod at the tip's speed, and the rod ends in its
+// bead (rods tens of centimetres long, the whole finger's material drawn
+// as one, read as straight strands crossing the frame). A finger
 // is a ligament, a round rod of water, not a tongue of film: besides the
 // grid's narrow strip (its columns, FINGER_SPOTS, a cusp in the rim) each
 // is drawn as a tube of its own, and its material drifts along the rim
@@ -483,6 +489,7 @@ const FINGER_STUB = 0.3;           // ...this much of it: a bump on the rim that
 const FINGER_SQUARENESS = 4;       // ...by (1 − |x|^this)^FINGER_POWER across it: a flat, round end on steep sides...
 const FINGER_POWER = 0.75;
 const FINGER_ROOT = 0.25;          // ...for the material launched within this many T of the rim
+const LIGAMENT_LONGEST = 0.03;     // m, times sqrt(R / 3 cm): a ligament is drawn no further than this from its root; the material beyond has already beaded into its trail of drops (the header)
 const LIGAMENT_RINGS = 8;          // a finger's ligament (the header): rings along it...
 const LIGAMENT_COLUMNS = 8;        // ...and vertices around each
 const LIGAMENT_ROOT = 0.2;         // it rises out of the sheet from this share of its width at its root...
@@ -953,6 +960,7 @@ export class CrownSheet {
     this.state = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, thickness: 0, radialDistance: 0, radialSpeed: 0, flown: 0, remaining: 1, carry: 0 };
     this.stateOther = { ...this.state };
     this.stateRim = { ...this.state };      // a column's free rim, for the seal's pull (pullIn)
+    this.stateTip = { ...this.state };      // a finger's tip material, for its bead's speed (placeBead)
     this.domeApex = { x: 0, y: 0, z: 0, age: -1 };   // where the sealing rims meet (domeApexNow)
     // A sealing crown's dome: its folds (DOME_FOLDS, at a random phase) and whether the closure has thrown its spike.
     this.domeFolds = Math.round(randomRange(DOME_FOLDS[0], DOME_FOLDS[1]));
@@ -1357,14 +1365,18 @@ export class CrownSheet {
   placeBead(finger, share) {
     const column = finger.column;
     const fingerSide = this.columnFingerSide[column];
-    const state = this.evaluate(0, this.columnCos[column], this.columnSin[column], this.columnSpeedFactor[column], this.columnThicknessFactor[column], this.state, 0, this.columnFingerFactor[column], false, this.columnRimShape?.[column], fingerSide);
+    // The bead sits at the rod's end (updateLigaments' endTau, the rim's own material before the first frame draws
+    // it) and flies on at the tip material's speed: the drops pinched off earlier run ahead of the rod, its trail.
+    const endTau = finger.endTau ?? 0;
+    const state = this.evaluate(endTau, this.columnCos[column], this.columnSin[column], this.columnSpeedFactor[column], this.columnThicknessFactor[column], this.state, 0, this.columnFingerFactor[column], false, this.columnRimShape?.[column], fingerSide);
     const tipX = state.x, tipY = state.y, tipZ = state.z;
     const lump = share * THREE.MathUtils.clamp(BEAD_RIM * state.thickness * finger.jitter, this.minDropRadius, this.maxDropRadius);
     const radius = Math.min(lump, share * DROP_CEILING);
     const bead = finger.bead;
     bead.lump = lump;
-    bead.vx = state.vx; bead.vy = state.vy; bead.vz = state.vz;
-    const below = this.evaluate(BEAD_END * this.launchDuration, this.columnCos[column], this.columnSin[column], this.columnSpeedFactor[column], this.columnThicknessFactor[column], this.stateOther, 0, this.columnFingerFactor[column], false, this.columnRimShape?.[column], fingerSide);
+    const tip = endTau > 0 ? this.evaluate(0, this.columnCos[column], this.columnSin[column], this.columnSpeedFactor[column], this.columnThicknessFactor[column], this.stateTip, 0, this.columnFingerFactor[column], false, this.columnRimShape?.[column], fingerSide) : state;
+    bead.vx = tip.vx; bead.vy = tip.vy; bead.vz = tip.vz;
+    const below = this.evaluate(endTau + BEAD_END * this.launchDuration, this.columnCos[column], this.columnSin[column], this.columnSpeedFactor[column], this.columnThicknessFactor[column], this.stateOther, 0, this.columnFingerFactor[column], false, this.columnRimShape?.[column], fingerSide);
     const alongX = tipX - below.x, alongY = tipY - below.y, alongZ = tipZ - below.z;
     const along = Math.sqrt(alongX * alongX + alongY * alongY + alongZ * alongZ);
     const reach = along > 1e-9 ? (0.6 * radius) / along : 0;
@@ -1703,17 +1715,37 @@ export class CrownSheet {
       const speedFactor = this.columnSpeedFactor[column], thicknessFactor = this.columnThicknessFactor[column];
       const fingerFactor = this.columnFingerFactor[column], fingerSide = this.columnFingerSide[column], rimShape = this.columnRimShape?.[column];
       // The rim bead as launched sets the width: a ligament is as thick as the rim it grew from (the rim gathers what the sheet drains).
-      let bead = 0;
+      const bead = 3 * this.baseThickness * thicknessFactor;   // the rim bead as launched: the rim gathers what the sheet drains
+      // The rod ends at its breakup length (LIGAMENT_LONGEST, the header): the rings beyond it gather at its end,
+      // of no width, and the end's material is where the finger's bead sits (placeBead).
+      const longest = LIGAMENT_LONGEST * Math.sqrt(this.sizeFactor);
+      let drawn = 0, endRing = LIGAMENT_RINGS - 1;
+      finger.endTau = front;
       for (let ring = 0; ring < LIGAMENT_RINGS; ring++) {
         const along = ring / (LIGAMENT_RINGS - 1);   // 0 at the root, 1 at the tip
         const tau = front + span * (1 - along);
+        if (ring > endRing) { centreX[ring] = centreX[endRing]; centreY[ring] = centreY[endRing]; centreZ[ring] = centreZ[endRing]; widths[ring] = -1; continue; }
         this.evaluate(tau, cosAngle, sinAngle, speedFactor, thicknessFactor, state, front, fingerFactor, false, rimShape, fingerSide);
+        if (ring > 0) {
+          const step = Math.sqrt((state.x - centreX[ring - 1]) ** 2 + (state.y - centreY[ring - 1]) ** 2 + (state.z - centreZ[ring - 1]) ** 2);
+          if (drawn + step > longest) {
+            // The end lies on this segment: cut it where the length runs out.
+            const share = step > 1e-9 ? (longest - drawn) / step : 0;
+            state.x = centreX[ring - 1] + (state.x - centreX[ring - 1]) * share;
+            state.y = centreY[ring - 1] + (state.y - centreY[ring - 1]) * share;
+            state.z = centreZ[ring - 1] + (state.z - centreZ[ring - 1]) * share;
+            endRing = ring;
+            finger.endTau = front + span * (1 - (ring - 1 + share) / (LIGAMENT_RINGS - 1));
+          }
+          drawn += step;
+        }
         centreX[ring] = state.x; centreY[ring] = state.y; centreZ[ring] = state.z;
-        if (ring === LIGAMENT_RINGS - 1) bead = 3 * this.baseThickness * thicknessFactor;   // the rim bead as launched: the rim gathers what the sheet drains
         widths[ring] = along;
+        if (ring === LIGAMENT_RINGS - 1) finger.endTau = front;
       }
       for (let ring = 0; ring < LIGAMENT_RINGS; ring++) {
         const along = widths[ring];
+        if (along < 0) { widths[ring] = 0; continue; }
         const rise = LIGAMENT_ROOT + (1 - LIGAMENT_ROOT) * smoothstep(0, LIGAMENT_RISE, along);
         const bulge = 1 + bulgeNow * Math.sin(Math.PI * 2 * finger.waves * along + finger.wavePhase);
         widths[ring] = gone ? 0 : Math.max(0.5 * bead * finger.thickness * rise * (1 - (1 - LIGAMENT_TIP) * along) * bulge, 0);
