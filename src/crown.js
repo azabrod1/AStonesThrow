@@ -151,24 +151,31 @@
 // A sealing crown has no fingers (a smooth rim of DOME_COLUMNS·sqrt(s)
 // columns, the slow modes only) and launches DOME_TILT degrees nearer
 // vertical. From DOME_PULL_START of its seal time a pull P (a smoothstep, 1
-// at the seal time) draws every element onto a dome (pullIn): a smooth bell
-// over the hole from the lip's crest to an apex DOME_HEIGHT·R above the still
-// water (the reference's real-air runs close about 4 cm up: a low dome), no
-// glass bell but a thin sheet whipped shut: its froth's violence and, as the
-// pull closes it, its whiteness are at least DOME_FROTH, and holes open all
-// over it at DOME_OPEN of FROTH_OPEN (Worthington's "bubble" is "doomed to almost immediate
-// destruction"; Truscott & Techet's dome is a ragged splash curtain), the
-// sheet's rim at the apex, its foot on the lip, buckled by a few folds around
-// (Marston et al. 2016 find every sealing crown buckles). Its rim's bead
-// merges as it closes. As the rim meets, a thin spike of water shoots up from
-// the apex (sealSpray: the reference's seal jet) and breaks into fine drops.
-// The dome holds still until the jet from the pinch reaches its apex
+// at the seal time) bends the free sheet over towards where its rims meet
+// (pullIn, domeApexNow): the centroid of the free rims round the ring, at
+// least DOME_HEIGHT·R up. Each column's rim is carried the whole way there
+// and the sheet below it by the DOME_PULL_POWER-th power of its height up
+// the sheet, the foot staying on the lip, buckled by a few folds around
+// (Marston et al. 2016 find every sealing crown buckles), so the dome is
+// the sheet's own shape, waves, lean and lopsidedness, with its top bowed
+// in and closed, as Speirs et al.'s and Worthington's are (a bell 1.4·R
+// high of its own shape that the whole sheet was blended onto, tried,
+// crushed a sheet standing four R into crossing shards). It is no glass
+// bell but a thin sheet whipped shut: its froth's violence and, as the
+// pull closes it, its top's whiteness are at least DOME_FROTH, and holes
+// open over its top at DOME_OPEN of FROTH_OPEN, the base clear film as an
+// open crown's (Worthington's "bubble" is "doomed to almost immediate
+// destruction"; Truscott & Techet's dome is a ragged splash curtain). Its
+// rim's bead merges as it closes. As the rims meet, a thin spike of water
+// shoots up from the apex (sealSpray: the reference's seal jet) and breaks
+// into fine drops. The dome stands, its sheet still flying as the free
+// sheet would under the pull, until the jet from the pinch reaches its apex
 // (seal.tear, from src/splash.js), then bursts from the apex down, its sheet
 // flung off out and up at seal.burstSpeed·s (the jet's push, Truscott &
 // Techet 2009: the jet "pulling the upper cavity almost inside-out"): the
 // tear. A dome whose jet is trapped (seal.sink) is instead drawn down into
 // the hole by the sealed cavity's falling pressure, its apex sinking from
-// DOME_HEIGHT·R to DOME_SINK·R below the water by the tear (Worthington's
+// where the rims met to DOME_SINK·R below the water by the tear (Worthington's
 // marble from 140 cm: "the air-tube is closed over and forms a downward jet
 // which shoots down the middle of the air-tube"), where it is gone: no
 // drops. Its rim sheds until it meets over the hole, and the burst
@@ -212,22 +219,34 @@
 // number of the stone against the reference throw's (frothWeber: the
 // sheet's inertia against its surface tension, which sets how finely it
 // breaks and how much air it takes): FROTH_GAIN·(w − FROTH_ONSET)^FROTH_POWER
-// (violenceOf), none below the onset and at most FROTH_MOST. The onset is
-// what photographs of stones thrown into lakes and ponds show: a stone a
-// hand throws, up to 10 cm or so thrown hard (w of 7), makes a sheet of
-// clear glass, white only where its top tears into spray, while a rock the
-// size of a head goes white through (a 16 cm stone thrown hard, w of 19,
-// is a third of the way there; a 30 cm rock two thirds). A violence that
-// rose with the speed alone made the default stone's hard throw milk.
+// (violenceOf), none below the onset and at most FROTH_MOST. The onset and
+// the gain are what photographs of stones thrown into lakes and ponds
+// show: a pebble tossed (w of 0.5) and the 3 cm stone's medium throw (w
+// of 1) make a sheet of clear glass, drops and no mist, the Pixabay lake
+// sheet, as does a 6 cm stone's medium throw (w under 1.5); a 6 cm stone
+// thrown hard (entering at 8.5 m/s, w of 3.6, a
+// violence of 0.45) a column whose lower half is clear film and whose
+// upper half shreds white into ligaments and drops, the Dreamstime and
+// Forthright lake throws; and a rock the size of a head (a 16 cm stone
+// thrown hard, w of 10) goes white through. The whiteness is the violence,
+// times FROTH_FLOOR as the sheet leaves rising to 1 as it thins, times the
+// material's place up the sheet: 1 for what left within FROTH_TOP[0] of
+// the launch window, the sheet's top, its fastest, most sheared and most
+// stretched material and what carries the air the launch entrained,
+// falling to none by FROTH_TOP[1], so the base is clear film under a white
+// top as the photographs' columns are (by the thinning alone a hard
+// throw's whole sheet was white by 80 ms, since all of it leaves within a
+// few milliseconds and thins alike, a milky bag; and an onset of 8 left it
+// all glass, a cup of clear plastic). The holes go the same way.
 // Each vertex then carries
 // how much of its launch thickness the stretching and draining have left it
 // (evaluate's `remaining`, so the share it has thinned, 1 − that), and from
-// it its whiteness, the violence times FROTH_FLOOR as it leaves rising to
-// the violence as it thins away, and its open share, the share of it holes
-// have opened: FROTH_OPEN times the thinned share squared, times
-// FROTH_OPEN_FLOOR rising to 1 with the violence, times FROTH_OPEN_EARLY
-// rising to 1 as the tear nears (from half its time); none on a dome until
-// it bursts. Its place on the sheet (aSheet) is its material's: its azimuth
+// it its whiteness (above), and its open share, the share of it holes
+// have opened: FROTH_OPEN times the thinned share squared, times its place
+// up the sheet (FROTH_TOP), times FROTH_OPEN_FLOOR rising to 1 with the
+// violence, times FROTH_OPEN_EARLY rising to 1 as the tear nears (from
+// half its time); none on a dome until it bursts. Its place on the sheet
+// (aSheet) is its material's: its azimuth
 // as cos θ and sin θ times the launch ring (1.2·R) in cells of
 // FROTH_CELL·sqrt(s) (a thick sheet's holes are bigger: a rock's sheet
 // pierced by hundreds of a pebble's holes read as a sieve),
@@ -493,25 +512,26 @@ const BEAD_JITTER = 0.55;          // ...give or take this share, drop by drop (
 const BEAD_SEED = 0.3;             // a bead starts with this share of its drop's volume: the rim's own thickening
 // The sheet's froth (the header; drawn by SHEET_FROTH in src/shaders/sheet.js).
 export const FROTH_SPEED = 6.3;    // m/s: the entry speed a sheet's violence is reckoned against (the reference throw's; src/splash.js froths the jet's base by the same law)
-const FROTH_ONSET = 8;             // the size-weighted Weber number s·(V / FROTH_SPEED)² below which a sheet carries no air (the header: a 6 cm stone thrown hard is 7, and its sheet is glass)...
-const FROTH_GAIN = 0.045;          // ...its violence this times (w − FROTH_ONSET)...
+const FROTH_ONSET = 1.5;           // the size-weighted Weber number s·(V / FROTH_SPEED)² below which a sheet carries no air (the header: a pebble's toss is 0.5 and the 3 cm stone's 1, their sheets glass; a 6 cm stone thrown hard enters at 8.5 m/s, w of 3.6, its top white)...
+const FROTH_GAIN = 0.25;           // ...its violence this times (w − FROTH_ONSET)...
 export const FROTH_POWER = 0.8;    // ...to this power...
 const FROTH_MOST = 1.0;            // ...at most this
 const FROTH_CELL = 0.006;          // m: the holes' cells around the ring as it is launched (1.2·R), times sqrt(s)...
 const FROTH_ALONG = 8;             // ...and along the sheet, this many over the main launch, times sqrt(s)
-const FROTH_FLOOR = 0.35;          // a sheet's whiteness: its violence times this as it leaves, rising to its violence as it thins
+const FROTH_FLOOR = 0.1;           // a sheet's whiteness: its violence times this as it leaves, rising to its violence as it thins...
+const FROTH_TOP = [0.3, 1.0];      // ...times 1 for the material launched within the first of these shares of the launch window, falling to 0 by the second (the header: a hard throw's top is white, its base clear film; so are its holes)
 const FROTH_OPEN = 0.55;           // the share of a sheet holes open as it thins away: at most this...
 const FROTH_OPEN_FLOOR = 0.25;     // ...times this for the gentlest throw, rising to 1 with the violence...
 const FROTH_OPEN_EARLY = 0.5;      // ...and times this until the tear nears, rising to 1 by it
 const MODES_PER_COLUMN = 1 / 2.5;  // a grid resolves modes up to this many per column
 const DOME_COLUMNS = 64;           // a sealing crown's columns around (times sqrt(R / 3 cm)): it has no fingers
 const DOME_PULL_START = 0.35;      // the pull starts at this share of the seal time...
-export const DOME_HEIGHT = 1.4;    // ...and draws the sheet onto a dome whose apex stands this many R above the still water...
-const DOME_ROUND = 0.8;            // ...its radius r_foot·cos(πs/2)^this at height y_foot + h·sin(πs/2) (s from its foot to its apex)...
+export const DOME_HEIGHT = 1.4;    // ...and bends the sheet's top over to where its rims meet, at least this many R above the still water (domeApexNow)...
+const DOME_PULL_POWER = 2;         // the pull on the sheet below the rim goes as this power of its height up the sheet (pullIn)
 const DOME_FOLDS = [6, 10];        // ...buckled by this many folds around (Marston et al. 2016)...
-const DOME_FOLD = 0.08;            // ...of up to this share of its radius, at mid height
+const DOME_FOLD = 0.08;            // ...of up to this share of the pull, at mid height
 const DOME_FROTH = 0.12;           // a sealing sheet's violence and, as it closes, its whiteness are at least this: sucked in, it whips, buckles and carries a little air (the header; a closing dome in Speirs et al.'s and Worthington's photographs is clear glass, buckled, with spray bursting through its top, not a white bag)
-const DOME_OPEN = 0.5;             // ...and holes open all over the closing dome at this share of FROTH_OPEN
+const DOME_OPEN = 0.15;            // ...and holes open over the closing dome's top at this share of FROTH_OPEN (at a half, to its foot, it was a bag of lace)
 const DOME_BURST = 0.25;           // a dome given no jet's push bursts with its sheet flying off at this times sqrt(g·R)·s, out and up
 const DOME_SINK = 1.5;             // a trapped jet's dome is drawn down to this many R below the water by the tear
 const DOME_TILT = 12;              // a sealing crown launches this many degrees nearer vertical: a taller wall
@@ -540,7 +560,7 @@ const FAN_DROP_FLOOR = 0.0003;     // ...and at least this (both times (R / 3 cm
 const FAN_RIM_DROPS = 0.2;         // ...and its rim sheds drops this fraction of the size a crown's does
 // The spray (the header, src/spray.js).
 const SPRAY_SHARE_FLOOR = 0.05;    // a torn patch throws this share of its water as spray for a sheet of no violence (its small drops, src/spray.js; at 0.3 a 3 cm stone's torn sheet was a carpet of thousands of sub-millimetre beads across the frame at 0.3 s, where the lake photographs show a few score drops, most of a sheet's water falling back as sheet and rim)...
-const SPRAY_SHARE_GAIN = 0.55;     // ...rising by this times its violence (at most 1)...
+const SPRAY_SHARE_GAIN = 0.3;      // ...rising by this times its violence (at most 1)...
 const SPRAY_SHARE_POWER = 0.7;     // ...to this power
 const SPRAY_SIZE = 0.6;            // its drops' mean radius, times the sheet's thickness there...
 const SPRAY_SIZE_RANGE = [0.0003, 0.0012];   // ...within this (m): the torn film's small drops, beads of a millimetre or two across, no mist (the lake photographs)
@@ -932,6 +952,8 @@ export class CrownSheet {
     }
     this.state = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, thickness: 0, radialDistance: 0, radialSpeed: 0, flown: 0, remaining: 1, carry: 0 };
     this.stateOther = { ...this.state };
+    this.stateRim = { ...this.state };      // a column's free rim, for the seal's pull (pullIn)
+    this.domeApex = { x: 0, y: 0, z: 0, age: -1 };   // where the sealing rims meet (domeApexNow)
     // A sealing crown's dome: its folds (DOME_FOLDS, at a random phase) and whether the closure has thrown its spike.
     this.domeFolds = Math.round(randomRange(DOME_FOLDS[0], DOME_FOLDS[1]));
     this.domeFoldPhase = randomRange(0, Math.PI * 2);
@@ -1168,7 +1190,7 @@ export class CrownSheet {
     out.flown = flown;
     // The foot never sinks below the lip it stands on: the water there holds it up.
     if (launch.carry > 0 && out.y < baseHeight) { out.y = baseHeight; out.vy = Math.max(out.vy, 0); }
-    if (this.seal && !free && this.age > this.seal.start) this.pullIn(out, tau, cosAngle, sinAngle, rimShape);
+    if (this.seal && !free && this.age > this.seal.start) this.pullIn(out, tau, cosAngle, sinAngle, speedFactor, thicknessFactor, fingerFactor, rimShape);
     // The bead gathers what stretching takes from the sheet, so it keeps three
     // times the unstretched thickness while the sheet behind it thins.
     const drained = this.baseThickness * thicknessFactor * fieldThickness * launch.launchThickness / launch.drainDivisor;
@@ -1185,43 +1207,62 @@ export class CrownSheet {
   }
 
   /**
-   * A surface seal's pull on a free element `out` (evaluate's, launched at
-   * tau from the azimuth with the given cosine and sine): it is drawn by the
-   * pull P (sealedShare) onto the dome (the header), a surface of revolution
-   * about the lip's centre from the lip's crest (its foot, the carried tail's
-   * ring) to an apex DOME_HEIGHT·R above the still water, the sheet's rim at
-   * the apex and its foot at the foot: at s from foot to rim (sheetHeight),
-   * radius r_foot·cos(πs/2)^DOME_ROUND·(1 + DOME_FOLD·sin(πs)·sin(kφ + ψ)) and
-   * height y_foot + (apex − y_foot)·sin(πs/2). So the dome is a smooth bell
-   * whatever the free sheet's waves and an oblique throw's lopsidedness, with
-   * k buckling folds. While it stands it holds still; once it bursts (the
-   * tear) its sheet flies off at the seal's burstSpeed·s, out and up; a
-   * sinking dome's apex is drawn down to DOME_SINK·R below the water by the
-   * tear instead (the header).
+   * Where a sealing crown's rims meet (the header): the centroid of the
+   * free rims round the ring now, found once a frame (the columns' rims at
+   * launch time 0, as the sheet would fly unsealed), at least DOME_HEIGHT·R
+   * up; a sinking dome's apex is drawn down to DOME_SINK·R below the water
+   * by the tear instead.
    */
-  pullIn(out, tau, cosAngle, sinAngle, rimShape) {
+  domeApexNow() {
+    const apex = this.domeApex;
+    if (apex.age === this.age) return apex;
+    const state = this.stateRim;
+    let sumX = 0, sumY = 0, sumZ = 0;
+    for (let column = 0; column < this.columns; column++) {
+      this.evaluate(0, this.columnCos[column], this.columnSin[column], this.columnSpeedFactor[column], this.columnThicknessFactor[column], state, 0, this.columnFingerFactor[column], true, this.columnRimShape?.[column]);
+      sumX += state.x; sumY += state.y; sumZ += state.z;
+    }
+    apex.x = sumX / this.columns;
+    apex.y = Math.max(sumY / this.columns, DOME_HEIGHT * this.radius);
+    apex.z = sumZ / this.columns;
+    if (this.seal.sink) apex.y -= (apex.y + DOME_SINK * this.radius) * smoothstep(this.seal.time, this.seal.tear, this.age);
+    apex.age = this.age;
+    return apex;
+  }
+
+  /**
+   * A surface seal's pull on a free element `out` (evaluate's, launched at
+   * tau from the azimuth with the given cosine and sine, and the launch's
+   * speed, thickness and finger factors there): the air rushing into the
+   * hole draws the rim in, so the free sheet is bent over by the pull P
+   * (sealedShare) towards where its rims meet (domeApexNow): its column's
+   * free rim is carried the whole way there and the material below it by
+   * DOME_PULL_POWER-th power of its height up the sheet (sheetHeight, 0 at
+   * the foot, which stays on the lip), buckled by k folds around of
+   * DOME_FOLD of the pull at mid height. So the sheet keeps its own shape,
+   * waves, lean and lopsidedness, and only its top bows in and closes, as
+   * Speirs et al.'s and Worthington's domes do (a bell of its own shape 1.4
+   * R high that the whole sheet was blended onto, tried, crushed a sheet
+   * standing four R into crossing shards). Once it bursts (the tear) its
+   * sheet flies off at the seal's burstSpeed·s, out and up; a sinking
+   * dome's apex sinks (the header).
+   */
+  pullIn(out, tau, cosAngle, sinAngle, speedFactor, thicknessFactor, fingerFactor, rimShape) {
     const pull = this.sealedShare();
-    const now = this.lipNow;
-    if (now.age !== this.age) { this.rim.lipAt(this.age, now); now.age = this.age; }
-    const shape = rimShape ?? this.rim.shape(cosAngle, sinAngle);
-    const footRadius = Math.max(now.widest * shape + now.widestWidth, RIM_RING_START * this.radius);
-    const footHeight = -BASE_DEPTH + this.rim.lipHeightBeyond(now, footRadius - (now.mouth * shape + now.width));
+    const apex = this.domeApexNow();
+    const rim = this.evaluate(0, cosAngle, sinAngle, speedFactor, thicknessFactor, this.stateRim, 0, fingerFactor, true, rimShape);
     const along = this.sheetHeight(tau, Math.max(this.feedEnd(), 1e-6));
     const angle = Math.atan2(sinAngle, cosAngle);
-    const fold = 1 + DOME_FOLD * Math.sin(Math.PI * along) * Math.sin(this.domeFolds * angle + this.domeFoldPhase);
-    const radius = footRadius * Math.cos(0.5 * Math.PI * along) ** DOME_ROUND * fold;
-    let apex = DOME_HEIGHT * this.radius;
-    if (this.seal.sink) apex -= (DOME_HEIGHT + DOME_SINK) * this.radius * smoothstep(this.seal.time, this.seal.tear, this.age);
-    const height = footHeight + (apex - footHeight) * Math.sin(0.5 * Math.PI * along);
-    const domeX = now.x + cosAngle * radius, domeZ = now.z + sinAngle * radius;
+    const weight = along ** DOME_PULL_POWER * (1 - DOME_FOLD * Math.sin(Math.PI * along) * Math.sin(this.domeFolds * angle + this.domeFoldPhase));
+    const domeX = out.x + weight * (apex.x - rim.x), domeY = out.y + weight * (apex.y - rim.y), domeZ = out.z + weight * (apex.z - rim.z);
     // At rest on the dome, or flying off it once it bursts.
     const burst = this.age >= this.breakTime && !this.seal.sink ? this.seal.burstSpeed * along : 0;
     const rate = this.sealRate();
     out.vx += pull * (cosAngle * burst - out.vx) + rate * (domeX - out.x);
-    out.vy += pull * (burst - out.vy) + rate * (height - out.y);
+    out.vy += pull * (burst - out.vy) + rate * (domeY - out.y);
     out.vz += pull * (sinAngle * burst - out.vz) + rate * (domeZ - out.z);
     out.x += pull * (domeX - out.x);
-    out.y += pull * (height - out.y);
+    out.y += pull * (domeY - out.y);
     out.z += pull * (domeZ - out.z);
   }
 
@@ -1277,21 +1318,20 @@ export class CrownSheet {
    */
   sealSpray(splash) {
     this.sealSprayed = true;
-    const lip = this.lipNow;
-    if (lip.age !== this.age) { this.rim.lipAt(this.age, lip); lip.age = this.age; }
+    const apex = this.domeApexNow();
     const scale = Math.sqrt(this.sizeFactor);
     const count = Math.max(Math.round(SEAL_SPRAY * scale), 3);
     for (let drop = 0; drop < count; drop++) {
       const speed = randomRange(SEAL_SPRAY_SPEED[0], SEAL_SPRAY_SPEED[1]) * scale;
       const angle = randomRange(0, Math.PI * 2);
       const lean = randomRange(0, 0.12) * speed;
-      splash.spawnDroplet(lip.x + randomRange(-0.1, 0.1) * this.radius, DOME_HEIGHT * this.radius, lip.z + randomRange(-0.1, 0.1) * this.radius,
+      splash.spawnDroplet(apex.x + randomRange(-0.1, 0.1) * this.radius, apex.y, apex.z + randomRange(-0.1, 0.1) * this.radius,
         Math.cos(angle) * lean, speed, Math.sin(angle) * lean, (0.0005 + 0.0009 * Math.random()) * this.sizeFactor ** 0.4);
     }
     // And the spike's finer spray (src/spray.js), as fast.
     const size = SEAL_FINE_SIZE * this.sizeFactor ** 0.3;
     splash.spray?.burst({
-      x: lip.x, y: DOME_HEIGHT * this.radius, z: lip.z, vx: 0, vy: 0.5 * (SEAL_SPRAY_SPEED[0] + SEAL_SPRAY_SPEED[1]) * scale, vz: 0,
+      x: apex.x, y: apex.y, z: apex.z, vx: 0, vy: 0.5 * (SEAL_SPRAY_SPEED[0] + SEAL_SPRAY_SPEED[1]) * scale, vz: 0,
       drops: SEAL_FINE * scale, radius: size, kick: 0.5 * (SEAL_SPRAY_SPEED[1] - SEAL_SPRAY_SPEED[0]) * scale, spread: 0.1 * this.radius,
       time: splash.time, random: this.sprayRandom, sizeFactor: this.sizeFactor,
     });
@@ -1785,13 +1825,18 @@ export class CrownSheet {
         // froth; and holes open only high in the flying sheet, where it is thinnest.
         const thinned = 1 - Math.min(Math.max(state.remaining, 0), 1);
         const flying = 1 - state.carry;
-        let whiteness = this.violence * (FROTH_FLOOR + (1 - FROTH_FLOOR) * thinned) * flying * flying;
-        let holes = opening * thinned * thinned * flying ** 4;
+        // The top of the sheet, its first material (FROTH_TOP): the fastest, the most sheared by the air and the
+        // most stretched, and what carries the air the launch entrained; the later, thicker material below it is
+        // clear film (the header).
+        const top = 1 - smoothstep(FROTH_TOP[0], FROTH_TOP[1], tau / this.launchDuration);
+        let whiteness = this.violence * (FROTH_FLOOR + (1 - FROTH_FLOOR) * thinned) * top * flying * flying;
+        let holes = opening * thinned * thinned * top * flying ** 4;
         if (this.seal) {
-          // A dome's sheet is whipped shut whole, thinned or not: white and torn all over as it closes.
+          // A dome's sheet is whipped shut, thinned or not: its top whitens and tears as it closes (the base clear
+          // film, as the open crown's: a dome white and holed to its foot was a bag of lace).
           const closing = this.sealedShare();
-          whiteness = Math.max(whiteness, DOME_FROTH * closing * flying * flying);
-          holes = Math.max(holes, DOME_OPEN * FROTH_OPEN * closing * flying ** 4);
+          whiteness = Math.max(whiteness, DOME_FROTH * closing * top * flying * flying);
+          holes = Math.max(holes, DOME_OPEN * FROTH_OPEN * closing * top * flying ** 4);
         }
         this.froths[vertex * 2] = whiteness;
         this.froths[vertex * 2 + 1] = holes;

@@ -92,9 +92,11 @@
 //     sheet is millimetres of curved glass through which the pond's ripples
 //     fold, the lake photographs). Its own normal is read bilinearly from
 //     the four buffer pixels about the device pixel that hold the same
-//     sheet (sheetNormal), since the buffer is coarser than the canvas on
-//     the lower presets and its nearest-read normals wove a dither of
-//     lens shifts across the sheet. It reflects pondView by both faces'
+//     sheet (sheetNormal), and so is each neighbour's along the travel
+//     (sheetNormalChange), since the buffer is coarser than the canvas (on
+//     the lower presets by its scale, on High by the device's two pixels to
+//     the point) and nearest-read normals wove a dither of lens shifts
+//     across the sheet, a checker on every sheet. It reflects pondView by both faces'
 //     Fresnel, 2F/(1 + F) (by one face's, a fold turning edge-on was dim,
 //     where a real one is a bright line). The water's own particles scatter
 //     light along the path through it, TURBID_SKY of the sky's mean and
@@ -656,8 +658,9 @@ vec3 linearToSrgb(vec3 c) {
 vec3 infoNormal(vec4 info) { return vec3(info.b, info.a, sqrt(max(1.0 - info.b * info.b - info.a * info.a, 0.0))); }
 
 // A sheet's normal read bilinearly (the header): the four buffer pixels about the device pixel, those holding the
-// same sheet (its class, within SHEET_LENS_DEPTH of this depth) weighted by their nearness, this pixel's otherwise.
-vec3 sheetNormal(vec2 uv, vec4 here) {
+// same sheet as the pixel's own info (its class, within SHEET_LENS_DEPTH of its depth) weighted by their nearness,
+// the fallback where none does.
+vec3 sheetNormal(vec2 uv, vec4 here, vec3 fallback) {
   vec2 texel = uv / uFluidTexel - 0.5;
   vec2 corner = floor(texel);
   vec2 share = texel - corner;
@@ -672,19 +675,19 @@ vec3 sheetNormal(vec2 uv, vec4 here) {
       weight += w;
     }
   }
-  return weight > 1e-4 ? normalize(sum / weight) : infoNormal(here);
+  return weight > 1e-4 ? normalize(sum / weight) : fallback;
 }
 
 // How a sheet's normal changes over a step of travelPixels (buffer pixels) across the screen (the header): from the
-// normals the depth pass wrote in the neighbouring pixels that hold the same sheet, one step each way along the travel.
-vec3 sheetNormalChange(vec2 uv, vec4 here, vec2 travelPixels) {
-  vec3 normal = infoNormal(here);
+// normals the depth pass wrote in the neighbouring pixels that hold the same sheet, one step each way along the
+// travel, each read bilinearly as the pixel's own is (sheetNormal; read nearest, the step's end fell on one buffer
+// pixel or the next from one device pixel to the next, and the lens shift wove a checker across every sheet on High,
+// whose buffer is the canvas's size but the canvas two device pixels to the point).
+vec3 sheetNormalChange(vec2 uv, vec4 here, vec3 normal, vec2 travelPixels) {
   vec2 towards = sign(travelPixels) * uFluidTexel;
-  vec4 acrossX = texture2D(uFluidInfo, uv + vec2(towards.x, 0.0));
-  vec4 acrossY = texture2D(uFluidInfo, uv + vec2(0.0, towards.y));
-  float sameX = step(998.75, acrossX.g) * step(abs(acrossX.r - here.r), SHEET_LENS_DEPTH * here.r);
-  float sameY = step(998.75, acrossY.g) * step(abs(acrossY.r - here.r), SHEET_LENS_DEPTH * here.r);
-  return (infoNormal(acrossX) - normal) * sameX * abs(travelPixels.x) + (infoNormal(acrossY) - normal) * sameY * abs(travelPixels.y);
+  vec3 acrossX = sheetNormal(uv + vec2(towards.x, 0.0), here, normal);
+  vec3 acrossY = sheetNormal(uv + vec2(0.0, towards.y), here, normal);
+  return (acrossX - normal) * abs(travelPixels.x) + (acrossY - normal) * abs(travelPixels.y);
 }
 
 // The nearest water the depth pass wrote in the eight buffer pixels around a pixel it wrote none in (the header).
@@ -720,7 +723,7 @@ void main() {
       float pond = step(996.75, info.g) - step(997.75, info.g);   // a column's foot that is the pond's water (the header)...
       float pondShare = pond * clamp((info.g - 997.0) * 2.0, 0.0, 1.0);   // ...and how much of it is
       float roundness = column > 0.5 ? (pond > 0.5 ? 0.0 : clamp((info.g - 998.0) * 2.0, 0.0, 1.0)) : 1.0;
-      vec3 normal = sheet > 0.5 ? sheetNormal(vUv, info) : infoNormal(info);
+      vec3 normal = sheet > 0.5 ? sheetNormal(vUv, info, infoNormal(info)) : infoNormal(info);
       vec3 position = viewPosition(vUv, info.r);
       vec3 toViewer = normalize(-position);
       float fresnel = waterFresnel(dot(normal, toViewer));
@@ -739,7 +742,7 @@ void main() {
         vec2 travelPixels = inside.xy * thickness * uProjScale / info.r;
         float reach = length(travelPixels);
         if (reach > SHEET_LENS_REACH) travelPixels *= SHEET_LENS_REACH / reach;
-        vec3 exitNormal = normalize(normal + sheetNormalChange(vUv, info, travelPixels));
+        vec3 exitNormal = normalize(normal + sheetNormalChange(vUv, info, normal, travelPixels));
         vec3 leaving = refract(inside, exitNormal, 1.333);
         vec2 refractUv = vUv;
         if (dot(leaving, leaving) > 0.0) refractUv += (leaving.xy / max(-leaving.z, 0.05) - eye.xy / max(-eye.z, 0.05)) * uProjScale * uFluidTexel * SHEET_LENS;
