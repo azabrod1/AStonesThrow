@@ -513,9 +513,11 @@ known timing, and the droplets are choreographed from them:
    launch, and each facet crossing the waterline throws its water as
    Wagner's spray root says, faster, lower and thicker the flatter the face
    meets the water, the stone's against the sphere's the launch was fitted
-   to; so the sheet is the lopsided, folded sail the photographs of thrown
-   stones show, a sphere keeps the fitted crown, and a seeded throw's field
-   is its own. Its rim
+   to, smoothed round the ring over about the stone's radius and held
+   within a few times each other, as the rim's tension and the film even a
+   facet's step out; so the sheet is the lopsided sheet the photographs of
+   thrown stones show, one film taller on one side than the other, a sphere
+   keeps the fitted crown, and a seeded throw's field is its own. Its rim
    thickens into a bead, a round rod of water drawn as a tube along the
    whole untorn rim, lumpy with its own beading, swelling into each finger,
    and grows fingers out of it: round ligaments of water, drawn
@@ -534,13 +536,15 @@ known timing, and the droplets are choreographed from them:
    each hole's rim a lumpy bead of the water it gathered), and past a size
    it carries froth, white streaks drawn out up the wall, patchy, and
    densest along the holes' rims: by the stone's size-weighted Weber
-   number against the reference throw's, with an onset, so every stone a
-   hand throws, up to 10 cm or so thrown hard, keeps a sheet of clear glass,
-   white only where its top tears into drops (what photographs of stones
-   thrown into lakes and ponds show), a 16 cm stone's thrown hard is a
-   third of the way to white and a rock's goes white through, its holes
-   bigger as its sheet is thicker; the foot the lip carries stays clear
-   water. Once its rim stalls
+   number against the reference throw's, with an onset, and weighted to
+   the sheet's top, the material launched first, so a pebble tossed or
+   the 3 cm stone thrown at a medium pace keeps a sheet of clear glass
+   with drops and no mist, a 6 cm stone thrown hard throws a column whose
+   lower half is clear film and whose upper half whitens and shreds into
+   ligaments and drops, and a 16 cm stone's thrown hard goes white through
+   (what photographs of stones thrown into lakes and ponds show), its
+   holes bigger as its sheet is thicker; the foot the lip carries stays
+   clear water. Once its rim stalls
    (about 90 ms for a 3 cm stone) the sheet tears, the arcs first and the
    fingers last, from the rim down into drops that carry its velocity. A
    thrown stone enters obliquely (about 30° from vertical thrown softly, 40
@@ -624,9 +628,10 @@ stone or a lumpy, spinning one is pushed sideways as it goes in, so its path
 curves a little. From these, the throw's size, speed and angle and a random
 stream seeded by the stone, the splash chooses (`chooseSplash` in
 `src/splash.js`): how the hole seals (deep; shallow for a flat face going in
-first; at the surface, the crown pulled shut over the hole into a low dome,
-a thin sheet whipped shut, white with air, buckled and torn, not a glass
-bell, when the entry's Froude number V²/(g·R) passes Birkhoff and Isaacs'
+first; at the surface, the crown's sheet bent over to where its rims meet
+and shut over the hole, its own shape, waves and lean with its top bowed
+in, whipped shut, buckled, whitened and torn at the top, not a glass bell,
+when the entry's Froude number V²/(g·R) passes Birkhoff and Isaacs'
 108, less readily the more oblique the entry and the more irregular the
 stone: Worthington's roughened marble dropped 15 cm threw a tall jet and
 from 140 cm none, Truscott and Techet's billiard balls at 6 m/s dome over,
