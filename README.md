@@ -612,7 +612,16 @@ known timing, and the droplets are choreographed from them:
    holes bigger as its sheet is thicker; the foot the lip carries stays
    clear water. Once its rim stalls
    (about 90 ms for a 3 cm stone) the sheet tears, the arcs first and the
-   fingers last, from the rim down into drops that carry its velocity. A
+   fingers last, from the rim down into drops that carry its velocity:
+   only what is still in the air (by then the foot lies on the lip, and the
+   sides and back of an oblique throw's crown are down), its holes opening
+   ahead of the torn edge as fast as they run back through the film there,
+   and what is torn flies on as a net of threads along the seams where the
+   holes met until the threads bead off into drops (tens of milliseconds
+   for a thin sheet, a few tenths of a second for a rock's thick one) or it
+   comes back down; a rock's drops can carry only a few hundredths of its
+   sheet, so its wall now falls back as fast as it can fall rather than
+   vanishing. A
    thrown stone enters obliquely (about 30° from vertical thrown softly, 40
    to 45° normally, 70 to 73° and twice as fast thrown hard), and then a fan comes first: the same sheet model
    over a sector 60° either side of the direction of travel, launched from
@@ -858,7 +867,7 @@ allows it scales as a Froude-similar splash does: lengths with the radius,
 times with √(R/g), speeds with the entry speed. The crown's sheet is as thick
 as the stone is big, so air and surface tension slow it less, it drains
 slower and stands longer: a 16 cm stone's crown stands for 160 ms, its rim
-25 to 40 cm high, and tears into some 3000 drops on High (2000 on Medium and Low), none over 4 mm in radius
+25 to 40 cm high, and tears into some 3000 drops on High (2000 on Medium and Low), none over 2.5 mm in radius
 (surface tension holds no bigger drop together in flight, so a big sheet
 tears into more drops, not bigger ones), while a 1.5 cm
 pebble's rises 5 cm when it seals deep (it nearly always seals at the
