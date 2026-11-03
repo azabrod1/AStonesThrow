@@ -1213,15 +1213,19 @@ export class CrownSheet {
     out.flown = flown;
     // The foot never sinks below the lip it stands on: the water there holds it up.
     if (launch.carry > 0 && out.y < baseHeight) { out.y = baseHeight; out.vy = Math.max(out.vy, 0); }
+    // What the rest reads of the launch, taken before the seal's pull: launchAt hands out one object, and the pull
+    // evaluates the free rims (domeApexNow, pullIn), which overwrote it with the rim's launch, so every pulled
+    // element took the rim's carry, thickness and drain (a dome's foot was drawn as flying sheet over the lip).
+    const launchThickness = launch.launchThickness, drainDivisor = launch.drainDivisor, carry = launch.carry;
     if (this.seal && !free && this.age > this.seal.start) this.pullIn(out, tau, cosAngle, sinAngle, speedFactor, thicknessFactor, fingerFactor, rimShape, column);
     // The bead gathers what stretching takes from the sheet, so it keeps three
     // times the unstretched thickness while the sheet behind it thins.
-    const drained = this.baseThickness * thicknessFactor * fieldThickness * launch.launchThickness / launch.drainDivisor;
+    const drained = this.baseThickness * thicknessFactor * fieldThickness * launchThickness / drainDivisor;
     // The fan thins to nothing at its edges.
     const sheetThickness = Math.max(drained * ringRadius / radialDistance, this.fan ? MIN_THICKNESS * thicknessFactor : MIN_THICKNESS);
     // The share of its launch thickness the stretching and draining have left it (the froth's).
-    out.remaining = ringRadius / Math.max(radialDistance, 1e-9) / launch.drainDivisor;
-    out.carry = launch.carry;
+    out.remaining = ringRadius / Math.max(radialDistance, 1e-9) / drainDivisor;
+    out.carry = carry;
     // A sealing crown's rim merges as it closes: no free edge, no bead, until the dome bursts.
     const merged = this.seal && edgeTau === 0 ? this.sealedShare() : 0;
     const bead = (1 - smoothstep(0.6 * BEAD_END, 1.3 * BEAD_END, (tau - edgeTau) / this.launchDuration)) * (1 - merged);
