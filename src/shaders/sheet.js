@@ -24,13 +24,10 @@
 // along the torn edge, whose weight is the length of aRimTangent over
 // RIM_LEAN (src/crown.js bends the bead's normal by 1.4 times the weight),
 // 1 at the edge, times RIM_AERATION. A stone's crown's fingers (aRod = 1)
-// are drawn as tubes of their own (src/crown.js `ligaments`, the column
-// materials); the sheet's strip under each (its rod columns) is still the
-// sheet, shaded as it is, white on a rock's, but takes no holes and no
-// wrinkles, its normals leaning across it as a rod's do (src/crown.js; the
-// lean adds to aRimTangent, so a finger's sides are aerated too, up to 0.86
-// at its roots). Marked as a column's glass tube (998) as well, the strips
-// were clear stripes down a white sheet, a picket fence on a rock's rim.
+// are rods of water, not film: the depth pass marks them as a column's tube
+// (998), so the composite shades them as the jet's glass is shaded, their
+// normals leaning across them as a rod's do (src/crown.js; the lean adds to
+// aRimTangent, so a finger's sides are aerated too, up to 0.86 at its roots).
 //
 // Froth (SHEET_FROTH; src/crown.js's header says what sets it). A sheet
 // thrown up fast is no clean film: it wrinkles, holes open in it as it
@@ -390,7 +387,7 @@ void main() {
   float sceneDepth = texture2D(uSceneDepth, gl_FragCoord.xy / uResolution).r;
   if (gl_FragCoord.z > sceneDepth || froth.hole || vFoot < 0.01) discard;
   normal = normalize(normal + vViewRimTangent);
-  gl_FragColor = vec4(-vViewPosition.z, 999.0, normal.xy);
+  gl_FragColor = vec4(-vViewPosition.z, vRod > 0.5 ? 998.0 : 999.0, normal.xy);
 }
 `;
 

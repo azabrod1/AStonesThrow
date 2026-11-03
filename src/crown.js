@@ -140,9 +140,8 @@
 // sixty-odd before it tears, drawn at most DROP_CEILING and each leaving as
 // several drops (up to about ten; Drop sizes, below). It is drawn as a droplet at the tip
 // (SplashSystem.prepareFrame takes them through beadsInto), so it is the round
-// glass bead a drop is, on a finger drawn as a tube of its own over its
-// strip of the sheet (aRod, src/shaders/sheet.js: no holes in the strip),
-// its normal leaning across it (FINGER_LEAN). When the
+// glass bead a drop is, on a finger shaded as a rod of water (aRod,
+// src/shaders/sheet.js), its normal leaning across it (FINGER_LEAN). When the
 // bead is whole it pinches off, a drop of its size flying on with the tip, and
 // the next one starts. The rim's drops are shared among the fingers by length
 // and come at a rate ramping up over the sheet's life (the instability grows);
@@ -918,7 +917,7 @@ export class CrownSheet {
     this.normals = new Float32Array(vertexCount * 3);
     this.rimTangents = new Float32Array(vertexCount * 3);
     this.thicknesses = new Float32Array(vertexCount);
-    this.rods = new Float32Array(vertexCount);       // 1 on a finger's strip: no holes or wrinkles there (src/shaders/sheet.js)
+    this.rods = new Float32Array(vertexCount);       // 1 on a finger: shaded as a rod of water, not as the sheet's film
     this.sheetPlaces = new Float32Array(vertexCount * 3);   // the material's place on the sheet, in the froth's cells (aSheet)
     this.froths = new Float32Array(vertexCount * 2);        // its whiteness and open share (aFroth)
     this.rowTaus = new Float64Array(vertexCount);   // launch time behind the free edge
