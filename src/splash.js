@@ -928,7 +928,7 @@ export class SplashSystem {
     this.sheetDepthMaterial = new THREE.ShaderMaterial({ vertexShader: SHEET_VERTEX, fragmentShader: SHEET_DEPTH_FRAGMENT, uniforms: { ...sheetUniforms(), ...rideUniforms() }, depthTest: true, depthWrite: true, side: THREE.DoubleSide });
     this.sheetThicknessMaterial = new THREE.ShaderMaterial({ vertexShader: SHEET_VERTEX, fragmentShader: SHEET_THICKNESS_FRAGMENT, uniforms: { ...sheetUniforms(), ...rideUniforms() }, ...summed, side: THREE.DoubleSide });
     // Jet columns, likewise.
-    const columnUniforms = () => ({ ...sheetUniforms(), ...galeUniforms(), uProjScale: { value: 1000 }, uMinPixelRadius: { value: 1.0 } });
+    const columnUniforms = () => ({ ...sheetUniforms(), ...galeUniforms(), ...rideUniforms(), uProjScale: { value: 1000 }, uMinPixelRadius: { value: 1.0 } });
     this.columnDepthMaterial = new THREE.ShaderMaterial({ vertexShader: COLUMN_VERTEX, fragmentShader: COLUMN_DEPTH_FRAGMENT, uniforms: columnUniforms(), depthTest: true, depthWrite: true, side: THREE.DoubleSide });
     this.columnThicknessMaterial = new THREE.ShaderMaterial({ vertexShader: COLUMN_VERTEX, fragmentShader: COLUMN_THICKNESS_FRAGMENT, uniforms: columnUniforms(), ...summed, side: THREE.DoubleSide });
     this.sunDirView = new THREE.Vector3();
@@ -952,7 +952,7 @@ export class SplashSystem {
     });
     this.columnMirror = mirrorPair({
       vertexShader: COLUMN_VERTEX, fragmentShader: MIRROR_COLUMN_FRAGMENT,
-      uniforms: { ...galeUniforms(), uProjScale: { value: 1000 }, uMinPixelRadius: { value: 1.0 }, uEnvCube: { value: environment.cubeTexture } },
+      uniforms: { ...galeUniforms(), ...rideUniforms(), uProjScale: { value: 1000 }, uMinPixelRadius: { value: 1.0 }, uEnvCube: { value: environment.cubeTexture } },
       side: THREE.DoubleSide,
     });
     this.dropMirror = mirrorPair({

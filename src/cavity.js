@@ -215,7 +215,11 @@
 // is drawn no deeper than DRAWN_DEPTH·R: the camera looks in at 15 to 25°
 // from the horizon and sees no more than one or two radii down, and the
 // floor drawn there shows what is below it (the stone) through it, as the
-// floor at the stone does. In the pool (`walls`, set by SplashSystem) the
+// floor at the stone does. Six radii, so a big stone, slowed hard, is
+// still in the drawn hole's air while its hole is open (a 30 cm rock is 5
+// radii down at 0.25 s), lit as in air and cut at the floor (src/rock.js
+// cutAt); drawn to four, the rock was under the floor, in the under-water
+// pass, lit as under 0.8 m of water: a flat dark shape seen from above. In the pool (`walls`, set by SplashSystem) the
 // hole is held inside its walls (holdWithinWalls in src/fluidMesh.js), so it
 // never shows through the tiles.
 import { createRingGrid, computeGridNormals, holdWithinWalls, markChanged } from './fluidMesh.js';
@@ -298,7 +302,7 @@ const CLOSED_RING = 1e-6;          // in R: a ring narrower is a point (the floo
 const PUSH_MARGIN = 2;             // water cells beyond the hole that the patch dips from
 const COVER_MARGIN = 2.5;          // water cells beyond that which the lip's apron covers
 const WELL_CLEARANCE = 0.2;        // in R: the patch dips this far below the hole's floor
-const DRAWN_DEPTH = 4;             // in R: the hole is drawn no deeper
+export const DRAWN_DEPTH = 6;      // in R: the hole is drawn no deeper (src/rock.js cuts the stone at its floor while the hole is open)
 
 const smoothstep = (edgeLow, edgeHigh, value) => {
   const clamped = Math.min(Math.max((value - edgeLow) / (edgeHigh - edgeLow), 0), 1);

@@ -24,10 +24,13 @@
 // along the torn edge, whose weight is the length of aRimTangent over
 // RIM_LEAN (src/crown.js bends the bead's normal by 1.4 times the weight),
 // 1 at the edge, times RIM_AERATION. A stone's crown's fingers (aRod = 1)
-// are rods of water, not film: the depth pass marks them as a column's tube
-// (998), so the composite shades them as the jet's glass is shaded, their
-// normals leaning across them as a rod's do (src/crown.js; the lean adds to
-// aRimTangent, so a finger's sides are aerated too, up to 0.86 at its roots).
+// are drawn as tubes of their own (src/crown.js `ligaments`, the column
+// materials); the sheet's strip under each (its rod columns) is still the
+// sheet, shaded as it is, white on a rock's, but takes no holes and no
+// wrinkles, its normals leaning across it as a rod's do (src/crown.js; the
+// lean adds to aRimTangent, so a finger's sides are aerated too, up to 0.86
+// at its roots). Marked as a column's glass tube (998) as well, the strips
+// were clear stripes down a white sheet, a picket fence on a rock's rim.
 //
 // Froth (SHEET_FROTH; src/crown.js's header says what sets it). A sheet
 // thrown up fast is no clean film: it wrinkles, holes open in it as it
@@ -135,7 +138,6 @@
 // and the MIRROR_* fragments of src/shaders/fluid.js.
 
 import { GLSL_COMMON } from './scene.js';
-import { GALE_SURFACE } from './gale.js';
 
 // The sheet's froth (the header): its noise, the holes it opens, its
 // whiteness and its wrinkles, for the sheet's passes here and the mirror's
@@ -388,7 +390,7 @@ void main() {
   float sceneDepth = texture2D(uSceneDepth, gl_FragCoord.xy / uResolution).r;
   if (gl_FragCoord.z > sceneDepth || froth.hole || vFoot < 0.01) discard;
   normal = normalize(normal + vViewRimTangent);
-  gl_FragColor = vec4(-vViewPosition.z, vRod > 0.5 ? 998.0 : 999.0, normal.xy);
+  gl_FragColor = vec4(-vViewPosition.z, 999.0, normal.xy);
 }
 `;
 
@@ -415,27 +417,37 @@ void main() {
 `;
 
 export const COLUMN_VERTEX = /* glsl */`
+#define COLUMN_RING_SPACING 0.01 // metres: the rings' height under a riding vertex, read this smooth (the sheet's)
 attribute float aRadius;
 attribute float aRound;
 attribute float aAir;
 attribute vec3 aRipple;          // the water's place on the column, in the ripples' cells (src/jet.js)
+attribute float aRide;           // how far it rides the pond's surface: the foot's share (src/jet.js)
 uniform float uProjScale;        // pixels per world unit at distance 1
 uniform float uMinPixelRadius;
+uniform sampler2D uHeight;
+uniform vec2 uDomainMin;
+uniform float uDomainSize;
+uniform float uTexelOffset;
 varying vec3 vViewPosition;
 varying vec3 vViewNormal;
 varying float vRadius;
 varying float vRound;
 varying float vAir;
 varying vec3 vRipple;
-${GALE_SURFACE}
+${GLSL_COMMON}
 void main() {
-  vec4 viewPosition = modelViewMatrix * vec4(position, 1.0);
-  // The column stands on still water (src/jet.js); the gale lifts it with the surface under it.
-  if (uGaleMetresPerUnit > 0.0) {
-    vec4 world = modelMatrix * vec4(position, 1.0);
-    world.y += galeLift(world.xyz);
-    viewPosition = viewMatrix * world;
+  vec4 world = modelMatrix * vec4(position, 1.0);
+  // Its foot is the pond's water and rides the surface under it, as the dish it stands in does (src/jet.js aRide).
+  if (aRide > 0.0) {
+    vec2 domainUv = (world.xz - uDomainMin) / uDomainSize + uTexelOffset;
+    float surface = texture2D(uHeight, domainUv).r + ambientHeight(world.xz);
+    if (uRingCount > 0) surface += ringHeight(world.xz, COLUMN_RING_SPACING);
+    world.y += aRide * surface * patchMask(domainUv);
   }
+  // The column stands on still water (src/jet.js); the gale lifts it with the surface under it.
+  if (uGaleMetresPerUnit > 0.0) world.y += galeLift((modelMatrix * vec4(position, 1.0)).xyz);
+  vec4 viewPosition = viewMatrix * world;
   vec3 viewNormal = normalize(normalMatrix * normal);
   float minRadius = uMinPixelRadius * max(-viewPosition.z, 0.05) / uProjScale;
   viewPosition.xyz += viewNormal * max(minRadius - aRadius, 0.0);

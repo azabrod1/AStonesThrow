@@ -1657,6 +1657,7 @@ vec3 galeFoamAt(vec2 restXZ) {
 // splash's rectangle take this; up to three fetches each.
 #define MIRROR_NEARNESS_SCALE 4.0     // MIRROR_COMMON's
 #define MIRROR_FARTHEST 1e-3          // nearness under this (beyond a kilometre): the sky
+#define MIRROR_EDGE 0.03              // a lookup past the mirror image's edge fades to the sky's cube over this share of the image (the water's reflection)
 vec3 nearReflection(vec2 rippleUv, vec3 ray) {
   vec2 lookup = clamp(rippleUv, vec2(0.002), vec2(0.998));
   vec4 flatCoord = uReflectionMatrix * vec4(vWorld, 1.0);
@@ -2015,7 +2016,15 @@ void main() {
   // grazing angles, so reflections stretch into vertical streaks, as they do
   // on a lake. A ray turned below the horizon would meet the next ripple; it
   // takes the horizon's colour. While the mirror holds the splash, near
-  // things are looked up where they are (nearReflection).
+  // things are looked up where they are (nearReflection). The image covers
+  // the view and no more: a lookup the ripples turn past its edge (in a
+  // zoomed or low view, where a ripple's tilt is a large share of the frame,
+  // and near a splash, whose ring tilts the water by degrees) finds nothing
+  // there, and takes the sky's cube in the reflected direction instead, the
+  // dome the image holds but for what is near, faded in over MIRROR_EDGE of
+  // the image (clamped to the edge, every such pixel read the edge's row, and
+  // the water before a splash in a view at its level drew its reflection as
+  // vertical bars).
   vec3 reflectedRay = reflect(-v, n);
 #ifdef CAVITY_MESH
   // Inside the hole (and on the lip's inner face) a reflected ray leaves
@@ -2038,6 +2047,9 @@ void main() {
   vec3 reflected;
   if (uMirrorNear.x > uMirrorNear.z) reflected = texture2D(uReflection, clamp(reflectUv, vec2(0.002), vec2(0.998))).rgb;
   else reflected = nearReflection(reflectUv, reflectedRay);
+  vec2 pastEdge = max(-reflectUv, reflectUv - 1.0);
+  float outside = smoothstep(0.0, MIRROR_EDGE, max(pastEdge.x, pastEdge.y));
+  if (outside > 0.0) reflected = mix(reflected, textureCube(uSkyCube, reflectedRay).rgb, outside);
 
 #ifdef CAVITY_MESH
   // Inside the hole the water is shaded as water is: what a wall reflects is

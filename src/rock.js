@@ -175,7 +175,11 @@
 // through the still surface (SEEN_THROUGH_WATER, src/shaders/scene.js), not
 // on the straight line from the camera, once the water has closed over it:
 // while its cavity is open (src/cavity.js) it is in air, seen through the
-// hole, and drawn where it is; from the pinch-off, over NECK_CLOSE·sqrt(R/g)
+// hole, and drawn where it is, and cut not at the surface but at the hole's
+// floor, which the cavity draws at the stone's centre (no deeper than its
+// DRAWN_DEPTH): its upper half in the hole's air in the main scene, lit as
+// in air, its wetted front under the floor in the under-water pass (an eye
+// under the water sees it whole, cutBelowAtSurface); from the pinch-off, over NECK_CLOSE·sqrt(R/g)
 // as the neck closes over it, it moves over to where the water shows it. The
 // pinch-off is its cavity's (setCavityTimes, which the splash calls with the
 // report's `rock`), PINCH_TIME·sqrt(R/g) after the impact until then. Seen
@@ -350,7 +354,7 @@
 // along whichever axis of its move rose (the pool's walls are square).
 import * as THREE from 'three';
 import { SEEN_THROUGH_WATER, SEEN_UNDER_CLEAR, CLEAR_SIDES_INSIDE, FLOATER_WATER } from './shaders/scene.js';
-import { PINCH_TIME, NECK_CLOSE, SPIN_DECAY, sinkStep, underWater } from './cavity.js';
+import { PINCH_TIME, NECK_CLOSE, SPIN_DECAY, DRAWN_DEPTH, sinkStep, underWater } from './cavity.js';
 import { THINGS, DEFAULT_THING, WATER_DENSITY, STONE_DENSITY } from './things.js';
 import { cornersOf, meshKind, meshVolume, withParts } from './thingMeshes.js';
 import { stoneDetail, stoneUniforms } from './shaders/stone.js';
@@ -1419,7 +1423,7 @@ export class Rock {
     this.sliding = null;           // tipping onto the face it slides on, and its turn about the vertical (startSliding, slideStep)
     this.passing = null;           // the things it passes by for now, and why (src/collide.js passBy)
     this.fading = undefined;       // seconds into shrinking away, once src/main.js has begun it (fadeOut): frozen, it is no longer stepped
-    this.drawn = { surface: 0, bedDepth: 1 };   // the water it was last drawn on (syncMeshes), for a knock's redraw
+    this.drawn = { surface: 0, bedDepth: 1, cut: 0, inHole: false, deepest: 0 };   // the water it was last drawn on, where it was cut and whether in its hole's air (syncMeshes), for a knock's redraw and drawAt
     this.age = 0;
     this.restTime = 0;
     this.stillSince = false;       // its last step found it still (the header): drawAt need not move its meshes
@@ -2101,10 +2105,32 @@ export class Rock {
   }
 
   /**
+   * Its halves cut at height `cut` (syncMeshes): the part above in the main
+   * scene, the part below in the under-water pass.
+   */
+  cutAt(cut) {
+    this.drawn.cut = cut;
+    if (this.meshAbove.material.clippingPlanes.length) this.meshAbove.material.clippingPlanes[0].constant = -cut;   // keeps y ≥ cut
+    if (this.meshBelow.material.clippingPlanes.length) this.meshBelow.material.clippingPlanes[0].constant = cut;    // keeps y ≤ cut
+  }
+
+  /**
+   * For an eye under the water (src/main.js renderFromBelow), which draws only
+   * the under-water half: while `fromBelow`, that half reaches the surface,
+   * the hole's air and all (syncMeshes cuts it at the hole's floor for an eye
+   * above the water); after, it is cut as syncMeshes cut it.
+   */
+  cutBelowAtSurface(fromBelow) {
+    if (!this.meshBelow.material.clippingPlanes.length) return;
+    this.meshBelow.material.clippingPlanes[0].constant = fromBelow ? this.drawn.surface : this.drawn.cut;
+  }
+
+  /**
    * The meshes where the stone is drawn: in the air where it is; in the water
    * lifted as the gale lifts the splash (the header), its halves cut at the
-   * water's height `surface` over it. Afloat, its part above the water is in
-   * the mirror image too.
+   * water's height `surface` over it, or in its hole's air at the hole's
+   * floor (cutAt). Afloat, its part above the water is in the mirror image
+   * too.
    */
   syncMeshes(surface = 0, bedDepth = 1) {
     this.drawn.surface = surface;
@@ -2121,8 +2147,15 @@ export class Rock {
     this.stepEnd.position.copy(this.meshAbove.position);
     this.stepEnd.quaternion.copy(this.quaternion);
     // Cut at the water: by a plane at its height over it (a floater that rides the water cuts itself at its true surface, rideTheWater).
-    if (this.meshAbove.material.clippingPlanes.length) this.meshAbove.material.clippingPlanes[0].constant = -surface;   // keeps y ≥ surface
-    if (this.meshBelow.material.clippingPlanes.length) this.meshBelow.material.clippingPlanes[0].constant = surface;    // keeps y ≤ surface
+    // In its hole's air (the header: from the impact to the pinch-off) the water it is in is only what wets its front:
+    // the hole's floor is drawn at its centre (src/cavity.js), so it is cut there, its upper half drawn in the scene,
+    // lit as in air, where the hole's walls hide what they should, and the half under the floor in the under-water
+    // pass, seen through it; below the hole's drawn depth, at that floor. Cut at the surface, all of it in the hole was
+    // in the under-water pass, seen only through the hole's walls as if under water: a flat dark shape through the lip.
+    // Drawn between steps (drawAt), the cut follows the centre as drawn.
+    this.drawn.inHole = this.sinceImpact >= 0 && Number.isFinite(this.sinceImpact) && this.seenThroughWater.value === 0;
+    this.drawn.deepest = lift - DRAWN_DEPTH * this.radius;
+    this.cutAt(this.drawn.inHole ? Math.min(Math.max(this.position.y + lift, this.drawn.deepest), surface) : surface);
     // At rest wholly under the water (on the bed) its part above the water draws nothing, and wholly out of it (on the
     // deck) its part below: hidden, a thing at rest costs one draw call, not two (src/main.js keeps tens of them).
     if (!this.floats) {
@@ -2268,6 +2301,8 @@ export class Rock {
       mesh.position.lerpVectors(before.position, after.position, share);
       mesh.quaternion.slerpQuaternions(before.quaternion, after.quaternion, share);
     }
+    // In its hole's air it is cut at the hole's floor, its centre as drawn (syncMeshes).
+    if (this.drawn.inHole) this.cutAt(Math.min(Math.max(this.meshAbove.position.y, this.drawn.deepest), this.drawn.surface));
     this.drawnStill = this.stillSince;   // a still thing's before and after are one: drawn there, once
   }
 

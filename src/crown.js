@@ -77,7 +77,11 @@
 // the material beyond that length is already the trail of drops it shed,
 // flying on ahead of the rod at the tip's speed, and the rod ends in its
 // bead (rods tens of centimetres long, the whole finger's material drawn
-// as one, read as straight strands crossing the frame). A finger
+// as one, read as straight strands crossing the frame). So, too, the
+// finger's own strip of the sheet and everything evaluate places: its
+// extra speed carries it no further past the rim than that length
+// (evaluate; its velocity keeps the whole of it), where flown in full a long
+// finger's strip ran ahead of its rim as a straight wire. A finger
 // is a ligament, a round rod of water, not a tongue of film: besides the
 // grid's narrow strip (its columns, FINGER_SPOTS, a cusp in the rim) each
 // is drawn as a tube of its own, and its material drifts along the rim
@@ -136,8 +140,9 @@
 // sixty-odd before it tears, drawn at most DROP_CEILING and each leaving as
 // several drops (up to about ten; Drop sizes, below). It is drawn as a droplet at the tip
 // (SplashSystem.prepareFrame takes them through beadsInto), so it is the round
-// glass bead a drop is, on a finger shaded as a rod of water (aRod,
-// src/shaders/sheet.js), its normal leaning across it (FINGER_LEAN). When the
+// glass bead a drop is, on a finger drawn as a tube of its own over its
+// strip of the sheet (aRod, src/shaders/sheet.js: no holes in the strip),
+// its normal leaning across it (FINGER_LEAN). When the
 // bead is whole it pinches off, a drop of its size flying on with the tip, and
 // the next one starts. The rim's drops are shared among the fingers by length
 // and come at a rate ramping up over the sheet's life (the instability grows);
@@ -713,6 +718,8 @@ export class CrownSheet {
     this.centreZ = impact.z;
     this.radius = radius;
     this.sizeFactor = radius / REFERENCE_RADIUS;
+    // How far a finger's material is drawn past the rim it grew from: its ligament's breakup length (the header).
+    this.ligamentLongest = LIGAMENT_LONGEST * Math.sqrt(this.sizeFactor);
     // A stone's sheet is as thick as the stone is big, so it slows, drains and
     // lasts in proportion; a landing drop's crown keeps the 3 cm stone's times.
     const stoneCrown = !landing && !fan;
@@ -911,7 +918,7 @@ export class CrownSheet {
     this.normals = new Float32Array(vertexCount * 3);
     this.rimTangents = new Float32Array(vertexCount * 3);
     this.thicknesses = new Float32Array(vertexCount);
-    this.rods = new Float32Array(vertexCount);       // 1 on a finger: shaded as a rod of water, not as the sheet's film
+    this.rods = new Float32Array(vertexCount);       // 1 on a finger's strip: no holes or wrinkles there (src/shaders/sheet.js)
     this.sheetPlaces = new Float32Array(vertexCount * 3);   // the material's place on the sheet, in the froth's cells (aSheet)
     this.froths = new Float32Array(vertexCount * 2);        // its whiteness and open share (aFroth)
     this.rowTaus = new Float64Array(vertexCount);   // launch time behind the free edge
@@ -1164,7 +1171,9 @@ export class CrownSheet {
         sinTilt = sinShifted;
       }
     }
-    const launchSpeed = launch.launchSpeed * speedFactor * fieldSpeed * (1 + fingerFactor * launch.fingerShare);
+    const sheetSpeed = launch.launchSpeed * speedFactor * fieldSpeed;
+    const fingerSpeed = sheetSpeed * fingerFactor * launch.fingerShare;
+    const launchSpeed = sheetSpeed + fingerSpeed;
     // On a cavity the material leaves from its lip's crest, where the lip was
     // then (centre, radius at this azimuth, height), once the crest is wider
     // than the ring above starts; once the hole closes it stays where the
@@ -1196,14 +1205,19 @@ export class CrownSheet {
     const upSpeed = launchSpeed * cosTilt;
     const decay = launch.decay;
     const flight = launch.flight;
+    // A finger's material is drawn no further past the rim than its ligament's breakup length (the header): beyond
+    // it the ligament has beaded off into the drops that fly on ahead at its full speed (the velocity below). Flown
+    // all the way, a long finger's strip of the sheet ran tens of centimetres ahead of its rim, a straight wire.
+    const drawnFinger = fingerSpeed > 0 ? Math.min(fingerSpeed, this.ligamentLongest / Math.max(flight, 1e-6)) : fingerSpeed;
+    const drawnSpeed = sheetSpeed + drawnFinger;
     // Carried material goes where the lip goes, not where it was flung or dragged.
     const flown = flight * (1 - launch.carry);
-    const radialDistance = ringRadius + radialSpeed * flown;
+    const radialDistance = ringRadius + drawnSpeed * sinTilt * flown;
     // A ligament's material also drifts along the rim (FINGER_SIDE, sideAt; the header: the tube's alone, given by
     // updateLigaments and placeBead, 0 for the sheet), by the finger's share of it, so it leans out of its root.
     const sideSpeed = fingerSide * launch.launchSpeed * speedFactor * fieldSpeed * launch.fingerShare;
     out.x = centreX + cosAngle * radialDistance + (this.driftX - sinAngle * sideSpeed) * flown;
-    out.y = baseHeight + upSpeed * flight - launch.fall;
+    out.y = baseHeight + drawnSpeed * cosTilt * flight - launch.fall;
     out.z = centreZ + sinAngle * radialDistance + (this.driftZ + cosAngle * sideSpeed) * flown;
     out.vx = (cosAngle * radialSpeed + this.driftX - sinAngle * sideSpeed) * decay;
     out.vy = upSpeed * decay - launch.fallSpeed;
@@ -1761,7 +1775,7 @@ export class CrownSheet {
       const bead = 3 * this.baseThickness * thicknessFactor;   // the rim bead as launched: the rim gathers what the sheet drains
       // The rod ends at its breakup length (LIGAMENT_LONGEST, the header): the rings beyond it gather at its end,
       // of no width, and the end's material is where the finger's bead sits (placeBead).
-      const longest = LIGAMENT_LONGEST * Math.sqrt(this.sizeFactor);
+      const longest = this.ligamentLongest;
       let drawn = 0, endRing = LIGAMENT_RINGS - 1;
       finger.endTau = front;
       for (let ring = 0; ring < LIGAMENT_RINGS; ring++) {

@@ -2840,7 +2840,10 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     renderer.setRenderTarget(mainTarget);
     renderer.clear(true, true, false);
     belowBackground.render(renderer, mainTarget);
+    // A stone in its hole's air is cut at the hole's floor for an eye above the water (src/rock.js); from below, whole.
+    for (const rock of rocks) rock.cutBelowAtSurface(true);
     if (!skip.floor) renderer.render(sceneUnder, camera);
+    for (const rock of rocks) rock.cutBelowAtSurface(false);
     const hidden = hiddenFromBelow();
     const wasVisible = hidden.map((object) => object.visible);
     for (const object of hidden) object.visible = false;
