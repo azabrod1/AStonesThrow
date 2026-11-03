@@ -92,11 +92,11 @@
 //     sheet is millimetres of curved glass through which the pond's ripples
 //     fold, the lake photographs). Its own normal is read bilinearly from
 //     the four buffer pixels about the device pixel that hold the same
-//     sheet (sheetNormal), and so is each neighbour's along the travel
-//     (sheetNormalChange), since the buffer is coarser than the canvas (on
-//     the lower presets by its scale, on High by the device's two pixels to
-//     the point) and nearest-read normals wove a dither of lens shifts
-//     across the sheet, a checker on every sheet. It reflects pondView by both faces'
+//     sheet (sheetNormal), and so are the neighbours' that give its
+//     gradient (sheetNormalChange, a central difference), since the buffer
+//     is coarser than the canvas on the lower presets and nearest-read or
+//     one-sided reads wove a dither of lens shifts across the sheet, a
+//     checker on every sheet. It reflects pondView by both faces'
 //     Fresnel, 2F/(1 + F) (by one face's, a fold turning edge-on was dim,
 //     where a real one is a bright line). The water's own particles scatter
 //     light along the path through it, TURBID_SKY of the sky's mean and
@@ -678,16 +678,16 @@ vec3 sheetNormal(vec2 uv, vec4 here, vec3 fallback) {
   return weight > 1e-4 ? normalize(sum / weight) : fallback;
 }
 
-// How a sheet's normal changes over a step of travelPixels (buffer pixels) across the screen (the header): from the
-// normals the depth pass wrote in the neighbouring pixels that hold the same sheet, one step each way along the
-// travel, each read bilinearly as the pixel's own is (sheetNormal; read nearest, the step's end fell on one buffer
-// pixel or the next from one device pixel to the next, and the lens shift wove a checker across every sheet on High,
-// whose buffer is the canvas's size but the canvas two device pixels to the point).
+// How a sheet's normal changes over a step of travelPixels (buffer pixels) across the screen (the header): the
+// normal's gradient across the buffer, from the normals the depth pass wrote one pixel either side of this one in
+// each direction, each read bilinearly as the pixel's own is (sheetNormal), times the travel. A central
+// difference: a one-sided one that stepped the way the travel pointed chose its neighbour by the sign of each
+// component, which flips from one device pixel to the next where the component is near zero, and the lens shift
+// wove a checker across every sheet on High.
 vec3 sheetNormalChange(vec2 uv, vec4 here, vec3 normal, vec2 travelPixels) {
-  vec2 towards = sign(travelPixels) * uFluidTexel;
-  vec3 acrossX = sheetNormal(uv + vec2(towards.x, 0.0), here, normal);
-  vec3 acrossY = sheetNormal(uv + vec2(0.0, towards.y), here, normal);
-  return (acrossX - normal) * abs(travelPixels.x) + (acrossY - normal) * abs(travelPixels.y);
+  vec3 plusX = sheetNormal(uv + vec2(uFluidTexel.x, 0.0), here, normal), minusX = sheetNormal(uv - vec2(uFluidTexel.x, 0.0), here, normal);
+  vec3 plusY = sheetNormal(uv + vec2(0.0, uFluidTexel.y), here, normal), minusY = sheetNormal(uv - vec2(0.0, uFluidTexel.y), here, normal);
+  return 0.5 * ((plusX - minusX) * travelPixels.x + (plusY - minusY) * travelPixels.y);
 }
 
 // The nearest water the depth pass wrote in the eight buffer pixels around a pixel it wrote none in (the header).
