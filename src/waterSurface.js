@@ -25,6 +25,15 @@
 // (src/main.js) draws both variants before the first throw, so their programs
 // are built by then.
 //
+// With `lean` (the page's ?lean=1, a trial: off, none of this exists) the
+// patch, its cavity variant and the sheet each have a lean twin, WATER_LEAN:
+// the ice, the gale and the rain fixed off, their code compiled out where the
+// full programs branch past it: the same water by a smaller program (about
+// 7% less of a Mac's GPU, measured by throughput). chooseLean, once a
+// frame, draws the twins while none of the three is on; the first ice, gale
+// or rain then builds the full programs mid-game, which the full ones alone
+// never need (they turn the three on and off by their uniforms).
+//
 // In the pool (setPool, src/pool.js) the inner patch draws only the pool's
 // quads and a ring of them under its walls (the patch beyond is the
 // solver's mirror images, src/spectralWater.js, and the deck covers it), the
@@ -64,6 +73,7 @@
 // they follow its resize.
 import * as THREE from 'three';
 import { ICE_SHADOW_UNIFORMS } from './iceShadow.js';
+import { withRandom, parkMiller } from './withRandom.js';
 import { WATER_VERTEX, WATER_FRAGMENT, WATER_UNDER_FRAGMENT } from './shaders/scene.js';
 
 // The floor's uniforms the surface seen from below shares (setBed): its march to the bed (LAKE_BED, every uniform it
@@ -71,6 +81,7 @@ import { WATER_VERTEX, WATER_FRAGMENT, WATER_UNDER_FRAGMENT } from './shaders/sc
 export const BED_UNIFORMS = ['uShore', 'uLand', 'uBank', 'uKoiPond', 'uPattern', 'uBedTint'];
 
 export const OUTER_HALF_SIZE = 9000;
+const LEAN_SEED = 53;   // the lean twins' ids' stream (createWaterSurface)
 const OUTER_GROWTH = 1.25;   // each of the outer sheet's square rings this many times the last's half size...
 const OUTER_CUTS = 8;        // ...and each of its sides cut into this many quads
 // The sheet starts this far inside the patch's edge, under it: the patch's
@@ -156,7 +167,7 @@ const NO_ICE = () => ({
   ...ICE_SHADOW_UNIFORMS,   // the shadows' shared set (src/iceShadow.js): none in use without ice
 });
 
-export function createWaterSurface(water, lighting, ambientWaves, { meshSegments = Math.min(water.size, 512), rings = null, dropRings = null, skyCube = null, rain = null, haze = null, gale = null, ice = null } = {}) {
+export function createWaterSurface(water, lighting, ambientWaves, { meshSegments = Math.min(water.size, 512), rings = null, dropRings = null, skyCube = null, rain = null, haze = null, gale = null, ice = null, lean: leanAllowed = false } = {}) {
   const uniforms = {
     uHeight: { value: water.heightTexture },
     uFoam: { value: water.foamTexture },
@@ -250,7 +261,19 @@ export function createWaterSurface(water, lighting, ambientWaves, { meshSegments
     defines: { AMBIENT_LEVELS: ambientWaves.levels, GALE_LEVELS: gale ? gale.levels : 1, CAVITY_MESH: 1 },
     side: THREE.DoubleSide,
   });
-  let aboveMaterial = innerMaterial;   // the patch's material from above, while fromBelow has swapped it
+  // The lean twins (the header), made only when asked for, their three.js ids drawn from a stream of their own
+  // (src/withRandom.js), so a seeded throw draws the same with them or without.
+  const leanOf = (base) => new THREE.ShaderMaterial({
+    vertexShader: base.vertexShader, fragmentShader: base.fragmentShader, uniforms: base.uniforms,
+    defines: { ...base.defines, WATER_LEAN: '' }, side: base.side,
+  });
+  const [leanInnerMaterial, leanOuterMaterial, leanInnerCavityMaterial] = leanAllowed
+    ? withRandom(parkMiller(LEAN_SEED), () => [leanOf(innerMaterial), leanOf(outerMaterial), leanOf(innerCavityMaterial)])
+    : [null, null, null];
+  let lean = false;   // drawing the lean twins (chooseLean)
+  let cavitiesOpen = false;
+  const patchMaterial = () => (cavitiesOpen ? (lean ? leanInnerCavityMaterial : innerCavityMaterial) : (lean ? leanInnerMaterial : innerMaterial));
+  const sheetMaterial = () => (lean ? leanOuterMaterial : outerMaterial);
 
   let segments = meshSegments;
   let pool = null;   // the pool's { minX, minZ, size, depth, deck } (setPool)
@@ -278,14 +301,35 @@ export function createWaterSurface(water, lighting, ambientWaves, { meshSegments
     /** Draw the patch and the sheet as seen from under the water (true), or from above again (false). */
     fromBelow(below) {
       if (below && inner.material !== innerUnderMaterial) {
-        aboveMaterial = inner.material;
         inner.material = innerUnderMaterial;
         outer.material = outerUnderMaterial;
       } else if (!below && inner.material === innerUnderMaterial) {
-        inner.material = aboveMaterial;
-        outer.material = outerMaterial;
+        inner.material = patchMaterial();
+        outer.material = sheetMaterial();
       }
     },
+    /**
+     * With `lean` (the header), the lean twins or the full programs, once a
+     * frame before the surface is drawn: the twins while there is no ice, no
+     * gale and no rain (so the full programs would skip that code), as long
+     * as the twins are built or the full ones are not yet; a session that
+     * has built only the full ones keeps them (the same water), so turning
+     * the three off builds nothing.
+     */
+    chooseLean(renderer) {
+      if (!leanAllowed) return;
+      const off = uniforms.uIceOn.value === 0 && !(uniforms.uGaleMetresPerUnit?.value > 0) && uniforms.uRainOn.value === 0;
+      const built = (material) => Boolean(renderer.properties.get(material).currentProgram);
+      const wanted = off && (built(leanInnerMaterial) || !built(innerMaterial));
+      if (wanted === lean) return;
+      lean = wanted;
+      if (inner.material === innerUnderMaterial) return;   // from below: fromBelow(false) draws the choice
+      inner.material = patchMaterial();
+      outer.material = sheetMaterial();
+    },
+    /** Whether the page asked for the lean twins (?lean=1), and whether they are drawn now. */
+    get leanAllowed() { return leanAllowed; },
+    get lean() { return lean; },
     /** The inner patch's quads per side. */
     get meshSegments() { return segments; },
     /** Its vertex spacing (m): the cavity's dip margins by it. */
@@ -350,7 +394,8 @@ export function createWaterSurface(water, lighting, ambientWaves, { meshSegments
         cavityUniforms.uCavityMouths.value[index].set(shape.x, shape.z, shape.radius * shape.radius, 0);
         cavityUniforms.uCavityShifts.value[index].set(shape.shiftX, shape.shiftY, shape.shiftZ);
       }
-      inner.material = count > 0 ? innerCavityMaterial : innerMaterial;
+      cavitiesOpen = count > 0;
+      if (inner.material !== innerUnderMaterial) inner.material = patchMaterial();
     },
     /** mirrorRect: where the splash is drawn in the mirror image (its pixels: x, y, width, height; 0 wide when nowhere). */
     update({ underTarget, reflectionTarget, reflectionMatrix, mirrorRect = null, stonesUnder = false, resolution, camera }) {

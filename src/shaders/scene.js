@@ -113,7 +113,12 @@ vec3 snowShade(vec2 point) {
 export const ICE_UNIFORMS = /* glsl */`
 uniform sampler2D uIceMask;
 uniform vec3 uIceArea;         // the mask's corner (x, z) and side (m)
+// WATER_LEAN (src/waterSurface.js, ?lean=1): the water's programs with no ice, gale or rain fixed so, their code compiled out.
+#ifdef WATER_LEAN
+const float uIceOn = 0.0;
+#else
 uniform float uIceOn;          // 1 while there is ice
+#endif
 uniform float uIceTop;         // its top over the still water (m)
 uniform float uIceThickness;   // m
 uniform float uIceFar;         // the cap of the mask's distances (m)
