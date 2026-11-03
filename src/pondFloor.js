@@ -110,6 +110,14 @@ export const KOI_SHORE = {
   beach: [0.15, 1.05],   // rad: the pebble beach's span of θ, on the right of the far half
   shelf: 0.35, deep: 1.35, lip: 0.08, beachLip: 0.08, mound: 0.3,
 };
+// The Reflecting Pool's (setShoreKind('mall'); src/main.js PLACES `mall`, src/nationalMall.js its grounds), in place of
+// the lake's: the Lincoln Memorial Reflecting Pool, a granite-walled basin `halfWidth` (m) either side of x = 0, its
+// west wall's water face at `west` (z, 30 cm behind the shore view's eye) and its east one `length` on (−z is east,
+// toward the Washington Monument). Its walls stand straight from its bed to their coping, `coping` above the still
+// water, the ground round it level with that (the walks, the lawns); its bed is the 2012 rebuild's tinted concrete,
+// `edge` deep at the side walls and `deep` along the middle (2 ft 6 in to 3 ft), a shallow crown. LAKE_BED in
+// src/shaders/scene.js is its GLSL twin (MALL_POOL): change both.
+export const MALL_POOL = { halfWidth: 25.3, west: 2.75, length: 618, coping: 0.3, edge: 0.6, deep: 0.88 };
 let shoreKind = 'lake';
 // Each place's shore (its sky's `shore`, src/sky.js; setShoreLook): the
 // ground's dry colour (`sand`, an albedo; Lakeside's is LAND_FRAGMENT's
@@ -145,11 +153,12 @@ export function setShoreLook(name) {
   shoreLookUniform.value.set(look.pebbles, look.pebbleSize, look.tufts, look.wrack);
   shoreMoreUniform.value.set(look.grass, look.cracks);
 }
-const shoreKindUniform = { value: 0 };   // LAKE_BED's uKoiPond: 1 for the Koi pond's shore
-/** The shore in force: 'lake' (the lake's, SHORE) or 'koi' (the Koi pond's, KOI_SHORE); every function here and LAKE_BED follow it. */
+const SHORE_KINDS = { lake: 0, koi: 1, mall: 2 };   // LAKE_BED's uShoreKind (SHORE_LAKE, SHORE_KOI, SHORE_MALL)
+const shoreKindUniform = { value: 0 };
+/** The shore in force: 'lake' (the lake's, SHORE), 'koi' (the Koi pond's, KOI_SHORE) or 'mall' (the Reflecting Pool's, MALL_POOL); every function here and LAKE_BED follow it. */
 export function setShoreKind(kind) {
-  shoreKind = kind === 'koi' ? 'koi' : 'lake';
-  shoreKindUniform.value = shoreKind === 'koi' ? 1 : 0;
+  shoreKind = Object.hasOwn(SHORE_KINDS, kind) ? kind : 'lake';
+  shoreKindUniform.value = SHORE_KINDS[shoreKind];
 }
 export const getShoreKind = () => shoreKind;
 /** The Koi pond's outline's radius (m) at the angle θ about its centre. */
@@ -166,9 +175,14 @@ export function koiShoreDistance(x, z) {
   const dx = x - KOI_SHORE.centre[0], dz = z - KOI_SHORE.centre[1];
   return koiShoreRadius(Math.atan2(dz, dx)) - Math.hypot(dx, dz);
 }
-/** How far out into the lake a world XZ point lies from the waterline (m; negative on the beach); the Koi pond's in its place. */
+/** How far inside the Reflecting Pool's walls a world XZ point lies (m: to the nearest wall's water face; negative outside them). */
+export function mallShoreDistance(x, z) {
+  return Math.min(MALL_POOL.halfWidth - Math.abs(x), MALL_POOL.west - z, z - (MALL_POOL.west - MALL_POOL.length));
+}
+/** How far out into the lake a world XZ point lies from the waterline (m; negative on the beach); the Koi pond's or the Reflecting Pool's in its place. */
 export function shoreDistance(x, z) {
   if (shoreKind === 'koi') return koiShoreDistance(x, z);
+  if (shoreKind === 'mall') return mallShoreDistance(x, z);
   return SHORE.z + (x * x) / (2 * SHORE.bend) - z;
 }
 const smoothstep = (low, high, value) => { const share = Math.min(Math.max((value - low) / (high - low), 0), 1); return share * share * (3 - 2 * share); };
@@ -190,9 +204,16 @@ export function koiFloorDepthAt(x, z) {
     return -(lip * Math.tanh(inland / (0.3 + 0.5 * beach)) + KOI_SHORE.mound * smoothstep(2, 7, inland));
   }
 }
-/** The lake bed's depth (m) under a world XZ point: positive in the lake, negative (the land's height) on land; the Koi pond's in its place. */
+/** The Reflecting Pool's bed's depth (m) under a world XZ point: its crowned concrete inside the walls, the coping's height (negative) outside. */
+export function mallFloorDepthAt(x, z) {
+  if (mallShoreDistance(x, z) < 0) return -MALL_POOL.coping;
+  const across = x / MALL_POOL.halfWidth;
+  return MALL_POOL.edge + (MALL_POOL.deep - MALL_POOL.edge) * (1 - across * across);
+}
+/** The lake bed's depth (m) under a world XZ point: positive in the lake, negative (the land's height) on land; the Koi pond's or the Reflecting Pool's in its place. */
 export function floorDepthAt(x, z) {
   if (shoreKind === 'koi') return koiFloorDepthAt(x, z);
+  if (shoreKind === 'mall') return mallFloorDepthAt(x, z);
   const offshore = shoreDistance(x, z);
   return offshore >= 0 ? SHORE.deep * Math.tanh(SHORE.slope * offshore / SHORE.deep) : -landHeight(-offshore);
 }
@@ -206,7 +227,7 @@ function shoreUniforms() {
     uShore: { value: new THREE.Vector4(SHORE.z, SHORE.bend, SHORE.slope, SHORE.deep) },
     uLand: { value: new THREE.Vector4(SHORE.beach, SHORE.beachTop, SHORE.bank, 0) },
     uBank: { value: new THREE.Vector2(SHORE.bankFrom, SHORE.bankTo) },
-    uKoiPond: shoreKindUniform,
+    uShoreKind: shoreKindUniform,
   };
 }
 const BANK = [0, 2.45];                                         // under the shore view's eye: the bed's mesh centres here

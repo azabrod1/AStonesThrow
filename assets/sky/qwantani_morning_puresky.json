@@ -1,0 +1,42 @@
+{
+  "source": "qwantani_morning_puresky_2k.hdr",
+  "width": 2048,
+  "height": 1024,
+  "sun": {
+    "elevation": 20.16,
+    "azimuth": 216.09,
+    "direction": [
+      0.75853,
+      0.34471,
+      0.553
+    ],
+    "pixels": 8
+  },
+  "sunIrradiance": [
+    8.3882,
+    6.8985,
+    5.0547
+  ],
+  "skyRadiance": [
+    0.39871,
+    0.46153,
+    0.57656
+  ],
+  "horizonRadiance": {
+    "median": 0.48785,
+    "p90": 2.323
+  },
+  "maxLuminance": 142820,
+  "taken": "2024-08-20T08:09:00+02:00",
+  "at": [
+    -28.48533209827116,
+    29.012639559934758
+  ],
+  "solar": {
+    "elevation": 19.49,
+    "azimuth": 63.36
+  },
+  "light": "sun",
+  "north": 152.73,
+  "northFrom": "sun"
+}

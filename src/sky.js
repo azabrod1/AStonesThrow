@@ -330,6 +330,26 @@ const SKIES = {
   // Nagoya Castle, in April's afternoon light through its trees (`shadedSun`: its sun behind leaves, the light on
   // level ground the balance's, most of it the sky's).
   garden: { ownPlace: false, shadedSun: true, sunAzimuth: 100, hours: { afternoon: { file: 'ninomaru_teien', label: 'Afternoon', clock: '15:09' } } },
+  // The Reflecting Pool's own (src/main.js PLACES `mall`), no place of its own: Mesas' hours with their land taken
+  // out (Poly Haven's pure skies of the same panoramas, the same columns and norths), since every piece of the
+  // Mall's land is drawn (src/nationalMall.js). Photographed in the southern winter, so `mirrored`: the sun's path
+  // through the north there runs through the south here, as Washington's does in October. The scene's −z is
+  // east, so the afternoon's sun stands 129° right of ahead, in the south-west, and the morning's, the golden
+  // hour's and the twilight's follow by their true suns (Orientation): low ahead of the eye on the right over the
+  // Monument, behind on the right lighting its west face, and set behind the Lincoln Memorial.
+  washington: {
+    ownPlace: false,
+    mirrored: true,
+    anchor: 'afternoon',
+    facing: 'afternoon',
+    sunAzimuth: 129,
+    hours: {
+      morning: { file: 'qwantani_morning_puresky', label: 'Morning', clock: '08:09' },
+      afternoon: { file: 'qwantani_afternoon_puresky', label: 'Afternoon', clock: '14:04' },
+      golden: { file: 'qwantani_sunset_puresky', label: 'Golden hour', clock: '17:09' },
+      twilight: { file: 'qwantani_dusk_2_puresky', label: 'Twilight', clock: '18:06' },
+    },
+  },
 };
 /** The skies that are each a place of their own (the Location setting's lakes; the Koi pond takes the garden's). */
 /** What a sky's beach is made of (`shore` above): a name of SHORE_LOOKS (src/pondFloor.js), 'sand' when unnamed. */

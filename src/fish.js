@@ -18,6 +18,7 @@
 //   - Desert oasis, a spring pool: a school of pupfish, the blue males and
 //     the brown females together, and a shoal of tilapia.
 //   - Rocky cove, the sea: a shoal of grey mullet and a wrasse on its own.
+//   - The Pool and the Reflecting Pool: none.
 //   - The Koi pond (a pond in a Japanese garden, src/pondFloor.js KOI_SHORE):
 //     koi of the classic varieties in one loose group, and a goldfish.
 // A few of each, not many: each is drawn and moves with care.
@@ -132,6 +133,7 @@ export const FISH_BY_PLACE = {
   cove: [{ species: 'mullet', count: 4 }, { species: 'wrasse', count: 1 }],
   koi: [{ species: 'koi', count: 7 }, { species: 'goldfish', count: 1 }],
   pool: [],
+  mall: [],   // the Reflecting Pool holds none: it is filtered city water, drained and cleaned
 };
 
 const GRAVITY = 9.81;

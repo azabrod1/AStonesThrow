@@ -2174,6 +2174,24 @@ vec3 floorPattern(vec2 p) {
 }
 `;
 
+// Which shore is in force (src/pondFloor.js setShoreKind), for LAKE_BED and the floor's look.
+const SHORE_KIND = /* glsl */`
+uniform float uShoreKind;   // SHORE_LAKE, SHORE_KOI (the Koi pond's shore in place of the lake's) or SHORE_MALL (the Reflecting Pool's walls)
+#define SHORE_LAKE 0.0
+#define SHORE_KOI 1.0
+#define SHORE_MALL 2.0
+#define isShore(kind) (abs(uShoreKind - (kind)) < 0.5)
+// The Reflecting Pool (uShoreKind SHORE_MALL): MALL_POOL in src/pondFloor.js, its twin. Inside its walls (the half
+// width either side of x = 0, the west wall's face at z = MALL_WEST, the east one MALL_LENGTH on) its crowned bed,
+// outside them the coping's height.
+#define MALL_HALF_WIDTH 25.3
+#define MALL_WEST 2.75
+#define MALL_LENGTH 618.0
+#define MALL_COPING 0.3
+#define MALL_EDGE 0.6
+#define MALL_DEEP 0.88
+`;
+
 // The lake bed's depth at a world XZ point, as floorDepthAt in
 // src/pondFloor.js computes it (SHORE there): deeper the farther out from the
 // waterline, levelling off; behind it negative, the land's height.
@@ -2181,17 +2199,18 @@ export const LAKE_BED = /* glsl */`
 uniform vec4 uShore;   // the waterline's z, its bend (m), the bed's slope out from it and the depth it levels off at
 uniform vec4 uLand;    // the beach's slope up from the water and the height it levels off at, the bank's height
 uniform vec2 uBank;    // how far inland the bank starts and ends (m)
-uniform float uKoiPond;   // 1: the Koi pond's shore in place of the lake's (below)
+${SHORE_KIND}
 float koiShoreRadius(float angle);
 float koiAngle(vec2 point);
 float shoreDistance(vec2 point) {
-  if (uKoiPond > 0.5) return koiShoreRadius(koiAngle(point)) - length(point - vec2(0.0, -1.2));
+  if (isShore(SHORE_KOI)) return koiShoreRadius(koiAngle(point)) - length(point - vec2(0.0, -1.2));
+  if (isShore(SHORE_MALL)) return min(MALL_HALF_WIDTH - abs(point.x), min(MALL_WEST - point.y, point.y - (MALL_WEST - MALL_LENGTH)));
   return uShore.x + point.x * point.x / (2.0 * uShore.y) - point.y;
 }
 float landHeight(float inland) {
   return uLand.y * tanh(uLand.x * inland / uLand.y) + uLand.z * smoothstep(uBank.x, uBank.y, inland);
 }
-// The Koi pond's shore (uKoiPond 1): KOI_SHORE in src/pondFloor.js, its twin.
+// The Koi pond's shore (uShoreKind SHORE_KOI): KOI_SHORE in src/pondFloor.js, its twin.
 #define KOI_CENTRE vec2(0.0, -1.2)
 #define KOI_BASE 4.0
 #define KOI_BEACH vec2(0.15, 1.05)
@@ -2212,7 +2231,11 @@ float koiBeach(float angle) {
 }
 float floorDepthAt(vec2 point) {
   float offshore = shoreDistance(point);
-  if (uKoiPond > 0.5) {
+  if (isShore(SHORE_MALL)) {
+    float across = point.x / MALL_HALF_WIDTH;
+    return offshore >= 0.0 ? MALL_EDGE + (MALL_DEEP - MALL_EDGE) * (1.0 - across * across) : -MALL_COPING;
+  }
+  if (isShore(SHORE_KOI)) {
     float beach = koiBeach(koiAngle(point));
     if (offshore >= 0.0) {
       float edged = KOI_SHELF * smoothstep(0.0, 0.25, offshore) + (KOI_DEEP - KOI_SHELF) * smoothstep(0.6, 2.0, offshore);
@@ -2411,6 +2434,39 @@ void main() {
 // the bright water under the surface), and where the ray passes into its
 // air it sees the sky down the mouth, dimmer the deeper the hole. Then the
 // water between it and the eye (UNDER_FOG).
+// The Reflecting Pool's bed (uShoreKind SHORE_MALL; src/pondFloor.js MALL_POOL): the 2012 rebuild's concrete,
+// tinted a dark grey so the water mirrors the monuments, cast in bays MALL_BAY (m) square with a sealed joint
+// between them, darker; a film of silt and algae over it in drifts, thicker toward the walls, where the water is
+// stillest; a few leaves from the elms, sodden and brown. Each detail fades where the pixel's `footprint` (m)
+// outgrows it. Over PATTERN_RANGE, as floorSand: the floor's and the underside's bed, the one look.
+const MALL_BED = /* glsl */`
+#define MALL_CONCRETE vec3(0.08, 0.08, 0.076)    // the tinted concrete's albedo
+#define MALL_BAY 7.5                             // m: its bays
+#define MALL_JOINT 0.025                         // m: their joints' width
+vec3 mallBed(vec2 point, float footprint) {
+  vec3 bed = MALL_CONCRETE * (0.86 + 0.22 * valueNoise(point * 0.35) + 0.1 * valueNoise(point * 3.1 + 5.0));
+  // The aggregate in the cast, a fine speckle, faded as it shrinks under a pixel.
+  float speck = valueNoise(point * 60.0);
+  bed *= 1.0 + (1.0 - smoothstep(0.005, 0.02, footprint)) * 0.25 * (smoothstep(0.7, 0.85, speck) - 0.6 * smoothstep(0.3, 0.15, speck));
+  // The bays' joints, antialiased over the pixel.
+  vec2 fromJoint = abs(fract(point / MALL_BAY) - 0.5) * MALL_BAY;   // the bays centred on the pool's axis, no joint down it
+  float jointWidth = max(MALL_JOINT, footprint);
+  float joint = (1.0 - smoothstep(0.0, jointWidth, min(fromJoint.x, fromJoint.y))) * (MALL_JOINT / jointWidth);
+  bed *= 1.0 - 0.35 * joint;
+  // Silt and algae: greenish brown drifts, more by the walls.
+  float wall = 1.0 - smoothstep(0.0, 6.0, MALL_HALF_WIDTH - abs(point.x));
+  float silt = smoothstep(0.35, 0.8, 0.7 * valueNoise(point * 0.22 + 3.0) + 0.3 * valueNoise(point * 1.3) + 0.3 * wall);
+  bed = mix(bed, vec3(0.085, 0.09, 0.055) * (0.8 + 0.4 * valueNoise(point * 2.4)), 0.65 * silt);
+  // Sodden leaves, one now and then in its cell.
+  vec2 cell = floor(point / 0.45);
+  float chance = fract(sin(dot(cell, vec2(127.1, 311.7))) * 43758.5453);
+  vec2 within = fract(point / 0.45) - 0.5 - (vec2(fract(chance * 7.13), fract(chance * 3.71)) - 0.5) * 0.6;
+  float leaf = (1.0 - smoothstep(0.05, 0.05 + max(footprint / 0.45, 0.02), length(within * vec2(1.0, 1.8)))) * step(0.93, chance);
+  bed = mix(bed, vec3(0.16, 0.1, 0.045) * (0.7 + 0.6 * fract(chance * 17.0)), 0.8 * leaf * (1.0 - smoothstep(0.01, 0.04, footprint)));
+  return bed / PATTERN_RANGE;
+}
+`;
+
 export const WATER_UNDER_FRAGMENT = /* glsl */`
 uniform sampler2D uHeight;
 uniform sampler2D uFoam;
@@ -2435,6 +2491,7 @@ ${UNDER_FOG}
 ${LAKE_BED}
 ${FLOOR_PATTERN_TILE}
 ${FLOOR_SAND}
+${MALL_BED}
 ${RAIN_RIPPLES}
 ${DROP_RING_SLOPES}
 ${POOL_TILES}
@@ -2513,7 +2570,8 @@ void main() {
       vec3 bed = vWorld + mirrored * along;
       float depth = max(-bed.y, 0.0);
       vec3 light = uSunIrradiance * exp(-uAbsorb * depth / max(uSunDir.y, 0.2)) * max(uSunDir.y, 0.0) + uSkyAmbient * exp(-uAbsorb * depth) * 1.4;
-      color = mix(color, floorSand(bed.xz) * PATTERN_RANGE * light, exp(-uExtinction * along));
+      vec3 ground = isShore(SHORE_MALL) ? mallBed(bed.xz, TILE_BLUR * (along + length(vWorld - cameraPosition))) : floorSand(bed.xz);
+      color = mix(color, ground * PATTERN_RANGE * light, exp(-uExtinction * along));
     }
   }
   vec3 outward = refract(ray, against, WATER_INDEX);
@@ -2744,12 +2802,14 @@ ${UNDER_FOG}
 ${CAUSTICS}
 ${FLOOR_SAND}
 
-uniform float uKoiPond;   // 1: the Koi pond's bed (below)
+${SHORE_KIND}
 #define KOI_BED vec3(0.46, 0.45, 0.38)   // the Koi pond's bed against the lake's sand: grey gravel, silt and a film of algae
+${MALL_BED}
 void main() {
-  // Sand with pebbles and silt (FLOOR_SAND); the Koi pond's, darker gravel under silt and algae, in drifts.
-  vec3 sand = floorSand(vFloorPoint);
-  if (uKoiPond > 0.5) sand *= KOI_BED * (0.7 + 0.5 * valueNoise(vFloorPoint * 0.7 + 11.0));
+  // Sand with pebbles and silt (FLOOR_SAND); the Koi pond's, darker gravel under silt and algae, in drifts; the
+  // Reflecting Pool's tinted concrete (mallBed).
+  vec3 sand = isShore(SHORE_MALL) ? mallBed(vFloorPoint, length(fwidth(vFloorPoint))) : floorSand(vFloorPoint);
+  if (isShore(SHORE_KOI)) sand *= KOI_BED * (0.7 + 0.5 * valueNoise(vFloorPoint * 0.7 + 11.0));
 
   // Caustics: where the surfaces above focus the sun, on the floor point this
   // pixel really shows. The floor is drawn on the straight line from the eye
@@ -2905,7 +2965,7 @@ ${PHOTO_LAND}
 ${HAZE}
 ${LAKE_BED}
 #define SKY_LIGHT 1.4        // the sky's light on the sand, as the bed's
-// The Koi pond's ground (uKoiPond): at the water a band of river stones, wide along its pebble beach (koiBeach) and
+// The Koi pond's ground (uShoreKind SHORE_KOI): at the water a band of river stones, wide along its pebble beach (koiBeach) and
 // narrow under its stone edge, dark where wet; then a garden's moss, mottled, with the bare earth showing through;
 // from KOI_MOSS_TO inland the bank's grass as the lake's.
 #define KOI_STONES vec2(0.25, 1.3)        // metres inland the stones reach: under the edge, along the beach
@@ -3051,7 +3111,7 @@ void main() {
   vec3 light = uSunIrradiance * max(dot(normal, uSunDir), 0.0) + uSkyAmbient * SKY_LIGHT;
   vec3 sand = floorSand(vWorld.xz) * PATTERN_RANGE * DRY_SAND * mix(WET_SHADE, 1.0, smoothstep(0.0, WET_HEIGHT, vWorld.y));
   float grassFrom = GRASS_FROM * uShoreMore.x, grassTo = GRASS_TO * uShoreMore.x;
-  if (uKoiPond > 0.5) {
+  if (isShore(SHORE_KOI)) {
     float beach = koiBeach(koiAngle(vWorld.xz));
     vec3 pebbles = floorSand(vWorld.xz * 0.7) * PATTERN_RANGE * KOI_STONE_TINT;
     // The stone edge: cobbles, each its own grey or brown, rounded (darker to its rim), moss and earth between them.
@@ -3074,7 +3134,7 @@ void main() {
   // Debris on the lake's beach: the wrack line, its sticks, the pebbles (the Koi pond's edge has its own cobbles).
   vec3 albedo = sand;
   float tone = 0.5;
-  if (uKoiPond < 0.5) {
+  if (!isShore(SHORE_KOI)) {
     float wrackLine = WRACK_INLAND + WRACK_WANDER * (2.0 * valueNoise(vec2(vWorld.x * WRACK_WAVELENGTH, 0.5) + 11.0) - 1.0);
     float wrack = (1.0 - smoothstep(0.0, WRACK_WIDTH, abs(vInland - wrackLine))) * uShoreLook.w;
     albedo = sand * mix(1.0, WRACK_SHADE, wrack * (1.0 - grass));
@@ -3099,8 +3159,8 @@ void main() {
   vec3 toLand = vWorld - cameraPosition;
   // Round the Koi pond the garden's lawn runs on farther before the photo's land takes over (the photo's own lake shore
   // lies where the lake's beach would end).
-  float far = uKoiPond > 0.5 ? smoothstep(4.0 * LAND_NEAR, 2.0 * LAND_FAR, length(toLand)) : smoothstep(LAND_NEAR, LAND_FAR, length(toLand));
-  float tuftShare = uKoiPond > 0.5 ? 0.0 : TUFT_SHARE * uShoreLook.z * smoothstep(grassFrom - 0.6, grassTo, vInland);
+  float far = isShore(SHORE_KOI) ? smoothstep(4.0 * LAND_NEAR, 2.0 * LAND_FAR, length(toLand)) : smoothstep(LAND_NEAR, LAND_FAR, length(toLand));
+  float tuftShare = isShore(SHORE_KOI) ? 0.0 : TUFT_SHARE * uShoreLook.z * smoothstep(grassFrom - 0.6, grassTo, vInland);
   if (grass > 0.0 || far > 0.0 || tuftShare > 0.0) {
     vec3 land = photoLand(uSkyCube, LAND_LEVEL, toLand.xz);
     float level = max(uSunDir.y, 0.0) + SKY_LIGHT * 0.25;
@@ -3113,7 +3173,7 @@ void main() {
     vec3 grassLand = nearLand * min(1.0, GRASS_ALBEDO_MOST * lightOn / grassLevel);
     // Round the Koi pond, a garden's lawn of its own (the photo's land there is the lake's far shore).
     // Behind its planting the ground lies in its trees' shade (src/koiGarden.js): dark, as the photo's is.
-    if (uKoiPond > 0.5) grassLand = KOI_LAWN * (uSunIrradiance * max(uSunDir.y, 0.0) + uSkyAmbient * SKY_LIGHT) * (0.85 + 0.3 * valueNoise(vWorld.xz * 0.6 + 2.0)) * mix(1.0, KOI_SHADE, smoothstep(1.5, 3.5, vInland));
+    if (isShore(SHORE_KOI)) grassLand = KOI_LAWN * (uSunIrradiance * max(uSunDir.y, 0.0) + uSkyAmbient * SKY_LIGHT) * (0.85 + 0.3 * valueNoise(vWorld.xz * 0.6 + 2.0)) * mix(1.0, KOI_SHADE, smoothstep(1.5, 3.5, vInland));
     // The sward: the ground's colour mottled over a metre and grained finer, each grain faded out where the pixel outgrows it.
     float near = 1.0 - far;
     float mottle = 1.0 + (0.6 * valueNoise(vWorld.xz * 2.3 + 5.0) - 0.3) * near;

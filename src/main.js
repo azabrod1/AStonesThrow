@@ -302,6 +302,7 @@ import { DropRings } from './dropRings.js';
 import { createEnvironment, SKY_NAMES, REED_SKIES, SALT_SKIES, skyShore, skyHours, resolveHour, nearestHour } from './sky.js';
 import { createWaterSurface } from './waterSurface.js';
 import { createPondFloor, createShore, floorDepthAt, groundHeightAt, setShoreKind, setShoreLook, KOI_SHORE } from './pondFloor.js';
+import { createNationalMall, MALL_BASIN } from './nationalMall.js';
 import { Rock, setAir, aimSkip, aimThrow, dressThing, flutterTrial, prepareThing, PREPARATION_WORK, skipLowest, skipSpeed, SKIP_THROW, PHYSICS_STEP, throwFlightTime } from './rock.js';
 import { THINGS, THING_NAMES, DEFAULT_THING, defineThing, onThingsChange } from './things.js';
 import { collideThings, forgetPasses } from './collide.js';
@@ -498,6 +499,7 @@ const FISH_BITE = { radius: 0.018, dimple: 0.0015, shrink: 0.45 };   // and as i
 const FISH_LAKE_INSET = { side: 0.4, far: 0.8 };   // m: the lake's fish keep this far inside the solver's patch at its sides and far edge, where the shore view sees into the water
 const FISH_SHAPE_SLACK = 1.05;   // a thing's reach and thickness as the fish keep clear of it, over its mesh's (fishShapeOf)
 const KOI_BED_ALBEDO = 0.3;   // the Koi pond's gravel and silt, for what the splash's drops show of its bed (src/splash.js setBed)
+const MALL_BED_ALBEDO = 0.1;  // the Reflecting Pool's tinted concrete (MALL_BED in src/shaders/scene.js), likewise
 const ORBIT_TURN = Math.PI;   // radians the view turns for a drag across the canvas's height
 const GLIDE_SECONDS = 1.0;    // a glide to another view
 // The View setting's choices (src/viewOrbit.js): the shore view the page
@@ -528,6 +530,13 @@ const POOL_VIEWS = {
   ...VIEWS,
   shore: orbitAbout({ x: 0.6, y: 1.7, z: 1.7 }, { x: 0, y: 0, z: -1.1 }),
   level: orbitAbout({ x: 0, y: 0.16, z: 0.25 }, { x: 0, y: 0.1, z: -1.4 }),
+};
+// At the Reflecting Pool (src/nationalMall.js) the shore view stands where the lake's does, at the pool's west wall,
+// but looks a little higher, so the Washington Monument down the far end stands whole in the frame over its
+// reflection; the throw's water stays in its lower half.
+const MALL_VIEWS = {
+  ...VIEWS,
+  shore: orbitAbout({ x: 0, y: 1.15, z: 2.45 }, { x: 0, y: 0.32, z: -1.6 }),
 };
 // Where the eye may stand (clampOrbit, src/viewOrbit.js): over the water at
 // least LOWEST_EYE above the beach or the still water; under it, on an orbit
@@ -618,6 +627,7 @@ const SUN_BALANCE = [3.0, 2.85, 2.55];        // the sun's irradiance under the 
 const WATER_CLARITIES = {
   pool: { absorb: [0.35, 0.06, 0.015], extinction: [0.42, 0.11, 0.06], color: [0.010, 0.090, 0.130] },
   koi: { absorb: [0.4, 0.09, 0.14], extinction: [0.6, 0.3, 0.42], color: [0.010, 0.066, 0.060] },   // a koi pond's, filtered but green: the fish show to the bottom
+  mall: { absorb: [0.42, 0.1, 0.12], extinction: [0.75, 0.38, 0.4], color: [0.008, 0.036, 0.034] },   // the Reflecting Pool's, filtered city water over its dark bed: clear, a little green, a mirror
   clear: { absorb: [0.40, 0.07, 0.05], extinction: [0.9, 0.35, 0.32], color: [0.012, 0.085, 0.115] },
   lake: { absorb: [0.45, 0.10, 0.07], extinction: [1.3, 0.85, 0.8], color: [0.014, 0.075, 0.100] },
   pond: { absorb: [0.95, 0.36, 0.34], extinction: [2.0, 1.45, 1.65], color: [0.015, 0.074, 0.041] },
@@ -638,7 +648,13 @@ const LAKE_CLARITIES = WATER_CHOICES.filter((name) => name !== 'frozen');
 // water inside a closed, irregular shore of its own (KOI_SHORE in
 // src/pondFloor.js, setShoreKind; setKoiPond), stone-edged with a pebble
 // beach, its own water (WATER_CLARITIES.koi) and a garden round it, out of
-// reach behind a hedge (src/koiGarden.js).
+// reach behind a hedge (src/koiGarden.js); or the Reflecting Pool (`mall`),
+// the Lincoln Memorial Reflecting Pool in Washington, D.C., under a pure sky
+// of its own hours (src/sky.js `washington`): the lake's open water inside
+// its granite walls (MALL_POOL in src/pondFloor.js, setShoreKind; setMall),
+// its own water (WATER_CLARITIES.mall) over a dark concrete bed, and the
+// Mall drawn round it, its elms and monuments (src/nationalMall.js), its
+// own views (MALL_VIEWS).
 // Each place's fish are
 // src/fish.js's (FISH_BY_PLACE, by the place's name); its beach's ground is
 // its sky's `shore` (SHORE_LOOKS in src/pondFloor.js, setShoreLook: sand,
@@ -651,8 +667,9 @@ const PLACES = {
   swiss: { sky: 'swiss', pool: false, defaultWater: 'frozen', defaultView: 'level' },
   pool: { sky: 'lakeside', pool: true },
   koi: { sky: 'garden', pool: false, koi: true },
+  mall: { sky: 'washington', pool: false, mall: true },
 };
-const PLACE_ALIASES = { alpine: 'swiss', meadow: 'lakeside', open: 'lakeside' };
+const PLACE_ALIASES = { alpine: 'swiss', meadow: 'lakeside', open: 'lakeside', dc: 'mall', washington: 'mall', 'reflecting-pool': 'mall' };
 const DEFAULT_PLACE = 'lakeside';
 /**
  * Settings remembered before the Pool was a place and the ice a water,
@@ -849,6 +866,9 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   const pool = createPool(water, lighting, ambientWaves, environment, { rings, haze: environment.hazeUniforms, wet: wetDeck, snow: snowCover, air, ice });
   let pooled = false;
   let koiPond = false;   // the lake's shore is the Koi pond's (PLACES `koi`; setKoiPond)
+  let mallHere = false;   // the lake's shore is the Reflecting Pool's walls (PLACES `mall`; setMall)
+  /** The shore in force for the place (src/pondFloor.js setShoreKind): the Koi pond's, the Reflecting Pool's or the lake's. */
+  const applyShoreKind = () => setShoreKind(koiPond ? 'koi' : mallHere ? 'mall' : 'lake');
   let reedsHere = false;   // the place's shallows have reeds (PLACES `reeds`; setReeds)
   const bedDepthAt = (x, z) => (pooled ? POOL.depth : floorDepthAt(x, z));
   water.floorDepthAt = bedDepthAt;
@@ -889,7 +909,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   }
   /** The gale's waves, as the wind and the water have them: a pool's basin is too small to raise any, and ice holds the water still. */
   function applyGale() {
-    const strength = pooled || koiPond || ice.on ? 0 : GALE_STRENGTHS[windName] ?? 0;   // a pond is too small for a gale's waves
+    const strength = pooled || koiPond || mallHere || ice.on ? 0 : GALE_STRENGTHS[windName] ?? 0;   // a pond, or a walled pool under a metre deep, is too small for a gale's waves
     galeWaves.setStrength(strength);
     surface.setGale(strength > 0);
     spindrift.setOn(strength > 0);
@@ -916,21 +936,22 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   let waterName = DEFAULT_WATER;
   pooled = PLACES[placeName].pool;
   koiPond = Boolean(PLACES[placeName].koi);
+  mallHere = Boolean(PLACES[placeName].mall);
   reedsHere = Boolean(PLACES[placeName].reeds);
-  setShoreKind(koiPond ? 'koi' : 'lake');
+  applyShoreKind();
   setShoreLook(skyShore(PLACES[placeName].sky));   // the beach and the bed in the place's own ground (SHORE_LOOKS)
-  boulders.show(!pooled && !koiPond ? PLACES[placeName].sky : null);
+  boulders.show(!pooled && !koiPond && !mallHere ? PLACES[placeName].sky : null);
   water.setPool(pooled);
   applyGale();
   /** The bed the splash's drops see (src/splash.js setBed): its depth under the patch's middle and its albedo, the pool's tiles, the Koi pond's gravel or the lake's sand. */
   function bedOfPlace() {
-    return { depth: bedDepthAt(water.centre[0], water.centre[1]), albedo: pooled ? POOL.tileAlbedo : koiPond ? KOI_BED_ALBEDO : undefined };
+    return { depth: bedDepthAt(water.centre[0], water.centre[1]), albedo: pooled ? POOL.tileAlbedo : koiPond ? KOI_BED_ALBEDO : mallHere ? MALL_BED_ALBEDO : undefined };
   }
   /** The water drawn: the lake's clarity, or the pool's own in the pool. */
   function applyWater() {
-    waterName = pooled ? 'pool' : koiPond ? 'koi' : lakeClarity;
-    // The sea's water holds a stone's foam (src/splash.js setSalt); the pool's, the koi pond's and the lakes' do not.
-    splash.setSalt(!pooled && !koiPond && SALT_SKIES.includes(PLACES[placeName]?.sky));
+    waterName = pooled ? 'pool' : koiPond ? 'koi' : mallHere ? 'mall' : lakeClarity;
+    // The sea's water holds a stone's foam (src/splash.js setSalt); the pool's, the koi pond's, the Reflecting Pool's and the lakes' do not.
+    splash.setSalt(!pooled && !koiPond && !mallHere && SALT_SKIES.includes(PLACES[placeName]?.sky));
     lighting.absorb.fromArray(WATER_CLARITIES[waterName].absorb);
     lighting.extinction.fromArray(WATER_CLARITIES[waterName].extinction);
     applyWaterColor();
@@ -971,7 +992,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   // it sees from there unzoomed (yaw and pitch toward the pivot, and the
   // widest field of view); view the current one, zoomed inside home.
   const requestedView = pageParameters.get('view');
-  const viewsNow = () => (pooled ? POOL_VIEWS : VIEWS);
+  const viewsNow = () => (pooled ? POOL_VIEWS : mallHere ? MALL_VIEWS : VIEWS);
   const orbit = { ...viewsNow()[Object.hasOwn(VIEWS, requestedView ?? '') ? requestedView : PLACES[firstPlace].defaultView ?? 'shore'] };
   // The ground the eye keeps over: the beach, or the pool's deck, eased in
   // over EYE_EDGE inside the pool's edge so the eye never stands at the
@@ -1049,15 +1070,20 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   const garden = createKoiGarden({ envTexture: environment.envTexture, mirrorLayer: MIRROR_LAYER, lighting });
   garden.setCoarse(settings.gardenCoarse);
   sceneMain.add(...garden.meshes);
+  // The Reflecting Pool's grounds (src/nationalMall.js): the Mall's coping, lawns, elms and monuments, in the main
+  // scene and the mirror; shown at the Reflecting Pool.
+  const mall = createNationalMall({ lighting, environment, mirrorLayer: MIRROR_LAYER, snow: snowCover, wet: wetDeck });
+  sceneMain.add(...mall.meshes);
   /** The lake's bed, beach and open water, or the pool's basin and deck: the meshes only (setPooled changes the water). */
   function showScenery(asPool) {
     floor.visible = shore.visible = !asPool;
-    reeds.visible = !asPool && !koiPond && reedsHere;   // the lake's shallows, where the place has them
-    boulders.show(!asPool && !koiPond ? PLACES[placeName].sky : null);   // and a rocky shore's stones (BOULDERS)
+    reeds.visible = !asPool && !koiPond && !mallHere && reedsHere;   // the lake's shallows, where the place has them
+    boulders.show(!asPool && !koiPond && !mallHere ? PLACES[placeName].sky : null);   // and a rocky shore's stones (BOULDERS)
     pool.setVisible(asPool);
-    shore.visible = !asPool && !koiPond;
+    shore.visible = !asPool && !koiPond && !mallHere;
     koiLand.visible = !asPool && koiPond;
     garden.setVisible(!asPool && koiPond);
+    mall.setVisible(!asPool && mallHere);
     surface.setPool(asPool ? { ...pool.square, depth: POOL.depth, deck: POOL.deck } : null);
   }
   showScenery(pooled);
@@ -1452,15 +1478,17 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     const sky = PLACES[place].sky;
     const request = { place, hour: resolveHour(sky, hour) };
     placeRequest = request;
+    if (PLACES[place].mall) mall.prepare();   // the Mall's grounds built between frames while the sky downloads
     return requestSky(sky, request.hour).then(() => {
       if (placeRequest === request && environment.name === sky && environment.hour === request.hour) {
         const entering = placeName !== place;
         placeName = place;
         setPooled(PLACES[place].pool);
         setKoiPond(Boolean(PLACES[place].koi));
+        setMall(Boolean(PLACES[place].mall));
         setReeds(Boolean(PLACES[place].reeds));
         setShoreLook(skyShore(PLACES[place].sky));
-        boulders.show(!pooled && !koiPond ? PLACES[place].sky : null);
+        boulders.show(!pooled && !koiPond && !mallHere ? PLACES[place].sky : null);
         if (entering) applyFish();
         if (entering && PLACES[place].defaultWater === 'frozen' && iceName === 'none') {
           clearPond();
@@ -1536,6 +1564,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     garden.setEnvironment(environment.envTexture);
     boulders.setEnvironment(environment.envTexture);
     garden.setLight();
+    mall.setLight();   // the floodlights after dusk (src/nationalMall.js)
     if (preview.mesh) preview.mesh.material.envMap = environment.envTexture;   // a new sky's map (the rocks take theirs as thrown)
     applyWaterColor();
     applySunLights();
@@ -2031,10 +2060,12 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       rock.launchSkip(velocity, tilt);
       // In the pool it touches and skims only inside the walls, less its radius (src/pool.js holds it off them).
       if (pooled) rock.skip.inside = poolInside(pool.square, radius);
+      else if (mallHere) rock.skip.inside = poolInside(MALL_BASIN, radius);   // and in the Reflecting Pool inside its granite walls
     }
-    // In the pool the deck is ground (src/pool.js poolGround); on ice the ice is, over the deck round a frozen pool (src/ice.js).
+    // In the pool the deck is ground (src/pool.js poolGround), and the Reflecting Pool's coping; on ice the ice is, over the deck round a frozen pool (src/ice.js).
     if (ice.on) rock.ground = ice.ground;
     else if (pooled) rock.ground = poolGround(pool.square);
+    else if (mallHere) rock.ground = poolGround(MALL_BASIN);
     else if (koiPond) rock.ground = koiGround;   // the Koi pond's lawn (src/koiGarden.js)
     rocks.push(rock);
     sceneMain.add(rock.meshAbove);
@@ -2235,19 +2266,22 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     const lowest = rock.lowestOffset();
     const steps = Math.min(128, Math.max(1, Math.ceil(from.distanceTo(wanted) / Math.max(reach / 2, 0.025))));
     const current = from.clone(), delta = wanted.sub(from).divideScalar(steps);
-    // In the basin as holdInPool keeps things there: a ball against a wall is in, not on the deck.
-    const inBasin = (x, z) => pooled && poolInside(pool.square, rock.radius)(x, z);
+    // In the basin as holdInPool keeps things there: a ball against a wall is in, not on the deck (the Pool's, or the
+    // Reflecting Pool's coping).
+    const basin = pooled ? pool.square : mallHere ? MALL_BASIN : null;
+    const deck = basin?.deck ?? POOL.deck, spanX = basin?.sizeX ?? basin?.size, spanZ = basin?.sizeZ ?? basin?.size;
+    const inBasin = (x, z) => basin !== null && poolInside(basin, rock.radius)(x, z);
     const rim = ice.top - 1e-6;
     let hole = ice.on && from.y + lowest < rim ? rock.iceHole : null;
     for (let step = 0; step < steps; step++) {
       const inside = inBasin(current.x, current.z);
       current.add(delta);
-      if (inside && current.y + lowest <= POOL.deck) {
-        current.x = THREE.MathUtils.clamp(current.x, pool.square.minX + reach, pool.square.minX + pool.square.size - reach);
-        current.z = THREE.MathUtils.clamp(current.z, pool.square.minZ + reach, pool.square.minZ + pool.square.size - reach);
+      if (inside && current.y + lowest <= deck) {
+        current.x = THREE.MathUtils.clamp(current.x, basin.minX + reach, basin.minX + spanX - reach);
+        current.z = THREE.MathUtils.clamp(current.z, basin.minZ + reach, basin.minZ + spanZ - reach);
       }
       // A step from the deck into the basin crosses the wall at its top.
-      const overDeck = pooled && !(inside && inBasin(current.x, current.z));
+      const overDeck = basin !== null && !(inside && inBasin(current.x, current.z));
       // Lowered into a hole, it stays in that one until its whole body clears the rim again.
       if (ice.on && !hole && current.y + lowest < rim) hole = ice.holeAt(current.x, current.z);
       if (hole) {
@@ -2261,7 +2295,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       }
       // In the Koi pond, out of the planting: never carried into the shrubs (src/koiGarden.js holdInGarden leaves it be).
       if (koiPond) keepOutOfGarden(current, rock.collisionRadius);
-      const ground = overDeck ? POOL.deck : (rock.ground?.at(current.x, current.z, rock) ?? -bedDepthAt(current.x, current.z));
+      const ground = overDeck ? deck : (rock.ground?.at(current.x, current.z, rock) ?? -bedDepthAt(current.x, current.z));
       current.y = Math.max(current.y, ground - lowest);
       if (current.y + lowest >= rim) hole = null;
     }
@@ -2526,9 +2560,9 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       simulationTime += step;
     }
   }
-  /** What holds things in (src/collide.js `contain`): the pool's walls, the Koi pond's hedge, a hole in the ice, a shore's boulders (src/boulders.js); null with none. */
+  /** What holds things in (src/collide.js `contain`): the pool's walls, the Reflecting Pool's, the Koi pond's hedge, a hole in the ice, a shore's boulders (src/boulders.js); null with none. */
   function containThings(rock) {
-    return (pooled ? holdInPool(rock, pool.square) : null) ?? (koiPond ? holdInGarden(rock) : null) ?? (ice.on ? ice.contain(rock) : null) ?? boulders.contain(rock);
+    return (pooled ? holdInPool(rock, pool.square) : null) ?? (mallHere ? holdInPool(rock, MALL_BASIN) : null) ?? (koiPond ? holdInGarden(rock) : null) ?? (ice.on ? ice.contain(rock) : null) ?? boulders.contain(rock);
   }
   function simulate(dt) {
     const frame = Math.min(dt, CATCH_UP * PHYSICS_STEP);
@@ -2837,7 +2871,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     ...ambientWaves.uniforms(),
     ...ice.uniforms,   // no shafts under the ice (underwaterShafts)
   });
-  const hiddenFromBelow = () => [environment.sky, shore, koiLand, reeds.above, boulders.above, pool.walls, pool.yard, ...garden.meshes, marker, arc, ...(preview.mesh ? [preview.mesh] : []), ...rocks.map((rock) => rock.meshAbove)];
+  const hiddenFromBelow = () => [environment.sky, shore, koiLand, reeds.above, boulders.above, pool.walls, pool.yard, ...garden.meshes, ...mall.meshes, marker, arc, ...(preview.mesh ? [preview.mesh] : []), ...rocks.map((rock) => rock.meshAbove)];
   function renderFromBelow() {
     renderer.setRenderTarget(mainTarget);
     renderer.clear(true, true, false);
@@ -3098,13 +3132,13 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   function setReeds(here) {
     if (here === reedsHere) return;
     reedsHere = here;
-    reeds.visible = !pooled && !koiPond && here;
+    reeds.visible = !pooled && !koiPond && !mallHere && here;
   }
 
   function setKoiPond(asKoi) {
     if (asKoi === koiPond) return;
     koiPond = asKoi;
-    setShoreKind(asKoi ? 'koi' : 'lake');
+    applyShoreKind();
     clearPond();
     applyWater();
     applySky();
@@ -3113,6 +3147,29 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     galeWaves.setBed(floorDepthAt(water.centre[0], water.centre[1]));
     splash.setBed(bedOfPlace());
     moveEye({ ...orbit });
+  }
+
+  /**
+   * The lake's water inside the Reflecting Pool's walls (true; src/pondFloor.js
+   * MALL_POOL) or the lake's own, as setKoiPond: the bed, the ground and their
+   * meshes (the Mall's grounds, src/nationalMall.js), the water's own, no gale,
+   * a still pond; the eye on the same view of the place (MALL_VIEWS).
+   */
+  function setMall(asMall) {
+    if (asMall === mallHere) return;
+    const standing = glide ? glide.name : viewName();
+    mallHere = asMall;
+    applyShoreKind();
+    clearPond();
+    applyWater();
+    applySky();
+    applyIce();
+    showScenery(pooled);
+    galeWaves.setBed(floorDepthAt(water.centre[0], water.centre[1]));
+    splash.setBed(bedOfPlace());
+    glide = null;
+    if (standing) showView(standing, { glide: false });
+    else moveEye({ ...orbit });
   }
 
   // ---- warm-up: core throws and the selected effects, under the veil -----
@@ -3211,6 +3268,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
         // and below, so a change of water compiles nothing.
         showScenery(!pooled);
         garden.setVisible(true, { building: false });   // the Koi pond's garden's programs too, whatever the place (src/koiGarden.js builds it only when shown)
+        mall.setVisible(true, { building: false });     // and the Reflecting Pool's grounds' (src/nationalMall.js, likewise)
         koiLand.visible = true;
         reeds.visible = true;   // and the reeds', whatever the place: a change of place compiles nothing
         boulders.show('all');   // and the boulders' (src/boulders.js)
@@ -3379,9 +3437,13 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     /** Whether the place is the Pool (its tiled pool in place of the lake). */
     get pooled() { return pooled; },
     /** Whether the place has its own water in place of the lake's clarities (the Pool's, the Koi pond's). */
-    get ownWater() { return pooled || koiPond; },
+    get ownWater() { return pooled || koiPond || mallHere; },
     /** Whether the place is the Koi pond (the lake's water in the pond's own shore, src/pondFloor.js KOI_SHORE). */
     get koi() { return koiPond; },
+    /** Whether the place is the Reflecting Pool (PLACES `mall`). */
+    get mall() { return mallHere; },
+    /** The Reflecting Pool's trees and leaf cards drawn at each level of detail (src/nationalMall.js), for the tools. */
+    get mallCounts() { return mall.counts; },
     /**
      * The fish (src/fish.js), as they swim now: each one's kind, length (m),
      * where it is, its speed (m/s), whether it is frightened and whether it is

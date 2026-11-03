@@ -228,8 +228,8 @@ full screen, which only a press or a key may ask for):
   freezes over again in half a minute, its shards frozen in, its new ice
   thin enough for the next throw to break.
 - Location (`?sky=`): Swiss Alps, Rocky cove, Highlands, Desert oasis,
-  Lakeside (the default), Mesas, Pool, or Koi pond (`?sky=koi`): a pond in
-  a Japanese garden under its own panorama (Poly Haven's Ninomaru Teien,
+  Lakeside (the default), Mesas, Pool, Koi pond or Reflecting Pool. Koi
+  pond (`?sky=koi`) is a pond in a Japanese garden under its own panorama (Poly Haven's Ninomaru Teien,
   the garden of Nagoya Castle, its sun behind leaves, so its brightness is
   taken from its sky: `shadedSun` in `src/sky.js`), about 9 m across, its
   shore irregular (lobes, a bay, a broad point), its far and side banks
@@ -239,7 +239,17 @@ full screen, which only a press or a key may ask for):
   Nothing thrown comes down on the ground there: every aim is kept 0.6 m
   inside the water, and a thing skipped or slid on to a bank is caught by
   the shrubs where they are drawn (`src/koiGarden.js`,
-  `tools/garden-probe.mjs`). Swiss Alps replaces Alpine with a
+  `tools/garden-probe.mjs`). Reflecting Pool (`?sky=mall`, or `dc`): the
+  Lincoln Memorial Reflecting Pool in Washington, D.C., from its west wall,
+  looking 618 m down it to the Washington Monument and the Capitol beyond,
+  drawn to their real sizes and places (`src/nationalMall.js`): the granite
+  coping 30 cm over still water on a dark concrete bed, the double allées
+  of American elms either side, the Lincoln Memorial behind the eye, all
+  mirrored in the pool and floodlit after dusk. Its sky is a pure sky (no
+  land in the photo: Poly Haven's Qwantani pure-sky hours, morning,
+  afternoon, golden hour and twilight, the sun's path turned for the
+  northern hemisphere: `washington` in `src/sky.js`). The walls hold what
+  reaches them and the coping is ground (`tools/mall-probe.mjs`). Swiss Alps replaces Alpine with a
   sharper 4K Lago d’Isola panorama, framed across its snowy ridge, and starts
   at water level with Frozen water (thin ice unless Thick was last chosen). Choosing liquid
   water is remembered when reloading the same place; entering Swiss Alps
@@ -258,7 +268,8 @@ full screen, which only a press or a key may ask for):
 - Time of day: named buttons and a slider select each photographed hour:
   Lakeside's dawn, sunrise, afternoon and night; Mesas' twelve hours from
   dawn to moonlight; Highlands' dawn, sunrise, noon, sunset and dusk; Desert
-  oasis' moonlight, golden hour and starlight. The land keeps still and the
+  oasis' moonlight, golden hour and starlight; the Reflecting Pool's
+  morning, afternoon, golden hour and twilight. The land keeps still and the
   sun moves round it. By night the eye sees mostly as its rods do: a
   moonlit blue that keeps some of the photo's colour. Adjacent hours are
   fetched ahead while the Time page is open. A new choice cancels a pending
@@ -1430,8 +1441,8 @@ farther out, so it rises into the view rather than filling its corner.
   `tools/ring-probe.mjs`, `tools/rain-probe.mjs`, `tools/snow-probe.mjs`,
   `tools/gale-probe.mjs`, `tools/skip-probe.mjs`, `tools/thing-probe.mjs`,
   `tools/ice-probe.mjs`, `tools/spray-probe.mjs`, `tools/jet-probe.mjs`,
-  `tools/drop-ring-probe.mjs`, `tools/fish-probe.mjs` and
-  `tools/garden-probe.mjs`;
+  `tools/drop-ring-probe.mjs`, `tools/fish-probe.mjs`,
+  `tools/garden-probe.mjs` and `tools/mall-probe.mjs`;
   each exits with 1 if a check fails. `tools/run-probes.mjs` runs them side
   by side, as many at once as the machine has cores (`PROBE_JOBS=1` runs
   them one after another), each one's output printed whole when it ends,
@@ -1698,6 +1709,9 @@ farther out, so it rises into the view rather than filling its corner.
   node tools/sky-probe.mjs assets/sky/lakeside_sunrise_2k.hdr --taken=2024-08-21T06:58:00+02:00 $L
   # with --align=assets/sky/lakeside_sunrise_2k.hdr: dawn 2024-08-21T06:27, night 08-21T19:51;
   # and lakeside (2019, its time stamp off by a quarter of an hour) with --align alone
+  # the Reflecting Pool's pure skies (qwantani_*_puresky_2k.hdr, the same shoot without its land), each by its time
+  # alone: morning 08-20T08:09, afternoon 08-21T14:04, sunset 08-18T17:09; and dusk_2 08-22T18:06
+  # --align=assets/sky/qwantani_dusk_2_2k.hdr --band=4,40
   ```
 - `node tools/jet-probe.mjs [radius] [entrySpeed] [horizontalFraction]`
   checks the slender-jet solver (`src/slenderJet.js`) against the textbook:

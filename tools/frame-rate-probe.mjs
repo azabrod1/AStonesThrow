@@ -29,6 +29,8 @@
 //   - pool: a basketball, a skipped stone and twenty-two stones in the
 //     pool's walls, more than Low keeps at rest, so the oldest fades as one
 //     comes to rest past the cap, between throws.
+//   - mall: a stone, a skipped stone, a duck and a basketball in the
+//     Reflecting Pool.
 // Prints each scene's comparison and exits with status 1 if any differs.
 //
 //   node tools/frame-rate-probe.mjs [--scene=koi,pool]   (only these scenes, in this order)
@@ -78,6 +80,15 @@ const SCENES = [
       { at: 0.5, x: 0.2, z: -1.3, thing: 'stone', manner: 'skip' },
       // More than Low keeps at rest (20): the one that comes to rest past it, between throws, fades the oldest.
       ...Array.from({ length: 22 }, (unused, index) => ({ at: 1 + 0.25 * index, x: -0.5 + 0.045 * index, z: -0.9 - 0.035 * index, thing: 'stone' })),
+    ],
+  },
+  {
+    name: 'mall', place: 'mall', ice: 'none', until: 12,
+    throws: [
+      { at: 0, x: 0, z: -1.4, thing: 'stone' },
+      { at: 0.6, x: 0.4, z: -1.8, thing: 'stone', manner: 'skip' },
+      { at: 1.4, x: -0.3, z: -1.2, thing: 'duck' },
+      { at: 2.2, x: 0.6, z: -1.0, thing: 'basketball' },
     ],
   },
 ];
