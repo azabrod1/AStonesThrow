@@ -18,7 +18,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-export const SITE_FILES = ['index.html', 'src', 'assets'];
+export const SITE_FILES = ['index.html', 'manifest.webmanifest', 'src', 'assets'];
 const UNPUBLISHED = /\.hdr$/;
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');

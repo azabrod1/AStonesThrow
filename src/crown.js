@@ -421,6 +421,7 @@ import * as THREE from 'three';
 import { createRingGrid, computeGridNormals, holdWithinWalls, markChanged } from './fluidMesh.js';
 import { buildLaunchField, sampleLaunchField } from './launchField.js';
 import { seededRandom, sprayDrops, gammaFactor } from './spray.js';
+import { splashRandom } from './splashRandom.js';
 
 const GRAVITY = 9.81;
 const REFERENCE_RADIUS = 0.03;     // the stone size the tuning constants were set for
@@ -577,7 +578,7 @@ const SATELLITE_SIZE = 0.25;       // ...of this share of its radius on average 
 const SURFACE_TENSION = 0.072;     // N/m
 const WATER_DENSITY = 1000;        // kg/m³
 
-const randomRange = (low, high) => low + Math.random() * (high - low);
+const randomRange = (low, high) => low + splashRandom() * (high - low);
 const smoothstep = (edgeLow, edgeHigh, value) => {
   const clamped = Math.min(Math.max((value - edgeLow) / (edgeHigh - edgeLow), 0), 1);
   return clamped * clamped * (3 - 2 * clamped);
@@ -633,7 +634,7 @@ function layFingers(fingerScale) {
   let angle = randomRange(0, Math.PI * 2);
   return spacings.map((spacing, index) => {
     const breadth = randomRange(FINGER_BREADTH[0], FINGER_BREADTH[1]);
-    const reach = FINGER_REACH * gammaFactor(Math.random) ** FINGER_REACH_POWER;
+    const reach = FINGER_REACH * gammaFactor(splashRandom) ** FINGER_REACH_POWER;
     const finger = {
       angle,
       halfWidth: FINGER_WIDTH * meanSpacing * breadth,
@@ -966,6 +967,14 @@ export class CrownSheet {
     this.domeFolds = Math.round(randomRange(DOME_FOLDS[0], DOME_FOLDS[1]));
     this.domeFoldPhase = randomRange(0, Math.PI * 2);
     this.sealSprayed = false;
+    // Kept between calls (made here, so every sheet keeps one shape for the engine): its box as drawn (updateGeometry),
+    // the seal's pull at an age (sealedShare), a column's free rim and folds' phase at an age (domeApexNow, pullIn), the last
+    // strip's far edge (stripArea), and the mirror's bounds hook (src/splash.js).
+    this.bounds = new THREE.Box3();
+    this.sealedMemo = { age: NaN, start: NaN, time: NaN, value: 0 };
+    this.domeColumns = { ages: new Float64Array(this.columns).fill(NaN), values: new Float64Array(4 * this.columns) };
+    this.lastEdge = { column: -1, tau: NaN, age: NaN, x: 0, y: 0, z: 0, radialDistance: 0 };
+    this.boundsInto = (box) => box.union(this.bounds);
   }
 
   /** A landing crown rides the waves; a stone's sheet on a cavity's lip rides them at its base, as the lip does. */
@@ -1105,8 +1114,11 @@ export class CrownSheet {
   /** How far a sealing crown has closed now (its pull, 0 to 1; 0 for any other sheet). */
   sealedShare() {
     if (!this.seal) return 0;
+    const memo = this.sealedMemo;
+    if (memo.age === this.age && memo.start === this.seal.start && memo.time === this.seal.time) return memo.value;
     const share = Math.min(Math.max((this.age - this.seal.start) / Math.max(this.seal.time - this.seal.start, 1e-4), 0), 1);
-    return share * share * (3 - 2 * share);
+    memo.age = this.age; memo.start = this.seal.start; memo.time = this.seal.time;
+    return (memo.value = share * share * (3 - 2 * share));
   }
 
   /** How fast the pull grows now (per second). */
@@ -1131,9 +1143,12 @@ export class CrownSheet {
    * for the rim, the tear front once it tears): the bead runs along it.
    * fingerFactor is fingerAt's factor there (0 on a drop's crown or the fan).
    * `free`: as the sheet would be with no seal pulling it in. rimShape is the
-   * cavity's mouth outline at this azimuth (columnRimShape), or worked out.
+   * cavity's mouth outline at this azimuth (columnRimShape), or worked out;
+   * `column`, the grid's column at this azimuth (or −1), lets a seal's pull
+   * keep what is the column's own (pullIn); fingerSide, sideAt's drift there,
+   * is a ligament's alone (updateLigaments, placeBead: the header).
    */
-  evaluate(tau, cosAngle, sinAngle, speedFactor, thicknessFactor, out, edgeTau = 0, fingerFactor = 0, free = false, rimShape = undefined, fingerSide = 0) {
+  evaluate(tau, cosAngle, sinAngle, speedFactor, thicknessFactor, out, edgeTau = 0, fingerFactor = 0, free = false, rimShape = undefined, column = -1, fingerSide = 0) {
     const launch = this.launchAt(tau);
     let ringRadius = launch.ringRadius;
     // The stone's launch field here and now (the header): faster or slower, thicker or thinner, lower or higher.
@@ -1198,7 +1213,7 @@ export class CrownSheet {
     out.flown = flown;
     // The foot never sinks below the lip it stands on: the water there holds it up.
     if (launch.carry > 0 && out.y < baseHeight) { out.y = baseHeight; out.vy = Math.max(out.vy, 0); }
-    if (this.seal && !free && this.age > this.seal.start) this.pullIn(out, tau, cosAngle, sinAngle, speedFactor, thicknessFactor, fingerFactor, rimShape);
+    if (this.seal && !free && this.age > this.seal.start) this.pullIn(out, tau, cosAngle, sinAngle, speedFactor, thicknessFactor, fingerFactor, rimShape, column);
     // The bead gathers what stretching takes from the sheet, so it keeps three
     // times the unstretched thickness while the sheet behind it thins.
     const drained = this.baseThickness * thicknessFactor * fieldThickness * launch.launchThickness / launch.drainDivisor;
@@ -1225,10 +1240,16 @@ export class CrownSheet {
     const apex = this.domeApex;
     if (apex.age === this.age) return apex;
     const state = this.stateRim;
+    const kept = this.domeColumns;
     let sumX = 0, sumY = 0, sumZ = 0;
     for (let column = 0; column < this.columns; column++) {
-      this.evaluate(0, this.columnCos[column], this.columnSin[column], this.columnSpeedFactor[column], this.columnThicknessFactor[column], state, 0, this.columnFingerFactor[column], true, this.columnRimShape?.[column]);
+      const cosAngle = this.columnCos[column], sinAngle = this.columnSin[column];
+      this.evaluate(0, cosAngle, sinAngle, this.columnSpeedFactor[column], this.columnThicknessFactor[column], state, 0, this.columnFingerFactor[column], true, this.columnRimShape?.[column]);
       sumX += state.x; sumY += state.y; sumZ += state.z;
+      // Kept for pullIn: the column's free rim at this age, and its folds' phase.
+      kept.ages[column] = this.age;
+      kept.values[4 * column] = state.x; kept.values[4 * column + 1] = state.y; kept.values[4 * column + 2] = state.z;
+      kept.values[4 * column + 3] = Math.sin(this.domeFolds * Math.atan2(sinAngle, cosAngle) + this.domeFoldPhase);
     }
     apex.x = sumX / this.columns;
     apex.y = Math.max(sumY / this.columns, DOME_HEIGHT * this.radius);
@@ -1253,16 +1274,24 @@ export class CrownSheet {
    * R high that the whole sheet was blended onto, tried, crushed a sheet
    * standing four R into crossing shards). Once it bursts (the tear) its
    * sheet flies off at the seal's burstSpeed·s, out and up; a sinking
-   * dome's apex sinks (the header).
+   * dome's apex sinks (the header). A grid column's free rim and folds'
+   * phase at this age are domeApexNow's, kept (`column`, evaluate's).
    */
-  pullIn(out, tau, cosAngle, sinAngle, speedFactor, thicknessFactor, fingerFactor, rimShape) {
+  pullIn(out, tau, cosAngle, sinAngle, speedFactor, thicknessFactor, fingerFactor, rimShape, column = -1) {
     const pull = this.sealedShare();
     const apex = this.domeApexNow();
-    const rim = this.evaluate(0, cosAngle, sinAngle, speedFactor, thicknessFactor, this.stateRim, 0, fingerFactor, true, rimShape);
+    let rimX, rimY, rimZ, foldPhase;
+    const kept = this.domeColumns;
+    if (column >= 0 && kept.ages[column] === this.age) {
+      rimX = kept.values[4 * column]; rimY = kept.values[4 * column + 1]; rimZ = kept.values[4 * column + 2]; foldPhase = kept.values[4 * column + 3];
+    } else {
+      const rim = this.evaluate(0, cosAngle, sinAngle, speedFactor, thicknessFactor, this.stateRim, 0, fingerFactor, true, rimShape);
+      rimX = rim.x; rimY = rim.y; rimZ = rim.z;
+      foldPhase = Math.sin(this.domeFolds * Math.atan2(sinAngle, cosAngle) + this.domeFoldPhase);
+    }
     const along = this.sheetHeight(tau, Math.max(this.feedEnd(), 1e-6));
-    const angle = Math.atan2(sinAngle, cosAngle);
-    const weight = along ** DOME_PULL_POWER * (1 - DOME_FOLD * Math.sin(Math.PI * along) * Math.sin(this.domeFolds * angle + this.domeFoldPhase));
-    const domeX = out.x + weight * (apex.x - rim.x), domeY = out.y + weight * (apex.y - rim.y), domeZ = out.z + weight * (apex.z - rim.z);
+    const weight = along ** DOME_PULL_POWER * (1 - DOME_FOLD * Math.sin(Math.PI * along) * foldPhase);
+    const domeX = out.x + weight * (apex.x - rimX), domeY = out.y + weight * (apex.y - rimY), domeZ = out.z + weight * (apex.z - rimZ);
     // At rest on the dome, or flying off it once it bursts.
     const burst = this.age >= this.breakTime && !this.seal.sink ? this.seal.burstSpeed * along : 0;
     const rate = this.sealRate();
@@ -1334,7 +1363,7 @@ export class CrownSheet {
       const angle = randomRange(0, Math.PI * 2);
       const lean = randomRange(0, 0.12) * speed;
       splash.spawnDroplet(apex.x + randomRange(-0.1, 0.1) * this.radius, apex.y, apex.z + randomRange(-0.1, 0.1) * this.radius,
-        Math.cos(angle) * lean, speed, Math.sin(angle) * lean, (0.0005 + 0.0009 * Math.random()) * this.sizeFactor ** 0.4);
+        Math.cos(angle) * lean, speed, Math.sin(angle) * lean, (0.0005 + 0.0009 * splashRandom()) * this.sizeFactor ** 0.4);
     }
     // And the spike's finer spray (src/spray.js), as fast.
     const size = SEAL_FINE_SIZE * this.sizeFactor ** 0.3;
@@ -1368,15 +1397,15 @@ export class CrownSheet {
     // The bead sits at the rod's end (updateLigaments' endTau, the rim's own material before the first frame draws
     // it) and flies on at the tip material's speed: the drops pinched off earlier run ahead of the rod, its trail.
     const endTau = finger.endTau ?? 0;
-    const state = this.evaluate(endTau, this.columnCos[column], this.columnSin[column], this.columnSpeedFactor[column], this.columnThicknessFactor[column], this.state, 0, this.columnFingerFactor[column], false, this.columnRimShape?.[column], fingerSide);
+    const state = this.evaluate(endTau, this.columnCos[column], this.columnSin[column], this.columnSpeedFactor[column], this.columnThicknessFactor[column], this.state, 0, this.columnFingerFactor[column], false, this.columnRimShape?.[column], -1, fingerSide);
     const tipX = state.x, tipY = state.y, tipZ = state.z;
     const lump = share * THREE.MathUtils.clamp(BEAD_RIM * state.thickness * finger.jitter, this.minDropRadius, this.maxDropRadius);
     const radius = Math.min(lump, share * DROP_CEILING);
     const bead = finger.bead;
     bead.lump = lump;
-    const tip = endTau > 0 ? this.evaluate(0, this.columnCos[column], this.columnSin[column], this.columnSpeedFactor[column], this.columnThicknessFactor[column], this.stateTip, 0, this.columnFingerFactor[column], false, this.columnRimShape?.[column], fingerSide) : state;
+    const tip = endTau > 0 ? this.evaluate(0, this.columnCos[column], this.columnSin[column], this.columnSpeedFactor[column], this.columnThicknessFactor[column], this.stateTip, 0, this.columnFingerFactor[column], false, this.columnRimShape?.[column], -1, fingerSide) : state;
     bead.vx = tip.vx; bead.vy = tip.vy; bead.vz = tip.vz;
-    const below = this.evaluate(endTau + BEAD_END * this.launchDuration, this.columnCos[column], this.columnSin[column], this.columnSpeedFactor[column], this.columnThicknessFactor[column], this.stateOther, 0, this.columnFingerFactor[column], false, this.columnRimShape?.[column], fingerSide);
+    const below = this.evaluate(endTau + BEAD_END * this.launchDuration, this.columnCos[column], this.columnSin[column], this.columnSpeedFactor[column], this.columnThicknessFactor[column], this.stateOther, 0, this.columnFingerFactor[column], false, this.columnRimShape?.[column], -1, fingerSide);
     const alongX = tipX - below.x, alongY = tipY - below.y, alongZ = tipZ - below.z;
     const along = Math.sqrt(alongX * alongX + alongY * alongY + alongZ * alongZ);
     const reach = along > 1e-9 ? (0.6 * radius) / along : 0;
@@ -1437,7 +1466,7 @@ export class CrownSheet {
    * as the spares earned allow; returns how many.
    */
   spawnLump(from, radius, spread, scatter, splash) {
-    const count = breakLump(from, radius, DROP_CEILING, 1 + Math.floor(this.spareCarry), spread, scatter, Math.random,
+    const count = breakLump(from, radius, DROP_CEILING, 1 + Math.floor(this.spareCarry), spread, scatter, splashRandom,
       (x, y, z, vx, vy, vz, piece) => splash.spawnDroplet(x, y, z, vx, vy, vz, piece));
     this.spareCarry -= count - 1;
     return count;
@@ -1510,7 +1539,7 @@ export class CrownSheet {
         const boost = randomRange(1.0, 1.08);
         const scatter = 0.05 * speed;
         const scatterX = randomRange(-scatter, scatter), scatterY = randomRange(-scatter, scatter), scatterZ = randomRange(-scatter, scatter);
-        const radius = (RIM_DROP_RADIUS + RIM_DROP_SPREAD * Math.random() ** 1.5) * (this.landing ? this.sizeFactor ** 0.4 : this.dropScale) * (this.fan ? FAN_RIM_DROPS : 1);
+        const radius = (RIM_DROP_RADIUS + RIM_DROP_SPREAD * splashRandom() ** 1.5) * (this.landing ? this.sizeFactor ** 0.4 : this.dropScale) * (this.fan ? FAN_RIM_DROPS : 1);
         this.spareCarry += this.spareRate;
         if (radius > DROP_CEILING) {
           state.vx *= boost; state.vy *= boost; state.vz *= boost;
@@ -1571,9 +1600,19 @@ export class CrownSheet {
     const thicknessFactor = this.columnThicknessFactor[column];
     const fingerFactor = this.columnFingerFactor[column];
     const rimShape = this.columnRimShape?.[column];
-    const from = this.evaluate(tauFrom, cosAngle, sinAngle, speedFactor, thicknessFactor, this.state, 0, fingerFactor, false, rimShape);
-    const fromX = from.x, fromY = from.y, fromZ = from.z, fromRadius = from.radialDistance;
-    const to = this.evaluate(tauTo, cosAngle, sinAngle, speedFactor, thicknessFactor, this.stateOther, 0, fingerFactor, false, rimShape);
+    // Strips follow one another down a column (the tear's swept strip, then the untorn one; spawnFromStrip's pieces):
+    // a near edge that was the last strip's far edge, at this age, is that edge (evaluate is a function of them alone).
+    const edge = this.lastEdge;
+    let fromX, fromY, fromZ, fromRadius;
+    if (edge.column === column && edge.tau === tauFrom && edge.age === this.age) {
+      fromX = edge.x; fromY = edge.y; fromZ = edge.z; fromRadius = edge.radialDistance;
+    } else {
+      const from = this.evaluate(tauFrom, cosAngle, sinAngle, speedFactor, thicknessFactor, this.state, 0, fingerFactor, false, rimShape, column);
+      fromX = from.x; fromY = from.y; fromZ = from.z; fromRadius = from.radialDistance;
+    }
+    const to = this.evaluate(tauTo, cosAngle, sinAngle, speedFactor, thicknessFactor, this.stateOther, 0, fingerFactor, false, rimShape, column);
+    edge.column = column; edge.tau = tauTo; edge.age = this.age;
+    edge.x = to.x; edge.y = to.y; edge.z = to.z; edge.radialDistance = to.radialDistance;
     const length = Math.sqrt((to.x - fromX) ** 2 + (to.y - fromY) ** 2 + (to.z - fromZ) ** 2);
     return length * 0.5 * (fromRadius + to.radialDistance) * this.columnWidths[column];
   }
@@ -1605,7 +1644,7 @@ export class CrownSheet {
         // patch holding more than a drop of DROP_CEILING breaks into
         // several, spread over it (1/density is its area).
         const volumeRadius = Math.cbrt((3 * state.thickness) / (4 * Math.PI * density));
-        const radius = THREE.MathUtils.clamp(volumeRadius * TEAR_GAMMA_VOLUME * gammaFactor(Math.random), this.minDropRadius, this.maxDropRadius);
+        const radius = THREE.MathUtils.clamp(volumeRadius * TEAR_GAMMA_VOLUME * gammaFactor(splashRandom), this.minDropRadius, this.maxDropRadius);
         const scatter = 0.04 * Math.sqrt(state.vx * state.vx + state.vy * state.vy + state.vz * state.vz) + 0.05;
         this.spareCarry += this.spareRate;
         this.sprayFromPatch(splash, state, density);
@@ -1725,7 +1764,7 @@ export class CrownSheet {
         const along = ring / (LIGAMENT_RINGS - 1);   // 0 at the root, 1 at the tip
         const tau = front + span * (1 - along);
         if (ring > endRing) { centreX[ring] = centreX[endRing]; centreY[ring] = centreY[endRing]; centreZ[ring] = centreZ[endRing]; widths[ring] = -1; continue; }
-        this.evaluate(tau, cosAngle, sinAngle, speedFactor, thicknessFactor, state, front, fingerFactor, false, rimShape, fingerSide);
+        this.evaluate(tau, cosAngle, sinAngle, speedFactor, thicknessFactor, state, front, fingerFactor, false, rimShape, -1, fingerSide);
         if (ring > 0) {
           const step = Math.sqrt((state.x - centreX[ring - 1]) ** 2 + (state.y - centreY[ring - 1]) ** 2 + (state.z - centreZ[ring - 1]) ** 2);
           if (drawn + step > longest) {
@@ -1842,7 +1881,7 @@ export class CrownSheet {
         const vertex = row * this.columns + column;
         const front = Math.min(this.tearFront[column], end);
         const tau = this.rowTau(row, front, end);
-        this.evaluate(tau, this.columnCos[column], this.columnSin[column], this.columnSpeedFactor[column], this.columnThicknessFactor[column], state, front, this.columnFingerFactor[column], false, this.columnRimShape?.[column]);
+        this.evaluate(tau, this.columnCos[column], this.columnSin[column], this.columnSpeedFactor[column], this.columnThicknessFactor[column], state, front, this.columnFingerFactor[column], false, this.columnRimShape?.[column], column);
         this.positions[vertex * 3] = state.x;
         this.positions[vertex * 3 + 1] = state.y;
         this.positions[vertex * 3 + 2] = state.z;
@@ -1875,6 +1914,17 @@ export class CrownSheet {
       }
     }
     holdWithinWalls(this.positions, this.walls);
+    // Its box as drawn, for the mirror's region (src/splash.js mirrorBounds), from the positions as they are written.
+    const drawnPositions = this.positions;
+    let minX = Infinity, minY = Infinity, minZ = Infinity, maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+    for (let index = 0; index < drawnPositions.length; index += 3) {
+      const x = drawnPositions[index], y = drawnPositions[index + 1], z = drawnPositions[index + 2];
+      if (x < minX) minX = x; if (x > maxX) maxX = x;
+      if (y < minY) minY = y; if (y > maxY) maxY = y;
+      if (z < minZ) minZ = z; if (z > maxZ) maxZ = z;
+    }
+    this.bounds.min.set(minX, minY, minZ);
+    this.bounds.max.set(maxX, maxY, maxZ);
     if (!this.beadsGone) for (const finger of this.fingers) this.placeBead(finger, this.beadShare(finger));
 
     // Normals from the grid; near the rim the bead's normal also leans along

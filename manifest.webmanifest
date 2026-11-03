@@ -1,0 +1,15 @@
+{
+  "name": "A Stone’s Throw",
+  "short_name": "Stone’s Throw",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": ["fullscreen"],
+  "background_color": "#0b1b22",
+  "theme_color": "#0b1b22",
+  "icons": [
+    { "src": "assets/icon/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "assets/icon/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "assets/icon/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

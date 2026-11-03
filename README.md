@@ -36,13 +36,19 @@ the moment a throw leaves the hand and fades back (`?preview=off` leaves
 it out).
 Escape or Reset view (under the menu button while the view is away from
 the shore's) glides back to the shore. The strip at the bottom sets what is
-thrown: its name opens a dropdown of every thing under its group (the
-gems last, seldom thrown), each with
-its picture (`src/thingMenu.js`; on a phone each group is one row a finger
-scrolls sideways, so the dropdown stays as tall as its groups however many
-things there are), and its slider sets the size (a stone 1.5
+thrown: its name opens a dropdown of things in tabs (`src/thingMenu.js`, its
+tab row `src/tabs.js`, as What to throw's is; `src/thingPage.js` builds
+both views and keeps their favourites and recent choices):
+Favourites, then a tab for each group (Stones, Balls, Food, Toys,
+Electronics, Gems, seldom thrown, and Other last), each thing a pill with
+its picture (on a desktop its note in a tip), the card as tall as the
+largest group. Over it the chosen thing has a card of its own, outlined in
+gold, under "Selected", with its size, a star that makes it a favourite and
+an ⓘ that opens What to throw on it. It opens on the chosen thing's group, or on Favourites if that was
+shown last. Its slider sets the size (a stone 1.5
 to 30 cm across, a bowling ball 6 to 16 lb, a basketball size 5 to 7, a gem
-5 to 1000 carats; a golf or a tennis ball has one size). Then how it is
+5 to 1000 carats, an iPad from an iPhone to an iPad Pro, a frying pan 20
+to 30 cm, roses one to 24; a golf or a tennis ball has one size). Then how it is
 thrown, in two parts: the manner, Toss (the low way round), Lob (the high
 way) or Skip, and the strength, Soft, Medium or Hard, which is the pace
 either way (`ARC` in `src/main.js`: a toss flies flatter the harder it is
@@ -51,24 +57,29 @@ about twice as fast, with a far bigger splash: below; the medium toss is
 the throw the splash is tuned to). Then the slow-motion clock, each press
 the next rate round (1×, ¼×, ⅒× real time), lit while slow; then the throw
 button, the strip's one lit control. With Skip, a flat stone (or a pizza,
-spun like a frisbee) is thrown low and level, spinning, at the strength's
-speed, and skips across the water (below), in the direction of the tap
-(even on the sky); its first touch lands where a level throw puts it. Skip
+spun like a frisbee, or an iPhone) is thrown low and level, spinning, at
+the strength's speed, and skips across the water (below), in the
+direction of the tap (even on the sky); its first touch lands where a
+level throw puts it. Skip
 is greyed out for what cannot skip, and choosing such a thing goes back to
 Toss. On a phone in portrait, where the title's line is hidden, a cue over
 the water says to tap it, until the first throw. The menu button at the
 top right opens the settings, laid out as the Moon app's menu is: a list in
 four groups (what is thrown: What to throw; the place: Location, Water and Time of
-day; the conditions: Weather, Wind and Sound; the viewing: View and Quality), each row an icon, its name
+day; the conditions: Weather, Wind and Sound; the viewing: View, Full screen and Quality), each row an icon, its name
 over a line on what it sets and where it stands, and each setting a page of
 its choices (Location and Water as pictures) with a line on each. Each choice
-is remembered on the device (but the view, which opens on the shore):
+is remembered on the device (but the view, which opens on the shore, and
+full screen, which only a press or a key may ask for):
 - What to throw (`?thing=`): stones (a river stone, the default; slate,
   granite, basalt, pumice), balls (golf, tennis, bowling, basketball), gems
-  (diamond, emerald, ruby, sapphire) and others (an apple, a watermelon, a
-  pizza, a frozen pizza, a pie, a rubber duck, a brick, a TV, an iPhone, a
-  banana, a slice of bread, a birthday cake, a snowball, a toy slide), each
-  the size, weight and density of the real thing (`src/things.js`). The foot of the strip's
+  (diamond, emerald, ruby, sapphire), food (an apple, a watermelon, a
+  pizza, a frozen pizza, a pie, a banana, a slice of bread, a birthday cake),
+  toys (a rubber duck, a toy slide), electronics (a TV, an iPhone, an iPad)
+  and others (a brick, a snowball, a frying pan, roses), each
+  the size, weight and density of the real thing (`src/things.js`). The page
+  shows one group at a time under a row of tabs, one for each group, so it
+  fits a phone however many groups there are. The ⓘ on the strip's
   dropdown opens this page. What is lighter than water floats; the rest sink.
   What comes to rest stays, on the bed or the pool's floor as on the deck, up
   to the quality preset's count (below); past it the oldest shrinks away.
@@ -95,7 +106,12 @@ is remembered on the device (but the view, which opens on the shore):
   on their own faces' area: they slap the water, flutter down as thin plates
   do, and come to rest lying along the lake bed's slope. In the pool they
   land wherever they fit, their slap standing no crown, and its walls meet
-  their corners. Choose them under Other or use `?thing=tv` and
+  their corners. The iPhone's glass is a painted picture of an iOS home
+  screen (its Dynamic Island with the time and signal either side, a
+  calendar and a weather widget, app icons with their names, the Search
+  pill and the dock), its camera plateau stands out of its back with its
+  three lenses, flash and LiDAR, and its USB-C port, speaker holes and
+  buttons are on its edges. Choose them under Electronics or use `?thing=tv` and
   `?thing=iphone`; both support Toss and Lob. A banana (about 920 kg/m³
   whole) tumbles end over end and floats with only a sliver out. A slice
   of bread (30 g, about 175 kg/m³) flutters down floppier than a pizza,
@@ -106,18 +122,50 @@ is remembered on the device (but the view, which opens on the shore):
   to slush in under half a minute and floats on, nine tenths under: slush
   is still lighter than water. A toddler's toy slide (99 × 46 × 70 cm,
   4.1 kg, hollow walls holding 39 litres) floats nine tenths out of the
-  water; it is held high enough to clear the water, and tumbles slowly. A
-  long thin thing's nominal radius (a banana's, the slide's) is its ball's
-  of like volume, so its splash is sized by what it displaces; the strip
-  shows its length. Fish eat what is edible (an apple, a banana, a
+  water; it is held high enough to clear the water, and tumbles slowly. On
+  ice it comes to a stop near where it lands, where a stone skates on: a
+  gameplay choice standing in for its tumbling landings, since hollow
+  plastic would really glide (`material.on`, `src/things.js`). An
+  iPad's slider runs through four devices, each its maker's size and
+  weight and drawn as itself: an iPhone (the iPhone's own), an iPad mini
+  (19.5 × 13.5 cm, 293 g, lavender), an iPad (24.9 × 18 cm, 477 g, sky
+  blue) and a 13-inch iPad Pro (28.2 × 21.6 × 0.51 cm, 579 g, space
+  black), each iPad's glass a painted picture of its home screen (its own
+  wallpaper, the status bar, a calendar and a weather widget, app icons
+  with their names and the dock; drawn by the pizza's program, so no
+  program of its own), its camera standing out of its back by its logo
+  (the Pro's island with its lens, LiDAR and flash), its USB-C port,
+  speaker holes and buttons on its edges (the iPhone is the iPhone, as
+  above); each is a plate that slaps the water and sinks, the thinnest
+  gliding between its swings. The iPhone on its own, flat and about twice
+  as dense as water, takes Skip too and skims three or four times; not one
+  iPad does, even at its iPhone step: Skip is the thing's, not a step's. A
+  cast-iron frying pan comes in 20, 25 and 30 cm (1.5, 2.4 and
+  3.4 kg, a Lodge's sizes, the largest with a helper handle), its walls as
+  thick as iron of its weight makes them (about 7150 kg/m³): thrown flat
+  and spinning, it slaps the water, flutters down broadside at about
+  0.8 m/s and lies on the bed on its base or its rim. Roses come one
+  long-stemmed rose or 3, 6, 12 or 24 tied in a spiral under a satin ribbon
+  (about 30 g a rose: 29 g to 0.8 kg), each bloom of layered petals (five
+  outer ones cupped and curled back at their tips, five inside them, four
+  round a spiralled heart, its sepals turned down under it), thorns up
+  their stems and leaves of three serrated leaflets; their petals hold
+  air, so they float, a third under, by each bloom's hull, the rose lying
+  on the water and a bouquet as a raft, its blooms up and its stems under,
+  its weight where its stems and blooms put it (a bouquet that lands on its
+  blooms may stay so). A
+  long thin thing's nominal radius (a banana's, the slide's, the roses')
+  is its ball's of like volume, so its splash is sized by what it
+  displaces; the strip shows its length. Fish eat what is edible (an apple, a banana, a
   watermelon, a pizza, a frozen one once thawed, a pie, bread, a cake):
   below. Each choice's picture
   (`assets/things/thumbs/`) is a harness frame of it at rest on the pool's
   deck, shrunk to 160×90: `--sky=pool --thing=name
   --throws=-1.75:0.75:0.05 --times=3 --seed=1 --w=320 --h=180`, looked at
   where it rests (`--report` says) with `--look=x:y:z` and a `--fov` that
-  frames it (a duck 4°, a pie 8°, a pizza 9°, a toy slide 24°; the cake's
-  with `--seed=3`, on which it lands right way up).
+  frames it (a duck 4°, an iPhone 4°, an iPad 6°, a frying pan 7°, a pie 8°, a pizza
+  9°, a toy slide 24°; the cake's with `--seed=3`, on which it lands right
+  way up, and the roses' with `--seed=5` at 11°, on which they stand).
 - View: Shore, standing on the bank as the page opens; Behind, over the
   thrower's shoulder, a metre back and a little above the shore's eye, so
   the hand with the preview of the thing in it, the arc of the throw and
@@ -251,6 +299,18 @@ is remembered on the device (but the view, which opens on the shore):
   nothing swims, nothing is startled and nothing is eaten (`?fish=off` on
   the page, `--fish=none` for the harness; remembered on the device like
   the other settings).
+- Full screen: On or Off, and the F key, where the browser lets a page take
+  the whole screen (Android, an iPad, a desktop browser: the Fullscreen
+  API, `src/screen.js`). Safari on an iPhone lets no page do that, so there
+  the page says the way: add the pond to the Home Screen (Share, then Add
+  to Home Screen) and open it from there, where it runs as an app with no
+  browser bars, the water under a see-through status bar
+  (`apple-mobile-web-app-status-bar-style` and `manifest.webmanifest`,
+  which asks Android for the whole screen too). Even in a Safari tab the
+  pond reaches up behind the iPhone's clock: Safari 26 draws only the page's
+  scrolled content there, never a fixed element, so on an upright iPhone
+  the canvas lies in the page a little taller than the window, scrolled up
+  under the status bar (`src/screen.js` says how and why; `?bleed=` below).
 - Quality: Auto, Low, Medium or High.
 Auto starts on High everywhere and steps down by itself if the idle
 pond or the first splash renders too slowly, and later whenever the frame
@@ -447,6 +507,12 @@ had before the control; Windy 1.8.
 **Things** (`src/things.js`, `src/thingMeshes.js`, `src/rock.js`,
 `src/collide.js`). What can be thrown is a registry of plain, validated
 definitions (`defineThing`); `__pond.defineThing(key, definition)` adds one.
+A size preset may have a look of its own (and water, air and ballast), so
+one slider can run through things of different shapes: each step is then a
+thing of its own (`variantAt`), made ready as the slider comes to it (the
+iPad's devices, the frying pan's sizes, the roses' counts). A mesh may give
+the physics a closed body of its own (`userData.physics`: a rose's blooms,
+whose petals are drawn open, float by their hulls).
 `tools/thing-probe.mjs` checks them.
 
 **Fish** (`src/fish.js`, drawn by `src/fishMeshes.js`). Each place's water
@@ -1381,11 +1447,15 @@ farther out, so it rises into the view rather than filling its corner.
   the pizza hold on thin ice, that the default stone breaks thin ice and
   holds on thick and a 30 cm rock breaks thick, that each outcome is the one
   its blow and its draw say, that whatever held rests on the ice and was
-  never under it, that every hole holds its cavity's lip and the jet's foot
+  never under it, lying on a face with its weight over what it rests on,
+  that every hole holds its cavity's lip and the jet's foot
   at every moment and its cracks lie on the ice, that a stone slides four
-  times as far on ice as on the deck, that a skip skitters, that a stone
+  times as far on ice as on the deck while a toy slide, made to stop there
+  (`material.on`), stops within a metre of where it lands, that a skip
+  skitters, that a stone
   slid into a hole falls in and a floater that broke through floats in its
-  hole, that a stone slid into one at rest knocks it on with the momentum
+  hole, that stones at rest where a hole opens fall in and those round it on
+  its crushed rim tip in while the rest stay clear of its edge, that a stone slid into one at rest knocks it on with the momentum
   kept, that a frozen pool keeps everything on its ice or its deck and turns
   a slide back off its walls, that a seeded throw breaks the same hole and
   halving the substep changes little, and what a break costs.
@@ -1554,6 +1624,11 @@ farther out, so it rises into the view rather than filling its corner.
   runs it headless and checks the report's shape.
 - `?paused=1` starts the page with its clock stopped (the harness does, so
   its frames start from world time zero and every run renders the same water).
+- `?bleed=N` lays the canvas N CSS pixels under the window's top, the page
+  scrolled up by as much, in any browser (`src/screen.js`); Safari 26 on an
+  upright iPhone does this by itself with 64 (24 on an iPhone with a home
+  button), a little over its status bar. `?bleed=0` turns it off there, to
+  compare; another N tries another height.
 - `?wind=x,z` on the page (`--wind=x:z` for the harness) sets the direction
   the wind blows toward, in world XZ (the camera looks toward −Z); the
   default is (0.45, −0.9), away from the camera and a little to the right.
@@ -1707,6 +1782,34 @@ farther out, so it rises into the view rather than filling its corner.
   120 Hz one, and a throw every other frame of a 120 Hz clock (held to 60 a
   second) and every frame of a 60 Hz one; and that a large window keeps
   within the pixel budget.
+- `node tools/frame-rate-probe.mjs [--scene=koi,pool]` plays seeded games
+  twice, in frames of 1/60 s and in frames of 1/60, 1/45, 1/120 and 1/50 s,
+  and checks they end the same, exactly: every thing thrown (its place, turn,
+  state, and when it began to fade), every fish, the ice's holes and the next
+  draw of `Math.random`. The scenes: throws among the lake's fish and more
+  floaters than Low keeps; a break through thin ice, a stone into its hole, a
+  brick slid and a pebble onto a shard; the koi and their food; the pool with
+  more stones than Low keeps at rest. Nothing is drawn
+  (`__pond.stepFrames`), so the floaters' ride, read back from the drawn
+  water, is left out.
+- `node tools/grab-probe.mjs` takes seeded throws in hand in each state they
+  pass through (in the air, skimming, going in, at rest on the bed, afloat
+  and at rest afloat, sliding and settling on thick ice, a piece of thin ice
+  set in its sheet and afloat, on the pool's floor, in the Koi pond),
+  carries each and lets it go over a surface of its own (the water, the
+  ice, a hole in it, the pool's deck, the garden's planting), and checks
+  that it is taken clean of every other state (src/rock.js setState), stays
+  held and never fades while carried, and once let go is kept and lies no
+  deeper in the bed than a stone settles into the sand.
+- `node tools/uniform-probe.mjs [--all]` starts the page on High and takes it
+  through what builds programs of its own (a throw, the storm, the blizzard,
+  thick ice, the Pool, the Koi pond, Low), packs each program's uniforms as
+  ANGLE does (GLSL ES 1.00's Appendix A) and checks that every one fits what
+  WebGL 2 promises each stage on any device: 224 uniform vectors and 16
+  textures to a fragment shader, 256 and 16 to a vertex shader. SwiftShader
+  and desktop GPUs give far more, so nothing else notices a program going
+  over; it prints each stage's largest and its headroom (`--all`: every
+  program's).
 - `node tools/zoom-probe.mjs [--w=390 --h=844]` drives the wheel, a pinch, a
   tap and Escape through the page's own handlers and checks that what is under
   the pointer stays there (at the shore, and at the corners of the steeper
@@ -1739,10 +1842,18 @@ farther out, so it rises into the view rather than filling its corner.
   portrait and goes with the first throw; that Toss, Lob and Skip set the
   manner, Soft, Medium and Hard the strength, and the clock goes round 1×, ¼×
   and ⅒×; that the name's dropdown fits over the
-  strip (a phone in portrait without scrolling, each group one row there that
-  scrolls sideways to every pill), its pills tall enough for a
-  finger, a pill tapped is thrown next, a press on the pond closes it without
-  throwing and the keyboard works it; that the settings open with their rows, each
+  strip (on a phone in portrait without scrolling), its pills, tabs, star
+  and ⓘ tall enough for a finger, that it opens on the chosen thing's group,
+  the chosen thing's own card stands above the tabs, its tabs keep their place, Favourites says
+  where to make one and, fuller than the largest group, scrolls without
+  moving the star, a group's tab holds its things, a favourite made with
+  its star or on What to throw shows there, a pill's tip is its note,
+  a pill tapped is thrown next, a press on the pond closes it without
+  throwing and the keyboard works it, its tabs included; that choosing a
+  long group's last card on What to throw never scrolls that page back up
+  to its tabs; that a thing whose steps are things of
+  their own (an iPad, a frying pan, roses) reads each step on the strip
+  without overflowing it; that the settings open with their rows, each
   row's value whole beside its name, the Water page's pictured choices each
   reachable by scrolling, its Frozen freezing the water, Thin and Thick
   under the cards fitting and taking, and Murky thawing it, the Location
@@ -1753,13 +1864,28 @@ farther out, so it rises into the view rather than filling its corner.
   `shots/controls-probe/`. The
   shoot harness and the other probes emulate a desktop browser, which ignores
   the viewport tag, so only this probe sees the page as a phone does.
+- `node tools/screen-probe.mjs` loads the page as Safari 26 on an iPhone
+  lays it out (its user agent and screen, touch, 3× pixels) and checks that
+  the canvas lies 64 pixels under the window's top, the page scrolled to
+  its foot, the pond framing the canvas as it lies and a tap throwing
+  under the finger; that the strip stays put, the page goes back to its
+  foot when something else scrolls it, and on its side the canvas is fixed
+  again; that Full screen's On and Off work and the canvas is fixed in full
+  screen; that without the Fullscreen API (an iPhone's Safari) the page
+  names the Home Screen's way, and that opened from the Home Screen, in
+  Chrome on an iPhone and in a desktop window there is no bleed, an iPhone
+  with a home button gets 24, F goes in and out of full screen on a desktop
+  and `?bleed=40` works there. No desktop browser has an iPhone's status
+  bar, so what shows under the clock can only be seen on a phone.
 - `window.__pond` exposes the app in the console: `throwAt(x, z, { radius, power, manner, skip, thing, size, dressing })`
   (`dressing`: the seed of a pizza's, pie's or cake's own parts; `preview.dressing` is the hand's),
   `setPower(name)` (and `power`), `setManner(name)` (and `manner`), `setSkip(on)` (and `skipping`), `setTrace(on)`,
   `setThing(name)` (and `thing`: a key of `THINGS` in `src/things.js`, remembered
   on the device) and `setSize(value)` (and `size`: the slider's value in its unit),
   `setTimeScale` (and `timeScale`), `pause()`, `advance(seconds)` (in the frames the app would
-  draw at the current time scale), `setDebugView(name)`, `setFov(degrees)`,
+  draw at the current time scale), `stepFrames(frames)` (each a frame of that many seconds, nothing
+  drawn), `restartFish()` (the place's fish as they start), `holdThing(rock)`, `carryHeld(x, y, z)` and
+  `letGo()` (the hand's hold, drag and release, as a press does them), `bedDepthAt(x, z)`, `poolSquare`, `setDebugView(name)`, `setFov(degrees)`,
   `lookAt(x, y, z)`, `resetView()`, `setWind(name)` (and `wind`: calm,
   breeze or windy, remembered on the device), `setSky(place)` and
   `setHour(name)` (and `sky`, `pooled`, `hour`, and `hours`, the shown

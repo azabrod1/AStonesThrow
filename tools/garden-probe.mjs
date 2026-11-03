@@ -17,7 +17,11 @@
 // - the surface seen from below marches to the Koi pond's bed, not the
 //   lake's: every uniform the shore's GLSL twin (LAKE_BED) declares is one
 //   the water shares from the floor (BED_UNIFORMS, src/waterSurface.js setBed);
-// - the cost: the garden's build and its triangles.
+// - the cost: the garden's build and its triangles, the scene's (fine) under
+//   300k and the mirror's (coarse, Low's scene's too) under 40% of them; the
+//   coarse garden laid out as the fine one (the same shrubs in the same
+//   order and tints, each where the fine one's is), so what is drawn on Low
+//   and in the mirror stands where the fine garden, which catches, does.
 import * as THREE from 'three';
 import { Rock } from '../src/rock.js';
 import { THINGS, THING_NAMES } from '../src/things.js';
@@ -53,9 +57,33 @@ console.log('\nthe planting catches:');
   const garden = createKoiGarden({ envTexture: null, mirrorLayer: 2, lighting: {} });
   garden.setVisible(true);
   const built = performance.now() - started;
-  const triangles = garden.meshes.reduce((sum, mesh) => sum + mesh.geometry.index.count / 3, 0) / 2;
-  console.log(`  built in ${built.toFixed(0)} ms, ${(triangles / 1000).toFixed(0)}k triangles (drawn twice: the scene and the mirror)`);
-  check(triangles < 300000, `under 300k triangles (${(triangles / 1000).toFixed(0)}k)`);
+  // The scene's garden (fine) and the mirror's (coarse: src/koiGarden.js COARSE), the meshes by look, main then mirror.
+  const fine = garden.meshes.filter((mesh, index) => index % 2 === 0), coarse = garden.meshes.filter((mesh, index) => index % 2 === 1);
+  const trianglesOf = (meshes) => meshes.reduce((sum, mesh) => sum + mesh.geometry.index.count / 3, 0);
+  const fineTriangles = trianglesOf(fine), coarseTriangles = trianglesOf(coarse);
+  console.log(`  built in ${built.toFixed(0)} ms: the scene's ${(fineTriangles / 1000).toFixed(0)}k triangles, the mirror's (and Low's scene) ${(coarseTriangles / 1000).toFixed(0)}k`);
+  check(fineTriangles < 300000, `the scene's under 300k triangles (${(fineTriangles / 1000).toFixed(0)}k)`);
+  check(coarseTriangles < 0.4 * fineTriangles, `the coarse garden under 40% of the fine's triangles (${(100 * coarseTriangles / fineTriangles).toFixed(0)}%)`);
+  // The coarse garden is the fine one's shrubs more coarsely made, from the same draws (src/koiGarden.js COARSE): the same
+  // shrubs in the same order, each its tint (drawn as it is planted) and its box about where the fine one's is (a coarser
+  // sphere reaches a little less far).
+  const shrubs = (mesh) => {
+    const tints = mesh.geometry.attributes.tint, positions = mesh.geometry.attributes.position, runs = [];
+    for (let corner = 0; corner < tints.count; corner++) {
+      const tint = tints.getX(corner);
+      if (runs.at(-1)?.tint !== tint) runs.push({ tint, box: new THREE.Box3() });
+      runs.at(-1).box.expandByPoint(new THREE.Vector3(positions.getX(corner), positions.getY(corner), positions.getZ(corner)));
+    }
+    return runs;
+  };
+  const fineShrubs = shrubs(fine[1]), coarseShrubs = shrubs(coarse[1]);
+  const sameTints = fineShrubs.length === coarseShrubs.length && fineShrubs.every((shrub, index) => shrub.tint === coarseShrubs[index].tint);
+  const moved = sameTints ? Math.max(...fineShrubs.map((shrub, index) => {
+    const size = shrub.box.getSize(new THREE.Vector3()).length();
+    return shrub.box.getCenter(new THREE.Vector3()).distanceTo(coarseShrubs[index].box.getCenter(new THREE.Vector3())) / size;
+  })) : Infinity;
+  console.log(`  the coarse garden: ${coarseShrubs.length} shrubs against ${fineShrubs.length}, each its box's middle at most ${(100 * moved).toFixed(1)}% of its size from the fine one's`);
+  check(sameTints && moved < 0.05, `the coarse garden is laid out as the fine one: the same shrubs, tints and order, each within 5% of its size (${(100 * moved).toFixed(1)}%)`);
   let sent = 0, deepest = -Infinity, restingOnLawn = 0, lost = 0, worst = null;
   const inSector = (angle) => { const into = (((angle - GARDEN.from) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI); return into > 0.05 && into < (((GARDEN.to - GARDEN.from) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI) - 0.05; };
   for (const name of THING_NAMES) {
