@@ -80,7 +80,7 @@ export const SCHEDULE = {
   distance: [48, 80],         // m out from the shore's eye to the middle of its run, along the home view's line...
   fogDistance: [48, 54],      // ...nearer in a fog, which would hide it out there (src/main.js WEATHERS.fog)
   bearing: 34,                // degrees either side of that line
-  across: 25,                 // degrees its course strays from straight across the line of sight: never toward the shore
+  across: 25,                 // degrees its course strays from straight across the line of sight, toward the shore or away (`nearest` holds)
   nearest: 36,                // m: no part of it ever comes nearer the eye (tools/visitor-probe.mjs checks)
   clear: 22,                  // m: no sighting starts with a thing thrown this near its course
   startle: 16,                // m: one under way goes down at once if a thing comes this near

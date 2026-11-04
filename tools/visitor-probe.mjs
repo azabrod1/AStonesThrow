@@ -1,6 +1,10 @@
 // Checks whatever is out on Loch Ness (src/lochVisitor.js) on the CPU, with
 // no browser: its schedule, its reach and its motion.
 //
+// - Its waves' reach (uVisitorReach, the circle the water shader works in)
+//   holds every ring slope over the shader's cutoff late in the linger, in
+//   a circle well inside the old height bound's; and by the last frame that
+//   draws it, its waves have eased out (SCHEDULE.fade).
 // - Over two hours of the loch with nothing thrown, it comes up: the first
 //   time within SCHEDULE.first of arriving, then every SCHEDULE.between
 //   after the last has gone, every form in turn and never one twice running.

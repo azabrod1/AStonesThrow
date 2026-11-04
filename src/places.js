@@ -4,20 +4,21 @@ import { SKY_NAMES, REED_SKIES, skyShore } from './sky.js';
 
 // The places (the Location setting): a sky (src/sky.js SKIES) and what lies
 // about the water, the lake's bed and shore, or the Pool's tiled pool on its
-// deck in a lawn (src/pool.js; setPooled), by Lakeside's lake and through its
-// hours, so that choosing it from Lakeside loads no photo; or the Koi pond
-// (`koi`), a pond in a Japanese garden under the same sky: the lake's open
-// water inside a closed, irregular shore of its own (KOI_SHORE in
-// src/pondFloor.js, setShoreKind; setKoiPond), stone-edged with a pebble
-// beach, its own water (WATER_CLARITIES.koi) and a garden round it, out of
-// reach behind a hedge (src/koiGarden.js).
+// deck in a lawn (src/pool.js; setPooled in src/main.js), by Lakeside's lake
+// and through its hours, so that choosing it from Lakeside loads no photo; or
+// the Koi pond (`koi`), a pond in a Japanese garden under the same sky: the
+// lake's open water inside a closed, irregular shore of its own (KOI_SHORE
+// and setShoreKind in src/pondFloor.js; setKoiPond in src/main.js),
+// stone-edged with a pebble beach, its own water (WATER_CLARITIES.koi) and a
+// garden round it, out of reach behind a hedge (src/koiGarden.js).
 // Each place's fish are
 // src/fish.js's (FISH_BY_PLACE, by the place's name); its beach's ground is
 // its sky's `shore` (SHORE_LOOKS in src/pondFloor.js, setShoreLook: sand,
 // shingle, scree...); its reeds (`reeds`,
-// src/reeds.js) are the sky's (REED_SKIES): the fresh lakes have them,
-// the sea cove, the bare rock shore, the salt flat and the frozen alpine
-// reservoir none, and the Pool and the Koi pond have their own grounds.
+// src/reeds.js; setReeds in src/main.js) are the sky's (REED_SKIES) unless
+// it says otherwise: the fresh lakes have them, the sea cove, the bare rock
+// shore, the salt flat, the frozen alpine reservoir and Loch Ness's shingle
+// none, and the Pool and the Koi pond have their own grounds.
 export const PLACES = {
   ...Object.fromEntries(SKY_NAMES.map((name) => [name, { sky: name, pool: false, reeds: REED_SKIES.includes(name) }])),
   swiss: { sky: 'swiss', pool: false, defaultWater: 'frozen', defaultView: 'level' },
