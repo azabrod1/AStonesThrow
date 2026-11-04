@@ -114,7 +114,12 @@ vec3 snowShade(vec2 point) {
 export const ICE_UNIFORMS = /* glsl */`
 uniform sampler2D uIceMask;
 uniform vec3 uIceArea;         // the mask's corner (x, z) and side (m)
+// WATER_LEAN (src/waterSurface.js, ?lean=1): the water's programs with no ice, gale or rain fixed so, their code compiled out.
+#ifdef WATER_LEAN
+const float uIceOn = 0.0;
+#else
 uniform float uIceOn;          // 1 while there is ice
+#endif
 uniform float uIceTop;         // its top over the still water (m)
 uniform float uIceThickness;   // m
 uniform float uIceFar;         // the cap of the mask's distances (m)
@@ -1359,9 +1364,9 @@ uniform vec4 uCavityMouths[CAVITY_PUSH];   // centre x and z, the circle's radiu
 uniform vec3 uCavityShifts[CAVITY_PUSH];   // the move: along x, the new height, along z
 #endif
 #ifdef CAVITY_MESH
-attribute vec3 aCavity;
+attribute vec4 aCavity;
 varying vec3 vNormalWorld;
-varying vec3 vCavity;
+varying vec4 vCavity;
 #endif
 varying vec3 vWorld;
 varying vec2 vDomainUv;
@@ -1535,9 +1540,13 @@ varying float vMask;
 varying float vViewZ;
 varying vec2 vRest;            // where the point lies on still water (WATER_VERTEX)
 #ifdef CAVITY_MESH
-#define CAVITY_DARKEST 0.1          // the hole's light where it sees no sky, against the open water's
+#define CAVITY_RIPPLE_CELL vec2(0.016, 0.008)   // m: the wall's ripples' cells around it and down it (WATER_FRAGMENT; at four to one the ripples were terrace rings)...
+#define CAVITY_RIPPLE_SLOPE 0.12               // ...and their slope
+#define CAVITY_FROTH_CELLS 120.0               // the bowl's froth's lumps: a value noise at this many cells a metre over the wall
+#define CAVITY_FROTH_ALBEDO vec3(0.85, 0.88, 0.9)   // and its white (the spray's scattering colour, src/shaders/fluid.js)
+#define CAVITY_BOUNCE 0.6                      // the share of the sky a wall keeps of a ray it passes to the wall across and out (WATER_FRAGMENT)
 varying vec3 vNormalWorld;
-varying vec3 vCavity;       // rides the surface, open to the sky, climb to escape (WATER_VERTEX)
+varying vec4 vCavity;       // rides the surface, open to the sky (the under-water view's), climb to escape, the bowl's froth (WATER_VERTEX; src/cavity.js)
 #endif
 ${GLSL_COMMON}
 ${POOL_TILES}
@@ -1639,41 +1648,42 @@ vec3 galeFoamAt(vec2 restXZ) {
 // 1 for the sky). A near object's reflection must move with the ripples by
 // d/(L + d) of what the sky's does (d its distance from the surface, L the
 // mirror camera's): its point at d along the rippled ray is looked up, not
-// the ray's direction. The object comes from the flat mirror's texel there
-// (its centre, nearest, so the distance is one object's and not a blend
-// with the sky's): the sky the ray reaches past it, or what the flat mirror
-// shows there, if nothing is near. Where the flat mirror shows sky but the
-// rippled direction lands on a near object, the ray cannot have hit it from
-// here (it would have been found nearer the flat texel) and the sky behind
-// it is not in the image: the flat texel's sky stands in. Only pixels whose
-// flat or rippled lookup falls in the splash's rectangle take this; two
-// fetches each.
+// the ray's direction. So the lookup starts where the rippled direction
+// points (the sky's place) and is refined by what it finds there: the point
+// that far along the rippled ray, projected into the mirror, twice over (a
+// near object found at the first refinement is placed right by the second;
+// a near object the direction lands on that the ray cannot reach from here
+// refines onto the sky behind it, and stays there). At a near object's
+// silhouette the nearness is a blend of its and the sky's and the
+// refinement lands between, a soft fringe a pixel wide; read at the texel's
+// centre instead, the nearness jumped from the sky's to the object's along
+// every texel edge of its silhouette, and the jump drew 1-pixel curves of
+// the object's light across the water. A choice between the flat mirror's
+// texel and the rippled one, made pixel by pixel, cut the image into shards
+// along every edge. Only pixels whose flat or rippled lookup falls in the
+// splash's rectangle take this; up to three fetches each.
 #define MIRROR_NEARNESS_SCALE 4.0     // MIRROR_COMMON's
 #define MIRROR_FARTHEST 1e-3          // nearness under this (beyond a kilometre): the sky
+#define MIRROR_EDGE 0.03              // a lookup past the mirror image's edge fades to the sky's cube over this share of the image (the water's reflection)
 vec3 nearReflection(vec2 rippleUv, vec3 ray) {
-  vec2 rippleLookup = clamp(rippleUv, vec2(0.002), vec2(0.998));
+  vec2 lookup = clamp(rippleUv, vec2(0.002), vec2(0.998));
   vec4 flatCoord = uReflectionMatrix * vec4(vWorld, 1.0);
   vec2 flatUv = flatCoord.xy / max(flatCoord.w, 1e-4);
   bool flatNear = all(greaterThanEqual(flatUv, uMirrorNear.xy)) && all(lessThanEqual(flatUv, uMirrorNear.zw));
   bool rippleNear = all(greaterThanEqual(rippleUv, uMirrorNear.xy)) && all(lessThanEqual(rippleUv, uMirrorNear.zw));
-  if (!flatNear && !rippleNear) return texture2D(uReflection, rippleLookup).rgb;
-  vec2 flatTexel = clamp((floor(flatUv * uMirrorSize) + 0.5) / uMirrorSize, vec2(0.002), vec2(0.998));
+  vec4 found = texture2D(uReflection, lookup);
+  if (!flatNear && !rippleNear) return found.rgb;
   vec3 mirrorEye = vec3(cameraPosition.x, 2.0 * uMirrorLevel - cameraPosition.y, cameraPosition.z);
   float surfaceDistance = distance(vWorld, mirrorEye);
-  if (flatNear) {
-    vec4 atFlat = texture2D(uReflection, flatTexel);
-    float nearness = (1.0 - atFlat.a) / MIRROR_NEARNESS_SCALE;
-    if (nearness > MIRROR_FARTHEST) {
-      float along = max(1.0 / nearness - surfaceDistance, 0.0);
-      vec4 nearCoord = uReflectionMatrix * vec4(vWorld + ray * along, 1.0);
-      return texture2D(uReflection, clamp(nearCoord.xy / max(nearCoord.w, 1e-4), vec2(0.002), vec2(0.998))).rgb;
-    }
-    vec4 atRipple = texture2D(uReflection, rippleLookup);
-    return (1.0 - atRipple.a) * surfaceDistance > 0.5 * MIRROR_NEARNESS_SCALE ? atFlat.rgb : atRipple.rgb;
+  for (int refinement = 0; refinement < 2; refinement++) {
+    float nearness = (1.0 - found.a) / MIRROR_NEARNESS_SCALE;
+    if (nearness <= MIRROR_FARTHEST) break;
+    float along = max(1.0 / nearness - surfaceDistance, 0.0);
+    vec4 nearCoord = uReflectionMatrix * vec4(vWorld + ray * along, 1.0);
+    lookup = clamp(nearCoord.xy / max(nearCoord.w, 1e-4), vec2(0.002), vec2(0.998));
+    found = texture2D(uReflection, lookup);
   }
-  vec4 atRipple = texture2D(uReflection, rippleLookup);
-  if ((1.0 - atRipple.a) * surfaceDistance <= 0.5 * MIRROR_NEARNESS_SCALE) return atRipple.rgb;
-  return texture2D(uReflection, flatTexel).rgb;
+  return found.rgb;
 }
 
 // The pool's tiles' fine detail, which the under-water pass, drawn coarser
@@ -1906,8 +1916,26 @@ void main() {
     slopeVariance += galeUnresolvedVariance(vRest) * ride;
   }
   vec3 meshNormal = normalize(vNormalWorld);
-  vec3 n = normalize(meshNormal + vec3(-surfaceSlope.x, 0.0, -surfaceSlope.y) * max(meshNormal.y, 0.0));
   float level = smoothstep(0.6, 0.9, meshNormal.y);   // 1 where the mesh lies as the surface does
+  // The wall is rippled (CAVITY_RIPPLE): the hoop ripples the stone's passage left and its capillary waves, a value
+  // noise over the wall's place, long around it and short down it, bumped into the normal by its screen derivatives
+  // (the sheet's wrinkles' way, src/shaders/sheet.js), fading as its cells shrink below a pixel; the lip keeps the
+  // surface's own. A mirror-smooth wall reflected the sky in one clean band and read as black lacquer.
+  vec3 wallNormal = meshNormal;
+  {
+    vec2 ripplePlace = vec2(vWorld.y / CAVITY_RIPPLE_CELL.y, (vWorld.x + 0.7 * vWorld.z) / CAVITY_RIPPLE_CELL.x);
+    float ripple = valueNoise(ripplePlace) + 0.5 * valueNoise(ripplePlace * 2.3 + 7.0);
+    vec3 sigmaX = dFdx(vWorld), sigmaY = dFdy(vWorld);
+    float cellsX = length(dFdx(ripplePlace)), cellsY = length(dFdy(ripplePlace));
+    float cellLength = 0.5 * (length(sigmaX) / max(cellsX, 1e-6) + length(sigmaY) / max(cellsY, 1e-6));
+    float amplitude = CAVITY_RIPPLE_SLOPE * cellLength * (1.0 - smoothstep(0.2, 0.6, max(cellsX, cellsY))) * (1.0 - level);
+    vec3 acrossWall = cross(sigmaY, meshNormal), upWall = cross(meshNormal, sigmaX);
+    float determinant = dot(sigmaX, acrossWall);
+    vec3 gradient = sign(determinant) * amplitude * (dFdx(ripple) * acrossWall + dFdy(ripple) * upWall);
+    vec3 rippled = abs(determinant) * meshNormal - gradient;
+    if (dot(rippled, rippled) > 0.0) wallNormal = normalize(rippled);
+  }
+  vec3 n = normalize(wallNormal + vec3(-surfaceSlope.x, 0.0, -surfaceSlope.y) * max(meshNormal.y, 0.0));
   vec2 slope = surfaceSlope;
 #else
   vec2 slope = vec2(hr - hl, hu - hd) / (2.0 * uCell) * vMask + ambientSlopeAtFullGust(vWorld.xz) * gust;
@@ -2007,7 +2035,15 @@ void main() {
   // grazing angles, so reflections stretch into vertical streaks, as they do
   // on a lake. A ray turned below the horizon would meet the next ripple; it
   // takes the horizon's colour. While the mirror holds the splash, near
-  // things are looked up where they are (nearReflection).
+  // things are looked up where they are (nearReflection). The image covers
+  // the view and no more: a lookup the ripples turn past its edge (in a
+  // zoomed or low view, where a ripple's tilt is a large share of the frame,
+  // and near a splash, whose ring tilts the water by degrees) finds nothing
+  // there, and takes the sky's cube in the reflected direction instead, the
+  // dome the image holds but for what is near, faded in over MIRROR_EDGE of
+  // the image (clamped to the edge, every such pixel read the edge's row, and
+  // the water before a splash in a view at its level drew its reflection as
+  // vertical bars).
   vec3 reflectedRay = reflect(-v, n);
 #ifdef CAVITY_MESH
   // Inside the hole (and on the lip's inner face) a reflected ray leaves
@@ -2016,6 +2052,11 @@ void main() {
   // on the lip (vCavity.z = 0) it is the open surface's.
   float climb = reflectedRay.y / max(length(reflectedRay.xz), 1e-3);
   float escapes = vCavity.z > 1e-4 ? smoothstep(0.7, 1.3, climb / vCavity.z) : 1.0;
+  // A ray that does not climb out meets the wall across at a grazing angle, where water reflects most of it, and
+  // climbs out from there (a hole is a hall of mirrors at grazing angles): it is looked up lifted to the climb that
+  // escapes, the sky it finds there kept by CAVITY_BOUNCE. Taken as the water seen through the wall across, the
+  // walls were a black lacquer; a real hole's walls are pale with the sky they pass round.
+  if (vCavity.z > 1e-4) reflectedRay.y = max(reflectedRay.y, 1.3 * vCavity.z * length(reflectedRay.xz));
 #endif
   reflectedRay.y = max(reflectedRay.y, 0.001);
   vec4 reflectCoord = uReflectionMatrix * vec4(reflectedRay, 0.0);
@@ -2025,6 +2066,9 @@ void main() {
   vec3 reflected;
   if (uMirrorNear.x > uMirrorNear.z) reflected = texture2D(uReflection, clamp(reflectUv, vec2(0.002), vec2(0.998))).rgb;
   else reflected = nearReflection(reflectUv, reflectedRay);
+  vec2 pastEdge = max(-reflectUv, reflectUv - 1.0);
+  float outside = smoothstep(0.0, MIRROR_EDGE, max(pastEdge.x, pastEdge.y));
+  if (outside > 0.0) reflected = mix(reflected, textureCube(uSkyCube, reflectedRay).rgb, outside);
   // The thing in the loch's waves too fine for the pixel (src/shaders/visitor.js) spread the reflected ray over about
   // twice their rms slope, as the ice's frost does; at a grazing angle the rays turned down meet the next crest, so the
   // spread climbs (by its width): far out, a wake shows as a V of paler, duller water across the far shore's image.
@@ -2039,15 +2083,29 @@ void main() {
   }
 
 #ifdef CAVITY_MESH
-  reflected = mix(refracted, reflected, escapes);
+  // Inside the hole the water is shaded as water is: what a wall reflects is
+  // the sky where its mirror ray climbs out of the mouth, and the sky its
+  // bounce off the wall across reaches where it does not (above, CAVITY_BOUNCE);
+  // what it lets through is the pond's body behind it, lit through the open
+  // surface all around as it always is, so it is dark where the water is deep
+  // and shows the sand where it is shallow. Nothing darkens the hole further:
+  // a hole shaded darker by its depth was a flat black pit, no water in it.
+  // The sun reaches only the part of the wall it shines into.
+  reflected *= mix(CAVITY_BOUNCE, 1.0, escapes);
   vec3 color = mix(refracted, reflected, fresnel);
-  // The hole shades itself: the sky it sees narrows with depth (vCavity.y),
-  // a wall sees half of it at most ((1 + n.y) / 2 of the sky, cosine
-  // weighted), and the sun reaches only the part of the wall it shines into.
-  color *= mix(CAVITY_DARKEST, 1.0, vCavity.y * (0.5 + 0.5 * meshNormal.y));
   float sunClimb = uSunDir.y / max(length(uSunDir.xz), 1e-3);
   float sunlit = vCavity.z > 1e-4 ? smoothstep(0.7, 1.3, sunClimb / vCavity.z) : 1.0;
   color += sunlit * min(sunGlitter(n, v, uSunDir, uSunIrradiance, slopeVariance), vec3(400.0));
+  // The bowl's froth (aCavity.w, src/cavity.js): the air the pinch entrained boiling up from the floor, a diffuse
+  // white lit by the sky and by the sun where it reaches, lumpy by a noise over the wall (froth, not paint), over
+  // the water's shading; none where the mesh lies as the surface does, whose foam the map draws.
+  float bowlFroth = vCavity.w * (1.0 - level);
+  if (bowlFroth > 0.001) {
+    float lumps = 0.55 + 0.9 * valueNoise(vec2(vWorld.x + 0.6 * vWorld.z, vWorld.y + 0.3 * vWorld.x) * CAVITY_FROTH_CELLS);
+    bowlFroth = clamp(bowlFroth * lumps, 0.0, 1.0);
+    vec3 frothWhite = CAVITY_FROTH_ALBEDO * (uSkyAmbient * 1.2 + uSunIrradiance * sunlit * (0.08 + 0.3 * max(dot(n, uSunDir), 0.0)));
+    color = mix(color, frothWhite, bowlFroth);
+  }
 #else
   vec3 color = mix(refracted, reflected, fresnel);
   color += min(sunGlitter(n, v, uSunDir, uSunIrradiance, slopeVariance), vec3(400.0));
@@ -2398,7 +2456,7 @@ varying float vViewZ;
 varying vec2 vRest;            // where the point lies on still water (WATER_VERTEX)
 #ifdef CAVITY_MESH
 varying vec3 vNormalWorld;
-varying vec3 vCavity;       // rides the surface, open to the sky, climb to escape (WATER_VERTEX)
+varying vec4 vCavity;       // rides the surface, open to the sky, climb to escape, the bowl's froth (WATER_VERTEX)
 #endif
 ${GLSL_COMMON}
 ${UNDER_FOG}

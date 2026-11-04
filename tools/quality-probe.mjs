@@ -26,9 +26,10 @@
 //    the pool's quads, a throw into it compiles none and keeps one ring, the
 //    near field's (src/rings.js), which retires with it, and a change of
 //    preset in it keeps the pool's mesh. The ice (src/ice.js): freezing the
-//    water, a throw that breaks it, its shards (within the preset's) and its
-//    flood, a hole's new ice and a frozen pool compile no program, and no
-//    gale blows on it. Every kind of thing (src/things.js)
+//    water compiles only the water's full programs (src/waterSurface.js: its
+//    lean twins draw open water), a throw that breaks it, its shards (within
+//    the preset's) and its flood, a hole's new ice and a frozen pool compile
+//    no program, and no gale blows on it. Every kind of thing (src/things.js)
 //    thrown at once, the floaters followed until they float in the mirror image,
 //    compiles no program, and no first throw builds a fixed mesh or slices
 //    its waterline (src/rock.js prepareThing did both under the veil; each
@@ -149,7 +150,9 @@ function expected(name, width, height, devicePixelRatio = 1) {
   const ratio = Math.min(devicePixelRatio, preset.maxDpr, Math.sqrt(PIXEL_BUDGET / (width * height)));
   const canvas = { width: Math.floor(width * ratio), height: Math.floor(height * ratio) };
   const scaled = (fraction, least) => ({ width: Math.max(least, Math.round(canvas.width * fraction)), height: Math.max(least, Math.round(canvas.height * fraction)) });
-  return { grid: preset.grid, meshSegments: preset.meshSegments, canvas, under: scaled(preset.underScale, 1), fluid: scaled(preset.fluidScale, 2), spray: preset.spray };
+  // At the frame a 'css' preset holds the under-water, mirror and fluid targets at one buffer pixel per CSS pixel (src/main.js QUALITY frameScale).
+  const frame = preset.frameScale === 'css' ? Math.min(1, Math.max(0.5, 1 / ratio)) : 1;
+  return { grid: preset.grid, meshSegments: preset.meshSegments, canvas, under: scaled(Math.min(frame, preset.underScale), 1), fluid: scaled(Math.min(frame, preset.fluidScale), 2), spray: preset.spray };
 }
 const size = ({ width, height }) => `${width}×${height}`;
 /** The quads across the water mesh: the patch's segments, or in the pool those over its square and one round it (src/waterSurface.js). */
@@ -295,14 +298,20 @@ const backOnLake = await page.evaluate(() => window.__pond.budget.programs);
 check(backOnLake === programsBeforePool, `back on the lake, still no new program (${backOnLake})`);
 await checkBuilt(phone, 'back on the lake');
 
-// The ice (src/ice.js): the water's own programs draw it (ICE_COMMON in src/shaders/scene.js), so freezing the water, a
-// throw that breaks it, its shards (floaters, src/things.js 'ice-shard'), the flood, a hole's new ice and a frozen pool
-// compile nothing; on ice no gale blows, and the hole, its shards (within the preset's) and the wet are in the budget.
-const programsBeforeIce = await page.evaluate(() => window.__pond.budget.programs);
+// The ice (src/ice.js): the water's own programs draw it (ICE_COMMON in src/shaders/scene.js), so freezing the water
+// compiles only the water's full programs, the patch's and its cavity variant's at once (src/waterSurface.js chooseLean:
+// open water draws their lean twins, WATER_LEAN, if nothing has built them yet), and a throw that breaks it, its shards
+// (floaters, src/things.js 'ice-shard'), the flood, a hole's new ice and a frozen pool compile nothing; on ice no gale
+// blows, and the hole, its shards (within the preset's) and the wet are in the budget.
+const programKeys = () => page.evaluate(() => window.__pond.renderer.info.programs.map((program) => program.cacheKey));
+const keysBeforeIce = await programKeys();
 await page.evaluate(() => { window.__pond.setIce('thin'); window.__pond.advance(0.1); });
 const iced = await page.evaluate(() => window.__pond.budget);
-check(iced.ice.name === 'thin' && iced.ice.thickness === 0.01 && iced.programs === programsBeforeIce && !iced.gale.blowing,
-  `thin ice compiles no program (${programsBeforeIce} before, ${iced.programs} drawing it) and stills any gale`);
+const builtByIce = (await programKeys()).filter((key) => !keysBeforeIce.includes(key));
+const waterOnly = builtByIce.length <= 2 && builtByIce.every((key) => key.includes('DRY_DISCS') && !key.includes('WATER_LEAN'));
+const programsBeforeIce = iced.programs;
+check(iced.ice.name === 'thin' && iced.ice.thickness === 0.01 && waterOnly && !iced.gale.blowing,
+  `thin ice compiles no program but the water's full ones (${builtByIce.length} built, ${keysBeforeIce.length} before) and stills any gale`);
 // (It flies some 0.8 s, and its shards go once its cavity has closed, some 0.3 s after.)
 await page.evaluate(() => { window.__pond.throwAt(0, -1.4, { radius: 0.03, power: 'normal' }); window.__pond.advance(1.5); });
 const broken = await page.evaluate(() => window.__pond.budget);

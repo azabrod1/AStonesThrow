@@ -1119,6 +1119,14 @@ export class Rings {
     return Math.round(spectrumBytes + partialBytes + PROFILE_TEXELS * MAX_RINGS * 4 * 2 * 2 + this.sourceTable.image.data.byteLength);   // a 1-texel-high layer's mip chain halves its width only: twice its texels
   }
 
+  /** None drawn this frame, though they live on (the profiler's `rings` skip, src/main.js): no pass, nothing for the water to read. */
+  hide() {
+    this.sharedUniforms.uRingCount.value = 0;
+    this.sharedUniforms.uCausticRings.value = 0;
+    this.passesRun = 0;
+    this.fetchesRun = 0;
+  }
+
   /** Every ring gone at once (the app's clearPond). */
   reset() {
     this.book.reset();

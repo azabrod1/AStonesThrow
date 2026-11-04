@@ -60,7 +60,12 @@
 //     more than glitter; following it there would cost most of the solver's
 //     time (its step is a share of that capillary time), so it is broken at
 //     once into what Rayleigh–Plateau makes of it: drops of THREAD_DROP of
-//     its radius, the water of each most unstable wavelength (9.02 radii).
+//     its radius, the water of each most unstable wavelength (9.02 radii),
+//     each times a gamma draw of order 4 (Villermaux's spread of a
+//     ligament's drops: a tenth under half the mean, a tenth over one and a
+//     half times it, from the solver's own stream), since a real thread's
+//     breakup is never so clean that its drops come out alike (a row of
+//     equal beads read as bullets).
 //
 // The water carries small disturbances at every scale (the collapse that
 // launches it is turbulent): a newly resolved stretch of column (a split
@@ -605,15 +610,17 @@ export class SlenderJet {
       water += amount; centreX += amount * x; centreY += amount * y; centreZ += amount * z;
       momentumX += amount * vx; momentumY += amount * vy; momentumZ += amount * vz;
     };
+    // The next drop's size, a gamma draw of order 4 (the header): the sum of four exponential draws, over four.
+    let spread = -Math.log(this.random() * this.random() * this.random() * this.random()) / 4;
     for (let node = first; node <= last; node++) {
       const next = node + 1;
       const radius = Math.max(this.segmentRadius[node], 1e-6);
-      const dropWater = (4 / 3) * Math.PI * (THREAD_DROP * radius) ** 3;
+      const dropWater = (4 / 3) * Math.PI * (THREAD_DROP * radius * spread) ** 3;
       // The nodes inside the thread go with it, beads and all.
       if (node > first) add(this.bead[node], this.positionX[node], this.positionY[node], this.positionZ[node], this.velocityX[node], this.velocityY[node], this.velocityZ[node]);
       add(this.volume[node], 0.5 * (this.positionX[node] + this.positionX[next]), 0.5 * (this.positionY[node] + this.positionY[next]), 0.5 * (this.positionZ[node] + this.positionZ[next]),
         0.5 * (this.velocityX[node] + this.velocityX[next]), 0.5 * (this.velocityY[node] + this.velocityY[next]), 0.5 * (this.velocityZ[node] + this.velocityZ[next]));
-      if (water >= dropWater) emit();
+      if (water >= dropWater) { emit(); spread = -Math.log(this.random() * this.random() * this.random() * this.random()) / 4; }
     }
     emit();
     this.events.push({ kind: 'pinch', time, x: this.positionX[first], y: this.positionY[first], z: this.positionZ[first], vx: this.velocityX[first], vy: this.velocityY[first], vz: this.velocityZ[first], radius: Math.max(this.beadRadius(first), this.segmentRadius[first]) });

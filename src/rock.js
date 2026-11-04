@@ -156,7 +156,7 @@
 //     stone's impact, as for any throw (`water`, the splash built from it),
 //     but for its lift under water, whose push across the throw's plane is
 //     left out (its fast spin would curve it off to one side).
-// A broad thing skipped (a pizza: `abilities.skips`) is thrown by its mass,
+// A broad thing skipped (a pizza, an iPhone: `abilities.skips`) is thrown by its mass,
 // as a stone heavier than SKIP_THROW.fullRadius's is (skipSpeed), spun no
 // faster at its rim than such a stone, aimed by its trailing edge, which
 // touches first (skipLowest), and flies the skip's arc held level by its
@@ -175,7 +175,11 @@
 // through the still surface (SEEN_THROUGH_WATER, src/shaders/scene.js), not
 // on the straight line from the camera, once the water has closed over it:
 // while its cavity is open (src/cavity.js) it is in air, seen through the
-// hole, and drawn where it is; from the pinch-off, over NECK_CLOSE·sqrt(R/g)
+// hole, and drawn where it is, and cut not at the surface but at the hole's
+// floor, which the cavity draws at the stone's centre (no deeper than its
+// DRAWN_DEPTH): its upper half in the hole's air in the main scene, lit as
+// in air, its wetted front under the floor in the under-water pass (an eye
+// under the water sees it whole, cutBelowAtSurface); from the pinch-off, over NECK_CLOSE·sqrt(R/g)
 // as the neck closes over it, it moves over to where the water shows it. The
 // pinch-off is its cavity's (setCavityTimes, which the splash calls with the
 // report's `rock`), PINCH_TIME·sqrt(R/g) after the impact until then. Seen
@@ -304,7 +308,9 @@
 //     where it changes how a thing goes along it ({ kind, friction, rolling,
 //     tumbling, tumble, give, rollingLeast }, each optional): ice is slick, so a thing on it takes the lesser of its
 //     own friction and rolling resistance and the ice's, a stone slows at the
-//     ice's `tumbling`·g and turns end over end at its `tumble`, and its
+//     ice's `tumbling`·g and turns end over end at its `tumble` (unless the
+//     thing's own `material.on` says otherwise for that `kind`, src/things.js:
+//     a toy slide's, made to stop on ice; groundFriction, groundSlowing), and its
 //     knock is heard as on ice (src/sound.js); a lawn is soft (src/koiGarden.js):
 //     a thing bounces off it at `give` of its own bounce, and a ball rolls on
 //     it against at least `rollingLeast`;
@@ -348,7 +354,7 @@
 // along whichever axis of its move rose (the pool's walls are square).
 import * as THREE from 'three';
 import { SEEN_THROUGH_WATER, SEEN_UNDER_CLEAR, CLEAR_SIDES_INSIDE, FLOATER_WATER } from './shaders/scene.js';
-import { PINCH_TIME, NECK_CLOSE, SPIN_DECAY, sinkStep, underWater } from './cavity.js';
+import { PINCH_TIME, NECK_CLOSE, SPIN_DECAY, DRAWN_DEPTH, sinkStep, underWater } from './cavity.js';
 import { THINGS, DEFAULT_THING, WATER_DENSITY, STONE_DENSITY } from './things.js';
 import { cornersOf, meshKind, meshVolume, withParts } from './thingMeshes.js';
 import { stoneDetail, stoneUniforms } from './shaders/stone.js';
@@ -1389,7 +1395,7 @@ export class Rock {
    * @param dressing the seed its own parts are drawn from (dressThing), in place of the one its throw draws: a person's throw is dressed as its preview in the hand (src/main.js)
    * @param size its slider's value (src/things.js): at a preset with a look of its own it is that preset's own thing (variantAt: an iPad's step, a bouquet's count), else its slider's first
    */
-  constructor({ radius, position, velocity, envTexture, waterFog = null, thing = DEFAULT_THING, mass = null, mirrorLayer = null, skip = false, water = null, piece = null, dressing = null, size = null }) {
+  constructor({ radius, position, velocity, envTexture, waterFog = null, thing = DEFAULT_THING, mass = null, mirrorLayer = null, skip = false, water = null, rideValues = null, piece = null, dressing = null, size = null }) {
     this.radius = radius;
     this.position = position.clone();
     this.previous = position.clone();   // where it was a step ago
@@ -1417,7 +1423,7 @@ export class Rock {
     this.sliding = null;           // tipping onto the face it slides on, and its turn about the vertical (startSliding, slideStep)
     this.passing = null;           // the things it passes by for now, and why (src/collide.js passBy)
     this.fading = undefined;       // seconds into shrinking away, once src/main.js has begun it (fadeOut): frozen, it is no longer stepped
-    this.drawn = { surface: 0, bedDepth: 1 };   // the water it was last drawn on (syncMeshes), for a knock's redraw
+    this.drawn = { surface: 0, bedDepth: 1, cut: 0, inHole: false, deepest: 0 };   // the water it was last drawn on, where it was cut and whether in its hole's air (syncMeshes), for a knock's redraw and drawAt
     this.age = 0;
     this.restTime = 0;
     this.stillSince = false;       // its last step found it still (the header): drawAt need not move its meshes
@@ -1577,7 +1583,7 @@ export class Rock {
   if (cameraPosition.y < 0.0) gl_FragColor.rgb = mix(uFogColor, gl_FragColor.rgb, exp(-uFogExtinction * length(vViewPosition)));`);
     };
     this.meshBelow.material.customProgramCacheKey = () => 'seen-through-water';
-    if (this.floats && water) this.rideTheWater(water, { seenThroughWater, waterLevel, fogExtinction, fogColor });
+    if (this.floats && water) this.rideTheWater(water, { seenThroughWater, waterLevel, fogExtinction, fogColor, rideValues });
     for (const mesh of this.meshes) {
       mesh.scale.setScalar(radius);
       mesh.frustumCulled = false;
@@ -1597,7 +1603,9 @@ export class Rock {
    * floats it on still water), so it rises and falls with the water's
    * height at its middle and is turned, rigidly, to the water's slope across
    * its width, at most RIDE_TILT (src/shaders/scene.js FLOATER_WATER, read
-   * with the water's own uniforms),
+   * with the water's own uniforms; worked out once a frame for each floater,
+   * not at each of its corners: src/floaterRide.js `place`, read from its
+   * `rideValues` at its `rideIndex`, or worked out here where it has none),
    * as far as it is at the water (`ride`, syncMeshes: wholly afloat; none in
    * the air clear of it, under it or on the ground, where it is drawn where
    * the physics has it, on its path and where it strikes),
@@ -1627,7 +1635,10 @@ export class Rock {
    * its own) are every floater's alike, drawn under the loading veil
    * (src/main.js warmUp).
    */
-  rideTheWater(water, { seenThroughWater, waterLevel, fogExtinction, fogColor }) {
+  rideTheWater(water, { seenThroughWater, waterLevel, fogExtinction, fogColor, rideValues = null }) {
+    // Its texel in src/floaterRide.js `values` (the water's height under its middle and its slope), −1 for none.
+    const rideIndex = this.rideIndex = { value: -1 };
+    const rideValuesUniform = rideValues ?? { value: null };
     // Inside its rim, its share `water.dry` of its radius (src/things.js), the water never covers its top.
     const dryRadius = this.dryRadius = { value: (this.thing.water.dry ?? 0) * this.radius };
     const rideShare = this.rideShare = { value: 0 };
@@ -1647,19 +1658,34 @@ export class Rock {
       shader.uniforms.uFogColor = fogColor;
       shader.uniforms.uDryRadius = dryRadius;
       shader.uniforms.uDrape = drapeShare;
+      shader.uniforms.uRideValues = rideValuesUniform;
+      shader.uniforms.uRideIndex = rideIndex;
       const clear = seenThrough && side === 'above', clearBelow = seenThrough && side === 'below';
       const declarations = `${FLOATER_WATER}\nuniform float uWaterLevel;\nuniform float uDryRadius;\nuniform float uRide;\nuniform float uDrape;\nvarying vec3 vRideWorld;\nvarying vec2 vRideMiddle;\n${clear ? 'varying float vClearShare;\n' : ''}${clearBelow ? 'varying float vRideUp;\n' : ''}`;
       shader.vertexShader = shader.vertexShader
-        .replace('#include <common>', `#include <common>\n${declarations}uniform float uSeenThroughWater;\n${side === 'below' ? SEEN_THROUGH_WATER : ''}${clear ? 'attribute float clearShare;\n' : ''}`)
+        .replace('#include <common>', `#include <common>\n${declarations}uniform float uSeenThroughWater;\nuniform sampler2D uRideValues;\nuniform int uRideIndex;\n${side === 'below' ? SEEN_THROUGH_WATER : ''}${clear ? 'attribute float clearShare;\n' : ''}`)
         .replace('#include <project_vertex>', `
   vec4 ridden = modelMatrix * vec4(transformed, 1.0);
   vec3 middle = (modelMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
   // The water's slope across its whole width, its tilt at most RIDE_TILT: it is turned, as a body is, to lie on it
   // (shearing it by the slope, as this once did, made a ball an egg on a splash's steep ring).
-  float across = length(modelMatrix[0].xyz);
-  vec2 slope = vec2(
-    floaterWaterHeight(middle.xz + vec2(across, 0.0)) - floaterWaterHeight(middle.xz - vec2(across, 0.0)),
-    floaterWaterHeight(middle.xz + vec2(0.0, across)) - floaterWaterHeight(middle.xz - vec2(0.0, across))) / (2.0 * across) * uRide;
+  // The water's height under its middle and its slope across it: its texel, worked out once for all its corners
+  // (src/floaterRide.js place), or here where it has none; none at all off the water.
+  vec2 slope = vec2(0.0);
+  float rideHeight = 0.0;
+  if (uRide > 0.0) {
+    if (uRideIndex >= 0) {
+      vec4 rideValue = texelFetch(uRideValues, ivec2(uRideIndex, 0), 0);
+      rideHeight = rideValue.x;
+      slope = rideValue.yz * uRide;
+    } else {
+      float across = length(modelMatrix[0].xyz);
+      slope = vec2(
+        floaterWaterHeight(middle.xz + vec2(across, 0.0)) - floaterWaterHeight(middle.xz - vec2(across, 0.0)),
+        floaterWaterHeight(middle.xz + vec2(0.0, across)) - floaterWaterHeight(middle.xz - vec2(0.0, across))) / (2.0 * across) * uRide;
+      rideHeight = floaterWaterHeight(middle.xz);
+    }
+  }
   slope *= min(1.0, ${RIDE_TILT.toFixed(4)} / max(length(slope), 1e-6));
   vec3 up = normalize(vec3(-slope.x, 1.0, -slope.y));
   vec3 turnAxis = vec3(up.z, 0.0, -up.x);
@@ -1676,7 +1702,7 @@ export class Rock {
     #endif
   }
   ridden.xyz = middle + offset;
-  ridden.y += uRide * floaterWaterHeight(middle.xz);
+  ridden.y += uRide * rideHeight;
   // A soft thing draped over the waves (the header): each point on the water's height under it, by its drape's share
   // (one more of the water's heights for each point; its normals keep the tilt over its whole width).
   if (uDrape * uRide > 0.0) ridden.xyz = mix(ridden.xyz, laid + vec3(0.0, uRide * floaterWaterHeight(laid.xz), 0.0), uDrape);
@@ -2079,10 +2105,32 @@ export class Rock {
   }
 
   /**
+   * Its halves cut at height `cut` (syncMeshes): the part above in the main
+   * scene, the part below in the under-water pass.
+   */
+  cutAt(cut) {
+    this.drawn.cut = cut;
+    if (this.meshAbove.material.clippingPlanes.length) this.meshAbove.material.clippingPlanes[0].constant = -cut;   // keeps y ≥ cut
+    if (this.meshBelow.material.clippingPlanes.length) this.meshBelow.material.clippingPlanes[0].constant = cut;    // keeps y ≤ cut
+  }
+
+  /**
+   * For an eye under the water (src/main.js renderFromBelow), which draws only
+   * the under-water half: while `fromBelow`, that half reaches the surface,
+   * the hole's air and all (syncMeshes cuts it at the hole's floor for an eye
+   * above the water); after, it is cut as syncMeshes cut it.
+   */
+  cutBelowAtSurface(fromBelow) {
+    if (!this.meshBelow.material.clippingPlanes.length) return;
+    this.meshBelow.material.clippingPlanes[0].constant = fromBelow ? this.drawn.surface : this.drawn.cut;
+  }
+
+  /**
    * The meshes where the stone is drawn: in the air where it is; in the water
    * lifted as the gale lifts the splash (the header), its halves cut at the
-   * water's height `surface` over it. Afloat, its part above the water is in
-   * the mirror image too.
+   * water's height `surface` over it, or in its hole's air at the hole's
+   * floor (cutAt). Afloat, its part above the water is in the mirror image
+   * too.
    */
   syncMeshes(surface = 0, bedDepth = 1) {
     this.drawn.surface = surface;
@@ -2099,8 +2147,15 @@ export class Rock {
     this.stepEnd.position.copy(this.meshAbove.position);
     this.stepEnd.quaternion.copy(this.quaternion);
     // Cut at the water: by a plane at its height over it (a floater that rides the water cuts itself at its true surface, rideTheWater).
-    if (this.meshAbove.material.clippingPlanes.length) this.meshAbove.material.clippingPlanes[0].constant = -surface;   // keeps y ≥ surface
-    if (this.meshBelow.material.clippingPlanes.length) this.meshBelow.material.clippingPlanes[0].constant = surface;    // keeps y ≤ surface
+    // In its hole's air (the header: from the impact to the pinch-off) the water it is in is only what wets its front:
+    // the hole's floor is drawn at its centre (src/cavity.js), so it is cut there, its upper half drawn in the scene,
+    // lit as in air, where the hole's walls hide what they should, and the half under the floor in the under-water
+    // pass, seen through it; below the hole's drawn depth, at that floor. Cut at the surface, all of it in the hole was
+    // in the under-water pass, seen only through the hole's walls as if under water: a flat dark shape through the lip.
+    // Drawn between steps (drawAt), the cut follows the centre as drawn.
+    this.drawn.inHole = this.sinceImpact >= 0 && Number.isFinite(this.sinceImpact) && this.seenThroughWater.value === 0;
+    this.drawn.deepest = lift - DRAWN_DEPTH * this.radius;
+    this.cutAt(this.drawn.inHole ? Math.min(Math.max(this.position.y + lift, this.drawn.deepest), surface) : surface);
     // At rest wholly under the water (on the bed) its part above the water draws nothing, and wholly out of it (on the
     // deck) its part below: hidden, a thing at rest costs one draw call, not two (src/main.js keeps tens of them).
     if (!this.floats) {
@@ -2246,6 +2301,8 @@ export class Rock {
       mesh.position.lerpVectors(before.position, after.position, share);
       mesh.quaternion.slerpQuaternions(before.quaternion, after.quaternion, share);
     }
+    // In its hole's air it is cut at the hole's floor, its centre as drawn (syncMeshes).
+    if (this.drawn.inHole) this.cutAt(Math.min(Math.max(this.meshAbove.position.y, this.drawn.deepest), this.drawn.surface));
     this.drawnStill = this.stillSince;   // a still thing's before and after are one: drawn there, once
   }
 
@@ -2572,7 +2629,12 @@ export class Rock {
    * pizza; src/main.js calls this once a frame): its give as bendStep has
    * it, its mesh bent along its face's normal by r² of each point's distance
    * from its middle, the cup and, in a saddle, the flap (turning at
-   * `soft.rate` a second).
+   * `soft.rate` a second). What of that is each point's own, the same every
+   * frame (its distance² from the short axis, twice its angle round it as a
+   * cosine and a sine, the bend's slope on its normal), is worked out once
+   * (flexBasis), so a frame costs a few multiplications a point, where an
+   * arctangent, a sine and a hypotenuse a point took a pizza a millisecond
+   * of a desktop's frame.
    */
   flex() {
     const soft = this.thing.body.soft;
@@ -2582,25 +2644,51 @@ export class Rock {
     const { cup, flap } = this.bend;
     if (Math.abs(cup) < 1e-4 && Math.abs(flap) < 1e-4 && this.flexedDrawn === false) return;
     const rest = this.restShape, restNormals = this.restNormals, array = positions.array, normals = this.geometry.attributes.normal.array;
+    const basis = this.flexBasis ??= this.makeFlexBasis();
     const phase = 2 * Math.PI * soft.rate * this.age;
-    const [axisX, axisY, axisZ] = this.shape.axes;   // its long, middle and short axes, in its own frame
-    for (let index = 0; index < array.length; index += 3) {
-      const x = rest[index], y = rest[index + 1], z = rest[index + 2];
-      const u = x * axisX.x + y * axisX.y + z * axisX.z, v = x * axisY.x + y * axisY.y + z * axisY.z;
-      const amount = cup + flap * Math.sin(phase + 2 * Math.atan2(v, u));
-      const bend = amount * (u * u + v * v);
-      array[index] = x + axisZ.x * bend; array[index + 1] = y + axisZ.y * bend; array[index + 2] = z + axisZ.z * bend;
+    // sin(phase + 2θ), θ a point's angle round the short axis: sin(phase)·cos 2θ + cos(phase)·sin 2θ.
+    const sinePhase = Math.sin(phase), cosinePhase = Math.cos(phase);
+    const axisZ = this.shape.axes[2];   // its short axis, in its own frame
+    for (let index = 0, at = 0; index < array.length; index += 3, at += 6) {
+      const amount = cup + flap * (sinePhase * basis[at + 1] + cosinePhase * basis[at + 2]);
+      const bend = amount * basis[at];
+      array[index] = rest[index] + axisZ.x * bend; array[index + 1] = rest[index + 1] + axisZ.y * bend; array[index + 2] = rest[index + 2] + axisZ.z * bend;
       // Its smooth normal tilted by the bend's slope, 2·amount·(u, v), on whichever face it is.
-      const nx = restNormals[index], ny = restNormals[index + 1], nz = restNormals[index + 2];
-      const facing = nx * axisZ.x + ny * axisZ.y + nz * axisZ.z;
-      const slopeU = 2 * amount * u * facing, slopeV = 2 * amount * v * facing;
-      const tx = nx - slopeU * axisX.x - slopeV * axisY.x, ty = ny - slopeU * axisX.y - slopeV * axisY.y, tz = nz - slopeU * axisX.z - slopeV * axisY.z;
-      const length = Math.hypot(tx, ty, tz) || 1;
+      const twice = 2 * amount;
+      const tx = restNormals[index] - twice * basis[at + 3], ty = restNormals[index + 1] - twice * basis[at + 4], tz = restNormals[index + 2] - twice * basis[at + 5];
+      const length = Math.sqrt(tx * tx + ty * ty + tz * tz) || 1;
       normals[index] = tx / length; normals[index + 1] = ty / length; normals[index + 2] = tz / length;
     }
     positions.needsUpdate = true;
     this.geometry.attributes.normal.needsUpdate = true;
     this.flexedDrawn = Math.abs(cup) >= 1e-4 || Math.abs(flap) >= 1e-4;
+  }
+
+  /**
+   * What of flex's bend is each point's own (flex): six numbers a point, its
+   * distance² from the short axis (u² + v², u and v along its long and
+   * middle axes), cos 2θ and sin 2θ of its angle round it (θ = atan2(v, u),
+   * 0 on the axis), and the bend's slope on its rest normal per unit of the
+   * bend (its facing, the normal along the short axis, times u along the long
+   * axis plus v along the middle one).
+   */
+  makeFlexBasis() {
+    const rest = this.restShape, restNormals = this.restNormals;
+    const [axisX, axisY, axisZ] = this.shape.axes;
+    const basis = new Float64Array(rest.length * 2);
+    for (let index = 0, at = 0; index < rest.length; index += 3, at += 6) {
+      const x = rest[index], y = rest[index + 1], z = rest[index + 2];
+      const u = x * axisX.x + y * axisX.y + z * axisX.z, v = x * axisY.x + y * axisY.y + z * axisY.z;
+      const squared = u * u + v * v;
+      const facing = restNormals[index] * axisZ.x + restNormals[index + 1] * axisZ.y + restNormals[index + 2] * axisZ.z;
+      basis[at] = squared;
+      basis[at + 1] = squared > 0 ? (u * u - v * v) / squared : 1;
+      basis[at + 2] = squared > 0 ? 2 * u * v / squared : 0;
+      basis[at + 3] = facing * (u * axisX.x + v * axisY.x);
+      basis[at + 4] = facing * (u * axisX.y + v * axisY.y);
+      basis[at + 5] = facing * (u * axisX.z + v * axisY.z);
+    }
+    return basis;
   }
 
   /**
@@ -3268,7 +3356,7 @@ export class Rock {
     this.velocity.y = bounce * fall;
     const along = Math.hypot(this.velocity.x, this.velocity.z);
     // The friction slows it along the ground, a ball no lower than rolling.
-    const friction = Math.min(material.friction, surface?.friction ?? Infinity);
+    const friction = this.groundFriction(surface);
     const least = material.roll ? material.roll * along : 0;
     const kept = along > 1e-9 ? Math.max(along - friction * (1 + bounce) * fall, least) / along : 0;
     const turn = material.roll ? 0 : GROUND.scatter * (2 * this.random() - 1);
@@ -3298,7 +3386,7 @@ export class Rock {
     // that rolls about its own axis (an apple) is slowed by its own lumps and give whatever it rolls on; a lawn holds
     // either back by at least its `rollingLeast`.
     const rolling = material.rollsAbout ? material.rolling : Math.min(material.rolling, surface?.rolling ?? Infinity);
-    const slowing = material.roll ? Math.max(rolling, surface?.rollingLeast ?? 0) : surface?.tumbling ?? GROUND.tumbling;
+    const slowing = material.roll ? Math.max(rolling, surface?.rollingLeast ?? 0) : this.groundSlowing(surface);
     const slowed = Math.max(along - slowing * GRAVITY * dt, 0);
     if (!material.roll) this.sliding ??= this.startSliding(along);
     if (slowed < GROUND.stopped) { this.restOn(height); return; }
@@ -3311,6 +3399,27 @@ export class Rock {
     } else {
       this.slideStep(height, slowed, dt);
     }
+  }
+
+  /**
+   * Its friction on the ground's own `surface` as it comes down on it
+   * (meetGround): what its material says for that surface's `kind`
+   * (`material.on`, src/things.js), else the lesser of its own and the
+   * ground's (ice is slick).
+   */
+  groundFriction(surface) {
+    const material = this.thing.material;
+    return material.on?.[surface?.kind]?.friction ?? Math.min(material.friction, surface?.friction ?? Infinity);
+  }
+
+  /**
+   * What it slows at, times g, sliding along the ground without rolling
+   * (alongGround): what its material says for that surface's `kind`
+   * (`material.on`, src/things.js), else the ground's own `tumbling` (ice's:
+   * it skates on), else GROUND.tumbling.
+   */
+  groundSlowing(surface) {
+    return this.thing.material.on?.[surface?.kind]?.slowing ?? surface?.tumbling ?? GROUND.tumbling;
   }
 
   /** The ground's own surface where it is (the header: its `materialAt`, else its `material`), or null. */
