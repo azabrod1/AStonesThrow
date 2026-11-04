@@ -23,7 +23,7 @@
 // --report="js expression" is evaluated in the page after each frame and its
 // result printed as JSON (window.__pond is the app). --floats=half renders on
 // the half-float path that devices without EXT_color_buffer_float take.
-// --sky=name picks the place (PLACES in src/main.js: a key of SKIES in
+// --sky=name picks the place (PLACES in src/places.js: a key of SKIES in
 // src/sky.js, or pool, the rocks in the pool under Lakeside's sky, src/
 // pool.js) and --time=hour its sky's hour (its anchor otherwise, never the
 // time of day last chosen: the harness's browser keeps no storage),
@@ -175,6 +175,8 @@ try {
 if (weather && weather !== 'clear' && weather !== 'fog') await page.waitForFunction(() => window.__pond.raining || window.__pond.snowing, null, { timeout: patience(60000) });
 // The sky's horizon strip (src/sky.js, Horizon) comes after the panorama: every frame shows it.
 await page.evaluate(() => window.__pond.horizonReady);
+// The lagoon's scanned bark and sand (src/tropics.js loadSurfaces), which come after its scenery is built.
+await page.evaluate(() => window.__pond.tropics?.surfacesReady);
 // The drop rings' table (src/dropRings.js), which the page fetches at the first impact: fetched now, so the
 // first throw's drops ring in every run, however long the fetch takes.
 if (throws.length > 0) {

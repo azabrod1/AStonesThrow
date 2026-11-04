@@ -36,8 +36,13 @@
 // rings and frames too), so a slow renderer is waited for and a GPU's runs
 // keep their limits.
 // PW_HARDWARE=1 (the startup probe's old switch) means PW_GPU=hardware.
+//
+// launchWebKit() launches Playwright's WebKit instead, for what only
+// Safari's engine shows (its image decoders, its layout: tools/site-check.mjs
+// --webkit); it prints the renderer WebGL 2 reports there, and patience()
+// follows it as it does Chromium's. It is not a phone's GPU.
 import { existsSync } from 'node:fs';
-import { chromium } from 'playwright';
+import { chromium, webkit } from 'playwright';
 
 const CONTAINER_CHROMIUMS = ['/opt/pw-browsers/chromium', '/opt/pw-browsers/chromium-1194/chrome-linux/chrome'];
 const SOFTWARE_PATIENCE = 5;
@@ -101,5 +106,14 @@ export async function launchBrowser(extraArgs = []) {
   const browser = await launch(SOFTWARE_ARGS);
   console.error(`browser: SwiftShader${mode === 'auto' ? ' (no GPU found)' : ''}`);
   launchedSoftware = true;
+  return browser;
+}
+
+/** Playwright's WebKit, headless (the header): its WebGL 2 renderer printed on stderr, patience fitted to it. */
+export async function launchWebKit() {
+  const browser = await webkit.launch({ headless: true });
+  const renderer = await rendererOf(browser).catch(() => null);
+  launchedSoftware = !renderer || SOFTWARE_RENDERER.test(renderer);
+  console.error(`browser: WebKit, ${renderer ?? 'no WebGL 2'}`);
   return browser;
 }

@@ -456,7 +456,7 @@ const MIRROR_PAD = 0.05;              // metres around what is mirrored: drawn r
 const MIRROR_DROP_RADIUS = 0.002;     // finer drops are left out of the mirror: their images there are under a pixel
 
 const POND_DEPTH = 0.8;               // when the water does not say (the CPU probes' stand-in)
-const SAND_ALBEDO = 0.33;             // the floor's mean sand colour (FLOOR_FRAGMENT in src/shaders/scene.js)
+export const SAND_ALBEDO = 0.33;      // the floor's mean sand colour (FLOOR_FRAGMENT in src/shaders/scene.js)
 
 // The composite's tone map (COMPOSITE_FRAGMENT in src/shaders/fluid.js) for a
 // frame with no water in the air: the same operations as its pixels with

@@ -228,12 +228,9 @@ full screen, which only a press or a key may ask for):
   freezes over again in half a minute, its shards frozen in, its new ice
   thin enough for the next throw to break.
 - Location (`?sky=`): Swiss Alps, Rocky cove, Highlands, Desert oasis,
-  Lakeside (the default), Mesas, Pool, Loch Ness (`?sky=loch`): the
-  Highlands' ridges and hours over a shingle shore with no reeds, its own
-  peat-dark water (Water's lake clarities give way to it, as to the pool's)
-  with brown trout, Arctic char and minnows in it, and far out on it, now
-  and then, something that comes up and goes down again (below, the
-  loch's visitor); or Koi pond (`?sky=koi`): a pond in
+  Lakeside (the default), Mesas, Pool, Loch Ness (`?sky=loch`),
+  Polynesian lagoon (`?sky=lagoon`): white coral sand, palms and reef fish
+  under a pure sky (below, the tropics); or Koi pond (`?sky=koi`): a pond in
   a Japanese garden under its own panorama (Poly Haven's Ninomaru Teien,
   the garden of Nagoya Castle, its sun behind leaves, so its brightness is
   taken from its sky: `shadedSun` in `src/sky.js`), about 9 m across, its
@@ -535,7 +532,10 @@ Alps brown trout and Arctic char; Highlands trout and minnows; Mesas a
 largemouth bass and bluegill; Desert oasis pupfish (blue males, brown
 females) and tilapia; Rocky cove grey mullet and a wrasse; the Koi pond
 seven koi of the classic varieties (Kohaku, Sanke, Showa, Ogon, Chagoi,
-Asagi, Yamabuki, Tancho) and a goldfish; the Pool none. A school keeps
+Asagi, Yamabuki, Tancho) and a goldfish; the Polynesian lagoon reef fish in
+their own colours, unmuted (a school of sergeant majors, silver-yellow with
+five black bars; a shoal of yellow tangs, with the white spine by the tail;
+a blue tang, its black palette mark and yellow tail); the Pool none. A school keeps
 about a body length apart and turns together, a shoal keeps loosely
 together, a pike or a trout keeps alone (boids: apart, aligned, together,
 toward a goal the group wanders to). Each fish ranges through the whole
@@ -1373,6 +1373,64 @@ show a bolt on the dome, a jagged line from the cloud's base, 600 m up,
 to the horizon, hidden where the photo's land stands in front of it; the
 mirror image is drawn again while it flashes, so the water shows it.
 
+**The tropics** (`src/tropics.js`, `LAGOON_SHORE` in `src/pondFloor.js`).
+The Polynesian lagoon is drawn from photographs of the Cook Islands' and
+French Polynesia's lagoons (Aitutaki's Tapuaetai, Bora Bora). The lake's
+beach under the eye runs on into a motu's: its white sand bends away along
+the right of the frame for 430 m to a point, and its land is a ring mesh of
+its own. Coconut palms stand in a row a few metres in from the waterline,
+leaning out over the water (two far out, their crowns low over it), and
+behind them a palm forest, its trunks in the canopy's shade, with beach
+naupaka scrub along its edge. Fallen coconuts lie on the sand under the
+beach's palms. Across the lagoon are motus 0.5 to 2.3 km off, dark lines of
+palm forest on low sand, and 7 km off a high island of volcanic peaks under
+forest, both through the air's haze (the sky's horizon colour, by
+distance). A palm is built once from its own seeded stream: a trunk leaning
+at its foot and curving up toward the light, ringed with frond scars; a
+crown of about thirty fronds, the young ones up and the old arching down
+and yellowing, a dead frond or two hanging brown; coconuts. Its leaflets
+are alpha-tested cards textured with an atlas baked on the GPU when the
+lagoon is first chosen (it is built while its sky downloads)
+(each leaflet a tapered blade, its alpha scaled by the mip it is drawn from
+so far crowns keep their leaves); the light passes through a leaf where the
+sun is behind it. Every palm is an instance of one of six variants at three
+levels of detail, chosen by projected size in the current view; when the camera moves,
+only the instances it sees (or sees in the water's mirror) are kept, one
+draw a mesh. Their shadows dapple the sand and the shallows' bed: a mask
+baked once, each palm drawn into it projected along the sun onto the
+water's level, which the land and the floor look up along the sun (the
+water's own shader is untouched). On Medium and Low every palm and mound is a level
+of detail coarser, using the same cached meshes and shadow masks. The Wind control bends each trunk along the wind as a
+cantilever, with a slow sway of its own and slow gusts, and flutters its
+fronds. Nothing of it has a body for the physics.
+
+The bark is a photoscan (Poly Haven's Palm Tree Bark: its relief and grain
+over the trunk's own colour, laid round the trunk as many times as its girth
+holds, so the swollen foot is not drawn out, and shifted on each palm), with
+a darker root collar and extra samples, finer round, in the root flare; the
+beach's dry sand takes a photoscan's creases and grain too (Sand 03) in place
+of the bed's tile's blotches, all but the wet strip by the water. Both come
+after the scenery is built; till then the analytic bark and the bed's sand
+stand in. Where a trunk meets the sand, the sand is banked a few centimetres
+up it, wandering round it, and the trunk hides some of the sky from the
+ground beside it: the land's shader finds the nearest foot to each point in a
+grid of them (one 2.5 m cell a foot) and shades the bank's slope and that
+shade; round the 24 feet nearest the eye the bank is a mesh of its own on the
+land's program, so it hides the trunk below its rim and the foot keeps its
+outline, with no seam on either side. Coconut husks have outward-facing triangles, smooth
+ridged normals and fibrous shading. Fallen husks are mostly dried brown and
+weathered grey, a few fresh green; each is an instance culled on its own, with
+a coarse husk past 35 m. A 1024² foreground shadow mask covers 64 m beside the
+full-beach mask, resolving roots and coconuts without increasing the full
+mask's size. Coral sand reduces the lake bed's grain and silt contrast, on land
+and under water alike. `node
+tools/tropics-probe.mjs` checks winding, finite geometry, camera round trips and
+the scenery budget. Geometry and placements are cached; quality changes only
+route visible instances between detail levels. Culling packs them front to back
+and uploads buffers only when the packed set changes. The foot lookup checks
+nine cells, covering the surface reach of the widest trunk. `?sky=lagoon` is
+the place's canonical name; `?sky=tropical` remains an alias.
+
 **Something in the loch** (`src/lochVisitor.js`; its water in
 `src/shaders/visitor.js`). At Loch Ness, every one to two and a half
 minutes (the first within a minute of arriving), something comes up 48 to
@@ -1500,7 +1558,8 @@ farther out, so it rises into the view rather than filling its corner.
   `tools/gale-probe.mjs`, `tools/skip-probe.mjs`, `tools/thing-probe.mjs`,
   `tools/ice-probe.mjs`, `tools/spray-probe.mjs`, `tools/jet-probe.mjs`,
   `tools/drop-ring-probe.mjs`, `tools/fish-probe.mjs`,
-  `tools/garden-probe.mjs` and `tools/visitor-probe.mjs`;
+  `tools/garden-probe.mjs`, `tools/tropics-probe.mjs` and
+  `tools/visitor-probe.mjs`;
   each exits with 1 if a check fails. `tools/run-probes.mjs` runs them side
   by side, as many at once as the machine has cores (`PROBE_JOBS=1` runs
   them one after another), each one's output printed whole when it ends,
@@ -1593,7 +1652,10 @@ farther out, so it rises into the view rather than filling its corner.
   must be added to its list. `node tools/site-check.mjs`, after
   `npm run site`, serves `_site/` under `/AStonesThrow/` as Pages does and
   checks that the pond starts, rain falls once asked for (its files load only
-  then) and no request fails.
+  then), the Polynesian lagoon's scanned bark and sand come once it is shown
+  and refresh the cached reflection, and no request fails. Add `--webkit` to run the same checks in WebKit
+  with an emulated iPhone layout. CI runs both engines; physical-phone
+  decoding and performance checks still need a real device.
 - `node tools/foam-probe.mjs` runs the foam's bubble pattern on the CPU, with
   the constants read from the shader: each layer's median and spread and the
   bubbles' mean shade match what the shader fades them to, the clear
@@ -1712,7 +1774,7 @@ farther out, so it rises into the view rather than filling its corner.
   sets its strength, over the one the Wind setting last chose on the device
   (kept in `localStorage`); calm otherwise.
 - `?sky=name` on the page (`--sky=name` for the harness) picks the place,
-  `PLACES` in `src/main.js` (a key of `SKIES` in `src/sky.js`, or `pool`, the
+  `PLACES` in `src/places.js` (a key of `SKIES` in `src/sky.js`, or `pool`, the
   old `?water=pool` too), over the one last chosen on the device (`sunrise`,
   the old Sunrise sky, is Lakeside at sunrise), and `?time=hour` (`--time=`
   for the harness) its sky's hour, over the one nearest the time of day last
@@ -1732,6 +1794,12 @@ farther out, so it rises into the view rather than filling its corner.
   The rocks are thrown from the shore whatever the view. The harness leaves
   the preview of the thing in the hand out (`?preview=off`) unless
   `--preview=1`, so frames from any orbit stay as they were.
+- `node tools/tropics-textures.mjs` writes the Polynesian lagoon's two
+  scanned surfaces, `assets/tropics/bark.jpg` and `assets/tropics/sand.jpg`,
+  from Poly Haven's Palm Tree Bark and Sand 03 (CC0; downloaded at each run,
+  never kept): each photoscan's normal and the detail of its colour packed
+  into one JPEG (its header says how), 251 KB and 427 KB, fetched only when
+  the lagoon is first shown.
 - `node tools/sky-encode.mjs [assets/sky/name_2k.hdr ...] [--verify] [--no-horizon]` encodes
   each sky's Radiance file (every one, by default) as the JPEG gain map the
   page loads, `assets/sky/name_2k.jpg`, and its horizon strip,
@@ -2022,4 +2090,6 @@ Moonrise, Moon Noon) by Greg Zaal, processed by Jarod Guest, and
 *Rogland Moonlit Night* are by Greg Zaal. Source pages:
 [Secluded Beach](https://polyhaven.com/a/secluded_beach),
 [Kiara](https://polyhaven.com/a/kiara_8_sunset),
-[Rogland](https://polyhaven.com/a/rogland_clear_night).
+[Rogland](https://polyhaven.com/a/rogland_clear_night),
+[Kloofendal 48d Partly Cloudy (Pure Sky)](https://polyhaven.com/a/kloofendal_48d_partly_cloudy_puresky)
+(the Polynesian lagoon's sky) by Greg Zaal, its sky edited by Jarod Guest.

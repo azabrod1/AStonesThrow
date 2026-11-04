@@ -187,6 +187,7 @@ const steps = [
   ['thick ice', async (pond) => { await pond.setWeather('clear'); pond.setIce('thick'); pond.throwAt(-0.3, -1.3, { radius: 0.03 }); pond.advance(3); }],
   ['the Pool', async (pond) => { pond.setIce('none'); await pond.setSky('pool'); pond.throwAt(0, -1.4, { radius: 0.03 }); pond.advance(1); }],
   ['Loch Ness', async (pond) => { await pond.setSky('loch'); pond.sightVisitor('neck', { elapsed: 8 }); pond.advance(0); }],
+  ['the Polynesian lagoon', async (pond) => { await pond.setSky('lagoon'); pond.advance(0); }],
   ['the Koi pond', async (pond) => { await pond.setSky('koi'); pond.throwAt(0, -1.4, { radius: 0.03, thing: 'pizza' }); pond.advance(1); }],
   ['Low', (pond) => { pond.setQuality('low'); pond.advance(1); }],
 ];

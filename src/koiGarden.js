@@ -1,4 +1,4 @@
-// The Koi pond's garden (src/main.js PLACES `koi`): the planted banks of a
+// The Koi pond's garden (src/places.js PLACES `koi`): the planted banks of a
 // Japanese stroll garden round the pond, under the garden's own panorama
 // (src/sky.js `garden`, Nagoya Castle's Ninomaru garden), whose trees stand
 // above them. Scenery, out of reach of anything thrown.
@@ -741,7 +741,7 @@ export function createKoiGarden({ envTexture, mirrorLayer, lighting }) {
       for (const mesh of meshes) mesh.visible = visible;
     },
     /**
-     * The scene's garden coarse as the mirror's (a preset's `gardenCoarse`:
+     * The scene's garden coarse as the mirror's (a preset's `sceneryCoarse`:
      * Low), or fine; built when it is first shown. Coarse, the fine garden is
      * let go once its catch table is made (letGoOfFine); fine again, it is
      * built again (a change from Low the person makes; the automatic quality

@@ -120,7 +120,7 @@ console.log('\nthe bed seen from below:');
 {
   const declared = [...LAKE_BED.matchAll(/^uniform \w+ (\w+);/gm)].map((match) => match[1]);
   const missing = declared.filter((name) => !BED_UNIFORMS.includes(name));
-  check(declared.includes('uKoiPond') && missing.length === 0, `the water seen from below shares every uniform of the shore's twin (${declared.join(', ')})${missing.length ? `; not ${missing.join(', ')}` : ''}`);
+  check(declared.includes('uShoreKind') && missing.length === 0, `the water seen from below shares every uniform of the shore's twin (${declared.join(', ')})${missing.length ? `; not ${missing.join(', ')}` : ''}`);
 }
 
 console.log('\nheld in the hand:');
