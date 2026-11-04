@@ -336,7 +336,7 @@ const SKIES = {
   // island). The sun behind the eye's right, as the lagoon photographs best: the shallows lit through, no glare. Its
 // light on level ground is 1.6 times the balance's (its sky alone two thirds of its sun's, against a fifth to two
 // fifths in the other photographs): exposed as an eye adapted half the way sees it (`adapt`, below).
-  lagoon: { ownPlace: false, adapt: 0.5, sunAzimuth: 145, hours: { midday: { file: 'kloofendal_48d_partly_cloudy_puresky', label: 'Midday', clock: '13:44' } } },
+  lagoon: { ownPlace: false, salt: true, adapt: 0.5, sunAzimuth: 145, hours: { midday: { file: 'kloofendal_48d_partly_cloudy_puresky', label: 'Midday', clock: '13:44' } } },
 };
 /** The skies that are each a place of their own (the Location setting's lakes; the Koi pond takes the garden's). */
 /** What a sky's beach is made of (`shore` above): a name of SHORE_LOOKS (src/pondFloor.js), 'sand' when unnamed. */
