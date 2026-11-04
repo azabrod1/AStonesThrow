@@ -4,7 +4,7 @@
 // with shoot.mjs and uniform-probe.mjs on the browser's GPU.
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { Tropics, PALMS, LODS, MOTUS, palmCullMargin, palmGeometry } from '../src/tropics.js';
+import { Tropics, PALMS, LODS, MOTUS, NEAR_SHADOW, SHADOW, palmCullMargin, palmGeometry } from '../src/tropics.js';
 import { LAND_VERTEX, PALM_FOOT } from '../src/shaders/scene.js';
 import { lagoonLandGeometry, setShoreKind } from '../src/pondFloor.js';
 
@@ -102,7 +102,22 @@ console.log(`ok: ${foliageFaces} foliage faces agree with their shading normals`
   assert(!frustum.intersectsSphere(new THREE.Sphere(new THREE.Vector3(x, y, z), radius)), 'the stand-in must lie outside the portrait frame for this check to mean anything');
   unbuilt.cull(portrait);
   assert(unbuilt.above.length === 2 && unbuilt.above.every((mesh) => mesh.visible && mesh.count === 1), 'unbuilt, the stand-in must stay drawn in any frame, so the warm-up builds its programs');
-  console.log('ok: unbuilt, the stand-in palm stays drawn outside an upright phone\'s frame, so the warm-up builds its programs');
+  // And the shadow bake the constructor makes draws it into both masks, though it stands in neither's box: so the masks'
+  // programs are built on it too.
+  const drawnInto = [];
+  Object.assign(unbuilt, {
+    renderer: {
+      getRenderTarget: () => null, getClearColor: (color) => color, getClearAlpha: () => 1, setClearColor() {}, clear() {},
+      setRenderTarget(target) { if (target) drawnInto.push([]); },
+      render(group) { group.traverseVisible((mesh) => { if (mesh.isInstancedMesh && mesh.count > 0) drawnInto.at(-1).push(mesh.material); }); },
+    },
+    shadowTarget: {}, nearShadowTarget: {}, shadowCamera: new THREE.OrthographicCamera(),
+    shadowMaterials: { leaves: new THREE.MeshBasicMaterial(), wood: new THREE.MeshBasicMaterial() },
+  });
+  Tropics.prototype.bakeShadows.call(unbuilt);
+  assert(drawnInto.length === 2 && drawnInto.every((materials) => materials.includes(unbuilt.shadowMaterials.leaves) && materials.includes(unbuilt.shadowMaterials.wood)),
+    'unbuilt, a shadow bake must draw the stand-in into both masks, so the warm-up builds their programs');
+  console.log('ok: unbuilt, the stand-in palm stays drawn outside an upright phone\'s frame and in both shadow masks, so the warm-up builds its programs');
 }
 
 const camera = new THREE.PerspectiveCamera(55, 16 / 9, 0.1, 20000);
@@ -342,6 +357,56 @@ console.log(`ok: ${windVertices} crown vertices stay within gale cull margins`);
   }
   assert(samples > 100);
   console.log(`ok: ${samples} foot-grid boundary samples match a full nearest-foot search`);
+}
+
+// A shadow bake draws into each mask only the instances whose shadow can fall in its box: none left out has a point
+// whose shadow lands in it (every fourth vertex, unswayed, carried along the sun as SHADOW_VERTEX carries it), and
+// the near mask's pass is a small part of what every caster would be. Every mesh is whole again after.
+{
+  const passes = [];
+  const sun = new THREE.Vector3(-0.9, 0.17, 0.4).normalize();   // a low sun: the longest shadows
+  Object.assign(tropics, {
+    renderer: {
+      getRenderTarget: () => null, getClearColor: (color) => color, getClearAlpha: () => 1, setClearColor() {}, clear() {},
+      setRenderTarget(target) { if (target) passes.push({ box: target.box, drawn: new Map() }); },
+      render(group) { group.traverseVisible((mesh) => { if (mesh.isInstancedMesh) passes.at(-1).drawn.set(mesh, mesh.instanceMatrix.array.slice(0, mesh.count * 16)); }); },
+    },
+    shadowTarget: { box: SHADOW.box }, nearShadowTarget: { box: NEAR_SHADOW.box },
+    shadowMaterials: { leaves: new THREE.MeshBasicMaterial(), wood: new THREE.MeshBasicMaterial() }, shadowCamera: new THREE.OrthographicCamera(),
+  });
+  tropics.uniforms.uSunDir.value.copy(sun);
+  Tropics.prototype.bakeShadows.call(tropics);
+  assert.equal(passes.length, 2);
+  const casters = tropics.above.filter((mesh) => mesh.userData.whole.casts);
+  const every = casters.reduce((sum, mesh) => sum + mesh.count * mesh.geometry.index.count / 3, 0);
+  const point = new THREE.Vector3(), matrix = new THREE.Matrix4();
+  const triangles = [];
+  for (const { box: [minX, minZ, sizeX, sizeZ], drawn } of passes) {
+    let passTriangles = 0;
+    for (const mesh of casters) {
+      const { whole } = mesh.userData, packedMatrices = drawn.get(mesh) ?? new Float32Array(0), count = packedMatrices.length / 16;
+      passTriangles += count * mesh.geometry.index.count / 3;
+      const where = (matrices, index) => `${matrices[index * 16 + 12]},${matrices[index * 16 + 13]},${matrices[index * 16 + 14]}`;
+      const packedAt = new Set(Array.from({ length: count }, (unused, slot) => where(packedMatrices, slot)));
+      const packed = new Set([...Array(whole.numbers.length / 4).keys()].filter((index) => packedAt.has(where(whole.matrices, index))));
+      assert.equal(packed.size, count, 'each instance drawn into a mask once');
+      const position = mesh.geometry.attributes.position;
+      for (let index = 0; index < whole.numbers.length / 4; index++) {
+        if (packed.has(index)) continue;
+        matrix.fromArray(whole.matrices, index * 16);
+        for (let vertex = 0; vertex < position.count; vertex += 4) {
+          point.fromBufferAttribute(position, vertex).applyMatrix4(matrix);
+          const x = point.x - sun.x * point.y / Math.max(sun.y, 0.05), z = point.z - sun.z * point.y / Math.max(sun.y, 0.05);
+          assert(!(x >= minX && x <= minX + sizeX && z >= minZ && z <= minZ + sizeZ), 'an instance whose shadow falls in a mask must be drawn into it');
+        }
+      }
+    }
+    triangles.push(passTriangles);
+  }
+  assert(triangles[0] < every && triangles[1] < 0.15 * every, `a bake draws ${triangles.join(' and ')} of the casters' ${every} triangles into its masks`);
+  assert(tropics.above.every((mesh) => mesh.visible && mesh.count === mesh.userData.whole.numbers.length / 4
+    && mesh.instanceMatrix.array.every((value, at) => value === mesh.userData.whole.matrices[at])), 'after a bake every mesh holds every instance');
+  console.log(`ok: a bake under a low sun draws ${triangles[0]} and ${triangles[1]} of the casters' ${every} triangles into the beach's and the near mask, and no shadow that falls in either is left out`);
 }
 
 // Image decoding receives typed JPEG bytes, even when fetch has no MIME type.

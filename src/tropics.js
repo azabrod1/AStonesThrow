@@ -81,6 +81,8 @@
 // that level (PALM_SHADOW in src/shaders/scene.js and src/pondFloor.js); the
 // water's own shader is untouched. A 64 m foreground mask resolves root and
 // coconut contact shadows at 6.25 cm without enlarging the full beach mask.
+// Each mask is drawn with only the instances whose shadow can fall in it
+// (shadowsInBox): the near mask with a few hundred, not every palm's.
 //
 // Medium and Low (setCoarse): every palm and mound a level coarser. A quality
 // change only reroutes instances; all geometry and shadow masks are reused.
@@ -891,8 +893,8 @@ const ALPHA_MIP = 0.25;
 // whole of the beach's planting (PLANTING.extent; the motus' are too far off for theirs to show), and its texels a
 // side (one channel; 20 to 27 cm, about the sun's own penumbra under a palm's crown); how much of the sun a leaf
 // keeps off (it passes on some, LEAF_LIGHT).
-const NEAR_SHADOW = { box: [-24, -32, 64, 64], texels: 1024 };
-const SHADOW = { box: [-160, -430, 440, 550], texels: 2048, leaf: 0.9 };
+export const NEAR_SHADOW = { box: [-24, -32, 64, 64], texels: 1024 };
+export const SHADOW = { box: [-160, -430, 440, 550], texels: 2048, leaf: 0.9 };
 // What draws them: each palm (and mound of scrub) as it stands, its points carried along the sun down to the water's
 // level and drawn there, top-down, into the mask (the light let through: 1 open, multiplied down by each leaf over it).
 const SHADOW_VERTEX = /* glsl */`
@@ -1213,6 +1215,10 @@ export class Tropics {
    * Draws the palms' and the scrub's shadows into the mask under the sun now
    * (every instance, as it stands, swaying as it is now): when built, and
    * again when the sun has moved (cull). The light let through starts at 1.
+   * Each mask is drawn with only the instances whose shadow can fall in its
+   * box (shadowsInBox), in their order: the rest would be clipped away
+   * whole, so the masks come out as if every instance were drawn. Unbuilt,
+   * the stand-in is drawn whole, for the masks' programs.
    */
   bakeShadows() {
     const renderer = this.renderer;
@@ -1220,38 +1226,94 @@ export class Tropics {
     const wasVisible = this.group.visible, materials = new Map();
     for (const mesh of this.above) {
       const { whole } = mesh.userData;
+      whole.kept = null;
+      materials.set(mesh, mesh.material);
+      mesh.visible = false;
+      if (!whole.casts) continue;
+      mesh.material = this.shadowMaterials[mesh.material === this.leafMaterial ? 'leaves' : 'wood'];
+      if (!this.built) {
+        // Unbuilt, the stand-in is drawn whole wherever it stands (as cull leaves it), so the masks' two programs are
+        // built on it under the loading veil: in no mask's box, it would be drawn into neither.
+        mesh.instanceMatrix.array.set(whole.matrices);
+        mesh.geometry.attributes.palmInstance.array.set(whole.numbers);
+        mesh.instanceMatrix.clearUpdateRanges();
+        mesh.geometry.attributes.palmInstance.clearUpdateRanges();
+        mesh.instanceMatrix.needsUpdate = mesh.geometry.attributes.palmInstance.needsUpdate = true;
+        mesh.count = whole.numbers.length / 4;
+        mesh.visible = true;
+      } else if (mesh.boundingSphere === null) {
+        // three.js orders a mesh's draws by its bounding sphere, made once at its first draw: made of every instance, as
+        // when every instance was drawn here, so the masks' draws keep their order.
+        mesh.instanceMatrix.array.set(whole.matrices);
+        mesh.count = whole.numbers.length / 4;
+        mesh.computeBoundingSphere();
+      }
+    }
+    this.group.visible = true;
+    renderer.setClearColor(0xffffff, 1);
+    // The beach's mask, then the same projection and programs into a small local mask for roots and fallen husks.
+    const shadowBox = PALM_SHADOW.uPalmShadowBox.value.clone();
+    for (const [mask, box, texels, boxUniform] of [[this.shadowTarget, SHADOW.box, SHADOW.texels, shadowBox], [this.nearShadowTarget, NEAR_SHADOW.box, NEAR_SHADOW.texels, PALM_SHADOW.uPalmShadowNearBox.value]]) {
+      PALM_SHADOW.uPalmShadowBox.value.copy(boxUniform);
+      if (this.built) this.shadowsInBox(box, box[2] / texels);
+      renderer.setRenderTarget(mask);
+      renderer.clear(true, false, false);
+      renderer.render(this.group, this.shadowCamera);
+    }
+    PALM_SHADOW.uPalmShadowBox.value.copy(shadowBox);
+    renderer.setRenderTarget(target);
+    renderer.setClearColor(clearColor, clearAlpha);
+    for (const [mesh, material] of materials) {
+      // Every instance, till the next cull.
+      const { whole } = mesh.userData;
       mesh.instanceMatrix.array.set(whole.matrices);
       mesh.geometry.attributes.palmInstance.array.set(whole.numbers);
       mesh.instanceMatrix.clearUpdateRanges();   // the whole of each (cull leaves a range of its own)
       mesh.geometry.attributes.palmInstance.clearUpdateRanges();
       mesh.instanceMatrix.needsUpdate = mesh.geometry.attributes.palmInstance.needsUpdate = true;
       mesh.count = whole.numbers.length / 4;
-      whole.kept = null;
-      materials.set(mesh, mesh.material);
-      mesh.visible = whole.casts;
-      if (whole.casts) mesh.material = this.shadowMaterials[mesh.material === this.leafMaterial ? 'leaves' : 'wood'];
-    }
-    this.group.visible = true;
-    renderer.setClearColor(0xffffff, 1);
-    renderer.setRenderTarget(this.shadowTarget);
-    renderer.clear(true, false, false);
-    renderer.render(this.group, this.shadowCamera);
-    // Same projection and programs, a small local mask for roots and fallen husks.
-    const shadowBox = PALM_SHADOW.uPalmShadowBox.value.clone();
-    PALM_SHADOW.uPalmShadowBox.value.copy(PALM_SHADOW.uPalmShadowNearBox.value);
-    renderer.setRenderTarget(this.nearShadowTarget);
-    renderer.clear(true, false, false);
-    renderer.render(this.group, this.shadowCamera);
-    PALM_SHADOW.uPalmShadowBox.value.copy(shadowBox);
-    renderer.setRenderTarget(target);
-    renderer.setClearColor(clearColor, clearAlpha);
-    for (const [mesh, material] of materials) {
       mesh.material = material;
       mesh.visible = true;
     }
     this.group.visible = wasVisible;
     this.bakedSun.copy(this.uniforms.uSunDir.value);
     this.culledFor.makeScale(0, 0, 0);   // culled again at the next frame
+  }
+
+  /**
+   * For a mask's draw (bakeShadows): each casting mesh's instances whose
+   * shadow can fall in `box` (least x and z, its size along each, m), packed
+   * at its front. SHADOW_VERTEX carries a point along the sun to the water's
+   * level, and that moves a point by at most `spread` times as far as it
+   * moves the sphere's centre, so an instance's shadow lies within its
+   * sphere's radius times `spread` of its centre's (a texel more, `margin`).
+   */
+  shadowsInBox([minX, minZ, sizeX, sizeZ], margin) {
+    const sun = this.uniforms.uSunDir.value, height = Math.max(sun.y, 0.05);
+    const spread = Math.hypot(1, Math.hypot(sun.x, sun.z) / height);
+    for (const { count, spheres, matrices, byLevel } of this.families) {
+      for (const meshes of byLevel) {
+        const casters = meshes.filter((mesh) => mesh.userData.whole.casts);
+        if (casters.length === 0) continue;
+        const here = [];
+        for (let index = 0; index < count; index++) {
+          const y = spheres[index * 4 + 1], reach = spheres[index * 4 + 3] * spread + margin;
+          const x = spheres[index * 4] - sun.x * (y / height), z = spheres[index * 4 + 2] - sun.z * (y / height);
+          if (x + reach >= minX && x - reach <= minX + sizeX && z + reach >= minZ && z - reach <= minZ + sizeZ) here.push(index);
+        }
+        let matricesPacked = null;
+        for (const mesh of casters) {
+          mesh.count = here.length;
+          mesh.visible = here.length > 0;
+          if (here.length === 0) continue;
+          if (matricesPacked !== mesh.instanceMatrix) {
+            packInto(mesh.instanceMatrix, matrices, here, 16);
+            matricesPacked = mesh.instanceMatrix;
+          }
+          packInto(mesh.geometry.attributes.palmInstance, mesh.userData.whole.numbers, here, 4);
+        }
+      }
+    }
   }
 
   /** Builds the whole of it (src/main.js shows it): what stands where, every mesh, the stand-in let go. */
