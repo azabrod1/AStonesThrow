@@ -16,6 +16,8 @@
 //   schedule, which the physics steps keep, is the same too.
 // - Frame work reuses the geometry, cross-section offsets and typed arrays;
 //   its hide is built only on first entering the loch and reused thereafter.
+// - Its contacts with the water (the heaps, the foam round them) end where
+//   its tube meets the water, never under a head lifted out of it.
 //
 //   node tools/visitor-probe.mjs
 import { createHash } from 'node:crypto';
@@ -177,6 +179,37 @@ for (const form of ['neck', 'back']) {
   }
   check(visitor.sighting.startled, 'a thing beside it startles it');
   check(under !== null && under - startledAt < 2.4 + 0.12 * visitor.sighting.length + 0.5, `and it is all under ${under === null ? 'never' : `${(under - startledAt).toFixed(2)} s`} after`);
+}
+
+// Where it meets the water: each contact (the water heaped and drawn down, the foam round it) runs from where its tube
+// meets the water at the front to where it does at the back, never under a head lifted out of it: every end of every
+// contact, in every frame of a few sightings of each form, is within a few centimetres of a knot whose tube is at the
+// waterline (its bottom under the water, its top within 2 cm of it or out).
+{
+  const worst = {};
+  for (const form of ['humps', 'neck', 'back']) {
+    worst[form] = 0;
+    for (let run = 0; run < 3; run++) {
+      const visitor = makeVisitor();
+      visitor.sightings = run * 3;   // a different summoned sighting each time
+      visitor.step(0, [], { open: true, near: false });
+      visitor.summon(0, form);
+      const sighting = visitor.sighting;
+      for (let time = 0; time < sighting.sinkStart + sighting.sinkSeconds; time += 1 / 15) {
+        visitor.showAt(time);
+        const meeting = visitor.spine.filter((knot) => knot.point.y - knot.radius * knot.flat < 0 && knot.point.y + knot.radius * knot.flat > -0.02);
+        const spans = visitor.uniforms.uVisitorSpans.value.toArray();
+        visitor.uniforms.uVisitorContacts.value.forEach((contact, slot) => {
+          if (contact.w <= 0) return;
+          for (const end of [1, -1]) {
+            const x = contact.x + end * spans[slot] * sighting.headingX, z = contact.y + end * spans[slot] * sighting.headingZ;
+            worst[form] = Math.max(worst[form], Math.min(...meeting.map((knot) => Math.hypot(knot.point.x - x, knot.point.z - z))));
+          }
+        });
+      }
+    }
+  }
+  check(Object.values(worst).every((distance) => distance < 0.15), `its contacts end where it meets the water: at most ${Object.entries(worst).map(([form, distance]) => `${form} ${(distance * 100).toFixed(1)} cm`).join(', ')} from a knot at the waterline`);
 }
 
 // Ice or a gale: nothing comes up.

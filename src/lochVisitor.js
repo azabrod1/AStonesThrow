@@ -773,8 +773,9 @@ export class LochVisitor {
   /**
    * The water's uniforms at `time` (src/shaders/visitor.js): the wake's
    * source at the head, at the depth its top holds when risen; where the
-   * body breaks the surface (contacts: the front of each piece out, then
-   * the backs); a breach's ring as the front comes up and a dive's as it
+   * body breaks the surface (contacts: each piece of it out, from where its
+   * tube meets the water at the front to where it does at the back, the
+   * highest first); a breach's ring as the front comes up and a dive's as it
    * goes down.
    */
   waterAt(sighting, time) {
@@ -792,26 +793,34 @@ export class LochVisitor {
     uniforms.uVisitorWake.value.set(sighting.speed, wakeHeight, Math.max(-risenTop, 0), sighting.girth);
     const ago = (moment) => time - moment;
     uniforms.uVisitorEnvelope.value.set(ago(sighting.start), ago(sighting.start + sighting.rise), ago(sighting.sinkStart), ago(sighting.sinkStart + sighting.sinkSeconds));
-    // Contacts: the pieces of spine whose top is out of the water.
+    // Contacts: where the body's tube crosses the waterline. A piece is a run of spine whose top is out of the water
+    // (or all but), from the foremost knot in it whose tube's bottom is under the water to the backmost: a lifted
+    // neck's head, and the neck above the water, are no part of it, the water under them open. A hump's arch clear of
+    // the water between two such knots stays in its piece (split, the humps' legs would be more pieces than there are
+    // slots, and a heap would come and go between frames).
     const pieces = [];
     let piece = null;
     for (let index = 0; index < SPINE_POINTS; index++) {
       const knot = this.spine[index];
-      const out = knot.point.y + knot.radius * knot.flat;
+      const deep = knot.radius * knot.flat;
+      const out = knot.point.y + deep;
       if (out > -0.02) {
-        if (!piece) { piece = { front: index, back: index, top: out }; pieces.push(piece); }
-        piece.back = index;
+        if (!piece) { piece = { front: -1, back: -1, top: out }; pieces.push(piece); }
         piece.top = Math.max(piece.top, out);
+        if (knot.point.y - deep < 0) {   // its tube meets the water
+          if (piece.front < 0) piece.front = index;
+          piece.back = index;
+        }
       } else piece = null;
     }
-    pieces.sort((one, other) => other.top - one.top);
+    const meeting = pieces.filter((one) => one.front >= 0).sort((one, other) => other.top - one.top);
     // Each piece a capsule along the course: its middle, its half-length, and its half-width at the waterline (the
     // widest cut of its knots' ellipses by the water), pushing up the bow's height, U² / 2g, as much as it is out.
     const contacts = uniforms.uVisitorContacts.value;
     const spans = uniforms.uVisitorSpans.value;
     const bow = (sighting.speed * sighting.speed) / (2 * GRAVITY);
     for (let slot = 0; slot < VISITOR_CONTACTS; slot++) {
-      const piece = pieces[slot];
+      const piece = meeting[slot];
       if (!piece) { contacts[slot].set(0, 0, 1, 0); spans.setComponent(slot, 0); continue; }
       const front = this.spine[piece.front].point, back = this.spine[piece.back].point;
       let width = 0.06;

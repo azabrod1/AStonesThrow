@@ -1395,7 +1395,8 @@ gone, all of it easing out over the linger's last 8 s so the water never
 stills at once); the Cauchy–Poisson rings of each breach and dive (long waves first,
 wavenumber g t² / 4r², the impulse's size cutting the short ones); the
 water heaped before each piece of it out of the water and drawn down
-behind (a capsule as long as the piece), the short capillary-gravity
+behind (a capsule from where its tube meets the water at the front to
+where it does at the back, so none under a head lifted clear), the short capillary-gravity
 ripples its waterline sheds, running out from the capsule's outline; and
 foam hugging the waterline and trailing behind. Each is filtered by the pixel's footprint and
 what it averages away goes to the glitter's roughness and spreads the
@@ -1854,8 +1855,9 @@ farther out, so it rises into the view rather than filling its corner.
   once; under ice or a gale nothing comes up; the same sightings and poses
   at 30, 60 and 144 frames a second (including the rendered skin and normals);
   posing it reuses its geometry, buffers and cross sections frame after frame
-  (work counted, not timed); and its waves have eased out by the last frame
-  that draws them.
+  (work counted, not timed); its contacts end where its tube meets the water,
+  never under a head lifted out of it; and its waves have eased out by the
+  last frame that draws them.
 - `node tools/visitor-wave-probe.mjs` checks the actual shader's Kelvin and
   breach-ring wave vectors against numerical derivatives of their phase:
   both Kelvin branches, both sides of the track, multiple headings and speeds.
