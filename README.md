@@ -242,9 +242,12 @@ full screen, which only a press or a key may ask for):
   `tools/garden-probe.mjs`). Reflecting Pool (`?sky=mall`, or `dc`): the
   Lincoln Memorial Reflecting Pool in Washington, D.C., from its west wall,
   looking 618 m down it to the Washington Monument and the Capitol beyond,
-  drawn to their real sizes and places (`src/nationalMall.js`): the granite
-  coping 30 cm over still water on a dark concrete bed, the double allées
-  of American elms either side, the Lincoln Memorial behind the eye, all
+  drawn to their real sizes and places (`src/nationalMall.js`, its
+  buildings `src/mallBuildings.js`): the granite coping 30 cm over still
+  water on a dark concrete bed, the double allées of American elms either
+  side, the Lincoln Memorial behind the eye (its colonnade, carved frieze
+  and attic, the statue in its lit chamber), the Monument in its ring of
+  flags, the Capitol's dome over its terraces, in the sun's shadows, all
   mirrored in the pool and floodlit after dusk. Its sky is a pure sky (no
   land in the photo: Poly Haven's Qwantani pure-sky hours, morning,
   afternoon, golden hour and twilight, the sun's path turned for the

@@ -21,24 +21,27 @@
 //     granite pavers, the Monument's plaza; per pixel (GROUND_FRAGMENT), in
 //     the elms' shade (allée shadows: their crowns' ellipsoids, by the
 //     rows' regular spacing, from where the sun's ray through the point
-//     meets the crowns' height), wet under rain, white under snow;
-//   - the monuments (stoneGeometry, one merged mesh): the Washington
-//     Monument (its shaft and pyramidion, the marble's two tones above and
-//     below the 46 m line where its building stopped in 1856, its courses,
-//     the observation windows), the Lincoln Memorial behind the eye (its
-//     terraces and stairs, its 36 fluted Doric columns, entablature and
-//     attic, the chamber open between the middle columns with the seated
-//     statue inside) and the Capitol (its wings, its drum, dome and
-//     lantern), each faded into the air by its distance (aerial
-//     perspective: AIR_DISTANCE, toward the sky's own horizon in that direction);
-//     floodlit after sundown (`flood`, setLight), as they are;
+//     meets the crowns' height), the Lincoln Memorial's and the Monument's
+//     (src/mallBuildings.js SUN_SHADOW), wet under rain, white under snow;
+//   - the buildings (src/mallBuildings.js, two merged meshes, each left
+//     out when out of view, and the flags): the coping, the Washington
+//     Monument and its ring of flags, the Lincoln Memorial behind the eye
+//     and the Capitol, drawn from their drawings, their carving per pixel,
+//     in the sun's shadows (a shadow map round the Memorial, drawn again
+//     only when the sun moves: update), each faded into the air by its
+//     distance (aerial perspective: AIR_DISTANCE, toward the sky's own
+//     horizon in that direction); floodlit after sundown (`flood`,
+//     setLight), as they are;
 //   - the trees (treeSpots): the double allées of American elms that line the
 //     pool, and the groves of the parks either side and beyond, out to a
-//     wooded horizon. Each tree is a trunk and its limbs (trunkGeometry: an
-//     elm's vase, its leaders arching out from a fork; the far trees' the
-//     bole alone) and a crown of leaf
-//     clusters (crownGeometry: cards that face the eye, each one of four
-//     sprays of leaves painted once into an atlas, leafAtlas), drawn
+//     wooded horizon. Each tree is one elm's skeleton (elmSkeleton: its
+//     leaders, and the lobes of foliage they carry, so the gaps between
+//     the clumps show the sky as an elm's do): a trunk and its limbs
+//     (trunkGeometry: an elm's vase, its leaders arching out from a fork;
+//     the far trees' the bole alone) and a crown of leaf clusters
+//     (crownGeometry: cards on the lobes that face the eye, each one of
+//     four sprays of leaves painted once into an atlas, leafAtlas, lit as
+//     its lobe: its underside and its depth in the crown darker), drawn
 //     instanced, one draw a level of detail. A level is chosen once, by the
 //     tree's distance from the pond (the eye never goes far from it), each
 //     coarser level fewer and larger cards on the same crown. A leaf card is
@@ -68,19 +71,16 @@
 import * as THREE from 'three';
 import { seededRandom } from './spray.js';
 import { MALL_POOL } from './pondFloor.js';
-import { HAZE } from './shaders/scene.js';
+import {
+  WEST, EAST, HALF, COPING_TOP, COPING, MONUMENT, KNOLL, LINCOLN, mallGroundAt, MALL_COMMON, SUN_SHADOW,
+  STONE_VERTEX, STONE_FRAGMENT, FLAG_VERTEX, FLAG_FRAGMENT, lincolnGeometry, distantGeometry, flagGeometry, createSunShadow,
+} from './mallBuildings.js';
 
-const MIRROR_NEARNESS_SCALE = 4;   // as src/rock.js's: the mirror image's alpha is 1 − this / distance
-const WEST = MALL_POOL.west;
-const EAST = MALL_POOL.west - MALL_POOL.length;
-const HALF = MALL_POOL.halfWidth;
-const COPING_TOP = MALL_POOL.coping;
+export { mallGroundAt };
 
 /** The pool as a walled basin (src/pool.js holdInPool, poolGround): its walls' faces, their top the coping's. */
 export const MALL_BASIN = Object.freeze({ minX: -HALF, minZ: EAST, sizeX: 2 * HALF, sizeZ: MALL_POOL.length, deck: COPING_TOP });
 
-// The coping: granite blocks `width` (m) across, `stone` long, from `below` (m, under the still water) to the top.
-const COPING = { width: 0.75, stone: 2.3, below: 0.25 };
 // The ground's bands beside the pool, out from the coping's outer edge (m): the sidewalk, a lawn, then each allée's
 // elm row (ALLEE.rows, from the pool's side) in lawn, the gravel walk between the rows; the west plaza's pavers from
 // the coping back `plaza` (m) and `plazaHalf` either side of the axis.
@@ -91,39 +91,10 @@ const ALLEE = { rows: [13, 25], spacing: 11.5, from: -1.5, to: EAST - 4 };
 // The reference elm (m): its height, where its crown begins (share of the height), its crown's greatest radius; the
 // crown's ellipsoid for shadows (centre height share, half height share).
 const ELM = { height: 18, crownFrom: 0.3, radius: 8.2, centre: 0.62, halfHeight: 0.36 };
-// The Washington Monument (m): its base's centre (x, z), its shaft's side at the base and at the top of the shaft,
-// the shaft's height, the whole height, where the marble's colour changes, the windows' height; on its knoll
-// (KNOLL: `height` over the Mall at the top, falling to the Mall's level by `radius`, the plaza flat to `plaza`).
-const MONUMENT = { x: 37, z: 138.5 - 1291, base: 16.8, top: 10.5, shaft: 152.4, height: 169.3, change: 46, windows: 150.2 };
-const KNOLL = { height: 9, plaza: 24, radius: 230 };
-// The Lincoln Memorial (m): its centre's z; the colonnade's stylobate (x and z half-sides, height over the Mall), its
-// columns (how many along x and along z, inset from the stylobate's edge, height, radius at the foot and the
-// neck), the entablature's height and overhang, the attic's setback and height; the terrace it stands on and the
-// stairs up to both (half-widths, z from and to, height).
-const LINCOLN = {
-  z: 138.5, halfX: 28.9, halfZ: 18.05, floor: 13.2,
-  columns: { alongX: 12, alongZ: 8, inset: 1.7, height: 13.4, foot: 1.13, neck: 0.9, flutes: 20 },
-  entablature: { height: 4.1, overhang: 0.5 }, attic: { setback: 3.4, height: 6.2 },
-  terrace: { halfX: 70, from: 84, to: 205, height: 6.6 },
-  lowerStair: { halfX: 30, from: 62, to: 84 },
-  upperStair: { halfX: 18, from: 102, to: 118 },
-  podium: { halfX: 33, from: 116, to: 161 },
-};
-// The Capitol (m): the dome's centre (z), the hill's height there, the building's half-length and depth, the wings'
-// height, the drum's radius and height, the dome's rise, the lantern's and the statue's.
-const CAPITOL = { z: 138.5 - 3560, hill: 24, halfLength: 115, depth: 70, wings: 30, drum: 20, drumHeight: 22, dome: 24, lantern: 10, statue: 6 };
 
 // ---- the ground --------------------------------------------------------------
 
 const smoothstep = (low, high, value) => { const share = Math.min(Math.max((value - low) / (high - low), 0), 1); return share * share * (3 - 2 * share); };
-/** The ground's height over the still water at (x, z) (m): the coping's level, the Monument's knoll, Capitol Hill. */
-export function mallGroundAt(x, z) {
-  const fromMonument = Math.hypot(x - MONUMENT.x, z - MONUMENT.z);
-  const knoll = KNOLL.height * (1 - smoothstep(KNOLL.plaza, KNOLL.radius, fromMonument));
-  const hill = CAPITOL.hill * smoothstep(CAPITOL.z + 900, CAPITOL.z + 250, z) * (1 - smoothstep(350, 900, Math.abs(x)));
-  return COPING_TOP + knoll + hill;
-}
-
 /** Edges from `inner` out to `outer` (m), the first `first` wide and each `growth` times the last. */
 function growingEdges(inner, outer, first, growth) {
   const edges = [inner];
@@ -176,232 +147,12 @@ function groundGeometry() {
   return geometry;
 }
 
-// ---- the stone: the coping and the monuments ---------------------------------
-
-// What each stone surface is (the `surface` attribute; STONE_FRAGMENT's looks): the coping's granite, the Lincoln
-// Memorial's marble, its terraces' and stairs' granite, the Monument's marble, its windows, the chamber's shade, the
-// statue, the Capitol's painted stone and its dome.
-const SURFACE = { coping: 0, marble: 1, terrace: 2, monument: 3, window: 4, chamber: 5, statue: 6, capitol: 7 };
-
-/** One merged mesh's pieces, each corner with its normal, its `surface`, its `hollow` (0 open to 1 deep in shade) and its `detail` (a column's angle round its axis, and 1 on a fluted shaft). */
-class Parts {
-  constructor() { this.positions = []; this.normals = []; this.surfaces = []; this.hollows = []; this.details = []; this.indices = []; }
-  /** `geometry` placed by `matrix`, as `surface`, its corners' hollow from `hollow(point, normal)` (or a number), detail from `detail(local)`. */
-  add(geometry, matrix, { surface, hollow = 0, detail = null }) {
-    if (!geometry.attributes.normal) geometry.computeVertexNormals();
-    const positions = geometry.attributes.position, normals = geometry.attributes.normal;
-    const normalMatrix = new THREE.Matrix3().getNormalMatrix(matrix);
-    const first = this.positions.length / 3;
-    const local = new THREE.Vector3(), point = new THREE.Vector3(), normal = new THREE.Vector3();
-    for (let corner = 0; corner < positions.count; corner++) {
-      local.fromBufferAttribute(positions, corner);
-      point.copy(local).applyMatrix4(matrix);
-      normal.fromBufferAttribute(normals, corner).applyMatrix3(normalMatrix).normalize();
-      this.positions.push(point.x, point.y, point.z);
-      this.normals.push(normal.x, normal.y, normal.z);
-      this.surfaces.push(surface);
-      this.hollows.push(typeof hollow === 'function' ? hollow(point, normal) : hollow);
-      const [detailFirst, detailSecond] = detail ? detail(local) : [0, 0];
-      this.details.push(detailFirst, detailSecond);
-    }
-    if (geometry.index) for (let index = 0; index < geometry.index.count; index++) this.indices.push(first + geometry.index.getX(index));
-    else for (let corner = 0; corner < positions.count; corner++) this.indices.push(first + corner);
-    geometry.dispose();
-  }
-  geometry() {
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.Float32BufferAttribute(this.positions, 3));
-    geometry.setAttribute('normal', new THREE.Float32BufferAttribute(this.normals, 3));
-    geometry.setAttribute('surface', new THREE.Float32BufferAttribute(this.surfaces, 1));
-    geometry.setAttribute('hollow', new THREE.Float32BufferAttribute(this.hollows, 1));
-    geometry.setAttribute('detail', new THREE.Float32BufferAttribute(this.details, 2));
-    geometry.setIndex(this.indices);
-    return geometry;
-  }
-}
-
-const at = (x, y, z) => new THREE.Matrix4().makeTranslation(x, y, z);
-/** A box from (x0, y0, z0) to (x1, y1, z1), flat-faced, its bottom left out when it stands on the ground. */
-function addBlock(parts, [x0, y0, z0], [x1, y1, z1], surface, { hollow = 0, bottom = false } = {}) {
-  const geometry = new THREE.BoxGeometry(x1 - x0, y1 - y0, z1 - z0);
-  if (!bottom) {
-    // The box's faces are in the order +x, −x, +y, −y, +z, −z, six indices each: drop −y.
-    const index = Array.from(geometry.index.array);
-    index.splice(18, 6);
-    geometry.setIndex(index);
-  }
-  parts.add(geometry, at((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2), { surface, hollow });
-}
-
-/** A flight of `count` steps rising from `y0` at z = `from` to `y1` at z = `to` (from < to: rising westward), `halfX` either side of x = 0; each step a block running back to the top. */
-function addStair(parts, { halfX, from, to, y0, y1, count, surface = SURFACE.terrace }) {
-  const run = (to - from) / count, rise = (y1 - y0) / count;
-  for (let step = 0; step < count; step++) addBlock(parts, [-halfX, y0 - 0.02, from + step * run], [halfX, y0 + (step + 1) * rise, to], surface);
-}
-
-/** The coping (COPING): four granite strips round the pool, their inner faces the walls' above the water. */
-function addCoping(parts) {
-  const outerX = HALF + COPING.width, westOuter = WEST + COPING.width, eastOuter = EAST - COPING.width;
-  for (const side of [-1, 1]) {
-    const inner = side * HALF, outer = side * outerX;
-    addBlock(parts, [Math.min(inner, outer), -COPING.below, eastOuter], [Math.max(inner, outer), COPING_TOP, westOuter], SURFACE.coping);
-  }
-  addBlock(parts, [-HALF, -COPING.below, WEST], [HALF, COPING_TOP, westOuter], SURFACE.coping);
-  addBlock(parts, [-HALF, -COPING.below, eastOuter], [HALF, COPING_TOP, EAST], SURFACE.coping);
-}
-
-/**
- * The Washington Monument (MONUMENT): the shaft, a square frustum, and its
- * pyramidion, faces aligned with the compass, on its plaza at the knoll's
- * top; its windows two to a face (dark recesses: SURFACE.window).
- */
-function addMonument(parts) {
-  const ground = mallGroundAt(MONUMENT.x, MONUMENT.z);
-  const half0 = MONUMENT.base / 2, half1 = MONUMENT.top / 2;
-  const positions = [], indices = [];
-  const corners = (half, height) => [[-half, height, -half], [half, height, -half], [half, height, half], [-half, height, half]];
-  const bottom = corners(half0, -1), top = corners(half1, MONUMENT.shaft);
-  const apex = [0, MONUMENT.height, 0];
-  // Each side its own corners, so its normal is flat.
-  for (let side = 0; side < 4; side++) {
-    const next = (side + 1) % 4, first = positions.length / 3;
-    positions.push(...bottom[side], ...bottom[next], ...top[next], ...top[side]);
-    indices.push(first, first + 2, first + 1, first, first + 3, first + 2);
-    const tip = positions.length / 3;
-    positions.push(...top[side], ...top[next], ...apex);
-    indices.push(tip, tip + 2, tip + 1);
-  }
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-  geometry.setIndex(indices);
-  const flat = geometry.toNonIndexed();
-  geometry.dispose();
-  flat.computeVertexNormals();
-  parts.add(flat, at(MONUMENT.x, ground, MONUMENT.z), { surface: SURFACE.monument });
-  // The windows: a pair on each face, just proud of it.
-  const lean = (half0 - half1) / MONUMENT.shaft;
-  const halfAt = half0 - lean * MONUMENT.windows;
-  for (let side = 0; side < 4; side++) {
-    const turn = new THREE.Matrix4().makeRotationY((side * Math.PI) / 2);
-    for (const across of [-1.1, 1.1]) {
-      const pane = new THREE.PlaneGeometry(0.75, 1.1);
-      parts.add(pane, at(MONUMENT.x, ground + MONUMENT.windows, MONUMENT.z).multiply(turn).multiply(at(across, 0, halfAt + 0.02)), { surface: SURFACE.window });
-    }
-  }
-  // The plaza's low granite kerb round the base.
-  parts.add(new THREE.CylinderGeometry(KNOLL.plaza * 0.55, KNOLL.plaza * 0.55, 0.5, 48, 1, true), at(MONUMENT.x, ground + 0.1, MONUMENT.z), { surface: SURFACE.terrace });
-}
-
-/** A fluted Doric column (LINCOLN.columns) on the stylobate at (x, z): shaft with entasis, echinus and abacus. */
-function addColumn(parts, x, y, z, hollow) {
-  const { height, foot, neck } = LINCOLN.columns;
-  const shaftHeight = height * 0.92, around = 24;
-  const profile = [];
-  for (let ring = 0; ring <= 8; ring++) {
-    const share = ring / 8;
-    profile.push(new THREE.Vector2(foot + (neck - foot) * share + 0.04 * Math.sin(Math.PI * share), shaftHeight * share));
-  }
-  const fluted = (local) => [Math.atan2(local.z, local.x), 1];
-  parts.add(new THREE.LatheGeometry(profile, around), at(x, y, z), { surface: SURFACE.marble, hollow, detail: fluted });
-  // The capital: the echinus flaring to the abacus, a square slab.
-  const capital = [new THREE.Vector2(neck, 0), new THREE.Vector2(neck * 1.05, 0.12), new THREE.Vector2(neck * 1.32, 0.42), new THREE.Vector2(neck * 1.38, 0.5)];
-  parts.add(new THREE.LatheGeometry(capital, around), at(x, y + shaftHeight, z), { surface: SURFACE.marble, hollow });
-  const abacus = neck * 1.42, top = y + height;
-  addBlock(parts, [x - abacus, top - (height - shaftHeight - 0.5), z - abacus], [x + abacus, top, z + abacus], SURFACE.marble, { hollow, bottom: true });
-}
-
-/**
- * The Lincoln Memorial (LINCOLN), behind the eye across the west plaza: the
- * terrace and its stairs, the podium, the colonnade of 36, the
- * entablature and the attic, and the chamber behind the columns, open
- * between the middle ones, with the seated statue inside.
- */
-function addLincoln(parts) {
-  const { z, halfX, halfZ, floor, columns, entablature, attic, terrace, lowerStair, upperStair, podium } = LINCOLN;
-  const base = COPING_TOP;
-  // The terrace, its stairs up from the plaza, the podium and its stairs.
-  addBlock(parts, [-terrace.halfX, base - 0.1, terrace.from], [terrace.halfX, base + terrace.height, terrace.to], SURFACE.terrace);
-  addStair(parts, { halfX: lowerStair.halfX, from: lowerStair.from, to: lowerStair.to, y0: base, y1: base + terrace.height, count: 22 });
-  addBlock(parts, [-podium.halfX, base + terrace.height - 0.1, podium.from], [podium.halfX, base + floor, podium.to], SURFACE.marble, { hollow: 0.1 });
-  addStair(parts, { halfX: upperStair.halfX, from: upperStair.from, to: upperStair.to, y0: base + terrace.height, y1: base + floor, count: 20 });
-  // The buttresses either side of the upper stair.
-  for (const side of [-1, 1]) addBlock(parts, [side * upperStair.halfX - (side > 0 ? 0 : 3.2), base + terrace.height, upperStair.from], [side * upperStair.halfX + (side > 0 ? 3.2 : 0), base + floor + 0.5, podium.from + 0.5], SURFACE.marble);
-  // The colonnade, inset from the stylobate's edge.
-  const stylobate = base + floor;
-  const spanX = halfX - columns.inset, spanZ = halfZ - columns.inset;
-  const columnAt = [];
-  for (let index = 0; index < columns.alongX; index++) {
-    const x = -spanX + (2 * spanX * index) / (columns.alongX - 1);
-    columnAt.push([x, z - spanZ], [x, z + spanZ]);
-  }
-  for (let index = 1; index < columns.alongZ - 1; index++) {
-    const along = -spanZ + (2 * spanZ * index) / (columns.alongZ - 1);
-    columnAt.push([-spanX, z + along], [spanX, z + along]);
-  }
-  for (const [x, columnZ] of columnAt) addColumn(parts, x, stylobate, columnZ, 0.05);
-  // The chamber's walls behind the colonnade, in its shade (hollow), open in the east between the middle columns.
-  const wallX = spanX - 3.6, wallZ = spanZ - 3.6, roof = stylobate + columns.height;
-  const opening = (2 * spanX) / (columns.alongX - 1) * 1.1;
-  addBlock(parts, [-wallX, stylobate, z - wallZ], [-opening, roof, z - wallZ + 1.2], SURFACE.marble, { hollow: 0.45 });
-  addBlock(parts, [opening, stylobate, z - wallZ], [wallX, roof, z - wallZ + 1.2], SURFACE.marble, { hollow: 0.45 });
-  addBlock(parts, [-opening, stylobate + columns.height * 0.82, z - wallZ], [opening, roof, z - wallZ + 1.2], SURFACE.marble, { hollow: 0.45 });
-  addBlock(parts, [-wallX, stylobate, z + wallZ - 1.2], [wallX, roof, z + wallZ], SURFACE.marble, { hollow: 0.45 });
-  for (const side of [-1, 1]) addBlock(parts, [side > 0 ? wallX - 1.2 : -wallX, stylobate, z - wallZ], [side > 0 ? wallX : -wallX + 1.2, roof, z + wallZ], SURFACE.marble, { hollow: 0.45 });
-  // The chamber's inside, dark but for its light (SURFACE.chamber), and the statue in it: the chair, the seated figure.
-  addBlock(parts, [-opening, stylobate, z - wallZ + 1.2], [opening, stylobate + columns.height * 0.82, z - wallZ + 1.3], SURFACE.chamber, { bottom: true });
-  addBlock(parts, [-wallX + 1.2, stylobate - 0.02, z - wallZ + 1.2], [wallX - 1.2, stylobate + 0.02, z + wallZ - 1.2], SURFACE.chamber);
-  addBlock(parts, [-wallX + 1.2, stylobate, z + 2.5], [wallX - 1.2, roof, z + 2.7], SURFACE.chamber);
-  const statue = (from, to) => addBlock(parts, from, to, SURFACE.statue);
-  statue([-2.4, stylobate, z + 0.4], [2.4, stylobate + 3.3, z + 2.5]);              // the pedestal
-  statue([-2.1, stylobate + 3.3, z + 0.2], [2.1, stylobate + 5.6, z + 2.4]);        // the chair, the lap
-  statue([-1.25, stylobate + 5.6, z + 1.0], [1.25, stylobate + 8.4, z + 2.3]);      // the body
-  statue([-0.45, stylobate + 8.4, z + 1.3], [0.45, stylobate + 9.4, z + 2.1]);      // the head
-  // The entablature over the columns, its cornice standing out; the attic set back over the chamber.
-  const overhang = entablature.overhang;
-  addBlock(parts, [-halfX + 0.3, roof, z - halfZ + 0.3], [halfX - 0.3, roof + entablature.height * 0.7, z + halfZ - 0.3], SURFACE.marble, { bottom: true, hollow: 0.02 });
-  addBlock(parts, [-halfX - overhang, roof + entablature.height * 0.7, z - halfZ - overhang], [halfX + overhang, roof + entablature.height, z + halfZ + overhang], SURFACE.marble, { bottom: true });
-  const atticTop = roof + entablature.height + attic.height;
-  addBlock(parts, [-halfX + attic.setback, roof + entablature.height, z - halfZ + attic.setback], [halfX - attic.setback, atticTop - 0.6, z + halfZ - attic.setback], SURFACE.marble);
-  addBlock(parts, [-halfX + attic.setback - 0.35, atticTop - 0.6, z - halfZ + attic.setback - 0.35], [halfX - attic.setback + 0.35, atticTop, z + halfZ - attic.setback + 0.35], SURFACE.marble, { bottom: true });
-}
-
-/** The Capitol (CAPITOL), far beyond the Monument: its long front and wings, the drum with its colonnade, the dome, the lantern and the statue. */
-function addCapitol(parts) {
-  const { z, halfLength, depth, wings, drum, drumHeight, dome, lantern, statue } = CAPITOL;
-  const ground = mallGroundAt(0, z);
-  addBlock(parts, [-halfLength, ground - 1, z - depth / 2], [halfLength, ground + wings, z + depth / 2], SURFACE.capitol);
-  addBlock(parts, [-38, ground + wings - 0.5, z - depth / 2 + 6], [38, ground + wings + 9, z + depth / 2 - 6], SURFACE.capitol);
-  const base = ground + wings + 9;
-  // The drum: its peristyle a ring a little in shade, the attic over it, then the dome's lathe and the lantern.
-  const round = (radius, height, segments = 40) => new THREE.CylinderGeometry(radius, radius, height, segments, 1, false);
-  parts.add(round(drum * 1.08, drumHeight * 0.62), at(0, base + drumHeight * 0.31, z), { surface: SURFACE.capitol, hollow: 0.3 });
-  parts.add(round(drum * 0.9, drumHeight * 0.38), at(0, base + drumHeight * 0.81, z), { surface: SURFACE.capitol });
-  const domeProfile = [];
-  for (let ring = 0; ring <= 10; ring++) {
-    const angle = (ring / 10) * Math.PI / 2;
-    domeProfile.push(new THREE.Vector2(drum * 0.92 * Math.cos(angle) + 0.01, dome * Math.sin(angle)));
-  }
-  parts.add(new THREE.LatheGeometry(domeProfile, 40), at(0, base + drumHeight, z), { surface: SURFACE.capitol });
-  parts.add(round(3.2, lantern, 16), at(0, base + drumHeight + dome + lantern / 2 - 0.5, z), { surface: SURFACE.capitol, hollow: 0.2 });
-  parts.add(round(0.8, statue, 8), at(0, base + drumHeight + dome + lantern + statue / 2 - 0.5, z), { surface: SURFACE.capitol, hollow: 0.5 });
-}
-
-/** The stone (the header): the coping, the Monument, the Lincoln Memorial and the Capitol, one mesh. */
-function stoneGeometry() {
-  const parts = new Parts();
-  addCoping(parts);
-  addMonument(parts);
-  addLincoln(parts);
-  addCapitol(parts);
-  return parts.geometry();
-}
-
 // ---- the trees -----------------------------------------------------------------
 
-// The leaf atlas (leafAtlas): ATLAS.cells × ATLAS.cells sprays, each `cell` texels square. A spray is a few twigs
-// from near the cell's middle, an elm's leaves alternate along each (ovate, `leaf` texels long, set at `angle`
-// (rad) to the twig), smaller toward the tips.
-const ATLAS = { cells: 2, cell: 256, twigs: [5, 8], leaf: [10, 16], angle: 0.75 };
+// The leaf atlas (leafAtlas): ATLAS.cells × ATLAS.cells sprays, each `cell` texels square. A spray is a round clump
+// of twigs from near the cell's middle, each with a twiglet or two, an elm's leaves alternate along them (ovate and
+// toothed, `leaf` texels long, set at `angle` (rad) to the twig), smaller toward the tips.
+const ATLAS = { cells: 2, cell: 256, twigs: [9, 13], leaf: [11, 17], angle: 0.8 };
 /**
  * The leaf atlas (ATLAS): RGBA bytes, R each leaf's brightness (its tilt
  * to the light, 0 to 1 about 0.5), G its own hue (paler and yellower
@@ -427,7 +178,8 @@ function leafAtlas(random) {
         else {
           // An ovate: widest a third of the way from its base, pointed at the tip.
           const taper = along > -0.3 ? 1 - ((along + 0.3) / 1.3) ** 1.6 : 1 - ((along + 0.3) / 0.7) ** 2;
-          distance = (Math.abs(across) - Math.max(taper, 0)) * (width / 2);
+          const teeth = 0.07 * Math.abs(Math.sin(along * 9));   // the elm's doubly toothed margin
+          distance = (Math.abs(across) - Math.max(taper, 0) * (1 - teeth)) * (width / 2);
           if (Math.abs(along) > 1) distance = Math.max(distance, (Math.abs(along) - 1) * (length / 2));
         }
         const cover = Math.min(Math.max(0.5 - distance, 0), 1);
@@ -450,25 +202,32 @@ function leafAtlas(random) {
         let x = originX + size * (0.5 + (random() - 0.5) * 0.2), y = originY + size * (0.5 + (random() - 0.5) * 0.2);
         let heading = (twig / twigs) * Math.PI * 2 + (random() - 0.5) * 0.7;
         const bend = (random() - 0.5) * 0.5, spray = 0.65 + 0.5 * random(), hue = random();
-        const length = size * (0.3 + 0.14 * random());
-        const step = 3.2;
-        let side = random() < 0.5 ? 1 : -1;
-        for (let travelled = 0; travelled < length; travelled += step) {
-          const share = travelled / length;
-          paint(x, y, step + 1, 1.3 * (1 - 0.5 * share), heading, 0, 0, true);
-          // A leaf now and then, alternate sides, smaller toward the tip, none at the twig's root.
-          if (share > 0.08 && random() < 0.72) {
-            const leafLength = (ATLAS.leaf[0] + (ATLAS.leaf[1] - ATLAS.leaf[0]) * random()) * (1 - 0.35 * share);
-            const leafAngle = heading + side * (ATLAS.angle + (random() - 0.5) * 0.4);
-            const out = leafLength * 0.48;
-            paint(x + Math.cos(leafAngle) * out, y + Math.sin(leafAngle) * out, leafLength, leafLength * (0.48 + 0.1 * random()), leafAngle,
-              Math.min(Math.max(spray * (0.75 + 0.5 * random()), 0), 1) * 0.6, Math.min(Math.max(hue * 0.6 + random() * 0.4, 0), 1), false);
-            side = -side;
+        const length = size * (0.26 + 0.17 * random());
+        // The twig, and a twiglet off it a third and two thirds along, each leafed.
+        const grow = (fromX, fromY, startHeading, twigLength, width, twiglets) => {
+          let atX = fromX, atY = fromY, towards = startHeading, side = random() < 0.5 ? 1 : -1;
+          const step = 3.2;
+          for (let travelled = 0; travelled < twigLength; travelled += step) {
+            const share = travelled / twigLength;
+            paint(atX, atY, step + 1, width * (1 - 0.5 * share), towards, 0, 0, true);
+            // A leaf at most steps, alternate sides, smaller toward the tip, none at the twig's root.
+            if (share > 0.06 && random() < 0.86) {
+              const leafLength = (ATLAS.leaf[0] + (ATLAS.leaf[1] - ATLAS.leaf[0]) * random()) * (1 - 0.3 * share);
+              const leafAngle = towards + side * (ATLAS.angle + (random() - 0.5) * 0.5);
+              const out = leafLength * 0.48;
+              paint(atX + Math.cos(leafAngle) * out, atY + Math.sin(leafAngle) * out, leafLength, leafLength * (0.5 + 0.1 * random()), leafAngle,
+                Math.min(Math.max(spray * (0.75 + 0.5 * random()), 0), 1) * 0.6, Math.min(Math.max(hue * 0.6 + random() * 0.4, 0), 1), false);
+              side = -side;
+            }
+            if (twiglets && [0.33, 0.66].some((at) => Math.abs(share - at) < 0.5 * step / twigLength)) {
+              grow(atX, atY, towards + (random() < 0.5 ? -1 : 1) * (0.6 + 0.3 * random()), twigLength * (0.35 + 0.15 * random()), width * 0.7, false);
+            }
+            atX += Math.cos(towards) * step;
+            atY += Math.sin(towards) * step;
+            towards += bend * step / twigLength * 2;
           }
-          x += Math.cos(heading) * step;
-          y += Math.sin(heading) * step;
-          heading += bend * step / length * 2;
-        }
+        };
+        grow(x, y, heading, length, 1.3, true);
       }
     }
   }
@@ -486,39 +245,102 @@ function leafAtlas(random) {
 const crownRadius = (share) => ELM.radius * (0.2 + 0.8 * Math.sin(Math.PI * Math.min(Math.max(share, 0), 1) ** 0.8) ** 0.6);
 const SHADE_HEIGHTS = [8.5, 13.5];   // m: the two heights the allées' shade takes the crowns at (GROUND_FRAGMENT alleeShade)
 
-// The crown's levels of detail (crownGeometry): how many cards, and each card's side (m) on the reference elm.
-const CROWN_LEVELS = [{ cards: 420, size: 2.4 }, { cards: 140, size: 3.9 }, { cards: 40, size: 6.8 }];
+// The crown's levels of detail (crownGeometry): how many cards, and each card's side (m) on the reference elm (the
+// farthest level's cards a lobe's own size, one or two a lobe).
+const CROWN_LEVELS = [{ cards: 440, size: 2.1 }, { cards: 150, size: 3.5 }, { cards: 44, size: 0 }];
+// The reference elm's lobes (elmSkeleton): the clumps of foliage its crown is made of, each a sphere `radius` (m)
+// across from LOBE.radius: three along each leader, riding a little over it, the last drooping past its tip; a
+// dome between the leaders' tops, and one on top.
+const LOBE = { along: [0.5, 0.78, 1.02], rise: [1.6, 2.2, 1.2], radius: [2.3, 3.3], dome: { out: 3.9, height: 15.4 }, top: 16.4 };
 /**
- * A crown of leaf cards (the header) for the reference elm: card centres on
- * and just inside its envelope (crownRadius), spread by area, each with its
- * corner, size, roll, depth in the crown, tint, the envelope's outward
- * normal there and its atlas cell.
+ * The reference elm's skeleton (seeded): its leaders (TRUNK: each a heading,
+ * its lean at the fork and the tip, its length), and its crown's lobes
+ * (LOBE: centre and radius), kept inside the crown's envelope (crownRadius),
+ * so the trunk's limbs and the crown's clumps are one tree's.
  */
-function crownGeometry(level, random) {
-  const { cards, size } = CROWN_LEVELS[level];
+function elmSkeleton(random) {
+  const between = ([least, most]) => least + (most - least) * random();
+  const count = TRUNK.leaders[0] + Math.floor(random() * (TRUNK.leaders[1] - TRUNK.leaders[0] + 1));
+  const leaders = Array.from({ length: count }, (unused, leader) => ({
+    heading: (leader / count) * Math.PI * 2 + (random() - 0.5) * 0.8, lean: between(TRUNK.lean), tipLean: between(TRUNK.tipLean), length: between(TRUNK.length),
+  }));
   const crownBottom = ELM.height * ELM.crownFrom, crownTall = ELM.height - crownBottom;
+  const lobes = [];
+  const place = (centre, radius) => {
+    // Inside the envelope: the lobe's outer side no farther out than the crown's radius at its height.
+    const share = (centre.y - crownBottom) / crownTall;
+    const out = Math.hypot(centre.x, centre.z), most = Math.max(crownRadius(share) * 1.04 - radius * 0.75, 0.3);
+    if (out > most) { centre.x *= most / out; centre.z *= most / out; }
+    centre.y = Math.min(centre.y, ELM.height - radius * 0.7);
+    lobes.push({ centre, radius });
+  };
+  for (const leader of leaders) {
+    LOBE.along.forEach((share, index) => {
+      const point = leaderPoint(leader, Math.min(share, 1));
+      if (share > 1) point.add(new THREE.Vector3(Math.cos(leader.heading), -0.6, Math.sin(leader.heading)).multiplyScalar((share - 1) * leader.length));
+      point.y += LOBE.rise[index];
+      place(point, between(LOBE.radius) * (index === 0 ? 0.85 : 1));
+    });
+  }
+  for (const leader of leaders) {
+    const heading = leader.heading + Math.PI / count + (random() - 0.5) * 0.3;
+    place(new THREE.Vector3(Math.cos(heading) * LOBE.dome.out, LOBE.dome.height + (random() - 0.5) * 1.2, Math.sin(heading) * LOBE.dome.out), between(LOBE.radius));
+  }
+  place(new THREE.Vector3((random() - 0.5) * 1.5, LOBE.top, (random() - 0.5) * 1.5), LOBE.radius[1]);
+  return { leaders, lobes };
+}
+/** Where a leader (elmSkeleton) is `share` of the way along it (m, on the reference elm), with `rings` steps. */
+function leaderPoint({ heading, lean, tipLean, length }, share, rings = 12) {
+  const point = new THREE.Vector3(0, TRUNK.fork - 0.4, 0);
+  const steps = Math.round(share * rings);
+  for (let ring = 0; ring < steps; ring++) {
+    const tilt = lean + (tipLean - lean) * (ring / rings) ** 2;
+    point.add(new THREE.Vector3(Math.sin(tilt) * Math.cos(heading), Math.cos(tilt), Math.sin(tilt) * Math.sin(heading)).multiplyScalar(length / rings));
+  }
+  return point;
+}
+/**
+ * A crown of leaf cards (the header) for the reference elm (`skeleton`):
+ * card centres on and just inside its lobes, spread by each lobe's area,
+ * fewer on a lobe's side toward the trunk (hidden); each with its corner,
+ * size, roll, depth (its lobe's underside and inside, and the lobe's own
+ * depth in the crown: the less sky), tint, its normal (its lobe's outward
+ * one, a little the crown's) and its atlas cell. The farthest level's
+ * cards are the lobes themselves.
+ */
+function crownGeometry(level, skeleton, random) {
+  const { cards, size } = CROWN_LEVELS[level];
   const centres = [], shapes = [], outwards = [], corners = [], cells = [];
   const corner = [[-1, -1], [1, -1], [1, 1], [-1, 1]];
-  for (let made = 0, guard = 0; made < cards && guard < cards * 50; guard++) {
-    const share = random();
-    const radius = crownRadius(share);
-    if (random() > radius / ELM.radius) continue;   // by area: the wide band holds more
-    const angle = random() * Math.PI * 2;
-    // Mostly at the surface, a few deeper (a coarse level's larger cards sit a little deeper).
-    const depth = 0.32 * random() ** 1.7 + level * 0.04;
-    const out = radius * (1 - depth);
-    const y = crownBottom + crownTall * share;
-    // The envelope's normal: across its radius's slope with height.
-    const slope = (crownRadius(share + 0.01) - crownRadius(share - 0.01)) / (0.02 * crownTall);
-    const outward = new THREE.Vector3(Math.cos(angle), -slope, Math.sin(angle)).normalize();
-    if (share > 0.88) outward.lerp(new THREE.Vector3(0, 1, 0), (share - 0.88) / 0.12).normalize();
-    if (share < 0.08) outward.lerp(new THREE.Vector3(0, -1, 0), (0.08 - share) / 0.08 * 0.7).normalize();
-    const cardSize = size * (0.8 + 0.4 * random());
+  const { lobes } = skeleton;
+  const area = lobes.reduce((sum, lobe) => sum + lobe.radius ** 2, 0);
+  const crownCentre = new THREE.Vector3(0, ELM.height * ELM.centre, 0);
+  const radii = new THREE.Vector3(ELM.radius, ELM.height * ELM.halfHeight, ELM.radius);
+  const direction = new THREE.Vector3(), fromAxis = new THREE.Vector3(), crownNormal = new THREE.Vector3(), point = new THREE.Vector3();
+  for (let made = 0, guard = 0; made < cards && guard < cards * 60; guard++) {
+    // A lobe by its area, a point on it.
+    let pick = random() * area, lobe = lobes[0];
+    for (const candidate of lobes) { pick -= candidate.radius ** 2; if (pick <= 0) { lobe = candidate; break; } }
+    const up = 2 * random() - 1, around = random() * Math.PI * 2;
+    direction.set(Math.sqrt(1 - up * up) * Math.cos(around), up, Math.sqrt(1 - up * up) * Math.sin(around));
+    fromAxis.set(lobe.centre.x, 0, lobe.centre.z).normalize();
+    if (direction.dot(fromAxis) < -0.35 && direction.y < 0.4 && random() < 0.75) continue;   // its side toward the trunk, mostly hidden
+    const far = size === 0;
+    const inside = far ? 0.45 : 0.28 * random() ** 1.5 + level * 0.05;
+    point.copy(lobe.centre).addScaledVector(direction, lobe.radius * (1 - inside));
+    // How deep the lobe sits in the whole crown (its centre's distance inside the crown's ellipsoid), its underside.
+    crownNormal.subVectors(point, crownCentre).divide(radii);
+    const lobeDepth = Math.min(Math.max(1 - crownNormal.length(), 0), 1);
+    crownNormal.divide(radii).normalize();
+    const underside = Math.max(-direction.y, 0);
+    const depth = Math.min(1, 0.45 * inside / 0.28 + 0.35 * underside + 0.8 * lobeDepth);
+    const normal = direction.clone().multiplyScalar(0.72).addScaledVector(crownNormal, 0.28).normalize();
+    const cardSize = far ? lobe.radius * (1.55 + 0.3 * random()) : size * (0.8 + 0.4 * random());
     const roll = random() * Math.PI * 2, tint = random(), cell = Math.floor(random() * ATLAS.cells * ATLAS.cells);
     for (const [cornerX, cornerY] of corner) {
-      centres.push(Math.cos(angle) * out, y, Math.sin(angle) * out);
-      shapes.push(cardSize, roll, depth / 0.32, tint);
-      outwards.push(outward.x, outward.y, outward.z);
+      centres.push(point.x, point.y, point.z);
+      shapes.push(cardSize, roll, depth, tint);
+      outwards.push(normal.x, normal.y, normal.z);
       corners.push(cornerX, cornerY);
       cells.push(cell);
     }
@@ -575,11 +397,10 @@ function addTube(target, path, radii, sides) {
     }
   }
 }
-/** The reference elm's trunk and limbs (TRUNK) at its level of TRUNK_LEVELS; seeded (`random`). */
-function trunkGeometry(level, random) {
+/** The reference elm's trunk and limbs (TRUNK, its leaders the skeleton's: elmSkeleton) at its level of TRUNK_LEVELS; seeded (`random`). */
+function trunkGeometry(level, skeleton, random) {
   const target = { positions: [], normals: [], barks: [], indices: [] };
   const { sides, rings, limbs: fine, boleOnly } = TRUNK_LEVELS[level];
-  const between = ([least, most]) => least + (most - least) * random();
   const trunkPath = [], trunkRadii = [];
   if (boleOnly) {
     addTube(target, [new THREE.Vector3(0, -0.3, 0), new THREE.Vector3(0, BOLE_TOP, 0)], [TRUNK.foot * 1.1, TRUNK.leaderRadius], sides);
@@ -591,10 +412,7 @@ function trunkGeometry(level, random) {
     trunkRadii.push(TRUNK.foot + (TRUNK.forkRadius - TRUNK.foot) * share + (TRUNK.flare - TRUNK.foot) * Math.max(0, 1 - share * 5) ** 2);
   }
   addTube(target, trunkPath, trunkRadii, sides);
-  const leaders = TRUNK.leaders[0] + Math.floor(random() * (TRUNK.leaders[1] - TRUNK.leaders[0] + 1));
-  for (let leader = 0; leader < leaders; leader++) {
-    const heading = (leader / leaders) * Math.PI * 2 + (random() - 0.5) * 0.8;
-    const lean = between(TRUNK.lean), tipLean = between(TRUNK.tipLean), length = between(TRUNK.length);
+  for (const { heading, lean, tipLean, length } of skeleton.leaders) {
     const path = [], radii = [];
     const point = new THREE.Vector3(0, TRUNK.fork - 0.4, 0);
     for (let ring = 0; ring <= rings; ring++) {
@@ -691,169 +509,6 @@ const LEVEL_REACH = [140, 430];
 
 // ---- the looks -------------------------------------------------------------------
 
-// What every look shares: the light (the scene's sun and sky, as the lake's land is lit: src/shaders/scene.js
-// LAND_FRAGMENT), the ground's light thrown back up (GROUND_ALBEDO), the floodlights after dusk (uFlood), and the
-// air between: what lies d metres off fades toward the sky's own horizon in its direction, by 1 − exp(−d/AIR_DISTANCE)
-// (a summer day's: the Monument 1.15 km off keeps 82% of itself, the Capitol 3.4 km off 56%), then the weather's haze.
-const MALL_COMMON = /* glsl */`
-uniform vec3 uSunDir;
-uniform vec3 uSunIrradiance;
-uniform vec3 uSkyAmbient;
-uniform samplerCube uSkyCube;
-uniform float uFlood;
-uniform float uSnow;
-uniform float uWet;
-${HAZE}
-varying vec3 vWorld;
-#define SKY_LIGHT 1.4
-#define GROUND_ALBEDO 0.16
-#define AIR_DISTANCE 5800.0
-#define SNOW_ALBEDO vec3(0.86, 0.89, 0.93)
-// GLSL_COMMON's hash21 (src/shaders/scene.js), not a sine's: it keeps its spread at the Mall's kilometres on any GPU.
-float mallHash(vec2 point) {
-  vec3 mixed = fract(vec3(point.xyx) * 0.1031);
-  mixed += dot(mixed, mixed.yzx + 33.33);
-  return fract((mixed.x + mixed.y) * mixed.z);
-}
-float mallNoise(vec2 point) {
-  vec2 cell = floor(point), within = fract(point);
-  vec2 eased = within * within * (3.0 - 2.0 * within);
-  return mix(mix(mallHash(cell), mallHash(cell + vec2(1.0, 0.0)), eased.x), mix(mallHash(cell + vec2(0.0, 1.0)), mallHash(cell + vec2(1.0, 1.0)), eased.x), eased.y);
-}
-vec3 daylight(vec3 normal, float sunShade, float skyShade) {
-  vec3 sky = uSkyAmbient * SKY_LIGHT;
-  return uSunIrradiance * max(dot(normal, uSunDir), 0.0) * sunShade
-    + sky * (0.6 + 0.4 * normal.y) * skyShade
-    + (uSunIrradiance * max(uSunDir.y, 0.0) + sky) * GROUND_ALBEDO * (0.5 - 0.5 * normal.y);
-}
-vec3 inAir(vec3 color, vec3 world) {
-  vec2 toward = world.xz - cameraPosition.xz;
-  toward /= max(length(toward), 1e-3);
-  float distance = length(world - cameraPosition);
-  vec3 air = textureCubeLodEXT(uSkyCube, normalize(vec3(toward.x, 0.035, toward.y)), 4.0).rgb;
-  return withHaze(mix(color, air, 1.0 - exp(-distance / AIR_DISTANCE)), distance);
-}
-vec4 finish(vec3 color) {
-#ifdef MIRRORED
-  return vec4(color, 1.0 - ${MIRROR_NEARNESS_SCALE.toFixed(1)} / max(length(vWorld - cameraPosition), 0.05));
-#else
-  return vec4(color, 1.0);
-#endif
-}
-`;
-
-const STONE_VERTEX = /* glsl */`
-attribute float surface;
-attribute float hollow;
-attribute vec2 detail;
-varying vec3 vWorld;
-varying vec3 vNormal;
-varying float vSurface;
-varying float vHollow;
-varying vec2 vDetail;
-void main() {
-  vec4 world = modelMatrix * vec4(position, 1.0);
-  vWorld = world.xyz;
-  vNormal = normalize(mat3(modelMatrix) * normal);
-  vSurface = surface;
-  vHollow = hollow;
-  vDetail = detail;
-  gl_Position = projectionMatrix * viewMatrix * world;
-}
-`;
-// The stone's looks (SURFACE): the coping's pale granite in its blocks (COPING.stone long), wet and greened at the
-// waterline; the Lincoln Memorial's white marble, its columns fluted (their angle round the axis, vDetail), its
-// terraces' granite in courses; the Monument's marble, whiter below its 46 m line and warmer above, in faint courses
-// streaked by the weather; dark windows and the chamber's shade, the statue pale in it; the Capitol's painted stone.
-// After dusk (uFlood) the marble is floodlit from below, and the chamber glows.
-const STONE_FRAGMENT = /* glsl */`
-${MALL_COMMON}
-varying vec3 vNormal;
-varying float vSurface;
-varying float vHollow;
-varying vec2 vDetail;
-#define HALF_WIDTH ${HALF.toFixed(2)}
-#define COPING_TOP ${COPING_TOP.toFixed(2)}
-#define COPING_STONE ${COPING.stone.toFixed(2)}
-#define MONUMENT_BASE ${(mallGroundAt(MONUMENT.x, MONUMENT.z)).toFixed(2)}
-#define MONUMENT_CHANGE ${MONUMENT.change.toFixed(1)}
-#define FLUTES ${LINCOLN.columns.flutes.toFixed(1)}
-#define FLOOD_LIGHT vec3(0.5, 0.47, 0.42)    // the floodlights' irradiance on the marble, in the sun's units
-#define CHAMBER_GLOW vec3(0.42, 0.3, 0.17)   // the lit chamber's light on its walls and the statue
-void main() {
-  vec3 normal = normalize(vNormal);
-  float footprint = length(fwidth(vWorld));
-  int kind = int(vSurface + 0.5);
-  vec3 albedo = vec3(0.7);
-  float sunShade = 1.0, skyShade = 1.0 - 0.7 * vHollow;
-  float floodShare = 0.0;
-  vec3 glow = vec3(0.0);
-  float grain = mallNoise(vWorld.xz * 3.7 + vWorld.y * 2.3) * 0.6 + mallNoise(vWorld.zy * 11.0 + vWorld.x) * 0.4;
-  if (kind == 0) {
-    // The coping: its blocks along the wall, their joints; speckled; wet and green at the waterline.
-    bool sideWall = abs(vWorld.x) > HALF_WIDTH - 0.01;
-    float along = sideWall ? vWorld.z : vWorld.x;
-    float fromJoint = abs(fract(along / COPING_STONE + 0.5) - 0.5) * COPING_STONE;
-    float jointWidth = max(0.006, footprint * 0.7);
-    float joint = (1.0 - smoothstep(0.0, jointWidth, fromJoint)) * (0.006 / jointWidth);
-    float block = mallHash(vec2(floor(along / COPING_STONE), sideWall ? sign(vWorld.x) : 3.0));
-    albedo = vec3(0.4, 0.385, 0.36) * (0.9 + 0.16 * block) * (0.88 + 0.24 * grain);
-    float speck = mallNoise(vWorld.xz * 90.0 + vWorld.y * 60.0);
-    albedo *= 1.0 + (1.0 - smoothstep(0.004, 0.015, footprint)) * (0.3 * smoothstep(0.75, 0.9, speck) - 0.3 * smoothstep(0.25, 0.1, speck));
-    albedo *= 1.0 - 0.6 * joint;
-    float wetLine = (1.0 - smoothstep(0.0, 0.09, vWorld.y)) * (1.0 - step(0.5, normal.y));
-    albedo = mix(albedo, albedo * vec3(0.55, 0.6, 0.5), wetLine);
-    albedo = mix(albedo, vec3(0.06, 0.075, 0.04), (1.0 - smoothstep(0.0, 0.035, vWorld.y)) * (1.0 - step(0.5, normal.y)) * 0.7);
-    albedo *= 1.0 - 0.35 * uWet;
-  } else if (kind == 1) {
-    // The memorial's marble, veined faintly; its columns fluted.
-    albedo = vec3(0.74, 0.72, 0.68) * (0.92 + 0.12 * grain);
-    if (vDetail.y > 0.5) {
-      float phase = fract(vDetail.x * FLUTES / 6.2831853);
-      float shown = 1.0 - smoothstep(0.03, 0.12, footprint);
-      vec3 around = vec3(-sin(vDetail.x), 0.0, cos(vDetail.x));
-      normal = normalize(normal + around * sin(phase * 6.2831853) * 0.55 * shown);
-      albedo *= 1.0 - 0.18 * shown * smoothstep(0.42, 0.5, abs(phase - 0.5)) - 0.06 * (1.0 - shown);
-    }
-    floodShare = 1.0;
-  } else if (kind == 2) {
-    // Granite terraces and stairs, in courses.
-    albedo = vec3(0.47, 0.45, 0.42) * (0.88 + 0.2 * grain);
-    float course = abs(fract(vWorld.y / 0.62) - 0.5) * 0.62;
-    albedo *= 1.0 - 0.25 * (1.0 - smoothstep(0.0, max(0.01, footprint), course)) * (1.0 - step(0.6, abs(normal.y)));
-    albedo *= 1.0 - 0.3 * uWet;
-    floodShare = 0.4;
-  } else if (kind == 3) {
-    // The Monument: whiter below the line, warmer above; its courses (0.6 m), its streaks.
-    float height = vWorld.y - MONUMENT_BASE;
-    vec3 lower = vec3(0.72, 0.71, 0.685), upper = vec3(0.71, 0.665, 0.6);
-    albedo = mix(lower, upper, smoothstep(MONUMENT_CHANGE - 0.4, MONUMENT_CHANGE + 0.4, height));
-    float course = abs(fract(height / 0.61) - 0.5) * 0.61;
-    albedo *= 1.0 - 0.12 * (1.0 - smoothstep(0.0, max(0.02, footprint), course)) * (0.02 / max(0.02, footprint));
-    albedo *= 0.94 + 0.08 * mallNoise(vec2((vWorld.x + vWorld.z) * 0.8, height * 0.03)) - 0.05 * smoothstep(0.6, 0.9, mallNoise(vec2((vWorld.x - vWorld.z) * 2.0, height * 0.12)));
-    floodShare = 1.0 - 0.4 * smoothstep(20.0, 165.0, height);
-  } else if (kind == 4) {
-    albedo = vec3(0.025);
-  } else if (kind == 5) {
-    albedo = vec3(0.12, 0.112, 0.1);
-    sunShade = 0.0; skyShade = 0.2;
-    glow = CHAMBER_GLOW * uFlood * 0.5;
-  } else if (kind == 6) {
-    albedo = vec3(0.7, 0.69, 0.66) * (0.9 + 0.15 * grain);
-    sunShade = 0.0; skyShade = 0.32;
-    glow = CHAMBER_GLOW * uFlood;
-  } else {
-    albedo = vec3(0.74, 0.73, 0.7) * (0.94 + 0.1 * grain);
-    floodShare = 0.8;
-  }
-  // Snow on what faces up.
-  float snow = uSnow * smoothstep(0.6, 0.9, normal.y) * smoothstep(0.2, 0.6, 1.2 * uSnow + 0.3 * mallNoise(vWorld.xz * 0.8) - 0.3);
-  albedo = mix(albedo, SNOW_ALBEDO, snow);
-  vec3 color = albedo * (daylight(normal, sunShade, skyShade) + FLOOD_LIGHT * uFlood * floodShare * (0.55 + 0.45 * (1.0 - abs(normal.y)))) + albedo * glow;
-  gl_FragColor = finish(inAir(color, vWorld));
-}
-`;
-
 const GROUND_VERTEX = /* glsl */`
 varying vec3 vWorld;
 varying vec3 vNormal;
@@ -869,6 +524,7 @@ void main() {
 // green; under the allées' crowns their shade (alleeShade), dappled.
 const GROUND_FRAGMENT = /* glsl */`
 ${MALL_COMMON}
+${SUN_SHADOW}
 varying vec3 vNormal;
 #define HALF_WIDTH ${HALF.toFixed(2)}
 #define COPING_OUT ${(HALF + COPING.width).toFixed(2)}
@@ -946,7 +602,7 @@ void main() {
   // Under the allées' crowns: less of the sky, and their shade.
   float nearRow = min(abs(outward + COPING_OUT - HALF_WIDTH - ROWS.x), abs(outward + COPING_OUT - HALF_WIDTH - ROWS.y));
   float under = beside ? 1.0 - smoothstep(3.0, 8.5, nearRow) : 0.0;
-  float shade = alleeShade(vWorld);
+  float shade = alleeShade(vWorld) * sunShadow(vWorld, normal) * monumentShadow(vWorld);
   float snow = uSnow * smoothstep(0.2, 0.6, 1.25 * uSnow + 0.35 * mallNoise(point * 0.6) - 0.25 - 0.25 * under);
   albedo = mix(albedo, SNOW_ALBEDO * (0.92 + 0.08 * mottle), snow);
   vec3 color = albedo * daylight(normal, shade, 1.0 - 0.45 * under);
@@ -1147,7 +803,12 @@ function setTrees(geometry, spots) {
 export function createNationalMall({ lighting, environment, mirrorLayer, snow = { value: 0 }, wet = { value: 0 } }) {
   const flood = { value: 0 };
   const leaves = { value: null };
+  const sunShadow = createSunShadow(lighting);
+  const time = { value: 0 };
+  const windFlag = { value: new THREE.Vector3(1, 0, 0.3) };
   const shared = {
+    ...sunShadow.uniforms,
+    uTime: time,
     uSunDir: { value: lighting.sunDirection },
     uSunIrradiance: { value: lighting.sunIrradiance },
     uSkyAmbient: { value: lighting.skyAmbient },
@@ -1158,7 +819,8 @@ export function createNationalMall({ lighting, environment, mirrorLayer, snow = 
     ...environment.hazeUniforms,
   };
   const LOOKS = {
-    stone: { vertex: STONE_VERTEX, fragment: STONE_FRAGMENT, speck: () => speck({ normal: 3, surface: 1, hollow: 1, detail: 2 }) },
+    stone: { vertex: STONE_VERTEX, fragment: STONE_FRAGMENT, speck: () => speck({ normal: 3, surface: 1, hollow: 1, detail: 2 }), levels: 2 },
+    flags: { vertex: FLAG_VERTEX, fragment: FLAG_FRAGMENT, speck: () => speck({ normal: 3, flag: 2, seed: 1 }) },
     ground: { vertex: GROUND_VERTEX, fragment: GROUND_FRAGMENT, speck: () => speck({ normal: 3 }) },
     canopy: { vertex: CANOPY_VERTEX, fragment: CANOPY_FRAGMENT, speck: () => speck({ shape: 4, outward: 3, corner: 2, cell: 1 }, TREE_INSTANCED), levels: CROWN_LEVELS.length },
     trunk: { vertex: TRUNK_VERTEX, fragment: TRUNK_FRAGMENT, speck: () => speck({ normal: 3, bark: 2 }, TREE_INSTANCED), levels: TRUNK_LEVELS.length },
@@ -1167,7 +829,7 @@ export function createNationalMall({ lighting, environment, mirrorLayer, snow = 
     const made = new THREE.ShaderMaterial({
       vertexShader: LOOKS[look].vertex,
       fragmentShader: LOOKS[look].fragment,
-      uniforms: { ...shared, ...(look === 'canopy' ? { uLeaves: leaves } : {}) },
+      uniforms: { ...shared, ...(look === 'canopy' ? { uLeaves: leaves } : {}), ...(look === 'flags' ? { uWindFlag: windFlag } : {}) },
       defines: mirrored ? { MIRRORED: 1 } : {},
     });
     return made;
@@ -1198,19 +860,28 @@ export function createNationalMall({ lighting, environment, mirrorLayer, snow = 
   const trees = {};
   const STAGES = [
     () => { leaves.value = leafAtlas(random); },
-    () => give('stone', 0, stoneGeometry()),
+    () => {
+      // The Lincoln Memorial apart from what lies ahead, each left out when out of the frustum (the eye looking east
+      // draws no Memorial; looking back, no Capitol); the flags apart, waving.
+      give('stone', 0, lincolnGeometry());
+      give('stone', 1, distantGeometry());
+      give('flags', 0, flagGeometry());
+      for (const look of ['stone', 'flags']) for (const pair of byLook[look]) for (const mesh of pair) mesh.frustumCulled = true;
+      sunShadow.invalidate();
+    },
     () => give('ground', 0, groundGeometry()),
     () => {
       const spots = treeSpots(random);
       const reach = (tree) => Math.hypot(tree.x, tree.z);
       trees.byLevel = [spots.filter((tree) => reach(tree) < LEVEL_REACH[0]), spots.filter((tree) => reach(tree) >= LEVEL_REACH[0] && reach(tree) < LEVEL_REACH[1]), spots.filter((tree) => reach(tree) >= LEVEL_REACH[1])];
-      trees.crowns = trees.byLevel.map((unused, level) => crownGeometry(level, random));
+      trees.skeleton = elmSkeleton(random);
+      trees.crowns = trees.byLevel.map((unused, level) => crownGeometry(level, trees.skeleton, random));
     },
     () => {
       // The mirror draws each tree a level coarser (the farthest as they are): its image is rippled and drawn
       // smaller, and a splash's mirror image is drawn every frame it flies, every tree's vertices with it.
       const { byLevel, crowns } = trees;
-      const trunks = byLevel.map((unused, level) => trunkGeometry(level, random));
+      const trunks = byLevel.map((unused, level) => trunkGeometry(level, trees.skeleton, random));
       const coarser = (level) => Math.min(level + 1, byLevel.length - 1);
       byLevel.forEach((spots, level) => {
         give('canopy', level, setTrees(crowns[level], spots), coarser(level) === level ? crowns[level] : setTrees(sharing(crowns[coarser(level)]), spots));
@@ -1244,6 +915,24 @@ export function createNationalMall({ lighting, environment, mirrorLayer, snow = 
       const sunLight = (0.2126 * lighting.sunIrradiance.x + 0.7152 * lighting.sunIrradiance.y + 0.0722 * lighting.sunIrradiance.z) * Math.max(lighting.sunDirection.y, 0);
       const skyLight = Math.PI * (0.2126 * lighting.skyAmbient.x + 0.7152 * lighting.skyAmbient.y + 0.0722 * lighting.skyAmbient.z);
       flood.value = 1 - smoothstep(0.08, 0.7, sunLight / Math.max(skyLight, 1e-6));
+      sunShadow.invalidate();
+    },
+    /**
+     * Each frame drawn, before the scene: the flags' clock (`seconds`, the
+     * simulation's), and the sun's shadow map drawn again if the sun has
+     * moved since (a draw of the Memorial's mesh, counted in the frame's).
+     */
+    update(renderer, seconds) {
+      time.value = seconds;
+      const [lincoln] = byLook.stone[0];
+      if (lincoln.visible && stagesDone >= STAGES.length) sunShadow.draw(renderer, lincoln.geometry);
+    },
+    /** Under the loading veil: draw the shadow map once from a speck, so its program is built (src/main.js warmUp). */
+    warmShadow(renderer) { sunShadow.warm(renderer, byLook.stone[0][0].geometry); },
+    /** The wind the flags fly in: its direction over the ground ([x, z]) and its strength (WIND_STRENGTHS). */
+    setWind([x, z], strength) {
+      const length = Math.hypot(x, z) || 1;
+      windFlag.value.set(x / length, z / length, Math.min(0.25 + 0.4 * strength, 1));
     },
     /** For the tools: how many trees and cards each level draws. */
     get counts() {

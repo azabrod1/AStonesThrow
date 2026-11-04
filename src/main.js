@@ -839,6 +839,9 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   const snow = new Snow(lighting, { gale: galeWaves.uniforms(), haze: environment.hazeUniforms });
   snow.setShare(settings.snowShare);
   const snowCover = { value: 0 };
+  // The Reflecting Pool's grounds (src/nationalMall.js): the Mall's coping, lawns, elms, monuments and flags, in the
+  // main scene and the mirror; shown at the Reflecting Pool (their flags fly in the Wind control's wind, applyWind).
+  const mall = createNationalMall({ lighting, environment, mirrorLayer: MIRROR_LAYER, snow: snowCover, wet: wetDeck });
   const air = { ...MILD_AIR };
   // The ice over the water (src/ice.js), off until the Ice setting freezes it (applyIce); its uniforms join the
   // water's, the rain's wet its too.
@@ -899,6 +902,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     const windLength = Math.hypot(windDirection[0], windDirection[1]);
     splash.spray.setWind(windDirection[0] / windLength, windDirection[1] / windLength, WIND_STRENGTHS[name]);
     reeds.setWind(WIND_STRENGTHS[name]);
+    mall.setWind(windDirection, WIND_STRENGTHS[name]);
     galeWaves.setFoamVelocity(water.foamUniforms.uFoamVelocity.value);
     applyGale();
   }
@@ -1070,9 +1074,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   const garden = createKoiGarden({ envTexture: environment.envTexture, mirrorLayer: MIRROR_LAYER, lighting });
   garden.setCoarse(settings.gardenCoarse);
   sceneMain.add(...garden.meshes);
-  // The Reflecting Pool's grounds (src/nationalMall.js): the Mall's coping, lawns, elms and monuments, in the main
-  // scene and the mirror; shown at the Reflecting Pool.
-  const mall = createNationalMall({ lighting, environment, mirrorLayer: MIRROR_LAYER, snow: snowCover, wet: wetDeck });
+  // The Reflecting Pool's grounds (made with the weather they take, above): in the main scene and the mirror.
   sceneMain.add(...mall.meshes);
   /** The lake's bed, beach and open water, or the pool's basin and deck: the meshes only (setPooled changes the water). */
   function showScenery(asPool) {
@@ -2771,6 +2773,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     reeds.update(simulationTime);
     renderer.info.reset();
     iceShadow.update(renderer, ice.shading.slots, ice.shading.sunLit ? ice.shading.sun : null);   // their shadows' tiles, those that moved (counted in the frame's draws)
+    mall.update(renderer, simulationTime);   // the Reflecting Pool's flags, and its sun's shadow map when the sun has moved
     framesRendered++;
     camera.updateMatrixWorld();
     if (!skip.ambient) ambientWaves.update(simulationTime);
@@ -3269,6 +3272,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
         showScenery(!pooled);
         garden.setVisible(true, { building: false });   // the Koi pond's garden's programs too, whatever the place (src/koiGarden.js builds it only when shown)
         mall.setVisible(true, { building: false });     // and the Reflecting Pool's grounds' (src/nationalMall.js, likewise)
+        mall.warmShadow(renderer);                       // and the program its sun's shadow map is drawn with
         koiLand.visible = true;
         reeds.visible = true;   // and the reeds', whatever the place: a change of place compiles nothing
         boulders.show('all');   // and the boulders' (src/boulders.js)
