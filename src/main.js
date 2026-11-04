@@ -1485,6 +1485,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     placeRequest = request;
     // The lagoon built while its sky downloads, once a frame has shown the choice, not as the sky arrives (buildLagoon).
     if (PLACES[place].tropics && !tropics.built) requestAnimationFrame(() => setTimeout(() => { if (placeRequest === request) buildLagoon(); }));
+    if (PLACES[place].visitor) visitor.prepareHide();   // its hide baked between frames while the sky downloads (src/lochVisitor.js)
     return requestSky(sky, request.hour).then(() => {
       if (placeRequest === request && environment.name === sky && environment.hour === request.hour) {
         const entering = placeName !== place;

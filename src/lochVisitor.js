@@ -56,9 +56,11 @@
 // surface: SPINE_POINTS × AROUND vertices (its colours once a sighting).
 // Three meshes draw it, as a boulder's do (src/boulders.js sceneryShader):
 // `above`, clipped to y ≥ 0, in the main scene, its skin dark and wet, a
-// hide (hideTexture: folds, warts and pores in its relief, wet and dry
-// patches in its gloss, blotches in its colour) laid in metres on the
-// body, wetter just over the waterline and washed with broken foam at it;
+// hide (hideBaker: folds, warts and pores in its relief, wet and dry
+// patches in its gloss, blotches in its colour; baked only for the loch, a
+// few milliseconds a task while its sky downloads, prepareHide) laid in
+// metres on the body, wetter just over the waterline and washed with broken
+// foam at it;
 // `below`, clipped to
 // y ≤ 0, in the under-water pass, drawn where the still surface shows it
 // and fading into the water; and its mirror image on the mirror layer, its
@@ -78,7 +80,7 @@ export const SCHEDULE = {
   distance: [48, 80],         // m out from the shore's eye to the middle of its run, along the home view's line...
   fogDistance: [48, 54],      // ...nearer in a fog, which would hide it out there (src/main.js WEATHERS.fog)
   bearing: 34,                // degrees either side of that line
-  across: 25,                 // degrees its course strays from straight across the line of sight: never toward the shore
+  across: 25,                 // degrees its course strays from straight across the line of sight, toward the shore or away (`nearest` holds)
   nearest: 36,                // m: no part of it ever comes nearer the eye (tools/visitor-probe.mjs checks)
   clear: 22,                  // m: no sighting starts with a thing thrown this near its course
   startle: 16,                // m: one under way goes down at once if a thing comes this near
@@ -92,7 +94,7 @@ const STARTLED_DIVE = 2.4;    // s: how fast it goes down when something comes n
 const SPINE_POINTS = 192;
 const AROUND = 24;            // vertices round the tube, and one more at the seam (under the belly) for the hide's texture
 const RING = AROUND + 1;
-const HIDE = { size: 256, tile: 0.8 };   // the hide's texture (hideTexture): texels a side, and metres a tile covers on the body
+const HIDE = { size: 256, tile: 0.8, budget: 3 };   // the hide's texture (hideBaker): texels a side, metres a tile covers on the body, ms a task bakes for
 const EYE = { x: 0, z: 2.45 };   // the shore's eye (src/main.js VIEWS.shore), which the distance is measured from
 const SKIN = { color: [0.05, 0.044, 0.034], spread: 0.25, roughness: 0.22, bump: 0.04, reflection: 0.75, below: 0.3 };   // wet: the sky's glint along its back, broken by the hide (its roughness times the texture's)
 // (bump: the hide's relief in metres, three.js's bumpScale being in world units: a few centimetres of folds and warts)
@@ -140,8 +142,9 @@ function drawSighting(stream, form, start, { near, eye = EYE }) {
     rise,
     sinkStart: start + rise + hold,
     sinkSeconds: sink,
-    lowerFrom: start + rise + hold - NECK.lower,   // the neck starts down (startle brings it forward)...
+    lowerFrom: start + rise + hold - NECK.lower,   // the neck starts down...
     lowerSeconds: NECK.lower + 0.2,                // ...and is down after this
+    hurriedFrom: null,  // startled with its neck not yet down: from then it comes down over NECK.startled too (startle)
     startled: false,
     heavyDive: false,   // startled before its dive's ring went out: that ring is heavier (waterAt)
     middleX,
@@ -181,9 +184,11 @@ const aroundAngle = (around) => -Math.PI / 2 + (2 * Math.PI * around) / AROUND;
  * of warts; pores), in its green the roughness's share (wet patches glossier,
  * the folds' crests drier), in its blue the colour's blotches. Value noise
  * on lattices that wrap with the tile, and warts in a jittered grid, from
- * its own seeded stream: the same hide every time.
+ * its own seeded stream, all drawn before the first texel: the same hide
+ * every time, however its rows are spread (`bake`, a band of rows at a time;
+ * `texture` once all are).
  */
-function hideTexture() {
+function hideBaker() {
   const size = HIDE.size;
   const stream = seededRandom(SCHEDULE.seed, 4);
   const lattice = Array.from({ length: 64 * 64 }, () => stream());
@@ -199,42 +204,50 @@ function hideTexture() {
   };
   const warts = Array.from({ length: 12 * 12 }, () => ({ x: stream(), y: stream(), size: 0.25 + 0.3 * stream(), height: 0.4 + 0.6 * stream() }));
   const data = new Uint8Array(size * size * 4);
-  for (let row = 0; row < size; row++) {
-    for (let column = 0; column < size; column++) {
-      const x = column / size, y = row / size;   // x along the body, y round it
-      const folds = 1 - Math.abs(2 * noise(x, y, 24, 5, 1) - 1) * 0.7 - Math.abs(2 * noise(x, y, 48, 9, 2) - 1) * 0.3;
-      let wart = 0;
-      const cellX = Math.floor(x * 12), cellY = Math.floor(y * 12);
-      for (let nearX = -1; nearX <= 1; nearX++) {
-        for (let nearY = -1; nearY <= 1; nearY++) {
-          const wrappedX = (cellX + nearX + 12) % 12, wrappedY = (cellY + nearY + 12) % 12;
-          const one = warts[wrappedX * 12 + wrappedY];
-          let apartX = (cellX + nearX + one.x) / 12 - x, apartY = (cellY + nearY + one.y) / 12 - y;
-          apartX -= Math.round(apartX); apartY -= Math.round(apartY);
-          const distance = Math.hypot(apartX, apartY) * 12 / one.size;
-          if (distance < 1) wart = Math.max(wart, one.height * (1 - distance * distance) ** 2);
+  let row = 0;
+  /** Bake up to `rows` more rows; whether all are baked. */
+  const bake = (rows) => {
+    for (const last = Math.min(row + rows, size); row < last; row++) {
+      for (let column = 0; column < size; column++) {
+        const x = column / size, y = row / size;   // x along the body, y round it
+        const folds = 1 - Math.abs(2 * noise(x, y, 24, 5, 1) - 1) * 0.7 - Math.abs(2 * noise(x, y, 48, 9, 2) - 1) * 0.3;
+        let wart = 0;
+        const cellX = Math.floor(x * 12), cellY = Math.floor(y * 12);
+        for (let nearX = -1; nearX <= 1; nearX++) {
+          for (let nearY = -1; nearY <= 1; nearY++) {
+            const wrappedX = (cellX + nearX + 12) % 12, wrappedY = (cellY + nearY + 12) % 12;
+            const one = warts[wrappedX * 12 + wrappedY];
+            let apartX = (cellX + nearX + one.x) / 12 - x, apartY = (cellY + nearY + one.y) / 12 - y;
+            apartX -= Math.round(apartX); apartY -= Math.round(apartY);
+            const distance = Math.hypot(apartX, apartY) * 12 / one.size;
+            if (distance < 1) wart = Math.max(wart, one.height * (1 - distance * distance) ** 2);
+          }
         }
+        const pores = noise(x, y, 64, 64, 3);
+        const height = 0.45 * folds + 0.4 * wart + 0.15 * pores;
+        const wetness = noise(x, y, 4, 3, 4);
+        const roughness = 0.2 + 0.7 * wetness ** 2 + 0.6 * Math.max(folds - 0.55, 0) + 0.35 * wart;
+        const blotch = 0.55 * noise(x, y, 6, 4, 5) + 0.3 * noise(x, y, 13, 7, 6) + 0.15 * pores;
+        const offset = (row * size + column) * 4;
+        data[offset] = Math.round(255 * Math.min(Math.max(height, 0), 1));
+        data[offset + 1] = Math.round(255 * Math.min(Math.max(roughness, 0), 1));
+        data[offset + 2] = Math.round(255 * Math.min(Math.max(blotch, 0), 1));
+        data[offset + 3] = 255;
       }
-      const pores = noise(x, y, 64, 64, 3);
-      const height = 0.45 * folds + 0.4 * wart + 0.15 * pores;
-      const wetness = noise(x, y, 4, 3, 4);
-      const roughness = 0.2 + 0.7 * wetness ** 2 + 0.6 * Math.max(folds - 0.55, 0) + 0.35 * wart;
-      const blotch = 0.55 * noise(x, y, 6, 4, 5) + 0.3 * noise(x, y, 13, 7, 6) + 0.15 * pores;
-      const offset = (row * size + column) * 4;
-      data[offset] = Math.round(255 * Math.min(Math.max(height, 0), 1));
-      data[offset + 1] = Math.round(255 * Math.min(Math.max(roughness, 0), 1));
-      data[offset + 2] = Math.round(255 * Math.min(Math.max(blotch, 0), 1));
-      data[offset + 3] = 255;
     }
-  }
-  const texture = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
-  texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
-  texture.magFilter = THREE.LinearFilter;
-  texture.minFilter = THREE.LinearMipmapLinearFilter;
-  texture.generateMipmaps = true;
-  texture.anisotropy = 4;
-  texture.needsUpdate = true;
-  return texture;
+    return row === size;
+  };
+  const texture = () => {
+    const made = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
+    made.wrapS = made.wrapT = THREE.RepeatWrapping;
+    made.magFilter = THREE.LinearFilter;
+    made.minFilter = THREE.LinearMipmapLinearFilter;
+    made.generateMipmaps = true;
+    made.anisotropy = 4;
+    made.needsUpdate = true;
+    return made;
+  };
+  return { bake, texture };
 }
 
 /** When a sighting is over, its wake and rings too (s). */
@@ -271,14 +284,13 @@ function radiusAt(sighting, along) {
 export class LochVisitor {
   constructor({ envTexture, waterFog, mirrorLayer }) {
     this.uniforms = {
-      uVisitorOn: { value: 0 },
       uVisitorSource: { value: new THREE.Vector4(0, 0, 1, 0) },
       uVisitorWake: { value: new THREE.Vector4(1, 0, 0, 0.4) },
       uVisitorEnvelope: { value: new THREE.Vector4() },
       uVisitorContacts: { value: Array.from({ length: VISITOR_CONTACTS }, () => new THREE.Vector4()) },
       uVisitorRings: { value: Array.from({ length: VISITOR_RINGS }, () => new THREE.Vector4()) },
       uVisitorSpans: { value: new THREE.Vector4() },
-      uVisitorReach: { value: new THREE.Vector4() },
+      uVisitorReach: { value: new THREE.Vector2() },   // its radius 0: none of it on the water
     };
     this.geometry = this.buildGeometry();
     this.skinOffsets = new Float64Array(SPINE_POINTS * RING * 2);
@@ -287,6 +299,7 @@ export class LochVisitor {
     this.hideMap = new THREE.DataTexture(new Uint8Array([128, 128, 128, 255]), 1, 1, THREE.RGBAFormat);
     this.hideMap.needsUpdate = true;
     this.hideReady = false;
+    this.hideBaking = null;   // the hide being baked a band at a time (prepareHide)
     this.skin = { churn: { value: 0 } };   // the waterline's foam band (above)
     this.above = new THREE.Mesh(this.geometry, this.material('above', { envTexture, waterFog }));
     this.below = new THREE.Mesh(this.geometry, this.material('below', { envTexture, waterFog }));
@@ -380,19 +393,53 @@ export class LochVisitor {
     }
   }
 
-  /** Whether the place is the loch: elsewhere nothing comes up. */
+  /**
+   * Whether the place is the loch: elsewhere nothing comes up. Entering it
+   * the first time, its hide is finished at once (whatever prepareHide has
+   * not yet baked), so it is ready before anything of it is drawn.
+   */
   setPlace(here) {
     this.here = here;
     if (here && !this.hideReady) {
-      const placeholder = this.hideMap;
-      this.hideMap = hideTexture();
-      this.hideReady = true;
-      for (const mesh of this.meshes) {
-        mesh.material.bumpMap = mesh.material.roughnessMap = this.hideMap;
-      }
-      placeholder.dispose();
+      const baker = this.hideBaking ?? hideBaker();
+      baker.bake(HIDE.size);
+      this.useHide(baker);
     }
     if (!here) this.hide();
+  }
+
+  /**
+   * Start baking the hide off the frames (src/main.js requestPlace, as the
+   * loch is asked for, while its sky downloads): rows for HIDE.budget ms a
+   * task, so no frame waits for the whole of it (some 40 ms, the first rows
+   * slower while the code is cold). Once baked it is laid on in place of the
+   * 1-texel stand-in; if the place comes first, setPlace finishes it.
+   */
+  prepareHide() {
+    if (this.hideReady || this.hideBaking) return;
+    const baker = hideBaker();
+    this.hideBaking = baker;
+    const band = () => {
+      if (this.hideBaking !== baker) return;   // finished by setPlace
+      const until = performance.now() + HIDE.budget;
+      let baked;
+      do baked = baker.bake(1); while (!baked && performance.now() < until);
+      if (baked) this.useHide(baker);
+      else setTimeout(band, 0);
+    };
+    setTimeout(band, 0);
+  }
+
+  /** The baked hide on all three materials in place of the stand-in: the same maps present, so no program changes. */
+  useHide(baker) {
+    const placeholder = this.hideMap;
+    this.hideMap = baker.texture();
+    this.hideReady = true;
+    this.hideBaking = null;
+    for (const mesh of this.meshes) {
+      mesh.material.bumpMap = mesh.material.roughnessMap = this.hideMap;
+    }
+    placeholder.dispose();
   }
 
   /** Back to the start, at world `time` (src/main.js clearPond): nothing up, the first sighting within SCHEDULE.first, from its stream's start. */
@@ -454,19 +501,17 @@ export class LochVisitor {
 
   /**
    * It goes down now, fast (STARTLED_DIVE), front first: a neck comes down
-   * over NECK.startled from where it stands, never at once; and if its
-   * dive's ring has not gone out yet, that ring is heavier (a swirl). One
-   * already going down goes on as it was.
+   * over NECK.startled from where it stands, never at once (its lowering,
+   * begun or not, is eased the rest of the way down from the height it has
+   * now: pose's `neckLift`); and if its dive's ring has not gone out yet,
+   * that ring is heavier (a swirl). One already going down goes on as it was.
    */
   startle(sighting, time) {
     sighting.startled = true;
     if (time >= sighting.sinkStart) return;
     sighting.sinkStart = time;
     sighting.sinkSeconds = Math.min(sighting.sinkSeconds, STARTLED_DIVE);
-    if (time < sighting.lowerFrom + sighting.lowerSeconds) {
-      sighting.lowerSeconds = Math.min(sighting.lowerFrom + sighting.lowerSeconds, time + NECK.startled) - Math.min(sighting.lowerFrom, time);
-      sighting.lowerFrom = Math.min(sighting.lowerFrom, time);
-    }
+    if (time < sighting.lowerFrom + sighting.lowerSeconds) sighting.hurriedFrom = time;
     sighting.heavyDive = true;
   }
 
@@ -522,7 +567,7 @@ export class LochVisitor {
 
   hide() {
     for (const mesh of this.meshes) mesh.visible = false;
-    this.uniforms.uVisitorOn.value = 0;
+    this.uniforms.uVisitorReach.value.x = 0;   // none of it on the water (src/shaders/visitor.js visitorNear)
   }
 
   /** Show it in the warm-up (src/main.js warmUp) whatever the place, so its three programs are built under the veil; false puts it back. */
@@ -565,8 +610,11 @@ export class LochVisitor {
     const flat = 0.86;
     const base = sighting.crest - sighting.wave - sighting.girth * flat;
     const waveSpeed = FORMS[sighting.form].waveSpeed * sighting.speed;
+    // The neck lifts as it rises and lowers before it dives; startled (hurriedFrom), the lowering is multiplied by a
+    // second, from 1 then to 0 over NECK.startled: so it goes on from the height and the speed it had, and is down by then.
+    const hurried = sighting.hurriedFrom === null ? 1 : 1 - ease(sighting.hurriedFrom, sighting.hurriedFrom + NECK.startled, time);
     const neckLift = neckLength > 0
-      ? ease(sighting.start + sighting.rise * 0.6, sighting.start + sighting.rise * 0.6 + NECK.lift, time) * (1 - ease(sighting.lowerFrom, sighting.lowerFrom + sighting.lowerSeconds, time))
+      ? ease(sighting.start + sighting.rise * 0.6, sighting.start + sighting.rise * 0.6 + NECK.lift, time) * (1 - ease(sighting.lowerFrom, sighting.lowerFrom + sighting.lowerSeconds, time)) * hurried
       : 0;
     let highest = -Infinity;
     for (let index = 0; index < SPINE_POINTS; index++) {
@@ -773,13 +821,13 @@ export class LochVisitor {
   /**
    * The water's uniforms at `time` (src/shaders/visitor.js): the wake's
    * source at the head, at the depth its top holds when risen; where the
-   * body breaks the surface (contacts: the front of each piece out, then
-   * the backs); a breach's ring as the front comes up and a dive's as it
+   * body breaks the surface (contacts: each piece of it out, from where its
+   * tube meets the water at the front to where it does at the back, the
+   * highest first); a breach's ring as the front comes up and a dive's as it
    * goes down.
    */
   waterAt(sighting, time) {
     const uniforms = this.uniforms;
-    uniforms.uVisitorOn.value = 1;
     // Over the linger's last SCHEDULE.fade seconds its heights (and so its slopes, their unresolved variance and its
     // foam) ease to none, so letting the sighting go stills nothing that shows; the rings' reach shrinks with them.
     const left = Math.min(Math.max((sightingEnd(sighting) - time) / SCHEDULE.fade, 0), 1);
@@ -792,26 +840,34 @@ export class LochVisitor {
     uniforms.uVisitorWake.value.set(sighting.speed, wakeHeight, Math.max(-risenTop, 0), sighting.girth);
     const ago = (moment) => time - moment;
     uniforms.uVisitorEnvelope.value.set(ago(sighting.start), ago(sighting.start + sighting.rise), ago(sighting.sinkStart), ago(sighting.sinkStart + sighting.sinkSeconds));
-    // Contacts: the pieces of spine whose top is out of the water.
+    // Contacts: where the body's tube crosses the waterline. A piece is a run of spine whose top is out of the water
+    // (or all but), from the foremost knot in it whose tube's bottom is under the water to the backmost: a lifted
+    // neck's head, and the neck above the water, are no part of it, the water under them open. A hump's arch clear of
+    // the water between two such knots stays in its piece (split, the humps' legs would be more pieces than there are
+    // slots, and a heap would come and go between frames).
     const pieces = [];
     let piece = null;
     for (let index = 0; index < SPINE_POINTS; index++) {
       const knot = this.spine[index];
-      const out = knot.point.y + knot.radius * knot.flat;
+      const deep = knot.radius * knot.flat;
+      const out = knot.point.y + deep;
       if (out > -0.02) {
-        if (!piece) { piece = { front: index, back: index, top: out }; pieces.push(piece); }
-        piece.back = index;
+        if (!piece) { piece = { front: -1, back: -1, top: out }; pieces.push(piece); }
         piece.top = Math.max(piece.top, out);
+        if (knot.point.y - deep < 0) {   // its tube meets the water
+          if (piece.front < 0) piece.front = index;
+          piece.back = index;
+        }
       } else piece = null;
     }
-    pieces.sort((one, other) => other.top - one.top);
+    const meeting = pieces.filter((one) => one.front >= 0).sort((one, other) => other.top - one.top);
     // Each piece a capsule along the course: its middle, its half-length, and its half-width at the waterline (the
     // widest cut of its knots' ellipses by the water), pushing up the bow's height, U² / 2g, as much as it is out.
     const contacts = uniforms.uVisitorContacts.value;
     const spans = uniforms.uVisitorSpans.value;
     const bow = (sighting.speed * sighting.speed) / (2 * GRAVITY);
     for (let slot = 0; slot < VISITOR_CONTACTS; slot++) {
-      const piece = pieces[slot];
+      const piece = meeting[slot];
       if (!piece) { contacts[slot].set(0, 0, 1, 0); spans.setComponent(slot, 0); continue; }
       const front = this.spine[piece.front].point, back = this.spine[piece.back].point;
       let width = 0.06;
@@ -842,10 +898,10 @@ export class LochVisitor {
       const middle = Math.min(1.2, sighting.length * 0.15);   // a little behind the head: where most of it moves the water
       rings[slot].set(x - sighting.headingX * middle, z - sighting.headingZ * middle, time - event.at, event.strength * (sighting.girth / 0.45) ** 2 * fade);
     }
-    // The circle all of it is inside (uVisitorReach): the wake out behind as far as the source has come (its energy
-    // goes no faster than the source); each ring out to where its slope, S g² t⁴ / 16r⁵, falls under the shader's
-    // VISITOR_RING_SLOPE_LEAST (ignoring attenuation gives a conservative bound), and
-    // no farther than its front; the body and what it heaps up round it.
+    // The circle all of it is inside (uVisitorReach's radius, round the head, uVisitorSource): the wake out behind as
+    // far as the source has come (its energy goes no faster than the source); each ring out to where its slope,
+    // S g² t⁴ / 16r⁵, falls under the shader's VISITOR_RING_SLOPE_LEAST (ignoring attenuation gives a conservative
+    // bound), and no farther than its front; the body and what it heaps up round it.
     const reach = uniforms.uVisitorReach.value;
     let radius = sighting.speed * Math.max(time - sighting.start, 0) * 1.07 + sighting.length + 3;
     for (const ring of rings) {
@@ -854,7 +910,7 @@ export class LochVisitor {
       const ringReach = Math.min(((ring.w * GRAVITY ** 2 * age ** 4) / (16 * VISITOR_RING_SLOPE_LEAST)) ** 0.2, (GRAVITY * age * age) / (4 * 0.8));
       radius = Math.max(radius, Math.hypot(ring.x - head.point.x, ring.y - head.point.z) + ringReach);
     }
-    reach.set(head.point.x, head.point.z, radius, time - sighting.start);   // w: its clock, which its ripples run on
+    reach.set(radius, time - sighting.start);   // y: its clock, which its ripples run on
   }
 }
 

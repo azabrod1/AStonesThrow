@@ -38,12 +38,14 @@
 //   asymptotic form does not hold and the ring fades in.
 // - Where the body breaks the surface (uVisitorContacts, each a capsule
 //   along the course as long as the piece out of the water, uVisitorSpans):
-//   the water heaped before its front and drawn down behind its back, a
-//   dipole as wide as the body there and as high as it pushes; and the
+//   the water heaped a width before its front and drawn down a width behind
+//   its back, each a bell as wide as the body there and as high as it
+//   pushes, level along its flanks between (the slope the gradient of that
+//   height); and the
 //   short ripples its waterline sheds as it goes and bobs, rings running
 //   out from the capsule's outline at their own speed (capillary-gravity,
 //   ω² = g k + σ k³ / ρ, a wavelength of CONTACT_RIPPLE), dying out over a
-//   metre or two, on the visitor's clock (uVisitorReach.w).
+//   metre or two, on the visitor's clock (uVisitorReach.y).
 //
 // Each wave is filtered by the pixel's footprint on the water (acrossX,
 // acrossY), as the rings' and the ripples' are: what is finer than a pixel
@@ -58,9 +60,14 @@
 // breach's first seconds, added to the water's own foam as lace that thins
 // as it pops (FOAM_PATTERN draws it).
 //
-// Cost: nothing while uVisitorOn is 0 (away from the loch, and between
-// sightings), and while it is 1 nothing outside uVisitorReach, a circle the
-// visitor sets each frame round all its waves can have reached (visitorNear).
+// Cost: nothing while uVisitorReach's radius is 0 (away from the loch, and
+// between sightings), and otherwise nothing outside it, a circle round the
+// source the visitor sets each frame round all its waves can have reached
+// (visitorNear).
+// Inside it, each term stops before its exps where it cannot show: a ring
+// beyond its front or under the slope cutoff unattenuated (exactly what the
+// cutoff would drop), a contact's waves and foam, and a ring's foam, past
+// where they fall under what can show (tools/visitor-wave-probe.mjs checks).
 export const VISITOR_CONTACTS = 4;
 export const VISITOR_RINGS = 2;
 export const VISITOR_RING_SLOPE_LEAST = 1e-3;  // invisible beyond this slope; shared with the CPU reach bound
@@ -79,19 +86,18 @@ vec2 visitorCapsule(vec2 offset, vec2 heading, float span) {
   float along = dot(offset, heading);
   return vec2(sign(along) * max(abs(along) - span, 0.0), dot(offset, vec2(-heading.y, heading.x)));
 }
-uniform float uVisitorOn;                          // 1 while anything of it is on the water, else 0
 uniform vec4 uVisitorSource;                       // the moving source: x, z; its heading x, z (unit)
 uniform vec4 uVisitorWake;                         // its speed U (m/s), the wake's height scale (m at 1 m behind), its depth (m), its size (m)
 uniform vec4 uVisitorEnvelope;                     // how strongly it made waves, by seconds ago: 0 before .x, 1 from .y, 1 until .z, 0 by .w
 uniform vec4 uVisitorContacts[VISITOR_CONTACTS];   // where it breaks the surface: x, z, half-width (m), height pushed up (m; 0 none)
 uniform vec4 uVisitorRings[VISITOR_RINGS];         // a breach's or a dive's rings: x, z, age (s), strength (m³; 0 none)
 uniform vec4 uVisitorSpans;                        // each contact's half-length along the course (m), one a component
-uniform vec4 uVisitorReach;                        // a circle round everything above, x, z and radius (m): none of it beyond; w its clock (s)
+uniform vec2 uVisitorReach;                        // a circle round the source (uVisitorSource.xy), its radius (m): none of the above beyond, 0 while none is on the water; y its clock (s)
 
 /** Whether \`point\` is where any of it reaches (uVisitorReach): the water shader pays for it only there. */
 bool visitorNear(vec2 point) {
-  vec2 offset = point - uVisitorReach.xy;   // uVisitorReach.w is its clock, not a reach
-  return uVisitorOn > 0.5 && dot(offset, offset) < uVisitorReach.z * uVisitorReach.z;
+  vec2 offset = point - uVisitorSource.xy;
+  return dot(offset, offset) < uVisitorReach.x * uVisitorReach.x;   // never while its radius is 0
 }
 
 /** How strongly the source made waves \`ago\` seconds ago (uVisitorEnvelope). */
@@ -154,9 +160,12 @@ vec3 visitorRings(vec2 point, vec2 acrossX, vec2 acrossY) {
     float radius = max(length(offset), 0.3);
     float timeSquared = ring.z * ring.z;
     float phase = VISITOR_GRAVITY * timeSquared / (4.0 * radius);
+    if (phase <= 0.8) continue;   // beyond its front, where it fades in from nothing (below)
     float waveNumber = phase / radius;
+    float unfiltered = ring.w * VISITOR_GRAVITY * timeSquared / (4.0 * radius * radius * radius);
+    if (unfiltered * waveNumber < VISITOR_RING_SLOPE_LEAST) continue;   // the impulse's cut and the fade only lower it: skip their exp
     float cut = waveNumber * VISITOR_RING_SIZE;
-    float height = ring.w * VISITOR_GRAVITY * timeSquared / (4.0 * radius * radius * radius) * exp(-cut * cut) * smoothstep(0.8, 3.0, phase);
+    float height = unfiltered * exp(-cut * cut) * smoothstep(0.8, 3.0, phase);
     if (height * waveNumber < VISITOR_RING_SLOPE_LEAST) continue;
     result += visitorWave(height, phase + 1.5707963, -waveNumber * offset / radius, acrossX, acrossY);
   }
@@ -175,15 +184,21 @@ vec3 visitorContacts(vec2 point, vec2 acrossX, vec2 acrossY) {
     vec4 contact = uVisitorContacts[index];
     if (contact.w <= 0.0) continue;
     float span = uVisitorSpans[index];
-    vec2 capsule = visitorCapsule(point - contact.xy, heading, span);
+    vec2 offset = point - contact.xy;
+    vec2 capsule = visitorCapsule(offset, heading, span);
     float width = contact.z;
     float fromCapsule = length(capsule);
     if (fromCapsule > width * 4.0 + CONTACT_RIPPLE_REACH * 4.0) continue;
-    // The heap and the trough: a dipole about the capsule.
-    float along = capsule.x / width, side = capsule.y / width;
-    float bell = exp(-0.5 * (along * along + 0.6 * side * side));
+    // The heap and the trough: the water heaped a width before the front and drawn down a width behind the back, each
+    // a bell as wide as the body (in widths: along the course from the capsule's middle, and across), so level along
+    // its flanks between them; the slope is the gradient of that height (tools/visitor-wave-probe.mjs checks).
+    float middle = dot(offset, heading) / width, side = capsule.y / width;
+    float ahead = middle - span / width - 1.0, astern = middle + span / width + 1.0;
+    float heap = exp(-0.5 * (ahead * ahead + 0.6 * side * side)), trough = exp(-0.5 * (astern * astern + 0.6 * side * side));
+    float height = 0.60653 * contact.w * (heap - trough);   // 0.60653, e^(-1/2): the heap's top, a width out, contact.w / √e
+    float slopeAlong = 0.60653 * contact.w / width * (astern * trough - ahead * heap), slopeAcross = -0.6 * side / width * height;
+    vec2 slope = slopeAlong * heading + slopeAcross * sideways;
     float kept = exp(-0.5 * (footprint / width) * (footprint / width));
-    vec2 slope = contact.w / width * bell * ((1.0 - along * along) * heading - 0.6 * along * side * sideways);
     float steepness = length(slope);
     result += vec3(slope * kept, 0.5 * steepness * steepness * (1.0 - kept * kept));
     // The ripples, out from the waterline (the capsule's outline, \`width\` from its line).
@@ -192,7 +207,7 @@ vec3 visitorContacts(vec2 point, vec2 acrossX, vec2 acrossY) {
       vec2 outward = capsule.x * heading + capsule.y * sideways;
       outward /= max(fromCapsule, 1e-4);
       float height = (0.12 * contact.w + 0.0015) * exp(-beyond / CONTACT_RIPPLE_REACH) * smoothstep(0.0, 0.06, beyond);
-      result += visitorWave(height, rippleNumber * beyond - rippleRate * uVisitorReach.w, rippleNumber * outward, acrossX, acrossY);
+      result += visitorWave(height, rippleNumber * beyond - rippleRate * uVisitorReach.y, rippleNumber * outward, acrossX, acrossY);
     }
   }
   return result;
@@ -213,10 +228,13 @@ float visitorFoam(vec2 point) {
     if (contact.w <= 0.0) continue;
     vec2 offset = visitorCapsule(point - contact.xy, heading, uVisitorSpans[index]);
     float width = contact.z;
+    float fromCapsule = length(offset);
+    // Farther, its trail (the farthest of it) adds under 1e-4 (churn 0.5 × 0.05 × e^(-5.6)), the wash and collar far less.
+    if (fromCapsule > 5.6 * (1.5 + 3.0 * width)) continue;
     float behind = -offset.x, side = offset.y;
     float churn = min(contact.w * 1.5, 0.5);   // the foam map is logarithmic (FOAM_PATTERN): half cover at 0.1, none under 0.01
     // A collar along the waterline (the outline, \`width\` out), thickest at the bow; and a wash over the body's own patch.
-    float fromLine = abs(length(offset) - width);
+    float fromLine = abs(fromCapsule - width);
     float collar = exp(-0.5 * fromLine * fromLine / (0.18 * 0.18 * width * width)) * (0.6 + 0.4 * smoothstep(-width, width, -behind))
       + 0.4 * exp(-0.5 * dot(offset, offset) / (1.2 * 1.2 * width * width));
     float trailWidth = width * (0.7 + 0.1 * max(behind, 0.0));
@@ -225,9 +243,11 @@ float visitorFoam(vec2 point) {
   }
   for (int index = 0; index < VISITOR_RINGS; index++) {
     vec4 ring = uVisitorRings[index];
-    if (ring.w <= 0.0 || ring.z <= 0.0) continue;
+    // Older, or more than four spreads out, it adds under 1e-4 (0.06 × e^(-6.5), × e^(-8)).
+    if (ring.w <= 0.0 || ring.z <= 0.0 || ring.z > 13.0) continue;
     vec2 offset = point - ring.xy;
     float spread = 0.9 + 0.35 * ring.z;
+    if (dot(offset, offset) > 16.0 * spread * spread) continue;
     foam += min(ring.w * 0.15, 0.06) * exp(-ring.z / 2.0) * exp(-0.5 * dot(offset, offset) / (spread * spread));
   }
   return min(foam, 0.12);

@@ -1453,7 +1453,8 @@ gone, all of it easing out over the linger's last 8 s so the water never
 stills at once); the Cauchy–Poisson rings of each breach and dive (long waves first,
 wavenumber g t² / 4r², the impulse's size cutting the short ones); the
 water heaped before each piece of it out of the water and drawn down
-behind (a capsule as long as the piece), the short capillary-gravity
+behind (a capsule from where its tube meets the water at the front to
+where it does at the back, so none under a head lifted clear), the short capillary-gravity
 ripples its waterline sheds, running out from the capsule's outline; and
 foam hugging the waterline and trailing behind. Each is filtered by the pixel's footprint and
 what it averages away goes to the glitter's roughness and spreads the
@@ -1461,8 +1462,10 @@ mirror (the sky cube blurred over twice its rms slope, as the ice's frost
 is), so from the shore, where a wave a metre long out there is less than a
 pixel deep, the wake shows as a pale line of rougher water across the far
 shore's image, and zoomed in, as waves. A frame's pose transforms cross
-sections cached once a sighting (about 0.3 ms). Its hide texture is baked
-on the first loch visit and reused. The water shader keeps two ring slots;
+sections cached once a sighting (about 0.3 ms). Its hide texture (some
+40 ms of work) is baked only for the loch, 3 ms at a time between frames
+while the loch's sky downloads, finished at once on entering if it is not
+done, and reused. The water shader keeps two ring slots;
 their shading bound ends where the slope falls below 0.001.
 `tools/visitor-probe.mjs` checks its schedule, its reach and that it goes
 alike at any frame rate.
@@ -1919,14 +1922,21 @@ farther out, so it rises into the view rather than filling its corner.
   and never one twice running; no point of its body, posed every frame,
   comes within 36 m of the shore's eye; a thing out on the water holds a
   sighting back from its course and one that comes near sends it down at
-  once; under ice or a gale nothing comes up; the same sightings and poses
+  once (a lifted neck from where it stands, even one already lowering);
+  under ice or a gale nothing comes up; the same sightings and poses
   at 30, 60 and 144 frames a second (including the rendered skin and normals);
   posing it reuses its geometry, buffers and cross sections frame after frame
-  (work counted, not timed); and its waves have eased out by the last frame
-  that draws them.
+  (work counted, not timed); its contacts end where its tube meets the water,
+  never under a head lifted out of it; and its waves have eased out by the
+  last frame that draws them.
 - `node tools/visitor-wave-probe.mjs` checks the actual shader's Kelvin and
   breach-ring wave vectors against numerical derivatives of their phase:
-  both Kelvin branches, both sides of the track, multiple headings and speeds.
+  both Kelvin branches, both sides of the track, multiple headings and speeds;
+  and, running the shader's own lines, that the water a contact heaps and
+  draws down has a slope with no curl that is its height's gradient, the
+  heap a width before the piece, the trough a width behind, level between;
+  and that the shader's early-outs drop nothing that shows: the rings' skip
+  exactly what the slope cutoff would, the foam's under 1e-4 of foam.
   `window.__pond.sightVisitor(form, { elapsed, distance, bearing, course })`
   brings one up at Loch Ness for the harness (`--eval`), and
   `__pond.visitor` says what it is doing.
