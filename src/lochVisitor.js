@@ -1,4 +1,4 @@
-// Something in the loch (src/main.js PLACES `loch`, `visitor`): now and then,
+// Something in the loch (src/places.js PLACES `loch`; src/main.js `visitor`): now and then,
 // far out on the water, something comes up, goes along a little, and goes
 // down again. What it is the scene never says. It is drawn as one long,
 // dark, wet body, of which the water shows only what breaks it, and each
@@ -83,7 +83,8 @@ export const SCHEDULE = {
   clear: 22,                  // m: no sighting starts with a thing thrown this near its course
   startle: 16,                // m: one under way goes down at once if a thing comes this near
   retry: 7,                   // s: a sighting held back (a thing near, ice, a gale) is tried again this much later
-  linger: 30,                 // s its wake and rings are kept after it has gone under
+  linger: 30,                 // s its wake and rings are kept after it has gone under...
+  fade: 8,                    // s: ...over the last of which all it does to the water fades out, so the water never stills at once
 };
 const SINK = 2.2;             // m: how far under its back waits before it rises, and goes back to (unseen in peat water)
 const RISE_LAG = 0.12;        // s per metre of body: it rises and goes down front first
@@ -779,11 +780,15 @@ export class LochVisitor {
   waterAt(sighting, time) {
     const uniforms = this.uniforms;
     uniforms.uVisitorOn.value = 1;
+    // Over the linger's last SCHEDULE.fade seconds its heights (and so its slopes, their unresolved variance and its
+    // foam) ease to none, so letting the sighting go stills nothing that shows; the rings' reach shrinks with them.
+    const left = Math.min(Math.max((sightingEnd(sighting) - time) / SCHEDULE.fade, 0), 1);
+    const fade = left * left * (3 - 2 * left);
     const head = this.spine[0];
     uniforms.uVisitorSource.value.set(head.point.x, head.point.z, sighting.headingX, sighting.headingZ);
     // The wake's source: the body's front half, at the depth of its top when risen (a hump's out: none).
     const risenTop = sighting.crest;
-    const wakeHeight = WAKE_HEIGHT * (sighting.girth / 0.45) * Math.min(sighting.speed / 1.2, 1.4) ** 1.5;
+    const wakeHeight = WAKE_HEIGHT * (sighting.girth / 0.45) * Math.min(sighting.speed / 1.2, 1.4) ** 1.5 * fade;
     uniforms.uVisitorWake.value.set(sighting.speed, wakeHeight, Math.max(-risenTop, 0), sighting.girth);
     const ago = (moment) => time - moment;
     uniforms.uVisitorEnvelope.value.set(ago(sighting.start), ago(sighting.start + sighting.rise), ago(sighting.sinkStart), ago(sighting.sinkStart + sighting.sinkSeconds));
@@ -818,7 +823,7 @@ export class LochVisitor {
       }
       const middleX = (front.x + back.x) / 2, middleZ = (front.z + back.z) / 2;
       const span = Math.abs((front.x - back.x) * sighting.headingX + (front.z - back.z) * sighting.headingZ) / 2;
-      contacts[slot].set(middleX, middleZ, width, (bow + 0.02) * Math.min(piece.top / 0.15 + 0.3, 1));
+      contacts[slot].set(middleX, middleZ, width, (bow + 0.02) * Math.min(piece.top / 0.15 + 0.3, 1) * fade);
       spans.setComponent(slot, span);
     }
     // Rings: a breach's where the front first comes up, a dive's where it goes down (a startled dive's heavier).
@@ -835,7 +840,7 @@ export class LochVisitor {
       if (!event || time <= event.at) { rings[slot].set(0, 0, 0, 0); continue; }
       const [x, z] = headAt(sighting, event.at);
       const middle = Math.min(1.2, sighting.length * 0.15);   // a little behind the head: where most of it moves the water
-      rings[slot].set(x - sighting.headingX * middle, z - sighting.headingZ * middle, time - event.at, event.strength * (sighting.girth / 0.45) ** 2);
+      rings[slot].set(x - sighting.headingX * middle, z - sighting.headingZ * middle, time - event.at, event.strength * (sighting.girth / 0.45) ** 2 * fade);
     }
     // The circle all of it is inside (uVisitorReach): the wake out behind as far as the source has come (its energy
     // goes no faster than the source); each ring out to where its slope, S g² t⁴ / 16r⁵, falls under the shader's

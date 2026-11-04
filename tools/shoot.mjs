@@ -62,6 +62,10 @@
 // --wait=seconds waits that long for the pond to be ready (by default 60 on a
 // GPU, longer on SwiftShader: tools/browser.mjs patience, as the harness's
 // other waits are).
+// --targets=full draws the home view with the preset's full-size under-water,
+// mirror and fluid targets (?targets=full), which High otherwise holds at one
+// buffer pixel per CSS pixel until zoomed in (src/main.js QUALITY frameScale):
+// the splash's reference frames at the frame were shot so.
 // --fish=none leaves the water without fish (src/fish.js; ?fish=none), and
 // --look=fish:n turns the view, after the pre-roll, to fish n
 // (__pond.fish's order); fish:n:side looks at it from beside it, under the
@@ -91,6 +95,7 @@ const throws = throwArgument === 'none' ? [] : throwArgument.split(',').map((t) 
 const times = arg('times', '0.02,0.08,0.15,0.3,0.6,1.2').split(',').map(Number);
 const keepUi = arg('ui', '0') === '1';
 const quality = arg('quality', 'high');
+const targets = arg('targets', '');   // full: the preset's target scales at the home view too (src/main.js QUALITY frameScale)
 const preRoll = Number(arg('preroll', '0'));
 const debugView = arg('debug', 'none');
 const fov = arg('fov', '');
@@ -157,7 +162,7 @@ const problems = [];
 page.on('pageerror', (e) => problems.push(String(e)));
 page.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') problems.push(m.text()); });
 
-const url = `http://localhost:${port}/index.html?quality=${quality}&paused=1${keepUi ? '' : '&ui=0'}${floats ? `&floats=${floats}` : ''}${sky ? `&sky=${sky}` : ''}${skyTime ? `&time=${skyTime}` : ''}${weather ? `&weather=${weather}` : ''}${waterClarity ? `&water=${waterClarity}` : ''}${iceName ? `&ice=${iceName}` : ''}${wind ? `&wind=${wind.replace(':', ',')}` : ''}${windStrength ? `&windStrength=${windStrength}` : ''}${thingName ? `&thing=${thingName}` : ''}${fishArgument ? `&fish=${fishArgument}` : ''}${showPreview ? '' : '&preview=off'}`;
+const url = `http://localhost:${port}/index.html?quality=${quality}&paused=1${keepUi ? '' : '&ui=0'}${floats ? `&floats=${floats}` : ''}${sky ? `&sky=${sky}` : ''}${skyTime ? `&time=${skyTime}` : ''}${weather ? `&weather=${weather}` : ''}${waterClarity ? `&water=${waterClarity}` : ''}${iceName ? `&ice=${iceName}` : ''}${wind ? `&wind=${wind.replace(':', ',')}` : ''}${windStrength ? `&windStrength=${windStrength}` : ''}${thingName ? `&thing=${thingName}` : ''}${fishArgument ? `&fish=${fishArgument}` : ''}${showPreview ? '' : '&preview=off'}${targets ? `&targets=${targets}` : ''}`;
 console.log(`[shoot] ${url} -> ${outDir}`);
 await page.goto(url, { waitUntil: 'domcontentloaded' });
 try {

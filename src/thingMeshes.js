@@ -196,20 +196,37 @@ function hash3(x, y, z) {
   return h - Math.floor(h);
 }
 
-function valueNoise3(x, y, z) {
+/**
+ * hash3 at the whole points of a box (x from xLeast, y from yLeast, z from zLeast, `size` of each), each worked out once
+ * for a mesh being built, outside it as hash3: the same values. A stone's noise lies in a box a few points across, met
+ * some ten thousand times.
+ */
+function latticeHash(xLeast, yLeast, zLeast, size) {
+  const values = new Float64Array(size * size * size).fill(NaN);
+  return (x, y, z) => {
+    const i = x - xLeast, j = y - yLeast, k = z - zLeast;
+    if (i < 0 || j < 0 || k < 0 || i >= size || j >= size || k >= size) return hash3(x, y, z);
+    const index = (i * size + j) * size + k;
+    let value = values[index];
+    if (value !== value) values[index] = value = hash3(x, y, z);
+    return value;
+  };
+}
+
+function valueNoise3(x, y, z, hash = hash3) {
   const ix = Math.floor(x), iy = Math.floor(y), iz = Math.floor(z);
   const fx = x - ix, fy = y - iy, fz = z - iz;
   const sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy), sz = fz * fz * (3 - 2 * fz);
   let result = 0;
   for (let dz = 0; dz <= 1; dz++) for (let dy = 0; dy <= 1; dy++) for (let dx = 0; dx <= 1; dx++) {
     const weight = (dx ? sx : 1 - sx) * (dy ? sy : 1 - sy) * (dz ? sz : 1 - sz);
-    result += weight * hash3(ix + dx, iy + dy, iz + dz);
+    result += weight * hash(ix + dx, iy + dy, iz + dz);
   }
   return result;
 }
 
 /** valueNoise3 with its gradient, into `gradient` (a Vector3): the same sum, each lattice value weighted by the slope of its weights too. */
-function valueNoise3WithGradient(x, y, z, gradient) {
+function valueNoise3WithGradient(x, y, z, gradient, hash = hash3) {
   const ix = Math.floor(x), iy = Math.floor(y), iz = Math.floor(z);
   const fx = x - ix, fy = y - iy, fz = z - iz;
   const sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy), sz = fz * fz * (3 - 2 * fz);
@@ -217,7 +234,7 @@ function valueNoise3WithGradient(x, y, z, gradient) {
   let result = 0, gradientX = 0, gradientY = 0, gradientZ = 0;
   for (let dz = 0; dz <= 1; dz++) for (let dy = 0; dy <= 1; dy++) for (let dx = 0; dx <= 1; dx++) {
     const weightX = dx ? sx : 1 - sx, weightY = dy ? sy : 1 - sy, weightZ = dz ? sz : 1 - sz;
-    const value = hash3(ix + dx, iy + dy, iz + dz);
+    const value = hash(ix + dx, iy + dy, iz + dz);
     result += weightX * weightY * weightZ * value;
     gradientX += (dx ? slopeX : -slopeX) * weightY * weightZ * value;
     gradientY += weightX * (dy ? slopeY : -slopeY) * weightZ * value;
@@ -350,9 +367,12 @@ export function createRockGeometry(seed = Math.random() * 1000, { flat = false, 
   const squash = flat || river ? new THREE.Vector3(1.0, flat ? flatLeast + flatSpread * Math.random() : 0.62 + 0.2 * Math.random(), 0.8 + 0.2 * Math.random())
     : new THREE.Vector3(1.0, look.squash[0] + look.squash[1] * Math.random(), look.squash[2] + look.squash[3] * Math.random());
   const lumps = flat ? SKIP_STONE.surfaceNoise : river ? 1 : look.lumps;
+  // Its corners share lattice points (a few hundred for some ten thousand lookups): each hash3 once. The noises read
+  // the unit sphere scaled by at most 4.5, x shifted by the seed and the fine one's y by 3.1.
+  const hash = latticeHash(Math.floor(seed) - 6, -6, -6, 18);
   const surfacePoint = (direction, out) => {
-    const coarse = valueNoise3(direction.x * 1.6 + seed, direction.y * 1.6, direction.z * 1.6) - 0.5;
-    const fine = valueNoise3(direction.x * 4.5 + seed, direction.y * 4.5 + 3.1, direction.z * 4.5) - 0.5;
+    const coarse = valueNoise3(direction.x * 1.6 + seed, direction.y * 1.6, direction.z * 1.6, hash) - 0.5;
+    const fine = valueNoise3(direction.x * 4.5 + seed, direction.y * 4.5 + 3.1, direction.z * 4.5, hash) - 0.5;
     const radialScale = flat ? 1 + SKIP_STONE.surfaceNoise * (0.42 * coarse + 0.14 * fine)
       : river ? 1 + 0.42 * coarse + 0.14 * fine : 1 + look.lumps * (0.42 * coarse + 0.14 * fine);
     return out.copy(direction).multiplyScalar(radialScale).multiply(squash);
@@ -363,8 +383,8 @@ export function createRockGeometry(seed = Math.random() * 1000, { flat = false, 
   const coarseSlope = new THREE.Vector3(), fineSlope = new THREE.Vector3(), slope = new THREE.Vector3();
   const tangent = new THREE.Vector3(), bitangent = new THREE.Vector3(), alongTangent = new THREE.Vector3(), alongBitangent = new THREE.Vector3();
   const surfacePointAndNormal = (direction, outPoint, outNormal) => {
-    const coarse = valueNoise3WithGradient(direction.x * 1.6 + seed, direction.y * 1.6, direction.z * 1.6, coarseSlope) - 0.5;
-    const fine = valueNoise3WithGradient(direction.x * 4.5 + seed, direction.y * 4.5 + 3.1, direction.z * 4.5, fineSlope) - 0.5;
+    const coarse = valueNoise3WithGradient(direction.x * 1.6 + seed, direction.y * 1.6, direction.z * 1.6, coarseSlope, hash) - 0.5;
+    const fine = valueNoise3WithGradient(direction.x * 4.5 + seed, direction.y * 4.5 + 3.1, direction.z * 4.5, fineSlope, hash) - 0.5;
     const radialScale = 1 + lumps * (0.42 * coarse + 0.14 * fine);
     slope.copy(coarseSlope).multiplyScalar(lumps * 0.42 * 1.6).addScaledVector(fineSlope, lumps * 0.14 * 4.5);
     outPoint.copy(direction).multiplyScalar(radialScale).multiply(squash);

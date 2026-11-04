@@ -39,16 +39,17 @@
 // Cost. The levels hold a twelfth of the frame's pixels between them, in
 // half floats (a 1170 × 2532 phone frame: 2 MB), and each pass reads a few
 // taps per pixel. The enlarging passes add into their level by blending, so
-// no level is held twice. What costs is not the pixels but the passes: the
-// chain stops at SMALLEST, four levels of a 2293 × 1133 frame (the last
-// 72 × 36, its texel about 5° of the view), because the three levels under
-// that, 36 × 18 to 9 × 5, six passes with a few hundred pixels between them,
-// took 2.1 ms of a 5.4 ms idle frame on an M5 Max in Chrome (the GPU timer
-// round the frame, each level skipped in turn: the passes' fixed cost, not
-// their work), and the frame with and without them is the same to the eye
+// no level is held twice. The chain stops at SMALLEST, four levels of a
+// 2293 × 1133 frame (the last 72 × 36, its texel about 5° of the view): the
+// three levels under that, 36 × 18 to 9 × 5, were six passes over a few
+// hundred pixels, and the frame with and without them is the same to the eye
 // (the sun's image in the water, 2× crops: the widest octaves' veil is
 // spread too thin to show, and their light goes to the levels built, the
-// weights normalised over those).
+// weights normalised over those). A pass has a fixed cost on a tiled GPU (a
+// phone's, an Apple one's); on an M5 Max in Chrome the whole chain is
+// 0.06 ms of GPU time (frames drawn back to back on a paused page and timed
+// to a readPixels: a timer query round one frame times its idle gaps too,
+// and read 2 ms for those six passes).
 import * as THREE from 'three';
 import { createFloatTarget, FullscreenPass } from './gpu.js';
 

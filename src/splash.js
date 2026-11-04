@@ -93,7 +93,13 @@
 // two kinds (src/spectralWater.js), a boil, big bubbles, dense and popping
 // within a second (BOIL_LIFETIME), and a raft, small bubbles lasting
 // seconds, which is sea foam and the gale's whitecaps' (src/galeWaves.js);
-// a stone stamps only boils. Where the hole closes its air comes up as a
+// a stone stamps only boils, a big one's foot frothing at impact
+// (contactFroth, by the entry's size-weighted Weber number: the lake
+// photographs show a clear foot under a pebble's sheet and a white one under
+// a rock's); but on the sea (setSalt: the places whose sky
+// is the sea's, src/sky.js SALT_SKIES) each boil also leaves a raft of
+// SALT_RAFT_SHARE of its amount lasting SALT_RAFT_LIFETIME, the bubble
+// patch a stone leaves on salt water for seconds. Where the hole closes its air comes up as a
 // boil over about the mouth, not at once but over the time the pinched-off
 // air takes to rise from the pinch depth (BUBBLE_RISE_SPEED, at most
 // FOAM_RISE_CAP: about 0.7 s for a 6 cm stone, 2.5 s for a rock), a
@@ -137,7 +143,7 @@
 // capillary rings the solver's cells are too coarse to hold, drawn instead
 // (src/dropRings.js, which the water carries as water.dropRings). A
 // large one (LANDING_CROWN_RADIUS
-// to DROP_CEILING, 3.5 to 4 mm: the biggest of the jet's and the crown's)
+// to DROP_CEILING, 2.5 mm: the biggest of the crown's)
 // that has flown at least LANDING_CROWN_FLIGHT and falls at
 // LANDING_CROWN_SPEED or more throws a small crown of its own, a CrownSheet
 // with the drop's radius and speed (at most MAX_LANDING_CROWNS alive; the
@@ -169,8 +175,10 @@
 // src/crown.js, the jet's in src/jet.js.
 //   - The crown's and the fan's droplet counts go as s^DROPLET_COUNT_POWER ·
 //     sqrt(V / 6 m/s) and the lumps their sheets tear into as s^0.5
-//     (src/crown.js); but no drop is bigger than DROP_CEILING (4 mm in
-//     radius, the most surface tension holds together in flight), so from
+//     (src/crown.js); but no drop is bigger than DROP_CEILING (2.5 mm in
+//     radius, the biggest a sheet's tearing throws: the lake photographs'
+//     drops are millimetres across; a lump bigger than that flies whole
+//     until the air tears it, Lumps below), so from
 //     the 3 cm stone up a bigger lump, the jet's too, breaks into several
 //     drops (breakLump), out of the spares under the caps: a big stone's
 //     crown is denser, not coarser. Past the caps the lumps lose water (a
@@ -283,7 +291,7 @@
 // lower its frame rate and when its solver may sleep.
 import * as THREE from 'three';
 import { FullscreenPass, createFloatTarget } from './gpu.js';
-import { CrownSheet, DOME_HEIGHT, DROP_CEILING, FROTH_SPEED, FROTH_POWER, breakLump } from './crown.js';
+import { CrownSheet, DOME_HEIGHT, DROP_CEILING, FROTH_SPEED, FROTH_POWER, breakLump, frothWeber } from './crown.js';
 import { JetColumn, CLEAN_FORM } from './jet.js';
 import { Cavity, PINCH_TIME, SURFACE_HEAD } from './cavity.js';
 import { MAX_CAVITIES } from './waterSurface.js';
@@ -316,6 +324,20 @@ const LANDING_CROWN_SPEED = 1.0;      // ...and fall this fast (m/s): not the dr
 const AIR_DENSITY = 1.2;
 const WATER_SURFACE_TENSION = 0.072;
 const WATER_DENSITY_LUMPS = 1000;
+// A drop's wobble. A drop just pinched off a ligament or a column is no
+// sphere: it is left prolate along the way it was pulled, and rings between
+// prolate and oblate at the frequency of its second mode (Rayleigh 1879),
+// ω² = 8σ / (ρ r³): 66 Hz for a 1.5 mm drop, 15 Hz for a 4 mm one, dying away
+// over r² / (5ν) (Lamb's viscous damping of that mode: 0.45 s for 1.5 mm,
+// longer than its flight). Its shape, its length along its motion over its
+// width, is 1 + a·e^(−age/τ)·cos(ω·age), a drawn between WOBBLE for each
+// drop of WOBBLE_LEAST_RADIUS and up (a finer one is a pixel and shows no
+// shape), stepped with the drop (shapes) and drawn by the vertex shader
+// (iShape in src/shaders/fluid.js); at 60 Hz a small drop's ringing is
+// faster than the frames, a jitter of shape, as it is in a camera's.
+const WOBBLE = [0.15, 0.45];
+const WOBBLE_LEAST_RADIUS = 0.001;
+const WATER_VISCOSITY = 1e-6;         // m²/s (kinematic)
 const WEBER_CRITICAL = 12;
 const LUMP_BREAK = { largest: 0.72, pieces: 8 };
 const LANDING_REFERENCE = 0.0086;     // the drop size the landing crown was tuned at (bigger than any drop now: DROP_CEILING)
@@ -337,8 +359,9 @@ const DROPLET_COUNT_POWER = 1.6;      // the crown's and the fan's drop counts s
 const CROWN_DROPLET_CAP = 3500;       // at most, unless the preset sets fewer (QUALITY's crownDrops, setCrownDropletCap): a 16 cm stone is given about 870, and its lumps over DROP_CEILING want the rest (src/crown.js)
 const FAN_DROPLET_CAP = 600;          // at most (the same stone's fan, about 400)
 const SPRAY_DROP_RADIUS = 0.0008;     // the contact line's spray: drops of this radius...
-const SPRAY_DROP_SPREAD = 0.001;      // ...to this much more, times (R / 3 cm)^0.4
-const CONTACT_SPRAY = { water: 0.002, radius: 0.00012, bursts: 24 };   // the contact's first ejecta as spray (src/spray.js): this share of the stone's volume, drops of this mean radius (times (R / 3 cm)^0.3), from this many places round the ring
+const SPRAY_DROP_SPREAD = 0.001;      // ...to this much more, times (R / 3 cm)^0.4, at most DROP_CEILING (the contact's first ejecta are fine)
+const CONTACT_FROTH = { onset: [3, 14], amount: 0.12, radius: 1.4, span: 3 };   // the froth at a big stone's foot (contactFroth): rising from none to all over this range of the entry's size-weighted Weber number, each sub-stamp's peak this times (R / 3 cm), over this many R, kept up for this many sqrt(R/g) while the sheet stands
+const CONTACT_SPRAY = { water: 0.002, radius: 0.00012, bursts: 24, onset: [2, 12] };   // the contact's first ejecta as spray (src/spray.js): this share of the stone's volume, drops of this mean radius (times (R / 3 cm)^0.3), from this many places round the ring, rising from none to all over this range of the entry's size-weighted Weber number (src/crown.js frothWeber: a pebble's contact throws drops, no mist, in the lake photographs)
 const BUBBLES = 110;                  // bubbles a 3 cm stone drags down, scaling with R²...
 const BUBBLE_CAP = 800;               // ...at most (a 16 cm stone wants 780)...
 const BUBBLE_SWARM = 5;               // ...in swarms of one to this many of like size, within BUBBLE_SWARM_SPREAD, drifting as one: they surface as clumps, not an even sprinkle
@@ -369,6 +392,8 @@ const BUBBLE_SWARM_SPREAD = 0.01;     // m
 const BOIL_AMOUNT = 0.046;            // a 3 cm stone's boil: each sub-stamp's peak (0.07 shared over its span until the boil was sustained, the same on average), scaling as R / 3 cm and the cavity splat's strength...
 const FOAM_AMOUNT_CAP = 0.8;          // ...at most
 const BOIL_LIFETIME = 0.45;           // τ of a boil (s): fresh water's bubbles burst as they come up
+const SALT_RAFT_SHARE = 0.35;         // on the sea (setSalt) a boil also leaves a raft of this share of its amount...
+const SALT_RAFT_LIFETIME = 5;         // ...with this τ (s): salt holds bubbles apart (the header's Foam)
 const BUBBLE_RISE_SPEED = 0.25;       // m/s: the pinched-off air rises as bubbles of millimetres to centimetres, this fast...
 const FOAM_RISE_CAP = 2.5;            // ...so the hole's boil arrives over its pinch depth at that speed, at most this long (s): a big stone's bubbles are bigger and faster
 const FOAM_STAMP_SPACING = 0.25;      // a patch spread over a span gets a sub-stamp every this many seconds, the amount shared among them (or each with all of it, sustained)
@@ -426,6 +451,7 @@ const DECK_DROPS = { wallInset: 0.004, wall: 0.3, splatterFrom: 0.0015, splatter
 // A knocked floater's spray (knock): drops per m/s, at most, their spread about the knock's direction, its lift, their radii (m).
 const KNOCK = { drops: 14, most: 70, spread: 0.7, lift: 0.4, radius: [0.0006, 0.0018] };
 const HAZE_RADIUS = 0.5;             // device pixels: finer drops are mist (src/shaders/fluid.js)
+const STREAK_CAP = 1 / 1000;         // s: the longest a drop's motion streak is exposed for (setFrameSeconds)
 const MIRROR_PAD = 0.05;              // metres around what is mirrored: drawn radii, streaks, a landing crown's ride
 const MIRROR_DROP_RADIUS = 0.002;     // finer drops are left out of the mirror: their images there are under a pixel
 
@@ -795,6 +821,8 @@ export class SplashSystem {
     this.radii = new Float32Array(capacity);
     this.ages = new Float32Array(capacity);
     this.lenses = new Float32Array(capacity);   // 1 for drops drawn as glass lenses like the jet column
+    this.wobbles = new Float32Array(capacity);  // the wobble's amplitude at birth (0 for a fine drop)...
+    this.shapes = new Float32Array(capacity);   // ...and its shape now, length along its motion over width (the header's wobble)
 
     this.bubbleCapacity = bubbleCapacity;
     this.bubbleCount = 0;
@@ -810,6 +838,7 @@ export class SplashSystem {
     this.wakes = [];     // scheduled cavity splats of an oblique entry
     this.poolRings = []; // a pool's ring sources, held until their release (stampCavity)
     this.foamStamps = [];   // scheduled foam: a cavity's, when it closes
+    this.salt = false;   // the sea's water (setSalt)
     this.bases = [];        // scheduled: a jet's base meeting the water, when the hole's bowl has flattened
     this.cavities = [];  // open cavities (src/cavity.js), drawn in the main scene from cavityGroup
     this.ground = null;  // the pool's walls and deck (setGround), or none
@@ -839,10 +868,12 @@ export class SplashSystem {
     this.instanceRadii = new THREE.InstancedBufferAttribute(this.radii, 1).setUsage(THREE.DynamicDrawUsage);
     this.instanceVelocities = new THREE.InstancedBufferAttribute(this.velocities, 3).setUsage(THREE.DynamicDrawUsage);
     this.instanceLenses = new THREE.InstancedBufferAttribute(this.lenses, 1).setUsage(THREE.DynamicDrawUsage);
+    this.instanceShapes = new THREE.InstancedBufferAttribute(this.shapes, 1).setUsage(THREE.DynamicDrawUsage);
     geometry.setAttribute('iPosition', this.instancePositions);
     geometry.setAttribute('iRadius', this.instanceRadii);
     geometry.setAttribute('iVelocity', this.instanceVelocities);
     geometry.setAttribute('iLens', this.instanceLenses);
+    geometry.setAttribute('iShape', this.instanceShapes);
     geometry.instanceCount = 0;
     this.particleGeometry = geometry;
 
@@ -897,7 +928,7 @@ export class SplashSystem {
     this.sheetDepthMaterial = new THREE.ShaderMaterial({ vertexShader: SHEET_VERTEX, fragmentShader: SHEET_DEPTH_FRAGMENT, uniforms: { ...sheetUniforms(), ...rideUniforms() }, depthTest: true, depthWrite: true, side: THREE.DoubleSide });
     this.sheetThicknessMaterial = new THREE.ShaderMaterial({ vertexShader: SHEET_VERTEX, fragmentShader: SHEET_THICKNESS_FRAGMENT, uniforms: { ...sheetUniforms(), ...rideUniforms() }, ...summed, side: THREE.DoubleSide });
     // Jet columns, likewise.
-    const columnUniforms = () => ({ ...sheetUniforms(), ...galeUniforms(), uProjScale: { value: 1000 }, uMinPixelRadius: { value: 1.0 } });
+    const columnUniforms = () => ({ ...sheetUniforms(), ...galeUniforms(), ...rideUniforms(), uProjScale: { value: 1000 }, uMinPixelRadius: { value: 1.0 } });
     this.columnDepthMaterial = new THREE.ShaderMaterial({ vertexShader: COLUMN_VERTEX, fragmentShader: COLUMN_DEPTH_FRAGMENT, uniforms: columnUniforms(), depthTest: true, depthWrite: true, side: THREE.DoubleSide });
     this.columnThicknessMaterial = new THREE.ShaderMaterial({ vertexShader: COLUMN_VERTEX, fragmentShader: COLUMN_THICKNESS_FRAGMENT, uniforms: columnUniforms(), ...summed, side: THREE.DoubleSide });
     this.sunDirView = new THREE.Vector3();
@@ -921,7 +952,7 @@ export class SplashSystem {
     });
     this.columnMirror = mirrorPair({
       vertexShader: COLUMN_VERTEX, fragmentShader: MIRROR_COLUMN_FRAGMENT,
-      uniforms: { ...galeUniforms(), uProjScale: { value: 1000 }, uMinPixelRadius: { value: 1.0 }, uEnvCube: { value: environment.cubeTexture } },
+      uniforms: { ...galeUniforms(), ...rideUniforms(), uProjScale: { value: 1000 }, uMinPixelRadius: { value: 1.0 }, uEnvCube: { value: environment.cubeTexture } },
       side: THREE.DoubleSide,
     });
     this.dropMirror = mirrorPair({
@@ -961,6 +992,7 @@ export class SplashSystem {
       uRefract: { value: 1.4 },
       uFluidScale: { value: 1.0 },
       uProjScale: { value: 1000 },
+      uFluidTexel: { value: new THREE.Vector2(1 / 512, 1 / 512) },
       ...(environment.hazeUniforms ?? { uHazeColor: { value: new THREE.Vector3() }, uHazeDensity: { value: 0 } }),   // the weather's haze (src/sky.js)
     });
     this.toneMapPass = new FullscreenPass(TONE_MAP_FRAGMENT, { uScene: { value: null }, uGlare: { value: null }, uGlareShare: { value: 0 }, uExposure: { value: lighting.exposure }, uNight: { value: 0 } });
@@ -1007,7 +1039,7 @@ export class SplashSystem {
     reseedSplashRandom();   // its own stream as it first started (src/splashRandom.js)
     this.count = 0;
     this.bubbleCount = 0;
-    for (const crown of this.crowns) { this.particleScene.remove(crown.mesh); crown.dispose(); }
+    for (const crown of this.crowns) { this.particleScene.remove(crown.mesh); if (crown.ligaments) this.particleScene.remove(crown.ligaments); crown.dispose(); }
     this.crowns = [];
     for (const column of [...this.columns]) this.retireColumn(column);
     for (const cavity of [...this.cavities]) this.retireCavity(cavity);
@@ -1087,7 +1119,7 @@ export class SplashSystem {
     // line now, drops shed by the sheet's rim, and the sheet's breakup.
     const crownCount = Math.round(THREE.MathUtils.clamp(CROWN_DROPLETS * sizeFactor ** DROPLET_COUNT_POWER * Math.sqrt(entrySpeed / 6), 50, this.crownDropletCap));
     const sprayCount = Math.round(0.1 * crownCount);
-    const rimCount = Math.round(0.1 * crownCount);
+    const rimCount = Math.round(0.3 * crownCount);   // the rim's share: its fingers shed chains of drops (the lake photographs' ligaments each trail several)
     for (let drop = 0; drop < sprayCount; drop++) {
       const angle = splashRandom() * Math.PI * 2;
       const dirX = Math.cos(angle), dirZ = Math.sin(angle);
@@ -1101,10 +1133,11 @@ export class SplashSystem {
       this.spawnDroplet(
         x + dirX * ringRadius, 0.003, z + dirZ * ringRadius,
         dirX * out + velocity.x * 0.22, up, dirZ * out + velocity.z * 0.22,
-        (SPRAY_DROP_RADIUS + SPRAY_DROP_SPREAD * splashRandom()) * sizeFactor ** 0.4,
+        Math.min((SPRAY_DROP_RADIUS + SPRAY_DROP_SPREAD * splashRandom()) * sizeFactor ** 0.4, DROP_CEILING),
       );
     }
     this.contactSpray(x, z, radius, entrySpeed, velocity, horizontal, horizontalFraction, sizeFactor);
+    this.contactFroth(x, z, radius, entrySpeed, sizeFactor, water);
     const stoneCrowns = this.crowns.filter((candidate) => !candidate.landing && !candidate.fan);
     if (stoneCrowns.length >= MAX_CROWNS) {
       const oldest = stoneCrowns[0];
@@ -1127,11 +1160,12 @@ export class SplashSystem {
       const crown = new CrownSheet({
         impact: info, startTime: this.time, rimDroplets: sealed && choice.trapped ? 0 : rimShed,
         breakupDroplets: sealed && choice.trapped ? 0 : crownCount - sprayCount - rimShed, spareDroplets: sealed && choice.trapped ? 0 : this.crownDropletCap - crownCount,
-        material: this.sheetDepthMaterial, rim: cavity, lopsided: choice.crown,
+        material: this.sheetDepthMaterial, columnMaterial: this.columnDepthMaterial, rim: cavity, lopsided: choice.crown,
         seal: sealed ? { time: choice.seal.dome * timeUnit, tear: choice.trapped ? cavity.pinchTime : burstTime, sink: choice.trapped, burstSpeed: DOME_BURST_SHARE * needleSpeed } : null,
       });
       this.crowns.push(crown);
       this.particleScene.add(crown.mesh);
+      if (crown.ligaments) this.particleScene.add(crown.ligaments);
     }
 
     // The forward fan of an oblique entry: a thin, fast, low sheet ahead of
@@ -1221,7 +1255,9 @@ export class SplashSystem {
   contactSpray(x, z, radius, entrySpeed, velocity, horizontal, horizontalFraction, sizeFactor) {
     const random = seededRandom(x, z, this.time, radius);
     const range = (low, high) => low + random() * (high - low);
-    const water = (CONTACT_SPRAY.water * (4 / 3) * Math.PI * radius ** 3) / CONTACT_SPRAY.bursts;
+    const mist = smoothstep(CONTACT_SPRAY.onset[0], CONTACT_SPRAY.onset[1], frothWeber(sizeFactor, entrySpeed));
+    if (mist <= 0) return;
+    const water = (mist * CONTACT_SPRAY.water * (4 / 3) * Math.PI * radius ** 3) / CONTACT_SPRAY.bursts;
     const meanRadius = CONTACT_SPRAY.radius * sizeFactor ** 0.3;
     for (let burst = 0; burst < CONTACT_SPRAY.bursts; burst++) {
       const angle = ((burst + random()) / CONTACT_SPRAY.bursts) * Math.PI * 2;
@@ -1236,6 +1272,19 @@ export class SplashSystem {
         kick: 0.15 * speed, spread: 0.2 * radius, time: this.time, random, sizeFactor,
       });
     }
+  }
+
+  /**
+   * The froth at the foot of a big stone's crown (the header's Foam): the
+   * air the contact line and the sheet's foot entrain as the stone goes in,
+   * a boil on the lip at impact, by the entry's size-weighted Weber number
+   * over CONTACT_FROTH.onset (none for a pebble, whose foot the lake
+   * photographs show clear; a rock's foot is white).
+   */
+  contactFroth(x, z, radius, entrySpeed, sizeFactor, water) {
+    const share = smoothstep(CONTACT_FROTH.onset[0], CONTACT_FROTH.onset[1], frothWeber(sizeFactor, entrySpeed));
+    if (share <= 0 || !water) return;
+    this.stampFoamPatch(water, foamRandom(x, z, this.time, radius), { x, z, radius: CONTACT_FROTH.radius * radius, amount: Math.min(CONTACT_FROTH.amount * share * sizeFactor, FOAM_AMOUNT_CAP), reach: 1.0, radii: [0.4, 0.8], lifetime: BOIL_LIFETIME, boil: true, time: this.time, span: CONTACT_FROTH.span * Math.sqrt(radius / GRAVITY), sustained: true, source: 'contact' });
   }
 
   /**
@@ -1293,7 +1342,7 @@ export class SplashSystem {
       this.spawnDroplet(
         startX - headingZ * aside, 0.003, startZ + headingX * aside,
         directionX * Math.cos(rise) * dropSpeed, Math.sin(rise) * dropSpeed, directionZ * Math.cos(rise) * dropSpeed,
-        (SPRAY_DROP_RADIUS + SPRAY_DROP_SPREAD * splashRandom()) * sizeFactor ** 0.4,
+        Math.min((SPRAY_DROP_RADIUS + SPRAY_DROP_SPREAD * splashRandom()) * sizeFactor ** 0.4, DROP_CEILING),
       );
     }
     // The water the face churned: a small boil, white for a moment (on the solver's patch only, where the foam is).
@@ -1501,6 +1550,7 @@ export class SplashSystem {
       this.spawnFoamSpecks(crown.centreX, crown.centreZ, 0.9 * radius, 2.2 * radius, count, 0.03, CROWN_SPECK_SPAN * Math.sqrt(radius / GRAVITY));
     }
     this.particleScene.remove(crown.mesh);
+    if (crown.ligaments) this.particleScene.remove(crown.ligaments);
     crown.dispose();
     this.crowns.splice(this.crowns.indexOf(crown), 1);
   }
@@ -1597,8 +1647,20 @@ export class SplashSystem {
         radius: radius * (radii[0] + (radii[1] - radii[0]) * random()), amount: amount * share * (0.4 + 0.6 * random()), lifetime, boil, source,
       };
       const at = time + span * piece / (count - 1);
-      if (at > this.time) this.foamStamps.push({ time: at, foam }); else water.addFoam(foam);
+      this.stampFoam(water, at, foam);
+      // Salt water holds a bubble patch (the header): a boil also leaves a raft, lasting.
+      if (this.salt && boil) this.stampFoam(water, at, { ...foam, boil: false, amount: foam.amount * SALT_RAFT_SHARE, lifetime: SALT_RAFT_LIFETIME });
     }
+  }
+
+  /** One foam stamp, now or when its time comes. */
+  stampFoam(water, at, foam) {
+    if (at > this.time) this.foamStamps.push({ time: at, foam }); else water.addFoam(foam);
+  }
+
+  /** Whether the water is the sea's (the header's Foam): a stone's boils then leave rafts. */
+  setSalt(salt) {
+    this.salt = Boolean(salt);
   }
 
   /**
@@ -1626,6 +1688,10 @@ export class SplashSystem {
     this.radii[i] = radius;
     this.ages[i] = 0;
     this.lenses[i] = lens ? 1 : 0;
+    // Pinched off prolate, it rings from there (the header's wobble).
+    const wobble = radius >= WOBBLE_LEAST_RADIUS ? randomRange(WOBBLE[0], WOBBLE[1]) : 0;
+    this.wobbles[i] = wobble;
+    this.shapes[i] = 1 + wobble;
   }
 
   removeDroplet(i) {
@@ -1638,6 +1704,8 @@ export class SplashSystem {
       this.radii[i] = this.radii[last];
       this.ages[i] = this.ages[last];
       this.lenses[i] = this.lenses[last];
+      this.wobbles[i] = this.wobbles[last];
+      this.shapes[i] = this.shapes[last];
     }
   }
 
@@ -1785,6 +1853,14 @@ export class SplashSystem {
       }
       this.positions[p] = x; this.positions[p + 1] = y; this.positions[p + 2] = z;
       this.velocities[p] = vx; this.velocities[p + 1] = vy; this.velocities[p + 2] = vz;
+      // Its wobble (the header): the second mode's ringing, dying away.
+      const wobble = this.wobbles[i];
+      if (wobble > 0) {
+        const age = this.ages[i];
+        const ringing = Math.sqrt((8 * WATER_SURFACE_TENSION) / (WATER_DENSITY_LUMPS * radius * radius * radius));
+        const damping = (radius * radius) / (5 * WATER_VISCOSITY);
+        this.shapes[i] = 1 + wobble * Math.exp(-age / damping) * Math.cos(ringing * age);
+      }
     }
 
     // Falling drops ring the surface again: the biggest first, each its
@@ -1856,6 +1932,7 @@ export class SplashSystem {
     this.instanceRadii.needsUpdate = true;
     this.instanceVelocities.needsUpdate = true;
     this.instanceLenses.needsUpdate = true;
+    this.instanceShapes.needsUpdate = true;
     this.particleGeometry.instanceCount = this.count;
     this.bubblePositionAttribute.needsUpdate = true;
     this.bubbleSizeAttribute.needsUpdate = true;
@@ -1888,7 +1965,7 @@ export class SplashSystem {
     const h = Math.max(2, Math.round(height * fluidScale));
     if (this.targets) Object.values(this.targets).forEach((t) => t.dispose());
     this.targets = {
-      info: createFloatTarget(w, h, { type: THREE.HalfFloatType, depth: true }),
+      info: createFloatTarget(w, h, { depth: true }),   // full floats where the device has them: a class's fraction (src/shaders/fluid.js) survives
       optics: createFloatTarget(w, h, { type: THREE.HalfFloatType, filter: THREE.LinearFilter }),
     };
     this.fluidSize = new THREE.Vector2(w, h);
@@ -1931,6 +2008,7 @@ export class SplashSystem {
       this.instanceRadii.needsUpdate = true;
       this.instanceVelocities.needsUpdate = true;
       this.instanceLenses.needsUpdate = true;
+      this.instanceShapes.needsUpdate = true;
     }
     const drawn = this.count + beads;
     this.particleGeometry.instanceCount = drawn;
@@ -1953,7 +2031,7 @@ export class SplashSystem {
     } else {
       this.spray.mesh.layers.disable(MIRROR_LAYER);
     }
-    for (const crown of this.crowns) list.push(mirrorWith(crown.mesh, this.sheetMirror));
+    for (const crown of this.crowns) { list.push(mirrorWith(crown.mesh, this.sheetMirror, crown.boundsInto)); if (crown.ligaments) list.push(mirrorWith(crown.ligaments, this.columnMirror)); }
     for (const column of this.columns) list.push(mirrorWith(column.mesh, this.columnMirror));
   }
 
@@ -2001,7 +2079,7 @@ export class SplashSystem {
   setPassMaterials(particleMaterial, sheetMaterial, columnMaterial, sprayMaterial) {
     this.particleMesh.material = particleMaterial;
     this.spray.mesh.material = sprayMaterial;
-    for (const crown of this.crowns) crown.mesh.material = sheetMaterial;
+    for (const crown of this.crowns) { crown.mesh.material = sheetMaterial; if (crown.ligaments) crown.ligaments.material = columnMaterial; }
     for (const column of this.columns) column.mesh.material = columnMaterial;
   }
 
@@ -2065,18 +2143,23 @@ export class SplashSystem {
     composite.uNight.value = this.lighting.night ?? 0;
     composite.uFluidScale.value = this.fluidScale;
     composite.uProjScale.value = projScale;
+    composite.uFluidTexel.value.set(1 / this.fluidSize.x, 1 / this.fluidSize.y);
     this.compositePass.render(renderer, output);
   }
 
   /**
    * The simulated length of the frame about to be stepped, given before its
    * substeps: the crown's tear and the jet's breakup advance once per frame,
-   * and the motion streaks follow it (shutter ≈ half a frame).
+   * and the motion streaks follow it (shutter ≈ half a frame, at most
+   * STREAK_CAP: a camera in daylight exposes for a thousandth of a second
+   * and freezes a splash's drops, where half a 60 Hz frame drew every
+   * sunlit drop as a white dash, a scratch across the picture, and a
+   * longer cap drew the jet's fast first drops as a burst of bullets).
    */
   setFrameSeconds(seconds) {
     this.frameSeconds = seconds;
     this.frameEnd = this.time + seconds;
-    this.streakSeconds = seconds * 0.5;
+    this.streakSeconds = Math.min(seconds * 0.5, STREAK_CAP);
   }
 
   /** After the sky changes the sun (src/sky.js): the sand's light that the splash's water sees the pond's floor by. */
