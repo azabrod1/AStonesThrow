@@ -38,7 +38,33 @@
 // plus the base's launch radius for its water, stretched as the launch
 // stretches it, from where the base is BASE_START of the core over
 // BASE_TAPER of the launch left), a trumpet 6 cm across at the water for the
-// reference throw. Rj is the
+// reference throw. Where the trumpet flares it is the pond's water welling
+// up, not a column standing in the air, and is shaded so: a ring whose
+// surface widens towards the foot at a slope of FOOT_POND[0] to FOOT_POND[1]
+// (radius per length along the axis) carries that share (0 to 1) as a
+// negative aRound, and src/shaders/sheet.js and the composite shade it as
+// the pond's surface, the sky's reflection over the water's own light from
+// under it: a ray into a flaring foot is bent down into the base and the
+// pond, where one into a standing tube crosses it and leaves (drawn as a
+// glass lens the foot was a block of glass on the water, its foot cut flat
+// along the surface and the pond's far side showing through it; the base's
+// share of the water alone, which widens most of the column, made the whole
+// column a dark bottle). Towards the water the trumpet flares as a horn:
+// a ring within HORN_HEIGHT times its own radius of the water is drawn
+// wider by HORN_GAIN times the square of how near it is, so the base's
+// water lies in a low mound curving into the column (Worthington's "cake"
+// of liquid round the foot), its lowest ring, held under the surface, out
+// of sight. And the foot rides the pond's surface, as the dish it stands
+// in does (src/cavity.js aCavity): each vertex is lifted by the water's
+// height under it (the solver's, the wind's and the rings') times its
+// ring's ride share (aRide, src/shaders/sheet.js), all of it at or under
+// the level and none HORN_HEIGHT of the ring's radius above it. Standing on
+// still water while the dish sank into the ring's first trough (2 to 3 cm
+// down by 0.2 s around the reference throw's jet, src/rings.js), the
+// trumpet's widest rings and the wall under them stood out of the water, a
+// plate with straight ends at the water's level. Drawn without the horn the base was a flat-topped block with
+// vertical walls on the water, and a flat skirt laid on the water in its
+// place a plate with a hard edge. Rj is the
 // stone's radius R times the sweep's `column` gain (Sizes, below; times
 // form.radiusScale), never under JET_RADIUS_LEAST, since a small stone's jet
 // is no thinner than the capillary length lets it be: Li & Li (2025) measure
@@ -134,9 +160,9 @@
 // Drops. A piece the solver lets go as a drop (one bead) becomes a droplet of
 // its water's radius and momentum (drops of LENS_DROP_RADIUS and more drawn
 // as glass, like the column); drops under LEAST_DROP are not worth one and
-// their water falls back. A drop bigger than DROP_CEILING (src/crown.js: 4
-// mm in radius, the most surface tension holds together at a raindrop's
-// speed) flies whole as a lump until the air tears it (src/splash.js's
+// their water falls back. A drop bigger than DROP_CEILING (src/crown.js: 2.5
+// mm in radius, the biggest a sheet's tearing throws; the lake photographs'
+// drops are millimetres across) flies whole as a lump until the air tears it (src/splash.js's
 // Lumps: by its Weber number, so a lump lobbed slowly reaches its apex whole
 // and comes apart as it falls, as a big stone's centimetre lumps do). A
 // piece that reaches the water leaves as droplets
@@ -179,7 +205,11 @@
 // its sphere, each free end a hemisphere of CAP_RINGS rings and a pole, the
 // pieces joined by rings of no radius (which draw nothing); normals from the
 // shapes (a ring's slope, a sphere's latitude); aRound 1 on spheres and caps
-// (the composite's lens). A long column with more nodes than rows is drawn
+// (the composite's lens); aRipple each vertex's place on the water, its
+// azimuth (RIPPLE_RING) and the launch's phase along the column
+// (RIPPLE_ALONG), which the column's shader ripples its normal over (the
+// capillary waves the mesh does not resolve), so they ride and stretch with
+// the water. A long column with more nodes than rows is drawn
 // through every few of them. SplashSystem draws the mesh with the column
 // materials in src/shaders/sheet.js through the droplets' screen-space fluid
 // passes, where the composite shades it as a glass lens. Below the bowl's
@@ -227,6 +257,9 @@ const UNSTABLE_WAVELENGTH = 9.02;  // Rayleigh–Plateau's most unstable wavelen
 const BASE_DEPTH = 0.004;          // the water the column drains into is this far under the bowl's floor (or the surface)
 const BASE_START = 0.3;            // the base widens the column from where its launch radius is this share of the core's...
 const BASE_TAPER = 0.25;           // ...over this share of the launch left after that
+const FOOT_POND = [0.35, 1.0];     // a ring whose surface flares towards the foot at this slope starts to be the pond's own water, and is wholly at this (the header)
+const HORN_HEIGHT = 2.0;           // the foot's horn (the header): a ring within this many of its own radii of the water flares...
+const HORN_GAIN = 1.2;             // ...by this times the square of how near it is (to this plus one times its radius at the water)
 const BUNCH_CAP = 1.4;             // where the base's water bunches, its width is at most this many launch radii
 const EMIT_LENGTH = 1.2;           // a node leaves the launch point once its segment is this many launch radii long...
 const EMIT_LEAST = 0.0004;         // ...and at least this (m)...
@@ -252,6 +285,8 @@ const BUMPS = 0.1;                 // the radius varies by this share, times sqr
 const BUMP_RADII = [0.003, 0.015]; // ...on a column this thick and more (m), none thinner than the first
 const BUMP_AROUND = [2, 3, 4, 5];  // the waves' lobes around the column...
 const BUMP_ALONG = [0.5, 0.9, 1.4, 2.3];   // ...and their cycles per unstable wavelength along it (the launch's phase)
+const RIPPLE_RING = 0.64;          // the shader's ripples (src/shaders/sheet.js): their cells around the column, over 2π (four: a column's waves are mostly rings)...
+const RIPPLE_ALONG = 3.0;          // ...and per radian of the launch's phase along it (about 4 mm each on the reference's column, whose launch spans 39 rad)
 
 /**
  * A jet's form (the header): how the collapse launches its water. The splash
@@ -401,12 +436,17 @@ export class JetColumn {
     this.radii = new Float32Array(ROWS * COLUMNS);
     this.roundness = new Float32Array(ROWS * COLUMNS);
     this.air = new Float32Array(ROWS * COLUMNS);
+    this.ripples = new Float32Array(ROWS * COLUMNS * 3);
+    this.rides = new Float32Array(ROWS * COLUMNS);   // how far each vertex rides the pond's surface (the header: the foot's)
+    this.footLevel = 0;                              // the water the foot stands in, this frame (drawChain's level)
     this.mesh = createRingGrid(ROWS, COLUMNS, {
       position: [this.positions, 3],
       aAir: [this.air, 1],
       normal: [this.normals, 3],
       aRadius: [this.radii, 1],
       aRound: [this.roundness, 1],
+      aRipple: [this.ripples, 3],
+      aRide: [this.rides, 1],
     }, material);
     this.geometry = this.mesh.geometry;
     this.columnCos = new Float64Array(COLUMNS);
@@ -415,9 +455,22 @@ export class JetColumn {
       this.columnCos[column] = Math.cos((column / COLUMNS) * Math.PI * 2);
       this.columnSin[column] = Math.sin((column / COLUMNS) * Math.PI * 2);
     }
+    // The bumps' waves around the ring (writeRing): each wave's angle there, as a sine and a cosine a column, so a ring
+    // turns them by its phase along the launch (sin(a + b) = sin a cos b + cos a sin b) in place of two of each a vertex.
+    this.bumpSines = new Float64Array(this.bumpWaves.length * COLUMNS);
+    this.bumpCosines = new Float64Array(this.bumpWaves.length * COLUMNS);
+    this.bumpWaves.forEach((mode, wave) => {
+      for (let column = 0; column < COLUMNS; column++) {
+        const angle = (mode.around * column * Math.PI * 2) / COLUMNS;
+        this.bumpSines[wave * COLUMNS + column] = Math.sin(angle);
+        this.bumpCosines[wave * COLUMNS + column] = Math.cos(angle);
+      }
+    });
+    this.rowSines = new Float64Array(this.bumpWaves.length);
+    this.rowCosines = new Float64Array(this.bumpWaves.length);
     // The drawn nodes, carried on to the frame's time, and the rings they make.
     this.drawX = new Float64Array(NODES); this.drawY = new Float64Array(NODES); this.drawZ = new Float64Array(NODES);
-    this.ring = { count: 0, centre: new Float64Array(ROWS * 3), axis: new Float64Array(ROWS * 3), radius: new Float64Array(ROWS), water: new Float64Array(ROWS), round: new Float64Array(ROWS), along: new Float64Array(ROWS * 2), air: new Float64Array(ROWS), phase: new Float64Array(ROWS) };
+    this.ring = { count: 0, centre: new Float64Array(ROWS * 3), axis: new Float64Array(ROWS * 3), radius: new Float64Array(ROWS), water: new Float64Array(ROWS), round: new Float64Array(ROWS), along: new Float64Array(ROWS * 2), air: new Float64Array(ROWS), phase: new Float64Array(ROWS), ride: new Float64Array(ROWS) };
     this.frame = { firstX: 1, firstY: 0, firstZ: 0 };
     this.bowl = { depth: 0, rise: 0 };
   }
@@ -824,7 +877,7 @@ export class JetColumn {
     }
     this.mesh.visible = ring.count > 0;
     holdWithinWalls(this.positions, this.walls);
-    markChanged(this.geometry, ['position', 'normal', 'aRadius', 'aRound', 'aAir']);
+    markChanged(this.geometry, ['position', 'normal', 'aRadius', 'aRound', 'aAir', 'aRipple', 'aRide']);
   }
 
   /** The column's radius at a node: the mean of its segments' either side (the drawing). */
@@ -871,6 +924,7 @@ export class JetColumn {
     };
     // The trumpet's chord, from the first node the base widens to the foot.
     const level = -this.floor(this.age, this.bowl).depth - BASE_DEPTH;
+    this.footLevel = level;
     const chord = this.chordScratch ??= { valid: false, x: 0, y: -1, z: 0, x0: 0, y0: 0, z0: 0 };
     chord.valid = false;
     let trumpetTop = -1;
@@ -885,6 +939,11 @@ export class JetColumn {
       }
     }
     let surfaceBase = 0;   // the base's width at the lowest ring above the level so far (the rings run top to foot)
+    // The foot's horn (the header): how much wider a ring of the given radius at the given height is drawn.
+    const horn = (radius, height) => {
+      const near = 1 - (height - level) / Math.max(HORN_HEIGHT * radius, 1e-6);
+      return near > 0 && near < 1 ? 1 + HORN_GAIN * near * near : near >= 1 ? 1 + HORN_GAIN : 1;
+    };
     const closedBelow = (node, base) => this.drawY[node] < level ? Math.max(surfaceBase - (level - this.drawY[node]), 0) : base;
     /** The ring at a node: its centre and axis into the scratches, and the base's width there (the header of the method). */
     const placeRing = (node, core, base) => {
@@ -943,14 +1002,20 @@ export class JetColumn {
         }
         continue;
       }
-      const radius = core + base;
-      // The slope of the surface along the axis, from the segments either side (the base's width at their nodes).
-      const before = node > first ? solver.segmentRadius[node - 1] + 0.5 * (base + closedBelow(node - 1, baseAt(node - 1))) : radius;
-      const after = node < last ? solver.segmentRadius[node] + 0.5 * (base + closedBelow(node + 1, baseAt(node + 1))) : radius;
+      // The horn (the header) widens the rings the base widens, on the piece standing in the water.
+      const horned = base > 0 && this.drawY[last] <= level + 1e-4;
+      const radius = (core + base) * (horned ? horn(core + base, centreY) : 1);
+      // The slope of the surface along the axis, from the segments either side (the base's width at their nodes, horned as this one is).
+      const beforeRadius = node > first ? solver.segmentRadius[node - 1] + 0.5 * (base + closedBelow(node - 1, baseAt(node - 1))) : radius;
+      const afterRadius = node < last ? solver.segmentRadius[node] + 0.5 * (base + closedBelow(node + 1, baseAt(node + 1))) : radius;
+      const before = node > first && horned ? beforeRadius * horn(beforeRadius, this.drawY[node - 1]) : beforeRadius;
+      const after = node < last && horned ? afterRadius * horn(afterRadius, this.drawY[node + 1]) : afterRadius;
       const spanLength = (node > first ? solver.segmentLength[node - 1] : 0) + (node < last ? solver.segmentLength[node] : 0);
       const slope = spanLength > 1e-9 ? (2 * (after - before)) / spanLength : 0;
       const tilt = 1 / Math.sqrt(1 + slope * slope);
-      this.addRing(centreX, centreY, centreZ, axis.x, axis.y, axis.z, radius, radius, 0, -slope * tilt, tilt, air, phase);
+      // Where the foot flares it is the pond's water (the header): its share, by the slope, as a negative roundness.
+      const pond = base > 0 ? smoothstep(FOOT_POND[0], FOOT_POND[1], slope) : 0;
+      this.addRing(centreX, centreY, centreZ, axis.x, axis.y, axis.z, radius, radius, -pond, -slope * tilt, tilt, air, phase);
     }
     // Its foot: a hemisphere under the last node (or its bead's lower pole).
     const footCore = this.tubeRadius(last, first, last);
@@ -980,6 +1045,8 @@ export class JetColumn {
     ring.water[index] = waterRadius;
     ring.round[index] = round;
     ring.air[index] = air; ring.phase[index] = phase;
+    // The foot rides the pond's surface (the header): all of a ring at or under the level, none HORN_HEIGHT of its radius over it.
+    ring.ride[index] = 1 - smoothstep(0, HORN_HEIGHT * Math.max(radius, waterRadius, 1e-4), centreY - this.footLevel);
     ring.along[index * 2] = normalAlong;
     ring.along[index * 2 + 1] = normalOut;
   }
@@ -1017,6 +1084,14 @@ export class JetColumn {
     // The bumps (the header): the radius's share of unevenness here, its waves around the ring and along the launch's phase.
     const bumps = this.bumps * smoothstep(BUMP_RADII[0], BUMP_RADII[1], ring.water[row]);
     const phase = ring.phase[row], air = ring.air[row];
+    const waves = this.bumpWaves, rowSines = this.rowSines, rowCosines = this.rowCosines, bumpSines = this.bumpSines, bumpCosines = this.bumpCosines;
+    if (bumps > 0) {
+      for (let wave = 0; wave < waves.length; wave++) {
+        const turn = waves[wave].along * phase + waves[wave].phase;
+        rowSines[wave] = Math.sin(turn);
+        rowCosines[wave] = Math.cos(turn);
+      }
+    }
     for (let column = 0; column < COLUMNS; column++) {
       const vertex = row * COLUMNS + column;
       const cosAngle = this.columnCos[column], sinAngle = this.columnSin[column];
@@ -1024,10 +1099,13 @@ export class JetColumn {
       let bumped = 1, outward = normalOut, around = 0;
       if (bumps > 0) {
         let wave = 0, slope = 0;
-        for (const mode of this.bumpWaves) {
-          const angle = (mode.around * column * Math.PI * 2) / COLUMNS + mode.along * phase + mode.phase;
-          wave += mode.weight * Math.sin(angle);
-          slope += mode.weight * mode.around * Math.cos(angle);
+        for (let index = 0; index < waves.length; index++) {
+          const mode = waves[index], at = index * COLUMNS + column;
+          // The wave's angle round the ring plus its turn along the launch.
+          const sine = bumpSines[at] * rowCosines[index] + bumpCosines[at] * rowSines[index];
+          const cosine = bumpCosines[at] * rowCosines[index] - bumpSines[at] * rowSines[index];
+          wave += mode.weight * sine;
+          slope += mode.weight * mode.around * cosine;
         }
         bumped = 1 + bumps * wave;
         // The normal turns around the ring against the bump's slope (dr/dθ over r), within the ring's plane.
@@ -1045,7 +1123,12 @@ export class JetColumn {
       this.normals[vertex * 3 + 2] = outZ * outward + tangentZ * around + axisZ * normalAlong;
       this.radii[vertex] = ring.water[row] * bumped;
       this.roundness[vertex] = ring.round[row];
+      this.rides[vertex] = ring.ride[row];
       this.air[vertex] = bumps > 0 ? Math.min(air * (1 + AIR_BLOTCH * (bumped - 1) / bumps), 1) : air;
+      // The water's place on the column for the shader's ripples (the header): around the ring and along the launch's phase.
+      this.ripples[vertex * 3] = cosAngle * RIPPLE_RING;
+      this.ripples[vertex * 3 + 1] = sinAngle * RIPPLE_RING;
+      this.ripples[vertex * 3 + 2] = phase * RIPPLE_ALONG;
     }
   }
 
@@ -1058,6 +1141,8 @@ export class JetColumn {
       this.radii[vertex] = 0;
       this.roundness[vertex] = 0;
       this.air[vertex] = 0;
+      this.rides[vertex] = 0;
+      this.ripples[vertex * 3] = 0; this.ripples[vertex * 3 + 1] = 0; this.ripples[vertex * 3 + 2] = 0;
     }
   }
 

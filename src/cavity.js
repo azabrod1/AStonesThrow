@@ -158,7 +158,11 @@
 // axis outward, CAP_ROWS of a flat floor at the bottom (the stone's centre,
 // which sits on it and shows through it, or the closing point once it has
 // pinched), WALL_ROWS up the wall (TOP_SHARE of them in the top TOP_SPAN·R,
-// the part the camera sees), then the lip's inner face, its outer fall and a
+// the part the camera sees; once the hole has pinched the wall curves into
+// its bottom as a quarter ellipse over FLOOR_ROUND of the bowl's depth, a
+// cup, since the slices just over the rising floor, still near their widest
+// in the model above, drew a flat floor with a step round it, a tabletop
+// sunk in the water), then the lip's inner face, its outer fall and a
 // flat apron out to where the surface takes over. It is built in world
 // coordinates once per rendered frame (updateGeometry) and drawn in the main
 // scene with the water shader's CAVITY_MESH variant (src/shaders/scene.js,
@@ -168,7 +172,14 @@
 // cap's rings with it) they face as the first open ring around does, so the
 // floor of a bowl flattening into the surface shades as the flat water it
 // is becoming, and the hole fades out rather than vanishing in the frame it
-// is gone. aCavity carries per vertex how far it rides the surface (1 on
+// is gone. Once the hole has pinched its bowl froths from the floor up
+// (aCavity's fourth, BOWL_FROTH by the entry's size-weighted Weber number
+// over BOWL_FROTH_ONSET, src/crown.js frothWeber, rising over BOWL_FROTH_RAMP
+// of the bowl's unit, fading up the wall over BOWL_FROTH_RISE·R from the
+// floor): the air the pinch entrained boils up where the jet leaves, and
+// the water shader whitens the bowl's bottom by it; a bowl of clear glass
+// with a jet rising out of it read as a dome, where a photograph shows a
+// rough, foamy mound. aCavity carries per vertex how far it rides the surface (1 on
 // the lip, which sits on the splash's height field, the wind's waves and
 // the rings like the surface it joins; 0 down the wall below RIDE_DEPTH·R
 // while the stone is in the hole, and 1 everywhere once the funnel has
@@ -177,7 +188,10 @@
 // would fold where the ring's trough under it is deeper than its rows are
 // apart), how open
 // to the sky it is (1 / (1 + (depth / (OCCLUSION_DEPTH·mouth))²): the
-// occlusion that darkens the hole towards its bottom) and how steeply a ray
+// occlusion that dims the sky the under-water view sees up through the hole
+// towards its bottom; seen from above the hole is shaded as water, its
+// walls reflecting the sky where their mirror rays climb out, and nothing
+// darkens it further, src/shaders/scene.js) and how steeply a ray
 // must climb to leave through the mouth (half the depth over the mouth's
 // radius; on the lip's inner face, any upward ray, while a downward one
 // meets the hole).
@@ -201,10 +215,15 @@
 // is drawn no deeper than DRAWN_DEPTH·R: the camera looks in at 15 to 25°
 // from the horizon and sees no more than one or two radii down, and the
 // floor drawn there shows what is below it (the stone) through it, as the
-// floor at the stone does. In the pool (`walls`, set by SplashSystem) the
+// floor at the stone does. Six radii, so a big stone, slowed hard, is
+// still in the drawn hole's air while its hole is open (a 30 cm rock is 5
+// radii down at 0.25 s), lit as in air and cut at the floor (src/rock.js
+// cutAt); drawn to four, the rock was under the floor, in the under-water
+// pass, lit as under 0.8 m of water: a flat dark shape seen from above. In the pool (`walls`, set by SplashSystem) the
 // hole is held inside its walls (holdWithinWalls in src/fluidMesh.js), so it
 // never shows through the tiles.
 import { createRingGrid, computeGridNormals, holdWithinWalls, markChanged } from './fluidMesh.js';
+import { frothWeber } from './crown.js';
 
 const GRAVITY = 9.81;
 // The stone under water, as src/rock.js moves it (tools/cavity-probe.mjs checks the two agree).
@@ -270,6 +289,11 @@ const ROWS = CAP_ROWS + WALL_ROWS + LIP_INNER_ROWS + LIP_FALL_ROWS + LIP_APRON_R
 const TOP_SPAN = 2.5;              // in R: the top of the wall, which the camera sees...
 const TOP_SHARE = 0.6;             // ...gets this share of the wall's rows
 const TOP_POWER = 1.3;             // crowded towards the surface
+const FLOOR_ROUND = 0.6;           // once pinched, the bowl's bottom is rounded (a quarter ellipse) over this share of its depth: a cup, not a flat-floored dish
+const BOWL_FROTH = 0.85;           // the pinched bowl's froth at its floor (the header): the share of its light scattered white for a big stone's entry...
+const BOWL_FROTH_ONSET = [2, 14];  // ...rising from none to all of it over this range of the entry's size-weighted Weber number (src/crown.js frothWeber: a pebble's pinch entrains little air, the lake photographs show a clear bowl)...
+const BOWL_FROTH_RAMP = 0.25;      // ...reached this many bowl units after the pinch...
+const BOWL_FROTH_RISE = 1.2;       // ...and fading up the wall over this many R above the floor
 const DARKEST_MOUTH = 0.15;        // in R: the narrowest mouth the occlusion and escape take
 const FACING_HOLE = 0.002;         // the least climb to escape the wall and the lip's inner face hand the shader (any ray going up)
 const OCCLUSION_DEPTH = 0.5;       // in mouth radii: the depth at which the hole sees half the sky it sees at its mouth
@@ -278,7 +302,7 @@ const CLOSED_RING = 1e-6;          // in R: a ring narrower is a point (the floo
 const PUSH_MARGIN = 2;             // water cells beyond the hole that the patch dips from
 const COVER_MARGIN = 2.5;          // water cells beyond that which the lip's apron covers
 const WELL_CLEARANCE = 0.2;        // in R: the patch dips this far below the hole's floor
-const DRAWN_DEPTH = 4;             // in R: the hole is drawn no deeper
+export const DRAWN_DEPTH = 6;      // in R: the hole is drawn no deeper (src/rock.js cuts the stone at its floor while the hole is open)
 
 const smoothstep = (edgeLow, edgeHigh, value) => {
   const clamped = Math.min(Math.max((value - edgeLow) / (edgeHigh - edgeLow), 0), 1);
@@ -460,6 +484,7 @@ export class Cavity {
     this.seal = { kind: 'deep', pinch: PINCH_TIME, bowl: 1, head: SURFACE_HEAD, mouth: 1, ...seal };
     this.pinchTime = this.seal.pinch * this.timeUnit;
     const speed = Math.max(impact.speed, 1.0);
+    this.frothPeak = BOWL_FROTH * smoothstep(BOWL_FROTH_ONSET[0], BOWL_FROTH_ONSET[1], frothWeber(radius / 0.03, speed));
     this.froude = (speed * speed) / (GRAVITY * radius);
     const horizontalSpeed = Math.hypot(velocity.x, velocity.z);
     const horizontalFraction = Math.min(horizontalSpeed / speed, 1);
@@ -509,7 +534,7 @@ export class Cavity {
     const vertexCount = ROWS * COLUMNS;
     this.positions = new Float32Array(vertexCount * 3);
     this.normals = new Float32Array(vertexCount * 3);
-    this.shading = new Float32Array(vertexCount * 3);   // ride, openness, escape (aCavity)
+    this.shading = new Float32Array(vertexCount * 4);   // ride, openness, escape, the bowl's froth (aCavity)
     this.rowX = new Float64Array(ROWS);
     this.rowZ = new Float64Array(ROWS);
     this.rowY = new Float64Array(ROWS);
@@ -517,7 +542,7 @@ export class Cavity {
     this.mesh = drawn ? createRingGrid(ROWS, COLUMNS, {
       position: [this.positions, 3],
       normal: [this.normals, 3],
-      aCavity: [this.shading, 3],
+      aCavity: [this.shading, 4],
     }, material ?? undefined) : null;
     this.geometry = this.mesh?.geometry ?? null;
     this.push = { x: impact.x, z: impact.z, radius: 0, shiftX: 0, shiftY: -1, shiftZ: 0 };
@@ -988,6 +1013,13 @@ export class Cavity {
       if (bottom <= 0) rowRadius = mouth;
       else if (wallRow === 0) rowRadius = bottomRadius;
       else rowRadius = depth <= 0 ? mouth : this.radiusAt(depth, age);
+      if (pinched && bottom > 0 && rowRadius > 0) {
+        // The bowl's bottom is rounded (the header): the slices just over its floor, still near their widest in the
+        // model, drew a flat floor with a step at its edge, a tabletop sunk in the water; a cup's walls curve into
+        // its bottom.
+        const up = (bottom - depth) / (FLOOR_ROUND * bottom);
+        if (up < 1) rowRadius *= Math.sqrt(Math.max(1 - (1 - up) * (1 - up), 0));
+      }
       this.sliceCentre(depth, centre);
       if (bottom <= 0 || depth <= 0) { centre.x = mouthX; centre.z = mouthZ; }
       if (!pinched && !truncated && wallRow === 0) { centre.x = this.stone.x; centre.z = this.stone.z; }
@@ -1057,9 +1089,13 @@ export class Cavity {
     const rideDepth = RIDE_DEPTH * radius;
     const apronStart = CAP_ROWS + WALL_ROWS + LIP_INNER_ROWS + LIP_FALL_ROWS;
     const fallStart = CAP_ROWS + WALL_ROWS + LIP_INNER_ROWS;
+    // The bowl's froth (the header): up from the floor, once the hole has pinched.
+    const frothNow = pinched ? this.frothPeak * smoothstep(0, BOWL_FROTH_RAMP, (age - this.pinchTime) / this.bowlUnit) : 0;
+    const frothRise = BOWL_FROTH_RISE * radius;
     for (let rowIndex = 0; rowIndex < ROWS; rowIndex++) {
       const rowY = this.rowY[rowIndex];
       const depth = Math.max(-rowY, 0);
+      const froth = frothNow > 0 && rowIndex < fallStart ? frothNow * (1 - smoothstep(0, frothRise, Math.max(bottom - depth, 0))) : 0;
       // The lip and the top of the wall ride the surface; once the funnel has turned (collapse) the whole bowl does.
       const ride = Math.max(1 - smoothstep(0, rideDepth, depth), collapse);
       const relativeDepth = depth / darkestMouth;
@@ -1083,9 +1119,10 @@ export class Cavity {
         this.positions[vertex * 3] = this.rowX[rowIndex] + cosAngle * distance;
         this.positions[vertex * 3 + 1] = rowY;
         this.positions[vertex * 3 + 2] = this.rowZ[rowIndex] + sinAngle * distance;
-        this.shading[vertex * 3] = ride;
-        this.shading[vertex * 3 + 1] = openness;
-        this.shading[vertex * 3 + 2] = escape;
+        this.shading[vertex * 4] = ride;
+        this.shading[vertex * 4 + 1] = openness;
+        this.shading[vertex * 4 + 2] = escape;
+        this.shading[vertex * 4 + 3] = froth;
       }
     }
 

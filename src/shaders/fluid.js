@@ -8,10 +8,13 @@
 //           r view depth, g what it is, b and a its view normal's x and y
 //           (turned to face the viewer; z follows). g is 999 for a crown
 //           sheet, 998 + roundness / 2 for a jet column (1 on its cap and
-//           bulb, a lens like a sphere, 0 on the tube; a half-float target
-//           keeps only 998 or 998.5) and, for a drop, its true on-screen
-//           radius in buffer pixels. Every class writes its exact normal:
-//           nothing is rebuilt from depth and nothing is blurred.
+//           bulb, a lens like a sphere, 0 on the tube), 997 + share / 2 for
+//           a column's foot that is the pond's own water (src/jet.js: the
+//           share of it that is) and, for a drop, its true on-screen
+//           radius in buffer pixels (a float target where the device has
+//           them; on half floats a class keeps only its halves). Every
+//           class writes its exact normal: nothing is rebuilt from depth and
+//           nothing is blurred.
 //   optics  (optics pass, summed: additive in all four channels)
 //           r the water a ray crosses (metres), g coverage (the share of the
 //           pixel and of the exposure that water covers), b the drops' sun
@@ -21,7 +24,8 @@
 //           scattered white, times its share of the pixel, as the coverage is.
 //
 // Droplets. Sphere impostors stretched along their motion into capsules, as a
-// camera's shutter would smear them (half a frame, uStreakSeconds). A drop
+// camera's shutter would smear them (half a frame, at most a few
+// thousandths of a second: uStreakSeconds, src/splash.js STREAK_CAP). A drop
 // narrower than uMinPixelRadius buffer pixels is drawn that wide and covers
 // the pixels it is drawn over by its true area's share (and its volume's in
 // the thickness), so a fine drop leaves as much light as it should, never a
@@ -30,12 +34,26 @@
 // device pixels (src/splash.js: 0.5, under a pixel wide) write no depth:
 // they are mist, only coverage and glints, and never hide the sheet behind
 // them. Lens drops (the jet's big ones, iLens) keep their round shape: a long
-// streak would read as a pill. uLeastRadius leaves finer drops out (the
-// mirror pass's). The spray (SPRAY_VERTEX, src/spray.js) goes through the
+// streak would read as a pill. A drop just pinched off wobbles (iShape,
+// src/splash.js: its length along its motion over its width, volume kept),
+// so the quad is drawn that much longer along the axis and narrower across
+// it, and the sphere's shading is stretched with it: an ellipsoid near
+// enough. uLeastRadius leaves finer drops out (the mirror pass's). The spray (SPRAY_VERTEX, src/spray.js) goes through the
 // same passes and fragments: each sprite a drop, or a puff of vWeight like
-// drops, drawn as a disc they cover PUFF_COVER of (a fixed size in the
-// world) with their coverage, water and glints summed, and as mist (no
-// depth); a sprite of one drop is a drop like any other.
+// drops, drawn as mist (no depth) over a soft disc, puffKernel: their
+// coverage and water summed over it, falling off as (1 − ρ²)² from its
+// centre (over the capsule of its streak), so a puff has no edge. The disc
+// is one its drops cover PUFF_COVER of at its birth, grown since by how far
+// they have spread about it (SPRAY_VERTEX's `spread`, src/spray.js says
+// how). Its glints are its drops' summed: vGlintShare of them a point, one
+// drop's glint as any drop's but at a place of the puff's own (hashed from
+// its birth, never its centre, which made every puff a disc with a dot in
+// it) swept along its streak, the rest spread over the kernel as the drops
+// are; a sprite of a few drops keeps nearly all of it as the point, so the
+// mist sparkles, a heavy one spreads nearly all (src/spray.js's share). A
+// sprite of one drop is a drop like any other. A
+// sprite of fewer than PUFF_LEAST drops is drawn as the one drop that holds
+// their water.
 //
 // Glints. A water sphere of radius r in sunlight of irradiance E sends the
 // sun's light towards the viewer from two points, each a tiny image of the
@@ -62,9 +80,33 @@
 // picks up is pondView: the sky cube above the horizon and, below it, the
 // pond as a rough mirror of the sky plus the sun's glitter, over the sand
 // floor seen through the water (uFloorLight), as the water shader shows it.
-//   - Sheet: reflects pondView and lets the scene behind through, shifted by
-//     its normal and thickness (a thin film barely bends what is behind it);
-//     sunGlitter with WATER_SLOPE_VARIANCE (its unresolved ripple). Its rim
+//   - Sheet: a thin curved shell of water. The ray refracts in through the
+//     face it meets, crosses the sheet, and leaves through the back face,
+//     whose normal differs from the front's by the sheet's curvature and
+//     wrinkles over the ray's travel inside (the normals the depth pass
+//     wrote in the neighbouring buffer pixels, read along the travel, at
+//     most SHEET_LENS_REACH pixels of it; a neighbour of another class or
+//     another depth says nothing about this face), so the scene is looked
+//     up where the ray leaving points, by SHEET_LENS of a far scene's shift
+//     (a flat film barely bent what was behind it and read as paint; a real
+//     sheet is millimetres of curved glass through which the pond's ripples
+//     fold, the lake photographs). Its own normal is read bilinearly from
+//     the four buffer pixels about the device pixel that hold the same
+//     sheet (sheetNormal), and so are the neighbours' that give its
+//     gradient (sheetNormalChange, a central difference), since the buffer
+//     is coarser than the canvas on the lower presets and nearest-read or
+//     one-sided reads wove a dither of lens shifts across the sheet, a
+//     checker on every sheet. It reflects pondView by both faces'
+//     Fresnel, 2F/(1 + F) (by one face's, a fold turning edge-on was dim,
+//     where a real one is a bright line). The water's own particles scatter
+//     light along the path through it, TURBID_SKY of the sky's mean and
+//     TURBID_SUN of the sun's in a forward lobe, by the water's scattering
+//     (extinction less absorption) over the path, so a muddy pond's sheet is
+//     tinted and glows against the sun where a clear lake's is glass;
+//     sunGlitter with WATER_SLOPE_VARIANCE (its unresolved ripple) plus
+//     SHEET_ROUGH_VARIANCE times its aeration (a white sheet is a torn,
+//     turbulent one: its glitter spreads where a glassy sheet's is a hard
+//     patch). Its rim
 //     bead and torn edges, and its froth (src/shaders/sheet.js), are
 //     aerated: mixed towards the spray's scattering colour by the optics'
 //     aeration over their coverage, at most 1. Its holes are the scene's:
@@ -81,8 +123,30 @@
 //     (the sun's glitter on it) and a drop the sky upside down below the pond,
 //     a light lower half under a dark top and a dark edge, rather than what is
 //     just behind it. The light is pondView, offset so that the
-//     straight-through direction gives exactly the scene behind. The column
-//     adds sunGlitter; a drop's glints come from the optics.
+//     straight-through direction gives exactly the scene behind; a column
+//     also takes the scene itself where its turned ray points (COLUMN_LENS
+//     of a far scene's shift, since the pond behind it is near; for
+//     COLUMN_LENS_SCENE of its refracted light, where the frame holds it),
+//     so the rings and the shore behind a jet bend and stretch through it
+//     as through a glass rod, where the model's light alone left them
+//     straight and the column read as frosted. A lens
+//     also carries light round inside it (a ray that enters near a drop's or
+//     a column's edge meets the far side at a grazing angle and is largely
+//     reflected on round the inside before it leaves, the sky and the pond
+//     mixed): the refracted light is mixed by COLUMN_INNER (a drop's by
+//     DROP_INNER) towards the drop's mean light, so a column's far side is
+//     never black (a smooth cylinder shading to pure black read as chrome)
+//     and a drop's top is dark, not void. The column
+//     adds sunGlitter; a drop's glints come from the optics. A column's
+//     foot that is the pond's water (its class's share) is a mound of the
+//     pond: a ray into it goes down into the pond's water there, the boil
+//     the jet rises from and all, so it shows the scene straight behind it
+//     (the pond's surface as the water shader draws it, shifted a little by
+//     the mound's normal as a thin film shifts it) under the mound's own
+//     Fresnel reflection, and the jet stands in a bump of the pond, its
+//     shape in the reflection on its curved top, not on a block of glass
+//     (the pond's deep light from under a surface, pondView's, made it a
+//     dark slab against the sky the flat water round it reflects).
 //   - A lens image needs room and stillness: a drop's shows from DETAIL_FROM
 //     to DETAIL_FULL device pixels of radius, and only where the drop covers
 //     the pixel for most of the exposure, a column's from COLUMN_DETAIL_FROM
@@ -96,6 +160,11 @@
 //     glints.
 // Coverage is the alpha: a sheet or column covers its pixels (its edge
 // softened by the buffer's filtering), a drop the share it really covers.
+// The filtered optics reach a buffer pixel past the depth pass's edge; a
+// pixel there is shaded as the nearest water beside it (nearestInfo: the
+// eight buffer pixels around it), not as mist, so an edge is its own water
+// softened by its coverage, with no pale outline stepping along the buffer's
+// grid where the buffer is coarser than the canvas (Medium's and Low's).
 // The composite also tone-maps the frame; a pixel with no water in it does
 // nothing else.
 //
@@ -131,7 +200,7 @@ float waterFresnel(float cosine) { return 0.02 + 0.98 * pow(1.0 - clamp(cosine, 
 const DROP_BODY = /* glsl */`
 #define WATER_INDEX 1.333
 #define MAX_DEVIATION 1.444      // radians (82.8°): no ray leaves a drop deviated more after one passage
-#define PUFF_COVER 0.1           // a puff's drops cover this share of the disc it is drawn as
+#define PUFF_COVER 0.1           // a puff's drops cover this share of the disc it is born as
 uniform float uProjScale;        // target pixels per world unit at distance 1
 uniform float uMinPixelRadius;   // a drop is drawn at least this wide (target pixels)
 uniform float uStreakSeconds;
@@ -142,16 +211,18 @@ varying vec3 vViewCentre;
 varying float vRadius;           // drawn radius (world)
 varying float vPixelRadius;      // true on-screen radius (target pixels); 0 for a puff, which writes no depth
 varying float vDrawnPixelRadius;
-varying float vAreaShare;        // the true drop's share of the drawn disc's area
+varying float vAreaShare;        // the true drop's share of the drawn disc's area (one of a puff's drops' share of its disc)
 varying float vWeight;           // the drops the sprite stands for (1 but for spray)
 varying float vStretch;          // half-length of the capsule in drawn radii (1 = sphere)
 varying vec2 vAxis;              // screen-space motion direction (view xy)
 varying vec4 vGlintPoints;       // reflected (xy) and refracted (zw) glint, view xy in drawn radii from the centre
 varying vec2 vGlintPowers;       // their radiance × pixel area over the sun's irradiance (E·P·ρ² / E), all its drops'
+varying float vGlintShare;       // the share of a puff's glints drawn as a point (1 for a drop), the rest spread over its kernel
+varying vec2 vPuffSeed;          // a puff's own place for its lumps (puffLumps), 0 for a drop
 ${FRESNEL}
 ${GALE_SURFACE}
 void cullDrop() { gl_Position = vec4(0.0, 0.0, 2.0, 1.0); }
-void drawDrop(vec3 centreWorld, vec3 velocityWorld, float dropRadius, float lens, float weight) {
+void drawDrop(vec3 centreWorld, vec3 velocityWorld, float dropRadius, float lens, float weight, float spread, float shape) {
   // A drop flies over still water (src/splash.js); the gale lifts it with the surface under it.
   vec3 centre = centreWorld;
   if (uGaleMetresPerUnit > 0.0) centre.y += galeLift(centreWorld);
@@ -159,8 +230,8 @@ void drawDrop(vec3 centreWorld, vec3 velocityWorld, float dropRadius, float lens
   float dist = max(-viewCentre.z, 0.05);
   float pixelRadius = dropRadius * uProjScale / dist;
   float drawnPixelRadius = max(pixelRadius, uMinPixelRadius);
-  // A puff of spray is drawn as a disc its drops cover PUFF_COVER of (a fixed size in the world).
-  if (weight > 1.0) drawnPixelRadius = max(drawnPixelRadius, pixelRadius * sqrt(weight / PUFF_COVER));
+  // A puff of spray is drawn as a disc its drops cover PUFF_COVER of at its birth, grown by their spread since (metres).
+  if (weight > 1.0) drawnPixelRadius = max(drawnPixelRadius, sqrt(dropRadius * dropRadius * weight / PUFF_COVER + spread * spread) * uProjScale / dist);
   float radius = dropRadius * drawnPixelRadius / max(pixelRadius, 1e-4);
   vec3 viewVelocity = (viewMatrix * vec4(velocityWorld, 0.0)).xyz;
   vec2 motion = viewVelocity.xy * uStreakSeconds;
@@ -170,7 +241,8 @@ void drawDrop(vec3 centreWorld, vec3 velocityWorld, float dropRadius, float lens
   // A drop drawn as a lens keeps its shape: a long streak would read as a pill.
   if (lens > 0.5) stretch = min(stretch, 1.25);
   vec2 perpendicular = vec2(-axis.y, axis.x);
-  vec2 offset = (axis * position.x * stretch + perpendicular * position.y) * radius;
+  // The wobble: longer along the motion by shape, narrower across by its square root (the volume kept).
+  vec2 offset = (axis * position.x * stretch * shape + perpendicular * position.y * inversesqrt(shape)) * radius;
 
   // The two glints (see the header), on the true sphere inside the drawn disc.
   vec3 toViewer = normalize(-viewCentre.xyz);
@@ -202,6 +274,8 @@ void drawDrop(vec3 centreWorld, vec3 velocityWorld, float dropRadius, float lens
   vGlintPoints = vec4(halfVector.xy, exitNormal.xy) * trueShare;
   vGlintPowers = vec2(reflectedPower, refractedPower) * pixelArea * weight;
 
+  vGlintShare = 1.0;
+  vPuffSeed = vec2(0.0);
   vQuad = position.xy;
   vViewCentre = viewCentre.xyz;
   vRadius = radius;
@@ -221,10 +295,11 @@ attribute vec3 iPosition;
 attribute float iRadius;
 attribute vec3 iVelocity;
 attribute float iLens;
+attribute float iShape;          // its length along its motion over its width (1 a sphere): the wobble, src/splash.js
 ${DROP_BODY}
 void main() {
   if (iRadius < uLeastRadius) { cullDrop(); return; }
-  drawDrop(iPosition, iVelocity, iRadius, iLens, 1.0);
+  drawDrop(iPosition, iVelocity, iRadius, iLens, 1.0, 0.0, max(iShape, 0.25));
 }
 `;
 
@@ -236,16 +311,34 @@ void main() {
 // across the water; in each v(t) = v∞ + (v₀ − v∞)·e^(−t/τ) and
 // x(t) = x₀ + v∞·t + τ·(v₀ − v∞)·(1 − e^(−t/τ)). It is left out before its
 // birth, past its life and once it is under the still water (the gale lifts
-// it as drawn).
+// it as drawn). A puff's drops spread about it by their burst's kick under
+// the same drag: PUFF_SPREAD of the kick times τ·(1 − e^(−t/τ)) in each
+// phase (across the water, the slow phase's COAST·τ2), the fast phase's
+// remainder carried into the slow one, at most PUFF_MOST_SPREAD; a sprite
+// of a few drops is a sample of them and spreads by the share
+// 1 − e^(−(weight − 1) / PUFF_BLUR_DROPS) of that (src/spray.js says why),
+// and that share of its glints is spread with them, the rest a point at a
+// place of its own within PUFF_GLINT_REACH of its centre (puffHash).
 export const SPRAY_VERTEX = /* glsl */`
 #define SPRAY_GRAVITY 9.81
 #define SPRAY_COAST ${COAST.toFixed(4)}
+#define PUFF_SPREAD 0.8          // a puff's drops spread at this share of their burst's kick (two of its spread along an axis)
+#define PUFF_MOST_SPREAD 0.02    // m: and no further than this, a bound on the fill a puff costs
+#define PUFF_BLUR_DROPS 20.0     // a puff of this many drops spreads with them in full, one of a few hardly at all
+#define PUFF_LEAST 40.0          // a puff of fewer drops than this is drawn as the one drop that holds their water (src/spray.js: Low's sprites stand for ten or twenty drops each)
+#define PUFF_GLINT_REACH 0.8     // a puff's point glint lies within this of its drawn radius from its centre
 attribute vec4 aOrigin;          // x, y, z at birth, and the splash time it was born
 attribute vec4 aLaunch;          // its velocity then, and how long it may fly
 attribute vec4 aDrop;            // radius, the drops it stands for, τ1, t1
-attribute vec3 aSlow;            // τ2, and the drift the wind gave it at its birth (world x, z, m/s)
+attribute vec4 aSlow;            // τ2, the drift the wind gave it at its birth (world x, z, m/s), and its burst's kick (m/s)
 uniform float uTime;             // the splash time
 ${DROP_BODY}
+// Two draws of a sprite's own (0 to 1), from where and when it was born.
+vec2 puffHash(vec4 origin) {
+  vec3 mixed = fract(origin.xyz * vec3(0.1031, 0.1030, 0.0973) + origin.w * 0.0953);
+  mixed += dot(mixed, mixed.yzx + 33.33);
+  return fract((mixed.xx + mixed.yz) * mixed.zy);
+}
 void main() {
   float age = uTime - aOrigin.w;
   if (age < 0.0 || age >= aLaunch.w || aDrop.x < uLeastRadius) { cullDrop(); return; }
@@ -265,7 +358,23 @@ void main() {
   centre += slowTerminal * late + slowTau * rest * (1.0 - slowDecay);
   velocity = slowTerminal + rest * slowDecay;
   if (centre.y < 0.0) { cullDrop(); return; }
-  drawDrop(centre, velocity, aDrop.x, 0.0, aDrop.y);
+  // A puff of fewer than PUFF_LEAST drops is the one drop that holds their water (src/spray.js).
+  float dropRadius = aDrop.x, weight = aDrop.y;
+  if (weight > 1.0 && weight < PUFF_LEAST) { dropRadius *= pow(weight, 1.0 / 3.0); weight = 1.0; }
+  // How far the puff's drops have spread about it (the header).
+  float blur = 1.0 - exp(-(weight - 1.0) / PUFF_BLUR_DROPS);
+  float spreadTime = fastTau * (1.0 - fastDecay) + fastDecay * slowTau.x * (1.0 - slowDecay.x);
+  float spread = min(PUFF_SPREAD * aSlow.w * blur * spreadTime, PUFF_MOST_SPREAD);
+  drawDrop(centre, velocity, dropRadius, 0.0, weight, spread, 1.0);
+  if (weight > 1.0) {
+    // The puff's point glint, one of its drops' somewhere in it; the rest of its glints go with the spread.
+    vec2 draws = puffHash(aOrigin);
+    float reach = PUFF_GLINT_REACH * sqrt(draws.x), angle = 6.2831853 * draws.y;
+    vec2 place = reach * vec2(cos(angle), sin(angle));
+    vGlintPoints += vec4(place, place);
+    vGlintShare = 1.0 - blur;
+    vPuffSeed = draws;
+  }
 }
 `;
 
@@ -286,6 +395,40 @@ float exposureShare(float along, float across, float travel) {
   float chord = sqrt(max(1.0 - across * across, 0.0));
   float overlap = max(min(along + chord, travel) - max(along - chord, -travel), 0.0);
   return min(overlap / (2.0 * travel), 1.0);
+}
+`;
+
+// A puff's drops over its disc (the header): (1 − ρ²)² of the squared
+// distance from its centre in drawn radii, over the capsule of its streak,
+// normalised to one over it (π/3 over the disc, 16/15 per unit of travel
+// over the streak), so that the puff's coverage, water and glints, each the
+// kernel times the drops' sum, add up to the drops'. A puff of many drops
+// is no even disc but lumps: its drops came off a torn patch of sheet in
+// clumps, so the kernel is modulated by a value noise of PUFF_LUMPS cells
+// across its radius (puffLumps, at a place of the sprite's own, vPuffSeed),
+// from 1 − PUFF_LUMP to 1 + PUFF_LUMP times, by the share the puff has
+// spread (a sprite of a few drops is one bead and takes none); the noise
+// averages one, so a puff keeps its drops' sum over its lumps.
+const PUFF = /* glsl */`
+#define PUFF_LUMPS 1.6           // the lumps' cells across a puff's drawn radius
+#define PUFF_LUMP 0.85           // and how far the kernel swings between them
+float puffKernel(float squaredDistance, float travel) {
+  float fall = 1.0 - squaredDistance;
+  return fall * fall / (PI / 3.0 + (16.0 / 15.0) * travel);
+}
+float puffLumpHash(vec2 point) {
+  vec3 mixed = fract(vec3(point.xyx) * 0.1031);
+  mixed += dot(mixed, mixed.yzx + 33.33);
+  return fract((mixed.x + mixed.y) * mixed.z);
+}
+float puffLumps(vec2 fragmentRadii, vec2 seed, float share) {
+  vec2 point = fragmentRadii * PUFF_LUMPS + seed * 64.0;
+  vec2 cell = floor(point);
+  vec2 local = point - cell;
+  vec2 ease = local * local * (3.0 - 2.0 * local);
+  float noise = mix(mix(puffLumpHash(cell), puffLumpHash(cell + vec2(1.0, 0.0)), ease.x),
+                    mix(puffLumpHash(cell + vec2(0.0, 1.0)), puffLumpHash(cell + vec2(1.0, 1.0)), ease.x), ease.y);
+  return 1.0 + PUFF_LUMP * share * (2.0 * noise - 1.0);
 }
 `;
 
@@ -346,8 +489,11 @@ varying float vStretch;
 varying vec2 vAxis;
 varying vec4 vGlintPoints;
 varying vec2 vGlintPowers;
+varying float vGlintShare;
+varying vec2 vPuffSeed;
 ${CAPSULE}
 ${EXPOSURE}
+${PUFF}
 ${GLINT_FOOTPRINT}
 void main() {
   vec3 c = capsule(vQuad, vStretch);
@@ -356,11 +502,20 @@ void main() {
   if (gl_FragCoord.z > sceneDepth) discard;
   float travel = vStretch - 1.0;
   vec2 fragment = vec2(vQuad.x * vStretch, vQuad.y);
-  // The true drop's volume (its puff's), spread over the drawn disc and the streak.
-  float thickness = 2.0 * sqrt(1.0 - c.z) * vRadius * vAreaShare * sqrt(vAreaShare) * vWeight / vStretch;
-  float coverage = exposureShare(fragment.x, fragment.y, travel) * vAreaShare * vWeight;
-  float glint = vGlintPowers.x * glintFootprint(fragment, vGlintPoints.xy, vAxis, travel, vDrawnPixelRadius)
-    + vGlintPowers.y * glintFootprint(fragment, vGlintPoints.zw, vAxis, travel, vDrawnPixelRadius);
+  float thickness, coverage;
+  float glint = vGlintShare * (vGlintPowers.x * glintFootprint(fragment, vGlintPoints.xy, vAxis, travel, vDrawnPixelRadius)
+    + vGlintPowers.y * glintFootprint(fragment, vGlintPoints.zw, vAxis, travel, vDrawnPixelRadius));
+  if (vWeight > 1.0) {
+    // A puff: its drops' area and water over its disc by the kernel, in lumps, and the rest of their glints (the header).
+    float kernel = puffKernel(c.z, travel) * puffLumps(fragment, vPuffSeed, 1.0 - vGlintShare);
+    coverage = PI * vAreaShare * vWeight * kernel;
+    thickness = (4.0 / 3.0) * PI * vAreaShare * sqrt(vAreaShare) * vWeight * vRadius * kernel;
+    glint += (1.0 - vGlintShare) * (vGlintPowers.x + vGlintPowers.y) * kernel / (vDrawnPixelRadius * vDrawnPixelRadius);
+  } else {
+    // The true drop's volume, spread over the drawn disc and the streak.
+    thickness = 2.0 * sqrt(1.0 - c.z) * vRadius * vAreaShare * sqrt(vAreaShare) / vStretch;
+    coverage = exposureShare(fragment.x, fragment.y, travel) * vAreaShare;
+  }
   gl_FragColor = vec4(thickness, coverage, glint, 0.0);
 }
 `;
@@ -422,12 +577,25 @@ uniform float uGlareShare;      // and the share of the scene it stands in for
 uniform float uRefract;
 uniform float uFluidScale;      // fluid-buffer pixels per device pixel (the buffer's resolution scale)
 uniform float uProjScale;       // fluid-buffer pixels per world unit at distance 1
+uniform vec2 uFluidTexel;       // one fluid-buffer pixel, in uv
 varying vec2 vUv;
 ${GLSL_COMMON}
 ${FRESNEL}
 ${NIGHT_VISION}
 ${HAZE}
-#define WATER_SLOPE_VARIANCE 0.006   // the sheet's and the column's unresolved ripple, for their glitter
+#define WATER_SLOPE_VARIANCE 0.006   // the sheet's and the column's unresolved ripple, for their glitter...
+#define SHEET_ROUGH_VARIANCE 0.05    // ...plus this times their aeration (white water is rough water)
+#define COLUMN_INNER 0.35            // the share of a column's refracted light that is its mean light, carried round inside it (the header)
+#define DROP_INNER 0.1               // and a drop's (less: a drop's dark top is what makes it a glass bead)
+#define COLUMN_LENS 0.45             // a column's lens image: the scene behind, shifted by the ray's turn through it by this share of a far scene's shift...
+#define COLUMN_LENS_SCENE 0.7        // ...making this share of its refracted light (the rest the pond's model light)...
+#define COLUMN_LENS_WIDTH vec2(40.0, 120.0)   // ...on a column up to this many device pixels in radius, none from the second
+#define POND_FILM 0.02               // a column's foot that is the pond's water shifts the pond behind it as a film this thick would (metres; the header)
+#define SHEET_LENS 0.5               // a sheet's lens image: the scene behind, shifted by the ray's turn through the sheet by this share of a far scene's shift (the pond behind a sheet is near)...
+#define SHEET_LENS_REACH 2.5         // ...the back face's normal read along the ray's travel inside the sheet for at most this many buffer pixels...
+#define SHEET_LENS_DEPTH 0.05        // ...from neighbours within this share of the depth (the same face, not a wall behind)
+#define TURBID_SKY 0.8               // the light the water's particles in a sheet scatter towards the viewer: this of the sky's mean radiance...
+#define TURBID_SUN 0.05              // ...plus this times the sun's irradiance, times (0.2 + 2·forward⁸): a muddy sheet glows against the sun
 #define GLITTER_CAP 40.0
 ${MEAN_LIGHT}
 #define BEAD_FROM 0.5                // device-pixel radius at which a drop starts to be a glass bead...
@@ -487,12 +655,61 @@ vec3 linearToSrgb(vec3 c) {
   return mix(lo, hi, step(vec3(0.0031308), c));
 }
 
+vec3 infoNormal(vec4 info) { return vec3(info.b, info.a, sqrt(max(1.0 - info.b * info.b - info.a * info.a, 0.0))); }
+
+// A sheet's normal read bilinearly (the header): the four buffer pixels about the device pixel, those holding the
+// same sheet as the pixel's own info (its class, within SHEET_LENS_DEPTH of its depth) weighted by their nearness,
+// the fallback where none does.
+vec3 sheetNormal(vec2 uv, vec4 here, vec3 fallback) {
+  vec2 texel = uv / uFluidTexel - 0.5;
+  vec2 corner = floor(texel);
+  vec2 share = texel - corner;
+  vec3 sum = vec3(0.0);
+  float weight = 0.0;
+  for (int dy = 0; dy < 2; dy++) {
+    for (int dx = 0; dx < 2; dx++) {
+      vec4 there = texture2D(uFluidInfo, (corner + vec2(float(dx), float(dy)) + 0.5) * uFluidTexel);
+      float same = step(998.75, there.g) * step(abs(there.r - here.r), SHEET_LENS_DEPTH * here.r);
+      float w = same * (dx == 0 ? 1.0 - share.x : share.x) * (dy == 0 ? 1.0 - share.y : share.y);
+      sum += infoNormal(there) * w;
+      weight += w;
+    }
+  }
+  return weight > 1e-4 ? normalize(sum / weight) : fallback;
+}
+
+// How a sheet's normal changes over a step of travelPixels (buffer pixels) across the screen (the header): the
+// normal's gradient across the buffer, from the normals the depth pass wrote one pixel either side of this one in
+// each direction, each read bilinearly as the pixel's own is (sheetNormal), times the travel. A central
+// difference: a one-sided one that stepped the way the travel pointed chose its neighbour by the sign of each
+// component, which flips from one device pixel to the next where the component is near zero, and the lens shift
+// wove a checker across every sheet on High.
+vec3 sheetNormalChange(vec2 uv, vec4 here, vec3 normal, vec2 travelPixels) {
+  vec3 plusX = sheetNormal(uv + vec2(uFluidTexel.x, 0.0), here, normal), minusX = sheetNormal(uv - vec2(uFluidTexel.x, 0.0), here, normal);
+  vec3 plusY = sheetNormal(uv + vec2(0.0, uFluidTexel.y), here, normal), minusY = sheetNormal(uv - vec2(0.0, uFluidTexel.y), here, normal);
+  return 0.5 * ((plusX - minusX) * travelPixels.x + (plusY - minusY) * travelPixels.y);
+}
+
+// The nearest water the depth pass wrote in the eight buffer pixels around a pixel it wrote none in (the header).
+vec4 nearestInfo(vec2 uv) {
+  vec4 nearest = vec4(0.0);
+  for (int dy = -1; dy <= 1; dy++) {
+    for (int dx = -1; dx <= 1; dx++) {
+      if (dx == 0 && dy == 0) continue;
+      vec4 candidate = texture2D(uFluidInfo, uv + vec2(float(dx), float(dy)) * uFluidTexel);
+      if (candidate.r > 0.0 && (nearest.r <= 0.0 || candidate.r < nearest.r)) nearest = candidate;
+    }
+  }
+  return nearest;
+}
+
 void main() {
   vec3 scene = mix(texture2D(uScene, vUv).rgb, texture2D(uGlare, vUv).rgb, uGlareShare);
   vec4 info = texture2D(uFluidInfo, vUv);
   vec4 optics = texture2D(uOptics, vUv);
   vec3 color = scene;
   if (optics.g > 0.0 || optics.b > 0.0) {
+    if (info.r <= 0.0) info = nearestInfo(vUv);
     float thickness = optics.r;
     float coverage = optics.g;
     vec3 sunWorld = normalize((uCameraWorld * vec4(uSunDirView, 0.0)).xyz);
@@ -502,12 +719,16 @@ void main() {
     float alpha = 1.0 - exp(-coverage);
     if (info.r > 0.0) {
       float sheet = step(998.75, info.g);
-      float column = step(997.75, info.g) - sheet;
-      float roundness = column > 0.5 ? clamp((info.g - 998.0) * 2.0, 0.0, 1.0) : 1.0;
-      vec3 normal = vec3(info.b, info.a, sqrt(max(1.0 - info.b * info.b - info.a * info.a, 0.0)));
+      float column = step(996.75, info.g) - sheet;
+      float pond = step(996.75, info.g) - step(997.75, info.g);   // a column's foot that is the pond's water (the header)...
+      float pondShare = pond * clamp((info.g - 997.0) * 2.0, 0.0, 1.0);   // ...and how much of it is
+      float roundness = column > 0.5 ? (pond > 0.5 ? 0.0 : clamp((info.g - 998.0) * 2.0, 0.0, 1.0)) : 1.0;
+      vec3 normal = sheet > 0.5 ? sheetNormal(vUv, info, infoNormal(info)) : infoNormal(info);
       vec3 position = viewPosition(vUv, info.r);
       vec3 toViewer = normalize(-position);
       float fresnel = waterFresnel(dot(normal, toViewer));
+      // A sheet has two faces (the header): what the first lets through, the second reflects again.
+      if (sheet > 0.5) fresnel = 2.0 * fresnel / (1.0 + fresnel);
       vec3 worldNormal = normalize((uCameraWorld * vec4(normal, 0.0)).xyz);
       vec3 worldToViewer = normalize((uCameraWorld * vec4(toViewer, 0.0)).xyz);
       vec3 absorbed = exp(-uAbsorb * thickness);
@@ -515,9 +736,21 @@ void main() {
       vec3 reflected = pondView(reflect(-worldToViewer, worldNormal), sunWorld, bodyReflected);
       vec3 refracted;
       if (sheet > 0.5) {
-        // A thin film: what is behind, barely shifted.
-        vec2 refractUv = clamp(vUv + normal.xy * uRefract * min(thickness, 0.06), vec2(0.001), vec2(0.999));
-        refracted = texture2D(uScene, refractUv).rgb * absorbed;
+        // A thin curved shell (the header): in through the front face, across the sheet, out through the back face.
+        vec3 eye = -toViewer;
+        vec3 inside = refract(eye, normal, 1.0 / 1.333);
+        vec2 travelPixels = inside.xy * thickness * uProjScale / info.r;
+        float reach = length(travelPixels);
+        if (reach > SHEET_LENS_REACH) travelPixels *= SHEET_LENS_REACH / reach;
+        vec3 exitNormal = normalize(normal + sheetNormalChange(vUv, info, normal, travelPixels));
+        vec3 leaving = refract(inside, exitNormal, 1.333);
+        vec2 refractUv = vUv;
+        if (dot(leaving, leaving) > 0.0) refractUv += (leaving.xy / max(-leaving.z, 0.05) - eye.xy / max(-eye.z, 0.05)) * uProjScale * uFluidTexel * SHEET_LENS;
+        refracted = texture2D(uScene, clamp(refractUv, vec2(0.001), vec2(0.999))).rgb;
+        // The water's particles scatter light along the path (the header): a muddy pond's sheet is tinted, not clear.
+        vec3 scattered = 1.0 - exp(-max(uExtinction - uAbsorb, vec3(0.0)) * thickness);
+        float sunForward = clamp(0.5 - 0.5 * dot(toViewer, uSunDirView), 0.0, 1.0);
+        refracted = refracted * exp(-uExtinction * thickness) + scattered * (uSkyAmbient * TURBID_SKY + uSunIrradiance * TURBID_SUN * (0.2 + 2.0 * pow(sunForward, 8.0)));
       } else {
         // A lens, a tube or a sphere: see the header.
         vec3 eye = -toViewer;
@@ -554,19 +787,40 @@ void main() {
         float carry = bodyEye > 0.01 ? 1.0 / bodyEye : 0.0;
         refracted = max(exitLight + under * bodyExit * carry, 0.0) * absorbed;
         reflected = max(reflected + under * bodyReflected * carry, 0.0);
+        if (column > 0.5) {
+          // The column's lens image (the header): the scene where the turned ray points, as far as the frame holds
+          // it; not where the surface flares from the axis (the foot's trumpet, whose turn the tube's law does not
+          // give) nor on a column wider on screen than COLUMN_LENS_WIDTH (whose background is the lip and the foam
+          // close behind it, which a far scene's shift smears into panels).
+          vec2 lensUv = vUv + (exitView.xy / max(-exitView.z, 0.05) - eye.xy / max(-eye.z, 0.05)) * uProjScale * uFluidTexel * COLUMN_LENS;
+          float held = step(0.0, lensUv.x) * step(lensUv.x, 1.0) * step(0.0, lensUv.y) * step(lensUv.y, 1.0);
+          vec3 axisView = vec3(uCameraWorld[0].y, uCameraWorld[1].y, uCameraWorld[2].y);
+          float tube = 1.0 - smoothstep(0.3, 0.7, abs(dot(normal, axisView)));
+          float widthPixels = 0.5 * thickness / max(normal.z, 0.3) * uProjScale / info.r / uFluidScale;
+          float narrow = 1.0 - smoothstep(COLUMN_LENS_WIDTH.x, COLUMN_LENS_WIDTH.y, widthPixels);
+          vec3 lensScene = texture2D(uScene, clamp(lensUv, vec2(0.001), vec2(0.999))).rgb;
+          refracted = mix(refracted, lensScene * absorbed, COLUMN_LENS_SCENE * held * tube * narrow);
+        }
+        // The light carried round inside the lens (the header).
+        refracted = mix(refracted, meanLight, mix(DROP_INNER, COLUMN_INNER, column));
+        if (pond > 0.5) {
+          // The pond's own water (the header): what goes in goes down into the pond behind the mound, boil and all.
+          vec2 pondUv = clamp(vUv + normal.xy * uRefract * POND_FILM, vec2(0.001), vec2(0.999));
+          refracted = mix(refracted, texture2D(uScene, pondUv).rgb * absorbed, pondShare);
+        }
       }
       vec3 surface = mix(refracted, reflected, fresnel);
-      // The sheet and the column glitter as the pond does; a drop's glints are in the optics.
-      if (sheet + column > 0.5) surface += min(sunGlitter(worldNormal, worldToViewer, sunWorld, uSunIrradiance, WATER_SLOPE_VARIANCE), vec3(GLITTER_CAP));
       // The rim bead, torn edges and froth, and a column's bubbly water, are aerated: a white scattering, brightest towards the sun.
       float forward = pow(clamp(0.5 - 0.5 * dot(toViewer, uSunDirView), 0.0, 1.0), 6.0);
       vec3 scattering = vec3(0.85, 0.88, 0.90) * (uSkyAmbient * 1.2 + uSunIrradiance * (0.08 + 0.7 * forward));
       // Where holes or the sheet's edge cover part of a pixel, the optics carry that share in the
       // aeration as in the coverage, and the alpha applies it: divide it out of the aeration.
       float aeration = optics.a / max(min(coverage, 1.0), 1e-3);
-      // A column's white water is a body, not a film: lit by the sky and shaded by the sun on its side.
+      // The sheet and the column glitter as the pond does, rougher where they are white; a drop's glints are in the optics.
+      if (sheet + column > 0.5) surface += min(sunGlitter(worldNormal, worldToViewer, sunWorld, uSunIrradiance, WATER_SLOPE_VARIANCE + SHEET_ROUGH_VARIANCE * clamp(aeration, 0.0, 1.0)), vec3(GLITTER_CAP));
+      // A column's white water is a body, not a film, and so is a sheet gone white: lit by the sky and shaded by the sun on its side.
       vec3 columnScattering = scattering * (0.55 + 0.45 * clamp(dot(worldNormal, sunWorld), 0.0, 1.0));
-      surface = mix(surface, mix(scattering, columnScattering, column), (sheet + column) * clamp(aeration, 0.0, 1.0));
+      surface = mix(surface, mix(scattering, columnScattering, clamp(column + sheet * aeration, 0.0, 1.0)), (sheet + column) * clamp(aeration, 0.0, 1.0));
       float drop = 1.0 - sheet - column;
       // On-screen radius in device pixels: a drop's from the depth pass, a column's from the water across it.
       float deviceRadius = mix(info.g, 0.5 * thickness / max(normal.z, 0.3) * uProjScale / info.r, column) / uFluidScale;
@@ -592,9 +846,8 @@ void main() {
 // included). The mirror pass draws each kind twice: its colour, then
 // (uMirrorDistance 1, the same program with another blend) its distance.
 // The distance draw writes nothing where the fragment covers less than
-// MIRROR_NEAR_COVERAGE of its pixel (a thin sheet's face: the reflected ray
-// goes on through it to the sky, so the water reflects that sky there, by
-// direction), and elsewhere its nearness to the mirror camera,
+// MIRROR_NEAR_COVERAGE of its pixel (a drop's or a puff's edge), and
+// elsewhere its nearness to the mirror camera,
 // 1 − MIRROR_NEARNESS_SCALE / distance, into alpha, leaving the colour as it
 // is; the blend keeps the least, the nearest. The dome and the clear leave
 // alpha at 1, as far as it gets. The water shader reads it back
@@ -614,8 +867,16 @@ vec4 mirrorNearness(float coverage, vec3 viewPoint) {
 }
 `;
 
-// A sheet: the sky's Fresnel reflection, and its aerated bead's and froth's
-// scattering, through its holes (SHEET_FROTH).
+// A sheet: the sky's Fresnel reflection off its wrinkled, banded face
+// (sheetNormal: a flat face reflected as a flat grey shape), and its aerated
+// bead's and froth's scattering, through its holes (SHEET_FROTH). A stone's
+// crown is near for the distance draw wherever it is, as the column is:
+// where only its bright faces were, its reflection was a patchwork of
+// pieces that moved with the sheet and pieces that moved with the sky, a
+// mosaic. A landing drop's crown (aRide) stays near only where it is bright:
+// the water is strewn with them, thin rings at the surface, and near all
+// over, the parallax drew each one's reflection as a 1-pixel curve across
+// the water.
 export const MIRROR_SHEET_FRAGMENT = /* glsl */`
 uniform vec3 uSkyAmbient;
 varying vec3 vViewPosition;
@@ -625,6 +886,9 @@ varying float vAeration;
 varying float vRod;
 varying vec3 vSheet;
 varying vec2 vFroth;
+varying float vRimDistance;
+varying float vFoot;
+varying float vRide;
 ${MIRROR_COMMON}
 ${SHEET_FROTH}
 void main() {
@@ -632,18 +896,20 @@ void main() {
   vec3 normal = normalize(vViewNormal);
   if (dot(normal, toViewer) < 0.0) normal = -normal;
   SheetFroth froth = sheetFroth(vSheet, vFroth, vAeration, vRod, dot(normal, toViewer));
-  if ((worldFromView(vViewPosition) + cameraPosition).y < uMirrorLevel || froth.hole) discard;
+  normal = sheetNormal(normal, vViewPosition, vSheet, vFroth, vRod, vRimDistance);
+  if ((worldFromView(vViewPosition) + cameraPosition).y < uMirrorLevel || froth.hole || vFoot < 0.01) discard;
   normal = normalize(normal + vViewRimTangent);
   float fresnel = waterFresnel(dot(normal, toViewer));
-  float aerated = min(RIM_AERATION * vAeration + froth.whiteness, 1.0) * (1.0 - fresnel) * froth.present;
-  fresnel *= froth.present;
-  if (uMirrorDistance > 0.5) { gl_FragColor = mirrorNearness(fresnel + aerated, vViewPosition); return; }
+  float aerated = min(RIM_AERATION * vAeration + froth.whiteness, 1.0) * (1.0 - fresnel) * froth.present * vFoot;
+  fresnel *= froth.present * vFoot;
+  if (uMirrorDistance > 0.5) { gl_FragColor = mirrorNearness(max(froth.present * vFoot * (1.0 - vRide), fresnel + aerated), vViewPosition); return; }
   vec3 reflected = textureCubeLodEXT(uEnvCube, worldFromView(reflect(-toViewer, normal)), 1.0).rgb;
   gl_FragColor = vec4(fresnel * reflected + aerated * uSkyAmbient * 1.2, fresnel + aerated);
 }
 `;
 
-// A column: the sky's Fresnel reflection. A tube bends light only across its
+// A column: the sky's Fresnel reflection, but for its foot that is the
+// pond's water, which has none of its own. A tube bends light only across its
 // axis, so from below it shows the sky behind it, which the dome already is.
 // All of it is near for the distance draw, faces included: what a reflected
 // ray sees through a glass rod is the rod's image of the sky, which moves
@@ -651,9 +917,13 @@ void main() {
 export const MIRROR_COLUMN_FRAGMENT = /* glsl */`
 varying vec3 vViewPosition;
 varying vec3 vViewNormal;
+varying float vRound;
 ${MIRROR_COMMON}
 void main() {
-  if ((worldFromView(vViewPosition) + cameraPosition).y < uMirrorLevel) discard;
+  // A column's foot that is the pond's water (a negative roundness, src/jet.js) is the pond's own surface, not a
+  // thing standing on it: it has no reflection of its own (drawn near, its flat rim lay in the mirror as a thin line
+  // the parallax drew across the water as curves).
+  if ((worldFromView(vViewPosition) + cameraPosition).y < uMirrorLevel || vRound < -0.01) discard;
   vec3 toViewer = normalize(-vViewPosition);
   vec3 normal = normalize(vViewNormal);
   if (dot(normal, toViewer) < 0.0) normal = -normal;
@@ -682,9 +952,12 @@ varying float vStretch;
 varying vec2 vAxis;
 varying vec4 vGlintPoints;
 varying vec2 vGlintPowers;
+varying float vGlintShare;
+varying vec2 vPuffSeed;
 ${MIRROR_COMMON}
 ${CAPSULE}
 ${EXPOSURE}
+${PUFF}
 ${GLINT_FOOTPRINT}
 void main() {
   if ((worldFromView(vViewCentre) + cameraPosition).y < uMirrorLevel) discard;
@@ -695,12 +968,20 @@ void main() {
   float fresnel = waterFresnel(normal.z);
   float travel = vStretch - 1.0;
   vec2 fragment = vec2(vQuad.x * vStretch, vQuad.y);
-  float coverage = exposureShare(fragment.x, fragment.y, travel) * vAreaShare * vWeight;
+  float coverage;
+  float glint = vGlintShare * (vGlintPowers.x * glintFootprint(fragment, vGlintPoints.xy, vAxis, travel, vDrawnPixelRadius)
+    + vGlintPowers.y * glintFootprint(fragment, vGlintPoints.zw, vAxis, travel, vDrawnPixelRadius));
+  if (vWeight > 1.0) {
+    // A puff: its drops' coverage over its disc by the kernel, in lumps, and the rest of their glints (the header).
+    float kernel = puffKernel(c.z, travel) * puffLumps(fragment, vPuffSeed, 1.0 - vGlintShare);
+    coverage = PI * vAreaShare * vWeight * kernel;
+    glint += (1.0 - vGlintShare) * (vGlintPowers.x + vGlintPowers.y) * kernel / (vDrawnPixelRadius * vDrawnPixelRadius);
+  } else {
+    coverage = exposureShare(fragment.x, fragment.y, travel) * vAreaShare;
+  }
   float body = MEAN_SKY * (1.0 - fresnel);
   if (uMirrorDistance > 0.5) { gl_FragColor = mirrorNearness(coverage * (fresnel + body), vViewCentre); return; }
   vec3 reflected = textureCubeLodEXT(uEnvCube, worldFromView(reflect(vec3(0.0, 0.0, -1.0), normal)), 1.0).rgb;
-  float glint = vGlintPowers.x * glintFootprint(fragment, vGlintPoints.xy, vAxis, travel, vDrawnPixelRadius)
-    + vGlintPowers.y * glintFootprint(fragment, vGlintPoints.zw, vAxis, travel, vDrawnPixelRadius);
   gl_FragColor = vec4(coverage * (fresnel * reflected + body * uSkyAmbient) + uSunIrradiance * glint, coverage * (fresnel + body));
 }
 `;

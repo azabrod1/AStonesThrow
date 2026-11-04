@@ -572,19 +572,56 @@ known timing, and the droplets are choreographed from them:
    tension and air, so the whole sheet is a closed form in launch time,
    azimuth and time: a tall, nearly upright wall that stands on the lip and
    leans in, 11 cm high at 90 ms for a 3 cm stone dropped straight in at
-   6.3 m/s (the reference simulation's: 11 to 12 cm at 0.1 s, below). Its rim
-   thickens into a bead and grows fingers: rods of water, unevenly spaced and
-   of uneven length (some only stubs), between arcs of rim that sag each
-   their own way, each ending in a bead that swells, pinches off as a drop
-   as big as the rim is thick, give or take a third, and starts again. The
-   sheet is no clean film: it wrinkles, holes open high in it as it thins
-   and the tear nears, and it carries froth, white streaks drawn out up the
-   wall and along the holes' edges, the more the bigger and faster the
-   throw (as the stone's Weber number), so a pebble's crown is glass, the
-   default stone's a clear sheet frosted at its edges, and a 30 cm rock's
-   streaked white; the foot the lip carries stays clear water. Once its rim stalls
+   6.3 m/s (the reference simulation's: 11 to 12 cm at 0.1 s, below). A
+   thrown stone is no sphere, and its own shape sets where its sheet is
+   fast and where slow (`src/launchField.js`): at impact the stone's mesh,
+   as it lies and moves, is cut by the water at launch times over the
+   launch, and each facet crossing the waterline throws its water as
+   Wagner's spray root says, faster, lower and thicker the flatter the face
+   meets the water, the stone's against the sphere's the launch was fitted
+   to, smoothed round the ring over about the stone's radius and held
+   within a few times each other, as the rim's tension and the film even a
+   facet's step out; so the sheet is the lopsided sheet the photographs of
+   thrown stones show, one film taller on one side than the other, a sphere
+   keeps the fitted crown, and a seeded throw's field is its own. Its rim
+   thickens into a bead, a round rod of water drawn as a tube along the
+   whole untorn rim, lumpy with its own beading, swelling into each finger,
+   and grows fingers out of it: round ligaments of water, drawn
+   as tubes of their own, as thick as the rim bead at their roots and
+   tapering to their tips, beaded along their length as a stretched
+   ligament is, unevenly spaced and of wildly uneven length (a few twice
+   the mean, a quarter only stubs), between scalloped arcs of rim that sag
+   each their own way, each ending in a bead that swells, pinches off as a
+   drop about as wide as the ligament, give or take a half, and starts again,
+   so each ligament trails a chain of drops; the ligaments lean and bend,
+   each drifting along the rim its own way. The
+   sheet is no clean film: it wrinkles, the rim's capillary waves run down
+   it in bands parallel to the edge, holes open high in it as it thins
+   and the tear nears (each a circle widening from its own seed, as a film
+   ruptures, until the holes meet and what is left is a web of ligaments,
+   each hole's rim a lumpy bead of the water it gathered), and past a size
+   it carries froth, white streaks drawn out up the wall, patchy, and
+   densest along the holes' rims: by the stone's size-weighted Weber
+   number against the reference throw's, with an onset, and weighted to
+   the sheet's top, the material launched first, so a pebble tossed or
+   the 3 cm stone thrown at a medium pace keeps a sheet of clear glass
+   with drops and no mist, a 6 cm stone thrown hard throws a column whose
+   lower half is clear film and whose upper half whitens and shreds into
+   ligaments and drops, and a 16 cm stone's thrown hard goes white through
+   (what photographs of stones thrown into lakes and ponds show), its
+   holes bigger as its sheet is thicker; the foot the lip carries stays
+   clear water. Once its rim stalls
    (about 90 ms for a 3 cm stone) the sheet tears, the arcs first and the
-   fingers last, from the rim down into drops that carry its velocity. A
+   fingers last, from the rim down into drops that carry its velocity:
+   only what is still in the air (by then the foot lies on the lip, and the
+   sides and back of an oblique throw's crown are down), its holes opening
+   ahead of the torn edge as fast as they run back through the film there,
+   and what is torn flies on as a net of threads along the seams where the
+   holes met until the threads bead off into drops (tens of milliseconds
+   for a thin sheet, a few tenths of a second for a rock's thick one) or it
+   comes back down; a rock's drops can carry only a few hundredths of its
+   sheet, so its wall now falls back as fast as it can fall rather than
+   vanishing. A
    thrown stone enters obliquely (about 30° from vertical thrown softly, 40
    to 45° normally, 70 to 73° and twice as fast thrown hard), and then a fan comes first: the same sheet model
    over a sector 60° either side of the direction of travel, launched from
@@ -599,6 +636,8 @@ known timing, and the droplets are choreographed from them:
    lifetime), so the hole is a wide funnel that necks and pinches off about
    2.06·√(R/g) after entry, about 7.5 R down for a 3 cm stone dropped straight
    in at 6.3 m/s; the bowl above the neck stays open and fills from below,
+   frothing from its floor up as the air the pinch entrained boils out where
+   the jet leaves (a bowl of clear glass under a jet read as a dome),
    and has flattened into the surface about √(z/g) after the pinch, z its
    depth (a deep seal; some throws seal shallower or at the surface, below).
    While the hole is open the water's head presses on the stone's front, as
@@ -664,9 +703,10 @@ stone or a lumpy, spinning one is pushed sideways as it goes in, so its path
 curves a little. From these, the throw's size, speed and angle and a random
 stream seeded by the stone, the splash chooses (`chooseSplash` in
 `src/splash.js`): how the hole seals (deep; shallow for a flat face going in
-first; at the surface, the crown pulled shut over the hole into a low dome,
-a thin sheet whipped shut, white with air, buckled and torn, not a glass
-bell, when the entry's Froude number V²/(g·R) passes Birkhoff and Isaacs'
+first; at the surface, the crown's sheet bent over to where its rims meet
+and shut over the hole, its own shape, waves and lean with its top bowed
+in, whipped shut, buckled, whitened and torn at the top, not a glass bell,
+when the entry's Froude number V²/(g·R) passes Birkhoff and Isaacs'
 108, less readily the more oblique the entry and the more irregular the
 stone: Worthington's roughened marble dropped 15 cm threw a tall jet and
 from 140 cm none, Truscott and Techet's billiard balls at 6 m/s dome over,
@@ -715,7 +755,8 @@ to skip.
 `src/spectralWater.js`). A pond is fresh water, and a bubble on fresh water
 bursts within a second (0.01 to 3 s, against 0.3 to 30 s on sea water, where
 salt keeps bubbles from merging: Anguelova & Huq 2017), so a stone leaves no
-raft. Where its hole closes, its air comes up as a boil: big bubbles,
+raft on a lake; on the sea (the cove and the harbour) each of its boils also
+leaves a raft that lasts seconds. Where its hole closes, its air comes up as a boil: big bubbles,
 popping as they surface (the boil's lifetime τ is 0.45 s), arriving over
 the time the pinched-off air takes to rise from the pinch depth (about
 0.7 s for a 6 cm stone, up to 2.5 s for a rock), so at any moment only
@@ -826,7 +867,7 @@ allows it scales as a Froude-similar splash does: lengths with the radius,
 times with √(R/g), speeds with the entry speed. The crown's sheet is as thick
 as the stone is big, so air and surface tension slow it less, it drains
 slower and stands longer: a 16 cm stone's crown stands for 160 ms, its rim
-25 to 40 cm high, and tears into some 3000 drops on High (2000 on Medium and Low), none over 4 mm in radius
+25 to 40 cm high, and tears into some 3000 drops on High (2000 on Medium and Low), none over 2.5 mm in radius
 (surface tension holds no bigger drop together in flight, so a big sheet
 tears into more drops, not bigger ones), while a 1.5 cm
 pebble's rises 5 cm when it seals deep (it nearly always seals at the
@@ -850,16 +891,32 @@ or the pond below the horizon, with the sand under it and the sun's glitter)
 and the light it lets through, absorbed by the pond's own coefficients over
 the water crossed, and the sun's glitter with the pond's own model. The
 crown sheet and the jet column are meshes and the droplets sphere impostors,
-stretched along their motion as a camera's shutter would smear them, all
+stretched along their motion as a camera's shutter would smear them (and,
+just pinched off, wobbling: longer then flatter along their flight, ringing
+at a drop's own note and dying away as a real one does), all
 drawn into one buffer of depth, kind and exact normal and one of summed
 thickness, coverage, sun glints and aeration; the composite pass shades
 them and tone-maps the frame. The sheet is a clear film that barely bends
-what is behind it, aerated (whitened) along its rim bead and torn edges and
+what is behind it as a thin curved shell of glass does: the ray refracts in
+through the face it meets, crosses the sheet and leaves through the back
+face, whose normal differs by the sheet's curvature and wrinkles over the
+travel inside (read from the neighbouring pixels' normals), so the pond's
+ripples fold through it, by both faces' Fresnel, bright where a fold turns
+edge-on, and tinted by the water's own particles along the path, so a
+muddy pond's sheet glows brown against the sun where a lake's is clear;
+aerated (whitened) along its rim bead and torn edges and
 by its froth, which scatters along the path through it, so a sheet seen
-face-on stays clear where one seen edge-on goes white; its holes are cut
+face-on stays clear where one seen edge-on goes white; its holes, circles
+widening from seeds until only a web of ligaments is left, their rims
+thicker with the water they gathered, are cut
 in each pass, antialiased, and those under a pixel or two only thin it to
 the right transparency, so a far sheet never sparkles; the column is a lens that shows the pond and its glitter from well to
-the side and, through its bulb, the sky upside down. A drop two device
+the side and, through its bulb, the sky upside down, and bends the scene
+behind it as a glass rod does, its surface rippled by the capillary waves
+its mesh does not hold, and never black on its far side (a lens carries
+light round inside it); where its foot flares into the water it is the
+pond's own water welling up, shaded as the pond's surface is, the sky's
+reflection over the water's light from under it. A drop two device
 pixels or wider is a glass bead, the pond in its top, the sky upside down
 in its lower half, with two glints, the sun reflected off it and the sun
 refracted through it (which makes a splash sparkle against the light),
@@ -877,16 +934,21 @@ spray sprite is written once and flies a closed form of its age in the
 vertex shader (two phases of linear drag, fitted to Schiller and Naumann's
 drag on a sphere within 4% at the median), through the same passes as the
 drops, so it costs a uniform and a draw a pass and nothing stepped; a
-sprite stands for one to several hundred like drops, drawn as a soft puff,
-so Medium and Low draw fewer, heavier sprites and the same mist, and a
-throttle keeps any throw within the ring's sprites. Seen from the shore it is
+sprite stands for one to several hundred like drops, drawn as a soft puff
+with no edge and no glint of its own, their light spread over it, which
+grows as its drops spread apart in flight and thins into the veil its
+neighbours make, so Medium and Low draw fewer, heavier sprites and the same
+mist, and a throttle keeps any throw within the ring's sprites. Seen from the shore it is
 the white veil round a big stone's crown and jet, and a sparkle against the
 sun. The water mirrors the splash:
 while it lives, its sheets, columns, drops and spray are drawn as cheap water into
 the mirror image the pond reflects, over just the rectangle they cover, with
 how far each is from the mirror's camera, so that the water looks a near
-thing's reflection up where it is: the jet's reflection hangs under the jet
-and only trembles with the ripples, where the sky's streaks with them.
+thing's reflection up where it is, refining the place the rippled ray
+points at by what it finds there: the jet's reflection hangs under the jet
+and only trembles with the ripples, where the sky's streaks with them, and
+the crown's, its wrinkles and bands in it, breaks along the rings rather
+than into shards.
 
 **Sky** (`src/sky.js`). The sky is a photograph: an equirectangular HDRI
 (a lakeside with a far shore by default, or one of seven others) on a dome at the far
@@ -1558,6 +1620,11 @@ farther out, so it rises into the view rather than filling its corner.
   (which follows `--preroll=seconds`), for a run of idle frames.
 - `?floats=half` on the page forces half-float render targets everywhere, the
   path devices without `EXT_color_buffer_float` take.
+- `?lean=0` on the page draws the water with its full programs only. Otherwise
+  it draws programs with the ice, the gale and the rain compiled out while
+  none of them is on (`src/waterSurface.js`): the same water, about 7% less
+  of the GPU on a Mac, and the first ice, gale or rain compiles the full
+  programs mid-game. `?profile=1`'s report says "lean water" or "full water".
 - `?trace=1` on the page, or the T key, traces each stone over everything
   (`__pond.setTrace`): its path from the hand until it goes in (yellow), its
   track on the water under it (white), a red cross at each touch and a white

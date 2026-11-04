@@ -10,7 +10,9 @@
 //   - the entry: speed and angle from vertical;
 //   - the crown: its sheet's time scales, its rim's peak height, its reach
 //     from the centre and its span across the throw at that moment, when it
-//     tears and when it is gone; the forward fan's reach;
+//     tears, when it is torn through and when it is gone (a stone's torn web
+//     flies on until it comes down, src/crown.js tearAirborne); the forward
+//     fan's reach;
 //   - the jet: the form the throw drew and how its hole sealed (src/splash.js
 //     chooseSplash; the stones are not seeded, so these change from run to
 //     run, tools/variety-probe.mjs gives their odds), when it starts, its
@@ -154,7 +156,7 @@ function runSplash(radius, { silent = false } = {}) {
   const crown = splash.crowns.find((candidate) => !candidate.landing && !candidate.fan);
   const fan = splash.crowns.find((candidate) => candidate.fan);
   const result = {
-    radius, impact, crown: { launch: crown.launchDuration, drag: crown.dragSeconds, breakTime: crown.breakTime, endTime: crown.endTime, thickness: crown.baseThickness, height: 0, heightTime: 0, reach: 0, maxDrop: crown.maxDropRadius },
+    radius, impact, crown: { launch: crown.launchDuration, drag: crown.dragSeconds, breakTime: crown.breakTime, endTime: crown.endTime, goneTime: 0, thickness: crown.baseThickness, height: 0, heightTime: 0, reach: 0, maxDrop: crown.maxDropRadius },
     fan: fan ? { reach: 0, endTime: fan.endTime } : null,
     jet: { start: null, top: 0, topTime: 0, widest: 0, gone: null },
     choice: splash.lastChoice ? { regime: splash.lastChoice.regime, seal: splash.lastChoice.seal.kind } : null,
@@ -177,6 +179,7 @@ function runSplash(radius, { silent = false } = {}) {
     result.peakAlive = Math.max(result.peakAlive, splash.count);
     const time = splash.time;
     if (splash.crowns.includes(crown)) {
+      result.crown.goneTime = crown.age;   // its torn web may fly on after its tear (src/crown.js tearAirborne)
       for (let vertex = 0; vertex < crown.positions.length / 3; vertex++) {
         const height = crown.positions[vertex * 3 + 1];
         if (height > result.crown.height) {
@@ -296,7 +299,7 @@ for (const radius of stoneRadii) {
   const { impact, crown, fan, jet } = result;
   const angle = Math.asin(Math.min(Math.hypot(impact.velocity.x, impact.velocity.z) / impact.speed, 1)) * 180 / Math.PI;
   console.log(`\nstone ${centimetres(2 * radius)} cm across (radius ${millimetres(radius)} mm, size factor ${(radius / 0.03).toFixed(2)}): enters at ${impact.speed.toFixed(2)} m/s, ${angle.toFixed(0)}° from vertical`);
-  console.log(`  crown: launch ${milliseconds(crown.launch)} ms, drag time ${milliseconds(crown.drag)} ms, h0 ${millimetres(crown.thickness)} mm; rim peaks ${centimetres(crown.height)} cm up at ${milliseconds(crown.heightTime)} ms, ${centimetres(crown.reach)} cm out, ${centimetres(crown.span)} cm across; tears at ${milliseconds(crown.breakTime)} ms, gone at ${milliseconds(crown.endTime)} ms; into lumps up to ${millimetres(crown.maxDrop)} mm${crown.maxDrop > DROP_CEILING ? `, drops up to ${millimetres(DROP_CEILING)} mm` : ''}`);
+  console.log(`  crown: launch ${milliseconds(crown.launch)} ms, drag time ${milliseconds(crown.drag)} ms, h0 ${millimetres(crown.thickness)} mm; rim peaks ${centimetres(crown.height)} cm up at ${milliseconds(crown.heightTime)} ms, ${centimetres(crown.reach)} cm out, ${centimetres(crown.span)} cm across; tears at ${milliseconds(crown.breakTime)} ms, through at ${milliseconds(crown.endTime)} ms, gone at ${milliseconds(crown.goneTime)} ms; into lumps up to ${millimetres(crown.maxDrop)} mm${crown.maxDrop > DROP_CEILING ? `, drops up to ${millimetres(DROP_CEILING)} mm` : ''}`);
   if (fan) console.log(`  fan: reaches ${centimetres(fan.reach)} cm, gone at ${milliseconds(fan.endTime)} ms`);
   const form = result.choice ? ` (${result.choice.regime} form, ${result.choice.seal} seal)` : '';
   if (jet.start !== null) console.log(`  jet${form}: starts at ${milliseconds(jet.start)} ms, top ${centimetres(jet.top)} cm at ${milliseconds(jet.topTime)} ms, widest ${millimetres(jet.widest)} mm across, gone at ${jet.gone === null ? '-' : milliseconds(jet.gone)} ms`);

@@ -127,7 +127,11 @@ void main() {
 export const RAIN_RIPPLES = /* glsl */`
 #define RAIN_LEVELS 10
 uniform sampler2D uRain;          // the tile: height (mm), ∂h/∂x, ∂h/∂z (src/rain.js)
+#ifdef WATER_LEAN
+const float uRainOn = 0.0;        // the water's lean programs (src/waterSurface.js): no rain
+#else
 uniform float uRainOn;            // 1 while it rains, else 0
+#endif
 uniform float uRainTileSize;      // metres
 uniform float uRainTexels;        // per side
 uniform float uRainUnresolved[RAIN_LEVELS];

@@ -299,7 +299,7 @@ import { Snow } from './snow.js';
 import { lightningAt } from './lightning.js';
 import { Rings } from './rings.js';
 import { DropRings } from './dropRings.js';
-import { createEnvironment, SKY_NAMES, REED_SKIES, skyShore, skyHours, resolveHour, nearestHour } from './sky.js';
+import { createEnvironment, SKY_NAMES, REED_SKIES, SALT_SKIES, skyShore, skyHours, resolveHour, nearestHour } from './sky.js';
 import { createWaterSurface } from './waterSurface.js';
 import { createPondFloor, createShore, floorDepthAt, groundHeightAt, setShoreKind, setShoreLook, KOI_SHORE } from './pondFloor.js';
 import { Rock, setAir, aimSkip, aimThrow, dressThing, flutterTrial, prepareThing, PREPARATION_WORK, skipLowest, skipSpeed, SKIP_THROW, PHYSICS_STEP, throwFlightTime } from './rock.js';
@@ -346,8 +346,10 @@ import { withRandom, parkMiller } from './withRandom.js';
 //                 them go to the preset's scales once zoomed in closer: at the
 //                 frame the splash is a few dozen pixels and a fleck of spray
 //                 a CSS pixel whatever the buffer, so the pixels above that
-//                 cost (on an M5 Max at 2293 × 1133, 1 ms of an idle frame's
-//                 3.3 and 2 of a splash frame's 7.5) show nothing, while a
+//                 cost (on an M5 Max at 2293 × 1133, a 3/4 scale: 0.05 ms of
+//                 an idle frame's 0.68 of GPU time and 0.1 of a splash
+//                 frame's 1.25, by throughput; more on a 2× display and a
+//                 phone's GPU) and show nothing, while a
 //                 close-up shows the fish seen through the water blocky and
 //                 the droplets soft at half (frames compared, home and
 //                 --fov=12). The targets are built again as the zoom crosses
@@ -793,7 +795,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   let qualityName = automaticQuality ? 'high' : QUALITY[quality] ? quality : 'medium';
   let settings = QUALITY[qualityName];
   // Parts of the frame the profiler switches off (src/profiler.js); all on otherwise.
-  const skip = { floor: false, surface: false, solver: false, ambient: false, fluid: false, spray: false, mirror: false, cavity: false, glare: false, halfDensity: false, sleep: false };
+  const skip = { floor: false, surface: false, solver: false, ambient: false, fluid: false, spray: false, mirror: false, cavity: false, glare: false, halfDensity: false, sleep: false, rings: false };
 
   const water = new SpectralWater(renderer, { size: settings.grid, domainSize: 6, centre: [0, -1.0], depth: POND_DEPTH });
   const windParameter = pageParameters.get('wind')?.split(',').map(Number);
@@ -850,7 +852,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   let reedsHere = false;   // the place's shallows have reeds (PLACES `reeds`; setReeds)
   const bedDepthAt = (x, z) => (pooled ? POOL.depth : floorDepthAt(x, z));
   water.floorDepthAt = bedDepthAt;
-  const surface = createWaterSurface(water, lighting, ambientWaves, { meshSegments: settings.meshSegments, rings, dropRings, skyCube: environment.cubeTexture, rain, haze: environment.hazeUniforms, gale: galeWaves, ice });
+  // The water's lean programs while there is no ice, gale or rain (src/waterSurface.js); ?lean=0 draws the full ones only.
+  const surface = createWaterSurface(water, lighting, ambientWaves, { meshSegments: settings.meshSegments, rings, dropRings, skyCube: environment.cubeTexture, rain, haze: environment.hazeUniforms, gale: galeWaves, ice, lean: pageParameters.get('lean') !== '0' });
   const floaterRide = createFloaterRide(surface.rideUniforms);   // the water under each floater, for the physics
   const splash = new SplashSystem({ environment, lighting, water, ambientWaves, surface });
   const glare = new Glare();   // the sun's image and every glint spread over the frame (src/glare.js), mixed in by the splash's final pass
@@ -926,6 +929,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   /** The water drawn: the lake's clarity, or the pool's own in the pool. */
   function applyWater() {
     waterName = pooled ? 'pool' : koiPond ? 'koi' : lakeClarity;
+    // The sea's water holds a stone's foam (src/splash.js setSalt); the pool's, the koi pond's and the lakes' do not.
+    splash.setSalt(!pooled && !koiPond && SALT_SKIES.includes(PLACES[placeName]?.sky));
     lighting.absorb.fromArray(WATER_CLARITIES[waterName].absorb);
     lighting.extinction.fromArray(WATER_CLARITIES[waterName].extinction);
     applyWaterColor();
@@ -2012,7 +2017,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     if (koiPond) keepInPond(target, radius);   // nothing thrown comes down on the Koi pond's ground (src/koiGarden.js)
     // Made first, so a thing that flutters is aimed by its own flight (src/rock.js trialFlight) and a skip by its own
     // mass (a pizza's toppings and all); a skip is let go lower, from the hand let down (skipThrow).
-    const rock = new Rock({ radius, position: handPosition(radius, thing), velocity: new THREE.Vector3(), envTexture: environment.envTexture, waterFog: { extinction: lighting.extinction, color: lighting.waterColor }, thing: name, mass, mirrorLayer: MIRROR_LAYER, skip: skips, water: surface.rideUniforms, dressing: options.dressing ?? null, size });
+    const rock = new Rock({ radius, position: handPosition(radius, thing), velocity: new THREE.Vector3(), envTexture: environment.envTexture, waterFog: { extinction: lighting.extinction, color: lighting.waterColor }, thing: name, mass, mirrorLayer: MIRROR_LAYER, skip: skips, water: surface.rideUniforms, rideValues: floaterRide.values, dressing: options.dressing ?? null, size });
     // A broad thing's tilt drawn first, so it is aimed by its own (a stone's is drawn as it is let go, as it always was).
     const tilt = skips && !thing.byDiameter ? rock.skipTilt() : undefined;
     const skipped = skips ? skipThrow(handPosition(radius, thing), target, { thing, radius, mass: rock.mass }, options.power ?? power, tilt) : null;
@@ -2048,7 +2053,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
    */
   function addShard(piece) {
     const { position, velocity } = piece.start;
-    const rock = new Rock({ radius: piece.radius, position, velocity, envTexture: environment.envTexture, waterFog: { extinction: lighting.extinction, color: lighting.waterColor }, thing: 'ice-shard', mass: piece.mass, mirrorLayer: MIRROR_LAYER, water: surface.rideUniforms, piece: piece.shape });
+    const rock = new Rock({ radius: piece.radius, position, velocity, envTexture: environment.envTexture, waterFog: { extinction: lighting.extinction, color: lighting.waterColor }, thing: 'ice-shard', mass: piece.mass, mirrorLayer: MIRROR_LAYER, water: surface.rideUniforms, rideValues: floaterRide.values, piece: piece.shape });
     rock.breakAway(piece.start);
     rock.iceHole = piece.hole;
     rock.ground = ice.ground;
@@ -2740,13 +2745,17 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     rain.update(simulationTime, camera, resolution, viewFocus());
     spindrift.update(simulationTime, camera, resolution, viewFocus());
     snow.update(simulationTime, camera, resolution);
-    rings.update(simulationTime);
+    if (skip.rings) rings.hide();   // the profiler's: the stones' rings neither summed nor read this frame
+    else rings.update(simulationTime);
     dropRings.update(simulationTime);
     // The splash's sheets and columns to this frame, for the mirror and the droplet passes.
     if (skip.spray) splash.spray.mesh.visible = false;
     if (!skip.fluid) splash.prepareFrame();
     const fromBelow = camera.position.y < (galeWaves.on ? galeSurfaceAt(camera.position.x, camera.position.z) : 0);
     showDetail(fromBelow);   // each ball's meshes as fine as each pass shows (src/rock.js)
+    // Each floater's ride as drawn (the water's height under its middle, its slope), once for all its corners and
+    // passes, before the first pass draws one (src/floaterRide.js place).
+    floaterRide.place(renderer, rocks);
     if (!fromBelow) updateReflection();   // from below no mirror is needed; a change of view keeps it marked stale until the eye surfaces
     // A floater whose rim keeps the water off its top (a pizza afloat, toppings up): the water is not drawn inside its rim.
     surface.setDryDiscs(rocks.filter((rock) => rock.dryDisc > 0).map((rock) => ({ x: rock.meshAbove.position.x, z: rock.meshAbove.position.z, radius: rock.dryDisc })));
@@ -2754,6 +2763,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     // it is drawn); seldom while nothing can meet one (`quiet`: everything at rest, nothing held, the finger out).
     const quiet = !grab.rock && !finger.inWater && !rocks.some((rock) => rock.state !== 'rest' || rock.fading !== undefined);
     floaterRide.update(renderer, rocks.filter((rock) => rock.rideShare && rock.rideShare.value > 0), quiet);
+    surface.chooseLean(renderer);
     surface.update({ underTarget, reflectionTarget, reflectionMatrix, mirrorRect: splashRect, stonesUnder: rocks.some((rock) => rock.state === 'held' || rock.state === 'skim' || rock.state === 'water' || rock.state === 'float' || rock.afloat || (rock.state === 'rest' && rock.position.y < 0)), resolution, camera, time: simulationTime });
     splash.prepareScene();   // the stones' cavities, and the patch dipping under them
     if (skip.cavity) surface.setCavities([]);
@@ -2832,7 +2842,10 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     renderer.setRenderTarget(mainTarget);
     renderer.clear(true, true, false);
     belowBackground.render(renderer, mainTarget);
+    // A stone in its hole's air is cut at the hole's floor for an eye above the water (src/rock.js); from below, whole.
+    for (const rock of rocks) rock.cutBelowAtSurface(true);
     if (!skip.floor) renderer.render(sceneUnder, camera);
+    for (const rock of rocks) rock.cutBelowAtSurface(false);
     const hidden = hiddenFromBelow();
     const wasVisible = hidden.map((object) => object.visible);
     for (const object of hidden) object.visible = false;
@@ -3123,8 +3136,12 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     // too; the ice comes back after its own break.
     const chosenIce = iceName;
     if (chosenIce !== 'none') iceForWarmUp('none');
+    // Started with ice, a gale or rain, the water's full programs alone (src/waterSurface.js holdFull), as the session
+    // keeps them: its open-water throws build no lean twin, nor does its first break after.
+    surface.holdFull(chosenIce !== 'none' || galeWaves.on || Boolean(WEATHERS[weatherName].rain));
     // Its throws seeded (Park–Miller, WARM_UP.seed), Math.random put back after (src/withRandom.js).
     withRandom(parkMiller(WARM_UP.seed), () => warmUpScene(chosenIce));
+    surface.holdFull(false);
     warmUpReport.programs = (renderer.info.programs?.length ?? 0) - programsBefore;
     warmUpReport.milliseconds = performance.now() - started;
   }
@@ -3250,9 +3267,11 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       if (skip.halfDensity !== wasHalfDensity) resize();
     },
     throwStone: () => throwAt(0, -1.4, { radius: 0.03, power: 'normal' }),
+    throwAt: (x, z) => throwAt(x, z, { radius: 0.03, power: 'normal' }),
+    fastForward(seconds) { for (let left = seconds; left > 1e-6; left -= 1 / 60) simulate(Math.min(1 / 60, left)); },
     hasImpacted: () => rocks.some((rock) => rock.state !== 'air' || rock.skip?.skips > 0),
     clearPond,
-    describe: () => `${qualityName}, ${resolution.x}×${resolution.y} at ${dpr.toFixed(2)}×, grid ${water.size}, mesh ${surface.meshSegments}`,
+    describe: () => `${qualityName}, ${resolution.x}×${resolution.y} at ${dpr.toFixed(2)}×, grid ${water.size}, mesh ${surface.meshSegments}, ${surface.leanAllowed ? 'lean' : 'full'} water`,
     memory: () => ({ ...memoryEstimate(), textures: renderer.info.memory.textures, geometries: renderer.info.memory.geometries }),
     onReport: (lines) => onProfile?.(lines),
   }) : null;
