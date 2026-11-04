@@ -63,6 +63,10 @@
 // Cost: nothing while uVisitorOn is 0 (away from the loch, and between
 // sightings), and while it is 1 nothing outside uVisitorReach, a circle the
 // visitor sets each frame round all its waves can have reached (visitorNear).
+// Inside it, each term stops before its exps where it cannot show: a ring
+// beyond its front or under the slope cutoff unattenuated (exactly what the
+// cutoff would drop), a contact's waves and foam, and a ring's foam, past
+// where they fall under what can show (tools/visitor-wave-probe.mjs checks).
 export const VISITOR_CONTACTS = 4;
 export const VISITOR_RINGS = 2;
 export const VISITOR_RING_SLOPE_LEAST = 1e-3;  // invisible beyond this slope; shared with the CPU reach bound
@@ -156,9 +160,12 @@ vec3 visitorRings(vec2 point, vec2 acrossX, vec2 acrossY) {
     float radius = max(length(offset), 0.3);
     float timeSquared = ring.z * ring.z;
     float phase = VISITOR_GRAVITY * timeSquared / (4.0 * radius);
+    if (phase <= 0.8) continue;   // beyond its front, where it fades in from nothing (below)
     float waveNumber = phase / radius;
+    float unfiltered = ring.w * VISITOR_GRAVITY * timeSquared / (4.0 * radius * radius * radius);
+    if (unfiltered * waveNumber < VISITOR_RING_SLOPE_LEAST) continue;   // the impulse's cut and the fade only lower it: skip their exp
     float cut = waveNumber * VISITOR_RING_SIZE;
-    float height = ring.w * VISITOR_GRAVITY * timeSquared / (4.0 * radius * radius * radius) * exp(-cut * cut) * smoothstep(0.8, 3.0, phase);
+    float height = unfiltered * exp(-cut * cut) * smoothstep(0.8, 3.0, phase);
     if (height * waveNumber < VISITOR_RING_SLOPE_LEAST) continue;
     result += visitorWave(height, phase + 1.5707963, -waveNumber * offset / radius, acrossX, acrossY);
   }
@@ -221,10 +228,13 @@ float visitorFoam(vec2 point) {
     if (contact.w <= 0.0) continue;
     vec2 offset = visitorCapsule(point - contact.xy, heading, uVisitorSpans[index]);
     float width = contact.z;
+    float fromCapsule = length(offset);
+    // Farther, its trail (the farthest of it) adds under 1e-4 (churn 0.5 × 0.05 × e^(-5.6)), the wash and collar far less.
+    if (fromCapsule > 5.6 * (1.5 + 3.0 * width)) continue;
     float behind = -offset.x, side = offset.y;
     float churn = min(contact.w * 1.5, 0.5);   // the foam map is logarithmic (FOAM_PATTERN): half cover at 0.1, none under 0.01
     // A collar along the waterline (the outline, \`width\` out), thickest at the bow; and a wash over the body's own patch.
-    float fromLine = abs(length(offset) - width);
+    float fromLine = abs(fromCapsule - width);
     float collar = exp(-0.5 * fromLine * fromLine / (0.18 * 0.18 * width * width)) * (0.6 + 0.4 * smoothstep(-width, width, -behind))
       + 0.4 * exp(-0.5 * dot(offset, offset) / (1.2 * 1.2 * width * width));
     float trailWidth = width * (0.7 + 0.1 * max(behind, 0.0));
@@ -233,9 +243,11 @@ float visitorFoam(vec2 point) {
   }
   for (int index = 0; index < VISITOR_RINGS; index++) {
     vec4 ring = uVisitorRings[index];
-    if (ring.w <= 0.0 || ring.z <= 0.0) continue;
+    // Older, or more than four spreads out, it adds under 1e-4 (0.06 × e^(-6.5), × e^(-8)).
+    if (ring.w <= 0.0 || ring.z <= 0.0 || ring.z > 13.0) continue;
     vec2 offset = point - ring.xy;
     float spread = 0.9 + 0.35 * ring.z;
+    if (dot(offset, offset) > 16.0 * spread * spread) continue;
     foam += min(ring.w * 0.15, 0.06) * exp(-ring.z / 2.0) * exp(-0.5 * dot(offset, offset) / (spread * spread));
   }
   return min(foam, 0.12);

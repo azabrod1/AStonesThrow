@@ -1864,7 +1864,9 @@ farther out, so it rises into the view rather than filling its corner.
   both Kelvin branches, both sides of the track, multiple headings and speeds;
   and, running the shader's own lines, that the water a contact heaps and
   draws down has a slope with no curl that is its height's gradient, the
-  heap a width before the piece, the trough a width behind, level between.
+  heap a width before the piece, the trough a width behind, level between;
+  and that the shader's early-outs drop nothing that shows: the rings' skip
+  exactly what the slope cutoff would, the foam's under 1e-4 of foam.
   `window.__pond.sightVisitor(form, { elapsed, distance, bearing, course })`
   brings one up at Loch Ness for the harness (`--eval`), and
   `__pond.visitor` says what it is doing.

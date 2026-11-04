@@ -5,7 +5,10 @@
 // run as JS: their slope has no curl and is the numerical gradient of the
 // height they state, inside a piece's span, past its ends and beside it; the
 // heap stands a width before the front, the trough a width behind the back,
-// the water level along the flank between.
+// the water level along the flank between. And the shader's early-outs, its
+// loops' bodies run as JS with them and without: the rings' skip no slope
+// over the cutoff, exactly, and the foam's drop under 1e-4 of it anywhere
+// (the foam map shows none under 0.01).
 import assert from 'node:assert/strict';
 import { VISITOR_WATER } from '../src/shaders/visitor.js';
 const kelvin = VISITOR_WATER.split('vec3 visitorKelvin(')[1].split('vec3 visitorRings(')[0];
@@ -116,4 +119,81 @@ assert(gradientWorst < 1e-6, gradientWorst === Infinity ? 'the heap\'s lines mus
   assert(Math.abs(heightAt(0, 1.5 * width)) < 0.01 * top && Math.abs(heightAt(0)) < 0.01 * top, 'level along the flank between them');
 }
 
-console.log(`visitor-wave-probe: ${checked} Kelvin gradient components, 9 ring gradients and the contacts' heap at ${heapPoints} points passed (curl ${curlWorst.toExponential(1)}, gradient ${gradientWorst.toExponential(1)} of its size)`);
+// The early-outs: a loop's body, the shader's lines after `after` to the loop's end, run as JS with GLSL's functions
+// and its #defines; a vec2 it declares is given (`offset`), and a ring's `result += visitorWave(height, ...)` returns
+// its height. `cuts: false` drops every `if (...) continue;` line.
+const GLSL = {
+  exp: Math.exp, abs: Math.abs, min: Math.min, max: Math.max, sqrt: Math.sqrt, dot, length: (vector) => Math.hypot(vector[0], vector[1]),
+  smoothstep: (from, to, value) => { const share = Math.min(Math.max((value - from) / (to - from), 0), 1); return share * share * (3 - 2 * share); },
+  ...Object.fromEntries([...VISITOR_WATER.matchAll(/#define (\w+) ([\d.e-]+)/g)].map((match) => [match[1], Number(match[2])])),
+};
+function loopBody(functionName, after, { cuts = true } = {}) {
+  const lines = VISITOR_WATER.split(`${functionName}(`)[1].split('\n');
+  const first = lines.findIndex((line) => line.includes(after));
+  assert(first >= 0, `${functionName} must have its line ${after}`);
+  const body = [];
+  for (const line of lines.slice(first + 1)) {
+    if (!/^ {4}/.test(line)) break;
+    const statement = line.replace(/\/\/.*$/, '').trim();
+    if (!statement) continue;
+    if (/^if \(.*\) continue;$/.test(statement) && !cuts) continue;
+    if (statement.startsWith('vec2 ')) { assert(/^vec2 offset = /.test(statement), `only offset is given: ${statement}`); continue; }
+    body.push(statement.replace(/^float /, 'let ').replace(/^result \+= visitorWave\(height, .*$/, 'reached = height;'));
+  }
+  return new Function(...Object.keys(GLSL), 'offset', 'contact', 'ring', `let foam = 0, reached = null;
+    for (let once = 0; once < 1; once++) {
+      ${body.join('\n')}
+    }
+    return { foam, reached };`).bind(null, ...Object.values(GLSL));
+}
+const withVector = (x, y) => Object.assign([x, y], { x, y });
+const around = (radius, turn) => withVector(radius * Math.cos(turn), radius * Math.sin(turn));
+// The rings' slope: with its cuts, exactly what the cutoff alone (VISITOR_RING_SLOPE_LEAST) keeps.
+{
+  const cut = loopBody('vec3 visitorRings', 'vec4 ring = uVisitorRings[index];'), whole = loopBody('vec3 visitorRings', 'vec4 ring = uVisitorRings[index];', { cuts: false });
+  let samples = 0, kept = 0;
+  for (const strength of [0.05, 0.3, 0.93]) {
+    for (const age of [0.3, 0.5, 1, 2, 5, 10, 20, 35]) {
+      for (let radius = 0.05; radius <= 200; radius *= 1.01) {   // finest near the front, where it fades in
+        const offset = around(radius, radius * 0.37), ring = { x: 0, y: 0, z: age, w: strength };
+        const reference = whole(offset, null, ring).reached, waveNumber = 9.81 * age * age / (4 * Math.max(radius, 0.3) ** 2);
+        const expected = reference !== null && reference * waveNumber >= GLSL.VISITOR_RING_SLOPE_LEAST ? reference : null;
+        assert.equal(cut(offset, null, ring).reached, expected, `the rings' early-outs must keep what the cutoff keeps (strength ${strength}, age ${age} s, ${radius} m)`);
+        samples++; if (expected !== null) kept++;
+      }
+    }
+  }
+  console.log(`visitor-wave-probe: the rings' early-outs keep exactly the ${kept} of ${samples} samples the cutoff keeps`);
+}
+// The foam: what its cuts drop, round a contact (any width and churn) and a breach's or dive's ring (any age).
+{
+  const contactCut = loopBody('float visitorFoam', 'vec2 offset = visitorCapsule('), contactWhole = loopBody('float visitorFoam', 'vec2 offset = visitorCapsule(', { cuts: false });
+  const ringCut = loopBody('float visitorFoam', 'vec4 ring = uVisitorRings[index];'), ringWhole = loopBody('float visitorFoam', 'vec4 ring = uVisitorRings[index];', { cuts: false });
+  let dropped = 0, skipped = 0, samples = 0;
+  for (const width of [0.06, 0.16, 0.35, 0.56]) {
+    for (const pushed of [0.01, 0.1, 0.4]) {
+      for (let radius = 0; radius <= 40; radius += 0.05) {
+        const offset = around(radius, 1.3 * radius), contact = { z: width, w: pushed };
+        const shown = contactCut(offset, contact).foam, whole = contactWhole(offset, contact).foam;
+        dropped = Math.max(dropped, Math.abs(whole - shown)); samples++;
+        if (shown === 0 && whole > 0) skipped++;
+        const behind = withVector(-radius, 0.02 * radius);   // straight down its trail, the farthest any of it goes
+        dropped = Math.max(dropped, Math.abs(contactWhole(behind, contact).foam - contactCut(behind, contact).foam));
+      }
+    }
+  }
+  for (const strength of [0.05, 0.3, 0.93]) {
+    for (const age of [0.5, 3, 8, 9, 10, 11, 12, 12.9, 13.1, 20, 30]) {
+      for (let radius = 0; radius <= 60; radius += 0.05) {
+        const offset = around(radius, radius), ring = { x: 0, y: 0, z: age, w: strength };
+        const shown = ringCut(offset, null, ring).foam, whole = ringWhole(offset, null, ring).foam;
+        dropped = Math.max(dropped, Math.abs(whole - shown)); samples++;
+        if (shown === 0 && whole > 0) skipped++;
+      }
+    }
+  }
+  assert(dropped < 1e-4, `the foam's early-outs must drop under 1e-4 of foam anywhere: ${dropped.toExponential(2)}`);
+  assert(skipped > samples / 2, 'the foam\'s early-outs must skip most of the water round it');
+  console.log(`visitor-wave-probe: the foam's early-outs skip ${skipped} of ${samples} samples and drop at most ${dropped.toExponential(1)} of foam`);
+}
+console.log(`visitor-wave-probe: ${checked} Kelvin gradient components, 9 ring gradients, the contacts' heap at ${heapPoints} points (curl ${curlWorst.toExponential(1)}, gradient ${gradientWorst.toExponential(1)} of its size) and the early-outs passed`);
