@@ -1324,7 +1324,7 @@ export class Tropics {
     }
   }
 
-  /** Builds the whole of it (src/main.js shows it): what stands where, every mesh, the stand-in let go. */
+  /** Builds the whole of it (src/main.js buildLagoon: as the lagoon is asked for, while its sky downloads, or when first shown): what stands where, every mesh, the stand-in let go. */
   build() {
     if (this.placed) return;   // geometry and placements live for the scene's lifetime
     for (const mesh of this.above) {
@@ -1676,8 +1676,9 @@ uniform vec3 uSkyAmbient;`)
 
   /**
    * Shown at the Polynesian lagoon, hidden elsewhere; built the first time
-   * it is shown (as a game streams a level in), but for the warm-up's
-   * (`building` false), which shows the stand-in.
+   * it is shown (as a game streams a level in), if src/main.js has not built
+   * it already as the lagoon was asked for, but for the warm-up's (`building`
+   * false), which shows the stand-in.
    */
   setVisible(visible, { building = true } = {}) {
     if (visible && building && !this.built) this.build();

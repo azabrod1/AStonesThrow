@@ -1382,7 +1382,7 @@ at its foot and curving up toward the light, ringed with frond scars; a
 crown of about thirty fronds, the young ones up and the old arching down
 and yellowing, a dead frond or two hanging brown; coconuts. Its leaflets
 are alpha-tested cards textured with an atlas baked on the GPU when the
-lagoon is first shown
+lagoon is first chosen (it is built while its sky downloads)
 (each leaflet a tapered blade, its alpha scaled by the mip it is drawn from
 so far crowns keep their leaves); the light passes through a leaf where the
 sun is behind it. Every palm is an instance of one of six variants at three

@@ -1071,10 +1071,15 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     shore.visible = !asPool && !koiPond && !lagoon;
     koiLand.visible = !asPool && koiPond;
     lagoonLand.visible = !asPool && lagoon;
-    if (lagoonLand.visible && !lagoonLand.geometry.attributes.position) lagoonLand.geometry = lagoonLandGeometry();   // built when first shown
+    if (lagoonLand.visible) buildLagoon();   // built when first shown, unless it was as it was asked for (requestPlace)
     garden.setVisible(!asPool && koiPond);
     tropics.setVisible(!asPool && Boolean(PLACES[placeName].tropics));   // the Polynesian lagoon's palms and motu
     surface.setPool(asPool ? { ...pool.square, depth: POOL.depth, deck: POOL.deck } : null);
+  }
+  /** The lagoon's land mesh and its scenery (src/tropics.js build), built once: building compiles no program. */
+  function buildLagoon() {
+    if (!lagoonLand.geometry.attributes.position) lagoonLand.geometry = lagoonLandGeometry();
+    tropics.build();
   }
   showScenery(pooled);
   // The fish (src/fish.js; drawn by src/fishMeshes.js in the under-water pass): the place's, in its water (applyFish);
@@ -1474,6 +1479,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     const sky = PLACES[place].sky;
     const request = { place, hour: resolveHour(sky, hour) };
     placeRequest = request;
+    // The lagoon built while its sky downloads, once a frame has shown the choice, not as the sky arrives (buildLagoon).
+    if (PLACES[place].tropics && !tropics.built) requestAnimationFrame(() => setTimeout(() => { if (placeRequest === request) buildLagoon(); }));
     return requestSky(sky, request.hour).then(() => {
       if (placeRequest === request && environment.name === sky && environment.hour === request.hour) {
         const entering = placeName !== place;
