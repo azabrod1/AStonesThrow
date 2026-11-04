@@ -19,6 +19,7 @@
   "type": "module",
   "devDependencies": {
     "@dimforge/rapier3d-compat": "^0.21.0",
-    "@jsquash/jpeg": "^1.6.0"
+    "@jsquash/jpeg": "^1.6.0",
+    "esbuild": "^0.28.2"
   }
 }
