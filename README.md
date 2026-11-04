@@ -1861,7 +1861,10 @@ farther out, so it rises into the view rather than filling its corner.
   last frame that draws them.
 - `node tools/visitor-wave-probe.mjs` checks the actual shader's Kelvin and
   breach-ring wave vectors against numerical derivatives of their phase:
-  both Kelvin branches, both sides of the track, multiple headings and speeds.
+  both Kelvin branches, both sides of the track, multiple headings and speeds;
+  and, running the shader's own lines, that the water a contact heaps and
+  draws down has a slope with no curl that is its height's gradient, the
+  heap a width before the piece, the trough a width behind, level between.
   `window.__pond.sightVisitor(form, { elapsed, distance, bearing, course })`
   brings one up at Loch Ness for the harness (`--eval`), and
   `__pond.visitor` says what it is doing.

@@ -38,8 +38,10 @@
 //   asymptotic form does not hold and the ring fades in.
 // - Where the body breaks the surface (uVisitorContacts, each a capsule
 //   along the course as long as the piece out of the water, uVisitorSpans):
-//   the water heaped before its front and drawn down behind its back, a
-//   dipole as wide as the body there and as high as it pushes; and the
+//   the water heaped a width before its front and drawn down a width behind
+//   its back, each a bell as wide as the body there and as high as it
+//   pushes, level along its flanks between (the slope the gradient of that
+//   height); and the
 //   short ripples its waterline sheds as it goes and bobs, rings running
 //   out from the capsule's outline at their own speed (capillary-gravity,
 //   ω² = g k + σ k³ / ρ, a wavelength of CONTACT_RIPPLE), dying out over a
@@ -175,15 +177,21 @@ vec3 visitorContacts(vec2 point, vec2 acrossX, vec2 acrossY) {
     vec4 contact = uVisitorContacts[index];
     if (contact.w <= 0.0) continue;
     float span = uVisitorSpans[index];
-    vec2 capsule = visitorCapsule(point - contact.xy, heading, span);
+    vec2 offset = point - contact.xy;
+    vec2 capsule = visitorCapsule(offset, heading, span);
     float width = contact.z;
     float fromCapsule = length(capsule);
     if (fromCapsule > width * 4.0 + CONTACT_RIPPLE_REACH * 4.0) continue;
-    // The heap and the trough: a dipole about the capsule.
-    float along = capsule.x / width, side = capsule.y / width;
-    float bell = exp(-0.5 * (along * along + 0.6 * side * side));
+    // The heap and the trough: the water heaped a width before the front and drawn down a width behind the back, each
+    // a bell as wide as the body (in widths: along the course from the capsule's middle, and across), so level along
+    // its flanks between them; the slope is the gradient of that height (tools/visitor-wave-probe.mjs checks).
+    float middle = dot(offset, heading) / width, side = capsule.y / width;
+    float ahead = middle - span / width - 1.0, astern = middle + span / width + 1.0;
+    float heap = exp(-0.5 * (ahead * ahead + 0.6 * side * side)), trough = exp(-0.5 * (astern * astern + 0.6 * side * side));
+    float height = 0.60653 * contact.w * (heap - trough);   // 0.60653, e^(-1/2): the heap's top, a width out, contact.w / √e
+    float slopeAlong = 0.60653 * contact.w / width * (astern * trough - ahead * heap), slopeAcross = -0.6 * side / width * height;
+    vec2 slope = slopeAlong * heading + slopeAcross * sideways;
     float kept = exp(-0.5 * (footprint / width) * (footprint / width));
-    vec2 slope = contact.w / width * bell * ((1.0 - along * along) * heading - 0.6 * along * side * sideways);
     float steepness = length(slope);
     result += vec3(slope * kept, 0.5 * steepness * steepness * (1.0 - kept * kept));
     // The ripples, out from the waterline (the capsule's outline, \`width\` from its line).
