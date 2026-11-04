@@ -3248,7 +3248,17 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       if (index === 0) {
         renderFrom(VIEWS.under);   // the cavity is open: the surface's and the cavity's programs from below
         iceCracks.endWarmUp();
-        if (!everything) continue;
+        if (!everything) {
+          // What the loch shows that is not up at the start: its visitor, drawn here when the place is the loch, so its
+          // first sighting builds no pipeline mid-session (src/lochVisitor.js warmUp; elsewhere the first pass starts it).
+          if (PLACES[placeName].visitor) {
+            visitor.warmUp(true);
+            render();
+            renderFrom(VIEWS.under);
+            visitor.warmUp(false);
+          }
+          continue;
+        }
         // The other water's scenery (the pool's, or the lake's), from above
         // and below, so a change of water compiles nothing.
         showScenery(!pooled);
