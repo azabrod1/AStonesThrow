@@ -50,7 +50,9 @@
 // Math.random. A few variants (PALMS) are built, each at three levels of
 // detail (LODS), and every palm is an instance of one of them, turned to
 // lean where it stands toward the water and scaled; its level is chosen by
-// projected size in the current camera (including zoom and the mirror).
+// projected size in the current camera (including zoom and the mirror): a
+// palm changes to the middle level 16 to 25 m off and to the coarsest 50 to
+// 79 m off (LODS), on Medium and Low a level sooner.
 // Per-frond streams and fixed curve endpoints keep the same palm across levels.
 //
 // The light on a leaf (LEAF_LIGHT): three.js's standard lighting, its normal
@@ -278,13 +280,19 @@ export const PALMS = [
 ];
 // The levels of detail: the share of a variant's fronds drawn, segments along a frond, columns across a sheet (2: a
 // plane; 3: folded), the rachis's sides (0: none), the sides of the frond bases' skirt and of the trunk (`trunk` where finer:
-// a near foot's buttresses), the trunk's rows, coconuts and their facets; and from how
-// far from the shore view's eye (m) a palm is drawn at it.
+// a near foot's buttresses), the trunk's rows, coconuts and their facets; and `from`, how far off (m) a palm is drawn
+// at it if its bounds' radius (every level's, as built) were PALM_REFERENCE_RADIUS, under a 55° field of view (levelOf).
+// A palm's own bounds are smaller, so it changes level nearer: the variants' (8.2 to 13 m) at scale 1 take level 1 from
+// 16 to 25 m off (to the middle of their bounds, or of its mirror image) and level 2 from 50 to 79 m; the shore view's
+// 48° (landscape) puts each 17% farther off, an upright phone's 62° 13% nearer, a zoom nearer still; and Medium and
+// Low (setCoarse) draw every palm a level coarser, so there a palm 16 to 25 m off is already the coarsest. The scrub
+// and the husks take `from` as it is, as metres off (their own radius is their reference).
 export const LODS = [
   { from: 0, fronds: 1, segments: 14, columns: 3, rachis: 3, around: 24, trunk: 32, rows: 42, nuts: 8, nutFacets: [10, 16] },
   { from: 35, fronds: 0.75, segments: 7, columns: 2, rachis: 0, around: 10, rows: 16, nuts: 3, nutFacets: [6, 10] },
   { from: 110, fronds: 0.45, segments: 2, columns: 2, rachis: 0, around: 4, rows: 4, nuts: 0, nutFacets: [0, 0] },
 ];
+const PALM_REFERENCE_RADIUS = 18;   // m: LODS's palm
 const TRUNK = { foot: 0.22, flare: 0.22, flareHeight: 0.07, top: 0.15, ring: 0.085, sunk: 0.15 };   // radius (m) at the foot above the flare, the flare's, its height (share), at the top; rings' spacing (m); how deep its foot is sunk into the sand (m)
 /** A trunk's radius (m, unscaled) a share of the way up it. */
 const trunkRadius = (share) => TRUNK.foot + (TRUNK.top - TRUNK.foot) * share ** 0.7 + TRUNK.flare * Math.max(1 - share / TRUNK.flareHeight, 0) ** 2;
@@ -1350,7 +1358,7 @@ export class Tropics {
       for (const shape of shapes) { bounds.union(shape.leaves.boundingSphere); bounds.union(shape.wood.boundingSphere); }
       const family = {};
       for (const [level, { leaves, wood, top }] of shapes.entries()) {
-        const options = { level, bounds, referenceRadius: 18, casts: level === 1, family };
+        const options = { level, bounds, referenceRadius: PALM_REFERENCE_RADIUS, casts: level === 1, family };
         this.instances(leaves, this.leafMaterial, here, (placed) => [variant.height, placed.phase, top.y, 0], options);
         this.instances(wood, this.woodMaterial, here, (placed) => [variant.height, placed.phase, top.y, placed.shade], options);
       }

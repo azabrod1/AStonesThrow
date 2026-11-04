@@ -395,9 +395,10 @@ import { withRandom, parkMiller } from './withRandom.js';
 //                 the floaters whose ride is read back.
 //   sceneryCoarse the Koi pond's garden drawn as coarsely as the mirror draws
 //                 it (src/koiGarden.js setCoarse: a third of its triangles;
-//                 it catches things alike either way), and the Polynesian
-//                 lagoon's palms and scrub a level of detail coarser
-//                 (src/tropics.js setCoarse).
+//                 it catches things alike either way). The Polynesian
+//                 lagoon's palms and scrub are a level of detail coarser on
+//                 any preset but High, not by this (src/tropics.js setCoarse,
+//                 LODS).
 //   spray         the splash's spray (src/spray.js): `ring` the slots of its
 //                 ring in use (sprites in flight at once, the oldest
 //                 overwritten past them) and `share` the share of its sprites
