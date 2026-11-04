@@ -299,7 +299,8 @@ import { Snow } from './snow.js';
 import { lightningAt } from './lightning.js';
 import { Rings } from './rings.js';
 import { DropRings } from './dropRings.js';
-import { createEnvironment, SKY_NAMES, REED_SKIES, SALT_SKIES, skyShore, skyHours, resolveHour, nearestHour } from './sky.js';
+import { PLACES, placeShore, waterForPlace } from './places.js';
+import { createEnvironment, SALT_SKIES, skyHours, resolveHour, nearestHour } from './sky.js';
 import { createWaterSurface } from './waterSurface.js';
 import { createPondFloor, createShore, floorDepthAt, groundHeightAt, setShoreKind, setShoreLook, KOI_SHORE } from './pondFloor.js';
 import { Rock, setAir, aimSkip, aimThrow, dressThing, flutterTrial, prepareThing, PREPARATION_WORK, skipLowest, skipSpeed, SKIP_THROW, PHYSICS_STEP, throwFlightTime } from './rock.js';
@@ -310,6 +311,7 @@ import { createFloatTarget, FullscreenPass, configureFloatSupport, renderTargetB
 import { Glare } from './glare.js';
 import { Reeds } from './reeds.js';
 import { Boulders } from './boulders.js';
+import { LochVisitor } from './lochVisitor.js';
 import { UNDER_BACKGROUND_FRAGMENT } from './shaders/scene.js';
 import { directionAt, placeDirection, clampToFrame, isZoomed, viewFacing } from './viewZoom.js';
 import { meshKind, withParts } from './thingMeshes.js';
@@ -619,6 +621,10 @@ const SUN_BALANCE = [3.0, 2.85, 2.55];        // the sun's irradiance under the 
 const WATER_CLARITIES = {
   pool: { absorb: [0.35, 0.06, 0.015], extinction: [0.42, 0.11, 0.06], color: [0.010, 0.090, 0.130] },
   koi: { absorb: [0.4, 0.09, 0.14], extinction: [0.6, 0.3, 0.42], color: [0.010, 0.066, 0.060] },   // a koi pond's, filtered but green: the fish show to the bottom
+  // Loch Ness's: stained by the peat its burns drain, tea-brown, the blue taken first (dissolved organic matter
+  // absorbs as e^(−0.015 λ), steeply toward the blue), so little light gets past a few metres down and a thing a
+  // metre under is a shadow; its deep water is near black, a little brown.
+  peat: { absorb: [0.65, 1.05, 2.2], extinction: [1.3, 1.7, 2.9], color: [0.0105, 0.0072, 0.0034] },
   clear: { absorb: [0.40, 0.07, 0.05], extinction: [0.9, 0.35, 0.32], color: [0.012, 0.085, 0.115] },
   lake: { absorb: [0.45, 0.10, 0.07], extinction: [1.3, 0.85, 0.8], color: [0.014, 0.075, 0.100] },
   pond: { absorb: [0.95, 0.36, 0.34], extinction: [2.0, 1.45, 1.65], color: [0.015, 0.074, 0.041] },
@@ -631,28 +637,6 @@ const DEFAULT_WATER = 'lake';
 // there is, the lake's of the clarity last chosen or the pool's.
 const WATER_CHOICES = ['clear', 'lake', 'pond', 'murky', 'frozen'];
 const LAKE_CLARITIES = WATER_CHOICES.filter((name) => name !== 'frozen');
-// The places (the Location setting): a sky (src/sky.js SKIES) and what lies
-// about the water, the lake's bed and shore, or the Pool's tiled pool on its
-// deck in a lawn (src/pool.js; setPooled), by Lakeside's lake and through its
-// hours, so that choosing it from Lakeside loads no photo; or the Koi pond
-// (`koi`), a pond in a Japanese garden under the same sky: the lake's open
-// water inside a closed, irregular shore of its own (KOI_SHORE in
-// src/pondFloor.js, setShoreKind; setKoiPond), stone-edged with a pebble
-// beach, its own water (WATER_CLARITIES.koi) and a garden round it, out of
-// reach behind a hedge (src/koiGarden.js).
-// Each place's fish are
-// src/fish.js's (FISH_BY_PLACE, by the place's name); its beach's ground is
-// its sky's `shore` (SHORE_LOOKS in src/pondFloor.js, setShoreLook: sand,
-// shingle, scree...); its reeds (`reeds`,
-// src/reeds.js) are the sky's (REED_SKIES): the fresh lakes have them,
-// the sea cove, the bare rock shore, the salt flat and the frozen alpine
-// reservoir none, and the Pool and the Koi pond have their own grounds.
-const PLACES = {
-  ...Object.fromEntries(SKY_NAMES.map((name) => [name, { sky: name, pool: false, reeds: REED_SKIES.includes(name) }])),
-  swiss: { sky: 'swiss', pool: false, defaultWater: 'frozen', defaultView: 'level' },
-  pool: { sky: 'lakeside', pool: true },
-  koi: { sky: 'garden', pool: false, koi: true },
-};
 const PLACE_ALIASES = { alpine: 'swiss', meadow: 'lakeside', open: 'lakeside' };
 const DEFAULT_PLACE = 'lakeside';
 /**
@@ -808,6 +792,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   const galeWaves = new GaleWaves(renderer, { windDirection, centre: water.centre, sharedWith: ambientWaves });
   const reeds = new Reeds({ lighting, ambientWaves, mirrorLayer: MIRROR_LAYER });   // the shallows' rushes (src/reeds.js), in the main scene, the mirror and the under-water pass
   const boulders = new Boulders({ envTexture: environment.envTexture, waterFog: { extinction: lighting.extinction, color: lighting.waterColor }, mirrorLayer: MIRROR_LAYER });   // a rocky shore's stones (src/boulders.js), the same three ways
+  const visitor = new LochVisitor({ envTexture: environment.envTexture, waterFog: { extinction: lighting.extinction, color: lighting.waterColor }, mirrorLayer: MIRROR_LAYER });   // something in the loch (src/lochVisitor.js), the same three ways, and its wake in the water's shader
   // The water's height at world (x, z) under the gale (its CPU sum), for the stones, the mirror and the eye.
   const galeSample = { height: 0, slopeX: 0, slopeZ: 0 };
   const galeSurfaceAt = (x, z) => galeWaves.sample(x, z, galeSample).height;
@@ -854,7 +839,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   const bedDepthAt = (x, z) => (pooled ? POOL.depth : floorDepthAt(x, z));
   water.floorDepthAt = bedDepthAt;
   // The water's lean programs while there is no ice, gale or rain (src/waterSurface.js); ?lean=0 draws the full ones only.
-  const surface = createWaterSurface(water, lighting, ambientWaves, { meshSegments: settings.meshSegments, rings, dropRings, skyCube: environment.cubeTexture, rain, haze: environment.hazeUniforms, gale: galeWaves, ice, lean: pageParameters.get('lean') !== '0' });
+  const surface = createWaterSurface(water, lighting, ambientWaves, { meshSegments: settings.meshSegments, rings, dropRings, skyCube: environment.cubeTexture, rain, haze: environment.hazeUniforms, gale: galeWaves, ice, visitor, lean: pageParameters.get('lean') !== '0' });
   const floaterRide = createFloaterRide(surface.rideUniforms);   // the water under each floater, for the physics
   const splash = new SplashSystem({ environment, lighting, water, ambientWaves, surface });
   const glare = new Glare();   // the sun's image and every glint spread over the frame (src/glare.js), mixed in by the splash's final pass
@@ -919,7 +904,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   koiPond = Boolean(PLACES[placeName].koi);
   reedsHere = Boolean(PLACES[placeName].reeds);
   setShoreKind(koiPond ? 'koi' : 'lake');
-  setShoreLook(skyShore(PLACES[placeName].sky));   // the beach and the bed in the place's own ground (SHORE_LOOKS)
+  setShoreLook(placeShore(placeName));   // the beach and the bed in the place's own ground (SHORE_LOOKS)
+  visitor.setPlace(Boolean(PLACES[placeName].visitor));
   boulders.show(!pooled && !koiPond ? PLACES[placeName].sky : null);
   water.setPool(pooled);
   applyGale();
@@ -929,8 +915,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   }
   /** The water drawn: the lake's clarity, or the pool's own in the pool. */
   function applyWater() {
-    waterName = pooled ? 'pool' : koiPond ? 'koi' : lakeClarity;
-    // The sea's water holds a stone's foam (src/splash.js setSalt); the pool's, the koi pond's and the lakes' do not.
+    waterName = waterForPlace(placeName, lakeClarity);
+    // The sea's water holds a stone's foam (src/splash.js setSalt); the pool's, the koi pond's, the loch's and the lakes' do not.
     splash.setSalt(!pooled && !koiPond && SALT_SKIES.includes(PLACES[placeName]?.sky));
     lighting.absorb.fromArray(WATER_CLARITIES[waterName].absorb);
     lighting.extinction.fromArray(WATER_CLARITIES[waterName].extinction);
@@ -1041,6 +1027,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   sceneUnder.add(reeds.below);
   sceneMain.add(boulders.above, boulders.mirror);
   sceneUnder.add(boulders.below);
+  sceneMain.add(visitor.above, visitor.mirror);
+  sceneUnder.add(visitor.below);
   // The pool's basin under the water, its walls and deck in the main scene
   // and the mirror (src/pool.js); shown in place of the lake's while the
   // water is the pool's (showScenery).
@@ -1334,11 +1322,12 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
    * held in the cached image),
    * into splashRect (0 wide when nowhere).
    */
-  function measureSplashImage(objects, floaters = []) {
+  function measureSplashImage(objects, floaters = [], visitorShown = false) {
     splashRect.set(0, 0, 0, 0);
-    if (objects.length === 0 && floaters.length === 0) return;
+    if (objects.length === 0 && floaters.length === 0 && !visitorShown) return;
     if (objects.length > 0) splash.mirrorBounds(mirrorBox);
     else mirrorBox.makeEmpty();
+    if (visitorShown) mirrorBox.union(visitor.bounds);   // whatever is out on the loch, as it is posed now (src/lochVisitor.js)
     // The splash is reckoned on still water and drawn lifted with the waves (galeLift): its image is about as much higher.
     if (!mirrorBox.isEmpty() && galeWaves.on && mirrorLevel.value !== 0) { mirrorBox.translate(mirrorShift.set(0, mirrorLevel.value, 0)); mirrorBox.expandByScalar(GALE_MIRROR_MARGIN); }
     // A floater's image, where it is drawn (lifted already), a little wider than it for its last frame's place: out to
@@ -1372,6 +1361,9 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     const waterMoves = !skip.ambient || !water.asleep || rings.live > 0 || rain.on;
     // Or one whose image was drawn and is now gone from it (a thing slid off the ice into a hole).
     const floaters = skip.mirror ? nothingMirrored : rocks.filter((rock) => rock.meshMirror && (rock.meshMirror.visible ? rock.fading !== undefined || (rock.ridesWater && waterMoves) || !rock.meshMirror.position.equals(rock.mirroredAt ?? unmirrored) : rock.mirroredAt));
+    // Whatever is out on the loch moves while it shows: its image is drawn again each frame (and, once it has gone, the
+    // last frame's region, mirroredRect, once more without it).
+    const visitorShown = !skip.mirror && visitor.mirror.visible;
     // A splash rises out of the water (a hole's open water, frozen: at 0); otherwise what lies on the ice meets its image.
     const iceTop = ice.on ? ice.top : 0;
     mirrorLevel.value = objects.length > 0 ? (galeWaves.on && lastImpact ? galeSurfaceAt(lastImpact.x, lastImpact.z) : 0) : iceTop;
@@ -1384,13 +1376,13 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       placeMirrorCamera();
       drawMirror(null, objects);
       viewChanged = false;
-      measureSplashImage(objects, floaters);
+      measureSplashImage(objects, floaters, visitorShown);
       mirroredRect.copy(splashRect);
       for (const rock of rocks) if (rock.meshMirror) rock.mirroredAt = rock.meshMirror.visible ? rock.meshMirror.position.clone() : null;
       return;
     }
-    if (objects.length === 0 && floaters.length === 0 && mirroredRect.z === 0) return;   // still water: the cached mirror stands
-    measureSplashImage(objects, floaters);
+    if (objects.length === 0 && floaters.length === 0 && !visitorShown && mirroredRect.z === 0) return;   // still water: the cached mirror stands
+    measureSplashImage(objects, floaters, visitorShown);
     if (splashRect.z === 0) mirrorRegion.copy(mirroredRect);
     else if (mirroredRect.z === 0) mirrorRegion.copy(splashRect);
     else {
@@ -1453,6 +1445,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     const sky = PLACES[place].sky;
     const request = { place, hour: resolveHour(sky, hour) };
     placeRequest = request;
+    if (PLACES[place].visitor) visitor.prepareHide();   // its hide baked between frames while the sky downloads (src/lochVisitor.js)
     return requestSky(sky, request.hour).then(() => {
       if (placeRequest === request && environment.name === sky && environment.hour === request.hour) {
         const entering = placeName !== place;
@@ -1460,9 +1453,15 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
         setPooled(PLACES[place].pool);
         setKoiPond(Boolean(PLACES[place].koi));
         setReeds(Boolean(PLACES[place].reeds));
-        setShoreLook(skyShore(PLACES[place].sky));
+        setShoreLook(placeShore(place));
         boulders.show(!pooled && !koiPond ? PLACES[place].sky : null);
-        if (entering) applyFish();
+        if (entering) {
+          applyWater();   // a place's own water (PLACES `water`), or the lake's clarity again...
+          applySky();     // ...and what its absorption lights: the sun under the water, the splash's view of the bed
+          visitor.setPlace(Boolean(PLACES[place].visitor));
+          visitor.reset(stepsTime);
+          applyFish();
+        }
         if (entering && PLACES[place].defaultWater === 'frozen' && iceName === 'none') {
           clearPond();
           applyIce(iceThickness);
@@ -1536,6 +1535,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   function applySky() {
     garden.setEnvironment(environment.envTexture);
     boulders.setEnvironment(environment.envTexture);
+    visitor.setEnvironment(environment.envTexture);
     garden.setLight();
     if (preview.mesh) preview.mesh.material.envMap = environment.envTexture;   // a new sky's map (the rocks take theirs as thrown)
     applyWaterColor();
@@ -2598,10 +2598,14 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       // The fish on their own clock (src/fish.js advance: whole FISH_STEP steps to this step's end), each step seeing the
       // things as they are then, so a seeded throw is the same with fish at any frame rate.
       fishes.advance(stepsTime, fishLook, fishBitten);
+      // Whatever is out on the loch (src/lochVisitor.js): it comes up when due, if the water is open and nothing thrown
+      // is near its course, and goes down at once if something comes near.
+      visitor.step(stepsTime, rocks, { open: !ice.on && !galeWaves.on, near: WEATHERS[weatherName].visibility < 200 });
       endStep(stepping);
     }
     advanceSplash(end);
     fishes.showAt(end);   // each fish drawn between its last two steps (src/fishMeshes.js)
+    visitor.showAt(end);   // whatever is out on the loch, posed at the frame's time (src/lochVisitor.js)
     for (const rock of rocks) rock.drawAt(rock.fading === undefined ? 1 - (stepsTime - end) / PHYSICS_STEP : 1);
     // What fades is drawn shrinking away (endStep counts its fade and retires it).
     for (const rock of rocks) {
@@ -2838,7 +2842,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     ...ambientWaves.uniforms(),
     ...ice.uniforms,   // no shafts under the ice (underwaterShafts)
   });
-  const hiddenFromBelow = () => [environment.sky, shore, koiLand, reeds.above, boulders.above, pool.walls, pool.yard, ...garden.meshes, marker, arc, ...(preview.mesh ? [preview.mesh] : []), ...rocks.map((rock) => rock.meshAbove)];
+  const hiddenFromBelow = () => [environment.sky, shore, koiLand, reeds.above, boulders.above, visitor.above, pool.walls, pool.yard, ...garden.meshes, marker, arc, ...(preview.mesh ? [preview.mesh] : []), ...rocks.map((rock) => rock.meshAbove)];
   function renderFromBelow() {
     renderer.setRenderTarget(mainTarget);
     renderer.clear(true, true, false);
@@ -3060,6 +3064,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     simulationTime = 0;
     stepsTime = 0;
     fishes.resetClock();
+    visitor.reset(0);   // nothing out on the loch; the first sighting from the start of its stream
     viewChanged = true;   // the mirror image is drawn whole again, without the splash
     mirroredRect.set(0, 0, 0, 0);
     splashRect.set(0, 0, 0, 0);
@@ -3243,7 +3248,17 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       if (index === 0) {
         renderFrom(VIEWS.under);   // the cavity is open: the surface's and the cavity's programs from below
         iceCracks.endWarmUp();
-        if (!everything) continue;
+        if (!everything) {
+          // What the loch shows that is not up at the start: its visitor, drawn here when the place is the loch, so its
+          // first sighting builds no pipeline mid-session (src/lochVisitor.js warmUp; elsewhere the first pass starts it).
+          if (PLACES[placeName].visitor) {
+            visitor.warmUp(true);
+            render();
+            renderFrom(VIEWS.under);
+            visitor.warmUp(false);
+          }
+          continue;
+        }
         // The other water's scenery (the pool's, or the lake's), from above
         // and below, so a change of water compiles nothing.
         showScenery(!pooled);
@@ -3251,8 +3266,10 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
         koiLand.visible = true;
         reeds.visible = true;   // and the reeds', whatever the place: a change of place compiles nothing
         boulders.show('all');   // and the boulders' (src/boulders.js)
+        visitor.warmUp(true);   // and whatever is in the loch's (src/lochVisitor.js)
         render();
         renderFrom(VIEWS.under);
+        visitor.warmUp(false);
         showScenery(pooled);
       }
     }
@@ -3416,8 +3433,21 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     get clarity() { return waterName; },
     /** Whether the place is the Pool (its tiled pool in place of the lake). */
     get pooled() { return pooled; },
-    /** Whether the place has its own water in place of the lake's clarities (the Pool's, the Koi pond's). */
-    get ownWater() { return pooled || koiPond; },
+    /** Whether the place has its own water in place of the lake's clarities (the Pool's, the Koi pond's, Loch Ness's). */
+    get ownWater() { return Boolean(PLACES[placeName].water); },
+    /** Which place's own water it is (index.html's Water page): 'pool', 'koi', 'loch', or null for the lake's clarities. */
+    get ownWaterName() { return PLACES[placeName].water ? placeName : null; },
+    /** The own-water card, from the same registry as its material. */
+    get ownWaterCard() { return PLACES[placeName].waterCard ?? PLACES.pool.waterCard; },
+    /** Whatever is out on the loch (src/lochVisitor.js): whether it is up, its form, where, how far out, how far risen. */
+    get visitor() { return visitor.report(stepsTime); },
+    /**
+     * Bring it up now (tools and probes): `form` one of src/lochVisitor.js
+     * FORMS (humps, neck, back, wake), begun `elapsed` seconds ago,
+     * `distance` m out at `bearing` degrees off the home view's line, its
+     * `course` (degrees from +x toward +z). Only at Loch Ness.
+     */
+    sightVisitor(form, options = {}) { return PLACES[placeName].visitor ? visitor.summon(stepsTime, form, options) : null; },
     /** Whether the place is the Koi pond (the lake's water in the pond's own shore, src/pondFloor.js KOI_SHORE). */
     get koi() { return koiPond; },
     /**

@@ -16,6 +16,7 @@ import { RAIN_RIPPLES, DROP_RING_SLOPES } from './rain.js';
 import { GALE_SURFACE } from './gale.js';
 import { SURFACE_BUBBLE, BUBBLE_SPRITE } from './bubble.js';
 import { ICE_SHADOW_LOOKUP } from '../iceShadow.js';
+import { VISITOR_WATER } from './visitor.js';
 
 // The weather's haze (rain's, snow's, a fog's; src/sky.js setWeather): what lies d metres off fades
 // toward uHazeColor, the overcast's horizon, by 1 − exp(−uHazeDensity·d)
@@ -1553,6 +1554,7 @@ ${FRESH_BOIL}
 ${FOAM_PATTERN}
 ${RAIN_RIPPLES}
 ${DROP_RING_SLOPES}
+${VISITOR_WATER}
 ${HAZE}
 
 // The slope variance of the ambient ripples that this pixel's lookup no
@@ -1887,6 +1889,7 @@ void main() {
   // dropRings.js: the little rings a splash's drops leave where they land).
   float gust = gustEnvelope(vWorld.xz, uGustTime);
   float subGridSpread = uRoughness * uRoughness;
+  float visitorVariance = 0.0;   // the thing in the loch's unresolved slope, for the mirror's spread (below)
 #ifdef CAVITY_MESH
   // The mesh's normal, tilted by the surface's slopes where the mesh rides
   // the surface (its own normal is the lip's shape on still water). The
@@ -1902,6 +1905,11 @@ void main() {
     slopeVariance += rainUnresolvedVariance(vWorld.xz) * ride;
   }
   if (uDropRingCount > 0) surfaceSlope += dropRingSlope(vWorld.xz, acrossX, acrossY) * ride;
+  if (visitorNear(vWorld.xz)) {   // the thing in the loch's wake (src/shaders/visitor.js)
+    vec3 visitor = visitorSlope(vWorld.xz, acrossX, acrossY);
+    surfaceSlope += visitor.xy * ride;
+    slopeVariance += visitor.z * ride;
+  }
   float galeJacobian = 1.0;
   if (uGaleMetresPerUnit > 0.0) {
     surfaceSlope += galeSlope(vRest, galeJacobian) * ride;
@@ -1938,6 +1946,12 @@ void main() {
     slopeVariance += rainUnresolvedVariance(vWorld.xz);
   }
   if (uDropRingCount > 0) slope += dropRingSlope(vWorld.xz, acrossX, acrossY);
+  if (visitorNear(vWorld.xz)) {   // the thing in the loch's wake (src/shaders/visitor.js)
+    vec3 visitor = visitorSlope(vWorld.xz, acrossX, acrossY);
+    slope += visitor.xy;
+    slopeVariance += visitor.z;
+    visitorVariance = visitor.z;
+  }
   float galeJacobian = 1.0;
   if (uGaleMetresPerUnit > 0.0) {
     slope += galeSlope(vRest, galeJacobian);
@@ -2055,6 +2069,18 @@ void main() {
   vec2 pastEdge = max(-reflectUv, reflectUv - 1.0);
   float outside = smoothstep(0.0, MIRROR_EDGE, max(pastEdge.x, pastEdge.y));
   if (outside > 0.0) reflected = mix(reflected, textureCube(uSkyCube, reflectedRay).rgb, outside);
+  // The thing in the loch's waves too fine for the pixel (src/shaders/visitor.js) spread the reflected ray over about
+  // twice their rms slope, as the ice's frost does; at a grazing angle the rays turned down meet the next crest, so the
+  // spread climbs (by its width): far out, a wake shows as a V of paler, duller water across the far shore's image.
+  // The sun's share is the glitter's (held to ICE_FROST_SKY of the sky's mean, as the frost's is).
+  if (visitorVariance > 1e-4) {
+    float visitorSpread = 2.0 * sqrt(visitorVariance);
+    vec3 spreadRay = normalize(vec3(reflectedRay.x, reflectedRay.y + visitorSpread * length(reflectedRay.xz), reflectedRay.z));
+    vec3 spreadSky = textureCubeLodEXT(uSkyCube, spreadRay, clamp(log2(max(visitorSpread * ICE_FROST_LEVELS, 1.0)), 0.0, ICE_FROST_COARSEST)).rgb;
+    float spreadLuminance = dot(spreadSky, vec3(0.2126, 0.7152, 0.0722)), skyMean = dot(uSkyAmbient, vec3(0.2126, 0.7152, 0.0722));
+    spreadSky *= min(1.0, ICE_FROST_SKY * skyMean / max(spreadLuminance, 1e-6));
+    reflected = mix(reflected, spreadSky, smoothstep(0.03, 0.2, visitorSpread));
+  }
 
 #ifdef CAVITY_MESH
   // Inside the hole the water is shaded as water is: what a wall reflects is
@@ -2109,6 +2135,8 @@ void main() {
     float left = whitecaps.b + whitecaps.g * galeStreaks(vRest, acrossX, acrossY);
     foamKinds += vec2(activeWhitewater + left, left);
   }
+  // The foam the thing in the loch churns (src/shaders/visitor.js): lace, as the gale's left foam is.
+  if (visitorNear(vWorld.xz)) foamKinds += vec2(visitorFoam(vWorld.xz));
   float foam = foamKinds.r;
 #ifdef CAVITY_MESH
   foam *= level;   // the pattern lies on the water's plane: none down the walls
