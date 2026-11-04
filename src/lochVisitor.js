@@ -272,14 +272,13 @@ function radiusAt(sighting, along) {
 export class LochVisitor {
   constructor({ envTexture, waterFog, mirrorLayer }) {
     this.uniforms = {
-      uVisitorOn: { value: 0 },
       uVisitorSource: { value: new THREE.Vector4(0, 0, 1, 0) },
       uVisitorWake: { value: new THREE.Vector4(1, 0, 0, 0.4) },
       uVisitorEnvelope: { value: new THREE.Vector4() },
       uVisitorContacts: { value: Array.from({ length: VISITOR_CONTACTS }, () => new THREE.Vector4()) },
       uVisitorRings: { value: Array.from({ length: VISITOR_RINGS }, () => new THREE.Vector4()) },
       uVisitorSpans: { value: new THREE.Vector4() },
-      uVisitorReach: { value: new THREE.Vector4() },
+      uVisitorReach: { value: new THREE.Vector2() },   // its radius 0: none of it on the water
     };
     this.geometry = this.buildGeometry();
     this.skinOffsets = new Float64Array(SPINE_POINTS * RING * 2);
@@ -521,7 +520,7 @@ export class LochVisitor {
 
   hide() {
     for (const mesh of this.meshes) mesh.visible = false;
-    this.uniforms.uVisitorOn.value = 0;
+    this.uniforms.uVisitorReach.value.x = 0;   // none of it on the water (src/shaders/visitor.js visitorNear)
   }
 
   /** Show it in the warm-up (src/main.js warmUp) whatever the place, so its three programs are built under the veil; false puts it back. */
@@ -782,7 +781,6 @@ export class LochVisitor {
    */
   waterAt(sighting, time) {
     const uniforms = this.uniforms;
-    uniforms.uVisitorOn.value = 1;
     // Over the linger's last SCHEDULE.fade seconds its heights (and so its slopes, their unresolved variance and its
     // foam) ease to none, so letting the sighting go stills nothing that shows; the rings' reach shrinks with them.
     const left = Math.min(Math.max((sightingEnd(sighting) - time) / SCHEDULE.fade, 0), 1);
@@ -853,10 +851,10 @@ export class LochVisitor {
       const middle = Math.min(1.2, sighting.length * 0.15);   // a little behind the head: where most of it moves the water
       rings[slot].set(x - sighting.headingX * middle, z - sighting.headingZ * middle, time - event.at, event.strength * (sighting.girth / 0.45) ** 2 * fade);
     }
-    // The circle all of it is inside (uVisitorReach): the wake out behind as far as the source has come (its energy
-    // goes no faster than the source); each ring out to where its slope, S g² t⁴ / 16r⁵, falls under the shader's
-    // VISITOR_RING_SLOPE_LEAST (ignoring attenuation gives a conservative bound), and
-    // no farther than its front; the body and what it heaps up round it.
+    // The circle all of it is inside (uVisitorReach's radius, round the head, uVisitorSource): the wake out behind as
+    // far as the source has come (its energy goes no faster than the source); each ring out to where its slope,
+    // S g² t⁴ / 16r⁵, falls under the shader's VISITOR_RING_SLOPE_LEAST (ignoring attenuation gives a conservative
+    // bound), and no farther than its front; the body and what it heaps up round it.
     const reach = uniforms.uVisitorReach.value;
     let radius = sighting.speed * Math.max(time - sighting.start, 0) * 1.07 + sighting.length + 3;
     for (const ring of rings) {
@@ -865,7 +863,7 @@ export class LochVisitor {
       const ringReach = Math.min(((ring.w * GRAVITY ** 2 * age ** 4) / (16 * VISITOR_RING_SLOPE_LEAST)) ** 0.2, (GRAVITY * age * age) / (4 * 0.8));
       radius = Math.max(radius, Math.hypot(ring.x - head.point.x, ring.y - head.point.z) + ringReach);
     }
-    reach.set(head.point.x, head.point.z, radius, time - sighting.start);   // w: its clock, which its ripples run on
+    reach.set(radius, time - sighting.start);   // y: its clock, which its ripples run on
   }
 }
 

@@ -175,12 +175,12 @@ const NO_ICE = () => ({
 
 // The loch's visitor's uniforms when there is none (src/shaders/visitor.js): off.
 const NO_VISITOR = () => ({
-  uVisitorOn: { value: 0 }, uVisitorSource: { value: new THREE.Vector4(0, 0, 1, 0) }, uVisitorWake: { value: new THREE.Vector4(1, 0, 0, 0.4) },
+  uVisitorSource: { value: new THREE.Vector4(0, 0, 1, 0) }, uVisitorWake: { value: new THREE.Vector4(1, 0, 0, 0.4) },
   uVisitorEnvelope: { value: new THREE.Vector4() },
   uVisitorContacts: { value: Array.from({ length: VISITOR_CONTACTS }, () => new THREE.Vector4()) },
   uVisitorRings: { value: Array.from({ length: VISITOR_RINGS }, () => new THREE.Vector4()) },
   uVisitorSpans: { value: new THREE.Vector4() },
-  uVisitorReach: { value: new THREE.Vector4() },
+  uVisitorReach: { value: new THREE.Vector2() },   // its radius 0: none
 });
 
 export function createWaterSurface(water, lighting, ambientWaves, { meshSegments = Math.min(water.size, 512), rings = null, dropRings = null, skyCube = null, rain = null, haze = null, gale = null, ice = null, visitor = null, lean: leanAllowed = false } = {}) {

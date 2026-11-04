@@ -85,26 +85,26 @@ for (const form of ['neck', 'back']) {
   // Late in the linger, before its waves ease out (SCHEDULE.fade): its rings at their widest at full height.
   const lingerEnd = sighting.sinkStart + sighting.sinkSeconds + SCHEDULE.linger;
   visitor.showAt(lingerEnd - SCHEDULE.fade - 0.1);
-  const reach = visitor.uniforms.uVisitorReach.value;
+  const reach = visitor.uniforms.uVisitorReach.value, source = visitor.uniforms.uVisitorSource.value;   // its radius (x), round the source
   const rings = visitor.uniforms.uVisitorRings.value;
   const fullWake = visitor.uniforms.uVisitorWake.value.y, fullRings = rings.map((ring) => ring.w);
   let covered = 0, clipped = 0, oldRadius = 0;
   for (const ring of rings) {
-    const centre = Math.hypot(ring.x - reach.x, ring.y - reach.y);
+    const centre = Math.hypot(ring.x - source.x, ring.y - source.y);
     oldRadius = Math.max(oldRadius, centre + Math.cbrt(ring.w * 9.81 * ring.z ** 2 / (4 * 2e-4)));
     for (let radius = 0.5; radius <= 300; radius += 0.5) {
       const phase = 9.81 * ring.z ** 2 / (4 * radius);
       const slope = ring.w * 9.81 ** 2 * ring.z ** 4 / (16 * radius ** 5);
       if (phase <= 0.8 || slope < VISITOR_RING_SLOPE_LEAST) continue;
       covered++;
-      if (centre + radius > reach.z + 1e-6) clipped++;
+      if (centre + radius > reach.x + 1e-6) clipped++;
     }
   }
-  check(VISITOR_RINGS === 2 && rings.length === 2 && covered > 0 && clipped === 0 && reach.z < 0.65 * oldRadius,
-    `${form} linger: ${reach.z.toFixed(1)} m shade radius (old height bound ${oldRadius.toFixed(1)} m), ${covered} ring samples covered, ${clipped} clipped; two ring slots`);
+  check(VISITOR_RINGS === 2 && rings.length === 2 && covered > 0 && clipped === 0 && reach.x < 0.65 * oldRadius,
+    `${form} linger: ${reach.x.toFixed(1)} m shade radius (old height bound ${oldRadius.toFixed(1)} m), ${covered} ring samples covered, ${clipped} clipped; two ring slots`);
   // The last frame that draws it at 60 fps: its waves eased out (SCHEDULE.fade). The shader's heights and slopes, and
   // their unresolved variance's root, go as the wake's height, the rings' strengths and the heaps, so under a
-  // thousandth of them is under a thousandth of any slope it drew (at most about 0.2): letting it go (uVisitorOn 0)
+  // thousandth of them is under a thousandth of any slope it drew (at most about 0.2): letting it go (uVisitorReach's radius 0)
   // stills nothing that shows.
   visitor.showAt(lingerEnd - 1 / 60);
   const wakeLeft = visitor.uniforms.uVisitorWake.value.y / fullWake;
