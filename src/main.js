@@ -302,11 +302,11 @@ import { DropRings } from './dropRings.js';
 import { PLACES, placeShore, waterForPlace } from './places.js';
 import { createEnvironment, SALT_SKIES, skyHours, resolveHour, nearestHour } from './sky.js';
 import { createWaterSurface } from './waterSurface.js';
-import { createPondFloor, createShore, floorDepthAt, groundHeightAt, lagoonLandGeometry, setShoreKind, setShoreLook, KOI_SHORE } from './pondFloor.js';
+import { createPondFloor, createShore, floorDepthAt, groundHeightAt, lagoonLandGeometry, setShoreKind, setShoreLook, KOI_SHORE, SHORE_LOOKS } from './pondFloor.js';
 import { Rock, setAir, aimSkip, aimThrow, dressThing, flutterTrial, prepareThing, PREPARATION_WORK, skipLowest, skipSpeed, SKIP_THROW, PHYSICS_STEP, throwFlightTime } from './rock.js';
 import { THINGS, THING_NAMES, DEFAULT_THING, defineThing, onThingsChange } from './things.js';
 import { collideThings, forgetPasses } from './collide.js';
-import { SplashSystem, MIRROR_LAYER } from './splash.js';
+import { SplashSystem, MIRROR_LAYER, SAND_ALBEDO } from './splash.js';
 import { createFloatTarget, FullscreenPass, configureFloatSupport, renderTargetBytes } from './gpu.js';
 import { Glare } from './glare.js';
 import { Reeds } from './reeds.js';
@@ -504,6 +504,10 @@ const FISH_BITE = { radius: 0.018, dimple: 0.0015, shrink: 0.45 };   // and as i
 const FISH_LAKE_INSET = { side: 0.4, far: 0.8 };   // m: the lake's fish keep this far inside the solver's patch at its sides and far edge, where the shore view sees into the water
 const FISH_SHAPE_SLACK = 1.05;   // a thing's reach and thickness as the fish keep clear of it, over its mesh's (fishShapeOf)
 const KOI_BED_ALBEDO = 0.3;   // the Koi pond's gravel and silt, for what the splash's drops show of its bed (src/splash.js setBed)
+// And the lagoon's coral sand: the lake's sand as the lagoon's look tints its bed (src/pondFloor.js setShoreLook, SHORE_LOOKS.coral
+// against Lakeside's sand, by their luminance: about 1.46 times as bright).
+const luminanceOf = ([red, green, blue]) => 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+const LAGOON_BED_ALBEDO = SAND_ALBEDO * luminanceOf(SHORE_LOOKS.coral.sand) / luminanceOf(SHORE_LOOKS.sand.sand);
 const ORBIT_TURN = Math.PI;   // radians the view turns for a drag across the canvas's height
 const GLIDE_SECONDS = 1.0;    // a glide to another view
 // The View setting's choices (src/viewOrbit.js): the shore view the page
@@ -923,9 +927,9 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   boulders.show(!pooled && !koiPond ? PLACES[placeName].sky : null);
   water.setPool(pooled);
   applyGale();
-  /** The bed the splash's drops see (src/splash.js setBed): its depth under the patch's middle and its albedo, the pool's tiles, the Koi pond's gravel or the lake's sand. */
+  /** The bed the splash's drops see (src/splash.js setBed): its depth under the patch's middle and its albedo, the pool's tiles, the Koi pond's gravel, the lagoon's coral sand or the lake's sand. */
   function bedOfPlace() {
-    return { depth: bedDepthAt(water.centre[0], water.centre[1]), albedo: pooled ? POOL.tileAlbedo : koiPond ? KOI_BED_ALBEDO : undefined };
+    return { depth: bedDepthAt(water.centre[0], water.centre[1]), albedo: pooled ? POOL.tileAlbedo : koiPond ? KOI_BED_ALBEDO : lagoon ? LAGOON_BED_ALBEDO : undefined };
   }
   /** The water drawn: the lake's clarity, or the pool's own in the pool. */
   function applyWater() {

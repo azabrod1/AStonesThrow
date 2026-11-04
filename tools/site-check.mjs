@@ -2,7 +2,8 @@
 // serves it, under the project path /AStonesThrow/, and checks that the pond
 // starts, that rain falls once asked for (its files load only then), that the
 // Polynesian lagoon's scanned bark and sand come once it is shown (src/
-// tropics.js loadSurfaces), refresh the cached reflections, and that every request the page makes succeeds. Catches a file
+// tropics.js loadSurfaces), refresh the cached reflections, that a tour of the places gives each its water (and the
+// splash the lagoon's brighter bed), and that every request the page makes succeeds. Catches a file
 // missing from SITE_FILES (tools/build-site.mjs) and a root-absolute path,
 // which works on localhost and 404s on Pages.
 //
@@ -127,12 +128,16 @@ if (started) {
       const cached = scenery.placed === placed && scenery.above.every((mesh, index) => mesh === meshes[index] && mesh.geometry === geometry[index]);
       const expected = { koi: 'koi', lagoon: 'lagoon', pool: 'pool', loch: 'peat', lakeside: 'lake' };
       let switched = true;
+      const bedAlbedo = {};   // what the splash's drops see of each place's bed (src/main.js bedOfPlace)
       await pond.horizonReady;
       for (const [place, water] of Object.entries(expected)) {
         await pond.setSky(place);
         await pond.horizonReady;
         switched &&= pond.sky === place && pond.clarity === water;
+        bedAlbedo[place] = pond.splash.bedAlbedo;
       }
+      // The lagoon's coral sand is brighter than the lake's, as its look tints the bed (1.35 to 1.6 times in each channel).
+      const coralBed = bedAlbedo.lagoon / bedAlbedo.lakeside >= 1.35 && bedAlbedo.lagoon / bedAlbedo.lakeside <= 1.6;
       pond.setIce('thin');
       pond.throwAt(0, -1.4, { radius: 0.15 });
       pond.advance(3);
@@ -144,6 +149,7 @@ if (started) {
         && pond.iceSheet.pieces.size === pieces && shards.every((rock) => pond.rocks.includes(rock));
       if (!cached) throw new Error('quality changes rebuilt lagoon geometry or placements');
       if (!switched) throw new Error('place tour selected the wrong water');
+      if (!coralBed) throw new Error(`the splash sees the lagoon's bed as ${bedAlbedo.lagoon} against the lake's ${bedAlbedo.lakeside}`);
       if (!keptIce) throw new Error('lake location switch lost ice holes or registered shards');
       pond.setIce('none');
       await pond.setSky('swiss');
