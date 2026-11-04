@@ -1404,8 +1404,10 @@ mirror (the sky cube blurred over twice its rms slope, as the ice's frost
 is), so from the shore, where a wave a metre long out there is less than a
 pixel deep, the wake shows as a pale line of rougher water across the far
 shore's image, and zoomed in, as waves. A frame's pose transforms cross
-sections cached once a sighting (about 0.3 ms). Its hide texture is baked
-on the first loch visit and reused. The water shader keeps two ring slots;
+sections cached once a sighting (about 0.3 ms). Its hide texture (some
+40 ms of work) is baked only for the loch, 3 ms at a time between frames
+while the loch's sky downloads, finished at once on entering if it is not
+done, and reused. The water shader keeps two ring slots;
 their shading bound ends where the slope falls below 0.001.
 `tools/visitor-probe.mjs` checks its schedule, its reach and that it goes
 alike at any frame rate.

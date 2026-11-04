@@ -56,9 +56,11 @@
 // surface: SPINE_POINTS × AROUND vertices (its colours once a sighting).
 // Three meshes draw it, as a boulder's do (src/boulders.js sceneryShader):
 // `above`, clipped to y ≥ 0, in the main scene, its skin dark and wet, a
-// hide (hideTexture: folds, warts and pores in its relief, wet and dry
-// patches in its gloss, blotches in its colour) laid in metres on the
-// body, wetter just over the waterline and washed with broken foam at it;
+// hide (hideBaker: folds, warts and pores in its relief, wet and dry
+// patches in its gloss, blotches in its colour; baked only for the loch, a
+// few milliseconds a task while its sky downloads, prepareHide) laid in
+// metres on the body, wetter just over the waterline and washed with broken
+// foam at it;
 // `below`, clipped to
 // y ≤ 0, in the under-water pass, drawn where the still surface shows it
 // and fading into the water; and its mirror image on the mirror layer, its
@@ -92,7 +94,7 @@ const STARTLED_DIVE = 2.4;    // s: how fast it goes down when something comes n
 const SPINE_POINTS = 192;
 const AROUND = 24;            // vertices round the tube, and one more at the seam (under the belly) for the hide's texture
 const RING = AROUND + 1;
-const HIDE = { size: 256, tile: 0.8 };   // the hide's texture (hideTexture): texels a side, and metres a tile covers on the body
+const HIDE = { size: 256, tile: 0.8, budget: 3 };   // the hide's texture (hideBaker): texels a side, metres a tile covers on the body, ms a task bakes for
 const EYE = { x: 0, z: 2.45 };   // the shore's eye (src/main.js VIEWS.shore), which the distance is measured from
 const SKIN = { color: [0.05, 0.044, 0.034], spread: 0.25, roughness: 0.22, bump: 0.04, reflection: 0.75, below: 0.3 };   // wet: the sky's glint along its back, broken by the hide (its roughness times the texture's)
 // (bump: the hide's relief in metres, three.js's bumpScale being in world units: a few centimetres of folds and warts)
@@ -182,9 +184,11 @@ const aroundAngle = (around) => -Math.PI / 2 + (2 * Math.PI * around) / AROUND;
  * of warts; pores), in its green the roughness's share (wet patches glossier,
  * the folds' crests drier), in its blue the colour's blotches. Value noise
  * on lattices that wrap with the tile, and warts in a jittered grid, from
- * its own seeded stream: the same hide every time.
+ * its own seeded stream, all drawn before the first texel: the same hide
+ * every time, however its rows are spread (`bake`, a band of rows at a time;
+ * `texture` once all are).
  */
-function hideTexture() {
+function hideBaker() {
   const size = HIDE.size;
   const stream = seededRandom(SCHEDULE.seed, 4);
   const lattice = Array.from({ length: 64 * 64 }, () => stream());
@@ -200,42 +204,50 @@ function hideTexture() {
   };
   const warts = Array.from({ length: 12 * 12 }, () => ({ x: stream(), y: stream(), size: 0.25 + 0.3 * stream(), height: 0.4 + 0.6 * stream() }));
   const data = new Uint8Array(size * size * 4);
-  for (let row = 0; row < size; row++) {
-    for (let column = 0; column < size; column++) {
-      const x = column / size, y = row / size;   // x along the body, y round it
-      const folds = 1 - Math.abs(2 * noise(x, y, 24, 5, 1) - 1) * 0.7 - Math.abs(2 * noise(x, y, 48, 9, 2) - 1) * 0.3;
-      let wart = 0;
-      const cellX = Math.floor(x * 12), cellY = Math.floor(y * 12);
-      for (let nearX = -1; nearX <= 1; nearX++) {
-        for (let nearY = -1; nearY <= 1; nearY++) {
-          const wrappedX = (cellX + nearX + 12) % 12, wrappedY = (cellY + nearY + 12) % 12;
-          const one = warts[wrappedX * 12 + wrappedY];
-          let apartX = (cellX + nearX + one.x) / 12 - x, apartY = (cellY + nearY + one.y) / 12 - y;
-          apartX -= Math.round(apartX); apartY -= Math.round(apartY);
-          const distance = Math.hypot(apartX, apartY) * 12 / one.size;
-          if (distance < 1) wart = Math.max(wart, one.height * (1 - distance * distance) ** 2);
+  let row = 0;
+  /** Bake up to `rows` more rows; whether all are baked. */
+  const bake = (rows) => {
+    for (const last = Math.min(row + rows, size); row < last; row++) {
+      for (let column = 0; column < size; column++) {
+        const x = column / size, y = row / size;   // x along the body, y round it
+        const folds = 1 - Math.abs(2 * noise(x, y, 24, 5, 1) - 1) * 0.7 - Math.abs(2 * noise(x, y, 48, 9, 2) - 1) * 0.3;
+        let wart = 0;
+        const cellX = Math.floor(x * 12), cellY = Math.floor(y * 12);
+        for (let nearX = -1; nearX <= 1; nearX++) {
+          for (let nearY = -1; nearY <= 1; nearY++) {
+            const wrappedX = (cellX + nearX + 12) % 12, wrappedY = (cellY + nearY + 12) % 12;
+            const one = warts[wrappedX * 12 + wrappedY];
+            let apartX = (cellX + nearX + one.x) / 12 - x, apartY = (cellY + nearY + one.y) / 12 - y;
+            apartX -= Math.round(apartX); apartY -= Math.round(apartY);
+            const distance = Math.hypot(apartX, apartY) * 12 / one.size;
+            if (distance < 1) wart = Math.max(wart, one.height * (1 - distance * distance) ** 2);
+          }
         }
+        const pores = noise(x, y, 64, 64, 3);
+        const height = 0.45 * folds + 0.4 * wart + 0.15 * pores;
+        const wetness = noise(x, y, 4, 3, 4);
+        const roughness = 0.2 + 0.7 * wetness ** 2 + 0.6 * Math.max(folds - 0.55, 0) + 0.35 * wart;
+        const blotch = 0.55 * noise(x, y, 6, 4, 5) + 0.3 * noise(x, y, 13, 7, 6) + 0.15 * pores;
+        const offset = (row * size + column) * 4;
+        data[offset] = Math.round(255 * Math.min(Math.max(height, 0), 1));
+        data[offset + 1] = Math.round(255 * Math.min(Math.max(roughness, 0), 1));
+        data[offset + 2] = Math.round(255 * Math.min(Math.max(blotch, 0), 1));
+        data[offset + 3] = 255;
       }
-      const pores = noise(x, y, 64, 64, 3);
-      const height = 0.45 * folds + 0.4 * wart + 0.15 * pores;
-      const wetness = noise(x, y, 4, 3, 4);
-      const roughness = 0.2 + 0.7 * wetness ** 2 + 0.6 * Math.max(folds - 0.55, 0) + 0.35 * wart;
-      const blotch = 0.55 * noise(x, y, 6, 4, 5) + 0.3 * noise(x, y, 13, 7, 6) + 0.15 * pores;
-      const offset = (row * size + column) * 4;
-      data[offset] = Math.round(255 * Math.min(Math.max(height, 0), 1));
-      data[offset + 1] = Math.round(255 * Math.min(Math.max(roughness, 0), 1));
-      data[offset + 2] = Math.round(255 * Math.min(Math.max(blotch, 0), 1));
-      data[offset + 3] = 255;
     }
-  }
-  const texture = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
-  texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
-  texture.magFilter = THREE.LinearFilter;
-  texture.minFilter = THREE.LinearMipmapLinearFilter;
-  texture.generateMipmaps = true;
-  texture.anisotropy = 4;
-  texture.needsUpdate = true;
-  return texture;
+    return row === size;
+  };
+  const texture = () => {
+    const made = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
+    made.wrapS = made.wrapT = THREE.RepeatWrapping;
+    made.magFilter = THREE.LinearFilter;
+    made.minFilter = THREE.LinearMipmapLinearFilter;
+    made.generateMipmaps = true;
+    made.anisotropy = 4;
+    made.needsUpdate = true;
+    return made;
+  };
+  return { bake, texture };
 }
 
 /** When a sighting is over, its wake and rings too (s). */
@@ -287,6 +299,7 @@ export class LochVisitor {
     this.hideMap = new THREE.DataTexture(new Uint8Array([128, 128, 128, 255]), 1, 1, THREE.RGBAFormat);
     this.hideMap.needsUpdate = true;
     this.hideReady = false;
+    this.hideBaking = null;   // the hide being baked a band at a time (prepareHide)
     this.skin = { churn: { value: 0 } };   // the waterline's foam band (above)
     this.above = new THREE.Mesh(this.geometry, this.material('above', { envTexture, waterFog }));
     this.below = new THREE.Mesh(this.geometry, this.material('below', { envTexture, waterFog }));
@@ -380,19 +393,53 @@ export class LochVisitor {
     }
   }
 
-  /** Whether the place is the loch: elsewhere nothing comes up. */
+  /**
+   * Whether the place is the loch: elsewhere nothing comes up. Entering it
+   * the first time, its hide is finished at once (whatever prepareHide has
+   * not yet baked), so it is ready before anything of it is drawn.
+   */
   setPlace(here) {
     this.here = here;
     if (here && !this.hideReady) {
-      const placeholder = this.hideMap;
-      this.hideMap = hideTexture();
-      this.hideReady = true;
-      for (const mesh of this.meshes) {
-        mesh.material.bumpMap = mesh.material.roughnessMap = this.hideMap;
-      }
-      placeholder.dispose();
+      const baker = this.hideBaking ?? hideBaker();
+      baker.bake(HIDE.size);
+      this.useHide(baker);
     }
     if (!here) this.hide();
+  }
+
+  /**
+   * Start baking the hide off the frames (src/main.js requestPlace, as the
+   * loch is asked for, while its sky downloads): rows for HIDE.budget ms a
+   * task, so no frame waits for the whole of it (some 40 ms, the first rows
+   * slower while the code is cold). Once baked it is laid on in place of the
+   * 1-texel stand-in; if the place comes first, setPlace finishes it.
+   */
+  prepareHide() {
+    if (this.hideReady || this.hideBaking) return;
+    const baker = hideBaker();
+    this.hideBaking = baker;
+    const band = () => {
+      if (this.hideBaking !== baker) return;   // finished by setPlace
+      const until = performance.now() + HIDE.budget;
+      let baked;
+      do baked = baker.bake(1); while (!baked && performance.now() < until);
+      if (baked) this.useHide(baker);
+      else setTimeout(band, 0);
+    };
+    setTimeout(band, 0);
+  }
+
+  /** The baked hide on all three materials in place of the stand-in: the same maps present, so no program changes. */
+  useHide(baker) {
+    const placeholder = this.hideMap;
+    this.hideMap = baker.texture();
+    this.hideReady = true;
+    this.hideBaking = null;
+    for (const mesh of this.meshes) {
+      mesh.material.bumpMap = mesh.material.roughnessMap = this.hideMap;
+    }
+    placeholder.dispose();
   }
 
   /** Back to the start, at world `time` (src/main.js clearPond): nothing up, the first sighting within SCHEDULE.first, from its stream's start. */

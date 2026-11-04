@@ -1444,6 +1444,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     const sky = PLACES[place].sky;
     const request = { place, hour: resolveHour(sky, hour) };
     placeRequest = request;
+    if (PLACES[place].visitor) visitor.prepareHide();   // its hide baked between frames while the sky downloads (src/lochVisitor.js)
     return requestSky(sky, request.hour).then(() => {
       if (placeRequest === request && environment.name === sky && environment.hour === request.hour) {
         const entering = placeName !== place;

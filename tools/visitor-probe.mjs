@@ -17,7 +17,9 @@
 //   whether the frames before it came at 30, 60 or 144 a second, and the
 //   schedule, which the physics steps keep, is the same too.
 // - Frame work reuses the geometry, cross-section offsets and typed arrays;
-//   its hide is built only on first entering the loch and reused thereafter.
+//   its hide is built only for the loch, a few milliseconds a task once it
+//   is asked for (finished at once on entering, if not done), the same
+//   texels either way, no program changed, and reused thereafter.
 // - Its contacts with the water (the heaps, the foam round them) end where
 //   its tube meets the water, never under a head lifted out of it.
 //
@@ -72,6 +74,25 @@ function run(seconds, { frame = 1 / 60, things = () => [], open = () => true, on
   visitor.setPlace(false);
   visitor.setPlace(true);
   check(visitor.hideMap === hide, 'later loch visits reuse the hide');
+}
+// Asked for (prepareHide, as the loch is chosen, while its sky downloads), the hide is baked a few milliseconds a task,
+// none of it at once, into the same texels as a bake at once; entering before it is done finishes it then.
+{
+  const texels = (visitor) => createHash('sha256').update(visitor.hideMap.image.data).digest('hex');
+  const atOnce = texels(makeVisitor());
+  const visitor = new LochVisitor({ envTexture: null, waterFog: { extinction: null, color: null }, mirrorLayer: 1 });
+  const versions = visitor.meshes.map((mesh) => mesh.material.version);
+  visitor.prepareHide();
+  const noneAtOnce = !visitor.hideReady && visitor.hideMap.image.width === 1;
+  let tasks = 0;
+  while (!visitor.hideReady && tasks < 100000) { await new Promise((resolve) => setTimeout(resolve, 0)); tasks++; }
+  check(noneAtOnce && tasks >= 2 && texels(visitor) === atOnce && visitor.meshes.every((mesh, index) => mesh.material.bumpMap === visitor.hideMap && mesh.material.version === versions[index]),
+    `asked for, the hide is baked over ${tasks} tasks, none at once, into the texels of a bake at once, no program changed`);
+  const early = new LochVisitor({ envTexture: null, waterFog: { extinction: null, color: null }, mirrorLayer: 1 });
+  early.prepareHide();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  early.setPlace(true);
+  check(early.hideReady && texels(early) === atOnce, 'entering the loch before it is baked finishes it then, the same texels');
 }
 
 // Late rings shade a compact circle while keeping every slope that can
