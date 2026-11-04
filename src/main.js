@@ -1328,7 +1328,9 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     renderer.setRenderTarget(reflectionTarget);
     renderer.setClearColor(0x000000, 1);
     renderer.clear(true, true, false);
+    if (region) tropics.keepToRegion(mirrorCamera, region, reflectionTarget.width, reflectionTarget.height);   // the lagoon's palms: only those the region shows (src/tropics.js)
     renderer.render(sceneMain, mirrorCamera);
+    tropics.endRegion();
     if (objects.length > 0) {
       renderer.render(splash.particleScene, mirrorCamera);
       for (const object of objects) object.material = object.userData.mirrorDistanceMaterial;

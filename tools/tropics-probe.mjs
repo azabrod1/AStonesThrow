@@ -32,6 +32,7 @@ const tropics = Object.assign(Object.create(Tropics.prototype), {
   bakedSun: new THREE.Vector3(), uniforms: { uSunDir: { value: new THREE.Vector3() } },
   culledFor: new THREE.Matrix4().makeScale(0, 0, 0), culledProjection: new THREE.Matrix4(),
   frustum: new THREE.Frustum(), viewProjection: new THREE.Matrix4(), sphere: new THREE.Sphere(),
+  regionCrop: new THREE.Matrix4(), regionViewProjection: new THREE.Matrix4(), regionFrustum: new THREE.Frustum(), regionHidden: [], regionShown: [],
 });
 const start = performance.now();
 tropics.build();
@@ -202,6 +203,68 @@ tropics.setCoarse(false);
 assert.equal(tropics.placed, placements);
 tropics.shown = true;
 console.log(`ok: quality changes reuse geometry, placements and masks; coarse scenery ${coarseTriangles} triangles`);
+
+// A redraw of a region of the mirror image (src/main.js drawMirror: a splash's image, or a floater's, each frame it
+// moves) draws, of the instances cull keeps, only those whose spheres reach into what the mirror camera sees through
+// the region, in cull's order: nothing inside the scissor changes, and the vertex work is a fraction of a whole redraw.
+{
+  camera.lookAt(0, 1.8, -100);
+  camera.updateMatrixWorld();
+  tropics.cull(camera);
+  const mirror = camera.clone();
+  mirror.position.y = -camera.position.y;
+  mirror.up.set(0, -1, 0);
+  mirror.lookAt(0, -1.8, -100);
+  mirror.updateMatrixWorld();
+  const [width, height] = [960, 540];
+  const region = new THREE.Vector4(300, 60, 220, 150);   // a splash's size, low and left of the middle (the camera is upside down: above the horizon)
+  const drawn = () => tropics.group.children.filter((mesh) => mesh.visible && mesh.count > 0 && mesh.layers.isEnabled(2));
+  const triangles = (meshes) => meshes.reduce((sum, mesh) => sum + mesh.count * mesh.geometry.index.count / 3, 0);
+  const whole = drawn(), wholeTriangles = triangles(whole);
+  tropics.keepToRegion(mirror, region, width, height);
+  const kept = drawn();
+  // Whether a sphere is seen through the region: a ray from the mirror camera through one of the region's pixels (every
+  // fourth each way, and its edges) meets it.
+  const rays = [];
+  const columns = [...Array(Math.floor(region.z / 4) + 1).keys()].map((step) => region.x + 4 * step).concat(region.x + region.z);
+  const rows = [...Array(Math.floor(region.w / 4) + 1).keys()].map((step) => region.y + 4 * step).concat(region.y + region.w);
+  for (const x of columns) for (const y of rows) rays.push(new THREE.Vector3(2 * x / width - 1, 2 * y / height - 1, 0.5).unproject(mirror).sub(mirror.position).normalize());
+  const sphere = new THREE.Sphere(), toCentre = new THREE.Vector3();
+  const reaches = (center, radius) => {
+    toCentre.subVectors(center, mirror.position);
+    return rays.some((ray) => {
+      const along = toCentre.dot(ray);
+      return along > 0 && toCentre.lengthSq() - along * along <= radius * radius;
+    });
+  };
+  let leftOut = 0;
+  for (const mesh of whole) {
+    const { kept: indices, spheres } = mesh.userData.whole;
+    const drawnHere = kept.includes(mesh) ? indices
+      : kept.filter((twin) => twin.geometry.index === mesh.geometry.index && twin.material === mesh.material && !tropics.above.includes(twin)).flatMap((twin) => twin.userData.whole.kept);
+    for (const index of indices) {
+      sphere.center.fromArray(spheres, index * 4);
+      sphere.radius = spheres[index * 4 + 3];
+      if (drawnHere.includes(index)) continue;
+      assert(!reaches(sphere.center, sphere.radius), 'an instance left out of the region\'s redraw must lie outside it');
+      leftOut++;
+    }
+    assert.deepEqual(drawnHere, indices.filter((index) => drawnHere.includes(index)), 'the region keeps cull\'s order');
+  }
+  for (const twin of kept.filter((mesh) => !tropics.above.includes(mesh))) {
+    for (const [slot, index] of twin.userData.whole.kept.entries()) {
+      assert.deepEqual(twin.instanceMatrix.array.slice(slot * 16, slot * 16 + 16), tropics.above.find((mesh) => mesh.geometry.index === twin.geometry.index).userData.whole.matrices.slice(index * 16, index * 16 + 16), 'a twin draws its mesh\'s instances');
+    }
+    assert(!twin.layers.isEnabled(0), 'a twin is drawn in the mirror only');
+  }
+  assert(leftOut > 0 && kept.some((mesh) => !tropics.above.includes(mesh)), 'the region leaves some instances out and draws some meshes in part');
+  const keptTriangles = triangles(kept);
+  tropics.endRegion();
+  assert.deepEqual(drawn(), whole, 'endRegion puts every mesh back as cull left it');
+  assert(tropics.group.children.every((mesh) => tropics.above.includes(mesh) || !mesh.visible), 'and hides the twins');
+  assert(keptTriangles < 0.3 * wholeTriangles, `a splash's region redraws ${keptTriangles} of the scenery's ${wholeTriangles} triangles`);
+  console.log(`ok: a splash's region of the mirror redraws ${keptTriangles} of the scenery's ${wholeTriangles} triangles, every instance it leaves out outside it`);
+}
 
 // Zoom increases detail; all LODs retain the same form and matching curve endpoints.
 const distant = { x: 0, y: 8, z: -150, scale: 1, radius: 9, referenceRadius: 9 };

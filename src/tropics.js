@@ -97,7 +97,11 @@
 // one draw a mesh. A variant's meshes, all its levels' leaves and wood, are
 // one family (instances): each placement is tested once, goes to its
 // level's two meshes, which share their matrices' buffer, and only the
-// packed front of a buffer whose set changed is uploaded.
+// packed front of a buffer whose set changed is uploaded. A redraw of only a
+// region of the mirror image (a splash's or a floater's image, each frame it
+// moves: src/main.js drawMirror) draws of those only the instances whose
+// spheres reach into the region (keepToRegion), through twins of their
+// meshes, so it spares the vertices as its scissor spares the pixels.
 // Built under the loading veil (src/main.js warmUp shows them whatever the
 // place).
 import * as THREE from 'three';
@@ -1132,6 +1136,12 @@ export class Tropics {
     this.frustum = new THREE.Frustum();
     this.viewProjection = new THREE.Matrix4();
     this.sphere = new THREE.Sphere();
+    // A region of the mirror image redrawn (keepToRegion): its sub-frustum, and the meshes hidden and twins shown for it.
+    this.regionCrop = new THREE.Matrix4();
+    this.regionViewProjection = new THREE.Matrix4();
+    this.regionFrustum = new THREE.Frustum();
+    this.regionHidden = [];
+    this.regionShown = [];
     // Until it is built, one far palm on the near motu stands for all of it: the warm-up compiles both programs on it
     // (cull leaves it whole till then, so any frame draws it).
     const { leaves, wood, top } = palmGeometry(PALMS[0], LODS[2], 0);
@@ -1406,6 +1416,99 @@ export class Tropics {
         }
       }
     }
+  }
+
+  /**
+   * Before a redraw of only a region of the mirror image (src/main.js
+   * drawMirror: the splash's image, or a floater's, drawn again each frame
+   * it moves; the scissor saves the pixels outside it, not the vertices):
+   * of the instances each mesh draws (cull), only those whose spheres reach
+   * into what `mirrorCamera` sees through `region` (x, y, width and height,
+   * in pixels of a target `width` × `height`). A mesh with none of them is
+   * left out, one with only some draws them through its twin (regionTwins),
+   * in the same order. Nothing drawn inside the region changes; endRegion
+   * puts the meshes back.
+   */
+  keepToRegion(mirrorCamera, region, width, height) {
+    if (!this.shown || !this.built) return;
+    // The region's sub-frustum: the mirror's projection cropped to it, a pixel wider each way than the scissor.
+    const left = 2 * (region.x - 1) / width - 1, right = 2 * (region.x + region.z + 1) / width - 1;
+    const bottom = 2 * (region.y - 1) / height - 1, top = 2 * (region.y + region.w + 1) / height - 1;
+    this.regionCrop.set(2 / (right - left), 0, 0, -(right + left) / (right - left), 0, 2 / (top - bottom), 0, -(top + bottom) / (top - bottom), 0, 0, 1, 0, 0, 0, 0, 1);
+    const frustum = this.regionFrustum.setFromProjectionMatrix(this.regionViewProjection.multiplyMatrices(this.regionCrop, mirrorCamera.projectionMatrix).multiply(mirrorCamera.matrixWorldInverse));
+    const sphere = this.sphere;
+    for (const family of this.families) {
+      const { spheres, byLevel } = family;
+      for (const [level, meshes] of byLevel.entries()) {
+        const kept = meshes[0].userData.whole.kept;   // shared by the level's meshes (cull)
+        if (!kept || kept.length === 0) continue;
+        const inRegion = [];
+        for (const index of kept) {
+          sphere.center.set(spheres[index * 4], spheres[index * 4 + 1], spheres[index * 4 + 2]);
+          sphere.radius = spheres[index * 4 + 3];
+          if (frustum.intersectsSphere(sphere)) inRegion.push(index);
+        }
+        if (inRegion.length === kept.length) continue;   // all of it: drawn as it is
+        for (const mesh of meshes) {
+          if (!mesh.visible) continue;
+          mesh.visible = false;
+          this.regionHidden.push(mesh);
+        }
+        if (inRegion.length === 0) continue;
+        let matricesPacked = null;
+        for (const twin of this.regionTwins(family, level)) {
+          twin.count = inRegion.length;
+          twin.visible = true;
+          this.regionShown.push(twin);
+          const whole = twin.userData.whole;
+          if (sameIndices(whole.kept, inRegion)) continue;
+          whole.kept = inRegion;
+          if (matricesPacked !== twin.instanceMatrix) {
+            packInto(twin.instanceMatrix, family.matrices, inRegion, 16);
+            matricesPacked = twin.instanceMatrix;
+          }
+          packInto(twin.geometry.attributes.palmInstance, whole.numbers, inRegion, 4);
+        }
+      }
+    }
+  }
+
+  /** After a region's redraw (keepToRegion): every mesh as cull left it, the twins hidden. */
+  endRegion() {
+    for (const mesh of this.regionHidden) mesh.visible = true;
+    for (const twin of this.regionShown) twin.visible = false;
+    this.regionHidden.length = 0;
+    this.regionShown.length = 0;
+  }
+
+  /**
+   * The twins of a family's meshes at a level (keepToRegion), made when first
+   * needed: the same geometry's buffers and the same material (so no program
+   * is built), instance buffers of their own, on the mirror layer only and
+   * hidden but for a region's redraw.
+   */
+  regionTwins(family, level) {
+    family.twins ??= [];
+    if (family.twins[level]) return family.twins[level];
+    let matrices = null;
+    family.twins[level] = family.byLevel[level].map((mesh) => {
+      const geometry = new THREE.BufferGeometry();
+      for (const [name, attribute] of Object.entries(mesh.geometry.attributes)) {
+        geometry.setAttribute(name, name === 'palmInstance' ? new THREE.InstancedBufferAttribute(new Float32Array(attribute.array.length), 4) : attribute);
+      }
+      geometry.setIndex(mesh.geometry.index);
+      geometry.boundingSphere = mesh.geometry.boundingSphere.clone();
+      const twin = new THREE.InstancedMesh(geometry, mesh.material, family.count);
+      if (matrices) twin.instanceMatrix = matrices;   // one buffer for the level's leaves and wood, as theirs
+      else matrices = twin.instanceMatrix;
+      twin.userData.whole = { numbers: mesh.userData.whole.numbers, kept: null };
+      twin.layers.set(this.mirrorLayer);
+      twin.frustumCulled = false;
+      twin.visible = false;
+      this.group.add(twin);
+      return twin;
+    });
+    return family.twins[level];
   }
 
   material(kind, envTexture) {
