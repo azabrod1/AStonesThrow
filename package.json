@@ -12,7 +12,7 @@
     "check:cpu": "npm test && node tools/variety-probe.mjs && node tools/pool-probe.mjs",
     "check:controls": "node tools/controls-probe.mjs && node tools/screen-probe.mjs && node tools/frame-rate-probe.mjs && node tools/grab-probe.mjs && node tools/uniform-probe.mjs",
     "check:site": "node tools/quality-probe.mjs && npm run site && node tools/site-check.mjs && node tools/startup-probe.mjs",
-    "prepare": "git config core.hooksPath .githooks || true"
+    "prepare": "git config --get core.hooksPath >/dev/null 2>&1 || git config core.hooksPath .githooks 2>/dev/null || true"
   },
   "keywords": [],
   "author": "",

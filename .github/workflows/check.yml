@@ -6,8 +6,8 @@ name: Check
 # SwiftShader took some 27 minutes over the browser probes where Metal takes
 # about 5, in two jobs side by side. PW_GPU=hardware fails rather than fall
 # back to SwiftShader (tools/browser.mjs). Each job runs one of package.json's
-# check scripts, the lists `npm run check` and the pre-push hook run locally,
-# so CI and a local run can never check different things.
+# check scripts, the lists `npm run check` runs locally (the pre-push hook
+# runs check:cpu), so CI and a local run can never check different things.
 on:
   pull_request:
   workflow_dispatch:

@@ -1,19 +1,25 @@
 #!/bin/sh
-# Runs what CI runs (npm run check: the CPU probes, then the browser probes on
-# this Mac's GPU) before a push leaves the machine, so a failing check is found
-# here and not after the push. npm install points git at this folder
+# Runs CI's CPU checks (npm run check:cpu: npm test, the variety and pool
+# probes, a few minutes) before a push leaves the machine, so a failing check
+# is found here and not after the push. npm install points git at this folder
 # (package.json's prepare); `git config core.hooksPath .githooks` does too.
 #
+# The browser groups (check:controls, check:site) are CI's: on a GPU they take
+# minutes, but on a machine without one (the cloud container) SwiftShader
+# takes half an hour or more. `git config check.browser true` adds them
+# here on a machine with a GPU, so the hook runs the whole of npm run check.
+#
 # It checks the working tree, so it pushes only HEAD, committed: a push of
-# another branch, or with uncommitted changes, is stopped before anything
-# runs. Deleting a remote branch runs nothing. `git push --no-verify` skips
-# the check: keep that for a push CI does not check (no code changed).
+# another branch, or with uncommitted or untracked files (ignored ones aside),
+# is stopped before anything runs. Deleting a remote branch or pushing a tag
+# runs nothing. `git push --no-verify` skips the check: keep that for a push
+# CI does not check (no code changed).
 
-zero=0000000000000000000000000000000000000000
 head=$(git rev-parse HEAD)
 pushes_code=no
 while read -r local_ref local_sha remote_ref remote_sha; do
-  [ "$local_sha" = "$zero" ] && continue
+  case "$local_ref" in refs/tags/*) continue ;; esac   # CI checks no tag, and the deploy is main's
+  case "$local_sha" in *[!0]*) ;; *) continue ;; esac   # all zeros (of either hash's length): a delete
   if [ "$local_sha" != "$head" ]; then
     echo "pre-push: $local_ref is not the checked-out commit; check it out and push from there, so the check runs on what is pushed." >&2
     exit 1
@@ -22,10 +28,19 @@ while read -r local_ref local_sha remote_ref remote_sha; do
 done
 [ "$pushes_code" = no ] && exit 0
 
-if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
-  echo "pre-push: uncommitted changes would be checked in place of the pushed commit; commit or stash them first." >&2
+if [ -n "$(git status --porcelain)" ]; then
+  echo "pre-push: uncommitted or untracked files would be checked in place of the pushed commit; commit, stash (git stash -u) or ignore them first." >&2
   exit 1
 fi
 
-echo "pre-push: npm run check (what CI runs; git push --no-verify skips it)" >&2
-exec npm run check
+if [ ! -d node_modules ]; then
+  echo "pre-push: no node_modules here, so the probes cannot run; npm install first." >&2
+  exit 1
+fi
+
+if [ "$(git config --bool --get check.browser)" = true ]; then
+  echo "pre-push: npm run check (all CI runs: check.browser is set; git push --no-verify skips it)" >&2
+  exec npm run check
+fi
+echo "pre-push: npm run check:cpu (CI's CPU checks; its browser checks run on the pull request; git push --no-verify skips it)" >&2
+exec npm run check:cpu

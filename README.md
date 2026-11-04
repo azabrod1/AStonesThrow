@@ -1389,9 +1389,13 @@ farther out, so it rises into the view rather than filling its corner.
 - `npm run check` runs what CI checks a pull request with, the same lists
   CI's jobs run: `check:cpu` (`npm test`, the variety and pool probes),
   `check:controls` and `check:site` (the browser probes, on the machine's
-  GPU). `npm install` points git at `.githooks/`, whose `pre-push` runs it
-  before every push and stops one that would fail; it checks the working
-  tree, so it pushes only the checked-out commit, with nothing uncommitted.
+  GPU). `npm install` points git at `.githooks/` (unless a hooks path is
+  set already), whose `pre-push` runs `check:cpu` before every push and stops
+  one that would fail; the browser groups are left to the pull request's CI,
+  since without a GPU SwiftShader takes half an hour or more over them
+  (`git config check.browser true` makes the hook run all of `npm run
+  check`). It checks the working tree, so it pushes only the checked-out
+  commit, with nothing uncommitted or untracked.
 - `node tools/ice-probe.mjs [--list]` throws every thing at thin and thick
   ice as the app throws it, each way, with the splash on the CPU, and
   prints what breaks what: each throw's blow against what the ice holds and
