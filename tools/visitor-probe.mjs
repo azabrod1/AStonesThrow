@@ -9,7 +9,9 @@
 //   where anything thrown can go (src/main.js FARTHEST_AWAY, 30 m).
 // - A thing out near its course holds a sighting back; one that comes
 //   within SCHEDULE.startle of a sighting under way sends it down at once,
-//   and it is all under the water within STARTLED_DIVE and its body's lag.
+//   and it is all under the water within STARTLED_DIVE and its body's lag;
+//   a neck startled at any point before it is down comes down from where it
+//   stands, its head not moved at the moment it is startled.
 // - Ice or a gale (the step's `open` false): nothing comes up.
 // - It goes alike at any frame rate: the pose at a moment is the same
 //   whether the frames before it came at 30, 60 or 144 a second, and the
@@ -179,6 +181,37 @@ for (const form of ['neck', 'back']) {
   }
   check(visitor.sighting.startled, 'a thing beside it startles it');
   check(under !== null && under - startledAt < 2.4 + 0.12 * visitor.sighting.length + 0.5, `and it is all under ${under === null ? 'never' : `${(under - startledAt).toFixed(2)} s`} after`);
+}
+
+// A neck startled before it is down comes down from where it stands, never at once: startled while it lifts, holds or
+// is already lowering, its head is where it was at that moment (posed before and after the step that startles it),
+// and it is all under as soon as a startled back would be.
+{
+  let largestJump = 0, slowest = 0, startles = 0;
+  for (const fromLowering of [-4, -0.5, 0.1, 0.3, 0.5, 0.9, 1.4]) {   // s from when its neck starts down
+    const visitor = makeVisitor();
+    visitor.step(0, [], { open: true, near: false });
+    visitor.summon(0, 'neck');
+    const sighting = visitor.sighting;
+    const at = sighting.lowerFrom + fromLowering;
+    if (at >= sighting.sinkStart) continue;
+    visitor.showAt(at);
+    const before = visitor.spine[0].point.y;
+    const head = visitor.report(at);
+    visitor.step(at, [{ position: { x: head.x, z: head.z } }], { open: true, near: false });
+    visitor.showAt(at);
+    if (!sighting.startled) continue;
+    startles++;
+    largestJump = Math.max(largestJump, Math.abs(visitor.spine[0].point.y - before));
+    let under = null;
+    for (let time = at; time < at + 8 && under === null; time += 1 / 60) {
+      visitor.showAt(time);
+      if (Math.max(...visitor.spine.map((knot) => knot.point.y + knot.radius * knot.flat)) < 0) under = time - at;
+    }
+    slowest = Math.max(slowest, under ?? Infinity);
+  }
+  check(startles === 7 && largestJump < 1e-3, `a neck startled at ${startles} moments before it is down: its head moves ${(largestJump * 1000).toFixed(2)} mm at the moment it is startled`);
+  check(slowest < 2.4 + 0.12 * 7.5 + 0.5, `and it is all under within ${slowest.toFixed(2)} s`);
 }
 
 // Where it meets the water: each contact (the water heaped and drawn down, the foam round it) runs from where its tube

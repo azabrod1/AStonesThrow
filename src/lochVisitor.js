@@ -140,8 +140,9 @@ function drawSighting(stream, form, start, { near, eye = EYE }) {
     rise,
     sinkStart: start + rise + hold,
     sinkSeconds: sink,
-    lowerFrom: start + rise + hold - NECK.lower,   // the neck starts down (startle brings it forward)...
+    lowerFrom: start + rise + hold - NECK.lower,   // the neck starts down...
     lowerSeconds: NECK.lower + 0.2,                // ...and is down after this
+    hurriedFrom: null,  // startled with its neck not yet down: from then it comes down over NECK.startled too (startle)
     startled: false,
     heavyDive: false,   // startled before its dive's ring went out: that ring is heavier (waterAt)
     middleX,
@@ -454,19 +455,17 @@ export class LochVisitor {
 
   /**
    * It goes down now, fast (STARTLED_DIVE), front first: a neck comes down
-   * over NECK.startled from where it stands, never at once; and if its
-   * dive's ring has not gone out yet, that ring is heavier (a swirl). One
-   * already going down goes on as it was.
+   * over NECK.startled from where it stands, never at once (its lowering,
+   * begun or not, is eased the rest of the way down from the height it has
+   * now: pose's `neckLift`); and if its dive's ring has not gone out yet,
+   * that ring is heavier (a swirl). One already going down goes on as it was.
    */
   startle(sighting, time) {
     sighting.startled = true;
     if (time >= sighting.sinkStart) return;
     sighting.sinkStart = time;
     sighting.sinkSeconds = Math.min(sighting.sinkSeconds, STARTLED_DIVE);
-    if (time < sighting.lowerFrom + sighting.lowerSeconds) {
-      sighting.lowerSeconds = Math.min(sighting.lowerFrom + sighting.lowerSeconds, time + NECK.startled) - Math.min(sighting.lowerFrom, time);
-      sighting.lowerFrom = Math.min(sighting.lowerFrom, time);
-    }
+    if (time < sighting.lowerFrom + sighting.lowerSeconds) sighting.hurriedFrom = time;
     sighting.heavyDive = true;
   }
 
@@ -565,8 +564,11 @@ export class LochVisitor {
     const flat = 0.86;
     const base = sighting.crest - sighting.wave - sighting.girth * flat;
     const waveSpeed = FORMS[sighting.form].waveSpeed * sighting.speed;
+    // The neck lifts as it rises and lowers before it dives; startled (hurriedFrom), the lowering is multiplied by a
+    // second, from 1 then to 0 over NECK.startled: so it goes on from the height and the speed it had, and is down by then.
+    const hurried = sighting.hurriedFrom === null ? 1 : 1 - ease(sighting.hurriedFrom, sighting.hurriedFrom + NECK.startled, time);
     const neckLift = neckLength > 0
-      ? ease(sighting.start + sighting.rise * 0.6, sighting.start + sighting.rise * 0.6 + NECK.lift, time) * (1 - ease(sighting.lowerFrom, sighting.lowerFrom + sighting.lowerSeconds, time))
+      ? ease(sighting.start + sighting.rise * 0.6, sighting.start + sighting.rise * 0.6 + NECK.lift, time) * (1 - ease(sighting.lowerFrom, sighting.lowerFrom + sighting.lowerSeconds, time)) * hurried
       : 0;
     let highest = -Infinity;
     for (let index = 0; index < SPINE_POINTS; index++) {

@@ -1852,7 +1852,8 @@ farther out, so it rises into the view rather than filling its corner.
   and never one twice running; no point of its body, posed every frame,
   comes within 36 m of the shore's eye; a thing out on the water holds a
   sighting back from its course and one that comes near sends it down at
-  once; under ice or a gale nothing comes up; the same sightings and poses
+  once (a lifted neck from where it stands, even one already lowering);
+  under ice or a gale nothing comes up; the same sightings and poses
   at 30, 60 and 144 frames a second (including the rendered skin and normals);
   posing it reuses its geometry, buffers and cross sections frame after frame
   (work counted, not timed); its contacts end where its tube meets the water,
