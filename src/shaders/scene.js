@@ -3220,8 +3220,8 @@ float tuft(vec2 point, float share, float edge, out float tone, out vec2 fromTuf
   float cover = 0.0;
   tone = 0.5;
   fromTuft = vec2(0.0);
-  for (int column = -1; column <= 1; column++) {
-    for (int row = -1; row <= 1; row++) {
+  for (int column = 0; column <= 1; column++) {
+    for (int row = 0; row <= 1; row++) {
       vec2 index = base + vec2(float(column), float(row));
       if (hash21(index + 0.37) >= share) continue;
       vec2 offset = point - (index + vec2(hash21(index + 1.3), hash21(index + 2.7))) * TUFT_CELL;

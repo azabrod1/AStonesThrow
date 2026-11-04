@@ -1108,7 +1108,8 @@ export class Tropics {
     this.frustum = new THREE.Frustum();
     this.viewProjection = new THREE.Matrix4();
     this.sphere = new THREE.Sphere();
-    // Until it is built, one far palm on the near motu stands for all of it: the warm-up compiles both programs on it.
+    // Until it is built, one far palm on the near motu stands for all of it: the warm-up compiles both programs on it
+    // (cull leaves it whole till then, so any frame draws it).
     const { leaves, wood, top } = palmGeometry(PALMS[0], LODS[2], 0);
     const middle = motuMiddle(MOTUS[0]);
     const standIn = [{ x: middle.x, y: MOTU_SAND.height - 0.1, z: middle.z, yaw: 0, scale: 1, phase: 0 }];
@@ -1310,7 +1311,9 @@ export class Tropics {
    * only when the camera has moved, as the mirror image is.
    */
   cull(camera) {
-    if (!this.shown) return;
+    // Unbuilt, there is only the stand-in, drawn whole wherever it stands so the warm-up builds its programs at any
+    // frame (33° off the home line, an upright phone's ±15° would cull it, and a program only builds when drawn).
+    if (!this.shown || !this.built) return;
     if (this.built && !this.bakedSun.equals(this.uniforms.uSunDir.value)) this.bakeShadows();   // the place's own sun come in
     if (this.culledFor.equals(camera.matrixWorld) && this.culledProjection.equals(camera.projectionMatrix)) return;
     this.culledFor.copy(camera.matrixWorld);

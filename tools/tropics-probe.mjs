@@ -4,7 +4,7 @@
 // with shoot.mjs and uniform-probe.mjs on the browser's GPU.
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { Tropics, PALMS, LODS, palmCullMargin } from '../src/tropics.js';
+import { Tropics, PALMS, LODS, MOTUS, palmCullMargin, palmGeometry } from '../src/tropics.js';
 import { LAND_VERTEX, PALM_FOOT } from '../src/shaders/scene.js';
 import { lagoonLandGeometry, setShoreKind } from '../src/pondFloor.js';
 
@@ -74,6 +74,35 @@ assert(huskFaces > 1000);
 console.log(`ok: ${huskFaces} coconut faces have outward, smooth normals`);
 assert(foliageFaces > 1000);
 console.log(`ok: ${foliageFaces} foliage faces agree with their shading normals`);
+
+// Unbuilt, the lagoon is its constructor's one stand-in palm on the near motu, 33° off the home view's line, which
+// the warm-up draws to build the leaves' and wood's programs under the veil (src/main.js warmUp). An upright
+// phone's shore view is about ±15° wide; cull leaves the stand-in whole, so even that frame draws it.
+{
+  const unbuilt = Object.assign(Object.create(Tropics.prototype), {
+    above: [], group: new THREE.Group(), built: false, coarse: false, shown: false,
+    mirrorLayer: 2, woodMaterial: new THREE.MeshStandardMaterial(), leafMaterial: new THREE.MeshStandardMaterial(),
+    bakeShadows() {}, bakedSun: new THREE.Vector3(), uniforms: { uSunDir: { value: new THREE.Vector3() } },
+    culledFor: new THREE.Matrix4().makeScale(0, 0, 0), culledProjection: new THREE.Matrix4(),
+    frustum: new THREE.Frustum(), viewProjection: new THREE.Matrix4(), sphere: new THREE.Sphere(),
+  });
+  const { leaves, wood, top } = palmGeometry(PALMS[0], LODS[2], 0);
+  const bearing = THREE.MathUtils.degToRad(MOTUS[0].bearing);
+  const standIn = [{ x: Math.sin(bearing) * MOTUS[0].distance, y: 1.1, z: 2.45 - Math.cos(bearing) * MOTUS[0].distance, yaw: 0, scale: 1, phase: 0 }];
+  unbuilt.instances(leaves, unbuilt.leafMaterial, standIn, () => [PALMS[0].height, 0, top.y, 0]);
+  unbuilt.instances(wood, unbuilt.woodMaterial, standIn, () => [PALMS[0].height, 0, top.y, 0]);
+  unbuilt.setVisible(true, { building: false });   // as the warm-up does
+  const portrait = new THREE.PerspectiveCamera(62, 390 / 844, 0.1, 20000);
+  portrait.position.set(0, 1.8, 2.45);
+  portrait.lookAt(0, 1.8, -100);
+  portrait.updateMatrixWorld();
+  const frustum = new THREE.Frustum().setFromProjectionMatrix(new THREE.Matrix4().multiplyMatrices(portrait.projectionMatrix, portrait.matrixWorldInverse));
+  const [x, y, z, radius] = unbuilt.above[0].userData.whole.spheres;
+  assert(!frustum.intersectsSphere(new THREE.Sphere(new THREE.Vector3(x, y, z), radius)), 'the stand-in must lie outside the portrait frame for this check to mean anything');
+  unbuilt.cull(portrait);
+  assert(unbuilt.above.length === 2 && unbuilt.above.every((mesh) => mesh.visible && mesh.count === 1), 'unbuilt, the stand-in must stay drawn in any frame, so the warm-up builds its programs');
+  console.log('ok: unbuilt, the stand-in palm stays drawn outside an upright phone\'s frame, so the warm-up builds its programs');
+}
 
 const camera = new THREE.PerspectiveCamera(55, 16 / 9, 0.1, 20000);
 camera.position.set(0, 1.8, 2.45);
