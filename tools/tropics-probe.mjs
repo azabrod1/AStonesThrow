@@ -152,6 +152,36 @@ camera.updateMatrixWorld();
 tropics.cull(camera);
 assert.deepEqual(tropics.above.map((mesh) => [mesh.instanceMatrix.version, mesh.geometry.attributes.palmInstance.version]), versions);
 console.log('ok: unchanged visible sets do not upload instance buffers');
+// A cull tests each placement once (and its mirror image), however many meshes stand at it (a palm's three levels,
+// leaves and wood), and uploads only the filled front of a changed buffer, a level's matrices once for its leaves and wood.
+{
+  const { palms, scrub, fallen } = tropics.placed;
+  const placements = palms.length + scrub.length + fallen.length + 2;   // and the motus' sand and the high island
+  const intersectsSphere = tropics.frustum.intersectsSphere;
+  let tests = 0;
+  tropics.frustum.intersectsSphere = function (sphere) { tests++; return intersectsSphere.call(this, sphere); };
+  const before = tropics.above.map((mesh) => mesh.instanceMatrix.version);
+  camera.position.x += 0.5;
+  camera.updateMatrixWorld();
+  tropics.cull(camera);
+  delete tropics.frustum.intersectsSphere;
+  assert(tests > placements && tests <= 2 * placements, `a cull makes ${tests} sphere tests for ${placements} placements`);
+  let uploaded = 0;
+  for (const [index, mesh] of tropics.above.entries()) {
+    if (mesh.instanceMatrix.version === before[index]) continue;
+    uploaded++;
+    for (const [attribute, size] of [[mesh.instanceMatrix, 16], [mesh.geometry.attributes.palmInstance, 4]]) {
+      assert.deepEqual(attribute.updateRanges.map(({ start, count }) => [start, count]), [[0, mesh.count * size]], `mesh ${index}: only its ${mesh.count} drawn instances are uploaded`);
+    }
+  }
+  assert(uploaded > 0);
+  const levelPairs = tropics.palmGeometry.flatMap((levels) => levels.map(({ leaves, wood }) => [leaves, wood].map((geometry) => tropics.above.find((mesh) => mesh.geometry === geometry))));
+  assert(levelPairs.every(([leaves, wood]) => leaves.instanceMatrix === wood.instanceMatrix), 'a palm level\'s leaves and wood share one matrix buffer');
+  camera.position.x -= 0.5;
+  camera.updateMatrixWorld();
+  tropics.cull(camera);
+  console.log(`ok: a cull makes ${tests} sphere tests for ${placements} placements (${tropics.above.length} meshes) and uploads only what it draws`);
+}
 
 // Quality changes route instances into existing meshes and leave masks alone.
 const meshes = tropics.above.slice(), placements = tropics.placed;

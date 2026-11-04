@@ -93,7 +93,11 @@
 // the world; in the main scene and on the
 // mirror layer. When the camera moves (cull, each frame from src/main.js
 // render), each mesh keeps only the instances the camera sees, or sees in
-// the water's mirror, packed at the front of its instances: one draw a mesh.
+// the water's mirror, packed at the front of its instances, nearest first:
+// one draw a mesh. A variant's meshes, all its levels' leaves and wood, are
+// one family (instances): each placement is tested once, goes to its
+// level's two meshes, which share their matrices' buffer, and only the
+// packed front of a buffer whose set changed is uploaded.
 // Built under the loading veil (src/main.js warmUp shows them whatever the
 // place).
 import * as THREE from 'three';
@@ -917,6 +921,25 @@ void main() {
 
 // How far (m, as built) the wind may lean a palm out of its bounding sphere (cull).
 export const palmCullMargin = (height) => WIND_STRENGTHS.gale * ((LEAN + SWAY) * height + FLUTTER) + 0.5;
+/** How much nearer a camera's field of view makes things look than the levels' 55° (LODS: levelOf). */
+const zoomOf = (camera) => Math.tan(THREE.MathUtils.degToRad((camera?.fov ?? 55) / 2)) / Math.tan(THREE.MathUtils.degToRad(55 / 2));
+/** Whether two lists of instances (cull's `kept`) are the same, in the same order. */
+function sameIndices(one, other) {
+  if (!one || one.length !== other.length) return false;
+  for (let slot = 0; slot < one.length; slot++) if (one[slot] !== other[slot]) return false;
+  return true;
+}
+/** Packs `whole`'s rows (`size` numbers each) for the instances `kept` at the front of `attribute`, and uploads only those. */
+function packInto(attribute, whole, kept, size) {
+  const packed = attribute.array;
+  for (let slot = 0; slot < kept.length; slot++) {
+    const from = kept[slot] * size, to = slot * size;
+    for (let offset = 0; offset < size; offset++) packed[to + offset] = whole[from + offset];
+  }
+  attribute.clearUpdateRanges();
+  attribute.addUpdateRange(0, kept.length * size);
+  attribute.needsUpdate = true;
+}
 
 // ---- The scenery -----------------------------------------------------------
 
@@ -1098,6 +1121,7 @@ export class Tropics {
     this.group = new THREE.Group();   // in the main scene (src/main.js)
     this.group.visible = false;
     this.above = [];
+    this.families = [];   // the meshes that stand at the same placements (instances), culled together
     this.built = false;
     this.surfacesReady = Promise.resolve();   // resolves when the scans have come or failed (loadSurfaces): the tools wait for it, the page never
     this.onSurfacesChanged = onSurfacesChanged;
@@ -1112,9 +1136,9 @@ export class Tropics {
     // (cull leaves it whole till then, so any frame draws it).
     const { leaves, wood, top } = palmGeometry(PALMS[0], LODS[2], 0);
     const middle = motuMiddle(MOTUS[0]);
-    const standIn = [{ x: middle.x, y: MOTU_SAND.height - 0.1, z: middle.z, yaw: 0, scale: 1, phase: 0 }];
-    this.instances(leaves, this.leafMaterial, standIn, () => [PALMS[0].height, 0, top.y, 0]);
-    this.instances(wood, this.woodMaterial, standIn, () => [PALMS[0].height, 0, top.y, 0]);
+    const standIn = [{ x: middle.x, y: MOTU_SAND.height - 0.1, z: middle.z, yaw: 0, scale: 1, phase: 0 }], family = {};
+    this.instances(leaves, this.leafMaterial, standIn, () => [PALMS[0].height, 0, top.y, 0], { family });
+    this.instances(wood, this.woodMaterial, standIn, () => [PALMS[0].height, 0, top.y, 0], { family });
     // The palms' shadows' mask (bakeShadows), its two programs built now (under the loading veil), on the stand-in.
     this.renderer = renderer;
     const [minX, minZ, sizeX, sizeZ] = SHADOW.box;
@@ -1188,6 +1212,8 @@ export class Tropics {
       const { whole } = mesh.userData;
       mesh.instanceMatrix.array.set(whole.matrices);
       mesh.geometry.attributes.palmInstance.array.set(whole.numbers);
+      mesh.instanceMatrix.clearUpdateRanges();   // the whole of each (cull leaves a range of its own)
+      mesh.geometry.attributes.palmInstance.clearUpdateRanges();
       mesh.instanceMatrix.needsUpdate = mesh.geometry.attributes.palmInstance.needsUpdate = true;
       mesh.count = whole.numbers.length / 4;
       whole.kept = null;
@@ -1227,6 +1253,7 @@ export class Tropics {
       this.group.remove(mesh);
     }
     this.above = [];
+    this.families = [];
     if (!this.built) {
       bakeAtlas(this.renderer, this.atlas, this.atlasPass, true);
       this.surfacesReady = this.loadSurfaces();
@@ -1249,8 +1276,9 @@ export class Tropics {
       const shapes = this.palmGeometry[variantIndex];
       const bounds = shapes[0].leaves.boundingSphere.clone();
       for (const shape of shapes) { bounds.union(shape.leaves.boundingSphere); bounds.union(shape.wood.boundingSphere); }
+      const family = {};
       for (const [level, { leaves, wood, top }] of shapes.entries()) {
-        const options = { level, bounds, referenceRadius: 18, casts: level === 1 };
+        const options = { level, bounds, referenceRadius: 18, casts: level === 1, family };
         this.instances(leaves, this.leafMaterial, here, (placed) => [variant.height, placed.phase, top.y, 0], options);
         this.instances(wood, this.woodMaterial, here, (placed) => [variant.height, placed.phase, top.y, placed.shade], options);
       }
@@ -1258,15 +1286,16 @@ export class Tropics {
     this.scrubGeometry = [0, 1, 2].map((level) => scrubGeometry(level, seededRandom(SEED, 30 + level)));
     const scrubBounds = this.scrubGeometry[0].boundingSphere.clone();
     for (const shape of this.scrubGeometry) scrubBounds.union(shape.boundingSphere);
+    const scrubFamily = {};
     for (const [level, shape] of this.scrubGeometry.entries()) {
-      this.instances(shape, this.leafMaterial, scrub, (placed) => [SCRUB.height, placed.phase, SCRUB.height * 0.4, placed.shade], { level, bounds: scrubBounds, casts: level === 1 });
+      this.instances(shape, this.leafMaterial, scrub, (placed) => [SCRUB.height, placed.phase, SCRUB.height * 0.4, placed.shade], { level, bounds: scrubBounds, casts: level === 1, family: scrubFamily });
     }
     const still = [{ x: 0, y: 0, z: 0, yaw: 0, scale: 1, phase: 0 }];
     for (const color of COLORS.fallen) {
       const here = fallen.filter((nut) => nut.color === color);
       const shapes = [false, true].map((far) => fallenGeometry(color, far));
-      const bounds = shapes[0].boundingSphere.clone().union(shapes[1].boundingSphere);
-      for (const [level, shape] of shapes.entries()) this.instances(shape, this.woodMaterial, here, () => [1, 0, 0, 0], { level, levels: 2, bounds, casts: level === 0 });
+      const bounds = shapes[0].boundingSphere.clone().union(shapes[1].boundingSphere), family = {};
+      for (const [level, shape] of shapes.entries()) this.instances(shape, this.woodMaterial, here, () => [1, 0, 0, 0], { level, levels: 2, bounds, casts: level === 0, family });
     }
     this.instances(motuSandGeometry(), this.woodMaterial, still, () => [1, 0, 0, 0], { casts: false });
     this.instances(islandGeometry(), this.woodMaterial, still, () => [1, 0, 0, 0], { casts: false });
@@ -1280,21 +1309,38 @@ export class Tropics {
    * scale), its palm's numbers from `numbers`. All of them are kept
    * (`whole`: each one's matrix, numbers and bounding sphere, and whether
    * they cast shadows into the mask), and those in view are packed at the
-   * front of its instances by `cull`.
+   * front of its instances by `cull`. The meshes of one `family` stand at
+   * the same placements inside the same bounds (a variant's levels, leaves
+   * and wood; the scrub's levels; a colour's husks, near and far): they
+   * share its matrices and spheres, and those of a level its matrices'
+   * buffer, so cull tests a placement once and packs its matrix once a level.
    */
-  instances(geometry, material, placed, numbers, { casts = true, level = null, levels = 3, bounds = geometry.boundingSphere, referenceRadius = bounds.radius } = {}) {
+  instances(geometry, material, placed, numbers, { casts = true, level = null, levels = 3, bounds = geometry.boundingSphere, referenceRadius = bounds.radius, family = {} } = {}) {
     const mesh = new THREE.InstancedMesh(geometry, material, placed.length);
-    const whole = { matrices: new Float32Array(placed.length * 16), numbers: new Float32Array(placed.length * 4), spheres: new Float32Array(placed.length * 4), casts, level, levels, radius: bounds.radius, referenceRadius, kept: null };
-    const matrix = new THREE.Matrix4(), turn = new THREE.Quaternion(), scale = new THREE.Vector3(), at = new THREE.Vector3(), sphere = new THREE.Sphere();
-    for (const [index, one] of placed.entries()) {
-      turn.setFromAxisAngle(UP, -one.yaw);
-      scale.setScalar(one.scale);
-      at.set(one.x, one.y, one.z);
-      matrix.compose(at, turn, scale).toArray(whole.matrices, index * 16);
-      whole.numbers.set(numbers(one), index * 4);
-      sphere.copy(bounds).applyMatrix4(matrix);
-      whole.spheres.set([sphere.center.x, sphere.center.y, sphere.center.z, sphere.radius + palmCullMargin(whole.numbers[index * 4]) * one.scale], index * 4);
+    if (!family.spheres) {
+      Object.assign(family, {
+        count: placed.length, matrices: new Float32Array(placed.length * 16), spheres: new Float32Array(placed.length * 4),
+        scales: new Float64Array(placed.length), distances: new Float64Array(placed.length),   // each one's scale; and its distance from the eye as culled last
+        graded: level !== null, levels, radius: bounds.radius, referenceRadius, byLevel: [], matrixBuffers: [],
+      });
+      const matrix = new THREE.Matrix4(), turn = new THREE.Quaternion(), scale = new THREE.Vector3(), at = new THREE.Vector3(), sphere = new THREE.Sphere();
+      for (const [index, one] of placed.entries()) {
+        turn.setFromAxisAngle(UP, -one.yaw);
+        scale.setScalar(one.scale);
+        at.set(one.x, one.y, one.z);
+        matrix.compose(at, turn, scale).toArray(family.matrices, index * 16);
+        family.scales[index] = Math.hypot(family.matrices[index * 16], family.matrices[index * 16 + 1], family.matrices[index * 16 + 2]);
+        sphere.copy(bounds).applyMatrix4(matrix);
+        family.spheres.set([sphere.center.x, sphere.center.y, sphere.center.z, sphere.radius + palmCullMargin(numbers(one)[0]) * one.scale], index * 4);
+      }
+      (this.families ??= []).push(family);
     }
+    const whole = { matrices: family.matrices, numbers: new Float32Array(placed.length * 4), spheres: family.spheres, casts, level, levels, radius: bounds.radius, referenceRadius, kept: null, family };
+    for (const [index, one] of placed.entries()) whole.numbers.set(numbers(one), index * 4);
+    const slot = level ?? 0;
+    (family.byLevel[slot] ??= []).push(mesh);
+    if (family.matrixBuffers[slot]) mesh.instanceMatrix = family.matrixBuffers[slot];   // one buffer for the level's leaves and wood
+    else family.matrixBuffers[slot] = mesh.instanceMatrix;
     mesh.instanceMatrix.array.set(whole.matrices);
     geometry.setAttribute('palmInstance', new THREE.InstancedBufferAttribute(whole.numbers.slice(), 4));
     mesh.userData.whole = whole;
@@ -1307,8 +1353,11 @@ export class Tropics {
   /**
    * Keeps of each mesh's instances only those `camera` sees, or sees in the
    * water's mirror (each one's sphere turned over about the water), packed at
-   * the front: one draw a mesh, as many instances as are in view. Done again
-   * only when the camera has moved, as the mirror image is.
+   * the front, nearest first: one draw a mesh, as many instances as are in
+   * view. Each placement of a family is tested once and goes to its level's
+   * meshes; a mesh's buffers are uploaded only when its set has changed, and
+   * then only as far as it is filled. Done again only when the camera has
+   * moved, as the mirror image is.
    */
   cull(camera) {
     // Unbuilt, there is only the stand-in, drawn whole wherever it stands so the warm-up builds its programs at any
@@ -1320,38 +1369,42 @@ export class Tropics {
     this.culledProjection.copy(camera.projectionMatrix);
     const frustum = this.frustum.setFromProjectionMatrix(this.viewProjection.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse));
     const sphere = this.sphere;
-    for (const mesh of this.above) {
-      const { matrices, numbers, spheres } = mesh.userData.whole;
-      const packedMatrices = mesh.instanceMatrix.array, numbersAttribute = mesh.geometry.attributes.palmInstance, packedNumbers = numbersAttribute.array;
-      const kept = [];
-      const distance = (index) => Math.hypot(spheres[index * 4] - camera.position.x, spheres[index * 4 + 1] - camera.position.y, spheres[index * 4 + 2] - camera.position.z);
-      for (let index = 0; index < spheres.length / 4; index++) {
-        sphere.center.set(spheres[index * 4], spheres[index * 4 + 1], spheres[index * 4 + 2]);
+    const eyeX = camera.position.x, eyeY = camera.position.y, eyeZ = camera.position.z, zoom = zoomOf(camera);
+    for (const family of this.families) {
+      const { count, spheres, scales, distances, graded, levels, radius, referenceRadius, byLevel } = family;
+      const kept = byLevel.map(() => []);
+      for (let index = 0; index < count; index++) {
+        const x = spheres[index * 4], y = spheres[index * 4 + 1], z = spheres[index * 4 + 2];
+        sphere.center.set(x, y, z);
         sphere.radius = spheres[index * 4 + 3];
-        let seen = frustum.intersectsSphere(sphere);
-        if (!seen) { sphere.center.y = -sphere.center.y; seen = frustum.intersectsSphere(sphere); }
-        if (!seen) continue;
-        if (mesh.userData.whole.level !== null) {
-          const scale = Math.hypot(matrices[index * 16], matrices[index * 16 + 1], matrices[index * 16 + 2]);
-          const level = Math.min(this.levelOf({ x: spheres[index * 4], y: spheres[index * 4 + 1], z: spheres[index * 4 + 2], scale,
-            radius: mesh.userData.whole.radius, referenceRadius: mesh.userData.whole.referenceRadius }, camera), mesh.userData.whole.levels - 1);
-          if (level !== mesh.userData.whole.level) continue;
+        if (!frustum.intersectsSphere(sphere)) {
+          sphere.center.y = -y;
+          if (!frustum.intersectsSphere(sphere)) continue;
         }
-        kept.push(index);
+        const distance = Math.hypot(x - eyeX, y - eyeY, z - eyeZ);
+        distances[index] = distance;
+        const level = graded ? Math.min(this.levelAt(Math.min(distance, Math.hypot(x - eyeX, -y - eyeY, z - eyeZ)), zoom, scales[index], referenceRadius, radius), levels - 1) : 0;
+        kept[level]?.push(index);
       }
-      // Front-to-back gives alpha-tested foliage early depth rejection.
-      kept.sort((one, other) => distance(one) - distance(other) || one - other);
-      mesh.count = kept.length;
-      mesh.visible = kept.length > 0;
-      const whole = mesh.userData.whole;
-      if (whole.kept?.length === kept.length && kept.every((index, slot) => index === whole.kept[slot])) continue;
-      for (const [slot, index] of kept.entries()) {
-        packedMatrices.set(matrices.subarray(index * 16, index * 16 + 16), slot * 16);
-        packedNumbers.set(numbers.subarray(index * 4, index * 4 + 4), slot * 4);
+      for (const [level, meshes] of byLevel.entries()) {
+        const here = kept[level];
+        // Front-to-back gives alpha-tested foliage early depth rejection.
+        here.sort((one, other) => distances[one] - distances[other] || one - other);
+        let matricesPacked = null;
+        for (const mesh of meshes) {
+          const whole = mesh.userData.whole;
+          mesh.count = here.length;
+          mesh.visible = here.length > 0;
+          if (sameIndices(whole.kept, here)) continue;
+          whole.kept = here;
+          if (here.length === 0) continue;   // nothing drawn: nothing to upload
+          if (matricesPacked !== mesh.instanceMatrix) {   // once for the level's meshes that share it
+            packInto(mesh.instanceMatrix, family.matrices, here, 16);
+            matricesPacked = mesh.instanceMatrix;
+          }
+          packInto(mesh.geometry.attributes.palmInstance, whole.numbers, here, 4);
+        }
       }
-      whole.kept = kept;
-      mesh.instanceMatrix.needsUpdate = true;
-      numbersAttribute.needsUpdate = true;
     }
   }
 
@@ -1492,9 +1545,15 @@ uniform vec3 uSkyAmbient;`)
     const eye = camera?.position ?? { x: EYE.x, y: 1.8, z: EYE.z };
     const distance = Math.min(Math.hypot(placed.x - eye.x, (placed.y ?? 0) - eye.y, placed.z - eye.z),
       Math.hypot(placed.x - eye.x, -(placed.y ?? 0) - eye.y, placed.z - eye.z));
-    const zoom = Math.tan(THREE.MathUtils.degToRad((camera?.fov ?? 55) / 2)) / Math.tan(THREE.MathUtils.degToRad(55 / 2));
-    const equivalent = distance * zoom / (placed.scale ?? 1) * (placed.referenceRadius ?? 1) / (placed.radius ?? 1);
-    return Math.min(LODS.findLastIndex((lod) => equivalent >= lod.from) + (this.coarse ? 1 : 0), LODS.length - 1);
+    return this.levelAt(distance, zoomOf(camera), placed.scale ?? 1, placed.referenceRadius ?? 1, placed.radius ?? 1);
+  }
+
+  /** levelOf's level for a thing `distance` metres off (the nearer of it and its mirror image) at `zoom` (zoomOf), scaled by `scale`. */
+  levelAt(distance, zoom, scale, referenceRadius, radius) {
+    const equivalent = distance * zoom / scale * referenceRadius / radius;
+    let level = -1;
+    for (let index = 0; index < LODS.length; index++) if (equivalent >= LODS[index].from) level = index;
+    return Math.min(level + (this.coarse ? 1 : 0), LODS.length - 1);
   }
 
   /** The world time (s), for the sway. */
