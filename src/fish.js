@@ -87,7 +87,10 @@
 // same with fish, at any frame rate. When the world's clock goes back to
 // zero (src/main.js clearPond: Frozen water, a new place) theirs goes with
 // it (resetClock), each fish kept where it is with its own timers, or they
-// would hang until the world caught up with the old clock.
+// would hang until the world caught up with the old clock. Held (hold), they
+// neither swim nor take fright and their clock keeps still: the warm-up's
+// pass that draws nothing (src/main.js warmUp) throws and steps a world the
+// fish must not see, or they would start the session elsewhere.
 // tools/fish-probe.mjs swims them on the CPU and checks all of the above.
 import { seededRandom } from './spray.js';
 
@@ -285,6 +288,12 @@ export class FishPopulation {
     this.bites = [];
     this.pushed = 0;   // m: the farthest keepClear has had to push a fish since step began (tools/fish-probe.mjs)
     this.random = seededRandom(seed, 0);
+    this.held = false;   // hold
+  }
+
+  /** Held (true), advance, startle and resetClock do nothing: the fish as they were till let go (the header). */
+  hold(held) {
+    this.held = held;
   }
 
   /**
@@ -551,6 +560,7 @@ export class FishPopulation {
 
   /** A splash, or anything sudden, at (x, z): every fish within `alarm` (m, times its kind's shy) takes fright. */
   startle(x, y, z, alarm) {
+    if (this.held) return;
     for (const fish of this.fish) {
       const reach = alarm * fish.species.shy;
       const apart = Math.hypot(fish.x - x, fish.z - z, Math.max(Math.abs(fish.y - y) - 0.4, 0));
@@ -617,6 +627,7 @@ export class FishPopulation {
 
   /** Rebase on a reset world clock, keeping the swimmers and their own timers. */
   resetClock(time = 0) {
+    if (this.held) return;
     this.clock = time;
     for (const fish of this.fish) {
       const before = (fish.before ??= {});
@@ -634,6 +645,7 @@ export class FishPopulation {
    * first call sets the clock.
    */
   advance(time, look, bitten = () => {}) {
+    if (this.held) return;
     this.clock ??= time;
     if (!this.water || this.fish.length === 0) { this.clock = Math.max(this.clock, time); return; }   // none to step (the Pool)
     while (this.clock + FISH_STEP <= time + 1e-9) {

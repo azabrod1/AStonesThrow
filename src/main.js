@@ -327,7 +327,8 @@ import { IceCracks } from './iceCracks.js';
 import { FishPopulation, edibleBites, fishSee, FISH_STILL, FISH_STEP } from './fish.js';
 import { createFishView } from './fishMeshes.js';
 import { createKoiGarden, koiGround, holdInGarden, keepInPond, keepOutOfGarden } from './koiGarden.js';
-import { withRandom, parkMiller } from './withRandom.js';
+import { withRandom, parkMiller, seekableParkMiller } from './withRandom.js';
+import { compileOnly } from './precompile.js';
 
 // Quality presets. The splash lives in a few dozen pixels, so the fluid
 // buffer's resolution is what it is made of: a drop narrower than a buffer
@@ -3139,60 +3140,95 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     // Started with ice, a gale or rain, the water's full programs alone (src/waterSurface.js holdFull), as the session
     // keeps them: its open-water throws build no lean twin, nor does its first break after.
     surface.holdFull(chosenIce !== 'none' || galeWaves.on || Boolean(WEATHERS[weatherName].rain));
-    // Its throws seeded (Park–Miller, WARM_UP.seed), Math.random put back after (src/withRandom.js).
-    withRandom(parkMiller(WARM_UP.seed), () => warmUpScene(chosenIce));
+    // Twice. First everything a session may draw (every place's scenery, every kind of thing, the ice), its programs only
+    // started compiling (src/precompile.js), so the driver builds them side by side; then drawn, only what this place,
+    // thing and water show, so the GPU builds their pipelines under the veil. The rest go on compiling after it lifts and
+    // build their pipelines when first drawn (a place, a thing or the ice chosen later), waited for if still compiling.
+    // Each pass's throws seeded (Park–Miller, WARM_UP.seed), Math.random put back after (src/withRandom.js); the
+    // second's thrown at the draws the first's were (throwDraws): the same throws, the stone's jet among its splash.
+    // The first pass leaves the world as it found it (clearPond), but for the fish, held through it (they would start the
+    // session elsewhere: src/fish.js hold), and the gale's sea, whose spin-up it counted as done but drew nothing for.
+    const throwDraws = {};
+    fishes.hold(true);
+    try {
+      compileOnly(renderer, () => {
+        const stream = seekableParkMiller(WARM_UP.seed);
+        withRandom(stream, () => warmUpScene(chosenIce, { everything: true, stream, throwDraws }));
+      });
+    } finally {
+      fishes.hold(false);
+    }
+    warmUpReport.firstPass = performance.now() - started;
+    galeWaves.respin();
+    if (chosenIce !== 'none') iceForWarmUp('none');
+    const stream = seekableParkMiller(WARM_UP.seed);
+    withRandom(stream, () => warmUpScene(chosenIce, { everything: false, stream, throwDraws }));
     surface.holdFull(false);
     warmUpReport.programs = (renderer.info.programs?.length ?? 0) - programsBefore;
     warmUpReport.milliseconds = performance.now() - started;
   }
-  /** What warmUp throws and draws to build the programs, ending on the ice `chosenIce` the page was asked for. */
-  function warmUpScene(chosenIce) {
+  /**
+   * What warmUp throws and draws to build the programs, ending on the ice `chosenIce` the page was asked for:
+   * `everything` a session may draw, or only what this place, thing and water show. `stream` is Math.random's while it
+   * runs (src/withRandom.js seekableParkMiller); the stone and the ice's breaker are thrown at its draws in `throwDraws`,
+   * which the pass of everything (first) sets: what it made before them (things made ready, a floater of each kind)
+   * drew ids from the stream, and this pass makes less.
+   */
+  function warmUpScene(chosenIce, { everything, stream, throwDraws }) {
+    const iced = chosenIce !== 'none';
+    const atThrowDraw = (name) => { if (everything) throwDraws[name] = stream.draws; else stream.seek(throwDraws[name]); };
     marker.visible = arc.visible = true;   // the aim marker's programs too
     rain.show(Boolean(WEATHERS[weatherName].rain));   // only selected rain needs these programs now
     const galeWarmUp = galeWaves.on ? galeWaves.warmUp() : null;   // only a selected gale needs these passes now
     snow.show(Boolean(WEATHERS[weatherName].snow));   // only selected snow needs its program now
-    // Every thing made ready to throw (src/rock.js prepareThing: a pizza's shared mesh and waterline, a ball's paints), so
-    // no throw pays for it; one defined later is made ready as it is defined.
-    for (const name of THING_NAMES) prepareNamed(name);
-    // Each thing that flies a flight of its own (a pizza, fresh or frozen) aimed once, so its first throw's aim runs
-    // code the browser has already made ready (src/rock.js flutterTrial, aimThrow).
-    for (const name of THING_NAMES.filter((key) => THINGS[key].air.model === 'flutter')) {
-      const measured = measureThing(name);
-      const prepared = prepareThing(measured.thing);
-      if (!prepared) continue;
-      const trial = flutterTrial({ thing: measured.thing, shape: prepared.shape, radius: measured.radius, density: measured.mass / (prepared.shape.volume * measured.radius ** 3), ownMass: measured.mass });
-      thingVelocity(handPosition(measured.radius, measured.thing), new THREE.Vector3(WARM_UP.x, 0, WARM_UP.z), 'normal', measured, trial);
+    if (everything) {
+      // Every thing made ready to throw (src/rock.js prepareThing: a pizza's shared mesh and waterline, a ball's paints),
+      // so no throw pays for it; one defined later is made ready as it is defined.
+      for (const name of THING_NAMES) prepareNamed(name);
+      // Each thing that flies a flight of its own (a pizza, fresh or frozen) aimed once, so its first throw's aim runs
+      // code the browser has already made ready (src/rock.js flutterTrial, aimThrow).
+      for (const name of THING_NAMES.filter((key) => THINGS[key].air.model === 'flutter')) {
+        const measured = measureThing(name);
+        const prepared = prepareThing(measured.thing);
+        if (!prepared) continue;
+        const trial = flutterTrial({ thing: measured.thing, shape: prepared.shape, radius: measured.radius, density: measured.mass / (prepared.shape.volume * measured.radius ** 3), ownMass: measured.mass });
+        thingVelocity(handPosition(measured.radius, measured.thing), new THREE.Vector3(WARM_UP.x, 0, WARM_UP.z), 'normal', measured, trial);
+      }
     }
+    atThrowDraw('stone');
     const stone = throwAt(WARM_UP.x, WARM_UP.z, { radius: WARM_UP.radius, power: 'normal', thing: DEFAULT_THING });
-    // A floater's mirror image (src/rock.js meshMirror), in the whole mirror drawn now, and a textured thing's
-    // materials (a pizza's: above, below and in the mirror): their programs too.
-    const floaters = WARM_UP.floaters.map((name) => throwAt(WARM_UP.x, WARM_UP.z, { thing: name }));
+    // A floater of each program and a sinker of each besides the stone's (WARM_UP); drawn, the thing chosen alone, unless
+    // it is the stone. A floater's mirror image (src/rock.js meshMirror), in the whole mirror drawn now, and a textured
+    // thing's materials (a pizza's: above, below and in the mirror): their programs too.
+    const chosen = everything || thingName === DEFAULT_THING ? [] : [throwAt(WARM_UP.x, WARM_UP.z, { thing: thingName })];
+    const floaters = [...(everything ? WARM_UP.floaters.map((name) => throwAt(WARM_UP.x, WARM_UP.z, { thing: name })) : []), ...chosen.filter((rock) => rock.floats)];
     for (const floater of floaters) floater.meshMirror.visible = true;
     // A textured sinker's three: above, below and, as anything but a floater is given on the ice, its mirror image.
-    const sinkers = WARM_UP.sinkers.map((name) => throwAt(WARM_UP.x, WARM_UP.z, { thing: name }));
-    for (const sinker of sinkers) Object.assign(sinker.prepareMirror(), { visible: true, frustumCulled: false });
+    const sinkers = [...(everything ? WARM_UP.sinkers.map((name) => throwAt(WARM_UP.x, WARM_UP.z, { thing: name })) : []), ...chosen.filter((rock) => !rock.floats)];
+    if (everything || iced) for (const sinker of sinkers) Object.assign(sinker.prepareMirror(), { visible: true, frustumCulled: false });
     // And a stone's, as anything but a floater is given on the ice (src/rock.js prepareMirror): its program too, drawn
     // wherever the mirror's camera looks (it is culled by it, and this stone is in the hand).
-    Object.assign(stone.prepareMirror(), { visible: true, frustumCulled: false });
-    iceCracks.warmUp(WARM_UP.x + 0.4, WARM_UP.z);   // the cracks' program, over ice or none
-    iceShadow.warmUp(renderer, stone.meshAbove);    // the shadows' atlas's program (src/iceShadow.js), a tile drawn for the stone
-    const fishWarmUp = fishView.warmUp();   // the fish's one program, whatever lives here (none in the Pool)
+    if (everything || iced) Object.assign(stone.prepareMirror(), { visible: true, frustumCulled: false });
+    if (everything || iced) {
+      iceCracks.warmUp(WARM_UP.x + 0.4, WARM_UP.z);   // the cracks' program
+      iceShadow.warmUp(renderer, stone.meshAbove);    // the shadows' atlas's program (src/iceShadow.js), a tile drawn for the stone
+    }
+    const fishWarmUp = everything || fishOn ? fishView.warmUp() : null;   // the fish's one program, whatever lives here (none in the Pool)
     // The preview's programs (buildPreview: a see-through material, textured and plain): a pizza's preview drawn in
-    // this frame and a stone's in the next, their materials kept (programKeepers); then the chosen thing's, below.
-    buildPreview('pizza');
+    // this frame and a stone's in the next, their materials kept (programKeepers); drawn, the chosen thing's alone.
+    buildPreview(everything ? 'pizza' : thingName);
     if (preview.mesh) programKeepers.push(preview.mesh.material);
     viewChanged = true;
     render();
-    fishWarmUp.done();
-    buildPreview(DEFAULT_THING);
-    if (preview.mesh) programKeepers.push(preview.mesh.material);
-    for (const floater of floaters) {
-      programKeepers.push(floater.meshAbove.material, floater.meshBelow.material, floater.meshMirror.material);
-      retireRock(floater, { keepMaterials: true });
+    fishWarmUp?.done();
+    if (everything) {
+      buildPreview(DEFAULT_THING);
+      if (preview.mesh) programKeepers.push(preview.mesh.material);
     }
-    for (const sinker of sinkers) {
-      programKeepers.push(sinker.meshAbove.material, sinker.meshBelow.material, sinker.meshMirror.material);
-      retireRock(sinker, { keepMaterials: true });
+    const materialsOf = (rock) => [rock.meshAbove.material, rock.meshBelow.material, ...(rock.meshMirror ? [rock.meshMirror.material] : [])];
+    for (const rock of [...floaters, ...sinkers]) {
+      programKeepers.push(...materialsOf(rock));
+      retireRock(rock, { keepMaterials: true });
     }
     floaterRide.warmUp(renderer);   // the floaters' ride's pass
     galeWarmUp?.done();
@@ -3207,6 +3243,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       if (index === 0) {
         renderFrom(VIEWS.under);   // the cavity is open: the surface's and the cavity's programs from below
         iceCracks.endWarmUp();
+        if (!everything) continue;
         // The other water's scenery (the pool's, or the lake's), from above
         // and below, so a change of water compiles nothing.
         showScenery(!pooled);
@@ -3219,7 +3256,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
         showScenery(pooled);
       }
     }
-    programKeepers.push(stone.meshAbove.material, stone.meshBelow.material, stone.meshMirror.material);
+    programKeepers.push(...materialsOf(stone));
     retireRock(stone, { keepMaterials: true });
     clearPond();
     buildPreview();   // the chosen thing's, in the hand from the first frame shown
@@ -3229,6 +3266,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     // a pipeline the first time a program draws in a state). Then the ice as chosen, whole.
     if (chosenIce !== 'none') {
       iceForWarmUp('thin');
+      atThrowDraw('breaker');
       const breaker = throwAt(WARM_UP.x, WARM_UP.z, { radius: WARM_UP.radius, power: 'normal', thing: DEFAULT_THING });
       for (let step = 0; step < 180 && breaker.state === 'air'; step++) simulate(1 / 60);
       for (let step = 0; step < 60 * WARM_UP.iceSeconds; step++) simulate(1 / 60);
