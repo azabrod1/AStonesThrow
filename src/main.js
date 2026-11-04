@@ -3090,7 +3090,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   function applyPlace(place) {
     const next = PLACES[place];
     const standing = glide ? glide.name : viewName();
-    const geometryChanges = pooled !== Boolean(next.pool) || koiPond !== Boolean(next.koi) || lagoon !== Boolean(next.tropics);
+    const poolChanges = pooled !== Boolean(next.pool);
+    const geometryChanges = poolChanges || koiPond !== Boolean(next.koi) || lagoon !== Boolean(next.tropics);
     const nextIce = next.defaultWater === 'frozen' && iceName === 'none' ? iceThickness : iceName;
     const iceChanges = nextIce !== iceName;
     if (geometryChanges || iceChanges) clearPond();
@@ -3115,10 +3116,14 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     visitor.setPlace(Boolean(next.visitor));
     visitor.reset(stepsTime);
     applyFish();
-    if (geometryChanges) {
+    // Into the pool or out of it, the eye on the same view of the new kind (the pool's views are its own); to another
+    // shore on the lake's water (the Koi pond's, the lagoon's), kept where it may stand there, its turn and zoom kept.
+    if (poolChanges) {
       glide = null;
       if (standing) showView(standing, { glide: false });
       else moveEye({ ...orbit });
+    } else if (geometryChanges) {
+      moveEye({ ...orbit });
     }
   }
 
