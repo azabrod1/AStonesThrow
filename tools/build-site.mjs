@@ -13,7 +13,16 @@
 // from. tools/site-check.mjs loads _site/ under
 // the Pages path to catch that before a push. .github/workflows/deploy.yml runs
 // this script on every push to main.
-import { cp, mkdir, rm, readFile, writeFile } from 'node:fs/promises';
+//
+// Each of the page's own modules (src/, and the jet's table in assets/jet/) is
+// published minified (esbuild), one file for one, each beside a source map:
+// their comments are their documentation and were most of the bytes (809 KB
+// of 1 MB gzipped), the whole download on a slow phone. Names, paths and the
+// module preloads stay as they are; template strings are kept as written, so
+// the shaders' text, which the browsers' shader caches are keyed on, is the
+// source's.
+import { cp, mkdir, rm, readFile, readdir, writeFile } from 'node:fs/promises';
+import { transform } from 'esbuild';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -26,6 +35,20 @@ const siteDirectory = path.join(root, '_site');
 await rm(siteDirectory, { recursive: true, force: true });
 await mkdir(siteDirectory);
 for (const entry of SITE_FILES) await cp(path.join(root, entry), path.join(siteDirectory, entry), { recursive: true, filter: (source) => !UNPUBLISHED.test(source) });
+// The page's own modules minified, in place (the header).
+const published = await readdir(siteDirectory, { recursive: true });
+const ownModules = published.filter((file) => file.endsWith('.js') && /^(src|assets)\//.test(file.split(path.sep).join('/')));
+let sourceBytes = 0, minifiedBytes = 0;
+for (const file of ownModules) {
+  const filePath = path.join(siteDirectory, file);
+  const source = await readFile(filePath, 'utf8');
+  const name = path.basename(file);
+  const { code, map } = await transform(source, { loader: 'js', format: 'esm', minify: true, sourcemap: 'external', sourcefile: name, legalComments: 'none' });
+  await writeFile(filePath, `${code}//# sourceMappingURL=${name}.map\n`);
+  await writeFile(`${filePath}.map`, map);
+  sourceBytes += source.length;
+  minifiedBytes += code.length;
+}
 // Keep the import-map version and the installed modules in agreement.
 const htmlPath = path.join(siteDirectory, 'index.html');
 const html = await readFile(htmlPath, 'utf8');
@@ -68,4 +91,4 @@ const afterLastPreload = html.indexOf('\n', lastPreload) + 1;
 const withPreloads = `${html.slice(0, afterLastPreload)}${preloads.join('\n')}\n${html.slice(afterLastPreload)}`;
 // Rewrite both the import map and module preloads to the same published file.
 await writeFile(htmlPath, withPreloads.replaceAll(cdnPrefix, './vendor/three/').replaceAll('build/three.module.js', 'build/three.module.min.js'));
-console.log(`[site] ${SITE_FILES.join(', ')} -> _site/; ${preloaded.size + preloads.length} module preloads`);
+console.log(`[site] ${SITE_FILES.join(', ')} -> _site/; ${preloaded.size + preloads.length} module preloads; ${ownModules.length} modules minified, ${Math.round(sourceBytes / 1024)} KB -> ${Math.round(minifiedBytes / 1024)} KB`);

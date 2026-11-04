@@ -348,7 +348,15 @@ The canvas never holds more than 2.6 million pixels.
 Core stone/splash programs are compiled while the page loads, under its
 veil: a stone is thrown and drawn there, then cleared away (with the water
 Frozen, into open water first, then a second through a sheet made thin for
-it, so the first break builds nothing, then the ice as chosen). Rain and gale
+it, so the first break builds nothing, then the ice as chosen). It runs twice
+(`src/precompile.js`): first every place's scenery, every kind of thing and
+the ice, their programs only started compiling, side by side on the
+driver's threads; then drawn, only what the chosen place, thing and water
+show. The rest finish compiling after the veil lifts and are drawn first
+when chosen. A browser keeps the programs it has built for shader text it
+has seen, so this matters most on a first visit after a deploy that changed
+a shader: one at a time, the warm-up took 9 s there on an M5 Max; started
+together, 2 s. Rain and gale
 programs are warmed only when selected at startup; otherwise
 they compile on first use, which can briefly pause that first interaction.
 No background warm-up modifies the live scene. The final scene, including
@@ -1579,7 +1587,9 @@ farther out, so it rises into the view rather than filling its corner.
   on every push to `main` and publishes `_site/` to GitHub Pages. `npm run site`
   (`tools/build-site.mjs`) copies only what the page loads: `index.html`,
   `src/` and `assets/`, less the skies' Radiance files (`.hdr`), which only
-  the tools read. A new file or folder loaded at run time outside those
+  the tools read, and minifies the page's own modules one by one (esbuild,
+  each with a source map; 1 MB of JavaScript gzipped becomes 0.58 MB, their
+  comments most of it). A new file or folder loaded at run time outside those
   must be added to its list. `node tools/site-check.mjs`, after
   `npm run site`, serves `_site/` under `/AStonesThrow/` as Pages does and
   checks that the pond starts, rain falls once asked for (its files load only

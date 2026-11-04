@@ -422,12 +422,13 @@ try {
     } else {
       // Instrument only the selected asset, leaving the module watchdog and
       // every other asset's deadline intact. No production test switches.
+      // The published module is minified (tools/build-site.mjs), its names
+      // not the source's: its source is served instrumented in its place.
       await delayed.route('**/src/loadAsset.js', async (route) => {
-        const response = await route.fetch();
-        const source = await response.text();
+        const source = await readFile(path.join(root, '../src/loadAsset.js'), 'utf8');
         const body = source.replace('  const controller =', `  if (new URL(url).pathname.endsWith(${JSON.stringify('/' + asset)})) timeout = 250;\n  const controller =`);
         assert.notEqual(body, source, 'the selected asset deadline must be instrumented');
-        await route.fulfill({ response, body });
+        await route.fulfill({ body, contentType: 'text/javascript' });
       });
       // Deliberately exceed the old globally shortened module deadline.
       await delayed.route('**/src/main.js', async (route) => {
