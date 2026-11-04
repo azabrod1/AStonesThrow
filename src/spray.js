@@ -38,11 +38,44 @@
 // nothing read back, and slow motion, pause and a seeded throw need nothing
 // of their own. Nothing is drawn once every sprite has landed.
 //
-// A sprite stands for `weight` like drops (1 to tens: a rock's mist is
+// A sprite stands for `weight` like drops (1 to hundreds: a rock's mist is
 // millions of drops, which no phone draws one by one). The fragments carry
 // a sprite's coverage, water and glints times its weight; a puff of more
-// than one is drawn as a disc its drops cover PUFF_COVER of (fluid.js), a
-// fixed size in the world, and as mist: it writes no depth. How many sprites
+// than one is drawn as mist (it writes no depth) over a soft disc, its
+// drops' cover and water falling off as (1 − ρ²)² from its centre and
+// summing to theirs (puffKernel, fluid.js), so no puff has an edge. At its
+// birth the disc is one its drops cover PUFF_COVER of; then it grows as its
+// drops spread about it, kicked apart at its burst's `kick` and slowed by
+// the same drag as their flight (the closed form again: PUFF_SPREAD of the
+// kick times τ·(1 − e^(−t/τ)) in each phase, at most PUFF_MOST_SPREAD, a
+// bound on the fill a puff costs), so a puff thins into the veil its
+// neighbours make and its light stays. A sprite of a few drops is one of
+// them, a sample, and spreads hardly at all (the share
+// 1 − e^(−(weight − 1) / PUFF_BLUR_DROPS)): High's mist keeps its sparkle,
+// (A burst given the unit vectors `along` and `across` of the patch of
+// sheet it comes from lays its sprites over that patch as a torn web: the
+// film between a sheet's holes gathers into ligaments between the knots
+// where they meet and those break into drops, so the drops lie along lines.
+// WEB_KNOTS knots are strewn about the patch's centre in the sheet's plane
+// (a Gaussian of WEB_KNOT_SPREAD of its spread each way) and each sprite is
+// put at a random point of the ligament between two of them, off it by a
+// Gaussian of WEB_JITTER of the spread, with the kick every way as before:
+// a clump with soft edges and strings through it. And since the sheet is
+// stretching as it flies, its upper material faster than its lower and its
+// ring widening, drops apart on it part at its strain, `strainAlong` and
+// `strainAcross` (1/s) times their offset, so the cloud a patch makes
+// stretches as the sheet would have, and its neighbours' run into it. An
+// even disc, tried, kept its edge and its fill for its whole flight, a
+// plate of drops; a ball about each patch's centre read as a puff; a
+// string along the flight as a bead curtain.)
+// Low's heavy sprites blur; but a sprite of fewer than PUFF_LEAST drops
+// (fluid.js) is drawn as the one drop that holds their water, since a
+// soft disc of a few drops read as a blurred white blob where the
+// photographs show drops. Its glints go the same way: that share of them
+// spread over the disc, the rest a point, one drop's sparkle as any drop's,
+// at a place of the puff's own (hashed from its birth), never its centre:
+// every puff's glints at its centre made each a disc with a dot in it, a
+// field of bubbles, in a zoomed view. How many sprites
 // a burst writes is its drops times the density, DENSITY·(R / 3 cm)^−1.4 of
 // the preset's share (setBudget) times (r / DENSITY_RADIUS)² for its drops'
 // mean radius r, at most 1, so a bigger stone and a lower preset draw fewer,
@@ -79,7 +112,7 @@
 import * as THREE from 'three';
 
 export const SPRAY_CAPACITY = 65536;
-export const SPRAY_STRIDE = 15;          // floats a slot: origin and birth, launch and life, radius, weight, τ1, t1, τ2 and the wind's drift at birth (x, z)
+export const SPRAY_STRIDE = 16;          // floats a slot: origin and birth, launch and life, radius, weight, τ1, t1, τ2, the wind's drift at birth (x, z) and the burst's kick
 const STRIDE = SPRAY_STRIDE;
 const GRAVITY = 9.81;
 export const SPRAY_LEAST_RADIUS = 0.00005;
@@ -95,9 +128,12 @@ const SPEED_STEPS = 161;                 // ...to 16 m/s
 const LANDING_STEPS = 2;                 // Newton's steps to a sprite's landing (linearLanding)
 export const MIRROR_SPRAY_RADIUS = 0.0004;   // finer sprites are left out of the mirror
 export const SPRAY_WIND = 1.5;           // m/s of drift per unit of the wind's strength (WIND_STRENGTHS, src/ambientWaves.js)
+const WEB_KNOTS = 4;                     // a torn patch's sprites lie on the ligaments between this many knots of its web (the header)...
+const WEB_KNOT_SPREAD = 0.7;             // ...the knots strewn about the patch's centre by a Gaussian of this share of the burst's spread each way...
+const WEB_JITTER = 0.15;                 // ...and each sprite off its ligament by a Gaussian of this share
 const DENSITY = 0.2;                     // sprites per drop for the 3 cm stone's drops of DENSITY_RADIUS, at a share of 1...
 const DENSITY_POWER = 2.2;               // ...times (R / 3 cm)^−DENSITY_POWER...
-const DENSITY_RADIUS = 0.0003;           // ...and times (r / DENSITY_RADIUS)²: a sprite stands for as much light, whatever its drops' size
+const DENSITY_RADIUS = 0.0002;           // ...and times (r / DENSITY_RADIUS)²: a sprite stands for as much light, whatever its drops' size (a drop of 0.45 mm and up is a sprite of its own at the full share)
 const CROWD_RATE = 1.5;                  // sprites a second, per slot of the ring in use, past which a burst writes fewer, heavier ones...
 const CROWD_SECONDS = 1 / 30;            // ...the writing reckoned over about this long (an exponential memory): two frames
 const GAMMA_ORDER = 4;
@@ -155,6 +191,12 @@ function gammaQuantiles() {
   });
 }
 const GAMMA_QUANTILES = gammaQuantiles();
+
+/** A draw from a gamma of order 4 with mean 1 (the table's quantiles), from `random`'s next number: a ligament's drop sizes (src/crown.js too). */
+export function gammaFactor(random) {
+  const place = random() * (GAMMA_TABLE_SIZE - 1), index = place | 0;
+  return GAMMA_QUANTILES[index] + (GAMMA_QUANTILES[Math.min(index + 1, GAMMA_TABLE_SIZE - 1)] - GAMMA_QUANTILES[index]) * (place - index);
+}
 
 /**
  * A water drop's deceleration by the air (m/s²) at `speed` for its radius:
@@ -303,6 +345,11 @@ export function landingBound(height, rise, flight) {
   return Math.min(fastTime + slow, MOST_LIFE);
 }
 
+/** One draw of a standard normal (Box–Muller, one of the pair). */
+function normalDraw(random) {
+  return Math.sqrt(-2 * Math.log(1 - random())) * Math.cos(2 * Math.PI * random());
+}
+
 /** A random unit vector into `out`, by Marsaglia's method (no angles, no trigonometry). */
 function randomDirection(random, out) {
   let first, second, square;
@@ -339,8 +386,11 @@ export class SpraySystem {
     this.dirtyCount = 0;
     this.windX = 0;               // the drift a drop born now is blown to (m/s; setWind), which it keeps
     this.windZ = 0;
+    this.kick = 0;                // the kick of the burst being written (m/s): how fast a puff's drops spread about it
     this.box = new THREE.Box3();  // round every flight since the ring started over
     this.direction = [0, 0, 0];   // burst's scratch
+    this.webAlong = new Float64Array(WEB_KNOTS);   // a torn patch's web's knots (burst, the header)...
+    this.webAcross = new Float64Array(WEB_KNOTS);  // ...in the sheet's plane
     this.flight = { fastTau: 0, fastTime: 0, slowTau: 0 };   // write's
     this.recent = 0;              // sprites written lately, decaying by e each CROWD_SECONDS (the header)
     this.recentTime = 0;          // the splash time it was reckoned at
@@ -355,7 +405,7 @@ export class SpraySystem {
     geometry.setAttribute('aOrigin', new THREE.InterleavedBufferAttribute(this.buffer, 4, 0));
     geometry.setAttribute('aLaunch', new THREE.InterleavedBufferAttribute(this.buffer, 4, 4));
     geometry.setAttribute('aDrop', new THREE.InterleavedBufferAttribute(this.buffer, 4, 8));
-    geometry.setAttribute('aSlow', new THREE.InterleavedBufferAttribute(this.buffer, 3, 12));
+    geometry.setAttribute('aSlow', new THREE.InterleavedBufferAttribute(this.buffer, 4, 12));
     geometry.instanceCount = 0;
     this.geometry = geometry;
     this.uniforms = { uTime: { value: 0 } };
@@ -418,9 +468,11 @@ export class SpraySystem {
    * each kicked by up to `kick` m/s in a random direction (from a third of
    * it), born at splash time `time`, as the stone of size factor
    * `sizeFactor`'s sprites; `random` the emitter's stream (seededRandom).
+   * Given the unit vectors `along` and `across` of a patch of sheet, they
+   * lie over it as a torn web and part at its strains (the header).
    * Returns the sprites written.
    */
-  burst({ x, y, z, vx, vy, vz, drops, radius, kick = 0, spread = 0, time, random, sizeFactor = 1, most = SPRAY_MOST_RADIUS }) {
+  burst({ x, y, z, vx, vy, vz, drops, radius, kick = 0, spread = 0, time, random, sizeFactor = 1, most = SPRAY_MOST_RADIUS, along = null, across = null, strainAlong = 0, strainAcross = 0 }) {
     if (!(drops > 0) || radius <= 0) return 0;
     if (time > this.recentTime) {
       this.recent *= Math.exp((this.recentTime - time) / CROWD_SECONDS);
@@ -433,18 +485,44 @@ export class SpraySystem {
     const sprites = Math.floor(wanted) + (random() < wanted - Math.floor(wanted) ? 1 : 0);
     const weight = 1 / density;
     const direction = this.direction;
+    this.kick = kick;
+    const web = sprites > 0 && along && across;
+    if (web) {
+      // The patch's web (the header): its knots about its centre, in the sheet's plane.
+      const knotsAlong = this.webAlong, knotsAcross = this.webAcross;
+      for (let knot = 0; knot < WEB_KNOTS; knot++) {
+        knotsAlong[knot] = WEB_KNOT_SPREAD * spread * normalDraw(random);
+        knotsAcross[knot] = WEB_KNOT_SPREAD * spread * normalDraw(random);
+      }
+    }
     for (let sprite = 0; sprite < sprites; sprite++) {
       // Gamma of order 4 about the mean, from its quantiles.
-      const place = random() * (GAMMA_TABLE_SIZE - 1), index = place | 0;
-      const gamma = GAMMA_QUANTILES[index] + (GAMMA_QUANTILES[Math.min(index + 1, GAMMA_TABLE_SIZE - 1)] - GAMMA_QUANTILES[index]) * (place - index);
-      const dropRadius = Math.min(Math.max(radius * gamma, SPRAY_LEAST_RADIUS), most);
+      const dropRadius = Math.min(Math.max(radius * gammaFactor(random), SPRAY_LEAST_RADIUS), most);
       randomDirection(random, direction);
       const speed = (kick * (1 + 2 * random())) / 3;
-      const kickX = direction[0] * speed, kickY = direction[1] * speed, kickZ = direction[2] * speed;
-      randomDirection(random, direction);
-      const out = spread * random();
+      let kickX = direction[0] * speed, kickY = direction[1] * speed, kickZ = direction[2] * speed;
+      let outX, outY, outZ;
+      if (web) {
+        // On the ligament between two of the web's knots, a little off it, and parted by the sheet's strain.
+        const first = Math.floor(random() * WEB_KNOTS);
+        const second = (first + 1 + Math.floor(random() * (WEB_KNOTS - 1))) % WEB_KNOTS;
+        const alongLigament = random();
+        const alongReach = this.webAlong[first] + (this.webAlong[second] - this.webAlong[first]) * alongLigament + WEB_JITTER * spread * normalDraw(random);
+        const acrossReach = this.webAcross[first] + (this.webAcross[second] - this.webAcross[first]) * alongLigament + WEB_JITTER * spread * normalDraw(random);
+        outX = along.x * alongReach + across.x * acrossReach;
+        outY = along.y * alongReach + across.y * acrossReach;
+        outZ = along.z * alongReach + across.z * acrossReach;
+        const partAlong = alongReach * strainAlong, partAcross = acrossReach * strainAcross;
+        kickX += along.x * partAlong + across.x * partAcross;
+        kickY += along.y * partAlong + across.y * partAcross;
+        kickZ += along.z * partAlong + across.z * partAcross;
+      } else {
+        randomDirection(random, direction);
+        const out = spread * random();
+        outX = direction[0] * out; outY = direction[1] * out; outZ = direction[2] * out;
+      }
       this.write(
-        x + direction[0] * out, Math.max(y + direction[1] * out, 0), z + direction[2] * out,
+        x + outX, Math.max(y + outY, 0), z + outZ,
         vx + kickX, vy + kickY, vz + kickZ, dropRadius, weight, time,
       );
     }
@@ -452,7 +530,7 @@ export class SpraySystem {
     return sprites;
   }
 
-  /** One sprite: a drop (or `weight` like drops) of `radius` at (x, y, z) moving at (vx, vy, vz), born at `time`. */
+  /** One sprite: a drop (or `weight` like drops, spreading at this.kick) of `radius` at (x, y, z) moving at (vx, vy, vz), born at `time`. */
   write(x, y, z, vx, vy, vz, radius, weight, time) {
     const flight = sprayFlight(radius, Math.sqrt(vx * vx + vy * vy + vz * vz), this.flight);
     const life = landingBound(y, vy, flight);
@@ -468,7 +546,7 @@ export class SpraySystem {
     data[base] = x; data[base + 1] = y; data[base + 2] = z; data[base + 3] = time;
     data[base + 4] = vx; data[base + 5] = vy; data[base + 6] = vz; data[base + 7] = life;
     data[base + 8] = radius; data[base + 9] = weight; data[base + 10] = flight.fastTau; data[base + 11] = flight.fastTime; data[base + 12] = flight.slowTau;
-    data[base + 13] = this.windX; data[base + 14] = this.windZ;
+    data[base + 13] = this.windX; data[base + 14] = this.windZ; data[base + 15] = this.kick;
     this.lastDeath = Math.max(this.lastDeath, time + life);
     if (radius >= MIRROR_SPRAY_RADIUS) this.mirrorDeath = Math.max(this.mirrorDeath, time + life);
     // Its flight's box: no further out than the wind's drift for its life and its launch's reach against it in each phase, no higher than its apex.

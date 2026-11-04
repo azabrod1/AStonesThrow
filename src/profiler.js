@@ -23,7 +23,15 @@
 //      is seeded (SEED) from the throw to the step's end, and the simulation
 //      advances 1/60 s per frame whatever the frame rate, so every replay
 //      simulates the same frames. Its frames are measured from the impact.
-//   4. For every step, medians over its measured frames: the interval
+//   4. A barrage: stones thrown every BARRAGE.every frames at BARRAGE.spots,
+//      as fast as someone tapping, measured from BARRAGE.warm frames after the
+//      first throw while the splashes overlap (seeded as a splash step is).
+//   5. The pond after a barrage: RINGS.stones stones thrown RINGS.gap s apart
+//      and RINGS.settle s of the simulation run on without drawing, so the
+//      splashes are over, the things at rest and the stones' rings
+//      (src/rings.js) are what is left, which every pixel of the water reads,
+//      for a minute or more; then measured as a still pond's step is.
+//   6. For every step, medians over its measured frames: the interval
 //      between frames from the browser's own timestamps (unclamped; the
 //      simulation keeps its 0.1 s clamp), the JS time spent in simulate and
 //      in render (performance.now around each: the CPU's part, not the
@@ -49,17 +57,34 @@ const SPLASH_VARIANTS = [
   { name: 'no cavity drawn', skip: { cavity: true } },
   { name: 'no splash solver', skip: { solver: true } },
 ];
+const BARRAGE_VARIANTS = [
+  { name: 'no rings drawn', skip: { rings: true } },
+  { name: 'no droplet passes', skip: { fluid: true } },
+  { name: 'no mirror pass', skip: { mirror: true } },
+  { name: 'no splash solver', skip: { solver: true } },
+];
+const RINGS_VARIANTS = [
+  { name: 'no rings drawn', skip: { rings: true } },
+  { name: 'no water surface', skip: { surface: true } },
+];
 const interleave = (baseline, variants) => [baseline, ...variants.flatMap((variant) => [variant, baseline])];
 export const SCHEDULE = [
   { name: 'empty frames', empty: true },
   ...interleave({ name: 'idle', baseline: true, skip: {} }, IDLE_VARIANTS).map((step) => ({ ...step, clearFirst: true })),
   ...interleave({ name: 'splash', baseline: true, skip: {} }, SPLASH_VARIANTS).map((step) => ({ ...step, throwStone: true })),
+  ...interleave({ name: 'barrage', baseline: true, skip: {} }, BARRAGE_VARIANTS).map((step) => ({ ...step, barrage: true })),
+  ...interleave({ name: 'after a barrage', baseline: true, skip: {} }, RINGS_VARIANTS).map((step) => ({ ...step, afterBarrage: true })),
 ];
 const WARM_UP_FRAMES = 15;    // dropped at the start of a step (after the impact, for a splash step)
 const MEASURED_FRAMES = 60;   // a still pond's step
 const SPLASH_FRAMES = 60;     // a splash step's, from the impact: one second of splash
 const FLIGHT_FRAMES = 120;    // a throw that has not landed by then is measured anyway
 const SEED = 20251015;
+// A barrage (step 4): a stone every `every` frames, up to `stones`, at these spots in the home view (x, z: m), in turn;
+// `warm` frames from the first throw before measuring, `frames` measured.
+const BARRAGE = { every: 7, stones: 20, warm: 40, frames: 90, spots: [[0, -1.4], [-0.8, -1.0], [0.7, -1.9], [-0.3, -2.1], [0.9, -0.9], [-1.1, -1.7], [0.3, -0.8], [-0.6, -1.5]] };
+// After a barrage (step 5): this many stones, this far apart (s), then this long (s) with nothing drawn.
+const RINGS = { stones: 24, gap: 0.12, settle: 4 };
 const FRAME_SECONDS = 1 / 60;
 
 const mean = (values) => (values.length === 0 ? 0 : values.reduce((total, value) => total + value, 0) / values.length);
@@ -86,13 +111,15 @@ export class Profiler {
    * @param applySkips called with a step's skip flags (all false to restore)
    * @param throwStone throws the reference stone
    * @param hasImpacted whether the stone has reached the water
+   * @param throwAt throws the reference stone at (x, z)
+   * @param fastForward runs the simulation on by this many seconds without drawing (1/60 s at a time, as frames would)
    * @param clearPond back to still water at time zero (no stones, no splash, the solver asleep)
    * @param describe a line naming the quality and resolution
    * @param memory the render targets' bytes by owner, and renderer.info.memory
    * @param onReport called with the lines of the report when every step is done
    */
-  constructor({ applySkips, throwStone, hasImpacted, clearPond, describe, memory, onReport }) {
-    Object.assign(this, { applySkips, throwStone, hasImpacted, clearPond, describe, memory, onReport });
+  constructor({ applySkips, throwStone, throwAt, fastForward, hasImpacted, clearPond, describe, memory, onReport }) {
+    Object.assign(this, { applySkips, throwStone, throwAt, fastForward, hasImpacted, clearPond, describe, memory, onReport });
     this.stepIndex = -1;
     this.results = [];
     this.done = false;
@@ -120,11 +147,20 @@ export class Profiler {
     }
     const step = this.step;
     this.applySkips(step.skip ?? {});
-    if (step.clearFirst || step.throwStone) this.clearPond();
-    if (step.throwStone) {
+    if (step.clearFirst || step.throwStone || step.barrage || step.afterBarrage) this.clearPond();
+    if (step.throwStone || step.barrage || step.afterBarrage) {
       this.originalRandom = Math.random;
       Math.random = seededRandom(SEED);
-      this.throwStone();
+    }
+    if (step.throwStone) this.throwStone();
+    this.barrageThrown = 0;
+    if (step.afterBarrage) {
+      for (let stone = 0; stone < RINGS.stones; stone++) {
+        const [x, z] = BARRAGE.spots[stone % BARRAGE.spots.length];
+        this.throwAt(x + 0.05 * Math.floor(stone / BARRAGE.spots.length), z);
+        this.fastForward(RINGS.gap);
+      }
+      this.fastForward(RINGS.settle);
     }
   }
 
@@ -142,6 +178,18 @@ export class Profiler {
     if (this.done) return;
     this.frames++;
     const step = this.step;
+    if (step.barrage) {
+      // A stone every BARRAGE.every frames, BARRAGE.stones of them, measured once they overlap.
+      if (this.barrageThrown < BARRAGE.stones && (this.frames - 1) % BARRAGE.every === 0) {
+        const [x, z] = BARRAGE.spots[this.barrageThrown % BARRAGE.spots.length];
+        this.throwAt(x, z);
+        this.barrageThrown++;
+      }
+      if (this.frames <= BARRAGE.warm) return;
+      this.samples.push(sample);
+      if (this.samples.length >= BARRAGE.frames) this.endStep();
+      return;
+    }
     if (step.throwStone) {
       if (this.impactFrame === null) {
         if (this.hasImpacted() || this.frames > FLIGHT_FRAMES) this.impactFrame = this.frames;
