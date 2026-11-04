@@ -198,7 +198,7 @@
 // shore view, which looks down into the pool from its near corner, and the
 // low one, whose eye is just inside the pool's near wall (POOL_VIEWS). A
 // change between the pool and the lake starts the new one still
-// (setPooled).
+// (applyPlace).
 //
 // Quality. Each preset of QUALITY sets the work a frame does: the splash
 // solver's grid, the inner water patch's mesh (src/waterSurface.js), the
@@ -838,7 +838,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   const dropRings = new DropRings({ rain, liveLimit: settings.dropRings });
   water.dropRings = dropRings;
   // The pool (src/pool.js), whose meshes the scenes take below; pooled while
-  // the water is the pool's (setPooled). The bed the splash's holes and the
+  // the water is the pool's (applyPlace). The bed the splash's holes and the
   // rocks rest on is the lake's (src/pondFloor.js), or the pool's floor,
   // whose walls hold the rocks in (holdInPool).
   const pool = createPool(water, lighting, ambientWaves, environment, { rings, haze: environment.hazeUniforms, wet: wetDeck, snow: snowCover, air, ice });
@@ -1062,7 +1062,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   const garden = createKoiGarden({ envTexture: environment.envTexture, mirrorLayer: MIRROR_LAYER, lighting });
   garden.setCoarse(settings.sceneryCoarse);
   sceneMain.add(...garden.meshes);
-  /** The lake's bed, beach and open water, or the pool's basin and deck: the meshes only (setPooled changes the water). */
+  /** The lake's bed, beach and open water, or the pool's basin and deck: the meshes only (applyPlace changes the water). */
   function showScenery(asPool) {
     floor.visible = shore.visible = !asPool;
     reeds.visible = !asPool && !koiPond && reedsHere;   // the lake's shallows, where the place has them
@@ -3455,7 +3455,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
      * remembered on this device, its sky at the hour nearest the time of day
      * last chosen. Its photo loads first and the old sky stays until it has
      * arrived; then the sky, the sun and everything they light change in one
-     * frame, and the pool or the lake with them (setPooled). Resolves to the
+     * frame, and the pool or the lake with them (applyPlace). Resolves to the
      * place then shown (the old one if the photo could not be fetched).
      * A new choice cancels the previous download and starts immediately.
      */

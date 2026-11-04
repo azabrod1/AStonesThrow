@@ -11,8 +11,8 @@
 //
 // The Three.js CDN is blocked to require the published local runtime; fonts
 // are stubbed so the check runs offline.
-import { launchBrowser, patience } from './browser.mjs';
-import { devices, webkit } from 'playwright';
+import { launchBrowser, launchWebKit, patience } from './browser.mjs';
+import { devices } from 'playwright';
 import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
@@ -46,7 +46,7 @@ const port = server.address().port;
 // WebKit covers Safari's decoder and mobile layout. Device emulation does
 // not measure a phone's GPU or establish behavior on physical iOS hardware.
 const useWebKit = process.argv.includes('--webkit');
-const browser = useWebKit ? await webkit.launch({ headless: true }) : await launchBrowser();
+const browser = useWebKit ? await launchWebKit() : await launchBrowser();
 const context = await browser.newContext(useWebKit
   ? { ...devices['iPhone 13'], deviceScaleFactor: 1 }
   : { viewport: { width: 390, height: 844 }, deviceScaleFactor: 1 });
