@@ -23,7 +23,7 @@
 // --report="js expression" is evaluated in the page after each frame and its
 // result printed as JSON (window.__pond is the app). --floats=half renders on
 // the half-float path that devices without EXT_color_buffer_float take.
-// --sky=name picks the place (PLACES in src/main.js: a key of SKIES in
+// --sky=name picks the place (PLACES in src/places.js: a key of SKIES in
 // src/sky.js, or pool, the rocks in the pool under Lakeside's sky, src/
 // pool.js) and --time=hour its sky's hour (its anchor otherwise, never the
 // time of day last chosen: the harness's browser keeps no storage),

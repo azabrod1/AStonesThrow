@@ -1764,7 +1764,7 @@ farther out, so it rises into the view rather than filling its corner.
   sets its strength, over the one the Wind setting last chose on the device
   (kept in `localStorage`); calm otherwise.
 - `?sky=name` on the page (`--sky=name` for the harness) picks the place,
-  `PLACES` in `src/main.js` (a key of `SKIES` in `src/sky.js`, or `pool`, the
+  `PLACES` in `src/places.js` (a key of `SKIES` in `src/sky.js`, or `pool`, the
   old `?water=pool` too), over the one last chosen on the device (`sunrise`,
   the old Sunrise sky, is Lakeside at sunrise), and `?time=hour` (`--time=`
   for the harness) its sky's hour, over the one nearest the time of day last

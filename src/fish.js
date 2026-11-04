@@ -128,7 +128,7 @@ export const FISH_SPECIES = {
   blueTang: { name: 'Blue tang', length: [0.18, 0.26], depth: [0.1, 3], cruise: 0.65, burst: 4.5, turn: 2.4, shy: 0.8, eats: true, company: 'alone', shape: { depth: 0.52, width: 0.11, tail: 0.24, fork: 0.15, snout: 0.7, peak: 0.4, dorsal: [0.22, 0.78, 0.13], anal: [0.5, 0.78, 0.11], pectoral: 0.13, pelvic: 0.08, scales: 70 }, pattern: 'blueTang' },
 };
 
-// Each place's fish (src/main.js PLACES): kinds and how many; none in the Pool.
+// Each place's fish (src/places.js PLACES): kinds and how many; none in the Pool.
 export const FISH_BY_PLACE = {
   lakeside: [{ species: 'minnow', count: 8 }, { species: 'perch', count: 4 }, { species: 'pike', count: 1 }],
   swiss: [{ species: 'trout', count: 2 }, { species: 'char', count: 3 }],

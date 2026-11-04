@@ -1,4 +1,4 @@
-// The Polynesian lagoon's scenery (src/main.js PLACES `lagoon`, under its
+// The Polynesian lagoon's scenery (src/places.js PLACES `lagoon`, under its
 // own pure sky, src/sky.js `lagoon`), drawn from photographs of Polynesian
 // and Cook Islands motus (Aitutaki's Tapuaetai, Bora Bora's lagoon): coconut
 // palms in a row along the lagoon's beach (src/pondFloor.js LAGOON_SHORE)

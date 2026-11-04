@@ -102,7 +102,7 @@ import { FullscreenPass } from './gpu.js';
 // src/shaders/scene.js is its GLSL twin, which sinks the floor's mesh and
 // raises the land's.
 export const SHORE = { z: 2.72, bend: 60, slope: 0.45, deep: 3.5, beach: 0.08, beachTop: 0.4, bank: 1.3, bankFrom: 3, bankTo: 8 };
-// The Koi pond's shore (setShoreKind('koi'; src/main.js PLACES `koi`), in place of the lake's: a closed, asymmetric
+// The Koi pond's shore (setShoreKind('koi'; src/places.js PLACES `koi`), in place of the lake's: a closed, asymmetric
 // outline about KOI_SHORE.centre, as a Japanese garden's pond is (its lobes, a bay, a broad point), its radius at the
 // angle θ from the centre base + Σ amplitude·cos(k·θ + phase) (KOI_SHORE.lobes): 9 m across, 7 m from the near shore,
 // 60 cm in front of the shore view's eye, to the far one. Out from it (s, koiShoreDistance) the bed drops
@@ -116,7 +116,7 @@ export const KOI_SHORE = {
   beach: [0.15, 1.05],   // rad: the pebble beach's span of θ, on the right of the far half
   shelf: 0.35, deep: 1.35, lip: 0.08, beachLip: 0.08, mound: 0.3,
 };
-// The Polynesian lagoon's shore (setShoreKind('lagoon'); src/main.js PLACES `lagoon`): the lake's waterline behind the
+// The Polynesian lagoon's shore (setShoreKind('lagoon'); src/places.js PLACES `lagoon`): the lake's waterline behind the
 // eye joined to a beach of white sand that runs out along the right of the home view toward the horizon, as a motu's
 // lagoon beach does in the photographs it is drawn from (Aitutaki's Tapuaetai, Bora Bora's motus). The beach's
 // waterline leaves LAGOON_SHORE.origin (5 m to the right of the throw's line, so the solver's patch is open water and a

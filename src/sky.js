@@ -244,7 +244,7 @@ import { decodeHorizonStrip, HORIZON_DECODE } from './horizonStrip.js';
 // `anchor` and `facing` (Light by the hour, Orientation) are the first hour
 // unless named. `defaultHour` may choose a starting view independently of
 // the lighting anchor. `reeds`: cattails stand in its shallows (src/reeds.js,
-// PLACES in src/main.js): the fresh lakes with a soft shore; a sea cove, a
+// PLACES in src/places.js): the fresh lakes with a soft shore; a sea cove, a
 // bare rock shore, a salt flat and a frozen alpine reservoir have none.
 // `shore` names what its beach is made of (SHORE_LOOKS in src/pondFloor.js;
 // Lakeside's sand when unnamed), chosen from the land in its photo. New locations face their cove opening, sunset ridge
@@ -326,11 +326,11 @@ const SKIES = {
   },
   swiss: { shore: 'scree', mirrored: true, sunAzimuth: 45, hours: { midday: { file: 'lago_disola', resolution: '4k', label: 'Midday' } } },
   wooded: { reeds: true, shore: 'turf', sunAzimuth: -60, hours: { morning: { file: 'radkow_lake', label: 'Late morning', clock: '11:11' } } },
-  // The Koi pond's own (src/main.js PLACES `koi`), no place of its own (`ownPlace`): Ninomaru Teien, the garden of
+  // The Koi pond's own (src/places.js PLACES `koi`), no place of its own (`ownPlace`): Ninomaru Teien, the garden of
   // Nagoya Castle, in April's afternoon light through its trees (`shadedSun`: its sun behind leaves, the light on
   // level ground the balance's, most of it the sky's).
   garden: { ownPlace: false, shadedSun: true, sunAzimuth: 100, hours: { afternoon: { file: 'ninomaru_teien', label: 'Afternoon', clock: '15:09' } } },
-  // The Polynesian lagoon's own (src/main.js PLACES `lagoon`), no place of its own: a pure sky (Poly Haven's Kloofendal
+  // The Polynesian lagoon's own (src/places.js PLACES `lagoon`), no place of its own: a pure sky (Poly Haven's Kloofendal
   // 48d Partly Cloudy, its land taken out), deep blue with trade-wind cumulus along the horizon and the sun 48° up, as
   // a South Pacific midday is; the land under it is the beach's own (src/tropics.js: the palms, the motus, the high
   // island). The sun behind the eye's right, as the lagoon photographs best: the shallows lit through, no glare. Its
