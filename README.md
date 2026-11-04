@@ -1391,7 +1391,8 @@ stationary phase (inside the 19.47° cusp lines, a transverse and a
 diverging wave of wavenumber g / (U² cos² θ), each raised by a source d
 under the surface as e^(−kd), its energy arriving where its group velocity
 carries it, so the wake grows out behind and lingers after the body has
-gone); the Cauchy–Poisson rings of each breach and dive (long waves first,
+gone, all of it easing out over the linger's last 8 s so the water never
+stills at once); the Cauchy–Poisson rings of each breach and dive (long waves first,
 wavenumber g t² / 4r², the impulse's size cutting the short ones); the
 water heaped before each piece of it out of the water and drawn down
 behind (a capsule as long as the piece), the short capillary-gravity
@@ -1852,7 +1853,9 @@ farther out, so it rises into the view rather than filling its corner.
   sighting back from its course and one that comes near sends it down at
   once; under ice or a gale nothing comes up; the same sightings and poses
   at 30, 60 and 144 frames a second (including the rendered skin and normals);
-  and a frame's pose takes under 1.5 ms.
+  posing it reuses its geometry, buffers and cross sections frame after frame
+  (work counted, not timed); and its waves have eased out by the last frame
+  that draws them.
 - `node tools/visitor-wave-probe.mjs` checks the actual shader's Kelvin and
   breach-ring wave vectors against numerical derivatives of their phase:
   both Kelvin branches, both sides of the track, multiple headings and speeds.

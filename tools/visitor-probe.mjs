@@ -78,9 +78,12 @@ for (const form of ['neck', 'back']) {
   visitor.step(0, [], { open: true, near: false });
   visitor.summon(0, form);
   const sighting = visitor.sighting;
-  visitor.showAt(sighting.sinkStart + sighting.sinkSeconds + SCHEDULE.linger - 0.1);
+  // Late in the linger, before its waves ease out (SCHEDULE.fade): its rings at their widest at full height.
+  const lingerEnd = sighting.sinkStart + sighting.sinkSeconds + SCHEDULE.linger;
+  visitor.showAt(lingerEnd - SCHEDULE.fade - 0.1);
   const reach = visitor.uniforms.uVisitorReach.value;
   const rings = visitor.uniforms.uVisitorRings.value;
+  const fullWake = visitor.uniforms.uVisitorWake.value.y, fullRings = rings.map((ring) => ring.w);
   let covered = 0, clipped = 0, oldRadius = 0;
   for (const ring of rings) {
     const centre = Math.hypot(ring.x - reach.x, ring.y - reach.y);
@@ -95,6 +98,16 @@ for (const form of ['neck', 'back']) {
   }
   check(VISITOR_RINGS === 2 && rings.length === 2 && covered > 0 && clipped === 0 && reach.z < 0.65 * oldRadius,
     `${form} linger: ${reach.z.toFixed(1)} m shade radius (old height bound ${oldRadius.toFixed(1)} m), ${covered} ring samples covered, ${clipped} clipped; two ring slots`);
+  // The last frame that draws it at 60 fps: its waves eased out (SCHEDULE.fade). The shader's heights and slopes, and
+  // their unresolved variance's root, go as the wake's height, the rings' strengths and the heaps, so under a
+  // thousandth of them is under a thousandth of any slope it drew (at most about 0.2): letting it go (uVisitorOn 0)
+  // stills nothing that shows.
+  visitor.showAt(lingerEnd - 1 / 60);
+  const wakeLeft = visitor.uniforms.uVisitorWake.value.y / fullWake;
+  const ringsLeft = Math.max(...rings.map((ring, slot) => ring.w / fullRings[slot]));
+  const heapLeft = Math.max(...visitor.uniforms.uVisitorContacts.value.map((contact) => contact.w));
+  check(fullRings.every((strength) => strength > 0) && wakeLeft < 1e-3 && ringsLeft < 1e-3 && heapLeft < 1e-4,
+    `${form} linger's last frame: the wake at ${wakeLeft.toExponential(1)} of its height, the rings at ${ringsLeft.toExponential(1)} of their strength, heaps ${heapLeft.toExponential(1)} m`);
 }
 
 // The schedule, with nothing thrown.
