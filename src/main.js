@@ -1026,7 +1026,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   sceneUnder.add(pool.basin);
   sceneMain.add(pool.walls, pool.mirrorWalls, pool.yard, pool.mirrorYard);
   // The Koi pond's garden (src/koiGarden.js): in the main scene and the mirror; shown in the Koi pond.
-  const garden = createKoiGarden({ envTexture: environment.envTexture, mirrorLayer: MIRROR_LAYER, lighting });
+  // Its shade is baked under its own sky alone: not for the next place's, applied before the garden is hidden, nor the page's first wait.
+  const garden = createKoiGarden({ envTexture: environment.envTexture, mirrorLayer: MIRROR_LAYER, lighting, ownSky: () => environment.name === PLACES.koi.sky });
   garden.setCoarse(settings.gardenCoarse);
   sceneMain.add(...garden.meshes);
   /** The lake's bed, beach and open water, or the pool's basin and deck: the meshes only (setPooled changes the water). */

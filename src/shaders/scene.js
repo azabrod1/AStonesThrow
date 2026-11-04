@@ -3123,7 +3123,8 @@ void main() {
     color = mix(color, land, far);
   }
   float snow = snowCover(vWorld.xz) * smoothstep(0.5 * SNOW_MELT_HEIGHT, SNOW_MELT_HEIGHT, vWorld.y) * (1.0 - far);
-  if (snow > 0.0) color = mix(color, snowShade(vWorld.xz) * (uSunIrradiance * max(dot(normal, uSunDir), 0.0) + uSkyAmbient * SKY_LIGHT), snow);
+  // Snow on the Koi pond's lawn keeps the garden's shade (sunSeen, skySeen: 1 elsewhere): under snow's full cloud it is what seats the shrubs.
+  if (snow > 0.0) color = mix(color, snowShade(vWorld.xz) * (uSunIrradiance * max(dot(normal, uSunDir), 0.0) * sunSeen + uSkyAmbient * SKY_LIGHT * skySeen), snow);
   // The haze by its distance (HAZE), but on the far land, which is the photo's, hazed already.
   if (uHazeDensity > 0.0) color = mix(color, uHazeColor, (1.0 - exp(-uHazeDensity * length(toLand))) * (1.0 - far));
   gl_FragColor = vec4(color, 1.0);

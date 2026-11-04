@@ -34,7 +34,9 @@
 // set's, not drawn into a shadow map each frame: a map over its ground,
 // from the coarse garden's own triangles on the CPU, once it is first shown
 // and again for a new sun (setLight; 100 ms the first time, under 20 a new
-// sun, tools/garden-probe.mjs). It holds, for each point of the ground
+// sun, tools/garden-probe.mjs), and only under its own sky (`ownSky`): the
+// next place's sky comes in while the garden is still shown, and the page's
+// first while it waits for one, and neither sun is its. It holds, for each point of the ground
 // plane, the height at which the sun's ray up through it last leaves the
 // planting, so the shrubs shade the lawn, one another and the lantern from
 // the one lookup; and the ground's occlusion under and beside them, which
@@ -798,7 +800,7 @@ const LOOKS = {
  * `mirrorLayer`); setVisible shows it, setEnvironment gives it the sky's
  * light, setLight the lawn's bounce for the light now.
  */
-export function createKoiGarden({ envTexture, mirrorLayer, lighting }) {
+export function createKoiGarden({ envTexture, mirrorLayer, lighting, ownSky = () => true }) {
   // Built the first time it is shown (setVisible), never at start-up elsewhere; till then a speck of the same
   // attributes stands in, so the warm-up builds its programs.
   const speck = () => {
@@ -810,12 +812,12 @@ export function createKoiGarden({ envTexture, mirrorLayer, lighting }) {
     return geometry;
   };
   let shown = false, visibleNow = false, coarse = false;
-  // The shade (bakeShade), baked for the sun it holds: once the garden is shown, and again for a new sun.
+  // The shade (bakeShade), baked for the sun it holds: once the garden is shown, and again for a new sun, its own sky's (ownSky).
   const shadePixels = new Uint8Array(SHADE.texels * SHADE.texels * 2);
   let shadeTexture = null;
   const shadedFor = new THREE.Vector3(NaN, NaN, NaN);
   const shade = () => {
-    if (!shown || !visibleNow || shadedFor.equals(lighting.sunDirection)) return;
+    if (!shown || !visibleNow || !ownSky() || shadedFor.equals(lighting.sunDirection)) return;
     const started = performance.now();
     shadedFor.copy(lighting.sunDirection);
     const sunUp = bakeShade(Object.values(builtGarden(COARSE)), lighting.sunDirection, shadePixels, shadeTexture !== null);

@@ -58,7 +58,8 @@ console.log('\nthe planting catches:');
   const started = performance.now();
   // Under a sun like the garden's (19° up), so its shade is baked as the page bakes it.
   const lighting = { sunDirection: new THREE.Vector3(-0.6, 0.333, -0.73).normalize(), sunIrradiance: new THREE.Vector3(1, 1, 1), skyAmbient: new THREE.Vector3(1, 1, 1) };
-  const garden = createKoiGarden({ envTexture: null, mirrorLayer: 2, lighting });
+  let skyIsOwn = true;   // whether the sky in is the garden's own (src/main.js ownSky)
+  const garden = createKoiGarden({ envTexture: null, mirrorLayer: 2, lighting, ownSky: () => skyIsOwn });
   garden.setVisible(true);
   const built = performance.now() - started;
   // The scene's garden (fine) and the mirror's (coarse: src/koiGarden.js COARSE), the meshes by look, main then mirror.
@@ -82,6 +83,18 @@ console.log('\nthe planting catches:');
   garden.setVisible(true);
   garden.setLight();
   check(shadeTexture.version === bakedVersion + 1, 'an unchanged visible sun reuses the shade bake');
+  // Leaving: the next place's sky (its sun) comes in while the garden is still shown (src/main.js applySky before
+  // setKoiPond); coming back, the garden's own sky and sun again.
+  const ownSun = lighting.sunDirection.clone();
+  skyIsOwn = false;
+  lighting.sunDirection.set(0.2, 0.6, -0.77).normalize();
+  garden.setLight();
+  check(shadeTexture.version === bakedVersion + 1, 'another place\'s sky, come in while the garden is shown, bakes no shade');
+  skyIsOwn = true;
+  lighting.sunDirection.copy(ownSun);
+  garden.setLight();
+  garden.setVisible(true);
+  check(shadeTexture.version === bakedVersion + 1, 'back under its own sky and sun, the shade it holds is kept');
   check(fineTriangles < 300000, `the scene's under 300k triangles (${(fineTriangles / 1000).toFixed(0)}k)`);
   check(coarseTriangles < 0.4 * fineTriangles, `the coarse garden under 40% of the fine's triangles (${(100 * coarseTriangles / fineTriangles).toFixed(0)}%)`);
   // The coarse garden is the fine one's shrubs more coarsely made, from the same draws (src/koiGarden.js COARSE): the same
