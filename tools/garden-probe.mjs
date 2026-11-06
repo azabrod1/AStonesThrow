@@ -19,11 +19,15 @@
 //   the water shares from the floor (BED_UNIFORMS, src/waterSurface.js setBed);
 // - the cost: the garden's build and its triangles, the scene's (fine) under
 //   300k and the mirror's (coarse, Low's scene's too) under 40% of them, and
-//   its shade's bake under 150 ms the first time (the occlusion too) and 50
-//   for a new sun; built ahead in steps (prepareSome, as src/main.js does
-//   while the Koi pond's sky downloads), a separate copy of the module, it
-//   is the same garden to the last corner, no step takes over STEP_MS, and
-//   shown then it takes under SHOWN_MS (its shadows alone); the
+//   its costs as shares of the garden's whole first build in the same run
+//   (SHARE_OF_BUILD: what is measured is the same work's time on the same
+//   machine at the same moment, so another probe crowding the cores slows
+//   both alike, where a budget in milliseconds fails): its shade's first
+//   bake (the occlusion too), a new sun's (the least over three suns); built
+//   ahead in steps (prepareSome, as src/main.js does while the Koi pond's
+//   sky downloads), a separate copy of the module, the same garden to the
+//   last corner, its longest step, and showing it then (its shadows alone);
+//   the build itself is held by its triangles; the
 //   coarse garden laid out as the fine one (the same shrubs in the same
 //   order and tints, each where the fine one's is), so what is drawn on Low
 //   and in the mirror stands where the fine garden, which catches, does.
@@ -40,7 +44,10 @@ const CAUGHT_WITHIN = 0.03;   // m: the most a thing may go into the planting pa
 const STEP = 1 / 240;
 setShoreKind('koi');
 const failures = [];
-const STEP_MS = 30, SHOWN_MS = 100;   // ms: the longest step of building the garden ahead; showing it once built (its first sun's shadows, cold)
+// Each cost's most, as a share of the garden's whole first build (the header). On an M1, alone or with the cores
+// crowded: the first bake 8 to 9%, a new sun's 1 to 1.5%, the longest step ahead 1.2 to 1.3%, showing it built 4%.
+const SHARE_OF_BUILD = { firstShade: 0.15, newSun: 0.04, step: 0.03, shown: 0.08 };
+const share = (milliseconds, of) => `${milliseconds.toFixed(1)} ms, ${(100 * milliseconds / of).toFixed(1)}% of the build`;
 function check(condition, message) { console.log(`${condition ? 'ok  ' : 'FAIL'} ${message}`); if (!condition) failures.push(message); }
 let randomState = 1;
 Math.random = () => { randomState = (randomState * 16807) % 2147483647; return (randomState - 1) / 2147483646; };
@@ -72,9 +79,14 @@ console.log('\nthe planting catches:');
   const fineTriangles = trianglesOf(fine), coarseTriangles = trianglesOf(coarse);
   console.log(`  built in ${built.toFixed(0)} ms (its shade baked in ${garden.shadeMilliseconds.toFixed(0)} of them): the scene's ${(fineTriangles / 1000).toFixed(0)}k triangles, the mirror's (and Low's scene) ${(coarseTriangles / 1000).toFixed(0)}k`);
   const firstShade = garden.shadeMilliseconds;
-  lighting.sunDirection.set(-0.5, 0.4, -0.77).normalize();
-  garden.setLight();   // a new sun: its shadows baked again, its occlusion kept
-  check(firstShade < 150 && garden.shadeMilliseconds < 50, `its shade baked in under 150 ms the first time (${firstShade.toFixed(0)} ms), a new sun's in under 50 (${garden.shadeMilliseconds.toFixed(0)} ms)`);
+  let newSun = Infinity;
+  for (const sun of [[-0.55, 0.37, -0.75], [-0.45, 0.42, -0.79], [-0.5, 0.4, -0.77]]) {
+    lighting.sunDirection.set(...sun).normalize();
+    garden.setLight();   // a new sun: its shadows baked again, its occlusion kept
+    newSun = Math.min(newSun, garden.shadeMilliseconds);
+  }
+  check(firstShade < SHARE_OF_BUILD.firstShade * built, `its shade's first bake under ${100 * SHARE_OF_BUILD.firstShade}% of the build (${share(firstShade, built)})`);
+  check(newSun < SHARE_OF_BUILD.newSun * built, `a new sun's under ${100 * SHARE_OF_BUILD.newSun}% (${share(newSun, built)}, the least of three)`);
   const shadeTexture = gardenShadeUniforms.uGardenShade.value;
   const bakedVersion = shadeTexture.version;
   garden.setVisible(false);
@@ -120,8 +132,8 @@ console.log('\nthe planting catches:');
       return mine.length === theirs.length && mine.every((value, at) => value === theirs[at]);
     });
     check(same, 'built ahead in steps, it is the same garden as one built at once, to the last corner');
-    check(longest < STEP_MS, `no step of building it ahead takes over ${STEP_MS} ms (the longest ${longest.toFixed(1)} ms)`);
-    check(shown < SHOWN_MS, `built ahead, it is shown in under ${SHOWN_MS} ms (${shown.toFixed(1)} ms)`);
+    check(longest < SHARE_OF_BUILD.step * built, `no step of building it ahead over ${100 * SHARE_OF_BUILD.step}% of the build (the longest ${share(longest, built)})`);
+    check(shown < SHARE_OF_BUILD.shown * built, `built ahead, it is shown in under ${100 * SHARE_OF_BUILD.shown}% of the build (${share(shown, built)})`);
   }
   check(fineTriangles < 300000, `the scene's under 300k triangles (${(fineTriangles / 1000).toFixed(0)}k)`);
   check(coarseTriangles < 0.4 * fineTriangles, `the coarse garden under 40% of the fine's triangles (${(100 * coarseTriangles / fineTriangles).toFixed(0)}%)`);
