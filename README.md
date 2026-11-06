@@ -1023,7 +1023,9 @@ The curated locations include:
   between the boulders. One photographed morning.
 - **Highlands** (`?sky=highlands`): five Kiara panoramas, from dawn and sunrise
   to noon, sunset and dusk. Starts at sunset unless a remembered clock is
-  nearer another hour; noon remains the lighting calibration anchor.
+  nearer another hour; noon remains the lighting calibration anchor, brought
+  up 1.5 stops (its `exposure`): the series was exposed photo by photo, and
+  as a single photograph its noon came out a dusk, darker than its sunset.
 - **Desert oasis** (`?sky=desert`): Rogland's golden hour, starry night and
   moonlit early morning, framed toward the lower rock skyline. The water is
   the simulation's, surrounded by the photographed desert.
