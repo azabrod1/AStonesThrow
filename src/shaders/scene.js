@@ -1676,6 +1676,11 @@ vec3 galeFoamAt(vec2 restXZ) {
 #define MIRROR_NEARNESS_SCALE 4.0     // MIRROR_COMMON's
 #define MIRROR_FARTHEST 1e-3          // nearness under this (beyond a kilometre): the sky
 #define MIRROR_EDGE 0.03              // a lookup past the mirror image's edge fades to the sky's cube over this share of the image (the water's reflection)
+// What the mirror image shows, faded to the sky's cube as far as the lookup is \`pastEdge\` (uv) past the image's edge.
+vec3 fadePastMirrorEdge(vec3 shown, vec2 pastEdge, vec3 ray) {
+  float outside = smoothstep(0.0, MIRROR_EDGE, max(pastEdge.x, pastEdge.y));
+  return outside > 0.0 ? mix(shown, textureCube(uSkyCube, ray).rgb, outside) : shown;
+}
 vec3 nearReflection(vec2 rippleUv, vec3 ray, out vec3 near) {
   vec2 lookup = clamp(rippleUv, vec2(0.002), vec2(0.998));
   near = vec3(rippleUv, 0.0);
@@ -1723,9 +1728,8 @@ vec3 nearReflection(vec2 rippleUv, vec3 ray, out vec3 near) {
 #define MIRROR_BOX 3.5                 // one lookup's footprint down the image, in the spread's rms (a box of the Gaussian's width)
 #define MIRROR_TAPS 3                  // grazing, where some rays dip below the horizon...
 #define MIRROR_TAP_STEP 1.2            // ...this far apart, in the spread's rms
-vec3 spreadMirror(vec3 sharp, vec3 near, vec3 ray, float slopeVariance) {
+vec3 spreadMirror(vec3 sharp, vec3 near, vec3 ray, vec4 coord, float slopeVariance) {   // coord: uReflectionMatrix * (ray, 0)
   float horizontal = max(length(ray.xz), 1e-3);
-  vec4 coord = uReflectionMatrix * vec4(ray, 0.0);
   vec4 raised = coord + 0.01 * horizontal * uReflectionMatrix[1];
   vec2 perClimb = (raised.xy / max(raised.w, 1e-4) - coord.xy / max(coord.w, 1e-4)) / 0.01;   // uv per unit of climb
   // A near thing's (nearness 1/(L + d) from the mirror camera, L its distance from the surface here) by L/(L + d).
@@ -1744,7 +1748,6 @@ vec3 spreadMirror(vec3 sharp, vec3 near, vec3 ray, float slopeVariance) {
   vec2 acrossTap = normalize(vec2(-downPixels.y, downPixels.x) + 1e-6) / uMirrorSize;   // a texel across the image (square in its pixels, not its uv)
   vec2 halfLength = max(0.5 * MIRROR_BOX, 0.5 * float(MIRROR_TAPS) * MIRROR_TAP_STEP) * spread * perClimb;   // either way's footprint, either side of the centre
   vec2 pastEdge = max(max(halfLength - centre, centre + halfLength - 1.0), max(-halfLength - centre, centre - halfLength - 1.0));
-  float outside = smoothstep(0.0, MIRROR_EDGE, max(pastEdge.x, pastEdge.y));
   vec3 spreadImage;
   if (climb > 0.5 * MIRROR_BOX * turned) {
     // Where no turned ray dips below the horizon (most of the water), one lookup: the hardware's anisotropic filter (the
@@ -1766,8 +1769,7 @@ vec3 spreadMirror(vec3 sharp, vec3 near, vec3 ray, float slopeVariance) {
     if (weights <= 1e-4) return sharp;
     spreadImage = sum / weights;
   }
-  if (outside > 0.0) spreadImage = mix(spreadImage, textureCube(uSkyCube, ray).rgb, outside);
-  return mix(sharp, spreadImage, smoothstep(0.5, 1.5, pixels));
+  return mix(sharp, fadePastMirrorEdge(spreadImage, pastEdge, ray), smoothstep(0.5, 1.5, pixels));
 }
 
 // The pool's tiles' fine detail, which the under-water pass, drawn coarser
@@ -2152,10 +2154,8 @@ void main() {
   else reflected = nearReflection(reflectUv, reflectedRay, near);
   // What the ripples too fine for the pixel do to it (spreadMirror): far out, the far shore's image spreads down the
   // water and pales toward it, and a wake too fine to resolve shows as a V of paler, duller water across it.
-  reflected = spreadMirror(reflected, near, reflectedRay, slopeVariance);
-  vec2 pastEdge = max(-reflectUv, reflectUv - 1.0);
-  float outside = smoothstep(0.0, MIRROR_EDGE, max(pastEdge.x, pastEdge.y));
-  if (outside > 0.0) reflected = mix(reflected, textureCube(uSkyCube, reflectedRay).rgb, outside);
+  reflected = spreadMirror(reflected, near, reflectedRay, reflectCoord, slopeVariance);
+  reflected = fadePastMirrorEdge(reflected, max(-reflectUv, reflectUv - 1.0), reflectedRay);
 
 #ifdef CAVITY_MESH
   // Inside the hole the water is shaded as water is: what a wall reflects is
