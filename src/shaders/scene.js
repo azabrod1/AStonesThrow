@@ -1740,7 +1740,8 @@ vec3 spreadMirror(vec3 sharp, vec3 near, vec3 ray, float slopeVariance) {
   if (pixels < 0.5) return sharp;
   vec2 centre = near.xy;
   float climb = ray.y / horizontal;
-  vec2 acrossTap = normalize(vec2(-perClimb.y, perClimb.x) + 1e-6) / uMirrorSize;   // a texel across the image
+  vec2 downPixels = perClimb * uMirrorSize;
+  vec2 acrossTap = normalize(vec2(-downPixels.y, downPixels.x) + 1e-6) / uMirrorSize;   // a texel across the image (square in its pixels, not its uv)
   vec2 halfLength = max(0.5 * MIRROR_BOX, 0.5 * float(MIRROR_TAPS) * MIRROR_TAP_STEP) * spread * perClimb;   // either way's footprint, either side of the centre
   vec2 pastEdge = max(max(halfLength - centre, centre + halfLength - 1.0), max(-halfLength - centre, centre - halfLength - 1.0));
   float outside = smoothstep(0.0, MIRROR_EDGE, max(pastEdge.x, pastEdge.y));
