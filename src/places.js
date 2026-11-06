@@ -10,7 +10,9 @@ import { SKY_NAMES, REED_SKIES, skyShore } from './sky.js';
 // and LAKE_BED's uShoreKind, its GLSL twin): the Koi pond (`koi`), a pond in
 // a Japanese garden under the same sky, a closed, irregular shore of its own
 // (KOI_SHORE), stone-edged with a pebble beach and a garden round it, out of
-// reach behind a hedge (src/koiGarden.js); or the Polynesian lagoon
+// reach behind a hedge (src/koiGarden.js), its ground running out to where
+// its sky's photo stands as a backdrop (src/sky.js Backdrop), its water's
+// sheet only past its shore (src/main.js KOI_SHEET_REACH); or the Polynesian lagoon
 // (`tropics`), the lake's beach running out along a lagoon's (LAGOON_SHORE)
 // under its palms, with motus across the water and a high island beyond
 // (src/tropics.js). A place may have its own water (`water`, a key of

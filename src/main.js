@@ -300,7 +300,7 @@ import { lightningAt } from './lightning.js';
 import { Rings } from './rings.js';
 import { DropRings } from './dropRings.js';
 import { PLACES, placeShore, waterForPlace } from './places.js';
-import { createEnvironment, SALT_SKIES, skyHours, resolveHour, nearestHour } from './sky.js';
+import { createEnvironment, SALT_SKIES, skyHours, resolveHour, nearestHour, skyBackdrop } from './sky.js';
 import { createWaterSurface } from './waterSurface.js';
 import { createPondFloor, createShore, floorDepthAt, groundHeightAt, lagoonLandGeometry, setShoreKind, setShoreLook, KOI_SHORE, SHORE_LOOKS } from './pondFloor.js';
 import { Rock, setAir, aimSkip, aimThrow, dressThing, flutterTrial, prepareThing, PREPARATION_WORK, skipLowest, skipSpeed, SKIP_THROW, PHYSICS_STEP, throwFlightTime } from './rock.js';
@@ -1037,7 +1037,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   // The beach behind the waterline (src/pondFloor.js), which the water mirrors too.
   const shore = createShore(floor, lighting, environment, { snow: snowCover });
   // The Koi pond's ground all round it (src/pondFloor.js), shown in place of the beach in the Koi pond, mirrored as it is.
-  const koiLand = createShore(floor, lighting, environment, { snow: snowCover, koi: true });
+  const koiLand = createShore(floor, lighting, environment, { snow: snowCover, koi: true, backdrop: skyBackdrop(PLACES.koi.sky) });
   koiLand.layers.enable(MIRROR_LAYER);
   sceneMain.add(koiLand);
   // The Polynesian lagoon's ground, its beach running out along the lagoon (src/pondFloor.js LAGOON_SHORE), the same way.
@@ -1064,7 +1064,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   sceneUnder.add(pool.basin);
   sceneMain.add(pool.walls, pool.mirrorWalls, pool.yard, pool.mirrorYard);
   // The Koi pond's garden (src/koiGarden.js): in the main scene and the mirror; shown in the Koi pond.
-  const garden = createKoiGarden({ envTexture: environment.envTexture, mirrorLayer: MIRROR_LAYER, lighting });
+  // Its shade is baked under its own sky alone: not for the next place's, applied before the garden is hidden, nor the page's first wait.
+  const garden = createKoiGarden({ envTexture: environment.envTexture, mirrorLayer: MIRROR_LAYER, lighting, ownSky: () => environment.name === PLACES.koi.sky });
   garden.setCoarse(settings.sceneryCoarse);
   sceneMain.add(...garden.meshes);
   /** The lake's bed, beach and open water, or the pool's basin and deck: the meshes only (applyPlace changes the water). */
@@ -1080,7 +1081,12 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     garden.setVisible(!asPool && koiPond);
     tropics.setVisible(!asPool && Boolean(PLACES[placeName].tropics));   // the Polynesian lagoon's palms and motu
     surface.setPool(asPool ? { ...pool.square, depth: POOL.depth, deck: POOL.deck } : null);
+    // Round the Koi pond its ground runs all round to its sky's backdrop (src/sky.js Backdrop): its water's sheet ends
+    // past its shore, a metre under the ground, so none shows beyond the ground's edge (src/waterSurface.js).
+    surface.setSheetReach(!asPool && koiPond ? KOI_SHEET_REACH : null);
   }
+  const KOI_MOST = KOI_SHORE.base + KOI_SHORE.lobes.reduce((sum, [amplitude]) => sum + amplitude, 0);   // m: the farthest the Koi pond's shore lies from its centre
+  const KOI_SHEET_REACH = Math.max(Math.abs(KOI_SHORE.centre[0] - water.centre[0]), Math.abs(KOI_SHORE.centre[1] - water.centre[1])) + KOI_MOST + 1;
   /** The lagoon's land mesh and its scenery (src/tropics.js build), built once: building compiles no program. */
   function buildLagoon() {
     if (!lagoonLand.geometry.attributes.position) lagoonLand.geometry = lagoonLandGeometry();
@@ -1095,10 +1101,9 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   sceneUnder.add(fishView.group);
   /** The place's fish in its water: the pool's basin, the Koi pond's (its shore holds them), or the lake's solver patch (FISH_LAKE_INSET) where it is deep enough. */
   function applyFish() {
-    const koiReach = KOI_SHORE.base + KOI_SHORE.lobes.reduce((sum, [amplitude]) => sum + amplitude, 0);
     const bounds = pooled
       ? { minX: pool.square.minX, minZ: pool.square.minZ, maxX: pool.square.minX + pool.square.size, maxZ: pool.square.minZ + pool.square.size }
-      : koiPond ? { minX: KOI_SHORE.centre[0] - koiReach, minZ: KOI_SHORE.centre[1] - koiReach, maxX: KOI_SHORE.centre[0] + koiReach, maxZ: KOI_SHORE.centre[1] + koiReach }
+      : koiPond ? { minX: KOI_SHORE.centre[0] - KOI_MOST, minZ: KOI_SHORE.centre[1] - KOI_MOST, maxX: KOI_SHORE.centre[0] + KOI_MOST, maxZ: KOI_SHORE.centre[1] + KOI_MOST }
       : { minX: water.domainMin[0] + FISH_LAKE_INSET.side, minZ: water.domainMin[1] + FISH_LAKE_INSET.far, maxX: water.domainMin[0] + water.domainSize - FISH_LAKE_INSET.side, maxZ: water.domainMin[1] + water.domainSize };
     fishes.setConditions(fishConditions());   // they start as deep as they will keep (setWaters places them)
     fishes.setWaters({ place: fishOn ? placeName : 'none', bounds, depthAt: bedDepthAt });
@@ -1487,6 +1492,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     // The lagoon built while its sky downloads, once a frame has shown the choice, not as the sky arrives (buildLagoon).
     if (PLACES[place].tropics && !tropics.built) requestAnimationFrame(() => setTimeout(() => { if (placeRequest === request) buildLagoon(); }));
     if (PLACES[place].visitor) visitor.prepareHide();   // its hide baked between frames while the sky downloads (src/lochVisitor.js)
+    if (PLACES[place].koi) prepareGarden(request);
     return requestSky(sky, request.hour).then(() => {
       if (placeRequest === request && environment.name === sky && environment.hour === request.hour) {
         const entering = placeName !== place;
@@ -1502,6 +1508,19 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       }
       return placeName;
     });
+  }
+  /**
+   * The Koi pond's garden built while its sky downloads (src/koiGarden.js
+   * prepareSome), GARDEN_SLICE_MS between one frame and the next, from the
+   * frame after the choice shows, for as long as the choice stands; if the
+   * sky comes first, showing the garden builds what is left at once.
+   */
+  const GARDEN_SLICE_MS = 6;
+  function prepareGarden(request) {
+    const slice = () => {
+      if (placeRequest === request && !garden.prepareSome(GARDEN_SLICE_MS)) requestAnimationFrame(() => setTimeout(slice));
+    };
+    requestAnimationFrame(() => setTimeout(slice));
   }
   /** What the sky shown fetched, for index.html to ask for first next time (SKY_ASSETS_STORAGE_KEY); forgetSkyAssets as another is chosen. */
   function rememberSkyAssets() {
@@ -2914,6 +2933,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       sky: sum(environment.targets) + environment.panoramaBytes + environment.horizonBytes,
       floor: floorPatternBytes,
       ice: ice.budget.maskBytes + iceCracks.bytes + iceShadow.bytes,
+      garden: garden.shadeBytes,
     };
     return { ...parts, total: Object.values(parts).reduce((total, bytes) => total + bytes, 0) };
   }
