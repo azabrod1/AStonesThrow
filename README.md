@@ -1519,7 +1519,9 @@ anisotropic filtering, one lookup where no ray is turned below the horizon,
 three where some are and those are left out, hidden by the next crest), so
 past where the ripples resolve the far shore's image softens down the water
 and pales toward it, rather than standing as a sharp copy of the shore that
-reads as more land; near things spread by their distance, as they move. It
+reads as more land; near things in the splash's rectangle (the splash, a floater,
+the thing in the loch) spread by their distance, as they move, and the cached
+image's others (the pool's walls, the boulders, the koi's garden) as the sky. It
 costs about 1.5 ms a frame on an M1 at 2149×1209 (16× filtering cost 6). Where there is foam it replaces the surface, a
 diffuse white under the sun and the sky; the foam specks ride on it. The
 splash's passes then draw its water over the scene and tone-map it; with no
