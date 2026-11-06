@@ -32,10 +32,11 @@
 // Its light and shade (bakeShade; GARDEN_SHADE in src/shaders/scene.js):
 // the garden is static, so its shadows are baked, as a game bakes a static
 // set's, not drawn into a shadow map each frame: a map over its ground,
-// from the coarse garden's own triangles on the CPU, once it is first shown
-// and again for a new sun (setLight; about 100 ms the first time, a tenth of
-// the garden's own first build, and 16 a new sun; tools/garden-probe.mjs
-// holds them under 150 and 50), and only under its own sky (`ownSky`): the
+// from the coarse garden's own triangles on the CPU: the ground's occlusion
+// once, whatever the sun (with the garden's build, prepareSome), and the
+// shadows once it is first shown and again for a new sun (setLight; about
+// 16 ms; tools/garden-probe.mjs holds a sun's under 50 and the whole of a
+// first bake, the occlusion too, under 150), and only under its own sky (`ownSky`): the
 // next place's sky comes in while the garden is still shown, and the page's
 // first while it waits for one, and neither sun is its. It holds, for each point of the ground
 // plane, the height at which the sun's ray up through it last leaves the
@@ -50,8 +51,11 @@
 // draws), the water's ripples breaking its image anyway, and so is the
 // scene's on a preset that asks (setCoarse: Low); what catches is the fine
 // garden's, whatever is drawn (on Low it is let go once its catch table is
-// made). Built once, the first time it is shown or
-// met (builtGarden), seeded (seededRandom), never Math.random.
+// made). Built once, seeded (seededRandom), never Math.random: a step a
+// shrub, a few milliseconds a frame while the Koi pond's sky downloads
+// (prepareSome, with the catch table and the ground's occlusion), and what
+// is left the first time it is shown or met (builtGarden), the same steps
+// on the same stream, so the garden is the same however it was built.
 import * as THREE from 'three';
 import { seededRandom } from './spray.js';
 import { KOI_SHORE, koiShoreRadius, koiShoreDistance, koiFloorDepthAt, gardenShadeUniforms } from './pondFloor.js';
@@ -465,7 +469,7 @@ const ROWS = [
 // Each shrub's own shape, besides its row's: a share of them clipped low and broad (`broad`: its height times
 // `flatter`, its length times `longer`), as karikomi are, among the rounded ones.
 const SHAPES = { broad: 0.3, flatter: 0.6, longer: 1.35 };
-// Each shrub's form (gardenGeometry `plant`), as karikomi are clipped: a single mound, a cloud of merged lobes, a broad
+// Each shrub's form (gardenSteps `plant`), as karikomi are clipped: a single mound, a cloud of merged lobes, a broad
 // base with a crown or two on it, or a wave of low lobes along the bank; `weight` how often.
 const FORMS = [{ name: 'round', weight: 2 }, { name: 'cloud', weight: 4 }, { name: 'tiered', weight: 2 }, { name: 'wave', weight: 2 }];
 const BACK_FORMS = [{ name: 'round', weight: 3 }, { name: 'tiered', weight: 2 }];
@@ -473,7 +477,8 @@ const BACK_FORMS = [{ name: 'round', weight: 3 }, { name: 'tiered', weight: 2 }]
 const ENDS = { back: 3.2, spacing: 0.75 };
 // The lantern: θ, how far behind the planting's beginning, and how low the shrubs before it keep (m, their `up`).
 const LANTERN_AT = { angle: -1.2, behind: 0.62, clear: 0.75, below: 0.3 };
-function gardenGeometry(random, detail = 1) {
+/** The garden's geometries ({ stone, foliage }), built a step a lobe of a shrub, then the lantern, then each look's mesh (prepareSome's steps). */
+function* gardenSteps(random, detail = 1) {
   const stone = new Parts(), foliage = new Parts();
   const between = ([least, most]) => least + (most - least) * random();
   const lantern = behindShore(LANTERN_AT.angle, plantingFrom(LANTERN_AT.angle) + LANTERN_AT.behind);
@@ -481,41 +486,42 @@ function gardenGeometry(random, detail = 1) {
   // A shrub (FORMS): its lobes, each a clipped cushion (shrub) in the shrub's own frame (x along the bank, z away from
   // it, y up), merged into one mass of its kind's green (FOLIAGE_LOOK: tint), each sunk a quarter into the ground or
   // set on the lobe below it.
-  const plant = (x, z, facing, along, up, deep, fineness = 1, forms = FORMS) => {
+  const plant = function* (x, z, facing, along, up, deep, fineness = 1, forms = FORMS) {
     const tint = random();
     const turn = new THREE.Matrix4().makeRotationY(facing);
-    const lobe = (offsetX, offsetZ, lobeAlong, lobeUp, lobeDeep, lift = 0) => {
+    const lobe = function* (offsetX, offsetZ, lobeAlong, lobeUp, lobeDeep, lift = 0) {
       const offset = new THREE.Vector3(offsetX, 0, offsetZ).applyMatrix4(turn);
       const atX = x + offset.x, atZ = z + offset.z;
       const sizeShare = Math.max(lobeAlong / along, lobeUp / up, 0.5);
       foliage.add(shrub({ along: lobeAlong, up: lobeUp, deep: lobeDeep, seed: 10 + random() * 90, fineness: detail * fineness * (0.45 + 0.55 * sizeShare) }),
         new THREE.Matrix4().makeRotationY(facing + (random() - 0.5) * 0.6).setPosition(atX, groundAt(atX, atZ) - lobeUp * 0.22 + lift, atZ), { tint });
+      yield;
     };
     let draw = random() * forms.reduce((sum, form) => sum + form.weight, 0);
     const form = forms.find((one) => (draw -= one.weight) < 0)?.name ?? 'round';
-    if (form === 'round') lobe(0, 0, along, up, deep);
+    if (form === 'round') yield* lobe(0, 0, along, up, deep);
     else if (form === 'cloud') {
       // A mass of several, the middle one largest, the others round it at their own heights.
-      lobe(0, 0, along * 0.78, up * 0.85, deep * 0.85);
+      yield* lobe(0, 0, along * 0.78, up * 0.85, deep * 0.85);
       const count = 3 + Math.floor(random() * 3);
       for (let index = 0; index < count; index++) {
         const angle = (index / count) * Math.PI * 2 + random() * 0.8, share = 0.45 + 0.25 * random();
-        lobe(Math.cos(angle) * along * 0.55, Math.sin(angle) * deep * 0.4, along * share, up * share * (0.75 + 0.5 * random()), deep * share, up * 0.12 * random());
+        yield* lobe(Math.cos(angle) * along * 0.55, Math.sin(angle) * deep * 0.4, along * share, up * share * (0.75 + 0.5 * random()), deep * share, up * 0.12 * random());
       }
     } else if (form === 'tiered') {
       // A broad low base, a smaller crown or two set on it.
-      lobe(0, 0, along * 1.1, up * 0.55, deep * 1.05);
+      yield* lobe(0, 0, along * 1.1, up * 0.55, deep * 1.05);
       const crowns = 1 + Math.floor(random() * 2);
       for (let index = 0; index < crowns; index++) {
         const share = 0.45 + 0.2 * random();
-        lobe((random() - 0.5) * along * 0.6, (random() - 0.5) * deep * 0.3, along * share, up * share, deep * share, up * 0.42);
+        yield* lobe((random() - 0.5) * along * 0.6, (random() - 0.5) * deep * 0.3, along * share, up * share, deep * share, up * 0.42);
       }
     } else {
       // A wave: low lobes in a row along the bank, rising and falling.
       const count = 3 + Math.floor(random() * 2);
       for (let index = 0; index < count; index++) {
         const share = 0.42 + 0.12 * random();
-        lobe((index - (count - 1) / 2) * along * 0.48, (random() - 0.5) * deep * 0.25, along * share, up * (0.55 + 0.4 * random()), deep * (0.75 + 0.2 * random()));
+        yield* lobe((index - (count - 1) / 2) * along * 0.48, (random() - 0.5) * deep * 0.25, along * share, up * (0.55 + 0.4 * random()), deep * (0.75 + 0.2 * random()));
       }
     }
   };
@@ -530,7 +536,7 @@ function gardenGeometry(random, detail = 1) {
       const fromLantern = nearLantern(x, z);
       if (row !== ROWS[0] && fromLantern < LANTERN_AT.clear) continue;
       if (row === ROWS[0] && fromLantern < LANTERN_AT.clear * 1.2) up = Math.min(up, LANTERN_AT.below);
-      plant(x, z, facingPond(x, z) + Math.PI / 2, along, up, deep, row.fineness, row.behind[0] > 1 ? BACK_FORMS : FORMS);   // the rows behind, mostly hidden, simpler
+      yield* plant(x, z, facingPond(x, z) + Math.PI / 2, along, up, deep, row.fineness, row.behind[0] > 1 ? BACK_FORMS : FORMS);   // the rows behind, mostly hidden, simpler
     }
   }
   // The ends, running back from the pond.
@@ -539,12 +545,15 @@ function gardenGeometry(random, detail = 1) {
       const deep = between(ROWS[0].deep), up = between([0.5, 0.95]);
       const angle = end + inward * deep / (koiShoreRadius(end) + plantingFrom(end) + back);
       const { x, z } = behindShore(angle, plantingFrom(end) + back + between(ROWS[0].along));
-      plant(x, z, facingPond(x, z), between(ROWS[0].along), up, deep);
+      yield* plant(x, z, facingPond(x, z), between(ROWS[0].along), up, deep);
     }
   }
   // The lantern, its windows toward the pond.
   addLantern(stone, { x: lantern.x, z: lantern.z, turn: facingPond(lantern.x, lantern.z), tint: 0.75 });
-  return { stone: stone.geometry(), foliage: foliage.geometry() };
+  yield;
+  const stoneGeometry = stone.geometry();
+  yield;
+  return { stone: stoneGeometry, foliage: foliage.geometry() };
 }
 
 // ---- its light and shade ---------------------------------------------------
@@ -565,7 +574,13 @@ const SHADE = { texels: 512, half: 20, top: GARDEN_SHADE_TOP, lowestSun: 0.02, p
  * `under`: seen along a direction whose x and z per unit of height are the
  * slopes (the sun's; 0 and 0 from straight above).
  */
-function rasterGreatest(geometries, into, { slopeX, slopeZ, under }) {
+function rasterGreatest(geometries, into, slopes) {
+  const steps = rasterSteps(geometries, into, slopes);
+  while (!steps.next().done);
+}
+const RASTER_STEP = 8192;   // faces a step of rasterSteps
+/** rasterGreatest's work, RASTER_STEP faces a step (bakeOcclusion's, ahead: prepareSome). */
+function* rasterSteps(geometries, into, { slopeX, slopeZ, under }) {
   const texel = (2 * SHADE.half) / SHADE.texels;
   const minX = KOI_SHORE.centre[0] - SHADE.half, minZ = KOI_SHORE.centre[1] - SHADE.half;
   const size = SHADE.texels;
@@ -585,6 +600,7 @@ function rasterGreatest(geometries, into, { slopeX, slopeZ, under }) {
       keep(Math.floor(mapped[at]), Math.floor(mapped[at + 1]), mapped[at + 2]);
     }
     for (let face = 0; face < index.length; face += 3) {
+      if (face % (3 * RASTER_STEP) === 3 * RASTER_STEP - 3) yield;
       const first = 3 * index[face], second = 3 * index[face + 1], third = 3 * index[face + 2];
       const ax = mapped[first], ay = mapped[first + 1], bx = mapped[second], by = mapped[second + 1], cx = mapped[third], cy = mapped[third + 1];
       const area = (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
@@ -608,6 +624,11 @@ function rasterGreatest(geometries, into, { slopeX, slopeZ, under }) {
 
 /** A box blur of `radius` texels along rows then columns of a square map, in place (`scratch` its size). */
 function boxBlur(values, scratch, radius) {
+  const steps = boxBlurSteps(values, scratch, radius);
+  while (!steps.next().done);
+}
+/** boxBlur's work, a step along the rows and one down the columns (bakeOcclusion's, ahead: prepareSome). */
+function* boxBlurSteps(values, scratch, radius) {
   const size = SHADE.texels, width = 2 * radius + 1;
   for (const [stride, step] of [[size, 1], [1, size]]) {
     for (let line = 0; line < size; line++) {
@@ -620,30 +641,35 @@ function boxBlur(values, scratch, radius) {
       }
     }
     values.set(scratch);
+    yield;
   }
 }
 
 /**
  * The garden's shade (GARDEN_SHADE in src/shaders/scene.js), from the coarse
  * garden's triangles (laid out as the fine one's, the header), into
- * `pixels` (RG, a byte each). Green, once (`occluded` false): the ground's
- * occlusion, from how far the planting covers it (seen from straight above,
- * over the ground about GROUND_UNDER high) spread over SHADE.reach. Red, for
- * the sun: each point of the ground plane's sun's ray's greatest height over
- * the planting, the triangles laid on the ground along the sun (a shadow map
- * whose texels lie on the ground), its edges softened. False for a sun too
+ * `pixels` (RG, a byte each). Green (bakeOcclusion, once, whatever the sun:
+ * prepareSome's last step): the ground's occlusion, from how far the
+ * planting covers it (seen from straight above, over the ground about
+ * GROUND_UNDER high) spread over SHADE.reach. Red (bakeShade, for each sun):
+ * each point of the ground plane's sun's ray's greatest height over the
+ * planting, the triangles laid on the ground along the sun (a shadow map
+ * whose texels lie on the ground), its edges softened; false for a sun too
  * low to shade by (the red 0: lit throughout).
  */
-function bakeShade(geometries, sunDirection, pixels, occluded) {
+function* bakeOcclusion(geometries, pixels) {
   const size = SHADE.texels, texel = (2 * SHADE.half) / size;
   const values = new Float32Array(size * size), scratch = new Float32Array(size * size);
-  if (!occluded) {
-    rasterGreatest(geometries, values, { slopeX: 0, slopeZ: 0, under: GROUND_UNDER });
-    for (let at = 0; at < values.length; at++) values[at] = Math.min(Math.max(values[at] / SHADE.fullAt, 0), 1);
-    boxBlur(values, scratch, Math.max(Math.round(SHADE.reach / texel), 1));
-    for (let at = 0; at < values.length; at++) pixels[2 * at + 1] = Math.round((1 - SHADE.most * values[at]) * 255);
-    values.fill(0);
-  }
+  yield* rasterSteps(geometries, values, { slopeX: 0, slopeZ: 0, under: GROUND_UNDER });
+  yield;
+  for (let at = 0; at < values.length; at++) values[at] = Math.min(Math.max(values[at] / SHADE.fullAt, 0), 1);
+  yield;
+  yield* boxBlurSteps(values, scratch, Math.max(Math.round(SHADE.reach / texel), 1));
+  for (let at = 0; at < values.length; at++) pixels[2 * at + 1] = Math.round((1 - SHADE.most * values[at]) * 255);
+}
+function bakeShade(geometries, sunDirection, pixels) {
+  const size = SHADE.texels, texel = (2 * SHADE.half) / size;
+  const values = new Float32Array(size * size), scratch = new Float32Array(size * size);
   const sunUp = sunDirection.y >= SHADE.lowestSun;
   if (sunUp) {
     rasterGreatest(geometries, values, { slopeX: sunDirection.x / sunDirection.y, slopeZ: sunDirection.z / sunDirection.y, under: 0 });
@@ -654,10 +680,24 @@ function bakeShade(geometries, sunDirection, pixels, occluded) {
   return sunUp;
 }
 
-const built = {};
-/** The garden's geometries, by look, fine or coarse (COARSE), each built once from the same draws (the header). */
+const built = {}, building = {};
+/** One step of building the garden at `detail` (gardenSteps, begun if need be); true once it is built. */
+function buildStep(detail) {
+  if (built[detail]) return true;
+  building[detail] ??= gardenSteps(seededRandom(7, 3), detail);
+  const step = building[detail].next();
+  if (!step.done) return false;
+  built[detail] = step.value;
+  delete building[detail];
+  return true;
+}
+/**
+ * The garden's geometries, by look, fine or coarse (COARSE), each built once
+ * from the same draws (the header): what prepare left unbuilt is built now,
+ * the same steps on the same stream, so the garden is the same either way.
+ */
 function builtGarden(detail = 1) {
-  built[detail] ??= gardenGeometry(seededRandom(7, 3), detail);
+  while (!buildStep(detail));
   return built[detail];
 }
 /** The fine garden let go once the catch table is made from it, where nothing draws it (Low: setCoarse); built again if asked for. */
@@ -666,18 +706,26 @@ function letGoOfFine() {
   for (const geometry of Object.values(built[1])) geometry.dispose();
   delete built[1];
 }
-let table = null;
+let table = null, tabling = null;
+const TABLE_STEP = 20000;   // corners a step of the catch table (catchSteps)
 /**
  * The catch table (CATCH; the header): for each direction about the pond's
  * centre and each height over the water, the least distance behind the
  * waterline of any corner of the drawn garden there (Infinity: nothing).
  */
 function catchTable() {
-  if (table) return table;
-  table = new Float32Array(CATCH.bins * CATCH.bands).fill(Infinity);
+  tabling ??= catchSteps();
+  while (!tabling.next().done);
+  return table;
+}
+/** The catch table's steps, TABLE_STEP corners each (prepare's); `table` once they are done. */
+function* catchSteps() {
+  if (table) return;
+  const filling = new Float32Array(CATCH.bins * CATCH.bands).fill(Infinity);
   for (const geometry of Object.values(builtGarden())) {
     const positions = geometry.attributes.position;
     for (let corner = 0; corner < positions.count; corner++) {
+      if (corner % TABLE_STEP === TABLE_STEP - 1) yield;
       const x = positions.getX(corner), y = positions.getY(corner), z = positions.getZ(corner);
       const band = Math.floor(y / CATCH.band);
       if (band < 0 || band >= CATCH.bands) continue;
@@ -686,10 +734,10 @@ function catchTable() {
       const bin = Math.floor(((angle / TURN) % 1 + 1) % 1 * CATCH.bins) % CATCH.bins;
       const inland = Math.hypot(apartX, apartZ) - koiShoreRadius(angle);
       const at = bin * CATCH.bands + band;
-      if (inland < table[at]) table[at] = inland;
+      if (inland < filling[at]) filling[at] = inland;
     }
   }
-  return table;
+  table = filling;
 }
 
 // ---- the looks -------------------------------------------------------------
@@ -819,13 +867,35 @@ export function createKoiGarden({ envTexture, mirrorLayer, lighting, ownSky = ()
   let shown = false, visibleNow = false, coarse = false;
   // The shade (bakeShade), baked for the sun it holds: once the garden is shown, and again for a new sun, its own sky's (ownSky).
   const shadePixels = new Uint8Array(SHADE.texels * SHADE.texels * 2);
-  let shadeTexture = null;
+  let shadeTexture = null, occluding = null, occluded = false;
+  // The ground's occlusion (bakeOcclusion), its steps shared by prepareSome and a garden shown before they are done.
+  const occlusionSteps = () => (occluding ??= bakeOcclusion(Object.values(builtGarden(COARSE)), shadePixels));
+  const occlude = () => {
+    if (occluded) return;
+    while (!occlusionSteps().next().done);
+    occluded = true;
+  };
+  // What prepareSome does, a step at a time: the coarse garden (the mirror's, and Low's scene's), the fine one, the
+  // catch table from it, the ground's occlusion; whatever is left when the garden is shown is done then, at once.
+  const preparation = (function* () {
+    for (const detail of [COARSE, 1]) {
+      while (!buildStep(detail)) yield;
+      yield;
+    }
+    tabling ??= catchSteps();
+    while (!tabling.next().done) yield;
+    yield;
+    while (!occluded && !occlusionSteps().next().done) yield;
+    occluded = true;
+  })();
+  let prepared = false;
   const shadedFor = new THREE.Vector3(NaN, NaN, NaN);
   const shade = () => {
     if (!shown || !visibleNow || !ownSky() || shadedFor.equals(lighting.sunDirection)) return;
     const started = performance.now();
     shadedFor.copy(lighting.sunDirection);
-    const sunUp = bakeShade(Object.values(builtGarden(COARSE)), lighting.sunDirection, shadePixels, shadeTexture !== null);
+    occlude();
+    const sunUp = bakeShade(Object.values(builtGarden(COARSE)), lighting.sunDirection, shadePixels);
     if (!shadeTexture) {
       shadeTexture = new THREE.DataTexture(shadePixels, SHADE.texels, SHADE.texels, THREE.RGFormat, THREE.UnsignedByteType);
       // No mip chain: the red is the greatest height over a texel, which averaged with the open ground about it would
@@ -896,6 +966,21 @@ export function createKoiGarden({ envTexture, mirrorLayer, lighting, ownSky = ()
     get shadeBytes() { return shadeTexture ? SHADE.texels * SHADE.texels * 2 : 0; },
     /** How long the last bake of its shade took (ms; tools/garden-probe.mjs). */
     get shadeMilliseconds() { return shadeMilliseconds; },
+    /**
+     * Build the garden ahead of showing it, its steps (preparation: a shrub,
+     * a share of the catch table, the occlusion) for about `milliseconds`,
+     * at least one; true once all are done. src/main.js requestPlace calls
+     * it a few milliseconds a frame while the Koi pond's sky downloads, so
+     * no frame pays for the garden's build (about a second on a laptop).
+     */
+    prepareSome(milliseconds) {
+      if (prepared) return true;
+      const until = performance.now() + milliseconds;
+      do {
+        if (preparation.next().done) prepared = true;
+      } while (!prepared && performance.now() < until);
+      return prepared;
+    },
     /** The sky's light for the garden (src/sky.js fills its map in place once a sky has loaded). */
     setEnvironment(texture) {
       for (const mesh of meshes) {

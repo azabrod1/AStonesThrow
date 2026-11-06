@@ -19,8 +19,11 @@
 //   the water shares from the floor (BED_UNIFORMS, src/waterSurface.js setBed);
 // - the cost: the garden's build and its triangles, the scene's (fine) under
 //   300k and the mirror's (coarse, Low's scene's too) under 40% of them, and
-//   its shade's bake (bakeShade) under 150 ms the first time and 50 for a
-//   new sun; the
+//   its shade's bake under 150 ms the first time (the occlusion too) and 50
+//   for a new sun; built ahead in steps (prepareSome, as src/main.js does
+//   while the Koi pond's sky downloads), a separate copy of the module, it
+//   is the same garden to the last corner, no step takes over STEP_MS, and
+//   shown then it takes under SHOWN_MS (its shadows alone); the
 //   coarse garden laid out as the fine one (the same shrubs in the same
 //   order and tints, each where the fine one's is), so what is drawn on Low
 //   and in the mirror stands where the fine garden, which catches, does.
@@ -37,6 +40,7 @@ const CAUGHT_WITHIN = 0.03;   // m: the most a thing may go into the planting pa
 const STEP = 1 / 240;
 setShoreKind('koi');
 const failures = [];
+const STEP_MS = 30, SHOWN_MS = 100;   // ms: the longest step of building the garden ahead; showing it once built (its first sun's shadows, cold)
 function check(condition, message) { console.log(`${condition ? 'ok  ' : 'FAIL'} ${message}`); if (!condition) failures.push(message); }
 let randomState = 1;
 Math.random = () => { randomState = (randomState * 16807) % 2147483647; return (randomState - 1) / 2147483646; };
@@ -95,6 +99,30 @@ console.log('\nthe planting catches:');
   garden.setLight();
   garden.setVisible(true);
   check(shadeTexture.version === bakedVersion + 1, 'back under its own sky and sun, the shade it holds is kept');
+  {
+    // Built ahead (prepareSome), in a copy of the module of its own (nothing built yet), a step at a time.
+    const ahead = await import('../src/koiGarden.js?ahead');
+    const aheadGarden = ahead.createKoiGarden({ envTexture: null, mirrorLayer: 2, lighting, ownSky: () => true });
+    let steps = 0, longest = 0, total = 0;
+    for (let done = false; !done; steps++) {
+      const started = performance.now();
+      done = aheadGarden.prepareSome(0);
+      const spent = performance.now() - started;
+      longest = Math.max(longest, spent);
+      total += spent;
+    }
+    const shownAt = performance.now();
+    aheadGarden.setVisible(true);
+    const shown = performance.now() - shownAt;
+    console.log(`  built ahead in ${steps} steps, ${total.toFixed(0)} ms in all, the longest ${longest.toFixed(1)} ms; shown then in ${shown.toFixed(1)} ms`);
+    const same = aheadGarden.meshes.every((mesh, index) => {
+      const mine = mesh.geometry.attributes.position.array, theirs = garden.meshes[index].geometry.attributes.position.array;
+      return mine.length === theirs.length && mine.every((value, at) => value === theirs[at]);
+    });
+    check(same, 'built ahead in steps, it is the same garden as one built at once, to the last corner');
+    check(longest < STEP_MS, `no step of building it ahead takes over ${STEP_MS} ms (the longest ${longest.toFixed(1)} ms)`);
+    check(shown < SHOWN_MS, `built ahead, it is shown in under ${SHOWN_MS} ms (${shown.toFixed(1)} ms)`);
+  }
   check(fineTriangles < 300000, `the scene's under 300k triangles (${(fineTriangles / 1000).toFixed(0)}k)`);
   check(coarseTriangles < 0.4 * fineTriangles, `the coarse garden under 40% of the fine's triangles (${(100 * coarseTriangles / fineTriangles).toFixed(0)}%)`);
   // The coarse garden is the fine one's shrubs more coarsely made, from the same draws (src/koiGarden.js COARSE): the same

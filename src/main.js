@@ -1492,6 +1492,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     // The lagoon built while its sky downloads, once a frame has shown the choice, not as the sky arrives (buildLagoon).
     if (PLACES[place].tropics && !tropics.built) requestAnimationFrame(() => setTimeout(() => { if (placeRequest === request) buildLagoon(); }));
     if (PLACES[place].visitor) visitor.prepareHide();   // its hide baked between frames while the sky downloads (src/lochVisitor.js)
+    if (PLACES[place].koi) prepareGarden(request);
     return requestSky(sky, request.hour).then(() => {
       if (placeRequest === request && environment.name === sky && environment.hour === request.hour) {
         const entering = placeName !== place;
@@ -1507,6 +1508,19 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       }
       return placeName;
     });
+  }
+  /**
+   * The Koi pond's garden built while its sky downloads (src/koiGarden.js
+   * prepareSome), GARDEN_SLICE_MS between one frame and the next, from the
+   * frame after the choice shows, for as long as the choice stands; if the
+   * sky comes first, showing the garden builds what is left at once.
+   */
+  const GARDEN_SLICE_MS = 6;
+  function prepareGarden(request) {
+    const slice = () => {
+      if (placeRequest === request && !garden.prepareSome(GARDEN_SLICE_MS)) requestAnimationFrame(() => setTimeout(slice));
+    };
+    requestAnimationFrame(() => setTimeout(slice));
   }
   /** What the sky shown fetched, for index.html to ask for first next time (SKY_ASSETS_STORAGE_KEY); forgetSkyAssets as another is chosen. */
   function rememberSkyAssets() {
