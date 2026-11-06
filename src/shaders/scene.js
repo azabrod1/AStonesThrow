@@ -1713,7 +1713,8 @@ vec3 nearReflection(vec2 rippleUv, vec3 ray, out vec3 near) {
 // splash's rectangle: the splash, a floater, the thing in the loch; in the Pool, the whole image: its walls and deck)
 // spreads by L/(L + d) of that, L its distance from the water here and d the water's from the eye, as nearReflection
 // moves it, about the lookup it settled on (\`near\`: that lookup and the nearness found there), so the spread image
-// lies over the sharp one. Where the spread is under
+// lies over the sharp one. Its image moves less, but its rays turn as far as the sky's: which of them dip below the
+// horizon is reckoned by the rays' turn, not the image's. Where the spread is under
 // half a mirror pixel the sharp image stands. A footprint the image's edge cuts would read the edge's clamped texels
 // down the water (the bars MIRROR_EDGE keeps from the sharp lookup): as far as its far end is past the edge, it fades
 // to the sky's cube, as the sharp lookup does.
@@ -1731,7 +1732,8 @@ vec3 spreadMirror(vec3 sharp, vec3 near, vec3 ray, float slopeVariance) {
   // the sharp lookup's shards, and the spread had smoothed them.
   vec3 mirrorEye = vec3(cameraPosition.x, 2.0 * uMirrorLevel - cameraPosition.y, cameraPosition.z);
   float reach = clamp(1.0 - distance(vWorld, mirrorEye) * near.z, 0.0, 1.0);
-  float spread = sqrt(2.0 * slopeVariance) * reach;
+  float turned = sqrt(2.0 * slopeVariance);   // the rays' turn (rms climb)
+  float spread = turned * reach;               // the image's
   float pixels = spread * length(perClimb * uMirrorSize);
   if (pixels < 0.5) return sharp;
   vec2 centre = near.xy;
@@ -1741,7 +1743,7 @@ vec3 spreadMirror(vec3 sharp, vec3 near, vec3 ray, float slopeVariance) {
   vec2 pastEdge = max(max(halfLength - centre, centre + halfLength - 1.0), max(-halfLength - centre, centre - halfLength - 1.0));
   float outside = smoothstep(0.0, MIRROR_EDGE, max(pastEdge.x, pastEdge.y));
   vec3 spreadImage;
-  if (climb > 0.5 * MIRROR_BOX * spread) {
+  if (climb > 0.5 * MIRROR_BOX * turned) {
     // Where no turned ray dips below the horizon (most of the water), one lookup: the hardware's anisotropic filter (the
     // image's anisotropy, src/main.js) averages a footprint MIRROR_BOX rms long down the image and a texel across it, a
     // box as wide as the Gaussian.
@@ -1754,9 +1756,8 @@ vec3 spreadMirror(vec3 sharp, vec3 near, vec3 ray, float slopeVariance) {
     float weights = 0.0;
     for (int tap = 0; tap < MIRROR_TAPS; tap++) {
       float along = (float(tap) - 0.5 * float(MIRROR_TAPS - 1)) * MIRROR_TAP_STEP;
-      float turn = along * spread;
-      float weight = exp(-0.5 * along * along) * smoothstep(0.0, 0.25 * spread, climb + turn);
-      sum += weight * textureGrad(uReflection, clamp(centre + turn * perClimb, vec2(0.002), vec2(0.998)), alongTap, acrossTap).rgb;
+      float weight = exp(-0.5 * along * along) * smoothstep(0.0, 0.25 * turned, climb + along * turned);
+      sum += weight * textureGrad(uReflection, clamp(centre + along * spread * perClimb, vec2(0.002), vec2(0.998)), alongTap, acrossTap).rgb;
       weights += weight;
     }
     if (weights <= 1e-4) return sharp;
