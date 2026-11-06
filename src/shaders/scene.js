@@ -2882,20 +2882,22 @@ void main() {
 // one another and their own lower lobes from the one map. Its green is the
 // ground's occlusion: how little of the sky a point of the ground sees for
 // the shrubs over and beside it (1 open), which the shrubs' own feet share
-// (gardenSkySeen). Before it is baked, and away from the garden, all is lit.
+// (gardenSkySeen). Before it is baked, and away from the garden, all is lit;
+// for a sun too low to shade by, bakeShade leaves the red 0 and passes
+// straight up as its sun (uGardenShadeSun), so all is lit then too.
+export const GARDEN_SHADE_TOP = 4;   // m: the red's full scale (bakeShade writes it, gardenSunSeen reads it)
 export const GARDEN_SHADE = /* glsl */`
-uniform sampler2D uGardenShade;   // red: the height its sun's ray leaves the planting (over GARDEN_SHADE_TOP); green: the ground's occlusion
+uniform sampler2D uGardenShade;   // red: the height its sun's ray leaves the planting (of GARDEN_SHADE_TOP); green: the ground's occlusion
 uniform vec4 uGardenShadeArea;    // the map's least x and z and its side (m); w 1 once baked
 uniform vec3 uGardenShadeSun;     // the sun it was baked for
-#define GARDEN_SHADE_TOP 4.0      // m: the red's full scale
 #define GARDEN_SHADE_BIAS 0.08    // m: a point this little below the height is still lit (the map's texels, the leaves' sprigs)...
 #define GARDEN_SHADE_SOFT 0.15    // ...and in full shadow this much lower
 #define GARDEN_FEET 0.9           // m: a shrub's faces this high over the ground see the sky as the ground beside them does, fading to open
 // How much of the sun reaches a point (1: all of it).
 float gardenSunSeen(vec3 point) {
-  if (uGardenShadeArea.w < 0.5 || uGardenShadeSun.y < 0.02) return 1.0;
+  if (uGardenShadeArea.w < 0.5) return 1.0;
   vec2 ground = point.xz - uGardenShadeSun.xz * (point.y / uGardenShadeSun.y);
-  float leaves = texture2D(uGardenShade, (ground - uGardenShadeArea.xy) / uGardenShadeArea.z).r * GARDEN_SHADE_TOP;
+  float leaves = texture2D(uGardenShade, (ground - uGardenShadeArea.xy) / uGardenShadeArea.z).r * ${GARDEN_SHADE_TOP.toFixed(1)};
   return 1.0 - smoothstep(GARDEN_SHADE_BIAS, GARDEN_SHADE_BIAS + GARDEN_SHADE_SOFT, leaves - point.y);
 }
 // How much of the sky a point sees for the planting about it: the ground's, and the shrubs' faces up to GARDEN_FEET over it.
@@ -3372,9 +3374,14 @@ void main() {
     vec3 land = vec3(0.0), grassLand;
     float level = max(uSunDir.y, 0.0) + SKY_LIGHT * 0.25;
     float slopeShade = (max(dot(normal, uSunDir), 0.0) + SKY_LIGHT * 0.25 * normal.y) / level;
-    // The Koi lawn has its own albedo all the way to the backdrop; photo samples only serve the lakes.
+    // The Koi lawn has its own albedo all the way to the backdrop; photo samples only serve the lakes. Being an albedo,
+    // it is lit on its own slope (no slopeShade, which would light its shade too). Behind the planting its trees' shade
+    // (KOI_SHADE) and the baked shade under its shrubs are one shade: the darker of the two, not their product.
     if (isShore(SHORE_KOI)) {
-      grassLand = mix(KOI_LAWN, KOI_LAWN_DRY, smoothstep(0.35, 0.75, valueNoise(vWorld.xz * KOI_LAWN_PATCHES + 7.0))) * (uSunIrradiance * max(uSunDir.y, 0.0) * sunSeen + uSkyAmbient * SKY_LIGHT * skySeen) * (0.9 + 0.2 * valueNoise(vWorld.xz * 0.6 + 2.0)) * mix(1.0, KOI_SHADE, smoothstep(1.5, 3.5, vInland));
+      float treeShade = mix(1.0, KOI_SHADE, smoothstep(1.5, 3.5, vInland));
+      vec3 lawnLight = uSunIrradiance * max(dot(normal, uSunDir), 0.0) * min(sunSeen, treeShade) + uSkyAmbient * SKY_LIGHT * min(skySeen, treeShade);
+      grassLand = mix(KOI_LAWN, KOI_LAWN_DRY, smoothstep(0.35, 0.75, valueNoise(vWorld.xz * KOI_LAWN_PATCHES + 7.0))) * lawnLight * (0.9 + 0.2 * valueNoise(vWorld.xz * 0.6 + 2.0));
+      slopeShade = 1.0;
     } else {
       land = photoLand(uSkyCube, LAND_LEVEL, toLand.xz);
       // Where the photo shows sky at the horizon, the grass would take the sky's light (a cloud's, white): no brighter

@@ -33,8 +33,9 @@
 // the garden is static, so its shadows are baked, as a game bakes a static
 // set's, not drawn into a shadow map each frame: a map over its ground,
 // from the coarse garden's own triangles on the CPU, once it is first shown
-// and again for a new sun (setLight; 100 ms the first time, under 20 a new
-// sun, tools/garden-probe.mjs), and only under its own sky (`ownSky`): the
+// and again for a new sun (setLight; about 100 ms the first time, a tenth of
+// the garden's own first build, and 16 a new sun; tools/garden-probe.mjs
+// holds them under 150 and 50), and only under its own sky (`ownSky`): the
 // next place's sky comes in while the garden is still shown, and the page's
 // first while it waits for one, and neither sun is its. It holds, for each point of the ground
 // plane, the height at which the sun's ray up through it last leaves the
@@ -54,7 +55,7 @@
 import * as THREE from 'three';
 import { seededRandom } from './spray.js';
 import { KOI_SHORE, koiShoreRadius, koiShoreDistance, koiFloorDepthAt, gardenShadeUniforms } from './pondFloor.js';
-import { GARDEN_SHADE } from './shaders/scene.js';
+import { GARDEN_SHADE, GARDEN_SHADE_TOP } from './shaders/scene.js';
 
 const MIRROR_NEARNESS_SCALE = 4;   // as src/rock.js's: the mirror image's alpha is 1 − this / distance
 const COARSE = 0.5;   // the coarse garden's shrubs (the header) as finely made as this of the fine's: about a third of its triangles
@@ -550,9 +551,10 @@ function gardenGeometry(random, detail = 1) {
 
 // The garden's shade (GARDEN_SHADE in src/shaders/scene.js; bakeShade): a map `texels` a side over a square `half`
 // (m) either way of the pond's centre, which holds the planting and its longest shadows (a 2 m shrub's under a sun
-// 19° up: 6 m), its shadows' edges softened over `penumbra` (m); the ground's occlusion from the planting's height over
-// it (full at `fullAt`, m) within `reach` (m), at most `most`.
-const SHADE = { texels: 512, half: 20, top: 4, penumbra: 0.25, reach: 0.7, most: 0.75, fullAt: 0.3 };
+// 19° up: 6 m), its heights to `top` (m: GARDEN_SHADE_TOP, the shader's) and its shadows' edges softened over
+// `penumbra` (m); the ground's occlusion from the planting's height over it (full at `fullAt`, m) within `reach` (m), at
+// most `most`; no shadows under a sun below `lowestSun` (its height's sine).
+const SHADE = { texels: 512, half: 20, top: GARDEN_SHADE_TOP, lowestSun: 0.02, penumbra: 0.25, reach: 0.7, most: 0.75, fullAt: 0.3 };
 
 /**
  * Each triangle of `geometries` laid on the map, each texel keeping the
@@ -642,7 +644,7 @@ function bakeShade(geometries, sunDirection, pixels, occluded) {
     for (let at = 0; at < values.length; at++) pixels[2 * at + 1] = Math.round((1 - SHADE.most * values[at]) * 255);
     values.fill(0);
   }
-  const sunUp = sunDirection.y >= 0.02;
+  const sunUp = sunDirection.y >= SHADE.lowestSun;
   if (sunUp) {
     rasterGreatest(geometries, values, { slopeX: sunDirection.x / sunDirection.y, slopeZ: sunDirection.z / sunDirection.y, under: 0 });
     // The shadow's edge softened over about SHADE.penumbra (m), as under a sun through leaves (and no texel's step shows).
@@ -778,15 +780,18 @@ const FOLIAGE_NORMAL = /* glsl */`
 `;
 // Leaves at a shrub's outline, after the rest of its light (the garden's shade on it included): the sky caught by the
 // leaves seen edge on, a sheen (uRim: the sky's light, FOLIAGE_RIM of it), and the sun through the thin foliage there
-// where it stands behind the shrub (FOLIAGE_THROUGH of its light at most), so a backlit shrub's edge glows.
-const FOLIAGE_RIM = 0.35, FOLIAGE_THROUGH = 0.5;
+// where it stands behind the shrub (FOLIAGE_THROUGH of its light at most), so a backlit shrub's edge glows, unless
+// another shrub or the hedge shades it: the garden's shadow tested FOLIAGE_THROUGH_DEPTH (m) sunward along the sun's
+// ray (the same texel, the height raised), so its own outer leaves, which the light comes through, do not count.
+const FOLIAGE_RIM = 0.35, FOLIAGE_THROUGH = 0.5, FOLIAGE_THROUGH_DEPTH = 0.4;
 const FOLIAGE_LIGHT = /* glsl */`
   {
     float edgeOn = 1.0 - saturate(dot(normal, geometryViewDir));
     reflectedLight.indirectDiffuse += diffuseColor.rgb * uRim * edgeOn * edgeOn * edgeOn * gardenSky;
 #if NUM_DIR_LIGHTS > 0
     float behind = saturate(dot(-geometryViewDir, directionalLights[0].direction));
-    reflectedLight.directDiffuse += diffuseColor.rgb * directionalLights[0].color * ${FOLIAGE_THROUGH.toFixed(2)} * behind * behind * behind * behind * edgeOn * edgeOn;
+    float throughSeen = gardenSunSeen(vGardenWorld + uGardenShadeSun * ${FOLIAGE_THROUGH_DEPTH.toFixed(2)});
+    reflectedLight.directDiffuse += diffuseColor.rgb * directionalLights[0].color * ${FOLIAGE_THROUGH.toFixed(2)} * behind * behind * behind * behind * edgeOn * edgeOn * throughSeen;
 #endif
   }
 `;
@@ -823,9 +828,12 @@ export function createKoiGarden({ envTexture, mirrorLayer, lighting, ownSky = ()
     const sunUp = bakeShade(Object.values(builtGarden(COARSE)), lighting.sunDirection, shadePixels, shadeTexture !== null);
     if (!shadeTexture) {
       shadeTexture = new THREE.DataTexture(shadePixels, SHADE.texels, SHADE.texels, THREE.RGFormat, THREE.UnsignedByteType);
+      // No mip chain: the red is the greatest height over a texel, which averaged with the open ground about it would
+      // sink, so far shadows would fade and shrink, and the sun's projection's derivatives jump at a shrub's outline.
+      // Both channels are blurred over a few texels already (SHADE.penumbra, SHADE.reach).
       shadeTexture.magFilter = THREE.LinearFilter;
-      shadeTexture.minFilter = THREE.LinearMipmapLinearFilter;
-      shadeTexture.generateMipmaps = true;
+      shadeTexture.minFilter = THREE.LinearFilter;
+      shadeTexture.generateMipmaps = false;
     }
     shadeTexture.needsUpdate = true;
     gardenShadeUniforms.uGardenShade.value = shadeTexture;
@@ -884,8 +892,8 @@ export function createKoiGarden({ envTexture, mirrorLayer, lighting, ownSky = ()
   }
   return {
     meshes,
-    /** The bytes its shade's texture holds, its mip chain with it (src/main.js memoryEstimate). */
-    get shadeBytes() { return shadeTexture ? Math.round((SHADE.texels * SHADE.texels * 2 * 4) / 3) : 0; },
+    /** The bytes its shade's texture holds (src/main.js memoryEstimate). */
+    get shadeBytes() { return shadeTexture ? SHADE.texels * SHADE.texels * 2 : 0; },
     /** How long the last bake of its shade took (ms; tools/garden-probe.mjs). */
     get shadeMilliseconds() { return shadeMilliseconds; },
     /** The sky's light for the garden (src/sky.js fills its map in place once a sky has loaded). */
