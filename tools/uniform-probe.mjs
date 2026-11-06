@@ -156,7 +156,9 @@ await page.addInitScript(() => {
       const entry = { key: `${info.type} ${info.cacheKey}`, label };
       for (const [stage, { variables, textures }] of Object.entries(stages)) {
         const largest = [...variables].sort((first, second) => second.rows * second.columns - first.rows * first.columns).slice(0, 8).map(({ name, columns, rows }) => `${name} ${rows}×${columns}`);
-        entry[stage] = { vectors: rowsNeeded(variables), textures, largest };
+        const visitor = variables.filter(({ name }) => name.startsWith('uVisitor'));
+        entry[stage] = { vectors: rowsNeeded(variables), textures, largest,
+          visitor: visitor.length ? { packed: rowsNeeded(visitor), without: rowsNeeded(variables.filter(({ name }) => !name.startsWith('uVisitor'))) } : null };
       }
       counted.push(entry);
     }
@@ -184,6 +186,8 @@ const steps = [
   ['the blizzard', async (pond) => { await pond.setWeather('blizzard'); pond.advance(1); }],
   ['thick ice', async (pond) => { await pond.setWeather('clear'); pond.setIce('thick'); pond.throwAt(-0.3, -1.3, { radius: 0.03 }); pond.advance(3); }],
   ['the Pool', async (pond) => { pond.setIce('none'); await pond.setSky('pool'); pond.throwAt(0, -1.4, { radius: 0.03 }); pond.advance(1); }],
+  ['Loch Ness', async (pond) => { await pond.setSky('loch'); pond.sightVisitor('neck', { elapsed: 8 }); pond.advance(0); }],
+  ['the Polynesian lagoon', async (pond) => { await pond.setSky('lagoon'); pond.advance(0); }],
   ['the Koi pond', async (pond) => { await pond.setSky('koi'); pond.throwAt(0, -1.4, { radius: 0.03, thing: 'pizza' }); pond.advance(1); }],
   ['Low', (pond) => { pond.setQuality('low'); pond.advance(1); }],
 ];
@@ -199,6 +203,11 @@ for (const [stage, least] of Object.entries(LEAST)) {
   const mostTextures = Math.max(...ranked.map((entry) => entry[stage].textures));
   console.log(`${stage}: ${ranked.length} programs; the most uniform vectors ${ranked[0][stage].vectors} of ${least.vectors} (${least.vectors - ranked[0][stage].vectors} to spare), the most textures ${mostTextures} of ${least.textures}`);
   for (const entry of showAll ? ranked : ranked.slice(0, 3)) console.log(`  ${String(entry[stage].vectors).padStart(4)} vectors, ${String(entry[stage].textures).padStart(2)} textures  ${entry.label} (${entry.step})`);
+  const withVisitor = ranked.find((entry) => entry[stage].visitor);
+  if (withVisitor) {
+    const count = withVisitor[stage];
+    console.log(`  visitor: ${count.visitor.packed} vectors packed alone; ${count.vectors - count.visitor.without} added to this program (${count.visitor.without} without it, ${count.vectors} with it)`);
+  }
   for (const entry of ranked) {
     if (entry[stage].vectors > least.vectors) failures.push(`${entry.label}'s ${stage} shader packs into ${entry[stage].vectors} uniform vectors, past WebGL 2's ${least.vectors}; its largest: ${entry[stage].largest.join(', ')}`);
     if (entry[stage].textures > least.textures) failures.push(`${entry.label}'s ${stage} shader samples ${entry[stage].textures} textures, past WebGL 2's ${least.textures}`);

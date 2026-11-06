@@ -38,8 +38,10 @@
 // UNDER_GAP inside its walls as well as clear of its floor and surface (and
 // out again as far as before once turned back from a wall), a
 // glide into its water and out goes over the water and never through the
-// deck, and a tap on the deck throws inside the walls. Prints one line per
-// check and exits with status 1 if any fails.
+// deck, and a tap on the deck throws inside the walls; and a view zoomed in
+// at Lakeside stays zoomed at the Koi pond, at the lagoon and back, the
+// lagoon built (compiling nothing) while its sky is held back. Prints one
+// line per check and exits with status 1 if any fails.
 // Also holds existing objects: quick taps still throw, an early drag turns
 // the camera, a hold lifts and drops from rest, and cancellation or a pinch
 // cannot leave a held object or accidentally throw another; one lifted out
@@ -463,6 +465,38 @@ const deckThrow = await page.evaluate(() => {
 });
 check(deckThrow.count === before + 1 && insideBy(deckThrow) > 0.2, `a tap on the deck beyond the pool throws inside its walls, landing ${(insideBy(deckThrow) * 100).toFixed(0)} cm in from the nearest`);
 await page.evaluate(async () => await window.__pond.setSky('lakeside'));
+// Another shore on the lake's water keeps the view as it was zoomed: zoomed in at Lakeside, then to the Koi pond, the
+// Polynesian lagoon and back (src/main.js applyPlace; only the Pool, whose views are its own, stands the eye afresh).
+await page.evaluate(() => window.__pond.showView('shore', { glide: false }));
+await page.mouse.move(Math.round(width * 0.5), Math.round(height * 0.5));
+for (let notch = 0; notch < 4; notch++) await page.mouse.wheel(0, -100);
+await page.waitForTimeout(50);
+const zoomedAtLakeside = await page.evaluate(() => ({ fov: window.__pond.camera.fov, level: window.__pond.zoomLevel }));
+const lagoonSky = '**/assets/sky/kloofendal_48d_partly_cloudy_puresky*';   // src/sky.js SKIES.lagoon
+for (const place of ['koi', 'lagoon', 'lakeside']) {
+  if (place === 'lagoon') {
+    // The lagoon is built while its sky downloads (src/main.js requestPlace, buildLagoon), compiling no program: its
+    // sky held back, the scenery is built and the place is still the Koi pond.
+    let release;
+    const held = new Promise((resolve) => { release = resolve; });
+    await context.route(lagoonSky, async (route) => { await held; await route.continue(); });
+    const before = await page.evaluate(() => { window.__pond.advance(0); return { programs: window.__pond.renderer.info.programs.length, built: window.__pond.tropics.built }; });
+    await page.evaluate(() => { window.__lagoonShown = window.__pond.setSky('lagoon'); });
+    let builtEarly = true;
+    try { await page.waitForFunction(() => window.__pond.tropics.built, null, { timeout: patience(30000) }); } catch { builtEarly = false; }
+    const during = await page.evaluate(() => ({ programs: window.__pond.renderer.info.programs.length, place: window.__pond.sky }));
+    check(!before.built && builtEarly && during.place === 'koi' && during.programs === before.programs,
+      `asked for, the lagoon is built while its sky downloads (${builtEarly ? 'built' : 'not built'}, still at ${during.place}, ${during.programs - before.programs} programs compiled)`);
+    release();
+    await page.evaluate(() => window.__lagoonShown);
+    await context.unroute(lagoonSky);
+  }
+  await page.evaluate(async (name) => await window.__pond.setSky(name), place);
+  const there = await page.evaluate(() => ({ fov: window.__pond.camera.fov, level: window.__pond.zoomLevel, place: window.__pond.sky }));
+  check(there.place === place && zoomedAtLakeside.level > 1.4 && Math.abs(there.level - zoomedAtLakeside.level) < 1e-9 && Math.abs(there.fov - zoomedAtLakeside.fov) < 1e-9,
+    `zoomed in ${zoomedAtLakeside.level.toFixed(2)} times at Lakeside, ${place === 'lakeside' ? 'back at Lakeside' : `at ${place}`} the view is zoomed ${there.level.toFixed(2)} times (fov ${there.fov.toFixed(2)})`);
+}
+await page.evaluate(() => window.__pond.resetView());
 
 // Existing objects use a hold, not a tap. Settle one with its real CPU
 // steps without paying for hundreds of unrelated water-solver frames.

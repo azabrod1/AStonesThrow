@@ -56,6 +56,34 @@ const REFLECTION_BELOW = 0.35;       // the environment's share on the part unde
 const MIRROR_NEARNESS_SCALE = 4;     // the mirror image's alpha is 1 − this / distance (MIRROR_COMMON in src/shaders/scene.js)
 
 /**
+ * What scenery drawn three ways (the boulders; whatever is out on Loch Ness,
+ * src/lochVisitor.js) patches into three.js's standard shader by `side`:
+ * `below`, drawn where the still surface shows it (SEEN_THROUGH_WATER) and,
+ * seen from under the water, fading into it (`waterFog`: its extinction and
+ * colour); `mirror`, its distance in alpha, as the water's mirror lookups
+ * read it; `above`, nothing. Call it last in onBeforeCompile.
+ */
+export function sceneryShader(shader, side, waterFog) {
+  if (side === 'below') {
+    shader.uniforms.uFogExtinction = { value: waterFog.extinction };
+    shader.uniforms.uFogColor = { value: waterFog.color };
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', `#include <common>\n${SEEN_THROUGH_WATER}`)
+      .replace('#include <project_vertex>', `vec4 sceneryWorld = modelMatrix * vec4(transformed, 1.0);
+  vec4 mvPosition = viewMatrix * vec4(seenThroughWater(sceneryWorld.xyz, 0.0), 1.0);
+  gl_Position = projectionMatrix * mvPosition;`);
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nuniform vec3 uFogExtinction;\nuniform vec3 uFogColor;')
+      .replace('#include <fog_fragment>', `#include <fog_fragment>
+  if (cameraPosition.y < 0.0) gl_FragColor.rgb = mix(uFogColor, gl_FragColor.rgb, exp(-uFogExtinction * length(vViewPosition)));`);
+  }
+  if (side === 'mirror') {
+    shader.fragmentShader = shader.fragmentShader.replace('#include <dithering_fragment>', `#include <dithering_fragment>
+  gl_FragColor.a = 1.0 - ${MIRROR_NEARNESS_SCALE.toFixed(1)} / max(length(vViewPosition), 0.05);`);
+  }
+}
+
+/**
  * The boulders of every sky that has them, shown by `show(sky)`: `above`
  * and `mirror` for the main scene (the mirror's meshes are on `mirrorLayer`
  * alone), `below` for the under-water pass. setEnvironment gives them a new
@@ -119,24 +147,7 @@ export class Boulders {
       shader.vertexShader = shader.vertexShader
         .replace('#include <common>', '#include <common>\nuniform float uBoulderGrain;')
         .replace('vStonePoint = position;', 'vStonePoint = position * uBoulderGrain;');
-      if (side === 'below') {
-        // Drawn where the still surface shows it, and seen from under the water fading into it.
-        shader.uniforms.uFogExtinction = { value: waterFog.extinction };
-        shader.uniforms.uFogColor = { value: waterFog.color };
-        shader.vertexShader = shader.vertexShader
-          .replace('#include <common>', `#include <common>\n${SEEN_THROUGH_WATER}`)
-          .replace('#include <project_vertex>', `vec4 boulderWorld = modelMatrix * vec4(transformed, 1.0);
-  vec4 mvPosition = viewMatrix * vec4(seenThroughWater(boulderWorld.xyz, 0.0), 1.0);
-  gl_Position = projectionMatrix * mvPosition;`);
-        shader.fragmentShader = shader.fragmentShader
-          .replace('#include <common>', '#include <common>\nuniform vec3 uFogExtinction;\nuniform vec3 uFogColor;')
-          .replace('#include <fog_fragment>', `#include <fog_fragment>
-  if (cameraPosition.y < 0.0) gl_FragColor.rgb = mix(uFogColor, gl_FragColor.rgb, exp(-uFogExtinction * length(vViewPosition)));`);
-      }
-      if (side === 'mirror') {
-        shader.fragmentShader = shader.fragmentShader.replace('#include <dithering_fragment>', `#include <dithering_fragment>
-  gl_FragColor.a = 1.0 - ${MIRROR_NEARNESS_SCALE.toFixed(1)} / max(length(vViewPosition), 0.05);`);
-      }
+      sceneryShader(shader, side, waterFog);   // below: seen through the water; mirror: its distance in alpha
     };
     made.customProgramCacheKey = () => `boulder-${side}`;
     return made;

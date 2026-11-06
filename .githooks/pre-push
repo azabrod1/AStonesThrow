@@ -7,7 +7,8 @@
 # The browser groups (check:controls, check:site) are CI's: on a GPU they take
 # minutes, but on a machine without one (the cloud container) SwiftShader
 # takes half an hour or more. `git config check.browser true` adds them
-# here on a machine with a GPU, so the hook runs the whole of npm run check.
+# here on a machine with a GPU, so the hook runs the whole of npm run check
+# (check:site's site-check also runs in WebKit: npx playwright install webkit).
 #
 # It checks the working tree, so it pushes only HEAD, committed: a push of
 # another branch, or with uncommitted or untracked files (ignored ones aside),

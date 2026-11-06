@@ -553,6 +553,15 @@ export class GaleWaves {
   }
 
   /**
+   * The sea spun up afresh at the next update, as on the first: for the
+   * warm-up (src/main.js), after its pass that draws nothing
+   * (src/precompile.js), whose updates counted the spin-up as done.
+   */
+  respin() {
+    this.foamTime = null;
+  }
+
+  /**
    * For the warm-up (src/main.js): a gale that blows is spun up now, under
    * the veil, at world time 0, and keeps its sea; one that does not is
    * blown (strength 1) for one run of each pass, the evaluation's, the
