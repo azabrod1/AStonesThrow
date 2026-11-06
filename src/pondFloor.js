@@ -511,6 +511,8 @@ export function createShore(floor, lighting, environment, { snow = { value: 0 },
       ...environment.hazeUniforms,
       uSnow: snow,   // the snow lying on it, 0 to 1 (src/main.js WEATHERS)
       ...gardenShadeUniforms,   // the Koi pond's garden's shade on its ground (src/koiGarden.js)
+      // The Koi pond's backdrop's circle on the ground, where its lawn ends (koiLandGeometry), for the shade at its foot.
+      uKoiEdge: { value: new THREE.Vector3(backdrop?.centre[0] ?? 0, backdrop?.centre[2] ?? 0, backdrop ? Math.sqrt(Math.max(backdrop.radius ** 2 - backdrop.centre[1] ** 2, 0)) : 1e6) },
       ...PALM_SHADOW,
       ...SAND_SCAN,
       ...PALM_FEET,

@@ -3086,6 +3086,7 @@ uniform float uLandLevel;        // ...at this level of its mip chain
 uniform vec4 uShoreLook;         // the place's shore (SHORE_LOOKS): the pebbles' share near the water, their size (times PEBBLE_RADII), the tufts' share (times TUFT_SHARE), the wrack's strength
 uniform vec2 uShoreMore;         // ...and how far inland the grass comes (times GRASS_FROM and GRASS_TO), the cracks of a dried flat (0 to 1)
 ${GARDEN_SHADE}
+uniform vec3 uKoiEdge;           // the Koi pond's backdrop's circle on the ground (src/sky.js Backdrop): its middle's x and z, its radius (m)
 uniform sampler2D uSandScan;     // the lagoon's dry sand, a photoscan (src/tropics.js SURFACES, tools/tropics-textures.mjs)...
 uniform float uSandScanOn;       // ...once it has come (0 till then)
 varying vec3 vWorld;
@@ -3111,7 +3112,8 @@ ${PALM_SHADOW}
 #define KOI_LAWN vec3(0.07, 0.115, 0.04)  // the garden's lawn beyond the moss...
 #define KOI_LAWN_DRY vec3(0.085, 0.1, 0.04)  // ...and its drier, yellower patches, a few metres across (KOI_LAWN_PATCHES)
 #define KOI_LAWN_PATCHES 0.13             // per metre
-#define KOI_SHADE 0.3                    // the garden's ground behind its planting, under its trees, against its lawn
+#define KOI_SHADE 0.3                    // the lawn at the foot of the garden's backdrop, under the photo's trees and hedges, against the open lawn...
+#define KOI_SHADE_REACH 18.0             // ...fading out over this many metres from the backdrop's circle (uKoiEdge)
 #define KOI_COBBLE 0.16                   // m: a cobble's cell at the stone edge
 // The cobbles set along the edge: the nearest jittered point and the next (as the pool's, in cells of KOI_COBBLE), so
 // each is its own rounded stone with dark gaps: (its distance from its middle in cells, its hash, the gap's distance).
@@ -3375,10 +3377,13 @@ void main() {
     float level = max(uSunDir.y, 0.0) + SKY_LIGHT * 0.25;
     float slopeShade = (max(dot(normal, uSunDir), 0.0) + SKY_LIGHT * 0.25 * normal.y) / level;
     // The Koi lawn has its own albedo all the way to the backdrop; photo samples only serve the lakes. Being an albedo,
-    // it is lit on its own slope (no slopeShade, which would light its shade too). Behind the planting its trees' shade
-    // (KOI_SHADE) and the baked shade under its shrubs are one shade: the darker of the two, not their product.
+    // it is lit on its own slope (no slopeShade, which would light its shade too). Its shade is where what casts it
+    // stands: the planting's baked (sunSeen, skySeen), and toward the backdrop the photo's trees' and hedges'
+    // (KOI_SHADE), so the lawn meets the photo's land in the shade at its foot; where both fall, the darker of the
+    // two, not their product.
     if (isShore(SHORE_KOI)) {
-      float treeShade = mix(1.0, KOI_SHADE, smoothstep(1.5, 3.5, vInland));
+      float toEdge = uKoiEdge.z - length(vWorld.xz - uKoiEdge.xy);
+      float treeShade = mix(1.0, KOI_SHADE, 1.0 - smoothstep(0.0, KOI_SHADE_REACH, toEdge));
       vec3 lawnLight = uSunIrradiance * max(dot(normal, uSunDir), 0.0) * min(sunSeen, treeShade) + uSkyAmbient * SKY_LIGHT * min(skySeen, treeShade);
       grassLand = mix(KOI_LAWN, KOI_LAWN_DRY, smoothstep(0.35, 0.75, valueNoise(vWorld.xz * KOI_LAWN_PATCHES + 7.0))) * lawnLight * (0.9 + 0.2 * valueNoise(vWorld.xz * 0.6 + 2.0));
       slopeShade = 1.0;
