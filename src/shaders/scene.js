@@ -1670,8 +1670,9 @@ vec3 galeFoamAt(vec2 restXZ) {
 // texel and the rippled one, made pixel by pixel, cut the image into shards
 // along every edge. Only pixels whose flat or rippled lookup falls in the
 // splash's rectangle take this; up to three fetches each. \`near\` is set to
-// the lookup it settled on and the nearness found there (0 for the sky, as
-// outside the rectangle), for spreadMirror.
+// the lookup it settled on, before it is held inside the image, and the
+// nearness found there (0 for the sky, as outside the rectangle), for
+// spreadMirror.
 #define MIRROR_NEARNESS_SCALE 4.0     // MIRROR_COMMON's
 #define MIRROR_FARTHEST 1e-3          // nearness under this (beyond a kilometre): the sky
 #define MIRROR_EDGE 0.03              // a lookup past the mirror image's edge fades to the sky's cube over this share of the image (the water's reflection)
@@ -1692,11 +1693,12 @@ vec3 nearReflection(vec2 rippleUv, vec3 ray, out vec3 near) {
     if (nearness <= MIRROR_FARTHEST) break;
     float along = max(1.0 / nearness - surfaceDistance, 0.0);
     vec4 nearCoord = uReflectionMatrix * vec4(vWorld + ray * along, 1.0);
-    lookup = clamp(nearCoord.xy / max(nearCoord.w, 1e-4), vec2(0.002), vec2(0.998));
+    near.xy = nearCoord.xy / max(nearCoord.w, 1e-4);
+    lookup = clamp(near.xy, vec2(0.002), vec2(0.998));
     found = mirrorTexel(lookup);
   }
   nearness = (1.0 - found.a) / MIRROR_NEARNESS_SCALE;
-  near = vec3(lookup, nearness > MIRROR_FARTHEST ? nearness : 0.0);
+  near.z = nearness > MIRROR_FARTHEST ? nearness : 0.0;
   return found.rgb;
 }
 
