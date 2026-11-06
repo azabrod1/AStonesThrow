@@ -264,7 +264,7 @@ import { decodeHorizonStrip, HORIZON_DECODE } from './horizonStrip.js';
 // `anchor` and `facing` (Light by the hour, Orientation) are the first hour
 // unless named. `defaultHour` may choose a starting view independently of
 // the lighting anchor. `reeds`: cattails stand in its shallows (src/reeds.js,
-// PLACES in src/main.js): the fresh lakes with a soft shore; a sea cove, a
+// PLACES in src/places.js): the fresh lakes with a soft shore; a sea cove, a
 // bare rock shore, a salt flat and a frozen alpine reservoir have none.
 // `shore` names what its beach is made of (SHORE_LOOKS in src/pondFloor.js;
 // Lakeside's sand when unnamed), chosen from the land in its photo. New locations face their cove opening, sunset ridge
@@ -346,10 +346,17 @@ const SKIES = {
   },
   swiss: { shore: 'scree', mirrored: true, sunAzimuth: 45, hours: { midday: { file: 'lago_disola', resolution: '4k', label: 'Midday' } } },
   wooded: { reeds: true, shore: 'turf', sunAzimuth: -60, hours: { morning: { file: 'radkow_lake', label: 'Late morning', clock: '11:11' } } },
-  // The Koi pond's own (src/main.js PLACES `koi`), no place of its own (`ownPlace`): Ninomaru Teien, the garden of
+  // The Koi pond's own (src/places.js PLACES `koi`), no place of its own (`ownPlace`): Ninomaru Teien, the garden of
   // Nagoya Castle, in April's afternoon light through its trees (`shadedSun`: its sun behind leaves, the light on
   // level ground the balance's, most of it the sky's). Its trees, hedges and hill stand near: a backdrop (Backdrop).
   garden: { ownPlace: false, shadedSun: true, sunAzimuth: 100, backdrop: { centre: [0, 0, 2.45], radius: 35 }, hours: { afternoon: { file: 'ninomaru_teien', label: 'Afternoon', clock: '15:09' } } },
+  // The Polynesian lagoon's own (src/places.js PLACES `lagoon`), no place of its own: a pure sky (Poly Haven's Kloofendal
+  // 48d Partly Cloudy, its land taken out), deep blue with trade-wind cumulus along the horizon and the sun 48° up, as
+  // a South Pacific midday is; the land under it is the beach's own (src/tropics.js: the palms, the motus, the high
+  // island). The sun behind the eye's right, as the lagoon photographs best: the shallows lit through, no glare. Its
+// light on level ground is 1.6 times the balance's (its sky alone two thirds of its sun's, against a fifth to two
+// fifths in the other photographs): exposed as an eye adapted half the way sees it (`adapt`, below).
+  lagoon: { ownPlace: false, salt: true, adapt: 0.5, sunAzimuth: 145, hours: { midday: { file: 'kloofendal_48d_partly_cloudy_puresky', label: 'Midday', clock: '13:44' } } },
 };
 /** A sky's backdrop (Backdrop, above): { centre: [x, y, z], radius } (m), or null where its land stands far off. */
 export const skyBackdrop = (name) => SKIES[name]?.backdrop ?? null;
@@ -838,7 +845,10 @@ export function createEnvironment(renderer, { name, hour, sunAzimuth, sunBalance
     // keeping its own small share of it (so the floor's caustics are faint, as in shade).
     const levelLight = (measured) => luminance(measured.sunIrradiance) * Math.max(Math.sin(THREE.MathUtils.degToRad(measured.sun.elevation)), 0) + Math.PI * luminance(measured.skyRadiance);
     const balanceScale = (balanceLuminance / luminance(balance.sunIrradiance)) * SKY_EXPOSURE;
-    const anchorScale = place.shadedSun ? balanceScale * levelLight(balance) / levelLight(anchor) : (balanceLuminance / luminance(anchor.sunIrradiance)) * SKY_EXPOSURE;
+    // A sky far brighter on level ground than the balance's (`adapt`: the lagoon's midday, its sun high among bright
+    // cumulus) is exposed as an eye adapted that share of the way to it sees it, sun and sky together.
+    const adapted = place.adapt ? (levelLight(balance) / levelLight(anchor)) ** place.adapt : 1;
+    const anchorScale = place.shadedSun ? balanceScale * levelLight(balance) / levelLight(anchor) : (balanceLuminance / luminance(anchor.sunIrradiance)) * SKY_EXPOSURE * adapted;
     const level = file === anchorFile ? 1 : adaptedLight(hourLight(measurement)) / adaptedLight(hourLight(anchor));
     const scale = anchorScale * level;
     if (sunlit) {
