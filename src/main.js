@@ -864,7 +864,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   let lagoon = false;    // the lake's shore runs out into the Polynesian lagoon's (PLACES `tropics`; applyPlace)
   let mallHere = false;  // the lake's water is the Reflecting Pool's, inside its walls (PLACES `mall`; applyPlace)
   // The Reflecting Pool's coping, walls and ground (src/mallPool.js), in the main scene and the mirror; shown there.
-  const mallPool = createMallPool(lighting, environment, { haze: environment.hazeUniforms, wet: wetDeck, snow: snowCover });
+  const mallPool = createMallPool(lighting, { haze: environment.hazeUniforms, wet: wetDeck, snow: snowCover });
   /** The shore in force (src/pondFloor.js setShoreKind): the Koi pond's, the lagoon's or the lake's. */
   const placeShoreKind = () => PLACES[placeName].shoreKind ?? 'lake';
   let reedsHere = false;   // the place's shallows have reeds (PLACES `reeds`; applyPlace)

@@ -3993,9 +3993,10 @@ void main() {
 // (MALL_COPING_WIDTH, in stones MALL_COPING_STONE long, its joints antialiased over the pixel, a dark wet band and a
 // film of algae at the waterline on the face); then beside the pool the concrete walk (MALL_WALK, slabs MALL_SLAB long),
 // behind the west wall the plaza's granite pavers (MALL_PAVER, in running bond, MALL_PLAZA deep and wide); then a mown
-// lawn in stripes. From MALL_NEAR to MALL_FAR away all of it becomes the land the sky photo shows at the horizon that way
-// (PHOTO_LAND, as the beach's and the Pool's deck do), so the ground runs into the photo's own elms and lawns (src/sky.js
-// `mall`). Lit by the sun and the sky; wet under rain, under snow (SNOW_COVER) white but for the wet face.
+// lawn in stripes, out to the horizon, where the sky's elms stand on it (src/sky.js `mall`, planted on the same lawn by
+// tools/mall-backdrop.py: unlike the beach's and the Pool's deck it never becomes the land the photo shows just over the
+// horizon, PHOTO_LAND, which here is the elms' trunks). Lit by the sun and the sky; wet under rain, under snow
+// (SNOW_COVER) white but for the wet face.
 export const MALL_GROUND_VERTEX = /* glsl */`
 varying vec3 vWorld;
 varying vec3 vNormal;
@@ -4014,7 +4015,6 @@ uniform float uWet;     // how wet the rain has made it, 0 to 1 (src/main.js)
 varying vec3 vWorld;
 varying vec3 vNormal;
 ${GLSL_COMMON}
-${PHOTO_LAND}
 ${MIRROR_NEARNESS_OUTPUT}
 ${HAZE}
 ${SHORE_KIND}
@@ -4035,8 +4035,6 @@ ${SHORE_KIND}
 #define MALL_PAVER_COLOR vec3(0.22, 0.205, 0.185)
 #define MALL_LAWN vec3(0.068, 0.098, 0.036)
 #define MALL_STRIPE 2.4              // m: the mower's stripes
-#define MALL_NEAR 22.0
-#define MALL_FAR 140.0
 // The share of a pixel footprint (m) wide covered by joints width wide every period along the coordinate along.
 float jointCover(float along, float period, float width, float footprint) {
   float fromJoint = abs(fract(along / period + 0.5) - 0.5) * period;
@@ -4077,8 +4075,8 @@ void main() {
     albedo = MALL_PAVER_COLOR * (0.9 + 0.14 * grain) * (1.0 + 0.14 * (shade - 0.5) * (1.0 - smoothstep(0.3, 1.0, footprint / MALL_PAVER.y)));
     float joints = max(jointCover(cell.x * MALL_PAVER.x, MALL_PAVER.x, MALL_PAVER_JOINT, footprint), jointCover(cell.y * MALL_PAVER.y, MALL_PAVER.y, MALL_PAVER_JOINT, footprint));
     albedo *= 1.0 - 0.5 * joints;
-  } else if (beside > 0.0 && beside < MALL_COPING_WIDTH + MALL_WALK) {
-    // The walk beside the pool: pale concrete slabs.
+  } else if (beside > 0.0 && beside < MALL_COPING_WIDTH + MALL_WALK && behind < 0.0 && beyond < 0.0) {
+    // The walk beside the pool, as long as the pool: pale concrete slabs.
     albedo = MALL_WALK_COLOR * (0.9 + 0.12 * grain) * (1.0 + 0.06 * (hash21(vec2(floor(point.y / MALL_SLAB), sign(point.x))) - 0.5));
     albedo *= 1.0 - 0.5 * jointCover(point.y, MALL_SLAB, MALL_SLAB_JOINT, footprint);
     albedo *= 1.0 - 0.5 * (1.0 - smoothstep(0.0, max(MALL_SLAB_JOINT, footprint), abs(beside - MALL_COPING_WIDTH - MALL_WALK)));
@@ -4094,11 +4092,7 @@ void main() {
   if (snow > 0.0) albedo = mix(albedo, snowShade(point), snow);
   vec3 normal = normalize(vNormal);
   vec3 color = albedo * (uSunIrradiance * max(dot(normal, uSunDir), 0.0) + uSkyAmbient * SKY_LIGHT * (0.5 + 0.5 * normal.y));
-  vec3 toGround = vWorld - cameraPosition;
-  float far = smoothstep(MALL_NEAR, MALL_FAR, length(toGround.xz));
-  if (far > 0.0) color = mix(color, photoLand(uSkyCube, LAND_LEVEL, toGround.xz), far);
-  // The haze by its distance, but on the far land, which is the photo's, hazed already (src/sky.js captures the cube with it).
-  color = mix(color, withHaze(color, length(toGround)), 1.0 - far);
+  color = withHaze(color, length(vWorld - cameraPosition));
 #ifdef MIRROR_NEARNESS
   gl_FragColor = vec4(color, mirrorNearness(vWorld));
 #else

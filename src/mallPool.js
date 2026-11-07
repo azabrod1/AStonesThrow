@@ -6,10 +6,11 @@
 // walls, its bed the 2012 rebuild's concrete coated in a navy polyurea in 2026
 // (MALL_BED in src/shaders/scene.js, under 60 to 88 cm of water), the eye at
 // its west wall.
-// The scene's −z is east, +x south. Everything beyond the coping and the
-// ground by it is the sky's photo (src/sky.js `mall`, a backdrop stitched
-// from photographs, tools/mall-backdrop.py): the elms, the Monument, the
-// Lincoln Memorial behind the eye.
+// The scene's −z is east, +x south. Everything standing beyond the coping
+// is the sky's backdrop (src/sky.js `mall`, matte-painted by
+// tools/mall-backdrop.py): the elms, planted from photographs of single elms,
+// the Monument and the Lincoln Memorial behind the eye, cut from photographs
+// of them.
 //
 // Here, two meshes of one program (MALL_GROUND_VERTEX and
 // MALL_GROUND_FRAGMENT):
@@ -17,7 +18,7 @@
 //     hole the pool's size, out to OUTER_HALF_SIZE; its cells finest by the
 //     walls (GROUND_EDGES) so the coping's joints hold still. Per pixel: the
 //     coping's granite, the walks beside the pool, the west plaza's pavers
-//     and the lawn, running into the photo's own land from MALL_NEAR away;
+//     and the lawn, out to the horizon, where the sky's elms stand on it;
 //   - the walls' faces (wallGeometry), from WALL_FROM under the still water
 //     (below any ripple) to the coping, facing in.
 // Each is drawn twice: in the main scene, and on the mirror's layer with its
@@ -107,10 +108,10 @@ function wallGeometry(bottom, stretch = 20) {
 
 /**
  * The Reflecting Pool's meshes (the header), hidden until setVisible: the ground and the walls in the main scene, and
- * their mirror images on the mirror's layer only. Their uniforms share the lighting's objects and the sky's cube (a
- * render target src/sky.js refills in place), so they follow a change of sky or weather; `wet` and `snow` are the weather's, shared uniform objects.
+ * their mirror images on the mirror's layer only. Their uniforms share the lighting's objects, so they follow a change
+ * of sky or weather; `wet` and `snow` are the weather's, shared uniform objects.
  */
-export function createMallPool(lighting, environment, { haze = null, wet = { value: 0 }, snow = { value: 0 } } = {}) {
+export function createMallPool(lighting, { haze = null, wet = { value: 0 }, snow = { value: 0 } } = {}) {
   const material = new THREE.ShaderMaterial({
     vertexShader: MALL_GROUND_VERTEX,
     fragmentShader: MALL_GROUND_FRAGMENT,
@@ -118,7 +119,6 @@ export function createMallPool(lighting, environment, { haze = null, wet = { val
       uSunDir: { value: lighting.sunDirection },
       uSunIrradiance: { value: lighting.sunIrradiance },
       uSkyAmbient: { value: lighting.skyAmbient },
-      uSkyCube: { value: environment.cubeTexture },
       uWet: wet,
       uSnow: snow,
       ...(haze ?? { uHazeColor: { value: new THREE.Vector3() }, uHazeDensity: { value: 0 } }),
