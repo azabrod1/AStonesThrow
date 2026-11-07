@@ -4,7 +4,7 @@
 - Evaluate the review findings, address the ones you agree are valid, and rerun the relevant build and tests.
 - Once the review findings are resolved and validation passes, commit the completed code changes unless the user explicitly asks not to commit.
 - Every new branch starts from `origin/main` and its PR targets `main`, unless the user says otherwise. Never stack on, or merge in, another open PR's branch: if two conflict, land one, then merge `main` into the other.
-- Never push past a failing pre-push check (`.githooks/pre-push`, which runs `npm run check:cpu`) or with `--no-verify` (only a push with no code in it). A new probe goes in its `check:` script in `package.json`, which CI's jobs run, never in `check.yml` alone.
+- Never push past a failing pre-push check (`.githooks/pre-push`, which runs `npm run check:cpu`, 2 to 3 minutes: give `git push` a long enough timeout) or with `--no-verify` (only a push with no code in it). A new probe goes in its `check:` script in `package.json`, which CI's jobs run, never in `check.yml` alone.
 
 ## Pull request writing
 

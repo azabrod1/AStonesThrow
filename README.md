@@ -1568,10 +1568,12 @@ farther out, so it rises into the view rather than filling its corner.
   another probe crowded passes alone, as it was written to. The summary
   names every probe run again. On four cores the suite takes about 80 s.
 - `npm run check` runs what CI checks a pull request with, the same lists
-  CI's jobs run: `check:cpu` (`npm test`, the variety and pool probes),
-  `check:controls` and `check:site` (the browser probes, on the machine's
-  GPU). `npm install` points git at `.githooks/` (unless a hooks path is
-  set already), whose `pre-push` runs `check:cpu` before every push and stops
+  CI's jobs run: `check:cpu` (`npm test` with the variety and pool probes
+  beside the others, about 2 to 3 minutes on four cores), `check:controls`
+  and `check:site` (the browser probes, on the machine's GPU). `npm install`
+  points git at `.githooks/` (`tools/install-hooks.mjs`: in this checkout
+  only, and unless a hooks path is set already), whose `pre-push` runs
+  `check:cpu` before every push and stops
   one that would fail; the browser groups are left to the pull request's CI,
   since without a GPU SwiftShader takes half an hour or more over them
   (`git config check.browser true` makes the hook run all of `npm run
