@@ -25,8 +25,8 @@ import { SKY_NAMES, REED_SKIES, skyShore } from './sky.js';
 // setShoreLook: sand, shingle, scree...); its reeds (`reeds`, src/reeds.js)
 // are its sky's (REED_SKIES) unless it says: the fresh lakes have them,
 // the sea cove, the bare rock shore, the salt flat, the frozen alpine
-// reservoir, Loch Ness and the lagoon none, and the Pool and the Koi pond
-// have their own grounds.
+// reservoir, Loch Ness and the lagoon none, and the Pool, the Koi pond and
+// the Reflecting Pool have their own grounds.
 export const PLACES = {
   ...Object.fromEntries(SKY_NAMES.map((name) => [name, { sky: name, pool: false, reeds: REED_SKIES.includes(name) }])),
   swiss: { sky: 'swiss', pool: false, defaultWater: 'frozen', defaultView: 'level' },
@@ -39,6 +39,10 @@ export const PLACES = {
   // its own peat-dark water (`water`: WATER_CLARITIES.peat, whatever clarity is chosen), and, far out now and then,
   // something that comes up and goes down again (`visitor`: src/lochVisitor.js).
   loch: { sky: 'highlands', pool: false, reeds: false, shore: 'shingle', water: 'peat', visitor: true, waterCard: { image: 'assets/sky/thumbs/loch.jpg', name: 'Loch water', note: 'Peat-dark: nothing a metre down can be seen' } },
+  // The Reflecting Pool: the lake's water inside the pool's granite walls (`shoreKind`, src/pondFloor.js MALL_POOL), its
+  // coping and ground (`mall`, src/mallPool.js) under its own sky, a backdrop of the Mall (src/sky.js `mall`), and its
+  // own still water over a dark bed.
+  mall: { sky: 'mall', pool: false, reeds: false, shoreKind: 'mall', mall: true, water: 'mall', waterCard: { image: 'assets/sky/thumbs/mall.jpg', name: 'Pool water', note: 'Still over a dark bed: a mirror for the monuments' } },
 };
 /** What a place's beach is made of (SHORE_LOOKS in src/pondFloor.js): its own `shore`, else its sky's. */
 export const placeShore = (place) => PLACES[place].shore ?? skyShore(PLACES[place].sky);

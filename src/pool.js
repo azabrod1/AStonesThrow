@@ -68,7 +68,7 @@ const ACROSS = { x: new THREE.Vector3(1, 0, 0), z: new THREE.Vector3(0, 0, 1) };
 const ACROSS_BACK = { x: new THREE.Vector3(-1, 0, 0), z: new THREE.Vector3(0, 0, -1) };
 // A basin (`square`): the Pool's, the solver's pool ({ minX, minZ, size }), or any other walled water, a rectangle
 // ({ minX, minZ, sizeX, sizeZ }) with its own walls' top (`deck`, m over the still water; POOL.deck unless given):
-// the Reflecting Pool's (src/nationalMall.js MALL_BASIN).
+// the Reflecting Pool's (src/mallPool.js MALL_BASIN).
 const spanOf = (square, axis) => (axis === 'x' ? square.sizeX : square.sizeZ) ?? square.size;
 const deckOf = (square) => square.deck ?? POOL.deck;
 
