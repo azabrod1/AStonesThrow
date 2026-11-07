@@ -513,7 +513,10 @@ far ripples average to flat instead of shimmering; the slope they average
 away becomes roughness in the sun's glitter, so the glitter keeps its
 brightness with distance. Gusts multiply it: patches of ripple about 3 m
 across (cat's paws) drift downwind at 1.5 m/s over calmer water that keeps a
-quarter of it, which also hides the tile's repetition. The Wind control
+quarter of it, which also hides the tile's repetition. Where a pixel spans
+more than a patch's cells the water's shader takes their average over the
+pixel (and its square for the roughness), so the far water does not flip
+between calm and gust from one pixel to the next. The Wind control
 scales the whole field by one factor (its slope variance below a pixel by
 the square) and the foam's drift with it: Calm 0.3, a glassy pond with faint
 cat's paws, on which a stone's rings read far; Breeze 1, the look the pond
@@ -1028,7 +1031,9 @@ The curated locations include:
   between the boulders. One photographed morning.
 - **Highlands** (`?sky=highlands`): five Kiara panoramas, from dawn and sunrise
   to noon, sunset and dusk. Starts at sunset unless a remembered clock is
-  nearer another hour; noon remains the lighting calibration anchor.
+  nearer another hour; noon remains the lighting calibration anchor, brought
+  up 1.5 stops (its `exposure`): the series was exposed photo by photo, and
+  as a single photograph its noon came out a dusk, darker than its sunset.
 - **Desert oasis** (`?sky=desert`): Rogland's golden hour, starry night and
   moonlit early morning, framed toward the lower rock skyline. The water is
   the simulation's, surrounded by the photographed desert.
@@ -1471,8 +1476,7 @@ where it does at the back, so none under a head lifted clear), the short capilla
 ripples its waterline sheds, running out from the capsule's outline; and
 foam hugging the waterline and trailing behind. Each is filtered by the pixel's footprint and
 what it averages away goes to the glitter's roughness and spreads the
-mirror (the sky cube blurred over twice its rms slope, as the ice's frost
-is), so from the shore, where a wave a metre long out there is less than a
+mirror as the wind's ripples do (`spreadMirror`), so from the shore, where a wave a metre long out there is less than a
 pixel deep, the wake shows as a pale line of rougher water across the far
 shore's image, and zoomed in, as waves. A frame's pose transforms cross
 sections cached once a sighting (about 0.3 ms). Its hide texture (some
@@ -1517,8 +1521,22 @@ drawn into it each frame, over the rectangle it covers) in the direction each ri
 turns the view ray, so reflections wobble into vertical streaks (near
 things, the splash's, by their distance, so they move far less), and adds
 the sun's glitter: a Beckmann highlight on the rippled normal, widened by the
-ripple finer than the pixel. Where there is foam it replaces the surface, a
-diffuse white under the sun and the sky; the foam specks ride on it. The
+ripple finer than the pixel. That ripple spreads the mirror image too, mostly
+down it (`spreadMirror`: one lookup of the image's mip levels over a box cut
+where its rays would dip below the horizon, hidden by the next crest, through
+4× anisotropic filtering: up to four probes down the box, so a box longer
+than four texels is blurred across by a quarter of its length; each step
+more would be another probe on nearly every water pixel, since the sub-grid
+ripple alone spreads the image by more than half a pixel), so past where the
+ripples resolve the far shore's image softens down the water and pales
+toward it, rather than standing as a sharp copy of the shore that reads as
+more land; near things the water looks up by their distance (in the splash's
+rectangle the splash, a floater, the thing in the loch; in the Pool its walls
+and deck) spread by it too, as they move, and the cached image's others (the
+boulders, the reeds, the koi's garden, the lagoon's palms) as the sky. Besides
+its lookup it costs the image's mip levels at each draw of it. Where there is
+foam it replaces the surface, a diffuse white under the sun and the sky; the
+foam specks ride on it. The
 splash's passes then draw its water over the scene and tone-map it; with no
 water in the air the frame is only tone-mapped. Before the tone map a few
 percent of the scene's light is spread as a lens spreads it (`src/glare.js`:

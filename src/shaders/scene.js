@@ -404,11 +404,47 @@ uniform float uGustTime;             // world seconds
 #define GUST_CALM 0.25
 #define GUST_EDGE_LOW 0.42
 #define GUST_EDGE_HIGH 0.62
+#define GUST_FINE 0.45           // the finer octave's cells, of GUST_SCALE
+// The two octaves' places in their noise's cells.
+void gustCells(vec2 worldXZ, float time, out vec2 coarse, out vec2 fine) {
+  coarse = mat2(0.8, 0.6, -0.6, 0.8) * (worldXZ - uWindDirection * GUST_DRIFT * time) / GUST_SCALE;
+  fine = mat2(0.6, -0.8, 0.8, 0.6) * (worldXZ - uWindDirection * 1.5 * GUST_DRIFT * time) / (GUST_FINE * GUST_SCALE) + 13.7;
+}
 float gustEnvelope(vec2 worldXZ, float time) {
-  vec2 coarse = mat2(0.8, 0.6, -0.6, 0.8) * (worldXZ - uWindDirection * GUST_DRIFT * time) / GUST_SCALE;
-  vec2 fine = mat2(0.6, -0.8, 0.8, 0.6) * (worldXZ - uWindDirection * 1.5 * GUST_DRIFT * time) / (0.45 * GUST_SCALE) + 13.7;
+  vec2 coarse, fine;
+  gustCells(worldXZ, time, coarse, fine);
   float field = 0.65 * valueNoise(coarse) + 0.35 * valueNoise(fine);
   return mix(GUST_CALM, 1.0, smoothstep(GUST_EDGE_LOW, GUST_EDGE_HIGH, field));
+}
+
+// The envelope averaged over a pixel whose footprint on the water is \`footprint\` metres (its longer side, as the
+// ripples' mip level is chosen): its mean and its mean square, which the ripples' unresolved slope variance takes.
+// Far out, where a pixel spans metres of water, the bare envelope is its two levels sampled pixel by pixel: the
+// glitter's roughness and the mirror's spread (spreadMirror) flipped between calm and gust from one pixel, and one
+// row, to the next. An octave whose cells are finer than about the footprint fades to its mean (from GUST_KEPT_FROM
+// to GUST_KEPT_TO of a cell a pixel), and the variance it had widens the smoothstep's edges (a ramp averaged over a
+// field that varies that much is a wider ramp, as steep at its middle as a Gaussian's) and adds to the mean square
+// (the step's own variance over the pixel, as much of it as the field's lost spread is wide against the edges).
+// Both moments are within a few percent of a Monte Carlo of this noise's, the fine octave averaged away or both.
+// With nothing lost it is gustEnvelope and its square.
+#define GUST_KEPT_FROM 0.25         // footprint per cell where an octave starts to fade...
+#define GUST_KEPT_TO 1.0            // ...and where it has gone
+#define GUST_NOISE_VARIANCE 0.046   // valueNoise's variance over its cells
+#define GUST_WIDENING 3.53          // (1.88)²: a smoothstep 2 × 1.88 σ wide is as steep at its middle as a Gaussian's CDF of rms σ
+#define GUST_STEP_SPREAD 0.0064     // the lost variance at which half the step's own variance reaches the mean square
+vec2 gustMoments(vec2 worldXZ, float time, float footprint) {
+  vec2 coarse, fine;
+  gustCells(worldXZ, time, coarse, fine);
+  float coarseKept = 1.0 - smoothstep(GUST_KEPT_FROM, GUST_KEPT_TO, footprint / GUST_SCALE);
+  float fineKept = 1.0 - smoothstep(GUST_KEPT_FROM, GUST_KEPT_TO, footprint / (GUST_FINE * GUST_SCALE));
+  float field = 0.5 + 0.65 * coarseKept * (valueNoise(coarse) - 0.5) + 0.35 * fineKept * (valueNoise(fine) - 0.5);
+  float lost = GUST_NOISE_VARIANCE * (0.65 * 0.65 * (1.0 - coarseKept * coarseKept) + 0.35 * 0.35 * (1.0 - fineKept * fineKept));
+  float middle = 0.5 * (GUST_EDGE_LOW + GUST_EDGE_HIGH);
+  float halfWidth = sqrt(0.25 * (GUST_EDGE_HIGH - GUST_EDGE_LOW) * (GUST_EDGE_HIGH - GUST_EDGE_LOW) + GUST_WIDENING * lost);
+  float stepped = smoothstep(middle - halfWidth, middle + halfWidth, field);
+  float gust = mix(GUST_CALM, 1.0, stepped);
+  float stepVariance = stepped * (1.0 - stepped) * lost / (lost + GUST_STEP_SPREAD);
+  return vec2(gust, gust * gust + (1.0 - GUST_CALM) * (1.0 - GUST_CALM) * stepVariance);
 }
 
 // Height of the ambient waves at full gust, metres. In a vertex shader the
@@ -1512,7 +1548,8 @@ export const WATER_FRAGMENT = /* glsl */`
 uniform sampler2D uHeight;
 uniform sampler2D uFoam;
 uniform vec2 uFoamDrift;          // how far the wind has carried the foam (m): its pattern drifts with the map
-uniform sampler2D uReflection;    // the sky dome seen through a mirrored camera; alpha: nearness (MIRROR_COMMON, src/shaders/fluid.js)
+uniform sampler2D uReflection;    // the sky dome seen through a mirrored camera; alpha: nearness (MIRROR_COMMON, src/shaders/fluid.js); mipmapped for spreadMirror
+#define mirrorTexel(uv) textureLod(uReflection, uv, 0.0)   // the mirror image itself: its mip levels are spreadMirror's alone
 uniform samplerCube uSkyCube;     // the sky as the droplets reflect it (src/sky.js), mipmapped: the ice's frosted mirror
 uniform mat4 uReflectionMatrix;   // world -> reflection texture coordinates
 uniform vec4 uMirrorNear;         // the splash's image in the mirror, uv corners (x0, y0, x1, y1); empty (x0 > x1) when none
@@ -1668,29 +1705,93 @@ vec3 galeFoamAt(vec2 restXZ) {
 // the object's light across the water. A choice between the flat mirror's
 // texel and the rippled one, made pixel by pixel, cut the image into shards
 // along every edge. Only pixels whose flat or rippled lookup falls in the
-// splash's rectangle take this; up to three fetches each.
+// splash's rectangle take this; up to three fetches each. \`near\` is set to
+// the lookup it settled on, before it is held inside the image, and the
+// nearness found there (0 for the sky, as outside the rectangle), for
+// spreadMirror.
 #define MIRROR_NEARNESS_SCALE 4.0     // MIRROR_COMMON's
 #define MIRROR_FARTHEST 1e-3          // nearness under this (beyond a kilometre): the sky
 #define MIRROR_EDGE 0.03              // a lookup past the mirror image's edge fades to the sky's cube over this share of the image (the water's reflection)
-vec3 nearReflection(vec2 rippleUv, vec3 ray) {
+// What the mirror image shows, faded to the sky's cube as far as the lookup is \`pastEdge\` (uv) past the image's edge.
+vec3 fadePastMirrorEdge(vec3 shown, vec2 pastEdge, vec3 ray) {
+  float outside = smoothstep(0.0, MIRROR_EDGE, max(pastEdge.x, pastEdge.y));
+  return outside > 0.0 ? mix(shown, textureCube(uSkyCube, ray).rgb, outside) : shown;
+}
+vec3 nearReflection(vec2 rippleUv, vec3 ray, out vec3 near) {
   vec2 lookup = clamp(rippleUv, vec2(0.002), vec2(0.998));
+  near = vec3(rippleUv, 0.0);
   vec4 flatCoord = uReflectionMatrix * vec4(vWorld, 1.0);
   vec2 flatUv = flatCoord.xy / max(flatCoord.w, 1e-4);
   bool flatNear = all(greaterThanEqual(flatUv, uMirrorNear.xy)) && all(lessThanEqual(flatUv, uMirrorNear.zw));
   bool rippleNear = all(greaterThanEqual(rippleUv, uMirrorNear.xy)) && all(lessThanEqual(rippleUv, uMirrorNear.zw));
-  vec4 found = texture2D(uReflection, lookup);
+  vec4 found = mirrorTexel(lookup);
   if (!flatNear && !rippleNear) return found.rgb;
+  float nearness = 0.0;
   vec3 mirrorEye = vec3(cameraPosition.x, 2.0 * uMirrorLevel - cameraPosition.y, cameraPosition.z);
   float surfaceDistance = distance(vWorld, mirrorEye);
   for (int refinement = 0; refinement < 2; refinement++) {
-    float nearness = (1.0 - found.a) / MIRROR_NEARNESS_SCALE;
+    nearness = (1.0 - found.a) / MIRROR_NEARNESS_SCALE;
     if (nearness <= MIRROR_FARTHEST) break;
     float along = max(1.0 / nearness - surfaceDistance, 0.0);
     vec4 nearCoord = uReflectionMatrix * vec4(vWorld + ray * along, 1.0);
-    lookup = clamp(nearCoord.xy / max(nearCoord.w, 1e-4), vec2(0.002), vec2(0.998));
-    found = texture2D(uReflection, lookup);
+    near.xy = nearCoord.xy / max(nearCoord.w, 1e-4);
+    lookup = clamp(near.xy, vec2(0.002), vec2(0.998));
+    found = mirrorTexel(lookup);
   }
+  nearness = (1.0 - found.a) / MIRROR_NEARNESS_SCALE;
+  near.z = nearness > MIRROR_FARTHEST ? nearness : 0.0;
   return found.rgb;
+}
+
+// The mirror image spread by the ripples too fine for the pixel (slopeVariance: the wind's, the rain's, the gale's, the
+// thing in the loch's), which would otherwise leave the far water a perfect mirror past where the ripples resolve, its
+// far shore's image as sharp as the shore, read as more land. A ripple tilted toward or away from the eye turns the
+// reflected ray up or down by twice its tilt; one tilted sideways turns it far less at a grazing angle, so the image
+// spreads vertically, as a far shore's does on a lake. The climb's spread is a Gaussian of rms sqrt(2 slopeVariance)
+// (slopeVariance is the Beckmann m², twice each axis's variance), averaged in one lookup over a box MIRROR_BOX rms
+// long down the image (textureGrad: the image's mip levels through its 4× anisotropic filter, src/main.js). Across
+// the image the filter keeps to a texel while the box is up to four texels long; past that it is a quarter of the
+// box's length across, so where the box spans many texels the image blurs across too, a quarter as far as down it.
+// A ray turned below the horizon meets the next crest instead (those facets are hidden): the box is cut at the lowest
+// ray that clears the horizon, so far out, where the rays graze, the image is lifted toward what stands higher, and
+// the water before the far shore takes the hills' tops and the sky, paler, as it does on a lake. The cut moves with
+// the ray's climb, so the box shortens smoothly toward the horizon: taps left out one by one as their rays dipped
+// drew a band across the far water where each went. A near thing in nearReflection's reach (in the
+// splash's rectangle: the splash, a floater, the thing in the loch; in the Pool, the whole image: its walls and deck)
+// spreads by L/(L + d) of that, L its distance from the water here and d the water's from the eye, as nearReflection
+// moves it, about the lookup it settled on (\`near\`: that lookup and the nearness found there), so the spread image
+// lies over the sharp one. Its image moves less, but its rays turn as far as the sky's: where the box is cut is
+// reckoned by the rays' turn, not the image's. Where the spread is under
+// half a mirror pixel the sharp image stands. A footprint the image's edge cuts would read the edge's clamped texels
+// down the water (the bars MIRROR_EDGE keeps from the sharp lookup): as far as its far end is past the edge, it fades
+// to the sky's cube, as the sharp lookup does.
+#define MIRROR_BOX 3.5                 // the lookup's footprint down the image, in the spread's rms (a box of the Gaussian's width)
+vec3 spreadMirror(vec3 sharp, vec3 near, vec3 ray, vec4 coord, float slopeVariance) {   // coord: uReflectionMatrix * (ray, 0)
+  float horizontal = max(length(ray.xz), 1e-3);
+  vec4 raised = coord + 0.01 * horizontal * uReflectionMatrix[1];
+  vec2 perClimb = (raised.xy / max(raised.w, 1e-4) - coord.xy / max(coord.w, 1e-4)) / 0.01;   // uv per unit of climb
+  // A near thing's (nearness 1/(L + d) from the mirror camera, L its distance from the surface here) by L/(L + d).
+  // Outside nearReflection's reach the cached image's near things (the boulders, the reeds, the koi's garden, the
+  // lagoon's palms) spread as the sky does, as the sharp lookup moves them: spread by their own nearness there, the
+  // garden's image by the bank stood as the sharp lookup's shards, and the spread had smoothed them.
+  vec3 mirrorEye = vec3(cameraPosition.x, 2.0 * uMirrorLevel - cameraPosition.y, cameraPosition.z);
+  float reach = clamp(1.0 - distance(vWorld, mirrorEye) * near.z, 0.0, 1.0);
+  float turned = sqrt(2.0 * slopeVariance);   // the rays' turn (rms climb)
+  float spread = turned * reach;               // the image's
+  float pixels = spread * length(perClimb * uMirrorSize);
+  if (pixels < 0.5) return sharp;
+  vec2 centre = near.xy;
+  float climb = ray.y / horizontal;
+  vec2 downPixels = perClimb * uMirrorSize;
+  vec2 acrossTap = normalize(vec2(-downPixels.y, downPixels.x) + 1e-6) / uMirrorSize;   // a texel across the image (square in its pixels, not its uv)
+  // The box: from the lowest ray that clears the horizon (\`lowest\` rms of the turn under the reflected ray) to
+  // MIRROR_BOX / 2 over it.
+  float lowest = min(climb / turned, 0.5 * MIRROR_BOX);
+  vec2 lowEnd = centre - lowest * spread * perClimb;
+  vec2 highEnd = centre + 0.5 * MIRROR_BOX * spread * perClimb;
+  vec2 pastEdge = max(max(-lowEnd, lowEnd - 1.0), max(-highEnd, highEnd - 1.0));
+  vec3 spreadImage = textureGrad(uReflection, clamp(0.5 * (lowEnd + highEnd), vec2(0.002), vec2(0.998)), highEnd - lowEnd, acrossTap).rgb;
+  return mix(sharp, fadePastMirrorEdge(spreadImage, pastEdge, ray), smoothstep(0.5, 1.5, pixels));
 }
 
 // The pool's tiles' fine detail, which the under-water pass, drawn coarser
@@ -1785,7 +1886,8 @@ vec3 iceSurface(IceMask mask, float footprint, vec2 acrossX, vec2 acrossY) {
   vec4 stillRayCoord = uReflectionMatrix * vec4(-v.x, v.y, -v.z, 0.0);
   vec4 stillPointCoord = uReflectionMatrix * vec4(vWorld.x, uMirrorLevel, vWorld.z, 1.0);
   vec2 reflectUv = stillPointCoord.xy / max(stillPointCoord.w, 1e-4) + reflectCoord.xy / max(reflectCoord.w, 1e-4) - stillRayCoord.xy / max(stillRayCoord.w, 1e-4);
-  vec3 reflected = uMirrorNear.x > uMirrorNear.z ? texture2D(uReflection, clamp(reflectUv, vec2(0.002), vec2(0.998))).rgb : nearReflection(reflectUv, reflectedRay);
+  vec3 near;   // (unused: the frost spreads the sky's cube)
+  vec3 reflected = uMirrorNear.x > uMirrorNear.z ? mirrorTexel(clamp(reflectUv, vec2(0.002), vec2(0.998))).rgb : nearReflection(reflectUv, reflectedRay, near);
   // Frost spreads the reflected ray over about twice its rms slope: past a little frost the mirror is the sky's cube
   // (the dome, which the mirror image holds but for what is near) blurred by its mip levels that wide (ICE_FROST_LEVELS
   // a radian).
@@ -1894,9 +1996,11 @@ void main() {
   // (a ring is a few thousandths steep where it is finer than a pixel, under
   // the ripples' own unresolved slope). So do the drop rings' (src/
   // dropRings.js: the little rings a splash's drops leave where they land).
-  float gust = gustEnvelope(vWorld.xz, uGustTime);
+  // The gusts as the pixel averages them (gustMoments): their mean scales the ripples' slope, their mean square the
+  // slope variance the ripples' mip levels lose.
+  vec2 gustSeen = gustMoments(vWorld.xz, uGustTime, max(length(acrossX), length(acrossY)));
+  float gust = gustSeen.x;
   float subGridSpread = uRoughness * uRoughness;
-  float visitorVariance = 0.0;   // the thing in the loch's unresolved slope, for the mirror's spread (below)
 #ifdef CAVITY_MESH
   // The mesh's normal, tilted by the surface's slopes where the mesh rides
   // the surface (its own normal is the lip's shape on still water). The
@@ -1906,7 +2010,7 @@ void main() {
   float ride = vCavity.x;
   vec2 surfaceSlope = vec2(hr - hl, hu - hd) / (2.0 * uCell) * vMask + ambientSlopeAtFullGust(vWorld.xz) * gust * ride;
   if (uRingCount > 0) surfaceSlope += ringSlope(vWorld.xz, acrossX, acrossY) * ride;
-  float slopeVariance = subGridSpread * subGridSpread + ambientUnresolvedVariance(vWorld.xz) * gust * gust * ride;
+  float slopeVariance = subGridSpread * subGridSpread + ambientUnresolvedVariance(vWorld.xz) * gustSeen.y * ride;
   if (uRainOn > 0.5) {
     surfaceSlope += rainSlope(vWorld.xz) * ride;
     slopeVariance += rainUnresolvedVariance(vWorld.xz) * ride;
@@ -1947,7 +2051,7 @@ void main() {
 #else
   vec2 slope = vec2(hr - hl, hu - hd) / (2.0 * uCell) * vMask + ambientSlopeAtFullGust(vWorld.xz) * gust;
   if (uRingCount > 0) slope += ringSlope(vWorld.xz, acrossX, acrossY);
-  float slopeVariance = subGridSpread * subGridSpread + ambientUnresolvedVariance(vWorld.xz) * gust * gust;
+  float slopeVariance = subGridSpread * subGridSpread + ambientUnresolvedVariance(vWorld.xz) * gustSeen.y;
   if (uRainOn > 0.5) {
     slope += rainSlope(vWorld.xz);
     slopeVariance += rainUnresolvedVariance(vWorld.xz);
@@ -1957,7 +2061,6 @@ void main() {
     vec3 visitor = visitorSlope(vWorld.xz, acrossX, acrossY);
     slope += visitor.xy;
     slopeVariance += visitor.z;
-    visitorVariance = visitor.z;
   }
   float galeJacobian = 1.0;
   if (uGaleMetresPerUnit > 0.0) {
@@ -2071,23 +2174,13 @@ void main() {
   vec4 stillPointCoord = uReflectionMatrix * vec4(vWorld.x, uMirrorLevel, vWorld.z, 1.0);
   vec2 reflectUv = stillPointCoord.xy / max(stillPointCoord.w, 1e-4) + reflectCoord.xy / max(reflectCoord.w, 1e-4) - stillRayCoord.xy / max(stillRayCoord.w, 1e-4);
   vec3 reflected;
-  if (uMirrorNear.x > uMirrorNear.z) reflected = texture2D(uReflection, clamp(reflectUv, vec2(0.002), vec2(0.998))).rgb;
-  else reflected = nearReflection(reflectUv, reflectedRay);
-  vec2 pastEdge = max(-reflectUv, reflectUv - 1.0);
-  float outside = smoothstep(0.0, MIRROR_EDGE, max(pastEdge.x, pastEdge.y));
-  if (outside > 0.0) reflected = mix(reflected, textureCube(uSkyCube, reflectedRay).rgb, outside);
-  // The thing in the loch's waves too fine for the pixel (src/shaders/visitor.js) spread the reflected ray over about
-  // twice their rms slope, as the ice's frost does; at a grazing angle the rays turned down meet the next crest, so the
-  // spread climbs (by its width): far out, a wake shows as a V of paler, duller water across the far shore's image.
-  // The sun's share is the glitter's (held to ICE_FROST_SKY of the sky's mean, as the frost's is).
-  if (visitorVariance > 1e-4) {
-    float visitorSpread = 2.0 * sqrt(visitorVariance);
-    vec3 spreadRay = normalize(vec3(reflectedRay.x, reflectedRay.y + visitorSpread * length(reflectedRay.xz), reflectedRay.z));
-    vec3 spreadSky = textureCubeLodEXT(uSkyCube, spreadRay, clamp(log2(max(visitorSpread * ICE_FROST_LEVELS, 1.0)), 0.0, ICE_FROST_COARSEST)).rgb;
-    float spreadLuminance = dot(spreadSky, vec3(0.2126, 0.7152, 0.0722)), skyMean = dot(uSkyAmbient, vec3(0.2126, 0.7152, 0.0722));
-    spreadSky *= min(1.0, ICE_FROST_SKY * skyMean / max(spreadLuminance, 1e-6));
-    reflected = mix(reflected, spreadSky, smoothstep(0.03, 0.2, visitorSpread));
-  }
+  vec3 near = vec3(reflectUv, 0.0);   // where the image was read and the nearness found there (0: the sky), for spreadMirror
+  if (uMirrorNear.x > uMirrorNear.z) reflected = mirrorTexel(clamp(reflectUv, vec2(0.002), vec2(0.998))).rgb;
+  else reflected = nearReflection(reflectUv, reflectedRay, near);
+  // What the ripples too fine for the pixel do to it (spreadMirror): far out, the far shore's image spreads down the
+  // water and pales toward it, and a wake too fine to resolve shows as a V of paler, duller water across it.
+  reflected = spreadMirror(reflected, near, reflectedRay, reflectCoord, slopeVariance);
+  reflected = fadePastMirrorEdge(reflected, max(-reflectUv, reflectUv - 1.0), reflectedRay);
 
 #ifdef CAVITY_MESH
   // Inside the hole the water is shaded as water is: what a wall reflects is
@@ -2523,7 +2616,7 @@ void main() {
   float hu = texture2D(uHeight, vDomainUv + vec2(0.0, texelStep)).r;
   vec2 acrossX = dFdx(vWorld.xz);
   vec2 acrossY = dFdy(vWorld.xz);
-  float gust = gustEnvelope(vWorld.xz, uGustTime);
+  float gust = gustMoments(vWorld.xz, uGustTime, max(length(acrossX), length(acrossY))).x;   // as the pixel averages it (WATER_FRAGMENT)
   vec2 slope = vec2(hr - hl, hu - hd) / (2.0 * uCell) * vMask + ambientSlopeAtFullGust(vWorld.xz) * gust;
   if (uRingCount > 0) slope += ringSlope(vWorld.xz, acrossX, acrossY);
   if (uRainOn > 0.5) slope += rainSlope(vWorld.xz);
