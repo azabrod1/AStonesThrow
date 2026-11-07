@@ -1,41 +1,64 @@
-"""The Reflecting Pool's sky (src/sky.js `mall`): a 360° backdrop matte-painted from flat photographs.
+"""The Reflecting Pool's skies (src/sky.js `mall`): 360° backdrops matte-painted from flat photographs, one an hour.
 
 No free panorama of the Lincoln Memorial Reflecting Pool from its west end exists, so this stitches one from
 freely licensed photographs on Wikimedia Commons and a pure sky from Poly Haven, as a film's matte painter would:
 each photograph is set where it looks from the pool's west end (its azimuth, tilt and field of view), its own sky
-cut away (a matte: sky-like pixels joined to its top, and the canopy's holes), its colour matched to the home
-view's, and its land laid over one sky, so the sky has no seams and is the light the scene is lit by. The water
-below the far shore is the app's (src/mallPool.js draws the coping and the ground out to the first elm row, the
-water stops at the walls), so each photograph is used from its far shore (`cut`) up; below it the far shore's
-row is carried down, a blur under the horizon that the encoder blurs further (tools/sky-encode.mjs GROUND_FROM).
+cut away (a matte: sky-like pixels joined to its top, and the canopy's holes), its colour matched to the hour's
+reference photograph, and its land laid over one sky, so the sky has no seams and is the light the scene is lit by.
+The water below the far shore is the app's (src/mallPool.js draws the coping and the ground out to the first elm
+row, the water stops at the walls), so each photograph is used from its far shore (`cut`) up; below it the far
+shore's row is carried down, a blur under the horizon that the encoder blurs further (tools/sky-encode.mjs).
 
-The photographs (tools/mall-backdrop.json `photos`, with their authors and licences;
-CC BY-SA asks that they be credited where the backdrop is shown): ahead, east, down the pool to the Washington Monument; behind, the Lincoln Memorial; to the south the
-elm rows across the water, and to the north the same photograph mirrored (no photograph of the north elms has
-their crowns and sky in frame). Each may name
+The photographs (tools/mall-backdrop.json `photos`, by name, with their authors and licences; CC BY-SA asks that
+they be credited where the backdrop is shown). The day's: ahead, east, down the pool to the Washington Monument;
+behind, the Lincoln Memorial; to the south the elm rows across the water, and to the north the same photograph
+mirrored (no photograph of the north elms has their crowns and sky in frame). The other hours' own: the Monument
+lit by the setting sun, the pool at night, and the Memorial floodlit after sunset. Each may name
   crop        the share of its width used (from, to): clutter at an edge left out;
   cut         its far shore, [x, y] shares of its width and height, the land above it;
-  keep        boxes whose white is land, not cloud (the marble);
+  keep        boxes whose white or brightness is land, not sky (the marble, the floodlit memorial);
   paint       lines to paint out ([[x, y], ...], width as a share of the width): a pole across the trees;
   protect     spans of its width (from, to) never copied into a gap: a landmark is never seen twice;
   yield       the degrees of its sides a gap's join may take (6; less where the photograph matters most);
-  blue, lum, white, hole_blue, sky_above   the matte's thresholds (land_matte).
+  blue, lum, white, hole_blue, sky_lum, sky_above   the matte's thresholds (land_matte; sky_lum for a dusk's or a
+              city night's sky, lighter than its land but neither blue nor white);
+  over        laid over the other layers once their gaps are filled: inside its `shape` (polygons, shares of the
+              photograph: a landmark in the hour's light), or whole, joined at its sides within `seam` degrees by
+              image quilting's cut where its land and theirs agree;
+  hide        boxes left to the sky (a landmark another layer shows in the hour's light).
 Between photographs that do not meet, the gap is filled from both sides, each side's land copied across into
 its half and the two joined where their treelines best agree: more of the same trees, never a stretched smear
 (fill_gaps).
 
-The sky: Poly Haven's qwantani_mid_morning_puresky (CC0), turned so its sun stands `sky.sunAzimuth` (degrees
-from north, clockwise) at its own height (40°). The land's light (`light`): a phone's photograph is display-
-referred, its shadows crushed and its sky near clipping, so its land is far darker against the sky than the land in
-a measured HDR (Poly Haven's lake and meadow panoramas hold their land's median luminance at 0.04 to 0.1 of
+The hours (`hours`, each its own Radiance file, `file`). Each lists its `layers`, a photograph by name with what the
+layer changes of it, every layer matched to the hour's `reference` photograph (its first layer's unless named) in log
+light, land above the shore against land above the shore (color_match: one contrast for the three channels, or each
+its own, `matchContrast: channels`, which gives sunlit leaves the sunset's gold), unless it is the reference or says
+`match: false`; `adjust` grades it by hand. The day's photographs are already placed, so another hour is the day's
+graded to that hour's reference, its landmarks laid over in their own light: at sunset the Monument cut out of a
+photograph lit by the low sun, behind the eye the Memorial floodlit with its trees black against the glow; at night
+the pool's own night photograph laid over the day's graded to its dark trees. A low sun's `backlight` darkens and
+greys what faces the eye toward it (the trees' shaded sides; backlight); `keepHue` and `unsky` keep a canopy's gaps
+and sky-tinted edges from taking a false colour in another light.
+
+The sky: one of Poly Haven's Qwantani pure skies (CC0) an hour, turned so its sun stands `sky.sunAzimuth` (degrees
+from north, clockwise) at its own height: where the true sun stood on the hour's day at the elevation the photo's
+sun has (`taken`, for tools/sky-probe.mjs --taken --at), so every hour's land lies alike. Its `gain` scales it; its
+`stars`, only its stars (a city's night shows few, and none of a far town's glow); its `glow`, a city's sky glow
+fitted to the reference photograph's own sky (fit_glow). The land's light (`light`): a phone's photograph is
+display-referred, its shadows crushed and its sky near clipping, so its land is far darker against the sky than the
+land in a measured HDR (Poly Haven's lake and meadow panoramas hold their land's median luminance at 0.04 to 0.1 of
 Three.js's units, about a tenth of their sky). Each pixel's luminance, from sRGB to linear, is raised to `gamma`
-(below 1: the shadows opened, the marble held) and scaled so the home view's land has the median `landMedian`.
+(below 1: the shadows opened, the marble held) and scaled so the home view's land has the median `landMedian`; or the
+reference photograph's sky has the median `skyMedian`, or matches the hour's sky in the same directions
+(`skyMatch`), so the land keeps the photograph's own contrast against its sky (exposure_of).
 
-Writes assets/sky/mall_2k.hdr (the dome's photo: run tools/sky-probe.mjs and tools/sky-encode.mjs on it)
-and assets/sky/mall_8k.hdr (the horizon strip's source, gitignored as Poly Haven's are: sky-encode cuts
-the strip from it), and --preview a tone-mapped look at both and eight views from the eye.
+Writes assets/sky/<file>_2k.hdr for each hour (the dome's photo: run tools/sky-probe.mjs, with the hour's `taken`,
+and tools/sky-encode.mjs on it) and assets/sky/<file>_8k.hdr (the horizon strip's source, gitignored as Poly
+Haven's are: sky-encode cuts the strip from it), and --preview a tone-mapped look at both and eight views from the
+eye, an hour's in a folder of its own. --hour builds only the hours named.
 
-    python3 tools/mall-backdrop.py [--preview=shots/mall-backdrop]
+    python3 tools/mall-backdrop.py [--hour=sunset,night] [--preview=shots/mall-backdrop]
 
 The photographs are downloaded once into tools/.mall-photos/ (gitignored). Needs numpy, scipy and Pillow.
 Azimuths here are degrees from north toward east (the file's left edge is north, east a quarter across), as
@@ -53,6 +76,8 @@ CACHE = os.path.join(ROOT, 'tools', '.mall-photos')
 AGENT = {'User-Agent': 'AStonesThrow-mall-backdrop/1.0 (https://github.com/azabrod1/AStonesThrow)'}
 WORK_WIDTH = 3000          # pixels: each photograph is worked at this width (the 8k strip's 23 a degree, and more)
 BAND = (-6.0, 32.0)        # degrees: the elevations land can reach (the rest is the pure sky alone)
+SUBJECT = 1e-3             # a layer's share subject to the backlight, carried as a fourth colour channel this small (so
+                           # the gap fill's cuts, which weigh every channel, never notice it)
 
 
 # ---- sources ------------------------------------------------------------------------------------------------
@@ -244,11 +269,13 @@ def land_matte(photo, spec):
     blue = b - r
     bluish = (blue > spec.get('blue', 0.05)) & (lum > spec.get('lum', 0.45))
     white = (lum > spec.get('white', 0.9)) & (np.abs(b - r) < 0.12)
+    bright = lum > spec['sky_lum'] if 'sky_lum' in spec else np.zeros_like(white)   # a dusk's or a city night's sky: lighter than its land
     for x0, y0, x1, y1 in spec.get('keep', []):
         box = (slice(int(y0 * h), int(y1 * h)), slice(int(x0 * w), int(x1 * w)))
         white[box] = False
+        bright[box] = False
         bluish[box] &= blue[box] > spec.get('keep_blue', 0.12)
-    skylike = (bluish | white) & above
+    skylike = (bluish | white | bright) & above
     labels, _ = ndimage.label(skylike)
     touching = np.unique(labels[: max(2, h // 200)])
     sky = np.isin(labels, touching[touching > 0])
@@ -275,11 +302,29 @@ def carry_shore_down(photo, cut):
     return np.where(below[..., None], shore[None, :, :], photo)
 
 
-def color_match(linear, matte, reference, reference_matte):
-    """Each channel's land matched to the home view's, its mean and spread in log light (as an exposure and a
-    contrast: never below black, as a match in linear light would push the shadows)."""
+def above_shore(entry):
+    """A prepared photograph's land above its far shore, but for its `keep` boxes (what is matched: below the shore is
+    its colour carried down, and a landmark, floodlit or marble, is not the light its trees are in)."""
+    height, width = entry['matte'].shape
+    land = (entry['matte'] > 0.9) & (np.arange(height)[:, None] < entry['cut'][None, :] * height)
+    for x0, y0, x1, y1 in entry['spec'].get('keep', []):
+        land[int(y0 * height):int(y1 * height), int(x0 * width):int(x1 * width)] = False
+    return land
+
+
+def color_match(linear, land, reference, reference_land, shared=False):
+    """Each channel's land matched to the reference's (both above their far shores), its mean and spread in log light
+    (as an exposure and a contrast: never below black, as a match in linear light would push the shadows). `shared`:
+    one contrast for all three, the luminance's, each channel keeping its own mean, so a highlight (a gap in a canopy,
+    sky-coloured) keeps its hue rather than being stretched to a false one."""
     out = linear.copy()
-    land, reference_land = matte > 0.9, reference_matte > 0.9
+    if shared:
+        mine_lum, theirs_lum = np.log(luminance(linear) + 1e-4), np.log(luminance(reference) + 1e-4)
+        ratio = theirs_lum[reference_land].std() / max(mine_lum[land].std(), 1e-6)
+        for channel in range(3):
+            mine, theirs = np.log(linear[..., channel] + 1e-4), np.log(reference[..., channel] + 1e-4)
+            out[..., channel] = np.exp((mine - mine[land].mean()) * ratio + theirs[reference_land].mean()) - 1e-4
+        return np.clip(out, 0, None)
     for channel in range(3):
         mine, theirs = np.log(linear[..., channel] + 1e-4), np.log(reference[..., channel] + 1e-4)
         mean, spread = mine[land].mean(), mine[land].std()
@@ -414,26 +459,115 @@ def fill_gaps(color, alpha, coverage, protected, yields):
     return np.roll(color, shift, 1), np.roll(out_alpha, shift, 1), found
 
 
-def prepare(plan):
-    photos = []
-    for spec in plan['photos']:
-        photo = load_photo(spec)
-        if spec.get('paint'):
-            photo = paint_out(photo, spec['paint'])
-        crop = spec.get('crop', [0, 1])
-        if crop != [0, 1]:
-            w = photo.shape[1]
-            photo = photo[:, int(crop[0] * w):int(crop[1] * w)]
-            spec = {**spec, 'cut': [[(x - crop[0]) / (crop[1] - crop[0]), y] for x, y in spec['cut']],
-                    'keep': [[(x0 - crop[0]) / (crop[1] - crop[0]), y0, (x1 - crop[0]) / (crop[1] - crop[0]), y1] for x0, y0, x1, y1 in spec.get('keep', [])],
-                    'protect': [[(x0 - crop[0]) / (crop[1] - crop[0]), (x1 - crop[0]) / (crop[1] - crop[0])] for x0, x1 in spec.get('protect', [])]}
-        matte, cut = land_matte(photo, spec)
-        photos.append({'spec': spec, 'photo': photo, 'linear': srgb_to_linear(carry_shore_down(photo, cut)), 'matte': matte})
-    reference = photos[0]
-    for entry in photos[1:]:
-        if entry['spec'].get('match', True):
-            entry['linear'] = color_match(entry['linear'], entry['matte'], reference['linear'], reference['matte'])
-    return photos
+def shape_matte(spec, height, width):
+    """An `over` layer's matte: its `shape` polygons (shares of the photograph), drawn at twice the size and shrunk, so
+    their edges are smooth."""
+    from PIL import ImageDraw
+    mask = Image.new('L', (2 * width, 2 * height), 0)
+    for polygon in spec['shape']:
+        ImageDraw.Draw(mask).polygon([(x * 2 * width, y * 2 * height) for x, y in polygon], fill=255)
+    return np.asarray(mask.resize((width, height), Image.BOX), np.float32) / 255
+
+
+def adjust(linear, settings):
+    """A layer's own grade (`adjust`): `exposure` in stops, `saturation` about its luminance, `tint` a colour to multiply."""
+    out = linear * 2.0 ** settings.get('exposure', 0.0)
+    if 'saturation' in settings:
+        lum = luminance(out)[..., None]
+        out = lum + (out - lum) * settings['saturation']
+    if 'tint' in settings:
+        out = out * np.array(settings['tint'], np.float32)
+    return np.clip(out, 0, None)
+
+
+def prepare_photo(spec):
+    """A photograph loaded, painted, cropped, its land matted (or its `shape`, for an `over` layer) and made linear."""
+    photo = load_photo(spec)
+    if spec.get('paint'):
+        photo = paint_out(photo, spec['paint'])
+    crop = spec.get('crop', [0, 1])
+    if crop != [0, 1]:
+        w = photo.shape[1]
+        photo = photo[:, int(crop[0] * w):int(crop[1] * w)]
+        spec = {**spec, 'cut': [[(x - crop[0]) / (crop[1] - crop[0]), y] for x, y in spec['cut']],
+                'keep': [[(x0 - crop[0]) / (crop[1] - crop[0]), y0, (x1 - crop[0]) / (crop[1] - crop[0]), y1] for x0, y0, x1, y1 in spec.get('keep', [])],
+                'protect': [[(x0 - crop[0]) / (crop[1] - crop[0]), (x1 - crop[0]) / (crop[1] - crop[0])] for x0, x1 in spec.get('protect', [])]}
+    matte, cut = land_matte(photo, spec)
+    for x0, y0, x1, y1 in spec.get('hide', []):
+        # Left to the sky (`hide`): a landmark another layer shows in this hour's light, so no edge of this one's shows.
+        h, w = matte.shape
+        matte[int(y0 * h):int(y1 * h), int(x0 * w):int(x1 * w)] = 0
+    entry = {'spec': spec, 'photo': photo, 'linear': srgb_to_linear(carry_shore_down(photo, cut)), 'matte': matte, 'cut': cut}
+    if spec.get('shape'):
+        entry['shape'] = shape_matte(spec, *photo.shape[:2])
+    return entry
+
+
+def backlight(dirs, settings, sun_azimuth):
+    """Land toward a low sun (`backlight`): what faces the eye there is the trees' shaded side, lit by the sky alone,
+    so it is darkened to `factor` straight at the sun and desaturated by `desaturate`, both easing off over `width`
+    degrees either side (as (1 − apart/width)^power). Applied to the composed land by its own direction, so what a gap
+    copies takes the light of where it is put; a layer lit by its own lamps (a floodlit memorial) is spared
+    (`backlight: false`). Returns the darkening and the desaturation."""
+    azimuth = np.degrees(np.arctan2(dirs[..., 0], dirs[..., 2])) % 360
+    apart = np.abs((azimuth - sun_azimuth + 180) % 360 - 180)
+    toward = np.clip(1 - apart / settings['width'], 0, 1) ** settings.get('power', 2)
+    return 1 - (1 - settings['factor']) * toward, settings.get('desaturate', 0.5) * toward
+
+
+def prepare(plan, hour):
+    """An hour's layers (`layers`: a photograph of `photos` by name, with what the layer changes of it), each matched to
+    the hour's `reference` photograph (its first layer's unless named): its land's colour in log light (color_match),
+    unless the layer is the reference or says `match: false`; then its own `adjust`. Returns the base layers, the
+    `over` layers (laid on top of everything, inside their `shape`) and the reference."""
+    reference_name = hour.get('reference', hour['layers'][0]['photo'])
+    cache = {}
+    def photo(name, overrides=None):
+        key = (name, json.dumps(overrides or {}, sort_keys=True))
+        if key not in cache:
+            cache[key] = prepare_photo({**plan['photos'][name], **(overrides or {})})
+        return cache[key]
+    reference = photo(reference_name)
+    # What is matched: the land above each far shore, with one contrast for its three channels; or, the morning as it
+    # was tuned, all the land (`matchWhole`: the shore's colour carried down below it too, which warms the side
+    # photographs toward the home view's lawn) and each channel its own contrast (`matchContrast: channels`).
+    land = (lambda entry: entry['matte'] > 0.9) if hour.get('matchWhole') else above_shore
+    base, over = [], []
+    for layer in hour['layers']:
+        overrides = {key: value for key, value in layer.items() if key not in ('photo', 'match', 'adjust')}
+        entry = dict(photo(layer['photo'], overrides))
+        matched = layer['photo'] != reference_name and layer.get('match', True)
+        if matched:
+            arguments = (entry['linear'], land(entry), reference['linear'], land(reference))
+            if hour.get('matchContrast') != 'channels':
+                entry['linear'] = color_match(*arguments, shared=True)
+            else:
+                graded = color_match(*arguments)
+                if 'keepHue' in hour:
+                    # Each channel its own contrast gives sunlit leaves the reference's gold, but stretches the sky in
+                    # a canopy's gaps and at its edges (the brightest of a tree) to a false pink: there (`keepHue`: from
+                    # what luminance to what, easing in) the shared contrast, which keeps its hue.
+                    r, g, b = (entry['photo'][..., channel] for channel in range(3))
+                    low, high = hour['keepHue']
+                    gap = np.clip((0.2126 * r + 0.7152 * g + 0.0722 * b - low) / (high - low), 0, 1)
+                    graded = graded + (color_match(*arguments, shared=True) - graded) * gap[..., None]
+                entry['linear'] = graded
+        if 'adjust' in layer:
+            entry['linear'] = adjust(entry['linear'], layer['adjust'])
+        entry['backlit'] = 'backlight' in hour and layer.get('backlight', True)
+        if hour.get('unsky') and matched:
+            # What the matte kept as land but is mostly sky (leaves blurred against it: bright, and grey to blue rather
+            # than a leaf's yellow-green) would take the hour's tint as land (pale blue to salmon): it is let through
+            # as it is sky-like (`unsky`: from what luminance to what), above the shore's own row of things (tents).
+            r, g, b = (entry['photo'][..., channel] for channel in range(3))
+            low, high = hour['unsky']
+            bright = np.clip((0.2126 * r + 0.7152 * g + 0.0722 * b - low) / (high - low), 0, 1)
+            grey = np.clip((b / np.maximum(g, 1e-3) - 0.75) / 0.15, 0, 1)
+            height = entry['matte'].shape[0]
+            clear = np.arange(height)[:, None] < (entry['cut'][None, :] - 0.04) * height
+            entry['matte'] = entry['matte'] * (1 - bright * grey * clear)
+        (over if entry['spec'].get('over') else base).append(entry)
+    return base, over, reference
 
 
 def luminance(color):
@@ -447,19 +581,77 @@ def grade(color, light):
     return color * (light['scale'] * np.power(np.maximum(lum, 1e-6), light['gamma'] - 1))[..., None]
 
 
-def exposure_of(reference, light):
-    """The scale under which the home view's land (above its far shore, matte whole) has the median luminance `light.landMedian`."""
-    land = reference['matte'] > 0.99
-    rows = np.arange(land.shape[0])[:, None] < (land.shape[0] * 0.5)
-    lum = luminance(reference['linear'])[land & rows]
-    return light['landMedian'] / float(np.median(np.power(np.maximum(lum, 1e-6), light['gamma'])))
+def photo_rays(spec, height, width, rows, columns):
+    """Directions (as `directions`) of a prepared photograph's pixels (rows, columns of its cropped image)."""
+    crop = spec.get('crop', [0, 1])
+    x = crop[0] + (columns + 0.5) / width * (crop[1] - crop[0])
+    if spec.get('mirror'):
+        x = 1 - x
+    full_width = width / (crop[1] - crop[0])
+    focal = 0.5 / math.tan(math.radians(spec['hfov']) / 2)
+    right, up, forward = camera(spec['yaw'], spec.get('pitch', 0.0), spec.get('roll', 0.0))
+    y = (rows + 0.5) / height
+    rays = right[None] * ((x - 0.5) / focal)[:, None] + up[None] * ((0.5 - y) * height / full_width / focal)[:, None] + forward[None]
+    return (rays / np.linalg.norm(rays, axis=-1, keepdims=True)).astype(np.float32)
 
 
-def compose(photos, sky, turn, light, width, rows=None):
+def sky_pixels(entry, step=4):
+    """A sample of a photograph's own sky above its far shore: its linear colours and their directions."""
+    matte, height, width = entry['matte'], *entry['matte'].shape
+    rows, columns = np.mgrid[0:height:step, 0:width:step]
+    shore = entry['cut'][columns] * height
+    chosen = (matte[rows, columns] < 0.01) & (rows < shore - 0.01 * height)
+    rows, columns = rows[chosen], columns[chosen]
+    return entry['linear'][rows, columns], photo_rays(entry['spec'], height, width, rows, columns)
+
+
+def exposure_of(reference, light, sky_at=None):
+    """The scale of grade(): the home view's land (above its far shore, matte whole) at the median luminance
+    `light.landMedian`; or the reference photograph's own sky at the median `light.skyMedian` (a night's: its land is
+    mostly dark); or (`light.skyMatch`) its sky as bright as the hour's sky in the same directions, so the land keeps
+    the photograph's own contrast against its sky."""
+    gamma = light['gamma']
+    if 'landMedian' in light:
+        land = reference['matte'] > 0.99
+        rows = np.arange(land.shape[0])[:, None] < (land.shape[0] * 0.5)
+        lum = luminance(reference['linear'])[land & rows]
+        return light['landMedian'] / float(np.median(np.power(np.maximum(lum, 1e-6), gamma)))
+    colors, rays = sky_pixels(reference)
+    own = float(np.median(np.power(np.maximum(luminance(colors), 1e-6), gamma)))
+    target = light['skyMedian'] if 'skyMedian' in light else float(np.median(luminance(sky_at(rays))))
+    return target / own
+
+
+def fit_glow(entry, light, shape):
+    """A city night's sky glow (`sky.glow`): brightest at the horizon and falling with elevation to `zenith` of it,
+    as zenith + (1 − zenith)·exp(−elevation/`scale`°) (a city's light scattered in the air above it: Garstang's model
+    has its sky a few times brighter low than overhead), its colour and brightness fitted channel by channel to the
+    reference photograph's own sky, graded as its land is. So the glow keeps the photograph's colour and its
+    brightness against its land; the photograph shows only its lowest few degrees, so the shape is not fitted."""
+    colors, rays = sky_pixels(entry, 2)
+    graded = grade(colors, light)
+    profile = lambda elevation: shape['zenith'] + (1 - shape['zenith']) * np.exp(-np.maximum(elevation, 0) / shape['scale'])
+    elevation = np.degrees(np.arcsin(np.clip(rays[:, 1], -1, 1)))
+    weights = profile(elevation)
+    level = (graded * weights[:, None]).sum(0) / (weights ** 2).sum()
+    print(f'  glow: {np.round(level, 4)} at the horizon, fitted from {elevation.min():.1f}° to {elevation.max():.1f}°')
+    return lambda dirs: (level * profile(np.degrees(np.arcsin(np.clip(dirs[..., 1], -1, 1))))[..., None]).astype(np.float32)
+
+
+def sky_of(pure, turn, settings, glow=None):
+    """The hour's sky along `dirs`: the pure sky turned (times `settings.gain`), and a night's glow over it."""
+    gain = settings.get('gain', 1.0)
+    def along(dirs):
+        sky = sample_sky(pure, dirs, turn) * gain
+        return sky + glow(dirs) if glow else sky
+    return along
+
+
+def compose(photos, over, sky, light, width, rows=None):
     height = width // 2
     rows = np.arange(height) if rows is None else rows
     dirs = directions(width, height, rows)
-    land_sum = np.zeros(dirs.shape, np.float32); alpha_sum = np.zeros(dirs.shape[:2], np.float32); weight_sum = np.zeros(dirs.shape[:2], np.float32)
+    land_sum = np.zeros((*dirs.shape[:2], 4), np.float32); alpha_sum = np.zeros(dirs.shape[:2], np.float32); weight_sum = np.zeros(dirs.shape[:2], np.float32)
     horizon_row = np.argmin(np.abs(rows - height / 2))
     protected = np.zeros(width, bool); yields = np.zeros(width); strongest = np.zeros(width)
     for entry in photos:
@@ -467,20 +659,52 @@ def compose(photos, sky, turn, light, width, rows=None):
         protect = np.zeros(entry['matte'].shape, np.float32)
         for low, high in spec.get('protect', []):
             protect[:, int(low * photo_width):int(high * photo_width)] = 1
-        channels = np.concatenate([entry['linear'] * spec.get('gain', 1.0), entry['matte'][..., None], protect[..., None]], -1)
+        backlit = np.full(entry['matte'].shape, SUBJECT if entry.get('backlit') else 0.0, np.float32)
+        channels = np.concatenate([entry['linear'] * spec.get('gain', 1.0), backlit[..., None], entry['matte'][..., None], protect[..., None]], -1)
         sampled, weight = project(channels, spec, dirs)
-        color, alpha = sampled[..., :3], sampled[..., 3]
+        color, alpha = sampled[..., :4], sampled[..., 4]
         land_sum += color * (alpha * weight)[..., None]; alpha_sum += alpha * weight; weight_sum += weight
         horizon_weight = weight[horizon_row]
-        protected |= (sampled[horizon_row, :, 4] > 0.01) & (horizon_weight > 0)
+        protected |= (sampled[horizon_row, :, 5] > 0.01) & (horizon_weight > 0)
         mine = horizon_weight > strongest
         yields[mine] = spec.get('yield', 6.0); strongest = np.maximum(strongest, horizon_weight)
     alpha = np.clip(alpha_sum / np.maximum(weight_sum, 1e-6), 0, 1)
     color = land_sum / np.maximum(alpha_sum[..., None], 1e-6)
     color, alpha, gaps = fill_gaps(color, alpha, weight_sum[horizon_row], protected, yields)
-    land = grade(color, light)
-    sky_part = sample_sky(sky, dirs, turn)
-    return sky_part * (1 - alpha[..., None]) + land * alpha[..., None], gaps
+    # The `over` layers, over whatever the others gave: a landmark in another light, inside its `shape`; or a whole
+    # photograph (its land and its sky), joined to the rest at each side by image quilting's cut (join) within its
+    # `seam` degrees, where its land and theirs agree best.
+    per_degree = width / 360
+    for entry in over:
+        if 'shape' in entry:
+            channels = np.concatenate([entry['linear'], np.zeros_like(entry['shape'])[..., None], entry['shape'][..., None]], -1)
+            sampled, weight = project(channels, {**entry['spec'], 'feather': 1e-3}, dirs)
+            share = (sampled[..., 4] * np.minimum(weight, 1))[..., None]
+            color = color * (1 - share) + sampled[..., :4] * share
+            alpha = alpha * (1 - share[..., 0]) + share[..., 0]
+            continue
+        backlit = np.full(entry['matte'].shape, SUBJECT if entry.get('backlit') else 0.0, np.float32)
+        channels = np.concatenate([entry['linear'], backlit[..., None], entry['matte'][..., None]], -1)
+        sampled, weight = project(channels, {**entry['spec'], 'feather': 1e-3}, dirs)
+        inside = np.flatnonzero(weight[horizon_row] > 0)
+        first, last = int(inside.min()), int(inside.max()) + 1   # (never across north: the photographs placed so)
+        window = int(entry['spec'].get('seam', 4) * per_degree)
+        mine_color, mine_alpha = sampled[..., :4] * sampled[..., 4:5], sampled[..., 4]
+        theirs_color = color * alpha[..., None]
+        into = join(theirs_color, alpha, mine_color, mine_alpha, first, first + window, per_degree)
+        out_of = join(mine_color, mine_alpha, theirs_color, alpha, last - window, last, per_degree)
+        share = into * (1 - out_of) * (weight > 0)
+        premultiplied = theirs_color * (1 - share[..., None]) + mine_color * share[..., None]
+        alpha = alpha * (1 - share) + mine_alpha * share
+        color = premultiplied / np.maximum(alpha[..., None], 1e-6)
+    land = grade(color[..., :3], light)
+    if 'backlight' in light:
+        darken, desaturate = backlight(dirs, light['backlight'], light['sunAzimuth'])
+        subject = np.clip(color[..., 3] / SUBJECT, 0, 1)
+        darken, desaturate = 1 - (1 - darken) * subject, desaturate * subject
+        lum = luminance(land)[..., None]
+        land = (lum + (land - lum) * (1 - desaturate[..., None])) * darken[..., None]
+    return sky(dirs) * (1 - alpha[..., None]) + land * alpha[..., None], gaps
 
 
 def preview(image, path, exposure=1.0):
@@ -510,37 +734,58 @@ def views(image, path, exposure=1.0):
     sheet.save(path, quality=88)
 
 
-def main():
-    plan = json.load(open(PLAN))
-    out_preview = next((arg.split('=', 1)[1] for arg in sys.argv[1:] if arg.startswith('--preview=')), None)
-    os.makedirs(CACHE, exist_ok=True)
-    sky_path = fetch(plan['sky']['url'], os.path.join(CACHE, os.path.basename(plan['sky']['url'])))
-    sky = read_hdr(sky_path)
-    lum = sky.mean(-1)
+def build(plan, name, hour, out_preview):
+    """One hour: its sky turned so its sun stands at `sky.sunAzimuth` (degrees from north, clockwise: where the true
+    sun stood then, so every hour's land lies alike), its layers composed at 2k and, in the land's band, at 8k."""
+    print(f'{name}:')
+    settings = hour['sky']
+    pure = read_hdr(fetch(settings['url'], os.path.join(CACHE, os.path.basename(settings['url']))))
+    lum = pure.mean(-1)
+    if settings.get('stars'):
+        # Only the stars (`stars`): the sky less its own smooth light, its airglow and a far town's dome, which under a
+        # city's glow would be the wrong colour in the wrong place.
+        pure = np.maximum(pure - ndimage.median_filter(pure, size=(9, 9, 1)), 0)
     sun_row, sun_column = np.unravel_index(lum.argmax(), lum.shape)
-    turn = (sun_column + 0.5) / sky.shape[1] - plan['sky']['sunAzimuth'] / 360
-    photos = prepare(plan)
-    light = {**plan['light'], 'scale': exposure_of(photos[0], plan['light'])}
-    print(f"land: luminance to the power {light['gamma']}, times {light['scale']:.3f}")
+    turn = (sun_column + 0.5) / pure.shape[1] - settings['sunAzimuth'] / 360
+    photos, over, reference = prepare(plan, hour)
+    light = dict(hour['light'])
+    if 'backlight' in hour:
+        light.update(backlight=hour['backlight'], sunAzimuth=settings['sunAzimuth'])
+    sky = sky_of(pure, turn, settings)
+    light['scale'] = exposure_of(reference, light, sky)
+    if settings.get('glow'):
+        sky = sky_of(pure, turn, settings, fit_glow(reference, light, settings['glow']))
+    print(f"  land: luminance to the power {light['gamma']}, times {light['scale']:.4g}")
     low, high = 2048, 8192
-    image, gaps = compose(photos, sky, turn, light, low)
+    image, gaps = compose(photos, over, sky, light, low)
     for start, width in gaps:
-        print(f'gap filled: {width:.1f}° from {start:.1f}°')
-    name = plan['name']
-    write_hdr(os.path.join(ROOT, 'assets', 'sky', f'{name}_2k.hdr'), image.astype(np.float32))
+        print(f'  gap filled: {width:.1f}° from {start:.1f}°')
+    file = hour['file']
+    write_hdr(os.path.join(ROOT, 'assets', 'sky', f'{file}_2k.hdr'), image.astype(np.float32))
     # The 8k: the 2k grown four times, the band where the land stands drawn at 8k.
     big = np.stack([np.asarray(Image.fromarray(image[..., c]).resize((high, high // 2), Image.BILINEAR)) for c in range(3)], -1)
     band_rows = np.arange(int((90 - BAND[1]) / 180 * high / 2), int((90 - BAND[0]) / 180 * high / 2))
-    sharp, _ = compose(photos, sky, turn, light, high, band_rows)
+    sharp, _ = compose(photos, over, sky, light, high, band_rows)
     big[band_rows] = sharp
-    write_hdr(os.path.join(ROOT, 'assets', 'sky', f'{name}_8k.hdr'), big.astype(np.float32))
+    write_hdr(os.path.join(ROOT, 'assets', 'sky', f'{file}_8k.hdr'), big.astype(np.float32))
     if out_preview:
-        os.makedirs(out_preview, exist_ok=True)
+        folder = os.path.join(out_preview, name)
+        os.makedirs(folder, exist_ok=True)
         level = 0.45 / max(float(np.median(image[low // 6 - 20:low // 6 + 20, :, 1])), 1e-6)   # the sky 30° up
-        preview(image, os.path.join(out_preview, 'pano.jpg'), level)
-        preview(big[band_rows], os.path.join(out_preview, 'band8k.jpg'), level)
-        views(big, os.path.join(out_preview, 'views.jpg'), level)
-        print(f'previews in {out_preview}')
+        preview(image, os.path.join(folder, 'pano.jpg'), level)
+        preview(big[band_rows], os.path.join(folder, 'band8k.jpg'), level)
+        views(big, os.path.join(folder, 'views.jpg'), level)
+        print(f'  previews in {folder}')
+
+
+def main():
+    plan = json.load(open(PLAN))
+    out_preview = next((arg.split('=', 1)[1] for arg in sys.argv[1:] if arg.startswith('--preview=')), None)
+    only = next((arg.split('=', 1)[1].split(',') for arg in sys.argv[1:] if arg.startswith('--hour=')), None)
+    os.makedirs(CACHE, exist_ok=True)
+    for name, hour in plan['hours'].items():
+        if only is None or name in only:
+            build(plan, name, hour, out_preview)
 
 
 if __name__ == '__main__':
