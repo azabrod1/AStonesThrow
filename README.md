@@ -1855,8 +1855,8 @@ farther out, so it rises into the view rather than filling its corner.
 - `node tools/sky-encode.mjs [assets/sky/name_2k.hdr ...] [--verify] [--no-horizon]` encodes
   each sky's Radiance file (every one, by default) as the JPEG gain map the
   page loads, `assets/sky/name_2k.jpg`, and its horizon strip,
-  `assets/sky/name_horizon.jpg`, the band from 17° above the horizon to 3°
-  below cut from Poly Haven's 8k file (downloaded beside it when missing,
+  `assets/sky/name_horizon.jpg`, the band from 17° above the horizon (30° for the
+  Reflecting Pool, its `stripAbove`) to 3° below cut from Poly Haven's 8k file (downloaded beside it when missing,
   never committed; `--no-horizon` skips it), which the page fetches after
   the sky and decodes on the GPU (`src/horizonStrip.js`; `--verify` checks
   that decode too): a base image and a gain map, matched

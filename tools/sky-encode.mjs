@@ -5,7 +5,7 @@
 // src/sky.js loads: a JPEG gain map that Three.js's UltraHDRLoader decodes
 // to half floats; and its horizon strip, assets/sky/<name>_horizon.jpg, the
 // same coding of the band about the horizon (HORIZON_STRIP in src/sky.js:
-// 17° up to 3° down) cut from the 8k panorama, assets/sky/<name>_8k.hdr,
+// 17° up to 3° down, or higher for a sky with a `stripAbove`) cut from the 8k panorama, assets/sky/<name>_8k.hdr,
 // which this tool downloads from Poly Haven when it is missing (never kept
 // in the repository: 100 MB each). The 2k photo gives the dome 5.7 pixels a
 // degree, the strip 23, so the land on the skyline is sharp at a desktop's
@@ -113,7 +113,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as THREE from 'three';
 import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
-import { HORIZON_STRIP, horizonRows } from '../src/sky.js';
+import { HORIZON_STRIP, horizonRows, stripAbove } from '../src/sky.js';
 import encodeJpeg, { init as initEncoder } from '@jsquash/jpeg/encode.js';
 import decodeJpeg, { init as initDecoder } from '@jsquash/jpeg/decode.js';
 
@@ -288,8 +288,8 @@ function container(baseJpeg, gainJpeg, metadata) {
 }
 
 /** The band about the horizon of a panorama, as the page's strip shows it (horizonRows). */
-function cropHorizon({ width, height, pixels, fileBytes }) {
-  const rows = horizonRows(height);
+function cropHorizon({ width, height, pixels, fileBytes }, aboveDegrees) {
+  const rows = horizonRows(height, aboveDegrees);
   const firstRow = height / 2 - rows.above;
   const stripHeight = rows.above + rows.below;
   return { width, height: stripHeight, pixels: pixels.slice(3 * firstRow * width, 3 * (firstRow + stripHeight) * width), fileBytes, horizonRow: rows.above };
@@ -399,7 +399,7 @@ async function encodeHorizon(hdrPath, measurement) {
     if (!response.ok) throw new Error(`${name}: ${HORIZON_URL(name)} answered ${response.status}`);
     await writeFile(sourcePath, Buffer.from(await response.arrayBuffer()));
   }
-  const strip = cropHorizon(await readPanorama(sourcePath));
+  const strip = cropHorizon(await readPanorama(sourcePath), stripAbove(name));
   return encodeImage(`${name}_horizon`, strip, measurement, HORIZON_QUALITY, strip.horizonRow);
 }
 

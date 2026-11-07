@@ -200,7 +200,7 @@
 // at the home view's 48° or a phone's three pixels a CSS pixel sees 20 to
 // 50 a degree, so the land on the skyline is a blur. Over the band about
 // the horizon (HORIZON_STRIP, below: 17° up to 3° down, where the
-// land stands) the dome draws the hour's horizon strip instead: the same
+// land stands; higher where a sky's land stands higher, stripAbove) the dome draws the hour's horizon strip instead: the same
 // band of the 8k photo (23 pixels a degree), its own JPEG gain map
 // (tools/sky-encode.mjs), which the page fetches once the panorama is up
 // and decodes on the GPU (src/horizonStrip.js: no JavaScript over its
@@ -343,7 +343,8 @@ const SKIES = {
   // photographs of the Mall on Wikimedia Commons over Poly Haven's Qwantani mid-morning pure sky
   // (tools/mall-backdrop.py, its plan tools/mall-backdrop.json with the photographs' authors and licences): ahead, east,
   // the pool's far end and the Washington Monument as photographed from its west end; behind, the Lincoln Memorial; the
-  // elm rows either side. In the morning the sun stands 40° right of ahead, in the south-east.
+  // elm rows either side, planted from photographs of single elms. In the morning the sun stands 40° right of ahead, in the south-east. The nearest elms stand
+  // 37 m off with their crowns up to 30° high, so its horizon strip reaches that high (`stripAbove`), not 17°.
   // Its hours are one September day's (tools/mall-backdrop.json `hours`, each its sky turned so its sun stands where the
   // true sun stood then, so their land lies alike): at sunset the sun is behind the Lincoln Memorial and the eye in its
   // shade (light 'none'), the Monument glowing down the pool; at night the monuments are floodlit under the city's glow,
@@ -351,6 +352,7 @@ const SKIES = {
   mall: {
     ownPlace: false,
     sunAzimuth: 40,
+    stripAbove: 30,
     hours: {
       morning: { file: 'mall', label: 'Late morning', clock: '10:38' },
       sunset: { file: 'mall_sunset', label: 'Sunset', clock: '18:32' },
@@ -579,11 +581,18 @@ const horizonUrl = (file) => new URL(`../assets/sky/${file}_horizon.jpg`, import
 // panorama, from `above` degrees over the horizon to `below` under it, its
 // rows (horizonRows, for a source `sourceHeight` rows tall) padded below to
 // a multiple of the JPEG's block; the page reads the band's edges back from
-// the strip's size the same way, so the two never disagree.
+// the strip's size the same way, so the two never disagree. A sky whose land
+// stands higher reaches higher (its `stripAbove`, degrees: the Reflecting
+// Pool's near elms, stripAbove).
 export const HORIZON_STRIP = { source: '8k', above: 17, below: 3 };
 const HORIZON_BLOCK = 8;
-export function horizonRows(sourceHeight) {
-  const above = Math.round((HORIZON_STRIP.above / 180) * sourceHeight);
+/** How high over the horizon (degrees) the strip of the hour whose file is `file` reaches: its sky's `stripAbove`, or HORIZON_STRIP's. */
+export function stripAbove(file) {
+  const sky = Object.values(SKIES).find((entry) => Object.values(entry.hours ?? {}).some((hour) => hour.file === file));
+  return sky?.stripAbove ?? HORIZON_STRIP.above;
+}
+export function horizonRows(sourceHeight, aboveDegrees = HORIZON_STRIP.above) {
+  const above = Math.round((aboveDegrees / 180) * sourceHeight);
   const below = Math.round((HORIZON_STRIP.below / 180) * sourceHeight);
   return { above, below: below + ((HORIZON_BLOCK - ((above + below) % HORIZON_BLOCK)) % HORIZON_BLOCK) };
 }
@@ -759,7 +768,7 @@ export function createEnvironment(renderer, { name, hour, sunAzimuth, sunBalance
       domeUniforms.uHorizonGain.value = texture(strip.gain, THREE.RedFormat);
       domeUniforms.uHorizonMeta.value.set(strip.metadata.weight * strip.metadata.gainMapMin, strip.metadata.weight * (strip.metadata.gainMapMax - strip.metadata.gainMapMin));
       // The band's elevations from the strip's size (horizonRows: the encoder's rows), a row's height at the source's resolution.
-      const rows = horizonRows(strip.width / 2);
+      const rows = horizonRows(strip.width / 2, stripAbove(file));
       const rowHeight = Math.PI / (strip.width / 2);
       domeUniforms.uHorizonBand.value.set(strip.width, strip.height, rows.above * rowHeight, -rows.below * rowHeight);
       environment.horizonBytes = strip.width * strip.height * 5;
