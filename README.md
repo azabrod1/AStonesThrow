@@ -1057,7 +1057,11 @@ The curated locations include:
   plaza and the lawn are drawn (`src/mallPool.js`), fading into the photo's
   land; the water stops at the granite walls (`setBounds` in
   `src/waterSurface.js`), and what reaches them comes back off them or
-  lies on the coping (`tools/mall-probe.mjs`).
+  lies on the coping, as do the splash's drops (`tools/mall-probe.mjs`);
+  a stone's ring comes back off them as its mirror image across the wall
+  (`setWalls` in `src/rings.js`), and under the water they stand from the
+  bed to the coping (the bed's own mesh, `mallBedGeometry` in
+  `src/pondFloor.js`).
 - **Wooded lake** (`?sky=wooded`): Radków Lake under the Table Mountains, one
   late morning, facing the wooded far shore with the sun to the left.
 
