@@ -112,9 +112,11 @@ export function holdInPool(rock, square) {
   if (rock.skip && rock.state === 'skim') return null;
   const afloat = rock.state === 'float' || rock.afloat;
   if (rock.state === 'ground' || (rock.state === 'rest' && !afloat)) return null;
-  // Above the still water and out of it, only what reaches below the walls' top meets them (the Reflecting Pool's
-  // stand 30 cm up): its depth the ellipsoid's (Rock.ellipsoidDepth), the step's stand-in for its mesh.
-  if (rock.position.y > 0 && !afloat && !(rock.skip && rock.state === 'water') && rock.position.y - rock.ellipsoidDepth() > deckOf(square)) return null;
+  // Above the still water and out of it, nothing meets the Pool's walls (10 cm up, as it always was, so its seeded
+  // throws keep as they were); a basin with walls of its own height (`deck`: the Reflecting Pool's stand 30 cm up) holds
+  // what still reaches below their top, its depth the ellipsoid's (Rock.ellipsoidDepth), the step's stand-in for its mesh.
+  const reachesUnderTop = square.deck !== undefined && rock.position.y - rock.ellipsoidDepth() <= square.deck;
+  if (rock.position.y > 0 && !afloat && !(rock.skip && rock.state === 'water') && !reachesUnderTop) return null;
   let held = null;
   for (const [axis, low] of [['x', square.minX], ['z', square.minZ]]) {
     const reaches = reachesAcross(rock, axis, square);
