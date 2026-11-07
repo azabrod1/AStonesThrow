@@ -1057,7 +1057,10 @@ The curated locations include:
   eye in its shade. At night the pool's own night photograph (Ramakrishna
   Gundra, CC BY-SA 4.0) is laid over the day's graded to its dark trees,
   under a dim, nearly grey city glow; the hour's light never falls below the
-  floodlights' (`lit`, `src/sky.js`), so the eye keeps its colours. The
+  floodlights' (`lit`, `src/sky.js`), so the eye keeps its colours. Zoomed
+  in, the Monument and the Memorial come from patches at their photographs'
+  own resolution, 96 and 57 pixels a degree against the horizon strip's 23
+  (`insets` in `src/sky.js`, `<file>_insets.jpg`). The
   backdrop is CC BY-SA 4.0 as a whole. Near the eye the coping, the walks,
   the west plaza and the lawn are drawn (`src/mallPool.js`), the lawn out to
   the horizon, where the elms stand on it; the water stops at the granite walls (`setBounds` in
@@ -1850,8 +1853,10 @@ farther out, so it rises into the view rather than filling its corner.
   land cut along minimum-cost seams, lays the hour's own landmarks over
   them, grades the land to the measured skies' brightness and lays it over
   the hour's sky. For each hour it writes `assets/sky/<file>_2k.hdr` and the
-  8k file the horizon strip is cut from (`<file>_8k.hdr`, never committed);
-  then run `tools/sky-probe.mjs` (with the hour's time and place: the runs
+  8k file the horizon strip is cut from (`<file>_8k.hdr`, never committed),
+  and the landmarks' insets, their photographs worked at full size
+  (`<file>_insets.hdr`, never committed: the encoder makes the page's
+  `<file>_insets.jpg` from it); then run `tools/sky-probe.mjs` (with the hour's time and place: the runs
   are under Reproduce the new measurements) and `tools/sky-encode.mjs
   --verify` on each, as for any sky. About a minute an hour; needs numpy,
   SciPy and Pillow.
@@ -1860,7 +1865,8 @@ farther out, so it rises into the view rather than filling its corner.
   page loads, `assets/sky/name_2k.jpg`, and its horizon strip,
   `assets/sky/name_horizon.jpg`, the band from 17° above the horizon (30° for the
   Reflecting Pool, its `stripAbove`) to 3° below cut from Poly Haven's 8k file (downloaded beside it when missing,
-  never committed; `--no-horizon` skips it), which the page fetches after
+  never committed; `--no-horizon` skips it, and the insets), and a sky's insets
+  (`assets/sky/name_insets.jpg`, from `name_insets.hdr` where it is), which the page fetches after
   the sky and decodes on the GPU (`src/horizonStrip.js`; `--verify` checks
   that decode too): a base image and a gain map, matched
   to the arithmetic of Three.js's UltraHDRLoader so that it decodes to the

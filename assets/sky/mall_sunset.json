@@ -3,30 +3,30 @@
   "width": 2048,
   "height": 1024,
   "sun": {
-    "elevation": 1.63,
-    "azimuth": 267.48,
+    "elevation": 2.58,
+    "azimuth": 265.7,
     "direction": [
-      0.04403,
-      0.02837,
-      0.99863
+      0.07491,
+      0.04497,
+      0.99618
     ],
-    "pixels": 33
+    "pixels": 53
   },
   "sunIrradiance": [
-    0.0031037,
-    0.0016378,
-    0.00053867
+    0.0057438,
+    0.0028147,
+    0.00086625
   ],
   "skyRadiance": [
-    0.47605,
-    0.65999,
-    0.97932
+    0.47602,
+    0.65997,
+    0.97931
   ],
   "horizonRadiance": {
-    "median": 0.076802,
-    "p90": 1.5862
+    "median": 0.076805,
+    "p90": 1.5864
   },
-  "maxLuminance": 13.198,
+  "maxLuminance": 13.456,
   "taken": "2026-09-20T18:32:00-04:00",
   "at": [
     38.8893,
@@ -40,8 +40,8 @@
   "alignment": {
     "reference": "mall_2k.hdr",
     "turn": 360,
-    "peak": 13.1,
-    "nextBest": 1.66
+    "peak": 12.61,
+    "nextBest": 1.91
   },
   "north": 359.71,
   "northFrom": "skyline"

@@ -18,9 +18,9 @@
     0.000013815
   ],
   "skyRadiance": [
-    0.12212,
-    0.12726,
-    0.14561
+    0.12214,
+    0.12727,
+    0.14562
   ],
   "horizonRadiance": {
     "median": 0.019586,
@@ -40,8 +40,8 @@
   "alignment": {
     "reference": "mall_2k.hdr",
     "turn": 359.99,
-    "peak": 13.71,
-    "nextBest": 1.63
+    "peak": 13.23,
+    "nextBest": 1.82
   },
   "north": 359.7,
   "northFrom": "skyline"
