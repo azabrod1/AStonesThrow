@@ -56,9 +56,9 @@ its own, `matchContrast: channels`, which gives sunlit leaves the sunset's gold)
 graded to that hour's reference, its landmarks laid over in their own light: at sunset the Monument cut out of a
 photograph lit by the low sun, behind the eye the Memorial floodlit; at night
 the pool's own night photograph laid over the day's graded to its dark trees. A low sun's `backlight` darkens and
-greys what faces the eye toward it (the trees' shaded sides; backlight); `keepHue` and `unsky` keep a canopy's gaps
-and sky-tinted edges from taking a false colour in another light, and `edge` frees the graded layers' land edges of
-their photographs' sky (decontaminate_edge), which would outline the trees in that light.
+greys what faces the eye toward it (the trees' shaded sides; backlight); `keepHue` and `unsky` keep a canopy's gaps,
+sky-tinted edges and pale stone from taking a false colour in another light, and `edge` frees the graded layers' land
+edges of their photographs' sky (decontaminate_edge), which would outline the trees in that light.
 
 The sky: one of Poly Haven's Qwantani pure skies (CC0) an hour, turned so its sun stands `sky.sunAzimuth` (degrees
 from north, clockwise) at its own height: where the true sun stood on the hour's day at the elevation the photo's
@@ -103,6 +103,9 @@ KEYED = {}                 # the elm cards, keyed once for every hour
 SOLID_RIM = 10             # pixels: a traced edge keyed against the sky beside it this far in (land_matte)
 KEY_FLOOR = 0.02           # how far a keyed shape's pixel's colour balance (each channel's share) lies from its sky's, all sky (key_shape)
 KEY_RAMP = 0.04            # and how much farther, all landmark
+GREY_TINT = 0.75           # blue over green past which keepHue takes a pixel as grey to blue (sky, stone), not a leaf
+GREY_LUM = 0.2             # and the luminance (sRGB) from which it does, easing in over 0.15 (a dark pixel stays as matched)
+GREY_NEUTRAL = 0.7         # how far toward grey keepHue takes such a pixel's colour
 EDGE_BAND = 10             # pixels (WORK_WIDTH's): how far from the sky an hour's `edge` decontaminates a graded layer's land
 EDGE_HOLE = 0.5            # a canopy's hole, for an hour's `edge`: a pixel at most this much land by its colour (and grey to blue)
 EDGE_CONTRAST = 0.25       # how far the land's colour lies from the sky's, as a share of the sky's, for an edge to be decontaminated
@@ -1041,10 +1044,19 @@ def prepare(plan, hour, per_degree=None, fits=None):
                 if 'keepHue' in hour:
                     # Each channel its own contrast gives sunlit leaves the reference's gold, but stretches the sky in
                     # a canopy's gaps and at its edges (the brightest of a tree) to a false pink: there (`keepHue`: from
-                    # what luminance to what, easing in) the shared contrast, which keeps its hue.
+                    # what luminance to what, easing in) the shared contrast, which keeps its hue. So too wherever the
+                    # photograph is grey to blue rather than a leaf's yellow-green (leaves mixed with sky, pale stone,
+                    # tents) and not dark: stretched apart, its channels turn it magenta.
                     low, high = hour['keepHue']
-                    gap = np.clip((luminance(entry['photo']) - low) / (high - low), 0, 1)
+                    lum = luminance(entry['photo'])
+                    gap = np.clip((lum - low) / (high - low), 0, 1)
+                    tint = entry['photo'][..., 2] / np.maximum(entry['photo'][..., 1], 1e-3)
+                    greyish = np.clip((tint - GREY_TINT) / 0.15, 0, 1) * np.clip((lum - GREY_LUM) / 0.15, 0, 1)
+                    gap = np.maximum(gap, greyish)
                     graded = graded + (match(True, 'shared') - graded) * gap[..., None]
+                    # Kept, its hue is the day's haze, which the hour's warm gain turns lilac: what is grey is let go
+                    # grey (GREY_NEUTRAL of the way to its own luminance).
+                    graded = graded + (luminance(graded)[..., None] - graded) * (GREY_NEUTRAL * greyish)[..., None]
                 entry['linear'] = graded
         if 'adjust' in layer:
             entry['linear'] = adjust(entry['linear'], layer['adjust'], above_shore(entry))
