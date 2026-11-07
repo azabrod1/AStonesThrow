@@ -1748,30 +1748,32 @@ vec3 nearReflection(vec2 rippleUv, vec3 ray, out vec3 near) {
 // far shore's image as sharp as the shore, read as more land. A ripple tilted toward or away from the eye turns the
 // reflected ray up or down by twice its tilt; one tilted sideways turns it far less at a grazing angle, so the image
 // spreads vertically, as a far shore's does on a lake. The climb's spread is a Gaussian of rms sqrt(2 slopeVariance)
-// (slopeVariance is the Beckmann m², twice each axis's variance), averaged down the image and not across it
-// (textureGrad: anisotropic, down the image's mip levels).
-// A ray turned below the horizon meets the next crest instead (those facets are hidden): its taps are left out, so
-// far out, where the rays graze, the image is lifted toward what stands higher, and the water before the far shore
-// takes the hills' tops and the sky, paler, as it does on a lake. A near thing in nearReflection's reach (in the
+// (slopeVariance is the Beckmann m², twice each axis's variance), averaged in one lookup over a box MIRROR_BOX rms
+// long down the image (textureGrad: the image's mip levels through its 4× anisotropic filter, src/main.js). Across
+// the image the filter keeps to a texel while the box is up to four texels long; past that it is a quarter of the
+// box's length across, so where the box spans many texels the image blurs across too, a quarter as far as down it.
+// A ray turned below the horizon meets the next crest instead (those facets are hidden): the box is cut at the lowest
+// ray that clears the horizon, so far out, where the rays graze, the image is lifted toward what stands higher, and
+// the water before the far shore takes the hills' tops and the sky, paler, as it does on a lake. The cut moves with
+// the ray's climb, so the box shortens smoothly toward the horizon: taps left out one by one as their rays dipped
+// drew a band across the far water where each went. A near thing in nearReflection's reach (in the
 // splash's rectangle: the splash, a floater, the thing in the loch; in the Pool, the whole image: its walls and deck)
 // spreads by L/(L + d) of that, L its distance from the water here and d the water's from the eye, as nearReflection
 // moves it, about the lookup it settled on (\`near\`: that lookup and the nearness found there), so the spread image
-// lies over the sharp one. Its image moves less, but its rays turn as far as the sky's: which of them dip below the
-// horizon is reckoned by the rays' turn, not the image's. Where the spread is under
+// lies over the sharp one. Its image moves less, but its rays turn as far as the sky's: where the box is cut is
+// reckoned by the rays' turn, not the image's. Where the spread is under
 // half a mirror pixel the sharp image stands. A footprint the image's edge cuts would read the edge's clamped texels
 // down the water (the bars MIRROR_EDGE keeps from the sharp lookup): as far as its far end is past the edge, it fades
 // to the sky's cube, as the sharp lookup does.
-#define MIRROR_BOX 3.5                 // one lookup's footprint down the image, in the spread's rms (a box of the Gaussian's width)
-#define MIRROR_TAPS 3                  // grazing, where some rays dip below the horizon...
-#define MIRROR_TAP_STEP 1.2            // ...this far apart, in the spread's rms
+#define MIRROR_BOX 3.5                 // the lookup's footprint down the image, in the spread's rms (a box of the Gaussian's width)
 vec3 spreadMirror(vec3 sharp, vec3 near, vec3 ray, vec4 coord, float slopeVariance) {   // coord: uReflectionMatrix * (ray, 0)
   float horizontal = max(length(ray.xz), 1e-3);
   vec4 raised = coord + 0.01 * horizontal * uReflectionMatrix[1];
   vec2 perClimb = (raised.xy / max(raised.w, 1e-4) - coord.xy / max(coord.w, 1e-4)) / 0.01;   // uv per unit of climb
   // A near thing's (nearness 1/(L + d) from the mirror camera, L its distance from the surface here) by L/(L + d).
-  // Outside nearReflection's reach the cached image's near things (the boulders, the koi's garden) spread as the sky
-  // does, as the sharp lookup moves them: spread by their own nearness there, the garden's image by the bank stood as
-  // the sharp lookup's shards, and the spread had smoothed them.
+  // Outside nearReflection's reach the cached image's near things (the boulders, the reeds, the koi's garden, the
+  // lagoon's palms) spread as the sky does, as the sharp lookup moves them: spread by their own nearness there, the
+  // garden's image by the bank stood as the sharp lookup's shards, and the spread had smoothed them.
   vec3 mirrorEye = vec3(cameraPosition.x, 2.0 * uMirrorLevel - cameraPosition.y, cameraPosition.z);
   float reach = clamp(1.0 - distance(vWorld, mirrorEye) * near.z, 0.0, 1.0);
   float turned = sqrt(2.0 * slopeVariance);   // the rays' turn (rms climb)
@@ -1782,29 +1784,13 @@ vec3 spreadMirror(vec3 sharp, vec3 near, vec3 ray, vec4 coord, float slopeVarian
   float climb = ray.y / horizontal;
   vec2 downPixels = perClimb * uMirrorSize;
   vec2 acrossTap = normalize(vec2(-downPixels.y, downPixels.x) + 1e-6) / uMirrorSize;   // a texel across the image (square in its pixels, not its uv)
-  vec2 halfLength = max(0.5 * MIRROR_BOX, 0.5 * float(MIRROR_TAPS) * MIRROR_TAP_STEP) * spread * perClimb;   // either way's footprint, either side of the centre
-  vec2 pastEdge = max(max(halfLength - centre, centre + halfLength - 1.0), max(-halfLength - centre, centre - halfLength - 1.0));
-  vec3 spreadImage;
-  if (climb > 0.5 * MIRROR_BOX * turned) {
-    // Where no turned ray dips below the horizon (most of the water), one lookup: the hardware's anisotropic filter (the
-    // image's anisotropy, src/main.js) averages a footprint MIRROR_BOX rms long down the image and a texel across it, a
-    // box as wide as the Gaussian.
-    spreadImage = textureGrad(uReflection, clamp(centre, vec2(0.002), vec2(0.998)), MIRROR_BOX * spread * perClimb, acrossTap).rgb;
-  } else {
-    // Grazing: MIRROR_TAPS such footprints, each as long as the taps are apart, those whose rays dip below the horizon
-    // left out.
-    vec2 alongTap = MIRROR_TAP_STEP * spread * perClimb;
-    vec3 sum = vec3(0.0);
-    float weights = 0.0;
-    for (int tap = 0; tap < MIRROR_TAPS; tap++) {
-      float along = (float(tap) - 0.5 * float(MIRROR_TAPS - 1)) * MIRROR_TAP_STEP;
-      float weight = exp(-0.5 * along * along) * smoothstep(0.0, 0.25 * turned, climb + along * turned);
-      sum += weight * textureGrad(uReflection, clamp(centre + along * spread * perClimb, vec2(0.002), vec2(0.998)), alongTap, acrossTap).rgb;
-      weights += weight;
-    }
-    if (weights <= 1e-4) return sharp;
-    spreadImage = sum / weights;
-  }
+  // The box: from the lowest ray that clears the horizon (\`lowest\` rms of the turn under the reflected ray) to
+  // MIRROR_BOX / 2 over it.
+  float lowest = min(climb / turned, 0.5 * MIRROR_BOX);
+  vec2 lowEnd = centre - lowest * spread * perClimb;
+  vec2 highEnd = centre + 0.5 * MIRROR_BOX * spread * perClimb;
+  vec2 pastEdge = max(max(-lowEnd, lowEnd - 1.0), max(-highEnd, highEnd - 1.0));
+  vec3 spreadImage = textureGrad(uReflection, clamp(0.5 * (lowEnd + highEnd), vec2(0.002), vec2(0.998)), highEnd - lowEnd, acrossTap).rgb;
   return mix(sharp, fadePastMirrorEdge(spreadImage, pastEdge, ray), smoothstep(0.5, 1.5, pixels));
 }
 

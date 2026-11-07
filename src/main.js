@@ -1806,7 +1806,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     const [underWidth, underHeight] = scaledSize(builtScales.under);
     underTarget = createFloatTarget(underWidth, underHeight, { type: THREE.HalfFloatType, filter: THREE.LinearFilter, depth: true, depthTexture: true });
     reflectionTarget = createFloatTarget(underWidth, underHeight, { type: THREE.HalfFloatType, filter: THREE.LinearFilter, depth: true, mipmaps: true });   // its mip levels: the water's spread mirror (spreadMirror in src/shaders/scene.js), made once a draw (drawMirror)
-    reflectionTarget.texture.anisotropy = Math.min(4, renderer.capabilities.getMaxAnisotropy());   // the spread is down the image alone
+    reflectionTarget.texture.anisotropy = Math.min(4, renderer.capabilities.getMaxAnisotropy());   // the spread is down the image: a footprint up to 4 texels long stays a texel across, a longer one a quarter of its length; each step more is another probe a lookup, on every water pixel the spread reads
     splash.resize(resolution.x, resolution.y, builtScales.fluid);
   }
 
