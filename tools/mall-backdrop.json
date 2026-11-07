@@ -3,6 +3,7 @@
  "photos": {
   "monument": {
    "commons": "File:Washington Monument with Lincoln Memorial Reflecting Pool 2014-06-08.jpg",
+   "sha1": "ada5fe09f9f2eda76cb56ae89534c5f42b966e28",
    "credit": "Kenrick95, CC BY-SA 4.0",
    "looks": "east down the pool to the Washington Monument (the home view)",
    "hfov": 70,
@@ -76,6 +77,7 @@
   },
   "memorial": {
    "commons": "File:Lincoln Memorial angle.jpg",
+   "sha1": "55f55f1f93e32b75b95e3b8458cc9da4632edbda",
    "credit": "Jmarcosny, CC BY-SA 4.0",
    "looks": "west to the Lincoln Memorial",
    "hfov": 63.4,
@@ -241,6 +243,7 @@
   },
   "monument-sunset": {
    "commons": "File:Washington Monument and Reflecting Pool at dusk.jpg",
+   "sha1": "abd66e047131e4b7aeeb4e0aaabce1de007cd515",
    "credit": "Gregg L. Davis, CC BY-SA 4.0",
    "looks": "east from the Lincoln Memorial's steps, the Monument lit by the setting sun: only the Monument is used (`shape`), over the morning's graded to it",
    "hfov": 31.53,
@@ -299,6 +302,7 @@
   },
   "monument-night": {
    "commons": "File:Washington Monument Reflection Night View.jpg",
+   "sha1": "6e4c1d30aadb71665d99c805ebb7be938d66a81d",
    "credit": "Ramakrishna Gundra, CC BY-SA 4.0",
    "looks": "east down the pool at night: the Monument floodlit, the elms dark over the walks' lamps; laid over the morning's graded to it, joined at its sides by quilting cuts",
    "hfov": 36.02,
@@ -337,6 +341,7 @@
   },
   "memorial-dusk": {
    "commons": "File:Lincoln Memorial at Sunset (49903476206).jpg",
+   "sha1": "3a525cf55d33aeb7c0ba5bfc8a30441b4519fad9",
    "credit": "John Brighenti, CC BY 2.0",
    "looks": "west to the Lincoln Memorial floodlit after sunset: only the building is used (`shape`), over the morning's Memorial graded to its hour, its trees the hour's elms",
    "hfov": 36.61,
@@ -632,6 +637,7 @@
   "cards": {
    "connecticut": {
     "commons": "File:American Elm Tree in Connecticut - May 13, 2020.jpg",
+    "sha1": "9223ce418d2b5fc8d2e42ccb97c3e07b769c8b81",
     "credit": "Marty Aligata, CC BY-SA 4.0",
     "box": [
      0.05,
@@ -713,6 +719,7 @@
    },
    "brattle": {
     "commons": "File:Elm Tree in Brattle Brook Park, Pittsfield, MA - August 2020.jpg",
+    "sha1": "8cc4a1b50179885451b32ac0e3123f1d7a2e3f15",
     "credit": "Marty Aligata, CC BY-SA 4.0",
     "box": [
      0.14,
@@ -786,6 +793,7 @@
    },
    "woodstock": {
     "commons": "File:Elm tree in Woodstock, Connecticut (2020).jpg",
+    "sha1": "a4fb206683fe99f92362799b040512a633f86d76",
     "credit": "Marty Aligata, CC BY-SA 4.0",
     "box": [
      0.2,
@@ -831,6 +839,7 @@
    },
    "newhaven": {
     "commons": "File:Large American Elm Tree, New Haven, CT - June 10, 2017.jpg",
+    "sha1": "e91d4f791f80a340ae2830a63627b5f8a040976a",
     "credit": "Marty Aligata, CC BY-SA 4.0",
     "box": [
      0.04,
@@ -936,6 +945,7 @@
    },
    "norwich": {
     "commons": "File:American Elm Tree in Norwich, Vermont - June 2023.jpg",
+    "sha1": "c2dd27a0e6b7b10109cf547eb373150e9c2dea6e",
     "credit": "Marty Aligata, CC BY-SA 4.0",
     "box": [
      0.04,

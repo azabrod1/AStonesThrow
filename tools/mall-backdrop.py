@@ -22,7 +22,8 @@ eye `eye` metres up, sized by its distance (draw_elms), matched to the hour's re
 The photographs (tools/mall-backdrop.json `photos`, by name, with their authors and licences; CC BY-SA asks that
 they be credited where the backdrop is shown). The day's: ahead, east, down the pool to the Washington Monument;
 behind, the Lincoln Memorial. The other hours' own: the Monument lit by the setting sun, the pool at night, and the
-Memorial floodlit after sunset. Each may name
+Memorial floodlit after sunset. Each, and each elm card, is a Commons file (`commons`) at one revision (`sha1`: its
+polygons are shares of that revision's size, so a later upload is never taken in its place: commons_file). Each may name
   crop        the share of its width used (from, to): clutter at an edge left out;
   cut         its far shore, [x, y] shares of its width and height, the land above it;
   keep        boxes whose white or brightness is land, not sky (the marble, the floodlit memorial);
@@ -90,7 +91,7 @@ The photographs are downloaded once into tools/.mall-photos/ (gitignored). Needs
 Azimuths here are degrees from north toward east (the file's left edge is north, east a quarter across), as
 the Radiance file's own columns run (tools/sky-probe.mjs: azimuth 360·u, turning right).
 """
-import json, math, os, subprocess, sys, time, urllib.parse, urllib.request, warnings
+import hashlib, json, math, os, subprocess, sys, time, urllib.parse, urllib.request, warnings
 import numpy as np
 from PIL import Image
 from scipy import ndimage
@@ -143,16 +144,22 @@ def fetch(url, path):
     raise SystemExit(f'could not fetch {url}')
 
 
-def commons_file(title):
-    """A Commons file's original, downloaded once."""
+def commons_file(title, sha1):
+    """A Commons file's original at the revision whose SHA-1 is `sha1` (each photograph's `sha1`: the polygons traced on
+    it are shares of its size, so another upload of the file would move them), downloaded once; a cached file that is
+    not that revision, or a file with no such revision, stops the build."""
     name = ''.join(character if character.isalnum() or character in '._-' else '_' for character in title[5:])
     path = os.path.join(CACHE, name)
-    if os.path.exists(path):
-        return path
-    query = urllib.parse.urlencode(dict(action='query', titles=title, prop='imageinfo', iiprop='url', format='json'))
-    info = json.loads(urllib.request.urlopen(urllib.request.Request('https://commons.wikimedia.org/w/api.php?' + query, headers=AGENT)).read())
-    url = list(info['query']['pages'].values())[0]['imageinfo'][0]['url']
-    return fetch(url, path)
+    if not os.path.exists(path):
+        query = urllib.parse.urlencode(dict(action='query', titles=title, prop='imageinfo', iiprop='url|sha1', iilimit=50, format='json'))
+        info = json.loads(urllib.request.urlopen(urllib.request.Request('https://commons.wikimedia.org/w/api.php?' + query, headers=AGENT)).read())
+        revisions = [revision for revision in list(info['query']['pages'].values())[0]['imageinfo'] if revision['sha1'] == sha1]
+        if not revisions:
+            raise SystemExit(f'{title}: Commons has no revision with SHA-1 {sha1} (the one its polygons were traced on)')
+        fetch(revisions[0]['url'], path)
+    if hashlib.sha1(open(path, 'rb').read()).hexdigest() != sha1:
+        raise SystemExit(f'{path} is not the revision of {title} its polygons were traced on (SHA-1 {sha1}): delete it to download that one')
+    return path
 
 
 # ---- Radiance files -----------------------------------------------------------------------------------------
@@ -281,7 +288,7 @@ def linear_to_srgb(linear):
 def load_photo(spec):
     """The photograph at its working width (`work`, WORK_WIDTH unless an inset's: work_width), never above its own; and
     how many times WORK_WIDTH's resolution that is, which the matte's pixel sizes scale by."""
-    image = Image.open(commons_file(spec['commons'])).convert('RGB')
+    image = Image.open(commons_file(spec['commons'], spec['sha1'])).convert('RGB')
     native = image.width
     width = min(spec.get('work', WORK_WIDTH), native)
     if width < native:
