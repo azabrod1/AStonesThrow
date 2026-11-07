@@ -1,0 +1,48 @@
+{
+  "source": "mall_sunset_2k.hdr",
+  "width": 2048,
+  "height": 1024,
+  "sun": {
+    "elevation": 1.63,
+    "azimuth": 267.48,
+    "direction": [
+      0.04403,
+      0.02837,
+      0.99863
+    ],
+    "pixels": 33
+  },
+  "sunIrradiance": [
+    0.0031037,
+    0.0016378,
+    0.00053867
+  ],
+  "skyRadiance": [
+    0.47605,
+    0.65999,
+    0.97932
+  ],
+  "horizonRadiance": {
+    "median": 0.076802,
+    "p90": 1.5862
+  },
+  "maxLuminance": 13.198,
+  "taken": "2026-09-20T18:32:00-04:00",
+  "at": [
+    38.8893,
+    -77.0464
+  ],
+  "solar": {
+    "elevation": 6.24,
+    "azimuth": 265.99
+  },
+  "light": "none",
+  "alignment": {
+    "reference": "mall_2k.hdr",
+    "turn": 360,
+    "peak": 13.1,
+    "nextBest": 1.66
+  },
+  "north": 359.71,
+  "northFrom": "skyline"
+}

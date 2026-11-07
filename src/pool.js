@@ -66,6 +66,11 @@ const WALL_KEPT = 0.4;         // a skipping stone comes back off a wall with th
 const WALL_WATER = 0.8;        // a thing in the water comes back off a wall at its own bounce times this (holdInPool)
 const ACROSS = { x: new THREE.Vector3(1, 0, 0), z: new THREE.Vector3(0, 0, 1) };
 const ACROSS_BACK = { x: new THREE.Vector3(-1, 0, 0), z: new THREE.Vector3(0, 0, -1) };
+// A basin (`square`): the Pool's, the solver's pool ({ minX, minZ, size }), or any other walled water, a rectangle
+// ({ minX, minZ, sizeX, sizeZ }) with its own walls' top (`deck`, m over the still water; POOL.deck unless given):
+// the Reflecting Pool's (src/mallPool.js MALL_BASIN).
+const spanOf = (square, axis) => (axis === 'x' ? square.sizeX : square.sizeZ) ?? square.size;
+const deckOf = (square) => square.deck ?? POOL.deck;
 
 /**
  * How far `rock` reaches from its centre towards the walls across `axis`
@@ -77,13 +82,14 @@ const ACROSS_BACK = { x: new THREE.Vector3(-1, 0, 0), z: new THREE.Vector3(0, 0,
  */
 function reachesAcross(rock, axis, square, quaternion = rock.quaternion) {
   const far = rock.reach * rock.radius, low = axis === 'x' ? square.minX : square.minZ;
-  const clear = (point) => point[axis] > low + far && point[axis] < low + square.size - far;
+  const clear = (point) => point[axis] > low + far && point[axis] < low + spanOf(square, axis) - far;
   if (clear(rock.position) && clear(rock.previous)) return null;
   return [-rock.lowestAlong(ACROSS[axis], quaternion), -rock.lowestAlong(ACROSS_BACK[axis], quaternion)];
 }
 
 /**
- * A thing under the water or afloat (src/rock.js) held inside the pool's
+ * A thing under the water or afloat (src/rock.js), or in the water and up
+ * out of it but reaching under the walls' top, held inside the pool's
  * walls (the square, water.poolSquare): the wall it reaches (reachesAcross) turns it back, at
  * its own bounce (Rock.collisionBounce) times WALL_WATER (the water between
  * it and the tiles takes some), and it carries on along the wall; under the
@@ -105,13 +111,17 @@ export function holdInPool(rock, square) {
   if (rock.state === 'air') { holdAirborne(rock, square); return null; }
   if (rock.skip && rock.state === 'skim') return null;
   const afloat = rock.state === 'float' || rock.afloat;
-  if (rock.position.y > 0 && !afloat && !(rock.skip && rock.state === 'water')) return null;
-  if (rock.state === 'air' || rock.state === 'ground' || (rock.state === 'rest' && !afloat)) return null;
+  if (rock.state === 'ground' || (rock.state === 'rest' && !afloat)) return null;
+  // Above the still water and out of it, nothing meets the Pool's walls (10 cm up, as it always was, so its seeded
+  // throws keep as they were); a basin with walls of its own height (`deck`: the Reflecting Pool's stand 30 cm up) holds
+  // what still reaches below their top, its depth the ellipsoid's (Rock.ellipsoidDepth), the step's stand-in for its mesh.
+  const reachesUnderTop = square.deck !== undefined && rock.position.y - rock.ellipsoidDepth() <= square.deck;
+  if (rock.position.y > 0 && !afloat && !(rock.skip && rock.state === 'water') && !reachesUnderTop) return null;
   let held = null;
   for (const [axis, low] of [['x', square.minX], ['z', square.minZ]]) {
     const reaches = reachesAcross(rock, axis, square);
     if (!reaches) continue;
-    const lowest = low + reaches[0], highest = low + square.size - reaches[1];
+    const lowest = low + reaches[0], highest = low + spanOf(square, axis) - reaches[1];
     const side = rock.position[axis] < lowest ? 1 : rock.position[axis] > highest ? -1 : 0;   // the wall's normal, into the pool
     if (side === 0) continue;
     const into = -side * rock.velocity[axis];   // its speed into the wall
@@ -143,12 +153,12 @@ function holdAirborne(rock, square) {
   const reaches = { x: reachesAcross(rock, 'x', square), z: reachesAcross(rock, 'z', square) };
   if (!reaches.x && !reaches.z) return;
   const reachedBefore = { x: reaches.x && reachesAcross(rock, 'x', square, turnedBefore), z: reaches.z && reachesAcross(rock, 'z', square, turnedBefore) };
-  const outside = (point, axis, low, within = reaches) => within[axis] !== null && (point[axis] < low + within[axis][0] || point[axis] > low + square.size - within[axis][1]);
+  const outside = (point, axis, low, within = reaches) => within[axis] !== null && (point[axis] < low + within[axis][0] || point[axis] > low + spanOf(square, axis) - within[axis][1]);
   const beyond = (point, within) => outside(point, 'x', square.minX, within) || outside(point, 'z', square.minZ, within);
-  if (!beyond(rock.position, reaches) || beyond(rock.previous, reachedBefore) || rock.position.y - rock.ellipsoidDepth() > POOL.deck) return;
+  if (!beyond(rock.position, reaches) || beyond(rock.previous, reachedBefore) || rock.position.y - rock.ellipsoidDepth() > deckOf(square)) return;
   for (const [axis, low] of [['x', square.minX], ['z', square.minZ]]) {
     if (!outside(rock.position, axis, low)) continue;
-    rock.position[axis] = THREE.MathUtils.clamp(rock.position[axis], low + reaches[axis][0], low + square.size - reaches[axis][1]);
+    rock.position[axis] = THREE.MathUtils.clamp(rock.position[axis], low + reaches[axis][0], low + spanOf(square, axis) - reaches[axis][1]);
     rock.velocity[axis] *= -(rock.skip ? WALL_KEPT : rock.collisionBounce);
   }
 }
@@ -159,12 +169,14 @@ function holdAirborne(rock, square) {
  * pool's ice is src/ice.js's, over this).
  */
 export function poolGround(square) {
-  return { at: (x, z) => (x >= square.minX && x <= square.minX + square.size && z >= square.minZ && z <= square.minZ + square.size ? null : POOL.deck) };
+  const sizeX = spanOf(square, 'x'), sizeZ = spanOf(square, 'z'), deck = deckOf(square);
+  return { at: (x, z) => (x >= square.minX && x <= square.minX + sizeX && z >= square.minZ && z <= square.minZ + sizeZ ? null : deck) };
 }
 
 /** Whether (x, z) lies inside the pool's walls less `margin` (a skip stone's radius: where it may touch the water; the aim's margin). */
 export function poolInside(square, margin) {
-  return (x, z) => x >= square.minX + margin && x <= square.minX + square.size - margin && z >= square.minZ + margin && z <= square.minZ + square.size - margin;
+  const sizeX = spanOf(square, 'x'), sizeZ = spanOf(square, 'z');
+  return (x, z) => x >= square.minX + margin && x <= square.minX + sizeX - margin && z >= square.minZ + margin && z <= square.minZ + sizeZ - margin;
 }
 
 /**

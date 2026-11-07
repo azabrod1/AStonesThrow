@@ -23,7 +23,8 @@
 // The page is started on High and taken through what builds programs of its
 // own (src/main.js warmUp builds the core under the veil, the rest on first
 // use): a throw, the storm (rain, gale, lightning), the blizzard (snow), thick
-// ice with a throw onto it, the Pool, the Koi pond, and Low. Every program
+// ice with a throw onto it, the Pool, the Koi pond, the Reflecting Pool, and
+// Low. Every program
 // built along the way is counted, once, where it holds the most. It prints
 // each stage's largest, with their headroom, and fails if any program goes
 // past WebGL 2's least, naming that program's largest uniforms.
@@ -189,6 +190,7 @@ const steps = [
   ['Loch Ness', async (pond) => { await pond.setSky('loch'); pond.sightVisitor('neck', { elapsed: 8 }); pond.advance(0); }],
   ['the Polynesian lagoon', async (pond) => { await pond.setSky('lagoon'); pond.advance(0); }],
   ['the Koi pond', async (pond) => { await pond.setSky('koi'); pond.throwAt(0, -1.4, { radius: 0.03, thing: 'pizza' }); pond.advance(1); }],
+  ['the Reflecting Pool', async (pond) => { await pond.setSky('mall'); pond.throwAt(0, -1.4, { radius: 0.03 }); pond.advance(1); }],
   ['Low', (pond) => { pond.setQuality('low'); pond.advance(1); }],
 ];
 for (const [name, step] of steps) {

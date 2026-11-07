@@ -842,6 +842,7 @@ export class SplashSystem {
     this.bases = [];        // scheduled: a jet's base meeting the water, when the hole's bowl has flattened
     this.cavities = [];  // open cavities (src/cavity.js), drawn in the main scene from cavityGroup
     this.ground = null;  // the pool's walls and deck (setGround), or none
+    this.groundBox = null;   // their far sides, x and z (setGround)
     this.ice = null;     // the ice over the water (setIce, src/ice.js), or none
     this.wetIce = null;  // its wetting where a drop lands on it (setIce)
     this.walls = null;   // the box the sheets and columns are held in (setGround)
@@ -1815,7 +1816,7 @@ export class SplashSystem {
       // coping, even if it ends the step below it, and one rising past the deck's top in the step crossed below it.
       if (this.ground) {
         const { square, deck } = this.ground;
-        const maxX = square.minX + square.size, maxZ = square.minZ + square.size;
+        const { maxX, maxZ } = this.groundBox;
         const inside = (pointX, pointZ) => pointX > square.minX && pointX < maxX && pointZ > square.minZ && pointZ < maxZ;
         const previousX = this.positions[p], previousY = this.positions[p + 1], previousZ = this.positions[p + 2];
         const was = inside(previousX, previousZ);
@@ -2196,7 +2197,9 @@ export class SplashSystem {
 
   /**
    * The ground round the water the drops can meet (null: none, the lake):
-   * a pool's `square` and its `deck`'s height (src/pool.js). A drop that
+   * a pool's `square` and its `deck`'s height (src/pool.js): the Pool's
+   * ({ minX, minZ, size }) or the Reflecting Pool's, a rectangle ({ minX,
+   * minZ, sizeX, sizeZ }, src/mallPool.js MALL_BASIN). A drop that
    * meets a wall's side below its top comes back off it (DECK_DROPS.wall of
    * its speed across it) into the pool; one that comes down on the deck lands
    * there, a big one splattering (DECK_DROPS.splatter), and `onWet(x, z,
@@ -2206,7 +2209,8 @@ export class SplashSystem {
     this.ground = ground;
     const square = ground?.square;
     const inset = DECK_DROPS.wallInset;
-    this.walls = square ? { minX: square.minX + inset, maxX: square.minX + square.size - inset, minZ: square.minZ + inset, maxZ: square.minZ + square.size - inset } : null;
+    this.groundBox = square ? { maxX: square.minX + (square.sizeX ?? square.size), maxZ: square.minZ + (square.sizeZ ?? square.size) } : null;
+    this.walls = square ? { minX: square.minX + inset, maxX: this.groundBox.maxX - inset, minZ: square.minZ + inset, maxZ: this.groundBox.maxZ - inset } : null;
   }
 
   /** The bed the splash's water sees through its drops: its depth (m) and albedo (the lake's sand by default; a pool's tiles, src/main.js). */

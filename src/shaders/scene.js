@@ -1365,6 +1365,10 @@ uniform float uTexelOffset;
 uniform float uInner;
 uniform float uMeshCell;       // the inner patch's vertex spacing (m): the rings are read that smooth
 uniform float uSheetSpacing;   // the outer sheet's vertex spacing per metre out from the patch's centre (src/waterSurface.js)
+// The water's rectangle where walls hold it (the Reflecting Pool's: src/waterSurface.js setBounds): least x and z,
+// greatest x and z (m); the sheet's corners outside it are drawn on its edge. All 0 (as a material without it reads
+// it) for none.
+uniform vec4 uWaterBounds;
 #ifdef CAVITY_PUSH
 uniform int uCavityCount;
 uniform vec4 uCavityMouths[CAVITY_PUSH];   // centre x and z, the circle's radius squared
@@ -1383,6 +1387,7 @@ varying vec2 vRest;            // where the point lies on still water (the gale 
 ${GLSL_COMMON}
 void main() {
   vec3 world = (modelMatrix * vec4(position, 1.0)).xyz;
+  if (uWaterBounds.z > uWaterBounds.x) world.xz = clamp(world.xz, uWaterBounds.xy, uWaterBounds.zw);
   vec2 domainUv = (world.xz - uDomainMin) / uDomainSize + uTexelOffset;
   float mask = uInner > 0.5 ? patchMask(domainUv) : 0.0;
 #ifdef CAVITY_MESH
@@ -2209,13 +2214,23 @@ vec3 floorPattern(vec2 p) {
 }
 `;
 
-// Which shore is in force (src/pondFloor.js setShoreKind): the lake's, the Koi pond's or the lagoon's.
+// Which shore is in force (src/pondFloor.js setShoreKind): the lake's, the Koi pond's, the lagoon's or the Reflecting Pool's.
 const SHORE_KIND = /* glsl */`
-uniform float uShoreKind;   // SHORE_LAKE, SHORE_KOI (the Koi pond's) or SHORE_LAGOON (the Polynesian lagoon's)
+uniform float uShoreKind;   // SHORE_LAKE, SHORE_KOI (the Koi pond's), SHORE_LAGOON (the Polynesian lagoon's) or SHORE_MALL (the Reflecting Pool's)
 #define SHORE_LAKE 0.0
 #define SHORE_KOI 1.0
 #define SHORE_LAGOON 2.0
+#define SHORE_MALL 3.0
 #define isShore(kind) (abs(uShoreKind - (kind)) < 0.5)
+// The Reflecting Pool (uShoreKind SHORE_MALL): MALL_POOL in src/pondFloor.js, its twin. Inside its walls (the half
+// width either side of x = 0, the west wall's face at z = MALL_WEST, the east one MALL_LENGTH on) its crowned bed,
+// outside them the coping's height.
+#define MALL_HALF_WIDTH 25.3
+#define MALL_WEST 2.75
+#define MALL_LENGTH 618.0
+#define MALL_COPING 0.3
+#define MALL_EDGE 0.6
+#define MALL_DEEP 0.88
 `;
 
 // The lake bed's depth at a world XZ point, as floorDepthAt in
@@ -2251,6 +2266,7 @@ float lagoonBeachDistance(vec2 point) {
 }
 float shoreDistance(vec2 point) {
   if (isShore(SHORE_KOI)) return koiShoreRadius(koiAngle(point)) - length(point - vec2(0.0, -1.2));
+  if (isShore(SHORE_MALL)) return min(MALL_HALF_WIDTH - abs(point.x), min(MALL_WEST - point.y, point.y - (MALL_WEST - MALL_LENGTH)));
   float lake = uShore.x + point.x * point.x / (2.0 * uShore.y) - point.y;
   return isShore(SHORE_LAGOON) ? smoothMin(lake, lagoonBeachDistance(point), LAGOON_JOIN) : lake;
 }
@@ -2278,6 +2294,10 @@ float koiBeach(float angle) {
 }
 float floorDepthAt(vec2 point) {
   float offshore = shoreDistance(point);
+  if (isShore(SHORE_MALL)) {
+    float across = point.x / MALL_HALF_WIDTH;
+    return offshore >= 0.0 ? MALL_EDGE + (MALL_DEEP - MALL_EDGE) * (1.0 - across * across) : -MALL_COPING;
+  }
   if (isShore(SHORE_KOI)) {
     float beach = koiBeach(koiAngle(point));
     if (offshore >= 0.0) {
@@ -2480,6 +2500,41 @@ void main() {
 // the bright water under the surface), and where the ray passes into its
 // air it sees the sky down the mouth, dimmer the deeper the hole. Then the
 // water between it and the eye (UNDER_FOG).
+// The Reflecting Pool's bed (uShoreKind SHORE_MALL; src/pondFloor.js MALL_POOL): since June 2026 its concrete has been
+// sprayed with a blue polyurea (Rhino Linings; "American flag blue", toned down from the first, brighter coat), an even
+// skin with a faint orange-peel grain, mottled a little where the spray overlapped; the concrete's bays (MALL_BAY m
+// square) show through it as faint lines at their joints; a thin film of silt and algae in drifts, thicker toward the
+// walls, where the water is stillest (it bloomed again within days of the refill); a few leaves from the elms, sodden
+// and brown. Each detail fades where the pixel's `footprint` (m) outgrows it. Over PATTERN_RANGE, as floorSand: the
+// floor's and the underside's bed, the one look.
+const MALL_BED = /* glsl */`
+#define MALL_COATING vec3(0.012, 0.028, 0.075)   // the polyurea's albedo: a dark navy
+#define MALL_BAY 7.5                             // m: the concrete's bays under it
+#define MALL_JOINT 0.025                         // m: their joints' width
+#define MALL_SILT vec3(0.07, 0.08, 0.05)         // the film over it, greenish brown
+vec3 mallBed(vec2 point, float footprint) {
+  vec3 bed = MALL_COATING * (0.9 + 0.14 * valueNoise(point * 0.35) + 0.06 * valueNoise(point * 3.1 + 5.0));
+  // The spray's orange peel, a fine grain, faded as it shrinks under a pixel.
+  bed *= 1.0 + (1.0 - smoothstep(0.004, 0.015, footprint)) * 0.08 * (valueNoise(point * 90.0) - 0.5);
+  // The bays' joints under the coat, antialiased over the pixel.
+  vec2 fromJoint = abs(fract(point / MALL_BAY) - 0.5) * MALL_BAY;   // the bays centred on the pool's axis, no joint down it
+  float jointWidth = max(MALL_JOINT, footprint);
+  float joint = (1.0 - smoothstep(0.0, jointWidth, min(fromJoint.x, fromJoint.y))) * (MALL_JOINT / jointWidth);
+  bed *= 1.0 - 0.2 * joint;
+  // Silt and algae: a thin film in drifts, more by the walls.
+  float wall = 1.0 - smoothstep(0.0, 6.0, MALL_HALF_WIDTH - abs(point.x));
+  float silt = smoothstep(0.45, 0.9, 0.7 * valueNoise(point * 0.22 + 3.0) + 0.3 * valueNoise(point * 1.3) + 0.3 * wall);
+  bed = mix(bed, MALL_SILT * (0.8 + 0.4 * valueNoise(point * 2.4)), 0.35 * silt);
+  // Sodden leaves, one now and then in its cell.
+  vec2 cell = floor(point / 0.45);
+  float chance = hash21(cell);
+  vec2 within = fract(point / 0.45) - 0.5 - (vec2(fract(chance * 7.13), fract(chance * 3.71)) - 0.5) * 0.6;
+  float leaf = (1.0 - smoothstep(0.05, 0.05 + max(footprint / 0.45, 0.02), length(within * vec2(1.0, 1.8)))) * step(0.93, chance);
+  bed = mix(bed, vec3(0.16, 0.1, 0.045) * (0.7 + 0.6 * fract(chance * 17.0)), 0.8 * leaf * (1.0 - smoothstep(0.01, 0.04, footprint)));
+  return bed / PATTERN_RANGE;
+}
+`;
+
 export const WATER_UNDER_FRAGMENT = /* glsl */`
 uniform sampler2D uHeight;
 uniform sampler2D uFoam;
@@ -2504,6 +2559,7 @@ ${UNDER_FOG}
 ${LAKE_BED}
 ${FLOOR_PATTERN_TILE}
 ${FLOOR_SAND}
+${MALL_BED}
 ${RAIN_RIPPLES}
 ${DROP_RING_SLOPES}
 ${POOL_TILES}
@@ -2582,7 +2638,10 @@ void main() {
       vec3 bed = vWorld + mirrored * along;
       float depth = max(-bed.y, 0.0);
       vec3 light = uSunIrradiance * exp(-uAbsorb * depth / max(uSunDir.y, 0.2)) * max(uSunDir.y, 0.0) + uSkyAmbient * exp(-uAbsorb * depth) * 1.4;
-      color = mix(color, floorSand(bed.xz) * PATTERN_RANGE * light, exp(-uExtinction * along));
+      vec3 ground;
+      if (isShore(SHORE_MALL)) ground = mallBed(bed.xz, TILE_BLUR * (along + length(vWorld - cameraPosition)));
+      else ground = floorSand(bed.xz);
+      color = mix(color, ground * PATTERN_RANGE * light, exp(-uExtinction * along));
     }
   }
   vec3 outward = refract(ray, against, WATER_INDEX);
@@ -2839,10 +2898,30 @@ ${CAUSTICS}
 ${FLOOR_SAND}
 ${SHORE_KIND}
 ${PALM_SHADOW}
+${MALL_BED}
 #define KOI_BED vec3(0.46, 0.45, 0.38)   // the Koi pond's bed against the lake's sand: grey gravel, silt and a film of algae
+#define MALL_WALL_FACE vec3(0.05, 0.062, 0.04)   // the Reflecting Pool's walls under the water: granite filmed with algae (as at the coping's waterline, MALL_GROUND_FRAGMENT)
 void main() {
-  // Sand with pebbles and silt (FLOOR_SAND); the Koi pond's, darker gravel under silt and algae, in drifts.
-  vec3 sand = floorSand(vFloorPoint);
+  // Sand with pebbles and silt (FLOOR_SAND); the Koi pond's, darker gravel under silt and algae, in drifts; the
+  // Reflecting Pool's blue-coated concrete (mallBed).
+  float bedFootprint = length(fwidth(vFloorPoint));   // taken in uniform control flow, for the Reflecting Pool's bed
+  vec3 sand;
+  if (isShore(SHORE_MALL)) sand = mallBed(vFloorPoint, bedFootprint);
+  else sand = floorSand(vFloorPoint);
+  // The Reflecting Pool's walls: its bed's mesh steps up each one just outside the water (src/pondFloor.js
+  // mallBedGeometry), where the point barely moves up the face, so the bed's detail and the caustics would streak
+  // down it. There, granite under a film of algae, mottled by the run of the wall and the depth, lit as a wall (it
+  // sees half the sky, the sun aslant: as the Pool's basin, POOL_FRAGMENT's light), without caustics.
+  float wallFace = 0.0;
+  if (isShore(SHORE_MALL)) {
+    vec2 point = vFloorPoint;
+    float beside = abs(point.x) - MALL_HALF_WIDTH, behind = max(point.y - MALL_WEST, (MALL_WEST - MALL_LENGTH) - point.y);
+    if (max(beside, behind) > 1e-5) {
+      wallFace = 1.0;
+      float along = beside > behind ? point.y : point.x;
+      sand = MALL_WALL_FACE * (0.75 + 0.5 * valueNoise(vec2(along * 1.7, vDepth * 7.0))) * (0.9 + 0.2 * valueNoise(vec2(along * 0.3, 2.0)));
+    }
+  }
   if (isShore(SHORE_KOI)) sand *= KOI_BED * (0.7 + 0.5 * valueNoise(vFloorPoint * 0.7 + 11.0));
 
   // Caustics: where the surfaces above focus the sun, on the floor point this
@@ -2863,10 +2942,10 @@ void main() {
   // From an eye under the water the floor is seen where it is.
   if (cameraPosition.y < 0.0) seenPoint = vFloorPoint;
   vec2 surfacePoint = seenPoint + vUpSun * vDepth;
-  float caustic = causticLight(1.0 + vFocusing * vDepth * surfaceCurvature(surfacePoint));
+  float caustic = mix(causticLight(1.0 + vFocusing * vDepth * surfaceCurvature(surfacePoint)), 1.0, wallFace);
 
   // The palms' shadows (PALM_SHADOW), where this point's sunlight crossed the surface.
-  vec3 color = sand * (vSunlight * caustic * (1.0 - palmShadow(surfacePoint)) + vSkylight);
+  vec3 color = sand * (vSunlight * caustic * (1.0 - palmShadow(surfacePoint)) + vSkylight) * (1.0 - 0.25 * wallFace);
   if (cameraPosition.y < 0.0) color = throughWater(color, vec3(vFloorPoint.x, -vDepth, vFloorPoint.y));
   gl_FragColor = vec4(color, 1.0);
 }
@@ -3899,7 +3978,121 @@ void main() {
   vec3 toGround = vWorld - cameraPosition;
   float far = smoothstep(LAND_NEAR, LAND_FAR, length(toGround));
   if (far > 0.0) color = mix(color, photoLand(uSkyCube, LAND_LEVEL, toGround.xz), far);
-  color = withHaze(color, length(toGround));
+  // The haze by its distance, but on the far land, which is the photo's, hazed already (src/sky.js captures the cube with it).
+  color = mix(color, withHaze(color, length(toGround)), 1.0 - far);
+#ifdef MIRROR_NEARNESS
+  gl_FragColor = vec4(color, mirrorNearness(vWorld));
+#else
+  gl_FragColor = vec4(color, 1.0);
+#endif
+}
+`;
+
+// The Reflecting Pool's ground and walls (src/mallPool.js): a plane at the coping's height out to the horizon with a
+// hole the pool's size, and the walls' faces above the water. Out from each wall's face the 1920s granite coping
+// (MALL_COPING_WIDTH, in stones MALL_COPING_STONE long, its joints antialiased over the pixel, a dark wet band and a
+// film of algae at the waterline on the face); then beside the pool the concrete walk (MALL_WALK, slabs MALL_SLAB long),
+// behind the west wall the plaza's granite pavers (MALL_PAVER, in running bond, MALL_PLAZA deep and wide); then a mown
+// lawn in stripes, out to the horizon, where the sky's elms stand on it (src/sky.js `mall`, planted on the same lawn by
+// tools/mall-backdrop.py: unlike the beach's and the Pool's deck it never becomes the land the photo shows just over the
+// horizon, PHOTO_LAND, which here is the elms' trunks). Lit by the sun and the sky; wet under rain, under snow
+// (SNOW_COVER) white but for the wet face.
+export const MALL_GROUND_VERTEX = /* glsl */`
+varying vec3 vWorld;
+varying vec3 vNormal;
+void main() {
+  vWorld = (modelMatrix * vec4(position, 1.0)).xyz;
+  vNormal = normal;
+  gl_Position = projectionMatrix * viewMatrix * vec4(vWorld, 1.0);
+}
+`;
+
+export const MALL_GROUND_FRAGMENT = /* glsl */`
+uniform vec3 uSunDir;
+uniform vec3 uSunIrradiance;
+uniform vec3 uSkyAmbient;
+uniform float uWet;     // how wet the rain has made it, 0 to 1 (src/main.js)
+varying vec3 vWorld;
+varying vec3 vNormal;
+${GLSL_COMMON}
+${MIRROR_NEARNESS_OUTPUT}
+${HAZE}
+${SHORE_KIND}
+#define SKY_LIGHT 1.4
+#define WET_STONE 0.62
+#define WET_GRASS 0.85
+#define MALL_COPING_WIDTH 0.75
+#define MALL_COPING_STONE 2.3
+#define MALL_STONE_JOINT 0.006
+#define MALL_GRANITE vec3(0.25, 0.235, 0.215)
+#define MALL_WALK 5.5
+#define MALL_SLAB 3.0
+#define MALL_SLAB_JOINT 0.01
+#define MALL_WALK_COLOR vec3(0.29, 0.28, 0.255)
+#define MALL_PLAZA vec2(34.0, 46.0)   // m: the west plaza's depth behind the coping, and its half width
+#define MALL_PAVER vec2(1.2, 0.6)
+#define MALL_PAVER_JOINT 0.008
+#define MALL_PAVER_COLOR vec3(0.22, 0.205, 0.185)
+#define MALL_LAWN vec3(0.068, 0.098, 0.036)
+#define MALL_STRIPE 2.4              // m: the mower's stripes
+// The share of a pixel footprint (m) wide covered by joints width wide every period along the coordinate along.
+float jointCover(float along, float period, float width, float footprint) {
+  float fromJoint = abs(fract(along / period + 0.5) - 0.5) * period;
+  float spread = max(width, footprint);
+  return (1.0 - smoothstep(0.0, spread, fromJoint)) * (width / spread);
+}
+void main() {
+  vec2 point = vWorld.xz;
+  vec2 footprint2 = max(abs(dFdx(point)), abs(dFdy(point)));
+  float footprint = max(footprint2.x, footprint2.y) + 1e-4;
+  float beside = abs(point.x) - MALL_HALF_WIDTH;
+  float behind = point.y - MALL_WEST;
+  float beyond = (MALL_WEST - MALL_LENGTH) - point.y;
+  float outside = max(beside, max(behind, beyond));
+  bool face = abs(vNormal.y) < 0.5;
+  float grain = valueNoise(point * 9.0 + vWorld.y * 7.0) * 0.6 + valueNoise(point * 31.0) * 0.4;
+  vec3 albedo;
+  float stone = 1.0;   // how much of it is stone, against grass, for the wet
+  if (face || outside < MALL_COPING_WIDTH) {
+    // The coping: its stones' joints across the run of the wall (along z beside the pool, along x at its ends).
+    float along = beside > max(behind, beyond) ? point.y : point.x;
+    albedo = MALL_GRANITE * (0.9 + 0.16 * grain) * (1.0 + 0.08 * (hash21(vec2(floor(along / MALL_COPING_STONE), 3.0)) - 0.5));
+    albedo *= 1.0 - 0.55 * jointCover(along, MALL_COPING_STONE, MALL_STONE_JOINT, footprint);
+    if (face) {
+      // At the waterline the face is wet and filmed with algae.
+      float waterline = 1.0 - smoothstep(0.02, 0.12, vWorld.y);
+      albedo = mix(albedo, vec3(0.05, 0.065, 0.04) * (0.8 + 0.4 * grain), 0.8 * waterline);
+    } else {
+      // The arris along the water rounded down, darker.
+      albedo *= mix(0.75, 1.0, smoothstep(0.0, 0.03, outside));
+      albedo *= 1.0 - 0.55 * jointCover(outside, 2.0 * MALL_COPING_WIDTH, MALL_STONE_JOINT, footprint) * step(MALL_COPING_WIDTH * 0.5, outside);
+    }
+  } else if (behind > 0.0 && behind < MALL_PLAZA.x && abs(point.x) < MALL_PLAZA.y) {
+    // The west plaza's pavers, in running bond.
+    vec2 cell = vec2(point.x, behind - MALL_COPING_WIDTH) / MALL_PAVER;
+    cell.x += 0.5 * mod(floor(cell.y), 2.0);
+    float shade = hash21(floor(cell));
+    albedo = MALL_PAVER_COLOR * (0.9 + 0.14 * grain) * (1.0 + 0.14 * (shade - 0.5) * (1.0 - smoothstep(0.3, 1.0, footprint / MALL_PAVER.y)));
+    float joints = max(jointCover(cell.x * MALL_PAVER.x, MALL_PAVER.x, MALL_PAVER_JOINT, footprint), jointCover(cell.y * MALL_PAVER.y, MALL_PAVER.y, MALL_PAVER_JOINT, footprint));
+    albedo *= 1.0 - 0.5 * joints;
+  } else if (beside > 0.0 && beside < MALL_COPING_WIDTH + MALL_WALK && behind < 0.0 && beyond < 0.0) {
+    // The walk beside the pool, as long as the pool: pale concrete slabs.
+    albedo = MALL_WALK_COLOR * (0.9 + 0.12 * grain) * (1.0 + 0.06 * (hash21(vec2(floor(point.y / MALL_SLAB), sign(point.x))) - 0.5));
+    albedo *= 1.0 - 0.5 * jointCover(point.y, MALL_SLAB, MALL_SLAB_JOINT, footprint);
+    albedo *= 1.0 - 0.5 * (1.0 - smoothstep(0.0, max(MALL_SLAB_JOINT, footprint), abs(beside - MALL_COPING_WIDTH - MALL_WALK)));
+  } else {
+    // The lawn, mown in stripes along the pool, mottled and grained.
+    float stripe = mod(floor(point.x / MALL_STRIPE), 2.0) * 2.0 - 1.0;
+    float stripes = 1.0 + 0.07 * stripe * (1.0 - smoothstep(0.4, 1.5, footprint));
+    albedo = MALL_LAWN * stripes * (1.0 + 0.5 * valueNoise(point * 0.9 + 5.0) - 0.25) * (0.85 + 0.3 * valueNoise(point * 13.0));
+    stone = 0.0;
+  }
+  albedo *= mix(1.0, mix(WET_GRASS, WET_STONE, stone), uWet);
+  float snow = face ? 0.0 : snowCover(point);
+  if (snow > 0.0) albedo = mix(albedo, snowShade(point), snow);
+  vec3 normal = normalize(vNormal);
+  vec3 color = albedo * (uSunIrradiance * max(dot(normal, uSunDir), 0.0) + uSkyAmbient * SKY_LIGHT * (0.5 + 0.5 * normal.y));
+  color = withHaze(color, length(vWorld - cameraPosition));
 #ifdef MIRROR_NEARNESS
   gl_FragColor = vec4(color, mirrorNearness(vWorld));
 #else

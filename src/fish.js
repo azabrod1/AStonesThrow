@@ -18,6 +18,7 @@
 //   - Desert oasis, a spring pool: a school of pupfish, the blue males and
 //     the brown females together, and a shoal of tilapia.
 //   - Rocky cove, the sea: a shoal of grey mullet and a wrasse on its own.
+//   - The Pool and the Reflecting Pool: none.
 //   - The Koi pond (a pond in a Japanese garden, src/pondFloor.js KOI_SHORE):
 //     koi of the classic varieties in one loose group, and a goldfish.
 //   - The Polynesian lagoon, a reef lagoon's sand shallows: a school of
@@ -145,6 +146,7 @@ export const FISH_BY_PLACE = {
   lagoon: [{ species: 'sergeant', count: 8 }, { species: 'yellowTang', count: 4 }, { species: 'blueTang', count: 1 }],   // the lagoon's reef fish
   loch: [{ species: 'trout', count: 2 }, { species: 'char', count: 2 }, { species: 'minnow', count: 6 }],   // Loch Ness's brown trout, Arctic char and minnows, shadows in its peat-dark water
   pool: [],
+  mall: [],   // the Reflecting Pool holds none: it is filtered city water, drained and cleaned
 };
 
 const GRAVITY = 9.81;

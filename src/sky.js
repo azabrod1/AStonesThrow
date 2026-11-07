@@ -37,7 +37,9 @@
 // stamps are wrong; the sunset's clock is read from its sun's height (a
 // glow through haze, so the probe calls its light 'none' and the scene's
 // sun is dark), the dusk's estimated from its glow. Wooded lake is one
-// photograph, Radków's lake under the Table Mountains (2025). Their rock ridges are aligned using the
+// photograph, Radków's lake under the Table Mountains (2025). The Reflecting
+// Pool's three hours are stitched from photographs (tools/mall-backdrop.py), one
+// September day's, each sky's sun turned to where the true sun stood then. Their rock ridges are aligned using the
 // probe's --band option: Kiara's lower valley from -15° to -5°, Rogland's
 // skyline from 0° to 18°. Small viewpoint changes in Kiara remain in nearby
 // rocks. Its sunrise/sunset are lit by the measured sun; their camera times
@@ -198,7 +200,7 @@
 // at the home view's 48° or a phone's three pixels a CSS pixel sees 20 to
 // 50 a degree, so the land on the skyline is a blur. Over the band about
 // the horizon (HORIZON_STRIP, below: 17° up to 3° down, where the
-// land stands) the dome draws the hour's horizon strip instead: the same
+// land stands; higher where a sky's land stands higher, stripAbove) the dome draws the hour's horizon strip instead: the same
 // band of the 8k photo (23 pixels a degree), its own JPEG gain map
 // (tools/sky-encode.mjs), which the page fetches once the panorama is up
 // and decodes on the GPU (src/horizonStrip.js: no JavaScript over its
@@ -337,6 +339,26 @@ const SKIES = {
 // light on level ground is 1.6 times the balance's (its sky alone two thirds of its sun's, against a fifth to two
 // fifths in the other photographs): exposed as an eye adapted half the way sees it (`adapt`, below).
   lagoon: { ownPlace: false, salt: true, adapt: 0.5, sunAzimuth: 145, hours: { midday: { file: 'kloofendal_48d_partly_cloudy_puresky', label: 'Midday', clock: '13:44' } } },
+  // The Reflecting Pool's own (src/places.js PLACES `mall`), no place of its own: a backdrop matte-painted from
+  // photographs of the Mall on Wikimedia Commons over Poly Haven's Qwantani mid-morning pure sky
+  // (tools/mall-backdrop.py, its plan tools/mall-backdrop.json with the photographs' authors and licences): ahead, east,
+  // the pool's far end and the Washington Monument as photographed from its west end; behind, the Lincoln Memorial; the
+  // elm rows either side, planted from photographs of single elms. In the morning the sun stands 40° right of ahead, in the south-east. The nearest elms stand
+  // 37 m off with their crowns up to 30° high, so its horizon strip reaches that high (`stripAbove`), not 17°.
+  // Its hours are one September day's (tools/mall-backdrop.json `hours`, each its sky turned so its sun stands where the
+  // true sun stood then, so their land lies alike): at sunset the sun is behind the Lincoln Memorial and the eye in its
+  // shade (light 'none'), the Monument glowing down the pool; at night the monuments are floodlit under the city's glow,
+  // and the hour's light never falls below `lit`.
+  mall: {
+    ownPlace: false,
+    sunAzimuth: 40,
+    stripAbove: 30,
+    hours: {
+      morning: { file: 'mall', label: 'Late morning', clock: '10:38' },
+      sunset: { file: 'mall_sunset', label: 'Sunset', clock: '18:32' },
+      night: { file: 'mall_night', label: 'Night', clock: '21:30', lit: 6 },
+    },
+  },
 };
 /** The skies that are each a place of their own (the Location setting's lakes; the Koi pond takes the garden's). */
 /** What a sky's beach is made of (`shore` above): a name of SHORE_LOOKS (src/pondFloor.js), 'sand' when unnamed. */
@@ -446,10 +468,13 @@ function adaptedLight(lux) {
  * The light on level ground at a panorama's hour (lux): the true sun's or
  * its twilight's (illuminance), and where the moon lights the photo, a full
  * moon's at its elevation besides, the sun's light MOON_DIMMING times dimmer.
+ * A city's night never falls below its own lamps' and sky glow's (`lit`, an
+ * hour's lux: the Reflecting Pool's floodlit monuments and lamp-lit walks),
+ * so its eye keeps its cones and its colours, as a starlit lake's does not.
  */
-function hourLight(measurement) {
+function hourLight(measurement, lit = 0) {
   const sunLight = illuminance(measurement.solar?.elevation ?? measurement.sun.elevation);
-  return lightOf(measurement) === 'moon' ? sunLight + illuminance(measurement.sun.elevation) / MOON_DIMMING : sunLight;
+  return Math.max(lit, lightOf(measurement) === 'moon' ? sunLight + illuminance(measurement.sun.elevation) / MOON_DIMMING : sunLight);
 }
 
 const DOME_VERTEX = /* glsl */`
@@ -556,11 +581,18 @@ const horizonUrl = (file) => new URL(`../assets/sky/${file}_horizon.jpg`, import
 // panorama, from `above` degrees over the horizon to `below` under it, its
 // rows (horizonRows, for a source `sourceHeight` rows tall) padded below to
 // a multiple of the JPEG's block; the page reads the band's edges back from
-// the strip's size the same way, so the two never disagree.
+// the strip's size the same way, so the two never disagree. A sky whose land
+// stands higher reaches higher (its `stripAbove`, degrees: the Reflecting
+// Pool's near elms, stripAbove).
 export const HORIZON_STRIP = { source: '8k', above: 17, below: 3 };
 const HORIZON_BLOCK = 8;
-export function horizonRows(sourceHeight) {
-  const above = Math.round((HORIZON_STRIP.above / 180) * sourceHeight);
+/** How high over the horizon (degrees) the strip of the hour whose file is `file` reaches: its sky's `stripAbove`, or HORIZON_STRIP's. */
+export function stripAbove(file) {
+  const sky = Object.values(SKIES).find((entry) => Object.values(entry.hours ?? {}).some((hour) => hour.file === file));
+  return sky?.stripAbove ?? HORIZON_STRIP.above;
+}
+export function horizonRows(sourceHeight, aboveDegrees = HORIZON_STRIP.above) {
+  const above = Math.round((aboveDegrees / 180) * sourceHeight);
   const below = Math.round((HORIZON_STRIP.below / 180) * sourceHeight);
   return { above, below: below + ((HORIZON_BLOCK - ((above + below) % HORIZON_BLOCK)) % HORIZON_BLOCK) };
 }
@@ -736,7 +768,7 @@ export function createEnvironment(renderer, { name, hour, sunAzimuth, sunBalance
       domeUniforms.uHorizonGain.value = texture(strip.gain, THREE.RedFormat);
       domeUniforms.uHorizonMeta.value.set(strip.metadata.weight * strip.metadata.gainMapMin, strip.metadata.weight * (strip.metadata.gainMapMax - strip.metadata.gainMapMin));
       // The band's elevations from the strip's size (horizonRows: the encoder's rows), a row's height at the source's resolution.
-      const rows = horizonRows(strip.width / 2);
+      const rows = horizonRows(strip.width / 2, stripAbove(file));
       const rowHeight = Math.PI / (strip.width / 2);
       domeUniforms.uHorizonBand.value.set(strip.width, strip.height, rows.above * rowHeight, -rows.below * rowHeight);
       environment.horizonBytes = strip.width * strip.height * 5;
@@ -819,7 +851,7 @@ export function createEnvironment(renderer, { name, hour, sunAzimuth, sunBalance
     // cumulus) is exposed as an eye adapted that share of the way to it sees it, sun and sky together.
     const adapted = place.adapt ? (levelLight(balance) / levelLight(anchor)) ** place.adapt : 1;
     const anchorScale = place.shadedSun ? balanceScale * levelLight(balance) / levelLight(anchor) : (balanceLuminance / luminance(anchor.sunIrradiance)) * SKY_EXPOSURE * adapted;
-    const level = file === anchorFile ? 1 : adaptedLight(hourLight(measurement)) / adaptedLight(hourLight(anchor));
+    const level = file === anchorFile ? 1 : adaptedLight(hourLight(measurement, entry.lit)) / adaptedLight(hourLight(anchor, place.hours[place.anchor ?? firstHour].lit));
     const scale = anchorScale * level;
     if (sunlit) {
       const sunColour = new THREE.Vector3().fromArray(measurement.sunIrradiance).divide(new THREE.Vector3().fromArray(balance.sunIrradiance)).multiply(sunBalance);
@@ -831,7 +863,7 @@ export function createEnvironment(renderer, { name, hour, sunAzimuth, sunBalance
       clear.sun.set(0, 0, 0);
     }
     clear.sky.fromArray(measurement.skyRadiance).multiplyScalar(scale);
-    clear.lux = hourLight(measurement);
+    clear.lux = hourLight(measurement, entry.lit);
     clear.level = level;
 
     const previous = domeUniforms.uPanorama.value;
