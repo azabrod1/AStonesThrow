@@ -3961,7 +3961,8 @@ void main() {
   vec3 toGround = vWorld - cameraPosition;
   float far = smoothstep(LAND_NEAR, LAND_FAR, length(toGround));
   if (far > 0.0) color = mix(color, photoLand(uSkyCube, LAND_LEVEL, toGround.xz), far);
-  color = withHaze(color, length(toGround));
+  // The haze by its distance, but on the far land, which is the photo's, hazed already (src/sky.js captures the cube with it).
+  color = mix(color, withHaze(color, length(toGround)), 1.0 - far);
 #ifdef MIRROR_NEARNESS
   gl_FragColor = vec4(color, mirrorNearness(vWorld));
 #else
@@ -4079,7 +4080,8 @@ void main() {
   vec3 toGround = vWorld - cameraPosition;
   float far = smoothstep(MALL_NEAR, MALL_FAR, length(toGround.xz));
   if (far > 0.0) color = mix(color, photoLand(uSkyCube, LAND_LEVEL, toGround.xz), far);
-  color = withHaze(color, length(toGround));
+  // The haze by its distance, but on the far land, which is the photo's, hazed already (src/sky.js captures the cube with it).
+  color = mix(color, withHaze(color, length(toGround)), 1.0 - far);
 #ifdef MIRROR_NEARNESS
   gl_FragColor = vec4(color, mirrorNearness(vWorld));
 #else
