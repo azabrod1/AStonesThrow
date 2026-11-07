@@ -55,7 +55,8 @@ graded to that hour's reference, its landmarks laid over in their own light: at 
 photograph lit by the low sun, behind the eye the Memorial floodlit; at night
 the pool's own night photograph laid over the day's graded to its dark trees. A low sun's `backlight` darkens and
 greys what faces the eye toward it (the trees' shaded sides; backlight); `keepHue` and `unsky` keep a canopy's gaps
-and sky-tinted edges from taking a false colour in another light.
+and sky-tinted edges from taking a false colour in another light, and `edge` frees the graded layers' land edges of
+their photographs' sky (decontaminate_edge), which would outline the trees in that light.
 
 The sky: one of Poly Haven's Qwantani pure skies (CC0) an hour, turned so its sun stands `sky.sunAzimuth` (degrees
 from north, clockwise) at its own height: where the true sun stood on the hour's day at the elevation the photo's
@@ -100,6 +101,8 @@ KEYED = {}                 # the elm cards, keyed once for every hour
 SOLID_RIM = 10             # pixels: a traced edge keyed against the sky beside it this far in (land_matte)
 KEY_FLOOR = 0.015          # how much more green's share of its colour than its sky's a keyed shape's pixel has, all sky (key_shape)
 KEY_RAMP = 0.035           # and how much more, all landmark
+EDGE_BAND = 10             # pixels (WORK_WIDTH's): how far from the sky an hour's `edge` decontaminates a graded layer's land
+EDGE_CONTRAST = 0.25       # how far the land's colour lies from the sky's, as a share of the sky's, for an edge to be decontaminated
 KEY_BAND = 0.04            # of the photograph's width: how far inside its shape's top and sides a pixel is keyed
 HEDGE = 0.2                # degrees: the land at the horizon reaches this high wherever no tree stands (compose_over_elms)
 CLEAN_SPAN = 0.08          # a share of the photograph's width: clean_rows's median, wider than a crowd on a step
@@ -997,6 +1000,8 @@ def prepare(plan, hour, per_degree=None, fits=None):
         if 'adjust' in layer:
             entry['linear'] = adjust(entry['linear'], layer['adjust'])
         entry['backlit'] = 'backlight' in hour and layer.get('backlight', True)
+        if hour.get('edge') and matched and 'shape' not in entry:
+            decontaminate_edge(entry)
         if hour.get('unsky') and matched:
             # What the matte kept as land but is mostly sky (leaves blurred against it: bright, and grey to blue rather
             # than a leaf's yellow-green) would take the hour's tint as land (pale blue to salmon): it is let through
@@ -1018,6 +1023,34 @@ def prepare(plan, hour, per_degree=None, fits=None):
         card['levels'] = card_levels(card['color'], card['alpha'])
         cards[name] = card
     return base, over, reference, cards
+
+
+def decontaminate_edge(entry):
+    """A graded layer's land edge freed of its photograph's sky (an hour's `edge`), as a compositor decontaminates a
+    key's edge: within EDGE_BAND of the sky, each pixel's share of land is where its colour lies between the sky behind
+    it (clean_plate of the sky) and the land's colour carried out to it from inside (clean_plate of the land), and its
+    colour is unmixed from that sky. So the pale sky a treeline's soft edge holds, graded to another hour's light (to
+    pink and white at sunset), is not left outlining the trees against that hour's sky. `keep` boxes and `solid`
+    landmarks are left as they are; and where land and sky are alike in colour there is nothing to tell apart."""
+    linear, matte, spec = entry['linear'], entry['matte'], entry['spec']
+    height, width = matte.shape
+    resolution = spec.get('resolution', 1.0)
+    above = np.arange(height)[:, None] < entry['cut'][None, :] * height
+    sky = (matte < 0.05) & above
+    band = above & (matte >= 0.05) & (ndimage.distance_transform_edt(~sky) <= EDGE_BAND * resolution)
+    for x0, y0, x1, y1 in spec.get('keep', []):
+        band[int(y0 * height):int(y1 * height), int(x0 * width):int(x1 * width)] = False
+    band &= polygons_mask(spec.get('solid', []), height, width) == 0
+    shrink = max(2, round(2 * resolution))
+    sky_plate = clean_plate(linear, sky, shrink=shrink)
+    land_plate = clean_plate(linear, (matte > 0.95) & ~band, shrink=shrink)
+    across = land_plate - sky_plate
+    reach = (across ** 2).sum(-1)
+    share = np.clip(((linear - sky_plate) * across).sum(-1) / np.maximum(reach, 1e-8), 0, 1)
+    band &= reach > EDGE_CONTRAST ** 2 * np.maximum((sky_plate ** 2).sum(-1), 1e-8)
+    unmixed = sky_plate + (linear - sky_plate) / np.maximum(share, 0.05)[..., None]
+    entry['linear'] = np.where(band[..., None], np.maximum(unmixed, 0), linear).astype(np.float32)
+    entry['matte'] = np.where(band, matte * share, matte).astype(np.float32)
 
 
 def luminance(color):
