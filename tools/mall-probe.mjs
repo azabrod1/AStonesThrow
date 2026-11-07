@@ -121,9 +121,9 @@ console.log('\nthe meshes:');
   const ground = scene[0].geometry, position = ground.attributes.position, index = ground.index.array;
   let overWater = 0, farthest = 0;
   for (let corner = 0; corner < index.length; corner += 3) {
-    let x = 0, z = 0;
-    for (let at = 0; at < 3; at++) { x += position.getX(index[corner + at]) / 3; z += position.getZ(index[corner + at]) / 3; farthest = Math.max(farthest, Math.abs(position.getX(index[corner + at])), Math.abs(position.getZ(index[corner + at]))); }
-    if (shoreDistance(x, z) > 0) overWater++;
+    let middleX = 0, middleZ = 0;
+    for (let at = 0; at < 3; at++) { middleX += position.getX(index[corner + at]) / 3; middleZ += position.getZ(index[corner + at]) / 3; farthest = Math.max(farthest, Math.abs(position.getX(index[corner + at])), Math.abs(position.getZ(index[corner + at]))); }
+    if (shoreDistance(middleX, middleZ) > 0) overWater++;
   }
   check(overWater === 0, `the ground leaves the pool open (${overWater} triangles over the water)`);
   check(farthest >= OUTER_HALF_SIZE, `and reaches the horizon (${farthest} m)`);

@@ -858,8 +858,8 @@ def plant_elms(settings):
     rng = np.random.default_rng(settings['seed'])
     names = sorted(settings['cards'])
     trees = []
-    def tree(x, z, height):
-        trees.append({'x': float(x), 'z': float(z), 'height': float(height), 'card': names[rng.integers(len(names))],
+    def tree(east, north, height):
+        trees.append({'x': float(east), 'z': float(north), 'height': float(height), 'card': names[rng.integers(len(names))],
                       'mirror': bool(rng.integers(2)), 'shade': float(rng.uniform(0.85, 1.12))})
     for row in settings['rows']:
         for place in np.arange(row['from'], row['to'], row['spacing']):
@@ -873,11 +873,11 @@ def plant_elms(settings):
         while planted < grove['count']:
             distance = math.sqrt(rng.uniform(grove['distance'][0] ** 2, grove['distance'][1] ** 2))   # even over the area
             azimuth = rng.uniform(0, 2 * math.pi)
-            x, z = distance * math.sin(azimuth), distance * math.cos(azimuth)
-            along_pool = -45 < x < 650
-            if (along_pool and abs(z) < 58) or (x <= -45 and abs(z) < 75):
+            east, north = distance * math.sin(azimuth), distance * math.cos(azimuth)
+            along_pool = -45 < east < 650
+            if (along_pool and abs(north) < 58) or (east <= -45 and abs(north) < 75):
                 continue
-            tree(x, z, rng.uniform(*grove['height']))
+            tree(east, north, rng.uniform(*grove['height']))
             planted += 1
     return trees
 
@@ -929,11 +929,11 @@ def draw_elms(cards, trees, settings, dirs, rows, width, subject):
         across = reach_along * (rays @ right)
         up = reach_along * rays[..., 1] + eye
         sign = -1 if tree['mirror'] else 1
-        u = (card['base'][0] + sign * across * per_metre) / 2 ** level
-        v = (card['base'][1] - up * per_metre) / 2 ** level
+        card_column = (card['base'][0] + sign * across * per_metre) / 2 ** level
+        card_row = (card['base'][1] - up * per_metre) / 2 ** level
         level_height, level_width = image.shape[:2]
-        inside = (toward > 0) & (u >= 0) & (u <= level_width - 1) & (v >= 0) & (v <= level_height - 1)
-        sample = bilinear(image, np.where(inside, u, 0), np.where(inside, v, 0)) * inside[..., None]
+        inside = (toward > 0) & (card_column >= 0) & (card_column <= level_width - 1) & (card_row >= 0) & (card_row <= level_height - 1)
+        sample = bilinear(image, np.where(inside, card_column, 0), np.where(inside, card_row, 0)) * inside[..., None]
         share = sample[..., 3]
         mist = 1 - math.exp(-distance / settings['haze']) if settings['haze'] else 0.0
         region = np.ix_(chosen_rows, columns)

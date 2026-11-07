@@ -88,8 +88,8 @@ function wallGeometry(bottom, stretch = 20) {
     const first = positions.length / 3;
     for (let piece = 0; piece <= pieces; piece++) {
       const share = piece / pieces;
-      const x = from[0] + (to[0] - from[0]) * share, z = from[1] + (to[1] - from[1]) * share;
-      positions.push(x, COPING_TOP, z, x, bottom, z);
+      const alongX = from[0] + (to[0] - from[0]) * share, alongZ = from[1] + (to[1] - from[1]) * share;
+      positions.push(alongX, COPING_TOP, alongZ, alongX, bottom, alongZ);
       normals.push(...normal, ...normal);
     }
     for (let piece = 0; piece < pieces; piece++) {
