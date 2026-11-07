@@ -2500,29 +2500,31 @@ void main() {
 // the bright water under the surface), and where the ray passes into its
 // air it sees the sky down the mouth, dimmer the deeper the hole. Then the
 // water between it and the eye (UNDER_FOG).
-// The Reflecting Pool's bed (uShoreKind SHORE_MALL; src/pondFloor.js MALL_POOL): the 2012 rebuild's concrete,
-// tinted a dark grey so the water mirrors the monuments, cast in bays MALL_BAY (m) square with a sealed joint
-// between them, darker; a film of silt and algae over it in drifts, thicker toward the walls, where the water is
-// stillest; a few leaves from the elms, sodden and brown. Each detail fades where the pixel's `footprint` (m)
-// outgrows it. Over PATTERN_RANGE, as floorSand: the floor's and the underside's bed, the one look.
+// The Reflecting Pool's bed (uShoreKind SHORE_MALL; src/pondFloor.js MALL_POOL): since June 2026 its concrete has been
+// sprayed with a blue polyurea (Rhino Linings; "American flag blue", toned down from the first, brighter coat), an even
+// skin with a faint orange-peel grain, mottled a little where the spray overlapped; the concrete's bays (MALL_BAY m
+// square) show through it as faint lines at their joints; a thin film of silt and algae in drifts, thicker toward the
+// walls, where the water is stillest (it bloomed again within days of the refill); a few leaves from the elms, sodden
+// and brown. Each detail fades where the pixel's `footprint` (m) outgrows it. Over PATTERN_RANGE, as floorSand: the
+// floor's and the underside's bed, the one look.
 const MALL_BED = /* glsl */`
-#define MALL_CONCRETE vec3(0.08, 0.08, 0.076)    // the tinted concrete's albedo
-#define MALL_BAY 7.5                             // m: its bays
+#define MALL_COATING vec3(0.012, 0.028, 0.075)   // the polyurea's albedo: a dark navy
+#define MALL_BAY 7.5                             // m: the concrete's bays under it
 #define MALL_JOINT 0.025                         // m: their joints' width
+#define MALL_SILT vec3(0.07, 0.08, 0.05)         // the film over it, greenish brown
 vec3 mallBed(vec2 point, float footprint) {
-  vec3 bed = MALL_CONCRETE * (0.86 + 0.22 * valueNoise(point * 0.35) + 0.1 * valueNoise(point * 3.1 + 5.0));
-  // The aggregate in the cast, a fine speckle, faded as it shrinks under a pixel.
-  float speck = valueNoise(point * 60.0);
-  bed *= 1.0 + (1.0 - smoothstep(0.005, 0.02, footprint)) * 0.25 * (smoothstep(0.7, 0.85, speck) - 0.6 * smoothstep(0.3, 0.15, speck));
-  // The bays' joints, antialiased over the pixel.
+  vec3 bed = MALL_COATING * (0.9 + 0.14 * valueNoise(point * 0.35) + 0.06 * valueNoise(point * 3.1 + 5.0));
+  // The spray's orange peel, a fine grain, faded as it shrinks under a pixel.
+  bed *= 1.0 + (1.0 - smoothstep(0.004, 0.015, footprint)) * 0.08 * (valueNoise(point * 90.0) - 0.5);
+  // The bays' joints under the coat, antialiased over the pixel.
   vec2 fromJoint = abs(fract(point / MALL_BAY) - 0.5) * MALL_BAY;   // the bays centred on the pool's axis, no joint down it
   float jointWidth = max(MALL_JOINT, footprint);
   float joint = (1.0 - smoothstep(0.0, jointWidth, min(fromJoint.x, fromJoint.y))) * (MALL_JOINT / jointWidth);
-  bed *= 1.0 - 0.35 * joint;
-  // Silt and algae: greenish brown drifts, more by the walls.
+  bed *= 1.0 - 0.2 * joint;
+  // Silt and algae: a thin film in drifts, more by the walls.
   float wall = 1.0 - smoothstep(0.0, 6.0, MALL_HALF_WIDTH - abs(point.x));
-  float silt = smoothstep(0.35, 0.8, 0.7 * valueNoise(point * 0.22 + 3.0) + 0.3 * valueNoise(point * 1.3) + 0.3 * wall);
-  bed = mix(bed, vec3(0.085, 0.09, 0.055) * (0.8 + 0.4 * valueNoise(point * 2.4)), 0.65 * silt);
+  float silt = smoothstep(0.45, 0.9, 0.7 * valueNoise(point * 0.22 + 3.0) + 0.3 * valueNoise(point * 1.3) + 0.3 * wall);
+  bed = mix(bed, MALL_SILT * (0.8 + 0.4 * valueNoise(point * 2.4)), 0.35 * silt);
   // Sodden leaves, one now and then in its cell.
   vec2 cell = floor(point / 0.45);
   float chance = hash21(cell);
@@ -2901,7 +2903,7 @@ ${MALL_BED}
 #define MALL_WALL_FACE vec3(0.05, 0.062, 0.04)   // the Reflecting Pool's walls under the water: granite filmed with algae (as at the coping's waterline, MALL_GROUND_FRAGMENT)
 void main() {
   // Sand with pebbles and silt (FLOOR_SAND); the Koi pond's, darker gravel under silt and algae, in drifts; the
-  // Reflecting Pool's tinted concrete (mallBed).
+  // Reflecting Pool's blue-coated concrete (mallBed).
   float bedFootprint = length(fwidth(vFloorPoint));   // taken in uniform control flow, for the Reflecting Pool's bed
   vec3 sand;
   if (isShore(SHORE_MALL)) sand = mallBed(vFloorPoint, bedFootprint);

@@ -132,7 +132,7 @@ export const LAGOON_SHORE = { origin: [5.2, 0], bearing: 22, bow: 900, wander: [
 // place of the lake's: the Lincoln Memorial Reflecting Pool, a granite-walled basin `halfWidth` (m) either side of
 // x = 0, its west wall's water face at `west` (z, 30 cm behind the shore view's eye) and its east one `length` on (−z
 // is east, toward the Washington Monument). Its walls stand straight from its bed to their coping, `coping` above the
-// still water, the ground round it level with that; its bed is the 2012 rebuild's tinted concrete, `edge` deep at the
+// still water, the ground round it level with that; its bed is the 2012 rebuild's concrete (blue-coated in 2026), `edge` deep at the
 // side walls and `deep` along the middle (2 ft 6 in to 3 ft), a shallow crown. LAKE_BED in src/shaders/scene.js is its
 // GLSL twin (MALL_*): change both.
 export const MALL_POOL = { halfWidth: 25.3, west: 2.75, length: 618, coping: 0.3, edge: 0.6, deep: 0.88 };

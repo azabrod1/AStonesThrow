@@ -1034,8 +1034,10 @@ The curated locations include:
   sun's path on it. Starts at the golden hour.
 - **Reflecting Pool** (`?sky=mall`): the Lincoln Memorial Reflecting Pool
   in Washington, D.C., seen from its west wall down its 618 m to the
-  Washington Monument, at three hours of one September day: late morning,
-  sunset and night. No one has published a free panorama taken there, so
+  Washington Monument, at three hours of a September day in 2026: late
+  morning, sunset and night. That June its bed was coated in a navy
+  polyurea ("American flag blue", `MALL_BED` in `src/shaders/scene.js`),
+  so the water is blue near the eye and a mirror farther off. No one has published a free panorama taken there, so
   each hour's sky is stitched from photographs on Wikimedia Commons over
   one of Poly Haven's Qwantani pure skies (`tools/mall-backdrop.py`, its
   plan `tools/mall-backdrop.json`, which lists each photo, its licence and

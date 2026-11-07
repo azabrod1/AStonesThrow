@@ -3,8 +3,9 @@
 // wall, looking east down its length to the Washington Monument.
 //
 // The pool is src/pondFloor.js's MALL_POOL: 618 m by 50.6 m inside its granite
-// walls, its bed the 2012 rebuild's dark tinted concrete (MALL_BED in
-// src/shaders/scene.js, under 60 to 88 cm of water), the eye at its west wall.
+// walls, its bed the 2012 rebuild's concrete coated in a navy polyurea in 2026
+// (MALL_BED in src/shaders/scene.js, under 60 to 88 cm of water), the eye at
+// its west wall.
 // The scene's −z is east, +x south. Everything beyond the coping and the
 // ground by it is the sky's photo (src/sky.js `mall`, a backdrop stitched
 // from photographs, tools/mall-backdrop.py): the elms, the Monument, the

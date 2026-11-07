@@ -506,7 +506,7 @@ const FISH_BITE = { radius: 0.018, dimple: 0.0015, shrink: 0.45 };   // and as i
 const FISH_LAKE_INSET = { side: 0.4, far: 0.8 };   // m: the lake's fish keep this far inside the solver's patch at its sides and far edge, where the shore view sees into the water
 const FISH_SHAPE_SLACK = 1.05;   // a thing's reach and thickness as the fish keep clear of it, over its mesh's (fishShapeOf)
 const KOI_BED_ALBEDO = 0.3;   // the Koi pond's gravel and silt, for what the splash's drops show of its bed (src/splash.js setBed)
-const MALL_BED_ALBEDO = 0.1;  // the Reflecting Pool's tinted concrete (MALL_BED in src/shaders/scene.js), likewise
+const MALL_BED_ALBEDO = 0.03; // the Reflecting Pool's blue coating (MALL_BED in src/shaders/scene.js: its luminance), likewise
 // And the lagoon's coral sand: the lake's sand as the lagoon's look tints its bed (src/pondFloor.js setShoreLook, SHORE_LOOKS.coral
 // against Lakeside's sand, by their luminance: about 1.46 times as bright).
 const luminanceOf = ([red, green, blue]) => 0.2126 * red + 0.7152 * green + 0.0722 * blue;
@@ -640,7 +640,7 @@ const SUN_BALANCE = [3.0, 2.85, 2.55];        // the sun's irradiance under the 
 const WATER_CLARITIES = {
   pool: { absorb: [0.35, 0.06, 0.015], extinction: [0.42, 0.11, 0.06], color: [0.010, 0.090, 0.130] },
   koi: { absorb: [0.4, 0.09, 0.14], extinction: [0.6, 0.3, 0.42], color: [0.010, 0.066, 0.060] },   // a koi pond's, filtered but green: the fish show to the bottom
-  mall: { absorb: [0.42, 0.1, 0.12], extinction: [0.75, 0.38, 0.4], color: [0.008, 0.036, 0.034] },   // the Reflecting Pool's, filtered city water over its dark bed: clear, a little green, a mirror
+  mall: { absorb: [0.4, 0.07, 0.05], extinction: [0.55, 0.18, 0.15], color: [0.006, 0.026, 0.034] },   // the Reflecting Pool's, filtered city water over its blue bed: clear, nearly pure water's absorption, a mirror
   // A coral lagoon's: sea water nearly as clear as pure water, scattering a little, over pale coral sand, so the
   // shallows are turquoise (the sand's light, its red taken by the water) and the deep a clear blue.
   lagoon: { absorb: [0.36, 0.065, 0.025], extinction: [0.48, 0.13, 0.085], color: [0.008, 0.075, 0.120] },
