@@ -1046,7 +1046,8 @@ The curated locations include:
   four rows along the pool and in groves out to 1.5 km, each stood upright
   where it grows, sized by its distance and hazed by its air. Over them the
   landmarks, cut from photographs and traced by hand where marble meets sky,
-  with the people taken off the Memorial's steps: the Monument down the pool
+  with the people taken off the Memorial's steps, and the steps, which its
+  photograph sees from off their axis, set square under it: the Monument down the pool
   (Kenrick95, CC BY-SA 4.0) and the Lincoln Memorial behind the eye
   (Jmarcosny, CC BY-SA 4.0), joined to the elms along minimum-cost seams.
   The other hours are the day's graded to a photograph of that hour, with

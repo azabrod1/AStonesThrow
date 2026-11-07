@@ -18,13 +18,13 @@
     0.000013815
   ],
   "skyRadiance": [
-    0.12214,
-    0.12727,
-    0.14562
+    0.1219,
+    0.12711,
+    0.14547
   ],
   "horizonRadiance": {
-    "median": 0.019586,
-    "p90": 0.32051
+    "median": 0.019609,
+    "p90": 0.3201
   },
   "maxLuminance": 30.285,
   "taken": "2026-09-20T21:30:00-04:00",
@@ -39,10 +39,10 @@
   "light": "none",
   "alignment": {
     "reference": "mall_2k.hdr",
-    "turn": 359.99,
-    "peak": 13.23,
-    "nextBest": 1.82
+    "turn": 360,
+    "peak": 13.36,
+    "nextBest": 1.78
   },
-  "north": 359.7,
+  "north": 359.71,
   "northFrom": "skyline"
 }
