@@ -108,8 +108,9 @@ export const SHORE = { z: 2.72, bend: 60, slope: 0.45, deep: 3.5, beach: 0.08, b
 // 60 cm in front of the shore view's eye, to the far one. Out from it (s, koiShoreDistance) the bed drops
 // steeply under a stone edge to a shelf 35 cm down, then to 1.35 m, as a koi pond's does; but along the pebble beach
 // (KOI_SHORE.beach, a span of angles: the suhama of a Japanese garden) it shelves gently. Behind it the ground rises
-// over a low lip (higher at the stone edge than at the beach) and mounds gently away from the water. LAKE_BED in
-// src/shaders/scene.js is its GLSL twin (KOI_LOBES): change both.
+// over a low lip (higher at the stone edge than at the beach) and mounds gently away from the water, out to where its
+// sky's backdrop stands on it (koiLandGeometry; src/sky.js Backdrop). LAKE_BED in src/shaders/scene.js is its GLSL
+// twin (KOI_LOBES): change both.
 export const KOI_SHORE = {
   centre: [0, -1.2], base: 4.0,
   lobes: [[0.55, 2, -0.5], [0.4, 3, 0.7 - Math.PI / 2], [0.2, 5, 1.9]],   // [amplitude (m), k, phase]
@@ -167,6 +168,13 @@ export function setShoreLook(name) {
 }
 const SHORE_KINDS = { lake: 0, koi: 1, lagoon: 2 };   // LAKE_BED's uShoreKind (SHORE_LAKE, SHORE_KOI, SHORE_LAGOON)
 const shoreKindUniform = { value: 0 };
+// The Koi pond's garden's shade on its ground (GARDEN_SHADE in src/shaders/scene.js), which src/koiGarden.js bakes
+// and its own materials share: a texel of all lit (red 0, green 1) until it does.
+export const gardenShadeUniforms = {
+  uGardenShade: { value: Object.assign(new THREE.DataTexture(new Uint8Array([0, 255, 0, 255]), 1, 1), { needsUpdate: true }) },
+  uGardenShadeArea: { value: new THREE.Vector4() },
+  uGardenShadeSun: { value: new THREE.Vector3(0, 1, 0) },
+};
 /** The shore in force: 'lake' (the lake's, SHORE), 'koi' (the Koi pond's, KOI_SHORE) or 'lagoon' (the Polynesian lagoon's, LAGOON_SHORE); every function here and LAKE_BED follow it. */
 export function setShoreKind(kind) {
   shoreKind = Object.hasOwn(SHORE_KINDS, kind) ? kind : 'lake';
@@ -400,19 +408,32 @@ function landGeometry() {
  * photo far off. It shares the floor's baked sand and the sky's cube map
  * (src/sky.js, refilled in place by a new sky); `snow` is the weather's
  * snow cover, a uniform's shared object. With `koi`, the Koi pond's ground
- * all round its outline (koiLandGeometry) in place of the lake's beach.
+ * all round its outline (koiLandGeometry) in place of the lake's beach, out
+ * to its sky's `backdrop` (src/sky.js skyBackdrop).
  */
 // The Koi pond's ground (createShore's `koi`): rings about the pond's outline (KOI_SHORE), from under its water's edge
-// out to the horizon, KOI_LAND.around to a ring, each ring KOI_LAND.growth farther out than the last.
+// out to where its sky's backdrop (src/sky.js Backdrop: a sphere about a point on the ground) meets the ground,
+// KOI_LAND.around to a ring, each ring KOI_LAND.growth farther out than the last, the last on that circle, where the
+// photo's land stands; with no backdrop, out to the horizon (KOI_LAND.far).
 const KOI_LAND = { around: 240, wet: [-0.5, -0.25, -0.1, 0], first: 0.03, growth: 1.2, far: 6000 };
-function koiLandGeometry() {
+function koiLandGeometry(backdrop) {
+  // Along each spoke from the pond's centre, how far out the backdrop's circle on the ground lies.
+  const [middleX, middleY, middleZ] = backdrop?.centre ?? [0, 0, 0];
+  const onGround = backdrop ? Math.sqrt(Math.max(backdrop.radius ** 2 - middleY ** 2, 0)) : Infinity;
+  const apartX = KOI_SHORE.centre[0] - middleX, apartZ = KOI_SHORE.centre[1] - middleZ;
+  const edges = Array.from({ length: KOI_LAND.around }, (_, spoke) => {
+    const angle = (spoke / KOI_LAND.around) * Math.PI * 2;
+    const along = apartX * Math.cos(angle) + apartZ * Math.sin(angle);
+    return -along + Math.sqrt(along * along - (apartX * apartX + apartZ * apartZ) + onGround * onGround);
+  });
+  const farthest = Math.min(KOI_LAND.far, Math.max(...edges.map((edge, spoke) => edge - koiShoreRadius((spoke / KOI_LAND.around) * Math.PI * 2))));
   const rows = [...KOI_LAND.wet];
-  for (let step = KOI_LAND.first; rows.at(-1) < KOI_LAND.far; step *= KOI_LAND.growth) rows.push(rows.at(-1) + step);
+  for (let step = KOI_LAND.first; rows.at(-1) < farthest; step *= KOI_LAND.growth) rows.push(rows.at(-1) + step);
   const positions = [];
   for (const out of rows) {
     for (let spoke = 0; spoke < KOI_LAND.around; spoke++) {
       const angle = (spoke / KOI_LAND.around) * Math.PI * 2;
-      const radius = koiShoreRadius(angle) + out;
+      const radius = Math.min(koiShoreRadius(angle) + out, edges[spoke]);
       positions.push(KOI_SHORE.centre[0] + Math.cos(angle) * radius, 0, KOI_SHORE.centre[1] + Math.sin(angle) * radius);
     }
   }
@@ -470,7 +491,7 @@ export function lagoonLandGeometry() {
   return geometry;
 }
 
-export function createShore(floor, lighting, environment, { snow = { value: 0 }, koi = false, lagoon = false } = {}) {
+export function createShore(floor, lighting, environment, { snow = { value: 0 }, koi = false, lagoon = false, backdrop = null } = {}) {
   const material = new THREE.ShaderMaterial({
     vertexShader: LAND_VERTEX,
     fragmentShader: LAND_FRAGMENT,
@@ -489,6 +510,9 @@ export function createShore(floor, lighting, environment, { snow = { value: 0 },
       uLandLevel: environment.landLevel,
       ...environment.hazeUniforms,
       uSnow: snow,   // the snow lying on it, 0 to 1 (src/main.js WEATHERS)
+      ...gardenShadeUniforms,   // the Koi pond's garden's shade on its ground (src/koiGarden.js)
+      // The Koi pond's backdrop's circle on the ground, where its lawn ends (koiLandGeometry), for the shade at its foot.
+      uKoiEdge: { value: new THREE.Vector3(backdrop?.centre[0] ?? 0, backdrop?.centre[2] ?? 0, backdrop ? Math.sqrt(Math.max(backdrop.radius ** 2 - backdrop.centre[1] ** 2, 0)) : 1e6) },
       ...PALM_SHADOW,
       ...SAND_SCAN,
       ...PALM_FEET,
@@ -497,7 +521,7 @@ export function createShore(floor, lighting, environment, { snow = { value: 0 },
   });
   // The lagoon's land is built the first time it is shown (src/main.js showScenery: lagoonLandGeometry); its program is
   // the lake's shore's, so nothing is left to build on the device then.
-  const mesh = new THREE.Mesh(koi ? koiLandGeometry() : lagoon ? new THREE.BufferGeometry() : landGeometry(), material);
+  const mesh = new THREE.Mesh(koi ? koiLandGeometry(backdrop) : lagoon ? new THREE.BufferGeometry() : landGeometry(), material);
   mesh.frustumCulled = false;
   return mesh;
 }
