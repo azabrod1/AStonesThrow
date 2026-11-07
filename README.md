@@ -508,7 +508,10 @@ far ripples average to flat instead of shimmering; the slope they average
 away becomes roughness in the sun's glitter, so the glitter keeps its
 brightness with distance. Gusts multiply it: patches of ripple about 3 m
 across (cat's paws) drift downwind at 1.5 m/s over calmer water that keeps a
-quarter of it, which also hides the tile's repetition. The Wind control
+quarter of it, which also hides the tile's repetition. Where a pixel spans
+more than a patch's cells the water's shader takes their average over the
+pixel (and its square for the roughness), so the far water does not flip
+between calm and gust from one pixel to the next. The Wind control
 scales the whole field by one factor (its slope variance below a pixel by
 the square) and the foam's drift with it: Calm 0.3, a glassy pond with faint
 cat's paws, on which a stone's rings read far; Breeze 1, the look the pond

@@ -404,11 +404,47 @@ uniform float uGustTime;             // world seconds
 #define GUST_CALM 0.25
 #define GUST_EDGE_LOW 0.42
 #define GUST_EDGE_HIGH 0.62
+#define GUST_FINE 0.45           // the finer octave's cells, of GUST_SCALE
+// The two octaves' places in their noise's cells.
+void gustCells(vec2 worldXZ, float time, out vec2 coarse, out vec2 fine) {
+  coarse = mat2(0.8, 0.6, -0.6, 0.8) * (worldXZ - uWindDirection * GUST_DRIFT * time) / GUST_SCALE;
+  fine = mat2(0.6, -0.8, 0.8, 0.6) * (worldXZ - uWindDirection * 1.5 * GUST_DRIFT * time) / (GUST_FINE * GUST_SCALE) + 13.7;
+}
 float gustEnvelope(vec2 worldXZ, float time) {
-  vec2 coarse = mat2(0.8, 0.6, -0.6, 0.8) * (worldXZ - uWindDirection * GUST_DRIFT * time) / GUST_SCALE;
-  vec2 fine = mat2(0.6, -0.8, 0.8, 0.6) * (worldXZ - uWindDirection * 1.5 * GUST_DRIFT * time) / (0.45 * GUST_SCALE) + 13.7;
+  vec2 coarse, fine;
+  gustCells(worldXZ, time, coarse, fine);
   float field = 0.65 * valueNoise(coarse) + 0.35 * valueNoise(fine);
   return mix(GUST_CALM, 1.0, smoothstep(GUST_EDGE_LOW, GUST_EDGE_HIGH, field));
+}
+
+// The envelope averaged over a pixel whose footprint on the water is \`footprint\` metres (its longer side, as the
+// ripples' mip level is chosen): its mean and its mean square, which the ripples' unresolved slope variance takes.
+// Far out, where a pixel spans metres of water, the bare envelope is its two levels sampled pixel by pixel: the
+// glitter's roughness and the mirror's spread (spreadMirror) flipped between calm and gust from one pixel, and one
+// row, to the next. An octave whose cells are finer than about the footprint fades to its mean (from GUST_KEPT_FROM
+// to GUST_KEPT_TO of a cell a pixel), and the variance it had widens the smoothstep's edges (a ramp averaged over a
+// field that varies that much is a wider ramp, as steep at its middle as a Gaussian's) and adds to the mean square
+// (the step's own variance over the pixel, as much of it as the field's lost spread is wide against the edges).
+// Both moments are within a few percent of a Monte Carlo of this noise's, the fine octave averaged away or both.
+// With nothing lost it is gustEnvelope and its square.
+#define GUST_KEPT_FROM 0.25         // footprint per cell where an octave starts to fade...
+#define GUST_KEPT_TO 1.0            // ...and where it has gone
+#define GUST_NOISE_VARIANCE 0.046   // valueNoise's variance over its cells
+#define GUST_WIDENING 3.53          // (1.88)²: a smoothstep 2 × 1.88 σ wide is as steep at its middle as a Gaussian's CDF of rms σ
+#define GUST_STEP_SPREAD 0.0064     // the lost variance at which half the step's own variance reaches the mean square
+vec2 gustMoments(vec2 worldXZ, float time, float footprint) {
+  vec2 coarse, fine;
+  gustCells(worldXZ, time, coarse, fine);
+  float coarseKept = 1.0 - smoothstep(GUST_KEPT_FROM, GUST_KEPT_TO, footprint / GUST_SCALE);
+  float fineKept = 1.0 - smoothstep(GUST_KEPT_FROM, GUST_KEPT_TO, footprint / (GUST_FINE * GUST_SCALE));
+  float field = 0.5 + 0.65 * coarseKept * (valueNoise(coarse) - 0.5) + 0.35 * fineKept * (valueNoise(fine) - 0.5);
+  float lost = GUST_NOISE_VARIANCE * (0.65 * 0.65 * (1.0 - coarseKept * coarseKept) + 0.35 * 0.35 * (1.0 - fineKept * fineKept));
+  float middle = 0.5 * (GUST_EDGE_LOW + GUST_EDGE_HIGH);
+  float halfWidth = sqrt(0.25 * (GUST_EDGE_HIGH - GUST_EDGE_LOW) * (GUST_EDGE_HIGH - GUST_EDGE_LOW) + GUST_WIDENING * lost);
+  float stepped = smoothstep(middle - halfWidth, middle + halfWidth, field);
+  float gust = mix(GUST_CALM, 1.0, stepped);
+  float stepVariance = stepped * (1.0 - stepped) * lost / (lost + GUST_STEP_SPREAD);
+  return vec2(gust, gust * gust + (1.0 - GUST_CALM) * (1.0 - GUST_CALM) * stepVariance);
 }
 
 // Height of the ambient waves at full gust, metres. In a vertex shader the
@@ -1974,7 +2010,10 @@ void main() {
   // (a ring is a few thousandths steep where it is finer than a pixel, under
   // the ripples' own unresolved slope). So do the drop rings' (src/
   // dropRings.js: the little rings a splash's drops leave where they land).
-  float gust = gustEnvelope(vWorld.xz, uGustTime);
+  // The gusts as the pixel averages them (gustMoments): their mean scales the ripples' slope, their mean square the
+  // slope variance the ripples' mip levels lose.
+  vec2 gustSeen = gustMoments(vWorld.xz, uGustTime, max(length(acrossX), length(acrossY)));
+  float gust = gustSeen.x;
   float subGridSpread = uRoughness * uRoughness;
 #ifdef CAVITY_MESH
   // The mesh's normal, tilted by the surface's slopes where the mesh rides
@@ -1985,7 +2024,7 @@ void main() {
   float ride = vCavity.x;
   vec2 surfaceSlope = vec2(hr - hl, hu - hd) / (2.0 * uCell) * vMask + ambientSlopeAtFullGust(vWorld.xz) * gust * ride;
   if (uRingCount > 0) surfaceSlope += ringSlope(vWorld.xz, acrossX, acrossY) * ride;
-  float slopeVariance = subGridSpread * subGridSpread + ambientUnresolvedVariance(vWorld.xz) * gust * gust * ride;
+  float slopeVariance = subGridSpread * subGridSpread + ambientUnresolvedVariance(vWorld.xz) * gustSeen.y * ride;
   if (uRainOn > 0.5) {
     surfaceSlope += rainSlope(vWorld.xz) * ride;
     slopeVariance += rainUnresolvedVariance(vWorld.xz) * ride;
@@ -2026,7 +2065,7 @@ void main() {
 #else
   vec2 slope = vec2(hr - hl, hu - hd) / (2.0 * uCell) * vMask + ambientSlopeAtFullGust(vWorld.xz) * gust;
   if (uRingCount > 0) slope += ringSlope(vWorld.xz, acrossX, acrossY);
-  float slopeVariance = subGridSpread * subGridSpread + ambientUnresolvedVariance(vWorld.xz) * gust * gust;
+  float slopeVariance = subGridSpread * subGridSpread + ambientUnresolvedVariance(vWorld.xz) * gustSeen.y;
   if (uRainOn > 0.5) {
     slope += rainSlope(vWorld.xz);
     slopeVariance += rainUnresolvedVariance(vWorld.xz);
@@ -2591,7 +2630,7 @@ void main() {
   float hu = texture2D(uHeight, vDomainUv + vec2(0.0, texelStep)).r;
   vec2 acrossX = dFdx(vWorld.xz);
   vec2 acrossY = dFdy(vWorld.xz);
-  float gust = gustEnvelope(vWorld.xz, uGustTime);
+  float gust = gustMoments(vWorld.xz, uGustTime, max(length(acrossX), length(acrossY))).x;   // as the pixel averages it (WATER_FRAGMENT)
   vec2 slope = vec2(hr - hl, hu - hd) / (2.0 * uCell) * vMask + ambientSlopeAtFullGust(vWorld.xz) * gust;
   if (uRingCount > 0) slope += ringSlope(vWorld.xz, acrossX, acrossY);
   if (uRainOn > 0.5) slope += rainSlope(vWorld.xz);
