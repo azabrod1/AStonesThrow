@@ -1,11 +1,12 @@
-// The Reflecting Pool on the CPU (PLACES `mall`: src/nationalMall.js, its
+// The Reflecting Pool on the CPU (PLACES `mall`: src/mallPool.js, its
 // shore MALL_POOL in src/pondFloor.js), and checks:
 //
 //   node tools/mall-probe.mjs
 //
 // - the bed's GLSL twin (LAKE_BED in src/shaders/scene.js) is laid out as
 //   MALL_POOL: its MALL_* numbers are MALL_POOL's, and the water seen from
-//   below shares every uniform it declares (BED_UNIFORMS);
+//   below shares every uniform it declares (BED_UNIFORMS); the walls that
+//   hold things (MALL_BASIN) and the water (MALL_BOUNDS) stand at its walls;
 // - the walls hold: each kind of thing, sent at the west wall, a side wall
 //   and their corner from 5 cm inside (its own reach toward the wall,
 //   lowestAlong; slow or fast, low or bouncing) or lobbed over it from a
@@ -14,25 +15,22 @@
 //   does (holdInPool on MALL_BASIN), never reaches into the granite (past a
 //   wall's face by more than INTO_STONE while its lowest point is under the
 //   coping's top) and never ends outside the water under the coping's top;
-// - the cost: the grounds' build (the leaves' atlas and every mesh, from
-//   one seeded stream), their triangles in the scene, under TRIANGLE_BOUND,
-//   and in the mirror (each tree a level coarser), under MIRROR_SHARE of
-//   the scene's (it is drawn again, every vertex, each frame a splash's
-//   image is), and the trees and cards each level draws; built twice, and
-//   a stage a task (prepare), the same.
+// - the meshes: the ground leaves the pool open (no triangle over the
+//   water) and reaches the horizon; draws and triangles, in the scene and
+//   the mirror, under TRIANGLE_BOUND.
 import * as THREE from 'three';
 import { Rock } from '../src/rock.js';
 import { THINGS, THING_NAMES } from '../src/things.js';
 import { setShoreKind, floorDepthAt, shoreDistance, MALL_POOL } from '../src/pondFloor.js';
 import { holdInPool, poolGround } from '../src/pool.js';
-import { createNationalMall, MALL_BASIN } from '../src/nationalMall.js';
+import { createMallPool, MALL_BASIN, MALL_BOUNDS } from '../src/mallPool.js';
+import { OUTER_HALF_SIZE } from '../src/waterSurface.js';
 import { collideThings } from '../src/collide.js';
 import { BED_UNIFORMS } from '../src/waterSurface.js';
 import { LAKE_BED } from '../src/shaders/scene.js';
 
 const INTO_STONE = 0.01;           // m: the most a thing may lie inside a wall's face below the coping's top
-const TRIANGLE_BOUND = 700000;     // the grounds' triangles in the scene
-const MIRROR_SHARE = 0.55;         // and the mirror's, at most this share of them
+const TRIANGLE_BOUND = 2000;       // the ground's and the walls' triangles, the scene's and the mirror's
 const STEP = 1 / 240;
 setShoreKind('mall');
 const failures = [];
@@ -50,6 +48,7 @@ console.log('the bed\'s twin:');
   const missing = declared.filter((name) => !BED_UNIFORMS.includes(name));
   check(missing.length === 0, `the water seen from below shares every uniform of the shore's twin${missing.length ? `; not ${missing.join(', ')}` : ''}`);
   check(MALL_BASIN.minX === -MALL_POOL.halfWidth && MALL_BASIN.minZ + MALL_BASIN.sizeZ === MALL_POOL.west && MALL_BASIN.deck === MALL_POOL.coping, 'the walls that hold things (MALL_BASIN) stand where the bed meets the coping');
+  check(MALL_BOUNDS.minX === MALL_BASIN.minX && MALL_BOUNDS.maxX === MALL_BASIN.minX + MALL_BASIN.sizeX && MALL_BOUNDS.minZ === MALL_BASIN.minZ && MALL_BOUNDS.maxZ === MALL_BASIN.minZ + MALL_BASIN.sizeZ, 'the water stops at the same walls (MALL_BOUNDS)');
   console.log(`  the bed ${floorDepthAt(MALL_POOL.halfWidth - 0.01, 0).toFixed(2)} m deep at the walls, ${floorDepthAt(0, 0).toFixed(2)} m on the axis; the coping ${(-floorDepthAt(0, MALL_POOL.west + 0.5)).toFixed(2)} m up`);
 }
 
@@ -103,33 +102,27 @@ console.log('\nthe walls hold:');
   check(over > 0 && restingUnder === 0, `of the ${over} that went over a wall, none ends under the coping's top (${restingUnder})`);
 }
 
-console.log('\nthe cost:');
+console.log('\nthe meshes:');
 {
   const lighting = { sunDirection: new THREE.Vector3(0, 1, 0), sunIrradiance: new THREE.Vector3(1, 1, 1), skyAmbient: new THREE.Vector3(0.2, 0.2, 0.2) };
-  const environment = { cubeTexture: null, hazeUniforms: {} };
-  const make = () => {
-    const mall = createNationalMall({ lighting, environment, mirrorLayer: 2 });
-    const started = performance.now();
-    mall.setVisible(true);
-    return { mall, built: performance.now() - started };
-  };
-  const { mall, built } = make();
+  const environment = { cubeTexture: null };
+  const started = performance.now();
+  const mall = createMallPool(lighting, environment);
+  const built = performance.now() - started;
   const scene = mall.meshes.filter((mesh) => mesh.layers.mask === 1), mirror = mall.meshes.filter((mesh) => mesh.layers.mask !== 1);
-  const trianglesOf = (meshes) => meshes.reduce((sum, mesh) => sum + (mesh.geometry.index.count / 3) * (mesh.geometry.isInstancedBufferGeometry ? mesh.geometry.instanceCount : 1), 0);
-  const triangles = trianglesOf(scene), mirrored = trianglesOf(mirror);
-  console.log(`  built in ${built.toFixed(0)} ms: ${scene.length} draws in the scene, ${(triangles / 1000).toFixed(0)}k triangles; as many in the mirror, ${(mirrored / 1000).toFixed(0)}k`);
-  for (const [level, { trees, cards }] of mall.counts.entries()) console.log(`  crowns' level ${level}: ${trees} trees of ${cards} cards`);
-  check(triangles < TRIANGLE_BOUND, `the grounds under ${TRIANGLE_BOUND / 1000}k triangles (${(triangles / 1000).toFixed(0)}k)`);
-  check(mirrored < MIRROR_SHARE * triangles, `the mirror's under ${Math.round(100 * MIRROR_SHARE)}% of them (${(100 * mirrored / triangles).toFixed(0)}%)`);
-  check(built < 1500, `built in under 1.5 s (${built.toFixed(0)} ms)`);
-  const sameAs = (other) => mall.meshes.every((mesh, index) => {
-    const one = mesh.geometry.attributes.position.array, theirs = other.meshes[index].geometry.attributes.position.array;
-    return one.length === theirs.length && one.every((value, at) => value === theirs[at]);
-  });
-  check(sameAs(make().mall), 'built twice, the same (one seeded stream)');
-  const staged = createNationalMall({ lighting, environment, mirrorLayer: 2 });
-  await staged.prepare();
-  check(sameAs(staged), 'built a stage a task (prepare), the same');
+  const trianglesOf = (meshes) => meshes.reduce((sum, mesh) => sum + mesh.geometry.index.count / 3, 0);
+  console.log(`  built in ${built.toFixed(1)} ms: ${scene.length} draws in the scene, ${trianglesOf(scene)} triangles; ${mirror.length} in the mirror, ${trianglesOf(mirror)}`);
+  check(trianglesOf(scene) + trianglesOf(mirror) < TRIANGLE_BOUND, `under ${TRIANGLE_BOUND} triangles in all`);
+  // The ground: no triangle's middle over the water, and its corners out to the horizon.
+  const ground = scene[0].geometry, position = ground.attributes.position, index = ground.index.array;
+  let overWater = 0, farthest = 0;
+  for (let corner = 0; corner < index.length; corner += 3) {
+    let x = 0, z = 0;
+    for (let at = 0; at < 3; at++) { x += position.getX(index[corner + at]) / 3; z += position.getZ(index[corner + at]) / 3; farthest = Math.max(farthest, Math.abs(position.getX(index[corner + at])), Math.abs(position.getZ(index[corner + at]))); }
+    if (shoreDistance(x, z) > 0) overWater++;
+  }
+  check(overWater === 0, `the ground leaves the pool open (${overWater} triangles over the water)`);
+  check(farthest >= OUTER_HALF_SIZE, `and reaches the horizon (${farthest} m)`);
 }
 
 console.log(failures.length ? `\n${failures.length} FAILED` : '\nall ok');
