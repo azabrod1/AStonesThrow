@@ -942,7 +942,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   setShoreKind(placeShoreKind());
   setShoreLook(placeShore(placeName));   // the beach and the bed in the place's own ground (SHORE_LOOKS)
   visitor.setPlace(Boolean(PLACES[placeName].visitor));
-  boulders.show(!pooled && !koiPond && !mallHere ? PLACES[placeName].sky : null);
+  boulders.show(!pooled && !koiPond ? PLACES[placeName].sky : null);
   water.setPool(pooled);
   applyGale();
   /** The bed the splash's drops see (src/splash.js setBed): its depth under the patch's middle and its albedo, the pool's tiles, the Koi pond's gravel, the lagoon's coral sand or the lake's sand. */
@@ -1096,8 +1096,8 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   /** The lake's bed, beach and open water, or the pool's basin and deck: the meshes only (applyPlace changes the water). */
   function showScenery(asPool) {
     floor.visible = shore.visible = !asPool;
-    reeds.visible = !asPool && !koiPond && !mallHere && reedsHere;   // the lake's shallows, where the place has them
-    boulders.show(!asPool && !koiPond && !mallHere ? PLACES[placeName].sky : null);   // and a rocky shore's stones (BOULDERS)
+    reeds.visible = !asPool && !koiPond && reedsHere;   // the lake's shallows, where the place has them
+    boulders.show(!asPool && !koiPond ? PLACES[placeName].sky : null);   // and a rocky shore's stones (BOULDERS)
     pool.setVisible(asPool);
     shore.visible = !asPool && !koiPond && !lagoon && !mallHere;
     mallPool.setVisible(!asPool && mallHere);   // the Reflecting Pool's coping and ground, the water stopping at its walls
