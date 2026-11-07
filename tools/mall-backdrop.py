@@ -389,8 +389,8 @@ def fill_gaps(color, alpha, coverage, protected, yields):
     seen twice). Three
     joins (join): the left photograph to its copy, in its last few degrees (its `yield`); the copies, where both are
     land to copy; the right copy to the right photograph, in its first few degrees."""
-    height, width = alpha.shape
-    per_degree = width / 360
+    height, circle = alpha.shape                             # circle: the panorama's columns round the circle
+    per_degree = circle / 360
     covered = coverage >= 0.999
     if covered.all():
         return color, alpha, []
@@ -400,34 +400,34 @@ def fill_gaps(color, alpha, coverage, protected, yields):
     premultiplied = color * alpha[..., None]
     copyable = covered & ~protected
     gaps, column = [], 0
-    while column < w:
+    while column < circle:
         if not covered[column]:
             start = column
-            while column < w and not covered[column]:
+            while column < circle and not covered[column]:
                 column += 1
             gaps.append((start, column))
         column += 1
     def run(column, step):                                   # copyable columns from `column` outward
         count = 0
-        while copyable[(column + step * count) % w] and count < w // 4:
+        while copyable[(column + step * count) % circle] and count < circle // 4:
             count += 1
         return count
     out_color, out_alpha = premultiplied.copy(), alpha.copy()
     slack = int(2 * per_degree)
     for start, end in gaps:
         width = end - start
-        margin_left = min(int(yields[(start - 1) % w] * per_degree), run(start - 1, -1))
-        margin_right = min(int(yields[end % w] * per_degree), run(end, 1))
+        margin_left = min(int(yields[(start - 1) % circle] * per_degree), run(start - 1, -1))
+        margin_right = min(int(yields[end % circle] * per_degree), run(end, 1))
         available_left, available_right = run(start - 1, -1), run(end, 1)
         # Each copy's source: of the offsets its side's land allows (together reaching across the gap, so the copies
         # meet), the one whose land best matches the photograph's where the two are joined (image quilting's choice of
         # patch), so the copy's treeline carries on the photograph's. The side with less land to copy chooses first.
         def best_reach(side, margin, available, least):
             high = max(available - margin, least + 1)
-            joined = np.arange(start - margin, start) % w if side < 0 else np.arange(end, end + margin) % w
+            joined = np.arange(start - margin, start) % circle if side < 0 else np.arange(end, end + margin) % circle
             here = alpha[:, joined]
             stride = max(1, int(per_degree / 4))
-            errors = [np.abs(alpha[:, (joined + side * reach) % w] - here).sum() for reach in range(least, high, stride)]
+            errors = [np.abs(alpha[:, (joined + side * reach) % circle] - here).sum() for reach in range(least, high, stride)]
             return least + int(np.argmin(errors)) * stride
         room_left, room_right = available_left - margin_left, available_right - margin_right
         if room_left <= room_right:
@@ -436,7 +436,7 @@ def fill_gaps(color, alpha, coverage, protected, yields):
         else:
             reach_right = best_reach(1, margin_right, available_right, max(slack, width + 2 * slack - room_left))
             reach_left = best_reach(-1, margin_left, available_left, max(slack, width + 2 * slack - reach_right))
-        columns = np.arange(start - margin_left, end + margin_right) % w
+        columns = np.arange(start - margin_left, end + margin_right) % circle
         span = len(columns)
         # The middle join where both copies are copyable land: left's source before the gap, right's after it.
         seam_low = max(margin_left, margin_left + width + slack - reach_right)
@@ -444,8 +444,8 @@ def fill_gaps(color, alpha, coverage, protected, yields):
         if seam_high < seam_low:
             seam_low = seam_high = margin_left + width // 2
         photo_color, photo_alpha = premultiplied[:, columns], alpha[:, columns]
-        from_left = (columns - reach_left) % w
-        from_right = (columns + reach_right) % w
+        from_left = (columns - reach_left) % circle
+        from_right = (columns + reach_right) % circle
         left_color, left_alpha = premultiplied[:, from_left], alpha[:, from_left]
         right_color, right_alpha = premultiplied[:, from_right], alpha[:, from_right]
         first = join(photo_color, photo_alpha, left_color, left_alpha, 0, max(margin_left, 2), per_degree)
@@ -457,7 +457,7 @@ def fill_gaps(color, alpha, coverage, protected, yields):
         out_color[:, columns] = photo_color * (1 - into)[..., None] + fill_color * into[..., None]
         out_alpha[:, columns] = photo_alpha * (1 - into) + fill_alpha * into
     color = out_color / np.maximum(out_alpha[..., None], 1e-6)
-    found = [(((start + shift) % width) / width * 360, (end - start) / width * 360) for start, end in gaps]
+    found = [(((start + shift) % circle) / circle * 360, (end - start) / circle * 360) for start, end in gaps]
     return np.roll(color, shift, 1), np.roll(out_alpha, shift, 1), found
 
 
