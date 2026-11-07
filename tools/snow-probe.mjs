@@ -24,8 +24,11 @@
 //   horizon (flakes a pixel column crosses beyond the near box);
 // - the far flakes interleaved with the near at FAR.flakes, whatever share
 //   of the instances a quality preset draws;
-// - the cost of the CPU's part, the uniforms a frame.
+// - the cost of the CPU's part, the uniforms a frame: under 20 µs of the
+//   main thread's time (tools/cost-clock.mjs: not the time spent waiting for
+//   a core beside other probes).
 import { SNOW, FAR, STREAK_SECONDS, STREAK_MIN_PIXELS, GUST_SHARE, flakeAt, flakeDrawn, flakeAttributes, farFlags, farBox, instancesOf, flakeSpeed, clockOffsets } from '../src/snow.js';
+import { costClock, costSince } from './cost-clock.mjs';
 
 const failures = [];
 function check(condition, message) { console.log(`${condition ? 'ok  ' : 'FAIL'} ${message}`); if (!condition) failures.push(message); }
@@ -183,9 +186,9 @@ const camera = new THREE.PerspectiveCamera(50, 16 / 9, 0.05, 1000);
 camera.updateProjectionMatrix();
 const resolution = new THREE.Vector2(1920, 1080);
 const frames = 20000;
-const started = performance.now();
+const started = costClock();
 for (let frame = 0; frame < frames; frame++) snow.update(frame / 60, camera, resolution);
-const microseconds = (performance.now() - started) * 1000 / frames;
+const microseconds = costSince(started) * 1000 / frames;
 console.log(`\nSnow.update: ${microseconds.toFixed(2)} µs a frame; one draw of ${snow.count} instanced quads, near and far (${snow.count * 2} triangles)`);
 check(microseconds < 20, `the snow costs the CPU under 20 µs a frame (${microseconds.toFixed(2)})`);
 

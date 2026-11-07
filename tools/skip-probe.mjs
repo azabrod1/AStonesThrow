@@ -49,7 +49,11 @@
 //     changes by under STEP_TOLERANCE of its length, and with the frame's
 //     substeps halved by under SUBSTEP_TOLERANCE (a contact's end carries
 //     the rest of its substep on into the air);
-//   - a contact costs under CONTACT_BUDGET milliseconds on average.
+//   - a contact costs under CONTACT_BUDGET milliseconds on average, of the
+//     main thread's time (tools/cost-clock.mjs: not the time spent waiting
+//     for a core, which now and then put a whole slice in one contact; with
+//     other work running in the container the wall clock read the average
+//     at 0.7 ms where it costs 0.13).
 // Throw i of a set is seeded as the shoot harness seeds a page (Park–Miller
 // from seed + i, just before the throw), so a run repeats exactly.
 //
@@ -62,6 +66,7 @@ import { SplashSystem } from '../src/splash.js';
 import { Rock, aimSkip, skipSpeed, SKIM, SKIP_THROW } from '../src/rock.js';
 import { holdInPool, poolGround, poolInside, POOL } from '../src/pool.js';
 import { floorDepthAt } from '../src/pondFloor.js';
+import { costClock, costSince } from './cost-clock.mjs';
 
 const option = (name, fallback) => { const hit = process.argv.find((argument) => argument.startsWith(`--${name}=`)); return hit ? hit.slice(name.length + 3) : fallback; };
 const throwCount = Number(process.argv.slice(2).find((argument) => !argument.startsWith('--')) ?? 60);
@@ -155,17 +160,17 @@ function runThrow(radius, power, seed, pooled = false) {
   const result = { seed, tilt, touches: [], hops: [], heights: [], entry: null, contactMs: [], frameMs: [], rested: false, failures: [] };
   let lastExit = null, highest = 0;
   for (let frame = 0; frame < LONGEST_THROW * 60; frame++) {
-    const started = performance.now();
+    const started = costClock();
     splash.setFrameSeconds(FRAME);
     for (let substep = 0; substep < substeps; substep++) {
-      const before = performance.now();
+      const before = costClock();
       const event = rock.update(FRAME / substeps, pooled ? POOL.depth : bedDepth);
       if (pooled) {
         holdInPool(rock, POOL_SQUARE);
         if (!insidePool(rock.position.x, rock.position.z) && rock.position.y - rock.ellipsoidDepth() < POOL.deck - 0.01) underDeck = true;
       }
       if (event && !firstWater) firstWater = { x: event.x, z: event.z };
-      const spent = performance.now() - before;
+      const spent = costSince(before);
       if (lastExit && rock.state === 'air') highest = Math.max(highest, rock.position.y);
       if (event) turnOf(event.velocity);
       if (event?.skim) {
@@ -193,7 +198,7 @@ function runThrow(radius, power, seed, pooled = false) {
       splash.update(FRAME / substeps, water);
     }
     splash.prepareFrame();
-    result.frameMs.push(performance.now() - started);
+    result.frameMs.push(costSince(started));
     for (let index = 0; index < splash.count * 3; index++) if (!Number.isFinite(splash.positions[index])) { result.failures.push('a drop went to NaN'); break; }
     if (rock.state === 'rest' && !splash.inMotion) { result.rested = true; break; }
   }

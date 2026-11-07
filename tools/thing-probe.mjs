@@ -124,6 +124,9 @@
 //   - held things stay at the hand without an impact, release from rest,
 //     float or sink from their new position, and can be lifted and dropped
 //     again; picking's apparent/physical water positions round-trip.
+// Both costs (FIXED_THROW_MS, STEP_COST_MS) are the main thread's time
+// (tools/cost-clock.mjs), not the time the probe waited for a core beside
+// others.
 //
 //   node tools/thing-probe.mjs
 import * as THREE from 'three';
@@ -135,6 +138,7 @@ import { collideThings } from '../src/collide.js';
 import { SplashSystem } from '../src/splash.js';
 import { meshKind, meshVolume, createRosesGeometry } from '../src/thingMeshes.js';
 import { apparentPoint, physicalPoint } from '../src/objectGrab.js';
+import { costClock, costSince } from './cost-clock.mjs';
 
 const GRAVITY = 9.81;
 const STEP = 1 / 240;
@@ -247,9 +251,9 @@ function follow(rock, { seconds = 30, step = STEP, floor = floorDepthAt, pooled 
   for (let time = 0; time < seconds; time += step) {
     const wasAir = rock.state === 'air';
     const before = rock.position.clone(), velocityBefore = rock.velocity.clone();
-    const started = performance.now();
+    const started = costClock();
     const impact = rock.update(step, floor);
-    const spent = performance.now() - started;
+    const spent = costSince(started);
     if (rock.state === 'float') { record.cost += spent; record.floatSteps++; record.stepCosts.push(spent); }
     if (pooled) collideThings([rock], (thing) => holdInPool(thing, POOL_SQUARE));
     record.states.add(rock.state);
@@ -1435,10 +1439,10 @@ console.log('\nThings meeting things (src/collide.js):');
     const measured = thing.measure(thing.slider?.initial);
     const times = [];
     for (let trial = 0; trial < 15; trial++) {
-      const before = performance.now();
+      const before = costClock();
       const rock = new Rock({ radius: thing.byDiameter ? 0.03 : measured.radius, position: new THREE.Vector3(), velocity: new THREE.Vector3(), envTexture: null, thing: name, mass: measured.mass });
       if (thing.air.model === 'flutter') rock.trialFlight();
-      times.push(performance.now() - before);
+      times.push(costSince(before));
       rock.dispose();
     }
     rows.push({ name, least: Math.min(...times), fixed: meshKind(thing.look.mesh).fixed });
