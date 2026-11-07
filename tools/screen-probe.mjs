@@ -86,10 +86,18 @@ async function openPond(options, query = '', before = null) {
   await page.waitForFunction(() => document.getElementById('veil').hidden, undefined, { timeout: patience(10000) }).catch(() => {});
   // The veil's going moves the page a pixel up (src/screen.js refresh, for Safari's bar colour) and a frame or two
   // later back to its foot: what is measured is where it settles.
-  await page.waitForFunction(() => Math.abs(window.scrollY - Math.max(0, document.documentElement.scrollHeight - window.innerHeight)) <= 0.5,
-    undefined, { timeout: patience(5000) }).catch(() => {});
+  await settled(page);
   return { context, page, problems };
 }
+
+/**
+ * Wait (a while, on SwiftShader) until the page lies at its foot: where src/screen.js leaves it once it has laid itself
+ * out (on the event that changed its shape, the resize that may follow it, or the frame after a scroll), and where the
+ * checks after it measure it. CI's browser has measured in between, a pixel short (39 of 40 asked) or with the bleed
+ * not yet given up. A page that never gets there is measured as it is, and fails them.
+ */
+const settled = (page) => page.waitForFunction(() => Math.abs(window.scrollY - Math.max(0, document.documentElement.scrollHeight - window.innerHeight)) <= 0.5,
+  undefined, { timeout: patience(5000) }).catch(() => {});
 
 /** Where the canvas lies and what the pond made of it. */
 const layout = (page) => page.evaluate(() => {
@@ -213,6 +221,7 @@ console.log(`Safari 26 on an iPhone: a ${IPHONE.viewport.width} × ${IPHONE.view
   await page.screenshot({ path: path.join(outputFolder, 'iphone-on-its-side.png') });
   await page.setViewportSize(IPHONE.viewport);
   await page.waitForTimeout(300);
+  await settled(page);
   checkUnderTop('upright again', ISLAND_BLEED, await layout(page));
 
   // Full screen, through the settings (this browser has the API the iPhone lacks).
@@ -234,6 +243,7 @@ console.log(`Safari 26 on an iPhone: a ${IPHONE.viewport.width} × ${IPHONE.view
   check(outOfFullScreen.element === null && outOfFullScreen.value === 'Off', `Off brings it out of full screen, the row saying ${outOfFullScreen.value}`);
   await closeSettings(page);
   await page.waitForTimeout(300);
+  await settled(page);
   checkUnderTop('out of full screen', ISLAND_BLEED, await layout(page));
   check(problems.length === 0, `no page errors${problems.length ? `: ${problems.join('; ')}` : ''}`);
   await context.close();
