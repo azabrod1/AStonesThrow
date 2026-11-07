@@ -970,7 +970,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   function applyGround() {
     // The Pool's deck, wet where drops land; the Reflecting Pool's coping (its walls and ground: src/mallPool.js), which
     // keeps no wet map of its own (only the rain wets it).
-    const ground = pooled ? { square: pool.square, deck: POOL.deck, onWet: (x, z, radius) => pool.wetSpot(x, z, radius) } : mallHere ? { square: MALL_BASIN, deck: MALL_BASIN.deck, onWet: null } : null;
+    const ground = pooled ? { square: pool.square, deck: POOL.deck, onWet: (x, z, radius) => pool.wetSpot(x, z, radius) } : mallHere ? { square: MALL_BASIN, onWet: null } : null;
     splash.setGround(ground);
   }
   applyGround();
@@ -1005,9 +1005,10 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   // walls too.
   const square = water.poolSquare;
   const poolBox = { minX: square.minX, maxX: square.minX + square.size, minZ: square.minZ, maxZ: square.minZ + square.size };
-  const underBox = { minX: poolBox.minX + UNDER_GAP, maxX: poolBox.maxX - UNDER_GAP, minZ: poolBox.minZ + UNDER_GAP, maxZ: poolBox.maxZ - UNDER_GAP };
+  const insideBy = (box, gap) => ({ minX: box.minX + gap, maxX: box.maxX - gap, minZ: box.minZ + gap, maxZ: box.maxZ - gap });
+  const underBox = insideBy(poolBox, UNDER_GAP);
   const outsidePool = (x, z) => Math.max(Math.abs(x - (square.minX + square.size / 2)), Math.abs(z - (square.minZ + square.size / 2))) - square.size / 2;
-  const mallUnderBox = { minX: MALL_BOUNDS.minX + UNDER_GAP, maxX: MALL_BOUNDS.maxX - UNDER_GAP, minZ: MALL_BOUNDS.minZ + UNDER_GAP, maxZ: MALL_BOUNDS.maxZ - UNDER_GAP };
+  const mallUnderBox = insideBy(MALL_BOUNDS, UNDER_GAP);
   const eyeGroundAt = (x, z) => (pooled ? POOL.deck * THREE.MathUtils.smoothstep(outsidePool(x, z), -EYE_EDGE, 0)
     : mallHere ? MALL_BASIN.deck * THREE.MathUtils.smoothstep(-mallShoreDistance(x, z), -EYE_EDGE, 0) : groundHeightAt(x, z));
   // Under a gale the eye keeps GALE_EYE_CLEARANCE clear of the still water

@@ -2197,7 +2197,8 @@ export class SplashSystem {
 
   /**
    * The ground round the water the drops can meet (null: none, the lake):
-   * a pool's `square` and its `deck`'s height (src/pool.js): the Pool's
+   * a pool's `square` and its `deck`'s height (src/pool.js; the square's own
+   * `deck` unless given): the Pool's
    * ({ minX, minZ, size }) or the Reflecting Pool's, a rectangle ({ minX,
    * minZ, sizeX, sizeZ }, src/mallPool.js MALL_BASIN). A drop that
    * meets a wall's side below its top comes back off it (DECK_DROPS.wall of
@@ -2206,7 +2207,7 @@ export class SplashSystem {
    * radius)` marks the paving wet where it fell.
    */
   setGround(ground) {
-    this.ground = ground;
+    this.ground = ground ? { ...ground, deck: ground.deck ?? ground.square.deck } : null;
     const square = ground?.square;
     const inset = DECK_DROPS.wallInset;
     this.groundBox = square ? { maxX: square.minX + (square.sizeX ?? square.size), maxZ: square.minZ + (square.sizeZ ?? square.size) } : null;
