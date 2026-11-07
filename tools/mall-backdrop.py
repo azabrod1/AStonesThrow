@@ -28,6 +28,9 @@ Memorial floodlit after sunset. Each may name
   keep        boxes whose white or brightness is land, not sky (the marble, the floodlit memorial);
   solid       polygons that are land whatever their colour: a landmark traced by hand where marble meets sky;
   clean       boxes of steps and terraces whose people are taken off them (clean_rows);
+  fill        boxes of a colonnade's floor whose people are taken off it, each filled from the stone above, or from the
+              row a fifth number names (fill_down);
+  clone       boxes copied from a place chosen by hand ([x0, y0, x1, y1, dx, dy]): people where no row is alike (clone_boxes);
   trees       boxes of its trees, which the elms are matched to when it is an hour's reference;
   paint       lines to paint out ([[x, y], ...], width as a share of the width): a pole across the trees;
   protect     spans of its width (from, to) never copied into a gap: a landmark is never seen twice;
@@ -67,8 +70,11 @@ reference photograph's sky has the median `skyMedian`, or matches the hour's sky
 
 Writes assets/sky/<file>_2k.hdr for each hour (the dome's photo: run tools/sky-probe.mjs, with the hour's `taken`,
 and tools/sky-encode.mjs on it) and assets/sky/<file>_8k.hdr (the horizon strip's source, gitignored as Poly
-Haven's are: sky-encode cuts the strip from it), and --preview a tone-mapped look at both and eight views from the
-eye, an hour's in a folder of its own. --hour builds only the hours named.
+Haven's are: sky-encode cuts the strip from it), and assets/sky/<file>_insets.hdr (gitignored too: sky-encode makes the
+page's _insets.jpg from it), the landmarks drawn sharper for close views: the sky's `insets` (src/sky.js, which lays
+out their atlas), each window composed again from its photographs worked at the width that gives its pixels a degree,
+up to their own (compose_inset). --preview gives a tone-mapped look at them all and eight views from the eye, an
+hour's in a folder of its own. --hour builds only the hours named.
 
     python3 tools/mall-backdrop.py [--hour=sunset,night] [--preview=shots/mall-backdrop]
 
@@ -76,7 +82,7 @@ The photographs are downloaded once into tools/.mall-photos/ (gitignored). Needs
 Azimuths here are degrees from north toward east (the file's left edge is north, east a quarter across), as
 the Radiance file's own columns run (tools/sky-probe.mjs: azimuth 360·u, turning right).
 """
-import json, math, os, sys, time, urllib.parse, urllib.request
+import json, math, os, subprocess, sys, time, urllib.parse, urllib.request, warnings
 import numpy as np
 from PIL import Image
 from scipy import ndimage
@@ -91,7 +97,12 @@ BAND = (-6.0, 32.0)        # degrees: the elevations land can reach (the rest is
 KEYED = {}                 # the elm cards, keyed once for every hour
 SOLID_RIM = 10             # pixels: a traced edge keyed against the sky beside it this far in (land_matte)
 HEDGE = 0.2                # degrees: the land at the horizon reaches this high wherever no tree stands (compose_over_elms)
-CLEAN_SPAN = 0.03          # a share of the photograph's width: clean_rows's median, wider than a group of people
+CLEAN_SPAN = 0.08          # a share of the photograph's width: clean_rows's median, wider than a crowd on a step
+CLEAN_ODD = 0.045          # what differs from its row's median by this much (sRGB) may be people: dark clothes against a
+                           # dark wall differ by 0.05 (clean_rows)
+CLEAN_STRIP = 0.004        # a share of its width: clean_rows clones people over in strips this wide (clone_along)
+CLEAN_TALL = 0.004         # a share of its height: what is odd for less than this, upright, is a step's edge (a riser is
+                           # 0.003 tall in the Memorial's photograph, a person sitting 0.005), not people (clean_rows)
 CLEAR_FADE = 0.03          # an elm card's crown fades out over this share of its photograph's height above its `clear` line
 SUBJECT = 1e-3             # a layer's share subject to the backlight, carried as a fourth colour channel this small (so
                            # the gap fill's cuts, which weigh every channel, never notice it)
@@ -251,11 +262,19 @@ def linear_to_srgb(linear):
 
 
 def load_photo(spec):
+    """The photograph at its working width (`work`, WORK_WIDTH unless an inset's: work_width), never above its own; and
+    how many times WORK_WIDTH's resolution that is, which the matte's pixel sizes scale by."""
     image = Image.open(commons_file(spec['commons'])).convert('RGB')
-    scale = WORK_WIDTH / image.width
-    if scale < 1:
-        image = image.resize((WORK_WIDTH, round(image.height * scale)), Image.LANCZOS)
-    return np.asarray(image, np.float32) / 255
+    native = image.width
+    width = min(spec.get('work', WORK_WIDTH), native)
+    if width < native:
+        image = image.resize((width, round(image.height * width / native)), Image.LANCZOS)
+    return np.asarray(image, np.float32) / 255, width / min(WORK_WIDTH, native)
+
+
+def work_width(spec, per_degree):
+    """The width at which a photograph gives `per_degree` pixels a degree at its centre (an inset's: compose_inset)."""
+    return math.ceil(per_degree * 180 / math.pi * 2 * math.tan(math.radians(spec['hfov']) / 2))
 
 
 def paint_out(photo, lines):
@@ -276,29 +295,127 @@ def paint_out(photo, lines):
     return photo
 
 
-def clean_rows(photo, boxes):
-    """People taken off steps and terraces (`clean`: boxes, shares of the photograph): what runs along a step is alike
-    along its row, so each pixel is compared with its row's median over CLEAN_SPAN of the width about it, and where
-    it differs (a person, or their shadow) it, and a few pixels round it, take that median: the step without them.
-    Never across anything upright that belongs there (a box stops short of it)."""
+def fill_down(photo, boxes):
+    """People taken off a colonnade's floor (`fill`: boxes, shares of the photograph): each box takes the band of the
+    same height just above it, or from the row a fifth number names (higher, past the shadows people cast on the wall
+    under a floodlight), where everything (the columns, the walls between them, the doorways) runs straight up and
+    down, so what stands on the floor is gone and the stone behind it lines up. A band from higher up is brought to
+    the light at the box's own height, column by column (a floodlit wall is brighter low down). Never under anything
+    that ends above it (a plaque: a box stops short of it)."""
+    height, width = photo.shape[:2]
+    for box in boxes:
+        x0, y0, x1, y1 = box[:4]
+        top, bottom, columns = int(y0 * height), int(y1 * height), slice(int(x0 * width), int(x1 * width))
+        source = int(box[4] * height) if len(box) > 4 else 2 * top - bottom
+        band = photo[source:source + bottom - top, columns].copy()
+        if source != 2 * top - bottom:
+            here, there = photo[top - 3:top, columns].mean(0), photo[source - 3:source, columns].mean(0)
+            gain = ndimage.gaussian_filter1d(here, 8, axis=0) / np.maximum(ndimage.gaussian_filter1d(there, 8, axis=0), 1e-4)
+            band *= gain[None]
+        photo[top:bottom, columns] = band
+    return photo
+
+
+def step_slope(lum, top, bottom, left, right):
+    """The slope (rows a column) along which the steps in a box of the photograph's luminance `lum` run: the photograph
+    is taken at an angle, so its steps' edges slant, and along the wrong line a clone lands a row or two off. Read
+    from the box's gradients as a structure tensor reads an orientation: for edges along y = s·x, the x gradient is
+    −s times the y gradient, so s = −Σ gx·gy / Σ gy², over the strongest edges that run nearly level (a person's
+    outline, mostly upright, left out)."""
+    rows, columns = slice(top, bottom), slice(left, right)
+    across, down = ndimage.sobel(lum, 1)[rows, columns], ndimage.sobel(lum, 0)[rows, columns]
+    level = (np.abs(down) > 3 * np.abs(across)) & (np.abs(down) > np.percentile(np.abs(down), 70))
+    return float(-(across * down)[level].sum() / max((down * down)[level].sum(), 1e-9))
+
+
+def clone_along(sheared, found, fallback, strip):
+    """Each blob of `found` (people, in a box sheared so its steps run along its rows) cloned over from beside it along
+    its rows, as a compositor's clone stamp, in upright strips at most `strip` pixels wide: each strip from the nearest
+    offset, either side, whose pixels hold no one, so the steps' edges and the stone's grain go on through it. A strip
+    with no clear source anywhere along its rows takes `fallback`."""
+    out = sheared.copy()
+    labels, _ = ndimage.label(found)
+    columns = sheared.shape[1]
+    for index, (rows, across) in enumerate(ndimage.find_objects(labels), 1):
+        for start in range(across.start, across.stop, strip):
+            part = slice(start, min(start + strip, across.stop))
+            blob = labels[rows, part] == index
+            if not blob.any():
+                continue
+            width = part.stop - part.start
+            for distance in range(width + 1, columns):
+                source = next((offset for offset in (distance, -distance) if 0 <= part.start + offset and part.stop + offset <= columns
+                               and found[rows, part.start + offset:part.stop + offset][blob].mean() < 0.02), None)
+                if source is not None:
+                    out[rows, part][blob] = sheared[rows, part.start + source:part.stop + source][blob]
+                    break
+            else:
+                out[rows, part][blob] = fallback[rows, part][blob]
+    return out
+
+
+def clone_boxes(photo, clones, resolution=1.0):
+    """What no row's steps can take (people in front of a hedge): each box of `clone` ([x0, y0, x1, y1, dx, dy], shares
+    of the photograph) copied from the place `dx`, `dy` away, as a compositor's clone stamp with its source chosen by
+    hand, its edges feathered over a few pixels."""
+    height, width = photo.shape[:2]
+    source = photo.copy()
+    for x0, y0, x1, y1, dx, dy in clones:
+        top, bottom, left, right = int(y0 * height), int(y1 * height), int(x0 * width), int(x1 * width)
+        shift_down, shift_across = int(round(dy * height)), int(round(dx * width))
+        feather = max(1.0, 2 * resolution)
+        inside = np.zeros((bottom - top, right - left), np.float32)
+        inside[int(feather):-int(feather) or None, int(feather):-int(feather) or None] = 1
+        share = ndimage.gaussian_filter(inside, feather)[..., None]
+        copied = source[top + shift_down:bottom + shift_down, left + shift_across:right + shift_across]
+        photo[top:bottom, left:right] = photo[top:bottom, left:right] * (1 - share) + copied * share
+    return photo
+
+
+def clean_rows(photo, boxes, resolution=1.0):
+    """People taken off steps and terraces (`clean`: boxes, shares of the photograph). What runs along a step is alike
+    along it, so the box is first sheared to its steps' slope (step_slope), and each pixel compared with its sheared
+    row's median over CLEAN_SPAN of the width about it; where it differs (a person, or their shadow) it, and a few
+    pixels round it, are taken for people, and cloned over from beside them along the step, in strips (clone_along), sheared
+    back. Nothing else changes, so a box's edges never show. Never across anything upright that belongs there (a box
+    stops short of it). Its pixel sizes are WORK_WIDTH's, times `resolution` for a photograph worked finer (an
+    inset's)."""
     height, width = photo.shape[:2]
     span = max(3, int(CLEAN_SPAN * width)) | 1
+    tall = np.ones((max(5, int(CLEAN_TALL * height)), 1), bool)
+    grow = max(1, round(3 * resolution))
+    lum = luminance(photo)
+    def sample(image, down, across):
+        return np.stack([ndimage.map_coordinates(image[..., channel], [down, across], order=1, mode='nearest') for channel in range(image.shape[-1])], -1)
     for x0, y0, x1, y1 in boxes:
-        rows, columns = slice(int(y0 * height), int(y1 * height)), slice(int(x0 * width), int(x1 * width))
-        region = photo[rows, columns]
-        median = ndimage.median_filter(region, size=(1, span, 1), mode='reflect')
-        odd = np.abs(region - median).max(-1) > 0.07
-        # Only what stands upright: a step running a little off the row differs from its median along a thin
-        # line, a person in a blob several pixels tall, so the lines are opened away (a vertical element).
-        upright = ndimage.binary_opening(odd, structure=np.ones((max(5, int(0.0025 * height)), 1), bool))
-        odd = ndimage.binary_dilation(upright, iterations=3)
-        photo[rows, columns] = np.where(odd[..., None], median, region)
+        top, bottom, left, right = int(y0 * height), int(y1 * height), int(x0 * width), int(x1 * width)
+        region = photo[top:bottom, left:right]
+        rows, columns = region.shape[:2]
+        slope = step_slope(lum, top, bottom, left, right)
+        # The sheared box: row r at column c is the photograph's row top + r + slope·(c − the middle), padded so that
+        # every pixel of the box has its sheared row. A clone comes only from inside the box (past it may be trees).
+        pad = int(math.ceil(abs(slope) * columns / 2)) + 1
+        down, across = np.mgrid[-pad:rows + pad, 0:columns].astype(np.float32)
+        sheared = sample(photo, top + down + slope * (across - columns / 2), left + across)
+        median = ndimage.median_filter(sheared, size=(1, span, 1), mode='reflect')
+        # Only what stands upright: a step's edge a little off its row differs from its median along a line under
+        # CLEAN_TALL, a person in a blob taller, so the lines are opened away (a vertical element).
+        odd = np.abs(sheared - median).max(-1) > CLEAN_ODD
+        found = ndimage.binary_dilation(ndimage.binary_opening(odd, structure=tall), iterations=grow)
+        cloned = clone_along(sheared, found, median, max(4, int(CLEAN_STRIP * width)))
+        # Back: the box's pixel (y, c) is the sheared (y − slope·(c − the middle) + pad, c).
+        box_down, box_across = np.mgrid[0:rows, 0:columns].astype(np.float32)
+        back = [box_down - slope * (box_across - columns / 2) + pad, box_across]
+        share = ndimage.map_coordinates(found.astype(np.float32), back, order=1, mode='nearest')[..., None]
+        photo[top:bottom, left:right] = region * (1 - share) + sample(cloned, *back) * share
     return photo
 
 
 def land_matte(photo, spec):
-    """Land (1) against sky (0) above the far shore (`cut`); below it land, the far shore carried down."""
+    """Land (1) against sky (0) above the far shore (`cut`); below it land, the far shore carried down. Its pixel sizes
+    are WORK_WIDTH's, times the spec's `resolution` for a photograph worked finer (an inset's: load_photo)."""
     height, width = photo.shape[:2]
+    resolution = spec.get('resolution', 1.0)
     ys = (np.arange(height) + 0.5) / height
     xs = (np.arange(width) + 0.5) / width
     cut = np.interp(xs, *zip(*spec['cut']))
@@ -325,7 +442,7 @@ def land_matte(photo, spec):
     if 'sky_above' in spec:
         rows = int(spec['sky_above'] * height)
         sky[:rows] |= skylike[:rows]
-    sky = ndimage.binary_opening(sky, iterations=1)
+    sky = ndimage.binary_opening(sky, iterations=max(1, round(resolution)))
     land = above & ~sky
     # What floats in the sky (a kite, a bird) is not land: keep only land joined to the far shore.
     labels, _ = ndimage.label(land)
@@ -336,11 +453,11 @@ def land_matte(photo, spec):
     # sky edges the stone: each pixel there keyed against the sky just outside it (clean_plate, from the sky the
     # matte found), as much stone as it differs from that sky.
     if solid.any():
-        rim = (solid > 0) & ~ndimage.binary_erosion(solid > 0.99, iterations=SOLID_RIM)
-        plate = clean_plate(photo, sky & (solid == 0), shrink=2)
+        rim = (solid > 0) & ~ndimage.binary_erosion(solid > 0.99, iterations=round(SOLID_RIM * resolution))
+        plate = clean_plate(photo, sky & (solid == 0), shrink=max(2, round(2 * resolution)))
         differs = np.clip((np.abs(photo - plate).max(-1) - 0.03) / 0.07, 0, 1)
         solid = np.where(rim, solid * differs, solid)
-    return np.maximum(np.clip(ndimage.gaussian_filter(land.astype(np.float32), 0.7), 0, 1), solid), cut
+    return np.maximum(np.clip(ndimage.gaussian_filter(land.astype(np.float32), 0.7 * resolution), 0, 1), solid), cut
 
 
 def carry_shore_down(photo, cut):
@@ -389,25 +506,25 @@ def match_tree(linear, mine, reference, theirs, tint):
     return np.clip(out, 0, None)
 
 
-def color_match(linear, land, reference, reference_land, shared=False):
+def color_match(linear, land, reference, reference_land, shared=False, fit=None):
     """Each channel's land matched to the reference's (both above their far shores), its mean and spread in log light
     (as an exposure and a contrast: never below black, as a match in linear light would push the shadows). `shared`:
     one contrast for all three, the luminance's, each channel keeping its own mean, so a highlight (a gap in a canopy,
-    sky-coloured) keeps its hue rather than being stretched to a false one."""
-    out = linear.copy()
-    if shared:
+    sky-coloured) keeps its hue rather than being stretched to a false one. Returns the matched colour and the match,
+    each channel's contrast and offset in log light, which `fit` gives instead of fitting (an inset's: the panorama's
+    own, so the photograph worked finer is graded exactly as it was)."""
+    if fit is None:
+        contrasts, offsets = [], []
         mine_lum, theirs_lum = np.log(luminance(linear) + 1e-4), np.log(luminance(reference) + 1e-4)
         ratio = theirs_lum[reference_land].std() / max(mine_lum[land].std(), 1e-6)
         for channel in range(3):
             mine, theirs = np.log(linear[..., channel] + 1e-4), np.log(reference[..., channel] + 1e-4)
-            out[..., channel] = np.exp((mine - mine[land].mean()) * ratio + theirs[reference_land].mean()) - 1e-4
-        return np.clip(out, 0, None)
-    for channel in range(3):
-        mine, theirs = np.log(linear[..., channel] + 1e-4), np.log(reference[..., channel] + 1e-4)
-        mean, spread = mine[land].mean(), mine[land].std()
-        target_mean, target_spread = theirs[reference_land].mean(), theirs[reference_land].std()
-        out[..., channel] = np.exp((mine - mean) * (target_spread / max(spread, 1e-6)) + target_mean) - 1e-4
-    return np.clip(out, 0, None)
+            contrast = ratio if shared else theirs[reference_land].std() / max(mine[land].std(), 1e-6)
+            contrasts.append(contrast)
+            offsets.append(theirs[reference_land].mean() - mine[land].mean() * contrast)
+        fit = (contrasts, offsets)
+    out = np.stack([np.exp(np.log(linear[..., channel] + 1e-4) * fit[0][channel] + fit[1][channel]) - 1e-4 for channel in range(3)], -1)
+    return np.clip(out, 0, None).astype(np.float32), fit
 
 
 def project(rgba, spec, dirs):
@@ -588,7 +705,7 @@ def key_elm(spec):
     Inside its `keep` polygons (its trunk, and crown hanging below `clear` in front of other things) it is tree, but for
     what is bright and grey there (a white house or the sky). Returns its straight colour, its matte, where its trunk
     meets the ground (`base`, pixels) and how many pixels its height is (to `top`)."""
-    photo = load_photo(spec)
+    photo, _ = load_photo(spec)
     if spec.get('paint'):
         photo = paint_out(photo, spec['paint'])
     height, width = photo.shape[:2]
@@ -754,12 +871,17 @@ def adjust(linear, settings):
 
 
 def prepare_photo(spec):
-    """A photograph loaded, painted, cropped, its land matted (or its `shape`, for an `over` layer) and made linear."""
-    photo = load_photo(spec)
+    """A photograph loaded, painted, its people taken off, cropped, its land matted (or its `shape`, for an `over` layer) and made linear."""
+    photo, resolution = load_photo(spec)
+    spec = {**spec, 'resolution': resolution}
     if spec.get('paint'):
         photo = paint_out(photo, spec['paint'])
     if spec.get('clean'):
-        photo = clean_rows(photo, spec['clean'])
+        photo = clean_rows(photo, spec['clean'], resolution)
+    if spec.get('clone'):
+        photo = clone_boxes(photo, spec['clone'], resolution)
+    if spec.get('fill'):
+        photo = fill_down(photo, spec['fill'])   # after: someone sitting across both is whole when clean_rows looks
     crop = spec.get('crop', [0, 1])
     if crop != [0, 1]:
         width = photo.shape[1]
@@ -792,17 +914,24 @@ def backlight(dirs, settings, sun_azimuth):
     return 1 - (1 - settings['factor']) * toward, settings.get('desaturate', 0.5) * toward
 
 
-def prepare(plan, hour):
+def prepare(plan, hour, per_degree=None, fits=None):
     """An hour's layers (`layers`: a photograph of `photos` by name, with what the layer changes of it), each matched to
     the hour's `reference` photograph (its first layer's unless named): its land's colour in log light (color_match),
     unless the layer is the reference or says `match: false`; then its own `adjust`. Returns the base layers, the
-    `over` layers (laid on top of everything, inside their `shape`) and the reference."""
+    `over` layers (laid on top of everything, inside their `shape`), the reference and the elm cards. For an inset
+    (`per_degree`), each photograph worked at the width that gives it that many pixels a degree (work_width), and no
+    cards (an inset is all landmark: compose_inset). Each layer's colour match is kept in `fits`, and taken from it
+    when it is there (an inset's: the panorama's own matches, not refitted to its finer photographs)."""
+    fits = {} if fits is None else fits
     reference_name = hour.get('reference', hour['layers'][0]['photo'])
     cache = {}
     def photo(name, overrides=None):
         key = (name, json.dumps(overrides or {}, sort_keys=True))
         if key not in cache:
-            cache[key] = prepare_photo({**plan['photos'][name], **(overrides or {})})
+            spec = {**plan['photos'][name], **(overrides or {})}
+            if per_degree:
+                spec['work'] = work_width(spec, per_degree)
+            cache[key] = prepare_photo(spec)
         return cache[key]
     reference = photo(reference_name)
     # What is matched: the land above each far shore, with one contrast for its three channels; or, the morning as it
@@ -810,23 +939,26 @@ def prepare(plan, hour):
     # photographs toward the home view's lawn) and each channel its own contrast (`matchContrast: channels`).
     land = (lambda entry: entry['matte'] > 0.9) if hour.get('matchWhole') else above_shore
     base, over = [], []
-    for layer in hour['layers']:
+    for index, layer in enumerate(hour['layers']):
         overrides = {key: value for key, value in layer.items() if key not in ('photo', 'match', 'adjust')}
         entry = dict(photo(layer['photo'], overrides))
         matched = layer['photo'] != reference_name and layer.get('match', True)
         if matched:
             arguments = (entry['linear'], land(entry), reference['linear'], land(reference))
+            def match(shared, kind):
+                graded, fits[(index, kind)] = color_match(*arguments, shared=shared, fit=fits.get((index, kind)))
+                return graded
             if hour.get('matchContrast') != 'channels':
-                entry['linear'] = color_match(*arguments, shared=True)
+                entry['linear'] = match(True, 'shared')
             else:
-                graded = color_match(*arguments)
+                graded = match(False, 'channels')
                 if 'keepHue' in hour:
                     # Each channel its own contrast gives sunlit leaves the reference's gold, but stretches the sky in
                     # a canopy's gaps and at its edges (the brightest of a tree) to a false pink: there (`keepHue`: from
                     # what luminance to what, easing in) the shared contrast, which keeps its hue.
                     low, high = hour['keepHue']
                     gap = np.clip((luminance(entry['photo']) - low) / (high - low), 0, 1)
-                    graded = graded + (color_match(*arguments, shared=True) - graded) * gap[..., None]
+                    graded = graded + (match(True, 'shared') - graded) * gap[..., None]
                 entry['linear'] = graded
         if 'adjust' in layer:
             entry['linear'] = adjust(entry['linear'], layer['adjust'])
@@ -844,7 +976,7 @@ def prepare(plan, hour):
             entry['matte'] = entry['matte'] * (1 - bright * grey * clear)
         (over if entry['spec'].get('over') else base).append(entry)
     cards = {}
-    for name, spec in plan.get('elms', {}).get('cards', {}).items():
+    for name, spec in ({} if per_degree else plan.get('elms', {}).get('cards', {})).items():
         if name not in KEYED:
             KEYED[name] = key_elm(spec)
         card = dict(KEYED[name])
@@ -966,11 +1098,11 @@ def compose(photos, over, sky, light, width, rows=None, elms=None):
     return finish(color, alpha, None, sky, light, dirs), gaps
 
 
-def lay_over(over, color, alpha, haze, dirs, width, horizon_row):
+def lay_over(over, color, alpha, haze, dirs, width, horizon_row, inset=False):
     # The `over` layers, over whatever the others gave: a landmark in another light, inside its `shape`; or a whole
     # photograph (its land and its sky), joined to the rest at each side by image quilting's cut (join) within its
-    # `seam` degrees, where its land and theirs agree best.
-    per_degree = width / 360
+    # `seam` degrees, where its land and theirs agree best. In an `inset` (compose_inset), which lies inside a whole
+    # photograph's joins, that photograph is all there is wherever it reaches.
     for entry in over:
         if 'shape' in entry:
             channels = np.concatenate([entry['linear'], np.zeros_like(entry['shape'])[..., None], entry['shape'][..., None]], -1)
@@ -984,14 +1116,18 @@ def lay_over(over, color, alpha, haze, dirs, width, horizon_row):
         backlit = np.full(entry['matte'].shape, SUBJECT if entry.get('backlit') else 0.0, np.float32)
         channels = np.concatenate([entry['linear'], backlit[..., None], entry['matte'][..., None]], -1)
         sampled, weight = project(channels, {**entry['spec'], 'feather': 1e-3}, dirs)
-        inside = np.flatnonzero(weight[horizon_row] > 0)
-        first, last = int(inside.min()), int(inside.max()) + 1   # (never across north: the photographs placed so)
-        window = int(entry['spec'].get('seam', 4) * per_degree)
         mine_color, mine_alpha = sampled[..., :4] * sampled[..., 4:5], sampled[..., 4]
         theirs_color = color * alpha[..., None]
-        into = join(theirs_color, alpha, mine_color, mine_alpha, first, first + window, per_degree)
-        out_of = join(mine_color, mine_alpha, theirs_color, alpha, last - window, last, per_degree)
-        share = into * (1 - out_of) * (weight > 0)
+        if inset:
+            share = (weight > 0).astype(np.float32)
+        else:
+            per_degree = width / 360
+            inside = np.flatnonzero(weight[horizon_row] > 0)
+            first, last = int(inside.min()), int(inside.max()) + 1   # (never across north: the photographs placed so)
+            window = int(entry['spec'].get('seam', 4) * per_degree)
+            into = join(theirs_color, alpha, mine_color, mine_alpha, first, first + window, per_degree)
+            out_of = join(mine_color, mine_alpha, theirs_color, alpha, last - window, last, per_degree)
+            share = into * (1 - out_of) * (weight > 0)
         premultiplied = theirs_color * (1 - share[..., None]) + mine_color * share[..., None]
         alpha = alpha * (1 - share) + mine_alpha * share
         color = premultiplied / np.maximum(alpha[..., None], 1e-6)
@@ -1043,6 +1179,48 @@ def compose_over_elms(over, sky, light, width, rows, dirs, elms):
     return finish(straight, alpha, haze, sky, light, dirs), []
 
 
+def inset_plan(file):
+    """The hour's insets and their atlas, as the page reads them (src/sky.js `skyInsets`, `insetLayout`)."""
+    script = ("import('./src/sky.js').then(({ skyInsets, insetLayout }) => { const insets = skyInsets(process.argv[1]); "
+              "console.log(JSON.stringify({ insets, layout: insetLayout(insets) })); })")
+    answer = subprocess.run(['node', '--input-type=module', '-e', script, file], cwd=ROOT, capture_output=True, text=True, check=True)
+    return json.loads(answer.stdout)
+
+
+def inset_directions(inset, place):
+    """Unit directions of an inset's texel centres: its `azimuth` span across its place's width, its `elevation` span
+    down its height from the top (the dome's reading of it, src/sky.js DOME_FRAGMENT)."""
+    azimuth = np.radians(inset['azimuth'][0] + (np.arange(place['width']) + 0.5) / place['width'] * (inset['azimuth'][1] - inset['azimuth'][0]))
+    elevation = np.radians(inset['elevation'][1] - (np.arange(place['height']) + 0.5) / place['height'] * (inset['elevation'][1] - inset['elevation'][0]))
+    az, el = np.meshgrid(azimuth, elevation)
+    return np.stack([np.cos(el) * np.sin(az), np.sin(el), np.cos(el) * np.cos(az)], -1).astype(np.float32)
+
+
+def compose_inset(plan, hour, inset, place, sky, light, fits):
+    """One inset of an hour (src/sky.js Insets): its window drawn as the panorama draws it, at the inset's own pixels a
+    degree, from its photographs worked that fine (prepare's `per_degree`). It lies inside a whole `over` photograph's
+    joins (checked), so that photograph is all that shows there under the hour's landmarks (lay_over's `inset`): no
+    elms, no quilting; the hour's sky, light and colour matches are the panorama's (`light` its scale, `fits` its
+    layers' matches: fitted once, so the inset is graded as the strip it lies in)."""
+    per_degree = place['width'] / (inset['azimuth'][1] - inset['azimuth'][0])
+    _, over, _, _ = prepare(plan, hour, per_degree, fits)
+    horizon_row = directions(8192, 4096, np.array([2048]))
+    for entry in over:
+        if 'shape' in entry:
+            continue
+        weight = project(np.zeros((*entry['matte'].shape, 1), np.float32), {**entry['spec'], 'feather': 1e-3}, horizon_row)[1][0]
+        reach = np.flatnonzero(weight > 0) / 8192 * 360
+        seam = entry['spec'].get('seam', 4)
+        low, high = inset['azimuth']
+        if high > reach.min() and low < reach.max() and not (reach.min() + seam <= low and high <= reach.max() - seam):
+            raise ValueError(f"{hour['file']}: the {inset['name']} inset, {low}° to {high}°, crosses the joins of {entry['spec']['commons']} ({reach.min() + seam:.1f}° to {reach.max() - seam:.1f}° inside them)")
+    dirs = inset_directions(inset, place)
+    color = np.zeros((*dirs.shape[:2], 4), np.float32)
+    alpha = np.zeros(dirs.shape[:2], np.float32)
+    color, alpha, haze = lay_over(over, color, alpha, np.zeros_like(alpha), dirs, None, None, inset=True)
+    return finish(color, alpha, haze, sky, light, dirs)
+
+
 def preview(image, path, exposure=1.0):
     mapped = image * exposure
     mapped = mapped / (1 + 0.15 * mapped)
@@ -1083,7 +1261,8 @@ def build(plan, name, hour, out_preview):
         pure = np.maximum(pure - ndimage.median_filter(pure, size=(9, 9, 1)), 0)
     sun_row, sun_column = np.unravel_index(lum.argmax(), lum.shape)
     turn = (sun_column + 0.5) / pure.shape[1] - settings['sunAzimuth'] / 360
-    photos, over, reference, cards = prepare(plan, hour)
+    fits = {}
+    photos, over, reference, cards = prepare(plan, hour, fits=fits)
     elms = None
     if cards:
         # The hour's haze (`elmHaze`, metres; 0 none: at night the trees stand black against the city's glow, whose
@@ -1110,6 +1289,7 @@ def build(plan, name, hour, out_preview):
     sharp, _ = compose(photos, over, sky, light, high, band_rows, elms=elms)
     big[band_rows] = sharp
     write_hdr(os.path.join(ROOT, 'assets', 'sky', f'{file}_8k.hdr'), big.astype(np.float32))
+    folder = None
     if out_preview:
         folder = os.path.join(out_preview, name)
         os.makedirs(folder, exist_ok=True)
@@ -1117,6 +1297,25 @@ def build(plan, name, hour, out_preview):
         preview(image, os.path.join(folder, 'pano.jpg'), level)
         preview(big[band_rows], os.path.join(folder, 'band8k.jpg'), level)
         views(big, os.path.join(folder, 'views.jpg'), level)
+    # The insets (src/sky.js Insets): each window at its own pixels a degree, in its place in one atlas, the rows under a
+    # shorter window its last row's (nothing reads them; a JPEG holds them for nothing). The day's layers are let go
+    # first: an inset's photographs are worked at up to their full size.
+    del photos, over, image, big, sharp
+    insets = inset_plan(file)
+    if insets['insets']:
+        layout = insets['layout']
+        atlas = np.zeros((layout['height'], layout['width'], 3), np.float32)
+        for inset, place in zip(insets['insets'], layout['places']):
+            started = time.time()
+            drawn = compose_inset(plan, hour, inset, place, sky, light, fits)
+            columns = slice(place['x'], place['x'] + place['width'])
+            atlas[place['y']:place['y'] + place['height'], columns] = drawn
+            atlas[place['y'] + place['height']:, columns] = drawn[-1]
+            print(f"  inset {inset['name']}: {place['width']} × {place['height']} ({time.time() - started:.0f} s)")
+        write_hdr(os.path.join(ROOT, 'assets', 'sky', f'{file}_insets.hdr'), atlas)
+        if folder:
+            preview(atlas, os.path.join(folder, 'insets.jpg'), level)
+    if folder:
         print(f'  previews in {folder}')
 
 
