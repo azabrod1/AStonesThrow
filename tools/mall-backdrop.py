@@ -101,8 +101,8 @@ WORK_WIDTH = 3000          # pixels: each photograph is worked at this width (th
 BAND = (-6.0, 32.0)        # degrees: the elevations land can reach (the rest is the pure sky alone)
 KEYED = {}                 # the elm cards, keyed once for every hour
 SOLID_RIM = 10             # pixels: a traced edge keyed against the sky beside it this far in (land_matte)
-KEY_FLOOR = 0.015          # how much more green's share of its colour than its sky's a keyed shape's pixel has, all sky (key_shape)
-KEY_RAMP = 0.035           # and how much more, all landmark
+KEY_FLOOR = 0.02           # how far a keyed shape's pixel's colour balance (each channel's share) lies from its sky's, all sky (key_shape)
+KEY_RAMP = 0.04            # and how much farther, all landmark
 EDGE_BAND = 10             # pixels (WORK_WIDTH's): how far from the sky an hour's `edge` decontaminates a graded layer's land
 EDGE_CONTRAST = 0.25       # how far the land's colour lies from the sky's, as a share of the sky's, for an edge to be decontaminated
 KEY_BAND = 0.04            # of the photograph's width: how far inside its shape's top and sides a pixel is keyed
@@ -707,26 +707,29 @@ def shape_matte(spec, height, width):
 
 def key_shape(photo, shape, cut, spec):
     """An `over` layer's `shape` keyed (`keyed`): inside the loose polygon, above the far shore, each pixel is as much
-    landmark as it differs from the photograph's sky behind it (clean_plate of its sky outside the shape: lighter than
-    `sky_lum`), and its colour is unmixed from that sky, as key_elm's is. So the sky the polygon takes beside a cornice,
-    or between the end columns, falls through to what lies under it, and no sliver of the photograph's sunset edges the
-    stone. Only within KEY_BAND of the shape's edge: the polygon is loose there, and only there. Gives the share and the
-    unmixed photograph."""
+    landmark as its colour differs from the photograph's sky behind it (clean_plate of its sky outside the shape:
+    lighter than `sky_lum`), and its colour is unmixed from that sky, as key_elm's is. So the sky the polygon takes
+    beside a cornice, between the end columns or along an obelisk falls through to what lies under it, and no sliver
+    of the photograph's sky edges the stone. Only within KEY_BAND of the shape's edge: the polygon is loose there, and
+    only there; and never inside its `solid` polygons, a core traced just inside the stone (a shaded face near its
+    sky's colour). Gives the share and the unmixed photograph."""
     height, width = shape.shape
     resolution = spec.get('resolution', 1.0)
     lum = photo @ np.array([0.2126, 0.7152, 0.0722], np.float32)
     above = ((np.arange(height) + 0.5) / height)[:, None] < cut[None, :]
     sky = above & (shape == 0) & (lum > spec['sky_lum'])
     plate = clean_plate(photo, sky, shrink=max(2, round(2 * resolution)))
-    # Floodlit stone and a sunset are both warm, and near in brightness: what tells them apart is green's share of
-    # the colour (a sunset's red and blue without it: about 0.28 against the stone's 0.34 and more). Or the stone is
-    # darker than the sky.
-    greener = photo[..., 1] / np.maximum(photo.sum(-1), 1e-4) - plate[..., 1] / np.maximum(plate.sum(-1), 1e-4)
+    # Stone and sky can be near in brightness (floodlit marble and a sunset are both warm and bright): what tells them
+    # apart is the colour's balance, each channel's share of it (a sunset's green about 0.28 against the floodlit
+    # stone's 0.34; a sunlit obelisk's red against a grey dusk). Or the stone is darker than the sky.
+    balance = lambda color: color / np.maximum(color.sum(-1, keepdims=True), 1e-4)
+    apart = np.sqrt(((balance(photo) - balance(plate)) ** 2).sum(-1))
     darker = plate @ np.array([0.2126, 0.7152, 0.0722], np.float32) - lum
-    differs = np.maximum(np.clip((greener - KEY_FLOOR) / KEY_RAMP, 0, 1), np.clip((darker - 0.1) / 0.15, 0, 1))
+    differs = np.maximum(np.clip((apart - KEY_FLOOR) / KEY_RAMP, 0, 1), np.clip((darker - 0.1) / 0.15, 0, 1))
     # (from its top and sides: its foot meets the land; the middle, the statue's white, kept whole)
     near_edge = ndimage.distance_transform_edt(np.logical_or.accumulate(shape > 0, axis=0)) < KEY_BAND * width
     share = np.where(above & near_edge, differs, 1.0)
+    share = np.maximum(share, polygons_mask(spec.get('solid', []), height, width))   # (a traced core: stone whatever its colour)
     unmixed = np.clip(plate + (photo - plate) / np.maximum(share, 0.05)[..., None], 0, 1)
     return (shape * share).astype(np.float32), np.where(above[..., None], unmixed, photo).astype(np.float32)
 
