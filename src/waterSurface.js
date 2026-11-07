@@ -52,6 +52,11 @@
 // shore (setSheetReach): beyond the land's edge the dome stands on the
 // ground, and water there would show past it, mirroring the photo.
 //
+// Water held in walls of its own (setBounds: the Reflecting Pool's,
+// src/mallPool.js MALL_BOUNDS) stops at them: WATER_VERTEX draws the sheet's
+// vertices outside the walls on their faces, so the ground beyond is the
+// ground's and no water shows past the coping.
+//
 // A frozen lake (src/ice.js, `ice`: its uniforms) is the same surface frozen:
 // the shaders draw the ice where its mask says there is ice and the water in
 // its holes (ICE_COMMON in src/shaders/scene.js), the patch held flat under
