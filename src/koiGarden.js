@@ -35,8 +35,8 @@
 // from the coarse garden's own triangles on the CPU: the ground's occlusion
 // once, whatever the sun (with the garden's build, prepareSome), and the
 // shadows once it is first shown and again for a new sun (setLight; about
-// 16 ms; tools/garden-probe.mjs holds a sun's under 50 and the whole of a
-// first bake, the occlusion too, under 150), and only under its own sky (`ownSky`): the
+// 16 ms; tools/garden-probe.mjs holds a sun's and the whole of a first
+// bake, the occlusion too, to shares of the garden's own build), and only under its own sky (`ownSky`): the
 // next place's sky comes in while the garden is still shown, and the page's
 // first while it waits for one, and neither sun is its. It holds, for each point of the ground
 // plane, the height at which the sun's ray up through it last leaves the
@@ -55,7 +55,9 @@
 // shrub, a few milliseconds a frame while the Koi pond's sky downloads
 // (prepareSome, with the catch table and the ground's occlusion), and what
 // is left the first time it is shown or met (builtGarden), the same steps
-// on the same stream, so the garden is the same however it was built.
+// on the same stream, so the garden is the same however it was built. Once
+// shown, building ahead stops: what is left is built when first met, and
+// going on would build again the fine garden Low let go (letGoOfFine).
 import * as THREE from 'three';
 import { seededRandom } from './spray.js';
 import { KOI_SHORE, koiShoreRadius, koiShoreDistance, koiFloorDepthAt, gardenShadeUniforms } from './pondFloor.js';
@@ -972,9 +974,12 @@ export function createKoiGarden({ envTexture, mirrorLayer, lighting, ownSky = ()
      * at least one; true once all are done. src/main.js requestPlace calls
      * it a few milliseconds a frame while the Koi pond's sky downloads, so
      * no frame pays for the garden's build (about a second on a laptop).
+     * True too once the garden is shown (setVisible built what it needed,
+     * the rest is built when first met): stepping on would build again the
+     * fine garden Low let go (setCoarse, letGoOfFine) and keep it.
      */
     prepareSome(milliseconds) {
-      if (prepared) return true;
+      if (prepared || shown) return true;
       const until = performance.now() + milliseconds;
       do {
         if (preparation.next().done) prepared = true;

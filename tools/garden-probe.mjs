@@ -27,7 +27,9 @@
 //   ahead in steps (prepareSome, as src/main.js does while the Koi pond's
 //   sky downloads), a separate copy of the module, the same garden to the
 //   last corner, its longest step, and showing it then (its shadows alone);
-//   the build itself is held by its triangles; the
+//   the build itself is held by its triangles; on Low, shown before it
+//   was built ahead, building ahead stops (the fine garden it let go is
+//   not built again); the
 //   coarse garden laid out as the fine one (the same shrubs in the same
 //   order and tints, each where the fine one's is), so what is drawn on Low
 //   and in the mirror stands where the fine garden, which catches, does.
@@ -134,6 +136,20 @@ console.log('\nthe planting catches:');
     check(same, 'built ahead in steps, it is the same garden as one built at once, to the last corner');
     check(longest < SHARE_OF_BUILD.step * built, `no step of building it ahead over ${100 * SHARE_OF_BUILD.step}% of the build (the longest ${share(longest, built)})`);
     check(shown < SHARE_OF_BUILD.shown * built, `built ahead, it is shown in under ${100 * SHARE_OF_BUILD.shown}% of the build (${share(shown, built)})`);
+  }
+  {
+    // On Low (setCoarse), its sky come before the build ahead is done (as on a phone): showing it builds what is left
+    // and lets the fine garden go once the catch table is made; src/main.js's slices go on asking while the place's
+    // request stands, and must not build the fine garden again (to be kept, never drawn).
+    const low = await import('../src/koiGarden.js?low');
+    const lowGarden = low.createKoiGarden({ envTexture: null, mirrorLayer: 2, lighting, ownSky: () => true });
+    lowGarden.setCoarse(true);
+    for (let step = 0; step < 20; step++) lowGarden.prepareSome(0);
+    lowGarden.setVisible(true);
+    const after = performance.now();
+    const doneAtOnce = lowGarden.prepareSome(0);
+    const spent = performance.now() - after;
+    check(doneAtOnce, `on Low, shown before it was built ahead, building ahead stops at once (${spent.toFixed(1)} ms), so the fine garden it let go is not built again`);
   }
   check(fineTriangles < 300000, `the scene's under 300k triangles (${(fineTriangles / 1000).toFixed(0)}k)`);
   check(coarseTriangles < 0.4 * fineTriangles, `the coarse garden under 40% of the fine's triangles (${(100 * coarseTriangles / fineTriangles).toFixed(0)}%)`);
