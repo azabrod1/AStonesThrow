@@ -980,6 +980,8 @@ def prepare(plan, hour, per_degree=None, fits=None):
         overrides = {key: value for key, value in layer.items() if key not in ('photo', 'match', 'adjust')}
         entry = dict(photo(layer['photo'], overrides))
         matched = layer['photo'] != reference_name and layer.get('match', True)
+        if hour.get('edge') and matched and 'shape' not in entry:
+            decontaminate_edge(entry)   # before the grade: a mixed pixel is a mix of land and sky only in the photograph's own light
         if matched:
             arguments = (entry['linear'], land(entry), reference['linear'], land(reference))
             def match(shared, kind):
@@ -1000,8 +1002,6 @@ def prepare(plan, hour, per_degree=None, fits=None):
         if 'adjust' in layer:
             entry['linear'] = adjust(entry['linear'], layer['adjust'])
         entry['backlit'] = 'backlight' in hour and layer.get('backlight', True)
-        if hour.get('edge') and matched and 'shape' not in entry:
-            decontaminate_edge(entry)
         if hour.get('unsky') and matched:
             # What the matte kept as land but is mostly sky (leaves blurred against it: bright, and grey to blue rather
             # than a leaf's yellow-green) would take the hour's tint as land (pale blue to salmon): it is let through
@@ -1037,7 +1037,7 @@ def decontaminate_edge(entry):
     resolution = spec.get('resolution', 1.0)
     above = np.arange(height)[:, None] < entry['cut'][None, :] * height
     sky = (matte < 0.05) & above
-    band = above & (matte >= 0.05) & (ndimage.distance_transform_edt(~sky) <= EDGE_BAND * resolution)
+    band = above & (matte > 0) & (ndimage.distance_transform_edt(~sky) <= EDGE_BAND * resolution)   # (the matte's faint tail too)
     for x0, y0, x1, y1 in spec.get('keep', []):
         band[int(y0 * height):int(y1 * height), int(x0 * width):int(x1 * width)] = False
     band &= polygons_mask(spec.get('solid', []), height, width) == 0
@@ -1049,7 +1049,8 @@ def decontaminate_edge(entry):
     share = np.clip(((linear - sky_plate) * across).sum(-1) / np.maximum(reach, 1e-8), 0, 1)
     band &= reach > EDGE_CONTRAST ** 2 * np.maximum((sky_plate ** 2).sum(-1), 1e-8)
     unmixed = sky_plate + (linear - sky_plate) / np.maximum(share, 0.05)[..., None]
-    entry['linear'] = np.where(band[..., None], np.maximum(unmixed, 0), linear).astype(np.float32)
+    unmixed = np.clip(unmixed, 0, np.maximum(linear, land_plate))   # (taking sky out never brightens it past both)
+    entry['linear'] = np.where(band[..., None], unmixed, linear).astype(np.float32)
     entry['matte'] = np.where(band, matte * share, matte).astype(np.float32)
 
 
