@@ -91,7 +91,7 @@ The photographs are downloaded once into tools/.mall-photos/ (gitignored). Needs
 Azimuths here are degrees from north toward east (the file's left edge is north, east a quarter across), as
 the Radiance file's own columns run (tools/sky-probe.mjs: azimuth 360·u, turning right).
 """
-import hashlib, json, math, os, subprocess, sys, time, urllib.parse, urllib.request, warnings
+import hashlib, json, math, os, subprocess, sys, time, urllib.error, urllib.parse, urllib.request, warnings
 import numpy as np
 from PIL import Image
 from scipy import ndimage
@@ -129,18 +129,26 @@ SUBJECT = 1e-3             # a layer's share subject to the backlight, carried a
 # ---- sources ------------------------------------------------------------------------------------------------
 
 def fetch(url, path):
+    """`url` downloaded to `path` once: written beside it and moved into place only when whole, so an interrupted
+    download never leaves a truncated file a later run would trust. A refusal for too many requests, a dropped
+    connection or a timeout is tried again, waiting longer each time; any other refusal stops the build."""
     if os.path.exists(path):
         return path
+    partial = path + '.part'
     for attempt in range(6):
         try:
             time.sleep(1.5)
             data = urllib.request.urlopen(urllib.request.Request(url, headers=AGENT), timeout=120).read()
-            open(path, 'wb').write(data)
+            with open(partial, 'wb') as file:
+                file.write(data)
+            os.replace(partial, path)
             return path
         except urllib.error.HTTPError as error:
             if error.code != 429:
                 raise
-            time.sleep(15 * (attempt + 1))
+        except (urllib.error.URLError, TimeoutError, ConnectionError):
+            pass
+        time.sleep(15 * (attempt + 1))
     raise SystemExit(f'could not fetch {url}')
 
 
