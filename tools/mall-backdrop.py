@@ -29,7 +29,7 @@ Memorial floodlit after sunset. Each may name
   solid       polygons that are land whatever their colour: a landmark traced by hand where marble meets sky;
   clean       boxes of steps and terraces whose people are taken off them (clean_rows);
   fill        boxes of a colonnade's floor whose people are taken off it, each filled from the stone above, or from the
-              row a fifth number names (fill_down);
+              row a fifth number names, down to a sixth if given (fill_down);
   clone       boxes copied from a place chosen by hand ([x0, y0, x1, y1, dx, dy]): people where no row is alike (clone_boxes);
   square      steps seen from off their axis set square under their building: its `axis`, and its `flights`, each a
               polygon and that flight's own axis (square_flights);
@@ -310,15 +310,19 @@ def fill_down(photo, boxes):
     same height just above it, or from the row a fifth number names (higher, past the shadows people cast on the wall
     under a floodlight), where everything (the columns, the walls between them, the doorways) runs straight up and
     down, so what stands on the floor is gone and the stone behind it lines up. A band from higher up is brought to
-    the light at the box's own height, column by column (a floodlit wall is brighter low down). Never under anything
-    that ends above it (a plaque: a box stops short of it)."""
+    the light at the box's own height, column by column (a floodlit wall is brighter low down); or a sixth number ends
+    that band, just above the box, and it is stretched to the box's height as it is. Never under anything that ends
+    above it (a plaque: a box stops short of it)."""
     height, width = photo.shape[:2]
     for box in boxes:
         x0, y0, x1, y1 = box[:4]
         top, bottom, columns = int(y0 * height), int(y1 * height), slice(int(x0 * width), int(x1 * width))
         source = int(box[4] * height) if len(box) > 4 else 2 * top - bottom
-        band = photo[source:source + bottom - top, columns].copy()
-        if source != 2 * top - bottom:
+        if len(box) > 5:   # a shorter band, stretched to the box's height (the plain stone under a statue)
+            band = ndimage.zoom(photo[source:int(box[5] * height), columns], ((bottom - top) / (int(box[5] * height) - source), 1, 1), order=1)[:bottom - top]
+        else:
+            band = photo[source:source + bottom - top, columns].copy()
+        if source != 2 * top - bottom and len(box) <= 5:   # (a stretched band runs on from the rows above the box)
             here, there = photo[top - 3:top, columns].mean(0), photo[source - 3:source, columns].mean(0)
             gain = ndimage.gaussian_filter1d(here, 8, axis=0) / np.maximum(ndimage.gaussian_filter1d(there, 8, axis=0), 1e-4)
             band *= gain[None]
