@@ -33,7 +33,9 @@
 //     first sighting (src/lochVisitor.js), whose state must match too: what
 //     it is, where, how far up, and when it comes and goes.
 //   - mall: a stone, a skipped stone, a duck and a basketball in the
-//     Reflecting Pool, inside its walls (src/mallPool.js).
+//     Reflecting Pool, inside its walls (src/mallPool.js), then by its west
+//     wall a duck and a bowling ball, whose drops reach the coping, whose
+//     ring comes back off the wall and whose splash pushes the duck into it.
 // Prints each scene's comparison and exits with status 1 if any differs.
 //
 //   node tools/frame-rate-probe.mjs [--scene=koi,pool]   (only these scenes, in this order)
@@ -92,6 +94,10 @@ const SCENES = [
       { at: 0.6, x: 0.4, z: -1.8, thing: 'stone', manner: 'skip' },
       { at: 1.4, x: -0.3, z: -1.2, thing: 'duck' },
       { at: 2.2, x: 0.6, z: -1.0, thing: 'basketball' },
+      // By the west wall (z 2.75): a duck afloat 35 cm off it, then a bowling ball 85 cm off it, whose drops reach the
+      // coping, whose ring comes back off the wall and whose splash pushes the duck against it (it ends held there).
+      { at: 3.0, x: 0.1, z: 2.4, thing: 'duck' },
+      { at: 4.2, x: 0.05, z: 1.9, thing: 'bowling' },
     ],
   },
   {
