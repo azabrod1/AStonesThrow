@@ -14,6 +14,11 @@
 // JavaScript, and the two textures hold 15 MB and 3.7 MB (the gain map one
 // byte a texel) against the 30 MB of half floats.
 //
+// The landmarks' insets (assets/sky/<file>_insets.jpg, src/sky.js Insets)
+// are coded and decoded the same way: decodeHorizonStrip takes their file
+// too, and INSET_DECODE (after HORIZON_DECODE, whose gainMapTexel it uses)
+// reads their atlas, each window's texels clamped to its own place.
+//
 // The file's layout (the encoder writes it; "Ultra HDR"): the base JPEG,
 // with a Multi-Picture Format directory (an APP2 segment, 'MPF\0') whose
 // second entry says where the gain map's JPEG starts and how long it is;
@@ -40,12 +45,15 @@ uniform vec4 uHorizonBand;        // the strip's width and height (texels; width
 float horizonLinear(float coded) {
   return min(coded < 10.31475 ? coded * 0.000303527 : pow(coded * 0.003717127 + 0.0521327014, 2.4), 65504.0);   // the loader clamps to half floats' range
 }
+// The radiance of a gain map's texel at uv (its centre): the base bytes raised by the gain byte, as the loader would.
+vec3 gainMapTexel(sampler2D baseImage, sampler2D gainMap, vec2 meta, vec2 uv) {
+  vec3 base = texture2D(baseImage, uv).rgb * 255.0;
+  float boost = exp2(meta.x + meta.y * texture2D(gainMap, uv).r);
+  return vec3(horizonLinear(base.r * boost), horizonLinear(base.g * boost), horizonLinear(base.b * boost));
+}
 // The radiance of one texel (x wrapping with the azimuth, y clamped to the strip).
 vec3 horizonTexel(vec2 texel) {
-  vec2 uv = (vec2(texel.x, clamp(texel.y, 0.0, uHorizonBand.y - 1.0)) + 0.5) / uHorizonBand.xy;
-  vec3 base = texture2D(uHorizon, uv).rgb * 255.0;
-  float boost = exp2(uHorizonMeta.x + uHorizonMeta.y * texture2D(uHorizonGain, uv).r);
-  return vec3(horizonLinear(base.r * boost), horizonLinear(base.g * boost), horizonLinear(base.b * boost));
+  return gainMapTexel(uHorizon, uHorizonGain, uHorizonMeta, (vec2(texel.x, clamp(texel.y, 0.0, uHorizonBand.y - 1.0)) + 0.5) / uHorizonBand.xy);
 }
 // The strip's radiance at uv (0 to 1 across and down it), bilinear in the linear values: each texel is
 // decoded with its own gain, so the base bytes of two blocks coded for different gains never mix.
@@ -55,6 +63,26 @@ vec3 horizonRadiance(vec2 uv) {
   vec2 within = position - corner;
   vec3 lower = mix(horizonTexel(corner), horizonTexel(corner + vec2(1.0, 0.0)), within.x);
   vec3 upper = mix(horizonTexel(corner + vec2(0.0, 1.0)), horizonTexel(corner + vec2(1.0, 1.0)), within.x);
+  return mix(lower, upper, within.y);
+}
+`;
+
+/** The insets' atlas (src/sky.js Insets): after HORIZON_DECODE. */
+export const INSET_DECODE = /* glsl */`
+uniform sampler2D uInset;         // the atlas's base image, bytes
+uniform sampler2D uInsetGain;     // its gain map
+uniform vec2 uInsetMeta;          // as uHorizonMeta
+uniform vec2 uInsetSize;          // the atlas's width and height, texels (width 0: no insets)
+// The radiance at a position in the atlas (texels, a texel's centre at its index + 0.5), bilinear in the linear
+// values as horizonRadiance is, never reaching past its window's place (x, y, width, height).
+vec3 insetRadiance(vec2 position, vec4 place) {
+  vec2 corner = floor(position - 0.5);
+  vec2 within = position - 0.5 - corner;
+  vec2 lowest = place.xy, highest = place.xy + place.zw - 1.0;
+  vec2 near = (clamp(corner, lowest, highest) + 0.5) / uInsetSize;
+  vec2 far = (clamp(corner + 1.0, lowest, highest) + 0.5) / uInsetSize;
+  vec3 lower = mix(gainMapTexel(uInset, uInsetGain, uInsetMeta, near), gainMapTexel(uInset, uInsetGain, uInsetMeta, vec2(far.x, near.y)), within.x);
+  vec3 upper = mix(gainMapTexel(uInset, uInsetGain, uInsetMeta, vec2(near.x, far.y)), gainMapTexel(uInset, uInsetGain, uInsetMeta, far), within.x);
   return mix(lower, upper, within.y);
 }
 `;

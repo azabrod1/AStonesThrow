@@ -211,6 +211,21 @@
 // come, or comes after another hour was asked for, leaves the panorama
 // whole; the page waits for none of it (horizonReady is for the tools).
 //
+// Insets. Zoomed in on a landmark the strip's 23 pixels a degree are soft
+// again (the Washington Monument at a 10° field of view is a few of its
+// pixels across). A sky may name windows (`insets`: the Reflecting Pool's
+// Monument and Lincoln Memorial) drawn from an atlas of their own at the
+// photographs' own resolution (perDegree, 57 to 96), the hour's
+// assets/sky/<file>_insets.jpg (tools/mall-backdrop.py renders it,
+// tools/sky-encode.mjs encodes it as the strip is), fetched after the strip
+// and decoded on the GPU as it is (INSET_DECODE). Each window fades in over
+// INSET_EDGE inside its edges, and out again where a screen pixel spans
+// INSET_FINEST to INSET_COARSEST of its texels (a home view's, a cube
+// capture's): it has no mip levels, a texel's bytes being coded for its own
+// gain, so a pixel spanning more than one takes four samples across it, and
+// past that the strip, fine enough there, shows alone. The atlas is a sky's
+// windows side by side (insetLayout); horizonBytes counts it with the strip.
+//
 // Memory. The panorama's pixels are dropped from the CPU once they are on the
 // GPU (nothing uploads it again), and the strip's ImageBitmaps are closed
 // once its textures are. The captures need no depth buffer: the
@@ -224,7 +239,7 @@
 import * as THREE from 'three';
 import { UltraHDRLoader } from 'three/addons/loaders/UltraHDRLoader.js';
 import { loadAsset, dropEarlyAssets } from './loadAsset.js';
-import { decodeHorizonStrip, HORIZON_DECODE } from './horizonStrip.js';
+import { decodeHorizonStrip, HORIZON_DECODE, INSET_DECODE } from './horizonStrip.js';
 
 // The orientation was chosen from home-view frames (mirrored: the photo
 // flipped left for right; sunAzimuth, degrees right of straight ahead, would
@@ -344,7 +359,10 @@ const SKIES = {
   // (tools/mall-backdrop.py, its plan tools/mall-backdrop.json with the photographs' authors and licences): ahead, east,
   // the pool's far end and the Washington Monument as photographed from its west end; behind, the Lincoln Memorial; the
   // elm rows either side, planted from photographs of single elms. In the morning the sun stands 40° right of ahead, in the south-east. The nearest elms stand
-  // 37 m off with their crowns up to 30° high, so its horizon strip reaches that high (`stripAbove`), not 17°.
+  // 37 m off with their crowns up to 30° high, so its horizon strip reaches that high (`stripAbove`), not 17°. The
+  // Washington Monument and the Lincoln Memorial are drawn sharper still, from their photographs' own pixels (`insets`,
+  // Insets): `azimuth` degrees from north toward east as the panorama's columns run (360·u), `elevation` degrees,
+  // `perDegree` pixels a degree, about the photograph's own (the Monument's 96, the Memorial's 57).
   // Its hours are one September day's (tools/mall-backdrop.json `hours`, each its sky turned so its sun stands where the
   // true sun stood then, so their land lies alike): at sunset the sun is behind the Lincoln Memorial and the eye in its
   // shade (light 'none'), the Monument glowing down the pool; at night the monuments are floodlit under the city's glow,
@@ -353,6 +371,10 @@ const SKIES = {
     ownPlace: false,
     sunAzimuth: 40,
     stripAbove: 30,
+    insets: [
+      { name: 'monument', azimuth: [86, 95], elevation: [-0.5, 10], perDegree: 96 },
+      { name: 'memorial', azimuth: [259, 283], elevation: [-1, 12.5], perDegree: 57 },
+    ],
     hours: {
       morning: { file: 'mall', label: 'Late morning', clock: '10:38' },
       sunset: { file: 'mall_sunset', label: 'Sunset', clock: '18:32' },
@@ -398,6 +420,8 @@ const ADAPTATION = 0.8;        // how far the eye adapts to an hour's light (Lig
 const ROD_ADAPTATION = 0.98;   // ...and, below NIGHT_VISION_LIGHT[0], its rods (adaptedLight)
 const DOWN_SUN_ELEVATION = 1;  // degrees: where the scene's dark sun stands while the true one is down
 const HORIZON_EDGE = 0.5;      // degrees inside the strip's band over which it fades into the panorama
+const INSET_EDGE = 0.25;       // degrees inside an inset's window over which it fades into the strip
+export const INSET_COUNT = 2;  // windows a sky may have (`insets`): the dome's uniform arrays
 const OVERCAST_TINT = [0.95, 0.99, 1.07];   // a rain cloud's grey, a little blue, at about unit luminance
 const HAZE_BRIGHTNESS = 0.6;   // rain's haze against the cloud's mean: an overcast's horizon is under half its zenith (CIE)
 const HAZE_LAYER = 1000;       // metres: the rain's and the snow's depth, which a ray climbing out of it crosses (a fog's is its own)
@@ -504,8 +528,14 @@ uniform float uHazeDensity;
 uniform float uFlash;          // the sky's light under lightning, against its own (1 with none)
 uniform vec4 uBolt;            // a bolt: its bearing (radians from −Z toward +X), its top's elevation, its brightness against the cloud (0: none), a seed
 uniform float uHorizonEdge;    // radians inside the strip's band over which it fades into the panorama (Horizon)
+uniform vec4 uInsetWindow[${INSET_COUNT}];   // each inset's window: u from and to (the panorama's, its azimuth over 360°; from = to: none), the elevation (radians) of its top and of its bottom
+uniform vec4 uInsetPlace[${INSET_COUNT}];    // its place in the atlas: x, y, width, height (texels)
+uniform float uInsetEdge;      // radians inside a window over which its inset fades in (Insets)
 varying vec3 vDirection;
 ${HORIZON_DECODE}
+${INSET_DECODE}
+#define INSET_FINEST 2.5       // texels a screen pixel spans where an inset starts to give way to the strip...
+#define INSET_COARSEST 3.5     // ...and where it is gone (Insets)
 #define OVERCAST_FLATTEN 0.6   // the luminance's power about the mean that cloud takes away: the sun and its glow sink, the shade lifts
 uniform float uHazeLayer;      // metres: the haze's depth, which a ray climbing out of it crosses (Weather, above)
 #define LAND_DISTANCE ${LAND_DISTANCE.toFixed(1)}
@@ -542,7 +572,35 @@ void main() {
   float elevation = asin(clamp(direction.y, -1.0, 1.0));
   vec2 panoramaUv = vec2(azimuth / (2.0 * PI) + 0.5, elevation / PI + 0.5);
   vec3 radiance = texture2D(uPanorama, panoramaUv).rgb;
-  if (uHorizonBand.x > 0.0) {
+  // Inside an inset's window, the inset (Insets), faded in from its edges, and out where a screen pixel spans more of
+  // its texels than its few samples can take (the strip is fine enough there); a pixel spanning more than one texel
+  // takes four samples across its footprint. The footprint is taken here, where every pixel takes it.
+  float pixelAngle = max(length(dFdx(direction)), length(dFdy(direction)));
+  vec3 inset = vec3(0.0);
+  float insetShare = 0.0;
+  if (uInsetSize.x > 0.0) {
+    float across = fract(panoramaUv.x);
+    for (int index = 0; index < ${INSET_COUNT}; index++) {
+      vec4 window = uInsetWindow[index];
+      float inside = min(min(across - window.x, window.y - across) * 2.0 * PI, min(window.z - elevation, elevation - window.w));
+      if (inside <= 0.0) continue;
+      vec4 place = uInsetPlace[index];
+      vec2 perRadian = place.zw / vec2((window.y - window.x) * 2.0 * PI, window.z - window.w);
+      vec2 footprint = pixelAngle * perRadian * vec2(1.0 / max(cos(elevation), 0.05), 1.0);
+      insetShare = smoothstep(0.0, uInsetEdge, inside) * (1.0 - smoothstep(INSET_FINEST, INSET_COARSEST, max(footprint.x, footprint.y)));
+      if (insetShare <= 0.0) break;
+      vec2 position = place.xy + vec2(across - window.x, window.z - elevation) * perRadian * vec2(2.0 * PI, 1.0);
+      if (max(footprint.x, footprint.y) < 1.25) {
+        inset = insetRadiance(position, place);
+      } else {
+        vec2 step = 0.25 * footprint;
+        inset = 0.25 * (insetRadiance(position + vec2(-step.x, -step.y), place) + insetRadiance(position + vec2(step.x, -step.y), place)
+          + insetRadiance(position + vec2(-step.x, step.y), place) + insetRadiance(position + vec2(step.x, step.y), place));
+      }
+      break;
+    }
+  }
+  if (uHorizonBand.x > 0.0 && insetShare < 1.0) {
     // Inside the strip's band, the strip (Horizon), faded in from the band's edges.
     float inside = min(uHorizonBand.z - elevation, elevation - uHorizonBand.w);
     if (inside > 0.0) {
@@ -550,6 +608,7 @@ void main() {
       radiance = mix(radiance, horizonRadiance(stripUv), smoothstep(0.0, uHorizonEdge, inside));
     }
   }
+  radiance = mix(radiance, inset, insetShare);
   radiance *= uScale;
   float brightest = max(radiance.r, max(radiance.g, radiance.b));
   radiance *= min(1.0, uRadianceCap / max(brightest, 1e-6));
@@ -576,6 +635,8 @@ const panoramaFile = ({ file, resolution = '2k' }) => `${file}_${resolution}.jpg
 const panoramaUrl = (name) => new URL(`../assets/sky/${name}`, import.meta.url).href;
 /** The hour's horizon strip (HORIZON_STRIP), fetched after its panorama is up (Horizon). */
 const horizonUrl = (file) => new URL(`../assets/sky/${file}_horizon.jpg`, import.meta.url).href;
+/** The hour's insets (Insets), fetched after its strip. */
+const insetsUrl = (file) => new URL(`../assets/sky/${file}_insets.jpg`, import.meta.url).href;
 
 // The strip's band: cut by tools/sky-encode.mjs from Poly Haven's `source`
 // panorama, from `above` degrees over the horizon to `below` under it, its
@@ -586,10 +647,32 @@ const horizonUrl = (file) => new URL(`../assets/sky/${file}_horizon.jpg`, import
 // Pool's near elms, stripAbove).
 export const HORIZON_STRIP = { source: '8k', above: 17, below: 3 };
 const HORIZON_BLOCK = 8;
+const skyOfFile = (file) => Object.values(SKIES).find((entry) => Object.values(entry.hours ?? {}).some((hour) => hour.file === file));
 /** How high over the horizon (degrees) the strip of the hour whose file is `file` reaches: its sky's `stripAbove`, or HORIZON_STRIP's. */
 export function stripAbove(file) {
-  const sky = Object.values(SKIES).find((entry) => Object.values(entry.hours ?? {}).some((hour) => hour.file === file));
-  return sky?.stripAbove ?? HORIZON_STRIP.above;
+  return skyOfFile(file)?.stripAbove ?? HORIZON_STRIP.above;
+}
+
+// The insets' atlas (Insets): each window of a sky's `insets` its
+// perDegree's pixels across and down, rounded up to INSET_BLOCK (the JPEG's
+// colour block, so no block holds two windows), side by side from the left,
+// the atlas as tall as the tallest. tools/mall-backdrop.py renders each
+// window into its place (assets/sky/<file>_insets.hdr), tools/sky-encode.mjs
+// encodes it, and the dome reads it back by the same layout.
+const INSET_BLOCK = 16;
+/** The insets of the hour whose file is `file`: its sky's `insets`, or none. */
+export const skyInsets = (file) => skyOfFile(file)?.insets ?? [];
+/** The atlas of `insets`: { width, height, places: [{ x, y, width, height }] } in texels. */
+export function insetLayout(insets) {
+  if (insets.length > INSET_COUNT) throw new Error(`A sky may have at most ${INSET_COUNT} insets`);
+  let x = 0;
+  const places = insets.map(({ azimuth, elevation, perDegree }) => {
+    const blocks = (degrees) => Math.ceil((degrees * perDegree) / INSET_BLOCK) * INSET_BLOCK;
+    const place = { x, y: 0, width: blocks(azimuth[1] - azimuth[0]), height: blocks(elevation[1] - elevation[0]) };
+    x += place.width;
+    return place;
+  });
+  return { width: x, height: Math.max(0, ...places.map((place) => place.height)), places };
 }
 export function horizonRows(sourceHeight, aboveDegrees = HORIZON_STRIP.above) {
   const above = Math.round((aboveDegrees / 180) * sourceHeight);
@@ -653,6 +736,13 @@ export function createEnvironment(renderer, { name, hour, sunAzimuth, sunBalance
         uHorizonMeta: { value: new THREE.Vector2() },
         uHorizonBand: { value: new THREE.Vector4() },
         uHorizonEdge: { value: THREE.MathUtils.degToRad(HORIZON_EDGE) },
+        uInset: { value: null },
+        uInsetGain: { value: null },
+        uInsetMeta: { value: new THREE.Vector2() },
+        uInsetSize: { value: new THREE.Vector2() },
+        uInsetWindow: { value: Array.from({ length: INSET_COUNT }, () => new THREE.Vector4()) },
+        uInsetPlace: { value: Array.from({ length: INSET_COUNT }, () => new THREE.Vector4()) },
+        uInsetEdge: { value: THREE.MathUtils.degToRad(INSET_EDGE) },
         uHazeLayer: { value: HAZE_LAYER },
         ...hazeUniforms,
       },
@@ -739,12 +829,49 @@ export function createEnvironment(renderer, { name, hour, sunAzimuth, sunBalance
   // The horizon strip (Horizon): the hour's, fetched once its panorama is up; the last asked for wins.
   let horizonRequest = 0;
   function clearHorizon() {
-    for (const name of ['uHorizon', 'uHorizonGain']) {
+    for (const name of ['uHorizon', 'uHorizonGain', 'uInset', 'uInsetGain']) {
       domeUniforms[name].value?.dispose();
       domeUniforms[name].value = null;
     }
     domeUniforms.uHorizonBand.value.set(0, 0, 0, 0);
+    domeUniforms.uInsetSize.value.set(0, 0);
     environment.horizonBytes = 0;
+  }
+  const gainMapTexture = (image, format, wrap) => {
+    const made = new THREE.Texture(image);
+    made.format = format;
+    made.colorSpace = THREE.NoColorSpace;   // the bytes as coded: the shader decodes them
+    made.minFilter = made.magFilter = THREE.NearestFilter;   // each texel with its own gain (horizonRadiance)
+    made.generateMipmaps = false;
+    made.flipY = false;   // row 0 is the top
+    made.wrapS = wrap;
+    made.needsUpdate = true;
+    made.onUpdate = () => { image.close(); };   // on the GPU now: free the bitmap
+    return made;
+  };
+  const gainMapMeta = ({ weight, gainMapMin, gainMapMax }) => [weight * gainMapMin, weight * (gainMapMax - gainMapMin)];
+  // The hour's insets (Insets), their windows from the sky's `insets` and their places from the atlas's layout.
+  async function loadInsets(file, request, signal) {
+    const insets = skyInsets(file);
+    if (!insets.length) return;
+    const atlas = await decodeHorizonStrip(await loadAsset(insetsUrl(file), 'arrayBuffer', { signal }));
+    const layout = insetLayout(insets);
+    if (request !== horizonRequest || atlas.width !== layout.width || atlas.height !== layout.height) {
+      atlas.base.close(); atlas.gain.close();
+      if (request === horizonRequest) throw new Error(`the atlas is ${atlas.width} × ${atlas.height}, its layout ${layout.width} × ${layout.height}`);
+      return;
+    }
+    domeUniforms.uInset.value = gainMapTexture(atlas.base, THREE.RGBAFormat, THREE.ClampToEdgeWrapping);
+    domeUniforms.uInsetGain.value = gainMapTexture(atlas.gain, THREE.RedFormat, THREE.ClampToEdgeWrapping);
+    domeUniforms.uInsetMeta.value.set(...gainMapMeta(atlas.metadata));
+    insets.forEach(({ azimuth, elevation }, index) => {
+      const { x, y, width, height } = layout.places[index];
+      domeUniforms.uInsetWindow.value[index].set(azimuth[0] / 360, azimuth[1] / 360, THREE.MathUtils.degToRad(elevation[1]), THREE.MathUtils.degToRad(elevation[0]));
+      domeUniforms.uInsetPlace.value[index].set(x, y, width, height);
+    });
+    for (let index = insets.length; index < INSET_COUNT; index++) domeUniforms.uInsetWindow.value[index].set(0, 0, 0, 0);
+    domeUniforms.uInsetSize.value.set(atlas.width, atlas.height);
+    environment.horizonBytes += atlas.width * atlas.height * 5;
   }
   async function loadHorizon(file, signal) {
     const request = ++horizonRequest;
@@ -752,21 +879,9 @@ export function createEnvironment(renderer, { name, hour, sunAzimuth, sunBalance
     try {
       const strip = await decodeHorizonStrip(await loadAsset(horizonUrl(file), 'arrayBuffer', { signal }));
       if (request !== horizonRequest) { strip.base.close(); strip.gain.close(); return; }
-      const texture = (image, format) => {
-        const made = new THREE.Texture(image);
-        made.format = format;
-        made.colorSpace = THREE.NoColorSpace;   // the bytes as coded: the shader decodes them
-        made.minFilter = made.magFilter = THREE.NearestFilter;   // each texel with its own gain (horizonRadiance)
-        made.generateMipmaps = false;
-        made.flipY = false;   // row 0 is the band's top
-        made.wrapS = THREE.RepeatWrapping;   // the azimuth wraps
-        made.needsUpdate = true;
-        made.onUpdate = () => { image.close(); };   // on the GPU now: free the bitmap
-        return made;
-      };
-      domeUniforms.uHorizon.value = texture(strip.base, THREE.RGBAFormat);
-      domeUniforms.uHorizonGain.value = texture(strip.gain, THREE.RedFormat);
-      domeUniforms.uHorizonMeta.value.set(strip.metadata.weight * strip.metadata.gainMapMin, strip.metadata.weight * (strip.metadata.gainMapMax - strip.metadata.gainMapMin));
+      domeUniforms.uHorizon.value = gainMapTexture(strip.base, THREE.RGBAFormat, THREE.RepeatWrapping);   // the azimuth wraps
+      domeUniforms.uHorizonGain.value = gainMapTexture(strip.gain, THREE.RedFormat, THREE.RepeatWrapping);
+      domeUniforms.uHorizonMeta.value.set(...gainMapMeta(strip.metadata));
       // The band's elevations from the strip's size (horizonRows: the encoder's rows), a row's height at the source's resolution.
       const rows = horizonRows(strip.width / 2, stripAbove(file));
       const rowHeight = Math.PI / (strip.width / 2);
@@ -774,6 +889,12 @@ export function createEnvironment(renderer, { name, hour, sunAzimuth, sunBalance
       environment.horizonBytes = strip.width * strip.height * 5;
     } catch (error) {
       if (request === horizonRequest && !signal?.aborted) console.warn(`The horizon strip of ${file} did not load; the panorama stands alone.`, error);
+      return;
+    }
+    try {
+      await loadInsets(file, request, signal);
+    } catch (error) {
+      if (request === horizonRequest && !signal?.aborted) console.warn(`The insets of ${file} did not load; the strip stands alone.`, error);
     }
   }
   // The hour's light under a clear sky (load), which the weather covers (applyWeather).
