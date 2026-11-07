@@ -31,6 +31,8 @@ Memorial floodlit after sunset. Each may name
   fill        boxes of a colonnade's floor whose people are taken off it, each filled from the stone above, or from the
               row a fifth number names (fill_down);
   clone       boxes copied from a place chosen by hand ([x0, y0, x1, y1, dx, dy]): people where no row is alike (clone_boxes);
+  square      steps seen from off their axis set square under their building: its `axis`, and its `flights`, each a
+              polygon and that flight's own axis (square_flights);
   trees       boxes of its trees, which the elms are matched to when it is an hour's reference;
   paint       lines to paint out ([[x, y], ...], width as a share of the width): a pole across the trees;
   protect     spans of its width (from, to) never copied into a gap: a landmark is never seen twice;
@@ -359,6 +361,34 @@ def clone_along(sheared, found, fallback, strip):
                     break
             else:
                 out[rows, part][blob] = fallback[rows, part][blob]
+    return out
+
+
+def square_flights(photo, square):
+    """Steps seen from off their axis set square under their building (`square`): `axis`, the building's middle (a
+    share of the width); `flights`, each a polygon (shares) holding a flight, its cheek block and what lies beside them,
+    and the `axis` of that flight in the photograph. A flight nearer the camera than its building is shifted aside by
+    parallax, the more the nearer, and its far side hidden; so each pixel of a flight's rows takes the flight's near
+    half at its distance from the building's middle, from whichever flight's polygon (first listed first) holds that
+    point, and the steps are whole, symmetric and centred, every block with its own flight. Rows of no flight are left
+    as they are."""
+    from scipy.ndimage import map_coordinates
+    height, width = photo.shape[:2]
+    across = (np.arange(width) + 0.5) / width
+    source = np.full((height, width), np.nan, np.float32)
+    for flight in square['flights']:
+        inside = polygons_mask([flight['polygon']], height, width) > 0.5
+        rows = np.flatnonzero(inside.any(1))
+        reach = flight['axis'] + np.abs(across - square['axis'])
+        columns = np.clip((reach * width).astype(int), 0, width - 1)
+        for row in rows:
+            take = np.isnan(source[row]) & inside[row, columns]
+            source[row, take] = reach[take] * width - 0.5
+    moved = ~np.isnan(source)
+    rows, columns = np.nonzero(moved)
+    out = photo.copy()
+    for channel in range(3):
+        out[rows, columns, channel] = map_coordinates(photo[..., channel], [rows, source[rows, columns]], order=1, mode='nearest')
     return out
 
 
@@ -916,6 +946,8 @@ def prepare_photo(spec):
         photo = clone_boxes(photo, spec['clone'], resolution)
     if spec.get('fill'):
         photo = fill_down(photo, spec['fill'])   # after: someone sitting across both is whole when clean_rows looks
+    if spec.get('square'):
+        photo = square_flights(photo, spec['square'])   # its people already off: none is seen twice
     crop = spec.get('crop', [0, 1])
     if crop != [0, 1]:
         width = photo.shape[1]
