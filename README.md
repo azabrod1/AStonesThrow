@@ -1034,16 +1034,26 @@ The curated locations include:
   sun's path on it. Starts at the golden hour.
 - **Reflecting Pool** (`?sky=mall`): the Lincoln Memorial Reflecting Pool
   in Washington, D.C., seen from its west wall down its 618 m to the
-  Washington Monument, one late morning. No one has published a free
-  panorama taken there, so its sky is stitched from three photographs on
-  Wikimedia Commons over Poly Haven's Qwantani mid-morning sky
-  (`tools/mall-backdrop.py`, its plan `tools/mall-backdrop.json`, which
-  lists each photo, its licence and where it is aimed): the Monument down
-  the pool (Kenrick95, CC BY-SA 4.0), the Lincoln Memorial behind the eye
-  (Jmarcosny, CC BY-SA 4.0) and the elms along the south side (Nvss132,
-  CC0), the north side that one mirrored. The gaps between them are filled
-  by copies of their own land cut along minimum-cost seams; so the backdrop
-  is CC BY-SA 4.0 as a whole. Near the eye the coping, the walks, the west
+  Washington Monument, at three hours of one September day: late morning,
+  sunset and night. No one has published a free panorama taken there, so
+  each hour's sky is stitched from photographs on Wikimedia Commons over
+  one of Poly Haven's Qwantani pure skies (`tools/mall-backdrop.py`, its
+  plan `tools/mall-backdrop.json`, which lists each photo, its licence and
+  where it is aimed). The day's: the Monument down the pool (Kenrick95,
+  CC BY-SA 4.0), the Lincoln Memorial behind the eye (Jmarcosny,
+  CC BY-SA 4.0) and the elms along the south side (Nvss132, CC0), the north
+  side that one mirrored, the gaps between them filled by copies of their
+  own land cut along minimum-cost seams. The other hours are the day's
+  graded to a photograph of that hour, with its landmarks laid over in their
+  own light: at sunset the Monument lit by the low sun (Gregg L. Davis,
+  CC BY-SA 4.0), the trees toward the sun darkened as backlit, and behind
+  the eye the Memorial floodlit with its trees black against the glow (John
+  Brighenti, CC BY 2.0); at sunset the sun is behind the Memorial and the
+  eye in its shade. At night the pool's own night photograph (Ramakrishna
+  Gundra, CC BY-SA 4.0) is laid over the day's graded to its dark trees,
+  under a city's sky glow fitted to that photograph's sky; the hour's light
+  never falls below the floodlights' (`lit`, `src/sky.js`), so the eye keeps
+  its colours. The backdrop is CC BY-SA 4.0 as a whole. Near the eye the coping, the walks, the west
   plaza and the lawn are drawn (`src/mallPool.js`), fading into the photo's
   land; the water stops at the granite walls (`setBounds` in
   `src/waterSurface.js`), and what reaches them comes back off them or
@@ -1093,6 +1103,11 @@ node tools/sky-probe.mjs assets/sky/small_harbour_sunset_2k.hdr --taken=2024-08-
 node tools/sky-probe.mjs assets/sky/small_harbor_01_2k.hdr --taken=2019-05-02T17:04:00+02:00 --at=-28.492189,29.002458 --align=assets/sky/small_harbour_morning_2k.hdr --band=0,4
 node tools/sky-probe.mjs assets/sky/small_harbor_02_2k.hdr --taken=2019-05-01T17:50:00+02:00 --at=-28.492613,29.002165 --align=assets/sky/small_harbour_morning_2k.hdr --band=1,5
 node tools/sky-probe.mjs assets/sky/radkow_lake_2k.hdr
+# the Reflecting Pool's hours (stitched by tools/mall-backdrop.py; each sky's sun turned to the true sun's place then)
+M=--at=38.8893,-77.0464
+node tools/sky-probe.mjs assets/sky/mall_2k.hdr --taken=2025-09-20T10:38:00-04:00 $M
+node tools/sky-probe.mjs assets/sky/mall_sunset_2k.hdr --taken=2025-09-20T18:32:00-04:00 $M --align=assets/sky/mall_2k.hdr
+node tools/sky-probe.mjs assets/sky/mall_night_2k.hdr --taken=2025-09-20T21:30:00-04:00 $M --align=assets/sky/mall_2k.hdr
 ```
 
 **Rain** (`src/rain.js`, `src/shaders/rain.js`; the cloud and haze in
@@ -1817,16 +1832,20 @@ farther out, so it rises into the view rather than filling its corner.
   never kept): each photoscan's normal and the detail of its colour packed
   into one JPEG (its header says how), 251 KB and 427 KB, fetched only when
   the lagoon is first shown.
-- `python3 tools/mall-backdrop.py [--preview=dir]` builds the Reflecting
-  Pool's sky from its plan, `tools/mall-backdrop.json`: it fetches the
-  photographs (cached in `tools/.mall-photos/`, gitignored), projects each
-  to the panorama where the plan aims it, mattes out its sky, matches its
-  colour, fills the gaps between them with copies of their land cut along
-  minimum-cost seams, grades the land to the measured skies' brightness and
-  lays it over the plan's sky. It writes `assets/sky/mall_2k.hdr` and the
-  8k file the horizon strip is cut from (`mall_8k.hdr`, never committed);
-  then run `tools/sky-probe.mjs` and `tools/sky-encode.mjs --verify` on
-  `mall_2k.hdr` as for any sky. About a minute; needs numpy, SciPy and Pillow.
+- `python3 tools/mall-backdrop.py [--hour=names] [--preview=dir]` builds the
+  Reflecting Pool's skies, one an hour, from its plan,
+  `tools/mall-backdrop.json`: it fetches the photographs (cached in
+  `tools/.mall-photos/`, gitignored), projects each to the panorama where
+  the plan aims it, mattes out its sky, matches its colour to the hour's
+  reference photograph, fills the gaps between them with copies of their
+  land cut along minimum-cost seams, lays the hour's own landmarks over
+  them, grades the land to the measured skies' brightness and lays it over
+  the hour's sky. For each hour it writes `assets/sky/<file>_2k.hdr` and the
+  8k file the horizon strip is cut from (`<file>_8k.hdr`, never committed);
+  then run `tools/sky-probe.mjs` (with the hour's time and place: the runs
+  are under Reproduce the new measurements) and `tools/sky-encode.mjs
+  --verify` on each, as for any sky. About a minute an hour; needs numpy,
+  SciPy and Pillow.
 - `node tools/sky-encode.mjs [assets/sky/name_2k.hdr ...] [--verify] [--no-horizon]` encodes
   each sky's Radiance file (every one, by default) as the JPEG gain map the
   page loads, `assets/sky/name_2k.jpg`, and its horizon strip,
