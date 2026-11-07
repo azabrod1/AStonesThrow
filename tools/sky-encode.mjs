@@ -10,7 +10,10 @@
 // in the repository: 100 MB each). The 2k photo gives the dome 5.7 pixels a
 // degree, the strip 23, so the land on the skyline is sharp at a desktop's
 // or a phone's pixels (src/sky.js, Horizon, which decodes the strip on the
-// GPU).
+// GPU). A sky with `insets` (src/sky.js Insets: the Reflecting Pool's
+// landmarks) has its atlas too, assets/sky/<name>_insets.jpg, coded as the
+// strip is from assets/sky/<name>_insets.hdr (tools/mall-backdrop.py writes
+// it; gitignored, as the 8k sources are), wherever that file is.
 //
 //   node tools/sky-encode.mjs [assets/sky/name_2k.hdr ...] [--verify] [--quality=n] [--no-horizon]
 //
@@ -20,7 +23,7 @@
 // half floats this tool's model of it gives, and each strip with the page's
 // own decoder (src/horizonStrip.js) within the GPU's arithmetic; rerun it
 // after a Three.js upgrade. --quality=n tries another quality for the base
-// image. --no-horizon leaves the strips alone (no 8k download).
+// image. --no-horizon leaves the strips and the insets alone (no 8k download).
 //
 // The format ("Ultra HDR"): a JPEG of 8-bit values, the base image, and after
 // it a second JPEG, the gain map, that says how far to raise each pixel; a
@@ -119,6 +122,7 @@ import decodeJpeg, { init as initDecoder } from '@jsquash/jpeg/decode.js';
 
 const SDR_QUALITY = 95;        // mozjpeg's quality for the base image (chosen from sizes and frames: below)
 const HORIZON_QUALITY = 85;    // the horizon strip's (the header)
+const INSET_QUALITY = 90;      // the insets': seen close, where the strip is far
 const STRIP_LEVELS = 2;        // coded levels the page's GPU decode of a strip may differ from the loader's by (verify: the table's level and the half floats' rounding; 1.88 at worst, in a sunrise's disc)...
 const STRIP_RELATIVE = 5e-4;   // ...plus this share of the coded value (the GPU's pow against the loader's, in the sun's disc: up to 3 levels of 30 000, varying run to run)
 const HORIZON_URL = (name) => `https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/${HORIZON_STRIP.source}/${name}_${HORIZON_STRIP.source}.hdr`;
@@ -403,6 +407,15 @@ async function encodeHorizon(hdrPath, measurement) {
   return encodeImage(`${name}_horizon`, strip, measurement, HORIZON_QUALITY, strip.horizonRow);
 }
 
+/** The sky's insets (the header), if its atlas's source is there: no ground to blur (its horizon row past its foot). */
+async function encodeInsets(hdrPath, measurement) {
+  const name = path.basename(hdrPath, '.hdr').replace(/_\d+k$/, '');
+  const sourcePath = path.join(path.dirname(hdrPath), `${name}_insets.hdr`);
+  try { await access(sourcePath); } catch { return null; }
+  const atlas = await readPanorama(sourcePath);
+  return encodeImage(`${name}_insets`, atlas, measurement, INSET_QUALITY, atlas.height);
+}
+
 /**
  * Decode each file with the pinned UltraHDRLoader in the headless browser;
  * compare with this tool's model. A strip is also decoded as the page
@@ -424,7 +437,7 @@ async function verify(results) {
   });
   await page.setContent(`<script type="importmap">{"imports":{"three":"${origin}/build/three.module.js"}}</script>`);
   for (const { name, file, decoded } of results) {
-    const strip = name.endsWith('_horizon');
+    const strip = name.endsWith('_horizon') || name.endsWith('_insets');   // decoded on the GPU by the page
     const { halves: fromBrowser, gpu } = await page.evaluate(async ([base64, loaderUrl, stripUrl, strip, stripLevels, stripRelative]) => {
       const { UltraHDRLoader } = await import(loaderUrl);
       const THREE = await import('three');
@@ -510,5 +523,10 @@ for (const input of inputs) {
   await writeFile(path.join(path.dirname(input), `${horizon.name}.jpg`), horizon.file);
   console.log(horizon.report);
   results.push(horizon);
+  const insets = await encodeInsets(input, measurement);
+  if (!insets) continue;
+  await writeFile(path.join(path.dirname(input), `${insets.name}.jpg`), insets.file);
+  console.log(insets.report);
+  results.push(insets);
 }
 if (argumentsGiven.includes('--verify')) await verify(results);
