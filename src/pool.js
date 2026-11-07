@@ -32,7 +32,11 @@
 // bed, and its walls hold a stone under the water, or afloat, inside them
 // (holdInPool): a wall turns it back where it touches, its own mesh's reach
 // towards the wall as it is turned (reachesAcross: a TV's corner, not the
-// circle of half its length). Anything in the air that meets a
+// circle of half its length). The same walls hold any other walled water
+// handed to them (a basin: a rectangle with its own deck, the Reflecting
+// Pool's, src/mallPool.js MALL_BASIN), and a basin whose walls stand high
+// (`holdUnderTop`) holds what is in the air below its top too, not only what
+// is in the water. Anything in the air that meets a
 // wall's side below its top, coming from inside (a skipping stone, a
 // floater bobbed clear), comes back off it (holdAirborne). The deck is ground to
 // whatever comes down on it (poolGround: src/rock.js bounces it, and
@@ -113,9 +117,9 @@ export function holdInPool(rock, square) {
   const afloat = rock.state === 'float' || rock.afloat;
   if (rock.state === 'ground' || (rock.state === 'rest' && !afloat)) return null;
   // Above the still water and out of it, nothing meets the Pool's walls (10 cm up, as it always was, so its seeded
-  // throws keep as they were); a basin with walls of its own height (`deck`: the Reflecting Pool's stand 30 cm up) holds
-  // what still reaches below their top, its depth the ellipsoid's (Rock.ellipsoidDepth), the step's stand-in for its mesh.
-  const reachesUnderTop = square.deck !== undefined && rock.position.y - rock.ellipsoidDepth() <= square.deck;
+  // throws keep as they were); a basin that says so (`holdUnderTop`: the Reflecting Pool's walls, 30 cm up) holds what
+  // still reaches below its walls' top, its depth the ellipsoid's (Rock.ellipsoidDepth), the step's stand-in for its mesh.
+  const reachesUnderTop = square.holdUnderTop === true && rock.position.y - rock.ellipsoidDepth() <= deckOf(square);
   if (rock.position.y > 0 && !afloat && !(rock.skip && rock.state === 'water') && !reachesUnderTop) return null;
   let held = null;
   for (const [axis, low] of [['x', square.minX], ['z', square.minZ]]) {

@@ -45,10 +45,13 @@ const EAST = MALL_POOL.west - MALL_POOL.length;
 const COPING_TOP = MALL_POOL.coping;
 const WALL_FROM = -0.1;   // m: the walls' faces reach this far under the still water
 
-/** The pool inside its walls, as src/pool.js holds things in a basin: its corner, its sides and its walls' top (m). */
-export const MALL_BASIN = Object.freeze({ minX: -HALF, minZ: EAST, sizeX: 2 * HALF, sizeZ: MALL_POOL.length, deck: COPING_TOP });
-/** The water's rectangle (src/waterSurface.js setBounds): the walls' faces. */
-export const MALL_BOUNDS = Object.freeze({ minX: -HALF, minZ: EAST, maxX: HALF, maxZ: WEST });
+/**
+ * The pool inside its walls, as src/pool.js holds things in a basin: its corner, its sides and its walls' top (m), and
+ * that its walls hold what reaches below their top even above the water (holdInPool `holdUnderTop`; the Pool's do not).
+ */
+export const MALL_BASIN = Object.freeze({ minX: -HALF, minZ: EAST, sizeX: 2 * HALF, sizeZ: MALL_POOL.length, deck: COPING_TOP, holdUnderTop: true });
+/** The water's rectangle (src/waterSurface.js setBounds): the walls' faces, MALL_BASIN's sides. */
+export const MALL_BOUNDS = Object.freeze({ minX: MALL_BASIN.minX, minZ: MALL_BASIN.minZ, maxX: MALL_BASIN.minX + MALL_BASIN.sizeX, maxZ: MALL_BASIN.minZ + MALL_BASIN.sizeZ });
 
 // The ground's cell edges out from a wall's face (m): the coping, the walk, then growing to the horizon.
 const GROUND_EDGES = [0, 0.75, 6.25, 15, 40, 120, 400, 1500, OUTER_HALF_SIZE];
