@@ -26,5 +26,17 @@
     "median": 0.05745,
     "p90": 0.34931
   },
-  "maxLuminance": 145370
+  "maxLuminance": 145370,
+  "taken": "2025-09-20T10:38:00-04:00",
+  "at": [
+    38.8893,
+    -77.0464
+  ],
+  "solar": {
+    "elevation": 39.78,
+    "azimuth": 130.32
+  },
+  "light": "sun",
+  "north": 359.61,
+  "northFrom": "sun"
 }

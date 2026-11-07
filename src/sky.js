@@ -37,7 +37,9 @@
 // stamps are wrong; the sunset's clock is read from its sun's height (a
 // glow through haze, so the probe calls its light 'none' and the scene's
 // sun is dark), the dusk's estimated from its glow. Wooded lake is one
-// photograph, Radków's lake under the Table Mountains (2025). Their rock ridges are aligned using the
+// photograph, Radków's lake under the Table Mountains (2025). The Reflecting
+// Pool's three hours are stitched from photographs (tools/mall-backdrop.py), one
+// September day's, each sky's sun turned to where the true sun stood then. Their rock ridges are aligned using the
 // probe's --band option: Kiara's lower valley from -15° to -5°, Rogland's
 // skyline from 0° to 18°. Small viewpoint changes in Kiara remain in nearby
 // rocks. Its sunrise/sunset are lit by the measured sun; their camera times
@@ -340,9 +342,21 @@ const SKIES = {
   // The Reflecting Pool's own (src/places.js PLACES `mall`), no place of its own: a backdrop matte-painted from
   // photographs of the Mall on Wikimedia Commons over Poly Haven's Qwantani mid-morning pure sky
   // (tools/mall-backdrop.py, its plan tools/mall-backdrop.json with the photographs' authors and licences): ahead, east,
-  // the pool's far end and the Washington Monument as photographed from its west end at 10:47 on a June morning; behind,
-  // the Lincoln Memorial; the elm rows either side. The sun stands 40° right of ahead, in the south-east, as it did then.
-  mall: { ownPlace: false, sunAzimuth: 40, hours: { morning: { file: 'mall', label: 'Late morning', clock: '10:47' } } },
+  // the pool's far end and the Washington Monument as photographed from its west end; behind, the Lincoln Memorial; the
+  // elm rows either side. In the morning the sun stands 40° right of ahead, in the south-east.
+  // Its hours are one September day's (tools/mall-backdrop.json `hours`, each its sky turned so its sun stands where the
+  // true sun stood then, so their land lies alike): at sunset the sun is behind the Lincoln Memorial and the eye in its
+  // shade (light 'none'), the Monument glowing down the pool; at night the monuments are floodlit under the city's glow,
+  // and the hour's light never falls below `lit`.
+  mall: {
+    ownPlace: false,
+    sunAzimuth: 40,
+    hours: {
+      morning: { file: 'mall', label: 'Late morning', clock: '10:38' },
+      sunset: { file: 'mall_sunset', label: 'Sunset', clock: '18:32' },
+      night: { file: 'mall_night', label: 'Night', clock: '21:30', lit: 6 },
+    },
+  },
 };
 /** The skies that are each a place of their own (the Location setting's lakes; the Koi pond takes the garden's). */
 /** What a sky's beach is made of (`shore` above): a name of SHORE_LOOKS (src/pondFloor.js), 'sand' when unnamed. */
@@ -452,10 +466,13 @@ function adaptedLight(lux) {
  * The light on level ground at a panorama's hour (lux): the true sun's or
  * its twilight's (illuminance), and where the moon lights the photo, a full
  * moon's at its elevation besides, the sun's light MOON_DIMMING times dimmer.
+ * A city's night never falls below its own lamps' and sky glow's (`lit`, an
+ * hour's lux: the Reflecting Pool's floodlit monuments and lamp-lit walks),
+ * so its eye keeps its cones and its colours, as a starlit lake's does not.
  */
-function hourLight(measurement) {
+function hourLight(measurement, lit = 0) {
   const sunLight = illuminance(measurement.solar?.elevation ?? measurement.sun.elevation);
-  return lightOf(measurement) === 'moon' ? sunLight + illuminance(measurement.sun.elevation) / MOON_DIMMING : sunLight;
+  return Math.max(lit, lightOf(measurement) === 'moon' ? sunLight + illuminance(measurement.sun.elevation) / MOON_DIMMING : sunLight);
 }
 
 const DOME_VERTEX = /* glsl */`
@@ -825,7 +842,7 @@ export function createEnvironment(renderer, { name, hour, sunAzimuth, sunBalance
     // cumulus) is exposed as an eye adapted that share of the way to it sees it, sun and sky together.
     const adapted = place.adapt ? (levelLight(balance) / levelLight(anchor)) ** place.adapt : 1;
     const anchorScale = place.shadedSun ? balanceScale * levelLight(balance) / levelLight(anchor) : (balanceLuminance / luminance(anchor.sunIrradiance)) * SKY_EXPOSURE * adapted;
-    const level = file === anchorFile ? 1 : adaptedLight(hourLight(measurement)) / adaptedLight(hourLight(anchor));
+    const level = file === anchorFile ? 1 : adaptedLight(hourLight(measurement, entry.lit)) / adaptedLight(hourLight(anchor, place.hours[place.anchor ?? firstHour].lit));
     const scale = anchorScale * level;
     if (sunlit) {
       const sunColour = new THREE.Vector3().fromArray(measurement.sunIrradiance).divide(new THREE.Vector3().fromArray(balance.sunIrradiance)).multiply(sunBalance);
@@ -837,7 +854,7 @@ export function createEnvironment(renderer, { name, hour, sunAzimuth, sunBalance
       clear.sun.set(0, 0, 0);
     }
     clear.sky.fromArray(measurement.skyRadiance).multiplyScalar(scale);
-    clear.lux = hourLight(measurement);
+    clear.lux = hourLight(measurement, entry.lit);
     clear.level = level;
 
     const previous = domeUniforms.uPanorama.value;
