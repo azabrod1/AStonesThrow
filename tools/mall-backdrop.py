@@ -104,6 +104,7 @@ SOLID_RIM = 10             # pixels: a traced edge keyed against the sky beside 
 KEY_FLOOR = 0.02           # how far a keyed shape's pixel's colour balance (each channel's share) lies from its sky's, all sky (key_shape)
 KEY_RAMP = 0.04            # and how much farther, all landmark
 EDGE_BAND = 10             # pixels (WORK_WIDTH's): how far from the sky an hour's `edge` decontaminates a graded layer's land
+EDGE_HOLE = 0.5            # a canopy's hole, for an hour's `edge`: a pixel at most this much land by its colour (and grey to blue)
 EDGE_CONTRAST = 0.25       # how far the land's colour lies from the sky's, as a share of the sky's, for an edge to be decontaminated
 KEY_BAND = 0.04            # of the photograph's width: how far inside its shape's top and sides a pixel is keyed
 HEDGE = 0.2                # degrees: the land at the horizon reaches this high wherever no tree stands (compose_over_elms)
@@ -1069,23 +1070,30 @@ def decontaminate_edge(entry):
     key's edge: within EDGE_BAND of the sky, each pixel's share of land is where its colour lies between the sky behind
     it (clean_plate of the sky) and the land's colour carried out to it from inside (clean_plate of the land), and its
     colour is unmixed from that sky. So the pale sky a treeline's soft edge holds, graded to another hour's light (to
-    pink and white at sunset), is not left outlining the trees against that hour's sky. `keep` boxes and `solid`
-    landmarks are left as they are; and where land and sky are alike in colour there is nothing to tell apart."""
+    pink and white at sunset), is not left outlining the trees against that hour's sky, nor in its canopy's holes.
+    `keep` boxes and `solid` landmarks are left as they are; and where land and sky are alike in colour there is
+    nothing to tell apart."""
     linear, matte, spec = entry['linear'], entry['matte'], entry['spec']
     height, width = matte.shape
     resolution = spec.get('resolution', 1.0)
     above = np.arange(height)[:, None] < entry['cut'][None, :] * height
     sky = (matte < 0.05) & above
-    band = above & (matte > 0) & (ndimage.distance_transform_edt(~sky) <= EDGE_BAND * resolution)   # (the matte's faint tail too)
+    free = polygons_mask(spec.get('solid', []), height, width) == 0
     for x0, y0, x1, y1 in spec.get('keep', []):
-        band[int(y0 * height):int(y1 * height), int(x0 * width):int(x1 * width)] = False
-    band &= polygons_mask(spec.get('solid', []), height, width) == 0
+        free[int(y0 * height):int(y1 * height), int(x0 * width):int(x1 * width)] = False
+    band = above & (matte > 0) & (ndimage.distance_transform_edt(~sky) <= EDGE_BAND * resolution) & free   # (the matte's faint tail too)
     shrink = max(2, round(2 * resolution))
     sky_plate = clean_plate(linear, sky, shrink=shrink)
     land_plate = clean_plate(linear, (matte > 0.95) & ~band, shrink=shrink)
     across = land_plate - sky_plate
     reach = (across ** 2).sum(-1)
     share = np.clip(((linear - sky_plate) * across).sum(-1) / np.maximum(reach, 1e-8), 0, 1)
+    # And a canopy's holes, however far in: nearer the sky's colour than the leaves', and grey to blue as sky is (a
+    # sunlit leaf, as bright, is yellow-green), above the shore's own row of things (tents, a memorial's pale stone).
+    photo = entry['photo']
+    grey = photo[..., 2] / np.maximum(photo[..., 1], 1e-3) > 0.75
+    clear = np.arange(height)[:, None] < (entry['cut'][None, :] - 0.04) * height
+    band |= clear & free & (matte > 0) & grey & (share < EDGE_HOLE)
     band &= reach > EDGE_CONTRAST ** 2 * np.maximum((sky_plate ** 2).sum(-1), 1e-8)
     unmixed = sky_plate + (linear - sky_plate) / np.maximum(share, 0.05)[..., None]
     unmixed = np.clip(unmixed, 0, np.maximum(linear, land_plate))   # (taking sky out never brightens it past both)
