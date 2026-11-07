@@ -1041,23 +1041,26 @@ The curated locations include:
   each hour's sky is stitched from photographs on Wikimedia Commons over
   one of Poly Haven's Qwantani pure skies (`tools/mall-backdrop.py`, its
   plan `tools/mall-backdrop.json`, which lists each photo, its licence and
-  where it is aimed). The day's: the Monument down the pool (Kenrick95,
-  CC BY-SA 4.0), the Lincoln Memorial behind the eye (Jmarcosny,
-  CC BY-SA 4.0) and the elms along the south side (Nvss132, CC0), the north
-  side that one mirrored, the gaps between them filled by copies of their
-  own land cut along minimum-cost seams. The other hours are the day's
-  graded to a photograph of that hour, with its landmarks laid over in their
-  own light: at sunset the Monument lit by the low sun (Gregg L. Davis,
-  CC BY-SA 4.0), the trees toward the sun darkened as backlit, and behind
-  the eye the Memorial floodlit with its trees black against the glow (John
+  where it is aimed). The elms are our own: five single elms cut from Marty
+  Aligata's photographs (CC BY-SA 4.0) against their own skies, planted in
+  four rows along the pool and in groves out to 1.5 km, each stood upright
+  where it grows, sized by its distance and hazed by its air. Over them the
+  landmarks, cut from photographs and traced by hand where marble meets sky,
+  with the people taken off the Memorial's steps: the Monument down the pool
+  (Kenrick95, CC BY-SA 4.0) and the Lincoln Memorial behind the eye
+  (Jmarcosny, CC BY-SA 4.0), joined to the elms along minimum-cost seams.
+  The other hours are the day's graded to a photograph of that hour, with
+  its landmarks laid over in their own light: at sunset the Monument lit by
+  the low sun (Gregg L. Davis, CC BY-SA 4.0), the trees toward the sun
+  darkened as backlit, and behind the eye the Memorial floodlit (John
   Brighenti, CC BY 2.0); at sunset the sun is behind the Memorial and the
   eye in its shade. At night the pool's own night photograph (Ramakrishna
   Gundra, CC BY-SA 4.0) is laid over the day's graded to its dark trees,
-  under a city's sky glow fitted to that photograph's sky; the hour's light
-  never falls below the floodlights' (`lit`, `src/sky.js`), so the eye keeps
-  its colours. The backdrop is CC BY-SA 4.0 as a whole. Near the eye the coping, the walks, the west
-  plaza and the lawn are drawn (`src/mallPool.js`), fading into the photo's
-  land; the water stops at the granite walls (`setBounds` in
+  under a dim, nearly grey city glow; the hour's light never falls below the
+  floodlights' (`lit`, `src/sky.js`), so the eye keeps its colours. The
+  backdrop is CC BY-SA 4.0 as a whole. Near the eye the coping, the walks,
+  the west plaza and the lawn are drawn (`src/mallPool.js`), the lawn out to
+  the horizon, where the elms stand on it; the water stops at the granite walls (`setBounds` in
   `src/waterSurface.js`), and what reaches them comes back off them or
   lies on the coping, as do the splash's drops (`tools/mall-probe.mjs`);
   a stone's ring comes back off them as its mirror image across the wall
@@ -1111,9 +1114,9 @@ node tools/sky-probe.mjs assets/sky/small_harbor_02_2k.hdr --taken=2019-05-01T17
 node tools/sky-probe.mjs assets/sky/radkow_lake_2k.hdr
 # the Reflecting Pool's hours (stitched by tools/mall-backdrop.py; each sky's sun turned to the true sun's place then)
 M=--at=38.8893,-77.0464
-node tools/sky-probe.mjs assets/sky/mall_2k.hdr --taken=2025-09-20T10:38:00-04:00 $M
-node tools/sky-probe.mjs assets/sky/mall_sunset_2k.hdr --taken=2025-09-20T18:32:00-04:00 $M --align=assets/sky/mall_2k.hdr
-node tools/sky-probe.mjs assets/sky/mall_night_2k.hdr --taken=2025-09-20T21:30:00-04:00 $M --align=assets/sky/mall_2k.hdr
+node tools/sky-probe.mjs assets/sky/mall_2k.hdr --taken=2026-09-20T10:38:00-04:00 $M
+node tools/sky-probe.mjs assets/sky/mall_sunset_2k.hdr --taken=2026-09-20T18:32:00-04:00 $M --align=assets/sky/mall_2k.hdr
+node tools/sky-probe.mjs assets/sky/mall_night_2k.hdr --taken=2026-09-20T21:30:00-04:00 $M --align=assets/sky/mall_2k.hdr
 ```
 
 **Rain** (`src/rain.js`, `src/shaders/rain.js`; the cloud and haze in

@@ -5,18 +5,30 @@ freely licensed photographs on Wikimedia Commons and a pure sky from Poly Haven,
 each photograph is set where it looks from the pool's west end (its azimuth, tilt and field of view), its own sky
 cut away (a matte: sky-like pixels joined to its top, and the canopy's holes), its colour matched to the hour's
 reference photograph, and its land laid over one sky, so the sky has no seams and is the light the scene is lit by.
-The water below the far shore is the app's (src/mallPool.js draws the coping and the ground out to the first elm
-row, the water stops at the walls), so each photograph is used from its far shore (`cut`) up; below it the far
+The water below the far shore is the app's (src/mallPool.js draws the coping and the lawn out to the horizon, the
+water stops at the walls), so each photograph is used from its far shore (`cut`) up; below it the far
 shore's row is carried down, a blur under the horizon that the encoder blurs further (tools/sky-encode.mjs).
+
+The elms (`elms`) are our own, not a photograph's: no photograph of the pool's sides joins another without a
+seam, so the land all round is planted, as a matte painter builds a forest from cards. Five single elms (`cards`,
+each its photograph, the `box` its crown stands in against its own sky, down to `clear`; `keep` polygons kept whole
+and `trunk` polygons kept where they are bark, less `holes`; its trunk's `base` and its crown's `top`) are cut out
+against their own skies (key_elm), then planted (plant_elms): `rows` along the pool and `groves` scattered round it,
+seeded (`seed`), and drawn into the panorama farthest first, each a card stood upright where it grows, facing the
+eye `eye` metres up, sized by its distance (draw_elms), matched to the hour's reference photograph's own trees
+(`trees` boxes; match_tree) and hazed by its air (`haze` metres, an hour's `elmHaze`). Every photograph is then an
+`over` layer: the landmarks, cropped to them and joined to the elms by quilting cuts (compose_over_elms).
 
 The photographs (tools/mall-backdrop.json `photos`, by name, with their authors and licences; CC BY-SA asks that
 they be credited where the backdrop is shown). The day's: ahead, east, down the pool to the Washington Monument;
-behind, the Lincoln Memorial; to the south the elm rows across the water, and to the north the same photograph
-mirrored (no photograph of the north elms has their crowns and sky in frame). The other hours' own: the Monument
-lit by the setting sun, the pool at night, and the Memorial floodlit after sunset. Each may name
+behind, the Lincoln Memorial. The other hours' own: the Monument lit by the setting sun, the pool at night, and the
+Memorial floodlit after sunset. Each may name
   crop        the share of its width used (from, to): clutter at an edge left out;
   cut         its far shore, [x, y] shares of its width and height, the land above it;
   keep        boxes whose white or brightness is land, not sky (the marble, the floodlit memorial);
+  solid       polygons that are land whatever their colour: a landmark traced by hand where marble meets sky;
+  clean       boxes of steps and terraces whose people are taken off them (clean_rows);
+  trees       boxes of its trees, which the elms are matched to when it is an hour's reference;
   paint       lines to paint out ([[x, y], ...], width as a share of the width): a pole across the trees;
   protect     spans of its width (from, to) never copied into a gap: a landmark is never seen twice;
   yield       the degrees of its sides a gap's join may take (6; less where the photograph matters most);
@@ -26,9 +38,8 @@ lit by the setting sun, the pool at night, and the Memorial floodlit after sunse
               photograph: a landmark in the hour's light), or whole, joined at its sides within `seam` degrees by
               image quilting's cut where its land and theirs agree;
   hide        boxes left to the sky (a landmark another layer shows in the hour's light).
-Between photographs that do not meet, the gap is filled from both sides, each side's land copied across into
-its half and the two joined where their treelines best agree: more of the same trees, never a stretched smear
-(fill_gaps).
+Without elms, between photographs that do not meet, the gap is filled from both sides, each side's land copied
+across into its half and the two joined where their treelines best agree (fill_gaps).
 
 The hours (`hours`, each its own Radiance file, `file`). Each lists its `layers`, a photograph by name with what the
 layer changes of it, every layer matched to the hour's `reference` photograph (its first layer's unless named) in log
@@ -36,7 +47,7 @@ light, land above the shore against land above the shore (color_match: one contr
 its own, `matchContrast: channels`, which gives sunlit leaves the sunset's gold), unless it is the reference or says
 `match: false`; `adjust` grades it by hand. The day's photographs are already placed, so another hour is the day's
 graded to that hour's reference, its landmarks laid over in their own light: at sunset the Monument cut out of a
-photograph lit by the low sun, behind the eye the Memorial floodlit with its trees black against the glow; at night
+photograph lit by the low sun, behind the eye the Memorial floodlit; at night
 the pool's own night photograph laid over the day's graded to its dark trees. A low sun's `backlight` darkens and
 greys what faces the eye toward it (the trees' shaded sides; backlight); `keepHue` and `unsky` keep a canopy's gaps
 and sky-tinted edges from taking a false colour in another light.
@@ -45,7 +56,8 @@ The sky: one of Poly Haven's Qwantani pure skies (CC0) an hour, turned so its su
 from north, clockwise) at its own height: where the true sun stood on the hour's day at the elevation the photo's
 sun has (`taken`, for tools/sky-probe.mjs --taken --at), so every hour's land lies alike. Its `gain` scales it; its
 `stars`, only its stars (a city's night shows few, and none of a far town's glow); its `glow`, a city's sky glow
-fitted to the reference photograph's own sky (fit_glow). The land's light (`light`): a phone's photograph is
+fitted to the reference photograph's own sky (fit_glow), or at its fitted luminance times `gain` in the `color` given
+(the eye sees a city's glow dimmer and greyer than a long exposure). The land's light (`light`): a phone's photograph is
 display-referred, its shadows crushed and its sky near clipping, so its land is far darker against the sky than the
 land in a measured HDR (Poly Haven's lake and meadow panoramas hold their land's median luminance at 0.04 to 0.1 of
 Three.js's units, about a tenth of their sky). Each pixel's luminance, from sRGB to linear, is raised to `gamma`
@@ -76,6 +88,11 @@ CACHE = os.path.join(ROOT, 'tools', '.mall-photos')
 AGENT = {'User-Agent': 'AStonesThrow-mall-backdrop/1.0 (https://github.com/azabrod1/AStonesThrow)'}
 WORK_WIDTH = 3000          # pixels: each photograph is worked at this width (the 8k strip's 23 a degree, and more)
 BAND = (-6.0, 32.0)        # degrees: the elevations land can reach (the rest is the pure sky alone)
+KEYED = {}                 # the elm cards, keyed once for every hour
+SOLID_RIM = 10             # pixels: a traced edge keyed against the sky beside it this far in (land_matte)
+HEDGE = 0.2                # degrees: the land at the horizon reaches this high wherever no tree stands (compose_over_elms)
+CLEAN_SPAN = 0.03          # a share of the photograph's width: clean_rows's median, wider than a group of people
+CLEAR_FADE = 0.03          # an elm card's crown fades out over this share of its photograph's height above its `clear` line
 SUBJECT = 1e-3             # a layer's share subject to the backlight, carried as a fourth colour channel this small (so
                            # the gap fill's cuts, which weigh every channel, never notice it)
 
@@ -259,6 +276,26 @@ def paint_out(photo, lines):
     return photo
 
 
+def clean_rows(photo, boxes):
+    """People taken off steps and terraces (`clean`: boxes, shares of the photograph): what runs along a step is alike
+    along its row, so each pixel is compared with its row's median over CLEAN_SPAN of the width about it, and where
+    it differs (a person, or their shadow) it, and a few pixels round it, take that median: the step without them.
+    Never across anything upright that belongs there (a box stops short of it)."""
+    height, width = photo.shape[:2]
+    span = max(3, int(CLEAN_SPAN * width)) | 1
+    for x0, y0, x1, y1 in boxes:
+        rows, columns = slice(int(y0 * height), int(y1 * height)), slice(int(x0 * width), int(x1 * width))
+        region = photo[rows, columns]
+        median = ndimage.median_filter(region, size=(1, span, 1), mode='reflect')
+        odd = np.abs(region - median).max(-1) > 0.07
+        # Only what stands upright: a step running a little off the row differs from its median along a thin
+        # line, a person in a blob several pixels tall, so the lines are opened away (a vertical element).
+        upright = ndimage.binary_opening(odd, structure=np.ones((max(5, int(0.0025 * height)), 1), bool))
+        odd = ndimage.binary_dilation(upright, iterations=3)
+        photo[rows, columns] = np.where(odd[..., None], median, region)
+    return photo
+
+
 def land_matte(photo, spec):
     """Land (1) against sky (0) above the far shore (`cut`); below it land, the far shore carried down."""
     height, width = photo.shape[:2]
@@ -277,7 +314,10 @@ def land_matte(photo, spec):
         white[box] = False
         bright[box] = False
         bluish[box] &= blue[box] > spec.get('keep_blue', 0.12)
-    skylike = (bluish | white | bright) & above
+    # Inside a `solid` polygon (a landmark traced by hand, as a compositor rotoscopes a hero element) it is land,
+    # whatever its colour: pale marble is never taken for sky, nor the sky beside it for marble.
+    solid = polygons_mask(spec.get('solid', []), height, width)
+    skylike = (bluish | white | bright) & above & (solid < 0.5)
     labels, _ = ndimage.label(skylike)
     touching = np.unique(labels[: max(2, height // 200)])
     sky = np.isin(labels, touching[touching > 0])
@@ -292,7 +332,15 @@ def land_matte(photo, spec):
     shore_rows = np.clip((cut * height).astype(int) - 2, 0, height - 1)
     grounded = np.unique(labels[shore_rows, np.arange(width)])
     land = np.isin(labels, grounded[grounded > 0]) | ~above
-    return np.clip(ndimage.gaussian_filter(land.astype(np.float32), 0.7), 0, 1), cut
+    # At a traced edge, what the polygon takes of the sky in its last few pixels goes back to the sky, so no sliver of
+    # sky edges the stone: each pixel there keyed against the sky just outside it (clean_plate, from the sky the
+    # matte found), as much stone as it differs from that sky.
+    if solid.any():
+        rim = (solid > 0) & ~ndimage.binary_erosion(solid > 0.99, iterations=SOLID_RIM)
+        plate = clean_plate(photo, sky & (solid == 0), shrink=2)
+        differs = np.clip((np.abs(photo - plate).max(-1) - 0.03) / 0.07, 0, 1)
+        solid = np.where(rim, solid * differs, solid)
+    return np.maximum(np.clip(ndimage.gaussian_filter(land.astype(np.float32), 0.7), 0, 1), solid), cut
 
 
 def carry_shore_down(photo, cut):
@@ -312,6 +360,33 @@ def above_shore(entry):
     for x0, y0, x1, y1 in entry['spec'].get('keep', []):
         land[int(y0 * height):int(y1 * height), int(x0 * width):int(x1 * width)] = False
     return land
+
+
+def trees_of(entry):
+    """A photograph's trees: its land inside its `trees` boxes (what the elm cards are matched to), else all its land
+    above its far shore."""
+    if 'trees' not in entry['spec']:
+        return above_shore(entry)
+    height, width = entry['matte'].shape
+    inside = np.zeros((height, width), bool)
+    for x0, y0, x1, y1 in entry['spec']['trees']:
+        inside[int(y0 * height):int(y1 * height), int(x0 * width):int(x1 * width)] = True
+    return inside & (entry['matte'] > 0.9)
+
+
+def match_tree(linear, mine, reference, theirs, tint):
+    """An elm card matched to the reference photograph's trees (`theirs`): its luminance's mean and spread in log light,
+    and only `tint` of the difference in hue (each channel's mean against the luminance's), so each card keeps its
+    own leaves' colour rather than all being stretched to one, and no edge despilled to grey turns purple."""
+    lum, reference_lum = np.log(luminance(linear) + 1e-4), np.log(luminance(reference) + 1e-4)
+    ratio = reference_lum[theirs].std() / max(lum[mine].std(), 1e-6)
+    matched = np.exp((lum - lum[mine].mean()) * ratio + reference_lum[theirs].mean()) - 1e-4
+    out = linear * (np.maximum(matched, 0) / np.maximum(luminance(linear), 1e-6))[..., None]
+    for channel in range(3):
+        mine_hue = np.log(linear[..., channel] + 1e-4)[mine].mean() - lum[mine].mean()
+        their_hue = np.log(reference[..., channel] + 1e-4)[theirs].mean() - reference_lum[theirs].mean()
+        out[..., channel] *= math.exp(tint * (their_hue - mine_hue))
+    return np.clip(out, 0, None)
 
 
 def color_match(linear, land, reference, reference_land, shared=False):
@@ -471,6 +546,202 @@ def shape_matte(spec, height, width):
     return np.asarray(mask.resize((width, height), Image.BOX), np.float32) / 255
 
 
+# ---- the elms ------------------------------------------------------------------------------------------------
+
+def polygons_mask(polygons, height, width):
+    """Polygons (shares of an image's width and height) as a mask, drawn at twice the size and shrunk: smooth edges."""
+    from PIL import ImageDraw
+    mask = Image.new('L', (2 * width, 2 * height), 0)
+    for polygon in polygons:
+        ImageDraw.Draw(mask).polygon([(across * 2 * width, down * 2 * height) for across, down in polygon], fill=255)
+    return np.asarray(mask.resize((width, height), Image.BOX), np.float32) / 255
+
+
+def clean_plate(color, known, shrink=8):
+    """The sky behind a tree, as a keyer's clean plate: `color` where `known` (the photograph's open sky), carried in
+    under the crown by normalized convolution, the finest scale that reaches a pixel giving it (worked at 1/`shrink`)."""
+    height, width = known.shape
+    small_height, small_width = max(1, height // shrink), max(1, width // shrink)
+    shrunk = lambda image: np.asarray(Image.fromarray(image.astype(np.float32)).resize((small_width, small_height), Image.BOX))
+    small_known = shrunk(known.astype(np.float32))
+    small_color = np.stack([shrunk(color[..., channel] * known) for channel in range(3)], -1)
+    plate = np.zeros_like(small_color)
+    filled = np.zeros(small_known.shape, bool)
+    for sigma in (1, 2, 4, 8, 16, 32, 64):
+        weight = ndimage.gaussian_filter(small_known, sigma)
+        estimate = ndimage.gaussian_filter(small_color, (sigma, sigma, 0)) / np.maximum(weight, 1e-6)[..., None]
+        take = ~filled & (weight > 0.1)
+        plate[take] = estimate[take]
+        filled |= take
+    if not filled.all():
+        plate[~filled] = small_color.sum((0, 1)) / max(small_known.sum(), 1e-6)
+    grown = lambda image: np.asarray(Image.fromarray(image.astype(np.float32)).resize((width, height), Image.BILINEAR))
+    return np.stack([grown(plate[..., channel]) for channel in range(3)], -1)
+
+
+def key_elm(spec):
+    """An elm cut out of its photograph (`elms.cards`), as a compositor's keyer cuts a subject from a clean background:
+    inside its `box` and above its `clear` line (the photograph's sky behind it) each pixel's share of tree is how much
+    greener (green less blue) and darker it is than the sky behind it there (clean_plate); its colour is then unmixed
+    from that sky (the tree's own colour, (C − (1 − α)·S)/α, in linear light), and where it is mostly sky (a leaf's
+    blurred edge) it takes the colour of the solid leaves about it, so no edge keeps the photograph's blue or white.
+    Inside its `keep` polygons (its trunk, and crown hanging below `clear` in front of other things) it is tree, but for
+    what is bright and grey there (a white house or the sky). Returns its straight colour, its matte, where its trunk
+    meets the ground (`base`, pixels) and how many pixels its height is (to `top`)."""
+    photo = load_photo(spec)
+    if spec.get('paint'):
+        photo = paint_out(photo, spec['paint'])
+    height, width = photo.shape[:2]
+    downs = ((np.arange(height) + 0.5) / height)[:, None]
+    acrosses = ((np.arange(width) + 0.5) / width)[None, :]
+    clear = np.interp(acrosses[0], *zip(*spec['clear']))[None, :]
+    above = downs < clear
+    left, top, right, bottom = spec['box']
+    in_box = (acrosses >= left) & (acrosses <= right) & (downs >= top) & (downs <= bottom)
+    red, green, blue = photo[..., 0], photo[..., 1], photo[..., 2]
+    lum = luminance(photo)
+    # The sky the plate is made from: outside the box, what is sky-coloured; inside it, only the clearly blue (the
+    # crown's gaps, so the plate is the sky just there).
+    saturation = photo.max(-1) - photo.min(-1)
+    clearly_sky = (blue - np.maximum(green, red) > 0.1) | ((saturation < 0.05) & (lum > 0.55))   # blue, or an overcast's grey
+    open_sky = above & (lum > 0.3) & np.where(in_box, clearly_sky, blue >= green - 0.03)
+    plate = clean_plate(photo, open_sky)
+    greener = green - blue
+    darker = luminance(plate) - lum
+    # Cut off above `clear` along a ragged line, as leaf clumps hang (smooth noise, up to CLEAR_FADE of the
+    # photograph's height above it), so the crown cut there has no straight edge.
+    clumps = ndimage.gaussian_filter(np.random.default_rng(len(spec['commons'])).uniform(size=(height // 16 + 1, width // 16 + 1)), 1.5)
+    clumps = (clumps - clumps.min()) / max(clumps.max() - clumps.min(), 1e-6)
+    clumps = np.asarray(Image.fromarray(clumps.astype(np.float32)).resize((width, height), Image.BILINEAR))
+    ragged = clear - CLEAR_FADE * clumps
+    crown = np.clip(np.maximum((greener - 0.02) / 0.08, (darker - spec.get('darker', 0.05)) / 0.2), 0, 1) * in_box * np.clip((ragged - downs) * height / 3, 0, 1)
+    skyish = np.clip((lum - 0.6) / 0.15, 0, 1) * np.clip((0.12 - saturation) / 0.06, 0, 1)
+    kept = polygons_mask(spec.get('keep', []), height, width) * (1 - skyish)
+    # A trunk's polygon keeps only bark: grey (leaves and lawn behind it are not) and darker than a wall behind it,
+    # or in deep shade; the trunk then made whole (closed, its holes filled: a lit ridge of bark is still bark).
+    trunk_area = polygons_mask(spec.get('trunk', []), height, width)
+    bark = np.maximum(np.clip((0.14 - saturation) / 0.06, 0, 1) * np.clip((0.55 - lum) / 0.1, 0, 1), np.clip((0.15 - lum) / 0.05, 0, 1)) * trunk_area
+    whole = ndimage.binary_fill_holes(ndimage.binary_closing(bark > 0.5, iterations=6)) & (trunk_area > 0.5)
+    whole = ndimage.binary_opening(whole, iterations=3)
+    kept = np.maximum(kept, np.maximum(bark * trunk_area, ndimage.gaussian_filter(whole.astype(np.float32), 1.0)))
+    kept *= 1 - polygons_mask(spec.get('holes', []), height, width)   # what shows between its stems
+    alpha = np.maximum(crown, kept).astype(np.float32)
+    linear, plate_linear = srgb_to_linear(photo), srgb_to_linear(plate)
+    unmixed = np.clip((linear - (1 - alpha)[..., None] * plate_linear) / np.maximum(alpha, 0.05)[..., None], 0, 1)
+    solid = (alpha > 0.9).astype(np.float32)
+    around = ndimage.gaussian_filter(linear * solid[..., None], (3, 3, 0)) / np.maximum(ndimage.gaussian_filter(solid, 3), 1e-6)[..., None]
+    trust = np.clip((alpha - 0.35) / 0.5, 0, 1)[..., None]
+    trust = np.where(ndimage.gaussian_filter(solid, 3)[..., None] > 0.02, trust * trust * (3 - 2 * trust), 1.0)
+    color = around * (1 - trust) + unmixed * trust
+    # Despilled, as a blue screen's subject is: no leaf is as blue as it is green, so what blue is left is the sky's.
+    color[..., 2] = np.minimum(color[..., 2], 0.9 * color[..., 1])
+    # Cropped to the tree, with a border of nothing.
+    rows, columns = np.nonzero(alpha > 0.01)
+    first_row, last_row = max(rows.min() - 4, 0), min(rows.max() + 5, height)
+    first_column, last_column = max(columns.min() - 4, 0), min(columns.max() + 5, width)
+    color = np.pad(color[first_row:last_row, first_column:last_column], ((2, 2), (2, 2), (0, 0)))
+    alpha = np.pad(alpha[first_row:last_row, first_column:last_column], 2)
+    base = (spec['base'][0] * width - first_column + 2, spec['base'][1] * height - first_row + 2)
+    return {'spec': spec, 'color': color.astype(np.float32), 'alpha': alpha, 'base': base,
+            'tall': (spec['base'][1] - spec['top']) * height}
+
+
+def plant_elms(settings):
+    """Where the elms stand (`elms`): the `rows` along the pool (each at `z` metres from its axis, north positive, from
+    `from` to `to` metres east of the eye, a tree every `spacing`, each set off by up to `jitter` along the row; a
+    `missing` share of places empty, a `young` share replanted, `youngHeight` tall) and the `groves` (`count` trees
+    scattered `distance` metres from the eye, never on the pool and its walks or in a row's strip, nor before the
+    Lincoln Memorial). Each tree: its place (x east, z north, m), height (m), card, mirrored or not, and its
+    brightness. Seeded (`seed`), so every hour plants the same trees."""
+    rng = np.random.default_rng(settings['seed'])
+    names = sorted(settings['cards'])
+    trees = []
+    def tree(x, z, height):
+        trees.append({'x': float(x), 'z': float(z), 'height': float(height), 'card': names[rng.integers(len(names))],
+                      'mirror': bool(rng.integers(2)), 'shade': float(rng.uniform(0.85, 1.12))})
+    for row in settings['rows']:
+        for place in np.arange(row['from'], row['to'], row['spacing']):
+            draw = rng.uniform()
+            if draw < row.get('missing', 0):
+                continue
+            height = rng.uniform(*row['youngHeight']) if draw > 1 - row.get('young', 0) else rng.uniform(*row['height'])
+            tree(place + rng.uniform(-1, 1) * row.get('jitter', 0), row['z'] + rng.uniform(-0.5, 0.5), height)
+    for grove in settings['groves']:
+        planted = 0
+        while planted < grove['count']:
+            distance = math.sqrt(rng.uniform(grove['distance'][0] ** 2, grove['distance'][1] ** 2))   # even over the area
+            azimuth = rng.uniform(0, 2 * math.pi)
+            x, z = distance * math.sin(azimuth), distance * math.cos(azimuth)
+            along_pool = -45 < x < 650
+            if (along_pool and abs(z) < 58) or (x <= -45 and abs(z) < 75):
+                continue
+            tree(x, z, rng.uniform(*grove['height']))
+            planted += 1
+    return trees
+
+
+def card_levels(color, alpha):
+    """A card's premultiplied colour and matte, and each halving of it (a mip chain, so a far tree is not aliased)."""
+    level = np.concatenate([color * alpha[..., None], alpha[..., None]], -1).astype(np.float32)
+    levels = [level]
+    while min(level.shape[:2]) > 16:
+        height, width = level.shape[0] // 2 * 2, level.shape[1] // 2 * 2
+        level = level[:height, :width].reshape(height // 2, 2, width // 2, 2, 4).mean((1, 3))
+        levels.append(level)
+    return levels
+
+
+def draw_elms(cards, trees, settings, dirs, rows, width, subject):
+    """The elms drawn into an equirect's `rows` (directions `dirs`), farthest first, each its card stood upright where
+    it grows, facing the eye: a ray's point on the card's plane, from its base, is the card's pixel (the card's pixels
+    a metre, its trunk's base to its crown's top over the tree's height), read from the mip level nearest the
+    panorama's own size there. Returns the land's colour (premultiplied, its fourth channel the backlight's subject),
+    its matte and its haze (each tree's share of the air between it and the eye, 1 − exp(−distance/`haze`))."""
+    eye, height = settings['eye'], width // 2
+    elevation = math.pi / 2 - (rows + 0.5) / height * math.pi
+    color = np.zeros((len(rows), width, 4), np.float32)
+    alpha = np.zeros((len(rows), width), np.float32)
+    haze = np.zeros((len(rows), width), np.float32)
+    pano_per_metre_at_one = width / (2 * math.pi)
+    for tree in sorted(trees, key=lambda tree: -math.hypot(tree['x'], tree['z'])):
+        card = cards[tree['card']]
+        distance = math.hypot(tree['x'], tree['z'])
+        azimuth = math.atan2(tree['x'], tree['z'])
+        per_metre = card['tall'] / tree['height']
+        level = int(np.clip(math.floor(math.log2(max(per_metre / (pano_per_metre_at_one / distance), 1))), 0, len(card['levels']) - 1))
+        image = card['levels'][level]
+        card_height, card_width = card['alpha'].shape
+        reach = max(card['base'][0], card_width - card['base'][0]) / per_metre
+        half = math.atan2(reach, distance) * 1.05
+        low, high = math.atan2(-eye - 0.5, distance), math.atan2(card['base'][1] / per_metre - eye, distance)
+        chosen_rows = np.flatnonzero((elevation >= low) & (elevation <= high))
+        if not len(chosen_rows):
+            continue
+        first = math.floor((azimuth - half) / (2 * math.pi) * width)
+        columns = np.arange(first, math.ceil((azimuth + half) / (2 * math.pi) * width) + 1) % width
+        rays = dirs[np.ix_(chosen_rows, columns)]
+        facing = np.array([math.sin(azimuth), 0, math.cos(azimuth)], np.float32)
+        right = np.array([math.cos(azimuth), 0, -math.sin(azimuth)], np.float32)
+        toward = rays @ facing
+        reach_along = distance / np.maximum(toward, 1e-6)
+        across = reach_along * (rays @ right)
+        up = reach_along * rays[..., 1] + eye
+        sign = -1 if tree['mirror'] else 1
+        u = (card['base'][0] + sign * across * per_metre) / 2 ** level
+        v = (card['base'][1] - up * per_metre) / 2 ** level
+        level_height, level_width = image.shape[:2]
+        inside = (toward > 0) & (u >= 0) & (u <= level_width - 1) & (v >= 0) & (v <= level_height - 1)
+        sample = bilinear(image, np.where(inside, u, 0), np.where(inside, v, 0)) * inside[..., None]
+        share = sample[..., 3]
+        mist = 1 - math.exp(-distance / settings['haze']) if settings['haze'] else 0.0
+        region = np.ix_(chosen_rows, columns)
+        keep = 1 - share
+        color[region] = np.concatenate([sample[..., :3] * tree['shade'], share[..., None] * subject], -1) + color[region] * keep[..., None]
+        haze[region] = share * mist + haze[region] * keep
+        alpha[region] = share + alpha[region] * keep
+    return color, alpha, haze
+
+
 def adjust(linear, settings):
     """A layer's own grade (`adjust`): `exposure` in stops, `saturation` about its luminance, `tint` a colour to multiply."""
     out = linear * 2.0 ** settings.get('exposure', 0.0)
@@ -487,13 +758,17 @@ def prepare_photo(spec):
     photo = load_photo(spec)
     if spec.get('paint'):
         photo = paint_out(photo, spec['paint'])
+    if spec.get('clean'):
+        photo = clean_rows(photo, spec['clean'])
     crop = spec.get('crop', [0, 1])
     if crop != [0, 1]:
         width = photo.shape[1]
         photo = photo[:, int(crop[0] * width):int(crop[1] * width)]
+        recrop = lambda across: (across - crop[0]) / (crop[1] - crop[0])
         spec = {**spec, 'cut': [[(across - crop[0]) / (crop[1] - crop[0]), down] for across, down in spec['cut']],
                 'keep': [[(x0 - crop[0]) / (crop[1] - crop[0]), y0, (x1 - crop[0]) / (crop[1] - crop[0]), y1] for x0, y0, x1, y1 in spec.get('keep', [])],
-                'protect': [[(x0 - crop[0]) / (crop[1] - crop[0]), (x1 - crop[0]) / (crop[1] - crop[0])] for x0, x1 in spec.get('protect', [])]}
+                'protect': [[(x0 - crop[0]) / (crop[1] - crop[0]), (x1 - crop[0]) / (crop[1] - crop[0])] for x0, x1 in spec.get('protect', [])],
+                'solid': [[[recrop(across), down] for across, down in polygon] for polygon in spec.get('solid', [])]}
     matte, cut = land_matte(photo, spec)
     for x0, y0, x1, y1 in spec.get('hide', []):
         # Left to the sky (`hide`): a landmark another layer shows in this hour's light, so no edge of this one's shows.
@@ -568,7 +843,15 @@ def prepare(plan, hour):
             clear = np.arange(height)[:, None] < (entry['cut'][None, :] - 0.04) * height
             entry['matte'] = entry['matte'] * (1 - bright * grey * clear)
         (over if entry['spec'].get('over') else base).append(entry)
-    return base, over, reference
+    cards = {}
+    for name, spec in plan.get('elms', {}).get('cards', {}).items():
+        if name not in KEYED:
+            KEYED[name] = key_elm(spec)
+        card = dict(KEYED[name])
+        card['color'] = match_tree(card['color'], card['alpha'] > 0.9, reference['linear'], trees_of(reference), plan['elms'].get('tint', 0.5))
+        card['levels'] = card_levels(card['color'], card['alpha'])
+        cards[name] = card
+    return base, over, reference, cards
 
 
 def luminance(color):
@@ -635,6 +918,11 @@ def fit_glow(entry, light, shape):
     elevation = np.degrees(np.arcsin(np.clip(rays[:, 1], -1, 1)))
     weights = profile(elevation)
     level = (graded * weights[:, None]).sum(0) / (weights ** 2).sum()
+    if 'color' in shape:
+        # Its colour given (`color`, relative) at the fitted luminance times `gain`: the photograph's long exposure
+        # shows the glow brown and bright; the eye sees it dimmer and nearly grey.
+        color = np.array(shape['color'], np.float32)
+        level = color * float(luminance(level)) * shape.get('gain', 1.0) / float(luminance(color))
     print(f'  glow: {np.round(level, 4)} at the horizon, fitted from {elevation.min():.1f}° to {elevation.max():.1f}°')
     return lambda dirs: (level * profile(np.degrees(np.arcsin(np.clip(dirs[..., 1], -1, 1))))[..., None]).astype(np.float32)
 
@@ -648,10 +936,12 @@ def sky_of(pure, turn, settings, glow=None):
     return along
 
 
-def compose(photos, over, sky, light, width, rows=None):
+def compose(photos, over, sky, light, width, rows=None, elms=None):
     height = width // 2
     rows = np.arange(height) if rows is None else rows
     dirs = directions(width, height, rows)
+    if elms:
+        return compose_over_elms(over, sky, light, width, rows, dirs, elms)
     land_sum = np.zeros((*dirs.shape[:2], 4), np.float32); alpha_sum = np.zeros(dirs.shape[:2], np.float32); weight_sum = np.zeros(dirs.shape[:2], np.float32)
     horizon_row = np.argmin(np.abs(rows - height / 2))
     protected = np.zeros(width, bool); yields = np.zeros(width); strongest = np.zeros(width)
@@ -672,6 +962,11 @@ def compose(photos, over, sky, light, width, rows=None):
     alpha = np.clip(alpha_sum / np.maximum(weight_sum, 1e-6), 0, 1)
     color = land_sum / np.maximum(alpha_sum[..., None], 1e-6)
     color, alpha, gaps = fill_gaps(color, alpha, weight_sum[horizon_row], protected, yields)
+    color, alpha, _ = lay_over(over, color, alpha, None, dirs, width, horizon_row)
+    return finish(color, alpha, None, sky, light, dirs), gaps
+
+
+def lay_over(over, color, alpha, haze, dirs, width, horizon_row):
     # The `over` layers, over whatever the others gave: a landmark in another light, inside its `shape`; or a whole
     # photograph (its land and its sky), joined to the rest at each side by image quilting's cut (join) within its
     # `seam` degrees, where its land and theirs agree best.
@@ -683,6 +978,8 @@ def compose(photos, over, sky, light, width, rows=None):
             share = (sampled[..., 4] * np.minimum(weight, 1))[..., None]
             color = color * (1 - share) + sampled[..., :4] * share
             alpha = alpha * (1 - share[..., 0]) + share[..., 0]
+            if haze is not None:
+                haze = haze * (1 - share[..., 0])
             continue
         backlit = np.full(entry['matte'].shape, SUBJECT if entry.get('backlit') else 0.0, np.float32)
         channels = np.concatenate([entry['linear'], backlit[..., None], entry['matte'][..., None]], -1)
@@ -698,6 +995,14 @@ def compose(photos, over, sky, light, width, rows=None):
         premultiplied = theirs_color * (1 - share[..., None]) + mine_color * share[..., None]
         alpha = alpha * (1 - share) + mine_alpha * share
         color = premultiplied / np.maximum(alpha[..., None], 1e-6)
+        if haze is not None:
+            haze = haze * (1 - share)
+    return color, alpha, haze
+
+
+def finish(color, alpha, haze, sky, light, dirs):
+    """The land graded to radiance (grade), backlit toward a low sun (backlight), hazed toward the sky at the horizon
+    by its `haze` share (the elms': their air), and laid over the hour's sky."""
     land = grade(color[..., :3], light)
     if 'backlight' in light:
         darken, desaturate = backlight(dirs, light['backlight'], light['sunAzimuth'])
@@ -705,7 +1010,37 @@ def compose(photos, over, sky, light, width, rows=None):
         darken, desaturate = 1 - (1 - darken) * subject, desaturate * subject
         lum = luminance(land)[..., None]
         land = (lum + (land - lum) * (1 - desaturate[..., None])) * darken[..., None]
-    return sky(dirs) * (1 - alpha[..., None]) + land * alpha[..., None], gaps
+    if haze is not None:
+        horizon = dirs * np.array([1, 0, 1], np.float32) + np.array([0, 0.035, 0], np.float32)
+        horizon /= np.linalg.norm(horizon, axis=-1, keepdims=True)
+        land = land * (1 - haze[..., None]) + sky(horizon) * haze[..., None]
+    return sky(dirs) * (1 - alpha[..., None]) + land * alpha[..., None]
+
+
+def compose_over_elms(over, sky, light, width, rows, dirs, elms):
+    """An hour composed over its elms (draw_elms) rather than over stitched photographs: every photograph an `over`
+    layer (the landmarks, cropped to them and joined to the trees by quilting cuts). Under the horizon, and HEDGE above
+    it, where no tree stands, the land is the colour of what stands at the horizon in that direction (under it the
+    app's own lawn covers it, to the horizon: src/shaders/scene.js MALL_GROUND_FRAGMENT)."""
+    cards, trees, settings, subject = elms
+    height = width // 2
+    color, alpha, haze = draw_elms(cards, trees, settings, dirs, rows, width, subject)
+    elevation = 90 - (rows + 0.5) / height * 180
+    low = (elevation > 0) & (elevation < 3)
+    if low.any():
+        weight = alpha[low].sum(0)
+        carried = color[low].sum(0)
+        smooth = lambda values: ndimage.gaussian_filter1d(values, width / 360, axis=0, mode='wrap')
+        shore = smooth(carried) / np.maximum(smooth(weight), 1e-6)[:, None]
+        below = (elevation <= HEDGE)[:, None]   # and a hair above: the far hedges and shrubs no tree card fills
+        open_share = np.where(below, 1 - alpha, 0)
+        color = color + shore[None] * open_share[..., None]
+        alpha = alpha + open_share
+    straight = color / np.maximum(alpha[..., None], 1e-6)
+    haze = haze / np.maximum(alpha, 1e-6)
+    horizon_row = int(np.argmin(np.abs(rows - height / 2)))
+    straight, alpha, haze = lay_over(over, straight, alpha, haze, dirs, width, horizon_row)
+    return finish(straight, alpha, haze, sky, light, dirs), []
 
 
 def preview(image, path, exposure=1.0):
@@ -748,7 +1083,13 @@ def build(plan, name, hour, out_preview):
         pure = np.maximum(pure - ndimage.median_filter(pure, size=(9, 9, 1)), 0)
     sun_row, sun_column = np.unravel_index(lum.argmax(), lum.shape)
     turn = (sun_column + 0.5) / pure.shape[1] - settings['sunAzimuth'] / 360
-    photos, over, reference = prepare(plan, hour)
+    photos, over, reference, cards = prepare(plan, hour)
+    elms = None
+    if cards:
+        # The hour's haze (`elmHaze`, metres; 0 none: at night the trees stand black against the city's glow, whose
+        # light is scattered over kilometres, not the few hundred metres to the trees).
+        planting = {**plan['elms'], 'haze': hour.get('elmHaze', plan['elms']['haze'])}
+        elms = (cards, plant_elms(planting), planting, SUBJECT if 'backlight' in hour else 0.0)
     light = dict(hour['light'])
     if 'backlight' in hour:
         light.update(backlight=hour['backlight'], sunAzimuth=settings['sunAzimuth'])
@@ -758,7 +1099,7 @@ def build(plan, name, hour, out_preview):
         sky = sky_of(pure, turn, settings, fit_glow(reference, light, settings['glow']))
     print(f"  land: luminance to the power {light['gamma']}, times {light['scale']:.4g}")
     low, high = 2048, 8192
-    image, gaps = compose(photos, over, sky, light, low)
+    image, gaps = compose(photos, over, sky, light, low, elms=elms)
     for start, width in gaps:
         print(f'  gap filled: {width:.1f}° from {start:.1f}°')
     file = hour['file']
@@ -766,7 +1107,7 @@ def build(plan, name, hour, out_preview):
     # The 8k: the 2k grown four times, the band where the land stands drawn at 8k.
     big = np.stack([np.asarray(Image.fromarray(image[..., channel]).resize((high, high // 2), Image.BILINEAR)) for channel in range(3)], -1)
     band_rows = np.arange(int((90 - BAND[1]) / 180 * high / 2), int((90 - BAND[0]) / 180 * high / 2))
-    sharp, _ = compose(photos, over, sky, light, high, band_rows)
+    sharp, _ = compose(photos, over, sky, light, high, band_rows, elms=elms)
     big[band_rows] = sharp
     write_hdr(os.path.join(ROOT, 'assets', 'sky', f'{file}_8k.hdr'), big.astype(np.float32))
     if out_preview:

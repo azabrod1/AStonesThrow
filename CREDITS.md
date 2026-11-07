@@ -4,13 +4,17 @@ Everything the page shows that someone else made, ready to go into an About scre
 
 ## Reflecting Pool
 
-The Reflecting Pool's three skies are stitched from these photographs (`tools/mall-backdrop.py`, its plan `tools/mall-backdrop.json`). Because several are CC BY-SA, each stitched backdrop is shared under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/) too.
+The Reflecting Pool's three skies are matte-painted from these photographs (`tools/mall-backdrop.py`, its plan `tools/mall-backdrop.json`): the landmarks cut from theirs, the elms planted from five photographs of single elms. Because several are CC BY-SA, each backdrop is shared under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/) too.
 
 | Shows | Photograph | Author | Licence |
 |---|---|---|---|
 | The Washington Monument down the pool (all hours) | [Washington Monument with Lincoln Memorial Reflecting Pool 2014-06-08](https://commons.wikimedia.org/wiki/File:Washington_Monument_with_Lincoln_Memorial_Reflecting_Pool_2014-06-08.jpg) | Kenrick95 | [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/) |
 | The Lincoln Memorial (all hours) | [Lincoln Memorial angle](https://commons.wikimedia.org/wiki/File:Lincoln_Memorial_angle.jpg) | Jmarcosny | [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/) |
-| The elms along both sides (all hours) | [Reflecting Pool algae](https://commons.wikimedia.org/wiki/File:Reflecting_Pool_algae.jpg) | Nvss132 | [CC0](https://creativecommons.org/publicdomain/zero/1.0/) |
+| An elm, planted along the pool (all hours) | [American Elm Tree in Connecticut - May 13, 2020](https://commons.wikimedia.org/wiki/File:American_Elm_Tree_in_Connecticut_-_May_13,_2020.jpg) | Marty Aligata | [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/) |
+| An elm, planted along the pool (all hours) | [Elm Tree in Brattle Brook Park, Pittsfield, MA - August 2020](https://commons.wikimedia.org/wiki/File:Elm_Tree_in_Brattle_Brook_Park,_Pittsfield,_MA_-_August_2020.jpg) | Marty Aligata | [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/) |
+| An elm, planted along the pool (all hours) | [Elm tree in Woodstock, Connecticut (2020)](https://commons.wikimedia.org/wiki/File:Elm_tree_in_Woodstock,_Connecticut_(2020).jpg) | Marty Aligata | [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/) |
+| An elm, planted along the pool (all hours) | [Large American Elm Tree, New Haven, CT - June 10, 2017](https://commons.wikimedia.org/wiki/File:Large_American_Elm_Tree,_New_Haven,_CT_-_June_10,_2017.jpg) | Marty Aligata | [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/) |
+| An elm, planted along the pool (all hours) | [American Elm Tree in Norwich, Vermont - June 2023](https://commons.wikimedia.org/wiki/File:American_Elm_Tree_in_Norwich,_Vermont_-_June_2023.jpg) | Marty Aligata | [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/) |
 | The Monument at sunset | [Washington Monument and Reflecting Pool at dusk](https://commons.wikimedia.org/wiki/File:Washington_Monument_and_Reflecting_Pool_at_dusk.jpg) | Gregg L. Davis | [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/) |
 | The Monument at night | [Washington Monument Reflection Night View](https://commons.wikimedia.org/wiki/File:Washington_Monument_Reflection_Night_View.jpg) | Ramakrishna Gundra | [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/) |
 | The Lincoln Memorial at sunset and night | [Lincoln Memorial at Sunset](https://commons.wikimedia.org/wiki/File:Lincoln_Memorial_at_Sunset_(49903476206).jpg) | John Brighenti | [CC BY 2.0](https://creativecommons.org/licenses/by/2.0/) |
