@@ -965,7 +965,10 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   splash.setBed(bedOfPlace());
   /** The ground the splash's drops meet: the pool's walls and deck, which they wet (src/splash.js setGround); none in the lake. */
   function applyGround() {
-    splash.setGround(pooled ? { square: pool.square, deck: POOL.deck, onWet: (x, z, radius) => pool.wetSpot(x, z, radius) } : null);
+    // The Pool's deck, wet where drops land; the Reflecting Pool's coping (its walls and ground: src/mallPool.js), which
+    // keeps no wet map of its own (only the rain wets it).
+    const ground = pooled ? { square: pool.square, deck: POOL.deck, onWet: (x, z, radius) => pool.wetSpot(x, z, radius) } : mallHere ? { square: MALL_BASIN, deck: MALL_BASIN.deck, onWet: null } : null;
+    splash.setGround(ground);
   }
   applyGround();
   // The ice (the header): Frozen water's, as chosen above.
