@@ -100,7 +100,7 @@ def fetch(url, path):
 
 def commons_file(title):
     """A Commons file's original, downloaded once."""
-    name = ''.join(c if c.isalnum() or c in '._-' else '_' for c in title[5:])
+    name = ''.join(character if character.isalnum() or character in '._-' else '_' for character in title[5:])
     path = os.path.join(CACHE, name)
     if os.path.exists(path):
         return path
@@ -198,37 +198,39 @@ def camera(yaw, pitch, roll=0.0):
     return right, up, forward
 
 
-def bilinear(image, u, v):
-    h, w = image.shape[:2]
-    u = np.clip(u, 0, w - 1.001); v = np.clip(v, 0, h - 1.001)
-    u0 = u.astype(np.int32); v0 = v.astype(np.int32)
-    fu = (u - u0)[..., None]; fv = (v - v0)[..., None]
-    return (image[v0, u0] * (1 - fu) * (1 - fv) + image[v0, u0 + 1] * fu * (1 - fv)
-            + image[v0 + 1, u0] * (1 - fu) * fv + image[v0 + 1, u0 + 1] * fu * fv)
+def bilinear(image, across, down):
+    """`image` at pixel coordinates (across, down), between its four nearest pixels."""
+    height, width = image.shape[:2]
+    across = np.clip(across, 0, width - 1.001); down = np.clip(down, 0, height - 1.001)
+    left = across.astype(np.int32); top = down.astype(np.int32)
+    right_share = (across - left)[..., None]; lower_share = (down - top)[..., None]
+    return (image[top, left] * (1 - right_share) * (1 - lower_share) + image[top, left + 1] * right_share * (1 - lower_share)
+            + image[top + 1, left] * (1 - right_share) * lower_share + image[top + 1, left + 1] * right_share * lower_share)
 
 
 def sample_sky(sky, dirs, turn):
     """The pure sky along `dirs`, turned by `turn` (a share of the circle) about the vertical."""
-    h, w = sky.shape[:2]
+    height, width = sky.shape[:2]
     azimuth = np.arctan2(dirs[..., 0], dirs[..., 2])
     elevation = np.arcsin(np.clip(dirs[..., 1], -1, 1))
-    u = ((azimuth / (2 * math.pi) + turn) % 1.0) * w - 0.5
-    v = (0.5 - elevation / math.pi) * h - 0.5
-    u0 = np.floor(u).astype(np.int32); fu = (u - u0)[..., None]
-    v = np.clip(v, 0, h - 1.001); v0 = v.astype(np.int32); fv = (v - v0)[..., None]
-    u0 %= w; u1 = (u0 + 1) % w
-    return (sky[v0, u0] * (1 - fu) * (1 - fv) + sky[v0, u1] * fu * (1 - fv) + sky[v0 + 1, u0] * (1 - fu) * fv + sky[v0 + 1, u1] * fu * fv)
+    across = ((azimuth / (2 * math.pi) + turn) % 1.0) * width - 0.5
+    down = (0.5 - elevation / math.pi) * height - 0.5
+    left = np.floor(across).astype(np.int32); right_share = (across - left)[..., None]
+    down = np.clip(down, 0, height - 1.001); top = down.astype(np.int32); lower_share = (down - top)[..., None]
+    left %= width; right = (left + 1) % width   # round the circle
+    return (sky[top, left] * (1 - right_share) * (1 - lower_share) + sky[top, right] * right_share * (1 - lower_share)
+            + sky[top + 1, left] * (1 - right_share) * lower_share + sky[top + 1, right] * right_share * lower_share)
 
 
 # ---- the photographs -------------------------------------------------------------------------------------------
 
-def srgb_to_linear(c):
-    return np.where(c <= 0.04045, c / 12.92, ((c + 0.055) / 1.055) ** 2.4).astype(np.float32)
+def srgb_to_linear(encoded):
+    return np.where(encoded <= 0.04045, encoded / 12.92, ((encoded + 0.055) / 1.055) ** 2.4).astype(np.float32)
 
 
-def linear_to_srgb(c):
-    c = np.clip(c, 0, None)
-    return np.where(c <= 0.0031308, c * 12.92, 1.055 * np.power(c, 1 / 2.4) - 0.055)
+def linear_to_srgb(linear):
+    linear = np.clip(linear, 0, None)
+    return np.where(linear <= 0.0031308, linear * 12.92, 1.055 * np.power(linear, 1 / 2.4) - 0.055)
 
 
 def load_photo(spec):
@@ -241,15 +243,15 @@ def load_photo(spec):
 
 def paint_out(photo, lines):
     """Paint out thin things (a pole) along polylines: each pixel within the line's width takes the pixel just beyond it, sideways."""
-    h, w = photo.shape[:2]
-    for points, width in lines:
-        half = max(2, round(width * w / 2))
-        mask = Image.new('L', (w, h), 0)
+    height, width = photo.shape[:2]
+    for points, line_width in lines:
+        half = max(2, round(line_width * width / 2))
+        mask = Image.new('L', (width, height), 0)
         from PIL import ImageDraw
-        ImageDraw.Draw(mask).line([(x * w, y * h) for x, y in points], fill=255, width=2 * half)
+        ImageDraw.Draw(mask).line([(across * width, down * height) for across, down in points], fill=255, width=2 * half)
         mask = np.asarray(mask) > 0
         ys, xs = np.nonzero(mask)
-        source = np.clip(xs + 2 * half + 2, 0, w - 1)
+        source = np.clip(xs + 2 * half + 2, 0, width - 1)
         photo[ys, xs] = photo[ys, source]
         blurred = ndimage.uniform_filter(photo, size=(3, 3, 1))
         edge = ndimage.binary_dilation(mask, iterations=2) & ~ndimage.binary_erosion(mask, iterations=2)
@@ -259,46 +261,46 @@ def paint_out(photo, lines):
 
 def land_matte(photo, spec):
     """Land (1) against sky (0) above the far shore (`cut`); below it land, the far shore carried down."""
-    h, w = photo.shape[:2]
-    ys = (np.arange(h) + 0.5) / h
-    xs = (np.arange(w) + 0.5) / w
+    height, width = photo.shape[:2]
+    ys = (np.arange(height) + 0.5) / height
+    xs = (np.arange(width) + 0.5) / width
     cut = np.interp(xs, *zip(*spec['cut']))
     above = ys[:, None] < cut[None, :]
-    r, g, b = photo[..., 0], photo[..., 1], photo[..., 2]
-    lum = 0.2126 * r + 0.7152 * g + 0.0722 * b
-    blue = b - r
+    red, green, blue_channel = photo[..., 0], photo[..., 1], photo[..., 2]
+    lum = 0.2126 * red + 0.7152 * green + 0.0722 * blue_channel
+    blue = blue_channel - red
     bluish = (blue > spec.get('blue', 0.05)) & (lum > spec.get('lum', 0.45))
-    white = (lum > spec.get('white', 0.9)) & (np.abs(b - r) < 0.12)
+    white = (lum > spec.get('white', 0.9)) & (np.abs(blue_channel - red) < 0.12)
     bright = lum > spec['sky_lum'] if 'sky_lum' in spec else np.zeros_like(white)   # a dusk's or a city night's sky: lighter than its land
     for x0, y0, x1, y1 in spec.get('keep', []):
-        box = (slice(int(y0 * h), int(y1 * h)), slice(int(x0 * w), int(x1 * w)))
+        box = (slice(int(y0 * height), int(y1 * height)), slice(int(x0 * width), int(x1 * width)))
         white[box] = False
         bright[box] = False
         bluish[box] &= blue[box] > spec.get('keep_blue', 0.12)
     skylike = (bluish | white | bright) & above
     labels, _ = ndimage.label(skylike)
-    touching = np.unique(labels[: max(2, h // 200)])
+    touching = np.unique(labels[: max(2, height // 200)])
     sky = np.isin(labels, touching[touching > 0])
     sky |= skylike & (blue > spec.get('hole_blue', 0.12))
     if 'sky_above' in spec:
-        rows = int(spec['sky_above'] * h)
+        rows = int(spec['sky_above'] * height)
         sky[:rows] |= skylike[:rows]
     sky = ndimage.binary_opening(sky, iterations=1)
     land = above & ~sky
     # What floats in the sky (a kite, a bird) is not land: keep only land joined to the far shore.
     labels, _ = ndimage.label(land)
-    shore_rows = np.clip((cut * h).astype(int) - 2, 0, h - 1)
-    grounded = np.unique(labels[shore_rows, np.arange(w)])
+    shore_rows = np.clip((cut * height).astype(int) - 2, 0, height - 1)
+    grounded = np.unique(labels[shore_rows, np.arange(width)])
     land = np.isin(labels, grounded[grounded > 0]) | ~above
     return np.clip(ndimage.gaussian_filter(land.astype(np.float32), 0.7), 0, 1), cut
 
 
 def carry_shore_down(photo, cut):
     """Below the far shore, each column takes its shore's colour (the app's water and ground cover it; the encoder blurs it)."""
-    h, w = photo.shape[:2]
-    rows = np.clip((cut * h).astype(int) - 3, 0, h - 1)
-    shore = photo[rows, np.arange(w)]
-    below = np.arange(h)[:, None] >= rows[None, :]
+    height, width = photo.shape[:2]
+    rows = np.clip((cut * height).astype(int) - 3, 0, height - 1)
+    shore = photo[rows, np.arange(width)]
+    below = np.arange(height)[:, None] >= rows[None, :]
     return np.where(below[..., None], shore[None, :, :], photo)
 
 
@@ -342,14 +344,14 @@ def project(rgba, spec, dirs):
     focal = (full_width / 2) / math.tan(math.radians(spec['hfov']) / 2)
     offset = spec.get('crop', [0, 1])[0] * full_width
     with np.errstate(divide='ignore', invalid='ignore'):
-        u = full_width / 2 + focal * (dirs @ right.astype(np.float32)) / depth
-        v = ph / 2 - focal * (dirs @ up.astype(np.float32)) / depth
+        across = full_width / 2 + focal * (dirs @ right.astype(np.float32)) / depth
+        down = ph / 2 - focal * (dirs @ up.astype(np.float32)) / depth
     if spec.get('mirror'):
-        u = full_width - u
-    u = u - offset
-    inside = (depth > 0) & (u >= 0) & (u <= pw - 1) & (v >= 0) & (v <= ph - 1)
-    sampled = bilinear(rgba, np.where(inside, u, 0), np.where(inside, v, 0))
-    feather = np.clip(np.minimum(u, pw - 1 - u) / (spec.get('feather', 0.02) * pw), 0, 1)
+        across = full_width - across
+    across = across - offset
+    inside = (depth > 0) & (across >= 0) & (across <= pw - 1) & (down >= 0) & (down <= ph - 1)
+    sampled = bilinear(rgba, np.where(inside, across, 0), np.where(inside, down, 0))
+    feather = np.clip(np.minimum(across, pw - 1 - across) / (spec.get('feather', 0.02) * pw), 0, 1)
     weight = np.where(inside, feather, 0).astype(np.float32)
     return sampled, weight
 
@@ -372,8 +374,8 @@ def join(left_color, left_alpha, right_color, right_alpha, low, high, per_degree
     for row in range(rows - 1, -1, -1):
         seam[row] = column
         if row:
-            options = [c for c in (column - 1, column, column + 1) if 0 <= c < high - low]
-            column = min(options, key=lambda c: total[row - 1, c])
+            options = [option for option in (column - 1, column, column + 1) if 0 <= option < high - low]
+            column = min(options, key=lambda option: total[row - 1, option])
     seam = ndimage.uniform_filter1d(seam, 3) + low
     blend = np.clip((np.arange(width)[None, :] - seam[:, None]) / max(2.0, per_degree / 4) + 0.5, 0, 1)
     return blend * blend * (3 - 2 * blend)
@@ -387,8 +389,8 @@ def fill_gaps(color, alpha, coverage, protected, yields):
     seen twice). Three
     joins (join): the left photograph to its copy, in its last few degrees (its `yield`); the copies, where both are
     land to copy; the right copy to the right photograph, in its first few degrees."""
-    h, w = alpha.shape
-    per_degree = w / 360
+    height, width = alpha.shape
+    per_degree = width / 360
     covered = coverage >= 0.999
     if covered.all():
         return color, alpha, []
@@ -455,7 +457,7 @@ def fill_gaps(color, alpha, coverage, protected, yields):
         out_color[:, columns] = photo_color * (1 - into)[..., None] + fill_color * into[..., None]
         out_alpha[:, columns] = photo_alpha * (1 - into) + fill_alpha * into
     color = out_color / np.maximum(out_alpha[..., None], 1e-6)
-    found = [(((start + shift) % w) / w * 360, (end - start) / w * 360) for start, end in gaps]
+    found = [(((start + shift) % width) / width * 360, (end - start) / width * 360) for start, end in gaps]
     return np.roll(color, shift, 1), np.roll(out_alpha, shift, 1), found
 
 
@@ -465,7 +467,7 @@ def shape_matte(spec, height, width):
     from PIL import ImageDraw
     mask = Image.new('L', (2 * width, 2 * height), 0)
     for polygon in spec['shape']:
-        ImageDraw.Draw(mask).polygon([(x * 2 * width, y * 2 * height) for x, y in polygon], fill=255)
+        ImageDraw.Draw(mask).polygon([(across * 2 * width, down * 2 * height) for across, down in polygon], fill=255)
     return np.asarray(mask.resize((width, height), Image.BOX), np.float32) / 255
 
 
@@ -487,16 +489,16 @@ def prepare_photo(spec):
         photo = paint_out(photo, spec['paint'])
     crop = spec.get('crop', [0, 1])
     if crop != [0, 1]:
-        w = photo.shape[1]
-        photo = photo[:, int(crop[0] * w):int(crop[1] * w)]
-        spec = {**spec, 'cut': [[(x - crop[0]) / (crop[1] - crop[0]), y] for x, y in spec['cut']],
+        width = photo.shape[1]
+        photo = photo[:, int(crop[0] * width):int(crop[1] * width)]
+        spec = {**spec, 'cut': [[(across - crop[0]) / (crop[1] - crop[0]), down] for across, down in spec['cut']],
                 'keep': [[(x0 - crop[0]) / (crop[1] - crop[0]), y0, (x1 - crop[0]) / (crop[1] - crop[0]), y1] for x0, y0, x1, y1 in spec.get('keep', [])],
                 'protect': [[(x0 - crop[0]) / (crop[1] - crop[0]), (x1 - crop[0]) / (crop[1] - crop[0])] for x0, x1 in spec.get('protect', [])]}
     matte, cut = land_matte(photo, spec)
     for x0, y0, x1, y1 in spec.get('hide', []):
         # Left to the sky (`hide`): a landmark another layer shows in this hour's light, so no edge of this one's shows.
-        h, w = matte.shape
-        matte[int(y0 * h):int(y1 * h), int(x0 * w):int(x1 * w)] = 0
+        height, width = matte.shape
+        matte[int(y0 * height):int(y1 * height), int(x0 * width):int(x1 * width)] = 0
     entry = {'spec': spec, 'photo': photo, 'linear': srgb_to_linear(carry_shore_down(photo, cut)), 'matte': matte, 'cut': cut}
     if spec.get('shape'):
         entry['shape'] = shape_matte(spec, *photo.shape[:2])
@@ -547,9 +549,8 @@ def prepare(plan, hour):
                     # Each channel its own contrast gives sunlit leaves the reference's gold, but stretches the sky in
                     # a canopy's gaps and at its edges (the brightest of a tree) to a false pink: there (`keepHue`: from
                     # what luminance to what, easing in) the shared contrast, which keeps its hue.
-                    r, g, b = (entry['photo'][..., channel] for channel in range(3))
                     low, high = hour['keepHue']
-                    gap = np.clip((0.2126 * r + 0.7152 * g + 0.0722 * b - low) / (high - low), 0, 1)
+                    gap = np.clip((luminance(entry['photo']) - low) / (high - low), 0, 1)
                     graded = graded + (color_match(*arguments, shared=True) - graded) * gap[..., None]
                 entry['linear'] = graded
         if 'adjust' in layer:
@@ -559,10 +560,10 @@ def prepare(plan, hour):
             # What the matte kept as land but is mostly sky (leaves blurred against it: bright, and grey to blue rather
             # than a leaf's yellow-green) would take the hour's tint as land (pale blue to salmon): it is let through
             # as it is sky-like (`unsky`: from what luminance to what), above the shore's own row of things (tents).
-            r, g, b = (entry['photo'][..., channel] for channel in range(3))
+            green, blue = entry['photo'][..., 1], entry['photo'][..., 2]
             low, high = hour['unsky']
-            bright = np.clip((0.2126 * r + 0.7152 * g + 0.0722 * b - low) / (high - low), 0, 1)
-            grey = np.clip((b / np.maximum(g, 1e-3) - 0.75) / 0.15, 0, 1)
+            bright = np.clip((luminance(entry['photo']) - low) / (high - low), 0, 1)
+            grey = np.clip((blue / np.maximum(green, 1e-3) - 0.75) / 0.15, 0, 1)
             height = entry['matte'].shape[0]
             clear = np.arange(height)[:, None] < (entry['cut'][None, :] - 0.04) * height
             entry['matte'] = entry['matte'] * (1 - bright * grey * clear)
@@ -584,14 +585,14 @@ def grade(color, light):
 def photo_rays(spec, height, width, rows, columns):
     """Directions (as `directions`) of a prepared photograph's pixels (rows, columns of its cropped image)."""
     crop = spec.get('crop', [0, 1])
-    x = crop[0] + (columns + 0.5) / width * (crop[1] - crop[0])
+    across = crop[0] + (columns + 0.5) / width * (crop[1] - crop[0])
     if spec.get('mirror'):
-        x = 1 - x
+        across = 1 - across
     full_width = width / (crop[1] - crop[0])
     focal = 0.5 / math.tan(math.radians(spec['hfov']) / 2)
     right, up, forward = camera(spec['yaw'], spec.get('pitch', 0.0), spec.get('roll', 0.0))
-    y = (rows + 0.5) / height
-    rays = right[None] * ((x - 0.5) / focal)[:, None] + up[None] * ((0.5 - y) * height / full_width / focal)[:, None] + forward[None]
+    down = (rows + 0.5) / height
+    rays = right[None] * ((across - 0.5) / focal)[:, None] + up[None] * ((0.5 - down) * height / full_width / focal)[:, None] + forward[None]
     return (rays / np.linalg.norm(rays, axis=-1, keepdims=True)).astype(np.float32)
 
 
@@ -763,7 +764,7 @@ def build(plan, name, hour, out_preview):
     file = hour['file']
     write_hdr(os.path.join(ROOT, 'assets', 'sky', f'{file}_2k.hdr'), image.astype(np.float32))
     # The 8k: the 2k grown four times, the band where the land stands drawn at 8k.
-    big = np.stack([np.asarray(Image.fromarray(image[..., c]).resize((high, high // 2), Image.BILINEAR)) for c in range(3)], -1)
+    big = np.stack([np.asarray(Image.fromarray(image[..., channel]).resize((high, high // 2), Image.BILINEAR)) for channel in range(3)], -1)
     band_rows = np.arange(int((90 - BAND[1]) / 180 * high / 2), int((90 - BAND[0]) / 180 * high / 2))
     sharp, _ = compose(photos, over, sky, light, high, band_rows)
     big[band_rows] = sharp
