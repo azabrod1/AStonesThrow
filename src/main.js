@@ -302,7 +302,7 @@ import { DropRings } from './dropRings.js';
 import { PLACES, placeShore, waterForPlace } from './places.js';
 import { createEnvironment, SALT_SKIES, skyHours, resolveHour, nearestHour } from './sky.js';
 import { createWaterSurface } from './waterSurface.js';
-import { createPondFloor, createShore, floorDepthAt, groundHeightAt, lagoonLandGeometry, setShoreKind, setShoreLook, KOI_SHORE, SHORE_LOOKS } from './pondFloor.js';
+import { createPondFloor, createShore, floorDepthAt, groundHeightAt, lagoonLandGeometry, mallShoreDistance, setShoreKind, setShoreLook, KOI_SHORE, SHORE_LOOKS } from './pondFloor.js';
 import { Rock, setAir, aimSkip, aimThrow, dressThing, flutterTrial, prepareThing, PREPARATION_WORK, skipLowest, skipSpeed, SKIP_THROW, PHYSICS_STEP, throwFlightTime } from './rock.js';
 import { THINGS, THING_NAMES, DEFAULT_THING, defineThing, onThingsChange } from './things.js';
 import { collideThings, forgetPasses } from './collide.js';
@@ -539,10 +539,12 @@ const VIEWS = {
 // from the lake's shore view's hand all the same (handPosition).
 // At the Reflecting Pool (src/mallPool.js) the shore view stands where the lake's does, at the pool's west wall, but
 // looks a little higher, so the Washington Monument down the far end stands whole in the frame over its reflection;
-// the throw's water stays in its lower half.
+// the throw's water stays in its lower half. Its water is 0.88 m deep at most, so the under-water view's eye stands
+// shallower than the lake's, UNDER_GAP clear of the bed (the lowest it may go there is 0.73 m down).
 const MALL_VIEWS = {
   ...VIEWS,
   shore: orbitAbout({ x: 0, y: 1.15, z: 2.45 }, { x: 0, y: 0.32, z: -1.6 }),
+  under: orbitAbout({ x: -0.7, y: -0.6, z: -0.1 }, { x: 0, y: -0.3, z: -1.4 }),
 };
 const POOL_VIEWS = {
   ...VIEWS,
@@ -996,19 +998,22 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
   const requestedView = pageParameters.get('view');
   const viewsNow = () => (pooled ? POOL_VIEWS : mallHere ? MALL_VIEWS : VIEWS);
   const orbit = { ...viewsNow()[Object.hasOwn(VIEWS, requestedView ?? '') ? requestedView : PLACES[firstPlace].defaultView ?? 'shore'] };
-  // The ground the eye keeps over: the beach, or the pool's deck, eased in
-  // over EYE_EDGE inside the pool's edge so the eye never stands at the
-  // deck's lip. Under a pool's water it keeps inside the walls too.
+  // The ground the eye keeps over: the beach, or the pool's deck or the
+  // Reflecting Pool's coping, eased in over EYE_EDGE inside the walls so the
+  // eye never stands at the lip. Under a pool's water it keeps inside the
+  // walls too.
   const square = water.poolSquare;
   const poolBox = { minX: square.minX, maxX: square.minX + square.size, minZ: square.minZ, maxZ: square.minZ + square.size };
   const underBox = { minX: poolBox.minX + UNDER_GAP, maxX: poolBox.maxX - UNDER_GAP, minZ: poolBox.minZ + UNDER_GAP, maxZ: poolBox.maxZ - UNDER_GAP };
   const outsidePool = (x, z) => Math.max(Math.abs(x - (square.minX + square.size / 2)), Math.abs(z - (square.minZ + square.size / 2))) - square.size / 2;
-  const eyeGroundAt = (x, z) => (pooled ? POOL.deck * THREE.MathUtils.smoothstep(outsidePool(x, z), -EYE_EDGE, 0) : groundHeightAt(x, z));
+  const mallUnderBox = { minX: MALL_BOUNDS.minX + UNDER_GAP, maxX: MALL_BOUNDS.maxX - UNDER_GAP, minZ: MALL_BOUNDS.minZ + UNDER_GAP, maxZ: MALL_BOUNDS.maxZ - UNDER_GAP };
+  const eyeGroundAt = (x, z) => (pooled ? POOL.deck * THREE.MathUtils.smoothstep(outsidePool(x, z), -EYE_EDGE, 0)
+    : mallHere ? MALL_BASIN.deck * THREE.MathUtils.smoothstep(-mallShoreDistance(x, z), -EYE_EDGE, 0) : groundHeightAt(x, z));
   // Under a gale the eye keeps GALE_EYE_CLEARANCE clear of the still water
   // too, over and under it, so no crest or trough reaches it.
   const galeClearance = () => (galeWaves.on ? GALE_EYE_CLEARANCE : 0);
   const aboveWater = { lowestAt: (x, z) => LOWEST_EYE + Math.max(eyeGroundAt(x, z), galeClearance()), highestAt: () => Infinity };
-  const underWater = { lowestAt: (x, z) => UNDER_GAP - (pooled ? POOL.depth : floorDepthAt(x, z)), highestAt: () => -UNDER_GAP - galeClearance(), get box() { return pooled ? underBox : null; } };
+  const underWater = { lowestAt: (x, z) => UNDER_GAP - (pooled ? POOL.depth : floorDepthAt(x, z)), highestAt: () => -UNDER_GAP - galeClearance(), get box() { return pooled ? underBox : mallHere ? mallUnderBox : null; } };
   /** Where an orbit's eye may stand: under the water if its pivot is. */
   const eyeBounds = (target) => (target.pivotY < 0 ? underWater : aboveWater);
   Object.assign(orbit, clampOrbit(orbit, eyeBounds(orbit)));   // the views stand within them, but under a gale
