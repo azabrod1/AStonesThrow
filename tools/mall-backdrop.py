@@ -1045,13 +1045,17 @@ def prepare(plan, hour, per_degree=None, fits=None):
         if hour.get('unsky') and matched:
             # What the matte kept as land but is mostly sky (leaves blurred against it: bright, and grey to blue rather
             # than a leaf's yellow-green) would take the hour's tint as land (pale blue to salmon): it is let through
-            # as it is sky-like (`unsky`: from what luminance to what), above the shore's own row of things (tents).
+            # as it is sky-like (`unsky`: from what luminance to what), above the shore's own row of things (tents), and
+            # outside its `keep` boxes.
             green, blue = entry['photo'][..., 1], entry['photo'][..., 2]
             low, high = hour['unsky']
             bright = np.clip((luminance(entry['photo']) - low) / (high - low), 0, 1)
             grey = np.clip((blue / np.maximum(green, 1e-3) - 0.75) / 0.15, 0, 1)
             height = entry['matte'].shape[0]
             clear = np.arange(height)[:, None] < (entry['cut'][None, :] - 0.04) * height
+            width = entry['matte'].shape[1]
+            for x0, y0, x1, y1 in entry['spec'].get('keep', []):   # (bright grey stone, a landmark's steps, is land)
+                clear[int(y0 * height):int(y1 * height), int(x0 * width):int(x1 * width)] = False
             entry['matte'] = entry['matte'] * (1 - bright * grey * clear)
         (over if entry['spec'].get('over') else base).append(entry)
     cards = {}
