@@ -67,7 +67,8 @@
 //     blow beside a load more than the ice holds breaks it with a finite
 //     strength (ICE.loadedLeast); stars at one place are one weak spot, and
 //     scattered ones at most WEAK.most; WEIGH.things at rest on the ice
-//     cost weigh under WEIGH.mostMicroseconds a step, one moved weighed again;
+//     cost weigh under WEIGH.mostMicroseconds a step (the least of three
+//     runs of WEIGH.steps), one moved weighed again;
 //   - shards (src/ice.js piecesOf, each made a thing as src/main.js makes
 //     it, src/rock.js adrift): a 6 cm stone through thin ice, a 16 cm one
 //     and a 30 cm rock through thick, each lets go SHARDS pieces the step
@@ -96,7 +97,14 @@
 //     them (painted as the sheet's ice), its middle ground again, thin; a
 //     stone thrown at it breaks the new ice, which lets go no shards; a hole
 //     with a thing thrown afloat in it stays open; each step of it costs
-//     under SKIN_MS.
+//     under SKIN_MS, the worst over the steps, each step's cost its least
+//     over the same seeded world run again when one comes near the budget,
+//     as a break's is.
+// Every cost (BREAK_MS, WEIGH, SKIN_MS) is the main thread's time
+// (tools/cost-clock.mjs), not the time the probe waited for a core beside
+// others: a step of the ice's clock, the worst of thousands, read 74 ms on
+// the wall clock in the container with other work running, where it costs 2
+// to 8.
 //
 //   node tools/ice-probe.mjs [--list]
 import * as THREE from 'three';
@@ -107,6 +115,7 @@ import { holdInPool, poolGround, POOL } from '../src/pool.js';
 import { collideThings, outlineOverlap, slabOverlap, passingBy, passBy, passesBy } from '../src/collide.js';
 import { SplashSystem } from '../src/splash.js';
 import { IceSheet, ICE, ICE_MATERIAL, ICE_THICKNESS, WEAK, convexHull, insidePolygon, polygonEdgeDistance } from '../src/ice.js';
+import { costClock, costSince } from './cost-clock.mjs';
 
 const GRAVITY = 9.81;
 const STEP = 1 / 240;
@@ -223,13 +232,13 @@ function follow(rock, ice, { step = STEP, others = [], pool = false, seconds = L
   const contain = (thing) => (pool ? holdInPool(thing, POOL_SQUARE) : null) ?? ice.contain(thing);
   for (let time = 0; time < seconds; time += step) {
     const heardBefore = rock.heard.length;
-    const started = performance.now();
+    const started = costClock();
     let impact = null;
     for (const thing of things) {
       const event = thing.update(step, pool ? POOL.depth : floorDepthAt);
       if (thing === rock) impact = event;
     }
-    const spent = performance.now() - started;
+    const spent = costSince(started);
     if (!record.firstStrike && ice.lastStrike && ice.lastStrike !== strikeBefore) record.firstStrike = ice.lastStrike;
     collideThings(things, contain);
     record.states.add(rock.state);
@@ -249,11 +258,11 @@ function follow(rock, ice, { step = STEP, others = [], pool = false, seconds = L
       record.impact ??= impact;
       record.throughIce ??= Boolean(impact.throughIce);
       record.touched ??= new THREE.Vector3(impact.x, 0, impact.z);
-      const before = performance.now();
+      const before = costClock();
       const cavity = splash.impact(impact, water);
       if (rock.iceHole && !rock.iceHole.settled) {
         ice.fitCavity(rock.iceHole, cavity, rock);
-        record.fitMs = performance.now() - before;
+        record.fitMs = costSince(before);
         record.cavity = cavity;
         record.hole = rock.iceHole;
         record.breakMs = spent;
@@ -383,9 +392,9 @@ for (const [key, entry] of table) {
   }
   const foot = cavity ? cavity.closurePoint({}) : hole;
   check(outside === 0 && ice.holeAt(foot.x, foot.z), `${key}: ${outside} of ${samples} points of its cavity's lip lie on the ice${ice.holeAt(foot.x, foot.z) ? '' : ', and the jet\'s foot'}`);
-  const painted = performance.now();
+  const painted = costClock();
   ice.update();
-  const paintMs = performance.now() - painted;
+  const paintMs = costSince(painted);
   for (const { points } of hole.cracks) {
     for (let index = 0; index < points.length; index += 2) {
       const x = points[index], z = points[index + 1];
@@ -413,9 +422,9 @@ for (const entry of totals) {
     ice.setThickness(metres);
     const record = follow(throwOnto(ice, name, { manner, power, value }), ice);
     if (!record.broke) break;   // (never: the same throw breaks the same ice)
-    const painted = performance.now();
+    const painted = costClock();
     ice.update();
-    entry.total = Math.min(entry.total, record.breakMs + record.fitMs + (performance.now() - painted));
+    entry.total = Math.min(entry.total, record.breakMs + record.fitMs + costSince(painted));
   }
 }
 const sortedTotals = totals.map((entry) => entry.total).sort((first, second) => first - second);
@@ -612,6 +621,9 @@ console.log('\nThe same seeded throw twice, and with the substep halved');
  * the ice's clock, its shards made things (adrift, held in their hole), the
  * things' meetings, its new ice reaching a shard freezing it in, a floater
  * in a hole keeping it open; `others` thrown too. step(seconds) steps on.
+ * world.costs lists, in the order they come, what each step of the ice's
+ * clock, each release of shards, each painting and each shard frozen in cost
+ * (ms, tools/cost-clock.mjs).
  */
 function iceWorld({ diameter = 6, thickness = 'thin', seed = 1, x = 0, z = -1.4, lob = 1.5 } = {}) {
   seedRandom(seed);
@@ -619,7 +631,7 @@ function iceWorld({ diameter = 6, thickness = 'thin', seed = 1, x = 0, z = -1.4,
   ice.setThickness(ICE_THICKNESS[thickness]);
   const { water, splash } = standIns();
   splash.setIce(ice);
-  const world = { ice, splash, things: [], shards: [], frozen: [], broken: [], time: 0, opened: 0, costs: { release: 0, clock: 0, paint: 0, freeze: 0 } };
+  const world = { ice, splash, things: [], shards: [], frozen: [], broken: [], time: 0, opened: 0, costs: { release: [], clock: [], paint: [], freeze: [] } };
   world.throwStone = (stoneDiameter, at = { x, z }, lobbed = lob) => {
     const radius = stoneDiameter / 200;
     const hand = handFor(radius), target = new THREE.Vector3(at.x, 0, at.z);
@@ -637,10 +649,10 @@ function iceWorld({ diameter = 6, thickness = 'thin', seed = 1, x = 0, z = -1.4,
       // What the ice's clock costs a step: flooding round a hole whose cavity has closed, drying, preparing and growing
       // new ice, and weighing what lies on it (weigh); a hole's shards let go are the step's end's (below), the break's
       // own painting the break's (BREAK_MS).
-      let started = performance.now();
+      let started = costClock();
       ice.setTime(world.time);
       ice.weigh(world.things);
-      world.costs.clock = Math.max(world.costs.clock, performance.now() - started);
+      world.costs.clock.push(costSince(started));
       for (const thing of world.things) {
         const impact = thing.update(STEP, floorDepthAt);
         if (impact && !impact.skim && !impact.ripple) {
@@ -653,10 +665,10 @@ function iceWorld({ diameter = 6, thickness = 'thin', seed = 1, x = 0, z = -1.4,
       // At the step's end, as src/main.js: what the ice lets go by the next step's time (a hole's shards the step after
       // its break, the parts of a piece split in this one) made things, and a piece broken up (splitPiece) gone. Its cost
       // is the release's.
-      started = performance.now();
+      started = costClock();
       ice.letGo(world.time + STEP);
       const pieces = ice.shards.splice(0);
-      if (pieces.length > 0) world.costs.release = Math.max(world.costs.release, performance.now() - started);
+      if (pieces.length > 0) world.costs.release.push(costSince(started));
       for (const piece of pieces) {
         const shard = new Rock({ radius: piece.radius, position: piece.start.position, velocity: piece.start.velocity, envTexture: null, thing: 'ice-shard', mass: piece.mass, piece: piece.shape });
         shard.breakAway(piece.start);
@@ -677,10 +689,10 @@ function iceWorld({ diameter = 6, thickness = 'thin', seed = 1, x = 0, z = -1.4,
       splash.update(STEP, water);
       // Once a frame (src/main.js render): the mask painted.
       if (Math.round(world.time / STEP) % 4 === 0) {
-        started = performance.now();
+        started = costClock();
         const painting = ice.holes.some((hole) => !hole.painted);
         ice.update();
-        if (!painting) world.costs.paint = Math.max(world.costs.paint, performance.now() - started);
+        if (!painting) world.costs.paint.push(costSince(started));
       }
       // At each step's end (src/main.js endStep): shards frozen in, holes with a floater in them stirred, what rests where
       // a hole has opened let fall.
@@ -689,9 +701,9 @@ function iceWorld({ diameter = 6, thickness = 'thin', seed = 1, x = 0, z = -1.4,
           if (!thing.iceHole || !(thing.state === 'float' || thing.afloat)) continue;
           if (!thing.piece) ice.disturb(thing.iceHole);
           else if (ice.reaches(thing)) {
-            started = performance.now();
+            started = costClock();
             ice.freezeIn(thing);
-            world.costs.freeze = Math.max(world.costs.freeze, performance.now() - started);
+            world.costs.freeze.push(costSince(started));
             world.things.splice(world.things.indexOf(thing), 1);
             world.frozen.push(thing);
           }
@@ -770,9 +782,13 @@ console.log('\nWeakened and weight (src/ice.js weakness, weigh): the same throw 
       resting.push(rock);
     }
     for (let step = 0; step < 50; step++) ice.weigh(resting);
-    const started = performance.now();
-    for (let step = 0; step < WEIGH.steps; step++) ice.weigh(resting);
-    const perStep = (performance.now() - started) / WEIGH.steps;
+    // The least of three runs: another process's slice can only lengthen one.
+    let perStep = Infinity;
+    for (let run = 0; run < 3; run++) {
+      const started = costClock();
+      for (let step = 0; step < WEIGH.steps; step++) ice.weigh(resting);
+      perStep = Math.min(perStep, costSince(started) / WEIGH.steps);
+    }
     const keptAnswer = ice.held.entries.length;
     resting[0].position.x += 0.01;
     ice.weigh(resting);
@@ -1089,8 +1105,25 @@ console.log('\nNew ice: a hole left alone skins over; a thing afloat in one keep
   const frozenPainted = world.frozen.filter((shard) => maskAt(ice, shard.position.x, shard.position.z)[0] > 128).length;
   const top = ice.at(middle.x, middle.z), thin = ice.thicknessAt(middle.x, middle.z);
   console.log(`  a 16 cm stone through thick ice: ${hole.skin?.closed ? 'skinned over' : 'still open'} ${(world.time - hole.openedAt).toFixed(0)} s after the break; its middle ${top === null ? 'water' : `ground at ${(1000 * top).toFixed(2)} mm, its new ice ${(1000 * thin).toFixed(2)} mm`} (clear of shards and the old ice for ${centimetres(middle.clear)} cm round); ${world.frozen.length} of ${shardsBefore} shards frozen in (${frozenPainted} painted as ice), ${world.things.filter((thing) => thing.piece).length} afloat`);
-  const { release, clock, paint, freeze } = world.costs;
-  console.log(`  at most a step: letting its shards go ${release.toFixed(1)} ms, the clock otherwise (the flood, drying, new ice prepared and grown, weighing what lies on the ice) ${clock.toFixed(1)} ms, the mask's painting and sending ${paint.toFixed(1)} ms, a shard frozen in ${freeze.toFixed(1)} ms`);
+  // The worst of some 17,000 steps is where a collection, or another process's slice landing while the main thread waits
+  // for a core, is likeliest to fall. So if a step comes near the budget the same world (seeded) is run again, as the
+  // breaks are (RECHECK_SHARE, RECHECK_RUNS), and every step keeps its least: a step can only be lengthened by what else
+  // happens, so the least is what it costs, and one that is slow every time still fails the check.
+  const worstOf = (costs) => Object.fromEntries(Object.entries(costs).map(([kind, list]) => [kind, list.reduce((most, cost) => Math.max(most, cost), 0)]));
+  const nearBudget = (costs) => Math.max(...Object.values(worstOf(costs))) >= RECHECK_SHARE * SKIN_MS;
+  let costs = world.costs, reruns = 0;
+  while (nearBudget(costs) && reruns < RECHECK_RUNS) {
+    reruns++;
+    const again = iceWorld({ diameter: 16, thickness: 'thick', seed: 2 });
+    again.throwStone(16);
+    again.step(5);
+    again.step(40 + 30 + 2 - 5);
+    const kinds = Object.keys(costs);
+    if (!check(kinds.every((kind) => again.costs[kind].length === costs[kind].length), `the same seeded world, run again, did not step the same (${kinds.map((kind) => `${kind} ${costs[kind].length} then ${again.costs[kind].length}`).join(', ')})`)) break;
+    costs = Object.fromEntries(kinds.map((kind) => [kind, costs[kind].map((cost, index) => Math.min(cost, again.costs[kind][index]))]));
+  }
+  const { release, clock, paint, freeze } = worstOf(costs);
+  console.log(`  at most a step: letting its shards go ${release.toFixed(1)} ms, the clock otherwise (the flood, drying, new ice prepared and grown, weighing what lies on the ice) ${clock.toFixed(1)} ms, the mask's painting and sending ${paint.toFixed(1)} ms, a shard frozen in ${freeze.toFixed(1)} ms${reruns ? ` (near the budget: run ${reruns} more time${reruns > 1 ? 's' : ''}, each step its least)` : ''}`);
   check(hole.skin?.closed && !ice.holeAt(middle.x, middle.z) && top !== null && thin > 0 && thin < ice.thickness, `a hole left alone ${hole.skin?.closed ? '' : 'did not skin over'}${top === null ? ', its middle still water' : ''}`);
   check(world.frozen.length === shardsBefore && frozenPainted === shardsBefore, `${world.frozen.length} of ${shardsBefore} shards froze in, ${frozenPainted} painted as ice`);
   check(maskAt(ice, middle.x, middle.z)[3] > 128, 'a skinned-over hole\'s middle is not new ice in the mask');
