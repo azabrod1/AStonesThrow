@@ -1,0 +1,30 @@
+{
+  "source": "mall_2k.hdr",
+  "width": 2048,
+  "height": 1024,
+  "sun": {
+    "elevation": 40.15,
+    "azimuth": 129.93,
+    "direction": [
+      0.49061,
+      0.64475,
+      -0.58617
+    ],
+    "pixels": 11
+  },
+  "sunIrradiance": [
+    7.8714,
+    7.3815,
+    6.6974
+  ],
+  "skyRadiance": [
+    0.29872,
+    0.35301,
+    0.46059
+  ],
+  "horizonRadiance": {
+    "median": 0.05745,
+    "p90": 0.34931
+  },
+  "maxLuminance": 145370
+}

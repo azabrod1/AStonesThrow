@@ -337,6 +337,12 @@ const SKIES = {
 // light on level ground is 1.6 times the balance's (its sky alone two thirds of its sun's, against a fifth to two
 // fifths in the other photographs): exposed as an eye adapted half the way sees it (`adapt`, below).
   lagoon: { ownPlace: false, salt: true, adapt: 0.5, sunAzimuth: 145, hours: { midday: { file: 'kloofendal_48d_partly_cloudy_puresky', label: 'Midday', clock: '13:44' } } },
+  // The Reflecting Pool's own (src/places.js PLACES `mall`), no place of its own: a backdrop matte-painted from
+  // photographs of the Mall on Wikimedia Commons over Poly Haven's Qwantani mid-morning pure sky
+  // (tools/mall-backdrop.py, its plan tools/mall-backdrop.json with the photographs' authors and licences): ahead, east,
+  // the pool's far end and the Washington Monument as photographed from its west end at 10:47 on a June morning; behind,
+  // the Lincoln Memorial; the elm rows either side. The sun stands 40° right of ahead, in the south-east, as it did then.
+  mall: { ownPlace: false, sunAzimuth: 40, hours: { morning: { file: 'mall', label: 'Late morning', clock: '10:47' } } },
 };
 /** The skies that are each a place of their own (the Location setting's lakes; the Koi pond takes the garden's). */
 /** What a sky's beach is made of (`shore` above): a name of SHORE_LOOKS (src/pondFloor.js), 'sand' when unnamed. */
