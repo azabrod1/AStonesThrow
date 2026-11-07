@@ -106,8 +106,8 @@ function wallGeometry(bottom, stretch = 20) {
 
 /**
  * The Reflecting Pool's meshes (the header), hidden until setVisible: the ground and the walls in the main scene, and
- * their mirror images on the mirror's layer only. Their uniforms share the lighting's objects and the sky's cube, so
- * they follow a change of sky or weather; `wet` and `snow` are the weather's, shared uniform objects.
+ * their mirror images on the mirror's layer only. Their uniforms share the lighting's objects and the sky's cube (a
+ * render target src/sky.js refills in place), so they follow a change of sky or weather; `wet` and `snow` are the weather's, shared uniform objects.
  */
 export function createMallPool(lighting, environment, { haze = null, wet = { value: 0 }, snow = { value: 0 } } = {}) {
   const material = new THREE.ShaderMaterial({
@@ -151,10 +151,6 @@ export function createMallPool(lighting, environment, { haze = null, wet = { val
     /** Show the meshes, or hide them. */
     setVisible(visible) {
       for (const object of meshes) object.visible = visible;
-    },
-    /** The sky's cube map, when a new sky brings its own object (src/sky.js refills it in place otherwise). */
-    setEnvironment(cube) {
-      material.uniforms.uSkyCube.value = cube;
     },
   };
 }
