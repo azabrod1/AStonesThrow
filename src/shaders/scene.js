@@ -4036,6 +4036,7 @@ ${SHORE_KIND}
 #define MALL_PAVER_COLOR vec3(0.22, 0.205, 0.185)
 #define MALL_LAWN vec3(0.068, 0.098, 0.036)
 #define MALL_STRIPE 2.4              // m: the mower's stripes
+#define MALL_BOUNCE 0.15             // what the ground and water before a wall's face give back of the light on them
 // The share of a pixel footprint (m) wide covered by joints width wide every period along the coordinate along.
 float jointCover(float along, float period, float width, float footprint) {
   float fromJoint = abs(fract(along / period + 0.5) - 0.5) * period;
@@ -4092,7 +4093,9 @@ void main() {
   float snow = face ? 0.0 : snowCover(point);
   if (snow > 0.0) albedo = mix(albedo, snowShade(point), snow);
   vec3 normal = normalize(vNormal);
-  vec3 color = albedo * (uSunIrradiance * max(dot(normal, uSunDir), 0.0) + uSkyAmbient * SKY_LIGHT * (0.5 + 0.5 * normal.y));
+  // A face sees the sky above and, below, the sunlit ground and water before it, which give back MALL_BOUNCE of their light.
+  vec3 levelLight = uSunIrradiance * max(uSunDir.y, 0.0) + uSkyAmbient * SKY_LIGHT;
+  vec3 color = albedo * (uSunIrradiance * max(dot(normal, uSunDir), 0.0) + uSkyAmbient * SKY_LIGHT * (0.5 + 0.5 * normal.y) + levelLight * MALL_BOUNCE * (0.5 - 0.5 * normal.y));
   float distance = length(vWorld - cameraPosition);
   color = mix(color, uAir.rgb, 1.0 - exp(-uAir.w * distance));   // the air the backdrop's elms stand in
   color = withHaze(color, distance);
