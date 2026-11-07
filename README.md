@@ -1564,8 +1564,11 @@ farther out, so it rises into the view rather than filling its corner.
   by side, as many at once as the machine has cores (`PROBE_JOBS=1` runs
   them one after another), each one's output printed whole when it ends,
   and runs any that failed beside the others again alone: the computed
-  checks are seeded and fail again, while a budget of wall-clock time that
-  another probe crowded passes alone, as it was written to. The summary
+  checks are seeded and fail again. The budgets of time (fish, ice, jet,
+  skip, snow, thing) are the main thread's time (`tools/cost-clock.mjs`),
+  which waiting for a core does not lengthen, so probes side by side or
+  other work on the machine leave them as they are alone, save for the
+  work itself slowed by a busy core, which the run alone settles. The summary
   names every probe run again. On four cores the suite takes about 80 s.
 - `npm run check` runs what CI checks a pull request with, the same lists
   CI's jobs run: `check:cpu` (`npm test` with the variety and pool probes
