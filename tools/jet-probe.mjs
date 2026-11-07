@@ -33,8 +33,9 @@
 //     measureJet, as tools/basilisk/sweep.py measures the run), its lumps
 //     printed beside the run's drops;
 //   - its cost: the solver's and the drawing's milliseconds per frame (mean
-//     and worst), warm (after a few silent jets), printed; the mean under
-//     COST_MOST;
+//     and worst) of the main thread's time (tools/cost-clock.mjs: not the
+//     time spent waiting for a core beside other probes), warm (after a few
+//     silent jets), printed; the mean under COST_MOST;
 //   - its aloft share (src/jet.js aloftShare: the share of its launched
 //     water up, by which the pond's heave under it is reduced, src/rings.js
 //     NEAR_FIELD): at least 0.9 as its launch ends, under 0.05 a second
@@ -62,6 +63,7 @@ import { chooseSplash, JET_COLLAPSE } from '../src/splash.js';
 import { seededRandom } from '../src/spray.js';
 import { measureJet } from './basilisk/jet-fit.mjs';
 import SWEEP from '../assets/jet/sweep.js';
+import { costClock, costBetween } from './cost-clock.mjs';
 
 const stoneRadius = Number(process.argv[2] ?? 0.03);
 const entrySpeed = Number(process.argv[3] ?? 6.3);
@@ -218,16 +220,16 @@ function runJet(frames, timed = false) {
   for (let frame = 0; !jet.finished && time < 4; frame++) {
     const seconds = frames[frame % frames.length];
     splash.frameSeconds = seconds;
-    let started = performance.now();
+    let started = costClock();
     for (let substep = 0; substep < 4; substep++) {
       time += seconds / 4;
       splash.time = time;
       jet.update(time, seconds / 4, splash, water);
     }
-    const updated = performance.now();
+    const updated = costClock();
     if (!jet.finished) jet.updateGeometry(time);
-    const drawn = performance.now();
-    if (timed) { record.update.push(updated - started); record.geometry.push(drawn - updated); }
+    const drawn = costClock();
+    if (timed) { record.update.push(costBetween(started, updated)); record.geometry.push(costBetween(updated, drawn)); }
     const top = jet.solver.count > 0 ? jet.topHeight() : -Infinity;
     record.top = Math.max(record.top, top);
     if (record.emerged === null && top > 0) { record.emerged = time + pinch; record.emergeSpeed = jet.solver.velocityY[0]; }

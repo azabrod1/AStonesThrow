@@ -1587,9 +1587,25 @@ farther out, so it rises into the view rather than filling its corner.
   by side, as many at once as the machine has cores (`PROBE_JOBS=1` runs
   them one after another), each one's output printed whole when it ends,
   and runs any that failed beside the others again alone: the computed
-  checks are seeded and fail again, while a budget of wall-clock time that
-  another probe crowded passes alone, as it was written to. The summary
+  checks are seeded and fail again. The budgets of time (fish, ice, jet,
+  skip, snow, thing) are the main thread's time (`tools/cost-clock.mjs`),
+  which waiting for a core does not lengthen, so probes side by side or
+  other work on the machine leave them as they are alone, save for the
+  work itself slowed by a busy core, which the run alone settles. The summary
   names every probe run again. On four cores the suite takes about 80 s.
+- `npm run check` runs what CI checks a pull request with, the same lists
+  CI's jobs run: `check:cpu` (`npm test` with the variety and pool probes
+  beside the others, about 2 to 3 minutes on four cores), `check:controls`
+  and `check:site` (the browser probes, on the machine's GPU). `npm install`
+  points git at `.githooks/` (`tools/install-hooks.mjs`: in this checkout
+  only, and unless a hooks path is set already), whose `pre-push` runs
+  `check:cpu` before every push and stops
+  one that would fail; the browser groups are left to the pull request's CI,
+  since without a GPU SwiftShader takes half an hour or more over them
+  (`git config check.browser true` makes the hook run all of `npm run
+  check`; its site check also runs in WebKit, which `npx playwright install
+  webkit` installs). It checks the working tree, so it pushes only the checked-out
+  commit, with nothing uncommitted or untracked.
 - `node tools/ice-probe.mjs [--list]` throws every thing at thin and thick
   ice as the app throws it, each way, with the splash on the CPU, and
   prints what breaks what: each throw's blow against what the ice holds and
