@@ -40,6 +40,8 @@ Memorial floodlit after sunset. Each may name
   over        laid over the other layers once their gaps are filled: inside its `shape` (polygons, shares of the
               photograph: a landmark in the hour's light), or whole, joined at its sides within `seam` degrees by
               image quilting's cut where its land and theirs agree;
+  keyed       its `shape` keyed against its own sky near the polygon's top and sides (key_shape): a loose polygon, and
+              no sliver of the photograph's sunset beside the stone;
   hide        boxes left to the sky (a landmark another layer shows in the hour's light).
 Without elms, between photographs that do not meet, the gap is filled from both sides, each side's land copied
 across into its half and the two joined where their treelines best agree (fill_gaps).
@@ -96,6 +98,9 @@ WORK_WIDTH = 3000          # pixels: each photograph is worked at this width (th
 BAND = (-6.0, 32.0)        # degrees: the elevations land can reach (the rest is the pure sky alone)
 KEYED = {}                 # the elm cards, keyed once for every hour
 SOLID_RIM = 10             # pixels: a traced edge keyed against the sky beside it this far in (land_matte)
+KEY_FLOOR = 0.015          # how much more green's share of its colour than its sky's a keyed shape's pixel has, all sky (key_shape)
+KEY_RAMP = 0.035           # and how much more, all landmark
+KEY_BAND = 0.04            # of the photograph's width: how far inside its shape's top and sides a pixel is keyed
 HEDGE = 0.2                # degrees: the land at the horizon reaches this high wherever no tree stands (compose_over_elms)
 CLEAN_SPAN = 0.08          # a share of the photograph's width: clean_rows's median, wider than a crowd on a step
 CLEAN_ODD = 0.045          # what differs from its row's median by this much (sRGB) may be people: dark clothes against a
@@ -663,6 +668,32 @@ def shape_matte(spec, height, width):
     return np.asarray(mask.resize((width, height), Image.BOX), np.float32) / 255
 
 
+def key_shape(photo, shape, cut, spec):
+    """An `over` layer's `shape` keyed (`keyed`): inside the loose polygon, above the far shore, each pixel is as much
+    landmark as it differs from the photograph's sky behind it (clean_plate of its sky outside the shape: lighter than
+    `sky_lum`), and its colour is unmixed from that sky, as key_elm's is. So the sky the polygon takes beside a cornice,
+    or between the end columns, falls through to what lies under it, and no sliver of the photograph's sunset edges the
+    stone. Only within KEY_BAND of the shape's edge: the polygon is loose there, and only there. Gives the share and the
+    unmixed photograph."""
+    height, width = shape.shape
+    resolution = spec.get('resolution', 1.0)
+    lum = photo @ np.array([0.2126, 0.7152, 0.0722], np.float32)
+    above = ((np.arange(height) + 0.5) / height)[:, None] < cut[None, :]
+    sky = above & (shape == 0) & (lum > spec['sky_lum'])
+    plate = clean_plate(photo, sky, shrink=max(2, round(2 * resolution)))
+    # Floodlit stone and a sunset are both warm, and near in brightness: what tells them apart is green's share of
+    # the colour (a sunset's red and blue without it: about 0.28 against the stone's 0.34 and more). Or the stone is
+    # darker than the sky.
+    greener = photo[..., 1] / np.maximum(photo.sum(-1), 1e-4) - plate[..., 1] / np.maximum(plate.sum(-1), 1e-4)
+    darker = plate @ np.array([0.2126, 0.7152, 0.0722], np.float32) - lum
+    differs = np.maximum(np.clip((greener - KEY_FLOOR) / KEY_RAMP, 0, 1), np.clip((darker - 0.1) / 0.15, 0, 1))
+    # (from its top and sides: its foot meets the land; the middle, the statue's white, kept whole)
+    near_edge = ndimage.distance_transform_edt(np.logical_or.accumulate(shape > 0, axis=0)) < KEY_BAND * width
+    share = np.where(above & near_edge, differs, 1.0)
+    unmixed = np.clip(plate + (photo - plate) / np.maximum(share, 0.05)[..., None], 0, 1)
+    return (shape * share).astype(np.float32), np.where(above[..., None], unmixed, photo).astype(np.float32)
+
+
 # ---- the elms ------------------------------------------------------------------------------------------------
 
 def polygons_mask(polygons, height, width):
@@ -899,6 +930,9 @@ def prepare_photo(spec):
     entry = {'spec': spec, 'photo': photo, 'linear': srgb_to_linear(carry_shore_down(photo, cut)), 'matte': matte, 'cut': cut}
     if spec.get('shape'):
         entry['shape'] = shape_matte(spec, *photo.shape[:2])
+        if spec.get('keyed'):
+            entry['shape'], keyed = key_shape(photo, entry['shape'], cut, spec)
+            entry['linear'] = srgb_to_linear(carry_shore_down(keyed, cut))
     return entry
 
 
