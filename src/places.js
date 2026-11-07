@@ -15,7 +15,10 @@ import { SKY_NAMES, REED_SKIES, skyShore } from './sky.js';
 // sheet only past its shore (src/main.js KOI_SHEET_REACH); or the Polynesian lagoon
 // (`tropics`), the lake's beach running out along a lagoon's (LAGOON_SHORE)
 // under its palms, with motus across the water and a high island beyond
-// (src/tropics.js). A place may have its own water (`water`, a key of
+// (src/tropics.js); or the Reflecting Pool (`mall`), a granite-walled basin
+// 618 m long (MALL_POOL), its walls, coping and lawn src/mallPool.js's, its
+// water clipped to the walls, under a backdrop matte-painted from
+// photographs (src/sky.js `mall`, tools/mall-backdrop.py). A place may have its own water (`water`, a key of
 // WATER_CLARITIES, whatever clarity is chosen, and its card, `waterCard`),
 // its own ground (`shore`, in place of its sky's), its own start
 // (`defaultWater`, `defaultView`), and, at Loch Ness, something far out now
