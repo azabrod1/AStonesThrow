@@ -3995,8 +3995,8 @@ void main() {
 // behind the west wall the plaza's granite pavers (MALL_PAVER, in running bond, MALL_PLAZA deep and wide); then a mown
 // lawn in stripes, out to the horizon, where the sky's elms stand on it (src/sky.js `mall`, planted on the same lawn by
 // tools/mall-backdrop.py: unlike the beach's and the Pool's deck it never becomes the land the photo shows just over the
-// horizon, PHOTO_LAND, which here is the elms' trunks). Lit by the sun and the sky; wet under rain, under snow
-// (SNOW_COVER) white but for the wet face.
+// horizon, PHOTO_LAND, which here is the elms' trunks). Lit by the sun and the sky, and hazed by the hour's air as the
+// elms are (uAir); wet under rain, under snow (SNOW_COVER) white but for the wet face.
 export const MALL_GROUND_VERTEX = /* glsl */`
 varying vec3 vWorld;
 varying vec3 vNormal;
@@ -4011,6 +4011,7 @@ export const MALL_GROUND_FRAGMENT = /* glsl */`
 uniform vec3 uSunDir;
 uniform vec3 uSunIrradiance;
 uniform vec3 uSkyAmbient;
+uniform vec4 uAir;      // the hour's clear air: the horizon's colour, and its density (1/m; src/sky.js, an hour's air)
 uniform float uWet;     // how wet the rain has made it, 0 to 1 (src/main.js)
 varying vec3 vWorld;
 varying vec3 vNormal;
@@ -4092,7 +4093,9 @@ void main() {
   if (snow > 0.0) albedo = mix(albedo, snowShade(point), snow);
   vec3 normal = normalize(vNormal);
   vec3 color = albedo * (uSunIrradiance * max(dot(normal, uSunDir), 0.0) + uSkyAmbient * SKY_LIGHT * (0.5 + 0.5 * normal.y));
-  color = withHaze(color, length(vWorld - cameraPosition));
+  float distance = length(vWorld - cameraPosition);
+  color = mix(color, uAir.rgb, 1.0 - exp(-uAir.w * distance));   // the air the backdrop's elms stand in
+  color = withHaze(color, distance);
 #ifdef MIRROR_NEARNESS
   gl_FragColor = vec4(color, mirrorNearness(vWorld));
 #else

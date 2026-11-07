@@ -746,6 +746,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     waterColor: new THREE.Vector3(),
     exposure: 0.55,
     night: 0,   // how far the eye sees with its rods (src/sky.js; NIGHT_VISION in src/shaders/fluid.js)
+    air: new THREE.Vector4(),   // the hour's clear air: its colour and density, 1/m (src/sky.js `air`; the Reflecting Pool's)
   };
   migrateStoredSettings();
   const storedChoice = (key) => { try { return window.localStorage.getItem(key); } catch { return null; } };

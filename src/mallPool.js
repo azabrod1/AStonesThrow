@@ -23,7 +23,9 @@
 //     (below any ripple) to the coping, facing in.
 // Each is drawn twice: in the main scene, and on the mirror's layer with its
 // distance in alpha (MIRROR_NEARNESS), the walls from the water up, so the
-// pool reflects them as near as they are. The water itself stops at the walls
+// pool reflects them as near as they are. Both stand in the hour's air
+// (lighting.air, src/sky.js `air`), as the backdrop's elms do: the far end's
+// walls and lawn, 615 m off, fade into its photograph as its own land does. The water itself stops at the walls
 // (src/waterSurface.js setBounds, BOUNDS here).
 //
 // Nothing thrown comes down out of the pool: a throw's aim stays inside the
@@ -119,6 +121,7 @@ export function createMallPool(lighting, { haze = null, wet = { value: 0 }, snow
       uSunDir: { value: lighting.sunDirection },
       uSunIrradiance: { value: lighting.sunIrradiance },
       uSkyAmbient: { value: lighting.skyAmbient },
+      uAir: { value: lighting.air ?? new THREE.Vector4() },
       uWet: wet,
       uSnow: snow,
       ...(haze ?? { uHazeColor: { value: new THREE.Vector3() }, uHazeDensity: { value: 0 } }),

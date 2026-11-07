@@ -366,7 +366,11 @@ const SKIES = {
   // Its hours are one September day's (tools/mall-backdrop.json `hours`, each its sky turned so its sun stands where the
   // true sun stood then, so their land lies alike): at sunset the sun is behind the Lincoln Memorial and the eye in its
   // shade (light 'none'), the Monument glowing down the pool; at night the monuments are floodlit under the city's glow,
-  // and the hour's light never falls below `lit`.
+  // and the hour's light never falls below `lit`. The pool runs 618 m ahead, so its far walls and lawn stand in the
+  // same air as the backdrop's elms (`air`, lighting.air: what lies d metres off fades toward `horizon` by
+  // 1 − exp(−d/`distance`), as tools/mall-backdrop.py hazes the elms by the plan's `elms.haze`: change both).
+  // `horizon` is the hour's pure sky 2° up toward the far end, east (azimuths 75° to 105°), in its panorama's own
+  // units, as the tool takes it; at night the elms are not hazed, nor is the pool.
   mall: {
     ownPlace: false,
     sunAzimuth: 40,
@@ -376,8 +380,8 @@ const SKIES = {
       { name: 'memorial', azimuth: [259, 283], elevation: [-1, 12.5], perDegree: 57 },
     ],
     hours: {
-      morning: { file: 'mall', label: 'Late morning', clock: '10:38' },
-      sunset: { file: 'mall_sunset', label: 'Sunset', clock: '18:32' },
+      morning: { file: 'mall', label: 'Late morning', clock: '10:38', air: { distance: 6000, horizon: [0.700, 0.752, 0.781] } },
+      sunset: { file: 'mall_sunset', label: 'Sunset', clock: '18:32', air: { distance: 6000, horizon: [1.172, 1.054, 0.966] } },
       night: { file: 'mall_night', label: 'Night', clock: '21:30', lit: 6 },
     },
   },
@@ -898,7 +902,7 @@ export function createEnvironment(renderer, { name, hour, sunAzimuth, sunBalance
     }
   }
   // The hour's light under a clear sky (load), which the weather covers (applyWeather).
-  const clear = { sun: new THREE.Vector3(), sky: new THREE.Vector3(), lux: 1, level: 1 };
+  const clear = { sun: new THREE.Vector3(), sky: new THREE.Vector3(), air: new THREE.Vector3(), airDensity: 0, lux: 1, level: 1 };
   let weather = { cover: 0, light: 1, visibility: Infinity, hazeBrightness: HAZE_BRIGHTNESS, hazeLayer: HAZE_LAYER };
 
   /**
@@ -984,6 +988,9 @@ export function createEnvironment(renderer, { name, hour, sunAzimuth, sunBalance
       clear.sun.set(0, 0, 0);
     }
     clear.sky.fromArray(measurement.skyRadiance).multiplyScalar(scale);
+    if (entry.air) clear.air.fromArray(entry.air.horizon).multiplyScalar(scale);
+    else clear.air.set(0, 0, 0);
+    clear.airDensity = entry.air ? 1 / entry.air.distance : 0;
     clear.lux = hourLight(measurement, entry.lit);
     clear.level = level;
 
@@ -1071,6 +1078,11 @@ export function createEnvironment(renderer, { name, hour, sunAzimuth, sunBalance
     domeUniforms.uHazeLayer.value = hazeLayer;
     fog.density = hazeDensity;
     hazeUniforms.uHazeColor.value.copy(lighting.skyAmbient).multiplyScalar(hazeBrightness);
+    // The hour's clear air (`air`), under cloud the cloud's horizon.
+    if (lighting.air) {
+      const air = clear.air.clone().lerp(hazeUniforms.uHazeColor.value, shade);
+      lighting.air.set(air.x, air.y, air.z, clear.airDensity);
+    }
 
     const previousAutoClear = renderer.autoClear;
     renderer.autoClear = true;
