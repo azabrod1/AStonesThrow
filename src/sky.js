@@ -226,13 +226,16 @@
 // photographs' own resolution (perDegree, 57 to 96), the hour's
 // assets/sky/<file>_insets.jpg (tools/mall-backdrop.py renders it,
 // tools/sky-encode.mjs encodes it as the strip is), fetched after the strip
-// and decoded on the GPU as it is (INSET_DECODE). Each window fades in over
+// and decoded once on the GPU when it comes (INSET_DECODE_PASS: the loader's
+// arithmetic, as the strip's) into half floats with mip levels, which the
+// dome reads in one trilinear lookup a pixel (INSET_SAMPLE). A window may
+// cross north (its azimuths taken round the turn). Each window fades in over
 // INSET_EDGE inside its edges, and out again where a screen pixel spans
 // INSET_FINEST to INSET_COARSEST of its texels (a home view's, a cube
-// capture's): it has no mip levels, a texel's bytes being coded for its own
-// gain, so a pixel spanning more than one takes four samples across it, and
-// past that the strip, fine enough there, shows alone. The atlas is a sky's
-// windows side by side (insetLayout); horizonBytes counts it with the strip.
+// capture's), where the strip, fine enough there, shows alone. The atlas is a
+// sky's windows side by side (insetLayout); horizonBytes counts it with the
+// strip. Its decoding program is built the first time a sky with insets
+// comes, and its coded textures are let go once it has run.
 //
 // Backdrop. A photo taken among near trees (the garden's: its hedges, its
 // hill and its stairs a few dozen metres off) is no horizon: drawn
@@ -267,7 +270,7 @@
 import * as THREE from 'three';
 import { UltraHDRLoader } from 'three/addons/loaders/UltraHDRLoader.js';
 import { loadAsset, dropEarlyAssets } from './loadAsset.js';
-import { decodeHorizonStrip, HORIZON_DECODE, INSET_DECODE } from './horizonStrip.js';
+import { decodeHorizonStrip, HORIZON_DECODE, INSET_DECODE_PASS, INSET_SAMPLE } from './horizonStrip.js';
 
 // The orientation was chosen from home-view frames (mirrored: the photo
 // flipped left for right; sunAzimuth, degrees right of straight ahead, would
@@ -568,7 +571,7 @@ uniform float uInsetEdge;      // radians inside a window over which its inset f
 uniform vec4 uBackdrop;        // the backdrop's centre (xyz) and radius (w; 0: none), metres (Backdrop)
 varying vec3 vDirection;
 ${HORIZON_DECODE}
-${INSET_DECODE}
+${INSET_SAMPLE}
 #define INSET_FINEST 2.5       // texels a screen pixel spans where an inset starts to give way to the strip...
 #define INSET_COARSEST 3.5     // ...and where it is gone (Insets)
 #define OVERCAST_FLATTEN 0.6   // the luminance's power about the mean that cloud takes away: the sun and its glow sink, the shade lifts
@@ -613,9 +616,8 @@ void main() {
   float elevation = asin(clamp(direction.y, -1.0, 1.0));
   vec2 panoramaUv = vec2(azimuth / (2.0 * PI) + 0.5, elevation / PI + 0.5);
   vec3 radiance = texture2D(uPanorama, panoramaUv).rgb;
-  // Inside an inset's window, the inset (Insets), faded in from its edges, and out where a screen pixel spans more of
-  // its texels than its few samples can take (the strip is fine enough there); a pixel spanning more than one texel
-  // takes four samples across its footprint. The footprint is taken here, where every pixel takes it.
+  // Inside an inset's window, the inset (Insets), faded in from its edges, and out where a screen pixel spans so many of
+  // its texels that the strip is fine enough there. The footprint is taken here, where every pixel takes it.
   float pixelAngle = max(length(dFdx(direction)), length(dFdy(direction)));
   vec3 inset = vec3(0.0);
   float insetShare = 0.0;
@@ -623,21 +625,16 @@ void main() {
     float across = fract(panoramaUv.x);
     for (int index = 0; index < ${INSET_COUNT}; index++) {
       vec4 window = uInsetWindow[index];
-      float inside = min(min(across - window.x, window.y - across) * 2.0 * PI, min(window.z - elevation, elevation - window.w));
+      float offset = fract(across - window.x), span = fract(window.y - window.x);   // round the turn: a window may cross north
+      float inside = min(min(offset, span - offset) * 2.0 * PI, min(window.z - elevation, elevation - window.w));
       if (inside <= 0.0) continue;
       vec4 place = uInsetPlace[index];
-      vec2 perRadian = place.zw / vec2((window.y - window.x) * 2.0 * PI, window.z - window.w);
+      vec2 perRadian = place.zw / vec2(span * 2.0 * PI, window.z - window.w);
       vec2 footprint = pixelAngle * perRadian * vec2(1.0 / max(cos(elevation), 0.05), 1.0);
       insetShare = smoothstep(0.0, uInsetEdge, inside) * (1.0 - smoothstep(INSET_FINEST, INSET_COARSEST, max(footprint.x, footprint.y)));
       if (insetShare <= 0.0) break;
-      vec2 position = place.xy + vec2(across - window.x, window.z - elevation) * perRadian * vec2(2.0 * PI, 1.0);
-      if (max(footprint.x, footprint.y) < 1.25) {
-        inset = insetRadiance(position, place);
-      } else {
-        vec2 step = 0.25 * footprint;
-        inset = 0.25 * (insetRadiance(position + vec2(-step.x, -step.y), place) + insetRadiance(position + vec2(step.x, -step.y), place)
-          + insetRadiance(position + vec2(-step.x, step.y), place) + insetRadiance(position + vec2(step.x, step.y), place));
-      }
+      vec2 position = place.xy + vec2(offset, window.z - elevation) * perRadian * vec2(2.0 * PI, 1.0);
+      inset = insetRadiance(position, footprint, place);
       break;
     }
   }
@@ -778,8 +775,6 @@ export function createEnvironment(renderer, { name, hour, sunAzimuth, sunBalance
         uHorizonBand: { value: new THREE.Vector4() },
         uHorizonEdge: { value: THREE.MathUtils.degToRad(HORIZON_EDGE) },
         uInset: { value: null },
-        uInsetGain: { value: null },
-        uInsetMeta: { value: new THREE.Vector2() },
         uInsetSize: { value: new THREE.Vector2() },
         uInsetWindow: { value: Array.from({ length: INSET_COUNT }, () => new THREE.Vector4()) },
         uInsetPlace: { value: Array.from({ length: INSET_COUNT }, () => new THREE.Vector4()) },
@@ -870,11 +865,15 @@ export function createEnvironment(renderer, { name, hour, sunAzimuth, sunBalance
 
   // The horizon strip (Horizon): the hour's, fetched once its panorama is up; the last asked for wins.
   let horizonRequest = 0;
+  let insetTarget = null;   // the decoded atlas (Insets)
   function clearHorizon() {
-    for (const name of ['uHorizon', 'uHorizonGain', 'uInset', 'uInsetGain']) {
+    for (const name of ['uHorizon', 'uHorizonGain']) {
       domeUniforms[name].value?.dispose();
       domeUniforms[name].value = null;
     }
+    insetTarget?.dispose();
+    insetTarget = null;
+    domeUniforms.uInset.value = null;
     domeUniforms.uHorizonBand.value.set(0, 0, 0, 0);
     domeUniforms.uInsetSize.value.set(0, 0);
     environment.horizonBytes = 0;
@@ -892,6 +891,43 @@ export function createEnvironment(renderer, { name, hour, sunAzimuth, sunBalance
     return made;
   };
   const gainMapMeta = ({ weight, gainMapMin, gainMapMax }) => [weight * gainMapMin, weight * (gainMapMax - gainMapMin)];
+  // The atlas's decoding (INSET_DECODE_PASS), built when insets first come: a quad over the target, its own camera.
+  let insetDecoder = null;
+  function decodeInsetAtlas(atlas) {
+    insetDecoder ??= (() => {
+      const material = new THREE.ShaderMaterial({
+        vertexShader: 'varying vec2 vUv;\nvoid main() {\n  vUv = uv;\n  gl_Position = vec4(position.xy, 0.0, 1.0);\n}',
+        fragmentShader: INSET_DECODE_PASS,
+        uniforms: { uInsetBase: { value: null }, uInsetGain: { value: null }, uInsetMeta: { value: new THREE.Vector2() } },
+        depthTest: false,
+        depthWrite: false,
+      });
+      const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material);
+      quad.frustumCulled = false;
+      const scene = new THREE.Scene();
+      scene.add(quad);
+      return { material, scene, camera: new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1) };
+    })();
+    const base = gainMapTexture(atlas.base, THREE.RGBAFormat, THREE.ClampToEdgeWrapping);
+    const gain = gainMapTexture(atlas.gain, THREE.RedFormat, THREE.ClampToEdgeWrapping);
+    const target = new THREE.WebGLRenderTarget(atlas.width, atlas.height, {
+      type: THREE.HalfFloatType, depthBuffer: false, generateMipmaps: true,
+      minFilter: THREE.LinearMipmapLinearFilter, magFilter: THREE.LinearFilter, wrapS: THREE.ClampToEdgeWrapping, wrapT: THREE.ClampToEdgeWrapping,
+    });
+    target.texture.colorSpace = THREE.NoColorSpace;
+    const uniforms = insetDecoder.material.uniforms;
+    uniforms.uInsetBase.value = base;
+    uniforms.uInsetGain.value = gain;
+    uniforms.uInsetMeta.value.set(...gainMapMeta(atlas.metadata));
+    const previous = renderer.getRenderTarget();
+    renderer.setRenderTarget(target);
+    renderer.render(insetDecoder.scene, insetDecoder.camera);   // (three makes the target's mip levels after it)
+    renderer.setRenderTarget(previous);
+    uniforms.uInsetBase.value = uniforms.uInsetGain.value = null;
+    base.dispose();
+    gain.dispose();
+    return target;
+  }
   // The hour's insets (Insets), their windows from the sky's `insets` and their places from the atlas's layout.
   async function loadInsets(file, request, signal) {
     const insets = skyInsets(file);
@@ -903,9 +939,8 @@ export function createEnvironment(renderer, { name, hour, sunAzimuth, sunBalance
       if (request === horizonRequest) throw new Error(`the atlas is ${atlas.width} × ${atlas.height}, its layout ${layout.width} × ${layout.height}`);
       return;
     }
-    domeUniforms.uInset.value = gainMapTexture(atlas.base, THREE.RGBAFormat, THREE.ClampToEdgeWrapping);
-    domeUniforms.uInsetGain.value = gainMapTexture(atlas.gain, THREE.RedFormat, THREE.ClampToEdgeWrapping);
-    domeUniforms.uInsetMeta.value.set(...gainMapMeta(atlas.metadata));
+    insetTarget = decodeInsetAtlas(atlas);
+    domeUniforms.uInset.value = insetTarget.texture;
     insets.forEach(({ azimuth, elevation }, index) => {
       const { x, y, width, height } = layout.places[index];
       domeUniforms.uInsetWindow.value[index].set(azimuth[0] / 360, azimuth[1] / 360, THREE.MathUtils.degToRad(elevation[1]), THREE.MathUtils.degToRad(elevation[0]));
@@ -913,7 +948,7 @@ export function createEnvironment(renderer, { name, hour, sunAzimuth, sunBalance
     });
     for (let index = insets.length; index < INSET_COUNT; index++) domeUniforms.uInsetWindow.value[index].set(0, 0, 0, 0);
     domeUniforms.uInsetSize.value.set(atlas.width, atlas.height);
-    environment.horizonBytes += atlas.width * atlas.height * 5;
+    environment.horizonBytes += Math.round(atlas.width * atlas.height * 8 * 4 / 3);   // half floats, and their mip levels
   }
   async function loadHorizon(file, signal) {
     const request = ++horizonRequest;

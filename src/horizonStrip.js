@@ -15,9 +15,12 @@
 // byte a texel) against the 30 MB of half floats.
 //
 // The landmarks' insets (assets/sky/<file>_insets.jpg, src/sky.js Insets)
-// are coded and decoded the same way: decodeHorizonStrip takes their file
-// too, and INSET_DECODE (after HORIZON_DECODE, whose gainMapTexel it uses)
-// reads their atlas, each window's texels clamped to its own place.
+// are coded the same way and taken apart by decodeHorizonStrip too, but
+// decoded once, when they come: INSET_DECODE_PASS (gainMapTexel over each
+// texel) writes the atlas's radiance into a texture of half floats with mip
+// levels, which the dome reads in one trilinear lookup (INSET_SAMPLE), each
+// window's texels clamped to its own place. The strip, eight times the
+// texels, stays coded on the GPU, as above.
 //
 // The file's layout (the encoder writes it; "Ultra HDR"): the base JPEG,
 // with a Multi-Picture Format directory (an APP2 segment, 'MPF\0') whose
@@ -67,23 +70,28 @@ vec3 horizonRadiance(vec2 uv) {
 }
 `;
 
-/** The insets' atlas (src/sky.js Insets): after HORIZON_DECODE. */
-export const INSET_DECODE = /* glsl */`
-uniform sampler2D uInset;         // the atlas's base image, bytes
+/** The insets' atlas decoded, once (src/sky.js Insets): a full-screen pass over a target the atlas's size. */
+export const INSET_DECODE_PASS = /* glsl */`
+${HORIZON_DECODE}
+uniform sampler2D uInsetBase;     // the atlas's base image, bytes
 uniform sampler2D uInsetGain;     // its gain map
 uniform vec2 uInsetMeta;          // as uHorizonMeta
-uniform vec2 uInsetSize;          // the atlas's width and height, texels (width 0: no insets)
-// The radiance at a position in the atlas (texels, a texel's centre at its index + 0.5), bilinear in the linear
-// values as horizonRadiance is, never reaching past its window's place (x, y, width, height).
-vec3 insetRadiance(vec2 position, vec4 place) {
-  vec2 corner = floor(position - 0.5);
-  vec2 within = position - 0.5 - corner;
-  vec2 lowest = place.xy, highest = place.xy + place.zw - 1.0;
-  vec2 near = (clamp(corner, lowest, highest) + 0.5) / uInsetSize;
-  vec2 far = (clamp(corner + 1.0, lowest, highest) + 0.5) / uInsetSize;
-  vec3 lower = mix(gainMapTexel(uInset, uInsetGain, uInsetMeta, near), gainMapTexel(uInset, uInsetGain, uInsetMeta, vec2(far.x, near.y)), within.x);
-  vec3 upper = mix(gainMapTexel(uInset, uInsetGain, uInsetMeta, vec2(near.x, far.y)), gainMapTexel(uInset, uInsetGain, uInsetMeta, far), within.x);
-  return mix(lower, upper, within.y);
+varying vec2 vUv;                 // a texel's centre
+void main() {
+  gl_FragColor = vec4(gainMapTexel(uInsetBase, uInsetGain, uInsetMeta, vUv), 1.0);
+}
+`;
+
+/** The decoded atlas read by the dome (src/sky.js Insets). */
+export const INSET_SAMPLE = /* glsl */`
+uniform sampler2D uInset;         // the atlas's radiance, half floats with mip levels (INSET_DECODE_PASS)
+uniform vec2 uInsetSize;          // its width and height, texels (width 0: no insets)
+// The radiance at a position in the atlas (texels, a texel's centre at its index + 0.5) for a screen pixel spanning
+// footprint texels across and down: one trilinear lookup, its position never past its window's place (x, y, width,
+// height). The gradients are given, so the lookup is defined in the dome's loop over the windows.
+vec3 insetRadiance(vec2 position, vec2 footprint, vec4 place) {
+  vec2 uv = clamp(position, place.xy + 0.5, place.xy + place.zw - 0.5) / uInsetSize;
+  return textureGrad(uInset, uv, vec2(footprint.x / uInsetSize.x, 0.0), vec2(0.0, footprint.y / uInsetSize.y)).rgb;
 }
 `;
 
