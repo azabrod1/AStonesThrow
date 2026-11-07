@@ -931,9 +931,16 @@ def draw_elms(cards, trees, settings, dirs, rows, width, subject):
     return color, alpha, haze
 
 
-def adjust(linear, settings):
-    """A layer's own grade (`adjust`): `exposure` in stops, `saturation` about its luminance, `tint` a colour to multiply."""
-    out = linear * 2.0 ** settings.get('exposure', 0.0)
+def adjust(linear, settings, land=None):
+    """A layer's own grade (`adjust`): `contrast` (a power on luminance about the median of its `land`, hue kept: what
+    the sun lit in its photograph and what it left in shade brought together, for an hour that has it all in shade),
+    `exposure` in stops, `saturation` about its luminance, `tint` a colour to multiply."""
+    out = linear
+    if 'contrast' in settings:
+        lum = np.maximum(luminance(out), 1e-5)
+        pivot = np.median(lum[land]) if land is not None and land.any() else np.median(lum)
+        out = out * ((pivot * (lum / pivot) ** settings['contrast']) / lum)[..., None]
+    out = out * 2.0 ** settings.get('exposure', 0.0)
     if 'saturation' in settings:
         lum = luminance(out)[..., None]
         out = lum + (out - lum) * settings['saturation']
@@ -1040,7 +1047,7 @@ def prepare(plan, hour, per_degree=None, fits=None):
                     graded = graded + (match(True, 'shared') - graded) * gap[..., None]
                 entry['linear'] = graded
         if 'adjust' in layer:
-            entry['linear'] = adjust(entry['linear'], layer['adjust'])
+            entry['linear'] = adjust(entry['linear'], layer['adjust'], above_shore(entry))
         entry['backlit'] = 'backlight' in hour and layer.get('backlight', True)
         if hour.get('unsky') and matched:
             # What the matte kept as land but is mostly sky (leaves blurred against it: bright, and grey to blue rather
