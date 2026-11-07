@@ -7,8 +7,9 @@
 // does: the waterline runs just behind the shore view's eye, bending gently
 // back on either side, and out from it the bed is 0.7 m deep under the
 // bottom of the shore view, 1.7 m where the reference throw lands, 3.5 m far
-// out. Its mesh is rings about the bank under the shore view's eye, sunk to
-// it in the vertex shader, and every point of it is lit through its own
+// out. Its mesh is rings about the bank under the shore view's eye (at the
+// Reflecting Pool a grid of its own, its walls stepped: mallBedGeometry),
+// sunk to it in the vertex shader, and every point of it is lit through its own
 // depth of water: the sun down to it, the caustics' focusing and where on it
 // they fall. So the sand is bright in the shallows and fades with depth, and
 // a ring's light on the sand, under 1.7 m of water where the rocks land, is
@@ -179,6 +180,7 @@ const shoreKindUniform = { value: 0 };
 export function setShoreKind(kind) {
   shoreKind = Object.hasOwn(SHORE_KINDS, kind) ? kind : 'lake';
   shoreKindUniform.value = SHORE_KINDS[shoreKind];
+  for (const bed of beds) bed.geometry = bedGeometryOf(shoreKind);
 }
 export const getShoreKind = () => shoreKind;
 /** The Koi pond's outline's radius (m) at the angle θ about its centre. */
@@ -273,6 +275,13 @@ function shoreUniforms() {
 const BANK = [0, 2.45];                                         // under the shore view's eye: the bed's mesh centres here
 const BED_RINGS = { first: 0.05, growth: 1.08, last: 300 };   // the mesh's rings about the bank, metres
 const BED_SEGMENTS = 96;                                        // and its spokes
+// The Reflecting Pool's bed mesh (mallBedGeometry): its rows from the west wall, the first BED_ROWS.first (m) on, each
+// BED_ROWS.growth times farther than the last, to the east wall; BED_COLUMNS across between the side walls; and at
+// every wall a step WALL_STEP (m) wide.
+const BED_ROWS = { first: 0.25, growth: 1.12 };
+const BED_COLUMNS = 16;
+const WALL_STEP = 0.002;
+const beds = new Set();   // the floor meshes made (createPondFloor), whose geometry follows the shore (setShoreKind)
 
 /**
  * The lake bed's mesh: rings about the bank, from BED_RINGS.first out to
@@ -304,6 +313,45 @@ function bedGeometry() {
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
   geometry.setIndex(indices);
   return geometry;
+}
+
+/**
+ * The Reflecting Pool's bed mesh (setShoreKind('mall')): a grid over the pool from the west wall to the east one,
+ * 618 m off (the lake's rings stop at BED_RINGS.last), with a column or row WALL_STEP outside each wall. The floor's
+ * vertex shader sinks the grid to the bed and lifts those just outside to the coping (mallFloorDepthAt), so each wall
+ * stands as a face from the bed to the coping, in the under-water pass as the water shows it, where the lake's rings
+ * would make a ramp metres wide.
+ */
+export function mallBedGeometry() {
+  const { halfWidth, west, length } = MALL_POOL;
+  const east = west - length;
+  const xs = [-halfWidth - WALL_STEP];
+  for (let column = 0; column <= BED_COLUMNS; column++) xs.push(-halfWidth + (2 * halfWidth * column) / BED_COLUMNS);
+  xs.push(halfWidth + WALL_STEP);
+  const zs = [west + WALL_STEP, west];
+  for (let distance = BED_ROWS.first; distance < length; distance *= BED_ROWS.growth) zs.push(west - distance);
+  zs.push(east, east - WALL_STEP);
+  const positions = [];
+  for (const z of zs) for (const x of xs) positions.push(x, 0, z);
+  const indices = [];
+  for (let row = 0; row < zs.length - 1; row++) {
+    for (let column = 0; column < xs.length - 1; column++) {
+      const corner = row * xs.length + column, next = corner + xs.length;
+      indices.push(corner, corner + 1, next, corner + 1, next + 1, next);   // facing up (the rows run toward −z); a wall's face, lifted, into the pool
+    }
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setIndex(indices);
+  return geometry;
+}
+
+const bedGeometries = new Map();
+/** The bed's mesh for a shore kind, made once: the Reflecting Pool's own (mallBedGeometry), or the lake's rings (bedGeometry). */
+export function bedGeometryOf(kind) {
+  const shape = kind === 'mall' ? 'mall' : 'lake';
+  if (!bedGeometries.has(shape)) bedGeometries.set(shape, shape === 'mall' ? mallBedGeometry() : bedGeometry());
+  return bedGeometries.get(shape);
 }
 
 const PATTERN_TEXELS = 1024;   // the tile's side (PATTERN_TILE, 2 m, in src/shaders/scene.js)
@@ -378,8 +426,9 @@ export function createPondFloor(water, lighting, ambientWaves, { renderer, rings
     },
   });
   material.addEventListener('dispose', () => pattern.dispose());
-  const mesh = new THREE.Mesh(bedGeometry(), material);
+  const mesh = new THREE.Mesh(bedGeometryOf(shoreKind), material);
   mesh.frustumCulled = false;
+  beds.add(mesh);
   return mesh;
 }
 

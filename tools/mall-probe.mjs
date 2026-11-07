@@ -17,11 +17,14 @@
 //   coping's top) and never ends outside the water under the coping's top;
 // - the meshes: the ground leaves the pool open (no triangle over the
 //   water) and reaches the horizon; draws and triangles, in the scene and
-//   the mirror, under TRIANGLE_BOUND.
+//   the mirror, under TRIANGLE_BOUND; the bed's mesh (src/pondFloor.js
+//   mallBedGeometry) reaches the east wall and steps at every wall: no
+//   triangle with corners either side of one is wider across it than
+//   WALL_WIDEST, so the walls stand from the bed to the coping.
 import * as THREE from 'three';
 import { Rock } from '../src/rock.js';
 import { THINGS, THING_NAMES } from '../src/things.js';
-import { setShoreKind, floorDepthAt, shoreDistance, MALL_POOL } from '../src/pondFloor.js';
+import { setShoreKind, floorDepthAt, shoreDistance, mallBedGeometry, MALL_POOL } from '../src/pondFloor.js';
 import { holdInPool, poolGround } from '../src/pool.js';
 import { createMallPool, MALL_BASIN, MALL_BOUNDS } from '../src/mallPool.js';
 import { OUTER_HALF_SIZE } from '../src/waterSurface.js';
@@ -31,6 +34,7 @@ import { LAKE_BED } from '../src/shaders/scene.js';
 
 const INTO_STONE = 0.01;           // m: the most a thing may lie inside a wall's face below the coping's top
 const TRIANGLE_BOUND = 2000;       // the ground's and the walls' triangles, the scene's and the mirror's
+const WALL_WIDEST = 0.01;          // m: the most a bed triangle across a wall may span across it
 const STEP = 1 / 240;
 setShoreKind('mall');
 const failures = [];
@@ -123,6 +127,21 @@ console.log('\nthe meshes:');
   }
   check(overWater === 0, `the ground leaves the pool open (${overWater} triangles over the water)`);
   check(farthest >= OUTER_HALF_SIZE, `and reaches the horizon (${farthest} m)`);
+  // The bed: to the east wall, and a step at every wall rather than a ramp.
+  const bed = mallBedGeometry(), corners = bed.attributes.position, bedIndex = bed.index.array;
+  const east = MALL_POOL.west - MALL_POOL.length;
+  let widest = 0, eastmost = Infinity;
+  for (let corner = 0; corner < bedIndex.length; corner += 3) {
+    const points = [0, 1, 2].map((at) => [corners.getX(bedIndex[corner + at]), corners.getZ(bedIndex[corner + at])]);
+    for (const point of points) eastmost = Math.min(eastmost, point[1]);
+    // A triangle with corners both in the water and outside it (shoreDistance: the signed distance to the nearest
+    // wall): how far apart they are across the walls.
+    const distances = points.map(([x, z]) => shoreDistance(x, z));
+    if (distances.some((distance) => distance < 0) && distances.some((distance) => distance >= 0)) widest = Math.max(widest, Math.max(...distances) - Math.min(...distances));
+  }
+  console.log(`  the bed: ${corners.count} vertices, ${bedIndex.length / 3} triangles`);
+  check(eastmost <= east, `the bed reaches the east wall (${eastmost.toFixed(1)} m, the wall at ${east.toFixed(1)} m)`);
+  check(widest <= WALL_WIDEST, `the bed steps at the walls (its triangles across a wall at most ${(widest * 1000).toFixed(1)} mm wide)`);
 }
 
 console.log(failures.length ? `\n${failures.length} FAILED` : '\nall ok');

@@ -2898,6 +2898,7 @@ ${SHORE_KIND}
 ${PALM_SHADOW}
 ${MALL_BED}
 #define KOI_BED vec3(0.46, 0.45, 0.38)   // the Koi pond's bed against the lake's sand: grey gravel, silt and a film of algae
+#define MALL_WALL_FACE vec3(0.05, 0.062, 0.04)   // the Reflecting Pool's walls under the water: granite filmed with algae (as at the coping's waterline, MALL_GROUND_FRAGMENT)
 void main() {
   // Sand with pebbles and silt (FLOOR_SAND); the Koi pond's, darker gravel under silt and algae, in drifts; the
   // Reflecting Pool's tinted concrete (mallBed).
@@ -2905,6 +2906,20 @@ void main() {
   vec3 sand;
   if (isShore(SHORE_MALL)) sand = mallBed(vFloorPoint, bedFootprint);
   else sand = floorSand(vFloorPoint);
+  // The Reflecting Pool's walls: its bed's mesh steps up each one just outside the water (src/pondFloor.js
+  // mallBedGeometry), where the point barely moves up the face, so the bed's detail and the caustics would streak
+  // down it. There, granite under a film of algae, mottled by the run of the wall and the depth, lit as a wall (it
+  // sees half the sky, the sun aslant: as the Pool's basin, POOL_FRAGMENT's light), without caustics.
+  float wallFace = 0.0;
+  if (isShore(SHORE_MALL)) {
+    vec2 point = vFloorPoint;
+    float beside = abs(point.x) - MALL_HALF_WIDTH, behind = max(point.y - MALL_WEST, (MALL_WEST - MALL_LENGTH) - point.y);
+    if (max(beside, behind) > 1e-5) {
+      wallFace = 1.0;
+      float along = beside > behind ? point.y : point.x;
+      sand = MALL_WALL_FACE * (0.75 + 0.5 * valueNoise(vec2(along * 1.7, vDepth * 7.0))) * (0.9 + 0.2 * valueNoise(vec2(along * 0.3, 2.0)));
+    }
+  }
   if (isShore(SHORE_KOI)) sand *= KOI_BED * (0.7 + 0.5 * valueNoise(vFloorPoint * 0.7 + 11.0));
 
   // Caustics: where the surfaces above focus the sun, on the floor point this
@@ -2925,10 +2940,10 @@ void main() {
   // From an eye under the water the floor is seen where it is.
   if (cameraPosition.y < 0.0) seenPoint = vFloorPoint;
   vec2 surfacePoint = seenPoint + vUpSun * vDepth;
-  float caustic = causticLight(1.0 + vFocusing * vDepth * surfaceCurvature(surfacePoint));
+  float caustic = mix(causticLight(1.0 + vFocusing * vDepth * surfaceCurvature(surfacePoint)), 1.0, wallFace);
 
   // The palms' shadows (PALM_SHADOW), where this point's sunlight crossed the surface.
-  vec3 color = sand * (vSunlight * caustic * (1.0 - palmShadow(surfacePoint)) + vSkylight);
+  vec3 color = sand * (vSunlight * caustic * (1.0 - palmShadow(surfacePoint)) + vSkylight) * (1.0 - 0.25 * wallFace);
   if (cameraPosition.y < 0.0) color = throughWater(color, vec3(vFloorPoint.x, -vDepth, vFloorPoint.y));
   gl_FragColor = vec4(color, 1.0);
 }
