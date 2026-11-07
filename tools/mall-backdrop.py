@@ -55,7 +55,10 @@ its own, `matchContrast: channels`, which gives sunlit leaves the sunset's gold)
 `match: false`; `adjust` grades it by hand. The day's photographs are already placed, so another hour is the day's
 graded to that hour's reference, its landmarks laid over in their own light: at sunset the Monument cut out of a
 photograph lit by the low sun, behind the eye the Memorial floodlit; at night
-the pool's own night photograph laid over the day's graded to its dark trees. A low sun's `backlight` darkens and
+the pool's own night photograph laid over the day's graded to its dark trees. A layer may also lend a detail its
+photograph sees and another does not: the day's Memorial, taken off its axis, hides the statue behind a column, so in
+the morning the dusk photograph's middle bay is laid into its doorway (its own `yaw` and `pitch` setting it there),
+dimmed by `adjust` from floodlight to a chamber in daylight. A low sun's `backlight` darkens and
 greys what faces the eye toward it (the trees' shaded sides; backlight); `keepHue` and `unsky` keep a canopy's gaps,
 sky-tinted edges and pale stone from taking a false colour in another light, and `edge` frees the graded layers' land
 edges of their photographs' sky (decontaminate_edge), which would outline the trees in that light.

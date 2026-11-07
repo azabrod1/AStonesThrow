@@ -487,6 +487,16 @@
       0.66
      ],
      "seam": 5
+    },
+    {
+     "photo": "memorial-dusk",
+     "match": false,
+     "keyed": false,
+     "solid": [],
+     "shape": [[[0.4825, 0.3935], [0.505, 0.3935], [0.505, 0.557], [0.4825, 0.557]]],
+     "yaw": 270.59,
+     "pitch": 5.58,
+     "adjust": {"exposure": -4.0, "saturation": 0.25}
     }
    ]
   },
