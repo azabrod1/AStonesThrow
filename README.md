@@ -229,6 +229,7 @@ full screen, which only a press or a key may ask for):
   thin enough for the next throw to break.
 - Location (`?sky=`): Swiss Alps, Rocky cove, Highlands, Desert oasis,
   Lakeside (the default), Mesas, Pool, Loch Ness (`?sky=loch`),
+  Reflecting Pool (`?sky=mall`, below),
   Polynesian lagoon (`?sky=lagoon`): white coral sand, palms and reef fish
   under a pure sky (below, the tropics); or Koi pond (`?sky=koi`): a pond in
   a Japanese garden under its own panorama (Poly Haven's Ninomaru Teien,
@@ -1031,6 +1032,22 @@ The curated locations include:
   panoramas from one spot at water level: a 2024 morning and golden hour,
   a 2019 sunset and dusk. Faces the flat-topped hills across the water, the
   sun's path on it. Starts at the golden hour.
+- **Reflecting Pool** (`?sky=mall`): the Lincoln Memorial Reflecting Pool
+  in Washington, D.C., seen from its west wall down its 618 m to the
+  Washington Monument, one late morning. No one has published a free
+  panorama taken there, so its sky is stitched from three photographs on
+  Wikimedia Commons over Poly Haven's Qwantani mid-morning sky
+  (`tools/mall-backdrop.py`, its plan `tools/mall-backdrop.json`, which
+  lists each photo, its licence and where it is aimed): the Monument down
+  the pool (Kenrick95, CC BY-SA 4.0), the Lincoln Memorial behind the eye
+  (Jmarcosny, CC BY-SA 4.0) and the elms along the south side (Nvss132,
+  CC0), the north side that one mirrored. The gaps between them are filled
+  by copies of their own land cut along minimum-cost seams; so the backdrop
+  is CC BY-SA 4.0 as a whole. Near the eye the coping, the walks, the west
+  plaza and the lawn are drawn (`src/mallPool.js`), fading into the photo's
+  land; the water stops at the granite walls (`setBounds` in
+  `src/waterSurface.js`), and what reaches them comes back off them or
+  lies on the coping (`tools/mall-probe.mjs`).
 - **Wooded lake** (`?sky=wooded`): Radków Lake under the Table Mountains, one
   late morning, facing the wooded far shore with the sun to the left.
 
@@ -1800,6 +1817,16 @@ farther out, so it rises into the view rather than filling its corner.
   never kept): each photoscan's normal and the detail of its colour packed
   into one JPEG (its header says how), 251 KB and 427 KB, fetched only when
   the lagoon is first shown.
+- `python3 tools/mall-backdrop.py [--preview=dir]` builds the Reflecting
+  Pool's sky from its plan, `tools/mall-backdrop.json`: it fetches the
+  photographs (cached in `tools/.mall-photos/`, gitignored), projects each
+  to the panorama where the plan aims it, mattes out its sky, matches its
+  colour, fills the gaps between them with copies of their land cut along
+  minimum-cost seams, grades the land to the measured skies' brightness and
+  lays it over the plan's sky. It writes `assets/sky/mall_2k.hdr` and the
+  8k file the horizon strip is cut from (`mall_8k.hdr`, never committed);
+  then run `tools/sky-probe.mjs` and `tools/sky-encode.mjs --verify` on
+  `mall_2k.hdr` as for any sky. About a minute; needs numpy, SciPy and Pillow.
 - `node tools/sky-encode.mjs [assets/sky/name_2k.hdr ...] [--verify] [--no-horizon]` encodes
   each sky's Radiance file (every one, by default) as the JPEG gain map the
   page loads, `assets/sky/name_2k.jpg`, and its horizon strip,
@@ -1926,6 +1953,12 @@ farther out, so it rises into the view rather than filling its corner.
   120 Hz one, and a throw every other frame of a 120 Hz clock (held to 60 a
   second) and every frame of a 60 Hz one; and that a large window keeps
   within the pixel budget.
+- `node tools/mall-probe.mjs` checks the Reflecting Pool on the CPU: its
+  bed's GLSL twin is `MALL_POOL`, the walls that hold things and the water's
+  bounds stand at its walls; every thing sent at a wall or a corner, slow or
+  fast, or lobbed over it, never goes into the granite and never ends under
+  the coping's top; the ground leaves the pool open and reaches the horizon,
+  under its triangle bound.
 - `node tools/visitor-probe.mjs` checks whatever is out on Loch Ness
   (`src/lochVisitor.js`) on the CPU: over two hours it comes up within its
   first minute and every one to two and a half minutes after, every form
