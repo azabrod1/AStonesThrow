@@ -170,11 +170,13 @@ for (const framing of FRAMINGS) {
   // A touch framing keeps its touch emulation (the browser's, not the page's doing): checked before every press and
   // measurement (press, boxes), and wherever it is found gone (no coarse pointer) that is said, with where, and it is
   // given back, so what is measured is the page as a phone shows it.
+  // Resolves true if it had to give the emulation back.
   const keepTouch = async (where) => {
-    if (!framing.touch || (await page.evaluate(() => matchMedia('(pointer: coarse)').matches))) return;
+    if (!framing.touch || (await page.evaluate(() => matchMedia('(pointer: coarse)').matches))) return false;
     console.log(`         (the browser had lost its touch emulation by ${where}: no coarse pointer; it is given back)`);
     await (await touchSession()).send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
     await page.waitForTimeout(200);
+    return true;
   };
   const problems = [];
   page.on('pageerror', (error) => problems.push(String(error)));
@@ -280,6 +282,26 @@ for (const framing of FRAMINGS) {
 
   // The settings (src/settingsPanel.js).
   const press = async (selector) => { await keepTouch(`pressing ${selector}`); return framing.touch ? page.tap(selector) : page.click(selector); };
+  // What to throw opened as a finger opens it: the strip's chip, then the dropdown's ⓘ, each waited on (a while, on
+  // SwiftShader) for what it opens and then for the panel's slide. CI's macOS runner has lost the touch emulation in
+  // the middle of these two taps, and the page did not open (the browser's doing, as keepTouch says); so when the page
+  // is not open and the emulation is found gone, it is given back and the taps made again, which is said. Not open
+  // with the emulation kept, it is left so, and the check after it fails.
+  const openWhatToThrow = async () => {
+    const pageOpen = () => page.evaluate(() => !document.querySelector('.menu-page[data-page="thing"]').hidden && document.getElementById('thing-menu').hidden);
+    for (let attempt = 0; ; attempt++) {
+      if (await page.evaluate(() => document.getElementById('thing-menu').hidden)) {
+        await press('#thing-chip');
+        await page.waitForFunction(() => !document.getElementById('thing-menu').hidden, undefined, { timeout: patience(2000) }).catch(() => {});
+        await page.waitForTimeout(300);
+      }
+      await press('#thing-more');
+      await page.waitForFunction(() => !document.querySelector('.menu-page[data-page="thing"]').hidden, undefined, { timeout: patience(2000) }).catch(() => {});
+      await page.waitForTimeout(400);
+      if (attempt > 0 || (await pageOpen()) || !(await keepTouch('opening What to throw'))) return;
+      console.log('         (What to throw did not open while the touch emulation was lost: its taps made again)');
+    }
+  };
   const boxes = async (selector) => (await keepTouch(`measuring ${selector}`), page.evaluate((query) => {
     const scale = window.visualViewport ? window.visualViewport.scale : 1;
     return [...document.querySelectorAll(query)].filter((element) => element.getClientRects().length > 0).map((element) => {
@@ -536,10 +558,7 @@ for (const framing of FRAMINGS) {
     stored: localStorage.getItem('stone-pond-favourites'),
   }));
   const starOnPage = async () => {
-    await press('#thing-chip');
-    await page.waitForTimeout(300);
-    await press('#thing-more');
-    await page.waitForTimeout(400);
+    await openWhatToThrow();
     await press('#thing-favourite');
     await page.keyboard.press('Escape');
     await page.waitForTimeout(150);
@@ -662,10 +681,7 @@ for (const framing of FRAMINGS) {
   const browsedTabStop = await page.evaluate(() => [...document.querySelectorAll('#thing .menu-group:not([hidden]) [role="radio"]')].filter((card) => card.tabIndex === 0).map((card) => card.dataset.value));
   await page.keyboard.press('Escape');
   await page.waitForTimeout(150);
-  await press('#thing-chip');
-  await page.waitForTimeout(300);
-  await press('#thing-more');
-  await page.waitForTimeout(400);
+  await openWhatToThrow();
   const backToChosen = await shownGroups();
   const chosenFocus = await page.evaluate(() => document.activeElement?.dataset?.value);
   check(browsedTabStop.join() === 'golf' && backToChosen.selected.join() === 'Stones' && backToChosen.shown.join() === 'Stones' && chosenFocus === 'stone',
@@ -738,10 +754,7 @@ for (const framing of FRAMINGS) {
     // The strip's chip opens What to throw at once, the choice's group shown; a tap on its card chooses it and shows it
     // over the groups (the settings stay open), Use closes them, and the next tap on the water throws it.
     if (await page.evaluate(() => document.getElementById('settings').hidden)) {
-      await press('#thing-chip');
-      await page.waitForTimeout(300);
-      await press('#thing-more');
-      await page.waitForTimeout(400);
+      await openWhatToThrow();
     }
     const onPage = await page.evaluate(() => !document.querySelector('.menu-page[data-page="thing"]').hidden && document.getElementById('thing-menu').hidden);
     check(onPage, `the dropdown's ⓘ opens What to throw at once (${onPage ? 'its page' : 'not it'})`);
@@ -788,10 +801,7 @@ for (const framing of FRAMINGS) {
   // just pressed jumping away under the finger (on a phone on its side, a long group's last cards). With the page at
   // its foot, the largest group's last card is chosen: the chosen thing's card above the groups changes height as it
   // shows it, so the page may scroll by as much (the browser keeping what is in view in place), never up by more.
-  await press('#thing-chip');
-  await page.waitForTimeout(300);
-  await press('#thing-more');
-  await page.waitForTimeout(400);
+  await openWhatToThrow();
   const largest = offered.reduce((most, group) => (group.count > most.count ? group : most));
   const lowest = largest.keys.at(-1);
   await press(`#thing-tabs [role="tab"][data-group="${largest.name}"]`);
@@ -816,10 +826,7 @@ for (const framing of FRAMINGS) {
   await press('#thing-use');
   await page.waitForTimeout(100);
   // What was used lately sits at the top of What to throw, a tap each: it throws at once (the settings close).
-  await press('#thing-chip');
-  await page.waitForTimeout(300);
-  await press('#thing-more');
-  await page.waitForTimeout(400);
+  await openWhatToThrow();
   const quick = await page.evaluate(() => [...document.querySelectorAll('#thing-quick button')].map((button) => button.dataset.value));
   if (quick.includes('pizza')) await press('#thing-quick [data-value="pizza"]');
   await page.waitForTimeout(150);
@@ -827,10 +834,7 @@ for (const framing of FRAMINGS) {
   check(quick.length >= 4 && quick.includes('pizza') && quickPicked.thing === 'pizza' && quickPicked.closed, `the latest choices sit at the top (${quick.join(', ')}), and one tapped is thrown at once (${quickPicked.thing}, ${quickPicked.closed ? 'closed' : 'open'})`);
   // What to throw opened from the chip (the dropdown's ⓘ): the chip pressed again closes it (its press is not one outside
   // the panel, src/settingsPanel.js), where the open panel leaves it uncovered; where the panel covers it, its ‹ closes it.
-  await press('#thing-chip');
-  await page.waitForTimeout(300);
-  await press('#thing-more');
-  await page.waitForTimeout(400);
+  await openWhatToThrow();
   const chipOpen = await page.evaluate(() => {
     const chip = document.getElementById('thing-chip');
     const box = chip.getBoundingClientRect();
