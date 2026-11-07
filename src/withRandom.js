@@ -27,3 +27,28 @@ export function parkMiller(seed) {
     return (state - 1) / 2147483646;
   };
 }
+
+/**
+ * parkMiller's stream, its draws counted (`draws`) and set to stand after any
+ * number of them (`seek`): after n draws its state is seed × 16807ⁿ mod
+ * (2³¹ − 1). The warm-up (src/main.js) throws at the draws it threw at before.
+ */
+export function seekableParkMiller(seed) {
+  let state = seed;
+  const random = () => {
+    random.draws++;
+    state = (state * 16807) % 2147483647;
+    return (state - 1) / 2147483646;
+  };
+  random.draws = 0;
+  random.seek = (draws) => {
+    const modulus = 2147483647n;
+    let power = 1n, base = 16807n;
+    for (let exponent = BigInt(draws); exponent > 0n; exponent >>= 1n, base = (base * base) % modulus) {
+      if (exponent & 1n) power = (power * base) % modulus;
+    }
+    state = Number((BigInt(seed) * power) % modulus);
+    random.draws = draws;
+  };
+  return random;
+}

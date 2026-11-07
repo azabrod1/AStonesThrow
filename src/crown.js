@@ -271,13 +271,57 @@
 // which its first material's rising speed u·cos(tilt)·exp(−a/τd) falls to
 // g·a (Newton's method, once), at least BREAK_FLOOR and at most
 // BREAK_CEILING (60 and 150 ms, times R / 3 cm from 3 cm up); a landing
-// crown's at LANDING_BREAK·T. It tears from the rim down to the water along a
-// ragged front, over 0.6·t_break, the raggedness varying smoothly around the
+// crown's at LANDING_BREAK·T. It tears from the rim down along a ragged
+// front, over TEAR_SHARE·t_break, the raggedness varying smoothly around the
 // ring (three lobes and TEAR_MODES at random phases), so the torn edge is a
-// curve, and fading as the front nears the foot (TEAR_EVEN), so the columns
+// curve, and fading as the tear nears its end (TEAR_EVEN), so the columns
 // finish together and none is left as a sliver on the lip; on a stone's
 // crown the arcs between the fingers tear first and the fingers last, at
 // the slowest pace, as a rim's webs open between its ligaments.
+// The fan and a landing crown, all of whose sheet flies until it tears, tear
+// evenly down their launch time (tearEvenly). A stone's crown tears only what
+// is still in the air (tearAirborne): by its tear much of its sheet has come
+// back down, the foot onto the lip that carries it and the sides and back of
+// an oblique throw's crown altogether, while its forward wall still stands
+// (a 30 cm stone's, thrown hard, is all of it launched in the first third of
+// the launch window). So each frame the front sweeps, column by column, its
+// share of the tear (the paced share above) of what is left flying below it,
+// measured by area over AIR_SAMPLES launch times (scanColumn), passing over
+// what has come down, which throws nothing (a front even in launch time spent
+// four fifths of its time on the lip, and the standing wall went in its first
+// 40 ms, at many times the speed it could fall); a column with nothing left
+// flying sweeps its foot at the same pace. Its drops and spray are shared
+// among the flying sheet swept by area, so none is thrown from the lip (where
+// most of them had been, removed within steps). Ahead of the front the film
+// opens (openUntil): its holes, seeded the froth's hole spacing apart and
+// each running back at the Taylor–Culick speed sqrt(2σ / ρh), meet in half
+// that spacing over that speed (openSeconds; tens of milliseconds for a 30 cm
+// stone's 2 mm sheet, a few for a 3 cm stone's), so the material the front
+// will reach within that time opens towards OPEN_AHEAD of it by then. Behind
+// the front the torn sheet still flying is not gone at once either: the
+// holes' rims have gathered the film between them into threads, each of
+// radius sqrt(spacing·h / 2π), and a thread beads off into drops only over
+// LIGAMENT_GROWTHS of its Rayleigh–Plateau growth times (webSeconds: a few
+// tens of milliseconds for a 3 cm stone's sheet, a few tenths of a second for
+// a 30 cm stone's 2 mm one). Until then it is a web, OPEN_AHEAD open where the front
+// passed and opening on as its threads go, reckoned from when the front
+// passed (tornAt, from each column's front at TEAR_CHECKS moments over the
+// tear), flying its own closed form down; a
+// thick sheet's web reaches the water before it has beaded off. What of it
+// has come back down to the lip or into the water is gone (advanceWeb keeps
+// the grid's top, webFront, at the first of it still in the air; the rest is
+// drawn as the lip's own water, faded out), and a finger's strip is no web
+// (a thread already: its water goes as its beads and drops; narrower than
+// the holes' cells, its web stood in the air as a solid white ribbon). Drawn
+// as drops alone, which carry only a few hundredths of a big stone's sheet
+// (Drop sizes, below), a 30 cm stone's wall rose for 0.25 s and was gone in
+// 0.05 s; its web falls back as fast as it can fall. A sheet come down onto the lip
+// that the front has not reached fades with its column's tear, as the lip's
+// water does (FOOT_FADE); the rim bead and the torn edge's ligaments ride the
+// edge down, going over RIM_BEAD_FADE of the column's tear and as the edge
+// reaches the lip (EDGE_LANDING). The crown lives on after its tear while its
+// web flies and has not beaded off, at most WEB_LONGEST. A dome's torn sheet is no web: the seal's
+// pull holds it over the hole, and its burst flings it off as drops.
 // The torn part becomes droplets that carry the local (decayed) sheet
 // velocity, each holding the volume of the patch of sheet it came from, so the
 // drops come out about the size the sheet's thickness implies, between
@@ -313,9 +357,9 @@
 // The spray draws from a stream of the crown's own, seeded by the tear's
 // phase, so it spends no draw of Math.random. For a 3 cm stone dropped straight in at 6.3 m/s
 // the sheet stands whole for 90 ms, its rim peaking 11 cm up at 90 ms, 8 cm
-// out (the reference: 11 to 12 cm at 0.1 s, 8 to 10 cm out), and is gone by
-// 150 ms; thrown at 42° from vertical its forward side stands taller, 13 to
-// 19 cm.
+// out (the reference: 11 to 12 cm at 0.1 s, 8 to 10 cm out), and is torn
+// through by 150 ms; thrown at 42° from vertical its forward side stands
+// taller, 13 to 19 cm, and the last of its torn web is down by about 220 ms.
 //
 // How a stone's sheet scales with its radius R, against s = R / 3 cm. Lengths
 // go with R and speeds with the entry speed V, as in a Froude-scaled splash:
@@ -339,10 +383,11 @@
 // nearly always does, it closes into a dome 1 cm high); a 4 cm stone's 11 cm, a 6 cm
 // stone's 14 cm (11 cm dropped straight in); a 16 cm stone's sheet is 4 mm
 // thick, stands for 160 ms with its rim 25 to 40 cm high, nearly ballistic,
-// is gone by 256 ms and tears into lumps of up to 9 mm, which fly as about
-// 1960 drops of 2.4 to 4 mm (tools/splash-probe.mjs measures these).
+// is torn through by 256 ms, its web down by 350 to 480 ms, and tears into
+// lumps of up to 4 mm, which fly as about 3000 drops of up to 2.5 mm
+// (tools/splash-probe.mjs measures these).
 //
-// Drop sizes. No drop flies bigger than DROP_CEILING (4 mm in radius),
+// Drop sizes. No drop flies bigger than DROP_CEILING (2.5 mm in radius),
 // whatever the sheet's thickness says: surface tension holds a free drop
 // together over the capillary length sqrt(σ/ρg) = 2.7 mm, which does not
 // grow with the stone, and air and its own wobble break a bigger lump within
@@ -353,7 +398,7 @@
 // DROP_CEILING times a gamma draw of order 4 (a ligament's spread of sizes,
 // as the tear's drops and the spray are) within LUMP_PIECE_LEAST and 1 of
 // it, so a lump's drops are a few big beads among smaller ones, no string
-// of equal beads (which a rock's rim shed before: every piece 2.4 to 4 mm),
+// of equal beads (which a rock's rim shed before: every piece of a size),
 // spread over where it came from: a big stone's sheet tears into
 // more drops, not bigger ones. The extra drops come out of the splash's cap
 // (spareDroplets: CROWN_DROPLET_CAP or FAN_DROPLET_CAP in src/splash.js less
@@ -361,11 +406,12 @@
 // alike as they come, so they are spread over the whole sheet; where they
 // run out a lump flies as one drop of at most DROP_CEILING and the rest of
 // its water is lost, the cap being the cost's limit. A 3 cm stone's sheet
-// needs few (a handful of its patches are over 4 mm); a 16 cm stone's, on
-// High (crownDrops 3500 in src/main.js), loses about a tenth of its water
-// (445 of some 500 ml flies), on Medium and Low (2000) about 40% (290 ml);
-// a 30 cm stone's about 88% on High (490 of 4000 ml). The fan's drops and a
-// landing crown's are far under the ceiling.
+// needs few (a handful of its patches are over the ceiling); a big stone's
+// sheet holds far more than its drops can (on High, crownDrops 3500 in
+// src/main.js, a 16 cm stone's and a 30 cm stone's drops carry 60 to 90 ml,
+// where a 30 cm stone's sheet holds some 5 litres), and its torn web carries
+// the rest down (the tear, above). The fan's drops and a landing crown's are
+// far under the ceiling.
 //
 // A large drop landing makes a small crown of its own, the classic
 // drop-impact crown: the same model with the drop's radius and landing speed
@@ -410,11 +456,17 @@
 // landing crown LANDING_COLUMNS; the fan's FAN_ROWS × FAN_COLUMNS across its
 // sector, not wrapping) once per rendered frame, row by row: what depends on
 // the launch time alone (the lip, the launch's speed, angle and drag) is
-// worked out once a row while the sheet is whole. update() runs every
-// simulation substep and sheds from the rim, while the tear, the costly part,
-// advances once per rendered frame: whenever a frame's worth of simulated
-// time (SplashSystem.frameSeconds) has passed, so the front moves on every
-// frame at any time scale. The mesh is drawn by SplashSystem with the
+// worked out once a row while the sheet is whole; a stone's crown's grid
+// runs from the top of its torn web (webFront), and a column torn through and
+// all come down is left where it lies, drawn as gone, unevaluated. update()
+// runs every simulation substep and sheds from the rim, while the tear, the
+// costly part, advances once per rendered frame: whenever a frame's worth of
+// simulated time (SplashSystem.frameSeconds) has passed, so the front moves
+// on every frame at any time scale; a column with nothing left flying is
+// scanned no more (columnDown). Its busiest frame is the tear's first, which
+// scans every column (for a 30 cm stone a tenth more of the closed form than
+// the even tear's busiest); its frames on average cost less than the even
+// tear's, and a 16 cm stone's whole crown a fifth more, as it stands longer. The mesh is drawn by SplashSystem with the
 // materials in src/shaders/sheet.js, through the droplets' screen-space fluid
 // passes.
 //
@@ -476,6 +528,19 @@ const TAIL_THICKNESS = 0.6;        // tail material leaves the ring at this frac
 const MIN_THICKNESS = 0.0002;
 const BEAD_END = 0.08;             // the bead is the material of the first 8% of T
 const TEAR_SHARE = 0.6;            // the tear takes this fraction of t_break
+const AIR_LEAST = 1;               // a stone's crown's sheet less than this many of its launch thicknesses above where it rests has come back down (tearAirborne)...
+const AIR_SAMPLES = 12;            // ...judged at this many launch times down each column...
+const AIR_POWER = 2.5;             // ...crowded towards its front by this power, as the rows crowd towards the rim
+const OPEN_AHEAD = 0.9;            // holes ahead of a stone's crown's tear front have opened this share of the sheet by the time it reaches them (openSeconds)
+const FROTH_HOLE_SCALE = 0.7;      // the holes' seeds per froth cell along the ring (src/shaders/sheet.js FROTH_HOLE_SCALE: change both)
+const FOOT_FADE = [0.6, 0.95];     // the sheet's passes fade it out as its carry rises over this (src/shaders/sheet.js FOOT_FADE: change both)
+const RIM_BEAD_FADE = [0.5, 1];    // a stone's crown's rim bead and its torn edge's ligaments ride the edge down, going over these shares of its column's tear...
+const EDGE_LANDING = 5;            // ...and as the edge comes down to the lip, over its last this many launch thicknesses (a couple of the bead's diameters) above it: the edge's water joins the lip's
+const LIGAMENT_GROWTHS = Math.log(100);   // a stone's crown's torn sheet still flying is a web, opening on from OPEN_AHEAD at the front as its threads bead off into drops, over this many of their Rayleigh–Plateau growth times (from a hundredth of their radius: webSeconds)...
+const WEB_HIDDEN = 0.99;           // ...gone, as drops, where it is this open...
+const TEAR_CHECKS = 16;            // ...its age read from where each column's front was at this many moments over the tear (tornAt)...
+const WEB_SAMPLES = 8;             // ...its top found among this many launch times over the torn part of each column...
+const WEB_LONGEST = 1.0;           // ...and the crown gone at the latest this many seconds after its tear, times sqrt(R / 3 cm), whatever still flies
 const BASE_DEPTH = 0.003;          // launch a little below the surface (or the cavity's lip) so the base meets the water
 const RIM_RING_START = 0.9;        // on a cavity, the ring is at least this many R until the lip's crest is wider
 const MAIN_MODES = [5, 6, 7, 8, 9];
@@ -826,8 +891,22 @@ export class CrownSheet {
     this.columnTearPace = new Float64Array(this.columns);
     this.tearFront = new Float64Array(this.columns);
     this.tearClock = Infinity;         // simulated time since the tear last advanced: tear at once
+    this.tornThrough = false;          // its last step has run (update)
     this.tearTarget = new Float64Array(this.columns);
     this.tearSwept = new Float64Array(this.columns);
+    this.tearDone = new Float64Array(this.columns);    // each column's paced share of a stone's crown's tear so far (tearAirborne)
+    this.openUntil = new Float64Array(this.columns);   // the launch time down to which holes open ahead of its front (updateGeometry)
+    this.scanTaus = new Float64Array(AIR_SAMPLES);     // the last scanned column's samples (scanColumn)...
+    this.scanAir = new Float64Array(AIR_SAMPLES);      // ...and its flying area from the front to each
+    this.scan = { air: 0, thickness: 0, radialDistance: 0 };
+    this.stripAir = 1;                                 // the share of the last strip measured still flying (stripArea)
+    this.webFront = new Float64Array(this.columns);    // the launch time down to which a stone's crown's torn sheet has come down (advanceWeb): the grid's top
+    this.frontHistory = new Float64Array(this.columns * (TEAR_CHECKS + 1));   // each column's front at the tear's checkpoints (tornAt)
+    this.checksKept = 1;                               // how many of them have passed (the first, at the break, the rim)
+    this.lastStep = 0;                                 // the crown's age at the tear's last step
+    this.webGoneAt = 0;                                // the age by which all its web will have beaded off
+    this.webLanded = false;                            // all of it has come down (update)
+    this.columnDown = new Uint8Array(this.columns);    // nothing of the column below its front is in the air (tearAirborne)
     if (this.fingered) layColumns(this.fingers, this.columnAngle, this.columnWidths, this.columnAcross);
     else for (let column = 0; column < this.columns; column++) {
       this.columnAngle[column] = this.firstAngle + column * this.columnWidth;
@@ -964,7 +1043,7 @@ export class CrownSheet {
       this.rimCentres = new Float64Array(this.columns * 3);
       this.rimRadii = new Float64Array(this.columns);
     }
-    this.state = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, thickness: 0, radialDistance: 0, radialSpeed: 0, flown: 0, remaining: 1, carry: 0 };
+    this.state = { x: 0, y: 0, z: 0, above: 0, vx: 0, vy: 0, vz: 0, thickness: 0, radialDistance: 0, radialSpeed: 0, flown: 0, remaining: 1, carry: 0 };
     this.stateOther = { ...this.state };
     this.stateRim = { ...this.state };      // a column's free rim, for the seal's pull (pullIn)
     this.stateTip = { ...this.state };      // a finger's tip material, for its bead's speed (placeBead)
@@ -979,7 +1058,7 @@ export class CrownSheet {
     this.bounds = new THREE.Box3();
     this.sealedMemo = { age: NaN, start: NaN, time: NaN, value: 0 };
     this.domeColumns = { ages: new Float64Array(this.columns).fill(NaN), values: new Float64Array(4 * this.columns) };
-    this.lastEdge = { column: -1, tau: NaN, age: NaN, x: 0, y: 0, z: 0, radialDistance: 0 };
+    this.lastEdge = { column: -1, tau: NaN, age: NaN, x: 0, y: 0, z: 0, radialDistance: 0, above: 0, thickness: 0 };
     this.boundsInto = (box) => box.union(this.bounds);
   }
 
@@ -1224,13 +1303,19 @@ export class CrownSheet {
     out.radialDistance = radialDistance;
     out.radialSpeed = radialSpeed * decay;
     out.flown = flown;
+    // How far above where it would rest it is (the tear's: the header's "airborne"): at or under 0 it has come back
+    // down, onto the lip it is carried by or, the rim's, into the water.
+    out.above = out.y - baseHeight;
     // The foot never sinks below the lip it stands on: the water there holds it up.
     if (launch.carry > 0 && out.y < baseHeight) { out.y = baseHeight; out.vy = Math.max(out.vy, 0); }
     // What the rest reads of the launch, taken before the seal's pull: launchAt hands out one object, and the pull
     // evaluates the free rims (domeApexNow, pullIn), which overwrote it with the rim's launch, so every pulled
     // element took the rim's carry, thickness and drain (a dome's foot was drawn as flying sheet over the lip).
     const launchThickness = launch.launchThickness, drainDivisor = launch.drainDivisor, carry = launch.carry;
-    if (this.seal && !free && this.age > this.seal.start) this.pullIn(out, tau, cosAngle, sinAngle, speedFactor, thicknessFactor, fingerFactor, rimShape, column);
+    if (this.seal && !free && this.age > this.seal.start) {
+      this.pullIn(out, tau, cosAngle, sinAngle, speedFactor, thicknessFactor, fingerFactor, rimShape, column);
+      out.above = Math.max(out.above, out.y - baseHeight);   // a dome's sheet is pulled up over the hole
+    }
     // The bead gathers what stretching takes from the sheet, so it keeps three
     // times the unstretched thickness while the sheet behind it thins.
     const drained = this.baseThickness * thicknessFactor * fieldThickness * launchThickness / drainDivisor;
@@ -1355,14 +1440,19 @@ export class CrownSheet {
       this.shed(dt, splash);
     } else {
       if (!this.beadsGone) this.releaseBeads(splash);
-      // The tear is the costly part, so it advances once per rendered frame.
+      // The tear is the costly part, so it advances once per rendered frame; its last step at once (a stone's web,
+      // after it, once a frame again).
       this.tearClock += dt;
-      if (this.tearClock >= splash.frameSeconds * (1 - 1e-6) || this.age >= this.endTime) {
+      const last = this.age >= this.endTime && !this.tornThrough;
+      if (this.tearClock >= splash.frameSeconds * (1 - 1e-6) || last) {
         this.tearClock = 0;
         this.tear(splash, Math.min((this.age - this.breakTime) / this.tearDuration, 1));
+        if (this.age >= this.endTime) this.tornThrough = true;
       }
     }
-    if (this.age >= this.endTime) this.finished = true;
+    // A stone's crown lives on after its tear while its torn web still flies (tearAirborne), at most WEB_LONGEST.
+    const web = !this.fan && !this.landing && !this.seal && !this.webLanded && this.age < this.webGoneAt && this.age < this.endTime + WEB_LONGEST * Math.sqrt(Math.max(this.sizeFactor, 1));
+    if (this.age >= this.endTime && !web) this.finished = true;
   }
 
   /**
@@ -1569,12 +1659,22 @@ export class CrownSheet {
   }
 
   /**
-   * Move the tear front to the given progress (0 to 1). The strips it sweeps
-   * get the droplets still owed in proportion to their share of the untorn
-   * area, so the sheet keeps spreading while it tears yet the last step leaves
-   * exactly the budget spent.
+   * Move the tear front to the given progress (0 to 1). A stone's crown tears
+   * through what is still flying (tearAirborne); the fan and a landing drop's
+   * crown, all of which flies until it tears, evenly (tearEvenly).
    */
   tear(splash, progress) {
+    if (this.fan || this.landing) this.tearEvenly(splash, progress);
+    else this.tearAirborne(splash, progress);
+  }
+
+  /**
+   * The fan's and a landing crown's tear. The strips it sweeps get the
+   * droplets still owed in proportion to their share of the untorn area, so
+   * the sheet keeps spreading while it tears yet the last step leaves exactly
+   * the budget spent.
+   */
+  tearEvenly(splash, progress) {
     const end = this.feedEnd();
     let sweptArea = 0;
     let untornArea = 0;
@@ -1597,9 +1697,206 @@ export class CrownSheet {
     const density = droplets / sweptArea;
     for (let column = 0; column < this.columns; column++) {
       if (this.tearTarget[column] <= this.tearFront[column]) continue;
-      this.spawnFromStrip(column, this.tearFront[column], this.tearTarget[column], end, this.tearSwept[column] * density, density, splash);
+      this.spawnFromStrip(column, this.tearFront[column], this.tearTarget[column], end, this.tearSwept[column] * density, density, splash, false);
       this.tearFront[column] = this.tearTarget[column];
     }
+  }
+
+  /**
+   * A stone's crown's tear (the header): column by column the front sweeps
+   * the sheet that is still in the air, as a share of what is left of it
+   * (the column's paced share of the tear, TEAR_EVEN, of what remains),
+   * passing over what has come back down to the lip or into the water, which
+   * throws nothing; with nothing of the column left flying it sweeps the foot
+   * on the lip at the same pace, so every column finishes with the tear. The
+   * droplets owed go to the flying sheet swept, in proportion to its share of
+   * the flying sheet left (what comes down untorn takes its share back down
+   * as sheet, so a big crown throws fewer drops than it was owed). Holes open
+   * ahead of the front (openUntil, drawn by updateGeometry) over the time
+   * they take to meet in the film there (openSeconds).
+   */
+  tearAirborne(splash, progress) {
+    const end = this.feedEnd();
+    const remainingSeconds = Math.max((1 - progress) * this.tearDuration, 0);
+    let sweptAir = 0;
+    let flyingAir = 0;
+    for (let column = 0; column < this.columns; column++) {
+      const pace = 1 + (this.columnTearPace[column] - 1) * (1 - progress) ** TEAR_EVEN;
+      const done = Math.min(progress * pace, 1);
+      const before = this.tearDone[column];
+      this.tearDone[column] = Math.max(done, before);
+      const share = done >= 1 ? 1 : Math.max(done - before, 0) / Math.max(1 - before, 1e-9);
+      const front = this.tearFront[column];
+      if (front >= end) { this.tearTarget[column] = end; this.tearSwept[column] = 0; this.openUntil[column] = end; continue; }
+      // A column with nothing left in the air below its front never has again (what has come down stays down: the
+      // sides and back of an oblique throw's crown are back on the lip by its tear): its foot goes at the pace, unscanned.
+      if (this.columnDown[column]) {
+        this.tearTarget[column] = front + (end - front) * share; this.tearSwept[column] = 0;
+        this.openUntil[column] = this.tearTarget[column];
+        continue;
+      }
+      const scan = this.scanColumn(column, front, end);
+      if (scan.air <= 0) this.columnDown[column] = 1;
+      let target;
+      if (share >= 1) target = end;
+      else if (scan.air <= 0) target = front + (end - front) * share;
+      else target = this.scanTauAt(share * scan.air);
+      target = Math.max(Math.min(target, end), front);
+      this.tearTarget[column] = target;
+      const swept = share >= 1 ? scan.air : share * scan.air;
+      this.tearSwept[column] = swept;
+      sweptAir += swept;
+      flyingAir += scan.air;
+      // The holes ahead: the flying sheet the front reaches within the time the film there takes to open.
+      const ahead = scan.air > 0 && share < 1 && remainingSeconds > 0
+        ? Math.min(this.openSeconds(scan) / remainingSeconds, 1) * (scan.air - swept) : 0;
+      this.openUntil[column] = ahead > 0 ? Math.max(this.scanTauAt(swept + ahead), target) : target;
+      // Behind it, the torn web's threads bead off into drops over their own time (webSeconds), reckoned from when
+      // the front passed (tornAt): a piece of it still flying is drawn until then, the crown with it.
+      if (scan.air > 0 && target > front) this.webGoneAt = Math.max(this.webGoneAt, this.age + this.webSeconds(scan));
+    }
+    if (sweptAir > 0 && this.breakupRemaining > 0) {
+      const droplets = this.breakupRemaining * Math.min(sweptAir / flyingAir, 1);
+      this.breakupRemaining -= droplets;
+      const density = droplets / sweptAir;
+      for (let column = 0; column < this.columns; column++) {
+        if (this.tearTarget[column] <= this.tearFront[column] || this.tearSwept[column] <= 0) continue;
+        this.spawnFromStrip(column, this.tearFront[column], this.tearTarget[column], end, this.tearSwept[column] * density, density, splash, true);
+      }
+    }
+    // The checkpoints this step has passed: each column's front then, between where it was and where it is.
+    const stepStart = this.lastStep || this.breakTime;
+    const checkSeconds = this.tearDuration / TEAR_CHECKS;
+    let checks = this.checksKept;
+    while (checks <= TEAR_CHECKS && this.breakTime + checks * checkSeconds <= this.age) checks++;
+    let landed = true;
+    for (let column = 0; column < this.columns; column++) {
+      const previous = this.tearFront[column];
+      const target = this.tearTarget[column];
+      for (let check = this.checksKept; check < checks; check++) {
+        const share = THREE.MathUtils.clamp((this.breakTime + check * checkSeconds - stepStart) / Math.max(this.age - stepStart, 1e-9), 0, 1);
+        this.frontHistory[column * (TEAR_CHECKS + 1) + check] = previous + (target - previous) * share;
+      }
+      this.tearFront[column] = target;
+      this.advanceWeb(column, previous);
+      if (this.webFront[column] < end) landed = false;
+    }
+    this.checksKept = checks;
+    this.lastStep = this.age;
+    this.webLanded = landed;
+  }
+
+  /**
+   * The top of a column's torn web: from where it was, the first of
+   * WEB_SAMPLES launch times down to the front still in the air, or the
+   * front if none is (the rim may come down before the sheet behind it:
+   * whatever has come down between is drawn as gone, updateGeometry);
+   * `previous` is where the front was before this step.
+   */
+  advanceWeb(column, previous) {
+    const front = this.tearFront[column];
+    let top = this.webFront[column];
+    // Nothing flies under the front of a column come down (columnDown): with no web left above where the front was,
+    // what it has torn since has come down too.
+    // A dome's torn sheet is no web: the seal's pull holds it over the hole, and its burst flings it off as drops.
+    if (top >= front || this.seal || (this.columnDown[column] && top >= previous)) { this.webFront[column] = front; return; }
+    const least = AIR_LEAST * this.baseThickness;
+    const state = this.state;
+    let landedTau = top;   // the last sample come down, before the first still flying
+    let found = front;
+    for (let sample = 0; sample < WEB_SAMPLES; sample++) {
+      const tau = top + (front - top) * (sample / (WEB_SAMPLES - 1)) ** AIR_POWER;
+      this.evaluate(tau, this.columnCos[column], this.columnSin[column], this.columnSpeedFactor[column], this.columnThicknessFactor[column], state, 0, this.columnFingerFactor[column], false, this.columnRimShape?.[column], column);
+      if (state.above > least) { found = landedTau; break; }
+      landedTau = tau;
+    }
+    this.webFront[column] = Math.max(found, top);
+  }
+
+  /**
+   * Sample one column from `front` to `end` (AIR_SAMPLES launch times,
+   * crowded towards the front by AIR_POWER, as the grid's rows crowd towards
+   * the rim) and sum the area of its sheet still flying (stripArea's share in
+   * the air), cumulatively, into scanTaus and scanAir; returns this.scan:
+   * {air, thickness, radialDistance} (the flying area, and the film's
+   * thickness and the ring's radius at the first flying sample).
+   */
+  scanColumn(column, front, end) {
+    const taus = this.scanTaus, air = this.scanAir, scan = this.scan;
+    scan.air = 0; scan.thickness = 0; scan.radialDistance = 0;
+    taus[0] = front; air[0] = 0;
+    for (let sample = 1; sample < AIR_SAMPLES; sample++) {
+      const from = taus[sample - 1];
+      const to = front + (end - front) * (sample / (AIR_SAMPLES - 1)) ** AIR_POWER;
+      taus[sample] = to;
+      const area = to > from ? this.stripArea(column, from, to) * this.stripAir : 0;
+      if (area > 0 && scan.thickness === 0) { scan.thickness = this.lastEdge.thickness; scan.radialDistance = this.lastEdge.radialDistance; }
+      air[sample] = air[sample - 1] + area;
+      // What flies of a column is one stretch (the rim may be down, then the sheet in the air, then the foot on the
+      // lip): past it, the rest of the column has come down too.
+      if (area <= 0 && scan.thickness > 0) {
+        for (let rest = sample + 1; rest < AIR_SAMPLES; rest++) { taus[rest] = front + (end - front) * (rest / (AIR_SAMPLES - 1)) ** AIR_POWER; air[rest] = air[sample]; }
+        break;
+      }
+    }
+    scan.air = air[AIR_SAMPLES - 1];
+    return scan;
+  }
+
+  /** The launch time down the last scanned column at which its flying area from the front reaches `area`. */
+  scanTauAt(area) {
+    const taus = this.scanTaus, air = this.scanAir;
+    for (let sample = 1; sample < AIR_SAMPLES; sample++) {
+      if (air[sample] < area) continue;
+      const step = air[sample] - air[sample - 1];
+      return taus[sample - 1] + (taus[sample] - taus[sample - 1]) * (step > 0 ? (area - air[sample - 1]) / step : 1);
+    }
+    return taus[AIR_SAMPLES - 1];
+  }
+
+  /**
+   * The time holes take to open a film the scan found (the header): seeded
+   * a hole's spacing apart (the froth's cells, stretched as the ring has
+   * widened, over the shader's FROTH_HOLE_SCALE) and each running back at
+   * the Taylor–Culick speed sqrt(2σ / ρh), they meet when each has run half
+   * that.
+   */
+  openSeconds(scan) {
+    const spacing = scan.radialDistance / (this.frothRing * FROTH_HOLE_SCALE);
+    const retreat = Math.sqrt((2 * SURFACE_TENSION) / (WATER_DENSITY * Math.max(scan.thickness, SPRAY_LEAST_FILM)));
+    return (0.5 * spacing) / retreat;
+  }
+
+  /**
+   * The time the web of a film the scan found takes to bead off into drops
+   * (the header): its holes' rims gather the film between them, a thread of
+   * radius sqrt(spacing·h / 2π) about each, and a thread's beading grows at
+   * most at the Rayleigh–Plateau rate 0.343·sqrt(σ / ρa³), so it is drops after
+   * LIGAMENT_GROWTHS growth times (tens of milliseconds for a 3 cm stone's
+   * sheet, a few tenths of a second for a 30 cm stone's).
+   */
+  /**
+   * When the front passed launch time `tau` down `column` (the crown's age),
+   * from its front at the tear's checkpoints (frontHistory) and, past the
+   * last of them, where it is now.
+   */
+  tornAt(column, tau) {
+    const history = this.frontHistory, base = column * (TEAR_CHECKS + 1);
+    const checkSeconds = this.tearDuration / TEAR_CHECKS;
+    let earlier = 0, earlierTime = this.breakTime;
+    for (let check = 1; check <= this.checksKept; check++) {
+      const later = check < this.checksKept ? history[base + check] : this.tearFront[column];
+      const laterTime = check < this.checksKept ? this.breakTime + check * checkSeconds : this.lastStep;
+      if (later >= tau) return later > earlier ? earlierTime + ((tau - earlier) / (later - earlier)) * (laterTime - earlierTime) : laterTime;
+      earlier = later; earlierTime = laterTime;
+    }
+    return this.lastStep;
+  }
+
+  webSeconds(scan) {
+    const spacing = scan.radialDistance / (this.frothRing * FROTH_HOLE_SCALE);
+    const thread = Math.sqrt((spacing * Math.max(scan.thickness, SPRAY_LEAST_FILM)) / (2 * Math.PI));
+    return LIGAMENT_GROWTHS * Math.sqrt((WATER_DENSITY * thread ** 3) / SURFACE_TENSION) / 0.343;
   }
 
   /** Area of one column's sheet between two launch times: one chord either side of T (only ratios matter). */
@@ -1610,6 +1907,12 @@ export class CrownSheet {
     return this.stripArea(column, tauFrom, tauTo);
   }
 
+  /**
+   * Area of one column's strip between two launch times (one chord); and,
+   * into this.stripAir, the share of it still in the air (where the height
+   * above its rest, evaluate's `above`, is over AIR_LEAST of the sheet's
+   * thickness as launched, between the ends as the heights cross it).
+   */
   stripArea(column, tauFrom, tauTo) {
     const cosAngle = this.columnCos[column];
     const sinAngle = this.columnSin[column];
@@ -1620,16 +1923,19 @@ export class CrownSheet {
     // Strips follow one another down a column (the tear's swept strip, then the untorn one; spawnFromStrip's pieces):
     // a near edge that was the last strip's far edge, at this age, is that edge (evaluate is a function of them alone).
     const edge = this.lastEdge;
-    let fromX, fromY, fromZ, fromRadius;
+    let fromX, fromY, fromZ, fromRadius, fromAbove;
     if (edge.column === column && edge.tau === tauFrom && edge.age === this.age) {
-      fromX = edge.x; fromY = edge.y; fromZ = edge.z; fromRadius = edge.radialDistance;
+      fromX = edge.x; fromY = edge.y; fromZ = edge.z; fromRadius = edge.radialDistance; fromAbove = edge.above;
     } else {
       const from = this.evaluate(tauFrom, cosAngle, sinAngle, speedFactor, thicknessFactor, this.state, 0, fingerFactor, false, rimShape, column);
-      fromX = from.x; fromY = from.y; fromZ = from.z; fromRadius = from.radialDistance;
+      fromX = from.x; fromY = from.y; fromZ = from.z; fromRadius = from.radialDistance; fromAbove = from.above;
     }
     const to = this.evaluate(tauTo, cosAngle, sinAngle, speedFactor, thicknessFactor, this.stateOther, 0, fingerFactor, false, rimShape, column);
     edge.column = column; edge.tau = tauTo; edge.age = this.age;
-    edge.x = to.x; edge.y = to.y; edge.z = to.z; edge.radialDistance = to.radialDistance;
+    edge.x = to.x; edge.y = to.y; edge.z = to.z; edge.radialDistance = to.radialDistance; edge.above = to.above; edge.thickness = to.thickness;
+    const least = AIR_LEAST * this.baseThickness;
+    const fromHeight = fromAbove - least, toHeight = to.above - least;
+    this.stripAir = fromHeight > 0 && toHeight > 0 ? 1 : fromHeight <= 0 && toHeight <= 0 ? 0 : Math.max(fromHeight, toHeight) / (Math.abs(fromHeight) + Math.abs(toHeight));
     const length = Math.sqrt((to.x - fromX) ** 2 + (to.y - fromY) ** 2 + (to.z - fromZ) ** 2);
     return length * 0.5 * (fromRadius + to.radialDistance) * this.columnWidths[column];
   }
@@ -1638,12 +1944,13 @@ export class CrownSheet {
    * Turn the strip of one column between two launch times into the given
    * number of droplets (fractions carry over), spread over it by area.
    */
-  spawnFromStrip(column, tauFrom, tauTo, end, droplets, density, splash) {
+  spawnFromStrip(column, tauFrom, tauTo, end, droplets, density, splash, airborne) {
     const pieces = Math.min(Math.max(1, Math.ceil(((tauTo - tauFrom) / Math.max(end, 1e-6)) * this.rows)), this.rows);
     const pieceAreas = this.pieceAreas;
     let totalArea = 0;
     for (let piece = 0; piece < pieces; piece++) {
-      pieceAreas[piece] = this.stripArea(column, tauFrom + ((tauTo - tauFrom) * piece) / pieces, tauFrom + ((tauTo - tauFrom) * (piece + 1)) / pieces);
+      // A stone's crown's drops come from what of the strip is still flying (tearAirborne).
+      pieceAreas[piece] = this.stripArea(column, tauFrom + ((tauTo - tauFrom) * piece) / pieces, tauFrom + ((tauTo - tauFrom) * (piece + 1)) / pieces) * (airborne ? this.stripAir : 1);
       totalArea += pieceAreas[piece];
     }
     if (totalArea <= 0) return;
@@ -1657,6 +1964,8 @@ export class CrownSheet {
         this.tearCarry -= 1;
         const angle = this.columnAngle[column] + randomRange(-halfWidth, halfWidth);
         this.evaluateAt(randomRange(pieceFrom, pieceTo), angle, state);
+        // A piece only partly flying: the part come back down is water again, and throws nothing.
+        if (airborne && state.above <= AIR_LEAST * this.baseThickness) continue;
         // Each drop holds the volume of the patch of sheet it came from; a
         // patch holding more than a drop of DROP_CEILING breaks into
         // several, spread over it (1/density is its area).
@@ -1767,6 +2076,9 @@ export class CrownSheet {
       const front = Math.min(this.tearFront[column], end);
       const span = Math.min(FINGER_ROOT * this.launchDuration, Math.max(end - front, 0));
       const gone = span <= 1e-9;
+      // The torn edge's ligaments go as its column's tear ends (RIM_BEAD_FADE) and as the edge comes down to the lip
+      // (EDGE_LANDING, by the root's height: below), as the rim bead does.
+      let torn = 1 - smoothstep(RIM_BEAD_FADE[0], RIM_BEAD_FADE[1], this.tearDone[column]);
       const cosAngle = this.columnCos[column], sinAngle = this.columnSin[column];
       const speedFactor = this.columnSpeedFactor[column], thicknessFactor = this.columnThicknessFactor[column];
       const fingerFactor = this.columnFingerFactor[column], fingerSide = this.columnFingerSide[column], rimShape = this.columnRimShape?.[column];
@@ -1796,6 +2108,7 @@ export class CrownSheet {
           drawn += step;
         }
         centreX[ring] = state.x; centreY[ring] = state.y; centreZ[ring] = state.z;
+        if (ring === 0 && this.tearDone[column] > 0) torn *= smoothstep(AIR_LEAST * this.baseThickness, EDGE_LANDING * this.baseThickness, state.above);
         widths[ring] = along;
         if (ring === LIGAMENT_RINGS - 1) finger.endTau = front;
       }
@@ -1804,7 +2117,7 @@ export class CrownSheet {
         if (along < 0) { widths[ring] = 0; continue; }
         const rise = LIGAMENT_ROOT + (1 - LIGAMENT_ROOT) * smoothstep(0, LIGAMENT_RISE, along);
         const bulge = 1 + bulgeNow * Math.sin(Math.PI * 2 * finger.waves * along + finger.wavePhase);
-        widths[ring] = gone ? 0 : Math.max(0.5 * bead * finger.thickness * rise * (1 - (1 - LIGAMENT_TIP) * along) * bulge, 0);
+        widths[ring] = gone ? 0 : Math.max(0.5 * bead * finger.thickness * rise * (1 - (1 - LIGAMENT_TIP) * along) * bulge * torn, 0);
       }
       // A joiner before the root, the rings, a cap at the tip, a joiner after. A joiner's normals all point along
       // the axis (as its cap's do): the column shader widens a ring narrower than a pixel along its normals, and a
@@ -1854,7 +2167,11 @@ export class CrownSheet {
       // Lumpy between the fingers (RIM_BEAD_LUMPS): two waves round the ring at phases of the crown's own.
       const angle = this.columnAngle[column];
       const lumps = 1 + RIM_BEAD_LUMPS * 0.5 * (Math.sin(RIM_BEAD_LUMP_WAVES[0] * this.fingers.length * angle + this.frothOffset) + Math.sin(RIM_BEAD_LUMP_WAVES[1] * this.fingers.length * angle + 2.7 * this.frothOffset));
-      radii[column] = RIM_BEAD * 3 * this.baseThickness * thicknessFactor * swell * lumps * (1 - smoothstep(0, tearSpan, front)) * (1 - merged);
+      // A stone's crown's bead rides its torn edge down while its column's flying sheet tears (RIM_BEAD_FADE), and is
+      // gone where that edge has come back down (onto the lip, or the rim into the water); the fan's goes at once.
+      const torn = this.fan || this.landing ? 1 - smoothstep(0, tearSpan, front)
+        : (1 - smoothstep(RIM_BEAD_FADE[0], RIM_BEAD_FADE[1], this.tearDone[column])) * smoothstep(AIR_LEAST * this.baseThickness, EDGE_LANDING * this.baseThickness, state.above);
+      radii[column] = RIM_BEAD * 3 * this.baseThickness * thicknessFactor * swell * lumps * torn * (1 - merged);
     }
     const grid = LIGAMENT_COLUMNS;
     const positions = this.ligamentPositions, normals = this.ligamentNormals, tubeRadii = this.ligamentRadii, round = this.ligamentRound, ripples = this.ligamentRipples;
@@ -1896,9 +2213,14 @@ export class CrownSheet {
     for (let row = 0; row < this.rows; row++) {
       for (let column = 0; column < this.columns; column++) {
         const vertex = row * this.columns + column;
+        // A stone's crown's column torn through and all come down is drawn as gone (the lip's water, below), where it lies.
+        if (this.webFront[column] >= end && !this.fan && !this.landing) { this.carries[vertex] = 1; continue; }
         const front = Math.min(this.tearFront[column], end);
-        const tau = this.rowTau(row, front, end);
-        this.evaluate(tau, this.columnCos[column], this.columnSin[column], this.columnSpeedFactor[column], this.columnThicknessFactor[column], state, front, this.columnFingerFactor[column], false, this.columnRimShape?.[column], column);
+        // A stone's crown's grid runs from the top of its torn web (webFront: the front itself, but for the torn
+        // sheet still flying); the web has no bead.
+        const tau = this.rowTau(row, Math.min(this.webFront[column], front), end);
+        const torn = tau < front;
+        this.evaluate(tau, this.columnCos[column], this.columnSin[column], this.columnSpeedFactor[column], this.columnThicknessFactor[column], state, torn ? -Infinity : front, this.columnFingerFactor[column], false, this.columnRimShape?.[column], column);
         this.positions[vertex * 3] = state.x;
         this.positions[vertex * 3 + 1] = state.y;
         this.positions[vertex * 3 + 2] = state.z;
@@ -1919,6 +2241,29 @@ export class CrownSheet {
         const top = 1 - smoothstep(FROTH_TOP[0], FROTH_TOP[1], tau / this.launchDuration);
         let whiteness = this.violence * (FROTH_FLOOR + (1 - FROTH_FLOOR) * thinned) * top * flying * flying;
         let holes = opening * thinned * thinned * top * flying ** 4;
+        // Ahead of a stone's crown's tear front the film is opening (tearAirborne's openUntil): OPEN_AHEAD of it
+        // by the front, so what the front reaches is already a web of its last threads.
+        const openUntil = this.openUntil[column];
+        if (openUntil > front && tau < openUntil && !torn) holes = Math.max(holes, OPEN_AHEAD * (1 - (tau - front) / (openUntil - front)) * flying);
+        if (torn) {
+          // The torn sheet still flying is a web (tearAirborne), opening on from OPEN_AHEAD at the front as its
+          // threads bead off (webSeconds of its own film, from when the front passed); beaded off, or come back down, it is gone (drawn
+          // as the lip's own water, which the sheet's passes fade out: src/shaders/sheet.js FOOT_FADE).
+          const tornAgo = this.age - this.tornAt(column, tau);   // how long ago the front passed
+          const open = OPEN_AHEAD + (1 - OPEN_AHEAD) * Math.min(tornAgo / Math.max(this.webSeconds(state), 1e-6), 1);
+          holes = Math.max(holes, open);
+          // What is left between its holes is their rims' threads, clear water: the film's froth goes with the film
+          // (left on, the web's last islands stood as matte white shards, torn paper).
+          whiteness *= Math.max((1 - open) / (1 - OPEN_AHEAD), 0);
+          // A finger's strip is a thread already, its water going as its beads and drops: no web (narrower than the
+          // holes' cells, its web stood in the air as a solid white ribbon, a scrap of plastic).
+          const fingerStrip = Math.abs(this.columnAcross[column]) < 1 && this.columnAcross[column] !== 0;
+          if (state.above <= AIR_LEAST * this.baseThickness || open >= WEB_HIDDEN || fingerStrip) this.carries[vertex] = 1;
+        } else if (this.tearDone[column] > 0 && state.above <= AIR_LEAST * this.baseThickness) {
+          // Sheet come back down onto the lip that the front has yet to reach is the lip's water too: it fades as
+          // the lip's own does (FOOT_FADE) over its column's tear, or it lay along the crest as a glass hoop.
+          this.carries[vertex] = Math.max(state.carry, FOOT_FADE[0] + (1 - FOOT_FADE[0]) * this.tearDone[column]);
+        }
         if (this.seal) {
           // A dome's sheet is whipped shut, thinned or not: its top whitens and tears as it closes (the base clear
           // film, as the open crown's: a dome white and holed to its foot was a bag of lace).
@@ -1964,9 +2309,11 @@ export class CrownSheet {
         const alongZ = positions[after * 3 + 2] - positions[before * 3 + 2];
         const alongLength = Math.sqrt(alongX * alongX + alongY * alongY + alongZ * alongZ);
         const merged = this.seal && front === 0 ? sealed : 0;
-        const bend = alongLength > 1e-9 ? 1.4 * (1 - smoothstep(0, BEAD_END, this.rowTaus[vertex] / this.launchDuration)) * (1 - merged) / alongLength : 0;
+        const web = this.rowTaus[vertex] < 0;   // the torn web (updateGeometry): no bead, no rods
+        const bend = alongLength > 1e-9 && !web ? 1.4 * (1 - smoothstep(0, BEAD_END, this.rowTaus[vertex] / this.launchDuration)) * (1 - merged) / alongLength : 0;
         let leanX = 0, leanY = 0, leanZ = 0;
-        const share = across === 0 ? 0 : 1 - smoothstep(0, FINGER_ROOT, (this.rowTaus[vertex] + front) / this.launchDuration);
+        // (its lean is the shader's aeration, which closes holes: a web on a finger's strip stood as a solid white rod)
+        const share = across === 0 || web ? 0 : 1 - smoothstep(0, FINGER_ROOT, (this.rowTaus[vertex] + front) / this.launchDuration);
         if (share > 0) {
           const aroundX = positions[(row * columns + next) * 3] - positions[(row * columns + previous) * 3];
           const aroundY = positions[(row * columns + next) * 3 + 1] - positions[(row * columns + previous) * 3 + 1];

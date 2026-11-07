@@ -228,8 +228,10 @@ full screen, which only a press or a key may ask for):
   freezes over again in half a minute, its shards frozen in, its new ice
   thin enough for the next throw to break.
 - Location (`?sky=`): Swiss Alps, Rocky cove, Highlands, Desert oasis,
-  Lakeside (the default), Mesas, Pool, Koi pond or Reflecting Pool. Koi
-  pond (`?sky=koi`) is a pond in a Japanese garden under its own panorama (Poly Haven's Ninomaru Teien,
+  Lakeside (the default), Mesas, Pool, Loch Ness (`?sky=loch`),
+  Polynesian lagoon (`?sky=lagoon`): white coral sand, palms and reef fish
+  under a pure sky (below, the tropics); or Koi pond (`?sky=koi`): a pond in
+  a Japanese garden under its own panorama (Poly Haven's Ninomaru Teien,
   the garden of Nagoya Castle, its sun behind leaves, so its brightness is
   taken from its sky: `shadedSun` in `src/sky.js`), about 9 m across, its
   shore irregular (lobes, a bay, a broad point), its far and side banks
@@ -239,20 +241,7 @@ full screen, which only a press or a key may ask for):
   Nothing thrown comes down on the ground there: every aim is kept 0.6 m
   inside the water, and a thing skipped or slid on to a bank is caught by
   the shrubs where they are drawn (`src/koiGarden.js`,
-  `tools/garden-probe.mjs`). Reflecting Pool (`?sky=mall`, or `dc`): the
-  Lincoln Memorial Reflecting Pool in Washington, D.C., from its west wall,
-  looking 618 m down it to the Washington Monument and the Capitol beyond,
-  drawn to their real sizes and places (`src/nationalMall.js`, its
-  buildings `src/mallBuildings.js`): the granite coping 30 cm over still
-  water on a dark concrete bed, the double allées of American elms either
-  side, the Lincoln Memorial behind the eye (its colonnade, carved frieze
-  and attic, the statue in its lit chamber), the Monument in its ring of
-  flags, the Capitol's dome over its terraces, in the sun's shadows, all
-  mirrored in the pool and floodlit after dusk. Its sky is a pure sky (no
-  land in the photo: Poly Haven's Qwantani pure-sky hours, morning,
-  afternoon, golden hour and twilight, the sun's path turned for the
-  northern hemisphere: `washington` in `src/sky.js`). The walls hold what
-  reaches them and the coping is ground (`tools/mall-probe.mjs`). Swiss Alps replaces Alpine with a
+  `tools/garden-probe.mjs`). Swiss Alps replaces Alpine with a
   sharper 4K Lago d’Isola panorama, framed across its snowy ridge, and starts
   at water level with Frozen water (thin ice unless Thick was last chosen). Choosing liquid
   water is remembered when reloading the same place; entering Swiss Alps
@@ -271,8 +260,7 @@ full screen, which only a press or a key may ask for):
 - Time of day: named buttons and a slider select each photographed hour:
   Lakeside's dawn, sunrise, afternoon and night; Mesas' twelve hours from
   dawn to moonlight; Highlands' dawn, sunrise, noon, sunset and dusk; Desert
-  oasis' moonlight, golden hour and starlight; the Reflecting Pool's
-  morning, afternoon, golden hour and twilight. The land keeps still and the
+  oasis' moonlight, golden hour and starlight. The land keeps still and the
   sun moves round it. By night the eye sees mostly as its rods do: a
   moonlit blue that keeps some of the photo's colour. Adjacent hours are
   fetched ahead while the Time page is open. A new choice cancels a pending
@@ -357,7 +345,15 @@ The canvas never holds more than 2.6 million pixels.
 Core stone/splash programs are compiled while the page loads, under its
 veil: a stone is thrown and drawn there, then cleared away (with the water
 Frozen, into open water first, then a second through a sheet made thin for
-it, so the first break builds nothing, then the ice as chosen). Rain and gale
+it, so the first break builds nothing, then the ice as chosen). It runs twice
+(`src/precompile.js`): first every place's scenery, every kind of thing and
+the ice, their programs only started compiling, side by side on the
+driver's threads; then drawn, only what the chosen place, thing and water
+show. The rest finish compiling after the veil lifts and are drawn first
+when chosen. A browser keeps the programs it has built for shader text it
+has seen, so this matters most on a first visit after a deploy that changed
+a shader: one at a time, the warm-up took 9 s there on an M5 Max; started
+together, 2 s. Rain and gale
 programs are warmed only when selected at startup; otherwise
 they compile on first use, which can briefly pause that first interaction.
 No background warm-up modifies the live scene. The final scene, including
@@ -536,7 +532,10 @@ Alps brown trout and Arctic char; Highlands trout and minnows; Mesas a
 largemouth bass and bluegill; Desert oasis pupfish (blue males, brown
 females) and tilapia; Rocky cove grey mullet and a wrasse; the Koi pond
 seven koi of the classic varieties (Kohaku, Sanke, Showa, Ogon, Chagoi,
-Asagi, Yamabuki, Tancho) and a goldfish; the Pool none. A school keeps
+Asagi, Yamabuki, Tancho) and a goldfish; the Polynesian lagoon reef fish in
+their own colours, unmuted (a school of sergeant majors, silver-yellow with
+five black bars; a shoal of yellow tangs, with the white spine by the tail;
+a blue tang, its black palette mark and yellow tail); the Pool none. A school keeps
 about a body length apart and turns together, a shoal keeps loosely
 together, a pike or a trout keeps alone (boids: apart, aligned, together,
 toward a goal the group wanders to). Each fish ranges through the whole
@@ -626,7 +625,16 @@ known timing, and the droplets are choreographed from them:
    holes bigger as its sheet is thicker; the foot the lip carries stays
    clear water. Once its rim stalls
    (about 90 ms for a 3 cm stone) the sheet tears, the arcs first and the
-   fingers last, from the rim down into drops that carry its velocity. A
+   fingers last, from the rim down into drops that carry its velocity:
+   only what is still in the air (by then the foot lies on the lip, and the
+   sides and back of an oblique throw's crown are down), its holes opening
+   ahead of the torn edge as fast as they run back through the film there,
+   and what is torn flies on as a net of threads along the seams where the
+   holes met until the threads bead off into drops (tens of milliseconds
+   for a thin sheet, a few tenths of a second for a rock's thick one) or it
+   comes back down; a rock's drops can carry only a few hundredths of its
+   sheet, so its wall now falls back as fast as it can fall rather than
+   vanishing. A
    thrown stone enters obliquely (about 30° from vertical thrown softly, 40
    to 45° normally, 70 to 73° and twice as fast thrown hard), and then a fan comes first: the same sheet model
    over a sector 60° either side of the direction of travel, launched from
@@ -872,7 +880,7 @@ allows it scales as a Froude-similar splash does: lengths with the radius,
 times with √(R/g), speeds with the entry speed. The crown's sheet is as thick
 as the stone is big, so air and surface tension slow it less, it drains
 slower and stands longer: a 16 cm stone's crown stands for 160 ms, its rim
-25 to 40 cm high, and tears into some 3000 drops on High (2000 on Medium and Low), none over 4 mm in radius
+25 to 40 cm high, and tears into some 3000 drops on High (2000 on Medium and Low), none over 2.5 mm in radius
 (surface tension holds no bigger drop together in flight, so a big sheet
 tears into more drops, not bigger ones), while a 1.5 cm
 pebble's rises 5 cm when it seals deep (it nearly always seals at the
@@ -1365,6 +1373,111 @@ show a bolt on the dome, a jagged line from the cloud's base, 600 m up,
 to the horizon, hidden where the photo's land stands in front of it; the
 mirror image is drawn again while it flashes, so the water shows it.
 
+**The tropics** (`src/tropics.js`, `LAGOON_SHORE` in `src/pondFloor.js`).
+The Polynesian lagoon is drawn from photographs of the Cook Islands' and
+French Polynesia's lagoons (Aitutaki's Tapuaetai, Bora Bora). The lake's
+beach under the eye runs on into a motu's: its white sand bends away along
+the right of the frame for 430 m to a point, and its land is a ring mesh of
+its own. Coconut palms stand in a row a few metres in from the waterline,
+leaning out over the water (two far out, their crowns low over it), and
+behind them a palm forest, its trunks in the canopy's shade, with beach
+naupaka scrub along its edge. Fallen coconuts lie on the sand under the
+beach's palms. Across the lagoon are motus 0.5 to 2.3 km off, dark lines of
+palm forest on low sand, and 7 km off a high island of volcanic peaks under
+forest, both through the air's haze (the sky's horizon colour, by
+distance). A palm is built once from its own seeded stream: a trunk leaning
+at its foot and curving up toward the light, ringed with frond scars; a
+crown of about thirty fronds, the young ones up and the old arching down
+and yellowing, a dead frond or two hanging brown; coconuts. Its leaflets
+are alpha-tested cards textured with an atlas baked on the GPU when the
+lagoon is first chosen (it is built while its sky downloads)
+(each leaflet a tapered blade, its alpha scaled by the mip it is drawn from
+so far crowns keep their leaves); the light passes through a leaf where the
+sun is behind it. Every palm is an instance of one of six variants at three
+levels of detail, chosen by projected size in the current view; when the camera moves,
+only the instances it sees (or sees in the water's mirror) are kept, one
+draw a mesh. Their shadows dapple the sand and the shallows' bed: a mask
+baked once, each palm drawn into it projected along the sun onto the
+water's level, which the land and the floor look up along the sun (the
+water's own shader is untouched). On Medium and Low every palm and mound is a level
+of detail coarser, using the same cached meshes and shadow masks. The Wind control bends each trunk along the wind as a
+cantilever, with a slow sway of its own and slow gusts, and flutters its
+fronds. Nothing of it has a body for the physics.
+
+The bark is a photoscan (Poly Haven's Palm Tree Bark: its relief and grain
+over the trunk's own colour, laid round the trunk as many times as its girth
+holds, so the swollen foot is not drawn out, and shifted on each palm), with
+a darker root collar and extra samples, finer round, in the root flare; the
+beach's dry sand takes a photoscan's creases and grain too (Sand 03) in place
+of the bed's tile's blotches, all but the wet strip by the water. Both come
+after the scenery is built; till then the analytic bark and the bed's sand
+stand in. Where a trunk meets the sand, the sand is banked a few centimetres
+up it, wandering round it, and the trunk hides some of the sky from the
+ground beside it: the land's shader finds the nearest foot to each point in a
+grid of them (one 2.5 m cell a foot) and shades the bank's slope and that
+shade; round the 24 feet nearest the eye the bank is a mesh of its own on the
+land's program, so it hides the trunk below its rim and the foot keeps its
+outline, with no seam on either side. Coconut husks have outward-facing triangles, smooth
+ridged normals and fibrous shading. Fallen husks are mostly dried brown and
+weathered grey, a few fresh green; each is an instance culled on its own, with
+a coarse husk past 35 m. A 1024² foreground shadow mask covers 64 m beside the
+full-beach mask, resolving roots and coconuts without increasing the full
+mask's size. Coral sand reduces the lake bed's grain and silt contrast, on land
+and under water alike. `node
+tools/tropics-probe.mjs` checks winding, finite geometry, camera round trips and
+the scenery budget. Geometry and placements are cached; quality changes only
+route visible instances between detail levels. Culling packs them front to back
+and uploads buffers only when the packed set changes. The foot lookup checks
+nine cells, covering the surface reach of the widest trunk. `?sky=lagoon` is
+the place's canonical name; `?sky=tropical` remains an alias.
+
+**Something in the loch** (`src/lochVisitor.js`; its water in
+`src/shaders/visitor.js`). At Loch Ness, every one to two and a half
+minutes (the first within a minute of arriving), something comes up 48 to
+80 m out, goes along across the view for fifteen to thirty seconds and goes
+down again, front first both ways. The scene never says what it is: each
+sighting is one of four forms, never the same twice running: two or three
+low humps, a wave running back along a body that stays under; a slender
+neck and a small head lifted out of the water, turning slowly; one long
+low back that rolls as a log does but goes steadily on; or nothing above
+the water at all, only a wake. It is one dark, wet body (a tube along a
+spine, posed in closed form from the world's time, knobbled along its
+back, its seeded cross sections cached once per sighting and transformed
+by the moving spine each frame, in a hide of folds, warts and pores, wet and dry patches and
+blotches, laid in metres on it; wetter at the waterline and washed there
+with broken foam), drawn above the water, below it (where the peat-dark
+water hides it within a metre) and in the mirror. It is out
+of reach: nothing of it ever comes within 36 m of the shore's eye (a
+floater past 30 m from the pond goes), it has no collider, no sighting
+starts with a thing thrown near its course, and one under way goes down
+at once, fast, if one comes within 16 m; under ice or a gale it stays
+down. Its waves are the water shader's, deep water's linear theory in
+closed form: the Kelvin wake of a source moving at its speed, by
+stationary phase (inside the 19.47° cusp lines, a transverse and a
+diverging wave of wavenumber g / (U² cos² θ), each raised by a source d
+under the surface as e^(−kd), its energy arriving where its group velocity
+carries it, so the wake grows out behind and lingers after the body has
+gone, all of it easing out over the linger's last 8 s so the water never
+stills at once); the Cauchy–Poisson rings of each breach and dive (long waves first,
+wavenumber g t² / 4r², the impulse's size cutting the short ones); the
+water heaped before each piece of it out of the water and drawn down
+behind (a capsule from where its tube meets the water at the front to
+where it does at the back, so none under a head lifted clear), the short capillary-gravity
+ripples its waterline sheds, running out from the capsule's outline; and
+foam hugging the waterline and trailing behind. Each is filtered by the pixel's footprint and
+what it averages away goes to the glitter's roughness and spreads the
+mirror (the sky cube blurred over twice its rms slope, as the ice's frost
+is), so from the shore, where a wave a metre long out there is less than a
+pixel deep, the wake shows as a pale line of rougher water across the far
+shore's image, and zoomed in, as waves. A frame's pose transforms cross
+sections cached once a sighting (about 0.3 ms). Its hide texture (some
+40 ms of work) is baked only for the loch, 3 ms at a time between frames
+while the loch's sky downloads, finished at once on entering if it is not
+done, and reused. The water shader keeps two ring slots;
+their shading bound ends where the slope falls below 0.001.
+`tools/visitor-probe.mjs` checks its schedule, its reach and that it goes
+alike at any frame rate.
+
 **From under the water** (the Under view; `renderFromBelow` in `src/main.js`,
 `UNDER_FOG` and `WATER_UNDER_FRAGMENT` in `src/shaders/scene.js`). The water's
 own light, darker looking down and brighter looking up toward the surface,
@@ -1445,7 +1558,8 @@ farther out, so it rises into the view rather than filling its corner.
   `tools/gale-probe.mjs`, `tools/skip-probe.mjs`, `tools/thing-probe.mjs`,
   `tools/ice-probe.mjs`, `tools/spray-probe.mjs`, `tools/jet-probe.mjs`,
   `tools/drop-ring-probe.mjs`, `tools/fish-probe.mjs`,
-  `tools/garden-probe.mjs` and `tools/mall-probe.mjs`;
+  `tools/garden-probe.mjs`, `tools/tropics-probe.mjs` and
+  `tools/visitor-probe.mjs`;
   each exits with 1 if a check fails. `tools/run-probes.mjs` runs them side
   by side, as many at once as the machine has cores (`PROBE_JOBS=1` runs
   them one after another), each one's output printed whole when it ends,
@@ -1532,11 +1646,16 @@ farther out, so it rises into the view rather than filling its corner.
   on every push to `main` and publishes `_site/` to GitHub Pages. `npm run site`
   (`tools/build-site.mjs`) copies only what the page loads: `index.html`,
   `src/` and `assets/`, less the skies' Radiance files (`.hdr`), which only
-  the tools read. A new file or folder loaded at run time outside those
+  the tools read, and minifies the page's own modules one by one (esbuild,
+  each with a source map; 1 MB of JavaScript gzipped becomes 0.58 MB, their
+  comments most of it). A new file or folder loaded at run time outside those
   must be added to its list. `node tools/site-check.mjs`, after
   `npm run site`, serves `_site/` under `/AStonesThrow/` as Pages does and
   checks that the pond starts, rain falls once asked for (its files load only
-  then) and no request fails.
+  then), the Polynesian lagoon's scanned bark and sand come once it is shown
+  and refresh the cached reflection, and no request fails. Add `--webkit` to run the same checks in WebKit
+  with an emulated iPhone layout. CI runs both engines; physical-phone
+  decoding and performance checks still need a real device.
 - `node tools/foam-probe.mjs` runs the foam's bubble pattern on the CPU, with
   the constants read from the shader: each layer's median and spread and the
   bubbles' mean shade match what the shader fades them to, the clear
@@ -1655,7 +1774,7 @@ farther out, so it rises into the view rather than filling its corner.
   sets its strength, over the one the Wind setting last chose on the device
   (kept in `localStorage`); calm otherwise.
 - `?sky=name` on the page (`--sky=name` for the harness) picks the place,
-  `PLACES` in `src/main.js` (a key of `SKIES` in `src/sky.js`, or `pool`, the
+  `PLACES` in `src/places.js` (a key of `SKIES` in `src/sky.js`, or `pool`, the
   old `?water=pool` too), over the one last chosen on the device (`sunrise`,
   the old Sunrise sky, is Lakeside at sunrise), and `?time=hour` (`--time=`
   for the harness) its sky's hour, over the one nearest the time of day last
@@ -1675,6 +1794,12 @@ farther out, so it rises into the view rather than filling its corner.
   The rocks are thrown from the shore whatever the view. The harness leaves
   the preview of the thing in the hand out (`?preview=off`) unless
   `--preview=1`, so frames from any orbit stay as they were.
+- `node tools/tropics-textures.mjs` writes the Polynesian lagoon's two
+  scanned surfaces, `assets/tropics/bark.jpg` and `assets/tropics/sand.jpg`,
+  from Poly Haven's Palm Tree Bark and Sand 03 (CC0; downloaded at each run,
+  never kept): each photoscan's normal and the detail of its colour packed
+  into one JPEG (its header says how), 251 KB and 427 KB, fetched only when
+  the lagoon is first shown.
 - `node tools/sky-encode.mjs [assets/sky/name_2k.hdr ...] [--verify] [--no-horizon]` encodes
   each sky's Radiance file (every one, by default) as the JPEG gain map the
   page loads, `assets/sky/name_2k.jpg`, and its horizon strip,
@@ -1712,9 +1837,6 @@ farther out, so it rises into the view rather than filling its corner.
   node tools/sky-probe.mjs assets/sky/lakeside_sunrise_2k.hdr --taken=2024-08-21T06:58:00+02:00 $L
   # with --align=assets/sky/lakeside_sunrise_2k.hdr: dawn 2024-08-21T06:27, night 08-21T19:51;
   # and lakeside (2019, its time stamp off by a quarter of an hour) with --align alone
-  # the Reflecting Pool's pure skies (qwantani_*_puresky_2k.hdr, the same shoot without its land), each by its time
-  # alone: morning 08-20T08:09, afternoon 08-21T14:04, sunset 08-18T17:09; and dusk_2 08-22T18:06
-  # --align=assets/sky/qwantani_dusk_2_2k.hdr --band=4,40
   ```
 - `node tools/jet-probe.mjs [radius] [entrySpeed] [horizontalFraction]`
   checks the slender-jet solver (`src/slenderJet.js`) against the textbook:
@@ -1804,6 +1926,30 @@ farther out, so it rises into the view rather than filling its corner.
   120 Hz one, and a throw every other frame of a 120 Hz clock (held to 60 a
   second) and every frame of a 60 Hz one; and that a large window keeps
   within the pixel budget.
+- `node tools/visitor-probe.mjs` checks whatever is out on Loch Ness
+  (`src/lochVisitor.js`) on the CPU: over two hours it comes up within its
+  first minute and every one to two and a half minutes after, every form
+  and never one twice running; no point of its body, posed every frame,
+  comes within 36 m of the shore's eye; a thing out on the water holds a
+  sighting back from its course and one that comes near sends it down at
+  once (a lifted neck from where it stands, even one already lowering);
+  under ice or a gale nothing comes up; the same sightings and poses
+  at 30, 60 and 144 frames a second (including the rendered skin and normals);
+  posing it reuses its geometry, buffers and cross sections frame after frame
+  (work counted, not timed); its contacts end where its tube meets the water,
+  never under a head lifted out of it; and its waves have eased out by the
+  last frame that draws them.
+- `node tools/visitor-wave-probe.mjs` checks the actual shader's Kelvin and
+  breach-ring wave vectors against numerical derivatives of their phase:
+  both Kelvin branches, both sides of the track, multiple headings and speeds;
+  and, running the shader's own lines, that the water a contact heaps and
+  draws down has a slope with no curl that is its height's gradient, the
+  heap a width before the piece, the trough a width behind, level between;
+  and that the shader's early-outs drop nothing that shows: the rings' skip
+  exactly what the slope cutoff would, the foam's under 1e-4 of foam.
+  `window.__pond.sightVisitor(form, { elapsed, distance, bearing, course })`
+  brings one up at Loch Ness for the harness (`--eval`), and
+  `__pond.visitor` says what it is doing.
 - `node tools/frame-rate-probe.mjs [--scene=koi,pool]` plays seeded games
   twice, in frames of 1/60 s and in frames of 1/60, 1/45, 1/120 and 1/50 s,
   and checks they end the same, exactly: every thing thrown (its place, turn,
@@ -1811,7 +1957,8 @@ farther out, so it rises into the view rather than filling its corner.
   draw of `Math.random`. The scenes: throws among the lake's fish and more
   floaters than Low keeps; a break through thin ice, a stone into its hole, a
   brick slid and a pebble onto a shard; the koi and their food; the pool with
-  more stones than Low keeps at rest. Nothing is drawn
+  more stones than Low keeps at rest; Loch Ness past its first sighting
+  (whatever is out there must be where it was, as far up). Nothing is drawn
   (`__pond.stepFrames`), so the floaters' ride, read back from the drawn
   water, is left out.
 - `node tools/grab-probe.mjs` takes seeded throws in hand in each state they
@@ -1943,4 +2090,6 @@ Moonrise, Moon Noon) by Greg Zaal, processed by Jarod Guest, and
 *Rogland Moonlit Night* are by Greg Zaal. Source pages:
 [Secluded Beach](https://polyhaven.com/a/secluded_beach),
 [Kiara](https://polyhaven.com/a/kiara_8_sunset),
-[Rogland](https://polyhaven.com/a/rogland_clear_night).
+[Rogland](https://polyhaven.com/a/rogland_clear_night),
+[Kloofendal 48d Partly Cloudy (Pure Sky)](https://polyhaven.com/a/kloofendal_48d_partly_cloudy_puresky)
+(the Polynesian lagoon's sky) by Greg Zaal, its sky edited by Jarod Guest.

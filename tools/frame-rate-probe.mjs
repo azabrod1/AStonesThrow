@@ -28,9 +28,10 @@
 //   - koi: a pizza, a slice of bread and a stone among the koi, who eat;
 //   - pool: a basketball, a skipped stone and twenty-two stones in the
 //     pool's walls, more than Low keeps at rest, so the oldest fades as one
-//     comes to rest past the cap, between throws.
-//   - mall: a stone, a skipped stone, a duck and a basketball in the
-//     Reflecting Pool.
+//     comes to rest past the cap, between throws;
+//   - loch: a stone and a skipped stone at Loch Ness, then left past its
+//     first sighting (src/lochVisitor.js), whose state must match too: what
+//     it is, where, how far up, and when it comes and goes.
 // Prints each scene's comparison and exits with status 1 if any differs.
 //
 //   node tools/frame-rate-probe.mjs [--scene=koi,pool]   (only these scenes, in this order)
@@ -83,12 +84,10 @@ const SCENES = [
     ],
   },
   {
-    name: 'mall', place: 'mall', ice: 'none', until: 12,
+    name: 'loch', place: 'loch', ice: 'none', until: 52,
     throws: [
       { at: 0, x: 0, z: -1.4, thing: 'stone' },
-      { at: 0.6, x: 0.4, z: -1.8, thing: 'stone', manner: 'skip' },
-      { at: 1.4, x: -0.3, z: -1.2, thing: 'duck' },
-      { at: 2.2, x: 0.6, z: -1.0, thing: 'basketball' },
+      { at: 1, x: 0.4, z: -2.2, thing: 'stone', manner: 'skip' },
     ],
   },
 ];
@@ -160,7 +159,8 @@ async function play(scene, pattern) {
       // shows), then what else is kept (the ice's shards).
       const things = [...new Set([...thrown, ...pond.rocks])].map((rock) => [rock.thing.name, rock.state, pond.rocks.includes(rock) ? (rock.fading !== undefined ? 'fading' : 'kept') : 'gone', rock.fadedAt ?? -1, ...rock.position.toArray(), ...rock.quaternion.toArray()]);
       const fish = pond.fish.fish.map((one) => [one.x, one.y, one.z, one.heading]);
-      return { things, fish, holes: pond.iceSheet.holes.length, next: Math.random(), frames: frame };
+      // The loch's visitor as the world has it: not `body`, where the last frame drew it.
+      return { things, fish, holes: pond.iceSheet.holes.length, visitor: JSON.stringify({ ...pond.visitor, body: undefined }), next: Math.random(), frames: frame };
     } finally {
       Math.random = random;
     }
@@ -182,6 +182,7 @@ function compare(steady, uneven) {
   numbers(steady.things, uneven.things, 'things');
   numbers(steady.fish, uneven.fish, 'fish');
   if (steady.holes !== uneven.holes) unlike.push(`holes: ${steady.holes} against ${uneven.holes}`);
+  if (steady.visitor !== uneven.visitor) unlike.push(`the loch's visitor: ${steady.visitor} against ${uneven.visitor}`);
   if (steady.next !== uneven.next) unlike.push(`the next Math.random: ${steady.next} against ${uneven.next}`);
   return { most, where, unlike };
 }

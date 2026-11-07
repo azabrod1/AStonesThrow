@@ -21,14 +21,18 @@
 //   - The Pool and the Reflecting Pool: none.
 //   - The Koi pond (a pond in a Japanese garden, src/pondFloor.js KOI_SHORE):
 //     koi of the classic varieties in one loose group, and a goldfish.
-// A few of each, not many: each is drawn and moves with care.
+//   - The Polynesian lagoon, a reef lagoon's sand shallows: a school of
+//     sergeant majors, a shoal of yellow tang and a blue tang on its own,
+//     bright, unmuted (fishMarkings mutes only the wild fish of cool water).
 //   - The Pool: none, chlorinated.
+// A few of each, not many: each is drawn and moves with care.
 //
 // The company a kind keeps (`company`): 'school', a tight school that turns
-// together (minnows, pupfish: Partridge's schooling fish keep about a body
+// together (minnows, pupfish, sergeant majors: Partridge's schooling fish keep about a body
 // length apart and line up with their neighbours); 'shoal', a looser group
 // that keeps together but each fish its own heading (perch, char, bluegill,
-// tilapia, mullet, koi); 'alone' (pike, trout, bass, wrasse), each fish on
+// tilapia, mullet, koi, yellow tang); 'alone' (pike, trout, bass, wrasse,
+// blue tang), each fish on
 // its own. A group follows a goal, a point in its water it wanders to, and
 // now and then rests, hanging nearly still; its fish steer by the boids'
 // three rules (Reynolds 1987: keep apart, line up, keep together), weighted
@@ -88,7 +92,10 @@
 // same with fish, at any frame rate. When the world's clock goes back to
 // zero (src/main.js clearPond: Frozen water, a new place) theirs goes with
 // it (resetClock), each fish kept where it is with its own timers, or they
-// would hang until the world caught up with the old clock.
+// would hang until the world caught up with the old clock. Held (hold), they
+// neither swim nor take fright and their clock keeps still: the warm-up's
+// pass that draws nothing (src/main.js warmUp) throws and steps a world the
+// fish must not see, or they would start the session elsewhere.
 // tools/fish-probe.mjs swims them on the CPU and checks all of the above.
 import { seededRandom } from './spray.js';
 
@@ -119,9 +126,13 @@ export const FISH_SPECIES = {
   wrasse: { name: 'Ballan wrasse', length: [0.25, 0.4], depth: [0.1, 3], cruise: 0.5, burst: 4, turn: 2.6, shy: 0.8, eats: true, company: 'alone', shape: { depth: 0.3, width: 0.15, tail: 0.2, fork: -0.15, snout: 0.65, peak: 0.4, dorsal: [0.25, 0.76, 0.08], anal: [0.6, 0.76, 0.08], pectoral: 0.11, pelvic: 0.07, scales: 40 }, pattern: 'wrasse' },
   koi: { name: 'Koi', length: [0.35, 0.6], depth: [0.08, 3], cruise: 0.38, burst: 3, turn: 1.8, shy: 0.55, eats: true, company: 'shoal', shape: { depth: 0.25, width: 0.17, tail: 0.24, fork: 0.22, snout: 0.25, barbels: true, peak: 0.38, dorsal: [0.33, 0.66, 0.08], anal: [0.64, 0.73, 0.07], pectoral: 0.14, pelvic: 0.09, scales: 32 }, pattern: 'koi' },
   goldfish: { name: 'Goldfish', length: [0.14, 0.22], depth: [0.08, 3], cruise: 0.7, burst: 4, turn: 2.2, shy: 0.7, eats: true, company: 'alone', shape: { depth: 0.36, width: 0.17, tail: 0.32, fork: 0.35, snout: 0.3, peak: 0.38, dorsal: [0.36, 0.62, 0.13], anal: [0.63, 0.72, 0.09], pectoral: 0.13, pelvic: 0.09, scales: 28 }, pattern: 'goldfish' },
+  // The Polynesian lagoon's reef fish (PLACES `lagoon`): bright, unmuted (fishMarkings mutes only the wild fish of cool water).
+  sergeant: { name: 'Sergeant major', length: [0.12, 0.18], depth: [0.1, 3], cruise: 1.0, burst: 5, turn: 3.0, shy: 0.9, eats: true, company: 'school', shape: { depth: 0.46, width: 0.13, tail: 0.24, fork: 0.35, snout: 0.6, peak: 0.36, dorsal: [0.25, 0.7, 0.12], anal: [0.55, 0.73, 0.1], pectoral: 0.13, pelvic: 0.09, scales: 34 }, pattern: 'sergeant' },
+  yellowTang: { name: 'Yellow tang', length: [0.12, 0.18], depth: [0.1, 3], cruise: 0.7, burst: 4, turn: 2.6, shy: 0.8, eats: true, company: 'shoal', shape: { depth: 0.66, width: 0.1, tail: 0.22, fork: 0.05, snout: 0.85, peak: 0.42, dorsal: [0.2, 0.78, 0.24], anal: [0.48, 0.78, 0.2], pectoral: 0.12, pelvic: 0.08, scales: 70 }, pattern: 'yellowTang' },
+  blueTang: { name: 'Blue tang', length: [0.18, 0.26], depth: [0.1, 3], cruise: 0.65, burst: 4.5, turn: 2.4, shy: 0.8, eats: true, company: 'alone', shape: { depth: 0.52, width: 0.11, tail: 0.24, fork: 0.15, snout: 0.7, peak: 0.4, dorsal: [0.22, 0.78, 0.13], anal: [0.5, 0.78, 0.11], pectoral: 0.13, pelvic: 0.08, scales: 70 }, pattern: 'blueTang' },
 };
 
-// Each place's fish (src/main.js PLACES): kinds and how many; none in the Pool.
+// Each place's fish (src/places.js PLACES): kinds and how many; none in the Pool.
 export const FISH_BY_PLACE = {
   lakeside: [{ species: 'minnow', count: 8 }, { species: 'perch', count: 4 }, { species: 'pike', count: 1 }],
   swiss: [{ species: 'trout', count: 2 }, { species: 'char', count: 3 }],
@@ -132,6 +143,8 @@ export const FISH_BY_PLACE = {
   desert: [{ species: 'pupfish', count: 8 }, { species: 'tilapia', count: 3 }],
   cove: [{ species: 'mullet', count: 4 }, { species: 'wrasse', count: 1 }],
   koi: [{ species: 'koi', count: 7 }, { species: 'goldfish', count: 1 }],
+  lagoon: [{ species: 'sergeant', count: 8 }, { species: 'yellowTang', count: 4 }, { species: 'blueTang', count: 1 }],   // the lagoon's reef fish
+  loch: [{ species: 'trout', count: 2 }, { species: 'char', count: 2 }, { species: 'minnow', count: 6 }],   // Loch Ness's brown trout, Arctic char and minnows, shadows in its peat-dark water
   pool: [],
   mall: [],   // the Reflecting Pool holds none: it is filtered city water, drained and cleaned
 };
@@ -287,6 +300,12 @@ export class FishPopulation {
     this.bites = [];
     this.pushed = 0;   // m: the farthest keepClear has had to push a fish since step began (tools/fish-probe.mjs)
     this.random = seededRandom(seed, 0);
+    this.held = false;   // hold
+  }
+
+  /** Held (true), advance, startle and resetClock do nothing: the fish as they were till let go (the header). */
+  hold(held) {
+    this.held = held;
   }
 
   /**
@@ -553,6 +572,7 @@ export class FishPopulation {
 
   /** A splash, or anything sudden, at (x, z): every fish within `alarm` (m, times its kind's shy) takes fright. */
   startle(x, y, z, alarm) {
+    if (this.held) return;
     for (const fish of this.fish) {
       const reach = alarm * fish.species.shy;
       const apart = Math.hypot(fish.x - x, fish.z - z, Math.max(Math.abs(fish.y - y) - 0.4, 0));
@@ -619,6 +639,7 @@ export class FishPopulation {
 
   /** Rebase on a reset world clock, keeping the swimmers and their own timers. */
   resetClock(time = 0) {
+    if (this.held) return;
     this.clock = time;
     for (const fish of this.fish) {
       const before = (fish.before ??= {});
@@ -636,6 +657,7 @@ export class FishPopulation {
    * first call sets the clock.
    */
   advance(time, look, bitten = () => {}) {
+    if (this.held) return;
     this.clock ??= time;
     if (!this.water || this.fish.length === 0) { this.clock = Math.max(this.clock, time); return; }   // none to step (the Pool)
     while (this.clock + FISH_STEP <= time + 1e-9) {

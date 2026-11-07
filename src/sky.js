@@ -244,7 +244,7 @@ import { decodeHorizonStrip, HORIZON_DECODE } from './horizonStrip.js';
 // `anchor` and `facing` (Light by the hour, Orientation) are the first hour
 // unless named. `defaultHour` may choose a starting view independently of
 // the lighting anchor. `reeds`: cattails stand in its shallows (src/reeds.js,
-// PLACES in src/main.js): the fresh lakes with a soft shore; a sea cove, a
+// PLACES in src/places.js): the fresh lakes with a soft shore; a sea cove, a
 // bare rock shore, a salt flat and a frozen alpine reservoir have none.
 // `shore` names what its beach is made of (SHORE_LOOKS in src/pondFloor.js;
 // Lakeside's sand when unnamed), chosen from the land in its photo. New locations face their cove opening, sunset ridge
@@ -326,30 +326,17 @@ const SKIES = {
   },
   swiss: { shore: 'scree', mirrored: true, sunAzimuth: 45, hours: { midday: { file: 'lago_disola', resolution: '4k', label: 'Midday' } } },
   wooded: { reeds: true, shore: 'turf', sunAzimuth: -60, hours: { morning: { file: 'radkow_lake', label: 'Late morning', clock: '11:11' } } },
-  // The Koi pond's own (src/main.js PLACES `koi`), no place of its own (`ownPlace`): Ninomaru Teien, the garden of
+  // The Koi pond's own (src/places.js PLACES `koi`), no place of its own (`ownPlace`): Ninomaru Teien, the garden of
   // Nagoya Castle, in April's afternoon light through its trees (`shadedSun`: its sun behind leaves, the light on
   // level ground the balance's, most of it the sky's).
   garden: { ownPlace: false, shadedSun: true, sunAzimuth: 100, hours: { afternoon: { file: 'ninomaru_teien', label: 'Afternoon', clock: '15:09' } } },
-  // The Reflecting Pool's own (src/main.js PLACES `mall`), no place of its own: Mesas' hours with their land taken
-  // out (Poly Haven's pure skies of the same panoramas, the same columns and norths), since every piece of the
-  // Mall's land is drawn (src/nationalMall.js). Photographed in the southern winter, so `mirrored`: the sun's path
-  // through the north there runs through the south here, as Washington's does in October. The scene's −z is
-  // east, so the afternoon's sun stands 129° right of ahead, in the south-west, and the morning's, the golden
-  // hour's and the twilight's follow by their true suns (Orientation): low ahead of the eye on the right over the
-  // Monument, behind on the right lighting its west face, and set behind the Lincoln Memorial.
-  washington: {
-    ownPlace: false,
-    mirrored: true,
-    anchor: 'afternoon',
-    facing: 'afternoon',
-    sunAzimuth: 129,
-    hours: {
-      morning: { file: 'qwantani_morning_puresky', label: 'Morning', clock: '08:09' },
-      afternoon: { file: 'qwantani_afternoon_puresky', label: 'Afternoon', clock: '14:04' },
-      golden: { file: 'qwantani_sunset_puresky', label: 'Golden hour', clock: '17:09' },
-      twilight: { file: 'qwantani_dusk_2_puresky', label: 'Twilight', clock: '18:06' },
-    },
-  },
+  // The Polynesian lagoon's own (src/places.js PLACES `lagoon`), no place of its own: a pure sky (Poly Haven's Kloofendal
+  // 48d Partly Cloudy, its land taken out), deep blue with trade-wind cumulus along the horizon and the sun 48° up, as
+  // a South Pacific midday is; the land under it is the beach's own (src/tropics.js: the palms, the motus, the high
+  // island). The sun behind the eye's right, as the lagoon photographs best: the shallows lit through, no glare. Its
+// light on level ground is 1.6 times the balance's (its sky alone two thirds of its sun's, against a fifth to two
+// fifths in the other photographs): exposed as an eye adapted half the way sees it (`adapt`, below).
+  lagoon: { ownPlace: false, salt: true, adapt: 0.5, sunAzimuth: 145, hours: { midday: { file: 'kloofendal_48d_partly_cloudy_puresky', label: 'Midday', clock: '13:44' } } },
 };
 /** The skies that are each a place of their own (the Location setting's lakes; the Koi pond takes the garden's). */
 /** What a sky's beach is made of (`shore` above): a name of SHORE_LOOKS (src/pondFloor.js), 'sand' when unnamed. */
@@ -828,7 +815,10 @@ export function createEnvironment(renderer, { name, hour, sunAzimuth, sunBalance
     // keeping its own small share of it (so the floor's caustics are faint, as in shade).
     const levelLight = (measured) => luminance(measured.sunIrradiance) * Math.max(Math.sin(THREE.MathUtils.degToRad(measured.sun.elevation)), 0) + Math.PI * luminance(measured.skyRadiance);
     const balanceScale = (balanceLuminance / luminance(balance.sunIrradiance)) * SKY_EXPOSURE;
-    const anchorScale = place.shadedSun ? balanceScale * levelLight(balance) / levelLight(anchor) : (balanceLuminance / luminance(anchor.sunIrradiance)) * SKY_EXPOSURE;
+    // A sky far brighter on level ground than the balance's (`adapt`: the lagoon's midday, its sun high among bright
+    // cumulus) is exposed as an eye adapted that share of the way to it sees it, sun and sky together.
+    const adapted = place.adapt ? (levelLight(balance) / levelLight(anchor)) ** place.adapt : 1;
+    const anchorScale = place.shadedSun ? balanceScale * levelLight(balance) / levelLight(anchor) : (balanceLuminance / luminance(anchor.sunIrradiance)) * SKY_EXPOSURE * adapted;
     const level = file === anchorFile ? 1 : adaptedLight(hourLight(measurement)) / adaptedLight(hourLight(anchor));
     const scale = anchorScale * level;
     if (sunlit) {

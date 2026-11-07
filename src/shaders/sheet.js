@@ -45,8 +45,8 @@
 // aSheet times FROTH_HOLE_SCALE (fewer, bigger holes than its cells), each
 // seed with a size of its own, FROTH_HOLE_SIZES by the square of a hash (a
 // few big holes among many small: holes nucleate at flaws and the first
-// grow longest), and holeDistance is the distance to the nearest of the 27
-// cells' seeds over that seed's size; a vertex's openness asks for the
+// grow longest), and holeDistances is the distance to the nearest of the 27
+// cells' seeds over that seed's size (and to the next nearest); a vertex's openness asks for the
 // radius the holes have reached: the share of the sheet within r of a seed
 // so measured, over 300 000 points on the CPU, is
 // 1 − exp(−(r / (0.6715 − 0.0386·u))³) within 0.2% for
@@ -54,7 +54,13 @@
 // distance is under it, give or take FROTH_RAGGED of the grain (a torn
 // edge is ragged), the sheet has a hole. As the openness grows the
 // holes widen from the same seeds, so a hole never flickers in and out, and
-// what is left between them is the ligaments' web. Each pass takes the
+// what is left between them is the ligaments' web. Past FROTH_WEB of open
+// (src/crown.js's torn sheet, and what lies just ahead of its tear) the holes
+// have met, and the web is drawn as what it is, threads along the seams where
+// they met (where the nearest and the next nearest seed are within the
+// threads' width of alike, the width the share left over FROTH_THREADS), not
+// as the islands the nearest hole's edge leaves there, which read as flat
+// shards. Each pass takes the
 // same holes: the depth pass discards a pixel more hole than sheet, the
 // optics pass writes the sheet's share of each pixel (its thickness,
 // coverage and aeration times it; the composite divides the aeration by the
@@ -144,11 +150,13 @@ import { GLSL_COMMON } from './scene.js';
 // any discard).
 export const SHEET_FROTH = /* glsl */`
 #define RIM_AERATION 0.55          // how far the rim bead and torn edges whiten
-#define FROTH_HOLE_SCALE 0.7       // the holes' seeds' cells per cell of the sheet: fewer, bigger holes
+#define FROTH_HOLE_SCALE 0.7       // the holes' seeds' cells per cell of the sheet: fewer, bigger holes (src/crown.js FROTH_HOLE_SCALE times how long they take to open: change both)
 #define FROTH_HOLE_SIZES vec2(0.45, 1.1)   // a seed's size: x + y times the square of its hash
 #define FROTH_RADIUS vec2(0.6715, -0.0386)   // the holes' radius for an open share: u·(x + y·u), u = cbrt(−ln(1 − share)) (the header)
 #define FROTH_RAGGED 0.2           // a hole's edge wanders by this much of a seed's cell with the grain
 #define FROTH_FADE vec2(0.35, 0.9)  // the field's footprint (cells a pixel) over which holes and grain fade to their means
+#define FROTH_WEB vec2(0.86, 0.9)   // a sheet this open is a web (src/crown.js's torn sheet and what lies just ahead of its tear): its holes have met, and what is left is their rims' threads along the seams between them...
+#define FROTH_THREADS 3.5          // ...as wide (cells) as its share left over this (a net of seams covers about this many times their width)
 #define FROTH_RIM 0.12             // a hole's rim: the sheet within this many cells (of its seed's size) of its edge...
 #define FROTH_RIM_MEAN vec2(0.09, 0.72)  // ...which holds this much of the sheet left (x + y·open share, measured: the header), half of it under the rim's profile
 #define FROTH_BASE 0.08            // the froth's density: this much everywhere (a film between its streaks is nearly clear)...
@@ -182,11 +190,13 @@ vec3 frothSeed(vec3 cell) {
   point += dot(point, point.yxz + 33.33);
   return fract((point.xxy + point.yxx) * point.zyx);
 }
-// The holes' field: how far the point is (cells) from the nearest seed of the 27 cells about it, over that seed's size.
-float holeDistance(vec3 point) {
+// The holes' field: how far the point is (cells) from the nearest seed of the 27 cells about it, over that seed's
+// size; and from the next nearest (y), so where the two are alike the holes about those seeds have met.
+vec2 holeDistances(vec3 point) {
   vec3 cell = floor(point);
   vec3 local = point - cell;
   float nearest = 16.0;
+  float next = 16.0;
   for (int dz = -1; dz <= 1; dz++) {
     for (int dy = -1; dy <= 1; dy++) {
       for (int dx = -1; dx <= 1; dx++) {
@@ -194,11 +204,13 @@ float holeDistance(vec3 point) {
         vec3 seedCell = cell + offset;
         float size = frothHash(seedCell + 7.3);
         size = FROTH_HOLE_SIZES.x + FROTH_HOLE_SIZES.y * size * size;
-        nearest = min(nearest, length(offset + frothSeed(seedCell) - local) / size);
+        float distance = length(offset + frothSeed(seedCell) - local) / size;
+        next = min(next, max(distance, nearest));
+        nearest = min(nearest, distance);
       }
     }
   }
-  return nearest;
+  return vec2(nearest, next);
 }
 // The radius every hole has reached when the sheet is this open (the header's fit).
 float holeRadius(float openShare) {
@@ -244,10 +256,18 @@ SheetFroth sheetFroth(vec3 sheet, vec2 froth, float rimAeration, float rod, floa
   // No holes open in a finger or the bead.
   float openShare = rod > 0.5 ? 0.0 : froth.y * (1.0 - clamp(rimAeration, 0.0, 1.0));
   float radius = holeRadius(openShare);
-  float field = holeDistance(sheet * FROTH_HOLE_SCALE) + FROTH_RAGGED * (grainNoise - 0.5) * grainResolved;
+  vec2 fields = holeDistances(sheet * FROTH_HOLE_SCALE);
+  float field = fields.x + FROTH_RAGGED * (grainNoise - 0.5) * grainResolved;
   float past = field - radius;   // cells outside the nearest hole's edge (inside it, negative)
   float edgeWidth = max(fwidth(field), 1e-4);
   float drawn = smoothstep(-edgeWidth, edgeWidth, past);
+  // A web is threads along the seams where its holes met, not the islands the nearest hole's edge leaves (flat
+  // shards, torn paper): drawn where the two nearest seeds are within the threads' width of alike.
+  float seam = fields.y - fields.x;
+  float seamWidth = max(fwidth(seam), 1e-4);
+  float threadWidth = (1.0 - openShare) / FROTH_THREADS;
+  float thread = 1.0 - smoothstep(threadWidth - seamWidth, threadWidth + seamWidth, seam);
+  drawn = mix(drawn, thread, smoothstep(FROTH_WEB.x, FROTH_WEB.y, openShare));
   result.present = openShare <= 0.0 ? 1.0 : mix(1.0 - openShare, drawn, resolved);
   result.hole = openShare > 0.0 && resolved > 0.5 && drawn < 0.5;
   float patchResolved = 1.0 - smoothstep(FROTH_FADE.x, FROTH_FADE.y, footprint * FROTH_PATCH_SCALE);
@@ -312,7 +332,7 @@ vec3 sheetNormal(vec3 normal, vec3 viewPosition, vec3 sheet, vec2 froth, float r
 
 export const SHEET_VERTEX = /* glsl */`
 #define RIM_LEAN 1.4             // the rim tangent's length at the free edge (src/crown.js's bend)
-#define FOOT_FADE vec2(0.6, 0.95)   // the sheet fades out as the lip's carry of its material rises over this range: its foot is the lip's water (the header)
+#define FOOT_FADE vec2(0.6, 0.95)   // the sheet fades out as the lip's carry of its material rises over this range: its foot is the lip's water (the header) (src/crown.js FOOT_FADE: change both)
 #define SHEET_RING_SPACING 0.01  // metres: the rings' height under a riding vertex, read this smooth (the water surface's own)
 attribute float aThickness;
 attribute vec3 aRimTangent;
