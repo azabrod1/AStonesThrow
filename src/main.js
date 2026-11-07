@@ -1099,6 +1099,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
     shore.visible = !asPool && !koiPond && !lagoon && !mallHere;
     mallPool.setVisible(!asPool && mallHere);   // the Reflecting Pool's coping and ground, the water stopping at its walls
     surface.setBounds(!asPool && mallHere ? MALL_BOUNDS : null);
+    rings.setWalls(!asPool && mallHere ? MALL_BOUNDS : null);   // and the rings come back off them (src/rings.js)
     koiLand.visible = !asPool && koiPond;
     lagoonLand.visible = !asPool && lagoon;
     if (lagoonLand.visible) buildLagoon();   // built when first shown, unless it was as it was asked for (requestPlace)
@@ -2960,7 +2961,7 @@ export async function startPond({ canvas, quality = 'auto', onReady, onProgress,
       memory: { ...renderer.info.memory },
       programs: renderer.info.programs?.length ?? 0,
       solverAsleep: water.asleep,
-      rings: { live: rings.live, fading: rings.fading, limit: rings.liveLimit, passes: rings.passesRun, fetches: rings.fetchesRun },
+      rings: { live: rings.live, fading: rings.fading, images: rings.images, limit: rings.liveLimit, passes: rings.passesRun, fetches: rings.fetchesRun },
       dropRings: { live: dropRings.live, limit: dropRings.liveLimit, ready: dropRings.ready },
       things: { kept: rocks.length, fading: rocks.filter((rock) => rock.fading !== undefined).length, resting: settings.resting, afloat: settings.afloat, shards: settings.shards, moving: settings.moving },
       wind: windName,
