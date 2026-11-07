@@ -7,7 +7,10 @@
 // same coding of the band about the horizon (HORIZON_STRIP in src/sky.js:
 // 17° up to 3° down, or higher for a sky with a `stripAbove`) cut from the 8k panorama, assets/sky/<name>_8k.hdr,
 // which this tool downloads from Poly Haven when it is missing (never kept
-// in the repository: 100 MB each). The 2k photo gives the dome 5.7 pixels a
+// in the repository: 100 MB each). A sky tools/mall-backdrop.py builds (an
+// hour's `file` in tools/mall-backdrop.json) is no Poly Haven file: its 8k is
+// that tool's, written locally, so where it is missing the committed strip is
+// kept as it is (neither re-encoded nor verified) and the rest go on. The 2k photo gives the dome 5.7 pixels a
 // degree, the strip 23, so the land on the skyline is sharp at a desktop's
 // or a phone's pixels (src/sky.js, Horizon, which decodes the strip on the
 // GPU). A sky with `insets` (src/sky.js Insets: the Reflecting Pool's
@@ -391,13 +394,23 @@ async function encodeImage(name, panorama, measurement, quality, horizonRow = pa
   return { name, file, report, decoded, width, height };
 }
 
-/** The panorama's horizon strip (the header): its 8k source, downloaded if missing, cut to the band and encoded. */
+// The skies tools/mall-backdrop.py builds, its hours' files: their 8k sources are its own, never Poly Haven's.
+const BUILT_SKIES = new Set(Object.values(JSON.parse(await readFile(path.join(root, 'tools/mall-backdrop.json'), 'utf8')).hours).map((hour) => hour.file));
+
+/**
+ * The panorama's horizon strip (the header): its 8k source, downloaded if missing, cut to the band and encoded; or
+ * null for a built sky (BUILT_SKIES) whose source is not here, its committed strip left as it is.
+ */
 async function encodeHorizon(hdrPath, measurement) {
   const name = path.basename(hdrPath, '.hdr').replace(/_\d+k$/, '');
   const sourcePath = path.join(path.dirname(hdrPath), `${name}_${HORIZON_STRIP.source}.hdr`);
   try {
     await access(sourcePath);
   } catch {
+    if (BUILT_SKIES.has(name)) {
+      console.log(`${name}: no ${path.basename(sourcePath)} (tools/mall-backdrop.py writes it): the committed strip and insets kept, not re-encoded or verified`);
+      return null;
+    }
     console.log(`${name}: downloading ${HORIZON_URL(name)}`);
     const response = await fetch(HORIZON_URL(name));
     if (!response.ok) throw new Error(`${name}: ${HORIZON_URL(name)} answered ${response.status}`);
@@ -520,6 +533,7 @@ for (const input of inputs) {
   results.push(result);
   if (argumentsGiven.includes('--no-horizon')) continue;
   const horizon = await encodeHorizon(input, measurement);
+  if (!horizon) continue;
   await writeFile(path.join(path.dirname(input), `${horizon.name}.jpg`), horizon.file);
   console.log(horizon.report);
   results.push(horizon);
