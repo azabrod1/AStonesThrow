@@ -650,6 +650,11 @@ vec3 sunGlitter(vec3 normal, vec3 toViewer, vec3 toSun, vec3 sunIrradiance, floa
   return sunIrradiance * distribution * shadowing * fresnel / max(4.0 * nDotV * nDotL, 1e-3) * nDotL;
 }
 ${ICE_COMMON}
+// The share of a pixel footprint (m) wide covered by joints width wide every period along the coordinate along, one
+// at each multiple of the period (iceLine's box filter: the coping's, walk's and plaza's joints, the pool bed's bays).
+float jointCover(float along, float period, float width, float footprint) {
+  return iceLine(abs(fract(along / period + 0.5) - 0.5) * period, 0.5 * width, footprint);
+}
 ${SNOW_COVER}
 `;
 
@@ -2610,9 +2615,8 @@ vec3 mallBed(vec2 point, float footprint) {
   // The spray's orange peel, a fine grain, faded as it shrinks under a pixel.
   bed *= 1.0 + (1.0 - smoothstep(0.004, 0.015, footprint)) * 0.08 * (valueNoise(point * 90.0) - 0.5);
   // The bays' joints under the coat, antialiased over the pixel.
-  vec2 fromJoint = abs(fract(point / MALL_BAY) - 0.5) * MALL_BAY;   // the bays centred on the pool's axis, no joint down it
-  float jointWidth = max(MALL_JOINT, footprint);
-  float joint = (1.0 - smoothstep(0.0, jointWidth, min(fromJoint.x, fromJoint.y))) * (MALL_JOINT / jointWidth);
+  vec2 halfBay = point + 0.5 * MALL_BAY;   // the bays centred on the pool's axis, no joint down it
+  float joint = max(jointCover(halfBay.x, MALL_BAY, MALL_JOINT, footprint), jointCover(halfBay.y, MALL_BAY, MALL_JOINT, footprint));
   bed *= 1.0 - 0.2 * joint;
   // Silt and algae: a thin film in drifts, more by the walls.
   float wall = 1.0 - smoothstep(0.0, 6.0, MALL_HALF_WIDTH - abs(point.x));
@@ -4191,12 +4195,6 @@ ${SHORE_KIND}
 #define MALL_LAWN vec3(0.068, 0.098, 0.036)
 #define MALL_STRIPE 2.4              // m: the mower's stripes
 #define MALL_BOUNCE 0.15             // what the ground and water before a wall's face give back of the light on them
-// The share of a pixel footprint (m) wide covered by joints width wide every period along the coordinate along.
-float jointCover(float along, float period, float width, float footprint) {
-  float fromJoint = abs(fract(along / period + 0.5) - 0.5) * period;
-  float spread = max(width, footprint);
-  return (1.0 - smoothstep(0.0, spread, fromJoint)) * (width / spread);
-}
 void main() {
   vec2 point = vWorld.xz;
   vec2 footprint2 = max(abs(dFdx(point)), abs(dFdy(point)));
