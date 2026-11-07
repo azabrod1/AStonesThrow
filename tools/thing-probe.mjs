@@ -92,8 +92,9 @@
 //     banana's length (their meshes', src/thingMeshes.js unitLength);
 //   - making each thing as it is thrown, once prepared (src/rock.js
 //     prepareThing), costs a fixed mesh's under FIXED_THROW_MS, or on a
-//     busy machine under STONE_SHARE of a river stone's (the table printed
-//     for every thing);
+//     busy machine under STONE_SHARE of a river stone's (the least of 15
+//     throws in each of two passes over the things, the first warming V8's
+//     compiled code; the table printed for every thing);
 //   - a thing defined from outside (src/things.js defineThing: a plain beach
 //     ball) is thrown and floats as its definition says, and a broken
 //     definition is refused, with what is wrong with it;
@@ -1425,34 +1426,39 @@ console.log('\nThings meeting things (src/collide.js):');
 
 // ---- what a throw costs the main thread (src/rock.js prepareThing) ----
 {
-  // Each thing made as the app throws it, after it is prepared (src/main.js warmUp): the least of 15. A thing of a
-  // fixed mesh shares its prepared one; a stone's lumps are its own, built each throw. The least, not the median: what
-  // else the machine does (a collection, another process: npm test runs the probes side by side) can only lengthen a
-  // trial, never shorten it, and on a busy machine the median of 15 still drifted to twice a thing's cost.
-  const rows = [], over = [];
+  // Each thing made as the app throws it, after it is prepared (src/main.js warmUp): the least of 15, in each of two
+  // passes over every thing, the least of both kept. A thing of a fixed mesh shares its prepared one; a stone's lumps
+  // are its own, built each throw. The least, not the median: what else the machine does (a collection, another
+  // process: npm test runs the probes side by side) can only lengthen a trial, never shorten it, and on a busy machine
+  // the median of 15 still drifted to twice a thing's cost. Two passes, because the first runs code V8 has not yet
+  // optimised (a cold run here: a pizza 0.9 ms the first pass, 0.4 the second), and on a busy machine its compiler's
+  // threads, starved, leave it so for longer (CI's runner read a pizza at 1.2 ms the first pass, 0.3 alone).
+  const rows = THING_NAMES.map((name) => ({ name, least: Infinity, fixed: meshKind(THINGS[name].look.mesh).fixed })), over = [];
   let preparing = 0;
-  for (const name of THING_NAMES) {
-    const thing = THINGS[name];
-    const started = performance.now();
-    prepareThing(thing);
-    preparing += performance.now() - started;
-    const measured = thing.measure(thing.slider?.initial);
-    const times = [];
-    for (let trial = 0; trial < 15; trial++) {
-      const before = costClock();
-      const rock = new Rock({ radius: thing.byDiameter ? 0.03 : measured.radius, position: new THREE.Vector3(), velocity: new THREE.Vector3(), envTexture: null, thing: name, mass: measured.mass });
-      if (thing.air.model === 'flutter') rock.trialFlight();
-      times.push(costSince(before));
-      rock.dispose();
+  for (let pass = 0; pass < 2; pass++) {
+    for (const row of rows) {
+      const thing = THINGS[row.name];
+      if (pass === 0) {
+        const started = performance.now();
+        prepareThing(thing);
+        preparing += performance.now() - started;
+      }
+      const measured = thing.measure(thing.slider?.initial);
+      for (let trial = 0; trial < 15; trial++) {
+        const before = costClock();
+        const rock = new Rock({ radius: thing.byDiameter ? 0.03 : measured.radius, position: new THREE.Vector3(), velocity: new THREE.Vector3(), envTexture: null, thing: row.name, mass: measured.mass });
+        if (thing.air.model === 'flutter') rock.trialFlight();
+        row.least = Math.min(row.least, costSince(before));
+        rock.dispose();
+      }
     }
-    rows.push({ name, least: Math.min(...times), fixed: meshKind(thing.look.mesh).fixed });
   }
   // A fixed mesh's thing costs under FIXED_THROW_MS, or, on a machine busy enough that a river stone (built afresh each
   // throw, as it always was) costs more than STONE_LOAD_MS, under STONE_SHARE of a stone's throw on this same run.
   const stone = rows.find((row) => row.name === 'stone').least;
   const most = stone > STONE_LOAD_MS ? STONE_SHARE * stone : FIXED_THROW_MS;
   for (const row of rows) if (row.fixed && row.least > most) over.push(`${row.name} ${row.least.toFixed(2)} ms`);
-  console.log(`\nWhat making a thing costs as it is thrown (ms, least of 15, once prepared; preparing them all took ${preparing.toFixed(0)} ms): ${rows.map((row) => `${row.name} ${row.least.toFixed(2)}`).join(', ')}`);
+  console.log(`\nWhat making a thing costs as it is thrown (ms, least of 15 in each of two passes, once prepared; preparing them all took ${preparing.toFixed(0)} ms): ${rows.map((row) => `${row.name} ${row.least.toFixed(2)}`).join(', ')}`);
   check(over.length === 0, `a prepared thing costs more than ${most.toFixed(2)} ms to throw (${over.join(', ')})`);
 }
 
