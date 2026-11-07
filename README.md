@@ -239,6 +239,11 @@ full screen, which only a press or a key may ask for):
   planted to the water with clipped shrubs (karikomi) in rows rising above
   the eye, a Kasuga stone lantern among them, the garden's trees behind; a
   lawn on the near bank, its own clear green water over gravel, and koi.
+  The photo is a backdrop 35 m off (`backdrop` in `src/sky.js`, as an HDRI
+  backdrop is projected): the lawn runs out to it and its trees and hill
+  stand on it, seen from any height. The shrubs cast their shadows on the
+  lawn and on one another, and shade the ground under them, from a map
+  baked once a sun from their own triangles (`bakeShade`).
   Nothing thrown comes down on the ground there: every aim is kept 0.6 m
   inside the water, and a thing skipped or slid on to a bank is caught by
   the shrubs where they are drawn (`src/koiGarden.js`,
@@ -509,7 +514,10 @@ far ripples average to flat instead of shimmering; the slope they average
 away becomes roughness in the sun's glitter, so the glitter keeps its
 brightness with distance. Gusts multiply it: patches of ripple about 3 m
 across (cat's paws) drift downwind at 1.5 m/s over calmer water that keeps a
-quarter of it, which also hides the tile's repetition. The Wind control
+quarter of it, which also hides the tile's repetition. Where a pixel spans
+more than a patch's cells the water's shader takes their average over the
+pixel (and its square for the roughness), so the far water does not flip
+between calm and gust from one pixel to the next. The Wind control
 scales the whole field by one factor (its slope variance below a pixel by
 the square) and the foam's drift with it: Calm 0.3, a glassy pond with faint
 cat's paws, on which a stone's rings read far; Breeze 1, the look the pond
@@ -1024,7 +1032,9 @@ The curated locations include:
   between the boulders. One photographed morning.
 - **Highlands** (`?sky=highlands`): five Kiara panoramas, from dawn and sunrise
   to noon, sunset and dusk. Starts at sunset unless a remembered clock is
-  nearer another hour; noon remains the lighting calibration anchor.
+  nearer another hour; noon remains the lighting calibration anchor, brought
+  up 1.5 stops (its `exposure`): the series was exposed photo by photo, and
+  as a single photograph its noon came out a dusk, darker than its sunset.
 - **Desert oasis** (`?sky=desert`): Rogland's golden hour, starry night and
   moonlit early morning, framed toward the lower rock skyline. The water is
   the simulation's, surrounded by the photographed desert.
@@ -1511,8 +1521,7 @@ where it does at the back, so none under a head lifted clear), the short capilla
 ripples its waterline sheds, running out from the capsule's outline; and
 foam hugging the waterline and trailing behind. Each is filtered by the pixel's footprint and
 what it averages away goes to the glitter's roughness and spreads the
-mirror (the sky cube blurred over twice its rms slope, as the ice's frost
-is), so from the shore, where a wave a metre long out there is less than a
+mirror as the wind's ripples do (`spreadMirror`), so from the shore, where a wave a metre long out there is less than a
 pixel deep, the wake shows as a pale line of rougher water across the far
 shore's image, and zoomed in, as waves. A frame's pose transforms cross
 sections cached once a sighting (about 0.3 ms). Its hide texture (some
@@ -1557,8 +1566,22 @@ drawn into it each frame, over the rectangle it covers) in the direction each ri
 turns the view ray, so reflections wobble into vertical streaks (near
 things, the splash's, by their distance, so they move far less), and adds
 the sun's glitter: a Beckmann highlight on the rippled normal, widened by the
-ripple finer than the pixel. Where there is foam it replaces the surface, a
-diffuse white under the sun and the sky; the foam specks ride on it. The
+ripple finer than the pixel. That ripple spreads the mirror image too, mostly
+down it (`spreadMirror`: one lookup of the image's mip levels over a box cut
+where its rays would dip below the horizon, hidden by the next crest, through
+4× anisotropic filtering: up to four probes down the box, so a box longer
+than four texels is blurred across by a quarter of its length; each step
+more would be another probe on nearly every water pixel, since the sub-grid
+ripple alone spreads the image by more than half a pixel), so past where the
+ripples resolve the far shore's image softens down the water and pales
+toward it, rather than standing as a sharp copy of the shore that reads as
+more land; near things the water looks up by their distance (in the splash's
+rectangle the splash, a floater, the thing in the loch; in the Pool its walls
+and deck) spread by it too, as they move, and the cached image's others (the
+boulders, the reeds, the koi's garden, the lagoon's palms) as the sky. Besides
+its lookup it costs the image's mip levels at each draw of it. Where there is
+foam it replaces the surface, a diffuse white under the sun and the sky; the
+foam specks ride on it. The
 splash's passes then draw its water over the scene and tone-map it; with no
 water in the air the frame is only tone-mapped. Before the tone map a few
 percent of the scene's light is spread as a lens spreads it (`src/glare.js`:
@@ -1609,9 +1632,25 @@ farther out, so it rises into the view rather than filling its corner.
   by side, as many at once as the machine has cores (`PROBE_JOBS=1` runs
   them one after another), each one's output printed whole when it ends,
   and runs any that failed beside the others again alone: the computed
-  checks are seeded and fail again, while a budget of wall-clock time that
-  another probe crowded passes alone, as it was written to. The summary
+  checks are seeded and fail again. The budgets of time (fish, ice, jet,
+  skip, snow, thing) are the main thread's time (`tools/cost-clock.mjs`),
+  which waiting for a core does not lengthen, so probes side by side or
+  other work on the machine leave them as they are alone, save for the
+  work itself slowed by a busy core, which the run alone settles. The summary
   names every probe run again. On four cores the suite takes about 80 s.
+- `npm run check` runs what CI checks a pull request with, the same lists
+  CI's jobs run: `check:cpu` (`npm test` with the variety and pool probes
+  beside the others, about 2 to 3 minutes on four cores), `check:controls`
+  and `check:site` (the browser probes, on the machine's GPU). `npm install`
+  points git at `.githooks/` (`tools/install-hooks.mjs`: in this checkout
+  only, and unless a hooks path is set already), whose `pre-push` runs
+  `check:cpu` before every push and stops
+  one that would fail; the browser groups are left to the pull request's CI,
+  since without a GPU SwiftShader takes half an hour or more over them
+  (`git config check.browser true` makes the hook run all of `npm run
+  check`; its site check also runs in WebKit, which `npx playwright install
+  webkit` installs). It checks the working tree, so it pushes only the checked-out
+  commit, with nothing uncommitted or untracked.
 - `node tools/ice-probe.mjs [--list]` throws every thing at thin and thick
   ice as the app throws it, each way, with the splash on the CPU, and
   prints what breaks what: each throw's blow against what the ice holds and

@@ -92,8 +92,10 @@
 //     banana's length (their meshes', src/thingMeshes.js unitLength);
 //   - making each thing as it is thrown, once prepared (src/rock.js
 //     prepareThing), costs a fixed mesh's under FIXED_THROW_MS, or on a
-//     busy machine under STONE_SHARE of a river stone's (the table printed
-//     for every thing);
+//     busy machine under STONE_SHARE of a river stone's (the least of 15
+//     throws in each of two passes over the things, the first warming V8's
+//     compiled code, and up to THROW_PASSES while one is over; the table
+//     printed for every thing);
 //   - a thing defined from outside (src/things.js defineThing: a plain beach
 //     ball) is thrown and floats as its definition says, and a broken
 //     definition is refused, with what is wrong with it;
@@ -124,6 +126,9 @@
 //   - held things stay at the hand without an impact, release from rest,
 //     float or sink from their new position, and can be lifted and dropped
 //     again; picking's apparent/physical water positions round-trip.
+// Both costs (FIXED_THROW_MS, STEP_COST_MS) are the main thread's time
+// (tools/cost-clock.mjs), not the time the probe waited for a core beside
+// others.
 //
 //   node tools/thing-probe.mjs
 import * as THREE from 'three';
@@ -135,6 +140,7 @@ import { collideThings } from '../src/collide.js';
 import { SplashSystem } from '../src/splash.js';
 import { meshKind, meshVolume, createRosesGeometry } from '../src/thingMeshes.js';
 import { apparentPoint, physicalPoint } from '../src/objectGrab.js';
+import { costClock, costSince } from './cost-clock.mjs';
 
 const GRAVITY = 9.81;
 const STEP = 1 / 240;
@@ -151,6 +157,7 @@ const STEP_TOLERANCE = 0.1;            // of the highest bob
 const FIXED_THROW_MS = 1;              // ms: the most making a prepared thing (a fixed mesh's, src/rock.js prepareThing) may take as it is thrown...
 const STONE_LOAD_MS = 3;               // ...unless a river stone's throw takes more than this (a busy machine: it takes 2.2 ms on a quiet one)...
 const STONE_SHARE = 1 / 3;             // ...when it may take this share of a stone's
+const THROW_PASSES = 4;                // the most passes over the things their throws are timed in (two at least)
 const STEP_COST_MS = 0.05;
 const PLATE_OVERTURNED = 0.1;          // of the plates thrown (30 cm pizzas and up, 23 cm pies and up): the most that come up upside down
 const PIZZA_RIGHTS_SECONDS = 8;        // s: a pizza let go on the water at any angle lies flat by then
@@ -247,9 +254,9 @@ function follow(rock, { seconds = 30, step = STEP, floor = floorDepthAt, pooled 
   for (let time = 0; time < seconds; time += step) {
     const wasAir = rock.state === 'air';
     const before = rock.position.clone(), velocityBefore = rock.velocity.clone();
-    const started = performance.now();
+    const started = costClock();
     const impact = rock.update(step, floor);
-    const spent = performance.now() - started;
+    const spent = costSince(started);
     if (rock.state === 'float') { record.cost += spent; record.floatSteps++; record.stepCosts.push(spent); }
     if (pooled) collideThings([rock], (thing) => holdInPool(thing, POOL_SQUARE));
     record.states.add(rock.state);
@@ -1421,35 +1428,46 @@ console.log('\nThings meeting things (src/collide.js):');
 
 // ---- what a throw costs the main thread (src/rock.js prepareThing) ----
 {
-  // Each thing made as the app throws it, after it is prepared (src/main.js warmUp): the least of 15. A thing of a
-  // fixed mesh shares its prepared one; a stone's lumps are its own, built each throw. The least, not the median: what
-  // else the machine does (a collection, another process: npm test runs the probes side by side) can only lengthen a
-  // trial, never shorten it, and on a busy machine the median of 15 still drifted to twice a thing's cost.
-  const rows = [], over = [];
-  let preparing = 0;
-  for (const name of THING_NAMES) {
-    const thing = THINGS[name];
-    const started = performance.now();
-    prepareThing(thing);
-    preparing += performance.now() - started;
-    const measured = thing.measure(thing.slider?.initial);
-    const times = [];
-    for (let trial = 0; trial < 15; trial++) {
-      const before = performance.now();
-      const rock = new Rock({ radius: thing.byDiameter ? 0.03 : measured.radius, position: new THREE.Vector3(), velocity: new THREE.Vector3(), envTexture: null, thing: name, mass: measured.mass });
-      if (thing.air.model === 'flutter') rock.trialFlight();
-      times.push(performance.now() - before);
-      rock.dispose();
-    }
-    rows.push({ name, least: Math.min(...times), fixed: meshKind(thing.look.mesh).fixed });
-  }
+  // Each thing made as the app throws it, after it is prepared (src/main.js warmUp): the least of 15, in each of at
+  // least two passes over every thing, the least of all kept. A thing of a fixed mesh shares its prepared one; a
+  // stone's lumps are its own, built each throw. The least, not the median: what else the machine does (a collection,
+  // another process: npm test runs the probes side by side) can only lengthen a trial, never shorten it, and on a busy
+  // machine the median of 15 still drifted to twice a thing's cost. Two passes, because the first runs code V8 has not
+  // yet optimised (a cold run here: a pizza 0.9 ms the first pass, 0.4 the second), and up to THROW_PASSES while a
+  // thing is over its budget, because on a busy machine V8's compiler threads, starved, leave it so for longer (CI's
+  // runner, beside the other probes, read a pizza at 1.14 ms after two passes, 0.33 alone). A thing slow in every pass
+  // still fails.
+  const rows = THING_NAMES.map((name) => ({ name, least: Infinity, fixed: meshKind(THINGS[name].look.mesh).fixed }));
   // A fixed mesh's thing costs under FIXED_THROW_MS, or, on a machine busy enough that a river stone (built afresh each
   // throw, as it always was) costs more than STONE_LOAD_MS, under STONE_SHARE of a stone's throw on this same run.
-  const stone = rows.find((row) => row.name === 'stone').least;
-  const most = stone > STONE_LOAD_MS ? STONE_SHARE * stone : FIXED_THROW_MS;
-  for (const row of rows) if (row.fixed && row.least > most) over.push(`${row.name} ${row.least.toFixed(2)} ms`);
-  console.log(`\nWhat making a thing costs as it is thrown (ms, least of 15, once prepared; preparing them all took ${preparing.toFixed(0)} ms): ${rows.map((row) => `${row.name} ${row.least.toFixed(2)}`).join(', ')}`);
-  check(over.length === 0, `a prepared thing costs more than ${most.toFixed(2)} ms to throw (${over.join(', ')})`);
+  const budget = () => {
+    const stone = rows.find((row) => row.name === 'stone').least;
+    return stone > STONE_LOAD_MS ? STONE_SHARE * stone : FIXED_THROW_MS;
+  };
+  const overBudget = () => rows.filter((row) => row.fixed && row.least > budget());
+  let preparing = 0, passes = 0;
+  for (; passes < THROW_PASSES && (passes < 2 || overBudget().length > 0); passes++) {
+    const pass = passes;
+    for (const row of rows) {
+      const thing = THINGS[row.name];
+      if (pass === 0) {
+        const started = performance.now();
+        prepareThing(thing);
+        preparing += performance.now() - started;
+      }
+      const measured = thing.measure(thing.slider?.initial);
+      for (let trial = 0; trial < 15; trial++) {
+        const before = costClock();
+        const rock = new Rock({ radius: thing.byDiameter ? 0.03 : measured.radius, position: new THREE.Vector3(), velocity: new THREE.Vector3(), envTexture: null, thing: row.name, mass: measured.mass });
+        if (thing.air.model === 'flutter') rock.trialFlight();
+        row.least = Math.min(row.least, costSince(before));
+        rock.dispose();
+      }
+    }
+  }
+  const over = overBudget().map((row) => `${row.name} ${row.least.toFixed(2)} ms`);
+  console.log(`\nWhat making a thing costs as it is thrown (ms, least of 15 in each of ${passes} passes, once prepared; preparing them all took ${preparing.toFixed(0)} ms): ${rows.map((row) => `${row.name} ${row.least.toFixed(2)}`).join(', ')}`);
+  check(over.length === 0, `a prepared thing costs more than ${budget().toFixed(2)} ms to throw (${over.join(', ')})`);
 }
 
 // ---- the substep, and the cost ----

@@ -13,14 +13,18 @@
 //
 // A probe's checks are of two kinds. Most are computed: every probe seeds its
 // own randomness, so they come out the same however busy the machine is.
-// Some are budgets of wall-clock time (a frame's step, a skip's contact, the
-// ice's break: fish, skip, ice, jet, snow, thing), written for a probe
-// running alone, which another probe on the next core can break. So a probe
-// that fails beside others is run again alone, once everything else has
-// ended, and its verdict is that run's: a computed check fails again, and a
-// budget passes or fails as it would have run alone. The summary names every
-// probe run again and how that ended, so nothing is passed over unseen. It
-// exits with 1 if any probe failed alone (or could not start).
+// Some are budgets of time (a frame's step, a skip's contact, the ice's
+// break: fish, skip, ice, jet, snow, thing). They are timed on the main
+// thread's time (tools/cost-clock.mjs), which the wait for a core does not
+// lengthen, but a busy machine still slows the work itself (caches shared
+// with the probe on the next core, a hyperthread's sibling). So a probe that
+// fails beside others is run again alone, once everything else has ended,
+// and its verdict is that run's: a computed check fails again, and a budget
+// passes or fails as it would have run alone. The summary names every probe
+// run again and how that ended, so nothing is passed over unseen: a pass
+// alone is either a budget the others slowed or a check that does not repeat
+// (its first output is printed above). It exits with 1 if any probe failed
+// alone (or could not start).
 import { spawn } from 'node:child_process';
 import { availableParallelism } from 'node:os';
 import path from 'node:path';
@@ -86,7 +90,7 @@ const workSeconds = probes.reduce((sum, probe) => sum + results.get(probe).secon
 console.log(`\nrun-probes: ${probes.length - failed.length} of ${probes.length} passed in ${totalSeconds.toFixed(0)} s (${workSeconds.toFixed(0)} s of probes, ${Math.min(jobs, probes.length)} at a time)`);
 for (const probe of failedBeside) {
   const second = alone.get(probe);
-  if (second) console.log(`  ${probe.name}: failed beside others, ${second.code === 0 ? 'passed alone (a time budget the others crowded)' : 'failed again alone'}`);
+  if (second) console.log(`  ${probe.name}: failed beside others, ${second.code === 0 ? 'passed alone (a budget the others slowed, or a check that does not repeat: its first output is above)' : 'failed again alone'}`);
 }
 if (failed.length) {
   console.log(`  failed: ${failed.map((probe) => probe.name).join(', ')}`);

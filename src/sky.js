@@ -112,8 +112,16 @@
 // moon low in the sky): lighting.night, from 0 to 1 between the two in the
 // logarithm of the light, mixes the picture towards what rods see, drawn
 // as a moonlit blue that keeps some of the cones' colour (NIGHT_VISION in
-// src/shaders/fluid.js). That factor is the environment's
-// `level` (1 for a single photograph and an anchor): the deep water's colour
+// src/shaders/fluid.js). Not every series shares one exposure: an hour's
+// `exposure` (stops) brings up one whose light reads too dim for its hour,
+// chosen from home-view frames, as a camera's exposure compensation would
+// (sun, sky and land together). Highlands' noon has it: against its sky the
+// photo's sun measures twice Mesas' noon's (15.5 to 7.3, its disc integrated,
+// no halo), its hills and low sky two to three times darker, and its sunset's
+// sun 1.5 times its noon's, so its hours were exposed one by one; as a
+// single photograph it came out a dusk, darker than its own sunset. That
+// factor and the hour's are the environment's `level` (1 for a single
+// photograph and an anchor, but for an `exposure`): the deep water's colour
 // (src/main.js), a radiance lit by what falls on the water, takes it, and so
 // does the cube's ground hemisphere.
 //
@@ -226,6 +234,26 @@
 // past that the strip, fine enough there, shows alone. The atlas is a sky's
 // windows side by side (insetLayout); horizonBytes counts it with the strip.
 //
+// Backdrop. A photo taken among near trees (the garden's: its hedges, its
+// hill and its stairs a few dozen metres off) is no horizon: drawn
+// infinitely far, it meets the ground the scene draws in a hard line under a
+// band of whatever the photo shows below its horizon, and from a raised eye
+// that ground runs on flat to the horizon. Such a sky names a `backdrop`, a
+// sphere (centre, radius) the photo is projected onto from its centre, as
+// an HDRI backdrop is (Unreal's HDRI Backdrop, Three.js's GroundedSkybox):
+// the dome finds where the eye's ray leaves the sphere and looks the photo
+// up along the direction from the centre to there (uBackdrop), so its land
+// shifts with the eye as land that far off would. The centre stands on the
+// ground under the shore view's eye, so the photo's horizon lies where the
+// sphere meets the ground: its land stands on the place's own ground, which
+// ends there (src/pondFloor.js koiLandGeometry), and nothing under its
+// horizon (blurred by the encoder, and often the photographer's own hedge)
+// is ever shown; the home view sees it as before, 2° lower. Ground projection
+// (the GroundedSkybox's floor) was tried and left: the garden's photographer
+// stood among hedges, whose feet it smeared across the lawn. An eye outside
+// the sphere sees the photo as ever. The cube's captures, from inside, take
+// it too; the mirror's eye, under the water, sees the sphere's reflection.
+//
 // Memory. The panorama's pixels are dropped from the CPU once they are on the
 // GPU (nothing uploads it again), and the strip's ImageBitmaps are closed
 // once its textures are. The captures need no depth buffer: the
@@ -306,7 +334,7 @@ const SKIES = {
     hours: {
       dawn: { file: 'kiara_1_dawn', label: 'Dawn', clock: '06:20' },
       sunrise: { file: 'kiara_2_sunrise', label: 'Sunrise', clock: '07:03' },
-      noon: { file: 'kiara_5_noon', label: 'Noon', clock: '12:15' },
+      noon: { file: 'kiara_5_noon', label: 'Noon', clock: '12:15', exposure: 1.5 },
       sunset: { file: 'kiara_8_sunset', label: 'Sunset', clock: '17:34' },
       dusk: { file: 'kiara_9_dusk', label: 'Dusk', clock: '17:55' },
     },
@@ -345,8 +373,8 @@ const SKIES = {
   wooded: { reeds: true, shore: 'turf', sunAzimuth: -60, hours: { morning: { file: 'radkow_lake', label: 'Late morning', clock: '11:11' } } },
   // The Koi pond's own (src/places.js PLACES `koi`), no place of its own (`ownPlace`): Ninomaru Teien, the garden of
   // Nagoya Castle, in April's afternoon light through its trees (`shadedSun`: its sun behind leaves, the light on
-  // level ground the balance's, most of it the sky's).
-  garden: { ownPlace: false, shadedSun: true, sunAzimuth: 100, hours: { afternoon: { file: 'ninomaru_teien', label: 'Afternoon', clock: '15:09' } } },
+  // level ground the balance's, most of it the sky's). Its trees, hedges and hill stand near: a backdrop (Backdrop).
+  garden: { ownPlace: false, shadedSun: true, sunAzimuth: 100, backdrop: { centre: [0, 0, 2.45], radius: 35 }, hours: { afternoon: { file: 'ninomaru_teien', label: 'Afternoon', clock: '15:09' } } },
   // The Polynesian lagoon's own (src/places.js PLACES `lagoon`), no place of its own: a pure sky (Poly Haven's Kloofendal
   // 48d Partly Cloudy, its land taken out), deep blue with trade-wind cumulus along the horizon and the sun 48° up, as
   // a South Pacific midday is; the land under it is the beach's own (src/tropics.js: the palms, the motus, the high
@@ -386,6 +414,8 @@ const SKIES = {
     },
   },
 };
+/** A sky's backdrop (Backdrop, above): { centre: [x, y, z], radius } (m), or null where its land stands far off. */
+export const skyBackdrop = (name) => SKIES[name]?.backdrop ?? null;
 /** The skies that are each a place of their own (the Location setting's lakes; the Koi pond takes the garden's). */
 /** What a sky's beach is made of (`shore` above): a name of SHORE_LOOKS (src/pondFloor.js), 'sand' when unnamed. */
 export const skyShore = (name) => SKIES[name]?.shore ?? 'sand';
@@ -535,6 +565,7 @@ uniform float uHorizonEdge;    // radians inside the strip's band over which it 
 uniform vec4 uInsetWindow[${INSET_COUNT}];   // each inset's window: u from and to (the panorama's, its azimuth over 360°; from = to: none), the elevation (radians) of its top and of its bottom
 uniform vec4 uInsetPlace[${INSET_COUNT}];    // its place in the atlas: x, y, width, height (texels)
 uniform float uInsetEdge;      // radians inside a window over which its inset fades in (Insets)
+uniform vec4 uBackdrop;        // the backdrop's centre (xyz) and radius (w; 0: none), metres (Backdrop)
 varying vec3 vDirection;
 ${HORIZON_DECODE}
 ${INSET_DECODE}
@@ -572,6 +603,12 @@ float boltLight(vec3 direction, float land) {
 }
 void main() {
   vec3 direction = normalize(vDirection);
+  if (uBackdrop.w > 0.0) {
+    // Where the ray leaves the backdrop's sphere, seen from its centre (Backdrop); from outside it, as ever.
+    vec3 fromCentre = cameraPosition - uBackdrop.xyz;
+    float along = dot(fromCentre, direction), inside = uBackdrop.w * uBackdrop.w - dot(fromCentre, fromCentre);
+    if (inside > 0.0) direction = normalize(fromCentre + (sqrt(along * along + inside) - along) * direction);
+  }
   float azimuth = atan(direction.z, direction.x * uMirror) + uRotation;
   float elevation = asin(clamp(direction.y, -1.0, 1.0));
   vec2 panoramaUv = vec2(azimuth / (2.0 * PI) + 0.5, elevation / PI + 0.5);
@@ -747,6 +784,7 @@ export function createEnvironment(renderer, { name, hour, sunAzimuth, sunBalance
         uInsetWindow: { value: Array.from({ length: INSET_COUNT }, () => new THREE.Vector4()) },
         uInsetPlace: { value: Array.from({ length: INSET_COUNT }, () => new THREE.Vector4()) },
         uInsetEdge: { value: THREE.MathUtils.degToRad(INSET_EDGE) },
+        uBackdrop: { value: new THREE.Vector4() },
         uHazeLayer: { value: HAZE_LAYER },
         ...hazeUniforms,
       },
@@ -976,7 +1014,7 @@ export function createEnvironment(renderer, { name, hour, sunAzimuth, sunBalance
     // cumulus) is exposed as an eye adapted that share of the way to it sees it, sun and sky together.
     const adapted = place.adapt ? (levelLight(balance) / levelLight(anchor)) ** place.adapt : 1;
     const anchorScale = place.shadedSun ? balanceScale * levelLight(balance) / levelLight(anchor) : (balanceLuminance / luminance(anchor.sunIrradiance)) * SKY_EXPOSURE * adapted;
-    const level = file === anchorFile ? 1 : adaptedLight(hourLight(measurement, entry.lit)) / adaptedLight(hourLight(anchor, place.hours[place.anchor ?? firstHour].lit));
+    const level = (file === anchorFile ? 1 : adaptedLight(hourLight(measurement, entry.lit)) / adaptedLight(hourLight(anchor, place.hours[place.anchor ?? firstHour].lit))) * 2 ** (entry.exposure ?? 0);
     const scale = anchorScale * level;
     if (sunlit) {
       const sunColour = new THREE.Vector3().fromArray(measurement.sunIrradiance).divide(new THREE.Vector3().fromArray(balance.sunIrradiance)).multiply(sunBalance);
@@ -998,6 +1036,8 @@ export function createEnvironment(renderer, { name, hour, sunAzimuth, sunBalance
     domeUniforms.uPanorama.value = panorama;
     domeUniforms.uMirror.value = mirror;
     domeUniforms.uRotation.value = rotation;
+    const backdrop = skyBackdrop(skyName);
+    domeUniforms.uBackdrop.value.set(...(backdrop?.centre ?? [0, 0, 0]), backdrop?.radius ?? 0);
     domeUniforms.uScale.value = scale;
     domeUniforms.uRadianceCap.value = RADIANCE_CAP * luminance(clear.sky.toArray());
     applyWeather();

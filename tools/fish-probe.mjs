@@ -29,7 +29,10 @@
 //   frames, as src/main.js steps them, they swim, take fright and bite
 //   exactly as over even ones, and are drawn between their last two steps
 //   (showAt);
-// - the cost: a frame's step for each place, with a throw's threats.
+// - the cost: a frame's step for each place, with a throw's threats, under
+//   0.25 ms of the main thread's time (tools/cost-clock.mjs: not the time
+//   spent waiting for a core beside other probes).
+import { costClock, costSince } from './cost-clock.mjs';
 import { FishPopulation, FISH_BY_PLACE, FISH_SPECIES, FEEDERS, FISH_STEP, edibleBites, fishSee } from '../src/fish.js';
 import { Rock } from '../src/rock.js';
 import * as THREE from 'three';
@@ -443,9 +446,9 @@ for (const place of Object.keys(FISH_BY_PLACE)) {
   const foods = [{ id: 'pizza', x: 0, y: 0, z: -1, radius: 0.15, floating: true, settled: 10 }];
   for (let frame = 0; frame < 600; frame++) population.step(FRAME, { threats, foods });
   const frames = 3000;
-  const started = performance.now();
+  const started = costClock();
   for (let frame = 0; frame < frames; frame++) population.step(FRAME, { threats, foods });
-  const milliseconds = (performance.now() - started) / frames;
+  const milliseconds = costSince(started) / frames;
   console.log(`  ${place}: ${population.fish.length} fish, ${(milliseconds * 1000).toFixed(1)} µs`);
   check(milliseconds < 0.25, `${place}: a frame's step under 0.25 ms (${milliseconds.toFixed(3)})`);
 }

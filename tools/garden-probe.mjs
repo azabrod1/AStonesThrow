@@ -18,14 +18,25 @@
 //   lake's: every uniform the shore's GLSL twin (LAKE_BED) declares is one
 //   the water shares from the floor (BED_UNIFORMS, src/waterSurface.js setBed);
 // - the cost: the garden's build and its triangles, the scene's (fine) under
-//   300k and the mirror's (coarse, Low's scene's too) under 40% of them; the
+//   300k and the mirror's (coarse, Low's scene's too) under 40% of them, and
+//   its costs as shares of the garden's whole first build in the same run
+//   (SHARE_OF_BUILD: what is measured is the same work's time on the same
+//   machine at the same moment, so another probe crowding the cores slows
+//   both alike, where a budget in milliseconds fails): its shade's first
+//   bake (the occlusion too), a new sun's (the least over three suns); built
+//   ahead in steps (prepareSome, as src/main.js does while the Koi pond's
+//   sky downloads), a separate copy of the module, the same garden to the
+//   last corner, its longest step, and showing it then (its shadows alone);
+//   the build itself is held by its triangles; on Low, shown before it
+//   was built ahead, building ahead stops (the fine garden it let go is
+//   not built again); the
 //   coarse garden laid out as the fine one (the same shrubs in the same
 //   order and tints, each where the fine one's is), so what is drawn on Low
 //   and in the mirror stands where the fine garden, which catches, does.
 import * as THREE from 'three';
 import { Rock } from '../src/rock.js';
 import { THINGS, THING_NAMES } from '../src/things.js';
-import { setShoreKind, koiFloorDepthAt, koiShoreDistance, koiShoreRadius, KOI_SHORE } from '../src/pondFloor.js';
+import { setShoreKind, koiFloorDepthAt, koiShoreDistance, koiShoreRadius, KOI_SHORE, gardenShadeUniforms } from '../src/pondFloor.js';
 import { koiGround, holdInGarden, keepInPond, keepOutOfGarden, plantingFront, createKoiGarden, KOI_AIM, GARDEN } from '../src/koiGarden.js';
 import { collideThings } from '../src/collide.js';
 import { BED_UNIFORMS } from '../src/waterSurface.js';
@@ -35,6 +46,10 @@ const CAUGHT_WITHIN = 0.03;   // m: the most a thing may go into the planting pa
 const STEP = 1 / 240;
 setShoreKind('koi');
 const failures = [];
+// Each cost's most, as a share of the garden's whole first build (the header). On an M1, alone or with the cores
+// crowded: the first bake 8 to 9%, a new sun's 1 to 1.5%, the longest step ahead 1.2 to 1.3%, showing it built 4%.
+const SHARE_OF_BUILD = { firstShade: 0.15, newSun: 0.04, step: 0.03, shown: 0.08 };
+const share = (milliseconds, of) => `${milliseconds.toFixed(1)} ms, ${(100 * milliseconds / of).toFixed(1)}% of the build`;
 function check(condition, message) { console.log(`${condition ? 'ok  ' : 'FAIL'} ${message}`); if (!condition) failures.push(message); }
 let randomState = 1;
 Math.random = () => { randomState = (randomState * 16807) % 2147483647; return (randomState - 1) / 2147483646; };
@@ -54,14 +69,88 @@ console.log('aims:');
 console.log('\nthe planting catches:');
 {
   const started = performance.now();
-  const garden = createKoiGarden({ envTexture: null, mirrorLayer: 2, lighting: {} });
+  // Under a sun like the garden's (19° up), so its shade is baked as the page bakes it.
+  const lighting = { sunDirection: new THREE.Vector3(-0.6, 0.333, -0.73).normalize(), sunIrradiance: new THREE.Vector3(1, 1, 1), skyAmbient: new THREE.Vector3(1, 1, 1) };
+  let skyIsOwn = true;   // whether the sky in is the garden's own (src/main.js ownSky)
+  const garden = createKoiGarden({ envTexture: null, mirrorLayer: 2, lighting, ownSky: () => skyIsOwn });
   garden.setVisible(true);
   const built = performance.now() - started;
   // The scene's garden (fine) and the mirror's (coarse: src/koiGarden.js COARSE), the meshes by look, main then mirror.
   const fine = garden.meshes.filter((mesh, index) => index % 2 === 0), coarse = garden.meshes.filter((mesh, index) => index % 2 === 1);
   const trianglesOf = (meshes) => meshes.reduce((sum, mesh) => sum + mesh.geometry.index.count / 3, 0);
   const fineTriangles = trianglesOf(fine), coarseTriangles = trianglesOf(coarse);
-  console.log(`  built in ${built.toFixed(0)} ms: the scene's ${(fineTriangles / 1000).toFixed(0)}k triangles, the mirror's (and Low's scene) ${(coarseTriangles / 1000).toFixed(0)}k`);
+  console.log(`  built in ${built.toFixed(0)} ms (its shade baked in ${garden.shadeMilliseconds.toFixed(0)} of them): the scene's ${(fineTriangles / 1000).toFixed(0)}k triangles, the mirror's (and Low's scene) ${(coarseTriangles / 1000).toFixed(0)}k`);
+  const firstShade = garden.shadeMilliseconds;
+  let newSun = Infinity;
+  for (const sun of [[-0.55, 0.37, -0.75], [-0.45, 0.42, -0.79], [-0.5, 0.4, -0.77]]) {
+    lighting.sunDirection.set(...sun).normalize();
+    garden.setLight();   // a new sun: its shadows baked again, its occlusion kept
+    newSun = Math.min(newSun, garden.shadeMilliseconds);
+  }
+  check(firstShade < SHARE_OF_BUILD.firstShade * built, `its shade's first bake under ${100 * SHARE_OF_BUILD.firstShade}% of the build (${share(firstShade, built)})`);
+  check(newSun < SHARE_OF_BUILD.newSun * built, `a new sun's under ${100 * SHARE_OF_BUILD.newSun}% (${share(newSun, built)}, the least of three)`);
+  const shadeTexture = gardenShadeUniforms.uGardenShade.value;
+  const bakedVersion = shadeTexture.version;
+  garden.setVisible(false);
+  lighting.sunDirection.set(-0.3, 0.5, -0.8).normalize();
+  garden.setLight();
+  check(shadeTexture.version === bakedVersion, 'a hidden garden does not rebake or upload shade for another sun');
+  garden.setVisible(true);
+  check(shadeTexture.version === bakedVersion + 1 && gardenShadeUniforms.uGardenShadeSun.value.equals(lighting.sunDirection),
+    'showing the garden refreshes shade for the current sun');
+  garden.setVisible(true);
+  garden.setLight();
+  check(shadeTexture.version === bakedVersion + 1, 'an unchanged visible sun reuses the shade bake');
+  // Leaving: the next place's sky (its sun) comes in while the garden is still shown (src/main.js applySky before
+  // setKoiPond); coming back, the garden's own sky and sun again.
+  const ownSun = lighting.sunDirection.clone();
+  skyIsOwn = false;
+  lighting.sunDirection.set(0.2, 0.6, -0.77).normalize();
+  garden.setLight();
+  check(shadeTexture.version === bakedVersion + 1, 'another place\'s sky, come in while the garden is shown, bakes no shade');
+  skyIsOwn = true;
+  lighting.sunDirection.copy(ownSun);
+  garden.setLight();
+  garden.setVisible(true);
+  check(shadeTexture.version === bakedVersion + 1, 'back under its own sky and sun, the shade it holds is kept');
+  {
+    // Built ahead (prepareSome), in a copy of the module of its own (nothing built yet), a step at a time.
+    const ahead = await import('../src/koiGarden.js?ahead');
+    const aheadGarden = ahead.createKoiGarden({ envTexture: null, mirrorLayer: 2, lighting, ownSky: () => true });
+    let steps = 0, longest = 0, total = 0;
+    for (let done = false; !done; steps++) {
+      const started = performance.now();
+      done = aheadGarden.prepareSome(0);
+      const spent = performance.now() - started;
+      longest = Math.max(longest, spent);
+      total += spent;
+    }
+    const shownAt = performance.now();
+    aheadGarden.setVisible(true);
+    const shown = performance.now() - shownAt;
+    console.log(`  built ahead in ${steps} steps, ${total.toFixed(0)} ms in all, the longest ${longest.toFixed(1)} ms; shown then in ${shown.toFixed(1)} ms`);
+    const same = aheadGarden.meshes.every((mesh, index) => {
+      const mine = mesh.geometry.attributes.position.array, theirs = garden.meshes[index].geometry.attributes.position.array;
+      return mine.length === theirs.length && mine.every((value, at) => value === theirs[at]);
+    });
+    check(same, 'built ahead in steps, it is the same garden as one built at once, to the last corner');
+    check(longest < SHARE_OF_BUILD.step * built, `no step of building it ahead over ${100 * SHARE_OF_BUILD.step}% of the build (the longest ${share(longest, built)})`);
+    check(shown < SHARE_OF_BUILD.shown * built, `built ahead, it is shown in under ${100 * SHARE_OF_BUILD.shown}% of the build (${share(shown, built)})`);
+  }
+  {
+    // On Low (setCoarse), its sky come before the build ahead is done (as on a phone): showing it builds what is left
+    // and lets the fine garden go once the catch table is made; src/main.js's slices go on asking while the place's
+    // request stands, and must not build the fine garden again (to be kept, never drawn).
+    const low = await import('../src/koiGarden.js?low');
+    const lowGarden = low.createKoiGarden({ envTexture: null, mirrorLayer: 2, lighting, ownSky: () => true });
+    lowGarden.setCoarse(true);
+    for (let step = 0; step < 20; step++) lowGarden.prepareSome(0);
+    lowGarden.setVisible(true);
+    const after = performance.now();
+    const doneAtOnce = lowGarden.prepareSome(0);
+    const spent = performance.now() - after;
+    check(doneAtOnce, `on Low, shown before it was built ahead, building ahead stops at once (${spent.toFixed(1)} ms), so the fine garden it let go is not built again`);
+  }
   check(fineTriangles < 300000, `the scene's under 300k triangles (${(fineTriangles / 1000).toFixed(0)}k)`);
   check(coarseTriangles < 0.4 * fineTriangles, `the coarse garden under 40% of the fine's triangles (${(100 * coarseTriangles / fineTriangles).toFixed(0)}%)`);
   // The coarse garden is the fine one's shrubs more coarsely made, from the same draws (src/koiGarden.js COARSE): the same

@@ -1,4 +1,4 @@
-node_modules/
+node_modules
 shots/
 _site/
 __pycache__/
