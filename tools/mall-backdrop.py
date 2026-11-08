@@ -34,6 +34,8 @@ polygons are shares of that revision's size, so a later upload is never taken in
   clone       boxes copied from a place chosen by hand ([x0, y0, x1, y1, dx, dy]): people where no row is alike (clone_boxes);
   square      steps seen from off their axis set square under their building: its `axis`, and its `flights`, each a
               polygon and that flight's own axis (square_flights);
+  centre      what stands behind a colonnade seen from off its axis set on its bay's middle: each a polygon (the
+              bay), the subject's `axis` and the bay's `middle` (centre_subjects);
   trees       boxes of its trees, which the elms are matched to when it is an hour's reference;
   paint       lines to paint out ([[x, y], ...], width as a share of the width): a pole across the trees;
   protect     spans of its width (from, to) never copied into a gap: a landmark is never seen twice;
@@ -104,6 +106,7 @@ AGENT = {'User-Agent': 'AStonesThrow-mall-backdrop/1.0 (https://github.com/azabr
 WORK_WIDTH = 3000          # pixels: each photograph is worked at this width (the 8k strip's 23 a degree, and more)
 BAND = (-6.0, 32.0)        # degrees: the elevations land can reach (the rest is the pure sky alone)
 KEYED = {}                 # the elm cards, keyed once for every hour
+CENTRE_EDGE = 4           # pixels: what centre_subjects takes stays this far inside its bay, clear of a column's soft edge
 SOLID_RIM = 10             # pixels: a traced edge keyed against the sky beside it this far in (land_matte)
 KEY_FLOOR = 0.02           # how far a keyed shape's pixel's colour balance (each channel's share) lies from its sky's, all sky (key_shape)
 KEY_RAMP = 0.04            # and how much farther, all landmark
@@ -415,6 +418,31 @@ def square_flights(photo, square):
     out = photo.copy()
     for channel in range(3):
         out[rows, columns, channel] = map_coordinates(photo[..., channel], [rows, source[rows, columns]], order=1, mode='nearest')
+    return out
+
+
+def centre_subjects(photo, centres):
+    """What stands behind a colonnade seen from off its axis set back on the bay's middle (`centre`: the statue in
+    the Memorial's doorway, shifted aside by parallax as the steps are, square_flights). Each is a `polygon` (shares)
+    holding the bay, the subject's `axis` and the bay's `middle` (shares of the width): each pixel of the polygon's
+    rows takes the pixel as far from the subject's axis as it lies from the bay's middle, on its own side while that
+    pixel is inside the bay, else on the other side (its mirror image about the axis: what the photograph's column
+    hides), so the subject keeps its own two sides but for a strip at the hidden edge."""
+    from scipy.ndimage import map_coordinates
+    height, width = photo.shape[:2]
+    out = photo.copy()
+    for centre in centres:
+        inside = polygons_mask([centre['polygon']], height, width) > 0.5
+        axis, middle = centre['axis'] * width - 0.5, centre['middle'] * width - 0.5
+        for row in np.flatnonzero(inside.any(1)):
+            columns = np.flatnonzero(inside[row])
+            first, last = columns[0] + CENTRE_EDGE, columns[-1] - CENTRE_EDGE   # the bay's own pixels, clear of the columns' edges
+            offset = columns - middle
+            source = axis + offset
+            hidden = (source < first) | (source > last)
+            source[hidden] = np.clip(axis - offset[hidden], first, last)
+            for channel in range(3):
+                out[row, columns, channel] = map_coordinates(photo[..., channel], [np.full(len(columns), row), source], order=1, mode='nearest')
     return out
 
 
@@ -984,6 +1012,8 @@ def prepare_photo(spec):
         photo = fill_down(photo, spec['fill'])   # after: someone sitting across both is whole when clean_rows looks
     if spec.get('square'):
         photo = square_flights(photo, spec['square'])   # its people already off: none is seen twice
+    if spec.get('centre'):
+        photo = centre_subjects(photo, spec['centre'])
     crop = spec.get('crop', [0, 1])
     if crop != [0, 1]:
         width = photo.shape[1]
