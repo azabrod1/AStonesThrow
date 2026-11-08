@@ -4219,7 +4219,6 @@ void main() {
     } else {
       // The arris along the water rounded down, darker.
       albedo *= mix(0.75, 1.0, smoothstep(0.0, 0.03, outside));
-      albedo *= 1.0 - 0.55 * jointCover(outside, 2.0 * MALL_COPING_WIDTH, MALL_STONE_JOINT, footprint) * step(MALL_COPING_WIDTH * 0.5, outside);
     }
   } else if (behind > 0.0 && behind < MALL_PLAZA.x && abs(point.x) < MALL_PLAZA.y) {
     // The west plaza's pavers, in running bond.
@@ -4241,6 +4240,8 @@ void main() {
     albedo = MALL_LAWN * stripes * (1.0 + 0.5 * valueNoise(point * 0.9 + 5.0) - 0.25) * (0.85 + 0.3 * valueNoise(point * 13.0));
     stone = 0.0;
   }
+  // The joint along the coping's outer edge, where it meets the walk, the plaza or the lawn: half of it either side.
+  if (!face) albedo *= 1.0 - 0.55 * iceLine(abs(outside - MALL_COPING_WIDTH), 0.5 * MALL_STONE_JOINT, footprint);
   albedo *= mix(1.0, mix(WET_GRASS, WET_STONE, stone), uWet);
   float snow = face ? 0.0 : snowCover(point);
   if (snow > 0.0) albedo = mix(albedo, snowShade(point), snow);
