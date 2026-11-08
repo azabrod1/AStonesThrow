@@ -229,7 +229,7 @@
 // and decoded once on the GPU when it comes (INSET_DECODE_PASS: the loader's
 // arithmetic, as the strip's) into half floats with mip levels, which the
 // dome reads in one trilinear lookup a pixel (INSET_SAMPLE). A window may
-// cross north (its azimuths taken round the turn). Each window fades in over
+// cross north, its azimuths running past 360 (insetLayout). Each window fades in over
 // INSET_EDGE inside its edges, and out again where a screen pixel spans
 // INSET_FINEST to INSET_COARSEST of its texels (a home view's, a cube
 // capture's), where the strip, fine enough there, shows alone. The atlas is a
@@ -696,13 +696,20 @@ export function stripAbove(file) {
 // colour block, so no block holds two windows), side by side from the left,
 // the atlas as tall as the tallest. tools/mall-backdrop.py renders each
 // window into its place (assets/sky/<file>_insets.hdr), tools/sky-encode.mjs
-// encodes it, and the dome reads it back by the same layout.
+// encodes it, and the dome reads it back by the same layout. A window's
+// azimuths run from the first to the second, less than a turn apart: one
+// across north runs past 360 ([350, 370]), never back round ([350, 10]),
+// since the tool and this layout take its width as their difference.
 const INSET_BLOCK = 16;
 /** The insets of the hour whose file is `file`: its sky's `insets`, or none. */
 export const skyInsets = (file) => skyOfFile(file)?.insets ?? [];
 /** The atlas of `insets`: { width, height, places: [{ x, y, width, height }] } in texels. */
 export function insetLayout(insets) {
   if (insets.length > INSET_COUNT) throw new Error(`A sky may have at most ${INSET_COUNT} insets`);
+  for (const { name, azimuth, elevation } of insets) {
+    if (!(azimuth[1] > azimuth[0] && azimuth[1] - azimuth[0] < 360)) throw new Error(`The ${name} inset's azimuths [${azimuth}] must rise by less than a turn: across north, run past 360 ([350, 370])`);
+    if (!(elevation[1] > elevation[0])) throw new Error(`The ${name} inset's elevations [${elevation}] must rise`);
+  }
   let x = 0;
   const places = insets.map(({ azimuth, elevation, perDegree }) => {
     const blocks = (degrees) => Math.ceil((degrees * perDegree) / INSET_BLOCK) * INSET_BLOCK;
